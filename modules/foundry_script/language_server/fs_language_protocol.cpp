@@ -193,9 +193,9 @@ Dictionary FSLanguageProtocol::initialize(const Dictionary &p_params) {
 		// since it might lead to unexpected behavior, like wrong warnings about duplicate class names.
 
 		String root;
-		Variant root_uri_var = p_params["rootUri"];
+		Variant root_uri_var = p_params.get("rootUri", Variant());
 		Variant root_var = p_params.get("rootPath", Variant());
-		if (root_uri_var.is_string()) {
+		if (root_uri_var.is_string() && String(root_uri_var).length()) {
 			root = get_workspace()->get_file_path(root_uri_var);
 		} else if (root_var.is_string()) {
 			root = root_var;
@@ -210,7 +210,7 @@ Dictionary FSLanguageProtocol::initialize(const Dictionary &p_params) {
 		}
 	}
 
-	String root_uri = p_params["rootUri"];
+	String root_uri = p_params.get("rootUri", "");
 	String root = p_params.get("rootPath", "");
 	bool is_same_workspace;
 #ifndef WINDOWS_ENABLED
@@ -242,11 +242,23 @@ Dictionary FSLanguageProtocol::initialize(const Dictionary &p_params) {
 
 	if (!_initialized) {
 		workspace->initialize();
-		text_document->initialize();
-		_initialized = true;
+		complete_initialization_if_workspace_ready();
 	}
 
 	return ret.to_json();
+}
+
+bool FSLanguageProtocol::complete_initialization_if_workspace_ready() {
+	if (_initialized) {
+		return true;
+	}
+	if (workspace.is_null() || !workspace->is_initialized() || text_document.is_null()) {
+		return false;
+	}
+
+	text_document->initialize();
+	_initialized = true;
+	return true;
 }
 
 void FSLanguageProtocol::initialized(const Variant &p_params) {
@@ -364,10 +376,16 @@ void FSLanguageProtocol::request_client(const String &p_method, const Variant &p
 }
 
 bool FSLanguageProtocol::is_smart_resolve_enabled() const {
+	if (EditorSettings::get_singleton() == nullptr) {
+		return false;
+	}
 	return bool(_EDITOR_GET("network/language_server/enable_smart_resolve"));
 }
 
 bool FSLanguageProtocol::is_goto_native_symbols_enabled() const {
+	if (EditorSettings::get_singleton() == nullptr) {
+		return false;
+	}
 	return bool(_EDITOR_GET("network/language_server/show_native_symbols_in_editor"));
 }
 

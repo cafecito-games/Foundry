@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "core/config/project_build_pipeline_status.h"
 #include "core/error/error_macros.h"
 #include "fs_extend_parser.h"
 #include "godot_lsp.h"
@@ -86,6 +87,23 @@ protected:
 	void list_script_files(const String &p_root_dir, List<String> &r_files);
 
 	void apply_new_signal(Object *obj, String function, PackedStringArray args);
+	void _connect_editor_signals();
+	ProjectBuildPipelineStatusSnapshot _get_build_pipeline_status_snapshot(bool p_compute_current_fingerprints = true) const;
+	ProjectBuildPipelineStatusSnapshot _run_dirty_pre_compile_tasks();
+	void _publish_build_pipeline_diagnostics(const ProjectBuildPipelineStatusSnapshot &p_snapshot);
+	void _clear_build_pipeline_diagnostics();
+	void _publish_diagnostics_array(const String &p_path, const Array &p_errors);
+	static bool _output_may_include_foundry_scripts(const String &p_output);
+	static bool _output_is_declared_res_root(const String &p_output);
+
+	HashSet<String> build_pipeline_diagnostic_paths;
+	bool build_pipeline_pre_compile_run_active = false;
+	bool build_pipeline_initialization_ready_for_recovery = false;
+
+#ifdef TESTS_ENABLED
+	bool build_pipeline_status_override_enabled = false;
+	ProjectBuildPipelineStatusSnapshot build_pipeline_status_override;
+#endif
 
 public:
 	String root;
@@ -95,11 +113,17 @@ public:
 
 public:
 	Error initialize();
+	bool is_initialized() const { return initialized; }
 
 	String get_file_path(const String &p_uri);
 	String get_file_uri(const String &p_path) const;
 
 	void publish_diagnostics(const String &p_path);
+	bool refresh_after_successful_build_outputs(const PackedStringArray &p_outputs);
+#ifdef TESTS_ENABLED
+	void set_build_pipeline_status_override_for_tests(const ProjectBuildPipelineStatusSnapshot &p_snapshot);
+	void clear_build_pipeline_status_override_for_tests();
+#endif
 	void completion(const LSP::CompletionParams &p_params, List<ScriptLanguage::CodeCompletionOption> *r_options);
 
 	const LSP::DocumentSymbol *resolve_symbol(

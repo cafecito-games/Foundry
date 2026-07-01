@@ -237,6 +237,50 @@ TEST_CASE("[ProjectBuildPipelineConfig] validation reports structured section an
 	CHECK(has_validation_error(errors, "build/tasks/run_codegen", "command"));
 }
 
+TEST_CASE("[ProjectBuildPipelineConfig] stage filter keeps only relevant tasks providers and parse errors") {
+	Ref<ConfigFile> config = parse_build_config(
+			"[build]\n"
+			"enabled=true\n"
+			"pre_compile=PackedStringArray(\"generate_proto\")\n"
+			"post_compile=42\n"
+			"\n"
+			"[build/providers/generate_protobuf]\n"
+			"script=\"res://addons/protobuf_build/generate_protobuf.fs\"\n"
+			"class_name=\"GenerateProtobuf\"\n"
+			"\n"
+			"[build/providers/post_provider]\n"
+			"script=42\n"
+			"class_name=\"PostProvider\"\n"
+			"\n"
+			"[build/tasks/generate_proto]\n"
+			"provider=\"generate_protobuf\"\n"
+			"outputs=PackedStringArray(\"res://generated/protobuf/\")\n"
+			"\n"
+			"[build/tasks/post_bundle]\n"
+			"provider=\"post_provider\"\n"
+			"outputs=PackedStringArray(\"res://build/post.bundle\")\n");
+
+	ProjectBuildPipelineConfig build_config;
+	CHECK_EQ(build_config.load_from_config_file(config), OK);
+
+	Vector<ProjectBuildPipelineConfig::ValidationError> full_errors = build_config.validate();
+	CHECK(has_validation_error(full_errors, "build", "post_compile"));
+	CHECK(has_validation_error(full_errors, "build/providers/post_provider", "script"));
+
+	ProjectBuildPipelineConfig pre_compile =
+			build_config.filtered_for_stage(ProjectBuildPipelineConfig::STAGE_PRE_COMPILE);
+	CHECK_EQ(pre_compile.get_stage_tasks(ProjectBuildPipelineConfig::STAGE_POST_COMPILE).size(), 0);
+
+	PackedStringArray pre_compile_tasks = pre_compile.get_stage_tasks(ProjectBuildPipelineConfig::STAGE_PRE_COMPILE);
+	REQUIRE_EQ(pre_compile_tasks.size(), 1);
+	CHECK_EQ(pre_compile_tasks[0], "generate_proto");
+	CHECK(pre_compile.get_task("generate_proto") != nullptr);
+	CHECK(pre_compile.get_task("post_bundle") == nullptr);
+	CHECK(pre_compile.get_provider("generate_protobuf") != nullptr);
+	CHECK(pre_compile.get_provider("post_provider") == nullptr);
+	CHECK_EQ(pre_compile.validate().size(), 0);
+}
+
 TEST_CASE("[ProjectBuildPipelineConfig] provider scripts must be concrete Foundry Script files") {
 	const char *invalid_scripts[] = {
 		"res://",

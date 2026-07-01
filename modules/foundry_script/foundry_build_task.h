@@ -181,6 +181,7 @@ protected:
 	static void _bind_methods();
 
 public:
+	String compute_fingerprint(const Ref<FoundryBuildContext> &p_context, String *r_error = nullptr) const;
 	virtual Ref<FoundryBuildTaskConfigSchema> get_config_schema() const override;
 	virtual Ref<FoundryBuildResult> run(const Ref<FoundryBuildContext> &p_context) override;
 };

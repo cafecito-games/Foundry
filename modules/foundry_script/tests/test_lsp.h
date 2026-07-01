@@ -41,6 +41,7 @@
 #include "../language_server/fs_workspace.h"
 #include "../language_server/godot_lsp.h"
 
+#include "core/config/project_build_pipeline_status.h"
 #include "core/config/project_settings.h"
 #include "core/io/dir_access.h"
 #include "core/io/file_access_pack.h"
@@ -130,6 +131,96 @@ namespace FSTests {
 // -> Reuse FoundryScript test project. LSP specific scripts are then placed inside `lsp` folder.
 //    Access via `res://lsp/my_script.fs`.
 const String root = "modules/foundry_script/tests/scripts/";
+
+struct ScopedLSPTempFile {
+	String path;
+	bool existed = false;
+	String previous_source;
+
+	static String resolve_path(const String &p_path) {
+		String absolute_path = ProjectSettings::get_singleton()->globalize_path(p_path);
+		if (absolute_path == p_path && p_path.begins_with("res://") && FSLanguageProtocol::get_singleton() != nullptr) {
+			Ref<FSWorkspace> workspace = FSLanguageProtocol::get_singleton()->get_workspace();
+			if (workspace.is_valid() && !workspace->root.is_empty()) {
+				absolute_path = workspace->root.path_join(p_path.substr(String("res://").length()));
+			}
+		}
+		return absolute_path;
+	}
+
+	ScopedLSPTempFile(const String &p_path, const String &p_source) {
+		path = p_path;
+		const String absolute_path = resolve_path(path);
+		const Error mkdir_err = DirAccess::make_dir_recursive_absolute(absolute_path.get_base_dir());
+		REQUIRE_EQ(mkdir_err, OK);
+		if (FileAccess::exists(absolute_path)) {
+			existed = true;
+			Ref<FileAccess> existing = FileAccess::open(absolute_path, FileAccess::READ);
+			REQUIRE_MESSAGE(existing.is_valid(), vformat("Cannot read existing '%s'", path));
+			previous_source = existing->get_as_utf8_string();
+		}
+		Ref<FileAccess> file = FileAccess::open(absolute_path, FileAccess::WRITE);
+		REQUIRE_MESSAGE(file.is_valid(), vformat("Cannot write '%s'", path));
+		file->store_string(p_source);
+	}
+
+	~ScopedLSPTempFile() {
+		const String absolute_path = resolve_path(path);
+		if (existed) {
+			Ref<FileAccess> file = FileAccess::open(absolute_path, FileAccess::WRITE);
+			ERR_FAIL_COND(file.is_null());
+			file->store_string(previous_source);
+		} else {
+			DirAccess::remove_absolute(absolute_path);
+		}
+	}
+
+	static void remove_recursive(const String &p_absolute_path) {
+		Ref<DirAccess> dir = DirAccess::open(p_absolute_path);
+		if (dir.is_null()) {
+			return;
+		}
+		dir->set_include_hidden(true);
+		dir->list_dir_begin();
+		for (String entry = dir->get_next(); !entry.is_empty(); entry = dir->get_next()) {
+			if (entry == "." || entry == "..") {
+				continue;
+			}
+			const String child = p_absolute_path.path_join(entry);
+			if (dir->current_is_dir() && !dir->is_link(child)) {
+				remove_recursive(child);
+			} else {
+				DirAccess::remove_absolute(child);
+			}
+		}
+		dir->list_dir_end();
+		DirAccess::remove_absolute(p_absolute_path);
+	}
+};
+
+ProjectBuildPipelineStatusSnapshot make_blocked_pre_compile_snapshot(const String &p_message) {
+	ProjectBuildPipelineStatusSnapshot snapshot;
+	snapshot.state = ProjectBuildPipelineStatus::STATE_BLOCKED;
+	snapshot.blocks_downstream_indexing = true;
+
+	ProjectBuildPipelineDiagnostic diagnostic;
+	diagnostic.kind = ProjectBuildPipelineDiagnostic::KIND_DIRTY;
+	diagnostic.task_name = "generate";
+	diagnostic.provider_id = "command";
+	diagnostic.file = "res://project.foundry";
+	diagnostic.message = p_message;
+	diagnostic.dirty_reason = ProjectBuildState::DIRTY_PREVIOUS_FAILURE;
+	snapshot.diagnostics.push_back(diagnostic);
+
+	return snapshot;
+}
+
+ProjectBuildPipelineStatusSnapshot make_clean_pre_compile_snapshot() {
+	ProjectBuildPipelineStatusSnapshot snapshot;
+	snapshot.state = ProjectBuildPipelineStatus::STATE_CLEAN;
+	snapshot.blocks_downstream_indexing = false;
+	return snapshot;
+}
 
 /*
  * After use:
@@ -1662,6 +1753,840 @@ func f():
 		}
 
 		memdelete(proto);
+		memdelete(efs);
+		finish_language();
+	}
+
+	TEST_CASE("Blocked pre-compile gate suppresses initial workspace script reload and publishes build diagnostics") {
+		FSLanguageProtocol *proto = initialize(root);
+		Ref<FSWorkspace> workspace = FSLanguageProtocol::get_singleton()->get_workspace();
+		const String generated_path = "res://lsp/pre_compile_blocked_generated.fs";
+		ScopedLSPTempFile generated(generated_path, "class_name PreCompileBlockedGenerated\n");
+
+		workspace->set_build_pipeline_status_override_for_tests(
+				make_blocked_pre_compile_snapshot("pre_compile failed before generated sources were ready"));
+		CHECK_EQ(workspace->initialize(), OK);
+
+		CHECK(FSLanguageProtocol::get_singleton()->peek_parse_result(generated_path) == nullptr);
+
+		Array notifications = TestFSLanguageProtocolInitializer::take_client_notifications(
+				proto, "textDocument/publishDiagnostics");
+		bool saw_build_diagnostic = false;
+		for (int i = 0; i < notifications.size(); i++) {
+			Dictionary notification = notifications[i];
+			Dictionary params = notification["params"];
+			Array diagnostics = params["diagnostics"];
+			for (int j = 0; j < diagnostics.size(); j++) {
+				Dictionary diagnostic = diagnostics[j];
+				if (String(diagnostic.get("message", "")).contains("pre_compile failed")) {
+					saw_build_diagnostic = true;
+				}
+			}
+		}
+		CHECK(saw_build_diagnostic);
+
+		workspace->clear_build_pipeline_status_override_for_tests();
+		CHECK_EQ(workspace->initialize(), OK);
+		CHECK(FSLanguageProtocol::get_singleton()->peek_parse_result(generated_path) != nullptr);
+
+		notifications = TestFSLanguageProtocolInitializer::take_client_notifications(
+				proto, "textDocument/publishDiagnostics");
+		bool saw_build_diagnostic_clear = false;
+		for (int i = 0; i < notifications.size(); i++) {
+			Dictionary notification = notifications[i];
+			Dictionary params = notification["params"];
+			if (String(params.get("uri", "")).ends_with("/project.foundry")) {
+				Array diagnostics = params["diagnostics"];
+				if (diagnostics.is_empty()) {
+					saw_build_diagnostic_clear = true;
+				}
+			}
+		}
+		CHECK(saw_build_diagnostic_clear);
+
+		memdelete(proto);
+		finish_language();
+	}
+
+	TEST_CASE("Language protocol retries workspace initialization after blocked pre-compile gate") {
+		FSLanguageProtocol *proto = initialize(root);
+		Ref<FSWorkspace> workspace = FSLanguageProtocol::get_singleton()->get_workspace();
+		const String generated_path = "res://lsp/pre_compile_protocol_retry_generated.fs";
+		ScopedLSPTempFile generated(generated_path, "class_name PreCompileProtocolRetryGenerated\n");
+
+		Dictionary params;
+		params["rootPath"] = workspace->root;
+
+		workspace->set_build_pipeline_status_override_for_tests(
+				make_blocked_pre_compile_snapshot("pre_compile failed before protocol initialization"));
+		proto->call("initialize", params);
+		CHECK_FALSE(proto->is_initialized());
+		CHECK(FSLanguageProtocol::get_singleton()->peek_parse_result(generated_path) == nullptr);
+
+		workspace->clear_build_pipeline_status_override_for_tests();
+		proto->call("initialize", params);
+		CHECK(proto->is_initialized());
+		CHECK(FSLanguageProtocol::get_singleton()->peek_parse_result(generated_path) != nullptr);
+
+		memdelete(proto);
+		finish_language();
+	}
+
+	TEST_CASE("Publishing diagnostics completes initialization after cleared pre-compile gate") {
+		FSLanguageProtocol *proto = initialize(root);
+		Ref<FSWorkspace> workspace = FSLanguageProtocol::get_singleton()->get_workspace();
+		const String script_path = "res://lsp/pre_compile_publish_recovery.fs";
+		ScopedLSPTempFile script(script_path, "class_name PreCompilePublishRecovery\n");
+
+		workspace->set_build_pipeline_status_override_for_tests(
+				make_blocked_pre_compile_snapshot("pre_compile blocked before diagnostics recovery"));
+		CHECK_EQ(workspace->initialize(), OK);
+		CHECK_FALSE(workspace->is_initialized());
+		CHECK_FALSE(proto->is_initialized());
+		CHECK(FSLanguageProtocol::get_singleton()->peek_parse_result(script_path) == nullptr);
+
+		workspace->clear_build_pipeline_status_override_for_tests();
+		ERR_PRINT_OFF;
+		workspace->publish_diagnostics(script_path);
+		ERR_PRINT_ON;
+
+		CHECK(workspace->is_initialized());
+		CHECK(proto->is_initialized());
+		CHECK(FSLanguageProtocol::get_singleton()->peek_parse_result(script_path) != nullptr);
+
+		memdelete(proto);
+		finish_language();
+	}
+
+	TEST_CASE("Disabled build pipeline ignores stale task sections during workspace indexing") {
+		FSLanguageProtocol *proto = initialize(root);
+		Ref<FSWorkspace> workspace = FSLanguageProtocol::get_singleton()->get_workspace();
+
+		const String script_path = "res://lsp/pre_compile_disabled_config_indexed.fs";
+		const String config_text =
+				"[build]\n"
+				"enabled=false\n"
+				"pre_compile=PackedStringArray(\"generate\")\n"
+				"\n"
+				"[build/tasks/generate]\n"
+				"provider=\"missing_provider\"\n"
+				"outputs=PackedStringArray(\"res://lsp/pre_compile_disabled_output.fs\")\n";
+		ScopedLSPTempFile project_config("res://project.foundry", config_text);
+		ScopedLSPTempFile script(script_path, "class_name PreCompileDisabledConfigIndexed\n");
+
+		CHECK_EQ(workspace->initialize(), OK);
+		CHECK(workspace->is_initialized());
+		CHECK(FSLanguageProtocol::get_singleton()->peek_parse_result(script_path) != nullptr);
+
+		memdelete(proto);
+		finish_language();
+	}
+
+	TEST_CASE("Post-compile config errors do not block workspace indexing") {
+		FSLanguageProtocol *proto = initialize(root);
+		Ref<FSWorkspace> workspace = FSLanguageProtocol::get_singleton()->get_workspace();
+
+		const String script_path = "res://lsp/post_compile_invalid_config_indexed.fs";
+		const String config_text =
+				"[build]\n"
+				"enabled=true\n"
+				"post_compile=PackedStringArray(\"bundle\")\n"
+				"\n"
+				"[build/tasks/bundle]\n"
+				"provider=\"command\"\n"
+				"command=\"python3\"\n";
+		ScopedLSPTempFile project_config("res://project.foundry", config_text);
+		ScopedLSPTempFile script(script_path, "class_name PostCompileInvalidConfigIndexed\n");
+
+		ERR_PRINT_OFF;
+		CHECK_EQ(workspace->initialize(), OK);
+		ERR_PRINT_ON;
+		CHECK(workspace->is_initialized());
+		CHECK(FSLanguageProtocol::get_singleton()->peek_parse_result(script_path) != nullptr);
+
+		memdelete(proto);
+		finish_language();
+	}
+
+	TEST_CASE("Post-compile provider load failure does not stop pre-compile recovery") {
+		EditorFileSystem *efs = memnew(EditorFileSystem);
+		FSLanguageProtocol *proto = initialize(root);
+		ProjectBuildTrustStore::set_cli_trusted_execution(true);
+
+		const String generated_path = "res://lsp/pre_compile_post_provider_failure_generated.fs";
+		const String provider_path = "res://lsp/post_compile_bad_provider.fs";
+		const String generator_script =
+				"import pathlib, sys\n"
+				"path = pathlib.Path(sys.argv[1])\n"
+				"path.parent.mkdir(parents=True, exist_ok=True)\n"
+				"path.write_text('class_name PreCompilePostProviderFailureGenerated\\n')\n";
+		const String config_text =
+				"[build]\n"
+				"enabled=true\n"
+				"pre_compile=PackedStringArray(\"generate\")\n"
+				"post_compile=PackedStringArray(\"bundle\")\n"
+				"\n"
+				"[build/providers/post_provider]\n"
+				"script=\"" +
+				provider_path + "\"\n"
+								"class_name=\"PostProvider\"\n"
+								"\n"
+								"[build/tasks/generate]\n"
+								"provider=\"command\"\n"
+								"command=\"python3\"\n"
+								"args=PackedStringArray(\"-c\", " +
+				Variant(generator_script).to_json_string() + ", \"" + generated_path + "\")\n"
+																					   "outputs=PackedStringArray(\"" +
+				generated_path + "\")\n"
+								 "\n"
+								 "[build/tasks/bundle]\n"
+								 "provider=\"post_provider\"\n"
+								 "outputs=PackedStringArray(\"res://lsp/post_compile_provider_output.txt\")\n";
+		ScopedLSPTempFile project_config("res://project.foundry", config_text);
+		ScopedLSPTempFile provider_script(provider_path, "class_name PostProvider\nfunc run(:\n");
+
+		ERR_PRINT_OFF;
+		CHECK_EQ(proto->get_workspace()->initialize(), OK);
+		ERR_PRINT_ON;
+
+		CHECK(FileAccess::exists(ScopedLSPTempFile::resolve_path(generated_path)));
+		CHECK(FSLanguageProtocol::get_singleton()->peek_parse_result(generated_path) != nullptr);
+
+		DirAccess::remove_absolute(ScopedLSPTempFile::resolve_path(generated_path));
+		DirAccess::remove_absolute(ScopedLSPTempFile::resolve_path("res://.foundry/build_state.cfg"));
+		ProjectBuildTrustStore::set_cli_trusted_execution(false);
+		memdelete(proto);
+		memdelete(efs);
+		finish_language();
+	}
+
+	TEST_CASE("Post-compile fingerprint probes do not run during workspace initialization") {
+		FSLanguageProtocol *proto = initialize(root);
+		ProjectBuildTrustStore::set_cli_trusted_execution(true);
+
+		const String marker_path = "res://lsp/post_compile_init_tool_version_ran.txt";
+		const String script_path = "res://lsp/post_compile_probe_target.fs";
+		const String tool_version_script =
+				"import pathlib, sys\n"
+				"path = pathlib.Path(sys.argv[1])\n"
+				"path.parent.mkdir(parents=True, exist_ok=True)\n"
+				"path.write_text('ran\\n')\n";
+		const String config_text =
+				"[build]\n"
+				"enabled=true\n"
+				"post_compile=PackedStringArray(\"bundle\")\n"
+				"\n"
+				"[build/tasks/bundle]\n"
+				"provider=\"command\"\n"
+				"command=\"python3\"\n"
+				"args=PackedStringArray(\"-c\", \"print('bundle')\")\n"
+				"outputs=PackedStringArray(\"res://lsp/post_compile_probe_output.txt\")\n"
+				"tool_version_command=PackedStringArray(\"python3\", \"-c\", " +
+				Variant(tool_version_script).to_json_string() + ", \"" + marker_path + "\")\n";
+		ScopedLSPTempFile project_config("res://project.foundry", config_text);
+		ScopedLSPTempFile target(script_path, "class_name PostCompileProbeTarget\n");
+
+		ERR_PRINT_OFF;
+		CHECK_EQ(proto->get_workspace()->initialize(), OK);
+		ERR_PRINT_ON;
+
+		CHECK(FSLanguageProtocol::get_singleton()->peek_parse_result(script_path) != nullptr);
+		CHECK_FALSE(FileAccess::exists(ScopedLSPTempFile::resolve_path(marker_path)));
+
+		DirAccess::remove_absolute(ScopedLSPTempFile::resolve_path(marker_path));
+		ProjectBuildTrustStore::set_cli_trusted_execution(false);
+		memdelete(proto);
+		finish_language();
+	}
+
+	TEST_CASE("Successful generated Foundry Script outputs refresh filesystem and workspace index") {
+		EditorFileSystem *efs = memnew(EditorFileSystem);
+		FSLanguageProtocol *proto = initialize(root);
+		Ref<FSWorkspace> workspace = FSLanguageProtocol::get_singleton()->get_workspace();
+		workspace->set_build_pipeline_status_override_for_tests(make_clean_pre_compile_snapshot());
+		ERR_PRINT_OFF;
+		CHECK_EQ(workspace->initialize(), OK);
+		ERR_PRINT_ON;
+
+		const int before_scan_count = EditorFileSystem::get_singleton()->get_scan_changes_call_count_for_tests();
+		const String generated_path = "res://lsp/pre_compile_success_generated.fs";
+		ScopedLSPTempFile generated(generated_path, "class_name PreCompileSuccessGenerated\n");
+
+		PackedStringArray outputs;
+		outputs.push_back(generated_path);
+		ERR_PRINT_OFF;
+		CHECK(workspace->refresh_after_successful_build_outputs(outputs));
+		ERR_PRINT_ON;
+
+		CHECK_GT(EditorFileSystem::get_singleton()->get_scan_changes_call_count_for_tests(), before_scan_count);
+		CHECK(FSLanguageProtocol::get_singleton()->peek_parse_result(generated_path) != nullptr);
+
+		workspace->clear_build_pipeline_status_override_for_tests();
+		memdelete(proto);
+		memdelete(efs);
+		finish_language();
+	}
+
+	TEST_CASE("Successful non-script output recovers blocked initial workspace index") {
+		EditorFileSystem *efs = memnew(EditorFileSystem);
+		FSLanguageProtocol *proto = initialize(root);
+		Ref<FSWorkspace> workspace = FSLanguageProtocol::get_singleton()->get_workspace();
+		const String script_path = "res://lsp/pre_compile_non_script_recovery.fs";
+		ScopedLSPTempFile script(script_path, "class_name PreCompileNonScriptRecovery\n");
+
+		workspace->set_build_pipeline_status_override_for_tests(
+				make_blocked_pre_compile_snapshot("pre_compile non-script output was not ready"));
+		CHECK_EQ(workspace->initialize(), OK);
+		CHECK_FALSE(workspace->is_initialized());
+		CHECK_FALSE(proto->is_initialized());
+		CHECK(FSLanguageProtocol::get_singleton()->peek_parse_result(script_path) == nullptr);
+
+		workspace->clear_build_pipeline_status_override_for_tests();
+		PackedStringArray outputs;
+		outputs.push_back("res://lsp/pre_compile_non_script_recovery.txt");
+		CHECK(workspace->refresh_after_successful_build_outputs(outputs));
+		CHECK(workspace->is_initialized());
+		CHECK(proto->is_initialized());
+		CHECK(FSLanguageProtocol::get_singleton()->peek_parse_result(script_path) != nullptr);
+
+		memdelete(proto);
+		memdelete(efs);
+		finish_language();
+	}
+
+	TEST_CASE("Successful output refresh keeps initial index blocked while build gate remains blocked") {
+		EditorFileSystem *efs = memnew(EditorFileSystem);
+		FSLanguageProtocol *proto = initialize(root);
+		Ref<FSWorkspace> workspace = FSLanguageProtocol::get_singleton()->get_workspace();
+		const String script_path = "res://lsp/pre_compile_still_blocked_refresh.fs";
+		ScopedLSPTempFile script(script_path, "class_name PreCompileStillBlockedRefresh\n");
+
+		workspace->set_build_pipeline_status_override_for_tests(
+				make_blocked_pre_compile_snapshot("pre_compile still blocks refresh recovery"));
+		CHECK_EQ(workspace->initialize(), OK);
+		CHECK_FALSE(workspace->is_initialized());
+		CHECK_FALSE(proto->is_initialized());
+		CHECK(FSLanguageProtocol::get_singleton()->peek_parse_result(script_path) == nullptr);
+
+		PackedStringArray outputs;
+		outputs.push_back("res://lsp/pre_compile_still_blocked_refresh.txt");
+		CHECK(workspace->refresh_after_successful_build_outputs(outputs));
+		CHECK_FALSE(workspace->is_initialized());
+		CHECK_FALSE(proto->is_initialized());
+		CHECK(FSLanguageProtocol::get_singleton()->peek_parse_result(script_path) == nullptr);
+
+		workspace->clear_build_pipeline_status_override_for_tests();
+		memdelete(proto);
+		memdelete(efs);
+		finish_language();
+	}
+
+	TEST_CASE("Successful dotted directory output refreshes workspace scripts") {
+		EditorFileSystem *efs = memnew(EditorFileSystem);
+		FSLanguageProtocol *proto = initialize(root);
+		Ref<FSWorkspace> workspace = FSLanguageProtocol::get_singleton()->get_workspace();
+		workspace->set_build_pipeline_status_override_for_tests(make_clean_pre_compile_snapshot());
+		ERR_PRINT_OFF;
+		CHECK_EQ(workspace->initialize(), OK);
+		ERR_PRINT_ON;
+
+		const String generated_path = "res://lsp/generated.v2/pre_compile_dotted_directory_generated.fs";
+		ScopedLSPTempFile generated(generated_path, "class_name PreCompileDottedDirectoryGenerated\n");
+
+		PackedStringArray outputs;
+		outputs.push_back("res://lsp/generated.v2");
+		ERR_PRINT_OFF;
+		CHECK(workspace->refresh_after_successful_build_outputs(outputs));
+		ERR_PRINT_ON;
+
+		CHECK(FSLanguageProtocol::get_singleton()->peek_parse_result(generated_path) != nullptr);
+
+		workspace->clear_build_pipeline_status_override_for_tests();
+		ScopedLSPTempFile::remove_recursive(ScopedLSPTempFile::resolve_path("res://lsp/generated.v2"));
+		memdelete(proto);
+		memdelete(efs);
+		finish_language();
+	}
+
+	TEST_CASE("Publishing diagnostics does not run command fingerprint probes") {
+		FSLanguageProtocol *proto = initialize(root);
+		ProjectBuildTrustStore::set_cli_trusted_execution(true);
+
+		const String marker_path = "res://lsp/pre_compile_publish_tool_version_ran.txt";
+		const String target_path = "res://lsp/pre_compile_publish_target.fs";
+		const String tool_version_script =
+				"import pathlib, sys\n"
+				"path = pathlib.Path(sys.argv[1])\n"
+				"path.parent.mkdir(parents=True, exist_ok=True)\n"
+				"path.write_text('ran\\n')\n";
+		const String config_text =
+				"[build]\n"
+				"enabled=true\n"
+				"pre_compile=PackedStringArray(\"generate\")\n"
+				"\n"
+				"[build/tasks/generate]\n"
+				"provider=\"command\"\n"
+				"command=\"python3\"\n"
+				"args=PackedStringArray(\"-c\", \"print('generate')\")\n"
+				"outputs=PackedStringArray(\"res://lsp/pre_compile_publish_output.txt\")\n"
+				"tool_version_command=PackedStringArray(\"python3\", \"-c\", " +
+				Variant(tool_version_script).to_json_string() + ", \"" + marker_path + "\")\n";
+		ScopedLSPTempFile project_config("res://project.foundry", config_text);
+		ScopedLSPTempFile target(target_path, "class_name PreCompilePublishTarget\n");
+
+		ERR_PRINT_OFF;
+		proto->get_workspace()->publish_diagnostics(target_path);
+		ERR_PRINT_ON;
+
+		CHECK_FALSE(FileAccess::exists(ScopedLSPTempFile::resolve_path(marker_path)));
+
+		ProjectBuildTrustStore::set_cli_trusted_execution(false);
+		memdelete(proto);
+		finish_language();
+	}
+
+	TEST_CASE("Missing pre-compile command output reruns before workspace indexing") {
+		EditorFileSystem *efs = memnew(EditorFileSystem);
+		ProjectBuildTrustStore::set_cli_trusted_execution(true);
+
+		const String generated_path = "res://lsp/pre_compile_missing_output_generated.fs";
+		const String script =
+				"import pathlib, sys\n"
+				"path = pathlib.Path(sys.argv[1])\n"
+				"path.parent.mkdir(parents=True, exist_ok=True)\n"
+				"path.write_text('class_name PreCompileMissingOutputGenerated\\n')\n";
+		const String config_text =
+				"[build]\n"
+				"enabled=true\n"
+				"pre_compile=PackedStringArray(\"generate\")\n"
+				"\n"
+				"[build/tasks/generate]\n"
+				"provider=\"command\"\n"
+				"command=\"python3\"\n"
+				"args=PackedStringArray(\"-c\", " +
+				Variant(script).to_json_string() + ", \"" + generated_path + "\")\n"
+																			 "outputs=PackedStringArray(\"" +
+				generated_path + "\")\n";
+
+		FSLanguageProtocol *first_proto = initialize(root);
+		ScopedLSPTempFile project_config("res://project.foundry", config_text);
+		const String absolute_generated_path = ScopedLSPTempFile::resolve_path(generated_path);
+
+		ERR_PRINT_OFF;
+		CHECK_EQ(first_proto->get_workspace()->initialize(), OK);
+		ERR_PRINT_ON;
+		CHECK(FileAccess::exists(absolute_generated_path));
+		memdelete(first_proto);
+		finish_language();
+
+		DirAccess::remove_absolute(absolute_generated_path);
+		CHECK_FALSE(FileAccess::exists(absolute_generated_path));
+
+		FSLanguageProtocol *second_proto = initialize(root);
+		ERR_PRINT_OFF;
+		CHECK_EQ(second_proto->get_workspace()->initialize(), OK);
+		ERR_PRINT_ON;
+		CHECK(FileAccess::exists(absolute_generated_path));
+		CHECK(FSLanguageProtocol::get_singleton()->peek_parse_result(generated_path) != nullptr);
+
+		DirAccess::remove_absolute(absolute_generated_path);
+		DirAccess::remove_absolute(ScopedLSPTempFile::resolve_path("res://.foundry/build_state.cfg"));
+		ProjectBuildTrustStore::set_cli_trusted_execution(false);
+		memdelete(second_proto);
+		memdelete(efs);
+		finish_language();
+	}
+
+	TEST_CASE("Clean pre-compile command stays skipped when another command reruns") {
+		EditorFileSystem *efs = memnew(EditorFileSystem);
+		ProjectBuildTrustStore::set_cli_trusted_execution(true);
+
+		const String counter_path = "res://lsp/pre_compile_clean_counter.txt";
+		const String generated_path = "res://lsp/pre_compile_skip_clean_generated.fs";
+		const String counter_script =
+				"import pathlib, sys\n"
+				"path = pathlib.Path(sys.argv[1])\n"
+				"path.parent.mkdir(parents=True, exist_ok=True)\n"
+				"value = 0\n"
+				"if path.exists():\n"
+				"    value = int(path.read_text().strip() or '0')\n"
+				"path.write_text(str(value + 1))\n";
+		const String generator_script =
+				"import pathlib, sys\n"
+				"path = pathlib.Path(sys.argv[1])\n"
+				"path.parent.mkdir(parents=True, exist_ok=True)\n"
+				"path.write_text('class_name PreCompileSkipCleanGenerated\\n')\n";
+		const String config_text =
+				"[build]\n"
+				"enabled=true\n"
+				"pre_compile=PackedStringArray(\"stable\", \"generate\")\n"
+				"\n"
+				"[build/tasks/stable]\n"
+				"provider=\"command\"\n"
+				"command=\"python3\"\n"
+				"args=PackedStringArray(\"-c\", " +
+				Variant(counter_script).to_json_string() + ", \"" + counter_path + "\")\n"
+																				   "outputs=PackedStringArray(\"" +
+				counter_path + "\")\n"
+							   "\n"
+							   "[build/tasks/generate]\n"
+							   "provider=\"command\"\n"
+							   "command=\"python3\"\n"
+							   "args=PackedStringArray(\"-c\", " +
+				Variant(generator_script).to_json_string() + ", \"" + generated_path + "\")\n"
+																					   "outputs=PackedStringArray(\"" +
+				generated_path + "\")\n";
+
+		FSLanguageProtocol *first_proto = initialize(root);
+		ScopedLSPTempFile project_config("res://project.foundry", config_text);
+		const String absolute_counter_path = ScopedLSPTempFile::resolve_path(counter_path);
+		const String absolute_generated_path = ScopedLSPTempFile::resolve_path(generated_path);
+
+		ERR_PRINT_OFF;
+		CHECK_EQ(first_proto->get_workspace()->initialize(), OK);
+		ERR_PRINT_ON;
+
+		Ref<FileAccess> counter = FileAccess::open(absolute_counter_path, FileAccess::READ);
+		REQUIRE(counter.is_valid());
+		CHECK_EQ(counter->get_as_utf8_string(), "1");
+		CHECK(FileAccess::exists(absolute_generated_path));
+		memdelete(first_proto);
+		finish_language();
+
+		DirAccess::remove_absolute(absolute_generated_path);
+		CHECK_FALSE(FileAccess::exists(absolute_generated_path));
+
+		FSLanguageProtocol *second_proto = initialize(root);
+		ERR_PRINT_OFF;
+		CHECK_EQ(second_proto->get_workspace()->initialize(), OK);
+		ERR_PRINT_ON;
+
+		counter = FileAccess::open(absolute_counter_path, FileAccess::READ);
+		REQUIRE(counter.is_valid());
+		CHECK_EQ(counter->get_as_utf8_string(), "1");
+		CHECK(FileAccess::exists(absolute_generated_path));
+		CHECK(FSLanguageProtocol::get_singleton()->peek_parse_result(generated_path) != nullptr);
+
+		DirAccess::remove_absolute(absolute_counter_path);
+		DirAccess::remove_absolute(absolute_generated_path);
+		DirAccess::remove_absolute(ScopedLSPTempFile::resolve_path("res://.foundry/build_state.cfg"));
+		ProjectBuildTrustStore::set_cli_trusted_execution(false);
+		memdelete(second_proto);
+		memdelete(efs);
+		finish_language();
+	}
+
+	TEST_CASE("Post-compile failure does not suppress runnable pre-compile indexing") {
+		EditorFileSystem *efs = memnew(EditorFileSystem);
+		ProjectBuildTrustStore::set_cli_trusted_execution(true);
+
+		const String generated_path = "res://lsp/pre_compile_post_failure_generated.fs";
+		const String post_output_path = "res://lsp/post_compile_failed_output.txt";
+		const String script =
+				"import pathlib, sys\n"
+				"path = pathlib.Path(sys.argv[1])\n"
+				"path.parent.mkdir(parents=True, exist_ok=True)\n"
+				"path.write_text('class_name PreCompilePostFailureGenerated\\n')\n";
+		const String config_text =
+				"[build]\n"
+				"enabled=true\n"
+				"pre_compile=PackedStringArray(\"generate\")\n"
+				"post_compile=PackedStringArray(\"bundle\")\n"
+				"\n"
+				"[build/tasks/generate]\n"
+				"provider=\"command\"\n"
+				"command=\"python3\"\n"
+				"args=PackedStringArray(\"-c\", " +
+				Variant(script).to_json_string() + ", \"" + generated_path + "\")\n"
+																			 "outputs=PackedStringArray(\"" +
+				generated_path + "\")\n"
+								 "\n"
+								 "[build/tasks/bundle]\n"
+								 "provider=\"command\"\n"
+								 "command=\"python3\"\n"
+								 "args=PackedStringArray(\"-c\", \"print('post')\")\n"
+								 "outputs=PackedStringArray(\"" +
+				post_output_path + "\")\n";
+
+		FSLanguageProtocol *proto = initialize(root);
+		ScopedLSPTempFile project_config("res://project.foundry", config_text);
+		PackedStringArray post_outputs;
+		post_outputs.push_back(post_output_path);
+		ProjectBuildState state;
+		state.record_task_result("bundle", "failed-fingerprint", post_outputs, false);
+		CHECK_EQ(state.save(), OK);
+
+		ERR_PRINT_OFF;
+		CHECK_EQ(proto->get_workspace()->initialize(), OK);
+		ERR_PRINT_ON;
+
+		CHECK(FileAccess::exists(ScopedLSPTempFile::resolve_path(generated_path)));
+		CHECK(FSLanguageProtocol::get_singleton()->peek_parse_result(generated_path) != nullptr);
+
+		DirAccess::remove_absolute(ScopedLSPTempFile::resolve_path(generated_path));
+		DirAccess::remove_absolute(ScopedLSPTempFile::resolve_path("res://.foundry/build_state.cfg"));
+		ProjectBuildTrustStore::set_cli_trusted_execution(false);
+		memdelete(proto);
+		memdelete(efs);
+		finish_language();
+	}
+
+	TEST_CASE("Failed later pre-compile command keeps earlier generated scripts unindexed") {
+		EditorFileSystem *efs = memnew(EditorFileSystem);
+		FSLanguageProtocol *proto = initialize(root);
+		ProjectBuildTrustStore::set_cli_trusted_execution(true);
+
+		const String generated_path = "res://lsp/pre_compile_partial_failure_generated.fs";
+		const String generator_script =
+				"import pathlib, sys\n"
+				"path = pathlib.Path(sys.argv[1])\n"
+				"path.parent.mkdir(parents=True, exist_ok=True)\n"
+				"path.write_text('class_name PreCompilePartialFailureGenerated\\n')\n";
+		const String config_text =
+				"[build]\n"
+				"enabled=true\n"
+				"pre_compile=PackedStringArray(\"generate\", \"fail\")\n"
+				"\n"
+				"[build/tasks/generate]\n"
+				"provider=\"command\"\n"
+				"command=\"python3\"\n"
+				"args=PackedStringArray(\"-c\", " +
+				Variant(generator_script).to_json_string() + ", \"" + generated_path + "\")\n"
+																					   "outputs=PackedStringArray(\"" +
+				generated_path + "\")\n"
+								 "\n"
+								 "[build/tasks/fail]\n"
+								 "provider=\"command\"\n"
+								 "command=\"python3\"\n"
+								 "args=PackedStringArray(\"-c\", \"import sys; sys.exit(3)\")\n"
+								 "outputs=PackedStringArray(\"res://lsp/pre_compile_partial_failure_marker.txt\")\n";
+		ScopedLSPTempFile project_config("res://project.foundry", config_text);
+
+		ERR_PRINT_OFF;
+		CHECK_EQ(proto->get_workspace()->initialize(), OK);
+		ERR_PRINT_ON;
+
+		CHECK(FileAccess::exists(ScopedLSPTempFile::resolve_path(generated_path)));
+		CHECK(FSLanguageProtocol::get_singleton()->peek_parse_result(generated_path) == nullptr);
+
+		DirAccess::remove_absolute(ScopedLSPTempFile::resolve_path(generated_path));
+		DirAccess::remove_absolute(ScopedLSPTempFile::resolve_path("res://.foundry/build_state.cfg"));
+		ProjectBuildTrustStore::set_cli_trusted_execution(false);
+		memdelete(proto);
+		memdelete(efs);
+		finish_language();
+	}
+
+	TEST_CASE("Pre-compile build state save failure blocks workspace indexing") {
+		EditorFileSystem *efs = memnew(EditorFileSystem);
+		FSLanguageProtocol *proto = initialize(root);
+		ProjectBuildTrustStore::set_cli_trusted_execution(true);
+
+		const String generated_path = "res://lsp/pre_compile_state_save_failure_generated.fs";
+		const String generator_script =
+				"import pathlib, sys\n"
+				"path = pathlib.Path(sys.argv[1])\n"
+				"path.parent.mkdir(parents=True, exist_ok=True)\n"
+				"path.write_text('class_name PreCompileStateSaveFailureGenerated\\n')\n";
+		const String config_text =
+				"[build]\n"
+				"enabled=true\n"
+				"pre_compile=PackedStringArray(\"generate\")\n"
+				"\n"
+				"[build/tasks/generate]\n"
+				"provider=\"command\"\n"
+				"command=\"python3\"\n"
+				"args=PackedStringArray(\"-c\", " +
+				Variant(generator_script).to_json_string() + ", \"" + generated_path + "\")\n"
+																					   "outputs=PackedStringArray(\"" +
+				generated_path + "\")\n";
+		ScopedLSPTempFile project_config("res://project.foundry", config_text);
+		const String build_state_path = ScopedLSPTempFile::resolve_path("res://.foundry/build_state.cfg");
+		ScopedLSPTempFile::remove_recursive(build_state_path);
+		DirAccess::remove_absolute(build_state_path);
+		REQUIRE_EQ(DirAccess::make_dir_recursive_absolute(build_state_path), OK);
+
+		ERR_PRINT_OFF;
+		CHECK_EQ(proto->get_workspace()->initialize(), OK);
+		ERR_PRINT_ON;
+
+		CHECK(FileAccess::exists(ScopedLSPTempFile::resolve_path(generated_path)));
+		CHECK(FSLanguageProtocol::get_singleton()->peek_parse_result(generated_path) == nullptr);
+
+		Array notifications = TestFSLanguageProtocolInitializer::take_client_notifications(
+				proto, "textDocument/publishDiagnostics");
+		bool saw_persist_diagnostic = false;
+		for (int i = 0; i < notifications.size(); i++) {
+			Dictionary notification = notifications[i];
+			Dictionary params = notification["params"];
+			Array diagnostics = params["diagnostics"];
+			for (int j = 0; j < diagnostics.size(); j++) {
+				Dictionary diagnostic = diagnostics[j];
+				if (String(diagnostic.get("message", "")).contains("could not be persisted")) {
+					saw_persist_diagnostic = true;
+				}
+			}
+		}
+		CHECK(saw_persist_diagnostic);
+
+		DirAccess::remove_absolute(ScopedLSPTempFile::resolve_path(generated_path));
+		ScopedLSPTempFile::remove_recursive(build_state_path);
+		ProjectBuildTrustStore::set_cli_trusted_execution(false);
+		memdelete(proto);
+		memdelete(efs);
+		finish_language();
+	}
+
+	TEST_CASE("Dirty pre-compile command runs before initial workspace script reload") {
+		EditorFileSystem *efs = memnew(EditorFileSystem);
+		FSLanguageProtocol *proto = initialize(root);
+		ProjectBuildTrustStore::set_cli_trusted_execution(true);
+
+		const String generated_path = "res://lsp/pre_compile_run_generated.fs";
+		const String script =
+				"import pathlib, sys\n"
+				"path = pathlib.Path(sys.argv[1])\n"
+				"path.parent.mkdir(parents=True, exist_ok=True)\n"
+				"path.write_text('class_name PreCompileRunGenerated\\n')\n";
+		const String config_text =
+				"[build]\n"
+				"enabled=true\n"
+				"pre_compile=PackedStringArray(\"generate\")\n"
+				"\n"
+				"[build/tasks/generate]\n"
+				"provider=\"command\"\n"
+				"command=\"python3\"\n"
+				"args=PackedStringArray(\"-c\", " +
+				Variant(script).to_json_string() + ", \"" + generated_path + "\")\n"
+																			 "outputs=PackedStringArray(\"" +
+				generated_path + "\")\n";
+		ScopedLSPTempFile project_config("res://project.foundry", config_text);
+
+		ERR_PRINT_OFF;
+		CHECK_EQ(FSLanguageProtocol::get_singleton()->get_workspace()->initialize(), OK);
+		ERR_PRINT_ON;
+
+		CHECK(FileAccess::exists(ScopedLSPTempFile::resolve_path(generated_path)));
+		CHECK(FSLanguageProtocol::get_singleton()->peek_parse_result(generated_path) != nullptr);
+
+		DirAccess::remove_absolute(ScopedLSPTempFile::resolve_path(generated_path));
+		DirAccess::remove_absolute(ScopedLSPTempFile::resolve_path("res://.foundry/build_state.cfg"));
+		ProjectBuildTrustStore::set_cli_trusted_execution(false);
+		memdelete(proto);
+		memdelete(efs);
+		finish_language();
+	}
+
+	TEST_CASE("Invalid pre-compile config blocks command execution before workspace indexing") {
+		FSLanguageProtocol *proto = initialize(root);
+		ProjectBuildTrustStore::set_cli_trusted_execution(true);
+
+		const String marker_path = "res://lsp/pre_compile_invalid_config_ran.txt";
+		const String script =
+				"import pathlib, sys\n"
+				"path = pathlib.Path(sys.argv[1])\n"
+				"path.parent.mkdir(parents=True, exist_ok=True)\n"
+				"path.write_text('ran\\n')\n";
+		const String config_text =
+				"[build]\n"
+				"enabled=true\n"
+				"pre_compile=PackedStringArray(\"generate\")\n"
+				"\n"
+				"[build/tasks/generate]\n"
+				"provider=\"command\"\n"
+				"command=\"python3\"\n"
+				"args=PackedStringArray(\"-c\", " +
+				Variant(script).to_json_string() + ", \"" + marker_path + "\")\n";
+		ScopedLSPTempFile project_config("res://project.foundry", config_text);
+
+		ERR_PRINT_OFF;
+		CHECK_EQ(FSLanguageProtocol::get_singleton()->get_workspace()->initialize(), OK);
+		ERR_PRINT_ON;
+
+		CHECK_FALSE(FileAccess::exists(ScopedLSPTempFile::resolve_path(marker_path)));
+
+		Array notifications = TestFSLanguageProtocolInitializer::take_client_notifications(
+				proto, "textDocument/publishDiagnostics");
+		bool saw_validation_diagnostic = false;
+		for (int i = 0; i < notifications.size(); i++) {
+			Dictionary notification = notifications[i];
+			Dictionary params = notification["params"];
+			Array diagnostics = params["diagnostics"];
+			for (int j = 0; j < diagnostics.size(); j++) {
+				Dictionary diagnostic = diagnostics[j];
+				if (String(diagnostic.get("message", "")).contains("outputs")) {
+					saw_validation_diagnostic = true;
+				}
+			}
+		}
+		CHECK(saw_validation_diagnostic);
+
+		ProjectBuildTrustStore::set_cli_trusted_execution(false);
+		memdelete(proto);
+		finish_language();
+	}
+
+	TEST_CASE("Changed pre-compile command inputs rerun before workspace indexing") {
+		EditorFileSystem *efs = memnew(EditorFileSystem);
+		FSLanguageProtocol *first_proto = initialize(root);
+		ProjectBuildTrustStore::set_cli_trusted_execution(true);
+
+		const String input_path = "res://lsp/pre_compile_input.txt";
+		const String generated_path = "res://lsp/pre_compile_input_generated.fs";
+		const String script =
+				"import pathlib, sys\n"
+				"source = pathlib.Path(sys.argv[1]).read_text().strip()\n"
+				"path = pathlib.Path(sys.argv[2])\n"
+				"path.parent.mkdir(parents=True, exist_ok=True)\n"
+				"path.write_text('class_name PreCompileInputGenerated\\nconst VALUE := \"%s\"\\n' % source)\n";
+		const String config_text =
+				"[build]\n"
+				"enabled=true\n"
+				"pre_compile=PackedStringArray(\"generate\")\n"
+				"\n"
+				"[build/tasks/generate]\n"
+				"provider=\"command\"\n"
+				"command=\"python3\"\n"
+				"args=PackedStringArray(\"-c\", " +
+				Variant(script).to_json_string() + ", \"" + input_path + "\", \"" + generated_path + "\")\n"
+																									 "inputs=PackedStringArray(\"" +
+				input_path + "\")\n"
+							 "outputs=PackedStringArray(\"" +
+				generated_path + "\")\n";
+		ScopedLSPTempFile project_config("res://project.foundry", config_text);
+		ScopedLSPTempFile input(input_path, "first");
+		const String absolute_input_path = ScopedLSPTempFile::resolve_path(input_path);
+		const String absolute_generated_path = ScopedLSPTempFile::resolve_path(generated_path);
+
+		ERR_PRINT_OFF;
+		CHECK_EQ(first_proto->get_workspace()->initialize(), OK);
+		ERR_PRINT_ON;
+
+		Ref<FileAccess> generated = FileAccess::open(absolute_generated_path, FileAccess::READ);
+		REQUIRE(generated.is_valid());
+		CHECK(generated->get_as_utf8_string().contains("first"));
+		memdelete(first_proto);
+		finish_language();
+
+		Ref<FileAccess> changed_input = FileAccess::open(absolute_input_path, FileAccess::WRITE);
+		REQUIRE(changed_input.is_valid());
+		changed_input->store_string("second");
+		changed_input.unref();
+
+		FSLanguageProtocol *second_proto = initialize(root);
+		ERR_PRINT_OFF;
+		CHECK_EQ(second_proto->get_workspace()->initialize(), OK);
+		ERR_PRINT_ON;
+
+		generated = FileAccess::open(absolute_generated_path, FileAccess::READ);
+		REQUIRE(generated.is_valid());
+		CHECK(generated->get_as_utf8_string().contains("second"));
+		CHECK(FSLanguageProtocol::get_singleton()->peek_parse_result(generated_path) != nullptr);
+
+		DirAccess::remove_absolute(absolute_generated_path);
+		DirAccess::remove_absolute(ScopedLSPTempFile::resolve_path("res://.foundry/build_state.cfg"));
+		ProjectBuildTrustStore::set_cli_trusted_execution(false);
+		memdelete(second_proto);
 		memdelete(efs);
 		finish_language();
 	}

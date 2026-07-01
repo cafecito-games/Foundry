@@ -613,6 +613,111 @@ ProjectSettings::CustomMap ProjectBuildPipelineConfig::to_project_settings_custo
 	return custom;
 }
 
+static bool _stage_filter_has_prefixed_id(const String &p_key, const String &p_prefix, const HashSet<String> &p_ids) {
+	if (!p_key.begins_with(p_prefix)) {
+		return false;
+	}
+
+	const String rest = p_key.substr(p_prefix.length());
+	const int div = rest.find_char('/');
+	const String id = div >= 0 ? rest.substr(0, div) : rest;
+	return p_ids.has(id);
+}
+
+static bool _stage_filter_has_section_id(const String &p_section, const String &p_prefix, const HashSet<String> &p_ids) {
+	if (!p_section.begins_with(p_prefix)) {
+		return false;
+	}
+
+	return p_ids.has(p_section.substr(p_prefix.length()));
+}
+
+static bool _stage_filter_keeps_parse_error(const ProjectBuildPipelineConfig::ValidationError &p_error,
+		ProjectBuildPipelineConfig::Stage p_stage, const HashSet<String> &p_stage_tasks,
+		const HashSet<String> &p_stage_providers) {
+	if (p_error.section == BUILD_SECTION) {
+		if (p_error.key == "enabled") {
+			return true;
+		}
+		if (p_error.key == "pre_compile") {
+			return p_stage == ProjectBuildPipelineConfig::STAGE_PRE_COMPILE;
+		}
+		if (p_error.key == "post_compile") {
+			return p_stage == ProjectBuildPipelineConfig::STAGE_POST_COMPILE;
+		}
+		if (_stage_filter_has_prefixed_id(p_error.key, "tasks/", p_stage_tasks)) {
+			return true;
+		}
+		if (_stage_filter_has_prefixed_id(p_error.key, "providers/", p_stage_providers)) {
+			return true;
+		}
+		return false;
+	}
+
+	if (_stage_filter_has_section_id(p_error.section, TASK_SECTION_PREFIX, p_stage_tasks)) {
+		return true;
+	}
+	if (_stage_filter_has_section_id(p_error.section, PROVIDER_SECTION_PREFIX, p_stage_providers)) {
+		return true;
+	}
+
+	return false;
+}
+
+ProjectBuildPipelineConfig ProjectBuildPipelineConfig::filtered_for_stage(Stage p_stage) const {
+	ProjectBuildPipelineConfig filtered;
+	filtered.enabled = enabled;
+
+	const PackedStringArray stage_tasks = get_stage_tasks(p_stage);
+	switch (p_stage) {
+		case STAGE_PRE_COMPILE:
+			filtered.pre_compile_tasks = stage_tasks;
+			break;
+		case STAGE_POST_COMPILE:
+			filtered.post_compile_tasks = stage_tasks;
+			break;
+	}
+
+	HashSet<String> selected_tasks;
+	HashSet<String> selected_providers;
+	for (int i = 0; i < stage_tasks.size(); i++) {
+		const String task_name = stage_tasks[i];
+		selected_tasks.insert(task_name);
+
+		const TaskDefinition *task = tasks.getptr(task_name);
+		if (task == nullptr) {
+			continue;
+		}
+
+		filtered.tasks[task_name] = *task;
+		filtered._append_ordered(filtered.task_order, task_name);
+		if (!task->provider.is_empty()) {
+			selected_providers.insert(task->provider);
+		}
+	}
+
+	for (const String &provider_id : provider_order) {
+		if (!selected_providers.has(provider_id)) {
+			continue;
+		}
+
+		const ProviderDescriptor *provider = providers.getptr(provider_id);
+		if (provider == nullptr) {
+			continue;
+		}
+		filtered.providers[provider_id] = *provider;
+		filtered._append_ordered(filtered.provider_order, provider_id);
+	}
+
+	for (const ValidationError &error : parse_errors) {
+		if (_stage_filter_keeps_parse_error(error, p_stage, selected_tasks, selected_providers)) {
+			filtered.parse_errors.push_back(error);
+		}
+	}
+
+	return filtered;
+}
+
 Vector<ProjectBuildPipelineConfig::ValidationError> ProjectBuildPipelineConfig::validate(
 		const FoundryBuildTaskRegistry *p_provider_registry) const {
 	Vector<ValidationError> errors = parse_errors;

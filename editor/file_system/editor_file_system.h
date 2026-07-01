@@ -193,6 +193,9 @@ class EditorFileSystem : public Node {
 	bool importing = false;
 	bool first_scan = true;
 	bool scan_changes_pending = false;
+#ifdef TESTS_ENABLED
+	int scan_changes_call_count = 0;
+#endif
 	float scan_total;
 	String filesystem_settings_version_for_import;
 	bool revalidate_import_files = false;
@@ -415,6 +418,9 @@ public:
 	float get_scanning_progress() const;
 	void scan();
 	void scan_changes();
+#ifdef TESTS_ENABLED
+	int get_scan_changes_call_count_for_tests() const { return scan_changes_call_count; }
+#endif
 	void update_file(const String &p_file);
 	void update_files(const Vector<String> &p_script_paths);
 	HashSet<String> get_valid_extensions() const;
