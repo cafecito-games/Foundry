@@ -99,6 +99,7 @@ private:
 
 	void _add_validation_error(Vector<ValidationError> &r_errors, const String &p_section, const String &p_key, const String &p_message) const;
 	void _add_parse_error(const String &p_section, const String &p_key, const String &p_message);
+	void _clear_parse_errors_for(const String &p_section, const String &p_key = String());
 	void _append_ordered(Vector<String> &r_order, const String &p_name) const;
 	void _clear_build_sections(const Ref<ConfigFile> &p_config) const;
 
@@ -136,7 +137,7 @@ public:
 	Status get_status() const;
 
 	bool is_enabled() const { return enabled; }
-	void set_enabled(bool p_enabled) { enabled = p_enabled; }
+	void set_enabled(bool p_enabled);
 
 	PackedStringArray get_stage_tasks(Stage p_stage) const;
 	PackedStringArray get_enabled_stage_tasks(Stage p_stage) const;

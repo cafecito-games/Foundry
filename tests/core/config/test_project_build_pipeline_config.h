@@ -562,6 +562,28 @@ TEST_CASE("[ProjectBuildPipelineConfig] rename_task updates order and stage refe
 	CHECK_FALSE(build_config.rename_task("missing", "whatever"));
 }
 
+TEST_CASE("[ProjectBuildPipelineConfig] editing a task clears its stale load-time parse errors") {
+	Ref<ConfigFile> config = parse_build_config(
+			"[build]\n"
+			"enabled=true\n"
+			"pre_compile=PackedStringArray(\"generate\")\n"
+			"\n"
+			"[build/tasks/generate]\n"
+			"provider=\"command\"\n"
+			"command=\"foundryproto\"\n"
+			"outputs=42\n"); // Wrong Variant type: records a parse error at load.
+
+	ProjectBuildPipelineConfig build_config;
+	CHECK_EQ(build_config.load_from_config_file(config), OK);
+	CHECK(has_validation_error(build_config.validate(), "build/tasks/generate", "outputs"));
+
+	// Repairing the task through the authoring API must drop the stale parse error.
+	ProjectBuildPipelineConfig::TaskDefinition fixed = make_command_task("generate", "foundryproto", "res://generated/");
+	build_config.set_task(fixed);
+	CHECK_FALSE(has_validation_error(build_config.validate(), "build/tasks/generate", "outputs"));
+	CHECK_EQ(build_config.validate().size(), 0);
+}
+
 TEST_CASE("[ProjectBuildPipelineConfig] rename_task replaces every stage reference") {
 	ProjectBuildPipelineConfig build_config;
 	build_config.set_task(make_command_task("generate", "foundryproto", "res://generated/"));
