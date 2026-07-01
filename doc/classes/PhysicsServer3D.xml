@@ -743,7 +743,7 @@
 			<return type="RID" />
 			<description>
 				Creates a custom shape in the physics server, and returns the [RID] that identifies it. Use [method shape_set_data] to set the shape's data.
-				[b]Note:[/b] Custom shapes are not supported by the built-in physics servers, so calling this method always produces an error when using Godot Physics or Jolt Physics. Custom physics servers implemented as FoundryExtensions may support a custom shape.
+				[b]Note:[/b] Custom shapes are not supported by the built-in physics servers, so calling this method always produces an error when using Foundry Physics or Jolt Physics. Custom physics servers implemented as FoundryExtensions may support a custom shape.
 			</description>
 		</method>
 		<method name="cylinder_shape_create">
@@ -1015,7 +1015,7 @@
 			<param index="0" name="shape" type="RID" />
 			<description>
 				Returns the collision margin for the shape.
-				[b]Note:[/b] This is not used in Godot Physics, so will always return [code]0[/code].
+				[b]Note:[/b] This is not used in Foundry Physics, so will always return [code]0[/code].
 			</description>
 		</method>
 		<method name="shape_get_type" qualifiers="const">
@@ -1050,7 +1050,7 @@
 			<param index="1" name="margin" type="float" />
 			<description>
 				Sets the collision margin for the shape.
-				[b]Note:[/b] This is not used in Godot Physics.
+				[b]Note:[/b] This is not used in Foundry Physics.
 			</description>
 		</method>
 		<method name="slider_joint_get_param" qualifiers="const">
@@ -1698,7 +1698,7 @@
 			Constant used internally for a soft body shape. Any attempt to create this kind of shape results in an error.
 		</constant>
 		<constant name="SHAPE_CUSTOM" value="10" enum="ShapeType">
-			Constant used internally for a custom shape. Any attempt to create this kind of shape results in an error when using Godot Physics or Jolt Physics.
+			Constant used internally for a custom shape. Any attempt to create this kind of shape results in an error when using Foundry Physics or Jolt Physics.
 		</constant>
 		<constant name="AREA_PARAM_GRAVITY_OVERRIDE_MODE" value="0" enum="AreaParameter">
 			Constant to set/get gravity override mode in an area. See [enum AreaSpaceOverrideMode] for possible values.

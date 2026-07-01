@@ -7,7 +7,7 @@ const pluginReference = require('eslint-plugin-html');
 const stylistic = require('@stylistic/eslint-plugin');
 
 if (process && process.env && process.env.npm_command && !fs.existsSync('./platform/web/eslint.config.cjs')) {
-	throw Error('eslint must be run from the Godot project root folder');
+	throw Error('eslint must be run from the Foundry project root folder');
 }
 
 const emscriptenGlobals = {
@@ -171,9 +171,9 @@ module.exports = [
 		languageOptions: {
 			globals: {
 				...globals.browser,
-				'___GODOT_CACHE___': true,
-				'___GODOT_ENSURE_CROSSORIGIN_ISOLATION_HEADERS___': true,
-				'___GODOT_OPT_CACHE___': true,
+				'___FOUNDRY_CACHE___': true,
+				'___FOUNDRY_ENSURE_CROSSORIGIN_ISOLATION_HEADERS___': true,
+				'___FOUNDRY_OPT_CACHE___': true,
 			},
 		},
 	},
@@ -193,7 +193,7 @@ module.exports = [
 				'$FOUNDRY_CONFIG': true,
 				'$FOUNDRY_PROJECT_NAME': true,
 				'$FOUNDRY_THREADS_ENABLED': true,
-				'___GODOT_THREADS_ENABLED___': true,
+				'___FOUNDRY_THREADS_ENABLED___': true,
 			},
 		},
 		rules: {

@@ -6748,7 +6748,7 @@ VisualShaderEditor::VisualShaderEditor() {
 	site_search->set_theme_type_variation(SceneStringName(FlatButton));
 	site_search->connect(SceneStringName(pressed), callable_mp(this, &VisualShaderEditor::_help_open));
 	site_search->set_text(TTR("Online Docs"));
-	site_search->set_tooltip_text(TTR("Open Godot online documentation."));
+	site_search->set_tooltip_text(TTR("Open Foundry online documentation."));
 	toolbar_hflow->add_child(site_search);
 
 	VSeparator *separator = memnew(VSeparator);
@@ -7143,7 +7143,7 @@ VisualShaderEditor::VisualShaderEditor() {
 
 	// INPUT
 
-	const String translation_gdsl = "\n\n" + TTR("Translated to '%s' in Godot Shading Language.");
+	const String translation_gdsl = "\n\n" + TTR("Translated to '%s' in Foundry Shading Language.");
 	const String input_param_shader_modes = TTR("'%s' input parameter for all shader modes.") + translation_gdsl;
 
 	// NODE3D-FOR-ALL

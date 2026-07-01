@@ -13,7 +13,7 @@
 	<key>CFBundleIconName</key>
 	<string>FoundryLG</string>
 	<key>CFBundleIdentifier</key>
-	<string>org.godotengine.godot</string>
+	<string>org.cafecito.foundry</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundlePackageType</key>

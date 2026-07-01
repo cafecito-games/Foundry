@@ -47,10 +47,10 @@ TEST_SUITE("Validate tests") {
 			CHECK_MESSAGE(true, "Pending test is run with `--no-skip`");
 		}
 	}
-	TEST_CASE("Muting Godot error messages") {
+	TEST_CASE("Muting Foundry error messages") {
 		ERR_PRINT_OFF;
 		CHECK_MESSAGE(!CoreGlobals::print_error_enabled, "Error printing should be disabled.");
-		ERR_PRINT("Still waiting for Godot!"); // This should never get printed!
+		ERR_PRINT("Still waiting for Foundry!"); // This should never get printed!
 		ERR_PRINT_ON;
 		CHECK_MESSAGE(CoreGlobals::print_error_enabled, "Error printing should be re-enabled.");
 	}
@@ -58,7 +58,7 @@ TEST_SUITE("Validate tests") {
 		Variant var;
 		INFO(var);
 
-		String string("Godot is finally here!");
+		String string("Foundry is finally here!");
 		INFO(string);
 
 		Vector2 vec2(0.5, 1.0);
@@ -103,7 +103,7 @@ TEST_SUITE("Validate tests") {
 		StringName string_name("has_method");
 		INFO(string_name);
 
-		NodePath node_path("godot/sprite");
+		NodePath node_path("foundry/sprite");
 		INFO(node_path);
 
 		INFO(RID());
@@ -194,7 +194,7 @@ TEST_SUITE("Validate tests") {
 		REQUIRE_FALSE(ed.has_error);
 
 		ERR_PRINT_OFF;
-		ERR_PRINT("Still waiting for Godot!");
+		ERR_PRINT("Still waiting for Foundry!");
 		ERR_PRINT_ON;
 
 		REQUIRE(ed.has_error);

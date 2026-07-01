@@ -153,13 +153,13 @@ const Engine = (function () {
 
 					let config = {};
 					try {
-						config = me.config.getGodotConfig(function () {
+						config = me.config.getFoundryConfig(function () {
 							me.rtenv = null;
 						});
 					} catch (e) {
 						return Promise.reject(e);
 					}
-					// Godot configuration.
+					// Foundry configuration.
 					me.rtenv['initConfig'](config);
 
 					// Preload FoundryExtension libraries.

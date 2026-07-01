@@ -2005,9 +2005,9 @@ TEST_CASE("[Variant] Identity comparison") {
 	CHECK(nil.identity_compare(Variant()));
 	CHECK_FALSE(nil.identity_compare(true));
 
-	Variant node_path = NodePath("godot");
+	Variant node_path = NodePath("foundry");
 	CHECK(node_path.identity_compare(node_path));
-	CHECK(node_path.identity_compare(NodePath("godot")));
+	CHECK(node_path.identity_compare(NodePath("foundry")));
 	CHECK_FALSE(node_path.identity_compare(NodePath("waiting")));
 
 	Variant plane = Plane();
@@ -2045,14 +2045,14 @@ TEST_CASE("[Variant] Identity comparison") {
 	CHECK(signal.identity_compare(Signal()));
 	CHECK_FALSE(signal.identity_compare(Signal(ObjectID(), StringName("lambda"))));
 
-	Variant str = "godot";
+	Variant str = "foundry";
 	CHECK(str.identity_compare(str));
-	CHECK(str.identity_compare("godot"));
+	CHECK(str.identity_compare("foundry"));
 	CHECK_FALSE(str.identity_compare("waiting"));
 
-	Variant str_name = StringName("godot");
+	Variant str_name = StringName("foundry");
 	CHECK(str_name.identity_compare(str_name));
-	CHECK(str_name.identity_compare(StringName("godot")));
+	CHECK(str_name.identity_compare(StringName("foundry")));
 	CHECK_FALSE(str_name.identity_compare(StringName("waiting")));
 
 	Variant transform2d = Transform2D();

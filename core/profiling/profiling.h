@@ -36,7 +36,7 @@
 // See the "No profiling" branch at the bottom for a short description of the functions.
 
 // To configure / use the profiler, use the --profiler_path and other --profiler_* arguments
-// when compiling Godot. You can also find details in the SCSub file (in this folder).
+// when compiling Foundry. You can also find details in the SCSub file (in this folder).
 
 // Note: It is highly recommended to avoid including this header in other header files.
 //       Prefer including it in .cpp files only. The reason is that we want to keep

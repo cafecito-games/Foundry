@@ -61,7 +61,7 @@ const FoundryConfig = {
 		canvas_resize_policy: 2, // Adaptive
 		virtual_keyboard: false,
 		persistent_drops: false,
-		godot_pool_size: 4,
+		foundry_pool_size: 4,
 		on_execute: null,
 		on_exit: null,
 
@@ -71,7 +71,7 @@ const FoundryConfig = {
 			FoundryConfig.locale = p_opts['locale'] || FoundryConfig.locale;
 			FoundryConfig.virtual_keyboard = p_opts['virtualKeyboard'];
 			FoundryConfig.persistent_drops = !!p_opts['persistentDrops'];
-			FoundryConfig.godot_pool_size = p_opts['godotPoolSize'];
+			FoundryConfig.foundry_pool_size = p_opts['foundryPoolSize'];
 			FoundryConfig.on_execute = p_opts['onExecute'];
 			FoundryConfig.on_exit = p_opts['onExit'];
 			if (p_opts['focusCanvas']) {
@@ -126,7 +126,7 @@ const FoundryFS = {
 			return FoundryFS._idbfs ? 1 : 0;
 		},
 
-		// Initialize godot file system, setting up persistent paths.
+		// Initialize Foundry file system, setting up persistent paths.
 		// Returns a promise that resolves when the FS is ready.
 		// We keep track of mount_points, so that we can properly close the IDBFS
 		// since emscripten is not doing it by itself. (emscripten GH#12516).
@@ -170,7 +170,7 @@ const FoundryFS = {
 			});
 		},
 
-		// Deinit godot file system, making sure to unmount file systems, and close IDBFS(s).
+		// Deinit Foundry file system, making sure to unmount file systems, and close IDBFS(s).
 		deinit: function () {
 			FoundryFS._mount_points.forEach(function (path) {
 				try {
@@ -343,7 +343,7 @@ const FoundryOS = {
 	foundry_js_os_hw_concurrency_get__proxy: 'sync',
 	foundry_js_os_hw_concurrency_get__sig: 'i',
 	foundry_js_os_hw_concurrency_get: function () {
-		// TODO Godot core needs fixing to avoid spawning too many threads (> 24).
+		// TODO Foundry core needs fixing to avoid spawning too many threads (> 24).
 		const concurrency = navigator.hardwareConcurrency || 1;
 		return concurrency < 2 ? concurrency : 2;
 	},
@@ -356,7 +356,7 @@ const FoundryOS = {
 			return 1;
 		}
 
-		return FoundryConfig.godot_pool_size;
+		return FoundryConfig.foundry_pool_size;
 	},
 
 	foundry_js_os_download_buffer__proxy: 'sync',
@@ -382,7 +382,7 @@ autoAddDeps(FoundryOS, '$FoundryOS');
 mergeInto(LibraryManager.library, FoundryOS);
 
 /*
- * Godot event listeners.
+ * Foundry event listeners.
  * Keeps track of registered event listeners so it can remove them on shutdown.
  */
 const FoundryEventListeners = {

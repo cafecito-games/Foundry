@@ -492,7 +492,7 @@ vec4 light_shadow_compute(uint light_base, vec4 light_color, vec4 shadow_uv
 		shadow /= 13.0;
 	}
 
-	vec4 shadow_color = godot_unpackUnorm4x8(light_array[light_base].shadow_color);
+	vec4 shadow_color = unpackUnorm4x8(light_array[light_base].shadow_color);
 #ifdef LIGHT_CODE_USED
 	shadow_color.rgb *= shadow_modulate;
 #endif
@@ -669,7 +669,7 @@ void main() {
 
 	if (specular_shininess_used || (using_light && normal_used && bool(batch_flags & BATCH_FLAGS_DEFAULT_SPECULAR_MAP_USED))) {
 		specular_shininess = texture(specular_texture, uv);
-		specular_shininess *= godot_unpackUnorm4x8(specular_shininess_in);
+		specular_shininess *= unpackUnorm4x8(specular_shininess_in);
 		specular_shininess_used = true;
 	} else {
 		specular_shininess = vec4(1.0);
