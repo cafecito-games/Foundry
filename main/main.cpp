@@ -30,6 +30,7 @@
 
 #include "main.h"
 
+#include "core/config/project_build_pipeline_status.h"
 #include "core/config/project_settings.h"
 #include "core/core_globals.h"
 #include "core/crypto/crypto.h"
@@ -575,6 +576,9 @@ void Main::print_help(const char *p_binary) {
 #if defined(OVERRIDE_PATH_ENABLED) || defined(ANDROID_ENABLED) || defined(WEB_ENABLED)
 	print_help_option("--main-pack <file>", "Path to a pack (.pck) file to load.\n", CLI_OPTION_AVAILABILITY_TEMPLATE_UNSAFE);
 #endif // defined(OVERRIDE_PATH_ENABLED) || defined(ANDROID_ENABLED) || defined(WEB_ENABLED)
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+	print_help_option("--foundry-build-trusted", "Allow automatic Foundry build task provider and command execution for this process. Intended for CI.\n");
+#endif // MODULE_FOUNDRY_SCRIPT_ENABLED
 
 #ifdef DISABLE_DEPRECATED
 	print_help_option("--render-thread <mode>", "Render thread mode (\"safe\", \"separate\").\n");
@@ -1163,6 +1167,12 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 		if (arg == "--single-window" || arg == "--editor-pseudolocalization") {
 			forwardable_cli_arguments[CLI_SCOPE_TOOL].push_back(arg);
 		}
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+		if (arg == "--foundry-build-trusted") {
+			forwardable_cli_arguments[CLI_SCOPE_TOOL].push_back(arg);
+			forwardable_cli_arguments[CLI_SCOPE_PROJECT].push_back(arg);
+		}
+#endif // MODULE_FOUNDRY_SCRIPT_ENABLED
 		if (arg == "--audio-driver" ||
 				arg == "--display-driver" ||
 				arg == "--rendering-method" ||
@@ -1209,6 +1219,11 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 
 		} else if (arg == "--no-header") {
 			Engine::get_singleton()->_print_header = false;
+
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+		} else if (arg == "--foundry-build-trusted") {
+			ProjectBuildTrustStore::set_cli_trusted_execution(true);
+#endif // MODULE_FOUNDRY_SCRIPT_ENABLED
 
 		} else if (arg == "--audio-driver") { // audio driver
 

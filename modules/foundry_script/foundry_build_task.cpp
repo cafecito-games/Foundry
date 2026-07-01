@@ -30,6 +30,7 @@
 
 #include "foundry_build_task.h"
 
+#include "core/config/project_build_pipeline_status.h"
 #include "core/config/project_settings.h"
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
@@ -603,11 +604,25 @@ static String _fingerprint_for_invocation(const CommandInvocation &p_invocation,
 	return builder.as_string().sha256_text();
 }
 
-static Dictionary _make_command_diagnostic(const String &p_message, const CommandRunData &p_run_data) {
+static String _tail_text(const String &p_text, int p_max_chars = 8192) {
+	if (p_text.length() <= p_max_chars) {
+		return p_text;
+	}
+	return p_text.substr(p_text.length() - p_max_chars);
+}
+
+static Dictionary _make_command_diagnostic(const String &p_message, const CommandRunData &p_run_data,
+		const String &p_task_name = String(), const String &p_provider_id = String(),
+		const String &p_command = String()) {
 	Dictionary diagnostic;
 	diagnostic["message"] = p_message;
+	diagnostic["task_name"] = p_task_name;
+	diagnostic["provider_id"] = p_provider_id;
+	diagnostic["command"] = p_command;
 	diagnostic["stdout"] = p_run_data.stdout_text;
 	diagnostic["stderr"] = p_run_data.stderr_text;
+	diagnostic["stdout_tail"] = _tail_text(p_run_data.stdout_text);
+	diagnostic["stderr_tail"] = _tail_text(p_run_data.stderr_text);
 	diagnostic["exit_code"] = p_run_data.exit_code;
 	diagnostic["timed_out"] = p_run_data.timed_out;
 	diagnostic["launch_error"] = p_run_data.launch_error;
@@ -861,6 +876,7 @@ void FoundryBuildContext::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_project_config_path"), &FoundryBuildContext::get_project_config_path);
 	ClassDB::bind_method(D_METHOD("set_options", "options"), &FoundryBuildContext::set_options);
 	ClassDB::bind_method(D_METHOD("get_options"), &FoundryBuildContext::get_options);
+	ClassDB::bind_method(D_METHOD("is_trusted_execution"), &FoundryBuildContext::is_trusted_execution);
 
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "provider_id"), "set_provider_id", "get_provider_id");
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "task_name"), "set_task_name", "get_task_name");
@@ -898,6 +914,14 @@ void FoundryBuildContext::set_options(const Dictionary &p_options) {
 
 Dictionary FoundryBuildContext::get_options() const {
 	return options.duplicate(true);
+}
+
+void FoundryBuildContext::set_trusted_execution(bool p_trusted_execution) {
+	trusted_execution = p_trusted_execution;
+}
+
+bool FoundryBuildContext::is_trusted_execution() const {
+	return trusted_execution || ProjectBuildTrustStore::is_cli_trusted_execution();
 }
 
 void FoundryBuildTask::_bind_methods() {
@@ -962,6 +986,20 @@ Ref<FoundryBuildResult> FoundryCommandBuildTask::run(const Ref<FoundryBuildConte
 
 	const Dictionary options = p_context->get_options();
 	const String command_text = options.has("command") ? String(options["command"]) : String();
+	if (!p_context->is_trusted_execution()) {
+		const String message = vformat("Build task '%s' requires trusted execution before running external command '%s'.",
+				p_context->get_task_name(), command_text);
+		result->set_success(false);
+		result->set_message(message);
+		result->set_exit_code(-1);
+		result->set_launch_error(message);
+		CommandRunData diagnostic_data;
+		diagnostic_data.exit_code = -1;
+		diagnostic_data.launch_error = message;
+		result->add_diagnostic(_make_command_diagnostic(message, diagnostic_data,
+				p_context->get_task_name(), p_context->get_provider_id(), command_text));
+		return result;
+	}
 	const PackedStringArray args = _string_array_from_options(options, "args");
 	const String working_directory = options.has("working_directory") ? String(options["working_directory"]) : "res://";
 	const Dictionary environment = _dictionary_from_options(options, "environment");
@@ -980,7 +1018,8 @@ Ref<FoundryBuildResult> FoundryCommandBuildTask::run(const Ref<FoundryBuildConte
 		CommandRunData diagnostic_data;
 		diagnostic_data.exit_code = -1;
 		diagnostic_data.launch_error = invocation_error;
-		result->add_diagnostic(_make_command_diagnostic(invocation_error, diagnostic_data));
+		result->add_diagnostic(_make_command_diagnostic(invocation_error, diagnostic_data,
+				p_context->get_task_name(), p_context->get_provider_id(), command_text));
 		return result;
 	}
 	result->add_command(_make_result_command(invocation));
@@ -1002,7 +1041,8 @@ Ref<FoundryBuildResult> FoundryCommandBuildTask::run(const Ref<FoundryBuildConte
 		}
 
 		if (tool_version_data.exit_code != 0 || !tool_version_data.launch_error.is_empty() || tool_version_data.timed_out) {
-			result->add_diagnostic(_make_command_diagnostic("Tool version command failed.", tool_version_data));
+			result->add_diagnostic(_make_command_diagnostic("Tool version command failed.", tool_version_data,
+					p_context->get_task_name(), p_context->get_provider_id(), tool_version_command[0]));
 		}
 	}
 
@@ -1027,7 +1067,8 @@ Ref<FoundryBuildResult> FoundryCommandBuildTask::run(const Ref<FoundryBuildConte
 			message = vformat("Command '%s' exited with code %d.", command_text, run_data.exit_code);
 		}
 		result->set_message(message);
-		result->add_diagnostic(_make_command_diagnostic(message, run_data));
+		result->add_diagnostic(_make_command_diagnostic(message, run_data,
+				p_context->get_task_name(), p_context->get_provider_id(), command_text));
 	}
 
 	return result;

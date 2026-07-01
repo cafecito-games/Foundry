@@ -50,6 +50,7 @@ private:
 	HashMap<String, LoadedProvider> loaded_providers;
 	Vector<String> loaded_order;
 	Vector<FoundryBuildTaskRegistry::Diagnostic> diagnostics;
+	bool trusted_execution = false;
 
 	void _add_diagnostic(FoundryBuildTaskRegistry::DiagnosticKind p_kind,
 			const FoundryBuildTaskRegistry::ProviderEntry &p_provider, const String &p_key,
@@ -70,6 +71,8 @@ private:
 
 public:
 	void clear();
+	void set_trusted_execution(bool p_trusted_execution);
+	bool is_trusted_execution() const;
 
 	Error load_registered_providers(const FoundryBuildTaskRegistry &p_registry);
 	Error load_project_bootstrap_providers(const String &p_project_config_path = "res://project.foundry");
