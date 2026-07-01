@@ -3572,6 +3572,7 @@ void ScriptTextEditor::_show_override_method_dialog(
 		const Vector<RefactorOverrideMethodCandidate> &p_candidates) {
 	override_method_location = p_location;
 	override_method_candidates = p_candidates;
+	override_method_source = code_editor->get_text_editor()->get_text();
 	override_method_filter->set_text(String());
 	_populate_override_method_list(String());
 	override_method_dialog->popup_centered();
@@ -3619,6 +3620,15 @@ void ScriptTextEditor::_on_override_method_confirmed() {
 	}
 
 	RefactorContext ctx = _make_refactor_context();
+	if (ctx.source != override_method_source) {
+		override_method_dialog->hide();
+		_on_override_method_canceled();
+		EditorToaster::get_singleton()->popup_str(
+				TTR("The script changed. Reopen Override Method and try again."),
+				EditorToaster::SEVERITY_ERROR);
+		return;
+	}
+
 	RefactorParams params;
 	params.override_method_id = override_method_candidates[candidate_index].id;
 	const RefactorResult result = FSRefactoring::prepare(
@@ -3643,6 +3653,7 @@ void ScriptTextEditor::_on_override_method_canceled() {
 	override_method_candidates.clear();
 	override_method_filtered_indices.clear();
 	override_method_location = RefactorLocation();
+	override_method_source = String();
 }
 
 void ScriptTextEditor::_on_override_method_filter_changed(const String &p_text) {

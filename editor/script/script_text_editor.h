@@ -104,6 +104,7 @@ class ScriptTextEditor : public ScriptEditorBase {
 	Vector<RefactorOverrideMethodCandidate> override_method_candidates;
 	Vector<int> override_method_filtered_indices;
 	RefactorLocation override_method_location;
+	String override_method_source;
 	RefactorDiffPreviewDialog *refactor_diff_preview_dialog = nullptr;
 	int pending_refactor_anchor_line = -1;
 	int pending_refactor_anchor_column = -1;
