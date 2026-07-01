@@ -261,11 +261,17 @@ void FSBuildPipelineSettingsDialog::_refresh_provider_select() {
 				break;
 			}
 		}
-		// A task may reference a provider that is not registered (e.g. a typo or a disabled addon).
-		// Keep it visible and selected so the user can see and fix it.
-		if (select_index < 0 && !task->provider.is_empty()) {
+		// The task's provider may not match any registered entry: it can be empty (a task still being
+		// authored) or reference an unregistered id (a typo or a disabled addon). Add an explicit entry
+		// carrying that exact provider value and select it, so the shown selection matches the model
+		// instead of OptionButton auto-selecting its first entry (which would silently display e.g.
+		// "command" while the saved provider stays empty and the validation error is unrepairable here).
+		if (select_index < 0) {
+			const String label = task->provider.is_empty()
+					? TTR("<none> (select a provider)")
+					: vformat("%s  – unregistered", task->provider);
 			const int item_index = provider_select->get_item_count();
-			provider_select->add_item(vformat("%s  – unregistered", task->provider));
+			provider_select->add_item(label);
 			provider_select->set_item_metadata(item_index, task->provider);
 			select_index = item_index;
 		}

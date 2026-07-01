@@ -562,6 +562,23 @@ TEST_CASE("[ProjectBuildPipelineConfig] rename_task updates order and stage refe
 	CHECK_FALSE(build_config.rename_task("missing", "whatever"));
 }
 
+TEST_CASE("[ProjectBuildPipelineConfig] rename_task replaces every stage reference") {
+	ProjectBuildPipelineConfig build_config;
+	build_config.set_task(make_command_task("generate", "foundryproto", "res://generated/"));
+	// Simulate an invalid loaded stage list that references the same task twice.
+	PackedStringArray duplicated;
+	duplicated.push_back("generate");
+	duplicated.push_back("generate");
+	build_config.set_stage_tasks(ProjectBuildPipelineConfig::STAGE_PRE_COMPILE, duplicated);
+
+	CHECK(build_config.rename_task("generate", "generate_proto"));
+	const PackedStringArray pre = build_config.get_stage_tasks(ProjectBuildPipelineConfig::STAGE_PRE_COMPILE);
+	REQUIRE_EQ(pre.size(), 2);
+	CHECK_EQ(pre[0], "generate_proto");
+	CHECK_EQ(pre[1], "generate_proto");
+	CHECK_FALSE(pre.has("generate"));
+}
+
 TEST_CASE("[ProjectBuildPipelineConfig] duplicate_task creates a uniquely named copy after the original") {
 	ProjectBuildPipelineConfig build_config;
 	build_config.set_task(make_command_task("generate", "foundryproto", "res://generated/"));

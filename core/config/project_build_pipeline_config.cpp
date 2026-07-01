@@ -914,11 +914,14 @@ bool ProjectBuildPipelineConfig::rename_task(const String &p_old_name, const Str
 		task_order.set(order_index, p_new_name);
 	}
 
+	// Replace every occurrence: an invalid loaded config can list a task more than once in a stage,
+	// and a partial rename would leave dangling references to the old, now-undefined name.
 	PackedStringArray *stage_arrays[2] = { &pre_compile_tasks, &post_compile_tasks };
 	for (PackedStringArray *stage : stage_arrays) {
-		const int stage_index = stage->find(p_old_name);
-		if (stage_index >= 0) {
-			stage->set(stage_index, p_new_name);
+		for (int i = 0; i < stage->size(); i++) {
+			if ((*stage)[i] == p_old_name) {
+				stage->set(i, p_new_name);
+			}
 		}
 	}
 	return true;
