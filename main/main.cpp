@@ -146,6 +146,7 @@
 #ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 #include "modules/foundry_script/foundry_script.h"
 #include "modules/foundry_script/fs_autoload_index.h"
+#include "modules/foundry_script/fs_build_pipeline_runner.h"
 #ifdef TOOLS_ENABLED
 #include "modules/foundry_script/editor/fs_migration_wizard.h"
 #endif // TOOLS_ENABLED
@@ -352,6 +353,21 @@ static Vector<String> get_files_with_extension(const String &p_root, const Strin
 	return paths;
 }
 #endif
+
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+static bool run_foundry_build_stage_for_cli(ProjectBuildPipelineConfig::Stage p_stage, const String &p_context) {
+	const FoundryBuildPipelineRunner::StageRunResult result = FoundryBuildPipelineRunner::run_stage(p_stage);
+	if (result.is_success()) {
+		return true;
+	}
+
+	FoundryBuildPipelineRunner::print_diagnostics(result.snapshot, p_context);
+	if (result.error != OK) {
+		ERR_PRINT(vformat("%s returned error %d.", p_context, int(result.error)));
+	}
+	return false;
+}
+#endif // MODULE_FOUNDRY_SCRIPT_ENABLED
 
 // FIXME: Could maybe be moved to have less code in main.cpp.
 void initialize_physics() {
@@ -960,35 +976,94 @@ void Main::test_cleanup() {
 #endif
 
 int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
+	bool test_requested = false;
+	String test_project_path;
+	bool foundry_build_trusted = false;
+
 	for (int x = 0; x < argc; x++) {
 		// Early return to ignore a possible user-provided "--test" argument.
 		if ((strlen(argv[x]) == 2) && ((strncmp(argv[x], "--", 2) == 0) || (strncmp(argv[x], "++", 2) == 0))) {
-			tests_need_run = false;
-			return EXIT_SUCCESS;
+			if (!test_requested) {
+				tests_need_run = false;
+				return EXIT_SUCCESS;
+			}
+			break;
 		}
-		// `--foundry_script-generate-tests` is a registered `--test` command (so it
-		// runs under `test_setup()`/`test_cleanup()` and the process shuts down
-		// cleanly); accept it as a standalone flag too, for backwards compatibility.
+		if (strcmp(argv[x], "--path") == 0 && x + 1 < argc) {
+			test_project_path = String::utf8(argv[x + 1]);
+			x++;
+			continue;
+		}
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+		if (strcmp(argv[x], "--foundry-build-trusted") == 0) {
+			foundry_build_trusted = true;
+			continue;
+		}
+#endif // MODULE_FOUNDRY_SCRIPT_ENABLED
+	   // `--foundry_script-generate-tests` is a registered `--test` command (so it
+	   // runs under `test_setup()`/`test_cleanup()` and the process shuts down
+	   // cleanly); accept it as a standalone flag too, for backwards compatibility.
 		const bool is_test = (strncmp(argv[x], "--test", 6) == 0) && (strlen(argv[x]) == 6);
 		const bool is_test_command = strcmp(argv[x], "--foundry_script-generate-tests") == 0;
 		const bool is_format_command = strcmp(argv[x], "--foundry_script-format") == 0 ||
 				strcmp(argv[x], "--foundry_script-generate-format-tests") == 0;
 		if (is_test || is_test_command || is_format_command) {
-			tests_need_run = true;
-#ifdef TESTS_ENABLED
-			// TODO: need to come up with different test contexts.
-			// Not every test requires high-level functionality like `ClassDB`.
-			test_setup();
-			int status = test_main(argc, argv);
-			test_cleanup();
-			return status;
-#else
-			ERR_PRINT(
-					"A test command was specified on the command line, but this Godot binary was compiled without support for unit tests. Aborting.\n"
-					"To be able to run unit tests, use the `tests=yes` SCons option when compiling Godot.\n");
-			return EXIT_FAILURE;
-#endif
+			test_requested = true;
 		}
+	}
+
+	if (test_requested) {
+		tests_need_run = true;
+#ifdef TESTS_ENABLED
+		// TODO: need to come up with different test contexts.
+		// Not every test requires high-level functionality like `ClassDB`.
+		test_setup();
+
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+		bool project_loaded_for_build_pipeline = false;
+		const bool old_foundry_build_trusted = ProjectBuildTrustStore::is_cli_trusted_execution();
+		if (!test_project_path.is_empty()) {
+			const Error project_err = ProjectSettings::get_singleton()->setup(test_project_path, String(), false, false);
+			if (project_err != OK) {
+				ERR_PRINT(vformat("Could not load project at path \"%s\" before running tests.", test_project_path));
+				test_cleanup();
+				return EXIT_FAILURE;
+			}
+			project_loaded_for_build_pipeline = true;
+
+			ProjectBuildTrustStore::set_cli_trusted_execution(foundry_build_trusted);
+			const bool pre_compile_ok = run_foundry_build_stage_for_cli(ProjectBuildPipelineConfig::STAGE_PRE_COMPILE,
+					"Foundry pre_compile test stage");
+			ProjectBuildTrustStore::set_cli_trusted_execution(old_foundry_build_trusted);
+			if (!pre_compile_ok) {
+				test_cleanup();
+				return EXIT_FAILURE;
+			}
+			ResourceLoader::add_custom_loaders();
+			ResourceSaver::add_custom_savers();
+		}
+#endif // MODULE_FOUNDRY_SCRIPT_ENABLED
+
+		int status = test_main(argc, argv);
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+		if (status == EXIT_SUCCESS && project_loaded_for_build_pipeline) {
+			ProjectBuildTrustStore::set_cli_trusted_execution(foundry_build_trusted);
+			const bool post_compile_ok = run_foundry_build_stage_for_cli(ProjectBuildPipelineConfig::STAGE_POST_COMPILE,
+					"Foundry post_compile test stage");
+			ProjectBuildTrustStore::set_cli_trusted_execution(old_foundry_build_trusted);
+			if (!post_compile_ok) {
+				status = EXIT_FAILURE;
+			}
+		}
+#endif // MODULE_FOUNDRY_SCRIPT_ENABLED
+		test_cleanup();
+		return status;
+#else
+		ERR_PRINT(
+				"A test command was specified on the command line, but this Godot binary was compiled without support for unit tests. Aborting.\n"
+				"To be able to run unit tests, use the `tests=yes` SCons option when compiling Godot.\n");
+		return EXIT_FAILURE;
+#endif
 	}
 	tests_need_run = false;
 	return EXIT_SUCCESS;
@@ -4408,6 +4483,25 @@ int Main::start() {
 	}
 #endif // TOOLS_ENABLED && MODULE_FOUNDRY_SCRIPT_ENABLED
 
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+	// `--script --check-only` still loads and validates the script, so run pre_compile before script loading.
+	bool foundry_runtime_build_stages_enabled = !project_manager && !editor && (!game_path.is_empty() || !script.is_empty());
+#endif // MODULE_FOUNDRY_SCRIPT_ENABLED
+	bool custom_resource_handlers_registered = false;
+
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+	if (foundry_runtime_build_stages_enabled) {
+		if (!run_foundry_build_stage_for_cli(ProjectBuildPipelineConfig::STAGE_PRE_COMPILE,
+					"Foundry pre_compile runtime stage")) {
+			return EXIT_FAILURE;
+		}
+
+		ResourceLoader::add_custom_loaders();
+		ResourceSaver::add_custom_savers();
+		custom_resource_handlers_registered = true;
+	}
+#endif // MODULE_FOUNDRY_SCRIPT_ENABLED
+
 	MainLoop *main_loop = nullptr;
 	if (editor) {
 		main_loop = memnew(SceneTree);
@@ -4421,7 +4515,17 @@ int Main::start() {
 		ERR_FAIL_COND_V_MSG(script_res.is_null(), EXIT_FAILURE, "Can't load script: " + script);
 
 		if (check_only) {
-			return script_res->is_valid() ? EXIT_SUCCESS : EXIT_FAILURE;
+			if (!script_res->is_valid()) {
+				return EXIT_FAILURE;
+			}
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+			if (foundry_runtime_build_stages_enabled &&
+					!run_foundry_build_stage_for_cli(ProjectBuildPipelineConfig::STAGE_POST_COMPILE,
+							"Foundry post_compile runtime stage")) {
+				return EXIT_FAILURE;
+			}
+#endif // MODULE_FOUNDRY_SCRIPT_ENABLED
+			return EXIT_SUCCESS;
 		}
 
 		if (script_res->can_instantiate()) {
@@ -4542,8 +4646,11 @@ int Main::start() {
 			sml->get_root()->set_embedding_subwindows(true);
 		}
 
-		ResourceLoader::add_custom_loaders();
-		ResourceSaver::add_custom_savers();
+		if (!custom_resource_handlers_registered) {
+			ResourceLoader::add_custom_loaders();
+			ResourceSaver::add_custom_savers();
+			custom_resource_handlers_registered = true;
+		}
 
 		if (!project_manager && !editor) { // game
 			if (!game_path.is_empty() || !script.is_empty()) {
@@ -4878,6 +4985,13 @@ int Main::start() {
 			}
 
 			OS::get_singleton()->benchmark_end_measure("Startup", "Load Game");
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+			if (foundry_runtime_build_stages_enabled &&
+					!run_foundry_build_stage_for_cli(ProjectBuildPipelineConfig::STAGE_POST_COMPILE,
+							"Foundry post_compile runtime stage")) {
+				return EXIT_FAILURE;
+			}
+#endif // MODULE_FOUNDRY_SCRIPT_ENABLED
 		}
 
 #ifdef TOOLS_ENABLED

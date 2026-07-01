@@ -34,6 +34,7 @@
 #include "core/extension/foundry_extension_manager.h"
 #include "core/input/input.h"
 #include "core/io/config_file.h"
+#include "core/io/dir_access.h"
 #include "core/io/file_access.h"
 #include "core/io/image.h"
 #include "core/io/resource_loader.h"
@@ -191,7 +192,11 @@
 #include "modules/modules_enabled.gen.h" // For foundry_script, mono.
 
 #ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+#include "modules/foundry_script/fs_build_pipeline_runner.h"
 #include "modules/foundry_script/fs_build_task_bootstrap_loader.h"
+
+static bool _run_foundry_build_stage(ProjectBuildPipelineConfig::Stage p_stage, const String &p_context);
+static void _refresh_foundry_build_outputs(void *p_userdata, const PackedStringArray &p_outputs);
 #endif
 
 #ifndef PHYSICS_2D_DISABLED
@@ -1314,8 +1319,16 @@ void EditorNode::_fs_changed() {
 				err = FAILED;
 				export_error = vformat("Export preset \"%s\" doesn't have a matching platform.", preset_name);
 			} else {
-				export_preset->update_value_overrides();
-				if (export_defer.pack_only) { // Only export .pck or .zip data pack.
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+				if (!_run_foundry_build_stage(ProjectBuildPipelineConfig::STAGE_PRE_COMPILE,
+							vformat("Foundry pre_compile export stage for preset \"%s\"", preset_name))) {
+					err = FAILED;
+				}
+#endif // MODULE_FOUNDRY_SCRIPT_ENABLED
+				if (err == OK) {
+					export_preset->update_value_overrides();
+				}
+				if (err == OK && export_defer.pack_only) { // Only export .pck or .zip data pack.
 					if (export_path.ends_with(".zip")) {
 						if (export_defer.patch) {
 							err = platform->export_zip_patch(export_preset, export_defer.debug, export_path, export_defer.patches);
@@ -1332,7 +1345,7 @@ void EditorNode::_fs_changed() {
 						ERR_PRINT(vformat("Export path \"%s\" doesn't end with a supported extension.", export_path));
 						err = FAILED;
 					}
-				} else { // Normal project export.
+				} else if (err == OK) { // Normal project export.
 					String config_error;
 					bool missing_templates;
 					if (export_defer.android_build_template) {
@@ -1346,6 +1359,11 @@ void EditorNode::_fs_changed() {
 						err = platform->export_project(export_preset, export_defer.debug, export_path);
 					}
 				}
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+				if (err == OK && !_run_foundry_build_stage(ProjectBuildPipelineConfig::STAGE_POST_COMPILE, vformat("Foundry post_compile export stage for preset \"%s\"", preset_name))) {
+					err = FAILED;
+				}
+#endif // MODULE_FOUNDRY_SCRIPT_ENABLED
 				if (err != OK) {
 					export_error = vformat("Project export for preset \"%s\" failed.", preset_name);
 				} else if (platform->get_worst_message_type() >= EditorExportPlatform::EXPORT_MESSAGE_WARNING) {
@@ -7529,8 +7547,289 @@ void EditorNode::add_build_callback(EditorBuildCallback p_callback) {
 
 EditorBuildCallback EditorNode::build_callbacks[EditorNode::MAX_BUILD_CALLBACKS];
 
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+static bool _foundry_build_output_has_glob_wildcard(const String &p_path) {
+	return p_path.contains("*") || p_path.contains("?");
+}
+
+static bool _foundry_build_output_may_be_directory(const String &p_path) {
+	const String path = p_path.strip_edges().replace_char('\\', '/');
+	return path.ends_with("/") || path.get_file().get_extension().is_empty();
+}
+
+static String _foundry_build_globalize_output_path(const String &p_path) {
+	const String path = p_path.strip_edges().replace_char('\\', '/');
+	if (path.begins_with("res://")) {
+		return ProjectSettings::get_singleton()->globalize_path(path).simplify_path();
+	}
+	return path.simplify_path();
+}
+
+static String _foundry_build_localize_output_path(const String &p_path) {
+	const String path = p_path.replace_char('\\', '/').simplify_path();
+	return ProjectSettings::get_singleton()->localize_path(path).replace_char('\\', '/');
+}
+
+static String _foundry_build_glob_search_root(const String &p_pattern) {
+	const int star = p_pattern.find_char('*');
+	const int question = p_pattern.find_char('?');
+	int wildcard = -1;
+	if (star >= 0 && question >= 0) {
+		wildcard = MIN(star, question);
+	} else {
+		wildcard = MAX(star, question);
+	}
+
+	if (wildcard < 0) {
+		return p_pattern.get_base_dir();
+	}
+
+	String prefix = p_pattern.substr(0, wildcard);
+	if (prefix.ends_with("/") && prefix.length() > 1) {
+		if (prefix.ends_with("://")) {
+			return prefix;
+		}
+		const String stripped_prefix = prefix.substr(0, prefix.length() - 1);
+		if (!stripped_prefix.ends_with(":")) {
+			return stripped_prefix;
+		}
+	}
+
+	String root = prefix.get_base_dir();
+	if (root == "res:") {
+		root = "res://";
+	}
+	return root.is_empty() ? "." : root;
+}
+
+static bool _foundry_build_glob_match_path(
+		const String &p_path, const String &p_pattern, int p_path_index, int p_pattern_index) {
+	const int path_length = p_path.length();
+	const int pattern_length = p_pattern.length();
+	if (p_pattern_index == pattern_length) {
+		return p_path_index == path_length;
+	}
+
+	const char32_t pattern_char = p_pattern[p_pattern_index];
+	if (pattern_char == '*') {
+		const bool globstar = p_pattern_index + 1 < pattern_length && p_pattern[p_pattern_index + 1] == '*';
+		if (globstar) {
+			const int next_pattern_index = p_pattern_index + 2;
+			if (next_pattern_index < pattern_length && p_pattern[next_pattern_index] == '/') {
+				if (_foundry_build_glob_match_path(p_path, p_pattern, p_path_index, next_pattern_index + 1)) {
+					return true;
+				}
+				for (int i = p_path_index; i < path_length; i++) {
+					if (p_path[i] == '/' &&
+							_foundry_build_glob_match_path(p_path, p_pattern, i + 1, next_pattern_index + 1)) {
+						return true;
+					}
+				}
+				return false;
+			}
+
+			for (int i = p_path_index; i <= path_length; i++) {
+				if (_foundry_build_glob_match_path(p_path, p_pattern, i, next_pattern_index)) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		for (int i = p_path_index; i <= path_length; i++) {
+			if (_foundry_build_glob_match_path(p_path, p_pattern, i, p_pattern_index + 1)) {
+				return true;
+			}
+			if (i == path_length || p_path[i] == '/') {
+				break;
+			}
+		}
+		return false;
+	}
+
+	if (p_path_index == path_length) {
+		return false;
+	}
+	if (pattern_char == '?') {
+		return p_path[p_path_index] != '/' &&
+				_foundry_build_glob_match_path(p_path, p_pattern, p_path_index + 1, p_pattern_index + 1);
+	}
+	return pattern_char == p_path[p_path_index] &&
+			_foundry_build_glob_match_path(p_path, p_pattern, p_path_index + 1, p_pattern_index + 1);
+}
+
+static bool _foundry_build_output_matches_glob(const String &p_path, const String &p_pattern) {
+	return _foundry_build_glob_match_path(
+			p_path.replace_char('\\', '/'), p_pattern.replace_char('\\', '/'), 0, 0);
+}
+
+static void _collect_foundry_build_directory_output_files(const String &p_root, Vector<String> &r_files) {
+	Ref<DirAccess> dir = DirAccess::open(p_root);
+	if (dir.is_null()) {
+		return;
+	}
+
+	dir->set_include_hidden(true);
+	if (dir->list_dir_begin() != OK) {
+		return;
+	}
+
+	for (String entry = dir->get_next(); !entry.is_empty(); entry = dir->get_next()) {
+		if (entry == "." || entry == "..") {
+			continue;
+		}
+
+		const String child = p_root.path_join(entry).simplify_path();
+		if (dir->current_is_dir() && !dir->is_link(child)) {
+			_collect_foundry_build_directory_output_files(child, r_files);
+		} else if (FileAccess::exists(child)) {
+			r_files.push_back(_foundry_build_localize_output_path(child));
+		}
+	}
+	dir->list_dir_end();
+}
+
+static void _collect_foundry_build_editor_directory_output_files(
+		EditorFileSystemDirectory *p_dir, Vector<String> &r_files) {
+	if (p_dir == nullptr) {
+		return;
+	}
+
+	for (int i = 0; i < p_dir->get_file_count(); i++) {
+		r_files.push_back(p_dir->get_file_path(i));
+	}
+	for (int i = 0; i < p_dir->get_subdir_count(); i++) {
+		_collect_foundry_build_editor_directory_output_files(p_dir->get_subdir(i), r_files);
+	}
+}
+
+static void _collect_foundry_build_editor_directory_output_files(const String &p_root, Vector<String> &r_files) {
+	EditorFileSystem *editor_file_system = EditorFileSystem::get_singleton();
+	if (editor_file_system == nullptr) {
+		return;
+	}
+
+	EditorFileSystemDirectory *directory =
+			editor_file_system->get_filesystem_path(_foundry_build_localize_output_path(p_root));
+	_collect_foundry_build_editor_directory_output_files(directory, r_files);
+}
+
+static void _collect_foundry_build_glob_output_files(
+		const String &p_root, const String &p_pattern, Vector<String> &r_files) {
+	Ref<DirAccess> dir = DirAccess::open(p_root);
+	if (dir.is_null()) {
+		return;
+	}
+
+	dir->set_include_hidden(true);
+	if (dir->list_dir_begin() != OK) {
+		return;
+	}
+
+	for (String entry = dir->get_next(); !entry.is_empty(); entry = dir->get_next()) {
+		if (entry == "." || entry == "..") {
+			continue;
+		}
+
+		const String child = p_root.path_join(entry).simplify_path();
+		if (dir->current_is_dir() && !dir->is_link(child)) {
+			_collect_foundry_build_glob_output_files(child, p_pattern, r_files);
+		} else if (FileAccess::exists(child) &&
+				_foundry_build_output_matches_glob(child, p_pattern)) {
+			r_files.push_back(_foundry_build_localize_output_path(child));
+		}
+	}
+	dir->list_dir_end();
+}
+
+static void _collect_foundry_build_editor_glob_output_files(
+		EditorFileSystemDirectory *p_dir, const String &p_pattern, Vector<String> &r_files) {
+	if (p_dir == nullptr) {
+		return;
+	}
+
+	for (int i = 0; i < p_dir->get_file_count(); i++) {
+		const String path = p_dir->get_file_path(i);
+		if (_foundry_build_output_matches_glob(path, p_pattern)) {
+			r_files.push_back(path);
+		}
+	}
+	for (int i = 0; i < p_dir->get_subdir_count(); i++) {
+		_collect_foundry_build_editor_glob_output_files(p_dir->get_subdir(i), p_pattern, r_files);
+	}
+}
+
+static void _collect_foundry_build_editor_glob_output_files(
+		const String &p_root, const String &p_pattern, Vector<String> &r_files) {
+	EditorFileSystem *editor_file_system = EditorFileSystem::get_singleton();
+	if (editor_file_system == nullptr) {
+		return;
+	}
+
+	EditorFileSystemDirectory *directory =
+			editor_file_system->get_filesystem_path(_foundry_build_localize_output_path(p_root));
+	_collect_foundry_build_editor_glob_output_files(
+			directory, _foundry_build_localize_output_path(p_pattern), r_files);
+}
+
+static void _refresh_foundry_build_outputs(void *p_userdata, const PackedStringArray &p_outputs) {
+	if (p_outputs.is_empty() || EditorFileSystem::get_singleton() == nullptr ||
+			ProjectSettings::get_singleton() == nullptr) {
+		return;
+	}
+
+	Vector<String> output_paths;
+	for (int i = 0; i < p_outputs.size(); i++) {
+		const String output = _foundry_build_globalize_output_path(p_outputs[i]);
+		if (_foundry_build_output_has_glob_wildcard(output)) {
+			_collect_foundry_build_glob_output_files(
+					_foundry_build_glob_search_root(output), output, output_paths);
+			_collect_foundry_build_editor_glob_output_files(
+					_foundry_build_glob_search_root(output), output, output_paths);
+		} else if (DirAccess::dir_exists_absolute(output)) {
+			_collect_foundry_build_directory_output_files(output, output_paths);
+			_collect_foundry_build_editor_directory_output_files(output, output_paths);
+		} else if (_foundry_build_output_may_be_directory(p_outputs[i])) {
+			const int previous_path_count = output_paths.size();
+			_collect_foundry_build_editor_directory_output_files(output, output_paths);
+			if (output_paths.size() == previous_path_count) {
+				output_paths.push_back(_foundry_build_localize_output_path(output));
+			}
+		} else {
+			output_paths.push_back(_foundry_build_localize_output_path(output));
+		}
+	}
+
+	if (output_paths.is_empty()) {
+		return;
+	}
+	EditorFileSystem::get_singleton()->update_files(output_paths);
+}
+
+static bool _run_foundry_build_stage(ProjectBuildPipelineConfig::Stage p_stage, const String &p_context) {
+	const FoundryBuildPipelineRunner::OutputCallback output_callback(_refresh_foundry_build_outputs);
+	const FoundryBuildPipelineRunner::StageRunResult result =
+			FoundryBuildPipelineRunner::run_stage(p_stage, FoundryBuildPipelineRunner::RUN_DIRTY_TASKS, output_callback);
+	if (result.is_success()) {
+		return true;
+	}
+
+	FoundryBuildPipelineRunner::print_diagnostics(result.snapshot, p_context);
+	if (result.error != OK) {
+		ERR_PRINT(vformat("%s returned error %d.", p_context, int(result.error)));
+	}
+	return false;
+}
+#endif // MODULE_FOUNDRY_SCRIPT_ENABLED
+
 bool EditorNode::call_build() {
 	bool builds_successful = true;
+
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+	if (!_run_foundry_build_stage(ProjectBuildPipelineConfig::STAGE_PRE_COMPILE, "Foundry pre_compile build stage")) {
+		return false;
+	}
+#endif // MODULE_FOUNDRY_SCRIPT_ENABLED
 
 	for (int i = 0; i < build_callback_count && builds_successful; i++) {
 		if (!build_callbacks[i]()) {
@@ -7543,6 +7842,13 @@ bool EditorNode::call_build() {
 		ERR_PRINT("An EditorPlugin build callback failed.");
 		builds_successful = false;
 	}
+
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+	if (builds_successful &&
+			!_run_foundry_build_stage(ProjectBuildPipelineConfig::STAGE_POST_COMPILE, "Foundry post_compile build stage")) {
+		builds_successful = false;
+	}
+#endif // MODULE_FOUNDRY_SCRIPT_ENABLED
 
 	return builds_successful;
 }
