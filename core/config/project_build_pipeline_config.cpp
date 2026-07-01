@@ -31,11 +31,57 @@
 #include "project_build_pipeline_config.h"
 
 #include "core/config/foundry_build_task_registry.h"
+#include "core/config/project_settings.h"
+#include "core/io/dir_access.h"
 
 static const char *BUILD_SECTION = "build";
 static const char *PROVIDER_SECTION_PREFIX = "build/providers/";
 static const char *TASK_SECTION_PREFIX = "build/tasks/";
 static const char *COMMAND_PROVIDER_ID = "command";
+
+static bool _has_glob_wildcard(const String &p_path) {
+	return p_path.contains("*") || p_path.contains("?");
+}
+
+static String _normalized_project_path(const String &p_path, bool p_keep_trailing_slash = false) {
+	const String slash_path = p_path.strip_edges().replace_char('\\', '/');
+	const bool had_trailing_slash = slash_path.ends_with("/");
+	String path = slash_path.simplify_path();
+	if (p_keep_trailing_slash && had_trailing_slash && !path.ends_with("/")) {
+		path += "/";
+	}
+	return path;
+}
+
+static bool _project_path_exists_as_directory(const String &p_path) {
+	if (ProjectSettings::get_singleton() == nullptr) {
+		return false;
+	}
+
+	return DirAccess::dir_exists_absolute(ProjectSettings::get_singleton()->globalize_path(p_path));
+}
+
+static String _glob_literal_directory_root(const String &p_pattern) {
+	int wildcard_index = -1;
+	for (int i = 0; i < p_pattern.length(); i++) {
+		if (p_pattern[i] == '*' || p_pattern[i] == '?') {
+			wildcard_index = i;
+			break;
+		}
+	}
+	if (wildcard_index < 0) {
+		return String();
+	}
+
+	for (int i = wildcard_index; i >= 0; i--) {
+		if (p_pattern[i] == '/') {
+			const String root = p_pattern.substr(0, i + 1);
+			return root.length() > String("res://").length() ? root : String();
+		}
+	}
+
+	return String();
+}
 
 bool ProjectBuildPipelineConfig::_is_valid_id(const String &p_id) {
 	if (p_id.is_empty()) {
@@ -844,6 +890,58 @@ PackedStringArray ProjectBuildPipelineConfig::get_enabled_stage_tasks(Stage p_st
 	}
 
 	return executable_tasks;
+}
+
+bool ProjectBuildPipelineConfig::is_declared_output_path(
+		const String &p_path, String *r_task_name, String *r_output_root) const {
+	const String path = _normalized_project_path(p_path);
+	if (!enabled || !_is_valid_project_path(path)) {
+		return false;
+	}
+
+	PackedStringArray enabled_tasks = get_enabled_stage_tasks(STAGE_PRE_COMPILE);
+	enabled_tasks.append_array(get_enabled_stage_tasks(STAGE_POST_COMPILE));
+	for (int task_index = 0; task_index < enabled_tasks.size(); task_index++) {
+		const String task_name = enabled_tasks[task_index];
+		const TaskDefinition *task = tasks.getptr(task_name);
+		if (task == nullptr) {
+			continue;
+		}
+
+		for (int i = 0; i < task->outputs.size(); i++) {
+			const String declared_output = task->outputs[i];
+			const String output = _normalized_project_path(
+					declared_output, declared_output.strip_edges().replace_char('\\', '/').ends_with("/"));
+			if (_is_unsafe_output_path(output)) {
+				continue;
+			}
+
+			bool matches = false;
+			if (_has_glob_wildcard(output)) {
+				const String output_root = _glob_literal_directory_root(output);
+				matches = !output_root.is_empty() && path.begins_with(output_root);
+			} else if (output.ends_with("/") || _project_path_exists_as_directory(output)) {
+				const String output_root = output.ends_with("/") ? output : output + "/";
+				matches = path == output_root.trim_suffix("/") || path.begins_with(output_root);
+			} else {
+				matches = path == output;
+			}
+
+			if (!matches) {
+				continue;
+			}
+
+			if (r_task_name != nullptr) {
+				*r_task_name = task->name;
+			}
+			if (r_output_root != nullptr) {
+				*r_output_root = declared_output;
+			}
+			return true;
+		}
+	}
+
+	return false;
 }
 
 const ProjectBuildPipelineConfig::ProviderDescriptor *ProjectBuildPipelineConfig::get_provider(const String &p_id) const {

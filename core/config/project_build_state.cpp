@@ -39,6 +39,7 @@ namespace {
 
 static const char *BUILD_STATE_SECTION = "build_state";
 static const char *BUILD_STATE_TASK_SECTION_PREFIX = "build_state/tasks/";
+static const char *BUILD_STATE_AUDIT_SECTION_PREFIX = "build_state/audit/";
 static const int BUILD_STATE_VERSION = 1;
 
 static bool _has_glob_wildcard(const String &p_path) {
@@ -302,6 +303,19 @@ String ProjectBuildState::_task_name_from_section(const String &p_section) {
 	return p_section.substr(String(BUILD_STATE_TASK_SECTION_PREFIX).length());
 }
 
+String ProjectBuildState::_audit_section(int p_index) {
+	return String(BUILD_STATE_AUDIT_SECTION_PREFIX) + String::num_int64(p_index).pad_zeros(4);
+}
+
+bool ProjectBuildState::_is_audit_section(const String &p_section) {
+	return p_section.begins_with(BUILD_STATE_AUDIT_SECTION_PREFIX) &&
+			p_section.length() > String(BUILD_STATE_AUDIT_SECTION_PREFIX).length();
+}
+
+int ProjectBuildState::_audit_index_from_section(const String &p_section) {
+	return p_section.substr(String(BUILD_STATE_AUDIT_SECTION_PREFIX).length()).to_int();
+}
+
 PackedStringArray ProjectBuildState::_compute_output_manifest(const PackedStringArray &p_outputs, bool *r_missing_output) {
 	if (r_missing_output != nullptr) {
 		*r_missing_output = false;
@@ -349,11 +363,13 @@ ProjectBuildState::ProjectBuildState(const String &p_state_path) :
 
 void ProjectBuildState::clear() {
 	records.clear();
+	audit_log.clear();
 	load_error = OK;
 }
 
 Error ProjectBuildState::load() {
 	records.clear();
+	audit_log.clear();
 	load_error = OK;
 
 	if (!FileAccess::exists(state_path)) {
@@ -376,37 +392,96 @@ Error ProjectBuildState::load() {
 	}
 
 	Vector<String> sections = config->get_sections();
+	HashMap<int, TaskRunAudit> loaded_audit;
 	for (const String &section : sections) {
-		if (!_is_task_section(section)) {
+		if (_is_task_section(section)) {
+			if (!config->has_section_key(section, "fingerprint") ||
+					!config->has_section_key(section, "success") ||
+					!config->has_section_key(section, "output_manifest")) {
+				load_error = ERR_FILE_CORRUPT;
+				records.clear();
+				audit_log.clear();
+				return load_error;
+			}
+
+			const Variant fingerprint_value = config->get_value(section, "fingerprint");
+			const Variant success_value = config->get_value(section, "success");
+			const Variant manifest_value = config->get_value(section, "output_manifest");
+			if ((fingerprint_value.get_type() != Variant::STRING && fingerprint_value.get_type() != Variant::STRING_NAME) ||
+					success_value.get_type() != Variant::BOOL ||
+					manifest_value.get_type() != Variant::PACKED_STRING_ARRAY) {
+				load_error = ERR_FILE_CORRUPT;
+				records.clear();
+				audit_log.clear();
+				return load_error;
+			}
+
+			TaskRecord record;
+			record.task_name = _task_name_from_section(section);
+			record.fingerprint = fingerprint_value;
+			record.success = success_value;
+			record.output_manifest = manifest_value;
+			records[record.task_name] = record;
 			continue;
 		}
 
-		if (!config->has_section_key(section, "fingerprint") ||
+		if (!_is_audit_section(section)) {
+			continue;
+		}
+
+		if (!config->has_section_key(section, "task_name") ||
+				!config->has_section_key(section, "fingerprint") ||
 				!config->has_section_key(section, "success") ||
-				!config->has_section_key(section, "output_manifest")) {
+				!config->has_section_key(section, "output_manifest") ||
+				!config->has_section_key(section, "dirty_reason") ||
+				!config->has_section_key(section, "dirty_message") ||
+				!config->has_section_key(section, "run_mode")) {
 			load_error = ERR_FILE_CORRUPT;
 			records.clear();
+			audit_log.clear();
 			return load_error;
 		}
 
+		const Variant task_name_value = config->get_value(section, "task_name");
 		const Variant fingerprint_value = config->get_value(section, "fingerprint");
 		const Variant success_value = config->get_value(section, "success");
 		const Variant manifest_value = config->get_value(section, "output_manifest");
-		if ((fingerprint_value.get_type() != Variant::STRING && fingerprint_value.get_type() != Variant::STRING_NAME) ||
+		const Variant dirty_reason_value = config->get_value(section, "dirty_reason");
+		const Variant dirty_message_value = config->get_value(section, "dirty_message");
+		const Variant run_mode_value = config->get_value(section, "run_mode");
+		if ((task_name_value.get_type() != Variant::STRING && task_name_value.get_type() != Variant::STRING_NAME) ||
+				(fingerprint_value.get_type() != Variant::STRING && fingerprint_value.get_type() != Variant::STRING_NAME) ||
 				success_value.get_type() != Variant::BOOL ||
-				manifest_value.get_type() != Variant::PACKED_STRING_ARRAY) {
+				manifest_value.get_type() != Variant::PACKED_STRING_ARRAY ||
+				dirty_reason_value.get_type() != Variant::INT ||
+				(dirty_message_value.get_type() != Variant::STRING && dirty_message_value.get_type() != Variant::STRING_NAME) ||
+				run_mode_value.get_type() != Variant::INT) {
 			load_error = ERR_FILE_CORRUPT;
 			records.clear();
+			audit_log.clear();
 			return load_error;
 		}
 
-		TaskRecord record;
-		record.task_name = _task_name_from_section(section);
-		record.fingerprint = fingerprint_value;
-		record.success = success_value;
-		record.output_manifest = manifest_value;
-		records[record.task_name] = record;
+		TaskRunAudit audit;
+		audit.task_name = task_name_value;
+		audit.fingerprint = fingerprint_value;
+		audit.success = success_value;
+		audit.output_manifest = manifest_value;
+		audit.dirty_reason = DirtyReason(int(dirty_reason_value));
+		audit.dirty_message = dirty_message_value;
+		audit.run_mode = RunMode(int(run_mode_value));
+		loaded_audit[_audit_index_from_section(section)] = audit;
 	}
+
+	Vector<int> audit_indices;
+	for (const KeyValue<int, TaskRunAudit> &E : loaded_audit) {
+		audit_indices.push_back(E.key);
+	}
+	audit_indices.sort();
+	for (int index : audit_indices) {
+		audit_log.push_back(loaded_audit[index]);
+	}
+	_trim_audit_log();
 
 	return OK;
 }
@@ -429,6 +504,18 @@ Error ProjectBuildState::save() const {
 		config->set_value(section, "output_manifest", record.output_manifest);
 	}
 
+	for (int i = 0; i < audit_log.size(); i++) {
+		const TaskRunAudit &audit = audit_log[i];
+		const String section = _audit_section(i);
+		config->set_value(section, "task_name", audit.task_name);
+		config->set_value(section, "fingerprint", audit.fingerprint);
+		config->set_value(section, "success", audit.success);
+		config->set_value(section, "output_manifest", audit.output_manifest);
+		config->set_value(section, "dirty_reason", audit.dirty_reason);
+		config->set_value(section, "dirty_message", audit.dirty_message);
+		config->set_value(section, "run_mode", audit.run_mode);
+	}
+
 	return config->save(state_path);
 }
 
@@ -444,8 +531,31 @@ void ProjectBuildState::record_task_result(const String &p_task_name, const Stri
 	records[p_task_name] = record;
 }
 
+void ProjectBuildState::record_task_run(const String &p_task_name, const String &p_fingerprint,
+		const PackedStringArray &p_outputs, bool p_success, const DirtyStatus &p_dirty_status,
+		RunMode p_run_mode) {
+	record_task_result(p_task_name, p_fingerprint, p_outputs, p_success);
+
+	TaskRunAudit audit;
+	audit.task_name = p_task_name;
+	audit.fingerprint = p_fingerprint;
+	audit.output_manifest = records[p_task_name].output_manifest;
+	audit.success = p_success;
+	audit.dirty_reason = p_dirty_status.reason;
+	audit.dirty_message = p_dirty_status.message;
+	audit.run_mode = p_run_mode;
+	audit_log.push_back(audit);
+	_trim_audit_log();
+}
+
 bool ProjectBuildState::has_task_record(const String &p_task_name) const {
 	return records.has(p_task_name);
+}
+
+void ProjectBuildState::_trim_audit_log() {
+	while (audit_log.size() > MAX_TASK_RUN_AUDIT_ENTRIES) {
+		audit_log.remove_at(0);
+	}
 }
 
 const ProjectBuildState::TaskRecord *ProjectBuildState::get_task_record(const String &p_task_name) const {

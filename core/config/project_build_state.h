@@ -32,10 +32,15 @@
 
 #include "core/error/error_list.h"
 #include "core/templates/hash_map.h"
+#include "core/templates/vector.h"
 #include "core/variant/variant.h"
 
 class ProjectBuildState {
 public:
+	enum {
+		MAX_TASK_RUN_AUDIT_ENTRIES = 128,
+	};
+
 	enum DirtyReason {
 		DIRTY_NONE,
 		DIRTY_MISSING_STATE,
@@ -47,11 +52,28 @@ public:
 		DIRTY_PROVIDER_FORCED,
 	};
 
+	enum RunMode {
+		RUN_MODE_AUTOMATIC_DIRTY_TASKS,
+		RUN_MODE_DIRTY_TASKS,
+		RUN_MODE_ALL_TASKS,
+		RUN_MODE_SELECTED_TASK,
+	};
+
 	struct TaskRecord {
 		String task_name;
 		String fingerprint;
 		PackedStringArray output_manifest;
 		bool success = false;
+	};
+
+	struct TaskRunAudit {
+		String task_name;
+		String fingerprint;
+		PackedStringArray output_manifest;
+		bool success = false;
+		DirtyReason dirty_reason = DIRTY_NONE;
+		String dirty_message;
+		RunMode run_mode = RUN_MODE_DIRTY_TASKS;
 	};
 
 	struct DirtyStatus {
@@ -63,13 +85,18 @@ public:
 private:
 	String state_path;
 	HashMap<String, TaskRecord> records;
+	Vector<TaskRunAudit> audit_log;
 	Error load_error = OK;
 
 	static String _default_state_path();
 	static String _task_section(const String &p_task_name);
 	static bool _is_task_section(const String &p_section);
 	static String _task_name_from_section(const String &p_section);
+	static String _audit_section(int p_index);
+	static bool _is_audit_section(const String &p_section);
+	static int _audit_index_from_section(const String &p_section);
 	static PackedStringArray _compute_output_manifest(const PackedStringArray &p_outputs, bool *r_missing_output = nullptr);
+	void _trim_audit_log();
 
 public:
 	ProjectBuildState();
@@ -84,8 +111,11 @@ public:
 
 	void record_task_result(const String &p_task_name, const String &p_fingerprint,
 			const PackedStringArray &p_outputs, bool p_success);
+	void record_task_run(const String &p_task_name, const String &p_fingerprint, const PackedStringArray &p_outputs,
+			bool p_success, const DirtyStatus &p_dirty_status, RunMode p_run_mode);
 	bool has_task_record(const String &p_task_name) const;
 	const TaskRecord *get_task_record(const String &p_task_name) const;
+	const Vector<TaskRunAudit> &get_task_run_audit_log() const { return audit_log; }
 
 	DirtyStatus get_task_dirty_status(const String &p_task_name, const String &p_current_fingerprint,
 			const PackedStringArray &p_outputs, bool p_provider_forced = false) const;

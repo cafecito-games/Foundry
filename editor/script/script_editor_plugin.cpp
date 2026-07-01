@@ -30,6 +30,7 @@
 
 #include "script_editor_plugin.h"
 
+#include "core/config/project_build_pipeline_config.h"
 #include "core/config/project_settings.h"
 #include "core/input/input.h"
 #include "core/io/config_file.h"
@@ -94,6 +95,34 @@ String get_script_refactor_action_name() {
 
 bool is_embedded_script_path(const String &p_path) {
 	return p_path.begins_with("local://") || p_path.contains("::");
+}
+
+void warn_if_saving_declared_build_output(const String &p_path) {
+	if (!p_path.begins_with("res://") || !FileAccess::exists("res://project.foundry")) {
+		return;
+	}
+
+	Ref<ConfigFile> config;
+	config.instantiate();
+	if (config->load("res://project.foundry") != OK) {
+		return;
+	}
+
+	ProjectBuildPipelineConfig build_config;
+	if (build_config.load_from_config_file(config) != OK) {
+		return;
+	}
+
+	String task_name;
+	String output_root;
+	if (!build_config.is_declared_output_path(p_path, &task_name, &output_root)) {
+		return;
+	}
+
+	EditorToaster::get_singleton()->popup_str(
+			vformat(TTR("Saving \"%s\" edits generated output declared by build task \"%s\" (%s). Manual edits may be overwritten the next time that task runs."),
+					p_path, task_name, output_root),
+			EditorToaster::SEVERITY_WARNING);
 }
 
 } // namespace
@@ -1146,6 +1175,7 @@ void ScriptEditor::_resave_scripts(const String &p_str) {
 			_save_text_file(text_file, text_file->get_path());
 			break;
 		} else {
+			warn_if_saving_declared_build_output(scr->get_path());
 			EditorNode::get_singleton()->save_resource(scr);
 		}
 		se->tag_saved_version();
@@ -2624,6 +2654,8 @@ Error ScriptEditor::_save_text_file(Ref<TextFile> p_text_file, const String &p_p
 	Ref<TextFile> sqscr = p_text_file;
 	ERR_FAIL_COND_V(sqscr.is_null(), ERR_INVALID_PARAMETER);
 
+	warn_if_saving_declared_build_output(p_path);
+
 	String source = sqscr->get_text();
 
 	Error err;
@@ -2871,6 +2903,7 @@ void ScriptEditor::save_current_script() {
 		clear_docs_from_script(scr);
 	}
 
+	warn_if_saving_declared_build_output(resource->get_path());
 	EditorNode::get_singleton()->save_resource(resource);
 
 	if (scr.is_valid()) {
@@ -2926,6 +2959,7 @@ void ScriptEditor::save_all_scripts() {
 			}
 
 			// External script, save it.
+			warn_if_saving_declared_build_output(edited_res->get_path());
 			EditorNode::get_singleton()->save_resource(edited_res);
 		} else {
 			// For built-in scripts, save their scenes instead.

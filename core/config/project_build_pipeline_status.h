@@ -78,6 +78,11 @@ struct ProjectBuildPipelineDiagnostic {
 	String provider_source_path;
 	String provider_source_section;
 	String provider_source_key;
+	String conflicting_provider_source_type;
+	String conflicting_provider_source_identifier;
+	String conflicting_provider_source_path;
+	String conflicting_provider_source_section;
+	String conflicting_provider_source_key;
 	String command;
 	int exit_code = 0;
 	String stdout_tail;
