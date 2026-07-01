@@ -54,8 +54,8 @@ void GLTFSkin::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_joint_i_to_bone_i", "joint_i_to_bone_i"), &GLTFSkin::set_joint_i_to_bone_i);
 	ClassDB::bind_method(D_METHOD("get_joint_i_to_name"), &GLTFSkin::get_joint_i_to_name);
 	ClassDB::bind_method(D_METHOD("set_joint_i_to_name", "joint_i_to_name"), &GLTFSkin::set_joint_i_to_name);
-	ClassDB::bind_method(D_METHOD("get_godot_skin"), &GLTFSkin::get_godot_skin);
-	ClassDB::bind_method(D_METHOD("set_godot_skin", "godot_skin"), &GLTFSkin::set_godot_skin);
+	ClassDB::bind_method(D_METHOD("get_foundry_skin"), &GLTFSkin::get_foundry_skin);
+	ClassDB::bind_method(D_METHOD("set_foundry_skin", "foundry_skin"), &GLTFSkin::set_foundry_skin);
 
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "skin_root"), "set_skin_root", "get_skin_root"); // GLTFNodeIndex
 	ADD_PROPERTY(PropertyInfo(Variant::PACKED_INT32_ARRAY, "joints_original"), "set_joints_original", "get_joints_original"); // Vector<GLTFNodeIndex>
@@ -66,7 +66,7 @@ void GLTFSkin::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "skeleton"), "set_skeleton", "get_skeleton"); // int
 	ADD_PROPERTY(PropertyInfo(Variant::DICTIONARY, "joint_i_to_bone_i", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_STORAGE | PROPERTY_USAGE_INTERNAL), "set_joint_i_to_bone_i", "get_joint_i_to_bone_i"); // RBMap<int,
 	ADD_PROPERTY(PropertyInfo(Variant::DICTIONARY, "joint_i_to_name", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_STORAGE | PROPERTY_USAGE_INTERNAL), "set_joint_i_to_name", "get_joint_i_to_name"); // RBMap<int,
-	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "godot_skin", PROPERTY_HINT_RESOURCE_TYPE, "Skin"), "set_godot_skin", "get_godot_skin"); // Ref<Skin>
+	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "foundry_skin", PROPERTY_HINT_RESOURCE_TYPE, "Skin"), "set_foundry_skin", "get_foundry_skin"); // Ref<Skin>
 }
 
 GLTFNodeIndex GLTFSkin::get_skin_root() {
@@ -150,12 +150,12 @@ void GLTFSkin::set_joint_i_to_name(const Dictionary &p_joint_i_to_name) {
 	}
 }
 
-Ref<Skin> GLTFSkin::get_godot_skin() {
-	return godot_skin;
+Ref<Skin> GLTFSkin::get_foundry_skin() {
+	return foundry_skin;
 }
 
-void GLTFSkin::set_godot_skin(const Ref<Skin> &p_godot_skin) {
-	godot_skin = p_godot_skin;
+void GLTFSkin::set_foundry_skin(const Ref<Skin> &p_foundry_skin) {
+	foundry_skin = p_foundry_skin;
 }
 
 Error GLTFSkin::from_dictionary(const Dictionary &dict) {
@@ -218,8 +218,8 @@ Error GLTFSkin::from_dictionary(const Dictionary &dict) {
 		StringName value = kv.value;
 		joint_i_to_name[key] = value;
 	}
-	if (dict.has("godot_skin")) {
-		godot_skin = dict["godot_skin"];
+	if (dict.has("foundry_skin")) {
+		foundry_skin = dict["foundry_skin"];
 	}
 	return OK;
 }
@@ -272,6 +272,6 @@ Dictionary GLTFSkin::to_dictionary() {
 	}
 	dict["joint_i_to_name"] = joint_i_to_name_dict;
 
-	dict["godot_skin"] = godot_skin;
+	dict["foundry_skin"] = foundry_skin;
 	return dict;
 }

@@ -746,8 +746,8 @@ void Main::print_help(const char *p_binary) {
 	print_help_option("--build-solutions", "Build the scripting solutions (e.g. for C# projects). Implies --editor and requires a valid project to edit.\n", CLI_OPTION_AVAILABILITY_EDITOR);
 	print_help_option("--dump-foundryextension-interface", "Generate a FoundryExtension header file \"foundry_extension_interface.h\" in the current folder. This file is the base file required to implement a FoundryExtension.\n", CLI_OPTION_AVAILABILITY_EDITOR);
 	print_help_option("--dump-foundryextension-interface-json", "Generate a JSON dump of the FoundryExtension interface named \"foundry_extension_interface.json\" in the current folder.\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--dump-extension-api", "Generate a JSON dump of the Godot API for FoundryExtension bindings named \"extension_api.json\" in the current folder.\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--dump-extension-api-with-docs", "Generate JSON dump of the Godot API like the previous option, but including documentation.\n", CLI_OPTION_AVAILABILITY_EDITOR);
+	print_help_option("--dump-extension-api", "Generate a JSON dump of the Foundry API for FoundryExtension bindings named \"extension_api.json\" in the current folder.\n", CLI_OPTION_AVAILABILITY_EDITOR);
+	print_help_option("--dump-extension-api-with-docs", "Generate JSON dump of the Foundry API like the previous option, but including documentation.\n", CLI_OPTION_AVAILABILITY_EDITOR);
 	print_help_option("--validate-extension-api <path>", "Validate an extension API file dumped (with one of the two previous options) from a previous version of the engine to ensure API compatibility.\n", CLI_OPTION_AVAILABILITY_EDITOR);
 	print_help_option("", "If incompatibilities or errors are detected, the exit code will be non-zero.\n");
 	print_help_option("--benchmark", "Benchmark the run time and print it to console.\n", CLI_OPTION_AVAILABILITY_EDITOR);

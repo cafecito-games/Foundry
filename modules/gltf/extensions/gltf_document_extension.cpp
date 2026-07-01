@@ -49,7 +49,7 @@ void GLTFDocumentExtension::_bind_methods() {
 	FOUNDRY_VIRTUAL_BIND(_convert_scene_node, "state", "gltf_node", "scene_node");
 	FOUNDRY_VIRTUAL_BIND(_export_post_convert, "state", "root");
 	FOUNDRY_VIRTUAL_BIND(_export_preserialize, "state");
-	FOUNDRY_VIRTUAL_BIND(_export_object_model_property, "state", "node_path", "godot_node", "gltf_node_index", "target_object", "target_depth");
+	FOUNDRY_VIRTUAL_BIND(_export_object_model_property, "state", "node_path", "foundry_node", "gltf_node_index", "target_object", "target_depth");
 	FOUNDRY_VIRTUAL_BIND(_get_saveable_image_formats);
 	FOUNDRY_VIRTUAL_BIND(_serialize_image_to_bytes, "state", "image", "image_dict", "image_format", "lossy_quality");
 	FOUNDRY_VIRTUAL_BIND(_save_image_at_path, "state", "image", "file_path", "image_format", "lossy_quality");
@@ -178,12 +178,12 @@ Error GLTFDocumentExtension::export_preserialize(Ref<GLTFState> p_state) {
 	return err;
 }
 
-Ref<GLTFObjectModelProperty> GLTFDocumentExtension::export_object_model_property(Ref<GLTFState> p_state, const NodePath &p_node_path, const Node *p_godot_node, GLTFNodeIndex p_gltf_node_index, const Object *p_target_object, int p_target_depth) {
+Ref<GLTFObjectModelProperty> GLTFDocumentExtension::export_object_model_property(Ref<GLTFState> p_state, const NodePath &p_node_path, const Node *p_foundry_node, GLTFNodeIndex p_gltf_node_index, const Object *p_target_object, int p_target_depth) {
 	Ref<GLTFObjectModelProperty> ret;
 	ERR_FAIL_COND_V(p_state.is_null(), ret);
-	ERR_FAIL_NULL_V(p_godot_node, ret);
+	ERR_FAIL_NULL_V(p_foundry_node, ret);
 	ERR_FAIL_NULL_V(p_target_object, ret);
-	FOUNDRY_VIRTUAL_CALL(_export_object_model_property, p_state, p_node_path, p_godot_node, p_gltf_node_index, p_target_object, p_target_depth, ret);
+	FOUNDRY_VIRTUAL_CALL(_export_object_model_property, p_state, p_node_path, p_foundry_node, p_gltf_node_index, p_target_object, p_target_depth, ret);
 	return ret;
 }
 

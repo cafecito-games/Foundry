@@ -951,7 +951,7 @@
 		<method name="push_error" qualifiers="vararg">
 			<return type="void" />
 			<description>
-				Pushes an error message to Godot's built-in debugger and to the OS terminal.
+				Pushes an error message to Foundry's built-in debugger and to the OS terminal.
 				[codeblocks]
 				[foundry_script]
 				push_error("test error") # Prints "test error" to debugger and terminal as an error.
@@ -966,7 +966,7 @@
 		<method name="push_fatal" qualifiers="vararg">
 			<return type="void" />
 			<description>
-				Pushes an error message to Godot's built-in debugger and to the OS terminal (like [method push_error]), then gracefully terminates the running project with a non-zero exit code. Use this for unrecoverable conditions the project should never continue past, such as a required asset failing to load.
+				Pushes an error message to Foundry's built-in debugger and to the OS terminal (like [method push_error]), then gracefully terminates the running project with a non-zero exit code. Use this for unrecoverable conditions the project should never continue past, such as a required asset failing to load.
 				[codeblocks]
 				[foundry_script]
 				push_fatal("Failed to load required asset.") # Logs the error, then quits the project.
@@ -986,7 +986,7 @@
 		<method name="push_warning" qualifiers="vararg">
 			<return type="void" />
 			<description>
-				Pushes a warning message to Godot's built-in debugger and to the OS terminal.
+				Pushes a warning message to Foundry's built-in debugger and to the OS terminal.
 				[codeblocks]
 				[foundry_script]
 				push_warning("test warning") # Prints "test warning" to debugger and terminal as a warning.

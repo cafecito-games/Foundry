@@ -613,7 +613,7 @@ Error GLTFDocumentExtensionPhysics::export_preserialize(Ref<GLTFState> p_state) 
 	return OK;
 }
 
-Ref<GLTFObjectModelProperty> GLTFDocumentExtensionPhysics::export_object_model_property(Ref<GLTFState> p_state, const NodePath &p_node_path, const Node *p_godot_node, GLTFNodeIndex p_gltf_node_index, const Object *p_target_object, int p_target_depth) {
+Ref<GLTFObjectModelProperty> GLTFDocumentExtensionPhysics::export_object_model_property(Ref<GLTFState> p_state, const NodePath &p_node_path, const Node *p_foundry_node, GLTFNodeIndex p_gltf_node_index, const Object *p_target_object, int p_target_depth) {
 	Ref<GLTFObjectModelProperty> ret;
 	const Vector<StringName> &path_subnames = p_node_path.get_subnames();
 	if (path_subnames.is_empty()) {
@@ -652,7 +652,7 @@ Ref<GLTFObjectModelProperty> GLTFDocumentExtensionPhysics::export_object_model_p
 			return ret;
 		}
 		ret->set_json_pointers({ split_json_pointer });
-	} else if (Object::cast_to<CollisionShape3D>(p_godot_node)) {
+	} else if (Object::cast_to<CollisionShape3D>(p_foundry_node)) {
 		if (path_subnames.size() != 2) {
 			return ret;
 		}
