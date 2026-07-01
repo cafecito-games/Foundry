@@ -60,7 +60,7 @@ import games.cafecito.foundry.Godot;
  * <p>
  * A Godot Android plugin is an Android library with the following requirements:
  * <p>
- * - The plugin must have a dependency on the Godot Android library: `implementation "games.cafecito:foundry:<godotLibVersion>"`
+ * - The plugin must have a dependency on the Godot Android library: `implementation "games.cafecito.foundry:foundry:<godotLibVersion>"`
  * <p>
  * - The plugin must include a <meta-data> tag in its Android manifest with the following format:
  * <meta-data android:name="org.godotengine.plugin.v2.[PluginName]" android:value="[plugin.init.ClassFullName]" />
