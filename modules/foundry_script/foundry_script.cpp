@@ -748,6 +748,40 @@ void FoundryScript::_update_exports_values(HashMap<StringName, Variant> &values,
 	}
 }
 
+void FoundryScript::_ensure_documentation() {
+	if (docs_generated) {
+		return;
+	}
+	// Docs bubble up to and are stored on the top-level script (see _add_doc).
+	if (_owner != nullptr) {
+		return;
+	}
+	// Mark generated up-front so re-entrant _add_doc calls (and recursion) don't loop.
+	docs_generated = true;
+
+	if (source.is_empty() && binary_tokens.is_empty()) {
+		return;
+	}
+
+	// Doc generation needs an analyzed parse tree, plus the inner-class FoundryScript
+	// objects created by make_scripts() during the last compile (which persist on `this`).
+	FSParser parser;
+	Error err;
+	if (!binary_tokens.is_empty()) {
+		err = parser.parse_binary(binary_tokens, path);
+	} else {
+		err = parser.parse(source, path, false);
+	}
+	if (err != OK) {
+		return;
+	}
+	FSAnalyzer analyzer(&parser);
+	if (analyzer.analyze() != OK) {
+		return;
+	}
+	FSDocGen::generate_docs(this, parser.get_tree());
+}
+
 void FoundryScript::_add_doc(const DocData::ClassDoc &p_doc) {
 	doc_class_name = p_doc.name;
 	if (_owner) { // Only the top-level class stores doc info.
@@ -767,6 +801,8 @@ void FoundryScript::_clear_doc() {
 	doc_class_name = StringName();
 	doc = DocData::ClassDoc();
 	docs.clear();
+	// Allow docs to be regenerated on the next request if the script is still valid.
+	docs_generated = false;
 }
 
 String FoundryScript::get_class_icon_path() const {
@@ -774,7 +810,7 @@ String FoundryScript::get_class_icon_path() const {
 }
 #endif
 
-bool FoundryScript::_update_exports(bool *r_err, bool p_recursive_call, PlaceHolderScriptInstance *p_instance_to_update, bool p_base_exports_changed) {
+bool FoundryScript::_update_exports(bool *r_err, bool p_recursive_call, PlaceHolderScriptInstance *p_instance_to_update, bool p_base_exports_changed, FSParser *p_reload_parser, FSAnalyzer *p_reload_analyzer) {
 #ifdef TOOLS_ENABLED
 
 	static Vector<FoundryScript *> base_caches;
@@ -789,32 +825,34 @@ bool FoundryScript::_update_exports(bool *r_err, bool p_recursive_call, PlaceHol
 		source_changed_cache = false;
 		changed = true;
 
-		String basedir = path;
-
-		if (basedir.is_empty()) {
-			basedir = get_path();
+		// Reuse an already parsed and analyzed tree when the caller (reload()) provides one for
+		// the current source, avoiding a redundant parse + analyze of the same script.
+		FSParser local_parser;
+		FSAnalyzer local_analyzer(&local_parser);
+		FSParser *parser_ptr = p_reload_parser;
+		FSAnalyzer *analyzer_ptr = p_reload_analyzer;
+		bool analyzed_ok = true;
+		if (parser_ptr == nullptr || analyzer_ptr == nullptr) {
+			parser_ptr = &local_parser;
+			analyzer_ptr = &local_analyzer;
+			Error err = local_parser.parse(source, path, false);
+			analyzed_ok = (err == OK && local_analyzer.analyze() == OK);
 		}
 
-		if (!basedir.is_empty()) {
-			basedir = basedir.get_base_dir();
-		}
-
-		FSParser parser;
-		FSAnalyzer analyzer(&parser);
-		Error err = parser.parse(source, path, false);
-
-		if (err == OK && analyzer.analyze() == OK) {
-			const FSParser::ClassNode *c = parser.get_tree();
+		if (analyzed_ok) {
+			const FSParser::ClassNode *c = parser_ptr->get_tree();
+			FSAnalyzer &analyzer = *analyzer_ptr;
 
 			if (base_cache.is_valid()) {
 				base_cache->inheriters_cache.erase(get_instance_id());
 				base_cache = Ref<FoundryScript>();
 			}
 
-			FSParser::DataType base_type = parser.get_tree()->base_type;
+			FSParser::DataType base_type = c->base_type;
 			if (base_type.kind == FSParser::DataType::CLASS) {
-				Ref<FoundryScript> bf = FSCache::get_full_script(base_type.script_path, err, path);
-				if (err == OK) {
+				Error base_err = OK;
+				Ref<FoundryScript> bf = FSCache::get_full_script(base_type.script_path, base_err, path);
+				if (base_err == OK) {
 					bf = Ref<FoundryScript>(bf->find_class(base_type.class_type->fqcn));
 					if (bf.is_valid()) {
 						base_cache = bf;
@@ -914,9 +952,11 @@ void FoundryScript::update_exports() {
 }
 
 #ifdef TOOLS_ENABLED
-void FoundryScript::_update_exports_down(bool p_base_exports_changed) {
+void FoundryScript::_update_exports_down(bool p_base_exports_changed, FSParser *p_reload_parser, FSAnalyzer *p_reload_analyzer) {
 	bool cyclic_error = false;
-	bool changed = _update_exports(&cyclic_error, false, nullptr, p_base_exports_changed);
+	// The provided parser/analyzer only describe this script, so they are used for this call and
+	// never forwarded to inheriters (which have their own source and are re-parsed as before).
+	bool changed = _update_exports(&cyclic_error, false, nullptr, p_base_exports_changed, p_reload_parser, p_reload_analyzer);
 
 	if (cyclic_error) {
 		return;
@@ -1148,9 +1188,14 @@ Error FoundryScript::reload(bool p_keep_state) {
 	}
 
 #ifdef TOOLS_ENABLED
-	// Done after compilation because it needs the FoundryScript object's inner class FoundryScript objects,
-	// which are made by calling make_scripts() within compiler.compile() above.
-	FSDocGen::generate_docs(this, parser.get_tree());
+	// Documentation is only consumed by editor-side surfaces (help viewer, script editor,
+	// inspector tooltips, --doctool). It is never needed to load or instantiate a scene, so
+	// it is generated lazily on the first get_documentation() request instead of on every
+	// reload. This keeps scene/resource opening fast (doc generation was ~22% of cold script
+	// load time). It still needs the inner class FoundryScript objects made by make_scripts()
+	// within compiler.compile() above, which persist on the script.
+	docs.clear();
+	docs_generated = false;
 #endif
 
 #ifdef DEBUG_ENABLED
@@ -1176,8 +1221,10 @@ Error FoundryScript::reload(bool p_keep_state) {
 	}
 
 	if (p_keep_state) {
-		// Update the properties in the inspector.
-		update_exports();
+		// Update the properties in the inspector. Reuse the parser/analyzer that just parsed and
+		// analyzed this exact source above, so the export cache is populated without a redundant
+		// third parse + second analyze of the same script.
+		_update_exports_down(false, &parser, &analyzer);
 	}
 #endif
 

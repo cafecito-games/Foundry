@@ -41,6 +41,8 @@
 #include "core/templates/rb_set.h"
 
 class FoundryScript;
+class FSParser;
+class FSAnalyzer;
 
 class FSNativeClass : public RefCounted {
 	FOUNDRY_CLASS(FSNativeClass, RefCounted);
@@ -340,8 +342,11 @@ private:
 	StringName doc_class_name;
 	DocData::ClassDoc doc;
 	Vector<DocData::ClassDoc> docs;
+	bool docs_generated = false;
 	void _add_doc(const DocData::ClassDoc &p_doc);
 	void _clear_doc();
+	// Generates documentation lazily (only when first requested by an editor surface).
+	void _ensure_documentation();
 #endif
 
 	FSFunction *initializer = nullptr; // Direct pointer to `new()`/`_init()` member function, faster to locate.
@@ -379,14 +384,17 @@ private:
 	HashSet<PlaceHolderScriptInstance *> placeholders;
 	//void _update_placeholder(PlaceHolderScriptInstance *p_placeholder);
 	virtual void _placeholder_erased(PlaceHolderScriptInstance *p_placeholder) override;
-	void _update_exports_down(bool p_base_exports_changed);
+	// p_reload_parser/p_reload_analyzer: when a caller (reload()) has already parsed and analyzed
+	// the current source, they are reused to populate the export cache for this script instead of
+	// re-parsing and re-analyzing it. They only apply to this script, not to inheriters.
+	void _update_exports_down(bool p_base_exports_changed, FSParser *p_reload_parser = nullptr, FSAnalyzer *p_reload_analyzer = nullptr);
 #endif
 
 #ifdef DEBUG_ENABLED
 	HashMap<ObjectID, List<Pair<StringName, Variant>>> pending_reload_state;
 #endif
 
-	bool _update_exports(bool *r_err = nullptr, bool p_recursive_call = false, PlaceHolderScriptInstance *p_instance_to_update = nullptr, bool p_base_exports_changed = false);
+	bool _update_exports(bool *r_err = nullptr, bool p_recursive_call = false, PlaceHolderScriptInstance *p_instance_to_update = nullptr, bool p_base_exports_changed = false, FSParser *p_reload_parser = nullptr, FSAnalyzer *p_reload_analyzer = nullptr);
 
 	void _save_orphaned_subclasses();
 
@@ -501,7 +509,10 @@ public:
 
 #ifdef TOOLS_ENABLED
 	virtual StringName get_doc_class_name() const override { return doc_class_name; }
-	virtual Vector<DocData::ClassDoc> get_documentation() const override { return docs; }
+	virtual Vector<DocData::ClassDoc> get_documentation() const override {
+		const_cast<FoundryScript *>(this)->_ensure_documentation();
+		return docs;
+	}
 	virtual String get_class_icon_path() const override;
 #endif // TOOLS_ENABLED
 
