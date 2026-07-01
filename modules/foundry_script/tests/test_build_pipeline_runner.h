@@ -90,6 +90,21 @@ struct ScopedPipelineProject {
 		CHECK_EQ(err, OK);
 	}
 
+	void write_file(const String &p_path, const String &p_text) const {
+		const String absolute_path = globalize(p_path);
+		const Error mkdir_err = DirAccess::make_dir_recursive_absolute(absolute_path.get_base_dir());
+		CHECK_EQ(mkdir_err, OK);
+		if (mkdir_err != OK) {
+			return;
+		}
+
+		Ref<FileAccess> file = FileAccess::open(absolute_path, FileAccess::WRITE);
+		CHECK_MESSAGE(file.is_valid(), vformat("Cannot write '%s'.", absolute_path));
+		if (file.is_valid()) {
+			file->store_string(p_text);
+		}
+	}
+
 	static void remove_recursive(const String &p_absolute_path) {
 		Ref<DirAccess> dir = DirAccess::open(p_absolute_path);
 		if (dir.is_null()) {
@@ -129,6 +144,16 @@ static PackedStringArray pipeline_args(const String &p_a, const String &p_b = St
 		args.push_back(p_d);
 	}
 	return args;
+}
+
+static String read_build_pipeline_fixture(const String &p_relative_path) {
+	const String path = String("modules/foundry_script/tests/fixtures/build_pipeline/").path_join(p_relative_path);
+	Ref<FileAccess> file = FileAccess::open(path, FileAccess::READ);
+	REQUIRE_MESSAGE(file.is_valid(), vformat("Cannot read build pipeline fixture '%s'.", path));
+	if (file.is_null()) {
+		return String();
+	}
+	return file->get_as_utf8_string();
 }
 
 static Ref<ConfigFile> make_pipeline_config(ProjectBuildPipelineConfig::Stage p_stage, const String &p_task_name,
@@ -385,6 +410,102 @@ TEST_CASE("[Modules][FoundryScript][BuildPipelineRunner] Post-compile failure bl
 	CHECK_EQ(result.snapshot.diagnostics[0].task_name, "post_verify");
 	CHECK_EQ(result.snapshot.diagnostics[0].exit_code, 7);
 	CHECK(result.snapshot.diagnostics[0].stderr_tail.contains("post failed"));
+}
+
+TEST_CASE("[Modules][FoundryScript][BuildPipelineRunner] End-to-end command fixture generates deterministic source") {
+	ScopedPipelineProject project("build_pipeline_runner_foundryproto_fixture");
+
+	project.write_file("res://proto/player.proto", read_build_pipeline_fixture("foundryproto/player.proto"));
+	project.write_file("res://tools/foundryproto_fixture.py",
+			read_build_pipeline_fixture("foundryproto/foundryproto_fixture.py"));
+
+	PackedStringArray generate_args;
+	generate_args.push_back("res://tools/foundryproto_fixture.py");
+	generate_args.push_back("--input");
+	generate_args.push_back("res://proto/player.proto");
+	generate_args.push_back("--output");
+	generate_args.push_back("res://generated/protobuf/player_proto.fs");
+	generate_args.push_back("--manifest");
+	generate_args.push_back("res://generated/protobuf/manifest.txt");
+	generate_args.push_back("--package");
+	generate_args.push_back("game.net");
+
+	const String post_compile_script =
+			"import pathlib, sys\n"
+			"generated = pathlib.Path(sys.argv[1]).read_text(encoding='utf-8')\n"
+			"manifest = pathlib.Path(sys.argv[2]).read_text(encoding='utf-8')\n"
+			"assert 'class_name PlayerProto extends RefCounted' in generated\n"
+			"assert 'messages=Player' in manifest\n"
+			"pathlib.Path(sys.argv[3]).parent.mkdir(parents=True, exist_ok=True)\n"
+			"pathlib.Path(sys.argv[3]).write_text('report=ok\\nclass=PlayerProto\\nmanifest=Player\\n', encoding='utf-8')\n";
+
+	Ref<ConfigFile> config;
+	config.instantiate();
+	config->set_value("build", "enabled", true);
+	config->set_value("build", "pre_compile", pipeline_args("generate_player_proto"));
+	config->set_value("build", "post_compile", pipeline_args("verify_generated_manifest"));
+
+	config->set_value("build/tasks/generate_player_proto", "provider", "command");
+	config->set_value("build/tasks/generate_player_proto", "command", "python3");
+	config->set_value("build/tasks/generate_player_proto", "args", generate_args);
+	config->set_value("build/tasks/generate_player_proto", "inputs",
+			pipeline_args("res://proto/player.proto", "res://tools/foundryproto_fixture.py"));
+	config->set_value("build/tasks/generate_player_proto", "outputs",
+			pipeline_args("res://generated/protobuf/player_proto.fs", "res://generated/protobuf/manifest.txt"));
+	config->set_value("build/tasks/generate_player_proto", "working_directory", "res://");
+	config->set_value("build/tasks/generate_player_proto", "tool_version_command",
+			pipeline_args("python3", "res://tools/foundryproto_fixture.py", "--version"));
+	config->set_value("build/tasks/generate_player_proto", "timeout_seconds", 5);
+
+	config->set_value("build/tasks/verify_generated_manifest", "provider", "command");
+	config->set_value("build/tasks/verify_generated_manifest", "command", "python3");
+	config->set_value("build/tasks/verify_generated_manifest", "args",
+			pipeline_args("-c", post_compile_script, "res://generated/protobuf/player_proto.fs",
+					"res://generated/protobuf/manifest.txt"));
+	PackedStringArray post_args = config->get_value("build/tasks/verify_generated_manifest", "args");
+	post_args.push_back("res://build/protobuf_report.txt");
+	config->set_value("build/tasks/verify_generated_manifest", "args", post_args);
+	config->set_value("build/tasks/verify_generated_manifest", "inputs",
+			pipeline_args("res://generated/protobuf/player_proto.fs", "res://generated/protobuf/manifest.txt"));
+	config->set_value("build/tasks/verify_generated_manifest", "outputs",
+			pipeline_args("res://build/protobuf_report.txt"));
+	config->set_value("build/tasks/verify_generated_manifest", "working_directory", "res://");
+	config->set_value("build/tasks/verify_generated_manifest", "timeout_seconds", 5);
+	project.save_config(config);
+
+	const ProjectBuildPipelineStatusSnapshot untrusted_status =
+			FoundryBuildPipelineRunner::get_stage_status(ProjectBuildPipelineConfig::STAGE_PRE_COMPILE);
+	REQUIRE_EQ(untrusted_status.state, ProjectBuildPipelineStatus::STATE_UNTRUSTED);
+	CHECK(FoundryBuildPipelineRunner::status_blocks_flow(untrusted_status));
+	CHECK_FALSE(FileAccess::exists(project.globalize("res://generated/protobuf/player_proto.fs")));
+
+	ProjectBuildTrustStore::set_cli_trusted_execution(true);
+
+	const FoundryBuildPipelineRunner::StageRunResult pre_result =
+			FoundryBuildPipelineRunner::run_stage(ProjectBuildPipelineConfig::STAGE_PRE_COMPILE);
+	REQUIRE_MESSAGE(pre_result.is_success(), "pre_compile command fixture should generate deterministic source.");
+	CHECK(pre_result.ran_any_task);
+	CHECK_EQ(FileAccess::get_file_as_string(project.globalize("res://generated/protobuf/player_proto.fs")),
+			read_build_pipeline_fixture("foundryproto/expected/player_proto.fs"));
+	CHECK_EQ(FileAccess::get_file_as_string(project.globalize("res://generated/protobuf/manifest.txt")),
+			read_build_pipeline_fixture("foundryproto/expected/manifest.txt"));
+
+	const ProjectBuildPipelineStatusSnapshot clean_pre_status =
+			FoundryBuildPipelineRunner::get_stage_status(ProjectBuildPipelineConfig::STAGE_PRE_COMPILE);
+	CHECK_EQ(clean_pre_status.state, ProjectBuildPipelineStatus::STATE_CLEAN);
+	CHECK_FALSE(FoundryBuildPipelineRunner::status_blocks_flow(clean_pre_status));
+
+	const FoundryBuildPipelineRunner::StageRunResult post_result =
+			FoundryBuildPipelineRunner::run_stage(ProjectBuildPipelineConfig::STAGE_POST_COMPILE);
+	REQUIRE_MESSAGE(post_result.is_success(), "post_compile command fixture should consume generated source.");
+	CHECK(post_result.ran_any_task);
+	CHECK_EQ(FileAccess::get_file_as_string(project.globalize("res://build/protobuf_report.txt")),
+			read_build_pipeline_fixture("foundryproto/expected/protobuf_report.txt"));
+
+	const FoundryBuildPipelineRunner::StageRunResult clean_pre_result =
+			FoundryBuildPipelineRunner::run_stage(ProjectBuildPipelineConfig::STAGE_PRE_COMPILE);
+	CHECK(clean_pre_result.is_success());
+	CHECK_FALSE(clean_pre_result.ran_any_task);
 }
 
 } // namespace FSTests
