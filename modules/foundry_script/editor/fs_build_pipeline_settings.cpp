@@ -552,7 +552,22 @@ ProjectBuildPipelineConfig::TaskDefinition FSBuildPipelineSettingsDialog::_read_
 		task.args = _lines_to_string_array(args_edit->get_text());
 		task.tool_version_command = _lines_to_string_array(tool_version_edit->get_text());
 	} else {
-		task.options = _lines_to_string_dictionary(generic_options_edit->get_text());
+		// The generic editor is text-only, so it would coerce every value to a String. Preserve the
+		// original typed Variant for any key whose textual form is unchanged; only keys the user
+		// actually retyped (or added) become strings.
+		const Dictionary previous = existing != nullptr ? existing->options : Dictionary();
+		const Dictionary edited = _lines_to_string_dictionary(generic_options_edit->get_text());
+		Dictionary options;
+		const Array edited_keys = edited.keys();
+		for (int i = 0; i < edited_keys.size(); i++) {
+			const Variant key = edited_keys[i];
+			if (previous.has(key) && String(previous[key]) == String(edited[key])) {
+				options[key] = previous[key];
+			} else {
+				options[key] = edited[key];
+			}
+		}
+		task.options = options;
 	}
 	return task;
 }
@@ -701,6 +716,27 @@ static String _provider_run_block_reason(const FoundryBuildTaskRegistry &p_regis
 	return String();
 }
 
+// The full reason a task must not be run: a blocking registry diagnostic, or a pipeline validation
+// error touching the task or its provider descriptor. Mirrors the pipeline's refusal to run invalid
+// or blocked configuration.
+static String _task_run_block_reason(const ProjectBuildPipelineConfig &p_config,
+		const FoundryBuildTaskRegistry &p_registry, const ProjectBuildPipelineConfig::TaskDefinition &p_task) {
+	const String provider_reason = _provider_run_block_reason(p_registry, p_task.provider);
+	if (!provider_reason.is_empty()) {
+		return provider_reason;
+	}
+
+	const String task_section = "build/tasks/" + p_task.name;
+	const String provider_section = "build/providers/" + p_task.provider;
+	const Vector<ProjectBuildPipelineConfig::ValidationError> errors = p_config.validate(&p_registry);
+	for (const ProjectBuildPipelineConfig::ValidationError &error : errors) {
+		if (error.section == task_section || error.section == provider_section) {
+			return vformat("%s/%s: %s", error.section, error.key, error.message);
+		}
+	}
+	return String();
+}
+
 void FSBuildPipelineSettingsDialog::_run_selected_task() {
 	if (!project_trusted || selected_task.is_empty()) {
 		return;
@@ -713,19 +749,22 @@ void FSBuildPipelineSettingsDialog::_run_selected_task() {
 	FoundryBuildTaskRegistry registry;
 	_build_available_registry(registry);
 
-	const String block_reason = _provider_run_block_reason(registry, task->provider);
+	const String block_reason = _task_run_block_reason(working_config, registry, *task);
 	if (!block_reason.is_empty()) {
 		run_output->set_text(vformat(TTR("Cannot run task '%s': %s"), task->name, block_reason));
 		return;
 	}
 
 	const Ref<FoundryBuildResult> result = _run_task_definition(*task, registry);
-	run_output->set_text(_format_run_output(selected_task, result));
+	String output = _format_run_output(selected_task, result);
 
 	ProjectBuildState state;
 	state.load();
 	state.record_task_result(task->name, result->get_fingerprint(), task->outputs, result->is_success());
-	state.save();
+	if (state.save() != OK) {
+		output += TTR("Warning: could not persist build state; cached status may be stale.") + String("\n");
+	}
+	run_output->set_text(output);
 
 	if (result->is_success() && EditorFileSystem::get_singleton() != nullptr) {
 		EditorFileSystem::get_singleton()->scan_changes();
@@ -750,10 +789,10 @@ void FSBuildPipelineSettingsDialog::_run_selected_stage() {
 		if (task == nullptr) {
 			continue;
 		}
-		const String block_reason = _provider_run_block_reason(registry, task->provider);
+		const String block_reason = _task_run_block_reason(working_config, registry, *task);
 		if (!block_reason.is_empty()) {
 			output += vformat(TTR("%s: cannot run – %s\n"), task->name, block_reason);
-			output += TTR("Stage stopped: provider is blocked.") + String("\n");
+			output += TTR("Stage stopped: task is blocked.") + String("\n");
 			break;
 		}
 		const Ref<FoundryBuildResult> result = _run_task_definition(*task, registry);
@@ -769,7 +808,9 @@ void FSBuildPipelineSettingsDialog::_run_selected_stage() {
 	if (stage_tasks.is_empty()) {
 		output = TTR("No enabled tasks in this stage.");
 	}
-	state.save();
+	if (state.save() != OK) {
+		output += TTR("Warning: could not persist build state; cached status may be stale.") + String("\n");
+	}
 	run_output->set_text(output);
 
 	if (changed_outputs && EditorFileSystem::get_singleton() != nullptr) {
@@ -781,7 +822,10 @@ void FSBuildPipelineSettingsDialog::_clear_cached_state() {
 	ProjectBuildState state;
 	state.load();
 	state.clear();
-	state.save();
+	if (state.save() != OK) {
+		run_output->set_text(TTR("Failed to clear cached build state; the state file could not be written."));
+		return;
+	}
 	run_output->set_text(TTR("Cleared cached build state."));
 }
 
