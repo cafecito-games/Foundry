@@ -748,6 +748,40 @@ void FoundryScript::_update_exports_values(HashMap<StringName, Variant> &values,
 	}
 }
 
+void FoundryScript::_ensure_documentation() {
+	if (docs_generated) {
+		return;
+	}
+	// Docs bubble up to and are stored on the top-level script (see _add_doc).
+	if (_owner != nullptr) {
+		return;
+	}
+	// Mark generated up-front so re-entrant _add_doc calls (and recursion) don't loop.
+	docs_generated = true;
+
+	if (source.is_empty() && binary_tokens.is_empty()) {
+		return;
+	}
+
+	// Doc generation needs an analyzed parse tree, plus the inner-class FoundryScript
+	// objects created by make_scripts() during the last compile (which persist on `this`).
+	FSParser parser;
+	Error err;
+	if (!binary_tokens.is_empty()) {
+		err = parser.parse_binary(binary_tokens, path);
+	} else {
+		err = parser.parse(source, path, false);
+	}
+	if (err != OK) {
+		return;
+	}
+	FSAnalyzer analyzer(&parser);
+	if (analyzer.analyze() != OK) {
+		return;
+	}
+	FSDocGen::generate_docs(this, parser.get_tree());
+}
+
 void FoundryScript::_add_doc(const DocData::ClassDoc &p_doc) {
 	doc_class_name = p_doc.name;
 	if (_owner) { // Only the top-level class stores doc info.
@@ -767,6 +801,8 @@ void FoundryScript::_clear_doc() {
 	doc_class_name = StringName();
 	doc = DocData::ClassDoc();
 	docs.clear();
+	// Allow docs to be regenerated on the next request if the script is still valid.
+	docs_generated = false;
 }
 
 String FoundryScript::get_class_icon_path() const {
@@ -1148,9 +1184,14 @@ Error FoundryScript::reload(bool p_keep_state) {
 	}
 
 #ifdef TOOLS_ENABLED
-	// Done after compilation because it needs the FoundryScript object's inner class FoundryScript objects,
-	// which are made by calling make_scripts() within compiler.compile() above.
-	FSDocGen::generate_docs(this, parser.get_tree());
+	// Documentation is only consumed by editor-side surfaces (help viewer, script editor,
+	// inspector tooltips, --doctool). It is never needed to load or instantiate a scene, so
+	// it is generated lazily on the first get_documentation() request instead of on every
+	// reload. This keeps scene/resource opening fast (doc generation was ~22% of cold script
+	// load time). It still needs the inner class FoundryScript objects made by make_scripts()
+	// within compiler.compile() above, which persist on the script.
+	docs.clear();
+	docs_generated = false;
 #endif
 
 #ifdef DEBUG_ENABLED

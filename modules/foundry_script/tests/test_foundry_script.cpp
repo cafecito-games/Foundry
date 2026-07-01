@@ -2999,6 +2999,62 @@ var map: Dictionary[String, DocTarget]
 	CHECK_EQ(docs[0].properties[2].type, "Dictionary[String, characters.DocTarget]");
 }
 
+TEST_CASE("[Modules][FoundryScript] Docs are generated lazily on request after reload()") {
+	// Regression test for lazy documentation generation. reload() no longer generates docs
+	// eagerly (doc generation was ~22% of cold script load time and is only needed by editor
+	// surfaces, never to load/instantiate a scene). get_documentation() must still return the
+	// correct docs by generating them lazily on first request.
+	if (!FSLanguage::get_singleton()->has_any_global_constant(SNAME("RefCounted"))) {
+		FSLanguage::get_singleton()->init();
+	}
+
+	const String source =
+			"## The current health.\n"
+			"var health: int = 10\n"
+			"\n"
+			"## Returns the doubled health.\n"
+			"func doubled() -> int:\n"
+			"\treturn health * 2\n";
+
+	Ref<FoundryScript> script;
+	script.instantiate();
+	script->set_path("user://lazy_doc_target.fs");
+	script->set_source_code(source);
+
+	const Error err = script->reload();
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	// Documentation is not populated by reload() itself; it is produced on demand here.
+	const Vector<DocData::ClassDoc> docs = script->get_documentation();
+	CHECK(docs.size() >= 1);
+	if (docs.size() < 1) {
+		return;
+	}
+
+	const DocData::ClassDoc &cd = docs[0];
+
+	bool found_property = false;
+	for (const DocData::PropertyDoc &p : cd.properties) {
+		if (p.name == "health") {
+			found_property = true;
+			CHECK(p.description.strip_edges() == "The current health.");
+		}
+	}
+	CHECK(found_property);
+
+	bool found_method = false;
+	for (const DocData::MethodDoc &m : cd.methods) {
+		if (m.name == "doubled") {
+			found_method = true;
+			CHECK(m.description.strip_edges() == "Returns the doubled health.");
+		}
+	}
+	CHECK(found_method);
+}
+
 TEST_CASE("[Modules][FoundryScript] Docgen emits enum_name files as enum class docs") {
 	FSParser parser;
 	Error err = parser.parse(R"(

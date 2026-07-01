@@ -340,8 +340,11 @@ private:
 	StringName doc_class_name;
 	DocData::ClassDoc doc;
 	Vector<DocData::ClassDoc> docs;
+	bool docs_generated = false;
 	void _add_doc(const DocData::ClassDoc &p_doc);
 	void _clear_doc();
+	// Generates documentation lazily (only when first requested by an editor surface).
+	void _ensure_documentation();
 #endif
 
 	FSFunction *initializer = nullptr; // Direct pointer to `new()`/`_init()` member function, faster to locate.
@@ -501,7 +504,10 @@ public:
 
 #ifdef TOOLS_ENABLED
 	virtual StringName get_doc_class_name() const override { return doc_class_name; }
-	virtual Vector<DocData::ClassDoc> get_documentation() const override { return docs; }
+	virtual Vector<DocData::ClassDoc> get_documentation() const override {
+		const_cast<FoundryScript *>(this)->_ensure_documentation();
+		return docs;
+	}
 	virtual String get_class_icon_path() const override;
 #endif // TOOLS_ENABLED
 
