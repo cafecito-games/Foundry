@@ -45,12 +45,16 @@ static const uint64_t FOUNDRY_NIR_SC_SENTINEL_MAGIC = 0x45678900; // This must b
 static const uint64_t FOUNDRY_NIR_SC_SENTINEL_MAGIC_MASK = 0xffffffffffffff00;
 static const uint64_t FOUNDRY_NIR_SC_SENTINEL_ID_MASK = 0x00000000000000ff;
 
-typedef struct FoundryNirCallbacks {
+// NOTE: This struct is a shared ABI contract with the patched Mesa/DXIL compiler
+// (nir_to_dxil_options.godot_nir_callbacks), whose headers are supplied externally at
+// build time and still reference the `GodotNirCallbacks` tag. The tag name must not be
+// renamed or the type identity breaks and the Windows d3d12 build fails to compile.
+typedef struct GodotNirCallbacks {
 	void *data;
 	void (*report_resource)(uint32_t p_register, uint32_t p_space, uint32_t p_dxil_type, void *p_data);
 	void (*report_sc_bit_offset_fn)(uint32_t p_sc_id, uint64_t p_bit_offset, void *p_data);
 	void (*report_bitcode_bit_offset_fn)(uint64_t p_bit_offset, void *p_data);
-} FoundryNirCallbacks;
+} GodotNirCallbacks;
 
 extern void *godot_nir_malloc(size_t p_size);
 extern void *godot_nir_realloc(void *p_block, size_t p_size);

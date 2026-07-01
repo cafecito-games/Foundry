@@ -488,7 +488,7 @@ bool RenderingShaderContainerD3D12::_convert_nir_to_dxil(const HashMap<int, nir_
 		godot_nir_callback_user_data.container = this;
 		godot_nir_callback_user_data.stage = stage;
 
-		FoundryNirCallbacks godot_nir_callbacks = {};
+		GodotNirCallbacks godot_nir_callbacks = {};
 		godot_nir_callbacks.data = &godot_nir_callback_user_data;
 		godot_nir_callbacks.report_resource = _nir_report_resource;
 		godot_nir_callbacks.report_sc_bit_offset_fn = _nir_report_sc_bit_offset;
