@@ -37,7 +37,7 @@
 #include <android/log.h>
 #include <jni.h>
 
-// Class that makes functions in java/src/org/godotengine/godot/FoundryRenderView.java callable from C++
+// Class that makes functions in java/src/games/cafecito/foundry/FoundryRenderView.java callable from C++
 class FoundryJavaViewWrapper {
 private:
 	jclass _cls;

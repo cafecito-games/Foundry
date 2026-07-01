@@ -43,7 +43,7 @@ FoundryJavaWrapper::FoundryJavaWrapper(JNIEnv *p_env, jobject p_foundry_instance
 	foundry_instance = p_env->NewGlobalRef(p_foundry_instance);
 
 	// get info about our Godot class so we can get pointers and stuff...
-	godot_class = jni_find_class(p_env, "org/godotengine/godot/Godot");
+	godot_class = jni_find_class(p_env, "games/cafecito/foundry/Godot");
 	if (godot_class) {
 		godot_class = (jclass)p_env->NewGlobalRef(godot_class);
 	} else {
@@ -77,7 +77,7 @@ FoundryJavaWrapper::FoundryJavaWrapper(JNIEnv *p_env, jobject p_foundry_instance
 	_on_godot_main_loop_started = p_env->GetMethodID(godot_class, "onGodotMainLoopStarted", "()V");
 	_on_godot_terminating = p_env->GetMethodID(godot_class, "onGodotTerminating", "()V");
 	_create_new_foundry_instance = p_env->GetMethodID(godot_class, "createNewGodotInstance", "([Ljava/lang/String;)I");
-	_get_render_view = p_env->GetMethodID(godot_class, "getRenderView", "()Lorg/godotengine/godot/FoundryRenderView;");
+	_get_render_view = p_env->GetMethodID(godot_class, "getRenderView", "()Lgames/cafecito/foundry/FoundryRenderView;");
 	_begin_benchmark_measure = p_env->GetMethodID(godot_class, "nativeBeginBenchmarkMeasure", "(Ljava/lang/String;Ljava/lang/String;)V");
 	_end_benchmark_measure = p_env->GetMethodID(godot_class, "nativeEndBenchmarkMeasure", "(Ljava/lang/String;Ljava/lang/String;)V");
 	_dump_benchmark = p_env->GetMethodID(godot_class, "nativeDumpBenchmark", "(Ljava/lang/String;)V");
@@ -90,11 +90,11 @@ FoundryJavaWrapper::FoundryJavaWrapper(JNIEnv *p_env, jobject p_foundry_instance
 	_set_window_color = p_env->GetMethodID(godot_class, "setWindowColor", "(Ljava/lang/String;)V");
 	_on_editor_workspace_selected = p_env->GetMethodID(godot_class, "nativeOnEditorWorkspaceSelected", "(Ljava/lang/String;)V");
 	_get_activity = p_env->GetMethodID(godot_class, "getActivity", "()Landroid/app/Activity;");
-	_build_env_connect = p_env->GetMethodID(godot_class, "nativeBuildEnvConnect", "(Lorg/godotengine/godot/variant/Callable;)Z");
+	_build_env_connect = p_env->GetMethodID(godot_class, "nativeBuildEnvConnect", "(Lgames/cafecito/foundry/variant/Callable;)Z");
 	_build_env_disconnect = p_env->GetMethodID(godot_class, "nativeBuildEnvDisconnect", "()V");
-	_build_env_execute = p_env->GetMethodID(godot_class, "nativeBuildEnvExecute", "(Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lorg/godotengine/godot/variant/Callable;Lorg/godotengine/godot/variant/Callable;)I");
+	_build_env_execute = p_env->GetMethodID(godot_class, "nativeBuildEnvExecute", "(Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lgames/cafecito/foundry/variant/Callable;Lgames/cafecito/foundry/variant/Callable;)I");
 	_build_env_cancel = p_env->GetMethodID(godot_class, "nativeBuildEnvCancel", "(I)V");
-	_build_env_clean_project = p_env->GetMethodID(godot_class, "nativeBuildEnvCleanProject", "(Ljava/lang/String;Ljava/lang/String;Lorg/godotengine/godot/variant/Callable;)V");
+	_build_env_clean_project = p_env->GetMethodID(godot_class, "nativeBuildEnvCleanProject", "(Ljava/lang/String;Ljava/lang/String;Lgames/cafecito/foundry/variant/Callable;)V");
 }
 
 FoundryJavaWrapper::~FoundryJavaWrapper() {

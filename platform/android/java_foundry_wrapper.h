@@ -38,7 +38,7 @@
 #include <android/log.h>
 #include <jni.h>
 
-// Class that makes functions in java/src/org/godotengine/godot/Godot.kt callable from C++
+// Class that makes functions in java/src/games/cafecito/foundry/Godot.kt callable from C++
 class FoundryJavaWrapper {
 private:
 	jobject foundry_instance;
