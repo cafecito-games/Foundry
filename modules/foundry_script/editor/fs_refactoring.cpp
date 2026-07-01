@@ -6000,7 +6000,8 @@ String render_function_signature(
 		const Vector<String> &p_lines,
 		const String &p_class_indent,
 		const Vector<FSParser::DataType> *p_parameter_types = nullptr,
-		const FSParser::DataType *p_return_type_override = nullptr) {
+		const FSParser::DataType *p_return_type_override = nullptr,
+		const Vector<FSParser::DataType> *p_type_parameter_bounds = nullptr) {
 	const String name = String(p_function->identifier->name);
 
 	// An abstract method on a class cannot be static, but a trait may declare an
@@ -6034,12 +6035,17 @@ String render_function_signature(
 
 			if (type_parameter->bound != nullptr) {
 				String rendered_bound;
+				bool has_rendered_bound = false;
+				if (p_type_parameter_bounds != nullptr && i < p_type_parameter_bounds->size()) {
+					has_rendered_bound = FSRefactorTypes::render_annotatable_type((*p_type_parameter_bounds)[i], rendered_bound);
+				}
 				// Prefer the eagerly-resolved (non-meta) bound. Otherwise fall back to the bound
 				// TypeNode's own datatype, which is populated even when the eager pass has not run in
 				// this analysis context — but in type position it is a metatype handle (especially for
 				// a user-class bound like `T: MyClass`), so strip the meta flag to render the instance
 				// type rather than have render_annotatable_type reject it and silently drop the bound.
-				if (!FSRefactorTypes::render_annotatable_type(type_parameter->resolved_bound, rendered_bound)) {
+				if (!has_rendered_bound &&
+						!FSRefactorTypes::render_annotatable_type(type_parameter->resolved_bound, rendered_bound)) {
 					FSParser::DataType bound_type = type_parameter->bound->get_datatype();
 					bound_type.is_meta_type = false;
 					FSRefactorTypes::render_annotatable_type(bound_type, rendered_bound);
@@ -6183,8 +6189,9 @@ String render_concrete_script_override_stub(
 		const Vector<String> &p_lines,
 		const String &p_class_indent,
 		const Vector<FSParser::DataType> *p_parameter_types = nullptr,
-		const FSParser::DataType *p_return_type_override = nullptr) {
-	return render_function_signature(p_function, p_lines, p_class_indent, p_parameter_types, p_return_type_override) + ":\n" +
+		const FSParser::DataType *p_return_type_override = nullptr,
+		const Vector<FSParser::DataType> *p_type_parameter_bounds = nullptr) {
+	return render_function_signature(p_function, p_lines, p_class_indent, p_parameter_types, p_return_type_override, p_type_parameter_bounds) + ":\n" +
 			render_super_call_body(p_function, p_class_indent);
 }
 
@@ -6645,6 +6652,20 @@ void add_script_override_candidate(
 	}
 	const FSParser::DataType return_type =
 			substitute_override_member_type(p_function->get_datatype(), p_specialized_base, p_declaring_class, p_function);
+	Vector<FSParser::DataType> type_parameter_bounds;
+	for (const FSParser::TypeParameterNode *type_parameter : p_function->type_parameters) {
+		FSParser::DataType bound_type;
+		if (type_parameter != nullptr && type_parameter->bound != nullptr) {
+			if (type_parameter->resolved_bound.is_set()) {
+				bound_type = type_parameter->resolved_bound;
+			} else {
+				bound_type = type_parameter->bound->get_datatype();
+				bound_type.is_meta_type = false;
+			}
+			bound_type = substitute_override_member_type(bound_type, p_specialized_base, p_declaring_class, p_function);
+		}
+		type_parameter_bounds.push_back(bound_type);
+	}
 	OverrideMethodCandidate candidate;
 	candidate.enabled = true;
 	candidate.rendered_block = render_concrete_script_override_stub(
@@ -6652,13 +6673,14 @@ void add_script_override_candidate(
 			lines,
 			p_class_indent,
 			&parameter_types,
-			&return_type);
+			&return_type,
+			&type_parameter_bounds);
 	candidate.insertion_line = p_insertion_line;
 	const String origin = p_declaring_class != nullptr && p_declaring_class->identifier != nullptr
 			? String(p_declaring_class->identifier->name)
 			: String("base class");
 	candidate.public_candidate.name = String(p_function->identifier->name);
-	candidate.public_candidate.signature = render_function_signature(p_function, lines, "", &parameter_types, &return_type);
+	candidate.public_candidate.signature = render_function_signature(p_function, lines, "", &parameter_types, &return_type, &type_parameter_bounds);
 	candidate.public_candidate.origin = origin;
 	candidate.public_candidate.detail = candidate.public_candidate.signature + " - " + origin;
 	candidate.public_candidate.id = make_override_method_id("script", origin, p_function->identifier->name);

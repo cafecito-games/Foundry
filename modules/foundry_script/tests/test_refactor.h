@@ -521,6 +521,26 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 		CHECK(out.contains("\t\treturn super.identity(value)\n"));
 	}
 
+	TEST_CASE("Override method specializes method generic bounds on specialized script base classes") {
+		const String source =
+				"class Base[T]:\n"
+				"\tfunc keep[U: T](value: U) -> U:\n"
+				"\t\treturn value\n"
+				"class Child extends Base[RefCounted]:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult candidates = FSTests::override_method_candidates(source, 4, 1);
+		REQUIRE(candidates.ok);
+		const RefactorOverrideMethodCandidate *candidate = FSTests::find_override_candidate(candidates.candidates, "keep");
+		REQUIRE(candidate != nullptr);
+
+		String out;
+		RefactorResult r = FSTests::run_override_method(source, 4, 1, candidate->id, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK(out.contains("\tfunc keep[U: RefCounted](value: U) -> U:\n"));
+		CHECK(out.contains("\t\treturn super.keep(value)\n"));
+	}
+
 	TEST_CASE("Override method renders async script base stub with awaited super call") {
 		const String source =
 				"class Base:\n"
