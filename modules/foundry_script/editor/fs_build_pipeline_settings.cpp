@@ -256,13 +256,13 @@ void FSBuildPipelineSettingsDialog::_refresh_provider_select() {
 		String label = entry->display_name.is_empty() ? entry->id : vformat("%s (%s)", entry->display_name, entry->id);
 		switch (entry->source.type) {
 			case FoundryBuildTaskRegistry::SOURCE_NATIVE:
-				label += "  – built-in";
+				label += "  - built-in";
 				break;
 			case FoundryBuildTaskRegistry::SOURCE_ADDON:
-				label += "  – addon";
+				label += "  - addon";
 				break;
 			case FoundryBuildTaskRegistry::SOURCE_PROJECT:
-				label += "  – project";
+				label += "  - project";
 				break;
 		}
 		const int item_index = provider_select->get_item_count();
@@ -286,7 +286,7 @@ void FSBuildPipelineSettingsDialog::_refresh_provider_select() {
 		if (select_index < 0) {
 			const String label = task->provider.is_empty()
 					? TTR("<none> (select a provider)")
-					: vformat("%s  – unregistered", task->provider);
+					: vformat("%s  - unregistered", task->provider);
 			const int item_index = provider_select->get_item_count();
 			provider_select->add_item(label);
 			provider_select->set_item_metadata(item_index, task->provider);
@@ -363,7 +363,7 @@ void FSBuildPipelineSettingsDialog::_refresh_options_editor() {
 				for (int i = 0; i < keys.size(); i++) {
 					const String key = keys[i];
 					const bool is_required = required.has(key);
-					schema_hint += vformat("\n  • %s: %s%s", key, String(properties[key]), is_required ? TTR(" (required)") : String());
+					schema_hint += vformat("\n  - %s: %s%s", key, String(properties[key]), is_required ? TTR(" (required)") : String());
 				}
 				hint = schema_hint;
 			}
@@ -807,7 +807,7 @@ static String _provider_run_block_reason(const FoundryBuildTaskRegistry &p_regis
 // The full reason a task must not be run: a blocking registry diagnostic, or any pipeline validation
 // error for the requested stage. The pipeline validates the stage-filtered configuration and blocks
 // that stage before executing any task, so a stage-level error (duplicate task, a task listed in
-// both stages) or another invalid task in the same stage must stop manual runs too — but an invalid
+// both stages) or another invalid task in the same stage must stop manual runs too -- but an invalid
 // task in the *other* stage must not, matching the pipeline's per-stage gating. Task/provider-scoped
 // errors are reported first for a clearer message.
 static String _task_run_block_reason(const ProjectBuildPipelineConfig &p_config,
@@ -892,7 +892,7 @@ void FSBuildPipelineSettingsDialog::_run_selected_stage() {
 		}
 		const String block_reason = _task_run_block_reason(working_config, registry, selected_stage, *task);
 		if (!block_reason.is_empty()) {
-			output += vformat(TTR("%s: cannot run – %s\n"), task->name, block_reason);
+			output += vformat(TTR("%s: cannot run - %s\n"), task->name, block_reason);
 			output += TTR("Stage stopped: task is blocked.") + String("\n");
 			break;
 		}
