@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="FoundryBuildTask" inherits="RefCounted" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Base class for script-backed Foundry build task providers.
+	</brief_description>
+	<description>
+		Build task provider scripts listed in project or addon build metadata must declare a [code]class_name[/code] that extends [FoundryBuildTask]. Build-task bootstrap loading instantiates these scripts with dependencies restricted to the build API and provider-local or addon-local helper scripts.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="get_config_schema" qualifiers="const">
+			<return type="FoundryBuildTaskConfigSchema" />
+			<description>
+				Returns the provider-specific configuration schema. Schema loading is intended for trusted providers and is not required when listing untrusted providers.
+			</description>
+		</method>
+		<method name="run">
+			<return type="FoundryBuildResult" />
+			<param index="0" name="context" type="FoundryBuildContext" />
+			<description>
+				Runs the build task for [param context]. The initial build-task API exposes this method for providers; command execution and full pipeline integration are handled outside bootstrap discovery.
+			</description>
+		</method>
+	</methods>
+</class>

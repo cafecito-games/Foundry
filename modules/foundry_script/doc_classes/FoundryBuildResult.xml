@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="FoundryBuildResult" inherits="RefCounted" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Result returned by a script-backed Foundry build task.
+	</brief_description>
+	<description>
+		Contains the high-level result of [method FoundryBuildTask.run] and any requested [FoundryBuildCommand] objects. Command execution is handled by later build-pipeline stages, not by provider bootstrap discovery.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="add_command">
+			<return type="void" />
+			<param index="0" name="command" type="FoundryBuildCommand" />
+			<description>
+				Appends [param command] to [member commands].
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="commands" type="Array" setter="set_commands" getter="get_commands">
+			The command descriptors requested by the task. Entries are expected to be [FoundryBuildCommand] instances.
+		</member>
+		<member name="message" type="String" setter="set_message" getter="get_message">
+			Optional human-readable result details.
+		</member>
+		<member name="success" type="bool" setter="set_success" getter="is_success">
+			Whether the task completed successfully.
+		</member>
+	</members>
+</class>

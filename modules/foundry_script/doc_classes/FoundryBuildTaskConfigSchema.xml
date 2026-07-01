@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="FoundryBuildTaskConfigSchema" inherits="RefCounted" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Configuration schema returned by a script-backed build task provider.
+	</brief_description>
+	<description>
+		Describes the provider-specific options accepted by a [FoundryBuildTask]. The schema is intentionally lightweight so providers can expose option metadata without participating in command execution or full pipeline gating.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="is_empty" qualifiers="const">
+			<return type="bool" />
+			<description>
+				Returns [code]true[/code] when the schema has no properties and no required option names.
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="properties" type="Dictionary" setter="set_properties" getter="get_properties">
+			Schema entries keyed by option name.
+		</member>
+		<member name="required" type="PackedStringArray" setter="set_required" getter="get_required">
+			Option names that must be present for this provider.
+		</member>
+	</members>
+</class>

@@ -30,6 +30,7 @@
 
 #include "register_types.h"
 
+#include "foundry_build_task.h"
 #include "foundry_script.h"
 #include "fs_cache.h"
 #include "fs_parser.h"
@@ -159,6 +160,12 @@ static void _editor_init() {
 void initialize_foundry_script_module(ModuleInitializationLevel p_level) {
 	if (p_level == MODULE_INITIALIZATION_LEVEL_SERVERS) {
 		FOUNDRY_REGISTER_CLASS(FoundryScript);
+		FOUNDRY_REGISTER_CLASS(FoundryBuildTaskConfigSchema);
+		FOUNDRY_REGISTER_CLASS(FoundryBuildCommand);
+		FOUNDRY_REGISTER_CLASS(FoundryBuildResult);
+		FOUNDRY_REGISTER_CLASS(FoundryBuildContext);
+		FOUNDRY_REGISTER_CLASS(FoundryBuildTask);
+		FOUNDRY_REGISTER_CLASS(FoundryCommandBuildTask);
 		FOUNDRY_REGISTER_CLASS(FSTypeParameter);
 		FOUNDRY_REGISTER_CLASS(FSSpecializedClassHandle);
 		FOUNDRY_REGISTER_CLASS(FSAnnotation);

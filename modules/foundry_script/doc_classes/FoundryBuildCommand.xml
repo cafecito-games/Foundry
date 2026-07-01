@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="FoundryBuildCommand" inherits="RefCounted" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		A command requested by a script-backed Foundry build task.
+	</brief_description>
+	<description>
+		Describes an external command that a [FoundryBuildTask] can return as part of a [FoundryBuildResult]. The bootstrap loader exposes this type to provider scripts so they can describe command work without executing it during provider discovery.
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="arguments" type="PackedStringArray" setter="set_arguments" getter="get_arguments">
+			The command arguments, stored separately from [member executable].
+		</member>
+		<member name="environment" type="Dictionary" setter="set_environment" getter="get_environment">
+			Environment variables to pass to the command. Keys and values are expected to be strings.
+		</member>
+		<member name="executable" type="String" setter="set_executable" getter="get_executable">
+			The executable path or name to run.
+		</member>
+		<member name="timeout_seconds" type="int" setter="set_timeout_seconds" getter="get_timeout_seconds">
+			The command timeout in seconds.
+		</member>
+		<member name="working_directory" type="String" setter="set_working_directory" getter="get_working_directory">
+			The working directory for the command, usually a [code]res://[/code] project path.
+		</member>
+	</members>
+</class>

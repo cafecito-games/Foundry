@@ -68,6 +68,7 @@ class BackgroundProgress;
 class DependencyErrorDialog;
 class DockSplitContainer;
 class DynamicFontImportSettingsDialog;
+class FoundryBuildTaskBootstrapLoader;
 class EditorAbout;
 class EditorBuildProfileManager;
 class EditorBottomPanel;
@@ -449,6 +450,7 @@ private:
 
 	bool requested_first_scan = false;
 	bool waiting_for_first_scan = true;
+	FoundryBuildTaskBootstrapLoader *build_task_bootstrap_loader = nullptr;
 	bool load_editor_layout_done = false;
 
 	bool select_current_scene_file_requested = false;
