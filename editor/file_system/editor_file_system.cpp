@@ -55,6 +55,9 @@
 #include <errno.h>
 #include <sys/inotify.h>
 #include <unistd.h>
+#elif defined(__APPLE__)
+#include <CoreServices/CoreServices.h>
+#include <dispatch/dispatch.h>
 #endif
 
 EditorFileSystem *EditorFileSystem::singleton = nullptr;
@@ -1717,7 +1720,16 @@ String EditorFileSystem::_get_file_by_class_name(EditorFileSystemDirectory *p_di
 	return "";
 }
 
+#ifdef EDITOR_FS_DIRECTORY_WATCHER_ENABLED
+
+void EditorFileSystem::_fs_watch_mark_scanned() {
+	// Consume the dirty state: a scan is about to run (or just ran) and will detect every change.
+	fs_watch_dirty.clear();
+}
+
 #if defined(__linux__) && !defined(__ANDROID__)
+// ---- Linux backend (inotify) ----
+
 void EditorFileSystem::_fs_watch_init() {
 	if (fs_watch_initialized) {
 		return;
@@ -1735,7 +1747,7 @@ void EditorFileSystem::_fs_watch_init() {
 		return;
 	}
 	fs_watch_healthy = true;
-	fs_watch_dirty = true; // Force the first changes scan to run for real.
+	fs_watch_dirty.set(); // Force the first changes scan to run for real.
 }
 
 void EditorFileSystem::_fs_watch_shutdown() {
@@ -1760,7 +1772,7 @@ void EditorFileSystem::_fs_watch_add_dir(const String &p_res_dir) {
 		// A directory could not be watched (e.g. inotify watch limit reached). Disable the
 		// watcher entirely and force full scans so that no change can be silently missed.
 		fs_watch_healthy = false;
-		fs_watch_dirty = true;
+		fs_watch_dirty.set();
 		return;
 	}
 	fs_watch_wd_to_dir[wd] = p_res_dir;
@@ -1794,7 +1806,7 @@ bool EditorFileSystem::_fs_watch_poll() {
 			}
 			break; // EAGAIN (drained) or unexpected error.
 		}
-		fs_watch_dirty = true;
+		fs_watch_dirty.set();
 		ssize_t off = 0;
 		while (off < len) {
 			const struct inotify_event *ev = (const struct inotify_event *)(buf + off);
@@ -1810,9 +1822,107 @@ bool EditorFileSystem::_fs_watch_poll() {
 	for (const String &d : new_dirs) {
 		_fs_watch_add_dir(d);
 	}
-	return fs_watch_dirty;
+	return fs_watch_dirty.is_set();
 }
-#endif // __linux__ && !__ANDROID__
+
+#elif defined(__APPLE__)
+// ---- macOS backend (FSEvents) ----
+//
+// FSEvents is recursive from a single root, so unlike inotify there is no per-directory watch to
+// manage. Events are delivered on a serial dispatch queue (another thread), so the shared
+// SafeFlag is set from the callback. Before reading the flag on a focus-in scan, the stream is
+// flushed synchronously so no buffered event is missed (matching inotify's synchronous drain).
+//
+// NOTE FOR THE macOS BUILD: this backend has been implemented but could not be compiled or run in
+// the Linux CI/dev environment where it was written. Verify it builds (add `-framework
+// CoreServices`, see platform/macos/detect.py) and passes the checks described in
+// misc/foundry_perf/README.md before relying on it.
+
+static void _fs_watch_fsevents_callback(ConstFSEventStreamRef p_stream, void *p_info, size_t p_num_events, void *p_event_paths, const FSEventStreamEventFlags *p_flags, const FSEventStreamEventId *p_ids) {
+	// Any event -- including dropped/must-rescan flags -- means "something changed": mark dirty and
+	// let the subsequent full scan figure out exactly what. Being conservative here is safe.
+	SafeFlag *dirty = static_cast<SafeFlag *>(p_info);
+	if (dirty != nullptr) {
+		dirty->set();
+	}
+}
+
+void EditorFileSystem::_fs_watch_init() {
+	if (fs_watch_initialized) {
+		return;
+	}
+	fs_watch_initialized = true;
+	if (!bool(EDITOR_GET("docks/filesystem/use_directory_watcher"))) {
+		return;
+	}
+
+	const CharString root_utf = ProjectSettings::get_singleton()->globalize_path("res://").utf8();
+	CFStringRef cf_root = CFStringCreateWithCString(nullptr, root_utf.get_data(), kCFStringEncodingUTF8);
+	if (cf_root == nullptr) {
+		return;
+	}
+	CFArrayRef paths = CFArrayCreate(nullptr, (const void **)&cf_root, 1, &kCFTypeArrayCallBacks);
+
+	FSEventStreamContext ctx = {};
+	ctx.info = &fs_watch_dirty;
+	FSEventStreamRef stream = FSEventStreamCreate(nullptr, &_fs_watch_fsevents_callback, &ctx, paths,
+			kFSEventStreamEventIdSinceNow, /*latency=*/0.1,
+			kFSEventStreamCreateFlagNoDefer | kFSEventStreamCreateFlagWatchRoot);
+	CFRelease(paths);
+	CFRelease(cf_root);
+	if (stream == nullptr) {
+		return;
+	}
+
+	dispatch_queue_t queue = dispatch_queue_create("org.foundry.editor.fswatch", DISPATCH_QUEUE_SERIAL);
+	FSEventStreamSetDispatchQueue(stream, queue);
+	if (!FSEventStreamStart(stream)) {
+		// Could not start (e.g. permissions or an unsupported filesystem): clean up and stay
+		// unhealthy so the normal full scan runs. No change can be missed.
+		FSEventStreamInvalidate(stream);
+		FSEventStreamRelease(stream);
+		dispatch_release(queue);
+		return;
+	}
+	fs_watch_stream = (void *)stream;
+	fs_watch_queue = (void *)queue;
+	fs_watch_healthy = true;
+	fs_watch_dirty.set(); // Force the first changes scan to run for real.
+}
+
+void EditorFileSystem::_fs_watch_shutdown() {
+	if (fs_watch_stream != nullptr) {
+		FSEventStreamRef stream = (FSEventStreamRef)fs_watch_stream;
+		FSEventStreamStop(stream);
+		FSEventStreamInvalidate(stream);
+		FSEventStreamRelease(stream);
+		fs_watch_stream = nullptr;
+	}
+	if (fs_watch_queue != nullptr) {
+		dispatch_release((dispatch_queue_t)fs_watch_queue);
+		fs_watch_queue = nullptr;
+	}
+	fs_watch_healthy = false;
+}
+
+void EditorFileSystem::_fs_watch_sync_tree(EditorFileSystemDirectory *p_dir) {
+	// No-op: the single recursive FSEvents stream created in _fs_watch_init() already covers the
+	// whole res:// subtree, so there are no per-directory watches to add.
+}
+
+bool EditorFileSystem::_fs_watch_poll() {
+	if (!fs_watch_healthy || fs_watch_stream == nullptr) {
+		return true; // Uncertain: force a scan.
+	}
+	// Force delivery of any events buffered by the stream latency so the flag reflects everything
+	// that has happened up to now before we decide whether to skip the scan.
+	FSEventStreamFlushSync((FSEventStreamRef)fs_watch_stream);
+	return fs_watch_dirty.is_set();
+}
+
+#endif // backend selection
+
+#endif // EDITOR_FS_DIRECTORY_WATCHER_ENABLED
 
 void EditorFileSystem::scan_changes() {
 	if (first_scan || // Prevent a premature changes scan from inhibiting the first full scan
@@ -1822,7 +1932,7 @@ void EditorFileSystem::scan_changes() {
 		return;
 	}
 
-#if defined(__linux__) && !defined(__ANDROID__)
+#ifdef EDITOR_FS_DIRECTORY_WATCHER_ENABLED
 	if (fs_watch_healthy) {
 		if (!_fs_watch_poll()) {
 			// The directory watcher has observed no changes since the last scan, so the full
@@ -1830,7 +1940,7 @@ void EditorFileSystem::scan_changes() {
 			emit_signal(SNAME("sources_changed"), false);
 			return;
 		}
-		fs_watch_dirty = false; // Consume; the scan below re-detects every change.
+		_fs_watch_mark_scanned(); // Consume; the scan below re-detects every change.
 	}
 #endif
 
@@ -1867,7 +1977,7 @@ void EditorFileSystem::scan_changes() {
 void EditorFileSystem::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_EXIT_TREE: {
-#if defined(__linux__) && !defined(__ANDROID__)
+#ifdef EDITOR_FS_DIRECTORY_WATCHER_ENABLED
 			_fs_watch_shutdown();
 #endif
 			Thread &active_thread = thread.is_started() ? thread : thread_sources;
@@ -1925,7 +2035,7 @@ void EditorFileSystem::_notification(int p_what) {
 							emit_signal(SNAME("filesystem_changed"));
 						}
 						emit_signal(SNAME("sources_changed"), sources_changed.size() > 0);
-#if defined(__linux__) && !defined(__ANDROID__)
+#ifdef EDITOR_FS_DIRECTORY_WATCHER_ENABLED
 						_fs_watch_sync_tree(filesystem); // Watch any directories added by this scan.
 #endif
 					}
@@ -1947,7 +2057,7 @@ void EditorFileSystem::_notification(int p_what) {
 					ResourceImporter::load_on_startup = nullptr;
 					emit_signal(SNAME("filesystem_changed"));
 					emit_signal(SNAME("sources_changed"), sources_changed.size() > 0);
-#if defined(__linux__) && !defined(__ANDROID__)
+#ifdef EDITOR_FS_DIRECTORY_WATCHER_ENABLED
 					// The full directory tree now exists: start the watcher and register watches.
 					_fs_watch_init();
 					_fs_watch_sync_tree(filesystem);

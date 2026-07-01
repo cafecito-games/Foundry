@@ -39,6 +39,12 @@
 #include "core/templates/safe_refcount.h"
 #include "scene/main/node.h"
 
+// Platforms that provide an OS directory-change notification backend for the editor filesystem
+// watcher (see EditorFileSystem::_fs_watch_*). Linux uses inotify; macOS uses FSEvents.
+#if (defined(__linux__) && !defined(__ANDROID__)) || defined(__APPLE__)
+#define EDITOR_FS_DIRECTORY_WATCHER_ENABLED
+#endif
+
 class FileAccess;
 
 struct EditorProgressBG;
@@ -346,22 +352,29 @@ class EditorFileSystem : public Node {
 
 	bool using_fat32_or_exfat; // Workaround for projects in FAT32 or exFAT filesystem (pendrives, most of the time)
 
-#if defined(__linux__) && !defined(__ANDROID__)
-	// Optional OS directory watcher (inotify). Used only as a conservative fast-path: when the
-	// watcher is healthy and has observed no events since the last scan, the O(number of files)
-	// focus-in rescan can be skipped. Any uncertainty (watch failure, queue overflow) disables
-	// the watcher and falls back to a full scan, so no change can ever be missed.
-	int fs_watch_inotify_fd = -1;
+#ifdef EDITOR_FS_DIRECTORY_WATCHER_ENABLED
+	// Optional OS directory watcher used only as a conservative fast-path: when the watcher is
+	// healthy and has observed no events since the last scan, the O(number of files) focus-in
+	// rescan can be skipped. Any uncertainty (watch failure, queue overflow, or the setting being
+	// disabled) keeps the watcher unhealthy and falls back to a full scan, so no change is ever
+	// missed. Linux is backed by inotify, macOS by FSEvents; other platforms keep polling.
 	bool fs_watch_initialized = false;
 	bool fs_watch_healthy = false;
-	bool fs_watch_dirty = true;
+	SafeFlag fs_watch_dirty; // Set by the backend (possibly from another thread on macOS).
+#if defined(__linux__) && !defined(__ANDROID__)
+	int fs_watch_inotify_fd = -1;
 	HashMap<int, String> fs_watch_wd_to_dir;
 	HashSet<String> fs_watch_dirs;
+	void _fs_watch_add_dir(const String &p_res_dir);
+#elif defined(__APPLE__)
+	void *fs_watch_stream = nullptr; // FSEventStreamRef (opaque to keep CoreServices out of this header).
+	void *fs_watch_queue = nullptr; // dispatch_queue_t.
+#endif
 	void _fs_watch_init();
 	void _fs_watch_shutdown();
-	void _fs_watch_add_dir(const String &p_res_dir);
 	void _fs_watch_sync_tree(EditorFileSystemDirectory *p_dir);
 	bool _fs_watch_poll();
+	void _fs_watch_mark_scanned();
 #endif
 
 	void _find_group_files(EditorFileSystemDirectory *efd, HashMap<String, Vector<String>> &group_files, HashSet<String> &groups_to_reimport);
