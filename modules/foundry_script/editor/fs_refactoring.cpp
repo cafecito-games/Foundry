@@ -6341,8 +6341,8 @@ int trait_use_end_line(const FSParser::ClassNode::TraitUse &p_trait_use) {
 	return end_line;
 }
 
-String make_override_method_id(const char *p_kind, const String &p_origin, const StringName &p_name) {
-	return String(p_kind) + "|" + p_origin + "|" + String(p_name);
+String make_override_method_id(const char *p_kind, const String &p_origin, const StringName &p_name, const String &p_fingerprint) {
+	return String(p_kind) + "|" + p_origin + "|" + String(p_name) + "|" + p_fingerprint.md5_text();
 }
 
 StringName get_identifier_name_or_empty(const FSParser::IdentifierNode *p_identifier) {
@@ -6872,7 +6872,7 @@ void add_script_override_candidate(
 	candidate.public_candidate.signature = render_function_signature(p_function, lines, "", &parameter_types, &return_type, &type_parameter_bounds);
 	candidate.public_candidate.origin = origin;
 	candidate.public_candidate.detail = candidate.public_candidate.signature + " - " + origin;
-	candidate.public_candidate.id = make_override_method_id("script", origin, p_function->identifier->name);
+	candidate.public_candidate.id = make_override_method_id("script", origin, p_function->identifier->name, candidate.rendered_block);
 	r_candidates.push_back(candidate);
 }
 
@@ -6948,7 +6948,11 @@ void add_abstract_override_candidate(
 			rest_parameter_type_ptr);
 	candidate.public_candidate.origin = "abstract requirement";
 	candidate.public_candidate.detail = candidate.public_candidate.signature + " - abstract requirement";
-	candidate.public_candidate.id = make_override_method_id("abstract", candidate.public_candidate.origin, p_owed.function->identifier->name);
+	candidate.public_candidate.id = make_override_method_id(
+			"abstract",
+			candidate.public_candidate.origin,
+			p_owed.function->identifier->name,
+			candidate.rendered_block);
 	r_candidates.push_back(candidate);
 }
 
@@ -6957,7 +6961,7 @@ void collect_script_base_override_candidates(
 		const String &p_target_path,
 		const Vector<String> &p_target_lines,
 		const FSParseResultProvider *p_parse_results,
-		HashSet<StringName> p_decided_names,
+		HashSet<StringName> &r_decided_names,
 		const String &p_class_indent,
 		int p_insertion_line,
 		Vector<OverrideMethodCandidate> &r_candidates) {
@@ -6971,6 +6975,7 @@ void collect_script_base_override_candidates(
 	FSParser::DataType current_specialized_type;
 	String current_path = p_target_path;
 	const Vector<String> *current_lines = &p_target_lines;
+	HashSet<StringName> local_decided_names = r_decided_names;
 
 	while (current != nullptr) {
 		String base_path;
@@ -6992,10 +6997,12 @@ void collect_script_base_override_candidates(
 			if (name == StringName()) {
 				continue;
 			}
-			const bool already_decided = p_decided_names.has(name);
+			const bool already_decided = local_decided_names.has(name);
+			bool propagate_decided_name = true;
 			if (!already_decided && member.type == FSParser::ClassNode::Member::FUNCTION) {
 				const FSParser::FunctionNode *function = member.function;
 				if (function != nullptr) {
+					propagate_decided_name = !function->is_abstract;
 					add_script_override_candidate(
 							function,
 							current,
@@ -7006,7 +7013,10 @@ void collect_script_base_override_candidates(
 							r_candidates);
 				}
 			}
-			p_decided_names.insert(name);
+			local_decided_names.insert(name);
+			if (!already_decided && propagate_decided_name) {
+				r_decided_names.insert(name);
+			}
 		}
 	}
 }
@@ -7184,21 +7194,18 @@ bool render_native_method_signature(
 	return true;
 }
 
-String render_native_super_call_body(
-		const String &p_method_name,
-		const Vector<String> &p_argument_names,
-		const FSParser::DataType &p_return_type,
-		const String &p_class_indent) {
+String render_native_default_body(const FSParser::DataType &p_return_type, const String &p_class_indent) {
 	const String body_indent = p_class_indent + "\t";
-	String call = "super." + p_method_name + "(";
-	for (int i = 0; i < p_argument_names.size(); i++) {
-		if (i > 0) {
-			call += ", ";
-		}
-		call += p_argument_names[i];
+	if (is_void_datatype(p_return_type)) {
+		return body_indent + "pass\n";
 	}
-	call += ")";
-	return body_indent + (is_void_datatype(p_return_type) ? call : "return " + call) + "\n";
+
+	String literal;
+	if (default_return_literal(p_return_type, literal)) {
+		return body_indent + "return " + literal + "\n";
+	}
+
+	return body_indent + "pass\n";
 }
 
 void add_native_override_candidate(
@@ -7223,7 +7230,7 @@ void add_native_override_candidate(
 	OverrideMethodCandidate candidate;
 	candidate.enabled = true;
 	candidate.rendered_block = p_class_indent + signature + ":\n" +
-			render_native_super_call_body(p_method.name, argument_names, return_type, p_class_indent);
+			render_native_default_body(return_type, p_class_indent);
 	candidate.insertion_line = p_insertion_line;
 	candidate.public_candidate.name = p_method.name;
 	candidate.public_candidate.signature = signature;
@@ -7231,7 +7238,7 @@ void add_native_override_candidate(
 	candidate.public_candidate.detail =
 			candidate.public_candidate.signature + " - " + candidate.public_candidate.origin;
 	candidate.public_candidate.id =
-			make_override_method_id("native", String(p_native_class), StringName(p_method.name));
+			make_override_method_id("native", String(p_native_class), StringName(p_method.name), candidate.rendered_block);
 	r_candidates.push_back(candidate);
 }
 
@@ -7305,17 +7312,18 @@ OverrideMethodCollection collect_override_methods_in_tree(
 	collect_declared_override_member_names(target, declared_names);
 	const String class_indent = class_member_indent(target, p_lines, target == p_tree);
 	const int insertion_line = find_class_method_insertion_line(target, p_tree, p_lines);
+	HashSet<StringName> inherited_decided_names = declared_names;
 	collect_script_base_override_candidates(
 			target,
 			p_path,
 			p_lines,
 			p_parse_results,
-			declared_names,
+			inherited_decided_names,
 			class_indent,
 			insertion_line,
 			collection.candidates);
 
-	HashSet<StringName> abstract_decided_names = declared_names;
+	HashSet<StringName> abstract_decided_names = inherited_decided_names;
 	collect_override_candidate_names(collection.candidates, abstract_decided_names);
 	Vector<OwedAbstractMethod> owed_abstract_methods;
 	bool depends_on_external_declarations = false;

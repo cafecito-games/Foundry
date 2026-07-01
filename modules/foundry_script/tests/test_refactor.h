@@ -38,6 +38,7 @@
 #include "../editor/fs_refactoring_edits.h"
 #include "../editor/fs_refactoring_names.h"
 #include "../editor/fs_refactoring_types.h"
+#include "../fs_analyzer.h"
 #include "../fs_cache.h"
 
 #include "core/config/project_settings.h"
@@ -51,6 +52,25 @@
 #endif
 
 namespace FSTests {
+
+class RefactorIgnoreWarningsScope {
+#ifdef DEBUG_ENABLED
+	bool previous_ignore = false;
+#endif
+
+public:
+	RefactorIgnoreWarningsScope() {
+#ifdef DEBUG_ENABLED
+		previous_ignore = FSParser::is_ignoring_warnings();
+		FSParser::set_ignoring_warnings(true);
+#endif
+	}
+	~RefactorIgnoreWarningsScope() {
+#ifdef DEBUG_ENABLED
+		FSParser::set_ignoring_warnings(previous_ignore);
+#endif
+	}
+};
 
 inline RefactorContext make_context(const String &p_path) {
 	Error err = OK;
@@ -200,6 +220,18 @@ inline RefactorOverrideMethodsResult override_method_candidates(const String &p_
 	ctx.path = "user://override_method_refactor.fs";
 	ctx.source = p_source;
 	return FSRefactoring::get_override_method_candidates(ctx, caret(p_line, p_column));
+}
+
+inline Error analyze_refactored_source(const String &p_source) {
+	RefactorIgnoreWarningsScope ignore_warnings;
+	FSParser parser;
+	Error err = parser.parse(p_source, "user://override_method_refactor_result.fs", false);
+	if (err != OK) {
+		return err;
+	}
+
+	FSAnalyzer analyzer(&parser);
+	return analyzer.analyze();
 }
 
 inline const RefactorOverrideMethodCandidate *find_override_candidate(
@@ -444,6 +476,34 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 		CHECK(out.is_empty());
 	}
 
+	TEST_CASE("Override method stale selected identity fails when signature changes") {
+		const String old_source =
+				"class Base:\n"
+				"\tfunc configure() -> int:\n"
+				"\t\treturn 1\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+		RefactorOverrideMethodsResult old_candidates = FSTests::override_method_candidates(old_source, 4, 1);
+		REQUIRE_MESSAGE(old_candidates.ok, old_candidates.error_message);
+		const RefactorOverrideMethodCandidate *old_candidate =
+				FSTests::find_override_candidate(old_candidates.candidates, "configure");
+		REQUIRE(old_candidate != nullptr);
+
+		const String changed_source =
+				"class Base:\n"
+				"\tfunc configure(speed: float) -> int:\n"
+				"\t\treturn int(speed)\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+
+		String out;
+		RefactorResult r = FSTests::run_override_method(changed_source, 4, 1, old_candidate->id, out);
+		CHECK_FALSE(r.ok);
+		CHECK_EQ(r.error_message, String("Selected override method is no longer available."));
+		CHECK(r.edits.is_empty());
+		CHECK(out.is_empty());
+	}
+
 	TEST_CASE("Override method lists native virtual methods") {
 		const String source =
 				"extends Control\n"
@@ -464,7 +524,7 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 		CHECK(candidate->origin.contains("Control"));
 	}
 
-	TEST_CASE("Override method renders native virtual stub with super call") {
+	TEST_CASE("Override method renders native virtual stub with pass body") {
 		const String source =
 				"extends Control\n"
 				"\n"
@@ -485,7 +545,25 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 		RefactorResult r = FSTests::run_override_method(source, 2, 1, candidate->id, out);
 		REQUIRE_MESSAGE(r.ok, r.error_message);
 		CHECK(out.contains("func _draw() -> void:\n"));
-		CHECK(out.contains("\tsuper._draw()\n"));
+		CHECK(out.contains("\tpass\n"));
+		CHECK_FALSE(out.contains("super._draw()"));
+	}
+
+	TEST_CASE("Override method native virtual stub analyzes without invalid super call") {
+		const String source =
+				"extends Control\n"
+				"\n"
+				"var marker := 0\n";
+		RefactorOverrideMethodsResult candidates = FSTests::override_method_candidates(source, 2, 1);
+		REQUIRE_MESSAGE(candidates.ok, candidates.error_message);
+		const RefactorOverrideMethodCandidate *candidate =
+				FSTests::find_override_candidate(candidates.candidates, "_draw");
+		REQUIRE(candidate != nullptr);
+
+		String out;
+		RefactorResult r = FSTests::run_override_method(source, 2, 1, candidate->id, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK_EQ(FSTests::analyze_refactored_source(out), OK);
 	}
 
 	TEST_CASE("Override method skips non-virtual native methods") {
@@ -524,8 +602,42 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 		RefactorResult r = FSTests::run_override_method(source, 2, 1, candidate->id, out);
 		REQUIRE_MESSAGE(r.ok, r.error_message);
 		CHECK(out.contains("class_name_arg: String"));
-		CHECK_FALSE(out.contains("super._make_template(template, class_name,"));
-		CHECK(out.contains("return super._make_template(template, class_name_arg, base_class_name)"));
+		CHECK_FALSE(out.contains("super._make_template"));
+		CHECK(out.contains("\tpass\n"));
+	}
+
+	TEST_CASE("Override method renders native virtual Dictionary return with literal default") {
+		const String source =
+				"extends AnimationNode\n"
+				"\n"
+				"var marker := 0\n";
+		RefactorOverrideMethodsResult candidates = FSTests::override_method_candidates(source, 2, 1);
+		REQUIRE_MESSAGE(candidates.ok, candidates.error_message);
+		const RefactorOverrideMethodCandidate *candidate =
+				FSTests::find_override_candidate(candidates.candidates, "_get_child_nodes");
+		REQUIRE(candidate != nullptr);
+
+		String out;
+		RefactorResult r = FSTests::run_override_method(source, 2, 1, candidate->id, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK(out.contains("func _get_child_nodes() -> Dictionary:\n"));
+		CHECK_FALSE(out.contains("super._get_child_nodes"));
+		CHECK(out.contains("\treturn {}\n"));
+	}
+
+	TEST_CASE("Override method skips native virtual hidden by final script base method") {
+		const String source =
+				"class Base extends Control:\n"
+				"\tfinal func _draw() -> void:\n"
+				"\t\tpass\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 4, 1);
+		if (result.ok) {
+			CHECK(FSTests::find_override_candidate(result.candidates, "_draw") == nullptr);
+		} else {
+			CHECK_EQ(result.error_message, String("No overridable methods found."));
+		}
 	}
 
 	TEST_CASE("Override method skips already declared native virtual methods") {
