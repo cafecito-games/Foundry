@@ -299,7 +299,7 @@ void OS_MacOS::load_shell_environment() const {
 			Vector<String> env_vars = pipe.split("\n");
 			for (const String &E : env_vars) {
 				Vector<String> tags = E.split("=", 2);
-				if (tags.size() != 2 || tags[0] == "SHELL" || tags[0] == "USER" || tags[0] == "COMMAND_MODE" || tags[0] == "TMPDIR" || tags[0] == "TERM_SESSION_ID" || tags[0] == "PWD" || tags[0] == "OLDPWD" || tags[0] == "SHLVL" || tags[0] == "HOME" || tags[0] == "DISPLAY" || tags[0] == "LOGNAME" || tags[0] == "TERM" || tags[0] == "COLORTERM" || tags[0] == "_" || tags[0].begins_with("__CF") || tags[0].begins_with("XPC_") || tags[0].begins_with("__GODOT")) {
+				if (tags.size() != 2 || tags[0] == "SHELL" || tags[0] == "USER" || tags[0] == "COMMAND_MODE" || tags[0] == "TMPDIR" || tags[0] == "TERM_SESSION_ID" || tags[0] == "PWD" || tags[0] == "OLDPWD" || tags[0] == "SHLVL" || tags[0] == "HOME" || tags[0] == "DISPLAY" || tags[0] == "LOGNAME" || tags[0] == "TERM" || tags[0] == "COLORTERM" || tags[0] == "_" || tags[0].begins_with("__CF") || tags[0].begins_with("XPC_") || tags[0].begins_with("__FOUNDRY")) {
 					continue;
 				}
 				OS::get_singleton()->set_environment(tags[0], tags[1]);
@@ -1186,7 +1186,7 @@ void OS_MacOS_NSApp::cleanup() {
 			Main::cleanup();
 		}
 	}
-	godot_cleanup_profiler();
+	foundry_cleanup_profiler();
 }
 
 OS_MacOS_NSApp::OS_MacOS_NSApp(const char *p_execpath, int p_argc, char **p_argv) :

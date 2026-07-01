@@ -623,9 +623,9 @@ void test_position_roundtrip(LSP::Position p_lsp, FoundryPosition p_gd, const Pa
 //      -> Character on `r` -> cursor between `a`&`r`s for tests:
 // * Line & Char:
 //   * LSP: both 0-based
-//   * Godot: both 1-based
+//   * Foundry: both 1-based
 TEST_SUITE("[Modules][FoundryScript][LSP][Editor]") {
-	TEST_CASE("Can convert positions to and from Godot") {
+	TEST_CASE("Can convert positions to and from Foundry") {
 		String code = R"(extends Node
 
 var member := 42
@@ -2613,7 +2613,7 @@ func f():
 		CHECK_EQ(LSP::marked_documentation("[color=red]red text[/color]"), "red text");
 		CHECK_EQ(LSP::marked_documentation("[font=Arial]Arial text[/font]"), "Arial text");
 
-		// The following tests are for all the link patterns specific to Godot's built-in docs that we render as inline code.
+		// The following tests are for all the link patterns specific to Foundry's built-in docs that we render as inline code.
 		CHECK_EQ(LSP::marked_documentation("Class link: [Node2D], [Sprite2D]"), "Class link: `Node2D`, `Sprite2D`");
 		CHECK_EQ(LSP::marked_documentation("Single class [RigidBody2D]"), "Single class `RigidBody2D`");
 		CHECK_EQ(LSP::marked_documentation("[method Node2D.set_position]"), "`Node2D.set_position`");
@@ -2628,16 +2628,16 @@ func f():
 		CHECK_EQ(LSP::marked_documentation("[param delta]"), "`delta`");
 
 		// Markdown links
-		CHECK_EQ(LSP::marked_documentation("[url=https://godotengine.org]link to Godot Engine[/url]"),
-				"[link to Godot Engine](https://godotengine.org)");
-		CHECK_EQ(LSP::marked_documentation("[url]https://godotengine.org/[/url]"),
-				"[https://godotengine.org/](https://godotengine.org/)");
+		CHECK_EQ(LSP::marked_documentation("[url=https://docs.cafecito.games/foundry]link to Foundry[/url]"),
+				"[link to Foundry](https://docs.cafecito.games/foundry)");
+		CHECK_EQ(LSP::marked_documentation("[url]https://docs.cafecito.games/foundry/[/url]"),
+				"[https://docs.cafecito.games/foundry/](https://docs.cafecito.games/foundry/)");
 
 		// Code listings
-		CHECK_EQ(LSP::marked_documentation("[codeblock]\nfunc test():\n    print(\"Hello, Godot!\")\n[/codeblock]"),
-				"```foundry_script\nfunc test():\n    print(\"Hello, Godot!\")\n```");
-		CHECK_EQ(LSP::marked_documentation("[codeblock lang=csharp]\npublic void Test()\n{\n    GD.Print(\"Hello, Godot!\");\n}\n[/codeblock]"),
-				"```csharp\npublic void Test()\n{\n    GD.Print(\"Hello, Godot!\");\n}\n```");
+		CHECK_EQ(LSP::marked_documentation("[codeblock]\nfunc test():\n    print(\"Hello, Foundry!\")\n[/codeblock]"),
+				"```foundry_script\nfunc test():\n    print(\"Hello, Foundry!\")\n```");
+		CHECK_EQ(LSP::marked_documentation("[codeblock lang=csharp]\npublic void Test()\n{\n    GD.Print(\"Hello, Foundry!\");\n}\n[/codeblock]"),
+				"```csharp\npublic void Test()\n{\n    GD.Print(\"Hello, Foundry!\");\n}\n```");
 		// Code listings with multiple languages (the codeblocks tag is used in the built-in reference)
 		// When [codeblocks] is used, we only convert the [foundry_script] tag to a code block like the built-in editor.
 		// NOTE: There is always a FoundryScript code listing in the built-in class reference.
@@ -2650,8 +2650,8 @@ func f():
 
 		// We have to be careful that different patterns don't conflict with each
 		// other, especially with urls that use brackets in markdown.
-		CHECK_EQ(LSP::marked_documentation("Class [Sprite2D] with [url=https://godotengine.org]link[/url]"),
-				"Class `Sprite2D` with [link](https://godotengine.org)");
+		CHECK_EQ(LSP::marked_documentation("Class [Sprite2D] with [url=https://docs.cafecito.games/foundry]link[/url]"),
+				"Class `Sprite2D` with [link](https://docs.cafecito.games/foundry)");
 	}
 }
 

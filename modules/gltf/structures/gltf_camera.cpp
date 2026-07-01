@@ -59,18 +59,18 @@ void GLTFCamera::_bind_methods() {
 }
 
 void GLTFCamera::set_fov_conversion_expressions(Ref<GLTFObjectModelProperty> &r_obj_model_prop) {
-	// Expression to convert glTF yfov in radians to Godot fov in degrees.
-	Ref<Expression> gltf_to_godot_expr;
-	gltf_to_godot_expr.instantiate();
-	PackedStringArray gltf_to_godot_args = { "yfov_rad" };
-	gltf_to_godot_expr->parse("rad_to_deg(yfov_rad)", gltf_to_godot_args);
-	r_obj_model_prop->set_gltf_to_godot_expression(gltf_to_godot_expr);
-	// Expression to convert Godot fov in degrees to glTF yfov in radians.
-	Ref<Expression> godot_to_gltf_expr;
-	godot_to_gltf_expr.instantiate();
-	PackedStringArray godot_to_gltf_args = { "fov_deg" };
-	godot_to_gltf_expr->parse("deg_to_rad(fov_deg)", godot_to_gltf_args);
-	r_obj_model_prop->set_godot_to_gltf_expression(godot_to_gltf_expr);
+	// Expression to convert glTF yfov in radians to Foundry fov in degrees.
+	Ref<Expression> gltf_to_foundry_expr;
+	gltf_to_foundry_expr.instantiate();
+	PackedStringArray gltf_to_foundry_args = { "yfov_rad" };
+	gltf_to_foundry_expr->parse("rad_to_deg(yfov_rad)", gltf_to_foundry_args);
+	r_obj_model_prop->set_gltf_to_foundry_expression(gltf_to_foundry_expr);
+	// Expression to convert Foundry fov in degrees to glTF yfov in radians.
+	Ref<Expression> foundry_to_gltf_expr;
+	foundry_to_gltf_expr.instantiate();
+	PackedStringArray foundry_to_gltf_args = { "fov_deg" };
+	foundry_to_gltf_expr->parse("deg_to_rad(fov_deg)", foundry_to_gltf_args);
+	r_obj_model_prop->set_foundry_to_gltf_expression(foundry_to_gltf_expr);
 }
 
 Ref<GLTFCamera> GLTFCamera::from_node(const Camera3D *p_camera) {
@@ -78,9 +78,9 @@ Ref<GLTFCamera> GLTFCamera::from_node(const Camera3D *p_camera) {
 	c.instantiate();
 	ERR_FAIL_NULL_V_MSG(p_camera, c, "Tried to create a GLTFCamera from a Camera3D node, but the given node was null.");
 	c->set_perspective(p_camera->get_projection() == Camera3D::ProjectionType::PROJECTION_PERSPECTIVE);
-	// glTF spec (yfov) is in radians, Godot's camera (fov) is in degrees.
+	// glTF spec (yfov) is in radians, Foundry's camera (fov) is in degrees.
 	c->set_fov(Math::deg_to_rad(p_camera->get_fov()));
-	// glTF spec (xmag and ymag) is a radius in meters, Godot's camera (size) is a diameter in meters.
+	// glTF spec (xmag and ymag) is a radius in meters, Foundry's camera (size) is a diameter in meters.
 	c->set_size_mag(p_camera->get_size() * 0.5f);
 	c->set_depth_far(p_camera->get_far());
 	c->set_depth_near(p_camera->get_near());
@@ -90,9 +90,9 @@ Ref<GLTFCamera> GLTFCamera::from_node(const Camera3D *p_camera) {
 Camera3D *GLTFCamera::to_node() const {
 	Camera3D *camera = memnew(Camera3D);
 	camera->set_projection(perspective ? Camera3D::PROJECTION_PERSPECTIVE : Camera3D::PROJECTION_ORTHOGONAL);
-	// glTF spec (yfov) is in radians, Godot's camera (fov) is in degrees.
+	// glTF spec (yfov) is in radians, Foundry's camera (fov) is in degrees.
 	camera->set_fov(Math::rad_to_deg(fov));
-	// glTF spec (xmag and ymag) is a radius in meters, Godot's camera (size) is a diameter in meters.
+	// glTF spec (xmag and ymag) is a radius in meters, Foundry's camera (size) is a diameter in meters.
 	camera->set_size(size_mag * 2.0f);
 	camera->set_near(depth_near);
 	camera->set_far(depth_far);

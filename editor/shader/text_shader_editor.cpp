@@ -1284,7 +1284,7 @@ TextShaderEditor::TextShaderEditor() {
 	site_search->set_theme_type_variation(SceneStringName(FlatButton));
 	site_search->connect(SceneStringName(pressed), callable_mp(this, &TextShaderEditor::_menu_option).bind(HELP_DOCS));
 	site_search->set_text(TTR("Online Docs"));
-	site_search->set_tooltip_text(TTR("Open Godot online documentation."));
+	site_search->set_tooltip_text(TTR("Open Foundry online documentation."));
 	menu_bar_hbox->add_child(site_search);
 
 	menu_bar_hbox->add_theme_style_override(SceneStringName(panel), EditorNode::get_singleton()->get_editor_theme()->get_stylebox(SNAME("ScriptEditorPanel"), EditorStringName(EditorStyles)));

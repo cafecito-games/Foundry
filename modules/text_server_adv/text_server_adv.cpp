@@ -451,7 +451,7 @@ bool TextServerAdvanced::_load_support_data(const String &p_filename) {
 #else
 	if (!icu_data_loaded) {
 		UErrorCode err = U_ZERO_ERROR;
-		String filename = (p_filename.is_empty()) ? String("res://icudt_godot.dat") : p_filename;
+		String filename = (p_filename.is_empty()) ? String("res://icudt_foundry.dat") : p_filename;
 		if (FileAccess::exists(filename)) {
 			Ref<FileAccess> f = FileAccess::open(filename, FileAccess::READ);
 			if (f.is_null()) {
@@ -479,11 +479,11 @@ bool TextServerAdvanced::_load_support_data(const String &p_filename) {
 }
 
 String TextServerAdvanced::_get_support_data_filename() const {
-	return String("icudt_godot.dat");
+	return String("icudt_foundry.dat");
 }
 
 String TextServerAdvanced::_get_support_data_info() const {
-	return String("ICU break iteration data (\"icudt_godot.dat\").");
+	return String("ICU break iteration data (\"icudt_foundry.dat\").");
 }
 
 bool TextServerAdvanced::_save_support_data(const String &p_filename) const {

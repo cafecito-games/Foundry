@@ -241,24 +241,24 @@ FoundryExtensionInterfaceFunctionPtr foundry_extension_get_proc_address(const ch
 }
 
 #ifndef DISABLE_DEPRECATED
-static void foundry_extension_get_godot_version(FoundryExtensionGodotVersion *r_godot_version) {
-	r_godot_version->major = FOUNDRY_VERSION_MAJOR;
-	r_godot_version->minor = FOUNDRY_VERSION_MINOR;
-	r_godot_version->patch = FOUNDRY_VERSION_PATCH;
-	r_godot_version->string = FOUNDRY_VERSION_FULL_NAME;
+static void foundry_extension_get_foundry_version(FoundryExtensionFoundryVersion *r_foundry_version) {
+	r_foundry_version->major = FOUNDRY_VERSION_MAJOR;
+	r_foundry_version->minor = FOUNDRY_VERSION_MINOR;
+	r_foundry_version->patch = FOUNDRY_VERSION_PATCH;
+	r_foundry_version->string = FOUNDRY_VERSION_FULL_NAME;
 }
 #endif
 
-static void foundry_extension_get_godot_version2(FoundryExtensionGodotVersion2 *r_godot_version) {
-	r_godot_version->major = FOUNDRY_VERSION_MAJOR;
-	r_godot_version->minor = FOUNDRY_VERSION_MINOR;
-	r_godot_version->patch = FOUNDRY_VERSION_PATCH;
-	r_godot_version->hex = FOUNDRY_VERSION_HEX;
-	r_godot_version->status = FOUNDRY_VERSION_STATUS;
-	r_godot_version->build = FOUNDRY_VERSION_BUILD;
-	r_godot_version->hash = FOUNDRY_VERSION_HASH;
-	r_godot_version->timestamp = FOUNDRY_VERSION_TIMESTAMP;
-	r_godot_version->string = FOUNDRY_VERSION_FULL_NAME;
+static void foundry_extension_get_foundry_version2(FoundryExtensionFoundryVersion2 *r_foundry_version) {
+	r_foundry_version->major = FOUNDRY_VERSION_MAJOR;
+	r_foundry_version->minor = FOUNDRY_VERSION_MINOR;
+	r_foundry_version->patch = FOUNDRY_VERSION_PATCH;
+	r_foundry_version->hex = FOUNDRY_VERSION_HEX;
+	r_foundry_version->status = FOUNDRY_VERSION_STATUS;
+	r_foundry_version->build = FOUNDRY_VERSION_BUILD;
+	r_foundry_version->hash = FOUNDRY_VERSION_HASH;
+	r_foundry_version->timestamp = FOUNDRY_VERSION_TIMESTAMP;
+	r_foundry_version->string = FOUNDRY_VERSION_FULL_NAME;
 }
 
 // Memory Functions
@@ -1747,9 +1747,9 @@ static void foundry_extension_editor_help_load_xml_from_utf8_chars(const char *p
 
 void foundry_extension_setup_interface() {
 #ifndef DISABLE_DEPRECATED
-	REGISTER_INTERFACE_FUNC(get_godot_version);
+	REGISTER_INTERFACE_FUNC(get_foundry_version);
 #endif // DISABLE_DEPRECATED
-	REGISTER_INTERFACE_FUNC(get_godot_version2);
+	REGISTER_INTERFACE_FUNC(get_foundry_version2);
 #ifndef DISABLE_DEPRECATED
 	REGISTER_INTERFACE_FUNC(mem_alloc);
 	REGISTER_INTERFACE_FUNC(mem_realloc);

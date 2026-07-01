@@ -59,7 +59,7 @@ public:
 	virtual void convert_scene_node(Ref<GLTFState> p_state, Ref<GLTFNode> p_gltf_node, Node *p_scene_node);
 	virtual Error export_post_convert(Ref<GLTFState> p_state, Node *p_root);
 	virtual Error export_preserialize(Ref<GLTFState> p_state);
-	virtual Ref<GLTFObjectModelProperty> export_object_model_property(Ref<GLTFState> p_state, const NodePath &p_node_path, const Node *p_godot_node, GLTFNodeIndex p_gltf_node_index, const Object *p_target_object, int p_target_depth);
+	virtual Ref<GLTFObjectModelProperty> export_object_model_property(Ref<GLTFState> p_state, const NodePath &p_node_path, const Node *p_foundry_node, GLTFNodeIndex p_gltf_node_index, const Object *p_target_object, int p_target_depth);
 	virtual Vector<String> get_saveable_image_formats();
 	virtual PackedByteArray serialize_image_to_bytes(Ref<GLTFState> p_state, Ref<Image> p_image, Dictionary &r_image_dict, const String &p_image_format, float p_lossy_quality);
 	virtual Error save_image_at_path(Ref<GLTFState> p_state, Ref<Image> p_image, const String &p_file_path, const String &p_image_format, float p_lossy_quality);

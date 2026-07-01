@@ -124,7 +124,7 @@ static void _terminate(JNIEnv *env, bool p_restart = false) {
 	NetSocketAndroid::terminate();
 
 	cleanup_android_class_loader();
-	godot_cleanup_profiler();
+	foundry_cleanup_profiler();
 
 	if (godot_java) {
 		godot_java->on_godot_terminating(env);
@@ -148,7 +148,7 @@ JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_setVirtualKeyboardHei
 }
 
 JNIEXPORT jboolean JNICALL Java_org_godotengine_godot_GodotLib_initialize(JNIEnv *env, jclass clazz, jobject p_foundry_instance, jobject p_asset_manager, jobject p_godot_io, jobject p_net_utils, jobject p_directory_access_handler, jobject p_file_access_handler, jboolean p_use_apk_expansion) {
-	godot_init_profiler();
+	foundry_init_profiler();
 
 	JavaVM *jvm;
 	env->GetJavaVM(&jvm);

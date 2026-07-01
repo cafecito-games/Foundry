@@ -2,8 +2,8 @@
     "_copyright": [
         "/**************************************************************************/",
         "/*                         This file is part of:                          */",
-        "/*                             GODOT ENGINE                               */",
-        "/*                        https://godotengine.org                         */",
+        "/*                             FOUNDRY ENGINE                             */",
+        "/*                  https://docs.cafecito.games/foundry                   */",
         "/**************************************************************************/",
         "/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */",
         "/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */",
@@ -1498,7 +1498,7 @@
                         "Paired with `call_virtual_with_data_func`, this is an alternative to `get_virtual_func` for extensions that",
                         "need or benefit from extra data when calling virtual functions.",
                         "Returns user data that will be passed to `call_virtual_with_data_func`.",
-                        "Returning `NULL` from this function signals to Godot that the virtual function is not overridden.",
+                        "Returning `NULL` from this function signals to Foundry that the virtual function is not overridden.",
                         "Data returned from this function should be managed by the extension and must be valid until the extension is deinitialized.",
                         "You should supply either `get_virtual_func`, or `get_virtual_call_data_func` with `call_virtual_with_data_func`."
                     ]
@@ -1623,7 +1623,7 @@
                         "Paired with `call_virtual_with_data_func`, this is an alternative to `get_virtual_func` for extensions that",
                         "need or benefit from extra data when calling virtual functions.",
                         "Returns user data that will be passed to `call_virtual_with_data_func`.",
-                        "Returning `NULL` from this function signals to Godot that the virtual function is not overridden.",
+                        "Returning `NULL` from this function signals to Foundry that the virtual function is not overridden.",
                         "Data returned from this function should be managed by the extension and must be valid until the extension is deinitialized.",
                         "You should supply either `get_virtual_func`, or `get_virtual_call_data_func` with `call_virtual_with_data_func`."
                     ]
@@ -1752,7 +1752,7 @@
                         "Paired with `call_virtual_with_data_func`, this is an alternative to `get_virtual_func` for extensions that",
                         "need or benefit from extra data when calling virtual functions.",
                         "Returns user data that will be passed to `call_virtual_with_data_func`.",
-                        "Returning `NULL` from this function signals to Godot that the virtual function is not overridden.",
+                        "Returning `NULL` from this function signals to Foundry that the virtual function is not overridden.",
                         "Data returned from this function should be managed by the extension and must be valid until the extension is deinitialized.",
                         "You should supply either `get_virtual_func`, or `get_virtual_call_data_func` with `call_virtual_with_data_func`."
                     ]
@@ -3335,28 +3335,28 @@
                 "The FoundryExtension can then modify the r_initialization structure, setting the minimum initialization level,",
                 "and providing pointers to functions that will be called at various stages of initialization/shutdown.",
                 "",
-                "The rest of the FoundryExtension's interface to Godot consists of function pointers that can be loaded",
+                "The rest of the FoundryExtension's interface to Foundry consists of function pointers that can be loaded",
                 "by calling p_get_proc_address(\"...\") with the name of the function.",
                 "",
                 "For example:",
                 "",
-                "  FoundryExtensionInterfaceGetGodotVersion get_godot_version = (FoundryExtensionInterfaceGetGodotVersion)p_get_proc_address(\"get_godot_version\");",
+                "  FoundryExtensionInterfaceGetFoundryVersion get_foundry_version = (FoundryExtensionInterfaceGetFoundryVersion)p_get_proc_address(\"get_foundry_version\");",
                 "",
                 "(Note that snippet may cause \"cast between incompatible function types\" on some compilers, you can",
                 "silence this by adding an intermediary `void*` cast.)",
                 "",
                 "You can then call it like a normal function:",
                 "",
-                "  FoundryExtensionGodotVersion godot_version;",
-                "  get_godot_version(&godot_version);",
-                "  printf(\"Godot v%d.%d.%d\\n\", godot_version.major, godot_version.minor, godot_version.patch);",
+                "  FoundryExtensionFoundryVersion foundry_version;",
+                "  get_foundry_version(&foundry_version);",
+                "  printf(\"Foundry v%d.%d.%d\\n\", foundry_version.major, foundry_version.minor, foundry_version.patch);",
                 "",
                 "All of these interface functions are described below, together with the name that's used to load it,",
                 "and the function pointer typedef that shows its signature."
             ]
         },
         {
-            "name": "FoundryExtensionGodotVersion",
+            "name": "FoundryExtensionFoundryVersion",
             "kind": "struct",
             "members": [
                 {
@@ -3378,7 +3378,7 @@
             ]
         },
         {
-            "name": "FoundryExtensionGodotVersion2",
+            "name": "FoundryExtensionFoundryVersion2",
             "kind": "struct",
             "members": [
                 {
@@ -3432,7 +3432,7 @@
                     "name": "string",
                     "type": "const char*",
                     "description": [
-                        "(e.g. \"Godot v3.1.4.stable.official.mono\")"
+                        "(e.g. \"Foundry v3.1.4.stable.official.mono\")"
                     ]
                 }
             ]
@@ -3469,14 +3469,14 @@
                     "name": "startup_func",
                     "type": "FoundryExtensionMainLoopStartupCallback",
                     "description": [
-                        "Will be called after Godot is started and is fully initialized."
+                        "Will be called after Foundry is started and is fully initialized."
                     ]
                 },
                 {
                     "name": "shutdown_func",
                     "type": "FoundryExtensionMainLoopShutdownCallback",
                     "description": [
-                        "Will be called before Godot is shutdown when it is still fully initialized."
+                        "Will be called before Foundry is shutdown when it is still fully initialized."
                     ]
                 },
                 {
@@ -3492,38 +3492,38 @@
     ],
     "interface": [
         {
-            "name": "get_godot_version",
+            "name": "get_foundry_version",
             "arguments": [
                 {
-                    "name": "r_godot_version",
-                    "type": "FoundryExtensionGodotVersion*",
+                    "name": "r_foundry_version",
+                    "type": "FoundryExtensionFoundryVersion*",
                     "description": [
                         "A pointer to the structure to write the version information into."
                     ]
                 }
             ],
             "description": [
-                "Gets the Godot version that the FoundryExtension was loaded into."
+                "Gets the Foundry version that the FoundryExtension was loaded into."
             ],
             "since": "4.1",
             "deprecated": {
                 "since": "4.5",
-                "replace_with": "get_godot_version2"
+                "replace_with": "get_foundry_version2"
             }
         },
         {
-            "name": "get_godot_version2",
+            "name": "get_foundry_version2",
             "arguments": [
                 {
-                    "name": "r_godot_version",
-                    "type": "FoundryExtensionGodotVersion2*",
+                    "name": "r_foundry_version",
+                    "type": "FoundryExtensionFoundryVersion2*",
                     "description": [
                         "A pointer to the structure to write the version information into."
                     ]
                 }
             ],
             "description": [
-                "Gets the Godot version that the FoundryExtension was loaded into."
+                "Gets the Foundry version that the FoundryExtension was loaded into."
             ],
             "since": "4.5"
         },
@@ -3737,7 +3737,7 @@
                 }
             ],
             "description": [
-                "Logs an error to Godot's built-in debugger and to the OS terminal."
+                "Logs an error to Foundry's built-in debugger and to the OS terminal."
             ],
             "since": "4.1"
         },
@@ -3788,7 +3788,7 @@
                 }
             ],
             "description": [
-                "Logs an error with a message to Godot's built-in debugger and to the OS terminal."
+                "Logs an error with a message to Foundry's built-in debugger and to the OS terminal."
             ],
             "since": "4.1"
         },
@@ -3832,7 +3832,7 @@
                 }
             ],
             "description": [
-                "Logs a warning to Godot's built-in debugger and to the OS terminal."
+                "Logs a warning to Foundry's built-in debugger and to the OS terminal."
             ],
             "since": "4.1"
         },
@@ -3883,7 +3883,7 @@
                 }
             ],
             "description": [
-                "Logs a warning with a message to Godot's built-in debugger and to the OS terminal."
+                "Logs a warning with a message to Foundry's built-in debugger and to the OS terminal."
             ],
             "since": "4.1"
         },
@@ -3927,7 +3927,7 @@
                 }
             ],
             "description": [
-                "Logs a script error to Godot's built-in debugger and to the OS terminal."
+                "Logs a script error to Foundry's built-in debugger and to the OS terminal."
             ],
             "since": "4.1"
         },
@@ -3978,7 +3978,7 @@
                 }
             ],
             "description": [
-                "Logs a script error with a message to Godot's built-in debugger and to the OS terminal."
+                "Logs a script error with a message to Foundry's built-in debugger and to the OS terminal."
             ],
             "since": "4.1"
         },
@@ -6340,7 +6340,7 @@
             "return_value": {
                 "type": "FoundryExtensionInt",
                 "description": [
-                    "A Godot error code (ex. OK, ERR_INVALID_DATA, etc)."
+                    "A Foundry error code (ex. OK, ERR_INVALID_DATA, etc)."
                 ]
             },
             "arguments": [
@@ -7848,7 +7848,7 @@
             ],
             "description": [
                 "Gets the class name of an Object.",
-                "If the FoundryExtension wraps the Godot object in an abstraction specific to its class, this is the",
+                "If the FoundryExtension wraps the Foundry object in an abstraction specific to its class, this is the",
                 "function that should be used to determine which wrapper to use."
             ],
             "since": "4.1"
@@ -8371,7 +8371,7 @@
             ],
             "description": [
                 "Constructs an Object of the requested class.",
-                "The passed class must be a built-in godot class, or an already-registered extension class. In both cases, object_set_instance() should be called to fully initialize the object."
+                "The passed class must be a built-in Foundry class, or an already-registered extension class. In both cases, object_set_instance() should be called to fully initialize the object."
             ],
             "since": "4.1",
             "deprecated": {
@@ -8398,7 +8398,7 @@
             ],
             "description": [
                 "Constructs an Object of the requested class.",
-                "The passed class must be a built-in godot class, or an already-registered extension class. In both cases, object_set_instance() should be called to fully initialize the object.",
+                "The passed class must be a built-in Foundry class, or an already-registered extension class. In both cases, object_set_instance() should be called to fully initialize the object.",
                 "",
                 "\"NOTIFICATION_POSTINITIALIZE\" must be sent after construction."
             ],
@@ -9142,11 +9142,11 @@
                 }
             ],
             "description": [
-                "Registers a callback that Godot can call to get the list of all classes (from ClassDB) that may be used by the calling FoundryExtension.",
+                "Registers a callback that Foundry can call to get the list of all classes (from ClassDB) that may be used by the calling FoundryExtension.",
                 "This is used by the editor to generate a build profile (in \"Tools\" > \"Engine Compilation Configuration Editor...\" > \"Detect from project\"),",
-                "in order to recompile Godot with only the classes used.",
+                "in order to recompile Foundry with only the classes used.",
                 "In the provided callback, the FoundryExtension should provide the list of classes that _may_ be used statically, thus the time of invocation shouldn't matter.",
-                "If a FoundryExtension doesn't register a callback, Godot will assume that it could be using any classes."
+                "If a FoundryExtension doesn't register a callback, Foundry will assume that it could be using any classes."
             ],
             "since": "4.5"
         },

@@ -525,7 +525,7 @@
 		<member name="debug/file_logging/enable_file_logging.pc" type="bool" setter="" getter="" default="true">
 			Desktop override for [member debug/file_logging/enable_file_logging], as log files are not readily accessible on mobile/Web platforms.
 		</member>
-		<member name="debug/file_logging/log_path" type="String" setter="" getter="" default="&quot;user://logs/godot.log&quot;">
+		<member name="debug/file_logging/log_path" type="String" setter="" getter="" default="&quot;user://logs/foundry.log&quot;">
 			Path at which to store log files for the project. Using a path under [code]user://[/code] is recommended.
 			This can be specified manually on the command line using the [code]--log-file &lt;file&gt;[/code] [url=$DOCS_URL/tutorials/editor/command_line_tutorial.html]command line argument[/url]. If this command line argument is specified, log rotation is automatically disabled (see [member debug/file_logging/max_log_files]).
 		</member>
@@ -2712,7 +2712,7 @@
 		</member>
 		<member name="physics/jolt_physics_3d/joints/world_node" type="int" setter="" getter="" default="0">
 			Which of the two nodes bound by a joint should represent the world when one of the two is omitted, as either [member Joint3D.node_a] or [member Joint3D.node_b]. This can be thought of as having the omitted node be a [StaticBody3D] at the joint's position. Joint limits are more easily expressed when [member Joint3D.node_a] represents the world.
-			[b]Note:[/b] In Godot Physics, only [member Joint3D.node_b] can represent the world.
+			[b]Note:[/b] In Foundry Physics, only [member Joint3D.node_b] can represent the world.
 		</member>
 		<member name="physics/jolt_physics_3d/limits/max_angular_velocity" type="float" setter="" getter="" default="47.12389">
 			The maximum angular velocity that a [RigidBody3D] can reach, in radians per second.

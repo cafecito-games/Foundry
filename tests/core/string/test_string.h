@@ -312,27 +312,27 @@ TEST_CASE("[String] Testing for empty string") {
 }
 
 TEST_CASE("[String] Contains") {
-	String s = "C:\\Godot\\project\\string_test.tscn";
+	String s = "C:\\Foundry\\project\\string_test.tscn";
 	CHECK(s.contains(":\\"));
-	CHECK(s.contains("Godot"));
+	CHECK(s.contains("Foundry"));
 	CHECK(s.contains(String("project\\string_test")));
 	CHECK(s.contains(String("\\string_test.tscn")));
 
 	CHECK(!s.contains("://"));
-	CHECK(!s.contains("Godoh"));
+	CHECK(!s.contains("Foundrz"));
 	CHECK(!s.contains(String("project\\string test")));
 	CHECK(!s.contains(String("\\char_test.tscn")));
 }
 
 TEST_CASE("[String] Contains case insensitive") {
-	String s = "C:\\Godot\\project\\string_test.tscn";
-	CHECK(s.containsn("Godot"));
-	CHECK(s.containsn("godot"));
+	String s = "C:\\Foundry\\project\\string_test.tscn";
+	CHECK(s.containsn("Foundry"));
+	CHECK(s.containsn("foundry"));
 	CHECK(s.containsn(String("Project\\string_test")));
 	CHECK(s.containsn(String("\\string_Test.tscn")));
 
-	CHECK(!s.containsn("Godoh"));
-	CHECK(!s.containsn("godoh"));
+	CHECK(!s.containsn("Foundrz"));
+	CHECK(!s.containsn("foundrz"));
 	CHECK(!s.containsn(String("project\\string test")));
 	CHECK(!s.containsn(String("\\char_test.tscn")));
 }
@@ -1608,7 +1608,7 @@ TEST_CASE("[String] Checking string is empty when it should be") {
 	if (!success) {
 		state = false;
 	}
-	String b = "Godot";
+	String b = "Foundry";
 	success = b[b.size()] == 0;
 	if (!success) {
 		state = false;
@@ -1619,7 +1619,7 @@ TEST_CASE("[String] Checking string is empty when it should be") {
 		state = false;
 	}
 
-	const String d = "Godot";
+	const String d = "Foundry";
 	success = d[d.size()] == 0;
 	if (!success) {
 		state = false;
@@ -1745,7 +1745,7 @@ TEST_CASE("[String] Count and countn functionality") {
 	s = "TestTestTest";
 	MULTICHECK_STRING_EQ(s, count, "TestTest", 1);
 
-	s = "TestGodotTestGodotTestGodot";
+	s = "TestFoundryTestFoundryTestFoundry";
 	MULTICHECK_STRING_EQ(s, count, "Test", 3);
 
 	s = "TestTestTestTest";
@@ -1814,12 +1814,12 @@ TEST_CASE("[String] dedent") {
 }
 
 TEST_CASE("[String] Path functions") {
-	static const char *path[8] = { "C:\\Godot\\project\\test.tscn", "/Godot/project/test.xscn", "../Godot/project/test.scn", "Godot\\test.doc", "C:\\test.", "res://test", "user://test", "/.test" };
-	static const char *base_dir[8] = { "C:\\Godot\\project", "/Godot/project", "../Godot/project", "Godot", "C:\\", "res://", "user://", "/" };
-	static const char *base_name[8] = { "C:\\Godot\\project\\test", "/Godot/project/test", "../Godot/project/test", "Godot\\test", "C:\\test", "res://test", "user://test", "/" };
+	static const char *path[8] = { "C:\\Foundry\\project\\test.tscn", "/Foundry/project/test.xscn", "../Foundry/project/test.scn", "Foundry\\test.doc", "C:\\test.", "res://test", "user://test", "/.test" };
+	static const char *base_dir[8] = { "C:\\Foundry\\project", "/Foundry/project", "../Foundry/project", "Foundry", "C:\\", "res://", "user://", "/" };
+	static const char *base_name[8] = { "C:\\Foundry\\project\\test", "/Foundry/project/test", "../Foundry/project/test", "Foundry\\test", "C:\\test", "res://test", "user://test", "/" };
 	static const char *ext[8] = { "tscn", "xscn", "scn", "doc", "", "", "", "test" };
 	static const char *file[8] = { "test.tscn", "test.xscn", "test.scn", "test.doc", "test.", "test", "test", ".test" };
-	static const char *simplified[8] = { "C:/Godot/project/test.tscn", "/Godot/project/test.xscn", "../Godot/project/test.scn", "Godot/test.doc", "C:/test.", "res://test", "user://test", "/.test" };
+	static const char *simplified[8] = { "C:/Foundry/project/test.tscn", "/Foundry/project/test.xscn", "../Foundry/project/test.scn", "Foundry/test.doc", "C:/test.", "res://test", "user://test", "/.test" };
 	static const bool abs[8] = { true, true, false, false, true, true, true, true };
 
 	for (int i = 0; i < 8; i++) {
@@ -1863,8 +1863,8 @@ TEST_CASE("[String] hash") {
 }
 
 TEST_CASE("[String] uri_encode/unescape") {
-	String s = "Godot Engine:'docs'";
-	String t = "Godot%20Engine%3A%27docs%27";
+	String s = "Foundry:'docs'";
+	String t = "Foundry%3A%27docs%27";
 
 	String x1 = "T%C4%93%C5%A1t";
 	static const uint8_t u8str[] = { 0x54, 0xC4, 0x93, 0xC5, 0xA1, 0x74, 0x00 };
@@ -1994,20 +1994,20 @@ TEST_CASE("[String] Reverse") {
 }
 
 TEST_CASE("[String] SHA1/SHA256/MD5") {
-	String s = "Godot";
-	String sha1 = "a1e91f39b9fce6a9998b14bdbe2aa2b39dc2d201";
+	String s = "Foundry";
+	String sha1 = "1023da04f8b2ce4cde682271be5adcd31bb02900";
 	static uint8_t sha1_buf[20] = {
-		0xA1, 0xE9, 0x1F, 0x39, 0xB9, 0xFC, 0xE6, 0xA9, 0x99, 0x8B, 0x14, 0xBD, 0xBE, 0x2A, 0xA2, 0xB3,
-		0x9D, 0xC2, 0xD2, 0x01
+		0x10, 0x23, 0xDA, 0x04, 0xF8, 0xB2, 0xCE, 0x4C, 0xDE, 0x68, 0x22, 0x71, 0xBE, 0x5A, 0xDC, 0xD3,
+		0x1B, 0xB0, 0x29, 0x00
 	};
-	String sha256 = "2a02b2443f7985d89d09001086ae3dcfa6eb0f55c6ef170715d42328e16e6cb8";
+	String sha256 = "88bc6ea46083b1ed223f6a2c0bf3b2990614e4a256a7d3f7ac03bdd0a487782f";
 	static uint8_t sha256_buf[32] = {
-		0x2A, 0x02, 0xB2, 0x44, 0x3F, 0x79, 0x85, 0xD8, 0x9D, 0x09, 0x00, 0x10, 0x86, 0xAE, 0x3D, 0xCF,
-		0xA6, 0xEB, 0x0F, 0x55, 0xC6, 0xEF, 0x17, 0x07, 0x15, 0xD4, 0x23, 0x28, 0xE1, 0x6E, 0x6C, 0xB8
+		0x88, 0xBC, 0x6E, 0xA4, 0x60, 0x83, 0xB1, 0xED, 0x22, 0x3F, 0x6A, 0x2C, 0x0B, 0xF3, 0xB2, 0x99,
+		0x06, 0x14, 0xE4, 0xA2, 0x56, 0xA7, 0xD3, 0xF7, 0xAC, 0x03, 0xBD, 0xD0, 0xA4, 0x87, 0x78, 0x2F
 	};
-	String md5 = "4a336d087aeb0390da10ee2ea7cb87f8";
+	String md5 = "e66e66c900feabf8c2d181e7ab88be17";
 	static uint8_t md5_buf[16] = {
-		0x4A, 0x33, 0x6D, 0x08, 0x7A, 0xEB, 0x03, 0x90, 0xDA, 0x10, 0xEE, 0x2E, 0xA7, 0xCB, 0x87, 0xF8
+		0xE6, 0x6E, 0x66, 0xC9, 0x00, 0xFE, 0xAB, 0xF8, 0xC2, 0xD1, 0x81, 0xE7, 0xAB, 0x88, 0xBE, 0x17
 	};
 
 	PackedByteArray buf = s.sha1_buffer();
@@ -2207,18 +2207,18 @@ TEST_CASE("[String][URL] Parse URL") {
 	CHECK_URL("https://www.example.com:8080/path/to/file.html#fragment", "https://", "www.example.com", 8080, "/path/to/file.html", "fragment", Error::OK);
 
 	// Valid URLs.
-	CHECK_URL("https://godotengine.org", "https://", "godotengine.org", 0, "", "", Error::OK);
-	CHECK_URL("https://godotengine.org/", "https://", "godotengine.org", 0, "/", "", Error::OK);
-	CHECK_URL("godotengine.org/", "", "godotengine.org", 0, "/", "", Error::OK);
-	CHECK_URL("HTTPS://godotengine.org/", "https://", "godotengine.org", 0, "/", "", Error::OK);
-	CHECK_URL("https://GODOTENGINE.ORG/", "https://", "godotengine.org", 0, "/", "", Error::OK);
-	CHECK_URL("http://godotengine.org", "http://", "godotengine.org", 0, "", "", Error::OK);
-	CHECK_URL("https://godotengine.org:8080", "https://", "godotengine.org", 8080, "", "", Error::OK);
-	CHECK_URL("https://godotengine.org/blog", "https://", "godotengine.org", 0, "/blog", "", Error::OK);
-	CHECK_URL("https://godotengine.org/blog/", "https://", "godotengine.org", 0, "/blog/", "", Error::OK);
-	CHECK_URL("https://docs.godotengine.org/en/stable", "https://", "docs.godotengine.org", 0, "/en/stable", "", Error::OK);
-	CHECK_URL("https://docs.godotengine.org/en/stable/", "https://", "docs.godotengine.org", 0, "/en/stable/", "", Error::OK);
-	CHECK_URL("https://me:secret@godotengine.org", "https://", "godotengine.org", 0, "", "", Error::OK);
+	CHECK_URL("https://cafecito.games", "https://", "cafecito.games", 0, "", "", Error::OK);
+	CHECK_URL("https://cafecito.games/", "https://", "cafecito.games", 0, "/", "", Error::OK);
+	CHECK_URL("cafecito.games/", "", "cafecito.games", 0, "/", "", Error::OK);
+	CHECK_URL("HTTPS://cafecito.games/", "https://", "cafecito.games", 0, "/", "", Error::OK);
+	CHECK_URL("https://CAFECITO.GAMES/", "https://", "cafecito.games", 0, "/", "", Error::OK);
+	CHECK_URL("http://cafecito.games", "http://", "cafecito.games", 0, "", "", Error::OK);
+	CHECK_URL("https://cafecito.games:8080", "https://", "cafecito.games", 8080, "", "", Error::OK);
+	CHECK_URL("https://cafecito.games/blog", "https://", "cafecito.games", 0, "/blog", "", Error::OK);
+	CHECK_URL("https://cafecito.games/blog/", "https://", "cafecito.games", 0, "/blog/", "", Error::OK);
+	CHECK_URL("https://docs.cafecito.games/foundry", "https://", "docs.cafecito.games", 0, "/foundry", "", Error::OK);
+	CHECK_URL("https://docs.cafecito.games/foundry/", "https://", "docs.cafecito.games", 0, "/foundry/", "", Error::OK);
+	CHECK_URL("https://me:secret@cafecito.games", "https://", "cafecito.games", 0, "", "", Error::OK);
 	CHECK_URL("https://[FEDC:BA98:7654:3210:FEDC:BA98:7654:3210]/ipv6", "https://", "fedc:ba98:7654:3210:fedc:ba98:7654:3210", 0, "/ipv6", "", Error::OK);
 
 	// Scheme vs Fragment.
@@ -2227,18 +2227,18 @@ TEST_CASE("[String][URL] Parse URL") {
 	// Invalid URLs.
 
 	// Invalid Scheme.
-	CHECK_URL("https_://godotengine.org", "", "https_", 0, "//godotengine.org", "", Error::ERR_INVALID_PARAMETER);
+	CHECK_URL("https_://cafecito.games", "", "https_", 0, "//cafecito.games", "", Error::ERR_INVALID_PARAMETER);
 
 	// Multiple ports.
-	CHECK_URL("https://godotengine.org:8080:433", "https://", "", 0, "", "", Error::ERR_INVALID_PARAMETER);
+	CHECK_URL("https://cafecito.games:8080:433", "https://", "", 0, "", "", Error::ERR_INVALID_PARAMETER);
 	// Missing ] on literal IPv6.
 	CHECK_URL("https://[FEDC:BA98:7654:3210:FEDC:BA98:7654:3210/ipv6", "https://", "", 0, "/ipv6", "", Error::ERR_INVALID_PARAMETER);
 	// Missing host.
 	CHECK_URL("https:///blog", "https://", "", 0, "/blog", "", Error::ERR_INVALID_PARAMETER);
 	// Invalid ports.
-	CHECK_URL("https://godotengine.org:notaport", "https://", "godotengine.org", 0, "", "", Error::ERR_INVALID_PARAMETER);
-	CHECK_URL("https://godotengine.org:-8080", "https://", "godotengine.org", -8080, "", "", Error::ERR_INVALID_PARAMETER);
-	CHECK_URL("https://godotengine.org:88888", "https://", "godotengine.org", 88888, "", "", Error::ERR_INVALID_PARAMETER);
+	CHECK_URL("https://cafecito.games:notaport", "https://", "cafecito.games", 0, "", "", Error::ERR_INVALID_PARAMETER);
+	CHECK_URL("https://cafecito.games:-8080", "https://", "cafecito.games", -8080, "", "", Error::ERR_INVALID_PARAMETER);
+	CHECK_URL("https://cafecito.games:88888", "https://", "cafecito.games", 88888, "", "", Error::ERR_INVALID_PARAMETER);
 
 #undef CHECK_URL
 }

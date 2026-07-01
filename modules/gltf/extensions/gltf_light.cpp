@@ -64,18 +64,18 @@ void GLTFLight::_bind_methods() {
 }
 
 void GLTFLight::set_cone_inner_attenuation_conversion_expressions(Ref<GLTFObjectModelProperty> &r_obj_model_prop) {
-	// Expression to convert glTF innerConeAngle to Godot spot_angle_attenuation.
-	Ref<Expression> gltf_to_godot_expr;
-	gltf_to_godot_expr.instantiate();
-	PackedStringArray gltf_to_godot_args = { "inner_cone_angle" };
-	gltf_to_godot_expr->parse("0.2 / (1.0 - inner_cone_angle / spot_angle) - 0.1", gltf_to_godot_args);
-	r_obj_model_prop->set_gltf_to_godot_expression(gltf_to_godot_expr);
-	// Expression to convert Godot spot_angle_attenuation to glTF innerConeAngle.
-	Ref<Expression> godot_to_gltf_expr;
-	godot_to_gltf_expr.instantiate();
-	PackedStringArray godot_to_gltf_args = { "godot_spot_angle_att" };
-	godot_to_gltf_expr->parse("spot_angle * maxf(0.0, 1.0 - (0.2 / (0.1 + godot_spot_angle_att)))", godot_to_gltf_args);
-	r_obj_model_prop->set_godot_to_gltf_expression(godot_to_gltf_expr);
+	// Expression to convert glTF innerConeAngle to Foundry spot_angle_attenuation.
+	Ref<Expression> gltf_to_foundry_expr;
+	gltf_to_foundry_expr.instantiate();
+	PackedStringArray gltf_to_foundry_args = { "inner_cone_angle" };
+	gltf_to_foundry_expr->parse("0.2 / (1.0 - inner_cone_angle / spot_angle) - 0.1", gltf_to_foundry_args);
+	r_obj_model_prop->set_gltf_to_foundry_expression(gltf_to_foundry_expr);
+	// Expression to convert Foundry spot_angle_attenuation to glTF innerConeAngle.
+	Ref<Expression> foundry_to_gltf_expr;
+	foundry_to_gltf_expr.instantiate();
+	PackedStringArray foundry_to_gltf_args = { "foundry_spot_angle_att" };
+	foundry_to_gltf_expr->parse("spot_angle * maxf(0.0, 1.0 - (0.2 / (0.1 + foundry_spot_angle_att)))", foundry_to_gltf_args);
+	r_obj_model_prop->set_foundry_to_gltf_expression(foundry_to_gltf_expr);
 }
 
 Color GLTFLight::get_color() {

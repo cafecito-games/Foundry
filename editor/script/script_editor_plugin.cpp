@@ -2368,12 +2368,12 @@ void ScriptEditor::_update_online_doc() {
 	}
 	if (native_class_doc) {
 		String name = eh->get_class();
-		String tooltip = vformat(TTR("Open '%s' in Godot online documentation."), name);
+		String tooltip = vformat(TTR("Open '%s' in Foundry online documentation."), name);
 		site_search->set_text(TTRC("Open in Online Docs"));
 		site_search->set_tooltip_text(tooltip);
 	} else {
 		site_search->set_text(TTRC("Online Docs"));
-		site_search->set_tooltip_text(TTRC("Open Godot online documentation."));
+		site_search->set_tooltip_text(TTRC("Open Foundry online documentation."));
 	}
 }
 

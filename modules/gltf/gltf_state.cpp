@@ -36,7 +36,7 @@
 void GLTFState::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("add_used_extension", "extension_name", "required"), &GLTFState::add_used_extension);
 	ClassDB::bind_method(D_METHOD("append_data_to_buffers", "data", "deduplication"), &GLTFState::append_data_to_buffers);
-	ClassDB::bind_method(D_METHOD("append_gltf_node", "gltf_node", "godot_scene_node", "parent_node_index"), &GLTFState::append_gltf_node);
+	ClassDB::bind_method(D_METHOD("append_gltf_node", "gltf_node", "foundry_scene_node", "parent_node_index"), &GLTFState::append_gltf_node);
 
 	ClassDB::bind_method(D_METHOD("get_json"), &GLTFState::get_json);
 	ClassDB::bind_method(D_METHOD("set_json", "json"), &GLTFState::set_json);
@@ -477,11 +477,11 @@ GLTFBufferViewIndex GLTFState::append_data_to_buffers(const Vector<uint8_t> &p_d
 	return new_index;
 }
 
-GLTFNodeIndex GLTFState::append_gltf_node(Ref<GLTFNode> p_gltf_node, Node *p_godot_scene_node, GLTFNodeIndex p_parent_node_index) {
+GLTFNodeIndex GLTFState::append_gltf_node(Ref<GLTFNode> p_gltf_node, Node *p_foundry_scene_node, GLTFNodeIndex p_parent_node_index) {
 	p_gltf_node->set_parent(p_parent_node_index);
 	const GLTFNodeIndex new_index = nodes.size();
 	nodes.append(p_gltf_node);
-	scene_nodes.insert(new_index, p_godot_scene_node);
+	scene_nodes.insert(new_index, p_foundry_scene_node);
 	if (p_parent_node_index == -1) {
 		root_nodes.append(new_index);
 	} else if (p_parent_node_index < new_index) {

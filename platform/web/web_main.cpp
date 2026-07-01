@@ -66,7 +66,7 @@ void exit_callback() {
 	int exit_code = OS_Web::get_singleton()->get_exit_code();
 	memdelete(os);
 	os = nullptr;
-	godot_cleanup_profiler();
+	foundry_cleanup_profiler();
 	emscripten_force_exit(exit_code); // Exit runtime.
 }
 
@@ -128,7 +128,7 @@ void print_web_header() {
 
 /// When calling main, it is assumed FS is setup and synced.
 extern EMSCRIPTEN_KEEPALIVE int godot_web_main(int argc, char *argv[]) {
-	godot_init_profiler();
+	foundry_init_profiler();
 
 	os = new OS_Web();
 

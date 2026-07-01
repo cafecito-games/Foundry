@@ -94,7 +94,7 @@ int main(int argc, char *argv[]) {
 	setrlimit(RLIMIT_STACK, &stack_lim);
 #endif
 
-	godot_init_profiler();
+	foundry_init_profiler();
 
 	OS_LinuxBSD os;
 
@@ -131,6 +131,6 @@ int main(int argc, char *argv[]) {
 	}
 	free(cwd);
 
-	godot_cleanup_profiler();
+	foundry_cleanup_profiler();
 	return os.get_exit_code();
 }

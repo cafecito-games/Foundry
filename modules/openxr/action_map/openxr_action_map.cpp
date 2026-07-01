@@ -188,8 +188,8 @@ void OpenXRActionMap::create_default_action_sets() {
 	//   we still want it to be part of our action map as we may deploy the same game to platforms that do and don't support it.
 	// - the same applies for interaction profiles that are only supported if the relevant extension is supported.
 
-	// Create our Godot action set.
-	Ref<OpenXRActionSet> action_set = OpenXRActionSet::new_action_set("godot", "Godot action set");
+	// Create our Foundry action set.
+	Ref<OpenXRActionSet> action_set = OpenXRActionSet::new_action_set("foundry", "Foundry action set");
 	add_action_set(action_set);
 
 	// Create our actions.

@@ -605,9 +605,9 @@ XrResult OpenXRAPI::attempt_create_instance(XrVersion p_version) {
 
 	// Attempt to create our OpenXR instance for the requested version.
 	XrApplicationInfo application_info{
-		"Godot Engine", // applicationName, if we're running a game we'll update this down below.
+		"Foundry", // applicationName, if we're running a game we'll update this down below.
 		1, // applicationVersion, we don't currently have this
-		"Godot Engine", // engineName
+		"Foundry", // engineName
 		FOUNDRY_VERSION_MAJOR * 10000 + FOUNDRY_VERSION_MINOR * 100 + FOUNDRY_VERSION_PATCH, // engineVersion 4.0 -> 40000, 4.0.1 -> 40001, 4.1 -> 40100, etc.
 		p_version // apiVersion
 	};
@@ -947,9 +947,9 @@ bool OpenXRAPI::create_session() {
 		return false;
 	}
 
-	set_object_name(XR_OBJECT_TYPE_SESSION, uint64_t(session), "Main Godot OpenXR Session");
+	set_object_name(XR_OBJECT_TYPE_SESSION, uint64_t(session), "Main Foundry OpenXR Session");
 
-	begin_debug_label_region("Godot session active");
+	begin_debug_label_region("Foundry session active");
 
 	for (OpenXRExtensionWrapper *wrapper : registered_extension_wrappers) {
 		wrapper->on_session_created(session);
