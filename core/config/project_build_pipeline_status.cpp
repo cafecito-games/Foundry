@@ -84,6 +84,15 @@ static void _copy_source(ProjectBuildPipelineDiagnostic &r_diagnostic,
 	r_diagnostic.file = p_source.path;
 }
 
+static void _copy_conflicting_source(ProjectBuildPipelineDiagnostic &r_diagnostic,
+		const FoundryBuildTaskRegistry::SourceMetadata &p_source) {
+	r_diagnostic.conflicting_provider_source_type = _source_type_name(p_source.type);
+	r_diagnostic.conflicting_provider_source_identifier = p_source.identifier;
+	r_diagnostic.conflicting_provider_source_path = p_source.path;
+	r_diagnostic.conflicting_provider_source_section = p_source.section;
+	r_diagnostic.conflicting_provider_source_key = p_source.key;
+}
+
 static ProjectBuildPipelineDiagnostic _provider_diagnostic_to_pipeline(
 		const FoundryBuildTaskRegistry::Diagnostic &p_diagnostic) {
 	ProjectBuildPipelineDiagnostic diagnostic;
@@ -92,6 +101,9 @@ static ProjectBuildPipelineDiagnostic _provider_diagnostic_to_pipeline(
 	diagnostic.task_name = p_diagnostic.task_name;
 	diagnostic.message = p_diagnostic.message;
 	_copy_source(diagnostic, p_diagnostic.source);
+	if (!p_diagnostic.conflicting_source.section.is_empty() || !p_diagnostic.conflicting_source.path.is_empty()) {
+		_copy_conflicting_source(diagnostic, p_diagnostic.conflicting_source);
+	}
 	return diagnostic;
 }
 
@@ -270,6 +282,11 @@ Dictionary ProjectBuildPipelineDiagnostic::to_dictionary() const {
 	payload["source_path"] = provider_source_path;
 	payload["source_section"] = provider_source_section;
 	payload["source_key"] = provider_source_key;
+	payload["conflicting_source_type"] = conflicting_provider_source_type;
+	payload["conflicting_source_identifier"] = conflicting_provider_source_identifier;
+	payload["conflicting_source_path"] = conflicting_provider_source_path;
+	payload["conflicting_source_section"] = conflicting_provider_source_section;
+	payload["conflicting_source_key"] = conflicting_provider_source_key;
 	payload["command"] = command;
 	payload["exit_code"] = exit_code;
 	payload["stdout_tail"] = stdout_tail;

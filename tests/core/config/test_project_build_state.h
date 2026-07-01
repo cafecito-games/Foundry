@@ -149,6 +149,63 @@ TEST_CASE("[ProjectBuildState] successful task state persists under project data
 	CHECK_EQ(second_status.reason, ProjectBuildState::DIRTY_NONE);
 }
 
+TEST_CASE("[ProjectBuildState] task run audit records what ran and why it was dirty") {
+	ScopedBuildStateProject project("project_build_state_audit");
+	project.write_file("res://generated/out.txt", "output-v1\n");
+
+	const PackedStringArray outputs = make_paths("res://generated/out.txt");
+	ProjectBuildState state;
+
+	const ProjectBuildState::DirtyStatus dirty =
+			state.get_task_dirty_status("generate_proto", "fingerprint-v1", outputs);
+	REQUIRE(dirty.dirty);
+	CHECK_EQ(dirty.reason, ProjectBuildState::DIRTY_MISSING_STATE);
+
+	state.record_task_run("generate_proto", "fingerprint-v1", outputs, true, dirty,
+			ProjectBuildState::RUN_MODE_DIRTY_TASKS);
+	CHECK_EQ(state.save(), OK);
+
+	ProjectBuildState reloaded;
+	CHECK_EQ(reloaded.load(), OK);
+
+	const Vector<ProjectBuildState::TaskRunAudit> &audit = reloaded.get_task_run_audit_log();
+	REQUIRE_EQ(audit.size(), 1);
+	CHECK_EQ(audit[0].task_name, "generate_proto");
+	CHECK_EQ(audit[0].fingerprint, "fingerprint-v1");
+	CHECK(audit[0].success);
+	CHECK_EQ(audit[0].dirty_reason, ProjectBuildState::DIRTY_MISSING_STATE);
+	CHECK_EQ(audit[0].dirty_message, "No persisted build state exists for this task.");
+	CHECK_EQ(audit[0].run_mode, ProjectBuildState::RUN_MODE_DIRTY_TASKS);
+}
+
+TEST_CASE("[ProjectBuildState] task run audit keeps bounded recent history") {
+	ScopedBuildStateProject project("project_build_state_audit_retention");
+	project.write_file("res://generated/out.txt", "output-v1\n");
+
+	const PackedStringArray outputs = make_paths("res://generated/out.txt");
+	ProjectBuildState state;
+	ProjectBuildState::DirtyStatus dirty;
+	dirty.dirty = true;
+	dirty.reason = ProjectBuildState::DIRTY_PROVIDER_FORCED;
+	dirty.message = "manual";
+
+	const int extra_entries = 4;
+	for (int i = 0; i < ProjectBuildState::MAX_TASK_RUN_AUDIT_ENTRIES + extra_entries; i++) {
+		state.record_task_run("generate_proto", "fingerprint-" + itos(i), outputs, true, dirty,
+				ProjectBuildState::RUN_MODE_ALL_TASKS);
+	}
+	CHECK_EQ(state.save(), OK);
+
+	ProjectBuildState reloaded;
+	CHECK_EQ(reloaded.load(), OK);
+
+	const Vector<ProjectBuildState::TaskRunAudit> &audit = reloaded.get_task_run_audit_log();
+	REQUIRE_EQ(audit.size(), ProjectBuildState::MAX_TASK_RUN_AUDIT_ENTRIES);
+	CHECK_EQ(audit[0].fingerprint, "fingerprint-" + itos(extra_entries));
+	CHECK_EQ(audit[audit.size() - 1].fingerprint,
+			"fingerprint-" + itos(ProjectBuildState::MAX_TASK_RUN_AUDIT_ENTRIES + extra_entries - 1));
+}
+
 TEST_CASE("[ProjectBuildState] config input and tool fingerprint changes mark tasks dirty") {
 	ScopedBuildStateProject project("project_build_state_fingerprint");
 	project.write_file("res://generated/out.txt", "output-v1\n");

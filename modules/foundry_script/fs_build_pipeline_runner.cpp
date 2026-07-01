@@ -252,6 +252,19 @@ static bool _dirty_reason_allows_stage_run(ProjectBuildState::DirtyReason p_reas
 			(p_retry_previous_failures || p_reason != ProjectBuildState::DIRTY_PREVIOUS_FAILURE);
 }
 
+static ProjectBuildState::RunMode _build_state_run_mode(FoundryBuildPipelineRunner::RunMode p_mode) {
+	switch (p_mode) {
+		case FoundryBuildPipelineRunner::RUN_AUTOMATIC_DIRTY_TASKS:
+			return ProjectBuildState::RUN_MODE_AUTOMATIC_DIRTY_TASKS;
+		case FoundryBuildPipelineRunner::RUN_DIRTY_TASKS:
+			return ProjectBuildState::RUN_MODE_DIRTY_TASKS;
+		case FoundryBuildPipelineRunner::RUN_ALL_TASKS:
+			return ProjectBuildState::RUN_MODE_ALL_TASKS;
+	}
+
+	return ProjectBuildState::RUN_MODE_DIRTY_TASKS;
+}
+
 static bool _has_runnable_dirty_stage_tasks(const ProjectBuildPipelineConfig &p_config,
 		const ProjectBuildState &p_state, ProjectBuildPipelineConfig::Stage p_stage,
 		const PackedStringArray &p_current_fingerprints, bool p_retry_previous_failures) {
@@ -472,7 +485,8 @@ FoundryBuildPipelineRunner::StageRunResult FoundryBuildPipelineRunner::run_stage
 
 		const FoundryBuildTaskBootstrapLoader::LoadedProvider *provider = loader.get_loaded_provider(task->provider);
 		if (provider == nullptr || provider->instance.is_null()) {
-			prepared.state.record_task_result(task->name, String(), task->outputs, false);
+			prepared.state.record_task_run(task->name, String(), task->outputs, false, task_status,
+					_build_state_run_mode(p_mode));
 			const Error save_err = prepared.state.save();
 			if (save_err != OK) {
 				run_result.error = save_err;
@@ -490,7 +504,8 @@ FoundryBuildPipelineRunner::StageRunResult FoundryBuildPipelineRunner::run_stage
 		Ref<FoundryBuildResult> result = provider->instance->run(context);
 		const bool success = result.is_valid() && result->is_success();
 		const String fingerprint = result.is_valid() ? result->get_fingerprint() : String();
-		prepared.state.record_task_result(task->name, fingerprint, task->outputs, success);
+		prepared.state.record_task_run(task->name, fingerprint, task->outputs, success, task_status,
+				_build_state_run_mode(p_mode));
 		const Error save_err = prepared.state.save();
 		if (save_err != OK) {
 			run_result.error = save_err;

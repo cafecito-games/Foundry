@@ -222,6 +222,11 @@ TEST_CASE("[ProjectBuildPipelineStatus] provider diagnostics are structured for 
 	provider_diagnostic.source.path = "res://project.foundry";
 	provider_diagnostic.source.section = "build/tasks/generate";
 	provider_diagnostic.source.key = "provider";
+	provider_diagnostic.conflicting_source.type = FoundryBuildTaskRegistry::SOURCE_ADDON;
+	provider_diagnostic.conflicting_source.identifier = "protobuf_build";
+	provider_diagnostic.conflicting_source.path = "res://addons/protobuf_build/plugin.cfg";
+	provider_diagnostic.conflicting_source.section = "build_tasks/command";
+	provider_diagnostic.conflicting_source.key = "providers";
 
 	ProjectBuildTrustStore trust;
 	trust.set_project_trusted(true);
@@ -239,6 +244,11 @@ TEST_CASE("[ProjectBuildPipelineStatus] provider diagnostics are structured for 
 	CHECK_EQ(diagnostic.provider_source_path, "res://project.foundry");
 	CHECK_EQ(diagnostic.provider_source_section, "build/tasks/generate");
 	CHECK_EQ(diagnostic.provider_source_key, "provider");
+	CHECK_EQ(diagnostic.conflicting_provider_source_type, "addon");
+	CHECK_EQ(diagnostic.conflicting_provider_source_identifier, "protobuf_build");
+	CHECK_EQ(diagnostic.conflicting_provider_source_path, "res://addons/protobuf_build/plugin.cfg");
+	CHECK_EQ(diagnostic.conflicting_provider_source_section, "build_tasks/command");
+	CHECK_EQ(diagnostic.conflicting_provider_source_key, "providers");
 
 	Dictionary payload = diagnostic.to_dictionary();
 	CHECK_EQ(String(payload["task_name"]), "generate");
@@ -246,6 +256,11 @@ TEST_CASE("[ProjectBuildPipelineStatus] provider diagnostics are structured for 
 	CHECK_EQ(String(payload["source_path"]), "res://project.foundry");
 	CHECK_EQ(String(payload["source_section"]), "build/tasks/generate");
 	CHECK_EQ(String(payload["source_key"]), "provider");
+	CHECK_EQ(String(payload["conflicting_source_type"]), "addon");
+	CHECK_EQ(String(payload["conflicting_source_identifier"]), "protobuf_build");
+	CHECK_EQ(String(payload["conflicting_source_path"]), "res://addons/protobuf_build/plugin.cfg");
+	CHECK_EQ(String(payload["conflicting_source_section"]), "build_tasks/command");
+	CHECK_EQ(String(payload["conflicting_source_key"]), "providers");
 }
 
 TEST_CASE("[ProjectBuildPipelineStatus] inactive task definitions do not block active pipeline status") {

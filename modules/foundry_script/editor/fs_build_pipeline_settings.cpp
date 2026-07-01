@@ -768,6 +768,14 @@ static Ref<FoundryBuildResult> _make_failure_result(const String &p_message) {
 	return result;
 }
 
+static ProjectBuildState::DirtyStatus _manual_run_dirty_status() {
+	ProjectBuildState::DirtyStatus status;
+	status.dirty = true;
+	status.reason = ProjectBuildState::DIRTY_PROVIDER_FORCED;
+	status.message = TTR("Manual recovery action requested a rerun.");
+	return status;
+}
+
 static Ref<FoundryBuildResult> _run_task_definition(const ProjectBuildPipelineConfig::TaskDefinition &p_task,
 		const FoundryBuildTaskRegistry &p_registry) {
 	Ref<FoundryBuildContext> context;
@@ -921,7 +929,8 @@ void FSBuildPipelineSettingsDialog::_run_selected_task() {
 
 	ProjectBuildState state;
 	state.load();
-	state.record_task_result(task->name, result->get_fingerprint(), task->outputs, result->is_success());
+	state.record_task_run(task->name, result->get_fingerprint(), task->outputs, result->is_success(),
+			_manual_run_dirty_status(), ProjectBuildState::RUN_MODE_SELECTED_TASK);
 	if (state.save() != OK) {
 		output += TTR("Warning: could not persist build state; cached status may be stale.") + String("\n");
 	}
@@ -958,7 +967,8 @@ void FSBuildPipelineSettingsDialog::_run_selected_stage() {
 		}
 		const Ref<FoundryBuildResult> result = _run_task_definition(*task, registry);
 		output += _format_run_output(task->name, result);
-		state.record_task_result(task->name, result->get_fingerprint(), task->outputs, result->is_success());
+		state.record_task_run(task->name, result->get_fingerprint(), task->outputs, result->is_success(),
+				_manual_run_dirty_status(), ProjectBuildState::RUN_MODE_ALL_TASKS);
 		if (result->is_success()) {
 			changed_outputs = true;
 		} else {

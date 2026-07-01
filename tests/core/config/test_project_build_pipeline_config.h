@@ -31,8 +31,13 @@
 #pragma once
 
 #include "core/config/project_build_pipeline_config.h"
+#include "core/config/project_settings.h"
 #include "core/io/config_file.h"
+#include "core/io/dir_access.h"
+#include "core/os/os.h"
+#include "tests/core/config/test_project_settings.h"
 #include "tests/test_macros.h"
+#include "tests/test_utils.h"
 
 namespace TestProjectBuildPipelineConfig {
 
@@ -77,6 +82,58 @@ static Ref<ConfigFile> config_from_project_settings_custom_map(const ProjectSett
 
 	return config;
 }
+
+struct ScopedBuildPipelineConfigProject {
+	String old_resource_path;
+	String old_project_data_dir_name;
+	String root_path;
+
+	explicit ScopedBuildPipelineConfigProject(const String &p_name) {
+		old_resource_path = TestProjectSettingsInternalsAccessor::resource_path();
+		old_project_data_dir_name = TestProjectSettingsInternalsAccessor::project_data_dir_name();
+		root_path = TestUtils::get_temp_path(p_name + "_" + itos(OS::get_singleton()->get_ticks_usec()));
+		const Error err = DirAccess::make_dir_recursive_absolute(root_path);
+		CHECK_EQ(err, OK);
+		if (err == OK) {
+			TestProjectSettingsInternalsAccessor::resource_path() = root_path;
+			TestProjectSettingsInternalsAccessor::project_data_dir_name() = "." + ProjectSettings::PROJECT_DATA_DIR_NAME_SUFFIX;
+		}
+	}
+
+	~ScopedBuildPipelineConfigProject() {
+		remove_recursive(root_path);
+		TestProjectSettingsInternalsAccessor::project_data_dir_name() = old_project_data_dir_name;
+		TestProjectSettingsInternalsAccessor::resource_path() = old_resource_path;
+	}
+
+	void make_dir(const String &p_path) const {
+		CHECK_EQ(DirAccess::make_dir_recursive_absolute(ProjectSettings::get_singleton()->globalize_path(p_path)), OK);
+	}
+
+private:
+	static void remove_recursive(const String &p_absolute_path) {
+		Ref<DirAccess> dir = DirAccess::open(p_absolute_path);
+		if (dir.is_null()) {
+			return;
+		}
+
+		dir->list_dir_begin();
+		String name = dir->get_next();
+		while (!name.is_empty()) {
+			if (name != "." && name != "..") {
+				const String child = p_absolute_path.path_join(name);
+				if (dir->current_is_dir()) {
+					remove_recursive(child);
+				} else {
+					dir->remove(child);
+				}
+			}
+			name = dir->get_next();
+		}
+		dir->list_dir_end();
+		dir->remove(p_absolute_path);
+	}
+};
 
 TEST_CASE("[ProjectBuildPipelineConfig] parses valid build config") {
 	Ref<ConfigFile> config = parse_build_config(
@@ -383,6 +440,126 @@ TEST_CASE("[ProjectBuildPipelineConfig] globally disabled build tasks remain ord
 	CHECK_EQ(stage_tasks[0], "generate_proto");
 
 	CHECK_EQ(build_config.get_enabled_stage_tasks(ProjectBuildPipelineConfig::STAGE_PRE_COMPILE).size(), 0);
+}
+
+TEST_CASE("[ProjectBuildPipelineConfig] declared output roots identify generated files for editor warnings") {
+	ScopedBuildPipelineConfigProject project("project_build_pipeline_config_output_roots");
+	project.make_dir("res://directory_output");
+
+	Ref<ConfigFile> config = parse_build_config(
+			"[build]\n"
+			"enabled=true\n"
+			"pre_compile=PackedStringArray(\"generate_proto\", \"bundle_metadata\", \"generate_models\")\n"
+			"\n"
+			"[build/tasks/generate_proto]\n"
+			"provider=\"command\"\n"
+			"command=\"python3\"\n"
+			"outputs=PackedStringArray(\"res://generated/protobuf/\", \"res://generated/manifest.json\")\n"
+			"\n"
+			"[build/tasks/bundle_metadata]\n"
+			"provider=\"command\"\n"
+			"command=\"python3\"\n"
+			"outputs=PackedStringArray(\"res://build/*.bundle\")\n"
+			"\n"
+			"[build/tasks/generate_models]\n"
+			"provider=\"command\"\n"
+			"command=\"python3\"\n"
+			"outputs=PackedStringArray(\"res://directory_output\")\n");
+
+	ProjectBuildPipelineConfig build_config;
+	CHECK_EQ(build_config.load_from_config_file(config), OK);
+
+	String task_name;
+	String output_root;
+	CHECK(build_config.is_declared_output_path("res://generated/protobuf/net/messages.fs", &task_name, &output_root));
+	CHECK_EQ(task_name, "generate_proto");
+	CHECK_EQ(output_root, "res://generated/protobuf/");
+
+	task_name = String();
+	output_root = String();
+	CHECK(build_config.is_declared_output_path("res://generated/manifest.json", &task_name, &output_root));
+	CHECK_EQ(task_name, "generate_proto");
+	CHECK_EQ(output_root, "res://generated/manifest.json");
+
+	task_name = String();
+	output_root = String();
+	CHECK(build_config.is_declared_output_path("res://build/client.bundle", &task_name, &output_root));
+	CHECK_EQ(task_name, "bundle_metadata");
+	CHECK_EQ(output_root, "res://build/*.bundle");
+
+	task_name = String();
+	output_root = String();
+	CHECK(build_config.is_declared_output_path("res://directory_output/nested/model.fs", &task_name, &output_root));
+	CHECK_EQ(task_name, "generate_models");
+	CHECK_EQ(output_root, "res://directory_output");
+
+	CHECK_FALSE(build_config.is_declared_output_path("res://scripts/player.fs"));
+	CHECK_FALSE(build_config.is_declared_output_path("user://generated/protobuf/net/messages.fs"));
+}
+
+TEST_CASE("[ProjectBuildPipelineConfig] declared output warnings only consider enabled stage tasks") {
+	ScopedBuildPipelineConfigProject project("project_build_pipeline_config_enabled_output_roots");
+	project.make_dir("res://enabled_dir");
+	project.make_dir("res://disabled_dir");
+	project.make_dir("res://unlisted_dir");
+
+	Ref<ConfigFile> config = parse_build_config(
+			"[build]\n"
+			"enabled=true\n"
+			"pre_compile=PackedStringArray(\"enabled_task\", \"disabled_task\")\n"
+			"\n"
+			"[build/tasks/enabled_task]\n"
+			"provider=\"command\"\n"
+			"command=\"python3\"\n"
+			"outputs=PackedStringArray(\"res://enabled_dir\")\n"
+			"\n"
+			"[build/tasks/disabled_task]\n"
+			"provider=\"command\"\n"
+			"command=\"python3\"\n"
+			"enabled=false\n"
+			"outputs=PackedStringArray(\"res://disabled_dir\")\n"
+			"\n"
+			"[build/tasks/unlisted_task]\n"
+			"provider=\"command\"\n"
+			"command=\"python3\"\n"
+			"outputs=PackedStringArray(\"res://unlisted_dir\")\n");
+
+	ProjectBuildPipelineConfig build_config;
+	CHECK_EQ(build_config.load_from_config_file(config), OK);
+
+	CHECK(build_config.is_declared_output_path("res://enabled_dir/generated.fs"));
+	CHECK_FALSE(build_config.is_declared_output_path("res://disabled_dir/generated.fs"));
+	CHECK_FALSE(build_config.is_declared_output_path("res://unlisted_dir/generated.fs"));
+
+	build_config.set_enabled(false);
+	CHECK_FALSE(build_config.is_declared_output_path("res://enabled_dir/generated.fs"));
+}
+
+TEST_CASE("[ProjectBuildPipelineConfig] declared output glob warnings use bounded literal roots") {
+	Ref<ConfigFile> config = parse_build_config(
+			"[build]\n"
+			"enabled=true\n"
+			"pre_compile=PackedStringArray(\"bundle_metadata\", \"unsafe_root_glob\")\n"
+			"\n"
+			"[build/tasks/bundle_metadata]\n"
+			"provider=\"command\"\n"
+			"command=\"python3\"\n"
+			"outputs=PackedStringArray(\"res://build/**/**/**/**/**/**/**/**/**/**/client.bundle\")\n"
+			"\n"
+			"[build/tasks/unsafe_root_glob]\n"
+			"provider=\"command\"\n"
+			"command=\"python3\"\n"
+			"outputs=PackedStringArray(\"res://*.fs\")\n");
+
+	ProjectBuildPipelineConfig build_config;
+	CHECK_EQ(build_config.load_from_config_file(config), OK);
+
+	String task_name;
+	String output_root;
+	CHECK(build_config.is_declared_output_path("res://build/client.bundle", &task_name, &output_root));
+	CHECK_EQ(task_name, "bundle_metadata");
+	CHECK_EQ(output_root, "res://build/**/**/**/**/**/**/**/**/**/**/client.bundle");
+	CHECK_FALSE(build_config.is_declared_output_path("res://player.fs"));
 }
 
 TEST_CASE("[ProjectBuildPipelineConfig] rejects generated outputs that normalize to the project root") {

@@ -141,6 +141,7 @@ public:
 
 	PackedStringArray get_stage_tasks(Stage p_stage) const;
 	PackedStringArray get_enabled_stage_tasks(Stage p_stage) const;
+	bool is_declared_output_path(const String &p_path, String *r_task_name = nullptr, String *r_output_root = nullptr) const;
 
 	const ProviderDescriptor *get_provider(const String &p_id) const;
 	const TaskDefinition *get_task(const String &p_name) const;
