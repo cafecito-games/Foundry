@@ -67,6 +67,10 @@ EditorFileSystem::ScannedDirectory *EditorFileSystem::first_scan_root_dir = null
 //the name is the version, to keep compatibility with different versions of Godot
 #define CACHE_FILE_NAME "filesystem_cache11"
 
+#ifdef EDITOR_FS_DIRECTORY_WATCHER_ENABLED
+static const uint64_t FS_WATCH_CLEAN_POLL_RECHECK_DELAY_USEC = 50000;
+#endif
+
 int EditorFileSystemDirectory::find_file_index(const String &p_file) const {
 	for (int i = 0; i < files.size(); i++) {
 		if (files[i]->file == p_file) {
@@ -1724,8 +1728,52 @@ String EditorFileSystem::_get_file_by_class_name(EditorFileSystemDirectory *p_di
 
 void EditorFileSystem::_fs_watch_mark_scanned() {
 	// Consume the dirty state: a scan is about to run (or just ran) and will detect every change.
+	fs_watch_clean_poll_recheck_pending = false;
 	fs_watch_dirty.clear();
 }
+
+void EditorFileSystem::_fs_watch_schedule_clean_poll_recheck() {
+	if (fs_watch_clean_poll_recheck_pending) {
+		return;
+	}
+	fs_watch_clean_poll_recheck_pending = true;
+	fs_watch_clean_poll_recheck_usec = OS::get_singleton()->get_ticks_usec() + FS_WATCH_CLEAN_POLL_RECHECK_DELAY_USEC;
+	set_process(true);
+}
+
+bool EditorFileSystem::_fs_watch_process_clean_poll_recheck() {
+	if (!fs_watch_clean_poll_recheck_pending) {
+		return false;
+	}
+	if (OS::get_singleton()->get_ticks_usec() < fs_watch_clean_poll_recheck_usec) {
+		return true;
+	}
+
+	fs_watch_clean_poll_recheck_pending = false;
+	if (fs_watch_healthy && _fs_watch_poll()) {
+		scan_changes();
+		return true;
+	}
+	return false;
+}
+
+#ifdef TESTS_ENABLED
+void EditorFileSystem::setup_directory_watcher_clean_poll_for_tests() {
+	first_scan = false;
+	scanning = false;
+	scanning_changes = false;
+	scan_changes_pending = false;
+	fs_watch_healthy = true;
+	fs_watch_dirty.clear();
+	fs_watch_clean_poll_recheck_pending = false;
+	fs_watch_poll_result_for_tests = 0;
+	set_process(false);
+}
+
+bool EditorFileSystem::is_directory_watcher_clean_poll_recheck_pending_for_tests() const {
+	return fs_watch_clean_poll_recheck_pending;
+}
+#endif
 
 #if defined(__linux__) && !defined(__ANDROID__)
 // ---- Linux backend (inotify) ----
@@ -1790,6 +1838,11 @@ void EditorFileSystem::_fs_watch_sync_tree(EditorFileSystemDirectory *p_dir) {
 }
 
 bool EditorFileSystem::_fs_watch_poll() {
+#ifdef TESTS_ENABLED
+	if (fs_watch_poll_result_for_tests >= 0) {
+		return fs_watch_poll_result_for_tests > 0;
+	}
+#endif
 	if (!fs_watch_healthy || fs_watch_inotify_fd < 0) {
 		return true; // Uncertain: force a scan.
 	}
@@ -1911,6 +1964,11 @@ void EditorFileSystem::_fs_watch_sync_tree(EditorFileSystemDirectory *p_dir) {
 }
 
 bool EditorFileSystem::_fs_watch_poll() {
+#ifdef TESTS_ENABLED
+	if (fs_watch_poll_result_for_tests >= 0) {
+		return fs_watch_poll_result_for_tests > 0;
+	}
+#endif
 	if (!fs_watch_healthy || fs_watch_stream == nullptr) {
 		return true; // Uncertain: force a scan.
 	}
@@ -1937,6 +1995,7 @@ void EditorFileSystem::scan_changes() {
 		if (!_fs_watch_poll()) {
 			// The directory watcher has observed no changes since the last scan, so the full
 			// O(number of files) rescan can be skipped entirely.
+			_fs_watch_schedule_clean_poll_recheck();
 			emit_signal(SNAME("sources_changed"), false);
 			return;
 		}
@@ -2071,6 +2130,14 @@ void EditorFileSystem::_notification(int p_what) {
 
 				prevent_recursive_process_hack = false;
 			}
+#ifdef EDITOR_FS_DIRECTORY_WATCHER_ENABLED
+			const bool keep_processing_for_fs_watch = _fs_watch_process_clean_poll_recheck();
+			if (keep_processing_for_fs_watch) {
+				set_process(true);
+			} else if (!scanning && !scanning_changes && !thread.is_started() && !scan_changes_pending) {
+				set_process(false);
+			}
+#endif
 		} break;
 	}
 }

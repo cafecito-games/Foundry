@@ -5,8 +5,8 @@ optimizations on macOS**. The implementation lives in the branch these files shi
 agent (or you) only needs to check out the branch, build, and run the checks below.
 
 > Status: the Foundry Script load optimizations (#760) and the **Linux** `inotify` watcher (#762)
-> are already merged to `develop`. This branch adds the **macOS FSEvents backend** (plus the
-> cross-platform refactor of the watcher) and needs macOS build + runtime verification.
+> are already merged to `develop`. This branch adds the **macOS FSEvents backend** plus the
+> cross-platform watcher recheck used to avoid missed late events after a clean poll.
 
 ## What was optimized
 
@@ -18,9 +18,8 @@ agent (or you) only needs to check out the branch, build, and run the checks bel
    editor focus-in and stats every tracked file (O(number of files)). A directory watcher lets it
    **skip** that rescan when nothing changed. Linux uses `inotify`; **macOS uses FSEvents**.
 
-> The macOS FSEvents backend (`editor/file_system/editor_file_system.cpp`, `#elif defined(__APPLE__)`)
-> was written in a Linux-only environment and has **not** been compiled or run on macOS yet. That is
-> what this kit is for.
+> Use this kit when changing the watcher: it exercises both the idle skip path and the dirty path
+> on a large project without needing a GUI focus event.
 
 ## Build (macOS)
 
@@ -40,12 +39,13 @@ compile, fix the API usage in the `#elif defined(__APPLE__)` block of `editor/fi
 ./bin/foundry.macos.editor.dev.* --headless --test --force-colors
 ```
 Expect `[doctest] Status: SUCCESS!` (leaked-instance warnings at exit are expected/non-blocking).
-Includes the regression test `Docs are generated lazily on request after reload()`.
+Includes the directory-watcher regression test that keeps a delayed recheck alive after a clean
+poll, plus the Foundry Script lazy-doc tests.
 
 ### 2. Headless watcher measurement (hard numbers)
 Focus-in doesn't happen headless, so apply the temporary instrumentation, rebuild, and run:
 ```sh
-git apply misc/foundry_perf/headless_scan_harness.patch
+git apply --unidiff-zero misc/foundry_perf/headless_scan_harness.patch
 scons platform=macos target=editor dev_build=yes tests=yes -j$(sysctl -n hw.ncpu)
 
 python3 misc/foundry_perf/gen_watch_project.py /tmp/proj_large 300 25   # ~7,500 files
@@ -54,14 +54,18 @@ python3 misc/foundry_perf/gen_watch_project.py /tmp/proj_large 300 25   # ~7,500
 FOUNDRY_PERF=1 FOUNDRY_PERF_TRIGGER_SCAN=5 \
   ./bin/foundry.macos.editor.dev.* --headless --editor --path /tmp/proj_large 2>&1 | grep '\[PERF\]\[scan_changes\]'
 
-# Activity: touch a temp file before each scan -> expect mode=SCAN every time
+# Activity: touch a temp file before each scan -> expect mode=SCAN every time.
+# The harness waits 50 ms after each synthetic touch so macOS FSEvents can deliver it before
+# the next forced scan. Override with FOUNDRY_PERF_TOUCH_DELAY_USEC only when stress-testing.
 FOUNDRY_PERF=1 FOUNDRY_PERF_TRIGGER_SCAN=5 FOUNDRY_PERF_TOUCH=1 \
   ./bin/foundry.macos.editor.dev.* --headless --editor --path /tmp/proj_large 2>&1 | grep '\[PERF\]\[scan_changes\]'
 
-git checkout -- editor/file_system/editor_file_system.cpp   # revert instrumentation; DO NOT commit it
+git apply -R --unidiff-zero misc/foundry_perf/headless_scan_harness.patch   # revert instrumentation; DO NOT commit it
 ```
 Reference (Linux, ~8.2k files): idle → first `mode=SCAN` (~54 ms) then `mode=SKIP`; activity → every
-scan is `mode=SCAN`. macOS should show the same pattern (absolute ms will differ).
+scan is `mode=SCAN`. macOS should show the same pattern (absolute ms will differ). With
+`FOUNDRY_PERF_TOUCH_DELAY_USEC=0`, the harness intentionally races FSEvents and may observe SKIPs
+before the delayed recheck catches the event; do not use that as the baseline measurement.
 
 ### 3. Manual GUI test (the key macOS-only check)
 ```sh
@@ -86,7 +90,11 @@ Compare `script_cold` / `flat_cold` to a build of `develop` to confirm the cold-
 
 ## Correctness invariants (do not break when fixing the macOS backend)
 - Skip the scan **only** when the watcher is healthy **and** reports zero events since the last scan.
-- Call `FSEventStreamFlushSync` before reading the dirty flag (closes the latency race).
+- Call `FSEventStreamFlushSync` before reading the dirty flag (drains events already buffered by
+  the stream).
+- After a clean watcher poll, keep one short delayed recheck alive. This catches asynchronous
+  watcher events that arrive just after the focus-in poll without returning to unconditional full
+  scans.
 - Any dropped-event flag, stream-start failure, or disabled setting ⇒ unhealthy ⇒ full scan. A
   broken watcher must only ever cause an *unnecessary* scan, never a *missed* change.
 - The dirty flag is set from the FSEvents dispatch-queue thread ⇒ it must stay a `SafeFlag`.

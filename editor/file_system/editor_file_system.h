@@ -360,7 +360,12 @@ class EditorFileSystem : public Node {
 	// missed. Linux is backed by inotify, macOS by FSEvents; other platforms keep polling.
 	bool fs_watch_initialized = false;
 	bool fs_watch_healthy = false;
+	bool fs_watch_clean_poll_recheck_pending = false;
+	uint64_t fs_watch_clean_poll_recheck_usec = 0;
 	SafeFlag fs_watch_dirty; // Set by the backend (possibly from another thread on macOS).
+#ifdef TESTS_ENABLED
+	int fs_watch_poll_result_for_tests = -1;
+#endif
 #if defined(__linux__) && !defined(__ANDROID__)
 	int fs_watch_inotify_fd = -1;
 	HashMap<int, String> fs_watch_wd_to_dir;
@@ -375,6 +380,8 @@ class EditorFileSystem : public Node {
 	void _fs_watch_sync_tree(EditorFileSystemDirectory *p_dir);
 	bool _fs_watch_poll();
 	void _fs_watch_mark_scanned();
+	void _fs_watch_schedule_clean_poll_recheck();
+	bool _fs_watch_process_clean_poll_recheck();
 #endif
 
 	void _find_group_files(EditorFileSystemDirectory *efd, HashMap<String, Vector<String>> &group_files, HashSet<String> &groups_to_reimport);
@@ -456,6 +463,12 @@ public:
 
 	void add_import_format_support_query(Ref<EditorFileSystemImportFormatSupportQuery> p_query);
 	void remove_import_format_support_query(Ref<EditorFileSystemImportFormatSupportQuery> p_query);
+
+#if defined(TESTS_ENABLED) && defined(EDITOR_FS_DIRECTORY_WATCHER_ENABLED)
+	void setup_directory_watcher_clean_poll_for_tests();
+	bool is_directory_watcher_clean_poll_recheck_pending_for_tests() const;
+#endif
+
 	EditorFileSystem();
 	~EditorFileSystem();
 };
