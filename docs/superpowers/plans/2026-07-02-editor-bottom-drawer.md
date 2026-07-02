@@ -696,6 +696,7 @@ git commit -m "Add per-panel pin-to-dock to the bottom drawer"
 **Files:**
 - Modify: `editor/gui/editor_bottom_panel.h`, `editor/gui/editor_bottom_panel.cpp`
 - Modify: `editor/settings/editor_settings.cpp` (register the setting near the other `interface/editor/` booleans; match the neighbors' macro style, e.g. `EDITOR_SETTING_BASIC`)
+- Modify: `doc/classes/EditorSettings.xml` (document the new setting in alphabetical member order, matching the neighboring `interface/editor/` entries' format)
 
 **Acceptance Criteria:**
 - [ ] Unpinned open/close slides (~0.15 s); pinned and drag-resize apply instantly
@@ -734,22 +735,27 @@ void EditorBottomPanel::_set_drawer_top_offset(float p_offset) {
 }
 ```
 
-In `_update_drawer_geometry`, replace the plain `set_offset(SIDE_TOP, -drawer_height);` with:
+In `_update_drawer_geometry`, replace the plain `set_offset(SIDE_TOP, -drawer_height);` with the block below. The tween must only be killed/restarted when the target height actually changes: one tab toggle fires `_update_drawer_geometry` several times in the same frame (the panel stylebox swap changes the strip height mid-burst), and killing the tween on a same-target settling call would snap the drawer instead of animating. Same-target calls with a running tween are left alone; the direct-set branch also runs when a previously finished tween Ref lingers (`!is_running()`), so same-target geometry refreshes (e.g. window resizes) still reposition the drawer and grabber.
 
 ```cpp
-	if (drawer_tween.is_valid()) {
-		drawer_tween->kill();
-		drawer_tween.unref();
+	const bool animate = !pinned && !grabber_dragging && is_inside_tree() && EDITOR_GET("interface/editor/animate_bottom_drawer");
+	const bool target_changed = last_drawer_height != drawer_height;
+	if (!animate || target_changed) {
+		if (drawer_tween.is_valid()) {
+			drawer_tween->kill();
+			drawer_tween.unref();
+		}
 	}
-	const bool animate = !_is_current_pinned() && !grabber_dragging && is_inside_tree() && last_drawer_height != drawer_height && EDITOR_GET("interface/editor/animate_bottom_drawer");
-	if (animate) {
+	if (animate && target_changed) {
 		drawer_tween = create_tween();
 		drawer_tween->tween_method(callable_mp(this, &EditorBottomPanel::_set_drawer_top_offset), get_offset(SIDE_TOP), -(float)drawer_height, 0.15)->set_trans(Tween::TRANS_CUBIC)->set_ease(Tween::EASE_OUT);
-	} else {
-		set_offset(SIDE_TOP, -drawer_height);
+	} else if (drawer_tween.is_null() || !drawer_tween->is_running()) {
+		_set_drawer_top_offset(-drawer_height);
 	}
 	last_drawer_height = drawer_height;
 ```
+
+Grabber positioning moves into `_set_drawer_top_offset` (computed from the panel's current animated top offset) so the grabber tracks the slide in the animated path and stays correct in the instant path.
 
 Add `#include "editor/settings/editor_settings.h"` and `#include "scene/animation/tween.h"` if not already present.
 
@@ -766,7 +772,7 @@ Add `#include "editor/settings/editor_settings.h"` and `#include "scene/animatio
 ```cpp
 void EditorBottomPanel::shortcut_input(const Ref<InputEvent> &p_event) {
 	Ref<InputEventKey> k = p_event;
-	if (k.is_null() || !k->is_pressed() || k->is_echo() || k->get_keycode() != Key::ESCAPE) {
+	if (k.is_null() || !k->is_action_pressed(SNAME("ui_cancel"), false, true)) {
 		return;
 	}
 	if (get_current_tab() == -1 || _is_current_pinned()) {
