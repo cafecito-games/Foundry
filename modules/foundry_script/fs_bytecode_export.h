@@ -73,6 +73,7 @@ public:
 	public:
 		uint32_t insert(const String &p_string);
 		void write(StreamPeerBuffer *r_stream) const;
+		void clear();
 	};
 
 	static Vector<uint8_t> write_header();

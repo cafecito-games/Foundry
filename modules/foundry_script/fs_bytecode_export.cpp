@@ -58,6 +58,11 @@ void FSBytecodeExporter::StringTable::write(StreamPeerBuffer *r_stream) const {
 	}
 }
 
+void FSBytecodeExporter::StringTable::clear() {
+	indices.clear();
+	strings.clear();
+}
+
 Vector<uint8_t> FSBytecodeExporter::write_header() {
 	Ref<StreamPeerBuffer> stream;
 	stream.instantiate();
@@ -597,6 +602,10 @@ Error FSBytecodeExporter::serialize(const Ref<FoundryScript> &p_script, Vector<u
 			vformat("Only a root script can be serialized to compiled bytecode; '%s' is an inner class.",
 					p_script->fully_qualified_name));
 
+	// Every serialization starts from a pristine string table: a reused exporter (the export
+	// integration serializes many scripts through one instance) must not embed a previous script's
+	// strings in this buffer — that would bloat every file and bleed identifiers across scripts.
+	string_table.clear();
 	local_class_indices.clear();
 	external_dependencies.clear();
 	external_dependency_set.clear();

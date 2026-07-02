@@ -64,7 +64,8 @@ public:
 //
 // A loader instance carries per-load state (the string table and the intra-file class list), so use
 // one instance per `.fsb`; when resolver recursion loads another `.fsb` (e.g. an external base), it
-// must do so through a fresh loader.
+// must do so through a fresh loader. The entry points enforce this: re-entering a loader that is
+// mid-load fails with ERR_BUSY instead of corrupting the outer load's state.
 class FSBytecodeLoader {
 public:
 	// Lambda metadata read alongside a deserialized function; the caller rebuilds the owning
@@ -84,6 +85,9 @@ private:
 	Vector<FoundryScript *> local_classes;
 	bool has_static_data = false;
 	bool annotated_static_unload = false;
+	// Guards the entry points against re-entrant use of one loader (see the class comment); set for
+	// the duration of load_skeleton/load_full/read_dependencies via a scope guard.
+	bool load_in_progress = false;
 
 	// A class's base reference parsed from the skeleton section; applied by `load_full` after the
 	// whole tree is instantiated (a base may be a later class in preorder).

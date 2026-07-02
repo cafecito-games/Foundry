@@ -38,6 +38,17 @@
 #include "core/io/marshalls.h"
 #include "core/version.h"
 
+// Marks a loader as mid-load for the duration of an entry point, so re-entrant use of the same
+// instance (which would clobber the string table and intra-file class list) is rejected with
+// ERR_BUSY on every path, including early error returns.
+struct FSBytecodeLoadScope {
+	bool *load_flag = nullptr;
+
+	explicit FSBytecodeLoadScope(bool *p_load_flag) :
+			load_flag(p_load_flag) { *load_flag = true; }
+	~FSBytecodeLoadScope() { *load_flag = false; }
+};
+
 // Reads a length-prefixed UTF-8 string, rejecting lengths the stream cannot hold so a corrupted
 // prefix cannot trigger a huge allocation.
 static Error read_bounded_utf8_string(StreamPeerBuffer *p_stream, String &r_string) {
@@ -1010,6 +1021,14 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 		}
 	}
 
+	// A nested function is always a lambda, and compiled lambdas are always named
+	// "<anonymous lambda>" (not a declarable identifier). A hostile lambda name that collides with
+	// a registered member function must be rejected before it is committed: the FSFunction
+	// destructor unregisters by name, so a later rollback or teardown of the lambda would silently
+	// unregister (and orphan) the real member function.
+	ERR_FAIL_COND_V_MSG(p_depth > 0 && p_script->member_functions.has(StringName(function_name)), ERR_INVALID_DATA,
+			vformat("Malformed lambda name '%s' in compiled script '%s'.", function_name, script_path));
+
 	p_function->setup_runtime_pointers();
 	p_function->name = StringName(function_name);
 #ifdef DEBUG_ENABLED
@@ -1134,7 +1153,10 @@ Error FSBytecodeLoader::_read_skeleton_class(StreamPeerBuffer *p_stream, const R
 					p_root_path, native_class_name));
 
 	// Base references are collected (aligned with the preorder class list) and applied by
-	// `load_full` once the whole tree exists: a local base may be a later class in preorder.
+	// `load_full` once the whole tree exists: a local base may be a later class in preorder. The
+	// parse below reads the wire format `FSBytecodeExporter::_encode_script_reference` writes and
+	// `_read_script_reference` decodes; it is inlined here because resolution must be deferred, so
+	// any wire-format change must update all three sites.
 	SkeletonBaseReference base_reference;
 	if (p_stream->get_u8() != 0) {
 		const uint8_t locality = p_stream->get_u8();
@@ -1190,6 +1212,9 @@ Error FSBytecodeLoader::_read_skeleton_class(StreamPeerBuffer *p_stream, const R
 
 Error FSBytecodeLoader::load_skeleton(const Vector<uint8_t> &p_buffer, const Ref<FoundryScript> &p_script) {
 	ERR_FAIL_COND_V(p_script.is_null(), ERR_INVALID_PARAMETER);
+	ERR_FAIL_COND_V_MSG(load_in_progress, ERR_BUSY,
+			"This bytecode loader is already mid-load; nested loads need a fresh FSBytecodeLoader.");
+	FSBytecodeLoadScope load_scope(&load_in_progress);
 	Ref<StreamPeerBuffer> stream;
 	Error error = _open_script_stream(p_buffer, stream);
 	if (error != OK) {
@@ -1210,6 +1235,9 @@ Error FSBytecodeLoader::load_skeleton(const Vector<uint8_t> &p_buffer, const Ref
 
 Error FSBytecodeLoader::read_dependencies(const Vector<uint8_t> &p_buffer, Vector<String> &r_dependencies) {
 	r_dependencies.clear();
+	ERR_FAIL_COND_V_MSG(load_in_progress, ERR_BUSY,
+			"This bytecode loader is already mid-load; nested loads need a fresh FSBytecodeLoader.");
+	FSBytecodeLoadScope load_scope(&load_in_progress);
 	Ref<StreamPeerBuffer> stream;
 	const Error error = _open_script_stream(p_buffer, stream);
 	if (error != OK) {
@@ -1578,9 +1606,12 @@ Error FSBytecodeLoader::_read_class_body(StreamPeerBuffer *p_stream, FoundryScri
 		}
 		if (p_script->member_functions.has(function->name)) {
 			// Deleting the duplicate erases its name from the map (the destructor unregisters by
-			// name), which is fine: the load fails and the caller discards the whole script.
-			const String duplicate_name = function->name;
+			// name), which would orphan the surviving original; put the original back so the script
+			// still owns and frees it after this load fails.
+			FSFunction *shadowed_function = p_script->member_functions[function->name];
+			const StringName duplicate_name = function->name;
 			memdelete(function);
+			p_script->member_functions.insert(duplicate_name, shadowed_function);
 			ERR_FAIL_V_MSG(ERR_INVALID_DATA,
 					vformat("Duplicate function '%s' in compiled script '%s'.", duplicate_name, script_path));
 		}
@@ -1711,6 +1742,10 @@ Error FSBytecodeLoader::_read_witness_section(StreamPeerBuffer *p_stream, Foundr
 Error FSBytecodeLoader::load_full(const Vector<uint8_t> &p_buffer, const Ref<FoundryScript> &p_script) {
 	ERR_FAIL_COND_V(p_script.is_null(), ERR_INVALID_PARAMETER);
 	const String script_path = p_script->get_script_path();
+	ERR_FAIL_COND_V_MSG(load_in_progress, ERR_BUSY,
+			vformat("Cannot load compiled script '%s': this bytecode loader is already mid-load; nested loads need a fresh FSBytecodeLoader.",
+					script_path));
+	FSBytecodeLoadScope load_scope(&load_in_progress);
 	ERR_FAIL_COND_V_MSG(p_script->valid, ERR_ALREADY_IN_USE,
 			vformat("Compiled script '%s' is already loaded.", script_path));
 

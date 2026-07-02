@@ -412,6 +412,50 @@ TEST_CASE("[FoundryScript][BytecodeScript] External bases and preload constants 
 		CHECK(!unresolved->is_valid());
 	}
 
+	// Re-entering the loader that is mid-load (a resolver reusing its invoking loader instead of a
+	// fresh one) is rejected with ERR_BUSY without corrupting the outer load.
+	{
+		struct ReentrantBytecodeResolver : public BytecodeTestResolver {
+			FSBytecodeLoader *active_loader = nullptr;
+			const Vector<uint8_t> *reentrant_buffer = nullptr;
+			Ref<FoundryScript> nested_target;
+			Error nested_result = OK;
+			bool attempted = false;
+
+			virtual Ref<Script> resolve_script(const String &p_path, const String &p_fully_qualified_name,
+					bool &r_is_local_class) override {
+				if (!attempted && active_loader != nullptr) {
+					attempted = true;
+					ERR_PRINT_OFF;
+					nested_result = active_loader->load_full(*reentrant_buffer, nested_target);
+					ERR_PRINT_ON;
+				}
+				return BytecodeTestResolver::resolve_script(p_path, p_fully_qualified_name, r_is_local_class);
+			}
+		};
+
+		ReentrantBytecodeResolver reentrant_resolver;
+		reentrant_resolver.scripts = resolver.scripts;
+		reentrant_resolver.resources = resolver.resources;
+		reentrant_resolver.nested_target.instantiate();
+		reentrant_resolver.nested_target->set_path_cache(original->get_script_path());
+		Ref<FoundryScript> outer;
+		outer.instantiate();
+		outer->set_path_cache(original->get_script_path());
+		FSBytecodeLoader reentrant_loader;
+		reentrant_loader.set_resolver(&reentrant_resolver);
+		reentrant_resolver.active_loader = &reentrant_loader;
+		reentrant_resolver.reentrant_buffer = &buffer;
+		REQUIRE(reentrant_loader.load_full(buffer, outer) == OK);
+		CHECK(reentrant_resolver.attempted);
+		CHECK(reentrant_resolver.nested_result == ERR_BUSY);
+		CHECK(!reentrant_resolver.nested_target->is_valid());
+		CHECK(outer->is_valid());
+		const Variant outer_instance_variant = bytecode_new_instance(outer);
+		Object *outer_instance = outer_instance_variant;
+		CHECK((int64_t)bytecode_instance_call(outer_instance, SNAME("child_total"), {}) == 12);
+	}
+
 	DirAccess::remove_absolute(base_path);
 	DirAccess::remove_absolute(resource_path);
 }
@@ -588,6 +632,68 @@ TEST_CASE("[FoundryScript][BytecodeScript] Conformance witnesses re-register wit
 	const Variant instance_variant = bytecode_new_instance(restored);
 	Object *instance = instance_variant;
 	CHECK((int64_t)bytecode_instance_call(instance, SNAME("run"), {}) == 47);
+}
+
+TEST_CASE("[FoundryScript][BytecodeScript] Script-level lambda metadata rebuilds") {
+	const Ref<FoundryScript> original = compile_bytecode_test_source(
+			"func lambda_total(base: int) -> int:\n"
+			"\tvar adder := func(value: int) -> int:\n"
+			"\t\treturn value + base\n"
+			"\treturn int(adder.call(4))\n");
+	BytecodeTestResolver resolver;
+	const Ref<FoundryScript> restored = bytecode_round_trip_script(original, &resolver);
+
+	// The restored script's lambda_info map is keyed by the restored lambda functions, with the
+	// serialized capture metadata.
+	REQUIRE(original->get_lambda_info().size() == 1);
+	REQUIRE(restored->get_lambda_info().size() == 1);
+	REQUIRE(original->get_member_functions().has(SNAME("lambda_total")));
+	REQUIRE(restored->get_member_functions().has(SNAME("lambda_total")));
+	const FSFunction *original_function = original->get_member_functions()[SNAME("lambda_total")];
+	const FSFunction *restored_function = restored->get_member_functions()[SNAME("lambda_total")];
+	REQUIRE(original_function->get_lambdas().size() == 1);
+	REQUIRE(restored_function->get_lambdas().size() == 1);
+	const FoundryScript::LambdaInfo *original_info =
+			original->get_lambda_info().getptr(original_function->get_lambdas()[0]);
+	const FoundryScript::LambdaInfo *restored_info =
+			restored->get_lambda_info().getptr(restored_function->get_lambdas()[0]);
+	REQUIRE(original_info != nullptr);
+	REQUIRE(restored_info != nullptr);
+	CHECK(restored_info->capture_count == original_info->capture_count);
+	CHECK(restored_info->use_self == original_info->use_self);
+
+	const Variant instance_variant = bytecode_new_instance(restored);
+	Object *instance = instance_variant;
+	CHECK((int64_t)bytecode_instance_call(instance, SNAME("lambda_total"), { 10 }) == 14);
+}
+
+TEST_CASE("[FoundryScript][BytecodeScript] Exporter reuse does not leak strings across scripts") {
+	const Ref<FoundryScript> first = compile_bytecode_test_source(
+			"var first_script_unique_marker: int = 1\n");
+	const Ref<FoundryScript> second = compile_bytecode_test_source(
+			"var second_script_unique_marker: int = 2\n");
+
+	FSBytecodeExporter exporter;
+	Vector<uint8_t> first_buffer;
+	REQUIRE(exporter.serialize(first, first_buffer) == OK);
+	Vector<uint8_t> second_buffer;
+	REQUIRE(exporter.serialize(second, second_buffer) == OK);
+
+	CHECK(bytecode_buffer_contains(first_buffer, "first_script_unique_marker"));
+	CHECK(bytecode_buffer_contains(second_buffer, "second_script_unique_marker"));
+	// A reused exporter must reset its string table per script; otherwise every buffer embeds all
+	// previously serialized scripts' identifiers.
+	CHECK(!bytecode_buffer_contains(second_buffer, "first_script_unique_marker"));
+
+	// The second buffer is self-consistent after the reset.
+	BytecodeTestResolver resolver;
+	Ref<FoundryScript> restored;
+	restored.instantiate();
+	restored->set_path_cache(second->get_script_path());
+	FSBytecodeLoader loader;
+	loader.set_resolver(&resolver);
+	REQUIRE(loader.load_full(second_buffer, restored) == OK);
+	CHECK(restored->debug_get_member_indices().has(SNAME("second_script_unique_marker")));
 }
 
 TEST_CASE("[FoundryScript][BytecodeScript] Serialized scripts carry no source text") {
