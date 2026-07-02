@@ -30,6 +30,8 @@
 
 #include "test_foundry_script.h"
 
+#include "fs_temporary_project_tree.h"
+
 #ifdef TOOLS_ENABLED
 #include "../editor/fs_docgen.h"
 #include "../editor/fs_highlighter.h"
@@ -3620,6 +3622,155 @@ TEST_CASE("[Modules][FoundryScript] Global class re-registration can update the 
 			"res://characters/new_path.fs", false, false, false);
 
 	CHECK_EQ(ScriptServer::get_global_class_path("characters.MovedCharacter"), "res://characters/new_path.fs");
+}
+
+TEST_CASE("[Modules][FoundryScript] Filesystem scan registers global classes with their metadata") {
+	GlobalScriptClassCacheBackup backup;
+	ScriptServer::global_classes_clear();
+
+	TemporaryProjectTree tree("fs_global_class_scan_discovery");
+	tree.write_file("player.fs", "class_name ScanPlayer\nextends Node\n");
+	tree.write_file("npc/guard.fs", "namespace scan.npcs\nclass_name ScanGuard\nextends Node\n");
+	tree.write_file("combat/sharable.fs", "trait_name ScanSharable\n\nabstract func share() -> void\n");
+	tree.write_file("items/weapon_type.fs", "enum_name ScanWeaponType {\n\tAXE,\n\tSWORD,\n}\n");
+	tree.write_file("base/creature.fs", "abstract class_name ScanCreature\nextends Node\n");
+	tree.write_file("tools/painter.fs", "@tool\nclass_name ScanPainter\nextends Node\n");
+	tree.write_file("notes.txt", "not a script\n");
+
+	ScriptServer::scan_global_classes(tree.root);
+
+	CHECK(ScriptServer::is_global_class("ScanPlayer"));
+	CHECK_EQ(ScriptServer::get_global_class_path("ScanPlayer"), tree.root.path_join("player.fs"));
+	CHECK_EQ(ScriptServer::get_global_class_base("ScanPlayer"), StringName("Node"));
+	CHECK_EQ(ScriptServer::get_global_class_language("ScanPlayer"), FSLanguage::get_singleton()->get_name());
+
+	CHECK(ScriptServer::is_global_class("scan.npcs.ScanGuard"));
+	CHECK_EQ(ScriptServer::get_global_class_path("scan.npcs.ScanGuard"), tree.root.path_join("npc/guard.fs"));
+
+	CHECK(ScriptServer::is_global_class_trait("ScanSharable"));
+	CHECK(ScriptServer::is_global_class_enum("ScanWeaponType"));
+	CHECK(ScriptServer::is_global_class_abstract("ScanCreature"));
+	CHECK(ScriptServer::is_global_class_tool("ScanPainter"));
+}
+
+TEST_CASE("[Modules][FoundryScript] Filesystem scan honors the editor's directory skip rules") {
+	GlobalScriptClassCacheBackup backup;
+	ScriptServer::global_classes_clear();
+
+	TemporaryProjectTree tree("fs_global_class_scan_skip_rules");
+	tree.write_file("keep.fs", "class_name ScanKeepRoot\nextends Node\n");
+	// Unlike the migration wizard's scan, addons are first-party for class resolution: the editor
+	// registers their global classes, so the headless scan must too.
+	tree.write_file("addons/lib/plugin_class.fs", "class_name ScanAddonClass\nextends Node\n");
+	tree.write_file("vendor/.fsignore", "");
+	tree.write_file("vendor/lib.fs", "class_name ScanVendored\nextends Node\n");
+	tree.write_file(".hidden/secret.fs", "class_name ScanHiddenClass\nextends Node\n");
+	tree.write_file("nested/project.foundry", "[application]\n");
+	tree.write_file("nested/sub.fs", "class_name ScanNestedClass\nextends Node\n");
+
+	ScriptServer::scan_global_classes(tree.root);
+
+	CHECK(ScriptServer::is_global_class("ScanKeepRoot"));
+	CHECK(ScriptServer::is_global_class("ScanAddonClass"));
+	CHECK_FALSE(ScriptServer::is_global_class("ScanVendored"));
+	CHECK_FALSE(ScriptServer::is_global_class("ScanHiddenClass"));
+	CHECK_FALSE(ScriptServer::is_global_class("ScanNestedClass"));
+}
+
+TEST_CASE("[Modules][FoundryScript] Filesystem scan reconciles stale entries against disk state") {
+	GlobalScriptClassCacheBackup backup;
+	ScriptServer::global_classes_clear();
+
+	TemporaryProjectTree tree("fs_global_class_scan_stale");
+	tree.write_file("renamed.fs", "class_name ScanNewName\nextends Node\n");
+
+	// A cache entry whose file was deleted, and one whose file now declares a different class.
+	ScriptServer::add_global_class("ScanGhost", "Node", FSLanguage::get_singleton()->get_name(),
+			tree.root.path_join("ghost.fs"), false, false, false);
+	ScriptServer::add_global_class("ScanOldName", "Node", FSLanguage::get_singleton()->get_name(),
+			tree.root.path_join("renamed.fs"), false, false, false);
+	// Entries the scan is not authoritative for: another language's class under the scanned root,
+	// and a FoundryScript class outside it.
+	ScriptServer::add_global_class("ScanForeignLanguage", "Node", "NotFoundryScript",
+			tree.root.path_join("foreign.fs"), false, false, false);
+	ScriptServer::add_global_class("ScanElsewhere", "Node", FSLanguage::get_singleton()->get_name(),
+			"res://elsewhere/thing.fs", false, false, false);
+
+	ScriptServer::scan_global_classes(tree.root);
+
+	CHECK_FALSE(ScriptServer::is_global_class("ScanGhost"));
+	CHECK_FALSE(ScriptServer::is_global_class("ScanOldName"));
+	CHECK(ScriptServer::is_global_class("ScanNewName"));
+	CHECK_EQ(ScriptServer::get_global_class_path("ScanNewName"), tree.root.path_join("renamed.fs"));
+	CHECK(ScriptServer::is_global_class("ScanForeignLanguage"));
+	CHECK(ScriptServer::is_global_class("ScanElsewhere"));
+}
+
+TEST_CASE("[Modules][FoundryScript] Filesystem scan keeps the first file on duplicate class names") {
+	GlobalScriptClassCacheBackup backup;
+	ScriptServer::global_classes_clear();
+
+	TemporaryProjectTree tree("fs_global_class_scan_duplicates");
+	tree.write_file("alpha.fs", "class_name ScanDuplicate\nextends Node\n");
+	tree.write_file("beta.fs", "class_name ScanDuplicate\nextends Node\n");
+
+	ERR_PRINT_OFF;
+	ScriptServer::scan_global_classes(tree.root);
+	ERR_PRINT_ON;
+
+	CHECK(ScriptServer::is_global_class("ScanDuplicate"));
+	// Files are scanned in sorted order, so the collision always resolves to the same file.
+	CHECK_EQ(ScriptServer::get_global_class_path("ScanDuplicate"), tree.root.path_join("alpha.fs"));
+}
+
+TEST_CASE("[Modules][FoundryScript] Filesystem scan indexes annotation-only libraries") {
+	GlobalScriptClassCacheBackup backup;
+	ScriptServer::global_classes_clear();
+
+	TemporaryProjectTree tree("fs_global_class_scan_annotations");
+	const String library_path = tree.root.path_join("testlib/annotations.fs");
+	tree.write_file("testlib/annotations.fs", "namespace scan.testlib\n\nannotation slow targets CLASS\n");
+
+	ScriptServer::scan_global_classes(tree.root);
+
+	CHECK(FSLanguage::get_singleton()->is_global_annotation(StringName("scan.testlib.slow")));
+	CHECK_EQ(FSLanguage::get_singleton()->get_global_annotation_path(StringName("scan.testlib.slow")), library_path);
+
+	FSLanguage::get_singleton()->remove_global_annotations_by_path(library_path);
+}
+
+TEST_CASE("[Modules][FoundryScript] Filesystem scan resolves global classes without a cache file") {
+	ScopedFSNativeGlobals native_globals;
+	GlobalScriptClassCacheBackup backup;
+	ScriptServer::global_classes_clear();
+
+	TemporaryProjectTree tree("fs_global_class_scan_resolution");
+	tree.write_file("unit.fs", "class_name ScanCachelessUnit\nextends RefCounted\n\nfunc describe() -> String:\n\treturn \"unit\"\n");
+	tree.write_file("consumer.fs",
+			"extends RefCounted\n\nfunc run() -> String:\n\tvar unit := ScanCachelessUnit.new()\n\treturn unit.describe()\n");
+
+	ScriptServer::scan_global_classes(tree.root);
+	CHECK(ScriptServer::is_global_class("ScanCachelessUnit"));
+
+	// The consumer references the class purely by its global name; with no cache file anywhere,
+	// only the scan makes this resolvable.
+	const String consumer_path = tree.root.path_join("consumer.fs");
+	Ref<FileAccess> consumer_file = FileAccess::open(consumer_path, FileAccess::READ);
+	CHECK(consumer_file.is_valid());
+	if (consumer_file.is_null()) {
+		return;
+	}
+
+	FSParser parser;
+	CHECK_EQ(parser.parse(consumer_file->get_as_utf8_string(), consumer_path, false), OK);
+	FSAnalyzer analyzer(&parser);
+	CHECK_EQ(analyzer.analyze(), OK);
+
+	Ref<FoundryScript> script;
+	script.instantiate();
+	script->set_path(consumer_path);
+	FSCompiler compiler;
+	CHECK_EQ(compiler.compile(&parser, script.ptr(), false), OK);
 }
 
 TEST_CASE("[Modules][FoundryScript] Global class cache version tracks mutations") {
