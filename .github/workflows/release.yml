@@ -313,6 +313,22 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | sed 's/"//g')
 
+      # codesign fails silently if bundle_sign_identity doesn't match anything
+      # in the keychain (SCons doesn't check its exit code), which previously
+      # let an unsigned .app slip through to notarization undetected. Fail
+      # fast here instead, with the list of identities actually available.
+      - name: Verify signing identity
+        env:
+          MACOS_CODESIGN_IDENTITY: ${{ secrets.MACOS_CODESIGN_IDENTITY }}
+        run: |
+          echo "Identities available in the signing keychain:"
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+
+          if ! security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep -qF -- "$MACOS_CODESIGN_IDENTITY"; then
+            echo "::error::MACOS_CODESIGN_IDENTITY does not match any identity imported from MACOS_CERTIFICATE into the signing keychain (see identities listed above). codesign would fail to find it and the .app would be built unsigned."
+            exit 1
+          fi
+
       - name: Compilation (x86_64)
         uses: ./.github/actions/foundry-build
         with:
