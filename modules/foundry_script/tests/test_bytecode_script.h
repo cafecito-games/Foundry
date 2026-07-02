@@ -524,7 +524,7 @@ TEST_CASE("[FoundryScript][BytecodeScript] Static variables, implicit initialize
 
 	// Static-variable opcodes bake a self-reference into the constant pools (the class operand), a
 	// cycle production breaks in FSLanguage::finish(); break it here so the fixture scripts do not
-	// outlive the language singleton in the test binary.
+	// outlive other suites when this case runs before the harness teardown.
 	restored->clear();
 	original->clear();
 }
@@ -975,10 +975,8 @@ func use_helper() -> String:
 	CHECK(loaded->reload(true) == OK);
 	CHECK(loaded->is_valid());
 
-	// The test harness never runs FSLanguage::finish(), which is what breaks the reference cycles
-	// scripts with static state keep through themselves; clear the fixtures explicitly so their
-	// compiled functions do not outlive language shutdown, and evict the helper so no fixture
-	// state leaks into other suites.
+	// Scripts with static state keep reference cycles through themselves; clear the fixtures
+	// explicitly so their compiled functions do not outlive other suites in this run.
 	FSCache::remove_static_script(loaded->get_fully_qualified_name());
 	FSCache::remove_script(binary_path);
 	FSCache::remove_script(original->get_script_path());
@@ -1039,7 +1037,7 @@ func ping() -> String:
 }
 
 TEST_CASE("[FoundryScript][BytecodeCache] Cyclic .fsb preloads publish before linking and both load") {
-	if (!FSLanguage::get_singleton()->has_any_global_constant(SNAME("RefCounted"))) {
+	if (!FSLanguage::get_singleton()->get_reflection_singleton().is_valid()) {
 		FSLanguage::get_singleton()->init();
 	}
 
@@ -1129,8 +1127,8 @@ static func pong() -> String:
 		CHECK(String(bytecode_instance_call(instance, SNAME("chain"), {})) == "pong-ping-a");
 	}
 
-	// The test harness never runs FSLanguage::finish(), so break the loaded scripts' preload
-	// reference cycle here or their compiled functions outlive language shutdown.
+	// Break the loaded scripts' preload reference cycle here so their compiled functions do not
+	// outlive other suites when this case runs before the harness teardown.
 	FSCache::remove_script(path_a);
 	FSCache::remove_script(path_b);
 	loaded_a->clear();
@@ -1141,7 +1139,7 @@ static func pong() -> String:
 }
 
 TEST_CASE("[FoundryScript][BytecodeHardening] A dependent .fsb refuses to link against a dependency that previously failed to load") {
-	if (!FSLanguage::get_singleton()->has_any_global_constant(SNAME("RefCounted"))) {
+	if (!FSLanguage::get_singleton()->get_reflection_singleton().is_valid()) {
 		FSLanguage::get_singleton()->init();
 	}
 

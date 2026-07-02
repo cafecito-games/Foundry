@@ -48,6 +48,10 @@ void finish_language();
 // tearing down the stable language globals. No-op when the language is down.
 void reset_language_state();
 
+// Whether FoundryScript globals are currently live, including when a test called
+// `FSLanguage::init()` directly instead of going through `init_language()`.
+bool is_fs_language_active();
+
 // Whether `init_language()` currently holds the language up. Used by the
 // per-suite test fixture to decide between resetting and tearing down.
 bool is_language_initialized();
