@@ -1021,14 +1021,6 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 		}
 	}
 
-	// A nested function is always a lambda, and compiled lambdas are always named
-	// "<anonymous lambda>" (not a declarable identifier). A hostile lambda name that collides with
-	// a registered member function must be rejected before it is committed: the FSFunction
-	// destructor unregisters by name, so a later rollback or teardown of the lambda would silently
-	// unregister (and orphan) the real member function.
-	ERR_FAIL_COND_V_MSG(p_depth > 0 && p_script->member_functions.has(StringName(function_name)), ERR_INVALID_DATA,
-			vformat("Malformed lambda name '%s' in compiled script '%s'.", function_name, script_path));
-
 	p_function->setup_runtime_pointers();
 	p_function->name = StringName(function_name);
 #ifdef DEBUG_ENABLED
@@ -1605,13 +1597,11 @@ Error FSBytecodeLoader::_read_class_body(StreamPeerBuffer *p_stream, FoundryScri
 			return error;
 		}
 		if (p_script->member_functions.has(function->name)) {
-			// Deleting the duplicate erases its name from the map (the destructor unregisters by
-			// name), which would orphan the surviving original; put the original back so the script
-			// still owns and frees it after this load fails.
-			FSFunction *shadowed_function = p_script->member_functions[function->name];
+			// Duplicate top-level function names are corrupt input. The duplicate's destructor is
+			// identity-checked (see ~FSFunction), so deleting it leaves the surviving original
+			// registered and owned by the script.
 			const StringName duplicate_name = function->name;
 			memdelete(function);
-			p_script->member_functions.insert(duplicate_name, shadowed_function);
 			ERR_FAIL_V_MSG(ERR_INVALID_DATA,
 					vformat("Duplicate function '%s' in compiled script '%s'.", duplicate_name, script_path));
 		}

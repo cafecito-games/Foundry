@@ -667,6 +667,74 @@ TEST_CASE("[FoundryScript][BytecodeScript] Script-level lambda metadata rebuilds
 	CHECK((int64_t)bytecode_instance_call(instance, SNAME("lambda_total"), { 10 }) == 14);
 }
 
+TEST_CASE("[FoundryScript][BytecodeScript] Named lambdas may shadow member function names") {
+	// A named lambda (grammar: `func`, [ identifier ], ...) may legally share its name with a
+	// member function; the loader must accept it, and its eventual destruction must not unregister
+	// the member (FSFunction unregistration is identity-checked).
+	const Ref<FoundryScript> original = compile_bytecode_test_source(
+			"func helper() -> int:\n"
+			"\treturn 1\n"
+			"\n"
+			"func run() -> int:\n"
+			"\tvar f := func helper() -> int:\n"
+			"\t\treturn 2\n"
+			"\treturn int(f.call()) + helper()\n");
+	{
+		const Variant original_instance_variant = bytecode_new_instance(original);
+		Object *original_instance = original_instance_variant;
+		CHECK((int64_t)bytecode_instance_call(original_instance, SNAME("run"), {}) == 3);
+	}
+
+	BytecodeTestResolver resolver;
+	const Ref<FoundryScript> restored = bytecode_round_trip_script(original, &resolver);
+	CHECK(restored->has_method(SNAME("helper")));
+	const Variant instance_variant = bytecode_new_instance(restored);
+	Object *instance = instance_variant;
+	CHECK((int64_t)bytecode_instance_call(instance, SNAME("run"), {}) == 3);
+	CHECK((int64_t)bytecode_instance_call(instance, SNAME("helper"), {}) == 1);
+}
+
+TEST_CASE("[FoundryScript][BytecodeScript] Duplicate function names in corrupt buffers fail cleanly") {
+	const Ref<FoundryScript> original = compile_bytecode_test_source(
+			"func alpha() -> int:\n"
+			"\treturn 1\n"
+			"\n"
+			"func bravo() -> int:\n"
+			"\treturn 2\n");
+
+	FSBytecodeExporter exporter;
+	Vector<uint8_t> buffer;
+	REQUIRE(exporter.serialize(original, buffer) == OK);
+
+	// Rename the second function to the first one's name in the string table (same length), so the
+	// loader reads two top-level functions both named "alpha".
+	const CharString marker = String("bravo").utf8();
+	const CharString replacement = String("alpha").utf8();
+	bool patched = false;
+	for (int i = 0; i + marker.length() <= buffer.size(); i++) {
+		if (memcmp(&buffer[i], marker.get_data(), marker.length()) == 0) {
+			memcpy(&buffer.write[i], replacement.get_data(), replacement.length());
+			patched = true;
+			break;
+		}
+	}
+	REQUIRE(patched);
+
+	Ref<FoundryScript> target;
+	target.instantiate();
+	target->set_path_cache(original->get_script_path());
+	BytecodeTestResolver resolver;
+	FSBytecodeLoader loader;
+	loader.set_resolver(&resolver);
+	ERR_PRINT_OFF;
+	CHECK(loader.load_full(buffer, target) == ERR_INVALID_DATA);
+	ERR_PRINT_ON;
+	CHECK(!target->is_valid());
+	// The surviving first function stays registered and owned by the discarded script (its
+	// destructor frees it exactly once); the duplicate's deletion must not have unregistered it.
+	CHECK(target->get_member_functions().has(SNAME("alpha")));
+}
+
 TEST_CASE("[FoundryScript][BytecodeScript] Exporter reuse does not leak strings across scripts") {
 	const Ref<FoundryScript> first = compile_bytecode_test_source(
 			"var first_script_unique_marker: int = 1\n");

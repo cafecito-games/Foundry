@@ -385,7 +385,13 @@ FSFunction::FSFunction() {
 }
 
 FSFunction::~FSFunction() {
-	get_script()->member_functions.erase(name);
+	// Unregister only if the entry is this function: a same-named sibling (e.g. a named lambda
+	// shadowing a member, or a rejected duplicate from a compiled-bytecode load) must never
+	// unregister — and thereby orphan — the function that actually owns the name.
+	HashMap<StringName, FSFunction *>::Iterator member_entry = get_script()->member_functions.find(name);
+	if (member_entry && member_entry->value == this) {
+		get_script()->member_functions.remove(member_entry);
+	}
 
 	for (int i = 0; i < lambdas.size(); i++) {
 		memdelete(lambdas[i]);

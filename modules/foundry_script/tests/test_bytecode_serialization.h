@@ -924,20 +924,16 @@ static FSFunction *bytecode_deserialize_function(FSBytecodeExporter &r_exporter,
 	return function;
 }
 
-// Deleting an FSFunction unregisters its name from the owning script's member-function map, which
-// for a deserialized copy still holds the original compiled function; put the original entry back.
+// Releases a deserialized function copy that was never registered on the script. The FSFunction
+// destructor's unregistration is identity-checked, so it cannot disturb the original compiled
+// function that owns the same name in the script's member-function map; this asserts exactly that.
 static void bytecode_destroy_restored_function(const Ref<FoundryScript> &p_script, FSFunction *p_restored) {
 	const StringName function_name = p_restored->get_name();
-	HashMap<StringName, FSFunction *> &member_functions =
-			const_cast<HashMap<StringName, FSFunction *> &>(p_script->get_member_functions());
-	FSFunction *original = nullptr;
-	if (FSFunction *const *found = member_functions.getptr(function_name)) {
-		original = *found;
-	}
+	FSFunction *const *original_entry = p_script->get_member_functions().getptr(function_name);
+	const FSFunction *original_function = original_entry != nullptr ? *original_entry : nullptr;
 	memdelete(p_restored);
-	if (original != nullptr) {
-		member_functions.insert(function_name, original);
-	}
+	FSFunction *const *surviving_entry = p_script->get_member_functions().getptr(function_name);
+	CHECK((surviving_entry != nullptr ? *surviving_entry : nullptr) == original_function);
 }
 
 static void bytecode_check_function_matches(const FSFunction *p_original, const FSFunction *p_restored) {
