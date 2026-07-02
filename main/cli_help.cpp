@@ -364,5 +364,55 @@ String FoundryCLIHelp::get_scoped_help_text(const String &p_binary, const Packed
 }
 
 String FoundryCLIHelp::get_help_json(const PackedStringArray &p_scope) {
-	return String("{}");
+	Array commands_json;
+	for (const CommandSpec &spec : COMMANDS) {
+		if (!is_command_in_build(spec)) {
+			continue;
+		}
+		if (p_scope.size() >= 1 && p_scope[0] != spec.noun) {
+			continue;
+		}
+		if (p_scope.size() >= 2 && p_scope[1] != spec.verb) {
+			continue;
+		}
+		Dictionary entry;
+		Array path;
+		path.push_back(spec.noun);
+		path.push_back(spec.verb);
+		entry["path"] = path;
+		entry["summary"] = spec.summary;
+		entry["usage"] = usage_line(spec);
+		entry["availability"] = spec.availability == AVAILABILITY_EDITOR ? "editor" : "release";
+		Array options;
+		for (int i = 0; i < spec.option_count; i++) {
+			const CommandOption &option = spec.options[i];
+			Dictionary option_json;
+			option_json["flag"] = option.flag;
+			option_json["value"] = option.value_name ? Variant(String(option.value_name)) : Variant();
+			option_json["description"] = option.description;
+			option_json["required"] = option.required;
+			options.push_back(option_json);
+		}
+		entry["options"] = options;
+		Array positionals;
+		for (int i = 0; i < spec.positional_count; i++) {
+			const Positional &positional = spec.positionals[i];
+			Dictionary positional_json;
+			positional_json["name"] = positional.name;
+			positional_json["optional"] = positional.optional;
+			positional_json["repeats"] = positional.repeats;
+			positionals.push_back(positional_json);
+		}
+		entry["positionals"] = positionals;
+		Array examples;
+		if (spec.example) {
+			examples.push_back(spec.example);
+		}
+		entry["examples"] = examples;
+		commands_json.push_back(entry);
+	}
+	Dictionary root;
+	root["foundry_cli_help_version"] = 1;
+	root["commands"] = commands_json;
+	return JSON::stringify(root, "  ", false);
 }

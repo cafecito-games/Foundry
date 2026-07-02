@@ -437,4 +437,11 @@ TEST_CASE("[FoundryCLIParser] Help flag after legacy token stays legacy") {
 	CHECK_FALSE(result.used_new_cli);
 }
 
+TEST_CASE("[FoundryCLIParser] No-header global option is reported for help") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({ "foundry", "--no-header", "script", "--help" }));
+	REQUIRE_MESSAGE(result.ok, result.error);
+	CHECK(result.help_requested);
+	CHECK(result.no_header);
+}
+
 } // namespace TestFoundryCLIParser

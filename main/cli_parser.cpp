@@ -170,6 +170,9 @@ static bool consume_common_global_option(CLIParseState &r_state, const String &p
 	}
 	if (p_arg == "--quiet" || p_arg == "-q" || p_arg == "--verbose" || p_arg == "-v" ||
 			p_arg == "--no-header" || p_arg == "--headless" || p_arg == "--disable-crash-handler") {
+		if (p_arg == "--no-header") {
+			r_state.result.no_header = true;
+		}
 		append(r_state.legacy_prefix, p_arg);
 		r_state.index++;
 		return true;

@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "core/io/json.h"
 #include "main/cli_help.h"
 #include "main/cli_parser.h"
 
@@ -113,6 +114,48 @@ TEST_CASE("[FoundryCLIHelp] Scope deeper than a command falls back to noun help"
 	const String fallback = FoundryCLIHelp::get_scoped_help_text("foundry", deep_scope, valid);
 	CHECK_FALSE(valid);
 	CHECK(fallback.contains("Subcommands"));
+}
+
+TEST_CASE("[FoundryCLIHelp] JSON help is valid and versioned") {
+	JSON json;
+	REQUIRE_EQ(json.parse(FoundryCLIHelp::get_help_json(PackedStringArray())), OK);
+	const Dictionary root = json.get_data();
+	CHECK_EQ(int(root["foundry_cli_help_version"]), 1);
+	const Array commands = root["commands"];
+#ifdef TOOLS_ENABLED
+	int command_count = 0;
+	FoundryCLIHelp::get_commands(command_count);
+	CHECK_EQ(commands.size(), command_count);
+#else
+	CHECK(commands.size() > 0);
+#endif
+	const Dictionary first = commands[0];
+	for (const char *key : { "path", "summary", "usage", "availability", "options", "positionals", "examples" }) {
+		CHECK_MESSAGE(first.has(key), key);
+	}
+}
+
+TEST_CASE("[FoundryCLIHelp] JSON help scopes to a single command") {
+	PackedStringArray scope;
+	scope.push_back("script");
+	scope.push_back("format");
+	JSON json;
+	REQUIRE_EQ(json.parse(FoundryCLIHelp::get_help_json(scope)), OK);
+	const Dictionary root = json.get_data();
+	const Array commands = root["commands"];
+	REQUIRE_EQ(commands.size(), 1);
+	const Dictionary entry = commands[0];
+	const Array path = entry["path"];
+	REQUIRE_EQ(path.size(), 2);
+	CHECK_EQ(String(path[0]), "script");
+	CHECK_EQ(String(path[1]), "format");
+	const Array options = entry["options"];
+	CHECK(options.size() > 0);
+}
+
+TEST_CASE("[FoundryCLIHelp] JSON help contains no ANSI escapes") {
+	const String json_text = FoundryCLIHelp::get_help_json(PackedStringArray());
+	CHECK_FALSE(json_text.contains(String::chr(0x1b)));
 }
 
 } // namespace TestFoundryCLIHelp

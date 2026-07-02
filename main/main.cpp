@@ -961,6 +961,11 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 		goto error;
 	}
 	if (cli_parse.help_requested) {
+		if (cli_parse.json) {
+			OS::get_singleton()->print("%s\n", FoundryCLIHelp::get_help_json(cli_parse.command_path).utf8().get_data());
+			exit_err = ERR_HELP;
+			goto error;
+		}
 		bool scope_valid = false;
 		const String scoped_help = FoundryCLIHelp::get_scoped_help_text(execpath, cli_parse.command_path, scope_valid);
 		if (!scope_valid) {
@@ -969,9 +974,15 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 			goto error;
 		}
 		if (cli_parse.command_path.is_empty()) {
-			print_help(execpath);
+			if (cli_parse.no_header) {
+				OS::get_singleton()->print("%s", FoundryCLIHelp::get_top_help_text(execpath).utf8().get_data());
+			} else {
+				print_help(execpath);
+			}
 		} else {
-			print_header(true);
+			if (!cli_parse.no_header) {
+				print_header(true);
+			}
 			OS::get_singleton()->print("%s", scoped_help.utf8().get_data());
 		}
 		exit_err = ERR_HELP;

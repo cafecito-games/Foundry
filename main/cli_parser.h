@@ -41,6 +41,7 @@ public:
 		bool json = false;
 		bool trusted = false;
 		bool help_requested = false;
+		bool no_header = false;
 		String error;
 		PackedStringArray command_path;
 		PackedStringArray normalized_args;
