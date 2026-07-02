@@ -60,8 +60,9 @@ namespace FSTests {
 // analyzer behavior is order-independent; cases that genuinely want warnings (the
 // `.fs` runner) re-enable them for their own run.
 //
-// The listener only acts while the language is actually up, so suites that never
-// initialize it (parser/tokenizer cases, non-FoundryScript suites) are untouched.
+// The listener only acts while the language is actually up (including suites that
+// called `FSLanguage::init()` directly), so suites that never initialize it
+// (parser/tokenizer cases, non-FoundryScript suites) are untouched.
 struct FSLanguageSuiteFixture : public doctest::IReporter {
 	// Name of the suite whose case last brought the language up, or empty when no
 	// suite currently owns it.
@@ -77,7 +78,7 @@ struct FSLanguageSuiteFixture : public doctest::IReporter {
 
 		// A different suite is starting: tear down the language the previous suite
 		// left up so this suite (or its own `init_language()` call) starts fresh.
-		if (is_language_initialized() && !owner_suite.is_empty() && owner_suite != current_suite) {
+		if (is_fs_language_active() && !owner_suite.is_empty() && owner_suite != current_suite) {
 			finish_language();
 			owner_suite = String();
 		}
@@ -94,7 +95,7 @@ struct FSLanguageSuiteFixture : public doctest::IReporter {
 	}
 
 	void test_case_end(const doctest::CurrentTestCaseStats &) override {
-		if (!is_language_initialized()) {
+		if (!is_fs_language_active() && !is_language_initialized()) {
 			// The case either never initialized the language or tore it down itself
 			// (e.g. the runner/completion suites); nothing to hoist or reset.
 			return;
@@ -106,15 +107,18 @@ struct FSLanguageSuiteFixture : public doctest::IReporter {
 			owner_suite = current_suite;
 		}
 
-		reset_language_state();
+		if (is_language_initialized()) {
+			reset_language_state();
+		}
 	}
 
 	void test_run_end(const doctest::TestRunStats &) override {
-		// Tear down the language the final owning suite left up.
-		if (is_language_initialized()) {
+		// Tear down any language state a suite left up, including suites that called
+		// `FSLanguage::init()` directly instead of `init_language()`.
+		if (is_fs_language_active()) {
 			finish_language();
-			owner_suite = String();
 		}
+		owner_suite = String();
 	}
 
 	void report_query(const doctest::QueryData &) override {}

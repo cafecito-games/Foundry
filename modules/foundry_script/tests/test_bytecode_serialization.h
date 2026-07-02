@@ -154,7 +154,7 @@ static bool bytecode_buffer_contains(const Vector<uint8_t> &p_buffer, const Stri
 }
 
 static Ref<FoundryScript> compile_bytecode_test_source(const String &p_source) {
-	if (!FSLanguage::get_singleton()->has_any_global_constant(SNAME("RefCounted"))) {
+	if (!FSLanguage::get_singleton()->get_reflection_singleton().is_valid()) {
 		FSLanguage::get_singleton()->init();
 	}
 

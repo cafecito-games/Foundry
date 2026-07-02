@@ -156,8 +156,13 @@ void init_language(const String &p_base_path) {
 	init_language_count++;
 }
 
+bool is_fs_language_active() {
+	return FSLanguage::get_singleton()->get_reflection_singleton().is_valid();
+}
+
 void finish_language() {
-	if (!language_initialized) {
+	if (!is_fs_language_active()) {
+		language_initialized = false;
 		return;
 	}
 	FSLanguage::get_singleton()->clear_global_annotations();

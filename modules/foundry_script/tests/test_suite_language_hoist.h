@@ -85,6 +85,15 @@ TEST_SUITE("[Modules][FoundryScript][SuiteLanguageHoist]") {
 	TEST_CASE("Language stays shared across a third case in the suite") {
 		check_language_setup_is_shared();
 	}
+
+	TEST_CASE("finish_language tears down direct init() state") {
+		if (!is_fs_language_active()) {
+			FSLanguage::get_singleton()->init();
+		}
+		CHECK(is_fs_language_active());
+		finish_language();
+		CHECK(!is_fs_language_active());
+	}
 }
 
 } // namespace FSTests

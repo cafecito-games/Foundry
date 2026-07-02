@@ -333,6 +333,13 @@ int test_main(int argc, char *argv[]) {
 	}
 
 	const int result = test_context.run();
+
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+	// Break static/preload reference cycles and drop compiled scripts before ObjectDB
+	// shutdown so exit-time leak reports reflect real leaks, not un-finalized language state.
+	FSTests::finish_language();
+#endif // MODULE_FOUNDRY_SCRIPT_ENABLED
+
 	ERR_FAIL_COND_V_MSG(cleanup_test_temp_path() != OK, result != 0 ? result : 1, "Failed to clean test temp path");
 	return result;
 }
