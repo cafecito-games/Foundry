@@ -223,13 +223,15 @@ Error FSBytecodeExporter::_encode_object(StreamPeerBuffer *r_stream, Object *p_o
 	// pools by the analyzer; they travel as symbolic tags resolved to the loading process's own
 	// language singletons.
 	if (FSReflection *reflection = Object::cast_to<FSReflection>(p_object)) {
-		ERR_FAIL_COND_V_MSG(reflection != FSLanguage::get_singleton()->get_reflection_singleton().ptr(), ERR_INVALID_PARAMETER,
+		FSLanguage *language = FSLanguage::get_singleton();
+		ERR_FAIL_COND_V_MSG(language == nullptr || reflection != language->get_reflection_singleton().ptr(), ERR_INVALID_PARAMETER,
 				"An FSReflection instance other than the language reflection singleton cannot be serialized to compiled bytecode.");
 		r_stream->put_u8(FSBytecodeFormat::TAG_REFLECTION_SINGLETON);
 		return OK;
 	}
 	if (FSNamespace *namespace_object = Object::cast_to<FSNamespace>(p_object)) {
-		ERR_FAIL_COND_V_MSG(namespace_object != FSLanguage::get_singleton()->get_namespace_singleton().ptr(), ERR_INVALID_PARAMETER,
+		FSLanguage *language = FSLanguage::get_singleton();
+		ERR_FAIL_COND_V_MSG(language == nullptr || namespace_object != language->get_namespace_singleton().ptr(), ERR_INVALID_PARAMETER,
 				"An FSNamespace instance other than the language namespace singleton cannot be serialized to compiled bytecode.");
 		r_stream->put_u8(FSBytecodeFormat::TAG_REFLECTION_NAMESPACE);
 		return OK;

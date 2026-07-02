@@ -270,8 +270,11 @@ Error FSBytecodeLoader::decode_variant_tagged(StreamPeerBuffer *p_stream, Varian
 		} break;
 		case FSBytecodeFormat::TAG_DEFAULT_VALUE: {
 			const uint32_t variant_type = p_stream->get_u32();
-			ERR_FAIL_COND_V_MSG(variant_type >= (uint32_t)Variant::VARIANT_MAX, ERR_INVALID_DATA,
-					"Malformed default-value type in compiled script data.");
+			// The encoder only emits this tag for the process-bound types whose empty value is
+			// portable; anything else is corrupt input, keeping the contract symmetric.
+			ERR_FAIL_COND_V_MSG(
+					variant_type != (uint32_t)Variant::CALLABLE && variant_type != (uint32_t)Variant::SIGNAL && variant_type != (uint32_t)Variant::RID,
+					ERR_INVALID_DATA, "Malformed default-value type in compiled script data.");
 			Callable::CallError construct_error;
 			Variant::construct((Variant::Type)variant_type, r_variant, nullptr, 0, construct_error);
 			ERR_FAIL_COND_V_MSG(construct_error.error != Callable::CallError::CALL_OK, ERR_INVALID_DATA,
@@ -286,7 +289,13 @@ Error FSBytecodeLoader::decode_variant_tagged(StreamPeerBuffer *p_stream, Varian
 			}
 			// Rebuilt by name, exactly as the analyzer builds it when folding a utility function
 			// used as a value; the constructor resolves the global/language scope itself.
-			r_variant = Callable(memnew(FSUtilityCallable(StringName(function_name))));
+			const Callable utility_callable = Callable(memnew(FSUtilityCallable(StringName(function_name))));
+			// An unknown name would yield a callable that only breaks at call time; fail the load
+			// eagerly instead, like every other symbolic resolution.
+			ERR_FAIL_COND_V_MSG(!utility_callable.is_valid(), ERR_CANT_RESOLVE,
+					vformat("Cannot decode compiled script data: utility function '%s' does not resolve in this engine build. Was the game exported with a matching engine build?",
+							function_name));
+			r_variant = utility_callable;
 			return OK;
 		} break;
 		default: {

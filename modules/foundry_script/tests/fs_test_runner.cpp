@@ -48,6 +48,7 @@
 #include "core/object/script_diagnostic_capture.h"
 #include "core/os/os.h"
 #include "core/string/string_builder.h"
+#include "core/templates/hash_set.h"
 #include "scene/resources/packed_scene.h"
 
 #include "tests/test_macros.h"
@@ -315,6 +316,27 @@ bool FSTestRunner::generate_outputs() {
 	return true;
 }
 
+// Reads the runner directives from a fixture's leading lines. Directives are full-line comments
+// (`#debug-only`, `#once-per-process`), one per line at the top of the file; the scan is
+// order-independent and stops at the first non-directive line, so a fixture can carry several.
+static HashSet<String> read_fixture_directives(const String &p_path) {
+	HashSet<String> directives;
+	Error open_error = OK;
+	Ref<FileAccess> fixture_file(FileAccess::open(p_path, FileAccess::READ, &open_error));
+	if (open_error != OK) {
+		ERR_PRINT(vformat(R"(Couldn't open test file "%s".)", p_path));
+		return directives;
+	}
+	while (!fixture_file->eof_reached()) {
+		const String line = fixture_file->get_line();
+		if (line != "#debug-only" && line != "#once-per-process") {
+			break;
+		}
+		directives.insert(line);
+	}
+	return directives;
+}
+
 bool FSTestRunner::make_tests_for_dir(const String &p_dir) {
 	Error err = OK;
 	Ref<DirAccess> dir(DirAccess::open(p_dir, &err));
@@ -346,32 +368,22 @@ bool FSTestRunner::make_tests_for_dir(const String &p_dir) {
 				next = dir->get_next();
 				continue;
 			} else if (next.has_extension("fs")) {
-				if (compiled_bytecode) {
-					// A `#once-per-process` first line marks fixtures whose expected output includes
-					// engine diagnostics emitted through once-per-process macros (e.g.
-					// `ERR_PRINT_ONCE` behind required virtual methods). Only a fixture's first run
-					// in a process reproduces them, and the compiled-bytecode pass is by
-					// construction the corpus's second run in the test binary, so it skips them.
-					Error once_marker_error = OK;
-					Ref<FileAccess> once_marker_file(FileAccess::open(current_dir.path_join(next), FileAccess::READ, &once_marker_error));
-					if (once_marker_error == OK && once_marker_file->get_line() == "#once-per-process") {
-						next = dir->get_next();
-						continue;
-					}
+				const HashSet<String> directives = read_fixture_directives(current_dir.path_join(next));
+				// `#once-per-process` marks fixtures whose expected output includes engine
+				// diagnostics emitted through once-per-process macros (e.g. `ERR_PRINT_ONCE`
+				// behind required virtual methods). Only a fixture's first run in a process
+				// reproduces them, so the repeated compiled-bytecode pass skips them. The skip is
+				// pass-order independent: whichever corpus pass runs the fixture first consumes
+				// the once-only diagnostics, so exactly one non-skipping pass can ever match.
+				if (compiled_bytecode && directives.has("#once-per-process")) {
+					next = dir->get_next();
+					continue;
 				}
 #ifndef DEBUG_ENABLED
 				// On release builds, skip tests marked as debug only.
-				Error open_err = OK;
-				Ref<FileAccess> script_file(FileAccess::open(current_dir.path_join(next), FileAccess::READ, &open_err));
-				if (open_err != OK) {
-					ERR_PRINT(vformat(R"(Couldn't open test file "%s".)", next));
+				if (directives.has("#debug-only")) {
 					next = dir->get_next();
 					continue;
-				} else {
-					if (script_file->get_line() == "#debug-only") {
-						next = dir->get_next();
-						continue;
-					}
 				}
 #endif
 

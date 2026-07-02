@@ -42,6 +42,7 @@
 #include "modules/foundry_script/fs_compiler.h"
 #include "modules/foundry_script/fs_function.h"
 #include "modules/foundry_script/fs_parser.h"
+#include "modules/foundry_script/fs_reflection.h"
 #include "modules/foundry_script/fs_utility_callable.h"
 
 #include "core/config/engine.h"
@@ -413,16 +414,44 @@ TEST_CASE("[FoundryScript][BytecodeCodec] Resource constants become external ref
 }
 
 TEST_CASE("[FoundryScript][BytecodeCodec] Native class and engine singleton constants round-trip") {
+	FSLanguage *language = FSLanguage::get_singleton();
+	if (!language->has_any_global_constant(SNAME("RefCounted"))) {
+		language->init();
+	}
+
 	const Ref<FSNativeClass> native_class = Ref<FSNativeClass>(memnew(FSNativeClass(StringName("Node"))));
 	const Variant decoded_native = bytecode_round_trip_variant(native_class);
 	const Ref<FSNativeClass> decoded_native_class = decoded_native;
 	REQUIRE(decoded_native_class.is_valid());
 	CHECK(decoded_native_class->get_name() == StringName("Node"));
+	// Class-handle equality is object identity, so the decoded handle must be the language's
+	// canonical global handle, not merely a same-named copy.
+	REQUIRE(language->has_any_global_constant(SNAME("Node")));
+	CHECK(decoded_native.operator Object *() == language->get_any_global_constant(SNAME("Node")).operator Object *());
 
 	Object *project_settings = Engine::get_singleton()->get_singleton_object(SNAME("ProjectSettings"));
 	REQUIRE(project_settings != nullptr);
 	const Variant decoded_singleton = bytecode_round_trip_variant(project_settings);
 	CHECK(decoded_singleton.operator Object *() == project_settings);
+}
+
+TEST_CASE("[FoundryScript][BytecodeCodec] Reflection singletons round-trip by identity") {
+	FSLanguage *language = FSLanguage::get_singleton();
+	// The reflection singletons only exist between init() and finish(); a preceding suite may have
+	// finished the language while leaving its globals populated, so guard on the singleton itself.
+	if (language->get_reflection_singleton().is_null()) {
+		language->init();
+	}
+
+	const Ref<FSReflection> reflection = language->get_reflection_singleton();
+	REQUIRE(reflection.is_valid());
+	const Variant decoded_reflection = bytecode_round_trip_variant(reflection);
+	CHECK(decoded_reflection.operator Object *() == reflection.ptr());
+
+	const Ref<FSNamespace> namespace_singleton = language->get_namespace_singleton();
+	REQUIRE(namespace_singleton.is_valid());
+	const Variant decoded_namespace = bytecode_round_trip_variant(namespace_singleton);
+	CHECK(decoded_namespace.operator Object *() == namespace_singleton.ptr());
 }
 
 TEST_CASE("[FoundryScript][BytecodeCodec] Process-bound Variants are rejected") {
@@ -489,6 +518,46 @@ TEST_CASE("[FoundryScript][BytecodeCodec] Portable process-bound values round-tr
 	read_only_dictionary["key"] = 2;
 	read_only_dictionary.make_read_only();
 	CHECK(Dictionary(bytecode_round_trip_variant(read_only_dictionary)).is_read_only());
+
+	// A tampered utility name fails the decode eagerly with ERR_CANT_RESOLVE instead of producing
+	// a callable that only breaks at call time.
+	{
+		FSBytecodeExporter tamper_exporter;
+		Vector<uint8_t> tampered_payload;
+		REQUIRE(bytecode_encode_variant(tamper_exporter, Callable(memnew(FSUtilityCallable(SNAME("absf")))), tampered_payload) == OK);
+
+		Ref<StreamPeerBuffer> table_stream;
+		table_stream.instantiate();
+		tamper_exporter.get_string_table().write(table_stream.ptr());
+		Vector<uint8_t> table_bytes = table_stream->get_data_array();
+		const CharString marker = String("absf").utf8();
+		const CharString replacement = String("zzzz").utf8();
+		bool patched = false;
+		for (int i = 0; i + marker.length() <= table_bytes.size(); i++) {
+			if (memcmp(&table_bytes[i], marker.get_data(), marker.length()) == 0) {
+				memcpy(&table_bytes.write[i], replacement.get_data(), replacement.length());
+				patched = true;
+				break;
+			}
+		}
+		REQUIRE(patched);
+
+		Ref<StreamPeerBuffer> tampered_table_stream;
+		tampered_table_stream.instantiate();
+		tampered_table_stream->set_data_array(table_bytes);
+		BytecodeTestResolver tamper_resolver;
+		FSBytecodeLoader tampered_loader;
+		tampered_loader.set_resolver(&tamper_resolver);
+		REQUIRE(tampered_loader.read_string_table(tampered_table_stream.ptr()) == OK);
+
+		Ref<StreamPeerBuffer> tampered_payload_stream;
+		tampered_payload_stream.instantiate();
+		tampered_payload_stream->set_data_array(tampered_payload);
+		Variant tampered_value;
+		ERR_PRINT_OFF;
+		CHECK(tampered_loader.decode_variant_tagged(tampered_payload_stream.ptr(), tampered_value) == ERR_CANT_RESOLVE);
+		ERR_PRINT_ON;
+	}
 }
 
 TEST_CASE("[FoundryScript][BytecodeCodec] FSDataType round-trip") {
