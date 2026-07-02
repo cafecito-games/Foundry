@@ -90,7 +90,7 @@ jobs:
       - name: Compilation
         uses: ./.github/actions/foundry-build
         with:
-          scons-flags: tests=yes module_text_server_fb_enabled=yes
+          scons-flags: foundry_script_frontend=yes tests=yes module_text_server_fb_enabled=yes
           platform: linuxbsd
           target: template_release
 
@@ -105,9 +105,9 @@ jobs:
           ./bin/foundry.linuxbsd.template_release.x86_64 --version
           ./bin/foundry.linuxbsd.template_release.x86_64 --headless --test --force-colors --test-case="*Release-build VM runtime error*"
 
-  template-release-no-frontend:
+  template-release-stripped-default:
     runs-on: ubuntu-22.04
-    name: Template release without Foundry Script front-end
+    name: Template release stripped front-end (default)
     timeout-minutes: 120
 
     steps:
@@ -124,7 +124,7 @@ jobs:
       - name: Restore Foundry build cache
         uses: ./.github/actions/foundry-cache-restore
         with:
-          cache-name: linux-template-release-no-frontend
+          cache-name: linux-template-release-stripped-default
         continue-on-error: true
 
       - name: Setup Python and SCons
@@ -133,14 +133,14 @@ jobs:
       - name: Compilation
         uses: ./.github/actions/foundry-build
         with:
-          scons-flags: foundry_script_frontend=no module_text_server_fb_enabled=yes
+          scons-flags: module_text_server_fb_enabled=yes
           platform: linuxbsd
           target: template_release
 
       - name: Save Foundry build cache
         uses: ./.github/actions/foundry-cache-save
         with:
-          cache-name: linux-template-release-no-frontend
+          cache-name: linux-template-release-stripped-default
         continue-on-error: true
 
       - name: Verify stripped template binary

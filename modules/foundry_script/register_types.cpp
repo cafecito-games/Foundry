@@ -89,7 +89,7 @@ Ref<FSEditorTranslationParserPlugin> fs_translation_parser_plugin;
 class EditorExportFoundryScript : public EditorExportPlugin {
 	FOUNDRY_CLASS(EditorExportFoundryScript, EditorExportPlugin);
 
-	static constexpr EditorExportPreset::ScriptExportMode DEFAULT_SCRIPT_MODE = EditorExportPreset::MODE_SCRIPT_BINARY_TOKENS_COMPRESSED;
+	static constexpr EditorExportPreset::ScriptExportMode DEFAULT_SCRIPT_MODE = EditorExportPreset::MODE_SCRIPT_COMPILED_BYTECODE;
 	EditorExportPreset::ScriptExportMode script_mode = DEFAULT_SCRIPT_MODE;
 
 	// Compiled-bytecode exports compile under export-only compiler flags: the export-compile flag

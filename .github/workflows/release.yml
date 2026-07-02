@@ -77,8 +77,11 @@ jobs:
       matrix:
         include:
           - target: editor
+            template_scons_flags: ""
           - target: template_debug
+            template_scons_flags: foundry_script_frontend=no
           - target: template_release
+            template_scons_flags: foundry_script_frontend=no
     env:
       FOUNDRY_VERSION_STATUS: ${{ needs.resolve.outputs.status }}
       SCONS_FLAGS: production=yes module_text_server_fb_enabled=yes
@@ -105,7 +108,7 @@ jobs:
       - name: Compilation
         uses: ./.github/actions/foundry-build
         with:
-          scons-flags: ${{ env.SCONS_FLAGS }} arch=x86_64
+          scons-flags: ${{ env.SCONS_FLAGS }} ${{ matrix.template_scons_flags }} arch=x86_64
           platform: linuxbsd
           target: ${{ matrix.target }}
 
@@ -165,8 +168,11 @@ jobs:
       matrix:
         include:
           - target: editor
+            template_scons_flags: ""
           - target: template_debug
+            template_scons_flags: foundry_script_frontend=no
           - target: template_release
+            template_scons_flags: foundry_script_frontend=no
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -219,7 +225,7 @@ jobs:
       - name: Compilation
         uses: ./.github/actions/foundry-build
         with:
-          scons-flags: ${{ env.SCONS_FLAGS }} arch=x86_64 d3d12=${{ steps.d3d12-sdk.outputs.D3D12_ENABLED }}
+          scons-flags: ${{ env.SCONS_FLAGS }} ${{ matrix.template_scons_flags }} arch=x86_64 d3d12=${{ steps.d3d12-sdk.outputs.D3D12_ENABLED }}
           platform: windows
           target: ${{ matrix.target }}
 
@@ -432,6 +438,7 @@ jobs:
       SCONS_FLAGS: >-
         production=yes
         module_text_server_fb_enabled=yes
+        foundry_script_frontend=no
         "accesskit_sdk_path=${{ github.workspace }}/accesskit-c-0.21.2/"
     steps:
       - name: Checkout
@@ -525,7 +532,7 @@ jobs:
     timeout-minutes: 90
     env:
       FOUNDRY_VERSION_STATUS: ${{ needs.resolve.outputs.status }}
-      SCONS_FLAGS: production=yes debug_symbols=no use_closure_compiler=yes
+      SCONS_FLAGS: production=yes debug_symbols=no use_closure_compiler=yes foundry_script_frontend=no
       EM_VERSION: 4.0.11
     strategy:
       fail-fast: false
@@ -618,14 +625,17 @@ jobs:
             cache-name: release-android-editor
             target: editor
             publish-publication: ToolsRelease
+            template_scons_flags: ""
           - name: templates (debug)
             cache-name: release-android-template-debug
             target: template_debug
             publish-publication: TemplateDebug
+            template_scons_flags: foundry_script_frontend=no
           - name: templates (release)
             cache-name: release-android-template-release
             target: template_release
             publish-publication: TemplateRelease
+            template_scons_flags: foundry_script_frontend=no
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -656,7 +666,7 @@ jobs:
       - name: Compilation (arm64)
         uses: ./.github/actions/foundry-build
         with:
-          scons-flags: ${{ env.SCONS_FLAGS }} arch=arm64
+          scons-flags: ${{ env.SCONS_FLAGS }} ${{ matrix.template_scons_flags }} arch=arm64
           platform: android
           target: ${{ matrix.target }}
 
@@ -664,7 +674,7 @@ jobs:
         if: matrix.target != 'editor'
         uses: ./.github/actions/foundry-build
         with:
-          scons-flags: ${{ env.SCONS_FLAGS }} arch=arm32
+          scons-flags: ${{ env.SCONS_FLAGS }} ${{ matrix.template_scons_flags }} arch=arm32
           platform: android
           target: ${{ matrix.target }}
 
@@ -722,7 +732,7 @@ jobs:
     timeout-minutes: 150
     env:
       FOUNDRY_VERSION_STATUS: ${{ needs.resolve.outputs.status }}
-      SCONS_FLAGS: production=yes module_text_server_fb_enabled=yes tests=no debug_symbols=no
+      SCONS_FLAGS: production=yes module_text_server_fb_enabled=yes tests=no debug_symbols=no foundry_script_frontend=no
     steps:
       - name: Checkout
         uses: actions/checkout@v6

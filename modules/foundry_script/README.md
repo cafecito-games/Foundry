@@ -139,23 +139,21 @@ There are many other classes in the FoundryScript module. Here is a brief overvi
 - Documentation generation from FoundryScript comments in [`FSDocGen`](editor/fs_docgen.h)
 
 
-## Stripped export templates (`foundry_script_frontend=no`)
+## Export templates and script bytecode (default)
 
-Export templates can be built without the Foundry Script front-end (tokenizer, parser, analyzer, compiler) to shrink the runtime binary by roughly 2 MiB uncompressed. This is intended for **`.fsb`-only** shipped games: exported packs that remap every script to compiled bytecode and never load `.fs`/`.fsc` source at runtime.
+Export templates omit the Foundry Script front-end by default (`foundry_script_frontend` defaults to `no` for `template_*` targets): the tokenizer, parser, analyzer, and compiler are left out of the runtime binary (~2 MiB smaller). The default export preset script mode is **Compiled bytecode** (`.fsb`), so shipped games load precompiled scripts only.
 
-Build a custom template with:
-
-```bash
-scons platform=<platform> target=template_release foundry_script_frontend=no
-```
-
-(`template_debug` is supported too.) The flag is incompatible with `target=editor`, `tests=yes`, and `use_fuzzer=yes`.
-
-**Constraints of a stripped template:**
+**Stripped-template constraints:**
 
 - `.fsb` loading is unchanged (loader, linker, VM, RPC, traits, typed containers).
-- Loading `.fs` or `.fsc` returns `ERR_UNAVAILABLE` with a message naming the path and build flag.
-- Runtime loading of `.fs` mods from `user://` is not supported; projects that need that must use default templates.
-- Build-task bootstrap providers that compile script sources cannot run in stripped templates.
+- Loading `.fs` or `.fsc` at runtime returns `ERR_UNAVAILABLE`.
+- Runtime loading of `.fs` mods from `user://` is not supported.
+- Build-task bootstrap providers that compile script sources cannot run in export templates.
 
-**Workflow:** build the stripped template, point the export preset's Custom Template fields at it, and set script export mode to **Compiled bytecode** so the pack ships only `.fsb` files (with `.remap` entries for `.fs` paths).
+**Building templates locally** (stripped front-end is the default):
+
+```bash
+scons platform=<platform> target=template_release
+```
+
+Pass `foundry_script_frontend=yes` to keep the source front-end in a template (e.g. for modding). The flag is incompatible with `target=editor`, `tests=yes`, and `use_fuzzer=yes`.

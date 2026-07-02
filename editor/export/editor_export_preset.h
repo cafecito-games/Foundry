@@ -100,7 +100,7 @@ private:
 	uint64_t seed = 0;
 
 	String script_key;
-	ScriptExportMode script_mode = MODE_SCRIPT_BINARY_TOKENS_COMPRESSED;
+	ScriptExportMode script_mode = MODE_SCRIPT_COMPILED_BYTECODE;
 
 	void _save_presets_if_available() const;
 	void _emit_presets_runnable_changed_if_available() const;
