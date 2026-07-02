@@ -57,6 +57,8 @@ class EditorBottomPanel : public TabContainer {
 	Control *grabber = nullptr;
 	LocalVector<EditorDock *> bottom_docks;
 	HashMap<String, int> dock_offsets;
+	HashMap<String, bool> dock_pinned;
+	bool pinned_by_default = false;
 
 	LocalVector<Button *> legacy_buttons;
 	void _on_button_visibility_changed(Button *p_button, EditorDock *p_dock);
@@ -65,6 +67,7 @@ class EditorBottomPanel : public TabContainer {
 	void _on_tab_changed(int p_idx);
 	void _pin_button_toggled(bool p_pressed);
 	void _expand_button_toggled(bool p_pressed);
+	bool _is_current_pinned() const;
 	int _get_strip_height() const;
 	int _get_body_height() const;
 	void _set_body_height(int p_height);
@@ -85,6 +88,7 @@ public:
 	void hide_bottom_panel();
 	void toggle_last_opened_bottom_panel();
 	void set_expanded(bool p_expanded);
+	void set_switch_locked(bool p_locked);
 	void _theme_changed();
 	bool is_locked() const { return lock_panel_switching; }
 

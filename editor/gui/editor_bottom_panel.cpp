@@ -61,6 +61,7 @@ void EditorBottomPanel::_notification(int p_what) {
 }
 
 void EditorBottomPanel::_on_tab_changed(int p_idx) {
+	pin_button->set_pressed_no_signal(_is_current_pinned());
 	// Repaint first: it swaps the panel stylebox override between the open and
 	// collapsed styles, which the drawer geometry depends on.
 	_repaint();
@@ -88,6 +89,15 @@ void EditorBottomPanel::_theme_changed() {
 	} else {
 		add_theme_style_override(SceneStringName(panel), get_theme_stylebox(SNAME("BottomPanel"), EditorStringName(EditorStyles)));
 	}
+}
+
+bool EditorBottomPanel::_is_current_pinned() const {
+	EditorDock *dock = Object::cast_to<EditorDock>(get_current_tab_control());
+	if (!dock) {
+		return false;
+	}
+	HashMap<String, bool>::ConstIterator E = dock_pinned.find(dock->get_effective_layout_key());
+	return E ? E->value : pinned_by_default;
 }
 
 int EditorBottomPanel::_get_strip_height() const {
@@ -154,7 +164,7 @@ void EditorBottomPanel::_update_drawer_geometry() {
 	const int drawer_height = BottomDrawerGeometry::drawer_height(open, drawer_expanded, strip_height, body_height, area_height);
 	set_offset(SIDE_TOP, -drawer_height);
 
-	const bool pinned = false;
+	const bool pinned = _is_current_pinned();
 	const int inset = BottomDrawerGeometry::workspace_inset(open, pinned, drawer_expanded, strip_height, body_height, area_height);
 	VSplitContainer *top_split = EditorNode::get_top_split();
 	if (top_split) {
@@ -215,6 +225,13 @@ void EditorBottomPanel::save_layout_to_config(Ref<ConfigFile> p_config_file, con
 		offsets[E.key] = E.value;
 	}
 	p_config_file->set_value(p_section, "bottom_panel_offsets", offsets);
+
+	Dictionary pinned;
+	for (const KeyValue<String, bool> &E : dock_pinned) {
+		pinned[E.key] = E.value;
+	}
+	p_config_file->set_value(p_section, "bottom_panel_pinned", pinned);
+	p_config_file->set_value(p_section, "bottom_panel_pinned_by_default", pinned_by_default);
 }
 
 void EditorBottomPanel::load_layout_from_config(Ref<ConfigFile> p_config_file, const String &p_section) {
@@ -224,12 +241,23 @@ void EditorBottomPanel::load_layout_from_config(Ref<ConfigFile> p_config_file, c
 	for (const Variant &v : offset_list) {
 		dock_offsets[v] = BottomDrawerGeometry::body_height_from_stored(offsets[v], 0);
 	}
+
+	// Layouts written before the drawer existed lack the key and keep the
+	// familiar in-flow behavior for every panel.
+	pinned_by_default = p_config_file->get_value(p_section, "bottom_panel_pinned_by_default", true);
+	const Dictionary pinned = p_config_file->get_value(p_section, "bottom_panel_pinned", Dictionary());
+	const LocalVector<Variant> pinned_list = pinned.get_key_list();
+	for (const Variant &v : pinned_list) {
+		dock_pinned[v] = pinned[v];
+	}
+	pin_button->set_pressed_no_signal(_is_current_pinned());
+
 	_update_drawer_geometry();
 }
 
 void EditorBottomPanel::make_item_visible(Control *p_item, bool p_visible, bool p_ignore_lock) {
 	// Don't allow changing tabs involuntarily when tabs are locked.
-	if (!p_ignore_lock && lock_panel_switching && pin_button->is_visible()) {
+	if (!p_ignore_lock && lock_panel_switching && get_current_tab() != -1) {
 		return;
 	}
 
@@ -247,7 +275,16 @@ void EditorBottomPanel::toggle_last_opened_bottom_panel() {
 }
 
 void EditorBottomPanel::_pin_button_toggled(bool p_pressed) {
-	lock_panel_switching = p_pressed;
+	EditorDock *dock = Object::cast_to<EditorDock>(get_current_tab_control());
+	if (dock) {
+		dock_pinned[dock->get_effective_layout_key()] = p_pressed;
+	}
+	_update_drawer_geometry();
+	EditorNode::get_singleton()->save_editor_layout_delayed();
+}
+
+void EditorBottomPanel::set_switch_locked(bool p_locked) {
+	lock_panel_switching = p_locked;
 }
 
 void EditorBottomPanel::set_expanded(bool p_expanded) {
@@ -366,7 +403,8 @@ EditorBottomPanel::EditorBottomPanel() {
 	pin_button->hide();
 	pin_button->set_theme_type_variation("BottomPanelButton");
 	pin_button->set_toggle_mode(true);
-	pin_button->set_tooltip_text(TTRC("Pin Bottom Panel Switching"));
+	pin_button->set_accessibility_name(TTRC("Dock Bottom Drawer"));
+	pin_button->set_tooltip_text(TTRC("Dock the bottom drawer, pushing the workspace up instead of covering it."));
 	pin_button->connect(SceneStringName(toggled), callable_mp(this, &EditorBottomPanel::_pin_button_toggled));
 
 	expand_button = memnew(Button);

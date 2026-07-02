@@ -9312,6 +9312,7 @@ EditorNode::EditorNode() {
 		Dictionary offsets;
 		offsets["Audio"] = 450;
 		default_layout->set_value(EDITOR_NODE_CONFIG_SECTION, "bottom_panel_offsets", offsets);
+		default_layout->set_value(EDITOR_NODE_CONFIG_SECTION, "bottom_panel_pinned_by_default", false);
 	}
 
 	_update_layouts_menu();
