@@ -39,6 +39,7 @@
 
 #include "../fs_analyzer.h"
 #include "../fs_position.h"
+#include "../fs_script_extensible_native_hooks.h"
 #include "../fs_type.h"
 
 #include "core/io/file_access.h"
@@ -7213,8 +7214,13 @@ void add_native_override_candidate(
 		const MethodInfo &p_method,
 		const String &p_class_indent,
 		int p_insertion_line,
+		bool p_is_script_extensible_hook,
 		Vector<OverrideMethodCandidate> &r_candidates) {
-	if ((p_method.flags & METHOD_FLAG_VIRTUAL) == 0 ||
+	// Script-extensible native hooks are bound as regular methods (dispatched through
+	// Object::call()), so they carry no METHOD_FLAG_VIRTUAL despite being intentional
+	// override points.
+	const bool is_overridable = (p_method.flags & METHOD_FLAG_VIRTUAL) != 0 || p_is_script_extensible_hook;
+	if (!is_overridable ||
 			(p_method.flags & METHOD_FLAG_VARARG) != 0 || (p_method.flags & METHOD_FLAG_STATIC) != 0 ||
 			is_constructor_like_override_method(StringName(p_method.name))) {
 		return;
@@ -7271,8 +7277,30 @@ void collect_native_base_override_candidates(
 				method,
 				p_class_indent,
 				p_insertion_line,
+				false,
 				r_candidates);
 		p_decided_names.insert(name);
+	}
+
+	List<StringName> hook_method_names;
+	FSScriptExtensibleNativeHooks::collect_allowed_overrides(native_base, hook_method_names);
+	for (const StringName &hook_method_name : hook_method_names) {
+		if (p_decided_names.has(hook_method_name) || native_seen_names.has(hook_method_name)) {
+			continue;
+		}
+		MethodInfo hook_method;
+		if (!ClassDB::get_method_info(native_base, hook_method_name, &hook_method)) {
+			continue;
+		}
+		native_seen_names.insert(hook_method_name);
+		add_native_override_candidate(
+				native_base,
+				hook_method,
+				p_class_indent,
+				p_insertion_line,
+				true,
+				r_candidates);
+		p_decided_names.insert(hook_method_name);
 	}
 }
 

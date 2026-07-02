@@ -60,3 +60,16 @@ bool FSScriptExtensibleNativeHooks::is_allowed_override(
 	}
 	return false;
 }
+
+void FSScriptExtensibleNativeHooks::collect_allowed_overrides(
+		const StringName &p_native_base, List<StringName> &r_method_names) {
+	if (p_native_base == StringName()) {
+		return;
+	}
+
+	for (const ScriptExtensibleNativeHook &hook : script_extensible_native_hooks) {
+		if (ClassDB::is_parent_class(p_native_base, StringName(hook.native_base))) {
+			r_method_names.push_back(StringName(hook.method_name));
+		}
+	}
+}

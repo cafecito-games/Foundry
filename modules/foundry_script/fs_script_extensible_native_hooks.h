@@ -31,8 +31,10 @@
 #pragma once
 
 #include "core/string/string_name.h"
+#include "core/templates/list.h"
 
 class FSScriptExtensibleNativeHooks {
 public:
 	static bool is_allowed_override(const StringName &p_native_base, const StringName &p_method_name);
+	static void collect_allowed_overrides(const StringName &p_native_base, List<StringName> &r_method_names);
 };
