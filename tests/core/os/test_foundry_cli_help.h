@@ -243,6 +243,7 @@ static PackedStringArray drift_base_args(const FoundryCLIHelp::CommandSpec &p_sp
 TEST_CASE("[FoundryCLIHelp] Registry nouns match the parser") {
 	int noun_count = 0;
 	const FoundryCLIHelp::NounSpec *nouns = FoundryCLIHelp::get_nouns(noun_count);
+	// Catches registry-side noun removal; additions must update this pin deliberately.
 	CHECK_EQ(noun_count, 8);
 	for (int i = 0; i < noun_count; i++) {
 		CHECK_MESSAGE(FoundryCLIParser::is_new_cli_command(nouns[i].name), nouns[i].name);
@@ -269,6 +270,8 @@ TEST_CASE("[FoundryCLIHelp] Every registry command is accepted by the parser") {
 	}
 }
 
+// Vacuous for passthrough commands (see drift_command_is_passthrough); their
+// real option handling lives downstream.
 TEST_CASE("[FoundryCLIHelp] Every documented option is accepted by its parser") {
 	int command_count = 0;
 	const FoundryCLIHelp::CommandSpec *commands = FoundryCLIHelp::get_commands(command_count);
@@ -283,6 +286,29 @@ TEST_CASE("[FoundryCLIHelp] Every documented option is accepted by its parser") 
 			FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(args);
 			REQUIRE_MESSAGE(result.ok, (String(spec.noun) + " " + spec.verb + " " + option.flag + ": " + result.error));
 		}
+	}
+}
+
+static bool drift_command_is_passthrough(const FoundryCLIHelp::CommandSpec &p_spec) {
+	// These commands forward unrecognized tokens to a downstream CLI, so the
+	// option-acceptance test above is vacuous for them and unknown options
+	// cannot be rejected at this layer.
+	const String label = String(p_spec.noun) + " " + p_spec.verb;
+	return label == "script format" || label == "script lint" || label == "test run";
+}
+
+TEST_CASE("[FoundryCLIHelp] Strict commands reject unknown options") {
+	int command_count = 0;
+	const FoundryCLIHelp::CommandSpec *commands = FoundryCLIHelp::get_commands(command_count);
+	for (int i = 0; i < command_count; i++) {
+		const FoundryCLIHelp::CommandSpec &spec = commands[i];
+		if (drift_command_is_passthrough(spec)) {
+			continue;
+		}
+		PackedStringArray args = drift_base_args(spec);
+		args.push_back("--drift-unknown-option");
+		FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(args);
+		CHECK_MESSAGE(!result.ok, (String(spec.noun) + " " + spec.verb + " accepted an unknown option"));
 	}
 }
 
