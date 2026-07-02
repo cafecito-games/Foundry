@@ -790,8 +790,6 @@ void Main::print_help(const char *p_binary) {
 	print_help_option("--foundryextension-docs", "Rather than dumping the engine API, generate API reference from all the FoundryExtensions loaded in the current project (used with --doctool).\n", CLI_OPTION_AVAILABILITY_EDITOR);
 #ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 	print_help_option("--foundry_script-docs <path>", "Rather than dumping the engine API, generate API reference from the inline documentation in the FoundryScript files found in <path> (used with --doctool).\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--foundry_script-format [--write|-w|--check|--diff|-d] [paths...|-]", "Format FoundryScript files or stdin and exit.\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--foundry_script-lint [--format=json|sarif] [--out <path>] [--fail-on=error|warning] [paths...]", "Lint FoundryScript files and exit.\n", CLI_OPTION_AVAILABILITY_EDITOR);
 	print_help_option("--foundry_script-migrate <path>", "Run the FoundryScript strict-typing migration wizard headlessly on the project at <path>: print the dry-run report and exit. Add --foundry_script-migrate-apply to commit the inferred annotations, and the --foundry_script-migrate-strict-* / -activate-strict / -confirm flags to project and enable strict settings.\n", CLI_OPTION_AVAILABILITY_EDITOR);
 	print_help_option("--foundry_script-migrate-apply", "Commit the inferred type annotations to disk during --foundry_script-migrate (otherwise the run is a preview).\n", CLI_OPTION_AVAILABILITY_EDITOR);
 	print_help_option("--foundry_script-migrate-strict-null-checks", "Project (and, with --foundry_script-migrate-activate-strict, enable) strict null checks during --foundry_script-migrate.\n", CLI_OPTION_AVAILABILITY_EDITOR);
