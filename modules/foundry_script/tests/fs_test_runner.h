@@ -97,6 +97,7 @@ private:
 	ErrorHandlerList _error_handler;
 
 	TokenizerMode tokenizer_mode = TOKENIZER_TEXT;
+	bool use_compiled_bytecode = false;
 
 	void enable_stdout();
 	void disable_stdout();
@@ -118,6 +119,9 @@ public:
 	void set_tokenizer_mode(TokenizerMode p_tokenizer_mode) { tokenizer_mode = p_tokenizer_mode; }
 	TokenizerMode get_tokenizer_mode() const { return tokenizer_mode; }
 
+	void set_use_compiled_bytecode(bool p_use_compiled_bytecode) { use_compiled_bytecode = p_use_compiled_bytecode; }
+	bool is_using_compiled_bytecode() const { return use_compiled_bytecode; }
+
 	FSTest(const String &p_source_path, const String &p_output_path, const String &p_base_dir);
 	FSTest() :
 			FSTest(String(), String(), String()) {} // Needed to use in Vector.
@@ -131,6 +135,7 @@ class FSTestRunner {
 	bool do_init_languages = false;
 	bool print_filenames; // Whether filenames should be printed when generated/running tests
 	bool binary_tokens; // Test with buffer tokenizer.
+	bool compiled_bytecode; // Round-trip compiled scripts through the `.fsb` serializer before running.
 
 	bool make_tests();
 	bool make_tests_for_dir(const String &p_dir);
@@ -145,7 +150,7 @@ public:
 	int run_tests();
 	bool generate_outputs();
 
-	FSTestRunner(const String &p_source_dir, bool p_init_language, bool p_print_filenames = false, bool p_use_binary_tokens = false);
+	FSTestRunner(const String &p_source_dir, bool p_init_language, bool p_print_filenames = false, bool p_use_binary_tokens = false, bool p_use_compiled_bytecode = false);
 	~FSTestRunner();
 };
 

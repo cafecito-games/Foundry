@@ -113,6 +113,8 @@ public:
 namespace FSTests {
 class TestFSTraitReflectionAccessor;
 class TestFSGenericReflectionAccessor;
+class TestFSLanguageGlobalsAccessor;
+class TestFSBytecodeScriptAccessor;
 } //namespace FSTests
 #endif // TESTS_ENABLED
 
@@ -122,6 +124,9 @@ class FoundryScript : public Script {
 	bool tool = false;
 	bool valid = false;
 	bool reloading = false;
+	// True when this script graph was reconstructed from serialized compiled bytecode (`.fsb`)
+	// instead of compiled from source; such a script has no source to re-parse.
+	bool compiled_binary = false;
 	bool _is_abstract = false;
 	bool _is_final = false;
 	bool _is_trait_type = false;
@@ -213,6 +218,8 @@ private:
 	friend class FSFunction;
 	friend class FSAnalyzer;
 	friend class FSCompiler;
+	friend class FSBytecodeExporter;
+	friend class FSBytecodeLoader;
 	friend class FSDocGen;
 	friend class FSLambdaCallable;
 	friend class FSLambdaSelfCallable;
@@ -221,6 +228,7 @@ private:
 #ifdef TESTS_ENABLED
 	friend class FSTests::TestFSTraitReflectionAccessor;
 	friend class FSTests::TestFSGenericReflectionAccessor;
+	friend class FSTests::TestFSBytecodeScriptAccessor;
 #endif // TESTS_ENABLED
 
 	Ref<FSNativeClass> native;
@@ -358,6 +366,10 @@ private:
 	Error _static_init();
 	void _static_default_init(); // Initialize static variables with default values based on their types.
 
+	// Re-links a bytecode-backed (`.fsb`) script from its compiled binary on disk; the parse-based
+	// reload path never applies to such scripts.
+	Error _reload_from_compiled_binary();
+
 	RBSet<Object *> instances;
 	bool destructing = false;
 	bool clearing = false;
@@ -428,6 +440,12 @@ public:
 	void cancel_pending_functions(bool warn);
 
 	virtual bool is_valid() const override { return valid; }
+	bool is_compiled_binary() const { return compiled_binary; }
+	// True while this script is mid-reload/mid-link (set on `reload()` entry, cleared on exit,
+	// including on failure). A dependency cycle publishes an invalid-but-error-free shell during
+	// this window; callers use this to tell a legitimate mid-cycle shell apart from an invalid
+	// script left in the cache by a previously failed load.
+	bool is_reloading() const { return reloading; }
 
 	bool inherits_script(const Ref<Script> &p_script) const override;
 
@@ -747,6 +765,9 @@ class FSNamespace;
 
 class FSLanguage : public ScriptLanguage {
 	friend class FSFunctionState;
+#ifdef TESTS_ENABLED
+	friend class FSTests::TestFSLanguageGlobalsAccessor;
+#endif // TESTS_ENABLED
 
 	static FSLanguage *singleton;
 
@@ -783,6 +804,9 @@ class FSLanguage : public ScriptLanguage {
 
 	bool track_call_stack = false;
 	bool track_locals = false;
+#ifdef TOOLS_ENABLED
+	bool compiling_for_export = false;
+#endif
 
 	static CallLevel *_get_stack_level(uint32_t p_level);
 
@@ -922,6 +946,17 @@ public:
 
 	_FORCE_INLINE_ bool should_track_call_stack() const { return track_call_stack; }
 	_FORCE_INLINE_ bool should_track_locals() const { return track_locals; }
+#ifdef TOOLS_ENABLED
+	// The compiled-bytecode export compiles release-profile scripts without call-stack tracking
+	// (no OPCODE_LINE emission); it saves and restores this flag around the export.
+	_FORCE_INLINE_ void set_track_call_stack(bool p_track_call_stack) { track_call_stack = p_track_call_stack; }
+	// While set, the compiler emits STORE_GLOBAL (with a masked, loader-rebaked operand) for
+	// autoload singletons instead of the editor-session STORE_NAMED_GLOBAL fallback, matching how
+	// game runtimes register autoloads in the global array. Set and cleared by the
+	// compiled-bytecode export around its compiles.
+	_FORCE_INLINE_ bool is_compiling_for_export() const { return compiling_for_export; }
+	_FORCE_INLINE_ void set_compiling_for_export(bool p_compiling_for_export) { compiling_for_export = p_compiling_for_export; }
+#endif // TOOLS_ENABLED
 	_FORCE_INLINE_ int get_global_array_size() const { return global_array.size(); }
 	_FORCE_INLINE_ Variant *get_global_array() { return _global_array; }
 	_FORCE_INLINE_ const HashMap<StringName, int> &get_global_map() const { return globals; }
@@ -929,6 +964,11 @@ public:
 	// These two functions should be used when behavior needs to be consistent between in-editor and running the scene
 	bool has_any_global_constant(const StringName &p_name) { return named_globals.has(p_name) || globals.has(p_name); }
 	Variant get_any_global_constant(const StringName &p_name);
+
+	// The reflection surface singletons registered by init(); null before init() and after finish().
+	// Defined out of line because only forward declarations of the types are visible here.
+	Ref<FSReflection> get_reflection_singleton() const;
+	Ref<FSNamespace> get_namespace_singleton() const;
 
 	_FORCE_INLINE_ static FSLanguage *get_singleton() { return singleton; }
 

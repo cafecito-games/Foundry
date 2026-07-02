@@ -229,204 +229,82 @@ FSFunction *FSByteCodeGenerator::write_end() {
 		}
 	}
 
-	if (constant_map.size()) {
-		function->_constant_count = constant_map.size();
-		function->constants.resize(constant_map.size());
-		function->_constants_ptr = function->constants.ptrw();
-		for (const KeyValue<Variant, int> &K : constant_map) {
-			function->constants.write[K.value] = K.key;
-		}
-	} else {
-		function->_constants_ptr = nullptr;
-		function->_constant_count = 0;
+	function->constants.resize(constant_map.size());
+	for (const KeyValue<Variant, int> &K : constant_map) {
+		function->constants.write[K.value] = K.key;
 	}
 
-	if (name_map.size()) {
-		function->global_names.resize(name_map.size());
-		function->_global_names_ptr = &function->global_names[0];
-		for (const KeyValue<StringName, int> &E : name_map) {
-			function->global_names.write[E.value] = E.key;
-		}
-		function->_global_names_count = function->global_names.size();
-
-	} else {
-		function->_global_names_ptr = nullptr;
-		function->_global_names_count = 0;
+	function->global_names.resize(name_map.size());
+	for (const KeyValue<StringName, int> &E : name_map) {
+		function->global_names.write[E.value] = E.key;
 	}
 
-	if (opcodes.size()) {
-		function->code = opcodes;
-		function->_code_ptr = &function->code.write[0];
-		function->_code_size = opcodes.size();
+	function->code = opcodes;
 
-	} else {
-		function->_code_ptr = nullptr;
-		function->_code_size = 0;
+	function->operator_funcs.resize(operator_func_map.size());
+	for (const KeyValue<Variant::ValidatedOperatorEvaluator, int> &E : operator_func_map) {
+		function->operator_funcs.write[E.value] = E.key;
 	}
 
-	if (function->default_arguments.size()) {
-		function->_default_arg_count = function->default_arguments.size() - 1;
-		function->_default_arg_ptr = &function->default_arguments[0];
-	} else {
-		function->_default_arg_count = 0;
-		function->_default_arg_ptr = nullptr;
+	function->setters.resize(setters_map.size());
+	for (const KeyValue<Variant::ValidatedSetter, int> &E : setters_map) {
+		function->setters.write[E.value] = E.key;
 	}
 
-	if (operator_func_map.size()) {
-		function->operator_funcs.resize(operator_func_map.size());
-		function->_operator_funcs_count = function->operator_funcs.size();
-		function->_operator_funcs_ptr = function->operator_funcs.ptr();
-		for (const KeyValue<Variant::ValidatedOperatorEvaluator, int> &E : operator_func_map) {
-			function->operator_funcs.write[E.value] = E.key;
-		}
-	} else {
-		function->_operator_funcs_count = 0;
-		function->_operator_funcs_ptr = nullptr;
+	function->getters.resize(getters_map.size());
+	for (const KeyValue<Variant::ValidatedGetter, int> &E : getters_map) {
+		function->getters.write[E.value] = E.key;
 	}
 
-	if (setters_map.size()) {
-		function->setters.resize(setters_map.size());
-		function->_setters_count = function->setters.size();
-		function->_setters_ptr = function->setters.ptr();
-		for (const KeyValue<Variant::ValidatedSetter, int> &E : setters_map) {
-			function->setters.write[E.value] = E.key;
-		}
-	} else {
-		function->_setters_count = 0;
-		function->_setters_ptr = nullptr;
+	function->keyed_setters.resize(keyed_setters_map.size());
+	for (const KeyValue<Variant::ValidatedKeyedSetter, int> &E : keyed_setters_map) {
+		function->keyed_setters.write[E.value] = E.key;
 	}
 
-	if (getters_map.size()) {
-		function->getters.resize(getters_map.size());
-		function->_getters_count = function->getters.size();
-		function->_getters_ptr = function->getters.ptr();
-		for (const KeyValue<Variant::ValidatedGetter, int> &E : getters_map) {
-			function->getters.write[E.value] = E.key;
-		}
-	} else {
-		function->_getters_count = 0;
-		function->_getters_ptr = nullptr;
+	function->keyed_getters.resize(keyed_getters_map.size());
+	for (const KeyValue<Variant::ValidatedKeyedGetter, int> &E : keyed_getters_map) {
+		function->keyed_getters.write[E.value] = E.key;
 	}
 
-	if (keyed_setters_map.size()) {
-		function->keyed_setters.resize(keyed_setters_map.size());
-		function->_keyed_setters_count = function->keyed_setters.size();
-		function->_keyed_setters_ptr = function->keyed_setters.ptr();
-		for (const KeyValue<Variant::ValidatedKeyedSetter, int> &E : keyed_setters_map) {
-			function->keyed_setters.write[E.value] = E.key;
-		}
-	} else {
-		function->_keyed_setters_count = 0;
-		function->_keyed_setters_ptr = nullptr;
+	function->indexed_setters.resize(indexed_setters_map.size());
+	for (const KeyValue<Variant::ValidatedIndexedSetter, int> &E : indexed_setters_map) {
+		function->indexed_setters.write[E.value] = E.key;
 	}
 
-	if (keyed_getters_map.size()) {
-		function->keyed_getters.resize(keyed_getters_map.size());
-		function->_keyed_getters_count = function->keyed_getters.size();
-		function->_keyed_getters_ptr = function->keyed_getters.ptr();
-		for (const KeyValue<Variant::ValidatedKeyedGetter, int> &E : keyed_getters_map) {
-			function->keyed_getters.write[E.value] = E.key;
-		}
-	} else {
-		function->_keyed_getters_count = 0;
-		function->_keyed_getters_ptr = nullptr;
+	function->indexed_getters.resize(indexed_getters_map.size());
+	for (const KeyValue<Variant::ValidatedIndexedGetter, int> &E : indexed_getters_map) {
+		function->indexed_getters.write[E.value] = E.key;
 	}
 
-	if (indexed_setters_map.size()) {
-		function->indexed_setters.resize(indexed_setters_map.size());
-		function->_indexed_setters_count = function->indexed_setters.size();
-		function->_indexed_setters_ptr = function->indexed_setters.ptr();
-		for (const KeyValue<Variant::ValidatedIndexedSetter, int> &E : indexed_setters_map) {
-			function->indexed_setters.write[E.value] = E.key;
-		}
-	} else {
-		function->_indexed_setters_count = 0;
-		function->_indexed_setters_ptr = nullptr;
-	}
-
-	if (indexed_getters_map.size()) {
-		function->indexed_getters.resize(indexed_getters_map.size());
-		function->_indexed_getters_count = function->indexed_getters.size();
-		function->_indexed_getters_ptr = function->indexed_getters.ptr();
-		for (const KeyValue<Variant::ValidatedIndexedGetter, int> &E : indexed_getters_map) {
-			function->indexed_getters.write[E.value] = E.key;
-		}
-	} else {
-		function->_indexed_getters_count = 0;
-		function->_indexed_getters_ptr = nullptr;
-	}
-
-	if (builtin_method_map.size()) {
-		function->builtin_methods.resize(builtin_method_map.size());
-		function->_builtin_methods_ptr = function->builtin_methods.ptr();
-		function->_builtin_methods_count = builtin_method_map.size();
-		for (const KeyValue<Variant::ValidatedBuiltInMethod, int> &E : builtin_method_map) {
-			function->builtin_methods.write[E.value] = E.key;
-		}
-	} else {
-		function->_builtin_methods_ptr = nullptr;
-		function->_builtin_methods_count = 0;
+	function->builtin_methods.resize(builtin_method_map.size());
+	for (const KeyValue<Variant::ValidatedBuiltInMethod, int> &E : builtin_method_map) {
+		function->builtin_methods.write[E.value] = E.key;
 	}
 	function->builtin_method_names = builtin_method_names;
 
-	if (constructors_map.size()) {
-		function->constructors.resize(constructors_map.size());
-		function->_constructors_ptr = function->constructors.ptr();
-		function->_constructors_count = constructors_map.size();
-		for (const KeyValue<Variant::ValidatedConstructor, int> &E : constructors_map) {
-			function->constructors.write[E.value] = E.key;
-		}
-	} else {
-		function->_constructors_ptr = nullptr;
-		function->_constructors_count = 0;
+	function->constructors.resize(constructors_map.size());
+	for (const KeyValue<Variant::ValidatedConstructor, int> &E : constructors_map) {
+		function->constructors.write[E.value] = E.key;
 	}
 
-	if (utilities_map.size()) {
-		function->utilities.resize(utilities_map.size());
-		function->_utilities_ptr = function->utilities.ptr();
-		function->_utilities_count = utilities_map.size();
-		for (const KeyValue<Variant::ValidatedUtilityFunction, int> &E : utilities_map) {
-			function->utilities.write[E.value] = E.key;
-		}
-	} else {
-		function->_utilities_ptr = nullptr;
-		function->_utilities_count = 0;
+	function->utilities.resize(utilities_map.size());
+	for (const KeyValue<Variant::ValidatedUtilityFunction, int> &E : utilities_map) {
+		function->utilities.write[E.value] = E.key;
 	}
 
-	if (gds_utilities_map.size()) {
-		function->gds_utilities.resize(gds_utilities_map.size());
-		function->_gds_utilities_ptr = function->gds_utilities.ptr();
-		function->_gds_utilities_count = gds_utilities_map.size();
-		for (const KeyValue<FSUtilityFunctions::FunctionPtr, int> &E : gds_utilities_map) {
-			function->gds_utilities.write[E.value] = E.key;
-		}
-	} else {
-		function->_gds_utilities_ptr = nullptr;
-		function->_gds_utilities_count = 0;
+	function->gds_utilities.resize(gds_utilities_map.size());
+	for (const KeyValue<FSUtilityFunctions::FunctionPtr, int> &E : gds_utilities_map) {
+		function->gds_utilities.write[E.value] = E.key;
 	}
 
-	if (method_bind_map.size()) {
-		function->methods.resize(method_bind_map.size());
-		function->_methods_ptr = function->methods.ptrw();
-		function->_methods_count = method_bind_map.size();
-		for (const KeyValue<MethodBind *, int> &E : method_bind_map) {
-			function->methods.write[E.value] = E.key;
-		}
-	} else {
-		function->_methods_ptr = nullptr;
-		function->_methods_count = 0;
+	function->methods.resize(method_bind_map.size());
+	for (const KeyValue<MethodBind *, int> &E : method_bind_map) {
+		function->methods.write[E.value] = E.key;
 	}
 
-	if (lambdas_map.size()) {
-		function->lambdas.resize(lambdas_map.size());
-		function->_lambdas_ptr = function->lambdas.ptrw();
-		function->_lambdas_count = lambdas_map.size();
-		for (const KeyValue<FSFunction *, int> &E : lambdas_map) {
-			function->lambdas.write[E.value] = E.key;
-		}
-	} else {
-		function->_lambdas_ptr = nullptr;
-		function->_lambdas_count = 0;
+	function->lambdas.resize(lambdas_map.size());
+	for (const KeyValue<FSFunction *, int> &E : lambdas_map) {
+		function->lambdas.write[E.value] = E.key;
 	}
 
 	if (FSLanguage::get_singleton()->should_track_locals()) {
@@ -434,6 +312,8 @@ FSFunction *FSByteCodeGenerator::write_end() {
 	}
 	function->_stack_size = FSFunction::FIXED_ADDRESSES_MAX + max_locals + temporaries.size();
 	function->_instruction_args_size = instr_args_max;
+
+	function->setup_runtime_pointers();
 
 #ifdef DEBUG_ENABLED
 	function->operator_names = operator_names;
@@ -443,6 +323,23 @@ FSFunction *FSByteCodeGenerator::write_end() {
 	function->constructors_names = constructors_names;
 	function->utilities_names = utilities_names;
 	function->gds_utilities_names = gds_utilities_names;
+#endif
+
+#ifdef TOOLS_ENABLED
+	DEV_ASSERT(export_fixups.operators.size() == operator_func_map.size());
+	DEV_ASSERT(export_fixups.setters.size() == setters_map.size());
+	DEV_ASSERT(export_fixups.getters.size() == getters_map.size());
+	DEV_ASSERT(export_fixups.keyed_setters.size() == keyed_setters_map.size());
+	DEV_ASSERT(export_fixups.keyed_getters.size() == keyed_getters_map.size());
+	DEV_ASSERT(export_fixups.indexed_setters.size() == indexed_setters_map.size());
+	DEV_ASSERT(export_fixups.indexed_getters.size() == indexed_getters_map.size());
+	DEV_ASSERT(export_fixups.builtin_methods.size() == builtin_method_map.size());
+	DEV_ASSERT(export_fixups.constructors.size() == constructors_map.size());
+	DEV_ASSERT(export_fixups.utilities.size() == utilities_map.size());
+	DEV_ASSERT(export_fixups.gds_utilities.size() == gds_utilities_map.size());
+	DEV_ASSERT(export_fixups.method_binds.size() == method_bind_map.size());
+	export_fixups.named_globals = named_globals;
+	function->export_fixups = export_fixups;
 #endif
 
 	ended = true;
@@ -598,6 +495,9 @@ void FSByteCodeGenerator::write_unary_operator(const Address &p_target, Variant:
 		append(Address());
 		append(p_target);
 		append(op_func);
+#ifdef TOOLS_ENABLED
+		record_export_fixup(export_fixups.operators, get_operation_pos(op_func), FSFunction::ExportFixups::OperatorKey{ p_operator, p_left_operand.type.builtin_type, Variant::NIL });
+#endif
 #ifdef DEBUG_ENABLED
 		add_debug_name(operator_names, get_operation_pos(op_func), Variant::get_operator_name(p_operator));
 #endif
@@ -605,6 +505,9 @@ void FSByteCodeGenerator::write_unary_operator(const Address &p_target, Variant:
 	}
 
 	// No specific types, perform variant evaluation.
+#ifdef TOOLS_ENABLED
+	const int unary_operator_offset = opcodes.size();
+#endif
 	append_opcode(FSFunction::OPCODE_OPERATOR);
 	append(p_left_operand);
 	append(Address());
@@ -616,6 +519,9 @@ void FSByteCodeGenerator::write_unary_operator(const Address &p_target, Variant:
 	for (int i = 0; i < _pointer_size; i++) {
 		append(0); // Space for function pointer.
 	}
+#ifdef TOOLS_ENABLED
+	export_fixups.operator_cache_offsets.push_back(unary_operator_offset);
+#endif
 }
 
 void FSByteCodeGenerator::write_binary_operator(const Address &p_target, Variant::Operator p_operator, const Address &p_left_operand, const Address &p_right_operand) {
@@ -655,6 +561,9 @@ void FSByteCodeGenerator::write_binary_operator(const Address &p_target, Variant
 		append(p_right_operand);
 		append(p_target);
 		append(op_func);
+#ifdef TOOLS_ENABLED
+		record_export_fixup(export_fixups.operators, get_operation_pos(op_func), FSFunction::ExportFixups::OperatorKey{ p_operator, p_left_operand.type.builtin_type, p_right_operand.type.builtin_type });
+#endif
 #ifdef DEBUG_ENABLED
 		add_debug_name(operator_names, get_operation_pos(op_func), Variant::get_operator_name(p_operator));
 #endif
@@ -662,6 +571,9 @@ void FSByteCodeGenerator::write_binary_operator(const Address &p_target, Variant
 	}
 
 	// No specific types, perform variant evaluation.
+#ifdef TOOLS_ENABLED
+	const int binary_operator_offset = opcodes.size();
+#endif
 	append_opcode(FSFunction::OPCODE_OPERATOR);
 	append(p_left_operand);
 	append(p_right_operand);
@@ -673,6 +585,9 @@ void FSByteCodeGenerator::write_binary_operator(const Address &p_target, Variant
 	for (int i = 0; i < _pointer_size; i++) {
 		append(0); // Space for function pointer.
 	}
+#ifdef TOOLS_ENABLED
+	export_fixups.operator_cache_offsets.push_back(binary_operator_offset);
+#endif
 }
 
 void FSByteCodeGenerator::write_type_test(const Address &p_target, const Address &p_source, const FSDataType &p_type) {
@@ -837,6 +752,9 @@ void FSByteCodeGenerator::write_set(const Address &p_target, const Address &p_in
 			append(p_index);
 			append(p_source);
 			append(setter);
+#ifdef TOOLS_ENABLED
+			record_export_fixup(export_fixups.indexed_setters, get_indexed_setter_pos(setter), p_target.type.builtin_type);
+#endif
 			return;
 		} else if (Variant::get_member_validated_keyed_setter(p_target.type.builtin_type)) {
 			Variant::ValidatedKeyedSetter setter = Variant::get_member_validated_keyed_setter(p_target.type.builtin_type);
@@ -845,6 +763,9 @@ void FSByteCodeGenerator::write_set(const Address &p_target, const Address &p_in
 			append(p_index);
 			append(p_source);
 			append(setter);
+#ifdef TOOLS_ENABLED
+			record_export_fixup(export_fixups.keyed_setters, get_keyed_setter_pos(setter), p_target.type.builtin_type);
+#endif
 			return;
 		}
 	}
@@ -865,6 +786,9 @@ void FSByteCodeGenerator::write_get(const Address &p_target, const Address &p_in
 			append(p_index);
 			append(p_target);
 			append(getter);
+#ifdef TOOLS_ENABLED
+			record_export_fixup(export_fixups.indexed_getters, get_indexed_getter_pos(getter), p_source.type.builtin_type);
+#endif
 			return;
 		} else if (Variant::get_member_validated_keyed_getter(p_source.type.builtin_type)) {
 			Variant::ValidatedKeyedGetter getter = Variant::get_member_validated_keyed_getter(p_source.type.builtin_type);
@@ -873,6 +797,9 @@ void FSByteCodeGenerator::write_get(const Address &p_target, const Address &p_in
 			append(p_index);
 			append(p_target);
 			append(getter);
+#ifdef TOOLS_ENABLED
+			record_export_fixup(export_fixups.keyed_getters, get_keyed_getter_pos(getter), p_source.type.builtin_type);
+#endif
 			return;
 		}
 	}
@@ -890,6 +817,9 @@ void FSByteCodeGenerator::write_set_named(const Address &p_target, const StringN
 		append(p_target);
 		append(p_source);
 		append(setter);
+#ifdef TOOLS_ENABLED
+		record_export_fixup(export_fixups.setters, get_setter_pos(setter), FSFunction::ExportFixups::TypedNameKey{ p_target.type.builtin_type, p_name });
+#endif
 #ifdef DEBUG_ENABLED
 		add_debug_name(setter_names, get_setter_pos(setter), p_name);
 #endif
@@ -908,6 +838,9 @@ void FSByteCodeGenerator::write_get_named(const Address &p_target, const StringN
 		append(p_source);
 		append(p_target);
 		append(getter);
+#ifdef TOOLS_ENABLED
+		record_export_fixup(export_fixups.getters, get_getter_pos(getter), FSFunction::ExportFixups::TypedNameKey{ p_source.type.builtin_type, p_name });
+#endif
 #ifdef DEBUG_ENABLED
 		add_debug_name(getter_names, get_getter_pos(getter), p_name);
 #endif
@@ -1154,16 +1087,24 @@ void FSByteCodeGenerator::write_assign_default_parameter(const Address &p_dst, c
 	function->default_arguments.push_back(opcodes.size());
 }
 
-void FSByteCodeGenerator::write_store_global(const Address &p_dst, int p_global_index) {
+void FSByteCodeGenerator::write_store_global(const Address &p_dst, int p_global_index, const StringName &p_global_name) {
 	append_opcode(FSFunction::OPCODE_STORE_GLOBAL);
 	append(p_dst);
 	append(p_global_index);
+#ifdef TOOLS_ENABLED
+	export_fixups.global_stores.push_back(FSFunction::ExportFixups::GlobalStore{ static_cast<int>(opcodes.size()) - 1, p_global_name });
+#endif
 }
 
 void FSByteCodeGenerator::write_store_named_global(const Address &p_dst, const StringName &p_global) {
 	append_opcode(FSFunction::OPCODE_STORE_NAMED_GLOBAL);
 	append(p_dst);
 	append(p_global);
+#ifdef TOOLS_ENABLED
+	if (!named_globals.has(p_global)) {
+		named_globals.push_back(p_global);
+	}
+#endif
 }
 
 void FSByteCodeGenerator::write_cast(const Address &p_target, const Address &p_source, const FSDataType &p_type) {
@@ -1264,6 +1205,9 @@ void FSByteCodeGenerator::write_call_foundry_script_utility(const Address &p_tar
 	append(p_arguments.size());
 	append(gds_function);
 	ct.cleanup();
+#ifdef TOOLS_ENABLED
+	record_export_fixup(export_fixups.gds_utilities, get_gds_utility_pos(gds_function), StringName(p_function));
+#endif
 #ifdef DEBUG_ENABLED
 	add_debug_name(gds_utilities_names, get_gds_utility_pos(gds_function), p_function);
 #endif
@@ -1300,6 +1244,9 @@ void FSByteCodeGenerator::write_call_utility(const Address &p_target, const Stri
 		append(p_arguments.size());
 		append(Variant::get_validated_utility_function(p_function));
 		ct.cleanup();
+#ifdef TOOLS_ENABLED
+		record_export_fixup(export_fixups.utilities, get_utility_pos(Variant::get_validated_utility_function(p_function)), StringName(p_function));
+#endif
 #ifdef DEBUG_ENABLED
 		add_debug_name(utilities_names, get_utility_pos(Variant::get_validated_utility_function(p_function)), p_function);
 #endif
@@ -1370,6 +1317,9 @@ void FSByteCodeGenerator::write_call_builtin_type(const Address &p_target, const
 	append(p_arguments.size());
 	Variant::ValidatedBuiltInMethod validated_method = Variant::get_validated_builtin_method(p_type, p_method);
 	const int method_index = get_builtin_method_pos(validated_method);
+#ifdef TOOLS_ENABLED
+	record_export_fixup(export_fixups.builtin_methods, method_index, FSFunction::ExportFixups::TypedNameKey{ p_type, p_method });
+#endif
 	append(method_index);
 	add_builtin_method_name(method_index, p_method);
 	ct.cleanup();
@@ -1398,6 +1348,9 @@ void FSByteCodeGenerator::write_call_native_static(const Address &p_target, cons
 	CallTarget ct = get_call_target(p_target);
 	append(ct.target);
 	append(method);
+#ifdef TOOLS_ENABLED
+	record_export_fixup(export_fixups.method_binds, get_method_bind_pos(method), FSFunction::ExportFixups::MethodBindKey{ p_class, p_method });
+#endif
 	append(p_arguments.size());
 	ct.cleanup();
 	return;
@@ -1430,6 +1383,9 @@ void FSByteCodeGenerator::write_call_native_static_validated(const FSCodeGenerat
 	append(ct.target);
 	append(p_arguments.size());
 	append(p_method);
+#ifdef TOOLS_ENABLED
+	record_export_fixup(export_fixups.method_binds, get_method_bind_pos(p_method), FSFunction::ExportFixups::MethodBindKey{ p_method->get_instance_class(), p_method->get_name() });
+#endif
 	ct.cleanup();
 }
 
@@ -1443,6 +1399,9 @@ void FSByteCodeGenerator::write_call_method_bind(const Address &p_target, const 
 	append(ct.target);
 	append(p_arguments.size());
 	append(p_method);
+#ifdef TOOLS_ENABLED
+	record_export_fixup(export_fixups.method_binds, get_method_bind_pos(p_method), FSFunction::ExportFixups::MethodBindKey{ p_method->get_instance_class(), p_method->get_name() });
+#endif
 	ct.cleanup();
 }
 
@@ -1474,6 +1433,9 @@ void FSByteCodeGenerator::write_call_method_bind_validated(const Address &p_targ
 	append(ct.target);
 	append(p_arguments.size());
 	append(p_method);
+#ifdef TOOLS_ENABLED
+	record_export_fixup(export_fixups.method_binds, get_method_bind_pos(p_method), FSFunction::ExportFixups::MethodBindKey{ p_method->get_instance_class(), p_method->get_name() });
+#endif
 	ct.cleanup();
 }
 
@@ -1568,6 +1530,9 @@ void FSByteCodeGenerator::write_construct(const Address &p_target, Variant::Type
 			append(p_arguments.size());
 			append(Variant::get_validated_constructor(p_type, valid_constructor));
 			ct.cleanup();
+#ifdef TOOLS_ENABLED
+			record_export_fixup(export_fixups.constructors, get_constructor_pos(Variant::get_validated_constructor(p_type, valid_constructor)), FSFunction::ExportFixups::ConstructorKey{ p_type, valid_constructor });
+#endif
 #ifdef DEBUG_ENABLED
 			add_debug_name(constructors_names, get_constructor_pos(Variant::get_validated_constructor(p_type, valid_constructor)), Variant::get_type_name(p_type));
 #endif

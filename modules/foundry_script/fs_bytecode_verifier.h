@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  fs_utility_callable.h                                                 */
+/*  fs_bytecode_verifier.h                                                */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -30,38 +30,27 @@
 
 #pragma once
 
-#include "fs_utility_functions.h"
+#include "core/error/error_list.h"
+#include "core/string/ustring.h"
 
-#include "core/variant/callable.h"
+class FSFunction;
 
-class FSUtilityCallable : public CallableCustom {
-	StringName function_name;
-	enum Type {
-		TYPE_INVALID,
-		TYPE_GLOBAL,
-		TYPE_FOUNDRY_SCRIPT,
-	};
-	Type type = TYPE_INVALID;
-	FSUtilityFunctions::FunctionPtr fs_function = nullptr;
-	uint32_t h = 0;
-
-	static bool compare_equal(const CallableCustom *p_a, const CallableCustom *p_b);
-	static bool compare_less(const CallableCustom *p_a, const CallableCustom *p_b);
-
+// Link-time bounds checker for a deserialized `.fsb` opcode stream. The release VM performs no
+// bounds checking on the instruction stream (`GET_VARIANT_PTR` is unchecked without `DEBUG_ENABLED`,
+// and `GD_ERR_BREAK` compiles to nothing), so a hostile or corrupted `.fsb` that passed the loader's
+// structural checks could still make the VM read or write out of bounds at execution time. The
+// verifier walks every deserialized function's opcode stream once — mirroring the exact per-opcode
+// operand layout the VM uses to advance `ip` — and rejects any instruction whose length overruns the
+// code, any operand address outside its address space (stack/constant/member), any jump target
+// outside the code (and, more strictly, not landing on an instruction boundary), and any table index
+// (operators, setters/getters, keyed/indexed setters/getters, builtin methods, constructors,
+// utilities, script utilities, method binds, lambdas, global names, the language global array) that
+// is out of range for its table. It runs in all builds and has no `DEBUG_ENABLED` dependency.
+class FSBytecodeVerifier {
 public:
-	// Identifies a Callable backed by this custom type, for serializers that rebuild utility
-	// callables by function name. Returns null when the callable is anything else.
-	static const FSUtilityCallable *get_from_callable(const Callable &p_callable);
-
-	uint32_t hash() const override;
-	String get_as_text() const override;
-	CompareEqualFunc get_compare_equal_func() const override;
-	CompareLessFunc get_compare_less_func() const override;
-	bool is_valid() const override;
-	StringName get_method() const override;
-	ObjectID get_object() const override;
-	int get_argument_count(bool &r_is_valid) const override;
-	void call(const Variant **p_arguments, int p_argcount, Variant &r_return_value, Callable::CallError &r_call_error) const override;
-
-	FSUtilityCallable(const StringName &p_function_name);
+	// `p_member_address_count` is the size of the member address space the function may reference —
+	// the owning class's flattened member count. It is an upper bound: a witness dispatched without
+	// an instance has an empty member space, but verifying against the class member count never
+	// rejects a well-formed function and keeps the check independent of any concrete instance.
+	static Error verify_function(const FSFunction *p_function, int p_member_address_count, const String &p_script_path);
 };

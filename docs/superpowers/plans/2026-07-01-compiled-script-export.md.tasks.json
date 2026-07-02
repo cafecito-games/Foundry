@@ -1,0 +1,60 @@
+{
+  "planPath": "docs/superpowers/plans/2026-07-01-compiled-script-export.md",
+  "tasks": [
+    {
+      "id": 1,
+      "subject": "Task 1: Format constants, string table, Variant/FSDataType codecs",
+      "status": "completed",
+      "description": "**Goal:** The .fsb building blocks — format header, deduped string table, tagged Variant codec (external-resource table), FSDataType codec — round-trip in isolation.\n\n```json:metadata\n{\"files\": [\"modules/foundry_script/fs_bytecode_format.h\", \"modules/foundry_script/fs_bytecode_export.h\", \"modules/foundry_script/fs_bytecode_export.cpp\", \"modules/foundry_script/fs_bytecode_loader.h\", \"modules/foundry_script/fs_bytecode_loader.cpp\", \"modules/foundry_script/tests/test_bytecode_serialization.h\"], \"verifyCommand\": \"./bin/foundry.macos.editor.dev.arm64 --headless --test --test-case=\\\"*BytecodeCodec*\\\" --force-colors\", \"acceptanceCriteria\": [\"header guard rejects mismatched engine build\", \"string table dedup\", \"resource constants become external refs with no property payload\", \"process-bound Variants rejected\", \"FSDataType round-trip\"]}\n```"
+    },
+    {
+      "id": 2,
+      "subject": "Task 2: Codegen fixup recording",
+      "status": "completed",
+      "description": "**Goal:** FSByteCodeGenerator records, under TOOLS_ENABLED, symbolic descriptors for every process-bound pointer it emits, plus {code_offset, global_name} pairs for OPCODE_STORE_GLOBAL, stored on the produced FSFunction.\n\n```json:metadata\n{\"files\": [\"modules/foundry_script/fs_function.h\", \"modules/foundry_script/fs_codegen.h\", \"modules/foundry_script/fs_byte_codegen.h\", \"modules/foundry_script/fs_byte_codegen.cpp\", \"modules/foundry_script/fs_compiler.cpp\", \"modules/foundry_script/tests/test_bytecode_serialization.h\"], \"verifyCommand\": \"./bin/foundry.macos.editor.dev.arm64 --headless --test --force-colors\", \"acceptanceCriteria\": [\"descriptor index == pointer-table index for all 12 tables\", \"STORE_GLOBAL offsets recorded with names\", \"full suite green\"]}\n```"
+    },
+    {
+      "id": 3,
+      "subject": "Task 3: FSFunction serialize/deserialize/link round-trip",
+      "status": "completed",
+      "blockedBy": [1, 2],
+      "description": "**Goal:** One compiled FSFunction round-trips through bytes and executes identically after linking, with hard errors on unresolvable fixups.\n\n```json:metadata\n{\"files\": [\"modules/foundry_script/fs_bytecode_export.cpp\", \"modules/foundry_script/fs_bytecode_loader.cpp\", \"modules/foundry_script/fs_function.h\", \"modules/foundry_script/fs_byte_codegen.cpp\", \"modules/foundry_script/tests/test_bytecode_serialization.h\"], \"verifyCommand\": \"./bin/foundry.macos.editor.dev.arm64 --headless --test --test-case=\\\"*BytecodeFunction*\\\" --force-colors\", \"acceptanceCriteria\": [\"execution parity with directly-compiled function\", \"hard error on unresolvable fixup\", \"release-subset payload only\"]}\n```"
+    },
+    {
+      "id": 4,
+      "subject": "Task 4: Whole-script graph serialization",
+      "status": "completed",
+      "blockedBy": [3],
+      "description": "**Goal:** serialize(script) / load_skeleton + load_full round-trip a complete FoundryScript — inheritance, inner classes, members, signals, constants, static variables, lambdas, generics, traits/witnesses — into a runnable script.\n\n```json:metadata\n{\"files\": [\"modules/foundry_script/fs_bytecode_export.h\", \"modules/foundry_script/fs_bytecode_export.cpp\", \"modules/foundry_script/fs_bytecode_loader.h\", \"modules/foundry_script/fs_bytecode_loader.cpp\", \"modules/foundry_script/foundry_script.h\", \"modules/foundry_script/tests/test_bytecode_serialization.h\"], \"verifyCommand\": \"./bin/foundry.macos.editor.dev.arm64 --headless --test --test-case=\\\"*BytecodeScript*\\\" --force-colors\", \"acceptanceCriteria\": [\"full class-graph round-trip\", \"witness re-registration\", \"reload-tail ordering\"]}\n```"
+    },
+    {
+      "id": 5,
+      "subject": "Task 5: Fixture-corpus round-trip mode",
+      "status": "completed",
+      "blockedBy": [4],
+      "description": "**Goal:** Every runtime fixture in modules/foundry_script/tests/scripts/ passes when executed through compile → serialize → deserialize → link → run, diffing the same .out files as the text path.\n\n```json:metadata\n{\"files\": [\"modules/foundry_script/tests/fs_test_runner.h\", \"modules/foundry_script/tests/fs_test_runner.cpp\", \"modules/foundry_script/tests/fs_test_runner_suite.h\"], \"verifyCommand\": \"./bin/foundry.macos.editor.dev.arm64 --headless --test --force-colors\", \"acceptanceCriteria\": [\"corpus parity in bytecode mode\", \"full suite green\"]}\n```"
+    },
+    {
+      "id": 6,
+      "subject": "Task 6: FSCache and resource-loader integration",
+      "status": "completed",
+      "blockedBy": [4],
+      "description": "**Goal:** A .fsb file on disk loads end-to-end through ResourceLoader — shallow/full cache branches, dependencies, cycles, reload guard — with the engine-version guard enforced.\n\n```json:metadata\n{\"files\": [\"modules/foundry_script/fs_cache.cpp\", \"modules/foundry_script/foundry_script.h\", \"modules/foundry_script/foundry_script.cpp\", \"modules/foundry_script/tests/test_bytecode_serialization.h\"], \"verifyCommand\": \"./bin/foundry.macos.editor.dev.arm64 --headless --test --force-colors\", \"acceptanceCriteria\": [\"ResourceLoader end-to-end\", \"cycles work\", \"reload guard\", \"version guard rejection\"]}\n```"
+    },
+    {
+      "id": 7,
+      "subject": "Task 7: Export preset mode and export plugin",
+      "status": "completed",
+      "blockedBy": [6],
+      "description": "**Goal:** Selecting Compiled Bytecode in an export preset ships .fsb files (path-remapped like .fsc), fails the export on any compile error, and fails the export when a scene contains a built-in script.\n\n```json:metadata\n{\"files\": [\"editor/export/editor_export_preset.h\", \"editor/export/editor_export_preset.cpp\", \"editor/export/project_export.cpp\", \"modules/foundry_script/register_types.cpp\"], \"verifyCommand\": \"./bin/foundry.macos.editor.dev.arm64 --headless --test --force-colors && headless export of scratchpad test project\", \"acceptanceCriteria\": [\"enum appended\", \"PCK contains only .fsb\", \"compile error fails export\", \"built-in script fails export\"]}\n```"
+    },
+    {
+      "id": 8,
+      "subject": "Task 8: Hardening — verifier, corrupt inputs, leak assertions",
+      "status": "completed",
+      "blockedBy": [6, 7],
+      "description": "**Goal:** A hostile or corrupted .fsb cannot crash the release VM, and a produced .fsb provably contains no source text or local identifiers.\n\n```json:metadata\n{\"files\": [\"modules/foundry_script/fs_bytecode_loader.cpp\", \"modules/foundry_script/tests/test_bytecode_serialization.h\"], \"verifyCommand\": \"./bin/foundry.macos.editor.dev.arm64 --headless --test --force-colors\", \"acceptanceCriteria\": [\"verifier bounds-checks all operands\", \"corruption never crashes\", \"no local-identifier/source leakage\", \"version pin\"]}\n```"
+    }
+  ],
+  "lastUpdated": "2026-07-02T22:00:00Z"
+}

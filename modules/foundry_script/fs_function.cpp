@@ -254,6 +254,64 @@ StringName FSFunction::get_global_name(int p_idx) const {
 	return global_names[p_idx];
 }
 
+void FSFunction::setup_runtime_pointers() {
+	_code_size = code.size();
+	_code_ptr = code.is_empty() ? nullptr : code.ptrw();
+
+	if (default_arguments.is_empty()) {
+		_default_arg_count = 0;
+		_default_arg_ptr = nullptr;
+	} else {
+		_default_arg_count = default_arguments.size() - 1;
+		_default_arg_ptr = default_arguments.ptr();
+	}
+
+	_constant_count = constants.size();
+	_constants_ptr = constants.is_empty() ? nullptr : constants.ptrw();
+
+	_global_names_count = global_names.size();
+	_global_names_ptr = global_names.is_empty() ? nullptr : global_names.ptr();
+
+	_operator_funcs_count = operator_funcs.size();
+	_operator_funcs_ptr = operator_funcs.is_empty() ? nullptr : operator_funcs.ptr();
+
+	_setters_count = setters.size();
+	_setters_ptr = setters.is_empty() ? nullptr : setters.ptr();
+
+	_getters_count = getters.size();
+	_getters_ptr = getters.is_empty() ? nullptr : getters.ptr();
+
+	_keyed_setters_count = keyed_setters.size();
+	_keyed_setters_ptr = keyed_setters.is_empty() ? nullptr : keyed_setters.ptr();
+
+	_keyed_getters_count = keyed_getters.size();
+	_keyed_getters_ptr = keyed_getters.is_empty() ? nullptr : keyed_getters.ptr();
+
+	_indexed_setters_count = indexed_setters.size();
+	_indexed_setters_ptr = indexed_setters.is_empty() ? nullptr : indexed_setters.ptr();
+
+	_indexed_getters_count = indexed_getters.size();
+	_indexed_getters_ptr = indexed_getters.is_empty() ? nullptr : indexed_getters.ptr();
+
+	_builtin_methods_count = builtin_methods.size();
+	_builtin_methods_ptr = builtin_methods.is_empty() ? nullptr : builtin_methods.ptr();
+
+	_constructors_count = constructors.size();
+	_constructors_ptr = constructors.is_empty() ? nullptr : constructors.ptr();
+
+	_utilities_count = utilities.size();
+	_utilities_ptr = utilities.is_empty() ? nullptr : utilities.ptr();
+
+	_gds_utilities_count = gds_utilities.size();
+	_gds_utilities_ptr = gds_utilities.is_empty() ? nullptr : gds_utilities.ptr();
+
+	_methods_count = methods.size();
+	_methods_ptr = methods.is_empty() ? nullptr : methods.ptrw();
+
+	_lambdas_count = lambdas.size();
+	_lambdas_ptr = lambdas.is_empty() ? nullptr : lambdas.ptrw();
+}
+
 struct _GDFKC {
 	int order = 0;
 	List<int> pos;
@@ -327,7 +385,13 @@ FSFunction::FSFunction() {
 }
 
 FSFunction::~FSFunction() {
-	get_script()->member_functions.erase(name);
+	// Unregister only if the entry is this function: a same-named sibling (e.g. a named lambda
+	// shadowing a member, or a rejected duplicate from a compiled-bytecode load) must never
+	// unregister — and thereby orphan — the function that actually owns the name.
+	HashMap<StringName, FSFunction *>::Iterator member_entry = get_script()->member_functions.find(name);
+	if (member_entry && member_entry->value == this) {
+		get_script()->member_functions.remove(member_entry);
+	}
 
 	for (int i = 0; i < lambdas.size(); i++) {
 		memdelete(lambdas[i]);

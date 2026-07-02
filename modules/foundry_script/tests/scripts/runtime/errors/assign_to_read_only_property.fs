@@ -1,3 +1,4 @@
+#once-per-process
 func subtest_attribute(state):
 	state.center_of_mass.x -= 1.0
 

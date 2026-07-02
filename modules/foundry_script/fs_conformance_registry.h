@@ -140,6 +140,11 @@ public:
 	// the declaring script frees the underlying `FSFunction`s so no borrowed pointer dangles.
 	void clear_runtime_witnesses(const String &p_source_file);
 
+	// Every compiled runtime witness `p_source_file` registered, exactly as registered. Used by the
+	// compiled-bytecode exporter to serialize a declaring script's conformances; the returned
+	// `FSFunction *` stay owned by the declaring script.
+	Vector<RuntimeConformance> get_runtime_witnesses(const String &p_source_file) const;
+
 	// The compiled witness for `p_method` on a target alias `p_target_key`, or `nullptr` when none is
 	// registered. Consulted by the runtime only after a normal member-function lookup misses.
 	FSFunction *find_witness_function(const String &p_target_key, const StringName &p_method) const;

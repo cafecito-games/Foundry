@@ -48,8 +48,18 @@ public:
 		return FSCache::singleton->full_fs_cache.has(p_path);
 	}
 
+	static Ref<FoundryScript> get_full(String p_path) {
+		const Ref<FoundryScript> *found = FSCache::singleton->full_fs_cache.getptr(p_path);
+		return found != nullptr ? *found : Ref<FoundryScript>();
+	}
+
 	static bool has_parser(String p_path) {
 		return FSCache::singleton->parser_map.has(p_path);
+	}
+
+	static Ref<FoundryScript> get_static(String p_fully_qualified_name) {
+		const Ref<FoundryScript> *found = FSCache::singleton->static_fs_cache.getptr(p_fully_qualified_name);
+		return found != nullptr ? *found : Ref<FoundryScript>();
 	}
 };
 
@@ -65,6 +75,14 @@ TEST_SUITE("[Modules][FoundryScript]") {
 		int fail_count = runner.run_tests();
 		INFO("Make sure `*.out` files have expected results.");
 		REQUIRE_MESSAGE(fail_count == 0, "All FoundryScript tests should pass.");
+	}
+
+	TEST_CASE("Script compilation and runtime with compiled bytecode round-trip") {
+		bool print_filenames = OS::get_singleton()->get_cmdline_args().find("--print-filenames") != nullptr;
+		FSTestRunner runner("modules/foundry_script/tests/scripts", true, print_filenames, false, true);
+		int fail_count = runner.run_tests();
+		INFO("Make sure `*.out` files have expected results.");
+		REQUIRE_MESSAGE(fail_count == 0, "All FoundryScript tests should pass when round-tripped through compiled bytecode.");
 	}
 }
 #endif // TOOLS_ENABLED
