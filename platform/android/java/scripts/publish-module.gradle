@@ -122,11 +122,36 @@ afterEvaluate {
     }
 }
 
-signing {
-    useInMemoryPgpKeys(
-        rootProject.ext["signing.keyId"],
-        rootProject.ext["signing.key"],
-        rootProject.ext["signing.password"],
-    )
-    sign publishing.publications
+def hasConfiguredSigningValue = { value ->
+    value != null && !value.toString().trim().isEmpty()
+}
+
+def hasSigningCredentials = { ->
+    hasConfiguredSigningValue(rootProject.ext["signing.keyId"]) &&
+        hasConfiguredSigningValue(rootProject.ext["signing.key"]) &&
+        hasConfiguredSigningValue(rootProject.ext["signing.password"])
+}
+
+def isSonatypePublishTask = { task ->
+    task.name == "publish" ||
+        task.name == "publishToSonatype" ||
+        task.name == "publishAllPublicationsToSonatypeRepository" ||
+        (task.name.startsWith("publish") && task.name.endsWith("PublicationToSonatypeRepository"))
+}
+
+if (hasSigningCredentials()) {
+    signing {
+        useInMemoryPgpKeys(
+            rootProject.ext["signing.keyId"],
+            rootProject.ext["signing.key"],
+            rootProject.ext["signing.password"],
+        )
+        sign publishing.publications
+    }
+} else {
+    gradle.taskGraph.whenReady { taskGraph ->
+        if (taskGraph.allTasks.any(isSonatypePublishTask)) {
+            throw new GradleException("Publishing to Sonatype requires SIGNING_KEY_ID, SIGNING_KEY, and SIGNING_PASSWORD.")
+        }
+    }
 }

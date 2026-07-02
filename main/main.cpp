@@ -978,7 +978,9 @@ void Main::test_cleanup() {
 int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 	bool test_requested = false;
 	String test_project_path;
+#if defined(TESTS_ENABLED) && defined(MODULE_FOUNDRY_SCRIPT_ENABLED)
 	bool foundry_build_trusted = false;
+#endif // TESTS_ENABLED && MODULE_FOUNDRY_SCRIPT_ENABLED
 
 	for (int x = 0; x < argc; x++) {
 		// Early return to ignore a possible user-provided "--test" argument.
@@ -994,12 +996,12 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 			x++;
 			continue;
 		}
-#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+#if defined(TESTS_ENABLED) && defined(MODULE_FOUNDRY_SCRIPT_ENABLED)
 		if (strcmp(argv[x], "--foundry-build-trusted") == 0) {
 			foundry_build_trusted = true;
 			continue;
 		}
-#endif // MODULE_FOUNDRY_SCRIPT_ENABLED
+#endif // TESTS_ENABLED && MODULE_FOUNDRY_SCRIPT_ENABLED
 	   // `--foundry_script-generate-tests` is a registered `--test` command (so it
 	   // runs under `test_setup()`/`test_cleanup()` and the process shuts down
 	   // cleanly); accept it as a standalone flag too, for backwards compatibility.
