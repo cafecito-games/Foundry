@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "core/core_globals.h"
 #include "core/object/script_diagnostic_capture.h"
 
 #include "tests/test_macros.h"
@@ -76,6 +77,51 @@ TEST_CASE("[ScriptDiagnosticCapture] Captures fatal diagnostics separately") {
 	CHECK(capture->get_event_count() == 1);
 	CHECK(capture->has_fatal("captured fatal"));
 	CHECK_FALSE(capture->has_error("captured fatal"));
+}
+
+TEST_CASE("[ScriptDiagnosticCapture] Quiet mode suppresses error printing while active") {
+	const bool errors_enabled_before = CoreGlobals::print_error_enabled;
+	CoreGlobals::print_error_enabled = true;
+
+	Ref<ScriptDiagnosticCapture> capture;
+	capture.instantiate();
+
+	capture->start(true);
+	CHECK(capture->is_quiet());
+	CHECK_FALSE(CoreGlobals::print_error_enabled);
+
+	ERR_PRINT("captured error");
+	WARN_PRINT("captured warning");
+
+	capture->stop();
+	CHECK_FALSE(capture->is_quiet());
+	CHECK(CoreGlobals::print_error_enabled);
+
+	CHECK(capture->get_event_count() == 2);
+	CHECK(capture->has_error("captured error"));
+	CHECK(capture->has_warning("captured warning"));
+
+	CoreGlobals::print_error_enabled = errors_enabled_before;
+}
+
+TEST_CASE("[ScriptDiagnosticCapture] Default start() keeps error printing enabled") {
+	const bool errors_enabled_before = CoreGlobals::print_error_enabled;
+	CoreGlobals::print_error_enabled = true;
+
+	Ref<ScriptDiagnosticCapture> capture;
+	capture.instantiate();
+
+	capture->start();
+	CHECK_FALSE(capture->is_quiet());
+	CHECK(CoreGlobals::print_error_enabled);
+
+	ERR_PRINT("captured error");
+	capture->stop();
+
+	CHECK(capture->get_event_count() == 1);
+	CHECK(CoreGlobals::print_error_enabled);
+
+	CoreGlobals::print_error_enabled = errors_enabled_before;
 }
 
 } // namespace TestScriptDiagnosticCapture
