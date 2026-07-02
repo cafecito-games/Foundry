@@ -403,4 +403,38 @@ TEST_CASE("[FoundryCLIParser] Unknown verb error keeps noun scope") {
 	CHECK_EQ(result.command_path, make_args({ "script" }));
 }
 
+TEST_CASE("[FoundryCLIParser] Help flag as an option value requests help") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({ "foundry", "project", "export", "--preset", "--help" }));
+	REQUIRE_MESSAGE(result.ok, result.error);
+	CHECK(result.help_requested);
+	CHECK_EQ(result.command_path, make_args({ "project", "export" }));
+
+	FoundryCLIParser::ParseResult global_value = FoundryCLIParser::parse(make_args({ "foundry", "script", "format", "--project", "--help" }));
+	REQUIRE_MESSAGE(global_value.ok, global_value.error);
+	CHECK(global_value.help_requested);
+	CHECK_EQ(global_value.command_path, make_args({ "script", "format" }));
+}
+
+TEST_CASE("[FoundryCLIParser] Unknown verb scope is the noun for every dispatcher") {
+	for (const String &noun : { String("editor"), String("lsp"), String("docs"), String("extension"), String("diagnostics") }) {
+		FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({ "foundry", noun, "bogus" }));
+		CHECK_FALSE(result.ok);
+		CHECK_EQ(result.command_path, make_args({ noun }));
+	}
+}
+
+TEST_CASE("[FoundryCLIParser] Help flag after user argument separator stays a user argument") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({ "foundry", "project", "run", "--project", "demo", "--", "--help" }));
+	REQUIRE_MESSAGE(result.ok, result.error);
+	CHECK_FALSE(result.help_requested);
+	CHECK_EQ(result.user_args, make_args({ "--help" }));
+}
+
+TEST_CASE("[FoundryCLIParser] Help flag after legacy token stays legacy") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({ "foundry", "--fullscreen", "--help" }));
+	REQUIRE_MESSAGE(result.ok, result.error);
+	CHECK_FALSE(result.help_requested);
+	CHECK_FALSE(result.used_new_cli);
+}
+
 } // namespace TestFoundryCLIParser

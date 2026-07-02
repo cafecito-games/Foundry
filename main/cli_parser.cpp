@@ -73,7 +73,15 @@ static void request_help(CLIParseState &r_state) {
 	r_state.result.used_new_cli = true;
 }
 
+static bool parse_stopped(const CLIParseState &p_state) {
+	return !p_state.result.ok || p_state.result.help_requested;
+}
+
 static bool require_value(CLIParseState &r_state, const String &p_option, String &r_value) {
+	if (r_state.index + 1 < r_state.args.size() && is_help_flag(r_state.args[r_state.index + 1])) {
+		request_help(r_state);
+		return false;
+	}
 	if (r_state.index + 1 >= r_state.args.size() || r_state.args[r_state.index + 1] == "--") {
 		fail(r_state.result, "Missing value for " + p_option + ".");
 		return false;
@@ -213,7 +221,7 @@ static void parse_project_run(CLIParseState &r_state) {
 			return;
 		}
 		if (consume_common_global_option(r_state, arg)) {
-			if (!r_state.result.ok) {
+			if (parse_stopped(r_state)) {
 				return;
 			}
 			continue;
@@ -265,7 +273,7 @@ static void parse_project_export(CLIParseState &r_state) {
 			return;
 		}
 		if (consume_common_global_option(r_state, arg)) {
-			if (!r_state.result.ok) {
+			if (parse_stopped(r_state)) {
 				return;
 			}
 			continue;
@@ -341,7 +349,7 @@ static void parse_project_import(CLIParseState &r_state) {
 			return;
 		}
 		if (consume_common_global_option(r_state, arg)) {
-			if (!r_state.result.ok) {
+			if (parse_stopped(r_state)) {
 				return;
 			}
 			continue;
@@ -387,7 +395,7 @@ static void parse_script_format(CLIParseState &r_state) {
 			return;
 		}
 		if (consume_common_global_option(r_state, arg)) {
-			if (!r_state.result.ok) {
+			if (parse_stopped(r_state)) {
 				return;
 			}
 			continue;
@@ -415,7 +423,7 @@ static void parse_script_lint(CLIParseState &r_state) {
 			return;
 		}
 		if (consume_common_global_option(r_state, arg)) {
-			if (!r_state.result.ok) {
+			if (parse_stopped(r_state)) {
 				return;
 			}
 			continue;
@@ -451,7 +459,7 @@ static void parse_script_migrate(CLIParseState &r_state) {
 			return;
 		}
 		if (consume_common_global_option(r_state, arg)) {
-			if (!r_state.result.ok) {
+			if (parse_stopped(r_state)) {
 				return;
 			}
 			continue;
@@ -566,7 +574,7 @@ static void parse_test_run(CLIParseState &r_state) {
 			return;
 		}
 		if (consume_common_global_option(r_state, arg)) {
-			if (!r_state.result.ok) {
+			if (parse_stopped(r_state)) {
 				return;
 			}
 			continue;
@@ -621,6 +629,10 @@ static void parse_editor(CLIParseState &r_state) {
 		request_help(r_state);
 		return;
 	}
+	if (command != "open" && command != "project-manager") {
+		fail(r_state.result, "Unknown editor command: " + command + ".");
+		return;
+	}
 	set_command_path(r_state.result, "editor", command);
 
 	while (r_state.index < r_state.args.size()) {
@@ -630,7 +642,7 @@ static void parse_editor(CLIParseState &r_state) {
 			return;
 		}
 		if (consume_common_global_option(r_state, arg)) {
-			if (!r_state.result.ok) {
+			if (parse_stopped(r_state)) {
 				return;
 			}
 			continue;
@@ -646,9 +658,6 @@ static void parse_editor(CLIParseState &r_state) {
 		append(normalized, "--editor");
 	} else if (command == "project-manager") {
 		append(normalized, "--project-manager");
-	} else {
-		fail(r_state.result, "Unknown editor command: " + command + ".");
-		return;
 	}
 	r_state.result.normalized_args = normalized;
 }
@@ -663,11 +672,11 @@ static void parse_lsp(CLIParseState &r_state) {
 		request_help(r_state);
 		return;
 	}
-	set_command_path(r_state.result, "lsp", command);
 	if (command != "serve") {
 		fail(r_state.result, "Unknown lsp command: " + command + ".");
 		return;
 	}
+	set_command_path(r_state.result, "lsp", command);
 
 	String port;
 	while (r_state.index < r_state.args.size()) {
@@ -677,7 +686,7 @@ static void parse_lsp(CLIParseState &r_state) {
 			return;
 		}
 		if (consume_common_global_option(r_state, arg)) {
-			if (!r_state.result.ok) {
+			if (parse_stopped(r_state)) {
 				return;
 			}
 			continue;
@@ -711,6 +720,10 @@ static void parse_docs(CLIParseState &r_state) {
 		request_help(r_state);
 		return;
 	}
+	if (command != "generate-api" && command != "generate-engine" && command != "generate-script") {
+		fail(r_state.result, "Unknown docs command: " + command + ".");
+		return;
+	}
 	set_command_path(r_state.result, "docs", command);
 
 	if (command == "generate-api") {
@@ -722,7 +735,7 @@ static void parse_docs(CLIParseState &r_state) {
 				return;
 			}
 			if (consume_common_global_option(r_state, arg)) {
-				if (!r_state.result.ok) {
+				if (parse_stopped(r_state)) {
 					return;
 				}
 			} else if (arg == "--include-docs") {
@@ -749,7 +762,7 @@ static void parse_docs(CLIParseState &r_state) {
 				return;
 			}
 			if (consume_common_global_option(r_state, arg)) {
-				if (!r_state.result.ok) {
+				if (parse_stopped(r_state)) {
 					return;
 				}
 			} else if (arg == "--output") {
@@ -786,7 +799,7 @@ static void parse_docs(CLIParseState &r_state) {
 				return;
 			}
 			if (consume_common_global_option(r_state, arg)) {
-				if (!r_state.result.ok) {
+				if (parse_stopped(r_state)) {
 					return;
 				}
 			} else if (arg == "--source") {
@@ -813,10 +826,7 @@ static void parse_docs(CLIParseState &r_state) {
 		}
 		append_pair(normalized, "--foundry_script-docs", source);
 		r_state.result.normalized_args = normalized;
-		return;
 	}
-
-	fail(r_state.result, "Unknown docs command: " + command + ".");
 }
 
 static void parse_extension(CLIParseState &r_state) {
@@ -827,6 +837,10 @@ static void parse_extension(CLIParseState &r_state) {
 	const String command = r_state.args[r_state.index++];
 	if (is_help_flag(command)) {
 		request_help(r_state);
+		return;
+	}
+	if (command != "dump-interface" && command != "validate-api") {
+		fail(r_state.result, "Unknown extension command: " + command + ".");
 		return;
 	}
 	set_command_path(r_state.result, "extension", command);
@@ -840,7 +854,7 @@ static void parse_extension(CLIParseState &r_state) {
 				return;
 			}
 			if (consume_common_global_option(r_state, arg)) {
-				if (!r_state.result.ok) {
+				if (parse_stopped(r_state)) {
 					return;
 				}
 			} else if (arg == "--format") {
@@ -874,7 +888,7 @@ static void parse_extension(CLIParseState &r_state) {
 				return;
 			}
 			if (consume_common_global_option(r_state, arg)) {
-				if (!r_state.result.ok) {
+				if (parse_stopped(r_state)) {
 					return;
 				}
 			} else if (arg == "--input") {
@@ -893,10 +907,7 @@ static void parse_extension(CLIParseState &r_state) {
 		PackedStringArray normalized = base_args(r_state);
 		append_pair(normalized, "--validate-extension-api", path);
 		r_state.result.normalized_args = normalized;
-		return;
 	}
-
-	fail(r_state.result, "Unknown extension command: " + command + ".");
 }
 
 static void parse_diagnostics(CLIParseState &r_state) {
@@ -909,6 +920,10 @@ static void parse_diagnostics(CLIParseState &r_state) {
 		request_help(r_state);
 		return;
 	}
+	if (command != "render-device-support" && command != "render-device-create") {
+		fail(r_state.result, "Unknown diagnostics command: " + command + ".");
+		return;
+	}
 	set_command_path(r_state.result, "diagnostics", command);
 	while (r_state.index < r_state.args.size()) {
 		const String arg = r_state.args[r_state.index];
@@ -917,7 +932,7 @@ static void parse_diagnostics(CLIParseState &r_state) {
 			return;
 		}
 		if (consume_common_global_option(r_state, arg)) {
-			if (!r_state.result.ok) {
+			if (parse_stopped(r_state)) {
 				return;
 			}
 			continue;
@@ -931,9 +946,6 @@ static void parse_diagnostics(CLIParseState &r_state) {
 		append(normalized, "--test-rd-support");
 	} else if (command == "render-device-create") {
 		append(normalized, "--test-rd-creation");
-	} else {
-		fail(r_state.result, "Unknown diagnostics command: " + command + ".");
-		return;
 	}
 	r_state.result.normalized_args = normalized;
 }
@@ -1020,7 +1032,7 @@ FoundryCLIParser::ParseResult FoundryCLIParser::parse(const PackedStringArray &p
 			return state.result;
 		}
 		if (consume_common_global_option(state, arg)) {
-			if (!state.result.ok) {
+			if (parse_stopped(state)) {
 				return state.result;
 			}
 			continue;
