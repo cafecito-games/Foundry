@@ -38,9 +38,9 @@ import androidx.test.espresso.Espresso
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.godot.game.test.FoundryAppInstrumentedTestPlugin
-import org.godotengine.godot.Godot
-import org.godotengine.godot.FoundryActivity.Companion.EXTRA_COMMAND_LINE_PARAMS
-import org.godotengine.godot.plugin.FoundryPluginRegistry
+import games.cafecito.foundry.Godot
+import games.cafecito.foundry.FoundryActivity.Companion.EXTRA_COMMAND_LINE_PARAMS
+import games.cafecito.foundry.plugin.FoundryPluginRegistry
 import org.junit.Test
 import org.junit.runner.RunWith
 import kotlin.test.assertEquals

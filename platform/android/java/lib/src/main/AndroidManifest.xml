@@ -8,7 +8,7 @@
         <!-- Records the version of the Godot library -->
         <meta-data
             android:name="org.godotengine.library.version"
-            android:value="${godotLibraryVersion}" />
+            android:value="${foundryLibraryVersion}" />
 
         <service android:name=".FoundryDownloaderService" />
 

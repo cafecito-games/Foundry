@@ -141,13 +141,13 @@ static void _terminate(JNIEnv *env, bool p_restart = false) {
 
 extern "C" {
 
-JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_setVirtualKeyboardHeight(JNIEnv *env, jclass clazz, jint p_height) {
+JNIEXPORT void JNICALL Java_games_cafecito_foundry_FoundryLib_setVirtualKeyboardHeight(JNIEnv *env, jclass clazz, jint p_height) {
 	if (godot_io_java) {
 		godot_io_java->set_vk_height(p_height);
 	}
 }
 
-JNIEXPORT jboolean JNICALL Java_org_godotengine_godot_GodotLib_initialize(JNIEnv *env, jclass clazz, jobject p_foundry_instance, jobject p_asset_manager, jobject p_godot_io, jobject p_net_utils, jobject p_directory_access_handler, jobject p_file_access_handler, jboolean p_use_apk_expansion) {
+JNIEXPORT jboolean JNICALL Java_games_cafecito_foundry_FoundryLib_initialize(JNIEnv *env, jclass clazz, jobject p_foundry_instance, jobject p_asset_manager, jobject p_godot_io, jobject p_net_utils, jobject p_directory_access_handler, jobject p_file_access_handler, jboolean p_use_apk_expansion) {
 	foundry_init_profiler();
 
 	JavaVM *jvm;
@@ -170,11 +170,11 @@ JNIEXPORT jboolean JNICALL Java_org_godotengine_godot_GodotLib_initialize(JNIEnv
 	return true;
 }
 
-JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_ondestroy(JNIEnv *env, jclass clazz) {
+JNIEXPORT void JNICALL Java_games_cafecito_foundry_FoundryLib_ondestroy(JNIEnv *env, jclass clazz) {
 	_terminate(env, false);
 }
 
-JNIEXPORT jboolean JNICALL Java_org_godotengine_godot_GodotLib_setup(JNIEnv *env, jclass clazz, jobjectArray p_cmdline, jobject p_godot_tts) {
+JNIEXPORT jboolean JNICALL Java_games_cafecito_foundry_FoundryLib_setup(JNIEnv *env, jclass clazz, jobjectArray p_cmdline, jobject p_godot_tts) {
 	setup_android_thread();
 
 	const char **cmdline = nullptr;
@@ -221,7 +221,7 @@ JNIEXPORT jboolean JNICALL Java_org_godotengine_godot_GodotLib_setup(JNIEnv *env
 	return true;
 }
 
-JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_resize(JNIEnv *env, jclass clazz, jobject p_surface, jint p_width, jint p_height) {
+JNIEXPORT void JNICALL Java_games_cafecito_foundry_FoundryLib_resize(JNIEnv *env, jclass clazz, jobject p_surface, jint p_width, jint p_height) {
 	if (os_android) {
 		os_android->set_display_size(Size2i(p_width, p_height));
 
@@ -237,7 +237,7 @@ JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_resize(JNIEnv *env, j
 	}
 }
 
-JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_newcontext(JNIEnv *env, jclass clazz, jobject p_surface) {
+JNIEXPORT void JNICALL Java_games_cafecito_foundry_FoundryLib_newcontext(JNIEnv *env, jclass clazz, jobject p_surface) {
 	if (os_android) {
 		if (step.get() == STEP_SETUP) {
 			// During startup
@@ -252,7 +252,7 @@ JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_newcontext(JNIEnv *en
 	}
 }
 
-JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_back(JNIEnv *env, jclass clazz) {
+JNIEXPORT void JNICALL Java_games_cafecito_foundry_FoundryLib_back(JNIEnv *env, jclass clazz) {
 	if (step.get() <= STEP_SETUP) {
 		return;
 	}
@@ -262,11 +262,11 @@ JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_back(JNIEnv *env, jcl
 	}
 }
 
-JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_ttsCallback(JNIEnv *env, jclass clazz, jint event, jlong id, jint pos) {
+JNIEXPORT void JNICALL Java_games_cafecito_foundry_FoundryLib_ttsCallback(JNIEnv *env, jclass clazz, jint event, jlong id, jint pos) {
 	TTS_Android::_java_utterance_callback(event, id, pos);
 }
 
-JNIEXPORT jboolean JNICALL Java_org_godotengine_godot_GodotLib_step(JNIEnv *env, jclass clazz) {
+JNIEXPORT jboolean JNICALL Java_games_cafecito_foundry_FoundryLib_step(JNIEnv *env, jclass clazz) {
 	if (step.get() == STEP_TERMINATED) {
 		return true;
 	}
@@ -324,7 +324,7 @@ JNIEXPORT jboolean JNICALL Java_org_godotengine_godot_GodotLib_step(JNIEnv *env,
 }
 
 // Called on the UI thread
-JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_dispatchMouseEvent(JNIEnv *env, jclass clazz, jint p_event_type, jint p_button_mask, jfloat p_x, jfloat p_y, jfloat p_delta_x, jfloat p_delta_y, jboolean p_double_click, jboolean p_source_mouse_relative, jfloat p_pressure, jfloat p_tilt_x, jfloat p_tilt_y) {
+JNIEXPORT void JNICALL Java_games_cafecito_foundry_FoundryLib_dispatchMouseEvent(JNIEnv *env, jclass clazz, jint p_event_type, jint p_button_mask, jfloat p_x, jfloat p_y, jfloat p_delta_x, jfloat p_delta_y, jboolean p_double_click, jboolean p_source_mouse_relative, jfloat p_pressure, jfloat p_tilt_x, jfloat p_tilt_y) {
 	if (step.get() <= STEP_SETUP) {
 		return;
 	}
@@ -333,7 +333,7 @@ JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_dispatchMouseEvent(JN
 }
 
 // Called on the UI thread
-JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_dispatchTouchEvent(JNIEnv *env, jclass clazz, jint ev, jint pointer, jint pointer_count, jfloatArray position, jboolean p_double_tap) {
+JNIEXPORT void JNICALL Java_games_cafecito_foundry_FoundryLib_dispatchTouchEvent(JNIEnv *env, jclass clazz, jint ev, jint pointer, jint pointer_count, jfloatArray position, jboolean p_double_tap) {
 	if (step.get() <= STEP_SETUP) {
 		return;
 	}
@@ -354,7 +354,7 @@ JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_dispatchTouchEvent(JN
 }
 
 // Called on the UI thread
-JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_magnify(JNIEnv *env, jclass clazz, jfloat p_x, jfloat p_y, jfloat p_factor) {
+JNIEXPORT void JNICALL Java_games_cafecito_foundry_FoundryLib_magnify(JNIEnv *env, jclass clazz, jfloat p_x, jfloat p_y, jfloat p_factor) {
 	if (step.get() <= STEP_SETUP) {
 		return;
 	}
@@ -362,7 +362,7 @@ JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_magnify(JNIEnv *env, 
 }
 
 // Called on the UI thread
-JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_pan(JNIEnv *env, jclass clazz, jfloat p_x, jfloat p_y, jfloat p_delta_x, jfloat p_delta_y) {
+JNIEXPORT void JNICALL Java_games_cafecito_foundry_FoundryLib_pan(JNIEnv *env, jclass clazz, jfloat p_x, jfloat p_y, jfloat p_delta_x, jfloat p_delta_y) {
 	if (step.get() <= STEP_SETUP) {
 		return;
 	}
@@ -370,7 +370,7 @@ JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_pan(JNIEnv *env, jcla
 }
 
 // Called on the UI thread
-JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_joybutton(JNIEnv *env, jclass clazz, jint p_device, jint p_button, jboolean p_pressed) {
+JNIEXPORT void JNICALL Java_games_cafecito_foundry_FoundryLib_joybutton(JNIEnv *env, jclass clazz, jint p_device, jint p_button, jboolean p_pressed) {
 	if (step.get() <= STEP_SETUP) {
 		return;
 	}
@@ -385,7 +385,7 @@ JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_joybutton(JNIEnv *env
 }
 
 // Called on the UI thread
-JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_joyaxis(JNIEnv *env, jclass clazz, jint p_device, jint p_axis, jfloat p_value) {
+JNIEXPORT void JNICALL Java_games_cafecito_foundry_FoundryLib_joyaxis(JNIEnv *env, jclass clazz, jint p_device, jint p_axis, jfloat p_value) {
 	if (step.get() <= STEP_SETUP) {
 		return;
 	}
@@ -400,7 +400,7 @@ JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_joyaxis(JNIEnv *env, 
 }
 
 // Called on the UI thread
-JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_joyhat(JNIEnv *env, jclass clazz, jint p_device, jint p_hat_x, jint p_hat_y) {
+JNIEXPORT void JNICALL Java_games_cafecito_foundry_FoundryLib_joyhat(JNIEnv *env, jclass clazz, jint p_device, jint p_hat_x, jint p_hat_y) {
 	if (step.get() <= STEP_SETUP) {
 		return;
 	}
@@ -429,7 +429,7 @@ JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_joyhat(JNIEnv *env, j
 }
 
 // Called on the UI thread
-JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_joyconnectionchanged(JNIEnv *env, jclass clazz, jint p_device, jboolean p_connected, jstring p_name) {
+JNIEXPORT void JNICALL Java_games_cafecito_foundry_FoundryLib_joyconnectionchanged(JNIEnv *env, jclass clazz, jint p_device, jboolean p_connected, jstring p_name) {
 	if (os_android) {
 		String name = jstring_to_string(p_name, env);
 		Input *input = Input::get_singleton();
@@ -440,30 +440,30 @@ JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_joyconnectionchanged(
 }
 
 // Called on the UI thread
-JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_key(JNIEnv *env, jclass clazz, jint p_physical_keycode, jint p_unicode, jint p_key_label, jboolean p_pressed, jboolean p_echo) {
+JNIEXPORT void JNICALL Java_games_cafecito_foundry_FoundryLib_key(JNIEnv *env, jclass clazz, jint p_physical_keycode, jint p_unicode, jint p_key_label, jboolean p_pressed, jboolean p_echo) {
 	if (step.get() <= STEP_SETUP) {
 		return;
 	}
 	input_handler->process_key_event(p_physical_keycode, p_unicode, p_key_label, p_pressed, p_echo);
 }
 
-JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_accelerometer(JNIEnv *env, jclass clazz, jfloat x, jfloat y, jfloat z) {
+JNIEXPORT void JNICALL Java_games_cafecito_foundry_FoundryLib_accelerometer(JNIEnv *env, jclass clazz, jfloat x, jfloat y, jfloat z) {
 	accelerometer = Vector3(x, y, z);
 }
 
-JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_gravity(JNIEnv *env, jclass clazz, jfloat x, jfloat y, jfloat z) {
+JNIEXPORT void JNICALL Java_games_cafecito_foundry_FoundryLib_gravity(JNIEnv *env, jclass clazz, jfloat x, jfloat y, jfloat z) {
 	gravity = Vector3(x, y, z);
 }
 
-JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_magnetometer(JNIEnv *env, jclass clazz, jfloat x, jfloat y, jfloat z) {
+JNIEXPORT void JNICALL Java_games_cafecito_foundry_FoundryLib_magnetometer(JNIEnv *env, jclass clazz, jfloat x, jfloat y, jfloat z) {
 	magnetometer = Vector3(x, y, z);
 }
 
-JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_gyroscope(JNIEnv *env, jclass clazz, jfloat x, jfloat y, jfloat z) {
+JNIEXPORT void JNICALL Java_games_cafecito_foundry_FoundryLib_gyroscope(JNIEnv *env, jclass clazz, jfloat x, jfloat y, jfloat z) {
 	gyroscope = Vector3(x, y, z);
 }
 
-JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_focusin(JNIEnv *env, jclass clazz) {
+JNIEXPORT void JNICALL Java_games_cafecito_foundry_FoundryLib_focusin(JNIEnv *env, jclass clazz) {
 	if (step.get() <= STEP_SETUP) {
 		return;
 	}
@@ -471,7 +471,7 @@ JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_focusin(JNIEnv *env, 
 	os_android->main_loop_focusin();
 }
 
-JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_focusout(JNIEnv *env, jclass clazz) {
+JNIEXPORT void JNICALL Java_games_cafecito_foundry_FoundryLib_focusout(JNIEnv *env, jclass clazz) {
 	if (step.get() <= STEP_SETUP) {
 		return;
 	}
@@ -479,7 +479,7 @@ JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_focusout(JNIEnv *env,
 	os_android->main_loop_focusout();
 }
 
-JNIEXPORT jstring JNICALL Java_org_godotengine_godot_GodotLib_getGlobal(JNIEnv *env, jclass clazz, jstring path) {
+JNIEXPORT jstring JNICALL Java_games_cafecito_foundry_FoundryLib_getGlobal(JNIEnv *env, jclass clazz, jstring path) {
 	String js = jstring_to_string(path, env);
 
 	Variant setting_with_override = GLOBAL_GET(js);
@@ -487,7 +487,7 @@ JNIEXPORT jstring JNICALL Java_org_godotengine_godot_GodotLib_getGlobal(JNIEnv *
 	return env->NewStringUTF(setting_value.utf8().get_data());
 }
 
-JNIEXPORT jobjectArray JNICALL Java_org_godotengine_godot_GodotLib_getRendererInfo(JNIEnv *env, jclass clazz) {
+JNIEXPORT jobjectArray JNICALL Java_games_cafecito_foundry_FoundryLib_getRendererInfo(JNIEnv *env, jclass clazz) {
 	String rendering_driver = RenderingServer::get_singleton()->get_current_rendering_driver_name();
 	String rendering_method = RenderingServer::get_singleton()->get_current_rendering_method();
 
@@ -498,7 +498,7 @@ JNIEXPORT jobjectArray JNICALL Java_org_godotengine_godot_GodotLib_getRendererIn
 	return result;
 }
 
-JNIEXPORT jstring JNICALL Java_org_godotengine_godot_GodotLib_getEditorSetting(JNIEnv *env, jclass clazz, jstring p_setting_key) {
+JNIEXPORT jstring JNICALL Java_games_cafecito_foundry_FoundryLib_getEditorSetting(JNIEnv *env, jclass clazz, jstring p_setting_key) {
 	String editor_setting_value = "";
 #ifdef TOOLS_ENABLED
 	String godot_setting_key = jstring_to_string(p_setting_key, env);
@@ -511,7 +511,7 @@ JNIEXPORT jstring JNICALL Java_org_godotengine_godot_GodotLib_getEditorSetting(J
 	return env->NewStringUTF(editor_setting_value.utf8().get_data());
 }
 
-JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_setEditorSetting(JNIEnv *env, jclass clazz, jstring p_key, jobject p_data) {
+JNIEXPORT void JNICALL Java_games_cafecito_foundry_FoundryLib_setEditorSetting(JNIEnv *env, jclass clazz, jstring p_key, jobject p_data) {
 #ifdef TOOLS_ENABLED
 	if (EditorSettings::get_singleton() != nullptr) {
 		String key = jstring_to_string(p_key, env);
@@ -523,7 +523,7 @@ JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_setEditorSetting(JNIE
 #endif
 }
 
-JNIEXPORT jobject JNICALL Java_org_godotengine_godot_GodotLib_getEditorProjectMetadata(JNIEnv *env, jclass clazz, jstring p_section, jstring p_key, jobject p_default_value) {
+JNIEXPORT jobject JNICALL Java_games_cafecito_foundry_FoundryLib_getEditorProjectMetadata(JNIEnv *env, jclass clazz, jstring p_section, jstring p_key, jobject p_default_value) {
 	jvalue result;
 
 #ifdef TOOLS_ENABLED
@@ -541,7 +541,7 @@ JNIEXPORT jobject JNICALL Java_org_godotengine_godot_GodotLib_getEditorProjectMe
 	return result.l;
 }
 
-JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_setEditorProjectMetadata(JNIEnv *env, jclass clazz, jstring p_section, jstring p_key, jobject p_data) {
+JNIEXPORT void JNICALL Java_games_cafecito_foundry_FoundryLib_setEditorProjectMetadata(JNIEnv *env, jclass clazz, jstring p_section, jstring p_key, jobject p_data) {
 #ifdef TOOLS_ENABLED
 	if (EditorSettings::get_singleton() != nullptr) {
 		String section = jstring_to_string(p_section, env);
@@ -554,21 +554,21 @@ JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_setEditorProjectMetad
 #endif
 }
 
-JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_onNightModeChanged(JNIEnv *env, jclass clazz) {
+JNIEXPORT void JNICALL Java_games_cafecito_foundry_FoundryLib_onNightModeChanged(JNIEnv *env, jclass clazz) {
 	DisplayServerAndroid *ds = (DisplayServerAndroid *)DisplayServer::get_singleton();
 	if (ds) {
 		ds->emit_system_theme_changed();
 	}
 }
 
-JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_hardwareKeyboardConnected(JNIEnv *env, jclass clazz, jboolean p_connected) {
+JNIEXPORT void JNICALL Java_games_cafecito_foundry_FoundryLib_hardwareKeyboardConnected(JNIEnv *env, jclass clazz, jboolean p_connected) {
 	DisplayServerAndroid *ds = (DisplayServerAndroid *)DisplayServer::get_singleton();
 	if (ds) {
 		ds->emit_hardware_keyboard_connection_changed(p_connected);
 	}
 }
 
-JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_filePickerCallback(JNIEnv *env, jclass clazz, jboolean p_ok, jobjectArray p_selected_paths) {
+JNIEXPORT void JNICALL Java_games_cafecito_foundry_FoundryLib_filePickerCallback(JNIEnv *env, jclass clazz, jboolean p_ok, jobjectArray p_selected_paths) {
 	DisplayServerAndroid *ds = (DisplayServerAndroid *)DisplayServer::get_singleton();
 	if (ds) {
 		Vector<String> selected_paths;
@@ -584,7 +584,7 @@ JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_filePickerCallback(JN
 	}
 }
 
-JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_requestPermissionResult(JNIEnv *env, jclass clazz, jstring p_permission, jboolean p_result) {
+JNIEXPORT void JNICALL Java_games_cafecito_foundry_FoundryLib_requestPermissionResult(JNIEnv *env, jclass clazz, jstring p_permission, jboolean p_result) {
 	String permission = jstring_to_string(p_permission, env);
 	if (permission == "android.permission.RECORD_AUDIO" && p_result) {
 		AudioDriver::get_singleton()->input_start();
@@ -595,7 +595,7 @@ JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_requestPermissionResu
 	}
 }
 
-JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_onRendererResumed(JNIEnv *env, jclass clazz) {
+JNIEXPORT void JNICALL Java_games_cafecito_foundry_FoundryLib_onRendererResumed(JNIEnv *env, jclass clazz) {
 	if (step.get() <= STEP_SETUP) {
 		return;
 	}
@@ -611,7 +611,7 @@ JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_onRendererResumed(JNI
 	}
 }
 
-JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_onRendererPaused(JNIEnv *env, jclass clazz) {
+JNIEXPORT void JNICALL Java_games_cafecito_foundry_FoundryLib_onRendererPaused(JNIEnv *env, jclass clazz) {
 	if (step.get() <= STEP_SETUP) {
 		return;
 	}
@@ -630,7 +630,7 @@ JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_onRendererPaused(JNIE
 	}
 }
 
-JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_onScreenRotationChange(JNIEnv *env, jclass clazz, jint p_orientation) {
+JNIEXPORT void JNICALL Java_games_cafecito_foundry_FoundryLib_onScreenRotationChange(JNIEnv *env, jclass clazz, jint p_orientation) {
 	if (step.get() <= STEP_SETUP) {
 		return;
 	}
@@ -641,7 +641,7 @@ JNIEXPORT void JNICALL Java_org_godotengine_godot_GodotLib_onScreenRotationChang
 	}
 }
 
-JNIEXPORT jboolean JNICALL Java_org_godotengine_godot_GodotLib_shouldDispatchInputToRenderThread(JNIEnv *env, jclass clazz) {
+JNIEXPORT jboolean JNICALL Java_games_cafecito_foundry_FoundryLib_shouldDispatchInputToRenderThread(JNIEnv *env, jclass clazz) {
 	Input *input = Input::get_singleton();
 	if (input) {
 		return !input->is_agile_input_event_flushing();
@@ -649,11 +649,11 @@ JNIEXPORT jboolean JNICALL Java_org_godotengine_godot_GodotLib_shouldDispatchInp
 	return false;
 }
 
-JNIEXPORT jstring JNICALL Java_org_godotengine_godot_GodotLib_getProjectResourceDir(JNIEnv *env, jclass clazz) {
+JNIEXPORT jstring JNICALL Java_games_cafecito_foundry_FoundryLib_getProjectResourceDir(JNIEnv *env, jclass clazz) {
 	const String resource_dir = OS::get_singleton()->get_resource_dir();
 	return env->NewStringUTF(resource_dir.utf8().get_data());
 }
-JNIEXPORT jboolean JNICALL Java_org_godotengine_godot_GodotLib_isEditorHint(JNIEnv *env, jclass clazz) {
+JNIEXPORT jboolean JNICALL Java_games_cafecito_foundry_FoundryLib_isEditorHint(JNIEnv *env, jclass clazz) {
 	Engine *engine = Engine::get_singleton();
 	if (engine) {
 		return engine->is_editor_hint();
@@ -661,7 +661,7 @@ JNIEXPORT jboolean JNICALL Java_org_godotengine_godot_GodotLib_isEditorHint(JNIE
 	return false;
 }
 
-JNIEXPORT jboolean JNICALL Java_org_godotengine_godot_GodotLib_isProjectManagerHint(JNIEnv *env, jclass clazz) {
+JNIEXPORT jboolean JNICALL Java_games_cafecito_foundry_FoundryLib_isProjectManagerHint(JNIEnv *env, jclass clazz) {
 	Engine *engine = Engine::get_singleton();
 	if (engine) {
 		return engine->is_project_manager_hint();
@@ -669,7 +669,7 @@ JNIEXPORT jboolean JNICALL Java_org_godotengine_godot_GodotLib_isProjectManagerH
 	return false;
 }
 
-JNIEXPORT jboolean JNICALL Java_org_godotengine_godot_GodotLib_hasFeature(JNIEnv *env, jclass clazz, jstring p_feature) {
+JNIEXPORT jboolean JNICALL Java_games_cafecito_foundry_FoundryLib_hasFeature(JNIEnv *env, jclass clazz, jstring p_feature) {
 	OS *os = OS::get_singleton();
 	if (os) {
 		String feature = jstring_to_string(p_feature, env);

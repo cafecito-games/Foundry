@@ -18,7 +18,7 @@ pluginManagement {
     }
 }
 
-rootProject.name = "Godot"
+rootProject.name = "Foundry"
 
 include ':app'
 include ':lib'

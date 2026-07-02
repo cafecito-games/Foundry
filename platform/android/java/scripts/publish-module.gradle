@@ -19,43 +19,28 @@ afterEvaluate {
                 // Mostly self-explanatory metadata
                 pom {
                     name = DEBUG_PUBLISH_ARTIFACT_ID
-                    description = 'Godot Engine Android Library - (Debug) Template Build'
-                    url = 'https://godotengine.org/'
+                    description = 'Foundry Engine Android Library - (Debug) Template Build'
+                    url = 'https://www.cafecito.games/'
                     licenses {
                         license {
                             name = 'MIT License'
-                            url = 'https://github.com/godotengine/godot/blob/master/LICENSE.txt'
+                            url = 'https://github.com/cafecito-games/Foundry/blob/develop/LICENSE.txt'
                         }
                     }
                     developers {
                         developer {
-                            id = 'm4gr3d'
-                            name = 'Fredia Huya-Kouadio'
-                            email = 'fhuyakou@gmail.com'
-                        }
-                        developer {
-                            id = 'reduz'
-                            name = 'Juan Linietsky'
-                            email = 'reduzio@gmail.com'
-                        }
-                        developer {
-                            id = 'akien-mga'
-                            name = 'Rémi Verschelde'
-                            email = 'rverschelde@gmail.com'
-                        }
-                        developer {
-                            id = 'godotengine'
-                            name = 'Godot Engine contributors'
-                            email = 'contact@godotengine.org'
+                            id = 'cafecito-games'
+                            name = 'CafecitoGames'
+                            email = 'csueiras@gmail.com'
                         }
                     }
 
                     // Version control info - if you're using GitHub, follow the
                     // format as seen here
                     scm {
-                        connection = 'scm:git:github.com/godotengine/godot.git'
-                        developerConnection = 'scm:git:ssh://github.com/godotengine/godot.git'
-                        url = 'https://github.com/godotengine/godot/tree/master'
+                        connection = 'scm:git:github.com/cafecito-games/Foundry.git'
+                        developerConnection = 'scm:git:ssh://github.com/cafecito-games/Foundry.git'
+                        url = 'https://github.com/cafecito-games/Foundry/tree/develop'
                     }
                 }
             }
@@ -71,43 +56,28 @@ afterEvaluate {
                 // Mostly self-explanatory metadata
                 pom {
                     name = PUBLISH_ARTIFACT_ID
-                    description = 'Godot Engine Android Library - Template Build'
-                    url = 'https://godotengine.org/'
+                    description = 'Foundry Engine Android Library - Template Build'
+                    url = 'https://www.cafecito.games/'
                     licenses {
                         license {
                             name = 'MIT License'
-                            url = 'https://github.com/godotengine/godot/blob/master/LICENSE.txt'
+                            url = 'https://github.com/cafecito-games/Foundry/blob/develop/LICENSE.txt'
                         }
                     }
                     developers {
                         developer {
-                            id = 'm4gr3d'
-                            name = 'Fredia Huya-Kouadio'
-                            email = 'fhuyakou@gmail.com'
-                        }
-                        developer {
-                            id = 'reduz'
-                            name = 'Juan Linietsky'
-                            email = 'reduzio@gmail.com'
-                        }
-                        developer {
-                            id = 'akien-mga'
-                            name = 'Rémi Verschelde'
-                            email = 'rverschelde@gmail.com'
-                        }
-                        developer {
-                            id = 'godotengine'
-                            name = 'Godot Engine contributors'
-                            email = 'contact@godotengine.org'
+                            id = 'cafecito-games'
+                            name = 'CafecitoGames'
+                            email = 'csueiras@gmail.com'
                         }
                     }
 
                     // Version control info - if you're using GitHub, follow the
                     // format as seen here
                     scm {
-                        connection = 'scm:git:github.com/godotengine/godot.git'
-                        developerConnection = 'scm:git:ssh://github.com/godotengine/godot.git'
-                        url = 'https://github.com/godotengine/godot/tree/master'
+                        connection = 'scm:git:github.com/cafecito-games/Foundry.git'
+                        developerConnection = 'scm:git:ssh://github.com/cafecito-games/Foundry.git'
+                        url = 'https://github.com/cafecito-games/Foundry/tree/develop'
                     }
                 }
             }
@@ -123,43 +93,28 @@ afterEvaluate {
                 // Mostly self-explanatory metadata
                 pom {
                     name = TOOLS_PUBLISH_ARTIFACT_ID
-                    description = 'Godot Engine Tools Android Library - Editor Build'
-                    url = 'https://godotengine.org/'
+                    description = 'Foundry Engine Tools Android Library - Editor Build'
+                    url = 'https://www.cafecito.games/'
                     licenses {
                         license {
                             name = 'MIT License'
-                            url = 'https://github.com/godotengine/godot/blob/master/LICENSE.txt'
+                            url = 'https://github.com/cafecito-games/Foundry/blob/develop/LICENSE.txt'
                         }
                     }
                     developers {
                         developer {
-                            id = 'm4gr3d'
-                            name = 'Fredia Huya-Kouadio'
-                            email = 'fhuyakou@gmail.com'
-                        }
-                        developer {
-                            id = 'reduz'
-                            name = 'Juan Linietsky'
-                            email = 'reduzio@gmail.com'
-                        }
-                        developer {
-                            id = 'akien-mga'
-                            name = 'Rémi Verschelde'
-                            email = 'rverschelde@gmail.com'
-                        }
-                        developer {
-                            id = 'godotengine'
-                            name = 'Godot Engine contributors'
-                            email = 'contact@godotengine.org'
+                            id = 'cafecito-games'
+                            name = 'CafecitoGames'
+                            email = 'csueiras@gmail.com'
                         }
                     }
 
                     // Version control info - if you're using GitHub, follow the
                     // format as seen here
                     scm {
-                        connection = 'scm:git:github.com/godotengine/godot.git'
-                        developerConnection = 'scm:git:ssh://github.com/godotengine/godot.git'
-                        url = 'https://github.com/godotengine/godot/tree/master'
+                        connection = 'scm:git:github.com/cafecito-games/Foundry.git'
+                        developerConnection = 'scm:git:ssh://github.com/cafecito-games/Foundry.git'
+                        url = 'https://github.com/cafecito-games/Foundry/tree/develop'
                     }
                 }
             }
