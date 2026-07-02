@@ -27,7 +27,7 @@
 - [ ] A non-quiet capture (`start()` / `start(false)`) never touches `CoreGlobals::print_error_enabled`.
 - [ ] Diagnostics are still recorded as events regardless of quiet mode.
 
-**Verify:** `./bin/godot.* --test --test-case="*ScriptDiagnosticCapture*" --force-colors` → `[doctest] Status: SUCCESS!`
+**Verify:** `./bin/foundry.macos.editor.dev.arm64 --test --test-case="*ScriptDiagnosticCapture*" --force-colors` → `[doctest] Status: SUCCESS!`
 
 **Steps:**
 
@@ -93,7 +93,7 @@ TEST_CASE("[ScriptDiagnosticCapture] Default start() keeps error printing enable
 
 - [ ] **Step 2: Run tests to verify they fail to compile/fail**
 
-Run: `./bin/godot.* --test --test-case="*ScriptDiagnosticCapture*" --force-colors`
+Run: `./bin/foundry.macos.editor.dev.arm64 --test --test-case="*ScriptDiagnosticCapture*" --force-colors`
 Expected: build error (`start(bool)`/`is_quiet()` do not exist yet). If a stale binary exists without the new test file compiled in, rebuild first with the command from Task 1's Verify line's build step (see project `scons` command in `CLAUDE.md`).
 
 - [ ] **Step 3: Implement the quiet-capture mechanism**
@@ -183,7 +183,7 @@ void ScriptDiagnosticCapture::stop() {
 
 - [ ] **Step 4: Build and run tests to verify they pass**
 
-Run: `scons platform=macos target=editor dev_build=yes tests=yes` then `./bin/godot.* --test --test-case="*ScriptDiagnosticCapture*" --force-colors`
+Run: `scons platform=macos target=editor dev_build=yes tests=yes` then `./bin/foundry.macos.editor.dev.arm64 --test --test-case="*ScriptDiagnosticCapture*" --force-colors`
 Expected: `[doctest] Status: SUCCESS!` with all `[ScriptDiagnosticCapture]` cases passing, including the two pre-existing ones.
 
 - [ ] **Step 5: Commit**
@@ -208,7 +208,7 @@ git commit -m "Add quiet mode to ScriptDiagnosticCapture"
 - [ ] A non-quiet capture nested inside an active quiet capture does not re-enable printing while the quiet capture is still active.
 - [ ] A quiet capture nested inside an active non-quiet capture suppresses printing only for its own duration, restoring the prior (enabled) state once it stops, independent of the still-active outer non-quiet capture.
 
-**Verify:** `./bin/godot.* --test --test-case="*ScriptDiagnosticCapture*" --force-colors` → `[doctest] Status: SUCCESS!`
+**Verify:** `./bin/foundry.macos.editor.dev.arm64 --test --test-case="*ScriptDiagnosticCapture*" --force-colors` → `[doctest] Status: SUCCESS!`
 
 **Steps:**
 
@@ -306,7 +306,7 @@ TEST_CASE("[ScriptDiagnosticCapture] Quiet capture nested inside a non-quiet cap
 
 - [ ] **Step 2: Run tests to verify they pass**
 
-Run: `./bin/godot.* --test --test-case="*ScriptDiagnosticCapture*" --force-colors`
+Run: `./bin/foundry.macos.editor.dev.arm64 --test --test-case="*ScriptDiagnosticCapture*" --force-colors`
 Expected: `[doctest] Status: SUCCESS!`. These should pass immediately against Task 1's implementation with no further production-code changes — if any fail, the ref-counting logic from Task 1 has a bug and must be fixed before proceeding.
 
 - [ ] **Step 3: Commit**
@@ -330,7 +330,7 @@ git commit -m "Test ScriptDiagnosticCapture quiet-mode composition"
 - [ ] A new case in the existing `[VariantUtility] push_fatal decision logic` test proves an active `ScriptDiagnosticCapture` prevents `push_fatal` from requesting process exit, even when `application/run/push_fatal_terminates` is enabled.
 - [ ] A new `ScriptDiagnosticCapture` test proves a quiet capture suppresses stderr printing for a captured fatal diagnostic while still recording it.
 
-**Verify:** `./bin/godot.* --test --test-case="*VariantUtility*push_fatal*" --test-case="*ScriptDiagnosticCapture*" --force-colors` → `[doctest] Status: SUCCESS!`
+**Verify:** `./bin/foundry.macos.editor.dev.arm64 --test --test-case="*VariantUtility*push_fatal*" --test-case="*ScriptDiagnosticCapture*" --force-colors` → `[doctest] Status: SUCCESS!`
 
 **Steps:**
 
@@ -392,7 +392,7 @@ TEST_CASE("[ScriptDiagnosticCapture] Quiet capture suppresses stderr output for 
 
 - [ ] **Step 3: Run tests to verify they pass**
 
-Run: `./bin/godot.* --test --test-case="*VariantUtility*push_fatal*" --test-case="*ScriptDiagnosticCapture*" --force-colors`
+Run: `./bin/foundry.macos.editor.dev.arm64 --test --test-case="*VariantUtility*push_fatal*" --test-case="*ScriptDiagnosticCapture*" --force-colors`
 Expected: `[doctest] Status: SUCCESS!`. Case 5 should already pass against current `push_fatal`/`has_active_capture()` behavior with no production-code changes (per the design doc, this invariant already holds); the new `ScriptDiagnosticCapture` case should pass against Task 1's implementation.
 
 - [ ] **Step 4: Commit**
@@ -416,7 +416,7 @@ git commit -m "Add fatal-diagnostic process-isolation regression tests"
 - [ ] A FoundryScript script calls `ScriptDiagnosticCapture.new()`, `start(true)`, `push_error`/`push_warning`/`push_fatal`, `stop()`, and asserts via `has_error`/`has_warning`/`has_fatal`/`get_event_count()` exactly like the existing non-quiet fixture.
 - [ ] The fixture's generated `.out` matches on a clean run.
 
-**Verify:** `./bin/godot.* --headless --gdscript-generate-tests modules/foundry_script/tests/scripts` regenerates `script_diagnostic_capture_quiet.out` with `FS_TEST_OK` as line 1 and no diff on a second run.
+**Verify:** `./bin/foundry.macos.editor.dev.arm64 --headless --foundry_script-generate-tests modules/foundry_script/tests/scripts` regenerates `script_diagnostic_capture_quiet.out` with `FS_TEST_OK` as line 1 and no diff on a second run.
 
 **Steps:**
 
@@ -449,7 +449,7 @@ func emit_fatal() -> void:
 Build first if needed (`scons platform=macos target=editor dev_build=yes tests=yes`), then run:
 
 ```bash
-./bin/godot.* --headless --gdscript-generate-tests modules/foundry_script/tests/scripts
+./bin/foundry.macos.editor.dev.arm64 --headless --foundry_script-generate-tests modules/foundry_script/tests/scripts
 ```
 
 This creates `modules/foundry_script/tests/scripts/runtime/features/script_diagnostic_capture_quiet.out`. Inspect it — expected content is:
@@ -469,7 +469,7 @@ false
 Run the same generate command again:
 
 ```bash
-./bin/godot.* --headless --gdscript-generate-tests modules/foundry_script/tests/scripts
+./bin/foundry.macos.editor.dev.arm64 --headless --foundry_script-generate-tests modules/foundry_script/tests/scripts
 ```
 
 Expected: no diff in `script_diagnostic_capture_quiet.out` (confirms the fixture is deterministic).
