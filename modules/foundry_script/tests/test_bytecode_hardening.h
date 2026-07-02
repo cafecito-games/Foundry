@@ -229,6 +229,130 @@ TEST_CASE("[FoundryScript][BytecodeHardening] Verifier rejects out-of-range tabl
 	bytecode_destroy_restored_function(script, function);
 }
 
+// Byte offsets of the fixed-width function-header fields inside a standalone function payload, in the
+// exact order `FSBytecodeExporter::serialize_function` writes them: a u32 name-table index, a u8 flag
+// byte, then the five int32 fields. Tests patch these to synthesize otherwise unreachable metadata.
+enum FunctionPayloadOffset {
+	FUNCTION_PAYLOAD_ARGUMENT_COUNT = 9,
+	FUNCTION_PAYLOAD_VARARG_INDEX = 13,
+	FUNCTION_PAYLOAD_STACK_SIZE = 17,
+	FUNCTION_PAYLOAD_INSTRUCTION_ARGS_SIZE = 21,
+};
+
+// Overwrites a little-endian int32 field in a serialized function payload.
+static void bytecode_patch_function_int32(Vector<uint8_t> &r_payload, int p_offset, int32_t p_value) {
+	REQUIRE(p_offset + 4 <= r_payload.size());
+	for (int i = 0; i < 4; i++) {
+		r_payload.write[p_offset + i] = (uint8_t)(((uint32_t)p_value >> (i * 8)) & 0xFF);
+	}
+}
+
+// Re-reads a (possibly tampered) standalone function payload through a fresh loader carrying the
+// exporter's string table, and reports the loader result. Any function produced on success is
+// released; its destructor's unregistration is identity-checked, so it never disturbs the original
+// compiled function that owns the same name in the script.
+static Error bytecode_read_function_payload(FSBytecodeExporter &r_exporter, const Ref<FoundryScript> &p_script,
+		const Vector<uint8_t> &p_payload) {
+	BytecodeTestResolver resolver;
+	FSBytecodeLoader loader = bytecode_loader_for(r_exporter, &resolver);
+	Ref<StreamPeerBuffer> stream;
+	stream.instantiate();
+	stream->set_data_array(p_payload);
+	FSFunction *function = nullptr;
+	Vector<FSBytecodeLoader::LoadedLambdaInfo> lambda_info;
+	const Error error = loader.read_function(stream.ptr(), p_script.ptr(), function, &lambda_info);
+	if (function != nullptr) {
+		memdelete(function);
+	}
+	return error;
+}
+
+TEST_CASE("[FoundryScript][BytecodeHardening] Loader bounds instruction-argument scratch size against opcode counts") {
+	// `Vector2(x, y)` compiles to a construct opcode carrying two instruction arguments, so the
+	// function's `_instruction_args_size` (the max instruction-argument count over its instructions)
+	// is at least two. The release VM sizes its `instruction_args` scratch array from that field and
+	// writes one pointer per bytecode-supplied count, so a payload whose field is smaller than a live
+	// opcode's count would overrun (or, at zero, null-dereference) that array.
+	// The arguments are runtime values, not literals, so the construct is not constant-folded away and
+	// really loads two instruction arguments at call time.
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"static func build(x: float, y: float) -> Vector2:\n"
+			"\treturn Vector2(x, y)\n");
+	const HashMap<StringName, FSFunction *>::ConstIterator element = script->get_member_functions().find(SNAME("build"));
+	REQUIRE(element);
+	const int instruction_args_size = element->value->get_instruction_args_size();
+	REQUIRE(instruction_args_size >= 1);
+
+	FSBytecodeExporter exporter;
+	const Vector<uint8_t> payload = bytecode_serialize_function_payload(exporter, element->value);
+
+	// The untouched payload, whose largest opcode uses exactly `_instruction_args_size` arguments,
+	// loads cleanly: the bound is not over-tight.
+	CHECK(bytecode_read_function_payload(exporter, script, payload) == OK);
+
+	ERR_PRINT_OFF;
+	// One short of the real maximum: the widest construct opcode now exceeds the scratch array.
+	Vector<uint8_t> undersized = payload;
+	bytecode_patch_function_int32(undersized, FUNCTION_PAYLOAD_INSTRUCTION_ARGS_SIZE, instruction_args_size - 1);
+	CHECK(bytecode_read_function_payload(exporter, script, undersized) == ERR_INVALID_DATA);
+
+	// Zero scratch entries while a live opcode still supplies arguments: the null-dereference case.
+	Vector<uint8_t> zeroed = payload;
+	bytecode_patch_function_int32(zeroed, FUNCTION_PAYLOAD_INSTRUCTION_ARGS_SIZE, 0);
+	CHECK(bytecode_read_function_payload(exporter, script, zeroed) == ERR_INVALID_DATA);
+	ERR_PRINT_ON;
+}
+
+TEST_CASE("[FoundryScript][BytecodeHardening] Loader bounds argument and vararg slots against the stack size") {
+	// `FSFunction::call()` writes incoming arguments at `stack[i + FIXED_ADDRESSES_MAX]` and a vararg
+	// array at `stack[_vararg_index]`, all inside a stack sized by `_stack_size`. The release VM never
+	// bounds-checks these writes, so a payload whose `_stack_size` cannot hold the declared arguments,
+	// or whose `_vararg_index` points outside the stack, must be rejected at load time.
+	//
+	// The parameter is never referenced in the body, so its argument stack slot never appears as an
+	// operand in the opcode stream. That isolates the argument-slot bound: shrinking `_stack_size`
+	// below the argument slots is caught by this loader check alone, not incidentally by the verifier's
+	// operand-address bound or the temporary-slot range check (there are no such operands or slots).
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"static func ignore(value: int) -> void:\n"
+			"\tpass\n");
+	const HashMap<StringName, FSFunction *>::ConstIterator element = script->get_member_functions().find(SNAME("ignore"));
+	REQUIRE(element);
+	const int argument_count = element->value->get_argument_count();
+	const int stack_size = element->value->get_max_stack_size();
+	REQUIRE(argument_count >= 1);
+	REQUIRE(stack_size > FSFunction::FIXED_ADDRESSES_MAX);
+
+	FSBytecodeExporter exporter;
+	const Vector<uint8_t> payload = bytecode_serialize_function_payload(exporter, element->value);
+
+	// The untouched payload loads cleanly, so none of the added bounds are over-tight.
+	CHECK(bytecode_read_function_payload(exporter, script, payload) == OK);
+
+	ERR_PRINT_OFF;
+	// A stack that holds the fixed slots but not the declared argument slots.
+	Vector<uint8_t> no_room_for_arguments = payload;
+	bytecode_patch_function_int32(no_room_for_arguments, FUNCTION_PAYLOAD_STACK_SIZE, FSFunction::FIXED_ADDRESSES_MAX);
+	CHECK(bytecode_read_function_payload(exporter, script, no_room_for_arguments) == ERR_INVALID_DATA);
+
+	// A vararg slot at exactly the stack size is one past the last addressable slot.
+	Vector<uint8_t> vararg_out_of_range = payload;
+	bytecode_patch_function_int32(vararg_out_of_range, FUNCTION_PAYLOAD_VARARG_INDEX, stack_size);
+	CHECK(bytecode_read_function_payload(exporter, script, vararg_out_of_range) == ERR_INVALID_DATA);
+
+	// A vararg slot far past the stack window.
+	Vector<uint8_t> vararg_wild = payload;
+	bytecode_patch_function_int32(vararg_wild, FUNCTION_PAYLOAD_VARARG_INDEX, stack_size + 4096);
+	CHECK(bytecode_read_function_payload(exporter, script, vararg_wild) == ERR_INVALID_DATA);
+	ERR_PRINT_ON;
+
+	// A vararg slot at the last in-range stack index is accepted, proving the check stops at the
+	// real boundary rather than rejecting every vararg slot.
+	Vector<uint8_t> vararg_in_range = payload;
+	bytecode_patch_function_int32(vararg_in_range, FUNCTION_PAYLOAD_VARARG_INDEX, stack_size - 1);
+	CHECK(bytecode_read_function_payload(exporter, script, vararg_in_range) == OK);
+}
+
 // Attempts to load a buffer that is expected to be malformed, on a throwaway script, asserting only
 // that the loader returns a clean result and never leaves a half-valid script behind (a crash would
 // take down the test process, which is the property under test).

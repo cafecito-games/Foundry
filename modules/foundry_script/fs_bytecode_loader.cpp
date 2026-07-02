@@ -747,6 +747,25 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 			ERR_INVALID_DATA,
 			vformat("Malformed compiled function '%s' in script '%s'.", function_name, script_path));
 
+	// `FSFunction::call()` lays out the stack as `FIXED_ADDRESSES_MAX` fixed slots (self/class/nil)
+	// followed by locals; incoming arguments are written at `stack[i + FIXED_ADDRESSES_MAX]` for
+	// `i in [0, _argument_count)`, and a vararg function writes its packed array at
+	// `stack[_vararg_index]` (a raw local slot index). Codegen (`write_end`) sizes the stack as
+	// `FIXED_ADDRESSES_MAX + max_locals + temporaries`, so every argument and the vararg slot fit
+	// inside `_stack_size`. Enforce that here; the release VM has no stack bounds checking, so a
+	// too-small `_stack_size` or an out-of-range `_vararg_index` would corrupt memory at call time.
+	ERR_FAIL_COND_V_MSG(p_function->_stack_size < FSFunction::FIXED_ADDRESSES_MAX, ERR_INVALID_DATA,
+			vformat("Malformed compiled function '%s' in script '%s': stack size is smaller than the fixed address slots.",
+					function_name, script_path));
+	ERR_FAIL_COND_V_MSG(
+			(int64_t)p_function->_argument_count + FSFunction::FIXED_ADDRESSES_MAX > (int64_t)p_function->_stack_size,
+			ERR_INVALID_DATA,
+			vformat("Malformed compiled function '%s' in script '%s': argument slots do not fit in the stack.",
+					function_name, script_path));
+	ERR_FAIL_COND_V_MSG(p_function->_vararg_index >= p_function->_stack_size, ERR_INVALID_DATA,
+			vformat("Malformed compiled function '%s' in script '%s': vararg slot is outside the stack.",
+					function_name, script_path));
+
 	const uint32_t argument_type_count = p_stream->get_u32();
 	ERR_FAIL_COND_V_MSG((int64_t)argument_type_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 			vformat("Truncated compiled function '%s' in script '%s'.", function_name, script_path));

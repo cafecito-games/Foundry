@@ -520,6 +520,15 @@ Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_me
 				// this is a true invariant and keeps every offset computed here well inside `int`.
 				VERIFY_FAIL_COND(instruction_arg_count > code_size, "instruction argument count exceeds code size");
 
+				// The VM's `LOAD_INSTRUCTION_ARGS` writes `instruction_arg_count` pointers into the
+				// `instruction_args` scratch array, which `FSFunction::call()` allocates with exactly
+				// `_instruction_args_size` entries. Codegen (`write_end`) sets that size to `instr_args_max`,
+				// the maximum instruction-argument count over every instruction, so no valid instruction
+				// can exceed it. Without this bound a crafted `_instruction_args_size` smaller than the
+				// count overruns (or, at zero, dereferences a null) `instruction_args` in release builds.
+				VERIFY_FAIL_COND(instruction_arg_count > p_function->_instruction_args_size,
+						"instruction argument count exceeds instruction-argument scratch size");
+
 				// `shift` is where the VM's `ip` points after loading the arguments (`ip += 1` in
 				// LOAD_INSTRUCTION_ARGS, then `ip += instr_arg_count`); trailing fields are read at
 				// `shift + n` and the last address sits at `shift`.
