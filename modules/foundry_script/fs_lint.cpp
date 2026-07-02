@@ -30,6 +30,7 @@
 
 #include "fs_lint.h"
 
+#include "core/config/project_settings.h"
 #include "core/core_globals.h"
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
@@ -382,8 +383,60 @@ int FSLintCLI::Result::get_exit_code(const Options &p_options) const {
 	return 0;
 }
 
+Error FSLintCLI::write_report(const Options &p_options, const Result &p_result) {
+	const String report = p_options.output_format == OUTPUT_SARIF ? to_sarif(p_result.diagnostics) : to_json(p_result.diagnostics);
+	const CharString report_utf8 = report.utf8();
+
+	if (p_options.output_path.is_empty()) {
+		clearerr(stdout);
+		const size_t report_length = report_utf8.length();
+		const size_t written = fwrite(report_utf8.get_data(), 1, report_length, stdout);
+		if (written != report_length || ferror(stdout)) {
+			fprintf(stderr, "foundry_script-lint: could not write report to stdout\n");
+			return ERR_CANT_CREATE;
+		}
+		if (fflush(stdout) != 0 || ferror(stdout)) {
+			fprintf(stderr, "foundry_script-lint: could not flush report to stdout\n");
+			return ERR_CANT_CREATE;
+		}
+		return OK;
+	}
+
+	Error open_error = OK;
+	Ref<FileAccess> file = FileAccess::open(p_options.output_path, FileAccess::WRITE, &open_error);
+	if (file.is_null() || open_error != OK) {
+		fprintf(stderr, "foundry_script-lint: could not open report file '%s' for writing\n", p_options.output_path.utf8().get_data());
+		return ERR_CANT_OPEN;
+	}
+
+	if (!file->store_string(report)) {
+		fprintf(stderr, "foundry_script-lint: could not write report file '%s'\n", p_options.output_path.utf8().get_data());
+		return ERR_CANT_CREATE;
+	}
+
+	return OK;
+}
+
 void FSLintCLI::run_from_cmdline() {
 	String error;
-	const Options options = parse_options(OS::get_singleton()->get_cmdline_args(), error);
-	OS::get_singleton()->set_exit_code(error.is_empty() ? EXIT_SUCCESS : 2);
+	Options options = parse_options(OS::get_singleton()->get_cmdline_args(), error);
+	if (!error.is_empty()) {
+		fprintf(stderr, "foundry_script-lint: %s\n", error.utf8().get_data());
+		OS::get_singleton()->set_exit_code(2);
+		return;
+	}
+
+	if (options.paths.is_empty()) {
+		options.paths.push_back(ProjectSettings::get_singleton()->get_resource_path());
+	}
+
+	Result result = lint_paths(options.paths, options);
+	if (write_report(options, result) != OK) {
+		result.had_command_error = true;
+		if (result.command_error.is_empty()) {
+			result.command_error = "Could not write lint report.";
+		}
+	}
+
+	OS::get_singleton()->set_exit_code(result.get_exit_code(options));
 }

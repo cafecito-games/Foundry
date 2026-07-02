@@ -94,6 +94,7 @@ public:
 	static Dictionary diagnostic_to_dictionary(const Diagnostic &p_diagnostic);
 	static String to_json(const Vector<Diagnostic> &p_diagnostics);
 	static String to_sarif(const Vector<Diagnostic> &p_diagnostics);
+	static Error write_report(const Options &p_options, const Result &p_result);
 	static void run_from_cmdline();
 
 private:

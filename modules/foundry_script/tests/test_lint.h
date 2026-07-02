@@ -215,6 +215,69 @@ TEST_CASE("[Modules][FoundryScript][Lint] CLI option parsing rejects invalid cho
 	CHECK(out_error.contains("Missing file path after --out"));
 }
 
+TEST_CASE("[Modules][FoundryScript][Lint] CLI result exit code honors fail-on threshold") {
+	FSLintCLI::Diagnostic warning;
+	warning.severity = FSLintCLI::SEVERITY_WARNING;
+
+	FSLintCLI::Result warning_result;
+	warning_result.diagnostics.push_back(warning);
+
+	FSLintCLI::Options fail_on_error;
+	fail_on_error.fail_on = FSLintCLI::FAIL_ON_ERROR;
+	CHECK_EQ(warning_result.get_exit_code(fail_on_error), 0);
+
+	FSLintCLI::Options fail_on_warning;
+	fail_on_warning.fail_on = FSLintCLI::FAIL_ON_WARNING;
+	CHECK_EQ(warning_result.get_exit_code(fail_on_warning), 1);
+
+	FSLintCLI::Diagnostic error;
+	error.severity = FSLintCLI::SEVERITY_ERROR;
+
+	FSLintCLI::Result error_result;
+	error_result.diagnostics.push_back(error);
+	CHECK_EQ(error_result.get_exit_code(fail_on_error), 1);
+
+	FSLintCLI::Result command_error_result;
+	command_error_result.had_command_error = true;
+	CHECK_EQ(command_error_result.get_exit_code(fail_on_error), 2);
+}
+
+TEST_CASE("[Modules][FoundryScript][Lint] CLI writes JSON report to filesystem file") {
+	Ref<DirAccess> dir = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+	REQUIRE(dir.is_valid());
+	const String report_path = dir->get_current_dir().path_join(
+			"lint_report_" + itos(OS::get_singleton()->get_ticks_usec()) + ".json");
+
+	FSLintCLI::Diagnostic diagnostic;
+	diagnostic.path = "res://scripts/warning.fs";
+	diagnostic.range.start_line = 2;
+	diagnostic.range.start_column = 4;
+	diagnostic.range.end_line = 2;
+	diagnostic.range.end_column = 9;
+	diagnostic.severity = FSLintCLI::SEVERITY_WARNING;
+	diagnostic.rule_id = "unused-variable";
+	diagnostic.message = "Unused local variable.";
+
+	FSLintCLI::Result result;
+	result.diagnostics.push_back(diagnostic);
+
+	FSLintCLI::Options options;
+	options.output_format = FSLintCLI::OUTPUT_JSON;
+	options.output_path = report_path;
+
+	DirAccess::remove_absolute(report_path);
+	CHECK_EQ(FSLintCLI::write_report(options, result), OK);
+	CHECK(FileAccess::exists(report_path));
+
+	Error read_error = OK;
+	const String report = FileAccess::get_file_as_string(report_path, &read_error);
+	CHECK_EQ(read_error, OK);
+	CHECK(report.contains("\"version\""));
+	CHECK(report.contains("\"diagnostics\""));
+
+	DirAccess::remove_absolute(report_path);
+}
+
 TEST_CASE("[Modules][FoundryScript][Lint] File collection recurses deterministically") {
 	TemporaryLintTree tree("fs_lint_collection");
 	tree.write_file("z_root.fs", "var z = 1\n");
