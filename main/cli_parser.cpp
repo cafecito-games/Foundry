@@ -64,6 +64,15 @@ static void fail(FoundryCLIParser::ParseResult &r_result, const String &p_messag
 	r_result.error = p_message;
 }
 
+static bool is_help_flag(const String &p_arg) {
+	return p_arg == "-h" || p_arg == "--help" || p_arg == "/?";
+}
+
+static void request_help(CLIParseState &r_state) {
+	r_state.result.help_requested = true;
+	r_state.result.used_new_cli = true;
+}
+
 static bool require_value(CLIParseState &r_state, const String &p_option, String &r_value) {
 	if (r_state.index + 1 >= r_state.args.size() || r_state.args[r_state.index + 1] == "--") {
 		fail(r_state.result, "Missing value for " + p_option + ".");
@@ -199,6 +208,10 @@ static void parse_project_run(CLIParseState &r_state) {
 
 	while (r_state.index < r_state.args.size()) {
 		const String arg = r_state.args[r_state.index];
+		if (is_help_flag(arg)) {
+			request_help(r_state);
+			return;
+		}
 		if (consume_common_global_option(r_state, arg)) {
 			if (!r_state.result.ok) {
 				return;
@@ -247,6 +260,10 @@ static void parse_project_export(CLIParseState &r_state) {
 
 	while (r_state.index < r_state.args.size()) {
 		const String arg = r_state.args[r_state.index];
+		if (is_help_flag(arg)) {
+			request_help(r_state);
+			return;
+		}
 		if (consume_common_global_option(r_state, arg)) {
 			if (!r_state.result.ok) {
 				return;
@@ -319,6 +336,10 @@ static void parse_project_import(CLIParseState &r_state) {
 	set_command_path(r_state.result, "project", "import");
 	while (r_state.index < r_state.args.size()) {
 		const String arg = r_state.args[r_state.index];
+		if (is_help_flag(arg)) {
+			request_help(r_state);
+			return;
+		}
 		if (consume_common_global_option(r_state, arg)) {
 			if (!r_state.result.ok) {
 				return;
@@ -341,6 +362,10 @@ static void parse_project(CLIParseState &r_state) {
 		return;
 	}
 	const String command = r_state.args[r_state.index++];
+	if (is_help_flag(command)) {
+		request_help(r_state);
+		return;
+	}
 	if (command == "run") {
 		parse_project_run(r_state);
 	} else if (command == "export") {
@@ -357,6 +382,10 @@ static void parse_script_format(CLIParseState &r_state) {
 	PackedStringArray formatter_args;
 	while (r_state.index < r_state.args.size()) {
 		const String arg = r_state.args[r_state.index];
+		if (is_help_flag(arg)) {
+			request_help(r_state);
+			return;
+		}
 		if (consume_common_global_option(r_state, arg)) {
 			if (!r_state.result.ok) {
 				return;
@@ -381,6 +410,10 @@ static void parse_script_lint(CLIParseState &r_state) {
 	PackedStringArray lint_args;
 	while (r_state.index < r_state.args.size()) {
 		const String arg = r_state.args[r_state.index];
+		if (is_help_flag(arg)) {
+			request_help(r_state);
+			return;
+		}
 		if (consume_common_global_option(r_state, arg)) {
 			if (!r_state.result.ok) {
 				return;
@@ -413,6 +446,10 @@ static void parse_script_migrate(CLIParseState &r_state) {
 
 	while (r_state.index < r_state.args.size()) {
 		const String arg = r_state.args[r_state.index];
+		if (is_help_flag(arg)) {
+			request_help(r_state);
+			return;
+		}
 		if (consume_common_global_option(r_state, arg)) {
 			if (!r_state.result.ok) {
 				return;
@@ -502,6 +539,10 @@ static void parse_script(CLIParseState &r_state) {
 		return;
 	}
 	const String command = r_state.args[r_state.index++];
+	if (is_help_flag(command)) {
+		request_help(r_state);
+		return;
+	}
 	if (command == "format") {
 		parse_script_format(r_state);
 	} else if (command == "lint") {
@@ -520,6 +561,10 @@ static void parse_test_run(CLIParseState &r_state) {
 
 	while (r_state.index < r_state.args.size()) {
 		const String arg = r_state.args[r_state.index];
+		if (is_help_flag(arg)) {
+			request_help(r_state);
+			return;
+		}
 		if (consume_common_global_option(r_state, arg)) {
 			if (!r_state.result.ok) {
 				return;
@@ -555,6 +600,10 @@ static void parse_test(CLIParseState &r_state) {
 		return;
 	}
 	const String command = r_state.args[r_state.index++];
+	if (is_help_flag(command)) {
+		request_help(r_state);
+		return;
+	}
 	if (command == "run") {
 		parse_test_run(r_state);
 	} else {
@@ -568,10 +617,18 @@ static void parse_editor(CLIParseState &r_state) {
 		return;
 	}
 	const String command = r_state.args[r_state.index++];
+	if (is_help_flag(command)) {
+		request_help(r_state);
+		return;
+	}
 	set_command_path(r_state.result, "editor", command);
 
 	while (r_state.index < r_state.args.size()) {
 		const String arg = r_state.args[r_state.index];
+		if (is_help_flag(arg)) {
+			request_help(r_state);
+			return;
+		}
 		if (consume_common_global_option(r_state, arg)) {
 			if (!r_state.result.ok) {
 				return;
@@ -602,6 +659,10 @@ static void parse_lsp(CLIParseState &r_state) {
 		return;
 	}
 	const String command = r_state.args[r_state.index++];
+	if (is_help_flag(command)) {
+		request_help(r_state);
+		return;
+	}
 	set_command_path(r_state.result, "lsp", command);
 	if (command != "serve") {
 		fail(r_state.result, "Unknown lsp command: " + command + ".");
@@ -611,6 +672,10 @@ static void parse_lsp(CLIParseState &r_state) {
 	String port;
 	while (r_state.index < r_state.args.size()) {
 		const String arg = r_state.args[r_state.index];
+		if (is_help_flag(arg)) {
+			request_help(r_state);
+			return;
+		}
 		if (consume_common_global_option(r_state, arg)) {
 			if (!r_state.result.ok) {
 				return;
@@ -642,12 +707,20 @@ static void parse_docs(CLIParseState &r_state) {
 		return;
 	}
 	const String command = r_state.args[r_state.index++];
+	if (is_help_flag(command)) {
+		request_help(r_state);
+		return;
+	}
 	set_command_path(r_state.result, "docs", command);
 
 	if (command == "generate-api") {
 		bool include_docs = false;
 		while (r_state.index < r_state.args.size()) {
 			const String arg = r_state.args[r_state.index];
+			if (is_help_flag(arg)) {
+				request_help(r_state);
+				return;
+			}
 			if (consume_common_global_option(r_state, arg)) {
 				if (!r_state.result.ok) {
 					return;
@@ -671,6 +744,10 @@ static void parse_docs(CLIParseState &r_state) {
 		bool no_docbase = false;
 		while (r_state.index < r_state.args.size()) {
 			const String arg = r_state.args[r_state.index];
+			if (is_help_flag(arg)) {
+				request_help(r_state);
+				return;
+			}
 			if (consume_common_global_option(r_state, arg)) {
 				if (!r_state.result.ok) {
 					return;
@@ -704,6 +781,10 @@ static void parse_docs(CLIParseState &r_state) {
 		String output;
 		while (r_state.index < r_state.args.size()) {
 			const String arg = r_state.args[r_state.index];
+			if (is_help_flag(arg)) {
+				request_help(r_state);
+				return;
+			}
 			if (consume_common_global_option(r_state, arg)) {
 				if (!r_state.result.ok) {
 					return;
@@ -744,12 +825,20 @@ static void parse_extension(CLIParseState &r_state) {
 		return;
 	}
 	const String command = r_state.args[r_state.index++];
+	if (is_help_flag(command)) {
+		request_help(r_state);
+		return;
+	}
 	set_command_path(r_state.result, "extension", command);
 
 	if (command == "dump-interface") {
 		String format = "header";
 		while (r_state.index < r_state.args.size()) {
 			const String arg = r_state.args[r_state.index];
+			if (is_help_flag(arg)) {
+				request_help(r_state);
+				return;
+			}
 			if (consume_common_global_option(r_state, arg)) {
 				if (!r_state.result.ok) {
 					return;
@@ -780,6 +869,10 @@ static void parse_extension(CLIParseState &r_state) {
 		String path;
 		while (r_state.index < r_state.args.size()) {
 			const String arg = r_state.args[r_state.index];
+			if (is_help_flag(arg)) {
+				request_help(r_state);
+				return;
+			}
 			if (consume_common_global_option(r_state, arg)) {
 				if (!r_state.result.ok) {
 					return;
@@ -812,9 +905,17 @@ static void parse_diagnostics(CLIParseState &r_state) {
 		return;
 	}
 	const String command = r_state.args[r_state.index++];
+	if (is_help_flag(command)) {
+		request_help(r_state);
+		return;
+	}
 	set_command_path(r_state.result, "diagnostics", command);
 	while (r_state.index < r_state.args.size()) {
 		const String arg = r_state.args[r_state.index];
+		if (is_help_flag(arg)) {
+			request_help(r_state);
+			return;
+		}
 		if (consume_common_global_option(r_state, arg)) {
 			if (!r_state.result.ok) {
 				return;
@@ -877,13 +978,26 @@ FoundryCLIParser::ParseResult FoundryCLIParser::parse(const PackedStringArray &p
 	}
 
 	const String first_arg = state.args[0];
-	state.has_executable_arg = !is_new_cli_command(first_arg) && !first_arg.begins_with("-");
+	state.has_executable_arg = !is_new_cli_command(first_arg) && first_arg != "help" && !is_help_flag(first_arg) && !first_arg.begins_with("-");
 	state.index = state.has_executable_arg ? 1 : 0;
 	while (state.index < state.args.size()) {
 		const String arg = state.args[state.index];
+		if (is_help_flag(arg)) {
+			request_help(state);
+			return state.result;
+		}
+		if (arg == "help") {
+			request_help(state);
+			for (int scope_index = state.index + 1; scope_index < state.args.size(); scope_index++) {
+				append(state.result.command_path, state.args[scope_index]);
+			}
+			return state.result;
+		}
 		if (is_new_cli_command(arg)) {
 			state.result.used_new_cli = true;
 			state.index++;
+			state.result.command_path.clear();
+			append(state.result.command_path, arg);
 			if (arg == "project") {
 				parse_project(state);
 			} else if (arg == "script") {

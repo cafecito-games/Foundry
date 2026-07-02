@@ -40,6 +40,7 @@ public:
 		bool used_new_cli = false;
 		bool json = false;
 		bool trusted = false;
+		bool help_requested = false;
 		String error;
 		PackedStringArray command_path;
 		PackedStringArray normalized_args;
