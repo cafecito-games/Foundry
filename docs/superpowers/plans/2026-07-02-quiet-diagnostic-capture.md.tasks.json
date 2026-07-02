@@ -24,10 +24,10 @@
     {
       "id": 3,
       "subject": "Task 4: FoundryScript fixture for quiet diagnostic capture",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [0],
       "description": "**Goal:** Prove the start(bool) binding works from actual FoundryScript source, covering the GDScript-facing API FoundryLib's testlib will call.\n\n**Files:**\n- Create: modules/foundry_script/tests/scripts/runtime/features/script_diagnostic_capture_quiet.fs\n- Create: modules/foundry_script/tests/scripts/runtime/features/script_diagnostic_capture_quiet.out\n\n**Acceptance Criteria:**\n- [ ] Fixture calls ScriptDiagnosticCapture.new(), start(true), push_error/push_warning/push_fatal, stop(), asserts via has_error/has_warning/has_fatal/get_event_count.\n- [ ] Generated .out matches on a clean run and is stable across regeneration.\n\n**Verify:** ./bin/godot.* --headless --gdscript-generate-tests modules/foundry_script/tests/scripts\n\nSee docs/superpowers/plans/2026-07-02-quiet-diagnostic-capture.md Task 4 for full code.\n\n```json:metadata\n{\"files\": [\"modules/foundry_script/tests/scripts/runtime/features/script_diagnostic_capture_quiet.fs\", \"modules/foundry_script/tests/scripts/runtime/features/script_diagnostic_capture_quiet.out\"], \"verifyCommand\": \"./bin/godot.* --headless --gdscript-generate-tests modules/foundry_script/tests/scripts\", \"acceptanceCriteria\": [\"Fixture exercises start(true) end-to-end\", \"Generated .out stable across regeneration\"]}\n```"
     }
   ],
-  "lastUpdated": "2026-07-02T14:00:00Z"
+  "lastUpdated": "2026-07-02T15:00:00Z"
 }
