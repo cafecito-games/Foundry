@@ -31,13 +31,20 @@
 #include "script_diagnostic_capture.h"
 
 #include "core/core_globals.h"
+#include "core/os/mutex.h"
 
 #include <atomic>
 
 namespace {
 
 std::atomic<int> active_capture_count = 0;
-std::atomic<int> quiet_capture_count = 0;
+
+// Guards quiet_capture_count together with the CoreGlobals::print_error_enabled
+// toggle it gates, so a concurrent start(true)/stop() can't observe or leave a
+// torn state (e.g. a second thread seeing a nonzero count before the flag is
+// actually disabled, or two threads racing to save/restore the prior value).
+Mutex quiet_capture_mutex;
+int quiet_capture_count = 0;
 bool saved_print_error_enabled = true;
 
 String safe_utf8(const char *p_text) {
@@ -139,9 +146,13 @@ void ScriptDiagnosticCapture::start(bool p_quiet) {
 	active_capture_count.fetch_add(1, std::memory_order_relaxed);
 
 	quiet = p_quiet;
-	if (quiet && quiet_capture_count.fetch_add(1, std::memory_order_relaxed) == 0) {
-		saved_print_error_enabled = CoreGlobals::print_error_enabled;
-		CoreGlobals::print_error_enabled = false;
+	if (quiet) {
+		MutexLock lock(quiet_capture_mutex);
+		if (quiet_capture_count == 0) {
+			saved_print_error_enabled = CoreGlobals::print_error_enabled;
+			CoreGlobals::print_error_enabled = false;
+		}
+		quiet_capture_count++;
 	}
 }
 
@@ -156,7 +167,9 @@ void ScriptDiagnosticCapture::stop() {
 
 	if (quiet) {
 		quiet = false;
-		if (quiet_capture_count.fetch_sub(1, std::memory_order_relaxed) == 1) {
+		MutexLock lock(quiet_capture_mutex);
+		quiet_capture_count--;
+		if (quiet_capture_count == 0) {
 			CoreGlobals::print_error_enabled = saved_print_error_enabled;
 		}
 	}
