@@ -35,10 +35,12 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.Handler
+import android.os.Looper
 import android.os.Message
 import android.os.Messenger
 import android.os.RemoteException
 import android.util.Log
+import games.cafecito.foundry.utils.getParcelableCompat
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -93,7 +95,7 @@ internal class EditorMessageDispatcher(private val editor: BaseFoundryEditor) {
 	private val editorConnectionsInfos = ConcurrentHashMap<Int, EditorConnectionInfo>()
 
 	@SuppressLint("HandlerLeak")
-	private val dispatcherHandler = object : Handler() {
+	private val dispatcherHandler = object : Handler(Looper.myLooper() ?: Looper.getMainLooper()) {
 		override fun handleMessage(msg: Message) {
 			when (msg.what) {
 				MSG_FORCE_QUIT -> {
@@ -274,7 +276,7 @@ internal class EditorMessageDispatcher(private val editor: BaseFoundryEditor) {
 		// Retrieve the sender messenger payload and store it. This can be used to communicate back
 		// to the sender.
 		val senderId = messengerBundle.getInt(KEY_EDITOR_ID)
-		val senderMessenger: Messenger? = messengerBundle.getParcelable(KEY_EDITOR_MESSENGER)
+		val senderMessenger = messengerBundle.getParcelableCompat(KEY_EDITOR_MESSENGER, Messenger::class.java)
 		registerMessenger(senderId, senderMessenger) {
 			// Terminate current instance when parent is no longer available.
 			Log.d(TAG, "Terminating current editor instance because parent is no longer available")

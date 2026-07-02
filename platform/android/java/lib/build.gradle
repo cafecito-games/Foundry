@@ -12,6 +12,7 @@ ext {
 apply from: "../scripts/publish-module.gradle"
 
 dependencies {
+    implementation "androidx.core:core:$versions.coreVersion"
     implementation "androidx.fragment:fragment:$versions.fragmentVersion"
     implementation "androidx.documentfile:documentfile:$versions.documentfileVersion"
 

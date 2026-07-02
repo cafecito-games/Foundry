@@ -33,7 +33,6 @@ package games.cafecito.foundry.editor.embed
 import android.content.Context
 import android.os.Build
 import android.os.Bundle
-import android.preference.PreferenceManager
 import android.view.LayoutInflater
 import android.view.MenuItem
 import android.view.View
@@ -48,6 +47,8 @@ import games.cafecito.foundry.editor.BaseFoundryEditor
 import games.cafecito.foundry.editor.BaseFoundryEditor.Companion.SNACKBAR_SHOW_DURATION_MS
 import games.cafecito.foundry.editor.R
 import games.cafecito.foundry.utils.DialogUtils
+import games.cafecito.foundry.utils.getDefaultSharedPreferencesCompat
+import games.cafecito.foundry.utils.getSerializableCompat
 
 /**
  * Implements the game menu interface for the Android editor.
@@ -387,7 +388,7 @@ class GameMenuFragment : Fragment(), PopupMenu.OnMenuItemClickListener {
 	}
 
 	internal fun refreshGameMenu(gameMenuState: Bundle) {
-		val sharedPrefs = PreferenceManager.getDefaultSharedPreferences(context)
+		val sharedPrefs = getDefaultSharedPreferencesCompat(requireContext())
 		if (menuListener?.isMenuBarCollapsable() == true) {
 			val collapsed = sharedPrefs.getBoolean(PREF_KEY_GAME_MENU_BAR_COLLAPSED, false)
 			view?.isVisible = !collapsed
@@ -400,14 +401,18 @@ class GameMenuFragment : Fragment(), PopupMenu.OnMenuItemClickListener {
 		suspendButton?.isEnabled = isGameRunning
 		nextFrameButton?.isEnabled = isGameRunning
 
-		val nodeType = gameMenuState.getSerializable(BaseFoundryEditor.GAME_MENU_ACTION_SET_NODE_TYPE) as GameMenuListener.NodeType? ?: GameMenuListener.NodeType.NONE
+		val nodeType = gameMenuState.getSerializableCompat(
+			BaseFoundryEditor.GAME_MENU_ACTION_SET_NODE_TYPE,
+			GameMenuListener.NodeType::class.java) ?: GameMenuListener.NodeType.NONE
 		unselectNodesButton?.isChecked = nodeType == GameMenuListener.NodeType.NONE
 		select2DNodesButton?.isChecked = nodeType == GameMenuListener.NodeType.TYPE_2D
 		select3DNodesButton?.isChecked = nodeType == GameMenuListener.NodeType.TYPE_3D
 
 		guiVisibilityButton?.isActivated = !gameMenuState.getBoolean(BaseFoundryEditor.GAME_MENU_ACTION_SET_SELECTION_VISIBLE, true)
 
-		val selectMode = gameMenuState.getSerializable(BaseFoundryEditor.GAME_MENU_ACTION_SET_SELECT_MODE) as GameMenuListener.SelectMode? ?: GameMenuListener.SelectMode.SINGLE
+		val selectMode = gameMenuState.getSerializableCompat(
+			BaseFoundryEditor.GAME_MENU_ACTION_SET_SELECT_MODE,
+			GameMenuListener.SelectMode::class.java) ?: GameMenuListener.SelectMode.SINGLE
 		toolSelectButton?.isChecked = selectMode == GameMenuListener.SelectMode.SINGLE
 		listSelectButton?.isChecked = selectMode == GameMenuListener.SelectMode.LIST
 
@@ -434,7 +439,9 @@ class GameMenuFragment : Fragment(), PopupMenu.OnMenuItemClickListener {
 
 			findItem(R.id.menu_embed_game_keep_on_top)?.isChecked = alwaysOnTopChecked
 
-			val cameraMode = gameMenuState.getSerializable(BaseFoundryEditor.GAME_MENU_ACTION_SET_CAMERA_MANIPULATE_MODE) as GameMenuListener.CameraMode? ?: GameMenuListener.CameraMode.NONE
+			val cameraMode = gameMenuState.getSerializableCompat(
+				BaseFoundryEditor.GAME_MENU_ACTION_SET_CAMERA_MANIPULATE_MODE,
+				GameMenuListener.CameraMode::class.java) ?: GameMenuListener.CameraMode.NONE
 			if (cameraMode == GameMenuListener.CameraMode.IN_GAME || cameraMode == GameMenuListener.CameraMode.NONE) {
 				findItem(R.id.menu_manipulate_camera_in_game)?.isChecked = true
 			} else {
@@ -447,7 +454,7 @@ class GameMenuFragment : Fragment(), PopupMenu.OnMenuItemClickListener {
 
 	private fun collapseGameMenu() {
 		view?.isVisible = false
-		PreferenceManager.getDefaultSharedPreferences(context).edit {
+		getDefaultSharedPreferencesCompat(requireContext()).edit {
 			putBoolean(PREF_KEY_GAME_MENU_BAR_COLLAPSED, true)
 		}
 		menuListener?.onGameMenuCollapsed(true)
@@ -455,7 +462,7 @@ class GameMenuFragment : Fragment(), PopupMenu.OnMenuItemClickListener {
 
 	internal fun expandGameMenu() {
 		view?.isVisible = true
-		PreferenceManager.getDefaultSharedPreferences(context).edit {
+		getDefaultSharedPreferencesCompat(requireContext()).edit {
 			putBoolean(PREF_KEY_GAME_MENU_BAR_COLLAPSED, false)
 		}
 		menuListener?.onGameMenuCollapsed(false)
@@ -463,7 +470,7 @@ class GameMenuFragment : Fragment(), PopupMenu.OnMenuItemClickListener {
 
 	private fun updateAlwaysOnTop(enabled: Boolean) {
 		alwaysOnTopChecked = enabled
-		PreferenceManager.getDefaultSharedPreferences(context).edit {
+		getDefaultSharedPreferencesCompat(requireContext()).edit {
 			putBoolean(PREF_KEY_ALWAYS_ON_TOP, enabled)
 		}
 	}
@@ -486,7 +493,7 @@ class GameMenuFragment : Fragment(), PopupMenu.OnMenuItemClickListener {
 
 				if (item.isChecked != isGameEmbedded && isGameRunning) {
 					activity?.let {
-						val sharedPrefs = PreferenceManager.getDefaultSharedPreferences(context)
+						val sharedPrefs = getDefaultSharedPreferencesCompat(requireContext())
 						if (!sharedPrefs.getBoolean(PREF_KEY_DONT_SHOW_RESTART_GAME_HINT, false)) {
 							DialogUtils.showSnackbar(
 								it,

@@ -18,5 +18,5 @@ runs:
       with:
         name: ${{ inputs.name }}
         path: ${{ inputs.path }}
-        # Default is 90 days.
-        retention-days: 60
+        # Match this repository's maximum artifact retention.
+        retention-days: 1

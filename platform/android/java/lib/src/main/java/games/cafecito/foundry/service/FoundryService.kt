@@ -37,6 +37,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.os.Message
 import android.os.Messenger
 import android.os.Process
@@ -45,12 +46,14 @@ import android.text.TextUtils
 import android.util.Log
 import android.view.SurfaceControlViewHost
 import android.widget.FrameLayout
+import android.window.InputTransferToken
 import androidx.annotation.CallSuper
 import androidx.annotation.RequiresApi
-import androidx.core.os.bundleOf
 import games.cafecito.foundry.Foundry
 import games.cafecito.foundry.FoundryHost
 import games.cafecito.foundry.R
+import games.cafecito.foundry.utils.getParcelableCompat
+import games.cafecito.foundry.utils.getParcelableExtraCompat
 import java.lang.ref.WeakReference
 
 /**
@@ -72,6 +75,7 @@ open class FoundryService : Service() {
 		// Keys to store / retrieve msg payloads
 		const val KEY_COMMAND_LINE_PARAMETERS = "commandLineParameters"
 		const val KEY_HOST_TOKEN = "hostToken"
+		const val KEY_HOST_INPUT_TRANSFER_TOKEN = "hostInputTransferToken"
 		const val KEY_DISPLAY_ID = "displayId"
 		const val KEY_WIDTH = "width"
 		const val KEY_HEIGHT = "height"
@@ -161,7 +165,8 @@ open class FoundryService : Service() {
 	/**
 	 * Handler of incoming messages from remote clients.
 	 */
-	private class IncomingHandler(private val serviceRef: WeakReference<FoundryService>) : Handler() {
+	private class IncomingHandler(private val serviceRef: WeakReference<FoundryService>) :
+			Handler(Looper.myLooper() ?: Looper.getMainLooper()) {
 
 		var viewHost: SurfaceControlViewHost? = null
 
@@ -206,46 +211,59 @@ open class FoundryService : Service() {
 						}
 
 						var currentViewHost = viewHost
-						if (currentViewHost != null) {
-							Log.i(TAG, "Attached Foundry engine to SurfaceControlViewHost")
-							service.listener?.onEngineStatusUpdate(
-								EngineStatus.SCVH_CREATED,
-								bundleOf(KEY_SURFACE_PACKAGE to currentViewHost.surfacePackage)
-							)
-							return
-						}
+							if (currentViewHost != null) {
+								Log.i(TAG, "Attached Foundry engine to SurfaceControlViewHost")
+								service.listener?.onEngineStatusUpdate(
+									EngineStatus.SCVH_CREATED,
+									Bundle().apply {
+										putParcelable(KEY_SURFACE_PACKAGE, currentViewHost.surfacePackage)
+									}
+								)
+								return
+							}
 
 						val msgData = msg.data
 						if (msgData.isEmpty) {
 							Log.e(TAG, "Invalid message data from binding client.. Aborting")
 							service.listener?.onEngineError(EngineError.SCVH_CREATION_FAILED)
 							return
-						}
+							}
 
-						val foundryContainerLayout = service.foundry.containerLayout
-						if (foundryContainerLayout == null) {
-							Log.e(TAG, "Invalid Foundry layout.. Aborting")
-							service.listener?.onEngineError(EngineError.SCVH_CREATION_FAILED)
-							return
-						}
+							val foundryContainerLayout = service.foundry.containerLayout
+							if (foundryContainerLayout == null) {
+								Log.e(TAG, "Invalid Foundry layout.. Aborting")
+								service.listener?.onEngineError(EngineError.SCVH_CREATION_FAILED)
+								return
+							}
 
-						val hostToken = msgData.getBinder(KEY_HOST_TOKEN)
-						val width = msgData.getInt(KEY_WIDTH)
-						val height = msgData.getInt(KEY_HEIGHT)
-						val displayId = msgData.getInt(KEY_DISPLAY_ID)
-						val display = service.getSystemService(DisplayManager::class.java)
-							.getDisplay(displayId)
+							val hostToken = msgData.getBinder(KEY_HOST_TOKEN)
+							val hostInputTransferToken = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA) {
+								msgData.getParcelableCompat(KEY_HOST_INPUT_TRANSFER_TOKEN, InputTransferToken::class.java)
+							} else {
+								null
+							}
+							val width = msgData.getInt(KEY_WIDTH)
+							val height = msgData.getInt(KEY_HEIGHT)
+							val displayId = msgData.getInt(KEY_DISPLAY_ID)
+							val display = service.getSystemService(DisplayManager::class.java)
+								.getDisplay(displayId)
 
-						Log.d(TAG, "Setting up SurfaceControlViewHost")
-						currentViewHost = SurfaceControlViewHost(service, display, hostToken).apply {
-							setView(foundryContainerLayout, width, height)
+							Log.d(TAG, "Setting up SurfaceControlViewHost")
+							currentViewHost = if (hostInputTransferToken != null) {
+								SurfaceControlViewHost(service, display, hostInputTransferToken)
+							} else {
+								SurfaceControlViewHost(service, display, hostToken)
+							}.apply {
+								setView(foundryContainerLayout, width, height)
 
-							Log.i(TAG, "Attached Foundry engine to SurfaceControlViewHost")
-							service.listener?.onEngineStatusUpdate(
-								EngineStatus.SCVH_CREATED,
-								bundleOf(KEY_SURFACE_PACKAGE to surfacePackage)
-							)
-						}
+								Log.i(TAG, "Attached Foundry engine to SurfaceControlViewHost")
+								service.listener?.onEngineStatusUpdate(
+									EngineStatus.SCVH_CREATED,
+									Bundle().apply {
+										putParcelable(KEY_SURFACE_PACKAGE, surfacePackage)
+									}
+								)
+							}
 						viewHost = currentViewHost
 					}
 
@@ -301,7 +319,7 @@ open class FoundryService : Service() {
 	override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
 		// Dispatch the start payload to the incoming handler
 		Log.d(TAG, "Processing start command $intent")
-		val msg = intent?.getParcelableExtra<Message>(EXTRA_MSG_PAYLOAD)
+		val msg = intent?.getParcelableExtraCompat(EXTRA_MSG_PAYLOAD, Message::class.java)
 		if (msg != null) {
 			handler.sendMessage(msg)
 		}

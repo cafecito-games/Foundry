@@ -70,11 +70,16 @@ import games.cafecito.foundry.utils.DialogUtils
 import games.cafecito.foundry.utils.FoundryNetUtils
 import games.cafecito.foundry.utils.PermissionsUtil
 import games.cafecito.foundry.utils.PermissionsUtil.requestPermission
+import games.cafecito.foundry.utils.addTranslucentSystemBarFlagsCompat
 import games.cafecito.foundry.utils.beginBenchmarkMeasure
 import games.cafecito.foundry.utils.benchmarkFile
 import games.cafecito.foundry.utils.dumpBenchmark
 import games.cafecito.foundry.utils.endBenchmarkMeasure
+import games.cafecito.foundry.utils.getLongVersionCodeCompat
+import games.cafecito.foundry.utils.getVibratorServiceCompat
+import games.cafecito.foundry.utils.turnScreenOnCompat
 import games.cafecito.foundry.utils.useBenchmark
+import games.cafecito.foundry.utils.vibrateCompat
 import games.cafecito.foundry.variant.Callable as FoundryCallable
 import games.cafecito.foundry.xr.XRMode
 import java.io.File
@@ -131,7 +136,7 @@ class Foundry private constructor(val context: Context) {
 
 	private val mSensorManager: SensorManager? by lazy { context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager }
 	private val mClipboard: ClipboardManager? by lazy { context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager }
-	private val vibratorService: Vibrator? by lazy { context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator }
+	private val vibratorService: Vibrator? by lazy { getVibratorServiceCompat(context) }
 	private val pluginRegistry: FoundryPluginRegistry by lazy { FoundryPluginRegistry.getPluginRegistry() }
 
 	private val accelerometerEnabled = AtomicBoolean(false)
@@ -317,10 +322,11 @@ class Foundry private constructor(val context: Context) {
 				// Build the full path to the app's expansion files
 				try {
 					expansionPackPath = Helpers.getSaveFilePath(context)
-					expansionPackPath += "/main." + context.packageManager.getPackageInfo(
+					val packageInfo = context.packageManager.getPackageInfo(
 							context.packageName,
 							0
-					).versionCode + "." + context.packageName + ".obb"
+					)
+					expansionPackPath += "/main." + packageInfo.getLongVersionCodeCompat() + "." + context.packageName + ".obb"
 				} catch (e: java.lang.Exception) {
 					Log.e(TAG, "Unable to build full path to the app's expansion files", e)
 				}
@@ -393,8 +399,7 @@ class Foundry private constructor(val context: Context) {
 			ViewCompat.setOnApplyWindowInsetsListener(rootView, null)
 			rootView.setPadding(0, 0, 0, 0)
 			if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
-				window.addFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS)
-				window.addFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_NAVIGATION)
+				window.addTranslucentSystemBarFlagsCompat()
 			}
 		} else {
 			if (rootView.rootWindowInsets != null) {
@@ -541,7 +546,7 @@ class Foundry private constructor(val context: Context) {
 		Log.v(TAG, "OnInitRenderView: $host")
 		try {
 			this.primaryHost = host
-			getActivity()?.window?.addFlags(WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON)
+			getActivity()?.turnScreenOnCompat()
 
 			if (containerLayout != null) {
 				assert(renderViewInitialized)
@@ -1147,26 +1152,7 @@ class Foundry private constructor(val context: Context) {
 	private fun vibrate(durationMs: Int, amplitude: Int) {
 		if (durationMs > 0 && requestPermission("VIBRATE")) {
 			try {
-				if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-					if (amplitude <= -1) {
-						vibratorService?.vibrate(
-							VibrationEffect.createOneShot(
-								durationMs.toLong(),
-								VibrationEffect.DEFAULT_AMPLITUDE
-							)
-						)
-					} else {
-						vibratorService?.vibrate(
-							VibrationEffect.createOneShot(
-								durationMs.toLong(),
-								amplitude
-							)
-						)
-					}
-				} else {
-					// deprecated in API 26
-					vibratorService?.vibrate(durationMs.toLong())
-				}
+				vibratorService?.vibrateCompat(durationMs.toLong(), amplitude)
 			} catch (e: SecurityException) {
 				Log.w(TAG, "SecurityException: VIBRATE permission not found. Make sure it is declared in the manifest or enabled in the export preset.")
 			}

@@ -37,6 +37,7 @@ import android.content.ServiceConnection
 import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.os.Message
 import android.os.Messenger
 import android.os.RemoteException
@@ -77,7 +78,7 @@ internal class GradleBuildEnvironmentClient(private val context: Context) {
 		}
 	}
 
-	private inner class IncomingHandler: Handler() {
+	private inner class IncomingHandler: Handler(Looper.myLooper() ?: Looper.getMainLooper()) {
 		override fun handleMessage(msg: Message) {
 			when (msg.what) {
 				MSG_COMMAND_RESULT -> {
