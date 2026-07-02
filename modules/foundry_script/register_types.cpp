@@ -30,23 +30,18 @@
 
 #include "register_types.h"
 
-#include "core/config/project_settings.h"
-
 #include "foundry_build_task.h"
 #include "foundry_script.h"
 #include "fs_cache.h"
 #include "fs_parser.h"
 #include "fs_reflection.h"
-#ifdef TOOLS_ENABLED
-#include "fs_tokenizer_buffer.h"
-#endif // TOOLS_ENABLED
 #include "fs_utility_functions.h"
 
 #ifdef TOOLS_ENABLED
-#include "fs_bytecode_export.h"
 #include "fs_format.h"
 
 #include "editor/fs_build_pipeline_settings.h"
+#include "editor/fs_editor_export_plugin.h"
 #include "editor/fs_highlighter.h"
 #include "editor/fs_migration_wizard_plugin.h"
 #include "editor/fs_translation_parser_plugin.h"
@@ -59,9 +54,6 @@
 #ifdef TESTS_ENABLED
 #include "tests/test_foundry_script.h"
 #endif
-
-#include "core/io/file_access.h"
-#include "core/io/resource_loader.h"
 
 #ifdef TOOLS_ENABLED
 #include "editor/editor_node.h"
@@ -85,222 +77,6 @@ FSCache *fs_cache = nullptr;
 #ifdef TOOLS_ENABLED
 
 Ref<FSEditorTranslationParserPlugin> fs_translation_parser_plugin;
-
-class EditorExportFoundryScript : public EditorExportPlugin {
-	FOUNDRY_CLASS(EditorExportFoundryScript, EditorExportPlugin);
-
-	static constexpr EditorExportPreset::ScriptExportMode DEFAULT_SCRIPT_MODE = EditorExportPreset::MODE_SCRIPT_COMPILED_BYTECODE;
-	EditorExportPreset::ScriptExportMode script_mode = DEFAULT_SCRIPT_MODE;
-	bool export_debug = true;
-
-	// Scoped to each .fs export: the export-compile flag makes bare autoload references emit
-	// STORE_GLOBAL (masked operand, rebaked by name at .fsb load), and release-profile exports
-	// additionally disable call-stack tracking so the serialized functions carry no OPCODE_LINE
-	// instructions. The scope restores the editor's own flags and recompiles every script FSCache
-	// reloaded during the compile so the live session never keeps export-only bytecode.
-	struct CompiledBytecodeExportScope {
-		bool call_stack_tracking_overridden = false;
-		bool call_stack_tracking_previous = false;
-
-		explicit CompiledBytecodeExportScope(bool p_release_profile) {
-			FSLanguage::get_singleton()->set_compiling_for_export(true);
-			FSCache::begin_script_reload_recording();
-			if (p_release_profile) {
-				call_stack_tracking_previous = FSLanguage::get_singleton()->should_track_call_stack();
-				FSLanguage::get_singleton()->set_track_call_stack(false);
-				call_stack_tracking_overridden = true;
-			}
-		}
-
-		~CompiledBytecodeExportScope() {
-			FSLanguage::get_singleton()->set_compiling_for_export(false);
-			if (call_stack_tracking_overridden) {
-				FSLanguage::get_singleton()->set_track_call_stack(call_stack_tracking_previous);
-			}
-			for (const String &path : FSCache::end_script_reload_recording()) {
-				Error error = OK;
-				FSCache::get_full_script(path, error, String(), true);
-				if (error != OK) {
-					WARN_PRINT(vformat("Could not recompile \"%s\" for the editor session after the compiled-bytecode export: %s.", path, error_names[error]));
-				}
-			}
-		}
-	};
-
-	// Export plugin callbacks cannot return an error; an EXPORT_MESSAGE_ERROR on the platform is
-	// what fails the export (see EditorExportPlatform::export_project_files).
-	void _add_export_error(const String &p_message) {
-		Ref<EditorExportPlatform> platform = get_export_platform();
-		if (platform.is_valid()) {
-			platform->add_message(EditorExportPlatform::EXPORT_MESSAGE_ERROR, TTR("Compiled Script Export"), p_message);
-		} else {
-			ERR_PRINT(p_message);
-		}
-	}
-
-	String _describe_script_errors(const String &p_path, Error p_fallback_error) {
-		Error parser_error = OK;
-		Ref<FSParserRef> parser_ref = FSCache::get_parser(p_path, FSParserRef::FULLY_SOLVED, parser_error);
-		if (parser_ref.is_valid() && parser_ref->get_parser() != nullptr) {
-			const List<FSParser::ParserError> &errors = parser_ref->get_parser()->get_errors();
-			if (!errors.is_empty()) {
-				const FSParser::ParserError &first_error = errors.front()->get();
-				return vformat("%s (line %d)", first_error.message, first_error.line);
-			}
-		}
-		if (p_fallback_error == OK) {
-			// The cache reported no error and the parser holds no diagnostics, yet the script is
-			// not valid; "OK" would read as nonsense here.
-			return TTR("script is not valid");
-		}
-		return error_names[p_fallback_error];
-	}
-
-	// Embedded (built-in) scripts ship their source inside the scene or resource file, which a
-	// compiled-bytecode export must not do. `get_classes_used` reads sub-resource types from both
-	// text and binary resources without loading them, and is immune to script-looking text inside
-	// string literals because it parses the file structure.
-	void _check_resource_for_built_in_script(const String &p_path) {
-		HashSet<StringName> classes_used;
-		ResourceLoader::get_classes_used(p_path, &classes_used);
-		if (classes_used.has(SNAME("FoundryScript"))) {
-			skip();
-			_add_export_error(vformat(TTR("\"%s\" contains a built-in script, which cannot be exported as compiled bytecode. Save the script to its own .fs file."), p_path));
-		}
-	}
-
-	// Any native resource file can embed a built-in script, and binary resources are saved under
-	// many type-specific extensions (".material", ".mesh", ".anim", ...), so the check keys off
-	// the file format instead of an extension list: binary resources declare themselves with the
-	// RSRC/RSCC magic, and text resources are exactly the text loader's two extensions. Imported
-	// byproducts such as compressed textures use different magics and are skipped.
-	bool _is_native_resource_file(const String &p_path) {
-		const String extension = p_path.get_extension().to_lower();
-		if (extension == "tscn" || extension == "tres") {
-			return true;
-		}
-		Ref<FileAccess> file = FileAccess::open(p_path, FileAccess::READ);
-		if (file.is_null()) {
-			return false;
-		}
-		uint8_t magic[4] = { 0, 0, 0, 0 };
-		if (file->get_buffer(magic, 4) != 4) {
-			return false;
-		}
-		if (magic[0] != 'R' || magic[1] != 'S') {
-			return false;
-		}
-		return (magic[2] == 'R' && magic[3] == 'C') || (magic[2] == 'C' && magic[3] == 'C');
-	}
-
-	void _export_file_compiled_bytecode(const String &p_path) {
-		const String extension = p_path.get_extension();
-		if (extension != "fs") {
-			if (_is_native_resource_file(p_path)) {
-				_check_resource_for_built_in_script(p_path);
-			}
-			return;
-		}
-
-		// The export runs in the editor process where project settings and autoloads are live, so
-		// the cache can compile the script exactly as the runtime would. Updating from disk forces
-		// a fresh compile under the current call-stack-tracking flag instead of reusing bytecode
-		// the editor session compiled earlier. Export-only compiler flags are scoped to this file
-		// so @tool scripts that tick during the export never execute placeholder-global bytecode.
-		CompiledBytecodeExportScope export_scope(!export_debug);
-		Error error = OK;
-		Ref<FoundryScript> script = FSCache::get_full_script(p_path, error, String(), true);
-		if (error != OK || script.is_null() || !script->is_valid()) {
-			skip();
-			_add_export_error(vformat(TTR("Script \"%s\" failed to compile: %s"), p_path, _describe_script_errors(p_path, error)));
-			return;
-		}
-
-		const Vector<StringName> unsupported_named_globals = FSBytecodeExporter::collect_unsupported_named_globals(script);
-		if (!unsupported_named_globals.is_empty()) {
-			Vector<String> printable_names;
-			Vector<String> autoload_names;
-			for (const StringName &name : unsupported_named_globals) {
-				printable_names.push_back(String(name));
-				if (ProjectSettings::get_singleton()->has_autoload(name)) {
-					autoload_names.push_back(String(name));
-				}
-			}
-			skip();
-			String message = vformat(TTR("Script \"%s\" references named globals that exist only in this editor session and are not defined by an exported game's runtime: %s."), p_path, String(", ").join(printable_names));
-			if (!autoload_names.is_empty()) {
-				// Autoload singletons compile as runtime globals under the export-compile flag,
-				// so landing here means that translation did not happen.
-				message += " " + vformat(TTR("%s matches a project autoload and should have compiled as a runtime global; this is a bug in the compiled-bytecode export."), String(", ").join(autoload_names));
-			}
-			_add_export_error(message);
-			return;
-		}
-
-		// The @static_unload flag lives on the parse tree and is not recoverable from the
-		// compiled script, so it is fetched from the cached parser.
-		bool annotated_static_unload = false;
-		Error parser_error = OK;
-		Ref<FSParserRef> parser_ref = FSCache::get_parser(p_path, FSParserRef::PARSED, parser_error);
-		if (parser_error == OK && parser_ref.is_valid() && parser_ref->get_parser() != nullptr && parser_ref->get_parser()->get_tree() != nullptr) {
-			annotated_static_unload = parser_ref->get_parser()->get_tree()->annotated_static_unload;
-		}
-
-		Vector<uint8_t> buffer;
-		FSBytecodeExporter exporter;
-		error = exporter.serialize(script, buffer, annotated_static_unload);
-		if (error != OK || buffer.is_empty()) {
-			skip();
-			_add_export_error(vformat(TTR("Script \"%s\" could not be serialized to compiled bytecode: %s."), p_path, error_names[error]));
-			return;
-		}
-
-		add_file(p_path.get_basename() + ".fsb", buffer, true);
-	}
-
-protected:
-	virtual void _export_begin(const HashSet<String> &p_features, bool p_debug, const String &p_path, int p_flags) override {
-		export_debug = p_debug;
-		script_mode = DEFAULT_SCRIPT_MODE;
-
-		const Ref<EditorExportPreset> &preset = get_export_preset();
-		if (preset.is_valid()) {
-			script_mode = preset->get_script_export_mode();
-		}
-	}
-
-	virtual void _export_end() override {
-		script_mode = DEFAULT_SCRIPT_MODE;
-	}
-
-	virtual void _export_file(const String &p_path, const String &p_type, const HashSet<String> &p_features) override {
-		if (script_mode == EditorExportPreset::MODE_SCRIPT_COMPILED_BYTECODE) {
-			_export_file_compiled_bytecode(p_path);
-			return;
-		}
-
-		if (p_path.get_extension() != "fs" || script_mode == EditorExportPreset::MODE_SCRIPT_TEXT) {
-			return;
-		}
-
-		Vector<uint8_t> file = FileAccess::get_file_as_bytes(p_path);
-		if (file.is_empty()) {
-			return;
-		}
-
-		String source = String::utf8(reinterpret_cast<const char *>(file.ptr()), file.size());
-		FSTokenizerBuffer::CompressMode compress_mode = script_mode == EditorExportPreset::MODE_SCRIPT_BINARY_TOKENS_COMPRESSED ? FSTokenizerBuffer::COMPRESS_ZSTD : FSTokenizerBuffer::COMPRESS_NONE;
-		file = FSTokenizerBuffer::parse_code_string(source, compress_mode);
-		if (file.is_empty()) {
-			return;
-		}
-
-		add_file(p_path.get_basename() + ".fsc", file, true);
-	}
-
-public:
-	virtual String get_name() const override { return "FoundryScript"; }
-};
 
 static FSMigrationWizardDialog *fs_migration_wizard_dialog = nullptr;
 static FSBuildPipelineSettingsDialog *fs_build_pipeline_settings_dialog = nullptr;
