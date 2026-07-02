@@ -30,31 +30,31 @@
     {
       "id": 5,
       "subject": "Task 5: Fixture-corpus round-trip mode",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [4],
       "description": "**Goal:** Every runtime fixture in modules/foundry_script/tests/scripts/ passes when executed through compile → serialize → deserialize → link → run, diffing the same .out files as the text path.\n\n```json:metadata\n{\"files\": [\"modules/foundry_script/tests/fs_test_runner.h\", \"modules/foundry_script/tests/fs_test_runner.cpp\", \"modules/foundry_script/tests/fs_test_runner_suite.h\"], \"verifyCommand\": \"./bin/foundry.macos.editor.dev.arm64 --headless --test --force-colors\", \"acceptanceCriteria\": [\"corpus parity in bytecode mode\", \"full suite green\"]}\n```"
     },
     {
       "id": 6,
       "subject": "Task 6: FSCache and resource-loader integration",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [4],
       "description": "**Goal:** A .fsb file on disk loads end-to-end through ResourceLoader — shallow/full cache branches, dependencies, cycles, reload guard — with the engine-version guard enforced.\n\n```json:metadata\n{\"files\": [\"modules/foundry_script/fs_cache.cpp\", \"modules/foundry_script/foundry_script.h\", \"modules/foundry_script/foundry_script.cpp\", \"modules/foundry_script/tests/test_bytecode_serialization.h\"], \"verifyCommand\": \"./bin/foundry.macos.editor.dev.arm64 --headless --test --force-colors\", \"acceptanceCriteria\": [\"ResourceLoader end-to-end\", \"cycles work\", \"reload guard\", \"version guard rejection\"]}\n```"
     },
     {
       "id": 7,
       "subject": "Task 7: Export preset mode and export plugin",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [6],
       "description": "**Goal:** Selecting Compiled Bytecode in an export preset ships .fsb files (path-remapped like .fsc), fails the export on any compile error, and fails the export when a scene contains a built-in script.\n\n```json:metadata\n{\"files\": [\"editor/export/editor_export_preset.h\", \"editor/export/editor_export_preset.cpp\", \"editor/export/project_export.cpp\", \"modules/foundry_script/register_types.cpp\"], \"verifyCommand\": \"./bin/foundry.macos.editor.dev.arm64 --headless --test --force-colors && headless export of scratchpad test project\", \"acceptanceCriteria\": [\"enum appended\", \"PCK contains only .fsb\", \"compile error fails export\", \"built-in script fails export\"]}\n```"
     },
     {
       "id": 8,
       "subject": "Task 8: Hardening — verifier, corrupt inputs, leak assertions",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [6, 7],
       "description": "**Goal:** A hostile or corrupted .fsb cannot crash the release VM, and a produced .fsb provably contains no source text or local identifiers.\n\n```json:metadata\n{\"files\": [\"modules/foundry_script/fs_bytecode_loader.cpp\", \"modules/foundry_script/tests/test_bytecode_serialization.h\"], \"verifyCommand\": \"./bin/foundry.macos.editor.dev.arm64 --headless --test --force-colors\", \"acceptanceCriteria\": [\"verifier bounds-checks all operands\", \"corruption never crashes\", \"no local-identifier/source leakage\", \"version pin\"]}\n```"
     }
   ],
-  "lastUpdated": "2026-07-02T08:00:00Z"
+  "lastUpdated": "2026-07-02T22:00:00Z"
 }
