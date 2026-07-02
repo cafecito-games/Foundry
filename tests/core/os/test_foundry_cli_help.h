@@ -208,4 +208,82 @@ TEST_CASE("[FoundryCLIHelp] JSON help distinguishes option value styles") {
 	CHECK(saw_space);
 }
 
+// The first "|" alternative of value_name doubles as a sample value the
+// parser must accept (e.g. "release|debug|pack|patch" -> "release").
+static String drift_option_value(const FoundryCLIHelp::CommandOption &p_option) {
+	return String(p_option.value_name).get_slice("|", 0);
+}
+
+static void drift_append_option(PackedStringArray &r_args, const FoundryCLIHelp::CommandOption &p_option) {
+	if (p_option.value_name && p_option.equals_form) {
+		r_args.push_back(String(p_option.flag) + "=" + drift_option_value(p_option));
+		return;
+	}
+	r_args.push_back(p_option.flag);
+	if (p_option.value_name) {
+		r_args.push_back(drift_option_value(p_option));
+	}
+}
+
+static PackedStringArray drift_base_args(const FoundryCLIHelp::CommandSpec &p_spec) {
+	PackedStringArray args;
+	args.push_back("foundry");
+	args.push_back(p_spec.noun);
+	args.push_back(p_spec.verb);
+	for (int i = 0; i < p_spec.option_count; i++) {
+		const FoundryCLIHelp::CommandOption &option = p_spec.options[i];
+		if (!option.required) {
+			continue;
+		}
+		drift_append_option(args, option);
+	}
+	return args;
+}
+
+TEST_CASE("[FoundryCLIHelp] Registry nouns match the parser") {
+	int noun_count = 0;
+	const FoundryCLIHelp::NounSpec *nouns = FoundryCLIHelp::get_nouns(noun_count);
+	CHECK_EQ(noun_count, 8);
+	for (int i = 0; i < noun_count; i++) {
+		CHECK_MESSAGE(FoundryCLIParser::is_new_cli_command(nouns[i].name), nouns[i].name);
+	}
+	int command_count = 0;
+	const FoundryCLIHelp::CommandSpec *commands = FoundryCLIHelp::get_commands(command_count);
+	for (int i = 0; i < command_count; i++) {
+		CHECK_MESSAGE(FoundryCLIHelp::has_noun(commands[i].noun), commands[i].noun);
+	}
+}
+
+TEST_CASE("[FoundryCLIHelp] Every registry command is accepted by the parser") {
+	int command_count = 0;
+	const FoundryCLIHelp::CommandSpec *commands = FoundryCLIHelp::get_commands(command_count);
+	for (int i = 0; i < command_count; i++) {
+		const FoundryCLIHelp::CommandSpec &spec = commands[i];
+		const String label = String(spec.noun) + " " + spec.verb;
+		FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(drift_base_args(spec));
+		REQUIRE_MESSAGE(result.ok, (label + ": " + result.error));
+		PackedStringArray expected_path;
+		expected_path.push_back(spec.noun);
+		expected_path.push_back(spec.verb);
+		CHECK_MESSAGE(result.command_path == expected_path, label);
+	}
+}
+
+TEST_CASE("[FoundryCLIHelp] Every documented option is accepted by its parser") {
+	int command_count = 0;
+	const FoundryCLIHelp::CommandSpec *commands = FoundryCLIHelp::get_commands(command_count);
+	for (int i = 0; i < command_count; i++) {
+		const FoundryCLIHelp::CommandSpec &spec = commands[i];
+		for (int option_index = 0; option_index < spec.option_count; option_index++) {
+			const FoundryCLIHelp::CommandOption &option = spec.options[option_index];
+			PackedStringArray args = drift_base_args(spec);
+			if (!option.required) {
+				drift_append_option(args, option);
+			}
+			FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(args);
+			REQUIRE_MESSAGE(result.ok, (String(spec.noun) + " " + spec.verb + " " + option.flag + ": " + result.error));
+		}
+	}
+}
+
 } // namespace TestFoundryCLIHelp
