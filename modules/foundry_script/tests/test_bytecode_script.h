@@ -860,7 +860,7 @@ static void bytecode_write_remap_file(const String &p_source_path, const String 
 	file->store_string(vformat("[remap]\n\npath=\"%s\"\n", p_target_path));
 }
 
-TEST_CASE("[FoundryScript][BytecodeCache] ResourceLoader loads a .fsb end-to-end with dependencies and statistics") {
+TEST_CASE("[FoundryScript][BytecodeCache] ResourceLoader loads a .fsb end-to-end with dependencies and static variables") {
 	const String helper_path = TestUtils::get_temp_path("test_bytecode_cache_helper.fs");
 	{
 		Ref<FileAccess> helper_file = FileAccess::open(helper_path, FileAccess::WRITE);
@@ -919,12 +919,15 @@ func use_helper() -> String:
 
 	// The test harness never runs FSLanguage::finish(), which is what breaks the reference cycles
 	// scripts with static state keep through themselves; clear the fixtures explicitly so their
-	// compiled functions do not outlive language shutdown.
+	// compiled functions do not outlive language shutdown, and evict the helper so no fixture
+	// state leaks into other suites.
 	FSCache::remove_static_script(loaded->get_fully_qualified_name());
 	FSCache::remove_script(binary_path);
 	FSCache::remove_script(original->get_script_path());
+	FSCache::remove_script(helper_path);
 	loaded->clear();
 	original->clear();
+	DirAccess::remove_absolute(binary_path);
 }
 
 TEST_CASE("[FoundryScript][BytecodeCache] A remapped .fs path loads its .fsb and refuses the parser") {
@@ -970,7 +973,11 @@ func ping() -> String:
 	CHECK(updated == loaded);
 	CHECK(loaded->is_valid());
 
+	// Evict the loaded script and the ERR_UNAVAILABLE parser entry, and drop the fixture files, so
+	// no cache or disk state leaks into other suites.
+	FSCache::remove_script(source_path);
 	DirAccess::remove_absolute(source_path + ".remap");
+	DirAccess::remove_absolute(binary_path);
 }
 
 TEST_CASE("[FoundryScript][BytecodeCache] Cyclic .fsb preloads publish before linking and both load") {

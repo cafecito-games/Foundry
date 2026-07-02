@@ -76,6 +76,8 @@ Error FSParserRef::raise_status(Status p_new_status) {
 				// Compiled binaries carry no parsable source; the parser and analyzer must never
 				// touch them. Bytecode-backed scripts load through FSBytecodeLoader instead.
 				if (remapped_path.has_extension("fsb")) {
+					// Not a dead store: `result` persists across raise_status re-entries and the
+					// `while (result == OK ...)` condition reads it, so later calls fail fast too.
 					result = ERR_UNAVAILABLE;
 					ERR_FAIL_V_MSG(ERR_UNAVAILABLE,
 							vformat("Cannot parse compiled Foundry Script binary '%s'; it can only be loaded as a script resource.", remapped_path));

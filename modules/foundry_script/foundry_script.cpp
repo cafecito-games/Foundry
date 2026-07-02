@@ -1056,6 +1056,9 @@ void FoundryScript::_restore_old_static_data() {
 #endif
 
 Error FoundryScript::reload(bool p_keep_state) {
+	// Also the cycle terminator for bytecode-backed (`.fsb`) links: returning OK (not an error) lets
+	// FSCache::get_full_script publish this script's invalid-but-error-free shell, which
+	// FSBytecodeCacheResolver deliberately accepts so mutually preloading scripts can link.
 	if (reloading) {
 		return OK;
 	}
