@@ -81,7 +81,7 @@ Per `FSFunction` (`fs_function.h`): `code`, `constants` (tagged encoder, below),
 - Whole-corpus mode: parameterize the existing fixture corpus (`modules/foundry_script/tests/scripts/`) through compile → serialize → load → run, diffing the same `.out` files — mirroring the existing `--use-binary-tokens` mechanism in the test runner.
 - Cache/loader integration: cycles, `get_dependencies`, `reload()` guard, conformance re-registration, threaded loads.
 - Hardening: corrupt-input tests against the link-time verifier; an assertion that a produced `.fsb` contains no source text or local/parameter identifier bytes; a format-version pin test (pattern: the `TOKENIZER_VERSION` pin).
-- End-to-end: export a test project; confirm the PCK contains only `.fsb` (no `.fs`/`.fsc`), the game runs with signals/exports/RPC/statistics/lambdas/traits intact, and a scene with a built-in script fails the export.
+- End-to-end: export a test project; confirm the PCK contains only `.fsb` (no `.fs`/`.fsc`), the game runs with signals/exports/RPC/static variables/lambdas/traits intact, and a scene with a built-in script fails the export.
 
 ## Out of scope / follow-ups
 
