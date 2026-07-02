@@ -1263,6 +1263,102 @@ Error FoundryScript::reload(bool p_keep_state) {
 #endif // FOUNDRY_SCRIPT_NO_FRONTEND
 }
 
+void FoundryScript::_erase_function_lambda_info(FoundryScript *p_script, FSFunction *p_function) {
+	if (p_script == nullptr || p_function == nullptr) {
+		return;
+	}
+	p_script->lambda_info.erase(p_function);
+	for (FSFunction *lambda : p_function->lambdas) {
+		FoundryScript *lambda_script = Object::cast_to<FoundryScript>(lambda->get_script());
+		_erase_function_lambda_info(lambda_script != nullptr ? lambda_script : p_script, lambda);
+	}
+}
+
+void FoundryScript::_clear_partial_bytecode_link_state() {
+	for (KeyValue<StringName, Ref<FoundryScript>> &subclass : subclasses) {
+		subclass.value->_clear_partial_bytecode_link_state();
+	}
+
+	{
+		MutexLock lock(func_ptrs_to_update_mutex);
+		for (UpdatableFuncPtr *updatable : func_ptrs_to_update) {
+			updatable->ptr = nullptr;
+		}
+	}
+
+	RBSet<FSFunction *> functions_to_delete;
+
+	if (!registered_conformance_source.is_empty()) {
+		FSConformanceRegistry::get_singleton()->clear_runtime_witnesses(registered_conformance_source);
+		registered_conformance_source = String();
+	}
+	for (FSFunction *witness : witness_functions) {
+		FoundryScript *target_script = Object::cast_to<FoundryScript>(witness->get_script());
+		_erase_function_lambda_info(target_script, witness);
+		functions_to_delete.insert(witness);
+	}
+	witness_functions.clear();
+	witness_target_scripts.clear();
+
+	for (const KeyValue<StringName, FSFunction *> &entry : member_functions) {
+		_erase_function_lambda_info(this, entry.value);
+		functions_to_delete.insert(entry.value);
+	}
+	member_functions.clear();
+
+	if (implicit_initializer != nullptr) {
+		_erase_function_lambda_info(this, implicit_initializer);
+		functions_to_delete.insert(implicit_initializer);
+		implicit_initializer = nullptr;
+	}
+	if (implicit_ready != nullptr) {
+		_erase_function_lambda_info(this, implicit_ready);
+		functions_to_delete.insert(implicit_ready);
+		implicit_ready = nullptr;
+	}
+	if (static_initializer != nullptr) {
+		_erase_function_lambda_info(this, static_initializer);
+		functions_to_delete.insert(static_initializer);
+		static_initializer = nullptr;
+	}
+	initializer = nullptr;
+
+	for (KeyValue<StringName, MemberInfo> &entry : member_indices) {
+		entry.value.data_type.script_type_ref = Ref<Script>();
+		entry.value.type_argument_binding.fixed.script_type_ref = Ref<Script>();
+	}
+	for (KeyValue<FoundryScript *, Vector<TypeArgumentBinding>> &entry : type_parameter_bindings_by_ancestor) {
+		for (TypeArgumentBinding &binding : entry.value) {
+			binding.fixed.script_type_ref = Ref<Script>();
+		}
+	}
+
+	member_indices.clear();
+	members.clear();
+	member_type_argument_bindings.clear();
+	static_variables.clear();
+	static_variables_indices.clear();
+	constants.clear();
+	_signals.clear();
+	script_trait_list.clear();
+	abstract_trait_requirements.clear();
+	type_parameters.clear();
+	type_parameter_bindings_by_ancestor.clear();
+	rpc_config.clear();
+	class_annotations.clear();
+	method_annotations.clear();
+	variable_annotations.clear();
+	signal_annotations.clear();
+	constant_annotations.clear();
+	method_parameter_annotations.clear();
+	signal_parameter_annotations.clear();
+	lambda_info.clear();
+
+	for (FSFunction *function : functions_to_delete) {
+		memdelete(function);
+	}
+}
+
 Error FoundryScript::_reload_from_compiled_binary() {
 	String binary_path = path;
 	if (binary_path.is_empty()) {
@@ -1277,15 +1373,10 @@ Error FoundryScript::_reload_from_compiled_binary() {
 		return ERR_FILE_CANT_READ;
 	}
 
-	// A prior link attempt that failed partway leaves functions registered on this script. Re-running
-	// load_full over that residue would trip the duplicate-function guard deep in the reader and
-	// surface as a misleading "corrupt input" error, and would otherwise risk linking fresh state on
-	// top of stale state. A fresh script (the normal first load) has no members yet, so a populated
-	// member map here means exactly that partial residue; fail with an accurate diagnostic instead of
-	// letting the reader mislabel it. (A full, safe teardown-and-relink of a partially-linked class
-	// graph — including inner classes — is a larger change tracked separately.)
-	ERR_FAIL_COND_V_MSG(!member_functions.is_empty(), ERR_ALREADY_IN_USE,
-			vformat("Cannot re-link compiled script '%s': a previous load left it partially linked.", binary_path));
+	// A prior link attempt that failed partway leaves body/witness state on this script and its inner
+	// classes. Tear that residue down so the retry reads a clean shell, mirroring what the text reload
+	// path does before recompiling.
+	_clear_partial_bytecode_link_state();
 
 	FSBytecodeCacheResolver resolver(binary_path);
 	FSBytecodeLoader loader;
