@@ -1597,9 +1597,6 @@ void EditorNode::_reload_project_settings() {
 	ProjectSettings::get_singleton()->setup(ProjectSettings::get_singleton()->get_resource_path(), String(), true, true);
 }
 
-void EditorNode::_vp_resized() {
-}
-
 void EditorNode::_viewport_resized() {
 	Window *w = get_window();
 	if (w) {
@@ -5310,15 +5307,6 @@ void EditorNode::_instantiate_request(const Vector<String> &p_files) {
 	request_instantiate_scenes(p_files);
 }
 
-void EditorNode::_close_messages() {
-	old_split_ofs = center_split->get_split_offset();
-	center_split->set_split_offset(0);
-}
-
-void EditorNode::_show_messages() {
-	center_split->set_split_offset(old_split_ofs);
-}
-
 void EditorNode::_update_prev_closed_scenes(const String &p_scene_path, bool p_add_scene) {
 	if (!p_scene_path.is_empty()) {
 		if (p_add_scene) {
@@ -6775,10 +6763,6 @@ void EditorNode::update_distraction_free_button_theme() {
 		distraction_free->set_theme_type_variation("BottomPanelButton");
 		distraction_free->remove_theme_style_override(SceneStringName(pressed));
 	}
-}
-
-void EditorNode::set_center_split_offset(int p_offset) {
-	center_split->set_split_offset(p_offset);
 }
 
 Dictionary EditorNode::drag_resource(const Ref<Resource> &p_res, Control *p_from) {
@@ -8455,10 +8439,6 @@ void EditorNode::_update_main_menu_type() {
 	}
 }
 
-void EditorNode::_bottom_panel_resized() {
-	bottom_panel->set_bottom_panel_offset(center_split->get_split_offset());
-}
-
 #ifdef ANDROID_ENABLED
 void EditorNode::_touch_actions_panel_mode_changed() {
 	int panel_mode = EDITOR_GET("interface/touchscreen/touch_actions_panel");
@@ -8893,13 +8873,10 @@ EditorNode::EditorNode() {
 	center_vb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	main_hsplit->add_child(center_vb);
 
-	center_split = memnew(DockSplitContainer);
-	center_split->set_name("DockVSplitCenter");
-	center_split->set_vertical(true);
-	center_split->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	center_split->set_collapsed(true);
-	center_vb->add_child(center_split);
-	center_split->connect("drag_ended", callable_mp(this, &EditorNode::_bottom_panel_resized));
+	center_overlay = memnew(Control);
+	center_overlay->set_name("CenterOverlay");
+	center_overlay->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	center_vb->add_child(center_overlay);
 
 	right_l_vsplit = memnew(DockSplitContainer);
 	right_l_vsplit->set_name("DockVSplitRightL");
@@ -8950,8 +8927,8 @@ EditorNode::EditorNode() {
 	add_child(scan_changes_timer);
 
 	top_split = memnew(VSplitContainer);
-	center_split->add_child(top_split);
-	top_split->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	center_overlay->add_child(top_split);
+	top_split->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 	top_split->set_collapsed(true);
 
 	VBoxContainer *srt = memnew(VBoxContainer);
@@ -9333,7 +9310,7 @@ EditorNode::EditorNode() {
 
 	{
 		Dictionary offsets;
-		offsets["Audio"] = -450;
+		offsets["Audio"] = 450;
 		default_layout->set_value(EDITOR_NODE_CONFIG_SECTION, "bottom_panel_offsets", offsets);
 	}
 
@@ -9344,13 +9321,13 @@ EditorNode::EditorNode() {
 	bottom_panel = memnew(EditorBottomPanel);
 	editor_dock_manager->register_dock_slot(DockConstants::DOCK_SLOT_BOTTOM, bottom_panel, DockConstants::DOCK_LAYOUT_HORIZONTAL);
 	bottom_panel->set_theme_type_variation("BottomPanel");
-	center_split->add_child(bottom_panel);
-	center_split->set_dragger_visibility(SplitContainer::DRAGGER_HIDDEN);
+	center_overlay->add_child(bottom_panel);
+	bottom_panel->set_anchors_and_offsets_preset(Control::PRESET_BOTTOM_WIDE);
+	bottom_panel->set_v_grow_direction(Control::GROW_DIRECTION_BEGIN);
+	center_overlay->connect(SceneStringName(resized), callable_mp(bottom_panel, &EditorBottomPanel::update_drawer_geometry));
 
 	log = memnew(EditorLog);
 	editor_dock_manager->add_dock(log);
-
-	center_split->connect(SceneStringName(resized), callable_mp(this, &EditorNode::_vp_resized));
 
 	native_shader_source_visualizer = memnew(EditorNativeShaderSourceVisualizer);
 	gui_base->add_child(native_shader_source_visualizer);

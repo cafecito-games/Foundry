@@ -50,6 +50,11 @@ class EditorBottomPanel : public TabContainer {
 
 	int previous_tab = -1;
 	bool lock_panel_switching = false;
+	bool drawer_expanded = false;
+	bool grabber_dragging = false;
+	int drag_start_body_height = 0;
+	float drag_start_mouse_y = 0.0f;
+	Control *grabber = nullptr;
 	LocalVector<EditorDock *> bottom_docks;
 	HashMap<String, int> dock_offsets;
 
@@ -60,7 +65,11 @@ class EditorBottomPanel : public TabContainer {
 	void _on_tab_changed(int p_idx);
 	void _pin_button_toggled(bool p_pressed);
 	void _expand_button_toggled(bool p_pressed);
-	void _update_center_split_offset();
+	int _get_strip_height() const;
+	int _get_body_height() const;
+	void _set_body_height(int p_height);
+	void _update_drawer_geometry();
+	void _grabber_input(const Ref<InputEvent> &p_event);
 	EditorDock *_get_dock_from_control(Control *p_control) const;
 
 protected:
@@ -79,8 +88,7 @@ public:
 	void _theme_changed();
 	bool is_locked() const { return lock_panel_switching; }
 
-	void set_bottom_panel_offset(int p_offset);
-	int get_bottom_panel_offset();
+	void update_drawer_geometry();
 
 	EditorBottomPanel();
 	~EditorBottomPanel();

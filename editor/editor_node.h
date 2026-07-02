@@ -305,7 +305,7 @@ private:
 	DockSplitContainer *main_hsplit = nullptr;
 	DockSplitContainer *right_l_vsplit = nullptr;
 	DockSplitContainer *right_r_vsplit = nullptr;
-	DockSplitContainer *center_split = nullptr;
+	Control *center_overlay = nullptr;
 
 	// Main tabs.
 	EditorSceneTabs *scene_tabs = nullptr;
@@ -319,7 +319,6 @@ private:
 	bool dimmed = false;
 
 	DisplayServer::WindowMode prev_mode = DisplayServer::WINDOW_MODE_MAXIMIZED;
-	int old_split_ofs = 0;
 	VSplitContainer *top_split = nullptr;
 	Control *vp_base = nullptr;
 
@@ -577,9 +576,6 @@ private:
 	void _update_title();
 	void _update_unsaved_cache();
 	void _version_control_menu_option(int p_idx);
-	void _close_messages();
-	void _show_messages();
-	void _vp_resized();
 	void _titlebar_resized();
 	void _viewport_resized();
 
@@ -731,8 +727,6 @@ private:
 	void _update_main_menu_type();
 	void _add_to_main_menu(const String &p_name, PopupMenu *p_menu);
 
-	void _bottom_panel_resized();
-
 protected:
 	friend class FileSystemDock;
 
@@ -758,7 +752,6 @@ public:
 
 	static EditorTitleBar *get_title_bar() { return singleton->title_bar; }
 	static VSplitContainer *get_top_split() { return singleton->top_split; }
-	static DockSplitContainer *get_center_split() { return singleton->center_split; }
 	static EditorBottomPanel *get_bottom_panel() { return singleton->bottom_panel; }
 	static EditorMainScreen *get_editor_main_screen() { return singleton->editor_main_screen; }
 
@@ -818,8 +811,6 @@ public:
 	void set_distraction_free_mode(bool p_enter);
 	bool is_distraction_free_mode_enabled() const;
 	void update_distraction_free_button_theme();
-
-	void set_center_split_offset(int p_offset);
 
 	void set_addon_plugin_enabled(const String &p_addon, bool p_enabled, bool p_config_changed = false);
 	bool is_addon_plugin_enabled(const String &p_addon) const;

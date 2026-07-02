@@ -35,10 +35,12 @@
 #include "editor/docks/editor_dock_manager.h"
 #include "editor/editor_node.h"
 #include "editor/editor_string_names.h"
+#include "editor/gui/bottom_drawer_geometry.h"
 #include "editor/gui/editor_toaster.h"
 #include "editor/gui/editor_version_button.h"
 #include "editor/scene/editor_scene_tabs.h"
 #include "editor/settings/editor_command_palette.h"
+#include "editor/themes/editor_scale.h"
 #include "scene/gui/box_container.h"
 #include "scene/gui/button.h"
 #include "scene/gui/separator.h"
@@ -53,13 +55,16 @@ void EditorBottomPanel::_notification(int p_what) {
 		case NOTIFICATION_THEME_CHANGED: {
 			pin_button->set_button_icon(get_editor_theme_icon(SNAME("Pin")));
 			expand_button->set_button_icon(get_editor_theme_icon(SNAME("ExpandBottomDock")));
+			_update_drawer_geometry();
 		} break;
 	}
 }
 
 void EditorBottomPanel::_on_tab_changed(int p_idx) {
-	_update_center_split_offset();
+	// Repaint first: it swaps the panel stylebox override between the open and
+	// collapsed styles, which the drawer geometry depends on.
 	_repaint();
+	_update_drawer_geometry();
 }
 
 void EditorBottomPanel::_theme_changed() {
@@ -85,19 +90,101 @@ void EditorBottomPanel::_theme_changed() {
 	}
 }
 
-void EditorBottomPanel::set_bottom_panel_offset(int p_offset) {
-	EditorDock *current_tab = Object::cast_to<EditorDock>(get_current_tab_control());
-	if (current_tab) {
-		dock_offsets[current_tab->get_effective_layout_key()] = p_offset;
+int EditorBottomPanel::_get_strip_height() const {
+	int height = get_tab_bar()->get_combined_minimum_size().height;
+	Ref<StyleBox> tabbar_style = get_theme_stylebox(SNAME("tabbar_background"));
+	if (tabbar_style.is_valid()) {
+		height += tabbar_style->get_minimum_size().height;
 	}
+	// TabContainer's minimum size also includes the panel stylebox, which
+	// differs between the open and collapsed states; without it the anchored
+	// rect falls below the minimum and the strip grows past the overlay edge.
+	Ref<StyleBox> panel_style = get_theme_stylebox(SceneStringName(panel));
+	if (panel_style.is_valid()) {
+		height += panel_style->get_minimum_size().height;
+	}
+	return height;
 }
 
-int EditorBottomPanel::get_bottom_panel_offset() {
-	EditorDock *current_tab = Object::cast_to<EditorDock>(get_current_tab_control());
-	if (current_tab) {
-		return dock_offsets[current_tab->get_effective_layout_key()];
+int EditorBottomPanel::_get_body_height() const {
+	Control *tab_control = get_current_tab_control();
+	if (!tab_control) {
+		return 0;
 	}
-	return 0;
+	const int min_body = tab_control->get_combined_minimum_size().height;
+	int stored = min_body;
+	EditorDock *dock = Object::cast_to<EditorDock>(tab_control);
+	if (dock) {
+		HashMap<String, int>::ConstIterator E = dock_offsets.find(dock->get_effective_layout_key());
+		if (E) {
+			stored = E->value;
+		}
+	}
+	Control *area = get_parent_control();
+	const int area_height = area ? area->get_size().height : stored + _get_strip_height();
+	return BottomDrawerGeometry::clamp_body_height(stored, min_body, _get_strip_height(), area_height);
+}
+
+void EditorBottomPanel::_set_body_height(int p_height) {
+	EditorDock *dock = Object::cast_to<EditorDock>(get_current_tab_control());
+	if (!dock) {
+		return;
+	}
+	Control *area = get_parent_control();
+	const int area_height = area ? area->get_size().height : p_height + _get_strip_height();
+	const int min_body = get_current_tab_control()->get_combined_minimum_size().height;
+	dock_offsets[dock->get_effective_layout_key()] = BottomDrawerGeometry::clamp_body_height(p_height, min_body, _get_strip_height(), area_height);
+	_update_drawer_geometry();
+}
+
+void EditorBottomPanel::update_drawer_geometry() {
+	_update_drawer_geometry();
+}
+
+void EditorBottomPanel::_update_drawer_geometry() {
+	Control *area = get_parent_control();
+	if (!area) {
+		return;
+	}
+	const bool open = get_current_tab() != -1;
+	const int strip_height = _get_strip_height();
+	const int area_height = area->get_size().height;
+	const int body_height = open ? _get_body_height() : 0;
+
+	const int drawer_height = BottomDrawerGeometry::drawer_height(open, drawer_expanded, strip_height, body_height, area_height);
+	set_offset(SIDE_TOP, -drawer_height);
+
+	const bool pinned = false;
+	const int inset = BottomDrawerGeometry::workspace_inset(open, pinned, drawer_expanded, strip_height, body_height, area_height);
+	VSplitContainer *top_split = EditorNode::get_top_split();
+	if (top_split) {
+		top_split->set_offset(SIDE_BOTTOM, -inset);
+	}
+
+	const int grabber_height = 6 * EDSCALE;
+	grabber->set_size(Vector2(area->get_size().width, grabber_height));
+	grabber->set_global_position(area->get_global_position() + Vector2(0, area_height - drawer_height));
+	grabber->set_visible(open && !drawer_expanded);
+}
+
+void EditorBottomPanel::_grabber_input(const Ref<InputEvent> &p_event) {
+	Ref<InputEventMouseButton> mb = p_event;
+	if (mb.is_valid() && mb->get_button_index() == MouseButton::LEFT) {
+		if (mb->is_pressed()) {
+			grabber_dragging = true;
+			drag_start_mouse_y = grabber->get_global_position().y + mb->get_position().y;
+			drag_start_body_height = _get_body_height();
+		} else {
+			grabber_dragging = false;
+			EditorNode::get_singleton()->save_editor_layout_delayed();
+		}
+	}
+
+	Ref<InputEventMouseMotion> mm = p_event;
+	if (mm.is_valid() && grabber_dragging) {
+		const float mouse_y = grabber->get_global_position().y + mm->get_position().y;
+		_set_body_height(drag_start_body_height + int(drag_start_mouse_y - mouse_y));
+	}
 }
 
 void EditorBottomPanel::_repaint() {
@@ -112,12 +199,6 @@ void EditorBottomPanel::_repaint() {
 		return;
 	}
 	previous_tab = get_current_tab();
-
-	DockSplitContainer *center_split = EditorNode::get_center_split();
-	ERR_FAIL_NULL(center_split);
-
-	center_split->set_dragger_visibility(panel_collapsed ? SplitContainer::DRAGGER_HIDDEN : SplitContainer::DRAGGER_VISIBLE);
-	center_split->set_collapsed(panel_collapsed);
 
 	pin_button->set_visible(!panel_collapsed);
 	expand_button->set_visible(!panel_collapsed);
@@ -141,9 +222,9 @@ void EditorBottomPanel::load_layout_from_config(Ref<ConfigFile> p_config_file, c
 	const LocalVector<Variant> offset_list = offsets.get_key_list();
 
 	for (const Variant &v : offset_list) {
-		dock_offsets[v] = offsets[v];
+		dock_offsets[v] = BottomDrawerGeometry::body_height_from_stored(offsets[v], 0);
 	}
-	_update_center_split_offset();
+	_update_drawer_geometry();
 }
 
 void EditorBottomPanel::make_item_visible(Control *p_item, bool p_visible, bool p_ignore_lock) {
@@ -174,7 +255,8 @@ void EditorBottomPanel::set_expanded(bool p_expanded) {
 }
 
 void EditorBottomPanel::_expand_button_toggled(bool p_pressed) {
-	EditorNode::get_top_split()->set_visible(!p_pressed);
+	drawer_expanded = p_pressed;
+	_update_drawer_geometry();
 
 	Button *distraction_free = EditorNode::get_singleton()->get_distraction_free_button();
 	distraction_free->set_meta("_scene_tabs_owned", !p_pressed);
@@ -187,13 +269,6 @@ void EditorBottomPanel::_expand_button_toggled(bool p_pressed) {
 		EditorSceneTabs::get_singleton()->add_extra_button(distraction_free);
 	}
 	_theme_changed();
-}
-
-void EditorBottomPanel::_update_center_split_offset() {
-	DockSplitContainer *center_split = EditorNode::get_center_split();
-	ERR_FAIL_NULL(center_split);
-
-	center_split->set_split_offset(get_bottom_panel_offset());
 }
 
 EditorDock *EditorBottomPanel::_get_dock_from_control(Control *p_control) const {
@@ -251,6 +326,16 @@ EditorBottomPanel::EditorBottomPanel() {
 	get_tab_bar()->connect("tab_changed", callable_mp(this, &EditorBottomPanel::_on_tab_changed));
 	set_tabs_position(TabPosition::POSITION_BOTTOM);
 	set_deselect_enabled(true);
+
+	grabber = memnew(Control);
+	grabber->set_name("DrawerGrabber");
+	// Top-level so the TabContainer base does not treat the grabber as a tab page.
+	// Its rect is driven manually from _update_drawer_geometry to track the drawer's top edge.
+	grabber->set_as_top_level(true);
+	add_child(grabber, false, Node::INTERNAL_MODE_BACK);
+	grabber->set_default_cursor_shape(Control::CURSOR_VSIZE);
+	grabber->hide();
+	grabber->connect(SceneStringName(gui_input), callable_mp(this, &EditorBottomPanel::_grabber_input));
 
 	bottom_hbox = memnew(HBoxContainer);
 	bottom_hbox->set_mouse_filter(MOUSE_FILTER_IGNORE);
