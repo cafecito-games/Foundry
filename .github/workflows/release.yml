@@ -352,14 +352,41 @@ jobs:
           NOTARIZE_ZIP="$RUNNER_TEMP/notarize.zip"
           ditto -c -k --keepParent "$APP_DIR" "$NOTARIZE_ZIP"
 
+          fetch_notary_log() {
+            local submission_id="$1"
+            if [ -z "$submission_id" ]; then
+              return
+            fi
+            echo "::group::Notary log for submission $submission_id"
+            xcrun notarytool log "$submission_id" \
+              --key "$API_KEY_PATH" \
+              --key-id "$APPLE_API_KEY_ID" \
+              --issuer "$APPLE_API_ISSUER" || true
+            echo "::endgroup::"
+          }
+
+          SUBMIT_JSON="$RUNNER_TEMP/notarytool_submit.json"
+          # notarytool exits 0 even when the submission is processed as Invalid,
+          # so success must be judged from the reported status, not the exit code.
           xcrun notarytool submit "$NOTARIZE_ZIP" \
             --key "$API_KEY_PATH" \
             --key-id "$APPLE_API_KEY_ID" \
             --issuer "$APPLE_API_ISSUER" \
-            --wait
+            --wait \
+            --output-format json | tee "$SUBMIT_JSON"
+
+          SUBMISSION_ID="$(python3 -c "import json; print(json.load(open('$SUBMIT_JSON')).get('id', ''))")"
+          STATUS="$(python3 -c "import json; print(json.load(open('$SUBMIT_JSON')).get('status', ''))")"
+
+          if [ "$STATUS" != "Accepted" ]; then
+            fetch_notary_log "$SUBMISSION_ID"
+            rm -f "$API_KEY_PATH" "$NOTARIZE_ZIP" "$SUBMIT_JSON"
+            echo "::error::Notarization status was '$STATUS' (expected Accepted); see the notary log above for the rejection reason."
+            exit 1
+          fi
 
           xcrun stapler staple "$APP_DIR"
-          rm -f "$API_KEY_PATH" "$NOTARIZE_ZIP"
+          rm -f "$API_KEY_PATH" "$NOTARIZE_ZIP" "$SUBMIT_JSON"
 
       - name: Remove signing keychain
         if: always()

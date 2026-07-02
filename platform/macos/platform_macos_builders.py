@@ -69,7 +69,7 @@ def generate_bundle(target, source, env):
             else:
                 sign_command += [env.Dir("#misc/dist/macos").abspath + "/editor.entitlements"]
             sign_command += [app_dir]
-            subprocess.run(sign_command)
+            subprocess.run(sign_command, check=True)
 
     else:
         # Template bundle.
