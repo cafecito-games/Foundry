@@ -373,12 +373,21 @@ TEST_CASE("[Modules][FoundryScript][Lint] Project files report resource and rela
 	TemporaryLintTree tree("fs_lint_project_paths");
 	tree.write_file("project.foundry", "");
 	tree.write_file("scripts/bad.fs", source);
-	ScopedResourcePath resource_path_scope(tree.root);
+	const String raw_root = tree.root + "_raw_alias";
+
+	Ref<DirAccess> dir = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+	REQUIRE(dir.is_valid());
+	REQUIRE_EQ(dir->change_dir(tree.root), OK);
+	const String canonical_root = dir->get_current_dir();
+	DirAccess::remove_absolute(raw_root);
+	REQUIRE_EQ(dir->create_link(canonical_root, raw_root), OK);
+	ScopedResourcePath resource_path_scope(canonical_root);
 
 	Vector<String> paths;
-	paths.push_back(tree.root.path_join("scripts"));
+	paths.push_back(raw_root.path_join("scripts"));
 	FSLintCLI::Options options;
 	const FSLintCLI::Result result = FSLintCLI::lint_paths(paths, options);
+	DirAccess::remove_absolute(raw_root);
 
 	CHECK_FALSE(result.had_command_error);
 	const FSLintCLI::Diagnostic *diagnostic = find_diagnostic(result, "parse-error");

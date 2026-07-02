@@ -64,12 +64,67 @@ FSLintCLI::Range make_range(const Vector<String> &p_lines, int p_line, int p_col
 	return range;
 }
 
+String get_canonical_dir(const String &p_dir) {
+	Ref<DirAccess> dir = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+	if (dir.is_null() || dir->change_dir(p_dir) != OK) {
+		return String();
+	}
+	return dir->get_current_dir().replace_char('\\', '/').simplify_path();
+}
+
+String localize_existing_absolute_file(
+		const String &p_file,
+		const String &p_localized,
+		const ProjectSettings *p_project_settings) {
+	if (!p_localized.is_absolute_path() || !FileAccess::exists(p_file)) {
+		return p_localized;
+	}
+
+	const String resource_path = p_project_settings->get_resource_path();
+	if (resource_path.is_empty()) {
+		return p_localized;
+	}
+
+	const String canonical_resource_root = get_canonical_dir(resource_path);
+	if (canonical_resource_root.is_empty()) {
+		return p_localized;
+	}
+
+	Ref<DirAccess> dir = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+	if (dir.is_null()) {
+		return p_localized;
+	}
+
+	Vector<String> relative_parts;
+	String current_dir = p_file.get_base_dir().replace_char('\\', '/').simplify_path();
+	while (!current_dir.is_empty()) {
+		if (dir->is_equivalent(current_dir, canonical_resource_root)) {
+			String relative_path;
+			for (int i = relative_parts.size() - 1; i >= 0; i--) {
+				relative_path = relative_path.path_join(relative_parts[i]);
+			}
+			relative_path = relative_path.path_join(p_file.get_file());
+			return String("res://").path_join(relative_path);
+		}
+
+		const String parent_dir = current_dir.get_base_dir();
+		if (parent_dir == current_dir) {
+			break;
+		}
+		relative_parts.push_back(current_dir.get_file());
+		current_dir = parent_dir;
+	}
+
+	return p_localized;
+}
+
 String get_report_path(const String &p_file) {
 	ProjectSettings *project_settings = ProjectSettings::get_singleton();
 	if (project_settings == nullptr) {
 		return p_file;
 	}
-	return project_settings->localize_path(p_file);
+	const String localized = project_settings->localize_path(p_file);
+	return localize_existing_absolute_file(p_file, localized, project_settings);
 }
 
 String get_sarif_path(const String &p_report_path) {
