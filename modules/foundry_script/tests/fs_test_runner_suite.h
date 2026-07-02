@@ -66,6 +66,14 @@ TEST_SUITE("[Modules][FoundryScript]") {
 		INFO("Make sure `*.out` files have expected results.");
 		REQUIRE_MESSAGE(fail_count == 0, "All FoundryScript tests should pass.");
 	}
+
+	TEST_CASE("Script compilation and runtime with compiled bytecode round-trip") {
+		bool print_filenames = OS::get_singleton()->get_cmdline_args().find("--print-filenames") != nullptr;
+		FSTestRunner runner("modules/foundry_script/tests/scripts", true, print_filenames, false, true);
+		int fail_count = runner.run_tests();
+		INFO("Make sure `*.out` files have expected results.");
+		REQUIRE_MESSAGE(fail_count == 0, "All FoundryScript tests should pass when round-tripped through compiled bytecode.");
+	}
 }
 #endif // TOOLS_ENABLED
 

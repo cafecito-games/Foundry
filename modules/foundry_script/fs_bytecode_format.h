@@ -66,8 +66,8 @@ public:
 
 	enum VariantTag : uint8_t {
 		TAG_INLINE_VARIANT, // encode_variant payload, full_objects = false.
-		TAG_ARRAY, // Element-wise recursion (typed metadata included).
-		TAG_DICTIONARY, // Element-wise recursion (typed metadata included).
+		TAG_ARRAY, // Read-only flag, then element-wise recursion (typed metadata included).
+		TAG_DICTIONARY, // Read-only flag, then element-wise recursion (typed metadata included).
 		TAG_SCRIPT_REF, // Foundry Script reference as (path, fully qualified class name).
 		TAG_EXTERNAL_SCRIPT, // Non-Foundry Script reference as (path, empty fully qualified name).
 		TAG_EXTERNAL_RESOURCE, // Resource reference as (path); property data is never serialized.
@@ -75,6 +75,10 @@ public:
 		TAG_ENGINE_SINGLETON, // Engine singleton object as (singleton name).
 		TAG_SPECIALIZED_HANDLE, // FSSpecializedClassHandle as (script reference, type arguments).
 		TAG_NULL_OBJECT, // Object-typed null (e.g. the script slot of a typed-container descriptor).
+		TAG_DEFAULT_VALUE, // Default-constructed value as (Variant type); the process-bound types (Callable, Signal, RID) have a portable empty value.
+		TAG_UTILITY_CALLABLE, // Utility-function Callable (FSUtilityCallable) as (function name); rebuilt by name at load.
+		TAG_REFLECTION_SINGLETON, // The language's FSReflection singleton (the `reflection` member of the reflection namespace).
+		TAG_REFLECTION_NAMESPACE, // The language's FSNamespace singleton (the reflection namespace global).
 	};
 
 	enum FixupTable : uint8_t {

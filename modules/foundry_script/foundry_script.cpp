@@ -2714,6 +2714,14 @@ Variant FSLanguage::get_any_global_constant(const StringName &p_name) {
 	ERR_FAIL_V_MSG(Variant(), vformat("Could not find any global constant with name: %s.", p_name));
 }
 
+Ref<FSReflection> FSLanguage::get_reflection_singleton() const {
+	return reflection_singleton;
+}
+
+Ref<FSNamespace> FSLanguage::get_namespace_singleton() const {
+	return namespace_singleton;
+}
+
 void FSLanguage::remove_named_global_constant(const StringName &p_name) {
 	ERR_FAIL_COND(!named_globals.has(p_name));
 	named_globals.erase(p_name);
@@ -2833,14 +2841,20 @@ void FSLanguage::finish() {
 
 	// Clear dependencies between scripts, to ensure cyclic references are broken
 	// (to avoid leaks at exit).
-	SelfList<FoundryScript> *s = script_list.first();
-	while (s) {
-		// This ensures the current script is not released before we can check
-		// what's the next one in the list (we can't get the next upfront because we
-		// don't know if the reference breaking will cause it -or any other after
-		// it, for that matter- to be released so the next one is not the same as
-		// before).
-		Ref<FoundryScript> scr = s->self();
+	//
+	// Take a strong reference to every listed script before breaking anything: releasing one
+	// script's references can destroy other scripts (destroying a root script releases its
+	// subclasses), and a destroyed script detaches itself from this intrusive list, nulling its
+	// links. Walking the list while that happens can land the iterator on a detached node,
+	// silently ending the sweep early and leaking uncleared scripts (with their static-variable
+	// state and ResourceCache entries) across a finish()/init() cycle. With every script pinned,
+	// the list stays intact for the whole sweep, and the pinned references are released together
+	// afterwards.
+	LocalVector<Ref<FoundryScript>> scripts_to_clear;
+	for (SelfList<FoundryScript> *s = script_list.first(); s; s = s->next()) {
+		scripts_to_clear.push_back(Ref<FoundryScript>(s->self()));
+	}
+	for (Ref<FoundryScript> &scr : scripts_to_clear) {
 		if (scr.is_valid()) {
 			for (KeyValue<StringName, FSFunction *> &E : scr->member_functions) {
 				FSFunction *func = E.value;
@@ -2867,8 +2881,8 @@ void FSLanguage::finish() {
 			// check
 			scr->clear();
 		}
-		s = s->next();
 	}
+	scripts_to_clear.clear();
 	script_list.clear();
 	function_list.clear();
 

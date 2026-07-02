@@ -942,6 +942,11 @@ public:
 	bool has_any_global_constant(const StringName &p_name) { return named_globals.has(p_name) || globals.has(p_name); }
 	Variant get_any_global_constant(const StringName &p_name);
 
+	// The reflection surface singletons registered by init(); null before init() and after finish().
+	// Defined out of line because only forward declarations of the types are visible here.
+	Ref<FSReflection> get_reflection_singleton() const;
+	Ref<FSNamespace> get_namespace_singleton() const;
+
 	_FORCE_INLINE_ static FSLanguage *get_singleton() { return singleton; }
 
 	virtual String get_name() const override;

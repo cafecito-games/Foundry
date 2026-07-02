@@ -33,6 +33,8 @@
 #include "foundry_script.h"
 #include "fs_conformance_registry.h"
 #include "fs_function.h"
+#include "fs_reflection.h"
+#include "fs_utility_callable.h"
 
 #include "core/config/engine.h"
 #include "core/templates/hash_set.h"
@@ -85,6 +87,9 @@ Error FSBytecodeExporter::encode_variant_tagged(StreamPeerBuffer *r_stream, cons
 		case Variant::ARRAY: {
 			const Array array = p_variant;
 			r_stream->put_u8(FSBytecodeFormat::TAG_ARRAY);
+			// Constants are baked read-only (deeply, each nested container carrying its own flag);
+			// losing the flag would let loaded code mutate values the text path rejects.
+			r_stream->put_u8(array.is_read_only() ? 1 : 0);
 			Error error = _encode_container_type(r_stream, array.get_element_type(), p_depth + 1);
 			if (error != OK) {
 				return error;
@@ -101,6 +106,7 @@ Error FSBytecodeExporter::encode_variant_tagged(StreamPeerBuffer *r_stream, cons
 		case Variant::DICTIONARY: {
 			const Dictionary dictionary = p_variant;
 			r_stream->put_u8(FSBytecodeFormat::TAG_DICTIONARY);
+			r_stream->put_u8(dictionary.is_read_only() ? 1 : 0);
 			Error error = _encode_container_type(r_stream, dictionary.get_key_type(), p_depth + 1);
 			if (error != OK) {
 				return error;
@@ -135,16 +141,40 @@ Error FSBytecodeExporter::encode_variant_tagged(StreamPeerBuffer *r_stream, cons
 			}
 			return _encode_object(r_stream, object, p_depth);
 		} break;
-		// These hold process-local identities (ObjectIDs, server handles); encode_variant would
-		// emit meaningless bytes, so they are rejected outright.
+		// These hold process-local identities (ObjectIDs, server handles) when non-empty;
+		// encode_variant would emit meaningless bytes, so only the portable forms are accepted:
+		// the default-constructed value, and utility-function callables, which are pure names.
 		case Variant::CALLABLE: {
-			ERR_FAIL_V_MSG(ERR_INVALID_PARAMETER, "A Callable cannot be serialized to compiled bytecode.");
+			const Callable callable = p_variant;
+			if (callable.is_null()) {
+				r_stream->put_u8(FSBytecodeFormat::TAG_DEFAULT_VALUE);
+				r_stream->put_u32((uint32_t)Variant::CALLABLE);
+				return OK;
+			}
+			if (const FSUtilityCallable *utility_callable = FSUtilityCallable::get_from_callable(callable)) {
+				r_stream->put_u8(FSBytecodeFormat::TAG_UTILITY_CALLABLE);
+				r_stream->put_u32(string_table.insert(String(utility_callable->get_method())));
+				return OK;
+			}
+			ERR_FAIL_V_MSG(ERR_INVALID_PARAMETER, "A Callable bound to a live target cannot be serialized to compiled bytecode.");
 		} break;
 		case Variant::SIGNAL: {
-			ERR_FAIL_V_MSG(ERR_INVALID_PARAMETER, "A Signal cannot be serialized to compiled bytecode.");
+			const Signal signal = p_variant;
+			if (signal.is_null()) {
+				r_stream->put_u8(FSBytecodeFormat::TAG_DEFAULT_VALUE);
+				r_stream->put_u32((uint32_t)Variant::SIGNAL);
+				return OK;
+			}
+			ERR_FAIL_V_MSG(ERR_INVALID_PARAMETER, "A Signal bound to a live object cannot be serialized to compiled bytecode.");
 		} break;
 		case Variant::RID: {
-			ERR_FAIL_V_MSG(ERR_INVALID_PARAMETER, "An RID cannot be serialized to compiled bytecode.");
+			const ::RID rid = p_variant;
+			if (!rid.is_valid()) {
+				r_stream->put_u8(FSBytecodeFormat::TAG_DEFAULT_VALUE);
+				r_stream->put_u32((uint32_t)Variant::RID);
+				return OK;
+			}
+			ERR_FAIL_V_MSG(ERR_INVALID_PARAMETER, "A live RID cannot be serialized to compiled bytecode.");
 		} break;
 		default: {
 			r_stream->put_u8(FSBytecodeFormat::TAG_INLINE_VARIANT);
@@ -187,6 +217,21 @@ Error FSBytecodeExporter::_encode_object(StreamPeerBuffer *r_stream, Object *p_o
 				return error;
 			}
 		}
+		return OK;
+	}
+	// The reflection surface globals (`foundry` and `foundry.reflection`) are folded into constant
+	// pools by the analyzer; they travel as symbolic tags resolved to the loading process's own
+	// language singletons.
+	if (FSReflection *reflection = Object::cast_to<FSReflection>(p_object)) {
+		ERR_FAIL_COND_V_MSG(reflection != FSLanguage::get_singleton()->get_reflection_singleton().ptr(), ERR_INVALID_PARAMETER,
+				"An FSReflection instance other than the language reflection singleton cannot be serialized to compiled bytecode.");
+		r_stream->put_u8(FSBytecodeFormat::TAG_REFLECTION_SINGLETON);
+		return OK;
+	}
+	if (FSNamespace *namespace_object = Object::cast_to<FSNamespace>(p_object)) {
+		ERR_FAIL_COND_V_MSG(namespace_object != FSLanguage::get_singleton()->get_namespace_singleton().ptr(), ERR_INVALID_PARAMETER,
+				"An FSNamespace instance other than the language namespace singleton cannot be serialized to compiled bytecode.");
+		r_stream->put_u8(FSBytecodeFormat::TAG_REFLECTION_NAMESPACE);
 		return OK;
 	}
 	if (Resource *resource = Object::cast_to<Resource>(p_object)) {
@@ -463,10 +508,16 @@ Error FSBytecodeExporter::serialize_function(StreamPeerBuffer *r_stream, const F
 	}
 
 	r_stream->put_u32((uint32_t)fixups.operators.size());
-	for (const FSFunction::ExportFixups::OperatorKey &key : fixups.operators) {
+	for (int operator_index = 0; operator_index < fixups.operators.size(); operator_index++) {
+		const FSFunction::ExportFixups::OperatorKey &key = fixups.operators[operator_index];
 		r_stream->put_u32((uint32_t)key.op);
 		r_stream->put_u32((uint32_t)key.left_type);
 		r_stream->put_u32((uint32_t)key.right_type);
+		// A validated-operator slot can legitimately hold no evaluator: codegen bakes null for a
+		// statically type-mismatched comparison that only runs behind a runtime type guard (e.g. a
+		// literal match pattern of a different type). Record the fact so the loader reproduces the
+		// null instead of reporting an engine mismatch.
+		r_stream->put_u8(p_function->operator_funcs[operator_index] == nullptr ? 1 : 0);
 	}
 
 	r_stream->put_u32((uint32_t)fixups.setters.size());

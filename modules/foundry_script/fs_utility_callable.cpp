@@ -30,6 +30,19 @@
 
 #include "fs_utility_callable.h"
 
+const FSUtilityCallable *FSUtilityCallable::get_from_callable(const Callable &p_callable) {
+	if (!p_callable.is_custom()) {
+		return nullptr;
+	}
+	const CallableCustom *custom = p_callable.get_custom();
+	// The comparison function pointer doubles as the type witness, the established pattern for
+	// identifying a CallableCustom subclass without RTTI.
+	if (custom == nullptr || custom->get_compare_equal_func() != &FSUtilityCallable::compare_equal) {
+		return nullptr;
+	}
+	return static_cast<const FSUtilityCallable *>(custom);
+}
+
 bool FSUtilityCallable::compare_equal(const CallableCustom *p_a, const CallableCustom *p_b) {
 	return p_a->hash() == p_b->hash();
 }

@@ -33,6 +33,8 @@
 #include "foundry_script.h"
 #include "fs_conformance_registry.h"
 #include "fs_function.h"
+#include "fs_reflection.h"
+#include "fs_utility_callable.h"
 
 #include "core/config/engine.h"
 #include "core/io/marshalls.h"
@@ -197,6 +199,7 @@ Error FSBytecodeLoader::decode_variant_tagged(StreamPeerBuffer *p_stream, Varian
 			return OK;
 		} break;
 		case FSBytecodeFormat::TAG_ARRAY: {
+			const bool read_only = p_stream->get_u8() != 0;
 			ContainerType element_type;
 			Error error = _decode_container_type(p_stream, element_type, p_depth + 1);
 			if (error != OK) {
@@ -218,10 +221,14 @@ Error FSBytecodeLoader::decode_variant_tagged(StreamPeerBuffer *p_stream, Varian
 				}
 				array.push_back(element);
 			}
+			if (read_only) {
+				array.make_read_only();
+			}
 			r_variant = array;
 			return OK;
 		} break;
 		case FSBytecodeFormat::TAG_DICTIONARY: {
+			const bool read_only = p_stream->get_u8() != 0;
 			ContainerType key_type;
 			Error error = _decode_container_type(p_stream, key_type, p_depth + 1);
 			if (error != OK) {
@@ -255,7 +262,31 @@ Error FSBytecodeLoader::decode_variant_tagged(StreamPeerBuffer *p_stream, Varian
 				}
 				dictionary[key] = value;
 			}
+			if (read_only) {
+				dictionary.make_read_only();
+			}
 			r_variant = dictionary;
+			return OK;
+		} break;
+		case FSBytecodeFormat::TAG_DEFAULT_VALUE: {
+			const uint32_t variant_type = p_stream->get_u32();
+			ERR_FAIL_COND_V_MSG(variant_type >= (uint32_t)Variant::VARIANT_MAX, ERR_INVALID_DATA,
+					"Malformed default-value type in compiled script data.");
+			Callable::CallError construct_error;
+			Variant::construct((Variant::Type)variant_type, r_variant, nullptr, 0, construct_error);
+			ERR_FAIL_COND_V_MSG(construct_error.error != Callable::CallError::CALL_OK, ERR_INVALID_DATA,
+					"Malformed default-value type in compiled script data.");
+			return OK;
+		} break;
+		case FSBytecodeFormat::TAG_UTILITY_CALLABLE: {
+			String function_name;
+			const Error error = _get_string(p_stream->get_u32(), function_name);
+			if (error != OK) {
+				return error;
+			}
+			// Rebuilt by name, exactly as the analyzer builds it when folding a utility function
+			// used as a value; the constructor resolves the global/language scope itself.
+			r_variant = Callable(memnew(FSUtilityCallable(StringName(function_name))));
 			return OK;
 		} break;
 		default: {
@@ -298,8 +329,20 @@ Error FSBytecodeLoader::_decode_object(StreamPeerBuffer *p_stream, uint8_t p_tag
 			if (error != OK) {
 				return error;
 			}
-			// FSNativeClass dispatches by name, so a fresh handle is equivalent to the exported one.
-			r_variant = Ref<FSNativeClass>(memnew(FSNativeClass(StringName(class_name))));
+			// Class-handle equality is object identity (`klass == Node` compares against the global),
+			// so the language's canonical handle must be reused when it exists; a fresh handle is
+			// only a fallback for names the running build does not expose as globals.
+			const StringName class_string_name = StringName(class_name);
+			FSLanguage *language = FSLanguage::get_singleton();
+			if (language != nullptr && language->has_any_global_constant(class_string_name)) {
+				const Variant global_value = language->get_any_global_constant(class_string_name);
+				Object *global_object = global_value;
+				if (Object::cast_to<FSNativeClass>(global_object) != nullptr) {
+					r_variant = global_value;
+					return OK;
+				}
+			}
+			r_variant = Ref<FSNativeClass>(memnew(FSNativeClass(class_string_name)));
 			return OK;
 		} break;
 		case FSBytecodeFormat::TAG_ENGINE_SINGLETON: {
@@ -316,6 +359,26 @@ Error FSBytecodeLoader::_decode_object(StreamPeerBuffer *p_stream, uint8_t p_tag
 		} break;
 		case FSBytecodeFormat::TAG_NULL_OBJECT: {
 			r_variant = Variant((Object *)nullptr);
+			return OK;
+		} break;
+		case FSBytecodeFormat::TAG_REFLECTION_SINGLETON: {
+			FSLanguage *language = FSLanguage::get_singleton();
+			ERR_FAIL_NULL_V_MSG(language, ERR_CANT_RESOLVE,
+					"Compiled script data references the reflection singleton before the language is initialized.");
+			const Ref<FSReflection> reflection = language->get_reflection_singleton();
+			ERR_FAIL_COND_V_MSG(reflection.is_null(), ERR_CANT_RESOLVE,
+					"Compiled script data references the reflection singleton before the language is initialized.");
+			r_variant = reflection;
+			return OK;
+		} break;
+		case FSBytecodeFormat::TAG_REFLECTION_NAMESPACE: {
+			FSLanguage *language = FSLanguage::get_singleton();
+			ERR_FAIL_NULL_V_MSG(language, ERR_CANT_RESOLVE,
+					"Compiled script data references the reflection namespace before the language is initialized.");
+			const Ref<FSNamespace> namespace_singleton = language->get_namespace_singleton();
+			ERR_FAIL_COND_V_MSG(namespace_singleton.is_null(), ERR_CANT_RESOLVE,
+					"Compiled script data references the reflection namespace before the language is initialized.");
+			r_variant = namespace_singleton;
 			return OK;
 		} break;
 		case FSBytecodeFormat::TAG_SPECIALIZED_HANDLE: {
@@ -723,21 +786,27 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 #endif
 
 	const uint32_t operator_count = p_stream->get_u32();
-	ERR_FAIL_COND_V_MSG((int64_t)operator_count * 12 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
+	ERR_FAIL_COND_V_MSG((int64_t)operator_count * 13 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 			vformat("Truncated compiled function '%s' in script '%s'.", function_name, script_path));
 	for (uint32_t i = 0; i < operator_count; i++) {
 		const uint32_t variant_operator = p_stream->get_u32();
 		const uint32_t left_type = p_stream->get_u32();
 		const uint32_t right_type = p_stream->get_u32();
+		// The slot held no evaluator at export time (a runtime type guard keeps it unreachable);
+		// reproduce the null rather than treating the failed lookup as an engine mismatch.
+		const bool null_evaluator = p_stream->get_u8() != 0;
 		ERR_FAIL_COND_V_MSG(
 				variant_operator >= Variant::OP_MAX || left_type >= Variant::VARIANT_MAX || right_type >= Variant::VARIANT_MAX,
 				ERR_INVALID_DATA,
 				vformat("Malformed operator fixup in compiled function '%s' in script '%s'.", function_name, script_path));
-		const Variant::ValidatedOperatorEvaluator evaluator = Variant::get_validated_operator_evaluator(
-				(Variant::Operator)variant_operator, (Variant::Type)left_type, (Variant::Type)right_type);
-		FSB_LINK_CHECK(evaluator == nullptr, "operator",
-				vformat("%s (%s, %s)", Variant::get_operator_name((Variant::Operator)variant_operator),
-						Variant::get_type_name((Variant::Type)left_type), Variant::get_type_name((Variant::Type)right_type)));
+		Variant::ValidatedOperatorEvaluator evaluator = nullptr;
+		if (!null_evaluator) {
+			evaluator = Variant::get_validated_operator_evaluator(
+					(Variant::Operator)variant_operator, (Variant::Type)left_type, (Variant::Type)right_type);
+			FSB_LINK_CHECK(evaluator == nullptr, "operator",
+					vformat("%s (%s, %s)", Variant::get_operator_name((Variant::Operator)variant_operator),
+							Variant::get_type_name((Variant::Type)left_type), Variant::get_type_name((Variant::Type)right_type)));
+		}
 		p_function->operator_funcs.push_back(evaluator);
 #ifdef DEBUG_ENABLED
 		p_function->operator_names.push_back(Variant::get_operator_name((Variant::Operator)variant_operator));

@@ -33,6 +33,8 @@
 #include "../foundry_script.h"
 #include "../fs_analyzer.h"
 #include "../fs_autoload_index.h"
+#include "../fs_bytecode_export.h"
+#include "../fs_bytecode_loader.h"
 #include "../fs_cache.h"
 #include "../fs_compiler.h"
 #include "../fs_parser.h"
@@ -186,11 +188,12 @@ uint64_t get_init_language_count() {
 
 StringName FSTestRunner::test_function_name;
 
-FSTestRunner::FSTestRunner(const String &p_source_dir, bool p_init_language, bool p_print_filenames, bool p_use_binary_tokens) {
+FSTestRunner::FSTestRunner(const String &p_source_dir, bool p_init_language, bool p_print_filenames, bool p_use_binary_tokens, bool p_use_compiled_bytecode) {
 	test_function_name = StringName("test");
 	do_init_languages = p_init_language;
 	print_filenames = p_print_filenames;
 	binary_tokens = p_use_binary_tokens;
+	compiled_bytecode = p_use_compiled_bytecode;
 
 	source_dir = p_source_dir;
 	if (!source_dir.ends_with("/")) {
@@ -343,6 +346,19 @@ bool FSTestRunner::make_tests_for_dir(const String &p_dir) {
 				next = dir->get_next();
 				continue;
 			} else if (next.has_extension("fs")) {
+				if (compiled_bytecode) {
+					// A `#once-per-process` first line marks fixtures whose expected output includes
+					// engine diagnostics emitted through once-per-process macros (e.g.
+					// `ERR_PRINT_ONCE` behind required virtual methods). Only a fixture's first run
+					// in a process reproduces them, and the compiled-bytecode pass is by
+					// construction the corpus's second run in the test binary, so it skips them.
+					Error once_marker_error = OK;
+					Ref<FileAccess> once_marker_file(FileAccess::open(current_dir.path_join(next), FileAccess::READ, &once_marker_error));
+					if (once_marker_error == OK && once_marker_file->get_line() == "#once-per-process") {
+						next = dir->get_next();
+						continue;
+					}
+				}
 #ifndef DEBUG_ENABLED
 				// On release builds, skip tests marked as debug only.
 				Error open_err = OK;
@@ -365,16 +381,19 @@ bool FSTestRunner::make_tests_for_dir(const String &p_dir) {
 				if (next.ends_with(".bin.fs")) {
 					// Test text mode first.
 					FSTest text_test(current_dir.path_join(next), current_dir.path_join(out_file), source_dir);
+					text_test.set_use_compiled_bytecode(compiled_bytecode);
 					tests.push_back(text_test);
 					// Test binary mode even without `--use-binary-tokens`.
 					FSTest bin_test(current_dir.path_join(next), current_dir.path_join(out_file), source_dir);
 					bin_test.set_tokenizer_mode(FSTest::TOKENIZER_BUFFER);
+					bin_test.set_use_compiled_bytecode(compiled_bytecode);
 					tests.push_back(bin_test);
 				} else {
 					FSTest test(current_dir.path_join(next), current_dir.path_join(out_file), source_dir);
 					if (binary_tokens) {
 						test.set_tokenizer_mode(FSTest::TOKENIZER_BUFFER);
 					}
+					test.set_use_compiled_bytecode(compiled_bytecode);
 					tests.push_back(test);
 				}
 			}
@@ -598,6 +617,64 @@ String FSTest::get_text_for_status(FSTest::TestStatus p_status) const {
 	return "";
 }
 
+#ifdef TOOLS_ENABLED
+// Resolves the external references a fixture's serialized bytecode names symbolically. Only the
+// top-level fixture script goes through the byte round-trip; its dependencies (preloads, external
+// bases, cross-file class references) resolve through the normal FSCache text-compilation path.
+// That boundary is what the mode proves: the serialized top-level script runs identically against
+// dependencies loaded the ordinary way.
+class FSTestBytecodeResolver : public FSBytecodeExternalResolver {
+public:
+	virtual Ref<Resource> resolve_resource(const String &p_path) override {
+		return ResourceLoader::load(p_path);
+	}
+
+	virtual Ref<Script> resolve_script(const String &p_path, const String &p_fully_qualified_name, bool &r_is_local_class) override {
+		// External references never name a class local to the buffer being loaded; those travel as
+		// intra-file class indices and resolve without consulting the resolver.
+		r_is_local_class = false;
+		Error error = OK;
+		Ref<FoundryScript> root_script = FSCache::get_full_script(p_path, error);
+		if (error != OK || root_script.is_null()) {
+			return Ref<Script>();
+		}
+		if (p_fully_qualified_name.is_empty() || root_script->get_fully_qualified_name() == p_fully_qualified_name) {
+			return root_script;
+		}
+		return Ref<Script>(root_script->find_class(p_fully_qualified_name));
+	}
+};
+
+// Rebuilds a runnable script from serialized fixture bytecode onto a fresh FoundryScript carrying
+// the fixture path. The fresh script never enters ResourceCache (`set_path_cache` only), so the
+// directly compiled original keeps its resource identity and dependency compilations that reach the
+// fixture's own path keep resolving, while execution goes through the restored script.
+static Error load_fixture_from_bytecode(const Vector<uint8_t> &p_buffer, const String &p_source_file, Ref<FoundryScript> &r_restored) {
+	Ref<FoundryScript> restored;
+	restored.instantiate();
+	restored->set_path_cache(p_source_file);
+
+	FSTestBytecodeResolver resolver;
+	FSBytecodeLoader loader;
+	loader.set_resolver(&resolver);
+	Error error = loader.load_skeleton(p_buffer, restored);
+	if (error != OK) {
+		return error;
+	}
+	error = loader.load_full(p_buffer, restored);
+	if (error != OK) {
+		return error;
+	}
+	// Publishing scripts with retained static data is the loader caller's job, mirroring what the
+	// compiler does on the text path.
+	if (loader.get_has_static_data() && !loader.get_annotated_static_unload()) {
+		FSCache::add_static_script(restored);
+	}
+	r_restored = restored;
+	return OK;
+}
+#endif // TOOLS_ENABLED
+
 FSTest::TestResult FSTest::execute_test_code(bool p_is_generating) {
 	disable_stdout();
 
@@ -692,8 +769,39 @@ FSTest::TestResult FSTest::execute_test_code(bool p_is_generating) {
 		return result;
 	}
 
+#ifdef TOOLS_ENABLED
+	// Fixtures that failed to parse, analyze, or compile returned above and never reach
+	// serialization, so error fixtures take the unchanged text path in this mode too.
+	Vector<uint8_t> bytecode_buffer;
+	if (use_compiled_bytecode) {
+		FSBytecodeExporter exporter;
+		err = exporter.serialize(script, bytecode_buffer, parser.get_tree()->annotated_static_unload);
+		if (err != OK) {
+			enable_stdout();
+			result.status = FS_TEST_LOAD_ERROR;
+			result.passed = false;
+			ERR_FAIL_V_MSG(result, "\nCould not serialize compiled bytecode for: '" + source_file + "'");
+		}
+	}
+#endif // TOOLS_ENABLED
+
 	// `*.norun.fs` files are allowed to not contain a `test()` function (no runtime testing).
 	if (source_file.ends_with(".norun.fs")) {
+#ifdef TOOLS_ENABLED
+		if (use_compiled_bytecode) {
+			// Nothing runs here, but the fixture must still survive deserialization and linking.
+			// Output handlers are not installed, matching the text path, which never reload()s
+			// these fixtures.
+			Ref<FoundryScript> restored;
+			err = load_fixture_from_bytecode(bytecode_buffer, source_file, restored);
+			if (err != OK) {
+				enable_stdout();
+				result.status = FS_TEST_LOAD_ERROR;
+				result.passed = false;
+				ERR_FAIL_V_MSG(result, "\nCould not load compiled bytecode for: '" + source_file + "'");
+			}
+		}
+#endif // TOOLS_ENABLED
 		enable_stdout();
 		result.status = FS_TEST_OK;
 		result.output = get_text_for_status(result.status) + "\n" + result.output;
@@ -721,15 +829,43 @@ FSTest::TestResult FSTest::execute_test_code(bool p_is_generating) {
 	add_print_handler(&_print_handler);
 	add_error_handler(&_error_handler);
 
-	err = script->reload();
-	if (err) {
-		enable_stdout();
-		result.status = FS_TEST_LOAD_ERROR;
-		result.output = "";
-		result.passed = false;
-		remove_print_handler(&_print_handler);
-		remove_error_handler(&_error_handler);
-		ERR_FAIL_V_MSG(result, "\nCould not reload script: '" + source_file + "'");
+#ifdef TOOLS_ENABLED
+	// Keeps the directly compiled script alive while the restored script runs: destroying it would
+	// clear path-keyed global registrations (e.g. conformance witnesses) that the restored script
+	// has just re-registered under the same fixture path.
+	Ref<FoundryScript> directly_compiled_script;
+	if (use_compiled_bytecode) {
+		// The restored script replaces the directly compiled one for execution. Loading happens with
+		// the print and error handlers already installed because linking finalizes with the reload()
+		// tail (static defaults, then the static initializer), so static-initializer output is
+		// captured exactly where the text path captures it during reload().
+		Ref<FoundryScript> restored;
+		err = load_fixture_from_bytecode(bytecode_buffer, source_file, restored);
+		if (err != OK) {
+			enable_stdout();
+			const String captured_output = result.output;
+			result.status = FS_TEST_LOAD_ERROR;
+			result.output = "";
+			result.passed = false;
+			remove_print_handler(&_print_handler);
+			remove_error_handler(&_error_handler);
+			ERR_FAIL_V_MSG(result, "\nCould not load compiled bytecode for: '" + source_file + "'\n" + captured_output);
+		}
+		directly_compiled_script = script;
+		script = restored;
+	} else
+#endif // TOOLS_ENABLED
+	{
+		err = script->reload();
+		if (err) {
+			enable_stdout();
+			result.status = FS_TEST_LOAD_ERROR;
+			result.output = "";
+			result.passed = false;
+			remove_print_handler(&_print_handler);
+			remove_error_handler(&_error_handler);
+			ERR_FAIL_V_MSG(result, "\nCould not reload script: '" + source_file + "'");
+		}
 	}
 
 	// Create object instance for test.

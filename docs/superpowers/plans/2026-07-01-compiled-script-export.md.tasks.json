@@ -4,26 +4,26 @@
     {
       "id": 1,
       "subject": "Task 1: Format constants, string table, Variant/FSDataType codecs",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** The .fsb building blocks — format header, deduped string table, tagged Variant codec (external-resource table), FSDataType codec — round-trip in isolation.\n\n```json:metadata\n{\"files\": [\"modules/foundry_script/fs_bytecode_format.h\", \"modules/foundry_script/fs_bytecode_export.h\", \"modules/foundry_script/fs_bytecode_export.cpp\", \"modules/foundry_script/fs_bytecode_loader.h\", \"modules/foundry_script/fs_bytecode_loader.cpp\", \"modules/foundry_script/tests/test_bytecode_serialization.h\"], \"verifyCommand\": \"./bin/foundry.macos.editor.dev.arm64 --headless --test --test-case=\\\"*BytecodeCodec*\\\" --force-colors\", \"acceptanceCriteria\": [\"header guard rejects mismatched engine build\", \"string table dedup\", \"resource constants become external refs with no property payload\", \"process-bound Variants rejected\", \"FSDataType round-trip\"]}\n```"
     },
     {
       "id": 2,
       "subject": "Task 2: Codegen fixup recording",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** FSByteCodeGenerator records, under TOOLS_ENABLED, symbolic descriptors for every process-bound pointer it emits, plus {code_offset, global_name} pairs for OPCODE_STORE_GLOBAL, stored on the produced FSFunction.\n\n```json:metadata\n{\"files\": [\"modules/foundry_script/fs_function.h\", \"modules/foundry_script/fs_codegen.h\", \"modules/foundry_script/fs_byte_codegen.h\", \"modules/foundry_script/fs_byte_codegen.cpp\", \"modules/foundry_script/fs_compiler.cpp\", \"modules/foundry_script/tests/test_bytecode_serialization.h\"], \"verifyCommand\": \"./bin/foundry.macos.editor.dev.arm64 --headless --test --force-colors\", \"acceptanceCriteria\": [\"descriptor index == pointer-table index for all 12 tables\", \"STORE_GLOBAL offsets recorded with names\", \"full suite green\"]}\n```"
     },
     {
       "id": 3,
       "subject": "Task 3: FSFunction serialize/deserialize/link round-trip",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [1, 2],
       "description": "**Goal:** One compiled FSFunction round-trips through bytes and executes identically after linking, with hard errors on unresolvable fixups.\n\n```json:metadata\n{\"files\": [\"modules/foundry_script/fs_bytecode_export.cpp\", \"modules/foundry_script/fs_bytecode_loader.cpp\", \"modules/foundry_script/fs_function.h\", \"modules/foundry_script/fs_byte_codegen.cpp\", \"modules/foundry_script/tests/test_bytecode_serialization.h\"], \"verifyCommand\": \"./bin/foundry.macos.editor.dev.arm64 --headless --test --test-case=\\\"*BytecodeFunction*\\\" --force-colors\", \"acceptanceCriteria\": [\"execution parity with directly-compiled function\", \"hard error on unresolvable fixup\", \"release-subset payload only\"]}\n```"
     },
     {
       "id": 4,
       "subject": "Task 4: Whole-script graph serialization",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [3],
       "description": "**Goal:** serialize(script) / load_skeleton + load_full round-trip a complete FoundryScript — inheritance, inner classes, members, signals, constants, static variables, lambdas, generics, traits/witnesses — into a runnable script.\n\n```json:metadata\n{\"files\": [\"modules/foundry_script/fs_bytecode_export.h\", \"modules/foundry_script/fs_bytecode_export.cpp\", \"modules/foundry_script/fs_bytecode_loader.h\", \"modules/foundry_script/fs_bytecode_loader.cpp\", \"modules/foundry_script/foundry_script.h\", \"modules/foundry_script/tests/test_bytecode_serialization.h\"], \"verifyCommand\": \"./bin/foundry.macos.editor.dev.arm64 --headless --test --test-case=\\\"*BytecodeScript*\\\" --force-colors\", \"acceptanceCriteria\": [\"full class-graph round-trip\", \"witness re-registration\", \"reload-tail ordering\"]}\n```"
     },
@@ -56,5 +56,5 @@
       "description": "**Goal:** A hostile or corrupted .fsb cannot crash the release VM, and a produced .fsb provably contains no source text or local identifiers.\n\n```json:metadata\n{\"files\": [\"modules/foundry_script/fs_bytecode_loader.cpp\", \"modules/foundry_script/tests/test_bytecode_serialization.h\"], \"verifyCommand\": \"./bin/foundry.macos.editor.dev.arm64 --headless --test --force-colors\", \"acceptanceCriteria\": [\"verifier bounds-checks all operands\", \"corruption never crashes\", \"no local-identifier/source leakage\", \"version pin\"]}\n```"
     }
   ],
-  "lastUpdated": "2026-07-02T00:08:42Z"
+  "lastUpdated": "2026-07-02T08:00:00Z"
 }

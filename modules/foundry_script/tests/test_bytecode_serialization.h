@@ -42,6 +42,7 @@
 #include "modules/foundry_script/fs_compiler.h"
 #include "modules/foundry_script/fs_function.h"
 #include "modules/foundry_script/fs_parser.h"
+#include "modules/foundry_script/fs_utility_callable.h"
 
 #include "core/config/engine.h"
 #include "core/config/project_settings.h"
@@ -428,22 +429,22 @@ TEST_CASE("[FoundryScript][BytecodeCodec] Process-bound Variants are rejected") 
 	FSBytecodeExporter exporter;
 	Vector<uint8_t> payload;
 
-	ERR_PRINT_OFF;
-	CHECK(bytecode_encode_variant(exporter, Callable(), payload) == ERR_INVALID_PARAMETER);
-	CHECK(bytecode_encode_variant(exporter, ::RID(), payload) == ERR_INVALID_PARAMETER);
-	CHECK(bytecode_encode_variant(exporter, Signal(), payload) == ERR_INVALID_PARAMETER);
-
 	Object *bare_object = memnew(Object);
+
+	ERR_PRINT_OFF;
+	CHECK(bytecode_encode_variant(exporter, Callable(bare_object, "method"), payload) == ERR_INVALID_PARAMETER);
+	CHECK(bytecode_encode_variant(exporter, ::RID::from_uint64(1), payload) == ERR_INVALID_PARAMETER);
+	CHECK(bytecode_encode_variant(exporter, Signal(bare_object, "changed"), payload) == ERR_INVALID_PARAMETER);
+
 	CHECK(bytecode_encode_variant(exporter, bare_object, payload) == ERR_INVALID_PARAMETER);
-	memdelete(bare_object);
 
 	// The interception also applies inside containers.
 	Array array_with_callable;
-	array_with_callable.push_back(Callable());
+	array_with_callable.push_back(Callable(bare_object, "method"));
 	CHECK(bytecode_encode_variant(exporter, array_with_callable, payload) == ERR_INVALID_PARAMETER);
 
 	Dictionary dictionary_with_signal;
-	dictionary_with_signal["on_hit"] = Signal();
+	dictionary_with_signal["on_hit"] = Signal(bare_object, "changed");
 	CHECK(bytecode_encode_variant(exporter, dictionary_with_signal, payload) == ERR_INVALID_PARAMETER);
 
 	// A resource without a path cannot be externalized.
@@ -451,6 +452,43 @@ TEST_CASE("[FoundryScript][BytecodeCodec] Process-bound Variants are rejected") 
 	pathless_resource.instantiate();
 	CHECK(bytecode_encode_variant(exporter, pathless_resource, payload) == ERR_INVALID_PARAMETER);
 	ERR_PRINT_ON;
+
+	memdelete(bare_object);
+}
+
+TEST_CASE("[FoundryScript][BytecodeCodec] Portable process-bound values round-trip") {
+	// The default-constructed values of the process-bound types carry no process state, and the
+	// analyzer folds them into constant pools (e.g. `Callable()` arguments and `RID()` literals).
+	CHECK(Callable(bytecode_round_trip_variant(Callable())).is_null());
+	CHECK(Signal(bytecode_round_trip_variant(Signal())).is_null());
+	CHECK(!::RID(bytecode_round_trip_variant(::RID())).is_valid());
+
+	// A utility-function callable is a pure name (the analyzer folds `absf` used as a value into
+	// one) and rebuilds by name.
+	const Callable utility_callable = Callable(memnew(FSUtilityCallable(SNAME("absf"))));
+	const Variant decoded = bytecode_round_trip_variant(utility_callable);
+	REQUIRE(decoded.get_type() == Variant::CALLABLE);
+	const Callable decoded_callable = decoded;
+	CHECK(decoded_callable.is_custom());
+	CHECK(decoded_callable.get_method() == StringName("absf"));
+	const Variant minus_two = -2.0;
+	const Variant *utility_arguments[1] = { &minus_two };
+	Variant utility_result;
+	Callable::CallError utility_error;
+	decoded_callable.callp(utility_arguments, 1, utility_result, utility_error);
+	CHECK(utility_error.error == Callable::CallError::CALL_OK);
+	CHECK((double)utility_result == 2.0);
+
+	// Read-only container flags survive: constants are baked deeply read-only, and a loaded
+	// constant must reject mutation exactly like the compiled one.
+	Array read_only_array;
+	read_only_array.push_back(1);
+	read_only_array.make_read_only();
+	CHECK(Array(bytecode_round_trip_variant(read_only_array)).is_read_only());
+	Dictionary read_only_dictionary;
+	read_only_dictionary["key"] = 2;
+	read_only_dictionary.make_read_only();
+	CHECK(Dictionary(bytecode_round_trip_variant(read_only_dictionary)).is_read_only());
 }
 
 TEST_CASE("[FoundryScript][BytecodeCodec] FSDataType round-trip") {

@@ -49,6 +49,10 @@ class FSUtilityCallable : public CallableCustom {
 	static bool compare_less(const CallableCustom *p_a, const CallableCustom *p_b);
 
 public:
+	// Identifies a Callable backed by this custom type, for serializers that rebuild utility
+	// callables by function name. Returns null when the callable is anything else.
+	static const FSUtilityCallable *get_from_callable(const Callable &p_callable);
+
 	uint32_t hash() const override;
 	String get_as_text() const override;
 	CompareEqualFunc get_compare_equal_func() const override;
