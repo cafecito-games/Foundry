@@ -129,7 +129,7 @@ void EditorDockDragHint::_notification(int p_what) {
 				return;
 			}
 
-			can_drop_dock = dragged_dock->get_available_layouts() & (EditorDock::DockLayout)EditorDockManager::get_singleton()->dock_slots[occupied_slot].layout;
+			can_drop_dock = occupied_slot == DockConstants::DOCK_SLOT_BOTTOM || (dragged_dock->get_available_layouts() & (EditorDock::DockLayout)EditorDockManager::get_singleton()->dock_slots[occupied_slot].layout);
 
 			dock_drop_highlight->set_border_color(valid_drop_color);
 			dock_drop_highlight->set_bg_color(valid_drop_color * Color(1, 1, 1, 0.1));
@@ -1127,6 +1127,10 @@ void DockContextPopup::_bottom_lock_toggled(bool p_pressed) {
 }
 
 bool DockContextPopup::_is_slot_available(int p_slot) const {
+	if (p_slot == DockConstants::DOCK_SLOT_BOTTOM) {
+		// The bottom drawer accepts every dock regardless of its declared layouts.
+		return true;
+	}
 	return context_dock->available_layouts & (EditorDock::DockLayout)EditorDockManager::get_singleton()->dock_slots[p_slot].layout;
 }
 
