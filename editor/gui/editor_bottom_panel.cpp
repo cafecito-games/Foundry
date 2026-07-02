@@ -40,7 +40,9 @@
 #include "editor/gui/editor_version_button.h"
 #include "editor/scene/editor_scene_tabs.h"
 #include "editor/settings/editor_command_palette.h"
+#include "editor/settings/editor_settings.h"
 #include "editor/themes/editor_scale.h"
+#include "scene/animation/tween.h"
 #include "scene/gui/box_container.h"
 #include "scene/gui/button.h"
 #include "scene/gui/separator.h"
@@ -162,7 +164,6 @@ void EditorBottomPanel::_update_drawer_geometry() {
 	const int body_height = open ? _get_body_height() : 0;
 
 	const int drawer_height = BottomDrawerGeometry::drawer_height(open, drawer_expanded, strip_height, body_height, area_height);
-	set_offset(SIDE_TOP, -drawer_height);
 
 	const bool pinned = _is_current_pinned();
 	const int inset = BottomDrawerGeometry::workspace_inset(open, pinned, drawer_expanded, strip_height, body_height, area_height);
@@ -171,10 +172,42 @@ void EditorBottomPanel::_update_drawer_geometry() {
 		top_split->set_offset(SIDE_BOTTOM, -inset);
 	}
 
+	// A single logical open/close often produces several _update_drawer_geometry
+	// calls within one frame (the tab change swaps the panel stylebox, which in
+	// turn changes the strip height and re-fires geometry). Only (re)start the
+	// tween when the target height actually changes; leave an in-flight tween
+	// running when a settling call reports the same target, so the slide is not
+	// snapped to its end on the same frame it began.
+	const bool animate = !pinned && !grabber_dragging && is_inside_tree() && EDITOR_GET("interface/editor/animate_bottom_drawer");
+	const bool target_changed = last_drawer_height != drawer_height;
+	if (drawer_tween.is_valid() && (!animate || target_changed)) {
+		drawer_tween->kill();
+		drawer_tween.unref();
+	}
+	if (animate && target_changed) {
+		drawer_tween = create_tween();
+		drawer_tween->tween_method(callable_mp(this, &EditorBottomPanel::_set_drawer_top_offset), get_offset(SIDE_TOP), -(float)drawer_height, 0.15)->set_trans(Tween::TRANS_CUBIC)->set_ease(Tween::EASE_OUT);
+	} else if (drawer_tween.is_null() || !drawer_tween->is_running()) {
+		// No slide in flight: place the drawer (and grabber) at the target now.
+		_set_drawer_top_offset(-drawer_height);
+	}
+	last_drawer_height = drawer_height;
+
+	grabber->set_visible(open && !drawer_expanded);
+}
+
+void EditorBottomPanel::_set_drawer_top_offset(float p_offset) {
+	set_offset(SIDE_TOP, p_offset);
+
+	// Track the grabber to the panel's animated top edge instead of the final
+	// target, so it slides with the drawer rather than jumping ahead of it.
+	Control *area = get_parent_control();
+	if (!area) {
+		return;
+	}
 	const int grabber_height = 6 * EDSCALE;
 	grabber->set_size(Vector2(area->get_size().width, grabber_height));
-	grabber->set_global_position(area->get_global_position() + Vector2(0, area_height - drawer_height));
-	grabber->set_visible(open && !drawer_expanded);
+	grabber->set_global_position(area->get_global_position() + Vector2(0, area->get_size().height + p_offset));
 }
 
 void EditorBottomPanel::_grabber_input(const Ref<InputEvent> &p_event) {
@@ -195,6 +228,22 @@ void EditorBottomPanel::_grabber_input(const Ref<InputEvent> &p_event) {
 		const float mouse_y = grabber->get_global_position().y + mm->get_position().y;
 		_set_body_height(drag_start_body_height + int(drag_start_mouse_y - mouse_y));
 	}
+}
+
+void EditorBottomPanel::shortcut_input(const Ref<InputEvent> &p_event) {
+	Ref<InputEventKey> k = p_event;
+	if (k.is_null() || !k->is_action_pressed(SNAME("ui_cancel"), false, true)) {
+		return;
+	}
+	if (get_current_tab() == -1 || _is_current_pinned()) {
+		return;
+	}
+	Control *focus_owner = get_viewport()->gui_get_focus_owner();
+	if (!focus_owner || !is_ancestor_of(focus_owner)) {
+		return;
+	}
+	hide_bottom_panel();
+	get_viewport()->set_input_as_handled();
 }
 
 void EditorBottomPanel::_repaint() {
@@ -363,6 +412,7 @@ EditorBottomPanel::EditorBottomPanel() {
 	get_tab_bar()->connect("tab_changed", callable_mp(this, &EditorBottomPanel::_on_tab_changed));
 	set_tabs_position(TabPosition::POSITION_BOTTOM);
 	set_deselect_enabled(true);
+	set_process_shortcut_input(true);
 
 	grabber = memnew(Control);
 	grabber->set_name("DrawerGrabber");

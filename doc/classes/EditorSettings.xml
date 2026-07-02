@@ -914,6 +914,9 @@
 			- [b]OK First[/b] forces the OK/Cancel ordering.
 			To check if these buttons are swapped at runtime, use [method DisplayServer.get_swap_cancel_ok].
 		</member>
+		<member name="interface/editor/animate_bottom_drawer" type="bool" setter="" getter="">
+			If [code]true[/code], the bottom drawer slides open and closed with a short animation when it is not docked. If [code]false[/code], it opens and closes instantly.
+		</member>
 		<member name="interface/editor/automatically_open_screenshots" type="bool" setter="" getter="">
 			If [code]true[/code], automatically opens screenshots with the default program associated to [code].png[/code] files after a screenshot is taken using the [b]Editor &gt; Take Screenshot[/b] action.
 		</member>

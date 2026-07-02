@@ -37,6 +37,7 @@ class ConfigFile;
 class EditorDock;
 class EditorToaster;
 class HBoxContainer;
+class Tween;
 
 class EditorBottomPanel : public TabContainer {
 	FOUNDRY_CLASS(EditorBottomPanel, TabContainer);
@@ -55,6 +56,8 @@ class EditorBottomPanel : public TabContainer {
 	int drag_start_body_height = 0;
 	float drag_start_mouse_y = 0.0f;
 	Control *grabber = nullptr;
+	Ref<Tween> drawer_tween;
+	int last_drawer_height = -1;
 	LocalVector<EditorDock *> bottom_docks;
 	HashMap<String, int> dock_offsets;
 	HashMap<String, bool> dock_pinned;
@@ -72,11 +75,13 @@ class EditorBottomPanel : public TabContainer {
 	int _get_body_height() const;
 	void _set_body_height(int p_height);
 	void _update_drawer_geometry();
+	void _set_drawer_top_offset(float p_offset);
 	void _grabber_input(const Ref<InputEvent> &p_event);
 	EditorDock *_get_dock_from_control(Control *p_control) const;
 
 protected:
 	void _notification(int p_what);
+	virtual void shortcut_input(const Ref<InputEvent> &p_event) override;
 
 public:
 	void save_layout_to_config(Ref<ConfigFile> p_config_file, const String &p_section) const;
