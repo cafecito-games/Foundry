@@ -335,7 +335,7 @@ void EditorExport::load_config() {
 		preset->set_include_filter(config->get_value(section, "include_filter"));
 		preset->set_exclude_filter(config->get_value(section, "exclude_filter"));
 		preset->set_export_path(config->get_value(section, "export_path", ""));
-		preset->set_script_export_mode(config->get_value(section, "script_export_mode", EditorExportPreset::MODE_SCRIPT_BINARY_TOKENS_COMPRESSED));
+		preset->set_script_export_mode(config->get_value(section, "script_export_mode", EditorExportPreset::MODE_SCRIPT_COMPILED_BYTECODE));
 		preset->set_patches(config->get_value(section, "patches", Vector<String>()));
 
 		if (config->has_section_key(section, "patch_delta_encoding")) {

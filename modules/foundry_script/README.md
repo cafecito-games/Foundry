@@ -137,3 +137,23 @@ There are many other classes in the FoundryScript module. Here is a brief overvi
 - Editor-related functions can be found in parts of `FSLanguage`, originally declared in [`foundry_script.h`](foundry_script.h) but defined in [`fs_editor.cpp`](fs_editor.cpp). Code highlighting can be found in [`FSSyntaxHighlighter`](editor/fs_highlighter.h).
 - FoundryScript decompilation is found in [`fs_disassembler.cpp`](fs_disassembler.h), defined as `FSFunction::disassemble()`.
 - Documentation generation from FoundryScript comments in [`FSDocGen`](editor/fs_docgen.h)
+
+
+## Export templates and script bytecode (default)
+
+Export templates omit the Foundry Script front-end by default (`foundry_script_frontend` defaults to `no` for `template_*` targets): the tokenizer, parser, analyzer, and compiler are left out of the runtime binary (~2 MiB smaller). The default export preset script mode is **Compiled bytecode** (`.fsb`), so shipped games load precompiled scripts only.
+
+**Stripped-template constraints:**
+
+- `.fsb` loading is unchanged (loader, linker, VM, RPC, traits, typed containers).
+- Loading `.fs` or `.fsc` at runtime returns `ERR_UNAVAILABLE`.
+- Runtime loading of `.fs` mods from `user://` is not supported.
+- Build-task bootstrap providers that compile script sources cannot run in export templates.
+
+**Building templates locally** (stripped front-end is the default):
+
+```bash
+scons platform=<platform> target=template_release
+```
+
+Pass `foundry_script_frontend=yes` to keep the source front-end in a template (e.g. for modding). The flag is incompatible with `target=editor`, `tests=yes`, and `use_fuzzer=yes`.

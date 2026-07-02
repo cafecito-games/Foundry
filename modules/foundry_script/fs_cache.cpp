@@ -31,13 +31,18 @@
 #include "fs_cache.h"
 
 #include "foundry_script.h"
-#include "fs_analyzer.h"
 #include "fs_bytecode_loader.h"
+#include "fs_no_frontend.h"
+#ifndef FOUNDRY_SCRIPT_NO_FRONTEND
+#include "fs_analyzer.h"
 #include "fs_compiler.h"
 #include "fs_parser.h"
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND
 
 #include "core/io/file_access.h"
 #include "core/templates/vector.h"
+
+#ifndef FOUNDRY_SCRIPT_NO_FRONTEND
 
 FSParserRef::Status FSParserRef::get_status() const {
 	return status;
@@ -155,6 +160,8 @@ FSParserRef::~FSParserRef() {
 	}
 }
 
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND
+
 FSCache *FSCache::singleton = nullptr;
 
 SafeBinaryMutex<FSCache::BINARY_MUTEX_TAG> &_get_fs_cache_mutex() {
@@ -176,7 +183,9 @@ void FSCache::move_script(const String &p_from, const String &p_to) {
 		return;
 	}
 
+#ifndef FOUNDRY_SCRIPT_NO_FRONTEND
 	remove_parser(p_from);
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND
 
 	if (singleton->shallow_fs_cache.has(p_from) && !p_from.is_empty()) {
 		singleton->shallow_fs_cache[p_to] = singleton->shallow_fs_cache[p_from];
@@ -200,6 +209,7 @@ void FSCache::remove_script(const String &p_path) {
 		return;
 	}
 
+#ifndef FOUNDRY_SCRIPT_NO_FRONTEND
 	if (HashMap<String, Vector<ObjectID>>::Iterator E = singleton->abandoned_parser_map.find(p_path)) {
 		for (ObjectID parser_ref_id : E->value) {
 			Ref<FSParserRef> parser_ref = { ObjectDB::get_instance(parser_ref_id) };
@@ -216,11 +226,14 @@ void FSCache::remove_script(const String &p_path) {
 	}
 
 	remove_parser(p_path);
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND
 
 	singleton->dependencies.erase(p_path);
 	singleton->shallow_fs_cache.erase(p_path);
 	singleton->full_fs_cache.erase(p_path);
 }
+
+#ifndef FOUNDRY_SCRIPT_NO_FRONTEND
 
 Ref<FSParserRef> FSCache::get_parser(const String &p_path, FSParserRef::Status p_status, Error &r_error, const String &p_owner) {
 	MutexLock lock(singleton->mutex);
@@ -337,6 +350,8 @@ void FSCache::remove_parser(const String &p_path) {
 	}
 }
 
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND
+
 String FSCache::get_source_code(const String &p_path) {
 	if (singleton != nullptr) {
 		MutexLock lock(singleton->mutex);
@@ -406,9 +421,11 @@ HashSet<String> FSCache::get_inverse_dependencies(const String &p_path) {
 		return HashSet<String>();
 	}
 
+#ifndef FOUNDRY_SCRIPT_NO_FRONTEND
 	if (singleton->parser_inverse_dependencies.has(p_path)) {
 		return singleton->parser_inverse_dependencies[p_path];
 	}
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND
 	return HashSet<String>();
 }
 
@@ -461,6 +478,11 @@ Ref<FoundryScript> FSCache::get_shallow_script(const String &p_path, Error &r_er
 		singleton->shallow_fs_cache[p_path] = script;
 		return script;
 	}
+
+#ifdef FOUNDRY_SCRIPT_NO_FRONTEND
+	r_error = ERR_UNAVAILABLE;
+	ERR_FAIL_V_MSG(Ref<FoundryScript>(), fs_no_frontend_error_message(p_path));
+#else
 	if (remapped_path.has_extension("fsc")) {
 		Vector<uint8_t> buffer = get_binary_tokens(remapped_path);
 		if (buffer.is_empty()) {
@@ -484,6 +506,7 @@ Ref<FoundryScript> FSCache::get_shallow_script(const String &p_path, Error &r_er
 	}
 
 	singleton->shallow_fs_cache[p_path] = script;
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND
 
 	return script;
 }
@@ -640,6 +663,7 @@ void FSCache::invalidate_analysis() {
 		return;
 	}
 
+#ifndef FOUNDRY_SCRIPT_NO_FRONTEND
 	Vector<String> parser_paths;
 	{
 		MutexLock lock(singleton->mutex);
@@ -656,6 +680,7 @@ void FSCache::invalidate_analysis() {
 	for (const String &path : parser_paths) {
 		remove_parser(path);
 	}
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND
 
 	MutexLock lock(singleton->mutex);
 	// Drop the analyzed-script artifacts so a subsequent load rebuilds them under the new settings.
@@ -678,6 +703,7 @@ void FSCache::clear() {
 	}
 	singleton->cleared = true;
 
+#ifndef FOUNDRY_SCRIPT_NO_FRONTEND
 	singleton->parser_dependencies.clear();
 	singleton->parser_inverse_dependencies.clear();
 
@@ -706,6 +732,7 @@ void FSCache::clear() {
 	}
 
 	parser_map_refs.clear();
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND
 	singleton->source_overrides.clear();
 	singleton->shallow_fs_cache.clear();
 	singleton->full_fs_cache.clear();

@@ -30,10 +30,12 @@
 
 #include "foundry_script.h"
 
+#ifndef FOUNDRY_SCRIPT_NO_FRONTEND
 #include "fs_analyzer.h"
+#include "fs_tokenizer.h"
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND
 #include "fs_autoload_index.h"
 #include "fs_parser.h"
-#include "fs_tokenizer.h"
 #include "fs_utility_functions.h"
 
 #ifdef TOOLS_ENABLED
@@ -146,6 +148,17 @@ static void get_function_names_recursively(const FSParser::ClassNode *p_class, c
 }
 
 bool FSLanguage::validate(const String &p_script, const String &p_path, List<String> *r_functions, List<ScriptLanguage::ScriptError> *r_errors, List<ScriptLanguage::Warning> *r_warnings, HashSet<int> *r_safe_lines) const {
+#ifdef FOUNDRY_SCRIPT_NO_FRONTEND
+	if (r_errors) {
+		ScriptLanguage::ScriptError error;
+		error.path = p_path;
+		error.line = 0;
+		error.column = 0;
+		error.message = "This binary was built without the Foundry Script front-end (foundry_script_frontend=no).";
+		r_errors->push_back(error);
+	}
+	return false;
+#else
 	FSParser parser;
 	FSAnalyzer analyzer(&parser);
 
@@ -214,6 +227,7 @@ bool FSLanguage::validate(const String &p_script, const String &p_path, List<Str
 #endif
 
 	return true;
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND
 }
 
 bool FSLanguage::supports_builtin_mode() const {
@@ -225,6 +239,9 @@ bool FSLanguage::supports_documentation() const {
 }
 
 int FSLanguage::find_function(const String &p_function, const String &p_code) const {
+#ifdef FOUNDRY_SCRIPT_NO_FRONTEND
+	return -1;
+#else
 	FSTokenizerText tokenizer;
 	tokenizer.set_source_code(p_code);
 	int indent = 0;
@@ -247,6 +264,7 @@ int FSLanguage::find_function(const String &p_function, const String &p_code) co
 		current = tokenizer.scan();
 	}
 	return -1;
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND
 }
 
 Script *FSLanguage::create_script() const {
@@ -395,7 +413,11 @@ void FSLanguage::debug_get_globals(List<String> *p_globals, List<Variant> *p_val
 	get_public_constants(&cinfo);
 
 	for (const KeyValue<StringName, int> &E : name_idx) {
+#ifdef FOUNDRY_SCRIPT_NO_FRONTEND
+		if ((ClassDB::class_exists(E.key) && ClassDB::is_class_exposed(E.key)) || Engine::get_singleton()->has_singleton(E.key)) {
+#else
 		if (FSAnalyzer::class_exists(E.key) || Engine::get_singleton()->has_singleton(E.key)) {
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND
 			continue;
 		}
 
@@ -516,6 +538,9 @@ void FSLanguage::get_public_constants(List<Pair<String, Variant>> *p_constants) 
 }
 
 void FSLanguage::get_public_annotations(List<MethodInfo> *p_annotations) const {
+#ifdef FOUNDRY_SCRIPT_NO_FRONTEND
+	return;
+#else
 	FSParser parser;
 	List<MethodInfo> annotations;
 	parser.get_annotation_list(&annotations);
@@ -523,6 +548,7 @@ void FSLanguage::get_public_annotations(List<MethodInfo> *p_annotations) const {
 	for (const MethodInfo &E : annotations) {
 		p_annotations->push_back(E);
 	}
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND
 }
 
 String FSLanguage::make_function(const String &p_class, const String &p_name, const PackedStringArray &p_args) const {

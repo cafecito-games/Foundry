@@ -38,6 +38,7 @@
 #include "core/templates/hash_set.h"
 #include "core/templates/vector.h"
 
+#ifndef FOUNDRY_SCRIPT_NO_FRONTEND
 class FSAnalyzer;
 class FSParser;
 
@@ -78,6 +79,7 @@ public:
 	FSParserRef() {}
 	~FSParserRef();
 };
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND
 
 #ifdef TESTS_ENABLED
 namespace FSTests {
@@ -87,14 +89,18 @@ class TestFSCacheAccessor;
 
 class FSCache {
 	// String key is full path.
+#ifndef FOUNDRY_SCRIPT_NO_FRONTEND
 	HashMap<String, FSParserRef *> parser_map;
 	HashMap<String, Vector<ObjectID>> abandoned_parser_map;
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND
 	HashMap<String, Ref<FoundryScript>> shallow_fs_cache;
 	HashMap<String, Ref<FoundryScript>> full_fs_cache;
 	HashMap<String, Ref<FoundryScript>> static_fs_cache;
 	HashMap<String, HashSet<String>> dependencies;
+#ifndef FOUNDRY_SCRIPT_NO_FRONTEND
 	HashMap<String, HashSet<String>> parser_dependencies;
 	HashMap<String, HashSet<String>> parser_inverse_dependencies;
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND
 
 	// In-memory source overrides keyed by path. When present, get_source_code() (and the
 	// script loaders) return the overridden source instead of reading disk, so the analyzer
@@ -102,7 +108,9 @@ class FSCache {
 	HashMap<String, String> source_overrides;
 
 	friend class FoundryScript;
+#ifndef FOUNDRY_SCRIPT_NO_FRONTEND
 	friend class FSParserRef;
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND
 	friend class FSInstance;
 #ifdef TESTS_ENABLED
 	friend class FSTests::TestFSCacheAccessor;
@@ -128,18 +136,22 @@ private:
 	static SafeBinaryMutex<BINARY_MUTEX_TAG> mutex;
 	friend SafeBinaryMutex<BINARY_MUTEX_TAG> &_get_fs_cache_mutex();
 
+#ifndef FOUNDRY_SCRIPT_NO_FRONTEND
 	static void clear_parser_dependency_edges(const String &p_path);
 	static void update_parser_dependencies(const String &p_path, const FSParser *p_parser);
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND
 
 public:
 	static void move_script(const String &p_from, const String &p_to);
 	static void remove_script(const String &p_path);
+#ifndef FOUNDRY_SCRIPT_NO_FRONTEND
 	static Ref<FSParserRef> get_parser(const String &p_path, FSParserRef::Status status, Error &r_error, const String &p_owner = String());
 	static bool has_parser(const String &p_path);
 	static void remove_parser(const String &p_path);
 	// Returns every path whose cached parser would be evicted by remove_parser(p_path),
 	// including p_path itself and all transitive inverse dependents recorded in the cache.
 	static HashSet<String> collect_parser_invalidation_closure(const String &p_path);
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND
 	static String get_source_code(const String &p_path);
 
 	// In-memory source-override map. While an override is set for a path, get_source_code()

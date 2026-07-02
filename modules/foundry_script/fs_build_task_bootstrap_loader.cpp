@@ -30,6 +30,8 @@
 
 #include "fs_build_task_bootstrap_loader.h"
 
+#ifndef FOUNDRY_SCRIPT_NO_FRONTEND
+
 #include "fs_analyzer.h"
 #include "fs_compiler.h"
 #include "fs_parser.h"
@@ -474,3 +476,70 @@ const FoundryBuildTaskBootstrapLoader::LoadedProvider *FoundryBuildTaskBootstrap
 		const String &p_provider_id) const {
 	return loaded_providers.getptr(p_provider_id);
 }
+
+#else // FOUNDRY_SCRIPT_NO_FRONTEND
+
+#include "core/config/project_build_pipeline_status.h"
+
+namespace {
+
+const char *FRONTEND_UNAVAILABLE_MESSAGE =
+		"Build task bootstrap providers require the Foundry Script front-end (foundry_script_frontend was disabled for this template build).";
+
+Error _frontend_unavailable_diagnostic(Vector<FoundryBuildTaskRegistry::Diagnostic> &p_diagnostics) {
+	FoundryBuildTaskRegistry::Diagnostic diagnostic;
+	diagnostic.kind = FoundryBuildTaskRegistry::DIAGNOSTIC_LOADER_FAILURE;
+	diagnostic.message = FRONTEND_UNAVAILABLE_MESSAGE;
+	p_diagnostics.push_back(diagnostic);
+	return ERR_UNAVAILABLE;
+}
+
+} // namespace
+
+void FoundryBuildTaskBootstrapLoader::clear() {
+	loaded_providers.clear();
+	loaded_order.clear();
+	diagnostics.clear();
+}
+
+void FoundryBuildTaskBootstrapLoader::set_trusted_execution(bool p_trusted_execution) {
+	trusted_execution = p_trusted_execution;
+}
+
+bool FoundryBuildTaskBootstrapLoader::is_trusted_execution() const {
+	return trusted_execution || ProjectBuildTrustStore::is_cli_trusted_execution();
+}
+
+Error FoundryBuildTaskBootstrapLoader::load_registered_providers(const FoundryBuildTaskRegistry &p_registry) {
+	clear();
+	return _frontend_unavailable_diagnostic(diagnostics);
+}
+
+Error FoundryBuildTaskBootstrapLoader::load_registered_providers(
+		const FoundryBuildTaskRegistry &p_registry, const PackedStringArray &p_provider_ids) {
+	clear();
+	return _frontend_unavailable_diagnostic(diagnostics);
+}
+
+Error FoundryBuildTaskBootstrapLoader::load_project_bootstrap_providers(const String &p_project_config_path) {
+	clear();
+	return _frontend_unavailable_diagnostic(diagnostics);
+}
+
+Error FoundryBuildTaskBootstrapLoader::load_provider_schema(
+		const String &p_provider_id, Ref<FoundryBuildTaskConfigSchema> &r_schema) {
+	r_schema.unref();
+	clear();
+	return _frontend_unavailable_diagnostic(diagnostics);
+}
+
+bool FoundryBuildTaskBootstrapLoader::has_loaded_provider(const String &p_provider_id) const {
+	return false;
+}
+
+const FoundryBuildTaskBootstrapLoader::LoadedProvider *FoundryBuildTaskBootstrapLoader::get_loaded_provider(
+		const String &p_provider_id) const {
+	return nullptr;
+}
+
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND

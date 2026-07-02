@@ -34,8 +34,10 @@
 #include "fs_tokenizer.h"
 
 #ifdef DEBUG_ENABLED
+#ifndef FOUNDRY_SCRIPT_NO_FRONTEND
 #include "fs_warning.h"
-#endif
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND
+#endif // DEBUG_ENABLED
 
 #include "core/io/resource.h"
 #include "core/object/ref_counted.h"
@@ -1660,7 +1662,11 @@ public:
 
 private:
 	friend class FSAnalyzer;
+#ifndef FOUNDRY_SCRIPT_NO_FRONTEND
 	friend class FSParserRef;
+
+	HashMap<String, Ref<FSParserRef>> depended_parsers;
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND
 
 	bool _is_tool = false;
 	String script_path;
@@ -1670,7 +1676,6 @@ private:
 	bool can_break = false;
 	bool can_continue = false;
 	List<bool> multiline_stack;
-	HashMap<String, Ref<FSParserRef>> depended_parsers;
 
 	// Bound recursion in the recursive-descent parser. Deeply nested expressions or
 	// statements (e.g. thousands of nested parentheses) or nested type annotations
@@ -1689,7 +1694,7 @@ private:
 	Node *list = nullptr;
 	List<ParserError> errors;
 
-#ifdef DEBUG_ENABLED
+#if defined(DEBUG_ENABLED) && !defined(FOUNDRY_SCRIPT_NO_FRONTEND)
 public:
 	struct WarningDirectoryRule {
 		enum Decision {
@@ -1720,7 +1725,7 @@ private:
 	HashSet<int> warning_ignored_lines[FSWarning::WARNING_MAX];
 	int warning_ignore_start_lines[FSWarning::WARNING_MAX];
 	HashSet<int> unsafe_lines;
-#endif // DEBUG_ENABLED
+#endif // DEBUG_ENABLED && !FOUNDRY_SCRIPT_NO_FRONTEND
 
 	FSTokenizer *tokenizer = nullptr;
 	FSTokenizer::Token previous;
@@ -1836,7 +1841,7 @@ private:
 	void clear();
 
 	void push_error(const String &p_message, const Node *p_origin = nullptr);
-#ifdef DEBUG_ENABLED
+#if defined(DEBUG_ENABLED) && !defined(FOUNDRY_SCRIPT_NO_FRONTEND)
 	void push_warning(const Node *p_source, FSWarning::Code p_code, const Vector<String> &p_symbols);
 	template <typename... Symbols>
 	void push_warning(const Node *p_source, FSWarning::Code p_code, const Symbols &...p_symbols) {
@@ -1844,7 +1849,7 @@ private:
 	}
 	void apply_pending_warnings();
 	void evaluate_warning_directory_rules_for_script_path();
-#endif // DEBUG_ENABLED
+#endif // DEBUG_ENABLED && !FOUNDRY_SCRIPT_NO_FRONTEND
 
 	// Setting p_force to false will prevent the completion context from being update if a context was already set before.
 	// This should only be done when we push context before we consumed any tokens for the corresponding structure.
@@ -2008,8 +2013,10 @@ public:
 	Error parse_binary(const Vector<uint8_t> &p_binary, const String &p_script_path);
 	ClassNode *get_tree() const { return head; }
 	bool is_tool() const { return _is_tool; }
+#ifndef FOUNDRY_SCRIPT_NO_FRONTEND
 	Ref<FSParserRef> get_depended_parser_for(const String &p_path);
 	const HashMap<String, Ref<FSParserRef>> &get_depended_parsers();
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND
 	ClassNode *find_class(const String &p_qualified_name) const;
 	bool has_class(const FSParser::ClassNode *p_class) const;
 	static Variant::Type get_builtin_type(const StringName &p_type); // Excluding `Variant::NIL` and `Variant::OBJECT`.
@@ -2021,20 +2028,19 @@ public:
 	const List<ParserError> &get_errors() const { return errors; }
 	List<String> get_dependencies() const;
 
-#ifdef DEBUG_ENABLED
+#if defined(DEBUG_ENABLED) && !defined(FOUNDRY_SCRIPT_NO_FRONTEND)
 	static void update_project_settings();
-	// Invoked on project-settings changes: if either strict analysis flag
-	// (debug/foundry_script/analysis/strict_null_checks / strict_dynamic_checks) changed since the last
-	// call, drops the FoundryScript cache's built artifacts so already-analyzed scripts are re-reported
-	// under the new flags within the same session. Returns true iff it detected a change and
-	// invalidated. Override-aware to match what FSAnalyzer actually reads.
 	static bool invalidate_analysis_on_strict_settings_change();
-	// Global toggle for warning collection. Used by tests to isolate analyzer-error
-	// checks from warning state that other test cases enable globally.
 	static bool is_ignoring_warnings() { return is_project_ignoring_warnings; }
 	static void set_ignoring_warnings(bool p_ignore) { is_project_ignoring_warnings = p_ignore; }
 	const List<FSWarning> &get_warnings() const { return warnings; }
+#endif // DEBUG_ENABLED && !FOUNDRY_SCRIPT_NO_FRONTEND
+
+#if defined(DEBUG_ENABLED) && !defined(FOUNDRY_SCRIPT_NO_FRONTEND)
 	const HashSet<int> &get_unsafe_lines() const { return unsafe_lines; }
+#endif // DEBUG_ENABLED && !FOUNDRY_SCRIPT_NO_FRONTEND
+
+#ifdef DEBUG_ENABLED
 	int get_last_line_number() const { return current.end_line; }
 #endif // DEBUG_ENABLED
 
@@ -2104,4 +2110,5 @@ public:
 	};
 #endif // DEBUG_ENABLED
 	static void cleanup();
+	static void clear_builtin_type_cache();
 };

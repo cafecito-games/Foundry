@@ -31,7 +31,9 @@
 #include "fs_autoload_index.h"
 
 #include "foundry_script.h"
+#ifndef FOUNDRY_SCRIPT_NO_FRONTEND
 #include "fs_analyzer.h"
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND
 #include "fs_cache.h"
 
 #include "core/config/project_settings.h"
