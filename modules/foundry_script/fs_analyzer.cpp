@@ -9564,9 +9564,13 @@ bool FSAnalyzer::type_satisfies_trait(const FSParser::DataType &p_argument, cons
 		}
 		ancestor = ancestor->base_type.kind == FSParser::DataType::CLASS ? ancestor->base_type.class_type : nullptr;
 	}
-	// Reuse the shared conformance machinery (`_class_has_trait`, reached through `is_type_compatible`),
-	// which walks the inheritance chain and also accounts for externally scripted trait uses.
-	return is_type_compatible(p_trait_bound, p_argument, false);
+	// Reuse the shared conformance machinery (`_class_has_trait`), which walks the inheritance chain
+	// and also accounts for externally scripted trait uses. Call `FSTypeCompatibility::check` directly
+	// so `is_type_compatible` can route trait targets here without recursion.
+	FSTypeCompatibility::Options options;
+	options.strict_dynamic = strict_dynamic_checks;
+	options.strict_null = strict_null_checks;
+	return FSTypeCompatibility::check(p_trait_bound, p_argument, options).compatible;
 }
 
 static bool _datatype_alpha_equal(const FSParser::DataType &p_a, const FSParser::DataType &p_b);
@@ -15995,6 +15999,14 @@ bool FSAnalyzer::is_type_compatible(const FSParser::DataType &p_target, const FS
 		}
 	}
 #endif // DEBUG_ENABLED
+	// Global class references are often resolved only to `INHERITANCE_SOLVED` (`make_global_class_meta_type`),
+	// so `resolved_traits` may still be empty when a trait-typed assignment, argument, or cast is checked.
+	// Eagerly resolve trait uses on the argument class chain before consulting `_class_has_trait`.
+	if (p_target.kind == FSParser::DataType::CLASS && p_target.class_type != nullptr &&
+			p_target.class_type->is_trait && !p_target.is_meta_type && !p_source.is_meta_type &&
+			p_source.kind == FSParser::DataType::CLASS && p_source.class_type != nullptr) {
+		return type_satisfies_trait(p_source, p_target);
+	}
 	FSTypeCompatibility::Options options;
 	options.allow_implicit_conversion = p_allow_implicit_conversion;
 	options.strict_dynamic = strict_dynamic_checks;
