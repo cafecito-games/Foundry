@@ -32,6 +32,12 @@
 
 #include "../fs_lint.h"
 
+#ifdef DEBUG_ENABLED
+#include "../fs_parser.h"
+#include "../fs_warning.h"
+#endif
+
+#include "core/config/project_settings.h"
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
 #include "core/os/os.h"
@@ -89,6 +95,66 @@ struct TemporaryLintTree {
 		DirAccess::remove_absolute(p_path);
 	}
 };
+
+static const FSLintCLI::Diagnostic *find_diagnostic(
+		const FSLintCLI::Result &p_result,
+		const String &p_rule_id,
+		const String &p_message_part = String()) {
+	for (int i = 0; i < p_result.diagnostics.size(); i++) {
+		const FSLintCLI::Diagnostic &diagnostic = p_result.diagnostics[i];
+		if (diagnostic.rule_id == p_rule_id && (p_message_part.is_empty() || diagnostic.message.contains(p_message_part))) {
+			return &diagnostic;
+		}
+	}
+	return nullptr;
+}
+
+static void check_diagnostic_basics(
+		const FSLintCLI::Diagnostic &p_diagnostic,
+		const String &p_path,
+		FSLintCLI::Severity p_severity) {
+	CHECK_EQ(p_diagnostic.path, p_path);
+	CHECK_EQ(p_diagnostic.sarif_path, p_path);
+	CHECK_EQ(p_diagnostic.severity, p_severity);
+	CHECK_EQ(p_diagnostic.source, "foundry_script");
+	CHECK_GE(p_diagnostic.range.start_line, 1);
+	CHECK_GE(p_diagnostic.range.start_column, 1);
+	CHECK_GE(p_diagnostic.range.end_line, p_diagnostic.range.start_line);
+	CHECK_GE(p_diagnostic.range.end_column, 1);
+	if (p_diagnostic.range.end_line == p_diagnostic.range.start_line) {
+		CHECK_GE(p_diagnostic.range.end_column, p_diagnostic.range.start_column);
+	}
+}
+
+#ifdef DEBUG_ENABLED
+class LintWarningSettingsScope {
+	Variant previous_enable;
+	Variant previous_unused_variable;
+	bool previous_ignore = false;
+
+public:
+	LintWarningSettingsScope() {
+		const String unused_variable_setting = FSWarning::get_setting_path_from_code(FSWarning::UNUSED_VARIABLE);
+		previous_enable = ProjectSettings::get_singleton()->get_setting("debug/foundry_script/warnings/enable", true);
+		previous_unused_variable = ProjectSettings::get_singleton()->get_setting(
+				unused_variable_setting,
+				(int)FSWarning::WARN);
+		previous_ignore = FSParser::is_ignoring_warnings();
+
+		ProjectSettings::get_singleton()->set_setting("debug/foundry_script/warnings/enable", true);
+		ProjectSettings::get_singleton()->set_setting(unused_variable_setting, (int)FSWarning::WARN);
+		FSParser::update_project_settings();
+	}
+
+	~LintWarningSettingsScope() {
+		const String unused_variable_setting = FSWarning::get_setting_path_from_code(FSWarning::UNUSED_VARIABLE);
+		ProjectSettings::get_singleton()->set_setting("debug/foundry_script/warnings/enable", previous_enable);
+		ProjectSettings::get_singleton()->set_setting(unused_variable_setting, previous_unused_variable);
+		FSParser::update_project_settings();
+		FSParser::set_ignoring_warnings(previous_ignore);
+	}
+};
+#endif // DEBUG_ENABLED
 
 TEST_CASE("[Modules][FoundryScript][Lint] CLI option parsing uses CI defaults") {
 	List<String> args;
@@ -172,7 +238,9 @@ TEST_CASE("[Modules][FoundryScript][Lint] File collection recurses deterministic
 
 TEST_CASE("[Modules][FoundryScript][Lint] File collection flags a missing path") {
 	Vector<String> paths;
-	paths.push_back(OS::get_singleton()->get_temp_path().path_join("fs_lint_missing_path_" + itos(OS::get_singleton()->get_ticks_usec())).path_join("none.fs"));
+	const String missing_root = OS::get_singleton()->get_temp_path().path_join(
+			"fs_lint_missing_path_" + itos(OS::get_singleton()->get_ticks_usec()));
+	paths.push_back(missing_root.path_join("none.fs"));
 
 	bool had_error = false;
 	ERR_PRINT_OFF;
@@ -182,5 +250,66 @@ TEST_CASE("[Modules][FoundryScript][Lint] File collection flags a missing path")
 	CHECK(files.is_empty());
 	CHECK_MESSAGE(had_error, "A missing path must mark the collection as failed.");
 }
+
+TEST_CASE("[Modules][FoundryScript][Lint] Parser errors become diagnostics") {
+	const String source = "func run() -> void\n\tpass\n";
+	TemporaryLintTree tree("fs_lint_parse_diagnostics");
+	const String path = tree.root.path_join("parse_error.fs");
+	tree.write_file("parse_error.fs", source);
+
+	Vector<String> paths;
+	paths.push_back(path);
+	FSLintCLI::Options options;
+	const FSLintCLI::Result result = FSLintCLI::lint_paths(paths, options);
+
+	CHECK_FALSE(result.had_command_error);
+	const FSLintCLI::Diagnostic *diagnostic = find_diagnostic(result, "parse-error");
+	REQUIRE(diagnostic != nullptr);
+	check_diagnostic_basics(*diagnostic, path, FSLintCLI::SEVERITY_ERROR);
+	const bool has_expected_message = diagnostic->message.contains("Expected") || diagnostic->message.contains("expected");
+	CHECK_MESSAGE(has_expected_message, diagnostic->message);
+}
+
+TEST_CASE("[Modules][FoundryScript][Lint] Analyzer errors become diagnostics") {
+	const String source = "func run() -> int:\n\treturn \"bad\"\n";
+	TemporaryLintTree tree("fs_lint_analyzer_diagnostics");
+	const String path = tree.root.path_join("analyzer_error.fs");
+	tree.write_file("analyzer_error.fs", source);
+
+	Vector<String> paths;
+	paths.push_back(path);
+	FSLintCLI::Options options;
+	const FSLintCLI::Result result = FSLintCLI::lint_paths(paths, options);
+
+	CHECK_FALSE(result.had_command_error);
+	const FSLintCLI::Diagnostic *diagnostic = find_diagnostic(result, "analyzer-error", "Cannot return");
+	REQUIRE(diagnostic != nullptr);
+	check_diagnostic_basics(*diagnostic, path, FSLintCLI::SEVERITY_ERROR);
+	CHECK(diagnostic->message.contains("String"));
+	CHECK(diagnostic->message.contains("int"));
+}
+
+#ifdef DEBUG_ENABLED
+TEST_CASE("[Modules][FoundryScript][Lint] Warnings become diagnostics") {
+	LintWarningSettingsScope warning_settings;
+
+	const String source = "func run() -> void:\n\tvar unused := 1\n";
+	TemporaryLintTree tree("fs_lint_warning_diagnostics");
+	const String path = tree.root.path_join("warning.fs");
+	tree.write_file("warning.fs", source);
+
+	Vector<String> paths;
+	paths.push_back(path);
+	FSLintCLI::Options options;
+	const FSLintCLI::Result result = FSLintCLI::lint_paths(paths, options);
+
+	CHECK_FALSE(result.had_command_error);
+	const FSLintCLI::Diagnostic *diagnostic = find_diagnostic(result, "UNUSED_VARIABLE");
+	REQUIRE(diagnostic != nullptr);
+	check_diagnostic_basics(*diagnostic, path, FSLintCLI::SEVERITY_WARNING);
+	CHECK_EQ(diagnostic->rule_id.to_lower(), "unused_variable");
+	CHECK(diagnostic->message.contains("unused"));
+}
+#endif // DEBUG_ENABLED
 
 } // namespace FSTests

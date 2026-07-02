@@ -34,9 +34,68 @@
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
 #include "core/os/os.h"
+#include "fs_analyzer.h"
+#include "fs_parser.h"
+
+#ifdef DEBUG_ENABLED
+#include "fs_warning.h"
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>
+
+namespace {
+
+FSLintCLI::Range make_range(const Vector<String> &p_lines, int p_line, int p_column) {
+	FSLintCLI::Range range;
+	const int line_count = MAX(1, p_lines.size());
+	const int line = CLAMP(p_line, 1, line_count);
+	const String line_text = line <= p_lines.size() ? p_lines[line - 1] : String();
+	const int end_column = MAX(1, line_text.strip_edges(false, true).length() + 1);
+	const int start_column = CLAMP(p_column, 1, end_column);
+
+	range.start_line = line;
+	range.start_column = start_column;
+	range.end_line = line;
+	range.end_column = end_column;
+	return range;
+}
+
+void add_diagnostic(
+		Vector<FSLintCLI::Diagnostic> &r_diagnostics,
+		const String &p_path,
+		const FSLintCLI::Range &p_range,
+		FSLintCLI::Severity p_severity,
+		const String &p_rule_id,
+		const String &p_message) {
+	FSLintCLI::Diagnostic diagnostic;
+	diagnostic.path = p_path;
+	diagnostic.sarif_path = p_path;
+	diagnostic.range = p_range;
+	diagnostic.severity = p_severity;
+	diagnostic.rule_id = p_rule_id;
+	diagnostic.message = p_message;
+	r_diagnostics.push_back(diagnostic);
+}
+
+void add_parser_errors(
+		Vector<FSLintCLI::Diagnostic> &r_diagnostics,
+		const String &p_path,
+		const Vector<String> &p_lines,
+		const List<FSParser::ParserError> &p_errors,
+		const String &p_rule_id) {
+	for (const FSParser::ParserError &error : p_errors) {
+		add_diagnostic(
+				r_diagnostics,
+				p_path,
+				make_range(p_lines, error.line, error.column),
+				FSLintCLI::SEVERITY_ERROR,
+				p_rule_id,
+				error.message);
+	}
+}
+
+} // namespace
 
 FSLintCLI::Options FSLintCLI::parse_options(const List<String> &p_cmdline_args, String &r_error) {
 	Options options;
@@ -135,6 +194,60 @@ Vector<String> FSLintCLI::collect_files(const Vector<String> &p_paths, bool &r_h
 	}
 	files.sort();
 	return files;
+}
+
+FSLintCLI::Result FSLintCLI::lint_paths(const Vector<String> &p_paths, const Options &p_options) {
+	(void)p_options;
+
+	Result result;
+	bool had_collection_error = false;
+	const Vector<String> files = collect_files(p_paths, had_collection_error);
+	if (had_collection_error) {
+		result.had_command_error = true;
+		result.command_error = "Could not collect all input files.";
+	}
+
+	for (const String &file : files) {
+		Error read_error = OK;
+		const String source = FileAccess::get_file_as_string(file, &read_error);
+		if (read_error != OK) {
+			const String message = vformat("%s: could not read file", file);
+			result.had_command_error = true;
+			if (result.command_error.is_empty()) {
+				result.command_error = message;
+			}
+			if (CoreGlobals::print_error_enabled) {
+				fprintf(stderr, "%s\n", message.utf8().get_data());
+			}
+			continue;
+		}
+
+		const Vector<String> lines = source.split("\n");
+		FSParser parser;
+		const Error parse_error = parser.parse(source, file, false);
+		if (parse_error != OK || !parser.get_errors().is_empty()) {
+			add_parser_errors(result.diagnostics, file, lines, parser.get_errors(), "parse-error");
+			continue;
+		}
+
+		FSAnalyzer analyzer(&parser);
+		analyzer.analyze();
+		add_parser_errors(result.diagnostics, file, lines, parser.get_errors(), "analyzer-error");
+
+#ifdef DEBUG_ENABLED
+		for (const FSWarning &warning : parser.get_warnings()) {
+			add_diagnostic(
+					result.diagnostics,
+					file,
+					make_range(lines, warning.start_line, 1),
+					SEVERITY_WARNING,
+					warning.get_name(),
+					warning.get_message());
+		}
+#endif
+	}
+
+	return result;
 }
 
 String FSLintCLI::severity_to_string(Severity p_severity) {
