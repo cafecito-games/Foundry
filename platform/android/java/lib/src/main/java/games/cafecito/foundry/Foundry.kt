@@ -152,7 +152,7 @@ class Foundry private constructor(val context: Context) {
 	val directoryAccessHandler = DirectoryAccessHandler(context)
 	val fileAccessHandler = FileAccessHandler(context)
 	val netUtils = FoundryNetUtils(context)
-	private val godotInputHandler = FoundryInputHandler(context, this)
+	private val foundryInputHandler = FoundryInputHandler(context, this)
 
 	private val hasClipboardCallable = Callable {
 		mClipboard?.hasPrimaryClip() == true
@@ -578,17 +578,17 @@ class Foundry private constructor(val context: Context) {
 			Log.d(TAG, "Render view should be transparent: $shouldBeTransparent")
 			renderView = if (usesVulkan()) {
 				if (meetsVulkanRequirements(context.packageManager)) {
-					FoundryVulkanRenderView(this, godotInputHandler, shouldBeTransparent)
+					FoundryVulkanRenderView(this, foundryInputHandler, shouldBeTransparent)
 				} else if (canFallbackToOpenGL()) {
 					// Fallback to OpenGl.
-					FoundryGLRenderView(this, godotInputHandler, xrMode, useDebugOpengl, shouldBeTransparent)
+					FoundryGLRenderView(this, foundryInputHandler, xrMode, useDebugOpengl, shouldBeTransparent)
 				} else {
 					throw IllegalStateException(context.getString(R.string.error_missing_vulkan_requirements_message))
 				}
 
 			} else {
 				// Fallback to OpenGl.
-				FoundryGLRenderView(this, godotInputHandler, xrMode, useDebugOpengl, shouldBeTransparent)
+				FoundryGLRenderView(this, foundryInputHandler, xrMode, useDebugOpengl, shouldBeTransparent)
 			}
 
 			renderView?.let {
@@ -717,16 +717,16 @@ class Foundry private constructor(val context: Context) {
 		}
 
 		if (accelerometerEnabled.get() && mAccelerometer != null) {
-			mSensorManager?.registerListener(godotInputHandler, mAccelerometer, SensorManager.SENSOR_DELAY_GAME)
+			mSensorManager?.registerListener(foundryInputHandler, mAccelerometer, SensorManager.SENSOR_DELAY_GAME)
 		}
 		if (gravityEnabled.get() && mGravity != null) {
-			mSensorManager?.registerListener(godotInputHandler, mGravity, SensorManager.SENSOR_DELAY_GAME)
+			mSensorManager?.registerListener(foundryInputHandler, mGravity, SensorManager.SENSOR_DELAY_GAME)
 		}
 		if (magnetometerEnabled.get() && mMagnetometer != null) {
-			mSensorManager?.registerListener(godotInputHandler, mMagnetometer, SensorManager.SENSOR_DELAY_GAME)
+			mSensorManager?.registerListener(foundryInputHandler, mMagnetometer, SensorManager.SENSOR_DELAY_GAME)
 		}
 		if (gyroscopeEnabled.get() && mGyroscope != null) {
-			mSensorManager?.registerListener(godotInputHandler, mGyroscope, SensorManager.SENSOR_DELAY_GAME)
+			mSensorManager?.registerListener(foundryInputHandler, mGyroscope, SensorManager.SENSOR_DELAY_GAME)
 		}
 	}
 
@@ -738,7 +738,7 @@ class Foundry private constructor(val context: Context) {
 		}
 
 		renderView?.onActivityPaused()
-		mSensorManager?.unregisterListener(godotInputHandler)
+		mSensorManager?.unregisterListener(foundryInputHandler)
 		for (plugin in pluginRegistry.allPlugins) {
 			plugin.onMainPause()
 		}
@@ -1289,7 +1289,7 @@ class Foundry private constructor(val context: Context) {
 
 	@Keep
 	private fun initInputDevices() {
-		godotInputHandler.initInputDevices()
+		foundryInputHandler.initInputDevices()
 	}
 
 	@Keep

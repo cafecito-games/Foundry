@@ -41,7 +41,7 @@
 // Class that makes functions in java/src/games/cafecito/foundry/FoundryIO.java callable from C++
 class FoundryIOJavaWrapper {
 private:
-	jobject godot_io_instance;
+	jobject foundry_io_instance;
 	jclass cls;
 
 	jmethodID _open_URI = 0;
@@ -65,7 +65,7 @@ private:
 	jmethodID _get_system_dir = 0;
 
 public:
-	FoundryIOJavaWrapper(JNIEnv *p_env, jobject p_godot_io_instance);
+	FoundryIOJavaWrapper(JNIEnv *p_env, jobject p_foundry_io_instance);
 	~FoundryIOJavaWrapper();
 
 	jobject get_instance();

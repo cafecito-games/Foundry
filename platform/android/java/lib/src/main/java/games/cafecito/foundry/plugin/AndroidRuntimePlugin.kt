@@ -42,7 +42,7 @@ import games.cafecito.foundry.variant.Callable
  *
  * @see <a href="https://docs.godotengine.org/en/latest/tutorials/platform/android/javaclasswrapper_and_androidruntimeplugin.html">Integrating with Android APIs</a>
  */
-class AndroidRuntimePlugin(godot: Foundry) : FoundryPlugin(godot) {
+class AndroidRuntimePlugin(foundry: Foundry) : FoundryPlugin(foundry) {
 	private val TAG = AndroidRuntimePlugin::class.java.simpleName
 
 	override fun getPluginName() = "AndroidRuntime"

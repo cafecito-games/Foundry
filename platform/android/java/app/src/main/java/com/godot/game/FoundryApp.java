@@ -48,20 +48,20 @@ public class FoundryApp extends FoundryActivity {
 		// .NET libraries.
 		if (BuildConfig.FLAVOR.equals("mono")) {
 			try {
-				Log.v("GODOT", "Loading System.Security.Cryptography.Native.Android library");
+				Log.v("FOUNDRY", "Loading System.Security.Cryptography.Native.Android library");
 				System.loadLibrary("System.Security.Cryptography.Native.Android");
 			} catch (UnsatisfiedLinkError e) {
-				Log.e("GODOT", "Unable to load System.Security.Cryptography.Native.Android library");
+				Log.e("FOUNDRY", "Unable to load System.Security.Cryptography.Native.Android library");
 			}
 		}
 	}
 
 	private final Runnable updateWindowAppearance = () -> {
-		Foundry godot = getFoundry();
-		if (godot != null) {
-			godot.enableImmersiveMode(godot.isInImmersiveMode(), true);
-			godot.enableEdgeToEdge(godot.isInEdgeToEdgeMode(), true);
-			godot.setSystemBarsAppearance();
+		Foundry foundry = getFoundry();
+		if (foundry != null) {
+			foundry.enableImmersiveMode(foundry.isInImmersiveMode(), true);
+			foundry.enableEdgeToEdge(foundry.isInEdgeToEdgeMode(), true);
+			foundry.setSystemBarsAppearance();
 		}
 	};
 

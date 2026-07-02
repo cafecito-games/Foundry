@@ -58,7 +58,7 @@ public class FoundryLib {
 	public static native boolean initialize(
 			Foundry p_instance,
 			AssetManager p_asset_manager,
-			FoundryIO godotIO,
+			FoundryIO foundryIO,
 			FoundryNetUtils netUtils,
 			DirectoryAccessHandler directoryAccessHandler,
 			FileAccessHandler fileAccessHandler,

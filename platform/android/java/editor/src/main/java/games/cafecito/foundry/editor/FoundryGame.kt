@@ -77,7 +77,7 @@ open class FoundryGame : BaseFoundryGame() {
 		}
 
 		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-			val gameView = findViewById<View>(R.id.godot_fragment_container)
+			val gameView = findViewById<View>(R.id.foundry_fragment_container)
 			gameView?.addOnLayoutChangeListener { v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
 				gameView.getGlobalVisibleRect(gameViewSourceRectHint)
 			}

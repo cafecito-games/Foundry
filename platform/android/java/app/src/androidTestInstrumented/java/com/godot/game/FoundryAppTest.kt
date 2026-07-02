@@ -194,8 +194,8 @@ class FoundryAppTest {
 			Log.d(TAG, "Waiting for the engine to terminate...")
 			testPlugin.waitForEngineTermination(5_000L)
 
-			val godot = Foundry.getInstance(InstrumentationRegistry.getInstrumentation().targetContext)
-			assertTrue { godot.runStatus != Foundry.RunStatus.TERMINATING }
+			val foundry = Foundry.getInstance(InstrumentationRegistry.getInstrumentation().targetContext)
+			assertTrue { foundry.runStatus != Foundry.RunStatus.TERMINATING }
 		}
 	}
 
@@ -220,8 +220,8 @@ class FoundryAppTest {
 			Log.d(TAG, "Waiting for the engine to terminate...")
 			testPlugin.waitForEngineTermination(5_000L)
 
-			val godot = Foundry.getInstance(InstrumentationRegistry.getInstrumentation().targetContext)
-			assertTrue { godot.runStatus == Foundry.RunStatus.TERMINATING }
+			val foundry = Foundry.getInstance(InstrumentationRegistry.getInstrumentation().targetContext)
+			assertTrue { foundry.runStatus == Foundry.RunStatus.TERMINATING }
 		}
 	}
 }

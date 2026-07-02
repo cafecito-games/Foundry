@@ -1795,9 +1795,9 @@ void EditorExportPlatformAndroid::_fix_resources(const Ref<EditorExportPreset> &
 
 		String str = _parse_string(&r_manifest[offset], string_flags & UTF8_FLAG);
 
-		if (str == "godot-project-name") {
+		if (str == "foundry-project-name") {
 			str = project_name;
-		} else if (str.begins_with("godot-project-name")) {
+		} else if (str.begins_with("foundry-project-name")) {
 			String lang = str.substr(str.rfind_char('-') + 1).replace_char('-', '_');
 
 			if (appnames.is_empty()) {

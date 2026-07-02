@@ -43,69 +43,69 @@ FoundryJavaWrapper::FoundryJavaWrapper(JNIEnv *p_env, jobject p_foundry_instance
 	foundry_instance = p_env->NewGlobalRef(p_foundry_instance);
 
 	// get info about our Foundry class so we can get pointers and stuff...
-	godot_class = jni_find_class(p_env, "games/cafecito/foundry/Foundry");
-	if (godot_class) {
-		godot_class = (jclass)p_env->NewGlobalRef(godot_class);
+	foundry_class = jni_find_class(p_env, "games/cafecito/foundry/Foundry");
+	if (foundry_class) {
+		foundry_class = (jclass)p_env->NewGlobalRef(foundry_class);
 	} else {
 		// this is a pretty serious fail.. bail... pointers will stay 0
 		return;
 	}
 
 	// get some Foundry method pointers...
-	_restart = p_env->GetMethodID(godot_class, "restart", "()V");
-	_finish = p_env->GetMethodID(godot_class, "forceQuit", "(I)Z");
-	_set_keep_screen_on = p_env->GetMethodID(godot_class, "setKeepScreenOn", "(Z)V");
-	_alert = p_env->GetMethodID(godot_class, "alert", "(Ljava/lang/String;Ljava/lang/String;)V");
-	_is_dark_mode_supported = p_env->GetMethodID(godot_class, "isDarkModeSupported", "()Z");
-	_is_dark_mode = p_env->GetMethodID(godot_class, "isDarkMode", "()Z");
-	_get_accent_color = p_env->GetMethodID(godot_class, "getAccentColor", "()I");
-	_get_base_color = p_env->GetMethodID(godot_class, "getBaseColor", "()I");
-	_get_clipboard = p_env->GetMethodID(godot_class, "getClipboard", "()Ljava/lang/String;");
-	_set_clipboard = p_env->GetMethodID(godot_class, "setClipboard", "(Ljava/lang/String;)V");
-	_has_clipboard = p_env->GetMethodID(godot_class, "hasClipboard", "()Z");
-	_show_dialog = p_env->GetMethodID(godot_class, "showDialog", "(Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;)V");
-	_show_input_dialog = p_env->GetMethodID(godot_class, "showInputDialog", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V");
-	_show_file_picker = p_env->GetMethodID(godot_class, "showFilePicker", "(Ljava/lang/String;Ljava/lang/String;I[Ljava/lang/String;)V");
-	_request_permission = p_env->GetMethodID(godot_class, "requestPermission", "(Ljava/lang/String;)Z");
-	_request_permissions = p_env->GetMethodID(godot_class, "requestPermissions", "()Z");
-	_get_granted_permissions = p_env->GetMethodID(godot_class, "getGrantedPermissions", "()[Ljava/lang/String;");
-	_get_ca_certificates = p_env->GetMethodID(godot_class, "getCACertificates", "()Ljava/lang/String;");
-	_init_input_devices = p_env->GetMethodID(godot_class, "initInputDevices", "()V");
-	_vibrate = p_env->GetMethodID(godot_class, "vibrate", "(II)V");
-	_get_input_fallback_mapping = p_env->GetMethodID(godot_class, "getInputFallbackMapping", "()Ljava/lang/String;");
-	_on_godot_setup_completed = p_env->GetMethodID(godot_class, "onFoundrySetupCompleted", "()V");
-	_on_godot_main_loop_started = p_env->GetMethodID(godot_class, "onFoundryMainLoopStarted", "()V");
-	_on_godot_terminating = p_env->GetMethodID(godot_class, "onFoundryTerminating", "()V");
-	_create_new_foundry_instance = p_env->GetMethodID(godot_class, "createNewFoundryInstance", "([Ljava/lang/String;)I");
-	_get_render_view = p_env->GetMethodID(godot_class, "getRenderView", "()Lgames/cafecito/foundry/FoundryRenderView;");
-	_begin_benchmark_measure = p_env->GetMethodID(godot_class, "nativeBeginBenchmarkMeasure", "(Ljava/lang/String;Ljava/lang/String;)V");
-	_end_benchmark_measure = p_env->GetMethodID(godot_class, "nativeEndBenchmarkMeasure", "(Ljava/lang/String;Ljava/lang/String;)V");
-	_dump_benchmark = p_env->GetMethodID(godot_class, "nativeDumpBenchmark", "(Ljava/lang/String;)V");
-	_get_foundry_extension_list_config_file = p_env->GetMethodID(godot_class, "getFoundryExtensionConfigFiles", "()[Ljava/lang/String;");
-	_check_internal_feature_support = p_env->GetMethodID(godot_class, "checkInternalFeatureSupport", "(Ljava/lang/String;)Z");
-	_sign_apk = p_env->GetMethodID(godot_class, "nativeSignApk", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)I");
-	_verify_apk = p_env->GetMethodID(godot_class, "nativeVerifyApk", "(Ljava/lang/String;)I");
-	_enable_immersive_mode = p_env->GetMethodID(godot_class, "nativeEnableImmersiveMode", "(Z)V");
-	_is_in_immersive_mode = p_env->GetMethodID(godot_class, "isInImmersiveMode", "()Z");
-	_set_window_color = p_env->GetMethodID(godot_class, "setWindowColor", "(Ljava/lang/String;)V");
-	_on_editor_workspace_selected = p_env->GetMethodID(godot_class, "nativeOnEditorWorkspaceSelected", "(Ljava/lang/String;)V");
-	_get_activity = p_env->GetMethodID(godot_class, "getActivity", "()Landroid/app/Activity;");
-	_build_env_connect = p_env->GetMethodID(godot_class, "nativeBuildEnvConnect", "(Lgames/cafecito/foundry/variant/Callable;)Z");
-	_build_env_disconnect = p_env->GetMethodID(godot_class, "nativeBuildEnvDisconnect", "()V");
-	_build_env_execute = p_env->GetMethodID(godot_class, "nativeBuildEnvExecute", "(Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lgames/cafecito/foundry/variant/Callable;Lgames/cafecito/foundry/variant/Callable;)I");
-	_build_env_cancel = p_env->GetMethodID(godot_class, "nativeBuildEnvCancel", "(I)V");
-	_build_env_clean_project = p_env->GetMethodID(godot_class, "nativeBuildEnvCleanProject", "(Ljava/lang/String;Ljava/lang/String;Lgames/cafecito/foundry/variant/Callable;)V");
+	_restart = p_env->GetMethodID(foundry_class, "restart", "()V");
+	_finish = p_env->GetMethodID(foundry_class, "forceQuit", "(I)Z");
+	_set_keep_screen_on = p_env->GetMethodID(foundry_class, "setKeepScreenOn", "(Z)V");
+	_alert = p_env->GetMethodID(foundry_class, "alert", "(Ljava/lang/String;Ljava/lang/String;)V");
+	_is_dark_mode_supported = p_env->GetMethodID(foundry_class, "isDarkModeSupported", "()Z");
+	_is_dark_mode = p_env->GetMethodID(foundry_class, "isDarkMode", "()Z");
+	_get_accent_color = p_env->GetMethodID(foundry_class, "getAccentColor", "()I");
+	_get_base_color = p_env->GetMethodID(foundry_class, "getBaseColor", "()I");
+	_get_clipboard = p_env->GetMethodID(foundry_class, "getClipboard", "()Ljava/lang/String;");
+	_set_clipboard = p_env->GetMethodID(foundry_class, "setClipboard", "(Ljava/lang/String;)V");
+	_has_clipboard = p_env->GetMethodID(foundry_class, "hasClipboard", "()Z");
+	_show_dialog = p_env->GetMethodID(foundry_class, "showDialog", "(Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;)V");
+	_show_input_dialog = p_env->GetMethodID(foundry_class, "showInputDialog", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V");
+	_show_file_picker = p_env->GetMethodID(foundry_class, "showFilePicker", "(Ljava/lang/String;Ljava/lang/String;I[Ljava/lang/String;)V");
+	_request_permission = p_env->GetMethodID(foundry_class, "requestPermission", "(Ljava/lang/String;)Z");
+	_request_permissions = p_env->GetMethodID(foundry_class, "requestPermissions", "()Z");
+	_get_granted_permissions = p_env->GetMethodID(foundry_class, "getGrantedPermissions", "()[Ljava/lang/String;");
+	_get_ca_certificates = p_env->GetMethodID(foundry_class, "getCACertificates", "()Ljava/lang/String;");
+	_init_input_devices = p_env->GetMethodID(foundry_class, "initInputDevices", "()V");
+	_vibrate = p_env->GetMethodID(foundry_class, "vibrate", "(II)V");
+	_get_input_fallback_mapping = p_env->GetMethodID(foundry_class, "getInputFallbackMapping", "()Ljava/lang/String;");
+	_on_foundry_setup_completed = p_env->GetMethodID(foundry_class, "onFoundrySetupCompleted", "()V");
+	_on_foundry_main_loop_started = p_env->GetMethodID(foundry_class, "onFoundryMainLoopStarted", "()V");
+	_on_foundry_terminating = p_env->GetMethodID(foundry_class, "onFoundryTerminating", "()V");
+	_create_new_foundry_instance = p_env->GetMethodID(foundry_class, "createNewFoundryInstance", "([Ljava/lang/String;)I");
+	_get_render_view = p_env->GetMethodID(foundry_class, "getRenderView", "()Lgames/cafecito/foundry/FoundryRenderView;");
+	_begin_benchmark_measure = p_env->GetMethodID(foundry_class, "nativeBeginBenchmarkMeasure", "(Ljava/lang/String;Ljava/lang/String;)V");
+	_end_benchmark_measure = p_env->GetMethodID(foundry_class, "nativeEndBenchmarkMeasure", "(Ljava/lang/String;Ljava/lang/String;)V");
+	_dump_benchmark = p_env->GetMethodID(foundry_class, "nativeDumpBenchmark", "(Ljava/lang/String;)V");
+	_get_foundry_extension_list_config_file = p_env->GetMethodID(foundry_class, "getFoundryExtensionConfigFiles", "()[Ljava/lang/String;");
+	_check_internal_feature_support = p_env->GetMethodID(foundry_class, "checkInternalFeatureSupport", "(Ljava/lang/String;)Z");
+	_sign_apk = p_env->GetMethodID(foundry_class, "nativeSignApk", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)I");
+	_verify_apk = p_env->GetMethodID(foundry_class, "nativeVerifyApk", "(Ljava/lang/String;)I");
+	_enable_immersive_mode = p_env->GetMethodID(foundry_class, "nativeEnableImmersiveMode", "(Z)V");
+	_is_in_immersive_mode = p_env->GetMethodID(foundry_class, "isInImmersiveMode", "()Z");
+	_set_window_color = p_env->GetMethodID(foundry_class, "setWindowColor", "(Ljava/lang/String;)V");
+	_on_editor_workspace_selected = p_env->GetMethodID(foundry_class, "nativeOnEditorWorkspaceSelected", "(Ljava/lang/String;)V");
+	_get_activity = p_env->GetMethodID(foundry_class, "getActivity", "()Landroid/app/Activity;");
+	_build_env_connect = p_env->GetMethodID(foundry_class, "nativeBuildEnvConnect", "(Lgames/cafecito/foundry/variant/Callable;)Z");
+	_build_env_disconnect = p_env->GetMethodID(foundry_class, "nativeBuildEnvDisconnect", "()V");
+	_build_env_execute = p_env->GetMethodID(foundry_class, "nativeBuildEnvExecute", "(Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lgames/cafecito/foundry/variant/Callable;Lgames/cafecito/foundry/variant/Callable;)I");
+	_build_env_cancel = p_env->GetMethodID(foundry_class, "nativeBuildEnvCancel", "(I)V");
+	_build_env_clean_project = p_env->GetMethodID(foundry_class, "nativeBuildEnvCleanProject", "(Ljava/lang/String;Ljava/lang/String;Lgames/cafecito/foundry/variant/Callable;)V");
 }
 
 FoundryJavaWrapper::~FoundryJavaWrapper() {
-	if (godot_view) {
-		delete godot_view;
+	if (foundry_view) {
+		delete foundry_view;
 	}
 
 	JNIEnv *env = get_jni_env();
 	ERR_FAIL_NULL(env);
 	env->DeleteGlobalRef(foundry_instance);
-	env->DeleteGlobalRef(godot_class);
+	env->DeleteGlobalRef(foundry_class);
 }
 
 jobject FoundryJavaWrapper::get_activity() {
@@ -118,47 +118,47 @@ jobject FoundryJavaWrapper::get_activity() {
 	return nullptr;
 }
 
-FoundryJavaViewWrapper *FoundryJavaWrapper::get_godot_view() {
-	if (godot_view != nullptr) {
-		return godot_view;
+FoundryJavaViewWrapper *FoundryJavaWrapper::get_foundry_view() {
+	if (foundry_view != nullptr) {
+		return foundry_view;
 	}
 	if (_get_render_view) {
 		JNIEnv *env = get_jni_env();
 		ERR_FAIL_NULL_V(env, nullptr);
-		jobject godot_render_view = env->CallObjectMethod(foundry_instance, _get_render_view);
-		if (!env->IsSameObject(godot_render_view, nullptr)) {
-			godot_view = new FoundryJavaViewWrapper(godot_render_view);
+		jobject foundry_render_view = env->CallObjectMethod(foundry_instance, _get_render_view);
+		if (!env->IsSameObject(foundry_render_view, nullptr)) {
+			foundry_view = new FoundryJavaViewWrapper(foundry_render_view);
 		}
 	}
-	return godot_view;
+	return foundry_view;
 }
 
-void FoundryJavaWrapper::on_godot_setup_completed(JNIEnv *p_env) {
-	if (_on_godot_setup_completed) {
+void FoundryJavaWrapper::on_foundry_setup_completed(JNIEnv *p_env) {
+	if (_on_foundry_setup_completed) {
 		if (p_env == nullptr) {
 			p_env = get_jni_env();
 		}
-		p_env->CallVoidMethod(foundry_instance, _on_godot_setup_completed);
+		p_env->CallVoidMethod(foundry_instance, _on_foundry_setup_completed);
 	}
 }
 
-void FoundryJavaWrapper::on_godot_main_loop_started(JNIEnv *p_env) {
-	if (_on_godot_main_loop_started) {
-		if (p_env == nullptr) {
-			p_env = get_jni_env();
-		}
-		ERR_FAIL_NULL(p_env);
-		p_env->CallVoidMethod(foundry_instance, _on_godot_main_loop_started);
-	}
-}
-
-void FoundryJavaWrapper::on_godot_terminating(JNIEnv *p_env) {
-	if (_on_godot_terminating) {
+void FoundryJavaWrapper::on_foundry_main_loop_started(JNIEnv *p_env) {
+	if (_on_foundry_main_loop_started) {
 		if (p_env == nullptr) {
 			p_env = get_jni_env();
 		}
 		ERR_FAIL_NULL(p_env);
-		p_env->CallVoidMethod(foundry_instance, _on_godot_terminating);
+		p_env->CallVoidMethod(foundry_instance, _on_foundry_main_loop_started);
+	}
+}
+
+void FoundryJavaWrapper::on_foundry_terminating(JNIEnv *p_env) {
+	if (_on_foundry_terminating) {
+		if (p_env == nullptr) {
+			p_env = get_jni_env();
+		}
+		ERR_FAIL_NULL(p_env);
+		p_env->CallVoidMethod(foundry_instance, _on_foundry_terminating);
 	}
 }
 

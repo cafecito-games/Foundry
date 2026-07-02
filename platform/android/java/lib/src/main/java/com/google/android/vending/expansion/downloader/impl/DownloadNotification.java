@@ -16,10 +16,10 @@
 
 package com.google.android.vending.expansion.downloader.impl;
 
-// -- GODOT start --
+// -- FOUNDRY start --
 //import com.android.vending.expansion.downloader.R;
 import games.cafecito.foundry.R;
-// -- GODOT end --
+// -- FOUNDRY end --
 
 import com.google.android.vending.expansion.downloader.DownloadProgressInfo;
 import com.google.android.vending.expansion.downloader.DownloaderClientMarshaller;

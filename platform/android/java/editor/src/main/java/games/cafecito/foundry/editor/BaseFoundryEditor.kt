@@ -348,7 +348,7 @@ abstract class BaseFoundryEditor : FoundryActivity(), GameMenuFragment.GameMenuL
 
 		runOnUiThread {
 			// Enable long press, panning and scaling gestures
-			godotFragment?.foundry?.renderView?.inputHandler?.apply {
+			foundryFragment?.foundry?.renderView?.inputHandler?.apply {
 				enableLongPress(longPressEnabled)
 				enablePanningAndScalingGestures(panScaleEnabled)
 				setOverrideVolumeButtons(overrideVolumeButtonsEnabled)
@@ -513,7 +513,7 @@ abstract class BaseFoundryEditor : FoundryActivity(), GameMenuFragment.GameMenuL
 			return editorWindowInfo.windowId
 		}
 
-		val sourceView = godotFragment?.view
+		val sourceView = foundryFragment?.view
 		val activityOptions = if (sourceView == null) {
 			null
 		} else {
@@ -549,8 +549,8 @@ abstract class BaseFoundryEditor : FoundryActivity(), GameMenuFragment.GameMenuL
 		}
 	}
 
-	final override fun onFoundryForceQuit(godotInstanceId: Int): Boolean {
-		val editorWindowInfo = getEditorWindowInfoForInstanceId(godotInstanceId) ?: return super.onFoundryForceQuit(godotInstanceId)
+	final override fun onFoundryForceQuit(foundryInstanceId: Int): Boolean {
+		val editorWindowInfo = getEditorWindowInfoForInstanceId(foundryInstanceId) ?: return super.onFoundryForceQuit(foundryInstanceId)
 
 		if (editorWindowInfo.windowClassName == javaClass.name) {
 			Log.d(TAG, "Force quitting ${editorWindowInfo.windowClassName}")
@@ -576,7 +576,7 @@ abstract class BaseFoundryEditor : FoundryActivity(), GameMenuFragment.GameMenuL
 			}
 		}
 
-		return super.onFoundryForceQuit(godotInstanceId)
+		return super.onFoundryForceQuit(foundryInstanceId)
 	}
 
 	// Get the screen's density scale

@@ -40,29 +40,29 @@ class Callable private constructor(private val nativeCallablePointer: Long) {
 
 	companion object {
 		/**
-		 * Invoke method [methodName] on the Foundry object specified by [godotObjectId]
+		 * Invoke method [methodName] on the Foundry object specified by [foundryObjectId]
 		 */
 		@JvmStatic
-		fun call(godotObjectId: Long, methodName: String, vararg methodParameters: Any): Any? {
-			return nativeCallObject(godotObjectId, methodName, methodParameters)
+		fun call(foundryObjectId: Long, methodName: String, vararg methodParameters: Any): Any? {
+			return nativeCallObject(foundryObjectId, methodName, methodParameters)
 		}
 
 		/**
-		 * Invoke method [methodName] on the Foundry object specified by [godotObjectId] during idle time.
+		 * Invoke method [methodName] on the Foundry object specified by [foundryObjectId] during idle time.
 		 */
 		@JvmStatic
-		fun callDeferred(godotObjectId: Long, methodName: String, vararg methodParameters: Any) {
-			nativeCallObjectDeferred(godotObjectId, methodName, methodParameters)
+		fun callDeferred(foundryObjectId: Long, methodName: String, vararg methodParameters: Any) {
+			nativeCallObjectDeferred(foundryObjectId, methodName, methodParameters)
 		}
 
 		@JvmStatic
 		private external fun nativeCall(pointer: Long, params: Array<out Any>): Any?
 
 		@JvmStatic
-		private external fun nativeCallObject(godotObjectId: Long, methodName: String, params: Array<out Any>): Any?
+		private external fun nativeCallObject(foundryObjectId: Long, methodName: String, params: Array<out Any>): Any?
 
 		@JvmStatic
-		private external fun nativeCallObjectDeferred(godotObjectId: Long, methodName: String, params: Array<out Any>)
+		private external fun nativeCallObjectDeferred(foundryObjectId: Long, methodName: String, params: Array<out Any>)
 
 		@JvmStatic
 		private external fun releaseNativePointer(nativePointer: Long)

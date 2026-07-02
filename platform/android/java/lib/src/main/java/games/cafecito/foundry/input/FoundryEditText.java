@@ -239,7 +239,7 @@ public class FoundryEditText extends EditText {
 			return mRenderView.getInputHandler().onKeyDown(keyCode, keyEvent);
 		}
 
-		// pass event to godot in special cases
+		// pass event to Foundry in special cases
 		if (needHandlingInFoundry(keyCode, keyEvent) && mRenderView.getInputHandler().onKeyDown(keyCode, keyEvent)) {
 			return true;
 		} else {

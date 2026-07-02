@@ -95,15 +95,15 @@ public final class FoundryPluginRegistry {
 	 * A plugin manifest entry is a '<meta-data>' tag setup as described in the {@link FoundryPlugin}
 	 * documentation.
 	 *
-	 * @param godot Foundry instance
+	 * @param foundry Foundry instance
 	 * @param runtimePlugins Set of plugins provided at runtime for registration
 	 * @return A singleton instance of {@link FoundryPluginRegistry}. This ensures that only one instance
 	 * of each Foundry Android plugins is available at runtime.
 	 */
-	public static FoundryPluginRegistry initializePluginRegistry(Foundry godot, Set<FoundryPlugin> runtimePlugins) {
+	public static FoundryPluginRegistry initializePluginRegistry(Foundry foundry, Set<FoundryPlugin> runtimePlugins) {
 		if (instance == null) {
 			instance = new FoundryPluginRegistry();
-			instance.loadPlugins(godot, runtimePlugins);
+			instance.loadPlugins(foundry, runtimePlugins);
 		}
 
 		return instance;
@@ -123,7 +123,7 @@ public final class FoundryPluginRegistry {
 		return instance;
 	}
 
-	private void loadPlugins(Foundry godot, Set<FoundryPlugin> runtimePlugins) {
+	private void loadPlugins(Foundry foundry, Set<FoundryPlugin> runtimePlugins) {
 		// Register the runtime plugins
 		if (runtimePlugins != null && !runtimePlugins.isEmpty()) {
 			for (FoundryPlugin plugin : runtimePlugins) {
@@ -134,7 +134,7 @@ public final class FoundryPluginRegistry {
 
 		// Register the manifest plugins
 		try {
-			final Context context = godot.getContext();
+			final Context context = foundry.getContext();
 			ApplicationInfo appInfo = context
 											  .getPackageManager()
 											  .getApplicationInfo(context.getPackageName(),
@@ -167,7 +167,7 @@ public final class FoundryPluginRegistry {
 																	   .forName(pluginHandleClassFullName);
 							Constructor<FoundryPlugin> pluginConstructor = pluginClass
 																				   .getConstructor(Foundry.class);
-							FoundryPlugin pluginHandle = pluginConstructor.newInstance(godot);
+							FoundryPlugin pluginHandle = pluginConstructor.newInstance(foundry);
 
 							// Load the plugin initializer into the registry using the plugin name as key.
 							if (!pluginName.equals(pluginHandle.getPluginName())) {

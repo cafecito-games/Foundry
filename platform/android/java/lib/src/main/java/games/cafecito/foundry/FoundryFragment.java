@@ -89,12 +89,12 @@ public class FoundryFragment extends Fragment implements IDownloaderClient, Foun
 
 	private Button mPauseButton;
 
-	private FrameLayout godotContainerLayout;
+	private FrameLayout foundryContainerLayout;
 	private int mState;
 
 	@Nullable
 	private FoundryHost parentHost;
-	private Foundry godot;
+	private Foundry foundry;
 
 	private void setState(int newState) {
 		if (mState != newState) {
@@ -110,7 +110,7 @@ public class FoundryFragment extends Fragment implements IDownloaderClient, Foun
 
 	@Override
 	public Foundry getFoundry() {
-		return godot;
+		return foundry;
 	}
 
 	@Override
@@ -125,9 +125,9 @@ public class FoundryFragment extends Fragment implements IDownloaderClient, Foun
 
 	@Override
 	public void onDetach() {
-		if (godotContainerLayout != null && godotContainerLayout.getParent() != null) {
+		if (foundryContainerLayout != null && foundryContainerLayout.getParent() != null) {
 			Log.d(TAG, "Cleaning up Foundry container layout during detach.");
-			((ViewGroup)godotContainerLayout.getParent()).removeView(godotContainerLayout);
+			((ViewGroup)foundryContainerLayout.getParent()).removeView(foundryContainerLayout);
 		}
 
 		super.onDetach();
@@ -138,21 +138,21 @@ public class FoundryFragment extends Fragment implements IDownloaderClient, Foun
 	@Override
 	public void onConfigurationChanged(Configuration newConfig) {
 		super.onConfigurationChanged(newConfig);
-		godot.onConfigurationChanged(newConfig);
+		foundry.onConfigurationChanged(newConfig);
 	}
 
 	@CallSuper
 	@Override
 	public void onActivityResult(int requestCode, int resultCode, Intent data) {
 		super.onActivityResult(requestCode, resultCode, data);
-		godot.onActivityResult(requestCode, resultCode, data);
+		foundry.onActivityResult(requestCode, resultCode, data);
 	}
 
 	@CallSuper
 	@Override
 	public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
 		super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-		godot.onRequestPermissionsResult(requestCode, permissions, grantResults);
+		foundry.onRequestPermissionsResult(requestCode, permissions, grantResults);
 	}
 
 	@Override
@@ -167,10 +167,10 @@ public class FoundryFragment extends Fragment implements IDownloaderClient, Foun
 		super.onCreate(icicle);
 
 		if (parentHost != null) {
-			godot = parentHost.getFoundry();
+			foundry = parentHost.getFoundry();
 		}
-		if (godot == null) {
-			godot = Foundry.getInstance(requireContext());
+		if (foundry == null) {
+			foundry = Foundry.getInstance(requireContext());
 		}
 		performEngineInitialization();
 		BenchmarkUtils.endBenchmarkMeasure("Startup", "FoundryFragment::onCreate");
@@ -178,12 +178,12 @@ public class FoundryFragment extends Fragment implements IDownloaderClient, Foun
 
 	private void performEngineInitialization() {
 		try {
-			if (!godot.initEngine(this, getCommandLine(), getHostPlugins(godot))) {
+			if (!foundry.initEngine(this, getCommandLine(), getHostPlugins(foundry))) {
 				throw new IllegalStateException("Unable to initialize Foundry engine");
 			}
 
-			godotContainerLayout = godot.onInitRenderView(this);
-			if (godotContainerLayout == null) {
+			foundryContainerLayout = foundry.onInitRenderView(this);
+			if (foundryContainerLayout == null) {
 				throw new IllegalStateException("Unable to initialize engine render view");
 			}
 		} catch (IllegalStateException e) {
@@ -191,7 +191,7 @@ public class FoundryFragment extends Fragment implements IDownloaderClient, Foun
 			final String errorMessage = TextUtils.isEmpty(e.getMessage())
 					? getString(R.string.error_engine_setup_message)
 					: e.getMessage();
-			godot.alert(errorMessage, getString(R.string.text_error_title), godot::destroyAndKillProcess);
+			foundry.alert(errorMessage, getString(R.string.text_error_title), foundry::destroyAndKillProcess);
 		} catch (IllegalArgumentException ignored) {
 			final Activity activity = getActivity();
 			Intent notifierIntent = new Intent(activity, activity.getClass());
@@ -237,22 +237,22 @@ public class FoundryFragment extends Fragment implements IDownloaderClient, Foun
 			return downloadingExpansionView;
 		}
 
-		if (godotContainerLayout != null && godotContainerLayout.getParent() != null) {
+		if (foundryContainerLayout != null && foundryContainerLayout.getParent() != null) {
 			Log.w(TAG, "Foundry container layout already has a parent, removing it.");
-			((ViewGroup)godotContainerLayout.getParent()).removeView(godotContainerLayout);
+			((ViewGroup)foundryContainerLayout.getParent()).removeView(foundryContainerLayout);
 		}
 
-		return godotContainerLayout;
+		return foundryContainerLayout;
 	}
 
 	@Override
 	public void onDestroy() {
-		if (godotContainerLayout != null && godotContainerLayout.getParent() != null) {
+		if (foundryContainerLayout != null && foundryContainerLayout.getParent() != null) {
 			Log.w(TAG, "Removing Foundry container layout from parent during destruction.");
-			((ViewGroup)godotContainerLayout.getParent()).removeView(godotContainerLayout);
+			((ViewGroup)foundryContainerLayout.getParent()).removeView(foundryContainerLayout);
 		}
 
-		godot.onDestroy(this);
+		foundry.onDestroy(this);
 		super.onDestroy();
 	}
 
@@ -260,57 +260,57 @@ public class FoundryFragment extends Fragment implements IDownloaderClient, Foun
 	public void onPause() {
 		super.onPause();
 
-		if (!godot.isInitialized()) {
+		if (!foundry.isInitialized()) {
 			if (null != mDownloaderClientStub) {
 				mDownloaderClientStub.disconnect(getActivity());
 			}
 			return;
 		}
 
-		godot.onPause(this);
+		foundry.onPause(this);
 	}
 
 	@Override
 	public void onStop() {
 		super.onStop();
-		if (!godot.isInitialized()) {
+		if (!foundry.isInitialized()) {
 			if (null != mDownloaderClientStub) {
 				mDownloaderClientStub.disconnect(getActivity());
 			}
 			return;
 		}
 
-		godot.onStop(this);
+		foundry.onStop(this);
 	}
 
 	@Override
 	public void onStart() {
 		super.onStart();
-		if (!godot.isInitialized()) {
+		if (!foundry.isInitialized()) {
 			if (null != mDownloaderClientStub) {
 				mDownloaderClientStub.connect(getActivity());
 			}
 			return;
 		}
 
-		godot.onStart(this);
+		foundry.onStart(this);
 	}
 
 	@Override
 	public void onResume() {
 		super.onResume();
-		if (!godot.isInitialized()) {
+		if (!foundry.isInitialized()) {
 			if (null != mDownloaderClientStub) {
 				mDownloaderClientStub.connect(getActivity());
 			}
 			return;
 		}
 
-		godot.onResume(this);
+		foundry.onResume(this);
 	}
 
 	public void onBackPressed() {
-		godot.onBackPressed();
+		foundry.onBackPressed();
 	}
 
 	/**
@@ -437,8 +437,8 @@ public class FoundryFragment extends Fragment implements IDownloaderClient, Foun
 	}
 
 	@Override
-	public boolean onFoundryForceQuit(int godotInstanceId) {
-		return parentHost != null && parentHost.onFoundryForceQuit(godotInstanceId);
+	public boolean onFoundryForceQuit(int foundryInstanceId) {
+		return parentHost != null && parentHost.onFoundryForceQuit(foundryInstanceId);
 	}
 
 	@Override

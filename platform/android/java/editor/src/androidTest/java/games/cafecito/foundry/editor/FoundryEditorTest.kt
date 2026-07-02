@@ -100,11 +100,11 @@ class FoundryEditorTest {
 	 */
 	@Test
 	fun testExplicitFoundryEditorLaunch() {
-		val godotEditorIntent = Intent().apply {
+		val foundryEditorIntent = Intent().apply {
 			component = ComponentName(BuildConfig.APPLICATION_ID, FOUNDRY_EDITOR_CLASS_NAME)
 			putExtra(EXTRA_COMMAND_LINE_PARAMS, TEST_COMMAND_LINE_PARAMS)
 		}
-		ActivityScenario.launch<FoundryEditor>(godotEditorIntent).use { scenario ->
+		ActivityScenario.launch<FoundryEditor>(foundryEditorIntent).use { scenario ->
 			scenario.onActivity { activity ->
 				assertEquals(activity.intent.component?.className, FOUNDRY_EDITOR_CLASS_NAME)
 

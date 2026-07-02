@@ -60,7 +60,7 @@ import games.cafecito.foundry.Foundry;
  * <p>
  * A Foundry Android plugin is an Android library with the following requirements:
  * <p>
- * - The plugin must have a dependency on the Foundry Android library: `implementation "games.cafecito.foundry:foundry:<godotLibVersion>"`
+ * - The plugin must have a dependency on the Foundry Android library: `implementation "games.cafecito.foundry:foundry:<foundryLibVersion>"`
  * <p>
  * - The plugin must include a <meta-data> tag in its Android manifest with the following format:
  * <meta-data android:name="org.godotengine.plugin.v2.[PluginName]" android:value="[plugin.init.ClassFullName]" />
@@ -82,22 +82,22 @@ import games.cafecito.foundry.Foundry;
 public abstract class FoundryPlugin {
 	private static final String TAG = FoundryPlugin.class.getSimpleName();
 
-	private final Foundry godot;
+	private final Foundry foundry;
 	private final ConcurrentHashMap<String, SignalInfo> registeredSignals = new ConcurrentHashMap<>();
 
 	/**
 	 * Base constructor passing a {@link Foundry} instance through which the plugin can access Foundry's
 	 * APIs and lifecycle events.
 	 */
-	public FoundryPlugin(Foundry godot) {
-		this.godot = godot;
+	public FoundryPlugin(Foundry foundry) {
+		this.foundry = foundry;
 	}
 
 	/**
 	 * Provides access to the Foundry engine.
 	 */
 	protected Foundry getFoundry() {
-		return godot;
+		return foundry;
 	}
 
 	/**
@@ -105,14 +105,14 @@ public abstract class FoundryPlugin {
 	 */
 	@Nullable
 	protected Activity getActivity() {
-		return godot.getActivity();
+		return foundry.getActivity();
 	}
 
 	/**
 	 * Provides access to the {@link Context}.
 	 */
 	protected Context getContext() {
-		return godot.getContext();
+		return foundry.getContext();
 	}
 
 	/**
@@ -351,7 +351,7 @@ public abstract class FoundryPlugin {
 	 * @param action the action to run on the host thread
 	 */
 	protected void runOnHostThread(Runnable action) {
-		godot.runOnHostThread(action);
+		foundry.runOnHostThread(action);
 	}
 
 	/**
@@ -360,7 +360,7 @@ public abstract class FoundryPlugin {
 	 * @param action the action to run on the render thread
 	 */
 	protected void runOnRenderThread(Runnable action) {
-		godot.runOnRenderThread(action);
+		foundry.runOnRenderThread(action);
 	}
 
 	/**
@@ -396,12 +396,12 @@ public abstract class FoundryPlugin {
 
 	/**
 	 * Emit a Foundry signal.
-	 * @param godot Foundry instance
+	 * @param foundry Foundry instance
 	 * @param pluginName Name of the Foundry plugin the signal will be emitted from. The plugin must already be registered with the Foundry engine.
 	 * @param signalInfo Information about the signal to emit.
 	 * @param signalArgs Arguments used to populate the emitted signal. The arguments will be validated against the given {@link SignalInfo} parameter.
 	 */
-	public static void emitSignal(Foundry godot, String pluginName, SignalInfo signalInfo, final Object... signalArgs) {
+	public static void emitSignal(Foundry foundry, String pluginName, SignalInfo signalInfo, final Object... signalArgs) {
 		try {
 			if (signalInfo == null) {
 				throw new IllegalArgumentException("Signal must be non null.");
@@ -423,7 +423,7 @@ public abstract class FoundryPlugin {
 				}
 			}
 
-			godot.runOnRenderThread(() -> nativeEmitSignal(pluginName, signalInfo.getName(), signalArgs));
+			foundry.runOnRenderThread(() -> nativeEmitSignal(pluginName, signalInfo.getName(), signalArgs));
 
 		} catch (IllegalArgumentException exception) {
 			Log.w(TAG, exception);

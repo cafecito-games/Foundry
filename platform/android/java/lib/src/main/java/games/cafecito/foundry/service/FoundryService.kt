@@ -222,9 +222,9 @@ open class FoundryService : Service() {
 							return
 						}
 
-						val godotContainerLayout = service.godot.containerLayout
-						if (godotContainerLayout == null) {
-							Log.e(TAG, "Invalid godot layout.. Aborting")
+						val foundryContainerLayout = service.foundry.containerLayout
+						if (foundryContainerLayout == null) {
+							Log.e(TAG, "Invalid Foundry layout.. Aborting")
 							service.listener?.onEngineError(EngineError.SCVH_CREATION_FAILED)
 							return
 						}
@@ -238,7 +238,7 @@ open class FoundryService : Service() {
 
 						Log.d(TAG, "Setting up SurfaceControlViewHost")
 						currentViewHost = SurfaceControlViewHost(service, display, hostToken).apply {
-							setView(godotContainerLayout, width, height)
+							setView(foundryContainerLayout, width, height)
 
 							Log.i(TAG, "Attached Foundry engine to SurfaceControlViewHost")
 							service.listener?.onEngineStatusUpdate(
@@ -259,7 +259,7 @@ open class FoundryService : Service() {
 
 	private inner class FoundryServiceHost : FoundryHost {
 		override fun getActivity() = null
-		override fun getFoundry() = this@FoundryService.godot
+		override fun getFoundry() = this@FoundryService.foundry
 		override fun getCommandLine() = commandLineParams
 
 		override fun runOnHostThread(action: Runnable) {
@@ -271,14 +271,14 @@ open class FoundryService : Service() {
 		}
 
 		override fun onFoundryForceQuit(instance: Foundry) {
-			if (instance === godot) {
+			if (instance === foundry) {
 				Log.d(TAG, "Force quitting Foundry service")
 				forceQuitService()
 			}
 		}
 
 		override fun onFoundryRestartRequested(instance: Foundry) {
-			if (instance === godot) {
+			if (instance === foundry) {
 				Log.d(TAG, "Restarting Foundry service")
 				listener?.onEngineRestartRequested()
 			}
@@ -288,9 +288,9 @@ open class FoundryService : Service() {
 	private val commandLineParams = ArrayList<String>()
 	private val handler = IncomingHandler(WeakReference(this))
 	private val messenger = Messenger(handler)
-	private val godotHost = FoundryServiceHost()
+	private val foundryHost = FoundryServiceHost()
 
-	private val godot: Foundry by lazy { Foundry.getInstance(applicationContext) }
+	private val foundry: Foundry by lazy { Foundry.getInstance(applicationContext) }
 	private var listener: RemoteListener? = null
 
 	override fun onCreate() {
@@ -321,11 +321,11 @@ open class FoundryService : Service() {
 		Log.d(TAG, "Performing engine initialization")
 		try {
 			// Initialize the Foundry instance
-			if (!godot.initEngine(godotHost, godotHost.commandLine, godotHost.getHostPlugins(godot))) {
+			if (!foundry.initEngine(foundryHost, foundryHost.commandLine, foundryHost.getHostPlugins(foundry))) {
 				throw IllegalStateException("Unable to initialize Foundry engine layer")
 			}
 
-			if (godot.onInitRenderView(godotHost) == null) {
+			if (foundry.onInitRenderView(foundryHost) == null) {
 				throw IllegalStateException("Unable to initialize engine render view")
 			}
 			return true
@@ -337,7 +337,7 @@ open class FoundryService : Service() {
 			} else {
 				e.message!!
 			}
-			godot.alert(errorMessage, getString(R.string.text_error_title)) { godot.destroyAndKillProcess() }
+			foundry.alert(errorMessage, getString(R.string.text_error_title)) { foundry.destroyAndKillProcess() }
 			return false
 		}
 	}
@@ -363,7 +363,7 @@ open class FoundryService : Service() {
 	}
 
 	private fun initEngine(args: Array<String>?): FrameLayout? {
-		if (!godot.isInitialized()) {
+		if (!foundry.isInitialized()) {
 			if (!args.isNullOrEmpty()) {
 				updateCommandLineParams(args.asList())
 			}
@@ -375,49 +375,49 @@ open class FoundryService : Service() {
 				Log.i(TAG, "Engine initialization complete!")
 			}
 		}
-		val godotContainerLayout = godot.containerLayout
-		if (godotContainerLayout == null) {
+		val foundryContainerLayout = foundry.containerLayout
+		if (foundryContainerLayout == null) {
 			listener?.onEngineError(EngineError.INIT_FAILED)
 		} else {
 			Log.i(TAG, "Initialized Foundry engine")
 			listener?.onEngineStatusUpdate(EngineStatus.INITIALIZED)
 		}
 
-		return godotContainerLayout
+		return foundryContainerLayout
 	}
 
 	private fun startEngine() {
-		if (!godot.isInitialized()) {
+		if (!foundry.isInitialized()) {
 			Log.e(TAG, "Attempting to start uninitialized Foundry engine instance")
 			return
 		}
 
 		Log.d(TAG, "Starting Foundry engine")
-		godot.onStart(godotHost)
-		godot.onResume(godotHost)
+		foundry.onStart(foundryHost)
+		foundry.onResume(foundryHost)
 
 		listener?.onEngineStatusUpdate(EngineStatus.STARTED)
 	}
 
 	private fun stopEngine() {
-		if (!godot.isInitialized()) {
+		if (!foundry.isInitialized()) {
 			Log.e(TAG, "Attempting to stop uninitialized Foundry engine instance")
 			return
 		}
 
 		Log.d(TAG, "Stopping Foundry engine")
-		godot.onPause(godotHost)
-		godot.onStop(godotHost)
+		foundry.onPause(foundryHost)
+		foundry.onStop(foundryHost)
 
 		listener?.onEngineStatusUpdate(EngineStatus.STOPPED)
 	}
 
 	private fun destroyEngine() {
-		if (!godot.isInitialized()) {
+		if (!foundry.isInitialized()) {
 			return
 		}
 
-		godot.onDestroy(godotHost)
+		foundry.onDestroy(foundryHost)
 
 		listener?.onEngineStatusUpdate(EngineStatus.DESTROYED)
 		listener = null

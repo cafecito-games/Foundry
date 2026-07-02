@@ -70,7 +70,7 @@ abstract class FoundryActivity : FragmentActivity(), FoundryHost {
 	/**
 	 * Interaction with the [Foundry] object is delegated to the [FoundryFragment] class.
 	 */
-	protected var godotFragment: FoundryFragment? = null
+	protected var foundryFragment: FoundryFragment? = null
 		private set
 
 	/**
@@ -121,17 +121,17 @@ abstract class FoundryActivity : FragmentActivity(), FoundryHost {
 		setContentView(getFoundryAppLayout())
 
 		// Register `OnBackPressedCallback` for the Foundry fragment.
-		onBackPressedDispatcher.addCallback { godotFragment?.onBackPressed() }
+		onBackPressedDispatcher.addCallback { foundryFragment?.onBackPressed() }
 
 		handleStartIntent(intent, true)
 
-		val currentFragment = supportFragmentManager.findFragmentById(R.id.godot_fragment_container)
+		val currentFragment = supportFragmentManager.findFragmentById(R.id.foundry_fragment_container)
 		if (currentFragment is FoundryFragment) {
 			Log.v(TAG, "Reusing existing Foundry fragment instance.")
-			godotFragment = currentFragment
+			foundryFragment = currentFragment
 		} else {
 			Log.v(TAG, "Creating new Foundry fragment instance.")
-			godotFragment = initFoundryInstance()
+			foundryFragment = initFoundryInstance()
 
 			val transaction = supportFragmentManager.beginTransaction()
 			if (currentFragment != null) {
@@ -139,8 +139,8 @@ abstract class FoundryActivity : FragmentActivity(), FoundryHost {
 				transaction.remove(currentFragment)
 			}
 
-			transaction.replace(R.id.godot_fragment_container, godotFragment!!)
-				.setPrimaryNavigationFragment(godotFragment)
+			transaction.replace(R.id.foundry_fragment_container, foundryFragment!!)
+				.setPrimaryNavigationFragment(foundryFragment)
 				.commitNowAllowingStateLoss()
 		}
 	}
@@ -176,7 +176,7 @@ abstract class FoundryActivity : FragmentActivity(), FoundryHost {
 	}
 
 	private fun terminateFoundryInstance(instance: Foundry) {
-		godotFragment?.let {
+		foundryFragment?.let {
 			if (instance === it.foundry) {
 				Log.v(TAG, "Force quitting Foundry instance")
 				ProcessPhoenix.forceQuit(this)
@@ -186,7 +186,7 @@ abstract class FoundryActivity : FragmentActivity(), FoundryHost {
 
 	override fun onFoundryRestartRequested(instance: Foundry) {
 		runOnUiThread {
-			godotFragment?.let {
+			foundryFragment?.let {
 				if (instance === it.foundry) {
 					// It's very hard to properly de-initialize Foundry on Android to restart the game
 					// from scratch. Therefore, we need to kill the whole app process and relaunch it.
@@ -221,13 +221,13 @@ abstract class FoundryActivity : FragmentActivity(), FoundryHost {
 	@CallSuper
 	override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
 		super.onActivityResult(requestCode, resultCode, data)
-		godotFragment?.onActivityResult(requestCode, resultCode, data)
+		foundryFragment?.onActivityResult(requestCode, resultCode, data)
 	}
 
 	@CallSuper
 	override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
 		super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-		godotFragment?.onRequestPermissionsResult(requestCode, permissions, grantResults)
+		foundryFragment?.onRequestPermissionsResult(requestCode, permissions, grantResults)
 
 		// Logging the result of permission requests
 		if (requestCode == PermissionsUtil.REQUEST_ALL_PERMISSION_REQ_CODE || requestCode == PermissionsUtil.REQUEST_SINGLE_PERMISSION_REQ_CODE) {
@@ -244,7 +244,7 @@ abstract class FoundryActivity : FragmentActivity(), FoundryHost {
 	}
 
 	override fun getFoundry(): Foundry? {
-		return godotFragment?.foundry
+		return foundryFragment?.foundry
 	}
 
 	/**

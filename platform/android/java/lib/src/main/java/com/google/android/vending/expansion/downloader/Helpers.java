@@ -24,10 +24,10 @@ import android.os.StatFs;
 import android.os.SystemClock;
 import android.util.Log;
 
-// -- GODOT start --
+// -- FOUNDRY start --
 //import com.android.vending.expansion.downloader.R;
 import games.cafecito.foundry.R;
-// -- GODOT end --
+// -- FOUNDRY end --
 
 import java.io.File;
 import java.text.SimpleDateFormat;
@@ -149,14 +149,14 @@ public class Helpers {
             }
             return "";
         }
-        // -- GODOT start --
+        // -- FOUNDRY start --
         return String.format(Locale.ENGLISH, "%.2f",
                 (float) overallProgress / (1024.0f * 1024.0f))
                 + "MB /" +
                 String.format(Locale.ENGLISH, "%.2f", (float) overallTotal /
                         (1024.0f * 1024.0f))
                 + "MB";
-        // -- GODOT end --
+        // -- FOUNDRY end --
     }
 
     /**
@@ -189,9 +189,9 @@ public class Helpers {
     }
 
     public static String getSpeedString(float bytesPerMillisecond) {
-        // -- GODOT start --
+        // -- FOUNDRY start --
         return String.format(Locale.ENGLISH, "%.2f", bytesPerMillisecond * 1000 / 1024);
-        // -- GODOT end --
+        // -- FOUNDRY end --
     }
 
     public static String getTimeRemaining(long durationInMilliseconds) {

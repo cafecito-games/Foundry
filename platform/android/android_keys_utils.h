@@ -36,12 +36,12 @@
 
 #define AKEYCODE_MAX 0xFFFF
 
-struct AndroidGodotCodePair {
+struct AndroidFoundryCodePair {
 	unsigned int android_code = 0;
-	Key godot_code = Key::NONE;
+	Key foundry_code = Key::NONE;
 };
 
-static AndroidGodotCodePair android_godot_code_pairs[] = {
+static AndroidFoundryCodePair android_foundry_code_pairs[] = {
 	{ AKEYCODE_UNKNOWN, Key::UNKNOWN }, // (0) Unknown key code.
 	{ AKEYCODE_BACK, Key::BACK }, // (4) Back key.
 	{ AKEYCODE_0, Key::KEY_0 }, // (7) '0' key.
@@ -174,15 +174,15 @@ static AndroidGodotCodePair android_godot_code_pairs[] = {
 	{ AKEYCODE_MAX, Key::UNKNOWN }
 };
 
-Key godot_code_from_android_code(unsigned int p_code);
+Key foundry_code_from_android_code(unsigned int p_code);
 
 // Key location determination.
-struct AndroidGodotLocationPair {
+struct AndroidFoundryLocationPair {
 	unsigned int android_code = 0;
-	KeyLocation godot_code = KeyLocation::UNSPECIFIED;
+	KeyLocation foundry_code = KeyLocation::UNSPECIFIED;
 };
 
-static AndroidGodotLocationPair android_godot_location_pairs[] = {
+static AndroidFoundryLocationPair android_foundry_location_pairs[] = {
 	{ AKEYCODE_ALT_LEFT, KeyLocation::LEFT },
 	{ AKEYCODE_ALT_RIGHT, KeyLocation::RIGHT },
 	{ AKEYCODE_SHIFT_LEFT, KeyLocation::LEFT },
@@ -194,4 +194,4 @@ static AndroidGodotLocationPair android_godot_location_pairs[] = {
 	{ AKEYCODE_MAX, KeyLocation::UNSPECIFIED }
 };
 
-KeyLocation godot_location_from_android_code(unsigned int p_code);
+KeyLocation foundry_location_from_android_code(unsigned int p_code);

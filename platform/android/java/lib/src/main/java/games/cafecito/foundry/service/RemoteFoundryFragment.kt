@@ -82,7 +82,7 @@ class RemoteFoundryFragment: Fragment() {
 	private var serviceBound = false
 	private var remoteGameArgs = arrayOf<String>()
 
-	private var godotHost : FoundryHost? = null
+	private var foundryHost : FoundryHost? = null
 
 	private val serviceConnection = object : ServiceConnection {
 		override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
@@ -228,18 +228,18 @@ class RemoteFoundryFragment: Fragment() {
 		super.onAttach(context)
 		val parentActivity = activity
 		if (parentActivity is FoundryHost) {
-			godotHost = parentActivity
+			foundryHost = parentActivity
 		} else {
 			val parentFragment = parentFragment
 			if (parentFragment is FoundryHost) {
-				godotHost = parentFragment
+				foundryHost = parentFragment
 			}
 		}
 	}
 
 	override fun onDetach() {
 		super.onDetach()
-		godotHost = null
+		foundryHost = null
 	}
 
 	override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, bundle: Bundle?): View? {

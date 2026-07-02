@@ -908,10 +908,10 @@ int CameraFeedAndroid::get_display_rotation() {
 }
 
 int CameraFeedAndroid::get_app_orientation() {
-	FoundryIOJavaWrapper *godot_io_java = OS_Android::get_singleton()->get_godot_io_java();
-	ERR_FAIL_NULL_V(godot_io_java, 0);
+	FoundryIOJavaWrapper *foundry_io_java = OS_Android::get_singleton()->get_foundry_io_java();
+	ERR_FAIL_NULL_V(foundry_io_java, 0);
 
-	int orientation = godot_io_java->get_screen_orientation();
+	int orientation = foundry_io_java->get_screen_orientation();
 	switch (orientation) {
 		case 0: // SCREEN_LANDSCAPE
 			return 90;

@@ -48,12 +48,12 @@ import com.google.android.vending.expansion.downloader.DownloaderClientMarshalle
 public class FoundryDownloaderAlarmReceiver extends BroadcastReceiver {
 	@Override
 	public void onReceive(Context context, Intent intent) {
-		Log.d("GODOT", "Alarma recivida");
+		Log.d("FOUNDRY", "Alarma recivida");
 		try {
 			DownloaderClientMarshaller.startDownloadServiceIfRequired(context, intent, FoundryDownloaderService.class);
 		} catch (NameNotFoundException e) {
 			e.printStackTrace();
-			Log.d("GODOT", "Exception: " + e.getClass().getName() + ":" + e.getMessage());
+			Log.d("FOUNDRY", "Exception: " + e.getClass().getName() + ":" + e.getMessage());
 		}
 	}
 }

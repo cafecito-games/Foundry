@@ -42,7 +42,7 @@ class FoundryJavaViewWrapper {
 private:
 	jclass _cls;
 
-	jobject _godot_view;
+	jobject _foundry_view;
 
 	jmethodID _can_capture_pointer = 0;
 	jmethodID _request_pointer_capture = 0;
@@ -52,7 +52,7 @@ private:
 	jmethodID _set_pointer_icon = 0;
 
 public:
-	FoundryJavaViewWrapper(jobject godot_view);
+	FoundryJavaViewWrapper(jobject foundry_view);
 
 	bool can_update_pointer_icon() const;
 	bool can_capture_pointer() const;

@@ -43,7 +43,7 @@ import java.util.concurrent.TimeUnit
 /**
  * [FoundryPlugin] used to drive instrumented tests.
  */
-class FoundryAppInstrumentedTestPlugin(godot: Foundry) : FoundryPlugin(godot) {
+class FoundryAppInstrumentedTestPlugin(foundry: Foundry) : FoundryPlugin(foundry) {
 
 	companion object {
 		private val TAG = FoundryAppInstrumentedTestPlugin::class.java.simpleName

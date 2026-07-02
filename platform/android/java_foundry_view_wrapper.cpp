@@ -32,13 +32,13 @@
 
 #include "thread_jandroid.h"
 
-FoundryJavaViewWrapper::FoundryJavaViewWrapper(jobject godot_view) {
+FoundryJavaViewWrapper::FoundryJavaViewWrapper(jobject foundry_view) {
 	JNIEnv *env = get_jni_env();
 	ERR_FAIL_NULL(env);
 
-	_godot_view = env->NewGlobalRef(godot_view);
+	_foundry_view = env->NewGlobalRef(foundry_view);
 
-	_cls = (jclass)env->NewGlobalRef(env->GetObjectClass(godot_view));
+	_cls = (jclass)env->NewGlobalRef(env->GetObjectClass(foundry_view));
 
 	_configure_pointer_icon = env->GetMethodID(_cls, "configurePointerIcon", "(ILjava/lang/String;FF)V");
 	_set_pointer_icon = env->GetMethodID(_cls, "setPointerIcon", "(I)V");
@@ -63,7 +63,7 @@ bool FoundryJavaViewWrapper::can_capture_pointer() const {
 		JNIEnv *env = get_jni_env();
 		ERR_FAIL_NULL_V(env, false);
 
-		return env->CallBooleanMethod(_godot_view, _can_capture_pointer);
+		return env->CallBooleanMethod(_foundry_view, _can_capture_pointer);
 	}
 
 	return false;
@@ -74,7 +74,7 @@ void FoundryJavaViewWrapper::request_pointer_capture() {
 		JNIEnv *env = get_jni_env();
 		ERR_FAIL_NULL(env);
 
-		env->CallVoidMethod(_godot_view, _request_pointer_capture);
+		env->CallVoidMethod(_foundry_view, _request_pointer_capture);
 	}
 }
 
@@ -83,7 +83,7 @@ void FoundryJavaViewWrapper::release_pointer_capture() {
 		JNIEnv *env = get_jni_env();
 		ERR_FAIL_NULL(env);
 
-		env->CallVoidMethod(_godot_view, _release_pointer_capture);
+		env->CallVoidMethod(_foundry_view, _release_pointer_capture);
 	}
 }
 
@@ -93,7 +93,7 @@ void FoundryJavaViewWrapper::configure_pointer_icon(int pointer_type, const Stri
 		ERR_FAIL_NULL(env);
 
 		jstring jImagePath = env->NewStringUTF(image_path.utf8().get_data());
-		env->CallVoidMethod(_godot_view, _configure_pointer_icon, pointer_type, jImagePath, p_hotspot.x, p_hotspot.y);
+		env->CallVoidMethod(_foundry_view, _configure_pointer_icon, pointer_type, jImagePath, p_hotspot.x, p_hotspot.y);
 		env->DeleteLocalRef(jImagePath);
 	}
 }
@@ -103,7 +103,7 @@ void FoundryJavaViewWrapper::set_pointer_icon(int pointer_type) {
 		JNIEnv *env = get_jni_env();
 		ERR_FAIL_NULL(env);
 
-		env->CallVoidMethod(_godot_view, _set_pointer_icon, pointer_type);
+		env->CallVoidMethod(_foundry_view, _set_pointer_icon, pointer_type);
 	}
 }
 
@@ -111,6 +111,6 @@ FoundryJavaViewWrapper::~FoundryJavaViewWrapper() {
 	JNIEnv *env = get_jni_env();
 	ERR_FAIL_NULL(env);
 
-	env->DeleteGlobalRef(_godot_view);
+	env->DeleteGlobalRef(_foundry_view);
 	env->DeleteGlobalRef(_cls);
 }

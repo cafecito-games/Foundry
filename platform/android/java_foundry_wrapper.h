@@ -42,9 +42,9 @@
 class FoundryJavaWrapper {
 private:
 	jobject foundry_instance;
-	jclass godot_class;
+	jclass foundry_class;
 
-	FoundryJavaViewWrapper *godot_view = nullptr;
+	FoundryJavaViewWrapper *foundry_view = nullptr;
 
 	jmethodID _restart = nullptr;
 	jmethodID _finish = nullptr;
@@ -68,9 +68,9 @@ private:
 	jmethodID _init_input_devices = nullptr;
 	jmethodID _vibrate = nullptr;
 	jmethodID _get_input_fallback_mapping = nullptr;
-	jmethodID _on_godot_setup_completed = nullptr;
-	jmethodID _on_godot_main_loop_started = nullptr;
-	jmethodID _on_godot_terminating = nullptr;
+	jmethodID _on_foundry_setup_completed = nullptr;
+	jmethodID _on_foundry_main_loop_started = nullptr;
+	jmethodID _on_foundry_terminating = nullptr;
 	jmethodID _create_new_foundry_instance = nullptr;
 	jmethodID _get_render_view = nullptr;
 	jmethodID _begin_benchmark_measure = nullptr;
@@ -96,11 +96,11 @@ public:
 
 	jobject get_activity();
 
-	FoundryJavaViewWrapper *get_godot_view();
+	FoundryJavaViewWrapper *get_foundry_view();
 
-	void on_godot_setup_completed(JNIEnv *p_env = nullptr);
-	void on_godot_main_loop_started(JNIEnv *p_env = nullptr);
-	void on_godot_terminating(JNIEnv *p_env = nullptr);
+	void on_foundry_setup_completed(JNIEnv *p_env = nullptr);
+	void on_foundry_main_loop_started(JNIEnv *p_env = nullptr);
+	void on_foundry_terminating(JNIEnv *p_env = nullptr);
 	void restart(JNIEnv *p_env = nullptr);
 	bool force_quit(JNIEnv *p_env = nullptr, int p_instance_id = 0);
 	void set_keep_screen_on(bool p_enabled);

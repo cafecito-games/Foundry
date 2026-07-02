@@ -87,7 +87,7 @@ void AndroidInputHandler::process_key_event(int p_physical_keycode, int p_unicod
 	Ref<InputEventKey> ev;
 	ev.instantiate();
 
-	Key physical_keycode = godot_code_from_android_code(p_physical_keycode);
+	Key physical_keycode = foundry_code_from_android_code(p_physical_keycode);
 	Key keycode;
 	if (unicode == '\b') { // 0x08
 		keycode = Key::BACKSPACE;
@@ -124,7 +124,7 @@ void AndroidInputHandler::process_key_event(int p_physical_keycode, int p_unicod
 	ev->set_physical_keycode(physical_keycode);
 	ev->set_key_label(fix_key_label(p_key_label, keycode));
 	ev->set_unicode(fix_unicode(unicode));
-	ev->set_location(godot_location_from_android_code(p_physical_keycode));
+	ev->set_location(foundry_location_from_android_code(p_physical_keycode));
 	ev->set_pressed(p_pressed);
 	ev->set_echo(p_echo);
 
@@ -299,7 +299,7 @@ void AndroidInputHandler::_release_mouse_event_info(bool p_source_mouse_relative
 }
 
 void AndroidInputHandler::process_mouse_event(int p_event_action, int p_event_android_buttons_mask, Point2 p_event_pos, Vector2 p_delta, bool p_double_click, bool p_source_mouse_relative, float p_pressure, Vector2 p_tilt) {
-	BitField<MouseButtonMask> event_buttons_mask = _android_button_mask_to_godot_button_mask(p_event_android_buttons_mask);
+	BitField<MouseButtonMask> event_buttons_mask = _android_button_mask_to_foundry_button_mask(p_event_android_buttons_mask);
 	switch (p_event_action) {
 		case AMOTION_EVENT_ACTION_HOVER_MOVE: // hover move
 		case AMOTION_EVENT_ACTION_HOVER_ENTER: // hover enter
@@ -439,23 +439,23 @@ MouseButton AndroidInputHandler::_button_index_from_mask(BitField<MouseButtonMas
 	}
 }
 
-BitField<MouseButtonMask> AndroidInputHandler::_android_button_mask_to_godot_button_mask(int android_button_mask) {
-	BitField<MouseButtonMask> godot_button_mask = MouseButtonMask::NONE;
+BitField<MouseButtonMask> AndroidInputHandler::_android_button_mask_to_foundry_button_mask(int android_button_mask) {
+	BitField<MouseButtonMask> foundry_button_mask = MouseButtonMask::NONE;
 	if (android_button_mask & AMOTION_EVENT_BUTTON_PRIMARY) {
-		godot_button_mask.set_flag(MouseButtonMask::LEFT);
+		foundry_button_mask.set_flag(MouseButtonMask::LEFT);
 	}
 	if (android_button_mask & AMOTION_EVENT_BUTTON_SECONDARY) {
-		godot_button_mask.set_flag(MouseButtonMask::RIGHT);
+		foundry_button_mask.set_flag(MouseButtonMask::RIGHT);
 	}
 	if (android_button_mask & AMOTION_EVENT_BUTTON_TERTIARY) {
-		godot_button_mask.set_flag(MouseButtonMask::MIDDLE);
+		foundry_button_mask.set_flag(MouseButtonMask::MIDDLE);
 	}
 	if (android_button_mask & AMOTION_EVENT_BUTTON_BACK) {
-		godot_button_mask.set_flag(MouseButtonMask::MB_XBUTTON1);
+		foundry_button_mask.set_flag(MouseButtonMask::MB_XBUTTON1);
 	}
 	if (android_button_mask & AMOTION_EVENT_BUTTON_FORWARD) {
-		godot_button_mask.set_flag(MouseButtonMask::MB_XBUTTON2);
+		foundry_button_mask.set_flag(MouseButtonMask::MB_XBUTTON2);
 	}
 
-	return godot_button_mask;
+	return foundry_button_mask;
 }
