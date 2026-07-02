@@ -1364,6 +1364,25 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 		} else if (foundry_script_cli_tool_args) {
 			if (arg == "--" || arg == "++") {
 				adding_user_args = true;
+			} else if (arg == "--path") {
+#if defined(OVERRIDE_PATH_ENABLED)
+				if (N) {
+					String p = N->get();
+					if (OS::get_singleton()->set_cwd(p) != OK) {
+						OS::get_singleton()->print("Invalid project path specified: \"%s\", aborting.\n", p.utf8().get_data());
+						goto error;
+					}
+					N = N->next();
+				} else {
+					OS::get_singleton()->print("Missing relative or absolute path, aborting.\n");
+					goto error;
+				}
+#else
+				ERR_PRINT(
+						"`--path` was specified on the command line, but this Foundry binary was compiled without support for path overrides. Aborting.\n"
+						"To be able to use it, use the `disable_path_overrides=no` SCons option when compiling Foundry.\n");
+				goto error;
+#endif // defined(OVERRIDE_PATH_ENABLED)
 			} else {
 				main_args.push_back(arg);
 			}
