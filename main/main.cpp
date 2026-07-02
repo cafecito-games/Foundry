@@ -58,6 +58,7 @@
 #include "core/version.h"
 #include "drivers/register_driver_types.h"
 #include "main/app_icon.gen.h"
+#include "main/cli_parser.h"
 #include "main/main_timer_sync.h"
 #include "main/performance.h"
 #include "main/splash.gen.h"
@@ -542,7 +543,57 @@ void Main::print_help(const char *p_binary) {
 	print_help_copyright("(c) 2014-present Godot Engine contributors. (c) 2007-present Juan Linietsky, Ariel Manzur.");
 
 	print_help_title("Usage");
-	OS::get_singleton()->print("  %s \u001b[96m[options] [path to \"project.foundry\" file]\u001b[0m\n", p_binary);
+	OS::get_singleton()->print(
+			"  %s \u001b[96m[global options] <command> [command options] "
+			"[-- user args]\u001b[0m\n",
+			p_binary);
+	OS::get_singleton()->print(
+			"  %s \u001b[96m[legacy options] [path to \"project.foundry\" file]\u001b[0m\n",
+			p_binary);
+
+	print_help_title("Command API");
+	OS::get_singleton()->print(
+			"  \u001b[92meditor open --project <dir>\u001b[0m                         "
+			"Open a project in the editor.\n");
+	OS::get_singleton()->print(
+			"  \u001b[92meditor project-manager\u001b[0m                              "
+			"Open the project manager.\n");
+	OS::get_singleton()->print(
+			"  \u001b[92mproject run --project <dir> [--scene <path>] -- ...\u001b[0m  "
+			"Run a project; arguments after -- are user args.\n");
+	OS::get_singleton()->print(
+			"  \u001b[92mproject export --project <dir> --preset <name> "
+			"--output <path> --mode <mode>\u001b[0m\n");
+	OS::get_singleton()->print(
+			"  \u001b[92mproject import --project <dir>\u001b[0m                       "
+			"Import project resources and exit.\n");
+	OS::get_singleton()->print(
+			"  \u001b[92mscript format [--check|--write|--diff] [paths...]\u001b[0m    "
+			"Format Foundry Script files or stdin.\n");
+	OS::get_singleton()->print(
+			"  \u001b[92mscript migrate --project <dir> [--apply] "
+			"[--strict null,dynamic]\u001b[0m\n");
+	OS::get_singleton()->print(
+			"  \u001b[92mtest run [--project <dir>] [--case <pattern>]\u001b[0m        "
+			"Run doctest suites.\n");
+	OS::get_singleton()->print(
+			"  \u001b[92mlsp serve --project <dir> [--port <port>]\u001b[0m           "
+			"Start the editor language server.\n");
+	OS::get_singleton()->print(
+			"  \u001b[92mdocs generate-api [--include-docs]\u001b[0m                  "
+			"Generate extension API JSON.\n");
+	OS::get_singleton()->print(
+			"  \u001b[92mextension dump-interface [--format header|json]\u001b[0m      "
+			"Generate FoundryExtension interface files.\n");
+	OS::get_singleton()->print(
+			"  \u001b[92mdiagnostics render-device-support\u001b[0m                   "
+			"Probe rendering device support.\n");
+	OS::get_singleton()->print(
+			"  Global command options: --json, --trusted, --project <dir>, "
+			"--headless, --quiet, --verbose.\n");
+	OS::get_singleton()->print(
+			"  Agent workflows should use -- to separate Foundry arguments from "
+			"project/user arguments.\n");
 
 #if defined(TOOLS_ENABLED)
 	print_help_title("Option legend (this build = editor)");
@@ -976,6 +1027,24 @@ void Main::test_cleanup() {
 #endif
 
 int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
+	const FoundryCLIParser::ParseResult cli_parse = FoundryCLIParser::parse(argc, argv);
+	Vector<CharString> normalized_arg_storage;
+	Vector<char *> normalized_argv;
+	if (!cli_parse.ok) {
+		tests_need_run = false;
+		return EXIT_SUCCESS;
+	}
+	if (cli_parse.used_new_cli) {
+		normalized_arg_storage.resize(cli_parse.normalized_args.size());
+		normalized_argv.resize(cli_parse.normalized_args.size());
+		for (int i = 0; i < cli_parse.normalized_args.size(); i++) {
+			normalized_arg_storage.write[i] = cli_parse.normalized_args[i].utf8();
+			normalized_argv.write[i] = const_cast<char *>(normalized_arg_storage[i].get_data());
+		}
+		argc = normalized_argv.size();
+		argv = normalized_argv.ptrw();
+	}
+
 	bool test_requested = false;
 	String test_project_path;
 #if defined(TESTS_ENABLED) && defined(MODULE_FOUNDRY_SCRIPT_ENABLED)
@@ -1156,22 +1225,11 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 	List<String> user_args;
 	bool adding_user_args = false;
 	List<String> platform_args = OS::get_singleton()->get_cmdline_platform_args();
+	PackedStringArray raw_cli_args;
 
 	// Add command line arguments.
 	for (int i = 0; i < argc; i++) {
-		args.push_back(String::utf8(argv[i]));
-	}
-
-	// Add arguments received from macOS LaunchService (URL schemas, file associations).
-	for (const String &arg : platform_args) {
-		args.push_back(arg);
-	}
-
-	List<String>::Element *I = args.front();
-
-	while (I) {
-		I->get() = unescape_cmdline(I->get().strip_edges());
-		I = I->next();
+		raw_cli_args.push_back(String::utf8(argv[i]));
 	}
 
 	String audio_driver = "";
@@ -1218,6 +1276,29 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 	// Exit error code used in the `goto error` conditions.
 	// It's returned as the program exit code. ERR_HELP is special cased and handled as success (0).
 	Error exit_err = ERR_INVALID_PARAMETER;
+	List<String>::Element *I = nullptr;
+
+	const FoundryCLIParser::ParseResult cli_parse = FoundryCLIParser::parse(raw_cli_args);
+	if (!cli_parse.ok) {
+		OS::get_singleton()->print("Foundry CLI error: %s\n", cli_parse.error.utf8().get_data());
+		goto error;
+	}
+
+	for (int i = 0; i < cli_parse.normalized_args.size(); i++) {
+		args.push_back(cli_parse.normalized_args[i]);
+	}
+
+	// Add arguments received from macOS LaunchService (URL schemas, file associations).
+	for (const String &arg : platform_args) {
+		args.push_back(arg);
+	}
+
+	I = args.front();
+
+	while (I) {
+		I->get() = unescape_cmdline(I->get().strip_edges());
+		I = I->next();
+	}
 
 	I = args.front();
 	while (I) {
