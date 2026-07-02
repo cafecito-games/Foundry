@@ -67,19 +67,24 @@ Ref<Script> FSBytecodeCacheResolver::resolve_script(const String &p_path, const 
 	if (root_script.is_null()) {
 		return Ref<Script>();
 	}
-	if (error != OK && !root_script->is_valid()) {
-		// A script mid-load in a dependency cycle is published invalid but error-free, and linking
-		// against that shell is what makes cycles work. An invalid script WITH an error genuinely
-		// failed to load and must not be linked against.
+	if (error != OK) {
+		// An invalid script WITH an error genuinely failed to load and must not be linked against.
 		return Ref<Script>();
 	}
-	// KNOWN LIMITATION: this cannot distinguish a script that is currently mid-load in a dependency
-	// cycle (invalid, error-free, and legitimately linkable as a shell) from one that was published
-	// to the cache after a *previous* load failed (also invalid and error-free on a cache hit). The
-	// latter is stale and should not be linked against, but is accepted here, producing a "valid"
-	// dependent with a dead dependency. Distinguishing the two needs an explicit in-progress set in
-	// FSCache (or a mid-load marker on the shell); that is tracked separately as it touches the cache
-	// lifecycle rather than the loader.
+	if (!root_script->is_valid()) {
+		// An invalid, error-free script is only linkable when it is the mid-cycle shell of a
+		// dependency currently being loaded higher on the call stack: `reload()` sets `reloading`
+		// on entry (and clears it on exit, including on failure), so the shell reports true here
+		// while it is being linked and linking against it is what makes dependency cycles work.
+		//
+		// A cache hit can also return an invalid, error-free script that was left behind by a
+		// *previous* load that failed. That script is not reloading; linking against it would
+		// silently produce a "valid" dependent backed by a dead dependency, so reject it and let
+		// this load fail deterministically instead.
+		ERR_FAIL_COND_V_MSG(!root_script->is_reloading(), Ref<Script>(),
+				vformat("Cannot resolve script reference '%s' from compiled script data: the dependency previously failed to load and is not valid.",
+						p_path));
+	}
 	if (p_fully_qualified_name.is_empty() || root_script->get_fully_qualified_name() == p_fully_qualified_name) {
 		return root_script;
 	}

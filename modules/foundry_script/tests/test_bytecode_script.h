@@ -1082,6 +1082,127 @@ static func pong() -> String:
 	DirAccess::remove_absolute(path_b + ".remap");
 }
 
+TEST_CASE("[FoundryScript][BytecodeHardening] A dependent .fsb refuses to link against a dependency that previously failed to load") {
+	if (!FSLanguage::get_singleton()->has_any_global_constant(SNAME("RefCounted"))) {
+		FSLanguage::get_singleton()->init();
+	}
+
+	const String base_path = TestUtils::get_temp_path("test_bytecode_stale_base.fs");
+	const String dependent_path = TestUtils::get_temp_path("test_bytecode_stale_dependent.fs");
+	{
+		Ref<FileAccess> base_file = FileAccess::open(base_path, FileAccess::WRITE);
+		REQUIRE(base_file.is_valid());
+		base_file->store_string(
+				"static func base_value() -> int:\n"
+				"\treturn 7\n");
+		Ref<FileAccess> dependent_file = FileAccess::open(dependent_path, FileAccess::WRITE);
+		REQUIRE(dependent_file.is_valid());
+		dependent_file->store_string(vformat(
+				"const Base = preload(\"%s\")\n"
+				"\n"
+				"func run() -> int:\n"
+				"\treturn Base.base_value()\n",
+				base_path));
+	}
+
+	const bool previous_ignore_warnings = FSParser::is_ignoring_warnings();
+	FSParser::set_ignoring_warnings(true);
+
+	Vector<uint8_t> buffer_base;
+	Vector<uint8_t> buffer_dependent;
+	{
+		const Ref<FoundryScript> text_base = ResourceLoader::load(base_path);
+		REQUIRE(text_base.is_valid());
+		REQUIRE(text_base->is_valid());
+		const Ref<FoundryScript> text_dependent = ResourceLoader::load(dependent_path);
+		REQUIRE(text_dependent.is_valid());
+		REQUIRE(text_dependent->is_valid());
+
+		FSBytecodeExporter exporter_base;
+		REQUIRE(exporter_base.serialize(text_base, buffer_base) == OK);
+		FSBytecodeExporter exporter_dependent;
+		REQUIRE(exporter_dependent.serialize(text_dependent, buffer_dependent) == OK);
+
+		// Drop the text compilations and break their preload reference cycle so both scripts free and
+		// leave ResourceCache; an exported game never had them.
+		FSCache::remove_script(dependent_path);
+		FSCache::remove_script(base_path);
+		text_dependent->clear();
+		text_base->clear();
+	}
+	FSParser::set_ignoring_warnings(previous_ignore_warnings);
+
+	// Produce a base `.fsb` whose header and skeleton parse but whose class-body section is absent, so
+	// the base loads far enough to be published to the cache yet fails to link. The shortest prefix
+	// that still yields a valid skeleton ends exactly where the body section begins, so truncating
+	// there drops the body while leaving the skeleton intact.
+	int skeleton_end = buffer_base.size();
+	for (int length = 0; length <= buffer_base.size(); length++) {
+		Vector<uint8_t> candidate = buffer_base;
+		candidate.resize(length);
+		Ref<FoundryScript> probe;
+		probe.instantiate();
+		probe->set_path_cache(base_path);
+		BytecodeTestResolver probe_resolver;
+		FSBytecodeLoader probe_loader;
+		probe_loader.set_resolver(&probe_resolver);
+		ERR_PRINT_OFF;
+		const Error skeleton_error = probe_loader.load_skeleton(candidate, probe);
+		ERR_PRINT_ON;
+		if (skeleton_error == OK) {
+			skeleton_end = length;
+			break;
+		}
+	}
+	REQUIRE(skeleton_end < buffer_base.size());
+	Vector<uint8_t> corrupted_base = buffer_base;
+	corrupted_base.resize(skeleton_end);
+
+	bytecode_write_file(base_path.get_basename() + ".fsb", corrupted_base);
+	bytecode_write_file(dependent_path.get_basename() + ".fsb", buffer_dependent);
+	bytecode_write_remap_file(base_path, base_path.get_basename() + ".fsb");
+	bytecode_write_remap_file(dependent_path, dependent_path.get_basename() + ".fsb");
+
+	// The base fails to link, but the failure is published to the full-script cache (text-path
+	// parity): an invalid, error-free script that is no longer reloading.
+	ERR_PRINT_OFF;
+	const Ref<FoundryScript> loaded_base = ResourceLoader::load(base_path);
+	ERR_PRINT_ON;
+	if (loaded_base.is_valid()) {
+		CHECK_FALSE(loaded_base->is_valid());
+	}
+	REQUIRE(TestFSCacheAccessor::has_full(base_path));
+	const Ref<FoundryScript> cached_base = TestFSCacheAccessor::get_full(base_path);
+	REQUIRE(cached_base.is_valid());
+	CHECK_FALSE(cached_base->is_valid());
+	CHECK_FALSE(cached_base->is_reloading());
+
+	// Loading the dependent resolves the base through the cache resolver and gets that stale, invalid
+	// script back on a cache hit. It must be rejected so the dependent fails deterministically instead
+	// of silently linking against a dead dependency.
+	ERR_PRINT_OFF;
+	const Ref<FoundryScript> loaded_dependent = ResourceLoader::load(dependent_path);
+	ERR_PRINT_ON;
+	if (loaded_dependent.is_valid()) {
+		CHECK_FALSE(loaded_dependent->is_valid());
+	}
+
+	FSCache::remove_script(dependent_path);
+	FSCache::remove_script(base_path);
+	if (loaded_dependent.is_valid()) {
+		loaded_dependent->clear();
+	}
+	if (loaded_base.is_valid()) {
+		loaded_base->clear();
+	}
+	DirAccess::remove_absolute(base_path + ".remap");
+	DirAccess::remove_absolute(dependent_path + ".remap");
+	DirAccess::remove_absolute(base_path.get_basename() + ".fsb");
+	DirAccess::remove_absolute(dependent_path.get_basename() + ".fsb");
+	DirAccess::remove_absolute(base_path);
+	DirAccess::remove_absolute(dependent_path);
+}
+
 TEST_CASE("[FoundryScript][BytecodeCache] A .fsb from a different engine build refuses to load") {
 	const Ref<FoundryScript> original = compile_bytecode_test_source(R"(
 func value() -> int:

@@ -441,6 +441,11 @@ public:
 
 	virtual bool is_valid() const override { return valid; }
 	bool is_compiled_binary() const { return compiled_binary; }
+	// True while this script is mid-reload/mid-link (set on `reload()` entry, cleared on exit,
+	// including on failure). A dependency cycle publishes an invalid-but-error-free shell during
+	// this window; callers use this to tell a legitimate mid-cycle shell apart from an invalid
+	// script left in the cache by a previously failed load.
+	bool is_reloading() const { return reloading; }
 
 	bool inherits_script(const Ref<Script> &p_script) const override;
 

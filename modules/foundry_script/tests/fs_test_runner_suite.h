@@ -48,6 +48,11 @@ public:
 		return FSCache::singleton->full_fs_cache.has(p_path);
 	}
 
+	static Ref<FoundryScript> get_full(String p_path) {
+		const Ref<FoundryScript> *found = FSCache::singleton->full_fs_cache.getptr(p_path);
+		return found != nullptr ? *found : Ref<FoundryScript>();
+	}
+
 	static bool has_parser(String p_path) {
 		return FSCache::singleton->parser_map.has(p_path);
 	}
