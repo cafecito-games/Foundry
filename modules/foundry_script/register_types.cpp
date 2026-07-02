@@ -37,7 +37,9 @@
 #include "fs_cache.h"
 #include "fs_parser.h"
 #include "fs_reflection.h"
+#ifdef TOOLS_ENABLED
 #include "fs_tokenizer_buffer.h"
+#endif // TOOLS_ENABLED
 #include "fs_utility_functions.h"
 
 #ifdef TOOLS_ENABLED
@@ -417,7 +419,9 @@ void uninitialize_foundry_script_module(ModuleInitializationLevel p_level) {
 		ResourceSaver::remove_resource_format_saver(resource_saver_gd);
 		resource_saver_gd.unref();
 
+#ifndef FOUNDRY_SCRIPT_NO_FRONTEND
 		FSParser::cleanup();
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND
 		FSUtilityFunctions::unregister_functions();
 	}
 

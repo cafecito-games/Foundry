@@ -30,16 +30,21 @@
 
 #include "foundry_script.h"
 
+#ifndef FOUNDRY_SCRIPT_NO_FRONTEND
 #include "fs_analyzer.h"
+#include "fs_compiler.h"
+#include "fs_warning.h"
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND
 #include "fs_bytecode_loader.h"
 #include "fs_cache.h"
-#include "fs_compiler.h"
 #include "fs_conformance_registry.h"
+#include "fs_no_frontend.h"
 #include "fs_parser.h"
 #include "fs_reflection.h"
 #include "fs_rpc_callable.h"
+#ifndef FOUNDRY_SCRIPT_NO_FRONTEND
 #include "fs_tokenizer_buffer.h"
-#include "fs_warning.h"
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND
 
 #ifdef TOOLS_ENABLED
 #include "editor/fs_docgen.h"
@@ -1108,6 +1113,15 @@ Error FoundryScript::reload(bool p_keep_state) {
 		return link_error;
 	}
 
+#ifdef FOUNDRY_SCRIPT_NO_FRONTEND
+	{
+		reloading = false;
+		const String script_path = path.is_empty() ? get_path() : path;
+		_err_print_error("FoundryScript::reload", script_path.is_empty() ? "built-in" : (const char *)script_path.utf8().get_data(), 0,
+				fs_no_frontend_error_message(script_path).utf8().get_data(), false, ERR_HANDLER_SCRIPT);
+		return ERR_UNAVAILABLE;
+	}
+#else
 	{
 		String source_path = path;
 		if (source_path.is_empty()) {
@@ -1246,6 +1260,7 @@ Error FoundryScript::reload(bool p_keep_state) {
 
 	reloading = false;
 	return OK;
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND
 }
 
 Error FoundryScript::_reload_from_compiled_binary() {
@@ -1546,8 +1561,13 @@ const Vector<uint8_t> &FoundryScript::get_binary_tokens_source() const {
 }
 
 Vector<uint8_t> FoundryScript::get_as_binary_tokens() const {
+#ifdef FOUNDRY_SCRIPT_NO_FRONTEND
+	ERR_PRINT("Foundry Script binary token export is unavailable in this build (foundry_script_frontend=no).");
+	return Vector<uint8_t>();
+#else
 	FSTokenizerBuffer tokenizer;
 	return tokenizer.parse_code_string(source, FSTokenizerBuffer::COMPRESS_NONE);
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND
 }
 
 const HashMap<StringName, FSFunction *> &FoundryScript::debug_get_member_functions() const {
@@ -2836,6 +2856,7 @@ void FSLanguage::init() {
 #endif // TOOLS_ENABLED
 
 #ifdef DEBUG_ENABLED
+#ifndef FOUNDRY_SCRIPT_NO_FRONTEND
 	FSParser::update_project_settings();
 	if (!ProjectSettings::get_singleton()->is_connected("settings_changed", callable_mp_static(&FSParser::update_project_settings))) {
 		ProjectSettings::get_singleton()->connect("settings_changed", callable_mp_static(&FSParser::update_project_settings));
@@ -2845,6 +2866,7 @@ void FSLanguage::init() {
 	if (!ProjectSettings::get_singleton()->is_connected("settings_changed", callable_mp_static(&FSLanguage::_on_settings_changed))) {
 		ProjectSettings::get_singleton()->connect("settings_changed", callable_mp_static(&FSLanguage::_on_settings_changed));
 	}
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND
 #endif // DEBUG_ENABLED
 
 #ifdef TESTS_ENABLED
@@ -3128,6 +3150,7 @@ struct FSDepSort {
 
 #ifdef DEBUG_ENABLED
 void FSLanguage::_on_settings_changed() {
+#ifndef FOUNDRY_SCRIPT_NO_FRONTEND
 	if (FSParser::invalidate_analysis_on_strict_settings_change()) {
 		// A strict flag flipped: the cache's stale parser/script artifacts were just dropped, so the
 		// next analysis of any script reads the new flags. We deliberately do NOT reload script
@@ -3147,6 +3170,7 @@ void FSLanguage::_on_settings_changed() {
 		}
 #endif
 	}
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND
 }
 #endif // DEBUG_ENABLED
 
@@ -3273,8 +3297,13 @@ void FSLanguage::reload_scripts(const Array &p_scripts, bool p_soft_reload) {
 
 			scr->set_source_code(fresh->get_source_code());
 		} else if (!scr->is_compiled_binary()) {
+#ifdef FOUNDRY_SCRIPT_NO_FRONTEND
+			print_verbose("FoundryScript: live reload of source scripts is unavailable in this template build.");
+			continue;
+#else
 			// Bytecode-backed scripts have no source; reload() re-links them from the binary.
 			scr->load_source_code(scr->get_path());
+#endif
 		}
 		scr->reload(p_soft_reload);
 
@@ -3465,6 +3494,9 @@ String FSLanguage::get_global_class_name(const String &p_path, String *r_base_ty
 }
 
 String FSLanguage::_get_global_class_name(const String &p_path, String *r_base_type, String *r_icon_path, bool *r_is_abstract, bool *r_is_tool, bool *r_is_trait, bool *r_is_enum, LocalVector<String> &r_visited) const {
+#ifdef FOUNDRY_SCRIPT_NO_FRONTEND
+	return String();
+#else
 	if (r_visited.has(p_path)) {
 		return String();
 	}
@@ -3590,11 +3622,15 @@ String FSLanguage::_get_global_class_name(const String &p_path, String *r_base_t
 		return String();
 	}
 	return c->qualified_global_name.is_empty() ? String(c->identifier->name) : c->qualified_global_name;
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND
 }
 
 void FSLanguage::get_global_annotations(const String &p_path, List<StringName> *r_annotations) const {
 	ERR_FAIL_NULL(r_annotations);
 
+#ifdef FOUNDRY_SCRIPT_NO_FRONTEND
+	return;
+#else
 	Error err = OK;
 	Ref<FileAccess> file = FileAccess::open(p_path, FileAccess::READ, &err);
 	if (err) {
@@ -3625,6 +3661,7 @@ void FSLanguage::get_global_annotations(const String &p_path, List<StringName> *
 		}
 		r_annotations->push_back(StringName(declaration->qualified_name));
 	}
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND
 }
 
 void FSLanguage::replace_global_annotations(const String &p_path, const List<StringName> &p_annotations) {
@@ -3802,7 +3839,10 @@ FSLanguage::FSLanguage() {
 #ifdef DEBUG_ENABLED
 	track_call_stack = true;
 	track_locals = track_locals || EngineDebugger::is_active();
+#endif // DEBUG_ENABLED
 
+#ifdef DEBUG_ENABLED
+#ifndef FOUNDRY_SCRIPT_NO_FRONTEND
 	GLOBAL_DEF("debug/foundry_script/warnings/enable", true);
 
 	GLOBAL_DEF(PropertyInfo(Variant::DICTIONARY,
@@ -3827,6 +3867,7 @@ FSLanguage::FSLanguage() {
 	// TODO: This setting has nothing to do with warnings. It should be moved at the next compatibility breakage,
 	// if the setting is still relevant at that time.
 	GLOBAL_DEF("debug/foundry_script/warnings/renamed_in_godot_4_hint", true);
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND
 #endif // DEBUG_ENABLED
 }
 
@@ -3928,6 +3969,7 @@ void ResourceFormatLoaderFoundryScript::get_dependencies(const String &p_path, L
 		return;
 	}
 
+#ifndef FOUNDRY_SCRIPT_NO_FRONTEND
 	Ref<FileAccess> file = FileAccess::open(p_path, FileAccess::READ);
 	ERR_FAIL_COND_MSG(file.is_null(), "Cannot open file '" + p_path + "'.");
 
@@ -3944,9 +3986,13 @@ void ResourceFormatLoaderFoundryScript::get_dependencies(const String &p_path, L
 	for (const String &E : parser.get_dependencies()) {
 		p_dependencies->push_back(E);
 	}
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND
 }
 
 void ResourceFormatLoaderFoundryScript::get_classes_used(const String &p_path, HashSet<StringName> *r_classes) {
+#ifdef FOUNDRY_SCRIPT_NO_FRONTEND
+	return;
+#else
 	Ref<FoundryScript> scr = ResourceLoader::load(p_path);
 	if (scr.is_null()) {
 		return;
@@ -4000,6 +4046,7 @@ void ResourceFormatLoaderFoundryScript::get_classes_used(const String &p_path, H
 
 		current = tokenizer.scan();
 	}
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND
 }
 
 Error ResourceFormatSaverFoundryScript::save(const Ref<Resource> &p_resource, const String &p_path, uint32_t p_flags) {

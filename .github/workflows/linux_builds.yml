@@ -104,3 +104,45 @@ jobs:
         run: |
           ./bin/foundry.linuxbsd.template_release.x86_64 --version
           ./bin/foundry.linuxbsd.template_release.x86_64 --headless --test --force-colors --test-case="*Release-build VM runtime error*"
+
+  template-release-no-frontend:
+    runs-on: ubuntu-22.04
+    name: Template release without Foundry Script front-end
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Setup dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libwayland-bin
+
+      - name: Restore Foundry build cache
+        uses: ./.github/actions/foundry-cache-restore
+        with:
+          cache-name: linux-template-release-no-frontend
+        continue-on-error: true
+
+      - name: Setup Python and SCons
+        uses: ./.github/actions/foundry-deps
+
+      - name: Compilation
+        uses: ./.github/actions/foundry-build
+        with:
+          scons-flags: foundry_script_frontend=no module_text_server_fb_enabled=yes
+          platform: linuxbsd
+          target: template_release
+
+      - name: Save Foundry build cache
+        uses: ./.github/actions/foundry-cache-save
+        with:
+          cache-name: linux-template-release-no-frontend
+        continue-on-error: true
+
+      - name: Verify stripped template binary
+        run: |
+          ./bin/foundry.linuxbsd.template_release.x86_64 --version
