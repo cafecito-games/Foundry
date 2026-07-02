@@ -1268,7 +1268,7 @@ void FoundryScript::_erase_function_lambda_info(FoundryScript *p_script, FSFunct
 		return;
 	}
 	p_script->lambda_info.erase(p_function);
-	for (FSFunction *lambda : p_function->get_lambdas()) {
+	for (FSFunction *lambda : p_function->lambdas) {
 		FoundryScript *lambda_script = Object::cast_to<FoundryScript>(lambda->get_script());
 		_erase_function_lambda_info(lambda_script != nullptr ? lambda_script : p_script, lambda);
 	}
