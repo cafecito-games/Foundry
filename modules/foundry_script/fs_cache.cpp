@@ -536,6 +536,12 @@ Ref<FoundryScript> FSCache::get_full_script(const String &p_path, Error &r_error
 		}
 	}
 
+#ifdef TOOLS_ENABLED
+	if (singleton->recording_script_reloads) {
+		singleton->recorded_script_reload_paths.insert(p_path);
+	}
+#endif // TOOLS_ENABLED
+
 	// Allowing lifting the lock might cause a script to be reloaded multiple times,
 	// which, as a last resort deadlock prevention strategy, is a good tradeoff.
 	{
@@ -570,6 +576,25 @@ Ref<FoundryScript> FSCache::get_cached_script(const String &p_path) {
 
 	return Ref<FoundryScript>();
 }
+
+#ifdef TOOLS_ENABLED
+void FSCache::begin_script_reload_recording() {
+	MutexLock lock(singleton->mutex);
+	singleton->recording_script_reloads = true;
+	singleton->recorded_script_reload_paths.clear();
+}
+
+Vector<String> FSCache::end_script_reload_recording() {
+	MutexLock lock(singleton->mutex);
+	singleton->recording_script_reloads = false;
+	Vector<String> reloaded_paths;
+	for (const String &path : singleton->recorded_script_reload_paths) {
+		reloaded_paths.push_back(path);
+	}
+	singleton->recorded_script_reload_paths.clear();
+	return reloaded_paths;
+}
+#endif // TOOLS_ENABLED
 
 Error FSCache::finish_compiling(const String &p_owner) {
 	MutexLock lock(singleton->mutex);

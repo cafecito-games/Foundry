@@ -1509,12 +1509,38 @@ TEST_CASE("[FoundryScript][BytecodeCodec] Editor-only named globals are collecte
 
 	const Vector<StringName> unsupported = FSBytecodeExporter::collect_unsupported_named_globals(script);
 
+	// Under the export-compile flag the same autoload reference compiles to STORE_GLOBAL with a
+	// masked operand rebaked by name at .fsb load, so the validator has nothing left to flag.
+	FSLanguage::get_singleton()->set_compiling_for_export(true);
+	const Ref<FoundryScript> export_script = compile_bytecode_test_source(
+			"func run():\n"
+			"\tvar direct = BytecodeEditorOnlyGlobal\n"
+			"\tvar through_lambda = func():\n"
+			"\t\treturn BytecodeEditorOnlyGlobal\n"
+			"\treturn [direct, through_lambda.call()]\n");
+	FSLanguage::get_singleton()->set_compiling_for_export(false);
+
+	const Vector<StringName> export_unsupported = FSBytecodeExporter::collect_unsupported_named_globals(export_script);
+	const HashMap<StringName, FSFunction *> &export_member_functions = export_script->get_member_functions();
+
 	FSLanguage::get_singleton()->remove_named_global_constant(editor_only_name);
 	ProjectSettings::get_singleton()->remove_autoload(editor_only_name);
 	DirAccess::remove_absolute(scene_path);
 
 	REQUIRE(unsupported.size() == 1);
 	CHECK(unsupported[0] == editor_only_name);
+
+	CHECK(export_unsupported.is_empty());
+	REQUIRE(export_member_functions.has(SNAME("run")));
+	const FSFunction::ExportFixups &export_function_fixups = export_member_functions[SNAME("run")]->export_fixups;
+	CHECK(export_function_fixups.named_globals.is_empty());
+	bool recorded_store_global_for_autoload = false;
+	for (const FSFunction::ExportFixups::GlobalStore &global_store : export_function_fixups.global_stores) {
+		if (global_store.global_name == editor_only_name) {
+			recorded_store_global_for_autoload = true;
+		}
+	}
+	CHECK(recorded_store_global_for_autoload);
 
 	// A script that never touches a named global reports nothing to validate.
 	const Ref<FoundryScript> clean_script = compile_bytecode_test_source(

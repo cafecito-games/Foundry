@@ -112,6 +112,15 @@ class FSCache {
 
 	bool cleared = false;
 
+#ifdef TOOLS_ENABLED
+	// Paths of scripts that went through a full reload while recording was active. The
+	// compiled-bytecode export records its compile window with this so it can recompile, for the
+	// live editor session, every script — including transitively compiled dependencies — that was
+	// compiled under export-only flags.
+	bool recording_script_reloads = false;
+	HashSet<String> recorded_script_reload_paths;
+#endif // TOOLS_ENABLED
+
 public:
 	static const int BINARY_MUTEX_TAG = 2;
 
@@ -157,6 +166,12 @@ public:
 	static Ref<FoundryScript> get_full_script(const String &p_path, Error &r_error, const String &p_owner = String(), bool p_update_from_disk = false);
 	static Ref<FoundryScript> get_cached_script(const String &p_path);
 	static Error finish_compiling(const String &p_owner);
+
+#ifdef TOOLS_ENABLED
+	// Reload-recording window used by the compiled-bytecode export (see the field comments).
+	static void begin_script_reload_recording();
+	static Vector<String> end_script_reload_recording();
+#endif // TOOLS_ENABLED
 	static void add_static_script(Ref<FoundryScript> p_script);
 	static void remove_static_script(const String &p_fqcn);
 

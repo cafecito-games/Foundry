@@ -2233,11 +2233,26 @@ Error EditorExportPlatform::save_pack(const Ref<EditorExportPreset> &p_preset, b
 
 	if (err != OK) {
 		add_message(EXPORT_MESSAGE_ERROR, TTR("Save PCK"), TTR("Failed to export project files."));
+		// A standalone PCK is written directly to the destination; do not leave a partial pack
+		// behind. Both file references must be released first: with safe-save enabled the write
+		// goes to a temporary file that only replaces the destination when the last reference
+		// closes. Embedded packs append to a binary the caller owns, so those are left to the
+		// caller's failure handling.
+		if (!p_embed) {
+			pd.f.unref();
+			f.unref();
+			DirAccess::remove_absolute(p_path);
+		}
 		return err;
 	}
 
 	if (pd.file_ofs.is_empty()) {
 		add_message(EXPORT_MESSAGE_ERROR, TTR("Save PCK"), TTR("No files or changes to export."));
+		if (!p_embed) {
+			pd.f.unref();
+			f.unref();
+			DirAccess::remove_absolute(p_path);
+		}
 		return FAILED;
 	}
 

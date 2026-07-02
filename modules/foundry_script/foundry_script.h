@@ -799,6 +799,9 @@ class FSLanguage : public ScriptLanguage {
 
 	bool track_call_stack = false;
 	bool track_locals = false;
+#ifdef TOOLS_ENABLED
+	bool compiling_for_export = false;
+#endif
 
 	static CallLevel *_get_stack_level(uint32_t p_level);
 
@@ -942,6 +945,12 @@ public:
 	// The compiled-bytecode export compiles release-profile scripts without call-stack tracking
 	// (no OPCODE_LINE emission); it saves and restores this flag around the export.
 	_FORCE_INLINE_ void set_track_call_stack(bool p_track_call_stack) { track_call_stack = p_track_call_stack; }
+	// While set, the compiler emits STORE_GLOBAL (with a masked, loader-rebaked operand) for
+	// autoload singletons instead of the editor-session STORE_NAMED_GLOBAL fallback, matching how
+	// game runtimes register autoloads in the global array. Set and cleared by the
+	// compiled-bytecode export around its compiles.
+	_FORCE_INLINE_ bool is_compiling_for_export() const { return compiling_for_export; }
+	_FORCE_INLINE_ void set_compiling_for_export(bool p_compiling_for_export) { compiling_for_export = p_compiling_for_export; }
 #endif // TOOLS_ENABLED
 	_FORCE_INLINE_ int get_global_array_size() const { return global_array.size(); }
 	_FORCE_INLINE_ Variant *get_global_array() { return _global_array; }

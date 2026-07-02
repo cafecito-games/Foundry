@@ -30,6 +30,8 @@
 
 #include "register_types.h"
 
+#include "core/config/project_settings.h"
+
 #include "foundry_build_task.h"
 #include "foundry_script.h"
 #include "fs_cache.h"
@@ -88,14 +90,15 @@ class EditorExportFoundryScript : public EditorExportPlugin {
 	static constexpr EditorExportPreset::ScriptExportMode DEFAULT_SCRIPT_MODE = EditorExportPreset::MODE_SCRIPT_BINARY_TOKENS_COMPRESSED;
 	EditorExportPreset::ScriptExportMode script_mode = DEFAULT_SCRIPT_MODE;
 
-	// Release-profile compiled-bytecode exports compile without call-stack tracking so the
-	// serialized functions carry no OPCODE_LINE instructions; the editor's own flag is saved
-	// here and restored in _export_end.
+	// Compiled-bytecode exports compile under export-only compiler flags: the export-compile flag
+	// makes bare autoload references emit STORE_GLOBAL (masked operand, rebaked by name at .fsb
+	// load), and release-profile exports additionally disable call-stack tracking so the
+	// serialized functions carry no OPCODE_LINE instructions. The editor's own flags are saved
+	// here and restored in _export_end, which also recompiles every script FSCache reloaded
+	// during the export window so the live session gets editor-correct bytecode back.
+	bool export_compile_flags_active = false;
 	bool call_stack_tracking_overridden = false;
 	bool call_stack_tracking_previous = false;
-	// Scripts recompiled through FSCache while the tracking override was active. They are shared
-	// with the live editor session, so _export_end recompiles them with the restored flag.
-	Vector<String> recompiled_script_paths;
 
 	// Export plugin callbacks cannot return an error; an EXPORT_MESSAGE_ERROR on the platform is
 	// what fails the export (see EditorExportPlatform::export_project_files).
@@ -134,13 +137,36 @@ class EditorExportFoundryScript : public EditorExportPlugin {
 		}
 	}
 
+	// Any native resource file can embed a built-in script, and binary resources are saved under
+	// many type-specific extensions (".material", ".mesh", ".anim", ...), so the check keys off
+	// the file format instead of an extension list: binary resources declare themselves with the
+	// RSRC/RSCC magic, and text resources are exactly the text loader's two extensions. Imported
+	// byproducts such as compressed textures use different magics and are skipped.
+	bool _is_native_resource_file(const String &p_path) {
+		const String extension = p_path.get_extension().to_lower();
+		if (extension == "tscn" || extension == "tres") {
+			return true;
+		}
+		Ref<FileAccess> file = FileAccess::open(p_path, FileAccess::READ);
+		if (file.is_null()) {
+			return false;
+		}
+		uint8_t magic[4] = { 0, 0, 0, 0 };
+		if (file->get_buffer(magic, 4) != 4) {
+			return false;
+		}
+		if (magic[0] != 'R' || magic[1] != 'S') {
+			return false;
+		}
+		return (magic[2] == 'R' && magic[3] == 'C') || (magic[2] == 'C' && magic[3] == 'C');
+	}
+
 	void _export_file_compiled_bytecode(const String &p_path) {
 		const String extension = p_path.get_extension();
-		if (extension == "tscn" || extension == "scn" || extension == "res" || extension == "tres") {
-			_check_resource_for_built_in_script(p_path);
-			return;
-		}
 		if (extension != "fs") {
+			if (_is_native_resource_file(p_path)) {
+				_check_resource_for_built_in_script(p_path);
+			}
 			return;
 		}
 
@@ -155,18 +181,25 @@ class EditorExportFoundryScript : public EditorExportPlugin {
 			_add_export_error(vformat(TTR("Script \"%s\" failed to compile: %s"), p_path, _describe_script_errors(p_path, error)));
 			return;
 		}
-		if (call_stack_tracking_overridden) {
-			recompiled_script_paths.push_back(p_path);
-		}
 
 		const Vector<StringName> unsupported_named_globals = FSBytecodeExporter::collect_unsupported_named_globals(script);
 		if (!unsupported_named_globals.is_empty()) {
 			Vector<String> printable_names;
+			Vector<String> autoload_names;
 			for (const StringName &name : unsupported_named_globals) {
 				printable_names.push_back(String(name));
+				if (ProjectSettings::get_singleton()->has_autoload(name)) {
+					autoload_names.push_back(String(name));
+				}
 			}
 			skip();
-			_add_export_error(vformat(TTR("Script \"%s\" references editor-only named globals that are not available in exported games: %s."), p_path, String(", ").join(printable_names)));
+			String message = vformat(TTR("Script \"%s\" references named globals that exist only in this editor session and are not defined by an exported game's runtime: %s."), p_path, String(", ").join(printable_names));
+			if (!autoload_names.is_empty()) {
+				// Autoload singletons compile as runtime globals under the export-compile flag,
+				// so landing here means that translation did not happen.
+				message += " " + vformat(TTR("%s matches a project autoload and should have compiled as a runtime global; this is a bug in the compiled-bytecode export."), String(", ").join(autoload_names));
+			}
+			_add_export_error(message);
 			return;
 		}
 
@@ -200,27 +233,37 @@ protected:
 			script_mode = preset->get_script_export_mode();
 		}
 
-		recompiled_script_paths.clear();
+		export_compile_flags_active = false;
 		call_stack_tracking_overridden = false;
-		if (script_mode == EditorExportPreset::MODE_SCRIPT_COMPILED_BYTECODE && !p_debug) {
-			call_stack_tracking_previous = FSLanguage::get_singleton()->should_track_call_stack();
-			FSLanguage::get_singleton()->set_track_call_stack(false);
-			call_stack_tracking_overridden = true;
+		if (script_mode == EditorExportPreset::MODE_SCRIPT_COMPILED_BYTECODE) {
+			FSLanguage::get_singleton()->set_compiling_for_export(true);
+			FSCache::begin_script_reload_recording();
+			export_compile_flags_active = true;
+			if (!p_debug) {
+				call_stack_tracking_previous = FSLanguage::get_singleton()->should_track_call_stack();
+				FSLanguage::get_singleton()->set_track_call_stack(false);
+				call_stack_tracking_overridden = true;
+			}
 		}
 	}
 
 	virtual void _export_end() override {
-		if (call_stack_tracking_overridden) {
-			FSLanguage::get_singleton()->set_track_call_stack(call_stack_tracking_previous);
-			call_stack_tracking_overridden = false;
-			// The scripts compiled for the export are the same objects the editor session holds;
-			// recompile them under the restored flag so editor debugging keeps line information.
-			for (const String &path : recompiled_script_paths) {
+		if (export_compile_flags_active) {
+			FSLanguage::get_singleton()->set_compiling_for_export(false);
+			if (call_stack_tracking_overridden) {
+				FSLanguage::get_singleton()->set_track_call_stack(call_stack_tracking_previous);
+				call_stack_tracking_overridden = false;
+			}
+			export_compile_flags_active = false;
+			// The scripts compiled during the export window are the same objects the live editor
+			// session holds and carry export-only bytecode (placeholder autoload globals, no line
+			// tracking); recompile all of them — including dependencies compiled transitively —
+			// under the restored flags.
+			for (const String &path : FSCache::end_script_reload_recording()) {
 				Error error = OK;
 				FSCache::get_full_script(path, error, String(), true);
 			}
 		}
-		recompiled_script_paths.clear();
 		script_mode = DEFAULT_SCRIPT_MODE;
 	}
 

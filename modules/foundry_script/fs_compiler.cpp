@@ -817,6 +817,21 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 
 #ifdef TOOLS_ENABLED
 					if (FSLanguage::get_singleton()->get_named_globals_map().has(identifier)) {
+						// Editor sessions register autoload singletons as named globals, but game
+						// runtimes register them in the global array, so a compiled-bytecode export
+						// must reach them through STORE_GLOBAL: the exporter masks the baked operand
+						// and records the name, and the .fsb loader rebakes the index against the
+						// runtime's global map, which does contain the autoload. The placeholder
+						// index below is never shipped and never runs — the export integration
+						// recompiles the script for the live editor session afterwards.
+						if (FSLanguage::get_singleton()->is_compiling_for_export()) {
+							HashMap<StringName, ProjectSettings::AutoloadInfo> autoloads = ProjectSettings::get_singleton()->get_autoload_list();
+							if (autoloads.has(identifier) && autoloads[identifier].is_singleton) {
+								FSCodeGenerator::Address global = codegen.add_temporary(_gdtype_from_datatype(in->get_datatype(), codegen.script));
+								gen->write_store_global(global, 0, identifier);
+								return global;
+							}
+						}
 						FSCodeGenerator::Address global = codegen.add_temporary(); // TODO: Get type.
 						gen->write_store_named_global(global, identifier);
 						return global;
