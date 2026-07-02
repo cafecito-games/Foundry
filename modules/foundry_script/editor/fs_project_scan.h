@@ -43,7 +43,7 @@ struct ProjectScanOptions {
 	bool include_addons = false;
 	// Directories marked with a `.fsignore` file are excluded by default (the same marker the
 	// editor file system honors); set false to descend into them anyway.
-	bool respect_gdignore = true;
+	bool respect_fsignore = true;
 };
 
 // The ordered work list produced for the migration driver, plus an honest account of what was

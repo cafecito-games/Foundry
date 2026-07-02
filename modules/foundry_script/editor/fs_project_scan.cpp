@@ -101,7 +101,7 @@ bool scan_directory(const String &p_dir_path, bool p_at_root, const ProjectScanO
 		}
 
 		// Honor the editor's ignore marker so vendored/generated trees stay untouched.
-		if (p_options.respect_gdignore && FileAccess::exists(subdirectory.path_join(".fsignore"))) {
+		if (p_options.respect_fsignore && FileAccess::exists(subdirectory.path_join(".fsignore"))) {
 			r_skipped.push_back(subdirectory);
 			continue;
 		}

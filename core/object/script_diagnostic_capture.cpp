@@ -30,11 +30,22 @@
 
 #include "script_diagnostic_capture.h"
 
+#include "core/core_globals.h"
+#include "core/os/mutex.h"
+
 #include <atomic>
 
 namespace {
 
 std::atomic<int> active_capture_count = 0;
+
+// Guards quiet_capture_count together with the CoreGlobals::print_error_enabled
+// toggle it gates, so a concurrent start(true)/stop() can't observe or leave a
+// torn state (e.g. a second thread seeing a nonzero count before the flag is
+// actually disabled, or two threads racing to save/restore the prior value).
+Mutex quiet_capture_mutex;
+int quiet_capture_count = 0;
+bool saved_print_error_enabled = true;
 
 String safe_utf8(const char *p_text) {
 	return p_text ? String::utf8(p_text) : String();
@@ -43,9 +54,10 @@ String safe_utf8(const char *p_text) {
 } // namespace
 
 void ScriptDiagnosticCapture::_bind_methods() {
-	ClassDB::bind_method(D_METHOD("start"), &ScriptDiagnosticCapture::start);
+	ClassDB::bind_method(D_METHOD("start", "quiet"), &ScriptDiagnosticCapture::start, DEFVAL(false));
 	ClassDB::bind_method(D_METHOD("stop"), &ScriptDiagnosticCapture::stop);
 	ClassDB::bind_method(D_METHOD("is_active"), &ScriptDiagnosticCapture::is_active);
+	ClassDB::bind_method(D_METHOD("is_quiet"), &ScriptDiagnosticCapture::is_quiet);
 
 	ClassDB::bind_method(D_METHOD("clear"), &ScriptDiagnosticCapture::clear);
 	ClassDB::bind_method(D_METHOD("get_event_count"), &ScriptDiagnosticCapture::get_event_count);
@@ -122,7 +134,7 @@ bool ScriptDiagnosticCapture::has_active_capture() {
 	return active_capture_count.load(std::memory_order_relaxed) > 0;
 }
 
-void ScriptDiagnosticCapture::start() {
+void ScriptDiagnosticCapture::start(bool p_quiet) {
 	if (active) {
 		return;
 	}
@@ -132,6 +144,16 @@ void ScriptDiagnosticCapture::start() {
 	add_error_handler(&error_handler);
 	active = true;
 	active_capture_count.fetch_add(1, std::memory_order_relaxed);
+
+	quiet = p_quiet;
+	if (quiet) {
+		MutexLock lock(quiet_capture_mutex);
+		if (quiet_capture_count == 0) {
+			saved_print_error_enabled = CoreGlobals::print_error_enabled;
+			CoreGlobals::print_error_enabled = false;
+		}
+		quiet_capture_count++;
+	}
 }
 
 void ScriptDiagnosticCapture::stop() {
@@ -142,6 +164,15 @@ void ScriptDiagnosticCapture::stop() {
 	remove_error_handler(&error_handler);
 	active = false;
 	active_capture_count.fetch_sub(1, std::memory_order_relaxed);
+
+	if (quiet) {
+		quiet = false;
+		MutexLock lock(quiet_capture_mutex);
+		quiet_capture_count--;
+		if (quiet_capture_count == 0) {
+			CoreGlobals::print_error_enabled = saved_print_error_enabled;
+		}
+	}
 }
 
 void ScriptDiagnosticCapture::clear() {

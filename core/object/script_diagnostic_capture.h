@@ -63,6 +63,7 @@ private:
 	ErrorHandlerList error_handler;
 	LocalVector<Event> events;
 	bool active = false;
+	bool quiet = false;
 
 	static Severity _severity_from_handler_type(ErrorHandlerType p_type);
 	static void _error_handler(void *p_userdata, const char *p_function, const char *p_file, int p_line, const char *p_error, const char *p_explanation, bool p_editor_notify, ErrorHandlerType p_type);
@@ -76,9 +77,10 @@ protected:
 public:
 	static bool has_active_capture();
 
-	void start();
+	void start(bool p_quiet = false);
 	void stop();
 	bool is_active() const { return active; }
+	bool is_quiet() const { return quiet; }
 
 	void clear();
 	int get_event_count() const { return events.size(); }

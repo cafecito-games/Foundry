@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "core/core_globals.h"
 #include "core/object/script_diagnostic_capture.h"
 
 #include "tests/test_macros.h"
@@ -76,6 +77,155 @@ TEST_CASE("[ScriptDiagnosticCapture] Captures fatal diagnostics separately") {
 	CHECK(capture->get_event_count() == 1);
 	CHECK(capture->has_fatal("captured fatal"));
 	CHECK_FALSE(capture->has_error("captured fatal"));
+}
+
+TEST_CASE("[ScriptDiagnosticCapture] Quiet mode suppresses error printing while active") {
+	const bool errors_enabled_before = CoreGlobals::print_error_enabled;
+	CoreGlobals::print_error_enabled = true;
+
+	Ref<ScriptDiagnosticCapture> capture;
+	capture.instantiate();
+
+	capture->start(true);
+	CHECK(capture->is_quiet());
+	CHECK_FALSE(CoreGlobals::print_error_enabled);
+
+	ERR_PRINT("captured error");
+	WARN_PRINT("captured warning");
+
+	capture->stop();
+	CHECK_FALSE(capture->is_quiet());
+	CHECK(CoreGlobals::print_error_enabled);
+
+	CHECK(capture->get_event_count() == 2);
+	CHECK(capture->has_error("captured error"));
+	CHECK(capture->has_warning("captured warning"));
+
+	CoreGlobals::print_error_enabled = errors_enabled_before;
+}
+
+TEST_CASE("[ScriptDiagnosticCapture] Default start() keeps error printing enabled") {
+	const bool errors_enabled_before = CoreGlobals::print_error_enabled;
+	CoreGlobals::print_error_enabled = true;
+
+	Ref<ScriptDiagnosticCapture> capture;
+	capture.instantiate();
+
+	capture->start();
+	CHECK_FALSE(capture->is_quiet());
+	CHECK(CoreGlobals::print_error_enabled);
+
+	ERR_PRINT("captured error");
+	capture->stop();
+
+	CHECK(capture->get_event_count() == 1);
+	CHECK(CoreGlobals::print_error_enabled);
+
+	CoreGlobals::print_error_enabled = errors_enabled_before;
+}
+
+TEST_CASE("[ScriptDiagnosticCapture] Overlapping quiet captures stay suppressed until the last one stops") {
+	const bool errors_enabled_before = CoreGlobals::print_error_enabled;
+	CoreGlobals::print_error_enabled = true;
+
+	Ref<ScriptDiagnosticCapture> outer;
+	outer.instantiate();
+	Ref<ScriptDiagnosticCapture> inner;
+	inner.instantiate();
+
+	outer->start(true);
+	CHECK_FALSE(CoreGlobals::print_error_enabled);
+
+	inner->start(true);
+	CHECK_FALSE(CoreGlobals::print_error_enabled);
+
+	inner->stop();
+	CHECK_FALSE(CoreGlobals::print_error_enabled);
+
+	outer->stop();
+	CHECK(CoreGlobals::print_error_enabled);
+
+	CoreGlobals::print_error_enabled = errors_enabled_before;
+}
+
+TEST_CASE("[ScriptDiagnosticCapture] Quiet capture restores prior disabled state instead of forcing enabled") {
+	const bool errors_enabled_before = CoreGlobals::print_error_enabled;
+	CoreGlobals::print_error_enabled = false;
+
+	Ref<ScriptDiagnosticCapture> capture;
+	capture.instantiate();
+
+	capture->start(true);
+	CHECK_FALSE(CoreGlobals::print_error_enabled);
+
+	capture->stop();
+	CHECK_FALSE(CoreGlobals::print_error_enabled);
+
+	CoreGlobals::print_error_enabled = errors_enabled_before;
+}
+
+TEST_CASE("[ScriptDiagnosticCapture] Non-quiet capture nested inside a quiet capture does not re-enable printing") {
+	const bool errors_enabled_before = CoreGlobals::print_error_enabled;
+	CoreGlobals::print_error_enabled = true;
+
+	Ref<ScriptDiagnosticCapture> quiet_capture;
+	quiet_capture.instantiate();
+	Ref<ScriptDiagnosticCapture> loud_capture;
+	loud_capture.instantiate();
+
+	quiet_capture->start(true);
+	loud_capture->start();
+	CHECK_FALSE(CoreGlobals::print_error_enabled);
+
+	loud_capture->stop();
+	CHECK_FALSE(CoreGlobals::print_error_enabled);
+
+	quiet_capture->stop();
+	CHECK(CoreGlobals::print_error_enabled);
+
+	CoreGlobals::print_error_enabled = errors_enabled_before;
+}
+
+TEST_CASE("[ScriptDiagnosticCapture] Quiet capture nested in a non-quiet capture only suppresses for its duration") {
+	const bool errors_enabled_before = CoreGlobals::print_error_enabled;
+	CoreGlobals::print_error_enabled = true;
+
+	Ref<ScriptDiagnosticCapture> loud_capture;
+	loud_capture.instantiate();
+	Ref<ScriptDiagnosticCapture> quiet_capture;
+	quiet_capture.instantiate();
+
+	loud_capture->start();
+	CHECK(CoreGlobals::print_error_enabled);
+
+	quiet_capture->start(true);
+	CHECK_FALSE(CoreGlobals::print_error_enabled);
+
+	quiet_capture->stop();
+	CHECK(CoreGlobals::print_error_enabled);
+
+	loud_capture->stop();
+	CHECK(CoreGlobals::print_error_enabled);
+
+	CoreGlobals::print_error_enabled = errors_enabled_before;
+}
+
+TEST_CASE("[ScriptDiagnosticCapture] Quiet capture suppresses stderr output for a captured fatal diagnostic") {
+	const bool errors_enabled_before = CoreGlobals::print_error_enabled;
+	CoreGlobals::print_error_enabled = true;
+
+	Ref<ScriptDiagnosticCapture> capture;
+	capture.instantiate();
+
+	capture->start(true);
+	_err_print_error(FUNCTION_STR, __FILE__, __LINE__, "quiet fatal", false, ERR_HANDLER_FATAL);
+	CHECK_FALSE(CoreGlobals::print_error_enabled);
+	capture->stop();
+
+	CHECK(capture->has_fatal("quiet fatal"));
+	CHECK(CoreGlobals::print_error_enabled);
+
+	CoreGlobals::print_error_enabled = errors_enabled_before;
 }
 
 } // namespace TestScriptDiagnosticCapture
