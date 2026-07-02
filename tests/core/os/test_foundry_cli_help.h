@@ -99,4 +99,20 @@ TEST_CASE("[FoundryCLIHelp] Scoped routing validates nouns and verbs") {
 	CHECK(fallback_noun.contains("Subcommands"));
 }
 
+TEST_CASE("[FoundryCLIHelp] Unknown command help is empty") {
+	CHECK(FoundryCLIHelp::get_command_help_text("script", "fmt").is_empty());
+	CHECK(FoundryCLIHelp::get_command_help_text("nope", "format").is_empty());
+}
+
+TEST_CASE("[FoundryCLIHelp] Scope deeper than a command falls back to noun help") {
+	PackedStringArray deep_scope;
+	deep_scope.push_back("script");
+	deep_scope.push_back("format");
+	deep_scope.push_back("extra");
+	bool valid = true;
+	const String fallback = FoundryCLIHelp::get_scoped_help_text("foundry", deep_scope, valid);
+	CHECK_FALSE(valid);
+	CHECK(fallback.contains("Subcommands"));
+}
+
 } // namespace TestFoundryCLIHelp
