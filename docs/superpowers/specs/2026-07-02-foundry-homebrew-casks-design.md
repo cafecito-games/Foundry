@@ -2,7 +2,7 @@
 
 ## Context
 
-Foundry already publishes release assets from `.github/workflows/release.yml`. The macOS release build produces a signed and notarized `Foundry.app`, packaged as `Foundry_v<version>_macos.universal.zip`, and the publish job uploads it to the GitHub Release.
+Foundry already publishes release assets from `.github/workflows/release.yml`. The macOS release build produces a signed and notarized `Foundry.app`, packaged as `Foundry_v<version>_macos.universal.zip`, and the Linux editor is packaged as `Foundry_v<version>_linux.x86_64.zip`. The publish job uploads both to the GitHub Release.
 
 Cafecito Games already owns the `cafecito-games/homebrew-tap` repository, which contains Homebrew casks under `Casks/`. The organization also has a `HOMEBREW_TAP_TOKEN` secret available for release automation.
 
@@ -13,6 +13,7 @@ Cafecito Games already owns the `cafecito-games/homebrew-tap` repository, which 
 - Provide prerelease channels for alpha, beta, and release-candidate users.
 - Install `Foundry.app` on macOS.
 - Link a `foundry` command into Homebrew's `bin` directory that runs `Foundry.app/Contents/MacOS/Foundry`.
+- Install the Linux x86_64 editor binary through the same channel casks on Linux.
 - Update the relevant tap cask automatically when a GitHub Release is published.
 
 ## Non-Goals
@@ -64,24 +65,27 @@ All casks install the same application bundle name and binary link, so they must
 
 ## Cask Shape
 
-The macOS cask should point at the GitHub Release asset:
+Each cask should support macOS and Linux x86_64 with platform-specific URLs and checksums:
 
 ```ruby
-url "https://github.com/cafecito-games/Foundry/releases/download/v#{version}/Foundry_v#{version}_macos.universal.zip"
-```
+cask "foundry" do
+  version "0.1.0"
 
-The generated cask should use the exact release version and SHA-256 from the release asset:
+  on_macos do
+    sha256 "<computed macOS sha256>"
+    url "https://github.com/cafecito-games/Foundry/releases/download/v#{version}/Foundry_v#{version}_macos.universal.zip"
 
-```ruby
-version "0.1.0-alpha.1"
-sha256 "<computed sha256>"
-```
+    app "Foundry.app"
+    binary "#{appdir}/Foundry.app/Contents/MacOS/Foundry", target: "foundry"
+  end
 
-Installation stanzas should install the app and link the CLI through Homebrew:
+  on_linux do
+    sha256 "<computed Linux sha256>"
+    url "https://github.com/cafecito-games/Foundry/releases/download/v#{version}/Foundry_v#{version}_linux.x86_64.zip"
 
-```ruby
-app "Foundry.app"
-binary "#{appdir}/Foundry.app/Contents/MacOS/Foundry", target: "foundry"
+    binary "foundry.linuxbsd.editor.x86_64", target: "foundry"
+  end
+end
 ```
 
 The cask should include standard metadata:
@@ -99,7 +103,7 @@ The Foundry release workflow should add a tap update step after `Publish GitHub 
 The step should:
 
 1. Determine the target cask token from the resolved release status.
-2. Compute the SHA-256 for `dist/Foundry_v<version>_macos.universal.zip`.
+2. Compute SHA-256 values for `dist/Foundry_v<version>_macos.universal.zip` and `dist/Foundry_v<version>_linux.x86_64.zip`.
 3. Generate the target cask file from a small template or script.
 4. Clone `cafecito-games/homebrew-tap` using `HOMEBREW_TAP_TOKEN`.
 5. Write the updated cask to `Casks/<token>.rb`.
@@ -115,11 +119,12 @@ The tap publication script should fail fast if:
 
 - The resolved release status does not map to a known channel.
 - The macOS release asset is missing from `dist/`.
+- The Linux x86_64 release asset is missing from `dist/`.
 - The SHA-256 cannot be computed.
 - The generated cask does not pass `ruby -c`.
 - The tap checkout or push fails.
 
-The script should be deterministic: given a cask token, version, SHA-256, and repository URL, it should emit the same cask file every time.
+The script should be deterministic: given a cask token, version, platform SHA-256 values, and repository URL, it should emit the same cask file every time.
 
 ## Testing
 
@@ -128,10 +133,10 @@ Repository tests should cover the cask-generation script without requiring a rea
 - Stable status maps to `foundry`.
 - Alpha, beta, and rc statuses map to their channel casks.
 - Unknown statuses fail.
-- Generated Ruby contains the expected version, URL, SHA-256, app stanza, binary stanza, and conflicts.
+- Generated Ruby contains the expected version, platform URLs, platform SHA-256 values, app stanza, binary stanzas, and conflicts.
 
 Release workflow validation should include script unit tests and `ruby -c` on generated fixture casks. A full end-to-end Homebrew install can be verified after the first public release asset exists.
 
 ## Future Work
 
-The same channel model can be extended to Linux by adding `on_linux` cask branches that install `Foundry_v<version>_linux.x86_64.zip` and link `foundry.linuxbsd.editor.x86_64` as `foundry`. This is not required for the initial macOS-focused cask support.
+Linux support is initially x86_64 only because the release workflow currently publishes only `Foundry_v<version>_linux.x86_64.zip`. Linux arm64 can be added later by extending the release build matrix and rendering the appropriate Homebrew architecture branch.

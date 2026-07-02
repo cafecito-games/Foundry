@@ -4,7 +4,7 @@
 
 **Goal:** Publish generated Homebrew casks for Foundry stable, alpha, beta, and rc channels from the existing release workflow.
 
-**Architecture:** Add a deterministic Python generator under `.github/scripts/` that maps Foundry release statuses to cask tokens, computes the macOS asset checksum, and writes the cask file used by the tap. Wire the release workflow publish job to clone `cafecito-games/homebrew-tap`, generate exactly one channel cask for each non-draft release, validate it, commit it, and push it.
+**Architecture:** Add a deterministic Python generator under `.github/scripts/` that maps Foundry release statuses to cask tokens, computes the macOS and Linux x86_64 asset checksums, and writes the cask file used by the tap. Wire the release workflow publish job to clone `cafecito-games/homebrew-tap`, generate exactly one channel cask for each non-draft release, validate it, commit it, and push it.
 
 **Tech Stack:** GitHub Actions, Python 3.8-compatible scripts, Homebrew Cask Ruby DSL, existing `misc/scripts/test_*.py` test style.
 
@@ -15,6 +15,10 @@
 - Create `.github/scripts/generate_homebrew_cask.py`: deterministic cask generator and CLI used by GitHub Actions.
 - Create `misc/scripts/test_homebrew_cask.py`: script-level tests for channel mapping, cask rendering, CLI output, syntax validation, and release workflow wiring.
 - Modify `.github/workflows/release.yml`: make publish checkout unconditional and add the Homebrew tap update step after GitHub Release publication.
+
+## Linux x86_64 Amendment
+
+After the initial macOS cask implementation, the same casks were extended to support Linux x86_64. The generator now accepts both macOS and Linux release assets, renders `on_macos` and `on_linux` blocks, and links `foundry.linuxbsd.editor.x86_64` as `foundry` on Linux. The release workflow now requires both `Foundry_v<version>_macos.universal.zip` and `Foundry_v<version>_linux.x86_64.zip` before updating the tap.
 
 ### Task 1: Add Failing Homebrew Cask Generator Tests
 

@@ -966,9 +966,14 @@ jobs:
             exit 1
           fi
 
-          asset="dist/Foundry_v${RELEASE_VERSION}_macos.universal.zip"
-          if [ ! -f "$asset" ]; then
-            echo "::error::Missing macOS release asset: $asset"
+          macos_asset="dist/Foundry_v${RELEASE_VERSION}_macos.universal.zip"
+          linux_asset="dist/Foundry_v${RELEASE_VERSION}_linux.x86_64.zip"
+          if [ ! -f "$macos_asset" ]; then
+            echo "::error::Missing macOS release asset: $macos_asset"
+            exit 1
+          fi
+          if [ ! -f "$linux_asset" ]; then
+            echo "::error::Missing Linux release asset: $linux_asset"
             exit 1
           fi
 
@@ -978,7 +983,8 @@ jobs:
           cask_path="$(python3 .github/scripts/generate_homebrew_cask.py \
             --status "$RELEASE_STATUS" \
             --version "$RELEASE_VERSION" \
-            --asset "$asset" \
+            --macos-asset "$macos_asset" \
+            --linux-asset "$linux_asset" \
             --output-dir "$tap_dir/Casks")"
           cask_token="$(basename "$cask_path" .rb)"
 
