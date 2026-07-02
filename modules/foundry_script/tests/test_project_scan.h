@@ -194,11 +194,11 @@ TEST_SUITE("[Modules][FoundryScript][ProjectScan]") {
 	}
 
 	TEST_CASE("Opts into .fsignore'd directories when requested") {
-		TemporaryProjectTree tree("fs_project_scan_gdignore");
+		TemporaryProjectTree tree("fs_project_scan_fsignore");
 		build_sample_project(tree);
 
 		ProjectScanOptions options;
-		options.respect_gdignore = false;
+		options.respect_fsignore = false;
 		const ProjectScanResult result = FSProjectScan::scan(tree.root, options);
 		REQUIRE(result.ok);
 
