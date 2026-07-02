@@ -124,6 +124,20 @@ class FSByteCodeGenerator : public FSCodeGenerator {
 	RBMap<FSFunction *, int> lambdas_map;
 	Vector<StringName> builtin_method_names;
 
+#ifdef TOOLS_ENABLED
+	FSFunction::ExportFixups export_fixups;
+
+	// The pointer maps dedupe by function pointer, so the descriptor is appended only when the
+	// matching map insertion assigned a new index; index i of each descriptor vector then always
+	// describes entry i of the matching pointer table.
+	template <typename DescriptorType>
+	void record_export_fixup(Vector<DescriptorType> &r_descriptors, int p_pointer_position, const DescriptorType &p_descriptor) {
+		if (p_pointer_position == r_descriptors.size()) {
+			r_descriptors.push_back(p_descriptor);
+		}
+	}
+#endif
+
 #ifdef DEBUG_ENABLED
 	// Keep method and property names for pointer and validated operations.
 	// Used when disassembling the bytecode.
@@ -525,7 +539,7 @@ public:
 	virtual void write_assign_true(const Address &p_target) override;
 	virtual void write_assign_false(const Address &p_target) override;
 	virtual void write_assign_default_parameter(const Address &p_dst, const Address &p_src, bool p_use_conversion) override;
-	virtual void write_store_global(const Address &p_dst, int p_global_index) override;
+	virtual void write_store_global(const Address &p_dst, int p_global_index, const StringName &p_global_name) override;
 	virtual void write_store_named_global(const Address &p_dst, const StringName &p_global) override;
 	virtual void write_cast(const Address &p_target, const Address &p_source, const FSDataType &p_type) override;
 	virtual void write_call(const Address &p_target, const Address &p_base, const StringName &p_function_name, const Vector<Address> &p_arguments) override;

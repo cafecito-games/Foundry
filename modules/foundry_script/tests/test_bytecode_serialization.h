@@ -34,6 +34,7 @@
 
 #include "modules/foundry_script/foundry_script.h"
 #include "modules/foundry_script/fs_analyzer.h"
+#include "modules/foundry_script/fs_byte_codegen.h"
 #include "modules/foundry_script/fs_bytecode_export.h"
 #include "modules/foundry_script/fs_bytecode_format.h"
 #include "modules/foundry_script/fs_bytecode_loader.h"
@@ -42,11 +43,15 @@
 #include "modules/foundry_script/fs_parser.h"
 
 #include "core/config/engine.h"
+#include "core/config/project_settings.h"
+#include "core/io/dir_access.h"
+#include "core/io/file_access.h"
 #include "core/io/stream_peer.h"
 #include "core/templates/hash_set.h"
 #include "core/templates/pair.h"
 
 #include "tests/test_macros.h"
+#include "tests/test_utils.h"
 
 namespace FSTests {
 
@@ -664,6 +669,202 @@ TEST_CASE("[FoundryScript][BytecodeCodec] Unresolvable external references fail 
 	ERR_PRINT_OFF;
 	CHECK(bytecode_decode_variant(exporter, payload, &empty_resolver, decoded) == ERR_CANT_RESOLVE);
 	ERR_PRINT_ON;
+}
+
+TEST_CASE("[FoundryScript][BytecodeCodegen] Codegen records export fixups for every pointer table") {
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"func run() -> Array:\n"
+			"\tvar base := 1.5\n"
+			"\tvar vector := Vector2(base, base + 1.0)\n"
+			"\tvector.x = 3.0\n"
+			"\tvar vertical := vector.y\n"
+			"\tvar total := vector.x + vertical\n"
+			"\tvar negated := -total\n"
+			"\tvar packed := PackedFloat64Array()\n"
+			"\tpacked.resize(2)\n"
+			"\tpacked[0] = total\n"
+			"\tvar first := packed[0]\n"
+			"\tvar data := {}\n"
+			"\tdata[\"value\"] = negated\n"
+			"\tvar stored = data[\"value\"]\n"
+			"\tvar text := \"fixup\"\n"
+			"\tvar text_length := text.length()\n"
+			"\tvar absolute := absf(total + first)\n"
+			"\tvar count := len(text)\n"
+			"\tvar reference := RefCounted.new()\n"
+			"\tvar identifier := reference.get_instance_id()\n"
+			"\tvar exists := FileAccess.file_exists(\"user://bytecode_fixup_probe\")\n"
+			"\treturn [stored, absolute, count, text_length, identifier, exists]\n");
+
+	const HashMap<StringName, FSFunction *> &member_functions = script->get_member_functions();
+	REQUIRE(member_functions.has(SNAME("run")));
+	const FSFunction *function = member_functions[SNAME("run")];
+	const FSFunction::ExportFixups &fixups = function->export_fixups;
+
+	// Every pointer table must have a symbolic descriptor for each entry, at the same index.
+	CHECK(fixups.operators.size() == function->get_operator_funcs_count());
+	CHECK(fixups.setters.size() == function->get_setters_count());
+	CHECK(fixups.getters.size() == function->get_getters_count());
+	CHECK(fixups.keyed_setters.size() == function->get_keyed_setters_count());
+	CHECK(fixups.keyed_getters.size() == function->get_keyed_getters_count());
+	CHECK(fixups.indexed_setters.size() == function->get_indexed_setters_count());
+	CHECK(fixups.indexed_getters.size() == function->get_indexed_getters_count());
+	CHECK(fixups.builtin_methods.size() == function->get_builtin_methods_count());
+	CHECK(fixups.constructors.size() == function->get_constructors_count());
+	CHECK(fixups.utilities.size() == function->get_utilities_count());
+	CHECK(fixups.gds_utilities.size() == function->get_gds_utilities_count());
+	CHECK(fixups.method_binds.size() == function->get_methods_count());
+
+	// The script must actually exercise every table.
+	CHECK(function->get_operator_funcs_count() > 0);
+	CHECK(function->get_setters_count() > 0);
+	CHECK(function->get_getters_count() > 0);
+	CHECK(function->get_keyed_setters_count() > 0);
+	CHECK(function->get_keyed_getters_count() > 0);
+	CHECK(function->get_indexed_setters_count() > 0);
+	CHECK(function->get_indexed_getters_count() > 0);
+	CHECK(function->get_builtin_methods_count() > 0);
+	CHECK(function->get_constructors_count() > 0);
+	CHECK(function->get_utilities_count() > 0);
+	CHECK(function->get_gds_utilities_count() > 0);
+	CHECK(function->get_methods_count() > 0);
+
+	bool has_float_addition = false;
+	bool has_float_negation = false;
+	for (const FSFunction::ExportFixups::OperatorKey &key : fixups.operators) {
+		if (key.op == Variant::OP_ADD && key.left_type == Variant::FLOAT && key.right_type == Variant::FLOAT) {
+			has_float_addition = true;
+		}
+		if (key.op == Variant::OP_NEGATE && key.left_type == Variant::FLOAT && key.right_type == Variant::NIL) {
+			has_float_negation = true;
+		}
+	}
+	CHECK(has_float_addition);
+	CHECK(has_float_negation);
+
+	bool has_vector_x_setter = false;
+	for (const FSFunction::ExportFixups::TypedNameKey &key : fixups.setters) {
+		if (key.type == Variant::VECTOR2 && key.name == SNAME("x")) {
+			has_vector_x_setter = true;
+		}
+	}
+	CHECK(has_vector_x_setter);
+
+	bool has_vector_y_getter = false;
+	for (const FSFunction::ExportFixups::TypedNameKey &key : fixups.getters) {
+		if (key.type == Variant::VECTOR2 && key.name == SNAME("y")) {
+			has_vector_y_getter = true;
+		}
+	}
+	CHECK(has_vector_y_getter);
+
+	CHECK(fixups.keyed_setters.has(Variant::DICTIONARY));
+	CHECK(fixups.keyed_getters.has(Variant::DICTIONARY));
+	CHECK(fixups.indexed_setters.has(Variant::PACKED_FLOAT64_ARRAY));
+	CHECK(fixups.indexed_getters.has(Variant::PACKED_FLOAT64_ARRAY));
+
+	bool has_string_length = false;
+	for (const FSFunction::ExportFixups::TypedNameKey &key : fixups.builtin_methods) {
+		if (key.type == Variant::STRING && key.name == SNAME("length")) {
+			has_string_length = true;
+		}
+	}
+	CHECK(has_string_length);
+
+	bool has_vector_constructor = false;
+	for (const FSFunction::ExportFixups::ConstructorKey &key : fixups.constructors) {
+		if (key.type == Variant::VECTOR2) {
+			CHECK(key.constructor_index >= 0);
+			CHECK(key.constructor_index < Variant::get_constructor_count(Variant::VECTOR2));
+			has_vector_constructor = true;
+		}
+	}
+	CHECK(has_vector_constructor);
+
+	CHECK(fixups.utilities.has(SNAME("absf")));
+	CHECK(fixups.gds_utilities.has(SNAME("len")));
+
+	bool has_get_instance_id = false;
+	for (const FSFunction::ExportFixups::MethodBindKey &key : fixups.method_binds) {
+		if (key.method_name == SNAME("get_instance_id")) {
+			CHECK(key.class_name != StringName());
+			has_get_instance_id = true;
+		}
+	}
+	CHECK(has_get_instance_id);
+}
+
+TEST_CASE("[FoundryScript][BytecodeCodegen] Codegen records store-global operands and named globals") {
+	// A singleton autoload reference is the one construct the compiler lowers to
+	// OPCODE_STORE_GLOBAL, baking the process-specific global-array index into the code.
+	const String scene_path = TestUtils::get_temp_path("bytecode_fixup_autoload.tscn");
+	{
+		Ref<FileAccess> scene_file = FileAccess::open(scene_path, FileAccess::WRITE);
+		REQUIRE(scene_file.is_valid());
+		scene_file->store_string("[gd_scene format=3]\n\n[node name=\"Root\" type=\"Node\"]\n");
+	}
+	const StringName autoload_name = "BytecodeFixupAutoload";
+	ProjectSettings::AutoloadInfo autoload;
+	autoload.name = autoload_name;
+	autoload.path = scene_path;
+	autoload.is_singleton = true;
+	ProjectSettings::get_singleton()->add_autoload(autoload);
+	if (!FSLanguage::get_singleton()->has_any_global_constant(SNAME("RefCounted"))) {
+		FSLanguage::get_singleton()->init();
+	}
+	FSLanguage::get_singleton()->add_global_constant(autoload_name, Variant());
+
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"func run() -> Array:\n"
+			"\tvar first_reference = BytecodeFixupAutoload\n"
+			"\tvar second_reference = BytecodeFixupAutoload\n"
+			"\treturn [first_reference, second_reference]\n");
+
+	ProjectSettings::get_singleton()->remove_autoload(autoload_name);
+	DirAccess::remove_absolute(scene_path);
+
+	const HashMap<StringName, FSFunction *> &member_functions = script->get_member_functions();
+	REQUIRE(member_functions.has(SNAME("run")));
+	const FSFunction *function = member_functions[SNAME("run")];
+	const FSFunction::ExportFixups &fixups = function->export_fixups;
+
+	REQUIRE(FSLanguage::get_singleton()->get_global_map().has(autoload_name));
+	const int global_index = FSLanguage::get_singleton()->get_global_map()[autoload_name];
+	const Vector<int> &code = function->get_code();
+	REQUIRE(fixups.global_stores.size() == 2);
+	for (const FSFunction::ExportFixups::GlobalStore &global_store : fixups.global_stores) {
+		CHECK(global_store.global_name == autoload_name);
+		REQUIRE(global_store.code_offset >= 2);
+		REQUIRE(global_store.code_offset < code.size());
+		CHECK(code[global_store.code_offset] == global_index);
+		CHECK(code[global_store.code_offset - 2] == FSFunction::OPCODE_STORE_GLOBAL);
+	}
+
+	// Named globals are constant-folded on the normal compile path, so drive the generator
+	// directly to prove both store-global recording and named-global staging end-to-end.
+	FSByteCodeGenerator generator;
+	generator.write_start(script.ptr(), "direct_store_global", false, Variant(), FSDataType());
+	const uint32_t temporary_index = generator.add_temporary(FSDataType());
+	const FSCodeGenerator::Address destination(FSCodeGenerator::Address::TEMPORARY, temporary_index);
+	generator.write_store_global(destination, 7, "DirectGlobal");
+	generator.write_store_named_global(destination, "DirectNamedGlobal");
+	generator.write_store_named_global(destination, "DirectNamedGlobal");
+	generator.pop_temporary();
+	FSFunction *direct_function = generator.write_end();
+	REQUIRE(direct_function != nullptr);
+
+	const FSFunction::ExportFixups &direct_fixups = direct_function->export_fixups;
+	const Vector<int> &direct_code = direct_function->get_code();
+	REQUIRE(direct_fixups.global_stores.size() == 1);
+	CHECK(direct_fixups.global_stores[0].global_name == SNAME("DirectGlobal"));
+	REQUIRE(direct_fixups.global_stores[0].code_offset >= 2);
+	REQUIRE(direct_fixups.global_stores[0].code_offset < direct_code.size());
+	CHECK(direct_code[direct_fixups.global_stores[0].code_offset] == 7);
+	CHECK(direct_code[direct_fixups.global_stores[0].code_offset - 2] == FSFunction::OPCODE_STORE_GLOBAL);
+	REQUIRE(direct_fixups.named_globals.size() == 1);
+	CHECK(direct_fixups.named_globals[0] == SNAME("DirectNamedGlobal"));
+
+	memdelete(direct_function);
 }
 
 } // namespace FSTests

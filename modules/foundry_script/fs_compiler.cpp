@@ -801,7 +801,7 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 						if (autoloads.has(identifier) && autoloads[identifier].is_singleton) {
 							FSCodeGenerator::Address global = codegen.add_temporary(_gdtype_from_datatype(in->get_datatype(), codegen.script));
 							int idx = FSLanguage::get_singleton()->get_global_map()[identifier];
-							gen->write_store_global(global, idx);
+							gen->write_store_global(global, idx, identifier);
 							return global;
 						} else {
 							int idx = FSLanguage::get_singleton()->get_global_map()[identifier];

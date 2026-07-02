@@ -636,6 +636,54 @@ private:
 	} profile;
 #endif
 
+#ifdef TOOLS_ENABLED
+
+public:
+	// Symbolic identities for every process-bound pointer the compiled function stores, recorded
+	// by FSByteCodeGenerator so the bytecode exporter can re-resolve the pointers in another
+	// process. Index i of each descriptor vector describes entry i of the matching pointer table.
+	struct ExportFixups {
+		struct OperatorKey {
+			Variant::Operator op;
+			Variant::Type left_type;
+			Variant::Type right_type;
+		};
+		struct TypedNameKey {
+			Variant::Type type;
+			StringName name;
+		};
+		struct ConstructorKey {
+			Variant::Type type;
+			int constructor_index;
+		};
+		struct MethodBindKey {
+			StringName class_name;
+			StringName method_name;
+		};
+		struct GlobalStore {
+			int code_offset; // Index into `code` of the baked global-array operand.
+			StringName global_name;
+		};
+		Vector<OperatorKey> operators;
+		Vector<TypedNameKey> setters;
+		Vector<TypedNameKey> getters;
+		Vector<Variant::Type> keyed_setters;
+		Vector<Variant::Type> keyed_getters;
+		Vector<Variant::Type> indexed_setters;
+		Vector<Variant::Type> indexed_getters;
+		Vector<TypedNameKey> builtin_methods;
+		Vector<ConstructorKey> constructors;
+		Vector<StringName> utilities;
+		Vector<StringName> gds_utilities;
+		Vector<MethodBindKey> method_binds;
+		Vector<GlobalStore> global_stores;
+		Vector<StringName> named_globals; // For export-time validation only.
+	};
+	ExportFixups export_fixups;
+
+private:
+#endif // TOOLS_ENABLED
+
 	String _get_call_error(const String &p_where, const Variant **p_argptrs, int p_argcount, const Variant &p_ret, const Callable::CallError &p_err) const;
 	String _get_callable_call_error(const String &p_where, const Callable &p_callable, const Variant **p_argptrs, int p_argcount, const Variant &p_ret, const Callable::CallError &p_err) const;
 	Variant _get_default_variant_for_data_type(const FSDataType &p_data_type);
@@ -672,6 +720,22 @@ public:
 
 	Variant get_constant(int p_idx) const;
 	StringName get_global_name(int p_idx) const;
+
+#ifdef TOOLS_ENABLED
+	_FORCE_INLINE_ const Vector<int> &get_code() const { return code; }
+	_FORCE_INLINE_ int get_operator_funcs_count() const { return _operator_funcs_count; }
+	_FORCE_INLINE_ int get_setters_count() const { return _setters_count; }
+	_FORCE_INLINE_ int get_getters_count() const { return _getters_count; }
+	_FORCE_INLINE_ int get_keyed_setters_count() const { return _keyed_setters_count; }
+	_FORCE_INLINE_ int get_keyed_getters_count() const { return _keyed_getters_count; }
+	_FORCE_INLINE_ int get_indexed_setters_count() const { return _indexed_setters_count; }
+	_FORCE_INLINE_ int get_indexed_getters_count() const { return _indexed_getters_count; }
+	_FORCE_INLINE_ int get_builtin_methods_count() const { return _builtin_methods_count; }
+	_FORCE_INLINE_ int get_constructors_count() const { return _constructors_count; }
+	_FORCE_INLINE_ int get_utilities_count() const { return _utilities_count; }
+	_FORCE_INLINE_ int get_gds_utilities_count() const { return _gds_utilities_count; }
+	_FORCE_INLINE_ int get_methods_count() const { return _methods_count; }
+#endif // TOOLS_ENABLED
 
 	Variant call(FSInstance *p_instance, const Variant **p_args, int p_argcount, Callable::CallError &r_err, CallState *p_state = nullptr, const Variant *p_self_override = nullptr);
 	// Dispatches a retroactive-conformance witness on a receiver that has no FSInstance (a native engine

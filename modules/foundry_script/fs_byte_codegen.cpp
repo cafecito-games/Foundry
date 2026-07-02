@@ -445,6 +445,11 @@ FSFunction *FSByteCodeGenerator::write_end() {
 	function->gds_utilities_names = gds_utilities_names;
 #endif
 
+#ifdef TOOLS_ENABLED
+	export_fixups.named_globals = named_globals;
+	function->export_fixups = export_fixups;
+#endif
+
 	ended = true;
 	return function;
 }
@@ -598,6 +603,9 @@ void FSByteCodeGenerator::write_unary_operator(const Address &p_target, Variant:
 		append(Address());
 		append(p_target);
 		append(op_func);
+#ifdef TOOLS_ENABLED
+		record_export_fixup(export_fixups.operators, get_operation_pos(op_func), FSFunction::ExportFixups::OperatorKey{ p_operator, p_left_operand.type.builtin_type, Variant::NIL });
+#endif
 #ifdef DEBUG_ENABLED
 		add_debug_name(operator_names, get_operation_pos(op_func), Variant::get_operator_name(p_operator));
 #endif
@@ -655,6 +663,9 @@ void FSByteCodeGenerator::write_binary_operator(const Address &p_target, Variant
 		append(p_right_operand);
 		append(p_target);
 		append(op_func);
+#ifdef TOOLS_ENABLED
+		record_export_fixup(export_fixups.operators, get_operation_pos(op_func), FSFunction::ExportFixups::OperatorKey{ p_operator, p_left_operand.type.builtin_type, p_right_operand.type.builtin_type });
+#endif
 #ifdef DEBUG_ENABLED
 		add_debug_name(operator_names, get_operation_pos(op_func), Variant::get_operator_name(p_operator));
 #endif
@@ -837,6 +848,9 @@ void FSByteCodeGenerator::write_set(const Address &p_target, const Address &p_in
 			append(p_index);
 			append(p_source);
 			append(setter);
+#ifdef TOOLS_ENABLED
+			record_export_fixup(export_fixups.indexed_setters, get_indexed_setter_pos(setter), p_target.type.builtin_type);
+#endif
 			return;
 		} else if (Variant::get_member_validated_keyed_setter(p_target.type.builtin_type)) {
 			Variant::ValidatedKeyedSetter setter = Variant::get_member_validated_keyed_setter(p_target.type.builtin_type);
@@ -845,6 +859,9 @@ void FSByteCodeGenerator::write_set(const Address &p_target, const Address &p_in
 			append(p_index);
 			append(p_source);
 			append(setter);
+#ifdef TOOLS_ENABLED
+			record_export_fixup(export_fixups.keyed_setters, get_keyed_setter_pos(setter), p_target.type.builtin_type);
+#endif
 			return;
 		}
 	}
@@ -865,6 +882,9 @@ void FSByteCodeGenerator::write_get(const Address &p_target, const Address &p_in
 			append(p_index);
 			append(p_target);
 			append(getter);
+#ifdef TOOLS_ENABLED
+			record_export_fixup(export_fixups.indexed_getters, get_indexed_getter_pos(getter), p_source.type.builtin_type);
+#endif
 			return;
 		} else if (Variant::get_member_validated_keyed_getter(p_source.type.builtin_type)) {
 			Variant::ValidatedKeyedGetter getter = Variant::get_member_validated_keyed_getter(p_source.type.builtin_type);
@@ -873,6 +893,9 @@ void FSByteCodeGenerator::write_get(const Address &p_target, const Address &p_in
 			append(p_index);
 			append(p_target);
 			append(getter);
+#ifdef TOOLS_ENABLED
+			record_export_fixup(export_fixups.keyed_getters, get_keyed_getter_pos(getter), p_source.type.builtin_type);
+#endif
 			return;
 		}
 	}
@@ -890,6 +913,9 @@ void FSByteCodeGenerator::write_set_named(const Address &p_target, const StringN
 		append(p_target);
 		append(p_source);
 		append(setter);
+#ifdef TOOLS_ENABLED
+		record_export_fixup(export_fixups.setters, get_setter_pos(setter), FSFunction::ExportFixups::TypedNameKey{ p_target.type.builtin_type, p_name });
+#endif
 #ifdef DEBUG_ENABLED
 		add_debug_name(setter_names, get_setter_pos(setter), p_name);
 #endif
@@ -908,6 +934,9 @@ void FSByteCodeGenerator::write_get_named(const Address &p_target, const StringN
 		append(p_source);
 		append(p_target);
 		append(getter);
+#ifdef TOOLS_ENABLED
+		record_export_fixup(export_fixups.getters, get_getter_pos(getter), FSFunction::ExportFixups::TypedNameKey{ p_source.type.builtin_type, p_name });
+#endif
 #ifdef DEBUG_ENABLED
 		add_debug_name(getter_names, get_getter_pos(getter), p_name);
 #endif
@@ -1154,16 +1183,24 @@ void FSByteCodeGenerator::write_assign_default_parameter(const Address &p_dst, c
 	function->default_arguments.push_back(opcodes.size());
 }
 
-void FSByteCodeGenerator::write_store_global(const Address &p_dst, int p_global_index) {
+void FSByteCodeGenerator::write_store_global(const Address &p_dst, int p_global_index, const StringName &p_global_name) {
 	append_opcode(FSFunction::OPCODE_STORE_GLOBAL);
 	append(p_dst);
 	append(p_global_index);
+#ifdef TOOLS_ENABLED
+	export_fixups.global_stores.push_back(FSFunction::ExportFixups::GlobalStore{ static_cast<int>(opcodes.size()) - 1, p_global_name });
+#endif
 }
 
 void FSByteCodeGenerator::write_store_named_global(const Address &p_dst, const StringName &p_global) {
 	append_opcode(FSFunction::OPCODE_STORE_NAMED_GLOBAL);
 	append(p_dst);
 	append(p_global);
+#ifdef TOOLS_ENABLED
+	if (!named_globals.has(p_global)) {
+		named_globals.push_back(p_global);
+	}
+#endif
 }
 
 void FSByteCodeGenerator::write_cast(const Address &p_target, const Address &p_source, const FSDataType &p_type) {
@@ -1264,6 +1301,9 @@ void FSByteCodeGenerator::write_call_foundry_script_utility(const Address &p_tar
 	append(p_arguments.size());
 	append(gds_function);
 	ct.cleanup();
+#ifdef TOOLS_ENABLED
+	record_export_fixup(export_fixups.gds_utilities, get_gds_utility_pos(gds_function), StringName(p_function));
+#endif
 #ifdef DEBUG_ENABLED
 	add_debug_name(gds_utilities_names, get_gds_utility_pos(gds_function), p_function);
 #endif
@@ -1300,6 +1340,9 @@ void FSByteCodeGenerator::write_call_utility(const Address &p_target, const Stri
 		append(p_arguments.size());
 		append(Variant::get_validated_utility_function(p_function));
 		ct.cleanup();
+#ifdef TOOLS_ENABLED
+		record_export_fixup(export_fixups.utilities, get_utility_pos(Variant::get_validated_utility_function(p_function)), StringName(p_function));
+#endif
 #ifdef DEBUG_ENABLED
 		add_debug_name(utilities_names, get_utility_pos(Variant::get_validated_utility_function(p_function)), p_function);
 #endif
@@ -1370,6 +1413,9 @@ void FSByteCodeGenerator::write_call_builtin_type(const Address &p_target, const
 	append(p_arguments.size());
 	Variant::ValidatedBuiltInMethod validated_method = Variant::get_validated_builtin_method(p_type, p_method);
 	const int method_index = get_builtin_method_pos(validated_method);
+#ifdef TOOLS_ENABLED
+	record_export_fixup(export_fixups.builtin_methods, method_index, FSFunction::ExportFixups::TypedNameKey{ p_type, p_method });
+#endif
 	append(method_index);
 	add_builtin_method_name(method_index, p_method);
 	ct.cleanup();
@@ -1398,6 +1444,9 @@ void FSByteCodeGenerator::write_call_native_static(const Address &p_target, cons
 	CallTarget ct = get_call_target(p_target);
 	append(ct.target);
 	append(method);
+#ifdef TOOLS_ENABLED
+	record_export_fixup(export_fixups.method_binds, get_method_bind_pos(method), FSFunction::ExportFixups::MethodBindKey{ p_class, p_method });
+#endif
 	append(p_arguments.size());
 	ct.cleanup();
 	return;
@@ -1430,6 +1479,9 @@ void FSByteCodeGenerator::write_call_native_static_validated(const FSCodeGenerat
 	append(ct.target);
 	append(p_arguments.size());
 	append(p_method);
+#ifdef TOOLS_ENABLED
+	record_export_fixup(export_fixups.method_binds, get_method_bind_pos(p_method), FSFunction::ExportFixups::MethodBindKey{ p_method->get_instance_class(), p_method->get_name() });
+#endif
 	ct.cleanup();
 }
 
@@ -1443,6 +1495,9 @@ void FSByteCodeGenerator::write_call_method_bind(const Address &p_target, const 
 	append(ct.target);
 	append(p_arguments.size());
 	append(p_method);
+#ifdef TOOLS_ENABLED
+	record_export_fixup(export_fixups.method_binds, get_method_bind_pos(p_method), FSFunction::ExportFixups::MethodBindKey{ p_method->get_instance_class(), p_method->get_name() });
+#endif
 	ct.cleanup();
 }
 
@@ -1474,6 +1529,9 @@ void FSByteCodeGenerator::write_call_method_bind_validated(const Address &p_targ
 	append(ct.target);
 	append(p_arguments.size());
 	append(p_method);
+#ifdef TOOLS_ENABLED
+	record_export_fixup(export_fixups.method_binds, get_method_bind_pos(p_method), FSFunction::ExportFixups::MethodBindKey{ p_method->get_instance_class(), p_method->get_name() });
+#endif
 	ct.cleanup();
 }
 
@@ -1568,6 +1626,9 @@ void FSByteCodeGenerator::write_construct(const Address &p_target, Variant::Type
 			append(p_arguments.size());
 			append(Variant::get_validated_constructor(p_type, valid_constructor));
 			ct.cleanup();
+#ifdef TOOLS_ENABLED
+			record_export_fixup(export_fixups.constructors, get_constructor_pos(Variant::get_validated_constructor(p_type, valid_constructor)), FSFunction::ExportFixups::ConstructorKey{ p_type, valid_constructor });
+#endif
 #ifdef DEBUG_ENABLED
 			add_debug_name(constructors_names, get_constructor_pos(Variant::get_validated_constructor(p_type, valid_constructor)), Variant::get_type_name(p_type));
 #endif
