@@ -797,7 +797,7 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 					if (FSLanguage::get_singleton()->get_global_map().has(identifier)) {
 						// If it's an autoload singleton, we postpone to load it at runtime.
 						// This is so one autoload doesn't try to load another before it's compiled.
-						HashMap<StringName, ProjectSettings::AutoloadInfo> autoloads = ProjectSettings::get_singleton()->get_autoload_list();
+						const HashMap<StringName, ProjectSettings::AutoloadInfo> &autoloads = ProjectSettings::get_singleton()->get_autoload_list();
 						if (autoloads.has(identifier) && autoloads[identifier].is_singleton) {
 							FSCodeGenerator::Address global = codegen.add_temporary(_gdtype_from_datatype(in->get_datatype(), codegen.script));
 							int idx = FSLanguage::get_singleton()->get_global_map()[identifier];
@@ -826,7 +826,7 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 						// integration recompiles the script for the live editor session in
 						// _export_end.
 						if (FSLanguage::get_singleton()->is_compiling_for_export()) {
-							HashMap<StringName, ProjectSettings::AutoloadInfo> autoloads = ProjectSettings::get_singleton()->get_autoload_list();
+							const HashMap<StringName, ProjectSettings::AutoloadInfo> &autoloads = ProjectSettings::get_singleton()->get_autoload_list();
 							if (autoloads.has(identifier) && autoloads[identifier].is_singleton) {
 								FSCodeGenerator::Address global = codegen.add_temporary(_gdtype_from_datatype(in->get_datatype(), codegen.script));
 								gen->write_store_global(global, 0, identifier);
