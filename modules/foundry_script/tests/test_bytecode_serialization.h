@@ -38,6 +38,7 @@
 #include "modules/foundry_script/fs_bytecode_export.h"
 #include "modules/foundry_script/fs_bytecode_format.h"
 #include "modules/foundry_script/fs_bytecode_loader.h"
+#include "modules/foundry_script/fs_cache.h"
 #include "modules/foundry_script/fs_compiler.h"
 #include "modules/foundry_script/fs_function.h"
 #include "modules/foundry_script/fs_parser.h"
@@ -156,23 +157,46 @@ static Ref<FoundryScript> compile_bytecode_test_source(const String &p_source) {
 	}
 
 	static int bytecode_test_script_index = 0;
-	const String path = vformat("user://test_bytecode_serialization_%d.fs", bytecode_test_script_index++);
+	const String path = TestUtils::get_temp_path(vformat("test_bytecode_serialization_%d.fs", bytecode_test_script_index++));
+	{
+		Ref<FileAccess> fixture_file = FileAccess::open(path, FileAccess::WRITE);
+		REQUIRE(fixture_file.is_valid());
+		fixture_file->store_string(p_source);
+	}
 
-	Ref<FoundryScript> script;
-	script.instantiate();
-	script->set_path(path);
-	script->set_source_code(p_source);
+	// Global warning levels can be elevated to errors by earlier language initialization; these
+	// fixtures test serialization, not diagnostics, so warnings are ignored for the whole
+	// parse-analyze-compile pipeline and the previous state is restored afterwards.
+	const bool previous_ignore_warnings = FSParser::is_ignoring_warnings();
+	FSParser::set_ignoring_warnings(true);
+
+	// Obtain the script through FSCache, mirroring how production loading publishes a script before
+	// compiling it: analyzer reductions that resolve this path through the cache (e.g. `Inner.new()`
+	// folding to the cached script's class) must land on the same script object compiled here.
+	Error error = OK;
+	Ref<FoundryScript> script = FSCache::get_shallow_script(path, error);
+	if (script.is_null()) {
+		FSParser::set_ignoring_warnings(previous_ignore_warnings);
+	}
+	REQUIRE(error == OK);
+	REQUIRE(script.is_valid());
 
 	FSParser parser;
-	Error error = parser.parse(p_source, script->get_path(), false);
-	REQUIRE(error == OK);
-
-	FSAnalyzer analyzer(&parser);
-	error = analyzer.analyze();
-	REQUIRE(error == OK);
-
-	FSCompiler compiler;
-	error = compiler.compile(&parser, script.ptr(), false);
+	error = parser.parse(p_source, path, false);
+	if (error == OK) {
+		FSAnalyzer analyzer(&parser);
+		error = analyzer.analyze();
+		if (error == OK) {
+			FSCompiler compiler;
+			error = compiler.compile(&parser, script.ptr(), false);
+		}
+	}
+	FSParser::set_ignoring_warnings(previous_ignore_warnings);
+	if (error != OK) {
+		for (const FSParser::ParserError &parser_error : parser.get_errors()) {
+			MESSAGE(vformat("Fixture error at line %d: %s", parser_error.line, parser_error.message));
+		}
+	}
 	REQUIRE(error == OK);
 
 	return script;

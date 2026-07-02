@@ -114,6 +114,7 @@ namespace FSTests {
 class TestFSTraitReflectionAccessor;
 class TestFSGenericReflectionAccessor;
 class TestFSLanguageGlobalsAccessor;
+class TestFSBytecodeScriptAccessor;
 } //namespace FSTests
 #endif // TESTS_ENABLED
 
@@ -123,6 +124,9 @@ class FoundryScript : public Script {
 	bool tool = false;
 	bool valid = false;
 	bool reloading = false;
+	// True when this script graph was reconstructed from serialized compiled bytecode (`.fsb`)
+	// instead of compiled from source; such a script has no source to re-parse.
+	bool compiled_binary = false;
 	bool _is_abstract = false;
 	bool _is_final = false;
 	bool _is_trait_type = false;
@@ -214,6 +218,8 @@ private:
 	friend class FSFunction;
 	friend class FSAnalyzer;
 	friend class FSCompiler;
+	friend class FSBytecodeExporter;
+	friend class FSBytecodeLoader;
 	friend class FSDocGen;
 	friend class FSLambdaCallable;
 	friend class FSLambdaSelfCallable;
@@ -222,6 +228,7 @@ private:
 #ifdef TESTS_ENABLED
 	friend class FSTests::TestFSTraitReflectionAccessor;
 	friend class FSTests::TestFSGenericReflectionAccessor;
+	friend class FSTests::TestFSBytecodeScriptAccessor;
 #endif // TESTS_ENABLED
 
 	Ref<FSNativeClass> native;
@@ -429,6 +436,7 @@ public:
 	void cancel_pending_functions(bool warn);
 
 	virtual bool is_valid() const override { return valid; }
+	bool is_compiled_binary() const { return compiled_binary; }
 
 	bool inherits_script(const Ref<Script> &p_script) const override;
 

@@ -113,6 +113,12 @@ void FSConformanceRegistry::clear_runtime_witnesses(const String &p_source_file)
 	}
 }
 
+Vector<FSConformanceRegistry::RuntimeConformance> FSConformanceRegistry::get_runtime_witnesses(const String &p_source_file) const {
+	MutexLock lock(mutex);
+	const Vector<RuntimeConformance> *entries = runtime_by_file.getptr(p_source_file);
+	return entries != nullptr ? *entries : Vector<RuntimeConformance>();
+}
+
 FSFunction *FSConformanceRegistry::find_witness_function(const String &p_target_key, const StringName &p_method) const {
 	if (p_target_key.is_empty() || p_method == StringName()) {
 		return nullptr;

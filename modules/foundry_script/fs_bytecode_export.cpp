@@ -31,6 +31,7 @@
 #include "fs_bytecode_export.h"
 
 #include "foundry_script.h"
+#include "fs_conformance_registry.h"
 #include "fs_function.h"
 
 #include "core/config/engine.h"
@@ -192,6 +193,7 @@ Error FSBytecodeExporter::_encode_object(StreamPeerBuffer *r_stream, Object *p_o
 		// property data (which may include script source) reaches the buffer.
 		r_stream->put_u8(FSBytecodeFormat::TAG_EXTERNAL_RESOURCE);
 		r_stream->put_u32(string_table.insert(path));
+		_record_external_dependency(path);
 		return OK;
 	}
 	List<Engine::Singleton> singletons;
@@ -238,10 +240,19 @@ Error FSBytecodeExporter::_encode_container_type(StreamPeerBuffer *r_stream, con
 	return OK;
 }
 
-// Writes a script identity as string-table indices for (path, fully qualified class name). This is
-// the single place that decides how a script reference is spelled in a `.fsb`; intra-file class
-// indices will be added here when whole-script serialization lands.
+// Writes a script identity. This is the single place that decides how a script reference is
+// spelled in a `.fsb`: a class local to the script being serialized (the root or one of its nested
+// subclasses) travels as its preorder class index, which the loader links to the already
+// instantiated skeleton script without any I/O; everything else travels as string-table indices
+// for (path, fully qualified class name), re-resolved through the loader's external resolver.
 Error FSBytecodeExporter::_encode_script_reference(StreamPeerBuffer *r_stream, Script *p_script) {
+	const uint32_t *local_class_index = local_class_indices.getptr(p_script);
+	if (local_class_index != nullptr) {
+		r_stream->put_u8(1);
+		r_stream->put_u32(*local_class_index);
+		return OK;
+	}
+	r_stream->put_u8(0);
 	String path = p_script->get_path();
 	String fully_qualified_name;
 	if (FoundryScript *foundry_script = Object::cast_to<FoundryScript>(p_script)) {
@@ -255,6 +266,7 @@ Error FSBytecodeExporter::_encode_script_reference(StreamPeerBuffer *r_stream, S
 					p_script->get_class()));
 	r_stream->put_u32(string_table.insert(path));
 	r_stream->put_u32(string_table.insert(fully_qualified_name));
+	_record_external_dependency(path);
 	return OK;
 }
 
@@ -543,6 +555,434 @@ Error FSBytecodeExporter::serialize_function(StreamPeerBuffer *r_stream, const F
 		}
 	}
 
+	return OK;
+}
+
+void FSBytecodeExporter::_record_external_dependency(const String &p_path) {
+	if (external_dependency_set.has(p_path)) {
+		return;
+	}
+	external_dependency_set.insert(p_path);
+	external_dependencies.push_back(p_path);
+}
+
+void FSBytecodeExporter::_index_local_classes(const FoundryScript *p_class) {
+	local_class_indices.insert(p_class, (uint32_t)local_class_indices.size());
+	for (const KeyValue<StringName, Ref<FoundryScript>> &subclass : p_class->subclasses) {
+		_index_local_classes(subclass.value.ptr());
+	}
+}
+
+// A class or a subclass tree carries static data when anything in it declared static variables or
+// needed a static initializer; this is the post-compile equivalent of the parse-tree scan
+// `FSCompiler::compile` uses to decide whether the script must be pinned by the static cache.
+static bool fsb_script_tree_has_static_data(const FoundryScript *p_class) {
+	if (p_class->get_static_initializer() != nullptr) {
+		return true;
+	}
+	for (const KeyValue<StringName, Ref<FoundryScript>> &subclass : p_class->get_subclasses()) {
+		if (fsb_script_tree_has_static_data(subclass.value.ptr())) {
+			return true;
+		}
+	}
+	return false;
+}
+
+Error FSBytecodeExporter::serialize(const Ref<FoundryScript> &p_script, Vector<uint8_t> &r_buffer, bool p_annotated_static_unload) {
+	r_buffer.clear();
+	ERR_FAIL_COND_V(p_script.is_null(), ERR_INVALID_PARAMETER);
+	ERR_FAIL_COND_V_MSG(!p_script->valid, ERR_INVALID_PARAMETER,
+			vformat("Cannot serialize invalid script '%s' to compiled bytecode.", p_script->get_script_path()));
+	ERR_FAIL_COND_V_MSG(!p_script->is_root_script(), ERR_INVALID_PARAMETER,
+			vformat("Only a root script can be serialized to compiled bytecode; '%s' is an inner class.",
+					p_script->fully_qualified_name));
+
+	local_class_indices.clear();
+	external_dependencies.clear();
+	external_dependency_set.clear();
+	_index_local_classes(p_script.ptr());
+
+	// Sections are encoded to a scratch buffer first: encoding discovers the string table entries,
+	// and the table must precede the sections in the final buffer.
+	Ref<StreamPeerBuffer> sections;
+	sections.instantiate();
+
+	sections->put_u32(FSBytecodeFormat::SECTION_SKELETON);
+	Error error = _write_skeleton_class(sections.ptr(), p_script.ptr(), 0);
+	if (error != OK) {
+		return error;
+	}
+
+	sections->put_u32(FSBytecodeFormat::SECTION_CLASS_BODIES);
+	error = _write_class_bodies(sections.ptr(), p_script.ptr(), 0);
+	if (error != OK) {
+		return error;
+	}
+
+	sections->put_u32(FSBytecodeFormat::SECTION_WITNESSES);
+	error = _write_witness_section(sections.ptr(), p_script.ptr());
+	if (error != OK) {
+		return error;
+	}
+
+	// The dependency section is assembled after the sections above discovered every external path,
+	// but is spliced in ahead of them so it can be read without touching class data.
+	Ref<StreamPeerBuffer> dependency_section;
+	dependency_section.instantiate();
+	dependency_section->put_u32(FSBytecodeFormat::SECTION_DEPENDENCIES);
+	dependency_section->put_u32((uint32_t)external_dependencies.size());
+	for (const String &dependency_path : external_dependencies) {
+		dependency_section->put_u32(string_table.insert(dependency_path));
+	}
+
+	Ref<StreamPeerBuffer> output;
+	output.instantiate();
+	const Vector<uint8_t> header = write_header();
+	output->put_data(header.ptr(), header.size());
+	uint32_t script_flags = 0;
+	if (p_script->tool) {
+		script_flags |= 1 << 0;
+	}
+	if (fsb_script_tree_has_static_data(p_script.ptr())) {
+		script_flags |= 1 << 1;
+	}
+	if (p_annotated_static_unload) {
+		script_flags |= 1 << 2;
+	}
+	output->put_u32(script_flags);
+	output->put_u32(FSBytecodeFormat::SECTION_STRING_TABLE);
+	string_table.write(output.ptr());
+	const Vector<uint8_t> dependency_bytes = dependency_section->get_data_array();
+	output->put_data(dependency_bytes.ptr(), dependency_bytes.size());
+	const Vector<uint8_t> section_bytes = sections->get_data_array();
+	output->put_data(section_bytes.ptr(), section_bytes.size());
+	r_buffer = output->get_data_array();
+	return OK;
+}
+
+// The `.fsb` analog of `FSCompiler::make_scripts`: everything needed to instantiate the class
+// tree and answer identity queries, readable without touching the class bodies.
+Error FSBytecodeExporter::_write_skeleton_class(StreamPeerBuffer *r_stream, const FoundryScript *p_class, int p_depth) {
+	ERR_FAIL_COND_V_MSG(p_depth > Variant::MAX_RECURSION_DEPTH, ERR_INVALID_PARAMETER,
+			vformat("Inner classes of script '%s' are too deeply nested to serialize to compiled bytecode.",
+					p_class->get_script_path()));
+
+	r_stream->put_u32(string_table.insert(p_class->fully_qualified_name));
+	r_stream->put_u32(string_table.insert(p_class->local_name));
+	r_stream->put_u32(string_table.insert(p_class->global_name));
+	r_stream->put_u32(string_table.insert(p_class->simplified_icon_path));
+	ERR_FAIL_COND_V_MSG(p_class->native.is_null(), ERR_INVALID_PARAMETER,
+			vformat("Cannot serialize class '%s' of script '%s' to compiled bytecode: it has no native base class.",
+					p_class->fully_qualified_name, p_class->get_script_path()));
+	r_stream->put_u32(string_table.insert(p_class->native->get_name()));
+	uint8_t class_flags = 0;
+	if (p_class->tool) {
+		class_flags |= 1 << 0;
+	}
+	if (p_class->_is_abstract) {
+		class_flags |= 1 << 1;
+	}
+	if (p_class->_is_final) {
+		class_flags |= 1 << 2;
+	}
+	if (p_class->_is_trait_type) {
+		class_flags |= 1 << 3;
+	}
+	r_stream->put_u8(class_flags);
+	r_stream->put_u32(string_table.insert(p_class->trait_type_name));
+
+	if (p_class->base.is_valid()) {
+		r_stream->put_u8(1);
+		const Error error = _encode_script_reference(r_stream, p_class->base.ptr());
+		if (error != OK) {
+			return error;
+		}
+	} else {
+		r_stream->put_u8(0);
+	}
+
+	r_stream->put_u32((uint32_t)p_class->subclasses.size());
+	for (const KeyValue<StringName, Ref<FoundryScript>> &subclass : p_class->subclasses) {
+		r_stream->put_u32(string_table.insert(subclass.key));
+		const Error error = _write_skeleton_class(r_stream, subclass.value.ptr(), p_depth + 1);
+		if (error != OK) {
+			return error;
+		}
+	}
+	return OK;
+}
+
+Error FSBytecodeExporter::_write_class_bodies(StreamPeerBuffer *r_stream, const FoundryScript *p_class, int p_depth) {
+	ERR_FAIL_COND_V(p_depth > Variant::MAX_RECURSION_DEPTH, ERR_INVALID_PARAMETER);
+	Error error = _write_class_body(r_stream, p_class);
+	if (error != OK) {
+		return error;
+	}
+	// Bodies follow the same preorder as the skeleton so the loader pairs them by position.
+	for (const KeyValue<StringName, Ref<FoundryScript>> &subclass : p_class->subclasses) {
+		error = _write_class_bodies(r_stream, subclass.value.ptr(), p_depth + 1);
+		if (error != OK) {
+			return error;
+		}
+	}
+	return OK;
+}
+
+Error FSBytecodeExporter::_write_member_info(StreamPeerBuffer *r_stream, const StringName &p_name, const FoundryScript::MemberInfo &p_member_info) {
+	r_stream->put_u32(string_table.insert(p_name));
+	r_stream->put_32(p_member_info.index);
+	r_stream->put_u32(string_table.insert(p_member_info.setter));
+	r_stream->put_u32(string_table.insert(p_member_info.getter));
+	Error error = encode_data_type(r_stream, p_member_info.data_type);
+	if (error != OK) {
+		return error;
+	}
+	_encode_property_info(r_stream, p_member_info.property_info);
+	return _write_type_argument_binding(r_stream, p_member_info.type_argument_binding);
+}
+
+Error FSBytecodeExporter::_write_type_argument_binding(StreamPeerBuffer *r_stream, const FoundryScript::TypeArgumentBinding &p_binding) {
+	r_stream->put_u8((uint8_t)p_binding.kind);
+	uint8_t binding_flags = 0;
+	if (p_binding.fixed_is_dependent) {
+		binding_flags |= 1 << 0;
+	}
+	if (p_binding.is_type_handle) {
+		binding_flags |= 1 << 1;
+	}
+	r_stream->put_u8(binding_flags);
+	r_stream->put_32(p_binding.leaf_ordinal);
+	return encode_data_type(r_stream, p_binding.fixed);
+}
+
+Error FSBytecodeExporter::_write_annotation_usages(StreamPeerBuffer *r_stream, const Vector<FoundryScript::AnnotationUsage> &p_usages) {
+	r_stream->put_u32((uint32_t)p_usages.size());
+	for (const FoundryScript::AnnotationUsage &usage : p_usages) {
+		r_stream->put_u32(string_table.insert(usage.name));
+		r_stream->put_u32(string_table.insert(usage.qualified_name));
+		r_stream->put_u8(usage.is_builtin ? 1 : 0);
+		Error error = encode_variant_tagged(r_stream, usage.args);
+		if (error != OK) {
+			return error;
+		}
+		error = encode_variant_tagged(r_stream, usage.kwargs);
+		if (error != OK) {
+			return error;
+		}
+	}
+	return OK;
+}
+
+Error FSBytecodeExporter::_write_annotation_usage_map(StreamPeerBuffer *r_stream, const HashMap<StringName, Vector<FoundryScript::AnnotationUsage>> &p_annotation_map) {
+	r_stream->put_u32((uint32_t)p_annotation_map.size());
+	for (const KeyValue<StringName, Vector<FoundryScript::AnnotationUsage>> &entry : p_annotation_map) {
+		r_stream->put_u32(string_table.insert(entry.key));
+		const Error error = _write_annotation_usages(r_stream, entry.value);
+		if (error != OK) {
+			return error;
+		}
+	}
+	return OK;
+}
+
+Error FSBytecodeExporter::_write_parameter_annotation_map(StreamPeerBuffer *r_stream, const HashMap<StringName, HashMap<StringName, Vector<FoundryScript::AnnotationUsage>>> &p_parameter_map) {
+	r_stream->put_u32((uint32_t)p_parameter_map.size());
+	for (const KeyValue<StringName, HashMap<StringName, Vector<FoundryScript::AnnotationUsage>>> &entry : p_parameter_map) {
+		r_stream->put_u32(string_table.insert(entry.key));
+		const Error error = _write_annotation_usage_map(r_stream, entry.value);
+		if (error != OK) {
+			return error;
+		}
+	}
+	return OK;
+}
+
+Error FSBytecodeExporter::_write_optional_function(StreamPeerBuffer *r_stream, const FSFunction *p_function) {
+	if (p_function == nullptr) {
+		r_stream->put_u8(0);
+		return OK;
+	}
+	r_stream->put_u8(1);
+	return serialize_function(r_stream, p_function);
+}
+
+Error FSBytecodeExporter::_write_class_body(StreamPeerBuffer *r_stream, const FoundryScript *p_class) {
+	// Members are serialized post-compile, so `member_indices` already includes the flattened base
+	// members; the loader never recomputes inheritance.
+	r_stream->put_u32((uint32_t)p_class->member_indices.size());
+	for (const KeyValue<StringName, FoundryScript::MemberInfo> &member : p_class->member_indices) {
+		const Error error = _write_member_info(r_stream, member.key, member.value);
+		if (error != OK) {
+			return error;
+		}
+	}
+
+	r_stream->put_u32((uint32_t)p_class->members.size());
+	for (const StringName &member_name : p_class->members) {
+		r_stream->put_u32(string_table.insert(member_name));
+	}
+
+	r_stream->put_u32((uint32_t)p_class->static_variables_indices.size());
+	for (const KeyValue<StringName, FoundryScript::MemberInfo> &static_variable : p_class->static_variables_indices) {
+		const Error error = _write_member_info(r_stream, static_variable.key, static_variable.value);
+		if (error != OK) {
+			return error;
+		}
+	}
+
+	r_stream->put_u32((uint32_t)p_class->constants.size());
+	for (const KeyValue<StringName, Variant> &constant : p_class->constants) {
+		r_stream->put_u32(string_table.insert(constant.key));
+		const Error error = encode_variant_tagged(r_stream, constant.value);
+		if (error != OK) {
+			return error;
+		}
+	}
+
+	r_stream->put_u32((uint32_t)p_class->_signals.size());
+	for (const KeyValue<StringName, MethodInfo> &signal_entry : p_class->_signals) {
+		r_stream->put_u32(string_table.insert(signal_entry.key));
+		const Error error = _encode_method_info(r_stream, signal_entry.value, 0);
+		if (error != OK) {
+			return error;
+		}
+	}
+
+	r_stream->put_u32((uint32_t)p_class->script_trait_list.size());
+	for (const StringName &trait_name : p_class->script_trait_list) {
+		r_stream->put_u32(string_table.insert(trait_name));
+	}
+
+	r_stream->put_u32((uint32_t)p_class->abstract_trait_requirements.size());
+	for (const KeyValue<StringName, FoundryScript::AbstractTraitRequirement> &requirement : p_class->abstract_trait_requirements) {
+		r_stream->put_u32(string_table.insert(requirement.key));
+		Error error = encode_data_type(r_stream, requirement.value.return_type);
+		if (error != OK) {
+			return error;
+		}
+		error = _encode_method_info(r_stream, requirement.value.method_info, 0);
+		if (error != OK) {
+			return error;
+		}
+	}
+
+	r_stream->put_u32((uint32_t)p_class->type_parameters.size());
+	for (const FoundryScript::TypeParameter &type_parameter : p_class->type_parameters) {
+		r_stream->put_u32(string_table.insert(type_parameter.name));
+		r_stream->put_32(type_parameter.index);
+		r_stream->put_u8(type_parameter.has_bound ? 1 : 0);
+		_encode_property_info(r_stream, type_parameter.bound);
+	}
+
+	// Ancestor keys are serialized as script references (class index or (path, fqcn)); the loader
+	// re-keys the table onto the live scripts it resolves.
+	r_stream->put_u32((uint32_t)p_class->type_parameter_bindings_by_ancestor.size());
+	for (const KeyValue<FoundryScript *, Vector<FoundryScript::TypeArgumentBinding>> &ancestor_entry : p_class->type_parameter_bindings_by_ancestor) {
+		Error error = _encode_script_reference(r_stream, ancestor_entry.key);
+		if (error != OK) {
+			return error;
+		}
+		r_stream->put_u32((uint32_t)ancestor_entry.value.size());
+		for (const FoundryScript::TypeArgumentBinding &binding : ancestor_entry.value) {
+			error = _write_type_argument_binding(r_stream, binding);
+			if (error != OK) {
+				return error;
+			}
+		}
+	}
+
+	// `rpc_config` is stored post-merge (it already contains inherited entries), so the loader
+	// takes it verbatim.
+	Error error = encode_variant_tagged(r_stream, p_class->rpc_config);
+	if (error != OK) {
+		return error;
+	}
+
+	error = _write_annotation_usages(r_stream, p_class->class_annotations);
+	if (error != OK) {
+		return error;
+	}
+	error = _write_annotation_usage_map(r_stream, p_class->method_annotations);
+	if (error != OK) {
+		return error;
+	}
+	error = _write_annotation_usage_map(r_stream, p_class->variable_annotations);
+	if (error != OK) {
+		return error;
+	}
+	error = _write_annotation_usage_map(r_stream, p_class->signal_annotations);
+	if (error != OK) {
+		return error;
+	}
+	error = _write_annotation_usage_map(r_stream, p_class->constant_annotations);
+	if (error != OK) {
+		return error;
+	}
+	error = _write_parameter_annotation_map(r_stream, p_class->method_parameter_annotations);
+	if (error != OK) {
+		return error;
+	}
+	error = _write_parameter_annotation_map(r_stream, p_class->signal_parameter_annotations);
+	if (error != OK) {
+		return error;
+	}
+
+	r_stream->put_u32((uint32_t)p_class->member_functions.size());
+	for (const KeyValue<StringName, FSFunction *> &member_function : p_class->member_functions) {
+		r_stream->put_u8(member_function.value == p_class->initializer ? 1 : 0);
+		error = serialize_function(r_stream, member_function.value);
+		if (error != OK) {
+			return error;
+		}
+	}
+
+	error = _write_optional_function(r_stream, p_class->implicit_initializer);
+	if (error != OK) {
+		return error;
+	}
+	error = _write_optional_function(r_stream, p_class->implicit_ready);
+	if (error != OK) {
+		return error;
+	}
+	return _write_optional_function(r_stream, p_class->static_initializer);
+}
+
+// Serializes the retroactive-conformance witnesses this script registered, per the entries
+// `FSCompiler::_compile_conformance_witnesses` recorded in the conformance registry. Each entry's
+// target script identity travels alongside its witness functions because those functions were
+// compiled against the target's member layout and must be re-owned by it at load.
+Error FSBytecodeExporter::_write_witness_section(StreamPeerBuffer *r_stream, const FoundryScript *p_script) {
+	Vector<FSConformanceRegistry::RuntimeConformance> conformances;
+	if (!p_script->registered_conformance_source.is_empty()) {
+		conformances = FSConformanceRegistry::get_singleton()->get_runtime_witnesses(p_script->registered_conformance_source);
+	}
+	r_stream->put_u32((uint32_t)conformances.size());
+	for (const FSConformanceRegistry::RuntimeConformance &conformance : conformances) {
+		ERR_FAIL_COND_V_MSG(conformance.functions.is_empty(), ERR_INVALID_PARAMETER,
+				vformat("Cannot serialize script '%s' to compiled bytecode: it registered a conformance without witness functions.",
+						p_script->get_script_path()));
+		FoundryScript *target_script = conformance.functions.begin()->value->_script;
+		ERR_FAIL_NULL_V_MSG(target_script, ERR_INVALID_PARAMETER,
+				vformat("Cannot serialize script '%s' to compiled bytecode: a conformance witness has no target script.",
+						p_script->get_script_path()));
+		Error error = _encode_script_reference(r_stream, target_script);
+		if (error != OK) {
+			return error;
+		}
+		r_stream->put_u32((uint32_t)conformance.target_keys.size());
+		for (const String &target_key : conformance.target_keys) {
+			r_stream->put_u32(string_table.insert(target_key));
+		}
+		r_stream->put_u32(string_table.insert(conformance.trait_name));
+		r_stream->put_u32((uint32_t)conformance.functions.size());
+		for (const KeyValue<StringName, FSFunction *> &witness : conformance.functions) {
+			r_stream->put_u32(string_table.insert(witness.key));
+			error = serialize_function(r_stream, witness.value);
+			if (error != OK) {
+				return error;
+			}
+		}
+	}
 	return OK;
 }
 

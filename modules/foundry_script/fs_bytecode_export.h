@@ -32,8 +32,11 @@
 
 #include "fs_bytecode_format.h"
 
+#include "foundry_script.h"
+
 #include "core/io/stream_peer.h"
 #include "core/templates/hash_map.h"
+#include "core/templates/hash_set.h"
 #include "core/templates/vector.h"
 #include "core/variant/container_type_validate.h"
 #include "core/variant/variant.h"
@@ -48,6 +51,17 @@ struct PropertyInfo;
 // Writer half of the `.fsb` compiled-bytecode format. Serialization externalizes every
 // process-bound object behind a symbolic tag (see `FSBytecodeFormat::VariantTag`), so the produced
 // bytes never contain object property dumps, raw pointers, or script source.
+//
+// Whole-script container layout produced by `serialize()`:
+//
+//   header (see `write_header`) | u32 script flags | SECTION_STRING_TABLE | SECTION_DEPENDENCIES |
+//   SECTION_SKELETON | SECTION_CLASS_BODIES | SECTION_WITNESSES
+//
+// The string table must precede every section that references it, but its contents are only known
+// after those sections are encoded; the writer therefore encodes the skeleton/body/witness sections
+// into a scratch buffer first (populating the table as a side effect) and emits the table before
+// splicing the scratch bytes into the final buffer. The dependency section lives ahead of the
+// skeleton so an exported game's dependency scan reads only the file's head.
 class FSBytecodeExporter {
 public:
 	// Deduplicating table of every string and StringName referenced by the serialized data. All
@@ -74,14 +88,42 @@ public:
 	// {code offset, global name} pairs so the loader must rebake them for its own global map.
 	Error serialize_function(StreamPeerBuffer *r_stream, const FSFunction *p_function, int p_depth = 0);
 
+	// Serializes a complete compiled root script — the whole class tree, member layouts, constants,
+	// signals, functions, static variables, generics metadata, and conformance witnesses — into a
+	// `.fsb` byte buffer. `p_annotated_static_unload` is the parse tree's `@static_unload` flag; it
+	// is not recoverable from the compiled script, so the export integration passes it from the
+	// cached parser. Both it and the derived has-static-data flag are stored in the script flags for
+	// the load integration to consume (`FSCache::add_static_script` is the loader caller's job).
+	Error serialize(const Ref<FoundryScript> &p_script, Vector<uint8_t> &r_buffer, bool p_annotated_static_unload = false);
+
 private:
 	StringTable string_table;
+
+	// Whole-script serialization state: preorder indices of the classes local to the script being
+	// serialized (root + nested subclasses), and the external paths its serialized references name.
+	HashMap<const Script *, uint32_t> local_class_indices;
+	Vector<String> external_dependencies;
+	HashSet<String> external_dependency_set;
+
+	void _record_external_dependency(const String &p_path);
+	void _index_local_classes(const FoundryScript *p_class);
 
 	Error _encode_object(StreamPeerBuffer *r_stream, Object *p_object, int p_depth);
 	Error _encode_container_type(StreamPeerBuffer *r_stream, const ContainerType &p_container_type, int p_depth);
 	Error _encode_script_reference(StreamPeerBuffer *r_stream, Script *p_script);
 	Error _encode_method_info(StreamPeerBuffer *r_stream, const MethodInfo &p_method_info, int p_depth);
 	void _encode_property_info(StreamPeerBuffer *r_stream, const PropertyInfo &p_property_info);
+
+	Error _write_skeleton_class(StreamPeerBuffer *r_stream, const FoundryScript *p_class, int p_depth);
+	Error _write_class_bodies(StreamPeerBuffer *r_stream, const FoundryScript *p_class, int p_depth);
+	Error _write_class_body(StreamPeerBuffer *r_stream, const FoundryScript *p_class);
+	Error _write_member_info(StreamPeerBuffer *r_stream, const StringName &p_name, const FoundryScript::MemberInfo &p_member_info);
+	Error _write_type_argument_binding(StreamPeerBuffer *r_stream, const FoundryScript::TypeArgumentBinding &p_binding);
+	Error _write_annotation_usages(StreamPeerBuffer *r_stream, const Vector<FoundryScript::AnnotationUsage> &p_usages);
+	Error _write_annotation_usage_map(StreamPeerBuffer *r_stream, const HashMap<StringName, Vector<FoundryScript::AnnotationUsage>> &p_annotation_map);
+	Error _write_parameter_annotation_map(StreamPeerBuffer *r_stream, const HashMap<StringName, HashMap<StringName, Vector<FoundryScript::AnnotationUsage>>> &p_parameter_map);
+	Error _write_optional_function(StreamPeerBuffer *r_stream, const FSFunction *p_function);
+	Error _write_witness_section(StreamPeerBuffer *r_stream, const FoundryScript *p_script);
 };
 
 #endif // TOOLS_ENABLED

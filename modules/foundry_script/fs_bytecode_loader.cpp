@@ -31,6 +31,7 @@
 #include "fs_bytecode_loader.h"
 
 #include "foundry_script.h"
+#include "fs_conformance_registry.h"
 #include "fs_function.h"
 
 #include "core/config/engine.h"
@@ -120,6 +121,43 @@ Error FSBytecodeLoader::_get_string(uint32_t p_index, String &r_string) const {
 	ERR_FAIL_UNSIGNED_INDEX_V_MSG(p_index, (uint32_t)string_table.size(), ERR_INVALID_DATA,
 			"String index out of range in compiled script data.");
 	r_string = string_table[p_index];
+	return OK;
+}
+
+// Mirrors `FSBytecodeExporter::_encode_script_reference`: an intra-file class index resolves
+// against the skeleton scripts of the `.fsb` being loaded; an external identity goes through the
+// resolver as (path, fully qualified class name).
+Error FSBytecodeLoader::_read_script_reference(StreamPeerBuffer *p_stream, Ref<Script> &r_script, bool &r_is_local_class,
+		const String &p_context) {
+	r_script = Ref<Script>();
+	r_is_local_class = false;
+	const uint8_t locality = p_stream->get_u8();
+	if (locality == 1) {
+		const uint32_t class_index = p_stream->get_u32();
+		ERR_FAIL_COND_V_MSG(class_index >= (uint32_t)local_classes.size(), ERR_INVALID_DATA,
+				vformat("Intra-file class index out of range in compiled script data (%s).", p_context));
+		r_script = Ref<Script>(local_classes[class_index]);
+		r_is_local_class = true;
+		return OK;
+	}
+	ERR_FAIL_COND_V_MSG(locality != 0, ERR_INVALID_DATA,
+			vformat("Malformed script reference in compiled script data (%s).", p_context));
+	String path;
+	Error error = _get_string(p_stream->get_u32(), path);
+	if (error != OK) {
+		return error;
+	}
+	String fully_qualified_name;
+	error = _get_string(p_stream->get_u32(), fully_qualified_name);
+	if (error != OK) {
+		return error;
+	}
+	ERR_FAIL_NULL_V_MSG(resolver, ERR_UNCONFIGURED, "No external-reference resolver is set on the bytecode loader.");
+	const Ref<Script> script = resolver->resolve_script(path, fully_qualified_name, r_is_local_class);
+	ERR_FAIL_COND_V_MSG(script.is_null(), ERR_CANT_RESOLVE,
+			vformat("Cannot resolve script reference '%s' ('%s') from compiled script data (%s).",
+					path, fully_qualified_name, p_context));
+	r_script = script;
 	return OK;
 }
 
@@ -219,23 +257,14 @@ Error FSBytecodeLoader::_decode_object(StreamPeerBuffer *p_stream, uint8_t p_tag
 	switch (p_tag) {
 		case FSBytecodeFormat::TAG_SCRIPT_REF:
 		case FSBytecodeFormat::TAG_EXTERNAL_SCRIPT: {
-			String path;
-			Error error = _get_string(p_stream->get_u32(), path);
-			if (error != OK) {
-				return error;
-			}
-			String fully_qualified_name;
-			error = _get_string(p_stream->get_u32(), fully_qualified_name);
-			if (error != OK) {
-				return error;
-			}
-			ERR_FAIL_NULL_V_MSG(resolver, ERR_UNCONFIGURED, "No external-reference resolver is set on the bytecode loader.");
 			// A Variant constant always holds a strong reference regardless of locality; the
 			// local-class distinction only matters for data-type linkage.
+			Ref<Script> script;
 			bool is_local_class = false;
-			const Ref<Script> script = resolver->resolve_script(path, fully_qualified_name, is_local_class);
-			ERR_FAIL_COND_V_MSG(script.is_null(), ERR_CANT_RESOLVE,
-					vformat("Cannot resolve script reference '%s' ('%s') from compiled script data.", path, fully_qualified_name));
+			const Error error = _read_script_reference(p_stream, script, is_local_class, "constant");
+			if (error != OK) {
+				return error;
+			}
 			r_variant = script;
 			return OK;
 		} break;
@@ -399,21 +428,12 @@ Error FSBytecodeLoader::decode_data_type(StreamPeerBuffer *p_stream, FSDataType 
 			"Invalid type parameter scope in compiled script data type.");
 	r_data_type.type_parameter_scope = (FSDataType::TypeParameterScope)type_parameter_scope;
 	if (p_stream->get_u8() != 0) {
-		String path;
-		error = _get_string(p_stream->get_u32(), path);
-		if (error != OK) {
-			return error;
-		}
-		String fully_qualified_name;
-		error = _get_string(p_stream->get_u32(), fully_qualified_name);
-		if (error != OK) {
-			return error;
-		}
-		ERR_FAIL_NULL_V_MSG(resolver, ERR_UNCONFIGURED, "No external-reference resolver is set on the bytecode loader.");
+		Ref<Script> script;
 		bool is_local_class = false;
-		const Ref<Script> script = resolver->resolve_script(path, fully_qualified_name, is_local_class);
-		ERR_FAIL_COND_V_MSG(script.is_null(), ERR_CANT_RESOLVE,
-				vformat("Cannot resolve script type '%s' ('%s') from compiled script data.", path, fully_qualified_name));
+		error = _read_script_reference(p_stream, script, is_local_class, "data type");
+		if (error != OK) {
+			return error;
+		}
 		if (is_local_class) {
 			// A class local to the file being loaded is held as a raw pointer without a strong
 			// reference, matching the rule documented on `FoundryScript::TypeArgumentBinding` in
@@ -1003,3 +1023,784 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 }
 
 #undef FSB_LINK_CHECK
+
+Error FSBytecodeLoader::_open_script_stream(const Vector<uint8_t> &p_buffer, Ref<StreamPeerBuffer> &r_stream) {
+	int header_size = 0;
+	const Error header_error = check_header(p_buffer, &header_size);
+	if (header_error != OK) {
+		return header_error;
+	}
+	r_stream.instantiate();
+	r_stream->set_data_array(p_buffer);
+	r_stream->seek(header_size);
+	const uint32_t script_flags = r_stream->get_u32();
+	// Bit 0 (tool) is also carried per class in the skeleton; only the static-data bits matter here.
+	has_static_data = (script_flags & (1 << 1)) != 0;
+	annotated_static_unload = (script_flags & (1 << 2)) != 0;
+	const Error section_error = _expect_section(r_stream.ptr(), FSBytecodeFormat::SECTION_STRING_TABLE);
+	if (section_error != OK) {
+		return section_error;
+	}
+	return read_string_table(r_stream.ptr());
+}
+
+Error FSBytecodeLoader::_expect_section(StreamPeerBuffer *p_stream, FSBytecodeFormat::SectionId p_section) {
+	const uint32_t section = p_stream->get_u32();
+	ERR_FAIL_COND_V_MSG(section != (uint32_t)p_section, ERR_INVALID_DATA,
+			vformat("Compiled script data is corrupted: expected section %d, found %d.", (int)p_section, (int64_t)section));
+	return OK;
+}
+
+Error FSBytecodeLoader::_read_dependency_section(StreamPeerBuffer *p_stream, Vector<String> *r_dependencies) {
+	Error error = _expect_section(p_stream, FSBytecodeFormat::SECTION_DEPENDENCIES);
+	if (error != OK) {
+		return error;
+	}
+	const uint32_t dependency_count = p_stream->get_u32();
+	ERR_FAIL_COND_V_MSG((int64_t)dependency_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
+			"Truncated dependency list in compiled script data.");
+	for (uint32_t i = 0; i < dependency_count; i++) {
+		String dependency_path;
+		error = _get_string(p_stream->get_u32(), dependency_path);
+		if (error != OK) {
+			return error;
+		}
+		if (r_dependencies != nullptr) {
+			r_dependencies->push_back(dependency_path);
+		}
+	}
+	return OK;
+}
+
+Error FSBytecodeLoader::_read_skeleton_class(StreamPeerBuffer *p_stream, const Ref<FoundryScript> &p_class, const String &p_root_path,
+		Vector<SkeletonBaseReference> &r_base_references, int p_depth) {
+	ERR_FAIL_COND_V_MSG(p_depth > Variant::MAX_RECURSION_DEPTH, ERR_INVALID_DATA,
+			vformat("Inner classes are too deeply nested in compiled script '%s'.", p_root_path));
+	local_classes.push_back(p_class.ptr());
+
+	String fully_qualified_name;
+	Error error = _get_string(p_stream->get_u32(), fully_qualified_name);
+	if (error != OK) {
+		return error;
+	}
+	String local_name;
+	error = _get_string(p_stream->get_u32(), local_name);
+	if (error != OK) {
+		return error;
+	}
+	String global_name;
+	error = _get_string(p_stream->get_u32(), global_name);
+	if (error != OK) {
+		return error;
+	}
+	String simplified_icon_path;
+	error = _get_string(p_stream->get_u32(), simplified_icon_path);
+	if (error != OK) {
+		return error;
+	}
+	String native_class_name;
+	error = _get_string(p_stream->get_u32(), native_class_name);
+	if (error != OK) {
+		return error;
+	}
+	const uint8_t class_flags = p_stream->get_u8();
+	String trait_type_name;
+	error = _get_string(p_stream->get_u32(), trait_type_name);
+	if (error != OK) {
+		return error;
+	}
+
+	p_class->fully_qualified_name = fully_qualified_name;
+	p_class->local_name = StringName(local_name);
+	p_class->global_name = StringName(global_name);
+	p_class->simplified_icon_path = simplified_icon_path;
+	p_class->tool = (class_flags & (1 << 0)) != 0;
+	p_class->_is_abstract = (class_flags & (1 << 1)) != 0;
+	p_class->_is_final = (class_flags & (1 << 2)) != 0;
+	p_class->_is_trait_type = (class_flags & (1 << 3)) != 0;
+	p_class->trait_type_name = StringName(trait_type_name);
+	p_class->compiled_binary = true;
+
+	// The native base is the shared handle in the language's global array, exactly as the compiler
+	// links it, so name-dispatched native identity behaves identically.
+	const HashMap<StringName, int> &global_map = FSLanguage::get_singleton()->get_global_map();
+	const int *native_index = global_map.getptr(StringName(native_class_name));
+	ERR_FAIL_NULL_V_MSG(native_index, ERR_CANT_RESOLVE,
+			vformat("Cannot load compiled script '%s': native base class '%s' is not registered in this build.",
+					p_root_path, native_class_name));
+	p_class->native = FSLanguage::get_singleton()->get_global_array()[*native_index];
+	ERR_FAIL_COND_V_MSG(p_class->native.is_null(), ERR_CANT_RESOLVE,
+			vformat("Cannot load compiled script '%s': global '%s' is not a native class in this build.",
+					p_root_path, native_class_name));
+
+	// Base references are collected (aligned with the preorder class list) and applied by
+	// `load_full` once the whole tree exists: a local base may be a later class in preorder.
+	SkeletonBaseReference base_reference;
+	if (p_stream->get_u8() != 0) {
+		const uint8_t locality = p_stream->get_u8();
+		if (locality == 1) {
+			base_reference.kind = 1;
+			base_reference.local_index = p_stream->get_u32();
+		} else if (locality == 0) {
+			base_reference.kind = 2;
+			error = _get_string(p_stream->get_u32(), base_reference.path);
+			if (error != OK) {
+				return error;
+			}
+			error = _get_string(p_stream->get_u32(), base_reference.fully_qualified_name);
+			if (error != OK) {
+				return error;
+			}
+		} else {
+			ERR_FAIL_V_MSG(ERR_INVALID_DATA, vformat("Malformed base class reference in compiled script '%s'.", p_root_path));
+		}
+	}
+	r_base_references.push_back(base_reference);
+
+	const uint32_t subclass_count = p_stream->get_u32();
+	ERR_FAIL_COND_V_MSG((int64_t)subclass_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
+			vformat("Truncated inner class list in compiled script '%s'.", p_root_path));
+	// Rebuild the subclass map in serialized order, reusing the scripts a previous `load_skeleton`
+	// instantiated so shallow references handed out earlier stay valid.
+	HashMap<StringName, Ref<FoundryScript>> previous_subclasses = p_class->subclasses;
+	p_class->subclasses.clear();
+	for (uint32_t i = 0; i < subclass_count; i++) {
+		String subclass_name;
+		error = _get_string(p_stream->get_u32(), subclass_name);
+		if (error != OK) {
+			return error;
+		}
+		Ref<FoundryScript> subclass;
+		if (const Ref<FoundryScript> *existing = previous_subclasses.getptr(StringName(subclass_name))) {
+			subclass = *existing;
+		}
+		if (subclass.is_null()) {
+			subclass.instantiate();
+		}
+		subclass->_owner = p_class.ptr();
+		subclass->path = p_root_path;
+		p_class->subclasses.insert(StringName(subclass_name), subclass);
+		error = _read_skeleton_class(p_stream, subclass, p_root_path, r_base_references, p_depth + 1);
+		if (error != OK) {
+			return error;
+		}
+	}
+	return OK;
+}
+
+Error FSBytecodeLoader::load_skeleton(const Vector<uint8_t> &p_buffer, const Ref<FoundryScript> &p_script) {
+	ERR_FAIL_COND_V(p_script.is_null(), ERR_INVALID_PARAMETER);
+	Ref<StreamPeerBuffer> stream;
+	Error error = _open_script_stream(p_buffer, stream);
+	if (error != OK) {
+		return error;
+	}
+	error = _read_dependency_section(stream.ptr(), nullptr);
+	if (error != OK) {
+		return error;
+	}
+	error = _expect_section(stream.ptr(), FSBytecodeFormat::SECTION_SKELETON);
+	if (error != OK) {
+		return error;
+	}
+	local_classes.clear();
+	Vector<SkeletonBaseReference> base_references;
+	return _read_skeleton_class(stream.ptr(), p_script, p_script->get_script_path(), base_references, 0);
+}
+
+Error FSBytecodeLoader::read_dependencies(const Vector<uint8_t> &p_buffer, Vector<String> &r_dependencies) {
+	r_dependencies.clear();
+	Ref<StreamPeerBuffer> stream;
+	const Error error = _open_script_stream(p_buffer, stream);
+	if (error != OK) {
+		return error;
+	}
+	return _read_dependency_section(stream.ptr(), &r_dependencies);
+}
+
+Error FSBytecodeLoader::_read_member_info(StreamPeerBuffer *p_stream, const String &p_script_path, StringName &r_name,
+		FoundryScript::MemberInfo &r_member_info) {
+	String member_name;
+	Error error = _get_string(p_stream->get_u32(), member_name);
+	if (error != OK) {
+		return error;
+	}
+	r_name = StringName(member_name);
+	r_member_info.index = p_stream->get_32();
+	String setter;
+	error = _get_string(p_stream->get_u32(), setter);
+	if (error != OK) {
+		return error;
+	}
+	r_member_info.setter = StringName(setter);
+	String getter;
+	error = _get_string(p_stream->get_u32(), getter);
+	if (error != OK) {
+		return error;
+	}
+	r_member_info.getter = StringName(getter);
+	error = decode_data_type(p_stream, r_member_info.data_type);
+	if (error != OK) {
+		return error;
+	}
+	error = _read_property_info(p_stream, r_member_info.property_info);
+	if (error != OK) {
+		return error;
+	}
+	return _read_type_argument_binding(p_stream, r_member_info.type_argument_binding);
+}
+
+Error FSBytecodeLoader::_read_type_argument_binding(StreamPeerBuffer *p_stream, FoundryScript::TypeArgumentBinding &r_binding) {
+	const uint8_t kind = p_stream->get_u8();
+	ERR_FAIL_COND_V_MSG(kind > (uint8_t)FoundryScript::TypeArgumentBinding::OPEN, ERR_INVALID_DATA,
+			"Invalid type argument binding in compiled script data.");
+	r_binding.kind = (FoundryScript::TypeArgumentBinding::Kind)kind;
+	const uint8_t binding_flags = p_stream->get_u8();
+	r_binding.fixed_is_dependent = (binding_flags & (1 << 0)) != 0;
+	r_binding.is_type_handle = (binding_flags & (1 << 1)) != 0;
+	r_binding.leaf_ordinal = p_stream->get_32();
+	return decode_data_type(p_stream, r_binding.fixed);
+}
+
+Error FSBytecodeLoader::_read_annotation_usages(StreamPeerBuffer *p_stream, const String &p_script_path,
+		Vector<FoundryScript::AnnotationUsage> &r_usages) {
+	const uint32_t usage_count = p_stream->get_u32();
+	ERR_FAIL_COND_V_MSG((int64_t)usage_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
+			vformat("Truncated annotation metadata in compiled script '%s'.", p_script_path));
+	for (uint32_t i = 0; i < usage_count; i++) {
+		FoundryScript::AnnotationUsage usage;
+		String annotation_name;
+		Error error = _get_string(p_stream->get_u32(), annotation_name);
+		if (error != OK) {
+			return error;
+		}
+		usage.name = StringName(annotation_name);
+		String qualified_name;
+		error = _get_string(p_stream->get_u32(), qualified_name);
+		if (error != OK) {
+			return error;
+		}
+		usage.qualified_name = StringName(qualified_name);
+		usage.is_builtin = p_stream->get_u8() != 0;
+		Variant args;
+		error = decode_variant_tagged(p_stream, args);
+		if (error != OK) {
+			return error;
+		}
+		ERR_FAIL_COND_V_MSG(args.get_type() != Variant::ARRAY, ERR_INVALID_DATA,
+				vformat("Malformed annotation arguments in compiled script '%s'.", p_script_path));
+		usage.args = args;
+		Variant kwargs;
+		error = decode_variant_tagged(p_stream, kwargs);
+		if (error != OK) {
+			return error;
+		}
+		ERR_FAIL_COND_V_MSG(kwargs.get_type() != Variant::DICTIONARY, ERR_INVALID_DATA,
+				vformat("Malformed annotation named arguments in compiled script '%s'.", p_script_path));
+		usage.kwargs = kwargs;
+		r_usages.push_back(usage);
+	}
+	return OK;
+}
+
+Error FSBytecodeLoader::_read_annotation_usage_map(StreamPeerBuffer *p_stream, const String &p_script_path,
+		HashMap<StringName, Vector<FoundryScript::AnnotationUsage>> &r_annotation_map) {
+	const uint32_t entry_count = p_stream->get_u32();
+	ERR_FAIL_COND_V_MSG((int64_t)entry_count * 8 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
+			vformat("Truncated annotation metadata in compiled script '%s'.", p_script_path));
+	for (uint32_t i = 0; i < entry_count; i++) {
+		String owner_name;
+		Error error = _get_string(p_stream->get_u32(), owner_name);
+		if (error != OK) {
+			return error;
+		}
+		Vector<FoundryScript::AnnotationUsage> usages;
+		error = _read_annotation_usages(p_stream, p_script_path, usages);
+		if (error != OK) {
+			return error;
+		}
+		r_annotation_map.insert(StringName(owner_name), usages);
+	}
+	return OK;
+}
+
+Error FSBytecodeLoader::_read_parameter_annotation_map(StreamPeerBuffer *p_stream, const String &p_script_path,
+		HashMap<StringName, HashMap<StringName, Vector<FoundryScript::AnnotationUsage>>> &r_parameter_map) {
+	const uint32_t entry_count = p_stream->get_u32();
+	ERR_FAIL_COND_V_MSG((int64_t)entry_count * 8 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
+			vformat("Truncated annotation metadata in compiled script '%s'.", p_script_path));
+	for (uint32_t i = 0; i < entry_count; i++) {
+		String owner_name;
+		Error error = _get_string(p_stream->get_u32(), owner_name);
+		if (error != OK) {
+			return error;
+		}
+		HashMap<StringName, Vector<FoundryScript::AnnotationUsage>> parameter_usages;
+		error = _read_annotation_usage_map(p_stream, p_script_path, parameter_usages);
+		if (error != OK) {
+			return error;
+		}
+		r_parameter_map.insert(StringName(owner_name), parameter_usages);
+	}
+	return OK;
+}
+
+Error FSBytecodeLoader::_read_optional_function(StreamPeerBuffer *p_stream, FoundryScript *p_script, FSFunction *&r_function,
+		Vector<LoadedLambdaInfo> *r_lambda_info) {
+	r_function = nullptr;
+	if (p_stream->get_u8() == 0) {
+		return OK;
+	}
+	return read_function(p_stream, p_script, r_function, r_lambda_info);
+}
+
+Error FSBytecodeLoader::_read_class_body(StreamPeerBuffer *p_stream, FoundryScript *p_script) {
+	const String script_path = p_script->get_script_path();
+
+	// Members were serialized post-compile with the base members already flattened in, so no
+	// inheritance recomputation happens here.
+	const uint32_t member_count = p_stream->get_u32();
+	ERR_FAIL_COND_V_MSG((int64_t)member_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
+			vformat("Truncated member table in compiled script '%s'.", script_path));
+	for (uint32_t i = 0; i < member_count; i++) {
+		StringName member_name;
+		FoundryScript::MemberInfo member_info;
+		const Error error = _read_member_info(p_stream, script_path, member_name, member_info);
+		if (error != OK) {
+			return error;
+		}
+		// Instance member slots are indexed straight from this value, so a wild index would write
+		// outside the instance's member array.
+		ERR_FAIL_COND_V_MSG(member_info.index < 0 || member_info.index >= (int)member_count, ERR_INVALID_DATA,
+				vformat("Malformed member index for '%s' in compiled script '%s'.", member_name, script_path));
+		p_script->member_indices.insert(member_name, member_info);
+	}
+
+	const uint32_t own_member_count = p_stream->get_u32();
+	ERR_FAIL_COND_V_MSG((int64_t)own_member_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
+			vformat("Truncated member list in compiled script '%s'.", script_path));
+	for (uint32_t i = 0; i < own_member_count; i++) {
+		String member_name;
+		const Error error = _get_string(p_stream->get_u32(), member_name);
+		if (error != OK) {
+			return error;
+		}
+		p_script->members.insert(StringName(member_name));
+	}
+
+	const uint32_t static_variable_count = p_stream->get_u32();
+	ERR_FAIL_COND_V_MSG((int64_t)static_variable_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
+			vformat("Truncated static variable table in compiled script '%s'.", script_path));
+	for (uint32_t i = 0; i < static_variable_count; i++) {
+		StringName static_variable_name;
+		FoundryScript::MemberInfo static_variable_info;
+		const Error error = _read_member_info(p_stream, script_path, static_variable_name, static_variable_info);
+		if (error != OK) {
+			return error;
+		}
+		ERR_FAIL_COND_V_MSG(static_variable_info.index < 0 || static_variable_info.index >= (int)static_variable_count,
+				ERR_INVALID_DATA,
+				vformat("Malformed static variable index for '%s' in compiled script '%s'.", static_variable_name, script_path));
+		p_script->static_variables_indices.insert(static_variable_name, static_variable_info);
+	}
+	p_script->static_variables.resize(p_script->static_variables_indices.size());
+
+	const uint32_t constant_count = p_stream->get_u32();
+	ERR_FAIL_COND_V_MSG((int64_t)constant_count * 5 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
+			vformat("Truncated constant table in compiled script '%s'.", script_path));
+	for (uint32_t i = 0; i < constant_count; i++) {
+		String constant_name;
+		Error error = _get_string(p_stream->get_u32(), constant_name);
+		if (error != OK) {
+			return error;
+		}
+		Variant constant_value;
+		error = decode_variant_tagged(p_stream, constant_value);
+		if (error != OK) {
+			return error;
+		}
+		p_script->constants.insert(StringName(constant_name), constant_value);
+	}
+
+	const uint32_t signal_count = p_stream->get_u32();
+	ERR_FAIL_COND_V_MSG((int64_t)signal_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
+			vformat("Truncated signal table in compiled script '%s'.", script_path));
+	for (uint32_t i = 0; i < signal_count; i++) {
+		String signal_name;
+		Error error = _get_string(p_stream->get_u32(), signal_name);
+		if (error != OK) {
+			return error;
+		}
+		MethodInfo signal_info;
+		error = _read_method_info(p_stream, signal_info, 0);
+		if (error != OK) {
+			return error;
+		}
+		p_script->_signals.insert(StringName(signal_name), signal_info);
+	}
+
+	const uint32_t trait_count = p_stream->get_u32();
+	ERR_FAIL_COND_V_MSG((int64_t)trait_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
+			vformat("Truncated trait list in compiled script '%s'.", script_path));
+	for (uint32_t i = 0; i < trait_count; i++) {
+		String trait_name;
+		const Error error = _get_string(p_stream->get_u32(), trait_name);
+		if (error != OK) {
+			return error;
+		}
+		p_script->script_trait_list.push_back(StringName(trait_name));
+	}
+
+	const uint32_t abstract_requirement_count = p_stream->get_u32();
+	ERR_FAIL_COND_V_MSG((int64_t)abstract_requirement_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
+			vformat("Truncated abstract trait requirements in compiled script '%s'.", script_path));
+	for (uint32_t i = 0; i < abstract_requirement_count; i++) {
+		String requirement_name;
+		Error error = _get_string(p_stream->get_u32(), requirement_name);
+		if (error != OK) {
+			return error;
+		}
+		FoundryScript::AbstractTraitRequirement requirement;
+		error = decode_data_type(p_stream, requirement.return_type);
+		if (error != OK) {
+			return error;
+		}
+		error = _read_method_info(p_stream, requirement.method_info, 0);
+		if (error != OK) {
+			return error;
+		}
+		p_script->abstract_trait_requirements.insert(StringName(requirement_name), requirement);
+	}
+
+	const uint32_t type_parameter_count = p_stream->get_u32();
+	ERR_FAIL_COND_V_MSG((int64_t)type_parameter_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
+			vformat("Truncated type parameter list in compiled script '%s'.", script_path));
+	for (uint32_t i = 0; i < type_parameter_count; i++) {
+		FoundryScript::TypeParameter type_parameter;
+		String type_parameter_name;
+		Error error = _get_string(p_stream->get_u32(), type_parameter_name);
+		if (error != OK) {
+			return error;
+		}
+		type_parameter.name = StringName(type_parameter_name);
+		type_parameter.index = p_stream->get_32();
+		type_parameter.has_bound = p_stream->get_u8() != 0;
+		error = _read_property_info(p_stream, type_parameter.bound);
+		if (error != OK) {
+			return error;
+		}
+		p_script->type_parameters.push_back(type_parameter);
+	}
+
+	// The per-ancestor binding table is re-keyed from serialized script identities to the live
+	// scripts: intra-file ancestors to skeleton scripts, external ones through the resolver. The
+	// raw keys follow the compile-time lifetime rules (ancestors stay alive via the `base` chain,
+	// external trait scripts via the loading cache).
+	const uint32_t ancestor_binding_count = p_stream->get_u32();
+	ERR_FAIL_COND_V_MSG((int64_t)ancestor_binding_count * 5 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
+			vformat("Truncated type parameter bindings in compiled script '%s'.", script_path));
+	for (uint32_t i = 0; i < ancestor_binding_count; i++) {
+		Ref<Script> ancestor_reference;
+		bool ancestor_is_local = false;
+		Error error = _read_script_reference(p_stream, ancestor_reference, ancestor_is_local, "type parameter ancestor");
+		if (error != OK) {
+			return error;
+		}
+		FoundryScript *ancestor_script = Object::cast_to<FoundryScript>(ancestor_reference.ptr());
+		ERR_FAIL_NULL_V_MSG(ancestor_script, ERR_INVALID_DATA,
+				vformat("Malformed type parameter ancestor in compiled script '%s'.", script_path));
+		const uint32_t binding_count = p_stream->get_u32();
+		ERR_FAIL_COND_V_MSG((int64_t)binding_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
+				vformat("Truncated type parameter bindings in compiled script '%s'.", script_path));
+		Vector<FoundryScript::TypeArgumentBinding> bindings;
+		for (uint32_t binding_index = 0; binding_index < binding_count; binding_index++) {
+			FoundryScript::TypeArgumentBinding binding;
+			error = _read_type_argument_binding(p_stream, binding);
+			if (error != OK) {
+				return error;
+			}
+			bindings.push_back(binding);
+		}
+		p_script->type_parameter_bindings_by_ancestor.insert(ancestor_script, bindings);
+	}
+
+	// `rpc_config` was serialized post-merge, so it is taken verbatim.
+	Variant rpc_config;
+	Error error = decode_variant_tagged(p_stream, rpc_config);
+	if (error != OK) {
+		return error;
+	}
+	ERR_FAIL_COND_V_MSG(rpc_config.get_type() != Variant::DICTIONARY, ERR_INVALID_DATA,
+			vformat("Malformed RPC configuration in compiled script '%s'.", script_path));
+	p_script->rpc_config = rpc_config;
+
+	error = _read_annotation_usages(p_stream, script_path, p_script->class_annotations);
+	if (error != OK) {
+		return error;
+	}
+	error = _read_annotation_usage_map(p_stream, script_path, p_script->method_annotations);
+	if (error != OK) {
+		return error;
+	}
+	error = _read_annotation_usage_map(p_stream, script_path, p_script->variable_annotations);
+	if (error != OK) {
+		return error;
+	}
+	error = _read_annotation_usage_map(p_stream, script_path, p_script->signal_annotations);
+	if (error != OK) {
+		return error;
+	}
+	error = _read_annotation_usage_map(p_stream, script_path, p_script->constant_annotations);
+	if (error != OK) {
+		return error;
+	}
+	error = _read_parameter_annotation_map(p_stream, script_path, p_script->method_parameter_annotations);
+	if (error != OK) {
+		return error;
+	}
+	error = _read_parameter_annotation_map(p_stream, script_path, p_script->signal_parameter_annotations);
+	if (error != OK) {
+		return error;
+	}
+
+	// Functions become the real registered member functions of the loaded script; any function
+	// registered before a later failure is owned by the script and freed by its destructor.
+	Vector<LoadedLambdaInfo> lambda_entries;
+	const uint32_t function_count = p_stream->get_u32();
+	ERR_FAIL_COND_V_MSG((int64_t)function_count * 5 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
+			vformat("Truncated function table in compiled script '%s'.", script_path));
+	for (uint32_t i = 0; i < function_count; i++) {
+		const bool is_initializer = p_stream->get_u8() != 0;
+		FSFunction *function = nullptr;
+		error = read_function(p_stream, p_script, function, &lambda_entries);
+		if (error != OK) {
+			return error;
+		}
+		if (p_script->member_functions.has(function->name)) {
+			// Deleting the duplicate erases its name from the map (the destructor unregisters by
+			// name), which is fine: the load fails and the caller discards the whole script.
+			const String duplicate_name = function->name;
+			memdelete(function);
+			ERR_FAIL_V_MSG(ERR_INVALID_DATA,
+					vformat("Duplicate function '%s' in compiled script '%s'.", duplicate_name, script_path));
+		}
+		p_script->member_functions.insert(function->name, function);
+		if (is_initializer) {
+			p_script->initializer = function;
+		}
+	}
+
+	error = _read_optional_function(p_stream, p_script, p_script->implicit_initializer, &lambda_entries);
+	if (error != OK) {
+		return error;
+	}
+	error = _read_optional_function(p_stream, p_script, p_script->implicit_ready, &lambda_entries);
+	if (error != OK) {
+		return error;
+	}
+	error = _read_optional_function(p_stream, p_script, p_script->static_initializer, &lambda_entries);
+	if (error != OK) {
+		return error;
+	}
+
+	for (const LoadedLambdaInfo &lambda_entry : lambda_entries) {
+		FoundryScript::LambdaInfo lambda_info;
+		lambda_info.capture_count = lambda_entry.capture_count;
+		lambda_info.use_self = lambda_entry.use_self;
+		p_script->lambda_info.insert(lambda_entry.function, lambda_info);
+	}
+
+	// Rebuild the slot-indexed binding table exactly as `_prepare_compilation` finalizes it.
+	p_script->member_type_argument_bindings.resize(p_script->member_indices.size());
+	for (const KeyValue<StringName, FoundryScript::MemberInfo> &member : p_script->member_indices) {
+		if (member.value.index >= 0 && member.value.index < p_script->member_type_argument_bindings.size()) {
+			p_script->member_type_argument_bindings.write[member.value.index] = member.value.type_argument_binding;
+		}
+	}
+
+	return OK;
+}
+
+// Rebuilds this script's retroactive-conformance witnesses and re-registers them with the runtime
+// registry, mirroring what `FSCompiler::_compile_conformance_witnesses` does after compilation:
+// the declaring script owns the functions, holds its external targets alive, and records the
+// registration key so reload/unload can drop the borrowed pointers first.
+Error FSBytecodeLoader::_read_witness_section(StreamPeerBuffer *p_stream, FoundryScript *p_script) {
+	const String script_path = p_script->get_script_path();
+	const uint32_t conformance_count = p_stream->get_u32();
+	ERR_FAIL_COND_V_MSG((int64_t)conformance_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
+			vformat("Truncated conformance section in compiled script '%s'.", script_path));
+	if (conformance_count == 0) {
+		return OK;
+	}
+
+	Vector<FSConformanceRegistry::RuntimeConformance> conformances;
+	for (uint32_t i = 0; i < conformance_count; i++) {
+		Ref<Script> target_reference;
+		bool target_is_local = false;
+		Error error = _read_script_reference(p_stream, target_reference, target_is_local, "conformance target");
+		if (error != OK) {
+			return error;
+		}
+		FoundryScript *target_script = Object::cast_to<FoundryScript>(target_reference.ptr());
+		ERR_FAIL_NULL_V_MSG(target_script, ERR_INVALID_DATA,
+				vformat("Malformed conformance target in compiled script '%s'.", script_path));
+
+		FSConformanceRegistry::RuntimeConformance conformance;
+		const uint32_t target_key_count = p_stream->get_u32();
+		ERR_FAIL_COND_V_MSG((int64_t)target_key_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
+				vformat("Truncated conformance section in compiled script '%s'.", script_path));
+		for (uint32_t key_index = 0; key_index < target_key_count; key_index++) {
+			String target_key;
+			error = _get_string(p_stream->get_u32(), target_key);
+			if (error != OK) {
+				return error;
+			}
+			conformance.target_keys.push_back(target_key);
+		}
+		String trait_name;
+		error = _get_string(p_stream->get_u32(), trait_name);
+		if (error != OK) {
+			return error;
+		}
+		conformance.trait_name = StringName(trait_name);
+
+		const uint32_t witness_count = p_stream->get_u32();
+		ERR_FAIL_COND_V_MSG((int64_t)witness_count * 5 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
+				vformat("Truncated conformance section in compiled script '%s'.", script_path));
+		for (uint32_t witness_index = 0; witness_index < witness_count; witness_index++) {
+			String method_name;
+			error = _get_string(p_stream->get_u32(), method_name);
+			if (error != OK) {
+				return error;
+			}
+			// Witnesses were compiled against the target's member layout, so they deserialize with
+			// the target as their script; the declaring script owns them for lifetime, exactly as
+			// at compile time.
+			Vector<LoadedLambdaInfo> lambda_entries;
+			FSFunction *witness = nullptr;
+			error = read_function(p_stream, target_script, witness, &lambda_entries);
+			if (error != OK) {
+				return error;
+			}
+			p_script->witness_functions.push_back(witness);
+			for (const LoadedLambdaInfo &lambda_entry : lambda_entries) {
+				FoundryScript::LambdaInfo lambda_info;
+				lambda_info.capture_count = lambda_entry.capture_count;
+				lambda_info.use_self = lambda_entry.use_self;
+				target_script->lambda_info.insert(lambda_entry.function, lambda_info);
+			}
+			conformance.functions[StringName(method_name)] = witness;
+		}
+
+		if (!conformance.functions.is_empty()) {
+			conformances.push_back(conformance);
+			// Keep the target alive as long as the witnesses whose `_script` points at it live. A
+			// self-reference is skipped to avoid the script holding a strong reference to itself.
+			if (target_script != p_script && !p_script->witness_target_scripts.has(target_reference)) {
+				p_script->witness_target_scripts.push_back(target_reference);
+			}
+		}
+	}
+
+	p_script->registered_conformance_source = script_path;
+	FSConformanceRegistry::get_singleton()->register_runtime_witnesses(script_path, conformances);
+	return OK;
+}
+
+Error FSBytecodeLoader::load_full(const Vector<uint8_t> &p_buffer, const Ref<FoundryScript> &p_script) {
+	ERR_FAIL_COND_V(p_script.is_null(), ERR_INVALID_PARAMETER);
+	const String script_path = p_script->get_script_path();
+	ERR_FAIL_COND_V_MSG(p_script->valid, ERR_ALREADY_IN_USE,
+			vformat("Compiled script '%s' is already loaded.", script_path));
+
+	Ref<StreamPeerBuffer> stream;
+	Error error = _open_script_stream(p_buffer, stream);
+	if (error != OK) {
+		return error;
+	}
+	error = _read_dependency_section(stream.ptr(), nullptr);
+	if (error != OK) {
+		return error;
+	}
+
+	error = _expect_section(stream.ptr(), FSBytecodeFormat::SECTION_SKELETON);
+	if (error != OK) {
+		return error;
+	}
+	local_classes.clear();
+	Vector<SkeletonBaseReference> base_references;
+	error = _read_skeleton_class(stream.ptr(), p_script, script_path, base_references, 0);
+	if (error != OK) {
+		return error;
+	}
+	ERR_FAIL_COND_V(base_references.size() != local_classes.size(), ERR_BUG);
+
+	// Base links come before any body decodes. External bases recurse through the resolver — the
+	// dependency-ordering mechanism; cycles rely on the caller's cache having published this
+	// script's shell before calling load_full.
+	for (int class_index = 0; class_index < local_classes.size(); class_index++) {
+		const SkeletonBaseReference &base_reference = base_references[class_index];
+		switch (base_reference.kind) {
+			case 0: {
+				// Native base only.
+			} break;
+			case 1: {
+				ERR_FAIL_COND_V_MSG(
+						base_reference.local_index >= (uint32_t)local_classes.size() ||
+								local_classes[base_reference.local_index] == local_classes[class_index],
+						ERR_INVALID_DATA,
+						vformat("Malformed base class reference in compiled script '%s'.", script_path));
+				local_classes[class_index]->base = Ref<FoundryScript>(local_classes[base_reference.local_index]);
+			} break;
+			case 2: {
+				ERR_FAIL_NULL_V_MSG(resolver, ERR_UNCONFIGURED,
+						"No external-reference resolver is set on the bytecode loader.");
+				bool base_is_local = false;
+				const Ref<FoundryScript> base =
+						resolver->resolve_script(base_reference.path, base_reference.fully_qualified_name, base_is_local);
+				ERR_FAIL_COND_V_MSG(base.is_null(), ERR_CANT_RESOLVE,
+						vformat("Cannot load compiled script '%s': base class '%s' ('%s') does not resolve.",
+								script_path, base_reference.fully_qualified_name, base_reference.path));
+				local_classes[class_index]->base = base;
+			} break;
+			default: {
+				ERR_FAIL_V_MSG(ERR_INVALID_DATA, vformat("Malformed base class reference in compiled script '%s'.", script_path));
+			} break;
+		}
+	}
+
+	error = _expect_section(stream.ptr(), FSBytecodeFormat::SECTION_CLASS_BODIES);
+	if (error != OK) {
+		return error;
+	}
+	// Bodies are stored in the same preorder as the skeleton.
+	for (FoundryScript *loaded_class : local_classes) {
+		error = _read_class_body(stream.ptr(), loaded_class);
+		if (error != OK) {
+			return error;
+		}
+	}
+
+	error = _expect_section(stream.ptr(), FSBytecodeFormat::SECTION_WITNESSES);
+	if (error != OK) {
+		return error;
+	}
+	error = _read_witness_section(stream.ptr(), p_script.ptr());
+	if (error != OK) {
+		return error;
+	}
+
+	// Finalization mirrors `_compile_class`'s per-class tail and `reload()`'s root tail: static
+	// defaults, then `valid`, then the static initializers.
+	for (FoundryScript *loaded_class : local_classes) {
+		loaded_class->_static_default_init();
+		loaded_class->valid = true;
+	}
+	if (ScriptServer::is_scripting_enabled() || p_script->is_tool()) {
+		error = p_script->_static_init();
+		ERR_FAIL_COND_V_MSG(error != OK, error,
+				vformat("Compiled script '%s' failed to run its static initializer.", script_path));
+	}
+	return OK;
+}

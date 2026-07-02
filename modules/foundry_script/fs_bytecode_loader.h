@@ -32,6 +32,8 @@
 
 #include "fs_bytecode_format.h"
 
+#include "foundry_script.h"
+
 #include "core/io/resource.h"
 #include "core/io/stream_peer.h"
 #include "core/object/script_language.h"
@@ -40,7 +42,6 @@
 
 class FSDataType;
 class FSFunction;
-class FoundryScript;
 struct MethodInfo;
 struct PropertyInfo;
 
@@ -74,6 +75,21 @@ private:
 	Vector<String> string_table;
 	FSBytecodeExternalResolver *resolver = nullptr;
 
+	// Classes local to the `.fsb` being loaded (root + nested subclasses, preorder). Serialized
+	// intra-file class indices resolve against this vector without touching the resolver.
+	Vector<FoundryScript *> local_classes;
+	bool has_static_data = false;
+	bool annotated_static_unload = false;
+
+	// A class's base reference parsed from the skeleton section; applied by `load_full` after the
+	// whole tree is instantiated (a base may be a later class in preorder).
+	struct SkeletonBaseReference {
+		uint8_t kind = 0; // 0 = no script base (native only), 1 = local class index, 2 = external script.
+		uint32_t local_index = 0;
+		String path;
+		String fully_qualified_name;
+	};
+
 	Error _get_string(uint32_t p_index, String &r_string) const;
 	Error _decode_object(StreamPeerBuffer *p_stream, uint8_t p_tag, Variant &r_variant, int p_depth);
 	Error _decode_container_type(StreamPeerBuffer *p_stream, ContainerType &r_container_type, int p_depth);
@@ -81,6 +97,27 @@ private:
 	Error _read_method_info(StreamPeerBuffer *p_stream, MethodInfo &r_method_info, int p_depth);
 	Error _read_function_body(StreamPeerBuffer *p_stream, FoundryScript *p_script, FSFunction *p_function,
 			Vector<LoadedLambdaInfo> *r_lambda_info, int p_depth);
+	Error _read_script_reference(StreamPeerBuffer *p_stream, Ref<Script> &r_script, bool &r_is_local_class,
+			const String &p_context);
+
+	Error _open_script_stream(const Vector<uint8_t> &p_buffer, Ref<StreamPeerBuffer> &r_stream);
+	Error _expect_section(StreamPeerBuffer *p_stream, FSBytecodeFormat::SectionId p_section);
+	Error _read_dependency_section(StreamPeerBuffer *p_stream, Vector<String> *r_dependencies);
+	Error _read_skeleton_class(StreamPeerBuffer *p_stream, const Ref<FoundryScript> &p_class, const String &p_root_path,
+			Vector<SkeletonBaseReference> &r_base_references, int p_depth);
+	Error _read_member_info(StreamPeerBuffer *p_stream, const String &p_script_path, StringName &r_name,
+			FoundryScript::MemberInfo &r_member_info);
+	Error _read_type_argument_binding(StreamPeerBuffer *p_stream, FoundryScript::TypeArgumentBinding &r_binding);
+	Error _read_annotation_usages(StreamPeerBuffer *p_stream, const String &p_script_path,
+			Vector<FoundryScript::AnnotationUsage> &r_usages);
+	Error _read_annotation_usage_map(StreamPeerBuffer *p_stream, const String &p_script_path,
+			HashMap<StringName, Vector<FoundryScript::AnnotationUsage>> &r_annotation_map);
+	Error _read_parameter_annotation_map(StreamPeerBuffer *p_stream, const String &p_script_path,
+			HashMap<StringName, HashMap<StringName, Vector<FoundryScript::AnnotationUsage>>> &r_parameter_map);
+	Error _read_optional_function(StreamPeerBuffer *p_stream, FoundryScript *p_script, FSFunction *&r_function,
+			Vector<LoadedLambdaInfo> *r_lambda_info);
+	Error _read_class_body(StreamPeerBuffer *p_stream, FoundryScript *p_script);
+	Error _read_witness_section(StreamPeerBuffer *p_stream, FoundryScript *p_script);
 
 public:
 	static Error check_header(const Vector<uint8_t> &p_buffer, int *r_header_size = nullptr);
@@ -101,4 +138,29 @@ public:
 	// entries appended by the failed call would point at freed functions.
 	Error read_function(StreamPeerBuffer *p_stream, FoundryScript *p_script, FSFunction *&r_function,
 			Vector<LoadedLambdaInfo> *r_lambda_info = nullptr, int p_depth = 0);
+
+	// Instantiates the root script's full class tree from the skeleton section only — names, fully
+	// qualified names, native base classes, class flags, and the `subclasses` map — the `.fsb`
+	// analog of `FSCompiler::make_scripts` plus the shallow-script identity surface. It performs
+	// no I/O beyond the buffer and never touches the resolver: base links (including external ones)
+	// are deferred to `load_full`, mirroring how `make_scripts` leaves `base` unset.
+	Error load_skeleton(const Vector<uint8_t> &p_buffer, const Ref<FoundryScript> &p_script);
+
+	// Reconstructs the complete runnable script graph onto `p_script` (which may or may not have
+	// gone through `load_skeleton`; existing skeleton scripts are reused). Requires the resolver.
+	// Ordered steps: skeleton, base links (external bases recurse through the resolver — the
+	// caller's cache publishing the shell first is what makes cycles work), class bodies (plain
+	// data, then functions; external constants resolve inline through the resolver), witness
+	// re-registration, then finalization mirroring `reload()`'s tail: `_static_default_init()`,
+	// `valid = true`, `_static_init()`. Calling `FSCache::add_static_script` for scripts whose
+	// flags report static data is the load-path integration's job; the flags are exposed through
+	// `get_has_static_data()`/`get_annotated_static_unload()` after any load call.
+	Error load_full(const Vector<uint8_t> &p_buffer, const Ref<FoundryScript> &p_script);
+
+	// Reads the external script/resource paths the `.fsb` references, from the dependency section
+	// at the head of the file, without touching any class data.
+	Error read_dependencies(const Vector<uint8_t> &p_buffer, Vector<String> &r_dependencies);
+
+	bool get_has_static_data() const { return has_static_data; }
+	bool get_annotated_static_unload() const { return annotated_static_unload; }
 };
