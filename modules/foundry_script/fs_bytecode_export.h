@@ -70,6 +70,7 @@ private:
 
 	Error _encode_object(StreamPeerBuffer *r_stream, Object *p_object, int p_depth);
 	Error _encode_container_type(StreamPeerBuffer *r_stream, const ContainerType &p_container_type, int p_depth);
+	Error _encode_script_reference(StreamPeerBuffer *r_stream, Script *p_script);
 };
 
 #endif // TOOLS_ENABLED

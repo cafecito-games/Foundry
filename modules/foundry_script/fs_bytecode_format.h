@@ -69,7 +69,7 @@ public:
 		TAG_ARRAY, // Element-wise recursion (typed metadata included).
 		TAG_DICTIONARY, // Element-wise recursion (typed metadata included).
 		TAG_SCRIPT_REF, // Foundry Script reference as (path, fully qualified class name).
-		TAG_EXTERNAL_SCRIPT, // Non-Foundry Script reference as (path).
+		TAG_EXTERNAL_SCRIPT, // Non-Foundry Script reference as (path, empty fully qualified name).
 		TAG_EXTERNAL_RESOURCE, // Resource reference as (path); property data is never serialized.
 		TAG_NATIVE_CLASS, // FSNativeClass value as (class name).
 		TAG_ENGINE_SINGLETON, // Engine singleton object as (singleton name).

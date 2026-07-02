@@ -46,7 +46,10 @@ class FSDataType;
 class FSBytecodeExternalResolver {
 public:
 	virtual Ref<Resource> resolve_resource(const String &p_path) = 0;
-	virtual Ref<Script> resolve_script(const String &p_path, const String &p_fully_qualified_name) = 0;
+	// `r_is_local_class` must be set to true when the resolved script is a class local to the
+	// `.fsb` being loaded (the root script or one of its inner classes); data-type linkage then
+	// holds it as a raw pointer without a strong reference.
+	virtual Ref<Script> resolve_script(const String &p_path, const String &p_fully_qualified_name, bool &r_is_local_class) = 0;
 
 	virtual ~FSBytecodeExternalResolver() {}
 };

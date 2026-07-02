@@ -34,6 +34,7 @@
 #include "fs_function.h"
 
 #include "core/config/engine.h"
+#include "core/io/marshalls.h"
 #include "core/version.h"
 
 // Reads a length-prefixed UTF-8 string, rejecting lengths the stream cannot hold so a corrupted
@@ -128,7 +129,22 @@ Error FSBytecodeLoader::decode_variant_tagged(StreamPeerBuffer *p_stream, Varian
 	const uint8_t tag = p_stream->get_u8();
 	switch (tag) {
 		case FSBytecodeFormat::TAG_INLINE_VARIANT: {
-			r_variant = p_stream->get_var(false);
+			// `StreamPeer::get_var` allocates the encoded length before validating it and swallows
+			// decode failures into a nil Variant, so a corrupted length prefix could trigger a huge
+			// allocation and corruption would silently decode as nil. Bound and decode manually.
+			const uint32_t length = p_stream->get_u32();
+			ERR_FAIL_COND_V_MSG((int64_t)length > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
+					"Truncated inline Variant in compiled script data.");
+			Vector<uint8_t> encoded;
+			Error error = encoded.resize(length);
+			ERR_FAIL_COND_V_MSG(error != OK, ERR_INVALID_DATA, "Cannot allocate inline Variant from compiled script data.");
+			if (length > 0) {
+				error = p_stream->get_data(encoded.ptrw(), length);
+				ERR_FAIL_COND_V_MSG(error != OK, ERR_INVALID_DATA, "Truncated inline Variant in compiled script data.");
+			}
+			// Objects always travel behind symbolic tags, so inline leaves never decode them.
+			error = decode_variant(r_variant, encoded.ptr(), encoded.size(), nullptr, false);
+			ERR_FAIL_COND_V_MSG(error != OK, ERR_INVALID_DATA, "Malformed inline Variant in compiled script data.");
 			return OK;
 		} break;
 		case FSBytecodeFormat::TAG_ARRAY: {
@@ -209,14 +225,15 @@ Error FSBytecodeLoader::_decode_object(StreamPeerBuffer *p_stream, uint8_t p_tag
 				return error;
 			}
 			String fully_qualified_name;
-			if (p_tag == FSBytecodeFormat::TAG_SCRIPT_REF) {
-				error = _get_string(p_stream->get_u32(), fully_qualified_name);
-				if (error != OK) {
-					return error;
-				}
+			error = _get_string(p_stream->get_u32(), fully_qualified_name);
+			if (error != OK) {
+				return error;
 			}
 			ERR_FAIL_NULL_V_MSG(resolver, ERR_UNCONFIGURED, "No external-reference resolver is set on the bytecode loader.");
-			const Ref<Script> script = resolver->resolve_script(path, fully_qualified_name);
+			// A Variant constant always holds a strong reference regardless of locality; the
+			// local-class distinction only matters for data-type linkage.
+			bool is_local_class = false;
+			const Ref<Script> script = resolver->resolve_script(path, fully_qualified_name, is_local_class);
 			ERR_FAIL_COND_V_MSG(script.is_null(), ERR_CANT_RESOLVE,
 					vformat("Cannot resolve script reference '%s' ('%s') from compiled script data.", path, fully_qualified_name));
 			r_variant = script;
@@ -389,11 +406,21 @@ Error FSBytecodeLoader::decode_data_type(StreamPeerBuffer *p_stream, FSDataType 
 			return error;
 		}
 		ERR_FAIL_NULL_V_MSG(resolver, ERR_UNCONFIGURED, "No external-reference resolver is set on the bytecode loader.");
-		const Ref<Script> script = resolver->resolve_script(path, fully_qualified_name);
+		bool is_local_class = false;
+		const Ref<Script> script = resolver->resolve_script(path, fully_qualified_name, is_local_class);
 		ERR_FAIL_COND_V_MSG(script.is_null(), ERR_CANT_RESOLVE,
 				vformat("Cannot resolve script type '%s' ('%s') from compiled script data.", path, fully_qualified_name));
-		r_data_type.script_type_ref = script;
-		r_data_type.script_type = script.ptr();
+		if (is_local_class) {
+			// A class local to the file being loaded is held as a raw pointer without a strong
+			// reference, matching the rule documented on `FoundryScript::TypeArgumentBinding` in
+			// foundry_script.h: persisted type descriptors must not keep local classes alive, or
+			// CRTP-style declarations like `class Node extends Box[Node]` create reference cycles
+			// and leak.
+			r_data_type.script_type = script.ptr();
+		} else {
+			r_data_type.script_type_ref = script;
+			r_data_type.script_type = script.ptr();
+		}
 	}
 	const uint32_t element_type_count = p_stream->get_u32();
 	ERR_FAIL_COND_V_MSG((int64_t)element_type_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,

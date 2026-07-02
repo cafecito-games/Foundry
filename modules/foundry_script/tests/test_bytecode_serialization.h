@@ -43,6 +43,7 @@
 
 #include "core/config/engine.h"
 #include "core/io/stream_peer.h"
+#include "core/templates/hash_set.h"
 #include "core/templates/pair.h"
 
 #include "tests/test_macros.h"
@@ -53,6 +54,7 @@ class BytecodeTestResolver : public FSBytecodeExternalResolver {
 public:
 	HashMap<String, Ref<Resource>> resources;
 	HashMap<String, Ref<Script>> scripts; // Keyed by "path::fully_qualified_name".
+	HashSet<String> local_classes; // Same keys as `scripts`.
 	Vector<String> resource_requests;
 	Vector<Pair<String, String>> script_requests;
 
@@ -62,9 +64,11 @@ public:
 		return found ? found->value : Ref<Resource>();
 	}
 
-	virtual Ref<Script> resolve_script(const String &p_path, const String &p_fully_qualified_name) override {
+	virtual Ref<Script> resolve_script(const String &p_path, const String &p_fully_qualified_name, bool &r_is_local_class) override {
 		script_requests.push_back(Pair<String, String>(p_path, p_fully_qualified_name));
-		const HashMap<String, Ref<Script>>::ConstIterator found = scripts.find(p_path + "::" + p_fully_qualified_name);
+		const String key = p_path + "::" + p_fully_qualified_name;
+		r_is_local_class = local_classes.has(key);
+		const HashMap<String, Ref<Script>>::ConstIterator found = scripts.find(key);
 		return found ? found->value : Ref<Script>();
 	}
 };
@@ -547,6 +551,103 @@ TEST_CASE("[FoundryScript][BytecodeCodec] FSDataType script references serialize
 	REQUIRE(resolver.script_requests.size() == 1);
 	CHECK(resolver.script_requests[0].first == inner_script->get_script_path());
 	CHECK(resolver.script_requests[0].second == inner_script->get_fully_qualified_name());
+}
+
+TEST_CASE("[FoundryScript][BytecodeCodec] Corrupted inline Variants fail the decode") {
+	FSBytecodeExporter exporter;
+	BytecodeTestResolver resolver;
+
+	// A legitimate nil still round-trips through the bounded decode path.
+	Vector<uint8_t> nil_payload;
+	REQUIRE(bytecode_encode_variant(exporter, Variant(), nil_payload) == OK);
+	Variant decoded = true;
+	REQUIRE(bytecode_decode_variant(exporter, nil_payload, &resolver, decoded) == OK);
+	CHECK(decoded.get_type() == Variant::NIL);
+
+	// A corrupted 4-byte length prefix (after the tag byte) must fail cleanly instead of
+	// attempting a huge allocation.
+	Vector<uint8_t> corrupted_length = nil_payload;
+	REQUIRE(corrupted_length.size() >= 5);
+	corrupted_length.write[1] = 0xFF;
+	corrupted_length.write[2] = 0xFF;
+	corrupted_length.write[3] = 0xFF;
+	corrupted_length.write[4] = 0x7F;
+	ERR_PRINT_OFF;
+	CHECK(bytecode_decode_variant(exporter, corrupted_length, &resolver, decoded) == ERR_INVALID_DATA);
+	ERR_PRINT_ON;
+
+	// A truncated payload must fail instead of silently decoding as nil.
+	Vector<uint8_t> string_payload;
+	REQUIRE(bytecode_encode_variant(exporter, String("truncate me"), string_payload) == OK);
+	Vector<uint8_t> truncated = string_payload;
+	truncated.resize(truncated.size() - 4);
+	ERR_PRINT_OFF;
+	CHECK(bytecode_decode_variant(exporter, truncated, &resolver, decoded) == ERR_INVALID_DATA);
+	ERR_PRINT_ON;
+
+	// Garbage bytes that pass the length check must still fail encode_variant's own decoding.
+	Vector<uint8_t> garbage = nil_payload;
+	for (int i = 5; i < garbage.size(); i++) {
+		garbage.write[i] = 0xFF;
+	}
+	ERR_PRINT_OFF;
+	CHECK(bytecode_decode_variant(exporter, garbage, &resolver, decoded) == ERR_INVALID_DATA);
+	ERR_PRINT_ON;
+}
+
+TEST_CASE("[FoundryScript][BytecodeCodec] FSDataType local-class references link without a strong reference") {
+	Ref<FoundryScript> referenced_script;
+	referenced_script.instantiate();
+	referenced_script->set_path_cache("res://linkage.fs");
+
+	FSDataType data_type;
+	data_type.kind = FSDataType::FOUNDRY_SCRIPT;
+	data_type.builtin_type = Variant::OBJECT;
+	data_type.native_type = "RefCounted";
+	data_type.script_type_ref = referenced_script;
+	data_type.script_type = referenced_script.ptr();
+
+	// External references keep the strong reference.
+	BytecodeTestResolver external_resolver;
+	external_resolver.scripts.insert("res://linkage.fs::", referenced_script);
+	const FSDataType external_decoded = bytecode_round_trip_data_type(data_type, &external_resolver);
+	CHECK(external_decoded.script_type_ref == Ref<Script>(referenced_script));
+	CHECK(external_decoded.script_type == referenced_script.ptr());
+
+	// Classes local to the loaded file link as a raw pointer only, per the local-class
+	// no-strong-ref rule (see FoundryScript::TypeArgumentBinding in foundry_script.h).
+	BytecodeTestResolver local_resolver;
+	local_resolver.scripts.insert("res://linkage.fs::", referenced_script);
+	local_resolver.local_classes.insert("res://linkage.fs::");
+	const FSDataType local_decoded = bytecode_round_trip_data_type(data_type, &local_resolver);
+	CHECK(local_decoded.script_type == referenced_script.ptr());
+	CHECK(local_decoded.script_type_ref.is_null());
+}
+
+TEST_CASE("[FoundryScript][BytecodeCodec] Specialized class handles round-trip") {
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"class Box[T]:\n"
+			"\tvar value\n");
+	const HashMap<StringName, Ref<FoundryScript>>::ConstIterator box_element = script->get_subclasses().find(SNAME("Box"));
+	REQUIRE(box_element);
+	const Ref<FoundryScript> box_script = box_element->value;
+	REQUIRE(box_script.is_valid());
+
+	ContainerType integer_argument;
+	integer_argument.builtin_type = Variant::INT;
+	Vector<ContainerType> type_arguments;
+	type_arguments.push_back(integer_argument);
+	const Ref<FSSpecializedClassHandle> handle = FSSpecializedClassHandle::create(box_script, type_arguments);
+	REQUIRE(handle.is_valid());
+
+	BytecodeTestResolver resolver;
+	resolver.scripts.insert(box_script->get_script_path() + "::" + box_script->get_fully_qualified_name(), box_script);
+	const Variant decoded = bytecode_round_trip_variant(handle, &resolver);
+	const Ref<FSSpecializedClassHandle> decoded_handle = decoded;
+	REQUIRE(decoded_handle.is_valid());
+	CHECK(decoded_handle->get_specialized_script() == box_script);
+	REQUIRE(decoded_handle->get_type_arguments().size() == 1);
+	CHECK(decoded_handle->get_type_arguments()[0] == integer_argument);
 }
 
 TEST_CASE("[FoundryScript][BytecodeCodec] Unresolvable external references fail the decode") {

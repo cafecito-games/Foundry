@@ -145,23 +145,11 @@ Error FSBytecodeExporter::encode_variant_tagged(StreamPeerBuffer *r_stream, cons
 Error FSBytecodeExporter::_encode_object(StreamPeerBuffer *r_stream, Object *p_object, int p_depth) {
 	ERR_FAIL_COND_V_MSG(p_depth > Variant::MAX_RECURSION_DEPTH, ERR_INVALID_PARAMETER,
 			"Object reference is too deeply nested to serialize to compiled bytecode.");
-	if (FoundryScript *foundry_script = Object::cast_to<FoundryScript>(p_object)) {
-		// Inner classes share the root script's path but only carry it in the script-local path
-		// member, so the resource path alone is not enough here.
-		ERR_FAIL_COND_V_MSG(foundry_script->get_script_path().is_empty(), ERR_INVALID_PARAMETER,
-				"A Foundry Script without a resource path cannot be serialized to compiled bytecode.");
-		r_stream->put_u8(FSBytecodeFormat::TAG_SCRIPT_REF);
-		r_stream->put_u32(string_table.insert(foundry_script->get_script_path()));
-		r_stream->put_u32(string_table.insert(foundry_script->get_fully_qualified_name()));
-		return OK;
-	}
 	if (Script *script = Object::cast_to<Script>(p_object)) {
-		ERR_FAIL_COND_V_MSG(script->get_path().is_empty(), ERR_INVALID_PARAMETER,
-				vformat("A script of type '%s' without a resource path cannot be serialized to compiled bytecode.",
-						script->get_class()));
-		r_stream->put_u8(FSBytecodeFormat::TAG_EXTERNAL_SCRIPT);
-		r_stream->put_u32(string_table.insert(script->get_path()));
-		return OK;
+		r_stream->put_u8(Object::cast_to<FoundryScript>(p_object) != nullptr
+						? FSBytecodeFormat::TAG_SCRIPT_REF
+						: FSBytecodeFormat::TAG_EXTERNAL_SCRIPT);
+		return _encode_script_reference(r_stream, script);
 	}
 	if (FSNativeClass *native_class = Object::cast_to<FSNativeClass>(p_object)) {
 		r_stream->put_u8(FSBytecodeFormat::TAG_NATIVE_CLASS);
@@ -242,6 +230,26 @@ Error FSBytecodeExporter::_encode_container_type(StreamPeerBuffer *r_stream, con
 	return OK;
 }
 
+// Writes a script identity as string-table indices for (path, fully qualified class name). This is
+// the single place that decides how a script reference is spelled in a `.fsb`; intra-file class
+// indices will be added here when whole-script serialization lands.
+Error FSBytecodeExporter::_encode_script_reference(StreamPeerBuffer *r_stream, Script *p_script) {
+	String path = p_script->get_path();
+	String fully_qualified_name;
+	if (FoundryScript *foundry_script = Object::cast_to<FoundryScript>(p_script)) {
+		// Inner classes share the root script's path but only carry it in the script-local path
+		// member, so the resource path alone is not enough here.
+		path = foundry_script->get_script_path();
+		fully_qualified_name = foundry_script->get_fully_qualified_name();
+	}
+	ERR_FAIL_COND_V_MSG(path.is_empty(), ERR_INVALID_PARAMETER,
+			vformat("A script of type '%s' without a resource path cannot be serialized to compiled bytecode.",
+					p_script->get_class()));
+	r_stream->put_u32(string_table.insert(path));
+	r_stream->put_u32(string_table.insert(fully_qualified_name));
+	return OK;
+}
+
 Error FSBytecodeExporter::encode_data_type(StreamPeerBuffer *r_stream, const FSDataType &p_data_type, int p_depth) {
 	ERR_FAIL_COND_V_MSG(p_depth > Variant::MAX_RECURSION_DEPTH, ERR_INVALID_PARAMETER,
 			"Data type is too deeply nested to serialize to compiled bytecode.");
@@ -270,19 +278,11 @@ Error FSBytecodeExporter::encode_data_type(StreamPeerBuffer *r_stream, const FSD
 	// property dump; the loader re-resolves it through its external resolver.
 	Script *script = p_data_type.script_type_ref.is_valid() ? p_data_type.script_type_ref.ptr() : p_data_type.script_type;
 	if (script != nullptr) {
-		String path = script->get_path();
-		String fully_qualified_name;
-		if (FoundryScript *foundry_script = Object::cast_to<FoundryScript>(script)) {
-			// Inner classes share the root script's path but only carry it in the script-local
-			// path member, so the resource path alone is not enough here.
-			path = foundry_script->get_script_path();
-			fully_qualified_name = foundry_script->get_fully_qualified_name();
-		}
-		ERR_FAIL_COND_V_MSG(path.is_empty(), ERR_INVALID_PARAMETER,
-				"A data type referencing a script without a resource path cannot be serialized to compiled bytecode.");
 		r_stream->put_u8(1);
-		r_stream->put_u32(string_table.insert(path));
-		r_stream->put_u32(string_table.insert(fully_qualified_name));
+		const Error error = _encode_script_reference(r_stream, script);
+		if (error != OK) {
+			return error;
+		}
 	} else {
 		r_stream->put_u8(0);
 	}
