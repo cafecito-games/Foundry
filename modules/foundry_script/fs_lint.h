@@ -87,7 +87,11 @@ public:
 	};
 
 	static Options parse_options(const List<String> &p_cmdline_args, String &r_error);
+	static Vector<String> collect_files(const Vector<String> &p_paths, bool &r_had_error);
 	static String severity_to_string(Severity p_severity);
 	static String sarif_level_for_severity(Severity p_severity);
 	static void run_from_cmdline();
+
+private:
+	static void collect_files_recursive(const String &p_dir, Vector<String> &r_files, bool &r_had_error);
 };

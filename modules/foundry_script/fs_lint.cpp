@@ -30,6 +30,9 @@
 
 #include "fs_lint.h"
 
+#include "core/core_globals.h"
+#include "core/io/dir_access.h"
+#include "core/io/file_access.h"
 #include "core/os/os.h"
 
 #include <stdio.h>
@@ -75,6 +78,63 @@ FSLintCLI::Options FSLintCLI::parse_options(const List<String> &p_cmdline_args, 
 	}
 
 	return options;
+}
+
+void FSLintCLI::collect_files_recursive(const String &p_dir, Vector<String> &r_files, bool &r_had_error) {
+	Error open_error = OK;
+	Ref<DirAccess> dir = DirAccess::open(p_dir, &open_error);
+	if (dir.is_null() || open_error != OK) {
+		if (CoreGlobals::print_error_enabled) {
+			fprintf(stderr, "%s: could not open directory\n", p_dir.utf8().get_data());
+		}
+		r_had_error = true;
+		return;
+	}
+
+	dir->set_include_hidden(false);
+	if (dir->list_dir_begin() != OK) {
+		if (CoreGlobals::print_error_enabled) {
+			fprintf(stderr, "%s: could not list directory\n", p_dir.utf8().get_data());
+		}
+		r_had_error = true;
+		return;
+	}
+
+	for (String entry = dir->get_next(); !entry.is_empty(); entry = dir->get_next()) {
+		if (entry == "." || entry == ".." || dir->current_is_hidden()) {
+			continue;
+		}
+		const String full_path = p_dir.path_join(entry);
+		if (dir->current_is_dir()) {
+			if (dir->is_link(entry)) {
+				continue;
+			}
+			collect_files_recursive(full_path, r_files, r_had_error);
+		} else if (entry.get_extension() == "fs") {
+			r_files.push_back(full_path);
+		}
+	}
+	dir->list_dir_end();
+}
+
+Vector<String> FSLintCLI::collect_files(const Vector<String> &p_paths, bool &r_had_error) {
+	Vector<String> files;
+	for (const String &path : p_paths) {
+		if (DirAccess::exists(path)) {
+			collect_files_recursive(path, files, r_had_error);
+		} else if (FileAccess::exists(path)) {
+			if (path.get_extension() == "fs") {
+				files.push_back(path);
+			}
+		} else {
+			if (CoreGlobals::print_error_enabled) {
+				fprintf(stderr, "%s: no such file or directory\n", path.utf8().get_data());
+			}
+			r_had_error = true;
+		}
+	}
+	files.sort();
+	return files;
 }
 
 String FSLintCLI::severity_to_string(Severity p_severity) {

@@ -34,10 +34,61 @@
 
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
+#include "core/os/os.h"
 
 #include "tests/test_macros.h"
 
 namespace FSTests {
+
+struct TemporaryLintTree {
+	String root;
+
+	explicit TemporaryLintTree(const String &p_name) {
+		root = OS::get_singleton()->get_temp_path().path_join(p_name + "_" + itos(OS::get_singleton()->get_ticks_usec()));
+		remove_recursive(root);
+		Ref<DirAccess> dir = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+		REQUIRE(dir.is_valid());
+		REQUIRE_EQ(dir->make_dir_recursive(root), OK);
+	}
+
+	~TemporaryLintTree() {
+		remove_recursive(root);
+	}
+
+	void write_file(const String &p_relative_path, const String &p_contents) const {
+		const String absolute_path = root.path_join(p_relative_path);
+		Ref<DirAccess> dir = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+		REQUIRE(dir.is_valid());
+		REQUIRE_EQ(dir->make_dir_recursive(absolute_path.get_base_dir()), OK);
+		Ref<FileAccess> file = FileAccess::open(absolute_path, FileAccess::WRITE);
+		REQUIRE_MESSAGE(file.is_valid(), vformat("Cannot write '%s'", absolute_path));
+		file->store_string(p_contents);
+	}
+
+	static void remove_recursive(const String &p_path) {
+		Ref<DirAccess> dir = DirAccess::open(p_path);
+		if (dir.is_null()) {
+			return;
+		}
+		dir->set_include_hidden(true);
+		if (dir->list_dir_begin() != OK) {
+			return;
+		}
+		for (String entry = dir->get_next(); !entry.is_empty(); entry = dir->get_next()) {
+			if (entry == "." || entry == "..") {
+				continue;
+			}
+			const String child = p_path.path_join(entry);
+			if (dir->current_is_dir() && !dir->is_link(entry)) {
+				remove_recursive(child);
+			} else {
+				DirAccess::remove_absolute(child);
+			}
+		}
+		dir->list_dir_end();
+		DirAccess::remove_absolute(p_path);
+	}
+};
 
 TEST_CASE("[Modules][FoundryScript][Lint] CLI option parsing uses CI defaults") {
 	List<String> args;
@@ -95,6 +146,41 @@ TEST_CASE("[Modules][FoundryScript][Lint] CLI option parsing rejects invalid cho
 	String out_error;
 	FSLintCLI::parse_options(missing_out, out_error);
 	CHECK(out_error.contains("Missing file path after --out"));
+}
+
+TEST_CASE("[Modules][FoundryScript][Lint] File collection recurses deterministically") {
+	TemporaryLintTree tree("fs_lint_collection");
+	tree.write_file("z_root.fs", "var z = 1\n");
+	tree.write_file("nested/b_mid.fs", "var b = 1\n");
+	tree.write_file("a_root.fs", "var a = 1\n");
+	tree.write_file("nested/ignore.txt", "not a script\n");
+	tree.write_file("nested/wrong.fs.txt", "not a script\n");
+	tree.write_file(".godot/generated/cache.fs", "var hidden = 1\n");
+
+	Vector<String> paths;
+	paths.push_back(tree.root);
+
+	bool had_error = false;
+	const Vector<String> files = FSLintCLI::collect_files(paths, had_error);
+
+	CHECK_FALSE(had_error);
+	REQUIRE_EQ(files.size(), 3);
+	CHECK_EQ(files[0], tree.root.path_join("a_root.fs"));
+	CHECK_EQ(files[1], tree.root.path_join("nested/b_mid.fs"));
+	CHECK_EQ(files[2], tree.root.path_join("z_root.fs"));
+}
+
+TEST_CASE("[Modules][FoundryScript][Lint] File collection flags a missing path") {
+	Vector<String> paths;
+	paths.push_back(OS::get_singleton()->get_temp_path().path_join("fs_lint_missing_path_" + itos(OS::get_singleton()->get_ticks_usec())).path_join("none.fs"));
+
+	bool had_error = false;
+	ERR_PRINT_OFF;
+	const Vector<String> files = FSLintCLI::collect_files(paths, had_error);
+	ERR_PRINT_ON;
+
+	CHECK(files.is_empty());
+	CHECK_MESSAGE(had_error, "A missing path must mark the collection as failed.");
 }
 
 } // namespace FSTests
