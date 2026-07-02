@@ -926,6 +926,18 @@ TEST_SUITE("[Modules][FoundryScript][Format]") {
 		CHECK_EQ(options.paths[1], "dir");
 	}
 
+	TEST_CASE("[Format] CLI option parsing recognizes the format command name") {
+		List<String> args;
+		args.push_back("--path");
+		args.push_back("project");
+		args.push_back("--foundry_script-format");
+		args.push_back("script.fs");
+		FSFormatterCLI::Options options = FSFormatterCLI::parse_options(args);
+		CHECK_FALSE(options.read_stdin);
+		REQUIRE_EQ(options.paths.size(), 1);
+		CHECK_EQ(options.paths[0], "script.fs");
+	}
+
 	TEST_CASE("[Format] CLI option parsing defaults to stdin and write/diff flags") {
 		List<String> only_command;
 		only_command.push_back("--foundry_script-format");

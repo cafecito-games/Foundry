@@ -150,6 +150,8 @@
 #include "modules/foundry_script/fs_build_pipeline_runner.h"
 #ifdef TOOLS_ENABLED
 #include "modules/foundry_script/editor/fs_migration_wizard.h"
+#include "modules/foundry_script/fs_format.h"
+#include "modules/foundry_script/fs_lint.h"
 #endif // TOOLS_ENABLED
 #if defined(TOOLS_ENABLED) && !defined(FOUNDRY_SCRIPT_NO_LSP)
 #include "modules/foundry_script/language_server/fs_language_server.h"
@@ -784,6 +786,8 @@ void Main::print_help(const char *p_binary) {
 	print_help_option("--foundryextension-docs", "Rather than dumping the engine API, generate API reference from all the FoundryExtensions loaded in the current project (used with --doctool).\n", CLI_OPTION_AVAILABILITY_EDITOR);
 #ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 	print_help_option("--foundry_script-docs <path>", "Rather than dumping the engine API, generate API reference from the inline documentation in the FoundryScript files found in <path> (used with --doctool).\n", CLI_OPTION_AVAILABILITY_EDITOR);
+	print_help_option("--foundry_script-format [--write|-w|--check|--diff|-d] [paths...|-]", "Format FoundryScript files or stdin and exit.\n", CLI_OPTION_AVAILABILITY_EDITOR);
+	print_help_option("--foundry_script-lint [--format=json|sarif] [--out <path>] [--fail-on=error|warning] [paths...]", "Lint FoundryScript files and exit.\n", CLI_OPTION_AVAILABILITY_EDITOR);
 	print_help_option("--foundry_script-migrate <path>", "Run the FoundryScript strict-typing migration wizard headlessly on the project at <path>: print the dry-run report and exit. Add --foundry_script-migrate-apply to commit the inferred annotations, and the --foundry_script-migrate-strict-* / -activate-strict / -confirm flags to project and enable strict settings.\n", CLI_OPTION_AVAILABILITY_EDITOR);
 	print_help_option("--foundry_script-migrate-apply", "Commit the inferred type annotations to disk during --foundry_script-migrate (otherwise the run is a preview).\n", CLI_OPTION_AVAILABILITY_EDITOR);
 	print_help_option("--foundry_script-migrate-strict-null-checks", "Project (and, with --foundry_script-migrate-activate-strict, enable) strict null checks during --foundry_script-migrate.\n", CLI_OPTION_AVAILABILITY_EDITOR);
@@ -1076,9 +1080,8 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 	   // cleanly); accept it as a standalone flag too, for backwards compatibility.
 		const bool is_test = (strncmp(argv[x], "--test", 6) == 0) && (strlen(argv[x]) == 6);
 		const bool is_test_command = strcmp(argv[x], "--foundry_script-generate-tests") == 0;
-		const bool is_format_command = strcmp(argv[x], "--foundry_script-format") == 0 ||
-				strcmp(argv[x], "--foundry_script-generate-format-tests") == 0;
-		if (is_test || is_test_command || is_format_command) {
+		const bool is_format_test_command = strcmp(argv[x], "--foundry_script-generate-format-tests") == 0;
+		if (is_test || is_test_command || is_format_test_command) {
 			test_requested = true;
 		}
 	}
@@ -1224,6 +1227,7 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 	List<String> main_args;
 	List<String> user_args;
 	bool adding_user_args = false;
+	bool foundry_script_cli_tool_args = false;
 	List<String> platform_args = OS::get_singleton()->get_cmdline_platform_args();
 	PackedStringArray raw_cli_args;
 
@@ -1357,6 +1361,12 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 
 		if (adding_user_args) {
 			user_args.push_back(arg);
+		} else if (foundry_script_cli_tool_args) {
+			if (arg == "--" || arg == "++") {
+				adding_user_args = true;
+			} else {
+				main_args.push_back(arg);
+			}
 		} else if (arg == "-h" || arg == "--help" || arg == "/?") { // display help
 
 			show_help = true;
@@ -1904,6 +1914,13 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 				OS::get_singleton()->print("Missing relative or absolute path to project for --foundry_script-docs, aborting.\n");
 				goto error;
 			}
+		} else if (arg == "--foundry_script-format" || arg == "--foundry_script-lint") {
+			cmdline_tool = true;
+			audio_driver = NULL_AUDIO_DRIVER;
+			display_driver = NULL_DISPLAY_DRIVER;
+			main_args.push_back(arg);
+			foundry_script_cli_tool_args = true;
+			quit_after = 1;
 		} else if (arg == "--foundry_script-migrate") {
 			// Headless strict-typing migration wizard: runs the dry-run report and, when
 			// asked, the atomic apply and gated strict activation, then exits. Will be
@@ -4164,6 +4181,8 @@ int Main::start() {
 	bool export_patch = false;
 #ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 	String fs_docs_path;
+	bool fs_format_requested = false;
+	bool fs_lint_requested = false;
 	String fs_migrate_path;
 	bool fs_migrate_apply = false;
 	bool fs_migrate_strict_null = false;
@@ -4211,6 +4230,10 @@ int Main::start() {
 		} else if (E->get() == "--install-android-build-template") {
 			install_android_build_template = true;
 #ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+		} else if (E->get() == "--foundry_script-format") {
+			fs_format_requested = true;
+		} else if (E->get() == "--foundry_script-lint") {
+			fs_lint_requested = true;
 		} else if (E->get() == "--foundry_script-migrate-apply") {
 			fs_migrate_apply = true;
 		} else if (E->get() == "--foundry_script-migrate-strict-null-checks") {
@@ -4492,11 +4515,22 @@ int Main::start() {
 
 	bool skip_main_scene_resolution = false;
 #if defined(TOOLS_ENABLED) && defined(MODULE_FOUNDRY_SCRIPT_ENABLED)
-	// The migration command is handled before the game branch and never runs the main scene, so do
-	// not resolve (and possibly abort on) an unimported uid:// main scene -- that would fail a fresh
-	// CI/source checkout before the migration could even print its report.
-	skip_main_scene_resolution = !fs_migrate_path.is_empty();
+	// These Foundry Script CLI tools are handled before the game branch and never run the main scene,
+	// so do not resolve (and possibly abort on) an unimported uid:// main scene -- that would fail a
+	// fresh CI/source checkout before the tool could even print its report.
+	skip_main_scene_resolution = fs_format_requested || fs_lint_requested || !fs_migrate_path.is_empty();
 #endif
+
+#if defined(TOOLS_ENABLED) && defined(MODULE_FOUNDRY_SCRIPT_ENABLED)
+	if (fs_format_requested) {
+		FSFormatterCLI::run_from_cmdline();
+		return OS::get_singleton()->get_exit_code();
+	}
+	if (fs_lint_requested) {
+		FSLintCLI::run_from_cmdline();
+		return OS::get_singleton()->get_exit_code();
+	}
+#endif // TOOLS_ENABLED && MODULE_FOUNDRY_SCRIPT_ENABLED
 
 	if (!skip_main_scene_resolution && script.is_empty() && game_path.is_empty()) {
 		const String main_scene = GLOBAL_GET("application/run/main_scene");
