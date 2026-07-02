@@ -64,16 +64,32 @@ FSLintCLI::Range make_range(const Vector<String> &p_lines, int p_line, int p_col
 	return range;
 }
 
+String get_report_path(const String &p_file) {
+	ProjectSettings *project_settings = ProjectSettings::get_singleton();
+	if (project_settings == nullptr) {
+		return p_file;
+	}
+	return project_settings->localize_path(p_file);
+}
+
+String get_sarif_path(const String &p_report_path) {
+	if (p_report_path.begins_with("res://")) {
+		return p_report_path.trim_prefix("res://");
+	}
+	return p_report_path;
+}
+
 void add_diagnostic(
 		Vector<FSLintCLI::Diagnostic> &r_diagnostics,
 		const String &p_path,
+		const String &p_sarif_path,
 		const FSLintCLI::Range &p_range,
 		FSLintCLI::Severity p_severity,
 		const String &p_rule_id,
 		const String &p_message) {
 	FSLintCLI::Diagnostic diagnostic;
 	diagnostic.path = p_path;
-	diagnostic.sarif_path = p_path;
+	diagnostic.sarif_path = p_sarif_path;
 	diagnostic.range = p_range;
 	diagnostic.severity = p_severity;
 	diagnostic.rule_id = p_rule_id;
@@ -84,6 +100,7 @@ void add_diagnostic(
 void add_parser_errors(
 		Vector<FSLintCLI::Diagnostic> &r_diagnostics,
 		const String &p_path,
+		const String &p_sarif_path,
 		const Vector<String> &p_lines,
 		const List<FSParser::ParserError> &p_errors,
 		const String &p_rule_id) {
@@ -91,6 +108,7 @@ void add_parser_errors(
 		add_diagnostic(
 				r_diagnostics,
 				p_path,
+				p_sarif_path,
 				make_range(p_lines, error.line, error.column),
 				FSLintCLI::SEVERITY_ERROR,
 				p_rule_id,
@@ -211,6 +229,8 @@ FSLintCLI::Result FSLintCLI::lint_paths(const Vector<String> &p_paths, const Opt
 	}
 
 	for (const String &file : files) {
+		const String report_path = get_report_path(file);
+		const String sarif_path = get_sarif_path(report_path);
 		Error read_error = OK;
 		const String source = FileAccess::get_file_as_string(file, &read_error);
 		if (read_error != OK) {
@@ -227,21 +247,22 @@ FSLintCLI::Result FSLintCLI::lint_paths(const Vector<String> &p_paths, const Opt
 
 		const Vector<String> lines = source.split("\n");
 		FSParser parser;
-		const Error parse_error = parser.parse(source, file, false);
+		const Error parse_error = parser.parse(source, report_path, false);
 		if (parse_error != OK || !parser.get_errors().is_empty()) {
-			add_parser_errors(result.diagnostics, file, lines, parser.get_errors(), "parse-error");
+			add_parser_errors(result.diagnostics, report_path, sarif_path, lines, parser.get_errors(), "parse-error");
 			continue;
 		}
 
 		FSAnalyzer analyzer(&parser);
 		analyzer.analyze();
-		add_parser_errors(result.diagnostics, file, lines, parser.get_errors(), "analyzer-error");
+		add_parser_errors(result.diagnostics, report_path, sarif_path, lines, parser.get_errors(), "analyzer-error");
 
 #ifdef DEBUG_ENABLED
 		for (const FSWarning &warning : parser.get_warnings()) {
 			add_diagnostic(
 					result.diagnostics,
-					file,
+					report_path,
+					sarif_path,
 					make_range(lines, warning.start_line, 1),
 					SEVERITY_WARNING,
 					warning.get_name(),

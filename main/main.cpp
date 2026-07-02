@@ -1918,6 +1918,7 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 			cmdline_tool = true;
 			audio_driver = NULL_AUDIO_DRIVER;
 			display_driver = NULL_DISPLAY_DRIVER;
+			Engine::get_singleton()->_print_header = false;
 			main_args.push_back(arg);
 			foundry_script_cli_tool_args = true;
 			quit_after = 1;

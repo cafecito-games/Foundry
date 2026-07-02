@@ -43,6 +43,7 @@
 #include "core/io/json.h"
 #include "core/os/os.h"
 
+#include "tests/core/config/test_project_settings.h"
 #include "tests/test_macros.h"
 
 namespace FSTests {
@@ -94,6 +95,20 @@ struct TemporaryLintTree {
 		}
 		dir->list_dir_end();
 		DirAccess::remove_absolute(p_path);
+	}
+};
+
+class ScopedResourcePath {
+	String previous_resource_path;
+
+public:
+	explicit ScopedResourcePath(const String &p_resource_path) {
+		previous_resource_path = TestProjectSettingsInternalsAccessor::resource_path();
+		TestProjectSettingsInternalsAccessor::resource_path() = p_resource_path;
+	}
+
+	~ScopedResourcePath() {
+		TestProjectSettingsInternalsAccessor::resource_path() = previous_resource_path;
 	}
 };
 
@@ -351,6 +366,25 @@ TEST_CASE("[Modules][FoundryScript][Lint] Analyzer errors become diagnostics") {
 	check_diagnostic_basics(*diagnostic, path, FSLintCLI::SEVERITY_ERROR);
 	CHECK(diagnostic->message.contains("String"));
 	CHECK(diagnostic->message.contains("int"));
+}
+
+TEST_CASE("[Modules][FoundryScript][Lint] Project files report resource and relative SARIF paths") {
+	const String source = "func run() -> void\n\tpass\n";
+	TemporaryLintTree tree("fs_lint_project_paths");
+	tree.write_file("project.foundry", "");
+	tree.write_file("scripts/bad.fs", source);
+	ScopedResourcePath resource_path_scope(tree.root);
+
+	Vector<String> paths;
+	paths.push_back(tree.root.path_join("scripts"));
+	FSLintCLI::Options options;
+	const FSLintCLI::Result result = FSLintCLI::lint_paths(paths, options);
+
+	CHECK_FALSE(result.had_command_error);
+	const FSLintCLI::Diagnostic *diagnostic = find_diagnostic(result, "parse-error");
+	REQUIRE(diagnostic != nullptr);
+	CHECK_EQ(diagnostic->path, "res://scripts/bad.fs");
+	CHECK_EQ(diagnostic->sarif_path, "scripts/bad.fs");
 }
 
 TEST_CASE("[Modules][FoundryScript][Lint] JSON serialization returns diagnostics report") {
