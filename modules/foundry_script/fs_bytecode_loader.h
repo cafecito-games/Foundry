@@ -59,6 +59,21 @@ public:
 	virtual ~FSBytecodeExternalResolver() {}
 };
 
+// Production resolver used by the resource pipeline: script references resolve through
+// `FSCache::get_full_script` (propagating the loading script's path as the dependency owner, and
+// recursing into nested `.fsb` loads through the cache so every buffer gets its own loader), plain
+// resources through `ResourceLoader`.
+class FSBytecodeCacheResolver : public FSBytecodeExternalResolver {
+	String owner_path;
+
+public:
+	explicit FSBytecodeCacheResolver(const String &p_owner_path) :
+			owner_path(p_owner_path) {}
+
+	virtual Ref<Resource> resolve_resource(const String &p_path) override;
+	virtual Ref<Script> resolve_script(const String &p_path, const String &p_fully_qualified_name, bool &r_is_local_class) override;
+};
+
 // Reader half of the `.fsb` compiled-bytecode format. Compiled into all builds, including export
 // templates.
 //

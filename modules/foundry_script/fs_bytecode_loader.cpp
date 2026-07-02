@@ -31,6 +31,7 @@
 #include "fs_bytecode_loader.h"
 
 #include "foundry_script.h"
+#include "fs_cache.h"
 #include "fs_conformance_registry.h"
 #include "fs_function.h"
 #include "fs_reflection.h"
@@ -38,6 +39,7 @@
 
 #include "core/config/engine.h"
 #include "core/io/marshalls.h"
+#include "core/io/resource_loader.h"
 #include "core/version.h"
 
 // Marks a loader as mid-load for the duration of an entry point, so re-entrant use of the same
@@ -50,6 +52,31 @@ struct FSBytecodeLoadScope {
 			load_flag(p_load_flag) { *load_flag = true; }
 	~FSBytecodeLoadScope() { *load_flag = false; }
 };
+
+Ref<Resource> FSBytecodeCacheResolver::resolve_resource(const String &p_path) {
+	return ResourceLoader::load(p_path);
+}
+
+Ref<Script> FSBytecodeCacheResolver::resolve_script(const String &p_path, const String &p_fully_qualified_name, bool &r_is_local_class) {
+	// External references never name a class local to the buffer being loaded; those travel as
+	// intra-file class indices and resolve without consulting the resolver.
+	r_is_local_class = false;
+	Error error = OK;
+	Ref<FoundryScript> root_script = FSCache::get_full_script(p_path, error, owner_path);
+	if (root_script.is_null()) {
+		return Ref<Script>();
+	}
+	if (error != OK && !root_script->is_valid()) {
+		// A script mid-load in a dependency cycle is published invalid but error-free, and linking
+		// against that shell is what makes cycles work. An invalid script WITH an error genuinely
+		// failed to load and must not be linked against.
+		return Ref<Script>();
+	}
+	if (p_fully_qualified_name.is_empty() || root_script->get_fully_qualified_name() == p_fully_qualified_name) {
+		return root_script;
+	}
+	return Ref<Script>(root_script->find_class(p_fully_qualified_name));
+}
 
 // Reads a length-prefixed UTF-8 string, rejecting lengths the stream cannot hold so a corrupted
 // prefix cannot trigger a huge allocation.

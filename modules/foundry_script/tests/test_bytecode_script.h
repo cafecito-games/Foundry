@@ -37,8 +37,12 @@
 // duplicate test registrations.
 #include "test_bytecode_serialization.h"
 
+// TestFSCacheAccessor, for asserting FSCache state after resource-pipeline loads.
+#include "fs_test_runner_suite.h"
+
 #include "modules/foundry_script/fs_conformance_registry.h"
 
+#include "core/io/resource_loader.h"
 #include "core/io/resource_saver.h"
 #include "scene/main/node.h"
 
@@ -840,6 +844,261 @@ TEST_CASE("[FoundryScript][BytecodeScript] Corrupted script buffers fail cleanly
 		ERR_PRINT_ON;
 		CHECK(!target->is_valid());
 	}
+}
+
+static void bytecode_write_file(const String &p_path, const Vector<uint8_t> &p_buffer) {
+	Ref<FileAccess> file = FileAccess::open(p_path, FileAccess::WRITE);
+	REQUIRE(file.is_valid());
+	file->store_buffer(p_buffer.ptr(), p_buffer.size());
+}
+
+// Writes the `.remap` sidecar `ResourceLoader::path_remap` reads, redirecting `p_source_path` to
+// `p_target_path` exactly like an export does when it replaces a text script with its `.fsb`.
+static void bytecode_write_remap_file(const String &p_source_path, const String &p_target_path) {
+	Ref<FileAccess> file = FileAccess::open(p_source_path + ".remap", FileAccess::WRITE);
+	REQUIRE(file.is_valid());
+	file->store_string(vformat("[remap]\n\npath=\"%s\"\n", p_target_path));
+}
+
+TEST_CASE("[FoundryScript][BytecodeCache] ResourceLoader loads a .fsb end-to-end with dependencies and statistics") {
+	const String helper_path = TestUtils::get_temp_path("test_bytecode_cache_helper.fs");
+	{
+		Ref<FileAccess> helper_file = FileAccess::open(helper_path, FileAccess::WRITE);
+		REQUIRE(helper_file.is_valid());
+		helper_file->store_string("const NAME = \"helper\"\n");
+	}
+
+	const Ref<FoundryScript> original = compile_bytecode_test_source(vformat(R"(
+const Helper = preload("%s")
+static var counter := 3
+
+func use_helper() -> String:
+	return Helper.NAME + str(counter)
+)",
+			helper_path));
+
+	FSBytecodeExporter exporter;
+	Vector<uint8_t> buffer;
+	REQUIRE(exporter.serialize(original, buffer) == OK);
+
+	const String binary_path = TestUtils::get_temp_path("test_bytecode_cache_direct.fsb");
+	bytecode_write_file(binary_path, buffer);
+
+	// The dependency list comes from the header section; the text path would UTF-8 parse the file
+	// and read garbage on binary data.
+	List<String> dependencies;
+	ResourceLoader::get_dependencies(binary_path, &dependencies);
+	bool helper_dependency_found = false;
+	for (const String &dependency : dependencies) {
+		helper_dependency_found = helper_dependency_found || dependency.contains(helper_path);
+	}
+	CHECK(helper_dependency_found);
+
+	const Ref<FoundryScript> loaded = ResourceLoader::load(binary_path);
+	REQUIRE(loaded.is_valid());
+	CHECK(loaded->is_valid());
+	CHECK(loaded->is_compiled_binary());
+	CHECK(loaded != original);
+	CHECK(ResourceCache::has(binary_path));
+	CHECK(TestFSCacheAccessor::has_full(binary_path));
+
+	// The serialized static-data flags route the loaded script into the static cache, mirroring
+	// what the compiler does on the text path.
+	CHECK(TestFSCacheAccessor::get_static(loaded->get_fully_qualified_name()) == loaded);
+	CHECK(TestFSBytecodeScriptAccessor::get_static_variable(loaded, "counter") == Variant(3));
+
+	{
+		const Variant instance_variant = bytecode_new_instance(loaded);
+		Object *instance = instance_variant;
+		CHECK(String(bytecode_instance_call(instance, SNAME("use_helper"), {})) == "helper3");
+	}
+
+	// reload() on a linked bytecode script never parses; it is a no-op that keeps the script valid.
+	CHECK(loaded->reload(true) == OK);
+	CHECK(loaded->is_valid());
+
+	// The test harness never runs FSLanguage::finish(), which is what breaks the reference cycles
+	// scripts with static state keep through themselves; clear the fixtures explicitly so their
+	// compiled functions do not outlive language shutdown.
+	FSCache::remove_static_script(loaded->get_fully_qualified_name());
+	FSCache::remove_script(binary_path);
+	FSCache::remove_script(original->get_script_path());
+	loaded->clear();
+	original->clear();
+}
+
+TEST_CASE("[FoundryScript][BytecodeCache] A remapped .fs path loads its .fsb and refuses the parser") {
+	const Ref<FoundryScript> original = compile_bytecode_test_source(R"(
+func ping() -> String:
+	return "pong"
+)");
+	const String source_path = original->get_script_path();
+
+	FSBytecodeExporter exporter;
+	Vector<uint8_t> buffer;
+	REQUIRE(exporter.serialize(original, buffer) == OK);
+
+	const String binary_path = source_path.get_basename() + ".fsb";
+	bytecode_write_file(binary_path, buffer);
+	bytecode_write_remap_file(source_path, binary_path);
+
+	// Drop the text compilation so the load below starts from a cold cache, the way an exported
+	// game (which never had the text script) would.
+	FSCache::remove_script(source_path);
+	CHECK(ResourceLoader::path_remap(source_path) == binary_path);
+
+	const Ref<FoundryScript> loaded = ResourceLoader::load(source_path);
+	REQUIRE(loaded.is_valid());
+	CHECK(loaded->is_valid());
+	CHECK(loaded->is_compiled_binary());
+	CHECK(loaded != original);
+	const Variant instance_variant = bytecode_new_instance(loaded);
+	Object *instance = instance_variant;
+	CHECK(String(bytecode_instance_call(instance, SNAME("ping"), {})) == "pong");
+
+	// The parser pipeline must never touch a bytecode-backed path.
+	Error parser_error = OK;
+	ERR_PRINT_OFF;
+	Ref<FSParserRef> parser_ref = FSCache::get_parser(source_path, FSParserRef::PARSED, parser_error);
+	ERR_PRINT_ON;
+	CHECK(parser_error == ERR_UNAVAILABLE);
+
+	// An update-from-disk load of an already linked binary is a no-op that returns the same script.
+	Error update_error = OK;
+	const Ref<FoundryScript> updated = FSCache::get_full_script(source_path, update_error, "", true);
+	CHECK(update_error == OK);
+	CHECK(updated == loaded);
+	CHECK(loaded->is_valid());
+
+	DirAccess::remove_absolute(source_path + ".remap");
+}
+
+TEST_CASE("[FoundryScript][BytecodeCache] Cyclic .fsb preloads publish before linking and both load") {
+	if (!FSLanguage::get_singleton()->has_any_global_constant(SNAME("RefCounted"))) {
+		FSLanguage::get_singleton()->init();
+	}
+
+	const String path_a = TestUtils::get_temp_path("test_bytecode_cache_cycle_a.fs");
+	const String path_b = TestUtils::get_temp_path("test_bytecode_cache_cycle_b.fs");
+	{
+		Ref<FileAccess> file_a = FileAccess::open(path_a, FileAccess::WRITE);
+		REQUIRE(file_a.is_valid());
+		file_a->store_string(vformat(R"(
+const Other = preload("%s")
+
+static func ping() -> String:
+	return "ping-a"
+
+func chain() -> String:
+	return Other.pong()
+)",
+				path_b));
+		Ref<FileAccess> file_b = FileAccess::open(path_b, FileAccess::WRITE);
+		REQUIRE(file_b.is_valid());
+		file_b->store_string(vformat(R"(
+const Other = preload("%s")
+
+static func pong() -> String:
+	return "pong-" + Other.ping()
+)",
+				path_a));
+	}
+
+	const bool previous_ignore_warnings = FSParser::is_ignoring_warnings();
+	FSParser::set_ignoring_warnings(true);
+
+	Vector<uint8_t> buffer_a;
+	Vector<uint8_t> buffer_b;
+	{
+		const Ref<FoundryScript> text_a = ResourceLoader::load(path_a);
+		REQUIRE(text_a.is_valid());
+		REQUIRE(text_a->is_valid());
+		Error text_error = OK;
+		const Ref<FoundryScript> text_b = FSCache::get_full_script(path_b, text_error);
+		REQUIRE(text_error == OK);
+		REQUIRE(text_b.is_valid());
+		REQUIRE(text_b->is_valid());
+
+		FSBytecodeExporter exporter_a;
+		REQUIRE(exporter_a.serialize(text_a, buffer_a) == OK);
+		FSBytecodeExporter exporter_b;
+		REQUIRE(exporter_b.serialize(text_b, buffer_b) == OK);
+
+		// Drop the text compilations and break their preload reference cycle so both scripts
+		// actually free and leave ResourceCache; an exported game never had them.
+		FSCache::remove_script(path_a);
+		FSCache::remove_script(path_b);
+		text_a->clear();
+		text_b->clear();
+	}
+	FSParser::set_ignoring_warnings(previous_ignore_warnings);
+	CHECK(!ResourceCache::has(path_a));
+	CHECK(!ResourceCache::has(path_b));
+
+	bytecode_write_file(path_a.get_basename() + ".fsb", buffer_a);
+	bytecode_write_file(path_b.get_basename() + ".fsb", buffer_b);
+	bytecode_write_remap_file(path_a, path_a.get_basename() + ".fsb");
+	bytecode_write_remap_file(path_b, path_b.get_basename() + ".fsb");
+
+	const Ref<FoundryScript> loaded_a = ResourceLoader::load(path_a);
+	REQUIRE(loaded_a.is_valid());
+	CHECK(loaded_a->is_valid());
+	CHECK(loaded_a->is_compiled_binary());
+
+	// B was published and fully linked while A was mid-link; loading it now hits the cache.
+	const Ref<FoundryScript> loaded_b = ResourceLoader::load(path_b);
+	REQUIRE(loaded_b.is_valid());
+	CHECK(loaded_b->is_valid());
+	CHECK(loaded_b->is_compiled_binary());
+
+	// The cross references are identity-correct: B linked against A's published shell, which is
+	// the same object that finished loading afterwards.
+	REQUIRE(loaded_a->get_constants().has(SNAME("Other")));
+	REQUIRE(loaded_b->get_constants().has(SNAME("Other")));
+	CHECK(Ref<FoundryScript>(loaded_a->get_constants()[SNAME("Other")]) == loaded_b);
+	CHECK(Ref<FoundryScript>(loaded_b->get_constants()[SNAME("Other")]) == loaded_a);
+
+	{
+		const Variant instance_variant = bytecode_new_instance(loaded_a);
+		Object *instance = instance_variant;
+		CHECK(String(bytecode_instance_call(instance, SNAME("chain"), {})) == "pong-ping-a");
+	}
+
+	// The test harness never runs FSLanguage::finish(), so break the loaded scripts' preload
+	// reference cycle here or their compiled functions outlive language shutdown.
+	FSCache::remove_script(path_a);
+	FSCache::remove_script(path_b);
+	loaded_a->clear();
+	loaded_b->clear();
+
+	DirAccess::remove_absolute(path_a + ".remap");
+	DirAccess::remove_absolute(path_b + ".remap");
+}
+
+TEST_CASE("[FoundryScript][BytecodeCache] A .fsb from a different engine build refuses to load") {
+	const Ref<FoundryScript> original = compile_bytecode_test_source(R"(
+func value() -> int:
+	return 1
+)");
+	FSBytecodeExporter exporter;
+	Vector<uint8_t> buffer;
+	REQUIRE(exporter.serialize(original, buffer) == OK);
+
+	// Flip one byte inside the engine-guard version string region (magic + format version +
+	// string length prefix put it at offset 12; see the header codec test).
+	buffer.write[16] ^= 0xFF;
+	const String binary_path = TestUtils::get_temp_path("test_bytecode_cache_bad_guard.fsb");
+	bytecode_write_file(binary_path, buffer);
+
+	Error load_error = OK;
+	ERR_PRINT_OFF;
+	const Ref<Resource> loaded = ResourceLoader::load(binary_path, "", ResourceFormatLoader::CACHE_MODE_REUSE, &load_error);
+	ERR_PRINT_ON;
+	CHECK(loaded.is_null());
+	CHECK(load_error != OK);
+	CHECK(!ResourceCache::has(binary_path));
+	CHECK(!TestFSCacheAccessor::has_shallow(binary_path));
+	CHECK(!TestFSCacheAccessor::has_full(binary_path));
 }
 
 } // namespace FSTests

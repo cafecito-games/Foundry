@@ -51,6 +51,11 @@ public:
 	static bool has_parser(String p_path) {
 		return FSCache::singleton->parser_map.has(p_path);
 	}
+
+	static Ref<FoundryScript> get_static(String p_fully_qualified_name) {
+		const Ref<FoundryScript> *found = FSCache::singleton->static_fs_cache.getptr(p_fully_qualified_name);
+		return found != nullptr ? *found : Ref<FoundryScript>();
+	}
 };
 
 // The full `.fs` fixture suite stays editor-only; release/template VM runtime error

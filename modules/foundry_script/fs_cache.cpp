@@ -32,6 +32,7 @@
 
 #include "foundry_script.h"
 #include "fs_analyzer.h"
+#include "fs_bytecode_loader.h"
 #include "fs_compiler.h"
 #include "fs_parser.h"
 
@@ -71,11 +72,18 @@ Error FSParserRef::raise_status(Status p_new_status) {
 	while (result == OK && p_new_status > status) {
 		switch (status) {
 			case EMPTY: {
+				String remapped_path = ResourceLoader::path_remap(path);
+				// Compiled binaries carry no parsable source; the parser and analyzer must never
+				// touch them. Bytecode-backed scripts load through FSBytecodeLoader instead.
+				if (remapped_path.has_extension("fsb")) {
+					result = ERR_UNAVAILABLE;
+					ERR_FAIL_V_MSG(ERR_UNAVAILABLE,
+							vformat("Cannot parse compiled Foundry Script binary '%s'; it can only be loaded as a script resource.", remapped_path));
+				}
 				// Calling parse will clear the parser, which can destruct another FSParserRef which can clear the last reference to the script with this path, calling remove_script, which clears this FSParserRef.
 				// It's ok if its the first thing done here.
 				get_parser()->clear();
 				status = PARSED;
-				String remapped_path = ResourceLoader::path_remap(path);
 				if (remapped_path.has_extension("fsc")) {
 					Vector<uint8_t> tokens = FSCache::get_binary_tokens(remapped_path);
 					source_hash = hash_djb2_buffer(tokens.ptr(), tokens.size());
@@ -435,6 +443,22 @@ Ref<FoundryScript> FSCache::get_shallow_script(const String &p_path, Error &r_er
 	script.instantiate();
 
 	script->set_path_cache(p_path);
+	if (remapped_path.has_extension("fsb")) {
+		// Compiled binaries never touch the parser pipeline: the skeleton section provides
+		// everything a shallow script carries (names, fully qualified names, flags, class tree).
+		Vector<uint8_t> buffer = get_binary_tokens(remapped_path);
+		if (buffer.is_empty()) {
+			r_error = ERR_FILE_CANT_READ;
+			return Ref<FoundryScript>(); // Returns null and does not cache when the script fails to load.
+		}
+		FSBytecodeLoader loader;
+		r_error = loader.load_skeleton(buffer, script);
+		if (r_error) {
+			return Ref<FoundryScript>();
+		}
+		singleton->shallow_fs_cache[p_path] = script;
+		return script;
+	}
 	if (remapped_path.has_extension("fsc")) {
 		Vector<uint8_t> buffer = get_binary_tokens(remapped_path);
 		if (buffer.is_empty()) {
@@ -489,7 +513,11 @@ Ref<FoundryScript> FSCache::get_full_script(const String &p_path, Error &r_error
 	const String remapped_path = ResourceLoader::path_remap(p_path);
 
 	if (p_update_from_disk) {
-		if (remapped_path.has_extension("fsc")) {
+		if (remapped_path.has_extension("fsb")) {
+			// Compiled binaries have no source to refresh; reload() below re-links from the
+			// binary when the script is not linked yet, and is a no-op otherwise (exported
+			// binaries are immutable, so there is nothing newer to pick up).
+		} else if (remapped_path.has_extension("fsc")) {
 			Vector<uint8_t> buffer = get_binary_tokens(remapped_path);
 			if (buffer.is_empty()) {
 				r_error = ERR_FILE_CANT_READ;

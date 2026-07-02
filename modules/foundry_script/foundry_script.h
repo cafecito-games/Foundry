@@ -366,6 +366,10 @@ private:
 	Error _static_init();
 	void _static_default_init(); // Initialize static variables with default values based on their types.
 
+	// Re-links a bytecode-backed (`.fsb`) script from its compiled binary on disk; the parse-based
+	// reload path never applies to such scripts.
+	Error _reload_from_compiled_binary();
+
 	RBSet<Object *> instances;
 	bool destructing = false;
 	bool clearing = false;

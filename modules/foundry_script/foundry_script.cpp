@@ -31,6 +31,7 @@
 #include "foundry_script.h"
 
 #include "fs_analyzer.h"
+#include "fs_bytecode_loader.h"
 #include "fs_cache.h"
 #include "fs_compiler.h"
 #include "fs_conformance_registry.h"
@@ -1092,6 +1093,18 @@ Error FoundryScript::reload(bool p_keep_state) {
 	}
 #endif
 
+	// Bytecode-backed scripts carry no source to parse; they re-link from the compiled binary on
+	// disk instead. An already linked script stays as-is: exported binaries are immutable, so
+	// there is nothing newer to pick up.
+	if (compiled_binary) {
+		Error link_error = OK;
+		if (!valid) {
+			link_error = _reload_from_compiled_binary();
+		}
+		reloading = false;
+		return link_error;
+	}
+
 	{
 		String source_path = path;
 		if (source_path.is_empty()) {
@@ -1229,6 +1242,35 @@ Error FoundryScript::reload(bool p_keep_state) {
 #endif
 
 	reloading = false;
+	return OK;
+}
+
+Error FoundryScript::_reload_from_compiled_binary() {
+	String binary_path = path;
+	if (binary_path.is_empty()) {
+		binary_path = get_path();
+	}
+	ERR_FAIL_COND_V_MSG(binary_path.is_empty(), ERR_FILE_NOT_FOUND,
+			"Compiled Foundry Script binary has no path to re-link from.");
+
+	const String remapped_path = ResourceLoader::path_remap(binary_path);
+	Vector<uint8_t> buffer = FSCache::get_binary_tokens(remapped_path);
+	if (buffer.is_empty()) {
+		return ERR_FILE_CANT_READ;
+	}
+
+	FSBytecodeCacheResolver resolver(binary_path);
+	FSBytecodeLoader loader;
+	loader.set_resolver(&resolver);
+	const Error link_error = loader.load_full(buffer, Ref<FoundryScript>(this));
+	if (link_error != OK) {
+		return link_error;
+	}
+	// Publishing scripts with retained static data is the loader caller's job, mirroring what the
+	// compiler does on the text path.
+	if (loader.get_has_static_data() && !loader.get_annotated_static_unload()) {
+		FSCache::add_static_script(Ref<FoundryScript>(this));
+	}
 	return OK;
 }
 
@@ -1840,7 +1882,8 @@ String FoundryScript::debug_get_script_name(const Ref<Script> &p_script) {
 }
 
 String FoundryScript::canonicalize_path(const String &p_path) {
-	if (p_path.get_extension() == "fsc") {
+	const String extension = p_path.get_extension();
+	if (extension == "fsc" || extension == "fsb") {
 		return p_path.get_basename() + ".fs";
 	}
 	return p_path;
@@ -3216,7 +3259,8 @@ void FSLanguage::reload_scripts(const Array &p_scripts, bool p_soft_reload) {
 			ERR_CONTINUE(fresh.is_null());
 
 			scr->set_source_code(fresh->get_source_code());
-		} else {
+		} else if (!scr->is_compiled_binary()) {
+			// Bytecode-backed scripts have no source; reload() re-links them from the binary.
 			scr->load_source_code(scr->get_path());
 		}
 		scr->reload(p_soft_reload);
@@ -3838,6 +3882,7 @@ Ref<Resource> ResourceFormatLoaderFoundryScript::load(const String &p_path, cons
 void ResourceFormatLoaderFoundryScript::get_recognized_extensions(List<String> *p_extensions) const {
 	p_extensions->push_back("fs");
 	p_extensions->push_back("fsc");
+	p_extensions->push_back("fsb");
 }
 
 bool ResourceFormatLoaderFoundryScript::handles_type(const String &p_type) const {
@@ -3846,13 +3891,30 @@ bool ResourceFormatLoaderFoundryScript::handles_type(const String &p_type) const
 
 String ResourceFormatLoaderFoundryScript::get_resource_type(const String &p_path) const {
 	String el = p_path.get_extension().to_lower();
-	if (el == "fs" || el == "fsc") {
+	if (el == "fs" || el == "fsc" || el == "fsb") {
 		return "FoundryScript";
 	}
 	return "";
 }
 
 void ResourceFormatLoaderFoundryScript::get_dependencies(const String &p_path, List<String> *p_dependencies, bool p_add_types) {
+	const String remapped_path = ResourceLoader::path_remap(p_path);
+	if (remapped_path.has_extension("fsb")) {
+		// Compiled binaries list their dependencies in a section near the file head; the UTF-8
+		// parse below would read garbage on binary data.
+		Vector<uint8_t> buffer = FileAccess::get_file_as_bytes(remapped_path);
+		ERR_FAIL_COND_MSG(buffer.is_empty(), "Cannot open file '" + remapped_path + "'.");
+		Vector<String> dependencies;
+		FSBytecodeLoader loader;
+		if (loader.read_dependencies(buffer, dependencies) != OK) {
+			return;
+		}
+		for (const String &dependency : dependencies) {
+			p_dependencies->push_back(dependency);
+		}
+		return;
+	}
+
 	Ref<FileAccess> file = FileAccess::open(p_path, FileAccess::READ);
 	ERR_FAIL_COND_MSG(file.is_null(), "Cannot open file '" + p_path + "'.");
 
