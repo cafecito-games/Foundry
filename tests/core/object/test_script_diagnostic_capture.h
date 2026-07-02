@@ -186,7 +186,7 @@ TEST_CASE("[ScriptDiagnosticCapture] Non-quiet capture nested inside a quiet cap
 	CoreGlobals::print_error_enabled = errors_enabled_before;
 }
 
-TEST_CASE("[ScriptDiagnosticCapture] Quiet capture nested inside a non-quiet capture only suppresses for its own duration") {
+TEST_CASE("[ScriptDiagnosticCapture] Quiet capture nested in a non-quiet capture only suppresses for its duration") {
 	const bool errors_enabled_before = CoreGlobals::print_error_enabled;
 	CoreGlobals::print_error_enabled = true;
 
