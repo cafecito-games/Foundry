@@ -527,6 +527,8 @@ private:
 	friend class FSCompiler;
 	friend class FSByteCodeGenerator;
 	friend class FSLanguage;
+	friend class FSBytecodeExporter;
+	friend class FSBytecodeLoader;
 
 	StringName name;
 	StringName source;
@@ -721,6 +723,11 @@ public:
 	Variant get_constant(int p_idx) const;
 	StringName get_global_name(int p_idx) const;
 
+	// Re-establishes every `_*_count` / `_*_ptr` mirror field from the backing vectors. The byte
+	// code generator and the compiled-bytecode loader both populate the vectors and then call this,
+	// so the pointer-table invariants cannot drift between the two producers.
+	void setup_runtime_pointers();
+
 #ifdef TOOLS_ENABLED
 	_FORCE_INLINE_ const Vector<int> &get_code() const { return code; }
 	_FORCE_INLINE_ int get_operator_funcs_count() const { return _operator_funcs_count; }
@@ -735,6 +742,12 @@ public:
 	_FORCE_INLINE_ int get_utilities_count() const { return _utilities_count; }
 	_FORCE_INLINE_ int get_gds_utilities_count() const { return _gds_utilities_count; }
 	_FORCE_INLINE_ int get_methods_count() const { return _methods_count; }
+	_FORCE_INLINE_ int get_constants_count() const { return _constant_count; }
+	_FORCE_INLINE_ int get_global_names_count() const { return _global_names_count; }
+	_FORCE_INLINE_ int get_lambdas_count() const { return _lambdas_count; }
+	_FORCE_INLINE_ const Vector<FSFunction *> &get_lambdas() const { return lambdas; }
+	_FORCE_INLINE_ const Vector<int> &get_default_argument_offsets() const { return default_arguments; }
+	_FORCE_INLINE_ int get_instruction_args_size() const { return _instruction_args_size; }
 #endif // TOOLS_ENABLED
 
 	Variant call(FSInstance *p_instance, const Variant **p_args, int p_argcount, Callable::CallError &r_err, CallState *p_state = nullptr, const Variant *p_self_override = nullptr);

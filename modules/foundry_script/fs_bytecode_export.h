@@ -41,6 +41,9 @@
 #ifdef TOOLS_ENABLED
 
 class FSDataType;
+class FSFunction;
+struct MethodInfo;
+struct PropertyInfo;
 
 // Writer half of the `.fsb` compiled-bytecode format. Serialization externalizes every
 // process-bound object behind a symbolic tag (see `FSBytecodeFormat::VariantTag`), so the produced
@@ -65,12 +68,20 @@ public:
 	Error encode_variant_tagged(StreamPeerBuffer *r_stream, const Variant &p_variant, int p_depth = 0);
 	Error encode_data_type(StreamPeerBuffer *r_stream, const FSDataType &p_data_type, int p_depth = 0);
 
+	// Serializes one compiled function, including its nested lambda functions depth-first. Every
+	// process-bound pointer table travels as the symbolic keys recorded in
+	// `FSFunction::export_fixups`; `OPCODE_STORE_GLOBAL` operands are masked out and travel as
+	// {code offset, global name} pairs so the loader must rebake them for its own global map.
+	Error serialize_function(StreamPeerBuffer *r_stream, const FSFunction *p_function, int p_depth = 0);
+
 private:
 	StringTable string_table;
 
 	Error _encode_object(StreamPeerBuffer *r_stream, Object *p_object, int p_depth);
 	Error _encode_container_type(StreamPeerBuffer *r_stream, const ContainerType &p_container_type, int p_depth);
 	Error _encode_script_reference(StreamPeerBuffer *r_stream, Script *p_script);
+	Error _encode_method_info(StreamPeerBuffer *r_stream, const MethodInfo &p_method_info, int p_depth);
+	void _encode_property_info(StreamPeerBuffer *r_stream, const PropertyInfo &p_property_info);
 };
 
 #endif // TOOLS_ENABLED

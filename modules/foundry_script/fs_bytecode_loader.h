@@ -39,6 +39,10 @@
 #include "core/variant/variant.h"
 
 class FSDataType;
+class FSFunction;
+class FoundryScript;
+struct MethodInfo;
+struct PropertyInfo;
 
 // Resolves the external references a `.fsb` stores symbolically (resource paths, script paths plus
 // fully qualified class names). The production resolver routes scripts through `FSCache` and
@@ -57,12 +61,26 @@ public:
 // Reader half of the `.fsb` compiled-bytecode format. Compiled into all builds, including export
 // templates.
 class FSBytecodeLoader {
+public:
+	// Lambda metadata read alongside a deserialized function; the caller rebuilds the owning
+	// script's `lambda_info` map from these entries.
+	struct LoadedLambdaInfo {
+		FSFunction *function = nullptr;
+		int capture_count = 0;
+		bool use_self = false;
+	};
+
+private:
 	Vector<String> string_table;
 	FSBytecodeExternalResolver *resolver = nullptr;
 
 	Error _get_string(uint32_t p_index, String &r_string) const;
 	Error _decode_object(StreamPeerBuffer *p_stream, uint8_t p_tag, Variant &r_variant, int p_depth);
 	Error _decode_container_type(StreamPeerBuffer *p_stream, ContainerType &r_container_type, int p_depth);
+	Error _read_property_info(StreamPeerBuffer *p_stream, PropertyInfo &r_property_info);
+	Error _read_method_info(StreamPeerBuffer *p_stream, MethodInfo &r_method_info, int p_depth);
+	Error _read_function_body(StreamPeerBuffer *p_stream, FoundryScript *p_script, FSFunction *p_function,
+			Vector<LoadedLambdaInfo> *r_lambda_info, int p_depth);
 
 public:
 	static Error check_header(const Vector<uint8_t> &p_buffer, int *r_header_size = nullptr);
@@ -74,4 +92,12 @@ public:
 
 	Error decode_variant_tagged(StreamPeerBuffer *p_stream, Variant &r_variant, int p_depth = 0);
 	Error decode_data_type(StreamPeerBuffer *p_stream, FSDataType &r_data_type, int p_depth = 0);
+
+	// Deserializes and links one compiled function (plus its nested lambdas) written by
+	// `FSBytecodeExporter::serialize_function`. On success the caller owns `r_function` and is
+	// expected to register it on `p_script` (the FSFunction destructor unregisters itself from the
+	// owning script's member-function map by name). Any unresolvable fixup is a hard error and
+	// leaves `r_function` null.
+	Error read_function(StreamPeerBuffer *p_stream, FoundryScript *p_script, FSFunction *&r_function,
+			Vector<LoadedLambdaInfo> *r_lambda_info = nullptr, int p_depth = 0);
 };

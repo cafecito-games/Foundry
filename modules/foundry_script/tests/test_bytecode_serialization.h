@@ -878,6 +878,391 @@ TEST_CASE("[FoundryScript][BytecodeCodec] Codegen records store-global operands 
 	CHECK(!FSLanguage::get_singleton()->get_global_map().has(autoload_name));
 }
 
+static Vector<uint8_t> bytecode_serialize_function_payload(FSBytecodeExporter &r_exporter, const FSFunction *p_function) {
+	Ref<StreamPeerBuffer> stream;
+	stream.instantiate();
+	REQUIRE(r_exporter.serialize_function(stream.ptr(), p_function) == OK);
+	return stream->get_data_array();
+}
+
+static FSFunction *bytecode_deserialize_function(FSBytecodeExporter &r_exporter, const Vector<uint8_t> &p_payload,
+		const Ref<FoundryScript> &p_script, Vector<FSBytecodeLoader::LoadedLambdaInfo> *r_lambda_info = nullptr) {
+	BytecodeTestResolver resolver;
+	FSBytecodeLoader loader = bytecode_loader_for(r_exporter, &resolver);
+	Ref<StreamPeerBuffer> payload_stream;
+	payload_stream.instantiate();
+	payload_stream->set_data_array(p_payload);
+	FSFunction *function = nullptr;
+	REQUIRE(loader.read_function(payload_stream.ptr(), p_script.ptr(), function, r_lambda_info) == OK);
+	REQUIRE(function != nullptr);
+	// The reader must consume exactly the bytes the writer produced.
+	CHECK(payload_stream->get_available_bytes() == 0);
+	return function;
+}
+
+// Deleting an FSFunction unregisters its name from the owning script's member-function map, which
+// for a deserialized copy still holds the original compiled function; put the original entry back.
+static void bytecode_destroy_restored_function(const Ref<FoundryScript> &p_script, FSFunction *p_restored) {
+	const StringName function_name = p_restored->get_name();
+	HashMap<StringName, FSFunction *> &member_functions =
+			const_cast<HashMap<StringName, FSFunction *> &>(p_script->get_member_functions());
+	FSFunction *original = nullptr;
+	if (FSFunction *const *found = member_functions.getptr(function_name)) {
+		original = *found;
+	}
+	memdelete(p_restored);
+	if (original != nullptr) {
+		member_functions.insert(function_name, original);
+	}
+}
+
+static void bytecode_check_function_matches(const FSFunction *p_original, const FSFunction *p_restored) {
+	CHECK(p_restored->get_name() == p_original->get_name());
+	CHECK(p_restored->is_static() == p_original->is_static());
+	CHECK(p_restored->get_argument_count() == p_original->get_argument_count());
+	CHECK(p_restored->is_vararg() == p_original->is_vararg());
+	CHECK(p_restored->get_max_stack_size() == p_original->get_max_stack_size());
+	CHECK(p_restored->get_instruction_args_size() == p_original->get_instruction_args_size());
+	CHECK(p_restored->get_return_type() == p_original->get_return_type());
+	CHECK(p_restored->get_method_info().name == p_original->get_method_info().name);
+	CHECK(p_restored->get_method_info().flags == p_original->get_method_info().flags);
+	CHECK(p_restored->get_method_info().arguments.size() == p_original->get_method_info().arguments.size());
+	CHECK(p_restored->get_rpc_config().hash_compare(p_original->get_rpc_config()));
+	CHECK(p_restored->get_code() == p_original->get_code());
+	CHECK(p_restored->get_default_argument_offsets() == p_original->get_default_argument_offsets());
+	CHECK(p_restored->get_constants_count() == p_original->get_constants_count());
+	CHECK(p_restored->get_global_names_count() == p_original->get_global_names_count());
+	CHECK(p_restored->get_operator_funcs_count() == p_original->get_operator_funcs_count());
+	CHECK(p_restored->get_setters_count() == p_original->get_setters_count());
+	CHECK(p_restored->get_getters_count() == p_original->get_getters_count());
+	CHECK(p_restored->get_keyed_setters_count() == p_original->get_keyed_setters_count());
+	CHECK(p_restored->get_keyed_getters_count() == p_original->get_keyed_getters_count());
+	CHECK(p_restored->get_indexed_setters_count() == p_original->get_indexed_setters_count());
+	CHECK(p_restored->get_indexed_getters_count() == p_original->get_indexed_getters_count());
+	CHECK(p_restored->get_builtin_methods_count() == p_original->get_builtin_methods_count());
+	CHECK(p_restored->get_constructors_count() == p_original->get_constructors_count());
+	CHECK(p_restored->get_utilities_count() == p_original->get_utilities_count());
+	CHECK(p_restored->get_gds_utilities_count() == p_original->get_gds_utilities_count());
+	CHECK(p_restored->get_methods_count() == p_original->get_methods_count());
+	REQUIRE(p_restored->get_lambdas().size() == p_original->get_lambdas().size());
+	for (int i = 0; i < p_original->get_lambdas().size(); i++) {
+		bytecode_check_function_matches(p_original->get_lambdas()[i], p_restored->get_lambdas()[i]);
+	}
+}
+
+// Serializes the named member function, deserializes it into a fresh FSFunction attached to the
+// same script (the simplest valid ownership story for a single-function round-trip; whole-script
+// loading owns the full graph), verifies structural equality, and proves the restored function
+// re-serializes to the exact same bytes. The caller owns the returned function and must release it
+// through `bytecode_destroy_restored_function`.
+static FSFunction *bytecode_round_trip_member_function(const Ref<FoundryScript> &p_script, const StringName &p_function_name,
+		Vector<FSBytecodeLoader::LoadedLambdaInfo> *r_lambda_info = nullptr) {
+	const HashMap<StringName, FSFunction *>::ConstIterator original_element = p_script->get_member_functions().find(p_function_name);
+	REQUIRE(original_element);
+	const FSFunction *original = original_element->value;
+
+	FSBytecodeExporter exporter;
+	const Vector<uint8_t> payload = bytecode_serialize_function_payload(exporter, original);
+
+	Vector<FSBytecodeLoader::LoadedLambdaInfo> local_lambda_info;
+	Vector<FSBytecodeLoader::LoadedLambdaInfo> *loaded_lambda_info = r_lambda_info != nullptr ? r_lambda_info : &local_lambda_info;
+	FSFunction *restored = bytecode_deserialize_function(exporter, payload, p_script, loaded_lambda_info);
+	bytecode_check_function_matches(original, restored);
+
+	// Re-serializing the restored function must reproduce the payload byte-for-byte. The exporter
+	// reads lambda metadata from the owning script, so stage the loaded entries the way the
+	// whole-script loader will, and drop them again right after.
+	HashMap<FSFunction *, FoundryScript::LambdaInfo> &script_lambda_info =
+			const_cast<HashMap<FSFunction *, FoundryScript::LambdaInfo> &>(p_script->get_lambda_info());
+	for (const FSBytecodeLoader::LoadedLambdaInfo &lambda_info : *loaded_lambda_info) {
+		script_lambda_info.insert(lambda_info.function, { lambda_info.capture_count, lambda_info.use_self });
+	}
+	FSBytecodeExporter reserialize_exporter;
+	const Vector<uint8_t> reserialized_payload = bytecode_serialize_function_payload(reserialize_exporter, restored);
+	CHECK(reserialized_payload == payload);
+	for (const FSBytecodeLoader::LoadedLambdaInfo &lambda_info : *loaded_lambda_info) {
+		script_lambda_info.erase(lambda_info.function);
+	}
+
+	return restored;
+}
+
+static Variant bytecode_call_function(FSFunction *p_function, const Vector<Variant> &p_arguments) {
+	constexpr int MAX_TEST_ARGUMENTS = 8;
+	REQUIRE(p_arguments.size() <= MAX_TEST_ARGUMENTS);
+	const Variant *argument_pointers[MAX_TEST_ARGUMENTS] = {};
+	for (int i = 0; i < p_arguments.size(); i++) {
+		argument_pointers[i] = &p_arguments[i];
+	}
+	Callable::CallError call_error;
+	const Variant result = p_function->call(nullptr, argument_pointers, p_arguments.size(), call_error);
+	CHECK(call_error.error == Callable::CallError::CALL_OK);
+	return result;
+}
+
+static void bytecode_check_call_parity(const Ref<FoundryScript> &p_script, const StringName &p_function_name,
+		FSFunction *p_restored, const Vector<Variant> &p_arguments) {
+	const HashMap<StringName, FSFunction *>::ConstIterator original_element = p_script->get_member_functions().find(p_function_name);
+	REQUIRE(original_element);
+	const Variant original_result = bytecode_call_function(original_element->value, p_arguments);
+	const Variant restored_result = bytecode_call_function(p_restored, p_arguments);
+	CHECK(restored_result.get_type() == original_result.get_type());
+	CHECK(restored_result.hash_compare(original_result));
+}
+
+TEST_CASE("[FoundryScript][BytecodeFunction] Compiled functions round-trip and execute identically") {
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"static func arithmetic(a: int, b: float) -> float:\n"
+			"\tvar total := float(a) * 2.0 + b\n"
+			"\tvar negated := -total\n"
+			"\treturn total - negated / 4.0\n"
+			"\n"
+			"static func string_operations(text: String) -> Array:\n"
+			"\treturn [text.length(), text.to_upper(), text.substr(1, 3)]\n"
+			"\n"
+			"static func construct_vector(x: float, y: float) -> Vector2:\n"
+			"\tvar vector := Vector2(x, y)\n"
+			"\tvector.x += 1.0\n"
+			"\treturn vector\n"
+			"\n"
+			"static func utility_calls(value: float) -> Array:\n"
+			"\treturn [absf(value), clampf(value, 0.0, 10.0), len(str(value))]\n"
+			"\n"
+			"static func native_method_call() -> String:\n"
+			"\tvar reference := RefCounted.new()\n"
+			"\treturn reference.get_class()\n"
+			"\n"
+			"static func lambda_sum(base: int) -> int:\n"
+			"\tvar doubler := func(value: int) -> int:\n"
+			"\t\tvar inner := func(amount: int) -> int:\n"
+			"\t\t\treturn amount + base\n"
+			"\t\treturn inner.call(value) * 2\n"
+			"\treturn doubler.call(base + 1)\n"
+			"\n"
+			"static func typed_assignment(value: float) -> Array:\n"
+			"\tvar count: int = int(value)\n"
+			"\tvar numbers: Array[int] = [count, count + 1]\n"
+			"\tvar mapping := {\"count\": count}\n"
+			"\treturn [count, numbers, mapping[\"count\"]]\n"
+			"\n"
+			"static func iterate(values: Array) -> int:\n"
+			"\tvar total := 0\n"
+			"\tfor value in values:\n"
+			"\t\ttotal += int(value)\n"
+			"\tfor index in range(3):\n"
+			"\t\ttotal += index\n"
+			"\tvar letters := 0\n"
+			"\tfor character in \"abc\":\n"
+			"\t\tletters += 1\n"
+			"\treturn total + letters\n"
+			"\n"
+			"static func with_defaults(base: int, multiplier: int = 3, suffix: String = \"end\") -> String:\n"
+			"\treturn str(base * multiplier) + suffix\n");
+
+	struct ParityFixture {
+		StringName function_name;
+		Vector<Vector<Variant>> argument_sets;
+	};
+	Vector<ParityFixture> fixtures;
+	fixtures.push_back({ "arithmetic", { { 5, 2.5 } } });
+	fixtures.push_back({ "string_operations", { { String("foundry") } } });
+	fixtures.push_back({ "construct_vector", { { 1.5, -2.0 } } });
+	fixtures.push_back({ "utility_calls", { { -3.5 } } });
+	fixtures.push_back({ "native_method_call", { {} } });
+	fixtures.push_back({ "typed_assignment", { { 6.9 } } });
+	Array iteration_values;
+	iteration_values.push_back(1);
+	iteration_values.push_back(2);
+	iteration_values.push_back(3);
+	fixtures.push_back({ "iterate", { { iteration_values } } });
+	// Default arguments: call with none, some, and all optional arguments provided.
+	fixtures.push_back({ "with_defaults", { { 2 }, { 2, 5 }, { 2, 5, String("!") } } });
+
+	for (const ParityFixture &fixture : fixtures) {
+		const String fixture_name = fixture.function_name;
+		CAPTURE(fixture_name);
+		FSFunction *restored = bytecode_round_trip_member_function(script, fixture.function_name);
+		for (const Vector<Variant> &arguments : fixture.argument_sets) {
+			bytecode_check_call_parity(script, fixture.function_name, restored, arguments);
+		}
+		bytecode_destroy_restored_function(script, restored);
+	}
+
+	// Lambdas (including a nested one) round-trip with their capture metadata and execute.
+	Vector<FSBytecodeLoader::LoadedLambdaInfo> loaded_lambda_info;
+	FSFunction *restored_lambda_function = bytecode_round_trip_member_function(script, "lambda_sum", &loaded_lambda_info);
+	REQUIRE(loaded_lambda_info.size() == 2);
+	HashMap<FSFunction *, FSBytecodeLoader::LoadedLambdaInfo> loaded_lambda_info_by_function;
+	for (const FSBytecodeLoader::LoadedLambdaInfo &lambda_info : loaded_lambda_info) {
+		REQUIRE(lambda_info.function != nullptr);
+		loaded_lambda_info_by_function.insert(lambda_info.function, lambda_info);
+	}
+	// Original and restored lambda trees are index-aligned; compare each pair's capture metadata.
+	const HashMap<StringName, FSFunction *>::ConstIterator original_lambda_element = script->get_member_functions().find(SNAME("lambda_sum"));
+	REQUIRE(original_lambda_element);
+	REQUIRE(original_lambda_element->value->get_lambdas().size() == 1);
+	const FSFunction *original_outer = original_lambda_element->value->get_lambdas()[0];
+	FSFunction *restored_outer = restored_lambda_function->get_lambdas()[0];
+	REQUIRE(original_outer->get_lambdas().size() == 1);
+	const FSFunction *original_inner = original_outer->get_lambdas()[0];
+	FSFunction *restored_inner = restored_outer->get_lambdas()[0];
+	const Pair<const FSFunction *, FSFunction *> lambda_pairs[2] = { { original_outer, restored_outer }, { original_inner, restored_inner } };
+	for (const Pair<const FSFunction *, FSFunction *> &lambda_pair : lambda_pairs) {
+		const FoundryScript::LambdaInfo *original_info = script->get_lambda_info().getptr(const_cast<FSFunction *>(lambda_pair.first));
+		REQUIRE(original_info != nullptr);
+		const FSBytecodeLoader::LoadedLambdaInfo *restored_info = loaded_lambda_info_by_function.getptr(lambda_pair.second);
+		REQUIRE(restored_info != nullptr);
+		CHECK(restored_info->capture_count == original_info->capture_count);
+		CHECK(restored_info->use_self == original_info->use_self);
+	}
+	bytecode_check_call_parity(script, "lambda_sum", restored_lambda_function, { 10 });
+	bytecode_destroy_restored_function(script, restored_lambda_function);
+}
+
+TEST_CASE("[FoundryScript][BytecodeFunction] Await-containing functions deserialize without error") {
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"static func waits(value):\n"
+			"\tvar waited = await value\n"
+			"\treturn waited\n");
+
+	FSFunction *restored = bytecode_round_trip_member_function(script, "waits");
+	bytecode_destroy_restored_function(script, restored);
+}
+
+TEST_CASE("[FoundryScript][BytecodeFunction] Store-global operands are rebaked by name at link time") {
+	if (!FSLanguage::get_singleton()->has_any_global_constant(SNAME("RefCounted"))) {
+		FSLanguage::get_singleton()->init();
+	}
+	const StringName global_name = "BytecodeFunctionGlobal";
+	FSLanguage::get_singleton()->add_global_constant(global_name, Variant());
+	const Ref<FoundryScript> script = compile_bytecode_test_source("var placeholder = 0\n");
+
+	// Drive the generator directly so the baked operand (7) is knowably wrong for this process,
+	// proving the loader rebakes it from the global name rather than trusting the serialized value.
+	FSByteCodeGenerator generator;
+	generator.write_start(script.ptr(), "direct_store_global", false, Variant(), FSDataType());
+	const uint32_t temporary_index = generator.add_temporary(FSDataType());
+	const FSCodeGenerator::Address destination(FSCodeGenerator::Address::TEMPORARY, temporary_index);
+	generator.write_store_global(destination, 7, global_name);
+	generator.pop_temporary();
+	FSFunction *original = generator.write_end();
+	REQUIRE(original != nullptr);
+	REQUIRE(original->export_fixups.global_stores.size() == 1);
+	const int code_offset = original->export_fixups.global_stores[0].code_offset;
+
+	FSBytecodeExporter exporter;
+	const Vector<uint8_t> payload = bytecode_serialize_function_payload(exporter, original);
+	FSFunction *restored = bytecode_deserialize_function(exporter, payload, script);
+
+	REQUIRE(FSLanguage::get_singleton()->get_global_map().has(global_name));
+	const int global_index = FSLanguage::get_singleton()->get_global_map()[global_name];
+	const Vector<int> &original_code = original->get_code();
+	const Vector<int> &restored_code = restored->get_code();
+	REQUIRE(restored_code.size() == original_code.size());
+	REQUIRE(code_offset >= 0);
+	REQUIRE(code_offset < restored_code.size());
+	// The rewritten slot holds this process's current global-map index for the name; every other
+	// slot is byte-identical to the original.
+	CHECK(restored_code[code_offset] == global_index);
+	CHECK(restored_code[code_offset] != 7);
+	for (int i = 0; i < original_code.size(); i++) {
+		if (i == code_offset) {
+			continue;
+		}
+		CHECK(original_code[i] == restored_code[i]);
+	}
+
+	// A global name missing from the runtime map is a hard link error.
+	TestFSLanguageGlobalsAccessor::remove_global(global_name);
+	CHECK(!FSLanguage::get_singleton()->get_global_map().has(global_name));
+	{
+		BytecodeTestResolver resolver;
+		FSBytecodeLoader loader = bytecode_loader_for(exporter, &resolver);
+		Ref<StreamPeerBuffer> payload_stream;
+		payload_stream.instantiate();
+		payload_stream->set_data_array(payload);
+		FSFunction *unresolved = nullptr;
+		ERR_PRINT_OFF;
+		CHECK(loader.read_function(payload_stream.ptr(), script.ptr(), unresolved) == ERR_CANT_RESOLVE);
+		ERR_PRINT_ON;
+		CHECK(unresolved == nullptr);
+	}
+
+	memdelete(restored);
+	memdelete(original);
+}
+
+TEST_CASE("[FoundryScript][BytecodeFunction] Tampered fixup keys fail the load without crashing") {
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"static func measure(text: String) -> int:\n"
+			"\treturn text.length()\n");
+	const HashMap<StringName, FSFunction *>::ConstIterator original_element = script->get_member_functions().find(SNAME("measure"));
+	REQUIRE(original_element);
+
+	FSBytecodeExporter exporter;
+	const Vector<uint8_t> payload = bytecode_serialize_function_payload(exporter, original_element->value);
+
+	Ref<StreamPeerBuffer> table_stream;
+	table_stream.instantiate();
+	exporter.get_string_table().write(table_stream.ptr());
+	Vector<uint8_t> table_bytes = table_stream->get_data_array();
+
+	// Rename the recorded builtin method to a same-size name that does not exist.
+	const CharString marker = String("length").utf8();
+	bool patched = false;
+	for (int i = 0; i + marker.length() <= table_bytes.size(); i++) {
+		if (memcmp(&table_bytes[i], marker.get_data(), marker.length()) == 0) {
+			table_bytes.write[i] = 'x';
+			patched = true;
+			break;
+		}
+	}
+	REQUIRE(patched);
+
+	BytecodeTestResolver resolver;
+	FSBytecodeLoader loader;
+	loader.set_resolver(&resolver);
+	Ref<StreamPeerBuffer> tampered_table_stream;
+	tampered_table_stream.instantiate();
+	tampered_table_stream->set_data_array(table_bytes);
+	REQUIRE(loader.read_string_table(tampered_table_stream.ptr()) == OK);
+
+	Ref<StreamPeerBuffer> payload_stream;
+	payload_stream.instantiate();
+	payload_stream->set_data_array(payload);
+	FSFunction *restored = nullptr;
+	ERR_PRINT_OFF;
+	CHECK(loader.read_function(payload_stream.ptr(), script.ptr(), restored) == ERR_CANT_RESOLVE);
+	ERR_PRINT_ON;
+	CHECK(restored == nullptr);
+}
+
+TEST_CASE("[FoundryScript][BytecodeFunction] Serialized functions carry no source text or local identifiers") {
+	const String source =
+			"static func secret() -> int:\n"
+			"\tvar distinctive_local_variable_name := 41\n"
+			"\treturn distinctive_local_variable_name + 1\n";
+	const Ref<FoundryScript> script = compile_bytecode_test_source(source);
+	const HashMap<StringName, FSFunction *>::ConstIterator original_element = script->get_member_functions().find(SNAME("secret"));
+	REQUIRE(original_element);
+
+	FSBytecodeExporter exporter;
+	const Vector<uint8_t> payload = bytecode_serialize_function_payload(exporter, original_element->value);
+	Ref<StreamPeerBuffer> table_stream;
+	table_stream.instantiate();
+	exporter.get_string_table().write(table_stream.ptr());
+	const Vector<uint8_t> table_bytes = table_stream->get_data_array();
+
+	CHECK(!bytecode_buffer_contains(payload, "distinctive_local_variable_name"));
+	CHECK(!bytecode_buffer_contains(table_bytes, "distinctive_local_variable_name"));
+	CHECK(!bytecode_buffer_contains(payload, source));
+	CHECK(!bytecode_buffer_contains(table_bytes, source));
+
+	FSFunction *restored = bytecode_deserialize_function(exporter, payload, script);
+	bytecode_check_call_parity(script, "secret", restored, {});
+	bytecode_destroy_restored_function(script, restored);
+}
+
 } // namespace FSTests
 
 #endif // TOOLS_ENABLED

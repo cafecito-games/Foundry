@@ -274,6 +274,10 @@ Error FSBytecodeLoader::_decode_object(StreamPeerBuffer *p_stream, uint8_t p_tag
 			r_variant = singleton_object;
 			return OK;
 		} break;
+		case FSBytecodeFormat::TAG_NULL_OBJECT: {
+			r_variant = Variant((Object *)nullptr);
+			return OK;
+		} break;
 		case FSBytecodeFormat::TAG_SPECIALIZED_HANDLE: {
 			const uint8_t script_tag = p_stream->get_u8();
 			Variant script_variant;
@@ -446,3 +450,518 @@ Error FSBytecodeLoader::decode_data_type(StreamPeerBuffer *p_stream, FSDataType 
 	}
 	return OK;
 }
+
+Error FSBytecodeLoader::_read_property_info(StreamPeerBuffer *p_stream, PropertyInfo &r_property_info) {
+	const uint32_t type = p_stream->get_u32();
+	ERR_FAIL_COND_V_MSG(type >= Variant::VARIANT_MAX, ERR_INVALID_DATA,
+			"Invalid property type in compiled script data.");
+	r_property_info.type = (Variant::Type)type;
+	String name;
+	Error error = _get_string(p_stream->get_u32(), name);
+	if (error != OK) {
+		return error;
+	}
+	r_property_info.name = name;
+	String class_name;
+	error = _get_string(p_stream->get_u32(), class_name);
+	if (error != OK) {
+		return error;
+	}
+	r_property_info.class_name = StringName(class_name);
+	const uint32_t hint = p_stream->get_u32();
+	ERR_FAIL_COND_V_MSG(hint >= PROPERTY_HINT_MAX, ERR_INVALID_DATA,
+			"Invalid property hint in compiled script data.");
+	r_property_info.hint = (PropertyHint)hint;
+	String hint_string;
+	error = _get_string(p_stream->get_u32(), hint_string);
+	if (error != OK) {
+		return error;
+	}
+	r_property_info.hint_string = hint_string;
+	r_property_info.usage = p_stream->get_u32();
+	return OK;
+}
+
+Error FSBytecodeLoader::_read_method_info(StreamPeerBuffer *p_stream, MethodInfo &r_method_info, int p_depth) {
+	String name;
+	Error error = _get_string(p_stream->get_u32(), name);
+	if (error != OK) {
+		return error;
+	}
+	r_method_info.name = name;
+	error = _read_property_info(p_stream, r_method_info.return_val);
+	if (error != OK) {
+		return error;
+	}
+	r_method_info.flags = p_stream->get_u32();
+	r_method_info.id = p_stream->get_32();
+	const uint32_t argument_count = p_stream->get_u32();
+	// Every serialized PropertyInfo occupies six 4-byte fields.
+	ERR_FAIL_COND_V_MSG((int64_t)argument_count * 24 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
+			"Truncated method info in compiled script data.");
+	for (uint32_t i = 0; i < argument_count; i++) {
+		PropertyInfo argument;
+		error = _read_property_info(p_stream, argument);
+		if (error != OK) {
+			return error;
+		}
+		r_method_info.arguments.push_back(argument);
+	}
+	const uint32_t default_argument_count = p_stream->get_u32();
+	ERR_FAIL_COND_V_MSG((int64_t)default_argument_count > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
+			"Truncated method info in compiled script data.");
+	for (uint32_t i = 0; i < default_argument_count; i++) {
+		Variant default_argument;
+		error = decode_variant_tagged(p_stream, default_argument, p_depth + 1);
+		if (error != OK) {
+			return error;
+		}
+		r_method_info.default_arguments.push_back(default_argument);
+	}
+	r_method_info.return_val_metadata = p_stream->get_32();
+	const uint32_t arguments_metadata_count = p_stream->get_u32();
+	ERR_FAIL_COND_V_MSG((int64_t)arguments_metadata_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
+			"Truncated method info in compiled script data.");
+	for (uint32_t i = 0; i < arguments_metadata_count; i++) {
+		r_method_info.arguments_metadata.push_back(p_stream->get_32());
+	}
+	return OK;
+}
+
+Error FSBytecodeLoader::read_function(StreamPeerBuffer *p_stream, FoundryScript *p_script, FSFunction *&r_function,
+		Vector<LoadedLambdaInfo> *r_lambda_info, int p_depth) {
+	r_function = nullptr;
+	ERR_FAIL_NULL_V(p_stream, ERR_INVALID_PARAMETER);
+	ERR_FAIL_NULL_V_MSG(p_script, ERR_INVALID_PARAMETER,
+			"A compiled function needs an owning script to deserialize into.");
+	ERR_FAIL_COND_V_MSG(p_depth > Variant::MAX_RECURSION_DEPTH, ERR_INVALID_DATA,
+			"Function lambdas are too deeply nested in compiled script data.");
+
+	FSFunction *function = memnew(FSFunction);
+	// The FSFunction destructor unregisters itself from the owning script by name, so ownership is
+	// wired before anything can fail; the name itself is only committed once the read succeeds.
+	function->_script = p_script;
+	function->source = p_script->get_script_path();
+
+	const Error error = _read_function_body(p_stream, p_script, function, r_lambda_info, p_depth);
+	if (error != OK) {
+		memdelete(function);
+		return error;
+	}
+	r_function = function;
+	return OK;
+}
+
+// Any fixup key that no longer resolves in this engine build is a hard load error; the engine-build
+// guard in the header makes this unreachable in practice, so this is defense in depth.
+#define FSB_LINK_CHECK(m_condition, m_table, m_key)                                                                                                                          \
+	ERR_FAIL_COND_V_MSG(m_condition, ERR_CANT_RESOLVE,                                                                                                                       \
+			vformat("Cannot link compiled function '%s' in script '%s': %s '%s' does not resolve in this engine build. Was the game exported with a matching engine build?", \
+					function_name, script_path, String(m_table), String(m_key)))
+
+Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryScript *p_script, FSFunction *p_function,
+		Vector<LoadedLambdaInfo> *r_lambda_info, int p_depth) {
+	String function_name;
+	Error error = _get_string(p_stream->get_u32(), function_name);
+	if (error != OK) {
+		return error;
+	}
+	const String script_path = p_function->source;
+
+	const uint8_t function_flags = p_stream->get_u8();
+	p_function->_static = (function_flags & (1 << 0)) != 0;
+	p_function->_initial_line = p_stream->get_32();
+	p_function->_argument_count = p_stream->get_32();
+	p_function->_vararg_index = p_stream->get_32();
+	p_function->_stack_size = p_stream->get_32();
+	p_function->_instruction_args_size = p_stream->get_32();
+	ERR_FAIL_COND_V_MSG(
+			p_function->_argument_count < 0 || p_function->_vararg_index < -1 || p_function->_stack_size < 0 ||
+					p_function->_instruction_args_size < 0,
+			ERR_INVALID_DATA,
+			vformat("Malformed compiled function '%s' in script '%s'.", function_name, script_path));
+
+	const uint32_t argument_type_count = p_stream->get_u32();
+	ERR_FAIL_COND_V_MSG((int64_t)argument_type_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
+			vformat("Truncated compiled function '%s' in script '%s'.", function_name, script_path));
+	for (uint32_t i = 0; i < argument_type_count; i++) {
+		FSDataType argument_type;
+		error = decode_data_type(p_stream, argument_type, p_depth + 1);
+		if (error != OK) {
+			return error;
+		}
+		p_function->argument_types.push_back(argument_type);
+	}
+	error = decode_data_type(p_stream, p_function->return_type, p_depth + 1);
+	if (error != OK) {
+		return error;
+	}
+	error = _read_method_info(p_stream, p_function->method_info, p_depth + 1);
+	if (error != OK) {
+		return error;
+	}
+	error = decode_variant_tagged(p_stream, p_function->rpc_config, p_depth + 1);
+	if (error != OK) {
+		return error;
+	}
+
+	const uint32_t temporary_slot_count = p_stream->get_u32();
+	ERR_FAIL_COND_V_MSG((int64_t)temporary_slot_count * 8 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
+			vformat("Truncated compiled function '%s' in script '%s'.", function_name, script_path));
+	for (uint32_t i = 0; i < temporary_slot_count; i++) {
+		const int32_t slot = p_stream->get_32();
+		const uint32_t slot_type = p_stream->get_u32();
+		// The VM initializes typed stack slots straight from this map, so a wild index would write
+		// outside the call stack.
+		ERR_FAIL_COND_V_MSG(slot < 0 || slot >= p_function->_stack_size || slot_type >= Variant::VARIANT_MAX,
+				ERR_INVALID_DATA,
+				vformat("Malformed temporary slot in compiled function '%s' in script '%s'.", function_name, script_path));
+		p_function->temporary_slots[slot] = (Variant::Type)slot_type;
+	}
+
+	const uint32_t code_size = p_stream->get_u32();
+	ERR_FAIL_COND_V_MSG((int64_t)code_size * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
+			vformat("Truncated compiled function '%s' in script '%s'.", function_name, script_path));
+	error = p_function->code.resize(code_size);
+	ERR_FAIL_COND_V(error != OK, ERR_OUT_OF_MEMORY);
+	for (uint32_t i = 0; i < code_size; i++) {
+		p_function->code.write[i] = p_stream->get_32();
+	}
+
+	const uint32_t default_argument_count = p_stream->get_u32();
+	ERR_FAIL_COND_V_MSG((int64_t)default_argument_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
+			vformat("Truncated compiled function '%s' in script '%s'.", function_name, script_path));
+	for (uint32_t i = 0; i < default_argument_count; i++) {
+		const int32_t default_argument_offset = p_stream->get_32();
+		// Default-argument entries are jump targets inside `code`.
+		ERR_FAIL_COND_V_MSG(default_argument_offset < 0 || default_argument_offset > (int32_t)code_size, ERR_INVALID_DATA,
+				vformat("Malformed default argument in compiled function '%s' in script '%s'.", function_name, script_path));
+		p_function->default_arguments.push_back(default_argument_offset);
+	}
+
+	const uint32_t constant_count = p_stream->get_u32();
+	ERR_FAIL_COND_V_MSG((int64_t)constant_count > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
+			vformat("Truncated compiled function '%s' in script '%s'.", function_name, script_path));
+	for (uint32_t i = 0; i < constant_count; i++) {
+		Variant constant;
+		error = decode_variant_tagged(p_stream, constant, p_depth + 1);
+		if (error != OK) {
+			return error;
+		}
+		p_function->constants.push_back(constant);
+	}
+
+	const uint32_t global_name_count = p_stream->get_u32();
+	ERR_FAIL_COND_V_MSG((int64_t)global_name_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
+			vformat("Truncated compiled function '%s' in script '%s'.", function_name, script_path));
+	for (uint32_t i = 0; i < global_name_count; i++) {
+		String global_name;
+		error = _get_string(p_stream->get_u32(), global_name);
+		if (error != OK) {
+			return error;
+		}
+		p_function->global_names.push_back(StringName(global_name));
+	}
+
+	const uint32_t builtin_method_name_count = p_stream->get_u32();
+	ERR_FAIL_COND_V_MSG((int64_t)builtin_method_name_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
+			vformat("Truncated compiled function '%s' in script '%s'.", function_name, script_path));
+	for (uint32_t i = 0; i < builtin_method_name_count; i++) {
+		String builtin_method_name;
+		error = _get_string(p_stream->get_u32(), builtin_method_name);
+		if (error != OK) {
+			return error;
+		}
+		p_function->builtin_method_names.push_back(StringName(builtin_method_name));
+	}
+
+#ifdef TOOLS_ENABLED
+	// Restoring the symbolic keys keeps a deserialized function re-serializable in tools builds.
+	FSFunction::ExportFixups &restored_fixups = p_function->export_fixups;
+#endif
+
+	const uint32_t operator_count = p_stream->get_u32();
+	ERR_FAIL_COND_V_MSG((int64_t)operator_count * 12 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
+			vformat("Truncated compiled function '%s' in script '%s'.", function_name, script_path));
+	for (uint32_t i = 0; i < operator_count; i++) {
+		const uint32_t variant_operator = p_stream->get_u32();
+		const uint32_t left_type = p_stream->get_u32();
+		const uint32_t right_type = p_stream->get_u32();
+		ERR_FAIL_COND_V_MSG(
+				variant_operator >= Variant::OP_MAX || left_type >= Variant::VARIANT_MAX || right_type >= Variant::VARIANT_MAX,
+				ERR_INVALID_DATA,
+				vformat("Malformed operator fixup in compiled function '%s' in script '%s'.", function_name, script_path));
+		const Variant::ValidatedOperatorEvaluator evaluator = Variant::get_validated_operator_evaluator(
+				(Variant::Operator)variant_operator, (Variant::Type)left_type, (Variant::Type)right_type);
+		FSB_LINK_CHECK(evaluator == nullptr, "operator",
+				vformat("%s (%s, %s)", Variant::get_operator_name((Variant::Operator)variant_operator),
+						Variant::get_type_name((Variant::Type)left_type), Variant::get_type_name((Variant::Type)right_type)));
+		p_function->operator_funcs.push_back(evaluator);
+#ifdef TOOLS_ENABLED
+		restored_fixups.operators.push_back({ (Variant::Operator)variant_operator, (Variant::Type)left_type, (Variant::Type)right_type });
+#endif
+	}
+
+	const uint32_t setter_count = p_stream->get_u32();
+	ERR_FAIL_COND_V_MSG((int64_t)setter_count * 8 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
+			vformat("Truncated compiled function '%s' in script '%s'.", function_name, script_path));
+	for (uint32_t i = 0; i < setter_count; i++) {
+		const uint32_t type = p_stream->get_u32();
+		String member_name;
+		error = _get_string(p_stream->get_u32(), member_name);
+		if (error != OK) {
+			return error;
+		}
+		ERR_FAIL_COND_V_MSG(type >= Variant::VARIANT_MAX, ERR_INVALID_DATA,
+				vformat("Malformed setter fixup in compiled function '%s' in script '%s'.", function_name, script_path));
+		const Variant::ValidatedSetter setter = Variant::get_member_validated_setter((Variant::Type)type, StringName(member_name));
+		FSB_LINK_CHECK(setter == nullptr, "member setter",
+				vformat("%s.%s", Variant::get_type_name((Variant::Type)type), member_name));
+		p_function->setters.push_back(setter);
+#ifdef TOOLS_ENABLED
+		restored_fixups.setters.push_back({ (Variant::Type)type, StringName(member_name) });
+#endif
+	}
+
+	const uint32_t getter_count = p_stream->get_u32();
+	ERR_FAIL_COND_V_MSG((int64_t)getter_count * 8 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
+			vformat("Truncated compiled function '%s' in script '%s'.", function_name, script_path));
+	for (uint32_t i = 0; i < getter_count; i++) {
+		const uint32_t type = p_stream->get_u32();
+		String member_name;
+		error = _get_string(p_stream->get_u32(), member_name);
+		if (error != OK) {
+			return error;
+		}
+		ERR_FAIL_COND_V_MSG(type >= Variant::VARIANT_MAX, ERR_INVALID_DATA,
+				vformat("Malformed getter fixup in compiled function '%s' in script '%s'.", function_name, script_path));
+		const Variant::ValidatedGetter getter = Variant::get_member_validated_getter((Variant::Type)type, StringName(member_name));
+		FSB_LINK_CHECK(getter == nullptr, "member getter",
+				vformat("%s.%s", Variant::get_type_name((Variant::Type)type), member_name));
+		p_function->getters.push_back(getter);
+#ifdef TOOLS_ENABLED
+		restored_fixups.getters.push_back({ (Variant::Type)type, StringName(member_name) });
+#endif
+	}
+
+	const uint32_t keyed_setter_count = p_stream->get_u32();
+	ERR_FAIL_COND_V_MSG((int64_t)keyed_setter_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
+			vformat("Truncated compiled function '%s' in script '%s'.", function_name, script_path));
+	for (uint32_t i = 0; i < keyed_setter_count; i++) {
+		const uint32_t type = p_stream->get_u32();
+		ERR_FAIL_COND_V_MSG(type >= Variant::VARIANT_MAX, ERR_INVALID_DATA,
+				vformat("Malformed keyed setter fixup in compiled function '%s' in script '%s'.", function_name, script_path));
+		const Variant::ValidatedKeyedSetter keyed_setter = Variant::get_member_validated_keyed_setter((Variant::Type)type);
+		FSB_LINK_CHECK(keyed_setter == nullptr, "keyed setter", Variant::get_type_name((Variant::Type)type));
+		p_function->keyed_setters.push_back(keyed_setter);
+#ifdef TOOLS_ENABLED
+		restored_fixups.keyed_setters.push_back((Variant::Type)type);
+#endif
+	}
+
+	const uint32_t keyed_getter_count = p_stream->get_u32();
+	ERR_FAIL_COND_V_MSG((int64_t)keyed_getter_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
+			vformat("Truncated compiled function '%s' in script '%s'.", function_name, script_path));
+	for (uint32_t i = 0; i < keyed_getter_count; i++) {
+		const uint32_t type = p_stream->get_u32();
+		ERR_FAIL_COND_V_MSG(type >= Variant::VARIANT_MAX, ERR_INVALID_DATA,
+				vformat("Malformed keyed getter fixup in compiled function '%s' in script '%s'.", function_name, script_path));
+		const Variant::ValidatedKeyedGetter keyed_getter = Variant::get_member_validated_keyed_getter((Variant::Type)type);
+		FSB_LINK_CHECK(keyed_getter == nullptr, "keyed getter", Variant::get_type_name((Variant::Type)type));
+		p_function->keyed_getters.push_back(keyed_getter);
+#ifdef TOOLS_ENABLED
+		restored_fixups.keyed_getters.push_back((Variant::Type)type);
+#endif
+	}
+
+	const uint32_t indexed_setter_count = p_stream->get_u32();
+	ERR_FAIL_COND_V_MSG((int64_t)indexed_setter_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
+			vformat("Truncated compiled function '%s' in script '%s'.", function_name, script_path));
+	for (uint32_t i = 0; i < indexed_setter_count; i++) {
+		const uint32_t type = p_stream->get_u32();
+		ERR_FAIL_COND_V_MSG(type >= Variant::VARIANT_MAX, ERR_INVALID_DATA,
+				vformat("Malformed indexed setter fixup in compiled function '%s' in script '%s'.", function_name, script_path));
+		const Variant::ValidatedIndexedSetter indexed_setter = Variant::get_member_validated_indexed_setter((Variant::Type)type);
+		FSB_LINK_CHECK(indexed_setter == nullptr, "indexed setter", Variant::get_type_name((Variant::Type)type));
+		p_function->indexed_setters.push_back(indexed_setter);
+#ifdef TOOLS_ENABLED
+		restored_fixups.indexed_setters.push_back((Variant::Type)type);
+#endif
+	}
+
+	const uint32_t indexed_getter_count = p_stream->get_u32();
+	ERR_FAIL_COND_V_MSG((int64_t)indexed_getter_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
+			vformat("Truncated compiled function '%s' in script '%s'.", function_name, script_path));
+	for (uint32_t i = 0; i < indexed_getter_count; i++) {
+		const uint32_t type = p_stream->get_u32();
+		ERR_FAIL_COND_V_MSG(type >= Variant::VARIANT_MAX, ERR_INVALID_DATA,
+				vformat("Malformed indexed getter fixup in compiled function '%s' in script '%s'.", function_name, script_path));
+		const Variant::ValidatedIndexedGetter indexed_getter = Variant::get_member_validated_indexed_getter((Variant::Type)type);
+		FSB_LINK_CHECK(indexed_getter == nullptr, "indexed getter", Variant::get_type_name((Variant::Type)type));
+		p_function->indexed_getters.push_back(indexed_getter);
+#ifdef TOOLS_ENABLED
+		restored_fixups.indexed_getters.push_back((Variant::Type)type);
+#endif
+	}
+
+	const uint32_t builtin_method_count = p_stream->get_u32();
+	ERR_FAIL_COND_V_MSG((int64_t)builtin_method_count * 8 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
+			vformat("Truncated compiled function '%s' in script '%s'.", function_name, script_path));
+	for (uint32_t i = 0; i < builtin_method_count; i++) {
+		const uint32_t type = p_stream->get_u32();
+		String method_name;
+		error = _get_string(p_stream->get_u32(), method_name);
+		if (error != OK) {
+			return error;
+		}
+		ERR_FAIL_COND_V_MSG(type >= Variant::VARIANT_MAX, ERR_INVALID_DATA,
+				vformat("Malformed builtin method fixup in compiled function '%s' in script '%s'.", function_name, script_path));
+		FSB_LINK_CHECK(!Variant::has_builtin_method((Variant::Type)type, StringName(method_name)), "builtin method",
+				vformat("%s.%s", Variant::get_type_name((Variant::Type)type), method_name));
+		const Variant::ValidatedBuiltInMethod builtin_method =
+				Variant::get_validated_builtin_method((Variant::Type)type, StringName(method_name));
+		FSB_LINK_CHECK(builtin_method == nullptr, "builtin method",
+				vformat("%s.%s", Variant::get_type_name((Variant::Type)type), method_name));
+		p_function->builtin_methods.push_back(builtin_method);
+#ifdef TOOLS_ENABLED
+		restored_fixups.builtin_methods.push_back({ (Variant::Type)type, StringName(method_name) });
+#endif
+	}
+
+	const uint32_t constructor_count = p_stream->get_u32();
+	ERR_FAIL_COND_V_MSG((int64_t)constructor_count * 8 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
+			vformat("Truncated compiled function '%s' in script '%s'.", function_name, script_path));
+	for (uint32_t i = 0; i < constructor_count; i++) {
+		const uint32_t type = p_stream->get_u32();
+		const int32_t constructor_index = p_stream->get_32();
+		ERR_FAIL_COND_V_MSG(type >= Variant::VARIANT_MAX, ERR_INVALID_DATA,
+				vformat("Malformed constructor fixup in compiled function '%s' in script '%s'.", function_name, script_path));
+		FSB_LINK_CHECK(constructor_index < 0 || constructor_index >= Variant::get_constructor_count((Variant::Type)type),
+				"constructor", vformat("%s #%d", Variant::get_type_name((Variant::Type)type), constructor_index));
+		const Variant::ValidatedConstructor constructor =
+				Variant::get_validated_constructor((Variant::Type)type, constructor_index);
+		FSB_LINK_CHECK(constructor == nullptr, "constructor",
+				vformat("%s #%d", Variant::get_type_name((Variant::Type)type), constructor_index));
+		p_function->constructors.push_back(constructor);
+#ifdef TOOLS_ENABLED
+		restored_fixups.constructors.push_back({ (Variant::Type)type, constructor_index });
+#endif
+	}
+
+	const uint32_t utility_count = p_stream->get_u32();
+	ERR_FAIL_COND_V_MSG((int64_t)utility_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
+			vformat("Truncated compiled function '%s' in script '%s'.", function_name, script_path));
+	for (uint32_t i = 0; i < utility_count; i++) {
+		String utility_name;
+		error = _get_string(p_stream->get_u32(), utility_name);
+		if (error != OK) {
+			return error;
+		}
+		FSB_LINK_CHECK(!Variant::has_utility_function(StringName(utility_name)), "utility function", utility_name);
+		const Variant::ValidatedUtilityFunction utility = Variant::get_validated_utility_function(StringName(utility_name));
+		FSB_LINK_CHECK(utility == nullptr, "utility function", utility_name);
+		p_function->utilities.push_back(utility);
+#ifdef TOOLS_ENABLED
+		restored_fixups.utilities.push_back(StringName(utility_name));
+#endif
+	}
+
+	const uint32_t gds_utility_count = p_stream->get_u32();
+	ERR_FAIL_COND_V_MSG((int64_t)gds_utility_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
+			vformat("Truncated compiled function '%s' in script '%s'.", function_name, script_path));
+	for (uint32_t i = 0; i < gds_utility_count; i++) {
+		String utility_name;
+		error = _get_string(p_stream->get_u32(), utility_name);
+		if (error != OK) {
+			return error;
+		}
+		FSB_LINK_CHECK(!FSUtilityFunctions::function_exists(StringName(utility_name)), "script utility function", utility_name);
+		const FSUtilityFunctions::FunctionPtr utility = FSUtilityFunctions::get_function(StringName(utility_name));
+		FSB_LINK_CHECK(utility == nullptr, "script utility function", utility_name);
+		p_function->gds_utilities.push_back(utility);
+#ifdef TOOLS_ENABLED
+		restored_fixups.gds_utilities.push_back(StringName(utility_name));
+#endif
+	}
+
+	const uint32_t method_bind_count = p_stream->get_u32();
+	ERR_FAIL_COND_V_MSG((int64_t)method_bind_count * 8 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
+			vformat("Truncated compiled function '%s' in script '%s'.", function_name, script_path));
+	for (uint32_t i = 0; i < method_bind_count; i++) {
+		String class_name;
+		error = _get_string(p_stream->get_u32(), class_name);
+		if (error != OK) {
+			return error;
+		}
+		String method_name;
+		error = _get_string(p_stream->get_u32(), method_name);
+		if (error != OK) {
+			return error;
+		}
+		MethodBind *method_bind = ClassDB::get_method(StringName(class_name), StringName(method_name));
+		FSB_LINK_CHECK(method_bind == nullptr, "native method", vformat("%s.%s", class_name, method_name));
+		p_function->methods.push_back(method_bind);
+#ifdef TOOLS_ENABLED
+		restored_fixups.method_binds.push_back({ StringName(class_name), StringName(method_name) });
+#endif
+	}
+
+	const uint32_t global_store_count = p_stream->get_u32();
+	ERR_FAIL_COND_V_MSG((int64_t)global_store_count * 8 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
+			vformat("Truncated compiled function '%s' in script '%s'.", function_name, script_path));
+	const HashMap<StringName, int> &global_map = FSLanguage::get_singleton()->get_global_map();
+	for (uint32_t i = 0; i < global_store_count; i++) {
+		const int32_t code_offset = p_stream->get_32();
+		String global_name;
+		error = _get_string(p_stream->get_u32(), global_name);
+		if (error != OK) {
+			return error;
+		}
+		ERR_FAIL_COND_V_MSG(code_offset < 0 || code_offset >= (int32_t)code_size, ERR_INVALID_DATA,
+				vformat("Malformed store-global fixup in compiled function '%s' in script '%s'.", function_name, script_path));
+		const int *global_index = global_map.getptr(StringName(global_name));
+		FSB_LINK_CHECK(global_index == nullptr, "global", global_name);
+		// The exporter masked this operand out; bake this process's global-array index in its place.
+		p_function->code.write[code_offset] = *global_index;
+#ifdef TOOLS_ENABLED
+		restored_fixups.global_stores.push_back({ code_offset, StringName(global_name) });
+#endif
+	}
+
+	const uint32_t lambda_count = p_stream->get_u32();
+	ERR_FAIL_COND_V_MSG((int64_t)lambda_count * 5 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
+			vformat("Truncated compiled function '%s' in script '%s'.", function_name, script_path));
+	for (uint32_t i = 0; i < lambda_count; i++) {
+		const int32_t capture_count = p_stream->get_32();
+		const bool use_self = p_stream->get_u8() != 0;
+		ERR_FAIL_COND_V_MSG(capture_count < 0, ERR_INVALID_DATA,
+				vformat("Malformed lambda info in compiled function '%s' in script '%s'.", function_name, script_path));
+		FSFunction *lambda = nullptr;
+		error = read_function(p_stream, p_script, lambda, r_lambda_info, p_depth + 1);
+		if (error != OK) {
+			return error;
+		}
+		// The parent owns its lambdas from this point on (the FSFunction destructor deletes them),
+		// so a later failure in this body still cleans them up.
+		p_function->lambdas.push_back(lambda);
+		if (r_lambda_info != nullptr) {
+			LoadedLambdaInfo lambda_info;
+			lambda_info.function = lambda;
+			lambda_info.capture_count = capture_count;
+			lambda_info.use_self = use_self;
+			r_lambda_info->push_back(lambda_info);
+		}
+	}
+
+	p_function->setup_runtime_pointers();
+	p_function->name = StringName(function_name);
+#ifdef DEBUG_ENABLED
+	// Keeps profiler and debugger signatures meaningful when a debug export template loads compiled
+	// bytecode; the tools-only disassembler name tables stay empty and degrade gracefully.
+	p_function->func_cname = (String(p_function->source) + " - " + function_name).utf8();
+	p_function->_func_cname = p_function->func_cname.get_data();
+#endif
+	return OK;
+}
+
+#undef FSB_LINK_CHECK

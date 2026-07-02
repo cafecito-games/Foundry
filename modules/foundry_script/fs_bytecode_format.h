@@ -74,6 +74,7 @@ public:
 		TAG_NATIVE_CLASS, // FSNativeClass value as (class name).
 		TAG_ENGINE_SINGLETON, // Engine singleton object as (singleton name).
 		TAG_SPECIALIZED_HANDLE, // FSSpecializedClassHandle as (script reference, type arguments).
+		TAG_NULL_OBJECT, // Object-typed null (e.g. the script slot of a typed-container descriptor).
 	};
 
 	enum FixupTable : uint8_t {

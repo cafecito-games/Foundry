@@ -34,6 +34,7 @@
 #include "fs_function.h"
 
 #include "core/config/engine.h"
+#include "core/templates/hash_set.h"
 #include "core/version.h"
 
 #ifdef TOOLS_ENABLED
@@ -116,9 +117,16 @@ Error FSBytecodeExporter::encode_variant_tagged(StreamPeerBuffer *r_stream, cons
 			return OK;
 		} break;
 		case Variant::OBJECT: {
-			Object *object = p_variant.get_validated_object();
-			ERR_FAIL_NULL_V_MSG(object, ERR_INVALID_PARAMETER,
-					"A null or freed Object cannot be serialized to compiled bytecode.");
+			bool previously_freed = false;
+			Object *object = p_variant.get_validated_object_with_check(previously_freed);
+			ERR_FAIL_COND_V_MSG(previously_freed, ERR_INVALID_PARAMETER,
+					"A freed Object cannot be serialized to compiled bytecode.");
+			if (object == nullptr) {
+				// Object-typed null occurs legitimately, e.g. the script slot of the typed-container
+				// descriptors the codegen bakes into constant pools; preserve it exactly.
+				r_stream->put_u8(FSBytecodeFormat::TAG_NULL_OBJECT);
+				return OK;
+			}
 			return _encode_object(r_stream, object, p_depth);
 		} break;
 		// These hold process-local identities (ObjectIDs, server handles); encode_variant would
@@ -300,6 +308,238 @@ Error FSBytecodeExporter::encode_data_type(StreamPeerBuffer *r_stream, const FSD
 			return error;
 		}
 	}
+	return OK;
+}
+
+void FSBytecodeExporter::_encode_property_info(StreamPeerBuffer *r_stream, const PropertyInfo &p_property_info) {
+	r_stream->put_u32((uint32_t)p_property_info.type);
+	r_stream->put_u32(string_table.insert(p_property_info.name));
+	r_stream->put_u32(string_table.insert(p_property_info.class_name));
+	r_stream->put_u32((uint32_t)p_property_info.hint);
+	r_stream->put_u32(string_table.insert(p_property_info.hint_string));
+	r_stream->put_u32(p_property_info.usage);
+}
+
+Error FSBytecodeExporter::_encode_method_info(StreamPeerBuffer *r_stream, const MethodInfo &p_method_info, int p_depth) {
+	r_stream->put_u32(string_table.insert(p_method_info.name));
+	_encode_property_info(r_stream, p_method_info.return_val);
+	r_stream->put_u32(p_method_info.flags);
+	r_stream->put_32(p_method_info.id);
+	r_stream->put_u32((uint32_t)p_method_info.arguments.size());
+	for (const PropertyInfo &argument : p_method_info.arguments) {
+		_encode_property_info(r_stream, argument);
+	}
+	r_stream->put_u32((uint32_t)p_method_info.default_arguments.size());
+	for (const Variant &default_argument : p_method_info.default_arguments) {
+		const Error error = encode_variant_tagged(r_stream, default_argument, p_depth + 1);
+		if (error != OK) {
+			return error;
+		}
+	}
+	r_stream->put_32(p_method_info.return_val_metadata);
+	r_stream->put_u32((uint32_t)p_method_info.arguments_metadata.size());
+	for (const int argument_metadata : p_method_info.arguments_metadata) {
+		r_stream->put_32(argument_metadata);
+	}
+	return OK;
+}
+
+Error FSBytecodeExporter::serialize_function(StreamPeerBuffer *r_stream, const FSFunction *p_function, int p_depth) {
+	ERR_FAIL_NULL_V(p_function, ERR_INVALID_PARAMETER);
+	ERR_FAIL_COND_V_MSG(p_depth > Variant::MAX_RECURSION_DEPTH, ERR_INVALID_PARAMETER,
+			vformat("Lambdas of compiled function '%s' are too deeply nested to serialize to compiled bytecode.",
+					p_function->name));
+
+	const FSFunction::ExportFixups &fixups = p_function->export_fixups;
+	// Serialization replaces every pointer table with the symbolic keys the codegen recorded; a
+	// size mismatch means this function was not produced by FSByteCodeGenerator in this process.
+	const bool fixups_cover_tables =
+			fixups.operators.size() == p_function->operator_funcs.size() &&
+			fixups.setters.size() == p_function->setters.size() &&
+			fixups.getters.size() == p_function->getters.size() &&
+			fixups.keyed_setters.size() == p_function->keyed_setters.size() &&
+			fixups.keyed_getters.size() == p_function->keyed_getters.size() &&
+			fixups.indexed_setters.size() == p_function->indexed_setters.size() &&
+			fixups.indexed_getters.size() == p_function->indexed_getters.size() &&
+			fixups.builtin_methods.size() == p_function->builtin_methods.size() &&
+			fixups.constructors.size() == p_function->constructors.size() &&
+			fixups.utilities.size() == p_function->utilities.size() &&
+			fixups.gds_utilities.size() == p_function->gds_utilities.size() &&
+			fixups.method_binds.size() == p_function->methods.size();
+	ERR_FAIL_COND_V_MSG(!fixups_cover_tables, ERR_INVALID_PARAMETER,
+			vformat("Cannot serialize compiled function '%s' of script '%s': its fixup descriptors do not cover its pointer tables.",
+					p_function->name, p_function->source));
+
+	r_stream->put_u32(string_table.insert(p_function->name));
+	uint8_t function_flags = 0;
+	if (p_function->_static) {
+		function_flags |= 1 << 0;
+	}
+	r_stream->put_u8(function_flags);
+	r_stream->put_32(p_function->_initial_line);
+	r_stream->put_32(p_function->_argument_count);
+	r_stream->put_32(p_function->_vararg_index);
+	r_stream->put_32(p_function->_stack_size);
+	r_stream->put_32(p_function->_instruction_args_size);
+
+	r_stream->put_u32((uint32_t)p_function->argument_types.size());
+	for (const FSDataType &argument_type : p_function->argument_types) {
+		const Error error = encode_data_type(r_stream, argument_type, p_depth + 1);
+		if (error != OK) {
+			return error;
+		}
+	}
+	Error error = encode_data_type(r_stream, p_function->return_type, p_depth + 1);
+	if (error != OK) {
+		return error;
+	}
+	error = _encode_method_info(r_stream, p_function->method_info, p_depth + 1);
+	if (error != OK) {
+		return error;
+	}
+	error = encode_variant_tagged(r_stream, p_function->rpc_config, p_depth + 1);
+	if (error != OK) {
+		return error;
+	}
+
+	r_stream->put_u32((uint32_t)p_function->temporary_slots.size());
+	for (const KeyValue<int, Variant::Type> &temporary_slot : p_function->temporary_slots) {
+		r_stream->put_32(temporary_slot.key);
+		r_stream->put_u32((uint32_t)temporary_slot.value);
+	}
+
+	// `OPCODE_STORE_GLOBAL` operands bake this process's global-array index, which is meaningless
+	// in another build; mask them out so the loader has to rebake every one from its name.
+	HashSet<int> masked_code_offsets;
+	for (const FSFunction::ExportFixups::GlobalStore &global_store : fixups.global_stores) {
+		ERR_FAIL_INDEX_V_MSG(global_store.code_offset, p_function->code.size(), ERR_INVALID_PARAMETER,
+				vformat("Cannot serialize compiled function '%s' of script '%s': store-global fixup offset is out of code bounds.",
+						p_function->name, p_function->source));
+		masked_code_offsets.insert(global_store.code_offset);
+	}
+	r_stream->put_u32((uint32_t)p_function->code.size());
+	for (int i = 0; i < p_function->code.size(); i++) {
+		r_stream->put_32(masked_code_offsets.has(i) ? 0 : p_function->code[i]);
+	}
+
+	r_stream->put_u32((uint32_t)p_function->default_arguments.size());
+	for (const int default_argument_offset : p_function->default_arguments) {
+		r_stream->put_32(default_argument_offset);
+	}
+
+	r_stream->put_u32((uint32_t)p_function->constants.size());
+	for (const Variant &constant : p_function->constants) {
+		error = encode_variant_tagged(r_stream, constant, p_depth + 1);
+		if (error != OK) {
+			return error;
+		}
+	}
+
+	r_stream->put_u32((uint32_t)p_function->global_names.size());
+	for (const StringName &global_name : p_function->global_names) {
+		r_stream->put_u32(string_table.insert(global_name));
+	}
+
+	r_stream->put_u32((uint32_t)p_function->builtin_method_names.size());
+	for (const StringName &builtin_method_name : p_function->builtin_method_names) {
+		r_stream->put_u32(string_table.insert(builtin_method_name));
+	}
+
+	r_stream->put_u32((uint32_t)fixups.operators.size());
+	for (const FSFunction::ExportFixups::OperatorKey &key : fixups.operators) {
+		r_stream->put_u32((uint32_t)key.op);
+		r_stream->put_u32((uint32_t)key.left_type);
+		r_stream->put_u32((uint32_t)key.right_type);
+	}
+
+	r_stream->put_u32((uint32_t)fixups.setters.size());
+	for (const FSFunction::ExportFixups::TypedNameKey &key : fixups.setters) {
+		r_stream->put_u32((uint32_t)key.type);
+		r_stream->put_u32(string_table.insert(key.name));
+	}
+
+	r_stream->put_u32((uint32_t)fixups.getters.size());
+	for (const FSFunction::ExportFixups::TypedNameKey &key : fixups.getters) {
+		r_stream->put_u32((uint32_t)key.type);
+		r_stream->put_u32(string_table.insert(key.name));
+	}
+
+	r_stream->put_u32((uint32_t)fixups.keyed_setters.size());
+	for (const Variant::Type type : fixups.keyed_setters) {
+		r_stream->put_u32((uint32_t)type);
+	}
+
+	r_stream->put_u32((uint32_t)fixups.keyed_getters.size());
+	for (const Variant::Type type : fixups.keyed_getters) {
+		r_stream->put_u32((uint32_t)type);
+	}
+
+	r_stream->put_u32((uint32_t)fixups.indexed_setters.size());
+	for (const Variant::Type type : fixups.indexed_setters) {
+		r_stream->put_u32((uint32_t)type);
+	}
+
+	r_stream->put_u32((uint32_t)fixups.indexed_getters.size());
+	for (const Variant::Type type : fixups.indexed_getters) {
+		r_stream->put_u32((uint32_t)type);
+	}
+
+	r_stream->put_u32((uint32_t)fixups.builtin_methods.size());
+	for (const FSFunction::ExportFixups::TypedNameKey &key : fixups.builtin_methods) {
+		r_stream->put_u32((uint32_t)key.type);
+		r_stream->put_u32(string_table.insert(key.name));
+	}
+
+	r_stream->put_u32((uint32_t)fixups.constructors.size());
+	for (const FSFunction::ExportFixups::ConstructorKey &key : fixups.constructors) {
+		r_stream->put_u32((uint32_t)key.type);
+		r_stream->put_32(key.constructor_index);
+	}
+
+	r_stream->put_u32((uint32_t)fixups.utilities.size());
+	for (const StringName &utility_name : fixups.utilities) {
+		r_stream->put_u32(string_table.insert(utility_name));
+	}
+
+	r_stream->put_u32((uint32_t)fixups.gds_utilities.size());
+	for (const StringName &utility_name : fixups.gds_utilities) {
+		r_stream->put_u32(string_table.insert(utility_name));
+	}
+
+	r_stream->put_u32((uint32_t)fixups.method_binds.size());
+	for (const FSFunction::ExportFixups::MethodBindKey &key : fixups.method_binds) {
+		r_stream->put_u32(string_table.insert(key.class_name));
+		r_stream->put_u32(string_table.insert(key.method_name));
+	}
+
+	r_stream->put_u32((uint32_t)fixups.global_stores.size());
+	for (const FSFunction::ExportFixups::GlobalStore &global_store : fixups.global_stores) {
+		r_stream->put_32(global_store.code_offset);
+		r_stream->put_u32(string_table.insert(global_store.global_name));
+	}
+
+	// `named_globals` is deliberately not serialized: it exists for export-time validation of
+	// OPCODE_STORE_NAMED_GLOBAL names, which dispatch by name at runtime and need no relinking.
+
+	r_stream->put_u32((uint32_t)p_function->lambdas.size());
+	for (FSFunction *lambda : p_function->lambdas) {
+		// Each lambda pointer appears in exactly one parent's table (the codegen keys them by
+		// pointer per function and lambdas belong to their lexical parent), so the depth-first
+		// recursion serializes every lambda exactly once.
+		ERR_FAIL_NULL_V_MSG(p_function->_script, ERR_INVALID_PARAMETER,
+				vformat("Cannot serialize compiled function '%s': it has lambdas but no owning script.", p_function->name));
+		const FoundryScript::LambdaInfo *lambda_info = p_function->_script->get_lambda_info().getptr(lambda);
+		ERR_FAIL_NULL_V_MSG(lambda_info, ERR_INVALID_PARAMETER,
+				vformat("Cannot serialize compiled function '%s' of script '%s': its owning script has no lambda info for lambda '%s'.",
+						p_function->name, p_function->source, lambda->name));
+		r_stream->put_32(lambda_info->capture_count);
+		r_stream->put_u8(lambda_info->use_self ? 1 : 0);
+		error = serialize_function(r_stream, lambda, p_depth + 1);
+		if (error != OK) {
+			return error;
+		}
+	}
+
 	return OK;
 }
 
