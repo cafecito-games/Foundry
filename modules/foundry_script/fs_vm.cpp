@@ -976,15 +976,20 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 	int line = _initial_line;
 
 	if (p_state) {
-		//use existing (supplied) state (awaited)
+		// Use existing (supplied) state (awaited).
 		stack = (Variant *)p_state->stack.ptr();
-		instruction_args = (Variant **)&p_state->stack.ptr()[sizeof(Variant) * p_state->stack_size]; //ptr() to avoid bounds check
+		instruction_args = (Variant **)&p_state->stack.ptr()[sizeof(Variant) * p_state->stack_size]; // `ptr()` to avoid bounds check.
 		line = p_state->line;
 		ip = p_state->ip;
 		alloca_size = p_state->stack.size();
 		script = p_state->script;
 		p_instance = p_state->instance;
 		defarg = p_state->defarg;
+
+		// Responsibility for the stack is moved from `FSFunctionState` to this method. Reset
+		// `stack_size` so `_clear_stack()` does not destroy the same slots again after this call
+		// finishes (including the resumed-then-awaited-again path).
+		p_state->stack_size = 0;
 
 	} else {
 		if (p_argcount != _argument_count) {
@@ -4866,35 +4871,28 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 	}
 #endif
 
-	// Check if this is not the last time it was interrupted by `await` or if it's the first time executing.
-	// If that is the case then we exit the function as normal. Otherwise we postpone it until the last `await` is completed.
-	// This ensures the call stack can be properly shown when using `await`, showing what resumed the function.
-	if (!p_state || awaited) {
-		FSLanguage::get_singleton()->exit_function();
-
-		// Free stack, except reserved addresses.
-		for (int i = FIXED_ADDRESSES_MAX; i < _stack_size; i++) {
-			stack[i].~Variant();
-		}
+	if (p_state && !awaited) {
+		// This means we have finished executing a resumed function and it was not awaited again.
+		// Signal the next function-state to resume.
+		const Variant *args[1] = { &retvalue };
+		p_state->completed.emit(args, 1);
 	}
+
+	// Exit function only after executing the remaining function states to preserve async call stack.
+	// This ensures the call stack can be properly shown when using `await`, showing what resumed the function.
+	FSLanguage::get_singleton()->exit_function();
 
 	// Always free reserved addresses, since they are never copied.
 	for (int i = 0; i < FIXED_ADDRESSES_MAX; i++) {
 		stack[i].~Variant();
 	}
 
-	call_depth--;
-
-	if (p_state && !awaited) {
-		// This means we have finished executing a resumed function and it was not awaited again.
-
-		// Signal the next function-state to resume.
-		const Variant *args[1] = { &retvalue };
-		p_state->completed.emit(args, 1);
-
-		// Exit function only after executing the remaining function states to preserve async call stack.
-		FSLanguage::get_singleton()->exit_function();
+	// Free stack, except reserved addresses.
+	for (int i = FIXED_ADDRESSES_MAX; i < _stack_size; i++) {
+		stack[i].~Variant();
 	}
+
+	call_depth--;
 
 	return retvalue;
 }
