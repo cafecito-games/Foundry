@@ -2302,6 +2302,11 @@ Error EditorExportPlatform::save_pack(const Ref<EditorExportPreset> &p_preset, b
 
 	if (!_encrypt_and_store_directory(f, pd, key, p_preset->get_seed(), file_base)) {
 		add_message(EXPORT_MESSAGE_ERROR, TTR("Save PCK"), TTR("Can't create encrypted file."));
+		if (!p_embed) {
+			pd.f.unref();
+			f.unref();
+			DirAccess::remove_absolute(p_path);
+		}
 		return ERR_CANT_CREATE;
 	}
 

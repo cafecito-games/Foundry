@@ -580,6 +580,9 @@ Ref<FoundryScript> FSCache::get_cached_script(const String &p_path) {
 #ifdef TOOLS_ENABLED
 void FSCache::begin_script_reload_recording() {
 	MutexLock lock(singleton->mutex);
+	// Only one recording window can be active at a time; silently restarting would discard the
+	// in-progress window's recorded paths.
+	ERR_FAIL_COND(singleton->recording_script_reloads);
 	singleton->recording_script_reloads = true;
 	singleton->recorded_script_reload_paths.clear();
 }

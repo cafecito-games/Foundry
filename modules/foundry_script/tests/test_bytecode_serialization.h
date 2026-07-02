@@ -1478,6 +1478,25 @@ TEST_CASE("[FoundryScript][BytecodeFunction] Serialized functions carry no sourc
 	bytecode_destroy_restored_function(script, restored);
 }
 
+// Cross-suite hygiene for the named-globals test: the autoload registration, the named global,
+// the temp scene file, and the export-compile flag are global state, so they must be undone even
+// when an assertion aborts the test case mid-way.
+struct BytecodeEditorOnlyGlobalGuard {
+	StringName name;
+	String scene_path;
+
+	~BytecodeEditorOnlyGlobalGuard() {
+		FSLanguage::get_singleton()->set_compiling_for_export(false);
+		if (FSLanguage::get_singleton()->get_named_globals_map().has(name)) {
+			FSLanguage::get_singleton()->remove_named_global_constant(name);
+		}
+		if (ProjectSettings::get_singleton()->has_autoload(name)) {
+			ProjectSettings::get_singleton()->remove_autoload(name);
+		}
+		DirAccess::remove_absolute(scene_path);
+	}
+};
+
 TEST_CASE("[FoundryScript][BytecodeCodec] Editor-only named globals are collected for export validation") {
 	if (!FSLanguage::get_singleton()->has_any_global_constant(SNAME("RefCounted"))) {
 		FSLanguage::get_singleton()->init();
@@ -1493,6 +1512,7 @@ TEST_CASE("[FoundryScript][BytecodeCodec] Editor-only named globals are collecte
 		scene_file->store_string("[gd_scene format=3]\n\n[node name=\"Root\" type=\"Node\"]\n");
 	}
 	const StringName editor_only_name = "BytecodeEditorOnlyGlobal";
+	BytecodeEditorOnlyGlobalGuard cleanup_guard{ editor_only_name, scene_path };
 	ProjectSettings::AutoloadInfo autoload;
 	autoload.name = editor_only_name;
 	autoload.path = scene_path;
@@ -1522,10 +1542,6 @@ TEST_CASE("[FoundryScript][BytecodeCodec] Editor-only named globals are collecte
 
 	const Vector<StringName> export_unsupported = FSBytecodeExporter::collect_unsupported_named_globals(export_script);
 	const HashMap<StringName, FSFunction *> &export_member_functions = export_script->get_member_functions();
-
-	FSLanguage::get_singleton()->remove_named_global_constant(editor_only_name);
-	ProjectSettings::get_singleton()->remove_autoload(editor_only_name);
-	DirAccess::remove_absolute(scene_path);
 
 	REQUIRE(unsupported.size() == 1);
 	CHECK(unsupported[0] == editor_only_name);

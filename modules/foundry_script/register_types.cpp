@@ -121,6 +121,11 @@ class EditorExportFoundryScript : public EditorExportPlugin {
 				return vformat("%s (line %d)", first_error.message, first_error.line);
 			}
 		}
+		if (p_fallback_error == OK) {
+			// The cache reported no error and the parser holds no diagnostics, yet the script is
+			// not valid; "OK" would read as nonsense here.
+			return TTR("script is not valid");
+		}
 		return error_names[p_fallback_error];
 	}
 
@@ -262,6 +267,9 @@ protected:
 			for (const String &path : FSCache::end_script_reload_recording()) {
 				Error error = OK;
 				FSCache::get_full_script(path, error, String(), true);
+				if (error != OK) {
+					WARN_PRINT(vformat("Could not recompile \"%s\" for the editor session after the compiled-bytecode export: %s.", path, error_names[error]));
+				}
 			}
 		}
 		script_mode = DEFAULT_SCRIPT_MODE;
