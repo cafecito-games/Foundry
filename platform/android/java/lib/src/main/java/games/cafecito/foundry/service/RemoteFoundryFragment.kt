@@ -38,6 +38,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.os.Message
 import android.os.Messenger
 import android.os.RemoteException
@@ -53,6 +54,9 @@ import games.cafecito.foundry.FoundryHost
 import games.cafecito.foundry.R
 import games.cafecito.foundry.service.FoundryService.EngineStatus.*
 import games.cafecito.foundry.service.FoundryService.EngineError.*
+import games.cafecito.foundry.utils.getHostInputTransferTokenCompat
+import games.cafecito.foundry.utils.getHostTokenCompat
+import games.cafecito.foundry.utils.getParcelableCompat
 import java.lang.ref.WeakReference
 
 /**
@@ -102,7 +106,8 @@ class RemoteFoundryFragment: Fragment() {
 	/**
 	 * Handler of incoming messages from [FoundryService] implementations.
 	 */
-	private class IncomingHandler(private val fragmentRef: WeakReference<RemoteFoundryFragment>) : Handler() {
+	private class IncomingHandler(private val fragmentRef: WeakReference<RemoteFoundryFragment>) :
+			Handler(Looper.myLooper() ?: Looper.getMainLooper()) {
 
 		override fun handleMessage(msg: Message) {
 			val fragment = fragmentRef.get() ?: return
@@ -122,19 +127,25 @@ class RemoteFoundryFragment: Fragment() {
 								INITIALIZED -> {
 									Log.d(TAG, "Engine initialized!")
 
-									try {
-										Log.i(TAG, "Creating SurfaceControlViewHost...")
-										fragment.remoteSurface?.let {
-											fragment.serviceMessenger?.send(Message.obtain().apply {
-												what = FoundryService.MSG_WRAP_ENGINE_WITH_SCVH
-												data.apply {
-													putBinder(FoundryService.KEY_HOST_TOKEN, it.hostToken)
-													putInt(FoundryService.KEY_DISPLAY_ID, it.display.displayId)
-													putInt(FoundryService.KEY_WIDTH, it.width)
-													putInt(FoundryService.KEY_HEIGHT, it.height)
-												}
-												replyTo = fragment.messengerForReply
-											})
+										try {
+											Log.i(TAG, "Creating SurfaceControlViewHost...")
+											fragment.remoteSurface?.let {
+												fragment.serviceMessenger?.send(Message.obtain().apply {
+													what = FoundryService.MSG_WRAP_ENGINE_WITH_SCVH
+													data.apply {
+														putBinder(FoundryService.KEY_HOST_TOKEN, it.getHostTokenCompat())
+														if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA) {
+															putParcelable(
+																FoundryService.KEY_HOST_INPUT_TRANSFER_TOKEN,
+																it.getHostInputTransferTokenCompat()
+															)
+														}
+														putInt(FoundryService.KEY_DISPLAY_ID, it.display.displayId)
+														putInt(FoundryService.KEY_WIDTH, it.width)
+														putInt(FoundryService.KEY_HEIGHT, it.height)
+													}
+													replyTo = fragment.messengerForReply
+												})
 										}
 									} catch (e: RemoteException) {
 										Log.e(TAG, "Unable to set up SurfaceControlViewHost", e)
@@ -157,8 +168,9 @@ class RemoteFoundryFragment: Fragment() {
 								SCVH_CREATED -> {
 									Log.d(TAG, "SurfaceControlViewHost created!")
 
-									val surfacePackage = msg.data.getParcelable<SurfaceControlViewHost.SurfacePackage>(
-										FoundryService.KEY_SURFACE_PACKAGE)
+									val surfacePackage = msg.data.getParcelableCompat(
+										FoundryService.KEY_SURFACE_PACKAGE,
+										SurfaceControlViewHost.SurfacePackage::class.java)
 									if (surfacePackage == null) {
 										Log.e(TAG, "Unable to retrieve surface package from FoundryService")
 									} else {

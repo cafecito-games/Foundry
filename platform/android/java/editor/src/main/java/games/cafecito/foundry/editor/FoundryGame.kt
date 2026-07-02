@@ -103,11 +103,14 @@ open class FoundryGame : BaseFoundryGame() {
 				if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
 					builder.setSeamlessResizeEnabled(false)
 				}
-				setPictureInPictureParams(builder.build())
-			}
 
-			Log.v(TAG, "Entering PiP mode")
-			enterPictureInPictureMode()
+				Log.v(TAG, "Entering PiP mode")
+				enterPictureInPictureMode(builder.build())
+			} else {
+				Log.v(TAG, "Entering PiP mode")
+				@Suppress("DEPRECATION")
+				enterPictureInPictureMode()
+			}
 		}
 	}
 

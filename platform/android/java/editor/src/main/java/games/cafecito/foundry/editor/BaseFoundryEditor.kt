@@ -42,7 +42,6 @@ import android.os.Bundle
 import android.os.Debug
 import android.os.Environment
 import android.os.Process
-import android.preference.PreferenceManager
 import android.util.Log
 import android.view.View
 import android.widget.TextView
@@ -70,6 +69,8 @@ import games.cafecito.foundry.error.Error
 import games.cafecito.foundry.utils.DialogUtils
 import games.cafecito.foundry.utils.PermissionsUtil
 import games.cafecito.foundry.utils.ProcessPhoenix
+import games.cafecito.foundry.utils.getDefaultSharedPreferencesCompat
+import games.cafecito.foundry.utils.getSerializableCompat
 import org.godotengine.openxr.vendors.utils.*
 import kotlin.math.min
 
@@ -386,7 +387,7 @@ abstract class BaseFoundryEditor : FoundryActivity(), GameMenuFragment.GameMenuL
 				editorMessageDispatcher.hasEditorConnection(RUN_GAME_INFO))) {
 			// If this is the editor window, and this is not the project manager, and we have a running game, then show
 			// a hint for how to resume the playing game.
-			val sharedPrefs = PreferenceManager.getDefaultSharedPreferences(applicationContext)
+			val sharedPrefs = getDefaultSharedPreferencesCompat(applicationContext)
 			if (!sharedPrefs.getBoolean(PREF_KEY_DONT_SHOW_GAME_RESUME_HINT, false)) {
 				DialogUtils.showSnackbar(
 					this,
@@ -836,7 +837,9 @@ abstract class BaseFoundryEditor : FoundryActivity(), GameMenuFragment.GameMenuL
 				dispatchNextFrame()
 			}
 			GAME_MENU_ACTION_SET_NODE_TYPE -> {
-				val nodeType = actionData.getSerializable(KEY_GAME_MENU_ACTION_PARAM1) as GameMenuFragment.GameMenuListener.NodeType?
+				val nodeType = actionData.getSerializableCompat(
+					KEY_GAME_MENU_ACTION_PARAM1,
+					GameMenuFragment.GameMenuListener.NodeType::class.java)
 				if (nodeType != null) {
 					selectRuntimeNode(nodeType)
 				}
@@ -850,7 +853,9 @@ abstract class BaseFoundryEditor : FoundryActivity(), GameMenuFragment.GameMenuL
 				overrideCamera(enabled)
 			}
 			GAME_MENU_ACTION_SET_SELECT_MODE -> {
-				val selectMode = actionData.getSerializable(KEY_GAME_MENU_ACTION_PARAM1) as GameMenuFragment.GameMenuListener.SelectMode?
+				val selectMode = actionData.getSerializableCompat(
+					KEY_GAME_MENU_ACTION_PARAM1,
+					GameMenuFragment.GameMenuListener.SelectMode::class.java)
 				if (selectMode != null) {
 					selectRuntimeNodeSelectMode(selectMode)
 				}
@@ -862,7 +867,9 @@ abstract class BaseFoundryEditor : FoundryActivity(), GameMenuFragment.GameMenuL
 				reset3DCamera()
 			}
 			GAME_MENU_ACTION_SET_CAMERA_MANIPULATE_MODE -> {
-				val mode = actionData.getSerializable(KEY_GAME_MENU_ACTION_PARAM1) as? GameMenuFragment.GameMenuListener.CameraMode?
+				val mode = actionData.getSerializableCompat(
+					KEY_GAME_MENU_ACTION_PARAM1,
+					GameMenuFragment.GameMenuListener.CameraMode::class.java)
 				if (mode != null) {
 					manipulateCamera(mode)
 				}
