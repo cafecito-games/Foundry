@@ -292,6 +292,8 @@ public:
 		const char *value_name = nullptr;
 		const char *description = nullptr;
 		bool required = false;
+		// True when the value is attached with '=' as a single token (e.g. --format=sarif).
+		bool equals_form = false;
 	};
 
 	struct Positional {
@@ -400,9 +402,9 @@ const CommandOption SCRIPT_FORMAT_OPTIONS[] = {
 
 const CommandOption SCRIPT_LINT_OPTIONS[] = {
 	{ "--project", "dir", PROJECT_OPTION_DESCRIPTION, false },
-	{ "--format=<json|sarif>", nullptr, "Machine-readable report format.", false },
+	{ "--format", "json|sarif", "Machine-readable report format.", false, true },
 	{ "--out", "path", "Write the report to a file instead of stdout.", false },
-	{ "--fail-on=<error|warning>", nullptr, "Severity threshold for a non-zero exit code.", false },
+	{ "--fail-on", "error|warning", "Severity threshold for a non-zero exit code.", false, true },
 };
 
 const CommandOption SCRIPT_MIGRATE_OPTIONS[] = {
@@ -540,7 +542,7 @@ String editor_badge_legend() {
 String option_display(const CommandOption &p_option) {
 	String display = p_option.flag;
 	if (p_option.value_name) {
-		display += " <" + String(p_option.value_name) + ">";
+		display += (p_option.equals_form ? "=<" : " <") + String(p_option.value_name) + ">";
 	}
 	return display;
 }
@@ -1009,6 +1011,7 @@ String FoundryCLIHelp::get_help_json(const PackedStringArray &p_scope) {
 			Dictionary option_json;
 			option_json["flag"] = option.flag;
 			option_json["value"] = option.value_name ? Variant(String(option.value_name)) : Variant();
+			option_json["style"] = option.value_name ? Variant(String(option.equals_form ? "equals" : "space")) : Variant();
 			option_json["description"] = option.description;
 			option_json["required"] = option.required;
 			options.push_back(option_json);
@@ -1103,6 +1106,17 @@ static String drift_option_value(const FoundryCLIHelp::CommandOption &p_option) 
 	return String(p_option.value_name).get_slice("|", 0);
 }
 
+static void drift_append_option(PackedStringArray &r_args, const FoundryCLIHelp::CommandOption &p_option) {
+	if (p_option.value_name && p_option.equals_form) {
+		r_args.push_back(String(p_option.flag) + "=" + drift_option_value(p_option));
+		return;
+	}
+	r_args.push_back(p_option.flag);
+	if (p_option.value_name) {
+		r_args.push_back(drift_option_value(p_option));
+	}
+}
+
 static PackedStringArray drift_base_args(const FoundryCLIHelp::CommandSpec &p_spec) {
 	PackedStringArray args;
 	args.push_back("foundry");
@@ -1113,10 +1127,7 @@ static PackedStringArray drift_base_args(const FoundryCLIHelp::CommandSpec &p_sp
 		if (!option.required) {
 			continue;
 		}
-		args.push_back(option.flag);
-		if (option.value_name) {
-			args.push_back(drift_option_value(option));
-		}
+		drift_append_option(args, option);
 	}
 	return args;
 }
@@ -1159,10 +1170,7 @@ TEST_CASE("[FoundryCLIHelp] Every documented option is accepted by its parser") 
 			const FoundryCLIHelp::CommandOption &option = spec.options[option_index];
 			PackedStringArray args = drift_base_args(spec);
 			if (!option.required) {
-				args.push_back(option.flag);
-				if (option.value_name) {
-					args.push_back(drift_option_value(option));
-				}
+				drift_append_option(args, option);
 			}
 			FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(args);
 			REQUIRE_MESSAGE(result.ok, String(spec.noun) + " " + spec.verb + " " + option.flag + ": " + result.error);
@@ -1220,9 +1228,12 @@ Insert after the "Global options" section:
   every command; `foundry --json script format --help` scopes the output. The
   document carries `foundry_cli_help_version: 1` and a flat `commands` array
   where each entry has `path`, `summary`, `usage`, `availability`
-  (`release` or `editor`), `options` (`flag`, `value`, `description`,
-  `required`), `positionals` (`name`, `optional`, `repeats`), and `examples`.
-  An unknown scope yields an empty `commands` array.
+  (`release` or `editor`), `options` (`flag`, `value`, `style`,
+  `description`, `required`), `positionals` (`name`, `optional`, `repeats`),
+  and `examples`. `style` is `"space"` when the value is a separate token,
+  `"equals"` when it is attached as `--flag=value`, and `null` for boolean
+  flags. An empty `commands` array means no command compiled into this build
+  matches the scope — it does not guarantee the scope itself is valid.
 
 Legacy engine flags are no longer documented in `--help`; the command API
 above is the supported surface (see issue #830 for the migration plan).
