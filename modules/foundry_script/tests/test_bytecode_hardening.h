@@ -105,11 +105,22 @@ TEST_CASE("[FoundryScript][BytecodeHardening] Verifier rejects malformed jumps a
 	jump_into_instruction.push_back(1);
 	CHECK(bytecode_verify_with_code(script, function, jump_into_instruction) == ERR_INVALID_DATA);
 
-	// A jump to exactly one-past-end is the valid loop-exit target.
+	// A jump to exactly one-past-end (`code_size`) is rejected: the release VM dispatches
+	// `_code_ptr[ip]` with no `ip < code_size` guard, so landing there reads an opcode past the buffer.
+	// Valid loop-exit jumps land on the real instruction after the loop (at minimum the trailing END),
+	// never at `code_size`.
 	Vector<int> jump_to_end;
 	jump_to_end.push_back(FSFunction::OPCODE_JUMP);
 	jump_to_end.push_back(2);
-	CHECK(bytecode_verify_with_code(script, function, jump_to_end) == OK);
+	CHECK(bytecode_verify_with_code(script, function, jump_to_end) == ERR_INVALID_DATA);
+
+	// A forward jump onto a real instruction boundary strictly inside the code passes: the jump lands
+	// on the trailing terminator, which also satisfies the end-in-a-terminator requirement.
+	Vector<int> jump_to_terminator;
+	jump_to_terminator.push_back(FSFunction::OPCODE_JUMP);
+	jump_to_terminator.push_back(2);
+	jump_to_terminator.push_back(FSFunction::OPCODE_END);
+	CHECK(bytecode_verify_with_code(script, function, jump_to_terminator) == OK);
 
 	// An instruction whose operands run past the end of the code.
 	Vector<int> truncated_instruction;
@@ -186,7 +197,8 @@ TEST_CASE("[FoundryScript][BytecodeHardening] Verifier checks the typed-dictiona
 	bad_value_type_info.push_back(0);
 	CHECK(bytecode_verify_with_code(script, function, bad_value_type_info) == ERR_INVALID_DATA);
 
-	// The same instruction with every operand in range passes, so the check is not over-tight.
+	// The same instruction with every operand in range passes, so the check is not over-tight. A
+	// trailing OPCODE_END terminates the function, which the verifier now requires.
 	Vector<int> valid_typed_dictionary;
 	valid_typed_dictionary.push_back(FSFunction::OPCODE_TYPE_TEST_DICTIONARY);
 	valid_typed_dictionary.push_back(FSFunction::ADDR_SELF);
@@ -197,6 +209,7 @@ TEST_CASE("[FoundryScript][BytecodeHardening] Verifier checks the typed-dictiona
 	valid_typed_dictionary.push_back(0);
 	valid_typed_dictionary.push_back(0);
 	valid_typed_dictionary.push_back(0);
+	valid_typed_dictionary.push_back(FSFunction::OPCODE_END);
 	CHECK(bytecode_verify_with_code(script, function, valid_typed_dictionary) == OK);
 
 	bytecode_destroy_restored_function(script, function);
@@ -223,6 +236,7 @@ TEST_CASE("[FoundryScript][BytecodeHardening] Verifier rejects out-of-range tabl
 		good_global_name.push_back(FSFunction::OPCODE_GET_MEMBER);
 		good_global_name.push_back(FSFunction::ADDR_SELF);
 		good_global_name.push_back(0);
+		good_global_name.push_back(FSFunction::OPCODE_END);
 		CHECK(bytecode_verify_with_code(script, function, good_global_name) == OK);
 	}
 
@@ -465,6 +479,93 @@ TEST_CASE("[FoundryScript][BytecodeHardening] Serialized bytecode leaks no sourc
 	// residual surface and are expected to be present.
 	CHECK(bytecode_buffer_contains(buffer, "member_marker"));
 	CHECK(bytecode_buffer_contains(buffer, "method_marker"));
+}
+
+TEST_CASE("[FoundryScript][BytecodeHardening] Verifier rejects fall-through and one-past-end targets") {
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"static func measure(text: String) -> int:\n"
+			"\treturn text.length()\n");
+	FSFunction *function = bytecode_round_trip_member_function(script, SNAME("measure"));
+
+	// A jump whose target is exactly `code_size`. The release VM would set ip = code_size and dispatch
+	// _code_ptr[code_size], reading an opcode past the buffer, so the target must be rejected even
+	// though the stream ends in a terminator.
+	Vector<int> jump_to_code_size;
+	jump_to_code_size.push_back(FSFunction::OPCODE_JUMP);
+	jump_to_code_size.push_back(3); // One past the end: code_size is 3 after the terminator below.
+	jump_to_code_size.push_back(FSFunction::OPCODE_END);
+	CHECK(bytecode_verify_with_code(script, function, jump_to_code_size) == ERR_INVALID_DATA);
+
+	// A function whose last decoded instruction is not a terminator. The stream ends on an instruction
+	// boundary, but execution would advance ip to code_size and read past the buffer, so it must be
+	// rejected.
+	Vector<int> non_terminator_tail;
+	non_terminator_tail.push_back(FSFunction::OPCODE_ASSIGN);
+	non_terminator_tail.push_back(FSFunction::ADDR_SELF);
+	non_terminator_tail.push_back(FSFunction::ADDR_SELF);
+	CHECK(bytecode_verify_with_code(script, function, non_terminator_tail) == ERR_INVALID_DATA);
+
+	// The same body followed by a terminator is accepted, proving neither check is over-tight.
+	Vector<int> terminated_tail;
+	terminated_tail.push_back(FSFunction::OPCODE_ASSIGN);
+	terminated_tail.push_back(FSFunction::ADDR_SELF);
+	terminated_tail.push_back(FSFunction::ADDR_SELF);
+	terminated_tail.push_back(FSFunction::OPCODE_END);
+	CHECK(bytecode_verify_with_code(script, function, terminated_tail) == OK);
+
+	bytecode_destroy_restored_function(script, function);
+}
+
+TEST_CASE("[FoundryScript][BytecodeHardening] Executed operator inline cache is zeroed on export") {
+	// An untyped `a + b` lowers to the non-validated OPCODE_OPERATOR, which the VM patches in place on
+	// first execution with inline-cache words: an operand signature, a cached return type, and a raw
+	// validated-evaluator function pointer split across ints. Those words are process-local and must
+	// never reach a `.fsb`; the exporter zeroes them back to the never-executed layout.
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"static func add(a, b):\n"
+			"\treturn a + b\n");
+	const HashMap<StringName, FSFunction *>::ConstIterator element = script->get_member_functions().find(SNAME("add"));
+	REQUIRE(element);
+	FSFunction *function = element->value;
+
+	const Vector<int> &operator_offsets = function->export_fixups.operator_cache_offsets;
+	REQUIRE(operator_offsets.size() == 1);
+	const int operator_offset = operator_offsets[0];
+	REQUIRE(function->get_code()[operator_offset] == FSFunction::OPCODE_OPERATOR);
+
+	constexpr int operator_pointer_size = sizeof(Variant::ValidatedOperatorEvaluator) / sizeof(int);
+	const int first_cache_word = operator_offset + 5;
+	const int last_cache_word = operator_offset + 6 + operator_pointer_size;
+
+	// Executing the function once populates the inline cache in place.
+	Vector<Variant> arguments;
+	arguments.push_back((int64_t)2);
+	arguments.push_back((int64_t)3);
+	const Variant original_result = bytecode_call_function(function, arguments);
+	CHECK((int64_t)original_result == 5);
+
+	// The signature word is now non-zero: the executed function really baked cache state, which is the
+	// exact leak the exporter must strip.
+	CHECK(function->get_code()[first_cache_word] != 0);
+
+	// Serialize the executed function, read it back, and confirm every cache word is zero while the
+	// base operands and operator enum survive.
+	FSBytecodeExporter exporter;
+	const Vector<uint8_t> payload = bytecode_serialize_function_payload(exporter, function);
+	FSFunction *restored = bytecode_deserialize_function(exporter, payload, script);
+	const Vector<int> &restored_code = restored->get_code();
+	for (int offset = first_cache_word; offset <= last_cache_word; offset++) {
+		CAPTURE(offset);
+		CHECK(restored_code[offset] == 0);
+	}
+	CHECK(restored_code[operator_offset] == FSFunction::OPCODE_OPERATOR);
+	CHECK(restored_code[operator_offset + 4] == function->get_code()[operator_offset + 4]);
+
+	// The round-tripped function re-heals its cache on first run and computes the same result.
+	const Variant restored_result = bytecode_call_function(restored, arguments);
+	CHECK((int64_t)restored_result == 5);
+
+	bytecode_destroy_restored_function(script, restored);
 }
 
 TEST_CASE("[FoundryScript][BytecodeHardening] finish() survives cascaded base/subclass destruction") {

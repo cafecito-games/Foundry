@@ -481,6 +481,25 @@ Error FSBytecodeExporter::serialize_function(StreamPeerBuffer *r_stream, const F
 						p_function->name, p_function->source));
 		masked_code_offsets.insert(global_store.code_offset);
 	}
+
+	// A non-validated OPCODE_OPERATOR reserves inline-cache words that the VM patches at runtime on the
+	// operator's first execution: the operand signature at offset+5, the cached return type at
+	// offset+6, and the validated-evaluator function pointer split across `operator_pointer_size` ints
+	// starting at offset+7. If the script ran in the editor before export, those words hold this
+	// process's raw pointer and type state; zeroing them restores the never-executed layout the loading
+	// VM re-heals on first run and keeps process-local pointers out of the `.fsb`. The base operands
+	// (left, right, destination) and the operator enum are untouched.
+	constexpr int operator_pointer_size = sizeof(Variant::ValidatedOperatorEvaluator) / sizeof(int);
+	for (const int operator_offset : fixups.operator_cache_offsets) {
+		const int first_cache_word = operator_offset + 5;
+		const int last_cache_word = operator_offset + 6 + operator_pointer_size;
+		ERR_FAIL_INDEX_V_MSG(last_cache_word, p_function->code.size(), ERR_INVALID_PARAMETER,
+				vformat("Cannot serialize compiled function '%s' of script '%s': operator cache offset is out of code bounds.",
+						p_function->name, p_function->source));
+		for (int offset = first_cache_word; offset <= last_cache_word; offset++) {
+			masked_code_offsets.insert(offset);
+		}
+	}
 	r_stream->put_u32((uint32_t)p_function->code.size());
 	for (int i = 0; i < p_function->code.size(); i++) {
 		r_stream->put_32(masked_code_offsets.has(i) ? 0 : p_function->code[i]);

@@ -505,6 +505,9 @@ void FSByteCodeGenerator::write_unary_operator(const Address &p_target, Variant:
 	}
 
 	// No specific types, perform variant evaluation.
+#ifdef TOOLS_ENABLED
+	const int unary_operator_offset = opcodes.size();
+#endif
 	append_opcode(FSFunction::OPCODE_OPERATOR);
 	append(p_left_operand);
 	append(Address());
@@ -516,6 +519,9 @@ void FSByteCodeGenerator::write_unary_operator(const Address &p_target, Variant:
 	for (int i = 0; i < _pointer_size; i++) {
 		append(0); // Space for function pointer.
 	}
+#ifdef TOOLS_ENABLED
+	export_fixups.operator_cache_offsets.push_back(unary_operator_offset);
+#endif
 }
 
 void FSByteCodeGenerator::write_binary_operator(const Address &p_target, Variant::Operator p_operator, const Address &p_left_operand, const Address &p_right_operand) {
@@ -565,6 +571,9 @@ void FSByteCodeGenerator::write_binary_operator(const Address &p_target, Variant
 	}
 
 	// No specific types, perform variant evaluation.
+#ifdef TOOLS_ENABLED
+	const int binary_operator_offset = opcodes.size();
+#endif
 	append_opcode(FSFunction::OPCODE_OPERATOR);
 	append(p_left_operand);
 	append(p_right_operand);
@@ -576,6 +585,9 @@ void FSByteCodeGenerator::write_binary_operator(const Address &p_target, Variant
 	for (int i = 0; i < _pointer_size; i++) {
 		append(0); // Space for function pointer.
 	}
+#ifdef TOOLS_ENABLED
+	export_fixups.operator_cache_offsets.push_back(binary_operator_offset);
+#endif
 }
 
 void FSByteCodeGenerator::write_type_test(const Address &p_target, const Address &p_source, const FSDataType &p_type) {

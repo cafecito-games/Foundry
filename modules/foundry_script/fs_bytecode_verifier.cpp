@@ -77,14 +77,15 @@ Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_me
 	const FSLanguage *language = FSLanguage::get_singleton();
 	const int global_array_size = language != nullptr ? language->get_global_array_size() : 0;
 
-	// Marks each offset that begins an instruction; `code_size` is the valid one-past-end target of a
-	// loop-exit jump. A jump into the middle of an instruction never lands on a marked boundary.
+	// Marks each offset that begins an instruction. A jump into the middle of an instruction, or to
+	// `code_size` (one past the end), never lands on a marked boundary. The release VM dispatches
+	// `_code_ptr[ip]` with no `ip < code_size` guard, so a target of `code_size` would read an opcode
+	// past the buffer; every valid target lands strictly inside `code`.
 	LocalVector<bool> instruction_starts;
-	instruction_starts.resize(code_size + 1);
-	for (int i = 0; i <= code_size; i++) {
+	instruction_starts.resize(code_size);
+	for (int i = 0; i < code_size; i++) {
 		instruction_starts[i] = false;
 	}
-	instruction_starts[code_size] = true;
 
 	// Every jump/branch/iterate target and default-argument entry, validated after the walk once all
 	// instruction boundaries are known (targets may point forward).
@@ -112,9 +113,11 @@ Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_me
 	constexpr int operator_pointer_size = sizeof(Variant::ValidatedOperatorEvaluator) / sizeof(int);
 
 	int ip = 0;
+	int final_instruction_opcode = -1;
 	while (ip < code_size) {
 		instruction_starts[ip] = true;
 		const int opcode = code_ptr[ip];
+		final_instruction_opcode = opcode;
 
 		switch (opcode) {
 			case FSFunction::OPCODE_OPERATOR: {
@@ -704,14 +707,37 @@ Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_me
 
 	VERIFY_FAIL_COND(ip != code_size, "instruction stream does not end on an instruction boundary");
 
-	// A jump/branch/iterate target must land on an instruction start or be the one-past-end loop exit.
+	// The function must end in a terminating instruction. Codegen's `write_end` always appends
+	// OPCODE_END as the final instruction, and every function-exit opcode leaves the interpreter loop
+	// (`OPCODE_BREAK`/`OPCODE_OUT`). Because the release VM dispatches `_code_ptr[ip]` with no
+	// `ip < code_size` guard, a stream whose last decoded instruction is not a terminator would let the
+	// VM advance `ip` to `code_size` and read an opcode past the buffer; requiring a terminator closes
+	// that fall-through.
+	bool ends_with_terminator = false;
+	switch (final_instruction_opcode) {
+		case FSFunction::OPCODE_END:
+		case FSFunction::OPCODE_RETURN:
+		case FSFunction::OPCODE_RETURN_TYPED_BUILTIN:
+		case FSFunction::OPCODE_RETURN_TYPED_ARRAY:
+		case FSFunction::OPCODE_RETURN_TYPED_DICTIONARY:
+		case FSFunction::OPCODE_RETURN_TYPED_NATIVE:
+		case FSFunction::OPCODE_RETURN_TYPED_SCRIPT:
+			ends_with_terminator = true;
+			break;
+		default:
+			ends_with_terminator = false;
+			break;
+	}
+	VERIFY_FAIL_COND(!ends_with_terminator, "function does not end in a terminating instruction");
+
+	// A jump/branch/iterate target must land on an instruction start strictly inside `code`.
 	for (const int target : jump_targets) {
-		VERIFY_FAIL_COND(target < 0 || target > code_size || !instruction_starts[target],
+		VERIFY_FAIL_COND(target < 0 || target >= code_size || !instruction_starts[target],
 				"jump target does not land on an instruction boundary");
 	}
 	// Default-argument entries are jump targets the VM reaches through OPCODE_JUMP_TO_DEF_ARGUMENT.
 	for (const int target : p_function->default_arguments) {
-		VERIFY_FAIL_COND(target < 0 || target > code_size || !instruction_starts[target],
+		VERIFY_FAIL_COND(target < 0 || target >= code_size || !instruction_starts[target],
 				"default argument target does not land on an instruction boundary");
 	}
 

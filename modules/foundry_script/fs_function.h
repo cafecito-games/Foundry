@@ -691,6 +691,11 @@ public:
 		Vector<StringName> gds_utilities;
 		Vector<MethodBindKey> method_binds;
 		Vector<GlobalStore> global_stores;
+		// Code offsets of every non-validated OPCODE_OPERATOR instruction. The VM patches inline-cache
+		// words into that instruction at runtime (an operand signature, a cached return type, and a raw
+		// evaluator function pointer); the exporter zeroes those words so no process-local pointer or
+		// state is baked into a `.fsb`.
+		Vector<int> operator_cache_offsets;
 		Vector<StringName> named_globals; // For export-time validation only.
 	};
 	ExportFixups export_fixups;
