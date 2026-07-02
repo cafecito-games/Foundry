@@ -653,6 +653,82 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 		CHECK(FSTests::find_override_candidate(result.candidates, "_draw") == nullptr);
 	}
 
+	TEST_CASE("Override method lists script-extensible native hooks from inherited native base") {
+		const String source =
+				"extends FoundryCommandBuildTask\n"
+				"\n"
+				"var marker := 0\n";
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 2, 1);
+		REQUIRE_MESSAGE(result.ok, result.error_message);
+		if (!result.ok) {
+			return;
+		}
+		const RefactorOverrideMethodCandidate *run_candidate =
+				FSTests::find_override_candidate(result.candidates, "run");
+		REQUIRE(run_candidate != nullptr);
+		if (run_candidate == nullptr) {
+			return;
+		}
+		CHECK(run_candidate->signature.contains("run(context: FoundryBuildContext) -> FoundryBuildResult"));
+		CHECK(run_candidate->origin.contains("FoundryCommandBuildTask"));
+
+		const RefactorOverrideMethodCandidate *schema_candidate =
+				FSTests::find_override_candidate(result.candidates, "get_config_schema");
+		REQUIRE(schema_candidate != nullptr);
+		if (schema_candidate == nullptr) {
+			return;
+		}
+		CHECK(schema_candidate->signature.contains("get_config_schema() -> FoundryBuildTaskConfigSchema"));
+	}
+
+	TEST_CASE("Override method renders script-extensible hook stub") {
+		const String source =
+				"extends FoundryCommandBuildTask\n"
+				"\n"
+				"var marker := 0\n";
+		RefactorOverrideMethodsResult candidates = FSTests::override_method_candidates(source, 2, 1);
+		REQUIRE_MESSAGE(candidates.ok, candidates.error_message);
+		if (!candidates.ok) {
+			return;
+		}
+		const RefactorOverrideMethodCandidate *candidate =
+				FSTests::find_override_candidate(candidates.candidates, "run");
+		REQUIRE(candidate != nullptr);
+		if (candidate == nullptr) {
+			return;
+		}
+
+		String out;
+		RefactorResult r = FSTests::run_override_method(source, 2, 1, candidate->id, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK(out.contains("func run(context: FoundryBuildContext) -> FoundryBuildResult:\n"));
+		CHECK_FALSE(out.contains("super.run"));
+	}
+
+	TEST_CASE("Override method skips already declared script-extensible hook") {
+		const String source =
+				"extends FoundryCommandBuildTask\n"
+				"\n"
+				"func run(context: FoundryBuildContext) -> FoundryBuildResult:\n"
+				"\treturn FoundryBuildResult.new()\n"
+				"\n"
+				"var marker := 0\n";
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 5, 1);
+		REQUIRE_MESSAGE(result.ok, result.error_message);
+		CHECK(FSTests::find_override_candidate(result.candidates, "run") == nullptr);
+		CHECK(FSTests::find_override_candidate(result.candidates, "get_config_schema") != nullptr);
+	}
+
+	TEST_CASE("Override method skips bound native methods that are not extensible hooks") {
+		const String source =
+				"extends FoundryCommandBuildTask\n"
+				"\n"
+				"var marker := 0\n";
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 2, 1);
+		REQUIRE_MESSAGE(result.ok, result.error_message);
+		CHECK(FSTests::find_override_candidate(result.candidates, "get_reference_count") == nullptr);
+	}
+
 	TEST_CASE("Override method includes abstract methods as selectable candidates") {
 		const String source =
 				"abstract class Base:\n"
