@@ -369,6 +369,9 @@ private:
 	// Re-links a bytecode-backed (`.fsb`) script from its compiled binary on disk; the parse-based
 	// reload path never applies to such scripts.
 	Error _reload_from_compiled_binary();
+	// Drops body/witness link residue from a failed `load_full` so a retry can re-link cleanly.
+	void _clear_partial_bytecode_link_state();
+	static void _erase_function_lambda_info(FoundryScript *p_script, FSFunction *p_function);
 
 	RBSet<Object *> instances;
 	bool destructing = false;

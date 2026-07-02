@@ -918,6 +918,61 @@ static void bytecode_write_remap_file(const String &p_source_path, const String 
 	file->store_string(vformat("[remap]\n\npath=\"%s\"\n", p_target_path));
 }
 
+TEST_CASE("[FoundryScript][BytecodeScript] Partial link failure is recovered on reload retry") {
+	const Ref<FoundryScript> original = compile_bytecode_test_source(
+			"func alpha() -> int:\n"
+			"\treturn 1\n"
+			"\n"
+			"func bravo() -> int:\n"
+			"\treturn 2\n");
+
+	const String source_path = original->get_script_path();
+	FSBytecodeExporter exporter;
+	Vector<uint8_t> good_buffer;
+	REQUIRE(exporter.serialize(original, good_buffer) == OK);
+
+	Vector<uint8_t> corrupt_buffer = good_buffer;
+	const CharString marker = String("bravo").utf8();
+	const CharString replacement = String("alpha").utf8();
+	bool patched = false;
+	for (int i = 0; i + marker.length() <= corrupt_buffer.size(); i++) {
+		if (memcmp(&corrupt_buffer[i], marker.get_data(), marker.length()) == 0) {
+			memcpy(&corrupt_buffer.write[i], replacement.get_data(), replacement.length());
+			patched = true;
+			break;
+		}
+	}
+	REQUIRE(patched);
+
+	const String binary_path = source_path.get_basename() + ".fsb";
+	bytecode_write_file(binary_path, corrupt_buffer);
+	bytecode_write_remap_file(source_path, binary_path);
+
+	Ref<FoundryScript> target;
+	target.instantiate();
+	target->set_path_cache(source_path);
+
+	BytecodeTestResolver resolver;
+	FSBytecodeLoader loader;
+	loader.set_resolver(&resolver);
+	ERR_PRINT_OFF;
+	CHECK(loader.load_full(corrupt_buffer, target) == ERR_INVALID_DATA);
+	ERR_PRINT_ON;
+	CHECK(!target->is_valid());
+	CHECK(target->get_member_functions().has(SNAME("alpha")));
+
+	bytecode_write_file(binary_path, good_buffer);
+	ERR_PRINT_OFF;
+	CHECK(target->reload() == OK);
+	ERR_PRINT_ON;
+	CHECK(target->is_valid());
+	CHECK(target->get_member_functions().has(SNAME("alpha")));
+	CHECK(target->get_member_functions().has(SNAME("bravo")));
+
+	DirAccess::remove_absolute(source_path + ".remap");
+	DirAccess::remove_absolute(binary_path);
+}
+
 TEST_CASE("[FoundryScript][BytecodeCache] ResourceLoader loads a .fsb end-to-end with dependencies and static variables") {
 	const String helper_path = TestUtils::get_temp_path("test_bytecode_cache_helper.fs");
 	{
