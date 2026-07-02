@@ -69,7 +69,7 @@ or by the git-style alias `foundry help [<noun> [<verb>]]`.
 - A bare noun (`foundry script`) prints the noun help to stderr and exits 1
   (incomplete command).
 - An unknown verb (`foundry script fmt`) prints
-  `Unknown script command 'fmt'.` followed by the noun help to stderr,
+  `Unknown script command: fmt.` followed by the noun help to stderr,
   exits 1.
 - Editor-only commands carry a slim availability badge; the badge legend
   shrinks to at most two lines and appears only in editor builds. Commands
