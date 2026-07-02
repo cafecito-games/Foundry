@@ -521,7 +521,7 @@ Variant::Type get_jni_type(const String &p_type) {
 }
 
 void setup_android_class_loader() {
-	// Find a known class defined in the Godot package and obtain its ClassLoader.
+	// Find a known class defined in the Foundry package and obtain its ClassLoader.
 	// This ClassLoader will be used by jni_find_class() to locate classes at runtime
 	// in a thread-safe manner, avoiding issues with FindClass in non-main threads.
 
@@ -532,7 +532,7 @@ void setup_android_class_loader() {
 	JNIEnv *env = get_jni_env();
 	ERR_FAIL_NULL(env);
 
-	jclass known_class = env->FindClass("games/cafecito/foundry/Godot");
+	jclass known_class = env->FindClass("games/cafecito/foundry/Foundry");
 	ERR_FAIL_NULL(known_class);
 
 	jclass class_class = env->FindClass("java/lang/Class");

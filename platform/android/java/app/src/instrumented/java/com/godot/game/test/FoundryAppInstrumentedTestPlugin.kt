@@ -32,9 +32,9 @@ package com.godot.game.test
 
 import android.util.Log
 import android.widget.Toast
-import games.cafecito.foundry.Godot
+import games.cafecito.foundry.Foundry
 import games.cafecito.foundry.plugin.FoundryPlugin
-import games.cafecito.foundry.plugin.UsedByGodot
+import games.cafecito.foundry.plugin.UsedByFoundry
 import games.cafecito.foundry.plugin.SignalInfo
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
@@ -43,7 +43,7 @@ import java.util.concurrent.TimeUnit
 /**
  * [FoundryPlugin] used to drive instrumented tests.
  */
-class FoundryAppInstrumentedTestPlugin(godot: Godot) : FoundryPlugin(godot) {
+class FoundryAppInstrumentedTestPlugin(godot: Foundry) : FoundryPlugin(godot) {
 
 	companion object {
 		private val TAG = FoundryAppInstrumentedTestPlugin::class.java.simpleName
@@ -66,7 +66,7 @@ class FoundryAppInstrumentedTestPlugin(godot: Godot) : FoundryPlugin(godot) {
 	private val latches = ConcurrentHashMap<String, CountDownLatch>()
 
 	init {
-		// Add a countdown latch that is triggered when `onGodotMainLoopStarted` is fired.
+		// Add a countdown latch that is triggered when `onFoundryMainLoopStarted` is fired.
 		// This will be used by tests to wait until the engine is ready.
 		latches[MAIN_LOOP_STARTED_LATCH_KEY] = CountDownLatch(1)
 		// Add a countdown latch that is triggered when the engine terminates.
@@ -77,30 +77,30 @@ class FoundryAppInstrumentedTestPlugin(godot: Godot) : FoundryPlugin(godot) {
 
 	override fun getPluginSignals() = SIGNALS
 
-	override fun onGodotMainLoopStarted() {
-		super.onGodotMainLoopStarted()
+	override fun onFoundryMainLoopStarted() {
+		super.onFoundryMainLoopStarted()
 		latches.remove(MAIN_LOOP_STARTED_LATCH_KEY)?.countDown()
 	}
 
-	override fun onGodotTerminating() {
-		super.onGodotTerminating()
+	override fun onFoundryTerminating() {
+		super.onFoundryTerminating()
 		latches.remove(ENGINE_TERMINATING_LATCH_KEY)?.countDown()
 	}
 
 	/**
-	 * Used by the instrumented test to wait until the Godot main loop is up and running.
+	 * Used by the instrumented test to wait until the Foundry main loop is up and running.
 	 */
-	internal fun waitForGodotMainLoopStarted() {
-		// Wait on the CountDownLatch for `onGodotMainLoopStarted`
+	internal fun waitForFoundryMainLoopStarted() {
+		// Wait on the CountDownLatch for `onFoundryMainLoopStarted`
 		try {
 			latches[MAIN_LOOP_STARTED_LATCH_KEY]?.await()
 		} catch (e: InterruptedException) {
-			Log.e(TAG, "Unable to wait for Godot main loop started event.", e)
+			Log.e(TAG, "Unable to wait for Foundry main loop started event.", e)
 		}
 	}
 
 	internal fun waitForEngineTermination(timeoutInMs: Long) {
-		// Wait on the CountDownLatch for `onGodotTerminating`.
+		// Wait on the CountDownLatch for `onFoundryTerminating`.
 		try {
 			latches[ENGINE_TERMINATING_LATCH_KEY]?.await(timeoutInMs, TimeUnit.MILLISECONDS)
 		} catch (e: InterruptedException) {
@@ -142,7 +142,7 @@ class FoundryAppInstrumentedTestPlugin(godot: Godot) : FoundryPlugin(godot) {
 	/**
 	 * Callback invoked from foundry_script when the tests are completed.
 	 */
-	@UsedByGodot
+	@UsedByFoundry
 	fun onTestsCompleted(testLabel: String, passes: Int, failures: Int) {
 		Log.d(TAG, "$testLabel tests completed")
 		val result = if (failures == 0) {
@@ -154,7 +154,7 @@ class FoundryAppInstrumentedTestPlugin(godot: Godot) : FoundryPlugin(godot) {
 		completeTest(testLabel, result)
 	}
 
-	@UsedByGodot
+	@UsedByFoundry
 	fun onTestsFailed(testLabel: String, failureMessage: String) {
 		Log.d(TAG, "$testLabel tests failed")
 		val result: Result<Any> = Result.failure(AssertionError(failureMessage))
@@ -166,7 +166,7 @@ class FoundryAppInstrumentedTestPlugin(godot: Godot) : FoundryPlugin(godot) {
 		latches.remove(testKey)?.countDown()
 	}
 
-	@UsedByGodot
+	@UsedByFoundry
 	fun helloWorld() {
 		runOnHostThread {
 			Toast.makeText(activity, "Toast from Android plugin", Toast.LENGTH_LONG).show()

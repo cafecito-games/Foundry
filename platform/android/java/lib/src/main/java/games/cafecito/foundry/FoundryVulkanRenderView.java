@@ -51,12 +51,12 @@ import games.cafecito.foundry.vulkan.VkRenderer;
 import games.cafecito.foundry.vulkan.VkSurfaceView;
 
 class FoundryVulkanRenderView extends VkSurfaceView implements FoundryRenderView {
-	private final Godot godot;
+	private final Foundry godot;
 	private final FoundryInputHandler mInputHandler;
 	private final VkRenderer mRenderer;
 	private final SparseArray<PointerIcon> customPointerIcons = new SparseArray<>();
 
-	public FoundryVulkanRenderView(Godot godot, FoundryInputHandler inputHandler, boolean shouldBeTranslucent) {
+	public FoundryVulkanRenderView(Foundry godot, FoundryInputHandler inputHandler, boolean shouldBeTranslucent) {
 		super(godot.getContext());
 
 		this.godot = godot;

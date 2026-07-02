@@ -61,7 +61,7 @@ public class FoundryNetUtils {
 
 	/**
 	 * Acquire the multicast lock. This is required on some devices to receive broadcast/multicast packets.
-	 * This is done automatically by Godot when enabling broadcast or joining a multicast group on a socket.
+	 * This is done automatically by Foundry when enabling broadcast or joining a multicast group on a socket.
 	 */
 	public void multicastLockAcquire() {
 		if (multicastLock == null)
@@ -69,13 +69,13 @@ public class FoundryNetUtils {
 		try {
 			multicastLock.acquire();
 		} catch (RuntimeException e) {
-			Log.e("Godot", "Exception during multicast lock acquire: " + e);
+			Log.e("Foundry", "Exception during multicast lock acquire: " + e);
 		}
 	}
 
 	/**
 	 * Release the multicast lock.
-	 * This is done automatically by Godot when the lock is no longer needed by a socket.
+	 * This is done automatically by Foundry when the lock is no longer needed by a socket.
 	 */
 	public void multicastLockRelease() {
 		if (multicastLock == null)
@@ -83,7 +83,7 @@ public class FoundryNetUtils {
 		try {
 			multicastLock.release();
 		} catch (RuntimeException e) {
-			Log.e("Godot", "Exception during multicast lock release: " + e);
+			Log.e("Foundry", "Exception during multicast lock release: " + e);
 		}
 	}
 
@@ -112,7 +112,7 @@ public class FoundryNetUtils {
 			}
 			return writer.toString();
 		} catch (Exception e) {
-			Log.e("Godot", "Exception while reading CA certificates: " + e);
+			Log.e("Foundry", "Exception while reading CA certificates: " + e);
 			return "";
 		}
 	}

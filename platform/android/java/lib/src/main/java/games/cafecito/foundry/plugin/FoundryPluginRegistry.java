@@ -45,20 +45,20 @@ import java.util.Collections;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
-import games.cafecito.foundry.Godot;
+import games.cafecito.foundry.Foundry;
 
 /**
- * Registry used to load and access the registered Godot Android plugins.
+ * Registry used to load and access the registered Foundry Android plugins.
  */
 public final class FoundryPluginRegistry {
 	private static final String TAG = FoundryPluginRegistry.class.getSimpleName();
 
 	/**
-	 * Prefix used for version 1 of the Godot plugin, mostly compatible with Godot 3.x
+	 * Prefix used for version 1 of the Foundry plugin, mostly compatible with Foundry 3.x
 	 */
 	private static final String FOUNDRY_PLUGIN_V1_NAME_PREFIX = "org.godotengine.plugin.v1.";
 	/**
-	 * Prefix used for version 2 of the Godot plugin, compatible with Godot 4.2+
+	 * Prefix used for version 2 of the Foundry plugin, compatible with Foundry 4.2+
 	 */
 	private static final String FOUNDRY_PLUGIN_V2_NAME_PREFIX = "org.godotengine.plugin.v2.";
 
@@ -90,17 +90,17 @@ public final class FoundryPluginRegistry {
 	}
 
 	/**
-	 * Parse the manifest file and load all included Godot Android plugins.
+	 * Parse the manifest file and load all included Foundry Android plugins.
 	 * <p>
 	 * A plugin manifest entry is a '<meta-data>' tag setup as described in the {@link FoundryPlugin}
 	 * documentation.
 	 *
-	 * @param godot Godot instance
+	 * @param godot Foundry instance
 	 * @param runtimePlugins Set of plugins provided at runtime for registration
 	 * @return A singleton instance of {@link FoundryPluginRegistry}. This ensures that only one instance
-	 * of each Godot Android plugins is available at runtime.
+	 * of each Foundry Android plugins is available at runtime.
 	 */
-	public static FoundryPluginRegistry initializePluginRegistry(Godot godot, Set<FoundryPlugin> runtimePlugins) {
+	public static FoundryPluginRegistry initializePluginRegistry(Foundry godot, Set<FoundryPlugin> runtimePlugins) {
 		if (instance == null) {
 			instance = new FoundryPluginRegistry();
 			instance.loadPlugins(godot, runtimePlugins);
@@ -113,7 +113,7 @@ public final class FoundryPluginRegistry {
 	 * Return the plugin registry if it's initialized.
 	 * Throws a {@link IllegalStateException} exception if not.
 	 *
-	 * @throws IllegalStateException if {@link FoundryPluginRegistry#initializePluginRegistry(Godot, Set)} has not been called prior to calling this method.
+	 * @throws IllegalStateException if {@link FoundryPluginRegistry#initializePluginRegistry(Foundry, Set)} has not been called prior to calling this method.
 	 */
 	public static FoundryPluginRegistry getPluginRegistry() throws IllegalStateException {
 		if (instance == null) {
@@ -123,7 +123,7 @@ public final class FoundryPluginRegistry {
 		return instance;
 	}
 
-	private void loadPlugins(Godot godot, Set<FoundryPlugin> runtimePlugins) {
+	private void loadPlugins(Foundry godot, Set<FoundryPlugin> runtimePlugins) {
 		// Register the runtime plugins
 		if (runtimePlugins != null && !runtimePlugins.isEmpty()) {
 			for (FoundryPlugin plugin : runtimePlugins) {
@@ -145,17 +145,17 @@ public final class FoundryPluginRegistry {
 			}
 
 			for (String metaDataName : metaData.keySet()) {
-				// Parse the meta-data looking for entry with the Godot plugin name prefix.
+				// Parse the meta-data looking for entry with the Foundry plugin name prefix.
 				String pluginName = null;
 				if (metaDataName.startsWith(FOUNDRY_PLUGIN_V2_NAME_PREFIX)) {
 					pluginName = metaDataName.substring(FOUNDRY_PLUGIN_V2_NAME_PREFIX.length()).trim();
 				} else if (metaDataName.startsWith(FOUNDRY_PLUGIN_V1_NAME_PREFIX)) {
 					pluginName = metaDataName.substring(FOUNDRY_PLUGIN_V1_NAME_PREFIX.length()).trim();
-					Log.w(TAG, "Godot v1 plugin are deprecated in Godot 4.2 and higher: " + pluginName);
+					Log.w(TAG, "Foundry v1 plugin are deprecated in Foundry 4.2 and higher: " + pluginName);
 				}
 
 				if (!TextUtils.isEmpty(pluginName)) {
-					Log.i(TAG, "Initializing Godot plugin " + pluginName);
+					Log.i(TAG, "Initializing Foundry plugin " + pluginName);
 
 					// Retrieve the plugin class full name.
 					String pluginHandleClassFullName = metaData.getString(metaDataName);
@@ -166,7 +166,7 @@ public final class FoundryPluginRegistry {
 							Class<FoundryPlugin> pluginClass = (Class<FoundryPlugin>)Class
 																	   .forName(pluginHandleClassFullName);
 							Constructor<FoundryPlugin> pluginConstructor = pluginClass
-																				   .getConstructor(Godot.class);
+																				   .getConstructor(Foundry.class);
 							FoundryPlugin pluginHandle = pluginConstructor.newInstance(godot);
 
 							// Load the plugin initializer into the registry using the plugin name as key.
@@ -175,9 +175,9 @@ public final class FoundryPluginRegistry {
 										"Meta-data plugin name does not match the value returned by the plugin handle: " + pluginName + " =/= " + pluginHandle.getPluginName());
 							}
 							registry.put(pluginName, pluginHandle);
-							Log.i(TAG, "Completed initialization for Godot plugin " + pluginHandle.getPluginName());
+							Log.i(TAG, "Completed initialization for Foundry plugin " + pluginHandle.getPluginName());
 						} catch (Exception e) {
-							Log.w(TAG, "Unable to load Godot plugin " + pluginName, e);
+							Log.w(TAG, "Unable to load Foundry plugin " + pluginName, e);
 						}
 					} else {
 						Log.w(TAG, "Invalid plugin loader class for " + pluginName);
@@ -185,7 +185,7 @@ public final class FoundryPluginRegistry {
 				}
 			}
 		} catch (Exception e) {
-			Log.e(TAG, "Unable load Godot Android plugins from the manifest file.", e);
+			Log.e(TAG, "Unable load Foundry Android plugins from the manifest file.", e);
 		}
 	}
 }

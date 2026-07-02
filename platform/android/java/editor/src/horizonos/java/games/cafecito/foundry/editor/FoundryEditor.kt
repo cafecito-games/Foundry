@@ -31,11 +31,11 @@
 package games.cafecito.foundry.editor
 
 /**
- * Primary window of the Godot Editor.
+ * Primary window of the Foundry Editor.
  *
  * This is the implementation of the editor used when running on HorizonOS devices.
  */
-open class FoundryEditor : BaseGodotEditor() {
+open class FoundryEditor : BaseFoundryEditor() {
 
 	override fun getExcludedPermissions(): MutableSet<String> {
 		val excludedPermissions = super.getExcludedPermissions().apply {

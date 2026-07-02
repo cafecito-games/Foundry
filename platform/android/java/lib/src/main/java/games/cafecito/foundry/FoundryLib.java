@@ -53,10 +53,10 @@ public class FoundryLib {
 	}
 
 	/**
-	 * Invoked on the main thread to initialize Godot native layer.
+	 * Invoked on the main thread to initialize Foundry native layer.
 	 */
 	public static native boolean initialize(
-			Godot p_instance,
+			Foundry p_instance,
 			AssetManager p_asset_manager,
 			FoundryIO godotIO,
 			FoundryNetUtils netUtils,
@@ -65,14 +65,14 @@ public class FoundryLib {
 			boolean use_apk_expansion);
 
 	/**
-	 * Invoked on the main thread to clean up Godot native layer.
+	 * Invoked on the main thread to clean up Foundry native layer.
 	 * @see androidx.fragment.app.Fragment#onDestroy()
 	 */
 	public static native void ondestroy();
 
 	/**
-	 * Invoked on the GL thread to complete setup for the Godot native layer logic.
-	 * @param p_cmdline Command line arguments used to configure Godot native layer components.
+	 * Invoked on the GL thread to complete setup for the Foundry native layer logic.
+	 * @param p_cmdline Command line arguments used to configure Foundry native layer components.
 	 */
 	public static native boolean setup(String[] p_cmdline, FoundryTTS tts);
 
@@ -183,7 +183,7 @@ public class FoundryLib {
 	public static native void focusout();
 
 	/**
-	 * Used to access Godot global properties.
+	 * Used to access Foundry global properties.
 	 * @param p_key Property key
 	 * @return String value of the property
 	 */
@@ -199,7 +199,7 @@ public class FoundryLib {
 	public static native String[] getRendererInfo();
 
 	/**
-	 * Used to access Godot's editor settings.
+	 * Used to access Foundry's editor settings.
 	 * @param settingKey Setting key
 	 * @return String value of the setting
 	 */
@@ -230,8 +230,8 @@ public class FoundryLib {
 	public static native void setEditorProjectMetadata(String section, String key, Object data);
 
 	/**
-	 * Invoke method |p_method| on the Godot object specified by |p_id|
-	 * @param p_id Id of the Godot object to invoke
+	 * Invoke method |p_method| on the Foundry object specified by |p_id|
+	 * @param p_id Id of the Foundry object to invoke
 	 * @param p_method Name of the method to invoke
 	 * @param p_params Parameters to use for method invocation
 	 *
@@ -243,8 +243,8 @@ public class FoundryLib {
 	}
 
 	/**
-	 * Invoke method |p_method| on the Godot object specified by |p_id| during idle time.
-	 * @param p_id Id of the Godot object to invoke
+	 * Invoke method |p_method| on the Foundry object specified by |p_id| during idle time.
+	 * @param p_id Id of the Foundry object to invoke
 	 * @param p_method Name of the method to invoke
 	 * @param p_params Parameters to use for method invocation
 	 *

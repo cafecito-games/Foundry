@@ -47,9 +47,9 @@ import games.cafecito.foundry.xr.XRMode
 import org.godotengine.openxr.vendors.utils.*
 
 /**
- * Drives the 'run project' window of the Godot Editor.
+ * Drives the 'run project' window of the Foundry Editor.
  */
-open class FoundryGame : BaseGodotGame() {
+open class FoundryGame : BaseFoundryGame() {
 
 	companion object {
 		private val TAG = FoundryGame::class.java.simpleName
@@ -142,7 +142,7 @@ open class FoundryGame : BaseGodotGame() {
 		}
 	}
 
-	override fun getGodotAppLayout() = R.layout.foundry_game_layout
+	override fun getFoundryAppLayout() = R.layout.foundry_game_layout
 
 	override fun getEditorWindowInfo() = RUN_GAME_INFO
 

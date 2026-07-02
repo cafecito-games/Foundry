@@ -103,7 +103,7 @@
                 android:defaultHeight="@dimen/editor_default_window_height" />
         </activity>
         <activity
-            android:name=".embed.EmbeddedGodotGame"
+            android:name=".embed.EmbeddedFoundryGame"
             android:configChanges="layoutDirection|locale|orientation|keyboardHidden|screenSize|smallestScreenSize|density|keyboard|navigation|screenLayout|uiMode"
             android:exported="false"
             android:icon="@mipmap/ic_play_window"
@@ -112,7 +112,7 @@
             android:taskAffinity=":embed"
             android:excludeFromRecents="true"
             android:launchMode="singleTask"
-            android:process=":EmbeddedGodotGame"
+            android:process=":EmbeddedFoundryGame"
             android:supportsPictureInPicture="true" />
         <activity
             android:name=".FoundryXRGame"

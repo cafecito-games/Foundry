@@ -76,12 +76,12 @@ import games.cafecito.foundry.xr.regular.RegularFallbackConfigChooser;
  *   bit depths). Failure to do so would result in an EGL_BAD_MATCH error.
  */
 class FoundryGLRenderView extends GLSurfaceView implements FoundryRenderView {
-	private final Godot godot;
+	private final Foundry godot;
 	private final FoundryInputHandler inputHandler;
 	private final FoundryRenderer godotRenderer;
 	private final SparseArray<PointerIcon> customPointerIcons = new SparseArray<>();
 
-	public FoundryGLRenderView(Godot godot, FoundryInputHandler inputHandler, XRMode xrMode, boolean useDebugOpengl, boolean shouldBeTranslucent) {
+	public FoundryGLRenderView(Foundry godot, FoundryInputHandler inputHandler, XRMode xrMode, boolean useDebugOpengl, boolean shouldBeTranslucent) {
 		super(godot.getContext());
 
 		this.godot = godot;

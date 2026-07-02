@@ -38,7 +38,7 @@ import androidx.test.espresso.Espresso
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.godot.game.test.FoundryAppInstrumentedTestPlugin
-import games.cafecito.foundry.Godot
+import games.cafecito.foundry.Foundry
 import games.cafecito.foundry.FoundryActivity.Companion.EXTRA_COMMAND_LINE_PARAMS
 import games.cafecito.foundry.plugin.FoundryPluginRegistry
 import org.junit.Test
@@ -78,8 +78,8 @@ class FoundryAppTest {
 				val testPlugin = getTestPlugin()
 				assertNotNull(testPlugin)
 
-				Log.d(TAG, "Waiting for the Godot main loop to start...")
-				testPlugin.waitForGodotMainLoopStarted()
+				Log.d(TAG, "Waiting for the Foundry main loop to start...")
+				testPlugin.waitForFoundryMainLoopStarted()
 
 				Log.d(TAG, "Running JavaClassWrapper tests...")
 				val result = testPlugin.runJavaClassWrapperTests()
@@ -101,8 +101,8 @@ class FoundryAppTest {
 				val testPlugin = getTestPlugin()
 				assertNotNull(testPlugin)
 
-				Log.d(TAG, "Waiting for the Godot main loop to start...")
-				testPlugin.waitForGodotMainLoopStarted()
+				Log.d(TAG, "Waiting for the Foundry main loop to start...")
+				testPlugin.waitForFoundryMainLoopStarted()
 
 				Log.d(TAG, "Running FileAccess tests...")
 				val result = testPlugin.runFileAccessTests()
@@ -114,10 +114,10 @@ class FoundryAppTest {
 	}
 
 	/**
-	 * Test implicit launch of the Godot app, and validates this resolves to the `FoundryAppLauncher` activity alias.
+	 * Test implicit launch of the Foundry app, and validates this resolves to the `FoundryAppLauncher` activity alias.
 	 */
 	@Test
-	fun testImplicitGodotAppLauncherLaunch() {
+	fun testImplicitFoundryAppLauncherLaunch() {
 		val implicitLaunchIntent = Intent().apply {
 			setPackage(BuildConfig.APPLICATION_ID)
 			action = Intent.ACTION_MAIN
@@ -135,10 +135,10 @@ class FoundryAppTest {
 	}
 
 	/**
-	 * Test explicit launch of the Godot app via its activity-alias launcher, and validates it resolves properly.
+	 * Test explicit launch of the Foundry app via its activity-alias launcher, and validates it resolves properly.
 	 */
 	@Test
-	fun testExplicitGodotAppLauncherLaunch() {
+	fun testExplicitFoundryAppLauncherLaunch() {
 		val explicitIntent = Intent().apply {
 			component = ComponentName(BuildConfig.APPLICATION_ID, FOUNDRY_APP_LAUNCHER_CLASS_NAME)
 			putExtra(EXTRA_COMMAND_LINE_PARAMS, TEST_COMMAND_LINE_PARAMS)
@@ -157,7 +157,7 @@ class FoundryAppTest {
 	 * Test explicit launch of the `FoundryApp` activity.
 	 */
 	@Test
-	fun testExplicitGodotAppLaunch() {
+	fun testExplicitFoundryAppLaunch() {
 		val explicitIntent = Intent().apply {
 			component = ComponentName(BuildConfig.APPLICATION_ID, FOUNDRY_APP_CLASS_NAME)
 			putExtra(EXTRA_COMMAND_LINE_PARAMS, TEST_COMMAND_LINE_PARAMS)
@@ -182,8 +182,8 @@ class FoundryAppTest {
 			val testPlugin = getTestPlugin()
 			assertNotNull(testPlugin)
 
-			Log.d(TAG, "Waiting for the Godot main loop to start...")
-			testPlugin.waitForGodotMainLoopStarted()
+			Log.d(TAG, "Waiting for the Foundry main loop to start...")
+			testPlugin.waitForFoundryMainLoopStarted()
 
 			// Disable 'quit_on_go_back'.
 			testPlugin.updateQuitOnGoBack(false)
@@ -194,8 +194,8 @@ class FoundryAppTest {
 			Log.d(TAG, "Waiting for the engine to terminate...")
 			testPlugin.waitForEngineTermination(5_000L)
 
-			val godot = Godot.getInstance(InstrumentationRegistry.getInstrumentation().targetContext)
-			assertTrue { godot.runStatus != Godot.RunStatus.TERMINATING }
+			val godot = Foundry.getInstance(InstrumentationRegistry.getInstrumentation().targetContext)
+			assertTrue { godot.runStatus != Foundry.RunStatus.TERMINATING }
 		}
 	}
 
@@ -208,8 +208,8 @@ class FoundryAppTest {
 			val testPlugin = getTestPlugin()
 			assertNotNull(testPlugin)
 
-			Log.d(TAG, "Waiting for the Godot main loop to start...")
-			testPlugin.waitForGodotMainLoopStarted()
+			Log.d(TAG, "Waiting for the Foundry main loop to start...")
+			testPlugin.waitForFoundryMainLoopStarted()
 
 			// Enable 'quit_on_go_back'.
 			testPlugin.updateQuitOnGoBack(true)
@@ -220,8 +220,8 @@ class FoundryAppTest {
 			Log.d(TAG, "Waiting for the engine to terminate...")
 			testPlugin.waitForEngineTermination(5_000L)
 
-			val godot = Godot.getInstance(InstrumentationRegistry.getInstrumentation().targetContext)
-			assertTrue { godot.runStatus == Godot.RunStatus.TERMINATING }
+			val godot = Foundry.getInstance(InstrumentationRegistry.getInstrumentation().targetContext)
+			assertTrue { godot.runStatus == Foundry.RunStatus.TERMINATING }
 		}
 	}
 }

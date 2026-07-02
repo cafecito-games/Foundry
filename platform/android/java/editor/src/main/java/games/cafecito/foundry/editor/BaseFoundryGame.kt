@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  BaseGodotGame.kt                                                      */
+/*  BaseFoundryGame.kt                                                      */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -33,7 +33,7 @@ package games.cafecito.foundry.editor
 import android.Manifest
 import android.util.Log
 import androidx.annotation.CallSuper
-import games.cafecito.foundry.Godot
+import games.cafecito.foundry.Foundry
 import games.cafecito.foundry.FoundryLib
 import games.cafecito.foundry.editor.utils.GameMenuUtils
 import games.cafecito.foundry.utils.PermissionsUtil
@@ -41,11 +41,11 @@ import games.cafecito.foundry.utils.ProcessPhoenix
 import org.godotengine.openxr.vendors.utils.*
 
 /**
- * Base class for the Godot play windows.
+ * Base class for the Foundry play windows.
  */
-abstract class BaseGodotGame: FoundryEditor() {
+abstract class BaseFoundryGame: FoundryEditor() {
 	companion object {
-		private val TAG = BaseGodotGame::class.java.simpleName
+		private val TAG = BaseFoundryGame::class.java.simpleName
 	}
 
 	override fun overrideVolumeButtons() = java.lang.Boolean.parseBoolean(FoundryLib.getGlobal("input_devices/pointing/android/override_volume_buttons"))
@@ -56,21 +56,21 @@ abstract class BaseGodotGame: FoundryEditor() {
 
 	override fun disableScrollDeadzone() = java.lang.Boolean.parseBoolean(FoundryLib.getGlobal("input_devices/pointing/android/disable_scroll_deadzone"))
 
-	override fun onGodotSetupCompleted() {
-		super.onGodotSetupCompleted()
-		Log.v(TAG, "OnGodotSetupCompleted")
+	override fun onFoundrySetupCompleted() {
+		super.onFoundrySetupCompleted()
+		Log.v(TAG, "OnFoundrySetupCompleted")
 
 		// Check if we should be running in XR instead (if available) as it's possible we were
 		// launched from the project manager which doesn't have that information.
 		val launchingArgs = retrieveCommandLineParamsFromLaunchIntent()
 		val editorWindowInfo = retrieveEditorWindowInfo(launchingArgs, getEditorGameEmbedMode())
 		if (editorWindowInfo != getEditorWindowInfo()) {
-			val relaunchIntent = getNewGodotInstanceIntent(editorWindowInfo, launchingArgs)
+			val relaunchIntent = getNewFoundryInstanceIntent(editorWindowInfo, launchingArgs)
 			relaunchIntent.putExtra(EXTRA_NEW_LAUNCH, true)
 				.putExtra(EditorMessageDispatcher.EXTRA_MSG_DISPATCHER_PAYLOAD, intent.getBundleExtra(EditorMessageDispatcher.EXTRA_MSG_DISPATCHER_PAYLOAD))
 
 			Log.d(TAG, "Relaunching XR project using ${editorWindowInfo.windowClassName} with parameters ${launchingArgs.contentToString()}")
-			Godot.getInstance(applicationContext).destroyAndKillProcess {
+			Foundry.getInstance(applicationContext).destroyAndKillProcess {
 				ProcessPhoenix.triggerRebirth(this, relaunchIntent)
 			}
 			return
@@ -105,7 +105,7 @@ abstract class BaseGodotGame: FoundryEditor() {
 	override fun supportsFeature(featureTag: String): Boolean {
 		if (HYBRID_APP_FEATURE == featureTag) {
 			// Check if hybrid is enabled.
-			return godot?.isXrRuntime == true && isHybridAppEnabled()
+			return foundry?.isXrRuntime == true && isHybridAppEnabled()
 		}
 
 		return super.supportsFeature(featureTag)

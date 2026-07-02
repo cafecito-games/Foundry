@@ -45,7 +45,7 @@ import games.cafecito.foundry.utils.PermissionsUtil
 import games.cafecito.foundry.utils.ProcessPhoenix
 
 /**
- * Base abstract activity for Android apps intending to use Godot as the primary screen.
+ * Base abstract activity for Android apps intending to use Foundry as the primary screen.
  *
  * Also a reference implementation for how to set up and use the [FoundryFragment] fragment
  * within an Android app.
@@ -61,14 +61,14 @@ abstract class FoundryActivity : FragmentActivity(), FoundryHost {
 		@JvmStatic
 		protected val EXTRA_NEW_LAUNCH = "new_launch_requested"
 
-		// This window must not match those in BaseGodotEditor.RUN_GAME_INFO etc
+		// This window must not match those in BaseFoundryEditor.RUN_GAME_INFO etc
 		@JvmStatic
 		private final val DEFAULT_WINDOW_ID = 664;
 	}
 
 	private val commandLineParams = ArrayList<String>()
 	/**
-	 * Interaction with the [Godot] object is delegated to the [FoundryFragment] class.
+	 * Interaction with the [Foundry] object is delegated to the [FoundryFragment] class.
 	 */
 	protected var godotFragment: FoundryFragment? = null
 		private set
@@ -118,20 +118,20 @@ abstract class FoundryActivity : FragmentActivity(), FoundryHost {
 
 		super.onCreate(savedInstanceState)
 
-		setContentView(getGodotAppLayout())
+		setContentView(getFoundryAppLayout())
 
-		// Register `OnBackPressedCallback` for the Godot fragment.
+		// Register `OnBackPressedCallback` for the Foundry fragment.
 		onBackPressedDispatcher.addCallback { godotFragment?.onBackPressed() }
 
 		handleStartIntent(intent, true)
 
 		val currentFragment = supportFragmentManager.findFragmentById(R.id.godot_fragment_container)
 		if (currentFragment is FoundryFragment) {
-			Log.v(TAG, "Reusing existing Godot fragment instance.")
+			Log.v(TAG, "Reusing existing Foundry fragment instance.")
 			godotFragment = currentFragment
 		} else {
-			Log.v(TAG, "Creating new Godot fragment instance.")
-			godotFragment = initGodotInstance()
+			Log.v(TAG, "Creating new Foundry fragment instance.")
+			godotFragment = initFoundryInstance()
 
 			val transaction = supportFragmentManager.beginTransaction()
 			if (currentFragment != null) {
@@ -145,7 +145,7 @@ abstract class FoundryActivity : FragmentActivity(), FoundryHost {
 		}
 	}
 
-	override fun onNewGodotInstanceRequested(args: Array<String>): Int {
+	override fun onNewFoundryInstanceRequested(args: Array<String>): Int {
 		Log.d(TAG, "Restarting with parameters ${args.contentToString()}")
 		val intent = Intent()
 			.setComponent(ComponentName(this, javaClass.name))
@@ -158,42 +158,42 @@ abstract class FoundryActivity : FragmentActivity(), FoundryHost {
 
 	protected fun triggerRebirth(bundle: Bundle?, intent: Intent) {
 		// Launch a new activity
-		Godot.getInstance(applicationContext).destroyAndKillProcess {
+		Foundry.getInstance(applicationContext).destroyAndKillProcess {
 			ProcessPhoenix.triggerRebirth(this, bundle, intent)
 		}
 	}
 
 	@LayoutRes
-	protected open fun getGodotAppLayout() = R.layout.foundry_app_layout
+	protected open fun getFoundryAppLayout() = R.layout.foundry_app_layout
 
 	override fun onDestroy() {
 		Log.v(TAG, "Destroying FoundryActivity $this...")
 		super.onDestroy()
 	}
 
-	override fun onGodotForceQuit(instance: Godot) {
-		runOnUiThread { terminateGodotInstance(instance) }
+	override fun onFoundryForceQuit(instance: Foundry) {
+		runOnUiThread { terminateFoundryInstance(instance) }
 	}
 
-	private fun terminateGodotInstance(instance: Godot) {
+	private fun terminateFoundryInstance(instance: Foundry) {
 		godotFragment?.let {
-			if (instance === it.godot) {
-				Log.v(TAG, "Force quitting Godot instance")
+			if (instance === it.foundry) {
+				Log.v(TAG, "Force quitting Foundry instance")
 				ProcessPhoenix.forceQuit(this)
 			}
 		}
 	}
 
-	override fun onGodotRestartRequested(instance: Godot) {
+	override fun onFoundryRestartRequested(instance: Foundry) {
 		runOnUiThread {
 			godotFragment?.let {
-				if (instance === it.godot) {
-					// It's very hard to properly de-initialize Godot on Android to restart the game
+				if (instance === it.foundry) {
+					// It's very hard to properly de-initialize Foundry on Android to restart the game
 					// from scratch. Therefore, we need to kill the whole app process and relaunch it.
 					//
 					// Restarting only the activity, wouldn't be enough unless it did proper cleanup (including
 					// releasing and reloading native libs or resetting their state somehow and clearing static data).
-					Log.v(TAG, "Restarting Godot instance...")
+					Log.v(TAG, "Restarting Foundry instance...")
 					ProcessPhoenix.triggerRebirth(this)
 				}
 			}
@@ -243,14 +243,14 @@ abstract class FoundryActivity : FragmentActivity(), FoundryHost {
 		return this
 	}
 
-	override fun getGodot(): Godot? {
-		return godotFragment?.godot
+	override fun getFoundry(): Foundry? {
+		return godotFragment?.foundry
 	}
 
 	/**
-	 * Used to initialize the Godot fragment instance in [onCreate].
+	 * Used to initialize the Foundry fragment instance in [onCreate].
 	 */
-	protected open fun initGodotInstance(): FoundryFragment {
+	protected open fun initFoundryInstance(): FoundryFragment {
 		return FoundryFragment()
 	}
 

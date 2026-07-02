@@ -65,7 +65,7 @@ import games.cafecito.foundry.input.FoundryEditText;
 public class FoundryIO {
 	private static final String TAG = FoundryIO.class.getSimpleName();
 
-	private final Godot godot;
+	private final Foundry godot;
 
 	private final String uniqueId;
 	FoundryEditText edit;
@@ -78,7 +78,7 @@ public class FoundryIO {
 	final int SCREEN_SENSOR_PORTRAIT = 5;
 	final int SCREEN_SENSOR = 6;
 
-	FoundryIO(Godot godot) {
+	FoundryIO(Foundry godot) {
 		this.godot = godot;
 		String androidId = Settings.Secure.getString(godot.getContext().getContentResolver(),
 				Settings.Secure.ANDROID_ID);

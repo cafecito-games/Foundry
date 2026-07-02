@@ -54,7 +54,7 @@ protected:
 
 public:
 	virtual Variant callp(const StringName &p_method, const Variant **p_args, int p_argcount, Callable::CallError &r_error) override {
-		// Godot methods take precedence.
+		// Foundry methods take precedence.
 		Variant ret = Object::callp(p_method, p_args, p_argcount, r_error);
 		if (r_error.error == Callable::CallError::CALL_OK) {
 			return ret;
@@ -62,10 +62,10 @@ public:
 
 		// Check the method we're looking for is in the JNISingleton map.
 		// This is done because JNISingletons register methods differently than wrapped JavaClass / JavaObject to allow
-		// for access to private methods annotated with the @UsedByGodot annotation.
+		// for access to private methods annotated with the @UsedByFoundry annotation.
 		// In the future, we should remove access to private methods and require that JNISingletons' methods exposed to
 		// FoundryScript be all public, similarly to what we do for wrapped JavaClass / JavaObject methods. Doing so will
-		// also allow dropping and deprecating the @UsedByGodot annotation.
+		// also allow dropping and deprecating the @UsedByFoundry annotation.
 		RBMap<StringName, MethodData>::Element *E = method_map.find(p_method);
 		if (E) {
 			if (wrapped_object.is_valid()) {

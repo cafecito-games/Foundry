@@ -44,8 +44,8 @@ import android.widget.RadioButton
 import androidx.core.content.edit
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
-import games.cafecito.foundry.editor.BaseGodotEditor
-import games.cafecito.foundry.editor.BaseGodotEditor.Companion.SNACKBAR_SHOW_DURATION_MS
+import games.cafecito.foundry.editor.BaseFoundryEditor
+import games.cafecito.foundry.editor.BaseFoundryEditor.Companion.SNACKBAR_SHOW_DURATION_MS
 import games.cafecito.foundry.editor.R
 import games.cafecito.foundry.utils.DialogUtils
 
@@ -383,7 +383,7 @@ class GameMenuFragment : Fragment(), PopupMenu.OnMenuItemClickListener {
 			popupMenu.show()
 		}
 
-		refreshGameMenu(arguments?.getBundle(BaseGodotEditor.EXTRA_GAME_MENU_STATE) ?: Bundle())
+		refreshGameMenu(arguments?.getBundle(BaseFoundryEditor.EXTRA_GAME_MENU_STATE) ?: Bundle())
 	}
 
 	internal fun refreshGameMenu(gameMenuState: Bundle) {
@@ -394,24 +394,24 @@ class GameMenuFragment : Fragment(), PopupMenu.OnMenuItemClickListener {
 			menuListener?.onGameMenuCollapsed(collapsed)
 		}
 		alwaysOnTopChecked = sharedPrefs.getBoolean(PREF_KEY_ALWAYS_ON_TOP, false)
-		isGameEmbedded = gameMenuState.getBoolean(BaseGodotEditor.EXTRA_IS_GAME_EMBEDDED, false)
-		isGameRunning = gameMenuState.getBoolean(BaseGodotEditor.EXTRA_IS_GAME_RUNNING, false)
+		isGameEmbedded = gameMenuState.getBoolean(BaseFoundryEditor.EXTRA_IS_GAME_EMBEDDED, false)
+		isGameRunning = gameMenuState.getBoolean(BaseFoundryEditor.EXTRA_IS_GAME_RUNNING, false)
 
 		suspendButton?.isEnabled = isGameRunning
 		nextFrameButton?.isEnabled = isGameRunning
 
-		val nodeType = gameMenuState.getSerializable(BaseGodotEditor.GAME_MENU_ACTION_SET_NODE_TYPE) as GameMenuListener.NodeType? ?: GameMenuListener.NodeType.NONE
+		val nodeType = gameMenuState.getSerializable(BaseFoundryEditor.GAME_MENU_ACTION_SET_NODE_TYPE) as GameMenuListener.NodeType? ?: GameMenuListener.NodeType.NONE
 		unselectNodesButton?.isChecked = nodeType == GameMenuListener.NodeType.NONE
 		select2DNodesButton?.isChecked = nodeType == GameMenuListener.NodeType.TYPE_2D
 		select3DNodesButton?.isChecked = nodeType == GameMenuListener.NodeType.TYPE_3D
 
-		guiVisibilityButton?.isActivated = !gameMenuState.getBoolean(BaseGodotEditor.GAME_MENU_ACTION_SET_SELECTION_VISIBLE, true)
+		guiVisibilityButton?.isActivated = !gameMenuState.getBoolean(BaseFoundryEditor.GAME_MENU_ACTION_SET_SELECTION_VISIBLE, true)
 
-		val selectMode = gameMenuState.getSerializable(BaseGodotEditor.GAME_MENU_ACTION_SET_SELECT_MODE) as GameMenuListener.SelectMode? ?: GameMenuListener.SelectMode.SINGLE
+		val selectMode = gameMenuState.getSerializable(BaseFoundryEditor.GAME_MENU_ACTION_SET_SELECT_MODE) as GameMenuListener.SelectMode? ?: GameMenuListener.SelectMode.SINGLE
 		toolSelectButton?.isChecked = selectMode == GameMenuListener.SelectMode.SINGLE
 		listSelectButton?.isChecked = selectMode == GameMenuListener.SelectMode.LIST
 
-		audioMuteButton?.isActivated = gameMenuState.getBoolean(BaseGodotEditor.GAME_MENU_ACTION_SET_DEBUG_MUTE_AUDIO, false)
+		audioMuteButton?.isActivated = gameMenuState.getBoolean(BaseFoundryEditor.GAME_MENU_ACTION_SET_DEBUG_MUTE_AUDIO, false)
 
 		popupMenu.menu.apply {
 			if (menuListener?.isGameEmbeddingSupported() == false) {
@@ -434,7 +434,7 @@ class GameMenuFragment : Fragment(), PopupMenu.OnMenuItemClickListener {
 
 			findItem(R.id.menu_embed_game_keep_on_top)?.isChecked = alwaysOnTopChecked
 
-			val cameraMode = gameMenuState.getSerializable(BaseGodotEditor.GAME_MENU_ACTION_SET_CAMERA_MANIPULATE_MODE) as GameMenuListener.CameraMode? ?: GameMenuListener.CameraMode.NONE
+			val cameraMode = gameMenuState.getSerializable(BaseFoundryEditor.GAME_MENU_ACTION_SET_CAMERA_MANIPULATE_MODE) as GameMenuListener.CameraMode? ?: GameMenuListener.CameraMode.NONE
 			if (cameraMode == GameMenuListener.CameraMode.IN_GAME || cameraMode == GameMenuListener.CameraMode.NONE) {
 				findItem(R.id.menu_manipulate_camera_in_game)?.isChecked = true
 			} else {

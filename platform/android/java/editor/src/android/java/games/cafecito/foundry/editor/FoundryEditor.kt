@@ -31,11 +31,11 @@
 package games.cafecito.foundry.editor
 
 /**
- * Primary window of the Godot Editor.
+ * Primary window of the Foundry Editor.
  *
  * This is the implementation of the editor used when running on Android devices.
  */
-open class FoundryEditor : BaseGodotEditor() {
+open class FoundryEditor : BaseFoundryEditor() {
 
 	override fun getXRRuntimePermissions(): MutableSet<String> {
 		val xrRuntimePermissions = super.getXRRuntimePermissions()

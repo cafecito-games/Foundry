@@ -31,7 +31,7 @@
 package games.cafecito.foundry.io.file
 
 /**
- * Android representation of Godot native access flags.
+ * Android representation of Foundry native access flags.
  */
 internal enum class FileAccessFlags(val nativeValue: Int) {
     /**

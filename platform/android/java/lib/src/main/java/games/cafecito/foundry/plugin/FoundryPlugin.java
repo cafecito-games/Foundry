@@ -53,14 +53,14 @@ import javax.microedition.khronos.egl.EGLConfig;
 import javax.microedition.khronos.opengles.GL10;
 
 import games.cafecito.foundry.BuildConfig;
-import games.cafecito.foundry.Godot;
+import games.cafecito.foundry.Foundry;
 
 /**
- * Base class for Godot Android plugins.
+ * Base class for Foundry Android plugins.
  * <p>
- * A Godot Android plugin is an Android library with the following requirements:
+ * A Foundry Android plugin is an Android library with the following requirements:
  * <p>
- * - The plugin must have a dependency on the Godot Android library: `implementation "games.cafecito.foundry:foundry:<godotLibVersion>"`
+ * - The plugin must have a dependency on the Foundry Android library: `implementation "games.cafecito.foundry:foundry:<godotLibVersion>"`
  * <p>
  * - The plugin must include a <meta-data> tag in its Android manifest with the following format:
  * <meta-data android:name="org.godotengine.plugin.v2.[PluginName]" android:value="[plugin.init.ClassFullName]" />
@@ -72,7 +72,7 @@ import games.cafecito.foundry.Godot;
  * - 'plugin.init.ClassFullName' is the full name (package + class name) of the plugin init class
  * extending {@link FoundryPlugin}.
  * <p>
- * A Godot Android plugin can also define and provide c/c++ foundry_extension libraries, which will be
+ * A Foundry Android plugin can also define and provide c/c++ foundry_extension libraries, which will be
  * automatically bundled by the aar build system.
  * FoundryExtension ('*.foundryextension') config files must be located in the project 'assets' directory and
  * their paths specified by {@link FoundryPlugin#getPluginFoundryExtensionLibrariesPaths()}.
@@ -82,21 +82,21 @@ import games.cafecito.foundry.Godot;
 public abstract class FoundryPlugin {
 	private static final String TAG = FoundryPlugin.class.getSimpleName();
 
-	private final Godot godot;
+	private final Foundry godot;
 	private final ConcurrentHashMap<String, SignalInfo> registeredSignals = new ConcurrentHashMap<>();
 
 	/**
-	 * Base constructor passing a {@link Godot} instance through which the plugin can access Godot's
+	 * Base constructor passing a {@link Foundry} instance through which the plugin can access Foundry's
 	 * APIs and lifecycle events.
 	 */
-	public FoundryPlugin(Godot godot) {
+	public FoundryPlugin(Foundry godot) {
 		this.godot = godot;
 	}
 
 	/**
-	 * Provides access to the Godot engine.
+	 * Provides access to the Foundry engine.
 	 */
-	protected Godot getGodot() {
+	protected Foundry getFoundry() {
 		return godot;
 	}
 
@@ -116,11 +116,11 @@ public abstract class FoundryPlugin {
 	}
 
 	/**
-	 * Register the plugin with Godot native code.
+	 * Register the plugin with Foundry native code.
 	 * <p>
 	 * This method is invoked on the render thread to register the plugin on engine startup.
 	 */
-	public final void onRegisterPluginWithGodotNative() {
+	public final void onRegisterPluginWithFoundryNative() {
 		final String pluginName = getPluginName();
 		if (!nativeRegisterSingleton(pluginName, this)) {
 			return;
@@ -133,8 +133,8 @@ public abstract class FoundryPlugin {
 
 		Method[] methods = clazz.getDeclaredMethods();
 		for (Method method : methods) {
-			// Check if the method is annotated with {@link UsedByGodot}.
-			if (method.getAnnotation(UsedByGodot.class) != null) {
+			// Check if the method is annotated with {@link UsedByFoundry}.
+			if (method.getAnnotation(UsedByFoundry.class) != null) {
 				filteredMethods.add(method);
 			} else {
 				// For backward compatibility, process the methods from the given <pluginMethods> argument.
@@ -175,11 +175,11 @@ public abstract class FoundryPlugin {
 	 * Invoked once during the initialization process after creation of the
 	 * {@link games.cafecito.foundry.FoundryRenderView} view.
 	 * <p>
-	 * The plugin can return a non-null {@link View} layout which will be added to the Godot view
+	 * The plugin can return a non-null {@link View} layout which will be added to the Foundry view
 	 * hierarchy.
 	 * <p>
 	 * Use {@link FoundryPlugin#shouldBeOnTop()} to specify whether the plugin's {@link View} should
-	 * be added on top or behind the main Godot view.
+	 * be added on top or behind the main Foundry view.
 	 *
 	 * @see Activity#onCreate(Bundle)
 	 * @return the plugin's view to be included; null if no views should be included.
@@ -222,23 +222,23 @@ public abstract class FoundryPlugin {
 	public boolean onMainBackPressed() { return false; }
 
 	/**
-	 * Invoked on the render thread when set up of the Godot engine is complete.
+	 * Invoked on the render thread when set up of the Foundry engine is complete.
 	 * <p>
-	 * This is invoked before {@link FoundryPlugin#onGodotMainLoopStarted()}.
+	 * This is invoked before {@link FoundryPlugin#onFoundryMainLoopStarted()}.
 	 */
-	public void onGodotSetupCompleted() {}
+	public void onFoundrySetupCompleted() {}
 
 	/**
-	 * Invoked on the render thread when the Godot main loop has started.
+	 * Invoked on the render thread when the Foundry main loop has started.
 	 *
-	 * This is invoked after {@link FoundryPlugin#onGodotSetupCompleted()}.
+	 * This is invoked after {@link FoundryPlugin#onFoundrySetupCompleted()}.
 	 */
-	public void onGodotMainLoopStarted() {}
+	public void onFoundryMainLoopStarted() {}
 
 	/**
-	 * Invoked on the render thread when the Godot engine is terminating.
+	 * Invoked on the render thread when the Foundry engine is terminating.
 	 */
-	public void onGodotTerminating() {}
+	public void onFoundryTerminating() {}
 
 	/**
 	 * When using the OpenGL renderer, this is invoked once per frame on the GL thread after the
@@ -285,9 +285,9 @@ public abstract class FoundryPlugin {
 	public abstract String getPluginName();
 
 	/**
-	 * Returns the list of methods to be exposed to Godot.
+	 * Returns the list of methods to be exposed to Foundry.
 	 *
-	 * @deprecated Use the {@link UsedByGodot} annotation instead.
+	 * @deprecated Use the {@link UsedByFoundry} annotation instead.
 	 */
 	@NonNull
 	@Deprecated
@@ -296,7 +296,7 @@ public abstract class FoundryPlugin {
 	}
 
 	/**
-	 * Returns the list of signals to be exposed to Godot.
+	 * Returns the list of signals to be exposed to Foundry.
 	 */
 	@NonNull
 	public Set<SignalInfo> getPluginSignals() {
@@ -315,10 +315,10 @@ public abstract class FoundryPlugin {
 
 	/**
 	 * Returns whether the plugin's {@link View} returned in
-	 * {@link FoundryPlugin#onMainCreate(Activity)} should be placed on top of the main Godot view.
+	 * {@link FoundryPlugin#onMainCreate(Activity)} should be placed on top of the main Foundry view.
 	 * <p>
 	 * Returning false causes the plugin's {@link View} to be placed behind, which can be useful
-	 * when used with transparency in order to let the Godot view handle inputs.
+	 * when used with transparency in order to let the Foundry view handle inputs.
 	 */
 	public boolean shouldBeOnTop() {
 		return true;
@@ -364,7 +364,7 @@ public abstract class FoundryPlugin {
 	}
 
 	/**
-	 * Emit a registered Godot signal.
+	 * Emit a registered Foundry signal.
 	 * @param signalName Name of the signal to emit. It will be validated against the set of registered signals.
 	 * @param signalArgs Arguments used to populate the emitted signal. The arguments will be validated against the registered {@link SignalInfo} matching the signalName parameter.
 	 */
@@ -376,7 +376,7 @@ public abstract class FoundryPlugin {
 				throw new IllegalArgumentException(
 						"Signal " + signalName + " is not registered for this plugin.");
 			}
-			emitSignal(getGodot(), getPluginName(), signalInfo, signalArgs);
+			emitSignal(getFoundry(), getPluginName(), signalInfo, signalArgs);
 		} catch (IllegalArgumentException exception) {
 			Log.w(TAG, exception);
 			if (BuildConfig.DEBUG) {
@@ -386,7 +386,7 @@ public abstract class FoundryPlugin {
 	}
 
 	/**
-	 * Emit a registered Godot signal.
+	 * Emit a registered Foundry signal.
 	 * @param signal Signal to emit. It will be validated against the set of registered signals.
 	 * @param signalArgs Arguments used to populate the emitted signal. The arguments will be validated against the registered {@link SignalInfo} matching the signal parameter.
 	 */
@@ -395,13 +395,13 @@ public abstract class FoundryPlugin {
 	}
 
 	/**
-	 * Emit a Godot signal.
-	 * @param godot Godot instance
-	 * @param pluginName Name of the Godot plugin the signal will be emitted from. The plugin must already be registered with the Godot engine.
+	 * Emit a Foundry signal.
+	 * @param godot Foundry instance
+	 * @param pluginName Name of the Foundry plugin the signal will be emitted from. The plugin must already be registered with the Foundry engine.
 	 * @param signalInfo Information about the signal to emit.
 	 * @param signalArgs Arguments used to populate the emitted signal. The arguments will be validated against the given {@link SignalInfo} parameter.
 	 */
-	public static void emitSignal(Godot godot, String pluginName, SignalInfo signalInfo, final Object... signalArgs) {
+	public static void emitSignal(Foundry godot, String pluginName, SignalInfo signalInfo, final Object... signalArgs) {
 		try {
 			if (signalInfo == null) {
 				throw new IllegalArgumentException("Signal must be non null.");

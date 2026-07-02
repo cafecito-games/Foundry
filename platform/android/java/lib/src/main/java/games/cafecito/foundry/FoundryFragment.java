@@ -71,7 +71,7 @@ import games.cafecito.foundry.plugin.FoundryPlugin;
 import games.cafecito.foundry.utils.BenchmarkUtils;
 
 /**
- * Base fragment for Android apps intending to use Godot for part of the app's UI.
+ * Base fragment for Android apps intending to use Foundry for part of the app's UI.
  */
 public class FoundryFragment extends Fragment implements IDownloaderClient, FoundryHost {
 	private static final String TAG = FoundryFragment.class.getSimpleName();
@@ -94,7 +94,7 @@ public class FoundryFragment extends Fragment implements IDownloaderClient, Foun
 
 	@Nullable
 	private FoundryHost parentHost;
-	private Godot godot;
+	private Foundry godot;
 
 	private void setState(int newState) {
 		if (mState != newState) {
@@ -109,7 +109,7 @@ public class FoundryFragment extends Fragment implements IDownloaderClient, Foun
 	}
 
 	@Override
-	public Godot getGodot() {
+	public Foundry getFoundry() {
 		return godot;
 	}
 
@@ -126,7 +126,7 @@ public class FoundryFragment extends Fragment implements IDownloaderClient, Foun
 	@Override
 	public void onDetach() {
 		if (godotContainerLayout != null && godotContainerLayout.getParent() != null) {
-			Log.d(TAG, "Cleaning up Godot container layout during detach.");
+			Log.d(TAG, "Cleaning up Foundry container layout during detach.");
 			((ViewGroup)godotContainerLayout.getParent()).removeView(godotContainerLayout);
 		}
 
@@ -167,10 +167,10 @@ public class FoundryFragment extends Fragment implements IDownloaderClient, Foun
 		super.onCreate(icicle);
 
 		if (parentHost != null) {
-			godot = parentHost.getGodot();
+			godot = parentHost.getFoundry();
 		}
 		if (godot == null) {
-			godot = Godot.getInstance(requireContext());
+			godot = Foundry.getInstance(requireContext());
 		}
 		performEngineInitialization();
 		BenchmarkUtils.endBenchmarkMeasure("Startup", "FoundryFragment::onCreate");
@@ -179,7 +179,7 @@ public class FoundryFragment extends Fragment implements IDownloaderClient, Foun
 	private void performEngineInitialization() {
 		try {
 			if (!godot.initEngine(this, getCommandLine(), getHostPlugins(godot))) {
-				throw new IllegalStateException("Unable to initialize Godot engine");
+				throw new IllegalStateException("Unable to initialize Foundry engine");
 			}
 
 			godotContainerLayout = godot.onInitRenderView(this);
@@ -238,7 +238,7 @@ public class FoundryFragment extends Fragment implements IDownloaderClient, Foun
 		}
 
 		if (godotContainerLayout != null && godotContainerLayout.getParent() != null) {
-			Log.w(TAG, "Godot container layout already has a parent, removing it.");
+			Log.w(TAG, "Foundry container layout already has a parent, removing it.");
 			((ViewGroup)godotContainerLayout.getParent()).removeView(godotContainerLayout);
 		}
 
@@ -248,7 +248,7 @@ public class FoundryFragment extends Fragment implements IDownloaderClient, Foun
 	@Override
 	public void onDestroy() {
 		if (godotContainerLayout != null && godotContainerLayout.getParent() != null) {
-			Log.w(TAG, "Removing Godot container layout from parent during destruction.");
+			Log.w(TAG, "Removing Foundry container layout from parent during destruction.");
 			((ViewGroup)godotContainerLayout.getParent()).removeView(godotContainerLayout);
 		}
 
@@ -415,50 +415,50 @@ public class FoundryFragment extends Fragment implements IDownloaderClient, Foun
 
 	@CallSuper
 	@Override
-	public void onGodotSetupCompleted() {
+	public void onFoundrySetupCompleted() {
 		if (parentHost != null) {
-			parentHost.onGodotSetupCompleted();
+			parentHost.onFoundrySetupCompleted();
 		}
 	}
 
 	@CallSuper
 	@Override
-	public void onGodotMainLoopStarted() {
+	public void onFoundryMainLoopStarted() {
 		if (parentHost != null) {
-			parentHost.onGodotMainLoopStarted();
+			parentHost.onFoundryMainLoopStarted();
 		}
 	}
 
 	@Override
-	public void onGodotForceQuit(Godot instance) {
+	public void onFoundryForceQuit(Foundry instance) {
 		if (parentHost != null) {
-			parentHost.onGodotForceQuit(instance);
+			parentHost.onFoundryForceQuit(instance);
 		}
 	}
 
 	@Override
-	public boolean onGodotForceQuit(int godotInstanceId) {
-		return parentHost != null && parentHost.onGodotForceQuit(godotInstanceId);
+	public boolean onFoundryForceQuit(int godotInstanceId) {
+		return parentHost != null && parentHost.onFoundryForceQuit(godotInstanceId);
 	}
 
 	@Override
-	public void onGodotRestartRequested(Godot instance) {
+	public void onFoundryRestartRequested(Foundry instance) {
 		if (parentHost != null) {
-			parentHost.onGodotRestartRequested(instance);
+			parentHost.onFoundryRestartRequested(instance);
 		}
 	}
 
 	@Override
-	public int onNewGodotInstanceRequested(String[] args) {
+	public int onNewFoundryInstanceRequested(String[] args) {
 		if (parentHost != null) {
-			return parentHost.onNewGodotInstanceRequested(args);
+			return parentHost.onNewFoundryInstanceRequested(args);
 		}
 		return -1;
 	}
 
 	@Override
 	@CallSuper
-	public Set<FoundryPlugin> getHostPlugins(Godot engine) {
+	public Set<FoundryPlugin> getHostPlugins(Foundry engine) {
 		if (parentHost != null) {
 			return parentHost.getHostPlugins(engine);
 		}

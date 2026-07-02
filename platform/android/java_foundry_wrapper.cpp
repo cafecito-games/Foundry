@@ -34,7 +34,7 @@
 
 // JNIEnv is only valid within the thread it belongs to, in a multi threading environment
 // we can't cache it.
-// For Godot we call most access methods from our thread and we thus get a valid JNIEnv
+// For Foundry we call most access methods from our thread and we thus get a valid JNIEnv
 // from get_jni_env(). For one or two we expect to pass the environment
 
 // TODO we could probably create a base class for this...
@@ -42,8 +42,8 @@
 FoundryJavaWrapper::FoundryJavaWrapper(JNIEnv *p_env, jobject p_foundry_instance) {
 	foundry_instance = p_env->NewGlobalRef(p_foundry_instance);
 
-	// get info about our Godot class so we can get pointers and stuff...
-	godot_class = jni_find_class(p_env, "games/cafecito/foundry/Godot");
+	// get info about our Foundry class so we can get pointers and stuff...
+	godot_class = jni_find_class(p_env, "games/cafecito/foundry/Foundry");
 	if (godot_class) {
 		godot_class = (jclass)p_env->NewGlobalRef(godot_class);
 	} else {
@@ -51,7 +51,7 @@ FoundryJavaWrapper::FoundryJavaWrapper(JNIEnv *p_env, jobject p_foundry_instance
 		return;
 	}
 
-	// get some Godot method pointers...
+	// get some Foundry method pointers...
 	_restart = p_env->GetMethodID(godot_class, "restart", "()V");
 	_finish = p_env->GetMethodID(godot_class, "forceQuit", "(I)Z");
 	_set_keep_screen_on = p_env->GetMethodID(godot_class, "setKeepScreenOn", "(Z)V");
@@ -73,10 +73,10 @@ FoundryJavaWrapper::FoundryJavaWrapper(JNIEnv *p_env, jobject p_foundry_instance
 	_init_input_devices = p_env->GetMethodID(godot_class, "initInputDevices", "()V");
 	_vibrate = p_env->GetMethodID(godot_class, "vibrate", "(II)V");
 	_get_input_fallback_mapping = p_env->GetMethodID(godot_class, "getInputFallbackMapping", "()Ljava/lang/String;");
-	_on_godot_setup_completed = p_env->GetMethodID(godot_class, "onGodotSetupCompleted", "()V");
-	_on_godot_main_loop_started = p_env->GetMethodID(godot_class, "onGodotMainLoopStarted", "()V");
-	_on_godot_terminating = p_env->GetMethodID(godot_class, "onGodotTerminating", "()V");
-	_create_new_foundry_instance = p_env->GetMethodID(godot_class, "createNewGodotInstance", "([Ljava/lang/String;)I");
+	_on_godot_setup_completed = p_env->GetMethodID(godot_class, "onFoundrySetupCompleted", "()V");
+	_on_godot_main_loop_started = p_env->GetMethodID(godot_class, "onFoundryMainLoopStarted", "()V");
+	_on_godot_terminating = p_env->GetMethodID(godot_class, "onFoundryTerminating", "()V");
+	_create_new_foundry_instance = p_env->GetMethodID(godot_class, "createNewFoundryInstance", "([Ljava/lang/String;)I");
 	_get_render_view = p_env->GetMethodID(godot_class, "getRenderView", "()Lgames/cafecito/foundry/FoundryRenderView;");
 	_begin_benchmark_measure = p_env->GetMethodID(godot_class, "nativeBeginBenchmarkMeasure", "(Ljava/lang/String;Ljava/lang/String;)V");
 	_end_benchmark_measure = p_env->GetMethodID(godot_class, "nativeEndBenchmarkMeasure", "(Ljava/lang/String;Ljava/lang/String;)V");

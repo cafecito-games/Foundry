@@ -32,7 +32,7 @@ package games.cafecito.foundry.io.directory
 
 import android.content.Context
 import android.util.Log
-import games.cafecito.foundry.Godot
+import games.cafecito.foundry.Foundry
 import games.cafecito.foundry.io.StorageScope
 import games.cafecito.foundry.io.directory.DirectoryAccessHandler.AccessType.ACCESS_RESOURCES
 import java.util.concurrent.locks.ReentrantLock
@@ -92,7 +92,7 @@ class DirectoryAccessHandler(context: Context) {
 				// If this is an editor build, 'Resources' refers to the opened project resources
 				// and so we provide a 'Filesystem' directory handler.
 				if (accessType == ACCESS_RESOURCES) {
-					return if (Godot.isEditorBuild()) {
+					return if (Foundry.isEditorBuild()) {
 						ACCESS_FILESYSTEM
 					} else {
 						ACCESS_RESOURCES

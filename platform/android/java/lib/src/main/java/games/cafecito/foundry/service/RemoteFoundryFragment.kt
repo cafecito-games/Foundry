@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  RemoteGodotFragment.kt                                                */
+/*  RemoteFoundryFragment.kt                                                */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -56,19 +56,19 @@ import games.cafecito.foundry.service.FoundryService.EngineError.*
 import java.lang.ref.WeakReference
 
 /**
- * Godot [Fragment] component showcasing how to drive rendering from another process using a [FoundryService] instance.
+ * Foundry [Fragment] component showcasing how to drive rendering from another process using a [FoundryService] instance.
  */
 @RequiresApi(Build.VERSION_CODES.R)
-class RemoteGodotFragment: Fragment() {
+class RemoteFoundryFragment: Fragment() {
 
 	companion object {
-		internal val TAG = RemoteGodotFragment::class.java.simpleName
+		internal val TAG = RemoteFoundryFragment::class.java.simpleName
 	}
 
 	/**
 	 * Target we publish for receiving messages from the service.
 	 */
-	private val messengerForReply = Messenger(IncomingHandler(WeakReference<RemoteGodotFragment>(this)))
+	private val messengerForReply = Messenger(IncomingHandler(WeakReference<RemoteFoundryFragment>(this)))
 
 	/**
 	 * Messenger for sending messages to the [FoundryService] implementation.
@@ -89,8 +89,8 @@ class RemoteGodotFragment: Fragment() {
 			Log.d(TAG, "Connected to service $name")
 			serviceMessenger = Messenger(service)
 
-			// Initialize the Godot engine
-			initGodotEngine()
+			// Initialize the Foundry engine
+			initFoundryEngine()
 		}
 
 		override fun onServiceDisconnected(name: ComponentName?) {
@@ -102,7 +102,7 @@ class RemoteGodotFragment: Fragment() {
 	/**
 	 * Handler of incoming messages from [FoundryService] implementations.
 	 */
-	private class IncomingHandler(private val fragmentRef: WeakReference<RemoteGodotFragment>) : Handler() {
+	private class IncomingHandler(private val fragmentRef: WeakReference<RemoteFoundryFragment>) : Handler() {
 
 		override fun handleMessage(msg: Message) {
 			val fragment = fragmentRef.get() ?: return
@@ -164,7 +164,7 @@ class RemoteGodotFragment: Fragment() {
 									} else {
 										fragment.remoteSurface?.setChildSurfacePackage(surfacePackage)
 										fragment.engineInitialized = true
-										fragment.startGodotEngine()
+										fragment.startFoundryEngine()
 									}
 								}
 							}
@@ -251,7 +251,7 @@ class RemoteGodotFragment: Fragment() {
 		remoteSurface = view.findViewById(R.id.remote_foundry_window_surface)
 		remoteSurface?.setZOrderOnTop(false)
 
-		initGodotEngine()
+		initFoundryEngine()
 	}
 
 	fun startRemoteGame(args: Array<String>) {
@@ -283,7 +283,7 @@ class RemoteGodotFragment: Fragment() {
 		}
 	}
 
-	private fun initGodotEngine() {
+	private fun initFoundryEngine() {
 		if (!serviceBound) {
 			return
 		}
@@ -297,11 +297,11 @@ class RemoteGodotFragment: Fragment() {
 				replyTo = messengerForReply
 			})
 		} catch (e: RemoteException) {
-			Log.e(TAG, "Unable to initialize Godot engine", e)
+			Log.e(TAG, "Unable to initialize Foundry engine", e)
 		}
 	}
 
-	private fun startGodotEngine() {
+	private fun startFoundryEngine() {
 		if (!serviceBound || !engineInitialized || !fragmentStarted) {
 			return
 		}
@@ -311,11 +311,11 @@ class RemoteGodotFragment: Fragment() {
 				replyTo = messengerForReply
 			})
 		} catch (e: RemoteException) {
-			Log.e(TAG, "Unable to start Godot engine", e)
+			Log.e(TAG, "Unable to start Foundry engine", e)
 		}
 	}
 
-	private fun stopGodotEngine() {
+	private fun stopFoundryEngine() {
 		if (!serviceBound || !engineInitialized || fragmentStarted) {
 			return
 		}
@@ -325,20 +325,20 @@ class RemoteGodotFragment: Fragment() {
 				replyTo = messengerForReply
 			})
 		} catch (e: RemoteException) {
-			Log.e(TAG, "Unable to stop Godot engine", e)
+			Log.e(TAG, "Unable to stop Foundry engine", e)
 		}
 	}
 
 	override fun onStart() {
 		super.onStart()
 		fragmentStarted = true
-		startGodotEngine()
+		startFoundryEngine()
 	}
 
 	override fun onStop() {
 		super.onStop()
 		fragmentStarted = false
-		stopGodotEngine()
+		stopFoundryEngine()
 	}
 
 	override fun onDestroy() {

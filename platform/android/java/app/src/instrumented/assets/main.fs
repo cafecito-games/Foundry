@@ -64,4 +64,4 @@ func _on_gd_script_toast_button_pressed() -> void:
 			var ToastClass = JavaClassWrapper.wrap("android.widget.Toast")
 			ToastClass.makeText(activity, "Toast from FoundryScript", ToastClass.LENGTH_LONG).show()
 
-		activity.runOnUiThread(android_runtime.createRunnableFromGodotCallable(toastCallable))
+		activity.runOnUiThread(android_runtime.createRunnableFromFoundryCallable(toastCallable))

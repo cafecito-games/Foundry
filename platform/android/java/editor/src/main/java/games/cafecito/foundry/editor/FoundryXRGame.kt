@@ -36,7 +36,7 @@ import games.cafecito.foundry.xr.XRMode
 /**
  * Provide support for running XR apps / games from the editor window.
  */
-open class FoundryXRGame: BaseGodotGame() {
+open class FoundryXRGame: BaseFoundryGame() {
 
 	override fun overrideOrientationRequest() = true
 
@@ -54,7 +54,7 @@ open class FoundryXRGame: BaseGodotGame() {
 
 	override fun getEditorWindowInfo() = XR_RUN_GAME_INFO
 
-	override fun getGodotAppLayout() = R.layout.foundry_xr_game_layout
+	override fun getFoundryAppLayout() = R.layout.foundry_xr_game_layout
 
 	override fun getProjectPermissionsToEnable(): MutableList<String> {
 		val permissionsToEnable = super.getProjectPermissionsToEnable()

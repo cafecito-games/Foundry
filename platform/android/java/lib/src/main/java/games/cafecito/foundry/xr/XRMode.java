@@ -31,7 +31,7 @@
 package games.cafecito.foundry.xr;
 
 /**
- * Godot available XR modes.
+ * Foundry available XR modes.
  */
 public enum XRMode {
 	REGULAR(0, "Regular", "--xr_mode_regular", "Default Android Gamepad"), // Regular/flatscreen

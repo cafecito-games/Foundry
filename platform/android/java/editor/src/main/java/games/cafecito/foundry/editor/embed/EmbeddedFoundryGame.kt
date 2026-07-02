@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  EmbeddedGodotGame.kt                                                  */
+/*  EmbeddedFoundryGame.kt                                                  */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -43,12 +43,12 @@ import games.cafecito.foundry.editor.R
 import games.cafecito.foundry.editor.utils.GameMenuUtils
 
 /**
- * Host the Godot game from the editor when the embedded mode is enabled.
+ * Host the Foundry game from the editor when the embedded mode is enabled.
  */
-class EmbeddedGodotGame : FoundryGame() {
+class EmbeddedFoundryGame : FoundryGame() {
 
 	companion object {
-		private val TAG = EmbeddedGodotGame::class.java.simpleName
+		private val TAG = EmbeddedFoundryGame::class.java.simpleName
 
 		private const val FULL_SCREEN_WIDTH = WindowManager.LayoutParams.MATCH_PARENT
 		private const val FULL_SCREEN_HEIGHT = WindowManager.LayoutParams.MATCH_PARENT
@@ -143,7 +143,7 @@ class EmbeddedGodotGame : FoundryGame() {
 	override fun isAlwaysOnTopSupported() = hasPiPSystemFeature()
 
 	override fun onFullScreenUpdated(enabled: Boolean) {
-		godot?.enableImmersiveMode(enabled)
+		foundry?.enableImmersiveMode(enabled)
 		isFullscreen = enabled
 		if (enabled) {
 			layoutWidthInPx = FULL_SCREEN_WIDTH
