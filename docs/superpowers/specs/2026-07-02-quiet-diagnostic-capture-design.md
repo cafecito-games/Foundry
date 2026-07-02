@@ -51,6 +51,8 @@ bool is_quiet() const { return quiet; }
 
 No change to `request_fatal_termination()`'s existing behavior: it already checks `ScriptDiagnosticCapture::has_active_capture()` (not quiet-specific) and does not terminate the process while any capture is active. Quiet mode only adds suppression of the "FATAL ERROR: ..." stderr text itself, via the same global `OS::_stderr_enabled` toggle described above — the event is still recorded and assertable via `has_fatal()`.
 
+This guard is already sufficient to make a captured fatal diagnostic purely representational — an `Event`, not a process-level fatal — with no gaps to close: `OS::request_exit(EXIT_FAILURE)` (`variant_utility.cpp:1069`) is the only process-level effect `push_fatal` triggers, and it's the one thing `has_active_capture()` guards. `ERR_HANDLER_FATAL` itself carries no other special-cased behavior in the engine — `_err_print_error()` (`core/error/error_macros.cpp:107-141`) treats it purely as a `Logger::ErrorType` label for the printed string, and every registered `ErrorHandlerList` consumer (remote debugger forwarding in `core/debugger/remote_debugger.cpp:110-125`, Windows `OutputDebugStringW` in `platform/windows/os_windows.cpp:283-291`, editor log/toaster UI) treats `ERR_HANDLER_FATAL` the same as any other severity — none of them abort, break, or dump on it. So there is no crash-handler, debugger-break, or abort() path reachable from `push_fatal` that bypasses `has_active_capture()`. This is a documentation-only addition (plus a regression test below) — it confirms behavior the codebase already has, rather than changing anything.
+
 ## Testing
 
 New/extended C++ test coverage (doctest, under `tests/`, e.g. `tests/core/object/test_script_diagnostic_capture.h` — create via `tests/create_test.py` if no existing test file covers this class) for:
@@ -60,6 +62,7 @@ New/extended C++ test coverage (doctest, under `tests/`, e.g. `tests/core/object
 - Two overlapping quiet captures: stderr stays suppressed for the full outer duration and is only restored after the last one stops (ref-count composition).
 - A quiet capture nested inside a non-quiet capture, and a non-quiet capture nested inside a quiet capture, to pin down and document the accepted "engine-wide while any quiet capture is active" behavior.
 - A diagnostic emitted with no capture active at all still prints normally, both before and after a prior quiet capture has started and stopped (confirms `saved_stderr_enabled` restoration is correct, not just hardcoded to `true`).
+- `push_fatal` inside a non-quiet capture does not terminate the process (existing `has_active_capture()` behavior — regression guard) and does not trigger any other process-level effect (no exit code change beyond what the test itself sets, no abort); the fatal is only observable as a recorded `Event`.
 
 ## Acceptance criteria (from the request doc, scoped to this design)
 
@@ -68,3 +71,4 @@ New/extended C++ test coverage (doctest, under `tests/`, e.g. `tests/core/object
 - Diagnostics captured under quiet mode are not printed to stderr.
 - Diagnostics not covered by a quiet capture continue to print normally.
 - Existing scripts using `ScriptDiagnosticCapture` without quiet mode keep current behavior.
+- Fatal diagnostics inside any active capture remain representable purely as `Event`s, with no process-level fatal side effect (termination, abort, or otherwise) — confirmed as already-correct existing behavior, pinned down with an explicit regression test and documentation.
