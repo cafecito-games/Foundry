@@ -6,11 +6,15 @@ on:
       - 'v*'
   workflow_dispatch:
     inputs:
-      version:
-        description: Release version, e.g. 0.1.0 (used when run manually).
+      mode:
+        description: Release mode. Draft builds assets only; publish creates the tag and publishes Maven/GitHub release.
         required: true
-        type: string
-      status:
+        default: draft
+        type: choice
+        options:
+          - draft
+          - publish
+      channel:
         description: Release channel, e.g. alpha, beta, rc, stable.
         required: true
         default: alpha
@@ -32,7 +36,8 @@ concurrency:
 jobs:
   # Resolve the version/status strings and whether to publish or leave a draft.
   # - Tag push (refs/tags/vX.Y.Z or refs/tags/vX.Y.Z-alpha.N) -> auto-published.
-  # - Manual dispatch -> version/channel from inputs, prerelease number auto-incremented, left as a draft.
+  # - Manual draft -> version from version.py, channel from inputs, prerelease number auto-incremented, left as a draft.
+  # - Manual publish -> same as manual draft, but creates the resolved tag and publishes in this run.
   resolve:
     runs-on: ubuntu-24.04
     outputs:
@@ -44,6 +49,7 @@ jobs:
       template_version: ${{ steps.resolve.outputs.template_version }}
       draft: ${{ steps.resolve.outputs.draft }}
       prerelease: ${{ steps.resolve.outputs.prerelease }}
+      create_tag: ${{ steps.resolve.outputs.create_tag }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -56,115 +62,10 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           REF_NAME: ${{ github.ref_name }}
           REPOSITORY: ${{ github.repository }}
-          VERSION_INPUT: ${{ inputs.version }}
-          STATUS_INPUT: ${{ inputs.status }}
+          MODE_INPUT: ${{ inputs.mode }}
+          CHANNEL_INPUT: ${{ inputs.channel }}
           GH_TOKEN: ${{ github.token }}
-        run: |
-          next_prerelease_number() {
-            local base_version="$1"
-            local channel="$2"
-            local version_regex="${base_version//./\\.}"
-            local max_number=0
-            local tag_name number
-
-            while IFS= read -r tag_name; do
-              number="$(printf '%s\n' "$tag_name" | sed -nE "s/^v${version_regex}-${channel}\.([1-9][0-9]*)$/\1/p")"
-              if [ -n "$number" ] && [ "$number" -gt "$max_number" ]; then
-                max_number="$number"
-              fi
-            done < <(
-              {
-                git ls-remote --tags origin "refs/tags/v${base_version}-${channel}.*" \
-                  | awk '{ print $2 }' \
-                  | sed -E 's#^refs/tags/##; s#\^\{\}$##'
-                gh release list -R "$REPOSITORY" --limit 1000 --json tagName --jq '.[].tagName'
-              } | sort -u
-            )
-
-            echo "$((max_number + 1))"
-          }
-
-          if [ "$EVENT_NAME" = "push" ]; then
-            tag="$REF_NAME"
-            release_version="${tag#v}"
-            draft="false"
-
-            if printf '%s' "$release_version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-              version="$release_version"
-              status="stable"
-              prerelease_number=""
-            elif printf '%s' "$release_version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+-(alpha|beta|rc)\.[1-9][0-9]*$'; then
-              version="$(printf '%s' "$release_version" | sed -E 's/^([0-9]+\.[0-9]+\.[0-9]+)-.*/\1/')"
-              channel="$(printf '%s' "$release_version" | sed -E 's/^[0-9]+\.[0-9]+\.[0-9]+-(alpha|beta|rc)\.[1-9][0-9]*$/\1/')"
-              prerelease_number="$(printf '%s' "$release_version" | sed -E 's/^[0-9]+\.[0-9]+\.[0-9]+-(alpha|beta|rc)\.([1-9][0-9]*)$/\2/')"
-              status="${channel}${prerelease_number}"
-            else
-              echo "::error::Invalid release tag '$tag'; expected vX.Y.Z or vX.Y.Z-alpha.N, vX.Y.Z-beta.N, vX.Y.Z-rc.N."
-              exit 1
-            fi
-          else
-            version="$VERSION_INPUT"
-            channel="$STATUS_INPUT"
-            draft="true"
-          fi
-
-          # Reject anything that is not a bare X.Y.Z version (defense in depth).
-          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "::error::Invalid release version '$version'; expected X.Y.Z."
-            exit 1
-          fi
-
-          if [ "$EVENT_NAME" != "push" ]; then
-            if ! printf '%s' "$channel" | grep -Eq '^(alpha|beta|rc|stable)$'; then
-              echo "::error::Invalid release channel '$channel'; expected alpha, beta, rc, or stable."
-              exit 1
-            fi
-
-            if [ "$channel" = "stable" ]; then
-              release_version="$version"
-              tag="v${version}"
-              status="stable"
-              prerelease_number=""
-            else
-              prerelease_number="$(next_prerelease_number "$version" "$channel")"
-              release_version="${version}-${channel}.${prerelease_number}"
-              tag="v${release_version}"
-              status="${channel}${prerelease_number}"
-            fi
-          fi
-
-          if [ "$status" = "stable" ]; then
-            prerelease="false"
-          else
-            prerelease="true"
-          fi
-
-          release_name="Foundry ${release_version}"
-
-          # Sanity-check the requested version matches version.py.
-          py_version="$(python3 -c 'import version; print(f"{version.major}.{version.minor}.{version.patch}")')"
-          if [ "$version" != "$py_version" ]; then
-            echo "::error::Requested release version '$version' does not match version.py ('$py_version')."
-            exit 1
-          fi
-
-          # Template directory version string: major.minor[.patch].status (patch omitted when 0),
-          # matching the engine's VERSION_FULL_CONFIG used to locate export templates.
-          template_version="$(FOUNDRY_VERSION_STATUS="$status" python3 -c "import os, version; p=f'.{version.patch}' if version.patch else ''; print(f'{version.major}.{version.minor}{p}.{os.environ[\"FOUNDRY_VERSION_STATUS\"]}')")"
-
-          {
-            echo "version=$version"
-            echo "tag=$tag"
-            echo "status=$status"
-            echo "prerelease_number=$prerelease_number"
-            echo "release_version=$release_version"
-            echo "release_name=$release_name"
-            echo "template_version=$template_version"
-            echo "draft=$draft"
-            echo "prerelease=$prerelease"
-          } >> "$GITHUB_OUTPUT"
-
-          echo "Releasing $release_version (tag $tag, engine status $status, template dir $template_version, draft=$draft, prerelease=$prerelease)"
+        run: python3 .github/scripts/resolve_release.py
 
   build-linux:
     needs: resolve
@@ -912,6 +813,26 @@ jobs:
       - package
     runs-on: ubuntu-24.04
     steps:
+      - name: Checkout
+        if: needs.resolve.outputs.create_tag == 'true'
+        uses: actions/checkout@v6
+
+      - name: Create release tag
+        if: needs.resolve.outputs.create_tag == 'true'
+        env:
+          TAG_NAME: ${{ needs.resolve.outputs.tag }}
+          RELEASE_NAME: ${{ needs.resolve.outputs.release_name }}
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG_NAME" >/dev/null 2>&1; then
+            echo "::error::Tag $TAG_NAME already exists."
+            exit 1
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG_NAME" -m "$RELEASE_NAME"
+          git push origin "refs/tags/$TAG_NAME"
+
       - name: Download release assets
         uses: actions/download-artifact@v8
         with:
