@@ -1801,7 +1801,9 @@ func f():
 		CHECK(saw_build_diagnostic);
 
 		workspace->clear_build_pipeline_status_override_for_tests();
+		ERR_PRINT_OFF;
 		CHECK_EQ(workspace->initialize(), OK);
+		ERR_PRINT_ON;
 		CHECK(FSLanguageProtocol::get_singleton()->peek_parse_result(generated_path) != nullptr);
 
 		notifications = TestFSLanguageProtocolInitializer::take_client_notifications(
@@ -1839,7 +1841,9 @@ func f():
 		CHECK(FSLanguageProtocol::get_singleton()->peek_parse_result(generated_path) == nullptr);
 
 		workspace->clear_build_pipeline_status_override_for_tests();
+		ERR_PRINT_OFF;
 		proto->call("initialize", params);
+		ERR_PRINT_ON;
 		CHECK(proto->is_initialized());
 		CHECK(FSLanguageProtocol::get_singleton()->peek_parse_result(generated_path) != nullptr);
 
@@ -1889,7 +1893,9 @@ func f():
 		ScopedLSPTempFile project_config("res://project.foundry", config_text);
 		ScopedLSPTempFile script(script_path, "class_name PreCompileDisabledConfigIndexed\n");
 
+		ERR_PRINT_OFF;
 		CHECK_EQ(workspace->initialize(), OK);
+		ERR_PRINT_ON;
 		CHECK(workspace->is_initialized());
 		CHECK(FSLanguageProtocol::get_singleton()->peek_parse_result(script_path) != nullptr);
 
@@ -2059,7 +2065,9 @@ func f():
 		workspace->clear_build_pipeline_status_override_for_tests();
 		PackedStringArray outputs;
 		outputs.push_back("res://lsp/pre_compile_non_script_recovery.txt");
+		ERR_PRINT_OFF;
 		CHECK(workspace->refresh_after_successful_build_outputs(outputs));
+		ERR_PRINT_ON;
 		CHECK(workspace->is_initialized());
 		CHECK(proto->is_initialized());
 		CHECK(FSLanguageProtocol::get_singleton()->peek_parse_result(script_path) != nullptr);
