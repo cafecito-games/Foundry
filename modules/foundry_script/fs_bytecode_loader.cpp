@@ -1555,7 +1555,23 @@ Error FSBytecodeLoader::_read_class_body(StreamPeerBuffer *p_stream, FoundryScri
 		// outside the instance's member array.
 		ERR_FAIL_COND_V_MSG(member_info.index < 0 || member_info.index >= (int)member_count, ERR_INVALID_DATA,
 				vformat("Malformed member index for '%s' in compiled script '%s'.", member_name, script_path));
+		// Duplicate member names are corrupt input: a validly compiled script never declares two members
+		// with the same name. `_create_instance` sizes each instance's `members` array from the deduplicated
+		// `member_indices` map, so a duplicate would collapse the map while leaving a surviving entry whose
+		// `index` (< member_count) points past the shrunken array, producing an out-of-bounds access in
+		// `FSInstance::set`/`get`. Rejecting duplicates keeps map size == member_count.
+		ERR_FAIL_COND_V_MSG(p_script->member_indices.has(member_name), ERR_INVALID_DATA,
+				vformat("Duplicate member '%s' in compiled script '%s'.", member_name, script_path));
 		p_script->member_indices.insert(member_name, member_info);
+	}
+	// Defense in depth: `FSInstance::set`/`get` index `members` directly by the stored `index` with no
+	// bounds check in the release VM, and each instance allocates `members` with `member_indices.size()`
+	// slots. With duplicates rejected the map size equals member_count and every index is already in range,
+	// but assert the invariant explicitly so a future serialization change cannot silently reintroduce an
+	// out-of-bounds member access.
+	for (const KeyValue<StringName, FoundryScript::MemberInfo> &E : p_script->member_indices) {
+		ERR_FAIL_COND_V_MSG(E.value.index < 0 || E.value.index >= (int)p_script->member_indices.size(), ERR_INVALID_DATA,
+				vformat("Member index out of range for '%s' in compiled script '%s'.", E.key, script_path));
 	}
 
 	const uint32_t own_member_count = p_stream->get_u32();

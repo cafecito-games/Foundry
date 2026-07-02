@@ -593,6 +593,123 @@ TEST_CASE("[FoundryScript][BytecodeHardening] finish() survives cascaded base/su
 	CHECK(after->get_member_functions().has(SNAME("ping")));
 }
 
+TEST_CASE("[FoundryScript][BytecodeHardening] Verifier rejects out-of-range builtin-static types") {
+	// `print(1)` gives the host function a non-empty global-name table and an instruction-argument
+	// scratch size of at least one, so the crafted CALL_BUILTIN_STATIC below can name a valid method
+	// index and carry one instruction argument.
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"static func run() -> void:\n"
+			"\tprint(1)\n");
+	FSFunction *function = bytecode_round_trip_member_function(script, SNAME("run"));
+
+	REQUIRE(function->get_global_names_count() > 0);
+	REQUIRE(function->get_instruction_args_size() >= 1);
+
+	// Layout of a CALL_BUILTIN_STATIC with one instruction argument: the argument sits at ip+2, then the
+	// VM reads the builtin type at shift+1, the method-name global index at shift+2, and the argument
+	// count at shift+3, where shift = ip + 1 + instruction_arg_count. `Variant::call_static` indexes
+	// `builtin_method_info[type]` with no bounds check in a release build, so an out-of-range type must
+	// be rejected here. The argument count is zero, so the only instruction-argument slot used is the
+	// return slot at index 0, which stays inside the single-entry scratch array.
+	const auto build_call = [](int p_builtin_type) {
+		Vector<int> code;
+		code.push_back(FSFunction::OPCODE_CALL_BUILTIN_STATIC);
+		code.push_back(1); // instruction_arg_count
+		code.push_back(FSFunction::ADDR_SELF); // instruction argument 0
+		code.push_back(p_builtin_type); // builtin type at shift+1
+		code.push_back(0); // method-name global index at shift+2
+		code.push_back(0); // argument count at shift+3
+		code.push_back(FSFunction::OPCODE_END);
+		return code;
+	};
+
+	// A type past the end of the per-type tables, far past it, and a negative type are all rejected.
+	CHECK(bytecode_verify_with_code(script, function, build_call(Variant::VARIANT_MAX)) == ERR_INVALID_DATA);
+	CHECK(bytecode_verify_with_code(script, function, build_call(Variant::VARIANT_MAX + 4096)) == ERR_INVALID_DATA);
+	CHECK(bytecode_verify_with_code(script, function, build_call(-1)) == ERR_INVALID_DATA);
+
+	// A real builtin type and the last valid type both pass, proving the bound stops at the real
+	// boundary rather than rejecting every builtin-static call.
+	CHECK(bytecode_verify_with_code(script, function, build_call(Variant::VECTOR2)) == OK);
+	CHECK(bytecode_verify_with_code(script, function, build_call(Variant::VARIANT_MAX - 1)) == OK);
+
+	bytecode_destroy_restored_function(script, function);
+}
+
+TEST_CASE("[FoundryScript][BytecodeHardening] Duplicate member names in corrupt buffers fail cleanly") {
+	// Two builtin-typed instance members of equal-length names so the string-table entry can be
+	// byte-patched to collide. Each instance sizes its `members` array from the deduplicated
+	// `member_indices` map, and `FSInstance::set`/`get` index that array by the stored member index.
+	//
+	// The members are left uninitialized so the implicit constructor emits no member-store opcode for
+	// them: that keeps the collapsed member slot out of the bytecode the verifier scans, isolating the
+	// duplicate-name rejection to the loader. The corrupted member is instead reached through the
+	// external `Object::set`/`get` property path, which the bytecode verifier does not cover.
+	const Ref<FoundryScript> original = compile_bytecode_test_source(
+			"var alpha\n"
+			"var bravo\n");
+
+	FSBytecodeExporter exporter;
+	Vector<uint8_t> buffer;
+	REQUIRE(exporter.serialize(original, buffer) == OK);
+
+	// The pristine buffer round-trips: two distinct members, each default-initialized and independently
+	// set/get, so the added bounds are not over-tight and the per-instance member array holds both slots.
+	{
+		BytecodeTestResolver resolver;
+		Ref<FoundryScript> accepted;
+		accepted.instantiate();
+		accepted->set_path_cache(original->get_script_path());
+		FSBytecodeLoader loader;
+		loader.set_resolver(&resolver);
+		REQUIRE(loader.load_full(buffer, accepted) == OK);
+		REQUIRE(accepted->is_valid());
+		{
+			const Variant instance_variant = bytecode_new_instance(accepted);
+			Object *instance = instance_variant;
+			// Both uninitialized `int` members default to zero and are then independently written and
+			// read back through the external property path, exercising the exact `members[index]` access
+			// the duplicate-name rejection protects.
+			CHECK((int64_t)instance->get(SNAME("alpha")) == 0);
+			CHECK((int64_t)instance->get(SNAME("bravo")) == 0);
+			instance->set(SNAME("alpha"), 33);
+			instance->set(SNAME("bravo"), 44);
+			CHECK((int64_t)instance->get(SNAME("alpha")) == 33);
+			CHECK((int64_t)instance->get(SNAME("bravo")) == 44);
+		}
+		accepted->clear();
+	}
+
+	// Rename the second member to the first one's name in the string table (same length), so the loader
+	// reads two member entries both named "alpha". The second entry keeps its own index of 1, which is
+	// `< member_count` (2) but past the deduplicated per-instance array (size 1): without the
+	// duplicate-name rejection this is an out-of-bounds `members` access in `FSInstance::set`/`get`.
+	const CharString marker = String("bravo").utf8();
+	const CharString replacement = String("alpha").utf8();
+	bool patched = false;
+	for (int i = 0; i + marker.length() <= buffer.size(); i++) {
+		if (memcmp(&buffer[i], marker.get_data(), marker.length()) == 0) {
+			memcpy(&buffer.write[i], replacement.get_data(), replacement.length());
+			patched = true;
+			break;
+		}
+	}
+	REQUIRE(patched);
+
+	Ref<FoundryScript> target;
+	target.instantiate();
+	target->set_path_cache(original->get_script_path());
+	BytecodeTestResolver resolver;
+	FSBytecodeLoader loader;
+	loader.set_resolver(&resolver);
+	ERR_PRINT_OFF;
+	CHECK(loader.load_full(buffer, target) == ERR_INVALID_DATA);
+	ERR_PRINT_ON;
+	CHECK(!target->is_valid());
+
+	original->clear();
+}
+
 } // namespace FSTests
 
 #endif // TOOLS_ENABLED

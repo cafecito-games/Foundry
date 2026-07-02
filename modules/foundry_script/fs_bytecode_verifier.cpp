@@ -638,6 +638,14 @@ Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_me
 						const int argument_count = code_ptr[shift + 3];
 						VERIFY_FAIL_COND(argument_count < 0, "negative argument count");
 						CHECK_TABLE(shift + 2, global_names_count, "global name");
+						// The builtin type at shift+1 selects which per-type method table to call the static
+						// method on. `Variant::call_static` indexes `builtin_method_info[type]` with no bounds
+						// check in a release build (unlike `Variant::construct`, whose `ERR_FAIL_INDEX` guards
+						// the type immediates the CONSTRUCT/CAST/ASSIGN_TYPED opcodes carry), so a crafted type
+						// `>= VARIANT_MAX` or negative would read out of bounds. Mirror the VM's own debug guard.
+						const int builtin_type = code_ptr[shift + 1];
+						VERIFY_FAIL_COND(builtin_type < 0 || builtin_type >= Variant::VARIANT_MAX,
+								"builtin static type is out of range");
 						highest_arg_index = argument_count;
 					} break;
 					case FSFunction::OPCODE_CALL_NATIVE_STATIC: {
