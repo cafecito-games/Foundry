@@ -50,8 +50,8 @@ Auto-raise events (debugger errors, output on run) open the drawer in whatever m
 
 - A grabber on the drawer's top edge provides drag-resize in both modes, replacing the split dragger (`DRAGGER_VISIBLE` logic in `editor_bottom_panel.cpp:103-129`).
 - Per-dock heights keep the existing `dock_offsets` map keyed by `get_effective_layout_key()` and the `bottom_panel_offsets` config key (`editor_bottom_panel.cpp:88-147`). Only the source of truth changes from split offset to drawer height.
-- Pin state persists as a parallel dictionary (`bottom_panel_pinned`) in the same layout section, saved/loaded alongside `bottom_panel_offsets`.
-- **Migration:** old layouts load cleanly — a stored offset becomes the drawer height. Pin defaults are detected by the `bottom_panel_pinned` key: a layout config that has bottom-panel data but no `bottom_panel_pinned` key is a pre-existing layout, and every panel defaults to **pinned** (preserves familiar behavior on upgrade); a fresh install with no layout config defaults to **unpinned** (the new default experience).
+- Pin state persists as a parallel dictionary (`bottom_panel_pinned`) plus an explicit `bottom_panel_pinned_by_default` bool in the same layout section, saved/loaded alongside `bottom_panel_offsets`.
+- **Migration:** old layouts load cleanly — a stored offset becomes the drawer height. The pin default is persisted explicitly as `bottom_panel_pinned_by_default`: configs written before the drawer lack the key and read as **pinned** (preserves familiar behavior on upgrade, stable across save/load cycles); the built-in default layout writes the key as **false**, so fresh installs get the unpinned overlay experience. Inferring the default from the presence of the `bottom_panel_pinned` dictionary is not sufficient — the first layout save would write an empty dictionary and silently flip upgraded users to unpinned.
 
 ### 4. Dock eligibility and the pin remap
 

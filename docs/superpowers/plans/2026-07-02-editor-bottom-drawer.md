@@ -594,7 +594,7 @@ In `make_item_visible`, the lock guard referenced the pin button's visibility as
 
 - [ ] **Step 2: Persist pin state with migration defaults**
 
-`save_layout_to_config` — append after the offsets block:
+`save_layout_to_config` — append after the offsets block. The default is persisted explicitly: inferring it from the presence of the `bottom_panel_pinned` key would decay after one save cycle (the first save writes an empty dictionary and would flip upgraded users to unpinned on the next launch).
 
 ```cpp
 	Dictionary pinned;
@@ -602,21 +602,17 @@ In `make_item_visible`, the lock guard referenced the pin button's visibility as
 		pinned[E.key] = E.value;
 	}
 	p_config_file->set_value(p_section, "bottom_panel_pinned", pinned);
+	p_config_file->set_value(p_section, "bottom_panel_pinned_by_default", pinned_by_default);
 ```
 
-`load_layout_from_config` — append before the final `_update_drawer_geometry();`:
+`load_layout_from_config` — append before the final `_update_drawer_geometry();`. Configs written before the drawer lack `bottom_panel_pinned_by_default` and read as pinned (familiar in-flow behavior on upgrade):
 
 ```cpp
-	if (p_config_file->has_section_key(p_section, "bottom_panel_pinned")) {
-		pinned_by_default = false;
-		const Dictionary pinned = p_config_file->get_value(p_section, "bottom_panel_pinned");
-		const LocalVector<Variant> pinned_list = pinned.get_key_list();
-		for (const Variant &v : pinned_list) {
-			dock_pinned[v] = pinned[v];
-		}
-	} else {
-		// Layout written before the drawer existed: keep the familiar in-flow behavior.
-		pinned_by_default = true;
+	pinned_by_default = p_config_file->get_value(p_section, "bottom_panel_pinned_by_default", true);
+	const Dictionary pinned = p_config_file->get_value(p_section, "bottom_panel_pinned", Dictionary());
+	const LocalVector<Variant> pinned_list = pinned.get_key_list();
+	for (const Variant &v : pinned_list) {
+		dock_pinned[v] = pinned[v];
 	}
 	pin_button->set_pressed_no_signal(_is_current_pinned());
 ```
@@ -628,7 +624,7 @@ In `make_item_visible`, the lock guard referenced the pin button's visibility as
 		Dictionary offsets;
 		offsets["Audio"] = 450;
 		default_layout->set_value(EDITOR_NODE_CONFIG_SECTION, "bottom_panel_offsets", offsets);
-		default_layout->set_value(EDITOR_NODE_CONFIG_SECTION, "bottom_panel_pinned", Dictionary());
+		default_layout->set_value(EDITOR_NODE_CONFIG_SECTION, "bottom_panel_pinned_by_default", false);
 	}
 ```
 
