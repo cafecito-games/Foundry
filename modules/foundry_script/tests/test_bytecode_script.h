@@ -529,10 +529,14 @@ TEST_CASE("[FoundryScript][BytecodeScript] Conformance witnesses re-register wit
 			"\tfunc ping() -> int:\n"
 			"\t\treturn power * 2\n"
 			"\n"
+			"class Speaker uses Pingable:\n"
+			"\tfunc ping() -> int:\n"
+			"\t\treturn 5\n"
+			"\n"
 			"func run() -> int:\n"
 			"\tvar gadget := Gadget.new()\n"
 			"\tvar pingable: Pingable = gadget\n"
-			"\treturn pingable.ping()\n");
+			"\treturn pingable.ping() + Speaker.new().ping()\n");
 	const String script_path = original->get_script_path();
 	const Ref<FoundryScript> original_gadget = original->get_subclasses().find(SNAME("Gadget"))->value;
 	const String gadget_key = original_gadget->get_fully_qualified_name();
@@ -541,7 +545,7 @@ TEST_CASE("[FoundryScript][BytecodeScript] Conformance witnesses re-register wit
 	{
 		const Variant instance_variant = bytecode_new_instance(original);
 		Object *instance = instance_variant;
-		CHECK((int64_t)bytecode_instance_call(instance, SNAME("run"), {}) == 42);
+		CHECK((int64_t)bytecode_instance_call(instance, SNAME("run"), {}) == 47);
 	}
 
 	FSBytecodeExporter exporter;
@@ -568,13 +572,22 @@ TEST_CASE("[FoundryScript][BytecodeScript] Conformance witnesses re-register wit
 	CHECK(TestFSBytecodeScriptAccessor::get_witness_functions(restored).has(registered_witness));
 	CHECK(!TestFSBytecodeScriptAccessor::get_witness_functions(original).has(registered_witness));
 
-	// The trait identity survived on the loaded trait class, and runtime dispatch through the
-	// restored graph reaches the witness.
+	// The trait identity survived on the loaded trait class, the direct `uses` trait list survived
+	// on the implementer, and runtime dispatch through the restored graph reaches the witness.
 	REQUIRE(restored->get_subclasses().has(SNAME("Pingable")));
 	CHECK(restored->get_subclasses().find(SNAME("Pingable"))->value->is_trait_type());
+	REQUIRE(restored->get_subclasses().has(SNAME("Speaker")));
+	const Ref<FoundryScript> original_speaker = original->get_subclasses().find(SNAME("Speaker"))->value;
+	const Ref<FoundryScript> restored_speaker = restored->get_subclasses().find(SNAME("Speaker"))->value;
+	List<StringName> original_speaker_traits;
+	original_speaker->get_script_trait_list(&original_speaker_traits);
+	REQUIRE(!original_speaker_traits.is_empty());
+	for (const StringName &trait_name : original_speaker_traits) {
+		CHECK(restored_speaker->has_script_trait(trait_name));
+	}
 	const Variant instance_variant = bytecode_new_instance(restored);
 	Object *instance = instance_variant;
-	CHECK((int64_t)bytecode_instance_call(instance, SNAME("run"), {}) == 42);
+	CHECK((int64_t)bytecode_instance_call(instance, SNAME("run"), {}) == 47);
 }
 
 TEST_CASE("[FoundryScript][BytecodeScript] Serialized scripts carry no source text") {

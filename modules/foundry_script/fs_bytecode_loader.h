@@ -61,6 +61,10 @@ public:
 
 // Reader half of the `.fsb` compiled-bytecode format. Compiled into all builds, including export
 // templates.
+//
+// A loader instance carries per-load state (the string table and the intra-file class list), so use
+// one instance per `.fsb`; when resolver recursion loads another `.fsb` (e.g. an external base), it
+// must do so through a fresh loader.
 class FSBytecodeLoader {
 public:
 	// Lambda metadata read alongside a deserialized function; the caller rebuilds the owning
