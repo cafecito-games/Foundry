@@ -129,9 +129,12 @@ class FSByteCodeGenerator : public FSCodeGenerator {
 
 	// The pointer maps dedupe by function pointer, so the descriptor is appended only when the
 	// matching map insertion assigned a new index; index i of each descriptor vector then always
-	// describes entry i of the matching pointer table.
+	// describes entry i of the matching pointer table. A position beyond the descriptor vector
+	// means some codegen site inserted into the pointer map without recording a descriptor,
+	// which would silently desynchronize every later entry.
 	template <typename DescriptorType>
 	void record_export_fixup(Vector<DescriptorType> &r_descriptors, int p_pointer_position, const DescriptorType &p_descriptor) {
+		DEV_ASSERT(p_pointer_position <= r_descriptors.size());
 		if (p_pointer_position == r_descriptors.size()) {
 			r_descriptors.push_back(p_descriptor);
 		}

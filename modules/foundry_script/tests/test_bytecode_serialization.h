@@ -55,6 +55,13 @@
 
 namespace FSTests {
 
+class TestFSLanguageGlobalsAccessor {
+public:
+	static void remove_global(const StringName &p_name) {
+		FSLanguage::get_singleton()->_remove_global(p_name);
+	}
+};
+
 class BytecodeTestResolver : public FSBytecodeExternalResolver {
 public:
 	HashMap<String, Ref<Resource>> resources;
@@ -671,7 +678,7 @@ TEST_CASE("[FoundryScript][BytecodeCodec] Unresolvable external references fail 
 	ERR_PRINT_ON;
 }
 
-TEST_CASE("[FoundryScript][BytecodeCodegen] Codegen records export fixups for every pointer table") {
+TEST_CASE("[FoundryScript][BytecodeCodec] Codegen records export fixups for every pointer table") {
 	const Ref<FoundryScript> script = compile_bytecode_test_source(
 			"func run() -> Array:\n"
 			"\tvar base := 1.5\n"
@@ -794,7 +801,7 @@ TEST_CASE("[FoundryScript][BytecodeCodegen] Codegen records export fixups for ev
 	CHECK(has_get_instance_id);
 }
 
-TEST_CASE("[FoundryScript][BytecodeCodegen] Codegen records store-global operands and named globals") {
+TEST_CASE("[FoundryScript][BytecodeCodec] Codegen records store-global operands and named globals") {
 	// A singleton autoload reference is the one construct the compiler lowers to
 	// OPCODE_STORE_GLOBAL, baking the process-specific global-array index into the code.
 	const String scene_path = TestUtils::get_temp_path("bytecode_fixup_autoload.tscn");
@@ -865,6 +872,10 @@ TEST_CASE("[FoundryScript][BytecodeCodegen] Codegen records store-global operand
 	CHECK(direct_fixups.named_globals[0] == SNAME("DirectNamedGlobal"));
 
 	memdelete(direct_function);
+
+	// Drop the registered autoload global so later fixtures see a pristine global map.
+	TestFSLanguageGlobalsAccessor::remove_global(autoload_name);
+	CHECK(!FSLanguage::get_singleton()->get_global_map().has(autoload_name));
 }
 
 } // namespace FSTests

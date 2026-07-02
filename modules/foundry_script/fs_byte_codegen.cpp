@@ -446,6 +446,18 @@ FSFunction *FSByteCodeGenerator::write_end() {
 #endif
 
 #ifdef TOOLS_ENABLED
+	DEV_ASSERT(export_fixups.operators.size() == operator_func_map.size());
+	DEV_ASSERT(export_fixups.setters.size() == setters_map.size());
+	DEV_ASSERT(export_fixups.getters.size() == getters_map.size());
+	DEV_ASSERT(export_fixups.keyed_setters.size() == keyed_setters_map.size());
+	DEV_ASSERT(export_fixups.keyed_getters.size() == keyed_getters_map.size());
+	DEV_ASSERT(export_fixups.indexed_setters.size() == indexed_setters_map.size());
+	DEV_ASSERT(export_fixups.indexed_getters.size() == indexed_getters_map.size());
+	DEV_ASSERT(export_fixups.builtin_methods.size() == builtin_method_map.size());
+	DEV_ASSERT(export_fixups.constructors.size() == constructors_map.size());
+	DEV_ASSERT(export_fixups.utilities.size() == utilities_map.size());
+	DEV_ASSERT(export_fixups.gds_utilities.size() == gds_utilities_map.size());
+	DEV_ASSERT(export_fixups.method_binds.size() == method_bind_map.size());
 	export_fixups.named_globals = named_globals;
 	function->export_fixups = export_fixups;
 #endif

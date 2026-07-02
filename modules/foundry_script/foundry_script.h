@@ -113,6 +113,7 @@ public:
 namespace FSTests {
 class TestFSTraitReflectionAccessor;
 class TestFSGenericReflectionAccessor;
+class TestFSLanguageGlobalsAccessor;
 } //namespace FSTests
 #endif // TESTS_ENABLED
 
@@ -747,6 +748,9 @@ class FSNamespace;
 
 class FSLanguage : public ScriptLanguage {
 	friend class FSFunctionState;
+#ifdef TESTS_ENABLED
+	friend class FSTests::TestFSLanguageGlobalsAccessor;
+#endif // TESTS_ENABLED
 
 	static FSLanguage *singleton;
 
