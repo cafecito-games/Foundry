@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="ScriptTestRunner" inherits="RefCounted" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+	<brief_description>
+		Base class for project test runner scripts hosted by the engine CLI.
+	</brief_description>
+	<description>
+		Extend [ScriptTestRunner] to implement a project-local test entrypoint. The engine launches the script under a live [SceneTree] main loop via [code]foundry project test[/code], passes user arguments after [code]--[/code] to [method run], and exits the process with the integer returned by [method run].
+		Async [method run] implementations are supported: the host awaits the coroutine handle and uses the completed result as the process exit code.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="run">
+			<return type="int" />
+			<param index="0" name="args" type="PackedStringArray" />
+			<description>
+				Script-dispatched entrypoint for project test runners. [param args] contains the user arguments from [code]OS.get_cmdline_user_args()[/code], in order. Return the desired process exit code. Async overrides are allowed.
+				Example CLI:
+				[codeblock]
+				foundry --headless project test --project . --runner res://addons/foundrylib/testlib/cli/run.fs -- --path res://tests --filter inventory
+				[/codeblock]
+			</description>
+		</method>
+	</methods>
+</class>

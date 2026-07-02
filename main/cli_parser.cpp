@@ -315,6 +315,40 @@ static void parse_project_export(CLIParseState &r_state) {
 	r_state.result.normalized_args = normalized;
 }
 
+static void parse_project_test(CLIParseState &r_state) {
+	set_command_path(r_state.result, "project", "test");
+	String runner;
+
+	while (r_state.index < r_state.args.size()) {
+		const String arg = r_state.args[r_state.index];
+		if (consume_common_global_option(r_state, arg)) {
+			if (!r_state.result.ok) {
+				return;
+			}
+			continue;
+		}
+		if (arg == "--runner") {
+			if (!require_value(r_state, arg, runner)) {
+				return;
+			}
+		} else {
+			fail(r_state.result, "Unknown option for project test: " + arg + ".");
+			return;
+		}
+	}
+
+	if (runner.is_empty()) {
+		fail(r_state.result, "project test requires --runner.");
+		return;
+	}
+
+	PackedStringArray normalized = base_args(r_state);
+	append_project(normalized, r_state.project_path);
+	append_pair(normalized, "--run-test-runner", runner);
+	append_user_args(normalized, r_state.result.user_args);
+	r_state.result.normalized_args = normalized;
+}
+
 static void parse_project_import(CLIParseState &r_state) {
 	set_command_path(r_state.result, "project", "import");
 	while (r_state.index < r_state.args.size()) {
@@ -347,6 +381,8 @@ static void parse_project(CLIParseState &r_state) {
 		parse_project_export(r_state);
 	} else if (command == "import") {
 		parse_project_import(r_state);
+	} else if (command == "test") {
+		parse_project_test(r_state);
 	} else {
 		fail(r_state.result, "Unknown project command: " + command + ".");
 	}

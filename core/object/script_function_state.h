@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  fs_script_extensible_native_hooks.h                                   */
+/*  script_function_state.h                                               */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -30,12 +30,11 @@
 
 #pragma once
 
-#include "core/string/string_name.h"
-#include "core/templates/list.h"
+#include "core/object/ref_counted.h"
 
-class FSScriptExtensibleNativeHooks {
-public:
-	static bool is_allowed_override(const StringName &p_native_base, const StringName &p_method_name);
-	static bool allows_async_override_of_sync_hook(const StringName &p_native_base, const StringName &p_method_name);
-	static void collect_allowed_overrides(const StringName &p_native_base, List<StringName> &r_method_names);
+class ScriptFunctionState : public RefCounted {
+	FOUNDRY_CLASS(ScriptFunctionState, RefCounted);
+
+protected:
+	static void _bind_methods();
 };

@@ -539,8 +539,6 @@ void FSFunctionState::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("resume", "arg"), &FSFunctionState::resume, DEFVAL(Variant()));
 	ClassDB::bind_method(D_METHOD("is_valid", "extended_check"), &FSFunctionState::is_valid, DEFVAL(false));
 	ClassDB::bind_vararg_method(METHOD_FLAGS_DEFAULT, "_signal_callback", &FSFunctionState::_signal_callback, MethodInfo("_signal_callback"));
-
-	ADD_SIGNAL(MethodInfo("completed", PropertyInfo(Variant::NIL, "result", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NIL_IS_VARIANT)));
 }
 
 FSFunctionState::FSFunctionState() :
