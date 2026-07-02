@@ -35,64 +35,13 @@
 #include "tests/test_macros.h"
 
 #include "../editor/fs_project_scan.h"
+#include "fs_temporary_project_tree.h"
 
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
 #include "core/os/os.h"
 
 namespace FSTests {
-
-// Builds a throwaway project tree on disk under the OS temp path and removes it on destruction,
-// so the scan runs against real directories without touching the test project or res://.
-struct TemporaryProjectTree {
-	String root;
-
-	explicit TemporaryProjectTree(const String &p_name) {
-		root = OS::get_singleton()->get_temp_path().path_join(p_name);
-		// Start from a clean slate in case a previous aborted run left the tree behind.
-		remove_recursive(root);
-		Ref<DirAccess> dir = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
-		REQUIRE_EQ(dir->make_dir_recursive(root), OK);
-	}
-
-	~TemporaryProjectTree() {
-		remove_recursive(root);
-	}
-
-	// Writes p_contents to root/p_relative_path, creating intermediate directories as needed.
-	void write_file(const String &p_relative_path, const String &p_contents) const {
-		const String absolute_path = root.path_join(p_relative_path);
-		Ref<DirAccess> dir = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
-		REQUIRE_EQ(dir->make_dir_recursive(absolute_path.get_base_dir()), OK);
-		Ref<FileAccess> file = FileAccess::open(absolute_path, FileAccess::WRITE);
-		REQUIRE_MESSAGE(file.is_valid(), vformat("Cannot write '%s'", absolute_path));
-		file->store_string(p_contents);
-	}
-
-	static void remove_recursive(const String &p_path) {
-		Ref<DirAccess> dir = DirAccess::open(p_path);
-		if (dir.is_null()) {
-			return;
-		}
-		dir->set_include_hidden(true);
-		dir->list_dir_begin();
-		for (String entry = dir->get_next(); !entry.is_empty(); entry = dir->get_next()) {
-			if (entry == "." || entry == "..") {
-				continue;
-			}
-			const String child = p_path.path_join(entry);
-			// Remove a symlink as a leaf; never descend through it, or a link back into the tree
-			// would make cleanup recurse forever (and could delete files outside the tree).
-			if (dir->current_is_dir() && !dir->is_link(child)) {
-				remove_recursive(child);
-			} else {
-				DirAccess::remove_absolute(child);
-			}
-		}
-		dir->list_dir_end();
-		DirAccess::remove_absolute(p_path);
-	}
-};
 
 static bool scan_contains(const ProjectScanResult &p_result, const String &p_relative, const String &p_root) {
 	const String absolute = p_root.path_join(p_relative);

@@ -4513,6 +4513,15 @@ int Main::start() {
 	}
 
 	if (!script.is_empty()) {
+		// Without the editor there is no EditorFileSystem to rebuild the global script class cache,
+		// so a missing or stale `global_script_class_cache.cfg` would break `class_name` resolution
+		// for the whole run. Rescan the project for global classes in memory instead (never written
+		// back to disk). Exported projects (running from a datapack) keep trusting the cache bundled
+		// at export time: their scripts may be compiled to bytecode the scan cannot parse.
+		if (!editor && ProjectSettings::get_singleton()->is_project_loaded() && !ProjectSettings::get_singleton()->is_using_datapack()) {
+			ScriptServer::scan_global_classes();
+		}
+
 		Ref<Script> script_res = ResourceLoader::load(script);
 		ERR_FAIL_COND_V_MSG(script_res.is_null(), EXIT_FAILURE, "Can't load script: " + script);
 

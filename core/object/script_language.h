@@ -110,6 +110,7 @@ public:
 	static void get_inheriters_list(const StringName &p_base_type, List<StringName> *r_classes);
 	static void get_indirect_inheriters_list(const StringName &p_base_type, List<StringName> *r_classes);
 	static void save_global_classes();
+	static void scan_global_classes(const String &p_root = "res://");
 
 	static Vector<Ref<ScriptBacktrace>> capture_script_backtraces(bool p_include_variables = false);
 

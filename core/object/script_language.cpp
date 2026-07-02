@@ -34,6 +34,8 @@
 #include "core/core_bind.h"
 #include "core/debugger/engine_debugger.h"
 #include "core/debugger/script_debugger.h"
+#include "core/io/dir_access.h"
+#include "core/io/file_access.h"
 #include "core/io/resource_loader.h"
 #include "core/templates/sort_array.h"
 
@@ -652,6 +654,129 @@ void ScriptServer::save_global_classes() {
 		gcarr.push_back(d);
 	}
 	ProjectSettings::get_singleton()->store_global_class_list(gcarr);
+}
+
+// Recursively collects script files under p_directory_path, mirroring the directories the editor
+// file-system scan descends into: hidden entries, symlinked directories, nested projects,
+// `.fsignore`-marked trees, and the project data directory are skipped, so the scan registers the
+// same set of global classes the editor would persist to the class cache.
+static void scan_script_files_in_directory(const String &p_directory_path, const HashMap<String, ScriptLanguage *> &p_language_by_extension, const String &p_project_data_path, Vector<String> &r_files) {
+	Ref<DirAccess> dir = DirAccess::open(p_directory_path);
+	if (dir.is_null() || dir->list_dir_begin() != OK) {
+		return;
+	}
+
+	Vector<String> subdirectories;
+	for (String entry = dir->get_next(); !entry.is_empty(); entry = dir->get_next()) {
+		if (entry.begins_with(".") || dir->current_is_hidden()) {
+			continue;
+		}
+
+		const String child_path = p_directory_path.path_join(entry);
+
+		// Never follow directory symlinks: a link outside the project or back into an ancestor
+		// would let the scan escape the project root or recurse forever.
+		if (dir->is_link(child_path)) {
+			continue;
+		}
+
+		if (dir->current_is_dir()) {
+			subdirectories.push_back(child_path);
+		} else if (p_language_by_extension.has(entry.get_extension().to_lower())) {
+			r_files.push_back(child_path);
+		}
+	}
+	dir->list_dir_end();
+
+	for (const String &subdirectory : subdirectories) {
+		if (!p_project_data_path.is_empty() && subdirectory == p_project_data_path) {
+			continue;
+		}
+		// A directory holding its own project file is a separate project, never part of this one.
+		if (FileAccess::exists(subdirectory.path_join("project.foundry"))) {
+			continue;
+		}
+		// Honor the editor's ignore marker so vendored/generated trees stay excluded.
+		if (FileAccess::exists(subdirectory.path_join(".fsignore"))) {
+			continue;
+		}
+		scan_script_files_in_directory(subdirectory, p_language_by_extension, p_project_data_path, r_files);
+	}
+}
+
+void ScriptServer::scan_global_classes(const String &p_root) {
+	// Rebuilds the in-memory global class table for p_root from what is actually on disk, without
+	// requiring the editor file system and without writing `global_script_class_cache.cfg` back.
+	// This is the fallback for processes that never construct EditorFileSystem (e.g.
+	// `--headless --script` runs), where the cache file on disk may be missing or stale.
+	HashMap<String, ScriptLanguage *> language_by_extension;
+	for (int i = 0; i < get_language_count(); i++) {
+		ScriptLanguage *language = get_language(i);
+		const String extension = language->get_extension().to_lower();
+		if (!extension.is_empty()) {
+			language_by_extension[extension] = language;
+		}
+	}
+	if (language_by_extension.is_empty()) {
+		return;
+	}
+
+	String project_data_path;
+	if (ProjectSettings::get_singleton()) {
+		project_data_path = ProjectSettings::get_singleton()->get_project_data_path();
+	}
+
+	Vector<String> files;
+	scan_script_files_in_directory(p_root, language_by_extension, project_data_path, files);
+	// Sort so a class name declared by multiple files always resolves to the same file,
+	// independent of filesystem enumeration order.
+	files.sort();
+
+	// The scan is the source of truth for everything it covers: drop entries under the scanned
+	// root owned by a scanned language, so classes whose file was deleted, renamed, or moved since
+	// the cache was written do not linger. Files still declaring their class are re-added below.
+	const String root_prefix = p_root.ends_with("/") ? p_root : p_root + "/";
+	LocalVector<StringName> stale_classes;
+	for (const KeyValue<StringName, GlobalScriptClass> &kv : global_classes) {
+		if (!kv.value.path.begins_with(root_prefix)) {
+			continue;
+		}
+		const ScriptLanguage *const *language = language_by_extension.getptr(kv.value.path.get_extension().to_lower());
+		if (language && (*language)->get_name() == String(kv.value.language)) {
+			stale_classes.push_back(kv.key);
+		}
+	}
+	for (const StringName &stale_class : stale_classes) {
+		remove_global_class(stale_class);
+	}
+
+	for (const String &file : files) {
+		ScriptLanguage *language = language_by_extension[file.get_extension().to_lower()];
+
+		// Refresh the language's cross-file annotation index even for files that declare no global
+		// class, so annotation-only libraries stay resolvable (mirrors the editor scan, see
+		// EditorFileSystem::_register_global_class_script).
+		language->update_global_class_annotations(file, file);
+
+		String base_type;
+		bool is_abstract = false;
+		bool is_tool = false;
+		bool is_trait = false;
+		bool is_enum = false;
+		const String class_name = language->get_global_class_name(file, &base_type, nullptr, &is_abstract, &is_tool, &is_trait, &is_enum);
+		if (class_name.is_empty()) {
+			continue;
+		}
+
+		if (is_global_class(class_name) && get_global_class_path(class_name) != file) {
+			ERR_PRINT(vformat(R"(Global script class "%s" from "%s" collides with existing script class from "%s".)", class_name, file, get_global_class_path(class_name)));
+			continue;
+		}
+
+		add_global_class(class_name, base_type, language->get_name(), file, is_abstract, is_tool, is_trait, is_enum);
+	}
+
+	print_verbose(vformat("ScriptServer: Scanned %d script file(s) under \"%s\" for global classes (%d registered).", files.size(), p_root, global_classes.size()));
 }
 
 Vector<Ref<ScriptBacktrace>> ScriptServer::capture_script_backtraces(bool p_include_variables) {
