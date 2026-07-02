@@ -33,7 +33,9 @@
 #include "core/core_globals.h"
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
+#include "core/io/json.h"
 #include "core/os/os.h"
+#include "core/variant/array.h"
 #include "fs_analyzer.h"
 #include "fs_parser.h"
 
@@ -264,6 +266,105 @@ String FSLintCLI::severity_to_string(Severity p_severity) {
 
 String FSLintCLI::sarif_level_for_severity(Severity p_severity) {
 	return severity_to_string(p_severity);
+}
+
+Dictionary FSLintCLI::diagnostic_to_dictionary(const Diagnostic &p_diagnostic) {
+	Dictionary range;
+	range["startLine"] = p_diagnostic.range.start_line;
+	range["startColumn"] = p_diagnostic.range.start_column;
+	range["endLine"] = p_diagnostic.range.end_line;
+	range["endColumn"] = p_diagnostic.range.end_column;
+
+	Dictionary diagnostic;
+	diagnostic["path"] = p_diagnostic.path;
+	diagnostic["range"] = range;
+	diagnostic["severity"] = severity_to_string(p_diagnostic.severity);
+	diagnostic["source"] = p_diagnostic.source;
+	diagnostic["ruleId"] = p_diagnostic.rule_id;
+	diagnostic["message"] = p_diagnostic.message;
+	return diagnostic;
+}
+
+String FSLintCLI::to_json(const Vector<Diagnostic> &p_diagnostics) {
+	Array diagnostics;
+	for (const Diagnostic &diagnostic : p_diagnostics) {
+		diagnostics.push_back(diagnostic_to_dictionary(diagnostic));
+	}
+
+	Dictionary root;
+	root["version"] = 1;
+	root["diagnostics"] = diagnostics;
+	return JSON::stringify(root, "\t", true, true) + "\n";
+}
+
+String FSLintCLI::to_sarif(const Vector<Diagnostic> &p_diagnostics) {
+	Dictionary rules_by_id;
+	Array results;
+
+	for (const Diagnostic &diagnostic : p_diagnostics) {
+		if (!rules_by_id.has(diagnostic.rule_id)) {
+			Dictionary rule;
+			rule["id"] = diagnostic.rule_id;
+			rules_by_id[diagnostic.rule_id] = rule;
+		}
+
+		Dictionary message;
+		message["text"] = diagnostic.message;
+
+		Dictionary artifact_location;
+		artifact_location["uri"] = diagnostic.sarif_path.is_empty() ? diagnostic.path : diagnostic.sarif_path;
+
+		Dictionary region;
+		region["startLine"] = diagnostic.range.start_line;
+		region["startColumn"] = diagnostic.range.start_column;
+		region["endLine"] = diagnostic.range.end_line;
+		region["endColumn"] = diagnostic.range.end_column;
+
+		Dictionary physical_location;
+		physical_location["artifactLocation"] = artifact_location;
+		physical_location["region"] = region;
+
+		Dictionary location;
+		location["physicalLocation"] = physical_location;
+
+		Array locations;
+		locations.push_back(location);
+
+		Dictionary result;
+		result["ruleId"] = diagnostic.rule_id;
+		result["level"] = sarif_level_for_severity(diagnostic.severity);
+		result["message"] = message;
+		result["locations"] = locations;
+		results.push_back(result);
+	}
+
+	Array rule_ids = rules_by_id.keys();
+	rule_ids.sort();
+
+	Array rules;
+	for (int i = 0; i < rule_ids.size(); i++) {
+		rules.push_back(rules_by_id[rule_ids[i]]);
+	}
+
+	Dictionary driver;
+	driver["name"] = "Foundry Script Lint";
+	driver["rules"] = rules;
+
+	Dictionary tool;
+	tool["driver"] = driver;
+
+	Dictionary run;
+	run["tool"] = tool;
+	run["results"] = results;
+
+	Array runs;
+	runs.push_back(run);
+
+	Dictionary root;
+	root["version"] = "2.1.0";
+	root["$schema"] = "https://json.schemastore.org/sarif-2.1.0.json";
+	root["runs"] = runs;
+	return JSON::stringify(root, "\t", true, true) + "\n";
 }
 
 int FSLintCLI::Result::get_exit_code(const Options &p_options) const {

@@ -40,6 +40,7 @@
 #include "core/config/project_settings.h"
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
+#include "core/io/json.h"
 #include "core/os/os.h"
 
 #include "tests/test_macros.h"
@@ -287,6 +288,146 @@ TEST_CASE("[Modules][FoundryScript][Lint] Analyzer errors become diagnostics") {
 	check_diagnostic_basics(*diagnostic, path, FSLintCLI::SEVERITY_ERROR);
 	CHECK(diagnostic->message.contains("String"));
 	CHECK(diagnostic->message.contains("int"));
+}
+
+TEST_CASE("[Modules][FoundryScript][Lint] JSON serialization returns diagnostics report") {
+	FSLintCLI::Diagnostic diagnostic;
+	diagnostic.path = "res://scripts/bad.fs";
+	diagnostic.range.start_line = 3;
+	diagnostic.range.start_column = 5;
+	diagnostic.range.end_line = 3;
+	diagnostic.range.end_column = 11;
+	diagnostic.severity = FSLintCLI::SEVERITY_WARNING;
+	diagnostic.rule_id = "strict-types";
+	diagnostic.message = "Type mismatch.";
+
+	Vector<FSLintCLI::Diagnostic> diagnostics;
+	diagnostics.push_back(diagnostic);
+
+	const String report = FSLintCLI::to_json(diagnostics);
+	const Variant parsed = JSON::parse_string(report);
+
+	REQUIRE_EQ(parsed.get_type(), Variant::DICTIONARY);
+	const Dictionary root = parsed;
+	CHECK_EQ(int(root["version"]), 1);
+	REQUIRE_EQ(root["diagnostics"].get_type(), Variant::ARRAY);
+	const Array parsed_diagnostics = root["diagnostics"];
+	REQUIRE_EQ(parsed_diagnostics.size(), 1);
+	REQUIRE_EQ(parsed_diagnostics[0].get_type(), Variant::DICTIONARY);
+	const Dictionary parsed_diagnostic = parsed_diagnostics[0];
+	CHECK_EQ(String(parsed_diagnostic["path"]), diagnostic.path);
+	CHECK_EQ(String(parsed_diagnostic["severity"]), "warning");
+	CHECK_EQ(String(parsed_diagnostic["source"]), "foundry_script");
+	CHECK_EQ(String(parsed_diagnostic["ruleId"]), diagnostic.rule_id);
+	CHECK_EQ(String(parsed_diagnostic["message"]), diagnostic.message);
+	REQUIRE_EQ(parsed_diagnostic["range"].get_type(), Variant::DICTIONARY);
+	const Dictionary range = parsed_diagnostic["range"];
+	CHECK_EQ(int(range["startLine"]), 3);
+	CHECK_EQ(int(range["startColumn"]), 5);
+	CHECK_EQ(int(range["endLine"]), 3);
+	CHECK_EQ(int(range["endColumn"]), 11);
+	CHECK(report.ends_with("\n"));
+}
+
+TEST_CASE("[Modules][FoundryScript][Lint] SARIF serialization returns run with rules and results") {
+	FSLintCLI::Diagnostic warning;
+	warning.path = "res://scripts/warning.fs";
+	warning.sarif_path = "scripts/warning.fs";
+	warning.range.start_line = 2;
+	warning.range.start_column = 4;
+	warning.range.end_line = 2;
+	warning.range.end_column = 9;
+	warning.severity = FSLintCLI::SEVERITY_WARNING;
+	warning.rule_id = "z-warning";
+	warning.message = "Warning message.";
+
+	FSLintCLI::Diagnostic error;
+	error.path = "res://scripts/error.fs";
+	error.range.start_line = 7;
+	error.range.start_column = 1;
+	error.range.end_line = 8;
+	error.range.end_column = 6;
+	error.severity = FSLintCLI::SEVERITY_ERROR;
+	error.rule_id = "a-error";
+	error.message = "Error message.";
+
+	Vector<FSLintCLI::Diagnostic> diagnostics;
+	diagnostics.push_back(warning);
+	diagnostics.push_back(error);
+
+	const String report = FSLintCLI::to_sarif(diagnostics);
+	const Variant parsed = JSON::parse_string(report);
+
+	REQUIRE_EQ(parsed.get_type(), Variant::DICTIONARY);
+	const Dictionary root = parsed;
+	CHECK_EQ(String(root["version"]), "2.1.0");
+	CHECK_EQ(String(root["$schema"]), "https://json.schemastore.org/sarif-2.1.0.json");
+	REQUIRE_EQ(root["runs"].get_type(), Variant::ARRAY);
+	const Array runs = root["runs"];
+	REQUIRE_EQ(runs.size(), 1);
+	REQUIRE_EQ(runs[0].get_type(), Variant::DICTIONARY);
+	const Dictionary run = runs[0];
+	REQUIRE_EQ(run["tool"].get_type(), Variant::DICTIONARY);
+	const Dictionary tool = run["tool"];
+	REQUIRE_EQ(tool["driver"].get_type(), Variant::DICTIONARY);
+	const Dictionary driver = tool["driver"];
+	CHECK_EQ(String(driver["name"]), "Foundry Script Lint");
+	REQUIRE_EQ(driver["rules"].get_type(), Variant::ARRAY);
+	const Array rules = driver["rules"];
+	REQUIRE_EQ(rules.size(), 2);
+	REQUIRE_EQ(rules[0].get_type(), Variant::DICTIONARY);
+	REQUIRE_EQ(rules[1].get_type(), Variant::DICTIONARY);
+	CHECK_EQ(String(Dictionary(rules[0])["id"]), "a-error");
+	CHECK_EQ(String(Dictionary(rules[1])["id"]), "z-warning");
+
+	REQUIRE_EQ(run["results"].get_type(), Variant::ARRAY);
+	const Array results = run["results"];
+	REQUIRE_EQ(results.size(), 2);
+
+	REQUIRE_EQ(results[0].get_type(), Variant::DICTIONARY);
+	const Dictionary warning_result = results[0];
+	CHECK_EQ(String(warning_result["ruleId"]), warning.rule_id);
+	CHECK_EQ(String(warning_result["level"]), "warning");
+	REQUIRE_EQ(warning_result["message"].get_type(), Variant::DICTIONARY);
+	CHECK_EQ(String(Dictionary(warning_result["message"])["text"]), warning.message);
+	REQUIRE_EQ(warning_result["locations"].get_type(), Variant::ARRAY);
+	const Array warning_locations = warning_result["locations"];
+	REQUIRE_EQ(warning_locations.size(), 1);
+	REQUIRE_EQ(warning_locations[0].get_type(), Variant::DICTIONARY);
+	const Dictionary warning_location = warning_locations[0];
+	REQUIRE_EQ(warning_location["physicalLocation"].get_type(), Variant::DICTIONARY);
+	const Dictionary warning_physical_location = warning_location["physicalLocation"];
+	REQUIRE_EQ(warning_physical_location["artifactLocation"].get_type(), Variant::DICTIONARY);
+	CHECK_EQ(String(Dictionary(warning_physical_location["artifactLocation"])["uri"]), warning.sarif_path);
+	REQUIRE_EQ(warning_physical_location["region"].get_type(), Variant::DICTIONARY);
+	const Dictionary warning_region = warning_physical_location["region"];
+	CHECK_EQ(int(warning_region["startLine"]), 2);
+	CHECK_EQ(int(warning_region["startColumn"]), 4);
+	CHECK_EQ(int(warning_region["endLine"]), 2);
+	CHECK_EQ(int(warning_region["endColumn"]), 9);
+
+	REQUIRE_EQ(results[1].get_type(), Variant::DICTIONARY);
+	const Dictionary error_result = results[1];
+	CHECK_EQ(String(error_result["ruleId"]), error.rule_id);
+	CHECK_EQ(String(error_result["level"]), "error");
+	REQUIRE_EQ(error_result["message"].get_type(), Variant::DICTIONARY);
+	CHECK_EQ(String(Dictionary(error_result["message"])["text"]), error.message);
+	REQUIRE_EQ(error_result["locations"].get_type(), Variant::ARRAY);
+	const Array error_locations = error_result["locations"];
+	REQUIRE_EQ(error_locations.size(), 1);
+	REQUIRE_EQ(error_locations[0].get_type(), Variant::DICTIONARY);
+	const Dictionary error_location = error_locations[0];
+	REQUIRE_EQ(error_location["physicalLocation"].get_type(), Variant::DICTIONARY);
+	const Dictionary error_physical_location = error_location["physicalLocation"];
+	REQUIRE_EQ(error_physical_location["artifactLocation"].get_type(), Variant::DICTIONARY);
+	CHECK_EQ(String(Dictionary(error_physical_location["artifactLocation"])["uri"]), error.path);
+	REQUIRE_EQ(error_physical_location["region"].get_type(), Variant::DICTIONARY);
+	const Dictionary error_region = error_physical_location["region"];
+	CHECK_EQ(int(error_region["startLine"]), 7);
+	CHECK_EQ(int(error_region["startColumn"]), 1);
+	CHECK_EQ(int(error_region["endLine"]), 8);
+	CHECK_EQ(int(error_region["endColumn"]), 6);
+	CHECK(report.ends_with("\n"));
 }
 
 #ifdef DEBUG_ENABLED

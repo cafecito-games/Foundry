@@ -91,6 +91,9 @@ public:
 	static Result lint_paths(const Vector<String> &p_paths, const Options &p_options);
 	static String severity_to_string(Severity p_severity);
 	static String sarif_level_for_severity(Severity p_severity);
+	static Dictionary diagnostic_to_dictionary(const Diagnostic &p_diagnostic);
+	static String to_json(const Vector<Diagnostic> &p_diagnostics);
+	static String to_sarif(const Vector<Diagnostic> &p_diagnostics);
 	static void run_from_cmdline();
 
 private:
