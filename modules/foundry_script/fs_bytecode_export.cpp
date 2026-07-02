@@ -494,6 +494,9 @@ Error FSBytecodeExporter::serialize_function(StreamPeerBuffer *r_stream, const F
 	for (const FSFunction::ExportFixups::ConstructorKey &key : fixups.constructors) {
 		r_stream->put_u32((uint32_t)key.type);
 		r_stream->put_32(key.constructor_index);
+		// The argument count pins the constructor's signature, so the loader can reject an index
+		// that silently came to mean a different overload.
+		r_stream->put_32(Variant::get_constructor_argument_count((Variant::Type)key.type, key.constructor_index));
 	}
 
 	r_stream->put_u32((uint32_t)fixups.utilities.size());
@@ -521,13 +524,13 @@ Error FSBytecodeExporter::serialize_function(StreamPeerBuffer *r_stream, const F
 	// `named_globals` is deliberately not serialized: it exists for export-time validation of
 	// OPCODE_STORE_NAMED_GLOBAL names, which dispatch by name at runtime and need no relinking.
 
+	ERR_FAIL_COND_V_MSG(!p_function->lambdas.is_empty() && p_function->_script == nullptr, ERR_INVALID_PARAMETER,
+			vformat("Cannot serialize compiled function '%s': it has lambdas but no owning script.", p_function->name));
 	r_stream->put_u32((uint32_t)p_function->lambdas.size());
 	for (FSFunction *lambda : p_function->lambdas) {
 		// Each lambda pointer appears in exactly one parent's table (the codegen keys them by
 		// pointer per function and lambdas belong to their lexical parent), so the depth-first
 		// recursion serializes every lambda exactly once.
-		ERR_FAIL_NULL_V_MSG(p_function->_script, ERR_INVALID_PARAMETER,
-				vformat("Cannot serialize compiled function '%s': it has lambdas but no owning script.", p_function->name));
 		const FoundryScript::LambdaInfo *lambda_info = p_function->_script->get_lambda_info().getptr(lambda);
 		ERR_FAIL_NULL_V_MSG(lambda_info, ERR_INVALID_PARAMETER,
 				vformat("Cannot serialize compiled function '%s' of script '%s': its owning script has no lambda info for lambda '%s'.",

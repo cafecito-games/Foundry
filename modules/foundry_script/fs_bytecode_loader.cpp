@@ -543,8 +543,14 @@ Error FSBytecodeLoader::read_function(StreamPeerBuffer *p_stream, FoundryScript 
 	function->_script = p_script;
 	function->source = p_script->get_script_path();
 
+	const int lambda_info_initial_size = r_lambda_info != nullptr ? r_lambda_info->size() : 0;
 	const Error error = _read_function_body(p_stream, p_script, function, r_lambda_info, p_depth);
 	if (error != OK) {
+		// Deleting the partial function cascades into any lambdas already attached to it, so roll
+		// the metadata entries appended for them back too; they would otherwise dangle.
+		if (r_lambda_info != nullptr) {
+			r_lambda_info->resize(lambda_info_initial_size);
+		}
 		memdelete(function);
 		return error;
 	}
@@ -584,6 +590,11 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 	const uint32_t argument_type_count = p_stream->get_u32();
 	ERR_FAIL_COND_V_MSG((int64_t)argument_type_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 			vformat("Truncated compiled function '%s' in script '%s'.", function_name, script_path));
+	// The VM indexes `argument_types` for every declared argument, so an argument count larger than
+	// the type table would read out of bounds at call time.
+	ERR_FAIL_COND_V_MSG((int64_t)p_function->_argument_count > (int64_t)argument_type_count, ERR_INVALID_DATA,
+			vformat("Malformed compiled function '%s' in script '%s': argument count exceeds its argument type table.",
+					function_name, script_path));
 	for (uint32_t i = 0; i < argument_type_count; i++) {
 		FSDataType argument_type;
 		error = decode_data_type(p_stream, argument_type, p_depth + 1);
@@ -697,6 +708,9 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 				vformat("%s (%s, %s)", Variant::get_operator_name((Variant::Operator)variant_operator),
 						Variant::get_type_name((Variant::Type)left_type), Variant::get_type_name((Variant::Type)right_type)));
 		p_function->operator_funcs.push_back(evaluator);
+#ifdef DEBUG_ENABLED
+		p_function->operator_names.push_back(Variant::get_operator_name((Variant::Operator)variant_operator));
+#endif
 #ifdef TOOLS_ENABLED
 		restored_fixups.operators.push_back({ (Variant::Operator)variant_operator, (Variant::Type)left_type, (Variant::Type)right_type });
 #endif
@@ -718,6 +732,9 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 		FSB_LINK_CHECK(setter == nullptr, "member setter",
 				vformat("%s.%s", Variant::get_type_name((Variant::Type)type), member_name));
 		p_function->setters.push_back(setter);
+#ifdef DEBUG_ENABLED
+		p_function->setter_names.push_back(member_name);
+#endif
 #ifdef TOOLS_ENABLED
 		restored_fixups.setters.push_back({ (Variant::Type)type, StringName(member_name) });
 #endif
@@ -739,6 +756,9 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 		FSB_LINK_CHECK(getter == nullptr, "member getter",
 				vformat("%s.%s", Variant::get_type_name((Variant::Type)type), member_name));
 		p_function->getters.push_back(getter);
+#ifdef DEBUG_ENABLED
+		p_function->getter_names.push_back(member_name);
+#endif
 #ifdef TOOLS_ENABLED
 		restored_fixups.getters.push_back({ (Variant::Type)type, StringName(member_name) });
 #endif
@@ -823,26 +843,37 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 		FSB_LINK_CHECK(builtin_method == nullptr, "builtin method",
 				vformat("%s.%s", Variant::get_type_name((Variant::Type)type), method_name));
 		p_function->builtin_methods.push_back(builtin_method);
+#ifdef DEBUG_ENABLED
+		p_function->builtin_methods_names.push_back(method_name);
+#endif
 #ifdef TOOLS_ENABLED
 		restored_fixups.builtin_methods.push_back({ (Variant::Type)type, StringName(method_name) });
 #endif
 	}
 
 	const uint32_t constructor_count = p_stream->get_u32();
-	ERR_FAIL_COND_V_MSG((int64_t)constructor_count * 8 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
+	ERR_FAIL_COND_V_MSG((int64_t)constructor_count * 12 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 			vformat("Truncated compiled function '%s' in script '%s'.", function_name, script_path));
 	for (uint32_t i = 0; i < constructor_count; i++) {
 		const uint32_t type = p_stream->get_u32();
 		const int32_t constructor_index = p_stream->get_32();
+		const int32_t constructor_argument_count = p_stream->get_32();
 		ERR_FAIL_COND_V_MSG(type >= Variant::VARIANT_MAX, ERR_INVALID_DATA,
 				vformat("Malformed constructor fixup in compiled function '%s' in script '%s'.", function_name, script_path));
 		FSB_LINK_CHECK(constructor_index < 0 || constructor_index >= Variant::get_constructor_count((Variant::Type)type),
 				"constructor", vformat("%s #%d", Variant::get_type_name((Variant::Type)type), constructor_index));
+		// The index alone could silently come to mean a different overload; the recorded argument
+		// count pins the signature the code was compiled against.
+		FSB_LINK_CHECK(constructor_argument_count != Variant::get_constructor_argument_count((Variant::Type)type, constructor_index),
+				"constructor", vformat("%s #%d (%d arguments)", Variant::get_type_name((Variant::Type)type), constructor_index, constructor_argument_count));
 		const Variant::ValidatedConstructor constructor =
 				Variant::get_validated_constructor((Variant::Type)type, constructor_index);
 		FSB_LINK_CHECK(constructor == nullptr, "constructor",
 				vformat("%s #%d", Variant::get_type_name((Variant::Type)type), constructor_index));
 		p_function->constructors.push_back(constructor);
+#ifdef DEBUG_ENABLED
+		p_function->constructors_names.push_back(Variant::get_type_name((Variant::Type)type));
+#endif
 #ifdef TOOLS_ENABLED
 		restored_fixups.constructors.push_back({ (Variant::Type)type, constructor_index });
 #endif
@@ -861,6 +892,9 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 		const Variant::ValidatedUtilityFunction utility = Variant::get_validated_utility_function(StringName(utility_name));
 		FSB_LINK_CHECK(utility == nullptr, "utility function", utility_name);
 		p_function->utilities.push_back(utility);
+#ifdef DEBUG_ENABLED
+		p_function->utilities_names.push_back(utility_name);
+#endif
 #ifdef TOOLS_ENABLED
 		restored_fixups.utilities.push_back(StringName(utility_name));
 #endif
@@ -879,6 +913,9 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 		const FSUtilityFunctions::FunctionPtr utility = FSUtilityFunctions::get_function(StringName(utility_name));
 		FSB_LINK_CHECK(utility == nullptr, "script utility function", utility_name);
 		p_function->gds_utilities.push_back(utility);
+#ifdef DEBUG_ENABLED
+		p_function->gds_utilities_names.push_back(utility_name);
+#endif
 #ifdef TOOLS_ENABLED
 		restored_fixups.gds_utilities.push_back(StringName(utility_name));
 #endif
@@ -957,7 +994,8 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 	p_function->name = StringName(function_name);
 #ifdef DEBUG_ENABLED
 	// Keeps profiler and debugger signatures meaningful when a debug export template loads compiled
-	// bytecode; the tools-only disassembler name tables stay empty and degrade gracefully.
+	// bytecode. The debug display-name vectors were synthesized alongside each fixup table above,
+	// because the disassembler indexes them unguarded.
 	p_function->func_cname = (String(p_function->source) + " - " + function_name).utf8();
 	p_function->_func_cname = p_function->func_cname.get_data();
 #endif

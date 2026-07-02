@@ -1237,6 +1237,94 @@ TEST_CASE("[FoundryScript][BytecodeFunction] Tampered fixup keys fail the load w
 	CHECK(restored == nullptr);
 }
 
+TEST_CASE("[FoundryScript][BytecodeFunction] Corrupted argument counts fail the load") {
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"static func no_arguments() -> int:\n"
+			"\treturn 7\n");
+	const HashMap<StringName, FSFunction *>::ConstIterator original_element = script->get_member_functions().find(SNAME("no_arguments"));
+	REQUIRE(original_element);
+
+	FSBytecodeExporter exporter;
+	const Vector<uint8_t> payload = bytecode_serialize_function_payload(exporter, original_element->value);
+
+	// An argument count larger than the argument-type table would make the VM index the table out
+	// of bounds at call time. Field layout: u32 name index, u8 flags, i32 initial line, then the
+	// i32 argument count at byte offset 9 (little-endian).
+	Vector<uint8_t> corrupted = payload;
+	REQUIRE(corrupted.size() > 13);
+	corrupted.write[9] = 3;
+
+	BytecodeTestResolver resolver;
+	FSBytecodeLoader loader = bytecode_loader_for(exporter, &resolver);
+	Ref<StreamPeerBuffer> payload_stream;
+	payload_stream.instantiate();
+	payload_stream->set_data_array(corrupted);
+	FSFunction *restored = nullptr;
+	ERR_PRINT_OFF;
+	CHECK(loader.read_function(payload_stream.ptr(), script.ptr(), restored) == ERR_INVALID_DATA);
+	ERR_PRINT_ON;
+	CHECK(restored == nullptr);
+}
+
+TEST_CASE("[FoundryScript][BytecodeFunction] Failed loads roll back the lambda metadata output") {
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"static func two_lambdas(base: int) -> int:\n"
+			"\tvar first := func(value: int) -> int:\n"
+			"\t\treturn value + base\n"
+			"\tvar second := func(text: String) -> int:\n"
+			"\t\treturn text.length() * base\n"
+			"\treturn first.call(1) + second.call(\"ab\")\n");
+	const HashMap<StringName, FSFunction *>::ConstIterator original_element = script->get_member_functions().find(SNAME("two_lambdas"));
+	REQUIRE(original_element);
+	REQUIRE(original_element->value->get_lambdas().size() == 2);
+
+	FSBytecodeExporter exporter;
+	const Vector<uint8_t> payload = bytecode_serialize_function_payload(exporter, original_element->value);
+
+	// Rename the builtin method only the second lambda uses, so the load fails after the first
+	// lambda's metadata entry was already appended.
+	Ref<StreamPeerBuffer> table_stream;
+	table_stream.instantiate();
+	exporter.get_string_table().write(table_stream.ptr());
+	Vector<uint8_t> table_bytes = table_stream->get_data_array();
+	const CharString marker = String("length").utf8();
+	bool patched = false;
+	for (int i = 0; i + marker.length() <= table_bytes.size(); i++) {
+		if (memcmp(&table_bytes[i], marker.get_data(), marker.length()) == 0) {
+			table_bytes.write[i] = 'x';
+			patched = true;
+			break;
+		}
+	}
+	REQUIRE(patched);
+
+	BytecodeTestResolver resolver;
+	FSBytecodeLoader loader;
+	loader.set_resolver(&resolver);
+	Ref<StreamPeerBuffer> tampered_table_stream;
+	tampered_table_stream.instantiate();
+	tampered_table_stream->set_data_array(table_bytes);
+	REQUIRE(loader.read_string_table(tampered_table_stream.ptr()) == OK);
+
+	// Entries that predate the call must survive; entries appended by the failed call must not.
+	Vector<FSBytecodeLoader::LoadedLambdaInfo> lambda_info;
+	FSBytecodeLoader::LoadedLambdaInfo sentinel;
+	sentinel.capture_count = 99;
+	lambda_info.push_back(sentinel);
+
+	Ref<StreamPeerBuffer> payload_stream;
+	payload_stream.instantiate();
+	payload_stream->set_data_array(payload);
+	FSFunction *restored = nullptr;
+	ERR_PRINT_OFF;
+	CHECK(loader.read_function(payload_stream.ptr(), script.ptr(), restored, &lambda_info) == ERR_CANT_RESOLVE);
+	ERR_PRINT_ON;
+	CHECK(restored == nullptr);
+	REQUIRE(lambda_info.size() == 1);
+	CHECK(lambda_info[0].capture_count == 99);
+	CHECK(lambda_info[0].function == nullptr);
+}
+
 TEST_CASE("[FoundryScript][BytecodeFunction] Serialized functions carry no source text or local identifiers") {
 	const String source =
 			"static func secret() -> int:\n"

@@ -96,8 +96,9 @@ public:
 	// Deserializes and links one compiled function (plus its nested lambdas) written by
 	// `FSBytecodeExporter::serialize_function`. On success the caller owns `r_function` and is
 	// expected to register it on `p_script` (the FSFunction destructor unregisters itself from the
-	// owning script's member-function map by name). Any unresolvable fixup is a hard error and
-	// leaves `r_function` null.
+	// owning script's member-function map by name). Any unresolvable fixup is a hard error that
+	// leaves `r_function` null and rolls `r_lambda_info` back to the size it had on entry, since
+	// entries appended by the failed call would point at freed functions.
 	Error read_function(StreamPeerBuffer *p_stream, FoundryScript *p_script, FSFunction *&r_function,
 			Vector<LoadedLambdaInfo> *r_lambda_info = nullptr, int p_depth = 0);
 };
