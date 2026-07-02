@@ -38,7 +38,7 @@ public interface FoundryRenderView {
 	SurfaceView getView();
 
 	/**
-	 * Starts the thread that will drive Godot's rendering.
+	 * Starts the thread that will drive Foundry's rendering.
 	 */
 	void startRenderer();
 

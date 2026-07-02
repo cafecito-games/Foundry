@@ -51,15 +51,15 @@ import games.cafecito.foundry.vulkan.VkRenderer;
 import games.cafecito.foundry.vulkan.VkSurfaceView;
 
 class FoundryVulkanRenderView extends VkSurfaceView implements FoundryRenderView {
-	private final Godot godot;
+	private final Foundry foundry;
 	private final FoundryInputHandler mInputHandler;
 	private final VkRenderer mRenderer;
 	private final SparseArray<PointerIcon> customPointerIcons = new SparseArray<>();
 
-	public FoundryVulkanRenderView(Godot godot, FoundryInputHandler inputHandler, boolean shouldBeTranslucent) {
-		super(godot.getContext());
+	public FoundryVulkanRenderView(Foundry foundry, FoundryInputHandler inputHandler, boolean shouldBeTranslucent) {
+		super(foundry.getContext());
 
-		this.godot = godot;
+		this.foundry = foundry;
 		mInputHandler = inputHandler;
 		mRenderer = new VkRenderer();
 		setPointerIcon(PointerIcon.getSystemIcon(getContext(), PointerIcon.TYPE_DEFAULT));
@@ -154,7 +154,7 @@ class FoundryVulkanRenderView extends VkSurfaceView implements FoundryRenderView
 	@Override
 	public boolean canCapturePointer() {
 		// Pointer capture is not supported on XR devices.
-		return !godot.isXrRuntime() && mInputHandler.canCapturePointer();
+		return !foundry.isXrRuntime() && mInputHandler.canCapturePointer();
 	}
 	@Override
 	public void requestPointerCapture() {
@@ -187,10 +187,10 @@ class FoundryVulkanRenderView extends VkSurfaceView implements FoundryRenderView
 		try {
 			Bitmap bitmap = null;
 			if (!TextUtils.isEmpty(imagePath)) {
-				if (godot.getDirectoryAccessHandler().filesystemFileExists(imagePath)) {
+				if (foundry.getDirectoryAccessHandler().filesystemFileExists(imagePath)) {
 					// Try to load the bitmap from the file system
 					bitmap = BitmapFactory.decodeFile(imagePath);
-				} else if (godot.getDirectoryAccessHandler().assetsFileExists(imagePath)) {
+				} else if (foundry.getDirectoryAccessHandler().assetsFileExists(imagePath)) {
 					// Try to load the bitmap from the assets directory
 					AssetManager am = getContext().getAssets();
 					InputStream imageInputStream = am.open(imagePath);

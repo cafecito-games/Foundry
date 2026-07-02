@@ -31,7 +31,7 @@
 package games.cafecito.foundry.error
 
 /**
- * Godot error list.
+ * Foundry error list.
  *
  * This enum MUST match its native counterpart in 'core/error/error_list.h'
  */

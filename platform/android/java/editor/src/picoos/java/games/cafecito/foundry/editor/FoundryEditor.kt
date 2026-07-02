@@ -31,8 +31,8 @@
 package games.cafecito.foundry.editor
 
 /**
- * Primary window of the Godot Editor.
+ * Primary window of the Foundry Editor.
  *
  * This is the implementation of the editor used when running on PicoOS devices.
  */
-open class FoundryEditor : BaseGodotEditor()
+open class FoundryEditor : BaseFoundryEditor()

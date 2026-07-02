@@ -54,7 +54,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-import games.cafecito.foundry.Godot;
+import games.cafecito.foundry.Foundry;
 
 /**
  * This class includes utility functions for Android permissions related operations.
@@ -160,7 +160,7 @@ public final class PermissionsUtil {
 
 			case "CAMERA":
 				permissions.add(Manifest.permission.CAMERA);
-				if (Godot.getInstance(activity).hasFeature("horizonos")) {
+				if (Foundry.getInstance(activity).hasFeature("horizonos")) {
 					// On HorizonOS, these permissions are required to get access to all the device's cameras.
 					permissions.add("horizonos.permission.AVATAR_CAMERA");
 					permissions.add("horizonos.permission.HEADSET_CAMERA");

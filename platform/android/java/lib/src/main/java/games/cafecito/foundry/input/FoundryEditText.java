@@ -239,8 +239,8 @@ public class FoundryEditText extends EditText {
 			return mRenderView.getInputHandler().onKeyDown(keyCode, keyEvent);
 		}
 
-		// pass event to godot in special cases
-		if (needHandlingInGodot(keyCode, keyEvent) && mRenderView.getInputHandler().onKeyDown(keyCode, keyEvent)) {
+		// pass event to Foundry in special cases
+		if (needHandlingInFoundry(keyCode, keyEvent) && mRenderView.getInputHandler().onKeyDown(keyCode, keyEvent)) {
 			return true;
 		} else {
 			return super.onKeyDown(keyCode, keyEvent);
@@ -261,14 +261,14 @@ public class FoundryEditText extends EditText {
 			return mRenderView.getInputHandler().onKeyUp(keyCode, keyEvent);
 		}
 
-		if (needHandlingInGodot(keyCode, keyEvent) && mRenderView.getInputHandler().onKeyUp(keyCode, keyEvent)) {
+		if (needHandlingInFoundry(keyCode, keyEvent) && mRenderView.getInputHandler().onKeyUp(keyCode, keyEvent)) {
 			return true;
 		} else {
 			return super.onKeyUp(keyCode, keyEvent);
 		}
 	}
 
-	private boolean needHandlingInGodot(int keyCode, KeyEvent keyEvent) {
+	private boolean needHandlingInFoundry(int keyCode, KeyEvent keyEvent) {
 		boolean isArrowKey = keyCode == KeyEvent.KEYCODE_DPAD_UP || keyCode == KeyEvent.KEYCODE_DPAD_DOWN ||
 				keyCode == KeyEvent.KEYCODE_DPAD_LEFT || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT;
 		boolean isModifiedKey = keyEvent.isAltPressed() || keyEvent.isCtrlPressed() || keyEvent.isSymPressed() ||

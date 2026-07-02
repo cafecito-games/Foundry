@@ -57,9 +57,9 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import games.cafecito.foundry.Foundry;
 import games.cafecito.foundry.FoundryLib;
 import games.cafecito.foundry.FoundryRenderView;
-import games.cafecito.foundry.Godot;
 
 /**
  * Handles input related events for the {@link FoundryRenderView} view.
@@ -84,12 +84,12 @@ public class FoundryInputHandler implements InputManager.InputDeviceListener, Se
 	private final SparseArray<Joystick> mJoysticksDevices = new SparseArray<>(4);
 	private final HashSet<Integer> mHardwareKeyboardIds = new HashSet<>();
 
-	private final Godot godot;
+	private final Foundry foundry;
 	private final InputManager mInputManager;
 	private final WindowManager windowManager;
 	private final GestureDetector gestureDetector;
 	private final ScaleGestureDetector scaleGestureDetector;
-	private final FoundryGestureHandler godotGestureHandler;
+	private final FoundryGestureHandler foundryGestureHandler;
 
 	/**
 	 * Used to decide whether mouse capture can be enabled.
@@ -102,17 +102,17 @@ public class FoundryInputHandler implements InputManager.InputDeviceListener, Se
 	private boolean overrideVolumeButtons = false;
 	private boolean hasHardwareKeyboardConfig = false;
 
-	public FoundryInputHandler(Context context, Godot godot) {
-		this.godot = godot;
+	public FoundryInputHandler(Context context, Foundry foundry) {
+		this.foundry = foundry;
 		mInputManager = (InputManager)context.getSystemService(Context.INPUT_SERVICE);
 		mInputManager.registerInputDeviceListener(this, null);
 
 		windowManager = (WindowManager)context.getSystemService(Context.WINDOW_SERVICE);
 
-		this.godotGestureHandler = new FoundryGestureHandler(this);
-		this.gestureDetector = new GestureDetector(context, godotGestureHandler);
+		this.foundryGestureHandler = new FoundryGestureHandler(this);
+		this.gestureDetector = new GestureDetector(context, foundryGestureHandler);
 		this.gestureDetector.setIsLongpressEnabled(false);
-		this.scaleGestureDetector = new ScaleGestureDetector(context, godotGestureHandler);
+		this.scaleGestureDetector = new ScaleGestureDetector(context, foundryGestureHandler);
 		this.scaleGestureDetector.setStylusScaleEnabled(true);
 		Configuration config = context.getResources().getConfiguration();
 		hasHardwareKeyboardConfig = config.keyboard != Configuration.KEYBOARD_NOKEYS &&
@@ -130,7 +130,7 @@ public class FoundryInputHandler implements InputManager.InputDeviceListener, Se
 	 * Disable scroll deadzone. This is false by default.
 	 */
 	public void disableScrollDeadzone(boolean disable) {
-		this.godotGestureHandler.setScrollDeadzoneDisabled(disable);
+		this.foundryGestureHandler.setScrollDeadzoneDisabled(disable);
 	}
 
 	/**
@@ -139,7 +139,7 @@ public class FoundryInputHandler implements InputManager.InputDeviceListener, Se
 	 * Note: This may interfere with multi-touch handling / support.
 	 */
 	public void enablePanningAndScalingGestures(boolean enable) {
-		this.godotGestureHandler.setPanningAndScalingEnabled(enable);
+		this.foundryGestureHandler.setPanningAndScalingEnabled(enable);
 	}
 
 	/**
@@ -182,7 +182,7 @@ public class FoundryInputHandler implements InputManager.InputDeviceListener, Se
 	}
 
 	public void onPointerCaptureChange(boolean hasCapture) {
-		godotGestureHandler.onPointerCaptureChange(hasCapture);
+		foundryGestureHandler.onPointerCaptureChange(hasCapture);
 	}
 
 	public boolean onKeyUp(final int keyCode, KeyEvent event) {
@@ -191,9 +191,9 @@ public class FoundryInputHandler implements InputManager.InputDeviceListener, Se
 			// Check if the device exists
 			final int deviceId = event.getDeviceId();
 			if (mJoystickIds.indexOfKey(deviceId) >= 0) {
-				final int button = getGodotButton(keyCode);
-				final int godotJoyId = mJoystickIds.get(deviceId);
-				handleJoystickButtonEvent(godotJoyId, button, false);
+				final int button = getFoundryButton(keyCode);
+				final int foundryJoyId = mJoystickIds.get(deviceId);
+				handleJoystickButtonEvent(foundryJoyId, button, false);
 			}
 		} else {
 			// getKeyCode(): The physical key that was pressed.
@@ -220,9 +220,9 @@ public class FoundryInputHandler implements InputManager.InputDeviceListener, Se
 				return true;
 
 			if (mJoystickIds.indexOfKey(deviceId) >= 0) {
-				final int button = getGodotButton(keyCode);
-				final int godotJoyId = mJoystickIds.get(deviceId);
-				handleJoystickButtonEvent(godotJoyId, button, true);
+				final int button = getFoundryButton(keyCode);
+				final int foundryJoyId = mJoystickIds.get(deviceId);
+				handleJoystickButtonEvent(foundryJoyId, button, true);
 			}
 		} else {
 			final int physical_keycode = event.getKeyCode();
@@ -247,7 +247,7 @@ public class FoundryInputHandler implements InputManager.InputDeviceListener, Se
 			return true;
 		}
 
-		if (godotGestureHandler.onMotionEvent(event)) {
+		if (foundryGestureHandler.onMotionEvent(event)) {
 			// The gesture handler has handled the event.
 			return true;
 		}
@@ -271,7 +271,7 @@ public class FoundryInputHandler implements InputManager.InputDeviceListener, Se
 			// Check if the device exists
 			final int deviceId = event.getDeviceId();
 			if (mJoystickIds.indexOfKey(deviceId) >= 0) {
-				final int godotJoyId = mJoystickIds.get(deviceId);
+				final int foundryJoyId = mJoystickIds.get(deviceId);
 				Joystick joystick = mJoysticksDevices.get(deviceId);
 				if (joystick == null) {
 					return true;
@@ -282,12 +282,12 @@ public class FoundryInputHandler implements InputManager.InputDeviceListener, Se
 					final float value = event.getAxisValue(axis);
 					/*
 					  As all axes are polled for each event, only fire an axis event if the value has actually changed.
-					  Prevents flooding Godot with repeated events.
+					  Prevents flooding Foundry with repeated events.
 					 */
 					if (joystick.axesValues.indexOfKey(axis) < 0 || (float)joystick.axesValues.get(axis) != value) {
 						// save value to prevent repeats
 						joystick.axesValues.put(axis, value);
-						handleJoystickAxisEvent(godotJoyId, i, value);
+						handleJoystickAxisEvent(foundryJoyId, i, value);
 					}
 				}
 
@@ -297,7 +297,7 @@ public class FoundryInputHandler implements InputManager.InputDeviceListener, Se
 					if (joystick.hatX != hatX || joystick.hatY != hatY) {
 						joystick.hatX = hatX;
 						joystick.hatY = hatY;
-						handleJoystickHatEvent(godotJoyId, hatX, hatY);
+						handleJoystickHatEvent(foundryJoyId, hatX, hatY);
 					}
 				}
 				return true;
@@ -310,7 +310,7 @@ public class FoundryInputHandler implements InputManager.InputDeviceListener, Se
 			return true;
 		}
 
-		if (godotGestureHandler.onMotionEvent(event)) {
+		if (foundryGestureHandler.onMotionEvent(event)) {
 			// The gesture handler has handled the event.
 			return true;
 		}
@@ -333,12 +333,12 @@ public class FoundryInputHandler implements InputManager.InputDeviceListener, Se
 	}
 
 	private int assignJoystickIdNumber(int deviceId) {
-		int godotJoyId = 0;
-		while (mJoystickIds.indexOfValue(godotJoyId) >= 0) {
-			godotJoyId++;
+		int foundryJoyId = 0;
+		while (mJoystickIds.indexOfValue(foundryJoyId) >= 0) {
+			foundryJoyId++;
 		}
-		mJoystickIds.put(deviceId, godotJoyId);
-		return godotJoyId;
+		mJoystickIds.put(deviceId, foundryJoyId);
+		return foundryJoyId;
 	}
 
 	@Override
@@ -408,7 +408,7 @@ public class FoundryInputHandler implements InputManager.InputDeviceListener, Se
 		Collections.sort(joystick.axes);
 		for (int idx = 0; idx < joystick.axes.size(); idx++) {
 			//Helps with creating new joypad mappings.
-			Log.i(TAG, " - Mapping Android axis " + joystick.axes.get(idx) + " to Godot axis " + idx);
+			Log.i(TAG, " - Mapping Android axis " + joystick.axes.get(idx) + " to Foundry axis " + idx);
 		}
 		mJoysticksDevices.put(deviceId, joystick);
 
@@ -423,10 +423,10 @@ public class FoundryInputHandler implements InputManager.InputDeviceListener, Se
 		if (mJoystickIds.indexOfKey(deviceId) < 0) {
 			return;
 		}
-		final int godotJoyId = mJoystickIds.get(deviceId);
+		final int foundryJoyId = mJoystickIds.get(deviceId);
 		mJoystickIds.delete(deviceId);
 		mJoysticksDevices.delete(deviceId);
-		handleJoystickConnectionChangedEvent(godotJoyId, false, "");
+		handleJoystickConnectionChangedEvent(foundryJoyId, false, "");
 	}
 
 	@Override
@@ -435,7 +435,7 @@ public class FoundryInputHandler implements InputManager.InputDeviceListener, Se
 		onInputDeviceAdded(deviceId);
 	}
 
-	public static int getGodotButton(int keyCode) {
+	public static int getFoundryButton(int keyCode) {
 		int button;
 		switch (keyCode) {
 			case KeyEvent.KEYCODE_BUTTON_A: // Android A is SNES B
@@ -770,7 +770,7 @@ public class FoundryInputHandler implements InputManager.InputDeviceListener, Se
 
 	private void dispatchInputEventRunnable(@NonNull InputEventRunnable runnable) {
 		if (shouldDispatchInputToRenderThread()) {
-			godot.runOnRenderThread(runnable);
+			foundry.runOnRenderThread(runnable);
 		} else {
 			runnable.run();
 		}
@@ -822,7 +822,7 @@ public class FoundryInputHandler implements InputManager.InputDeviceListener, Se
 		}
 
 		runnable.setSensorEvent(event.sensor.getType(), rotatedValue0, rotatedValue1, rotatedValue2);
-		godot.runOnRenderThread(runnable);
+		foundry.runOnRenderThread(runnable);
 	}
 
 	@Override

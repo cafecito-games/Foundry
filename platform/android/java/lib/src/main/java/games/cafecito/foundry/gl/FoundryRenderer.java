@@ -40,7 +40,7 @@ import games.cafecito.foundry.plugin.FoundryPlugin;
 import games.cafecito.foundry.plugin.FoundryPluginRegistry;
 
 /**
- * Godot's GL renderer implementation.
+ * Foundry's GL renderer implementation.
  */
 public class FoundryRenderer implements GLSurfaceView.Renderer {
 	private final String TAG = FoundryRenderer.class.getSimpleName();
@@ -68,7 +68,7 @@ public class FoundryRenderer implements GLSurfaceView.Renderer {
 
 	@Override
 	public void onRenderThreadExiting() {
-		Log.d(TAG, "Destroying Godot Engine");
+		Log.d(TAG, "Destroying Foundry Engine");
 		FoundryLib.ondestroy();
 	}
 

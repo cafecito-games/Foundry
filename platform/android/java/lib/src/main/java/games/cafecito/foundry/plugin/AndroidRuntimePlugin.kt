@@ -34,15 +34,15 @@ import android.content.Intent
 import android.util.Log
 import androidx.core.net.toUri
 
-import games.cafecito.foundry.Godot
+import games.cafecito.foundry.Foundry
 import games.cafecito.foundry.variant.Callable
 
 /**
- * Built-in Godot Android plugin used to provide access to the Android runtime capabilities.
+ * Built-in Foundry Android plugin used to provide access to the Android runtime capabilities.
  *
  * @see <a href="https://docs.godotengine.org/en/latest/tutorials/platform/android/javaclasswrapper_and_androidruntimeplugin.html">Integrating with Android APIs</a>
  */
-class AndroidRuntimePlugin(godot: Godot) : FoundryPlugin(godot) {
+class AndroidRuntimePlugin(foundry: Foundry) : FoundryPlugin(foundry) {
 	private val TAG = AndroidRuntimePlugin::class.java.simpleName
 
 	override fun getPluginName() = "AndroidRuntime"
@@ -50,35 +50,35 @@ class AndroidRuntimePlugin(godot: Godot) : FoundryPlugin(godot) {
 	/**
 	 * Provides access to the application [android.content.Context] to FoundryScript
 	 */
-	@UsedByGodot
+	@UsedByFoundry
 	fun getApplicationContext() = activity?.applicationContext
 
 	/**
 	 * Provides access to the host [android.app.Activity] to FoundryScript
 	 */
-	@UsedByGodot
+	@UsedByFoundry
 	public override fun getActivity() = super.getActivity()
 
 	/**
-	 * Utility method used to create [Runnable] from Godot [Callable].
+	 * Utility method used to create [Runnable] from Foundry [Callable].
 	 */
-	@UsedByGodot
-	fun createRunnableFromGodotCallable(godotCallable: Callable): Runnable {
-		return Runnable { godotCallable.call() }
+	@UsedByFoundry
+	fun createRunnableFromFoundryCallable(foundryCallable: Callable): Runnable {
+		return Runnable { foundryCallable.call() }
 	}
 
 	/**
-	 * Utility method used to create [java.util.concurrent.Callable] from Godot [Callable].
+	 * Utility method used to create [java.util.concurrent.Callable] from Foundry [Callable].
 	 */
-	@UsedByGodot
-	fun createCallableFromGodotCallable(godotCallable: Callable): java.util.concurrent.Callable<Any> {
-		return java.util.concurrent.Callable { godotCallable.call() }
+	@UsedByFoundry
+	fun createCallableFromFoundryCallable(foundryCallable: Callable): java.util.concurrent.Callable<Any> {
+		return java.util.concurrent.Callable { foundryCallable.call() }
 	}
 
 	/**
 	 * Helper method to take/release persistable URI permission.
 	 */
-	@UsedByGodot
+	@UsedByFoundry
 	fun updatePersistableUriPermission(uriString: String, persist: Boolean): Boolean {
 		try {
 			val uri = uriString.toUri()

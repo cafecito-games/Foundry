@@ -71,8 +71,8 @@
 static JavaClassWrapper *java_class_wrapper = nullptr;
 static OS_Android *os_android = nullptr;
 static AndroidInputHandler *input_handler = nullptr;
-static FoundryJavaWrapper *godot_java = nullptr;
-static FoundryIOJavaWrapper *godot_io_java = nullptr;
+static FoundryJavaWrapper *foundry_java = nullptr;
+static FoundryIOJavaWrapper *foundry_io_java = nullptr;
 
 enum StartupStep {
 	STEP_TERMINATED = -1,
@@ -113,8 +113,8 @@ static void _terminate(JNIEnv *env, bool p_restart = false) {
 		Main::cleanup();
 		delete os_android;
 	}
-	if (godot_io_java) {
-		delete godot_io_java;
+	if (foundry_io_java) {
+		delete foundry_io_java;
 	}
 
 	TTS_Android::terminate();
@@ -126,28 +126,28 @@ static void _terminate(JNIEnv *env, bool p_restart = false) {
 	cleanup_android_class_loader();
 	foundry_cleanup_profiler();
 
-	if (godot_java) {
-		godot_java->on_godot_terminating(env);
+	if (foundry_java) {
+		foundry_java->on_foundry_terminating(env);
 		if (!restart_on_cleanup) {
 			if (p_restart) {
-				godot_java->restart(env);
+				foundry_java->restart(env);
 			} else {
-				godot_java->force_quit(env);
+				foundry_java->force_quit(env);
 			}
 		}
-		delete godot_java;
+		delete foundry_java;
 	}
 }
 
 extern "C" {
 
 JNIEXPORT void JNICALL Java_games_cafecito_foundry_FoundryLib_setVirtualKeyboardHeight(JNIEnv *env, jclass clazz, jint p_height) {
-	if (godot_io_java) {
-		godot_io_java->set_vk_height(p_height);
+	if (foundry_io_java) {
+		foundry_io_java->set_vk_height(p_height);
 	}
 }
 
-JNIEXPORT jboolean JNICALL Java_games_cafecito_foundry_FoundryLib_initialize(JNIEnv *env, jclass clazz, jobject p_foundry_instance, jobject p_asset_manager, jobject p_godot_io, jobject p_net_utils, jobject p_directory_access_handler, jobject p_file_access_handler, jboolean p_use_apk_expansion) {
+JNIEXPORT jboolean JNICALL Java_games_cafecito_foundry_FoundryLib_initialize(JNIEnv *env, jclass clazz, jobject p_foundry_instance, jobject p_asset_manager, jobject p_foundry_io, jobject p_net_utils, jobject p_directory_access_handler, jobject p_file_access_handler, jboolean p_use_apk_expansion) {
 	foundry_init_profiler();
 
 	JavaVM *jvm;
@@ -157,15 +157,15 @@ JNIEXPORT jboolean JNICALL Java_games_cafecito_foundry_FoundryLib_initialize(JNI
 	setup_android_class_loader();
 
 	// create our wrapper classes
-	godot_java = new FoundryJavaWrapper(env, p_foundry_instance);
-	godot_io_java = new FoundryIOJavaWrapper(env, p_godot_io);
+	foundry_java = new FoundryJavaWrapper(env, p_foundry_instance);
+	foundry_io_java = new FoundryIOJavaWrapper(env, p_foundry_io);
 
 	FileAccessAndroid::setup(p_asset_manager);
 	DirAccessJAndroid::setup(p_directory_access_handler);
 	FileAccessFilesystemJAndroid::setup(p_file_access_handler);
 	NetSocketAndroid::setup(p_net_utils);
 
-	os_android = new OS_Android(godot_java, godot_io_java, p_use_apk_expansion);
+	os_android = new OS_Android(foundry_java, foundry_io_java, p_use_apk_expansion);
 
 	return true;
 }
@@ -174,7 +174,7 @@ JNIEXPORT void JNICALL Java_games_cafecito_foundry_FoundryLib_ondestroy(JNIEnv *
 	_terminate(env, false);
 }
 
-JNIEXPORT jboolean JNICALL Java_games_cafecito_foundry_FoundryLib_setup(JNIEnv *env, jclass clazz, jobjectArray p_cmdline, jobject p_godot_tts) {
+JNIEXPORT jboolean JNICALL Java_games_cafecito_foundry_FoundryLib_setup(JNIEnv *env, jclass clazz, jobjectArray p_cmdline, jobject p_foundry_tts) {
 	setup_android_thread();
 
 	const char **cmdline = nullptr;
@@ -215,7 +215,7 @@ JNIEXPORT jboolean JNICALL Java_games_cafecito_foundry_FoundryLib_setup(JNIEnv *
 		return false;
 	}
 
-	TTS_Android::setup(p_godot_tts);
+	TTS_Android::setup(p_foundry_tts);
 
 	java_class_wrapper = memnew(JavaClassWrapper);
 	return true;
@@ -272,8 +272,8 @@ JNIEXPORT jboolean JNICALL Java_games_cafecito_foundry_FoundryLib_step(JNIEnv *e
 	}
 
 	if (step.get() == STEP_SETUP) {
-		// Since Godot is initialized on the UI thread, main_thread_id was set to that thread's id,
-		// but for Godot purposes, the main thread is the one running the game loop
+		// Since Foundry is initialized on the UI thread, main_thread_id was set to that thread's id,
+		// but for Foundry purposes, the main thread is the one running the game loop
 		Main::setup2(false); // The logo is shown in the next frame otherwise we run into rendering issues
 		input_handler = new AndroidInputHandler();
 		step.increment();
@@ -304,9 +304,9 @@ JNIEXPORT jboolean JNICALL Java_games_cafecito_foundry_FoundryLib_step(JNIEnv *e
 			return true; // should exit instead and print the error
 		}
 
-		godot_java->on_godot_setup_completed(env);
+		foundry_java->on_foundry_setup_completed(env);
 		os_android->main_loop_begin();
-		godot_java->on_godot_main_loop_started(env);
+		foundry_java->on_foundry_main_loop_started(env);
 		step.increment();
 	}
 
@@ -501,8 +501,8 @@ JNIEXPORT jobjectArray JNICALL Java_games_cafecito_foundry_FoundryLib_getRendere
 JNIEXPORT jstring JNICALL Java_games_cafecito_foundry_FoundryLib_getEditorSetting(JNIEnv *env, jclass clazz, jstring p_setting_key) {
 	String editor_setting_value = "";
 #ifdef TOOLS_ENABLED
-	String godot_setting_key = jstring_to_string(p_setting_key, env);
-	Variant editor_setting = EDITOR_GET(godot_setting_key);
+	String foundry_setting_key = jstring_to_string(p_setting_key, env);
+	Variant editor_setting = EDITOR_GET(foundry_setting_key);
 	editor_setting_value = (editor_setting.get_type() == Variant::NIL) ? "" : editor_setting;
 #else
 	WARN_PRINT("Access to the Editor Settings in only available on Editor builds");

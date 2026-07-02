@@ -43,7 +43,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * Instrumented test for the Godot editor.
+ * Instrumented test for the Foundry editor.
  */
 @RunWith(AndroidJUnit4::class)
 class FoundryEditorTest {
@@ -99,12 +99,12 @@ class FoundryEditorTest {
 	 * Explicitly launch the `FoundryEditor` activity.
 	 */
 	@Test
-	fun testExplicitGodotEditorLaunch() {
-		val godotEditorIntent = Intent().apply {
+	fun testExplicitFoundryEditorLaunch() {
+		val foundryEditorIntent = Intent().apply {
 			component = ComponentName(BuildConfig.APPLICATION_ID, FOUNDRY_EDITOR_CLASS_NAME)
 			putExtra(EXTRA_COMMAND_LINE_PARAMS, TEST_COMMAND_LINE_PARAMS)
 		}
-		ActivityScenario.launch<FoundryEditor>(godotEditorIntent).use { scenario ->
+		ActivityScenario.launch<FoundryEditor>(foundryEditorIntent).use { scenario ->
 			scenario.onActivity { activity ->
 				assertEquals(activity.intent.component?.className, FOUNDRY_EDITOR_CLASS_NAME)
 

@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  Godot.kt                                                              */
+/*  Foundry.kt                                                              */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -94,17 +94,17 @@ import java.util.concurrent.atomic.AtomicReference
  * Can be hosted by [Activity], [Fragment] or [Service] android components, so long as its
  * lifecycle methods are properly invoked.
  */
-class Godot private constructor(val context: Context) {
+class Foundry private constructor(val context: Context) {
 
 	companion object {
-		private val TAG = Godot::class.java.simpleName
+		private val TAG = Foundry::class.java.simpleName
 
-		@Volatile private var INSTANCE: Godot? = null
+		@Volatile private var INSTANCE: Foundry? = null
 
 		@JvmStatic
-		fun getInstance(context: Context): Godot {
+		fun getInstance(context: Context): Foundry {
 			return INSTANCE ?: synchronized(this) {
-				INSTANCE ?: Godot(context.applicationContext).also { INSTANCE = it }
+				INSTANCE ?: Foundry(context.applicationContext).also { INSTANCE = it }
 			}
 		}
 
@@ -152,7 +152,7 @@ class Godot private constructor(val context: Context) {
 	val directoryAccessHandler = DirectoryAccessHandler(context)
 	val fileAccessHandler = FileAccessHandler(context)
 	val netUtils = FoundryNetUtils(context)
-	private val godotInputHandler = FoundryInputHandler(context, this)
+	private val foundryInputHandler = FoundryInputHandler(context, this)
 
 	private val hasClipboardCallable = Callable {
 		mClipboard?.hasPrimaryClip() == true
@@ -228,7 +228,7 @@ class Godot private constructor(val context: Context) {
 	fun getActivity() = primaryHost?.activity
 
 	/**
-	 * Start initialization of the Godot engine.
+	 * Start initialization of the Foundry engine.
 	 *
 	 * This must be followed by [onInitRenderView] to complete initialization of the engine.
 	 *
@@ -247,11 +247,11 @@ class Godot private constructor(val context: Context) {
 
 		darkMode = context.resources?.configuration?.uiMode?.and(Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
 
-		beginBenchmarkMeasure("Startup", "Godot::initEngine")
+		beginBenchmarkMeasure("Startup", "Foundry::initEngine")
 		try {
 			this.primaryHost = host
 
-			Log.v(TAG, "Initializing Godot plugin registry")
+			Log.v(TAG, "Initializing Foundry plugin registry")
 			val runtimePlugins = mutableSetOf<FoundryPlugin>(AndroidRuntimePlugin(this))
 			runtimePlugins.addAll(hostPlugins)
 			FoundryPluginRegistry.initializePluginRegistry(this, runtimePlugins)
@@ -355,19 +355,19 @@ class Godot private constructor(val context: Context) {
 					fileAccessHandler,
 					useApkExpansion,
 				)
-				Log.v(TAG, "Godot native layer initialization completed: $nativeLayerInitializeCompleted")
+				Log.v(TAG, "Foundry native layer initialization completed: $nativeLayerInitializeCompleted")
 			}
 
 			if (nativeLayerInitializeCompleted && !nativeLayerSetupCompleted) {
 				nativeLayerSetupCompleted = FoundryLib.setup(commandLine.toTypedArray(), tts)
 				if (!nativeLayerSetupCompleted) {
-					throw IllegalStateException("Unable to setup the Godot engine! Aborting...")
+					throw IllegalStateException("Unable to setup the Foundry engine! Aborting...")
 				} else {
-					Log.v(TAG, "Godot native layer setup completed")
+					Log.v(TAG, "Foundry native layer setup completed")
 				}
 			}
 		} finally {
-			endBenchmarkMeasure("Startup", "Godot::initEngine")
+			endBenchmarkMeasure("Startup", "Foundry::initEngine")
 		}
 		return isNativeInitialized()
 	}
@@ -525,9 +525,9 @@ class Godot private constructor(val context: Context) {
 	 * This must be preceded by [initEngine] to properly initialize the engine.
 	 *
 	 * @param host The [FoundryHost] that's initializing the render views
-	 * @param providedContainerLayout Optional argument; if provided, this is reused to host the Godot's render views
+	 * @param providedContainerLayout Optional argument; if provided, this is reused to host the Foundry's render views
 	 *
-	 * @return A [FrameLayout] instance containing Godot's render views if initialization is successful, null otherwise.
+	 * @return A [FrameLayout] instance containing Foundry's render views if initialization is successful, null otherwise.
 	 *
 	 * @throws IllegalStateException if [initEngine] has not been called
 	 */
@@ -537,7 +537,7 @@ class Godot private constructor(val context: Context) {
 			throw IllegalStateException("initEngine(...) must be invoked successfully prior to initializing the render view")
 		}
 
-		beginBenchmarkMeasure("Startup", "Godot::onInitRenderView")
+		beginBenchmarkMeasure("Startup", "Foundry::onInitRenderView")
 		Log.v(TAG, "OnInitRenderView: $host")
 		try {
 			this.primaryHost = host
@@ -578,17 +578,17 @@ class Godot private constructor(val context: Context) {
 			Log.d(TAG, "Render view should be transparent: $shouldBeTransparent")
 			renderView = if (usesVulkan()) {
 				if (meetsVulkanRequirements(context.packageManager)) {
-					FoundryVulkanRenderView(this, godotInputHandler, shouldBeTransparent)
+					FoundryVulkanRenderView(this, foundryInputHandler, shouldBeTransparent)
 				} else if (canFallbackToOpenGL()) {
 					// Fallback to OpenGl.
-					FoundryGLRenderView(this, godotInputHandler, xrMode, useDebugOpengl, shouldBeTransparent)
+					FoundryGLRenderView(this, foundryInputHandler, xrMode, useDebugOpengl, shouldBeTransparent)
 				} else {
 					throw IllegalStateException(context.getString(R.string.error_missing_vulkan_requirements_message))
 				}
 
 			} else {
 				// Fallback to OpenGl.
-				FoundryGLRenderView(this, godotInputHandler, xrMode, useDebugOpengl, shouldBeTransparent)
+				FoundryGLRenderView(this, foundryInputHandler, xrMode, useDebugOpengl, shouldBeTransparent)
 			}
 
 			renderView?.let {
@@ -660,12 +660,12 @@ class Godot private constructor(val context: Context) {
 
 			renderView?.queueOnRenderThread {
 				for (plugin in pluginRegistry.allPlugins) {
-					plugin.onRegisterPluginWithGodotNative()
+					plugin.onRegisterPluginWithFoundryNative()
 				}
 				setKeepScreenOn(java.lang.Boolean.parseBoolean(FoundryLib.getGlobal("display/window/energy_saving/keep_screen_on")))
 			}
 
-			// Include the returned non-null views in the Godot view hierarchy.
+			// Include the returned non-null views in the Foundry view hierarchy.
 			for (plugin in pluginRegistry.allPlugins) {
 				val pluginView = plugin.onMainCreate(activity)
 				if (pluginView != null) {
@@ -683,7 +683,7 @@ class Godot private constructor(val context: Context) {
 				containerLayout = null
 			}
 
-			endBenchmarkMeasure("Startup", "Godot::onInitRenderView")
+			endBenchmarkMeasure("Startup", "Foundry::onInitRenderView")
 		}
 		return containerLayout
 	}
@@ -717,16 +717,16 @@ class Godot private constructor(val context: Context) {
 		}
 
 		if (accelerometerEnabled.get() && mAccelerometer != null) {
-			mSensorManager?.registerListener(godotInputHandler, mAccelerometer, SensorManager.SENSOR_DELAY_GAME)
+			mSensorManager?.registerListener(foundryInputHandler, mAccelerometer, SensorManager.SENSOR_DELAY_GAME)
 		}
 		if (gravityEnabled.get() && mGravity != null) {
-			mSensorManager?.registerListener(godotInputHandler, mGravity, SensorManager.SENSOR_DELAY_GAME)
+			mSensorManager?.registerListener(foundryInputHandler, mGravity, SensorManager.SENSOR_DELAY_GAME)
 		}
 		if (magnetometerEnabled.get() && mMagnetometer != null) {
-			mSensorManager?.registerListener(godotInputHandler, mMagnetometer, SensorManager.SENSOR_DELAY_GAME)
+			mSensorManager?.registerListener(foundryInputHandler, mMagnetometer, SensorManager.SENSOR_DELAY_GAME)
 		}
 		if (gyroscopeEnabled.get() && mGyroscope != null) {
-			mSensorManager?.registerListener(godotInputHandler, mGyroscope, SensorManager.SENSOR_DELAY_GAME)
+			mSensorManager?.registerListener(foundryInputHandler, mGyroscope, SensorManager.SENSOR_DELAY_GAME)
 		}
 	}
 
@@ -738,7 +738,7 @@ class Godot private constructor(val context: Context) {
 		}
 
 		renderView?.onActivityPaused()
-		mSensorManager?.unregisterListener(godotInputHandler)
+		mSensorManager?.unregisterListener(foundryInputHandler)
 		for (plugin in pluginRegistry.allPlugins) {
 			plugin.onMainPause()
 		}
@@ -765,7 +765,7 @@ class Godot private constructor(val context: Context) {
 
 		if (renderView?.blockingExitRenderer(EXIT_RENDERER_TIMEOUT_IN_MS) != true) {
 			Log.w(TAG, "Unable to exit the renderer within $EXIT_RENDERER_TIMEOUT_IN_MS ms... Force quitting the process.")
-			onGodotTerminating()
+			onFoundryTerminating()
 			forceQuit(0)
 		}
 
@@ -828,12 +828,12 @@ class Godot private constructor(val context: Context) {
 	}
 
 	/**
-	 * Invoked on the render thread when the Godot setup is complete.
+	 * Invoked on the render thread when the Foundry setup is complete.
 	 */
-	private fun onGodotSetupCompleted() {
-		Log.v(TAG, "OnGodotSetupCompleted")
+	private fun onFoundrySetupCompleted() {
+		Log.v(TAG, "OnFoundrySetupCompleted")
 
-		// These properties are defined after Godot setup completion, so we retrieve them here.
+		// These properties are defined after Foundry setup completion, so we retrieve them here.
 		val longPressEnabled = java.lang.Boolean.parseBoolean(FoundryLib.getGlobal("input_devices/pointing/android/enable_long_press_as_right_click"))
 		val panScaleEnabled = java.lang.Boolean.parseBoolean(FoundryLib.getGlobal("input_devices/pointing/android/enable_pan_and_scale_gestures"))
 		val rotaryInputAxisValue = FoundryLib.getGlobal("input_devices/pointing/android/rotary_input_scroll_axis")
@@ -855,16 +855,16 @@ class Godot private constructor(val context: Context) {
 		}
 
 		for (plugin in pluginRegistry.allPlugins) {
-			plugin.onGodotSetupCompleted()
+			plugin.onFoundrySetupCompleted()
 		}
-		primaryHost?.onGodotSetupCompleted()
+		primaryHost?.onFoundrySetupCompleted()
 	}
 
 	/**
-	 * Invoked on the render thread when the Godot main loop has started.
+	 * Invoked on the render thread when the Foundry main loop has started.
 	 */
-	private fun onGodotMainLoopStarted() {
-		Log.v(TAG, "OnGodotMainLoopStarted")
+	private fun onFoundryMainLoopStarted() {
+		Log.v(TAG, "OnFoundryMainLoopStarted")
 		_runStatus.set(RunStatus.STARTED)
 
 		accelerometerEnabled.set(java.lang.Boolean.parseBoolean(FoundryLib.getGlobal("input_devices/sensors/enable_accelerometer")))
@@ -877,27 +877,27 @@ class Godot private constructor(val context: Context) {
 		}
 
 		for (plugin in pluginRegistry.allPlugins) {
-			plugin.onGodotMainLoopStarted()
+			plugin.onFoundryMainLoopStarted()
 		}
-		primaryHost?.onGodotMainLoopStarted()
+		primaryHost?.onFoundryMainLoopStarted()
 	}
 
 	/**
 	 * Invoked on the render thread when the engine is about to terminate.
 	 */
 	@Keep
-	private fun onGodotTerminating() {
-		Log.v(TAG, "OnGodotTerminating")
+	private fun onFoundryTerminating() {
+		Log.v(TAG, "OnFoundryTerminating")
 		_runStatus.set(RunStatus.TERMINATING)
 
 		for (plugin in pluginRegistry.allPlugins) {
-			plugin.onGodotTerminating()
+			plugin.onFoundryTerminating()
 		}
 		runOnTerminate.get()?.run()
 	}
 
 	private fun restart() {
-		primaryHost?.onGodotRestartRequested(this)
+		primaryHost?.onFoundryRestartRequested(this)
 	}
 
 	fun alert(
@@ -1097,7 +1097,7 @@ class Godot private constructor(val context: Context) {
 	}
 
 	/**
-	 * Destroys the Godot Engine and kill the process it's running in.
+	 * Destroys the Foundry Engine and kill the process it's running in.
 	 */
 	@JvmOverloads
 	fun destroyAndKillProcess(destroyRunnable: Runnable? = null) {
@@ -1123,10 +1123,10 @@ class Godot private constructor(val context: Context) {
 	private fun forceQuit(instanceId: Int): Boolean {
 		primaryHost?.let {
 			if (instanceId == 0) {
-				it.onGodotForceQuit(this)
+				it.onFoundryForceQuit(this)
 				return true
 			} else {
-				return it.onGodotForceQuit(instanceId)
+				return it.onFoundryForceQuit(instanceId)
 			}
 		} ?: return false
 	}
@@ -1196,12 +1196,12 @@ class Godot private constructor(val context: Context) {
 	}
 
 	/**
-	 * Returns true if this is the Godot editor.
+	 * Returns true if this is the Foundry editor.
 	 */
 	fun isEditorHint() = isEditorBuild() && FoundryLib.isEditorHint()
 
 	/**
-	 * Returns true if this is the Godot project manager.
+	 * Returns true if this is the Foundry project manager.
 	 */
 	fun isProjectManagerHint() = isEditorBuild() && FoundryLib.isProjectManagerHint()
 
@@ -1289,12 +1289,12 @@ class Godot private constructor(val context: Context) {
 
 	@Keep
 	private fun initInputDevices() {
-		godotInputHandler.initInputDevices()
+		foundryInputHandler.initInputDevices()
 	}
 
 	@Keep
-	private fun createNewGodotInstance(args: Array<String>): Int {
-		return primaryHost?.onNewGodotInstanceRequested(args) ?: -1
+	private fun createNewFoundryInstance(args: Array<String>): Int {
+		return primaryHost?.onNewFoundryInstanceRequested(args) ?: -1
 	}
 
 	@Keep

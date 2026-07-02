@@ -42,9 +42,9 @@ import android.util.Log
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Used by the [BaseGodotEditor] classes to dispatch messages across processes.
+ * Used by the [BaseFoundryEditor] classes to dispatch messages across processes.
  */
-internal class EditorMessageDispatcher(private val editor: BaseGodotEditor) {
+internal class EditorMessageDispatcher(private val editor: BaseFoundryEditor) {
 
 	companion object {
 		private val TAG = EditorMessageDispatcher::class.java.simpleName

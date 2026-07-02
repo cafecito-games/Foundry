@@ -76,17 +76,17 @@ import games.cafecito.foundry.xr.regular.RegularFallbackConfigChooser;
  *   bit depths). Failure to do so would result in an EGL_BAD_MATCH error.
  */
 class FoundryGLRenderView extends GLSurfaceView implements FoundryRenderView {
-	private final Godot godot;
+	private final Foundry foundry;
 	private final FoundryInputHandler inputHandler;
-	private final FoundryRenderer godotRenderer;
+	private final FoundryRenderer foundryRenderer;
 	private final SparseArray<PointerIcon> customPointerIcons = new SparseArray<>();
 
-	public FoundryGLRenderView(Godot godot, FoundryInputHandler inputHandler, XRMode xrMode, boolean useDebugOpengl, boolean shouldBeTranslucent) {
-		super(godot.getContext());
+	public FoundryGLRenderView(Foundry foundry, FoundryInputHandler inputHandler, XRMode xrMode, boolean useDebugOpengl, boolean shouldBeTranslucent) {
+		super(foundry.getContext());
 
-		this.godot = godot;
+		this.foundry = foundry;
 		this.inputHandler = inputHandler;
-		this.godotRenderer = new FoundryRenderer();
+		this.foundryRenderer = new FoundryRenderer();
 		setPointerIcon(PointerIcon.getSystemIcon(getContext(), PointerIcon.TYPE_DEFAULT));
 		init(xrMode, shouldBeTranslucent, useDebugOpengl);
 	}
@@ -106,7 +106,7 @@ class FoundryGLRenderView extends GLSurfaceView implements FoundryRenderView {
 		queueEvent(() -> {
 			FoundryLib.focusout();
 			// Pause the renderer
-			godotRenderer.onActivityPaused();
+			foundryRenderer.onActivityPaused();
 		});
 	}
 
@@ -119,7 +119,7 @@ class FoundryGLRenderView extends GLSurfaceView implements FoundryRenderView {
 	public void onActivityResumed() {
 		queueEvent(() -> {
 			// Resume the renderer
-			godotRenderer.onActivityResumed();
+			foundryRenderer.onActivityResumed();
 			FoundryLib.focusin();
 		});
 	}
@@ -175,7 +175,7 @@ class FoundryGLRenderView extends GLSurfaceView implements FoundryRenderView {
 	@Override
 	public boolean canCapturePointer() {
 		// Pointer capture is not supported on XR devices.
-		return !godot.isXrRuntime() && inputHandler.canCapturePointer();
+		return !foundry.isXrRuntime() && inputHandler.canCapturePointer();
 	}
 
 	@Override
@@ -203,10 +203,10 @@ class FoundryGLRenderView extends GLSurfaceView implements FoundryRenderView {
 		try {
 			Bitmap bitmap = null;
 			if (!TextUtils.isEmpty(imagePath)) {
-				if (godot.getDirectoryAccessHandler().filesystemFileExists(imagePath)) {
+				if (foundry.getDirectoryAccessHandler().filesystemFileExists(imagePath)) {
 					// Try to load the bitmap from the file system
 					bitmap = BitmapFactory.decodeFile(imagePath);
-				} else if (godot.getDirectoryAccessHandler().assetsFileExists(imagePath)) {
+				} else if (foundry.getDirectoryAccessHandler().assetsFileExists(imagePath)) {
 					// Try to load the bitmap from the assets directory
 					AssetManager am = getContext().getAssets();
 					InputStream imageInputStream = am.open(imagePath);
@@ -287,6 +287,6 @@ class FoundryGLRenderView extends GLSurfaceView implements FoundryRenderView {
 	@Override
 	public void startRenderer() {
 		/* Set the renderer responsible for frame rendering */
-		setRenderer(godotRenderer);
+		setRenderer(foundryRenderer);
 	}
 }

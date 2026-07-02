@@ -42,11 +42,11 @@ internal class GradleBuildProvider(
 
 	val gradleBuildEnvironmentClient = GradleBuildEnvironmentClient(context)
 
-	val godot get() = host.godot
+	val foundry get() = host.foundry
 
 	override fun buildEnvConnect(callback: Callable): Boolean {
 		return gradleBuildEnvironmentClient.connect {
-			godot?.runOnRenderThread {
+			foundry?.runOnRenderThread {
 				callback.call()
 			}
 		}
@@ -68,12 +68,12 @@ internal class GradleBuildProvider(
 			return -1;
 		}
 		val outputCb: (Int, String) -> Unit = { outputType, line ->
-			godot?.runOnRenderThread {
+			foundry?.runOnRenderThread {
 				outputCallback.call(outputType, line)
 			}
 		}
 		val resultCb: (Int) -> Unit = { exitCode ->
-			godot?.runOnRenderThread {
+			foundry?.runOnRenderThread {
 				resultCallback.call(exitCode)
 			}
 		}
@@ -86,7 +86,7 @@ internal class GradleBuildProvider(
 
 	override fun buildEnvCleanProject(projectPath: String, buildDir: String, callback: Callable) {
 		val cb: (Int) -> Unit = { exitCode ->
-			godot?.runOnRenderThread {
+			foundry?.runOnRenderThread {
 				callback.call()
 			}
 		}

@@ -43,74 +43,74 @@ import games.cafecito.foundry.error.Error;
 import games.cafecito.foundry.plugin.FoundryPlugin;
 
 /**
- * Denotate a component (e.g: Activity, Fragment) that hosts the {@link Godot} engine.
+ * Denotate a component (e.g: Activity, Fragment) that hosts the {@link Foundry} engine.
  */
 public interface FoundryHost {
 	/**
-	 * Provides a set of command line parameters to setup the {@link Godot} engine.
+	 * Provides a set of command line parameters to setup the {@link Foundry} engine.
 	 */
 	default List<String> getCommandLine() {
 		return Collections.emptyList();
 	}
 
 	/**
-	 * Invoked on the render thread when setup of the {@link Godot} engine is complete.
+	 * Invoked on the render thread when setup of the {@link Foundry} engine is complete.
 	 */
-	default void onGodotSetupCompleted() {}
+	default void onFoundrySetupCompleted() {}
 
 	/**
-	 * Invoked on the render thread when the {@link Godot} engine main loop has started.
+	 * Invoked on the render thread when the {@link Foundry} engine main loop has started.
 	 */
-	default void onGodotMainLoopStarted() {}
+	default void onFoundryMainLoopStarted() {}
 
 	/**
-	 * Invoked on the render thread to terminate the given {@link Godot} engine instance.
+	 * Invoked on the render thread to terminate the given {@link Foundry} engine instance.
 	 */
-	default void onGodotForceQuit(Godot instance) {}
+	default void onFoundryForceQuit(Foundry instance) {}
 
 	/**
-	 * Invoked on the render thread to terminate the {@link Godot} engine instance with the given id.
-	 * @param godotInstanceId id of the Godot instance to terminate. See {@code onNewGodotInstanceRequested}
+	 * Invoked on the render thread to terminate the {@link Foundry} engine instance with the given id.
+	 * @param foundryInstanceId id of the Foundry instance to terminate. See {@code onNewFoundryInstanceRequested}
 	 *
 	 * @return true if successful, false otherwise.
 	 */
-	default boolean onGodotForceQuit(int godotInstanceId) {
+	default boolean onFoundryForceQuit(int foundryInstanceId) {
 		return false;
 	}
 
 	/**
-	 * Invoked on the render thread when the Godot instance wants to be restarted. It's up to the host
+	 * Invoked on the render thread when the Foundry instance wants to be restarted. It's up to the host
 	 * to perform the appropriate action(s).
 	 */
-	default void onGodotRestartRequested(Godot instance) {}
+	default void onFoundryRestartRequested(Foundry instance) {}
 
 	/**
-	 * Invoked on the render thread when a new Godot instance is requested. It's up to the host to
+	 * Invoked on the render thread when a new Foundry instance is requested. It's up to the host to
 	 * perform the appropriate action(s).
 	 *
 	 * @param args Arguments used to initialize the new instance.
 	 *
-	 * @return the id of the new instance. See {@code onGodotForceQuit}
+	 * @return the id of the new instance. See {@code onFoundryForceQuit}
 	 */
-	default int onNewGodotInstanceRequested(String[] args) {
+	default int onNewFoundryInstanceRequested(String[] args) {
 		return -1;
 	}
 
 	/**
-	 * Provide access to the Activity hosting the {@link Godot} engine if any.
+	 * Provide access to the Activity hosting the {@link Foundry} engine if any.
 	 */
 	@Nullable
 	Activity getActivity();
 
 	/**
-	 * Provide access to the hosted {@link Godot} engine.
+	 * Provide access to the hosted {@link Foundry} engine.
 	 */
-	Godot getGodot();
+	Foundry getFoundry();
 
 	/**
-	 * Returns a set of {@link FoundryPlugin} to be registered with the hosted {@link Godot} engine.
+	 * Returns a set of {@link FoundryPlugin} to be registered with the hosted {@link Foundry} engine.
 	 */
-	default Set<FoundryPlugin> getHostPlugins(Godot engine) {
+	default Set<FoundryPlugin> getHostPlugins(Foundry engine) {
 		return Collections.emptySet();
 	}
 

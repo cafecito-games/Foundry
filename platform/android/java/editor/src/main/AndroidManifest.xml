@@ -91,7 +91,7 @@
             android:configChanges="layoutDirection|locale|orientation|keyboardHidden|screenSize|smallestScreenSize|density|keyboard|navigation|screenLayout|uiMode"
             android:exported="false"
             android:icon="@mipmap/ic_play_window"
-            android:label="@string/godot_game_activity_name"
+            android:label="@string/foundry_game_activity_name"
             android:launchMode="singleTask"
             android:process=":FoundryGame"
             android:autoRemoveFromRecents="true"
@@ -103,16 +103,16 @@
                 android:defaultHeight="@dimen/editor_default_window_height" />
         </activity>
         <activity
-            android:name=".embed.EmbeddedGodotGame"
+            android:name=".embed.EmbeddedFoundryGame"
             android:configChanges="layoutDirection|locale|orientation|keyboardHidden|screenSize|smallestScreenSize|density|keyboard|navigation|screenLayout|uiMode"
             android:exported="false"
             android:icon="@mipmap/ic_play_window"
-            android:label="@string/godot_game_activity_name"
+            android:label="@string/foundry_game_activity_name"
             android:theme="@style/FoundryEmbeddedGameTheme"
             android:taskAffinity=":embed"
             android:excludeFromRecents="true"
             android:launchMode="singleTask"
-            android:process=":EmbeddedGodotGame"
+            android:process=":EmbeddedFoundryGame"
             android:supportsPictureInPicture="true" />
         <activity
             android:name=".FoundryXRGame"
@@ -121,7 +121,7 @@
             android:launchMode="singleTask"
             android:taskAffinity=":xr"
             android:icon="@mipmap/ic_play_window"
-            android:label="@string/godot_game_activity_name"
+            android:label="@string/foundry_game_activity_name"
             android:exported="false"
             android:autoRemoveFromRecents="true"
             android:screenOrientation="landscape"

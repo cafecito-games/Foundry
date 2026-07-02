@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  FullScreenGodotApp.java                                               */
+/*  UsedByFoundry.java                                                    */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -28,12 +28,18 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-package games.cafecito.foundry;
+package games.cafecito.foundry.plugin;
+
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
 
 /**
- * Base abstract activity for Android apps intending to use Godot as the primary screen.
+ * Annotation to indicate a method is being invoked from the Foundry game logic.
  *
- * @deprecated Use {@link FoundryActivity}
+ * At runtime, annotated plugin methods are detected and automatically registered.
  */
-@Deprecated
-public abstract class FullScreenGodotApp extends FoundryActivity {}
+@Target({ ElementType.METHOD })
+@Retention(RetentionPolicy.RUNTIME)
+public @interface UsedByFoundry {}

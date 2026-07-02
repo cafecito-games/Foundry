@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  BaseGodotEditor.kt                                                    */
+/*  BaseFoundryEditor.kt                                                    */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -54,12 +54,12 @@ import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.view.isVisible
 import androidx.window.layout.WindowMetricsCalculator
 import games.cafecito.foundry.editor.buildprovider.GradleBuildProvider
-import games.cafecito.foundry.editor.embed.EmbeddedGodotGame
+import games.cafecito.foundry.editor.embed.EmbeddedFoundryGame
 import games.cafecito.foundry.editor.embed.GameMenuFragment
 import games.cafecito.foundry.editor.utils.signApk
 import games.cafecito.foundry.editor.utils.verifyApk
 import games.cafecito.foundry.BuildProvider
-import games.cafecito.foundry.Godot
+import games.cafecito.foundry.Foundry
 import games.cafecito.foundry.FoundryActivity
 import games.cafecito.foundry.FoundryLib
 import games.cafecito.foundry.editor.utils.EditorUtils
@@ -74,16 +74,16 @@ import org.godotengine.openxr.vendors.utils.*
 import kotlin.math.min
 
 /**
- * Base class for the Godot Android Editor activities.
+ * Base class for the Foundry Android Editor activities.
  *
  * This provides the basic templates for the activities making up this application.
  * Each derived activity runs in its own process, which enable up to have several instances of
- * the Godot engine up and running at the same time.
+ * the Foundry engine up and running at the same time.
  */
-abstract class BaseGodotEditor : FoundryActivity(), GameMenuFragment.GameMenuListener {
+abstract class BaseFoundryEditor : FoundryActivity(), GameMenuFragment.GameMenuListener {
 
 	companion object {
-		private val TAG = BaseGodotEditor::class.java.simpleName
+		private val TAG = BaseFoundryEditor::class.java.simpleName
 
 		private const val WAIT_FOR_DEBUGGER = false
 
@@ -107,7 +107,7 @@ abstract class BaseGodotEditor : FoundryActivity(), GameMenuFragment.GameMenuLis
 		// Info for the various classes used by the editor.
 		internal val EDITOR_MAIN_INFO = EditorWindowInfo(FoundryEditor::class.java, 777, "")
 		internal val RUN_GAME_INFO = EditorWindowInfo(FoundryGame::class.java, 667, ":FoundryGame", LaunchPolicy.AUTO)
-		internal val EMBEDDED_RUN_GAME_INFO = EditorWindowInfo(EmbeddedGodotGame::class.java, 2667, ":EmbeddedGodotGame")
+		internal val EMBEDDED_RUN_GAME_INFO = EditorWindowInfo(EmbeddedFoundryGame::class.java, 2667, ":EmbeddedFoundryGame")
 		internal val XR_RUN_GAME_INFO = EditorWindowInfo(FoundryXRGame::class.java, 1667, ":FoundryXRGame")
 
 		/** Default behavior, means we check project settings **/
@@ -187,7 +187,7 @@ abstract class BaseGodotEditor : FoundryActivity(), GameMenuFragment.GameMenuLis
 	} }
 	private val embeddedGameStateLabel: TextView? by lazy { findViewById<TextView?>(R.id.embedded_game_state_label)?.apply {
 		setOnClickListener {
-			godot?.runOnRenderThread {
+			foundry?.runOnRenderThread {
 				GameMenuUtils.playMainScene()
 			}
 		}
@@ -198,7 +198,7 @@ abstract class BaseGodotEditor : FoundryActivity(), GameMenuFragment.GameMenuLis
 	protected var gameMenuFragment: GameMenuFragment? = null
 	protected val gameMenuState = Bundle()
 
-	override fun getGodotAppLayout() = R.layout.foundry_editor_layout
+	override fun getFoundryAppLayout() = R.layout.foundry_editor_layout
 
 	internal open fun getEditorWindowInfo() = EDITOR_MAIN_INFO
 
@@ -276,7 +276,7 @@ abstract class BaseGodotEditor : FoundryActivity(), GameMenuFragment.GameMenuLis
 			// Override EXTRA_NEW_LAUNCH so the editor is not restarted
 			newIntent.putExtra(EXTRA_NEW_LAUNCH, false)
 
-			godot?.runOnRenderThread {
+			foundry?.runOnRenderThread {
 				// Look for the scene, XR-mode, and hybrid data arguments.
 				var scene = ""
 				var xrMode = XR_MODE_DEFAULT
@@ -340,15 +340,15 @@ abstract class BaseGodotEditor : FoundryActivity(), GameMenuFragment.GameMenuLis
 		}
 	}
 
-	override fun onGodotSetupCompleted() {
-		super.onGodotSetupCompleted()
+	override fun onFoundrySetupCompleted() {
+		super.onFoundrySetupCompleted()
 		val longPressEnabled = enableLongPressGestures()
 		val panScaleEnabled = enablePanAndScaleGestures()
 		val overrideVolumeButtonsEnabled = overrideVolumeButtons()
 
 		runOnUiThread {
 			// Enable long press, panning and scaling gestures
-			godotFragment?.godot?.renderView?.inputHandler?.apply {
+			foundryFragment?.foundry?.renderView?.inputHandler?.apply {
 				enableLongPress(longPressEnabled)
 				enablePanningAndScalingGestures(panScaleEnabled)
 				setOverrideVolumeButtons(overrideVolumeButtonsEnabled)
@@ -359,7 +359,7 @@ abstract class BaseGodotEditor : FoundryActivity(), GameMenuFragment.GameMenuLis
 	private fun updateWindowAppearance() {
 		val editorWindowInfo = getEditorWindowInfo()
 		if (editorWindowInfo == EDITOR_MAIN_INFO || editorWindowInfo == RUN_GAME_INFO) {
-			godot?.apply {
+			foundry?.apply {
 				enableImmersiveMode(isInImmersiveMode(), true)
 				enableEdgeToEdge(isInEdgeToEdgeMode(), true)
 				setSystemBarsAppearance()
@@ -367,8 +367,8 @@ abstract class BaseGodotEditor : FoundryActivity(), GameMenuFragment.GameMenuLis
 		}
 	}
 
-	override fun onGodotMainLoopStarted() {
-		super.onGodotMainLoopStarted()
+	override fun onFoundryMainLoopStarted() {
+		super.onFoundryMainLoopStarted()
 		runOnUiThread {
 			// Hide the loading indicator
 			editorLoadingIndicator?.visibility = View.GONE
@@ -381,7 +381,7 @@ abstract class BaseGodotEditor : FoundryActivity(), GameMenuFragment.GameMenuLis
 		updateWindowAppearance()
 
 		if (getEditorWindowInfo() == EDITOR_MAIN_INFO &&
-			godot?.isEditorHint() == true &&
+			foundry?.isEditorHint() == true &&
 			(editorMessageDispatcher.hasEditorConnection(EMBEDDED_RUN_GAME_INFO) ||
 				editorMessageDispatcher.hasEditorConnection(RUN_GAME_INFO))) {
 			// If this is the editor window, and this is not the project manager, and we have a running game, then show
@@ -449,7 +449,7 @@ abstract class BaseGodotEditor : FoundryActivity(), GameMenuFragment.GameMenuLis
 		}
 
 		// Project manager doesn't support embed mode.
-		if (godot?.isProjectManagerHint() == true) {
+		if (foundry?.isProjectManagerHint() == true) {
 			return RUN_GAME_INFO
 		}
 
@@ -472,13 +472,13 @@ abstract class BaseGodotEditor : FoundryActivity(), GameMenuFragment.GameMenuLis
 		}
 	}
 
-	protected fun getNewGodotInstanceIntent(editorWindowInfo: EditorWindowInfo, args: Array<String>): Intent {
+	protected fun getNewFoundryInstanceIntent(editorWindowInfo: EditorWindowInfo, args: Array<String>): Intent {
 		// If we're launching an editor window (project manager or editor) and we're in
 		// fullscreen mode, we want to remain in fullscreen mode.
 		// This doesn't apply to the play / game window since for that window fullscreen is
 		// controlled by the game logic.
 		val updatedArgs = if ((editorWindowInfo == EDITOR_MAIN_INFO || editorWindowInfo == RUN_GAME_INFO) &&
-			godot?.isInImmersiveMode() == true &&
+			foundry?.isInImmersiveMode() == true &&
 			!args.contains(FULLSCREEN_ARG) &&
 			!args.contains(FULLSCREEN_ARG_SHORT)
 		) {
@@ -500,7 +500,7 @@ abstract class BaseGodotEditor : FoundryActivity(), GameMenuFragment.GameMenuLis
 		return newInstance
 	}
 
-	final override fun onNewGodotInstanceRequested(args: Array<String>): Int {
+	final override fun onNewFoundryInstanceRequested(args: Array<String>): Int {
 		val editorWindowInfo = retrieveEditorWindowInfo(args, fetchGameEmbedMode())
 
 		// Check if this editor window is being terminated. If it's, delay the creation of a new instance until the
@@ -508,12 +508,12 @@ abstract class BaseGodotEditor : FoundryActivity(), GameMenuFragment.GameMenuLis
 		if (editorMessageDispatcher.isPendingForceQuit(editorWindowInfo)) {
 			Log.v(TAG, "Scheduling new launch after termination of ${editorWindowInfo.windowId}")
 			editorMessageDispatcher.runTaskAfterForceQuit(editorWindowInfo) {
-				onNewGodotInstanceRequested(args)
+				onNewFoundryInstanceRequested(args)
 			}
 			return editorWindowInfo.windowId
 		}
 
-		val sourceView = godotFragment?.view
+		val sourceView = foundryFragment?.view
 		val activityOptions = if (sourceView == null) {
 			null
 		} else {
@@ -522,10 +522,10 @@ abstract class BaseGodotEditor : FoundryActivity(), GameMenuFragment.GameMenuLis
 			ActivityOptions.makeScaleUpAnimation(sourceView, startX, startY, 0, 0)
 		}
 
-		val newInstance = getNewGodotInstanceIntent(editorWindowInfo, args)
+		val newInstance = getNewFoundryInstanceIntent(editorWindowInfo, args)
 		newInstance.apply {
-			putExtra(EXTRA_EDITOR_HINT, godot?.isEditorHint() == true)
-			putExtra(EXTRA_PROJECT_MANAGER_HINT, godot?.isProjectManagerHint() == true)
+			putExtra(EXTRA_EDITOR_HINT, foundry?.isEditorHint() == true)
+			putExtra(EXTRA_PROJECT_MANAGER_HINT, foundry?.isProjectManagerHint() == true)
 			putExtra(EXTRA_GAME_MENU_STATE, gameMenuState)
 		}
 
@@ -541,16 +541,16 @@ abstract class BaseGodotEditor : FoundryActivity(), GameMenuFragment.GameMenuLis
 		return editorWindowInfo.windowId
 	}
 
-	override fun onGodotForceQuit(instance: Godot) {
+	override fun onFoundryForceQuit(instance: Foundry) {
 		if (!isRunningInInstrumentation()) {
 			// For instrumented tests, we disable force-quitting to allow the tests to complete successfully, otherwise
 			// they fail when the process crashes.
-			super.onGodotForceQuit(instance)
+			super.onFoundryForceQuit(instance)
 		}
 	}
 
-	final override fun onGodotForceQuit(godotInstanceId: Int): Boolean {
-		val editorWindowInfo = getEditorWindowInfoForInstanceId(godotInstanceId) ?: return super.onGodotForceQuit(godotInstanceId)
+	final override fun onFoundryForceQuit(foundryInstanceId: Int): Boolean {
+		val editorWindowInfo = getEditorWindowInfoForInstanceId(foundryInstanceId) ?: return super.onFoundryForceQuit(foundryInstanceId)
 
 		if (editorWindowInfo.windowClassName == javaClass.name) {
 			Log.d(TAG, "Force quitting ${editorWindowInfo.windowClassName}")
@@ -570,13 +570,13 @@ abstract class BaseGodotEditor : FoundryActivity(), GameMenuFragment.GameMenuLis
 		for (runningProcess in runningProcesses) {
 			if (runningProcess.processName == processName) {
 				// Killing process directly
-				Log.v(TAG, "Killing Godot process ${runningProcess.processName}")
+				Log.v(TAG, "Killing Foundry process ${runningProcess.processName}")
 				Process.killProcess(runningProcess.pid)
 				return true
 			}
 		}
 
-		return super.onGodotForceQuit(godotInstanceId)
+		return super.onFoundryForceQuit(foundryInstanceId)
 	}
 
 	// Get the screen's density scale
@@ -601,25 +601,25 @@ abstract class BaseGodotEditor : FoundryActivity(), GameMenuFragment.GameMenuLis
 	}
 
 	/**
-	 * The Godot Android Editor sets its own orientation via its AndroidManifest
+	 * The Foundry Android Editor sets its own orientation via its AndroidManifest
 	 */
 	protected open fun overrideOrientationRequest() = true
 
 	protected open fun overrideVolumeButtons() = false
 
 	/**
-	 * Enable long press gestures for the Godot Android editor.
+	 * Enable long press gestures for the Foundry Android editor.
 	 */
 	protected open fun enableLongPressGestures() =
 		java.lang.Boolean.parseBoolean(FoundryLib.getEditorSetting("interface/touchscreen/enable_long_press_as_right_click"))
 
 	/**
-	 * Disable scroll deadzone for the Godot Android editor.
+	 * Disable scroll deadzone for the Foundry Android editor.
 	 */
 	protected open fun disableScrollDeadzone() = true
 
 	/**
-	 * Enable pan and scale gestures for the Godot Android editor.
+	 * Enable pan and scale gestures for the Foundry Android editor.
 	 */
 	protected open fun enablePanAndScaleGestures() =
 		java.lang.Boolean.parseBoolean(FoundryLib.getEditorSetting("interface/touchscreen/enable_pan_and_scale_gestures"))
@@ -737,13 +737,13 @@ abstract class BaseGodotEditor : FoundryActivity(), GameMenuFragment.GameMenuLis
 		keystoreUser: String,
 		keystorePassword: String
 	): Error {
-		val godot = godot ?: return Error.ERR_UNCONFIGURED
-		return signApk(godot.fileAccessHandler, inputPath, outputPath, keystorePath, keystoreUser, keystorePassword)
+		val foundry = foundry ?: return Error.ERR_UNCONFIGURED
+		return signApk(foundry.fileAccessHandler, inputPath, outputPath, keystorePath, keystoreUser, keystorePassword)
 	}
 
 	override fun verifyApk(apkPath: String): Error {
-		val godot = godot ?: return Error.ERR_UNCONFIGURED
-		return verifyApk(godot.fileAccessHandler, apkPath)
+		val foundry = foundry ?: return Error.ERR_UNCONFIGURED
+		return verifyApk(foundry.fileAccessHandler, apkPath)
 	}
 
 	@CallSuper
@@ -887,88 +887,88 @@ abstract class BaseGodotEditor : FoundryActivity(), GameMenuFragment.GameMenuLis
 
 	override fun suspendGame(suspended: Boolean) {
 		gameMenuState.putBoolean(GAME_MENU_ACTION_SET_SUSPEND, suspended)
-		godot?.runOnRenderThread {
+		foundry?.runOnRenderThread {
 			GameMenuUtils.setSuspend(suspended)
 		}
 	}
 
 	override fun dispatchNextFrame() {
-		godot?.runOnRenderThread {
+		foundry?.runOnRenderThread {
 			GameMenuUtils.nextFrame()
 		}
 	}
 
 	override fun toggleSelectionVisibility(enabled: Boolean) {
 		gameMenuState.putBoolean(GAME_MENU_ACTION_SET_SELECTION_VISIBLE, enabled)
-		godot?.runOnRenderThread {
+		foundry?.runOnRenderThread {
 			GameMenuUtils.setSelectionVisible(enabled)
 		}
 	}
 
 	override fun overrideCamera(enabled: Boolean) {
 		gameMenuState.putBoolean(GAME_MENU_ACTION_SET_CAMERA_OVERRIDE, enabled)
-		godot?.runOnRenderThread {
+		foundry?.runOnRenderThread {
 			GameMenuUtils.setCameraOverride(enabled)
 		}
 	}
 
 	override fun selectRuntimeNode(nodeType: GameMenuFragment.GameMenuListener.NodeType) {
 		gameMenuState.putSerializable(GAME_MENU_ACTION_SET_NODE_TYPE, nodeType)
-		godot?.runOnRenderThread {
+		foundry?.runOnRenderThread {
 			GameMenuUtils.setNodeType(nodeType.ordinal)
 		}
 	}
 
 	override fun selectRuntimeNodeSelectMode(selectMode: GameMenuFragment.GameMenuListener.SelectMode) {
 		gameMenuState.putSerializable(GAME_MENU_ACTION_SET_SELECT_MODE, selectMode)
-		godot?.runOnRenderThread {
+		foundry?.runOnRenderThread {
 			GameMenuUtils.setSelectMode(selectMode.ordinal)
 		}
 	}
 
 	override fun reset2DCamera() {
-		godot?.runOnRenderThread {
+		foundry?.runOnRenderThread {
 			GameMenuUtils.resetCamera2DPosition()
 		}
 	}
 
 	override fun reset3DCamera() {
-		godot?.runOnRenderThread {
+		foundry?.runOnRenderThread {
 			GameMenuUtils.resetCamera3DPosition()
 		}
 	}
 
 	override fun manipulateCamera(mode: GameMenuFragment.GameMenuListener.CameraMode) {
 		gameMenuState.putSerializable(GAME_MENU_ACTION_SET_CAMERA_MANIPULATE_MODE, mode)
-		godot?.runOnRenderThread {
+		foundry?.runOnRenderThread {
 			GameMenuUtils.setCameraManipulateMode(mode.ordinal)
 		}
 	}
 
 	override fun muteAudio(enabled: Boolean) {
 		gameMenuState.putBoolean(GAME_MENU_ACTION_SET_DEBUG_MUTE_AUDIO, enabled)
-		godot?.runOnRenderThread {
+		foundry?.runOnRenderThread {
 			GameMenuUtils.setDebugMuteAudio(enabled)
 		}
 	}
 
 	override fun resetTimeScale() {
 		gameMenuState.putDouble(GAME_MENU_ACTION_SET_TIME_SCALE, 1.0)
-		godot?.runOnRenderThread {
+		foundry?.runOnRenderThread {
 			GameMenuUtils.resetTimeScale()
 		}
 	}
 
 	override fun setTimeScale(scale: Double) {
 		gameMenuState.putDouble(GAME_MENU_ACTION_SET_TIME_SCALE, scale)
-		godot?.runOnRenderThread {
+		foundry?.runOnRenderThread {
 			GameMenuUtils.setTimeScale(scale)
 		}
 	}
 
 	override fun embedGameOnPlay(embedded: Boolean) {
 		gameMenuState.putBoolean(GAME_MENU_ACTION_EMBED_GAME_ON_PLAY, embedded)
-		godot?.runOnRenderThread {
+		foundry?.runOnRenderThread {
 			val gameEmbedMode = if (embedded) GameEmbedMode.ENABLED else GameEmbedMode.DISABLED
 			GameMenuUtils.saveGameEmbedMode(gameEmbedMode)
 		}

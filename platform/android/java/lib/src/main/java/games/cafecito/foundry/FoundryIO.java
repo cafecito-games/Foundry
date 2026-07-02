@@ -65,7 +65,7 @@ import games.cafecito.foundry.input.FoundryEditText;
 public class FoundryIO {
 	private static final String TAG = FoundryIO.class.getSimpleName();
 
-	private final Godot godot;
+	private final Foundry foundry;
 
 	private final String uniqueId;
 	FoundryEditText edit;
@@ -78,9 +78,9 @@ public class FoundryIO {
 	final int SCREEN_SENSOR_PORTRAIT = 5;
 	final int SCREEN_SENSOR = 6;
 
-	FoundryIO(Godot godot) {
-		this.godot = godot;
-		String androidId = Settings.Secure.getString(godot.getContext().getContentResolver(),
+	FoundryIO(Foundry foundry) {
+		this.foundry = foundry;
+		String androidId = Settings.Secure.getString(foundry.getContext().getContentResolver(),
 				Settings.Secure.ANDROID_ID);
 		if (androidId == null) {
 			androidId = "";
@@ -90,9 +90,9 @@ public class FoundryIO {
 	}
 
 	private Context getContext() {
-		Context context = godot.getActivity();
+		Context context = foundry.getActivity();
 		if (context == null) {
-			context = godot.getContext();
+			context = foundry.getContext();
 		}
 		return context;
 	}
@@ -198,13 +198,13 @@ public class FoundryIO {
 	}
 
 	public double getScreenRefreshRate(double fallback) {
-		Activity activity = godot.getActivity();
+		Activity activity = foundry.getActivity();
 
 		Display display = null;
 		if (activity != null) {
 			display = activity.getWindowManager().getDefaultDisplay();
 		} else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-			display = godot.getContext().getDisplay();
+			display = foundry.getContext().getDisplay();
 		}
 
 		if (display != null) {
@@ -218,15 +218,15 @@ public class FoundryIO {
 		int[] result = new int[4];
 
 		View topView = null;
-		if (godot.getActivity() != null) {
-			topView = godot.getActivity().getWindow().getDecorView();
-		} else if (godot.getRenderView() != null) {
-			topView = godot.getRenderView().getView();
+		if (foundry.getActivity() != null) {
+			topView = foundry.getActivity().getWindow().getDecorView();
+		} else if (foundry.getRenderView() != null) {
+			topView = foundry.getRenderView().getView();
 		}
 
 		if (topView != null) {
 			int insetTypes;
-			if (godot.isInImmersiveMode()) {
+			if (foundry.isInImmersiveMode()) {
 				insetTypes = WindowInsetsCompat.Type.displayCutout();
 			} else {
 				insetTypes = WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout();
@@ -236,7 +236,7 @@ public class FoundryIO {
 				WindowInsetsCompat insetsCompat = WindowInsetsCompat.toWindowInsetsCompat(topView.getRootWindowInsets(), topView);
 				Insets insets = insetsCompat.getInsets(insetTypes);
 
-				if (godot.isInEdgeToEdgeMode() || godot.isInImmersiveMode()) {
+				if (foundry.isInEdgeToEdgeMode() || foundry.isInImmersiveMode()) {
 					result[0] = insets.left;
 					result[1] = insets.top;
 				} else {
@@ -258,10 +258,10 @@ public class FoundryIO {
 		}
 
 		View topView = null;
-		if (godot.getActivity() != null) {
-			topView = godot.getActivity().getWindow().getDecorView();
-		} else if (godot.getRenderView() != null) {
-			topView = godot.getRenderView().getView();
+		if (foundry.getActivity() != null) {
+			topView = foundry.getActivity().getWindow().getDecorView();
+		} else if (foundry.getRenderView() != null) {
+			topView = foundry.getRenderView().getView();
 		}
 
 		if (topView == null) {
@@ -304,7 +304,7 @@ public class FoundryIO {
 	}
 
 	public void setScreenOrientation(int p_orientation) {
-		final Activity activity = godot.getActivity();
+		final Activity activity = foundry.getActivity();
 		if (activity == null) {
 			return;
 		}
@@ -335,7 +335,7 @@ public class FoundryIO {
 	}
 
 	public int getScreenOrientation() {
-		final Activity activity = godot.getActivity();
+		final Activity activity = foundry.getActivity();
 		if (activity == null) {
 			return -1;
 		}
@@ -371,13 +371,13 @@ public class FoundryIO {
 	}
 
 	public int getDisplayRotation() {
-		Activity activity = godot.getActivity();
+		Activity activity = foundry.getActivity();
 
 		Display display = null;
 		if (activity != null) {
 			display = activity.getWindowManager().getDefaultDisplay();
 		} else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-			display = godot.getContext().getDisplay();
+			display = foundry.getContext().getDisplay();
 		}
 
 		if (display != null) {

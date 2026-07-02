@@ -80,7 +80,7 @@ private:
 	void _set_key_modifier_state(Ref<InputEventWithModifiers> ev, Key p_keycode);
 
 	static MouseButton _button_index_from_mask(BitField<MouseButtonMask> button_mask);
-	static BitField<MouseButtonMask> _android_button_mask_to_godot_button_mask(int android_button_mask);
+	static BitField<MouseButtonMask> _android_button_mask_to_foundry_button_mask(int android_button_mask);
 
 	void _wheel_button_click(BitField<MouseButtonMask> event_buttons_mask, const Ref<InputEventMouseButton> &ev, MouseButton wheel_button, float factor);
 
