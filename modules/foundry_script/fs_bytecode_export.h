@@ -97,6 +97,16 @@ public:
 	// the load integration to consume (`FSCache::add_static_script` is the loader caller's job).
 	Error serialize(const Ref<FoundryScript> &p_script, Vector<uint8_t> &r_buffer, bool p_annotated_static_unload = false);
 
+	// Named globals the compiled script reads through the TOOLS-only OPCODE_STORE_NAMED_GLOBAL
+	// whose lookup an exported template runtime cannot satisfy. The runtime named-global map only
+	// carries the names the language itself registers in every build (the reserved globals, see
+	// FSLanguage::get_reserved_global_names); anything else — typically an autoload singleton the
+	// editor session registered as a named global — would fail the opcode's map lookup in a
+	// template, so the export must refuse to ship the script. Walks every compiled function of
+	// the script graph: member functions, implicit/static initializers, conformance witnesses,
+	// nested lambdas, and all subclasses. Returned names are sorted for stable error messages.
+	static Vector<StringName> collect_unsupported_named_globals(const Ref<FoundryScript> &p_script);
+
 private:
 	StringTable string_table;
 
@@ -108,6 +118,9 @@ private:
 
 	void _record_external_dependency(const String &p_path);
 	void _index_local_classes(const FoundryScript *p_class);
+
+	static void _collect_unsupported_named_globals_from_function(const FSFunction *p_function, HashSet<StringName> &r_names);
+	static void _collect_unsupported_named_globals_from_class(const FoundryScript *p_class, HashSet<StringName> &r_names);
 
 	Error _encode_object(StreamPeerBuffer *r_stream, Object *p_object, int p_depth);
 	Error _encode_container_type(StreamPeerBuffer *r_stream, const ContainerType &p_container_type, int p_depth);

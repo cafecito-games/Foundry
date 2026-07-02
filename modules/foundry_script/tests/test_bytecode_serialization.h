@@ -1478,6 +1478,95 @@ TEST_CASE("[FoundryScript][BytecodeFunction] Serialized functions carry no sourc
 	bytecode_destroy_restored_function(script, restored);
 }
 
+TEST_CASE("[FoundryScript][BytecodeCodec] Editor-only named globals are collected for export validation") {
+	if (!FSLanguage::get_singleton()->has_any_global_constant(SNAME("RefCounted"))) {
+		FSLanguage::get_singleton()->init();
+	}
+
+	// Mirrors an editor session, where an autoload singleton is registered only as a named global
+	// (not in the global array): the compiler reaches it through the TOOLS-only
+	// STORE_NAMED_GLOBAL fallback, which an exported template runtime cannot resolve.
+	const String scene_path = TestUtils::get_temp_path("bytecode_editor_only_autoload.tscn");
+	{
+		Ref<FileAccess> scene_file = FileAccess::open(scene_path, FileAccess::WRITE);
+		REQUIRE(scene_file.is_valid());
+		scene_file->store_string("[gd_scene format=3]\n\n[node name=\"Root\" type=\"Node\"]\n");
+	}
+	const StringName editor_only_name = "BytecodeEditorOnlyGlobal";
+	ProjectSettings::AutoloadInfo autoload;
+	autoload.name = editor_only_name;
+	autoload.path = scene_path;
+	autoload.is_singleton = true;
+	ProjectSettings::get_singleton()->add_autoload(autoload);
+	FSLanguage::get_singleton()->add_named_global_constant(editor_only_name, Variant());
+
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"func run():\n"
+			"\tvar direct = BytecodeEditorOnlyGlobal\n"
+			"\tvar through_lambda = func():\n"
+			"\t\treturn BytecodeEditorOnlyGlobal\n"
+			"\treturn [direct, through_lambda.call()]\n");
+
+	const Vector<StringName> unsupported = FSBytecodeExporter::collect_unsupported_named_globals(script);
+
+	FSLanguage::get_singleton()->remove_named_global_constant(editor_only_name);
+	ProjectSettings::get_singleton()->remove_autoload(editor_only_name);
+	DirAccess::remove_absolute(scene_path);
+
+	REQUIRE(unsupported.size() == 1);
+	CHECK(unsupported[0] == editor_only_name);
+
+	// A script that never touches a named global reports nothing to validate.
+	const Ref<FoundryScript> clean_script = compile_bytecode_test_source(
+			"func run() -> int:\n"
+			"\treturn 42\n");
+	CHECK(FSBytecodeExporter::collect_unsupported_named_globals(clean_script).is_empty());
+}
+
+TEST_CASE("[FoundryScript][BytecodeCodec] Call-stack tracking gates OPCODE_LINE emission") {
+	if (!FSLanguage::get_singleton()->has_any_global_constant(SNAME("RefCounted"))) {
+		FSLanguage::get_singleton()->init();
+	}
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"func run() -> int:\n"
+			"\treturn 1\n");
+
+	// The editor keeps call-stack tracking on; a release-profile compiled-bytecode export flips
+	// it off around the export compile so the serialized functions carry no OPCODE_LINE
+	// instructions. This pins the codegen gate the export toggle relies on.
+	FSLanguage *language = FSLanguage::get_singleton();
+	const bool previous_track_call_stack = language->should_track_call_stack();
+
+	language->set_track_call_stack(true);
+	FSByteCodeGenerator tracked_generator;
+	tracked_generator.write_start(script.ptr(), "tracked_newline", false, Variant(), FSDataType());
+	tracked_generator.write_newline(1);
+	FSFunction *tracked_function = tracked_generator.write_end();
+
+	language->set_track_call_stack(false);
+	FSByteCodeGenerator untracked_generator;
+	untracked_generator.write_start(script.ptr(), "untracked_newline", false, Variant(), FSDataType());
+	untracked_generator.write_newline(1);
+	FSFunction *untracked_function = untracked_generator.write_end();
+
+	language->set_track_call_stack(previous_track_call_stack);
+
+	REQUIRE(tracked_function != nullptr);
+	REQUIRE(untracked_function != nullptr);
+	const Vector<int> &tracked_code = tracked_function->get_code();
+	const Vector<int> &untracked_code = untracked_function->get_code();
+	CHECK(tracked_code.size() == untracked_code.size() + 2);
+	REQUIRE(tracked_code.size() >= 2);
+	CHECK(tracked_code[0] == FSFunction::OPCODE_LINE);
+	CHECK(tracked_code[1] == 1);
+	if (!untracked_code.is_empty()) {
+		CHECK(untracked_code[0] != FSFunction::OPCODE_LINE);
+	}
+
+	memdelete(tracked_function);
+	memdelete(untracked_function);
+}
+
 } // namespace FSTests
 
 #endif // TOOLS_ENABLED

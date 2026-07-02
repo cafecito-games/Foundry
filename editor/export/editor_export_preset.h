@@ -57,6 +57,8 @@ public:
 		MODE_SCRIPT_TEXT,
 		MODE_SCRIPT_BINARY_TOKENS,
 		MODE_SCRIPT_BINARY_TOKENS_COMPRESSED,
+		// Saved presets store the enum as an int; only ever append new modes.
+		MODE_SCRIPT_COMPILED_BYTECODE,
 	};
 
 private:

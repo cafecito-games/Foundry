@@ -938,6 +938,11 @@ public:
 
 	_FORCE_INLINE_ bool should_track_call_stack() const { return track_call_stack; }
 	_FORCE_INLINE_ bool should_track_locals() const { return track_locals; }
+#ifdef TOOLS_ENABLED
+	// The compiled-bytecode export compiles release-profile scripts without call-stack tracking
+	// (no OPCODE_LINE emission); it saves and restores this flag around the export.
+	_FORCE_INLINE_ void set_track_call_stack(bool p_track_call_stack) { track_call_stack = p_track_call_stack; }
+#endif // TOOLS_ENABLED
 	_FORCE_INLINE_ int get_global_array_size() const { return global_array.size(); }
 	_FORCE_INLINE_ Variant *get_global_array() { return _global_array; }
 	_FORCE_INLINE_ const HashMap<StringName, int> &get_global_map() const { return globals; }

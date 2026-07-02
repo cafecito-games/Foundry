@@ -646,6 +646,53 @@ static bool fsb_script_tree_has_static_data(const FoundryScript *p_class) {
 	return false;
 }
 
+void FSBytecodeExporter::_collect_unsupported_named_globals_from_function(const FSFunction *p_function, HashSet<StringName> &r_names) {
+	if (p_function == nullptr) {
+		return;
+	}
+	for (const StringName &name : p_function->export_fixups.named_globals) {
+		if (!FSLanguage::get_singleton()->is_reserved_global_name(name)) {
+			r_names.insert(name);
+		}
+	}
+	for (const FSFunction *lambda : p_function->lambdas) {
+		_collect_unsupported_named_globals_from_function(lambda, r_names);
+	}
+}
+
+void FSBytecodeExporter::_collect_unsupported_named_globals_from_class(const FoundryScript *p_class, HashSet<StringName> &r_names) {
+	for (const KeyValue<StringName, FSFunction *> &member_function : p_class->member_functions) {
+		_collect_unsupported_named_globals_from_function(member_function.value, r_names);
+	}
+	_collect_unsupported_named_globals_from_function(p_class->implicit_initializer, r_names);
+	_collect_unsupported_named_globals_from_function(p_class->implicit_ready, r_names);
+	_collect_unsupported_named_globals_from_function(p_class->static_initializer, r_names);
+	for (const FSFunction *witness_function : p_class->witness_functions) {
+		_collect_unsupported_named_globals_from_function(witness_function, r_names);
+	}
+	for (const KeyValue<StringName, Ref<FoundryScript>> &subclass : p_class->subclasses) {
+		_collect_unsupported_named_globals_from_class(subclass.value.ptr(), r_names);
+	}
+}
+
+Vector<StringName> FSBytecodeExporter::collect_unsupported_named_globals(const Ref<FoundryScript> &p_script) {
+	ERR_FAIL_COND_V(p_script.is_null(), Vector<StringName>());
+	HashSet<StringName> names;
+	_collect_unsupported_named_globals_from_class(p_script.ptr(), names);
+
+	Vector<String> sorted_names;
+	for (const StringName &name : names) {
+		sorted_names.push_back(String(name));
+	}
+	sorted_names.sort();
+
+	Vector<StringName> result;
+	for (const String &name : sorted_names) {
+		result.push_back(StringName(name));
+	}
+	return result;
+}
+
 Error FSBytecodeExporter::serialize(const Ref<FoundryScript> &p_script, Vector<uint8_t> &r_buffer, bool p_annotated_static_unload) {
 	r_buffer.clear();
 	ERR_FAIL_COND_V(p_script.is_null(), ERR_INVALID_PARAMETER);

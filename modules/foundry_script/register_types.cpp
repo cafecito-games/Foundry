@@ -39,6 +39,7 @@
 #include "fs_utility_functions.h"
 
 #ifdef TOOLS_ENABLED
+#include "fs_bytecode_export.h"
 #include "fs_format.h"
 
 #include "editor/fs_build_pipeline_settings.h"
@@ -87,6 +88,109 @@ class EditorExportFoundryScript : public EditorExportPlugin {
 	static constexpr EditorExportPreset::ScriptExportMode DEFAULT_SCRIPT_MODE = EditorExportPreset::MODE_SCRIPT_BINARY_TOKENS_COMPRESSED;
 	EditorExportPreset::ScriptExportMode script_mode = DEFAULT_SCRIPT_MODE;
 
+	// Release-profile compiled-bytecode exports compile without call-stack tracking so the
+	// serialized functions carry no OPCODE_LINE instructions; the editor's own flag is saved
+	// here and restored in _export_end.
+	bool call_stack_tracking_overridden = false;
+	bool call_stack_tracking_previous = false;
+	// Scripts recompiled through FSCache while the tracking override was active. They are shared
+	// with the live editor session, so _export_end recompiles them with the restored flag.
+	Vector<String> recompiled_script_paths;
+
+	// Export plugin callbacks cannot return an error; an EXPORT_MESSAGE_ERROR on the platform is
+	// what fails the export (see EditorExportPlatform::export_project_files).
+	void _add_export_error(const String &p_message) {
+		Ref<EditorExportPlatform> platform = get_export_platform();
+		if (platform.is_valid()) {
+			platform->add_message(EditorExportPlatform::EXPORT_MESSAGE_ERROR, TTR("Compiled Script Export"), p_message);
+		} else {
+			ERR_PRINT(p_message);
+		}
+	}
+
+	String _describe_script_errors(const String &p_path, Error p_fallback_error) {
+		Error parser_error = OK;
+		Ref<FSParserRef> parser_ref = FSCache::get_parser(p_path, FSParserRef::FULLY_SOLVED, parser_error);
+		if (parser_ref.is_valid() && parser_ref->get_parser() != nullptr) {
+			const List<FSParser::ParserError> &errors = parser_ref->get_parser()->get_errors();
+			if (!errors.is_empty()) {
+				const FSParser::ParserError &first_error = errors.front()->get();
+				return vformat("%s (line %d)", first_error.message, first_error.line);
+			}
+		}
+		return error_names[p_fallback_error];
+	}
+
+	// Embedded (built-in) scripts ship their source inside the scene or resource file, which a
+	// compiled-bytecode export must not do. `get_classes_used` reads sub-resource types from both
+	// text and binary resources without loading them, and is immune to script-looking text inside
+	// string literals because it parses the file structure.
+	void _check_resource_for_built_in_script(const String &p_path) {
+		HashSet<StringName> classes_used;
+		ResourceLoader::get_classes_used(p_path, &classes_used);
+		if (classes_used.has(SNAME("FoundryScript"))) {
+			skip();
+			_add_export_error(vformat(TTR("\"%s\" contains a built-in script, which cannot be exported as compiled bytecode. Save the script to its own .fs file."), p_path));
+		}
+	}
+
+	void _export_file_compiled_bytecode(const String &p_path) {
+		const String extension = p_path.get_extension();
+		if (extension == "tscn" || extension == "scn" || extension == "res" || extension == "tres") {
+			_check_resource_for_built_in_script(p_path);
+			return;
+		}
+		if (extension != "fs") {
+			return;
+		}
+
+		// The export runs in the editor process where project settings and autoloads are live, so
+		// the cache can compile the script exactly as the runtime would. Updating from disk forces
+		// a fresh compile under the current call-stack-tracking flag instead of reusing bytecode
+		// the editor session compiled earlier.
+		Error error = OK;
+		Ref<FoundryScript> script = FSCache::get_full_script(p_path, error, String(), true);
+		if (error != OK || script.is_null() || !script->is_valid()) {
+			skip();
+			_add_export_error(vformat(TTR("Script \"%s\" failed to compile: %s"), p_path, _describe_script_errors(p_path, error)));
+			return;
+		}
+		if (call_stack_tracking_overridden) {
+			recompiled_script_paths.push_back(p_path);
+		}
+
+		const Vector<StringName> unsupported_named_globals = FSBytecodeExporter::collect_unsupported_named_globals(script);
+		if (!unsupported_named_globals.is_empty()) {
+			Vector<String> printable_names;
+			for (const StringName &name : unsupported_named_globals) {
+				printable_names.push_back(String(name));
+			}
+			skip();
+			_add_export_error(vformat(TTR("Script \"%s\" references editor-only named globals that are not available in exported games: %s."), p_path, String(", ").join(printable_names)));
+			return;
+		}
+
+		// The @static_unload flag lives on the parse tree and is not recoverable from the
+		// compiled script, so it is fetched from the cached parser.
+		bool annotated_static_unload = false;
+		Error parser_error = OK;
+		Ref<FSParserRef> parser_ref = FSCache::get_parser(p_path, FSParserRef::PARSED, parser_error);
+		if (parser_error == OK && parser_ref.is_valid() && parser_ref->get_parser() != nullptr && parser_ref->get_parser()->get_tree() != nullptr) {
+			annotated_static_unload = parser_ref->get_parser()->get_tree()->annotated_static_unload;
+		}
+
+		Vector<uint8_t> buffer;
+		FSBytecodeExporter exporter;
+		error = exporter.serialize(script, buffer, annotated_static_unload);
+		if (error != OK || buffer.is_empty()) {
+			skip();
+			_add_export_error(vformat(TTR("Script \"%s\" could not be serialized to compiled bytecode: %s."), p_path, error_names[error]));
+			return;
+		}
+
+		add_file(p_path.get_basename() + ".fsb", buffer, true);
+	}
+
 protected:
 	virtual void _export_begin(const HashSet<String> &p_features, bool p_debug, const String &p_path, int p_flags) override {
 		script_mode = DEFAULT_SCRIPT_MODE;
@@ -95,9 +199,37 @@ protected:
 		if (preset.is_valid()) {
 			script_mode = preset->get_script_export_mode();
 		}
+
+		recompiled_script_paths.clear();
+		call_stack_tracking_overridden = false;
+		if (script_mode == EditorExportPreset::MODE_SCRIPT_COMPILED_BYTECODE && !p_debug) {
+			call_stack_tracking_previous = FSLanguage::get_singleton()->should_track_call_stack();
+			FSLanguage::get_singleton()->set_track_call_stack(false);
+			call_stack_tracking_overridden = true;
+		}
+	}
+
+	virtual void _export_end() override {
+		if (call_stack_tracking_overridden) {
+			FSLanguage::get_singleton()->set_track_call_stack(call_stack_tracking_previous);
+			call_stack_tracking_overridden = false;
+			// The scripts compiled for the export are the same objects the editor session holds;
+			// recompile them under the restored flag so editor debugging keeps line information.
+			for (const String &path : recompiled_script_paths) {
+				Error error = OK;
+				FSCache::get_full_script(path, error, String(), true);
+			}
+		}
+		recompiled_script_paths.clear();
+		script_mode = DEFAULT_SCRIPT_MODE;
 	}
 
 	virtual void _export_file(const String &p_path, const String &p_type, const HashSet<String> &p_features) override {
+		if (script_mode == EditorExportPreset::MODE_SCRIPT_COMPILED_BYTECODE) {
+			_export_file_compiled_bytecode(p_path);
+			return;
+		}
+
 		if (p_path.get_extension() != "fs" || script_mode == EditorExportPreset::MODE_SCRIPT_TEXT) {
 			return;
 		}

@@ -195,5 +195,8 @@
 		</constant>
 		<constant name="MODE_SCRIPT_BINARY_TOKENS_COMPRESSED" value="2" enum="ScriptExportMode">
 		</constant>
+		<constant name="MODE_SCRIPT_COMPILED_BYTECODE" value="3" enum="ScriptExportMode">
+			Exports FoundryScript files as compiled [code].fsb[/code] bytecode. No script source text is shipped. Exporting fails if any script does not compile or if a scene embeds a built-in script.
+		</constant>
 	</constants>
 </class>

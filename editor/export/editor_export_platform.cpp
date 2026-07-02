@@ -1231,6 +1231,11 @@ Error EditorExportPlatform::_export_project_files(const Ref<EditorExportPreset> 
 }
 
 Error EditorExportPlatform::export_project_files(const Ref<EditorExportPreset> &p_preset, bool p_debug, EditorExportSaveFunction p_save_func, EditorExportRemoveFunction p_remove_func, void *p_udata, EditorExportSaveSharedObject p_so_func) {
+	// Export plugin callbacks return void, so an error message added through `add_message()` is
+	// the only way a plugin can veto the export (e.g. a script that must not ship as source
+	// failed to compile). Snapshot the message count so any error reported below fails the export.
+	const int initial_message_count = get_message_count();
+
 	//figure out paths of files that will be exported
 	HashSet<String> paths;
 	Vector<String> path_remaps;
@@ -1784,6 +1789,12 @@ Error EditorExportPlatform::export_project_files(const Ref<EditorExportPreset> &
 		}
 	}
 
+	for (int i = initial_message_count; i < get_message_count(); i++) {
+		if (get_message(i).msg_type == EXPORT_MESSAGE_ERROR) {
+			return FAILED;
+		}
+	}
+
 	return OK;
 }
 
@@ -2323,13 +2334,16 @@ Error EditorExportPlatform::save_zip(const Ref<EditorExportPreset> &p_preset, bo
 	zd.so_files = p_so_files;
 
 	Error err = export_project_files(p_preset, p_debug, p_save_func, nullptr, &zd, _zip_add_shared_object);
-	if (err != OK && err != ERR_SKIP) {
-		add_message(EXPORT_MESSAGE_ERROR, TTR("Save ZIP"), TTR("Failed to export project files."));
-	}
 
 	zipClose(zip, nullptr);
 
 	Ref<DirAccess> da = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+
+	if (err != OK && err != ERR_SKIP) {
+		add_message(EXPORT_MESSAGE_ERROR, TTR("Save ZIP"), TTR("Failed to export project files."));
+		da->remove(tmppath);
+		return err;
+	}
 
 	if (zd.file_count == 0) {
 		da->remove(tmppath);
@@ -2341,6 +2355,7 @@ Error EditorExportPlatform::save_zip(const Ref<EditorExportPreset> &p_preset, bo
 	if (err != OK) {
 		da->remove(tmppath);
 		add_message(EXPORT_MESSAGE_ERROR, TTR("Save ZIP"), vformat(TTR("Failed to move temporary file \"%s\" to \"%s\"."), tmppath, p_path));
+		return err;
 	}
 
 	return OK;
