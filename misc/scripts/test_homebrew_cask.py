@@ -96,16 +96,15 @@ def test_render_stable_cask(generator) -> None:
         'desc "Game engine and editor with Foundry Script"',
         'homepage "https://github.com/cafecito-games/Foundry"',
         'skip "Auto-generated on release."',
-        'conflicts_with cask: "foundry@alpha"',
-        'conflicts_with cask: "foundry@beta"',
-        'conflicts_with cask: "foundry@rc"',
+        'conflicts_with cask: ["foundry@alpha", "foundry@beta", "foundry@rc"]',
         'app "Foundry.app"',
         'binary "#{appdir}/Foundry.app/Contents/MacOS/Foundry", target: "foundry"',
     ]
     for snippet in required:
         assert_contains(cask, snippet, "stable cask")
 
-    assert_not_contains(cask, 'conflicts_with cask: "foundry"\n', "stable cask should not conflict with itself")
+    assert_not_contains(cask, 'conflicts_with cask: ["foundry",', "stable cask should not conflict with itself")
+    assert_not_contains(cask, 'conflicts_with cask: "foundry@alpha"', "stable cask should use one conflicts array")
 
 
 def test_render_alpha_cask(generator) -> None:
@@ -119,15 +118,16 @@ def test_render_alpha_cask(generator) -> None:
         'cask "foundry@alpha" do',
         'version "0.1.0-alpha.3"',
         'sha256 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"',
-        'conflicts_with cask: "foundry"',
-        'conflicts_with cask: "foundry@beta"',
-        'conflicts_with cask: "foundry@rc"',
+        'conflicts_with cask: ["foundry", "foundry@beta", "foundry@rc"]',
         'binary "#{appdir}/Foundry.app/Contents/MacOS/Foundry", target: "foundry"',
     ]
     for snippet in required:
         assert_contains(cask, snippet, "alpha cask")
 
-    assert_not_contains(cask, 'conflicts_with cask: "foundry@alpha"\n', "alpha cask should not conflict with itself")
+    assert_not_contains(
+        cask, 'conflicts_with cask: ["foundry", "foundry@alpha"', "alpha cask should not conflict with itself"
+    )
+    assert_not_contains(cask, 'conflicts_with cask: "foundry"', "alpha cask should use one conflicts array")
 
 
 def test_cli_writes_expected_cask_and_checksum(generator) -> None:
@@ -167,6 +167,11 @@ def test_cli_writes_expected_cask_and_checksum(generator) -> None:
         cask = cask_path.read_text()
         assert_contains(cask, f'sha256 "{expected_sha}"', "generated checksum")
         assert_contains(cask, 'cask "foundry@beta" do', "generated beta cask")
+        assert_contains(
+            cask,
+            'conflicts_with cask: ["foundry", "foundry@alpha", "foundry@rc"]',
+            "generated beta cask conflicts",
+        )
 
         ruby = shutil.which("ruby")
         if ruby is not None:
