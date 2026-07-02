@@ -89,15 +89,80 @@ TEST_CASE("[FoundryCLIParser] Script format maps to the existing formatter comma
 							   "foundry",
 							   "script",
 							   "format",
+							   "--project",
+							   "demo",
 							   "--check",
 							   "modules/foundry_script/tests/scripts",
 					   },
 			{
 					"foundry",
 					"--headless",
+					"--path",
+					"demo",
 					"--foundry_script-format",
 					"--check",
 					"modules/foundry_script/tests/scripts",
+			});
+}
+
+TEST_CASE("[FoundryCLIParser] Script lint maps to the existing lint command") {
+	require_normalized({
+							   "foundry",
+							   "script",
+							   "lint",
+							   "--project",
+							   "demo",
+							   "--format=sarif",
+							   "--out",
+							   "lint.sarif",
+							   "scripts",
+					   },
+			{
+					"foundry",
+					"--headless",
+					"--path",
+					"demo",
+					"--foundry_script-lint",
+					"--format=sarif",
+					"--out",
+					"lint.sarif",
+					"scripts",
+			});
+}
+
+TEST_CASE("[FoundryCLIParser] Script tools map when setup argv omits the executable") {
+	require_normalized({
+							   "script",
+							   "format",
+							   "--project",
+							   "demo",
+							   "--write",
+							   "scripts",
+					   },
+			{
+					"--headless",
+					"--path",
+					"demo",
+					"--foundry_script-format",
+					"--write",
+					"scripts",
+			});
+
+	require_normalized({
+							   "script",
+							   "lint",
+							   "--project",
+							   "demo",
+							   "--format=json",
+							   "scripts",
+					   },
+			{
+					"--headless",
+					"--path",
+					"demo",
+					"--foundry_script-lint",
+					"--format=json",
+					"scripts",
 			});
 }
 

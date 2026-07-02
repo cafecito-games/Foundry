@@ -38,6 +38,10 @@
 #include "core/string/ustring.h"
 #include "core/templates/hash_map.h"
 
+#ifdef TESTS_ENABLED
+#include <stdio.h>
+#endif
+
 // Turns FoundryScript source text into canonical text. The formatter never mutates
 // the parser or tokenizer: it runs its own tokenize pass to capture comments
 // and the original literal source text, parses for the structural tree, then
@@ -298,8 +302,7 @@ private:
 };
 
 // Headless command driving FSFormatter over files, directories, and stdin
-// with CI-friendly exit codes. Registered as the `--foundry_script-format` test command
-// and dispatched from the test-command entrypoint.
+// with CI-friendly exit codes.
 class FSFormatterCLI {
 public:
 	enum Mode {
@@ -333,10 +336,14 @@ public:
 	// for unit testing of the filesystem traversal.
 	static Vector<String> collect_files(const Vector<String> &p_paths, bool &r_had_error);
 
+#ifdef TESTS_ENABLED
+	static bool test_write_raw(FILE *p_stream, const String &p_text);
+#endif
+
 private:
 	static void collect_gd_scripts_recursive(const String &p_dir, Vector<String> &r_files, bool &r_had_error);
 	static String make_unified_diff(const String &p_path, const String &p_original, const String &p_formatted);
-	static void print_raw(const String &p_text);
+	static bool print_raw(const String &p_text);
 };
 
 #endif // TOOLS_ENABLED

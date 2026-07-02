@@ -458,10 +458,6 @@ void generate_foundry_script_tests() {
 // only records comments there), so these commands must not be referenced in a
 // `tests=yes` build that is not also a tools/editor build.
 #ifdef TOOLS_ENABLED
-void fs_format_command() {
-	FSFormatterCLI::run_from_cmdline();
-}
-
 void fs_generate_format_tests() {
 	FSFormatterCLI::generate_format_tests();
 }
@@ -474,7 +470,6 @@ REGISTER_TEST_COMMAND("foundry_script-compiler", &test_compiler);
 REGISTER_TEST_COMMAND("foundry_script-bytecode", &test_bytecode);
 REGISTER_TEST_COMMAND("--foundry_script-generate-tests", &generate_foundry_script_tests);
 #ifdef TOOLS_ENABLED
-REGISTER_TEST_COMMAND("--foundry_script-format", &fs_format_command);
 REGISTER_TEST_COMMAND("--foundry_script-generate-format-tests", &fs_generate_format_tests);
 #endif // TOOLS_ENABLED
 #endif
