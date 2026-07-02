@@ -67,7 +67,7 @@ Auto-raise events (debugger errors, output on run) open the drawer in whatever m
 
 ## Testing
 
-**Automated.** Factor the geometry state machine (open/pin/expand transitions, inset math, offset + pin persistence round-trip) so it is assertable in C++ doctests where an editor instance is available. At minimum: persistence round-trip of heights and pin states through a `ConfigFile`, and inset math for all state combinations.
+**Automated.** Factor the geometry state machine (open/pin/expand transitions, inset math, offset + pin persistence round-trip) so it is assertable in C++ doctests where an editor instance is available. At minimum: persistence round-trip of heights and pin states through a `ConfigFile`, and inset math for all state combinations. *Status: inset math and legacy migration are covered by `tests/editor/test_bottom_drawer_geometry.h`; the `ConfigFile` round-trip test is deferred to #838 because `EditorBottomPanel`'s constructor requires editor scaffolding that headless unit tests cannot instantiate today.*
 
 **Manual verification matrix** (run before merge):
 
@@ -80,6 +80,7 @@ Auto-raise events (debugger errors, output on run) open the drawer in whatever m
 | Expand, both modes | Drawer covers full workspace height and restores |
 | Esc with focus in drawer | Closes when unpinned; no-op when pinned |
 | Drag Inspector (vertical-only dock) into the drawer | Accepted, renders vertically, moves back out cleanly |
+| Inspector in drawer with a very short editor window | Degenerate clamping stays usable; no clipped strip or stranded grabber |
 | Run project with errors | Debugger/output auto-raises per its pin state; context-menu lock prevents tab stealing |
 | Make a drawer dock floating and return | Unchanged from today |
 | Distraction-free mode | Drawer and workspace behave; no dangling button reparenting |
