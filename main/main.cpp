@@ -570,8 +570,12 @@ void Main::print_help(const char *p_binary) {
 			"  \u001b[92mproject import --project <dir>\u001b[0m                       "
 			"Import project resources and exit.\n");
 	OS::get_singleton()->print(
-			"  \u001b[92mscript format [--check|--write|--diff] [paths...]\u001b[0m    "
+			"  \u001b[92mscript format [--project <dir>] [--check|--write|--diff] [paths...]\u001b[0m\n"
 			"Format Foundry Script files or stdin.\n");
+	OS::get_singleton()->print(
+			"  \u001b[92mscript lint [--project <dir>] [--format=json|sarif] [--out <path>]\u001b[0m\n"
+			"  \u001b[92m            [--fail-on=error|warning] [paths...]\u001b[0m\n"
+			"Lint Foundry Script files.\n");
 	OS::get_singleton()->print(
 			"  \u001b[92mscript migrate --project <dir> [--apply] "
 			"[--strict null,dynamic]\u001b[0m\n");

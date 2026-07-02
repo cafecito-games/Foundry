@@ -34,6 +34,7 @@ namespace {
 
 struct CLIParseState {
 	PackedStringArray args;
+	bool has_executable_arg = false;
 	int index = 0;
 	String project_path;
 	PackedStringArray legacy_prefix;
@@ -173,7 +174,7 @@ static bool consume_common_global_option(CLIParseState &r_state, const String &p
 
 static PackedStringArray base_args(const CLIParseState &p_state) {
 	PackedStringArray normalized;
-	if (!p_state.args.is_empty()) {
+	if (p_state.has_executable_arg && !p_state.args.is_empty()) {
 		append(normalized, p_state.args[0]);
 	}
 	append_trust(normalized, p_state.result.trusted);
@@ -367,9 +368,34 @@ static void parse_script_format(CLIParseState &r_state) {
 
 	PackedStringArray normalized = base_args(r_state);
 	append_headless(normalized);
+	append_project(normalized, r_state.project_path);
 	append(normalized, "--foundry_script-format");
 	for (int i = 0; i < formatter_args.size(); i++) {
 		append(normalized, formatter_args[i]);
+	}
+	r_state.result.normalized_args = normalized;
+}
+
+static void parse_script_lint(CLIParseState &r_state) {
+	set_command_path(r_state.result, "script", "lint");
+	PackedStringArray lint_args;
+	while (r_state.index < r_state.args.size()) {
+		const String arg = r_state.args[r_state.index];
+		if (consume_common_global_option(r_state, arg)) {
+			if (!r_state.result.ok) {
+				return;
+			}
+			continue;
+		}
+		append(lint_args, r_state.args[r_state.index++]);
+	}
+
+	PackedStringArray normalized = base_args(r_state);
+	append_headless(normalized);
+	append_project(normalized, r_state.project_path);
+	append(normalized, "--foundry_script-lint");
+	for (int i = 0; i < lint_args.size(); i++) {
+		append(normalized, lint_args[i]);
 	}
 	r_state.result.normalized_args = normalized;
 }
@@ -478,6 +504,8 @@ static void parse_script(CLIParseState &r_state) {
 	const String command = r_state.args[r_state.index++];
 	if (command == "format") {
 		parse_script_format(r_state);
+	} else if (command == "lint") {
+		parse_script_lint(r_state);
 	} else if (command == "migrate") {
 		parse_script_migrate(r_state);
 	} else {
@@ -844,7 +872,13 @@ FoundryCLIParser::ParseResult FoundryCLIParser::parse(const PackedStringArray &p
 
 	collect_user_args(state);
 
-	state.index = 1;
+	if (state.args.is_empty()) {
+		return state.result;
+	}
+
+	const String first_arg = state.args[0];
+	state.has_executable_arg = !is_new_cli_command(first_arg) && !first_arg.begins_with("-");
+	state.index = state.has_executable_arg ? 1 : 0;
 	while (state.index < state.args.size()) {
 		const String arg = state.args[state.index];
 		if (is_new_cli_command(arg)) {

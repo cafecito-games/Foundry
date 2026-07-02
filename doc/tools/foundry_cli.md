@@ -25,7 +25,8 @@ foundry project run --project . --scene res://main.tscn -- --game-arg value
 foundry project export --project . --preset Linux --output build/game.x86_64 --mode release
 foundry project import --project .
 
-foundry script format --check scripts
+foundry script format --project . --check scripts
+foundry script lint --project . --format=sarif --out reports/foundry-script.sarif scripts
 foundry script migrate --trusted --project . --apply --strict null,dynamic --confirm
 
 foundry test run --project . --case "*FoundryScript*"
