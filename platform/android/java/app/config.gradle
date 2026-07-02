@@ -177,14 +177,25 @@ ext.getFoundryLibraryVersion = { ->
 }
 
 ext.getFoundryPublishVersion = { ->
-    List<String> requiredKeys = ["major", "minor", "patch", "status"]
-    String versionName = ""
-    int versionCode = 1
-    (versionName, versionCode) = generateFoundryLibraryVersion(requiredKeys)
-    if (!versionName.endsWith("stable")) {
-        versionName += "-SNAPSHOT"
+    // Base `major.minor.patch` version read from version.py.
+    String baseVersion = generateFoundryLibraryVersion(["major", "minor", "patch"])[0]
+
+    // Effective release channel. The CI-provided FOUNDRY_VERSION_STATUS (derived from the release
+    // tag by the release workflow's resolve job) takes precedence over version.py's `status`, so a
+    // tagged release drives the published version without hand-editing version.py. Local and
+    // untagged builds fall back to version.py.
+    String status = System.getenv("FOUNDRY_VERSION_STATUS")
+    if (status == null || status.trim().isEmpty()) {
+        status = generateFoundryLibraryVersion(["status"])[0]
     }
-    return versionName
+    status = status.trim()
+
+    // Stable releases publish a clean `major.minor.patch`; every other channel publishes a
+    // channel-tagged SNAPSHOT to the snapshot repository.
+    if (status.startsWith("stable")) {
+        return baseVersion
+    }
+    return "${baseVersion}-${status}-SNAPSHOT"
 }
 
 final String VALUE_SEPARATOR_REGEX = "\\|"
