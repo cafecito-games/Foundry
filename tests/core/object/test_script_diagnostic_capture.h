@@ -124,4 +124,90 @@ TEST_CASE("[ScriptDiagnosticCapture] Default start() keeps error printing enable
 	CoreGlobals::print_error_enabled = errors_enabled_before;
 }
 
+TEST_CASE("[ScriptDiagnosticCapture] Overlapping quiet captures stay suppressed until the last one stops") {
+	const bool errors_enabled_before = CoreGlobals::print_error_enabled;
+	CoreGlobals::print_error_enabled = true;
+
+	Ref<ScriptDiagnosticCapture> outer;
+	outer.instantiate();
+	Ref<ScriptDiagnosticCapture> inner;
+	inner.instantiate();
+
+	outer->start(true);
+	CHECK_FALSE(CoreGlobals::print_error_enabled);
+
+	inner->start(true);
+	CHECK_FALSE(CoreGlobals::print_error_enabled);
+
+	inner->stop();
+	CHECK_FALSE(CoreGlobals::print_error_enabled);
+
+	outer->stop();
+	CHECK(CoreGlobals::print_error_enabled);
+
+	CoreGlobals::print_error_enabled = errors_enabled_before;
+}
+
+TEST_CASE("[ScriptDiagnosticCapture] Quiet capture restores prior disabled state instead of forcing enabled") {
+	const bool errors_enabled_before = CoreGlobals::print_error_enabled;
+	CoreGlobals::print_error_enabled = false;
+
+	Ref<ScriptDiagnosticCapture> capture;
+	capture.instantiate();
+
+	capture->start(true);
+	CHECK_FALSE(CoreGlobals::print_error_enabled);
+
+	capture->stop();
+	CHECK_FALSE(CoreGlobals::print_error_enabled);
+
+	CoreGlobals::print_error_enabled = errors_enabled_before;
+}
+
+TEST_CASE("[ScriptDiagnosticCapture] Non-quiet capture nested inside a quiet capture does not re-enable printing") {
+	const bool errors_enabled_before = CoreGlobals::print_error_enabled;
+	CoreGlobals::print_error_enabled = true;
+
+	Ref<ScriptDiagnosticCapture> quiet_capture;
+	quiet_capture.instantiate();
+	Ref<ScriptDiagnosticCapture> loud_capture;
+	loud_capture.instantiate();
+
+	quiet_capture->start(true);
+	loud_capture->start();
+	CHECK_FALSE(CoreGlobals::print_error_enabled);
+
+	loud_capture->stop();
+	CHECK_FALSE(CoreGlobals::print_error_enabled);
+
+	quiet_capture->stop();
+	CHECK(CoreGlobals::print_error_enabled);
+
+	CoreGlobals::print_error_enabled = errors_enabled_before;
+}
+
+TEST_CASE("[ScriptDiagnosticCapture] Quiet capture nested inside a non-quiet capture only suppresses for its own duration") {
+	const bool errors_enabled_before = CoreGlobals::print_error_enabled;
+	CoreGlobals::print_error_enabled = true;
+
+	Ref<ScriptDiagnosticCapture> loud_capture;
+	loud_capture.instantiate();
+	Ref<ScriptDiagnosticCapture> quiet_capture;
+	quiet_capture.instantiate();
+
+	loud_capture->start();
+	CHECK(CoreGlobals::print_error_enabled);
+
+	quiet_capture->start(true);
+	CHECK_FALSE(CoreGlobals::print_error_enabled);
+
+	quiet_capture->stop();
+	CHECK(CoreGlobals::print_error_enabled);
+
+	loud_capture->stop();
+	CHECK(CoreGlobals::print_error_enabled);
+
+	CoreGlobals::print_error_enabled = errors_enabled_before;
+}
+
 } // namespace TestScriptDiagnosticCapture
