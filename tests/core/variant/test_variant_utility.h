@@ -34,6 +34,7 @@
 
 #include "core/config/engine.h"
 #include "core/config/project_settings.h"
+#include "core/object/script_diagnostic_capture.h"
 #include "core/os/os.h"
 
 #include "tests/test_macros.h"
@@ -183,6 +184,23 @@ TEST_CASE("[VariantUtility] push_fatal decision logic") {
 		CHECK(call_error.error == Callable::CallError::CALL_OK);
 		CHECK(os->is_exit_requested());
 		CHECK(os->get_exit_code() == EXIT_FAILURE);
+	}
+
+	// Case 5: active capture -> log only, no exit request, even with the setting enabled.
+	{
+		settings->set_setting("application/run/push_fatal_terminates", true);
+
+		Ref<ScriptDiagnosticCapture> capture;
+		capture.instantiate();
+		capture->start();
+
+		const bool before = os->is_exit_requested();
+		Variant::call_utility_function("push_fatal", &ret, args, 1, call_error);
+		CHECK(call_error.error == Callable::CallError::CALL_OK);
+		CHECK(os->is_exit_requested() == before);
+		CHECK(capture->has_fatal("fatal!"));
+
+		capture->stop();
 	}
 
 	// Restore mutated state, including the process-global exit-request flag

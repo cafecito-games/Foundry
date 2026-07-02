@@ -210,4 +210,22 @@ TEST_CASE("[ScriptDiagnosticCapture] Quiet capture nested in a non-quiet capture
 	CoreGlobals::print_error_enabled = errors_enabled_before;
 }
 
+TEST_CASE("[ScriptDiagnosticCapture] Quiet capture suppresses stderr output for a captured fatal diagnostic") {
+	const bool errors_enabled_before = CoreGlobals::print_error_enabled;
+	CoreGlobals::print_error_enabled = true;
+
+	Ref<ScriptDiagnosticCapture> capture;
+	capture.instantiate();
+
+	capture->start(true);
+	_err_print_error(FUNCTION_STR, __FILE__, __LINE__, "quiet fatal", false, ERR_HANDLER_FATAL);
+	CHECK_FALSE(CoreGlobals::print_error_enabled);
+	capture->stop();
+
+	CHECK(capture->has_fatal("quiet fatal"));
+	CHECK(CoreGlobals::print_error_enabled);
+
+	CoreGlobals::print_error_enabled = errors_enabled_before;
+}
+
 } // namespace TestScriptDiagnosticCapture
