@@ -1262,6 +1262,16 @@ Error FoundryScript::_reload_from_compiled_binary() {
 		return ERR_FILE_CANT_READ;
 	}
 
+	// A prior link attempt that failed partway leaves functions registered on this script. Re-running
+	// load_full over that residue would trip the duplicate-function guard deep in the reader and
+	// surface as a misleading "corrupt input" error, and would otherwise risk linking fresh state on
+	// top of stale state. A fresh script (the normal first load) has no members yet, so a populated
+	// member map here means exactly that partial residue; fail with an accurate diagnostic instead of
+	// letting the reader mislabel it. (A full, safe teardown-and-relink of a partially-linked class
+	// graph — including inner classes — is a larger change tracked separately.)
+	ERR_FAIL_COND_V_MSG(!member_functions.is_empty(), ERR_ALREADY_IN_USE,
+			vformat("Cannot re-link compiled script '%s': a previous load left it partially linked.", binary_path));
+
 	FSBytecodeCacheResolver resolver(binary_path);
 	FSBytecodeLoader loader;
 	loader.set_resolver(&resolver);

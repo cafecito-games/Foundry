@@ -48,6 +48,9 @@ class FSDataType {
 public:
 	Vector<FSDataType> container_element_types;
 
+	// NOTE: `TYPE_PARAMETER` must remain the last/highest value. The compiled-bytecode loader
+	// (`FSBytecodeLoader::decode_data_type`) validates a deserialized kind with `kind > TYPE_PARAMETER`;
+	// if a new kind is appended after it, update that upper-bound check to the new last value.
 	enum Kind {
 		VARIANT, // Can be any type.
 		BUILTIN,
@@ -59,6 +62,9 @@ public:
 
 	Kind kind = VARIANT;
 
+	// NOTE: `TYPE_PARAMETER_METHOD` must remain the last/highest value. The compiled-bytecode loader
+	// validates a deserialized scope with `type_parameter_scope > TYPE_PARAMETER_METHOD`; update that
+	// check if a new scope is appended after it.
 	enum TypeParameterScope {
 		TYPE_PARAMETER_NONE,
 		TYPE_PARAMETER_CLASS,
@@ -529,6 +535,7 @@ private:
 	friend class FSLanguage;
 	friend class FSBytecodeExporter;
 	friend class FSBytecodeLoader;
+	friend class FSBytecodeVerifier;
 
 	StringName name;
 	StringName source;

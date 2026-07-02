@@ -31,6 +31,7 @@
 #include "fs_bytecode_loader.h"
 
 #include "foundry_script.h"
+#include "fs_bytecode_verifier.h"
 #include "fs_cache.h"
 #include "fs_conformance_registry.h"
 #include "fs_function.h"
@@ -72,6 +73,13 @@ Ref<Script> FSBytecodeCacheResolver::resolve_script(const String &p_path, const 
 		// failed to load and must not be linked against.
 		return Ref<Script>();
 	}
+	// KNOWN LIMITATION: this cannot distinguish a script that is currently mid-load in a dependency
+	// cycle (invalid, error-free, and legitimately linkable as a shell) from one that was published
+	// to the cache after a *previous* load failed (also invalid and error-free on a cache hit). The
+	// latter is stale and should not be linked against, but is accepted here, producing a "valid"
+	// dependent with a dead dependency. Distinguishing the two needs an explicit in-progress set in
+	// FSCache (or a mid-load marker on the shell); that is tracked separately as it touches the cache
+	// lifecycle rather than the loader.
 	if (p_fully_qualified_name.is_empty() || root_script->get_fully_qualified_name() == p_fully_qualified_name) {
 		return root_script;
 	}
@@ -233,7 +241,8 @@ Error FSBytecodeLoader::decode_variant_tagged(StreamPeerBuffer *p_stream, Varian
 				return error;
 			}
 			Array array;
-			if (element_type.builtin_type != Variant::NIL || element_type.class_name != StringName() || element_type.script.is_valid()) {
+			const bool array_is_typed = element_type.builtin_type != Variant::NIL || element_type.class_name != StringName() || element_type.script.is_valid();
+			if (array_is_typed) {
 				array.set_typed(element_type);
 			}
 			const uint32_t count = p_stream->get_u32();
@@ -246,7 +255,12 @@ Error FSBytecodeLoader::decode_variant_tagged(StreamPeerBuffer *p_stream, Varian
 				if (error != OK) {
 					return error;
 				}
+				const int size_before = array.size();
 				array.push_back(element);
+				// A typed array silently rejects (drops) an element whose type does not match, leaving
+				// a container that is quietly missing data; treat that as corrupt input instead.
+				ERR_FAIL_COND_V_MSG(array_is_typed && array.size() != size_before + 1, ERR_INVALID_DATA,
+						"Type-mismatched array element in compiled script data.");
 			}
 			if (read_only) {
 				array.make_read_only();
@@ -269,7 +283,8 @@ Error FSBytecodeLoader::decode_variant_tagged(StreamPeerBuffer *p_stream, Varian
 			Dictionary dictionary;
 			const bool key_typed = key_type.builtin_type != Variant::NIL || key_type.class_name != StringName() || key_type.script.is_valid();
 			const bool value_typed = value_type.builtin_type != Variant::NIL || value_type.class_name != StringName() || value_type.script.is_valid();
-			if (key_typed || value_typed) {
+			const bool dictionary_is_typed = key_typed || value_typed;
+			if (dictionary_is_typed) {
 				dictionary.set_typed(key_type, value_type);
 			}
 			const uint32_t count = p_stream->get_u32();
@@ -287,7 +302,13 @@ Error FSBytecodeLoader::decode_variant_tagged(StreamPeerBuffer *p_stream, Varian
 				if (error != OK) {
 					return error;
 				}
+				const int size_before = dictionary.size();
 				dictionary[key] = value;
+				// A typed dictionary silently rejects a key or value whose type does not match. The
+				// serialized source is a real Dictionary with unique keys, so a well-formed entry always
+				// grows the dictionary by one; anything else is corrupt input.
+				ERR_FAIL_COND_V_MSG(dictionary_is_typed && dictionary.size() != size_before + 1, ERR_INVALID_DATA,
+						"Type-mismatched dictionary entry in compiled script data.");
 			}
 			if (read_only) {
 				dictionary.make_read_only();
@@ -332,6 +353,10 @@ Error FSBytecodeLoader::decode_variant_tagged(StreamPeerBuffer *p_stream, Varian
 }
 
 Error FSBytecodeLoader::_decode_object(StreamPeerBuffer *p_stream, uint8_t p_tag, Variant &r_variant, int p_depth) {
+	// A nested TAG_SPECIALIZED_HANDLE recurses straight back into `_decode_object` (one byte of input
+	// per level), so guard depth at this entry too rather than relying on the caller's guard.
+	ERR_FAIL_COND_V_MSG(p_depth > Variant::MAX_RECURSION_DEPTH, ERR_INVALID_DATA,
+			"Object is too deeply nested in compiled script data.");
 	switch (p_tag) {
 		case FSBytecodeFormat::TAG_SCRIPT_REF:
 		case FSBytecodeFormat::TAG_EXTERNAL_SCRIPT: {
@@ -1124,6 +1149,14 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 			lambda_info.use_self = use_self;
 			r_lambda_info->push_back(lambda_info);
 		}
+	}
+
+	// Bounds-check the opcode stream before it is ever handed to the release VM, which performs no
+	// such checks. Members were read before functions in the class body, so `member_indices` already
+	// holds the class's flattened member count that member-address operands may reference.
+	error = FSBytecodeVerifier::verify_function(p_function, p_script->member_indices.size(), script_path);
+	if (error != OK) {
+		return error;
 	}
 
 	p_function->setup_runtime_pointers();
