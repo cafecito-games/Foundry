@@ -84,6 +84,7 @@
 	<members>
 		<member name="available_layouts" type="int" setter="set_available_layouts" getter="get_available_layouts" enum="EditorDock.DockLayout" is_bitfield="true" default="DOCK_LAYOUT_FLOATING | DOCK_LAYOUT_VERTICAL">
 			The available layouts for this dock, as a bitmask. By default, the dock allows vertical and floating layouts.
+			[b]Note:[/b] The bottom dock slot accepts any dock regardless of this value. A dock moved there receives [method _update_layout] with [constant DOCK_LAYOUT_HORIZONTAL] even if it does not declare horizontal support.
 		</member>
 		<member name="closable" type="bool" setter="set_closable" getter="is_closable" default="false">
 			If [code]true[/code], the dock can be closed with the Close button in the context popup. Docks with [member global] enabled are always closable.
