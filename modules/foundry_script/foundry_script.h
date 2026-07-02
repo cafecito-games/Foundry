@@ -952,8 +952,8 @@ public:
 	_FORCE_INLINE_ void set_track_call_stack(bool p_track_call_stack) { track_call_stack = p_track_call_stack; }
 	// While set, the compiler emits STORE_GLOBAL (with a masked, loader-rebaked operand) for
 	// autoload singletons instead of the editor-session STORE_NAMED_GLOBAL fallback, matching how
-	// game runtimes register autoloads in the global array. Set and cleared by the
-	// compiled-bytecode export around its compiles.
+	// game runtimes register autoloads in the global array. Scoped to each compiled-bytecode
+	// .fs export (set for the compile/serialize, then cleared with an immediate recompile).
 	_FORCE_INLINE_ bool is_compiling_for_export() const { return compiling_for_export; }
 	_FORCE_INLINE_ void set_compiling_for_export(bool p_compiling_for_export) { compiling_for_export = p_compiling_for_export; }
 #endif // TOOLS_ENABLED
