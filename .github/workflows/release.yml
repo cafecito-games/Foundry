@@ -933,6 +933,7 @@ jobs:
       - name: Create release tag
         if: needs.resolve.outputs.create_tag == 'true'
         env:
+          GH_TOKEN: ${{ github.token }}
           TAG_NAME: ${{ needs.resolve.outputs.tag }}
           RELEASE_NAME: ${{ needs.resolve.outputs.release_name }}
         run: |
@@ -941,10 +942,19 @@ jobs:
             exit 1
           fi
 
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "$TAG_NAME" -m "$RELEASE_NAME"
-          git push origin "refs/tags/$TAG_NAME"
+          # Create the annotated tag through the REST API instead of `git push`:
+          # GITHUB_TOKEN cannot be granted the `workflows` permission, so pushing
+          # a tag whose commit touches .github/workflows/ is rejected at the git
+          # layer, while the Git Data API accepts it.
+          TAG_SHA=$(gh api "repos/$GITHUB_REPOSITORY/git/tags" \
+            -f tag="$TAG_NAME" \
+            -f message="$RELEASE_NAME" \
+            -f object="$GITHUB_SHA" \
+            -f type=commit \
+            --jq .sha)
+          gh api "repos/$GITHUB_REPOSITORY/git/refs" \
+            -f ref="refs/tags/$TAG_NAME" \
+            -f sha="$TAG_SHA"
 
       - name: Download release assets
         uses: actions/download-artifact@v8
