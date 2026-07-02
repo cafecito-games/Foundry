@@ -823,8 +823,8 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 						// and records the name, and the .fsb loader rebakes the index against the
 						// runtime's global map, which does contain the autoload. The placeholder
 						// index below is never shipped and is not expected to run — the export
-						// integration recompiles the script for the live editor session in
-						// _export_end.
+						// integration scopes this flag to each .fs serialization and recompiles the
+						// script for the live editor session before returning.
 						if (FSLanguage::get_singleton()->is_compiling_for_export()) {
 							const HashMap<StringName, ProjectSettings::AutoloadInfo> &autoloads = ProjectSettings::get_singleton()->get_autoload_list();
 							if (autoloads.has(identifier) && autoloads[identifier].is_singleton) {

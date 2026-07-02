@@ -1565,6 +1565,75 @@ TEST_CASE("[FoundryScript][BytecodeCodec] Editor-only named globals are collecte
 	CHECK(FSBytecodeExporter::collect_unsupported_named_globals(clean_script).is_empty());
 }
 
+TEST_CASE("[FoundryScript][BytecodeCodec] Per-file export compile scope restores editor bytecode") {
+	if (!FSLanguage::get_singleton()->has_any_global_constant(SNAME("RefCounted"))) {
+		FSLanguage::get_singleton()->init();
+	}
+
+	const String scene_path = TestUtils::get_temp_path("bytecode_per_file_export_autoload.tscn");
+	{
+		Ref<FileAccess> scene_file = FileAccess::open(scene_path, FileAccess::WRITE);
+		REQUIRE(scene_file.is_valid());
+		scene_file->store_string("[gd_scene format=3]\n\n[node name=\"Root\" type=\"Node\"]\n");
+	}
+	const StringName autoload_name = "BytecodePerFileExportAutoload";
+	const String script_path = TestUtils::get_temp_path("bytecode_per_file_export_autoload.fs");
+	{
+		Ref<FileAccess> script_file = FileAccess::open(script_path, FileAccess::WRITE);
+		REQUIRE(script_file.is_valid());
+		script_file->store_string(
+				"func run():\n"
+				"\treturn BytecodePerFileExportAutoload\n");
+	}
+	BytecodeEditorOnlyGlobalGuard cleanup_guard{ autoload_name, scene_path };
+	ProjectSettings::AutoloadInfo autoload;
+	autoload.name = autoload_name;
+	autoload.path = scene_path;
+	autoload.is_singleton = true;
+	ProjectSettings::get_singleton()->add_autoload(autoload);
+	FSLanguage::get_singleton()->add_named_global_constant(autoload_name, Variant());
+
+	auto get_run_export_fixups = [&]() -> const FSFunction::ExportFixups & {
+		Ref<FoundryScript> script = FSCache::get_cached_script(script_path);
+		REQUIRE(script.is_valid());
+		REQUIRE(script->get_member_functions().has(SNAME("run")));
+		return script->get_member_functions()[SNAME("run")]->export_fixups;
+	};
+
+	Error error = OK;
+	Ref<FoundryScript> editor_script = FSCache::get_full_script(script_path, error, String(), true);
+	REQUIRE(error == OK);
+	CHECK(editor_script->get_member_functions()[SNAME("run")]->export_fixups.global_stores.is_empty());
+
+	// Mirrors EditorExportFoundryScript::CompiledBytecodeExportScope: export-only flags apply only
+	// for the compile/serialize of one .fs, then every reloaded script is recompiled for the editor.
+	{
+		FSLanguage::get_singleton()->set_compiling_for_export(true);
+		FSCache::begin_script_reload_recording();
+		Ref<FoundryScript> export_script = FSCache::get_full_script(script_path, error, String(), true);
+		REQUIRE(error == OK);
+		bool recorded_store_global_for_autoload = false;
+		for (const FSFunction::ExportFixups::GlobalStore &global_store : export_script->get_member_functions()[SNAME("run")]->export_fixups.global_stores) {
+			if (global_store.global_name == autoload_name) {
+				recorded_store_global_for_autoload = true;
+			}
+		}
+		CHECK(recorded_store_global_for_autoload);
+
+		FSLanguage::get_singleton()->set_compiling_for_export(false);
+		for (const String &path : FSCache::end_script_reload_recording()) {
+			FSCache::get_full_script(path, error, String(), true);
+			REQUIRE(error == OK);
+		}
+	}
+
+	CHECK_FALSE(FSLanguage::get_singleton()->is_compiling_for_export());
+	CHECK(get_run_export_fixups().global_stores.is_empty());
+
+	FSCache::remove_script(script_path);
+	DirAccess::remove_absolute(script_path);
+}
+
 TEST_CASE("[FoundryScript][BytecodeCodec] Call-stack tracking gates OPCODE_LINE emission") {
 	if (!FSLanguage::get_singleton()->has_any_global_constant(SNAME("RefCounted"))) {
 		FSLanguage::get_singleton()->init();

@@ -113,10 +113,10 @@ class FSCache {
 	bool cleared = false;
 
 #ifdef TOOLS_ENABLED
-	// Paths of scripts that went through a full reload while recording was active. The
-	// compiled-bytecode export records its compile window with this so it can recompile, for the
-	// live editor session, every script — including transitively compiled dependencies — that was
-	// compiled under export-only flags.
+	// Paths of scripts that went through a full reload while recording was active. Each
+	// compiled-bytecode .fs export records its compile window with this so it can recompile, for
+	// the live editor session, every script — including transitively compiled dependencies — that
+	// was compiled under export-only flags before returning from _export_file.
 	bool recording_script_reloads = false;
 	HashSet<String> recorded_script_reload_paths;
 #endif // TOOLS_ENABLED

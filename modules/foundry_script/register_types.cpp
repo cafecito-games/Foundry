@@ -89,16 +89,41 @@ class EditorExportFoundryScript : public EditorExportPlugin {
 
 	static constexpr EditorExportPreset::ScriptExportMode DEFAULT_SCRIPT_MODE = EditorExportPreset::MODE_SCRIPT_BINARY_TOKENS_COMPRESSED;
 	EditorExportPreset::ScriptExportMode script_mode = DEFAULT_SCRIPT_MODE;
+	bool export_debug = true;
 
-	// Compiled-bytecode exports compile under export-only compiler flags: the export-compile flag
-	// makes bare autoload references emit STORE_GLOBAL (masked operand, rebaked by name at .fsb
-	// load), and release-profile exports additionally disable call-stack tracking so the
-	// serialized functions carry no OPCODE_LINE instructions. The editor's own flags are saved
-	// here and restored in _export_end, which also recompiles every script FSCache reloaded
-	// during the export window so the live session gets editor-correct bytecode back.
-	bool export_compile_flags_active = false;
-	bool call_stack_tracking_overridden = false;
-	bool call_stack_tracking_previous = false;
+	// Scoped to each .fs export: the export-compile flag makes bare autoload references emit
+	// STORE_GLOBAL (masked operand, rebaked by name at .fsb load), and release-profile exports
+	// additionally disable call-stack tracking so the serialized functions carry no OPCODE_LINE
+	// instructions. The scope restores the editor's own flags and recompiles every script FSCache
+	// reloaded during the compile so the live session never keeps export-only bytecode.
+	struct CompiledBytecodeExportScope {
+		bool call_stack_tracking_overridden = false;
+		bool call_stack_tracking_previous = false;
+
+		explicit CompiledBytecodeExportScope(bool p_release_profile) {
+			FSLanguage::get_singleton()->set_compiling_for_export(true);
+			FSCache::begin_script_reload_recording();
+			if (p_release_profile) {
+				call_stack_tracking_previous = FSLanguage::get_singleton()->should_track_call_stack();
+				FSLanguage::get_singleton()->set_track_call_stack(false);
+				call_stack_tracking_overridden = true;
+			}
+		}
+
+		~CompiledBytecodeExportScope() {
+			FSLanguage::get_singleton()->set_compiling_for_export(false);
+			if (call_stack_tracking_overridden) {
+				FSLanguage::get_singleton()->set_track_call_stack(call_stack_tracking_previous);
+			}
+			for (const String &path : FSCache::end_script_reload_recording()) {
+				Error error = OK;
+				FSCache::get_full_script(path, error, String(), true);
+				if (error != OK) {
+					WARN_PRINT(vformat("Could not recompile \"%s\" for the editor session after the compiled-bytecode export: %s.", path, error_names[error]));
+				}
+			}
+		}
+	};
 
 	// Export plugin callbacks cannot return an error; an EXPORT_MESSAGE_ERROR on the platform is
 	// what fails the export (see EditorExportPlatform::export_project_files).
@@ -178,7 +203,9 @@ class EditorExportFoundryScript : public EditorExportPlugin {
 		// The export runs in the editor process where project settings and autoloads are live, so
 		// the cache can compile the script exactly as the runtime would. Updating from disk forces
 		// a fresh compile under the current call-stack-tracking flag instead of reusing bytecode
-		// the editor session compiled earlier.
+		// the editor session compiled earlier. Export-only compiler flags are scoped to this file
+		// so @tool scripts that tick during the export never execute placeholder-global bytecode.
+		CompiledBytecodeExportScope export_scope(!export_debug);
 		Error error = OK;
 		Ref<FoundryScript> script = FSCache::get_full_script(p_path, error, String(), true);
 		if (error != OK || script.is_null() || !script->is_valid()) {
@@ -231,47 +258,16 @@ class EditorExportFoundryScript : public EditorExportPlugin {
 
 protected:
 	virtual void _export_begin(const HashSet<String> &p_features, bool p_debug, const String &p_path, int p_flags) override {
+		export_debug = p_debug;
 		script_mode = DEFAULT_SCRIPT_MODE;
 
 		const Ref<EditorExportPreset> &preset = get_export_preset();
 		if (preset.is_valid()) {
 			script_mode = preset->get_script_export_mode();
 		}
-
-		export_compile_flags_active = false;
-		call_stack_tracking_overridden = false;
-		if (script_mode == EditorExportPreset::MODE_SCRIPT_COMPILED_BYTECODE) {
-			FSLanguage::get_singleton()->set_compiling_for_export(true);
-			FSCache::begin_script_reload_recording();
-			export_compile_flags_active = true;
-			if (!p_debug) {
-				call_stack_tracking_previous = FSLanguage::get_singleton()->should_track_call_stack();
-				FSLanguage::get_singleton()->set_track_call_stack(false);
-				call_stack_tracking_overridden = true;
-			}
-		}
 	}
 
 	virtual void _export_end() override {
-		if (export_compile_flags_active) {
-			FSLanguage::get_singleton()->set_compiling_for_export(false);
-			if (call_stack_tracking_overridden) {
-				FSLanguage::get_singleton()->set_track_call_stack(call_stack_tracking_previous);
-				call_stack_tracking_overridden = false;
-			}
-			export_compile_flags_active = false;
-			// The scripts compiled during the export window are the same objects the live editor
-			// session holds and carry export-only bytecode (placeholder autoload globals, no line
-			// tracking); recompile all of them — including dependencies compiled transitively —
-			// under the restored flags.
-			for (const String &path : FSCache::end_script_reload_recording()) {
-				Error error = OK;
-				FSCache::get_full_script(path, error, String(), true);
-				if (error != OK) {
-					WARN_PRINT(vformat("Could not recompile \"%s\" for the editor session after the compiled-bytecode export: %s.", path, error_names[error]));
-				}
-			}
-		}
 		script_mode = DEFAULT_SCRIPT_MODE;
 	}
 
