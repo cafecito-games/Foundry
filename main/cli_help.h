@@ -47,6 +47,8 @@ public:
 		const char *value_name = nullptr;
 		const char *description = nullptr;
 		bool required = false;
+		// True when the value is attached with '=' as a single token (e.g. --format=sarif).
+		bool equals_form = false;
 	};
 
 	struct Positional {

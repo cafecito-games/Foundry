@@ -87,9 +87,9 @@ const CommandOption SCRIPT_FORMAT_OPTIONS[] = {
 
 const CommandOption SCRIPT_LINT_OPTIONS[] = {
 	{ "--project", "dir", PROJECT_OPTION_DESCRIPTION, false },
-	{ "--format=<json|sarif>", nullptr, "Machine-readable report format.", false },
+	{ "--format", "json|sarif", "Machine-readable report format.", false, true },
 	{ "--out", "path", "Write the report to a file instead of stdout.", false },
-	{ "--fail-on=<error|warning>", nullptr, "Severity threshold for a non-zero exit code.", false },
+	{ "--fail-on", "error|warning", "Severity threshold for a non-zero exit code.", false, true },
 };
 
 const CommandOption SCRIPT_MIGRATE_OPTIONS[] = {
@@ -221,7 +221,7 @@ String editor_badge_legend() {
 String option_display(const CommandOption &p_option) {
 	String display = p_option.flag;
 	if (p_option.value_name) {
-		display += " <" + String(p_option.value_name) + ">";
+		display += (p_option.equals_form ? "=<" : " <") + String(p_option.value_name) + ">";
 	}
 	return display;
 }
@@ -389,6 +389,7 @@ String FoundryCLIHelp::get_help_json(const PackedStringArray &p_scope) {
 			Dictionary option_json;
 			option_json["flag"] = option.flag;
 			option_json["value"] = option.value_name ? Variant(String(option.value_name)) : Variant();
+			option_json["style"] = option.value_name ? Variant(String(option.equals_form ? "equals" : "space")) : Variant();
 			option_json["description"] = option.description;
 			option_json["required"] = option.required;
 			options.push_back(option_json);

@@ -158,4 +158,54 @@ TEST_CASE("[FoundryCLIHelp] JSON help contains no ANSI escapes") {
 	CHECK_FALSE(json_text.contains(String::chr(0x1b)));
 }
 
+TEST_CASE("[FoundryCLIHelp] JSON help keeps the version envelope for unknown scopes") {
+	PackedStringArray scope;
+	scope.push_back("not-a-noun");
+	JSON json;
+	REQUIRE_EQ(json.parse(FoundryCLIHelp::get_help_json(scope)), OK);
+	const Dictionary root = json.get_data();
+	CHECK_EQ(int(root["foundry_cli_help_version"]), 1);
+	CHECK_EQ(Array(root["commands"]).size(), 0);
+}
+
+TEST_CASE("[FoundryCLIHelp] JSON help noun scope lists only that noun") {
+	PackedStringArray scope;
+	scope.push_back("script");
+	JSON json;
+	REQUIRE_EQ(json.parse(FoundryCLIHelp::get_help_json(scope)), OK);
+	const Array commands = Dictionary(json.get_data())["commands"];
+	CHECK(commands.size() > 1);
+	for (int i = 0; i < commands.size(); i++) {
+		const Array path = Dictionary(commands[i])["path"];
+		CHECK_EQ(String(path[0]), "script");
+	}
+}
+
+TEST_CASE("[FoundryCLIHelp] JSON help distinguishes option value styles") {
+	PackedStringArray scope;
+	scope.push_back("script");
+	scope.push_back("lint");
+	JSON json;
+	REQUIRE_EQ(json.parse(FoundryCLIHelp::get_help_json(scope)), OK);
+	const Array commands = Dictionary(json.get_data())["commands"];
+	REQUIRE_EQ(commands.size(), 1);
+	const Array options = Dictionary(commands[0])["options"];
+	bool saw_equals = false;
+	bool saw_space = false;
+	for (int i = 0; i < options.size(); i++) {
+		const Dictionary option = options[i];
+		const Variant value = option["value"];
+		const Variant style = option["style"];
+		if (value.get_type() == Variant::NIL) {
+			CHECK(style.get_type() == Variant::NIL);
+		} else if (String(style) == "equals") {
+			saw_equals = true;
+		} else if (String(style) == "space") {
+			saw_space = true;
+		}
+	}
+	CHECK(saw_equals);
+	CHECK(saw_space);
+}
+
 } // namespace TestFoundryCLIHelp

@@ -444,4 +444,11 @@ TEST_CASE("[FoundryCLIParser] No-header global option is reported for help") {
 	CHECK(result.no_header);
 }
 
+TEST_CASE("[FoundryCLIParser] No-header after the verb is reported for help") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({ "foundry", "script", "format", "--no-header", "--help" }));
+	REQUIRE_MESSAGE(result.ok, result.error);
+	CHECK(result.help_requested);
+	CHECK(result.no_header);
+}
+
 } // namespace TestFoundryCLIParser
