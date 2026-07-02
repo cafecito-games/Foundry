@@ -918,7 +918,6 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
-        if: needs.resolve.outputs.create_tag == 'true'
         uses: actions/checkout@v6
 
       - name: Create release tag
@@ -952,3 +951,60 @@ jobs:
           prerelease: ${{ needs.resolve.outputs.prerelease }}
           generate_release_notes: true
           files: dist/*
+
+      - name: Update Homebrew tap
+        if: needs.resolve.outputs.draft == 'false'
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          RELEASE_VERSION: ${{ needs.resolve.outputs.release_version }}
+          RELEASE_STATUS: ${{ needs.resolve.outputs.status }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${HOMEBREW_TAP_TOKEN:-}" ]; then
+            echo "::error::HOMEBREW_TAP_TOKEN is not configured."
+            exit 1
+          fi
+
+          asset="dist/Foundry_v${RELEASE_VERSION}_macos.universal.zip"
+          if [ ! -f "$asset" ]; then
+            echo "::error::Missing macOS release asset: $asset"
+            exit 1
+          fi
+
+          tap_dir="$RUNNER_TEMP/homebrew-tap"
+          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/cafecito-games/homebrew-tap.git" "$tap_dir"
+
+          cask_path="$(python3 .github/scripts/generate_homebrew_cask.py \
+            --status "$RELEASE_STATUS" \
+            --version "$RELEASE_VERSION" \
+            --asset "$asset" \
+            --output-dir "$tap_dir/Casks")"
+          cask_token="$(basename "$cask_path" .rb)"
+
+          ruby -c "$cask_path"
+          if command -v brew >/dev/null 2>&1; then
+            cleanup_homebrew_tap() {
+              brew untap cafecito-games/tap >/dev/null 2>&1 || true
+            }
+            trap cleanup_homebrew_tap EXIT
+            brew tap cafecito-games/tap "$tap_dir"
+            brew_tap_dir="$(brew --repository cafecito-games/tap)"
+            mkdir -p "$brew_tap_dir/Casks"
+            cp "$cask_path" "$brew_tap_dir/Casks/${cask_token}.rb"
+            brew audit --cask --tap cafecito-games/tap "$cask_token"
+            cleanup_homebrew_tap
+            trap - EXIT
+          fi
+
+          cd "$tap_dir"
+          if [ -z "$(git status --porcelain -- "$cask_path")" ]; then
+            echo "Homebrew cask $cask_token is already up to date for v${RELEASE_VERSION}."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$cask_path"
+          git commit -m "Brew cask update for ${cask_token} version v${RELEASE_VERSION}"
+          git push origin HEAD:main
