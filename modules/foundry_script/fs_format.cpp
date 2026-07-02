@@ -39,6 +39,11 @@
 #include "core/os/os.h"
 #include "core/templates/local_vector.h"
 
+#ifdef UNIX_ENABLED
+#include <fcntl.h>
+#include <unistd.h>
+#endif
+
 #include <stdio.h>
 
 static String binary_operator_text(FSParser::BinaryOpNode::OpType p_operation) {
@@ -2534,13 +2539,72 @@ static bool write_file_atomic(const String &p_path, const String &p_content, Str
 	return true;
 }
 
-void FSFormatterCLI::print_raw(const String &p_text) {
-	const CharString utf8 = p_text.utf8();
-	if (utf8.length() > 0) {
-		fwrite(utf8.get_data(), 1, utf8.length(), stdout);
+static bool is_stream_writable(FILE *p_stream) {
+	if (p_stream == nullptr) {
+		return false;
 	}
-	fflush(stdout);
+#ifdef UNIX_ENABLED
+	const int fd = fileno(p_stream);
+	if (fd < 0) {
+		return false;
+	}
+	const int flags = fcntl(fd, F_GETFL);
+	if (flags < 0) {
+		return false;
+	}
+	const int access_mode = flags & O_ACCMODE;
+	return access_mode == O_WRONLY || access_mode == O_RDWR;
+#else
+	return true;
+#endif
 }
+
+static const bool stdout_writable_at_process_start = is_stream_writable(stdout);
+
+static bool write_raw_to_stream(FILE *p_stream, const String &p_text, const char *p_error_target) {
+	if (p_stream == nullptr) {
+		if (p_error_target != nullptr) {
+			fprintf(stderr, "foundry_script-format: could not write output to %s\n", p_error_target);
+		}
+		return false;
+	}
+	if ((p_stream == stdout && !stdout_writable_at_process_start) || !is_stream_writable(p_stream)) {
+		if (p_error_target != nullptr) {
+			fprintf(stderr, "foundry_script-format: could not write output to %s\n", p_error_target);
+		}
+		return false;
+	}
+
+	const CharString utf8 = p_text.utf8();
+	clearerr(p_stream);
+	const size_t length = utf8.length();
+	if (length > 0) {
+		const size_t written = fwrite(utf8.get_data(), 1, length, p_stream);
+		if (written != length || ferror(p_stream)) {
+			if (p_error_target != nullptr) {
+				fprintf(stderr, "foundry_script-format: could not write output to %s\n", p_error_target);
+			}
+			return false;
+		}
+	}
+	if (fflush(p_stream) != 0 || ferror(p_stream)) {
+		if (p_error_target != nullptr) {
+			fprintf(stderr, "foundry_script-format: could not flush output to %s\n", p_error_target);
+		}
+		return false;
+	}
+	return true;
+}
+
+bool FSFormatterCLI::print_raw(const String &p_text) {
+	return write_raw_to_stream(stdout, p_text, "stdout");
+}
+
+#ifdef TESTS_ENABLED
+bool FSFormatterCLI::test_write_raw(FILE *p_stream, const String &p_text) {
+	return write_raw_to_stream(p_stream, p_text, nullptr);
+}
+#endif
 
 FSFormatterCLI::Options FSFormatterCLI::parse_options(const List<String> &p_cmdline_args) {
 	Options options;
@@ -2745,16 +2809,25 @@ void FSFormatterCLI::run_from_cmdline() {
 		switch (options.mode) {
 			case MODE_CHECK:
 				if (differs) {
-					fprintf(stdout, "<stdin>\n");
+					if (!print_raw("<stdin>\n")) {
+						OS::get_singleton()->set_exit_code(EXIT_FAILURE);
+						return;
+					}
 				}
 				break;
 			case MODE_DIFF:
 				if (differs) {
-					print_raw(make_unified_diff("<stdin>", source, result.formatted));
+					if (!print_raw(make_unified_diff("<stdin>", source, result.formatted))) {
+						OS::get_singleton()->set_exit_code(EXIT_FAILURE);
+						return;
+					}
 				}
 				break;
 			default:
-				print_raw(result.formatted);
+				if (!print_raw(result.formatted)) {
+					OS::get_singleton()->set_exit_code(EXIT_FAILURE);
+					return;
+				}
 				break;
 		}
 		const bool failure = (options.mode == MODE_CHECK || options.mode == MODE_DIFF) && differs;
@@ -2783,9 +2856,13 @@ void FSFormatterCLI::run_from_cmdline() {
 		if (differs) {
 			needs_change = true;
 		}
+		bool stop_processing = false;
 		switch (options.mode) {
 			case MODE_STDOUT:
-				print_raw(result.formatted);
+				if (!print_raw(result.formatted)) {
+					had_error = true;
+					stop_processing = true;
+				}
 				break;
 			case MODE_WRITE:
 				if (differs) {
@@ -2798,17 +2875,25 @@ void FSFormatterCLI::run_from_cmdline() {
 				break;
 			case MODE_CHECK:
 				if (differs) {
-					fprintf(stdout, "%s\n", file.utf8().get_data());
+					if (!print_raw(file + "\n")) {
+						had_error = true;
+						stop_processing = true;
+					}
 				}
 				break;
 			case MODE_DIFF:
 				if (differs) {
-					print_raw(make_unified_diff(file, source, result.formatted));
+					if (!print_raw(make_unified_diff(file, source, result.formatted))) {
+						had_error = true;
+						stop_processing = true;
+					}
 				}
 				break;
 		}
+		if (stop_processing) {
+			break;
+		}
 	}
-	fflush(stdout);
 
 	const bool failure = had_error || ((options.mode == MODE_CHECK || options.mode == MODE_DIFF) && needs_change);
 	OS::get_singleton()->set_exit_code(failure ? EXIT_FAILURE : EXIT_SUCCESS);

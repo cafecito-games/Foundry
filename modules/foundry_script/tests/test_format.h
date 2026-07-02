@@ -41,6 +41,8 @@
 
 #include "tests/test_macros.h"
 
+#include <stdio.h>
+
 namespace FSTests {
 
 static String format_or_fail(const String &p_source) {
@@ -974,6 +976,23 @@ TEST_SUITE("[Modules][FoundryScript][Format]") {
 		CHECK(options.read_stdin);
 		REQUIRE_EQ(options.paths.size(), 1);
 		CHECK_EQ(options.paths[0], "file.fs");
+	}
+
+	TEST_CASE("[Format] CLI raw output detects write failures") {
+		Ref<DirAccess> da = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+		REQUIRE(da.is_valid());
+		const String path = da->get_current_dir().path_join("gdfmt_read_only_output.tmp");
+		const CharString path_utf8 = path.utf8();
+
+		FILE *writable = fopen(path_utf8.get_data(), "wb");
+		REQUIRE(writable != nullptr);
+		fclose(writable);
+
+		FILE *read_only = fopen(path_utf8.get_data(), "rb");
+		REQUIRE(read_only != nullptr);
+		CHECK_FALSE(FSFormatterCLI::test_write_raw(read_only, "formatted\n"));
+		fclose(read_only);
+		da->remove(path);
 	}
 
 	TEST_CASE("[Format] Directory collection skips symlinked subdirectories") {
