@@ -739,6 +739,64 @@ TEST_CASE("[FoundryScript][BytecodeScript] Duplicate function names in corrupt b
 	CHECK(target->get_member_functions().has(SNAME("alpha")));
 }
 
+TEST_CASE("[FoundryScript][BytecodeHardening] Duplicate static-variable names in corrupt buffers fail cleanly") {
+	// Two builtin-typed static variables of equal-length names so the string-table entry can be byte-patched to
+	// collide. Both are `int`, so `_static_default_init` writes `static_variables.write[index]` for each.
+	const Ref<FoundryScript> original = compile_bytecode_test_source(
+			"static var alpha: int = 11\n"
+			"static var bravo: int = 22\n");
+
+	FSBytecodeExporter exporter;
+	Vector<uint8_t> buffer;
+	REQUIRE(exporter.serialize(original, buffer) == OK);
+
+	// The pristine buffer round-trips: two distinct static variables, each default-initialized to its value, so
+	// the added bounds are not over-tight and the dense static table is sized to hold both slots.
+	{
+		BytecodeTestResolver resolver;
+		Ref<FoundryScript> accepted;
+		accepted.instantiate();
+		accepted->set_path_cache(original->get_script_path());
+		FSBytecodeLoader loader;
+		loader.set_resolver(&resolver);
+		REQUIRE(loader.load_full(buffer, accepted) == OK);
+		CHECK(accepted->is_valid());
+		CHECK((int64_t)TestFSBytecodeScriptAccessor::get_static_variable(accepted, SNAME("alpha")) == 11);
+		CHECK((int64_t)TestFSBytecodeScriptAccessor::get_static_variable(accepted, SNAME("bravo")) == 22);
+		accepted->clear();
+	}
+
+	// Rename the second static to the first one's name in the string table (same length), so the loader
+	// reads two static-variable entries both named "alpha". The second entry keeps its own index of 1,
+	// which is `< static_variable_count` (2) but past the deduplicated table (size 1): without the
+	// duplicate-name rejection this is the out-of-bounds `static_variables.write[1]` in
+	// `_static_default_init`.
+	const CharString marker = String("bravo").utf8();
+	const CharString replacement = String("alpha").utf8();
+	bool patched = false;
+	for (int i = 0; i + marker.length() <= buffer.size(); i++) {
+		if (memcmp(&buffer[i], marker.get_data(), marker.length()) == 0) {
+			memcpy(&buffer.write[i], replacement.get_data(), replacement.length());
+			patched = true;
+			break;
+		}
+	}
+	REQUIRE(patched);
+
+	Ref<FoundryScript> target;
+	target.instantiate();
+	target->set_path_cache(original->get_script_path());
+	BytecodeTestResolver resolver;
+	FSBytecodeLoader loader;
+	loader.set_resolver(&resolver);
+	ERR_PRINT_OFF;
+	CHECK(loader.load_full(buffer, target) == ERR_INVALID_DATA);
+	ERR_PRINT_ON;
+	CHECK(!target->is_valid());
+
+	original->clear();
+}
+
 TEST_CASE("[FoundryScript][BytecodeScript] Exporter reuse does not leak strings across scripts") {
 	const Ref<FoundryScript> first = compile_bytecode_test_source(
 			"var first_script_unique_marker: int = 1\n");

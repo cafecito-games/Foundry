@@ -1583,9 +1583,24 @@ Error FSBytecodeLoader::_read_class_body(StreamPeerBuffer *p_stream, FoundryScri
 		ERR_FAIL_COND_V_MSG(static_variable_info.index < 0 || static_variable_info.index >= (int)static_variable_count,
 				ERR_INVALID_DATA,
 				vformat("Malformed static variable index for '%s' in compiled script '%s'.", static_variable_name, script_path));
+		// Duplicate static variable names are corrupt input: a validly compiled script never declares
+		// two static variables with the same name. The dense `static_variables` table below is sized from the
+		// deduplicated map, so a duplicate would collapse the map while leaving a surviving entry whose
+		// `index` (< static_variable_count) points past the shrunken table, producing an out-of-bounds
+		// write in `_static_default_init`. Rejecting duplicates keeps map size == static_variable_count.
+		ERR_FAIL_COND_V_MSG(p_script->static_variables_indices.has(static_variable_name), ERR_INVALID_DATA,
+				vformat("Duplicate static variable '%s' in compiled script '%s'.", static_variable_name, script_path));
 		p_script->static_variables_indices.insert(static_variable_name, static_variable_info);
 	}
 	p_script->static_variables.resize(p_script->static_variables_indices.size());
+	// Defense in depth: `_static_default_init` and the static getters/setters index `static_variables`
+	// directly by the stored `index` with no bounds check in the release VM. With duplicates rejected
+	// the map size equals static_variable_count and every index is already in range, but assert the
+	// invariant explicitly so a future serialization change cannot silently reintroduce an OOB write.
+	for (const KeyValue<StringName, FoundryScript::MemberInfo> &E : p_script->static_variables_indices) {
+		ERR_FAIL_COND_V_MSG(E.value.index < 0 || E.value.index >= p_script->static_variables.size(), ERR_INVALID_DATA,
+				vformat("Static variable index out of range for '%s' in compiled script '%s'.", E.key, script_path));
+	}
 
 	const uint32_t constant_count = p_stream->get_u32();
 	ERR_FAIL_COND_V_MSG((int64_t)constant_count * 5 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
