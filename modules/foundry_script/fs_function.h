@@ -335,6 +335,11 @@ public:
 	// The flag sits well above Variant::VARIANT_MAX, so the real type is recovered by masking it off.
 	static constexpr int NULLABLE_TYPE_OPERAND_FLAG = 1 << 24;
 
+	// Each opcode's operand layout lives in THREE places that must stay in sync: the VM's dispatch in
+	// `fs_vm.cpp` (authoritative), the `disassemble()` walk in `fs_disassembler.cpp`, and the link-time
+	// bounds checker in `FSBytecodeVerifier::verify_function`. Adding, removing, or changing the
+	// operands of any opcode requires updating all three and bumping `FSBytecodeFormat::FORMAT_VERSION`
+	// (the verifier has no default fall-through: an opcode with no matching case is rejected as corrupt).
 	enum Opcode {
 		OPCODE_OPERATOR,
 		OPCODE_OPERATOR_VALIDATED,

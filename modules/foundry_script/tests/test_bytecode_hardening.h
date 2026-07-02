@@ -155,6 +155,53 @@ TEST_CASE("[FoundryScript][BytecodeHardening] Verifier rejects overflowing varia
 	bytecode_destroy_restored_function(script, function);
 }
 
+TEST_CASE("[FoundryScript][BytecodeHardening] Verifier checks the typed-dictionary value type-info operand") {
+	// A typed dictionary opcode carries two packed type-info addresses (key at ip+3, value at ip+4).
+	// The value operand is the easy one to miss, and the release VM dereferences it, so a crafted
+	// out-of-range ip+4 must be rejected. `print(...)` guarantees a non-empty global-name table so the
+	// accept case can name a valid global index.
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"static func run() -> void:\n"
+			"\tprint(1)\n");
+	FSFunction *function = bytecode_round_trip_member_function(script, SNAME("run"));
+
+	const int stack_size = function->get_max_stack_size();
+	REQUIRE(stack_size > FSFunction::ADDR_STACK_NIL);
+	const int global_names_count = function->get_global_names_count();
+	REQUIRE(global_names_count > 0);
+
+	const int out_of_range_stack = FSFunction::ADDR_TYPE_STACK << FSFunction::ADDR_BITS | stack_size;
+
+	// Layout: [op, dst, value, key_type_info, value_type_info, key_builtin, key_global, value_builtin,
+	// value_global]. Only the value_type_info address at ip+4 is out of range.
+	Vector<int> bad_value_type_info;
+	bad_value_type_info.push_back(FSFunction::OPCODE_TYPE_TEST_DICTIONARY);
+	bad_value_type_info.push_back(FSFunction::ADDR_SELF);
+	bad_value_type_info.push_back(FSFunction::ADDR_SELF);
+	bad_value_type_info.push_back(FSFunction::ADDR_SELF);
+	bad_value_type_info.push_back(out_of_range_stack);
+	bad_value_type_info.push_back(0);
+	bad_value_type_info.push_back(0);
+	bad_value_type_info.push_back(0);
+	bad_value_type_info.push_back(0);
+	CHECK(bytecode_verify_with_code(script, function, bad_value_type_info) == ERR_INVALID_DATA);
+
+	// The same instruction with every operand in range passes, so the check is not over-tight.
+	Vector<int> valid_typed_dictionary;
+	valid_typed_dictionary.push_back(FSFunction::OPCODE_TYPE_TEST_DICTIONARY);
+	valid_typed_dictionary.push_back(FSFunction::ADDR_SELF);
+	valid_typed_dictionary.push_back(FSFunction::ADDR_SELF);
+	valid_typed_dictionary.push_back(FSFunction::ADDR_SELF);
+	valid_typed_dictionary.push_back(FSFunction::ADDR_SELF);
+	valid_typed_dictionary.push_back(0);
+	valid_typed_dictionary.push_back(0);
+	valid_typed_dictionary.push_back(0);
+	valid_typed_dictionary.push_back(0);
+	CHECK(bytecode_verify_with_code(script, function, valid_typed_dictionary) == OK);
+
+	bytecode_destroy_restored_function(script, function);
+}
+
 TEST_CASE("[FoundryScript][BytecodeHardening] Verifier rejects out-of-range table indices") {
 	const Ref<FoundryScript> script = compile_bytecode_test_source(
 			"static func measure(text: String) -> int:\n"

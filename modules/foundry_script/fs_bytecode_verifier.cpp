@@ -153,9 +153,12 @@ Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_me
 			case FSFunction::OPCODE_ASSIGN_TYPED_DICTIONARY:
 			case FSFunction::OPCODE_ASSIGN_TYPED_DICTIONARY_CONVERT: {
 				VERIFY_FAIL_COND(ip + 9 > code_size, "instruction overruns code");
+				// A typed dictionary carries two type-info addresses: the key at ip+3 and the value at
+				// ip+4 (the VM reads both through GET_VARIANT_PTR and dereferences them).
 				CHECK_ADDR(ip + 1);
 				CHECK_ADDR(ip + 2);
 				CHECK_ADDR(ip + 3);
+				CHECK_ADDR(ip + 4);
 				CHECK_TABLE(ip + 6, global_names_count, "global name");
 				CHECK_TABLE(ip + 8, global_names_count, "global name");
 				ip += 9;
@@ -706,6 +709,7 @@ Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_me
 #undef CHECK_ADDR
 #undef CHECK_TABLE
 #undef COLLECT_JUMP
+#undef VERIFY_FAIL_COND
 
 	return OK;
 }
