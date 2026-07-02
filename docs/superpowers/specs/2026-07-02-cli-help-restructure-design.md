@@ -24,7 +24,7 @@ command-first CLI introduced in #814. There is no per-command help:
   achieved via a declarative registry plus cross-check tests, not via
   docopt.cpp — see Alternatives).
 
-## Non-Goals (decomposed follow-up project)
+## Non-Goals (decomposed follow-up project, tracked in #830)
 
 - Hard rejection of legacy invocations (`foundry --editor --path .`,
   bare scene paths, `--doctool`, ...). Internal callers (editor self-relaunch,
