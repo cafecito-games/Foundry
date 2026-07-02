@@ -3773,6 +3773,67 @@ TEST_CASE("[Modules][FoundryScript] Filesystem scan resolves global classes with
 	CHECK_EQ(compiler.compile(&parser, script.ptr(), false), OK);
 }
 
+TEST_CASE("[Modules][FoundryScript] Filesystem scan resolves trait widening without a cache file") {
+	ScopedFSNativeGlobals native_globals;
+	GlobalScriptClassCacheBackup backup;
+	ScriptServer::global_classes_clear();
+
+	TemporaryProjectTree tree("fs_global_class_scan_trait_widening");
+	tree.write_file("b_trait.fs", R"(trait_name BTrait
+
+abstract func value() -> int
+)");
+	tree.write_file("b_impl.fs", R"(class_name BImpl
+extends RefCounted
+uses BTrait
+
+func _init() -> void:
+	pass
+
+func value() -> int:
+	return 42
+)");
+	tree.write_file("consumer.fs", R"(extends RefCounted
+
+static func that_trait(t: BTrait) -> int:
+	return t.value()
+
+static func current() -> BImpl:
+	return BImpl.new()
+
+func run() -> int:
+	var direct: BTrait = BImpl.new()
+	var assigned: BTrait = current()
+	var casted := current() as BTrait
+	return that_trait(current())
+)");
+
+	ScriptServer::scan_global_classes(tree.root);
+	CHECK(ScriptServer::is_global_class("BTrait"));
+	CHECK(ScriptServer::is_global_class("BImpl"));
+
+	// The consumer references both globals purely by name; with no cache file anywhere, only the
+	// scan makes them resolvable. Trait widening must not depend on another script having already
+	// raised the conformer to `INTERFACE_SOLVED`.
+	const String consumer_path = tree.root.path_join("consumer.fs");
+	Ref<FileAccess> consumer_file = FileAccess::open(consumer_path, FileAccess::READ);
+	CHECK(consumer_file.is_valid());
+	if (consumer_file.is_null()) {
+		return;
+	}
+
+	FSParser parser;
+	CHECK_EQ(parser.parse(consumer_file->get_as_utf8_string(), consumer_path, false), OK);
+	FSAnalyzer analyzer(&parser);
+	CHECK_EQ(analyzer.analyze(), OK);
+
+	Ref<FoundryScript> script;
+	script.instantiate();
+	script->set_path(consumer_path);
+	FSCompiler compiler;
+	CHECK_EQ(compiler.compile(&parser, script.ptr(), false), OK);
+}
+
 TEST_CASE("[Modules][FoundryScript] Global class cache version tracks mutations") {
 	GlobalScriptClassCacheBackup backup;
 	ScriptServer::global_classes_clear();
