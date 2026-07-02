@@ -220,13 +220,38 @@ def test_release_workflow_wires_homebrew_tap_update() -> None:
         "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/cafecito-games/homebrew-tap.git",
         "python3 .github/scripts/generate_homebrew_cask.py",
         'ruby -c "$cask_path"',
-        'brew audit --cask "$cask_token"',
+        'brew tap cafecito-games/tap "$tap_dir"',
+        'brew_tap_dir="$(brew --repository cafecito-games/tap)"',
+        'mkdir -p "$brew_tap_dir/Casks"',
+        'cp "$cask_path" "$brew_tap_dir/Casks/${cask_token}.rb"',
+        'brew audit --cask --tap cafecito-games/tap "$cask_token"',
+        "brew untap cafecito-games/tap",
+        'git status --porcelain -- "$cask_path"',
         "Brew cask update for ${cask_token} version v${RELEASE_VERSION}",
         "git push origin HEAD:main",
     ]
     missing = [snippet for snippet in required_snippets if snippet not in workflow]
     if missing:
         fail(f"release workflow is missing Homebrew tap wiring: {missing}")
+
+    forbidden_snippets = [
+        '(cd "$tap_dir" && brew audit --cask "$cask_token")',
+        'brew audit --cask "$cask_token"',
+        'git diff --quiet -- "$cask_path"',
+    ]
+    present = [snippet for snippet in forbidden_snippets if snippet in workflow]
+    if present:
+        fail(f"release workflow still contains broken Homebrew tap wiring: {present}")
+
+    audit_sequence = [
+        'brew tap cafecito-games/tap "$tap_dir"',
+        'brew_tap_dir="$(brew --repository cafecito-games/tap)"',
+        'cp "$cask_path" "$brew_tap_dir/Casks/${cask_token}.rb"',
+        'brew audit --cask --tap cafecito-games/tap "$cask_token"',
+    ]
+    positions = [workflow.index(snippet) for snippet in audit_sequence]
+    if positions != sorted(positions):
+        fail("release workflow audits the cask before copying generated content into the Homebrew tap checkout")
 
 
 def main() -> None:
