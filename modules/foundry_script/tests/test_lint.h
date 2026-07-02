@@ -414,10 +414,10 @@ TEST_CASE("[Modules][FoundryScript][Lint] JSON serialization returns diagnostics
 	const Variant parsed = JSON::parse_string(report);
 
 	REQUIRE_EQ(parsed.get_type(), Variant::DICTIONARY);
-	const Dictionary root = parsed;
-	CHECK_EQ(int(root["version"]), 1);
-	REQUIRE_EQ(root["diagnostics"].get_type(), Variant::ARRAY);
-	const Array parsed_diagnostics = root["diagnostics"];
+	const Dictionary report_root = parsed;
+	CHECK_EQ(int(report_root["version"]), 1);
+	REQUIRE_EQ(report_root["diagnostics"].get_type(), Variant::ARRAY);
+	const Array parsed_diagnostics = report_root["diagnostics"];
 	REQUIRE_EQ(parsed_diagnostics.size(), 1);
 	REQUIRE_EQ(parsed_diagnostics[0].get_type(), Variant::DICTIONARY);
 	const Dictionary parsed_diagnostic = parsed_diagnostics[0];
@@ -465,11 +465,11 @@ TEST_CASE("[Modules][FoundryScript][Lint] SARIF serialization returns run with r
 	const Variant parsed = JSON::parse_string(report);
 
 	REQUIRE_EQ(parsed.get_type(), Variant::DICTIONARY);
-	const Dictionary root = parsed;
-	CHECK_EQ(String(root["version"]), "2.1.0");
-	CHECK_EQ(String(root["$schema"]), "https://json.schemastore.org/sarif-2.1.0.json");
-	REQUIRE_EQ(root["runs"].get_type(), Variant::ARRAY);
-	const Array runs = root["runs"];
+	const Dictionary report_root = parsed;
+	CHECK_EQ(String(report_root["version"]), "2.1.0");
+	CHECK_EQ(String(report_root["$schema"]), "https://json.schemastore.org/sarif-2.1.0.json");
+	REQUIRE_EQ(report_root["runs"].get_type(), Variant::ARRAY);
+	const Array runs = report_root["runs"];
 	REQUIRE_EQ(runs.size(), 1);
 	REQUIRE_EQ(runs[0].get_type(), Variant::DICTIONARY);
 	const Dictionary run = runs[0];

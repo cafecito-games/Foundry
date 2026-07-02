@@ -37,18 +37,22 @@
 #include "core/io/json.h"
 #include "core/os/os.h"
 #include "core/variant/array.h"
+
+#ifndef FOUNDRY_SCRIPT_NO_FRONTEND
 #include "fs_analyzer.h"
 #include "fs_parser.h"
 
 #ifdef DEBUG_ENABLED
 #include "fs_warning.h"
 #endif
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND
 
 #include <stdio.h>
 #include <stdlib.h>
 
 namespace {
 
+#ifndef FOUNDRY_SCRIPT_NO_FRONTEND
 FSLintCLI::Range make_range(const Vector<String> &p_lines, int p_line, int p_column) {
 	FSLintCLI::Range range;
 	const int line_count = MAX(1, p_lines.size());
@@ -170,6 +174,7 @@ void add_parser_errors(
 				error.message);
 	}
 }
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND
 
 } // namespace
 
@@ -273,9 +278,21 @@ Vector<String> FSLintCLI::collect_files(const Vector<String> &p_paths, bool &r_h
 }
 
 FSLintCLI::Result FSLintCLI::lint_paths(const Vector<String> &p_paths, const Options &p_options) {
+	Result result;
+
+#ifdef FOUNDRY_SCRIPT_NO_FRONTEND
+	(void)p_paths;
 	(void)p_options;
 
-	Result result;
+	result.had_command_error = true;
+	result.command_error = "Foundry Script lint requires the Foundry Script front-end (foundry_script_frontend=no).";
+	if (CoreGlobals::print_error_enabled) {
+		fprintf(stderr, "foundry_script-lint: %s\n", result.command_error.utf8().get_data());
+	}
+	return result;
+#else
+	(void)p_options;
+
 	bool had_collection_error = false;
 	const Vector<String> files = collect_files(p_paths, had_collection_error);
 	if (had_collection_error) {
@@ -327,6 +344,7 @@ FSLintCLI::Result FSLintCLI::lint_paths(const Vector<String> &p_paths, const Opt
 	}
 
 	return result;
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND
 }
 
 String FSLintCLI::severity_to_string(Severity p_severity) {
