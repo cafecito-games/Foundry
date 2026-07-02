@@ -21,10 +21,10 @@ def generate_bundle(target, source, env):
         # Lipo editor executable.
         target_bin = lipo(bin_dir + "/" + prefix, env.extra_suffix + env.module_version_string)
 
-        # Assemble .app bundle and update version info.
-        app_dir = env.Dir(
-            "#bin/" + (prefix + env.extra_suffix + env.module_version_string).replace(".", "_") + ".app"
-        ).abspath
+        # Assemble .app bundle and update version info. The bundle is always
+        # named after the product (matching CFBundleName/CFBundleExecutable
+        # in editor_info_plist.template), not the internal binary prefix.
+        app_dir = env.Dir("#bin/Foundry.app").abspath
         templ = env.Dir("#misc/dist/macos_tools.app").abspath
         if os.path.exists(app_dir):
             shutil.rmtree(app_dir)

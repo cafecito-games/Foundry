@@ -288,6 +288,31 @@ jobs:
           fi
         continue-on-error: true
 
+      # Import the Developer ID Application certificate into a throwaway
+      # keychain scoped to this job, so `codesign` (invoked by generate_bundle
+      # via bundle_sign_identity below) can find it. The keychain and its
+      # random password never leave the runner.
+      - name: Import signing certificate
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          CERT_PATH="$RUNNER_TEMP/developer_id.p12"
+          echo -n "$MACOS_CERTIFICATE" | base64 --decode -o "$CERT_PATH"
+          security import "$CERT_PATH" -k "$KEYCHAIN_PATH" -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          rm -f "$CERT_PATH"
+
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | sed 's/"//g')
+
       - name: Compilation (x86_64)
         uses: ./.github/actions/foundry-build
         with:
@@ -296,13 +321,49 @@ jobs:
           target: editor
 
       # The arm64 build runs generate_bundle, lipo-ing both archs into the
-      # universal editor .app the release packages.
+      # universal editor .app and codesigning it with the imported Developer
+      # ID identity (hardened runtime + entitlements, per platform_macos_builders.py).
       - name: Compilation (arm64) + bundle
         uses: ./.github/actions/foundry-build
         with:
-          scons-flags: ${{ env.SCONS_FLAGS }} arch=arm64 vulkan=${{ steps.vulkan-sdk.outputs.VULKAN_ENABLED }} generate_bundle=yes
+          scons-flags: >-
+            ${{ env.SCONS_FLAGS }} arch=arm64 vulkan=${{ steps.vulkan-sdk.outputs.VULKAN_ENABLED }}
+            generate_bundle=yes "bundle_sign_identity=${{ secrets.MACOS_CODESIGN_IDENTITY }}"
           platform: macos
           target: editor
+
+      # Notarize the signed .app with Apple's notary service and staple the
+      # ticket, so Gatekeeper accepts it offline on end-user machines.
+      - name: Notarize and staple editor .app
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          APP_DIR="$(find bin -maxdepth 1 -name '*.app' -print -quit)"
+          if [ -z "$APP_DIR" ]; then
+            echo "::error::No .app bundle found under bin/ to notarize."
+            exit 1
+          fi
+
+          API_KEY_PATH="$RUNNER_TEMP/apple_api_key.p8"
+          echo -n "$APPLE_API_KEY" | base64 --decode -o "$API_KEY_PATH"
+
+          NOTARIZE_ZIP="$RUNNER_TEMP/notarize.zip"
+          ditto -c -k --keepParent "$APP_DIR" "$NOTARIZE_ZIP"
+
+          xcrun notarytool submit "$NOTARIZE_ZIP" \
+            --key "$API_KEY_PATH" \
+            --key-id "$APPLE_API_KEY_ID" \
+            --issuer "$APPLE_API_ISSUER" \
+            --wait
+
+          xcrun stapler staple "$APP_DIR"
+          rm -f "$API_KEY_PATH" "$NOTARIZE_ZIP"
+
+      - name: Remove signing keychain
+        if: always()
+        run: security delete-keychain "$KEYCHAIN_PATH" || true
 
       - name: Save Foundry build cache
         uses: ./.github/actions/foundry-cache-save
