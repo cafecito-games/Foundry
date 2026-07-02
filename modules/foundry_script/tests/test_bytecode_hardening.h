@@ -124,6 +124,37 @@ TEST_CASE("[FoundryScript][BytecodeHardening] Verifier rejects malformed jumps a
 	bytecode_destroy_restored_function(script, function);
 }
 
+TEST_CASE("[FoundryScript][BytecodeHardening] Verifier rejects overflowing variable-argument counts") {
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"static func measure(text: String) -> int:\n"
+			"\treturn text.length()\n");
+	FSFunction *function = bytecode_round_trip_member_function(script, SNAME("measure"));
+
+	// The instruction-argument count of a variable-argument opcode is a raw, attacker-controlled code
+	// word. A value near INT_MAX must be rejected outright: it must never overflow the signed
+	// `ip + length` overrun guard into a negative (which would slip past the check straight into a
+	// multi-billion-iteration argument loop and negative-offset reads). A plain byte flip cannot
+	// synthesize such a value, so this uses explicit large counts across several var-arg opcodes.
+	static const int large_counts[] = { 0x7ffffff0, 0x7fffffff, 0x40000000, 1000 };
+	static const int vararg_opcodes[] = {
+		FSFunction::OPCODE_CALL,
+		FSFunction::OPCODE_CONSTRUCT,
+		FSFunction::OPCODE_CONSTRUCT_TYPED_DICTIONARY,
+		FSFunction::OPCODE_CALL_BUILTIN_STATIC,
+		FSFunction::OPCODE_CREATE_LAMBDA,
+	};
+	for (int vararg_opcode : vararg_opcodes) {
+		for (int large_count : large_counts) {
+			Vector<int> overflowing;
+			overflowing.push_back(vararg_opcode);
+			overflowing.push_back(large_count);
+			CHECK(bytecode_verify_with_code(script, function, overflowing) == ERR_INVALID_DATA);
+		}
+	}
+
+	bytecode_destroy_restored_function(script, function);
+}
+
 TEST_CASE("[FoundryScript][BytecodeHardening] Verifier rejects out-of-range table indices") {
 	const Ref<FoundryScript> script = compile_bytecode_test_source(
 			"static func measure(text: String) -> int:\n"

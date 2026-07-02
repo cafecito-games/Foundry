@@ -510,6 +510,12 @@ Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_me
 				VERIFY_FAIL_COND(ip + 2 > code_size, "instruction argument count overruns code");
 				const int instruction_arg_count = code_ptr[ip + 1];
 				VERIFY_FAIL_COND(instruction_arg_count < 0, "negative instruction argument count");
+				// The count is an attacker-controlled raw code word. Cap it against the code size before
+				// any `ip + count`/`ip + length` arithmetic below: a value near INT_MAX would otherwise
+				// overflow those signed sums past `code_size` and slip through the overrun guard (and the
+				// argument loop). A function cannot have more argument words than it has code words, so
+				// this is a true invariant and keeps every offset computed here well inside `int`.
+				VERIFY_FAIL_COND(instruction_arg_count > code_size, "instruction argument count exceeds code size");
 
 				// `shift` is where the VM's `ip` points after loading the arguments (`ip += 1` in
 				// LOAD_INSTRUCTION_ARGS, then `ip += instr_arg_count`); trailing fields are read at
