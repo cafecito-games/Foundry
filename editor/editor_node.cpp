@@ -108,6 +108,7 @@
 #include "editor/file_system/dependency_editor.h"
 #include "editor/file_system/editor_paths.h"
 #include "editor/gui/editor_about.h"
+#include "editor/gui/editor_bottom_drawer_strip.h"
 #include "editor/gui/editor_bottom_panel.h"
 #include "editor/gui/editor_file_dialog.h"
 #include "editor/gui/editor_quick_open_dialog.h"
@@ -9326,6 +9327,11 @@ EditorNode::EditorNode() {
 	bottom_panel->set_anchors_and_offsets_preset(Control::PRESET_BOTTOM_WIDE);
 	bottom_panel->set_v_grow_direction(Control::GROW_DIRECTION_BEGIN);
 	center_overlay->connect(SceneStringName(resized), callable_mp(bottom_panel, &EditorBottomPanel::update_drawer_geometry));
+
+	// Full-window status strip that mirrors the bottom drawer's tabs. It is the
+	// last child of main_vbox so it spans below main_hsplit, under the dock columns.
+	bottom_drawer_strip = memnew(EditorBottomDrawerStrip(bottom_panel));
+	main_vbox->add_child(bottom_drawer_strip);
 
 	log = memnew(EditorLog);
 	editor_dock_manager->add_dock(log);

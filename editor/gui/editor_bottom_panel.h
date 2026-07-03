@@ -35,16 +35,11 @@
 class Button;
 class ConfigFile;
 class EditorDock;
-class EditorToaster;
-class HBoxContainer;
 class Tween;
 
 class EditorBottomPanel : public TabContainer {
 	FOUNDRY_CLASS(EditorBottomPanel, TabContainer);
 
-	HBoxContainer *bottom_hbox = nullptr;
-	Control *icon_spacer = nullptr;
-	EditorToaster *editor_toaster = nullptr;
 	Button *pin_button = nullptr;
 	Button *expand_button = nullptr;
 	Popup *layout_popup = nullptr;
@@ -96,6 +91,9 @@ public:
 	void set_switch_locked(bool p_locked);
 	void _theme_changed();
 	bool is_locked() const { return lock_panel_switching; }
+
+	Button *get_pin_button() const { return pin_button; }
+	Button *get_expand_button() const { return expand_button; }
 
 	void update_drawer_geometry();
 

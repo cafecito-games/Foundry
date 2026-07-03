@@ -154,6 +154,8 @@ public:
 
 	TabContainer *get_dock_tab_container(Control *p_dock) const;
 
+	void show_dock_context_popup(EditorDock *p_dock, const Point2 &p_screen_position);
+
 	void set_docks_visible(bool p_show);
 	bool are_docks_visible() const;
 

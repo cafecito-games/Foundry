@@ -303,6 +303,16 @@ void EditorDockManager::_dock_container_popup(int p_tab_idx, TabContainer *p_doc
 	dock_context_popup->popup();
 }
 
+void EditorDockManager::show_dock_context_popup(EditorDock *p_dock, const Point2 &p_screen_position) {
+	if (p_dock == nullptr) {
+		return;
+	}
+
+	dock_context_popup->set_dock(p_dock);
+	dock_context_popup->set_position(p_screen_position);
+	dock_context_popup->popup();
+}
+
 void EditorDockManager::_dock_container_update_visibility(TabContainer *p_dock_container) {
 	if (!docks_visible) {
 		return;

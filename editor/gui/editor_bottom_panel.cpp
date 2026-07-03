@@ -36,8 +36,7 @@
 #include "editor/editor_node.h"
 #include "editor/editor_string_names.h"
 #include "editor/gui/bottom_drawer_geometry.h"
-#include "editor/gui/editor_toaster.h"
-#include "editor/gui/editor_version_button.h"
+#include "editor/gui/editor_bottom_drawer_strip.h"
 #include "editor/scene/editor_scene_tabs.h"
 #include "editor/settings/editor_command_palette.h"
 #include "editor/settings/editor_settings.h"
@@ -45,7 +44,6 @@
 #include "scene/animation/tween.h"
 #include "scene/gui/box_container.h"
 #include "scene/gui/button.h"
-#include "scene/gui/separator.h"
 #include "scene/gui/split_container.h"
 
 void EditorBottomPanel::_notification(int p_what) {
@@ -71,20 +69,8 @@ void EditorBottomPanel::_on_tab_changed(int p_idx) {
 }
 
 void EditorBottomPanel::_theme_changed() {
-	int icon_width = get_theme_constant(SNAME("class_icon_size"), EditorStringName(Editor));
-	int margin = bottom_hbox->get_minimum_size().width;
-	if (get_popup()) {
-		margin -= icon_width;
-	}
-
-	// Add margin to make space for the right side popup button.
-	icon_spacer->set_custom_minimum_size(Vector2(icon_width, 0));
-
-	// Need to get stylebox from EditorNode to update theme correctly.
-	Ref<StyleBox> bottom_tabbar_style = EditorNode::get_singleton()->get_editor_theme()->get_stylebox(SNAME("tabbar_background"), SNAME("BottomPanel"))->duplicate();
-	bottom_tabbar_style->set_content_margin(is_layout_rtl() ? SIDE_LEFT : SIDE_RIGHT, margin + bottom_tabbar_style->get_content_margin(is_layout_rtl() ? SIDE_RIGHT : SIDE_LEFT));
-	add_theme_style_override("tabbar_background", bottom_tabbar_style);
-
+	// The tab bar is hidden in favor of the status strip, so only the panel
+	// stylebox needs swapping between the open and collapsed states.
 	if (get_current_tab() == -1) {
 		// Hide panel when not showing anything.
 		remove_theme_style_override(SceneStringName(panel));
@@ -348,8 +334,7 @@ void EditorBottomPanel::_expand_button_toggled(bool p_pressed) {
 	distraction_free->set_meta("_scene_tabs_owned", !p_pressed);
 	EditorNode::get_singleton()->update_distraction_free_button_theme();
 	if (p_pressed) {
-		distraction_free->reparent(bottom_hbox);
-		bottom_hbox->move_child(distraction_free, -2);
+		EditorNode::get_bottom_drawer_strip()->host_distraction_free_button(distraction_free);
 	} else {
 		distraction_free->get_parent()->remove_child(distraction_free);
 		EditorSceneTabs::get_singleton()->add_extra_button(distraction_free);
@@ -411,6 +396,7 @@ void EditorBottomPanel::_on_button_visibility_changed(Button *p_button, EditorDo
 EditorBottomPanel::EditorBottomPanel() {
 	get_tab_bar()->connect("tab_changed", callable_mp(this, &EditorBottomPanel::_on_tab_changed));
 	set_tabs_position(TabPosition::POSITION_BOTTOM);
+	set_tabs_visible(false);
 	set_deselect_enabled(true);
 	set_process_shortcut_input(true);
 
@@ -424,32 +410,10 @@ EditorBottomPanel::EditorBottomPanel() {
 	grabber->hide();
 	grabber->connect(SceneStringName(gui_input), callable_mp(this, &EditorBottomPanel::_grabber_input));
 
-	bottom_hbox = memnew(HBoxContainer);
-	bottom_hbox->set_mouse_filter(MOUSE_FILTER_IGNORE);
-	bottom_hbox->set_anchors_and_offsets_preset(Control::PRESET_RIGHT_WIDE);
-	get_tab_bar()->add_child(bottom_hbox);
-
-	icon_spacer = memnew(Control);
-	icon_spacer->set_mouse_filter(MOUSE_FILTER_IGNORE);
-	bottom_hbox->add_child(icon_spacer);
-
-	bottom_hbox->add_child(memnew(VSeparator));
-
-	editor_toaster = memnew(EditorToaster);
-	bottom_hbox->add_child(editor_toaster);
-
-	EditorVersionButton *version_btn = memnew(EditorVersionButton(EditorVersionButton::FORMAT_BASIC));
-	// Fade out the version label to be less prominent, but still readable.
-	version_btn->set_self_modulate(Color(1, 1, 1, 0.65));
-	version_btn->set_v_size_flags(Control::SIZE_SHRINK_CENTER);
-	bottom_hbox->add_child(version_btn);
-
-	// Add a dummy control node for horizontal spacing.
-	Control *h_spacer = memnew(Control);
-	bottom_hbox->add_child(h_spacer);
-
+	// The pin and expand buttons are hosted by EditorBottomDrawerStrip, which
+	// reparents them into itself; they are created here without a parent so the
+	// panel keeps owning all of their toggle logic.
 	pin_button = memnew(Button);
-	bottom_hbox->add_child(pin_button);
 	pin_button->hide();
 	pin_button->set_theme_type_variation("BottomPanelButton");
 	pin_button->set_toggle_mode(true);
@@ -458,7 +422,6 @@ EditorBottomPanel::EditorBottomPanel() {
 	pin_button->connect(SceneStringName(toggled), callable_mp(this, &EditorBottomPanel::_pin_button_toggled));
 
 	expand_button = memnew(Button);
-	bottom_hbox->add_child(expand_button);
 	expand_button->hide();
 	expand_button->set_theme_type_variation("BottomPanelButton");
 	expand_button->set_toggle_mode(true);

@@ -71,6 +71,7 @@ class DynamicFontImportSettingsDialog;
 class FoundryBuildTaskBootstrapLoader;
 class EditorAbout;
 class EditorBuildProfileManager;
+class EditorBottomDrawerStrip;
 class EditorBottomPanel;
 class EditorCommandPalette;
 class EditorDockManager;
@@ -429,6 +430,7 @@ private:
 	Callable palette_file_selected_callback;
 
 	EditorBottomPanel *bottom_panel = nullptr;
+	EditorBottomDrawerStrip *bottom_drawer_strip = nullptr;
 
 	Tree *disk_changed_list = nullptr;
 	LocalVector<String> disk_changed_scenes;
@@ -753,6 +755,7 @@ public:
 	static EditorTitleBar *get_title_bar() { return singleton->title_bar; }
 	static VSplitContainer *get_top_split() { return singleton->top_split; }
 	static EditorBottomPanel *get_bottom_panel() { return singleton->bottom_panel; }
+	static EditorBottomDrawerStrip *get_bottom_drawer_strip() { return singleton->bottom_drawer_strip; }
 	static EditorMainScreen *get_editor_main_screen() { return singleton->editor_main_screen; }
 
 	static Button *get_distraction_free_button() { return singleton->distraction_free; }
