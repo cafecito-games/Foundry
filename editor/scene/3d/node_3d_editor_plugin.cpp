@@ -8546,6 +8546,11 @@ void Node3DEditor::update_grid() {
 
 void Node3DEditor::_active_scene_context_changed() {
 	editor_selection = EditorNode::get_singleton()->get_editor_selection();
+	for (uint32_t i = 0; i < VIEWPORTS_COUNT; i++) {
+		if (viewports[i]) {
+			viewports[i]->editor_selection = editor_selection;
+		}
+	}
 	_selection_changed();
 }
 
@@ -8979,6 +8984,9 @@ void Node3DEditor::_notification(int p_what) {
 			SceneTreeDock::get_singleton()->get_tree_editor()->connect("node_changed", callable_mp(this, &Node3DEditor::_refresh_menu_icons));
 			EditorNode::get_singleton()->connect_editor_selection_changed(callable_mp(this, &Node3DEditor::_selection_changed));
 			EditorNode::get_singleton()->connect("active_scene_context_changed", callable_mp(this, &Node3DEditor::_active_scene_context_changed));
+			// A context may have activated before this connection existed
+			// (the initial scene tab is created during EditorNode setup).
+			_active_scene_context_changed();
 
 			_update_preview_environment();
 
