@@ -64,9 +64,25 @@ struct BottomDrawerGeometry {
 	// island overflows symmetrically past both edges.
 	static int island_width(int p_window_width, int p_min_width, int p_min_side_margin) {
 		int nominal = (p_window_width * 64) / 100;
+		return clamp_island_width(nominal, p_window_width, p_min_width, p_min_side_margin);
+	}
+
+	static int clamp_island_width(int p_width, int p_window_width, int p_min_width, int p_min_side_margin) {
 		int max_width = p_window_width - 2 * p_min_side_margin;
-		int width = nominal < max_width ? nominal : max_width;
+		int width = p_width < max_width ? p_width : max_width;
 		return width > p_min_width ? width : p_min_width;
+	}
+
+	static int island_width_with_override(int p_window_width, int p_min_width, int p_min_side_margin, int p_override_width) {
+		if (p_override_width <= 0) {
+			return island_width(p_window_width, p_min_width, p_min_side_margin);
+		}
+		return clamp_island_width(p_override_width, p_window_width, p_min_width, p_min_side_margin);
+	}
+
+	static int island_width_from_edge_drag(int p_start_width, int p_mouse_delta_x, bool p_right_edge, int p_window_width, int p_min_width, int p_min_side_margin) {
+		const int grow_delta = p_right_edge ? p_mouse_delta_x : -p_mouse_delta_x;
+		return clamp_island_width(p_start_width + 2 * grow_delta, p_window_width, p_min_width, p_min_side_margin);
 	}
 
 	static int island_x(int p_window_width, int p_island_width) {

@@ -139,6 +139,15 @@ int EditorBottomPanel::_get_body_height() const {
 	return BottomDrawerGeometry::clamp_body_height(stored, min_body, 0, _get_drawer_area_height());
 }
 
+int EditorBottomPanel::_get_island_width_override() const {
+	EditorDock *dock = Object::cast_to<EditorDock>(get_current_tab_control());
+	if (!dock) {
+		return 0;
+	}
+	HashMap<String, int>::ConstIterator E = dock_widths.find(dock->get_effective_layout_key());
+	return E ? E->value : 0;
+}
+
 void EditorBottomPanel::_set_body_height(int p_height) {
 	EditorDock *dock = Object::cast_to<EditorDock>(get_current_tab_control());
 	if (!dock) {
@@ -146,6 +155,29 @@ void EditorBottomPanel::_set_body_height(int p_height) {
 	}
 	const int min_body = get_current_tab_control()->get_combined_minimum_size().height;
 	dock_offsets[dock->get_effective_layout_key()] = BottomDrawerGeometry::clamp_body_height(p_height, min_body, 0, _get_drawer_area_height());
+	_update_drawer_geometry();
+}
+
+void EditorBottomPanel::_set_island_width(int p_width) {
+	EditorDock *dock = Object::cast_to<EditorDock>(get_current_tab_control());
+	if (!dock) {
+		return;
+	}
+	Control *base = get_parent_control();
+	if (!base) {
+		return;
+	}
+	const int window_width = int(base->get_global_rect().size.width);
+	dock_widths[dock->get_effective_layout_key()] = BottomDrawerGeometry::clamp_island_width(p_width, window_width, 480 * EDSCALE, 48 * EDSCALE);
+	_update_drawer_geometry();
+}
+
+void EditorBottomPanel::_reset_island_width() {
+	EditorDock *dock = Object::cast_to<EditorDock>(get_current_tab_control());
+	if (!dock) {
+		return;
+	}
+	dock_widths.erase(dock->get_effective_layout_key());
 	_update_drawer_geometry();
 }
 
@@ -193,12 +225,15 @@ void EditorBottomPanel::_update_drawer_geometry() {
 			width = int(column_rect.size.width);
 		} else {
 			// Unpinned: a horizontally centered floating island.
-			width = BottomDrawerGeometry::island_width(window_width, 480 * EDSCALE, 48 * EDSCALE);
+			width = BottomDrawerGeometry::island_width_with_override(window_width, 480 * EDSCALE, 48 * EDSCALE, _get_island_width_override());
 			x = BottomDrawerGeometry::island_x(window_width, width);
 		}
 		drawer_current_x = x;
 		drawer_current_width = width;
 	}
+	const bool show_side_grabbers = open && !pinned;
+	left_grabber->set_visible(show_side_grabbers);
+	right_grabber->set_visible(show_side_grabbers);
 	grabber->set_visible(open && !drawer_expanded);
 
 	// Only a pinned, non-expanded open drawer reserves workspace space. The strip
@@ -217,7 +252,7 @@ void EditorBottomPanel::_update_drawer_geometry() {
 	const float target_y = open ? float(area_height - height) : float(area_height);
 	// A close only animates when the panel is actually on screen; a closed,
 	// already-hidden drawer (e.g. at startup) settles instantly with no slide.
-	const bool animate = !pinned && !grabber_dragging && is_inside_tree() && (open || is_visible()) && bool(EDITOR_GET("interface/editor/animate_bottom_drawer"));
+	const bool animate = !pinned && !grabber_dragging && !side_grabber_dragging && is_inside_tree() && (open || is_visible()) && bool(EDITOR_GET("interface/editor/animate_bottom_drawer"));
 	const bool target_changed = last_target_y != target_y;
 	if (drawer_tween.is_valid() && (!animate || target_changed)) {
 		drawer_tween->kill();
@@ -266,6 +301,26 @@ void EditorBottomPanel::_set_drawer_y(float p_y) {
 	const int grabber_height = 6 * EDSCALE;
 	grabber->set_size(Vector2(get_size().width, grabber_height));
 	grabber->set_global_position(base->get_global_position() + Vector2(drawer_current_x, p_y));
+	_update_side_grabber_geometry(p_y, height);
+}
+
+void EditorBottomPanel::_update_side_grabber_geometry(float p_y, float p_height) {
+	Control *base = get_parent_control();
+	if (!base) {
+		return;
+	}
+	const int grabber_width = 6 * EDSCALE;
+	const int top_grabber_height = 6 * EDSCALE;
+	const bool top_grabber_visible = grabber->is_visible();
+	const float side_y = top_grabber_visible ? p_y + top_grabber_height : p_y;
+	const float side_height = top_grabber_visible ? MAX(0.0f, p_height - top_grabber_height) : p_height;
+
+	left_grabber->set_size(Vector2(grabber_width, side_height));
+	right_grabber->set_size(Vector2(grabber_width, side_height));
+
+	const Vector2 base_pos = base->get_global_position();
+	left_grabber->set_global_position(base_pos + Vector2(drawer_current_x, side_y));
+	right_grabber->set_global_position(base_pos + Vector2(drawer_current_x + drawer_current_width - grabber_width, side_y));
 }
 
 void EditorBottomPanel::_hide_if_closed() {
@@ -291,6 +346,39 @@ void EditorBottomPanel::_grabber_input(const Ref<InputEvent> &p_event) {
 	if (mm.is_valid() && grabber_dragging) {
 		const float mouse_y = grabber->get_global_position().y + mm->get_position().y;
 		_set_body_height(drag_start_body_height + int(drag_start_mouse_y - mouse_y));
+	}
+}
+
+void EditorBottomPanel::_side_grabber_input(const Ref<InputEvent> &p_event, bool p_right_edge) {
+	Control *edge_grabber = p_right_edge ? right_grabber : left_grabber;
+	Ref<InputEventMouseButton> mb = p_event;
+	if (mb.is_valid() && mb->get_button_index() == MouseButton::LEFT) {
+		if (mb->is_double_click()) {
+			_reset_island_width();
+			EditorNode::get_singleton()->save_editor_layout_delayed();
+			return;
+		}
+		if (mb->is_pressed()) {
+			side_grabber_dragging = true;
+			dragging_right_edge = p_right_edge;
+			drag_start_mouse_x = edge_grabber->get_global_position().x + mb->get_position().x;
+			drag_start_island_width = drawer_current_width;
+		} else {
+			side_grabber_dragging = false;
+			EditorNode::get_singleton()->save_editor_layout_delayed();
+		}
+	}
+
+	Ref<InputEventMouseMotion> mm = p_event;
+	if (mm.is_valid() && side_grabber_dragging && dragging_right_edge == p_right_edge) {
+		Control *base = get_parent_control();
+		if (!base) {
+			return;
+		}
+		const float mouse_x = edge_grabber->get_global_position().x + mm->get_position().x;
+		const int mouse_delta = int(mouse_x - drag_start_mouse_x);
+		const int window_width = int(base->get_global_rect().size.width);
+		_set_island_width(BottomDrawerGeometry::island_width_from_edge_drag(drag_start_island_width, mouse_delta, p_right_edge, window_width, 480 * EDSCALE, 48 * EDSCALE));
 	}
 }
 
@@ -339,6 +427,14 @@ void EditorBottomPanel::save_layout_to_config(Ref<ConfigFile> p_config_file, con
 	}
 	p_config_file->set_value(p_section, "bottom_panel_offsets", offsets);
 
+	Dictionary widths;
+	for (const KeyValue<String, int> &E : dock_widths) {
+		if (E.value > 0) {
+			widths[E.key] = E.value;
+		}
+	}
+	p_config_file->set_value(p_section, "bottom_panel_widths", widths);
+
 	Dictionary pinned;
 	for (const KeyValue<String, bool> &E : dock_pinned) {
 		pinned[E.key] = E.value;
@@ -353,6 +449,15 @@ void EditorBottomPanel::load_layout_from_config(Ref<ConfigFile> p_config_file, c
 
 	for (const Variant &v : offset_list) {
 		dock_offsets[v] = BottomDrawerGeometry::body_height_from_stored(offsets[v], 0);
+	}
+
+	const Dictionary widths = p_config_file->get_value(p_section, "bottom_panel_widths", Dictionary());
+	const LocalVector<Variant> width_list = widths.get_key_list();
+	for (const Variant &v : width_list) {
+		const int width = widths[v];
+		if (width > 0) {
+			dock_widths[v] = width;
+		}
 	}
 
 	// Layouts written before the drawer existed lack the key and keep the
@@ -496,6 +601,22 @@ EditorBottomPanel::EditorBottomPanel() {
 	grabber->set_default_cursor_shape(Control::CURSOR_VSIZE);
 	grabber->hide();
 	grabber->connect(SceneStringName(gui_input), callable_mp(this, &EditorBottomPanel::_grabber_input));
+
+	left_grabber = memnew(Control);
+	left_grabber->set_name("DrawerLeftGrabber");
+	left_grabber->set_as_top_level(true);
+	add_child(left_grabber, false, Node::INTERNAL_MODE_BACK);
+	left_grabber->set_default_cursor_shape(Control::CURSOR_HSIZE);
+	left_grabber->hide();
+	left_grabber->connect(SceneStringName(gui_input), callable_mp(this, &EditorBottomPanel::_side_grabber_input).bind(false));
+
+	right_grabber = memnew(Control);
+	right_grabber->set_name("DrawerRightGrabber");
+	right_grabber->set_as_top_level(true);
+	add_child(right_grabber, false, Node::INTERNAL_MODE_BACK);
+	right_grabber->set_default_cursor_shape(Control::CURSOR_HSIZE);
+	right_grabber->hide();
+	right_grabber->connect(SceneStringName(gui_input), callable_mp(this, &EditorBottomPanel::_side_grabber_input).bind(true));
 
 	// The pin and expand buttons are hosted by EditorBottomDrawerStrip, which
 	// reparents them into itself; they are created here without a parent so the

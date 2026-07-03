@@ -51,12 +51,19 @@ class EditorBottomPanel : public TabContainer {
 	int drag_start_body_height = 0;
 	float drag_start_mouse_y = 0.0f;
 	Control *grabber = nullptr;
+	bool side_grabber_dragging = false;
+	bool dragging_right_edge = false;
+	int drag_start_island_width = 0;
+	float drag_start_mouse_x = 0.0f;
+	Control *left_grabber = nullptr;
+	Control *right_grabber = nullptr;
 	Ref<Tween> drawer_tween;
 	float last_target_y = -1.0f;
 	int drawer_current_x = 0;
 	int drawer_current_width = 0;
 	LocalVector<EditorDock *> bottom_docks;
 	HashMap<String, int> dock_offsets;
+	HashMap<String, int> dock_widths;
 	HashMap<String, bool> dock_pinned;
 	bool pinned_by_default = false;
 
@@ -70,11 +77,16 @@ class EditorBottomPanel : public TabContainer {
 	bool _is_current_pinned() const;
 	int _get_drawer_area_height() const;
 	int _get_body_height() const;
+	int _get_island_width_override() const;
 	void _set_body_height(int p_height);
+	void _set_island_width(int p_width);
+	void _reset_island_width();
 	void _update_drawer_geometry();
 	void _set_drawer_y(float p_y);
+	void _update_side_grabber_geometry(float p_y, float p_height);
 	void _hide_if_closed();
 	void _grabber_input(const Ref<InputEvent> &p_event);
+	void _side_grabber_input(const Ref<InputEvent> &p_event, bool p_right_edge);
 	EditorDock *_get_dock_from_control(Control *p_control) const;
 
 protected:

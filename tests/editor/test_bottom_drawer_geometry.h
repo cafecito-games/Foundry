@@ -72,6 +72,48 @@ TEST_CASE("[Editor][BottomDrawerGeometry] Island width and position") {
 	CHECK(BottomDrawerGeometry::island_x(1001, 640) == 180);
 }
 
+TEST_CASE("[Editor][BottomDrawerGeometry] Clamp island width") {
+	// Within bounds: unchanged.
+	CHECK(BottomDrawerGeometry::clamp_island_width(800, 2000, 480, 48) == 800);
+	// Below minimum: raised.
+	CHECK(BottomDrawerGeometry::clamp_island_width(300, 2000, 480, 48) == 480);
+	// Above maximum: lowered.
+	CHECK(BottomDrawerGeometry::clamp_island_width(1950, 2000, 480, 48) == 1904);
+	// Very narrow window: minimum wins over the margin clamp.
+	CHECK(BottomDrawerGeometry::clamp_island_width(900, 500, 480, 48) == 480);
+}
+
+TEST_CASE("[Editor][BottomDrawerGeometry] Island width with override") {
+	// No override: 64% default.
+	CHECK(BottomDrawerGeometry::island_width_with_override(2000, 480, 48, 0) == 1280);
+	CHECK(BottomDrawerGeometry::island_width_with_override(2000, 480, 48, -1) == 1280);
+	// Override inside bounds: used exactly.
+	CHECK(BottomDrawerGeometry::island_width_with_override(2000, 480, 48, 900) == 900);
+	// Override below minimum: clamped.
+	CHECK(BottomDrawerGeometry::island_width_with_override(2000, 480, 48, 300) == 480);
+	// Override above maximum: clamped.
+	CHECK(BottomDrawerGeometry::island_width_with_override(2000, 480, 48, 1950) == 1904);
+}
+
+TEST_CASE("[Editor][BottomDrawerGeometry] Island width from edge drag") {
+	const int start = 1000;
+	const int window = 2000;
+	const int min_w = 480;
+	const int margin = 48;
+	// Right edge: positive delta grows by twice the mouse delta.
+	CHECK(BottomDrawerGeometry::island_width_from_edge_drag(start, 50, true, window, min_w, margin) == 1100);
+	// Right edge: negative delta shrinks by twice the mouse delta.
+	CHECK(BottomDrawerGeometry::island_width_from_edge_drag(start, -50, true, window, min_w, margin) == 900);
+	// Left edge: negative delta grows by twice the mouse delta.
+	CHECK(BottomDrawerGeometry::island_width_from_edge_drag(start, -50, false, window, min_w, margin) == 1100);
+	// Left edge: positive delta shrinks by twice the mouse delta.
+	CHECK(BottomDrawerGeometry::island_width_from_edge_drag(start, 50, false, window, min_w, margin) == 900);
+	// Clamps at minimum.
+	CHECK(BottomDrawerGeometry::island_width_from_edge_drag(500, -100, true, window, min_w, margin) == 480);
+	// Clamps at maximum.
+	CHECK(BottomDrawerGeometry::island_width_from_edge_drag(1800, 100, true, window, min_w, margin) == 1904);
+}
+
 TEST_CASE("[Editor][BottomDrawerGeometry] Island height") {
 	// Not expanded: body height, capped by the available area.
 	CHECK(BottomDrawerGeometry::island_height(false, 200, 600, 24) == 200);
