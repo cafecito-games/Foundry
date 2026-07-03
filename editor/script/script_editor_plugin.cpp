@@ -706,6 +706,41 @@ ScriptEditorBase *ScriptEditor::_get_current_editor() const {
 	return Object::cast_to<ScriptEditorBase>(tab_container->get_tab_control(selected));
 }
 
+bool ScriptEditor::get_current_script_view_state(String &r_path, int &r_line, int &r_column) const {
+	ScriptEditorBase *editor = _get_current_editor();
+	if (editor == nullptr) {
+		return false;
+	}
+
+	Ref<Resource> resource = editor->get_edited_resource();
+	if (resource.is_valid()) {
+		r_path = resource->get_path();
+	} else {
+		r_path = editor->edited_file_data.path;
+	}
+	if (r_path.is_empty()) {
+		return false;
+	}
+
+	CodeTextEditor *code_editor = editor->get_code_editor();
+	if (code_editor == nullptr) {
+		r_line = -1;
+		r_column = -1;
+		return true;
+	}
+
+	TextEdit *text_editor = code_editor->get_text_editor();
+	if (text_editor == nullptr) {
+		r_line = -1;
+		r_column = -1;
+		return true;
+	}
+
+	r_line = text_editor->get_caret_line() + 1;
+	r_column = text_editor->get_caret_column() + 1;
+	return true;
+}
+
 ScriptEditorBase *ScriptEditor::get_open_editor_for_path(const String &p_path) const {
 	for (int i = 0; i < tab_container->get_tab_count(); i++) {
 		ScriptEditorBase *se = Object::cast_to<ScriptEditorBase>(tab_container->get_tab_control(i));
