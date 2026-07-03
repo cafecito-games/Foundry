@@ -284,8 +284,8 @@ private:
 
 	// Last theme preview mode applied through update_preview_themes();
 	// re-applied to a context's viewport when it activates.
-	int theme_preview_mode = 0;
-	bool theme_preview_mode_set = false;
+	int last_theme_preview_mode = 0;
+	bool last_theme_preview_mode_set = false;
 
 	EditorCommandPalette *command_palette = nullptr;
 	EditorQuickOpenDialog *quick_open_dialog = nullptr;

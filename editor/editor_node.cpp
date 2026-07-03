@@ -723,8 +723,8 @@ Ref<Texture2D> EditorNode::get_editor_theme_native_menu_icon(const StringName &p
 }
 
 void EditorNode::update_preview_themes(int p_mode) {
-	theme_preview_mode = p_mode;
-	theme_preview_mode_set = true;
+	last_theme_preview_mode = p_mode;
+	last_theme_preview_mode_set = true;
 	if (!get_scene_root()->is_inside_tree()) {
 		return; // Too early.
 	}
@@ -734,7 +734,7 @@ void EditorNode::update_preview_themes(int p_mode) {
 void EditorNode::_apply_preview_themes(SubViewport *p_viewport) {
 	Vector<Ref<Theme>> preview_themes;
 
-	switch (theme_preview_mode) {
+	switch (last_theme_preview_mode) {
 		case CanvasItemEditor::THEME_PREVIEW_PROJECT:
 			preview_themes.push_back(ThemeDB::get_singleton()->get_project_theme());
 			break;
@@ -4700,7 +4700,7 @@ void EditorNode::_attach_active_scene_context() {
 	// freed while the context was inactive) can be pruned.
 	active_scene_context->get_history()->cleanup_history();
 	_apply_scene_viewport_2d_state(active_scene_context->get_viewport());
-	if (theme_preview_mode_set) {
+	if (last_theme_preview_mode_set) {
 		_apply_preview_themes(active_scene_context->get_viewport());
 	}
 }
