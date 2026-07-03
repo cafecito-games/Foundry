@@ -47,6 +47,7 @@
 #include "tests/editor/test_bottom_drawer_geometry.h"
 #include "tests/editor/test_bottom_drawer_layout.h"
 #include "tests/editor/test_editor_autoload_settings.h"
+#include "tests/editor/test_editor_automation_snapshot.h"
 #include "tests/editor/test_editor_export_platform_autoload.h"
 #include "tests/editor/test_editor_help_type_links.h"
 #include "tests/editor/test_editor_scene_context.h"
