@@ -628,6 +628,92 @@ static void parse_script(CLIParseState &r_state) {
 	}
 }
 
+static void parse_test_generate_fixtures(CLIParseState &r_state) {
+	set_command_path(r_state.result, "test", "generate-fixtures");
+	PackedStringArray paths;
+	bool print_filenames = false;
+
+	while (r_state.index < r_state.args.size()) {
+		const String arg = r_state.args[r_state.index];
+		if (is_help_flag(arg)) {
+			request_help(r_state);
+			return;
+		}
+		if (consume_common_global_option(r_state, arg)) {
+			if (parse_stopped(r_state)) {
+				return;
+			}
+			continue;
+		}
+		if (arg == "--print-filenames") {
+			print_filenames = true;
+			r_state.index++;
+		} else if (arg.begins_with("-")) {
+			fail(r_state.result, "Unknown option for test generate-fixtures: " + arg + ".");
+			return;
+		} else {
+			append(paths, arg);
+			r_state.index++;
+		}
+	}
+
+	PackedStringArray normalized = base_args(r_state);
+	append_headless(normalized);
+	append_project(normalized, r_state.project_path);
+	append(normalized, "--test");
+	append(normalized, "--foundry_script-generate-tests");
+	if (print_filenames) {
+		append(normalized, "--print-filenames");
+	}
+	if (paths.is_empty()) {
+		append(normalized, "modules/foundry_script/tests/scripts");
+	} else {
+		for (int i = 0; i < paths.size(); i++) {
+			append(normalized, paths[i]);
+		}
+	}
+	r_state.result.normalized_args = normalized;
+}
+
+static void parse_test_generate_format_fixtures(CLIParseState &r_state) {
+	set_command_path(r_state.result, "test", "generate-format-fixtures");
+	PackedStringArray paths;
+
+	while (r_state.index < r_state.args.size()) {
+		const String arg = r_state.args[r_state.index];
+		if (is_help_flag(arg)) {
+			request_help(r_state);
+			return;
+		}
+		if (consume_common_global_option(r_state, arg)) {
+			if (parse_stopped(r_state)) {
+				return;
+			}
+			continue;
+		}
+		if (arg.begins_with("-")) {
+			fail(r_state.result, "Unknown option for test generate-format-fixtures: " + arg + ".");
+			return;
+		}
+		append(paths, arg);
+		r_state.index++;
+	}
+
+	PackedStringArray normalized = base_args(r_state);
+	append_headless(normalized);
+	append_project(normalized, r_state.project_path);
+	append(normalized, "--test");
+	append(normalized, "--foundry_script-generate-format-tests");
+	if (paths.is_empty()) {
+		append(normalized, "modules/foundry_script/tests/scripts/format");
+	} else {
+		for (int i = 0; i < paths.size(); i++) {
+			append(normalized, paths[i]);
+		}
+	}
+	r_state.result.normalized_args = normalized;
+}
+
 static void parse_test_run(CLIParseState &r_state) {
 	set_command_path(r_state.result, "test", "run");
 	String test_case;
@@ -680,6 +766,10 @@ static void parse_test(CLIParseState &r_state) {
 	}
 	if (command == "run") {
 		parse_test_run(r_state);
+	} else if (command == "generate-fixtures") {
+		parse_test_generate_fixtures(r_state);
+	} else if (command == "generate-format-fixtures") {
+		parse_test_generate_format_fixtures(r_state);
 	} else {
 		fail(r_state.result, "Unknown test command: " + command + ".");
 	}
@@ -1162,6 +1252,10 @@ String FoundryCLIParser::get_legacy_deprecation_notice(const PackedStringArray &
 			has_dump_interface = true;
 		} else if (arg == "--validate-extension-api") {
 			has_validate_extension_api = true;
+		} else if (arg == "--foundry_script-generate-tests") {
+			return "Deprecated CLI: use `foundry test generate-fixtures` instead of `--foundry_script-generate-tests`.";
+		} else if (arg == "--foundry_script-generate-format-tests") {
+			return "Deprecated CLI: use `foundry test generate-format-fixtures` instead of `--foundry_script-generate-format-tests`.";
 		}
 	}
 

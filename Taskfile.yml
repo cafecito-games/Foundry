@@ -198,7 +198,7 @@ tasks:
           fi
         fi
         test -x "$binary" || { echo "Missing $binary. Run 'task build' or set BINARY=path/to/foundry."; exit 1; }
-        "$binary" --headless --foundry_script-generate-tests modules/foundry_script/tests/scripts
+        "$binary" test generate-fixtures modules/foundry_script/tests/scripts
 
   clean:
     desc: Clean the selected SCons build variant.

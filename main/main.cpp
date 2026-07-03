@@ -700,6 +700,16 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 		tests_need_run = false;
 		return EXIT_SUCCESS;
 	}
+	if (!cli_parse.used_new_cli) {
+		PackedStringArray deprecation_args;
+		for (int i = 0; i < argc; i++) {
+			deprecation_args.push_back(String::utf8(argv[i]));
+		}
+		const String deprecation_notice = FoundryCLIParser::get_legacy_deprecation_notice(deprecation_args);
+		if (!deprecation_notice.is_empty()) {
+			OS::get_singleton()->printerr("%s\n", deprecation_notice.utf8().get_data());
+		}
+	}
 	if (cli_parse.used_new_cli) {
 		normalized_arg_storage.resize(cli_parse.normalized_args.size());
 		normalized_argv.resize(cli_parse.normalized_args.size());
@@ -737,9 +747,11 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 			continue;
 		}
 #endif // TESTS_ENABLED && MODULE_FOUNDRY_SCRIPT_ENABLED
-	   // `--foundry_script-generate-tests` is a registered `--test` command (so it
-	   // runs under `test_setup()`/`test_cleanup()` and the process shuts down
-	   // cleanly); accept it as a standalone flag too, for backwards compatibility.
+	   // `--foundry_script-generate-tests` and `--foundry_script-generate-format-tests`
+	   // are registered `--test` commands (so they run under `test_setup()`/`test_cleanup()`
+	   // and the process shuts down cleanly); accept them as standalone flags too for
+	   // backwards compatibility. Prefer `foundry test generate-fixtures` and
+	   // `foundry test generate-format-fixtures`.
 		const bool is_test = (strncmp(argv[x], "--test", 6) == 0) && (strlen(argv[x]) == 6);
 		const bool is_test_command = strcmp(argv[x], "--foundry_script-generate-tests") == 0;
 		const bool is_format_test_command = strcmp(argv[x], "--foundry_script-generate-format-tests") == 0;
