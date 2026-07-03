@@ -212,9 +212,9 @@ struct DiagnosticCaptureFixture {
 	}
 };
 
-static Ref<ScriptDiagnosticCaptureResult> run_capture_async(Node *p_suite, const StringName &p_method, int p_max_frames = 240) {
-	const Callable callable = callable_mp(p_suite, p_method);
-	const Variant pending = ScriptDiagnosticCaptureScope::capture_async(callable);
+static Ref<ScriptDiagnosticCaptureResult> run_capture_async(Node *p_suite, const StringName &p_method, bool p_quiet = false, int p_max_frames = 240) {
+	const Callable callable(p_suite, p_method);
+	const Variant pending = ScriptDiagnosticCaptureScope::capture_async(callable, p_quiet);
 
 	Ref<ScriptDiagnosticCaptureResult> immediate = pending;
 	if (immediate.is_valid()) {
@@ -246,7 +246,7 @@ TEST_CASE("[ScriptDiagnosticCaptureScope][SceneTree] capture_async records async
 	CoreGlobals::print_error_enabled = true;
 
 	DiagnosticCaptureFixture fixture;
-	const Ref<ScriptDiagnosticCaptureResult> result = run_capture_async(fixture.suite, SNAME("async_capture_diagnostic"));
+	const Ref<ScriptDiagnosticCaptureResult> result = run_capture_async(fixture.suite, SNAME("async_capture_diagnostic"), true);
 
 	CHECK_EQ(int(result->get_return_value()), 13);
 	CHECK(result->get_capture().is_valid());
@@ -262,7 +262,7 @@ TEST_CASE("[ScriptDiagnosticCaptureScope][SceneTree] capture_async runtime error
 	CoreGlobals::print_error_enabled = true;
 
 	DiagnosticCaptureFixture fixture;
-	const Ref<ScriptDiagnosticCaptureResult> result = run_capture_async(fixture.suite, SNAME("runtime_error"));
+	const Ref<ScriptDiagnosticCaptureResult> result = run_capture_async(fixture.suite, SNAME("runtime_error"), true);
 
 	CHECK(result->get_return_value().get_type() == Variant::NIL);
 	CHECK(result->get_capture().is_valid());

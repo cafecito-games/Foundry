@@ -101,8 +101,8 @@ Ref<ScriptDiagnosticCaptureResult> ScriptDiagnosticCaptureScope::_make_result(co
 Ref<ScriptDiagnosticCaptureScope> ScriptDiagnosticCaptureScope::start(bool p_quiet) {
 	Ref<ScriptDiagnosticCaptureScope> scope;
 	scope.instantiate();
-	scope->capture.instantiate();
-	scope->capture->start(p_quiet);
+	scope->diagnostic_capture.instantiate();
+	scope->diagnostic_capture->start(p_quiet);
 	return scope;
 }
 
@@ -111,18 +111,18 @@ void ScriptDiagnosticCaptureScope::stop() {
 		return;
 	}
 	stopped = true;
-	if (capture.is_valid() && capture->is_active()) {
-		capture->stop();
+	if (diagnostic_capture.is_valid() && diagnostic_capture->is_active()) {
+		diagnostic_capture->stop();
 	}
 }
 
 bool ScriptDiagnosticCaptureScope::is_active() const {
-	return !stopped && capture.is_valid() && capture->is_active();
+	return !stopped && diagnostic_capture.is_valid() && diagnostic_capture->is_active();
 }
 
 Array ScriptDiagnosticCaptureScope::get_events() const {
-	if (capture.is_valid()) {
-		return capture->get_events();
+	if (diagnostic_capture.is_valid()) {
+		return diagnostic_capture->get_events();
 	}
 	return Array();
 }
@@ -131,7 +131,8 @@ Ref<ScriptDiagnosticCaptureResult> ScriptDiagnosticCaptureScope::capture(const C
 	Ref<ScriptDiagnosticCaptureScope> scope = start(p_quiet);
 
 	Callable::CallError err;
-	const Variant return_value = p_callable.callp(nullptr, 0, err, nullptr);
+	Variant return_value;
+	p_callable.callp(nullptr, 0, return_value, err);
 	ERR_FAIL_COND_V(err.error != Callable::CallError::CALL_OK, Ref<ScriptDiagnosticCaptureResult>());
 
 	scope->stop();
@@ -142,7 +143,8 @@ Variant ScriptDiagnosticCaptureScope::capture_async(const Callable &p_callable, 
 	Ref<ScriptDiagnosticCaptureScope> scope = start(p_quiet);
 
 	Callable::CallError err;
-	const Variant ret = p_callable.callp(nullptr, 0, err, nullptr);
+	Variant ret;
+	p_callable.callp(nullptr, 0, ret, err);
 	ERR_FAIL_COND_V(err.error != Callable::CallError::CALL_OK, Variant());
 
 	ScriptFunctionState *function_state = Object::cast_to<ScriptFunctionState>(ret);

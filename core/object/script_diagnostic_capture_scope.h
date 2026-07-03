@@ -79,7 +79,7 @@ class ScriptDiagnosticCaptureScope : public RefCounted {
 	friend class ScriptDiagnosticCapturePendingState;
 
 private:
-	Ref<ScriptDiagnosticCapture> capture;
+	Ref<ScriptDiagnosticCapture> diagnostic_capture;
 	bool stopped = false;
 
 	static Ref<ScriptDiagnosticCaptureResult> _make_result(const Variant &p_return_value, const Ref<ScriptDiagnosticCapture> &p_capture);
@@ -92,7 +92,7 @@ public:
 	void stop();
 	bool is_active() const;
 	Array get_events() const;
-	Ref<ScriptDiagnosticCapture> get_capture() const { return capture; }
+	Ref<ScriptDiagnosticCapture> get_capture() const { return diagnostic_capture; }
 
 	static Ref<ScriptDiagnosticCaptureResult> capture(const Callable &p_callable, bool p_quiet = false);
 	static Variant capture_async(const Callable &p_callable, bool p_quiet = false);
