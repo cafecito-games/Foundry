@@ -83,7 +83,7 @@
     {
       "id": 16,
       "subject": "Task 10: v2 verification pass",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [
         15
       ],
