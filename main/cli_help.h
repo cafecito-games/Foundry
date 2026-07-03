@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  cli_parser.h                                                          */
+/*  cli_help.h                                                            */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -33,22 +33,59 @@
 #include "core/string/ustring.h"
 #include "core/variant/variant.h"
 
-class FoundryCLIParser {
+class FoundryCLIHelp {
 public:
-	struct ParseResult {
-		bool ok = true;
-		bool used_new_cli = false;
-		bool json = false;
-		bool trusted = false;
-		bool help_requested = false;
-		bool no_header = false;
-		String error;
-		PackedStringArray command_path;
-		PackedStringArray normalized_args;
-		PackedStringArray user_args;
+	enum Availability {
+		AVAILABILITY_RELEASE,
+		AVAILABILITY_EDITOR,
 	};
 
-	static ParseResult parse(const PackedStringArray &p_args);
-	static ParseResult parse(int p_argc, char *p_argv[]);
-	static bool is_new_cli_command(const String &p_arg);
+	struct CommandOption {
+		const char *flag = nullptr;
+		// Null for boolean flags. "a|b" lists accepted values; the first
+		// alternative doubles as a parseable sample value in drift tests.
+		const char *value_name = nullptr;
+		const char *description = nullptr;
+		bool required = false;
+		// True when the value is attached with '=' as a single token (e.g. --format=sarif).
+		bool equals_form = false;
+	};
+
+	struct Positional {
+		const char *name = nullptr;
+		bool optional = true;
+		bool repeats = false;
+	};
+
+	struct CommandSpec {
+		const char *noun = nullptr;
+		const char *verb = nullptr;
+		const char *summary = nullptr;
+		const char *usage_args = nullptr;
+		Availability availability = AVAILABILITY_RELEASE;
+		const CommandOption *options = nullptr;
+		int option_count = 0;
+		const Positional *positionals = nullptr;
+		int positional_count = 0;
+		const char *example = nullptr;
+	};
+
+	struct NounSpec {
+		const char *name = nullptr;
+		const char *summary = nullptr;
+	};
+
+	static const NounSpec *get_nouns(int &r_count);
+	static const CommandSpec *get_commands(int &r_count);
+	static bool has_noun(const String &p_noun);
+	static bool has_command(const String &p_noun, const String &p_verb);
+
+	static String get_top_help_text(const String &p_binary);
+	static String get_noun_help_text(const String &p_noun);
+	static String get_command_help_text(const String &p_noun, const String &p_verb);
+	// Routes `p_scope` ([] | [noun] | [noun, verb]) to the right level.
+	// `r_valid` is false when the scope names an unknown noun or verb; the
+	// nearest valid level's text is still returned as a fallback.
+	static String get_scoped_help_text(const String &p_binary, const PackedStringArray &p_scope, bool &r_valid);
+	static String get_help_json(const PackedStringArray &p_scope);
 };

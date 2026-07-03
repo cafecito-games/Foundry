@@ -60,6 +60,7 @@
 #include "core/version.h"
 #include "drivers/register_driver_types.h"
 #include "main/app_icon.gen.h"
+#include "main/cli_help.h"
 #include "main/cli_parser.h"
 #include "main/main_timer_sync.h"
 #include "main/performance.h"
@@ -305,11 +306,6 @@ static const String NULL_DISPLAY_DRIVER("headless");
 static const String EMBEDDED_DISPLAY_DRIVER("embedded");
 static const String NULL_AUDIO_DRIVER("Dummy");
 
-// The length of the longest column in the command-line help we should align to
-// (excluding the 2-space left and right margins).
-// Currently, this is `--export-release <preset> <path>`.
-static const int OPTION_COLUMN_LENGTH = 32;
-
 /* Helper methods */
 
 bool Main::is_cmdline_tool() {
@@ -477,348 +473,11 @@ void Main::print_help_copyright(const char *p_notice) {
 	OS::get_singleton()->print("\u001b[90m%s\u001b[0m\n", p_notice);
 }
 
-/**
- * Prints a title in the command-line help with colored text. A newline is
- * automatically added at beginning and at the end.
- */
-void Main::print_help_title(const char *p_title) {
-	OS::get_singleton()->print("\n\u001b[1;93m%s:\u001b[0m\n", p_title);
-}
-
-/**
- * Returns the option string with required and optional arguments colored separately from the rest of the option.
- * This color replacement must be done *after* calling `rpad()` for the length padding to be done correctly.
- */
-String Main::format_help_option(const char *p_option) {
-	return (String(p_option)
-					.rpad(OPTION_COLUMN_LENGTH)
-					.replace("[", "\u001b[96m[")
-					.replace("]", "]\u001b[0m")
-					.replace("<", "\u001b[95m<")
-					.replace(">", ">\u001b[0m"));
-}
-
-/**
- * Prints an option in the command-line help with colored text. No newline is
- * added at the end. `p_availability` denotes which build types the argument is
- * available in. Support in release export templates implies support in debug
- * export templates and editor. Support in debug export templates implies
- * support in editor.
- */
-void Main::print_help_option(const char *p_option, const char *p_description, CLIOptionAvailability p_availability) {
-	const bool option_empty = (p_option && !p_option[0]);
-	if (!option_empty) {
-		const char *availability_badge = "";
-		switch (p_availability) {
-			case CLI_OPTION_AVAILABILITY_EDITOR:
-				availability_badge = "\u001b[1;91mE";
-				break;
-			case CLI_OPTION_AVAILABILITY_TEMPLATE_DEBUG:
-				availability_badge = "\u001b[1;94mD";
-				break;
-			case CLI_OPTION_AVAILABILITY_TEMPLATE_UNSAFE:
-				availability_badge = "\u001b[1;93mX";
-				break;
-			case CLI_OPTION_AVAILABILITY_TEMPLATE_RELEASE:
-				availability_badge = "\u001b[1;92mR";
-				break;
-			case CLI_OPTION_AVAILABILITY_HIDDEN:
-				// Use for multiline option names (but not when the option name is empty).
-				availability_badge = " ";
-				break;
-		}
-		OS::get_singleton()->print(
-				"  \u001b[92m%s  %s\u001b[0m  %s",
-				format_help_option(p_option).utf8().ptr(),
-				availability_badge,
-				p_description);
-	} else {
-		// Make continuation lines for descriptions faint if the option name is empty.
-		OS::get_singleton()->print(
-				"  \u001b[92m%s   \u001b[0m  \u001b[90m%s",
-				format_help_option(p_option).utf8().ptr(),
-				p_description);
-	}
-}
-
 void Main::print_help(const char *p_binary) {
 	print_header(true);
 	print_help_copyright("Free and open source software under the terms of the MIT license.");
 	print_help_copyright("(c) 2014-present Godot Engine contributors. (c) 2007-present Juan Linietsky, Ariel Manzur.");
-
-	print_help_title("Usage");
-	OS::get_singleton()->print(
-			"  %s \u001b[96m[global options] <command> [command options] "
-			"[-- user args]\u001b[0m\n",
-			p_binary);
-	OS::get_singleton()->print(
-			"  %s \u001b[96m[legacy options] [path to \"project.foundry\" file]\u001b[0m\n",
-			p_binary);
-
-	print_help_title("Command API");
-	OS::get_singleton()->print(
-			"  \u001b[92meditor open --project <dir>\u001b[0m                         "
-			"Open a project in the editor.\n");
-	OS::get_singleton()->print(
-			"  \u001b[92meditor project-manager\u001b[0m                              "
-			"Open the project manager.\n");
-	OS::get_singleton()->print(
-			"  \u001b[92mproject run --project <dir> [--scene <path>] -- ...\u001b[0m  "
-			"Run a project; arguments after -- are user args.\n");
-	OS::get_singleton()->print(
-			"  \u001b[92mproject export --project <dir> --preset <name> "
-			"--output <path> --mode <mode>\u001b[0m\n");
-	OS::get_singleton()->print(
-			"  \u001b[92mproject import --project <dir>\u001b[0m                       "
-			"Import project resources and exit.\n");
-	OS::get_singleton()->print(
-			"  \u001b[92mproject test --project <dir> --runner <script> -- <args>\u001b[0m  "
-			"Run a project test runner script.\n");
-	OS::get_singleton()->print(
-			"  \u001b[92mscript format [--project <dir>] [--check|--write|--diff] [paths...]\u001b[0m\n"
-			"Format Foundry Script files or stdin.\n");
-	OS::get_singleton()->print(
-			"  \u001b[92mscript lint [--project <dir>] [--format=json|sarif] [--out <path>]\u001b[0m\n"
-			"  \u001b[92m            [--fail-on=error|warning] [paths...]\u001b[0m\n"
-			"Lint Foundry Script files.\n");
-	OS::get_singleton()->print(
-			"  \u001b[92mscript migrate --project <dir> [--apply] "
-			"[--strict null,dynamic]\u001b[0m\n");
-	OS::get_singleton()->print(
-			"  \u001b[92mtest run [--project <dir>] [--case <pattern>]\u001b[0m        "
-			"Run doctest suites.\n");
-	OS::get_singleton()->print(
-			"  \u001b[92mlsp serve --project <dir> [--port <port>]\u001b[0m           "
-			"Start the editor language server.\n");
-	OS::get_singleton()->print(
-			"  \u001b[92mdocs generate-api [--include-docs]\u001b[0m                  "
-			"Generate extension API JSON.\n");
-	OS::get_singleton()->print(
-			"  \u001b[92mextension dump-interface [--format header|json]\u001b[0m      "
-			"Generate FoundryExtension interface files.\n");
-	OS::get_singleton()->print(
-			"  \u001b[92mdiagnostics render-device-support\u001b[0m                   "
-			"Probe rendering device support.\n");
-	OS::get_singleton()->print(
-			"  Global command options: --json, --trusted, --project <dir>, "
-			"--headless, --quiet, --verbose.\n");
-	OS::get_singleton()->print(
-			"  Agent workflows should use -- to separate Foundry arguments from "
-			"project/user arguments.\n");
-
-#if defined(TOOLS_ENABLED)
-	print_help_title("Option legend (this build = editor)");
-#elif defined(DEBUG_ENABLED)
-	print_help_title("Option legend (this build = debug export template)");
-#else
-	print_help_title("Option legend (this build = release export template)");
-#endif
-
-	OS::get_singleton()->print("  \u001b[1;92mR\u001b[0m  Available in editor builds, debug export templates and release export templates.\n");
-#ifdef DEBUG_ENABLED
-	OS::get_singleton()->print("  \u001b[1;94mD\u001b[0m  Available in editor builds and debug export templates only.\n");
-#endif
-#if defined(OVERRIDE_PATH_ENABLED)
-	OS::get_singleton()->print("  \u001b[1;93mX\u001b[0m  Only available in editor builds, and export templates compiled with `disable_path_overrides=false`.\n");
-#endif
-#ifdef TOOLS_ENABLED
-	OS::get_singleton()->print("  \u001b[1;91mE\u001b[0m  Only available in editor builds.\n");
-#endif
-
-	print_help_title("General options");
-	print_help_option("-h, --help", "Display this help message.\n");
-	print_help_option("--version", "Display the version string.\n");
-	print_help_option("-v, --verbose", "Use verbose stdout mode.\n");
-	print_help_option("--quiet", "Quiet mode, silences stdout messages. Errors are still displayed.\n");
-	print_help_option("--no-header", "Do not print engine version and rendering driver/method header on startup.\n");
-
-	print_help_title("Run options");
-	print_help_option("--, ++", "Separator for user-provided arguments. Following arguments are not used by the engine, but can be read from `OS.get_cmdline_user_args()`.\n");
-#ifdef TOOLS_ENABLED
-	print_help_option("-e, --editor", "Start the editor instead of running the scene.\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("-p, --project-manager", "Start the project manager, even if a project is auto-detected.\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--recovery-mode", "Start the editor in recovery mode, which disables features that can typically cause startup crashes, such as tool scripts, editor plugins, FoundryExtension addons, and others.\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--debug-server <uri>", "Start the editor debug server (<protocol>://<host/IP>[:port], e.g. tcp://127.0.0.1:6007)\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--dap-port <port>", "Use the specified port for the FoundryScript Debug Adapter Protocol. Recommended port range [1024, 49151].\n", CLI_OPTION_AVAILABILITY_EDITOR);
-#if defined(MODULE_FOUNDRY_SCRIPT_ENABLED) && !defined(FOUNDRY_SCRIPT_NO_LSP)
-	print_help_option("--lsp-port <port>", "Use the specified port for the FoundryScript Language Server Protocol. Recommended port range [1024, 49151].\n", CLI_OPTION_AVAILABILITY_EDITOR);
-#endif // MODULE_FOUNDRY_SCRIPT_ENABLED && !FOUNDRY_SCRIPT_NO_LSP
-#endif
-	print_help_option("--quit", "Quit after the first iteration.\n");
-	print_help_option("--quit-after <int>", "Quit after the given number of iterations. Set to 0 to disable.\n");
-	print_help_option("-l, --language <locale>", "Use a specific locale (<locale> being a two-letter code).\n");
-#if defined(OVERRIDE_PATH_ENABLED)
-	print_help_option("--path <directory>", "Path to a project (<directory> must contain a \"project.foundry\" file).\n", CLI_OPTION_AVAILABILITY_TEMPLATE_UNSAFE);
-	print_help_option("--scene <path>", "Path or UID of a scene in the project that should be started.\n", CLI_OPTION_AVAILABILITY_TEMPLATE_UNSAFE);
-#endif // defined(OVERRIDE_PATH_ENABLED)
-#if defined(OVERRIDE_PATH_ENABLED) || defined(ANDROID_ENABLED) || defined(WEB_ENABLED)
-	print_help_option("--main-pack <file>", "Path to a pack (.pck) file to load.\n", CLI_OPTION_AVAILABILITY_TEMPLATE_UNSAFE);
-#endif // defined(OVERRIDE_PATH_ENABLED) || defined(ANDROID_ENABLED) || defined(WEB_ENABLED)
-#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
-	print_help_option("--foundry-build-trusted", "Allow automatic Foundry build task provider and command execution for this process. Intended for CI.\n");
-#endif // MODULE_FOUNDRY_SCRIPT_ENABLED
-
-#ifdef DISABLE_DEPRECATED
-	print_help_option("--render-thread <mode>", "Render thread mode (\"safe\", \"separate\").\n");
-#else
-	print_help_option("--render-thread <mode>", "Render thread mode (\"unsafe\" [deprecated], \"safe\", \"separate\").\n");
-#endif // DISABLE_DEPRECATED
-#if defined(DEBUG_ENABLED) || defined(TOOLS_ENABLED)
-	print_help_option("--remote-fs <address>", "Remote filesystem (<host/IP>[:<port>] address).\n", CLI_OPTION_AVAILABILITY_TEMPLATE_DEBUG);
-	print_help_option("--remote-fs-password <password>", "Password for remote filesystem.\n", CLI_OPTION_AVAILABILITY_TEMPLATE_DEBUG);
-#endif // defined(DEBUG_ENABLED) || defined (TOOLS_ENABLED)
-
-	print_help_option("--audio-driver <driver>", "Audio driver [");
-	for (int i = 0; i < AudioDriverManager::get_driver_count(); i++) {
-		if (i > 0) {
-			OS::get_singleton()->print(", ");
-		}
-		OS::get_singleton()->print("\"%s\"", AudioDriverManager::get_driver(i)->get_name());
-	}
-	OS::get_singleton()->print("].\n");
-
-	print_help_option("--display-driver <driver>", "Display driver (and rendering driver) [");
-	for (int i = 0; i < DisplayServer::get_create_function_count(); i++) {
-		if (i > 0) {
-			OS::get_singleton()->print(", ");
-		}
-		OS::get_singleton()->print("\"%s\" (", DisplayServer::get_create_function_name(i));
-		Vector<String> rd = DisplayServer::get_create_function_rendering_drivers(i);
-		for (int j = 0; j < rd.size(); j++) {
-			if (j > 0) {
-				OS::get_singleton()->print(", ");
-			}
-			OS::get_singleton()->print("\"%s\"", rd[j].utf8().get_data());
-		}
-		OS::get_singleton()->print(")");
-	}
-	OS::get_singleton()->print("].\n");
-	print_help_option("--audio-output-latency <ms>", "Override audio output latency in milliseconds (default is 15 ms).\n");
-	print_help_option("", "Lower values make sound playback more reactive but increase CPU usage, and may result in audio cracking if the CPU can't keep up.\n");
-
-	print_help_option("--rendering-method <renderer>", "Renderer name. Requires driver support.\n");
-	print_help_option("--rendering-driver <driver>", "Rendering driver (depends on display driver).\n");
-	print_help_option("--gpu-index <device_index>", "Use a specific GPU (run with --verbose to get a list of available devices).\n");
-	print_help_option("--text-driver <driver>", "Text driver (used for font rendering, bidirectional support and shaping).\n");
-	print_help_option("--tablet-driver <driver>", "Pen tablet input driver.\n");
-	print_help_option("--headless", "Enable headless mode (--display-driver headless --audio-driver Dummy). Useful for servers and with --script.\n");
-	print_help_option("--log-file <file>", "Write output/error log to the specified path instead of the default location defined by the project.\n");
-	print_help_option("", "<file> path should be absolute or relative to the project directory.\n");
-	print_help_option("--write-movie <file>", "Write a video to the specified path (usually with .avi or .png extension).\n");
-	print_help_option("", "--fixed-fps is forced when enabled, but it can be used to change movie FPS.\n");
-	print_help_option("", "--disable-vsync can speed up movie writing but makes interaction more difficult.\n");
-	print_help_option("", "--quit-after can be used to specify the number of frames to write.\n");
-
-	print_help_title("Display options");
-	print_help_option("-f, --fullscreen", "Request fullscreen mode.\n");
-	print_help_option("-m, --maximized", "Request a maximized window.\n");
-	print_help_option("-w, --windowed", "Request windowed mode.\n");
-	print_help_option("-t, --always-on-top", "Request an always-on-top window.\n");
-	print_help_option("--resolution <W>x<H>", "Request window resolution.\n");
-	print_help_option("--position <X>,<Y>", "Request window position.\n");
-	print_help_option("--screen <N>", "Request window screen.\n");
-	print_help_option("--single-window", "Use a single window (no separate subwindows).\n");
-#ifndef _3D_DISABLED
-	print_help_option("--xr-mode <mode>", "Select XR (Extended Reality) mode [\"default\", \"off\", \"on\"].\n");
-#endif
-	print_help_option("--wid <window_id>", "Request parented to window.\n");
-	print_help_option("--accessibility <mode>", "Select accessibility mode ['auto' (when screen reader is running, default), 'always', 'disabled'].\n");
-
-	print_help_title("Debug options");
-	print_help_option("-d, --debug", "Debug (local stdout debugger).\n");
-	print_help_option("-b, --breakpoints", "Breakpoint list as source::line comma-separated pairs, no spaces (use %%20 instead).\n");
-	print_help_option("--ignore-error-breaks", "If debugger is connected, prevents sending error breakpoints.\n");
-	print_help_option("--profiling", "Enable profiling in the script debugger.\n");
-	print_help_option("--gpu-profile", "Show a GPU profile of the tasks that took the most time during frame rendering.\n");
-	print_help_option("--gpu-validation", "Enable graphics API validation layers for debugging.\n");
-#ifdef DEBUG_ENABLED
-	print_help_option("--gpu-abort", "Abort on graphics API usage errors (usually validation layer errors). May help see the problem if your system freezes.\n", CLI_OPTION_AVAILABILITY_TEMPLATE_DEBUG);
-#endif
-	print_help_option("--generate-spirv-debug-info", "Generate SPIR-V debug information (Vulkan only). This allows source-level shader debugging with RenderDoc.\n");
-#if defined(DEBUG_ENABLED) || defined(DEV_ENABLED)
-	print_help_option("--extra-gpu-memory-tracking", "Enables additional memory tracking (see class reference for `RenderingDevice.get_driver_and_device_memory_report()` and linked methods). Currently only implemented for Vulkan. Enabling this feature may cause crashes on some systems due to buggy drivers or bugs in the Vulkan Loader. See https://github.com/godotengine/godot/issues/95967\n");
-	print_help_option("--accurate-breadcrumbs", "Force barriers between breadcrumbs. Useful for narrowing down a command causing GPU resets. Currently only implemented for Vulkan.\n");
-#endif
-#if defined(DEBUG_ENABLED) || defined(TOOLS_ENABLED)
-	print_help_option("--remote-debug <uri>", "Remote debug (<protocol>://<host/IP>[:<port>], e.g. tcp://127.0.0.1:6007).\n");
-#endif
-	print_help_option("--single-threaded-scene", "Force scene tree to run in single-threaded mode. Sub-thread groups are disabled and run on the main thread.\n");
-#ifdef DEBUG_ENABLED
-	print_help_option("--debug-collisions", "Show collision shapes when running the scene.\n", CLI_OPTION_AVAILABILITY_TEMPLATE_DEBUG);
-	print_help_option("--debug-paths", "Show path lines when running the scene.\n", CLI_OPTION_AVAILABILITY_TEMPLATE_DEBUG);
-	print_help_option("--debug-navigation", "Show navigation polygons when running the scene.\n", CLI_OPTION_AVAILABILITY_TEMPLATE_DEBUG);
-	print_help_option("--debug-avoidance", "Show navigation avoidance debug visuals when running the scene.\n", CLI_OPTION_AVAILABILITY_TEMPLATE_DEBUG);
-	print_help_option("--debug-stringnames", "Print all StringName allocations to stdout when the engine quits.\n", CLI_OPTION_AVAILABILITY_TEMPLATE_DEBUG);
-	print_help_option("--debug-canvas-item-redraw", "Display a rectangle each time a canvas item requests a redraw (useful to troubleshoot low processor mode).\n", CLI_OPTION_AVAILABILITY_TEMPLATE_DEBUG);
-
-#endif
-	print_help_option("--max-fps <fps>", "Set a maximum number of frames per second rendered (can be used to limit power usage). A value of 0 results in unlimited framerate.\n");
-	print_help_option("--frame-delay <ms>", "Simulate high CPU load (delay each frame by <ms> milliseconds). Do not use as a FPS limiter; use --max-fps instead.\n");
-	print_help_option("--time-scale <scale>", "Force time scale (higher values are faster, 1.0 is normal speed).\n");
-	print_help_option("--disable-vsync", "Forces disabling of vertical synchronization, even if enabled in the project settings. Does not override driver-level V-Sync enforcement.\n");
-	print_help_option("--disable-render-loop", "Disable render loop so rendering only occurs when called explicitly from script.\n");
-	print_help_option("--disable-crash-handler", "Disable crash handler when supported by the platform code.\n");
-	print_help_option("--fixed-fps <fps>", "Force a fixed number of frames per second. This setting disables real-time synchronization.\n");
-	print_help_option("--delta-smoothing <enable>", "Enable or disable frame delta smoothing [\"enable\", \"disable\"].\n");
-	print_help_option("--print-fps", "Print the frames per second to the stdout.\n");
-#ifdef TOOLS_ENABLED
-	print_help_option("--editor-pseudolocalization", "Enable pseudolocalization for the editor and the project manager.\n", CLI_OPTION_AVAILABILITY_EDITOR);
-#endif
-
-#if defined(OVERRIDE_PATH_ENABLED) || defined(TESTS_ENABLED)
-	print_help_title("Standalone tools");
-#endif // defined(OVERRIDE_PATH_ENABLED) || defined(TESTS_ENABLED)
-#if defined(OVERRIDE_PATH_ENABLED)
-	print_help_option("-s, --script <script>", "Run a script.\n", CLI_OPTION_AVAILABILITY_TEMPLATE_UNSAFE);
-	print_help_option("--main-loop <main_loop_name>", "Run a MainLoop specified by its global class name.\n", CLI_OPTION_AVAILABILITY_TEMPLATE_UNSAFE);
-	print_help_option("--check-only", "Only parse for errors and quit (use with --script).\n", CLI_OPTION_AVAILABILITY_TEMPLATE_UNSAFE);
-#endif // defined(OVERRIDE_PATH_ENABLED)
-#ifdef TOOLS_ENABLED
-	print_help_option("--import", "Starts the editor, waits for any resources to be imported, and then quits.\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--export-release <preset> <path>", "Export the project in release mode using the given preset and output path. The preset name should match one defined in \"export_presets.cfg\".\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("", "<path> should be absolute or relative to the project directory, and include the filename for the binary (e.g. \"builds/game.exe\").\n");
-	print_help_option("", "The target directory must exist.\n");
-	print_help_option("--export-debug <preset> <path>", "Export the project in debug mode using the given preset and output path. See --export-release description for other considerations.\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--export-pack <preset> <path>", "Export the project data only using the given preset and output path. The <path> extension determines whether it will be in PCK or ZIP format.\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--export-patch <preset> <path>", "Export pack with changed files only. See --export-pack description for other considerations.\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--patches <paths>", "List of patches to use with --export-patch. The list is comma-separated.\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--install-android-build-template", "Install the Android build template. Used in conjunction with --export-release or --export-debug.\n", CLI_OPTION_AVAILABILITY_EDITOR);
-#ifndef DISABLE_DEPRECATED
-	// Commands are long; split the description to a second line.
-	print_help_option("--convert-3to4 ", "\n", CLI_OPTION_AVAILABILITY_HIDDEN);
-	print_help_option("  [max_file_kb] [max_line_size]", "Converts project from Godot 3.x to Godot 4.x.\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--validate-conversion-3to4 ", "\n", CLI_OPTION_AVAILABILITY_HIDDEN);
-	print_help_option("  [max_file_kb] [max_line_size]", "Shows what elements will be renamed when converting project from Godot 3.x to Godot 4.x.\n", CLI_OPTION_AVAILABILITY_EDITOR);
-#endif // DISABLE_DEPRECATED
-	print_help_option("--doctool [path]", "Dump the engine API reference to the given <path> (defaults to current directory) in XML format, merging if existing files are found.\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--no-docbase", "Disallow dumping the base types (used with --doctool).\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--foundryextension-docs", "Rather than dumping the engine API, generate API reference from all the FoundryExtensions loaded in the current project (used with --doctool).\n", CLI_OPTION_AVAILABILITY_EDITOR);
-#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
-	print_help_option("--foundry_script-docs <path>", "Rather than dumping the engine API, generate API reference from the inline documentation in the FoundryScript files found in <path> (used with --doctool).\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--foundry_script-migrate <path>", "Run the FoundryScript strict-typing migration wizard headlessly on the project at <path>: print the dry-run report and exit. Add --foundry_script-migrate-apply to commit the inferred annotations, and the --foundry_script-migrate-strict-* / -activate-strict / -confirm flags to project and enable strict settings.\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--foundry_script-migrate-apply", "Commit the inferred type annotations to disk during --foundry_script-migrate (otherwise the run is a preview).\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--foundry_script-migrate-strict-null-checks", "Project (and, with --foundry_script-migrate-activate-strict, enable) strict null checks during --foundry_script-migrate.\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--foundry_script-migrate-strict-dynamic-checks", "Project (and, with --foundry_script-migrate-activate-strict, enable) strict dynamic checks during --foundry_script-migrate.\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--foundry_script-migrate-activate-strict", "Flip the requested strict project settings during --foundry_script-migrate. Requires --foundry_script-migrate-confirm and a clean report (or --foundry_script-migrate-allow-violations).\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--foundry_script-migrate-confirm", "Confirm the gated strict-settings flip for --foundry_script-migrate-activate-strict.\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--foundry_script-migrate-allow-violations", "Allow the strict-settings flip even when violations remain (gradual adoption) during --foundry_script-migrate.\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--foundry_script-migrate-acknowledge-vcs", "Acknowledge the version-control safety warning so --foundry_script-migrate-apply proceeds on an unversioned or dirty tree.\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--foundry_script-migrate-follow-up <path>", "Write the manual follow-up punch-list from --foundry_script-migrate to <path>.\n", CLI_OPTION_AVAILABILITY_EDITOR);
-#endif
-	print_help_option("--build-solutions", "Build the scripting solutions (e.g. for C# projects). Implies --editor and requires a valid project to edit.\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--dump-foundryextension-interface", "Generate a FoundryExtension header file \"foundry_extension_interface.h\" in the current folder. This file is the base file required to implement a FoundryExtension.\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--dump-foundryextension-interface-json", "Generate a JSON dump of the FoundryExtension interface named \"foundry_extension_interface.json\" in the current folder.\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--dump-extension-api", "Generate a JSON dump of the Foundry API for FoundryExtension bindings named \"extension_api.json\" in the current folder.\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--dump-extension-api-with-docs", "Generate JSON dump of the Foundry API like the previous option, but including documentation.\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--validate-extension-api <path>", "Validate an extension API file dumped (with one of the two previous options) from a previous version of the engine to ensure API compatibility.\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("", "If incompatibilities or errors are detected, the exit code will be non-zero.\n");
-	print_help_option("--benchmark", "Benchmark the run time and print it to console.\n", CLI_OPTION_AVAILABILITY_EDITOR);
-	print_help_option("--benchmark-file <path>", "Benchmark the run time and save it to a given file in JSON format. The path should be absolute.\n", CLI_OPTION_AVAILABILITY_EDITOR);
-#endif // TOOLS_ENABLED
-#ifdef TESTS_ENABLED
-	print_help_option("--test [--help]", "Run unit tests. Use --test --help for more information.\n");
-#endif // TESTS_ENABLED
-	OS::get_singleton()->print("\n");
+	OS::get_singleton()->print("%s", FoundryCLIHelp::get_top_help_text(p_binary).utf8().get_data());
 }
 
 #ifdef TESTS_ENABLED
@@ -1042,6 +701,10 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 	Vector<CharString> normalized_arg_storage;
 	Vector<char *> normalized_argv;
 	if (!cli_parse.ok) {
+		tests_need_run = false;
+		return EXIT_SUCCESS;
+	}
+	if (cli_parse.help_requested) {
 		tests_need_run = false;
 		return EXIT_SUCCESS;
 	}
@@ -1291,7 +954,40 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 
 	const FoundryCLIParser::ParseResult cli_parse = FoundryCLIParser::parse(raw_cli_args);
 	if (!cli_parse.ok) {
-		OS::get_singleton()->print("Foundry CLI error: %s\n", cli_parse.error.utf8().get_data());
+		OS::get_singleton()->printerr("Foundry CLI error: %s\n", cli_parse.error.utf8().get_data());
+		if (!cli_parse.command_path.is_empty() && FoundryCLIHelp::has_noun(cli_parse.command_path[0])) {
+			bool scope_valid = false;
+			const String scoped_help = FoundryCLIHelp::get_scoped_help_text(execpath, cli_parse.command_path, scope_valid);
+			OS::get_singleton()->printerr("%s", scoped_help.utf8().get_data());
+		}
+		goto error;
+	}
+	if (cli_parse.help_requested) {
+		if (cli_parse.json) {
+			OS::get_singleton()->print("%s\n", FoundryCLIHelp::get_help_json(cli_parse.command_path).utf8().get_data());
+			exit_err = ERR_HELP;
+			goto error;
+		}
+		bool scope_valid = false;
+		const String scoped_help = FoundryCLIHelp::get_scoped_help_text(execpath, cli_parse.command_path, scope_valid);
+		if (!scope_valid) {
+			OS::get_singleton()->printerr("Unknown command for help: %s\n", String(" ").join(cli_parse.command_path).utf8().get_data());
+			OS::get_singleton()->printerr("%s", scoped_help.utf8().get_data());
+			goto error;
+		}
+		if (cli_parse.command_path.is_empty()) {
+			if (cli_parse.no_header) {
+				OS::get_singleton()->print("%s", FoundryCLIHelp::get_top_help_text(execpath).utf8().get_data());
+			} else {
+				print_help(execpath);
+			}
+		} else {
+			if (!cli_parse.no_header) {
+				print_header(true);
+			}
+			OS::get_singleton()->print("%s", scoped_help.utf8().get_data());
+		}
+		exit_err = ERR_HELP;
 		goto error;
 	}
 
