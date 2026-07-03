@@ -1,0 +1,94 @@
+{
+  "planPath": "docs/superpowers/plans/2026-07-02-editor-bottom-drawer.md",
+  "tasks": [
+    {
+      "id": 7,
+      "subject": "Task 1: BottomDrawerGeometry pure helpers with unit tests",
+      "status": "completed",
+      "description": "**Goal:** Header-only, dependency-free geometry/migration math for the drawer, fully covered by doctests.\n\n**Files:** Create editor/gui/bottom_drawer_geometry.h, tests/editor/test_bottom_drawer_geometry.h; Modify tests/test_main.cpp\n\n```json:metadata\n{\"files\": [\"editor/gui/bottom_drawer_geometry.h\", \"tests/editor/test_bottom_drawer_geometry.h\", \"tests/test_main.cpp\"], \"verifyCommand\": \"./bin/foundry.macos.editor.dev.arm64 --test --test-case=\\\"*BottomDrawerGeometry*\\\" --force-colors\", \"acceptanceCriteria\": [\"pure helpers implemented\", \"doctests cover all cases\", \"test case passes\"]}\n```"
+    },
+    {
+      "id": 8,
+      "subject": "Task 2: Overlay control tree and drawer geometry",
+      "status": "completed",
+      "blockedBy": [
+        7
+      ],
+      "description": "**Goal:** Delete center_split; bottom panel becomes a bottom-anchored overlay inside new plain Control center_overlay, with grabber resize, expand-to-full, and height persistence with legacy migration.\n\n```json:metadata\n{\"files\": [\"editor/editor_node.h\", \"editor/editor_node.cpp\", \"editor/gui/editor_bottom_panel.h\", \"editor/gui/editor_bottom_panel.cpp\"], \"verifyCommand\": \"./bin/foundry.macos.editor.dev.arm64 --test --force-colors\", \"acceptanceCriteria\": [\"overlay open without workspace resize\", \"grabber resize persists\", \"expand works\", \"legacy offsets migrate\", \"suite green\"]}\n```"
+    },
+    {
+      "id": 9,
+      "subject": "Task 3: Pin-to-dock, pin remap, lock relocation",
+      "status": "completed",
+      "blockedBy": [
+        8
+      ],
+      "description": "**Goal:** Per-panel pin docks the drawer in-flow; pin persists with migration defaults (upgrades pinned, fresh unpinned); lock-tab-switching moves to DockContextPopup.\n\n```json:metadata\n{\"files\": [\"editor/gui/editor_bottom_panel.h\", \"editor/gui/editor_bottom_panel.cpp\", \"editor/docks/editor_dock_manager.h\", \"editor/docks/editor_dock_manager.cpp\", \"editor/editor_node.cpp\"], \"verifyCommand\": \"./bin/foundry.macos.editor.dev.arm64 --test --force-colors\", \"acceptanceCriteria\": [\"pin per panel works and persists\", \"migration defaults correct\", \"lock in context popup works\", \"suite green\"]}\n```"
+    },
+    {
+      "id": 10,
+      "subject": "Task 4: Slide animation, Esc-to-close, editor setting",
+      "status": "completed",
+      "blockedBy": [
+        9
+      ],
+      "description": "**Goal:** Unpinned open/close tweens (~0.15s) gated by new interface/editor/animate_bottom_drawer setting; Esc closes an unpinned focused drawer.\n\n```json:metadata\n{\"files\": [\"editor/gui/editor_bottom_panel.h\", \"editor/gui/editor_bottom_panel.cpp\", \"editor/settings/editor_settings.cpp\"], \"verifyCommand\": \"./bin/foundry.macos.editor.dev.arm64 --test --force-colors\", \"acceptanceCriteria\": [\"animation gated correctly\", \"Esc behavior correct\", \"suite green\"]}\n```"
+    },
+    {
+      "id": 11,
+      "subject": "Task 5: Relax bottom-slot dock gate",
+      "status": "completed",
+      "blockedBy": [
+        8
+      ],
+      "description": "**Goal:** Any dock (incl. vertical-only Inspector/Scene Tree) can be dropped into the bottom drawer via drag hint and slot picker.\n\n```json:metadata\n{\"files\": [\"editor/docks/editor_dock_manager.cpp\"], \"verifyCommand\": \"./bin/foundry.macos.editor.dev.arm64 --test --force-colors\", \"acceptanceCriteria\": [\"any dock droppable in drawer\", \"restore path works\", \"suite green\"]}\n```"
+    },
+    {
+      "id": 12,
+      "subject": "Task 6: Full verification pass",
+      "status": "completed",
+      "blockedBy": [
+        10,
+        11
+      ],
+      "description": "**Goal:** Full suite green, pre-commit clean, and the spec's complete manual verification matrix passes.\n\n```json:metadata\n{\"files\": [], \"verifyCommand\": \"./bin/foundry.macos.editor.dev.arm64 --test --force-colors && pre-commit run --all-files\", \"acceptanceCriteria\": [\"suite green\", \"pre-commit clean\", \"manual matrix passes\"]}\n```"
+    },
+    {
+      "id": 13,
+      "subject": "Task 7: Island geometry helpers with unit tests",
+      "status": "completed",
+      "blockedBy": [
+        12
+      ],
+      "description": "**Goal:** island_width/island_x/island_height pure helpers + doctests.\n\n```json:metadata\n{\"files\": [\"editor/gui/bottom_drawer_geometry.h\", \"tests/editor/test_bottom_drawer_geometry.h\"], \"verifyCommand\": \"./bin/foundry.macos.editor.dev.arm64 --test --test-case=\\\"*BottomDrawerGeometry*\\\" --force-colors\", \"acceptanceCriteria\": [\"helpers pure\", \"doctests cover clamps\", \"filtered test passes\"]}\n```"
+    },
+    {
+      "id": 14,
+      "subject": "Task 8: EditorBottomDrawerStrip widget",
+      "status": "completed",
+      "blockedBy": [
+        13
+      ],
+      "description": "**Goal:** Slim full-window status strip replaces visible tab bar; per-dock toggles, close x, right-click context popup, hosts toaster/version/pin/expand.\n\n```json:metadata\n{\"files\": [\"editor/gui/editor_bottom_drawer_strip.h\", \"editor/gui/editor_bottom_drawer_strip.cpp\", \"editor/gui/editor_bottom_panel.h\", \"editor/gui/editor_bottom_panel.cpp\", \"editor/docks/editor_dock_manager.h\", \"editor/docks/editor_dock_manager.cpp\", \"editor/editor_node.cpp\"], \"verifyCommand\": \"./bin/foundry.macos.editor.dev.arm64 --test --force-colors\", \"acceptanceCriteria\": [\"strip mirrors docks\", \"popup on right-click\", \"legacy paths unchanged\", \"suite green\"]}\n```"
+    },
+    {
+      "id": 15,
+      "subject": "Task 9: Window-level island geometry",
+      "status": "completed",
+      "blockedBy": [
+        14
+      ],
+      "description": "**Goal:** Centered floating island (unpinned) / column-flush (pinned) at window level; hidden when closed; strip drop target; island stylebox.\n\n```json:metadata\n{\"files\": [\"editor/editor_node.cpp\", \"editor/gui/editor_bottom_panel.h\", \"editor/gui/editor_bottom_panel.cpp\", \"editor/docks/editor_dock_manager.cpp\", \"editor/themes/editor_theme_manager.cpp\"], \"verifyCommand\": \"./bin/foundry.macos.editor.dev.arm64 --test --force-colors\", \"acceptanceCriteria\": [\"island unpinned\", \"column-flush pinned\", \"closed drop target works\", \"suite green\"]}\n```"
+    },
+    {
+      "id": 16,
+      "subject": "Task 10: v2 verification pass",
+      "status": "completed",
+      "blockedBy": [
+        15
+      ],
+      "description": "**Goal:** Full suite + pre-commit on branch files + v2 manual matrix.\n\n```json:metadata\n{\"files\": [], \"verifyCommand\": \"./bin/foundry.macos.editor.dev.arm64 --test --force-colors\", \"acceptanceCriteria\": [\"suite green\", \"pre-commit clean\", \"manual matrix passes\"]}\n```"
+    }
+  ],
+  "lastUpdated": "2026-07-02"
+}

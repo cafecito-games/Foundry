@@ -32,6 +32,7 @@
 
 #include "scene/gui/box_container.h"
 #include "scene/gui/button.h"
+#include "scene/gui/check_button.h"
 #include "scene/gui/label.h"
 #include "scene/gui/split_container.h"
 #include "scene/gui/tab_container.h"
@@ -40,6 +41,7 @@
 #include "editor/docks/editor_dock.h"
 #include "editor/editor_node.h"
 #include "editor/editor_string_names.h"
+#include "editor/gui/editor_bottom_drawer_strip.h"
 #include "editor/gui/editor_bottom_panel.h"
 #include "editor/gui/window_wrapper.h"
 #include "editor/settings/editor_settings.h"
@@ -128,7 +130,7 @@ void EditorDockDragHint::_notification(int p_what) {
 				return;
 			}
 
-			can_drop_dock = dragged_dock->get_available_layouts() & (EditorDock::DockLayout)EditorDockManager::get_singleton()->dock_slots[occupied_slot].layout;
+			can_drop_dock = occupied_slot == DockConstants::DOCK_SLOT_BOTTOM || (dragged_dock->get_available_layouts() & (EditorDock::DockLayout)EditorDockManager::get_singleton()->dock_slots[occupied_slot].layout);
 
 			dock_drop_highlight->set_border_color(valid_drop_color);
 			dock_drop_highlight->set_bg_color(valid_drop_color * Color(1, 1, 1, 0.1));
@@ -271,6 +273,13 @@ EditorDock *EditorDockManager::_get_dock_tab_dragged() {
 		}
 
 		for (int i = 0; i < DockConstants::DOCK_SLOT_MAX; i++) {
+			if (i == DockConstants::DOCK_SLOT_BOTTOM) {
+				// The bottom drawer hides when closed and floats as an island when
+				// open, so its drop target is the always-visible status strip.
+				dock_slots[i].drag_hint->set_rect(EditorNode::get_bottom_drawer_strip()->get_global_rect());
+				dock_slots[i].drag_hint->show();
+				continue;
+			}
 			if (dock_slots[i].container->is_visible_in_tree()) {
 				dock_slots[i].drag_hint->set_rect(dock_slots[i].container->get_global_rect());
 				dock_slots[i].drag_hint->show();
@@ -299,6 +308,16 @@ void EditorDockManager::_dock_container_popup(int p_tab_idx, TabContainer *p_doc
 	// Right click context menu.
 	dock_context_popup->set_dock(hovered_dock);
 	dock_context_popup->set_position(p_dock_container->get_tab_bar()->get_screen_position() + p_dock_container->get_tab_bar()->get_local_mouse_position());
+	dock_context_popup->popup();
+}
+
+void EditorDockManager::show_dock_context_popup(EditorDock *p_dock, const Point2 &p_screen_position) {
+	if (p_dock == nullptr) {
+		return;
+	}
+
+	dock_context_popup->set_dock(p_dock);
+	dock_context_popup->set_position(p_screen_position);
 	dock_context_popup->popup();
 }
 
@@ -1121,7 +1140,15 @@ void DockContextPopup::_float_dock() {
 	dock_manager->_open_dock_in_window(context_dock);
 }
 
+void DockContextPopup::_bottom_lock_toggled(bool p_pressed) {
+	EditorNode::get_bottom_panel()->set_switch_locked(p_pressed);
+}
+
 bool DockContextPopup::_is_slot_available(int p_slot) const {
+	if (p_slot == DockConstants::DOCK_SLOT_BOTTOM) {
+		// The bottom drawer accepts every dock regardless of its declared layouts.
+		return true;
+	}
 	return context_dock->available_layouts & (EditorDock::DockLayout)EditorDockManager::get_singleton()->dock_slots[p_slot].layout;
 }
 
@@ -1293,6 +1320,13 @@ void DockContextPopup::_update_buttons() {
 		tab_move_left_button->set_disabled(context_tab_index == 0);
 		tab_move_right_button->set_disabled(context_tab_index >= context_tab_container->get_tab_count() - 1);
 	}
+
+	const bool in_bottom_slot = context_dock && context_dock->get_parent() == EditorNode::get_bottom_panel();
+	bottom_lock_button->set_visible(in_bottom_slot);
+	if (in_bottom_slot) {
+		bottom_lock_button->set_pressed_no_signal(EditorNode::get_bottom_panel()->is_locked());
+	}
+
 	reset_size();
 }
 
@@ -1364,6 +1398,14 @@ DockContextPopup::DockContextPopup() {
 	make_float_button->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	make_float_button->connect(SceneStringName(pressed), callable_mp(this, &DockContextPopup::_float_dock));
 	dock_select_popup_vb->add_child(make_float_button);
+
+	bottom_lock_button = memnew(CheckButton);
+	bottom_lock_button->set_text(TTRC("Lock Tab Switching"));
+	bottom_lock_button->set_tooltip_text(TTRC("Prevent other panels from automatically switching the active bottom drawer tab."));
+	bottom_lock_button->set_focus_mode(Control::FOCUS_ACCESSIBILITY);
+	bottom_lock_button->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	bottom_lock_button->connect(SceneStringName(toggled), callable_mp(this, &DockContextPopup::_bottom_lock_toggled));
+	dock_select_popup_vb->add_child(bottom_lock_button);
 
 	close_button = memnew(Button);
 	close_button->set_text(TTRC("Close"));

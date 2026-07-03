@@ -35,6 +35,7 @@
 #include "scene/gui/split_container.h"
 
 class Button;
+class CheckButton;
 class ConfigFile;
 class Control;
 class EditorDock;
@@ -153,6 +154,8 @@ public:
 
 	TabContainer *get_dock_tab_container(Control *p_dock) const;
 
+	void show_dock_context_popup(EditorDock *p_dock, const Point2 &p_screen_position);
+
 	void set_docks_visible(bool p_show);
 	bool are_docks_visible() const;
 
@@ -202,6 +205,7 @@ private:
 	Button *tab_move_left_button = nullptr;
 	Button *tab_move_right_button = nullptr;
 	Button *close_button = nullptr;
+	CheckButton *bottom_lock_button = nullptr;
 
 	Control *dock_select = nullptr;
 	Rect2 dock_select_rects[DockConstants::DOCK_SLOT_MAX];
@@ -215,6 +219,7 @@ private:
 	void _tab_move_right();
 	void _close_dock();
 	void _float_dock();
+	void _bottom_lock_toggled(bool p_pressed);
 	bool _is_slot_available(int p_slot) const;
 
 	void _dock_select_input(const Ref<InputEvent> &p_input);

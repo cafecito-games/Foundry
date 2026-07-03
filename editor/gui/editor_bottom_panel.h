@@ -35,23 +35,30 @@
 class Button;
 class ConfigFile;
 class EditorDock;
-class EditorToaster;
-class HBoxContainer;
+class Tween;
 
 class EditorBottomPanel : public TabContainer {
 	FOUNDRY_CLASS(EditorBottomPanel, TabContainer);
 
-	HBoxContainer *bottom_hbox = nullptr;
-	Control *icon_spacer = nullptr;
-	EditorToaster *editor_toaster = nullptr;
 	Button *pin_button = nullptr;
 	Button *expand_button = nullptr;
 	Popup *layout_popup = nullptr;
 
 	int previous_tab = -1;
 	bool lock_panel_switching = false;
+	bool drawer_expanded = false;
+	bool grabber_dragging = false;
+	int drag_start_body_height = 0;
+	float drag_start_mouse_y = 0.0f;
+	Control *grabber = nullptr;
+	Ref<Tween> drawer_tween;
+	float last_target_y = -1.0f;
+	int drawer_current_x = 0;
+	int drawer_current_width = 0;
 	LocalVector<EditorDock *> bottom_docks;
 	HashMap<String, int> dock_offsets;
+	HashMap<String, bool> dock_pinned;
+	bool pinned_by_default = false;
 
 	LocalVector<Button *> legacy_buttons;
 	void _on_button_visibility_changed(Button *p_button, EditorDock *p_dock);
@@ -60,11 +67,19 @@ class EditorBottomPanel : public TabContainer {
 	void _on_tab_changed(int p_idx);
 	void _pin_button_toggled(bool p_pressed);
 	void _expand_button_toggled(bool p_pressed);
-	void _update_center_split_offset();
+	bool _is_current_pinned() const;
+	int _get_drawer_area_height() const;
+	int _get_body_height() const;
+	void _set_body_height(int p_height);
+	void _update_drawer_geometry();
+	void _set_drawer_y(float p_y);
+	void _hide_if_closed();
+	void _grabber_input(const Ref<InputEvent> &p_event);
 	EditorDock *_get_dock_from_control(Control *p_control) const;
 
 protected:
 	void _notification(int p_what);
+	virtual void shortcut_input(const Ref<InputEvent> &p_event) override;
 
 public:
 	void save_layout_to_config(Ref<ConfigFile> p_config_file, const String &p_section) const;
@@ -76,11 +91,21 @@ public:
 	void hide_bottom_panel();
 	void toggle_last_opened_bottom_panel();
 	void set_expanded(bool p_expanded);
+	void set_switch_locked(bool p_locked);
 	void _theme_changed();
 	bool is_locked() const { return lock_panel_switching; }
 
-	void set_bottom_panel_offset(int p_offset);
-	int get_bottom_panel_offset();
+	Button *get_pin_button() const { return pin_button; }
+	Button *get_expand_button() const { return expand_button; }
+
+	// The drawer's rect is fully manually driven and its height animates below
+	// the content minimum while sliding (the bottom edge stays glued to the strip
+	// line); reporting a zero minimum keeps Control::set_size from clamping the
+	// rect back up mid-slide. Steady-state heights still respect the content
+	// minimum via the body-height clamp.
+	virtual Size2 get_minimum_size() const override { return Size2(); }
+
+	void update_drawer_geometry();
 
 	EditorBottomPanel();
 	~EditorBottomPanel();
