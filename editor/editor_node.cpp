@@ -2094,12 +2094,19 @@ void EditorNode::_save_editor_states(const String &p_file, int p_idx) {
 		cf->set_value("editor_states", kv.key, kv.value);
 	}
 
-	// Save the currently selected nodes.
-
-	List<Node *> selection = editor_selection->get_full_selected_node_list();
+	// Save the scene's selected nodes as scene-relative paths, since an
+	// inactive scene's nodes are not in the tree. Restoring resolves them
+	// with get_node_or_null on the scene root, which also accepts the
+	// absolute paths written by older versions.
 	TypedArray<NodePath> selection_paths;
-	for (Node *selected_node : selection) {
-		selection_paths.push_back(selected_node->get_path());
+	EditorSceneContext *scene_context = editor_data.get_scene_context(p_idx);
+	if (scene_context) {
+		for (const ObjectID &selected_node_id : scene_context->get_selected_node_ids()) {
+			Node *selected_node = ObjectDB::get_instance<Node>(selected_node_id);
+			if (selected_node) {
+				selection_paths.push_back(scene->get_path_to(selected_node));
+			}
+		}
 	}
 	cf->set_value("editor_states", "selected_nodes", selection_paths);
 
