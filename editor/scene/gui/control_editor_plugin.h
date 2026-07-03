@@ -230,6 +230,7 @@ class ControlEditorToolbar : public HBoxContainer {
 	bool _is_node_locked(const Node *p_node);
 	List<Control *> _get_edited_controls();
 	void _selection_changed();
+	void _update_editor_selection();
 
 protected:
 	void _notification(int p_notification);

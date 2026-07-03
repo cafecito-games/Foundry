@@ -914,9 +914,7 @@ TEST_SUITE("[Modules][FoundryScript][Format]") {
 	}
 
 	TEST_CASE("[Format] CLI option parsing recognizes modes and paths") {
-		List<String> args;
-		args.push_back("--headless");
-		args.push_back("--foundry_script-format");
+		Vector<String> args;
 		args.push_back("--check");
 		args.push_back("a.fs");
 		args.push_back("dir");
@@ -928,11 +926,8 @@ TEST_SUITE("[Modules][FoundryScript][Format]") {
 		CHECK_EQ(options.paths[1], "dir");
 	}
 
-	TEST_CASE("[Format] CLI option parsing recognizes the format command name") {
-		List<String> args;
-		args.push_back("--path");
-		args.push_back("project");
-		args.push_back("--foundry_script-format");
+	TEST_CASE("[Format] CLI option parsing recognizes script paths") {
+		Vector<String> args;
 		args.push_back("script.fs");
 		FSFormatterCLI::Options options = FSFormatterCLI::parse_options(args);
 		CHECK_FALSE(options.read_stdin);
@@ -941,22 +936,18 @@ TEST_SUITE("[Modules][FoundryScript][Format]") {
 	}
 
 	TEST_CASE("[Format] CLI option parsing defaults to stdin and write/diff flags") {
-		List<String> only_command;
-		only_command.push_back("--foundry_script-format");
-		FSFormatterCLI::Options defaulted = FSFormatterCLI::parse_options(only_command);
+		FSFormatterCLI::Options defaulted = FSFormatterCLI::parse_options(Vector<String>());
 		CHECK(defaulted.read_stdin);
 		CHECK_EQ(defaulted.mode, FSFormatterCLI::MODE_STDOUT);
 
-		List<String> dash;
-		dash.push_back("--foundry_script-format");
+		Vector<String> dash;
 		dash.push_back("-w");
 		dash.push_back("-");
 		FSFormatterCLI::Options stdin_write = FSFormatterCLI::parse_options(dash);
 		CHECK_EQ(stdin_write.mode, FSFormatterCLI::MODE_WRITE);
 		CHECK(stdin_write.read_stdin);
 
-		List<String> diff;
-		diff.push_back("--foundry_script-format");
+		Vector<String> diff;
 		diff.push_back("--diff");
 		diff.push_back("x.fs");
 		FSFormatterCLI::Options diff_options = FSFormatterCLI::parse_options(diff);
@@ -965,11 +956,7 @@ TEST_SUITE("[Modules][FoundryScript][Format]") {
 	}
 
 	TEST_CASE("[Format] CLI option parsing flags mixed stdin and paths") {
-		// `--foundry_script-format - file.fs` requests both stdin and a path. `run_from_cmdline`
-		// rejects this state (it would otherwise silently format only stdin and drop the
-		// file); the parser surfaces it as `read_stdin` with a non-empty `paths`.
-		List<String> mixed;
-		mixed.push_back("--foundry_script-format");
+		Vector<String> mixed;
 		mixed.push_back("-");
 		mixed.push_back("file.fs");
 		FSFormatterCLI::Options options = FSFormatterCLI::parse_options(mixed);

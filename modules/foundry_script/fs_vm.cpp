@@ -32,7 +32,9 @@
 #include "fs_conformance_registry.h"
 #include "fs_function.h"
 #include "fs_lambda_callable.h"
+#include "fs_script_test_guard.h"
 
+#include "core/object/script_function_state.h"
 #include "core/os/os.h"
 #include "core/profiling/profiling.h"
 
@@ -2821,7 +2823,7 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 						bool was_freed = false;
 						Object *obj = call_ret_dst->get_validated_object_with_check(was_freed);
 
-						if (obj && obj->is_class_ptr(FSFunctionState::get_class_ptr_static())) {
+						if (obj && obj->is_class_ptr(ScriptFunctionState::get_class_ptr_static())) {
 							err_text = R"(Trying to call an async function without "await".)";
 							OPCODE_BREAK;
 						}
@@ -3447,7 +3449,7 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 
 						// Is this even possible to be null at this point?
 						if (obj) {
-							if (obj->is_class_ptr(FSFunctionState::get_class_ptr_static())) {
+							if (obj->is_class_ptr(ScriptFunctionState::get_class_ptr_static())) {
 								result = Signal(obj, SNAME("completed"));
 							}
 						}
@@ -3528,6 +3530,15 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 					OPCODE_BREAK;
 				}
 #endif
+				{
+					String guard_message;
+					FSScriptTestGuard::UnwindReason guard_reason = FSScriptTestGuard::UNWIND_NONE;
+					if (FSScriptTestGuard::checkpoint(guard_message, guard_reason)) {
+						FSScriptTestGuard::mark_unwind(guard_reason, guard_message);
+						err_text = guard_message;
+						OPCODE_BREAK;
+					}
+				}
 				GET_VARIANT_PTR(result, 0);
 				*result = p_state->result;
 				ip += 2;
@@ -4803,6 +4814,16 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				line = _code_ptr[ip + 1];
 				ip += 2;
 
+				if (FSScriptTestGuard::is_active()) {
+					String guard_message;
+					FSScriptTestGuard::UnwindReason guard_reason = FSScriptTestGuard::UNWIND_NONE;
+					if (FSScriptTestGuard::checkpoint(guard_message, guard_reason)) {
+						FSScriptTestGuard::mark_unwind(guard_reason, guard_message);
+						err_text = guard_message;
+						OPCODE_BREAK;
+					}
+				}
+
 				if (EngineDebugger::is_active()) {
 					// line
 					bool do_break = false;
@@ -4870,9 +4891,15 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 			}
 			int err_line = line;
 
-			_err_print_error(err_func.utf8().get_data(), err_file.utf8().get_data(), err_line, err_text.utf8().get_data(), false, ERR_HANDLER_SCRIPT);
+			bool suppress_report = false;
+			FSScriptTestGuard::notify_script_error(err_text, suppress_report);
+			if (!suppress_report) {
+				_err_print_error(err_func.utf8().get_data(), err_file.utf8().get_data(), err_line, err_text.utf8().get_data(), false, ERR_HANDLER_SCRIPT);
+			}
 #ifdef DEBUG_ENABLED
-			FSLanguage::get_singleton()->debug_break(err_text, false);
+			if (!suppress_report) {
+				FSLanguage::get_singleton()->debug_break(err_text, false);
+			}
 #endif
 			retvalue = _get_default_variant_for_data_type(return_type);
 		}

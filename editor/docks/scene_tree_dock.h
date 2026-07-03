@@ -179,7 +179,6 @@ class SceneTreeDock : public EditorDock {
 	void _create();
 	Node *_do_create(Node *p_parent);
 	void _post_do_create(Node *p_child);
-	Node *scene_root = nullptr;
 	Node *edited_scene = nullptr;
 	Node *pending_click_select = nullptr;
 	bool tree_clicked = false;
@@ -254,6 +253,7 @@ class SceneTreeDock : public EditorDock {
 	bool _validate_no_foreign();
 	bool _validate_no_instance();
 	void _selection_changed();
+	void _update_editor_selection();
 	void _update_script_button();
 	void _queue_update_script_button();
 
@@ -362,6 +362,6 @@ public:
 		return script_create_dialog;
 	}
 
-	SceneTreeDock(Node *p_scene_root, EditorSelection *p_editor_selection, EditorData &p_editor_data);
+	SceneTreeDock(EditorSelection *p_editor_selection, EditorData &p_editor_data);
 	~SceneTreeDock();
 };

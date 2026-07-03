@@ -5574,12 +5574,11 @@ void AnimationTrackEditor::_notification(int p_what) {
 		} break;
 
 		case NOTIFICATION_READY: {
-			Node *scene_root = EditorNode::get_singleton()->get_scene_root();
-			scene_root->connect("child_entered_tree", callable_mp(this, &AnimationTrackEditor::_root_node_changed).bind(false));
-			scene_root->connect("child_exiting_tree", callable_mp(this, &AnimationTrackEditor::_root_node_changed).bind(true));
+			_update_scene_root_connections();
+			EditorNode::get_singleton()->connect("active_scene_context_changed", callable_mp(this, &AnimationTrackEditor::_update_scene_root_connections));
 
 			EditorNode::get_singleton()->connect("scene_changed", callable_mp(this, &AnimationTrackEditor::_scene_changed));
-			EditorNode::get_singleton()->get_editor_selection()->connect("selection_changed", callable_mp(this, &AnimationTrackEditor::_selection_changed));
+			EditorNode::get_singleton()->connect_editor_selection_changed(callable_mp(this, &AnimationTrackEditor::_selection_changed));
 
 			panner->setup((ViewPanner::ControlScheme)EDITOR_GET("editors/panning/animation_editors_panning_scheme").operator int(), ED_GET_SHORTCUT("canvas_item_editor/pan_view"), bool(EDITOR_GET("editors/panning/simple_panning")));
 			panner->setup_warped_panning(get_viewport(), EDITOR_GET("editors/panning/warped_mouse_panning"));
@@ -7815,6 +7814,23 @@ void AnimationTrackEditor::_auto_fit_bezier() {
 	if (bezier_edit->is_visible()) {
 		bezier_edit->auto_fit_vertically();
 	}
+}
+
+void AnimationTrackEditor::_update_scene_root_connections() {
+	// The viewport hosting the edited scene changes with the active scene
+	// context, so follow it to keep observing scene root changes.
+	Node *scene_root_viewport = EditorNode::get_singleton()->get_scene_root();
+	Node *previous_viewport = ObjectDB::get_instance<Node>(scene_root_viewport_id);
+	if (previous_viewport == scene_root_viewport) {
+		return;
+	}
+	if (previous_viewport) {
+		previous_viewport->disconnect("child_entered_tree", callable_mp(this, &AnimationTrackEditor::_root_node_changed).bind(false));
+		previous_viewport->disconnect("child_exiting_tree", callable_mp(this, &AnimationTrackEditor::_root_node_changed).bind(true));
+	}
+	scene_root_viewport_id = scene_root_viewport->get_instance_id();
+	scene_root_viewport->connect("child_entered_tree", callable_mp(this, &AnimationTrackEditor::_root_node_changed).bind(false));
+	scene_root_viewport->connect("child_exiting_tree", callable_mp(this, &AnimationTrackEditor::_root_node_changed).bind(true));
 }
 
 void AnimationTrackEditor::_root_node_changed(Node *p_node, bool p_removed) {

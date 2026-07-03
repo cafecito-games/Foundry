@@ -41,8 +41,6 @@ class EditorSelectionHistory;
 class EditorObjectSelector : public Button {
 	FOUNDRY_CLASS(EditorObjectSelector, Button);
 
-	EditorSelectionHistory *history = nullptr;
-
 	TextureRect *current_object_icon = nullptr;
 	Label *current_object_label = nullptr;
 	TextureRect *sub_objects_icon = nullptr;
@@ -65,5 +63,5 @@ public:
 	void clear_path();
 	void enable_path();
 
-	EditorObjectSelector(EditorSelectionHistory *p_history);
+	EditorObjectSelector();
 };

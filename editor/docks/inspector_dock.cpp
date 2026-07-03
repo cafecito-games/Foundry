@@ -798,7 +798,7 @@ InspectorDock::InspectorDock(EditorData &p_editor_data) {
 
 	HBoxContainer *subresource_hb = memnew(HBoxContainer);
 	main_vb->add_child(subresource_hb);
-	object_selector = memnew(EditorObjectSelector(EditorNode::get_singleton()->get_editor_selection_history()));
+	object_selector = memnew(EditorObjectSelector);
 	object_selector->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	subresource_hb->add_child(object_selector);
 

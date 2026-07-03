@@ -848,6 +848,8 @@ class AnimationTrackEditor : public VBoxContainer {
 	void _auto_fit();
 	void _auto_fit_bezier();
 
+	ObjectID scene_root_viewport_id;
+	void _update_scene_root_connections();
 	void _root_node_changed(Node *p_node, bool p_removed);
 	void _scene_changed();
 	void _selection_changed();

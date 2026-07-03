@@ -199,7 +199,7 @@ void GroupSettingsEditor::_modify_references(const StringName &p_name, const Str
 	int steps = scenes.size();
 	Vector<EditorData::EditedScene> edited_scenes = EditorNode::get_editor_data().get_edited_scenes();
 	for (const EditorData::EditedScene &es : edited_scenes) {
-		if (!es.root) {
+		if (!es.get_root()) {
 			continue;
 		}
 		if (es.path.is_empty()) {
@@ -217,11 +217,11 @@ void GroupSettingsEditor::_modify_references(const StringName &p_name, const Str
 	// Update opened scenes.
 	HashSet<String> edited_scenes_path;
 	for (const EditorData::EditedScene &es : edited_scenes) {
-		if (!es.root) {
+		if (!es.get_root()) {
 			continue;
 		}
 		progress.step(es.path, step++);
-		bool edited = p_is_rename ? rename_node_references(es.root, p_name, p_new_name) : remove_node_references(es.root, p_name);
+		bool edited = p_is_rename ? rename_node_references(es.get_root(), p_name, p_new_name) : remove_node_references(es.get_root(), p_name);
 		if (!es.path.is_empty()) {
 			scenes.erase(es.path);
 			if (edited) {

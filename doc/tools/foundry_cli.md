@@ -34,8 +34,9 @@ execution is explicit, and project/user arguments are passed only after `--`.
   flags. An empty `commands` array means no command compiled into this build
   matches the scope — it does not guarantee the scope itself is valid.
 
-Legacy engine flags are no longer documented in `--help`; the command API
-above is the supported surface (see issue #830 for the migration plan).
+Legacy workflow flags such as `--editor`, `--path`, `--test`, and
+`--foundry_script-format` are rejected with a replacement hint. Use the
+command-first invocations documented above.
 
 ## Commands
 
