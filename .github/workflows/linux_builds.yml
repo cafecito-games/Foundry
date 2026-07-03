@@ -60,7 +60,7 @@ jobs:
         run: |
           ./bin/foundry.linuxbsd.editor.dev.x86_64 --version
           ./bin/foundry.linuxbsd.editor.dev.x86_64 --help
-          ./bin/foundry.linuxbsd.editor.dev.x86_64 --headless --test --force-colors
+          ./bin/foundry.linuxbsd.editor.dev.x86_64 test run --force-colors
 
   release-vm-error-tests:
     runs-on: ubuntu-22.04
@@ -103,7 +103,7 @@ jobs:
       - name: Release-build VM runtime error tests
         run: |
           ./bin/foundry.linuxbsd.template_release.x86_64 --version
-          ./bin/foundry.linuxbsd.template_release.x86_64 --headless --test --force-colors --test-case="*Release-build VM runtime error*"
+          ./bin/foundry.linuxbsd.template_release.x86_64 test run --force-colors --case "*Release-build VM runtime error*"
 
   template-release-stripped-default:
     runs-on: ubuntu-22.04

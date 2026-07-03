@@ -26,25 +26,25 @@ ARTIFACTS: list[ArtifactSpec] = [
     {
         "name": "extension_api.json",
         "produced": "extension_api.json",
-        "args": ["--headless", "--dump-extension-api"],
+        "args": ["docs", "generate-api", "--headless"],
         "description": "Foundry extension API without inline documentation.",
     },
     {
         "name": "extension_api_with_docs.json",
         "produced": "extension_api.json",
-        "args": ["--headless", "--dump-extension-api-with-docs"],
+        "args": ["docs", "generate-api", "--include-docs", "--headless"],
         "description": "Foundry extension API including inline documentation.",
     },
     {
         "name": "foundry_extension_interface.h",
         "produced": "foundry_extension_interface.h",
-        "args": ["--headless", "--dump-foundryextension-interface"],
+        "args": ["extension", "dump-interface", "--headless"],
         "description": "FoundryExtension C ABI header.",
     },
     {
         "name": "foundry_extension_interface.json",
         "produced": "foundry_extension_interface.json",
-        "args": ["--headless", "--dump-foundryextension-interface-json"],
+        "args": ["extension", "dump-interface", "--format", "json", "--headless"],
         "description": "FoundryExtension C ABI JSON description.",
     },
 ]

@@ -108,4 +108,4 @@ jobs:
         run: |
           ${{ matrix.bin }} --version
           ${{ matrix.bin }} --help
-          ${{ matrix.bin }} --test --force-colors
+          ${{ matrix.bin }} test run --force-colors

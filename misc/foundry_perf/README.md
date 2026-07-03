@@ -34,7 +34,7 @@ Binary: `bin/foundry.macos.editor.dev.<arch>` (`arm64` or `x86_64`). The build l
 
 ### 1. Automated tests
 ```sh
-./bin/foundry.macos.editor.dev.* --headless --test --force-colors
+./bin/foundry.macos.editor.dev.* test run --force-colors
 ```
 Expect `[doctest] Status: SUCCESS!` (leaked-instance warnings at exit are expected/non-blocking).
 Includes the directory-watcher regression test that keeps a delayed recheck alive after a clean

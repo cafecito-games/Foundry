@@ -28,9 +28,34 @@ def make_fake_foundry_binary(path: Path) -> None:
             import sys
             from pathlib import Path
 
-            args = set(sys.argv[1:])
+            args = sys.argv[1:]
 
-            if "--dump-extension-api-with-docs" in args:
+            def has_pair(flag: str, value: str | None = None) -> bool:
+                if flag not in args:
+                    return False
+                if value is None:
+                    return True
+                index = args.index(flag)
+                return index + 1 < len(args) and args[index + 1] == value
+
+            wants_api_with_docs = (
+                "--dump-extension-api-with-docs" in args
+                or (has_pair("docs", "generate-api") and "--include-docs" in args)
+            )
+            wants_api = (
+                "--dump-extension-api" in args
+                or (has_pair("docs", "generate-api") and not wants_api_with_docs)
+            )
+            wants_interface_json = (
+                "--dump-foundryextension-interface-json" in args
+                or (has_pair("extension", "dump-interface") and has_pair("--format", "json"))
+            )
+            wants_interface_header = (
+                "--dump-foundryextension-interface" in args
+                or (has_pair("extension", "dump-interface") and not wants_interface_json)
+            )
+
+            if wants_api_with_docs:
                 print("Dumping Extension API including documentation")
                 Path("extension_api.json").write_text(json.dumps({
                     "header": {
@@ -45,7 +70,7 @@ def make_fake_foundry_binary(path: Path) -> None:
                     "classes": [{"name": "FoundryScript"}],
                     "docs": True
                 }))
-            elif "--dump-extension-api" in args:
+            elif wants_api:
                 print("Dumping Extension API")
                 Path("extension_api.json").write_text(json.dumps({
                     "header": {
@@ -60,13 +85,13 @@ def make_fake_foundry_binary(path: Path) -> None:
                     "classes": [{"name": "FoundryScript"}],
                     "docs": False
                 }))
-            elif "--dump-foundryextension-interface-json" in args:
+            elif wants_interface_json:
                 print("Dumping FoundryExtension interface json file")
                 Path("foundry_extension_interface.json").write_text(json.dumps({
                     "format_version": 1,
                     "types": [{"name": "FoundryExtensionBool"}]
                 }))
-            elif "--dump-foundryextension-interface" in args:
+            elif wants_interface_header:
                 print("Dumping FoundryExtension interface header file")
                 Path("foundry_extension_interface.h").write_text("typedef unsigned char FoundryExtensionBool;\\n")
             else:
