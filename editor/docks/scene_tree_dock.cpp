@@ -1730,6 +1730,13 @@ void SceneTreeDock::_notification(int p_what) {
 		} break;
 
 		case NOTIFICATION_ENTER_TREE: {
+			// The signal only exists once EditorNode's bindings are set up,
+			// which happens after its constructor (and this dock) ran; a
+			// context may also have activated before this connection existed.
+			if (!EditorNode::get_singleton()->is_connected("active_scene_context_changed", callable_mp(this, &SceneTreeDock::_update_editor_selection))) {
+				EditorNode::get_singleton()->connect("active_scene_context_changed", callable_mp(this, &SceneTreeDock::_update_editor_selection));
+				_update_editor_selection();
+			}
 			clear_inherit_confirm->connect(SceneStringName(confirmed), callable_mp(this, &SceneTreeDock::_tool_selected).bind(TOOL_SCENE_CLEAR_INHERITANCE_CONFIRM, false));
 			scene_tree->set_auto_expand_selected(EDITOR_GET("docks/scene_tree/auto_expand_to_selected"), false);
 			scene_tree->set_hide_filtered_out_parents(EDITOR_GET("docks/scene_tree/hide_filtered_out_parents"), false);
@@ -4964,7 +4971,6 @@ SceneTreeDock::SceneTreeDock(EditorSelection *p_editor_selection, EditorData &p_
 	scene_tree->get_scene_tree()->connect("item_icon_double_clicked", callable_mp(this, &SceneTreeDock::_focus_node));
 
 	EditorNode::get_singleton()->connect_editor_selection_changed(callable_mp(this, &SceneTreeDock::_selection_changed));
-	EditorNode::get_singleton()->connect("active_scene_context_changed", callable_mp(this, &SceneTreeDock::_update_editor_selection));
 
 	scene_tree->set_as_scene_tree_dock();
 	scene_tree->set_editor_selection(editor_selection);

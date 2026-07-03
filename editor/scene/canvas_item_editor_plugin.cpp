@@ -4458,6 +4458,13 @@ void CanvasItemEditor::_notification(int p_what) {
 		} break;
 
 		case NOTIFICATION_ENTER_TREE: {
+			// The signal only exists once EditorNode's bindings are set up,
+			// which happens after its constructor (and this editor) ran; a
+			// context may also have activated before this connection existed.
+			if (!EditorNode::get_singleton()->is_connected("active_scene_context_changed", callable_mp(this, &CanvasItemEditor::_active_scene_context_changed))) {
+				EditorNode::get_singleton()->connect("active_scene_context_changed", callable_mp(this, &CanvasItemEditor::_active_scene_context_changed));
+				_active_scene_context_changed();
+			}
 			select_sb->set_texture(get_editor_theme_icon(SNAME("EditorRect2D")));
 			select_sb->set_texture_margin_all(4);
 			select_sb->set_content_margin_all(4);
@@ -5581,7 +5588,6 @@ CanvasItemEditor::CanvasItemEditor() {
 	EditorNode::get_singleton()->add_editor_selection_plugin(this);
 	EditorNode::get_singleton()->connect_editor_selection_changed(callable_mp((CanvasItem *)this, &CanvasItem::queue_redraw));
 	EditorNode::get_singleton()->connect_editor_selection_changed(callable_mp(this, &CanvasItemEditor::_selection_changed));
-	EditorNode::get_singleton()->connect("active_scene_context_changed", callable_mp(this, &CanvasItemEditor::_active_scene_context_changed));
 
 	SceneTreeDock::get_singleton()->connect("node_created", callable_mp(this, &CanvasItemEditor::_adjust_new_node_position));
 	SceneTreeDock::get_singleton()->connect("add_node_used", callable_mp(this, &CanvasItemEditor::_reset_create_position));
