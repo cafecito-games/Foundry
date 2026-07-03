@@ -114,6 +114,7 @@
 #endif
 
 #ifdef TOOLS_ENABLED
+#include "editor/automation/editor_automation_server.h"
 #include "editor/debugger/debug_adapter/debug_adapter_server.h"
 #include "editor/debugger/editor_debugger_node.h"
 #include "editor/doc/doc_data_class_path.gen.h"
@@ -725,6 +726,9 @@ static void apply_foundry_cli_invocation(
 			break;
 		case Kind::EDITOR_OPEN:
 			editor = true;
+#if defined(TOOLS_ENABLED)
+			EditorAutomationServer::apply_cli_options(inv);
+#endif
 			for (int i = 0; i < inv.passthrough_args.size(); i++) {
 				r_main_args.push_back(inv.passthrough_args[i]);
 			}

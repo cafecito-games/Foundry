@@ -65,9 +65,15 @@ void ScriptDiagnosticCapture::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_events"), &ScriptDiagnosticCapture::get_events);
 
 	ClassDB::bind_method(D_METHOD("has_diagnostic", "severity", "message"), &ScriptDiagnosticCapture::has_diagnostic, DEFVAL(String()));
+	ClassDB::bind_method(D_METHOD("has_diagnostic_containing", "severity", "text"), &ScriptDiagnosticCapture::has_diagnostic_containing, DEFVAL(String()));
 	ClassDB::bind_method(D_METHOD("has_error", "message"), &ScriptDiagnosticCapture::has_error, DEFVAL(String()));
 	ClassDB::bind_method(D_METHOD("has_warning", "message"), &ScriptDiagnosticCapture::has_warning, DEFVAL(String()));
 	ClassDB::bind_method(D_METHOD("has_fatal", "message"), &ScriptDiagnosticCapture::has_fatal, DEFVAL(String()));
+	ClassDB::bind_method(D_METHOD("has_error_containing", "text"), &ScriptDiagnosticCapture::has_error_containing, DEFVAL(String()));
+	ClassDB::bind_method(D_METHOD("has_warning_containing", "text"), &ScriptDiagnosticCapture::has_warning_containing, DEFVAL(String()));
+	ClassDB::bind_method(D_METHOD("has_fatal_containing", "text"), &ScriptDiagnosticCapture::has_fatal_containing, DEFVAL(String()));
+
+	ClassDB::bind_static_method("ScriptDiagnosticCapture", D_METHOD("is_supported"), &ScriptDiagnosticCapture::is_supported);
 
 	BIND_ENUM_CONSTANT(SEVERITY_ERROR);
 	BIND_ENUM_CONSTANT(SEVERITY_WARNING);
@@ -117,9 +123,35 @@ bool ScriptDiagnosticCapture::_has_diagnostic(Severity p_severity, const String 
 	return false;
 }
 
+bool ScriptDiagnosticCapture::_has_diagnostic_containing(Severity p_severity, const String &p_text) const {
+	for (const Event &event : events) {
+		if (event.severity == p_severity && (p_text.is_empty() || event.message.contains(p_text))) {
+			return true;
+		}
+	}
+	return false;
+}
+
+String ScriptDiagnosticCapture::_severity_name(Severity p_severity) {
+	switch (p_severity) {
+		case SEVERITY_ERROR:
+			return "error";
+		case SEVERITY_WARNING:
+			return "warning";
+		case SEVERITY_SCRIPT_ERROR:
+			return "script_error";
+		case SEVERITY_SHADER_ERROR:
+			return "shader_error";
+		case SEVERITY_FATAL:
+			return "fatal";
+	}
+	return "error";
+}
+
 Dictionary ScriptDiagnosticCapture::_event_to_dictionary(const Event &p_event) const {
 	Dictionary result;
 	result["severity"] = p_event.severity;
+	result["severity_name"] = _severity_name(p_event.severity);
 	result["message"] = p_event.message;
 	result["code"] = p_event.code;
 	result["rationale"] = p_event.rationale;
@@ -132,6 +164,10 @@ Dictionary ScriptDiagnosticCapture::_event_to_dictionary(const Event &p_event) c
 
 bool ScriptDiagnosticCapture::has_active_capture() {
 	return active_capture_count.load(std::memory_order_relaxed) > 0;
+}
+
+bool ScriptDiagnosticCapture::is_supported() {
+	return true;
 }
 
 void ScriptDiagnosticCapture::start(bool p_quiet) {
@@ -198,6 +234,11 @@ bool ScriptDiagnosticCapture::has_diagnostic(int p_severity, const String &p_mes
 	return _has_diagnostic((Severity)p_severity, p_message);
 }
 
+bool ScriptDiagnosticCapture::has_diagnostic_containing(int p_severity, const String &p_text) const {
+	ERR_FAIL_COND_V(p_severity < SEVERITY_ERROR || p_severity > SEVERITY_FATAL, false);
+	return _has_diagnostic_containing((Severity)p_severity, p_text);
+}
+
 bool ScriptDiagnosticCapture::has_error(const String &p_message) const {
 	return _has_diagnostic(SEVERITY_ERROR, p_message);
 }
@@ -208,6 +249,18 @@ bool ScriptDiagnosticCapture::has_warning(const String &p_message) const {
 
 bool ScriptDiagnosticCapture::has_fatal(const String &p_message) const {
 	return _has_diagnostic(SEVERITY_FATAL, p_message);
+}
+
+bool ScriptDiagnosticCapture::has_error_containing(const String &p_text) const {
+	return _has_diagnostic_containing(SEVERITY_ERROR, p_text);
+}
+
+bool ScriptDiagnosticCapture::has_warning_containing(const String &p_text) const {
+	return _has_diagnostic_containing(SEVERITY_WARNING, p_text);
+}
+
+bool ScriptDiagnosticCapture::has_fatal_containing(const String &p_text) const {
+	return _has_diagnostic_containing(SEVERITY_FATAL, p_text);
 }
 
 ScriptDiagnosticCapture::~ScriptDiagnosticCapture() {

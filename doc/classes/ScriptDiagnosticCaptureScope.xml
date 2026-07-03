@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="ScriptDiagnosticCaptureScope" inherits="RefCounted" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+	<brief_description>
+		Scoped helper that starts and stops a [ScriptDiagnosticCapture] exactly once.
+	</brief_description>
+	<description>
+		[ScriptDiagnosticCaptureScope] wraps a [ScriptDiagnosticCapture] with a stop-exactly-once contract and a destructor safety net. Dropping the scope without calling [method stop] still restores diagnostic output state, which keeps per-test capture reliable across async code, teardowns, runtime failures, and future timeout/abort paths.
+		Nested scopes preserve broadcast semantics: every active capture receives each diagnostic event. Quiet restoration remains nest-safe through the global quiet refcount already used by [ScriptDiagnosticCapture].
+		[b]Composition with [ScriptTestExecution][/b]
+		Recommended runner pattern: capture outside, guard inside — start a quiet scope, [code]await[/code] [method ScriptTestExecution.guard_callv], then [method stop] — so guard-initiated unwinds never leak an active capture.
+		[codeblock]
+		var diagnostics := ScriptDiagnosticCaptureScope.start(true)
+		var execution_result: ScriptTestExecutionResult = await execution.guard_callv(suite, test_case.method_name, test_case.arguments)
+		diagnostics.stop()
+		context.set_diagnostics(diagnostics.capture)
+		[/codeblock]
+		[b]Async helpers[/b]
+		[method capture_async] records script runtime errors as ordinary diagnostic events but does not alter error control flow. Whether a captured diagnostic fails a test remains runner policy.
+	</description>
+	<methods>
+		<method name="capture" qualifiers="static">
+			<return type="ScriptDiagnosticCaptureResult" />
+			<param index="0" name="callable" type="Callable" />
+			<param index="1" name="quiet" type="bool" default="false" />
+			<description>
+				Starts a capture, invokes [param callable] synchronously, stops the capture, and returns a [ScriptDiagnosticCaptureResult].
+			</description>
+		</method>
+		<method name="capture_async" qualifiers="static">
+			<return type="Variant" />
+			<param index="0" name="callable" type="Callable" />
+			<param index="1" name="quiet" type="bool" default="false" />
+			<description>
+				Like [method capture], but when [param callable] suspends and returns a [ScriptFunctionState] handle, returns a pending handle whose [signal ScriptFunctionState.completed] emits a [ScriptDiagnosticCaptureResult] once the coroutine finishes. Synchronous callables return the result object directly, so [code]await ScriptDiagnosticCaptureScope.capture_async(...)[/code] works for both sync and async callables.
+			</description>
+		</method>
+		<method name="get_events" qualifiers="const">
+			<return type="Array" />
+			<description>
+				Convenience passthrough to [member capture]'s [method ScriptDiagnosticCapture.get_events].
+			</description>
+		</method>
+		<method name="is_active" qualifiers="const">
+			<return type="bool" />
+			<description>
+				Returns [code]true[/code] while the scope's capture is active and [method stop] has not been called.
+			</description>
+		</method>
+		<method name="start" qualifiers="static">
+			<return type="ScriptDiagnosticCaptureScope" />
+			<param index="0" name="quiet" type="bool" default="false" />
+			<description>
+				Creates a scope and starts its internal capture.
+			</description>
+		</method>
+		<method name="stop">
+			<return type="void" />
+			<description>
+				Stops the capture. Safe to call more than once; only the first call has an effect.
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="capture" type="ScriptDiagnosticCapture" setter="" getter="get_capture">
+			The underlying capture, exposing the full query surface after [method stop].
+		</member>
+	</members>
+</class>

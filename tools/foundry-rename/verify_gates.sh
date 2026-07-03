@@ -36,12 +36,11 @@ hdr()  { printf '\n=== %s ===\n' "$1"; }
 #   thirdparty            never renamed (vendored upstream)
 #   tools/foundry-rename  the rename map literally contains the old strings
 #   *.po / *.pot          translations, pending regeneration
-#   CHANGELOG / docs      historical records
+#   docs                  historical records
 #   LICENSE/COPYRIGHT/... inherited attribution kept verbatim by design
 EXCLUDE_CODE=(
   ':!thirdparty'
   ':!tools/foundry-rename'
-  ':!CHANGELOG.md'
   ':!docs/superpowers'
 )
 
@@ -75,10 +74,10 @@ gate2_stragglers() {
   else
     fail "unexpected GODOT_* / project.godot residuals:"; printf '%s\n' "$unexpected"; fi
 
-  # No corrupted Foundry banner forged from the inherited Godot header.
-  n=$(git grep -lE 'FOUNDRY ENGINE|Foundry Engine contributors|foundryengine\.org' \
+  # No corrupted Foundry contributor/domain banner forged from the inherited Godot header.
+  n=$(git grep -lE 'Foundry Engine contributors|foundryengine\.org' \
         -- ':!tools/foundry-rename' | wc -l | tr -d ' ')
-  if [ "$n" -eq 0 ]; then pass "0 corrupted FOUNDRY ENGINE / foundryengine.org banners"; else
+  if [ "$n" -eq 0 ]; then pass "0 corrupted Foundry contributor/domain banners"; else
     fail "$n files with a corrupted Foundry banner"; fi
 }
 

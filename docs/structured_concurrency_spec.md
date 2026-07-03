@@ -171,7 +171,7 @@ call all yield `Coroutine[T]`.
   `x.length()` passed analysis and then misbehaved at runtime. Under honest
   typing `x : Coroutine[T]`, so `x.length()` becomes a compile error. This only
   affects code that was already runtime-broken (using the unsound inferred type
-  without awaiting). Document in the changelog.
+  without awaiting). Document in the release notes.
 
 ## Root-scope soundness gap
 

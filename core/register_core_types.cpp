@@ -74,6 +74,7 @@
 #include "core/object/class_db.h"
 #include "core/object/script_backtrace.h"
 #include "core/object/script_diagnostic_capture.h"
+#include "core/object/script_diagnostic_capture_scope.h"
 #include "core/object/script_function_state.h"
 #include "core/object/script_language_extension.h"
 #include "core/object/script_test_runner.h"
@@ -175,6 +176,9 @@ void register_core_types() {
 	FOUNDRY_REGISTER_ABSTRACT_CLASS(ScriptFunctionState);
 	FOUNDRY_REGISTER_CLASS(ScriptBacktrace);
 	FOUNDRY_REGISTER_CLASS(ScriptDiagnosticCapture);
+	FOUNDRY_REGISTER_CLASS(ScriptDiagnosticCaptureScope);
+	FOUNDRY_REGISTER_CLASS(ScriptDiagnosticCaptureResult);
+	FOUNDRY_REGISTER_CLASS(ScriptDiagnosticCapturePendingState);
 	FOUNDRY_REGISTER_CLASS(ScriptTestRunner);
 	FOUNDRY_REGISTER_VIRTUAL_CLASS(ScriptExtension);
 	FOUNDRY_REGISTER_VIRTUAL_CLASS(ScriptLanguageExtension);

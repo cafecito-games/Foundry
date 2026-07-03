@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  script_diagnostic_capture.h                                           */
+/*  script_diagnostic_capture_scope.h                                     */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -30,76 +30,72 @@
 
 #pragma once
 
-#include "core/error/error_macros.h"
 #include "core/object/ref_counted.h"
-#include "core/templates/local_vector.h"
-#include "core/variant/array.h"
-#include "core/variant/dictionary.h"
+#include "core/object/script_diagnostic_capture.h"
+#include "core/object/script_function_state.h"
+#include "core/variant/callable.h"
 
-class ScriptDiagnosticCapture : public RefCounted {
-	FOUNDRY_CLASS(ScriptDiagnosticCapture, RefCounted);
+class ScriptDiagnosticCaptureScope;
 
-public:
-	enum Severity {
-		SEVERITY_ERROR,
-		SEVERITY_WARNING,
-		SEVERITY_SCRIPT_ERROR,
-		SEVERITY_SHADER_ERROR,
-		SEVERITY_FATAL,
-	};
+class ScriptDiagnosticCaptureResult : public RefCounted {
+	FOUNDRY_CLASS(ScriptDiagnosticCaptureResult, RefCounted);
 
 private:
-	struct Event {
-		Severity severity = SEVERITY_ERROR;
-		String message;
-		String code;
-		String rationale;
-		String function;
-		String file;
-		int line = 0;
-		bool editor_notify = false;
-	};
-
-	ErrorHandlerList error_handler;
-	LocalVector<Event> events;
-	bool active = false;
-	bool quiet = false;
-
-	static Severity _severity_from_handler_type(ErrorHandlerType p_type);
-	static void _error_handler(void *p_userdata, const char *p_function, const char *p_file, int p_line, const char *p_error, const char *p_explanation, bool p_editor_notify, ErrorHandlerType p_type);
-
-	bool _has_diagnostic(Severity p_severity, const String &p_message) const;
-	bool _has_diagnostic_containing(Severity p_severity, const String &p_text) const;
-	static String _severity_name(Severity p_severity);
-	Dictionary _event_to_dictionary(const Event &p_event) const;
+	Variant return_value;
+	Ref<ScriptDiagnosticCapture> capture;
 
 protected:
 	static void _bind_methods();
 
 public:
-	static bool has_active_capture();
-	static bool is_supported();
+	void configure(const Variant &p_return_value, const Ref<ScriptDiagnosticCapture> &p_capture);
 
-	void start(bool p_quiet = false);
-	void stop();
-	bool is_active() const { return active; }
-	bool is_quiet() const { return quiet; }
-
-	void clear();
-	int get_event_count() const { return events.size(); }
-	Dictionary get_event(int p_index) const;
-	Array get_events() const;
-
-	bool has_diagnostic(int p_severity, const String &p_message = String()) const;
-	bool has_diagnostic_containing(int p_severity, const String &p_text = String()) const;
-	bool has_error(const String &p_message = String()) const;
-	bool has_warning(const String &p_message = String()) const;
-	bool has_fatal(const String &p_message = String()) const;
-	bool has_error_containing(const String &p_text = String()) const;
-	bool has_warning_containing(const String &p_text = String()) const;
-	bool has_fatal_containing(const String &p_text = String()) const;
-
-	~ScriptDiagnosticCapture();
+	Variant get_return_value() const { return return_value; }
+	Ref<ScriptDiagnosticCapture> get_capture() const { return capture; }
 };
 
-VARIANT_ENUM_CAST(ScriptDiagnosticCapture::Severity);
+class ScriptDiagnosticCapturePendingState : public ScriptFunctionState {
+	FOUNDRY_CLASS(ScriptDiagnosticCapturePendingState, ScriptFunctionState);
+
+	friend class ScriptDiagnosticCaptureScope;
+
+	Ref<ScriptDiagnosticCaptureScope> scope;
+	Ref<ScriptFunctionState> coroutine_state;
+	bool finalized = false;
+
+	void _finalize(const Variant &p_return_value);
+	void _on_coroutine_completed(const Variant &p_result);
+
+protected:
+	static void _bind_methods();
+
+public:
+	~ScriptDiagnosticCapturePendingState();
+};
+
+class ScriptDiagnosticCaptureScope : public RefCounted {
+	FOUNDRY_CLASS(ScriptDiagnosticCaptureScope, RefCounted);
+
+	friend class ScriptDiagnosticCapturePendingState;
+
+private:
+	Ref<ScriptDiagnosticCapture> diagnostic_capture;
+	bool stopped = false;
+
+	static Ref<ScriptDiagnosticCaptureResult> _make_result(const Variant &p_return_value, const Ref<ScriptDiagnosticCapture> &p_capture);
+
+protected:
+	static void _bind_methods();
+
+public:
+	static Ref<ScriptDiagnosticCaptureScope> start(bool p_quiet = false);
+	void stop();
+	bool is_active() const;
+	Array get_events() const;
+	Ref<ScriptDiagnosticCapture> get_capture() const { return diagnostic_capture; }
+
+	static Ref<ScriptDiagnosticCaptureResult> capture(const Callable &p_callable, bool p_quiet = false);
+	static Variant capture_async(const Callable &p_callable, bool p_quiet = false);
+
+	~ScriptDiagnosticCaptureScope();
+};

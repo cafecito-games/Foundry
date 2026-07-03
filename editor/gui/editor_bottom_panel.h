@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "editor/gui/bottom_drawer_layout.h"
 #include "scene/gui/tab_container.h"
 
 class Button;
@@ -62,10 +63,7 @@ class EditorBottomPanel : public TabContainer {
 	int drawer_current_x = 0;
 	int drawer_current_width = 0;
 	LocalVector<EditorDock *> bottom_docks;
-	HashMap<String, int> dock_offsets;
-	HashMap<String, int> dock_widths;
-	HashMap<String, bool> dock_pinned;
-	bool pinned_by_default = false;
+	BottomDrawerLayoutState layout_state;
 
 	LocalVector<Button *> legacy_buttons;
 	void _on_button_visibility_changed(Button *p_button, EditorDock *p_dock);

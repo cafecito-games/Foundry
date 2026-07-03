@@ -56,6 +56,10 @@ const char *PROJECT_OPTION_DESCRIPTION = "Project directory containing a project
 
 const CommandOption EDITOR_OPEN_OPTIONS[] = {
 	{ "--project", "dir", PROJECT_OPTION_DESCRIPTION, false },
+	{ "--automation", nullptr, "Enable the local editor automation backend.", false },
+	{ "--automation-transport", "mcp", "Automation transport (only mcp is supported).", false, true },
+	{ "--automation-port", "0", "Local automation port; 0 auto-selects later.", false },
+	{ "--automation-token", "token", "Deterministic session token for tests.", false },
 };
 
 const CommandOption PROJECT_RUN_OPTIONS[] = {
