@@ -1,8 +1,10 @@
 <!--
-Please target the `master` branch in priority.
+Target the `develop` branch.
 
-Relevant fixes are cherry-picked for stable branches as needed by maintainers.
-
-To speed up the contribution process and avoid CI errors, please set up pre-commit hooks locally:
-https://contributing.godotengine.org/en/latest/engine/guidelines/code_style.html
+Keep PRs focused and explain the Foundry behavior or workflow affected.
+For user-facing changes, include relevant tests, reproduction steps, or screenshots.
 -->
+
+## Summary
+
+## Testing

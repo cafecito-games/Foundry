@@ -1,0 +1,60 @@
+name: Foundry issue
+description: Report a bug or request a feature for Foundry
+title: "[Issue]: "
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Foundry is experimental. Bug reports and feature requests are welcome, but they may go unaddressed and there is no support SLA.
+
+        Please keep each issue focused on one bug or request.
+
+  - type: dropdown
+    id: issue_type
+    attributes:
+      label: Issue type
+      options:
+        - Bug report
+        - Feature request
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Foundry version
+      description: Include the release, build, or commit hash if you know it.
+      placeholder: v0.1.0, nightly build, or commit 4582ea6
+
+  - type: input
+    id: system
+    attributes:
+      label: System information
+      description: Include your OS, CPU architecture, and GPU or rendering backend if relevant.
+      placeholder: macOS 15.5, Apple Silicon, Vulkan
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Describe the bug, feature request, or behavior you expected.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: For bugs, list the smallest set of steps or sample code needed to reproduce the issue.
+      placeholder: |
+        1. Create a new project.
+        2. Add the following Foundry Script.
+        3. Run the project.
+
+  - type: textarea
+    id: attachments
+    attributes:
+      label: Minimal project, logs, or screenshots
+      description: Attach a minimal project, logs, screenshots, or video if they help explain the issue.
