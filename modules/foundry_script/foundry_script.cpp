@@ -3954,10 +3954,6 @@ FSLanguage::FSLanguage() {
 		}
 #endif // DISABLE_DEPRECATED
 	}
-
-	// TODO: This setting has nothing to do with warnings. It should be moved at the next compatibility breakage,
-	// if the setting is still relevant at that time.
-	GLOBAL_DEF("debug/foundry_script/warnings/renamed_in_godot_4_hint", true);
 #endif // FOUNDRY_SCRIPT_NO_FRONTEND
 #endif // DEBUG_ENABLED
 }
