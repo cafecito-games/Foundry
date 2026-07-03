@@ -552,6 +552,21 @@ rejected. Witness methods may carry the `static`/`async` modifiers. Inside the w
 `self` is a copy for scalars and strings (mutations do not propagate to the caller) but shares
 storage for `Array` and `Dictionary` (mutations through `self` are visible to the caller).
 
+**Coherence.** The analyzer rejects duplicate `(target, trait)` conformances (same file or
+cross-file). It also rejects **witness method-name collisions** on the same target: runtime
+witness dispatch keys on `(target alias, method name)` only, so two conformances on the same
+target that each supply a witness with the same name — even for different traits — are an
+error. Requirements satisfied by the target's own existing methods without a supplied witness
+do not participate in this check.
+
+**Inheritance-chain shadowing** is legal: conforming the same trait on a base type and on a
+derived type (native engine classes or FS classes) is allowed. Witness dispatch walks the
+instance's class chain most-derived-first and uses the first matching witness; `is`/`as`
+against the trait succeed if any level in the chain declares the conformance. Colliding witness
+names on different levels of the chain (e.g. a base conformance to trait A supplies `foo()` and
+a derived conformance to trait B supplies `foo()`) follow this shadowing rule and are not
+rejected.
+
 ---
 
 ## 5. Expressions (Pratt parser)

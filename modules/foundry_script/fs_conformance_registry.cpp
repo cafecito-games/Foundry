@@ -227,6 +227,26 @@ FSConformanceRegistry::WitnessMap FSConformanceRegistry::get_witnesses(const Str
 	return WitnessMap();
 }
 
+String FSConformanceRegistry::get_witness_source(const String &p_target_key, const StringName &p_method, StringName &r_trait_name) const {
+	r_trait_name = StringName();
+	if (p_target_key.is_empty() || p_method == StringName()) {
+		return String();
+	}
+	MutexLock lock(mutex);
+	for (const KeyValue<String, Vector<Conformance>> &file_entry : conformances_by_file) {
+		for (const Conformance &conformance : file_entry.value) {
+			if (!conformance.target_keys.has(p_target_key)) {
+				continue;
+			}
+			if (conformance.witnesses.has(p_method)) {
+				r_trait_name = conformance.trait_name;
+				return conformance.source_file;
+			}
+		}
+	}
+	return String();
+}
+
 FSConformanceRegistry::FSConformanceRegistry() {
 	if (singleton == nullptr) {
 		singleton = this;

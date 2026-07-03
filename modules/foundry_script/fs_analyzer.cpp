@@ -10698,6 +10698,9 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 	// Track `(target, trait)` pairs declared in this file to reject duplicate conformances locally; a
 	// pair already registered by a *different* file is a cross-file duplicate.
 	HashSet<String> seen_pairs;
+	// Track witness method names per target key within this file to reject same-target witness
+	// collisions across different trait conformances.
+	HashMap<String, HashMap<StringName, StringName>> seen_witnesses_by_target;
 	Vector<FSConformanceRegistry::Conformance> valid_entries;
 
 	for (FSParser::ConformanceNode *conformance : p_class->conformances) {
@@ -10729,6 +10732,10 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 			target_keys.push_back(target_type.script_path);
 		}
 
+		const String target_key = target->fqcn;
+		bool conformance_witness_checked = false;
+		bool conformance_witness_collision = false;
+		StringName witness_trait_label;
 		for (FSParser::ClassNode::TraitUse &trait_use : conformance->traits) {
 			// The `uses` clause is written in the head file, so resolve trait names in the head's scope.
 			FSParser::ClassNode *trait = resolve_trait_reference(parser->head, trait_use, conformance);
@@ -10799,6 +10806,42 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 			}
 			seen_pairs.insert(pair_key);
 
+			if (!conformance_witness_checked) {
+				conformance_witness_checked = true;
+				HashMap<StringName, StringName> &seen_witnesses = seen_witnesses_by_target[target_key];
+				for (FSParser::FunctionNode *witness : conformance->witnesses) {
+					if (witness == nullptr || witness->identifier == nullptr) {
+						continue;
+					}
+					const StringName witness_name = witness->identifier->name;
+					if (witness_name == StringName()) {
+						continue;
+					}
+
+					const StringName *existing_trait = seen_witnesses.getptr(witness_name);
+					if (existing_trait != nullptr) {
+						push_error(vformat(R"*(Class "%s" already provides a witness for method "%s()" through its conformance to trait "%s" in this file.)*",
+										   _class_or_trait_name(target), witness_name, String(*existing_trait)),
+								conformance);
+						conformance_witness_collision = true;
+						continue;
+					}
+
+					StringName other_trait;
+					const String other_witness_source = registry->get_witness_source(target_key, witness_name, other_trait);
+					if (!other_witness_source.is_empty() && other_witness_source != source_file) {
+						push_error(vformat(R"*(Class "%s" already has a witness for method "%s()" via a conformance in "%s".)*",
+										   _class_or_trait_name(target), witness_name, other_witness_source),
+								conformance);
+						conformance_witness_collision = true;
+						continue;
+					}
+				}
+			}
+			if (conformance_witness_collision) {
+				continue;
+			}
+
 			const HashMap<StringName, FSParser::DataType> substitution = conformance_trait_substitution(trait, trait_use);
 			if (!validate_conformance(conformance, target, trait, substitution)) {
 				continue;
@@ -10814,6 +10857,18 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 				}
 			}
 			valid_entries.push_back(entry);
+			if (witness_trait_label == StringName()) {
+				witness_trait_label = trait_identity;
+			}
+		}
+
+		if (witness_trait_label != StringName()) {
+			HashMap<StringName, StringName> &seen_witnesses = seen_witnesses_by_target[target_key];
+			for (FSParser::FunctionNode *witness : conformance->witnesses) {
+				if (witness != nullptr && witness->identifier != nullptr && witness->identifier->name != StringName()) {
+					seen_witnesses.insert(witness->identifier->name, witness_trait_label);
+				}
+			}
 		}
 	}
 
