@@ -33,6 +33,8 @@
 #include "editor/plugins/editor_plugin.h"
 #include "main/cli_parser.h"
 
+class EditorAutomationMCPServer;
+
 class EditorAutomationServer : public EditorPlugin {
 	FOUNDRY_CLASS(EditorAutomationServer, EditorPlugin);
 
@@ -53,12 +55,16 @@ private:
 	Transport transport = Transport::NONE;
 	int port = 0;
 	String token;
+	String endpoint;
 	bool local_only = true;
 	bool started = false;
 	bool start_attempted = false;
 
+	EditorAutomationMCPServer *mcp_server = nullptr;
+
 	String _generate_token() const;
 	void _show_dev_indicator() const;
+	bool _start_mcp_transport();
 	void _notification(int p_what);
 
 public:
@@ -72,6 +78,7 @@ public:
 	String get_transport_name() const;
 	int get_port() const { return port; }
 	const String &get_token() const { return token; }
+	const String &get_endpoint() const { return endpoint; }
 	bool is_local_only() const { return local_only; }
 	bool is_started() const { return started; }
 

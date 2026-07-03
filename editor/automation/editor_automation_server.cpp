@@ -30,7 +30,10 @@
 
 #include "editor_automation_server.h"
 
+#include "editor/automation/editor_automation_mcp_server.h"
+
 #include "core/crypto/crypto_core.h"
+#include "core/io/json.h"
 #include "core/os/os.h"
 #include "editor/editor_log.h"
 #include "editor/editor_node.h"
@@ -66,6 +69,11 @@ EditorAutomationServer::EditorAutomationServer() {
 }
 
 EditorAutomationServer::~EditorAutomationServer() {
+	if (mcp_server != nullptr) {
+		mcp_server->stop();
+		memdelete(mcp_server);
+		mcp_server = nullptr;
+	}
 	if (singleton == this) {
 		singleton = nullptr;
 	}
@@ -97,6 +105,32 @@ void EditorAutomationServer::_show_dev_indicator() const {
 	EditorNode::get_log()->add_message("--- Automation Active ---", EditorLog::MSG_TYPE_EDITOR);
 }
 
+bool EditorAutomationServer::_start_mcp_transport() {
+	if (mcp_server == nullptr) {
+		mcp_server = memnew(EditorAutomationMCPServer);
+	}
+	mcp_server->set_token(token);
+
+	EditorAutomationMCPDispatcher::Options options;
+	options.snapshot_root = nullptr; // Capture from the live editor.
+	mcp_server->set_dispatcher_options(options);
+
+	const int requested_port = port < 0 ? 0 : port;
+	const Error err = mcp_server->listen(requested_port, IPAddress("127.0.0.1"));
+	if (err != OK) {
+		const String failure = vformat("Editor automation MCP server failed to listen on 127.0.0.1:%d (error %d).", requested_port, (int)err);
+		OS::get_singleton()->printerr("%s\n", failure.utf8().get_data());
+		EditorNode::get_log()->add_message(failure, EditorLog::MSG_TYPE_ERROR);
+		memdelete(mcp_server);
+		mcp_server = nullptr;
+		return false;
+	}
+
+	port = mcp_server->get_port();
+	endpoint = vformat("http://127.0.0.1:%d/mcp", port);
+	return true;
+}
+
 void EditorAutomationServer::start() {
 	ERR_FAIL_COND(!enabled);
 	ERR_FAIL_COND(started);
@@ -105,9 +139,24 @@ void EditorAutomationServer::start() {
 		token = _generate_token();
 	}
 
+	if (transport == Transport::MCP) {
+		if (!_start_mcp_transport()) {
+			return;
+		}
+	}
+
 	const String transport_name = get_transport_name();
-	const String message = "Editor automation enabled (transport=" + transport_name + ")";
+	const String message = vformat("Editor automation enabled (transport=%s, endpoint=%s)", transport_name, endpoint);
 	OS::get_singleton()->print("%s\n", message.utf8().get_data());
+
+	// Machine-readable line for launching test harnesses / agent hosts.
+	Dictionary machine_line;
+	machine_line["transport"] = transport_name;
+	machine_line["endpoint"] = endpoint;
+	machine_line["token"] = token;
+	machine_line["local_only"] = local_only;
+	OS::get_singleton()->print("FOUNDRY_AUTOMATION %s\n", JSON::stringify(machine_line, "", false).utf8().get_data());
+
 	EditorNode::get_log()->add_message(message, EditorLog::MSG_TYPE_EDITOR);
 	_show_dev_indicator();
 	started = true;
@@ -118,6 +167,9 @@ void EditorAutomationServer::stop() {
 		return;
 	}
 	started = false;
+	if (mcp_server != nullptr) {
+		mcp_server->stop();
+	}
 	EditorNode::get_log()->add_message("--- Editor automation stopped ---", EditorLog::MSG_TYPE_EDITOR);
 }
 
@@ -128,15 +180,20 @@ void EditorAutomationServer::_notification(int p_what) {
 		} break;
 
 		case NOTIFICATION_INTERNAL_PROCESS: {
-			if (!enabled || start_attempted) {
+			if (!enabled) {
 				break;
 			}
-			EditorNode *editor_node = EditorNode::get_singleton();
-			if (editor_node == nullptr || !editor_node->is_editor_ready()) {
-				break;
+			if (!start_attempted) {
+				EditorNode *editor_node = EditorNode::get_singleton();
+				if (editor_node == nullptr || !editor_node->is_editor_ready()) {
+					break;
+				}
+				start_attempted = true;
+				start();
 			}
-			start_attempted = true;
-			start();
+			if (started && mcp_server != nullptr) {
+				mcp_server->poll();
+			}
 		} break;
 	}
 }

@@ -52,6 +52,7 @@
 #include "tests/editor/test_editor_autoload_settings.h"
 #include "tests/editor/test_editor_automation_snapshot.h"
 #include "tests/editor/test_editor_automation_driver.h"
+#include "tests/editor/test_editor_automation_mcp.h"
 #include "tests/editor/test_editor_automation_wait.h"
 #include "tests/editor/test_editor_export_platform_autoload.h"
 #include "tests/editor/test_editor_help_type_links.h"

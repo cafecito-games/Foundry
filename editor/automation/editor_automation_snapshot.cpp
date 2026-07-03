@@ -46,12 +46,12 @@
 #include "scene/gui/slider.h"
 #include "scene/gui/spin_box.h"
 #include "scene/gui/subviewport_container.h"
-#include "scene/main/viewport.h"
 #include "scene/gui/tab_bar.h"
 #include "scene/gui/tab_container.h"
 #include "scene/gui/text_edit.h"
 #include "scene/gui/tree.h"
 #include "scene/main/canvas_item.h"
+#include "scene/main/viewport.h"
 #include "scene/main/window.h"
 
 namespace {
@@ -414,8 +414,15 @@ class EditorAutomationSnapshotBuilder {
 			return element_index;
 		}
 
-		for (int i = 0; i < p_node->get_child_count(false); i++) {
-			Node *child = p_node->get_child(i, false);
+		// Descend into internal children only for Window nodes. Dialogs
+		// (AcceptDialog/ConfirmationDialog and subclasses like CreateDialog) add
+		// their action buttons (OK/Cancel/custom) via an internal buttons HBox, so
+		// without this those buttons are invisible to automation and dialogs can
+		// never be confirmed. Regular Controls keep hiding their internal parts
+		// (e.g. SpinBox line edit, Tree/ItemList scrollbars) to avoid noise.
+		const bool include_internal = Object::cast_to<Window>(p_node) != nullptr;
+		for (int i = 0; i < p_node->get_child_count(include_internal); i++) {
+			Node *child = p_node->get_child(i, include_internal);
 			if (_should_skip_child(p_node, child)) {
 				continue;
 			}
@@ -536,8 +543,20 @@ EditorAutomationSnapshot EditorAutomationSnapshot::capture_from_roots(const Loca
 EditorAutomationSnapshot EditorAutomationSnapshot::capture_from_editor() {
 	LocalVector<Node *> roots;
 	EditorNode *editor_node = EditorNode::get_singleton();
-	if (editor_node != nullptr && editor_node->is_editor_ready()) {
-		roots.push_back(editor_node);
+	if (editor_node != nullptr && editor_node->is_editor_ready() && editor_node->is_inside_tree()) {
+		// EditorNode is a plain Node, so it is not itself a visible element and
+		// the snapshot walk does not descend through non-Control/non-Window
+		// nodes. Capture from the editor's GUI base Control, which is the root of
+		// the visible editor UI (docks, toolbars, dialogs, popups).
+		Control *gui_base = editor_node->get_gui_base();
+		if (gui_base != nullptr) {
+			roots.push_back(gui_base);
+		} else {
+			Window *root_window = editor_node->get_window();
+			if (root_window != nullptr) {
+				roots.push_back(root_window);
+			}
+		}
 	}
 	return capture_from_roots(roots);
 }
