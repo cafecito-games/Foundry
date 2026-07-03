@@ -185,6 +185,9 @@ public:
 	void register_undo_redo(UndoRedo *p_undo_redo);
 	void deinit();
 
+	int get_message_count() const { return messages.size(); }
+	Dictionary get_message_snapshot(int p_index) const;
+
 	void clear();
 
 	EditorLog();

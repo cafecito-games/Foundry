@@ -612,6 +612,8 @@ public:
 	void set_scene_root_script(Ref<Script> p_script);
 	Vector<Ref<Script>> get_open_scripts() const;
 
+	bool get_current_script_view_state(String &r_path, int &r_line, int &r_column) const;
+
 	bool script_goto_method(Ref<Script> p_script, const String &p_method);
 
 	virtual void edited_scene_changed();

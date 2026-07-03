@@ -30,7 +30,9 @@
 
 #include "editor_automation_driver.h"
 
+#include "editor/automation/editor_automation_log.h"
 #include "editor/automation/editor_automation_selector.h"
+#include "editor/automation/editor_automation_trace.h"
 #include "core/input/input_event.h"
 #include "core/object/object.h"
 #include "core/os/keyboard.h"
@@ -588,6 +590,36 @@ Variant _read_variant_option(const Dictionary &p_options, const char *p_key) {
 	return p_options.get(p_key, Variant());
 }
 
+String _element_summary_from_snapshot(const EditorAutomationSnapshot &p_snapshot, const EditorAutomationElement &p_element) {
+	return vformat("%s:%s (%s)", p_element.role, p_element.name, p_element.id);
+}
+
+void _record_action_trace(
+		const String &p_action,
+		const Dictionary &p_target,
+		const EditorAutomationSnapshot &p_snapshot,
+		const EditorAutomationElement *p_element,
+		const EditorAutomationActionResult &p_result,
+		const EditorAutomationLogMarker &p_log_marker) {
+	String summary;
+	String element_id;
+	if (p_element != nullptr) {
+		element_id = p_element->id;
+		summary = _element_summary_from_snapshot(p_snapshot, *p_element);
+	}
+	const String result_kind = p_result.ok ? String("success") : p_result.kind;
+	EditorAutomationTrace::get_singleton().record_action(
+			p_action,
+			p_target,
+			element_id,
+			summary,
+			p_result.route,
+			result_kind,
+			p_result.ok,
+			p_log_marker.message_index,
+			p_log_marker.message_index);
+}
+
 } // namespace
 
 EditorAutomationActionResult EditorAutomationDriver::perform(
@@ -595,9 +627,15 @@ EditorAutomationActionResult EditorAutomationDriver::perform(
 		const String &p_action,
 		const Dictionary &p_target,
 		const Dictionary &p_options) {
+	EditorAutomationTrace::get_singleton().begin_action();
+	const EditorAutomationLogMarker log_marker = EditorAutomationLog::create_marker();
+
 	const EditorAutomationActionKind action_kind = editor_automation_action_kind_from_string(p_action);
 	if (action_kind == EditorAutomationActionKind::UNKNOWN) {
-		return EditorAutomationActionResult::failure("unsupported_action", vformat("Unsupported action '%s'.", p_action));
+		EditorAutomationActionResult result = EditorAutomationActionResult::failure("unsupported_action", vformat("Unsupported action '%s'.", p_action));
+		_record_action_trace(p_action, p_target, p_snapshot, nullptr, result, log_marker);
+		EditorAutomationTrace::get_singleton().end_action();
+		return result;
 	}
 
 	const EditorAutomationRoutePreference route_preference = editor_automation_route_preference_from_string(_read_string_option(p_options, "route"));
@@ -605,58 +643,87 @@ EditorAutomationActionResult EditorAutomationDriver::perform(
 	if (action_kind == EditorAutomationActionKind::PRESS_KEY) {
 		const String key_name = _read_string_option(p_options, "key");
 		if (key_name.is_empty()) {
-			return EditorAutomationActionResult::failure("invalid_parameter", "press_key requires a `key` option.");
+			EditorAutomationActionResult result = EditorAutomationActionResult::failure("invalid_parameter", "press_key requires a `key` option.");
+			_record_action_trace(p_action, p_target, p_snapshot, nullptr, result, log_marker);
+			EditorAutomationTrace::get_singleton().end_action();
+			return result;
 		}
-		return _action_press_key(p_snapshot, key_name, route_preference);
+		EditorAutomationActionResult result = _action_press_key(p_snapshot, key_name, route_preference);
+		_record_action_trace(p_action, p_target, p_snapshot, nullptr, result, log_marker);
+		EditorAutomationTrace::get_singleton().end_action();
+		return result;
 	}
 
 	const EditorAutomationSelectorResult selector_result = _resolve_target(p_snapshot, p_target);
 	if (selector_result.status != EditorAutomationSelectorStatus::OK) {
-		return _selector_failure(selector_result);
+		EditorAutomationActionResult result = _selector_failure(selector_result);
+		_record_action_trace(p_action, p_target, p_snapshot, nullptr, result, log_marker);
+		EditorAutomationTrace::get_singleton().end_action();
+		return result;
 	}
 	ERR_FAIL_COND_V(selector_result.match_indices.size() != 1, EditorAutomationActionResult::failure("ambiguous_selector", "Selector matched multiple elements."));
 	const EditorAutomationElement &element = p_snapshot.get_element(selector_result.match_indices[0]);
 
+	EditorAutomationActionResult result;
 	switch (action_kind) {
 		case EditorAutomationActionKind::FOCUS:
-			return _action_focus(p_snapshot, element, route_preference);
+			result = _action_focus(p_snapshot, element, route_preference);
+			break;
 		case EditorAutomationActionKind::CLICK:
-			return _action_click(p_snapshot, element, route_preference);
+			result = _action_click(p_snapshot, element, route_preference);
+			break;
 		case EditorAutomationActionKind::SET_TEXT: {
 			if (!p_options.has("text")) {
-				return EditorAutomationActionResult::failure("invalid_parameter", "set_text requires a `text` option.");
+				result = EditorAutomationActionResult::failure("invalid_parameter", "set_text requires a `text` option.");
+				break;
 			}
 			const String text = _read_string_option(p_options, "text");
-			return _action_set_text(p_snapshot, element, text, route_preference);
+			result = _action_set_text(p_snapshot, element, text, route_preference);
+			break;
 		}
 		case EditorAutomationActionKind::TYPE_TEXT: {
 			const String text = _read_string_option(p_options, "text");
 			if (text.is_empty()) {
-				return EditorAutomationActionResult::failure("invalid_parameter", "type_text requires a `text` option.");
+				result = EditorAutomationActionResult::failure("invalid_parameter", "type_text requires a `text` option.");
+				break;
 			}
-			return _action_type_text(p_snapshot, element, text, route_preference);
+			result = _action_type_text(p_snapshot, element, text, route_preference);
+			break;
 		}
 		case EditorAutomationActionKind::SELECT:
-			return _action_select(p_snapshot, element, _read_variant_option(p_options, "value"));
+			result = _action_select(p_snapshot, element, _read_variant_option(p_options, "value"));
+			break;
 		case EditorAutomationActionKind::EXPAND:
-			return _action_tree_item_state(p_snapshot, element, true);
+			result = _action_tree_item_state(p_snapshot, element, true);
+			break;
 		case EditorAutomationActionKind::COLLAPSE:
-			return _action_tree_item_state(p_snapshot, element, false);
+			result = _action_tree_item_state(p_snapshot, element, false);
+			break;
 		case EditorAutomationActionKind::CHOOSE_MENU_ITEM: {
 			String kind;
 			String key;
 			if (!_parse_virtual_key(element, kind, key) || kind != "menu_item") {
-				return EditorAutomationActionResult::failure("unsupported_action", "choose_menu_item requires a menu item element.");
+				result = EditorAutomationActionResult::failure("unsupported_action", "choose_menu_item requires a menu item element.");
+				break;
 			}
-			return _action_select_virtual(p_snapshot, element, kind, key);
+			result = _action_select_virtual(p_snapshot, element, kind, key);
+			break;
 		}
 		case EditorAutomationActionKind::SET_VALUE:
-			return _action_set_value(p_snapshot, element, _read_variant_option(p_options, "value"), route_preference);
+			result = _action_set_value(p_snapshot, element, _read_variant_option(p_options, "value"), route_preference);
+			break;
 		case EditorAutomationActionKind::INCREMENT:
-			return _action_adjust_value(p_snapshot, element, true, route_preference);
+			result = _action_adjust_value(p_snapshot, element, true, route_preference);
+			break;
 		case EditorAutomationActionKind::DECREMENT:
-			return _action_adjust_value(p_snapshot, element, false, route_preference);
+			result = _action_adjust_value(p_snapshot, element, false, route_preference);
+			break;
 		default:
-			return EditorAutomationActionResult::failure("unsupported_action", vformat("Unsupported action '%s'.", p_action));
+			result = EditorAutomationActionResult::failure("unsupported_action", vformat("Unsupported action '%s'.", p_action));
+			break;
 	}
+
+	_record_action_trace(p_action, p_target, p_snapshot, &element, result, log_marker);
+	EditorAutomationTrace::get_singleton().end_action();
+	return result;
 }

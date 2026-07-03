@@ -287,6 +287,33 @@ void EditorLog::add_message(const String &p_msg, MessageType p_type) {
 	}
 }
 
+Dictionary EditorLog::get_message_snapshot(int p_index) const {
+	Dictionary dict;
+	ERR_FAIL_INDEX_V(p_index, messages.size(), dict);
+	const LogMessage &message = messages[p_index];
+	dict["text"] = message.text;
+	switch (message.type) {
+		case MSG_TYPE_ERROR:
+			dict["severity"] = "error";
+			break;
+		case MSG_TYPE_WARNING:
+			dict["severity"] = "warning";
+			break;
+		case MSG_TYPE_EDITOR:
+			dict["severity"] = "editor";
+			break;
+		case MSG_TYPE_STD_RICH:
+			dict["severity"] = "stdout_rich";
+			break;
+		case MSG_TYPE_STD:
+		default:
+			dict["severity"] = "stdout";
+			break;
+	}
+	dict["count"] = message.count;
+	return dict;
+}
+
 void EditorLog::_set_dock_tab_icon(Ref<Texture2D> p_icon) {
 	set_dock_icon(p_icon);
 	set_force_show_icon(p_icon.is_valid());
