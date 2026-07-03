@@ -169,6 +169,20 @@ bool FSConformanceRegistry::has_conformance(const String &p_target_key, const St
 	return traits != nullptr && traits->has(p_trait_name);
 }
 
+bool FSConformanceRegistry::builtin_type_conforms(Variant::Type p_type, const StringName &p_trait_name) const {
+	if (p_type == Variant::NIL || p_type == Variant::OBJECT || p_trait_name == StringName()) {
+		return false;
+	}
+	return has_conformance(Variant::get_type_name(p_type), p_trait_name);
+}
+
+FSFunction *FSConformanceRegistry::find_builtin_witness_function(Variant::Type p_type, const StringName &p_method) const {
+	if (p_type == Variant::NIL || p_type == Variant::OBJECT || p_method == StringName()) {
+		return nullptr;
+	}
+	return find_witness_function(Variant::get_type_name(p_type), p_method);
+}
+
 bool FSConformanceRegistry::native_class_conforms(const StringName &p_native_class, const StringName &p_trait_name) const {
 	if (p_native_class == StringName() || p_trait_name == StringName()) {
 		return false;

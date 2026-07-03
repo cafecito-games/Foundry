@@ -9699,6 +9699,18 @@ bool FSAnalyzer::find_trait_implementation(FSParser::ClassNode *p_class, const S
 		}
 		visited_classes.insert(current_class);
 
+		if (current_class->is_builtin_conformance_shim) {
+			const FSParser::DataType &self_type = current_class->get_datatype();
+			if (self_type.kind == FSParser::DataType::BUILTIN && self_type.builtin_type != Variant::NIL &&
+					Variant::has_builtin_method(self_type.builtin_type, p_function_name)) {
+				r_implementation.method_info = Variant::get_builtin_method_info(self_type.builtin_type, p_function_name);
+				r_implementation.method_info_source = vformat(R"(Implementation comes from builtin type "%s".)", Variant::get_type_name(self_type.builtin_type));
+				r_implementation.has_method_info = true;
+				return true;
+			}
+			return false;
+		}
+
 		if (current_class->has_function(p_function_name)) {
 			FSParser::FunctionNode *function = current_class->get_member(p_function_name).function;
 			if (!function->is_abstract) {
@@ -10486,11 +10498,47 @@ FSParser::ClassNode *FSAnalyzer::resolve_conformance_target(FSParser::Conformanc
 		return resolve_native_conformance_shim(p_conformance, r_target_type);
 	}
 
-	// Builtin/value targets (`extend int uses ...`) remain unsupported.
+	if (r_target_type.kind == FSParser::DataType::BUILTIN) {
+		if (r_target_type.builtin_type == Variant::NIL || r_target_type.builtin_type == Variant::OBJECT) {
+			push_error(vformat(R"(Cannot retroactively conform "%s" to a trait.)", Variant::get_type_name(r_target_type.builtin_type)), p_conformance->target);
+			return nullptr;
+		}
+		return resolve_builtin_conformance_shim(p_conformance, r_target_type);
+	}
+
+	if (r_target_type.kind == FSParser::DataType::VARIANT) {
+		push_error(R"(Retroactive conformance supports only Foundry Script class, native engine-class, and builtin value-type targets.)", p_conformance->target);
+		return nullptr;
+	}
+
+	// Enum, metatype, and other unsupported targets.
 	if (!r_target_type.is_variant()) {
-		push_error(R"(Retroactive conformance supports only Foundry Script class and native engine-class targets.)", p_conformance->target);
+		push_error(R"(Retroactive conformance supports only Foundry Script class, native engine-class, and builtin value-type targets.)", p_conformance->target);
 	}
 	return nullptr;
+}
+
+FSParser::ClassNode *FSAnalyzer::resolve_builtin_conformance_shim(FSParser::ConformanceNode *p_conformance, const FSParser::DataType &p_builtin_type) {
+	if (p_conformance->builtin_target_shim != nullptr) {
+		return p_conformance->builtin_target_shim;
+	}
+
+	FSParser::ClassNode *shim = parser->alloc_recovery_node<FSParser::ClassNode>();
+	shim->fqcn = String(Variant::get_type_name(p_builtin_type.builtin_type));
+	shim->resolved_interface = true;
+	shim->resolved_body = true;
+	shim->resolved_trait_uses = true;
+	shim->is_builtin_conformance_shim = true;
+
+	FSParser::DataType self_type = p_builtin_type;
+	self_type.is_meta_type = false;
+	if (self_type.type_source == FSParser::DataType::UNDETECTED) {
+		self_type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+	}
+	shim->set_datatype(self_type);
+
+	p_conformance->builtin_target_shim = shim;
+	return shim;
 }
 
 FSParser::ClassNode *FSAnalyzer::resolve_native_conformance_shim(FSParser::ConformanceNode *p_conformance, const FSParser::DataType &p_native_type) {
@@ -10795,6 +10843,8 @@ void FSAnalyzer::resolve_conformance_bodies(FSParser::ClassNode *p_class) {
 			// A native target's witnesses are resolved against the synthesized stand-in so `self` and
 			// member access bind to the native surface.
 			target = conformance->native_target_shim;
+		} else if (target_type.kind == FSParser::DataType::BUILTIN) {
+			target = conformance->builtin_target_shim;
 		}
 		if (target == nullptr) {
 			continue;
@@ -10951,7 +11001,7 @@ Ref<FSParserRef> FSAnalyzer::ensure_cached_external_parser_for_class(const FSPar
 	// carries no members and its base is a native engine class, so no external parser backs it. Treat it
 	// like a local class (null parser ref, no error) so witness-body member resolution against the native
 	// surface doesn't trip the foreign-class lookup.
-	if (p_class->is_native_conformance_shim) {
+	if (p_class->is_native_conformance_shim || p_class->is_builtin_conformance_shim) {
 		return nullptr;
 	}
 

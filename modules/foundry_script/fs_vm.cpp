@@ -1443,20 +1443,24 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 						OPCODE_BREAK;
 					}
 
-					if (object && is_trait_type) {
+					if (is_trait_type) {
 						// Trait-typed values are Object-backed: a trait has no native class of its own, so
 						// membership is a nominal trait-set lookup over the flattened implementer rather than
 						// a native/script inheritance walk.
 						const StringName trait_name = fs_type->get_trait_type_name();
-						ScriptInstance *script_instance = object->get_script_instance();
-						if (script_instance != nullptr) {
-							Ref<Script> script_ref = script_instance->get_script();
-							result = script_ref.is_valid() && script_ref->has_script_trait(trait_name);
-						}
-						if (!result) {
-							// A native object (no Foundry Script instance), or a scripted object whose engine
-							// base class was retroactively conformed, satisfies the trait via the registry.
-							result = FSConformanceRegistry::get_singleton()->native_class_conforms(object->get_class_name(), trait_name);
+						if (object) {
+							ScriptInstance *script_instance = object->get_script_instance();
+							if (script_instance != nullptr) {
+								Ref<Script> script_ref = script_instance->get_script();
+								result = script_ref.is_valid() && script_ref->has_script_trait(trait_name);
+							}
+							if (!result) {
+								// A native object (no Foundry Script instance), or a scripted object whose engine
+								// base class was retroactively conformed, satisfies the trait via the registry.
+								result = FSConformanceRegistry::get_singleton()->native_class_conforms(object->get_class_name(), trait_name);
+							}
+						} else if (value->get_type() != Variant::NIL && value->get_type() != Variant::OBJECT) {
+							result = FSConformanceRegistry::get_singleton()->builtin_type_conforms(value->get_type(), trait_name);
 						}
 					} else if (object && object->get_script_instance()) {
 						Ref<Script> script_ref = object->get_script_instance()->get_script();
@@ -2152,6 +2156,13 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 								"' to a variable of type 'Type[" + _get_type_handle_type_name(expected_handle_type, base_type) + "]'.";
 						OPCODE_BREAK;
 					}
+				} else if (is_trait_type && src->get_type() != Variant::OBJECT && src->get_type() != Variant::NIL) {
+					const StringName trait_name = fs_base_type->get_trait_type_name();
+					if (!FSConformanceRegistry::get_singleton()->builtin_type_conforms(src->get_type(), trait_name)) {
+						err_text = "Trying to assign value of type '" + Variant::get_type_name(src->get_type()) +
+								"' to a variable of type '" + base_type->get_path().get_file() + "'.";
+						OPCODE_BREAK;
+					}
 				} else if (src->get_type() != Variant::OBJECT && src->get_type() != Variant::NIL) {
 					err_text = "Trying to assign a non-object value to a variable of type '" + base_type->get_path().get_file() + "'.";
 					OPCODE_BREAK;
@@ -2436,8 +2447,10 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 					OPCODE_BREAK;
 				}
 				if (src->get_type() != Variant::OBJECT && src->get_type() != Variant::NIL) {
-					err_text = "Trying to assign a non-object value to a variable of type '" + base_type->get_path().get_file() + "'.";
-					OPCODE_BREAK;
+					if (!is_trait_type || !FSConformanceRegistry::get_singleton()->builtin_type_conforms(src->get_type(), fs_base_type->get_trait_type_name())) {
+						err_text = "Trying to assign a non-object value to a variable of type '" + base_type->get_path().get_file() + "'.";
+						OPCODE_BREAK;
+					}
 				}
 #endif
 
@@ -2445,11 +2458,11 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 
 				if (is_type_handle) {
 					valid = expected_handle_type.is_type(*src);
-				} else if (src->get_type() != Variant::NIL && src->operator Object *() != nullptr) {
-					Object *src_obj = src->operator Object *();
-					ScriptInstance *scr_inst = src_obj->get_script_instance();
-					if (is_trait_type) {
-						const StringName trait_name = fs_base_type->get_trait_type_name();
+				} else if (is_trait_type) {
+					const StringName trait_name = fs_base_type->get_trait_type_name();
+					if (src->get_type() == Variant::OBJECT && src->operator Object *() != nullptr) {
+						Object *src_obj = src->operator Object *();
+						ScriptInstance *scr_inst = src_obj->get_script_instance();
 						if (scr_inst) {
 							Ref<Script> src_script = scr_inst->get_script();
 							valid = src_script.is_valid() && src_script->has_script_trait(trait_name);
@@ -2459,7 +2472,13 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 							// base class was retroactively conformed, casts successfully via the registry.
 							valid = FSConformanceRegistry::get_singleton()->native_class_conforms(src_obj->get_class_name(), trait_name);
 						}
-					} else if (scr_inst) {
+					} else if (src->get_type() != Variant::NIL) {
+						valid = FSConformanceRegistry::get_singleton()->builtin_type_conforms(src->get_type(), trait_name);
+					}
+				} else if (src->get_type() != Variant::NIL && src->operator Object *() != nullptr) {
+					Object *src_obj = src->operator Object *();
+					ScriptInstance *scr_inst = src_obj->get_script_instance();
+					if (scr_inst) {
 						Ref<Script> src_script = scr_inst->get_script();
 						Script *src_type = src_script.ptr();
 						while (src_type) {
@@ -2758,20 +2777,24 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				}
 				base->callp(*methodname, argptrs, argc, temp_ret, err);
 
-				// Retroactive-conformance witness fallback. A trait method called on a native engine object
-				// (`extend Node uses Trait: ...`) is not a real method on that object, so the normal call
-				// misses; consult the conformance registry by the object's engine-class hierarchy and, when
-				// a witness is registered, dispatch it with the object as `self`. Foundry Script instances
-				// reach their witnesses through `FSInstance::callp` instead, so this only fires for native
-				// receivers (and runs in both debug and release builds).
-				if (err.error == Callable::CallError::CALL_ERROR_INVALID_METHOD && base->get_type() == Variant::OBJECT) {
-					Object *witness_obj = base->get_validated_object();
-					if (witness_obj != nullptr) {
-						FSFunction *witness = FSConformanceRegistry::get_singleton()->find_native_witness_function(witness_obj->get_class_name(), *methodname);
-						if (witness != nullptr) {
-							err.error = Callable::CallError::CALL_OK;
-							temp_ret = witness->call_witness(*base, argptrs, argc, err);
+				// Retroactive-conformance witness fallback. A trait method called on a receiver that does not
+				// implement the method natively misses `Variant::callp`; consult the conformance registry
+				// and, when a witness is registered, dispatch it with the receiver as `self`. Foundry Script
+				// instances reach their witnesses through `FSInstance::callp` for class targets; native
+				// objects and builtin values use this fallback (runs in both debug and release builds).
+				if (err.error == Callable::CallError::CALL_ERROR_INVALID_METHOD) {
+					FSFunction *witness = nullptr;
+					if (base->get_type() == Variant::OBJECT) {
+						Object *witness_obj = base->get_validated_object();
+						if (witness_obj != nullptr) {
+							witness = FSConformanceRegistry::get_singleton()->find_native_witness_function(witness_obj->get_class_name(), *methodname);
 						}
+					} else if (base->get_type() != Variant::NIL) {
+						witness = FSConformanceRegistry::get_singleton()->find_builtin_witness_function(base->get_type(), *methodname);
+					}
+					if (witness != nullptr) {
+						err.error = Callable::CallError::CALL_OK;
+						temp_ret = witness->call_witness(*base, argptrs, argc, err);
 					}
 				}
 

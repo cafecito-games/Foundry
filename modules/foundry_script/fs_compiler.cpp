@@ -4730,6 +4730,10 @@ Error FSCompiler::_compile_conformance_witnesses(FoundryScript *p_script, const 
 			target_class = conformance->native_target_shim;
 			target_script = Ref<FoundryScript>(p_script);
 			runtime_entry.target_keys.push_back(String(target_type.native_type));
+		} else if (target_type.kind == FSParser::DataType::BUILTIN && conformance->builtin_target_shim != nullptr) {
+			target_class = conformance->builtin_target_shim;
+			target_script = Ref<FoundryScript>(p_script);
+			runtime_entry.target_keys.push_back(String(Variant::get_type_name(target_type.builtin_type)));
 		} else {
 			// Recover the target's parser ClassNode (the codegen `self`/member-layout context). A global
 			// or in-file class target resolves to a CLASS datatype carrying the ClassNode directly; an

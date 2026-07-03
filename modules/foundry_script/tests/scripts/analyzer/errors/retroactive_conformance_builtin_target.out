@@ -1,2 +1,0 @@
-FS_TEST_ANALYZER_ERROR
->> ERROR at line 3: Retroactive conformance supports only Foundry Script class and native engine-class targets.

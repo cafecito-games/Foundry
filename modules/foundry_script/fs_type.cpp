@@ -425,6 +425,12 @@ FSTypeCompatibility::Result FSTypeCompatibility::check(const FSParser::DataType 
 			result.compatible = registry->native_class_conforms(p_source.native_type, trait_name);
 			return result;
 		}
+		if (p_source.kind == FSParser::DataType::BUILTIN && !p_source.is_meta_type) {
+			const StringName trait_name = fs_trait_identity_name(p_target.class_type);
+			const FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
+			result.compatible = registry->builtin_type_conforms(p_source.builtin_type, trait_name);
+			return result;
+		}
 		return result;
 	}
 

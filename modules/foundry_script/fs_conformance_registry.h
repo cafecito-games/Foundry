@@ -124,6 +124,10 @@ public:
 	// a conformance declared on a base class (e.g. a `Sprite2D` value satisfies `extend Node2D uses ...`).
 	bool native_class_conforms(const StringName &p_native_class, const StringName &p_trait_name) const;
 
+	// True when the builtin value type `p_type` (keyed by `Variant::get_type_name`) declares an external
+	// conformance to `p_trait_name`. Builtins have no inheritance chain, so this is an exact-key lookup.
+	bool builtin_type_conforms(Variant::Type p_type, const StringName &p_trait_name) const;
+
 	// The declaring file of the (target, trait) conformance, or an empty string when none exists.
 	// Useful for diagnosing cross-file duplicate conformances.
 	String get_conformance_source(const String &p_target_key, const StringName &p_trait_name) const;
@@ -153,6 +157,10 @@ public:
 	// none is registered. Walks `ClassDB::get_parent_class` so a witness declared on a base engine class
 	// dispatches for a subclass instance. Consulted by the runtime after a native call misses.
 	FSFunction *find_native_witness_function(const StringName &p_native_class, const StringName &p_method) const;
+
+	// The compiled witness for `p_method` on builtin type `p_type`, or `nullptr` when none is registered.
+	// Consulted by the runtime after a builtin `Variant::callp` misses.
+	FSFunction *find_builtin_witness_function(Variant::Type p_type, const StringName &p_method) const;
 
 	FSConformanceRegistry();
 	~FSConformanceRegistry();

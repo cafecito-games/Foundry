@@ -287,6 +287,7 @@ class FSAnalyzer {
 	void resolve_conformance_bodies(FSParser::ClassNode *p_class);
 	FSParser::ClassNode *resolve_conformance_target(FSParser::ConformanceNode *p_conformance, FSParser::DataType &r_target_type);
 	FSParser::ClassNode *resolve_native_conformance_shim(FSParser::ConformanceNode *p_conformance, const FSParser::DataType &p_native_type);
+	FSParser::ClassNode *resolve_builtin_conformance_shim(FSParser::ConformanceNode *p_conformance, const FSParser::DataType &p_builtin_type);
 	bool validate_conformance(FSParser::ConformanceNode *p_conformance, FSParser::ClassNode *p_target,
 			FSParser::ClassNode *p_trait, const HashMap<StringName, FSParser::DataType> &p_trait_substitution);
 	HashMap<StringName, FSParser::DataType> conformance_trait_substitution(FSParser::ClassNode *p_trait,

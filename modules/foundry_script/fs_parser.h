@@ -1018,6 +1018,10 @@ public:
 		// not part of any file's class table, so the external-parser lookups that back cross-file member
 		// resolution must treat it as a fully-resolved local class rather than a foreign one.
 		bool is_native_conformance_shim = false;
+		// True for the member-less stand-in the analyzer synthesizes to represent a builtin value-type
+		// target of a retroactive conformance (`extend int uses ...`). Like the native stand-in, it is
+		// owned by the parser but absent from the class table.
+		bool is_builtin_conformance_shim = false;
 
 		StringName get_global_name() const {
 			if (outer != nullptr || identifier == nullptr) {
@@ -1071,6 +1075,10 @@ public:
 		// `self` typing, member access against the native surface, signature validation) can be reused. Null
 		// for Foundry Script class/script targets, which resolve to a real ClassNode.
 		ClassNode *native_target_shim = nullptr;
+		// For a builtin value-type target (`extend int uses ...`), the analyzer synthesizes a member-less
+		// stand-in ClassNode whose self datatype is the builtin type so witness bodies resolve against the
+		// Variant builtin surface. Null for other target kinds.
+		ClassNode *builtin_target_shim = nullptr;
 
 		ConformanceNode() {
 			type = CONFORMANCE;
