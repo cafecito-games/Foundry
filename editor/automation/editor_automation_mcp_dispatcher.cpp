@@ -39,6 +39,7 @@
 #include "editor/automation/editor_automation_wait.h"
 
 #include "core/io/json.h"
+#include "core/math/math_funcs.h"
 
 #ifdef TOOLS_ENABLED
 #include "editor/editor_node.h"
@@ -343,7 +344,15 @@ Dictionary EditorAutomationMCPDispatcher::handle_message(const Dictionary &p_mes
 Dictionary EditorAutomationMCPDispatcher::handle_message(const Dictionary &p_message, bool &r_has_response) {
 	r_has_response = true;
 
-	const Variant id = p_message.has("id") ? p_message.get("id", Variant()) : Variant();
+	Variant id = p_message.has("id") ? p_message.get("id", Variant()) : Variant();
+	// Godot's JSON parser represents all numbers as doubles. Echo whole-number
+	// ids back as integers so strict JSON-RPC/MCP clients can match them.
+	if (id.get_type() == Variant::FLOAT) {
+		const double value = id;
+		if (value == Math::floor(value) && Math::is_finite(value)) {
+			id = (int64_t)value;
+		}
+	}
 	const bool is_notification = !p_message.has("id");
 
 	if (!p_message.has("method") || p_message.get("method", Variant()).get_type() != Variant::STRING) {
@@ -536,10 +545,19 @@ Dictionary EditorAutomationMCPDispatcher::_tool_find_elements(const Dictionary &
 	const EditorAutomationSelectorResult selector_result = EditorAutomationSelector::resolve(snapshot, selector);
 	Dictionary result = selector_result.to_dictionary();
 
-	if (selector_result.status == EditorAutomationSelectorStatus::OK) {
+	// find_elements is a multi-match tool: a selector that resolves to several
+	// elements (AMBIGUOUS for single-target callers) is a valid result here, not
+	// an error. Only genuine no-match / stale / invalid selectors are failures.
+	const bool has_matches = (selector_result.status == EditorAutomationSelectorStatus::OK ||
+									 selector_result.status == EditorAutomationSelectorStatus::AMBIGUOUS) &&
+			!selector_result.match_indices.is_empty();
+
+	if (has_matches) {
 		r_is_error = false;
+		result["ok"] = true;
+		result["ambiguous"] = selector_result.status == EditorAutomationSelectorStatus::AMBIGUOUS;
 		Array elements;
-		int total = selector_result.match_indices.size();
+		const int total = selector_result.match_indices.size();
 		bool truncated = false;
 		for (int i = 0; i < total; i++) {
 			if (elements.size() >= max_results) {
@@ -553,7 +571,7 @@ Dictionary EditorAutomationMCPDispatcher::_tool_find_elements(const Dictionary &
 		result["match_count"] = total;
 		result["truncated"] = truncated;
 	} else {
-		// No-match / ambiguous / invalid are structured automation failures.
+		// No-match / stale / invalid are structured automation failures.
 		r_is_error = true;
 	}
 	return result;

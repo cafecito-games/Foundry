@@ -221,6 +221,18 @@ TEST_CASE("[Editor][Automation][MCP] find_elements delegates to the selector cor
 	button->set_anchors_and_offsets_preset(Control::PRESET_TOP_LEFT);
 	button->set_size(Size2(120, 32));
 	root->add_child(button);
+
+	Button *dup_a = memnew(Button);
+	dup_a->set_text("Duplicate");
+	dup_a->set_anchors_and_offsets_preset(Control::PRESET_TOP_LEFT);
+	dup_a->set_size(Size2(120, 32));
+	root->add_child(dup_a);
+
+	Button *dup_b = memnew(Button);
+	dup_b->set_text("Duplicate");
+	dup_b->set_anchors_and_offsets_preset(Control::PRESET_TOP_LEFT);
+	dup_b->set_size(Size2(120, 32));
+	root->add_child(dup_b);
 	mcp_flush_frames();
 
 	EditorAutomationMCPDispatcher dispatcher;
@@ -261,6 +273,25 @@ TEST_CASE("[Editor][Automation][MCP] find_elements delegates to the selector cor
 		CHECK((bool)result["isError"]);
 		const Dictionary structured = result["structuredContent"];
 		CHECK_FALSE((bool)structured["ok"]);
+	}
+
+	SUBCASE("multiple matches are returned, not treated as an error") {
+		Dictionary selector;
+		selector["role"] = "button";
+		selector["name"] = "Duplicate";
+		Dictionary arguments;
+		arguments["selector"] = selector;
+		Dictionary params;
+		params["name"] = "find_elements";
+		params["arguments"] = arguments;
+
+		const Dictionary response = dispatcher.handle_message(make_request(10, "tools/call", params));
+		const Dictionary result = response["result"];
+		CHECK_FALSE((bool)result["isError"]);
+		const Dictionary structured = result["structuredContent"];
+		CHECK((bool)structured["ok"]);
+		CHECK((bool)structured["ambiguous"]);
+		CHECK((int)structured["match_count"] == 2);
 	}
 
 	memdelete(root);
