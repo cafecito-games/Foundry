@@ -1,7 +1,7 @@
-#compdef godot
+#compdef foundry
 
-# zsh completion for the Godot editor
-# To use it, install this file as `_godot` in a directory specified in your
+# zsh completion for the Foundry editor
+# To use it, install this file as `_foundry` in a directory specified in your
 # `fpath` environment variable then restart your shell.
 #
 # Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md).
@@ -83,11 +83,11 @@ _arguments \
   '--export-release[export the project in release mode using the given preset and output path]:export preset name then path' \
   '--export-debug[export the project in debug mode using the given preset and output path]:export preset name then path' \
   '--export-pack[export the project data only as a PCK or ZIP file using the given preset and output path]:export preset name then path' \
-  '--doctool[dump the engine API reference to the given path in XML format, merging if existing files are found]:path to base Godot build directory (optional):_dirs' \
+  '--doctool[dump the engine API reference to the given path in XML format, merging if existing files are found]:path to base Foundry build directory (optional):_dirs' \
   '--no-docbase[disallow dumping the base types (used with --doctool)]' \
   '--build-solutions[build the scripting solutions (e.g. for C# projects)]' \
   '--dump-foundryextension-interface[generate FoundryExtension header file 'foundry_extension_interface.h' in the current folder. This file is the base file required to implement a FoundryExtension.]' \
-  '--dump-extension-api[generate JSON dump of the Godot API for FoundryExtension bindings named "extension_api.json" in the current folder]' \
+  '--dump-extension-api[generate JSON dump of the Foundry API for FoundryExtension bindings named "extension_api.json" in the current folder]' \
   '--benchmark[benchmark the run time and print it to console]' \
   '--benchmark-file[benchmark the run time and save it to a given file in JSON format]:path to output JSON file' \
   '--test[run all unit tests; run with "--test --help" for more information]'
