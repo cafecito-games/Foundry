@@ -4871,10 +4871,12 @@ void SceneTreeDock::_update_configuration_warning() {
 	}
 }
 
-SceneTreeDock::SceneTreeDock(EditorSelection *p_editor_selection, EditorData &p_editor_data) {
+SceneTreeDock::SceneTreeDock(EditorSelection *p_editor_selection, EditorData &p_editor_data, bool p_register_open_command) {
 	set_name(TTRC("Scene"));
 	set_icon_name("PackedScene");
-	set_dock_shortcut(ED_SHORTCUT_AND_COMMAND("docks/open_scene", TTRC("Open Scene Dock")));
+	if (p_register_open_command) {
+		set_dock_shortcut(ED_SHORTCUT_AND_COMMAND("docks/open_scene", TTRC("Open Scene Dock")));
+	}
 	set_default_slot(EditorDock::DOCK_SLOT_LEFT_UR);
 	// Primary instance keeps the bare layout key; secondary instances (future
 	// phases) get "Scene:<n>". See EditorDock::get_effective_layout_key().

@@ -346,6 +346,8 @@ private:
 	// Main tabs.
 	EditorSceneWorkspace *scene_workspace = nullptr;
 	EditorSceneTabs *scene_tabs = nullptr;
+	SceneTreeDock *scene_tree_dock_primary = nullptr;
+	InspectorDock *inspector_dock_primary = nullptr;
 	SceneTreeDock *scene_tree_dock_secondary = nullptr;
 	InspectorDock *inspector_dock_secondary = nullptr;
 

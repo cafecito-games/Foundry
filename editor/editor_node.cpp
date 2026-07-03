@@ -4621,6 +4621,7 @@ void EditorNode::_set_current_scene_nocheck(int p_idx) {
 	} else {
 		editor_data.set_pane_current_scene(editor_data.get_focused_pane(), -1);
 	}
+	_bind_pane_docks(editor_data.get_focused_pane());
 
 	_apply_scene_state_for_index(p_idx);
 }
@@ -4704,12 +4705,14 @@ void EditorNode::_activate_scene_context(EditorSceneContext *p_context) {
 	// deriving UI state from the selection get notified.
 	editor_selection->mark_changed();
 
-	// Rebind the single instance of each dock to the newly focused context.
-	if (SceneTreeDock::get_singleton()) {
-		SceneTreeDock::get_singleton()->set_scene_context(p_context);
+	// Rebind the dock for the focused pane to the newly active context.
+	SceneTreeDock *focused_tree_dock = editor_data.get_focused_pane() == 0 ? scene_tree_dock_primary : scene_tree_dock_secondary;
+	InspectorDock *focused_inspector_dock = editor_data.get_focused_pane() == 0 ? inspector_dock_primary : inspector_dock_secondary;
+	if (focused_tree_dock) {
+		focused_tree_dock->set_scene_context(p_context);
 	}
-	if (InspectorDock::get_singleton()) {
-		InspectorDock::get_singleton()->set_scene_context(p_context);
+	if (focused_inspector_dock) {
+		focused_inspector_dock->set_scene_context(p_context);
 	}
 
 	emit_signal(SNAME("active_scene_context_changed"));
@@ -4827,8 +4830,8 @@ void EditorNode::update_all_scene_tabs() {
 void EditorNode::_update_focused_dock_singletons() {
 	const int focused = editor_data.get_focused_pane();
 	if (focused == 0) {
-		SceneTreeDock::set_focused_instance(SceneTreeDock::get_singleton());
-		InspectorDock::set_focused_instance(InspectorDock::get_singleton());
+		SceneTreeDock::set_focused_instance(scene_tree_dock_primary);
+		InspectorDock::set_focused_instance(inspector_dock_primary);
 	} else if (scene_tree_dock_secondary && inspector_dock_secondary) {
 		SceneTreeDock::set_focused_instance(scene_tree_dock_secondary);
 		InspectorDock::set_focused_instance(inspector_dock_secondary);
@@ -4839,11 +4842,11 @@ void EditorNode::_bind_pane_docks(int p_pane) {
 	const int scene_idx = editor_data.get_pane_current_scene(p_pane);
 	EditorSceneContext *context = scene_idx >= 0 ? editor_data.get_scene_context(scene_idx) : no_scene_context;
 	if (p_pane == 0) {
-		if (SceneTreeDock::get_singleton()) {
-			SceneTreeDock::get_singleton()->set_scene_context(context);
+		if (scene_tree_dock_primary) {
+			scene_tree_dock_primary->set_scene_context(context);
 		}
-		if (InspectorDock::get_singleton()) {
-			InspectorDock::get_singleton()->set_scene_context(context);
+		if (inspector_dock_primary) {
+			inspector_dock_primary->set_scene_context(context);
 		}
 	} else if (scene_tree_dock_secondary && inspector_dock_secondary) {
 		scene_tree_dock_secondary->set_scene_context(context);
@@ -4856,12 +4859,12 @@ void EditorNode::_create_secondary_docks() {
 		return;
 	}
 
-	scene_tree_dock_secondary = memnew(SceneTreeDock(editor_selection, editor_data));
+	scene_tree_dock_secondary = memnew(SceneTreeDock(editor_selection, editor_data, false));
 	scene_tree_dock_secondary->set_layout_key("Scene:2");
 	scene_tree_dock_secondary->set_owning_pane(1);
 	editor_dock_manager->add_dock(scene_tree_dock_secondary);
 
-	inspector_dock_secondary = memnew(InspectorDock(editor_data));
+	inspector_dock_secondary = memnew(InspectorDock(editor_data, false));
 	inspector_dock_secondary->set_layout_key("Inspector:2");
 	inspector_dock_secondary->set_owning_pane(1);
 	editor_dock_manager->add_dock(inspector_dock_secondary);
@@ -4890,6 +4893,7 @@ void EditorNode::_split_workspace(bool p_vertical) {
 		_create_secondary_docks();
 		scene_workspace->split_workspace(p_vertical);
 		editor_data.set_pane_current_scene(1, editor_data.get_pane_current_scene(1));
+		_bind_pane_docks(0);
 		_bind_pane_docks(1);
 	} else {
 		scene_workspace->split_workspace(p_vertical);
@@ -4935,11 +4939,14 @@ void EditorNode::focus_pane(int p_pane) {
 	_update_focused_dock_singletons();
 
 	EditorScenePane *pane = scene_workspace->get_pane(p_pane);
-	pane->get_content_host()->add_child(editor_main_screen);
+	Control *content_host = pane->get_content_host();
+	if (editor_main_screen->get_parent() != content_host) {
+		content_host->add_child(editor_main_screen);
+		editor_main_screen->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+	}
 
 	const int scene_idx = editor_data.get_pane_current_scene(p_pane);
-	_activate_scene_context(scene_idx >= 0 ? editor_data.get_scene_context(scene_idx) : nullptr);
-	_apply_scene_state_for_index(scene_idx);
+	_set_current_scene_nocheck(scene_idx);
 }
 
 void EditorNode::on_pane_tab_changed(int p_pane, int p_tab) {
@@ -9437,6 +9444,7 @@ EditorNode::EditorNode() {
 	editor_main_screen->set_custom_minimum_size(Size2(0, 80) * EDSCALE);
 	editor_main_screen->set_draw_behind_parent(true);
 	scene_workspace->get_pane(0)->get_content_host()->add_child(editor_main_screen);
+	editor_main_screen->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 	editor_main_screen->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 
 	placeholder_scene_viewport = memnew(SubViewport);
@@ -9738,10 +9746,10 @@ EditorNode::EditorNode() {
 
 	// Instantiate and place editor docks.
 
-	memnew(SceneTreeDock(editor_selection, editor_data));
-	SceneTreeDock::get_singleton()->set_scene_context(no_scene_context);
-	SceneTreeDock::get_singleton()->set_owning_pane(0);
-	editor_dock_manager->add_dock(SceneTreeDock::get_singleton());
+	scene_tree_dock_primary = memnew(SceneTreeDock(editor_selection, editor_data));
+	scene_tree_dock_primary->set_scene_context(no_scene_context);
+	scene_tree_dock_primary->set_owning_pane(0);
+	editor_dock_manager->add_dock(scene_tree_dock_primary);
 
 	memnew(ImportDock);
 	editor_dock_manager->add_dock(ImportDock::get_singleton());
@@ -9753,10 +9761,12 @@ EditorNode::EditorNode() {
 	get_project_settings()->connect_filesystem_dock_signals(filesystem_dock);
 	editor_dock_manager->add_dock(filesystem_dock);
 
-	memnew(InspectorDock(editor_data));
-	InspectorDock::get_singleton()->set_scene_context(no_scene_context);
-	InspectorDock::get_singleton()->set_owning_pane(0);
-	editor_dock_manager->add_dock(InspectorDock::get_singleton());
+	inspector_dock_primary = memnew(InspectorDock(editor_data));
+	inspector_dock_primary->set_scene_context(no_scene_context);
+	inspector_dock_primary->set_owning_pane(0);
+	editor_dock_manager->add_dock(inspector_dock_primary);
+
+	_bind_pane_docks(0);
 
 	memnew(SignalsDock);
 	editor_dock_manager->add_dock(SignalsDock::get_singleton());

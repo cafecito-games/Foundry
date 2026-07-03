@@ -188,6 +188,6 @@ public:
 	void store_script_properties(Object *p_object);
 	void apply_script_properties(Object *p_object);
 
-	InspectorDock(EditorData &p_editor_data);
+	InspectorDock(EditorData &p_editor_data, bool p_register_open_command = true);
 	~InspectorDock();
 };

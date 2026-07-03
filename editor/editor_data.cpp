@@ -424,6 +424,9 @@ bool EditorData::is_scene_changed(int p_idx) {
 	if (p_idx == -1) {
 		p_idx = current_edited_scene;
 	}
+	if (p_idx < 0) {
+		return false;
+	}
 	ERR_FAIL_INDEX_V(p_idx, edited_scene.size(), false);
 
 	uint64_t current_scene_version = undo_redo_manager->get_or_create_history(edited_scene[p_idx].context->get_history_id()).undo_redo->get_version();
@@ -837,12 +840,13 @@ EditorSceneContext *EditorData::get_active_scene_context() const {
 
 Node *EditorData::get_edited_scene_root(int p_idx) {
 	if (p_idx < 0) {
-		ERR_FAIL_INDEX_V(current_edited_scene, edited_scene.size(), nullptr);
-		return edited_scene[current_edited_scene].get_root();
-	} else {
-		ERR_FAIL_INDEX_V(p_idx, edited_scene.size(), nullptr);
-		return edited_scene[p_idx].get_root();
+		p_idx = current_edited_scene;
 	}
+	if (p_idx < 0) {
+		return nullptr;
+	}
+	ERR_FAIL_INDEX_V(p_idx, edited_scene.size(), nullptr);
+	return edited_scene[p_idx].get_root();
 }
 
 void EditorData::set_edited_scene_root(Node *p_root, bool p_attach_to_viewport) {

@@ -380,6 +380,6 @@ public:
 		return script_create_dialog;
 	}
 
-	SceneTreeDock(EditorSelection *p_editor_selection, EditorData &p_editor_data);
+	SceneTreeDock(EditorSelection *p_editor_selection, EditorData &p_editor_data, bool p_register_open_command = true);
 	~SceneTreeDock();
 };

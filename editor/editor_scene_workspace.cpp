@@ -66,8 +66,14 @@ void EditorScenePane::_pane_focus_entered() {
 }
 
 void EditorScenePane::set_focused_visual(bool p_focused) {
-	if (focus_frame) {
-		focus_frame->set_visible(p_focused);
+	if (!focus_frame) {
+		return;
+	}
+
+	if (p_focused) {
+		focus_frame->add_theme_style_override(SceneStringName(panel), get_theme_stylebox(SNAME("Focus"), EditorStringName(EditorStyles)));
+	} else {
+		focus_frame->remove_theme_style_override(SceneStringName(panel));
 	}
 }
 
@@ -88,14 +94,23 @@ void EditorScenePane::set_preview_mode(bool p_show_live_preview, bool p_show_3d_
 	}
 }
 
+void EditorScenePane::_fit_content_child(Control *p_child) {
+	if (!p_child) {
+		return;
+	}
+	p_child->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+}
+
 void EditorScenePane::setup(int p_pane_index) {
 	pane_index = p_pane_index;
 	set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	add_theme_constant_override("separation", 0);
 
 	focus_frame = memnew(PanelContainer);
 	focus_frame->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
-	focus_frame->hide();
+	focus_frame->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	focus_frame->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	add_child(focus_frame);
 
 	VBoxContainer *inner = memnew(VBoxContainer);
@@ -118,12 +133,14 @@ void EditorScenePane::setup(int p_pane_index) {
 	preview_container->set_stretch(true);
 	preview_container->hide();
 	content_host->add_child(preview_container);
+	_fit_content_child(preview_container);
 
 	preview_placeholder = memnew(PanelContainer);
 	preview_placeholder->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	preview_placeholder->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	preview_placeholder->hide();
 	content_host->add_child(preview_placeholder);
+	_fit_content_child(preview_placeholder);
 
 	VBoxContainer *placeholder_vb = memnew(VBoxContainer);
 	placeholder_vb->set_alignment(BoxContainer::ALIGNMENT_CENTER);
@@ -158,14 +175,44 @@ void EditorSceneWorkspace::_notification(int p_what) {
 	}
 }
 
+void EditorSceneWorkspace::_configure_pane_layout(EditorScenePane *p_pane, bool p_in_split) {
+	ERR_FAIL_NULL(p_pane);
+	p_pane->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	p_pane->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	if (p_in_split) {
+		p_pane->set_anchors_preset(Control::PRESET_TOP_LEFT);
+		p_pane->set_offsets_preset(Control::PRESET_TOP_LEFT);
+	} else {
+		p_pane->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+	}
+}
+
+void EditorSceneWorkspace::_ensure_split_offset() {
+	if (!split || panes.size() < 2) {
+		return;
+	}
+
+	const Size2 size = split->get_size();
+	const int axis = split_vertical ? size.height : size.width;
+	if (axis <= 0) {
+		if (!is_connected(SceneStringName(resized), callable_mp(this, &EditorSceneWorkspace::_ensure_split_offset))) {
+			connect(SceneStringName(resized), callable_mp(this, &EditorSceneWorkspace::_ensure_split_offset), CONNECT_ONE_SHOT);
+		}
+		return;
+	}
+
+	split->set_split_offset(axis / 2);
+}
+
 void EditorSceneWorkspace::_create_pane(int p_index) {
 	EditorScenePane *pane = memnew(EditorScenePane);
 	pane->setup(p_index);
 	panes.push_back(pane);
 	if (panes.size() == 1) {
 		add_child(pane);
-		pane->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+		_configure_pane_layout(pane, false);
 	} else {
+		_configure_pane_layout(pane, true);
 		split->add_child(pane);
 	}
 }
@@ -179,6 +226,7 @@ EditorSceneWorkspace *EditorSceneWorkspace::create_single_pane_workspace() {
 	workspace->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	workspace->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	workspace->_create_pane(0);
+	workspace->update_focus_visuals();
 	return workspace;
 }
 
@@ -191,16 +239,19 @@ void EditorSceneWorkspace::split_workspace(bool p_vertical) {
 
 	split_vertical = p_vertical;
 	remove_child(panes[0]);
+	_configure_pane_layout(panes[0], true);
 
 	split = memnew(SplitContainer);
 	split->set_vertical(p_vertical);
 	split->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	split->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	split->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 	add_child(split);
 
 	split->add_child(panes[0]);
 	_create_pane(1);
 	update_focus_visuals();
+	callable_mp(this, &EditorSceneWorkspace::_ensure_split_offset).call_deferred();
 }
 
 void EditorSceneWorkspace::unsplit_workspace() {
@@ -214,7 +265,7 @@ void EditorSceneWorkspace::unsplit_workspace() {
 	split = nullptr;
 
 	add_child(panes[0]);
-	panes[0]->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+	_configure_pane_layout(panes[0], false);
 
 	panes.remove_at(1);
 	memdelete(pane_1);
