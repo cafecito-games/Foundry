@@ -723,10 +723,10 @@ PackedStringArray EditorInterface::get_open_scenes() const {
 	Vector<EditorData::EditedScene> scenes = EditorNode::get_editor_data().get_edited_scenes();
 
 	for (EditorData::EditedScene &edited_scene : scenes) {
-		if (edited_scene.root == nullptr) {
+		if (edited_scene.get_root() == nullptr) {
 			continue;
 		}
-		ret.push_back(edited_scene.root->get_scene_file_path());
+		ret.push_back(edited_scene.get_root()->get_scene_file_path());
 	}
 	return ret;
 }
@@ -736,10 +736,10 @@ TypedArray<Node> EditorInterface::get_open_scene_roots() const {
 	Vector<EditorData::EditedScene> scenes = EditorNode::get_editor_data().get_edited_scenes();
 
 	for (EditorData::EditedScene &edited_scene : scenes) {
-		if (edited_scene.root == nullptr) {
+		if (edited_scene.get_root() == nullptr) {
 			continue;
 		}
-		ret.push_back(edited_scene.root);
+		ret.push_back(edited_scene.get_root());
 	}
 	return ret;
 }

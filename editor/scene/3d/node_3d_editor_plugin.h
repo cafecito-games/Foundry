@@ -876,6 +876,7 @@ private:
 	void _register_all_gizmos();
 
 	void _selection_changed();
+	void _active_scene_context_changed();
 	void _refresh_menu_icons();
 
 	bool do_snap_selected_nodes_to_floor = false;

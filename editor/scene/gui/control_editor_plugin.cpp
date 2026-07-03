@@ -937,6 +937,10 @@ List<Control *> ControlEditorToolbar::_get_edited_controls() {
 	return selection;
 }
 
+void ControlEditorToolbar::_update_editor_selection() {
+	editor_selection = EditorNode::get_singleton()->get_editor_selection();
+}
+
 void ControlEditorToolbar::_selection_changed() {
 	// Update toolbar visibility.
 	bool has_controls = false;
@@ -1081,6 +1085,16 @@ void ControlEditorToolbar::_selection_changed() {
 
 void ControlEditorToolbar::_notification(int p_what) {
 	switch (p_what) {
+		case NOTIFICATION_ENTER_TREE: {
+			// The signal only exists once EditorNode's bindings are set up,
+			// which happens after its constructor (and this toolbar) ran; a
+			// context may also have activated before this connection existed.
+			if (!EditorNode::get_singleton()->is_connected("active_scene_context_changed", callable_mp(this, &ControlEditorToolbar::_update_editor_selection))) {
+				EditorNode::get_singleton()->connect("active_scene_context_changed", callable_mp(this, &ControlEditorToolbar::_update_editor_selection));
+				_update_editor_selection();
+			}
+		} break;
+
 		case NOTIFICATION_THEME_CHANGED: {
 			anchors_button->set_button_icon(get_editor_theme_icon(SNAME("ControlLayout")));
 			anchor_mode_button->set_button_icon(get_editor_theme_icon(SNAME("Anchor")));
@@ -1145,8 +1159,8 @@ ControlEditorToolbar::ControlEditorToolbar() {
 
 	// Editor connections.
 	editor_selection = EditorNode::get_singleton()->get_editor_selection();
-	editor_selection->add_editor_plugin(this);
-	editor_selection->connect("selection_changed", callable_mp(this, &ControlEditorToolbar::_selection_changed));
+	EditorNode::get_singleton()->add_editor_selection_plugin(this);
+	EditorNode::get_singleton()->connect_editor_selection_changed(callable_mp(this, &ControlEditorToolbar::_selection_changed));
 
 	singleton = this;
 }

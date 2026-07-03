@@ -439,6 +439,7 @@ private:
 	void _on_grid_menu_id_pressed(int p_id);
 	void _reset_transform(TransformType p_type);
 	void _update_oversampling();
+	void _active_scene_context_changed();
 
 public:
 	enum ThemePreviewMode {

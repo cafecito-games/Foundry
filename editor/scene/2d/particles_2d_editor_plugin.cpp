@@ -426,7 +426,7 @@ void GPUParticles2DEditorPlugin::_generate_visibility_rect() {
 void Particles2DEditorPlugin::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_ENTER_TREE: {
-			EditorNode::get_singleton()->get_editor_selection()->connect("selection_changed", callable_mp(this, &Particles2DEditorPlugin::_selection_changed));
+			EditorNode::get_singleton()->connect_editor_selection_changed(callable_mp(this, &Particles2DEditorPlugin::_selection_changed));
 		} break;
 	}
 }

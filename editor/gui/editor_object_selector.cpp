@@ -102,6 +102,7 @@ void EditorObjectSelector::_show_popup() {
 }
 
 void EditorObjectSelector::_about_to_show() {
+	EditorSelectionHistory *history = EditorNode::get_singleton()->get_editor_selection_history();
 	Object *obj = ObjectDB::get_instance(history->get_path_object(history->get_path_size() - 1));
 	if (!obj) {
 		return;
@@ -117,6 +118,7 @@ void EditorObjectSelector::_about_to_show() {
 }
 
 void EditorObjectSelector::update_path() {
+	EditorSelectionHistory *history = EditorNode::get_singleton()->get_editor_selection_history();
 	for (int i = 0; i < history->get_path_size(); i++) {
 		Object *obj = ObjectDB::get_instance(history->get_path_object(i));
 		if (!obj) {
@@ -203,9 +205,7 @@ void EditorObjectSelector::_notification(int p_what) {
 	}
 }
 
-EditorObjectSelector::EditorObjectSelector(EditorSelectionHistory *p_history) {
-	history = p_history;
-
+EditorObjectSelector::EditorObjectSelector() {
 	MarginContainer *main_mc = memnew(MarginContainer);
 	main_mc->set_theme_type_variation("ObjectSelectorMargin");
 	main_mc->set_anchors_and_offsets_preset(PRESET_FULL_RECT);

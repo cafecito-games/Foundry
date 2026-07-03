@@ -2195,7 +2195,7 @@ void Node3DEditorViewport::_sinput(const Ref<InputEvent> &p_event) {
 					surface->queue_redraw();
 				} else {
 					if (ruler->is_inside_tree()) {
-						EditorNode::get_singleton()->get_scene_root()->remove_child(ruler);
+						ruler->get_parent()->remove_child(ruler);
 						ruler_start_point->set_visible(false);
 						ruler_end_point->set_visible(false);
 						ruler_label->set_visible(false);
@@ -5148,7 +5148,9 @@ void Node3DEditorViewport::_remove_preview_node() {
 			node->queue_free();
 			preview_node->remove_child(node);
 		}
-		EditorNode::get_singleton()->get_scene_root()->remove_child(preview_node);
+		// The displayed viewport may have changed since the preview was added,
+		// so remove the preview from its actual parent.
+		preview_node->get_parent()->remove_child(preview_node);
 	}
 }
 
@@ -8542,6 +8544,16 @@ void Node3DEditor::update_grid() {
 	}
 }
 
+void Node3DEditor::_active_scene_context_changed() {
+	editor_selection = EditorNode::get_singleton()->get_editor_selection();
+	for (uint32_t i = 0; i < VIEWPORTS_COUNT; i++) {
+		if (viewports[i]) {
+			viewports[i]->editor_selection = editor_selection;
+		}
+	}
+	_selection_changed();
+}
+
 void Node3DEditor::_selection_changed() {
 	_refresh_menu_icons();
 
@@ -8970,7 +8982,11 @@ void Node3DEditor::_notification(int p_what) {
 			get_tree()->connect("node_removed", callable_mp(this, &Node3DEditor::_node_removed));
 			get_tree()->connect("node_added", callable_mp(this, &Node3DEditor::_node_added));
 			SceneTreeDock::get_singleton()->get_tree_editor()->connect("node_changed", callable_mp(this, &Node3DEditor::_refresh_menu_icons));
-			editor_selection->connect("selection_changed", callable_mp(this, &Node3DEditor::_selection_changed));
+			EditorNode::get_singleton()->connect_editor_selection_changed(callable_mp(this, &Node3DEditor::_selection_changed));
+			EditorNode::get_singleton()->connect("active_scene_context_changed", callable_mp(this, &Node3DEditor::_active_scene_context_changed));
+			// A context may have activated before this connection existed
+			// (the initial scene tab is created during EditorNode setup).
+			_active_scene_context_changed();
 
 			_update_preview_environment();
 
@@ -9754,7 +9770,7 @@ Node3DEditor::Node3DEditor() {
 	ERR_FAIL_COND_MSG(singleton != nullptr, "A Node3DEditor singleton already exists.");
 	singleton = this;
 	editor_selection = EditorNode::get_singleton()->get_editor_selection();
-	editor_selection->add_editor_plugin(this);
+	EditorNode::get_singleton()->add_editor_selection_plugin(this);
 
 	snap_enabled = false;
 	snap_key_enabled = false;
