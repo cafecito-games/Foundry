@@ -249,4 +249,12 @@ EditorBottomDrawerStrip::EditorBottomDrawerStrip(EditorBottomPanel *p_bottom_pan
 
 	bottom_panel->get_tab_bar()->connect("tab_changed", callable_mp(this, &EditorBottomDrawerStrip::_update_active_states).unbind(1));
 	bottom_panel->connect("child_order_changed", callable_mp(this, &EditorBottomDrawerStrip::_rebuild_toggles), CONNECT_DEFERRED);
+
+	// Initial tabs may already exist (native bottom docks are registered after the
+	// strip is constructed). child_order_changed is not emitted for them.
+	callable_mp(this, &EditorBottomDrawerStrip::rebuild_toggles).call_deferred();
+}
+
+void EditorBottomDrawerStrip::rebuild_toggles() {
+	_rebuild_toggles();
 }

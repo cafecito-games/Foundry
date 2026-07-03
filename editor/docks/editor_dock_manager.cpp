@@ -62,6 +62,20 @@ static inline Ref<Texture2D> _get_dock_icon(const EditorDock *p_dock, const Call
 	return icon;
 }
 
+static void _notify_bottom_drawer_strip_tabs_changed_if_needed(Node *p_old_parent, Control *p_new_parent) {
+	const EditorBottomPanel *bottom_panel = EditorNode::get_bottom_panel();
+	if (!bottom_panel) {
+		return;
+	}
+	if (p_old_parent != bottom_panel && p_new_parent != bottom_panel) {
+		return;
+	}
+	EditorBottomDrawerStrip *strip = EditorNode::get_bottom_drawer_strip();
+	if (strip) {
+		callable_mp(strip, &EditorBottomDrawerStrip::rebuild_toggles).call_deferred();
+	}
+}
+
 bool EditorDockDragHint::can_drop_data(const Point2 &p_point, const Variant &p_data) const {
 	return can_drop_dock;
 }
@@ -481,6 +495,8 @@ void EditorDockManager::_move_dock_tab_index(EditorDock *p_dock, int p_tab_index
 		dock_tab_container->set_current_tab(target_index);
 	}
 	dock_tab_container->set_block_signals(false);
+
+	_notify_bottom_drawer_strip_tabs_changed_if_needed(dock_tab_container, dock_tab_container);
 }
 
 void EditorDockManager::_move_dock(EditorDock *p_dock, Control *p_target, int p_tab_index, bool p_set_current) {
@@ -516,6 +532,7 @@ void EditorDockManager::_move_dock(EditorDock *p_dock, Control *p_target, int p_
 
 	if (!p_target) {
 		p_dock->is_open = false;
+		_notify_bottom_drawer_strip_tabs_changed_if_needed(parent, nullptr);
 		return;
 	}
 
@@ -543,6 +560,8 @@ void EditorDockManager::_move_dock(EditorDock *p_dock, Control *p_target, int p_
 		}
 		_dock_container_update_visibility(dock_tab_container);
 	}
+
+	_notify_bottom_drawer_strip_tabs_changed_if_needed(parent, p_target);
 }
 
 void EditorDockManager::_queue_update_tab_style(EditorDock *p_dock) {
@@ -825,6 +844,11 @@ void EditorDockManager::load_docks_from_config(Ref<ConfigFile> p_layout, const S
 	main_hsplit->set_split_offsets(offsets);
 
 	update_docks_menu();
+
+	EditorBottomDrawerStrip *strip = EditorNode::get_bottom_drawer_strip();
+	if (strip) {
+		callable_mp(strip, &EditorBottomDrawerStrip::rebuild_toggles).call_deferred();
+	}
 }
 
 void EditorDockManager::set_dock_enabled(EditorDock *p_dock, bool p_enabled) {
