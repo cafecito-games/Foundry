@@ -135,6 +135,7 @@ Vector<ScriptLanguage::ScriptTemplate> FSLanguage::get_built_in_templates(const 
 	return templates;
 }
 
+#ifndef FOUNDRY_SCRIPT_NO_FRONTEND
 static void get_function_names_recursively(const FSParser::ClassNode *p_class, const String &p_prefix, HashMap<int, String> &r_funcs) {
 	for (int i = 0; i < p_class->members.size(); i++) {
 		if (p_class->members[i].type == FSParser::ClassNode::Member::FUNCTION) {
@@ -146,6 +147,7 @@ static void get_function_names_recursively(const FSParser::ClassNode *p_class, c
 		}
 	}
 }
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND
 
 bool FSLanguage::validate(const String &p_script, const String &p_path, List<String> *r_functions, List<ScriptLanguage::ScriptError> *r_errors, List<ScriptLanguage::Warning> *r_warnings, HashSet<int> *r_safe_lines) const {
 #ifdef FOUNDRY_SCRIPT_NO_FRONTEND
