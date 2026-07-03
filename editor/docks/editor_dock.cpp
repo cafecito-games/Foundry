@@ -125,9 +125,11 @@ void EditorDock::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_ENTER_TREE:
 		case NOTIFICATION_TRANSLATION_CHANGED: {
-			const String display_title = get_display_title();
-			if (!display_title.is_empty()) {
-				set_accessibility_name(display_title);
+			if (get_accessibility_name().strip_edges().is_empty()) {
+				const String display_title = get_display_title();
+				if (!display_title.is_empty()) {
+					set_accessibility_name(display_title);
+				}
 			}
 		} break;
 		default:

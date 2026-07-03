@@ -123,6 +123,9 @@ String EditorAutomationWorkflow::role_for_node(const Node *p_node) {
 	if (Object::cast_to<const EditorInspectorCategory>(p_node)) {
 		return "inspector_section";
 	}
+	if (Object::cast_to<const EditorInspectorSection>(p_node)) {
+		return "inspector_section";
+	}
 	if (Object::cast_to<const ScriptEditor>(p_node)) {
 		return "script_editor";
 	}
@@ -150,7 +153,7 @@ Dictionary EditorAutomationWorkflow::metadata_for_node(const Node *p_node) {
 		metadata["value"] = _variant_summary(property->get_edited_property_display_value());
 		metadata["enabled"] = !property->is_read_only();
 		metadata["editable"] = !property->is_read_only();
-		if (Object *edited_object = property->get_edited_object()) {
+		if (Object *edited_object = const_cast<EditorProperty *>(property)->get_edited_object()) {
 			metadata["object_class"] = edited_object->get_class();
 		}
 		return metadata;
@@ -158,6 +161,11 @@ Dictionary EditorAutomationWorkflow::metadata_for_node(const Node *p_node) {
 
 	if (const EditorInspectorCategory *category = Object::cast_to<const EditorInspectorCategory>(p_node)) {
 		metadata["section"] = category->get_label();
+		return metadata;
+	}
+
+	if (const EditorInspectorSection *section = Object::cast_to<const EditorInspectorSection>(p_node)) {
+		metadata["section"] = section->get_label();
 		return metadata;
 	}
 

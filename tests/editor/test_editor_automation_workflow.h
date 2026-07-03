@@ -149,7 +149,7 @@ TEST_CASE("[Editor][Automation][MCP] run_command rejects unknown command") {
 	const Dictionary result = response["result"];
 	CHECK((bool)result["isError"]);
 	const Dictionary structured = result["structuredContent"];
-	CHECK(structured.get("ok", true) == false);
+	CHECK((bool)structured.get("ok", true) == false);
 	CHECK(String(structured.get("kind", String())) == "unknown_command");
 }
 

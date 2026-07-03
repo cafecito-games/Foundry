@@ -126,7 +126,9 @@ Dictionary EditorAutomationState::read_editor_state() {
 		state["edited_scene_root"] = Dictionary();
 		state["selected_nodes"] = Array();
 		state["selected_paths"] = Array();
-		state["filesystem"] = Dictionary();
+		Dictionary filesystem_state;
+		filesystem_state["supported"] = false;
+		state["filesystem"] = filesystem_state;
 		state["script"] = Dictionary();
 		state["playing"] = Dictionary();
 		state["unsaved"] = Dictionary();
