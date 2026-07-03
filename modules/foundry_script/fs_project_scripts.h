@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  fs_trait_utils.h                                                      */
+/*  fs_project_scripts.h                                                  */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -30,16 +30,54 @@
 
 #pragma once
 
-#include "fs_parser.h"
+#include "core/object/ref_counted.h"
+#include "core/variant/typed_array.h"
 
-static _FORCE_INLINE_ StringName fs_trait_identity_name(const FSParser::ClassNode *p_trait) {
-	ERR_FAIL_NULL_V(p_trait, StringName());
+class FSAnnotation;
+class FSMethodDescriptor;
+class FSScriptDescriptor;
+class Script;
 
-	const StringName global_name = p_trait->get_global_name();
-	if (global_name != StringName()) {
-		return global_name;
-	}
-	return StringName(p_trait->fqcn);
-}
+class FSProjectScripts : public RefCounted {
+	FOUNDRY_CLASS(FSProjectScripts, RefCounted);
 
-bool fs_class_has_named_trait(const FSParser::ClassNode *p_class, const StringName &p_trait_name);
+protected:
+	static void _bind_methods();
+
+public:
+	TypedArray<FSScriptDescriptor> list_scripts_under(const String &p_root_path, bool p_recursive = true) const;
+	Ref<FSScriptDescriptor> get_script_descriptor(const String &p_path) const;
+};
+
+class FSScriptDescriptor : public RefCounted {
+	FOUNDRY_CLASS(FSScriptDescriptor, RefCounted);
+
+	String path;
+	StringName global_class_name;
+	StringName fully_qualified_name;
+	StringName base_type;
+	bool is_trait = false;
+	bool is_abstract = false;
+	bool indexed_ok = false;
+	TypedArray<Dictionary> index_diagnostics;
+
+protected:
+	static void _bind_methods();
+
+public:
+	String get_path() const { return path; }
+	StringName get_global_class_name() const { return global_class_name; }
+	StringName get_fully_qualified_name() const { return fully_qualified_name; }
+	StringName get_base_type() const { return base_type; }
+	bool get_is_trait() const { return is_trait; }
+	bool get_is_abstract() const { return is_abstract; }
+	bool get_indexed_ok() const { return indexed_ok; }
+
+	TypedArray<Dictionary> get_index_diagnostics() const { return index_diagnostics.duplicate(); }
+	TypedArray<FSAnnotation> get_class_annotations() const;
+	TypedArray<FSMethodDescriptor> get_methods() const;
+	bool implements_trait(const StringName &p_trait_name) const;
+	Ref<Script> load_script() const;
+
+	static Ref<FSScriptDescriptor> build(const String &p_path);
+};

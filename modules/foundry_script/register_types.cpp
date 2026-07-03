@@ -34,6 +34,7 @@
 #include "foundry_script.h"
 #include "fs_cache.h"
 #include "fs_parser.h"
+#include "fs_project_scripts.h"
 #include "fs_reflection.h"
 #include "fs_utility_functions.h"
 
@@ -143,6 +144,8 @@ void initialize_foundry_script_module(ModuleInitializationLevel p_level) {
 		FOUNDRY_REGISTER_CLASS(FSMethodDescriptor);
 		FOUNDRY_REGISTER_CLASS(FSPropertyDescriptor);
 		FOUNDRY_REGISTER_CLASS(FSReflection);
+		FOUNDRY_REGISTER_CLASS(FSProjectScripts);
+		FOUNDRY_REGISTER_CLASS(FSScriptDescriptor);
 		FOUNDRY_REGISTER_CLASS(FSNamespace);
 
 		script_language_gd = memnew(FSLanguage);

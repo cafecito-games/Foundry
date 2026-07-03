@@ -4,11 +4,14 @@
 		The [code]foundry[/code] namespace object exposed to FoundryScript.
 	</brief_description>
 	<description>
-		Backs the [code]foundry[/code] global in FoundryScript. It is a singleton you do not construct; access its members through [code]foundry.[/code], for example [code]foundry.reflection.get_methods(...)[/code]. Currently it exposes only the read-only [member reflection] member.
+		Backs the [code]foundry[/code] global in FoundryScript. It is a singleton you do not construct; access its members through [code]foundry.[/code], for example [code]foundry.reflection.get_methods(...)[/code] or [code]foundry.project_scripts.list_scripts_under(...)[/code]. It exposes the read-only [member reflection] and [member project_scripts] members.
 	</description>
 	<tutorials>
 	</tutorials>
 	<members>
+		<member name="project_scripts" type="FSProjectScripts" setter="" getter="get_project_scripts">
+			Read-only project script discovery for test runners. See [FSProjectScripts].
+		</member>
 		<member name="reflection" type="FSReflection" setter="" getter="get_reflection">
 			The read-only reflection and dynamic-proxy API. See [FSReflection].
 		</member>

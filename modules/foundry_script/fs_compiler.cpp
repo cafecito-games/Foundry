@@ -4525,6 +4525,14 @@ void FSCompiler::convert_to_initializer_type(Variant &p_variant, const FSParser:
 	}
 }
 
+void FSCompiler::collect_passive_annotations(const List<FSParser::AnnotationNode *> &p_annotations, Vector<FoundryScript::AnnotationUsage> &r_usages) {
+	_collect_annotations(p_annotations, r_usages);
+}
+
+void FSCompiler::collect_passive_parameter_annotations(const Vector<FSParser::ParameterNode *> &p_parameters, const FSParser::ParameterNode *p_rest_parameter, HashMap<StringName, Vector<FoundryScript::AnnotationUsage>> &r_parameter_annotations) {
+	_collect_parameter_annotations(p_parameters, p_rest_parameter, r_parameter_annotations);
+}
+
 void FSCompiler::make_scripts(FoundryScript *p_script, const FSParser::ClassNode *p_class, bool p_keep_state) {
 	p_script->fully_qualified_name = p_class->fqcn;
 	p_script->local_name = p_class->identifier ? p_class->identifier->name : StringName();

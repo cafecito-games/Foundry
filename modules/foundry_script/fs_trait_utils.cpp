@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  fs_trait_utils.h                                                      */
+/*  fs_trait_utils.cpp                                                    */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -16,9 +16,6 @@
 /* permit persons to whom the Software is furnished to do so, subject to  */
 /* the following conditions:                                              */
 /*                                                                        */
-/* The above copyright notice and this permission notice shall be         */
-/* included in all copies or substantial portions of the Software.        */
-/*                                                                        */
 /* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
 /* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
 /* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
@@ -28,18 +25,49 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-#pragma once
+#include "fs_trait_utils.h"
 
-#include "fs_parser.h"
+#include "fs_cache.h"
+#include "fs_conformance_registry.h"
 
-static _FORCE_INLINE_ StringName fs_trait_identity_name(const FSParser::ClassNode *p_trait) {
-	ERR_FAIL_NULL_V(p_trait, StringName());
-
-	const StringName global_name = p_trait->get_global_name();
-	if (global_name != StringName()) {
-		return global_name;
+bool fs_class_has_named_trait(const FSParser::ClassNode *p_class, const StringName &p_trait_name) {
+	if (p_class == nullptr || p_trait_name == StringName()) {
+		return false;
 	}
-	return StringName(p_trait->fqcn);
-}
 
-bool fs_class_has_named_trait(const FSParser::ClassNode *p_class, const StringName &p_trait_name);
+	const FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
+	const FSParser::ClassNode *current = p_class;
+	while (current != nullptr) {
+		if (current->is_trait && fs_trait_identity_name(current) == p_trait_name) {
+			return true;
+		}
+
+		for (const FSParser::ClassNode *trait : current->resolved_traits) {
+			if (trait != nullptr && fs_trait_identity_name(trait) == p_trait_name) {
+				return true;
+			}
+		}
+
+		if (registry->has_conformance(current->fqcn, p_trait_name) ||
+				registry->has_conformance(current->get_global_name(), p_trait_name)) {
+			return true;
+		}
+
+		if (current->base_type.kind == FSParser::DataType::CLASS) {
+			current = current->base_type.class_type;
+		} else if (current->base_type.kind == FSParser::DataType::SCRIPT && !current->base_type.script_path.is_empty()) {
+			Error err = OK;
+			Ref<FSParserRef> base_parser_ref = FSCache::get_parser(current->base_type.script_path, FSParserRef::INTERFACE_SOLVED, err);
+			if (err != OK || base_parser_ref.is_null()) {
+				return false;
+			}
+			current = base_parser_ref->get_parser()->get_tree();
+		} else if (current->base_type.kind == FSParser::DataType::NATIVE) {
+			return registry->native_class_conforms(current->base_type.native_type, p_trait_name);
+		} else {
+			break;
+		}
+	}
+
+	return false;
+}

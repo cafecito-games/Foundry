@@ -40,6 +40,7 @@
 #include "fs_conformance_registry.h"
 #include "fs_no_frontend.h"
 #include "fs_parser.h"
+#include "fs_project_scripts.h"
 #include "fs_reflection.h"
 #include "fs_rpc_callable.h"
 #ifndef FOUNDRY_SCRIPT_NO_FRONTEND
@@ -2885,6 +2886,10 @@ Ref<FSReflection> FSLanguage::get_reflection_singleton() const {
 	return reflection_singleton;
 }
 
+Ref<FSProjectScripts> FSLanguage::get_project_scripts_singleton() const {
+	return project_scripts_singleton;
+}
+
 Ref<FSNamespace> FSLanguage::get_namespace_singleton() const {
 	return namespace_singleton;
 }
@@ -2931,12 +2936,14 @@ void FSLanguage::init() {
 		_add_global(E.name, E.ptr);
 	}
 
-	// Expose the read-only reflection API as the `godot.reflection` surface. A true
-	// language namespace is not available, so `godot` is a nested-singleton object
-	// whose `reflection` member is the introspection object.
+	// Expose the read-only reflection API as the `foundry.reflection` surface. A true
+	// language namespace is not available, so `foundry` is a nested-singleton object
+	// whose `reflection` and `project_scripts` members are the introspection surfaces.
 	reflection_singleton.instantiate();
+	project_scripts_singleton.instantiate();
 	namespace_singleton.instantiate();
 	namespace_singleton->set_reflection(reflection_singleton);
+	namespace_singleton->set_project_scripts(project_scripts_singleton);
 	add_named_global_constant(FOUNDRY_SCRIPT_REFLECTION_NAMESPACE, namespace_singleton);
 
 #ifdef TOOLS_ENABLED
@@ -3069,6 +3076,7 @@ void FSLanguage::finish() {
 		}
 	}
 	namespace_singleton.unref();
+	project_scripts_singleton.unref();
 	reflection_singleton.unref();
 
 	finishing = false;

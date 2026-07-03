@@ -765,6 +765,7 @@ public:
 
 class FSReflection;
 class FSNamespace;
+class FSProjectScripts;
 
 class FSLanguage : public ScriptLanguage {
 	friend class FSFunctionState;
@@ -782,10 +783,11 @@ class FSLanguage : public ScriptLanguage {
 	HashMap<StringName, Variant> named_globals;
 	Vector<int> global_array_empty_indexes;
 
-	// Read-only reflection singletons exposed as the `foundry.reflection` surface.
+	// Read-only reflection singletons exposed as the `foundry` namespace surface.
 	// Held by `named_globals`; these member refs keep them addressable and are
 	// cleared in finish().
 	Ref<FSReflection> reflection_singleton;
+	Ref<FSProjectScripts> project_scripts_singleton;
 	Ref<FSNamespace> namespace_singleton;
 
 	struct CallLevel {
@@ -971,6 +973,7 @@ public:
 	// The reflection surface singletons registered by init(); null before init() and after finish().
 	// Defined out of line because only forward declarations of the types are visible here.
 	Ref<FSReflection> get_reflection_singleton() const;
+	Ref<FSProjectScripts> get_project_scripts_singleton() const;
 	Ref<FSNamespace> get_namespace_singleton() const;
 
 	_FORCE_INLINE_ static FSLanguage *get_singleton() { return singleton; }

@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="FSProjectScripts" inherits="RefCounted" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Parser-level project script discovery for FoundryScript test runners.
+	</brief_description>
+	<description>
+		Exposes read-only discovery over the project's FoundryScript files without loading or executing them. Access it through [member FSNamespace.project_scripts] as [code]foundry.project_scripts[/code].
+		[code]list_scripts_under()[/code] walks a [code]res://[/code] directory and returns one [FSScriptDescriptor] per [code].fs[/code] file, including scripts that fail to parse or index. Filtering policy (name prefixes, annotation matching, excluded directories) stays in runner code; descriptors carry the metadata needed to decide what to run.
+		Descriptors are built from parser-level indexing via [FSCache] at interface-resolved status. Discovery never runs static initializers, [code]_init[/code], or other user code, and does not print indexing diagnostics to the console. Broken files remain enumerable with [member FSScriptDescriptor.indexed_ok] set to [code]false[/code] and diagnostics available from [method FSScriptDescriptor.get_index_diagnostics].
+		Example:
+		[codeblock]
+		for descriptor in foundry.project_scripts.list_scripts_under("res://tests"):
+		    if not descriptor.indexed_ok:
+		        report_broken_file(descriptor.path, descriptor.get_index_diagnostics())
+		        continue
+		    if not descriptor.implements_trait(&amp;"my.testlib.Test"):
+		        continue
+		    for method in descriptor.get_methods():
+		        if str(method.name).begins_with("test_"):
+		            cases.append(TestCase.from_descriptor(descriptor, method))
+		[/codeblock]
+		Suites are instantiated later with [method FSScriptDescriptor.load_script].
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="get_script_descriptor" qualifiers="const">
+			<return type="FSScriptDescriptor" />
+			<param index="0" name="path" type="String" />
+			<description>
+				Returns a descriptor for a single script path. Returns a null [code]Ref[/code] when the file does not exist.
+			</description>
+		</method>
+		<method name="list_scripts_under" qualifiers="const">
+			<return type="FSScriptDescriptor[]" />
+			<param index="0" name="root_path" type="String" />
+			<param index="1" name="recursive" type="bool" default="true" />
+			<description>
+				Enumerates FoundryScript files under [param root_path] using engine directory access. Results are sorted lexicographically by path for reproducible CI output. Each script yields a descriptor, including files that fail to index.
+			</description>
+		</method>
+	</methods>
+</class>

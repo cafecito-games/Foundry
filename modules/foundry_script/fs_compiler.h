@@ -200,6 +200,8 @@ class FSCompiler {
 
 public:
 	static void convert_to_initializer_type(Variant &p_variant, const FSParser::VariableNode *p_node);
+	static void collect_passive_annotations(const List<FSParser::AnnotationNode *> &p_annotations, Vector<FoundryScript::AnnotationUsage> &r_usages);
+	static void collect_passive_parameter_annotations(const Vector<FSParser::ParameterNode *> &p_parameters, const FSParser::ParameterNode *p_rest_parameter, HashMap<StringName, Vector<FoundryScript::AnnotationUsage>> &r_parameter_annotations);
 	static void make_scripts(FoundryScript *p_script, const FSParser::ClassNode *p_class, bool p_keep_state);
 	Error compile(const FSParser *p_parser, FoundryScript *p_script, bool p_keep_state = false);
 
