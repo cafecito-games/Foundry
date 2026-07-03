@@ -942,8 +942,8 @@ InspectorDock::InspectorDock(EditorData &p_editor_data) {
 
 	set_process_shortcut_input(true);
 
-	connect(SceneStringName(focus_entered), callable_mp(this, &InspectorDock::_dock_focus_entered));
-	connect(SceneStringName(gui_input), callable_mp(this, &InspectorDock::_dock_gui_input));
+	main_vb->connect(SceneStringName(focus_entered), callable_mp(this, &InspectorDock::_dock_focus_entered));
+	main_vb->connect(SceneStringName(gui_input), callable_mp(this, &InspectorDock::_dock_gui_input));
 }
 
 void InspectorDock::_dock_focus_entered() {

@@ -5128,8 +5128,8 @@ SceneTreeDock::SceneTreeDock(EditorSelection *p_editor_selection, EditorData &p_
 
 	Resource::_update_configuration_warning = _update_configuration_warning;
 
-	connect(SceneStringName(focus_entered), callable_mp(this, &SceneTreeDock::_dock_focus_entered));
-	connect(SceneStringName(gui_input), callable_mp(this, &SceneTreeDock::_dock_gui_input));
+	main_vbox->connect(SceneStringName(focus_entered), callable_mp(this, &SceneTreeDock::_dock_focus_entered));
+	main_vbox->connect(SceneStringName(gui_input), callable_mp(this, &SceneTreeDock::_dock_gui_input));
 }
 
 void SceneTreeDock::_dock_focus_entered() {
