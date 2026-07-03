@@ -279,9 +279,6 @@ public:
 	virtual void sync() = 0;
 	virtual void finish() = 0;
 	virtual void free_rid(RID p_rid) = 0;
-#ifndef DISABLE_DEPRECATED
-	[[deprecated("Use `free_rid()` instead.")]] void free(RID p_rid) { free_rid(p_rid); }
-#endif // DISABLE_DEPRECATED
 
 	NavigationServer2D();
 	~NavigationServer2D() override;
@@ -307,12 +304,6 @@ public:
 	bool get_debug_enabled() const;
 
 protected:
-#ifndef DISABLE_DEPRECATED
-	Vector<Vector2> _map_get_path_bind_compat_100129(RID p_map, Vector2 p_origin, Vector2 p_destination, bool p_optimize, uint32_t p_navigation_layers = 1) const;
-	void _query_path_bind_compat_100129(const Ref<NavigationPathQueryParameters2D> &p_query_parameters, Ref<NavigationPathQueryResult2D> p_query_result) const;
-	static void _bind_compatibility_methods();
-#endif
-
 private:
 	bool debug_enabled = false;
 

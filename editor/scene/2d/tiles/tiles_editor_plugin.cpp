@@ -43,7 +43,6 @@
 #include "editor/settings/editor_command_palette.h"
 #include "editor/settings/editor_settings.h"
 #include "editor/themes/editor_scale.h"
-#include "scene/2d/tile_map.h"
 #include "scene/2d/tile_map_layer.h"
 #include "scene/gui/button.h"
 #include "scene/gui/control.h"
@@ -360,14 +359,6 @@ void TileMapEditorPlugin::_tile_map_layer_changed() {
 	callable_mp(this, &TileMapEditorPlugin::_update_tile_map).call_deferred();
 }
 
-void TileMapEditorPlugin::_tile_map_layer_removed() {
-	// Workaround for TileMap, making sure the editor stays open when you delete the currently edited layer.
-	TileMap *tile_map = ObjectDB::get_instance<TileMap>(tile_map_group_id);
-	if (tile_map) {
-		edit(tile_map);
-	}
-}
-
 void TileMapEditorPlugin::_update_tile_map() {
 	TileMapLayer *edited_layer = ObjectDB::get_instance<TileMapLayer>(tile_map_layer_id);
 	if (edited_layer) {
@@ -396,16 +387,14 @@ void TileMapEditorPlugin::_select_layer(const StringName &p_name) {
 	}
 }
 
-void TileMapEditorPlugin::_edit_tile_map_layer(TileMapLayer *p_tile_map_layer, bool p_show_layer_selector) {
+void TileMapEditorPlugin::_edit_tile_map_layer(TileMapLayer *p_tile_map_layer) {
 	ERR_FAIL_NULL(p_tile_map_layer);
 
 	editor->edit(p_tile_map_layer);
-	editor->set_show_layer_selector(p_show_layer_selector);
 
 	// Update the object IDs.
 	tile_map_layer_id = p_tile_map_layer->get_instance_id();
 	p_tile_map_layer->connect(CoreStringName(changed), callable_mp(this, &TileMapEditorPlugin::_tile_map_layer_changed));
-	p_tile_map_layer->connect(SceneStringName(tree_exited), callable_mp(this, &TileMapEditorPlugin::_tile_map_layer_removed));
 
 	// Update the edited tileset.
 	Ref<TileSet> tile_set = p_tile_map_layer->get_tile_set();
@@ -419,23 +408,6 @@ void TileMapEditorPlugin::_edit_tile_map_layer(TileMapLayer *p_tile_map_layer, b
 	}
 }
 
-void TileMapEditorPlugin::_edit_tile_map(TileMap *p_tile_map) {
-	ERR_FAIL_NULL(p_tile_map);
-
-	tile_map_group_id = p_tile_map->get_instance_id();
-	if (!p_tile_map->is_connected(CoreStringName(changed), callable_mp(editor, &TileMapLayerEditor::set_show_layer_selector))) {
-		p_tile_map->connect(CoreStringName(changed), callable_mp(editor, &TileMapLayerEditor::set_show_layer_selector).bind(p_tile_map->get_layers_count()));
-	}
-
-	if (p_tile_map->get_layers_count() > 0) {
-		TileMapLayer *selected_layer = Object::cast_to<TileMapLayer>(p_tile_map->get_child(0));
-		_edit_tile_map_layer(selected_layer, true);
-	} else {
-		editor->edit(nullptr);
-		editor->set_show_layer_selector(false);
-	}
-}
-
 void TileMapEditorPlugin::_notification(int p_notification) {
 	if (p_notification == NOTIFICATION_EXIT_TREE) {
 		get_tree()->queue_delete(TilesEditorUtils::get_singleton());
@@ -446,25 +418,15 @@ void TileMapEditorPlugin::edit(Object *p_object) {
 	TileMapLayer *edited_layer = ObjectDB::get_instance<TileMapLayer>(tile_map_layer_id);
 	if (edited_layer) {
 		edited_layer->disconnect(CoreStringName(changed), callable_mp(this, &TileMapEditorPlugin::_tile_map_layer_changed));
-		edited_layer->disconnect(SceneStringName(tree_exited), callable_mp(this, &TileMapEditorPlugin::_tile_map_layer_removed));
 	}
 
-	TileMap *edited_map = ObjectDB::get_instance<TileMap>(tile_map_group_id);
-	if (edited_map) {
-		edited_map->disconnect(CoreStringName(changed), callable_mp(editor, &TileMapLayerEditor::set_show_layer_selector));
-	}
-
-	tile_map_group_id = ObjectID();
 	tile_map_layer_id = ObjectID();
 	tile_set_id = ObjectID();
 
-	TileMap *tile_map = Object::cast_to<TileMap>(p_object);
 	TileMapLayer *tile_map_layer = Object::cast_to<TileMapLayer>(p_object);
 	MultiNodeEdit *multi_node_edit = Object::cast_to<MultiNodeEdit>(p_object);
-	if (tile_map) {
-		_edit_tile_map(tile_map);
-	} else if (tile_map_layer) {
-		_edit_tile_map_layer(tile_map_layer, false);
+	if (tile_map_layer) {
+		_edit_tile_map_layer(tile_map_layer);
 	} else if (multi_node_edit) {
 		editor->edit(multi_node_edit);
 	} else {
@@ -485,7 +447,7 @@ bool TileMapEditorPlugin::handles(Object *p_object) const {
 		}
 		return only_tile_map_layers;
 	}
-	return Object::cast_to<TileMapLayer>(p_object) != nullptr || Object::cast_to<TileMap>(p_object) != nullptr;
+	return Object::cast_to<TileMapLayer>(p_object) != nullptr;
 }
 
 void TileMapEditorPlugin::make_visible(bool p_visible) {

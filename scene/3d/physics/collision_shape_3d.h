@@ -51,9 +51,6 @@ class CollisionShape3D : public Node3D {
 	void _shape_changed();
 #endif // DEBUG_ENABLED
 
-#ifndef DISABLE_DEPRECATED
-	void resource_changed(Ref<Resource> res);
-#endif
 	bool disabled = false;
 
 protected:

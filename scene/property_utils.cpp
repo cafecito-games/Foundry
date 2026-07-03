@@ -299,14 +299,6 @@ void PropertyUtils::assign_custom_type_script(Object *p_object, const Ref<Script
 
 Ref<Script> PropertyUtils::get_custom_type_script(const Object *p_object) {
 	Variant custom_script = p_object->get_meta(SceneStringName(_custom_type_script));
-#ifndef DISABLE_DEPRECATED
-	if (custom_script.get_type() == Variant::OBJECT) {
-		// Convert old script meta.
-		Ref<Script> script_object(custom_script);
-		assign_custom_type_script(const_cast<Object *>(p_object), script_object);
-		return script_object;
-	}
-#endif
 	ResourceUID::ID id = ResourceUID::get_singleton()->text_to_id(custom_script);
 	if (unlikely(id == ResourceUID::INVALID_ID || !ResourceUID::get_singleton()->has_id(id))) {
 		const_cast<Object *>(p_object)->remove_meta(SceneStringName(_custom_type_script));

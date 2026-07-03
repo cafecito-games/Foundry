@@ -195,34 +195,6 @@ void NavigationAgent2D::_bind_methods() {
 	ADD_SIGNAL(MethodInfo("velocity_computed", PropertyInfo(Variant::VECTOR2, "safe_velocity")));
 }
 
-#ifndef DISABLE_DEPRECATED
-// Compatibility with Godot 4.0 beta 10 or below.
-// Functions in block below all renamed or replaced in 4.0 beta 1X avoidance rework.
-bool NavigationAgent2D::_set(const StringName &p_name, const Variant &p_value) {
-	if (p_name == "time_horizon") {
-		set_time_horizon_agents(p_value);
-		return true;
-	}
-	if (p_name == "target_location") {
-		set_target_position(p_value);
-		return true;
-	}
-	return false;
-}
-
-bool NavigationAgent2D::_get(const StringName &p_name, Variant &r_ret) const {
-	if (p_name == "time_horizon") {
-		r_ret = get_time_horizon_agents();
-		return true;
-	}
-	if (p_name == "target_location") {
-		r_ret = get_target_position();
-		return true;
-	}
-	return false;
-}
-#endif // DISABLE_DEPRECATED
-
 void NavigationAgent2D::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_POST_ENTER_TREE: {

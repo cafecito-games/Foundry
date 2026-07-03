@@ -484,17 +484,10 @@ void FoundryExtensionManager::_bind_methods() {
 FoundryExtensionManager::FoundryExtensionManager() {
 	ERR_FAIL_COND(singleton != nullptr);
 	singleton = this;
-
-#ifndef DISABLE_DEPRECATED
-	FoundryExtensionSpecialCompatHashes::initialize();
-#endif
 }
 
 FoundryExtensionManager::~FoundryExtensionManager() {
 	if (singleton == this) {
 		singleton = nullptr;
 	}
-#ifndef DISABLE_DEPRECATED
-	FoundryExtensionSpecialCompatHashes::finalize();
-#endif
 }

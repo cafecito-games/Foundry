@@ -29,7 +29,6 @@
 /**************************************************************************/
 
 #include "regex.h"
-#include "regex.compat.inc"
 
 #include "core/os/memory.h"
 

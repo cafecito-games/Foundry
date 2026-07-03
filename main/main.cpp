@@ -48,8 +48,8 @@
 #include "core/io/image_loader.h"
 #include "core/io/ip.h"
 #include "core/io/resource_loader.h"
-#include "core/object/message_queue.h"
 #include "core/object/class_db.h"
+#include "core/object/message_queue.h"
 #include "core/object/script_language.h"
 #include "core/object/script_test_runner.h"
 #include "core/os/os.h"
@@ -1457,20 +1457,11 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 			if (N) {
 				if (N->get() == "safe") {
 					separate_thread_render = 0;
-#ifndef DISABLE_DEPRECATED
-				} else if (N->get() == "unsafe") {
-					OS::get_singleton()->print("The --render-thread unsafe option is unsupported in Foundry 4 and will be removed.\n");
-					separate_thread_render = 0;
-#endif
 				} else if (N->get() == "separate") {
 					separate_thread_render = 1;
 				} else {
 					OS::get_singleton()->print("Unknown render thread mode, aborting.\n");
-#ifdef DISABLE_DEPRECATED
 					OS::get_singleton()->print("Valid options are 'safe' and 'separate'.\n");
-#else
-					OS::get_singleton()->print("Valid options are 'unsafe', 'safe' and 'separate'.\n");
-#endif
 					goto error;
 				}
 
@@ -1588,11 +1579,6 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 				OS::get_singleton()->print("Missing comma-separated list of patches after --patches, aborting.\n");
 				goto error;
 			}
-#ifndef DISABLE_DEPRECATED
-		} else if (arg == "--export") { // For users used to 3.x syntax.
-			OS::get_singleton()->print("The Godot 3 --export option was changed to more explicit --export-release / --export-debug / --export-pack options.\nSee the --help output for details.\n");
-			goto error;
-#endif // DISABLE_DEPRECATED
 		} else if (arg == "--doctool") {
 			// Actually handling is done in start().
 			cmdline_tool = true;

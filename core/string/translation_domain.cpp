@@ -253,25 +253,6 @@ PackedStringArray TranslationDomain::get_loaded_locales() const {
 	return locales;
 }
 
-#ifndef DISABLE_DEPRECATED
-Ref<Translation> TranslationDomain::get_translation_object(const String &p_locale) const {
-	Ref<Translation> res;
-	int best_score = 0;
-
-	for (const Ref<Translation> &E : translations) {
-		int score = TranslationServer::get_singleton()->compare_locales(p_locale, E->get_locale());
-		if (score > 0 && score >= best_score) {
-			res = E;
-			best_score = score;
-			if (score == 10) {
-				break; // Exact match, skip the rest.
-			}
-		}
-	}
-	return res;
-}
-#endif
-
 void TranslationDomain::add_translation(const Ref<Translation> &p_translation) {
 	ERR_FAIL_COND_MSG(p_translation.is_null(), "Invalid translation provided.");
 	translations.insert(p_translation);
@@ -504,10 +485,6 @@ StringName TranslationDomain::pseudolocalize(const StringName &p_message) const 
 }
 
 void TranslationDomain::_bind_methods() {
-#ifndef DISABLE_DEPRECATED
-	ClassDB::bind_method(D_METHOD("get_translation_object", "locale"), &TranslationDomain::get_translation_object);
-#endif
-
 	ClassDB::bind_method(D_METHOD("add_translation", "translation"), &TranslationDomain::add_translation);
 	ClassDB::bind_method(D_METHOD("remove_translation", "translation"), &TranslationDomain::remove_translation);
 	ClassDB::bind_method(D_METHOD("clear"), &TranslationDomain::clear);

@@ -46,11 +46,6 @@ public:
 	virtual void show_advanced_options(const String &p_path) override;
 #endif
 
-#ifndef DISABLE_DEPRECATED
-	static Ref<AudioStreamOggVorbis> load_from_file(const String &p_path);
-	static Ref<AudioStreamOggVorbis> load_from_buffer(const Vector<uint8_t> &p_stream_data);
-#endif
-
 	virtual void get_recognized_extensions(List<String> *p_extensions) const override;
 	virtual String get_save_extension() const override;
 	virtual String get_resource_type() const override;

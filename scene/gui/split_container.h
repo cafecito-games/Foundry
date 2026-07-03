@@ -147,11 +147,6 @@ protected:
 	virtual void move_child_notify(Node *p_child) override;
 	static void _bind_methods();
 
-#ifndef DISABLE_DEPRECATED
-	void _clamp_split_offset_compat_90411();
-	static void _bind_compatibility_methods();
-#endif // DISABLE_DEPRECATED
-
 public:
 	void set_split_offset(int p_offset, int p_index = 0);
 	int get_split_offset(int p_index = 0) const;
@@ -194,12 +189,6 @@ public:
 
 	void set_touch_dragger_enabled(bool p_enabled);
 	bool is_touch_dragger_enabled() const;
-
-#ifndef DISABLE_DEPRECATED
-	Control *get_drag_area_control() { return dragging_area_controls[0]; }
-	void _set_split_offset_first(int p_offset) { set_split_offset(p_offset); }
-	int _get_split_offset_first() const { return get_split_offset(); }
-#endif
 
 	SplitContainer(bool p_vertical = false);
 };

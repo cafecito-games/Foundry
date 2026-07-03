@@ -108,28 +108,6 @@ private:
 protected:
 	static void _bind_methods();
 
-#ifndef DISABLE_DEPRECATED
-	// 32-bit and non-const versions for compatibility.
-	GLTFBufferViewIndex _get_buffer_view_bind_compat_106220();
-	int _get_byte_offset_bind_compat_106220();
-	int _get_component_type_bind_compat_106220();
-	void _set_component_type_bind_compat_106220(int p_component_type);
-	bool _get_normalized_bind_compat_106220();
-	int _get_count_bind_compat_106220();
-	GLTFAccessorType _get_accessor_type_bind_compat_106220();
-	int _get_type_bind_compat_106220();
-	Vector<double> _get_min_bind_compat_106220();
-	Vector<double> _get_max_bind_compat_106220();
-	int _get_sparse_count_bind_compat_106220();
-	int _get_sparse_indices_buffer_view_bind_compat_106220();
-	int _get_sparse_indices_byte_offset_bind_compat_106220();
-	int _get_sparse_indices_component_type_bind_compat_106220();
-	void _set_sparse_indices_component_type_bind_compat_106220(int p_sparse_indices_component_type);
-	int _get_sparse_values_buffer_view_bind_compat_106220();
-	int _get_sparse_values_byte_offset_bind_compat_106220();
-	static void _bind_compatibility_methods();
-#endif // DISABLE_DEPRECATED
-
 public:
 	// Property getters and setters.
 	GLTFBufferViewIndex get_buffer_view() const;

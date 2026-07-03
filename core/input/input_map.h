@@ -70,11 +70,6 @@ private:
 protected:
 	static void _bind_methods();
 
-#ifndef DISABLE_DEPRECATED
-	void _add_action_bind_compat_97281(const StringName &p_action, float p_deadzone = 0.5);
-	static void _bind_compatibility_methods();
-#endif // DISABLE_DEPRECATED
-
 public:
 	static _FORCE_INLINE_ InputMap *get_singleton() { return singleton; }
 

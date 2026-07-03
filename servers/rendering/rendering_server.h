@@ -82,17 +82,6 @@ protected:
 	static RenderingServer *(*create_func)();
 	static void _bind_methods();
 
-#ifndef DISABLE_DEPRECATED
-	void _environment_set_fog_bind_compat_84792(RID p_env, bool p_enable, const Color &p_light_color, float p_light_energy, float p_sun_scatter, float p_density, float p_height, float p_height_density, float p_aerial_perspective, float p_sky_affect);
-	void _canvas_item_add_multiline_bind_compat_84523(RID p_item, const Vector<Point2> &p_points, const Vector<Color> &p_colors, float p_width = -1.0);
-	void _canvas_item_add_rect_bind_compat_84523(RID p_item, const Rect2 &p_rect, const Color &p_color);
-	void _canvas_item_add_circle_bind_compat_84523(RID p_item, const Point2 &p_pos, float p_radius, const Color &p_color);
-	void _instance_set_interpolated_bind_compat_104269(RID p_instance, bool p_interpolated);
-	void _instance_reset_physics_interpolation_bind_compat_104269(RID p_instance);
-
-	static void _bind_compatibility_methods();
-#endif
-
 public:
 	static RenderingServer *get_singleton();
 	static RenderingServer *create();
@@ -480,9 +469,6 @@ public:
 	};
 
 protected:
-#ifndef DISABLE_DEPRECATED
-	void _multimesh_allocate_data_bind_compat_99455(RID p_multimesh, int p_instances, MultimeshTransformFormat p_transform_format, bool p_use_colors, bool p_use_custom_data);
-#endif
 public:
 	virtual void multimesh_allocate_data(RID p_multimesh, int p_instances, MultimeshTransformFormat p_transform_format, bool p_use_colors = false, bool p_use_custom_data = false, bool p_use_indirect = false) = 0;
 	virtual int multimesh_get_instance_count(RID p_multimesh) const = 0;
@@ -1778,11 +1764,6 @@ public:
 	/* FREE */
 
 	virtual void free_rid(RID p_rid) = 0; // Free RIDs associated with the rendering server.
-#ifndef DISABLE_DEPRECATED
-	[[deprecated("Use `free_rid()` instead.")]] void free(RID p_rid) {
-		free_rid(p_rid);
-	}
-#endif // DISABLE_DEPRECATED
 
 	/* INTERPOLATION */
 
@@ -1862,23 +1843,12 @@ public:
 
 	virtual void set_boot_image_with_stretch(const Ref<Image> &p_image, const Color &p_color, SplashStretchMode p_stretch_mode, bool p_use_filter = true) = 0;
 	static Rect2 get_splash_stretched_screen_rect(const Size2 &p_image_size, const Size2 &p_window_size, SplashStretchMode p_stretch_mode); // Helper for splash screen
-#ifndef DISABLE_DEPRECATED
-	void set_boot_image(const Ref<Image> &p_image, const Color &p_color, bool p_scale, bool p_use_filter = true); // Superseded, but left to preserve compat.
-#endif
 	_ALWAYS_INLINE_ static SplashStretchMode map_scaling_option_to_stretch_mode(bool p_scale) {
 		return p_scale ? SplashStretchMode::SPLASH_STRETCH_MODE_KEEP : SplashStretchMode::SPLASH_STRETCH_MODE_DISABLED;
 	}
 	virtual Color get_default_clear_color() = 0;
 	virtual void set_default_clear_color(const Color &p_color) = 0;
 
-#ifndef DISABLE_DEPRECATED
-	// Never actually used, should be removed when we can break compatibility.
-	enum Features {
-		FEATURE_SHADERS,
-		FEATURE_MULTITHREADED,
-	};
-	virtual bool has_feature(Features p_feature) const = 0;
-#endif
 	virtual bool has_os_feature(const String &p_feature) const = 0;
 
 	virtual void set_debug_generate_wireframes(bool p_generate) = 0;
@@ -1914,10 +1884,6 @@ public:
 	typedef void (*SurfaceUpgradeCallback)();
 	void set_surface_upgrade_callback(SurfaceUpgradeCallback p_callback);
 	void set_warn_on_surface_upgrade(bool p_warn);
-#endif
-
-#ifndef DISABLE_DEPRECATED
-	void fix_surface_compatibility(SurfaceData &p_surface, const String &p_path = "");
 #endif
 
 private:
@@ -2024,10 +1990,6 @@ VARIANT_ENUM_CAST(RenderingServer::RenderingInfo);
 VARIANT_ENUM_CAST(RenderingServer::SplashStretchMode);
 VARIANT_ENUM_CAST(RenderingServer::CanvasTextureChannel);
 VARIANT_ENUM_CAST(RenderingServer::BakeChannels);
-
-#ifndef DISABLE_DEPRECATED
-VARIANT_ENUM_CAST(RenderingServer::Features);
-#endif
 
 // Alias to make it easier to use.
 #define RS RenderingServer

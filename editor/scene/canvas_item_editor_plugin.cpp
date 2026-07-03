@@ -5295,13 +5295,6 @@ void CanvasItemEditor::set_state(const Dictionary &p_state) {
 		grid_step = state["grid_step"];
 	}
 
-#ifndef DISABLE_DEPRECATED
-	if (state.has("primary_grid_steps")) {
-		primary_grid_step.x = state["primary_grid_steps"];
-		primary_grid_step.y = state["primary_grid_steps"];
-	}
-#endif // DISABLE_DEPRECATED
-
 	if (state.has("primary_grid_step")) {
 		primary_grid_step = state["primary_grid_step"];
 	}

@@ -30,18 +30,6 @@
 
 #include "joint_limitation_cone_3d.h"
 
-#ifndef DISABLE_DEPRECATED
-bool JointLimitationCone3D::_set(const StringName &p_path, const Variant &p_value) {
-	// To keep compatibility between 4.6.beta2 and beta3.
-	if (p_path == SNAME("radius_range")) {
-		set_angle((float)p_value * Math::TAU);
-	} else {
-		return false;
-	}
-	return true;
-}
-#endif // DISABLE_DEPRECATED
-
 void JointLimitationCone3D::set_angle(real_t p_angle) {
 	angle = p_angle;
 	emit_changed();

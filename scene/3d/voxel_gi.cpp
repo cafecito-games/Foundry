@@ -236,24 +236,6 @@ void VoxelGIData::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "interior"), "set_interior", "is_interior");
 }
 
-#ifndef DISABLE_DEPRECATED
-bool VoxelGI::_set(const StringName &p_name, const Variant &p_value) {
-	if (p_name == "extents") { // Compatibility with Godot 3.x.
-		set_size((Vector3)p_value * 2);
-		return true;
-	}
-	return false;
-}
-
-bool VoxelGI::_get(const StringName &p_name, Variant &r_property) const {
-	if (p_name == "extents") { // Compatibility with Godot 3.x.
-		r_property = size / 2;
-		return true;
-	}
-	return false;
-}
-#endif // DISABLE_DEPRECATED
-
 VoxelGIData::VoxelGIData() {
 	probe = RS::get_singleton()->voxel_gi_create();
 }

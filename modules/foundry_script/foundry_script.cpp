@@ -3954,13 +3954,6 @@ FSLanguage::FSLanguage() {
 		const FSWarning::Code code = (FSWarning::Code)i;
 		const Variant default_value = FSWarning::get_default_value(code);
 		GLOBAL_DEF(FSWarning::get_property_info(code), default_value);
-
-#ifndef DISABLE_DEPRECATED
-		if (i >= FSWarning::FIRST_DEPRECATED_WARNING) {
-			const String setting_path = FSWarning::get_setting_path_from_code(code);
-			ProjectSettings::get_singleton()->set_as_internal(setting_path, true);
-		}
-#endif // DISABLE_DEPRECATED
 	}
 #endif // FOUNDRY_SCRIPT_NO_FRONTEND
 #endif // DEBUG_ENABLED

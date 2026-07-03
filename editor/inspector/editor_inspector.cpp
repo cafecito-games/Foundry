@@ -29,7 +29,6 @@
 /**************************************************************************/
 
 #include "editor_inspector.h"
-#include "editor_inspector.compat.inc"
 
 #include "core/os/keyboard.h"
 #include "editor/debugger/editor_debugger_inspector.h"

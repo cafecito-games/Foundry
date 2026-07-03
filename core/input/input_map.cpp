@@ -29,7 +29,6 @@
 /**************************************************************************/
 
 #include "input_map.h"
-#include "input_map.compat.inc"
 
 #include "core/config/project_settings.h"
 #include "core/input/input.h"

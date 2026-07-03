@@ -29,7 +29,6 @@
 /**************************************************************************/
 
 #include "jsonrpc.h"
-#include "jsonrpc.compat.inc"
 
 #include "core/io/json.h"
 

@@ -169,12 +169,6 @@ protected:
 	FOUNDRY_VIRTUAL2RC(real_t, _estimate_cost, Vector2i, Vector2i)
 	FOUNDRY_VIRTUAL2RC(real_t, _compute_cost, Vector2i, Vector2i)
 
-#ifndef DISABLE_DEPRECATED
-	TypedArray<Vector2i> _get_id_path_bind_compat_88047(const Vector2i &p_from, const Vector2i &p_to);
-	Vector<Vector2> _get_point_path_bind_compat_88047(const Vector2i &p_from, const Vector2i &p_to);
-	static void _bind_compatibility_methods();
-#endif
-
 public:
 	void set_region(const Rect2i &p_region);
 	Rect2i get_region() const;

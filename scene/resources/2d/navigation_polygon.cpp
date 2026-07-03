@@ -309,112 +309,6 @@ void NavigationPolygon::clear_outlines() {
 	rect_cache_dirty = true;
 }
 
-#ifndef DISABLE_DEPRECATED
-void NavigationPolygon::make_polygons_from_outlines() {
-	RWLockWrite write_lock(rwlock);
-	WARN_PRINT("Function make_polygons_from_outlines() is deprecated."
-			   "\nUse NavigationServer2D.parse_source_geometry_data() and NavigationServer2D.bake_from_source_geometry_data() instead.");
-
-	{
-		MutexLock lock(navigation_mesh_generation);
-		navigation_mesh.unref();
-	}
-	List<TPPLPoly> in_poly, out_poly;
-
-	Vector2 outside_point(-1e10, -1e10);
-
-	for (int i = 0; i < outlines.size(); i++) {
-		Vector<Vector2> ol = outlines[i];
-		int olsize = ol.size();
-		if (olsize < 3) {
-			continue;
-		}
-		const Vector2 *r = ol.ptr();
-		for (int j = 0; j < olsize; j++) {
-			outside_point = outside_point.max(r[j]);
-		}
-	}
-
-	outside_point += Vector2(0.7239784, 0.819238); //avoid precision issues
-
-	for (int i = 0; i < outlines.size(); i++) {
-		Vector<Vector2> ol = outlines[i];
-		int olsize = ol.size();
-		if (olsize < 3) {
-			continue;
-		}
-		const Vector2 *r = ol.ptr();
-
-		int interscount = 0;
-		//test if this is an outer outline
-		for (int k = 0; k < outlines.size(); k++) {
-			if (i == k) {
-				continue; //no self intersect
-			}
-
-			Vector<Vector2> ol2 = outlines[k];
-			int olsize2 = ol2.size();
-			if (olsize2 < 3) {
-				continue;
-			}
-			const Vector2 *r2 = ol2.ptr();
-
-			for (int l = 0; l < olsize2; l++) {
-				if (Geometry2D::segment_intersects_segment(r[0], outside_point, r2[l], r2[(l + 1) % olsize2], nullptr)) {
-					interscount++;
-				}
-			}
-		}
-
-		bool outer = (interscount % 2) == 0;
-
-		TPPLPoly tp;
-		tp.Init(olsize);
-		for (int j = 0; j < olsize; j++) {
-			tp[j] = r[j];
-		}
-
-		if (outer) {
-			tp.SetOrientation(TPPL_ORIENTATION_CCW);
-		} else {
-			tp.SetOrientation(TPPL_ORIENTATION_CW);
-			tp.SetHole(true);
-		}
-
-		in_poly.push_back(tp);
-	}
-
-	TPPLPartition tpart;
-	if (tpart.ConvexPartition_HM(&in_poly, &out_poly) == 0) { //failed!
-		ERR_PRINT("NavigationPolygon: Convex partition failed! Failed to convert outlines to a valid NavigationPolygon."
-				  "\nNavigationPolygon outlines can not overlap vertices or edges inside same outline or with other outlines or have any intersections."
-				  "\nAdd the outmost and largest outline first. To add holes inside this outline add the smaller outlines with same winding order.");
-		return;
-	}
-
-	polygons.clear();
-	vertices.clear();
-
-	HashMap<Vector2, int> points;
-	for (const TPPLPoly &tp : out_poly) {
-		Vector<int> p;
-
-		for (int64_t i = 0; i < tp.GetNumPoints(); i++) {
-			HashMap<Vector2, int>::Iterator E = points.find(tp[i]);
-			if (!E) {
-				E = points.insert(tp[i], vertices.size());
-				vertices.push_back(tp[i]);
-			}
-			p.push_back(E->value);
-		}
-
-		polygons.push_back(p);
-	}
-
-	emit_changed();
-}
-#endif // DISABLE_DEPRECATED
-
 void NavigationPolygon::set_cell_size(real_t p_cell_size) {
 	cell_size = p_cell_size;
 	get_navigation_mesh()->set_cell_size(cell_size);
@@ -540,9 +434,6 @@ void NavigationPolygon::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_outline", "idx"), &NavigationPolygon::get_outline);
 	ClassDB::bind_method(D_METHOD("remove_outline", "idx"), &NavigationPolygon::remove_outline);
 	ClassDB::bind_method(D_METHOD("clear_outlines"), &NavigationPolygon::clear_outlines);
-#ifndef DISABLE_DEPRECATED
-	ClassDB::bind_method(D_METHOD("make_polygons_from_outlines"), &NavigationPolygon::make_polygons_from_outlines);
-#endif // DISABLE_DEPRECATED
 
 	ClassDB::bind_method(D_METHOD("_set_polygons", "polygons"), &NavigationPolygon::_set_polygons);
 	ClassDB::bind_method(D_METHOD("_get_polygons"), &NavigationPolygon::_get_polygons);

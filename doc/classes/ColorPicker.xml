@@ -119,8 +119,6 @@
 		<constant name="MODE_HSV" value="1" enum="ColorModeType">
 			Allows editing the color with Hue/Saturation/Value sliders.
 		</constant>
-		<constant name="MODE_RAW" value="2" enum="ColorModeType" deprecated="This is replaced by [constant MODE_LINEAR].">
-		</constant>
 		<constant name="MODE_LINEAR" value="2" enum="ColorModeType">
 			Allows editing the color with Red/Green/Blue sliders in linear color space.
 		</constant>

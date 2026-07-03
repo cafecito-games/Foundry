@@ -567,12 +567,6 @@ class VisualShaderNodeTexture2DArray : public VisualShaderNodeSample3D {
 	Ref<TextureLayered> texture_array;
 
 protected:
-#ifndef DISABLE_DEPRECATED
-	void _set_texture_array_bind_compat_95126(Ref<Texture2DArray> p_texture_array);
-	Ref<Texture2DArray> _get_texture_array_bind_compat_95126() const;
-	static void _bind_compatibility_methods();
-#endif // DISABLE_DEPRECATED
-
 	static void _bind_methods();
 
 public:
@@ -637,12 +631,6 @@ private:
 	TextureType texture_type = TYPE_DATA;
 
 protected:
-#ifndef DISABLE_DEPRECATED
-	void _set_cube_map_bind_compat_95126(Ref<Cubemap> p_cube_map);
-	Ref<Cubemap> _get_cube_map_bind_compat_95126() const;
-	static void _bind_compatibility_methods();
-#endif // DISABLE_DEPRECATED
-
 	static void _bind_methods();
 
 public:

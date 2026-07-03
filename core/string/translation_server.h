@@ -53,11 +53,6 @@ class TranslationServer : public Object {
 
 	static void _bind_methods();
 
-#ifndef DISABLE_DEPRECATED
-	String _standardize_locale_bind_compat_98972(const String &p_locale) const;
-	static void _bind_compatibility_methods();
-#endif
-
 	struct LocaleScriptInfo {
 		String name;
 		String script;
@@ -111,10 +106,6 @@ public:
 	String get_locale() const;
 	void set_fallback_locale(const String &p_locale);
 	String get_fallback_locale() const;
-
-#ifndef DISABLE_DEPRECATED
-	Ref<Translation> get_translation_object(const String &p_locale);
-#endif
 
 	bool has_translation(const Ref<Translation> &p_translation) const;
 	TypedArray<Translation> get_translations() const;

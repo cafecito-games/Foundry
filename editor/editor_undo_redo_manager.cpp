@@ -29,7 +29,6 @@
 /**************************************************************************/
 
 #include "editor_undo_redo_manager.h"
-#include "editor_undo_redo_manager.compat.inc"
 
 #include "core/io/resource.h"
 #include "core/os/os.h"

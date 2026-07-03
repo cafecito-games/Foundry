@@ -29,7 +29,6 @@
 /**************************************************************************/
 
 #include "gpu_particles_3d.h"
-#include "gpu_particles_3d.compat.inc"
 
 #include "scene/3d/cpu_particles_3d.h"
 #include "scene/resources/curve_texture.h"

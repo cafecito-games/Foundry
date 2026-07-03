@@ -187,7 +187,6 @@ opts.Add(BoolVariable("production", "Set defaults to build Godot for use in prod
 opts.Add(BoolVariable("threads", "Enable threading support", True))
 
 # Components
-opts.Add(BoolVariable("deprecated", "Enable compatibility code for deprecated and removed features", True))
 opts.Add(
     EnumVariable("precision", "Set the floating-point precision level", "single", ["single", "double"], ignorecase=2)
 )
@@ -581,9 +580,6 @@ if env.editor_build:
         env["no_editor_splash"] = True
     if env["no_editor_splash"]:
         env.Append(CPPDEFINES=["NO_EDITOR_SPLASH"])
-
-if not env["deprecated"]:
-    env.Append(CPPDEFINES=["DISABLE_DEPRECATED"])
 
 if env["precision"] == "double":
     env.Append(CPPDEFINES=["REAL_T_IS_DOUBLE"])

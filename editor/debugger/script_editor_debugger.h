@@ -207,9 +207,6 @@ private:
 	void _msg_scene_click_ctrl(uint64_t p_thread_id, const Array &p_data);
 	void _msg_scene_scene_tree(uint64_t p_thread_id, const Array &p_data);
 	void _msg_scene_inspect_objects(uint64_t p_thread_id, const Array &p_data);
-#ifndef DISABLE_DEPRECATED
-	void _msg_scene_inspect_object(uint64_t p_thread_id, const Array &p_data);
-#endif // DISABLE_DEPRECATED
 	void _msg_scene_debug_mute_audio(uint64_t p_thread_id, const Array &p_data);
 	void _msg_servers_memory_usage(uint64_t p_thread_id, const Array &p_data);
 	void _msg_servers_drawn(uint64_t p_thread_id, const Array &p_data);

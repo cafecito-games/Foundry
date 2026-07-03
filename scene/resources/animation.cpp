@@ -29,7 +29,6 @@
 /**************************************************************************/
 
 #include "animation.h"
-#include "animation.compat.inc"
 
 #include "core/io/marshalls.h"
 
@@ -448,11 +447,6 @@ bool Animation::_set(const StringName &p_name, const Variant &p_value) {
 		} else {
 			return false;
 		}
-#ifndef DISABLE_DEPRECATED
-	} else if (prop_name == "loop" && p_value.operator bool()) { // Compatibility with Godot 3.x.
-		loop_mode = Animation::LoopMode::LOOP_LINEAR;
-		return true;
-#endif // DISABLE_DEPRECATED
 	} else {
 		return false;
 	}

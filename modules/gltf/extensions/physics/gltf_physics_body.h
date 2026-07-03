@@ -91,11 +91,6 @@ public:
 	Quaternion get_inertia_orientation() const;
 	void set_inertia_orientation(const Quaternion &p_inertia_orientation);
 
-#ifndef DISABLE_DEPRECATED
-	Basis get_inertia_tensor() const;
-	void set_inertia_tensor(const Basis &p_inertia_tensor);
-#endif // DISABLE_DEPRECATED
-
 	static Ref<GLTFPhysicsBody> from_node(const CollisionObject3D *p_body_node);
 	CollisionObject3D *to_node() const;
 

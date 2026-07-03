@@ -51,9 +51,6 @@
 #include "core/templates/hashfuncs.h"
 #include "scene/main/node.h"
 
-#if defined(TOOLS_ENABLED) && !defined(DISABLE_DEPRECATED)
-#endif
-
 #define UNNAMED_ENUM "<anonymous enum>"
 #define ENUM_SEPARATOR "."
 

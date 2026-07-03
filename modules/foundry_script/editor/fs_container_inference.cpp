@@ -43,7 +43,7 @@
 namespace {
 
 // A bare call name that is a built-in language/Variant utility (e.g. `print`,
-// `len`, `Color8`) dispatches to engine code, not an overridable script method,
+// `len`, `char`) dispatches to engine code, not an overridable script method,
 // so it cannot mutate a script-defined member.
 bool is_global_utility_call(const StringName &p_name) {
 	return FSUtilityFunctions::function_exists(p_name) || Variant::has_utility_function(p_name);

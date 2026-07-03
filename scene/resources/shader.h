@@ -70,12 +70,6 @@ private:
 	Array _get_shader_uniform_list(bool p_get_groups = false);
 
 protected:
-#ifndef DISABLE_DEPRECATED
-	void _set_default_texture_parameter_bind_compat_95126(const StringName &p_name, const Ref<Texture2D> &p_texture, int p_index = 0);
-	Ref<Texture2D> _get_default_texture_parameter_bind_compat_95126(const StringName &p_name, int p_index = 0) const;
-	static void _bind_compatibility_methods();
-#endif // DISABLE_DEPRECATED
-
 	static void _bind_methods();
 
 public:

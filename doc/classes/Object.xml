@@ -30,6 +30,15 @@
 		<link title="Object notifications">$DOCS_URL/tutorials/best_practices/godot_notifications.html</link>
 	</tutorials>
 	<methods>
+		<method name="_equals" qualifiers="virtual">
+			<return type="bool" />
+			<param index="0" name="other" type="Variant" />
+			<description>
+				Override this method with [method _hash_code] to customize object equality for [Dictionary] keys and the equality operators ([code]==[/code] and [code]!=[/code]).
+				This method should return [code]true[/code] when [param other] represents the same logical value as this object.
+				[b]Note:[/b] Objects that compare equal must return the same value from [method _hash_code]. The values used by [method _equals] and [method _hash_code] should not change while the object is used as a [Dictionary] key.
+			</description>
+		</method>
 		<method name="_get" qualifiers="virtual">
 			<return type="Variant" />
 			<param index="0" name="property" type="StringName" />
@@ -189,13 +198,11 @@
 				[b]Note:[/b] Unlike other virtual methods, this method is called automatically for every script that overrides it. This means that the base implementation should not be called via [code]super[/code] in FoundryScript or its equivalents in other languages. The bottom-most sub-class will be called first, with subsequent calls ascending the class hierarchy.
 			</description>
 		</method>
-		<method name="_equals" qualifiers="virtual">
-			<return type="bool" />
-			<param index="0" name="other" type="Variant" />
+		<method name="_hash_code" qualifiers="virtual">
+			<return type="int" />
 			<description>
-				Override this method with [method _hash_code] to customize object equality for [Dictionary] keys and the equality operators ([code]==[/code] and [code]!=[/code]).
-				This method should return [code]true[/code] when [param other] represents the same logical value as this object.
-				[b]Note:[/b] Objects that compare equal must return the same value from [method _hash_code]. The values used by [method _equals] and [method _hash_code] should not change while the object is used as a [Dictionary] key.
+				Override this method with [method _equals] to customize the integer hash used for this object as a [Dictionary] key and by [method @GlobalScope.hash].
+				[b]Note:[/b] Objects that compare equal with [method _equals] must return the same hash code. The hash code should not change while the object is used as a [Dictionary] key.
 			</description>
 		</method>
 		<method name="_init" qualifiers="virtual">
@@ -203,13 +210,6 @@
 			<description>
 				Called when the object's script is instantiated, oftentimes after the object is initialized in memory (through [code]Object.new()[/code] in FoundryScript, or [code]new FoundryObject[/code] in C#). It can be also defined to take in parameters. This method is similar to a constructor in most programming languages.
 				[b]Note:[/b] If [method _init] is defined with [i]required[/i] parameters, the Object with script may only be created directly. If any other means (such as [method PackedScene.instantiate] or [method Node.duplicate]) are used, the script's initialization will fail.
-			</description>
-		</method>
-		<method name="_hash_code" qualifiers="virtual">
-			<return type="int" />
-			<description>
-				Override this method with [method _equals] to customize the integer hash used for this object as a [Dictionary] key and by [method @GlobalScope.hash].
-				[b]Note:[/b] Objects that compare equal with [method _equals] must return the same hash code. The hash code should not change while the object is used as a [Dictionary] key.
 			</description>
 		</method>
 		<method name="_iter_get" qualifiers="virtual">

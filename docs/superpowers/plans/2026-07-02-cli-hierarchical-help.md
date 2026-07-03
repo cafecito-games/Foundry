@@ -752,7 +752,7 @@ TEST_CASE("[FoundryCLIHelp] Scoped routing validates nouns and verbs") {
 	CHECK(valid);
 
 	PackedStringArray bad_noun;
-	bad_noun.push_back("scritp");
+	bad_noun.push_back("script");
 	const String fallback_top = FoundryCLIHelp::get_scoped_help_text("foundry", bad_noun, valid);
 	CHECK_FALSE(valid);
 	CHECK(fallback_top.contains("Global options"));

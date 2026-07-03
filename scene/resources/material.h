@@ -913,11 +913,6 @@ VARIANT_ENUM_CAST(BaseMaterial3D::StencilCompare)
 class StandardMaterial3D : public BaseMaterial3D {
 	FOUNDRY_CLASS(StandardMaterial3D, BaseMaterial3D)
 protected:
-#ifndef DISABLE_DEPRECATED
-	// Kept for compatibility from 3.x to 4.0.
-	bool _set(const StringName &p_name, const Variant &p_value);
-#endif
-
 public:
 	StandardMaterial3D() :
 			BaseMaterial3D(false) {}

@@ -270,12 +270,6 @@ void EditorExport::load_config() {
 		}
 
 		String platform = config->get_value(section, "platform");
-#ifndef DISABLE_DEPRECATED
-		// Compatibility with Linux platform before 4.3.
-		if (platform == "Linux/X11") {
-			platform = "Linux";
-		}
-#endif
 
 		Ref<EditorExportPreset> preset;
 

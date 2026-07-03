@@ -29,7 +29,6 @@
 /**************************************************************************/
 
 #include "code_edit.h"
-#include "code_edit.compat.inc"
 
 #include "core/config/project_settings.h"
 #include "core/os/keyboard.h"

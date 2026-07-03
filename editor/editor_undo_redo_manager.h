@@ -77,11 +77,6 @@ private:
 protected:
 	static void _bind_methods();
 
-#ifndef DISABLE_DEPRECATED
-	void _create_action_bind_compat_106121(const String &p_name = "", UndoRedo::MergeMode p_mode = UndoRedo::MERGE_DISABLE, Object *p_custom_context = nullptr, bool p_backward_undo_ops = false);
-	static void _bind_compatibility_methods();
-#endif
-
 public:
 	History &get_or_create_history(int p_idx);
 	UndoRedo *get_history_undo_redo(int p_idx) const;

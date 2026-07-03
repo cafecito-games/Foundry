@@ -306,25 +306,6 @@ void NavigationRegion3D::_bind_methods() {
 	ADD_SIGNAL(MethodInfo("bake_finished"));
 }
 
-#ifndef DISABLE_DEPRECATED
-// Compatibility with earlier 4.0 betas.
-bool NavigationRegion3D::_set(const StringName &p_name, const Variant &p_value) {
-	if (p_name == "navmesh") {
-		set_navigation_mesh(p_value);
-		return true;
-	}
-	return false;
-}
-
-bool NavigationRegion3D::_get(const StringName &p_name, Variant &r_ret) const {
-	if (p_name == "navmesh") {
-		r_ret = get_navigation_mesh();
-		return true;
-	}
-	return false;
-}
-#endif // DISABLE_DEPRECATED
-
 void NavigationRegion3D::_navigation_mesh_changed() {
 	_update_bounds();
 

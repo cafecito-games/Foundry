@@ -81,7 +81,7 @@ void Parallax2D::_validate_property(PropertyInfo &p_property) const {
 	}
 }
 
-void Parallax2D::_camera_moved(const Transform2D &p_transform, const Point2 &p_screen_offset, const Point2 &p_adj_screen_pos) {
+void Parallax2D::_camera_moved(const Point2 &p_adj_screen_pos) {
 	if (!ignore_camera_scroll) {
 		if (get_viewport() && get_viewport()->is_snap_2d_transforms_to_pixel_enabled()) {
 			Size2 vps = get_viewport_rect().size;
@@ -263,7 +263,7 @@ bool Parallax2D::is_ignore_camera_scroll() {
 }
 
 void Parallax2D::_bind_methods() {
-	ClassDB::bind_method(D_METHOD("_camera_moved", "transform", "screen_offset", "adj_screen_offset"), &Parallax2D::_camera_moved);
+	ClassDB::bind_method(D_METHOD("_camera_moved", "adj_screen_offset"), &Parallax2D::_camera_moved);
 	ClassDB::bind_method(D_METHOD("set_scroll_scale", "scale"), &Parallax2D::set_scroll_scale);
 	ClassDB::bind_method(D_METHOD("get_scroll_scale"), &Parallax2D::get_scroll_scale);
 	ClassDB::bind_method(D_METHOD("set_repeat_size", "repeat_size"), &Parallax2D::set_repeat_size);

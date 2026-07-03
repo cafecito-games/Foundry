@@ -137,11 +137,6 @@ class SpinBox : public Range {
 		int buttons_vertical_separation = 0;
 		int field_and_buttons_separation = 0;
 		int buttons_width = 0;
-#ifndef DISABLE_DEPRECATED
-		Ref<Texture2D> updown_icon;
-		bool is_updown_assigned = false;
-		bool set_min_buttons_width_from_icons = false;
-#endif
 	} theme_cache;
 
 	void _mouse_exited();

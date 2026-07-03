@@ -1141,11 +1141,6 @@ void GridMap::clear() {
 	clear_baked_meshes();
 }
 
-#ifndef DISABLE_DEPRECATED
-void GridMap::resource_changed(const Ref<Resource> &p_res) {
-}
-#endif
-
 void GridMap::_update_octants_callback() {
 	if (!awaiting_update) {
 		return;
@@ -1220,10 +1215,6 @@ void GridMap::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("local_to_map", "local_position"), &GridMap::local_to_map);
 	ClassDB::bind_method(D_METHOD("map_to_local", "map_position"), &GridMap::map_to_local);
-
-#ifndef DISABLE_DEPRECATED
-	ClassDB::bind_method(D_METHOD("resource_changed", "resource"), &GridMap::resource_changed);
-#endif
 
 	ClassDB::bind_method(D_METHOD("set_center_x", "enable"), &GridMap::set_center_x);
 	ClassDB::bind_method(D_METHOD("get_center_x"), &GridMap::get_center_x);

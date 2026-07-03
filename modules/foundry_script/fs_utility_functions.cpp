@@ -91,7 +91,7 @@
 		return;                                                           \
 	}
 
-#define FS_FUNC_FAIL_COND_MSG(m_cond, m_msg)                             \
+#define FS_FUNC_FAIL_COND_MSG(m_cond, m_msg)                            \
 	if (unlikely(m_cond)) {                                             \
 		*r_ret = m_msg;                                                 \
 		r_error.error = Callable::CallError::CALL_ERROR_INVALID_METHOD; \
@@ -99,19 +99,6 @@
 	}
 
 struct FSUtilityFunctionsDefinitions {
-#ifndef DISABLE_DEPRECATED
-	static inline void convert(Variant *r_ret, const Variant **p_args, int p_arg_count, Callable::CallError &r_error) {
-		DEBUG_VALIDATE_ARG_COUNT(2, 2);
-		DEBUG_VALIDATE_ARG_TYPE(1, Variant::INT);
-
-		int type = *p_args[1];
-		DEBUG_VALIDATE_ARG_CUSTOM(1, Variant::INT, type < 0 || type >= Variant::VARIANT_MAX,
-				RTR("Invalid type argument to convert(), use TYPE_* constants."));
-
-		Variant::construct(Variant::Type(type), *r_ret, p_args, 1, r_error);
-	}
-#endif // DISABLE_DEPRECATED
-
 	static inline void type_exists(Variant *r_ret, const Variant **p_args, int p_arg_count, Callable::CallError &r_error) {
 		DEBUG_VALIDATE_ARG_COUNT(1, 1);
 		DEBUG_VALIDATE_ARG_TYPE(0, Variant::STRING_NAME);
@@ -236,116 +223,6 @@ struct FSUtilityFunctionsDefinitions {
 		DEBUG_VALIDATE_ARG_TYPE(0, Variant::STRING);
 		*r_ret = ResourceLoader::load(*p_args[0]);
 	}
-
-#ifndef DISABLE_DEPRECATED
-
-	static inline void inst_to_dict(Variant *r_ret, const Variant **p_args, int p_arg_count, Callable::CallError &r_error) {
-		DEBUG_VALIDATE_ARG_COUNT(1, 1);
-		DEBUG_VALIDATE_ARG_TYPE(0, Variant::OBJECT);
-
-		if (p_args[0]->get_type() == Variant::NIL) {
-			*r_ret = Variant();
-			return;
-		}
-
-		Object *obj = *p_args[0];
-		if (!obj) {
-			*r_ret = Variant();
-			return;
-		}
-
-		VALIDATE_ARG_CUSTOM(0, Variant::OBJECT,
-				!obj->get_script_instance() || obj->get_script_instance()->get_language() != FSLanguage::get_singleton() || obj->get_script_instance()->is_synthetic(),
-				RTR("Not a script with an instance."));
-
-		FSInstance *inst = static_cast<FSInstance *>(obj->get_script_instance());
-
-		Ref<FoundryScript> base = inst->get_script();
-		VALIDATE_ARG_CUSTOM(0, Variant::OBJECT, base.is_null(), RTR("Not based on a script."));
-
-		FoundryScript *p = base.ptr();
-		String path = p->get_script_path();
-		Vector<StringName> sname;
-
-		while (p->_owner) {
-			sname.push_back(p->local_name);
-			p = p->_owner;
-		}
-		sname.reverse();
-
-		VALIDATE_ARG_CUSTOM(0, Variant::OBJECT, !path.is_resource_file(), RTR("Not based on a resource file."));
-
-		NodePath cp(sname, Vector<StringName>(), false);
-
-		Dictionary d;
-		d["@subpath"] = cp;
-		d["@path"] = path;
-
-		for (const KeyValue<StringName, FoundryScript::MemberInfo> &E : base->member_indices) {
-			if (!d.has(E.key)) {
-				d[E.key] = inst->members[E.value.index];
-			}
-		}
-
-		*r_ret = d;
-	}
-
-	static inline void dict_to_inst(Variant *r_ret, const Variant **p_args, int p_arg_count, Callable::CallError &r_error) {
-		DEBUG_VALIDATE_ARG_COUNT(1, 1);
-		DEBUG_VALIDATE_ARG_TYPE(0, Variant::DICTIONARY);
-
-		Dictionary d = *p_args[0];
-
-		VALIDATE_ARG_CUSTOM(0, Variant::DICTIONARY, !d.has("@path"), RTR("Invalid instance dictionary format (missing @path)."));
-
-		Ref<Script> scr = ResourceLoader::load(d["@path"]);
-		VALIDATE_ARG_CUSTOM(0, Variant::DICTIONARY, scr.is_null(), RTR("Invalid instance dictionary format (can't load script at @path)."));
-
-		Ref<FoundryScript> gdscr = scr;
-		VALIDATE_ARG_CUSTOM(0, Variant::DICTIONARY, gdscr.is_null(), RTR("Invalid instance dictionary format (invalid script at @path)."));
-
-		NodePath sub;
-		if (d.has("@subpath")) {
-			sub = d["@subpath"];
-		}
-
-		for (int i = 0; i < sub.get_name_count(); i++) {
-			gdscr = gdscr->subclasses[sub.get_name(i)];
-			VALIDATE_ARG_CUSTOM(0, Variant::DICTIONARY, gdscr.is_null(), RTR("Invalid instance dictionary (invalid subclasses)."));
-		}
-
-		*r_ret = gdscr->_new(nullptr, -1 /* skip initializer */, r_error);
-		if (r_error.error != Callable::CallError::CALL_OK) {
-			*r_ret = RTR("Cannot instantiate FoundryScript class.");
-			return;
-		}
-
-		FSInstance *inst = static_cast<FSInstance *>(static_cast<Object *>(*r_ret)->get_script_instance());
-		Ref<FoundryScript> gd_ref = inst->get_script();
-
-		for (KeyValue<StringName, FoundryScript::MemberInfo> &E : gd_ref->member_indices) {
-			if (d.has(E.key)) {
-				inst->members.write[E.value.index] = d[E.key];
-			}
-		}
-	}
-
-	static inline void Color8(Variant *r_ret, const Variant **p_args, int p_arg_count, Callable::CallError &r_error) {
-		DEBUG_VALIDATE_ARG_COUNT(3, 4);
-		DEBUG_VALIDATE_ARG_TYPE(0, Variant::INT);
-		DEBUG_VALIDATE_ARG_TYPE(1, Variant::INT);
-		DEBUG_VALIDATE_ARG_TYPE(2, Variant::INT);
-
-		int64_t alpha = 255;
-		if (p_arg_count == 4) {
-			DEBUG_VALIDATE_ARG_TYPE(3, Variant::INT);
-			alpha = *p_args[3];
-		}
-
-		*r_ret = Color::from_rgba8(*p_args[0], *p_args[1], *p_args[2], alpha);
-	}
-
-#endif // DISABLE_DEPRECATED
 
 	static inline void print_debug(Variant *r_ret, const Variant **p_args, int p_arg_count, Callable::CallError &r_error) {
 		String s;
@@ -600,20 +477,11 @@ static void _register_function(const StringName &p_name, const MethodInfo &p_met
 
 void FSUtilityFunctions::register_functions() {
 	/* clang-format off */
-#ifndef DISABLE_DEPRECATED
-	REGISTER_FUNC( convert,        true,  RETVAR,             ARGS( ARGVAR("what"), ARGTYPE("type") ), false, varray(     ));
-#endif // DISABLE_DEPRECATED
 	REGISTER_FUNC( type_exists,    true,  RET(BOOL),          ARGS( ARG("type", STRING_NAME)        ), false, varray(     ));
 	REGISTER_FUNC( _char,          true,  RET(STRING),        ARGS( ARG("code", INT)                ), false, varray(     ));
 	REGISTER_FUNC( ord,            true,  RET(INT),           ARGS( ARG("char", STRING)             ), false, varray(     ));
 	REGISTER_FUNC( range,          false, RET(ARRAY),         NOARGS,                                  true,  varray(     ));
 	REGISTER_FUNC( load,           false, RETCLS("Resource"), ARGS( ARG("path", STRING)             ), false, varray(     ));
-#ifndef DISABLE_DEPRECATED
-	REGISTER_FUNC( inst_to_dict,   false, RET(DICTIONARY),    ARGS( ARG("instance", OBJECT)         ), false, varray(     ));
-	REGISTER_FUNC( dict_to_inst,   false, RET(OBJECT),        ARGS( ARG("dictionary", DICTIONARY)   ), false, varray(     ));
-	REGISTER_FUNC( Color8,         true,  RET(COLOR),         ARGS( ARG("r8", INT), ARG("g8", INT),
-																	ARG("b8", INT), ARG("a8", INT)  ), false, varray( 255 ));
-#endif // DISABLE_DEPRECATED
 	REGISTER_FUNC( print_debug,    false, RET(NIL),           NOARGS,                                  true,  varray(     ));
 	REGISTER_FUNC( print_stack,    false, RET(NIL),           NOARGS,                                  false, varray(     ));
 	REGISTER_FUNC( get_stack,      false, RET(ARRAY),         NOARGS,                                  false, varray(     ));

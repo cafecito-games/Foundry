@@ -43,10 +43,6 @@ protected:
 	FOUNDRY_VIRTUAL1R(TypedArray<PackedStringArray>, _parse_file, String)
 	FOUNDRY_VIRTUAL0RC(Vector<String>, _get_recognized_extensions)
 
-#ifndef DISABLE_DEPRECATED
-	FOUNDRY_VIRTUAL3_COMPAT(_parse_file_bind_compat_99297, _parse_file, String, TypedArray<String>, TypedArray<Array>)
-#endif
-
 public:
 	virtual Error parse_file(const String &p_path, Vector<Vector<String>> *r_translations);
 	virtual void get_recognized_extensions(List<String> *r_extensions) const;

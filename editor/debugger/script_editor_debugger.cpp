@@ -453,17 +453,6 @@ void ScriptEditorDebugger::_msg_scene_inspect_objects(uint64_t p_thread_id, cons
 	}
 }
 
-#ifndef DISABLE_DEPRECATED
-void ScriptEditorDebugger::_msg_scene_inspect_object(uint64_t p_thread_id, const Array &p_data) {
-	ERR_FAIL_COND(p_data.is_empty());
-	// Legacy compatibility: convert single object response to new format.
-	// p_data is [id, className, properties] - wrap it as first element of array for new handler.
-	Array wrapped_data;
-	wrapped_data.push_back(p_data);
-	_msg_scene_inspect_objects(p_thread_id, wrapped_data);
-}
-#endif // DISABLE_DEPRECATED
-
 void ScriptEditorDebugger::_msg_scene_debug_mute_audio(uint64_t p_thread_id, const Array &p_data) {
 	ERR_FAIL_COND(p_data.is_empty());
 	// This is handled by SceneDebugger, we need to ignore here to not show a warning.
@@ -998,9 +987,6 @@ void ScriptEditorDebugger::_init_parse_message_handlers() {
 	parse_message_handlers["scene:click_ctrl"] = &ScriptEditorDebugger::_msg_scene_click_ctrl;
 	parse_message_handlers["scene:scene_tree"] = &ScriptEditorDebugger::_msg_scene_scene_tree;
 	parse_message_handlers["scene:inspect_objects"] = &ScriptEditorDebugger::_msg_scene_inspect_objects;
-#ifndef DISABLE_DEPRECATED
-	parse_message_handlers["scene:inspect_object"] = &ScriptEditorDebugger::_msg_scene_inspect_object;
-#endif // DISABLE_DEPRECATED
 	parse_message_handlers["scene:debug_mute_audio"] = &ScriptEditorDebugger::_msg_scene_debug_mute_audio;
 	parse_message_handlers["servers:memory_usage"] = &ScriptEditorDebugger::_msg_servers_memory_usage;
 	parse_message_handlers["servers:drawn"] = &ScriptEditorDebugger::_msg_servers_drawn;

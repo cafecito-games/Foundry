@@ -4,8 +4,10 @@
 		Abstract base type for native coroutine handles returned by async FoundryScript calls.
 	</brief_description>
 	<description>
-		[ScriptFunctionState] is the engine-level contract for a suspended async function. FoundryScript's runtime coroutine handle derives from this type. Native hosts that resume or await script coroutines outside the VM should detect the handle with [method Object.cast_to] and listen for the [signal completed] signal rather than depending on module-specific types.
+		[ScriptFunctionState] is the engine-level contract for a suspended async function. FoundryScript's runtime coroutine handle derives from this type. Native hosts that resume or await script coroutines outside the VM should detect the handle with [code]Object::cast_to()[/code] and listen for the [signal completed] signal rather than depending on module-specific types.
 	</description>
+	<tutorials>
+	</tutorials>
 	<signals>
 		<signal name="completed">
 			<param index="0" name="result" type="Variant" />

@@ -354,10 +354,6 @@ public:
 	virtual void font_draw_glyph_outline(const RID &p_font, const RID &p_canvas, int64_t p_size, int64_t p_outline_size, const Vector2 &p_pos, int64_t p_index, const Color &p_color = Color(1, 1, 1), float p_oversampling = 0.0) const override;
 	FOUNDRY_VIRTUAL7C_REQUIRED(_font_draw_glyph, RID, RID, int64_t, const Vector2 &, int64_t, const Color &, float);
 	FOUNDRY_VIRTUAL8C_REQUIRED(_font_draw_glyph_outline, RID, RID, int64_t, int64_t, const Vector2 &, int64_t, const Color &, float);
-#ifndef DISABLE_DEPRECATED
-	FOUNDRY_VIRTUAL6C_COMPAT(_font_draw_glyph_bind_compat_104872, _font_draw_glyph, RID, RID, int64_t, const Vector2 &, int64_t, const Color &);
-	FOUNDRY_VIRTUAL7C_COMPAT(_font_draw_glyph_outline_bind_compat_104872, _font_draw_glyph_outline, RID, RID, int64_t, int64_t, const Vector2 &, int64_t, const Color &);
-#endif
 
 	virtual bool font_is_language_supported(const RID &p_font_rid, const String &p_language) const override;
 	virtual void font_set_language_support_override(const RID &p_font_rid, const String &p_language, bool p_supported) override;
@@ -391,12 +387,6 @@ public:
 	FOUNDRY_VIRTUAL1RC(Dictionary, _font_supported_feature_list, RID);
 	FOUNDRY_VIRTUAL1RC(Dictionary, _font_supported_variation_list, RID);
 
-#ifndef DISABLE_DEPRECATED
-	virtual double font_get_global_oversampling() const override;
-	virtual void font_set_global_oversampling(double p_oversampling) override;
-	FOUNDRY_VIRTUAL0RC(double, _font_get_global_oversampling);
-	FOUNDRY_VIRTUAL1(_font_set_global_oversampling, double);
-#endif
 	virtual void reference_oversampling_level(double p_oversampling) override;
 	virtual void unreference_oversampling_level(double p_oversampling) override;
 	FOUNDRY_VIRTUAL1(_reference_oversampling_level, double);
@@ -590,10 +580,6 @@ public:
 	virtual void shaped_text_draw_outline(const RID &p_shaped, const RID &p_canvas, const Vector2 &p_pos, double p_clip_l = -1.0, double p_clip_r = -1.0, int64_t p_outline_size = 1, const Color &p_color = Color(1, 1, 1), float p_oversampling = 0.0) const override;
 	FOUNDRY_VIRTUAL7C(_shaped_text_draw, RID, RID, const Vector2 &, double, double, const Color &, float);
 	FOUNDRY_VIRTUAL8C(_shaped_text_draw_outline, RID, RID, const Vector2 &, double, double, int64_t, const Color &, float);
-#ifndef DISABLE_DEPRECATED
-	FOUNDRY_VIRTUAL6C_COMPAT(_shaped_text_draw_bind_compat_104872, _shaped_text_draw, RID, RID, const Vector2 &, double, double, const Color &);
-	FOUNDRY_VIRTUAL7C_COMPAT(_shaped_text_draw_outline_bind_compat_104872, _shaped_text_draw_outline, RID, RID, const Vector2 &, double, double, int64_t, const Color &);
-#endif
 
 	virtual Vector2 shaped_text_get_grapheme_bounds(const RID &p_shaped, int64_t p_pos) const override;
 	virtual int64_t shaped_text_next_grapheme_pos(const RID &p_shaped, int64_t p_pos) const override;
@@ -610,15 +596,6 @@ public:
 	FOUNDRY_VIRTUAL2RC(int64_t, _shaped_text_next_character_pos, RID, int64_t);
 	FOUNDRY_VIRTUAL2RC(int64_t, _shaped_text_prev_character_pos, RID, int64_t);
 	FOUNDRY_VIRTUAL2RC(int64_t, _shaped_text_closest_character_pos, RID, int64_t);
-
-#ifndef DISABLE_DEPRECATED
-	virtual String format_number(const String &p_string, const String &p_language = "") const override;
-	virtual String parse_number(const String &p_string, const String &p_language = "") const override;
-	virtual String percent_sign(const String &p_language = "") const override;
-	FOUNDRY_VIRTUAL2RC(String, _format_number, const String &, const String &);
-	FOUNDRY_VIRTUAL2RC(String, _parse_number, const String &, const String &);
-	FOUNDRY_VIRTUAL1RC(String, _percent_sign, const String &);
-#endif // DISABLE_DEPRECATED
 
 	virtual String strip_diacritics(const String &p_string) const override;
 	FOUNDRY_VIRTUAL1RC(String, _strip_diacritics, const String &);

@@ -96,9 +96,6 @@ public:
 		LAYOUT_DIRECTION_RTL,
 		LAYOUT_DIRECTION_SYSTEM_LOCALE,
 		LAYOUT_DIRECTION_MAX,
-#ifndef DISABLE_DEPRECATED
-		LAYOUT_DIRECTION_LOCALE = LAYOUT_DIRECTION_APPLICATION_LOCALE,
-#endif // DISABLE_DEPRECATED
 	};
 
 	enum {
@@ -341,9 +338,6 @@ public:
 	bool is_maximize_allowed() const;
 
 	void request_attention();
-#ifndef DISABLE_DEPRECATED
-	void move_to_foreground();
-#endif // DISABLE_DEPRECATED
 
 	virtual void set_visible(bool p_visible);
 	bool is_visible() const;
@@ -449,14 +443,6 @@ public:
 	void set_layout_direction(LayoutDirection p_direction);
 	LayoutDirection get_layout_direction() const;
 	bool is_layout_rtl() const;
-
-#ifndef DISABLE_DEPRECATED
-	void set_use_font_oversampling(bool p_oversampling);
-	bool is_using_font_oversampling() const;
-
-	void set_auto_translate(bool p_enable);
-	bool is_auto_translating() const;
-#endif
 
 	// Theming.
 

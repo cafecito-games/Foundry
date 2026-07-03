@@ -128,29 +128,6 @@ protected:
 
 	static inline FileCloseFailNotify close_fail_notify = nullptr;
 
-#ifndef DISABLE_DEPRECATED
-	static Ref<FileAccess> _open_encrypted_bind_compat_98918(const String &p_path, ModeFlags p_mode_flags, const Vector<uint8_t> &p_key);
-	static Ref<FileAccess> _create_temp_compat_114053(int p_mode_flags, const String &p_prefix = "", const String &p_extension = "", bool p_keep = false);
-
-	void store_8_bind_compat_78289(uint8_t p_dest);
-	void store_16_bind_compat_78289(uint16_t p_dest);
-	void store_32_bind_compat_78289(uint32_t p_dest);
-	void store_64_bind_compat_78289(uint64_t p_dest);
-	void store_buffer_bind_compat_78289(const Vector<uint8_t> &p_buffer);
-	void store_var_bind_compat_78289(const Variant &p_var, bool p_full_objects = false);
-	void store_half_bind_compat_78289(float p_dest);
-	void store_float_bind_compat_78289(float p_dest);
-	void store_double_bind_compat_78289(double p_dest);
-	void store_real_bind_compat_78289(real_t p_real);
-	void store_string_bind_compat_78289(const String &p_string);
-	void store_line_bind_compat_78289(const String &p_line);
-	void store_csv_line_bind_compat_78289(const Vector<String> &p_values, const String &p_delim = ",");
-	void store_pascal_string_bind_compat_78289(const String &p_string);
-	String get_as_text_bind_compat_110867(bool p_skip_cr) const;
-
-	static void _bind_compatibility_methods();
-#endif
-
 private:
 	static inline bool backup_save = false;
 	static inline thread_local Error last_file_open_error = OK;

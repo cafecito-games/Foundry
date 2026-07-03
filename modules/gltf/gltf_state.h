@@ -121,46 +121,6 @@ protected:
 protected:
 	static void _bind_methods();
 
-#ifndef DISABLE_DEPRECATED
-	// Non-const getters for compatibility.
-	int32_t _get_handle_binary_image_bind_compat_113172();
-	Dictionary _get_json_bind_compat_113172();
-	int _get_major_version_bind_compat_113172();
-	int _get_minor_version_bind_compat_113172();
-	Vector<uint8_t> _get_glb_data_bind_compat_113172();
-	bool _get_use_named_skin_binds_bind_compat_113172();
-	bool _get_discard_meshes_and_materials_bind_compat_113172();
-	TypedArray<GLTFNode> _get_nodes_bind_compat_113172();
-	TypedArray<PackedByteArray> _get_buffers_bind_compat_113172();
-	TypedArray<GLTFBufferView> _get_buffer_views_bind_compat_113172();
-	TypedArray<GLTFAccessor> _get_accessors_bind_compat_113172();
-	TypedArray<GLTFMesh> _get_meshes_bind_compat_113172();
-	TypedArray<Material> _get_materials_bind_compat_113172();
-	String _get_scene_name_bind_compat_113172();
-	String _get_base_path_bind_compat_113172();
-	String _get_extract_path_bind_compat_113172();
-	String _get_extract_prefix_bind_compat_113172();
-	PackedInt32Array _get_root_nodes_bind_compat_113172();
-	TypedArray<GLTFTexture> _get_textures_bind_compat_113172();
-	TypedArray<GLTFTextureSampler> _get_texture_samplers_bind_compat_113172();
-	TypedArray<Texture2D> _get_images_bind_compat_113172();
-	TypedArray<GLTFSkin> _get_skins_bind_compat_113172();
-	TypedArray<GLTFCamera> _get_cameras_bind_compat_113172();
-	TypedArray<GLTFLight> _get_lights_bind_compat_113172();
-	TypedArray<String> _get_unique_names_bind_compat_113172();
-	TypedArray<String> _get_unique_animation_names_bind_compat_113172();
-	TypedArray<GLTFSkeleton> _get_skeletons_bind_compat_113172();
-	bool _get_create_animations_bind_compat_113172();
-	bool _get_import_as_skeleton_bones_bind_compat_113172();
-	TypedArray<GLTFAnimation> _get_animations_bind_compat_113172();
-	Node *_get_scene_node_bind_compat_113172(GLTFNodeIndex p_gltf_node_index);
-	GLTFNodeIndex _get_node_index_bind_compat_113172(Node *p_node);
-	int _get_animation_players_count_bind_compat_113172(int p_anim_player_index);
-	AnimationPlayer *_get_animation_player_bind_compat_113172(int p_anim_player_index);
-	Variant _get_additional_data_bind_compat_113172(const StringName &p_extension_name);
-	static void _bind_compatibility_methods();
-#endif // DISABLE_DEPRECATED
-
 public:
 	double get_bake_fps() const {
 		return bake_fps;

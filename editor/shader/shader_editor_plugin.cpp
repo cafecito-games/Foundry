@@ -265,18 +265,6 @@ void ShaderEditorPlugin::set_window_layout(Ref<ConfigFile> p_layout) {
 }
 
 void ShaderEditorPlugin::get_window_layout(Ref<ConfigFile> p_layout) {
-#ifndef DISABLE_DEPRECATED
-	if (p_layout->has_section_key("ShaderEditor", "window_rect")) {
-		p_layout->erase_section_key("ShaderEditor", "window_rect");
-	}
-	if (p_layout->has_section_key("ShaderEditor", "window_screen")) {
-		p_layout->erase_section_key("ShaderEditor", "window_screen");
-	}
-	if (p_layout->has_section_key("ShaderEditor", "window_screen_rect")) {
-		p_layout->erase_section_key("ShaderEditor", "window_screen_rect");
-	}
-#endif
-
 	Array shaders;
 	String selected_shader;
 	for (int i = 0; i < shader_tabs->get_tab_count(); i++) {

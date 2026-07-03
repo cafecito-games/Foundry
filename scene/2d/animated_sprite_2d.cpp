@@ -612,15 +612,6 @@ void AnimatedSprite2D::get_argument_options(const StringName &p_function, int p_
 }
 #endif // TOOLS_ENABLED
 
-#ifndef DISABLE_DEPRECATED
-bool AnimatedSprite2D::_set(const StringName &p_name, const Variant &p_value) {
-	if ((p_name == SNAME("frames"))) {
-		set_sprite_frames(p_value);
-		return true;
-	}
-	return false;
-}
-#endif
 void AnimatedSprite2D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_sprite_frames", "sprite_frames"), &AnimatedSprite2D::set_sprite_frames);
 	ClassDB::bind_method(D_METHOD("get_sprite_frames"), &AnimatedSprite2D::get_sprite_frames);

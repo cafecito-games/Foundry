@@ -221,19 +221,6 @@ partial class SurfaceTool
     }
 }
 
-partial class TileMap
-{
-    /// <summary>
-    /// The TileMap's quadrant size. Optimizes drawing by batching, using chunks of this size.
-    /// </summary>
-    [EditorBrowsable(EditorBrowsableState.Never)]
-    public int CellQuadrantSize
-    {
-        get => RenderingQuadrantSize;
-        set => RenderingQuadrantSize = value;
-    }
-}
-
 partial class Tree
 {
     /// <inheritdoc cref="EditSelected(bool)"/>

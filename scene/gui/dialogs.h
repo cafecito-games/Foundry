@@ -93,13 +93,6 @@ protected:
 	void _ok_pressed();
 	void _cancel_pressed();
 
-#ifndef DISABLE_DEPRECATED
-	void _register_text_enter_bind_compat_89419(Control *p_line_edit);
-	void _remove_button_bind_compat_89419(Control *p_button);
-
-	static void _bind_compatibility_methods();
-#endif
-
 public:
 	Label *get_label() { return message_label; }
 	static void set_swap_cancel_ok(bool p_swap);

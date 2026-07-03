@@ -56,20 +56,6 @@ Error GLTFDocumentExtensionPhysics::import_preflight(Ref<GLTFState> p_state, con
 					p_state->set_additional_data(StringName("GLTFPhysicsShapes"), state_shapes);
 				}
 			}
-#ifndef DISABLE_DEPRECATED
-		} else if (state_extensions.has("OMI_collider")) {
-			Dictionary omi_collider_ext = state_extensions["OMI_collider"];
-			if (omi_collider_ext.has("colliders")) {
-				Array state_collider_dicts = omi_collider_ext["colliders"];
-				if (state_collider_dicts.size() > 0) {
-					Array state_colliders;
-					for (int i = 0; i < state_collider_dicts.size(); i++) {
-						state_colliders.push_back(GLTFPhysicsShape::from_dictionary(state_collider_dicts[i]));
-					}
-					p_state->set_additional_data(StringName("GLTFPhysicsShapes"), state_colliders);
-				}
-			}
-#endif // DISABLE_DEPRECATED
 		}
 	}
 	return OK;
@@ -84,20 +70,6 @@ Vector<String> GLTFDocumentExtensionPhysics::get_supported_extensions() {
 }
 
 Error GLTFDocumentExtensionPhysics::parse_node_extensions(Ref<GLTFState> p_state, Ref<GLTFNode> p_gltf_node, const Dictionary &p_extensions) {
-#ifndef DISABLE_DEPRECATED
-	if (p_extensions.has("OMI_collider")) {
-		Dictionary node_collider_ext = p_extensions["OMI_collider"];
-		if (node_collider_ext.has("collider")) {
-			// "collider" is the index of the collider in the state colliders array.
-			int node_collider_index = node_collider_ext["collider"];
-			Array state_colliders = p_state->get_additional_data(StringName("GLTFPhysicsShapes"));
-			ERR_FAIL_INDEX_V_MSG(node_collider_index, state_colliders.size(), Error::ERR_FILE_CORRUPT, "glTF Physics: On node " + p_gltf_node->get_name() + ", the collider index " + itos(node_collider_index) + " is not in the state colliders (size: " + itos(state_colliders.size()) + ").");
-			p_gltf_node->set_additional_data(StringName("GLTFPhysicsShape"), state_colliders[node_collider_index]);
-		} else {
-			p_gltf_node->set_additional_data(StringName("GLTFPhysicsShape"), GLTFPhysicsShape::from_dictionary(node_collider_ext));
-		}
-	}
-#endif // DISABLE_DEPRECATED
 	if (p_extensions.has("OMI_physics_body")) {
 		Dictionary physics_body_ext = p_extensions["OMI_physics_body"];
 		if (physics_body_ext.has("collider")) {
@@ -301,39 +273,6 @@ void _setup_shape_mesh_resource_from_index_if_needed(const Ref<GLTFState> &p_sta
 	p_gltf_shape->set_importer_mesh(importer_mesh);
 }
 
-#ifndef DISABLE_DEPRECATED
-CollisionObject3D *_generate_shape_with_body(Ref<GLTFState> p_state, Ref<GLTFNode> p_gltf_node, Ref<GLTFPhysicsShape> p_physics_shape, Ref<GLTFPhysicsBody> p_physics_body) {
-	print_verbose("glTF: Creating shape with body for: " + p_gltf_node->get_name());
-	bool is_trigger = p_physics_shape->get_is_trigger();
-	// This method is used for the case where we must generate a parent body.
-	// This is can happen for multiple reasons. One possibility is that this
-	// glTF file is using OMI_collider but not OMI_physics_body, or at least
-	// this particular node is not using it. Another possibility is that the
-	// physics body information is set up on the same glTF node, not a parent.
-	CollisionObject3D *body;
-	if (p_physics_body.is_valid()) {
-		// This code is run when the physics body is on the same glTF node.
-		body = p_physics_body->to_node();
-		if (is_trigger && (p_physics_body->get_body_type() != "trigger")) {
-			// Edge case: If the body's trigger and the collider's trigger
-			// are in disagreement, we need to create another new body.
-			CollisionObject3D *child = _generate_shape_with_body(p_state, p_gltf_node, p_physics_shape, nullptr);
-			child->set_name(p_gltf_node->get_name() + (is_trigger ? String("Trigger") : String("Solid")));
-			body->add_child(child);
-			return body;
-		}
-	} else if (is_trigger) {
-		body = memnew(Area3D);
-	} else {
-		body = memnew(StaticBody3D);
-	}
-	CollisionShape3D *shape = p_physics_shape->to_node();
-	shape->set_name(p_gltf_node->get_name() + "Shape");
-	body->add_child(shape);
-	return body;
-}
-#endif // DISABLE_DEPRECATED
-
 CollisionObject3D *_get_ancestor_collision_object(Node *p_scene_parent) {
 	// Note: Despite the name of the method, at the moment this only checks
 	// the direct parent. Only check more later if Godot adds support for it.
@@ -404,30 +343,6 @@ Array _get_ancestor_compound_trigger_nodes(const Ref<GLTFState> &p_state, const 
 
 Node3D *GLTFDocumentExtensionPhysics::generate_scene_node(Ref<GLTFState> p_state, Ref<GLTFNode> p_gltf_node, Node *p_scene_parent) {
 	Ref<GLTFPhysicsBody> gltf_physics_body = p_gltf_node->get_additional_data(StringName("GLTFPhysicsBody"));
-#ifndef DISABLE_DEPRECATED
-	// This deprecated code handles OMI_collider (which we internally name "GLTFPhysicsShape").
-	Ref<GLTFPhysicsShape> gltf_physics_shape = p_gltf_node->get_additional_data(StringName("GLTFPhysicsShape"));
-	if (gltf_physics_shape.is_valid()) {
-		_setup_shape_mesh_resource_from_index_if_needed(p_state, gltf_physics_shape);
-		// If this glTF node specifies both a shape and a body, generate both.
-		if (gltf_physics_body.is_valid()) {
-			return _generate_shape_with_body(p_state, p_gltf_node, gltf_physics_shape, gltf_physics_body);
-		}
-		CollisionObject3D *ancestor_col_obj = _get_ancestor_collision_object(p_scene_parent);
-		if (gltf_physics_shape->get_is_trigger()) {
-			// If the shape wants to be a trigger and it already has a
-			// trigger parent, we only need to make the shape node.
-			if (Object::cast_to<Area3D>(ancestor_col_obj)) {
-				return gltf_physics_shape->to_node(true);
-			}
-		} else if (ancestor_col_obj != nullptr) {
-			// If the shape has a valid parent, only make the shape node.
-			return gltf_physics_shape->to_node(true);
-		}
-		// Otherwise, we need to create a new body.
-		return _generate_shape_with_body(p_state, p_gltf_node, gltf_physics_shape, nullptr);
-	}
-#endif // DISABLE_DEPRECATED
 	Node3D *ret = nullptr;
 	CollisionObject3D *ancestor_col_obj = nullptr;
 	Ref<GLTFPhysicsShape> gltf_physics_collider_shape = p_gltf_node->get_additional_data(StringName("GLTFPhysicsColliderShape"));

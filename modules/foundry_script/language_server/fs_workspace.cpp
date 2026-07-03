@@ -51,12 +51,6 @@ void FSWorkspace::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_file_uri", "path"), &FSWorkspace::get_file_uri);
 	ClassDB::bind_method(D_METHOD("publish_diagnostics", "path"), &FSWorkspace::publish_diagnostics);
 	ClassDB::bind_method(D_METHOD("generate_script_api", "path"), &FSWorkspace::generate_script_api);
-
-#ifndef DISABLE_DEPRECATED
-	ClassDB::bind_method(D_METHOD("didDeleteFiles"), &FSWorkspace::didDeleteFiles);
-	ClassDB::bind_method(D_METHOD("parse_script", "path", "content"), &FSWorkspace::parse_script);
-	ClassDB::bind_method(D_METHOD("parse_local_script", "path"), &FSWorkspace::parse_script);
-#endif
 }
 
 void FSWorkspace::apply_new_signal(Object *obj, String function, PackedStringArray args) {

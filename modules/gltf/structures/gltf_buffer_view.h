@@ -60,16 +60,6 @@ private:
 protected:
 	static void _bind_methods();
 
-#ifndef DISABLE_DEPRECATED
-	// Non-const versions for compatibility.
-	GLTFBufferIndex _get_buffer_bind_compat_86907();
-	int _get_byte_offset_bind_compat_86907();
-	int _get_byte_length_bind_compat_86907();
-	int _get_byte_stride_bind_compat_86907();
-	bool _get_indices_bind_compat_86907();
-	static void _bind_compatibility_methods();
-#endif // DISABLE_DEPRECATED
-
 public:
 	GLTFBufferIndex get_buffer() const;
 	void set_buffer(GLTFBufferIndex p_buffer);

@@ -31,7 +31,6 @@
 #include "openxr_api_extension.h"
 
 #include "extensions/openxr_extension_wrapper.h"
-#include "openxr_api_extension.compat.inc"
 
 void OpenXRAPIExtension::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_openxr_version"), &OpenXRAPIExtension::get_openxr_version);

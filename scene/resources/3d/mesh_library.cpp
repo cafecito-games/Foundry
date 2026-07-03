@@ -83,12 +83,6 @@ bool MeshLibrary::_set(const StringName &p_name, const Variant &p_value) {
 			set_item_navigation_mesh(idx, p_value);
 		} else if (what == "navigation_mesh_transform") {
 			set_item_navigation_mesh_transform(idx, p_value);
-#ifndef DISABLE_DEPRECATED
-		} else if (what == "navmesh") { // Renamed in 4.0 beta 9.
-			set_item_navigation_mesh(idx, p_value);
-		} else if (what == "navmesh_transform") { // Renamed in 4.0 beta 9.
-			set_item_navigation_mesh_transform(idx, p_value);
-#endif // DISABLE_DEPRECATED
 		} else if (what == "navigation_layers") {
 			set_item_navigation_layers(idx, p_value);
 		} else {
@@ -123,12 +117,6 @@ bool MeshLibrary::_get(const StringName &p_name, Variant &r_ret) const {
 		r_ret = get_item_navigation_mesh(idx);
 	} else if (what == "navigation_mesh_transform") {
 		r_ret = get_item_navigation_mesh_transform(idx);
-#ifndef DISABLE_DEPRECATED
-	} else if (what == "navmesh") { // Renamed in 4.0 beta 9.
-		r_ret = get_item_navigation_mesh(idx);
-	} else if (what == "navmesh_transform") { // Renamed in 4.0 beta 9.
-		r_ret = get_item_navigation_mesh_transform(idx);
-#endif // DISABLE_DEPRECATED
 	} else if (what == "navigation_layers") {
 		r_ret = get_item_navigation_layers(idx);
 	} else if (what == "preview") {

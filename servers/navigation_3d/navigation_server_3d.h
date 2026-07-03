@@ -140,10 +140,6 @@ public:
 
 	virtual void region_set_navigation_mesh(RID p_region, Ref<NavigationMesh> p_navigation_mesh) = 0;
 
-#ifndef DISABLE_DEPRECATED
-	virtual void region_bake_navigation_mesh(Ref<NavigationMesh> p_navigation_mesh, Node *p_root_node) = 0;
-#endif // DISABLE_DEPRECATED
-
 	virtual int region_get_connections_count(RID p_region) const = 0;
 	virtual Vector3 region_get_connection_pathway_start(RID p_region, int p_connection_id) const = 0;
 	virtual Vector3 region_get_connection_pathway_end(RID p_region, int p_connection_id) const = 0;
@@ -309,11 +305,6 @@ public:
 	virtual void sync() = 0;
 	virtual void finish() = 0;
 	virtual void free_rid(RID p_rid) = 0;
-#ifndef DISABLE_DEPRECATED
-	[[deprecated("Use `free_rid()` instead.")]] void free(RID p_rid) {
-		free_rid(p_rid);
-	}
-#endif // DISABLE_DEPRECATED
 
 	NavigationServer3D();
 	~NavigationServer3D() override;
@@ -339,12 +330,6 @@ public:
 	bool get_debug_enabled() const;
 
 protected:
-#ifndef DISABLE_DEPRECATED
-	Vector<Vector3> _map_get_path_bind_compat_100129(RID p_map, Vector3 p_origin, Vector3 p_destination, bool p_optimize, uint32_t p_navigation_layers = 1) const;
-	void _query_path_bind_compat_100129(const Ref<NavigationPathQueryParameters3D> &p_query_parameters, Ref<NavigationPathQueryResult3D> p_query_result) const;
-	static void _bind_compatibility_methods();
-#endif
-
 private:
 	bool debug_enabled = false;
 

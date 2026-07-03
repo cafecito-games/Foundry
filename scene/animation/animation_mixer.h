@@ -392,11 +392,6 @@ protected:
 	} capture_cache;
 	void blend_capture(double p_delta); // To blend capture track with all other animations.
 
-#ifndef DISABLE_DEPRECATED
-	virtual Variant _post_process_key_value_bind_compat_86687(const Ref<Animation> &p_anim, int p_track, Variant p_value, Object *p_object, int p_object_idx = -1);
-	static void _bind_compatibility_methods();
-#endif // DISABLE_DEPRECATED
-
 public:
 	/* ---- Data lists ---- */
 	void get_animation_library_list(List<StringName> *p_animations) const;

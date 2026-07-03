@@ -30,10 +30,6 @@
 
 #pragma once
 
-#ifndef DISABLE_DEPRECATED
-#include "foundry_plugin_config.h"
-#endif // DISABLE_DEPRECATED
-
 #include "gradle_export_util.h"
 
 #include "core/io/image.h"
@@ -88,11 +84,6 @@ class EditorExportPlatformAndroid : public EditorExportPlatform {
 		String version;
 	};
 
-#ifndef DISABLE_DEPRECATED
-	mutable Vector<PluginConfigAndroid> android_plugins;
-	mutable SafeFlag android_plugins_changed;
-	Mutex android_plugins_lock;
-#endif // DISABLE_DEPRECATED
 	String last_plugin_names;
 	uint64_t last_gradle_build_time = 0;
 	String last_gradle_build_dir;
@@ -144,15 +135,6 @@ class EditorExportPlatformAndroid : public EditorExportPlatform {
 	};
 
 	static Vector<ABI> get_abis();
-
-#ifndef DISABLE_DEPRECATED
-	/// List the gdap files in the directory specified by the p_path parameter.
-	static Vector<String> list_gdap_files(const String &p_path);
-
-	static Vector<PluginConfigAndroid> get_plugins();
-
-	static Vector<PluginConfigAndroid> get_enabled_plugins(const Ref<EditorExportPreset> &p_presets);
-#endif // DISABLE_DEPRECATED
 
 	static Error store_in_apk(APKExportData *ed, const String &p_path, const Vector<uint8_t> &p_data, int compression_method = Z_DEFLATED);
 

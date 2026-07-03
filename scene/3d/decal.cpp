@@ -47,8 +47,7 @@ void Decal::set_texture(DecalTexture p_type, const Ref<Texture2D> &p_texture) {
 
 #ifdef DEBUG_ENABLED
 	if (p_texture.is_valid() &&
-			(p_texture->is_class("AnimatedTexture") ||
-					p_texture->is_class("AtlasTexture") ||
+			(p_texture->is_class("AtlasTexture") ||
 					p_texture->is_class("CameraTexture") ||
 					p_texture->is_class("CanvasTexture") ||
 					p_texture->is_class("MeshTexture") ||
@@ -236,7 +235,7 @@ void Decal::_bind_methods() {
 
 	ADD_GROUP("Textures", "texture_");
 	// Only allow texture types that display correctly.
-	const String texture_hint = "Texture2D,-AnimatedTexture,-AtlasTexture,-CameraTexture,-CanvasTexture,-MeshTexture,-Texture2DRD,-ViewportTexture";
+	const String texture_hint = "Texture2D,-AtlasTexture,-CameraTexture,-CanvasTexture,-MeshTexture,-Texture2DRD,-ViewportTexture";
 	ADD_PROPERTYI(PropertyInfo(Variant::OBJECT, "texture_albedo", PROPERTY_HINT_RESOURCE_TYPE, texture_hint), "set_texture", "get_texture", TEXTURE_ALBEDO);
 	ADD_PROPERTYI(PropertyInfo(Variant::OBJECT, "texture_normal", PROPERTY_HINT_RESOURCE_TYPE, texture_hint), "set_texture", "get_texture", TEXTURE_NORMAL);
 	ADD_PROPERTYI(PropertyInfo(Variant::OBJECT, "texture_orm", PROPERTY_HINT_RESOURCE_TYPE, texture_hint), "set_texture", "get_texture", TEXTURE_ORM);
@@ -268,24 +267,6 @@ void Decal::_bind_methods() {
 	BIND_ENUM_CONSTANT(TEXTURE_EMISSION);
 	BIND_ENUM_CONSTANT(TEXTURE_MAX);
 }
-
-#ifndef DISABLE_DEPRECATED
-bool Decal::_set(const StringName &p_name, const Variant &p_value) {
-	if (p_name == "extents") { // Compatibility with Godot 3.x.
-		set_size((Vector3)p_value * 2);
-		return true;
-	}
-	return false;
-}
-
-bool Decal::_get(const StringName &p_name, Variant &r_property) const {
-	if (p_name == "extents") { // Compatibility with Godot 3.x.
-		r_property = size / 2;
-		return true;
-	}
-	return false;
-}
-#endif // DISABLE_DEPRECATED
 
 Decal::Decal() {
 	decal = RenderingServer::get_singleton()->decal_create();

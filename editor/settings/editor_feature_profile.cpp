@@ -47,9 +47,6 @@ const char *EditorFeatureProfile::feature_names[FEATURE_MAX] = {
 	TTRC("Script Editor"),
 	TTRC("Asset Library"),
 	TTRC("Scene Tree Editing"),
-#ifndef DISABLE_DEPRECATED
-	TTRC("Node Dock (deprecated)"),
-#endif
 	TTRC("FileSystem Dock"),
 	TTRC("Import Dock"),
 	TTRC("History Dock"),
@@ -63,9 +60,6 @@ const char *EditorFeatureProfile::feature_descriptions[FEATURE_MAX] = {
 	TTRC("Allows to edit scripts using the integrated script editor."),
 	TTRC("Provides built-in access to the Asset Library."),
 	TTRC("Allows editing the node hierarchy in the Scene dock."),
-#ifndef DISABLE_DEPRECATED
-	TTRC("Allows to work with signals and groups of the node selected in the Scene dock."),
-#endif
 	TTRC("Allows to browse the local file system via a dedicated dock."),
 	TTRC("Allows to configure import settings for individual assets. Requires the FileSystem dock to function."),
 	TTRC("Provides an overview of the editor's and each scene's undo history."),
@@ -79,9 +73,6 @@ const char *EditorFeatureProfile::feature_identifiers[FEATURE_MAX] = {
 	"script",
 	"asset_lib",
 	"scene_tree",
-#ifndef DISABLE_DEPRECATED
-	"node_dock",
-#endif
 	"filesystem_dock",
 	"import_dock",
 	"history_dock",
@@ -320,9 +311,6 @@ void EditorFeatureProfile::_bind_methods() {
 	BIND_ENUM_CONSTANT(FEATURE_SCRIPT);
 	BIND_ENUM_CONSTANT(FEATURE_ASSET_LIB);
 	BIND_ENUM_CONSTANT(FEATURE_SCENE_TREE);
-#ifndef DISABLE_DEPRECATED
-	BIND_ENUM_CONSTANT(FEATURE_NODE_DOCK);
-#endif
 	BIND_ENUM_CONSTANT(FEATURE_FILESYSTEM_DOCK);
 	BIND_ENUM_CONSTANT(FEATURE_IMPORT_DOCK);
 	BIND_ENUM_CONSTANT(FEATURE_HISTORY_DOCK);

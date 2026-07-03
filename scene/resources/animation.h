@@ -393,16 +393,6 @@ protected:
 
 	static bool inform_variant_array(int &r_min, int &r_max); // Returns true if max and min are swapped.
 
-#ifndef DISABLE_DEPRECATED
-	Vector3 _position_track_interpolate_bind_compat_86629(int p_track, double p_time) const;
-	Quaternion _rotation_track_interpolate_bind_compat_86629(int p_track, double p_time) const;
-	Vector3 _scale_track_interpolate_bind_compat_86629(int p_track, double p_time) const;
-	float _blend_shape_track_interpolate_bind_compat_86629(int p_track, double p_time) const;
-	Variant _value_track_interpolate_bind_compat_86629(int p_track, double p_time) const;
-	int _track_find_key_bind_compat_92861(int p_track, double p_time, FindMode p_find_mode = FIND_MODE_NEAREST) const;
-	static void _bind_compatibility_methods();
-#endif // DISABLE_DEPRECATED
-
 public:
 	int add_track(TrackType p_type, int p_at_pos = -1);
 	void remove_track(int p_track);

@@ -619,27 +619,6 @@ bool ProjectSettings::_load_resource_pack(const String &p_pack, bool p_replace_f
 }
 
 void ProjectSettings::_convert_to_last_version(int p_from_version) {
-#ifndef DISABLE_DEPRECATED
-	if (p_from_version <= 3) {
-		// Converts the actions from array to dictionary (array of events to dictionary with deadzone + events)
-		for (KeyValue<StringName, ProjectSettings::VariantContainer> &E : props) {
-			Variant value = E.value.variant;
-			if (String(E.key).begins_with("input/") && value.get_type() == Variant::ARRAY) {
-				Array array = value;
-				Dictionary action;
-				action["deadzone"] = Variant(0.5f);
-				action["events"] = array;
-				E.value.variant = action;
-			}
-		}
-	} else if (p_from_version <= 6) {
-		// Check if we still have legacy boot splash (removed in 4.6), map it to new project setting, then remove legacy setting.
-		if (has_setting("application/boot_splash/fullsize")) {
-			set_setting("application/boot_splash/stretch_mode", RenderingServer::map_scaling_option_to_stretch_mode(get_setting("application/boot_splash/fullsize")));
-			set_setting("application/boot_splash/fullsize", Variant());
-		}
-	}
-#endif // DISABLE_DEPRECATED
 }
 
 /*
@@ -1001,21 +980,6 @@ Error ProjectSettings::_load_settings_text_or_binary(const String &p_text_path, 
 	// Fallback to text-based project.foundry file if binary was not found.
 	err = _load_settings_text(p_text_path);
 	if (err == OK) {
-#ifndef DISABLE_DEPRECATED
-		const PackedStringArray features = get_setting("application/config/features");
-		for (const String &feat : features) {
-			if (feat.contains_char('.') && feat.get_slice_count(".") == 2) {
-				int major_version = feat.get_slicec('.', 0).to_int();
-				int minor_version = feat.get_slicec('.', 1).to_int();
-				// Major version is irrelevant, but the extra check ensures that the feature is in fact a version string.
-				if (major_version == 4 && minor_version < 6) {
-					// Enable MeshInstance3D compat for projects created before 4.6.
-					set_setting("animation/compatibility/default_parent_skeleton_in_mesh_instance_3d", true);
-				}
-				break;
-			}
-		}
-#endif
 		return OK;
 	} else if (err != ERR_FILE_NOT_FOUND) {
 		ERR_PRINT(vformat("Couldn't load file '%s', error code %d.", p_text_path, err));
@@ -1738,9 +1702,6 @@ ProjectSettings::ProjectSettings() {
 	GLOBAL_DEF("display/window/energy_saving/keep_screen_on", true);
 	GLOBAL_DEF("animation/warnings/check_invalid_track_paths", true);
 	GLOBAL_DEF("animation/warnings/check_angle_interpolation_type_conflicting", true);
-#ifndef DISABLE_DEPRECATED
-	GLOBAL_DEF_RST("animation/compatibility/default_parent_skeleton_in_mesh_instance_3d", false);
-#endif
 
 	GLOBAL_DEF_BASIC(PropertyInfo(Variant::STRING, "audio/buses/default_bus_layout", PROPERTY_HINT_FILE, "*.tres"), "res://default_bus_layout.tres");
 	GLOBAL_DEF(PropertyInfo(Variant::INT, "audio/general/default_playback_type", PROPERTY_HINT_ENUM, "Stream,Sample"), 0);
@@ -1763,11 +1724,7 @@ ProjectSettings::ProjectSettings() {
 	GLOBAL_DEF("display/window/frame_pacing/android/enable_frame_pacing", true);
 	GLOBAL_DEF(PropertyInfo(Variant::INT, "display/window/frame_pacing/android/swappy_mode", PROPERTY_HINT_ENUM, "pipeline_forced_on,auto_fps_pipeline_forced_on,auto_fps_auto_pipeline"), 2);
 
-#ifdef DISABLE_DEPRECATED
 	custom_prop_info["rendering/driver/threads/thread_model"] = PropertyInfo(Variant::INT, "rendering/driver/threads/thread_model", PROPERTY_HINT_ENUM, "Safe:1,Separate");
-#else
-	custom_prop_info["rendering/driver/threads/thread_model"] = PropertyInfo(Variant::INT, "rendering/driver/threads/thread_model", PROPERTY_HINT_ENUM, "Unsafe (deprecated),Safe,Separate");
-#endif
 
 #ifndef PHYSICS_2D_DISABLED
 	GLOBAL_DEF("physics/2d/run_on_separate_thread", false);

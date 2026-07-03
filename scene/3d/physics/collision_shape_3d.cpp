@@ -114,11 +114,6 @@ void CollisionShape3D::_notification(int p_what) {
 	}
 }
 
-#ifndef DISABLE_DEPRECATED
-void CollisionShape3D::resource_changed(Ref<Resource> res) {
-}
-#endif
-
 PackedStringArray CollisionShape3D::get_configuration_warnings() const {
 	PackedStringArray warnings = Node3D::get_configuration_warnings();
 
@@ -159,9 +154,6 @@ PackedStringArray CollisionShape3D::get_configuration_warnings() const {
 }
 
 void CollisionShape3D::_bind_methods() {
-#ifndef DISABLE_DEPRECATED
-	ClassDB::bind_method(D_METHOD("resource_changed", "resource"), &CollisionShape3D::resource_changed);
-#endif
 	ClassDB::bind_method(D_METHOD("set_shape", "shape"), &CollisionShape3D::set_shape);
 	ClassDB::bind_method(D_METHOD("get_shape"), &CollisionShape3D::get_shape);
 	ClassDB::bind_method(D_METHOD("set_disabled", "enable"), &CollisionShape3D::set_disabled);

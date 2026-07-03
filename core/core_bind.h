@@ -163,13 +163,6 @@ protected:
 	static void _bind_methods();
 	static inline OS *singleton = nullptr;
 
-#ifndef DISABLE_DEPRECATED
-	Dictionary _execute_with_pipe_bind_compat_94434(const String &p_path, const Vector<String> &p_arguments);
-
-	String _read_string_from_stdin_bind_compat_91201();
-	static void _bind_compatibility_methods();
-#endif
-
 public:
 	enum RenderingDriver {
 		RENDERING_DRIVER_VULKAN,
@@ -459,10 +452,6 @@ class Semaphore : public RefCounted {
 
 protected:
 	static void _bind_methods();
-#ifndef DISABLE_DEPRECATED
-	void _post_bind_compat_93605();
-	static void _bind_compatibility_methods();
-#endif // DISABLE_DEPRECATED
 
 public:
 	void wait();

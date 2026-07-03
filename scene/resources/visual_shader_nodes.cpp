@@ -29,7 +29,6 @@
 /**************************************************************************/
 
 #include "visual_shader_nodes.h"
-#include "visual_shader_nodes.compat.inc"
 
 ////////////// Vector Base
 

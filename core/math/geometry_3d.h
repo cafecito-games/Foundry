@@ -331,12 +331,6 @@ public:
 		return true;
 	}
 
-#ifndef DISABLE_DEPRECATED
-	static Vector3 get_closest_point_to_segment(const Vector3 &p_point, const Vector3 *p_segment) {
-		return get_closest_point_to_segment(p_point, p_segment[0], p_segment[1]);
-	}
-#endif // DISABLE_DEPRECATED
-
 	static Vector3 get_closest_point_to_segment(const Vector3 &p_point, const Vector3 &p_segment_a, const Vector3 &p_segment_b) {
 		Vector3 p = p_point - p_segment_a;
 		Vector3 n = p_segment_b - p_segment_a;
@@ -355,12 +349,6 @@ public:
 			return p_segment_a + n * d; // Inside.
 		}
 	}
-
-#ifndef DISABLE_DEPRECATED
-	static Vector3 get_closest_point_to_segment_uncapped(const Vector3 &p_point, const Vector3 *p_segment) {
-		return get_closest_point_to_segment_uncapped(p_point, p_segment[0], p_segment[1]);
-	}
-#endif // DISABLE_DEPRECATED
 
 	static Vector3 get_closest_point_to_segment_uncapped(const Vector3 &p_point, const Vector3 &p_segment_a, const Vector3 &p_segment_b) {
 		Vector3 p = p_point - p_segment_a;
@@ -398,12 +386,6 @@ public:
 
 		return true;
 	}
-
-#ifndef DISABLE_DEPRECATED
-	static inline bool triangle_sphere_intersection_test(const Vector3 *p_triangle, const Vector3 &p_normal, const Vector3 &p_sphere_pos, real_t p_sphere_radius, Vector3 &r_triangle_contact, Vector3 &r_sphere_contact) {
-		return triangle_sphere_intersection_test(p_triangle[0], p_triangle[1], p_triangle[2], p_normal, p_sphere_pos, p_sphere_radius, r_triangle_contact, r_sphere_contact);
-	}
-#endif // DISABLE_DEPRECATED
 
 	static inline bool triangle_sphere_intersection_test(const Vector3 &p_triangle_a, const Vector3 &p_triangle_b, const Vector3 &p_triangle_c, const Vector3 &p_normal, const Vector3 &p_sphere_pos, real_t p_sphere_radius, Vector3 &r_triangle_contact, Vector3 &r_sphere_contact) {
 		real_t d = p_normal.dot(p_sphere_pos) - p_normal.dot(p_triangle_a);

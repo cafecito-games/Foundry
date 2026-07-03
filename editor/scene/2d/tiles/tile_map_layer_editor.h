@@ -40,7 +40,6 @@
 #include "scene/gui/flow_container.h"
 #include "scene/gui/item_list.h"
 #include "scene/gui/menu_button.h"
-#include "scene/gui/option_button.h"
 #include "scene/gui/separator.h"
 #include "scene/gui/spin_box.h"
 #include "scene/gui/split_container.h"
@@ -294,7 +293,7 @@ private:
 	BoxContainer *main_box_container = nullptr;
 	SplitContainer *tilemap_tab_terrains = nullptr;
 
-	// TileMap editing.
+	// TileMapLayer editing.
 	bool has_mouse = false;
 	void _mouse_exited_viewport();
 
@@ -388,8 +387,6 @@ private:
 	Control *padding_control = nullptr;
 	SwitchSeparator *layer_selector_separator = nullptr;
 
-	bool show_layers_selector = false;
-
 	BoxContainer *layer_selection_hbox = nullptr;
 	Button *select_previous_layer = nullptr;
 	void _select_previous_layer_pressed();
@@ -397,8 +394,6 @@ private:
 	void _select_next_layer_pressed();
 	Button *select_all_layers = nullptr;
 	void _select_all_layers_pressed();
-	OptionButton *layers_selection_button = nullptr;
-	void _layers_selection_item_selected(int p_index);
 	void _update_layers_selector();
 
 	Button *toggle_highlight_selected_layer_button = nullptr;
@@ -412,7 +407,6 @@ private:
 
 	enum {
 		ADVANCED_MENU_REPLACE_WITH_PROXIES,
-		ADVANCED_MENU_EXTRACT_TILE_MAP_LAYERS,
 	};
 	MenuButton *advanced_menu_button = nullptr;
 	void _advanced_menu_button_id_pressed(int p_id);
@@ -425,7 +419,7 @@ private:
 	LocalVector<TileMapLayerSubEditorPlugin *> tabs_plugins;
 	void _update_bottom_panel();
 
-	// TileMap.
+	// Textures.
 	Ref<Texture2D> missing_tile_texture;
 	Ref<Texture2D> warning_pattern_texture;
 
@@ -435,9 +429,6 @@ private:
 
 	// Updates.
 	void _layers_select_next_or_previous(bool p_next);
-
-	// Inspector undo/redo callback.
-	void _move_tile_map_array_element(Object *p_undo_redo, Object *p_edited, const String &p_array_prefix, int p_from_index, int p_to_pos);
 
 protected:
 	void _notification(int p_what);
@@ -449,7 +440,6 @@ public:
 	void forward_canvas_draw_over_viewport(Control *p_overlay);
 
 	void edit(Object *p_tile_map_layer);
-	void set_show_layer_selector(bool p_show_layer_selector);
 
 	TileMapLayerEditor();
 	~TileMapLayerEditor();

@@ -34,9 +34,9 @@
 
 #include "tests/test_macros.h"
 
+#include "../foundry_script.h"
 #include "../fs_cache.h"
 #include "../fs_parser.h"
-#include "../foundry_script.h"
 
 #include "core/config/project_settings.h"
 

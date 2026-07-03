@@ -93,17 +93,8 @@ public:
 		ONREADY_WITH_EXPORT, // The `@onready` annotation will set the value after `@export` which is likely not intended.
 		NON_EXHAUSTIVE_MATCH, // A `match` over an enum or `bool` does not handle all values and has no wildcard `_` branch.
 		MATCH_WITHOUT_DEFAULT, // A `match` over a non-finite-domain value has no wildcard `_` branch.
-#ifndef DISABLE_DEPRECATED
-		PROPERTY_USED_AS_FUNCTION, // Function not found, but there's a property with the same name.
-		CONSTANT_USED_AS_FUNCTION, // Function not found, but there's a constant with the same name.
-		FUNCTION_USED_AS_PROPERTY, // Property not found, but there's a function with the same name.
-#endif // DISABLE_DEPRECATED
 		WARNING_MAX,
 	};
-
-#ifndef DISABLE_DEPRECATED
-	static constexpr int FIRST_DEPRECATED_WARNING = PROPERTY_USED_AS_FUNCTION;
-#endif // DISABLE_DEPRECATED
 
 	constexpr static WarnLevel default_warning_levels[] = {
 		WARN, // UNASSIGNED_VARIABLE
@@ -154,11 +145,6 @@ public:
 		ERROR, // ONREADY_WITH_EXPORT // May not work as expected.
 		WARN, // NON_EXHAUSTIVE_MATCH
 		IGNORE, // MATCH_WITHOUT_DEFAULT // Requiring a default branch on open-domain matches is noisy; opt-in.
-#ifndef DISABLE_DEPRECATED
-		WARN, // PROPERTY_USED_AS_FUNCTION
-		WARN, // CONSTANT_USED_AS_FUNCTION
-		WARN, // FUNCTION_USED_AS_PROPERTY
-#endif // DISABLE_DEPRECATED
 	};
 
 	static_assert(std_size(default_warning_levels) == WARNING_MAX, "Amount of default levels does not match the amount of warnings.");

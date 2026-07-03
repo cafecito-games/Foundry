@@ -220,11 +220,6 @@ private:
 protected:
 	static void _bind_methods();
 
-#ifndef DISABLE_DEPRECATED
-	void _add_button_bind_compat_76829(int p_column, const Ref<Texture2D> &p_button, int p_id, bool p_disabled, const String &p_tooltip);
-	static void _bind_compatibility_methods();
-#endif
-
 	// Bind helpers.
 	Dictionary _get_range_config(int p_column) {
 		Dictionary d;
@@ -341,9 +336,6 @@ public:
 	void set_metadata(int p_column, const Variant &p_meta);
 	Variant get_metadata(int p_column) const;
 
-#ifndef DISABLE_DEPRECATED
-	void set_custom_draw(int p_column, Object *p_object, const StringName &p_callback);
-#endif // DISABLE_DEPRECATED
 	void set_custom_draw_callback(int p_column, const Callable &p_callback);
 	Callable get_custom_draw_callback(int p_column) const;
 

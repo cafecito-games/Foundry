@@ -132,17 +132,11 @@
 				Returns a [PackedVector2Array] containing all the vertices being used to create the polygons.
 			</description>
 		</method>
-		<method name="make_polygons_from_outlines" deprecated="Use [method NavigationServer2D.parse_source_geometry_data] and [method NavigationServer2D.bake_from_source_geometry_data] instead.">
-			<return type="void" />
-			<description>
-				Creates polygons from the outlines added in the editor or by script.
-			</description>
-		</method>
 		<method name="remove_outline">
 			<return type="void" />
 			<param index="0" name="idx" type="int" />
 			<description>
-				Removes an outline created in the editor or by script. You have to call [method make_polygons_from_outlines] for the polygons to update.
+				Removes an outline created in the editor or by script. The navigation polygon must be baked again for the change to take effect.
 			</description>
 		</method>
 		<method name="set_outline">
@@ -150,7 +144,7 @@
 			<param index="0" name="idx" type="int" />
 			<param index="1" name="outline" type="PackedVector2Array" />
 			<description>
-				Changes an outline created in the editor or by script. You have to call [method make_polygons_from_outlines] for the polygons to update.
+				Changes an outline created in the editor or by script. The navigation polygon must be baked again for the change to take effect.
 			</description>
 		</method>
 		<method name="set_parsed_collision_mask_value">
@@ -216,11 +210,11 @@
 			Represents the size of the [enum SamplePartitionType] enum.
 		</constant>
 		<constant name="PARSED_GEOMETRY_MESH_INSTANCES" value="0" enum="ParsedGeometryType">
-			Parses mesh instances as obstruction geometry. This includes [Polygon2D], [MeshInstance2D], [MultiMeshInstance2D], and [TileMap] nodes.
+			Parses mesh instances as obstruction geometry. This includes [Polygon2D], [MeshInstance2D], [MultiMeshInstance2D], and [TileMapLayer] nodes.
 			Meshes are only parsed when they use a 2D vertices surface format.
 		</constant>
 		<constant name="PARSED_GEOMETRY_STATIC_COLLIDERS" value="1" enum="ParsedGeometryType">
-			Parses [StaticBody2D] and [TileMap] colliders as obstruction geometry. The collider should be in any of the layers specified by [member parsed_collision_mask].
+			Parses [StaticBody2D] and [TileMapLayer] colliders as obstruction geometry. The collider should be in any of the layers specified by [member parsed_collision_mask].
 		</constant>
 		<constant name="PARSED_GEOMETRY_BOTH" value="2" enum="ParsedGeometryType">
 			Both [constant PARSED_GEOMETRY_MESH_INSTANCES] and [constant PARSED_GEOMETRY_STATIC_COLLIDERS].

@@ -201,21 +201,6 @@ bool CSGShape3D::is_root_shape() const {
 	return !parent_shape;
 }
 
-#ifndef DISABLE_DEPRECATED
-void CSGShape3D::set_snap(float p_snap) {
-	if (snap == p_snap) {
-		return;
-	}
-
-	snap = p_snap;
-	_make_dirty();
-}
-
-float CSGShape3D::get_snap() const {
-	return snap;
-}
-#endif // DISABLE_DEPRECATED
-
 void CSGShape3D::_make_dirty(bool p_parent_removing) {
 #ifndef PHYSICS_3D_DISABLED
 	if ((p_parent_removing || is_root_shape()) && !dirty) {
@@ -1000,12 +985,6 @@ void CSGShape3D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_operation", "operation"), &CSGShape3D::set_operation);
 	ClassDB::bind_method(D_METHOD("get_operation"), &CSGShape3D::get_operation);
 
-#ifndef DISABLE_DEPRECATED
-	ClassDB::bind_method(D_METHOD("_update_shape"), &CSGShape3D::update_shape);
-	ClassDB::bind_method(D_METHOD("set_snap", "snap"), &CSGShape3D::set_snap);
-	ClassDB::bind_method(D_METHOD("get_snap"), &CSGShape3D::get_snap);
-#endif // DISABLE_DEPRECATED
-
 #ifndef PHYSICS_3D_DISABLED
 	ClassDB::bind_method(D_METHOD("set_use_collision", "operation"), &CSGShape3D::set_use_collision);
 	ClassDB::bind_method(D_METHOD("is_using_collision"), &CSGShape3D::is_using_collision);
@@ -1038,9 +1017,6 @@ void CSGShape3D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("bake_static_mesh"), &CSGShape3D::bake_static_mesh);
 
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "operation", PROPERTY_HINT_ENUM, "Union,Intersection,Subtraction"), "set_operation", "get_operation");
-#ifndef DISABLE_DEPRECATED
-	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "snap", PROPERTY_HINT_RANGE, "0.000001,1,0.000001,suffix:m", PROPERTY_USAGE_NONE), "set_snap", "get_snap");
-#endif // DISABLE_DEPRECATED
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "calculate_tangents"), "set_calculate_tangents", "is_calculating_tangents");
 
 #ifndef PHYSICS_3D_DISABLED
@@ -1653,30 +1629,6 @@ void CSGBox3D::set_size(const Vector3 &p_size) {
 Vector3 CSGBox3D::get_size() const {
 	return size;
 }
-
-#ifndef DISABLE_DEPRECATED
-// Kept for compatibility from 3.x to 4.0.
-bool CSGBox3D::_set(const StringName &p_name, const Variant &p_value) {
-	if (p_name == "width") {
-		size.x = p_value;
-		_make_dirty();
-		update_gizmos();
-		return true;
-	} else if (p_name == "height") {
-		size.y = p_value;
-		_make_dirty();
-		update_gizmos();
-		return true;
-	} else if (p_name == "depth") {
-		size.z = p_value;
-		_make_dirty();
-		update_gizmos();
-		return true;
-	} else {
-		return false;
-	}
-}
-#endif
 
 void CSGBox3D::set_material(const Ref<Material> &p_material) {
 	material = p_material;

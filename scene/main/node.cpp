@@ -29,7 +29,6 @@
 /**************************************************************************/
 
 #include "node.h"
-#include "node.compat.inc"
 
 STATIC_ASSERT_INCOMPLETE_TYPE(class, Mesh);
 STATIC_ASSERT_INCOMPLETE_TYPE(class, RenderingServer);

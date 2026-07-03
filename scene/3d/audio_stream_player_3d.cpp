@@ -29,7 +29,6 @@
 /**************************************************************************/
 
 #include "audio_stream_player_3d.h"
-#include "audio_stream_player_3d.compat.inc"
 
 #include "core/config/project_settings.h"
 #include "scene/3d/audio_listener_3d.h"

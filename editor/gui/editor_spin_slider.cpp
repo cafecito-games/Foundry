@@ -536,16 +536,6 @@ EditorSpinSlider::ControlState EditorSpinSlider::get_control_state() const {
 	return control_state;
 }
 
-#ifndef DISABLE_DEPRECATED
-void EditorSpinSlider::set_hide_slider(bool p_hide) {
-	set_control_state(p_hide ? CONTROL_STATE_HIDE : CONTROL_STATE_DEFAULT);
-}
-
-bool EditorSpinSlider::is_hiding_slider() const {
-	return control_state == CONTROL_STATE_HIDE;
-}
-#endif
-
 void EditorSpinSlider::set_editing_integer(bool p_editing_integer) {
 	if (p_editing_integer == editing_integer) {
 		return;
@@ -719,10 +709,6 @@ void EditorSpinSlider::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("set_control_state", "state"), &EditorSpinSlider::set_control_state);
 	ClassDB::bind_method(D_METHOD("get_control_state"), &EditorSpinSlider::get_control_state);
-#ifndef DISABLE_DEPRECATED
-	ClassDB::bind_method(D_METHOD("set_hide_slider", "hide_slider"), &EditorSpinSlider::set_hide_slider);
-	ClassDB::bind_method(D_METHOD("is_hiding_slider"), &EditorSpinSlider::is_hiding_slider);
-#endif
 
 	ClassDB::bind_method(D_METHOD("set_editing_integer", "editing_integer"), &EditorSpinSlider::set_editing_integer);
 	ClassDB::bind_method(D_METHOD("is_editing_integer"), &EditorSpinSlider::is_editing_integer);
@@ -732,9 +718,6 @@ void EditorSpinSlider::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "read_only"), "set_read_only", "is_read_only");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "flat"), "set_flat", "is_flat");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "control_state"), "set_control_state", "get_control_state");
-#ifndef DISABLE_DEPRECATED
-	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "hide_slider"), "set_hide_slider", "is_hiding_slider");
-#endif
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "editing_integer"), "set_editing_integer", "is_editing_integer");
 
 	BIND_ENUM_CONSTANT(CONTROL_STATE_DEFAULT);

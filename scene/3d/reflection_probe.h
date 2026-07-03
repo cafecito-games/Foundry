@@ -69,10 +69,6 @@ private:
 protected:
 	static void _bind_methods();
 	void _validate_property(PropertyInfo &p_property) const;
-#ifndef DISABLE_DEPRECATED
-	bool _set(const StringName &p_name, const Variant &p_value);
-	bool _get(const StringName &p_name, Variant &r_property) const;
-#endif // DISABLE_DEPRECATED
 
 public:
 	void set_intensity(float p_intensity);

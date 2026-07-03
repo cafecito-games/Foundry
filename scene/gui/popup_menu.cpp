@@ -29,7 +29,6 @@
 /**************************************************************************/
 
 #include "popup_menu.h"
-#include "popup_menu.compat.inc"
 
 #include "core/config/project_settings.h"
 #include "core/input/input.h"
@@ -3093,48 +3092,6 @@ bool PopupMenu::_set(const StringName &p_name, const Variant &p_value) {
 		return true;
 	}
 
-#ifndef DISABLE_DEPRECATED
-	// Compatibility.
-	if (p_name == "items") {
-		Array arr = p_value;
-		ERR_FAIL_COND_V(arr.size() % 10, false);
-		clear();
-
-		for (int i = 0; i < arr.size(); i += 10) {
-			String text = arr[i + 0];
-			Ref<Texture2D> icon = arr[i + 1];
-			// For compatibility, use false/true for no/checkbox and integers for other values
-			bool checkable = arr[i + 2];
-			bool radio_checkable = (int)arr[i + 2] == Item::CHECKABLE_TYPE_RADIO_BUTTON;
-			bool checked = arr[i + 3];
-			bool disabled = arr[i + 4];
-
-			int id = arr[i + 5];
-			int accel = arr[i + 6];
-			Variant meta = arr[i + 7];
-			String subm = arr[i + 8];
-			bool sep = arr[i + 9];
-
-			int idx = get_item_count();
-			add_item(text, id);
-			set_item_icon(idx, icon);
-			if (checkable) {
-				if (radio_checkable) {
-					set_item_as_radio_checkable(idx, true);
-				} else {
-					set_item_as_checkable(idx, true);
-				}
-			}
-			set_item_checked(idx, checked);
-			set_item_disabled(idx, disabled);
-			set_item_id(idx, id);
-			set_item_metadata(idx, meta);
-			set_item_as_separator(idx, sep);
-			set_item_accelerator(idx, (Key)accel);
-			set_item_submenu(idx, subm);
-		}
-	}
-#endif
 	return false;
 }
 

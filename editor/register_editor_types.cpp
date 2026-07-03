@@ -129,10 +129,6 @@
 #include "editor/shader/shader_file_editor_plugin.h"
 #include "editor/translations/editor_translation_parser.h"
 #include "editor/version_control/editor_vcs_interface.h"
-#ifndef DISABLE_DEPRECATED
-#include "editor/scene/2d/parallax_background_editor_plugin.h"
-#include "editor/scene/3d/skeleton_ik_3d_editor_plugin.h"
-#endif
 
 void register_editor_types() {
 	OS::get_singleton()->benchmark_begin_measure("Editor", "Register Types");
@@ -257,9 +253,6 @@ void register_editor_types() {
 	EditorPlugins::add_by_type<ThemeEditorPlugin>();
 	EditorPlugins::add_by_type<ToolButtonEditorPlugin>();
 	EditorPlugins::add_by_type<VoxelGIEditorPlugin>();
-#ifndef DISABLE_DEPRECATED
-	EditorPlugins::add_by_type<SkeletonIK3DEditorPlugin>();
-#endif
 
 	// 2D
 	EditorPlugins::add_by_type<Camera2DEditorPlugin>();
@@ -276,9 +269,6 @@ void register_editor_types() {
 	EditorPlugins::add_by_type<Sprite2DEditorPlugin>();
 	EditorPlugins::add_by_type<TileSetEditorPlugin>();
 	EditorPlugins::add_by_type<TileMapEditorPlugin>();
-#ifndef DISABLE_DEPRECATED
-	EditorPlugins::add_by_type<ParallaxBackgroundEditorPlugin>();
-#endif
 
 	// For correct doc generation.
 	GLOBAL_DEF(PropertyInfo(Variant::STRING, "editor/run/main_run_args", PROPERTY_HINT_NONE, "monospace"), "");

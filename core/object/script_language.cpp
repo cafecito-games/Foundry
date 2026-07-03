@@ -306,23 +306,6 @@ Error ScriptServer::unregister_language(const ScriptLanguage *p_language) {
 void ScriptServer::init_languages() {
 	{ // Load global classes.
 		global_classes_clear();
-#ifndef DISABLE_DEPRECATED
-		if (ProjectSettings::get_singleton()->has_setting("_global_script_classes")) {
-			Array script_classes = GLOBAL_GET("_global_script_classes");
-
-			for (const Variant &script_class : script_classes) {
-				Dictionary c = script_class;
-				if (!c.has("class") || !c.has("language") || !c.has("path") || !c.has("base") || !c.has("is_abstract") || !c.has("is_tool")) {
-					continue;
-				}
-				// `is_trait` and `is_enum` were added later, so they may be absent in older caches.
-				const bool is_trait = c.has("is_trait") && c["is_trait"];
-				const bool is_enum = c.has("is_enum") && c["is_enum"];
-				add_global_class(c["class"], c["base"], c["language"], c["path"], c["is_abstract"], c["is_tool"], is_trait, is_enum);
-			}
-			ProjectSettings::get_singleton()->clear("_global_script_classes");
-		}
-#endif
 
 		Array script_classes = ProjectSettings::get_singleton()->get_global_class_list();
 		for (const Variant &script_class : script_classes) {

@@ -29,7 +29,6 @@
 /**************************************************************************/
 
 #include "control.h"
-#include "control.compat.inc"
 
 #include "container.h"
 #include "core/config/project_settings.h"
@@ -3642,18 +3641,6 @@ bool Control::is_localizing_numeral_system() const {
 	return data.localize_numeral_system;
 }
 
-#ifndef DISABLE_DEPRECATED
-void Control::set_auto_translate(bool p_enable) {
-	ERR_MAIN_THREAD_GUARD;
-	set_auto_translate_mode(p_enable ? AUTO_TRANSLATE_MODE_ALWAYS : AUTO_TRANSLATE_MODE_DISABLED);
-}
-
-bool Control::is_auto_translating() const {
-	ERR_READ_THREAD_GUARD_V(false);
-	return can_auto_translate();
-}
-#endif // DISABLE_DEPRECATED
-
 void Control::set_tooltip_auto_translate_mode(AutoTranslateMode p_mode) {
 	ERR_MAIN_THREAD_GUARD;
 	data.tooltip_auto_translate_mode = p_mode;
@@ -4195,11 +4182,6 @@ void Control::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_layout_direction"), &Control::get_layout_direction);
 	ClassDB::bind_method(D_METHOD("is_layout_rtl"), &Control::is_layout_rtl);
 
-#ifndef DISABLE_DEPRECATED
-	ClassDB::bind_method(D_METHOD("set_auto_translate", "enable"), &Control::set_auto_translate);
-	ClassDB::bind_method(D_METHOD("is_auto_translating"), &Control::is_auto_translating);
-#endif // DISABLE_DEPRECATED
-
 	ClassDB::bind_method(D_METHOD("set_localize_numeral_system", "enable"), &Control::set_localize_numeral_system);
 	ClassDB::bind_method(D_METHOD("is_localizing_numeral_system"), &Control::is_localizing_numeral_system);
 
@@ -4278,10 +4260,6 @@ void Control::_bind_methods() {
 
 	ADD_GROUP("Localization", "");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "localize_numeral_system"), "set_localize_numeral_system", "is_localizing_numeral_system");
-
-#ifndef DISABLE_DEPRECATED
-	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "auto_translate", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NONE), "set_auto_translate", "is_auto_translating");
-#endif // DISABLE_DEPRECATED
 
 	ADD_GROUP("Tooltip", "tooltip_");
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "tooltip_text", PROPERTY_HINT_MULTILINE_TEXT), "set_tooltip_text", "get_tooltip_text");
@@ -4408,9 +4386,6 @@ void Control::_bind_methods() {
 	BIND_ENUM_CONSTANT(LAYOUT_DIRECTION_RTL);
 	BIND_ENUM_CONSTANT(LAYOUT_DIRECTION_SYSTEM_LOCALE);
 	BIND_ENUM_CONSTANT(LAYOUT_DIRECTION_MAX);
-#ifndef DISABLE_DEPRECATED
-	BIND_ENUM_CONSTANT(LAYOUT_DIRECTION_LOCALE);
-#endif // DISABLE_DEPRECATED
 
 	BIND_ENUM_CONSTANT(TEXT_DIRECTION_INHERITED);
 	BIND_ENUM_CONSTANT(TEXT_DIRECTION_AUTO);

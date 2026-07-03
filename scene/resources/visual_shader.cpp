@@ -1501,17 +1501,6 @@ bool VisualShader::is_text_shader() const {
 	return false;
 }
 
-#ifndef DISABLE_DEPRECATED
-void VisualShader::set_graph_offset(const Vector2 &p_offset) {
-	WARN_DEPRECATED_MSG("graph_offset property is deprecated. Setting it has no effect.");
-}
-
-Vector2 VisualShader::get_graph_offset() const {
-	WARN_DEPRECATED_MSG("graph_offset property is deprecated. Getting it always returns Vector2().");
-	return Vector2();
-}
-#endif
-
 String VisualShader::generate_preview_shader(Type p_type, int p_node, int p_port, Vector<DefaultTextureParam> &default_tex_params) const {
 	Ref<VisualShaderNode> node = get_node(p_type, p_node);
 	ERR_FAIL_COND_V(node.is_null(), String());
@@ -3203,12 +3192,6 @@ void VisualShader::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("_update_shader"), &VisualShader::_update_shader);
 
-#ifndef DISABLE_DEPRECATED
-	ClassDB::bind_method(D_METHOD("set_graph_offset", "offset"), &VisualShader::set_graph_offset);
-	ClassDB::bind_method(D_METHOD("get_graph_offset"), &VisualShader::get_graph_offset);
-	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2, "graph_offset", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NONE), "set_graph_offset", "get_graph_offset");
-#endif
-
 	ADD_PROPERTY_DEFAULT("code", ""); // Inherited from Shader, prevents showing default code as override in docs.
 
 	BIND_ENUM_CONSTANT(TYPE_VERTEX);
@@ -4414,17 +4397,6 @@ bool VisualShaderNodeParameter::is_global_code_generated() const {
 	return global_code_generated;
 }
 
-#ifndef DISABLE_DEPRECATED
-// Kept for compatibility from 3.x to 4.0.
-bool VisualShaderNodeParameter::_set(const StringName &p_name, const Variant &p_value) {
-	if (p_name == "uniform_name") {
-		set_parameter_name(p_value);
-		return true;
-	}
-	return false;
-}
-#endif
-
 void VisualShaderNodeParameter::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_parameter_name", "name"), &VisualShaderNodeParameter::set_parameter_name);
 	ClassDB::bind_method(D_METHOD("get_parameter_name"), &VisualShaderNodeParameter::get_parameter_name);
@@ -4717,23 +4689,6 @@ VisualShaderNodeFrame::VisualShaderNodeFrame() {
 }
 
 ////////////// Comment (Deprecated)
-
-#ifndef DISABLE_DEPRECATED
-void VisualShaderNodeComment::_bind_methods() {
-	ClassDB::bind_method(D_METHOD("set_description", "description"), &VisualShaderNodeComment::set_description);
-	ClassDB::bind_method(D_METHOD("get_description"), &VisualShaderNodeComment::get_description);
-
-	ADD_PROPERTY(PropertyInfo(Variant::STRING, "description"), "set_description", "get_description");
-}
-
-void VisualShaderNodeComment::set_description(const String &p_description) {
-	description = p_description;
-}
-
-String VisualShaderNodeComment::get_description() const {
-	return description;
-}
-#endif
 
 ////////////// GroupBase
 

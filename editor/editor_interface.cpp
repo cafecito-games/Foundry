@@ -29,7 +29,6 @@
 /**************************************************************************/
 
 #include "editor_interface.h"
-#include "editor_interface.compat.inc"
 
 #include "core/config/project_settings.h"
 #include "core/io/resource_loader.h"

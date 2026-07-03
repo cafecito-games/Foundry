@@ -53,9 +53,4 @@ protected:
 	void _notification(int p_what);
 
 public:
-#ifndef DISABLE_DEPRECATED
-	void add_side_menu(Control *p_menu, const String &p_title = "") { ERR_FAIL_MSG("add_side_menu() is kept for compatibility and does nothing. For similar functionality, you can show another dialog after file dialog."); }
-	void set_disable_overwrite_warning(bool p_disable) { set_customization_flag_enabled(CUSTOMIZATION_OVERWRITE_WARNING, !p_disable); }
-	bool is_overwrite_warning_disabled() const { return !is_customization_flag_enabled(CUSTOMIZATION_OVERWRITE_WARNING); }
-#endif
 };

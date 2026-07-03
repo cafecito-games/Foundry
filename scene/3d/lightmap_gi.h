@@ -99,14 +99,6 @@ public:
 	int get_user_lightmap_slice_index(int p_user) const;
 	void clear_users();
 
-#ifndef DISABLE_DEPRECATED
-	void set_light_texture(const Ref<TextureLayered> &p_light_texture);
-	Ref<TextureLayered> get_light_texture() const;
-
-	void _set_light_textures_data(const Array &p_data);
-	Array _get_light_textures_data() const;
-#endif
-
 	void set_uses_spherical_harmonics(bool p_enable);
 	bool is_using_spherical_harmonics() const;
 

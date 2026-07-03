@@ -122,11 +122,6 @@ public:
 	void set_control_state(ControlState p_type);
 	ControlState get_control_state() const;
 
-#ifndef DISABLE_DEPRECATED
-	void set_hide_slider(bool p_hide);
-	bool is_hiding_slider() const;
-#endif
-
 	void set_editing_integer(bool p_editing_integer);
 	bool is_editing_integer() const;
 

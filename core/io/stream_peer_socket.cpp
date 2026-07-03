@@ -29,7 +29,6 @@
 /**************************************************************************/
 
 #include "stream_peer_socket.h"
-#include "stream_peer_socket.compat.inc"
 
 Error StreamPeerSocket::poll() {
 	if (status == STATUS_CONNECTED) {

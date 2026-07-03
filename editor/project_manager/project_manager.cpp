@@ -730,12 +730,6 @@ void ProjectManager::_open_selected_projects_with_migration() {
 		return;
 	}
 
-#ifndef DISABLE_DEPRECATED
-	if (project_list->get_selected_projects().size() == 1) {
-		// Only migrate if a single project is opened.
-		_minor_project_migrate();
-	}
-#endif
 	_open_selected_projects();
 }
 
@@ -1128,34 +1122,6 @@ void ProjectManager::add_new_tag(const String &p_tag) {
 }
 
 // Project converter/migration tool.
-
-#ifndef DISABLE_DEPRECATED
-void ProjectManager::_minor_project_migrate() {
-	const ProjectList::Item migrated_project = project_list->get_selected_projects()[0];
-
-	if (version_convert_feature.begins_with("4.3")) {
-		// Migrate layout after scale changes.
-		const float edscale = EDSCALE;
-		if (edscale != 1.0) {
-			Ref<ConfigFile> layout_file;
-			layout_file.instantiate();
-
-			const String layout_path = migrated_project.path.path_join(".foundry/editor/editor_layout.cfg");
-			Error err = layout_file->load(layout_path);
-			if (err == OK) {
-				for (int i = 0; i < 4; i++) {
-					const String key = "dock_hsplit_" + itos(i + 1);
-					int old_value = layout_file->get_value("docks", key, 0);
-					if (old_value != 0) {
-						layout_file->set_value("docks", key, old_value / edscale);
-					}
-				}
-				layout_file->save(layout_path);
-			}
-		}
-	}
-}
-#endif
 
 void ProjectManager::_migration_guide_button_pressed() {
 	const String url = vformat("%s/tutorials/migrating/index.html", FOUNDRY_VERSION_DOCS_URL);

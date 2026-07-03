@@ -32,13 +32,6 @@
 
 #include "scene/3d/skeleton_modifier_3d.h"
 
-#ifndef DISABLE_DEPRECATED
-namespace compat::SpringBoneSimulator3D {
-enum BoneDirection : int;
-enum RotationAxis : int;
-} //namespace compat::SpringBoneSimulator3D
-#endif
-
 class SpringBoneSimulator3D : public SkeletonModifier3D {
 	FOUNDRY_CLASS(SpringBoneSimulator3D, SkeletonModifier3D);
 
@@ -196,17 +189,6 @@ protected:
 
 	void _validate_rotation_axes(Skeleton3D *p_skeleton) const;
 	void _validate_rotation_axis(Skeleton3D *p_skeleton, int p_index, int p_joint) const;
-
-#ifndef DISABLE_DEPRECATED
-	compat::SpringBoneSimulator3D::BoneDirection _get_end_bone_direction_bind_compat_110120(int p_index) const;
-	void _set_end_bone_direction_bind_compat_110120(int p_index, compat::SpringBoneSimulator3D::BoneDirection p_bone_direction);
-	compat::SpringBoneSimulator3D::RotationAxis _get_rotation_axis_bind_compat_110120(int p_index) const;
-	void _set_rotation_axis_bind_compat_110120(int p_index, compat::SpringBoneSimulator3D::RotationAxis p_axis);
-	compat::SpringBoneSimulator3D::RotationAxis _get_joint_rotation_axis_bind_compat_110120(int p_index, int p_joint) const;
-	void _set_joint_rotation_axis_bind_compat_110120(int p_index, int p_joint, compat::SpringBoneSimulator3D::RotationAxis p_axis);
-
-	static void _bind_compatibility_methods();
-#endif // DISABLE_DEPRECATED
 
 public:
 	// Setting.

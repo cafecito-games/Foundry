@@ -424,17 +424,6 @@
 				[b]Note:[/b] A plugin instance can belong only to a single context menu slot.
 			</description>
 		</method>
-		<method name="add_control_to_bottom_panel" deprecated="Use [method add_dock] instead, with [member EditorDock.default_slot] set to [constant DOCK_SLOT_BOTTOM].">
-			<return type="Button" />
-			<param index="0" name="control" type="Control" />
-			<param index="1" name="title" type="String" />
-			<param index="2" name="shortcut" type="Shortcut" default="null" />
-			<description>
-				Adds a control to the bottom panel (together with Output, Debug, Animation, etc.). Returns a reference to a button that is outside the scene tree. It's up to you to hide/show the button when needed. When your plugin is deactivated, make sure to remove your custom control with [method remove_control_from_bottom_panel] and free it with [method Node.queue_free].
-				[param shortcut] is a shortcut that, when activated, will toggle the bottom panel's visibility. The shortcut object is only set when this control is added to the bottom panel.
-				[b]Note[/b] See the default editor bottom panel shortcuts in the Editor Settings for inspiration. By convention, they all use [kbd]Alt[/kbd] modifier.
-			</description>
-		</method>
 		<method name="add_control_to_container">
 			<return type="void" />
 			<param index="0" name="container" type="int" enum="EditorPlugin.CustomControlContainer" />
@@ -443,18 +432,6 @@
 				Adds a custom control to a container in the editor UI.
 				Please remember that you have to manage the visibility of your custom controls yourself (and likely hide it after adding it).
 				When your plugin is deactivated, make sure to remove your custom control with [method remove_control_from_container] and free it with [method Node.queue_free].
-			</description>
-		</method>
-		<method name="add_control_to_dock" deprecated="Use [method add_dock] instead.">
-			<return type="void" />
-			<param index="0" name="slot" type="int" enum="EditorPlugin.DockSlot" />
-			<param index="1" name="control" type="Control" />
-			<param index="2" name="shortcut" type="Shortcut" default="null" />
-			<description>
-				Adds the control to a specific dock slot.
-				If the dock is repositioned and as long as the plugin is active, the editor will save the dock position on further sessions.
-				When your plugin is deactivated, make sure to remove your custom control with [method remove_control_from_docks] and free it with [method Node.queue_free].
-				Optionally, you can specify a shortcut parameter. When pressed, this shortcut will open and focus the dock.
 			</description>
 		</method>
 		<method name="add_custom_type">
@@ -663,26 +640,12 @@
 				Removes the specified context menu plugin.
 			</description>
 		</method>
-		<method name="remove_control_from_bottom_panel" deprecated="Use [method remove_dock] instead.">
-			<return type="void" />
-			<param index="0" name="control" type="Control" />
-			<description>
-				Removes the control from the bottom panel. You have to manually [method Node.queue_free] the control.
-			</description>
-		</method>
 		<method name="remove_control_from_container">
 			<return type="void" />
 			<param index="0" name="container" type="int" enum="EditorPlugin.CustomControlContainer" />
 			<param index="1" name="control" type="Control" />
 			<description>
 				Removes the control from the specified container. You have to manually [method Node.queue_free] the control.
-			</description>
-		</method>
-		<method name="remove_control_from_docks" deprecated="Use [method remove_dock] instead.">
-			<return type="void" />
-			<param index="0" name="control" type="Control" />
-			<description>
-				Removes the control from the dock. You have to manually [method Node.queue_free] the control.
 			</description>
 		</method>
 		<method name="remove_custom_type">
@@ -781,14 +744,6 @@
 			<param index="0" name="callable" type="Callable" />
 			<description>
 				Removes a callback previously added by [method add_undo_redo_inspector_hook_callback].
-			</description>
-		</method>
-		<method name="set_dock_tab_icon" deprecated="Use [member EditorDock.dock_icon] instead.">
-			<return type="void" />
-			<param index="0" name="control" type="Control" />
-			<param index="1" name="icon" type="Texture2D" />
-			<description>
-				Sets the tab icon for the given control in a dock slot. Setting to [code]null[/code] removes the icon.
 			</description>
 		</method>
 		<method name="set_force_draw_over_forwarding_enabled">

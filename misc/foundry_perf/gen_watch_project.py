@@ -8,6 +8,7 @@ skip-when-idle behavior is easy to observe.
 Usage: gen_watch_project.py <out_dir> [num_dirs=300] [files_per_dir=25]
 Example: python3 gen_watch_project.py /tmp/proj_large 300 25   # ~7,500 .fs files
 """
+
 import os
 import sys
 

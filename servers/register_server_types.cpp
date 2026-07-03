@@ -76,9 +76,6 @@
 #include "text/text_server.h"
 #include "text/text_server_dummy.h"
 #include "text/text_server_extension.h"
-#ifndef DISABLE_DEPRECATED
-#include "audio/effects/audio_effect_limiter.h"
-#endif
 
 // 2D physics and navigation.
 #ifndef NAVIGATION_2D_DISABLED
@@ -213,10 +210,6 @@ void register_server_types() {
 		FOUNDRY_REGISTER_ABSTRACT_CLASS(AudioEffectSpectrumAnalyzerInstance);
 
 		FOUNDRY_REGISTER_CLASS(AudioEffectCapture);
-
-#ifndef DISABLE_DEPRECATED
-		FOUNDRY_REGISTER_CLASS(AudioEffectLimiter);
-#endif
 	}
 
 	FOUNDRY_REGISTER_ABSTRACT_CLASS(RenderingDevice);

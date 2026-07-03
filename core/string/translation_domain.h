@@ -77,10 +77,6 @@ public:
 	TypedArray<Translation> get_translations_bind() const;
 	TypedArray<Translation> find_translations_bind(const String &p_locale, bool p_exact) const;
 
-#ifndef DISABLE_DEPRECATED
-	Ref<Translation> get_translation_object(const String &p_locale) const;
-#endif
-
 	void add_translation(const Ref<Translation> &p_translation);
 	void remove_translation(const Ref<Translation> &p_translation);
 	void clear();

@@ -29,7 +29,6 @@
 /**************************************************************************/
 
 #include "foundry_extension.h"
-#include "foundry_extension.compat.inc"
 
 #include "core/config/project_settings.h"
 #include "core/object/class_db.h"
@@ -238,139 +237,6 @@ public:
 	}
 };
 
-#ifndef DISABLE_DEPRECATED
-void FoundryExtension::_register_extension_class(FoundryExtensionClassLibraryPtr p_library, FoundryExtensionConstStringNamePtr p_class_name, FoundryExtensionConstStringNamePtr p_parent_class_name, const FoundryExtensionClassCreationInfo *p_extension_funcs) {
-	const FoundryExtensionClassCreationInfo5 class_info5 = {
-		p_extension_funcs->is_virtual, // FoundryExtensionBool is_virtual;
-		p_extension_funcs->is_abstract, // FoundryExtensionBool is_abstract;
-		true, // FoundryExtensionBool is_exposed;
-		false, // FoundryExtensionBool is_runtime;
-		nullptr, // FoundryExtensionConstStringPtr icon_path;
-		p_extension_funcs->set_func, // FoundryExtensionClassSet set_func;
-		p_extension_funcs->get_func, // FoundryExtensionClassGet get_func;
-		p_extension_funcs->get_property_list_func, // FoundryExtensionClassGetPropertyList get_property_list_func;
-		nullptr, // FoundryExtensionClassFreePropertyList2 free_property_list_func;
-		p_extension_funcs->property_can_revert_func, // FoundryExtensionClassPropertyCanRevert property_can_revert_func;
-		p_extension_funcs->property_get_revert_func, // FoundryExtensionClassPropertyGetRevert property_get_revert_func;
-		nullptr, // FoundryExtensionClassValidateProperty validate_property_func;
-		nullptr, // FoundryExtensionClassNotification2 notification_func;
-		p_extension_funcs->to_string_func, // FoundryExtensionClassToString to_string_func;
-		p_extension_funcs->reference_func, // FoundryExtensionClassReference reference_func;
-		p_extension_funcs->unreference_func, // FoundryExtensionClassUnreference unreference_func;
-		nullptr, // FoundryExtensionClassCreateInstance2 create_instance_func; /* this one is mandatory */
-		p_extension_funcs->free_instance_func, // FoundryExtensionClassFreeInstance free_instance_func; /* this one is mandatory */
-		nullptr, // FoundryExtensionClassRecreateInstance recreate_instance_func;
-		nullptr, // FoundryExtensionClassGetVirtual get_virtual_func;
-		nullptr, // FoundryExtensionClassGetVirtualCallData get_virtual_call_data_func;
-		nullptr, // FoundryExtensionClassCallVirtualWithData call_virtual_func;
-		p_extension_funcs->class_userdata, // void *class_userdata;
-	};
-
-	const ClassCreationDeprecatedInfo legacy = {
-		false,
-		p_extension_funcs->notification_func, // FoundryExtensionClassNotification notification_func;
-		p_extension_funcs->free_property_list_func, // FoundryExtensionClassFreePropertyList free_property_list_func;
-		p_extension_funcs->create_instance_func, // FoundryExtensionClassCreateInstance create_instance_func;
-		p_extension_funcs->get_rid_func, // FoundryExtensionClassGetRID get_rid;
-		p_extension_funcs->get_virtual_func, // FoundryExtensionClassGetVirtual get_virtual_func;
-		nullptr,
-	};
-	_register_extension_class_internal(p_library, p_class_name, p_parent_class_name, &class_info5, &legacy);
-}
-
-void FoundryExtension::_register_extension_class2(FoundryExtensionClassLibraryPtr p_library, FoundryExtensionConstStringNamePtr p_class_name, FoundryExtensionConstStringNamePtr p_parent_class_name, const FoundryExtensionClassCreationInfo2 *p_extension_funcs) {
-	const FoundryExtensionClassCreationInfo5 class_info5 = {
-		p_extension_funcs->is_virtual, // FoundryExtensionBool is_virtual;
-		p_extension_funcs->is_abstract, // FoundryExtensionBool is_abstract;
-		p_extension_funcs->is_exposed, // FoundryExtensionBool is_exposed;
-		false, // FoundryExtensionBool is_runtime;
-		nullptr, // FoundryExtensionConstStringPtr icon_path;
-		p_extension_funcs->set_func, // FoundryExtensionClassSet set_func;
-		p_extension_funcs->get_func, // FoundryExtensionClassGet get_func;
-		p_extension_funcs->get_property_list_func, // FoundryExtensionClassGetPropertyList get_property_list_func;
-		nullptr, // FoundryExtensionClassFreePropertyList2 free_property_list_func;
-		p_extension_funcs->property_can_revert_func, // FoundryExtensionClassPropertyCanRevert property_can_revert_func;
-		p_extension_funcs->property_get_revert_func, // FoundryExtensionClassPropertyGetRevert property_get_revert_func;
-		p_extension_funcs->validate_property_func, // FoundryExtensionClassValidateProperty validate_property_func;
-		p_extension_funcs->notification_func, // FoundryExtensionClassNotification2 notification_func;
-		p_extension_funcs->to_string_func, // FoundryExtensionClassToString to_string_func;
-		p_extension_funcs->reference_func, // FoundryExtensionClassReference reference_func;
-		p_extension_funcs->unreference_func, // FoundryExtensionClassUnreference unreference_func;
-		nullptr, // FoundryExtensionClassCreateInstance2 create_instance_func; /* this one is mandatory */
-		p_extension_funcs->free_instance_func, // FoundryExtensionClassFreeInstance free_instance_func; /* this one is mandatory */
-		p_extension_funcs->recreate_instance_func, // FoundryExtensionClassRecreateInstance recreate_instance_func;
-		nullptr, // FoundryExtensionClassGetVirtual get_virtual_func;
-		nullptr, // FoundryExtensionClassGetVirtualCallData get_virtual_call_data_func;
-		p_extension_funcs->call_virtual_with_data_func, // FoundryExtensionClassCallVirtualWithData call_virtual_func;
-		p_extension_funcs->class_userdata, // void *class_userdata;
-	};
-
-	const ClassCreationDeprecatedInfo legacy = {
-		!p_extension_funcs->is_exposed, // bool legacy_unexposed_class;
-		nullptr, // FoundryExtensionClassNotification notification_func;
-		p_extension_funcs->free_property_list_func, // FoundryExtensionClassFreePropertyList free_property_list_func;
-		p_extension_funcs->create_instance_func, // FoundryExtensionClassCreateInstance create_instance_func;
-		p_extension_funcs->get_rid_func, // FoundryExtensionClassGetRID get_rid;
-		p_extension_funcs->get_virtual_func, // FoundryExtensionClassGetVirtual get_virtual_func;
-		p_extension_funcs->get_virtual_call_data_func, // FoundryExtensionClassGetVirtual get_virtual_func;
-	};
-	_register_extension_class_internal(p_library, p_class_name, p_parent_class_name, &class_info5, &legacy);
-}
-
-void FoundryExtension::_register_extension_class3(FoundryExtensionClassLibraryPtr p_library, FoundryExtensionConstStringNamePtr p_class_name, FoundryExtensionConstStringNamePtr p_parent_class_name, const FoundryExtensionClassCreationInfo3 *p_extension_funcs) {
-	const FoundryExtensionClassCreationInfo5 class_info5 = {
-		p_extension_funcs->is_virtual, // FoundryExtensionBool is_virtual;
-		p_extension_funcs->is_abstract, // FoundryExtensionBool is_abstract;
-		p_extension_funcs->is_exposed, // FoundryExtensionBool is_exposed;
-		p_extension_funcs->is_runtime, // FoundryExtensionBool is_runtime;
-		nullptr, // FoundryExtensionConstStringPtr icon_path;
-		p_extension_funcs->set_func, // FoundryExtensionClassSet set_func;
-		p_extension_funcs->get_func, // FoundryExtensionClassGet get_func;
-		p_extension_funcs->get_property_list_func, // FoundryExtensionClassGetPropertyList get_property_list_func;
-		p_extension_funcs->free_property_list_func, // FoundryExtensionClassFreePropertyList free_property_list_func;
-		p_extension_funcs->property_can_revert_func, // FoundryExtensionClassPropertyCanRevert property_can_revert_func;
-		p_extension_funcs->property_get_revert_func, // FoundryExtensionClassPropertyGetRevert property_get_revert_func;
-		p_extension_funcs->validate_property_func, // FoundryExtensionClassValidateProperty validate_property_func;
-		p_extension_funcs->notification_func, // FoundryExtensionClassNotification2 notification_func;
-		p_extension_funcs->to_string_func, // FoundryExtensionClassToString to_string_func;
-		p_extension_funcs->reference_func, // FoundryExtensionClassReference reference_func;
-		p_extension_funcs->unreference_func, // FoundryExtensionClassUnreference unreference_func;
-		nullptr, // FoundryExtensionClassCreateInstance2 create_instance_func; /* this one is mandatory */
-		p_extension_funcs->free_instance_func, // FoundryExtensionClassFreeInstance free_instance_func; /* this one is mandatory */
-		p_extension_funcs->recreate_instance_func, // FoundryExtensionClassRecreateInstance recreate_instance_func;
-		nullptr, // FoundryExtensionClassGetVirtual get_virtual_func;
-		nullptr, // FoundryExtensionClassGetVirtualCallData get_virtual_call_data_func;
-		p_extension_funcs->call_virtual_with_data_func, // FoundryExtensionClassCallVirtualWithData call_virtual_func;
-		p_extension_funcs->class_userdata, // void *class_userdata;
-	};
-
-	const ClassCreationDeprecatedInfo legacy = {
-		!p_extension_funcs->is_exposed, // bool legacy_unexposed_class;
-		nullptr, // FoundryExtensionClassNotification notification_func;
-		nullptr, // FoundryExtensionClassFreePropertyList free_property_list_func;
-		p_extension_funcs->create_instance_func, // FoundryExtensionClassCreateInstance2 create_instance_func;
-		p_extension_funcs->get_rid_func, // FoundryExtensionClassGetRID get_rid;
-		p_extension_funcs->get_virtual_func, // FoundryExtensionClassGetVirtual get_virtual_func;
-		p_extension_funcs->get_virtual_call_data_func, // FoundryExtensionClassGetVirtual get_virtual_func;
-	};
-	_register_extension_class_internal(p_library, p_class_name, p_parent_class_name, &class_info5, &legacy);
-}
-
-void FoundryExtension::_register_extension_class4(FoundryExtensionClassLibraryPtr p_library, FoundryExtensionConstStringNamePtr p_class_name, FoundryExtensionConstStringNamePtr p_parent_class_name, const FoundryExtensionClassCreationInfo4 *p_extension_funcs) {
-	FoundryExtensionClassCreationInfo5 class_info5 = *p_extension_funcs;
-	const ClassCreationDeprecatedInfo legacy = {
-		!p_extension_funcs->is_exposed, // bool legacy_unexposed_class;
-		nullptr, // FoundryExtensionClassNotification notification_func;
-		nullptr, // FoundryExtensionClassFreePropertyList free_property_list_func;
-		nullptr, // FoundryExtensionClassCreateInstance2 create_instance_func;
-		nullptr, // FoundryExtensionClassGetRID get_rid;
-		nullptr, // FoundryExtensionClassGetVirtual get_virtual_func;
-		nullptr, // FoundryExtensionClassGetVirtual get_virtual_func;
-	};
-	_register_extension_class_internal(p_library, p_class_name, p_parent_class_name, &class_info5, &legacy);
-}
-#endif // DISABLE_DEPRECATED
-
 void FoundryExtension::_register_extension_class5(FoundryExtensionClassLibraryPtr p_library, FoundryExtensionConstStringNamePtr p_class_name, FoundryExtensionConstStringNamePtr p_parent_class_name, const FoundryExtensionClassCreationInfo5 *p_extension_funcs) {
 	_register_extension_class_internal(p_library, p_class_name, p_parent_class_name, p_extension_funcs);
 }
@@ -427,11 +293,6 @@ void FoundryExtension::_register_extension_class_internal(FoundryExtensionClassL
 
 	if (self->reloadable && p_extension_funcs->recreate_instance_func == nullptr) {
 		bool can_create_class = (bool)p_extension_funcs->create_instance_func;
-#ifndef DISABLE_DEPRECATED
-		if (!can_create_class && p_deprecated_funcs) {
-			can_create_class = (bool)p_deprecated_funcs->create_instance_func;
-		}
-#endif
 		if (can_create_class) {
 			ERR_PRINT(vformat("Extension marked as reloadable, but attempted to register class '%s' which doesn't support reloading. Perhaps your language binding don't support it? Reloading disabled for this extension.", class_name));
 			self->reloadable = false;
@@ -455,17 +316,6 @@ void FoundryExtension::_register_extension_class_internal(FoundryExtensionClassL
 	extension->foundry_extension.property_can_revert = p_extension_funcs->property_can_revert_func;
 	extension->foundry_extension.property_get_revert = p_extension_funcs->property_get_revert_func;
 	extension->foundry_extension.validate_property = p_extension_funcs->validate_property_func;
-#ifndef DISABLE_DEPRECATED
-	if (p_deprecated_funcs) {
-		extension->foundry_extension.legacy_unexposed_class = p_deprecated_funcs->legacy_unexposed_class;
-		extension->foundry_extension.notification = p_deprecated_funcs->notification_func;
-		extension->foundry_extension.free_property_list = p_deprecated_funcs->free_property_list_func;
-		extension->foundry_extension.create_instance = p_deprecated_funcs->create_instance_func;
-		extension->foundry_extension.get_rid = p_deprecated_funcs->get_rid_func;
-		extension->foundry_extension.get_virtual = p_deprecated_funcs->get_virtual_func;
-		extension->foundry_extension.get_virtual_call_data = p_deprecated_funcs->get_virtual_call_data_func;
-	}
-#endif // DISABLE_DEPRECATED
 	extension->foundry_extension.notification2 = p_extension_funcs->notification_func;
 	extension->foundry_extension.to_string = p_extension_funcs->to_string_func;
 	extension->foundry_extension.reference = p_extension_funcs->reference_func;
@@ -819,12 +669,6 @@ FoundryExtension::~FoundryExtension() {
 void FoundryExtension::initialize_foundry_extensions() {
 	foundry_extension_setup_interface();
 
-#ifndef DISABLE_DEPRECATED
-	register_interface_function("classdb_register_extension_class", (FoundryExtensionInterfaceFunctionPtr)&FoundryExtension::_register_extension_class);
-	register_interface_function("classdb_register_extension_class2", (FoundryExtensionInterfaceFunctionPtr)&FoundryExtension::_register_extension_class2);
-	register_interface_function("classdb_register_extension_class3", (FoundryExtensionInterfaceFunctionPtr)&FoundryExtension::_register_extension_class3);
-	register_interface_function("classdb_register_extension_class4", (FoundryExtensionInterfaceFunctionPtr)&FoundryExtension::_register_extension_class4);
-#endif // DISABLE_DEPRECATED
 	register_interface_function("classdb_register_extension_class5", (FoundryExtensionInterfaceFunctionPtr)&FoundryExtension::_register_extension_class5);
 	register_interface_function("classdb_register_extension_class_method", (FoundryExtensionInterfaceFunctionPtr)&FoundryExtension::_register_extension_class_method);
 	register_interface_function("classdb_register_extension_class_virtual_method", (FoundryExtensionInterfaceFunctionPtr)&FoundryExtension::_register_extension_class_virtual_method);

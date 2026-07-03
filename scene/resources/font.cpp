@@ -29,7 +29,6 @@
 /**************************************************************************/
 
 #include "font.h"
-#include "font.compat.inc"
 
 #include "core/io/image_loader.h"
 #include "core/templates/hash_map.h"
@@ -1085,89 +1084,6 @@ void FontFile::_validate_property(PropertyInfo &p_property) const {
 
 bool FontFile::_set(const StringName &p_name, const Variant &p_value) {
 	Vector<String> tokens = p_name.operator String().split("/");
-
-#ifndef DISABLE_DEPRECATED
-	if (tokens.size() == 1 && tokens[0] == "font_path") {
-		// Compatibility, DynamicFontData.
-		load_dynamic_font(p_value);
-	}
-	if (tokens.size() == 1 && tokens[0] == "font_data") {
-		// Compatibility, DynamicFont.
-		Ref<Font> f = p_value;
-		if (f.is_valid()) {
-			fallbacks.push_back(f);
-			return true;
-		}
-		return false;
-	} else if (tokens.size() == 2 && tokens[0] == "fallback") {
-		// Compatibility, DynamicFont.
-		Ref<FontFile> f = p_value;
-		if (f.is_valid()) {
-			fallbacks.push_back(f);
-			return true;
-		}
-		return false;
-	} else if (tokens.size() == 1 && tokens[0] == "textures") {
-		// Compatibility, BitmapFont.
-		set_fixed_size(16);
-		Array textures = p_value;
-		for (int i = 0; i < textures.size(); i++) {
-			Ref<ImageTexture> tex = textures[i];
-			ERR_CONTINUE(tex.is_null());
-			set_texture_image(0, Vector2i(16, 0), i, tex->get_image());
-		}
-	} else if (tokens.size() == 1 && tokens[0] == "chars") {
-		// Compatibility, BitmapFont.
-		set_fixed_size(16);
-		PackedInt32Array arr = p_value;
-		int len = arr.size();
-		ERR_FAIL_COND_V(len % 9, false);
-		if (!len) {
-			return false;
-		}
-		int chars = len / 9;
-		for (int i = 0; i < chars; i++) {
-			const int32_t *char_data = &arr[i * 9];
-			char32_t c = char_data[0];
-			set_glyph_texture_idx(0, Vector2i(16, 0), c, char_data[1]);
-			set_glyph_uv_rect(0, Vector2i(16, 0), c, Rect2(char_data[2], char_data[3], char_data[4], char_data[5]));
-			set_glyph_offset(0, Vector2i(16, 0), c, Size2(char_data[6], char_data[7]));
-			set_glyph_advance(0, 16, c, Vector2(char_data[8], 0));
-		}
-	} else if (tokens.size() == 1 && tokens[0] == "kernings") {
-		// Compatibility, BitmapFont.
-		set_fixed_size(16);
-		PackedInt32Array arr = p_value;
-		int len = arr.size();
-		ERR_FAIL_COND_V(len % 3, false);
-		if (!len) {
-			return false;
-		}
-		for (int i = 0; i < len / 3; i++) {
-			const int32_t *kern_data = &arr[i * 3];
-			set_kerning(0, 16, Vector2i(kern_data[0], kern_data[1]), Vector2(kern_data[2], 0));
-		}
-	} else if (tokens.size() == 1 && tokens[0] == "height") {
-		// Compatibility, BitmapFont.
-		bmp_height = p_value;
-		set_fixed_size(16);
-		set_cache_descent(0, 16, bmp_height - bmp_ascent);
-	} else if (tokens.size() == 1 && tokens[0] == "ascent") {
-		// Compatibility, BitmapFont.
-		bmp_ascent = p_value;
-		set_fixed_size(16);
-		set_cache_ascent(0, 16, bmp_ascent);
-		set_cache_descent(0, 16, bmp_height - bmp_ascent);
-	} else if (tokens.size() == 1 && tokens[0] == "fallback") {
-		// Compatibility, BitmapFont.
-		Ref<Font> f = p_value;
-		if (f.is_valid()) {
-			fallbacks.push_back(f);
-			return true;
-		}
-		return false;
-	}
-#endif // DISABLE_DEPRECATED
 
 	if (tokens.size() == 2 && tokens[0] == "language_support_override") {
 		const String &lang_code = tokens[1];

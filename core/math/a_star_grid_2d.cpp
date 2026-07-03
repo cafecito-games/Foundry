@@ -29,7 +29,6 @@
 /**************************************************************************/
 
 #include "a_star_grid_2d.h"
-#include "a_star_grid_2d.compat.inc"
 
 #include "core/variant/typed_array.h"
 

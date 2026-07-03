@@ -137,11 +137,6 @@ void TextServerExtension::_bind_methods() {
 	FOUNDRY_VIRTUAL_BIND(_font_set_variation_coordinates, "font_rid", "variation_coordinates");
 	FOUNDRY_VIRTUAL_BIND(_font_get_variation_coordinates, "font_rid");
 
-#ifndef DISABLE_DEPRECATED
-	FOUNDRY_VIRTUAL_BIND(_font_set_oversampling, "font_rid", "oversampling");
-	FOUNDRY_VIRTUAL_BIND(_font_get_oversampling, "font_rid");
-#endif
-
 	FOUNDRY_VIRTUAL_BIND(_font_get_size_cache_list, "font_rid");
 	FOUNDRY_VIRTUAL_BIND(_font_clear_size_cache, "font_rid");
 	FOUNDRY_VIRTUAL_BIND(_font_remove_size_cache, "font_rid", "size");
@@ -215,10 +210,6 @@ void TextServerExtension::_bind_methods() {
 
 	FOUNDRY_VIRTUAL_BIND(_font_draw_glyph, "font_rid", "canvas", "size", "pos", "index", "color", "oversampling");
 	FOUNDRY_VIRTUAL_BIND(_font_draw_glyph_outline, "font_rid", "canvas", "size", "outline_size", "pos", "index", "color", "oversampling");
-#ifndef DISABLE_DEPRECATED
-	FOUNDRY_VIRTUAL_BIND_COMPAT(_font_draw_glyph_bind_compat_104872, "font_rid", "canvas", "size", "pos", "index", "color");
-	FOUNDRY_VIRTUAL_BIND_COMPAT(_font_draw_glyph_outline_bind_compat_104872, "font_rid", "canvas", "size", "outline_size", "pos", "index", "color");
-#endif
 
 	FOUNDRY_VIRTUAL_BIND(_font_is_language_supported, "font_rid", "language");
 	FOUNDRY_VIRTUAL_BIND(_font_set_language_support_override, "font_rid", "language", "supported");
@@ -238,10 +229,6 @@ void TextServerExtension::_bind_methods() {
 	FOUNDRY_VIRTUAL_BIND(_font_supported_feature_list, "font_rid");
 	FOUNDRY_VIRTUAL_BIND(_font_supported_variation_list, "font_rid");
 
-#ifndef DISABLE_DEPRECATED
-	FOUNDRY_VIRTUAL_BIND(_font_get_global_oversampling);
-	FOUNDRY_VIRTUAL_BIND(_font_set_global_oversampling, "oversampling");
-#endif
 	FOUNDRY_VIRTUAL_BIND(_reference_oversampling_level, "oversampling");
 	FOUNDRY_VIRTUAL_BIND(_unreference_oversampling_level, "oversampling");
 
@@ -353,10 +340,6 @@ void TextServerExtension::_bind_methods() {
 
 	FOUNDRY_VIRTUAL_BIND(_shaped_text_draw, "shaped", "canvas", "pos", "clip_l", "clip_r", "color", "oversampling");
 	FOUNDRY_VIRTUAL_BIND(_shaped_text_draw_outline, "shaped", "canvas", "pos", "clip_l", "clip_r", "outline_size", "color", "oversampling");
-#ifndef DISABLE_DEPRECATED
-	FOUNDRY_VIRTUAL_BIND_COMPAT(_shaped_text_draw_bind_compat_104872, "shaped", "canvas", "pos", "clip_l", "clip_r", "color");
-	FOUNDRY_VIRTUAL_BIND_COMPAT(_shaped_text_draw_outline_bind_compat_104872, "shaped", "canvas", "pos", "clip_l", "clip_r", "outline_size", "color");
-#endif
 
 	FOUNDRY_VIRTUAL_BIND(_shaped_text_get_grapheme_bounds, "shaped", "pos");
 	FOUNDRY_VIRTUAL_BIND(_shaped_text_next_grapheme_pos, "shaped", "pos");
@@ -366,12 +349,6 @@ void TextServerExtension::_bind_methods() {
 	FOUNDRY_VIRTUAL_BIND(_shaped_text_next_character_pos, "shaped", "pos");
 	FOUNDRY_VIRTUAL_BIND(_shaped_text_prev_character_pos, "shaped", "pos");
 	FOUNDRY_VIRTUAL_BIND(_shaped_text_closest_character_pos, "shaped", "pos");
-
-#ifndef DISABLE_DEPRECATED
-	FOUNDRY_VIRTUAL_BIND(_format_number, "number", "language");
-	FOUNDRY_VIRTUAL_BIND(_parse_number, "number", "language");
-	FOUNDRY_VIRTUAL_BIND(_percent_sign, "language");
-#endif
 
 	FOUNDRY_VIRTUAL_BIND(_strip_diacritics, "string");
 	FOUNDRY_VIRTUAL_BIND(_is_valid_identifier, "string");
@@ -1028,16 +1005,10 @@ void TextServerExtension::font_render_glyph(const RID &p_font_rid, const Vector2
 
 void TextServerExtension::font_draw_glyph(const RID &p_font_rid, const RID &p_canvas, int64_t p_size, const Vector2 &p_pos, int64_t p_index, const Color &p_color, float p_oversampling) const {
 	FOUNDRY_VIRTUAL_CALL(_font_draw_glyph, p_font_rid, p_canvas, p_size, p_pos, p_index, p_color, p_oversampling);
-#ifndef DISABLE_DEPRECATED
-	FOUNDRY_VIRTUAL_CALL(_font_draw_glyph_bind_compat_104872, p_font_rid, p_canvas, p_size, p_pos, p_index, p_color);
-#endif
 }
 
 void TextServerExtension::font_draw_glyph_outline(const RID &p_font_rid, const RID &p_canvas, int64_t p_size, int64_t p_outline_size, const Vector2 &p_pos, int64_t p_index, const Color &p_color, float p_oversampling) const {
 	FOUNDRY_VIRTUAL_CALL(_font_draw_glyph_outline, p_font_rid, p_canvas, p_size, p_outline_size, p_pos, p_index, p_color, p_oversampling);
-#ifndef DISABLE_DEPRECATED
-	FOUNDRY_VIRTUAL_CALL(_font_draw_glyph_outline_bind_compat_104872, p_font_rid, p_canvas, p_size, p_outline_size, p_pos, p_index, p_color);
-#endif
 }
 
 bool TextServerExtension::font_is_language_supported(const RID &p_font_rid, const String &p_language) const {
@@ -1113,16 +1084,6 @@ Dictionary TextServerExtension::font_supported_variation_list(const RID &p_font_
 	FOUNDRY_VIRTUAL_CALL(_font_supported_variation_list, p_font_rid, ret);
 	return ret;
 }
-
-#ifndef DISABLE_DEPRECATED
-double TextServerExtension::font_get_global_oversampling() const {
-	return 1.0;
-}
-
-void TextServerExtension::font_set_global_oversampling(double p_oversampling) {
-	// NOP
-}
-#endif
 
 void TextServerExtension::reference_oversampling_level(double p_oversampling) {
 	FOUNDRY_VIRTUAL_CALL(_reference_oversampling_level, p_oversampling);
@@ -1592,11 +1553,6 @@ void TextServerExtension::shaped_text_draw(const RID &p_shaped, const RID &p_can
 	if (FOUNDRY_VIRTUAL_CALL(_shaped_text_draw, p_shaped, p_canvas, p_pos, p_clip_l, p_clip_r, p_color, p_oversampling)) {
 		return;
 	}
-#ifndef DISABLE_DEPRECATED
-	if (FOUNDRY_VIRTUAL_CALL(_shaped_text_draw_bind_compat_104872, p_shaped, p_canvas, p_pos, p_clip_l, p_clip_r, p_color)) {
-		return;
-	}
-#endif
 	TextServer::shaped_text_draw(p_shaped, p_canvas, p_pos, p_clip_l, p_clip_r, p_color, p_oversampling);
 }
 
@@ -1604,11 +1560,6 @@ void TextServerExtension::shaped_text_draw_outline(const RID &p_shaped, const RI
 	if (FOUNDRY_VIRTUAL_CALL(_shaped_text_draw_outline, p_shaped, p_canvas, p_pos, p_clip_l, p_clip_r, p_outline_size, p_color, p_oversampling)) {
 		return;
 	}
-#ifndef DISABLE_DEPRECATED
-	if (FOUNDRY_VIRTUAL_CALL(_shaped_text_draw_outline_bind_compat_104872, p_shaped, p_canvas, p_pos, p_clip_l, p_clip_r, p_outline_size, p_color)) {
-		return;
-	}
-#endif
 	TextServer::shaped_text_draw_outline(p_shaped, p_canvas, p_pos, p_clip_l, p_clip_r, p_outline_size, p_color, p_oversampling);
 }
 
@@ -1667,32 +1618,6 @@ int64_t TextServerExtension::shaped_text_closest_character_pos(const RID &p_shap
 	}
 	return TextServer::shaped_text_closest_character_pos(p_shaped, p_pos);
 }
-
-#ifndef DISABLE_DEPRECATED
-String TextServerExtension::format_number(const String &p_string, const String &p_language) const {
-	String ret;
-	if (FOUNDRY_VIRTUAL_CALL(_format_number, p_string, p_language, ret)) {
-		return ret;
-	}
-	return TextServer::format_number(p_string, p_language);
-}
-
-String TextServerExtension::parse_number(const String &p_string, const String &p_language) const {
-	String ret;
-	if (FOUNDRY_VIRTUAL_CALL(_parse_number, p_string, p_language, ret)) {
-		return ret;
-	}
-	return TextServer::parse_number(p_string, p_language);
-}
-
-String TextServerExtension::percent_sign(const String &p_language) const {
-	String ret = "%";
-	if (FOUNDRY_VIRTUAL_CALL(_percent_sign, p_language, ret)) {
-		return ret;
-	}
-	return TextServer::percent_sign(p_language);
-}
-#endif // DISABLE_DEPRECATED
 
 bool TextServerExtension::is_valid_identifier(const String &p_string) const {
 	bool ret;

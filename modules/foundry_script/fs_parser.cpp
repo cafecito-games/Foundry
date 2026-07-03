@@ -97,18 +97,6 @@ void FSParser::update_project_settings() {
 		warning_levels[i] = (FSWarning::WarnLevel)(int)GLOBAL_GET(setting_path);
 	}
 
-#ifndef DISABLE_DEPRECATED
-	// We do not use `GLOBAL_GET`, since we check without taking overrides into account. We leave the migration of non-trivial configurations to the user.
-	if (unlikely(ProjectSettings::get_singleton()->has_setting("debug/foundry_script/warnings/exclude_addons"))) {
-		const bool is_excluding_addons = ProjectSettings::get_singleton()->get_setting("debug/foundry_script/warnings/exclude_addons", true).booleanize();
-		ProjectSettings::get_singleton()->clear("debug/foundry_script/warnings/exclude_addons");
-
-		Dictionary rules = ProjectSettings::get_singleton()->get_setting("debug/foundry_script/warnings/directory_rules");
-		rules["res://addons"] = is_excluding_addons ? WarningDirectoryRule::DECISION_EXCLUDE : WarningDirectoryRule::DECISION_INCLUDE;
-		ProjectSettings::get_singleton()->set_setting("debug/foundry_script/warnings/directory_rules", rules);
-	}
-#endif // DISABLE_DEPRECATED
-
 	warning_directory_rules.clear();
 
 	const Dictionary rules = GLOBAL_GET("debug/foundry_script/warnings/directory_rules");
@@ -6607,7 +6595,6 @@ String FSParser::SuiteNode::Local::get_name() const {
 			return String();
 	}
 }
-
 
 void FSParser::complete_extents(Node *p_node) {
 	while (!nodes_in_progress.is_empty() && nodes_in_progress.back()->get() != p_node) {

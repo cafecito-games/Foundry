@@ -86,13 +86,6 @@ class EditorInterface : public Object {
 protected:
 	static void _bind_methods();
 
-#ifndef DISABLE_DEPRECATED
-	void _popup_node_selector_bind_compat_94323(const Callable &p_callback, const TypedArray<StringName> &p_valid_types = TypedArray<StringName>());
-	void _popup_property_selector_bind_compat_94323(Object *p_object, const Callable &p_callback, const PackedInt32Array &p_type_filter = PackedInt32Array());
-	void _open_scene_from_path_bind_compat_90057(const String &scene_path);
-	static void _bind_compatibility_methods();
-#endif
-
 public:
 	static EditorInterface *get_singleton() { return singleton; }
 

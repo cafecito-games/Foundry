@@ -29,7 +29,6 @@
 /**************************************************************************/
 
 #include "audio_stream_player.h"
-#include "audio_stream_player.compat.inc"
 
 #include "scene/audio/audio_stream_player_internal.h"
 #include "servers/audio/audio_stream.h"

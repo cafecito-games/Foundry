@@ -20,9 +20,6 @@
 			If [code]true[/code], the slider will not draw background.
 		</member>
 		<member name="focus_mode" type="int" setter="set_focus_mode" getter="get_focus_mode" overrides="Control" enum="Control.FocusMode" default="FOCUS_ALL" />
-		<member name="hide_slider" type="bool" setter="set_hide_slider" getter="is_hiding_slider" default="false" deprecated="Use [member control_state] instead.">
-			If [code]true[/code], the slider and up/down arrows are hidden.
-		</member>
 		<member name="label" type="String" setter="set_label" getter="get_label" default="&quot;&quot;">
 			The text that displays to the left of the value.
 		</member>

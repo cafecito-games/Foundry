@@ -14,7 +14,7 @@
 			<return type="int" />
 			<param index="0" name="args" type="PackedStringArray" />
 			<description>
-				Script-dispatched entrypoint for project test runners. [param args] contains the user arguments from [code]OS.get_cmdline_user_args()[/code], in order. Return the desired process exit code. Async overrides are allowed.
+				Script-dispatched entrypoint for project test runners. [param args] contains the user arguments from [method OS.get_cmdline_user_args], in order. Return the desired process exit code. Async overrides are allowed.
 				Example CLI:
 				[codeblock]
 				foundry --headless project test --project . --runner res://addons/foundrylib/testlib/cli/run.fs -- --path res://tests --filter inventory

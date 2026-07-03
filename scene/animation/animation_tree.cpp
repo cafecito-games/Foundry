@@ -29,7 +29,6 @@
 /**************************************************************************/
 
 #include "animation_tree.h"
-#include "animation_tree.compat.inc"
 
 #include "animation_blend_tree.h"
 #include "scene/animation/animation_player.h"
@@ -921,13 +920,6 @@ void AnimationTree::_validate_property(PropertyInfo &p_property) const {
 }
 
 bool AnimationTree::_set(const StringName &p_name, const Variant &p_value) {
-#ifndef DISABLE_DEPRECATED
-	String name = p_name;
-	if (name == "process_callback") {
-		set_callback_mode_process(static_cast<AnimationCallbackModeProcess>((int)p_value));
-		return true;
-	}
-#endif // DISABLE_DEPRECATED
 	if (properties_dirty) {
 		_update_properties();
 	}
@@ -948,12 +940,6 @@ bool AnimationTree::_set(const StringName &p_name, const Variant &p_value) {
 }
 
 bool AnimationTree::_get(const StringName &p_name, Variant &r_ret) const {
-#ifndef DISABLE_DEPRECATED
-	if (p_name == "process_callback") {
-		r_ret = get_callback_mode_process();
-		return true;
-	}
-#endif // DISABLE_DEPRECATED
 	if (properties_dirty) {
 		_update_properties();
 	}

@@ -65,10 +65,6 @@
 #include "extensions/openxr_fb_update_swapchain_extension.h"
 #include "extensions/openxr_hand_tracking_extension.h"
 
-#ifndef DISABLE_DEPRECATED
-#include "extensions/openxr_extension_wrapper_extension.h"
-#endif // DISABLE_DEPRECATED
-
 #ifdef ANDROID_ENABLED
 #define OPENXR_LOADER_NAME "libopenxr_loader.so"
 #endif
@@ -1874,13 +1870,6 @@ void OpenXRAPI::register_extension_metadata() {
 
 void OpenXRAPI::cleanup_extension_wrappers() {
 	for (OpenXRExtensionWrapper *extension_wrapper : registered_extension_wrappers) {
-#ifndef DISABLE_DEPRECATED
-		// Fix crash when the extension wrapper comes from FoundryExtension.
-		OpenXRExtensionWrapperExtension *foundry_extension_extension_wrapper = dynamic_cast<OpenXRExtensionWrapperExtension *>(extension_wrapper);
-		if (foundry_extension_extension_wrapper) {
-			memdelete(foundry_extension_extension_wrapper);
-		} else
-#endif
 		{
 			memdelete(extension_wrapper);
 		}

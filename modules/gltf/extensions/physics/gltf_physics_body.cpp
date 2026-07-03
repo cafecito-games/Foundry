@@ -57,10 +57,6 @@ void GLTFPhysicsBody::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_inertia_diagonal", "inertia_diagonal"), &GLTFPhysicsBody::set_inertia_diagonal);
 	ClassDB::bind_method(D_METHOD("get_inertia_orientation"), &GLTFPhysicsBody::get_inertia_orientation);
 	ClassDB::bind_method(D_METHOD("set_inertia_orientation", "inertia_orientation"), &GLTFPhysicsBody::set_inertia_orientation);
-#ifndef DISABLE_DEPRECATED
-	ClassDB::bind_method(D_METHOD("get_inertia_tensor"), &GLTFPhysicsBody::get_inertia_tensor);
-	ClassDB::bind_method(D_METHOD("set_inertia_tensor", "inertia_tensor"), &GLTFPhysicsBody::set_inertia_tensor);
-#endif // DISABLE_DEPRECATED
 
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "body_type"), "set_body_type", "get_body_type");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "mass"), "set_mass", "get_mass");
@@ -69,9 +65,6 @@ void GLTFPhysicsBody::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR3, "center_of_mass"), "set_center_of_mass", "get_center_of_mass");
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR3, "inertia_diagonal"), "set_inertia_diagonal", "get_inertia_diagonal");
 	ADD_PROPERTY(PropertyInfo(Variant::QUATERNION, "inertia_orientation"), "set_inertia_orientation", "get_inertia_orientation");
-#ifndef DISABLE_DEPRECATED
-	ADD_PROPERTY(PropertyInfo(Variant::BASIS, "inertia_tensor"), "set_inertia_tensor", "get_inertia_tensor");
-#endif // DISABLE_DEPRECATED
 }
 
 String GLTFPhysicsBody::get_body_type() const {
@@ -168,16 +161,6 @@ void GLTFPhysicsBody::set_inertia_orientation(const Quaternion &p_inertia_orient
 	inertia_orientation = p_inertia_orientation;
 }
 
-#ifndef DISABLE_DEPRECATED
-Basis GLTFPhysicsBody::get_inertia_tensor() const {
-	return Basis::from_scale(inertia_diagonal);
-}
-
-void GLTFPhysicsBody::set_inertia_tensor(const Basis &p_inertia_tensor) {
-	inertia_diagonal = p_inertia_tensor.get_main_diagonal();
-}
-#endif // DISABLE_DEPRECATED
-
 Ref<GLTFPhysicsBody> GLTFPhysicsBody::from_node(const CollisionObject3D *p_body_node) {
 	Ref<GLTFPhysicsBody> physics_body;
 	physics_body.instantiate();
@@ -256,10 +239,6 @@ Ref<GLTFPhysicsBody> GLTFPhysicsBody::from_dictionary(const Dictionary &p_dictio
 	Dictionary motion;
 	if (p_dictionary.has("motion")) {
 		motion = p_dictionary["motion"];
-#ifndef DISABLE_DEPRECATED
-	} else {
-		motion = p_dictionary;
-#endif // DISABLE_DEPRECATED
 	}
 	if (motion.has("type")) {
 		// Read the body type. This representation sits between glTF's and Godot's physics nodes.
@@ -275,16 +254,6 @@ Ref<GLTFPhysicsBody> GLTFPhysicsBody::from_dictionary(const Dictionary &p_dictio
 			physics_body->body_type = PhysicsBodyType::ANIMATABLE;
 		} else if (body_type_string == "dynamic") {
 			physics_body->body_type = PhysicsBodyType::RIGID;
-#ifndef DISABLE_DEPRECATED
-		} else if (body_type_string == "character") {
-			physics_body->body_type = PhysicsBodyType::CHARACTER;
-		} else if (body_type_string == "rigid") {
-			physics_body->body_type = PhysicsBodyType::RIGID;
-		} else if (body_type_string == "vehicle") {
-			physics_body->body_type = PhysicsBodyType::VEHICLE;
-		} else if (body_type_string == "trigger") {
-			physics_body->body_type = PhysicsBodyType::TRIGGER;
-#endif // DISABLE_DEPRECATED
 		} else {
 			ERR_PRINT("Error parsing glTF physics body: The body type in the glTF file \"" + body_type_string + "\" was not recognized.");
 		}

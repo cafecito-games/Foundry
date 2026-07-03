@@ -108,11 +108,7 @@ public:
 		BREAK_WORD_BOUND = 1 << 1,
 		BREAK_GRAPHEME_BOUND = 1 << 2,
 		BREAK_ADAPTIVE = 1 << 3,
-#ifndef DISABLE_DEPRECATED
-		BREAK_TRIM_EDGE_SPACES = 1 << 4,
-#else
-	// RESERVED = 1 << 4,
-#endif
+		// RESERVED = 1 << 4,
 		BREAK_TRIM_INDENT = 1 << 5,
 		BREAK_TRIM_START_EDGE_SPACES = 1 << 6,
 		BREAK_TRIM_END_EDGE_SPACES = 1 << 7,
@@ -236,15 +232,6 @@ protected:
 	void _init_diacritics_map();
 
 	static void _bind_methods();
-
-#ifndef DISABLE_DEPRECATED
-	void _font_draw_glyph_bind_compat_104872(const RID &p_font, const RID &p_canvas, int64_t p_size, const Vector2 &p_pos, int64_t p_index, const Color &p_color = Color(1, 1, 1)) const;
-	void _font_draw_glyph_outline_bind_compat_104872(const RID &p_font, const RID &p_canvas, int64_t p_size, int64_t p_outline_size, const Vector2 &p_pos, int64_t p_index, const Color &p_color = Color(1, 1, 1)) const;
-	void _shaped_text_draw_bind_compat_104872(const RID &p_shaped, const RID &p_canvas, const Vector2 &p_pos, double p_clip_l = -1.0, double p_clip_r = -1.0, const Color &p_color = Color(1, 1, 1)) const;
-	void _shaped_text_draw_outline_bind_compat_104872(const RID &p_shaped, const RID &p_canvas, const Vector2 &p_pos, double p_clip_l = -1.0, double p_clip_r = -1.0, int64_t p_outline_size = 1, const Color &p_color = Color(1, 1, 1)) const;
-	PackedInt32Array _shaped_text_get_word_breaks_bind_compat_90732(const RID &p_shaped, BitField<TextServer::GraphemeFlag> p_grapheme_flags = GRAPHEME_IS_SPACE | GRAPHEME_IS_PUNCTUATION) const;
-	static void _bind_compatibility_methods();
-#endif
 
 public:
 	static BitField<TextOverrunFlag> get_overrun_flags_from_behavior(OverrunBehavior p_behavior);
@@ -450,10 +437,6 @@ public:
 	virtual Dictionary font_supported_feature_list(const RID &p_font_rid) const = 0;
 	virtual Dictionary font_supported_variation_list(const RID &p_font_rid) const = 0;
 
-#ifndef DISABLE_DEPRECATED
-	virtual double font_get_global_oversampling() const { return 1.0; }
-	virtual void font_set_global_oversampling(double p_oversampling) {}
-#endif
 	virtual void reference_oversampling_level(double p_oversampling) {}
 	virtual void unreference_oversampling_level(double p_oversampling) {}
 
@@ -586,13 +569,6 @@ public:
 	void debug_print_glyph(int p_idx, const Glyph &p_glyph) const;
 	void shaped_text_debug_print(const RID &p_shaped) const;
 #endif
-
-#ifndef DISABLE_DEPRECATED
-	// Number conversion.
-	virtual String format_number(const String &p_string, const String &p_language = "") const;
-	virtual String parse_number(const String &p_string, const String &p_language = "") const;
-	virtual String percent_sign(const String &p_language = "") const;
-#endif // DISABLE_DEPRECATED
 
 	// String functions.
 	virtual PackedInt32Array string_get_word_breaks(const String &p_string, const String &p_language = "", int64_t p_chars_per_line = 0) const = 0;

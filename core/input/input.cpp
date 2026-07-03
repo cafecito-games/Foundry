@@ -29,7 +29,6 @@
 /**************************************************************************/
 
 #include "input.h"
-#include "input.compat.inc"
 
 #include "core/config/project_settings.h"
 #include "core/input/default_controller_mappings.h"
