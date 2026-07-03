@@ -35,6 +35,7 @@
 
 #include "scene/gui/button.h"
 #include "scene/gui/check_box.h"
+#include "scene/gui/dialogs.h"
 #include "scene/gui/line_edit.h"
 #include "scene/gui/panel_container.h"
 #include "scene/gui/tab_container.h"
@@ -58,6 +59,24 @@ static void setup_visible_control(Control *p_control, const Size2 &p_size = Size
 	p_control->set_anchors_and_offsets_preset(Control::PRESET_TOP_LEFT);
 	p_control->set_size(p_size);
 	p_control->set_visible(true);
+}
+
+TEST_CASE("[Editor][Automation] dialog action buttons (Window internal children) are captured") {
+	// AcceptDialog adds its OK/custom buttons via an internal buttons HBox. The
+	// snapshot must descend into Window internal children so dialogs can be
+	// confirmed via automation.
+	AcceptDialog *dialog = memnew(AcceptDialog);
+	dialog->set_title("Confirm");
+	dialog->set_ok_button_text("Create");
+	SceneTree::get_singleton()->get_root()->add_child(dialog);
+	dialog->set_visible(true);
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(dialog);
+	const EditorAutomationElement *ok_button = find_element_by_role_and_name(snapshot, "button", "Create");
+	CHECK(ok_button != nullptr);
+
+	memdelete(dialog);
 }
 
 TEST_CASE("[Editor][Automation] synthetic control tree snapshot") {

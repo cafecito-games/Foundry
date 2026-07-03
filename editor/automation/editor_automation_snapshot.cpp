@@ -414,8 +414,15 @@ class EditorAutomationSnapshotBuilder {
 			return element_index;
 		}
 
-		for (int i = 0; i < p_node->get_child_count(false); i++) {
-			Node *child = p_node->get_child(i, false);
+		// Descend into internal children only for Window nodes. Dialogs
+		// (AcceptDialog/ConfirmationDialog and subclasses like CreateDialog) add
+		// their action buttons (OK/Cancel/custom) via an internal buttons HBox, so
+		// without this those buttons are invisible to automation and dialogs can
+		// never be confirmed. Regular Controls keep hiding their internal parts
+		// (e.g. SpinBox line edit, Tree/ItemList scrollbars) to avoid noise.
+		const bool include_internal = Object::cast_to<Window>(p_node) != nullptr;
+		for (int i = 0; i < p_node->get_child_count(include_internal); i++) {
+			Node *child = p_node->get_child(i, include_internal);
 			if (_should_skip_child(p_node, child)) {
 				continue;
 			}
