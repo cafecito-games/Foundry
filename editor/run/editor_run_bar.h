@@ -38,6 +38,7 @@ class Button;
 class EditorRunNative;
 class MenuButton;
 class PanelContainer;
+class RunTargetsPanel;
 class HBoxContainer;
 class AcceptDialog;
 
@@ -71,6 +72,9 @@ class EditorRunBar : public MarginContainer {
 	AcceptDialog *recovery_mode_popup = nullptr;
 
 	Button *play_button = nullptr;
+	MenuButton *run_options_button = nullptr;
+	AcceptDialog *run_targets_dialog = nullptr;
+	RunTargetsPanel *run_targets_panel = nullptr;
 	Button *pause_button = nullptr;
 	Button *stop_button = nullptr;
 	Button *play_scene_button = nullptr;
@@ -98,6 +102,9 @@ class EditorRunBar : public MarginContainer {
 	void _write_movie_toggled(bool p_enabled);
 	void _quick_run_selected(const String &p_file_path, int p_menu_item = RunXRModeMenuItem::INVALID);
 
+	void _run_options_item_pressed(int p_id);
+	void _ensure_run_targets_dialog();
+
 	void _play_current_pressed(int p_menu_item = RunXRModeMenuItem::INVALID);
 	void _play_custom_pressed(int p_menu_item = RunXRModeMenuItem::INVALID);
 
@@ -114,12 +121,24 @@ protected:
 	static void _bind_methods();
 
 public:
+	struct RunOptionsMenuEntry {
+		int id = 0;
+		String label;
+	};
+
+	enum RunOptionsMenuItem {
+		RUN_OPTIONS_CONFIGURE_RUN_TARGETS = 0,
+	};
+
+	static Vector<RunOptionsMenuEntry> build_run_options_menu_model();
+
 	static EditorRunBar *get_singleton() { return singleton; }
 
 	void recovery_mode_show_dialog();
 	void recovery_mode_reload_project();
 
 	void play_main_scene(bool p_from_native = false, const Vector<String> &p_play_args = Vector<String>());
+	void open_run_targets_configuration();
 	void play_current_scene(bool p_reload = false, const Vector<String> &p_play_args = Vector<String>());
 	void play_custom_scene(const String &p_custom, const Vector<String> &p_play_args = Vector<String>());
 

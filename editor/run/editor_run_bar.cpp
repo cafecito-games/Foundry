@@ -39,14 +39,17 @@
 #include "editor/gui/editor_quick_open_dialog.h"
 #include "editor/gui/editor_toaster.h"
 #include "editor/run/editor_run_native.h"
+#include "editor/run/run_targets_panel.h"
 #include "editor/settings/editor_command_palette.h"
 #include "editor/settings/editor_settings.h"
 #include "editor/settings/project_settings_editor.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/gui/box_container.h"
 #include "scene/gui/button.h"
+#include "scene/gui/dialogs.h"
 #include "scene/gui/menu_button.h"
 #include "scene/gui/panel_container.h"
+#include "scene/gui/popup_menu.h"
 
 #ifndef XR_DISABLED
 #include "servers/xr/xr_server.h"
@@ -90,6 +93,7 @@ void EditorRunBar::_notification(int p_what) {
 			}
 
 			_update_play_buttons();
+			run_options_button->set_button_icon(get_editor_theme_icon(SNAME("GuiDropdown")));
 			profiler_autostart_indicator->set_button_icon(get_editor_theme_icon(SNAME("ProfilerAutostartWarning")));
 			pause_button->set_button_icon(get_editor_theme_icon(SNAME("Pause")));
 			stop_button->set_button_icon(get_editor_theme_icon(SNAME("Stop")));
@@ -197,6 +201,51 @@ Vector<String> EditorRunBar::_get_xr_mode_play_args(RunXRModeMenuItem p_menu_ite
 		play_args.push_back("on");
 	}
 	return play_args;
+}
+
+void EditorRunBar::_run_options_item_pressed(int p_id) {
+	switch (p_id) {
+		case RUN_OPTIONS_CONFIGURE_RUN_TARGETS: {
+			open_run_targets_configuration();
+		} break;
+	}
+}
+
+void EditorRunBar::_ensure_run_targets_dialog() {
+	if (run_targets_dialog != nullptr) {
+		return;
+	}
+
+	run_targets_dialog = memnew(AcceptDialog);
+	run_targets_dialog->set_title(TTR("Run Targets"));
+	run_targets_dialog->set_min_size(Size2(760, 420) * EDSCALE);
+	add_child(run_targets_dialog);
+
+	run_targets_panel = memnew(RunTargetsPanel);
+	run_targets_panel->set_custom_minimum_size(Size2(760, 420) * EDSCALE);
+	run_targets_panel->set_h_size_flags(SIZE_EXPAND_FILL);
+	run_targets_panel->set_v_size_flags(SIZE_EXPAND_FILL);
+	run_targets_dialog->add_child(run_targets_panel);
+}
+
+void EditorRunBar::open_run_targets_configuration() {
+	if (Engine::get_singleton()->is_recovery_mode_hint()) {
+		return;
+	}
+
+	_ensure_run_targets_dialog();
+	run_targets_dialog->popup_centered_clamped(Size2(900, 540) * EDSCALE, 0.8);
+}
+
+Vector<EditorRunBar::RunOptionsMenuEntry> EditorRunBar::build_run_options_menu_model() {
+	Vector<RunOptionsMenuEntry> entries;
+
+	RunOptionsMenuEntry configure_run_targets;
+	configure_run_targets.id = RUN_OPTIONS_CONFIGURE_RUN_TARGETS;
+	configure_run_targets.label = TTRC("Run Targets Configuration...");
+	entries.push_back(configure_run_targets);
+
+	return entries;
 }
 
 void EditorRunBar::_quick_run_selected(const String &p_file_path, int p_menu_item) {
@@ -606,6 +655,20 @@ EditorRunBar::EditorRunBar() {
 	play_button->set_shortcut(ED_GET_SHORTCUT("editor/run_project"));
 	play_button->set_tooltip_text(TTRC("Run the project's main scene."));
 	play_button->connect(SceneStringName(pressed), callable_mp(this, &EditorRunBar::play_main_scene).bind(false, Vector<String>()));
+
+	run_options_button = memnew(MenuButton);
+	main_hbox->add_child(run_options_button);
+	run_options_button->set_theme_type_variation("RunBarButton");
+	run_options_button->set_focus_mode(Control::FOCUS_ACCESSIBILITY);
+	run_options_button->set_tooltip_text(TTRC("Run Options"));
+	run_options_button->set_accessibility_name(TTRC("Run Options"));
+	run_options_button->set_flat(false);
+
+	PopupMenu *run_options_popup = run_options_button->get_popup();
+	for (const RunOptionsMenuEntry &entry : build_run_options_menu_model()) {
+		run_options_popup->add_item(entry.label, entry.id);
+	}
+	run_options_popup->connect(SceneStringName(id_pressed), callable_mp(this, &EditorRunBar::_run_options_item_pressed));
 
 	pause_button = memnew(Button);
 	main_hbox->add_child(pause_button);

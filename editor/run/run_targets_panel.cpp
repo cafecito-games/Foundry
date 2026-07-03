@@ -162,25 +162,47 @@ void RunTargetsPanel::_ensure_manager() {
 		return;
 	}
 
-	manager = RunTargetManager::get_singleton();
-	if (manager != nullptr) {
-		// Another owner (the run-bar selector) already created and configured the
-		// manager; consume it without taking ownership.
+	auto mark_config_read_only = [this](Error p_load_error) {
+		// A malformed/unreadable run_targets.cfg leaves the manager without a save
+		// path; editing would silently lose changes, so keep the panel read-only and
+		// tell the user instead of pretending edits persist.
+		config_writable = false;
+		ERR_PRINT(vformat("Run Targets: could not load \"%s\" (error %d). The panel is read-only until the file is fixed.", String(RUN_TARGETS_CONFIG_PATH), p_load_error));
+	};
+
+	auto use_shared_manager = [this, &mark_config_read_only](RunTargetManager *p_manager) {
+		if (p_manager == nullptr) {
+			return false;
+		}
+
+		manager = p_manager;
+		if (manager->get_last_load_error() != OK || !manager->has_loaded_config_path()) {
+			mark_config_read_only(manager->get_last_load_error());
+		}
+		return true;
+	};
+
+	EditorRunNative *run_native = EditorRunNative::get_singleton();
+	if (run_native != nullptr && use_shared_manager(run_native->get_run_target_manager())) {
+		// The run bar's deploy dropdown owns the live manager; consume it without
+		// taking ownership so configuration edits update the same state.
 		return;
 	}
 
-	// No manager has been installed yet. Create a minimal one so the dock works on
-	// its own, load the project's targets, register the iOS adapter on macOS, and
-	// publish it so the rest of the editor shares this single instance.
+	if (use_shared_manager(RunTargetManager::get_singleton())) {
+		// Fallback compatibility for callers that still publish a manager through
+		// the legacy singleton path.
+		return;
+	}
+
+	// No shared manager is available yet. Create a minimal one so the panel works
+	// on its own, load the project's targets, register the iOS adapter on macOS,
+	// and publish it so other fallback consumers share this single instance.
 	manager = memnew(RunTargetManager);
 	owns_manager = true;
 	const Error load_error = manager->load(RUN_TARGETS_CONFIG_PATH);
 	if (load_error != OK) {
-		// A malformed/unreadable run_targets.cfg leaves the manager without a save
-		// path; editing would silently lose changes, so keep the dock read-only and
-		// tell the user instead of pretending edits persist.
-		config_writable = false;
-		ERR_PRINT(vformat("Run Targets: could not load \"%s\" (error %d). The dock is read-only until the file is fixed.", String(RUN_TARGETS_CONFIG_PATH), load_error));
+		mark_config_read_only(load_error);
 	}
 
 #ifdef MACOS_ENABLED
@@ -213,6 +235,10 @@ bool RunTargetsPanel::_get_selected_target(RunTarget &r_target) const {
 }
 
 void RunTargetsPanel::_commit_target(int p_index, const RunTarget &p_target) {
+	if (!config_writable) {
+		return;
+	}
+
 	Vector<RunTarget> targets = manager->get_targets();
 	if (p_index < 0 || p_index >= targets.size()) {
 		return;
@@ -461,6 +487,10 @@ void RunTargetsPanel::_on_target_selected(int p_index) {
 }
 
 void RunTargetsPanel::_on_add_pressed() {
+	if (!config_writable) {
+		return;
+	}
+
 	Ref<EditorExportPreset> preset = _get_or_create_preset_for_platform(IOS_PLATFORM);
 
 	RunTarget target;
@@ -504,7 +534,7 @@ void RunTargetsPanel::_refresh_unconfigured_devices() {
 
 	const HashMap<String, Vector<RunTargetDevice>> devices_by_platform = _gather_devices_by_platform();
 	// build_menu_model already partitions devices into configured-target rows and
-	// SETUP_DEVICE rows for connected devices no target claims; reuse it so the dock
+	// SETUP_DEVICE rows for connected devices no target claims; reuse it so the panel
 	// and the run-bar selector agree on which devices still need setting up.
 	const Vector<RunTargetMenuEntry> entries = EditorRunNative::build_menu_model(manager->get_targets(), devices_by_platform);
 
@@ -558,6 +588,10 @@ void RunTargetsPanel::_on_setup_device_pressed(const String &p_platform, const S
 }
 
 void RunTargetsPanel::_on_remove_pressed() {
+	if (!config_writable) {
+		return;
+	}
+
 	const int index = _selected_target_index();
 	if (index < 0) {
 		return;
@@ -572,6 +606,10 @@ void RunTargetsPanel::_on_remove_pressed() {
 }
 
 void RunTargetsPanel::_on_rename_pressed() {
+	if (!config_writable) {
+		return;
+	}
+
 	RunTarget target;
 	if (!_get_selected_target(target)) {
 		return;
@@ -583,6 +621,10 @@ void RunTargetsPanel::_on_rename_pressed() {
 }
 
 void RunTargetsPanel::_on_rename_confirmed() {
+	if (!config_writable) {
+		return;
+	}
+
 	const int index = _selected_target_index();
 	if (index < 0) {
 		return;
@@ -621,6 +663,10 @@ void RunTargetsPanel::_on_signing_mode_changed(int p_index) {
 	if (updating_fields) {
 		return;
 	}
+	if (!config_writable) {
+		return;
+	}
+
 	const int index = _selected_target_index();
 	if (index < 0) {
 		return;
@@ -638,6 +684,10 @@ void RunTargetsPanel::_on_bundle_id_submitted() {
 	if (updating_fields) {
 		return;
 	}
+	if (!config_writable) {
+		return;
+	}
+
 	RunTarget target;
 	if (!_get_selected_target(target)) {
 		return;
@@ -655,6 +705,10 @@ void RunTargetsPanel::_on_bundle_id_submitted() {
 }
 
 void RunTargetsPanel::_apply_team_id(const String &p_team_id) {
+	if (!config_writable) {
+		return;
+	}
+
 	const int index = _selected_target_index();
 	if (index < 0) {
 		return;
@@ -711,6 +765,10 @@ void RunTargetsPanel::_on_device_changed(int p_index) {
 	if (updating_fields) {
 		return;
 	}
+	if (!config_writable) {
+		return;
+	}
+
 	const int index = _selected_target_index();
 	if (index < 0) {
 		return;
@@ -883,7 +941,6 @@ void RunTargetsPanel::_notification(int p_what) {
 
 RunTargetsPanel::RunTargetsPanel() {
 	set_name(TTRC("Run Targets"));
-	set_default_slot(EditorDock::DOCK_SLOT_RIGHT_BR);
 
 	HSplitContainer *split = memnew(HSplitContainer);
 	split->set_v_size_flags(SIZE_EXPAND_FILL);

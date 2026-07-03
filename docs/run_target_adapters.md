@@ -7,17 +7,18 @@ one-click as the in-editor Play button. The iOS adapter shipped first (epic
 the running example) by implementing a single interface.
 
 The whole point of the layer is that you write **one adapter class** and the rest
-of the editor — the run-bar dropdown beside Play, the Targets dock, the readiness
-"doctor", target persistence — works for your platform with no further changes.
+of the editor — the run-bar deploy dropdown, Run Targets configuration, the
+readiness "doctor", target persistence — works for your platform with no further
+changes.
 
 ## Architecture at a glance
 
 ```
                        ┌──────────────────────────────┐
-   run-bar dropdown ──▶│                              │
+   deploy dropdown ───▶│                              │
    (EditorRunNative)   │       RunTargetManager       │──▶ RunTargetPlatform
                        │  owns targets + active sel.   │      (your adapter)
-   Targets dock ──────▶│  dispatches by platform str.  │
+   configuration UI ──▶│  dispatches by platform str.  │
    (RunTargetsPanel)   └──────────────────────────────┘            │
                                      ▲                              ▼
                               RunTarget records              RunTargetReadiness
@@ -36,8 +37,9 @@ of the editor — the run-bar dropdown beside Play, the Targets dock, the readin
 - **`EditorRunNative`** (`editor/run/editor_run_native.cpp`) — the editor surface
   that constructs the manager, registers the built-in adapters, and renders the
   run-bar dropdown. This is where you register your adapter.
-- **`RunTargetsPanel`** (`editor/run/run_targets_panel.cpp`) — the Targets dock.
-  It consumes the manager generically; you do not normally touch it.
+- **`RunTargetsPanel`** (`editor/run/run_targets_panel.cpp`) — the Run Targets
+  configuration panel shown in the run-options modal. It consumes the manager
+  generically; you do not normally touch it.
 
 Every UI surface renders from the same data the adapter returns, so detection
 logic is written **once** and never duplicated.
@@ -54,8 +56,8 @@ public:
     // Enumerate the devices this platform can currently deploy to.
     virtual Vector<RunTargetDevice> list_devices() = 0;
 
-    // Optional: signing teams to offer in the Targets dock's picker. Default
-    // returns empty -> the dock falls back to a free-form team field.
+    // Optional: signing teams to offer in Run Targets configuration. Default
+    // returns empty -> the panel falls back to a free-form team field.
     virtual Vector<SigningTeam> list_signing_teams() { return {}; }
 
     // Deploy and launch. p_debug_flags is a bitmask of
@@ -201,7 +203,8 @@ open. If you want the same for Android, mirror that file: derive sensible
 defaults (e.g. an application id), write an `export_presets.cfg` Android preset
 and a `run_targets.cfg` target with `platform = "android"`, and wire a radio
 button in `editor/project_manager/project_dialog.cpp`. This is optional — adapters
-work without a template; users just add a target manually in the Targets dock.
+work without a template; users just add a target manually in Run Targets
+configuration.
 
 ### 7. Add tests
 
@@ -227,12 +230,13 @@ scons platform=macos target=editor dev_mode=yes tests=yes
 - **Dispatch key.** The string you pass to `register_platform("...")` must equal
   the `RunTarget::platform` value. Mismatch → `resolve()` returns
   `ERR_UNAVAILABLE` and nothing runs.
-- **Tolerate a null manager.** Editor surfaces reach the manager via
-  `RunTargetManager::get_singleton()`, which can be null (headless tooling, early
-  startup). Any new consumer must handle null.
+- **Use the shared manager.** `EditorRunNative` owns the live `RunTargetManager`
+  used by the deploy dropdown. Configuration surfaces should prefer
+  `EditorRunNative::get_singleton()->get_run_target_manager()` when available and
+  handle null while the editor is still starting or in headless tooling.
 - **Keep detection pure.** `probe_readiness` and any ladder logic must not touch
   the UI or run anything. Gather raw signals, decide from data — that is what
-  makes it testable and keeps the dropdown and dock in sync.
+  makes it testable and keeps the dropdown and configuration panel in sync.
 - **Wrap, don't reimplement.** Reuse the platform's existing export/run path.
   `run()` is glue, not a second deploy engine.
 - **`device_id == "auto"`.** Resolve `"auto"`/empty to a concrete device the same
@@ -242,12 +246,11 @@ scons platform=macos target=editor dev_mode=yes tests=yes
   `EditorRunNative`'s constructor, `memdelete` in its destructor, and
   `unregister_platform` first.
 - **`-Werror=shadow`.** Linux CI compiles with `-Wshadow -Werror`; a local macOS
-  build does **not** catch it. Avoid local names that shadow a member — notably,
-  `EditorDock` has a `String title` member, so never name a local `title` in dock
-  code (use `title_label`). This has failed CI before.
+  build does **not** catch it. Avoid local names that shadow inherited members in
+  UI code; use specific names such as `title_label`. This has failed CI before.
 - **Signing teams are optional.** Only override `list_signing_teams()` if your
-  platform actually has a team concept; otherwise the default empty list gives the
-  Targets dock a free-form field, which is correct for Android.
+  platform actually has a team concept; otherwise the default empty list gives
+  Run Targets configuration a free-form field, which is correct for Android.
 
 ## Reference files
 
@@ -259,6 +262,6 @@ scons platform=macos target=editor dev_mode=yes tests=yes
 | Readiness Doctor | `editor/run/run_target_readiness.{h,cpp}` |
 | Reference adapter (iOS) | `editor/run/ios_run_target_platform.{h,cpp}` |
 | Registration + run-bar dropdown | `editor/run/editor_run_native.{h,cpp}` |
-| Targets dock | `editor/run/run_targets_panel.{h,cpp}` |
+| Run Targets configuration panel | `editor/run/run_targets_panel.{h,cpp}` |
 | Project template (optional) | `editor/project_manager/ios_project_template.{h,cpp}` |
 | Design spec | `docs/superpowers/specs/2026-06-26-ios-run-targets-design.md` |

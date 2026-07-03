@@ -103,10 +103,11 @@ Error seed(const String &p_project_path, const String &p_project_name) {
 		return targets_error;
 	}
 
-	// Ask the editor to reveal the Targets dock the first time this project is
-	// opened, landing the user on the readiness ladder ("here's what's left to run
-	// on your phone") instead of leaving the seeded target undiscovered.
-	return RunTargetManager::request_show_dock_on_first_open(targets_path);
+	// Ask the editor to reveal Run Targets configuration the first time this
+	// project is opened, landing the user on the readiness ladder ("here's what's
+	// left to run on your phone") instead of leaving the seeded target
+	// undiscovered.
+	return RunTargetManager::request_show_configuration_on_first_open(targets_path);
 }
 
 } // namespace IOSProjectTemplate

@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers-extended-cc:subagent-driven-development (recommended) or superpowers-extended-cc:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make running a Godot game on a physical iPhone as discoverable and one-click as the in-editor Play button, by adding a platform-agnostic "run target" layer (data model, readiness doctor, run-bar dropdown, targets dock, project wizard) on top of the existing iOS export/`run()` machinery.
+**Goal:** Make running a Godot game on a physical iPhone as discoverable and one-click as the in-editor Play button, by adding a platform-agnostic "run target" layer (data model, readiness doctor, run-bar dropdown, Run Targets configuration, project wizard) on top of the existing iOS export/`run()` machinery.
 
-**Architecture:** A new `RunTarget` record (in `run_targets.cfg`) references an existing export preset and adds device/team/signing metadata. A `RunTargetManager` resolves targets and owns the active selection; a `RunTargetReadiness` "Doctor" probes prerequisites and emits an ordered, renderable step ladder; a `RunTargetPlatform` adapter wraps the existing iOS enumeration + `run()`. UI surfaces (run-bar selector, targets dock, project-manager wizard) render from these. Execution reuses the existing export-to-`.xcarchive` + `xcodebuild`/`devicectl` path, adding `-allowProvisioningUpdates` and routing failures through the Doctor's shared error vocabulary.
+**Architecture:** A new `RunTarget` record (in `run_targets.cfg`) references an existing export preset and adds device/team/signing metadata. A `RunTargetManager` resolves targets and owns the active selection; a `RunTargetReadiness` "Doctor" probes prerequisites and emits an ordered, renderable step ladder; a `RunTargetPlatform` adapter wraps the existing iOS enumeration + `run()`. UI surfaces (run-bar selector, Run Targets configuration, project-manager wizard) render from these. Execution reuses the existing export-to-`.xcarchive` + `xcodebuild`/`devicectl` path, adding `-allowProvisioningUpdates` and routing failures through the Doctor's shared error vocabulary.
 
 **Tech Stack:** C++ (Godot engine, editor module), SCons build, doctest unit tests, macOS shell tools (`xcrun`, `devicectl`, `xcodebuild`, `xcode-select`).
 
@@ -23,7 +23,7 @@
 | `editor/run/ios_run_target_platform.h/.cpp` | iOS adapter: wraps existing enumeration + `run()`; readiness probes via shell tools behind an injectable command seam | New |
 | `editor/export/editor_export_platform_apple_embedded.cpp` | Extract enumeration + run logic into adapter-callable methods; add `-allowProvisioningUpdates` | Modify |
 | `editor/run/editor_run_native.cpp/.h` | Upgrade deploy menu into the run-bar target selector | Modify |
-| `editor/run/run_targets_panel.h/.cpp` | Dockable targets/signing/readiness panel | New |
+| `editor/run/run_targets_panel.h/.cpp` | Configuration panel for targets/signing/readiness | New |
 | `editor/project_manager/.../*` | "Mobile (iOS)" project template seeding preset + target | Modify |
 | `tests/editor/run/test_run_target.h` | RunTarget model + manager unit tests | New |
 | `tests/editor/run/test_run_target_readiness.h` | Doctor parsing/ladder tests with captured fixtures | New |
@@ -178,13 +178,13 @@
 
 ---
 
-## Task 6: Targets dock panel
+## Task 6: Run Targets configuration panel
 
-**Goal:** A dockable panel to manage targets, edit signing/devices, and view the live readiness ladder.
+**Goal:** A configuration panel to manage targets, edit signing/devices, and view the live readiness ladder.
 
 **Files:**
 - Create: `editor/run/run_targets_panel.h`, `editor/run/run_targets_panel.cpp`
-- Modify: editor dock registration (follow an existing bottom/right dock registration pattern)
+- Modify: editor configuration surface registration
 
 **Acceptance Criteria:**
 - [ ] Targets list supports add/remove/rename; each target binds to an export preset (auto-create if the project has none for the platform).
@@ -193,14 +193,14 @@
 - [ ] Edits write through to `run_targets.cfg` (target/device/team) and the linked export preset (bundle id, signing).
 - [ ] Opening the panel triggers an on-demand reprobe; **Recheck** reprobes a single target.
 
-**Verify:** Manual: open panel, edit bundle id, confirm it persists to the export preset; toggle a fixture/stubbed readiness state and confirm the ladder re-renders.
+**Verify:** Manual: open Run Targets configuration, edit bundle id, confirm it persists to the export preset; toggle a fixture/stubbed readiness state and confirm the ladder re-renders.
 
 **Steps:**
 - [ ] Build the three-region `VBoxContainer` panel; bind list selection to the editor area.
 - [ ] Wire writes to `RunTargetStore` and `EditorExportPreset` setters; debounce bundle-id validation.
 - [ ] Render the ladder from `RunTargetReadiness`; wire Recheck → reprobe → refresh.
-- [ ] Register as a dock and as the "Manage targets…" / "Set up this device…" target from Task 5.
-- [ ] Commit: `feat(editor): add Run Targets dock with signing and readiness`.
+- [ ] Expose as the "Manage targets…" / "Set up this device…" target from Task 5.
+- [ ] Commit: `feat(editor): add Run Targets configuration with signing and readiness`.
 
 ---
 
@@ -215,14 +215,14 @@
 - [ ] A "Mobile (iOS)" choice appears alongside renderer options in new-project creation.
 - [ ] Choosing it writes an `iOS` export preset with mobile defaults (portrait, correct renderer, placeholder bundle id derived from project name) and a `run_targets.cfg` with one `iOS Device` target (`signing_mode=automatic`, `device_id=auto`, empty `team_id`).
 - [ ] No signing or device detection is attempted at create time.
-- [ ] On first editor open of such a project, the Targets dock opens to the readiness ladder.
+- [ ] On first editor open of such a project, Run Targets configuration opens to the readiness ladder.
 
-**Verify:** Manual: create a project with the option; confirm `export_presets.cfg` and `run_targets.cfg` contents; open editor and confirm the dock opens.
+**Verify:** Manual: create a project with the option; confirm `export_presets.cfg` and `run_targets.cfg` contents; open editor and confirm Run Targets configuration opens.
 
 **Steps:**
 - [ ] Add the option to the new-project UI; follow the existing renderer-selection wiring.
 - [ ] On create, generate the preset + `run_targets.cfg` (derive bundle id: lowercase, strip non-alphanumerics → `com.example.<slug>`).
-- [ ] Add a first-open flag the editor reads to auto-open the Targets dock.
+- [ ] Add a first-open flag the editor reads to auto-open Run Targets configuration.
 - [ ] Commit: `feat(project-manager): add Mobile (iOS) project template seeding run target`.
 
 ---
@@ -249,6 +249,6 @@
 
 ## Self-Review
 
-- **Spec coverage:** data model (T0), adapter+contract (T1), manager (T2), Doctor (T3), iOS execution + automatic provisioning (T4), run-bar dropdown (T5), targets dock (T6), wizard (T7), testing/manual QA (T3/T8). All spec sections mapped.
+- **Spec coverage:** data model (T0), adapter+contract (T1), manager (T2), Doctor (T3), iOS execution + automatic provisioning (T4), run-bar dropdown (T5), Run Targets configuration (T6), wizard (T7), testing/manual QA (T3/T8). All spec sections mapped.
 - **Type consistency:** `RunTarget`, `ReadinessStep{id,title,detail,status,fix_hint}`, `RunTargetPlatform{probe_readiness,list_devices,run}`, `RunTargetManager{resolve,set_active_target}` used consistently across tasks.
 - **Dependencies:** T1→T0; T2→T1; T3→T1; T4→T2,T3; T5→T2,T3,T4; T6→T2,T3,T4; T7→T0; T8→T3.

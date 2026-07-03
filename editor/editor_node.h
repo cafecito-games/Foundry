@@ -99,7 +99,6 @@ class EditorQuickOpenDialog;
 class FBXImporterManager;
 class FileSystemDock;
 class HistoryDock;
-class RunTargetsPanel;
 class OrphanResourcesDialog;
 class ProgressDialog;
 class ProjectExportDialog;
@@ -303,7 +302,6 @@ private:
 	EditorSelectionHistory *editor_history = nullptr; // Always points at the active context's history (the no_scene_context's when no scene is open).
 	EditorSettingsDialog *editor_settings_dialog = nullptr;
 	HistoryDock *history_dock = nullptr;
-	RunTargetsPanel *run_targets_dock = nullptr;
 
 	ProjectExportDialog *project_export = nullptr;
 	ProjectSettingsEditor *project_settings_editor = nullptr;
@@ -740,7 +738,7 @@ private:
 	void _immediate_dialog_confirmed();
 
 	void _begin_first_scan();
-	void _show_run_targets_dock_on_first_open();
+	void _show_run_targets_configuration_on_first_open();
 
 	void _notify_nodes_scene_reimported(Node *p_node, Array p_reimported_nodes);
 

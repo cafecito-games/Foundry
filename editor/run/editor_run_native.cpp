@@ -192,7 +192,8 @@ void EditorRunNative::_rebuild_popup() {
 			const RunTargetMenuEntry &entry = run_target_entries[i];
 			// Connected-but-unconfigured devices are already listed (and deployable)
 			// through the legacy rows below; the guided "set up" affordance for them
-			// lives in the Targets dock, so only configured targets are enriched here.
+			// lives in Run Targets configuration, so only configured targets are
+			// enriched here.
 			if (entry.kind != RunTargetMenuEntry::TARGET) {
 				continue;
 			}

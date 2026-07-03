@@ -35,9 +35,17 @@
 #include "editor/run/run_target_platform.h"
 #include "editor/run/run_targets_panel.h"
 
+#include "editor/docks/editor_dock.h"
+#include "scene/gui/box_container.h"
+
 #include "tests/test_macros.h"
 
+#include <type_traits>
+
 namespace TestRunTargetsPanel {
+
+static_assert(std::is_base_of<VBoxContainer, RunTargetsPanel>::value, "RunTargetsPanel must be embeddable in dialogs as a VBoxContainer.");
+static_assert(!std::is_base_of<EditorDock, RunTargetsPanel>::value, "RunTargetsPanel must not be registered as an editor dock.");
 
 static ReadinessStep make_step(const String &p_id, ReadinessStep::Status p_status) {
 	ReadinessStep step;

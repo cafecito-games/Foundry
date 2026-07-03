@@ -106,7 +106,7 @@ TEST_CASE("[Editor][IOSProjectTemplate] Seeding writes a single default run targ
 	CHECK_EQ(targets[0], IOSProjectTemplate::make_default_target());
 }
 
-TEST_CASE("[Editor][IOSProjectTemplate] Seeding requests the Targets dock on first open") {
+TEST_CASE("[Editor][IOSProjectTemplate] Seeding requests Run Targets configuration on first open") {
 	const String dir = TestUtils::get_temp_path("ios_template_first_open");
 	DirAccess::make_dir_recursive_absolute(dir);
 
@@ -115,9 +115,9 @@ TEST_CASE("[Editor][IOSProjectTemplate] Seeding requests the Targets dock on fir
 	const String targets_path = dir.path_join("run_targets.cfg");
 
 	// The first-open marker fires exactly once: the first consume (first editor
-	// open) reveals the dock; a later open sees nothing.
-	CHECK(RunTargetManager::consume_show_dock_on_first_open(targets_path));
-	CHECK_FALSE(RunTargetManager::consume_show_dock_on_first_open(targets_path));
+	// open) reveals configuration; a later open sees nothing.
+	CHECK(RunTargetManager::consume_show_configuration_on_first_open(targets_path));
+	CHECK_FALSE(RunTargetManager::consume_show_configuration_on_first_open(targets_path));
 
 	// Consuming the marker must leave the seeded default target untouched.
 	const Vector<RunTarget> targets = RunTarget::load_all(targets_path);

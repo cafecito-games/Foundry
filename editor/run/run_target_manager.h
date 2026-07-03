@@ -51,22 +51,26 @@ class EditorExportPreset;
 // fake adapter and a fake preset provider.
 class RunTargetManager {
 public:
-	// Process-wide accessor so editor surfaces (the run-bar target selector and
-	// the Targets dock) can reach the single manager that owns the project's run
-	// targets without threading it through constructors. The editor creates the
-	// manager once and installs it here; consumers read it and must tolerate a
-	// null result (e.g. headless tooling, or before the editor has set it up).
+	// Process-wide fallback accessor for editor surfaces that need a manager when
+	// the run bar's `EditorRunNative` owner is unavailable. Consumers read it and
+	// must tolerate a null result (e.g. headless tooling, or before the editor has
+	// set up a fallback manager).
 	static RunTargetManager *get_singleton();
 	static void set_singleton(RunTargetManager *p_manager);
 
-	// First-open marker for the Targets dock. The "Mobile (iOS)" project template
-	// seeds a half-configured run target and asks the editor to reveal the Targets
-	// dock once, on first open, so the run-target workflow is discoverable. The flag
-	// is stored in run_targets.cfg's meta section so no extra file is introduced.
+	// First-open marker for Run Targets configuration. The "Mobile (iOS)"
+	// project template seeds a half-configured run target and asks the editor to
+	// reveal configuration once, on first open, so the run-target workflow is
+	// discoverable. The flag is stored in run_targets.cfg's meta section so no
+	// extra file is introduced.
 	//
-	// `request_show_dock_on_first_open` writes the flag, preserving any targets and
-	// active selection already in the file. `consume_show_dock_on_first_open` reports
-	// whether the flag was set and clears it, so the dock is revealed at most once.
+	// `request_show_configuration_on_first_open` writes the flag, preserving any
+	// targets and active selection already in the file.
+	// `consume_show_configuration_on_first_open` reports whether the flag was set
+	// and clears it, so configuration is revealed at most once.
+	static Error request_show_configuration_on_first_open(const String &p_config_path);
+	static bool consume_show_configuration_on_first_open(const String &p_config_path);
+
 	static Error request_show_dock_on_first_open(const String &p_config_path);
 	static bool consume_show_dock_on_first_open(const String &p_config_path);
 
@@ -97,6 +101,8 @@ public:
 	// file yields an empty target list (not an error). Returns the load error for
 	// a malformed/unreadable file.
 	Error load(const String &p_path);
+	Error get_last_load_error() const { return last_load_error; }
+	bool has_loaded_config_path() const { return !config_path.is_empty(); }
 
 	// Persists the current targets and active selection back to the loaded path.
 	Error save();
@@ -127,6 +133,7 @@ private:
 	Vector<RunTarget> targets;
 	String active_target_name;
 	String config_path;
+	Error last_load_error = ERR_UNCONFIGURED;
 	HashMap<String, RunTargetPlatform *> adapters;
 	PresetProvider *preset_provider = nullptr;
 

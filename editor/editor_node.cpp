@@ -152,7 +152,6 @@
 #include "editor/run/editor_run_bar.h"
 #include "editor/run/game_view_plugin.h"
 #include "editor/run/run_target_manager.h"
-#include "editor/run/run_targets_panel.h"
 #include "editor/scene/3d/material_3d_conversion_plugins.h"
 #include "editor/scene/3d/mesh_library_editor_plugin.h"
 #include "editor/scene/3d/node_3d_editor_plugin.h"
@@ -1451,10 +1450,10 @@ void EditorNode::_sources_changed(bool p_exist) {
 
 		_load_editor_layout();
 
-		// Reveal the Targets dock the first time a freshly seeded "Mobile (iOS)"
-		// project is opened, so the run-target readiness ladder is discoverable.
-		// Runs after the layout load so it wins over the restored active tab.
-		_show_run_targets_dock_on_first_open();
+		// Reveal Run Targets configuration the first time a freshly seeded
+		// "Mobile (iOS)" project is opened, so the run-target readiness ladder is
+		// discoverable. Runs after the layout load so it wins over restored UI.
+		_show_run_targets_configuration_on_first_open();
 
 		if (!defer_load_scene.is_empty()) {
 			OS::get_singleton()->benchmark_begin_measure("Editor", "Load Scene");
@@ -6258,19 +6257,19 @@ void EditorNode::_begin_first_scan() {
 	requested_first_scan = true;
 }
 
-void EditorNode::_show_run_targets_dock_on_first_open() {
+void EditorNode::_show_run_targets_configuration_on_first_open() {
 	// Command-line/headless runs (export, import, tests) must not consume the
-	// one-shot marker: there is no dock to reveal, and burning it here would mean
-	// the first interactive open never shows the dock.
-	if (cmdline_mode || run_targets_dock == nullptr || editor_dock_manager == nullptr) {
+	// one-shot marker: there is no modal to reveal, and burning it here would
+	// mean the first interactive open never shows Run Targets configuration.
+	if (cmdline_mode || Engine::get_singleton()->is_recovery_mode_hint() || project_run_bar == nullptr) {
 		return;
 	}
 
 	// The marker is seeded into the project's run_targets.cfg by the "Mobile (iOS)"
-	// project template and consumed (read once, then cleared) here, so the dock is
-	// revealed exactly once — on the first editor open of a freshly created project.
-	if (RunTargetManager::consume_show_dock_on_first_open("res://run_targets.cfg")) {
-		editor_dock_manager->focus_dock(run_targets_dock);
+	// project template and consumed here, so Run Targets configuration is revealed
+	// exactly once on the first editor open of a freshly created project.
+	if (RunTargetManager::consume_show_configuration_on_first_open("res://run_targets.cfg")) {
+		project_run_bar->open_run_targets_configuration();
 	}
 }
 
@@ -9460,9 +9459,6 @@ EditorNode::EditorNode() {
 
 	history_dock = memnew(HistoryDock);
 	editor_dock_manager->add_dock(history_dock);
-
-	run_targets_dock = memnew(RunTargetsPanel);
-	editor_dock_manager->add_dock(run_targets_dock);
 
 	// Add some offsets to make LEFT_R and RIGHT_L docks wider than minsize.
 	const int dock_hsize = 280;

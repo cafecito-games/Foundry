@@ -7,7 +7,7 @@
     { "id": 3, "subject": "Task 3: RunTargetReadiness Doctor — ladder and error vocabulary", "status": "pending", "blockedBy": [1], "description": "Ordered ladder eval over injected probe results + provisioning error mapping; fixture-driven tests." },
     { "id": 4, "subject": "Task 4: iOS adapter — wrap existing enumeration and run()", "status": "pending", "blockedBy": [2, 3], "description": "IOSRunTargetPlatform reusing existing enumeration + run(); injectable CommandRunner; -allowProvisioningUpdates." },
     { "id": 5, "subject": "Task 5: Run-bar target selector", "status": "pending", "blockedBy": [2, 3, 4], "description": "Upgrade editor_run_native deploy menu into the run-bar target selector with readiness badges." },
-    { "id": 6, "subject": "Task 6: Targets dock panel", "status": "pending", "blockedBy": [2, 3, 4], "description": "Dockable panel: targets list, signing & devices, live readiness ladder." },
+    { "id": 6, "subject": "Task 6: Run Targets configuration panel", "status": "pending", "blockedBy": [2, 3, 4], "description": "Configuration panel: targets list, signing & devices, live readiness ladder." },
     { "id": 7, "subject": "Task 7: New-project Mobile (iOS) template", "status": "pending", "blockedBy": [0], "description": "Project Manager option seeding iOS export preset + default run target." },
     { "id": 8, "subject": "Task 8: Manual QA checklist", "status": "pending", "blockedBy": [3], "description": "Real-device first-run + repeat-run + failure-path manual QA doc." }
   ],

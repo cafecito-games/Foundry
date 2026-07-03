@@ -30,7 +30,8 @@
 
 #pragma once
 
-#include "editor/docks/editor_dock.h"
+#include "scene/gui/box_container.h"
+
 #include "editor/run/run_target.h"
 #include "editor/run/run_target_platform.h"
 
@@ -41,24 +42,24 @@ class LineEdit;
 class ItemList;
 class Label;
 class OptionButton;
-class VBoxContainer;
 class ConfirmationDialog;
 class EditorExportPreset;
 class RunTargetManager;
 class RunTargetPlatform;
 
-// The Targets dock: configure run targets, edit their signing/device, and view
-// the live readiness ladder for the selected target. It is a thin view over the
-// shared `RunTargetManager` (run targets + active selection) and the linked
+// Run Targets configuration: configure run targets, edit their signing/device,
+// and view the live readiness ladder for the selected target.
+// It is a thin view over the shared `RunTargetManager` (run targets + active
+// selection) and the linked
 // `EditorExportPreset` (bundle id, signing team) — it invents no new build
 // config and never duplicates the readiness logic, which lives in the Doctor.
 //
-// The manager is consumed from `RunTargetManager::get_singleton()` so the dock
-// and the run-bar selector share one source of truth. When no manager has been
-// installed yet (e.g. on a develop checkout where that owner has not landed), the
-// dock creates and installs a minimal one so it remains functional on its own.
-class RunTargetsPanel : public EditorDock {
-	FOUNDRY_CLASS(RunTargetsPanel, EditorDock);
+// The manager is consumed from `EditorRunNative` when available so the panel and
+// the run-bar selector share one source of truth. When no shared manager exists
+// yet, the panel creates and installs a minimal one so it remains functional on
+// its own.
+class RunTargetsPanel : public VBoxContainer {
+	FOUNDRY_CLASS(RunTargetsPanel, VBoxContainer);
 
 public:
 	// Validates an iOS bundle identifier the way the Apple export platform does:
@@ -73,7 +74,7 @@ public:
 	static String default_bundle_id_for_project(const String &p_project_name);
 
 	// Index of the first step the user can act on (the first non-OK rung), or -1
-	// when every step is satisfied. The dock expands this step's fix hint; pure so
+	// when every step is satisfied. The panel expands this step's fix hint; pure so
 	// the rendering decision is testable independently of the widgets.
 	static int first_actionable_step_index(const Vector<ReadinessStep> &p_steps);
 
@@ -111,7 +112,7 @@ private:
 	bool initialized = false;
 	bool updating_fields = false; // Guards field writes while loading a selection.
 	// False when the project's run_targets.cfg failed to load (malformed/unreadable)
-	// and an owned manager therefore has no usable save path; the dock disables
+	// and an owned manager therefore has no usable save path; the panel disables
 	// mutation rather than silently dropping edits.
 	bool config_writable = true;
 

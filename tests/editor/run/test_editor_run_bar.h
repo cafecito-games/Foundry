@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  ios_project_template.h                                                */
+/*  test_editor_run_bar.h                                                 */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -30,34 +30,22 @@
 
 #pragma once
 
-#include "editor/run/run_target.h"
+#ifdef TOOLS_ENABLED
 
-#include "core/error/error_list.h"
-#include "core/string/ustring.h"
+#include "editor/run/editor_run_bar.h"
 
-// Seeds a freshly created project for the "Mobile (iOS)" template so the iOS run
-// target is half-configured before the editor first opens: an `iOS` export
-// preset plus a `run_targets.cfg` with one default target. Deliberately minimal:
-// no signing attempts and no device detection (no device is plugged in yet).
-namespace IOSProjectTemplate {
+#include "tests/test_macros.h"
 
-// The export preset name the template creates and the default target links to.
-inline constexpr const char *PRESET_NAME = "iOS";
+namespace TestEditorRunBar {
 
-// Derives a placeholder reverse-DNS bundle identifier from a project name, e.g.
-// "My Game!" -> "com.example.mygame". Non-alphanumeric and non-ASCII characters
-// are stripped after lowercasing. When the name has no usable ASCII alphanumeric
-// characters, the slug falls back to "game".
-String derive_bundle_identifier(const String &p_project_name);
+TEST_CASE("[EditorRunBar] Run options menu exposes run targets configuration") {
+	const Vector<EditorRunBar::RunOptionsMenuEntry> entries = EditorRunBar::build_run_options_menu_model();
 
-// Builds the default iOS run target ("iOS Device") for a new project: automatic
-// signing, "auto" device, and an empty team id (filled on first run).
-RunTarget make_default_target();
+	REQUIRE_EQ(entries.size(), 1);
+	CHECK_EQ(entries[0].id, EditorRunBar::RUN_OPTIONS_CONFIGURE_RUN_TARGETS);
+	CHECK_EQ(entries[0].label, String("Run Targets Configuration..."));
+}
 
-// Writes `export_presets.cfg` (an `iOS` preset with the derived bundle id) and
-// `run_targets.cfg` (the default target, plus a one-shot marker asking the editor
-// to reveal Run Targets configuration on first open) into `p_project_path`.
-// Returns OK on success, or the first underlying write error otherwise.
-Error seed(const String &p_project_path, const String &p_project_name);
+} // namespace TestEditorRunBar
 
-} // namespace IOSProjectTemplate
+#endif // TOOLS_ENABLED
