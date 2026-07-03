@@ -87,16 +87,7 @@ String EditorAutomationServer::_generate_token() const {
 	CryptoCore::RandomGenerator rng;
 	ERR_FAIL_COND_V(rng.init() != OK, String());
 	ERR_FAIL_COND_V(rng.get_random_bytes(bytes, k_token_bytes) != OK, String());
-
-	String token_hex;
-	token_hex.resize(k_token_bytes * 2);
-	char *token_chars = token_hex.ptrw();
-	static const char hex_digits[] = "0123456789abcdef";
-	for (int i = 0; i < k_token_bytes; i++) {
-		token_chars[i * 2] = hex_digits[(bytes[i] >> 4) & 0x0f];
-		token_chars[i * 2 + 1] = hex_digits[bytes[i] & 0x0f];
-	}
-	return token_hex;
+	return String::hex_encode_buffer(bytes, k_token_bytes);
 }
 
 void EditorAutomationServer::_show_dev_indicator() const {
@@ -116,7 +107,7 @@ void EditorAutomationServer::start() {
 
 	const String transport_name = get_transport_name();
 	const String message = "Editor automation enabled (transport=" + transport_name + ")";
-	OS::get_singleton()->print_line(message);
+	OS::get_singleton()->print("%s\n", message.utf8().get_data());
 	EditorNode::get_log()->add_message(message, EditorLog::MSG_TYPE_EDITOR);
 	_show_dev_indicator();
 	started = true;
