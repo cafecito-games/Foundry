@@ -755,7 +755,7 @@ void InspectorDock::set_scene_context(EditorSceneContext *p_context) {
 }
 
 InspectorDock::InspectorDock(EditorData &p_editor_data) {
-	singleton = this;
+	singleton = singleton ? singleton : this;
 	set_name(TTRC("Inspector"));
 	set_icon_name("AnimationTrackList");
 	set_dock_shortcut(ED_SHORTCUT_AND_COMMAND("docks/open_inspector", TTRC("Open Inspector Dock")));
@@ -941,8 +941,26 @@ InspectorDock::InspectorDock(EditorData &p_editor_data) {
 	}
 
 	set_process_shortcut_input(true);
+
+	connect(SceneStringName(focus_entered), callable_mp(this, &InspectorDock::_dock_focus_entered));
+	connect(SceneStringName(gui_input), callable_mp(this, &InspectorDock::_dock_gui_input));
+}
+
+void InspectorDock::_dock_focus_entered() {
+	if (EditorNode::get_singleton()) {
+		EditorNode::get_singleton()->focus_pane(owning_pane);
+	}
+}
+
+void InspectorDock::_dock_gui_input(const Ref<InputEvent> &p_event) {
+	Ref<InputEventMouseButton> mb = p_event;
+	if (mb.is_valid() && mb->is_pressed() && mb->get_button_index() == MouseButton::LEFT && EditorNode::get_singleton()) {
+		EditorNode::get_singleton()->focus_pane(owning_pane);
+	}
 }
 
 InspectorDock::~InspectorDock() {
-	singleton = nullptr;
+	if (singleton == this) {
+		singleton = nullptr;
+	}
 }

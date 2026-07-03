@@ -1158,4 +1158,39 @@ TEST_CASE("[SceneTree][TabBar] Mouse interaction") {
 
 // FIXME: Add tests for keyboard navigation and other methods.
 
+TEST_CASE("[SceneTree][TabBar] tab_transferred signal") {
+	TabBar *source = memnew(TabBar);
+	TabBar *target = memnew(TabBar);
+	SceneTree::get_singleton()->get_root()->add_child(source);
+	SceneTree::get_singleton()->get_root()->add_child(target);
+	source->set_clip_tabs(false);
+	target->set_clip_tabs(false);
+	source->set_drag_to_rearrange_enabled(true);
+	target->set_drag_to_rearrange_enabled(true);
+	source->set_tabs_rearrange_group(2);
+	target->set_tabs_rearrange_group(2);
+	source->add_tab("tab0");
+	source->add_tab("tab1");
+	target->add_tab("other");
+	MessageQueue::get_singleton()->flush();
+
+	SIGNAL_WATCH(target, "tab_transferred");
+
+	const Rect2 source_tab_rect = source->get_tab_rect(0);
+	const Point2 target_point = target->get_position() + target->get_tab_rect(0).get_center();
+
+	SEND_GUI_MOUSE_BUTTON_EVENT(source_tab_rect.position, MouseButton::LEFT, MouseButtonMask::LEFT, Key::NONE);
+	SEND_GUI_MOUSE_MOTION_EVENT(source_tab_rect.position + Point2(20, 0), MouseButtonMask::LEFT, Key::NONE);
+	SEND_GUI_MOUSE_MOTION_EVENT(target_point, MouseButtonMask::LEFT, Key::NONE);
+	SEND_GUI_MOUSE_BUTTON_RELEASED_EVENT(target_point, MouseButton::LEFT, MouseButtonMask::NONE, Key::NONE);
+
+	CHECK(source->get_tab_count() == 1);
+	CHECK(target->get_tab_count() == 2);
+	SIGNAL_CHECK("tab_transferred", { { source, 0, 1 } });
+
+	SIGNAL_UNWATCH(target, "tab_transferred");
+	memdelete(source);
+	memdelete(target);
+}
+
 } // namespace TestTabBar

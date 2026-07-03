@@ -117,6 +117,7 @@ public:
 		uint64_t file_modified_time = 0;
 		NodePath live_edit_root;
 		uint64_t last_checked_version = 0;
+		int pane = 0;
 
 		Node *get_root() const;
 	};
@@ -139,6 +140,10 @@ private:
 	Vector<EditedScene> edited_scene;
 	int current_edited_scene = -1;
 	int last_created_scene = 1;
+	Vector<int> pane_current_scenes;
+	int focused_pane = 0;
+
+	void _ensure_pane_capacity(int p_pane);
 
 	bool _find_updated_instances(Node *p_root, Node *p_node, HashSet<String> &checked_paths);
 
@@ -221,6 +226,15 @@ public:
 	bool check_and_update_scene(int p_idx);
 	bool reload_scene_from_memory(int p_idx, bool p_mark_unsaved);
 	void move_edited_scene_to_index(int p_idx);
+
+	Vector<int> get_pane_scene_indices(int p_pane) const;
+	int pane_tab_to_scene_index(int p_pane, int p_tab) const;
+	int scene_index_to_pane_tab(int p_idx) const;
+	void set_scene_pane(int p_idx, int p_pane);
+	int get_pane_current_scene(int p_pane) const;
+	void set_pane_current_scene(int p_pane, int p_idx);
+	int get_focused_pane() const;
+	void set_focused_pane(int p_pane);
 
 	bool call_build();
 

@@ -98,6 +98,7 @@
 #include "editor/editor_log.h"
 #include "editor/editor_main_screen.h"
 #include "editor/editor_scene_context.h"
+#include "editor/editor_scene_workspace.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/export/dedicated_server_export_plugin.h"
 #include "editor/export/editor_export.h"
@@ -821,7 +822,7 @@ void EditorNode::_notification(int p_what) {
 
 		case NOTIFICATION_PROCESS: {
 			if (editor_data.is_scene_changed(-1)) {
-				scene_tabs->update_scene_tabs();
+				update_all_scene_tabs();
 			}
 
 			// Update the animation frame of the update spinner.
@@ -1074,7 +1075,7 @@ void EditorNode::_notification(int p_what) {
 			}
 
 			if (EditorSettings::get_singleton()->check_changed_settings_in_group("interface/scene_tabs")) {
-				scene_tabs->update_scene_tabs();
+				update_all_scene_tabs();
 			}
 
 			if (EditorSettings::get_singleton()->check_changed_settings_in_group("docks/filesystem")) {
@@ -1396,7 +1397,7 @@ void EditorNode::_resources_reimporting(const Vector<String> &p_resources) {
 }
 
 void EditorNode::_resources_reimported(const Vector<String> &p_resources) {
-	int current_tab = scene_tabs->get_current_tab();
+	const int current_scene_idx = editor_data.get_edited_scene();
 
 	for (const String &res_path : resources_reimported) {
 		if (!ResourceCache::has(res_path)) {
@@ -1419,7 +1420,8 @@ void EditorNode::_resources_reimported(const Vector<String> &p_resources) {
 	// Only refresh the current scene tab if it's been reimported.
 	// Otherwise the scene tab will try to grab focus unnecessarily.
 	bool should_refresh_current_scene_tab = false;
-	const String current_scene_tab = editor_data.get_scene_path(current_tab);
+	const int current_scene_idx = editor_data.get_edited_scene();
+	const String current_scene_tab = editor_data.get_scene_path(current_scene_idx);
 	for (const String &E : scenes_reimported) {
 		if (!should_refresh_current_scene_tab && E == current_scene_tab) {
 			should_refresh_current_scene_tab = true;
@@ -1434,7 +1436,7 @@ void EditorNode::_resources_reimported(const Vector<String> &p_resources) {
 	resources_reimported.clear();
 
 	if (should_refresh_current_scene_tab) {
-		_set_current_scene_nocheck(current_tab);
+		_set_current_scene_nocheck(current_scene_idx);
 	}
 }
 
@@ -1571,7 +1573,7 @@ void EditorNode::_reload_modified_scenes() {
 	}
 
 	_set_current_scene(current_idx);
-	scene_tabs->update_scene_tabs();
+	update_all_scene_tabs();
 	disk_changed->hide();
 }
 
@@ -2512,7 +2514,7 @@ void EditorNode::_save_scene(String p_file, int idx) {
 		editor_folding.save_scene_folding(scene, p_file);
 
 		_update_title();
-		scene_tabs->update_scene_tabs();
+		update_all_scene_tabs();
 	} else {
 		_dialog_display_save_error(p_file, err);
 	}
@@ -2613,7 +2615,7 @@ void EditorNode::_mark_unsaved_scenes() {
 	}
 
 	_update_title();
-	scene_tabs->update_scene_tabs();
+	update_all_scene_tabs();
 }
 
 bool EditorNode::_is_scene_unsaved(int p_idx) {
@@ -3355,18 +3357,23 @@ void EditorNode::_menu_option_confirm(int p_option, bool p_confirmed) {
 		} break;
 		case EditorSceneTabs::SCENE_CLOSE_OTHERS: {
 			tab_closing_menu_option = -1;
-			for (int i = 0; i < editor_data.get_edited_scene_count(); i++) {
-				if (i == editor_data.get_edited_scene()) {
-					continue;
+			const int pane = editor_data.get_focused_pane();
+			const Vector<int> pane_scenes = editor_data.get_pane_scene_indices(pane);
+			const int current = editor_data.get_edited_scene();
+			for (int idx : pane_scenes) {
+				if (idx != current) {
+					tabs_to_close.push_back(editor_data.get_scene_path(idx));
 				}
-				tabs_to_close.push_back(editor_data.get_scene_path(i));
 			}
 			_proceed_closing_scene_tabs();
 		} break;
 		case EditorSceneTabs::SCENE_CLOSE_RIGHT: {
 			tab_closing_menu_option = -1;
-			for (int i = editor_data.get_edited_scene() + 1; i < editor_data.get_edited_scene_count(); i++) {
-				tabs_to_close.push_back(editor_data.get_scene_path(i));
+			const int pane = editor_data.get_focused_pane();
+			const Vector<int> pane_scenes = editor_data.get_pane_scene_indices(pane);
+			const int current_tab = editor_data.scene_index_to_pane_tab(editor_data.get_edited_scene());
+			for (int tab = current_tab + 1; tab < pane_scenes.size(); tab++) {
+				tabs_to_close.push_back(editor_data.get_scene_path(pane_scenes[tab]));
 			}
 			_proceed_closing_scene_tabs();
 		} break;
@@ -3376,6 +3383,15 @@ void EditorNode::_menu_option_confirm(int p_option, bool p_confirmed) {
 				tabs_to_close.push_back(editor_data.get_scene_path(i));
 			}
 			_proceed_closing_scene_tabs();
+		} break;
+		case WORKSPACE_SPLIT_HORIZONTAL: {
+			_split_workspace(false);
+		} break;
+		case WORKSPACE_SPLIT_VERTICAL: {
+			_split_workspace(true);
+		} break;
+		case WORKSPACE_CLOSE_SPLIT: {
+			_unsplit_workspace();
 		} break;
 		case SCENE_CLOSE: {
 			_scene_tab_closed(editor_data.get_edited_scene());
@@ -4097,7 +4113,7 @@ void EditorNode::_discard_changes(const String &p_str) {
 			// Don't close tabs when exiting the editor (required for "restore_scenes_on_load" setting).
 			if (!_is_closing_editor()) {
 				_remove_scene(tab_closing_idx);
-				scene_tabs->update_scene_tabs();
+				update_all_scene_tabs();
 			}
 			_proceed_closing_scene_tabs();
 		} break;
@@ -4447,7 +4463,7 @@ void EditorNode::_remove_edited_scene(bool p_change_tab) {
 	}
 	editor_data.remove_scene(old_index);
 	_update_title();
-	scene_tabs->update_scene_tabs();
+	update_all_scene_tabs();
 }
 
 void EditorNode::_remove_scene(int index, bool p_change_tab) {
@@ -4590,44 +4606,41 @@ void EditorNode::_set_current_scene(int p_idx) {
 }
 
 void EditorNode::_set_current_scene_nocheck(int p_idx) {
-	// Save the folding in case the scene gets reloaded.
-	if (editor_data.get_scene_path(p_idx) != "" && editor_data.get_edited_scene_root(p_idx)) {
+	if (p_idx >= 0 && editor_data.get_scene_path(p_idx) != "" && editor_data.get_edited_scene_root(p_idx)) {
 		editor_folding.save_scene_folding(editor_data.get_edited_scene_root(p_idx), editor_data.get_scene_path(p_idx));
 	}
 
 	changing_scene = true;
-
 	resource_count.clear();
 	SceneTreeDock::get_singleton()->clear_previous_node_selection();
 
-	// Deactivates the outgoing context (detaching its viewport, with the
-	// scene still parented to it) and points the editor at the new context.
-	// This happens while the outgoing scene is still the current one, since
-	// stashing its editor plugin states runs plugin get_state()
-	// implementations that resolve node paths through the current scene.
-	_activate_scene_context(editor_data.get_scene_context(p_idx));
+	EditorSceneContext *new_context = p_idx >= 0 ? editor_data.get_scene_context(p_idx) : nullptr;
+	_activate_scene_context(new_context);
 
-	editor_data.set_edited_scene(p_idx);
+	if (p_idx >= 0) {
+		editor_data.set_edited_scene(p_idx);
+	} else {
+		editor_data.set_pane_current_scene(editor_data.get_focused_pane(), -1);
+	}
 
-	Node *new_scene = editor_data.get_edited_scene_root();
+	_apply_scene_state_for_index(p_idx);
+}
+
+void EditorNode::_apply_scene_state_for_index(int p_idx) {
+	Node *new_scene = p_idx >= 0 ? editor_data.get_edited_scene_root(p_idx) : nullptr;
 
 	if (Popup *p = Object::cast_to<Popup>(new_scene)) {
 		p->show();
 	}
 
-	// The bound scene context already holds the new root; refresh the dock's
-	// tree so it reflects it.
 	SceneTreeDock::get_singleton()->update_tree();
 	if (get_tree()) {
 		get_tree()->set_edited_scene_root(new_scene);
 	}
 
-	// Attach the new context's viewport only after the SceneTree's
-	// edited-scene root points at its scene, so enter-tree handlers observe
-	// the correct edited root.
-	_attach_active_scene_context();
+	_update_pane_display_attachments();
 
-	if (editor_data.check_and_update_scene(p_idx)) {
+	if (p_idx >= 0 && editor_data.check_and_update_scene(p_idx)) {
 		if (!editor_data.get_scene_path(p_idx).is_empty()) {
 			editor_folding.load_scene_folding(editor_data.get_edited_scene_root(p_idx), editor_data.get_scene_path(p_idx));
 		}
@@ -4635,7 +4648,7 @@ void EditorNode::_set_current_scene_nocheck(int p_idx) {
 		EditorUndoRedoManager::get_singleton()->clear_history(editor_data.get_scene_history_id(p_idx), false);
 	}
 
-	EditorSceneContext *context = editor_data.get_active_scene_context();
+	EditorSceneContext *context = active_scene_context;
 	Dictionary state;
 	if (context) {
 		editor_data.set_editor_plugin_states(context->get_editor_plugin_states());
@@ -4644,10 +4657,10 @@ void EditorNode::_set_current_scene_nocheck(int p_idx) {
 	_edit_current(true);
 
 	_update_title();
-	callable_mp(scene_tabs, &EditorSceneTabs::update_scene_tabs).call_deferred();
+	update_all_scene_tabs();
 
 	if (tabs_to_close.is_empty() && !restoring_scenes) {
-		callable_mp(this, &EditorNode::_set_main_scene_state).call_deferred(state, get_edited_scene()); // Do after everything else is done setting up.
+		callable_mp(this, &EditorNode::_set_main_scene_state).call_deferred(state, get_edited_scene());
 	}
 
 	if (!select_current_scene_file_requested && EDITOR_GET("interface/scene_tabs/auto_select_current_scene_file")) {
@@ -4657,6 +4670,7 @@ void EditorNode::_set_current_scene_nocheck(int p_idx) {
 
 	_update_undo_redo_allowed();
 	_update_unsaved_cache();
+	changing_scene = false;
 }
 
 void EditorNode::_activate_scene_context(EditorSceneContext *p_context) {
@@ -4676,7 +4690,7 @@ void EditorNode::_activate_scene_context(EditorSceneContext *p_context) {
 		// singletons (plugin states, dock scroll offsets and filters).
 		active_scene_context->set_editor_plugin_states(editor_data.get_editor_plugin_states());
 		active_scene_context->set_main_state(_get_main_scene_state());
-		if (active_scene_context->is_active()) {
+		if (active_scene_context->is_active() && !_is_context_pane_current(active_scene_context)) {
 			active_scene_context->deactivate();
 		}
 	}
@@ -4700,6 +4714,76 @@ void EditorNode::_activate_scene_context(EditorSceneContext *p_context) {
 	}
 
 	emit_signal(SNAME("active_scene_context_changed"));
+}
+
+bool EditorNode::_is_context_pane_current(EditorSceneContext *p_context) const {
+	if (!p_context || !scene_workspace) {
+		return false;
+	}
+	for (int p = 0; p < scene_workspace->get_pane_count(); p++) {
+		const int scene_idx = editor_data.get_pane_current_scene(p);
+		if (scene_idx >= 0 && editor_data.get_scene_context(scene_idx) == p_context) {
+			return true;
+		}
+	}
+	return false;
+}
+
+void EditorNode::_update_pane_display_attachments() {
+	if (!scene_workspace) {
+		_attach_active_scene_context();
+		return;
+	}
+
+	for (int i = 0; i < editor_data.get_edited_scene_count(); i++) {
+		EditorSceneContext *ctx = editor_data.get_scene_context(i);
+		bool is_pane_current = false;
+		int owning_pane = -1;
+		for (int p = 0; p < scene_workspace->get_pane_count(); p++) {
+			if (editor_data.get_pane_current_scene(p) == i) {
+				is_pane_current = true;
+				owning_pane = p;
+				break;
+			}
+		}
+
+		if (!is_pane_current) {
+			if (ctx->is_active()) {
+				ctx->deactivate();
+			}
+			continue;
+		}
+
+		EditorScenePane *pane = scene_workspace->get_pane(owning_pane);
+		const bool is_focused_pane = owning_pane == editor_data.get_focused_pane();
+		Node *scene_root = editor_data.get_edited_scene_root(i);
+		Ref<Texture2D> icon;
+		if (scene_root) {
+			icon = get_object_icon(scene_root);
+		}
+		const String scene_name = editor_data.get_scene_title(i);
+
+		if (is_focused_pane) {
+			pane->set_preview_mode(false, false, scene_name, icon);
+			if (scene_viewport_container) {
+				ctx->set_display_parent(scene_viewport_container, true);
+			}
+			_apply_scene_viewport_2d_state(ctx->get_viewport());
+			if (last_theme_preview_mode_set) {
+				_apply_preview_themes(ctx->get_viewport());
+			}
+		} else if (ctx->scene_has_3d_content()) {
+			pane->set_preview_mode(false, true, scene_name, icon);
+			if (ctx->is_active()) {
+				ctx->deactivate();
+			}
+		} else {
+			pane->set_preview_mode(true, false, scene_name, icon);
+			ctx->set_display_parent(pane->get_preview_container(), false);
+		}
+
+		ctx->get_history()->cleanup_history();
+	}
 }
 
 void EditorNode::_attach_active_scene_context() {
@@ -4727,6 +4811,205 @@ SubViewport *EditorNode::get_scene_root() {
 		return active_scene_context->get_viewport();
 	}
 	return placeholder_scene_viewport;
+}
+
+void EditorNode::update_all_scene_tabs() {
+	if (!scene_workspace) {
+		if (scene_tabs) {
+			update_all_scene_tabs();
+		}
+		return;
+	}
+	for (int p = 0; p < scene_workspace->get_pane_count(); p++) {
+		scene_workspace->get_pane(p)->get_scene_tabs()->update_scene_tabs();
+	}
+}
+
+void EditorNode::_update_focused_dock_singletons() {
+	const int focused = editor_data.get_focused_pane();
+	if (focused == 0) {
+		SceneTreeDock::set_focused_instance(SceneTreeDock::get_singleton());
+		InspectorDock::set_focused_instance(InspectorDock::get_singleton());
+	} else if (scene_tree_dock_secondary && inspector_dock_secondary) {
+		SceneTreeDock::set_focused_instance(scene_tree_dock_secondary);
+		InspectorDock::set_focused_instance(inspector_dock_secondary);
+	}
+}
+
+void EditorNode::_bind_pane_docks(int p_pane) {
+	const int scene_idx = editor_data.get_pane_current_scene(p_pane);
+	EditorSceneContext *context = scene_idx >= 0 ? editor_data.get_scene_context(scene_idx) : no_scene_context;
+	if (p_pane == 0) {
+		if (SceneTreeDock::get_singleton()) {
+			SceneTreeDock::get_singleton()->set_scene_context(context);
+		}
+		if (InspectorDock::get_singleton()) {
+			InspectorDock::get_singleton()->set_scene_context(context);
+		}
+	} else if (scene_tree_dock_secondary && inspector_dock_secondary) {
+		scene_tree_dock_secondary->set_scene_context(context);
+		inspector_dock_secondary->set_scene_context(context);
+	}
+}
+
+void EditorNode::_create_secondary_docks() {
+	if (scene_tree_dock_secondary) {
+		return;
+	}
+
+	scene_tree_dock_secondary = memnew(SceneTreeDock(editor_selection, editor_data));
+	scene_tree_dock_secondary->set_layout_key("Scene:2");
+	scene_tree_dock_secondary->set_owning_pane(1);
+	editor_dock_manager->add_dock(scene_tree_dock_secondary);
+
+	inspector_dock_secondary = memnew(InspectorDock(editor_data));
+	inspector_dock_secondary->set_layout_key("Inspector:2");
+	inspector_dock_secondary->set_owning_pane(1);
+	editor_dock_manager->add_dock(inspector_dock_secondary);
+
+	_bind_pane_docks(1);
+}
+
+void EditorNode::_destroy_secondary_docks() {
+	if (!scene_tree_dock_secondary) {
+		return;
+	}
+
+	editor_dock_manager->remove_dock(scene_tree_dock_secondary);
+	editor_dock_manager->remove_dock(inspector_dock_secondary);
+	memdelete(scene_tree_dock_secondary);
+	memdelete(inspector_dock_secondary);
+	scene_tree_dock_secondary = nullptr;
+	inspector_dock_secondary = nullptr;
+}
+
+void EditorNode::_split_workspace(bool p_vertical) {
+	if (!scene_workspace) {
+		return;
+	}
+	if (!scene_workspace->is_split()) {
+		_create_secondary_docks();
+		scene_workspace->split_workspace(p_vertical);
+		editor_data.set_pane_current_scene(1, editor_data.get_pane_current_scene(1));
+		_bind_pane_docks(1);
+	} else {
+		scene_workspace->split_workspace(p_vertical);
+	}
+	save_editor_layout_delayed();
+}
+
+void EditorNode::_unsplit_workspace() {
+	if (!scene_workspace || !scene_workspace->is_split()) {
+		return;
+	}
+
+	const Vector<int> pane_1_scenes = editor_data.get_pane_scene_indices(1);
+	for (int scene_idx : pane_1_scenes) {
+		editor_data.set_scene_pane(scene_idx, 0);
+	}
+
+	const int focused = editor_data.get_focused_pane();
+	const int pane_0_current = editor_data.get_pane_current_scene(0);
+	const int pane_1_current = editor_data.get_pane_current_scene(1);
+	const int merged_current = (focused == 1 && pane_1_current >= 0) ? pane_1_current : pane_0_current;
+	editor_data.set_pane_current_scene(0, merged_current);
+
+	_destroy_secondary_docks();
+	scene_workspace->unsplit_workspace();
+	editor_data.set_focused_pane(0);
+	focus_pane(0);
+	update_all_scene_tabs();
+	save_editor_layout_delayed();
+}
+
+void EditorNode::focus_pane(int p_pane) {
+	ERR_FAIL_COND(!scene_workspace);
+	ERR_FAIL_INDEX(p_pane, scene_workspace->get_pane_count());
+
+	if (editor_data.get_focused_pane() == p_pane) {
+		return;
+	}
+
+	editor_data.set_focused_pane(p_pane);
+	scene_workspace->set_focused_pane(p_pane);
+	EditorSceneTabs::set_focused_singleton(scene_workspace->get_pane(p_pane)->get_scene_tabs());
+	_update_focused_dock_singletons();
+
+	EditorScenePane *pane = scene_workspace->get_pane(p_pane);
+	pane->get_content_host()->add_child(editor_main_screen);
+
+	const int scene_idx = editor_data.get_pane_current_scene(p_pane);
+	_activate_scene_context(scene_idx >= 0 ? editor_data.get_scene_context(scene_idx) : nullptr);
+	_apply_scene_state_for_index(scene_idx);
+}
+
+void EditorNode::on_pane_tab_changed(int p_pane, int p_tab) {
+	focus_pane(p_pane);
+	const int scene_idx = editor_data.pane_tab_to_scene_index(p_pane, p_tab);
+	if (scene_idx >= 0) {
+		_set_current_scene(scene_idx);
+	}
+}
+
+void EditorNode::on_pane_tab_closed(int p_scene_idx) {
+	_scene_tab_closed(p_scene_idx);
+}
+
+void EditorNode::move_scene_to_other_pane(int p_scene_idx) {
+	ERR_FAIL_INDEX(p_scene_idx, editor_data.get_edited_scene_count());
+	const int source_pane = editor_data.get_edited_scenes()[p_scene_idx].pane;
+	const int target_pane = source_pane == 0 ? 1 : 0;
+
+	if (!scene_workspace->is_split()) {
+		_split_workspace(false);
+	}
+
+	editor_data.set_scene_pane(p_scene_idx, target_pane);
+	focus_pane(target_pane);
+	editor_data.set_pane_current_scene(target_pane, p_scene_idx);
+	_set_current_scene(p_scene_idx);
+	update_all_scene_tabs();
+}
+
+void EditorNode::transfer_scene_to_pane(int p_scene_idx, int p_target_pane, int p_target_tab) {
+	ERR_FAIL_INDEX(p_scene_idx, editor_data.get_edited_scene_count());
+	ERR_FAIL_COND(p_target_pane < 0 || p_target_pane >= scene_workspace->get_pane_count());
+
+	if (!scene_workspace->is_split() && p_target_pane == 1) {
+		_split_workspace(false);
+	}
+
+	const int source_pane = editor_data.get_edited_scenes()[p_scene_idx].pane;
+	editor_data.set_scene_pane(p_scene_idx, p_target_pane);
+
+	const Vector<int> target_scenes = editor_data.get_pane_scene_indices(p_target_pane);
+	int global_target = p_target_tab;
+	if (p_target_tab >= 0 && p_target_tab < target_scenes.size()) {
+		global_target = target_scenes[p_target_tab];
+	} else if (!target_scenes.is_empty()) {
+		global_target = target_scenes[target_scenes.size() - 1];
+	} else {
+		global_target = p_scene_idx;
+	}
+
+	editor_data.set_edited_scene(p_scene_idx);
+	editor_data.move_edited_scene_to_index(global_target);
+
+	if (editor_data.get_pane_current_scene(source_pane) == p_scene_idx) {
+		editor_data.set_pane_current_scene(source_pane, -1);
+	}
+	editor_data.set_pane_current_scene(p_target_pane, p_scene_idx);
+
+	focus_pane(p_target_pane);
+	_set_current_scene(p_scene_idx);
+	update_all_scene_tabs();
+}
+
+void EditorNode::focus_scene_in_pane(int p_scene_idx) {
+	ERR_FAIL_INDEX(p_scene_idx, editor_data.get_edited_scene_count());
+	const int pane = editor_data.get_edited_scenes()[p_scene_idx].pane;
+	focus_pane(pane);
+	_set_current_scene(p_scene_idx);
 }
 
 void EditorNode::configure_scene_context(EditorSceneContext *p_context) {
@@ -4877,7 +5160,7 @@ int EditorNode::new_scene() {
 	}
 
 	editor_data.clear_editor_states();
-	scene_tabs->update_scene_tabs();
+	update_all_scene_tabs();
 	return idx;
 }
 
@@ -5055,7 +5338,7 @@ Error EditorNode::load_scene(const String &p_scene, bool p_ignore_broken_deps, b
 	}
 
 	_update_title();
-	scene_tabs->update_scene_tabs();
+	update_all_scene_tabs();
 	if (!restoring_scenes) {
 		_add_to_recent_scenes(lpath);
 	}
@@ -6337,7 +6620,7 @@ void EditorNode::_save_editor_layout() {
 	config->load(EditorPaths::get_singleton()->get_project_settings_dir().path_join("editor_layout.cfg"));
 
 	editor_dock_manager->save_docks_to_config(config, "docks");
-	_save_open_scenes_to_config(config);
+	_save_workspace_to_config(config);
 	_save_central_editor_layout_to_config(config);
 	_save_window_settings_to_config(config, "EditorWindow");
 	editor_data.get_plugin_window_layout(config);
@@ -6345,19 +6628,10 @@ void EditorNode::_save_editor_layout() {
 	config->save(EditorPaths::get_singleton()->get_project_settings_dir().path_join("editor_layout.cfg"));
 }
 
-void EditorNode::_save_open_scenes_to_config(Ref<ConfigFile> p_layout) {
-	PackedStringArray scenes;
-	for (int i = 0; i < editor_data.get_edited_scene_count(); i++) {
-		String path = editor_data.get_scene_path(i);
-		if (path.is_empty()) {
-			continue;
-		}
-		scenes.push_back(path);
+void EditorNode::_save_workspace_to_config(Ref<ConfigFile> p_layout) {
+	if (scene_workspace) {
+		EditorSceneWorkspace::save_to_config(p_layout, editor_data, scene_workspace);
 	}
-	p_layout->set_value(EDITOR_NODE_CONFIG_SECTION, "open_scenes", scenes);
-
-	String currently_edited_scene_path = editor_data.get_scene_path(editor_data.get_edited_scene());
-	p_layout->set_value(EDITOR_NODE_CONFIG_SECTION, "current_scene", currently_edited_scene_path);
 }
 
 void EditorNode::save_editor_layout_delayed() {
@@ -6391,10 +6665,19 @@ void EditorNode::_load_editor_layout() {
 		}
 	} else {
 		ep.step(TTR("Loading docks..."), 1, true);
+
+		const Ref<ConfigFile> workspace_config = config;
+		if (EditorSceneWorkspace::get_saved_pane_count(workspace_config) == 2) {
+			_split_workspace(EditorSceneWorkspace::get_saved_split_vertical(workspace_config));
+			if (scene_workspace && scene_workspace->get_split()) {
+				scene_workspace->get_split()->set_split_offset(EditorSceneWorkspace::get_saved_split_offset(workspace_config));
+			}
+		}
+
 		editor_dock_manager->load_docks_from_config(config, "docks", true);
 
 		ep.step(TTR("Reopening scenes..."), 2, true);
-		_load_open_scenes_from_config(config);
+		_load_workspace_from_config(workspace_config);
 
 		ep.step(TTR("Loading central editor layout..."), 3, true);
 		_load_central_editor_layout_from_config(config);
@@ -6471,7 +6754,7 @@ void EditorNode::_save_window_settings_to_config(Ref<ConfigFile> p_layout, const
 	}
 }
 
-void EditorNode::_load_open_scenes_from_config(Ref<ConfigFile> p_layout) {
+void EditorNode::_load_workspace_from_config(const Ref<ConfigFile> &p_config) {
 	if (Engine::get_singleton()->is_recovery_mode_hint()) {
 		return;
 	}
@@ -6480,32 +6763,52 @@ void EditorNode::_load_open_scenes_from_config(Ref<ConfigFile> p_layout) {
 		return;
 	}
 
-	if (!p_layout->has_section(EDITOR_NODE_CONFIG_SECTION) ||
-			!p_layout->has_section_key(EDITOR_NODE_CONFIG_SECTION, "open_scenes")) {
+	if (!EditorSceneWorkspace::has_workspace_session(p_config)) {
 		return;
 	}
 
 	restoring_scenes = true;
 
-	PackedStringArray scenes = p_layout->get_value(EDITOR_NODE_CONFIG_SECTION, "open_scenes");
-	for (int i = 0; i < scenes.size(); i++) {
-		if (FileAccess::exists(scenes[i])) {
-			load_scene(scenes[i]);
+	const int pane_count = EditorSceneWorkspace::get_saved_pane_count(p_config);
+	for (int p = 0; p < pane_count; p++) {
+		const PackedStringArray scenes = EditorSceneWorkspace::get_saved_pane_scenes(p_config, p);
+		for (int i = 0; i < scenes.size(); i++) {
+			if (FileAccess::exists(scenes[i])) {
+				const int prev_count = editor_data.get_edited_scene_count();
+				load_scene(scenes[i], false, false, false, true);
+				if (editor_data.get_edited_scene_count() > prev_count) {
+					editor_data.set_scene_pane(editor_data.get_edited_scene_count() - 1, p);
+				} else {
+					editor_data.set_scene_pane(editor_data.get_edited_scene(), p);
+				}
+			}
 		}
-	}
 
-	if (p_layout->has_section_key(EDITOR_NODE_CONFIG_SECTION, "current_scene")) {
-		String current_scene = p_layout->get_value(EDITOR_NODE_CONFIG_SECTION, "current_scene");
-		for (int i = 0; i < editor_data.get_edited_scene_count(); i++) {
-			if (editor_data.get_scene_path(i) == current_scene) {
-				_set_current_scene(i);
-				break;
+		const String current_path = EditorSceneWorkspace::get_saved_pane_current(p_config, p);
+		if (!current_path.is_empty()) {
+			for (int i = 0; i < editor_data.get_edited_scene_count(); i++) {
+				if (editor_data.get_scene_path(i) == current_path) {
+					editor_data.set_pane_current_scene(p, i);
+					break;
+				}
 			}
 		}
 	}
 
-	save_editor_layout_delayed();
+	const int focused = EditorSceneWorkspace::get_saved_focused_pane(p_config);
+	editor_data.set_focused_pane(focused);
+	if (scene_workspace) {
+		scene_workspace->set_focused_pane(focused);
+		EditorSceneTabs::set_focused_singleton(scene_workspace->get_pane(focused)->get_scene_tabs());
+	}
+	focus_pane(focused);
 
+	const int current = editor_data.get_pane_current_scene(focused);
+	if (current >= 0) {
+		_set_current_scene(current);
+	}
+
+	save_editor_layout_delayed();
 	restoring_scenes = false;
 }
 
@@ -6519,11 +6822,7 @@ bool EditorNode::has_scenes_in_session() {
 	if (err != OK) {
 		return false;
 	}
-	if (!config->has_section(EDITOR_NODE_CONFIG_SECTION) || !config->has_section_key(EDITOR_NODE_CONFIG_SECTION, "open_scenes")) {
-		return false;
-	}
-	Array scenes = config->get_value(EDITOR_NODE_CONFIG_SECTION, "open_scenes");
-	return !scenes.is_empty();
+	return EditorSceneWorkspace::has_workspace_session(config);
 }
 
 void EditorNode::undo() {
@@ -6849,8 +7148,8 @@ void EditorNode::_scene_tab_closed(int p_tab) {
 	}
 
 	if (!unsaved_message.is_empty()) {
-		if (scene_tabs->get_current_tab() != p_tab) {
-			_set_current_scene(p_tab);
+		if (editor_data.get_edited_scene() != p_tab) {
+			focus_scene_in_pane(p_tab);
 		}
 
 		save_confirmation->set_ok_button_text(TTR("Save & Close"));
@@ -6862,7 +7161,7 @@ void EditorNode::_scene_tab_closed(int p_tab) {
 	}
 
 	save_editor_layout_delayed();
-	scene_tabs->update_scene_tabs();
+	update_all_scene_tabs();
 }
 
 void EditorNode::_cancel_close_scene_tab() {
@@ -8366,6 +8665,11 @@ void EditorNode::_build_file_menu() {
 	file_menu->add_shortcut(ED_GET_SHORTCUT("editor/reload_saved_scene"), SCENE_RELOAD_SAVED_SCENE);
 	file_menu->add_shortcut(ED_GET_SHORTCUT("editor/close_scene"), SCENE_CLOSE);
 	file_menu->add_shortcut(ED_GET_SHORTCUT("editor/close_all_scenes"), SCENE_CLOSE_ALL);
+	file_menu->add_separator();
+	file_menu->add_item(TTRC("Split Scene Workspace Horizontally"), WORKSPACE_SPLIT_HORIZONTAL);
+	file_menu->add_item(TTRC("Split Scene Workspace Vertically"), WORKSPACE_SPLIT_VERTICAL);
+	file_menu->add_item(TTRC("Close Scene Workspace Split"), WORKSPACE_CLOSE_SPLIT);
+	file_menu->set_item_disabled(file_menu->get_item_index(WORKSPACE_CLOSE_SPLIT), true);
 #ifdef MACOS_ENABLED
 	if (menu_type != MENU_TYPE_GLOBAL) {
 		// On macOS "Quit" option is in the "app" menu.
@@ -9112,10 +9416,12 @@ EditorNode::EditorNode() {
 	srt->add_theme_constant_override("separation", 0);
 	top_split->add_child(srt);
 
-	scene_tabs = memnew(EditorSceneTabs);
-	srt->add_child(scene_tabs);
-	scene_tabs->connect("tab_changed", callable_mp(this, &EditorNode::_set_current_scene));
-	scene_tabs->connect("tab_closed", callable_mp(this, &EditorNode::_scene_tab_closed));
+	scene_workspace = EditorSceneWorkspace::create_single_pane_workspace();
+	srt->add_child(scene_workspace);
+	scene_workspace->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+
+	scene_tabs = scene_workspace->get_pane(0)->get_scene_tabs();
+	EditorSceneTabs::set_focused_singleton(scene_tabs);
 
 	distraction_free = memnew(Button);
 	distraction_free->set_theme_type_variation("FlatMenuButton");
@@ -9131,7 +9437,7 @@ EditorNode::EditorNode() {
 	editor_main_screen = memnew(EditorMainScreen);
 	editor_main_screen->set_custom_minimum_size(Size2(0, 80) * EDSCALE);
 	editor_main_screen->set_draw_behind_parent(true);
-	srt->add_child(editor_main_screen);
+	scene_workspace->get_pane(0)->get_content_host()->add_child(editor_main_screen);
 	editor_main_screen->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 
 	placeholder_scene_viewport = memnew(SubViewport);
@@ -9435,6 +9741,7 @@ EditorNode::EditorNode() {
 
 	memnew(SceneTreeDock(editor_selection, editor_data));
 	SceneTreeDock::get_singleton()->set_scene_context(no_scene_context);
+	SceneTreeDock::get_singleton()->set_owning_pane(0);
 	editor_dock_manager->add_dock(SceneTreeDock::get_singleton());
 
 	memnew(ImportDock);
@@ -9859,7 +10166,7 @@ EditorNode::EditorNode() {
 	editor_data.set_edited_scene(0);
 	_activate_scene_context(editor_data.get_active_scene_context());
 	_attach_active_scene_context();
-	scene_tabs->update_scene_tabs();
+	update_all_scene_tabs();
 
 	ImportDock::get_singleton()->initialize_import_options();
 

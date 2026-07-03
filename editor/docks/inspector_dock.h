@@ -82,6 +82,10 @@ class InspectorDock : public EditorDock {
 	// The scene context this dock is bound to. Inspector navigation history is
 	// read through it rather than through EditorNode globals.
 	EditorSceneContext *scene_context = nullptr;
+	int owning_pane = 0;
+
+	void _dock_focus_entered();
+	void _dock_gui_input(const Ref<InputEvent> &p_event);
 
 	EditorInspector *inspector = nullptr;
 
@@ -158,6 +162,7 @@ public:
 	// explicit dock/context reference instead of relying on these
 	// focused-context singletons.
 	static InspectorDock *get_singleton() { return singleton; }
+	static void set_focused_instance(InspectorDock *p_instance) { singleton = p_instance; }
 	static EditorInspector *get_inspector_singleton() { return singleton ? singleton->inspector : nullptr; }
 
 protected:
@@ -171,6 +176,8 @@ public:
 	void clear();
 	void set_info(const String &p_button_text, const String &p_message, bool p_is_warning);
 	void set_scene_context(EditorSceneContext *p_context);
+	void set_owning_pane(int p_pane) { owning_pane = p_pane; }
+	int get_owning_pane() const { return owning_pane; }
 	EditorSceneContext *get_scene_context() const { return scene_context; }
 	void update(Object *p_object);
 	Container *get_addon_area();

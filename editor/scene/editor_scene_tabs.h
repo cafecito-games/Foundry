@@ -52,9 +52,11 @@ public:
 		SCENE_RUN,
 		SCENE_CLOSE_OTHERS,
 		SCENE_CLOSE_RIGHT,
+		SCENE_MOVE_TO_OTHER_PANE,
 	};
 
 private:
+	int pane_index = 0;
 	PanelContainer *tabbar_panel = nullptr;
 	HBoxContainer *tabbar_container = nullptr;
 
@@ -79,6 +81,7 @@ private:
 
 	void _update_tab_titles();
 	void _reposition_active_tab(int p_to_index);
+	void _tab_transferred(TabBar *p_from_tab_bar, int p_from_index, int p_to_index);
 	void _update_context_menu();
 	void _custom_menu_option(int p_option);
 	void _update_scene_list();
@@ -97,6 +100,9 @@ protected:
 
 public:
 	static EditorSceneTabs *get_singleton() { return singleton; }
+	static void set_focused_singleton(EditorSceneTabs *p_tabs) { singleton = p_tabs; }
+
+	int get_pane_index() const { return pane_index; }
 
 	void add_extra_button(Button *p_button);
 
@@ -105,5 +111,5 @@ public:
 
 	void update_scene_tabs();
 
-	EditorSceneTabs();
+	EditorSceneTabs(int p_pane_index = 0);
 };

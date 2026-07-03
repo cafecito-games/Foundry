@@ -73,6 +73,17 @@ int EditorUndoRedoManager::get_history_id_for_object(Object *p_object) const {
 			if (idx > 0) {
 				history_id = idx;
 			}
+		} else {
+			for (int i = 0; i < EditorNode::get_editor_data().get_edited_scene_count(); i++) {
+				Node *scene_root = EditorNode::get_editor_data().get_edited_scene_root(i);
+				if (scene_root && (node == scene_root || scene_root->is_ancestor_of(node))) {
+					int idx = EditorNode::get_editor_data().get_scene_history_id(i);
+					if (idx > 0) {
+						history_id = idx;
+						break;
+					}
+				}
+			}
 		}
 	}
 

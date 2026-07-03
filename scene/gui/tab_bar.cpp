@@ -1621,6 +1621,8 @@ void TabBar::_move_tab_from(TabBar *p_from_tabbar, int p_from_index, int p_to_in
 
 	queue_accessibility_update();
 	update_minimum_size();
+
+	emit_signal("tab_transferred", p_from_tabbar, p_from_index, p_to_index);
 }
 
 int TabBar::get_tab_idx_at_point(const Point2 &p_point) const {
@@ -2119,6 +2121,7 @@ void TabBar::_bind_methods() {
 	ADD_SIGNAL(MethodInfo("tab_button_pressed", PropertyInfo(Variant::INT, "tab")));
 	ADD_SIGNAL(MethodInfo("tab_hovered", PropertyInfo(Variant::INT, "tab")));
 	ADD_SIGNAL(MethodInfo("active_tab_rearranged", PropertyInfo(Variant::INT, "idx_to")));
+	ADD_SIGNAL(MethodInfo("tab_transferred", PropertyInfo(Variant::OBJECT, "from_tab_bar", PROPERTY_HINT_RESOURCE_TYPE, "TabBar"), PropertyInfo(Variant::INT, "from_index"), PropertyInfo(Variant::INT, "to_index")));
 
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "current_tab", PROPERTY_HINT_RANGE, "-1,4096,1"), "set_current_tab", "get_current_tab");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "tab_alignment", PROPERTY_HINT_ENUM, "Left,Center,Right"), "set_tab_alignment", "get_tab_alignment");

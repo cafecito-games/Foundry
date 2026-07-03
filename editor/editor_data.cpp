@@ -617,6 +617,7 @@ int EditorData::add_edited_scene(int p_at_pos) {
 	es.live_edit_root = NodePath(String("/root"));
 	es.context = memnew(EditorSceneContext);
 	es.context->set_history_id(last_created_scene++);
+	es.pane = focused_pane;
 	if (EditorNode::get_singleton()) {
 		EditorNode::get_singleton()->configure_scene_context(es.context);
 	}
@@ -630,6 +631,10 @@ int EditorData::add_edited_scene(int p_at_pos) {
 	if (current_edited_scene < 0) {
 		current_edited_scene = 0;
 	}
+
+	_ensure_pane_capacity(focused_pane + 1);
+	pane_current_scenes.write[focused_pane] = p_at_pos;
+
 	return p_at_pos;
 }
 
@@ -652,10 +657,27 @@ void EditorData::remove_scene(int p_idx) {
 		}
 	}
 
+	for (int p = 0; p < pane_current_scenes.size(); p++) {
+		int cur = pane_current_scenes[p];
+		if (cur == p_idx) {
+			int replacement = -1;
+			const Vector<int> pane_scenes = get_pane_scene_indices(p);
+			for (int i = 0; i < pane_scenes.size(); i++) {
+				if (pane_scenes[i] != p_idx) {
+					replacement = pane_scenes[i];
+					break;
+				}
+			}
+			pane_current_scenes.write[p] = replacement;
+		} else if (cur > p_idx) {
+			pane_current_scenes.write[p]--;
+		}
+	}
+
 	if (current_edited_scene > p_idx) {
 		current_edited_scene--;
-	} else if (current_edited_scene == p_idx && current_edited_scene > 0) {
-		current_edited_scene--;
+	} else if (current_edited_scene == p_idx) {
+		current_edited_scene = get_pane_current_scene(focused_pane);
 	}
 
 	if (!edited_scene[p_idx].path.is_empty()) {
@@ -786,6 +808,9 @@ int EditorData::get_edited_scene_from_path(const String &p_path) const {
 void EditorData::set_edited_scene(int p_idx) {
 	ERR_FAIL_INDEX(p_idx, edited_scene.size());
 	current_edited_scene = p_idx;
+	const int pane = edited_scene[p_idx].pane;
+	_ensure_pane_capacity(pane + 1);
+	pane_current_scenes.write[pane] = p_idx;
 }
 
 Node *EditorData::EditedScene::get_root() const {
@@ -873,10 +898,113 @@ void EditorData::move_edited_scene_to_index(int p_idx) {
 	ERR_FAIL_INDEX(current_edited_scene, edited_scene.size());
 	ERR_FAIL_INDEX(p_idx, edited_scene.size());
 
+	const int from_idx = current_edited_scene;
+	auto remap_index = [&](int p_scene_idx) -> int {
+		if (p_scene_idx < 0) {
+			return -1;
+		}
+		if (p_scene_idx == from_idx) {
+			return p_idx;
+		}
+		if (from_idx < p_idx) {
+			if (p_scene_idx > from_idx && p_scene_idx <= p_idx) {
+				return p_scene_idx - 1;
+			}
+		} else if (from_idx > p_idx) {
+			if (p_scene_idx >= p_idx && p_scene_idx < from_idx) {
+				return p_scene_idx + 1;
+			}
+		}
+		return p_scene_idx;
+	};
+
+	for (int p = 0; p < pane_current_scenes.size(); p++) {
+		pane_current_scenes.write[p] = remap_index(pane_current_scenes[p]);
+	}
+
 	EditedScene es = edited_scene[current_edited_scene];
 	edited_scene.remove_at(current_edited_scene);
 	edited_scene.insert(p_idx, es);
 	current_edited_scene = p_idx;
+	_ensure_pane_capacity(es.pane + 1);
+	pane_current_scenes.write[es.pane] = p_idx;
+}
+
+void EditorData::_ensure_pane_capacity(int p_pane) {
+	while (pane_current_scenes.size() <= p_pane) {
+		pane_current_scenes.push_back(-1);
+	}
+}
+
+Vector<int> EditorData::get_pane_scene_indices(int p_pane) const {
+	Vector<int> result;
+	for (int i = 0; i < edited_scene.size(); i++) {
+		if (edited_scene[i].pane == p_pane) {
+			result.push_back(i);
+		}
+	}
+	return result;
+}
+
+int EditorData::pane_tab_to_scene_index(int p_pane, int p_tab) const {
+	const Vector<int> indices = get_pane_scene_indices(p_pane);
+	ERR_FAIL_INDEX_V(p_tab, indices.size(), -1);
+	return indices[p_tab];
+}
+
+int EditorData::scene_index_to_pane_tab(int p_idx) const {
+	ERR_FAIL_INDEX_V(p_idx, edited_scene.size(), -1);
+	const int pane = edited_scene[p_idx].pane;
+	const Vector<int> indices = get_pane_scene_indices(pane);
+	for (int i = 0; i < indices.size(); i++) {
+		if (indices[i] == p_idx) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+void EditorData::set_scene_pane(int p_idx, int p_pane) {
+	ERR_FAIL_INDEX(p_idx, edited_scene.size());
+	ERR_FAIL_COND(p_pane < 0);
+	edited_scene.write[p_idx].pane = p_pane;
+}
+
+int EditorData::get_pane_current_scene(int p_pane) const {
+	if (p_pane < 0 || p_pane >= pane_current_scenes.size()) {
+		return -1;
+	}
+	return pane_current_scenes[p_pane];
+}
+
+void EditorData::set_pane_current_scene(int p_pane, int p_idx) {
+	ERR_FAIL_COND(p_pane < 0);
+	_ensure_pane_capacity(p_pane + 1);
+	pane_current_scenes.write[p_pane] = p_idx;
+	if (p_pane == focused_pane) {
+		current_edited_scene = p_idx;
+	}
+#ifdef DEV_ENABLED
+	if (p_idx >= 0) {
+		ERR_FAIL_COND(p_idx >= edited_scene.size());
+		ERR_FAIL_COND(edited_scene[p_idx].pane != p_pane);
+	}
+	ERR_FAIL_COND_MSG(current_edited_scene != get_pane_current_scene(focused_pane), "EditorData pane current invariant broken.");
+#endif
+}
+
+int EditorData::get_focused_pane() const {
+	return focused_pane;
+}
+
+void EditorData::set_focused_pane(int p_pane) {
+	ERR_FAIL_COND(p_pane < 0);
+	focused_pane = p_pane;
+	_ensure_pane_capacity(p_pane + 1);
+	current_edited_scene = pane_current_scenes[p_pane];
+#ifdef DEV_ENABLED
+	ERR_FAIL_COND_MSG(current_edited_scene != get_pane_current_scene(focused_pane), "EditorData pane current invariant broken.");
+#endif
 }
 
 Ref<Script> EditorData::get_scene_root_script(int p_idx) const {
@@ -969,6 +1097,9 @@ void EditorData::clear_edited_scenes() {
 	}
 	edited_scene.clear();
 	current_edited_scene = -1;
+	pane_current_scenes.clear();
+	pane_current_scenes.push_back(-1);
+	focused_pane = 0;
 	SceneTree::get_singleton()->set_edited_scene_root(nullptr);
 }
 
@@ -1194,6 +1325,7 @@ void EditorData::clear_script_icon_cache() {
 EditorData::EditorData() {
 	undo_redo_manager = memnew(EditorUndoRedoManager);
 	script_class_load_icon_paths();
+	pane_current_scenes.push_back(-1);
 }
 
 EditorData::~EditorData() {

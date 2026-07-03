@@ -294,6 +294,14 @@
 				Emitted when the active tab is rearranged via mouse drag. See [member drag_to_rearrange_enabled].
 			</description>
 		</signal>
+		<signal name="tab_transferred">
+			<param index="0" name="from_tab_bar" type="TabBar" />
+			<param index="1" name="from_index" type="int" />
+			<param index="2" name="to_index" type="int" />
+			<description>
+				Emitted when a tab is dragged from another [TabBar] in the same [member tabs_rearrange_group] into this one.
+			</description>
+		</signal>
 		<signal name="tab_button_pressed">
 			<param index="0" name="tab" type="int" />
 			<description>

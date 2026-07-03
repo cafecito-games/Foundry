@@ -4880,7 +4880,7 @@ SceneTreeDock::SceneTreeDock(EditorSelection *p_editor_selection, EditorData &p_
 	// phases) get "Scene:<n>". See EditorDock::get_effective_layout_key().
 	set_layout_key("Scene");
 
-	singleton = this;
+	singleton = singleton ? singleton : this;
 	editor_data = &p_editor_data;
 	editor_selection = p_editor_selection;
 
@@ -5127,10 +5127,28 @@ SceneTreeDock::SceneTreeDock(EditorSelection *p_editor_selection, EditorData &p_
 	EDITOR_DEF("_use_favorites_root_selection", false);
 
 	Resource::_update_configuration_warning = _update_configuration_warning;
+
+	connect(SceneStringName(focus_entered), callable_mp(this, &SceneTreeDock::_dock_focus_entered));
+	connect(SceneStringName(gui_input), callable_mp(this, &SceneTreeDock::_dock_gui_input));
+}
+
+void SceneTreeDock::_dock_focus_entered() {
+	if (EditorNode::get_singleton()) {
+		EditorNode::get_singleton()->focus_pane(owning_pane);
+	}
+}
+
+void SceneTreeDock::_dock_gui_input(const Ref<InputEvent> &p_event) {
+	Ref<InputEventMouseButton> mb = p_event;
+	if (mb.is_valid() && mb->is_pressed() && mb->get_button_index() == MouseButton::LEFT && EditorNode::get_singleton()) {
+		EditorNode::get_singleton()->focus_pane(owning_pane);
+	}
 }
 
 SceneTreeDock::~SceneTreeDock() {
-	singleton = nullptr;
+	if (singleton == this) {
+		singleton = nullptr;
+	}
 	if (editor_selection && editor_selection->is_connected("selection_changed", callable_mp(this, &SceneTreeDock::_selection_changed))) {
 		editor_selection->disconnect("selection_changed", callable_mp(this, &SceneTreeDock::_selection_changed));
 	}

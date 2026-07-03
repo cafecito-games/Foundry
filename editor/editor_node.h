@@ -90,6 +90,9 @@ class EditorResourceConversionPlugin;
 class EditorRunBar;
 class EditorSceneContext;
 class EditorSceneTabs;
+class EditorSceneWorkspace;
+class InspectorDock;
+class SceneTreeDock;
 class EditorSelectionHistory;
 class SubViewportContainer;
 class EditorSettingsDialog;
@@ -163,6 +166,10 @@ public:
 		SCENE_CLOSE,
 		SCENE_CLOSE_ALL,
 		SCENE_QUIT,
+
+		WORKSPACE_SPLIT_HORIZONTAL,
+		WORKSPACE_SPLIT_VERTICAL,
+		WORKSPACE_CLOSE_SPLIT,
 
 		FILE_EXPORT_MESH_LIBRARY,
 
@@ -337,7 +344,10 @@ private:
 	Control *center_overlay = nullptr;
 
 	// Main tabs.
+	EditorSceneWorkspace *scene_workspace = nullptr;
 	EditorSceneTabs *scene_tabs = nullptr;
+	SceneTreeDock *scene_tree_dock_secondary = nullptr;
+	InspectorDock *inspector_dock_secondary = nullptr;
 
 	int tab_closing_idx = 0;
 	List<String> tabs_to_close;
@@ -621,8 +631,18 @@ private:
 
 	void _set_current_scene(int p_idx);
 	void _set_current_scene_nocheck(int p_idx);
+	void _apply_scene_state_for_index(int p_idx);
 	void _activate_scene_context(EditorSceneContext *p_context);
 	void _attach_active_scene_context();
+	void _update_pane_display_attachments();
+	bool _is_context_pane_current(EditorSceneContext *p_context) const;
+	void _update_focused_dock_singletons();
+	void _bind_pane_docks(int p_pane);
+	void _create_secondary_docks();
+	void _destroy_secondary_docks();
+	void _split_workspace(bool p_vertical);
+	void _unsplit_workspace();
+	void _load_workspace_from_config(const Ref<ConfigFile> &p_config);
 	void _configure_editor_selection(EditorSelection *p_selection);
 	void _apply_scene_viewport_settings(SubViewport *p_viewport);
 	void _apply_scene_viewport_2d_state(SubViewport *p_viewport);
@@ -700,15 +720,13 @@ private:
 	void _set_main_scene_state(Dictionary p_state, Node *p_for_scene);
 
 	void _save_editor_layout();
+	void _save_workspace_to_config(Ref<ConfigFile> p_layout);
 	void _load_editor_layout();
 
 	void _save_central_editor_layout_to_config(Ref<ConfigFile> p_config_file);
 	void _load_central_editor_layout_from_config(Ref<ConfigFile> p_config_file);
 
 	void _save_window_settings_to_config(Ref<ConfigFile> p_layout, const String &p_section);
-
-	void _save_open_scenes_to_config(Ref<ConfigFile> p_layout);
-	void _load_open_scenes_from_config(Ref<ConfigFile> p_layout);
 
 	void _update_layouts_menu();
 	void _layout_menu_option(int p_id);
@@ -918,6 +936,14 @@ public:
 	// Toggles 2D rendering of the edited-scene viewport (2D vs other main
 	// screens); the state is re-applied on every context switch.
 	void set_scene_viewport_2d_disabled(bool p_disabled);
+
+	void focus_pane(int p_pane);
+	void on_pane_tab_changed(int p_pane, int p_tab);
+	void on_pane_tab_closed(int p_scene_idx);
+	void update_all_scene_tabs();
+	void move_scene_to_other_pane(int p_scene_idx);
+	void transfer_scene_to_pane(int p_scene_idx, int p_target_pane, int p_target_tab);
+	void focus_scene_in_pane(int p_scene_idx);
 
 	void set_edited_scene(Node *p_scene);
 	void set_edited_scene_root(Node *p_scene, bool p_auto_add);

@@ -30,7 +30,29 @@
 
 #include "editor_scene_context.h"
 
+#include "scene/3d/node_3d.h"
 #include "scene/main/viewport.h"
+
+void EditorSceneContext::_recompute_3d_content() {
+	has_3d_content = false;
+	if (!scene_root_node) {
+		return;
+	}
+
+	List<Node *> stack;
+	stack.push_back(scene_root_node);
+	while (!stack.is_empty()) {
+		Node *node = stack.front()->get();
+		stack.pop_front();
+		if (Object::cast_to<Node3D>(node)) {
+			has_3d_content = true;
+			return;
+		}
+		for (int i = 0; i < node->get_child_count(); i++) {
+			stack.push_back(node->get_child(i));
+		}
+	}
+}
 
 void EditorSceneContext::set_scene_root_node(Node *p_scene_root, bool p_attach_to_viewport) {
 	if (scene_root_node == p_scene_root) {
@@ -41,6 +63,7 @@ void EditorSceneContext::set_scene_root_node(Node *p_scene_root, bool p_attach_t
 		// which moves the new node into the old node's parent slot), so the
 		// old root must keep its parent until then.
 		scene_root_node = p_scene_root;
+		_recompute_3d_content();
 		return;
 	}
 	if (scene_root_node && scene_root_node->get_parent() == viewport) {
@@ -50,6 +73,7 @@ void EditorSceneContext::set_scene_root_node(Node *p_scene_root, bool p_attach_t
 	if (scene_root_node && scene_root_node->get_parent() == nullptr) {
 		viewport->add_child(scene_root_node, true);
 	}
+	_recompute_3d_content();
 }
 
 void EditorSceneContext::attach_scene_root_node() {
@@ -97,6 +121,22 @@ void EditorSceneContext::deactivate() {
 	}
 	selection->clear();
 	active = false;
+}
+
+void EditorSceneContext::set_display_parent(Node *p_parent, bool p_audio_listener_2d) {
+	ERR_FAIL_NULL(p_parent);
+
+	if (viewport->get_parent() != p_parent) {
+		if (viewport->get_parent()) {
+			viewport->get_parent()->remove_child(viewport);
+		}
+		p_parent->add_child(viewport);
+	}
+
+	viewport->set_as_audio_listener_2d(p_audio_listener_2d);
+	active = true;
+	retained_selection_ids.clear();
+	_recompute_3d_content();
 }
 
 Vector<ObjectID> EditorSceneContext::get_selected_node_ids() const {

@@ -145,6 +145,10 @@ class SceneTreeDock : public EditorDock {
 	// and the edited scene root are all read through it rather than through
 	// EditorNode globals.
 	EditorSceneContext *scene_context = nullptr;
+	int owning_pane = 0;
+
+	void _dock_focus_entered();
+	void _dock_gui_input(const Ref<InputEvent> &p_event);
 	EditorSelection *editor_selection = nullptr;
 	LocalVector<ObjectID> node_previous_selection;
 	bool update_script_button_queued = false;
@@ -322,6 +326,7 @@ public:
 	// act on a specific context should hold an explicit dock/context reference
 	// instead of relying on this focused-context singleton.
 	static SceneTreeDock *get_singleton() { return singleton; }
+	static void set_focused_instance(SceneTreeDock *p_instance) { singleton = p_instance; }
 
 protected:
 	void _notification(int p_what);
@@ -336,6 +341,8 @@ public:
 
 	void add_root_node(Node *p_node);
 	void set_scene_context(EditorSceneContext *p_context);
+	void set_owning_pane(int p_pane) { owning_pane = p_pane; }
+	int get_owning_pane() const { return owning_pane; }
 	EditorSceneContext *get_scene_context() const { return scene_context; }
 	void update_tree();
 	void instantiate(const String &p_file);

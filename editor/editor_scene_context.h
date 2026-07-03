@@ -57,6 +57,9 @@ class EditorSceneContext {
 	int history_id = 0;
 	Vector<ObjectID> retained_selection_ids;
 	bool active = false;
+	bool has_3d_content = false;
+
+	void _recompute_3d_content();
 
 public:
 	SubViewport *get_viewport() const { return viewport; }
@@ -82,6 +85,8 @@ public:
 	bool is_active() const { return active; }
 	void activate(Node *p_display_parent);
 	void deactivate();
+	void set_display_parent(Node *p_parent, bool p_audio_listener_2d);
+	bool scene_has_3d_content() const { return has_3d_content; }
 
 	Vector<ObjectID> get_selected_node_ids() const;
 	void set_selected_node_ids(const Vector<ObjectID> &p_ids);

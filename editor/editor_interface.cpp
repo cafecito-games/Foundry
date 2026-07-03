@@ -383,7 +383,7 @@ void EditorInterface::add_root_node(Node *p_node) {
 
 	EditorNode::get_singleton()->set_edited_scene(p_node);
 	EditorUndoRedoManager::get_singleton()->set_history_as_unsaved(EditorNode::get_editor_data().get_current_edited_scene_history_id());
-	EditorSceneTabs::get_singleton()->update_scene_tabs();
+	EditorNode::get_singleton()->update_all_scene_tabs();
 }
 
 void EditorInterface::set_plugin_enabled(const String &p_plugin, bool p_enabled) {
@@ -762,7 +762,7 @@ void EditorInterface::save_scene_as(const String &p_scene, bool p_with_preview) 
 
 void EditorInterface::mark_scene_as_unsaved() {
 	EditorUndoRedoManager::get_singleton()->set_history_as_unsaved(EditorNode::get_editor_data().get_current_edited_scene_history_id());
-	EditorSceneTabs::get_singleton()->update_scene_tabs();
+	EditorNode::get_singleton()->update_all_scene_tabs();
 }
 
 void EditorInterface::save_all_scenes() {
