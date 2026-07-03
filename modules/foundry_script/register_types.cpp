@@ -229,26 +229,9 @@ void test_bytecode() {
 	FSTests::test(FSTests::TestType::TEST_BYTECODE);
 }
 
-void generate_foundry_script_tests() {
-	FSTests::FSTestRunner::generate_outputs_for_cmdline();
-}
-
-// The canonical formatter and its CLI live under `TOOLS_ENABLED` (the tokenizer
-// only records comments there), so these commands must not be referenced in a
-// `tests=yes` build that is not also a tools/editor build.
-#ifdef TOOLS_ENABLED
-void fs_generate_format_tests() {
-	FSFormatterCLI::generate_format_tests();
-}
-#endif // TOOLS_ENABLED
-
 REGISTER_TEST_COMMAND("foundry_script-tokenizer", &test_tokenizer);
 REGISTER_TEST_COMMAND("foundry_script-tokenizer-buffer", &test_tokenizer_buffer);
 REGISTER_TEST_COMMAND("foundry_script-parser", &test_parser);
 REGISTER_TEST_COMMAND("foundry_script-compiler", &test_compiler);
 REGISTER_TEST_COMMAND("foundry_script-bytecode", &test_bytecode);
-REGISTER_TEST_COMMAND("--foundry_script-generate-tests", &generate_foundry_script_tests);
-#ifdef TOOLS_ENABLED
-REGISTER_TEST_COMMAND("--foundry_script-generate-format-tests", &fs_generate_format_tests);
-#endif // TOOLS_ENABLED
 #endif

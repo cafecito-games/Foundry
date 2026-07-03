@@ -44,12 +44,23 @@ static PackedStringArray make_args(const std::initializer_list<String> &p_args) 
 	return args;
 }
 
-static void require_normalized(
+static bool has_arg(const PackedStringArray &p_args, const String &p_arg) {
+	for (int i = 0; i < p_args.size(); i++) {
+		if (p_args[i] == p_arg) {
+			return true;
+		}
+	}
+	return false;
+}
+
+using Kind = FoundryCLIParser::CLIInvocation::Kind;
+
+static void require_kind(
 		const std::initializer_list<String> &p_input,
-		const std::initializer_list<String> &p_expected) {
+		Kind p_expected_kind) {
 	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args(p_input));
 	REQUIRE_MESSAGE(result.ok, result.error);
-	CHECK_EQ(result.normalized_args, make_args(p_expected));
+	CHECK_EQ(result.invocation.kind, p_expected_kind);
 }
 
 TEST_CASE("[FoundryCLIParser] Project run keeps user arguments behind separator") {
@@ -71,293 +82,212 @@ TEST_CASE("[FoundryCLIParser] Project run keeps user arguments behind separator"
 	CHECK(result.json);
 	CHECK_EQ(result.command_path, make_args({ "project", "run" }));
 	CHECK_EQ(result.user_args, make_args({ "--difficulty", "hard" }));
-	CHECK_EQ(result.normalized_args, make_args({
-											 "foundry",
-											 "--no-header",
-											 "--path",
-											 "demo",
-											 "--scene",
-											 "res://main.tscn",
-											 "--",
-											 "--difficulty",
-											 "hard",
-									 }));
+	CHECK_EQ(result.invocation.kind, Kind::PROJECT_RUN);
+	CHECK_EQ(result.invocation.project_path, "demo");
+	CHECK_EQ(result.invocation.scene, "res://main.tscn");
+	CHECK(has_arg(result.global_args, "--no-header"));
 }
 
-TEST_CASE("[FoundryCLIParser] Script format maps to the existing formatter command") {
-	require_normalized({
-							   "foundry",
-							   "script",
-							   "format",
-							   "--project",
-							   "demo",
-							   "--check",
-							   "modules/foundry_script/tests/scripts",
-					   },
-			{
-					"foundry",
-					"--headless",
-					"--path",
-					"demo",
-					"--foundry_script-format",
-					"--check",
-					"modules/foundry_script/tests/scripts",
-			});
+TEST_CASE("[FoundryCLIParser] Script format records formatter arguments") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"script",
+			"format",
+			"--project",
+			"demo",
+			"--check",
+			"modules/foundry_script/tests/scripts",
+	}));
+
+	REQUIRE_MESSAGE(result.ok, result.error);
+	CHECK_EQ(result.invocation.kind, Kind::SCRIPT_FORMAT);
+	CHECK_EQ(result.invocation.project_path, "demo");
+	CHECK_EQ(result.invocation.command_args, make_args({ "--check", "modules/foundry_script/tests/scripts" }));
+	CHECK(has_arg(result.global_args, "--headless"));
 }
 
-TEST_CASE("[FoundryCLIParser] Script lint maps to the existing lint command") {
-	require_normalized({
-							   "foundry",
-							   "script",
-							   "lint",
-							   "--project",
-							   "demo",
-							   "--format=sarif",
-							   "--out",
-							   "lint.sarif",
-							   "scripts",
-					   },
-			{
-					"foundry",
-					"--headless",
-					"--path",
-					"demo",
-					"--foundry_script-lint",
-					"--format=sarif",
-					"--out",
-					"lint.sarif",
-					"scripts",
-			});
+TEST_CASE("[FoundryCLIParser] Script lint records lint arguments") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"script",
+			"lint",
+			"--project",
+			"demo",
+			"--format=sarif",
+			"--out",
+			"lint.sarif",
+			"scripts",
+	}));
+
+	REQUIRE_MESSAGE(result.ok, result.error);
+	CHECK_EQ(result.invocation.kind, Kind::SCRIPT_LINT);
+	CHECK_EQ(result.invocation.command_args, make_args({ "--format=sarif", "--out", "lint.sarif", "scripts" }));
 }
 
-TEST_CASE("[FoundryCLIParser] Script tools map when setup argv omits the executable") {
-	require_normalized({
-							   "script",
-							   "format",
-							   "--project",
-							   "demo",
-							   "--write",
-							   "scripts",
-					   },
-			{
-					"--headless",
-					"--path",
-					"demo",
-					"--foundry_script-format",
-					"--write",
-					"scripts",
-			});
-
-	require_normalized({
-							   "script",
-							   "lint",
-							   "--project",
-							   "demo",
-							   "--format=json",
-							   "scripts",
-					   },
-			{
-					"--headless",
-					"--path",
-					"demo",
-					"--foundry_script-lint",
-					"--format=json",
-					"scripts",
-			});
+TEST_CASE("[FoundryCLIParser] Script tools parse when setup argv omits the executable") {
+	require_kind({ "script", "format", "--project", "demo", "--write", "scripts" }, Kind::SCRIPT_FORMAT);
+	require_kind({ "script", "lint", "--project", "demo", "--format=json", "scripts" }, Kind::SCRIPT_LINT);
 }
 
 TEST_CASE("[FoundryCLIParser] Script migrate uses explicit trust and strict options") {
-	require_normalized({
-							   "foundry",
-							   "script",
-							   "migrate",
-							   "--trusted",
-							   "--project",
-							   "demo",
-							   "--apply",
-							   "--strict",
-							   "null,dynamic",
-							   "--activate-strict",
-							   "--confirm",
-							   "--follow-up",
-							   "follow_up.md",
-					   },
-			{
-					"foundry",
-					"--foundry-build-trusted",
-					"--headless",
-					"--foundry_script-migrate",
-					"demo",
-					"--foundry_script-migrate-apply",
-					"--foundry_script-migrate-strict-null-checks",
-					"--foundry_script-migrate-strict-dynamic-checks",
-					"--foundry_script-migrate-activate-strict",
-					"--foundry_script-migrate-confirm",
-					"--foundry_script-migrate-follow-up",
-					"follow_up.md",
-			});
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"script",
+			"migrate",
+			"--trusted",
+			"--project",
+			"demo",
+			"--apply",
+			"--strict",
+			"null,dynamic",
+			"--activate-strict",
+			"--confirm",
+			"--follow-up",
+			"follow_up.md",
+	}));
+
+	REQUIRE_MESSAGE(result.ok, result.error);
+	CHECK(result.trusted);
+	CHECK_EQ(result.invocation.kind, Kind::SCRIPT_MIGRATE);
+	CHECK_EQ(result.invocation.project_path, "demo");
+	CHECK(result.invocation.migrate_apply);
+	CHECK(result.invocation.migrate_strict_null);
+	CHECK(result.invocation.migrate_strict_dynamic);
+	CHECK(result.invocation.migrate_activate_strict);
+	CHECK(result.invocation.migrate_confirm);
+	CHECK_EQ(result.invocation.migrate_follow_up, "follow_up.md");
+	CHECK(has_arg(result.global_args, "--foundry-build-trusted"));
+	CHECK(has_arg(result.global_args, "--headless"));
 }
 
 TEST_CASE("[FoundryCLIParser] Project export requires structured preset and output") {
-	require_normalized({
-							   "foundry",
-							   "project",
-							   "export",
-							   "--project",
-							   "demo",
-							   "--preset",
-							   "Linux",
-							   "--output",
-							   "build/game.x86_64",
-							   "--mode",
-							   "release",
-					   },
-			{
-					"foundry",
-					"--path",
-					"demo",
-					"--export-release",
-					"Linux",
-					"build/game.x86_64",
-			});
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"project",
+			"export",
+			"--project",
+			"demo",
+			"--preset",
+			"Linux",
+			"--output",
+			"build/game.x86_64",
+			"--mode",
+			"release",
+	}));
+
+	REQUIRE_MESSAGE(result.ok, result.error);
+	CHECK_EQ(result.invocation.kind, Kind::PROJECT_EXPORT);
+	CHECK_EQ(result.invocation.export_preset, "Linux");
+	CHECK_EQ(result.invocation.export_output, "build/game.x86_64");
+	CHECK_EQ(result.invocation.export_mode, "release");
 }
 
-TEST_CASE("[FoundryCLIParser] Test run maps agent-friendly options to doctest") {
-	require_normalized({
-							   "foundry",
-							   "test",
-							   "run",
-							   "--project",
-							   "demo",
-							   "--case",
-							   "*FoundryScript*",
-					   },
-			{
-					"foundry",
-					"--headless",
-					"--path",
-					"demo",
-					"--test",
-					"--test-case=*FoundryScript*",
-			});
+TEST_CASE("[FoundryCLIParser] Test run records case filter") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"test",
+			"run",
+			"--project",
+			"demo",
+			"--case",
+			"*FoundryScript*",
+	}));
+
+	REQUIRE_MESSAGE(result.ok, result.error);
+	CHECK_EQ(result.invocation.kind, Kind::TEST_RUN);
+	CHECK_EQ(result.invocation.test_case, "*FoundryScript*");
+	CHECK(has_arg(result.global_args, "--headless"));
 }
 
-TEST_CASE("[FoundryCLIParser] Test fixture generators map to registered test commands") {
-	require_normalized({
-							   "foundry",
-							   "test",
-							   "generate-fixtures",
-							   "modules/foundry_script/tests/scripts/parser",
-					   },
-			{
-					"foundry",
-					"--headless",
-					"--test",
-					"--foundry_script-generate-tests",
-					"modules/foundry_script/tests/scripts/parser",
-			});
+TEST_CASE("[FoundryCLIParser] Test fixture generators record paths") {
+	FoundryCLIParser::ParseResult fixtures = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"test",
+			"generate-fixtures",
+			"modules/foundry_script/tests/scripts/parser",
+	}));
+	REQUIRE_MESSAGE(fixtures.ok, fixtures.error);
+	CHECK_EQ(fixtures.invocation.kind, Kind::TEST_GENERATE_FIXTURES);
+	CHECK_EQ(fixtures.invocation.command_args, make_args({ "modules/foundry_script/tests/scripts/parser" }));
 
-	require_normalized({
-							   "foundry",
-							   "test",
-							   "generate-fixtures",
-							   "--print-filenames",
-					   },
-			{
-					"foundry",
-					"--headless",
-					"--test",
-					"--foundry_script-generate-tests",
-					"--print-filenames",
-					"modules/foundry_script/tests/scripts",
-			});
+	FoundryCLIParser::ParseResult print_names = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"test",
+			"generate-fixtures",
+			"--print-filenames",
+	}));
+	REQUIRE_MESSAGE(print_names.ok, print_names.error);
+	CHECK(print_names.invocation.print_filenames);
+	CHECK_EQ(print_names.invocation.command_args, make_args({ "modules/foundry_script/tests/scripts" }));
 
-	require_normalized({
-							   "foundry",
-							   "test",
-							   "generate-format-fixtures",
-							   "modules/foundry_script/tests/scripts/format",
-					   },
-			{
-					"foundry",
-					"--headless",
-					"--test",
-					"--foundry_script-generate-format-tests",
-					"modules/foundry_script/tests/scripts/format",
-			});
+	FoundryCLIParser::ParseResult format_fixtures = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"test",
+			"generate-format-fixtures",
+			"modules/foundry_script/tests/scripts/format",
+	}));
+	REQUIRE_MESSAGE(format_fixtures.ok, format_fixtures.error);
+	CHECK_EQ(format_fixtures.invocation.kind, Kind::TEST_GENERATE_FORMAT_FIXTURES);
+	CHECK_EQ(format_fixtures.invocation.command_args, make_args({ "modules/foundry_script/tests/scripts/format" }));
 }
 
-TEST_CASE("[FoundryCLIParser] LSP serve maps to editor language server startup") {
-	require_normalized({
-							   "foundry",
-							   "lsp",
-							   "serve",
-							   "--project",
-							   "demo",
-							   "--port",
-							   "6005",
-					   },
-			{
-					"foundry",
-					"--path",
-					"demo",
-					"--editor",
-					"--lsp-port",
-					"6005",
-			});
+TEST_CASE("[FoundryCLIParser] LSP serve records port") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"lsp",
+			"serve",
+			"--project",
+			"demo",
+			"--port",
+			"6005",
+	}));
+
+	REQUIRE_MESSAGE(result.ok, result.error);
+	CHECK_EQ(result.invocation.kind, Kind::LSP_SERVE);
+	CHECK_EQ(result.invocation.project_path, "demo");
+	CHECK_EQ(result.invocation.lsp_port, "6005");
 }
 
-TEST_CASE("[FoundryCLIParser] Docs and extension commands map to generator tools") {
-	require_normalized({
-							   "foundry",
-							   "docs",
-							   "generate-api",
-							   "--include-docs",
-					   },
-			{
-					"foundry",
-					"--dump-extension-api-with-docs",
-			});
+TEST_CASE("[FoundryCLIParser] Docs and extension commands record generator options") {
+	FoundryCLIParser::ParseResult api = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"docs",
+			"generate-api",
+			"--include-docs",
+	}));
+	REQUIRE_MESSAGE(api.ok, api.error);
+	CHECK_EQ(api.invocation.kind, Kind::DOCS_GENERATE_API);
+	CHECK(api.invocation.docs_include_docs);
 
-	require_normalized({
-							   "foundry",
-							   "docs",
-							   "generate-engine",
-							   "--output",
-							   "doc-out",
-					   },
-			{
-					"foundry",
-					"--doctool",
-					"doc-out",
-			});
+	FoundryCLIParser::ParseResult engine = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"docs",
+			"generate-engine",
+			"--output",
+			"doc-out",
+	}));
+	REQUIRE_MESSAGE(engine.ok, engine.error);
+	CHECK_EQ(engine.invocation.kind, Kind::DOCS_GENERATE_ENGINE);
+	CHECK_EQ(engine.invocation.docs_engine_output, "doc-out");
 
-	require_normalized({
-							   "foundry",
-							   "extension",
-							   "dump-interface",
-							   "--format",
-							   "json",
-					   },
-			{
-					"foundry",
-					"--dump-foundryextension-interface-json",
-			});
+	FoundryCLIParser::ParseResult extension = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"extension",
+			"dump-interface",
+			"--format",
+			"json",
+	}));
+	REQUIRE_MESSAGE(extension.ok, extension.error);
+	CHECK_EQ(extension.invocation.kind, Kind::EXTENSION_DUMP_INTERFACE);
+	CHECK_EQ(extension.invocation.extension_interface_format, "json");
 }
 
 TEST_CASE("[FoundryCLIParser] Diagnostics commands map to render device probes") {
-	require_normalized({
-							   "foundry",
-							   "diagnostics",
-							   "render-device-support",
-					   },
-			{
-					"foundry",
-					"--test-rd-support",
-			});
+	require_kind({ "foundry", "diagnostics", "render-device-support" }, Kind::DIAGNOSTICS_RENDER_DEVICE_SUPPORT);
+	require_kind({ "foundry", "diagnostics", "render-device-create" }, Kind::DIAGNOSTICS_RENDER_DEVICE_CREATE);
 }
 
-TEST_CASE("[FoundryCLIParser] Project test normalizes to internal runner flag") {
+TEST_CASE("[FoundryCLIParser] Project test records runner and user args") {
 	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
 			"foundry",
 			"--json",
@@ -376,17 +306,8 @@ TEST_CASE("[FoundryCLIParser] Project test normalizes to internal runner flag") 
 	CHECK(result.json);
 	CHECK_EQ(result.command_path, make_args({ "project", "test" }));
 	CHECK_EQ(result.user_args, make_args({ "--filter", "x" }));
-	CHECK_EQ(result.normalized_args, make_args({
-											 "foundry",
-											 "--no-header",
-											 "--path",
-											 "demo",
-											 "--run-test-runner",
-											 "res://run.fs",
-											 "--",
-											 "--filter",
-											 "x",
-									 }));
+	CHECK_EQ(result.invocation.kind, Kind::PROJECT_TEST);
+	CHECK_EQ(result.invocation.runner, "res://run.fs");
 }
 
 TEST_CASE("[FoundryCLIParser] Project test requires runner") {
@@ -440,7 +361,6 @@ TEST_CASE("[FoundryCLIParser] Help flag scoped to a command") {
 }
 
 TEST_CASE("[FoundryCLIParser] Help flag skips required option validation") {
-	// script migrate requires --project, but a help request must not fail on it.
 	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({ "foundry", "script", "migrate", "--apply", "--help" }));
 	REQUIRE_MESSAGE(result.ok, result.error);
 	CHECK(result.help_requested);
@@ -521,7 +441,7 @@ TEST_CASE("[FoundryCLIParser] Help flag after user argument separator stays a us
 	CHECK_EQ(result.user_args, make_args({ "--help" }));
 }
 
-TEST_CASE("[FoundryCLIParser] Help flag after legacy token stays legacy") {
+TEST_CASE("[FoundryCLIParser] Help flag after global option stays non-help") {
 	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({ "foundry", "--fullscreen", "--help" }));
 	REQUIRE_MESSAGE(result.ok, result.error);
 	CHECK_FALSE(result.help_requested);
@@ -570,73 +490,76 @@ TEST_CASE("[FoundryCLIParser] Help flag accepts trailing global flags") {
 	CHECK_EQ(no_header.command_path, make_args({ "script", "format" }));
 }
 
-TEST_CASE("[FoundryCLIParser] Project run forwards internal runtime flags") {
-	require_normalized({
-							   "foundry",
-							   "project",
-							   "run",
-							   "--project",
-							   "demo",
-							   "--scene",
-							   "res://main.tscn",
-							   "--remote-debug",
-							   "tcp://127.0.0.1:6007",
-							   "--editor-pid",
-							   "42",
-					   },
-			{
-					"foundry",
-					"--path",
-					"demo",
-					"--scene",
-					"res://main.tscn",
-					"--remote-debug",
-					"tcp://127.0.0.1:6007",
-					"--editor-pid",
-					"42",
-			});
+TEST_CASE("[FoundryCLIParser] Project run forwards passthrough runtime flags") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"project",
+			"run",
+			"--project",
+			"demo",
+			"--scene",
+			"res://main.tscn",
+			"--remote-debug",
+			"tcp://127.0.0.1:6007",
+			"--editor-pid",
+			"42",
+	}));
+
+	REQUIRE_MESSAGE(result.ok, result.error);
+	CHECK_EQ(result.invocation.scene, "res://main.tscn");
+	CHECK_EQ(result.invocation.passthrough_args, make_args({ "--remote-debug", "tcp://127.0.0.1:6007", "--editor-pid", "42" }));
 }
 
 TEST_CASE("[FoundryCLIParser] Editor open accepts a scene path to reopen") {
-	require_normalized({
-							   "foundry",
-							   "editor",
-							   "open",
-							   "--project",
-							   "demo",
-							   "res://main.tscn",
-					   },
-			{
-					"foundry",
-					"--path",
-					"demo",
-					"--editor",
-					"res://main.tscn",
-			});
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"editor",
+			"open",
+			"--project",
+			"demo",
+			"res://main.tscn",
+	}));
+
+	REQUIRE_MESSAGE(result.ok, result.error);
+	CHECK_EQ(result.invocation.kind, Kind::EDITOR_OPEN);
+	CHECK_EQ(result.invocation.passthrough_args, make_args({ "res://main.tscn" }));
 }
 
-TEST_CASE("[FoundryCLIParser] Editor project-manager maps project path") {
-	require_normalized({
-							   "foundry",
-							   "editor",
-							   "project-manager",
-							   "--project",
-							   "/opt/foundry",
-					   },
-			{
-					"foundry",
-					"--path",
-					"/opt/foundry",
-					"--project-manager",
-			});
+TEST_CASE("[FoundryCLIParser] Editor project-manager records project path") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"editor",
+			"project-manager",
+			"--project",
+			"/opt/foundry",
+	}));
+
+	REQUIRE_MESSAGE(result.ok, result.error);
+	CHECK_EQ(result.invocation.kind, Kind::EDITOR_PROJECT_MANAGER);
+	CHECK_EQ(result.invocation.project_path, "/opt/foundry");
 }
 
-TEST_CASE("[FoundryCLIParser] Legacy deprecation notice points to replacements") {
-	CHECK(FoundryCLIParser::get_legacy_deprecation_notice(make_args({ "foundry", "--editor", "--path", "." })).contains("editor open"));
-	CHECK(FoundryCLIParser::get_legacy_deprecation_notice(make_args({ "foundry", "-p" })).contains("project-manager"));
-	CHECK(FoundryCLIParser::get_legacy_deprecation_notice(make_args({ "foundry", "test", "run" })).is_empty());
-	CHECK(FoundryCLIParser::get_legacy_deprecation_notice(make_args({ "foundry", "--foundry_script-generate-tests" })).contains("test generate-fixtures"));
-	CHECK(FoundryCLIParser::get_legacy_deprecation_notice(make_args({ "foundry", "--foundry_script-generate-format-tests" })).contains("test generate-format-fixtures"));
+TEST_CASE("[FoundryCLIParser] Removed legacy workflow flags are rejected") {
+	auto expect_removed = [](const std::initializer_list<String> &p_input, const String &p_flag) {
+		FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args(p_input));
+		CHECK_FALSE(result.ok);
+		CHECK(result.error.contains(p_flag));
+		CHECK(result.error.contains("has been removed"));
+	};
+
+	expect_removed({ "foundry", "--editor" }, "--editor");
+	expect_removed({ "foundry", "-e" }, "-e");
+	expect_removed({ "foundry", "--project-manager" }, "--project-manager");
+	expect_removed({ "foundry", "-p" }, "-p");
+	expect_removed({ "foundry", "--path", "." }, "--path");
+	expect_removed({ "foundry", "--import" }, "--import");
+	expect_removed({ "foundry", "--test" }, "--test");
+	expect_removed({ "foundry", "--export-release", "Linux", "out" }, "--export-release");
+	expect_removed({ "foundry", "--foundry_script-format" }, "--foundry_script-format");
+	expect_removed({ "foundry", "--foundry_script-lint" }, "--foundry_script-lint");
+	expect_removed({ "foundry", "--foundry_script-generate-tests" }, "--foundry_script-generate-tests");
+	expect_removed({ "foundry", "--doctool" }, "--doctool");
+	expect_removed({ "foundry", "--lsp-port", "6005" }, "--lsp-port");
 }
 
 } // namespace TestFoundryCLIParser

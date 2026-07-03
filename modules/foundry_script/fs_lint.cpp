@@ -178,18 +178,10 @@ void add_parser_errors(
 
 } // namespace
 
-FSLintCLI::Options FSLintCLI::parse_options(const List<String> &p_cmdline_args, String &r_error) {
+FSLintCLI::Options FSLintCLI::parse_options(const Vector<String> &p_args, String &r_error) {
 	Options options;
-	bool reached_command = false;
-	for (const List<String>::Element *element = p_cmdline_args.front(); element; element = element->next()) {
-		const String &argument = element->get();
-		if (!reached_command) {
-			if (argument == "--foundry_script-lint") {
-				reached_command = true;
-			}
-			continue;
-		}
-
+	for (int i = 0; i < p_args.size(); i++) {
+		const String &argument = p_args[i];
 		if (argument == "--format=json") {
 			options.output_format = OUTPUT_JSON;
 		} else if (argument == "--format=sarif") {
@@ -205,13 +197,12 @@ FSLintCLI::Options FSLintCLI::parse_options(const List<String> &p_cmdline_args, 
 			r_error = "Invalid --fail-on value. Expected error or warning.";
 			return options;
 		} else if (argument == "--out") {
-			const List<String>::Element *next = element->next();
-			if (next == nullptr || next->get().begins_with("-")) {
+			if (i + 1 >= p_args.size() || p_args[i + 1].begins_with("-")) {
 				r_error = "Missing file path after --out.";
 				return options;
 			}
-			options.output_path = next->get();
-			element = next;
+			options.output_path = p_args[i + 1];
+			i++;
 		} else {
 			options.paths.push_back(argument);
 		}
@@ -511,9 +502,9 @@ Error FSLintCLI::write_report(const Options &p_options, const Result &p_result) 
 	return OK;
 }
 
-void FSLintCLI::run_from_cmdline() {
+void FSLintCLI::run_from_cmdline(const Vector<String> &p_command_args) {
 	String error;
-	Options options = parse_options(OS::get_singleton()->get_cmdline_args(), error);
+	Options options = parse_options(p_command_args, error);
 	if (!error.is_empty()) {
 		fprintf(stderr, "foundry_script-lint: %s\n", error.utf8().get_data());
 		OS::get_singleton()->set_exit_code(2);
