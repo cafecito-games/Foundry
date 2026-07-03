@@ -70,5 +70,7 @@ public:
 	// expand button as the strip's last control.
 	void host_distraction_free_button(Button *p_button);
 
+	void rebuild_toggles();
+
 	EditorBottomDrawerStrip(EditorBottomPanel *p_bottom_panel);
 };
