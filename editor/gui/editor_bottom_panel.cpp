@@ -107,8 +107,7 @@ bool EditorBottomPanel::_is_current_pinned() const {
 	if (!dock) {
 		return false;
 	}
-	HashMap<String, bool>::ConstIterator E = dock_pinned.find(dock->get_effective_layout_key());
-	return E ? E->value : pinned_by_default;
+	return layout_state.is_pinned(dock->get_effective_layout_key());
 }
 
 int EditorBottomPanel::_get_drawer_area_height() const {
@@ -131,10 +130,7 @@ int EditorBottomPanel::_get_body_height() const {
 	int stored = min_body;
 	EditorDock *dock = Object::cast_to<EditorDock>(tab_control);
 	if (dock) {
-		HashMap<String, int>::ConstIterator E = dock_offsets.find(dock->get_effective_layout_key());
-		if (E) {
-			stored = E->value;
-		}
+		stored = layout_state.get_offset(dock->get_effective_layout_key(), min_body);
 	}
 	return BottomDrawerGeometry::clamp_body_height(stored, min_body, 0, _get_drawer_area_height());
 }
@@ -144,8 +140,7 @@ int EditorBottomPanel::_get_island_width_override() const {
 	if (!dock) {
 		return 0;
 	}
-	HashMap<String, int>::ConstIterator E = dock_widths.find(dock->get_effective_layout_key());
-	return E ? E->value : 0;
+	return layout_state.get_width(dock->get_effective_layout_key());
 }
 
 void EditorBottomPanel::_set_body_height(int p_height) {
@@ -154,7 +149,7 @@ void EditorBottomPanel::_set_body_height(int p_height) {
 		return;
 	}
 	const int min_body = get_current_tab_control()->get_combined_minimum_size().height;
-	dock_offsets[dock->get_effective_layout_key()] = BottomDrawerGeometry::clamp_body_height(p_height, min_body, 0, _get_drawer_area_height());
+	layout_state.set_offset(dock->get_effective_layout_key(), BottomDrawerGeometry::clamp_body_height(p_height, min_body, 0, _get_drawer_area_height()));
 	_update_drawer_geometry();
 }
 
@@ -168,7 +163,7 @@ void EditorBottomPanel::_set_island_width(int p_width) {
 		return;
 	}
 	const int window_width = int(base->get_global_rect().size.width);
-	dock_widths[dock->get_effective_layout_key()] = BottomDrawerGeometry::clamp_island_width(p_width, window_width, 480 * EDSCALE, 48 * EDSCALE);
+	layout_state.set_width(dock->get_effective_layout_key(), BottomDrawerGeometry::clamp_island_width(p_width, window_width, 480 * EDSCALE, 48 * EDSCALE));
 	_update_drawer_geometry();
 }
 
@@ -177,7 +172,7 @@ void EditorBottomPanel::_reset_island_width() {
 	if (!dock) {
 		return;
 	}
-	dock_widths.erase(dock->get_effective_layout_key());
+	layout_state.erase_width(dock->get_effective_layout_key());
 	_update_drawer_geometry();
 }
 
@@ -421,53 +416,11 @@ void EditorBottomPanel::_repaint() {
 }
 
 void EditorBottomPanel::save_layout_to_config(Ref<ConfigFile> p_config_file, const String &p_section) const {
-	Dictionary offsets;
-	for (const KeyValue<String, int> &E : dock_offsets) {
-		offsets[E.key] = E.value;
-	}
-	p_config_file->set_value(p_section, "bottom_panel_offsets", offsets);
-
-	Dictionary widths;
-	for (const KeyValue<String, int> &E : dock_widths) {
-		if (E.value > 0) {
-			widths[E.key] = E.value;
-		}
-	}
-	p_config_file->set_value(p_section, "bottom_panel_widths", widths);
-
-	Dictionary pinned;
-	for (const KeyValue<String, bool> &E : dock_pinned) {
-		pinned[E.key] = E.value;
-	}
-	p_config_file->set_value(p_section, "bottom_panel_pinned", pinned);
-	p_config_file->set_value(p_section, "bottom_panel_pinned_by_default", pinned_by_default);
+	layout_state.save_to_config(p_config_file, p_section);
 }
 
 void EditorBottomPanel::load_layout_from_config(Ref<ConfigFile> p_config_file, const String &p_section) {
-	const Dictionary offsets = p_config_file->get_value(p_section, "bottom_panel_offsets", Dictionary());
-	const LocalVector<Variant> offset_list = offsets.get_key_list();
-
-	for (const Variant &v : offset_list) {
-		dock_offsets[v] = BottomDrawerGeometry::body_height_from_stored(offsets[v], 0);
-	}
-
-	const Dictionary widths = p_config_file->get_value(p_section, "bottom_panel_widths", Dictionary());
-	const LocalVector<Variant> width_list = widths.get_key_list();
-	for (const Variant &v : width_list) {
-		const int width = widths[v];
-		if (width > 0) {
-			dock_widths[v] = width;
-		}
-	}
-
-	// Layouts written before the drawer existed lack the key and keep the
-	// familiar in-flow behavior for every panel.
-	pinned_by_default = p_config_file->get_value(p_section, "bottom_panel_pinned_by_default", true);
-	const Dictionary pinned = p_config_file->get_value(p_section, "bottom_panel_pinned", Dictionary());
-	const LocalVector<Variant> pinned_list = pinned.get_key_list();
-	for (const Variant &v : pinned_list) {
-		dock_pinned[v] = pinned[v];
-	}
+	layout_state.load_from_config(p_config_file, p_section);
 	pin_button->set_pressed_no_signal(_is_current_pinned());
 
 	_update_drawer_geometry();
@@ -495,7 +448,7 @@ void EditorBottomPanel::toggle_last_opened_bottom_panel() {
 void EditorBottomPanel::_pin_button_toggled(bool p_pressed) {
 	EditorDock *dock = Object::cast_to<EditorDock>(get_current_tab_control());
 	if (dock) {
-		dock_pinned[dock->get_effective_layout_key()] = p_pressed;
+		layout_state.set_pinned(dock->get_effective_layout_key(), p_pressed);
 	}
 	// Swap between the island and square panel styles before repositioning.
 	_theme_changed();
