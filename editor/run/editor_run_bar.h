@@ -114,6 +114,17 @@ protected:
 	static void _bind_methods();
 
 public:
+	struct RunOptionsMenuEntry {
+		int id = 0;
+		String label;
+	};
+
+	enum RunOptionsMenuItem {
+		RUN_OPTIONS_CONFIGURE_RUN_TARGETS = 0,
+	};
+
+	static Vector<RunOptionsMenuEntry> build_run_options_menu_model();
+
 	static EditorRunBar *get_singleton() { return singleton; }
 
 	void recovery_mode_show_dialog();

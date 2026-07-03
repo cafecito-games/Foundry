@@ -199,6 +199,17 @@ Vector<String> EditorRunBar::_get_xr_mode_play_args(RunXRModeMenuItem p_menu_ite
 	return play_args;
 }
 
+Vector<EditorRunBar::RunOptionsMenuEntry> EditorRunBar::build_run_options_menu_model() {
+	Vector<RunOptionsMenuEntry> entries;
+
+	RunOptionsMenuEntry configure_run_targets;
+	configure_run_targets.id = RUN_OPTIONS_CONFIGURE_RUN_TARGETS;
+	configure_run_targets.label = TTRC("Run Targets Configuration...");
+	entries.push_back(configure_run_targets);
+
+	return entries;
+}
+
 void EditorRunBar::_quick_run_selected(const String &p_file_path, int p_menu_item) {
 	play_custom_scene(p_file_path, _get_xr_mode_play_args(static_cast<RunXRModeMenuItem>(p_menu_item)));
 }
