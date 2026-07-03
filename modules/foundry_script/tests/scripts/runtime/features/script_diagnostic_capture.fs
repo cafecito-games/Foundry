@@ -14,4 +14,3 @@ func test():
 
 func emit_fatal() -> void:
 	push_fatal("captured fatal")
-

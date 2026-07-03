@@ -12,8 +12,10 @@ Produces:
   scenes/nested.tscn            (instances leaf.tscn nest_children times)
   bench_manifest.txt            (list of scene paths to benchmark, one per line)
 """
+
 import os
 import sys
+
 
 def main():
     out = sys.argv[1]
@@ -34,23 +36,23 @@ def main():
         p = os.path.join(out, "scripts", f"script_{i:05d}.fs")
         with open(p, "w") as f:
             if i > 0 and i % 4 == 0:
-                f.write(f'extends "res://scripts/script_{i-1:05d}.fs"\n\n')
+                f.write(f'extends "res://scripts/script_{i - 1:05d}.fs"\n\n')
             else:
                 f.write("extends Node\n\n")
             f.write(f"var value_{i}: int = {i}\n")
-            f.write(f"var name_{i}: String = \"n{i}\"\n")
+            f.write(f'var name_{i}: String = "n{i}"\n')
             f.write(f"var arr_{i}: Array = [1, 2, 3]\n\n")
             f.write(f"func compute_{i}(x: int) -> int:\n")
-            f.write(f"\tvar total: int = x\n")
-            f.write(f"\tfor j in range(10):\n")
+            f.write("\tvar total: int = x\n")
+            f.write("\tfor j in range(10):\n")
             f.write(f"\t\ttotal += j * value_{i}\n")
-            f.write(f"\treturn total\n\n")
+            f.write("\treturn total\n\n")
             f.write(f"func describe_{i}() -> String:\n")
             f.write(f"\treturn name_{i} + str(value_{i})\n")
 
     # A shared leaf script for scene attachment.
     with open(os.path.join(out, "scripts", "leaf_script.fs"), "w") as f:
-        f.write("extends Node\n\nvar hp: int = 100\nvar label: String = \"leaf\"\n\n")
+        f.write('extends Node\n\nvar hp: int = 100\nvar label: String = "leaf"\n\n')
         f.write("func ping() -> int:\n\treturn hp\n")
 
     manifest = []
@@ -71,7 +73,7 @@ def main():
         # Build ext_resource header
         idmap = {}
         for k, sid in enumerate(used):
-            rid = f"{k+1}_s{sid}"
+            rid = f"{k + 1}_s{sid}"
             idmap[sid] = rid
             ext.append(f'[ext_resource type="Script" path="res://scripts/script_{sid:05d}.fs" id="{rid}"]')
         load_steps = 1 + len(ext)
@@ -93,7 +95,7 @@ def main():
 
     # Leaf scene with a script, used for nesting.
     with open(os.path.join(out, "scenes", "leaf.tscn"), "w") as f:
-        f.write('[gd_scene load_steps=2 format=3]\n\n')
+        f.write("[gd_scene load_steps=2 format=3]\n\n")
         f.write('[ext_resource type="Script" path="res://scripts/leaf_script.fs" id="1_leaf"]\n\n')
         f.write('[node name="Leaf" type="Node"]\nscript = ExtResource("1_leaf")\n')
         f.write('[node name="A" type="Node" parent="."]\n')
@@ -102,7 +104,7 @@ def main():
 
     # Nested scene: instances leaf.tscn nest_children times.
     with open(os.path.join(out, "scenes", "nested.tscn"), "w") as f:
-        f.write(f'[gd_scene load_steps=2 format=3]\n\n')
+        f.write("[gd_scene load_steps=2 format=3]\n\n")
         f.write('[ext_resource type="PackedScene" path="res://scenes/leaf.tscn" id="1_leaf"]\n\n')
         f.write('[node name="Root" type="Node"]\n')
         for c in range(nest_children):
@@ -112,8 +114,11 @@ def main():
     with open(os.path.join(out, "bench_manifest.txt"), "w") as f:
         f.write("\n".join(manifest) + "\n")
 
-    print(f"Generated project at {out}: scripts={num_scripts} flat_scenes={num_leaf_scenes} "
-          f"nodes/scene={nodes_per_scene} nest_children={nest_children}")
+    print(
+        f"Generated project at {out}: scripts={num_scripts} flat_scenes={num_leaf_scenes} "
+        f"nodes/scene={nodes_per_scene} nest_children={nest_children}"
+    )
+
 
 if __name__ == "__main__":
     main()
