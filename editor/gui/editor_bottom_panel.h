@@ -52,7 +52,9 @@ class EditorBottomPanel : public TabContainer {
 	float drag_start_mouse_y = 0.0f;
 	Control *grabber = nullptr;
 	Ref<Tween> drawer_tween;
-	int last_drawer_height = -1;
+	float last_target_y = -1.0f;
+	int drawer_current_x = 0;
+	int drawer_current_width = 0;
 	LocalVector<EditorDock *> bottom_docks;
 	HashMap<String, int> dock_offsets;
 	HashMap<String, bool> dock_pinned;
@@ -66,11 +68,12 @@ class EditorBottomPanel : public TabContainer {
 	void _pin_button_toggled(bool p_pressed);
 	void _expand_button_toggled(bool p_pressed);
 	bool _is_current_pinned() const;
-	int _get_strip_height() const;
+	int _get_drawer_area_height() const;
 	int _get_body_height() const;
 	void _set_body_height(int p_height);
 	void _update_drawer_geometry();
-	void _set_drawer_top_offset(float p_offset);
+	void _set_drawer_y(float p_y);
+	void _hide_if_closed();
 	void _grabber_input(const Ref<InputEvent> &p_event);
 	EditorDock *_get_dock_from_control(Control *p_control) const;
 
@@ -94,6 +97,13 @@ public:
 
 	Button *get_pin_button() const { return pin_button; }
 	Button *get_expand_button() const { return expand_button; }
+
+	// The drawer's rect is fully manually driven and its height animates below
+	// the content minimum while sliding (the bottom edge stays glued to the strip
+	// line); reporting a zero minimum keeps Control::set_size from clamping the
+	// rect back up mid-slide. Steady-state heights still respect the content
+	// minimum via the body-height clamp.
+	virtual Size2 get_minimum_size() const override { return Size2(); }
 
 	void update_drawer_geometry();
 

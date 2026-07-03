@@ -41,6 +41,7 @@
 #include "editor/docks/editor_dock.h"
 #include "editor/editor_node.h"
 #include "editor/editor_string_names.h"
+#include "editor/gui/editor_bottom_drawer_strip.h"
 #include "editor/gui/editor_bottom_panel.h"
 #include "editor/gui/window_wrapper.h"
 #include "editor/settings/editor_settings.h"
@@ -272,6 +273,13 @@ EditorDock *EditorDockManager::_get_dock_tab_dragged() {
 		}
 
 		for (int i = 0; i < DockConstants::DOCK_SLOT_MAX; i++) {
+			if (i == DockConstants::DOCK_SLOT_BOTTOM) {
+				// The bottom drawer hides when closed and floats as an island when
+				// open, so its drop target is the always-visible status strip.
+				dock_slots[i].drag_hint->set_rect(EditorNode::get_bottom_drawer_strip()->get_global_rect());
+				dock_slots[i].drag_hint->show();
+				continue;
+			}
 			if (dock_slots[i].container->is_visible_in_tree()) {
 				dock_slots[i].drag_hint->set_rect(dock_slots[i].container->get_global_rect());
 				dock_slots[i].drag_hint->show();

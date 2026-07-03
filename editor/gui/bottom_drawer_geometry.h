@@ -34,33 +34,12 @@
 // Kept free of scene/editor dependencies so it is unit-testable headlessly.
 //
 // Terms:
-// - strip:  the always-visible tab strip along the bottom of the workspace area.
-// - body:   the content region of the drawer above the strip when a tab is open.
-// - area:   the full height of the workspace overlay region (center_overlay).
-// - inset:  vertical space the workspace reserves at its bottom edge.
+// - strip:  the slim status strip control along the bottom of the editor
+//           window; a separate control, not part of the drawer.
+// - body:   the content region of the drawer shown when a tab is open.
+// - area:   the gui_base region above the strip available to the drawer.
+// - island: the floating card shown for an unpinned open drawer.
 struct BottomDrawerGeometry {
-	static int drawer_height(bool p_open, bool p_expanded, int p_strip_height, int p_body_height, int p_area_height) {
-		if (!p_open) {
-			return p_strip_height;
-		}
-		if (p_expanded) {
-			return p_area_height;
-		}
-		int height = p_strip_height + p_body_height;
-		return height < p_area_height ? height : p_area_height;
-	}
-
-	// Unpinned drawers overlay the workspace, so only the strip is reserved.
-	// Expanded drawers cover the workspace entirely; keeping the inset at the
-	// strip lets un-expanding restore the previous workspace size instantly.
-	static int workspace_inset(bool p_open, bool p_pinned, bool p_expanded, int p_strip_height, int p_body_height, int p_area_height) {
-		if (!p_open || !p_pinned || p_expanded) {
-			return p_strip_height;
-		}
-		int inset = p_strip_height + p_body_height;
-		return inset < p_area_height ? inset : p_area_height;
-	}
-
 	static int clamp_body_height(int p_body_height, int p_min_body_height, int p_strip_height, int p_area_height) {
 		int max_body = p_area_height - p_strip_height;
 		int height = p_body_height < max_body ? p_body_height : max_body;
@@ -79,7 +58,10 @@ struct BottomDrawerGeometry {
 
 	// The island is the floating card shown for an unpinned open drawer.
 	// Width targets 64% of the window, kept inside a minimum side margin,
-	// with an absolute minimum so panel content stays usable.
+	// with an absolute minimum so panel content stays usable. The minimum width
+	// wins over the margin clamp, so on a window narrower than the minimum the
+	// result exceeds the window; island_x then returns a negative x and the
+	// island overflows symmetrically past both edges.
 	static int island_width(int p_window_width, int p_min_width, int p_min_side_margin) {
 		int nominal = (p_window_width * 64) / 100;
 		int max_width = p_window_width - 2 * p_min_side_margin;
@@ -92,7 +74,7 @@ struct BottomDrawerGeometry {
 	}
 
 	// Height of the island body region (excludes nothing; the strip is a
-	// separate control in v2). Expanded fills the area minus a top margin.
+	// separate control). Expanded fills the area minus a top margin.
 	static int island_height(bool p_expanded, int p_body_height, int p_area_height, int p_top_margin) {
 		int max_height = p_area_height - p_top_margin;
 		if (max_height < 0) {

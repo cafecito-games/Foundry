@@ -36,35 +36,6 @@
 
 namespace TestBottomDrawerGeometry {
 
-TEST_CASE("[Editor][BottomDrawerGeometry] Drawer height") {
-	// Closed: only the tab strip is visible.
-	CHECK(BottomDrawerGeometry::drawer_height(false, false, 30, 200, 600) == 30);
-	// Closed and expanded flag leftover: still only the strip.
-	CHECK(BottomDrawerGeometry::drawer_height(false, true, 30, 200, 600) == 30);
-	// Open: strip + body.
-	CHECK(BottomDrawerGeometry::drawer_height(true, false, 30, 200, 600) == 230);
-	// Open + expanded: full area.
-	CHECK(BottomDrawerGeometry::drawer_height(true, true, 30, 200, 600) == 600);
-	// Open body taller than the area is capped by the area.
-	CHECK(BottomDrawerGeometry::drawer_height(true, false, 30, 900, 600) == 600);
-}
-
-TEST_CASE("[Editor][BottomDrawerGeometry] Workspace inset") {
-	// Closed: workspace reserves only the strip.
-	CHECK(BottomDrawerGeometry::workspace_inset(false, false, false, 30, 200, 600) == 30);
-	CHECK(BottomDrawerGeometry::workspace_inset(false, true, false, 30, 200, 600) == 30);
-	// Open + unpinned: overlay, workspace still reserves only the strip.
-	CHECK(BottomDrawerGeometry::workspace_inset(true, false, false, 30, 200, 600) == 30);
-	// Open + pinned: workspace reserves strip + body.
-	CHECK(BottomDrawerGeometry::workspace_inset(true, true, false, 30, 200, 600) == 230);
-	// Expanded covers the workspace in both pin modes; inset stays strip-only so
-	// un-expanding restores instantly.
-	CHECK(BottomDrawerGeometry::workspace_inset(true, false, true, 30, 200, 600) == 30);
-	CHECK(BottomDrawerGeometry::workspace_inset(true, true, true, 30, 200, 600) == 30);
-	// Pinned body taller than the area is capped so the inset never exceeds the area.
-	CHECK(BottomDrawerGeometry::workspace_inset(true, true, false, 30, 900, 600) == 600);
-}
-
 TEST_CASE("[Editor][BottomDrawerGeometry] Clamp body height") {
 	// Within range: unchanged.
 	CHECK(BottomDrawerGeometry::clamp_body_height(200, 50, 30, 600) == 200);
@@ -102,7 +73,7 @@ TEST_CASE("[Editor][BottomDrawerGeometry] Island width and position") {
 }
 
 TEST_CASE("[Editor][BottomDrawerGeometry] Island height") {
-	// Not expanded: strip + body, capped by the area.
+	// Not expanded: body height, capped by the available area.
 	CHECK(BottomDrawerGeometry::island_height(false, 200, 600, 24) == 200);
 	CHECK(BottomDrawerGeometry::island_height(false, 900, 600, 24) == 576);
 	// Expanded: full area minus the top margin.

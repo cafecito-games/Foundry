@@ -207,6 +207,11 @@ void EditorBottomDrawerStrip::host_distraction_free_button(Button *p_button) {
 EditorBottomDrawerStrip::EditorBottomDrawerStrip(EditorBottomPanel *p_bottom_panel) {
 	bottom_panel = p_bottom_panel;
 
+	// The strip's slim background is provided by a theme type variation instead
+	// of a stylebox override: applying an override from NOTIFICATION_THEME_CHANGED
+	// re-fires the same notification and recurses infinitely.
+	set_theme_type_variation("BottomDrawerStrip");
+
 	main_hbox = memnew(HBoxContainer);
 	add_child(main_hbox);
 

@@ -1749,6 +1749,32 @@ void ThemeClassic::populate_editor_styles(const Ref<EditorTheme> &p_theme, Edito
 		p_theme->set_color("icon_hover_color", "BottomPanelButton", icon_hover_color);
 		p_theme->set_color("icon_hover_pressed_color", "BottomPanelButton", icon_hover_color);
 
+		// Bottom drawer island: the floating card shown for an unpinned open
+		// drawer. Rounded top corners, a thin contrast border, and an opaque fill
+		// so it reads as a distinct surface hovering over the workspace.
+		Ref<StyleBoxFlat> style_bottom_drawer_island = style_bottom_panel->duplicate();
+		style_bottom_drawer_island->set_corner_radius(CORNER_TOP_LEFT, 8 * EDSCALE);
+		style_bottom_drawer_island->set_corner_radius(CORNER_TOP_RIGHT, 8 * EDSCALE);
+		style_bottom_drawer_island->set_border_width_all(Math::round(EDSCALE));
+		style_bottom_drawer_island->set_border_width(SIDE_BOTTOM, 0);
+		style_bottom_drawer_island->set_border_color(p_config.contrast_color_1);
+		Color island_bg_color = style_bottom_drawer_island->get_bg_color();
+		island_bg_color.a = 1.0;
+		style_bottom_drawer_island->set_bg_color(island_bg_color);
+		p_theme->set_stylebox("BottomDrawerIsland", EditorStringName(EditorStyles), style_bottom_drawer_island);
+
+		// Bottom drawer status strip: a slim flat bar spanning the window with only
+		// a top separator border. Registered as a type variation (not applied as an
+		// override) so the strip picks it up without touching overrides from its
+		// own THEME_CHANGED handler, which would recurse.
+		Ref<StyleBoxFlat> style_bottom_drawer_strip = p_config.base_style->duplicate();
+		style_bottom_drawer_strip->set_corner_radius_all(0);
+		style_bottom_drawer_strip->set_border_width_all(0);
+		style_bottom_drawer_strip->set_border_width(SIDE_TOP, Math::round(EDSCALE));
+		style_bottom_drawer_strip->set_border_color(p_config.contrast_color_1);
+		p_theme->set_type_variation("BottomDrawerStrip", "PanelContainer");
+		p_theme->set_stylebox(SceneStringName(panel), "BottomDrawerStrip", style_bottom_drawer_strip);
+
 		// Audio bus.
 		p_theme->set_stylebox(CoreStringName(normal), "EditorAudioBus", style_bottom_panel);
 		p_theme->set_stylebox("master", "EditorAudioBus", p_config.button_style_disabled);

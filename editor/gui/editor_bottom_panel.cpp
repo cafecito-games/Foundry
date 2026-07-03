@@ -55,6 +55,11 @@ void EditorBottomPanel::_notification(int p_what) {
 		case NOTIFICATION_THEME_CHANGED: {
 			pin_button->set_button_icon(get_editor_theme_icon(SNAME("Pin")));
 			expand_button->set_button_icon(get_editor_theme_icon(SNAME("ExpandBottomDock")));
+			// Refresh the stylebox override first: a theme regeneration replaces
+			// the island/panel styleboxes, and the geometry below measures the
+			// applied stylebox's chrome. _theme_changed only touches the override
+			// when it differs, so this cannot recurse.
+			_theme_changed();
 			_update_drawer_geometry();
 		} break;
 	}
@@ -63,19 +68,37 @@ void EditorBottomPanel::_notification(int p_what) {
 void EditorBottomPanel::_on_tab_changed(int p_idx) {
 	pin_button->set_pressed_no_signal(_is_current_pinned());
 	// Repaint first: it swaps the panel stylebox override between the open and
-	// collapsed styles, which the drawer geometry depends on.
+	// collapsed styles, which the drawer geometry depends on. _repaint short-
+	// circuits when switching between two already-open tabs, so refresh the
+	// stylebox here too in case the new tab differs in pin state (island vs
+	// square).
 	_repaint();
+	_theme_changed();
 	_update_drawer_geometry();
 }
 
 void EditorBottomPanel::_theme_changed() {
 	// The tab bar is hidden in favor of the status strip, so only the panel
-	// stylebox needs swapping between the open and collapsed states.
+	// stylebox needs swapping between the collapsed, floating-island and pinned
+	// states. Unpinned open drawers render as a rounded, bordered island; pinned
+	// ones keep the square panel style flush over the workspace column.
+	//
+	// This runs from NOTIFICATION_THEME_CHANGED, and applying an override from
+	// there re-fires the same notification, so only touch the override when the
+	// applied stylebox actually differs; the re-entrant pass then resolves the
+	// same stylebox and no-ops, converging after at most one extra pass.
 	if (get_current_tab() == -1) {
 		// Hide panel when not showing anything.
-		remove_theme_style_override(SceneStringName(panel));
-	} else {
-		add_theme_style_override(SceneStringName(panel), get_theme_stylebox(SNAME("BottomPanel"), EditorStringName(EditorStyles)));
+		if (has_theme_stylebox_override(SceneStringName(panel))) {
+			remove_theme_style_override(SceneStringName(panel));
+		}
+		return;
+	}
+	const Ref<StyleBox> desired_style = _is_current_pinned()
+			? get_theme_stylebox(SNAME("BottomPanel"), EditorStringName(EditorStyles))
+			: get_theme_stylebox(SNAME("BottomDrawerIsland"), EditorStringName(EditorStyles));
+	if (!has_theme_stylebox_override(SceneStringName(panel)) || get_theme_stylebox(SceneStringName(panel)) != desired_style) {
+		add_theme_style_override(SceneStringName(panel), desired_style);
 	}
 }
 
@@ -88,20 +111,15 @@ bool EditorBottomPanel::_is_current_pinned() const {
 	return E ? E->value : pinned_by_default;
 }
 
-int EditorBottomPanel::_get_strip_height() const {
-	int height = get_tab_bar()->get_combined_minimum_size().height;
-	Ref<StyleBox> tabbar_style = get_theme_stylebox(SNAME("tabbar_background"));
-	if (tabbar_style.is_valid()) {
-		height += tabbar_style->get_minimum_size().height;
+int EditorBottomPanel::_get_drawer_area_height() const {
+	// The drawer region is gui_base's rect above the status strip. The strip is
+	// a separate control, so it contributes nothing to this height.
+	Control *base = get_parent_control();
+	EditorBottomDrawerStrip *strip = EditorNode::get_bottom_drawer_strip();
+	if (!base || !strip) {
+		return 0;
 	}
-	// TabContainer's minimum size also includes the panel stylebox, which
-	// differs between the open and collapsed states; without it the anchored
-	// rect falls below the minimum and the strip grows past the overlay edge.
-	Ref<StyleBox> panel_style = get_theme_stylebox(SceneStringName(panel));
-	if (panel_style.is_valid()) {
-		height += panel_style->get_minimum_size().height;
-	}
-	return height;
+	return MAX(0, int(strip->get_global_rect().position.y - base->get_global_rect().position.y));
 }
 
 int EditorBottomPanel::_get_body_height() const {
@@ -118,9 +136,7 @@ int EditorBottomPanel::_get_body_height() const {
 			stored = E->value;
 		}
 	}
-	Control *area = get_parent_control();
-	const int area_height = area ? area->get_size().height : stored + _get_strip_height();
-	return BottomDrawerGeometry::clamp_body_height(stored, min_body, _get_strip_height(), area_height);
+	return BottomDrawerGeometry::clamp_body_height(stored, min_body, 0, _get_drawer_area_height());
 }
 
 void EditorBottomPanel::_set_body_height(int p_height) {
@@ -128,10 +144,8 @@ void EditorBottomPanel::_set_body_height(int p_height) {
 	if (!dock) {
 		return;
 	}
-	Control *area = get_parent_control();
-	const int area_height = area ? area->get_size().height : p_height + _get_strip_height();
 	const int min_body = get_current_tab_control()->get_combined_minimum_size().height;
-	dock_offsets[dock->get_effective_layout_key()] = BottomDrawerGeometry::clamp_body_height(p_height, min_body, _get_strip_height(), area_height);
+	dock_offsets[dock->get_effective_layout_key()] = BottomDrawerGeometry::clamp_body_height(p_height, min_body, 0, _get_drawer_area_height());
 	_update_drawer_geometry();
 }
 
@@ -140,60 +154,124 @@ void EditorBottomPanel::update_drawer_geometry() {
 }
 
 void EditorBottomPanel::_update_drawer_geometry() {
-	Control *area = get_parent_control();
-	if (!area) {
+	Control *base = get_parent_control();
+	EditorBottomDrawerStrip *strip = EditorNode::get_bottom_drawer_strip();
+	VSplitContainer *top_split = EditorNode::get_top_split();
+	if (!base || !strip || !top_split) {
 		return;
 	}
+
 	const bool open = get_current_tab() != -1;
-	const int strip_height = _get_strip_height();
-	const int area_height = area->get_size().height;
-	const int body_height = open ? _get_body_height() : 0;
-
-	const int drawer_height = BottomDrawerGeometry::drawer_height(open, drawer_expanded, strip_height, body_height, area_height);
-
 	const bool pinned = _is_current_pinned();
-	const int inset = BottomDrawerGeometry::workspace_inset(open, pinned, drawer_expanded, strip_height, body_height, area_height);
-	VSplitContainer *top_split = EditorNode::get_top_split();
-	if (top_split) {
-		top_split->set_offset(SIDE_BOTTOM, -inset);
-	}
 
-	// A single logical open/close often produces several _update_drawer_geometry
-	// calls within one frame (the tab change swaps the panel stylebox, which in
-	// turn changes the strip height and re-fires geometry). Only (re)start the
-	// tween when the target height actually changes; leave an in-flight tween
-	// running when a settling call reports the same target, so the slide is not
-	// snapped to its end on the same frame it began.
-	const bool animate = !pinned && !grabber_dragging && is_inside_tree() && EDITOR_GET("interface/editor/animate_bottom_drawer");
-	const bool target_changed = last_drawer_height != drawer_height;
+	// The drawer occupies gui_base's region above the status strip; positions are
+	// expressed in gui_base coordinates. All rects come from global space so the
+	// math is independent of the panel's own (manually driven) rect.
+	const Rect2 base_rect = base->get_global_rect();
+	const int area_height = _get_drawer_area_height();
+	const int window_width = int(base_rect.size.width);
+
+	int height = 0;
+	if (open) {
+		// The drawer's total height is the stored body height plus the panel
+		// stylebox chrome around the dock content, so the content region keeps
+		// exactly the stored height.
+		int chrome_height = 0;
+		Ref<StyleBox> panel_style = get_theme_stylebox(SceneStringName(panel));
+		if (panel_style.is_valid()) {
+			chrome_height = panel_style->get_minimum_size().height;
+		}
+		const int body_height = _get_body_height();
+		height = BottomDrawerGeometry::island_height(drawer_expanded, body_height + chrome_height, area_height, 24 * EDSCALE);
+
+		int width = 0;
+		int x = 0;
+		if (pinned) {
+			// Pinned: align flush over the center workspace column.
+			const Rect2 column_rect = top_split->get_global_rect();
+			x = int(column_rect.position.x - base_rect.position.x);
+			width = int(column_rect.size.width);
+		} else {
+			// Unpinned: a horizontally centered floating island.
+			width = BottomDrawerGeometry::island_width(window_width, 480 * EDSCALE, 48 * EDSCALE);
+			x = BottomDrawerGeometry::island_x(window_width, width);
+		}
+		drawer_current_x = x;
+		drawer_current_width = width;
+	}
+	grabber->set_visible(open && !drawer_expanded);
+
+	// Only a pinned, non-expanded open drawer reserves workspace space. The strip
+	// is a separate control outside center_overlay, so it contributes nothing to
+	// the inset.
+	const int inset = (open && pinned && !drawer_expanded) ? height : 0;
+	top_split->set_offset(SIDE_BOTTOM, -inset);
+
+	// The slide animates the island's y: open lifts it from the strip line up to
+	// (area_height - height); close slides it back down to the strip line and
+	// then hides the panel. A single logical open/close can fire several geometry
+	// updates in one frame (stylebox swaps, deferred layout), so only (re)start
+	// the tween when the target y actually changes; leave an in-flight tween
+	// running on a same-target settling call so the slide is not snapped to its
+	// end on the same frame it began.
+	const float target_y = open ? float(area_height - height) : float(area_height);
+	// A close only animates when the panel is actually on screen; a closed,
+	// already-hidden drawer (e.g. at startup) settles instantly with no slide.
+	const bool animate = !pinned && !grabber_dragging && is_inside_tree() && (open || is_visible()) && bool(EDITOR_GET("interface/editor/animate_bottom_drawer"));
+	const bool target_changed = last_target_y != target_y;
 	if (drawer_tween.is_valid() && (!animate || target_changed)) {
 		drawer_tween->kill();
 		drawer_tween.unref();
 	}
+
+	if (open && !is_visible()) {
+		// Seed an opening drawer at the strip line so it rises into view.
+		_set_drawer_y(area_height);
+		show();
+	}
+
 	if (animate && target_changed) {
 		drawer_tween = create_tween();
-		drawer_tween->tween_method(callable_mp(this, &EditorBottomPanel::_set_drawer_top_offset), get_offset(SIDE_TOP), -(float)drawer_height, 0.15)->set_trans(Tween::TRANS_CUBIC)->set_ease(Tween::EASE_OUT);
+		drawer_tween->tween_method(callable_mp(this, &EditorBottomPanel::_set_drawer_y), get_position().y, target_y, 0.15)->set_trans(Tween::TRANS_CUBIC)->set_ease(Tween::EASE_OUT);
+		if (!open) {
+			drawer_tween->tween_callback(callable_mp(this, &EditorBottomPanel::_hide_if_closed));
+		}
 	} else if (drawer_tween.is_null() || !drawer_tween->is_running()) {
 		// No slide in flight: place the drawer (and grabber) at the target now.
-		_set_drawer_top_offset(-drawer_height);
+		_set_drawer_y(target_y);
+		if (!open) {
+			hide();
+		}
 	}
-	last_drawer_height = drawer_height;
-
-	grabber->set_visible(open && !drawer_expanded);
+	last_target_y = target_y;
 }
 
-void EditorBottomPanel::_set_drawer_top_offset(float p_offset) {
-	set_offset(SIDE_TOP, p_offset);
+void EditorBottomPanel::_set_drawer_y(float p_y) {
+	// Derive the height from y so the bottom edge stays glued to the strip line
+	// throughout the slide: the drawer emerges from the strip instead of sliding
+	// over it. At rest this equals the computed target height by construction
+	// (target_y = area_height - height). Requires the zero minimum size reported
+	// by get_minimum_size(); Control::set_size clamps to the minimum otherwise
+	// and would extend the rect below the strip.
+	const float height = MAX(0.0f, float(_get_drawer_area_height()) - p_y);
+	set_position(Point2(drawer_current_x, p_y));
+	set_size(Size2(drawer_current_width, height));
 
 	// Track the grabber to the panel's animated top edge instead of the final
 	// target, so it slides with the drawer rather than jumping ahead of it.
-	Control *area = get_parent_control();
-	if (!area) {
+	Control *base = get_parent_control();
+	if (!base) {
 		return;
 	}
 	const int grabber_height = 6 * EDSCALE;
-	grabber->set_size(Vector2(area->get_size().width, grabber_height));
-	grabber->set_global_position(area->get_global_position() + Vector2(0, area->get_size().height + p_offset));
+	grabber->set_size(Vector2(get_size().width, grabber_height));
+	grabber->set_global_position(base->get_global_position() + Vector2(drawer_current_x, p_y));
+}
+
+void EditorBottomPanel::_hide_if_closed() {
+	if (get_current_tab() == -1) {
+		hide();
+	}
 }
 
 void EditorBottomPanel::_grabber_input(const Ref<InputEvent> &p_event) {
@@ -314,6 +392,8 @@ void EditorBottomPanel::_pin_button_toggled(bool p_pressed) {
 	if (dock) {
 		dock_pinned[dock->get_effective_layout_key()] = p_pressed;
 	}
+	// Swap between the island and square panel styles before repositioning.
+	_theme_changed();
 	_update_drawer_geometry();
 	EditorNode::get_singleton()->save_editor_layout_delayed();
 }
@@ -399,6 +479,13 @@ EditorBottomPanel::EditorBottomPanel() {
 	set_tabs_visible(false);
 	set_deselect_enabled(true);
 	set_process_shortcut_input(true);
+	// The slide animates the panel's height below its content minimum, squeezing
+	// the current dock; clipping hides the squeezed content past the bottom edge
+	// so the drawer emerges from the strip cleanly.
+	set_clip_contents(true);
+	// The drawer starts collapsed: it is hidden until a tab is opened, and the
+	// status strip is its collapsed representation.
+	hide();
 
 	grabber = memnew(Control);
 	grabber->set_name("DrawerGrabber");

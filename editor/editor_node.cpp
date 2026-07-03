@@ -9323,15 +9323,26 @@ EditorNode::EditorNode() {
 	bottom_panel = memnew(EditorBottomPanel);
 	editor_dock_manager->register_dock_slot(DockConstants::DOCK_SLOT_BOTTOM, bottom_panel, DockConstants::DOCK_LAYOUT_HORIZONTAL);
 	bottom_panel->set_theme_type_variation("BottomPanel");
-	center_overlay->add_child(bottom_panel);
-	bottom_panel->set_anchors_and_offsets_preset(Control::PRESET_BOTTOM_WIDE);
-	bottom_panel->set_v_grow_direction(Control::GROW_DIRECTION_BEGIN);
+	// The open drawer renders as a floating island over the whole window. Parent
+	// it to gui_base right after the editor's main layout so it draws above the
+	// workspace but below the dock drag hints (added later). center_overlay stays
+	// behind for the workspace inset. The panel's rect is set manually on every
+	// geometry update, so it carries no anchors preset.
+	gui_base->add_child(bottom_panel);
+	Node *drawer_anchor = main_vbox;
+	while (drawer_anchor->get_parent() != gui_base) {
+		drawer_anchor = drawer_anchor->get_parent();
+	}
+	gui_base->move_child(bottom_panel, drawer_anchor->get_index() + 1);
 	center_overlay->connect(SceneStringName(resized), callable_mp(bottom_panel, &EditorBottomPanel::update_drawer_geometry));
 
 	// Full-window status strip that mirrors the bottom drawer's tabs. It is the
 	// last child of main_vbox so it spans below main_hsplit, under the dock columns.
 	bottom_drawer_strip = memnew(EditorBottomDrawerStrip(bottom_panel));
 	main_vbox->add_child(bottom_drawer_strip);
+	// The drawer's region is measured from the strip's top edge, so recompute the
+	// island geometry whenever the strip is laid out or resized.
+	bottom_drawer_strip->connect(SceneStringName(resized), callable_mp(bottom_panel, &EditorBottomPanel::update_drawer_geometry));
 
 	log = memnew(EditorLog);
 	editor_dock_manager->add_dock(log);
