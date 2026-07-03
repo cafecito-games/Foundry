@@ -162,16 +162,26 @@ void RunTargetsPanel::_ensure_manager() {
 		return;
 	}
 
-	manager = RunTargetManager::get_singleton();
+	EditorRunNative *run_native = EditorRunNative::get_singleton();
+	if (run_native != nullptr) {
+		manager = run_native->get_run_target_manager();
+	}
 	if (manager != nullptr) {
-		// Another owner (the run-bar selector) already created and configured the
-		// manager; consume it without taking ownership.
+		// The run bar's deploy dropdown owns the live manager; consume it without
+		// taking ownership so configuration edits update the same state.
 		return;
 	}
 
-	// No manager has been installed yet. Create a minimal one so the panel works on
-	// its own, load the project's targets, register the iOS adapter on macOS, and
-	// publish it so the rest of the editor shares this single instance.
+	manager = RunTargetManager::get_singleton();
+	if (manager != nullptr) {
+		// Fallback compatibility for callers that still publish a manager through
+		// the legacy singleton path.
+		return;
+	}
+
+	// No shared manager is available yet. Create a minimal one so the panel works
+	// on its own, load the project's targets, register the iOS adapter on macOS,
+	// and publish it so other fallback consumers share this single instance.
 	manager = memnew(RunTargetManager);
 	owns_manager = true;
 	const Error load_error = manager->load(RUN_TARGETS_CONFIG_PATH);

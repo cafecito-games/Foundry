@@ -54,10 +54,10 @@ class RunTargetPlatform;
 // `EditorExportPreset` (bundle id, signing team) — it invents no new build
 // config and never duplicates the readiness logic, which lives in the Doctor.
 //
-// The manager is consumed from `RunTargetManager::get_singleton()` so the panel
-// and the run-bar selector share one source of truth. When no manager has been
-// installed yet (e.g. on a develop checkout where that owner has not landed), the
-// panel creates and installs a minimal one so it remains functional on its own.
+// The manager is consumed from `EditorRunNative` when available so the panel and
+// the run-bar selector share one source of truth. When no shared manager exists
+// yet, the panel creates and installs a minimal one so it remains functional on
+// its own.
 class RunTargetsPanel : public VBoxContainer {
 	FOUNDRY_CLASS(RunTargetsPanel, VBoxContainer);
 

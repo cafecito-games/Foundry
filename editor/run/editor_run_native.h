@@ -81,8 +81,8 @@ class EditorRunNative : public HBoxContainer {
 	int resume_id = -1;
 
 	// Owns the project's run targets and the registered platform adapters. The
-	// Targets dock (and any other surface) reaches the same instance through
-	// `EditorRunNative::get_singleton()->get_run_target_manager()`.
+	// Run Targets configuration modal (and any other surface) reaches the same
+	// instance through `EditorRunNative::get_singleton()->get_run_target_manager()`.
 	RunTargetManager run_target_manager;
 	RunTargetPlatform *ios_platform = nullptr; // macOS only; owned, registered as "ios".
 

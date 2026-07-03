@@ -51,11 +51,10 @@ class EditorExportPreset;
 // fake adapter and a fake preset provider.
 class RunTargetManager {
 public:
-	// Process-wide accessor so editor surfaces (the run-bar target selector and
-	// the Targets dock) can reach the single manager that owns the project's run
-	// targets without threading it through constructors. The editor creates the
-	// manager once and installs it here; consumers read it and must tolerate a
-	// null result (e.g. headless tooling, or before the editor has set it up).
+	// Process-wide fallback accessor for editor surfaces that need a manager when
+	// the run bar's `EditorRunNative` owner is unavailable. Consumers read it and
+	// must tolerate a null result (e.g. headless tooling, or before the editor has
+	// set up a fallback manager).
 	static RunTargetManager *get_singleton();
 	static void set_singleton(RunTargetManager *p_manager);
 
