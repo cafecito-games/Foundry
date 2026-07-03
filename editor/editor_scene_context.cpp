@@ -126,6 +126,8 @@ void EditorSceneContext::deactivate() {
 void EditorSceneContext::set_display_parent(Node *p_parent, bool p_audio_listener_2d) {
 	ERR_FAIL_NULL(p_parent);
 
+	const Vector<ObjectID> selected_before = active ? get_selected_node_ids() : Vector<ObjectID>();
+
 	if (viewport->get_parent() != p_parent) {
 		if (viewport->get_parent()) {
 			viewport->get_parent()->remove_child(viewport);
@@ -135,7 +137,12 @@ void EditorSceneContext::set_display_parent(Node *p_parent, bool p_audio_listene
 
 	viewport->set_as_audio_listener_2d(p_audio_listener_2d);
 	active = true;
-	retained_selection_ids.clear();
+
+	if (!selected_before.is_empty()) {
+		set_selected_node_ids(selected_before);
+	} else {
+		retained_selection_ids.clear();
+	}
 	_recompute_3d_content();
 }
 

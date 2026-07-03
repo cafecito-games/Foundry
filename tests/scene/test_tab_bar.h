@@ -1098,6 +1098,7 @@ TEST_CASE("[SceneTree][TabBar] Mouse interaction") {
 
 		// Drag to target container.
 		target_tab_bar->set_tabs_rearrange_group(1);
+		SIGNAL_WATCH(target_tab_bar, "tab_transferred");
 		SEND_GUI_MOUSE_BUTTON_EVENT(tab_rects[0].position, MouseButton::LEFT, MouseButtonMask::LEFT, Key::NONE);
 		SEND_GUI_MOUSE_MOTION_EVENT(tab_rects[0].position + Point2(20, 0), MouseButtonMask::LEFT, Key::NONE);
 		SEND_GUI_MOUSE_MOTION_EVENT(target_tab_after_first, MouseButtonMask::LEFT, Key::NONE);
@@ -1117,6 +1118,14 @@ TEST_CASE("[SceneTree][TabBar] Mouse interaction") {
 		SIGNAL_CHECK_FALSE("active_tab_rearranged");
 		SIGNAL_CHECK_FALSE("tab_selected"); // Does not send since tab was removed.
 		SIGNAL_CHECK("tab_changed", { { 0 } });
+		Array transferred_emission;
+		transferred_emission.push_back(tab_bar);
+		transferred_emission.push_back(0);
+		transferred_emission.push_back(1);
+		Array transferred_expected;
+		transferred_expected.push_back(transferred_emission);
+		CHECK(SignalWatcher::get_singleton()->check("tab_transferred", transferred_expected));
+		SIGNAL_UNWATCH(target_tab_bar, "tab_transferred");
 
 		Point2 target_tab = target_tab_bar->get_position();
 
@@ -1157,40 +1166,5 @@ TEST_CASE("[SceneTree][TabBar] Mouse interaction") {
 }
 
 // FIXME: Add tests for keyboard navigation and other methods.
-
-TEST_CASE("[SceneTree][TabBar] tab_transferred signal") {
-	TabBar *source = memnew(TabBar);
-	TabBar *target = memnew(TabBar);
-	SceneTree::get_singleton()->get_root()->add_child(source);
-	SceneTree::get_singleton()->get_root()->add_child(target);
-	source->set_clip_tabs(false);
-	target->set_clip_tabs(false);
-	source->set_drag_to_rearrange_enabled(true);
-	target->set_drag_to_rearrange_enabled(true);
-	source->set_tabs_rearrange_group(2);
-	target->set_tabs_rearrange_group(2);
-	source->add_tab("tab0");
-	source->add_tab("tab1");
-	target->add_tab("other");
-	MessageQueue::get_singleton()->flush();
-
-	SIGNAL_WATCH(target, "tab_transferred");
-
-	const Rect2 source_tab_rect = source->get_tab_rect(0);
-	const Point2 target_point = target->get_position() + target->get_tab_rect(0).get_center();
-
-	SEND_GUI_MOUSE_BUTTON_EVENT(source_tab_rect.position, MouseButton::LEFT, MouseButtonMask::LEFT, Key::NONE);
-	SEND_GUI_MOUSE_MOTION_EVENT(source_tab_rect.position + Point2(20, 0), MouseButtonMask::LEFT, Key::NONE);
-	SEND_GUI_MOUSE_MOTION_EVENT(target_point, MouseButtonMask::LEFT, Key::NONE);
-	SEND_GUI_MOUSE_BUTTON_RELEASED_EVENT(target_point, MouseButton::LEFT, MouseButtonMask::NONE, Key::NONE);
-
-	CHECK(source->get_tab_count() == 1);
-	CHECK(target->get_tab_count() == 2);
-	SIGNAL_CHECK("tab_transferred", { { source, 0, 1 } });
-
-	SIGNAL_UNWATCH(target, "tab_transferred");
-	memdelete(source);
-	memdelete(target);
-}
 
 } // namespace TestTabBar

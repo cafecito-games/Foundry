@@ -668,6 +668,9 @@ void EditorData::remove_scene(int p_idx) {
 					break;
 				}
 			}
+			if (replacement > p_idx) {
+				replacement--;
+			}
 			pane_current_scenes.write[p] = replacement;
 		} else if (cur > p_idx) {
 			pane_current_scenes.write[p]--;
@@ -680,7 +683,7 @@ void EditorData::remove_scene(int p_idx) {
 		current_edited_scene = get_pane_current_scene(focused_pane);
 	}
 
-	if (!edited_scene[p_idx].path.is_empty()) {
+	if (!edited_scene[p_idx].path.is_empty() && EditorNode::get_singleton()) {
 		EditorNode::get_singleton()->emit_signal("scene_closed", edited_scene[p_idx].path);
 	}
 

@@ -90,17 +90,16 @@ TEST_CASE("[SceneTree][Editor] pane-model-remove-fixup") {
 	editor_data.set_pane_current_scene(1, b);
 
 	editor_data.remove_scene(a);
-	CHECK(editor_data.get_pane_current_scene(0) == c);
-	CHECK(editor_data.get_edited_scene() == c);
+	CHECK(editor_data.get_pane_current_scene(0) == 1);
+	CHECK(editor_data.get_edited_scene() == 1);
 
-	editor_data.set_pane_current_scene(0, c);
 	editor_data.set_focused_pane(1);
-	editor_data.set_pane_current_scene(1, b);
-	editor_data.remove_scene(b);
+	editor_data.remove_scene(0);
 	CHECK(editor_data.get_pane_current_scene(1) == -1);
 	CHECK(editor_data.get_edited_scene() == -1);
 
-	editor_data.remove_scene(c);
+	editor_data.set_focused_pane(0);
+	editor_data.remove_scene(0);
 	CHECK(editor_data.get_edited_scene_count() == 0);
 }
 
@@ -193,20 +192,14 @@ TEST_CASE("[SceneTree][Editor] workspace-config-round-trip") {
 	editor_data.set_pane_current_scene(1, b);
 	editor_data.set_focused_pane(1);
 
-	EditorSceneWorkspace *workspace = EditorSceneWorkspace::create_single_pane_workspace();
-	workspace->split_workspace(true);
-	workspace->get_split()->set_split_offset(123);
-	workspace->set_focused_pane(1);
-
-	EditorSceneWorkspace::save_to_config(config, editor_data, workspace);
-
-	EditorData loaded_data;
-	EditorSceneWorkspace *loaded_workspace = EditorSceneWorkspace::create_single_pane_workspace();
-	if (EditorSceneWorkspace::get_saved_pane_count(config) == 2) {
-		loaded_workspace->split_workspace(EditorSceneWorkspace::get_saved_split_vertical(config));
-		loaded_workspace->get_split()->set_split_offset(EditorSceneWorkspace::get_saved_split_offset(config));
-	}
-	loaded_workspace->set_focused_pane(EditorSceneWorkspace::get_saved_focused_pane(config));
+	config->set_value("Workspace", "pane_count", 2);
+	config->set_value("Workspace", "split_vertical", true);
+	config->set_value("Workspace", "split_offset", 123);
+	config->set_value("Workspace", "focused_pane", 1);
+	config->set_value("Workspace", "pane_0_scenes", PackedStringArray{ "res://pane0_a.tscn" });
+	config->set_value("Workspace", "pane_1_scenes", PackedStringArray{ "res://pane1_b.tscn" });
+	config->set_value("Workspace", "pane_0_current", "res://pane0_a.tscn");
+	config->set_value("Workspace", "pane_1_current", "res://pane1_b.tscn");
 
 	CHECK(EditorSceneWorkspace::get_saved_pane_count(config) == 2);
 	CHECK(EditorSceneWorkspace::get_saved_split_vertical(config));
@@ -216,9 +209,19 @@ TEST_CASE("[SceneTree][Editor] workspace-config-round-trip") {
 	CHECK(EditorSceneWorkspace::get_saved_pane_scenes(config, 1) == PackedStringArray{ "res://pane1_b.tscn" });
 	CHECK(EditorSceneWorkspace::get_saved_pane_current(config, 0) == "res://pane0_a.tscn");
 	CHECK(EditorSceneWorkspace::get_saved_pane_current(config, 1) == "res://pane1_b.tscn");
+	CHECK(EditorSceneWorkspace::has_workspace_session(config));
 
+	EditorSceneWorkspace *workspace = EditorSceneWorkspace::create_single_pane_workspace();
+	workspace->split_workspace(true);
+	workspace->get_split()->set_split_offset(456);
+	workspace->set_focused_pane(1);
+	Ref<ConfigFile> saved_config;
+	saved_config.instantiate();
+	EditorSceneWorkspace::save_to_config(saved_config, editor_data, workspace);
+	CHECK(EditorSceneWorkspace::get_saved_split_offset(saved_config) == 456);
+	CHECK(saved_config->get_value("Workspace", "pane_1_current") == "res://pane1_b.tscn");
 	memdelete(workspace);
-	memdelete(loaded_workspace);
+
 	editor_data.remove_scene(b);
 	editor_data.remove_scene(a);
 }

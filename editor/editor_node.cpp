@@ -1420,7 +1420,6 @@ void EditorNode::_resources_reimported(const Vector<String> &p_resources) {
 	// Only refresh the current scene tab if it's been reimported.
 	// Otherwise the scene tab will try to grab focus unnecessarily.
 	bool should_refresh_current_scene_tab = false;
-	const int current_scene_idx = editor_data.get_edited_scene();
 	const String current_scene_tab = editor_data.get_scene_path(current_scene_idx);
 	for (const String &E : scenes_reimported) {
 		if (!should_refresh_current_scene_tab && E == current_scene_tab) {
@@ -9756,6 +9755,7 @@ EditorNode::EditorNode() {
 
 	memnew(InspectorDock(editor_data));
 	InspectorDock::get_singleton()->set_scene_context(no_scene_context);
+	InspectorDock::get_singleton()->set_owning_pane(0);
 	editor_dock_manager->add_dock(InspectorDock::get_singleton());
 
 	memnew(SignalsDock);
