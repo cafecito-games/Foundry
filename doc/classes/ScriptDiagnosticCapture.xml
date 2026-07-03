@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="ScriptDiagnosticCapture" inherits="RefCounted" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+	<brief_description>
+		Low-level recorder for engine diagnostics during tests.
+	</brief_description>
+	<description>
+		[ScriptDiagnosticCapture] registers a thread-local error handler and collects diagnostic events while active. Multiple active captures each receive every event (broadcast semantics). Use [ScriptDiagnosticCaptureScope] when a test runner needs scoped start/stop pairing across async code and failure paths.
+		[b]Event schema[/b]
+		Each event dictionary returned by [method get_event] and [method get_events] uses these stable keys: [code]severity[/code] ([int]), [code]severity_name[/code] ([String]), [code]message[/code], [code]code[/code], [code]rationale[/code], [code]function[/code], [code]file[/code], [code]line[/code] ([int]), and [code]editor_notify[/code] ([bool]).
+		[b]Quiet mode[/b]
+		When [method start] is called with [code]quiet = true[/code], captured events are still recorded but console printing is suppressed via a nest-safe global refcount. Quiet mode affects console output only; editor toasts, debugger presentation, and other channels are out of scope.
+		[b]Composition with [ScriptTestExecution][/b]
+		For project test runners, place diagnostic capture outside execution guards so guard-initiated unwinds (timeout/abort) never leak an active capture and the guard's silent unwind is not recorded as a spurious diagnostic:
+		[codeblock]
+		var diagnostics := ScriptDiagnosticCaptureScope.start(true)
+		var execution_result: ScriptTestExecutionResult = await execution.guard_callv(suite, test_case.method_name, test_case.arguments)
+		diagnostics.stop()
+		context.set_diagnostics(diagnostics.capture)
+		[/codeblock]
+	</description>
+	<methods>
+		<method name="clear">
+			<return type="void" />
+			<description>
+				Removes all recorded events without stopping capture.
+			</description>
+		</method>
+		<method name="get_event" qualifiers="const">
+			<return type="Dictionary" />
+			<param index="0" name="index" type="int" />
+			<description>
+				Returns the event dictionary at [param index].
+			</description>
+		</method>
+		<method name="get_event_count" qualifiers="const">
+			<return type="int" />
+			<description>
+				Returns how many events have been recorded.
+			</description>
+		</method>
+		<method name="get_events" qualifiers="const">
+			<return type="Array" />
+			<description>
+				Returns every recorded event dictionary.
+			</description>
+		</method>
+		<method name="has_diagnostic" qualifiers="const">
+			<return type="bool" />
+			<param index="0" name="severity" type="int" enum="Severity" />
+			<param index="1" name="message" type="String" default="&quot;&quot;" />
+			<description>
+				Returns [code]true[/code] when an event with [param severity] exists. When [param message] is non-empty, the event message must match exactly.
+			</description>
+		</method>
+		<method name="has_diagnostic_containing" qualifiers="const">
+			<return type="bool" />
+			<param index="0" name="severity" type="int" enum="Severity" />
+			<param index="1" name="text" type="String" default="&quot;&quot;" />
+			<description>
+				Returns [code]true[/code] when an event with [param severity] exists whose message contains [param text]. When [param text] is empty, any event with the severity matches.
+			</description>
+		</method>
+		<method name="has_error" qualifiers="const">
+			<return type="bool" />
+			<param index="0" name="message" type="String" default="&quot;&quot;" />
+			<description>
+				Shorthand for [method has_diagnostic] with [constant SEVERITY_ERROR].
+			</description>
+		</method>
+		<method name="has_error_containing" qualifiers="const">
+			<return type="bool" />
+			<param index="0" name="text" type="String" default="&quot;&quot;" />
+			<description>
+				Shorthand for [method has_diagnostic_containing] with [constant SEVERITY_ERROR].
+			</description>
+		</method>
+		<method name="has_fatal" qualifiers="const">
+			<return type="bool" />
+			<param index="0" name="message" type="String" default="&quot;&quot;" />
+			<description>
+				Shorthand for [method has_diagnostic] with [constant SEVERITY_FATAL].
+			</description>
+		</method>
+		<method name="has_fatal_containing" qualifiers="const">
+			<return type="bool" />
+			<param index="0" name="text" type="String" default="&quot;&quot;" />
+			<description>
+				Shorthand for [method has_diagnostic_containing] with [constant SEVERITY_FATAL].
+			</description>
+		</method>
+		<method name="has_warning" qualifiers="const">
+			<return type="bool" />
+			<param index="0" name="message" type="String" default="&quot;&quot;" />
+			<description>
+				Shorthand for [method has_diagnostic] with [constant SEVERITY_WARNING].
+			</description>
+		</method>
+		<method name="has_warning_containing" qualifiers="const">
+			<return type="bool" />
+			<param index="0" name="text" type="String" default="&quot;&quot;" />
+			<description>
+				Shorthand for [method has_diagnostic_containing] with [constant SEVERITY_WARNING].
+			</description>
+		</method>
+		<method name="is_active" qualifiers="const">
+			<return type="bool" />
+			<description>
+				Returns [code]true[/code] while this capture is registered.
+			</description>
+		</method>
+		<method name="is_quiet" qualifiers="const">
+			<return type="bool" />
+			<description>
+				Returns [code]true[/code] when this capture was started in quiet mode.
+			</description>
+		</method>
+		<method name="is_supported" qualifiers="static">
+			<return type="bool" />
+			<description>
+				Returns [code]true[/code]. Addons can probe this stable contract point instead of checking [method ClassDB.class_exists] for [ScriptDiagnosticCapture].
+			</description>
+		</method>
+		<method name="start">
+			<return type="void" />
+			<param index="0" name="quiet" type="bool" default="false" />
+			<description>
+				Begins recording diagnostics. Safe to call only once until [method stop] is called.
+			</description>
+		</method>
+		<method name="stop">
+			<return type="void" />
+			<description>
+				Stops recording diagnostics and unregisters the error handler.
+			</description>
+		</method>
+	</methods>
+	<constants>
+		<constant name="SEVERITY_ERROR" value="0" enum="Severity">
+			Ordinary engine error diagnostics.
+		</constant>
+		<constant name="SEVERITY_WARNING" value="1" enum="Severity">
+			Warning diagnostics.
+		</constant>
+		<constant name="SEVERITY_SCRIPT_ERROR" value="2" enum="Severity">
+			Script runtime error diagnostics.
+		</constant>
+		<constant name="SEVERITY_SHADER_ERROR" value="3" enum="Severity">
+			Shader error diagnostics.
+		</constant>
+		<constant name="SEVERITY_FATAL" value="4" enum="Severity">
+			Fatal diagnostics.
+		</constant>
+	</constants>
+</class>
