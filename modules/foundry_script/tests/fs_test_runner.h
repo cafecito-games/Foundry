@@ -148,8 +148,8 @@ class FSTestRunner {
 public:
 	static StringName test_function_name;
 
-	// Registered as the `--foundry_script-generate-tests` test command so it runs
-	// under the `--test` setup/teardown and the process can shut down cleanly.
+	// Registered as the `--foundry_script-generate-tests` test command (normalized from
+	// `foundry test generate-fixtures`) so it runs under the `--test` setup/teardown.
 	static void generate_outputs_for_cmdline();
 	int run_tests();
 	bool generate_outputs();

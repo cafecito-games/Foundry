@@ -53,6 +53,8 @@ foundry script lint --project . --format=sarif --out reports/foundry-script.sari
 foundry script migrate --trusted --project . --apply --strict null,dynamic --confirm
 
 foundry test run --project . --case "*FoundryScript*"
+foundry test generate-fixtures modules/foundry_script/tests/scripts
+foundry test generate-format-fixtures modules/foundry_script/tests/scripts/format
 foundry lsp serve --project . --port 6005
 
 foundry docs generate-api --include-docs

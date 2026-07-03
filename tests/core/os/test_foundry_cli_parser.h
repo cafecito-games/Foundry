@@ -242,6 +242,51 @@ TEST_CASE("[FoundryCLIParser] Test run maps agent-friendly options to doctest") 
 			});
 }
 
+TEST_CASE("[FoundryCLIParser] Test fixture generators map to registered test commands") {
+	require_normalized({
+							   "foundry",
+							   "test",
+							   "generate-fixtures",
+							   "modules/foundry_script/tests/scripts/parser",
+					   },
+			{
+					"foundry",
+					"--headless",
+					"--test",
+					"--foundry_script-generate-tests",
+					"modules/foundry_script/tests/scripts/parser",
+			});
+
+	require_normalized({
+							   "foundry",
+							   "test",
+							   "generate-fixtures",
+							   "--print-filenames",
+					   },
+			{
+					"foundry",
+					"--headless",
+					"--test",
+					"--foundry_script-generate-tests",
+					"--print-filenames",
+					"modules/foundry_script/tests/scripts",
+			});
+
+	require_normalized({
+							   "foundry",
+							   "test",
+							   "generate-format-fixtures",
+							   "modules/foundry_script/tests/scripts/format",
+					   },
+			{
+					"foundry",
+					"--headless",
+					"--test",
+					"--foundry_script-generate-format-tests",
+					"modules/foundry_script/tests/scripts/format",
+			});
+}
+
 TEST_CASE("[FoundryCLIParser] LSP serve maps to editor language server startup") {
 	require_normalized({
 							   "foundry",
@@ -590,6 +635,8 @@ TEST_CASE("[FoundryCLIParser] Legacy deprecation notice points to replacements")
 	CHECK(FoundryCLIParser::get_legacy_deprecation_notice(make_args({ "foundry", "--editor", "--path", "." })).contains("editor open"));
 	CHECK(FoundryCLIParser::get_legacy_deprecation_notice(make_args({ "foundry", "-p" })).contains("project-manager"));
 	CHECK(FoundryCLIParser::get_legacy_deprecation_notice(make_args({ "foundry", "test", "run" })).is_empty());
+	CHECK(FoundryCLIParser::get_legacy_deprecation_notice(make_args({ "foundry", "--foundry_script-generate-tests" })).contains("test generate-fixtures"));
+	CHECK(FoundryCLIParser::get_legacy_deprecation_notice(make_args({ "foundry", "--foundry_script-generate-format-tests" })).contains("test generate-format-fixtures"));
 }
 
 } // namespace TestFoundryCLIParser
