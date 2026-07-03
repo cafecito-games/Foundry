@@ -102,7 +102,9 @@ void EditorObjectSelector::_show_popup() {
 }
 
 void EditorObjectSelector::_about_to_show() {
-	EditorSelectionHistory *history = EditorNode::get_singleton()->get_editor_selection_history();
+	if (!history) {
+		return;
+	}
 	Object *obj = ObjectDB::get_instance(history->get_path_object(history->get_path_size() - 1));
 	if (!obj) {
 		return;
@@ -117,15 +119,24 @@ void EditorObjectSelector::_about_to_show() {
 	}
 }
 
+void EditorObjectSelector::set_history(EditorSelectionHistory *p_history) {
+	history = p_history;
+}
+
 void EditorObjectSelector::update_path() {
-	EditorSelectionHistory *history = EditorNode::get_singleton()->get_editor_selection_history();
+	if (!history) {
+		return;
+	}
 	for (int i = 0; i < history->get_path_size(); i++) {
 		Object *obj = ObjectDB::get_instance(history->get_path_object(i));
 		if (!obj) {
 			continue;
 		}
 
-		Ref<Texture2D> obj_icon = EditorNode::get_singleton()->get_object_icon(obj);
+		Ref<Texture2D> obj_icon;
+		if (EditorNode::get_singleton()) {
+			obj_icon = EditorNode::get_singleton()->get_object_icon(obj);
+		}
 		if (obj_icon.is_valid()) {
 			current_object_icon->set_texture(obj_icon);
 		}

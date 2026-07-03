@@ -4483,7 +4483,9 @@ void EditorNode::set_edited_scene_root(Node *p_scene, bool p_auto_add) {
 	if (Object::cast_to<Popup>(p_scene)) {
 		Object::cast_to<Popup>(p_scene)->show();
 	}
-	SceneTreeDock::get_singleton()->set_edited_scene(p_scene);
+	// The bound scene context already holds the new root; refresh the dock's
+	// tree so it reflects it.
+	SceneTreeDock::get_singleton()->update_tree();
 	if (get_tree()) {
 		get_tree()->set_edited_scene_root(p_scene);
 	}
@@ -4614,7 +4616,9 @@ void EditorNode::_set_current_scene_nocheck(int p_idx) {
 		p->show();
 	}
 
-	SceneTreeDock::get_singleton()->set_edited_scene(new_scene);
+	// The bound scene context already holds the new root; refresh the dock's
+	// tree so it reflects it.
+	SceneTreeDock::get_singleton()->update_tree();
 	if (get_tree()) {
 		get_tree()->set_edited_scene_root(new_scene);
 	}
@@ -4657,6 +4661,13 @@ void EditorNode::_set_current_scene_nocheck(int p_idx) {
 }
 
 void EditorNode::_activate_scene_context(EditorSceneContext *p_context) {
+	// "No scene open" is represented by the persistent no_scene_context, so a
+	// null request binds the docks and editor selection/history to it rather
+	// than to nothing.
+	if (!p_context) {
+		p_context = no_scene_context;
+	}
+
 	if (active_scene_context == p_context) {
 		return;
 	}
@@ -4673,24 +4684,29 @@ void EditorNode::_activate_scene_context(EditorSceneContext *p_context) {
 
 	active_scene_context = p_context;
 
-	if (p_context) {
-		editor_selection = p_context->get_selection();
-		editor_history = p_context->get_history();
-	} else {
-		editor_selection = no_scene_selection;
-		editor_history = &no_scene_history;
-	}
+	editor_selection = p_context->get_selection();
+	editor_history = p_context->get_history();
 
 	// The effective selection changed with the context even if the incoming
 	// selection's content did not (e.g. it is empty), so make sure consumers
 	// deriving UI state from the selection get notified.
 	editor_selection->mark_changed();
 
+	// Rebind the single instance of each dock to the newly focused context.
+	if (SceneTreeDock::get_singleton()) {
+		SceneTreeDock::get_singleton()->set_scene_context(p_context);
+	}
+	if (InspectorDock::get_singleton()) {
+		InspectorDock::get_singleton()->set_scene_context(p_context);
+	}
+
 	emit_signal(SNAME("active_scene_context_changed"));
 }
 
 void EditorNode::_attach_active_scene_context() {
-	if (!active_scene_context || !scene_viewport_container) {
+	// The no_scene_context has no scene to show, so its (empty) viewport is
+	// never attached to the display container.
+	if (!active_scene_context || active_scene_context == no_scene_context || !scene_viewport_container) {
 		return;
 	}
 	if (!active_scene_context->is_active()) {
@@ -4706,7 +4722,9 @@ void EditorNode::_attach_active_scene_context() {
 }
 
 SubViewport *EditorNode::get_scene_root() {
-	if (active_scene_context) {
+	// The no_scene_context stands in for "no real scene", so fall back to the
+	// placeholder viewport in that case just like before it existed.
+	if (active_scene_context && active_scene_context != no_scene_context) {
 		return active_scene_context->get_viewport();
 	}
 	return placeholder_scene_viewport;
@@ -4722,10 +4740,19 @@ void EditorNode::scene_context_about_to_be_removed(EditorSceneContext *p_context
 	if (active_scene_context != p_context) {
 		return;
 	}
-	active_scene_context = nullptr;
-	editor_selection = no_scene_selection;
-	editor_history = &no_scene_history;
+	// The context is about to be freed, so fall back to the persistent
+	// no_scene_context and rebind the docks so they never hold the stale
+	// pointer.
+	active_scene_context = no_scene_context;
+	editor_selection = no_scene_context->get_selection();
+	editor_history = no_scene_context->get_history();
 	editor_selection->mark_changed();
+	if (SceneTreeDock::get_singleton()) {
+		SceneTreeDock::get_singleton()->set_scene_context(no_scene_context);
+	}
+	if (InspectorDock::get_singleton()) {
+		InspectorDock::get_singleton()->set_scene_context(no_scene_context);
+	}
 	emit_signal(SNAME("active_scene_context_changed"));
 }
 
@@ -4744,7 +4771,7 @@ void EditorNode::_configure_editor_selection(EditorSelection *p_selection) {
 void EditorNode::add_editor_selection_plugin(Object *p_plugin) {
 	ERR_FAIL_NULL(p_plugin);
 	selection_meta_plugins.push_back(p_plugin->get_instance_id());
-	no_scene_selection->add_editor_plugin(p_plugin);
+	no_scene_context->get_selection()->add_editor_plugin(p_plugin);
 	for (int i = 0; i < editor_data.get_edited_scene_count(); i++) {
 		editor_data.get_scene_context(i)->get_selection()->add_editor_plugin(p_plugin);
 	}
@@ -4752,7 +4779,7 @@ void EditorNode::add_editor_selection_plugin(Object *p_plugin) {
 
 void EditorNode::connect_editor_selection_changed(const Callable &p_callable) {
 	selection_changed_callables.push_back(p_callable);
-	no_scene_selection->connect("selection_changed", p_callable);
+	no_scene_context->get_selection()->connect("selection_changed", p_callable);
 	for (int i = 0; i < editor_data.get_edited_scene_count(); i++) {
 		editor_data.get_scene_context(i)->get_selection()->connect("selection_changed", p_callable);
 	}
@@ -7523,7 +7550,7 @@ void EditorNode::reload_instances_with_path_in_edited_scenes() {
 					// How that the editor executes a redraw while destroying or progressing the EditorProgress,
 					// it crashes when the root scene has been replaced because the edited scene
 					// was freed and no longer in the scene tree.
-					SceneTreeDock::get_singleton()->set_edited_scene(current_edited_scene);
+					SceneTreeDock::get_singleton()->update_tree();
 					if (get_tree()) {
 						get_tree()->set_edited_scene_root(current_edited_scene);
 					}
@@ -8910,9 +8937,9 @@ EditorNode::EditorNode() {
 		EditorInspector::add_inspector_plugin(ppm);
 	}
 
-	no_scene_selection = memnew(EditorSelection);
-	editor_selection = no_scene_selection;
-	editor_history = &no_scene_history;
+	no_scene_context = memnew(EditorSceneContext);
+	editor_selection = no_scene_context->get_selection();
+	editor_history = no_scene_context->get_history();
 
 	EditorFileSystem *efs = memnew(EditorFileSystem);
 	add_child(efs);
@@ -9408,6 +9435,7 @@ EditorNode::EditorNode() {
 	// Instantiate and place editor docks.
 
 	memnew(SceneTreeDock(editor_selection, editor_data));
+	SceneTreeDock::get_singleton()->set_scene_context(no_scene_context);
 	editor_dock_manager->add_dock(SceneTreeDock::get_singleton());
 
 	memnew(ImportDock);
@@ -9421,6 +9449,7 @@ EditorNode::EditorNode() {
 	editor_dock_manager->add_dock(filesystem_dock);
 
 	memnew(InspectorDock(editor_data));
+	InspectorDock::get_singleton()->set_scene_context(no_scene_context);
 	editor_dock_manager->add_dock(InspectorDock::get_singleton());
 
 	memnew(SignalsDock);
@@ -9891,7 +9920,7 @@ EditorNode::~EditorNode() {
 #ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 	memdelete(build_task_bootstrap_loader);
 #endif
-	memdelete(no_scene_selection);
+	memdelete(no_scene_context);
 	memdelete(editor_plugins_over);
 	memdelete(editor_plugins_force_over);
 	memdelete(editor_plugins_force_input_forwarding);

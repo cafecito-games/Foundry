@@ -226,5 +226,10 @@ String EditorDock::get_display_title() const {
 }
 
 String EditorDock::get_effective_layout_key() const {
+	// Multi-instance scheme: the primary instance of a dock uses the bare key
+	// (e.g. "Scene", "Inspector") so existing user layouts keep loading;
+	// secondary instances created for additional panes use "<key>:<n>" (e.g.
+	// "Scene:2"), assigned by whoever constructs them. EditorDockManager also
+	// uniquifies colliding keys with the same "<key>:<n>" suffix as a guard.
 	return layout_key.is_empty() ? get_display_title() : layout_key;
 }

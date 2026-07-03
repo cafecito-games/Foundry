@@ -37,6 +37,7 @@
 
 class CheckBox;
 class EditorData;
+class EditorSceneContext;
 class EditorSelection;
 class HBoxContainer;
 class MenuButton;
@@ -140,6 +141,10 @@ class SceneTreeDock : public EditorDock {
 	void _perform_property_drop(Node *p_node, const String &p_property, Ref<Resource> p_res);
 
 	EditorData *editor_data = nullptr;
+	// The scene context this dock is bound to. Selection, inspector history,
+	// and the edited scene root are all read through it rather than through
+	// EditorNode globals.
+	EditorSceneContext *scene_context = nullptr;
 	EditorSelection *editor_selection = nullptr;
 	LocalVector<ObjectID> node_previous_selection;
 	bool update_script_button_queued = false;
@@ -179,7 +184,9 @@ class SceneTreeDock : public EditorDock {
 	void _create();
 	Node *_do_create(Node *p_parent);
 	void _post_do_create(Node *p_child);
-	Node *edited_scene = nullptr;
+	// Root of the scene edited by the bound context (null when none is bound
+	// or the context has no scene root yet).
+	Node *_get_edited_scene_root() const;
 	Node *pending_click_select = nullptr;
 	bool tree_clicked = false;
 
@@ -253,7 +260,6 @@ class SceneTreeDock : public EditorDock {
 	bool _validate_no_foreign();
 	bool _validate_no_instance();
 	void _selection_changed();
-	void _update_editor_selection();
 	void _update_script_button();
 	void _queue_update_script_button();
 
@@ -312,6 +318,9 @@ private:
 	static SceneTreeDock *singleton;
 
 public:
+	// Returns the dock bound to the focused scene context. Call sites that must
+	// act on a specific context should hold an explicit dock/context reference
+	// instead of relying on this focused-context singleton.
 	static SceneTreeDock *get_singleton() { return singleton; }
 
 protected:
@@ -326,7 +335,9 @@ public:
 	void _focus_node();
 
 	void add_root_node(Node *p_node);
-	void set_edited_scene(Node *p_scene);
+	void set_scene_context(EditorSceneContext *p_context);
+	EditorSceneContext *get_scene_context() const { return scene_context; }
+	void update_tree();
 	void instantiate(const String &p_file);
 	void instantiate_scenes(const Vector<String> &p_files, Node *p_parent = nullptr);
 	void clear_previous_node_selection();

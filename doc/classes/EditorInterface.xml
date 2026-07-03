@@ -171,7 +171,7 @@
 		<method name="get_inspector" qualifiers="const">
 			<return type="EditorInspector" />
 			<description>
-				Returns the editor's [EditorInspector] instance.
+				Returns the [EditorInspector] instance of the currently focused scene context (the inspector shown for the active scene tab).
 				[b]Warning:[/b] Removing and freeing this node will render a part of the editor useless and may cause a crash.
 			</description>
 		</method>

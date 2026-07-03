@@ -46,6 +46,10 @@ class EditorObjectSelector : public Button {
 	TextureRect *sub_objects_icon = nullptr;
 	PopupMenu *sub_objects_menu = nullptr;
 
+	// Inspector navigation history of the bound scene context, injected by the
+	// owning InspectorDock. Tolerates null (no context bound).
+	EditorSelectionHistory *history = nullptr;
+
 	Vector<ObjectID> objects;
 
 	void _show_popup();
@@ -59,6 +63,7 @@ protected:
 public:
 	virtual Size2 get_minimum_size() const override;
 
+	void set_history(EditorSelectionHistory *p_history);
 	void update_path();
 	void clear_path();
 	void enable_path();
