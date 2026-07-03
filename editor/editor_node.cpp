@@ -4654,6 +4654,9 @@ void EditorNode::_activate_scene_context(EditorSceneContext *p_context) {
 		if (scene_viewport_container && !p_context->is_active()) {
 			p_context->activate(scene_viewport_container);
 		}
+		// With the scene back in the tree, stale history entries (e.g. nodes
+		// freed while the context was inactive) can be pruned.
+		p_context->get_history()->cleanup_history();
 		_apply_scene_viewport_2d_state(p_context->get_viewport());
 		if (theme_preview_mode_set) {
 			_apply_preview_themes(p_context->get_viewport());
@@ -5321,22 +5324,18 @@ void EditorNode::get_children_nodes(Node *p_node, List<Node *> &p_nodes) {
 	}
 }
 
-void EditorNode::replace_history_reimported_nodes(Node *p_original_root_node, Node *p_new_root_node, Node *p_node) {
-	// Fix the history of the scene currently selected in editor_data (which,
-	// during reimports, is not necessarily the displayed one).
-	EditorSceneContext *scene_context = editor_data.get_active_scene_context();
-	ERR_FAIL_NULL(scene_context);
-	EditorSelectionHistory *history = scene_context->get_history();
+void EditorNode::replace_history_reimported_nodes(Node *p_original_root_node, Node *p_new_root_node, Node *p_node, EditorSelectionHistory *p_history) {
+	ERR_FAIL_NULL(p_history);
 	NodePath scene_path_to_node = p_original_root_node->get_path_to(p_node);
 	Node *new_node = p_new_root_node->get_node_or_null(scene_path_to_node);
 	if (new_node) {
-		history->replace_object(p_node->get_instance_id(), new_node->get_instance_id());
+		p_history->replace_object(p_node->get_instance_id(), new_node->get_instance_id());
 	} else {
-		history->replace_object(p_node->get_instance_id(), ObjectID());
+		p_history->replace_object(p_node->get_instance_id(), ObjectID());
 	}
 
 	for (int i = 0; i < p_node->get_child_count(); i++) {
-		replace_history_reimported_nodes(p_original_root_node, p_new_root_node, p_node->get_child(i));
+		replace_history_reimported_nodes(p_original_root_node, p_new_root_node, p_node->get_child(i), p_history);
 	}
 }
 
@@ -7432,7 +7431,7 @@ void EditorNode::reload_instances_with_path_in_edited_scenes() {
 			// instantiated if used elsewhere, causing the "current edited item" to be
 			// linked to a node that will be destroyed later. This caused the editor to
 			// crash when reimporting scenes with animations when "Editable children" was enabled.
-			replace_history_reimported_nodes(original_node, instantiated_node, original_node);
+			replace_history_reimported_nodes(original_node, instantiated_node, original_node, scene_context->get_history());
 
 			// Reset the editable instance state.
 			HashMap<NodePath, SceneEditorDataEntry> scene_editor_data_table;
@@ -7586,8 +7585,12 @@ void EditorNode::reload_instances_with_path_in_edited_scenes() {
 			editor_selection->update();
 		}
 
-		// Cleanup the history of the changes.
-		scene_context->get_history()->cleanup_history();
+		// Cleanup the history of the changes. Inactive contexts are skipped:
+		// their nodes are intentionally out of the tree, which cleanup_history
+		// treats as invalid. Their history is cleaned up on activation.
+		if (scene_context->is_active()) {
+			scene_context->get_history()->cleanup_history();
+		}
 	}
 
 	// For the whole editor, call the _notify_nodes_scene_reimported with a list of replaced nodes.

@@ -997,7 +997,7 @@ public:
 	void get_children_nodes(Node *p_node, List<Node *> &p_nodes);
 	bool is_additional_node_in_scene(Node *p_edited_scene, Node *p_reimported_root, Node *p_node);
 
-	void replace_history_reimported_nodes(Node *p_original_root_node, Node *p_new_root_node, Node *p_node);
+	void replace_history_reimported_nodes(Node *p_original_root_node, Node *p_new_root_node, Node *p_node, EditorSelectionHistory *p_history);
 
 	bool is_scene_open(const String &p_path);
 	bool is_multi_window_enabled() const;
