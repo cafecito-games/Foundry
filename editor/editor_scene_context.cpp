@@ -36,11 +36,18 @@ void EditorSceneContext::set_scene_root_node(Node *p_scene_root, bool p_attach_t
 	if (scene_root_node == p_scene_root) {
 		return;
 	}
+	if (!p_attach_to_viewport) {
+		// The caller replaces the root in place (e.g. through replace_by,
+		// which moves the new node into the old node's parent slot), so the
+		// old root must keep its parent until then.
+		scene_root_node = p_scene_root;
+		return;
+	}
 	if (scene_root_node && scene_root_node->get_parent() == viewport) {
 		viewport->remove_child(scene_root_node);
 	}
 	scene_root_node = p_scene_root;
-	if (p_attach_to_viewport && scene_root_node && scene_root_node->get_parent() == nullptr) {
+	if (scene_root_node && scene_root_node->get_parent() == nullptr) {
 		viewport->add_child(scene_root_node, true);
 	}
 }

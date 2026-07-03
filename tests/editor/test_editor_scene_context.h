@@ -195,6 +195,31 @@ TEST_CASE("[SceneTree][Editor] EditorSceneContext preserves inspector history ac
 	memdelete(context);
 }
 
+TEST_CASE("[SceneTree][Editor] EditorSceneContext supports in-place root replacement") {
+	Window *tree_root = SceneTree::get_singleton()->get_root();
+
+	EditorSceneContext *context = memnew(EditorSceneContext);
+	Node2D *old_root = memnew(Node2D);
+	context->set_scene_root_node(old_root);
+	context->activate(tree_root);
+
+	// Mirrors SceneTreeDock's change-root-type flow: the context is told
+	// about the new root first, then replace_by moves it into the old root's
+	// parent slot. The old root must keep its parent until replace_by runs.
+	Node2D *new_root = memnew(Node2D);
+	context->set_scene_root_node(new_root, false);
+	CHECK(old_root->get_parent() == context->get_viewport());
+	old_root->replace_by(new_root, true);
+
+	CHECK(context->get_scene_root_node() == new_root);
+	CHECK(new_root->get_parent() == context->get_viewport());
+	CHECK(old_root->get_parent() == nullptr);
+
+	memdelete(old_root);
+	context->deactivate();
+	memdelete(context);
+}
+
 TEST_CASE("[SceneTree][Editor] EditorData creates one context per edited scene") {
 	EditorData editor_data;
 
