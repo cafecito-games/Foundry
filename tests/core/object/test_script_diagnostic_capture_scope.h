@@ -167,6 +167,8 @@ TEST_CASE("[ScriptDiagnosticCapture] Event dictionaries expose the stable schema
 #include "modules/foundry_script/tests/fs_test_runner.h"
 
 #include "core/config/project_settings.h"
+#include "core/io/dir_access.h"
+#include "core/io/file_access.h"
 #include "core/io/resource_loader.h"
 #include "core/object/script_function_state.h"
 #include "scene/main/scene_tree.h"
@@ -286,6 +288,19 @@ TEST_CASE("[ScriptDiagnosticCaptureScope][SceneTree] capture_async runtime error
 	CHECK(CoreGlobals::print_error_enabled);
 
 	CoreGlobals::print_error_enabled = errors_enabled_before;
+}
+
+TEST_CASE("[ScriptDiagnosticCaptureScope][SceneTree] Project settings restore keeps user:// writable") {
+	{
+		DiagnosticCaptureFixture fixture;
+		(void)fixture;
+	}
+
+	Ref<FileAccess> file = FileAccess::open("user://diagnostic_capture_restore_probe.fs", FileAccess::WRITE);
+	CHECK(file.is_valid());
+	if (file.is_valid()) {
+		DirAccess::remove_absolute("user://diagnostic_capture_restore_probe.fs");
+	}
 }
 
 } // namespace TestScriptDiagnosticCaptureScopeAsync
