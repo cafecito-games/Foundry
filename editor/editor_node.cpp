@@ -4591,13 +4591,17 @@ void EditorNode::_set_current_scene_nocheck(int p_idx) {
 
 	resource_count.clear();
 	SceneTreeDock::get_singleton()->clear_previous_node_selection();
-	editor_data.set_edited_scene(p_idx);
-
-	Node *new_scene = editor_data.get_edited_scene_root();
 
 	// Deactivates the outgoing context (detaching its viewport, with the
 	// scene still parented to it) and points the editor at the new context.
-	_activate_scene_context(editor_data.get_active_scene_context());
+	// This happens while the outgoing scene is still the current one, since
+	// stashing its editor plugin states runs plugin get_state()
+	// implementations that resolve node paths through the current scene.
+	_activate_scene_context(editor_data.get_scene_context(p_idx));
+
+	editor_data.set_edited_scene(p_idx);
+
+	Node *new_scene = editor_data.get_edited_scene_root();
 
 	if (Popup *p = Object::cast_to<Popup>(new_scene)) {
 		p->show();
