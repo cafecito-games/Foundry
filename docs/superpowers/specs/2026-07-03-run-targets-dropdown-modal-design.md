@@ -4,9 +4,9 @@ Date: 2026-07-03
 
 ## Context
 
-Run targets are currently configured through `RunTargetsPanel`, an `EditorDock` registered in the editor sidebar. The run bar already has the main Run Project button, pause/stop buttons, and the existing remote deploy menu (`EditorRunNative`). The run-target deploy rows are part of the remote deploy menu, while the detailed configuration/readiness UI lives in the dock.
+Run targets started from `RunTargetsPanel`, which was originally implemented as an `EditorDock` registered in the editor sidebar. The run bar already has the main Run Project button, pause/stop buttons, and the existing remote deploy menu (`EditorRunNative`). The run-target deploy rows are part of the remote deploy menu, and this branch moves the detailed configuration/readiness UI into a run-options modal.
 
-This placement makes run targets feel like a persistent workspace panel even though they are a run configuration workflow. The desired direction is to access run target configuration from a small dropdown button next to the main Run Project button, similar to other IDEs.
+That sidebar placement made run targets feel like a persistent workspace panel even though they are a run configuration workflow. This branch makes run target configuration accessible from a small dropdown button next to the main Run Project button, similar to other IDEs.
 
 ## Goals
 

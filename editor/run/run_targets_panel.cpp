@@ -235,6 +235,10 @@ bool RunTargetsPanel::_get_selected_target(RunTarget &r_target) const {
 }
 
 void RunTargetsPanel::_commit_target(int p_index, const RunTarget &p_target) {
+	if (!config_writable) {
+		return;
+	}
+
 	Vector<RunTarget> targets = manager->get_targets();
 	if (p_index < 0 || p_index >= targets.size()) {
 		return;
@@ -483,6 +487,10 @@ void RunTargetsPanel::_on_target_selected(int p_index) {
 }
 
 void RunTargetsPanel::_on_add_pressed() {
+	if (!config_writable) {
+		return;
+	}
+
 	Ref<EditorExportPreset> preset = _get_or_create_preset_for_platform(IOS_PLATFORM);
 
 	RunTarget target;
@@ -580,6 +588,10 @@ void RunTargetsPanel::_on_setup_device_pressed(const String &p_platform, const S
 }
 
 void RunTargetsPanel::_on_remove_pressed() {
+	if (!config_writable) {
+		return;
+	}
+
 	const int index = _selected_target_index();
 	if (index < 0) {
 		return;
@@ -594,6 +606,10 @@ void RunTargetsPanel::_on_remove_pressed() {
 }
 
 void RunTargetsPanel::_on_rename_pressed() {
+	if (!config_writable) {
+		return;
+	}
+
 	RunTarget target;
 	if (!_get_selected_target(target)) {
 		return;
@@ -605,6 +621,10 @@ void RunTargetsPanel::_on_rename_pressed() {
 }
 
 void RunTargetsPanel::_on_rename_confirmed() {
+	if (!config_writable) {
+		return;
+	}
+
 	const int index = _selected_target_index();
 	if (index < 0) {
 		return;
@@ -643,6 +663,10 @@ void RunTargetsPanel::_on_signing_mode_changed(int p_index) {
 	if (updating_fields) {
 		return;
 	}
+	if (!config_writable) {
+		return;
+	}
+
 	const int index = _selected_target_index();
 	if (index < 0) {
 		return;
@@ -660,6 +684,10 @@ void RunTargetsPanel::_on_bundle_id_submitted() {
 	if (updating_fields) {
 		return;
 	}
+	if (!config_writable) {
+		return;
+	}
+
 	RunTarget target;
 	if (!_get_selected_target(target)) {
 		return;
@@ -677,6 +705,10 @@ void RunTargetsPanel::_on_bundle_id_submitted() {
 }
 
 void RunTargetsPanel::_apply_team_id(const String &p_team_id) {
+	if (!config_writable) {
+		return;
+	}
+
 	const int index = _selected_target_index();
 	if (index < 0) {
 		return;
@@ -733,6 +765,10 @@ void RunTargetsPanel::_on_device_changed(int p_index) {
 	if (updating_fields) {
 		return;
 	}
+	if (!config_writable) {
+		return;
+	}
+
 	const int index = _selected_target_index();
 	if (index < 0) {
 		return;
