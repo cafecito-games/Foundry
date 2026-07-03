@@ -75,6 +75,7 @@ if env.editor_build:
     env.add_source_files(env.editor_sources, translation_targets.keys())
 
     SConscript("animation/SCsub")
+    SConscript("automation/SCsub")
     SConscript("asset_library/SCsub")
     SConscript("audio/SCsub")
     SConscript("debugger/SCsub")

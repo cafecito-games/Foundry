@@ -92,6 +92,11 @@ public:
 
 		String lsp_port;
 
+		bool automation = false;
+		String automation_transport;
+		int automation_port = -1;
+		String automation_token;
+
 		bool docs_include_docs = false;
 		String docs_engine_output;
 		bool docs_no_docbase = false;

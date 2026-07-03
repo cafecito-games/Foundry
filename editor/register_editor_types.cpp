@@ -32,6 +32,7 @@
 
 #include "core/object/script_language.h"
 #include "editor/animation/animation_tree_editor_plugin.h"
+#include "editor/automation/editor_automation_server.h"
 #include "editor/audio/audio_stream_editor_plugin.h"
 #include "editor/audio/audio_stream_randomizer_editor_plugin.h"
 #include "editor/debugger/debug_adapter/debug_adapter_server.h"
@@ -220,6 +221,7 @@ void register_editor_types() {
 	if (!Engine::get_singleton()->is_recovery_mode_hint()) {
 		EditorPlugins::add_by_type<DebugAdapterServer>();
 	}
+	EditorPlugins::add_by_type<EditorAutomationServer>();
 	EditorPlugins::add_by_type<EditorScriptPlugin>();
 	EditorPlugins::add_by_type<FontEditorPlugin>();
 	EditorPlugins::add_by_type<GPUParticles3DEditorPlugin>();
