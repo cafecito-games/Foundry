@@ -883,11 +883,13 @@ void SceneTreeEditor::_node_added(Node *p_node) {
 }
 
 void SceneTreeEditor::_node_removed(Node *p_node) {
-	if (EditorNode::get_singleton()->is_exiting()) {
+	// The exit/scene-switch fast paths live on EditorNode; a bare context (e.g.
+	// in unit tests) has none, so fall through to the normal removal handling.
+	if (EditorNode::get_singleton() && EditorNode::get_singleton()->is_exiting()) {
 		return; // Speed up exit.
 	}
 
-	if (EditorNode::get_singleton()->is_changing_scene()) {
+	if (EditorNode::get_singleton() && EditorNode::get_singleton()->is_changing_scene()) {
 		return; // Switching tabs we will be destroying node cache anyway.
 	}
 
@@ -1254,7 +1256,10 @@ void SceneTreeEditor::_tree_process_mode_changed() {
 }
 
 void SceneTreeEditor::_tree_changed() {
-	if (EditorNode::get_singleton()->is_exiting()) {
+	// EditorNode owns the exit flag; when the editor is shutting down there is
+	// no point updating. Without an EditorNode (e.g. a dock bound to a bare
+	// context in unit tests) there is nothing to speed up, so skip the check.
+	if (EditorNode::get_singleton() && EditorNode::get_singleton()->is_exiting()) {
 		return; // Speed up exit.
 	}
 

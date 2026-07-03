@@ -35,6 +35,7 @@
 #include "editor/docks/filesystem_dock.h"
 #include "editor/editor_main_screen.h"
 #include "editor/editor_node.h"
+#include "editor/editor_scene_context.h"
 #include "editor/editor_string_names.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/gui/editor_file_dialog.h"
@@ -310,13 +311,20 @@ void InspectorDock::_prepare_resource_extra_popup() {
 }
 
 Ref<Resource> InspectorDock::_get_current_resource() const {
-	ObjectID current_id = EditorNode::get_singleton()->get_editor_selection_history()->get_current();
+	EditorSelectionHistory *editor_history = _get_history();
+	if (!editor_history) {
+		return Ref<Resource>();
+	}
+	ObjectID current_id = editor_history->get_current();
 	Object *current_obj = current_id.is_valid() ? ObjectDB::get_instance(current_id) : nullptr;
 	return Ref<Resource>(Object::cast_to<Resource>(current_obj));
 }
 
 void InspectorDock::_prepare_history() {
-	EditorSelectionHistory *editor_history = EditorNode::get_singleton()->get_editor_selection_history();
+	EditorSelectionHistory *editor_history = _get_history();
+	if (!editor_history) {
+		return;
+	}
 	editor_history->cleanup_history();
 
 	int history_to = MAX(0, editor_history->get_history_len() - 25);
@@ -366,8 +374,12 @@ void InspectorDock::_prepare_history() {
 }
 
 void InspectorDock::_select_history(int p_idx) {
+	EditorSelectionHistory *editor_history = _get_history();
+	if (!editor_history) {
+		return;
+	}
 	// Push it to the top, it is not correct, but it's more useful.
-	ObjectID id = EditorNode::get_singleton()->get_editor_selection_history()->get_history_obj(p_idx);
+	ObjectID id = editor_history->get_history_obj(p_idx);
 	Object *obj = ObjectDB::get_instance(id);
 	if (!obj) {
 		return;
@@ -404,7 +416,11 @@ void InspectorDock::_files_moved(const String &p_old_file, const String &p_new_f
 		return;
 	}
 
-	ObjectID current_id = EditorNode::get_singleton()->get_editor_selection_history()->get_current();
+	EditorSelectionHistory *editor_history = _get_history();
+	if (!editor_history) {
+		return;
+	}
+	ObjectID current_id = editor_history->get_current();
 	Ref<Resource> res(current_id.is_valid() ? ObjectDB::get_instance(current_id) : nullptr);
 	// We only care about updating the path if the current object is the one being renamed.
 	if (res.is_valid() && p_old_file == res->get_path()) {
@@ -414,7 +430,8 @@ void InspectorDock::_files_moved(const String &p_old_file, const String &p_new_f
 }
 
 void InspectorDock::_edit_forward() {
-	if (EditorNode::get_singleton()->get_editor_selection_history()->next()) {
+	EditorSelectionHistory *editor_history = _get_history();
+	if (editor_history && editor_history->next()) {
 		EditorNode::get_singleton()->edit_current();
 
 		if (const EditorDebuggerRemoteObjects *robjs = Object::cast_to<EditorDebuggerRemoteObjects>(current)) {
@@ -424,7 +441,10 @@ void InspectorDock::_edit_forward() {
 }
 
 void InspectorDock::_edit_back() {
-	EditorSelectionHistory *editor_history = EditorNode::get_singleton()->get_editor_selection_history();
+	EditorSelectionHistory *editor_history = _get_history();
+	if (!editor_history) {
+		return;
+	}
 	if ((current && editor_history->previous()) || editor_history->get_path_size() == 1) {
 		EditorNode::get_singleton()->edit_current();
 
@@ -546,14 +566,16 @@ void InspectorDock::clear() {
 }
 
 void InspectorDock::update(Object *p_object) {
-	EditorSelectionHistory *editor_history = EditorNode::get_singleton()->get_editor_selection_history();
+	EditorSelectionHistory *editor_history = _get_history();
 
-	backward_button->set_disabled(editor_history->is_at_beginning());
-	forward_button->set_disabled(editor_history->is_at_end());
-
-	history_menu->set_disabled(true);
-	if (editor_history->get_history_len() > 0) {
-		history_menu->set_disabled(false);
+	if (editor_history) {
+		backward_button->set_disabled(editor_history->is_at_beginning());
+		forward_button->set_disabled(editor_history->is_at_end());
+		history_menu->set_disabled(editor_history->get_history_len() == 0);
+	} else {
+		backward_button->set_disabled(true);
+		forward_button->set_disabled(true);
+		history_menu->set_disabled(true);
 	}
 	object_selector->update_path();
 
@@ -714,12 +736,33 @@ void InspectorDock::shortcut_input(const Ref<InputEvent> &p_event) {
 	}
 }
 
+EditorSelectionHistory *InspectorDock::_get_history() const {
+	return scene_context ? scene_context->get_history() : nullptr;
+}
+
+void InspectorDock::set_scene_context(EditorSceneContext *p_context) {
+	if (scene_context == p_context) {
+		return;
+	}
+	scene_context = p_context;
+
+	// Re-inject the bound context's history into the object selector and
+	// refresh the history-dependent chrome (back/forward buttons, history
+	// menu). What the inspector edits is still driven by
+	// EditorNode::_edit_current() after a context switch.
+	object_selector->set_history(_get_history());
+	update(current);
+}
+
 InspectorDock::InspectorDock(EditorData &p_editor_data) {
 	singleton = this;
 	set_name(TTRC("Inspector"));
 	set_icon_name("AnimationTrackList");
 	set_dock_shortcut(ED_SHORTCUT_AND_COMMAND("docks/open_inspector", TTRC("Open Inspector Dock")));
 	set_default_slot(EditorDock::DOCK_SLOT_RIGHT_UL);
+	// Primary instance keeps the bare layout key; secondary instances (future
+	// phases) get "Inspector:<n>". See EditorDock::get_effective_layout_key().
+	set_layout_key("Inspector");
 
 	VBoxContainer *main_vb = memnew(VBoxContainer);
 	add_child(main_vb);
@@ -811,7 +854,7 @@ InspectorDock::InspectorDock(EditorData &p_editor_data) {
 	open_docs_button->connect(SceneStringName(pressed), callable_mp(this, &InspectorDock::_menu_option).bind(OBJECT_REQUEST_HELP));
 
 	new_resource_dialog = memnew(CreateDialog);
-	EditorNode::get_singleton()->get_gui_base()->add_child(new_resource_dialog);
+	add_child(new_resource_dialog);
 	new_resource_dialog->set_base_type("Resource");
 	new_resource_dialog->connect("create", callable_mp(this, &InspectorDock::_resource_created));
 
@@ -864,7 +907,7 @@ InspectorDock::InspectorDock(EditorData &p_editor_data) {
 	unique_resources_confirmation->connect(SceneStringName(confirmed), callable_mp(this, &InspectorDock::_menu_confirm_current));
 
 	info_dialog = memnew(AcceptDialog);
-	EditorNode::get_singleton()->get_gui_base()->add_child(info_dialog);
+	add_child(info_dialog);
 
 	load_resource_dialog = memnew(EditorFileDialog);
 	main_vb->add_child(load_resource_dialog);
@@ -893,7 +936,9 @@ InspectorDock::InspectorDock(EditorData &p_editor_data) {
 
 	inspector->connect("resource_selected", callable_mp(this, &InspectorDock::_resource_selected));
 
-	FileSystemDock::get_singleton()->connect("files_moved", callable_mp(this, &InspectorDock::_files_moved));
+	if (FileSystemDock::get_singleton()) {
+		FileSystemDock::get_singleton()->connect("files_moved", callable_mp(this, &InspectorDock::_files_moved));
+	}
 
 	set_process_shortcut_input(true);
 }

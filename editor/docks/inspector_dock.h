@@ -43,9 +43,14 @@
 
 class EditorFileDialog;
 class EditorObjectSelector;
+class EditorSceneContext;
 
 class InspectorDock : public EditorDock {
 	FOUNDRY_CLASS(InspectorDock, EditorDock);
+
+	// Grants the dock-binding unit tests read access to the history-dependent
+	// chrome (back/forward/history-menu button states).
+	friend class InspectorDockTestAccess;
 
 	enum MenuOptions {
 		RESOURCE_LOAD,
@@ -73,6 +78,10 @@ class InspectorDock : public EditorDock {
 	};
 
 	EditorData *editor_data = nullptr;
+
+	// The scene context this dock is bound to. Inspector navigation history is
+	// read through it rather than through EditorNode globals.
+	EditorSceneContext *scene_context = nullptr;
 
 	EditorInspector *inspector = nullptr;
 
@@ -134,14 +143,22 @@ class InspectorDock : public EditorDock {
 	void _select_history(int p_idx);
 	void _prepare_history();
 
+	// Inspector navigation history of the bound context (null when no context
+	// is bound).
+	EditorSelectionHistory *_get_history() const;
+
 	virtual void shortcut_input(const Ref<InputEvent> &p_event) override;
 
 private:
 	static inline InspectorDock *singleton = nullptr;
 
 public:
+	// Both accessors return the dock/inspector bound to the focused scene
+	// context. Call sites that must act on a specific context should hold an
+	// explicit dock/context reference instead of relying on these
+	// focused-context singletons.
 	static InspectorDock *get_singleton() { return singleton; }
-	static EditorInspector *get_inspector_singleton() { return singleton->inspector; }
+	static EditorInspector *get_inspector_singleton() { return singleton ? singleton->inspector : nullptr; }
 
 protected:
 	static void _bind_methods();
@@ -153,6 +170,8 @@ public:
 	void open_resource(const String &p_type);
 	void clear();
 	void set_info(const String &p_button_text, const String &p_message, bool p_is_warning);
+	void set_scene_context(EditorSceneContext *p_context);
+	EditorSceneContext *get_scene_context() const { return scene_context; }
 	void update(Object *p_object);
 	Container *get_addon_area();
 	EditorInspector *get_inspector() { return inspector; }

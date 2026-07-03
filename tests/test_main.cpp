@@ -36,6 +36,7 @@
 
 #ifdef TOOLS_ENABLED
 #include "editor/file_system/editor_paths.h"
+#include "editor/inspector/editor_property_name_processor.h"
 #include "editor/settings/editor_settings.h"
 #include "tests/editor/file_system/test_editor_file_system.h"
 #include "tests/editor/project_manager/test_ios_project_template.h"
@@ -46,6 +47,7 @@
 #include "tests/editor/run/test_run_targets_panel.h"
 #include "tests/editor/test_bottom_drawer_geometry.h"
 #include "tests/editor/test_bottom_drawer_layout.h"
+#include "tests/editor/test_dock_scene_context_binding.h"
 #include "tests/editor/test_editor_autoload_settings.h"
 #include "tests/editor/test_editor_automation_snapshot.h"
 #include "tests/editor/test_editor_automation_driver.h"
@@ -443,6 +445,7 @@ struct FoundryTestCaseListener : public doctest::IReporter {
 				Engine::get_singleton()->set_editor_hint(true);
 				EditorPaths::create();
 				EditorSettings::create();
+				memnew(EditorPropertyNameProcessor);
 			}
 #endif // TOOLS_ENABLED
 
@@ -479,6 +482,9 @@ struct FoundryTestCaseListener : public doctest::IReporter {
 
 	void test_case_end(const doctest::CurrentTestCaseStats &) override {
 #ifdef TOOLS_ENABLED
+		if (EditorPropertyNameProcessor::get_singleton()) {
+			memdelete(EditorPropertyNameProcessor::get_singleton());
+		}
 		if (EditorSettings::get_singleton()) {
 			EditorSettings::destroy();
 

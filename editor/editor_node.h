@@ -261,11 +261,13 @@ private:
 	EditorData editor_data;
 	EditorFolding editor_folding;
 
-	// Selection/history state for when no scene context is active yet (during
-	// startup, before the first scene tab exists). Once contexts exist, the
-	// active context's objects are used instead.
-	EditorSelection *no_scene_selection = nullptr;
-	EditorSelectionHistory no_scene_history;
+	// Persistent scene context used whenever no real scene is open (during
+	// startup before the first scene tab exists, or after all scenes are
+	// closed). It owns a selection/history so the docks and editor_selection /
+	// editor_history always have a valid context to bind to, but it is never
+	// registered in EditorData and never holds a scene root. Binding a
+	// nullptr context means binding this one.
+	EditorSceneContext *no_scene_context = nullptr;
 
 	// The scene context whose viewport is currently displayed and whose
 	// selection/history the editor is wired to.
@@ -297,8 +299,8 @@ private:
 	EditorPluginList *editor_plugins_over = nullptr;
 	EditorQuickOpenDialog *quick_open_color_palette = nullptr;
 	EditorResourcePreview *resource_preview = nullptr;
-	EditorSelection *editor_selection = nullptr; // Always points at the active context's selection (or no_scene_selection).
-	EditorSelectionHistory *editor_history = nullptr; // Always points at the active context's history (or no_scene_history).
+	EditorSelection *editor_selection = nullptr; // Always points at the active context's selection (the no_scene_context's when no scene is open).
+	EditorSelectionHistory *editor_history = nullptr; // Always points at the active context's history (the no_scene_context's when no scene is open).
 	EditorSettingsDialog *editor_settings_dialog = nullptr;
 	HistoryDock *history_dock = nullptr;
 	RunTargetsPanel *run_targets_dock = nullptr;

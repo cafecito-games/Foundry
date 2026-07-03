@@ -133,6 +133,11 @@ private:
 public:
 	static EditorDockManager *get_singleton() { return singleton; }
 
+	// Returns a layout key equal to p_key when it is free, or p_key with a
+	// ":<n>" suffix (":2", ":3", ...) that avoids all p_taken_keys otherwise.
+	// Keeps per-dock layout config subsections unique across dock instances.
+	static String uniquify_layout_key(const String &p_key, const Vector<String> &p_taken_keys);
+
 	void update_docks_menu();
 	void update_tab_styles();
 	void set_tab_icon_max_width(int p_max_width);

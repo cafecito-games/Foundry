@@ -973,9 +973,38 @@ void EditorDockManager::focus_dock(EditorDock *p_dock) {
 	_make_dock_visible(p_dock, true);
 }
 
+String EditorDockManager::uniquify_layout_key(const String &p_key, const Vector<String> &p_taken_keys) {
+	if (!p_taken_keys.has(p_key)) {
+		return p_key;
+	}
+	int suffix = 2;
+	String unique_key;
+	do {
+		unique_key = p_key + ":" + itos(suffix);
+		suffix++;
+	} while (p_taken_keys.has(unique_key));
+	return unique_key;
+}
+
 void EditorDockManager::add_dock(EditorDock *p_dock) {
 	ERR_FAIL_NULL(p_dock);
 	ERR_FAIL_COND_MSG(all_docks.has(p_dock), vformat("Cannot add dock '%s', already added.", p_dock->get_display_title()));
+
+	// Layout keys must be unique so per-dock layout config subsections don't
+	// clash. If an incoming dock collides with an already-registered dock
+	// (e.g. two third-party plugins registering same-named docks, or a future
+	// secondary dock instance), uniquify it by appending ":2", ":3", ... The
+	// dock is never rejected, so existing plugins keep working.
+	const String incoming_key = p_dock->get_effective_layout_key();
+	Vector<String> taken_keys;
+	for (const EditorDock *dock : all_docks) {
+		taken_keys.push_back(dock->get_effective_layout_key());
+	}
+	const String unique_key = uniquify_layout_key(incoming_key, taken_keys);
+	if (unique_key != incoming_key) {
+		WARN_PRINT(vformat("Dock '%s' has a layout key ('%s') that collides with an already-registered dock; using '%s' instead.", p_dock->get_display_title(), incoming_key, unique_key));
+		p_dock->set_layout_key(unique_key);
+	}
 
 	p_dock->dock_slot_index = p_dock->default_slot;
 	all_docks.push_back(p_dock);
