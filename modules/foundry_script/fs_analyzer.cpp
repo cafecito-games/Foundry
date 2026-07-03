@@ -10800,7 +10800,7 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 			const String other_source = registry->get_conformance_source(target->fqcn, trait_identity);
 			if (!other_source.is_empty() && other_source != source_file) {
 				push_error(vformat(R"(Class "%s" already conforms to trait "%s" via a conformance in "%s".)",
-								   _class_or_trait_name(target), _class_or_trait_name(trait), other_source),
+								   _class_or_trait_name(target), _class_or_trait_name(trait), _localize_script_path(other_source)),
 						conformance);
 				continue;
 			}
@@ -10831,7 +10831,7 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 					const String other_witness_source = registry->get_witness_source(target_key, witness_name, other_trait);
 					if (!other_witness_source.is_empty() && other_witness_source != source_file) {
 						push_error(vformat(R"*(Class "%s" already has a witness for method "%s()" via a conformance in "%s".)*",
-										   _class_or_trait_name(target), witness_name, other_witness_source),
+										   _class_or_trait_name(target), witness_name, _localize_script_path(other_witness_source)),
 								conformance);
 						conformance_witness_collision = true;
 						continue;
