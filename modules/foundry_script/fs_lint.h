@@ -86,7 +86,7 @@ public:
 		int get_exit_code(const Options &p_options) const;
 	};
 
-	static Options parse_options(const List<String> &p_cmdline_args, String &r_error);
+	static Options parse_options(const Vector<String> &p_args, String &r_error);
 	static Vector<String> collect_files(const Vector<String> &p_paths, bool &r_had_error);
 	static Result lint_paths(const Vector<String> &p_paths, const Options &p_options);
 	static String severity_to_string(Severity p_severity);
@@ -95,7 +95,7 @@ public:
 	static String to_json(const Vector<Diagnostic> &p_diagnostics);
 	static String to_sarif(const Vector<Diagnostic> &p_diagnostics);
 	static Error write_report(const Options &p_options, const Result &p_result);
-	static void run_from_cmdline();
+	static void run_from_cmdline(const Vector<String> &p_command_args);
 
 private:
 	static void collect_files_recursive(const String &p_dir, Vector<String> &r_files, bool &r_had_error);

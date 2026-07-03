@@ -152,6 +152,7 @@
 #include "modules/foundry_script/editor/fs_migration_wizard.h"
 #include "modules/foundry_script/fs_format.h"
 #include "modules/foundry_script/fs_lint.h"
+#include "modules/foundry_script/tests/fs_test_runner.h"
 #endif // TOOLS_ENABLED
 #if defined(TOOLS_ENABLED) && !defined(FOUNDRY_SCRIPT_NO_LSP)
 #include "modules/foundry_script/language_server/fs_language_server.h"
@@ -290,6 +291,7 @@ static bool include_docs_in_extension_api_dump = false;
 static bool validate_extension_api = false;
 static String validate_extension_api_file;
 #endif
+static FoundryCLIParser::ParseResult foundry_cli_parse;
 bool profile_gpu = false;
 
 // Constants.
@@ -688,10 +690,141 @@ void Main::test_cleanup() {
 }
 #endif
 
+#if defined(TOOLS_ENABLED)
+static void apply_foundry_cli_project_path(const String &p_project_path, String &r_project_path) {
+	if (p_project_path.is_empty()) {
+		return;
+	}
+#if defined(OVERRIDE_PATH_ENABLED)
+	if (OS::get_singleton()->set_cwd(p_project_path) != OK) {
+		OS::get_singleton()->printerr("Invalid project path specified: \"%s\", aborting.\n", p_project_path.utf8().get_data());
+		return;
+	}
+	r_project_path = p_project_path;
+#else
+	ERR_PRINT(
+			"`--project` was specified on the command line, but this Foundry binary was compiled without support for path overrides. Aborting.\n"
+			"To be able to use it, use the `disable_path_overrides=no` SCons option when compiling Foundry.\n");
+#endif
+}
+
+static void apply_foundry_cli_invocation(
+		const FoundryCLIParser::ParseResult &p_parse,
+		String &r_project_path,
+		String &r_audio_driver,
+		List<String> &r_main_args,
+		bool &r_test_rd_support,
+		bool &r_test_rd_creation) {
+	using Kind = FoundryCLIParser::CLIInvocation::Kind;
+	const FoundryCLIParser::CLIInvocation &inv = p_parse.invocation;
+
+	apply_foundry_cli_project_path(inv.project_path, r_project_path);
+
+	switch (inv.kind) {
+		case Kind::NONE:
+			break;
+		case Kind::EDITOR_OPEN:
+			editor = true;
+			for (int i = 0; i < inv.passthrough_args.size(); i++) {
+				r_main_args.push_back(inv.passthrough_args[i]);
+			}
+			break;
+		case Kind::EDITOR_PROJECT_MANAGER:
+			project_manager = true;
+			break;
+		case Kind::PROJECT_RUN:
+			for (int i = 0; i < inv.passthrough_args.size(); i++) {
+				r_main_args.push_back(inv.passthrough_args[i]);
+			}
+			break;
+		case Kind::PROJECT_TEST:
+			break;
+		case Kind::PROJECT_EXPORT:
+			editor = true;
+			cmdline_tool = true;
+			wait_for_import = true;
+			break;
+		case Kind::PROJECT_IMPORT:
+			editor = true;
+			cmdline_tool = true;
+			wait_for_import = true;
+			quit_after = 1;
+			break;
+		case Kind::SCRIPT_FORMAT:
+		case Kind::SCRIPT_LINT:
+			cmdline_tool = true;
+			r_audio_driver = NULL_AUDIO_DRIVER;
+			display_driver = NULL_DISPLAY_DRIVER;
+			quit_after = 1;
+			break;
+		case Kind::SCRIPT_MIGRATE:
+			r_project_path = inv.project_path;
+			cmdline_tool = true;
+			r_audio_driver = NULL_AUDIO_DRIVER;
+			display_driver = NULL_DISPLAY_DRIVER;
+			quit_after = 1;
+			break;
+		case Kind::TEST_RUN:
+		case Kind::TEST_GENERATE_FIXTURES:
+		case Kind::TEST_GENERATE_FORMAT_FIXTURES:
+			break;
+		case Kind::LSP_SERVE:
+			editor = true;
+#if defined(MODULE_FOUNDRY_SCRIPT_ENABLED) && !defined(FOUNDRY_SCRIPT_NO_LSP)
+			if (!inv.lsp_port.is_empty()) {
+				const int port_override = inv.lsp_port.to_int();
+				if (port_override >= 0 && port_override <= 65535) {
+					FSLanguageServer::port_override = port_override;
+				}
+			}
+#endif
+			break;
+		case Kind::DOCS_GENERATE_API:
+			editor = true;
+			cmdline_tool = true;
+			dump_extension_api = true;
+			include_docs_in_extension_api_dump = inv.docs_include_docs;
+			print_line(inv.docs_include_docs ? "Dumping Extension API including documentation" : "Dumping Extension API");
+			break;
+		case Kind::DOCS_GENERATE_ENGINE:
+			cmdline_tool = true;
+			r_audio_driver = NULL_AUDIO_DRIVER;
+			display_driver = NULL_DISPLAY_DRIVER;
+			break;
+		case Kind::DOCS_GENERATE_SCRIPT:
+			cmdline_tool = true;
+			quit_after = 1;
+			break;
+		case Kind::EXTENSION_DUMP_INTERFACE:
+			editor = true;
+			cmdline_tool = true;
+			if (inv.extension_interface_format == "json") {
+				dump_foundry_extension_interface = true;
+				print_line("Dumping FoundryExtension interface json file");
+			} else {
+				dump_foundry_extension_interface_header = true;
+				print_line("Dumping FoundryExtension interface header file");
+			}
+			break;
+		case Kind::EXTENSION_VALIDATE_API:
+			editor = true;
+			cmdline_tool = true;
+			validate_extension_api = true;
+			validate_extension_api_file = inv.extension_validate_input;
+			break;
+		case Kind::DIAGNOSTICS_RENDER_DEVICE_SUPPORT:
+			r_test_rd_support = true;
+			break;
+		case Kind::DIAGNOSTICS_RENDER_DEVICE_CREATE:
+			r_test_rd_creation = true;
+			break;
+	}
+}
+#endif // TOOLS_ENABLED
+
 int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 	const FoundryCLIParser::ParseResult cli_parse = FoundryCLIParser::parse(argc, argv);
-	Vector<CharString> normalized_arg_storage;
-	Vector<char *> normalized_argv;
+	foundry_cli_parse = cli_parse;
 	if (!cli_parse.ok) {
 		tests_need_run = false;
 		return EXIT_SUCCESS;
@@ -700,121 +833,100 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 		tests_need_run = false;
 		return EXIT_SUCCESS;
 	}
-	if (!cli_parse.used_new_cli) {
-		PackedStringArray deprecation_args;
-		for (int i = 0; i < argc; i++) {
-			deprecation_args.push_back(String::utf8(argv[i]));
-		}
-		const String deprecation_notice = FoundryCLIParser::get_legacy_deprecation_notice(deprecation_args);
-		if (!deprecation_notice.is_empty()) {
-			OS::get_singleton()->printerr("%s\n", deprecation_notice.utf8().get_data());
-		}
-	}
-	if (cli_parse.used_new_cli) {
-		normalized_arg_storage.resize(cli_parse.normalized_args.size());
-		normalized_argv.resize(cli_parse.normalized_args.size());
-		for (int i = 0; i < cli_parse.normalized_args.size(); i++) {
-			normalized_arg_storage.write[i] = cli_parse.normalized_args[i].utf8();
-			normalized_argv.write[i] = const_cast<char *>(normalized_arg_storage[i].get_data());
-		}
-		argc = normalized_argv.size();
-		argv = normalized_argv.ptrw();
+
+	using Kind = FoundryCLIParser::CLIInvocation::Kind;
+	const Kind kind = cli_parse.invocation.kind;
+	if (kind != Kind::TEST_RUN && kind != Kind::TEST_GENERATE_FIXTURES && kind != Kind::TEST_GENERATE_FORMAT_FIXTURES) {
+		tests_need_run = false;
+		return EXIT_SUCCESS;
 	}
 
-	bool test_requested = false;
-	String test_project_path;
-#if defined(TESTS_ENABLED) && defined(MODULE_FOUNDRY_SCRIPT_ENABLED)
-	bool foundry_build_trusted = false;
-#endif // TESTS_ENABLED && MODULE_FOUNDRY_SCRIPT_ENABLED
-
-	for (int x = 0; x < argc; x++) {
-		// Early return to ignore a possible user-provided "--test" argument.
-		if ((strlen(argv[x]) == 2) && ((strncmp(argv[x], "--", 2) == 0) || (strncmp(argv[x], "++", 2) == 0))) {
-			if (!test_requested) {
-				tests_need_run = false;
-				return EXIT_SUCCESS;
-			}
-			break;
-		}
-		if (strcmp(argv[x], "--path") == 0 && x + 1 < argc) {
-			test_project_path = String::utf8(argv[x + 1]);
-			x++;
-			continue;
-		}
-#if defined(TESTS_ENABLED) && defined(MODULE_FOUNDRY_SCRIPT_ENABLED)
-		if (strcmp(argv[x], "--foundry-build-trusted") == 0) {
-			foundry_build_trusted = true;
-			continue;
-		}
-#endif // TESTS_ENABLED && MODULE_FOUNDRY_SCRIPT_ENABLED
-	   // `--foundry_script-generate-tests` and `--foundry_script-generate-format-tests`
-	   // are registered `--test` commands (so they run under `test_setup()`/`test_cleanup()`
-	   // and the process shuts down cleanly); accept them as standalone flags too for
-	   // backwards compatibility. Prefer `foundry test generate-fixtures` and
-	   // `foundry test generate-format-fixtures`.
-		const bool is_test = (strncmp(argv[x], "--test", 6) == 0) && (strlen(argv[x]) == 6);
-		const bool is_test_command = strcmp(argv[x], "--foundry_script-generate-tests") == 0;
-		const bool is_format_test_command = strcmp(argv[x], "--foundry_script-generate-format-tests") == 0;
-		if (is_test || is_test_command || is_format_test_command) {
-			test_requested = true;
-		}
-	}
-
-	if (test_requested) {
-		tests_need_run = true;
+	tests_need_run = true;
 #ifdef TESTS_ENABLED
-		// TODO: need to come up with different test contexts.
-		// Not every test requires high-level functionality like `ClassDB`.
-		test_setup();
+	test_setup();
 
 #ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
-		bool project_loaded_for_build_pipeline = false;
-		const bool old_foundry_build_trusted = ProjectBuildTrustStore::is_cli_trusted_execution();
-		if (!test_project_path.is_empty()) {
-			const Error project_err = ProjectSettings::get_singleton()->setup(test_project_path, String(), false, false);
-			if (project_err != OK) {
-				ERR_PRINT(vformat("Could not load project at path \"%s\" before running tests.", test_project_path));
-				test_cleanup();
-				return EXIT_FAILURE;
-			}
-			project_loaded_for_build_pipeline = true;
-
-			ProjectBuildTrustStore::set_cli_trusted_execution(foundry_build_trusted);
-			const bool pre_compile_ok = run_foundry_build_stage_for_cli(ProjectBuildPipelineConfig::STAGE_PRE_COMPILE,
-					"Foundry pre_compile test stage");
-			ProjectBuildTrustStore::set_cli_trusted_execution(old_foundry_build_trusted);
-			if (!pre_compile_ok) {
-				test_cleanup();
-				return EXIT_FAILURE;
-			}
-			ResourceLoader::add_custom_loaders();
-			ResourceSaver::add_custom_savers();
+	bool project_loaded_for_build_pipeline = false;
+	const bool old_foundry_build_trusted = ProjectBuildTrustStore::is_cli_trusted_execution();
+	const String &test_project_path = cli_parse.invocation.project_path;
+	if (!test_project_path.is_empty()) {
+		const Error project_err = ProjectSettings::get_singleton()->setup(test_project_path, String(), false, false);
+		if (project_err != OK) {
+			ERR_PRINT(vformat("Could not load project at path \"%s\" before running tests.", test_project_path));
+			test_cleanup();
+			return EXIT_FAILURE;
 		}
-#endif // MODULE_FOUNDRY_SCRIPT_ENABLED
+		project_loaded_for_build_pipeline = true;
 
-		int status = test_main(argc, argv);
-#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
-		if (status == EXIT_SUCCESS && project_loaded_for_build_pipeline) {
-			ProjectBuildTrustStore::set_cli_trusted_execution(foundry_build_trusted);
-			const bool post_compile_ok = run_foundry_build_stage_for_cli(ProjectBuildPipelineConfig::STAGE_POST_COMPILE,
-					"Foundry post_compile test stage");
-			ProjectBuildTrustStore::set_cli_trusted_execution(old_foundry_build_trusted);
-			if (!post_compile_ok) {
-				status = EXIT_FAILURE;
-			}
+		ProjectBuildTrustStore::set_cli_trusted_execution(cli_parse.trusted);
+		const bool pre_compile_ok = run_foundry_build_stage_for_cli(ProjectBuildPipelineConfig::STAGE_PRE_COMPILE,
+				"Foundry pre_compile test stage");
+		ProjectBuildTrustStore::set_cli_trusted_execution(old_foundry_build_trusted);
+		if (!pre_compile_ok) {
+			test_cleanup();
+			return EXIT_FAILURE;
 		}
-#endif // MODULE_FOUNDRY_SCRIPT_ENABLED
-		test_cleanup();
-		return status;
-#else
-		ERR_PRINT(
-				"A test command was specified on the command line, but this Foundry binary was compiled without support for unit tests. Aborting.\n"
-				"To be able to run unit tests, use the `tests=yes` SCons option when compiling Foundry.\n");
-		return EXIT_FAILURE;
-#endif
+		ResourceLoader::add_custom_loaders();
+		ResourceSaver::add_custom_savers();
 	}
-	tests_need_run = false;
-	return EXIT_SUCCESS;
+#endif // MODULE_FOUNDRY_SCRIPT_ENABLED
+
+	int status = EXIT_SUCCESS;
+	if (kind == Kind::TEST_RUN) {
+		Vector<CharString> test_arg_storage;
+		Vector<char *> test_argv;
+		auto push_test_arg = [&](const String &p_arg) {
+			test_arg_storage.push_back(p_arg.utf8());
+			test_argv.push_back(const_cast<char *>(test_arg_storage[test_arg_storage.size() - 1].get_data()));
+		};
+		for (int i = 0; i < cli_parse.global_args.size(); i++) {
+			push_test_arg(cli_parse.global_args[i]);
+		}
+		push_test_arg("--test");
+		if (!cli_parse.invocation.test_case.is_empty()) {
+			push_test_arg("--test-case=" + cli_parse.invocation.test_case);
+		}
+		for (int i = 0; i < cli_parse.invocation.passthrough_args.size(); i++) {
+			push_test_arg(cli_parse.invocation.passthrough_args[i]);
+		}
+		status = test_main(test_argv.size(), test_argv.ptrw());
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+	} else if (kind == Kind::TEST_GENERATE_FIXTURES) {
+		const String path = cli_parse.invocation.command_args.is_empty()
+				? String("modules/foundry_script/tests/scripts")
+				: cli_parse.invocation.command_args[0];
+		FSTests::FSTestRunner runner(path, true, cli_parse.invocation.print_filenames);
+		if (!runner.generate_outputs()) {
+			status = EXIT_FAILURE;
+		}
+	} else if (kind == Kind::TEST_GENERATE_FORMAT_FIXTURES) {
+		const String path = cli_parse.invocation.command_args.is_empty()
+				? String("modules/foundry_script/tests/scripts/format")
+				: cli_parse.invocation.command_args[0];
+		FSFormatterCLI::generate_format_tests(path);
+		status = OS::get_singleton()->get_exit_code();
+	}
+#endif // MODULE_FOUNDRY_SCRIPT_ENABLED
+
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+	if (status == EXIT_SUCCESS && project_loaded_for_build_pipeline) {
+		ProjectBuildTrustStore::set_cli_trusted_execution(cli_parse.trusted);
+		const bool post_compile_ok = run_foundry_build_stage_for_cli(ProjectBuildPipelineConfig::STAGE_POST_COMPILE,
+				"Foundry post_compile test stage");
+		ProjectBuildTrustStore::set_cli_trusted_execution(old_foundry_build_trusted);
+		if (!post_compile_ok) {
+			status = EXIT_FAILURE;
+		}
+	}
+#endif // MODULE_FOUNDRY_SCRIPT_ENABLED
+	test_cleanup();
+	return status;
+#else
+	ERR_PRINT(
+			"A test command was specified on the command line, but this Foundry binary was compiled without support for unit tests. Aborting.\n"
+			"To be able to run unit tests, use the `tests=yes` SCons option when compiling Foundry.\n");
+	return EXIT_FAILURE;
+#endif
 }
 
 /* Engine initialization
@@ -957,6 +1069,7 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 	List<String>::Element *I = nullptr;
 
 	const FoundryCLIParser::ParseResult cli_parse = FoundryCLIParser::parse(raw_cli_args);
+	foundry_cli_parse = cli_parse;
 	if (!cli_parse.ok) {
 		OS::get_singleton()->printerr("Foundry CLI error: %s\n", cli_parse.error.utf8().get_data());
 		if (!cli_parse.command_path.is_empty() && FoundryCLIHelp::has_noun(cli_parse.command_path[0])) {
@@ -995,16 +1108,20 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 		goto error;
 	}
 
-	if (!cli_parse.used_new_cli) {
-		const String deprecation_notice = FoundryCLIParser::get_legacy_deprecation_notice(raw_cli_args);
-		if (!deprecation_notice.is_empty()) {
-			OS::get_singleton()->printerr("%s\n", deprecation_notice.utf8().get_data());
-		}
+	for (int i = 0; i < cli_parse.global_args.size(); i++) {
+		args.push_back(cli_parse.global_args[i]);
+	}
+	for (int i = 0; i < cli_parse.user_args.size(); i++) {
+		user_args.push_back(cli_parse.user_args[i]);
 	}
 
-	for (int i = 0; i < cli_parse.normalized_args.size(); i++) {
-		args.push_back(cli_parse.normalized_args[i]);
+#ifdef TOOLS_ENABLED
+	apply_foundry_cli_invocation(cli_parse, project_path, audio_driver, main_args, test_rd_support, test_rd_creation);
+	if (cli_parse.invocation.kind == FoundryCLIParser::CLIInvocation::SCRIPT_FORMAT ||
+			cli_parse.invocation.kind == FoundryCLIParser::CLIInvocation::SCRIPT_LINT) {
+		Engine::get_singleton()->_print_header = false;
 	}
+#endif
 
 	// Add arguments received from macOS LaunchService (URL schemas, file associations).
 	for (const String &arg : platform_args) {
@@ -2109,7 +2226,6 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 		// Create initialization lock file to detect crashes during startup.
 		OS::get_singleton()->create_lock_file();
 
-		main_args.push_back("--editor");
 		if (!init_windowed && !init_fullscreen) {
 			init_maximized = true;
 			window_mode = DisplayServer::WINDOW_MODE_MAXIMIZED;
@@ -3906,6 +4022,69 @@ int Main::start() {
 #endif
 #endif // TOOLS_ENABLED
 
+	const FoundryCLIParser::CLIInvocation &cli_invocation = foundry_cli_parse.invocation;
+	using CLIKind = FoundryCLIParser::CLIInvocation::Kind;
+	switch (cli_invocation.kind) {
+		case CLIKind::PROJECT_RUN:
+			if (!cli_invocation.scene.is_empty()) {
+				game_path = ResourceUID::ensure_path(cli_invocation.scene);
+			}
+			if (!cli_invocation.script.is_empty()) {
+				script = cli_invocation.script;
+			}
+			check_only = cli_invocation.check_only;
+			break;
+		case CLIKind::PROJECT_TEST:
+			test_runner_path = cli_invocation.runner;
+			break;
+#ifdef TOOLS_ENABLED
+		case CLIKind::PROJECT_EXPORT:
+			_export_preset = cli_invocation.export_preset;
+			positional_arg = cli_invocation.export_output;
+			export_debug = cli_invocation.export_mode == "debug";
+			export_pack_only = cli_invocation.export_mode == "pack" || cli_invocation.export_mode == "patch";
+			export_patch = cli_invocation.export_mode == "patch";
+			if (!cli_invocation.export_patches.is_empty()) {
+				patches = cli_invocation.export_patches.split(",", false);
+			}
+			install_android_build_template = cli_invocation.install_android_build_template;
+			break;
+		case CLIKind::DOCS_GENERATE_ENGINE:
+			doc_tool_path = cli_invocation.docs_engine_output.is_empty() ? "." : cli_invocation.docs_engine_output;
+			doc_tool_implicit_cwd = cli_invocation.docs_engine_output.is_empty();
+			if (cli_invocation.docs_no_docbase) {
+				gen_flags.set_flag(DocTools::GENERATE_FLAG_SKIP_BASIC_TYPES);
+			}
+			break;
+		case CLIKind::DOCS_GENERATE_SCRIPT:
+			fs_docs_path = cli_invocation.docs_script_source;
+			doc_tool_path = cli_invocation.docs_script_output.is_empty() ? "." : cli_invocation.docs_script_output;
+			doc_tool_implicit_cwd = cli_invocation.docs_script_output.is_empty();
+			break;
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+		case CLIKind::SCRIPT_FORMAT:
+			fs_format_requested = true;
+			break;
+		case CLIKind::SCRIPT_LINT:
+			fs_lint_requested = true;
+			break;
+		case CLIKind::SCRIPT_MIGRATE:
+			fs_migrate_path = cli_invocation.project_path;
+			fs_migrate_apply = cli_invocation.migrate_apply;
+			fs_migrate_strict_null = cli_invocation.migrate_strict_null;
+			fs_migrate_strict_dynamic = cli_invocation.migrate_strict_dynamic;
+			fs_migrate_activate_strict = cli_invocation.migrate_activate_strict;
+			fs_migrate_confirm = cli_invocation.migrate_confirm;
+			fs_migrate_allow_violations = cli_invocation.migrate_allow_violations;
+			fs_migrate_acknowledge_vcs = cli_invocation.migrate_acknowledge_vcs;
+			fs_migrate_follow_up_path = cli_invocation.migrate_follow_up;
+			break;
+#endif // MODULE_FOUNDRY_SCRIPT_ENABLED
+#endif // TOOLS_ENABLED
+		default:
+			break;
+	}
+
 	main_timer_sync.init(OS::get_singleton()->get_ticks_usec());
 	List<String> args = OS::get_singleton()->get_cmdline_args();
 
@@ -4234,11 +4413,19 @@ int Main::start() {
 
 #if defined(TOOLS_ENABLED) && defined(MODULE_FOUNDRY_SCRIPT_ENABLED)
 	if (fs_format_requested) {
-		FSFormatterCLI::run_from_cmdline();
+		Vector<String> format_args;
+		for (int i = 0; i < cli_invocation.command_args.size(); i++) {
+			format_args.push_back(cli_invocation.command_args[i]);
+		}
+		FSFormatterCLI::run_from_cmdline(format_args);
 		return OS::get_singleton()->get_exit_code();
 	}
 	if (fs_lint_requested) {
-		FSLintCLI::run_from_cmdline();
+		Vector<String> lint_args;
+		for (int i = 0; i < cli_invocation.command_args.size(); i++) {
+			lint_args.push_back(cli_invocation.command_args[i]);
+		}
+		FSLintCLI::run_from_cmdline(lint_args);
 		return OS::get_singleton()->get_exit_code();
 	}
 #endif // TOOLS_ENABLED && MODULE_FOUNDRY_SCRIPT_ENABLED

@@ -173,9 +173,7 @@ public:
 #endif // DEBUG_ENABLED
 
 TEST_CASE("[Modules][FoundryScript][Lint] CLI option parsing uses CI defaults") {
-	List<String> args;
-	args.push_back("--headless");
-	args.push_back("--foundry_script-lint");
+	Vector<String> args;
 
 	String error;
 	FSLintCLI::Options options = FSLintCLI::parse_options(args, error);
@@ -188,8 +186,7 @@ TEST_CASE("[Modules][FoundryScript][Lint] CLI option parsing uses CI defaults") 
 }
 
 TEST_CASE("[Modules][FoundryScript][Lint] CLI option parsing accepts SARIF output file and warning threshold") {
-	List<String> args;
-	args.push_back("--foundry_script-lint");
+	Vector<String> args;
 	args.push_back("--format=sarif");
 	args.push_back("--out");
 	args.push_back("lint.sarif");
@@ -208,22 +205,19 @@ TEST_CASE("[Modules][FoundryScript][Lint] CLI option parsing accepts SARIF outpu
 }
 
 TEST_CASE("[Modules][FoundryScript][Lint] CLI option parsing rejects invalid choices") {
-	List<String> bad_format;
-	bad_format.push_back("--foundry_script-lint");
+	Vector<String> bad_format;
 	bad_format.push_back("--format=xml");
 	String format_error;
 	FSLintCLI::parse_options(bad_format, format_error);
 	CHECK(format_error.contains("Invalid --format value"));
 
-	List<String> bad_fail_on;
-	bad_fail_on.push_back("--foundry_script-lint");
+	Vector<String> bad_fail_on;
 	bad_fail_on.push_back("--fail-on=note");
 	String fail_on_error;
 	FSLintCLI::parse_options(bad_fail_on, fail_on_error);
 	CHECK(fail_on_error.contains("Invalid --fail-on value"));
 
-	List<String> missing_out;
-	missing_out.push_back("--foundry_script-lint");
+	Vector<String> missing_out;
 	missing_out.push_back("--out");
 	String out_error;
 	FSLintCLI::parse_options(missing_out, out_error);

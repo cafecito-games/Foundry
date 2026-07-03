@@ -2606,16 +2606,10 @@ bool FSFormatterCLI::test_write_raw(FILE *p_stream, const String &p_text) {
 }
 #endif
 
-FSFormatterCLI::Options FSFormatterCLI::parse_options(const List<String> &p_cmdline_args) {
+FSFormatterCLI::Options FSFormatterCLI::parse_options(const Vector<String> &p_args) {
 	Options options;
-	bool reached_command = false;
-	for (const String &argument : p_cmdline_args) {
-		if (!reached_command) {
-			if (argument == "--foundry_script-format") {
-				reached_command = true;
-			}
-			continue;
-		}
+	for (int i = 0; i < p_args.size(); i++) {
+		const String &argument = p_args[i];
 		if (argument == "--write" || argument == "-w") {
 			options.mode = MODE_WRITE;
 		} else if (argument == "--check") {
@@ -2782,8 +2776,8 @@ String FSFormatterCLI::make_unified_diff(const String &p_path, const String &p_o
 	return result;
 }
 
-void FSFormatterCLI::run_from_cmdline() {
-	const Options options = parse_options(OS::get_singleton()->get_cmdline_args());
+void FSFormatterCLI::run_from_cmdline(const Vector<String> &p_command_args) {
+	const Options options = parse_options(p_command_args);
 
 	bool needs_change = false;
 	bool had_error = false;
@@ -2899,16 +2893,8 @@ void FSFormatterCLI::run_from_cmdline() {
 	OS::get_singleton()->set_exit_code(failure ? EXIT_FAILURE : EXIT_SUCCESS);
 }
 
-void FSFormatterCLI::generate_format_tests() {
-	String root = "modules/foundry_script/tests/scripts/format";
-	const List<String> cmdline_args = OS::get_singleton()->get_cmdline_args();
-	for (const List<String>::Element *E = cmdline_args.front(); E; E = E->next()) {
-		if (E->get() == "--foundry_script-generate-format-tests" && E->next()) {
-			root = E->next()->get();
-			break;
-		}
-	}
-
+void FSFormatterCLI::generate_format_tests(const String &p_root) {
+	String root = p_root;
 	Vector<String> all_scripts;
 	bool had_error = false;
 	collect_gd_scripts_recursive(root, all_scripts, had_error);

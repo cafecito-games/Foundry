@@ -37,17 +37,12 @@ struct CLIParseState {
 	bool has_executable_arg = false;
 	int index = 0;
 	String project_path;
-	PackedStringArray legacy_prefix;
+	PackedStringArray global_prefix;
 	FoundryCLIParser::ParseResult result;
 };
 
 static void append(PackedStringArray &r_args, const String &p_arg) {
 	r_args.push_back(p_arg);
-}
-
-static void append_pair(PackedStringArray &r_args, const String &p_option, const String &p_value) {
-	r_args.push_back(p_option);
-	r_args.push_back(p_value);
 }
 
 static bool has_arg(const PackedStringArray &p_args, const String &p_arg) {
@@ -113,12 +108,6 @@ static bool require_value(CLIParseState &r_state, const String &p_option, String
 	return true;
 }
 
-static void append_project(PackedStringArray &r_args, const String &p_project_path) {
-	if (!p_project_path.is_empty()) {
-		append_pair(r_args, "--path", p_project_path);
-	}
-}
-
 static void append_trust(PackedStringArray &r_args, bool p_trusted) {
 	if (p_trusted && !has_arg(r_args, "--foundry-build-trusted")) {
 		append(r_args, "--foundry-build-trusted");
@@ -137,14 +126,17 @@ static void append_json_defaults(PackedStringArray &r_args, bool p_json) {
 	}
 }
 
-static void append_user_args(PackedStringArray &r_args, const PackedStringArray &p_user_args) {
-	if (p_user_args.is_empty()) {
-		return;
+static void finalize_global_args(CLIParseState &r_state) {
+	PackedStringArray global_args;
+	if (r_state.has_executable_arg && !r_state.args.is_empty()) {
+		append(global_args, r_state.args[0]);
 	}
-	append(r_args, "--");
-	for (int i = 0; i < p_user_args.size(); i++) {
-		append(r_args, p_user_args[i]);
+	append_trust(global_args, r_state.result.trusted);
+	for (int i = 0; i < r_state.global_prefix.size(); i++) {
+		append(global_args, r_state.global_prefix[i]);
 	}
+	append_json_defaults(global_args, r_state.result.json);
+	r_state.result.global_args = global_args;
 }
 
 static bool consume_common_project_option(CLIParseState &r_state, const String &p_arg) {
@@ -196,7 +188,7 @@ static bool consume_common_global_option(CLIParseState &r_state, const String &p
 		if (p_arg == "--no-header") {
 			r_state.result.no_header = true;
 		}
-		append(r_state.legacy_prefix, p_arg);
+		append(r_state.global_prefix, p_arg);
 		r_state.index++;
 		return true;
 	}
@@ -207,25 +199,13 @@ static bool consume_common_global_option(CLIParseState &r_state, const String &p
 			if (!require_value(r_state, p_arg, value)) {
 				return true;
 			}
-			append_pair(r_state.legacy_prefix, p_arg, value);
+			append(r_state.global_prefix, p_arg);
+			append(r_state.global_prefix, value);
 			return true;
 		}
 	}
 
 	return false;
-}
-
-static PackedStringArray base_args(const CLIParseState &p_state) {
-	PackedStringArray normalized;
-	if (p_state.has_executable_arg && !p_state.args.is_empty()) {
-		append(normalized, p_state.args[0]);
-	}
-	append_trust(normalized, p_state.result.trusted);
-	for (int i = 0; i < p_state.legacy_prefix.size(); i++) {
-		append(normalized, p_state.legacy_prefix[i]);
-	}
-	append_json_defaults(normalized, p_state.result.json);
-	return normalized;
 }
 
 static void set_command_path(FoundryCLIParser::ParseResult &r_result, const String &p_group, const String &p_command) {
@@ -236,9 +216,7 @@ static void set_command_path(FoundryCLIParser::ParseResult &r_result, const Stri
 
 static void parse_project_run(CLIParseState &r_state) {
 	set_command_path(r_state.result, "project", "run");
-	String scene;
-	String script;
-	bool check_only = false;
+	r_state.result.invocation.kind = FoundryCLIParser::CLIInvocation::PROJECT_RUN;
 	PackedStringArray passthrough;
 
 	while (r_state.index < r_state.args.size()) {
@@ -254,15 +232,15 @@ static void parse_project_run(CLIParseState &r_state) {
 			continue;
 		}
 		if (arg == "--scene") {
-			if (!require_value(r_state, arg, scene)) {
+			if (!require_value(r_state, arg, r_state.result.invocation.scene)) {
 				return;
 			}
 		} else if (arg == "--script") {
-			if (!require_value(r_state, arg, script)) {
+			if (!require_value(r_state, arg, r_state.result.invocation.script)) {
 				return;
 			}
 		} else if (arg == "--check-only") {
-			check_only = true;
+			r_state.result.invocation.check_only = true;
 			r_state.index++;
 		} else {
 			append(passthrough, arg);
@@ -270,26 +248,14 @@ static void parse_project_run(CLIParseState &r_state) {
 		}
 	}
 
-	PackedStringArray normalized = base_args(r_state);
-	append_project(normalized, r_state.project_path);
-	if (!scene.is_empty()) {
-		append_pair(normalized, "--scene", scene);
-	}
-	if (!script.is_empty()) {
-		append_pair(normalized, "--script", script);
-	}
-	if (check_only) {
-		append(normalized, "--check-only");
-	}
-	for (int i = 0; i < passthrough.size(); i++) {
-		append(normalized, passthrough[i]);
-	}
-	append_user_args(normalized, r_state.result.user_args);
-	r_state.result.normalized_args = normalized;
+	r_state.result.invocation.project_path = r_state.project_path;
+	r_state.result.invocation.passthrough_args = passthrough;
+	finalize_global_args(r_state);
 }
 
 static void parse_project_export(CLIParseState &r_state) {
 	set_command_path(r_state.result, "project", "export");
+	r_state.result.invocation.kind = FoundryCLIParser::CLIInvocation::PROJECT_EXPORT;
 	String preset;
 	String output;
 	String mode = "release";
@@ -341,37 +307,23 @@ static void parse_project_export(CLIParseState &r_state) {
 		fail(r_state.result, "project export requires --output.");
 		return;
 	}
-
-	String export_option;
-	if (mode == "release") {
-		export_option = "--export-release";
-	} else if (mode == "debug") {
-		export_option = "--export-debug";
-	} else if (mode == "pack") {
-		export_option = "--export-pack";
-	} else if (mode == "patch") {
-		export_option = "--export-patch";
-	} else {
+	if (mode != "release" && mode != "debug" && mode != "pack" && mode != "patch") {
 		fail(r_state.result, "project export --mode must be release, debug, pack, or patch.");
 		return;
 	}
 
-	PackedStringArray normalized = base_args(r_state);
-	append_project(normalized, r_state.project_path);
-	append(normalized, export_option);
-	append(normalized, preset);
-	append(normalized, output);
-	if (!patches.is_empty()) {
-		append_pair(normalized, "--patches", patches);
-	}
-	if (install_android_template) {
-		append(normalized, "--install-android-build-template");
-	}
-	r_state.result.normalized_args = normalized;
+	r_state.result.invocation.project_path = r_state.project_path;
+	r_state.result.invocation.export_preset = preset;
+	r_state.result.invocation.export_output = output;
+	r_state.result.invocation.export_mode = mode;
+	r_state.result.invocation.export_patches = patches;
+	r_state.result.invocation.install_android_build_template = install_android_template;
+	finalize_global_args(r_state);
 }
 
 static void parse_project_test(CLIParseState &r_state) {
 	set_command_path(r_state.result, "project", "test");
+	r_state.result.invocation.kind = FoundryCLIParser::CLIInvocation::PROJECT_TEST;
 	String runner;
 
 	while (r_state.index < r_state.args.size()) {
@@ -397,15 +349,14 @@ static void parse_project_test(CLIParseState &r_state) {
 		return;
 	}
 
-	PackedStringArray normalized = base_args(r_state);
-	append_project(normalized, r_state.project_path);
-	append_pair(normalized, "--run-test-runner", runner);
-	append_user_args(normalized, r_state.result.user_args);
-	r_state.result.normalized_args = normalized;
+	r_state.result.invocation.project_path = r_state.project_path;
+	r_state.result.invocation.runner = runner;
+	finalize_global_args(r_state);
 }
 
 static void parse_project_import(CLIParseState &r_state) {
 	set_command_path(r_state.result, "project", "import");
+	r_state.result.invocation.kind = FoundryCLIParser::CLIInvocation::PROJECT_IMPORT;
 	while (r_state.index < r_state.args.size()) {
 		const String arg = r_state.args[r_state.index];
 		if (is_help_flag(arg)) {
@@ -422,10 +373,8 @@ static void parse_project_import(CLIParseState &r_state) {
 			return;
 		}
 	}
-	PackedStringArray normalized = base_args(r_state);
-	append_project(normalized, r_state.project_path);
-	append(normalized, "--import");
-	r_state.result.normalized_args = normalized;
+	r_state.result.invocation.project_path = r_state.project_path;
+	finalize_global_args(r_state);
 }
 
 static void parse_project(CLIParseState &r_state) {
@@ -453,7 +402,7 @@ static void parse_project(CLIParseState &r_state) {
 
 static void parse_script_format(CLIParseState &r_state) {
 	set_command_path(r_state.result, "script", "format");
-	PackedStringArray formatter_args;
+	r_state.result.invocation.kind = FoundryCLIParser::CLIInvocation::SCRIPT_FORMAT;
 	while (r_state.index < r_state.args.size()) {
 		const String arg = r_state.args[r_state.index];
 		if (is_help_flag(arg)) {
@@ -466,22 +415,17 @@ static void parse_script_format(CLIParseState &r_state) {
 			}
 			continue;
 		}
-		append(formatter_args, r_state.args[r_state.index++]);
+		append(r_state.result.invocation.command_args, r_state.args[r_state.index++]);
 	}
 
-	PackedStringArray normalized = base_args(r_state);
-	append_headless(normalized);
-	append_project(normalized, r_state.project_path);
-	append(normalized, "--foundry_script-format");
-	for (int i = 0; i < formatter_args.size(); i++) {
-		append(normalized, formatter_args[i]);
-	}
-	r_state.result.normalized_args = normalized;
+	append_headless(r_state.global_prefix);
+	r_state.result.invocation.project_path = r_state.project_path;
+	finalize_global_args(r_state);
 }
 
 static void parse_script_lint(CLIParseState &r_state) {
 	set_command_path(r_state.result, "script", "lint");
-	PackedStringArray lint_args;
+	r_state.result.invocation.kind = FoundryCLIParser::CLIInvocation::SCRIPT_LINT;
 	while (r_state.index < r_state.args.size()) {
 		const String arg = r_state.args[r_state.index];
 		if (is_help_flag(arg)) {
@@ -494,29 +438,17 @@ static void parse_script_lint(CLIParseState &r_state) {
 			}
 			continue;
 		}
-		append(lint_args, r_state.args[r_state.index++]);
+		append(r_state.result.invocation.command_args, r_state.args[r_state.index++]);
 	}
 
-	PackedStringArray normalized = base_args(r_state);
-	append_headless(normalized);
-	append_project(normalized, r_state.project_path);
-	append(normalized, "--foundry_script-lint");
-	for (int i = 0; i < lint_args.size(); i++) {
-		append(normalized, lint_args[i]);
-	}
-	r_state.result.normalized_args = normalized;
+	append_headless(r_state.global_prefix);
+	r_state.result.invocation.project_path = r_state.project_path;
+	finalize_global_args(r_state);
 }
 
 static void parse_script_migrate(CLIParseState &r_state) {
 	set_command_path(r_state.result, "script", "migrate");
-	bool apply = false;
-	bool strict_null = false;
-	bool strict_dynamic = false;
-	bool activate_strict = false;
-	bool confirm = false;
-	bool allow_violations = false;
-	bool acknowledge_vcs = false;
-	String follow_up;
+	r_state.result.invocation.kind = FoundryCLIParser::CLIInvocation::SCRIPT_MIGRATE;
 
 	while (r_state.index < r_state.args.size()) {
 		const String arg = r_state.args[r_state.index];
@@ -531,7 +463,7 @@ static void parse_script_migrate(CLIParseState &r_state) {
 			continue;
 		}
 		if (arg == "--apply") {
-			apply = true;
+			r_state.result.invocation.migrate_apply = true;
 			r_state.index++;
 		} else if (arg == "--strict") {
 			String value;
@@ -542,28 +474,28 @@ static void parse_script_migrate(CLIParseState &r_state) {
 			for (const String &entry : entries) {
 				const String stripped = entry.strip_edges();
 				if (stripped == "null") {
-					strict_null = true;
+					r_state.result.invocation.migrate_strict_null = true;
 				} else if (stripped == "dynamic") {
-					strict_dynamic = true;
+					r_state.result.invocation.migrate_strict_dynamic = true;
 				} else {
 					fail(r_state.result, "script migrate --strict accepts null and dynamic.");
 					return;
 				}
 			}
 		} else if (arg == "--activate-strict") {
-			activate_strict = true;
+			r_state.result.invocation.migrate_activate_strict = true;
 			r_state.index++;
 		} else if (arg == "--confirm") {
-			confirm = true;
+			r_state.result.invocation.migrate_confirm = true;
 			r_state.index++;
 		} else if (arg == "--allow-violations") {
-			allow_violations = true;
+			r_state.result.invocation.migrate_allow_violations = true;
 			r_state.index++;
 		} else if (arg == "--acknowledge-vcs") {
-			acknowledge_vcs = true;
+			r_state.result.invocation.migrate_acknowledge_vcs = true;
 			r_state.index++;
 		} else if (arg == "--follow-up") {
-			if (!require_value(r_state, arg, follow_up)) {
+			if (!require_value(r_state, arg, r_state.result.invocation.migrate_follow_up)) {
 				return;
 			}
 		} else {
@@ -577,34 +509,9 @@ static void parse_script_migrate(CLIParseState &r_state) {
 		return;
 	}
 
-	PackedStringArray normalized = base_args(r_state);
-	append_headless(normalized);
-	append_pair(normalized, "--foundry_script-migrate", r_state.project_path);
-	if (apply) {
-		append(normalized, "--foundry_script-migrate-apply");
-	}
-	if (strict_null) {
-		append(normalized, "--foundry_script-migrate-strict-null-checks");
-	}
-	if (strict_dynamic) {
-		append(normalized, "--foundry_script-migrate-strict-dynamic-checks");
-	}
-	if (activate_strict) {
-		append(normalized, "--foundry_script-migrate-activate-strict");
-	}
-	if (confirm) {
-		append(normalized, "--foundry_script-migrate-confirm");
-	}
-	if (allow_violations) {
-		append(normalized, "--foundry_script-migrate-allow-violations");
-	}
-	if (acknowledge_vcs) {
-		append(normalized, "--foundry_script-migrate-acknowledge-vcs");
-	}
-	if (!follow_up.is_empty()) {
-		append_pair(normalized, "--foundry_script-migrate-follow-up", follow_up);
-	}
-	r_state.result.normalized_args = normalized;
+	append_headless(r_state.global_prefix);
+	r_state.result.invocation.project_path = r_state.project_path;
+	finalize_global_args(r_state);
 }
 
 static void parse_script(CLIParseState &r_state) {
@@ -630,8 +537,8 @@ static void parse_script(CLIParseState &r_state) {
 
 static void parse_test_generate_fixtures(CLIParseState &r_state) {
 	set_command_path(r_state.result, "test", "generate-fixtures");
+	r_state.result.invocation.kind = FoundryCLIParser::CLIInvocation::TEST_GENERATE_FIXTURES;
 	PackedStringArray paths;
-	bool print_filenames = false;
 
 	while (r_state.index < r_state.args.size()) {
 		const String arg = r_state.args[r_state.index];
@@ -646,7 +553,7 @@ static void parse_test_generate_fixtures(CLIParseState &r_state) {
 			continue;
 		}
 		if (arg == "--print-filenames") {
-			print_filenames = true;
+			r_state.result.invocation.print_filenames = true;
 			r_state.index++;
 		} else if (arg.begins_with("-")) {
 			fail(r_state.result, "Unknown option for test generate-fixtures: " + arg + ".");
@@ -657,26 +564,19 @@ static void parse_test_generate_fixtures(CLIParseState &r_state) {
 		}
 	}
 
-	PackedStringArray normalized = base_args(r_state);
-	append_headless(normalized);
-	append_project(normalized, r_state.project_path);
-	append(normalized, "--test");
-	append(normalized, "--foundry_script-generate-tests");
-	if (print_filenames) {
-		append(normalized, "--print-filenames");
-	}
+	append_headless(r_state.global_prefix);
+	r_state.result.invocation.project_path = r_state.project_path;
 	if (paths.is_empty()) {
-		append(normalized, "modules/foundry_script/tests/scripts");
+		append(r_state.result.invocation.command_args, "modules/foundry_script/tests/scripts");
 	} else {
-		for (int i = 0; i < paths.size(); i++) {
-			append(normalized, paths[i]);
-		}
+		r_state.result.invocation.command_args = paths;
 	}
-	r_state.result.normalized_args = normalized;
+	finalize_global_args(r_state);
 }
 
 static void parse_test_generate_format_fixtures(CLIParseState &r_state) {
 	set_command_path(r_state.result, "test", "generate-format-fixtures");
+	r_state.result.invocation.kind = FoundryCLIParser::CLIInvocation::TEST_GENERATE_FORMAT_FIXTURES;
 	PackedStringArray paths;
 
 	while (r_state.index < r_state.args.size()) {
@@ -699,24 +599,19 @@ static void parse_test_generate_format_fixtures(CLIParseState &r_state) {
 		r_state.index++;
 	}
 
-	PackedStringArray normalized = base_args(r_state);
-	append_headless(normalized);
-	append_project(normalized, r_state.project_path);
-	append(normalized, "--test");
-	append(normalized, "--foundry_script-generate-format-tests");
+	append_headless(r_state.global_prefix);
+	r_state.result.invocation.project_path = r_state.project_path;
 	if (paths.is_empty()) {
-		append(normalized, "modules/foundry_script/tests/scripts/format");
+		append(r_state.result.invocation.command_args, "modules/foundry_script/tests/scripts/format");
 	} else {
-		for (int i = 0; i < paths.size(); i++) {
-			append(normalized, paths[i]);
-		}
+		r_state.result.invocation.command_args = paths;
 	}
-	r_state.result.normalized_args = normalized;
+	finalize_global_args(r_state);
 }
 
 static void parse_test_run(CLIParseState &r_state) {
 	set_command_path(r_state.result, "test", "run");
-	String test_case;
+	r_state.result.invocation.kind = FoundryCLIParser::CLIInvocation::TEST_RUN;
 	PackedStringArray passthrough;
 
 	while (r_state.index < r_state.args.size()) {
@@ -732,7 +627,7 @@ static void parse_test_run(CLIParseState &r_state) {
 			continue;
 		}
 		if (arg == "--case") {
-			if (!require_value(r_state, arg, test_case)) {
+			if (!require_value(r_state, arg, r_state.result.invocation.test_case)) {
 				return;
 			}
 		} else {
@@ -741,17 +636,10 @@ static void parse_test_run(CLIParseState &r_state) {
 		}
 	}
 
-	PackedStringArray normalized = base_args(r_state);
-	append_headless(normalized);
-	append_project(normalized, r_state.project_path);
-	append(normalized, "--test");
-	if (!test_case.is_empty()) {
-		append(normalized, "--test-case=" + test_case);
-	}
-	for (int i = 0; i < passthrough.size(); i++) {
-		append(normalized, passthrough[i]);
-	}
-	r_state.result.normalized_args = normalized;
+	append_headless(r_state.global_prefix);
+	r_state.result.invocation.project_path = r_state.project_path;
+	r_state.result.invocation.passthrough_args = passthrough;
+	finalize_global_args(r_state);
 }
 
 static void parse_test(CLIParseState &r_state) {
@@ -790,6 +678,9 @@ static void parse_editor(CLIParseState &r_state) {
 		return;
 	}
 	set_command_path(r_state.result, "editor", command);
+	r_state.result.invocation.kind = command == "open"
+			? FoundryCLIParser::CLIInvocation::EDITOR_OPEN
+			: FoundryCLIParser::CLIInvocation::EDITOR_PROJECT_MANAGER;
 
 	PackedStringArray passthrough;
 	while (r_state.index < r_state.args.size()) {
@@ -813,18 +704,9 @@ static void parse_editor(CLIParseState &r_state) {
 		return;
 	}
 
-	PackedStringArray normalized = base_args(r_state);
-	if (command == "open") {
-		append_project(normalized, r_state.project_path);
-		append(normalized, "--editor");
-		for (int i = 0; i < passthrough.size(); i++) {
-			append(normalized, passthrough[i]);
-		}
-	} else if (command == "project-manager") {
-		append_project(normalized, r_state.project_path);
-		append(normalized, "--project-manager");
-	}
-	r_state.result.normalized_args = normalized;
+	r_state.result.invocation.project_path = r_state.project_path;
+	r_state.result.invocation.passthrough_args = passthrough;
+	finalize_global_args(r_state);
 }
 
 static void parse_lsp(CLIParseState &r_state) {
@@ -842,8 +724,8 @@ static void parse_lsp(CLIParseState &r_state) {
 		return;
 	}
 	set_command_path(r_state.result, "lsp", command);
+	r_state.result.invocation.kind = FoundryCLIParser::CLIInvocation::LSP_SERVE;
 
-	String port;
 	while (r_state.index < r_state.args.size()) {
 		const String arg = r_state.args[r_state.index];
 		if (is_help_flag(arg)) {
@@ -857,7 +739,7 @@ static void parse_lsp(CLIParseState &r_state) {
 			continue;
 		}
 		if (arg == "--port") {
-			if (!require_value(r_state, arg, port)) {
+			if (!require_value(r_state, arg, r_state.result.invocation.lsp_port)) {
 				return;
 			}
 		} else {
@@ -866,13 +748,8 @@ static void parse_lsp(CLIParseState &r_state) {
 		}
 	}
 
-	PackedStringArray normalized = base_args(r_state);
-	append_project(normalized, r_state.project_path);
-	append(normalized, "--editor");
-	if (!port.is_empty()) {
-		append_pair(normalized, "--lsp-port", port);
-	}
-	r_state.result.normalized_args = normalized;
+	r_state.result.invocation.project_path = r_state.project_path;
+	finalize_global_args(r_state);
 }
 
 static void parse_docs(CLIParseState &r_state) {
@@ -892,7 +769,7 @@ static void parse_docs(CLIParseState &r_state) {
 	set_command_path(r_state.result, "docs", command);
 
 	if (command == "generate-api") {
-		bool include_docs = false;
+		r_state.result.invocation.kind = FoundryCLIParser::CLIInvocation::DOCS_GENERATE_API;
 		while (r_state.index < r_state.args.size()) {
 			const String arg = r_state.args[r_state.index];
 			if (is_help_flag(arg)) {
@@ -904,22 +781,19 @@ static void parse_docs(CLIParseState &r_state) {
 					return;
 				}
 			} else if (arg == "--include-docs") {
-				include_docs = true;
+				r_state.result.invocation.docs_include_docs = true;
 				r_state.index++;
 			} else {
 				fail(r_state.result, "Unknown option for docs generate-api: " + arg + ".");
 				return;
 			}
 		}
-		PackedStringArray normalized = base_args(r_state);
-		append(normalized, include_docs ? "--dump-extension-api-with-docs" : "--dump-extension-api");
-		r_state.result.normalized_args = normalized;
+		finalize_global_args(r_state);
 		return;
 	}
 
 	if (command == "generate-engine") {
-		String output;
-		bool no_docbase = false;
+		r_state.result.invocation.kind = FoundryCLIParser::CLIInvocation::DOCS_GENERATE_ENGINE;
 		while (r_state.index < r_state.args.size()) {
 			const String arg = r_state.args[r_state.index];
 			if (is_help_flag(arg)) {
@@ -931,32 +805,23 @@ static void parse_docs(CLIParseState &r_state) {
 					return;
 				}
 			} else if (arg == "--output") {
-				if (!require_value(r_state, arg, output)) {
+				if (!require_value(r_state, arg, r_state.result.invocation.docs_engine_output)) {
 					return;
 				}
 			} else if (arg == "--no-docbase") {
-				no_docbase = true;
+				r_state.result.invocation.docs_no_docbase = true;
 				r_state.index++;
 			} else {
 				fail(r_state.result, "Unknown option for docs generate-engine: " + arg + ".");
 				return;
 			}
 		}
-		PackedStringArray normalized = base_args(r_state);
-		append(normalized, "--doctool");
-		if (!output.is_empty()) {
-			append(normalized, output);
-		}
-		if (no_docbase) {
-			append(normalized, "--no-docbase");
-		}
-		r_state.result.normalized_args = normalized;
+		finalize_global_args(r_state);
 		return;
 	}
 
 	if (command == "generate-script") {
-		String source;
-		String output;
+		r_state.result.invocation.kind = FoundryCLIParser::CLIInvocation::DOCS_GENERATE_SCRIPT;
 		while (r_state.index < r_state.args.size()) {
 			const String arg = r_state.args[r_state.index];
 			if (is_help_flag(arg)) {
@@ -968,11 +833,11 @@ static void parse_docs(CLIParseState &r_state) {
 					return;
 				}
 			} else if (arg == "--source") {
-				if (!require_value(r_state, arg, source)) {
+				if (!require_value(r_state, arg, r_state.result.invocation.docs_script_source)) {
 					return;
 				}
 			} else if (arg == "--output") {
-				if (!require_value(r_state, arg, output)) {
+				if (!require_value(r_state, arg, r_state.result.invocation.docs_script_output)) {
 					return;
 				}
 			} else {
@@ -980,17 +845,11 @@ static void parse_docs(CLIParseState &r_state) {
 				return;
 			}
 		}
-		if (source.is_empty()) {
+		if (r_state.result.invocation.docs_script_source.is_empty()) {
 			fail(r_state.result, "docs generate-script requires --source.");
 			return;
 		}
-		PackedStringArray normalized = base_args(r_state);
-		append(normalized, "--doctool");
-		if (!output.is_empty()) {
-			append(normalized, output);
-		}
-		append_pair(normalized, "--foundry_script-docs", source);
-		r_state.result.normalized_args = normalized;
+		finalize_global_args(r_state);
 	}
 }
 
@@ -1011,6 +870,7 @@ static void parse_extension(CLIParseState &r_state) {
 	set_command_path(r_state.result, "extension", command);
 
 	if (command == "dump-interface") {
+		r_state.result.invocation.kind = FoundryCLIParser::CLIInvocation::EXTENSION_DUMP_INTERFACE;
 		String format = "header";
 		while (r_state.index < r_state.args.size()) {
 			const String arg = r_state.args[r_state.index];
@@ -1031,20 +891,17 @@ static void parse_extension(CLIParseState &r_state) {
 				return;
 			}
 		}
-		PackedStringArray normalized = base_args(r_state);
-		if (format == "header") {
-			append(normalized, "--dump-foundryextension-interface");
-		} else if (format == "json") {
-			append(normalized, "--dump-foundryextension-interface-json");
-		} else {
+		if (format != "header" && format != "json") {
 			fail(r_state.result, "extension dump-interface --format must be header or json.");
 			return;
 		}
-		r_state.result.normalized_args = normalized;
+		r_state.result.invocation.extension_interface_format = format;
+		finalize_global_args(r_state);
 		return;
 	}
 
 	if (command == "validate-api") {
+		r_state.result.invocation.kind = FoundryCLIParser::CLIInvocation::EXTENSION_VALIDATE_API;
 		String path;
 		while (r_state.index < r_state.args.size()) {
 			const String arg = r_state.args[r_state.index];
@@ -1069,9 +926,8 @@ static void parse_extension(CLIParseState &r_state) {
 			fail(r_state.result, "extension validate-api requires --input.");
 			return;
 		}
-		PackedStringArray normalized = base_args(r_state);
-		append_pair(normalized, "--validate-extension-api", path);
-		r_state.result.normalized_args = normalized;
+		r_state.result.invocation.extension_validate_input = path;
+		finalize_global_args(r_state);
 	}
 }
 
@@ -1090,6 +946,10 @@ static void parse_diagnostics(CLIParseState &r_state) {
 		return;
 	}
 	set_command_path(r_state.result, "diagnostics", command);
+	r_state.result.invocation.kind = command == "render-device-support"
+			? FoundryCLIParser::CLIInvocation::DIAGNOSTICS_RENDER_DEVICE_SUPPORT
+			: FoundryCLIParser::CLIInvocation::DIAGNOSTICS_RENDER_DEVICE_CREATE;
+
 	while (r_state.index < r_state.args.size()) {
 		const String arg = r_state.args[r_state.index];
 		if (is_help_flag(arg)) {
@@ -1106,13 +966,7 @@ static void parse_diagnostics(CLIParseState &r_state) {
 		return;
 	}
 
-	PackedStringArray normalized = base_args(r_state);
-	if (command == "render-device-support") {
-		append(normalized, "--test-rd-support");
-	} else if (command == "render-device-create") {
-		append(normalized, "--test-rd-creation");
-	}
-	r_state.result.normalized_args = normalized;
+	finalize_global_args(r_state);
 }
 
 static void collect_user_args(CLIParseState &r_state) {
@@ -1125,6 +979,110 @@ static void collect_user_args(CLIParseState &r_state) {
 			return;
 		}
 	}
+}
+
+static bool is_legacy_workflow_flag(const String &p_arg, String &r_replacement) {
+	if (p_arg == "--editor" || p_arg == "-e") {
+		r_replacement = "`foundry editor open --project <dir>`";
+		return true;
+	}
+	if (p_arg == "--project-manager" || p_arg == "-p") {
+		r_replacement = "`foundry editor project-manager`";
+		return true;
+	}
+	if (p_arg == "--path") {
+		r_replacement = "`--project <dir>` with a Foundry command";
+		return true;
+	}
+	if (p_arg == "--import") {
+		r_replacement = "`foundry project import --project <dir>`";
+		return true;
+	}
+	if (p_arg == "--test") {
+		r_replacement = "`foundry test run`";
+		return true;
+	}
+	if (p_arg == "--export-release" || p_arg == "--export-debug" || p_arg == "--export-pack" || p_arg == "--export-patch") {
+		r_replacement = "`foundry project export --project <dir> --preset <name> --output <path> --mode release|debug|pack|patch`";
+		return true;
+	}
+	if (p_arg == "--run-test-runner") {
+		r_replacement = "`foundry project test --project <dir> --runner <path>`";
+		return true;
+	}
+	if (p_arg == "--foundry_script-format") {
+		r_replacement = "`foundry script format`";
+		return true;
+	}
+	if (p_arg == "--foundry_script-lint") {
+		r_replacement = "`foundry script lint`";
+		return true;
+	}
+	if (p_arg == "--foundry_script-migrate" || p_arg.begins_with("--foundry_script-migrate-")) {
+		r_replacement = "`foundry script migrate`";
+		return true;
+	}
+	if (p_arg == "--foundry_script-generate-tests") {
+		r_replacement = "`foundry test generate-fixtures`";
+		return true;
+	}
+	if (p_arg == "--foundry_script-generate-format-tests") {
+		r_replacement = "`foundry test generate-format-fixtures`";
+		return true;
+	}
+	if (p_arg == "--doctool") {
+		r_replacement = "`foundry docs generate-engine` or `foundry docs generate-script`";
+		return true;
+	}
+	if (p_arg == "--foundry_script-docs") {
+		r_replacement = "`foundry docs generate-script --source <path>`";
+		return true;
+	}
+	if (p_arg == "--dump-extension-api" || p_arg == "--dump-extension-api-with-docs") {
+		r_replacement = "`foundry docs generate-api`";
+		return true;
+	}
+	if (p_arg == "--dump-foundryextension-interface" || p_arg == "--dump-foundryextension-interface-json") {
+		r_replacement = "`foundry extension dump-interface`";
+		return true;
+	}
+	if (p_arg == "--validate-extension-api") {
+		r_replacement = "`foundry extension validate-api --input <path>`";
+		return true;
+	}
+	if (p_arg == "--test-rd-support") {
+		r_replacement = "`foundry diagnostics render-device-support`";
+		return true;
+	}
+	if (p_arg == "--test-rd-creation") {
+		r_replacement = "`foundry diagnostics render-device-create`";
+		return true;
+	}
+	if (p_arg == "--lsp-port") {
+		r_replacement = "`foundry lsp serve --port <port>`";
+		return true;
+	}
+	return false;
+}
+
+static bool reject_legacy_workflow_flags(CLIParseState &r_state, int p_start_index) {
+	for (int i = p_start_index; i < r_state.args.size(); i++) {
+		String replacement;
+		if (is_legacy_workflow_flag(r_state.args[i], replacement)) {
+			fail(r_state.result, vformat("`%s` has been removed. Use %s.", r_state.args[i], replacement));
+			return true;
+		}
+	}
+	return false;
+}
+
+static void pass_through_global_args(CLIParseState &r_state, int p_start_index) {
+	PackedStringArray global_args;
+	for (int i = 0; i < r_state.args.size(); i++) {
+		append(global_args, r_state.args[i]);
+	}
+	r_state.result.global_args = global_args;
+	r_state.index = p_start_index;
 }
 
 } // namespace
@@ -1143,7 +1101,6 @@ bool FoundryCLIParser::is_new_cli_command(const String &p_arg) {
 FoundryCLIParser::ParseResult FoundryCLIParser::parse(const PackedStringArray &p_args) {
 	CLIParseState state;
 	state.args = p_args;
-	state.result.normalized_args = p_args;
 	if (p_args.is_empty()) {
 		return state.result;
 	}
@@ -1156,7 +1113,13 @@ FoundryCLIParser::ParseResult FoundryCLIParser::parse(const PackedStringArray &p
 
 	const String first_arg = state.args[0];
 	state.has_executable_arg = !is_new_cli_command(first_arg) && first_arg != "help" && !is_help_flag(first_arg) && !first_arg.begins_with("-");
-	state.index = state.has_executable_arg ? 1 : 0;
+	const int start_index = state.has_executable_arg ? 1 : 0;
+
+	if (reject_legacy_workflow_flags(state, start_index)) {
+		return state.result;
+	}
+
+	state.index = start_index;
 	while (state.index < state.args.size()) {
 		const String arg = state.args[state.index];
 		if (is_help_flag(arg)) {
@@ -1209,82 +1172,18 @@ FoundryCLIParser::ParseResult FoundryCLIParser::parse(const PackedStringArray &p
 			fail(state.result, "Expected a Foundry command after global options, got: " + arg + ".");
 			return state.result;
 		}
-		return state.result; // Legacy invocation; leave it untouched.
+		pass_through_global_args(state, start_index);
+		return state.result;
 	}
 
 	if (state.result.used_new_cli) {
 		fail(state.result, "Expected a Foundry command after global options.");
+	} else if (!state.global_prefix.is_empty()) {
+		finalize_global_args(state);
+	} else {
+		pass_through_global_args(state, start_index);
 	}
 	return state.result;
-}
-
-String FoundryCLIParser::get_legacy_deprecation_notice(const PackedStringArray &p_args) {
-	int start_index = 0;
-	if (!p_args.is_empty() && !is_new_cli_command(p_args[0]) && p_args[0] != "help" && !is_help_flag(p_args[0]) &&
-			!p_args[0].begins_with("-")) {
-		start_index = 1;
-	}
-
-	bool has_editor = false;
-	bool has_project_manager = false;
-	bool has_import = false;
-	bool has_test = false;
-	bool has_path = false;
-	bool has_dump_extension_api = false;
-	bool has_dump_interface = false;
-	bool has_validate_extension_api = false;
-
-	for (int i = start_index; i < p_args.size(); i++) {
-		const String &arg = p_args[i];
-		if (arg == "--editor" || arg == "-e") {
-			has_editor = true;
-		} else if (arg == "--project-manager" || arg == "-p") {
-			has_project_manager = true;
-		} else if (arg == "--import") {
-			has_import = true;
-		} else if (arg == "--test") {
-			has_test = true;
-		} else if (arg == "--path") {
-			has_path = true;
-		} else if (arg == "--dump-extension-api" || arg == "--dump-extension-api-with-docs") {
-			has_dump_extension_api = true;
-		} else if (arg == "--dump-foundryextension-interface" || arg == "--dump-foundryextension-interface-json") {
-			has_dump_interface = true;
-		} else if (arg == "--validate-extension-api") {
-			has_validate_extension_api = true;
-		} else if (arg == "--foundry_script-generate-tests") {
-			return "Deprecated CLI: use `foundry test generate-fixtures` instead of `--foundry_script-generate-tests`.";
-		} else if (arg == "--foundry_script-generate-format-tests") {
-			return "Deprecated CLI: use `foundry test generate-format-fixtures` instead of `--foundry_script-generate-format-tests`.";
-		}
-	}
-
-	if (has_editor) {
-		return "Deprecated CLI: use `foundry editor open --project <dir>` instead of `--editor`/`--path`.";
-	}
-	if (has_project_manager) {
-		return "Deprecated CLI: use `foundry editor project-manager` instead of `--project-manager`/`-p`.";
-	}
-	if (has_import) {
-		return "Deprecated CLI: use `foundry project import --project <dir>` instead of `--import --path`.";
-	}
-	if (has_test) {
-		return "Deprecated CLI: use `foundry test run` instead of `--test`.";
-	}
-	if (has_dump_extension_api) {
-		return "Deprecated CLI: use `foundry docs generate-api` instead of `--dump-extension-api`.";
-	}
-	if (has_dump_interface) {
-		return "Deprecated CLI: use `foundry extension dump-interface` instead of `--dump-foundryextension-interface`.";
-	}
-	if (has_validate_extension_api) {
-		return "Deprecated CLI: use `foundry extension validate-api --input <path>` instead of `--validate-extension-api`.";
-	}
-	if (has_path) {
-		return "Deprecated CLI: use `--project <dir>` with a Foundry command instead of `--path`.";
-	}
-
-	return String();
 }
 
 FoundryCLIParser::ParseResult FoundryCLIParser::parse(int p_argc, char *p_argv[]) {

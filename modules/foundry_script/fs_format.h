@@ -318,17 +318,14 @@ public:
 		bool read_stdin = false;
 	};
 
-	static void run_from_cmdline();
+	static void run_from_cmdline(const Vector<String> &p_command_args);
 
 	// Regenerates the golden `expected.fs` next to each `input.fs` fixture by
-	// formatting the input with the current formatter. Driven by the
-	// `--foundry_script-generate-format-tests` command; the optional path argument
-	// overrides the default fixture root.
-	static void generate_format_tests();
+	// formatting the input with the current formatter.
+	static void generate_format_tests(const String &p_root = "modules/foundry_script/tests/scripts/format");
 
-	// Parses the formatter arguments that follow `--foundry_script-format`. Exposed for
-	// unit testing of the pure argument/mode parsing (no process side effects).
-	static Options parse_options(const List<String> &p_cmdline_args);
+	// Parses formatter command arguments. Exposed for unit testing.
+	static Options parse_options(const Vector<String> &p_args);
 
 	// Recursively collects `*.fs` files under `p_paths` (directories recurse, files
 	// are taken as-is), skipping hidden and symlinked directories. `r_had_error` is
