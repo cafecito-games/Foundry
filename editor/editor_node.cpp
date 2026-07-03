@@ -4863,6 +4863,10 @@ Error EditorNode::load_scene(const String &p_scene, bool p_ignore_broken_deps, b
 			_set_current_scene(idx);
 		}
 	} else {
+		// The reused blank tab may not be the displayed context yet, e.g.
+		// when the current scene was just removed for an in-place reload.
+		_activate_scene_context(editor_data.get_active_scene_context());
+
 		EditorUndoRedoManager::get_singleton()->clear_history(editor_data.get_current_edited_scene_history_id(), false);
 
 		Dictionary state = editor_data.get_active_scene_context()->get_main_state();
