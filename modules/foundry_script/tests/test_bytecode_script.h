@@ -638,6 +638,50 @@ TEST_CASE("[FoundryScript][BytecodeScript] Conformance witnesses re-register wit
 	CHECK((int64_t)bytecode_instance_call(instance, SNAME("run"), {}) == 47);
 }
 
+TEST_CASE("[FoundryScript][BytecodeScript] Builtin conformance witnesses re-register with the registry") {
+	const Ref<FoundryScript> original = compile_bytecode_test_source(
+			"trait Pingable:\n"
+			"\tabstract func ping() -> int\n"
+			"\n"
+			"extend int uses Pingable:\n"
+			"\tfunc ping() -> int:\n"
+			"\t\treturn self + 1\n"
+			"\n"
+			"func run() -> int:\n"
+			"\tvar value: Pingable = 41\n"
+			"\treturn value.ping()\n");
+	const String script_path = original->get_script_path();
+
+	{
+		const Variant instance_variant = bytecode_new_instance(original);
+		Object *instance = instance_variant;
+		CHECK((int64_t)bytecode_instance_call(instance, SNAME("run"), {}) == 42);
+	}
+
+	FSBytecodeExporter exporter;
+	Vector<uint8_t> buffer;
+	REQUIRE(exporter.serialize(original, buffer) == OK);
+
+	FSConformanceRegistry::get_singleton()->clear_runtime_witnesses(script_path);
+	CHECK(FSConformanceRegistry::get_singleton()->find_builtin_witness_function(Variant::INT, SNAME("ping")) == nullptr);
+
+	Ref<FoundryScript> restored;
+	restored.instantiate();
+	restored->set_path_cache(script_path);
+	BytecodeTestResolver resolver;
+	FSBytecodeLoader loader;
+	loader.set_resolver(&resolver);
+	REQUIRE(loader.load_full(buffer, restored) == OK);
+
+	FSFunction *registered_witness = FSConformanceRegistry::get_singleton()->find_builtin_witness_function(Variant::INT, SNAME("ping"));
+	REQUIRE(registered_witness != nullptr);
+	CHECK(TestFSBytecodeScriptAccessor::get_witness_functions(restored).has(registered_witness));
+
+	const Variant instance_variant = bytecode_new_instance(restored);
+	Object *instance = instance_variant;
+	CHECK((int64_t)bytecode_instance_call(instance, SNAME("run"), {}) == 42);
+}
+
 TEST_CASE("[FoundryScript][BytecodeScript] Script-level lambda metadata rebuilds") {
 	const Ref<FoundryScript> original = compile_bytecode_test_source(
 			"func lambda_total(base: int) -> int:\n"

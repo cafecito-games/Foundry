@@ -548,7 +548,9 @@ T`) is a parse error, because a conformance applies to **all** specializations o
 base. The `uses` clause reuses `trait_use` from §3.3. The body contains **only** function /
 accessor members; `var`, `const`, `signal`, inner `class`/`trait`, and `enum` members are
 rejected. Witness methods may carry the `static`/`async` modifiers. Inside the witnesses,
-`self` is typed as the target.
+`self` is typed as the target. For builtin value-type targets (`extend int uses ...`), witness
+`self` is a copy for scalars and strings (mutations do not propagate to the caller) but shares
+storage for `Array` and `Dictionary` (mutations through `self` are visible to the caller).
 
 ---
 
