@@ -509,31 +509,42 @@ TEST_CASE("[Editor][RunTarget] A failed load leaves prior state untouched") {
 	CHECK_EQ(reloaded[0].name, "My iPhone");
 }
 
-TEST_CASE("[Editor][RunTarget] First-open dock marker round-trips and is consumed once") {
+TEST_CASE("[Editor][RunTarget] First-open configuration marker round-trips and is consumed once") {
 	const String path = TestUtils::get_temp_path("run_targets_first_open.cfg");
 	if (FileAccess::exists(path)) {
 		DirAccess::remove_absolute(path);
 	}
 
-	// Seed targets first, then request the marker, mirroring the project template.
 	Vector<RunTarget> initial;
 	initial.push_back(make_target("My iPhone"));
 	REQUIRE_EQ(RunTarget::save_all(path, initial), OK);
-	REQUIRE_EQ(RunTargetManager::request_show_dock_on_first_open(path), OK);
+	REQUIRE_EQ(RunTargetManager::request_show_configuration_on_first_open(path), OK);
 
-	// Requesting the marker does not disturb the seeded targets.
 	const Vector<RunTarget> after_request = RunTarget::load_all(path);
 	REQUIRE_EQ(after_request.size(), 1);
-	CHECK_EQ(after_request[0].name, "My iPhone");
+	CHECK_EQ(after_request[0], initial[0]);
 
-	// The first consume reports the request and clears it; the second sees nothing.
-	CHECK(RunTargetManager::consume_show_dock_on_first_open(path));
-	CHECK_FALSE(RunTargetManager::consume_show_dock_on_first_open(path));
+	CHECK(RunTargetManager::consume_show_configuration_on_first_open(path));
+	CHECK_FALSE(RunTargetManager::consume_show_configuration_on_first_open(path));
 
-	// Clearing the marker leaves the targets intact.
 	const Vector<RunTarget> after_consume = RunTarget::load_all(path);
 	REQUIRE_EQ(after_consume.size(), 1);
-	CHECK_EQ(after_consume[0].name, "My iPhone");
+	CHECK_EQ(after_consume[0], initial[0]);
+}
+
+TEST_CASE("[Editor][RunTarget] First-open configuration consumes the legacy dock key") {
+	const String path = TestUtils::get_temp_path("run_targets_first_open_legacy_key.cfg");
+	if (FileAccess::exists(path)) {
+		DirAccess::remove_absolute(path);
+	}
+
+	Ref<ConfigFile> config;
+	config.instantiate();
+	config->set_value("meta", "show_dock_on_first_open", true);
+	REQUIRE_EQ(config->save(path), OK);
+
+	CHECK(RunTargetManager::consume_show_configuration_on_first_open(path));
+	CHECK_FALSE(RunTargetManager::consume_show_configuration_on_first_open(path));
 }
 
 TEST_CASE("[Editor][RunTarget] Consuming a first-open marker preserves the active selection") {
@@ -551,9 +562,9 @@ TEST_CASE("[Editor][RunTarget] Consuming a first-open marker preserves the activ
 		REQUIRE(manager.set_active_target("My iPhone"));
 		REQUIRE_EQ(manager.save(), OK);
 	}
-	REQUIRE_EQ(RunTargetManager::request_show_dock_on_first_open(path), OK);
+	REQUIRE_EQ(RunTargetManager::request_show_configuration_on_first_open(path), OK);
 
-	CHECK(RunTargetManager::consume_show_dock_on_first_open(path));
+	CHECK(RunTargetManager::consume_show_configuration_on_first_open(path));
 
 	// The active selection persisted alongside the marker survives consuming it.
 	RunTargetManager reloaded;
@@ -572,7 +583,7 @@ TEST_CASE("[Editor][RunTarget] Consuming a marker on a config without one return
 	initial.push_back(make_target("My iPhone"));
 	REQUIRE_EQ(RunTarget::save_all(path, initial), OK);
 
-	CHECK_FALSE(RunTargetManager::consume_show_dock_on_first_open(path));
+	CHECK_FALSE(RunTargetManager::consume_show_configuration_on_first_open(path));
 }
 
 TEST_CASE("[Editor][RunTarget] Consuming a marker on a missing config returns false") {
@@ -581,7 +592,7 @@ TEST_CASE("[Editor][RunTarget] Consuming a marker on a missing config returns fa
 		DirAccess::remove_absolute(path);
 	}
 
-	CHECK_FALSE(RunTargetManager::consume_show_dock_on_first_open(path));
+	CHECK_FALSE(RunTargetManager::consume_show_configuration_on_first_open(path));
 }
 
 } // namespace TestRunTarget

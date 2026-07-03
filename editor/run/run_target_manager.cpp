@@ -43,7 +43,7 @@ namespace {
 // sections written by `RunTarget::save_all`.
 constexpr const char *META_SECTION = "meta";
 constexpr const char *ACTIVE_TARGET_KEY = "active_target";
-constexpr const char *SHOW_DOCK_ON_FIRST_OPEN_KEY = "show_dock_on_first_open";
+constexpr const char *SHOW_CONFIGURATION_ON_FIRST_OPEN_KEY = "show_dock_on_first_open";
 
 // The default preset lookup: resolves a preset by name against the editor's
 // `EditorExport` singleton. Returns a null Ref when the singleton is absent
@@ -158,7 +158,7 @@ Error RunTargetManager::save() {
 	return config->save(config_path);
 }
 
-Error RunTargetManager::request_show_dock_on_first_open(const String &p_config_path) {
+Error RunTargetManager::request_show_configuration_on_first_open(const String &p_config_path) {
 	ERR_FAIL_COND_V(p_config_path.is_empty(), ERR_INVALID_PARAMETER);
 
 	Ref<ConfigFile> config;
@@ -171,11 +171,11 @@ Error RunTargetManager::request_show_dock_on_first_open(const String &p_config_p
 		return load_error;
 	}
 
-	config->set_value(META_SECTION, SHOW_DOCK_ON_FIRST_OPEN_KEY, true);
+	config->set_value(META_SECTION, SHOW_CONFIGURATION_ON_FIRST_OPEN_KEY, true);
 	return config->save(p_config_path);
 }
 
-bool RunTargetManager::consume_show_dock_on_first_open(const String &p_config_path) {
+bool RunTargetManager::consume_show_configuration_on_first_open(const String &p_config_path) {
 	if (p_config_path.is_empty()) {
 		return false;
 	}
@@ -185,23 +185,31 @@ bool RunTargetManager::consume_show_dock_on_first_open(const String &p_config_pa
 	if (config->load(p_config_path) != OK) {
 		return false;
 	}
-	if (!config->has_section_key(META_SECTION, SHOW_DOCK_ON_FIRST_OPEN_KEY)) {
+	if (!config->has_section_key(META_SECTION, SHOW_CONFIGURATION_ON_FIRST_OPEN_KEY)) {
 		return false;
 	}
 
-	const bool requested = config->get_value(META_SECTION, SHOW_DOCK_ON_FIRST_OPEN_KEY, false);
+	const bool requested = config->get_value(META_SECTION, SHOW_CONFIGURATION_ON_FIRST_OPEN_KEY, false);
 	// Clear the one-shot marker (this drops the meta section too when nothing else
-	// lives there) so the dock is revealed at most once, then persist the change.
-	config->erase_section_key(META_SECTION, SHOW_DOCK_ON_FIRST_OPEN_KEY);
+	// lives there) so configuration is revealed at most once, then persist the change.
+	config->erase_section_key(META_SECTION, SHOW_CONFIGURATION_ON_FIRST_OPEN_KEY);
 	const Error save_error = config->save(p_config_path);
 	if (save_error != OK) {
-		// The marker is still on disk, so reporting it consumed would auto-focus the
-		// dock on every open. Skip the reveal this time; a later open with a writable
-		// config will clear it cleanly.
-		WARN_PRINT(vformat("Could not clear the run-target first-open marker at \"%s\" (error %d); skipping the Targets dock reveal.", p_config_path, save_error));
+		// The marker is still on disk, so reporting it consumed would reveal
+		// configuration on every open. Skip the reveal this time; a later open with
+		// a writable config will clear it cleanly.
+		WARN_PRINT(vformat("Could not clear the run-target first-open marker at \"%s\" (error %d); skipping the Run Targets configuration reveal.", p_config_path, save_error));
 		return false;
 	}
 	return requested;
+}
+
+Error RunTargetManager::request_show_dock_on_first_open(const String &p_config_path) {
+	return request_show_configuration_on_first_open(p_config_path);
+}
+
+bool RunTargetManager::consume_show_dock_on_first_open(const String &p_config_path) {
+	return consume_show_configuration_on_first_open(p_config_path);
 }
 
 void RunTargetManager::set_targets(const Vector<RunTarget> &p_targets) {

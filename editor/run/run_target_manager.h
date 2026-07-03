@@ -59,14 +59,19 @@ public:
 	static RunTargetManager *get_singleton();
 	static void set_singleton(RunTargetManager *p_manager);
 
-	// First-open marker for the Targets dock. The "Mobile (iOS)" project template
-	// seeds a half-configured run target and asks the editor to reveal the Targets
-	// dock once, on first open, so the run-target workflow is discoverable. The flag
-	// is stored in run_targets.cfg's meta section so no extra file is introduced.
+	// First-open marker for Run Targets configuration. The "Mobile (iOS)"
+	// project template seeds a half-configured run target and asks the editor to
+	// reveal configuration once, on first open, so the run-target workflow is
+	// discoverable. The flag is stored in run_targets.cfg's meta section so no
+	// extra file is introduced.
 	//
-	// `request_show_dock_on_first_open` writes the flag, preserving any targets and
-	// active selection already in the file. `consume_show_dock_on_first_open` reports
-	// whether the flag was set and clears it, so the dock is revealed at most once.
+	// `request_show_configuration_on_first_open` writes the flag, preserving any
+	// targets and active selection already in the file.
+	// `consume_show_configuration_on_first_open` reports whether the flag was set
+	// and clears it, so configuration is revealed at most once.
+	static Error request_show_configuration_on_first_open(const String &p_config_path);
+	static bool consume_show_configuration_on_first_open(const String &p_config_path);
+
 	static Error request_show_dock_on_first_open(const String &p_config_path);
 	static bool consume_show_dock_on_first_open(const String &p_config_path);
 
