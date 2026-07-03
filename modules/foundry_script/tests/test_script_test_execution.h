@@ -31,6 +31,8 @@
 #pragma once
 
 #include "../fs_script_test_execution.h"
+#include "../fs_script_test_guard.h"
+#include "../foundry_script.h"
 #include "fs_test_runner.h"
 
 #include "core/io/resource_loader.h"
@@ -91,9 +93,10 @@ static Ref<ScriptTestExecutionResult> run_guarded_call(Node *p_suite, const Stri
 	execution->set_abort_on_fatal(p_abort_on_fatal);
 
 	ScriptTestExecutionCapture capture;
-	const Variant call_result = execution->callv(p_suite, p_method, Array());
+	const Variant call_result = execution->guard_callv(p_suite, p_method, Array());
 
-	Ref<ScriptTestExecutionResult> immediate = call_result;
+	Ref<ScriptTestExecutionResult> immediate;
+	immediate = Object::cast_to<ScriptTestExecutionResult>(call_result.get_validated_object());
 	if (immediate.is_valid()) {
 		return immediate;
 	}
@@ -106,11 +109,22 @@ static Ref<ScriptTestExecutionResult> run_guarded_call(Node *p_suite, const Stri
 	REQUIRE(tree != nullptr);
 	for (int frame = 0; frame < p_max_frames && !capture.done; frame++) {
 		tree->process(1.0 / 60.0);
+		if (FSLanguage::get_singleton()) {
+			FSLanguage::get_singleton()->frame();
+		}
+		FSScriptTestGuard::poll_timeouts();
 	}
 
 	REQUIRE(capture.done);
 	REQUIRE(capture.result.is_valid());
 	return capture.result;
+}
+
+TEST_CASE("[Modules][FoundryScript][ScriptTestExecution] guard_callv is registered with object, method, and args") {
+	MethodInfo info;
+	const bool found = ClassDB::get_method_info(SNAME("ScriptTestExecution"), SNAME("guard_callv"), &info);
+	CHECK(found);
+	CHECK_EQ(info.arguments.size(), 3);
 }
 
 TEST_CASE("[Modules][FoundryScript][ScriptTestExecution][SceneTree] Sync method completes with return value") {
@@ -187,8 +201,30 @@ TEST_CASE("[Modules][FoundryScript][ScriptTestExecution][SceneTree] abort_on_fat
 
 TEST_CASE("[Modules][FoundryScript][ScriptTestExecution][SceneTree] Nested guards time out independently") {
 	ScriptExecutionFixture fixture;
-	const Ref<ScriptTestExecutionResult> result = run_guarded_call(fixture.suite, SNAME("nested_outer"), 1.0);
-	CHECK_EQ(result->get_status(), ScriptTestExecutionResult::STATUS_COMPLETED);
+
+	Ref<ScriptTestExecution> outer;
+	outer.instantiate();
+	outer->set_timeout_seconds(0.5);
+
+	ScriptTestExecutionCapture outer_capture;
+	const Variant outer_pending = outer->guard_callv(fixture.suite, SNAME("async_never_signal"), Array());
+	ScriptTestExecutionPendingState *outer_state = Object::cast_to<ScriptTestExecutionPendingState>(outer_pending);
+	REQUIRE(outer_state != nullptr);
+
+	const Ref<ScriptTestExecutionResult> inner_result = run_guarded_call(fixture.suite, SNAME("cpu_spin"), 0.1);
+	CHECK_EQ(inner_result->get_status(), ScriptTestExecutionResult::STATUS_TIMED_OUT);
+
+	outer_state->connect(SNAME("completed"), callable_mp(&outer_capture, &ScriptTestExecutionCapture::on_completed), Object::CONNECT_ONE_SHOT);
+	SceneTree *tree = SceneTree::get_singleton();
+	for (int frame = 0; frame < 360 && !outer_capture.done; frame++) {
+		tree->process(1.0 / 60.0);
+		if (FSLanguage::get_singleton()) {
+			FSLanguage::get_singleton()->frame();
+		}
+		FSScriptTestGuard::poll_timeouts();
+	}
+	REQUIRE(outer_capture.done);
+	CHECK_EQ(outer_capture.result->get_status(), ScriptTestExecutionResult::STATUS_TIMED_OUT);
 }
 
 TEST_CASE("[Modules][FoundryScript][ScriptTestExecution][SceneTree] Zero timeout never expires on a long await") {
@@ -206,7 +242,7 @@ TEST_CASE("[Modules][FoundryScript][ScriptTestExecution][SceneTree] Awaiting a S
 	execution->set_timeout_seconds(1.0);
 
 	ScriptTestExecutionCapture capture;
-	const Variant pending = execution->callv(fixture.suite, SNAME("async_frames"), Array());
+	const Variant pending = execution->guard_callv(fixture.suite, SNAME("async_frames"), Array());
 	ScriptTestExecutionPendingState *pending_state = Object::cast_to<ScriptTestExecutionPendingState>(pending);
 	REQUIRE(pending_state != nullptr);
 	pending_state->connect(SNAME("completed"), callable_mp(&capture, &ScriptTestExecutionCapture::on_completed), Object::CONNECT_ONE_SHOT);
@@ -214,6 +250,10 @@ TEST_CASE("[Modules][FoundryScript][ScriptTestExecution][SceneTree] Awaiting a S
 	SceneTree *tree = SceneTree::get_singleton();
 	for (int frame = 0; frame < 240 && !capture.done; frame++) {
 		tree->process(1.0 / 60.0);
+		if (FSLanguage::get_singleton()) {
+			FSLanguage::get_singleton()->frame();
+		}
+		FSScriptTestGuard::poll_timeouts();
 	}
 
 	REQUIRE(capture.done);

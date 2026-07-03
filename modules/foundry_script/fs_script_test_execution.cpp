@@ -332,7 +332,7 @@ void ScriptTestExecution::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_timeout_seconds"), &ScriptTestExecution::get_timeout_seconds);
 	ClassDB::bind_method(D_METHOD("set_abort_on_fatal", "abort_on_fatal"), &ScriptTestExecution::set_abort_on_fatal);
 	ClassDB::bind_method(D_METHOD("get_abort_on_fatal"), &ScriptTestExecution::get_abort_on_fatal);
-	ClassDB::bind_method(D_METHOD("callv", "object", "method", "args"), &ScriptTestExecution::callv);
+	ClassDB::bind_method(D_METHOD("guard_callv", "object", "method", "args"), &ScriptTestExecution::guard_callv);
 
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "timeout_seconds"), "set_timeout_seconds", "get_timeout_seconds");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "abort_on_fatal"), "set_abort_on_fatal", "get_abort_on_fatal");
@@ -351,10 +351,10 @@ void ScriptTestExecution::_pending_finalized(ScriptTestExecutionPendingState *p_
 	}
 }
 
-Variant ScriptTestExecution::callv(Object *p_object, const StringName &p_method, const Array &p_args) {
+Variant ScriptTestExecution::guard_callv(Object *p_object, const StringName &p_method, const Array &p_args) {
 	if (pending.is_valid() && !pending->is_finalized()) {
 		return _make_result(ScriptTestExecutionResult::STATUS_RUNTIME_ERROR, Variant(),
-				"ScriptTestExecution.callv() called while a previous call is still pending.", OS::get_singleton()->get_ticks_usec());
+				"ScriptTestExecution.guard_callv() called while a previous call is still pending.", OS::get_singleton()->get_ticks_usec());
 	}
 
 	ERR_FAIL_NULL_V(p_object, _make_result(ScriptTestExecutionResult::STATUS_RUNTIME_ERROR, Variant(), "Invalid object.", OS::get_singleton()->get_ticks_usec()));
@@ -373,6 +373,11 @@ Variant ScriptTestExecution::callv(Object *p_object, const StringName &p_method,
 	}
 
 	const Variant ret = p_object->callv(p_method, p_args);
+
+	if (guard.abort_requested) {
+		FSScriptTestGuard::pop(&guard);
+		return _make_result(ScriptTestExecutionResult::STATUS_ABORTED, Variant(), guard.abort_message, start_usec);
+	}
 
 	if (guard.unwind_reason != FSScriptTestGuard::UNWIND_NONE) {
 		ScriptTestExecutionResult::Status status = guard.unwind_reason == FSScriptTestGuard::UNWIND_TIMED_OUT

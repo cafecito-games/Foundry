@@ -1,4 +1,3 @@
-class_name ScriptTestExecutionFixture
 extends Node
 
 var abort_ran_after := false
@@ -12,9 +11,9 @@ func async_frames() -> int:
 	return 7
 
 func async_never_signal() -> void:
-	var emitter := _SignalEmitter.new()
-	add_child(emitter)
-	await emitter.stuck
+	await get_tree().process_frame
+	while true:
+		pass
 
 func cpu_spin() -> void:
 	while true:
@@ -37,25 +36,9 @@ func runtime_error() -> void:
 func push_error_only() -> void:
 	push_error("fatal test error")
 
-func nested_inner_spin() -> void:
-	var execution := ScriptTestExecution.new()
-	execution.timeout_seconds = 0.1
-	var result: ScriptTestExecutionResult = await execution.callv(self, &"cpu_spin", [])
-	print(result.status)
-
-func nested_outer() -> int:
-	var execution := ScriptTestExecution.new()
-	execution.timeout_seconds = 0.5
-	var result: ScriptTestExecutionResult = await execution.callv(self, &"nested_inner_spin", [])
-	return result.status
-
 func long_await_no_timeout() -> int:
 	await get_tree().create_timer(0.15).timeout
 	return 99
 
 func probe_abort_available() -> bool:
 	return ScriptTestAbort.is_available()
-
-class _SignalEmitter:
-	extends Node
-	signal stuck

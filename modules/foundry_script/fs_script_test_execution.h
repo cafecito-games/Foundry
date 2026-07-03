@@ -118,7 +118,7 @@ public:
 	void set_abort_on_fatal(bool p_abort_on_fatal) { abort_on_fatal = p_abort_on_fatal; }
 	bool get_abort_on_fatal() const { return abort_on_fatal; }
 
-	Variant callv(Object *p_object, const StringName &p_method, const Array &p_args);
+	Variant guard_callv(Object *p_object, const StringName &p_method, const Array &p_args);
 
 	void _pending_finalized(ScriptTestExecutionPendingState *p_pending);
 };

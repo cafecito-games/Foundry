@@ -5,8 +5,9 @@
 	</brief_description>
 	<description>
 		[ScriptTestExecution] is a low-level primitive for project test runners. It runs one method call under an execution guard that can time out tight script loops, abort cooperatively, and return a structured [ScriptTestExecutionResult] instead of hanging the process.
-		When the guarded call suspends on [code]await[/code], [method callv] returns a pending [ScriptFunctionState] handle whose [signal ScriptFunctionState.completed] emits the final result.
-		Each [ScriptTestExecution] instance is single-use per guarded call: calling [method callv] again while a previous call is still pending returns [constant ScriptTestExecutionResult.STATUS_RUNTIME_ERROR].
+		Because [RefCounted] inherits [Object]'s two-argument [method Object.callv], the guarded entry point is exposed as [method guard_callv].
+		When the guarded call suspends on [code]await[/code], [method guard_callv] returns a pending [ScriptFunctionState] handle whose [signal ScriptFunctionState.completed] emits the final result.
+		Each [ScriptTestExecution] instance is single-use per guarded call: calling [method guard_callv] again while a previous call is still pending returns [constant ScriptTestExecutionResult.STATUS_RUNTIME_ERROR].
 		Nested guards are supported. [method ScriptTestAbort.abort_current] and checkpoint enforcement always target the innermost active guard on the calling thread.
 		[b]Cleanup guarantees[/b]
 		After a timeout or abort the engine unwinds the guarded script stack, releases parked coroutine handles, clears their signal connections, and restores the thread-local guard state so the runner can continue with [code]after_each[/code] and the rest of the suite.
@@ -16,7 +17,7 @@
 		Release-profile compiled-bytecode exports strip line checkpoints, so CPU-loop timeouts fall back to await-boundary enforcement there. Editor and headless project test runs retain line checkpoints.
 	</description>
 	<methods>
-		<method name="callv">
+		<method name="guard_callv">
 			<return type="Variant" />
 			<param index="0" name="object" type="Object" />
 			<param index="1" name="method" type="StringName" />
