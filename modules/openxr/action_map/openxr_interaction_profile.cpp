@@ -46,16 +46,6 @@ void OpenXRIPBinding::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::ARRAY, "binding_modifiers", PROPERTY_HINT_RESOURCE_TYPE, "OpenXRActionBindingModifier", PROPERTY_USAGE_NO_EDITOR), "set_binding_modifiers", "get_binding_modifiers");
 
 	// Deprecated
-#ifndef DISABLE_DEPRECATED
-	ClassDB::bind_method(D_METHOD("set_paths", "paths"), &OpenXRIPBinding::set_paths);
-	ClassDB::bind_method(D_METHOD("get_paths"), &OpenXRIPBinding::get_paths);
-	ADD_PROPERTY(PropertyInfo(Variant::PACKED_STRING_ARRAY, "paths", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NONE), "set_paths", "get_paths");
-
-	ClassDB::bind_method(D_METHOD("get_path_count"), &OpenXRIPBinding::get_path_count);
-	ClassDB::bind_method(D_METHOD("has_path", "path"), &OpenXRIPBinding::has_path);
-	ClassDB::bind_method(D_METHOD("add_path", "path"), &OpenXRIPBinding::add_path);
-	ClassDB::bind_method(D_METHOD("remove_path", "path"), &OpenXRIPBinding::remove_path);
-#endif // DISABLE_DEPRECATED
 }
 
 Ref<OpenXRIPBinding> OpenXRIPBinding::new_binding(const Ref<OpenXRAction> &p_action, const String &p_binding_path) {
@@ -162,59 +152,6 @@ void OpenXRIPBinding::remove_binding_modifier(const Ref<OpenXRActionBindingModif
 		emit_changed();
 	}
 }
-
-#ifndef DISABLE_DEPRECATED
-
-void OpenXRIPBinding::set_paths(const PackedStringArray &p_paths) { // Deprecated, but needed for loading old action maps.
-	// Fallback logic, this should ONLY be called when loading older action maps.
-	// We'll parse this momentarily and extract individual bindings.
-	binding_path = "";
-	for (const String &path : p_paths) {
-		if (!binding_path.is_empty()) {
-			binding_path += ",";
-		}
-		binding_path += path;
-	}
-}
-
-PackedStringArray OpenXRIPBinding::get_paths() const { // Deprecated, but needed for converting old action maps.
-	// Fallback logic, return an array.
-	// If we just loaded an old action map from disc, this will be a comma separated list of actions.
-	// Once parsed there should be only one path in our array.
-	PackedStringArray paths = binding_path.split(",", false);
-
-	return paths;
-}
-
-int OpenXRIPBinding::get_path_count() const { // Deprecated.
-	// Fallback logic, we only have one entry.
-	return binding_path.is_empty() ? 0 : 1;
-}
-
-bool OpenXRIPBinding::has_path(const String &p_path) const { // Deprecated.
-	// Fallback logic, return true if this is our path.
-	return binding_path == p_path;
-}
-
-void OpenXRIPBinding::add_path(const String &p_path) { // Deprecated.
-	// Fallback logic, only assign first time this is called.
-	if (binding_path != p_path) {
-		ERR_FAIL_COND_MSG(!binding_path.is_empty(), "Method add_path has been deprecated. A binding path was already set, create separate binding resources for each path and use set_binding_path instead.");
-
-		binding_path = p_path;
-		emit_changed();
-	}
-}
-
-void OpenXRIPBinding::remove_path(const String &p_path) { // Deprecated.
-	ERR_FAIL_COND_MSG(binding_path != p_path, "Method remove_path has been deprecated. Attempt at removing a different binding path, remove the correct binding record from the interaction profile instead.");
-
-	// Fallback logic, clear if this is our path.
-	binding_path = p_path;
-	emit_changed();
-}
-
-#endif // DISABLE_DEPRECATED
 
 OpenXRIPBinding::~OpenXRIPBinding() {
 	action.unref();

@@ -1,8 +1,8 @@
 #!/usr/bin/env python
+from misc.utility.scons_hints import *
+
 import glob
 import os
-
-from misc.utility.scons_hints import *
 
 Import("env")
 Import("env_modules")

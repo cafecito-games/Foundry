@@ -136,13 +136,6 @@
 				[b]Note:[/b] When called from an exported project returns the same value as [method get_locale].
 			</description>
 		</method>
-		<method name="get_translation_object" deprecated="Use [method find_translations] instead.">
-			<return type="Translation" />
-			<param index="0" name="locale" type="String" />
-			<description>
-				Returns the [Translation] instance that best matches [param locale] in the main translation domain. Returns [code]null[/code] if there are no matches.
-			</description>
-		</method>
 		<method name="get_translations" qualifiers="const">
 			<return type="Translation[]" />
 			<description>

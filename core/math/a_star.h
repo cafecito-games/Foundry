@@ -125,12 +125,6 @@ protected:
 	FOUNDRY_VIRTUAL2RC(real_t, _estimate_cost, int64_t, int64_t)
 	FOUNDRY_VIRTUAL2RC(real_t, _compute_cost, int64_t, int64_t)
 
-#ifndef DISABLE_DEPRECATED
-	Vector<int64_t> _get_id_path_bind_compat_88047(int64_t p_from_id, int64_t p_to_id);
-	Vector<Vector3> _get_point_path_bind_compat_88047(int64_t p_from_id, int64_t p_to_id);
-	static void _bind_compatibility_methods();
-#endif
-
 public:
 	int64_t get_available_point_id() const;
 
@@ -183,12 +177,6 @@ protected:
 	FOUNDRY_VIRTUAL2RC(bool, _filter_neighbor, int64_t, int64_t)
 	FOUNDRY_VIRTUAL2RC(real_t, _estimate_cost, int64_t, int64_t)
 	FOUNDRY_VIRTUAL2RC(real_t, _compute_cost, int64_t, int64_t)
-
-#ifndef DISABLE_DEPRECATED
-	Vector<int64_t> _get_id_path_bind_compat_88047(int64_t p_from_id, int64_t p_to_id);
-	Vector<Vector2> _get_point_path_bind_compat_88047(int64_t p_from_id, int64_t p_to_id);
-	static void _bind_compatibility_methods();
-#endif
 
 public:
 	int64_t get_available_point_id() const;

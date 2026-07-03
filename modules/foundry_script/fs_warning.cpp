@@ -172,13 +172,6 @@ String FSWarning::get_message() const {
 			return vformat(R"(The "match" statement does not cover all values of "%s". Unhandled: %s. Add the missing patterns or a "_" wildcard branch.)", symbols[0], symbols[1]);
 		case MATCH_WITHOUT_DEFAULT:
 			return R"(The "match" statement has no "_" wildcard branch; some values may go unhandled.)";
-#ifndef DISABLE_DEPRECATED
-		// Never produced. These warnings migrated from 3.x by mistake.
-		case PROPERTY_USED_AS_FUNCTION: // There is already an error.
-		case CONSTANT_USED_AS_FUNCTION: // There is already an error.
-		case FUNCTION_USED_AS_PROPERTY: // This is valid, returns `Callable`.
-			break;
-#endif // DISABLE_DEPRECATED
 		case WARNING_MAX:
 			break; // Can't happen, but silences warning.
 	}
@@ -252,11 +245,6 @@ String FSWarning::get_name_from_code(Code p_code) {
 		PNAME("ONREADY_WITH_EXPORT"),
 		PNAME("NON_EXHAUSTIVE_MATCH"),
 		PNAME("MATCH_WITHOUT_DEFAULT"),
-#ifndef DISABLE_DEPRECATED
-		"PROPERTY_USED_AS_FUNCTION",
-		"CONSTANT_USED_AS_FUNCTION",
-		"FUNCTION_USED_AS_PROPERTY",
-#endif // DISABLE_DEPRECATED
 	};
 
 	static_assert(std_size(names) == WARNING_MAX, "Amount of warning types don't match the amount of warning names.");

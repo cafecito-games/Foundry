@@ -29,7 +29,6 @@
 /**************************************************************************/
 
 #include "text_paragraph.h"
-#include "text_paragraph.compat.inc"
 
 void TextParagraph::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("clear"), &TextParagraph::clear);

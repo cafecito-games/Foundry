@@ -114,21 +114,7 @@ Error ResourceImporterOggVorbis::import(ResourceUID::ID p_source_id, const Strin
 	return ResourceSaver::save(ogg_vorbis_stream, p_save_path + ".oggvorbisstr");
 }
 
-#ifndef DISABLE_DEPRECATED
-Ref<AudioStreamOggVorbis> ResourceImporterOggVorbis::load_from_buffer(const Vector<uint8_t> &p_stream_data) {
-	return AudioStreamOggVorbis::load_from_buffer(p_stream_data);
-}
-
-Ref<AudioStreamOggVorbis> ResourceImporterOggVorbis::load_from_file(const String &p_path) {
-	return AudioStreamOggVorbis::load_from_file(p_path);
-}
-#endif
-
 void ResourceImporterOggVorbis::_bind_methods() {
-#ifndef DISABLE_DEPRECATED
-	ClassDB::bind_static_method("ResourceImporterOggVorbis", D_METHOD("load_from_buffer", "stream_data"), &ResourceImporterOggVorbis::load_from_buffer);
-	ClassDB::bind_static_method("ResourceImporterOggVorbis", D_METHOD("load_from_file", "path"), &ResourceImporterOggVorbis::load_from_file);
-#endif
 }
 
 ResourceImporterOggVorbis::ResourceImporterOggVorbis() {

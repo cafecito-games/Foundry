@@ -249,9 +249,6 @@ class ProjectManager : public Control {
 	bool open_in_recovery_mode = false;
 	bool open_in_verbose_mode = false;
 
-#ifndef DISABLE_DEPRECATED
-	void _minor_project_migrate();
-#endif
 	void _migration_guide_button_pressed();
 
 	// Input and I/O.

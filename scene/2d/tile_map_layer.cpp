@@ -34,7 +34,6 @@
 #include "core/math/geometry_2d.h"
 #include "core/math/random_pcg.h"
 #include "core/templates/a_hash_map.h"
-#include "scene/2d/tile_map.h"
 #include "scene/gui/control.h"
 #include "scene/resources/2d/navigation_mesh_source_geometry_data_2d.h"
 #include "scene/resources/material.h"
@@ -893,7 +892,7 @@ void TileMapLayer::_physics_update(bool p_force_cleanup) {
 								xform = gl_transform * xform;
 								ps->body_set_state(body, PhysicsServer2D::BODY_STATE_TRANSFORM, xform);
 
-								ps->body_attach_object_instance_id(body, tile_map_node ? tile_map_node->get_instance_id() : get_instance_id());
+								ps->body_attach_object_instance_id(body, get_instance_id());
 								ps->body_set_collision_layer(body, physics_layer);
 								ps->body_set_collision_mask(body, physics_mask);
 								ps->body_set_pickable(body, false);
@@ -1050,7 +1049,7 @@ void TileMapLayer::_physics_notification(int p_what) {
 
 	switch (p_what) {
 		case NOTIFICATION_TRANSFORM_CHANGED:
-			// Move the collisison shapes along with the TileMap.
+			// Move the collision shapes along with the TileMapLayer.
 			if (is_inside_tree() && tile_set.is_valid()) {
 				for (KeyValue<Vector2i, Ref<PhysicsQuadrant>> &kv : physics_quadrant_map) {
 					for (const KeyValue<PhysicsQuadrant::PhysicsBodyKey, PhysicsQuadrant::PhysicsBodyValue> &kvbody : kv.value->bodies) {
@@ -1291,36 +1290,11 @@ void TileMapLayer::_physics_draw_quadrant_debug(const RID &p_canvas_item, DebugQ
 
 void TileMapLayer::_navigation_update(bool p_force_cleanup) {
 	ERR_FAIL_NULL(NavigationServer2D::get_singleton());
-	NavigationServer2D *ns = NavigationServer2D::get_singleton();
 
 	// Check if we should cleanup everything.
 	bool forced_cleanup = p_force_cleanup || !enabled || !navigation_enabled || !is_inside_tree() || tile_set.is_null();
 	if (forced_cleanup && _navigation_was_cleaned_up) {
 		return;
-	}
-
-	// ----------- Layer level processing -----------
-	// All this processing is kept for compatibility with the TileMap node.
-	// Otherwise, layers shall use the World2D navigation map or define a custom one with set_navigation_map(...).
-	if (tile_map_node) {
-		if (forced_cleanup) {
-			if (navigation_map_override.is_valid()) {
-				ns->free_rid(navigation_map_override);
-				navigation_map_override = RID();
-			}
-		} else {
-			// Update navigation maps.
-			if (!navigation_map_override.is_valid()) {
-				if (layer_index_in_tile_map_node > 0) {
-					// Create a dedicated map for each layer.
-					RID new_layer_map = ns->map_create();
-					// Set the default NavigationPolygon cell_size on the new map as a mismatch causes an error.
-					ns->map_set_cell_size(new_layer_map, NavigationDefaults2D::NAV_MESH_CELL_SIZE);
-					ns->map_set_active(new_layer_map, true);
-					navigation_map_override = new_layer_map;
-				}
-			}
-		}
 	}
 
 	// ----------- Navigation regions processing -----------
@@ -1434,7 +1408,7 @@ void TileMapLayer::_navigation_update_cell(CellData &r_cell_data) {
 						if (!region.is_valid()) {
 							region = ns->region_create();
 						}
-						ns->region_set_owner_id(region, tile_map_node ? tile_map_node->get_instance_id() : get_instance_id());
+						ns->region_set_owner_id(region, get_instance_id());
 						ns->region_set_map(region, navigation_map);
 						ns->region_set_transform(region, gl_xform * tile_transform);
 						ns->region_set_navigation_layers(region, tile_set->get_navigation_layer_layers(navigation_layer_index));
@@ -1600,13 +1574,7 @@ void TileMapLayer::_scenes_update(bool p_force_cleanup) {
 
 void TileMapLayer::_scenes_clear_cell(CellData &r_cell_data) {
 	// Cleanup existing scene.
-	Node *node = nullptr;
-	if (tile_map_node) {
-		// Compatibility with TileMap.
-		node = tile_map_node->get_node_or_null(r_cell_data.scene);
-	} else {
-		node = get_node_or_null(r_cell_data.scene);
-	}
+	Node *node = get_node_or_null(r_cell_data.scene);
 	if (node) {
 		node->queue_free();
 	}
@@ -1644,12 +1612,7 @@ void TileMapLayer::_scenes_update_cell(CellData &r_cell_data) {
 						rs->canvas_item_set_modulate(scene_as_ci->get_canvas_item(), _highlight_color(scene_as_ci->get_modulate()));
 					}
 #endif // TOOLS_ENABLED
-					if (tile_map_node) {
-						// Compatibility with TileMap.
-						tile_map_node->add_child(scene);
-					} else {
-						add_child(scene);
-					}
+					add_child(scene);
 					r_cell_data.scene = scene->get_name();
 				}
 			}
@@ -1729,22 +1692,20 @@ void TileMapLayer::_build_runtime_update_tile_data(bool p_force_cleanup) {
 	bool forced_cleanup = p_force_cleanup || !enabled || tile_set.is_null() || !is_visible_in_tree();
 	if (!forced_cleanup) {
 		bool valid_runtime_update = FOUNDRY_VIRTUAL_IS_OVERRIDDEN(_use_tile_data_runtime_update) && FOUNDRY_VIRTUAL_IS_OVERRIDDEN(_tile_data_runtime_update);
-		bool valid_runtime_update_for_tilemap = tile_map_node && tile_map_node->FOUNDRY_VIRTUAL_IS_OVERRIDDEN(_use_tile_data_runtime_update) && tile_map_node->FOUNDRY_VIRTUAL_IS_OVERRIDDEN(_tile_data_runtime_update); // For keeping compatibility.
-		if (valid_runtime_update || valid_runtime_update_for_tilemap) {
-			bool use_tilemap_for_runtime = valid_runtime_update_for_tilemap && !valid_runtime_update;
+		if (valid_runtime_update) {
 			if (_runtime_update_tile_data_was_cleaned_up || dirty.flags[DIRTY_FLAGS_TILE_SET]) {
 				_runtime_update_needs_all_cells_cleaned_up = true;
 				for (KeyValue<Vector2i, CellData> &E : tile_map_layer_data) {
-					_build_runtime_update_tile_data_for_cell(E.value, use_tilemap_for_runtime);
+					_build_runtime_update_tile_data_for_cell(E.value);
 				}
 			} else if (dirty.flags[DIRTY_FLAGS_LAYER_RUNTIME_UPDATE]) {
 				for (KeyValue<Vector2i, CellData> &E : tile_map_layer_data) {
-					_build_runtime_update_tile_data_for_cell(E.value, use_tilemap_for_runtime, true);
+					_build_runtime_update_tile_data_for_cell(E.value, true);
 				}
 			} else {
 				for (SelfList<CellData> *cell_data_list_element = dirty.cell_list.first(); cell_data_list_element; cell_data_list_element = cell_data_list_element->next()) {
 					CellData &cell_data = *cell_data_list_element->self();
-					_build_runtime_update_tile_data_for_cell(cell_data, use_tilemap_for_runtime);
+					_build_runtime_update_tile_data_for_cell(cell_data);
 				}
 			}
 		}
@@ -1755,7 +1716,7 @@ void TileMapLayer::_build_runtime_update_tile_data(bool p_force_cleanup) {
 	_runtime_update_tile_data_was_cleaned_up = forced_cleanup;
 }
 
-void TileMapLayer::_build_runtime_update_tile_data_for_cell(CellData &r_cell_data, bool p_use_tilemap_for_runtime, bool p_auto_add_to_dirty_list) {
+void TileMapLayer::_build_runtime_update_tile_data_for_cell(CellData &r_cell_data, bool p_auto_add_to_dirty_list) {
 	TileMapCell &c = r_cell_data.cell;
 	TileSetSource *source;
 	if (tile_set->has_source(c.source_id)) {
@@ -1766,36 +1727,18 @@ void TileMapLayer::_build_runtime_update_tile_data_for_cell(CellData &r_cell_dat
 			if (atlas_source) {
 				bool ret = false;
 
-				if (p_use_tilemap_for_runtime) {
-					// Compatibility with TileMap.
-					if (tile_map_node->FOUNDRY_VIRTUAL_CALL(_use_tile_data_runtime_update, layer_index_in_tile_map_node, r_cell_data.coords, ret) && ret) {
-						TileData *tile_data = atlas_source->get_tile_data(c.get_atlas_coords(), c.alternative_tile);
+				if (FOUNDRY_VIRTUAL_CALL(_use_tile_data_runtime_update, r_cell_data.coords, ret) && ret) {
+					TileData *tile_data = atlas_source->get_tile_data(c.get_atlas_coords(), c.alternative_tile);
 
-						// Create the runtime TileData.
-						TileData *tile_data_runtime_use = tile_data->duplicate();
-						tile_data_runtime_use->set_allow_transform(true);
-						r_cell_data.runtime_tile_data_cache = tile_data_runtime_use;
+					// Create the runtime TileData.
+					TileData *tile_data_runtime_use = tile_data->duplicate();
+					tile_data_runtime_use->set_allow_transform(true);
+					r_cell_data.runtime_tile_data_cache = tile_data_runtime_use;
 
-						tile_map_node->FOUNDRY_VIRTUAL_CALL(_tile_data_runtime_update, layer_index_in_tile_map_node, r_cell_data.coords, tile_data_runtime_use);
+					FOUNDRY_VIRTUAL_CALL(_tile_data_runtime_update, r_cell_data.coords, tile_data_runtime_use);
 
-						if (p_auto_add_to_dirty_list && !r_cell_data.dirty_list_element.in_list()) {
-							dirty.cell_list.add(&r_cell_data.dirty_list_element);
-						}
-					}
-				} else {
-					if (FOUNDRY_VIRTUAL_CALL(_use_tile_data_runtime_update, r_cell_data.coords, ret) && ret) {
-						TileData *tile_data = atlas_source->get_tile_data(c.get_atlas_coords(), c.alternative_tile);
-
-						// Create the runtime TileData.
-						TileData *tile_data_runtime_use = tile_data->duplicate();
-						tile_data_runtime_use->set_allow_transform(true);
-						r_cell_data.runtime_tile_data_cache = tile_data_runtime_use;
-
-						FOUNDRY_VIRTUAL_CALL(_tile_data_runtime_update, r_cell_data.coords, tile_data_runtime_use);
-
-						if (p_auto_add_to_dirty_list && !r_cell_data.dirty_list_element.in_list()) {
-							dirty.cell_list.add(&r_cell_data.dirty_list_element);
-						}
+					if (p_auto_add_to_dirty_list && !r_cell_data.dirty_list_element.in_list()) {
+						dirty.cell_list.add(&r_cell_data.dirty_list_element);
 					}
 				}
 			}
@@ -2286,8 +2229,6 @@ void TileMapLayer::_bind_methods() {
 
 	ADD_SIGNAL(MethodInfo(CoreStringName(changed)));
 
-	ADD_PROPERTY_DEFAULT("tile_map_data_format", TileMapDataFormat::TILE_MAP_DATA_FORMAT_1);
-
 	BIND_ENUM_CONSTANT(DEBUG_VISIBILITY_MODE_DEFAULT);
 	BIND_ENUM_CONSTANT(DEBUG_VISIBILITY_MODE_FORCE_HIDE);
 	BIND_ENUM_CONSTANT(DEBUG_VISIBILITY_MODE_FORCE_SHOW);
@@ -2329,18 +2270,6 @@ bool TileMapLayer::_edit_is_selected_on_click(const Point2 &p_point, double p_to
 	return tile_set.is_valid() && get_cell_source_id(local_to_map(p_point)) != TileSet::INVALID_SOURCE;
 }
 #endif
-
-void TileMapLayer::set_as_tile_map_internal_node(int p_index) {
-	// Compatibility with TileMap.
-	ERR_FAIL_NULL(get_parent());
-	tile_map_node = Object::cast_to<TileMap>(get_parent());
-	set_use_parent_material(true);
-	if (layer_index_in_tile_map_node != p_index) {
-		layer_index_in_tile_map_node = p_index;
-		dirty.flags[DIRTY_FLAGS_LAYER_INDEX_IN_TILE_MAP_NODE] = true;
-		_queue_internal_update();
-	}
-}
 
 Rect2 TileMapLayer::get_rect(bool &r_changed) const {
 	if (tile_set.is_null()) {
@@ -3232,7 +3161,7 @@ void TileMapLayer::set_tile_map_data_from_array(const Vector<uint8_t> &p_data) {
 	index += 2;
 	ERR_FAIL_COND_MSG(format >= TileMapLayerDataFormat::TILE_MAP_LAYER_DATA_FORMAT_MAX, vformat("Unsupported tile map data format: %s. Expected format ID lower or equal to: %s", format, TileMapLayerDataFormat::TILE_MAP_LAYER_DATA_FORMAT_MAX - 1));
 
-	// Clear the TileMap.
+	// Clear the TileMapLayer.
 	clear();
 
 	while (index < size) {
@@ -3241,7 +3170,7 @@ void TileMapLayer::set_tile_map_data_from_array(const Vector<uint8_t> &p_data) {
 		// Get a pointer at the start of the cell data.
 		const uint8_t *cell_data_ptr = &ptr[index];
 
-		// Extracts position in TileMap.
+		// Extracts position in the TileMapLayer.
 		int16_t x = decode_uint16(&cell_data_ptr[0]);
 		int16_t y = decode_uint16(&cell_data_ptr[2]);
 
@@ -3279,7 +3208,7 @@ Vector<uint8_t> TileMapLayer::get_tile_map_data_as_array() const {
 		// Get a pointer at the start of the cell data.
 		uint8_t *cell_data_ptr = (uint8_t *)&ptr[index];
 
-		// Store position in TileMap.
+		// Store position in the TileMapLayer.
 		encode_uint16((int16_t)(E.key.x), &cell_data_ptr[0]);
 		encode_uint16((int16_t)(E.key.y), &cell_data_ptr[2]);
 

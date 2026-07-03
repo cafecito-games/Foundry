@@ -123,18 +123,15 @@ class TileMapEditorPlugin : public EditorPlugin {
 
 	TileMapLayerEditor *editor = nullptr;
 	ObjectID tile_map_layer_id;
-	ObjectID tile_map_group_id; // Allow keeping the layer selector up to date.
 
 	bool tile_map_changed_needs_update = false;
-	ObjectID tile_set_id; // The TileSet associated with the TileMap.
+	ObjectID tile_set_id; // The TileSet associated with the TileMapLayer.
 
 	void _tile_map_layer_changed();
-	void _tile_map_layer_removed();
 	void _update_tile_map();
 	void _select_layer(const StringName &p_name);
 
-	void _edit_tile_map_layer(TileMapLayer *p_tile_map_layer, bool p_show_layer_selector);
-	void _edit_tile_map(TileMap *p_tile_map);
+	void _edit_tile_map_layer(TileMapLayer *p_tile_map_layer);
 
 protected:
 	void _notification(int p_notification);

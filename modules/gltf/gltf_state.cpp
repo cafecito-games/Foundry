@@ -29,7 +29,6 @@
 /**************************************************************************/
 
 #include "gltf_state.h"
-#include "gltf_state.compat.inc"
 
 #include "gltf_template_convert.h"
 
@@ -140,17 +139,6 @@ void GLTFState::_bind_methods() {
 	BIND_ENUM_CONSTANT(HANDLE_BINARY_IMAGE_MODE_EXTRACT_TEXTURES);
 	BIND_ENUM_CONSTANT(HANDLE_BINARY_IMAGE_MODE_EMBED_AS_BASISU);
 	BIND_ENUM_CONSTANT(HANDLE_BINARY_IMAGE_MODE_EMBED_AS_UNCOMPRESSED);
-
-#ifndef DISABLE_DEPRECATED
-	// Deprecated non-type-safe versions for backward compatibility, remove in Godot 5.0.
-	ClassDB::bind_method(D_METHOD("get_handle_binary_image"), &GLTFState::get_handle_binary_image);
-	ClassDB::bind_method(D_METHOD("set_handle_binary_image", "method"), &GLTFState::set_handle_binary_image);
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "handle_binary_image", PROPERTY_HINT_ENUM, "Discard All Textures,Extract Textures,Embed as Basis Universal,Embed as Uncompressed", PROPERTY_USAGE_INTERNAL), "set_handle_binary_image", "get_handle_binary_image"); // enum as int
-	BIND_CONSTANT(HANDLE_BINARY_DISCARD_TEXTURES);
-	BIND_CONSTANT(HANDLE_BINARY_EXTRACT_TEXTURES);
-	BIND_CONSTANT(HANDLE_BINARY_EMBED_AS_BASISU);
-	BIND_CONSTANT(HANDLE_BINARY_EMBED_AS_UNCOMPRESSED);
-#endif // DISABLE_DEPRECATED
 }
 
 void GLTFState::add_used_extension(const String &p_extension_name, bool p_required) {

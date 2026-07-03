@@ -66,23 +66,8 @@ class FoundryExtension : public Resource {
 	HashMap<StringName, Extension> extension_classes;
 
 	struct ClassCreationDeprecatedInfo {
-#ifndef DISABLE_DEPRECATED
-		bool legacy_unexposed_class = false;
-		FoundryExtensionClassNotification notification_func = nullptr;
-		FoundryExtensionClassFreePropertyList free_property_list_func = nullptr;
-		FoundryExtensionClassCreateInstance create_instance_func = nullptr;
-		FoundryExtensionClassGetRID get_rid_func = nullptr;
-		FoundryExtensionClassGetVirtual get_virtual_func = nullptr;
-		FoundryExtensionClassGetVirtualCallData get_virtual_call_data_func = nullptr;
-#endif // DISABLE_DEPRECATED
 	};
 
-#ifndef DISABLE_DEPRECATED
-	static void _register_extension_class(FoundryExtensionClassLibraryPtr p_library, FoundryExtensionConstStringNamePtr p_class_name, FoundryExtensionConstStringNamePtr p_parent_class_name, const FoundryExtensionClassCreationInfo *p_extension_funcs);
-	static void _register_extension_class2(FoundryExtensionClassLibraryPtr p_library, FoundryExtensionConstStringNamePtr p_class_name, FoundryExtensionConstStringNamePtr p_parent_class_name, const FoundryExtensionClassCreationInfo2 *p_extension_funcs);
-	static void _register_extension_class3(FoundryExtensionClassLibraryPtr p_library, FoundryExtensionConstStringNamePtr p_class_name, FoundryExtensionConstStringNamePtr p_parent_class_name, const FoundryExtensionClassCreationInfo3 *p_extension_funcs);
-	static void _register_extension_class4(FoundryExtensionClassLibraryPtr p_library, FoundryExtensionConstStringNamePtr p_class_name, FoundryExtensionConstStringNamePtr p_parent_class_name, const FoundryExtensionClassCreationInfo4 *p_extension_funcs);
-#endif // DISABLE_DEPRECATED
 	static void _register_extension_class5(FoundryExtensionClassLibraryPtr p_library, FoundryExtensionConstStringNamePtr p_class_name, FoundryExtensionConstStringNamePtr p_parent_class_name, const FoundryExtensionClassCreationInfo5 *p_extension_funcs);
 	static void _register_extension_class_internal(FoundryExtensionClassLibraryPtr p_library, FoundryExtensionConstStringNamePtr p_class_name, FoundryExtensionConstStringNamePtr p_parent_class_name, const FoundryExtensionClassCreationInfo5 *p_extension_funcs, const ClassCreationDeprecatedInfo *p_deprecated_funcs = nullptr);
 	static void _register_extension_class_method(FoundryExtensionClassLibraryPtr p_library, FoundryExtensionConstStringNamePtr p_class_name, const FoundryExtensionClassMethodInfo *p_method_info);
@@ -148,13 +133,6 @@ public:
 	};
 
 protected:
-#ifndef DISABLE_DEPRECATED
-	Error _open_library_bind_compat_88418(const String &p_path, const String &p_entry_symbol);
-	void _close_library_bind_compat_88418();
-	void _initialize_library_bind_compat_88418(InitializationLevel p_level);
-	static void _bind_compatibility_methods();
-#endif
-
 public:
 #ifdef TOOLS_ENABLED
 	bool is_reloadable() const { return reloadable; }

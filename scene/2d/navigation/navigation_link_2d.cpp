@@ -79,32 +79,6 @@ void NavigationLink2D::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "travel_cost"), "set_travel_cost", "get_travel_cost");
 }
 
-#ifndef DISABLE_DEPRECATED
-bool NavigationLink2D::_set(const StringName &p_name, const Variant &p_value) {
-	if (p_name == "start_location") {
-		set_start_position(p_value);
-		return true;
-	}
-	if (p_name == "end_location") {
-		set_end_position(p_value);
-		return true;
-	}
-	return false;
-}
-
-bool NavigationLink2D::_get(const StringName &p_name, Variant &r_ret) const {
-	if (p_name == "start_location") {
-		r_ret = get_start_position();
-		return true;
-	}
-	if (p_name == "end_location") {
-		r_ret = get_end_position();
-		return true;
-	}
-	return false;
-}
-#endif // DISABLE_DEPRECATED
-
 void NavigationLink2D::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_ENTER_TREE: {

@@ -86,10 +86,6 @@ public:
 	virtual Ref<Texture2D> get_option_icon(int p_index) const override;
 	FOUNDRY_VIRTUAL1RC(Ref<Texture2D>, _get_option_icon, int);
 
-#ifndef DISABLE_DEPRECATED
-	FOUNDRY_VIRTUAL1RC_COMPAT(_get_option_icon_bind_compat_108825, Ref<ImageTexture>, _get_option_icon, int)
-#endif
-
 	virtual String get_option_label(int p_device) const override;
 	FOUNDRY_VIRTUAL1RC(String, _get_option_label, int);
 

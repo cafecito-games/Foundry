@@ -203,24 +203,6 @@ bool ShaderMaterial::_set(const StringName &p_name, const Variant &p_value) {
 			set_shader_parameter(param, p_value);
 			return true;
 		}
-#ifndef DISABLE_DEPRECATED
-		// Compatibility remaps are only needed here.
-		if (s.begins_with("param/")) {
-			s = s.replace_first("param/", "shader_parameter/");
-		} else if (s.begins_with("shader_param/")) {
-			s = s.replace_first("shader_param/", "shader_parameter/");
-		} else if (s.begins_with("shader_uniform/")) {
-			s = s.replace_first("shader_uniform/", "shader_parameter/");
-		} else {
-			return false; // Not a shader parameter.
-		}
-
-		WARN_PRINT("This material (containing shader with path: '" + shader->get_path() + "') uses an old deprecated parameter names. Consider re-saving this resource (or scene which contains it) in order for it to continue working in future versions.");
-		String param = s.replace_first("shader_parameter/", "");
-		remap_cache[s] = param;
-		set_shader_parameter(param, p_value);
-		return true;
-#endif
 	}
 
 	return false;
@@ -336,21 +318,6 @@ void ShaderMaterial::_get_property_list(List<PropertyInfo> *p_list) const {
 				} else {
 					is_uniform_type_compatible = pi.type == cached.get_type();
 				}
-
-#ifndef DISABLE_DEPRECATED
-				// PackedFloat32Array -> PackedVector4Array conversion.
-				if (!is_uniform_type_compatible && pi.type == Variant::PACKED_VECTOR4_ARRAY && cached.get_type() == Variant::PACKED_FLOAT32_ARRAY) {
-					PackedVector4Array varray;
-					PackedFloat32Array array = (PackedFloat32Array)cached;
-
-					for (int i = 0; i + 3 < array.size(); i += 4) {
-						varray.push_back(Vector4(array[i], array[i + 1], array[i + 2], array[i + 3]));
-					}
-
-					param_cache.insert(pi.name, varray);
-					is_uniform_type_compatible = true;
-				}
-#endif
 
 				if (is_uniform_type_compatible && pi.type == Variant::OBJECT && cached.get_type() == Variant::OBJECT) {
 					// Check if the Object class (hint string) changed, for example Texture2D sampler to Texture3D.
@@ -4028,104 +3995,5 @@ BaseMaterial3D::~BaseMaterial3D() {
 }
 
 //////////////////////
-
-#ifndef DISABLE_DEPRECATED
-// Kept for compatibility from 3.x to 4.0.
-bool StandardMaterial3D::_set(const StringName &p_name, const Variant &p_value) {
-	if (p_name == "flags_transparent") {
-		bool transparent = p_value;
-		if (transparent) {
-			set_transparency(TRANSPARENCY_ALPHA);
-		}
-		return true;
-	} else if (p_name == "flags_unshaded") {
-		bool unshaded = p_value;
-		if (unshaded) {
-			set_shading_mode(SHADING_MODE_UNSHADED);
-		}
-		return true;
-	} else if (p_name == "flags_vertex_lighting") {
-		bool vertex_lit = p_value;
-		if (vertex_lit && get_shading_mode() != SHADING_MODE_UNSHADED) {
-			set_shading_mode(SHADING_MODE_PER_VERTEX);
-		}
-		return true;
-	} else if (p_name == "params_use_alpha_scissor") {
-		bool use_scissor = p_value;
-		if (use_scissor) {
-			set_transparency(TRANSPARENCY_ALPHA_SCISSOR);
-		}
-		return true;
-	} else if (p_name == "params_use_alpha_hash") {
-		bool use_hash = p_value;
-		if (use_hash) {
-			set_transparency(TRANSPARENCY_ALPHA_HASH);
-		}
-		return true;
-	} else if (p_name == "params_depth_draw_mode") {
-		int mode = p_value;
-		if (mode == 3) {
-			set_transparency(TRANSPARENCY_ALPHA_DEPTH_PRE_PASS);
-		}
-		return true;
-	} else if (p_name == "depth_enabled") {
-		bool enabled = p_value;
-		if (enabled) {
-			set_feature(FEATURE_HEIGHT_MAPPING, true);
-			set_flag(FLAG_INVERT_HEIGHTMAP, true);
-		}
-		return true;
-	} else {
-		static const Pair<const char *, const char *> remaps[] = {
-			{ "flags_use_shadow_to_opacity", "shadow_to_opacity" },
-			{ "flags_use_shadow_to_opacity", "shadow_to_opacity" },
-			{ "flags_no_depth_test", "no_depth_test" },
-			{ "flags_use_point_size", "use_point_size" },
-			{ "flags_fixed_size", "fixed_size" },
-			{ "flags_albedo_tex_force_srgb", "albedo_texture_force_srgb" },
-			{ "flags_do_not_receive_shadows", "disable_receive_shadows" },
-			{ "flags_disable_ambient_light", "disable_ambient_light" },
-			{ "params_diffuse_mode", "diffuse_mode" },
-			{ "params_specular_mode", "specular_mode" },
-			{ "params_blend_mode", "blend_mode" },
-			{ "params_cull_mode", "cull_mode" },
-			{ "params_depth_draw_mode", "params_depth_draw_mode" },
-			{ "params_point_size", "point_size" },
-			{ "params_billboard_mode", "billboard_mode" },
-			{ "params_billboard_keep_scale", "billboard_keep_scale" },
-			{ "params_grow", "grow" },
-			{ "params_grow_amount", "grow_amount" },
-			{ "params_alpha_scissor_threshold", "alpha_scissor_threshold" },
-			{ "params_alpha_hash_scale", "alpha_hash_scale" },
-			{ "params_alpha_antialiasing_edge", "alpha_antialiasing_edge" },
-
-			{ "depth_scale", "heightmap_scale" },
-			{ "depth_deep_parallax", "heightmap_deep_parallax" },
-			{ "depth_min_layers", "heightmap_min_layers" },
-			{ "depth_max_layers", "heightmap_max_layers" },
-			{ "depth_flip_tangent", "heightmap_flip_tangent" },
-			{ "depth_flip_binormal", "heightmap_flip_binormal" },
-			{ "depth_texture", "heightmap_texture" },
-
-			{ "emission_energy", "emission_energy_multiplier" },
-
-			{ nullptr, nullptr },
-		};
-
-		int idx = 0;
-		while (remaps[idx].first) {
-			if (p_name == remaps[idx].first) {
-				set(remaps[idx].second, p_value);
-				return true;
-			}
-			idx++;
-		}
-
-		WARN_PRINT("Godot 3.x SpatialMaterial remapped parameter not found: " + String(p_name));
-		return true;
-	}
-}
-
-#endif // DISABLE_DEPRECATED
 
 ///////////////////////

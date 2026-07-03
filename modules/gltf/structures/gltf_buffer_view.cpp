@@ -29,7 +29,6 @@
 /**************************************************************************/
 
 #include "gltf_buffer_view.h"
-#include "gltf_buffer_view.compat.inc"
 
 #include "../gltf_state.h"
 

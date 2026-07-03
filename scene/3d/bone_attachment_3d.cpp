@@ -29,7 +29,6 @@
 /**************************************************************************/
 
 #include "bone_attachment_3d.h"
-#include "bone_attachment_3d.compat.inc"
 
 void BoneAttachment3D::_validate_property(PropertyInfo &p_property) const {
 	if (Engine::get_singleton()->is_editor_hint() && p_property.name == "bone_name") {

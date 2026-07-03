@@ -200,12 +200,6 @@
 				Returns [code]true[/code] if font texture mipmap generation is enabled.
 			</description>
 		</method>
-		<method name="_font_get_global_oversampling" qualifiers="virtual const">
-			<return type="float" />
-			<description>
-				Returns the font oversampling factor, shared by all fonts in the TextServer.
-			</description>
-		</method>
 		<method name="_font_get_glyph_advance" qualifiers="virtual required const">
 			<return type="Vector2" />
 			<param index="0" name="font_rid" type="RID" />
@@ -375,13 +369,6 @@
 			<param index="0" name="font_rid" type="RID" />
 			<description>
 				Returns [Dictionary] with OpenType font name strings (localized font names, version, description, license information, sample text, etc.).
-			</description>
-		</method>
-		<method name="_font_get_oversampling" qualifiers="virtual const">
-			<return type="float" />
-			<param index="0" name="font_rid" type="RID" />
-			<description>
-				Returns oversampling factor override. If set to a positive value, overrides the oversampling factor of the viewport this font is used in. See [member Viewport.oversampling]. This value doesn't override the [code skip-lint]oversampling[/code] parameter of [code skip-lint]draw_*[/code] methods. Used by dynamic fonts only.
 			</description>
 		</method>
 		<method name="_font_get_scale" qualifiers="virtual required const">
@@ -771,13 +758,6 @@
 				If set to [code]true[/code] font texture mipmap generation is enabled.
 			</description>
 		</method>
-		<method name="_font_set_global_oversampling" qualifiers="virtual">
-			<return type="void" />
-			<param index="0" name="oversampling" type="float" />
-			<description>
-				Sets oversampling factor, shared by all font in the TextServer.
-			</description>
-		</method>
 		<method name="_font_set_glyph_advance" qualifiers="virtual required">
 			<return type="void" />
 			<param index="0" name="font_rid" type="RID" />
@@ -909,14 +889,6 @@
 			<param index="1" name="overrides" type="Dictionary" />
 			<description>
 				Sets font OpenType feature set override.
-			</description>
-		</method>
-		<method name="_font_set_oversampling" qualifiers="virtual">
-			<return type="void" />
-			<param index="0" name="font_rid" type="RID" />
-			<param index="1" name="oversampling" type="float" />
-			<description>
-				If set to a positive value, overrides the oversampling factor of the viewport this font is used in. See [member Viewport.oversampling]. This value doesn't override the [code skip-lint]oversampling[/code] parameter of [code skip-lint]draw_*[/code] methods. Used by dynamic fonts only.
 			</description>
 		</method>
 		<method name="_font_set_scale" qualifiers="virtual required">
@@ -1054,15 +1026,6 @@
 				Returns the dictionary of the supported OpenType variation coordinates.
 			</description>
 		</method>
-		<method name="_format_number" qualifiers="virtual const" deprecated="Use [method TranslationServer.format_number] instead.">
-			<return type="String" />
-			<param index="0" name="number" type="String" />
-			<param index="1" name="language" type="String" />
-			<description>
-				Converts a number from Western Arabic (0..9) to the numeral system used in the given [param language].
-				If [param language] is an empty string, the active locale will be used.
-			</description>
-		</method>
 		<method name="_free_rid" qualifiers="virtual required">
 			<return type="void" />
 			<param index="0" name="rid" type="RID" />
@@ -1171,15 +1134,6 @@
 				Converts the given readable name of a feature, variation, script, or language to an OpenType tag.
 			</description>
 		</method>
-		<method name="_parse_number" qualifiers="virtual const" deprecated="Use [method TranslationServer.parse_number] instead.">
-			<return type="String" />
-			<param index="0" name="number" type="String" />
-			<param index="1" name="language" type="String" />
-			<description>
-				Converts [param number] from the numeral system used in the given [param language] to Western Arabic (0..9).
-				If [param language] is an empty string, the active locale will be used.
-			</description>
-		</method>
 		<method name="_parse_structured_text" qualifiers="virtual const">
 			<return type="Vector3i[]" />
 			<param index="0" name="parser_type" type="int" enum="TextServer.StructuredTextParser" />
@@ -1187,13 +1141,6 @@
 			<param index="2" name="text" type="String" />
 			<description>
 				Default implementation of the BiDi algorithm override function.
-			</description>
-		</method>
-		<method name="_percent_sign" qualifiers="virtual const" deprecated="Use [method TranslationServer.get_percent_sign] instead.">
-			<return type="String" />
-			<param index="0" name="language" type="String" />
-			<description>
-				Returns percent sign used in the given [param language].
 			</description>
 		</method>
 		<method name="_reference_oversampling_level" qualifiers="virtual">

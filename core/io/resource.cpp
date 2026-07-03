@@ -609,11 +609,6 @@ void Resource::_take_over_path(const String &p_path) {
 RID Resource::get_rid() const {
 	RID ret;
 	if (!FOUNDRY_VIRTUAL_CALL(_get_rid, ret)) {
-#ifndef DISABLE_DEPRECATED
-		if (_get_extension() && _get_extension()->get_rid) {
-			ret = RID::from_uint64(_get_extension()->get_rid(_get_extension_instance()));
-		}
-#endif
 	}
 	return ret;
 }

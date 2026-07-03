@@ -383,11 +383,7 @@ inline void SpinBox::_compute_sizes() {
 	int buttons_block_wanted_width = theme_cache.buttons_width + theme_cache.field_and_buttons_separation;
 	int buttons_block_icon_enforced_width = _get_widest_button_icon_width() + theme_cache.field_and_buttons_separation;
 
-#ifndef DISABLE_DEPRECATED
-	const bool min_width_from_icons = theme_cache.set_min_buttons_width_from_icons || (theme_cache.buttons_width < 0);
-#else
 	const bool min_width_from_icons = theme_cache.buttons_width < 0;
-#endif
 	int w = min_width_from_icons != 0 ? MAX(buttons_block_icon_enforced_width, buttons_block_wanted_width) : buttons_block_wanted_width;
 
 	if (w != sizing_cache.buttons_block_width) {
@@ -412,9 +408,6 @@ inline void SpinBox::_compute_sizes() {
 
 inline int SpinBox::_get_widest_button_icon_width() {
 	int max = 0;
-#ifndef DISABLE_DEPRECATED
-	max = MAX(max, theme_cache.updown_icon->get_width());
-#endif
 	max = MAX(max, theme_cache.up_icon->get_width());
 	max = MAX(max, theme_cache.up_hover_icon->get_width());
 	max = MAX(max, theme_cache.up_pressed_icon->get_width());
@@ -485,15 +478,6 @@ void SpinBox::_notification(int p_what) {
 			draw_style_box(up_stylebox, Rect2(sizing_cache.buttons_left, 0, sizing_cache.buttons_width, sizing_cache.button_up_height));
 			draw_style_box(down_stylebox, Rect2(sizing_cache.buttons_left, sizing_cache.second_button_top, sizing_cache.buttons_width, sizing_cache.button_down_height));
 
-#ifndef DISABLE_DEPRECATED
-			if (theme_cache.is_updown_assigned) {
-				int updown_icon_left = sizing_cache.buttons_left + (sizing_cache.buttons_width - theme_cache.updown_icon->get_width()) / 2;
-				int updown_icon_top = (size.height - theme_cache.updown_icon->get_height()) / 2;
-
-				theme_cache.updown_icon->draw(get_canvas_item(), Point2i(updown_icon_left, updown_icon_top));
-				break; // If updown is a valid texture, skip other arrows (for compatibility).
-			}
-#endif
 			// Draw arrows.
 			draw_texture(up_icon, Point2i(up_icon_left, up_icon_top), up_icon_modulate);
 			draw_texture(down_icon, Point2i(down_icon_left, down_icon_top), down_icon_modulate);
@@ -526,9 +510,6 @@ void SpinBox::_notification(int p_what) {
 		} break;
 
 		case NOTIFICATION_THEME_CHANGED: {
-#ifndef DISABLE_DEPRECATED
-			theme_cache.is_updown_assigned = !theme_cache.updown_icon->get_size().is_zero_approx();
-#endif
 			callable_mp((Control *)this, &Control::update_minimum_size).call_deferred();
 			callable_mp((Control *)get_line_edit(), &Control::update_minimum_size).call_deferred();
 		} break;
@@ -682,11 +663,6 @@ void SpinBox::_bind_methods() {
 	BIND_THEME_ITEM(Theme::DATA_TYPE_CONSTANT, SpinBox, buttons_vertical_separation);
 	BIND_THEME_ITEM(Theme::DATA_TYPE_CONSTANT, SpinBox, field_and_buttons_separation);
 	BIND_THEME_ITEM(Theme::DATA_TYPE_CONSTANT, SpinBox, buttons_width);
-#ifndef DISABLE_DEPRECATED
-	BIND_THEME_ITEM(Theme::DATA_TYPE_CONSTANT, SpinBox, set_min_buttons_width_from_icons);
-
-	BIND_THEME_ITEM_CUSTOM(Theme::DATA_TYPE_ICON, SpinBox, updown_icon, "updown");
-#endif
 	BIND_THEME_ITEM_CUSTOM(Theme::DATA_TYPE_ICON, SpinBox, up_icon, "up");
 	BIND_THEME_ITEM_CUSTOM(Theme::DATA_TYPE_ICON, SpinBox, up_hover_icon, "up_hover");
 	BIND_THEME_ITEM_CUSTOM(Theme::DATA_TYPE_ICON, SpinBox, up_pressed_icon, "up_pressed");

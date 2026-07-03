@@ -101,10 +101,6 @@ void ShapeCast3D::_notification(int p_what) {
 }
 
 void ShapeCast3D::_bind_methods() {
-#ifndef DISABLE_DEPRECATED
-	ClassDB::bind_method(D_METHOD("resource_changed", "resource"), &ShapeCast3D::resource_changed);
-#endif
-
 	ClassDB::bind_method(D_METHOD("set_enabled", "enabled"), &ShapeCast3D::set_enabled);
 	ClassDB::bind_method(D_METHOD("is_enabled"), &ShapeCast3D::is_enabled);
 
@@ -321,11 +317,6 @@ real_t ShapeCast3D::get_closest_collision_safe_fraction() const {
 real_t ShapeCast3D::get_closest_collision_unsafe_fraction() const {
 	return collision_unsafe_fraction;
 }
-
-#ifndef DISABLE_DEPRECATED
-void ShapeCast3D::resource_changed(Ref<Resource> p_res) {
-}
-#endif
 
 void ShapeCast3D::_shape_changed() {
 	update_gizmos();

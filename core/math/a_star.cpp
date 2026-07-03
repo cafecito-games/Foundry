@@ -29,7 +29,6 @@
 /**************************************************************************/
 
 #include "a_star.h"
-#include "a_star.compat.inc"
 
 #include "core/math/geometry_3d.h"
 

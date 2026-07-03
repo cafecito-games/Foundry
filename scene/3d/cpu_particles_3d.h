@@ -209,11 +209,6 @@ protected:
 	void _notification(int p_what);
 	void _validate_property(PropertyInfo &p_property) const;
 
-#ifndef DISABLE_DEPRECATED
-	void _restart_bind_compat_92089();
-	static void _bind_compatibility_methods();
-#endif
-
 public:
 	AABB get_aabb() const override;
 

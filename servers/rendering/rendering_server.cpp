@@ -29,7 +29,6 @@
 /**************************************************************************/
 
 #include "rendering_server.h"
-#include "rendering_server.compat.inc"
 
 #include "core/config/project_settings.h"
 #include "core/variant/typed_array.h"
@@ -2218,78 +2217,6 @@ void RenderingServer::set_warn_on_surface_upgrade(bool p_warn) {
 }
 #endif
 
-#ifndef DISABLE_DEPRECATED
-void RenderingServer::fix_surface_compatibility(SurfaceData &p_surface, const String &p_path) {
-	uint64_t surface_version = p_surface.format & (ARRAY_FLAG_FORMAT_VERSION_MASK << ARRAY_FLAG_FORMAT_VERSION_SHIFT);
-	ERR_FAIL_COND_MSG(surface_version > ARRAY_FLAG_FORMAT_CURRENT_VERSION, "Cannot convert surface with version provided (" + itos((surface_version >> RS::ARRAY_FLAG_FORMAT_VERSION_SHIFT) & RS::ARRAY_FLAG_FORMAT_VERSION_MASK) + ") to current version (" + itos((RS::ARRAY_FLAG_FORMAT_CURRENT_VERSION >> RS::ARRAY_FLAG_FORMAT_VERSION_SHIFT) & RS::ARRAY_FLAG_FORMAT_VERSION_MASK) + ")");
-
-#ifdef TOOLS_ENABLED
-	// Editor callback to ask user about re-saving all meshes.
-	if (surface_upgrade_callback && warn_on_surface_upgrade) {
-		surface_upgrade_callback();
-	}
-
-	if (warn_on_surface_upgrade) {
-		WARN_PRINT_ONCE_ED("At least one surface uses an old surface format and needs to be upgraded. The upgrade happens automatically at load time every time until the mesh is saved again or re-imported. Once saved (or re-imported), this mesh will be incompatible with earlier versions of Godot.");
-
-		if (!p_path.is_empty()) {
-			WARN_PRINT("A surface of " + p_path + " uses an old surface format and needs to be upgraded.");
-		}
-	}
-#endif
-
-	if (surface_version == ARRAY_FLAG_FORMAT_VERSION_1) {
-		// The only difference for now is that Version 1 uses interleaved vertex positions while version 2 does not.
-		// I.e. PNTPNTPNT -> PPPNTNTNT.
-
-		if (p_surface.vertex_data.size() > 0 && p_surface.vertex_count > 0) {
-			int vertex_size = 0;
-			int normal_size = 0;
-			int tangent_size = 0;
-			if (p_surface.format & ARRAY_FORMAT_VERTEX) {
-				if (p_surface.format & ARRAY_FLAG_USE_2D_VERTICES) {
-					vertex_size = sizeof(float) * 2;
-				} else {
-					vertex_size = sizeof(float) * 3;
-				}
-			}
-			if (p_surface.format & ARRAY_FORMAT_NORMAL) {
-				normal_size += sizeof(uint16_t) * 2;
-			}
-			if (p_surface.format & ARRAY_FORMAT_TANGENT) {
-				tangent_size = sizeof(uint16_t) * 2;
-			}
-			int stride = p_surface.vertex_data.size() / p_surface.vertex_count;
-			int position_stride = vertex_size;
-			int normal_tangent_stride = normal_size + tangent_size;
-
-			p_surface.vertex_data = _convert_surface_version_1_to_surface_version_2(p_surface.format, p_surface.vertex_data, p_surface.vertex_count, stride, vertex_size, normal_size, position_stride, normal_tangent_stride);
-
-			if (p_surface.blend_shape_data.size() > 0) {
-				// The size of one blend shape.
-				int divisor = (vertex_size + normal_size + tangent_size) * p_surface.vertex_count;
-				ERR_FAIL_COND((p_surface.blend_shape_data.size() % divisor) != 0);
-
-				uint32_t blend_shape_count = p_surface.blend_shape_data.size() / divisor;
-
-				Vector<uint8_t> new_blend_shape_data;
-				for (uint32_t i = 0; i < blend_shape_count; i++) {
-					Vector<uint8_t> bs_data = p_surface.blend_shape_data.slice(i * divisor, (i + 1) * divisor);
-					Vector<uint8_t> blend_shape = _convert_surface_version_1_to_surface_version_2(p_surface.format, bs_data, p_surface.vertex_count, stride, vertex_size, normal_size, position_stride, normal_tangent_stride);
-					new_blend_shape_data.append_array(blend_shape);
-				}
-
-				ERR_FAIL_COND(p_surface.blend_shape_data.size() != new_blend_shape_data.size());
-
-				p_surface.blend_shape_data = new_blend_shape_data;
-			}
-		}
-	}
-	p_surface.format &= ~(ARRAY_FLAG_FORMAT_VERSION_MASK << ARRAY_FLAG_FORMAT_VERSION_SHIFT);
-	p_surface.format |= ARRAY_FLAG_FORMAT_CURRENT_VERSION & (ARRAY_FLAG_FORMAT_VERSION_MASK << ARRAY_FLAG_FORMAT_VERSION_SHIFT);
-}
-#endif
-
 #ifdef TOOLS_ENABLED
 void RenderingServer::get_argument_options(const StringName &p_function, int p_idx, List<String> *r_options) const {
 	const String pf = p_function;
@@ -3555,9 +3482,6 @@ void RenderingServer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_white_texture"), &RenderingServer::get_white_texture);
 
 	ClassDB::bind_method(D_METHOD("set_boot_image_with_stretch", "image", "color", "stretch_mode", "use_filter"), &RenderingServer::set_boot_image_with_stretch, DEFVAL(true));
-#ifndef DISABLE_DEPRECATED
-	ClassDB::bind_method(D_METHOD("set_boot_image", "image", "color", "scale", "use_filter"), &RenderingServer::set_boot_image, DEFVAL(true));
-#endif
 	ClassDB::bind_method(D_METHOD("get_default_clear_color"), &RenderingServer::get_default_clear_color);
 	ClassDB::bind_method(D_METHOD("set_default_clear_color", "color"), &RenderingServer::set_default_clear_color);
 
@@ -3607,13 +3531,6 @@ void RenderingServer::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("is_on_render_thread"), &RenderingServer::is_on_render_thread);
 	ClassDB::bind_method(D_METHOD("call_on_render_thread", "callable"), &RenderingServer::call_on_render_thread);
-
-#ifndef DISABLE_DEPRECATED
-	ClassDB::bind_method(D_METHOD("has_feature", "feature"), &RenderingServer::has_feature);
-
-	BIND_ENUM_CONSTANT(FEATURE_SHADERS);
-	BIND_ENUM_CONSTANT(FEATURE_MULTITHREADED);
-#endif
 }
 
 void RenderingServer::mesh_add_surface_from_mesh_data(RID p_mesh, const Geometry3D::MeshData &p_mesh_data) {
@@ -3644,13 +3561,6 @@ void RenderingServer::mesh_add_surface_from_planes(RID p_mesh, const Vector<Plan
 	Geometry3D::MeshData mdata = Geometry3D::build_convex_mesh(p_planes);
 	mesh_add_surface_from_mesh_data(p_mesh, mdata);
 }
-
-#ifndef DISABLE_DEPRECATED
-void RenderingServer::set_boot_image(const Ref<Image> &p_image, const Color &p_color, bool p_scale, bool p_use_filter) {
-	SplashStretchMode stretch_mode = map_scaling_option_to_stretch_mode(p_scale);
-	set_boot_image_with_stretch(p_image, p_color, stretch_mode, p_use_filter);
-}
-#endif
 
 RID RenderingServer::instance_create2(RID p_base, RID p_scenario) {
 	RID instance = instance_create();

@@ -41,11 +41,6 @@ class JSONRPC : public Object {
 protected:
 	static void _bind_methods();
 
-#ifndef DISABLE_DEPRECATED
-	void _set_scope_bind_compat_104890(const String &p_scope, Object *p_obj);
-	static void _bind_compatibility_methods();
-#endif
-
 public:
 	JSONRPC();
 	~JSONRPC();

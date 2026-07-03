@@ -211,12 +211,6 @@
 				Returns [code]true[/code] if font texture mipmap generation is enabled.
 			</description>
 		</method>
-		<method name="font_get_global_oversampling" qualifiers="const" deprecated="Use [Viewport] oversampling, or the [code skip-lint]oversampling[/code] argument of the [code skip-lint]draw_*[/code] methods instead.">
-			<return type="float" />
-			<description>
-				This method does nothing and always returns [code]1.0[/code].
-			</description>
-		</method>
 		<method name="font_get_glyph_advance" qualifiers="const">
 			<return type="Vector2" />
 			<param index="0" name="font_rid" type="RID" />
@@ -786,13 +780,6 @@
 				If set to [code]true[/code] font texture mipmap generation is enabled.
 			</description>
 		</method>
-		<method name="font_set_global_oversampling" deprecated="Use [Viewport] oversampling, or the [code skip-lint]oversampling[/code] argument of the [code skip-lint]draw_*[/code] methods instead.">
-			<return type="void" />
-			<param index="0" name="oversampling" type="float" />
-			<description>
-				This method does nothing.
-			</description>
-		</method>
 		<method name="font_set_glyph_advance">
 			<return type="void" />
 			<param index="0" name="font_rid" type="RID" />
@@ -1075,15 +1062,6 @@
 				Returns the dictionary of the supported OpenType variation coordinates.
 			</description>
 		</method>
-		<method name="format_number" qualifiers="const" deprecated="Use [method TranslationServer.format_number] instead.">
-			<return type="String" />
-			<param index="0" name="number" type="String" />
-			<param index="1" name="language" type="String" default="&quot;&quot;" />
-			<description>
-				Converts a number from Western Arabic (0..9) to the numeral system used in the given [param language].
-				If [param language] is an empty string, the active locale will be used.
-			</description>
-		</method>
 		<method name="free_rid">
 			<return type="void" />
 			<param index="0" name="rid" type="RID" />
@@ -1204,15 +1182,6 @@
 				Converts the given readable name of a feature, variation, script, or language to an OpenType tag.
 			</description>
 		</method>
-		<method name="parse_number" qualifiers="const" deprecated="Use [method TranslationServer.parse_number] instead.">
-			<return type="String" />
-			<param index="0" name="number" type="String" />
-			<param index="1" name="language" type="String" default="&quot;&quot;" />
-			<description>
-				Converts [param number] from the numeral system used in the given [param language] to Western Arabic (0..9).
-				If [param language] is an empty string, the active locale will be used.
-			</description>
-		</method>
 		<method name="parse_structured_text" qualifiers="const">
 			<return type="Vector3i[]" />
 			<param index="0" name="parser_type" type="int" enum="TextServer.StructuredTextParser" />
@@ -1220,14 +1189,6 @@
 			<param index="2" name="text" type="String" />
 			<description>
 				Default implementation of the BiDi algorithm override function.
-			</description>
-		</method>
-		<method name="percent_sign" qualifiers="const" deprecated="Use [method TranslationServer.get_percent_sign] instead.">
-			<return type="String" />
-			<param index="0" name="language" type="String" default="&quot;&quot;" />
-			<description>
-				Returns the percent sign used in the given [param language].
-				If [param language] is an empty string, the active locale will be used.
 			</description>
 		</method>
 		<method name="save_support_data" qualifiers="const">
@@ -2088,9 +2049,6 @@
 		</constant>
 		<constant name="BREAK_ADAPTIVE" value="8" enum="LineBreakFlag" is_bitfield="true">
 			Should be used only in conjunction with [constant BREAK_WORD_BOUND], break the line between any unconnected graphemes, if it's impossible to break it between the words.
-		</constant>
-		<constant name="BREAK_TRIM_EDGE_SPACES" value="16" enum="LineBreakFlag" is_bitfield="true" deprecated="Use [code]BREAK_TRIM_START_EDGE_SPACES | BREAK_TRIM_END_EDGE_SPACES[/code] instead.">
-			Remove edge spaces from the broken line segments.
 		</constant>
 		<constant name="BREAK_TRIM_INDENT" value="32" enum="LineBreakFlag" is_bitfield="true">
 			Subtract first line indentation width from all lines after the first one.

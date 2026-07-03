@@ -244,11 +244,6 @@ public: // internal methods
 
 	virtual bool is_text_shader() const override;
 
-#ifndef DISABLE_DEPRECATED
-	void set_graph_offset(const Vector2 &p_offset);
-	Vector2 get_graph_offset() const;
-#endif
-
 	String generate_preview_shader(Type p_type, int p_node, int p_port, Vector<DefaultTextureParam> &r_default_tex_params) const;
 
 	String validate_port_name(const String &p_port_name, VisualShaderNode *p_node, int p_port_id, bool p_output) const;
@@ -611,10 +606,6 @@ protected:
 	static void _bind_methods();
 	String _get_qual_str() const;
 
-#ifndef DISABLE_DEPRECATED
-	bool _set(const StringName &p_name, const Variant &p_value);
-#endif
-
 public:
 	void set_parameter_name(const String &p_name);
 	String get_parameter_name() const;
@@ -780,26 +771,6 @@ public:
 
 	VisualShaderNodeFrame();
 };
-
-#ifndef DISABLE_DEPRECATED
-// Deprecated, for compatibility only.
-class VisualShaderNodeComment : public VisualShaderNodeFrame {
-	FOUNDRY_CLASS(VisualShaderNodeComment, VisualShaderNodeFrame);
-
-	String description;
-
-protected:
-	static void _bind_methods();
-
-public:
-	virtual String get_caption() const override { return "Comment(Deprecated)"; }
-
-	virtual Category get_category() const override { return CATEGORY_NONE; }
-
-	void set_description(const String &p_description);
-	String get_description() const;
-};
-#endif
 
 class VisualShaderNodeGroupBase : public VisualShaderNodeResizableBase {
 	FOUNDRY_CLASS(VisualShaderNodeGroupBase, VisualShaderNodeResizableBase);

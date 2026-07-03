@@ -43,11 +43,6 @@ class WebXRInterface : public XRInterface {
 protected:
 	static void _bind_methods();
 
-#ifndef DISABLE_DEPRECATED
-	static void _bind_compatibility_methods();
-	Ref<XRPositionalTracker> _get_input_source_tracker_bind_compat_90645(int p_input_source_id) const;
-#endif
-
 public:
 	enum TargetRayMode {
 		TARGET_RAY_MODE_UNKNOWN,

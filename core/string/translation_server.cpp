@@ -29,7 +29,6 @@
 /**************************************************************************/
 
 #include "translation_server.h"
-#include "translation_server.compat.inc"
 
 #include "core/config/project_settings.h"
 #include "core/io/resource_loader.h"
@@ -527,12 +526,6 @@ void TranslationServer::remove_translation(const Ref<Translation> &p_translation
 	main_domain->remove_translation(p_translation);
 }
 
-#ifndef DISABLE_DEPRECATED
-Ref<Translation> TranslationServer::get_translation_object(const String &p_locale) {
-	return main_domain->get_translation_object(p_locale);
-}
-#endif
-
 TypedArray<Translation> TranslationServer::get_translations() const {
 	return main_domain->get_translations_bind();
 }
@@ -724,10 +717,6 @@ void TranslationServer::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("add_translation", "translation"), &TranslationServer::add_translation);
 	ClassDB::bind_method(D_METHOD("remove_translation", "translation"), &TranslationServer::remove_translation);
-
-#ifndef DISABLE_DEPRECATED
-	ClassDB::bind_method(D_METHOD("get_translation_object", "locale"), &TranslationServer::get_translation_object);
-#endif
 
 	ClassDB::bind_method(D_METHOD("get_translations"), &TranslationServer::get_translations);
 	ClassDB::bind_method(D_METHOD("find_translations", "locale", "exact"), &TranslationServer::find_translations);

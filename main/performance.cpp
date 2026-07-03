@@ -29,7 +29,6 @@
 /**************************************************************************/
 
 #include "performance.h"
-#include "performance.compat.inc"
 
 #include "core/os/os.h"
 #include "core/variant/typed_array.h"

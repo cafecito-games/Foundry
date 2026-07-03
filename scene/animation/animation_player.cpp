@@ -29,7 +29,6 @@
 /**************************************************************************/
 
 #include "animation_player.h"
-#include "animation_player.compat.inc"
 
 #include "core/config/engine.h"
 
@@ -51,14 +50,6 @@ bool AnimationPlayer::_set(const StringName &p_name, const Variant &p_value) {
 			float time = array[i * 3 + 2];
 			set_blend_time(from, to, time);
 		}
-#ifndef DISABLE_DEPRECATED
-	} else if (p_name == "method_call_mode") {
-		set_callback_mode_method(static_cast<AnimationCallbackModeMethod>((int)p_value));
-	} else if (p_name == "playback_process_mode") {
-		set_callback_mode_process(static_cast<AnimationCallbackModeProcess>((int)p_value));
-	} else if (p_name == "playback_active") {
-		set_active(p_value);
-#endif // DISABLE_DEPRECATED
 	} else {
 		return false;
 	}
@@ -90,14 +81,6 @@ bool AnimationPlayer::_get(const StringName &p_name, Variant &r_ret) const {
 		}
 
 		r_ret = array;
-#ifndef DISABLE_DEPRECATED
-	} else if (name == "method_call_mode") {
-		r_ret = get_callback_mode_method();
-	} else if (name == "playback_process_mode") {
-		r_ret = get_callback_mode_process();
-	} else if (name == "playback_active") {
-		r_ret = is_active();
-#endif // DISABLE_DEPRECATED
 	} else {
 		return false;
 	}

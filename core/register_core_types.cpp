@@ -75,8 +75,8 @@
 #include "core/object/script_backtrace.h"
 #include "core/object/script_diagnostic_capture.h"
 #include "core/object/script_function_state.h"
-#include "core/object/script_test_runner.h"
 #include "core/object/script_language_extension.h"
+#include "core/object/script_test_runner.h"
 #include "core/object/undo_redo.h"
 #include "core/object/worker_thread_pool.h"
 #include "core/os/main_loop.h"
@@ -84,9 +84,6 @@
 #include "core/string/optimized_translation.h"
 #include "core/string/translation.h"
 #include "core/string/translation_server.h"
-#ifndef DISABLE_DEPRECATED
-#include "core/io/packed_data_container.h"
-#endif
 
 static Ref<ResourceFormatSaverBinary> resource_saver_binary;
 static Ref<ResourceFormatLoaderBinary> resource_loader_binary;
@@ -282,10 +279,6 @@ void register_core_types() {
 	FOUNDRY_REGISTER_CLASS(AStarGrid2D);
 	FOUNDRY_REGISTER_CLASS(EncodedObjectAsID);
 	FOUNDRY_REGISTER_CLASS(RandomNumberGenerator);
-#ifndef DISABLE_DEPRECATED
-	FOUNDRY_REGISTER_CLASS(PackedDataContainer);
-	FOUNDRY_REGISTER_ABSTRACT_CLASS(PackedDataContainerRef);
-#endif
 
 	FOUNDRY_REGISTER_ABSTRACT_CLASS(ImageFormatLoader);
 	FOUNDRY_REGISTER_CLASS(ImageFormatLoaderExtension);

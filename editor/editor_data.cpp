@@ -1085,21 +1085,6 @@ void EditorData::script_class_save_global_classes() {
 void EditorData::script_class_load_icon_paths() {
 	script_class_clear_icon_paths();
 
-#ifndef DISABLE_DEPRECATED
-	if (ProjectSettings::get_singleton()->has_setting("_global_script_class_icons")) {
-		Dictionary d = GLOBAL_GET("_global_script_class_icons");
-
-		for (const KeyValue<Variant, Variant> &kv : d) {
-			String name = kv.key.operator String();
-			_script_class_icon_paths[name] = kv.value;
-
-			String path = ScriptServer::get_global_class_path(name);
-			script_class_set_name(path, name);
-		}
-		ProjectSettings::get_singleton()->clear("_global_script_class_icons");
-	}
-#endif
-
 	Array script_classes = ProjectSettings::get_singleton()->get_global_class_list();
 	for (int i = 0; i < script_classes.size(); i++) {
 		Dictionary d = script_classes[i];
@@ -1280,9 +1265,6 @@ void EditorSelection::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("remove_node", "node"), &EditorSelection::remove_node);
 	ClassDB::bind_method(D_METHOD("get_selected_nodes"), &EditorSelection::get_selected_nodes);
 	ClassDB::bind_method(D_METHOD("get_top_selected_nodes"), &EditorSelection::get_top_selected_nodes);
-#ifndef DISABLE_DEPRECATED
-	ClassDB::bind_method(D_METHOD("get_transformable_selected_nodes"), &EditorSelection::get_top_selected_nodes);
-#endif // DISABLE_DEPRECATED
 	ADD_SIGNAL(MethodInfo("selection_changed"));
 }
 

@@ -29,7 +29,6 @@
 /**************************************************************************/
 
 #include "navigation_server_2d.h"
-#include "navigation_server_2d.compat.inc"
 
 #include "core/config/project_settings.h"
 #include "scene/main/node.h"

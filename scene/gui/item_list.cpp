@@ -2239,24 +2239,6 @@ bool ItemList::_set(const StringName &p_name, const Variant &p_value) {
 		return true;
 	}
 
-#ifndef DISABLE_DEPRECATED
-	// Compatibility.
-	if (p_name == "items") {
-		Array arr = p_value;
-		ERR_FAIL_COND_V(arr.size() % 3, false);
-		clear();
-
-		for (int i = 0; i < arr.size(); i += 3) {
-			String text = arr[i + 0];
-			Ref<Texture2D> icon = arr[i + 1];
-			bool disabled = arr[i + 2];
-
-			int idx = get_item_count();
-			add_item(text, icon);
-			set_item_disabled(idx, disabled);
-		}
-	}
-#endif
 	return false;
 }
 

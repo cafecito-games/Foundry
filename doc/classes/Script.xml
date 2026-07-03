@@ -91,7 +91,7 @@
 				[b]Note:[/b] The dictionaries returned by this method are formatted identically to those returned by [method Object.get_signal_list].
 			</description>
 		</method>
-		<method name="get_script_trait_list" qualifiers="const">
+		<method name="get_script_trait_list">
 			<return type="StringName[]" />
 			<description>
 				Returns the list of traits applied to this [Script], including traits applied transitively.

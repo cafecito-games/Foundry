@@ -391,12 +391,6 @@ protected:
 
 	static void _bind_methods();
 
-#ifndef DISABLE_DEPRECATED
-	void _add_filter_bind_compat_111439(const String &p_filter, const String &p_description = "");
-
-	static void _bind_compatibility_methods();
-#endif
-
 public:
 	virtual void set_visible(bool p_visible) override;
 

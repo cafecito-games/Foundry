@@ -192,11 +192,6 @@ public:
 	void set_lightmap_texel_scale(float p_scale);
 	float get_lightmap_texel_scale() const;
 
-#ifndef DISABLE_DEPRECATED
-	void set_lightmap_scale(GeometryInstance3D::LightmapScale p_scale);
-	LightmapScale get_lightmap_scale() const;
-#endif // DISABLE_DEPRECATED
-
 	void set_instance_shader_parameter(const StringName &p_name, const Variant &p_value);
 	Variant get_instance_shader_parameter(const StringName &p_name) const;
 

@@ -99,12 +99,6 @@ public:
 		return Math::sqrt((c1 - c2).dot(c1 - c2));
 	}
 
-#ifndef DISABLE_DEPRECATED
-	static Vector2 get_closest_point_to_segment(const Vector2 &p_point, const Vector2 *p_segment) {
-		return get_closest_point_to_segment(p_point, p_segment[0], p_segment[1]);
-	}
-#endif // DISABLE_DEPRECATED
-
 	static Vector2 get_closest_point_to_segment(const Vector2 &p_point, const Vector2 &p_segment_a, const Vector2 &p_segment_b) {
 		Vector2 p = p_point - p_segment_a;
 		Vector2 n = p_segment_b - p_segment_a;
@@ -124,12 +118,6 @@ public:
 		}
 	}
 
-#ifndef DISABLE_DEPRECATED
-	static real_t get_distance_to_segment(const Vector2 &p_point, const Vector2 *p_segment) {
-		return get_distance_to_segment(p_point, p_segment[0], p_segment[1]);
-	}
-#endif // DISABLE_DEPRECATED
-
 	static real_t get_distance_to_segment(const Vector2 &p_point, const Vector2 &p_segment_a, const Vector2 &p_segment_b) {
 		return p_point.distance_to(get_closest_point_to_segment(p_point, p_segment_a, p_segment_b));
 	}
@@ -147,12 +135,6 @@ public:
 
 		return (cn.cross(an) > 0) == orientation;
 	}
-
-#ifndef DISABLE_DEPRECATED
-	static Vector2 get_closest_point_to_segment_uncapped(const Vector2 &p_point, const Vector2 *p_segment) {
-		return get_closest_point_to_segment_uncapped(p_point, p_segment[0], p_segment[1]);
-	}
-#endif // DISABLE_DEPRECATED
 
 	static Vector2 get_closest_point_to_segment_uncapped(const Vector2 &p_point, const Vector2 &p_segment_a, const Vector2 &p_segment_b) {
 		Vector2 p = p_point - p_segment_a;

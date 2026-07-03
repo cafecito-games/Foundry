@@ -73,11 +73,6 @@ protected:
 public:
 	static constexpr AncestralClass static_ancestral_class = AncestralClass::MESH_INSTANCE_3D;
 
-#ifndef DISABLE_DEPRECATED
-	static inline bool use_parent_skeleton_compat = false;
-	static inline bool upgrading_skeleton_compat = false;
-#endif
-
 	void set_mesh(const Ref<Mesh> &p_mesh);
 	Ref<Mesh> get_mesh() const;
 

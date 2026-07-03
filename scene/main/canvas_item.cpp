@@ -29,7 +29,6 @@
 /**************************************************************************/
 
 #include "canvas_item.h"
-#include "canvas_item.compat.inc"
 
 #include "scene/2d/canvas_group.h"
 #include "scene/main/canvas_layer.h"

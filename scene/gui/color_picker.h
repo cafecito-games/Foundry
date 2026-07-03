@@ -101,9 +101,6 @@ public:
 	enum ColorModeType {
 		MODE_RGB,
 		MODE_HSV,
-#ifndef DISABLE_DEPRECATED
-		MODE_RAW = 2,
-#endif
 		MODE_LINEAR = 2,
 		MODE_OKHSL,
 

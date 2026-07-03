@@ -29,7 +29,6 @@
 /**************************************************************************/
 
 #include "split_container.h"
-#include "split_container.compat.inc"
 
 #include "scene/gui/texture_rect.h"
 #include "scene/main/viewport.h"
@@ -553,15 +552,6 @@ void SplitContainer::_update_default_dragger_positions() {
 		}
 		stretch_data.push_back(sdata);
 	}
-
-#ifndef DISABLE_DEPRECATED
-	if (expand_count == 2 && valid_children.size() == 2u) {
-		// Special case when there are 2 expanded children, ignore minimum sizes.
-		const real_t ratio = stretch_data[0].stretch_ratio / (stretch_data[0].stretch_ratio + stretch_data[1].stretch_ratio);
-		default_dragger_positions[0] = (int)(size * ratio - sep * 0.5);
-		return;
-	}
-#endif // DISABLE_DEPRECATED
 
 	// Determine final sizes if stretching.
 	while (stretch_total > 0.0 && stretchable_space > 0.0) {
@@ -1322,13 +1312,6 @@ void SplitContainer::_bind_methods() {
 	BIND_THEME_ITEM_CUSTOM(Theme::DATA_TYPE_ICON, SplitContainer, grabber_icon_h, "h_grabber");
 	BIND_THEME_ITEM_CUSTOM(Theme::DATA_TYPE_ICON, SplitContainer, grabber_icon_v, "v_grabber");
 	BIND_THEME_ITEM_CUSTOM(Theme::DATA_TYPE_STYLEBOX, SplitContainer, split_bar_background, "split_bar_background");
-
-#ifndef DISABLE_DEPRECATED
-	ClassDB::bind_method(D_METHOD("get_drag_area_control"), &SplitContainer::get_drag_area_control);
-	ClassDB::bind_method(D_METHOD("set_split_offset", "offset"), &SplitContainer::_set_split_offset_first);
-	ClassDB::bind_method(D_METHOD("get_split_offset"), &SplitContainer::_get_split_offset_first);
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "split_offset", PROPERTY_HINT_NONE, String(), PROPERTY_USAGE_NO_EDITOR), "set_split_offset", "get_split_offset");
-#endif // DISABLE_DEPRECATED
 }
 
 SplitContainer::SplitContainer(bool p_vertical) {

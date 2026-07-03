@@ -283,24 +283,6 @@ void ReflectionProbe::_bind_methods() {
 	BIND_ENUM_CONSTANT(AMBIENT_COLOR);
 }
 
-#ifndef DISABLE_DEPRECATED
-bool ReflectionProbe::_set(const StringName &p_name, const Variant &p_value) {
-	if (p_name == "extents") { // Compatibility with Godot 3.x.
-		set_size((Vector3)p_value * 2);
-		return true;
-	}
-	return false;
-}
-
-bool ReflectionProbe::_get(const StringName &p_name, Variant &r_property) const {
-	if (p_name == "extents") { // Compatibility with Godot 3.x.
-		r_property = size / 2;
-		return true;
-	}
-	return false;
-}
-#endif // DISABLE_DEPRECATED
-
 ReflectionProbe::ReflectionProbe() {
 	probe = RenderingServer::get_singleton()->reflection_probe_create();
 	RS::get_singleton()->instance_set_base(get_instance(), probe);

@@ -114,12 +114,7 @@ Node *EditorSceneFormatImporterFBX2GLTF::import_scene(const String &p_path, uint
 		return nullptr;
 	}
 
-#ifndef DISABLE_DEPRECATED
-	bool trimming = p_options.has("animation/trimming") ? (bool)p_options["animation/trimming"] : false;
-	return gltf->generate_scene(state, (float)p_options["animation/fps"], trimming, false);
-#else
 	return gltf->generate_scene(state, (float)p_options["animation/fps"], (bool)p_options["animation/trimming"], false);
-#endif
 }
 
 Variant EditorSceneFormatImporterFBX2GLTF::get_option_visibility(const String &p_path, const String &p_scene_import_type,

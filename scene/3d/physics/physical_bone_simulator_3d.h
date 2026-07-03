@@ -77,9 +77,6 @@ protected:
 	virtual void _skeleton_changed(Skeleton3D *p_old, Skeleton3D *p_new) override;
 
 public:
-#ifndef DISABLE_DEPRECATED
-	bool is_compat = false;
-#endif // _DISABLE_DEPRECATED
 	bool is_simulating_physics() const;
 
 	int find_bone(const String &p_name) const;

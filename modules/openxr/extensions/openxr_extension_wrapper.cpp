@@ -79,11 +79,6 @@ void OpenXRExtensionWrapper::_bind_methods() {
 	FOUNDRY_VIRTUAL_BIND(_on_viewport_composition_layer_destroyed, "layer");
 	FOUNDRY_VIRTUAL_BIND(_set_android_surface_swapchain_create_info_and_get_next_pointer, "property_values", "next_pointer");
 
-#ifndef DISABLE_DEPRECATED
-	FOUNDRY_VIRTUAL_BIND_COMPAT(_get_requested_extensions_bind_compat_109302);
-	FOUNDRY_VIRTUAL_BIND_COMPAT(_set_instance_create_info_and_get_next_pointer_bind_compat_109302, "next_pointer");
-#endif
-
 	ClassDB::bind_method(D_METHOD("get_openxr_api"), &OpenXRExtensionWrapper::_foundry_extension_get_openxr_api);
 	ClassDB::bind_method(D_METHOD("register_extension_wrapper"), &OpenXRExtensionWrapper::_foundry_extension_register_extension_wrapper);
 }
@@ -99,17 +94,6 @@ HashMap<String, bool *> OpenXRExtensionWrapper::get_requested_extensions(XrVersi
 		}
 		return result;
 	}
-
-#ifndef DISABLE_DEPRECATED
-	if (FOUNDRY_VIRTUAL_CALL(_get_requested_extensions_bind_compat_109302, request_extension)) {
-		HashMap<String, bool *> result;
-		for (const KeyValue<Variant, Variant> &kv : request_extension) {
-			FoundryExtensionPtr<bool> value = VariantCaster<FoundryExtensionPtr<bool>>::cast(kv.value);
-			result.insert(kv.key, value);
-		}
-		return result;
-	}
-#endif
 
 	return HashMap<String, bool *>();
 }
@@ -130,12 +114,6 @@ void *OpenXRExtensionWrapper::set_instance_create_info_and_get_next_pointer(XrVe
 	if (FOUNDRY_VIRTUAL_CALL(_set_instance_create_info_and_get_next_pointer, (uint64_t)p_xr_version, FoundryExtensionPtr<void>(p_next_pointer), pointer)) {
 		return reinterpret_cast<void *>(pointer);
 	}
-
-#ifndef DISABLE_DEPRECATED
-	if (FOUNDRY_VIRTUAL_CALL(_set_instance_create_info_and_get_next_pointer_bind_compat_109302, FoundryExtensionPtr<void>(p_next_pointer), pointer)) {
-		return reinterpret_cast<void *>(pointer);
-	}
-#endif
 
 	return nullptr;
 }

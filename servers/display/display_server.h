@@ -46,13 +46,6 @@ class DisplayServer : public Object {
 	static DisplayServer *singleton;
 	static bool hidpi_allowed;
 
-#ifndef DISABLE_DEPRECATED
-	mutable HashMap<String, RID> menu_names;
-
-	RID _get_rid_from_name(NativeMenu *p_nmenu, const String &p_menu_root) const;
-	RID _accessibility_create_sub_text_edit_elements_bind_compat_113459(const RID &p_parent_rid, const RID &p_shaped_text, float p_min_height, int p_insert_pos = -1);
-#endif
-
 	LocalVector<ObjectID> additional_outputs;
 
 public:
@@ -109,10 +102,6 @@ private:
 protected:
 	static void _bind_methods();
 
-#ifndef DISABLE_DEPRECATED
-	static void _bind_compatibility_methods();
-#endif
-
 	static Ref<Image> _get_cursor_image_from_resource(const Ref<Resource> &p_cursor, const Vector2 &p_hotspot);
 
 	enum {
@@ -132,9 +121,6 @@ protected:
 
 public:
 	enum Feature {
-#ifndef DISABLE_DEPRECATED
-		FEATURE_GLOBAL_MENU,
-#endif
 		FEATURE_SUBWINDOWS,
 		FEATURE_TOUCHSCREEN,
 		FEATURE_MOUSE,
@@ -175,65 +161,6 @@ public:
 	virtual String get_name() const = 0;
 
 	virtual void help_set_search_callbacks(const Callable &p_search_callback = Callable(), const Callable &p_action_callback = Callable());
-
-#ifndef DISABLE_DEPRECATED
-	virtual void global_menu_set_popup_callbacks(const String &p_menu_root, const Callable &p_open_callback = Callable(), const Callable &p_close_callback = Callable());
-
-	virtual int global_menu_add_submenu_item(const String &p_menu_root, const String &p_label, const String &p_submenu, int p_index = -1);
-	virtual int global_menu_add_item(const String &p_menu_root, const String &p_label, const Callable &p_callback = Callable(), const Callable &p_key_callback = Callable(), const Variant &p_tag = Variant(), Key p_accel = Key::NONE, int p_index = -1);
-	virtual int global_menu_add_check_item(const String &p_menu_root, const String &p_label, const Callable &p_callback = Callable(), const Callable &p_key_callback = Callable(), const Variant &p_tag = Variant(), Key p_accel = Key::NONE, int p_index = -1);
-	virtual int global_menu_add_icon_item(const String &p_menu_root, const Ref<Texture2D> &p_icon, const String &p_label, const Callable &p_callback = Callable(), const Callable &p_key_callback = Callable(), const Variant &p_tag = Variant(), Key p_accel = Key::NONE, int p_index = -1);
-	virtual int global_menu_add_icon_check_item(const String &p_menu_root, const Ref<Texture2D> &p_icon, const String &p_label, const Callable &p_callback = Callable(), const Callable &p_key_callback = Callable(), const Variant &p_tag = Variant(), Key p_accel = Key::NONE, int p_index = -1);
-	virtual int global_menu_add_radio_check_item(const String &p_menu_root, const String &p_label, const Callable &p_callback = Callable(), const Callable &p_key_callback = Callable(), const Variant &p_tag = Variant(), Key p_accel = Key::NONE, int p_index = -1);
-	virtual int global_menu_add_icon_radio_check_item(const String &p_menu_root, const Ref<Texture2D> &p_icon, const String &p_label, const Callable &p_callback = Callable(), const Callable &p_key_callback = Callable(), const Variant &p_tag = Variant(), Key p_accel = Key::NONE, int p_index = -1);
-	virtual int global_menu_add_multistate_item(const String &p_menu_root, const String &p_label, int p_max_states, int p_default_state, const Callable &p_callback = Callable(), const Callable &p_key_callback = Callable(), const Variant &p_tag = Variant(), Key p_accel = Key::NONE, int p_index = -1);
-	virtual int global_menu_add_separator(const String &p_menu_root, int p_index = -1);
-
-	virtual int global_menu_get_item_index_from_text(const String &p_menu_root, const String &p_text) const;
-	virtual int global_menu_get_item_index_from_tag(const String &p_menu_root, const Variant &p_tag) const;
-
-	virtual bool global_menu_is_item_checked(const String &p_menu_root, int p_idx) const;
-	virtual bool global_menu_is_item_checkable(const String &p_menu_root, int p_idx) const;
-	virtual bool global_menu_is_item_radio_checkable(const String &p_menu_root, int p_idx) const;
-	virtual Callable global_menu_get_item_callback(const String &p_menu_root, int p_idx) const;
-	virtual Callable global_menu_get_item_key_callback(const String &p_menu_root, int p_idx) const;
-	virtual Variant global_menu_get_item_tag(const String &p_menu_root, int p_idx) const;
-	virtual String global_menu_get_item_text(const String &p_menu_root, int p_idx) const;
-	virtual String global_menu_get_item_submenu(const String &p_menu_root, int p_idx) const;
-	virtual Key global_menu_get_item_accelerator(const String &p_menu_root, int p_idx) const;
-	virtual bool global_menu_is_item_disabled(const String &p_menu_root, int p_idx) const;
-	virtual bool global_menu_is_item_hidden(const String &p_menu_root, int p_idx) const;
-	virtual String global_menu_get_item_tooltip(const String &p_menu_root, int p_idx) const;
-	virtual int global_menu_get_item_state(const String &p_menu_root, int p_idx) const;
-	virtual int global_menu_get_item_max_states(const String &p_menu_root, int p_idx) const;
-	virtual Ref<Texture2D> global_menu_get_item_icon(const String &p_menu_root, int p_idx) const;
-	virtual int global_menu_get_item_indentation_level(const String &p_menu_root, int p_idx) const;
-
-	virtual void global_menu_set_item_checked(const String &p_menu_root, int p_idx, bool p_checked);
-	virtual void global_menu_set_item_checkable(const String &p_menu_root, int p_idx, bool p_checkable);
-	virtual void global_menu_set_item_radio_checkable(const String &p_menu_root, int p_idx, bool p_checkable);
-	virtual void global_menu_set_item_callback(const String &p_menu_root, int p_idx, const Callable &p_callback);
-	virtual void global_menu_set_item_key_callback(const String &p_menu_root, int p_idx, const Callable &p_key_callback);
-	virtual void global_menu_set_item_hover_callbacks(const String &p_menu_root, int p_idx, const Callable &p_callback);
-	virtual void global_menu_set_item_tag(const String &p_menu_root, int p_idx, const Variant &p_tag);
-	virtual void global_menu_set_item_text(const String &p_menu_root, int p_idx, const String &p_text);
-	virtual void global_menu_set_item_submenu(const String &p_menu_root, int p_idx, const String &p_submenu);
-	virtual void global_menu_set_item_accelerator(const String &p_menu_root, int p_idx, Key p_keycode);
-	virtual void global_menu_set_item_disabled(const String &p_menu_root, int p_idx, bool p_disabled);
-	virtual void global_menu_set_item_hidden(const String &p_menu_root, int p_idx, bool p_hidden);
-	virtual void global_menu_set_item_tooltip(const String &p_menu_root, int p_idx, const String &p_tooltip);
-	virtual void global_menu_set_item_state(const String &p_menu_root, int p_idx, int p_state);
-	virtual void global_menu_set_item_max_states(const String &p_menu_root, int p_idx, int p_max_states);
-	virtual void global_menu_set_item_icon(const String &p_menu_root, int p_idx, const Ref<Texture2D> &p_icon);
-	virtual void global_menu_set_item_indentation_level(const String &p_menu_root, int p_idx, int p_level);
-
-	virtual int global_menu_get_item_count(const String &p_menu_root) const;
-
-	virtual void global_menu_remove_item(const String &p_menu_root, int p_idx);
-	virtual void global_menu_clear(const String &p_menu_root);
-
-	virtual Dictionary global_menu_get_system_menu_roots() const;
-#endif
 
 	struct TTSUtterance {
 		String text;
@@ -835,11 +762,6 @@ public:
 	};
 	virtual Error file_dialog_show(const String &p_title, const String &p_current_directory, const String &p_filename, bool p_show_hidden, FileDialogMode p_mode, const Vector<String> &p_filters, const Callable &p_callback, WindowID p_window_id = MAIN_WINDOW_ID);
 	virtual Error file_dialog_with_options_show(const String &p_title, const String &p_current_directory, const String &p_root, const String &p_filename, bool p_show_hidden, FileDialogMode p_mode, const Vector<String> &p_filters, const TypedArray<Dictionary> &p_options, const Callable &p_callback, WindowID p_window_id = MAIN_WINDOW_ID);
-
-#ifndef DISABLE_DEPRECATED
-	Error _file_dialog_show_bind_compat_98194(const String &p_title, const String &p_current_directory, const String &p_filename, bool p_show_hidden, FileDialogMode p_mode, const Vector<String> &p_filters, const Callable &p_callback);
-	Error _file_dialog_with_options_show_bind_compat_98194(const String &p_title, const String &p_current_directory, const String &p_root, const String &p_filename, bool p_show_hidden, FileDialogMode p_mode, const Vector<String> &p_filters, const TypedArray<Dictionary> &p_options, const Callable &p_callback);
-#endif
 
 	virtual void beep() const;
 

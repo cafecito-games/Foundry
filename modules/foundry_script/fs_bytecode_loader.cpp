@@ -130,8 +130,8 @@ Error FSBytecodeLoader::check_header(const Vector<uint8_t> &p_buffer, int *r_hea
 	const uint32_t file_opcode_end = stream->get_u32();
 	const uint32_t file_opcode_count = stream->get_u32();
 
-	const String runtime_version_config = VERSION_FULL_CONFIG;
-	const String runtime_version_hash = VERSION_HASH;
+	const String runtime_version_config = FOUNDRY_VERSION_FULL_CONFIG;
+	const String runtime_version_hash = FOUNDRY_VERSION_HASH;
 	const bool guard_matches = file_version_config == runtime_version_config &&
 			file_version_hash == runtime_version_hash &&
 			file_real_t_size == (uint32_t)sizeof(real_t) &&

@@ -395,7 +395,6 @@ void PointLight2D::set_texture(const Ref<Texture2D> &p_texture) {
 	if (texture.is_valid()) {
 #ifdef DEBUG_ENABLED
 		if (
-				p_texture->is_class("AnimatedTexture") ||
 				p_texture->is_class("AtlasTexture") ||
 				p_texture->is_class("CameraTexture") ||
 				p_texture->is_class("CanvasTexture") ||
@@ -452,17 +451,6 @@ real_t PointLight2D::get_texture_scale() const {
 	return _scale;
 }
 
-#ifndef DISABLE_DEPRECATED
-bool PointLight2D::_set(const StringName &p_name, const Variant &p_value) {
-	if (p_name == "mode" && p_value.is_num()) { // Compatibility with Godot 3.x.
-		set_blend_mode((BlendMode)(int)p_value);
-		return true;
-	}
-
-	return false;
-}
-#endif // DISABLE_DEPRECATED
-
 void PointLight2D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_texture", "texture"), &PointLight2D::set_texture);
 	ClassDB::bind_method(D_METHOD("get_texture"), &PointLight2D::get_texture);
@@ -474,7 +462,7 @@ void PointLight2D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_texture_scale"), &PointLight2D::get_texture_scale);
 
 	// Only allow texture types that display correctly.
-	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "texture", PROPERTY_HINT_RESOURCE_TYPE, "Texture2D,-AnimatedTexture,-AtlasTexture,-CameraTexture,-CanvasTexture,-MeshTexture,-Texture2DRD,-ViewportTexture"), "set_texture", "get_texture");
+	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "texture", PROPERTY_HINT_RESOURCE_TYPE, "Texture2D,-AtlasTexture,-CameraTexture,-CanvasTexture,-MeshTexture,-Texture2DRD,-ViewportTexture"), "set_texture", "get_texture");
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2, "offset", PROPERTY_HINT_NONE, "suffix:px"), "set_texture_offset", "get_texture_offset");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "texture_scale", PROPERTY_HINT_RANGE, "0.01,50,0.01"), "set_texture_scale", "get_texture_scale");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "height", PROPERTY_HINT_RANGE, "0,1024,1,or_greater,suffix:px"), "set_height", "get_height");

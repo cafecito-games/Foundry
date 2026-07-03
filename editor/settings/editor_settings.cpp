@@ -1225,16 +1225,6 @@ const String EditorSettings::_get_project_metadata_path() const {
 	return EditorPaths::get_singleton()->get_project_settings_dir().path_join("project_metadata.cfg");
 }
 
-#ifndef DISABLE_DEPRECATED
-void EditorSettings::_remove_deprecated_settings() {
-	erase("interface/theme/preset");
-	erase("network/connection/engine_version_update_mode");
-	erase("run/output/always_open_output_on_play");
-	erase("run/output/always_close_output_on_stop");
-	erase("text_editor/theme/line_spacing"); // See GH-106137.
-}
-#endif
-
 // PUBLIC METHODS
 
 EditorSettings *EditorSettings::get_singleton() {
@@ -1315,9 +1305,6 @@ void EditorSettings::create() {
 		singleton->setup_network();
 		singleton->load_favorites_and_recent_dirs();
 		singleton->update_text_editor_themes_list();
-#ifndef DISABLE_DEPRECATED
-		singleton->_remove_deprecated_settings();
-#endif
 
 		return;
 	}

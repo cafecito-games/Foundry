@@ -209,8 +209,8 @@ TEST_CASE("[Modules][FoundryScript][Proxy] get_script identity and method list")
 	REQUIRE(proxy.is_valid());
 
 	CHECK(proxy->get_script_instance()->get_script() == greeter);
-	// Synthetic flag keeps language-keyed casts (e.g. inst_to_dict) from treating
-	// the proxy as a FSInstance.
+	// Synthetic flag keeps language-keyed casts from treating the proxy as a
+	// FSInstance.
 	CHECK(proxy->get_script_instance()->is_synthetic());
 
 	List<MethodInfo> methods;

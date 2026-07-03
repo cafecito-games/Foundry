@@ -335,9 +335,6 @@ struct ObjectFoundryExtension {
 	bool is_runtime = false;
 	bool is_placeholder = false;
 #endif
-#ifndef DISABLE_DEPRECATED
-	bool legacy_unexposed_class = false;
-#endif // DISABLE_DEPRECATED
 	FoundryExtensionClassSet set;
 	FoundryExtensionClassGet get;
 	FoundryExtensionClassGetPropertyList get_property_list;
@@ -345,10 +342,6 @@ struct ObjectFoundryExtension {
 	FoundryExtensionClassPropertyCanRevert property_can_revert;
 	FoundryExtensionClassPropertyGetRevert property_get_revert;
 	FoundryExtensionClassValidateProperty validate_property;
-#ifndef DISABLE_DEPRECATED
-	FoundryExtensionClassNotification notification;
-	FoundryExtensionClassFreePropertyList free_property_list;
-#endif // DISABLE_DEPRECATED
 	FoundryExtensionClassNotification2 notification2;
 	FoundryExtensionClassToString to_string;
 	FoundryExtensionClassReference reference;
@@ -357,15 +350,8 @@ struct ObjectFoundryExtension {
 
 	void *class_userdata = nullptr;
 
-#ifndef DISABLE_DEPRECATED
-	FoundryExtensionClassCreateInstance create_instance;
-#endif // DISABLE_DEPRECATED
 	FoundryExtensionClassCreateInstance2 create_instance2;
 	FoundryExtensionClassFreeInstance free_instance;
-#ifndef DISABLE_DEPRECATED
-	FoundryExtensionClassGetVirtual get_virtual;
-	FoundryExtensionClassGetVirtualCallData get_virtual_call_data;
-#endif // DISABLE_DEPRECATED
 	FoundryExtensionClassGetVirtual2 get_virtual2;
 	FoundryExtensionClassGetVirtualCallData2 get_virtual_call_data2;
 	FoundryExtensionClassCallVirtualWithData call_virtual_with_data;

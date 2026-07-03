@@ -17,17 +17,6 @@
 				Clamps the [member split_offsets] values to ensure they are within valid ranges and do not overlap with each other. When overlaps occur, this method prioritizes one split offset (at index [param priority_index]) by clamping any overlapping split offsets to it.
 			</description>
 		</method>
-		<method name="get_drag_area_control" deprecated="Use the first element of [method get_drag_area_controls] instead.">
-			<return type="Control" />
-			<description>
-				Returns the drag area [Control]. For example, you can move a pre-configured button into the drag area [Control] so that it rides along with the split bar. Try setting the [Button] anchors to [code]center[/code] prior to the [code]reparent()[/code] call.
-				[codeblock]
-				$BarnacleButton.reparent($SplitContainer.get_drag_area_control())
-				[/codeblock]
-				[b]Note:[/b] The drag area [Control] is drawn over the [SplitContainer]'s children, so [CanvasItem] draw objects called from the [Control] and children added to the [Control] will also appear over the [SplitContainer]'s children. Try setting [member Control.mouse_filter] of custom children to [constant Control.MOUSE_FILTER_IGNORE] to prevent blocking the mouse from dragging if desired.
-				[b]Warning:[/b] This is a required internal node, removing and freeing it may cause a crash.
-			</description>
-		</method>
 		<method name="get_drag_area_controls">
 			<return type="Control[]" />
 			<description>
@@ -61,9 +50,6 @@
 		</member>
 		<member name="dragging_enabled" type="bool" setter="set_dragging_enabled" getter="is_dragging_enabled" default="true">
 			Enables or disables split dragging.
-		</member>
-		<member name="split_offset" type="int" setter="set_split_offset" getter="get_split_offset" default="0" deprecated="Use [member split_offsets] instead. The first element of the array is the split offset between the first two children.">
-			The first element of [member split_offsets].
 		</member>
 		<member name="split_offsets" type="PackedInt32Array" setter="set_split_offsets" getter="get_split_offsets" default="PackedInt32Array(0)">
 			Offsets for each dragger in pixels. Each one is the offset of the split between the [Control] nodes before and after the dragger, with [code]0[/code] being the default position. The default position is based on the [Control] nodes expand flags and minimum sizes. See [member Control.size_flags_horizontal], [member Control.size_flags_vertical], and [member Control.size_flags_stretch_ratio].

@@ -1320,11 +1320,6 @@ static void _find_annotation_arguments(const FSParser::AnnotationNode *p_annotat
 		}
 	} else if (p_annotation->name == SNAME("@warning_ignore") || p_annotation->name == SNAME("@warning_ignore_start") || p_annotation->name == SNAME("@warning_ignore_restore")) {
 		for (int warning_code = 0; warning_code < FSWarning::WARNING_MAX; warning_code++) {
-#ifndef DISABLE_DEPRECATED
-			if (warning_code >= FSWarning::FIRST_DEPRECATED_WARNING) {
-				break; // Don't suggest deprecated warnings as they are never produced.
-			}
-#endif // DISABLE_DEPRECATED
 			ScriptLanguage::CodeCompletionOption warning(FSWarning::get_name_from_code((FSWarning::Code)warning_code).to_lower(), ScriptLanguage::CODE_COMPLETION_KIND_PLAIN_TEXT);
 			warning.insert_text = warning.display.quote(p_quote_style);
 			r_result.insert(warning.display, warning);

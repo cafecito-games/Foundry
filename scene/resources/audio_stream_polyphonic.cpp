@@ -29,7 +29,6 @@
 /**************************************************************************/
 
 #include "audio_stream_polyphonic.h"
-#include "audio_stream_polyphonic.compat.inc"
 
 #include "servers/audio/audio_server.h"
 

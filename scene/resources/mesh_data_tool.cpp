@@ -29,7 +29,6 @@
 /**************************************************************************/
 
 #include "mesh_data_tool.h"
-#include "mesh_data_tool.compat.inc"
 
 void MeshDataTool::clear() {
 	vertices.clear();

@@ -74,14 +74,6 @@ public:
 	void remove_binding_modifier(const Ref<OpenXRActionBindingModifier> &p_binding_modifier); // Remove a binding modifier object
 
 	// Deprecated.
-#ifndef DISABLE_DEPRECATED
-	void set_paths(const PackedStringArray &p_paths); // Set our paths (for loading from resource), needed for loading old action maps.
-	PackedStringArray get_paths() const; // Get our paths (for saving to resource), needed for converted old action maps.
-	int get_path_count() const; // Get the number of io paths.
-	bool has_path(const String &p_path) const; // Has this io path.
-	void add_path(const String &p_path); // Add an io path.
-	void remove_path(const String &p_path); // Remove an io path.
-#endif // DISABLE_DEPRECATED
 
 	// TODO add validation that we can display in the interface that checks if no two paths belong to the same top level path
 

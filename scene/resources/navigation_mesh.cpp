@@ -639,21 +639,3 @@ void NavigationMesh::_validate_property(PropertyInfo &p_property) const {
 		}
 	}
 }
-
-#ifndef DISABLE_DEPRECATED
-bool NavigationMesh::_set(const StringName &p_name, const Variant &p_value) {
-	if (p_name == "polygon_verts_per_poly") { // Renamed in 4.0 beta 9.
-		set_vertices_per_polygon(p_value);
-		return true;
-	}
-	return false;
-}
-
-bool NavigationMesh::_get(const StringName &p_name, Variant &r_ret) const {
-	if (p_name == "polygon_verts_per_poly") { // Renamed in 4.0 beta 9.
-		r_ret = get_vertices_per_polygon();
-		return true;
-	}
-	return false;
-}
-#endif // DISABLE_DEPRECATED

@@ -52,5 +52,7 @@
 		<constant name="ERROR_TYPE_SHADER" value="3" enum="ErrorType">
 			The message received is a shader error.
 		</constant>
+		<constant name="ERROR_TYPE_FATAL" value="4" enum="ErrorType">
+		</constant>
 	</constants>
 </class>

@@ -29,7 +29,6 @@
 /**************************************************************************/
 
 #include "render_scene_buffers_rd.h"
-#include "render_scene_buffers_rd.compat.inc"
 
 #include "servers/rendering/renderer_rd/storage_rd/texture_storage.h"
 

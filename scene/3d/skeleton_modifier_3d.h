@@ -110,9 +110,6 @@ protected:
 	virtual void _process_modification(double p_delta);
 	// TODO: In Godot 5, should obsolete old FOUNDRY_VIRTUAL0(_process_modification); and replace it with _process_modification_with_delta as FOUNDRY_VIRTUAL1(_process_modification, double).
 	FOUNDRY_VIRTUAL1(_process_modification_with_delta, double);
-#ifndef DISABLE_DEPRECATED
-	FOUNDRY_VIRTUAL0(_process_modification);
-#endif
 
 public:
 	virtual PackedStringArray get_configuration_warnings() const override;

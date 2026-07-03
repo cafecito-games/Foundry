@@ -128,11 +128,6 @@ void SkeletonModifier3D::_process_modification(double p_delta) {
 	if (FOUNDRY_VIRTUAL_CALL(_process_modification_with_delta, p_delta)) {
 		return;
 	}
-#ifndef DISABLE_DEPRECATED
-	if (FOUNDRY_VIRTUAL_CALL(_process_modification)) {
-		return;
-	}
-#endif // DISABLE_DEPRECATED
 }
 
 void SkeletonModifier3D::_notification(int p_what) {
@@ -162,9 +157,6 @@ void SkeletonModifier3D::_bind_methods() {
 
 	ADD_SIGNAL(MethodInfo("modification_processed"));
 	FOUNDRY_VIRTUAL_BIND(_process_modification_with_delta, "delta");
-#ifndef DISABLE_DEPRECATED
-	FOUNDRY_VIRTUAL_BIND(_process_modification);
-#endif
 
 	FOUNDRY_VIRTUAL_BIND(_skeleton_changed, "old_skeleton", "new_skeleton");
 	FOUNDRY_VIRTUAL_BIND(_validate_bone_names);

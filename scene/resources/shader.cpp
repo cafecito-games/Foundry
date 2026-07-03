@@ -29,7 +29,6 @@
 /**************************************************************************/
 
 #include "shader.h"
-#include "shader.compat.inc"
 
 #include "core/io/file_access.h"
 #include "scene/main/scene_tree.h"

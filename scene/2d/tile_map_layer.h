@@ -36,7 +36,6 @@
 class NavigationMeshSourceGeometryData2D;
 #endif // NAVIGATION_2D_DISABLED
 class TileSetAtlasSource;
-class TileMap;
 
 enum TileMapLayerDataFormat {
 	TILE_MAP_LAYER_DATA_FORMAT_0 = 0,
@@ -371,8 +370,6 @@ public:
 		DIRTY_FLAGS_LAYER_RUNTIME_UPDATE,
 		DIRTY_FLAGS_LAYER_HIGHLIGHT_MODE,
 
-		DIRTY_FLAGS_LAYER_INDEX_IN_TILE_MAP_NODE, // For compatibility.
-
 		DIRTY_FLAGS_LAYER_GROUP_SELECTED_LAYERS,
 		DIRTY_FLAGS_LAYER_GROUP_HIGHLIGHT_SELECTED,
 
@@ -410,10 +407,6 @@ private:
 	// Internal.
 	bool pending_update = false;
 
-	// For keeping compatibility with TileMap.
-	TileMap *tile_map_node = nullptr;
-	int layer_index_in_tile_map_node = -1;
-
 	// Dirty flag. Allows knowing what was modified since the last update.
 	struct {
 		bool flags[DIRTY_FLAGS_MAX] = { false };
@@ -429,7 +422,7 @@ private:
 	// Runtime tile data.
 	bool _runtime_update_tile_data_was_cleaned_up = false;
 	void _build_runtime_update_tile_data(bool p_force_cleanup);
-	void _build_runtime_update_tile_data_for_cell(CellData &r_cell_data, bool p_use_tilemap_for_runtime, bool p_auto_add_to_dirty_list = false);
+	void _build_runtime_update_tile_data_for_cell(CellData &r_cell_data, bool p_auto_add_to_dirty_list = false);
 	bool _runtime_update_needs_all_cells_cleaned_up = false;
 	void _clear_runtime_update_tile_data();
 	void _clear_runtime_update_tile_data_for_cell(CellData &r_cell_data);
@@ -525,11 +518,6 @@ public:
 	virtual bool _edit_is_selected_on_click(const Point2 &p_point, double p_tolerance) const override;
 #endif
 
-	// TileMap node.
-	void set_as_tile_map_internal_node(int p_index);
-	int get_index_in_tile_map() const {
-		return layer_index_in_tile_map_node;
-	}
 	const HashMap<Vector2i, CellData> &get_tile_map_layer_data() const {
 		return tile_map_layer_data;
 	}

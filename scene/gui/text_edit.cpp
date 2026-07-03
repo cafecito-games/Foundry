@@ -29,7 +29,6 @@
 /**************************************************************************/
 
 #include "text_edit.h"
-#include "text_edit.compat.inc"
 
 #include "core/config/project_settings.h"
 #include "core/input/input.h"
@@ -950,12 +949,6 @@ void TextEdit::_notification(int p_what) {
 			}
 
 			int visible_rows = get_visible_line_count() + 1;
-
-#ifndef DISABLE_DEPRECATED
-			if (theme_cache.background_color.a > 0.01) {
-				RS::get_singleton()->canvas_item_add_rect(text_ci, Rect2(Point2i(), get_size()), theme_cache.background_color);
-			}
-#endif // DISABLE_DEPRECATED
 
 			Vector<BraceMatchingData> brace_matching;
 			if (highlight_matching_braces_enabled) {
@@ -7534,12 +7527,6 @@ void TextEdit::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("menu_option", "option"), &TextEdit::menu_option);
 
 	/* Deprecated */
-#ifndef DISABLE_DEPRECATED
-	ClassDB::bind_method(D_METHOD("adjust_carets_after_edit", "caret", "from_line", "from_col", "to_line", "to_col"), &TextEdit::adjust_carets_after_edit);
-	ClassDB::bind_method(D_METHOD("get_caret_index_edit_order"), &TextEdit::get_caret_index_edit_order);
-	ClassDB::bind_method(D_METHOD("get_selection_line", "caret_index"), &TextEdit::get_selection_line, DEFVAL(0));
-	ClassDB::bind_method(D_METHOD("get_selection_column", "caret_index"), &TextEdit::get_selection_column, DEFVAL(0));
-#endif
 
 	/* Inspector */
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "text", PROPERTY_HINT_MULTILINE_TEXT), "set_text", "get_text");
@@ -7654,10 +7641,6 @@ void TextEdit::_bind_methods() {
 
 	BIND_THEME_ITEM(Theme::DATA_TYPE_CONSTANT, TextEdit, line_spacing);
 	BIND_THEME_ITEM(Theme::DATA_TYPE_CONSTANT, TextEdit, wrap_offset);
-
-#ifndef DISABLE_DEPRECATED
-	BIND_THEME_ITEM(Theme::DATA_TYPE_COLOR, TextEdit, background_color);
-#endif // DISABLE_DEPRECATED
 
 	BIND_THEME_ITEM(Theme::DATA_TYPE_COLOR, TextEdit, current_line_color);
 	BIND_THEME_ITEM(Theme::DATA_TYPE_COLOR, TextEdit, word_highlighted_color);
@@ -9033,24 +9016,6 @@ void TextEdit::_clear_syntax_highlighting_cache() {
 }
 
 /* Deprecated. */
-#ifndef DISABLE_DEPRECATED
-Vector<int> TextEdit::get_caret_index_edit_order() {
-	Vector<int> carets_order = get_sorted_carets();
-	carets_order.reverse();
-	return carets_order;
-}
-
-void TextEdit::adjust_carets_after_edit(int p_caret, int p_from_line, int p_from_col, int p_to_line, int p_to_col) {
-}
-
-int TextEdit::get_selection_line(int p_caret) const {
-	return get_selection_origin_line(p_caret);
-}
-
-int TextEdit::get_selection_column(int p_caret) const {
-	return get_selection_origin_column(p_caret);
-}
-#endif
 
 /*** Super internal Core API. Everything builds on it. ***/
 

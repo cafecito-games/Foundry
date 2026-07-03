@@ -29,16 +29,11 @@
 /**************************************************************************/
 
 #include "text_server.h"
-#include "text_server.compat.inc"
 
 #include "core/config/project_settings.h"
 #include "core/os/main_loop.h"
 #include "core/variant/typed_array.h"
 #include "servers/rendering/rendering_server.h"
-
-#ifndef DISABLE_DEPRECATED
-#include "core/string/translation_server.h"
-#endif // DISABLE_DEPRECATED
 
 TextServerManager *TextServerManager::singleton = nullptr;
 
@@ -396,11 +391,6 @@ void TextServer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("font_supported_feature_list", "font_rid"), &TextServer::font_supported_feature_list);
 	ClassDB::bind_method(D_METHOD("font_supported_variation_list", "font_rid"), &TextServer::font_supported_variation_list);
 
-#ifndef DISABLE_DEPRECATED
-	ClassDB::bind_method(D_METHOD("font_get_global_oversampling"), &TextServer::font_get_global_oversampling);
-	ClassDB::bind_method(D_METHOD("font_set_global_oversampling", "oversampling"), &TextServer::font_set_global_oversampling);
-#endif
-
 	ClassDB::bind_method(D_METHOD("get_hex_code_box_size", "size", "index"), &TextServer::get_hex_code_box_size);
 	ClassDB::bind_method(D_METHOD("draw_hex_code_box", "canvas", "size", "pos", "index", "color"), &TextServer::draw_hex_code_box);
 
@@ -515,12 +505,6 @@ void TextServer::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("shaped_text_get_dominant_direction_in_range", "shaped", "start", "end"), &TextServer::shaped_text_get_dominant_direction_in_range);
 
-#ifndef DISABLE_DEPRECATED
-	ClassDB::bind_method(D_METHOD("format_number", "number", "language"), &TextServer::format_number, DEFVAL(""));
-	ClassDB::bind_method(D_METHOD("parse_number", "number", "language"), &TextServer::parse_number, DEFVAL(""));
-	ClassDB::bind_method(D_METHOD("percent_sign", "language"), &TextServer::percent_sign, DEFVAL(""));
-#endif // DISABLE_DEPRECATED
-
 	ClassDB::bind_method(D_METHOD("string_get_word_breaks", "string", "language", "chars_per_line"), &TextServer::string_get_word_breaks, DEFVAL(""), DEFVAL(0));
 	ClassDB::bind_method(D_METHOD("string_get_character_breaks", "string", "language"), &TextServer::string_get_character_breaks, DEFVAL(""));
 
@@ -582,9 +566,6 @@ void TextServer::_bind_methods() {
 	BIND_BITFIELD_FLAG(BREAK_WORD_BOUND);
 	BIND_BITFIELD_FLAG(BREAK_GRAPHEME_BOUND);
 	BIND_BITFIELD_FLAG(BREAK_ADAPTIVE);
-#ifndef DISABLE_DEPRECATED
-	BIND_BITFIELD_FLAG(BREAK_TRIM_EDGE_SPACES);
-#endif
 	BIND_BITFIELD_FLAG(BREAK_TRIM_INDENT);
 	BIND_BITFIELD_FLAG(BREAK_TRIM_START_EDGE_SPACES);
 	BIND_BITFIELD_FLAG(BREAK_TRIM_END_EDGE_SPACES);
@@ -846,12 +827,6 @@ PackedInt32Array TextServer::shaped_text_get_line_breaks_adv(const RID &p_shaped
 	int prev_chunk = -1;
 	bool trim_next = false;
 
-#ifndef DISABLE_DEPRECATED
-	if (p_break_flags.has_flag(BREAK_TRIM_EDGE_SPACES)) {
-		p_break_flags = p_break_flags | BREAK_TRIM_START_EDGE_SPACES | BREAK_TRIM_END_EDGE_SPACES;
-	}
-#endif
-
 	int l_size = shaped_text_get_glyph_count(p_shaped);
 	const Glyph *l_gl = const_cast<TextServer *>(this)->shaped_text_sort_logical(p_shaped);
 
@@ -1034,12 +1009,6 @@ PackedInt32Array TextServer::shaped_text_get_line_breaks(const RID &p_shaped, do
 	int last_safe_break = -1;
 	int word_count = 0;
 	bool trim_next = false;
-
-#ifndef DISABLE_DEPRECATED
-	if (p_break_flags.has_flag(BREAK_TRIM_EDGE_SPACES)) {
-		p_break_flags = p_break_flags | BREAK_TRIM_START_EDGE_SPACES | BREAK_TRIM_END_EDGE_SPACES;
-	}
-#endif
 
 	TextServer::Orientation orientation = shaped_text_get_orientation(p_shaped);
 	int l_size = shaped_text_get_glyph_count(p_shaped);
@@ -2119,23 +2088,6 @@ String TextServer::strip_diacritics(const String &p_string) const {
 	}
 	return result;
 }
-
-#ifndef DISABLE_DEPRECATED
-String TextServer::format_number(const String &p_string, const String &p_language) const {
-	const StringName lang = p_language.is_empty() ? TranslationServer::get_singleton()->get_tool_locale() : p_language;
-	return TranslationServer::get_singleton()->format_number(p_string, lang);
-}
-
-String TextServer::parse_number(const String &p_string, const String &p_language) const {
-	const StringName lang = p_language.is_empty() ? TranslationServer::get_singleton()->get_tool_locale() : p_language;
-	return TranslationServer::get_singleton()->parse_number(p_string, lang);
-}
-
-String TextServer::percent_sign(const String &p_language) const {
-	const StringName lang = p_language.is_empty() ? TranslationServer::get_singleton()->get_tool_locale() : p_language;
-	return TranslationServer::get_singleton()->get_percent_sign(lang);
-}
-#endif // DISABLE_DEPRECATED
 
 TypedArray<Vector3i> TextServer::parse_structured_text(StructuredTextParser p_parser_type, const Array &p_args, const String &p_text) const {
 	TypedArray<Vector3i> ret;

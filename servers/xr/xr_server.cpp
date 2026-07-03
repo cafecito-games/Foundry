@@ -29,7 +29,6 @@
 /**************************************************************************/
 
 #include "xr_server.h"
-#include "xr_server.compat.inc"
 
 #include "core/config/project_settings.h"
 #include "servers/xr/xr_interface.h"

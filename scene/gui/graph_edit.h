@@ -372,13 +372,6 @@ private:
 
 	bool _check_clickable_control(Control *p_control, const Vector2 &r_mouse_pos, const Vector2 &p_offset);
 
-#ifndef DISABLE_DEPRECATED
-	bool _is_arrange_nodes_button_hidden_bind_compat_81582() const;
-	void _set_arrange_nodes_button_hidden_bind_compat_81582(bool p_enable);
-	PackedVector2Array _get_connection_line_bind_compat_86158(const Vector2 &p_from, const Vector2 &p_to);
-	Error _connect_node_bind_compat_97449(const StringName &p_from, int p_from_port, const StringName &p_to, int p_to_port);
-#endif
-
 protected:
 	virtual void _update_theme_item_cache() override;
 
@@ -387,9 +380,6 @@ protected:
 
 	void _notification(int p_what);
 	static void _bind_methods();
-#ifndef DISABLE_DEPRECATED
-	static void _bind_compatibility_methods();
-#endif
 
 	virtual bool is_in_input_hotzone(GraphNode *p_graph_node, int p_port_idx, const Vector2 &p_mouse_pos, const Vector2i &p_port_size);
 	virtual bool is_in_output_hotzone(GraphNode *p_graph_node, int p_port_idx, const Vector2 &p_mouse_pos, const Vector2i &p_port_size);

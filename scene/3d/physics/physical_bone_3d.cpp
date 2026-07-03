@@ -31,9 +31,6 @@
 #include "physical_bone_3d.h"
 
 #include "scene/3d/physics/physical_bone_simulator_3d.h"
-#ifndef DISABLE_DEPRECATED
-#include "scene/3d/skeleton_3d.h"
-#endif //_DISABLE_DEPRECATED
 
 bool PhysicalBone3D::JointData::_set(const StringName &p_name, const Variant &p_value, RID j) {
 	return false;
@@ -1044,15 +1041,6 @@ void PhysicalBone3D::_update_simulator_path() {
 		simulator_id = sim->get_instance_id();
 		return;
 	}
-#ifndef DISABLE_DEPRECATED
-	Skeleton3D *sk = cast_to<Skeleton3D>(get_parent());
-	if (sk) {
-		PhysicalBoneSimulator3D *ssim = cast_to<PhysicalBoneSimulator3D>(sk->get_simulator());
-		if (ssim) {
-			simulator_id = ssim->get_instance_id();
-		}
-	}
-#endif // _DISABLE_DEPRECATED
 }
 
 PhysicalBoneSimulator3D *PhysicalBone3D::get_simulator() const {

@@ -110,11 +110,6 @@ public:
 	FOUNDRY_VIRTUAL2R(uint64_t, _set_view_configuration_and_get_next_pointer, uint32_t, FoundryExtensionPtr<void>);
 	FOUNDRY_VIRTUAL1C(_print_view_configuration_info, int);
 
-#ifndef DISABLE_DEPRECATED
-	FOUNDRY_VIRTUAL0R_COMPAT(_get_requested_extensions_bind_compat_109302, Dictionary, _get_requested_extensions);
-	FOUNDRY_VIRTUAL1R_COMPAT(_set_instance_create_info_and_get_next_pointer_bind_compat_109302, uint64_t, _set_instance_create_info_and_get_next_pointer, FoundryExtensionPtr<void>);
-#endif
-
 	virtual PackedStringArray get_suggested_tracker_names();
 
 	FOUNDRY_VIRTUAL0R(PackedStringArray, _get_suggested_tracker_names);

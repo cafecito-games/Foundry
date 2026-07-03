@@ -1006,33 +1006,6 @@ enum OldArrayFormat {
 	OLD_ARRAY_FLAG_USE_OCTAHEDRAL_COMPRESSION = OLD_ARRAY_COMPRESS_INDEX << 4,
 };
 
-#ifndef DISABLE_DEPRECATED
-static Array _convert_old_array(const Array &p_old) {
-	Array new_array;
-	new_array.resize(Mesh::ARRAY_MAX);
-	new_array[Mesh::ARRAY_VERTEX] = p_old[OLD_ARRAY_VERTEX];
-	new_array[Mesh::ARRAY_NORMAL] = p_old[OLD_ARRAY_NORMAL];
-	new_array[Mesh::ARRAY_TANGENT] = p_old[OLD_ARRAY_TANGENT];
-	new_array[Mesh::ARRAY_COLOR] = p_old[OLD_ARRAY_COLOR];
-	new_array[Mesh::ARRAY_TEX_UV] = p_old[OLD_ARRAY_TEX_UV];
-	new_array[Mesh::ARRAY_TEX_UV2] = p_old[OLD_ARRAY_TEX_UV2];
-	new_array[Mesh::ARRAY_BONES] = p_old[OLD_ARRAY_BONES];
-	new_array[Mesh::ARRAY_WEIGHTS] = p_old[OLD_ARRAY_WEIGHTS];
-	new_array[Mesh::ARRAY_INDEX] = p_old[OLD_ARRAY_INDEX];
-	return new_array;
-}
-
-static Mesh::PrimitiveType _old_primitives[7] = {
-	Mesh::PRIMITIVE_POINTS,
-	Mesh::PRIMITIVE_LINES,
-	Mesh::PRIMITIVE_LINE_STRIP,
-	Mesh::PRIMITIVE_LINES,
-	Mesh::PRIMITIVE_TRIANGLES,
-	Mesh::PRIMITIVE_TRIANGLE_STRIP,
-	Mesh::PRIMITIVE_TRIANGLE_STRIP
-};
-#endif // DISABLE_DEPRECATED
-
 void _fix_array_compatibility(const Vector<uint8_t> &p_src, uint64_t p_old_format, uint64_t p_new_format, uint32_t p_elements, Vector<uint8_t> &vertex_data, Vector<uint8_t> &attribute_data, Vector<uint8_t> &skin_data) {
 	uint32_t dst_vertex_stride;
 	uint32_t dst_normal_tangent_stride;
@@ -1344,144 +1317,6 @@ bool ArrayMesh::_set(const StringName &p_name, const Variant &p_value) {
 		return true;
 	}
 
-#ifndef DISABLE_DEPRECATED
-	// Kept for compatibility from 3.x to 4.0.
-	if (!sname.begins_with("surfaces")) {
-		return false;
-	}
-
-	WARN_DEPRECATED_MSG(vformat(
-			"Mesh uses old surface format, which is deprecated (and loads slower). Consider re-importing or re-saving the scene. Path: \"%s\"",
-			get_path()));
-
-	int idx = sname.get_slicec('/', 1).to_int();
-	String what = sname.get_slicec('/', 2);
-
-	if (idx == surfaces.size()) {
-		//create
-		Dictionary d = p_value;
-		ERR_FAIL_COND_V(!d.has("primitive"), false);
-
-		if (d.has("arrays")) {
-			//oldest format (2.x)
-			ERR_FAIL_COND_V(!d.has("morph_arrays"), false);
-			Array morph_arrays = d["morph_arrays"];
-			for (int i = 0; i < morph_arrays.size(); i++) {
-				morph_arrays[i] = _convert_old_array(morph_arrays[i]);
-			}
-			add_surface_from_arrays(_old_primitives[int(d["primitive"])], _convert_old_array(d["arrays"]), morph_arrays);
-
-		} else if (d.has("array_data")) {
-			//print_line("array data (old style");
-			//older format (3.x)
-			Vector<uint8_t> array_data = d["array_data"];
-			Vector<uint8_t> array_index_data;
-			if (d.has("array_index_data")) {
-				array_index_data = d["array_index_data"];
-			}
-
-			ERR_FAIL_COND_V(!d.has("format"), false);
-			uint64_t old_format = d["format"];
-
-			uint32_t primitive = d["primitive"];
-
-			primitive = _old_primitives[primitive]; //compatibility
-
-			ERR_FAIL_COND_V(!d.has("vertex_count"), false);
-			int vertex_count = d["vertex_count"];
-
-			uint64_t new_format = ARRAY_FORMAT_VERTEX | ARRAY_FLAG_FORMAT_CURRENT_VERSION;
-
-			if (old_format & OLD_ARRAY_FORMAT_NORMAL) {
-				new_format |= ARRAY_FORMAT_NORMAL;
-			}
-			if (old_format & OLD_ARRAY_FORMAT_TANGENT) {
-				new_format |= ARRAY_FORMAT_TANGENT;
-			}
-			if (old_format & OLD_ARRAY_FORMAT_COLOR) {
-				new_format |= ARRAY_FORMAT_COLOR;
-			}
-			if (old_format & OLD_ARRAY_FORMAT_TEX_UV) {
-				new_format |= ARRAY_FORMAT_TEX_UV;
-			}
-			if (old_format & OLD_ARRAY_FORMAT_TEX_UV2) {
-				new_format |= ARRAY_FORMAT_TEX_UV2;
-			}
-			if (old_format & OLD_ARRAY_FORMAT_BONES) {
-				new_format |= ARRAY_FORMAT_BONES;
-			}
-			if (old_format & OLD_ARRAY_FORMAT_WEIGHTS) {
-				new_format |= ARRAY_FORMAT_WEIGHTS;
-			}
-			if (old_format & OLD_ARRAY_FORMAT_INDEX) {
-				new_format |= ARRAY_FORMAT_INDEX;
-			}
-			if (old_format & OLD_ARRAY_FLAG_USE_2D_VERTICES) {
-				new_format |= OLD_ARRAY_FLAG_USE_2D_VERTICES;
-			}
-
-			Vector<uint8_t> vertex_array;
-			Vector<uint8_t> attribute_array;
-			Vector<uint8_t> skin_array;
-
-			_fix_array_compatibility(array_data, old_format, new_format, vertex_count, vertex_array, attribute_array, skin_array);
-
-			int index_count = 0;
-			if (d.has("index_count")) {
-				index_count = d["index_count"];
-			}
-
-			Vector<uint8_t> blend_shapes_new;
-
-			if (d.has("blend_shape_data")) {
-				Array blend_shape_data = d["blend_shape_data"];
-				for (int i = 0; i < blend_shape_data.size(); i++) {
-					Vector<uint8_t> blend_vertex_array;
-					Vector<uint8_t> blend_attribute_array;
-					Vector<uint8_t> blend_skin_array;
-
-					Vector<uint8_t> shape = blend_shape_data[i];
-					_fix_array_compatibility(shape, old_format, new_format, vertex_count, blend_vertex_array, blend_attribute_array, blend_skin_array);
-
-					blend_shapes_new.append_array(blend_vertex_array);
-				}
-			}
-
-			//clear unused flags
-			print_verbose("Mesh format pre-conversion: " + itos(old_format));
-
-			print_verbose("Mesh format post-conversion: " + itos(new_format));
-
-			ERR_FAIL_COND_V(!d.has("aabb"), false);
-			AABB aabb_new = d["aabb"];
-
-			Vector<AABB> bone_aabb;
-			if (d.has("skeleton_aabb")) {
-				Array baabb = d["skeleton_aabb"];
-				bone_aabb.resize(baabb.size());
-
-				for (int i = 0; i < baabb.size(); i++) {
-					bone_aabb.write[i] = baabb[i];
-				}
-			}
-
-			add_surface(new_format, PrimitiveType(primitive), vertex_array, attribute_array, skin_array, vertex_count, array_index_data, index_count, aabb_new, blend_shapes_new, bone_aabb);
-
-		} else {
-			ERR_FAIL_V(false);
-		}
-
-		if (d.has("material")) {
-			surface_set_material(idx, d["material"]);
-		}
-		if (d.has("name")) {
-			surface_set_name(idx, d["name"]);
-		}
-
-		return true;
-	}
-#endif // DISABLE_DEPRECATED
-
 	return false;
 }
 
@@ -1657,18 +1492,6 @@ void ArrayMesh::_set_surfaces(const Array &p_surfaces) {
 		if (d.has("2d")) {
 			_2d = d["2d"];
 		}
-
-#ifndef DISABLE_DEPRECATED
-		uint64_t surface_version = surface.format & (ARRAY_FLAG_FORMAT_VERSION_MASK << ARRAY_FLAG_FORMAT_VERSION_SHIFT);
-		if (surface_version != ARRAY_FLAG_FORMAT_CURRENT_VERSION) {
-			RS::get_singleton()->fix_surface_compatibility(surface, get_path());
-			surface_version = surface.format & (RS::ARRAY_FLAG_FORMAT_VERSION_MASK << RS::ARRAY_FLAG_FORMAT_VERSION_SHIFT);
-			ERR_FAIL_COND_MSG(surface_version != RS::ARRAY_FLAG_FORMAT_CURRENT_VERSION,
-					vformat("Surface version provided (%d) does not match current version (%d).",
-							(surface_version >> RS::ARRAY_FLAG_FORMAT_VERSION_SHIFT) & RS::ARRAY_FLAG_FORMAT_VERSION_MASK,
-							(RS::ARRAY_FLAG_FORMAT_CURRENT_VERSION >> RS::ARRAY_FLAG_FORMAT_VERSION_SHIFT) & RS::ARRAY_FLAG_FORMAT_VERSION_MASK));
-		}
-#endif
 
 		surface_data.push_back(surface);
 		surface_materials.push_back(material);

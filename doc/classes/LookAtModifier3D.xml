@@ -27,7 +27,7 @@
 			<return type="bool" />
 			<description>
 				Returns whether the target is within the angle limitations. It is useful for unsetting the [member target_node] when the target is outside of the angle limitations.
-				[b]Note:[/b] The value is updated after [method SkeletonModifier3D._process_modification]. To retrieve this value correctly, we recommend using the signal [signal SkeletonModifier3D.modification_processed].
+				[b]Note:[/b] The value is updated after [method SkeletonModifier3D._process_modification_with_delta]. To retrieve this value correctly, we recommend using the signal [signal SkeletonModifier3D.modification_processed].
 			</description>
 		</method>
 	</methods>

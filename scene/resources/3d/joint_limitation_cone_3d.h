@@ -38,9 +38,6 @@ class JointLimitationCone3D : public JointLimitation3D {
 	real_t angle = Math::TAU * 0.25;
 
 protected:
-#ifndef DISABLE_DEPRECATED
-	bool _set(const StringName &p_name, const Variant &p_value);
-#endif // DISABLE_DEPRECATED
 	static void _bind_methods();
 
 	virtual Vector3 _solve(const Vector3 &p_direction) const override;

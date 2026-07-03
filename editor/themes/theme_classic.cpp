@@ -96,9 +96,6 @@ void ThemeClassic::populate_shared_styles(const Ref<EditorTheme> &p_theme, Edito
 		p_theme->set_color("warning_color", EditorStringName(Editor), p_config.warning_color);
 		p_theme->set_color("error_color", EditorStringName(Editor), p_config.error_color);
 		p_theme->set_color("ruler_color", EditorStringName(Editor), p_config.dark_color_2);
-#ifndef DISABLE_DEPRECATED // Used before 4.3.
-		p_theme->set_color("disabled_highlight_color", EditorStringName(Editor), p_config.highlight_disabled_color);
-#endif
 
 		// Only used when the Draw Extra Borders editor setting is enabled.
 		p_config.extra_border_color_1 = Color(0.5, 0.5, 0.5);
@@ -150,13 +147,6 @@ void ThemeClassic::populate_shared_styles(const Ref<EditorTheme> &p_theme, Edito
 		p_theme->set_color("font_dark_background_hover_color", EditorStringName(Editor), p_config.font_dark_background_hover_color);
 		p_theme->set_color("font_dark_background_pressed_color", EditorStringName(Editor), p_config.font_dark_background_pressed_color);
 		p_theme->set_color("font_dark_background_hover_pressed_color", EditorStringName(Editor), p_config.font_dark_background_hover_pressed_color);
-
-#ifndef DISABLE_DEPRECATED // Used before 4.3.
-		p_theme->set_color("readonly_font_color", EditorStringName(Editor), p_config.font_readonly_color);
-		p_theme->set_color("disabled_font_color", EditorStringName(Editor), p_config.font_disabled_color);
-		p_theme->set_color("readonly_color", EditorStringName(Editor), p_config.font_readonly_color);
-		p_theme->set_color("highlighted_font_color", EditorStringName(Editor), p_config.font_hover_color); // Closest equivalent.
-#endif
 
 		// Icon colors.
 
@@ -1264,9 +1254,6 @@ void ThemeClassic::populate_standard_styles(const Ref<EditorTheme> &p_theme, Edi
 		p_theme->set_constant("buttons_vertical_separation", "SpinBox", 0);
 		p_theme->set_constant("field_and_buttons_separation", "SpinBox", 2);
 		p_theme->set_constant("buttons_width", "SpinBox", 16);
-#ifndef DISABLE_DEPRECATED
-		p_theme->set_constant("set_min_buttons_width_from_icons", "SpinBox", 1);
-#endif
 	}
 
 	// ProgressBar.
@@ -2137,9 +2124,6 @@ void ThemeClassic::populate_editor_styles(const Ref<EditorTheme> &p_theme, Edito
 		Color prop_subsection_color = p_config.dark_color_1.lerp(p_config.mono_color, 0.06);
 
 		p_theme->set_color("prop_subsection", EditorStringName(Editor), prop_subsection_color);
-#ifndef DISABLE_DEPRECATED // Used before 4.3.
-		p_theme->set_color("property_color", EditorStringName(Editor), prop_category_color);
-#endif
 
 		// EditorInspectorCategory.
 

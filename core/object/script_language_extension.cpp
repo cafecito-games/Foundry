@@ -106,9 +106,6 @@ void ScriptLanguageExtension::_bind_methods() {
 
 	FOUNDRY_VIRTUAL_BIND(_validate_path, "path");
 	FOUNDRY_VIRTUAL_BIND(_create_script);
-#ifndef DISABLE_DEPRECATED
-	FOUNDRY_VIRTUAL_BIND(_has_named_classes);
-#endif
 	FOUNDRY_VIRTUAL_BIND(_supports_builtin_mode);
 	FOUNDRY_VIRTUAL_BIND(_supports_documentation);
 	FOUNDRY_VIRTUAL_BIND(_can_inherit_from_file);

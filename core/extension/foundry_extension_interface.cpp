@@ -174,34 +174,6 @@ public:
 		r_call_error.expected = error.expected;
 	}
 
-#ifndef DISABLE_DEPRECATED
-	CallableCustomExtension(FoundryExtensionCallableCustomInfo *p_info) {
-		userdata = p_info->callable_userdata;
-		token = p_info->token;
-
-		object = p_info->object_id;
-
-		call_func = p_info->call_func;
-		is_valid_func = p_info->is_valid_func;
-		free_func = p_info->free_func;
-
-		equal_func = p_info->equal_func;
-		less_than_func = p_info->less_than_func;
-
-		to_string_func = p_info->to_string_func;
-
-		get_argument_count_func = nullptr;
-
-		// Pre-calculate the hash.
-		if (p_info->hash_func != nullptr) {
-			_hash = p_info->hash_func(userdata);
-		} else {
-			_hash = hash_murmur3_one_64((uint64_t)call_func);
-			_hash = hash_murmur3_one_64((uint64_t)userdata, _hash);
-		}
-	}
-#endif
-
 	CallableCustomExtension(FoundryExtensionCallableCustomInfo2 *p_info) {
 		userdata = p_info->callable_userdata;
 		token = p_info->token;
@@ -240,15 +212,6 @@ FoundryExtensionInterfaceFunctionPtr foundry_extension_get_proc_address(const ch
 	return FoundryExtension::get_interface_function(p_name);
 }
 
-#ifndef DISABLE_DEPRECATED
-static void foundry_extension_get_foundry_version(FoundryExtensionFoundryVersion *r_foundry_version) {
-	r_foundry_version->major = FOUNDRY_VERSION_MAJOR;
-	r_foundry_version->minor = FOUNDRY_VERSION_MINOR;
-	r_foundry_version->patch = FOUNDRY_VERSION_PATCH;
-	r_foundry_version->string = FOUNDRY_VERSION_FULL_NAME;
-}
-#endif
-
 static void foundry_extension_get_foundry_version2(FoundryExtensionFoundryVersion2 *r_foundry_version) {
 	r_foundry_version->major = FOUNDRY_VERSION_MAJOR;
 	r_foundry_version->minor = FOUNDRY_VERSION_MINOR;
@@ -262,19 +225,6 @@ static void foundry_extension_get_foundry_version2(FoundryExtensionFoundryVersio
 }
 
 // Memory Functions
-#ifndef DISABLE_DEPRECATED
-static void *foundry_extension_mem_alloc(size_t p_size) {
-	return memalloc(p_size);
-}
-
-static void *foundry_extension_mem_realloc(void *p_mem, size_t p_size) {
-	return memrealloc(p_mem, p_size);
-}
-
-static void foundry_extension_mem_free(void *p_mem) {
-	memfree(p_mem);
-}
-#endif
 
 static void *foundry_extension_mem_alloc2(size_t p_size, FoundryExtensionBool p_prepad_align) {
 	return Memory::alloc_static(p_size, p_prepad_align);
@@ -1290,14 +1240,6 @@ static FoundryExtensionVariantPtr foundry_extension_array_operator_index_const(F
 	return (FoundryExtensionVariantPtr)&self->operator[](p_index);
 }
 
-#ifndef DISABLE_DEPRECATED
-void foundry_extension_array_ref(FoundryExtensionTypePtr p_self, FoundryExtensionConstTypePtr p_from) {
-	Array *self = (Array *)p_self;
-	const Array *from = (const Array *)p_from;
-	self->Array::operator=(*from);
-}
-#endif // DISABLE_DEPRECATED
-
 void foundry_extension_array_set_typed(FoundryExtensionTypePtr p_self, FoundryExtensionVariantType p_type, FoundryExtensionConstStringNamePtr p_class_name, FoundryExtensionConstVariantPtr p_script) {
 	Array *self = reinterpret_cast<Array *>(p_self);
 	const StringName *class_name = reinterpret_cast<const StringName *>(p_class_name);
@@ -1504,87 +1446,6 @@ static void foundry_extension_ref_set_object(FoundryExtensionRefPtr p_ref, Found
 	ref->reference_ptr(o);
 }
 
-#ifndef DISABLE_DEPRECATED
-static FoundryExtensionScriptInstancePtr foundry_extension_script_instance_create(const FoundryExtensionScriptInstanceInfo *p_info, FoundryExtensionScriptInstanceDataPtr p_instance_data) {
-	FoundryExtensionScriptInstanceInfo3 *info_3 = memnew(FoundryExtensionScriptInstanceInfo3);
-	info_3->set_func = p_info->set_func;
-	info_3->get_func = p_info->get_func;
-	info_3->get_property_list_func = p_info->get_property_list_func;
-	info_3->free_property_list_func = nullptr;
-	info_3->get_class_category_func = nullptr;
-	info_3->property_can_revert_func = p_info->property_can_revert_func;
-	info_3->property_get_revert_func = p_info->property_get_revert_func;
-	info_3->get_owner_func = p_info->get_owner_func;
-	info_3->get_property_state_func = p_info->get_property_state_func;
-	info_3->get_method_list_func = p_info->get_method_list_func;
-	info_3->free_method_list_func = nullptr;
-	info_3->get_property_type_func = p_info->get_property_type_func;
-	info_3->validate_property_func = nullptr;
-	info_3->has_method_func = p_info->has_method_func;
-	info_3->get_method_argument_count_func = nullptr;
-	info_3->call_func = p_info->call_func;
-	info_3->notification_func = nullptr;
-	info_3->to_string_func = p_info->to_string_func;
-	info_3->refcount_incremented_func = p_info->refcount_incremented_func;
-	info_3->refcount_decremented_func = p_info->refcount_decremented_func;
-	info_3->get_script_func = p_info->get_script_func;
-	info_3->is_placeholder_func = p_info->is_placeholder_func;
-	info_3->set_fallback_func = p_info->set_fallback_func;
-	info_3->get_fallback_func = p_info->get_fallback_func;
-	info_3->get_language_func = p_info->get_language_func;
-	info_3->free_func = p_info->free_func;
-
-	ScriptInstanceExtension *script_instance_extension = memnew(ScriptInstanceExtension);
-	script_instance_extension->instance = p_instance_data;
-	script_instance_extension->native_info = info_3;
-	script_instance_extension->free_native_info = true;
-	script_instance_extension->deprecated_native_info = memnew(ScriptInstanceExtension::DeprecatedNativeInfo);
-	script_instance_extension->deprecated_native_info->notification_func = p_info->notification_func;
-	script_instance_extension->deprecated_native_info->free_property_list_func = p_info->free_property_list_func;
-	script_instance_extension->deprecated_native_info->free_method_list_func = p_info->free_method_list_func;
-	return reinterpret_cast<FoundryExtensionScriptInstancePtr>(script_instance_extension);
-}
-
-static FoundryExtensionScriptInstancePtr foundry_extension_script_instance_create2(const FoundryExtensionScriptInstanceInfo2 *p_info, FoundryExtensionScriptInstanceDataPtr p_instance_data) {
-	FoundryExtensionScriptInstanceInfo3 *info_3 = memnew(FoundryExtensionScriptInstanceInfo3);
-	info_3->set_func = p_info->set_func;
-	info_3->get_func = p_info->get_func;
-	info_3->get_property_list_func = p_info->get_property_list_func;
-	info_3->free_property_list_func = nullptr;
-	info_3->get_class_category_func = nullptr;
-	info_3->property_can_revert_func = p_info->property_can_revert_func;
-	info_3->property_get_revert_func = p_info->property_get_revert_func;
-	info_3->get_owner_func = p_info->get_owner_func;
-	info_3->get_property_state_func = p_info->get_property_state_func;
-	info_3->get_method_list_func = p_info->get_method_list_func;
-	info_3->free_method_list_func = nullptr;
-	info_3->get_property_type_func = p_info->get_property_type_func;
-	info_3->validate_property_func = nullptr;
-	info_3->has_method_func = p_info->has_method_func;
-	info_3->get_method_argument_count_func = nullptr;
-	info_3->call_func = p_info->call_func;
-	info_3->notification_func = p_info->notification_func;
-	info_3->to_string_func = p_info->to_string_func;
-	info_3->refcount_incremented_func = p_info->refcount_incremented_func;
-	info_3->refcount_decremented_func = p_info->refcount_decremented_func;
-	info_3->get_script_func = p_info->get_script_func;
-	info_3->is_placeholder_func = p_info->is_placeholder_func;
-	info_3->set_fallback_func = p_info->set_fallback_func;
-	info_3->get_fallback_func = p_info->get_fallback_func;
-	info_3->get_language_func = p_info->get_language_func;
-	info_3->free_func = p_info->free_func;
-
-	ScriptInstanceExtension *script_instance_extension = memnew(ScriptInstanceExtension);
-	script_instance_extension->instance = p_instance_data;
-	script_instance_extension->native_info = info_3;
-	script_instance_extension->free_native_info = true;
-	script_instance_extension->deprecated_native_info = memnew(ScriptInstanceExtension::DeprecatedNativeInfo);
-	script_instance_extension->deprecated_native_info->free_property_list_func = p_info->free_property_list_func;
-	script_instance_extension->deprecated_native_info->free_method_list_func = p_info->free_method_list_func;
-	return reinterpret_cast<FoundryExtensionScriptInstancePtr>(script_instance_extension);
-}
-#endif // DISABLE_DEPRECATED
-
 static FoundryExtensionScriptInstancePtr foundry_extension_script_instance_create3(const FoundryExtensionScriptInstanceInfo3 *p_info, FoundryExtensionScriptInstanceDataPtr p_instance_data) {
 	ScriptInstanceExtension *script_instance_extension = memnew(ScriptInstanceExtension);
 	script_instance_extension->instance = p_instance_data;
@@ -1652,12 +1513,6 @@ static void foundry_extension_object_set_script_instance(FoundryExtensionObjectP
 	o->set_script_instance(script_instance);
 }
 
-#ifndef DISABLE_DEPRECATED
-static void foundry_extension_callable_custom_create(FoundryExtensionUninitializedTypePtr r_callable, FoundryExtensionCallableCustomInfo *p_custom_callable_info) {
-	memnew_placement(r_callable, Callable(memnew(CallableCustomExtension(p_custom_callable_info))));
-}
-#endif
-
 static void foundry_extension_callable_custom_create2(FoundryExtensionUninitializedTypePtr r_callable, FoundryExtensionCallableCustomInfo2 *p_custom_callable_info) {
 	memnew_placement(r_callable, Callable(memnew(CallableCustomExtension(p_custom_callable_info))));
 }
@@ -1680,16 +1535,6 @@ static FoundryExtensionMethodBindPtr foundry_extension_classdb_get_method_bind(F
 	bool exists = false;
 	MethodBind *mb = ClassDB::get_method_with_compatibility(classname, methodname, p_hash, &exists);
 
-#ifndef DISABLE_DEPRECATED
-	// If lookup failed, see if this is one of the broken hashes from issue #81386.
-	if (!mb && exists) {
-		uint32_t mapped_hash;
-		if (FoundryExtensionSpecialCompatHashes::lookup_current_hash(classname, methodname, p_hash, &mapped_hash)) {
-			mb = ClassDB::get_method_with_compatibility(classname, methodname, mapped_hash, &exists);
-		}
-	}
-#endif
-
 	if (!mb && exists) {
 		ERR_PRINT(vformat("Method '%s.%s' has changed and no compatibility fallback has been provided. Please open an issue.", classname, methodname));
 		return nullptr;
@@ -1697,13 +1542,6 @@ static FoundryExtensionMethodBindPtr foundry_extension_classdb_get_method_bind(F
 	ERR_FAIL_NULL_V(mb, nullptr);
 	return (FoundryExtensionMethodBindPtr)mb;
 }
-
-#ifndef DISABLE_DEPRECATED
-static FoundryExtensionObjectPtr foundry_extension_classdb_construct_object(FoundryExtensionConstStringNamePtr p_classname) {
-	const StringName classname = *reinterpret_cast<const StringName *>(p_classname);
-	return (FoundryExtensionObjectPtr)ClassDB::instantiate_no_placeholders(classname);
-}
-#endif
 
 static FoundryExtensionObjectPtr foundry_extension_classdb_construct_object2(FoundryExtensionConstStringNamePtr p_classname) {
 	const StringName classname = *reinterpret_cast<const StringName *>(p_classname);
@@ -1746,15 +1584,7 @@ static void foundry_extension_editor_help_load_xml_from_utf8_chars(const char *p
 #define REGISTER_INTERFACE_FUNC(m_name) FoundryExtension::register_interface_function(#m_name, (FoundryExtensionInterfaceFunctionPtr) & foundry_extension_##m_name)
 
 void foundry_extension_setup_interface() {
-#ifndef DISABLE_DEPRECATED
-	REGISTER_INTERFACE_FUNC(get_foundry_version);
-#endif // DISABLE_DEPRECATED
 	REGISTER_INTERFACE_FUNC(get_foundry_version2);
-#ifndef DISABLE_DEPRECATED
-	REGISTER_INTERFACE_FUNC(mem_alloc);
-	REGISTER_INTERFACE_FUNC(mem_realloc);
-	REGISTER_INTERFACE_FUNC(mem_free);
-#endif // DISABLE_DEPRECATED
 	REGISTER_INTERFACE_FUNC(mem_alloc2);
 	REGISTER_INTERFACE_FUNC(mem_realloc2);
 	REGISTER_INTERFACE_FUNC(mem_free2);
@@ -1868,9 +1698,6 @@ void foundry_extension_setup_interface() {
 	REGISTER_INTERFACE_FUNC(packed_vector4_array_operator_index_const);
 	REGISTER_INTERFACE_FUNC(array_operator_index);
 	REGISTER_INTERFACE_FUNC(array_operator_index_const);
-#ifndef DISABLE_DEPRECATED
-	REGISTER_INTERFACE_FUNC(array_ref);
-#endif // DISABLE_DEPRECATED
 	REGISTER_INTERFACE_FUNC(array_set_typed);
 	REGISTER_INTERFACE_FUNC(array_set_typed_by_descriptor);
 	REGISTER_INTERFACE_FUNC(array_get_typed_element_type_descriptor);
@@ -1896,23 +1723,13 @@ void foundry_extension_setup_interface() {
 	REGISTER_INTERFACE_FUNC(object_call_script_method);
 	REGISTER_INTERFACE_FUNC(ref_get_object);
 	REGISTER_INTERFACE_FUNC(ref_set_object);
-#ifndef DISABLE_DEPRECATED
-	REGISTER_INTERFACE_FUNC(script_instance_create);
-	REGISTER_INTERFACE_FUNC(script_instance_create2);
-#endif // DISABLE_DEPRECATED
 	REGISTER_INTERFACE_FUNC(script_instance_create3);
 	REGISTER_INTERFACE_FUNC(placeholder_script_instance_create);
 	REGISTER_INTERFACE_FUNC(placeholder_script_instance_update);
 	REGISTER_INTERFACE_FUNC(object_get_script_instance);
 	REGISTER_INTERFACE_FUNC(object_set_script_instance);
-#ifndef DISABLE_DEPRECATED
-	REGISTER_INTERFACE_FUNC(callable_custom_create);
-#endif // DISABLE_DEPRECATED
 	REGISTER_INTERFACE_FUNC(callable_custom_create2);
 	REGISTER_INTERFACE_FUNC(callable_custom_get_userdata);
-#ifndef DISABLE_DEPRECATED
-	REGISTER_INTERFACE_FUNC(classdb_construct_object);
-#endif // DISABLE_DEPRECATED
 	REGISTER_INTERFACE_FUNC(classdb_construct_object2);
 	REGISTER_INTERFACE_FUNC(classdb_get_method_bind);
 	REGISTER_INTERFACE_FUNC(classdb_get_class_tag);

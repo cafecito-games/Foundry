@@ -29,7 +29,6 @@
 /**************************************************************************/
 
 #include "gpu_particles_2d.h"
-#include "gpu_particles_2d.compat.inc"
 
 #include "scene/2d/cpu_particles_2d.h"
 #include "scene/resources/atlas_texture.h"

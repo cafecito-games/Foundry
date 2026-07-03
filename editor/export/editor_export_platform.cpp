@@ -30,8 +30,6 @@
 
 #include "editor_export_platform.h"
 
-#include "editor_export_platform.compat.inc"
-
 #include "core/config/project_settings.h"
 #include "core/crypto/crypto_core.h"
 #include "core/extension/foundry_extension.h"

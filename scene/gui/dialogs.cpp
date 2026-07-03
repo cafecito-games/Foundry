@@ -29,7 +29,6 @@
 /**************************************************************************/
 
 #include "dialogs.h"
-#include "dialogs.compat.inc"
 
 #include "scene/gui/line_edit.h"
 #include "scene/theme/theme_db.h"

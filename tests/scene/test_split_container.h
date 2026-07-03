@@ -473,7 +473,7 @@ TEST_CASE("[SceneTree][SplitContainer] Two children") {
 			// Unequal stretch ratios.
 			child_a->set_stretch_ratio(2.0);
 			MessageQueue::get_singleton()->flush();
-			def_pos = (split_container->get_size().y * 2 / 3) - sep.y / 2;
+			def_pos = (split_container->get_size().y - sep.y) * 2 / 3;
 			CHECK_RECTS(get_rects(split_container, def_pos, sep.y, false), get_child_rects(split_container));
 			split_container->clamp_split_offset();
 			MessageQueue::get_singleton()->flush();
@@ -530,7 +530,7 @@ TEST_CASE("[SceneTree][SplitContainer] Two children") {
 			// Unequal stretch ratios.
 			child_a->set_stretch_ratio(2.0);
 			MessageQueue::get_singleton()->flush();
-			def_pos = (split_container->get_size().y * 2 / 3) - sep.y / 2;
+			def_pos = (split_container->get_size().y - sep.y) * 2 / 3;
 			CHECK_RECTS(get_rects_rtl(split_container, def_pos, sep.y), get_child_rects(split_container));
 			split_container->clamp_split_offset();
 			MessageQueue::get_singleton()->flush();
@@ -699,7 +699,7 @@ TEST_CASE("[SceneTree][SplitContainer] Two children") {
 			CHECK_RECTS(get_rects(split_container, pos, sep.x), get_child_rects(split_container));
 			split_container->clamp_split_offset();
 			MessageQueue::get_singleton()->flush();
-			CHECK(split_container->get_split_offset() == pos - def_pos);
+			CHECK(split_container->get_split_offset() == 0);
 			CHECK_RECTS(get_rects(split_container, pos, sep.x), get_child_rects(split_container));
 
 			// Second child with minimum size.
@@ -710,7 +710,7 @@ TEST_CASE("[SceneTree][SplitContainer] Two children") {
 			CHECK_RECTS(get_rects(split_container, pos, sep.x), get_child_rects(split_container));
 			split_container->clamp_split_offset();
 			MessageQueue::get_singleton()->flush();
-			CHECK(split_container->get_split_offset() == pos - def_pos);
+			CHECK(split_container->get_split_offset() == 0);
 			CHECK_RECTS(get_rects(split_container, pos, sep.x), get_child_rects(split_container));
 
 			// Both children with minimum size.
@@ -721,12 +721,12 @@ TEST_CASE("[SceneTree][SplitContainer] Two children") {
 			CHECK_RECTS(get_rects(split_container, pos, sep.x), get_child_rects(split_container));
 			split_container->clamp_split_offset();
 			MessageQueue::get_singleton()->flush();
-			CHECK(split_container->get_split_offset() == pos - def_pos);
+			CHECK(split_container->get_split_offset() == 0);
 			CHECK_RECTS(get_rects(split_container, pos, sep.x), get_child_rects(split_container));
 		}
 
 		SUBCASE("[SplitContainer] Unequal stretch ratios") {
-			const int def_pos = (split_container->get_size().x * 2 / 3) - sep.x / 2;
+			const int def_pos = (split_container->get_size().x - sep.x) * 2 / 3;
 			child_a->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 			child_b->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 			child_a->set_stretch_ratio(2.0);
@@ -748,7 +748,7 @@ TEST_CASE("[SceneTree][SplitContainer] Two children") {
 			CHECK_RECTS(get_rects(split_container, pos, sep.x), get_child_rects(split_container));
 			split_container->clamp_split_offset();
 			MessageQueue::get_singleton()->flush();
-			CHECK(split_container->get_split_offset() == pos - def_pos);
+			CHECK(split_container->get_split_offset() == 0);
 			CHECK_RECTS(get_rects(split_container, pos, sep.x), get_child_rects(split_container));
 
 			// Second child with minimum size.
@@ -759,7 +759,7 @@ TEST_CASE("[SceneTree][SplitContainer] Two children") {
 			CHECK_RECTS(get_rects(split_container, pos, sep.x), get_child_rects(split_container));
 			split_container->clamp_split_offset();
 			MessageQueue::get_singleton()->flush();
-			CHECK(split_container->get_split_offset() == pos - def_pos);
+			CHECK(split_container->get_split_offset() == 0);
 			CHECK_RECTS(get_rects(split_container, pos, sep.x), get_child_rects(split_container));
 
 			// Both children with minimum size.
@@ -770,7 +770,7 @@ TEST_CASE("[SceneTree][SplitContainer] Two children") {
 			CHECK_RECTS(get_rects(split_container, pos, sep.x), get_child_rects(split_container));
 			split_container->clamp_split_offset();
 			MessageQueue::get_singleton()->flush();
-			CHECK(split_container->get_split_offset() == pos - def_pos);
+			CHECK(split_container->get_split_offset() == 0);
 			CHECK_RECTS(get_rects(split_container, pos, sep.x), get_child_rects(split_container));
 		}
 	}
@@ -895,7 +895,7 @@ TEST_CASE("[SceneTree][SplitContainer] Two children") {
 		}
 
 		SUBCASE("[SplitContainer] Unequal stretch ratios") {
-			int def_pos = (split_container->get_size().x * 2 / 3) - sep.x / 2;
+			int def_pos = (split_container->get_size().x - sep.x) * 2 / 3;
 			child_a->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 			child_b->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 			child_a->set_stretch_ratio(2.0);
@@ -1412,7 +1412,7 @@ TEST_CASE("[SceneTree][SplitContainer] Two children") {
 		}
 
 		SUBCASE("[SplitContainer] Unequal stretch ratios") {
-			int def_pos = (split_container->get_size().x * 2 / 3) - sep.x / 2;
+			int def_pos = (split_container->get_size().x - sep.x) * 2 / 3;
 			child_a->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 			child_b->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 			child_a->set_stretch_ratio(2.0);
@@ -1420,13 +1420,13 @@ TEST_CASE("[SceneTree][SplitContainer] Two children") {
 
 			// Increase the size.
 			split_container->set_size(Size2(600, 500));
-			def_pos = (split_container->get_size().x * 2 / 3) - sep.x / 2;
+			def_pos = (split_container->get_size().x - sep.x) * 2 / 3;
 			MessageQueue::get_singleton()->flush();
 			CHECK_RECTS(get_rects(split_container, def_pos, sep.x), get_child_rects(split_container));
 
 			// Decrease the size.
 			split_container->set_size(Size2(400, 500));
-			def_pos = (split_container->get_size().x * 2 / 3) - sep.x / 2;
+			def_pos = (split_container->get_size().x - sep.x) * 2 / 3;
 			MessageQueue::get_singleton()->flush();
 			CHECK_RECTS(get_rects(split_container, def_pos, sep.x), get_child_rects(split_container));
 
@@ -1436,7 +1436,7 @@ TEST_CASE("[SceneTree][SplitContainer] Two children") {
 			CHECK_RECTS(get_rects(split_container, def_pos + 100, sep.x), get_child_rects(split_container));
 
 			split_container->set_size(Size2(500, 500));
-			def_pos = (split_container->get_size().x * 2 / 3) - sep.x / 2;
+			def_pos = (split_container->get_size().x - sep.x) * 2 / 3;
 			MessageQueue::get_singleton()->flush();
 			CHECK_RECTS(get_rects(split_container, def_pos + 100, sep.x), get_child_rects(split_container));
 			CHECK(split_container->get_split_offset() == 100);
@@ -1449,7 +1449,7 @@ TEST_CASE("[SceneTree][SplitContainer] Two children") {
 
 			// Increase size again.
 			split_container->set_size(Size2(500, 500));
-			def_pos = (split_container->get_size().x * 2 / 3) - sep.x / 2;
+			def_pos = (split_container->get_size().x - sep.x) * 2 / 3;
 			MessageQueue::get_singleton()->flush();
 			CHECK_RECTS(get_rects(split_container, def_pos + 100, sep.x), get_child_rects(split_container));
 			CHECK(split_container->get_split_offset() == 100);

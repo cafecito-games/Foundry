@@ -807,11 +807,6 @@ void DisplayServerMacOS::window_resize(WindowID p_window, int p_width, int p_hei
 
 bool DisplayServerMacOS::has_feature(Feature p_feature) const {
 	switch (p_feature) {
-#ifndef DISABLE_DEPRECATED
-		case FEATURE_GLOBAL_MENU: {
-			return (native_menu && native_menu->has_feature(NativeMenu::FEATURE_GLOBAL_MENU));
-		} break;
-#endif
 		case FEATURE_SUBWINDOWS:
 		//case FEATURE_TOUCHSCREEN:
 		case FEATURE_MOUSE:

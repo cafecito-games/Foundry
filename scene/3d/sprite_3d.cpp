@@ -1490,15 +1490,6 @@ void AnimatedSprite3D::get_argument_options(const StringName &p_function, int p_
 }
 #endif
 
-#ifndef DISABLE_DEPRECATED
-bool AnimatedSprite3D::_set(const StringName &p_name, const Variant &p_value) {
-	if ((p_name == SNAME("frames"))) {
-		set_sprite_frames(p_value);
-		return true;
-	}
-	return false;
-}
-#endif
 void AnimatedSprite3D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_sprite_frames", "sprite_frames"), &AnimatedSprite3D::set_sprite_frames);
 	ClassDB::bind_method(D_METHOD("get_sprite_frames"), &AnimatedSprite3D::get_sprite_frames);

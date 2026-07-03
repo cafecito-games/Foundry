@@ -29,7 +29,6 @@
 /**************************************************************************/
 
 #include "cpu_particles_3d.h"
-#include "cpu_particles_3d.compat.inc"
 
 #include "core/math/random_number_generator.h"
 #include "scene/3d/camera_3d.h"

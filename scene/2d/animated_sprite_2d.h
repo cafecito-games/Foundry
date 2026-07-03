@@ -63,9 +63,6 @@ class AnimatedSprite2D : public Node2D {
 	Rect2 _get_rect() const;
 
 protected:
-#ifndef DISABLE_DEPRECATED
-	bool _set(const StringName &p_name, const Variant &p_value);
-#endif // DISABLE_DEPRECATED
 	static void _bind_methods();
 	void _notification(int p_what);
 	void _validate_property(PropertyInfo &p_property) const;

@@ -115,7 +115,7 @@ _complete_foundry_bash() {
   if [[ $prev == "--render-thread" ]]; then
     local IFS=$' \n\t'
     # shellcheck disable=SC2207
-    COMPREPLY=($(compgen -W "unsafe safe separate" -- "$cur"))
+    COMPREPLY=($(compgen -W "safe separate" -- "$cur"))
   elif [[ $prev == "--rendering-method" ]]; then
     local IFS=$' \n\t'
     # shellcheck disable=SC2207

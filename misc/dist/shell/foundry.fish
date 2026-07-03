@@ -54,7 +54,7 @@ complete -c foundry -l quit -d "Quit after the first iteration"
 complete -c foundry -s l -l language -d "Use a specific locale (<locale> being a two-letter code)" -x
 complete -c foundry -l path -d "Path to a project (<directory> must contain a 'project.foundry' file)" -r
 complete -c foundry -l main-pack -d "Path to a pack (.pck) file to load" -r
-complete -c foundry -l render-thread -d "Set the render thread mode" -x -a "unsafe safe separate"
+complete -c foundry -l render-thread -d "Set the render thread mode" -x -a "safe separate"
 complete -c foundry -l remote-fs -d "Use a remote filesystem (<host/IP>[:<port>] address)" -x
 complete -c foundry -l remote-fs-password -d "Password for remote filesystem" -x
 complete -c foundry -l audio-driver -d "Set the audio driver" -x

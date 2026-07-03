@@ -83,12 +83,6 @@ private:
 protected:
 	static void _bind_methods();
 
-#ifndef DISABLE_DEPRECATED
-	RID _shader_create_from_bytecode_bind_compat_79606(const Vector<uint8_t> &p_shader_binary);
-	RID _texture_create_from_extension_compat_105570(TextureType p_type, DataFormat p_format, TextureSamples p_samples, BitField<RenderingDevice::TextureUsageBits> p_usage, uint64_t p_image, uint64_t p_width, uint64_t p_height, uint64_t p_depth, uint64_t p_layers);
-	static void _bind_compatibility_methods();
-#endif
-
 	/***************************/
 	/**** ID INFRASTRUCTURE ****/
 	/***************************/
@@ -456,9 +450,6 @@ public:
 	bool texture_is_valid(RID p_texture);
 	TextureFormat texture_get_format(RID p_texture);
 	Size2i texture_size(RID p_texture);
-#ifndef DISABLE_DEPRECATED
-	uint64_t texture_get_native_handle(RID p_texture);
-#endif
 
 	Error texture_copy(RID p_from_texture, RID p_to_texture, const Vector3 &p_from, const Vector3 &p_to, const Vector3 &p_size, uint32_t p_src_mipmap, uint32_t p_dst_mipmap, uint32_t p_src_layer, uint32_t p_dst_layer);
 	Error texture_clear(RID p_texture, const Color &p_color, uint32_t p_base_mipmap, uint32_t p_mipmaps, uint32_t p_base_layer, uint32_t p_layers);
@@ -928,77 +919,6 @@ private:
 	String _shader_uniform_debug(RID p_shader, int p_set = -1);
 
 	RID_Owner<Shader, true> shader_owner;
-
-#ifndef DISABLE_DEPRECATED
-public:
-	enum BarrierMask {
-		BARRIER_MASK_VERTEX = 1,
-		BARRIER_MASK_FRAGMENT = 8,
-		BARRIER_MASK_COMPUTE = 2,
-		BARRIER_MASK_TRANSFER = 4,
-
-		BARRIER_MASK_RASTER = BARRIER_MASK_VERTEX | BARRIER_MASK_FRAGMENT, // 9,
-		BARRIER_MASK_ALL_BARRIERS = 0x7FFF, // all flags set
-		BARRIER_MASK_NO_BARRIER = 0x8000,
-	};
-
-	enum InitialAction {
-		INITIAL_ACTION_LOAD,
-		INITIAL_ACTION_CLEAR,
-		INITIAL_ACTION_DISCARD,
-		INITIAL_ACTION_MAX,
-		INITIAL_ACTION_CLEAR_REGION = INITIAL_ACTION_CLEAR,
-		INITIAL_ACTION_CLEAR_REGION_CONTINUE = INITIAL_ACTION_CLEAR,
-		INITIAL_ACTION_KEEP = INITIAL_ACTION_LOAD,
-		INITIAL_ACTION_DROP = INITIAL_ACTION_DISCARD,
-		INITIAL_ACTION_CONTINUE = INITIAL_ACTION_LOAD,
-	};
-
-	enum FinalAction {
-		FINAL_ACTION_STORE,
-		FINAL_ACTION_DISCARD,
-		FINAL_ACTION_MAX,
-		FINAL_ACTION_READ = FINAL_ACTION_STORE,
-		FINAL_ACTION_CONTINUE = FINAL_ACTION_STORE,
-	};
-
-	void barrier(BitField<BarrierMask> p_from = BARRIER_MASK_ALL_BARRIERS, BitField<BarrierMask> p_to = BARRIER_MASK_ALL_BARRIERS);
-	void full_barrier();
-	void draw_command_insert_label(String p_label_name, const Color &p_color = Color(1, 1, 1, 1));
-	Error draw_list_begin_split(RID p_framebuffer, uint32_t p_splits, DrawListID *r_split_ids, InitialAction p_initial_color_action, FinalAction p_final_color_action, InitialAction p_initial_depth_action, FinalAction p_final_depth_action, const Vector<Color> &p_clear_color_values = Vector<Color>(), float p_clear_depth = 1.0, uint32_t p_clear_stencil = 0, const Rect2 &p_region = Rect2(), const Vector<RID> &p_storage_textures = Vector<RID>());
-	Error draw_list_switch_to_next_pass_split(uint32_t p_splits, DrawListID *r_split_ids);
-	Vector<int64_t> _draw_list_begin_split(RID p_framebuffer, uint32_t p_splits, InitialAction p_initial_color_action, FinalAction p_final_color_action, InitialAction p_initial_depth_action, FinalAction p_final_depth_action, const Vector<Color> &p_clear_color_values = Vector<Color>(), float p_clear_depth = 1.0, uint32_t p_clear_stencil = 0, const Rect2 &p_region = Rect2(), const TypedArray<RID> &p_storage_textures = TypedArray<RID>());
-	Vector<int64_t> _draw_list_switch_to_next_pass_split(uint32_t p_splits);
-
-private:
-	void _draw_list_end_bind_compat_81356(BitField<BarrierMask> p_post_barrier);
-	void _compute_list_end_bind_compat_81356(BitField<BarrierMask> p_post_barrier);
-	void _barrier_bind_compat_81356(BitField<BarrierMask> p_from, BitField<BarrierMask> p_to);
-
-	void _draw_list_end_bind_compat_84976(BitField<BarrierMask> p_post_barrier);
-	void _compute_list_end_bind_compat_84976(BitField<BarrierMask> p_post_barrier);
-	InitialAction _convert_initial_action_84976(InitialAction p_old_initial_action);
-	FinalAction _convert_final_action_84976(FinalAction p_old_final_action);
-	DrawListID _draw_list_begin_bind_compat_84976(RID p_framebuffer, InitialAction p_initial_color_action, FinalAction p_final_color_action, InitialAction p_initial_depth_action, FinalAction p_final_depth_action, const Vector<Color> &p_clear_color_values, float p_clear_depth, uint32_t p_clear_stencil, const Rect2 &p_region, const TypedArray<RID> &p_storage_textures);
-	ComputeListID _compute_list_begin_bind_compat_84976(bool p_allow_draw_overlap);
-	Error _buffer_update_bind_compat_84976(RID p_buffer, uint32_t p_offset, uint32_t p_size, const Vector<uint8_t> &p_data, BitField<BarrierMask> p_post_barrier);
-	Error _buffer_clear_bind_compat_84976(RID p_buffer, uint32_t p_offset, uint32_t p_size, BitField<BarrierMask> p_post_barrier);
-	Error _texture_update_bind_compat_84976(RID p_texture, uint32_t p_layer, const Vector<uint8_t> &p_data, BitField<BarrierMask> p_post_barrier);
-	Error _texture_copy_bind_compat_84976(RID p_from_texture, RID p_to_texture, const Vector3 &p_from, const Vector3 &p_to, const Vector3 &p_size, uint32_t p_src_mipmap, uint32_t p_dst_mipmap, uint32_t p_src_layer, uint32_t p_dst_layer, BitField<BarrierMask> p_post_barrier);
-	Error _texture_clear_bind_compat_84976(RID p_texture, const Color &p_color, uint32_t p_base_mipmap, uint32_t p_mipmaps, uint32_t p_base_layer, uint32_t p_layers, BitField<BarrierMask> p_post_barrier);
-	Error _texture_resolve_multisample_bind_compat_84976(RID p_from_texture, RID p_to_texture, BitField<BarrierMask> p_post_barrier);
-
-	FramebufferFormatID _screen_get_framebuffer_format_bind_compat_87340() const;
-
-	DrawListID _draw_list_begin_bind_compat_90993(RID p_framebuffer, InitialAction p_initial_color_action, FinalAction p_final_color_action, InitialAction p_initial_depth_action, FinalAction p_final_depth_action, const Vector<Color> &p_clear_color_values, float p_clear_depth, uint32_t p_clear_stencil, const Rect2 &p_region);
-
-	DrawListID _draw_list_begin_bind_compat_98670(RID p_framebuffer, InitialAction p_initial_color_action, FinalAction p_final_color_action, InitialAction p_initial_depth_action, FinalAction p_final_depth_action, const Vector<Color> &p_clear_color_values, float p_clear_depth, uint32_t p_clear_stencil, const Rect2 &p_region, uint32_t p_breadcrumb);
-
-	RID _uniform_buffer_create_bind_compat_101561(uint32_t p_size_bytes, const Vector<uint8_t> &p_data);
-	RID _vertex_buffer_create_bind_compat_101561(uint32_t p_size_bytes, const Vector<uint8_t> &p_data, bool p_use_as_storage);
-	RID _index_buffer_create_bind_compat_101561(uint32_t p_size_indices, IndexBufferFormat p_format, const Vector<uint8_t> &p_data, bool p_use_restart_indices);
-	RID _storage_buffer_create_bind_compat_101561(uint32_t p_size, const Vector<uint8_t> &p_data, BitField<StorageBufferUsage> p_usage);
-#endif
 
 public:
 	RenderingDeviceDriver *get_device_driver() const { return driver; }
@@ -1665,11 +1585,6 @@ public:
 	void _set_max_fps(int p_max_fps);
 
 	void free_rid(RID p_rid);
-#ifndef DISABLE_DEPRECATED
-	[[deprecated("Use `free_rid()` instead.")]] void free(RID p_rid) {
-		free_rid(p_rid);
-	}
-#endif // DISABLE_DEPRECATED
 
 	/****************/
 	/**** Timing ****/
@@ -1815,11 +1730,5 @@ VARIANT_ENUM_CAST(RenderingDevice::MemoryType)
 VARIANT_ENUM_CAST(RenderingDevice::Features)
 VARIANT_ENUM_CAST(RenderingDevice::BreadcrumbMarker)
 VARIANT_BITFIELD_CAST(RenderingDevice::DrawFlags);
-
-#ifndef DISABLE_DEPRECATED
-VARIANT_BITFIELD_CAST(RenderingDevice::BarrierMask);
-VARIANT_ENUM_CAST(RenderingDevice::InitialAction)
-VARIANT_ENUM_CAST(RenderingDevice::FinalAction)
-#endif
 
 typedef RenderingDevice RD;

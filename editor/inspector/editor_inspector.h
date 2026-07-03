@@ -353,10 +353,6 @@ protected:
 	FOUNDRY_VIRTUAL7R(bool, _parse_property, Object *, Variant::Type, String, PropertyHint, String, BitField<PropertyUsageFlags>, bool)
 	FOUNDRY_VIRTUAL1(_parse_end, Object *)
 
-#ifndef DISABLE_DEPRECATED
-	void _add_property_editor_bind_compat_92322(const String &p_for_property, Control *p_prop, bool p_add_to_end);
-	static void _bind_compatibility_methods();
-#endif // DISABLE_DEPRECATED
 public:
 	void add_custom_control(Control *control);
 	void add_property_editor(const String &p_for_property, Control *p_prop, bool p_add_to_end = false, const String &p_label = String());

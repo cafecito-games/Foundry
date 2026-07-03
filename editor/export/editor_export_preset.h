@@ -114,11 +114,6 @@ protected:
 
 	static void _bind_methods();
 
-#ifndef DISABLE_DEPRECATED
-	int _get_script_export_mode_bind_compat_107167() const;
-	static void _bind_compatibility_methods();
-#endif
-
 public:
 	Ref<EditorExportPlatform> get_platform() const;
 

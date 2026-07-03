@@ -70,9 +70,6 @@ private:
 protected:
 	void _notification(int p_what);
 	static void _bind_methods();
-#ifndef DISABLE_DEPRECATED
-	bool _set(const StringName &p_name, const Variant &p_value);
-#endif // DISABLE_DEPRECATED
 
 	void _accessibility_action_click(const Variant &p_data);
 

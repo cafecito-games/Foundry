@@ -261,17 +261,6 @@ protected:
 	bool _property_get_revert(const StringName &p_name, Variant &r_property) const { return property_helper.property_get_revert(p_name, r_property); }
 	static void _bind_methods();
 
-#ifndef DISABLE_DEPRECATED
-	void _add_shortcut_bind_compat_36493(const Ref<Shortcut> &p_shortcut, int p_id = -1, bool p_global = false);
-	void _add_icon_shortcut_bind_compat_36493(const Ref<Texture2D> &p_icon, const Ref<Shortcut> &p_shortcut, int p_id = -1, bool p_global = false);
-	void _clear_bind_compat_79965();
-
-	void _set_system_menu_root_compat_87452(const String &p_special);
-	String _get_system_menu_root_compat_87452() const;
-
-	static void _bind_compatibility_methods();
-#endif
-
 public:
 	// ATTENTION: This is used by the POT generator's scene parser. If the number of properties returned by `_get_items()` ever changes,
 	// this value should be updated to reflect the new size.

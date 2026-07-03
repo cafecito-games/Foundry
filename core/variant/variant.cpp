@@ -32,9 +32,9 @@
 
 #include "core/debugger/engine_debugger.h"
 #include "core/io/json.h"
-#include "core/object/object.h"
 #include "core/io/resource.h"
 #include "core/math/math_funcs.h"
+#include "core/object/object.h"
 #include "core/variant/variant_parser.h"
 
 PagedAllocator<Variant::Pools::BucketSmall, true> Variant::Pools::_bucket_small;

@@ -29,7 +29,6 @@
 /**************************************************************************/
 
 #include "editor_plugin.h"
-#include "editor_plugin.compat.inc"
 
 #include "editor/debugger/editor_debugger_node.h"
 #include "editor/debugger/editor_debugger_plugin.h"
@@ -80,47 +79,6 @@ void EditorPlugin::add_autoload_singleton(const String &p_name, const String &p_
 void EditorPlugin::remove_autoload_singleton(const String &p_name) {
 	EditorNode::get_singleton()->get_project_settings()->get_autoload_settings()->autoload_remove(p_name);
 }
-
-#ifndef DISABLE_DEPRECATED
-Button *EditorPlugin::add_control_to_bottom_panel(Control *p_control, const String &p_title, const Ref<Shortcut> &p_shortcut) {
-	ERR_FAIL_NULL_V(p_control, nullptr);
-	return EditorNode::get_bottom_panel()->add_item(p_title, p_control, p_shortcut);
-}
-
-void EditorPlugin::add_control_to_dock(DockSlot p_slot, Control *p_control, const Ref<Shortcut> &p_shortcut) {
-	ERR_FAIL_NULL(p_control);
-	ERR_FAIL_COND(legacy_docks.has(p_control));
-
-	EditorDock *dock = memnew(EditorDock);
-	dock->set_title(p_control->get_name());
-	dock->set_dock_shortcut(p_shortcut);
-	dock->set_default_slot((EditorDock::DockSlot)p_slot);
-	dock->add_child(p_control);
-	legacy_docks[p_control] = dock;
-
-	EditorDockManager::get_singleton()->add_dock(dock);
-}
-
-void EditorPlugin::remove_control_from_docks(Control *p_control) {
-	ERR_FAIL_NULL(p_control);
-	ERR_FAIL_COND(!legacy_docks.has(p_control));
-
-	EditorDockManager::get_singleton()->remove_dock(legacy_docks[p_control]);
-	legacy_docks[p_control]->queue_free();
-	legacy_docks.erase(p_control);
-}
-
-void EditorPlugin::set_dock_tab_icon(Control *p_control, const Ref<Texture2D> &p_icon) {
-	ERR_FAIL_NULL(p_control);
-	ERR_FAIL_COND(!legacy_docks.has(p_control));
-	legacy_docks[p_control]->set_dock_icon(p_icon);
-}
-
-void EditorPlugin::remove_control_from_bottom_panel(Control *p_control) {
-	ERR_FAIL_NULL(p_control);
-	EditorNode::get_bottom_panel()->remove_item(p_control);
-}
-#endif
 
 void EditorPlugin::add_dock(EditorDock *p_dock) {
 	EditorDockManager::get_singleton()->add_dock(p_dock);
@@ -598,24 +556,7 @@ void EditorPlugin::remove_resource_conversion_plugin(const Ref<EditorResourceCon
 	EditorNode::get_singleton()->remove_resource_conversion_plugin(p_plugin);
 }
 
-#ifndef DISABLE_DEPRECATED
-void EditorPlugin::_editor_project_settings_changed() {
-	emit_signal(SNAME("project_settings_changed"));
-}
-#endif
-
 void EditorPlugin::_notification(int p_what) {
-#ifndef DISABLE_DEPRECATED
-	switch (p_what) {
-		case NOTIFICATION_ENTER_TREE: {
-			ProjectSettings::get_singleton()->connect("settings_changed", callable_mp(this, &EditorPlugin::_editor_project_settings_changed));
-		} break;
-
-		case NOTIFICATION_EXIT_TREE: {
-			ProjectSettings::get_singleton()->disconnect("settings_changed", callable_mp(this, &EditorPlugin::_editor_project_settings_changed));
-		} break;
-	}
-#endif
 }
 
 void EditorPlugin::_bind_methods() {
@@ -629,14 +570,6 @@ void EditorPlugin::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_export_as_menu"), &EditorPlugin::get_export_as_menu);
 	ClassDB::bind_method(D_METHOD("add_custom_type", "type", "base", "script", "icon"), &EditorPlugin::add_custom_type);
 	ClassDB::bind_method(D_METHOD("remove_custom_type", "type"), &EditorPlugin::remove_custom_type);
-
-#ifndef DISABLE_DEPRECATED
-	ClassDB::bind_method(D_METHOD("add_control_to_dock", "slot", "control", "shortcut"), &EditorPlugin::add_control_to_dock, DEFVAL(Ref<Shortcut>()));
-	ClassDB::bind_method(D_METHOD("remove_control_from_docks", "control"), &EditorPlugin::remove_control_from_docks);
-	ClassDB::bind_method(D_METHOD("set_dock_tab_icon", "control", "icon"), &EditorPlugin::set_dock_tab_icon);
-	ClassDB::bind_method(D_METHOD("add_control_to_bottom_panel", "control", "title", "shortcut"), &EditorPlugin::add_control_to_bottom_panel, DEFVAL(Ref<Shortcut>()));
-	ClassDB::bind_method(D_METHOD("remove_control_from_bottom_panel", "control"), &EditorPlugin::remove_control_from_bottom_panel);
-#endif
 
 	ClassDB::bind_method(D_METHOD("add_autoload_singleton", "name", "path"), &EditorPlugin::add_autoload_singleton);
 	ClassDB::bind_method(D_METHOD("remove_autoload_singleton", "name"), &EditorPlugin::remove_autoload_singleton);

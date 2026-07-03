@@ -645,9 +645,6 @@ private:
 		Color current_line_color = Color(1, 1, 1);
 		Color word_highlighted_color = Color(1, 1, 1);
 
-#ifndef DISABLE_DEPRECATED
-		Color background_color = Color(1, 1, 1);
-#endif // DISABLE_DEPRECATED
 	} theme_cache;
 
 	bool window_has_focus = true;
@@ -697,12 +694,6 @@ private:
 protected:
 	void _notification(int p_what);
 	static void _bind_methods();
-
-#ifndef DISABLE_DEPRECATED
-	void _set_selection_mode_compat_86978(SelectionMode p_mode, int p_line = -1, int p_column = -1, int p_caret = 0);
-	Point2i _get_line_column_at_pos_bind_compat_100913(const Point2i &p_pos, bool p_allow_out_of_bounds = true) const;
-	static void _bind_compatibility_methods();
-#endif // DISABLE_DEPRECATED
 
 	virtual void _draw_guidelines() {}
 	virtual void _update_theme_item_cache() override;
@@ -1190,13 +1181,6 @@ public:
 	String get_custom_word_separators() const;
 
 	/* Deprecated. */
-#ifndef DISABLE_DEPRECATED
-	Vector<int> get_caret_index_edit_order();
-	void adjust_carets_after_edit(int p_caret, int p_from_line, int p_from_col, int p_to_line, int p_to_col);
-
-	int get_selection_line(int p_caret = 0) const;
-	int get_selection_column(int p_caret = 0) const;
-#endif
 
 	TextEdit(const String &p_placeholder = String());
 	~TextEdit();

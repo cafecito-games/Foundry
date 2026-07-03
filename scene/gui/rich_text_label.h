@@ -136,24 +136,6 @@ protected:
 	void _notification(int p_what);
 	static void _bind_methods();
 
-#ifndef DISABLE_DEPRECATED
-	void _push_font_bind_compat_79053(const Ref<Font> &p_font, int p_size);
-	void _set_table_column_expand_bind_compat_79053(int p_column, bool p_expand, int p_ratio);
-	void _push_meta_bind_compat_99481(const Variant &p_meta, MetaUnderline p_underline_mode);
-	void _push_meta_bind_compat_89024(const Variant &p_meta);
-	void _add_image_bind_compat_80410(const Ref<Texture2D> &p_image, const int p_width, const int p_height, const Color &p_color, InlineAlignment p_alignment, const Rect2 &p_region);
-	void _add_image_bind_compat_76829(const Ref<Texture2D> &p_image, const int p_width, const int p_height, const Color &p_color, InlineAlignment p_alignment, const Rect2 &p_region, const Variant &p_key, bool p_pad, const String &p_tooltip, bool p_size_in_percent);
-	void _push_table_bind_compat_76829(int p_columns, InlineAlignment p_alignment, int p_align_to_row);
-	bool _remove_paragraph_bind_compat_91098(int p_paragraph);
-	void _set_table_column_expand_bind_compat_101482(int p_column, bool p_expand, int p_ratio);
-	void _push_underline_bind_compat_106300();
-	void _push_strikethrough_bind_compat_106300();
-	void _add_image_bind_compat_107347(const Ref<Texture2D> &p_image, int p_width = 0, int p_height = 0, const Color &p_color = Color(1.0, 1.0, 1.0), InlineAlignment p_alignment = INLINE_ALIGNMENT_CENTER, const Rect2 &p_region = Rect2(), const Variant &p_key = Variant(), bool p_pad = false, const String &p_tooltip = String(), bool p_size_in_percent = false, const String &p_alt_text = String());
-	void _update_image_bind_compat_107347(const Variant &p_key, BitField<ImageUpdateMask> p_mask, const Ref<Texture2D> &p_image, int p_width = 0, int p_height = 0, const Color &p_color = Color(1.0, 1.0, 1.0), InlineAlignment p_alignment = INLINE_ALIGNMENT_CENTER, const Rect2 &p_region = Rect2(), bool p_pad = false, const String &p_tooltip = String(), bool p_size_in_percent = false);
-
-	static void _bind_compatibility_methods();
-#endif
-
 private:
 	struct Item;
 
@@ -747,10 +729,6 @@ private:
 	static Vector<String> _split_unquoted(const String &p_src, char32_t p_splitter);
 	static String _get_tag_value(const String &p_tag);
 
-#ifndef DISABLE_DEPRECATED
-	// Kept for compatibility from 3.x to 4.0.
-	bool _set(const StringName &p_name, const Variant &p_value);
-#endif
 	bool use_bbcode = false;
 	String text;
 	void _apply_translation();

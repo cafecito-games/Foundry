@@ -55,9 +55,6 @@ void EditorExportPlatformExtension::_bind_methods() {
 	FOUNDRY_VIRTUAL_BIND(_get_options_tooltip);
 
 	FOUNDRY_VIRTUAL_BIND(_get_option_icon, "device");
-#ifndef DISABLE_DEPRECATED
-	FOUNDRY_VIRTUAL_BIND_COMPAT(_get_option_icon_bind_compat_108825, "device");
-#endif
 
 	FOUNDRY_VIRTUAL_BIND(_get_option_label, "device");
 	FOUNDRY_VIRTUAL_BIND(_get_option_tooltip, "device");
@@ -191,12 +188,6 @@ Ref<Texture2D> EditorExportPlatformExtension::get_option_icon(int p_index) const
 	if (FOUNDRY_VIRTUAL_CALL(_get_option_icon, p_index, ret)) {
 		return ret;
 	}
-#ifndef DISABLE_DEPRECATED
-	Ref<ImageTexture> comp_ret;
-	if (FOUNDRY_VIRTUAL_CALL(_get_option_icon_bind_compat_108825, p_index, comp_ret)) {
-		return comp_ret;
-	}
-#endif
 	return EditorExportPlatform::get_option_icon(p_index);
 }
 

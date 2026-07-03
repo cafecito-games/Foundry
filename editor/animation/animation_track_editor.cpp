@@ -3178,11 +3178,7 @@ void AnimationTrackEdit::gui_input(const Ref<InputEvent> &p_event) {
 							StringName prop = npath.get_concatenated_subnames();
 							PropertyInfo prop_info;
 							ClassDB::get_property_info(nd->get_class(), prop, &prop_info);
-#ifdef DISABLE_DEPRECATED
 							bool is_angle = prop_info.type == Variant::FLOAT && prop_info.hint_string.contains("radians_as_degrees");
-#else
-							bool is_angle = prop_info.type == Variant::FLOAT && prop_info.hint_string.contains("radians");
-#endif // DISABLE_DEPRECATED
 							if (is_angle) {
 								menu->add_icon_item(get_editor_theme_icon(SNAME("InterpLinearAngle")), TTR("Linear Angle"), MENU_INTERPOLATION_LINEAR_ANGLE);
 								menu->add_icon_item(get_editor_theme_icon(SNAME("InterpCubicAngle")), TTR("Cubic Angle"), MENU_INTERPOLATION_CUBIC_ANGLE);

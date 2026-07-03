@@ -29,7 +29,6 @@
 /**************************************************************************/
 
 #include "cpu_particles_2d.h"
-#include "cpu_particles_2d.compat.inc"
 
 #include "core/math/random_number_generator.h"
 #include "core/math/transform_interpolator.h"

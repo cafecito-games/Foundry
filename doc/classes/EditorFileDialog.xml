@@ -10,19 +10,4 @@
 	</description>
 	<tutorials>
 	</tutorials>
-	<methods>
-		<method name="add_side_menu" deprecated="This feature is no longer supported.">
-			<return type="void" />
-			<param index="0" name="menu" type="Control" />
-			<param index="1" name="title" type="String" default="&quot;&quot;" />
-			<description>
-				This method is kept for compatibility and does nothing. As an alternative, you can display another dialog after showing the file dialog.
-			</description>
-		</method>
-	</methods>
-	<members>
-		<member name="disable_overwrite_warning" type="bool" setter="set_disable_overwrite_warning" getter="is_overwrite_warning_disabled" default="false" deprecated="Use [member FileDialog.overwrite_warning_enabled] instead.">
-			If [code]true[/code], the [EditorFileDialog] will not warn the user before overwriting files.
-		</member>
-	</members>
 </class>

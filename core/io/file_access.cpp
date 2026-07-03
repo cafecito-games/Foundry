@@ -29,7 +29,6 @@
 /**************************************************************************/
 
 #include "file_access.h"
-#include "file_access.compat.inc"
 
 #include "core/config/project_settings.h"
 #include "core/crypto/crypto_core.h"

@@ -72,8 +72,8 @@ Vector<uint8_t> FSBytecodeExporter::write_header() {
 	stream->put_u32(FSBytecodeFormat::FORMAT_VERSION);
 	// Engine guard: a `.fsb` bakes validated pointers and opcode layouts of the exporting build, so
 	// the loader refuses anything not produced by the exact same engine build.
-	stream->put_utf8_string(VERSION_FULL_CONFIG);
-	stream->put_utf8_string(VERSION_HASH);
+	stream->put_utf8_string(FOUNDRY_VERSION_FULL_CONFIG);
+	stream->put_utf8_string(FOUNDRY_VERSION_HASH);
 	stream->put_u8((uint8_t)sizeof(real_t));
 	stream->put_u32((uint32_t)FSFunction::OPCODE_END);
 	stream->put_u32((uint32_t)FSFunction::OPCODE_END + 1);
