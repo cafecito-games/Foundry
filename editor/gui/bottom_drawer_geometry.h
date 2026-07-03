@@ -76,4 +76,31 @@ struct BottomDrawerGeometry {
 		}
 		return p_stored > 0 ? p_stored : p_fallback;
 	}
+
+	// The island is the floating card shown for an unpinned open drawer.
+	// Width targets 64% of the window, kept inside a minimum side margin,
+	// with an absolute minimum so panel content stays usable.
+	static int island_width(int p_window_width, int p_min_width, int p_min_side_margin) {
+		int nominal = (p_window_width * 64) / 100;
+		int max_width = p_window_width - 2 * p_min_side_margin;
+		int width = nominal < max_width ? nominal : max_width;
+		return width > p_min_width ? width : p_min_width;
+	}
+
+	static int island_x(int p_window_width, int p_island_width) {
+		return (p_window_width - p_island_width) / 2;
+	}
+
+	// Height of the island body region (excludes nothing; the strip is a
+	// separate control in v2). Expanded fills the area minus a top margin.
+	static int island_height(bool p_expanded, int p_body_height, int p_area_height, int p_top_margin) {
+		int max_height = p_area_height - p_top_margin;
+		if (max_height < 0) {
+			max_height = 0;
+		}
+		if (p_expanded) {
+			return max_height;
+		}
+		return p_body_height < max_height ? p_body_height : max_height;
+	}
 };

@@ -85,4 +85,30 @@ TEST_CASE("[Editor][BottomDrawerGeometry] Migrate stored layout values") {
 	CHECK(BottomDrawerGeometry::body_height_from_stored(0, 120) == 120);
 }
 
+TEST_CASE("[Editor][BottomDrawerGeometry] Island width and position") {
+	// Nominal: 64% of the window.
+	CHECK(BottomDrawerGeometry::island_width(2000, 480, 48) == 1280);
+	CHECK(BottomDrawerGeometry::island_x(2000, 1280) == 360);
+	// Tiny window with a small minimum: the margin clamp binds (64% would exceed it).
+	CHECK(BottomDrawerGeometry::island_width(260, 100, 48) == 164);
+	// Narrow window where 64% falls below the minimum: the width floor wins.
+	CHECK(BottomDrawerGeometry::island_width(700, 480, 48) == 480);
+	// Narrower still: minimum width floor wins over the margin clamp.
+	CHECK(BottomDrawerGeometry::island_width(500, 480, 48) == 480);
+	// Degenerate: window narrower than the minimum; minimum still wins.
+	CHECK(BottomDrawerGeometry::island_width(300, 480, 48) == 480);
+	// Odd leftover pixels center deterministically.
+	CHECK(BottomDrawerGeometry::island_x(1001, 640) == 180);
+}
+
+TEST_CASE("[Editor][BottomDrawerGeometry] Island height") {
+	// Not expanded: strip + body, capped by the area.
+	CHECK(BottomDrawerGeometry::island_height(false, 200, 600, 24) == 200);
+	CHECK(BottomDrawerGeometry::island_height(false, 900, 600, 24) == 576);
+	// Expanded: full area minus the top margin.
+	CHECK(BottomDrawerGeometry::island_height(true, 200, 600, 24) == 576);
+	// Degenerate area smaller than the margin never goes negative.
+	CHECK(BottomDrawerGeometry::island_height(true, 200, 20, 24) == 0);
+}
+
 } // namespace TestBottomDrawerGeometry
