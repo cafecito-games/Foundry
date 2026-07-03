@@ -65,6 +65,10 @@ public:
 
 	void set_scene_root_node(Node *p_scene_root, bool p_attach_to_viewport = true);
 	Node *get_scene_root_node() const { return scene_root_node; }
+	// Parents a still-unparented scene root under the viewport. Used when the
+	// caller needs the SceneTree's edited-scene root updated before the scene
+	// enters the tree.
+	void attach_scene_root_node();
 
 	void set_editor_plugin_states(const Dictionary &p_states) { editor_plugin_states = p_states; }
 	Dictionary get_editor_plugin_states() const { return editor_plugin_states; }

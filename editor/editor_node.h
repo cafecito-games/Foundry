@@ -622,6 +622,7 @@ private:
 	void _set_current_scene(int p_idx);
 	void _set_current_scene_nocheck(int p_idx);
 	void _activate_scene_context(EditorSceneContext *p_context);
+	void _attach_active_scene_context();
 	void _configure_editor_selection(EditorSelection *p_selection);
 	void _apply_scene_viewport_settings(SubViewport *p_viewport);
 	void _apply_scene_viewport_2d_state(SubViewport *p_viewport);

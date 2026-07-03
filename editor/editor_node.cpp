@@ -4467,9 +4467,11 @@ void EditorNode::set_edited_scene_root(Node *p_scene, bool p_auto_add) {
 	Node *old_edited_scene_root = get_editor_data().get_edited_scene_root();
 	ERR_FAIL_COND_MSG(p_scene && p_scene != old_edited_scene_root && p_scene->get_parent(), "Non-null nodes that are set as edited scene should not have a parent node.");
 
-	// The scene is parented under the active context's viewport (unless
-	// p_auto_add is false, in which case the caller places it in the tree).
-	get_editor_data().set_edited_scene_root(p_scene, p_auto_add);
+	EditorSceneContext *context = editor_data.get_active_scene_context();
+	if (p_auto_add && context && old_edited_scene_root && old_edited_scene_root->get_parent() == context->get_viewport()) {
+		context->get_viewport()->remove_child(old_edited_scene_root);
+	}
+	get_editor_data().set_edited_scene_root(p_scene, false);
 
 	if (Object::cast_to<Popup>(p_scene)) {
 		Object::cast_to<Popup>(p_scene)->show();
@@ -4477,6 +4479,13 @@ void EditorNode::set_edited_scene_root(Node *p_scene, bool p_auto_add) {
 	SceneTreeDock::get_singleton()->set_edited_scene(p_scene);
 	if (get_tree()) {
 		get_tree()->set_edited_scene_root(p_scene);
+	}
+
+	// Parent the scene under the context's viewport only after the
+	// SceneTree's edited-scene root points at it, so enter-tree handlers
+	// observe the correct edited root.
+	if (p_auto_add && context) {
+		context->attach_scene_root_node();
 	}
 }
 
@@ -4587,7 +4596,7 @@ void EditorNode::_set_current_scene_nocheck(int p_idx) {
 	Node *new_scene = editor_data.get_edited_scene_root();
 
 	// Deactivates the outgoing context (detaching its viewport, with the
-	// scene still parented to it) and attaches the new context's viewport.
+	// scene still parented to it) and points the editor at the new context.
 	_activate_scene_context(editor_data.get_active_scene_context());
 
 	if (Popup *p = Object::cast_to<Popup>(new_scene)) {
@@ -4598,6 +4607,11 @@ void EditorNode::_set_current_scene_nocheck(int p_idx) {
 	if (get_tree()) {
 		get_tree()->set_edited_scene_root(new_scene);
 	}
+
+	// Attach the new context's viewport only after the SceneTree's
+	// edited-scene root points at its scene, so enter-tree handlers observe
+	// the correct edited root.
+	_attach_active_scene_context();
 
 	if (editor_data.check_and_update_scene(p_idx)) {
 		if (!editor_data.get_scene_path(p_idx).is_empty()) {
@@ -4651,16 +4665,6 @@ void EditorNode::_activate_scene_context(EditorSceneContext *p_context) {
 	if (p_context) {
 		editor_selection = p_context->get_selection();
 		editor_history = p_context->get_history();
-		if (scene_viewport_container && !p_context->is_active()) {
-			p_context->activate(scene_viewport_container);
-		}
-		// With the scene back in the tree, stale history entries (e.g. nodes
-		// freed while the context was inactive) can be pruned.
-		p_context->get_history()->cleanup_history();
-		_apply_scene_viewport_2d_state(p_context->get_viewport());
-		if (theme_preview_mode_set) {
-			_apply_preview_themes(p_context->get_viewport());
-		}
 	} else {
 		editor_selection = no_scene_selection;
 		editor_history = &no_scene_history;
@@ -4672,6 +4676,22 @@ void EditorNode::_activate_scene_context(EditorSceneContext *p_context) {
 	editor_selection->mark_changed();
 
 	emit_signal(SNAME("active_scene_context_changed"));
+}
+
+void EditorNode::_attach_active_scene_context() {
+	if (!active_scene_context || !scene_viewport_container) {
+		return;
+	}
+	if (!active_scene_context->is_active()) {
+		active_scene_context->activate(scene_viewport_container);
+	}
+	// With the scene back in the tree, stale history entries (e.g. nodes
+	// freed while the context was inactive) can be pruned.
+	active_scene_context->get_history()->cleanup_history();
+	_apply_scene_viewport_2d_state(active_scene_context->get_viewport());
+	if (theme_preview_mode_set) {
+		_apply_preview_themes(active_scene_context->get_viewport());
+	}
 }
 
 SubViewport *EditorNode::get_scene_root() {
@@ -4732,9 +4752,7 @@ void EditorNode::set_scene_viewport_container(SubViewportContainer *p_container)
 	if (placeholder_scene_viewport && !placeholder_scene_viewport->get_parent()) {
 		p_container->add_child(placeholder_scene_viewport);
 	}
-	if (active_scene_context && !active_scene_context->is_active()) {
-		active_scene_context->activate(p_container);
-	}
+	_attach_active_scene_context();
 }
 
 void EditorNode::set_scene_viewport_2d_disabled(bool p_disabled) {
@@ -4872,6 +4890,7 @@ Error EditorNode::load_scene(const String &p_scene, bool p_ignore_broken_deps, b
 		// The reused blank tab may not be the displayed context yet, e.g.
 		// when the current scene was just removed for an in-place reload.
 		_activate_scene_context(editor_data.get_active_scene_context());
+		_attach_active_scene_context();
 
 		EditorUndoRedoManager::get_singleton()->clear_history(editor_data.get_current_edited_scene_history_id(), false);
 
@@ -9803,6 +9822,7 @@ EditorNode::EditorNode() {
 	editor_data.add_edited_scene(-1);
 	editor_data.set_edited_scene(0);
 	_activate_scene_context(editor_data.get_active_scene_context());
+	_attach_active_scene_context();
 	scene_tabs->update_scene_tabs();
 
 	ImportDock::get_singleton()->initialize_import_options();

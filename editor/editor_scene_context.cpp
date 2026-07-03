@@ -52,6 +52,12 @@ void EditorSceneContext::set_scene_root_node(Node *p_scene_root, bool p_attach_t
 	}
 }
 
+void EditorSceneContext::attach_scene_root_node() {
+	if (scene_root_node && scene_root_node->get_parent() == nullptr) {
+		viewport->add_child(scene_root_node, true);
+	}
+}
+
 void EditorSceneContext::activate(Node *p_display_parent) {
 	ERR_FAIL_COND(active);
 	ERR_FAIL_NULL(p_display_parent);
