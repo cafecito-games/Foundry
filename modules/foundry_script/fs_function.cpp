@@ -31,6 +31,8 @@
 #include "fs_function.h"
 
 #include "foundry_script.h"
+#include "fs_script_test_execution.h"
+#include "fs_script_test_guard.h"
 #include "fs_conformance_registry.h"
 
 bool FSDataType::_script_conforms_to_trait(const Ref<Script> &p_base, const StringName &p_trait) {
@@ -465,6 +467,25 @@ bool FSFunctionState::is_valid(bool p_extended_check) const {
 
 Variant FSFunctionState::resume(const Variant &p_arg) {
 	ERR_FAIL_NULL_V(function, Variant());
+
+	{
+		String guard_message;
+		FSScriptTestGuard::UnwindReason guard_reason = FSScriptTestGuard::UNWIND_NONE;
+		if (FSScriptTestGuard::checkpoint(guard_message, guard_reason)) {
+			FSScriptTestGuard::mark_unwind(guard_reason, guard_message);
+			FSScriptTestGuard::GuardRecord *active_guard = FSScriptTestGuard::get_innermost();
+			if (active_guard && active_guard->pending_state) {
+				active_guard->pending_state->_finalize_from_guard();
+			}
+			scripts_list.remove_from_list();
+			instances_list.remove_from_list();
+			_clear_connections();
+			_clear_stack();
+			function = nullptr;
+			return Variant();
+		}
+	}
+
 	{
 		MutexLock lock(FSLanguage::singleton->mutex);
 
@@ -532,6 +553,20 @@ void FSFunctionState::_clear_connections() {
 
 	for (Object::Connection &c : conns) {
 		c.signal.disconnect(c.callable);
+	}
+}
+
+void FSFunctionState::abandon_chain(FSFunctionState *p_state) {
+	if (!p_state) {
+		return;
+	}
+	if (p_state->first_state.is_valid()) {
+		abandon_chain(p_state->first_state.ptr());
+	}
+	ObjectID state_id = p_state->get_instance_id();
+	p_state->_clear_connections();
+	if (ObjectDB::get_instance(state_id)) {
+		p_state->_clear_stack();
 	}
 }
 

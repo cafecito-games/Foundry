@@ -892,6 +892,7 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 		status = test_main(test_argv.size(), test_argv.ptrw());
 #ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 	} else if (kind == Kind::TEST_GENERATE_FIXTURES) {
+#ifdef TOOLS_ENABLED
 		const String path = cli_parse.invocation.command_args.is_empty()
 				? String("modules/foundry_script/tests/scripts")
 				: cli_parse.invocation.command_args[0];
@@ -899,12 +900,21 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 		if (!runner.generate_outputs()) {
 			status = EXIT_FAILURE;
 		}
+#else
+		ERR_PRINT("foundry test generate-fixtures requires an editor build.");
+		status = EXIT_FAILURE;
+#endif // TOOLS_ENABLED
 	} else if (kind == Kind::TEST_GENERATE_FORMAT_FIXTURES) {
+#ifdef TOOLS_ENABLED
 		const String path = cli_parse.invocation.command_args.is_empty()
 				? String("modules/foundry_script/tests/scripts/format")
 				: cli_parse.invocation.command_args[0];
 		FSFormatterCLI::generate_format_tests(path);
 		status = OS::get_singleton()->get_exit_code();
+#else
+		ERR_PRINT("foundry test generate-format-fixtures requires an editor build.");
+		status = EXIT_FAILURE;
+#endif // TOOLS_ENABLED
 	}
 #endif // MODULE_FOUNDRY_SCRIPT_ENABLED
 

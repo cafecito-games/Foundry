@@ -812,6 +812,7 @@ public:
 
 	void _clear_stack();
 	void _clear_connections();
+	static void abandon_chain(FSFunctionState *p_state);
 
 	FSFunctionState();
 	~FSFunctionState();

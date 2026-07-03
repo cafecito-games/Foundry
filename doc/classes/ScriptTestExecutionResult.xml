@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="ScriptTestExecutionResult" inherits="RefCounted" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+	<brief_description>
+		Structured outcome of a guarded [ScriptTestExecution] call.
+	</brief_description>
+	<description>
+		Returned when a guarded call finishes, times out, aborts, or fails with a script runtime error. Pass/fail policy is left to the runner; [constant STATUS_COMPLETED] only means the guarded method returned without guard interruption.
+		Diagnostic events are not recorded here; compose diagnostic capture separately when needed.
+	</description>
+	<members>
+		<member name="elapsed_seconds" type="float" setter="" getter="get_elapsed_seconds" default="0.0">
+			Wall time spent in the guarded call.
+		</member>
+		<member name="message" type="String" setter="" getter="get_message" default="&quot;&quot;">
+			Abort, timeout, or runtime-error text. Empty for [constant STATUS_COMPLETED].
+		</member>
+		<member name="return_value" type="Variant" setter="" getter="get_return_value">
+			Return value from the guarded method. Meaningful only for [constant STATUS_COMPLETED].
+		</member>
+		<member name="status" type="int" setter="" getter="get_status" enum="Status" default="0">
+			Completion status for the guarded call.
+		</member>
+		<member name="timeout_seconds" type="float" setter="" getter="get_timeout_seconds" default="0.0">
+			Echo of the guard's configured timeout.
+		</member>
+	</members>
+	<constants>
+		<constant name="STATUS_COMPLETED" value="0" enum="Status">
+			The guarded method finished without guard interruption.
+		</constant>
+		<constant name="STATUS_TIMED_OUT" value="1" enum="Status">
+			The guard deadline expired at a checkpoint or await boundary.
+		</constant>
+		<constant name="STATUS_ABORTED" value="2" enum="Status">
+			The guard was aborted cooperatively or by an opted-in fatal diagnostic.
+		</constant>
+		<constant name="STATUS_RUNTIME_ERROR" value="3" enum="Status">
+			The guarded method failed with an ordinary script runtime error.
+		</constant>
+	</constants>
+</class>

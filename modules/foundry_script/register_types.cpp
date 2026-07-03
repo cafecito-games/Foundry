@@ -36,6 +36,7 @@
 #include "fs_parser.h"
 #include "fs_project_scripts.h"
 #include "fs_reflection.h"
+#include "fs_script_test_execution.h"
 #include "fs_utility_functions.h"
 
 #ifdef TOOLS_ENABLED
@@ -147,6 +148,10 @@ void initialize_foundry_script_module(ModuleInitializationLevel p_level) {
 		FOUNDRY_REGISTER_CLASS(FSProjectScripts);
 		FOUNDRY_REGISTER_CLASS(FSScriptDescriptor);
 		FOUNDRY_REGISTER_CLASS(FSNamespace);
+		FOUNDRY_REGISTER_CLASS(ScriptTestExecutionResult);
+		FOUNDRY_REGISTER_CLASS(ScriptTestExecutionPendingState);
+		FOUNDRY_REGISTER_CLASS(ScriptTestExecution);
+		FOUNDRY_REGISTER_CLASS(ScriptTestAbort);
 
 		script_language_gd = memnew(FSLanguage);
 		ScriptServer::register_language(script_language_gd);
