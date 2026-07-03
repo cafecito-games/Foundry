@@ -2997,7 +2997,14 @@ Node *SceneTreeDock::_get_edited_scene_root() const {
 }
 
 void SceneTreeDock::update_tree() {
-	scene_tree->update_tree();
+	// Deferred on purpose: callers on the scene-switch path (set_scene_context()
+	// during rebinding, EditorNode::set_edited_scene_root(),
+	// _set_current_scene_nocheck()) run before SceneTree::set_edited_scene_root()
+	// updates the global edited root that SceneTreeEditor resolves against.
+	// Refreshing synchronously would traverse the just-detached previous root
+	// and spam "Node not found" errors, so let the update land after the
+	// synchronous switch work completes.
+	callable_mp(scene_tree, &SceneTreeEditor::update_tree).call_deferred();
 }
 
 void SceneTreeDock::set_scene_context(EditorSceneContext *p_context) {
@@ -3020,7 +3027,7 @@ void SceneTreeDock::set_scene_context(EditorSceneContext *p_context) {
 		editor_selection->connect("selection_changed", callable_mp(this, &SceneTreeDock::_selection_changed));
 	}
 
-	scene_tree->update_tree();
+	update_tree();
 }
 
 void SceneTreeDock::_selection_changed() {
