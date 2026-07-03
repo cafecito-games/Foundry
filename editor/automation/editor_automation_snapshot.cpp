@@ -46,12 +46,12 @@
 #include "scene/gui/slider.h"
 #include "scene/gui/spin_box.h"
 #include "scene/gui/subviewport_container.h"
-#include "scene/main/sub_viewport.h"
+#include "scene/main/viewport.h"
 #include "scene/gui/tab_bar.h"
 #include "scene/gui/tab_container.h"
 #include "scene/gui/text_edit.h"
 #include "scene/gui/tree.h"
-#include "scene/main/node.h"
+#include "scene/main/canvas_item.h"
 #include "scene/main/window.h"
 
 namespace {
@@ -63,127 +63,158 @@ class EditorAutomationSnapshotBuilder {
 	Node *path_root = nullptr;
 	Control *focused_control = nullptr;
 
-	static Rect2i _control_bounds_global(const Control *p_control) {
+	static Rect2i _node_bounds_global(const Node *p_node) {
 		// Bounds are expressed in global/screen coordinates for automation clients.
-		const Rect2 rect = p_control->get_global_rect();
-		return Rect2i(rect.position.floor(), rect.size.floor());
+		if (const Control *control = Object::cast_to<const Control>(p_node)) {
+			const Rect2 rect = control->get_global_rect();
+			return Rect2i(rect.position.floor(), rect.size.floor());
+		}
+		if (const Window *window = Object::cast_to<const Window>(p_node)) {
+			return Rect2i(window->get_position(), window->get_size());
+		}
+		return Rect2i();
 	}
 
-	static bool _control_is_enabled(const Control *p_control) {
-		if (const BaseButton *button = Object::cast_to<const BaseButton>(p_control)) {
+	static bool _node_is_visible(const Node *p_node) {
+		if (const CanvasItem *canvas_item = Object::cast_to<const CanvasItem>(p_node)) {
+			return canvas_item->is_visible_in_tree();
+		}
+		if (const Window *window = Object::cast_to<const Window>(p_node)) {
+			return window->is_visible();
+		}
+		return false;
+	}
+
+	static bool _node_is_enabled(const Node *p_node) {
+		if (const BaseButton *button = Object::cast_to<const BaseButton>(p_node)) {
 			return !button->is_disabled();
 		}
-		if (const LineEdit *line_edit = Object::cast_to<const LineEdit>(p_control)) {
+		if (const LineEdit *line_edit = Object::cast_to<const LineEdit>(p_node)) {
 			return line_edit->is_editable();
 		}
-		if (const TextEdit *text_edit = Object::cast_to<const TextEdit>(p_control)) {
+		if (const TextEdit *text_edit = Object::cast_to<const TextEdit>(p_node)) {
 			return text_edit->is_editable();
 		}
 		return true;
 	}
 
-	static String _control_name(const Control *p_control) {
-		const String accessibility_name = p_control->get_accessibility_name().strip_edges();
-		if (!accessibility_name.is_empty()) {
-			return accessibility_name;
+	static String _node_name(const Node *p_node) {
+		if (const Control *control = Object::cast_to<const Control>(p_node)) {
+			const String accessibility_name = control->get_accessibility_name().strip_edges();
+			if (!accessibility_name.is_empty()) {
+				return accessibility_name;
+			}
 		}
-		if (const Button *button = Object::cast_to<const Button>(p_control)) {
+		if (const Button *button = Object::cast_to<const Button>(p_node)) {
 			return button->get_text();
 		}
-		if (const Window *window = Object::cast_to<const Window>(p_control)) {
-			return window->get_title();
+		if (const Window *window = Object::cast_to<const Window>(p_node)) {
+			const String title = window->get_title();
+			if (!title.is_empty()) {
+				return title;
+			}
 		}
-		if (const OptionButton *option_button = Object::cast_to<const OptionButton>(p_control)) {
+		if (const OptionButton *option_button = Object::cast_to<const OptionButton>(p_node)) {
 			const int selected = option_button->get_selected();
 			if (selected >= 0) {
 				return option_button->get_item_text(selected);
 			}
 		}
-		return p_control->get_name();
+		return p_node->get_name();
 	}
 
-	static String _control_text(const Control *p_control) {
-		if (const LineEdit *line_edit = Object::cast_to<const LineEdit>(p_control)) {
+	static String _node_text(const Node *p_node) {
+		if (const LineEdit *line_edit = Object::cast_to<const LineEdit>(p_node)) {
 			return line_edit->get_text();
 		}
-		if (const TextEdit *text_edit = Object::cast_to<const TextEdit>(p_control)) {
+		if (const TextEdit *text_edit = Object::cast_to<const TextEdit>(p_node)) {
 			return text_edit->get_text();
 		}
-		if (const Button *button = Object::cast_to<const Button>(p_control)) {
+		if (const Button *button = Object::cast_to<const Button>(p_node)) {
 			return button->get_text();
 		}
-		if (const Range *range = Object::cast_to<const Range>(p_control)) {
+		if (const Range *range = Object::cast_to<const Range>(p_node)) {
 			return String::num(range->get_value());
 		}
-		if (const OptionButton *option_button = Object::cast_to<const OptionButton>(p_control)) {
+		if (const OptionButton *option_button = Object::cast_to<const OptionButton>(p_node)) {
 			const int selected = option_button->get_selected();
 			if (selected >= 0) {
 				return option_button->get_item_text(selected);
 			}
+		}
+		if (const Window *window = Object::cast_to<const Window>(p_node)) {
+			return window->get_title();
 		}
 		return String();
 	}
 
-	static String _control_role(const Control *p_control) {
-		if (Object::cast_to<const SubViewportContainer>(p_control)) {
+	static String _node_role(const Node *p_node) {
+		if (Object::cast_to<const SubViewportContainer>(p_node)) {
 			return "viewport";
 		}
-		if (Object::cast_to<const AcceptDialog>(p_control)) {
+		if (Object::cast_to<const AcceptDialog>(p_node)) {
 			return "dialog";
 		}
-		if (Object::cast_to<const Window>(p_control)) {
-			return "window";
-		}
-		if (Object::cast_to<const CheckBox>(p_control) || Object::cast_to<const CheckButton>(p_control)) {
-			return "checkbox";
-		}
-		if (Object::cast_to<const Button>(p_control)) {
-			return "button";
-		}
-		if (Object::cast_to<const CodeEdit>(p_control)) {
-			return "code_editor";
-		}
-		if (Object::cast_to<const TextEdit>(p_control)) {
-			return "text_area";
-		}
-		if (Object::cast_to<const LineEdit>(p_control)) {
-			return "text_field";
-		}
-		if (Object::cast_to<const Tree>(p_control)) {
-			return "tree";
-		}
-		if (Object::cast_to<const ItemList>(p_control)) {
-			return "list";
-		}
-		if (Object::cast_to<const PopupMenu>(p_control)) {
+		if (Object::cast_to<const PopupMenu>(p_node)) {
 			return "menu";
 		}
-		if (Object::cast_to<const OptionButton>(p_control)) {
+		if (Object::cast_to<const Window>(p_node)) {
+			return "window";
+		}
+		if (Object::cast_to<const CheckBox>(p_node) || Object::cast_to<const CheckButton>(p_node)) {
+			return "checkbox";
+		}
+		if (Object::cast_to<const Button>(p_node)) {
+			return "button";
+		}
+		if (Object::cast_to<const CodeEdit>(p_node)) {
+			return "code_editor";
+		}
+		if (Object::cast_to<const TextEdit>(p_node)) {
+			return "text_area";
+		}
+		if (Object::cast_to<const LineEdit>(p_node)) {
+			return "text_field";
+		}
+		if (Object::cast_to<const Tree>(p_node)) {
+			return "tree";
+		}
+		if (Object::cast_to<const ItemList>(p_node)) {
+			return "list";
+		}
+		if (Object::cast_to<const OptionButton>(p_node)) {
 			return "select";
 		}
-		if (Object::cast_to<const SpinBox>(p_control)) {
+		if (Object::cast_to<const SpinBox>(p_node)) {
 			return "spinbox";
 		}
-		if (Object::cast_to<const Slider>(p_control)) {
+		if (Object::cast_to<const Slider>(p_node)) {
 			return "slider";
 		}
-		if (Object::cast_to<const TabBar>(p_control)) {
+		if (Object::cast_to<const TabBar>(p_node)) {
 			return "tab_list";
 		}
-		if (Object::cast_to<const TabContainer>(p_control)) {
+		if (Object::cast_to<const TabContainer>(p_node)) {
 			return "tab_list";
 		}
-		return "control";
+		if (Object::cast_to<const Control>(p_node)) {
+			return "control";
+		}
+		return "node";
 	}
 
-	static void _append_actions(const Control *p_control, const String &p_role, PackedStringArray &r_actions) {
+	static void _append_actions(const Node *p_node, const String &p_role, PackedStringArray &r_actions) {
 		auto add_unique = [&](const String &p_action) {
 			if (!r_actions.has(p_action)) {
 				r_actions.push_back(p_action);
 			}
 		};
 
-		if (p_control->has_focus() || p_control->get_focus_mode_with_override() != Control::FOCUS_NONE) {
+		if (const Control *control = Object::cast_to<const Control>(p_node)) {
+			if (control->has_focus() || control->get_focus_mode_with_override() != Control::FOCUS_NONE) {
+				add_unique("focus");
+			}
+		} else if (Object::cast_to<const Window>(p_node)) {
 			add_unique("focus");
 		}
 
@@ -201,9 +232,9 @@ class EditorAutomationSnapshotBuilder {
 
 	String _node_path(const Node *p_node) const {
 		if (path_root == nullptr) {
-			return p_node->get_path();
+			return String(p_node->get_path());
 		}
-		return path_root->get_path_to(p_node);
+		return String(path_root->get_path_to(p_node));
 	}
 
 	int _add_virtual_element(int p_parent_index, const String &p_kind, const String &p_key, const String &p_role, const String &p_name, const String &p_text, bool p_selected = false) {
@@ -218,7 +249,7 @@ class EditorAutomationSnapshotBuilder {
 		element.selected = p_selected;
 		element.parent_index = p_parent_index;
 		if (p_parent_index >= 0) {
-			data.elements[p_parent_index].children.push_back(data.elements.size());
+			data.elements.ptrw()[p_parent_index].children.push_back(data.elements.size());
 		} else {
 			data.root_indices.push_back(data.elements.size());
 		}
@@ -246,7 +277,7 @@ class EditorAutomationSnapshotBuilder {
 		item = item->get_first_child();
 		while (item) {
 			if (item->is_visible_in_tree()) {
-				const String key = vformat("%llu:%s", tree_id, _tree_item_path(item));
+				const String key = vformat("%s:%s", String::num_uint64(tree_id), _tree_item_path(item));
 				const String item_text = item->get_text(0);
 				_add_virtual_element(p_parent_index, "tree_item", key, "tree_item", item_text, item_text, item->is_selected(0));
 			}
@@ -258,7 +289,7 @@ class EditorAutomationSnapshotBuilder {
 		const uint64_t list_id = p_item_list->get_instance_id();
 		for (int i = 0; i < p_item_list->get_item_count(); i++) {
 			const String item_text = p_item_list->get_item_text(i);
-			const String key = vformat("%llu:%d", list_id, i);
+			const String key = vformat("%s:%d", String::num_uint64(list_id), i);
 			_add_virtual_element(p_parent_index, "list_item", key, "list_item", item_text, item_text, p_item_list->is_selected(i));
 		}
 	}
@@ -270,7 +301,7 @@ class EditorAutomationSnapshotBuilder {
 				continue;
 			}
 			const String item_text = p_popup_menu->get_item_text(i);
-			const String key = vformat("%llu:%d", menu_id, i);
+			const String key = vformat("%s:%d", String::num_uint64(menu_id), i);
 			_add_virtual_element(p_parent_index, "menu_item", key, "menu_item", item_text, item_text, false);
 		}
 	}
@@ -282,7 +313,7 @@ class EditorAutomationSnapshotBuilder {
 				continue;
 			}
 			const String tab_title = p_tab_bar->get_tab_title(i);
-			const String key = vformat("%llu:%d", tab_bar_id, i);
+			const String key = vformat("%s:%d", String::num_uint64(tab_bar_id), i);
 			_add_virtual_element(p_parent_index, "tab", key, "tab", tab_title, tab_title, p_tab_bar->get_current_tab() == i);
 		}
 	}
@@ -294,26 +325,26 @@ class EditorAutomationSnapshotBuilder {
 				continue;
 			}
 			const String tab_title = p_tab_container->get_tab_title(i);
-			const String key = vformat("%llu:%d", tab_container_id, i);
+			const String key = vformat("%s:%d", String::num_uint64(tab_container_id), i);
 			_add_virtual_element(p_parent_index, "tab", key, "tab", tab_title, tab_title, p_tab_container->get_current_tab() == i);
 		}
 	}
 
-	void _add_control_children(const Control *p_control, int p_parent_index) {
-		if (Object::cast_to<const Tree>(p_control)) {
-			_add_tree_items(static_cast<const Tree *>(p_control), p_parent_index);
-		} else if (Object::cast_to<const ItemList>(p_control)) {
-			_add_item_list_items(static_cast<const ItemList *>(p_control), p_parent_index);
-		} else if (Object::cast_to<const PopupMenu>(p_control)) {
-			_add_popup_menu_items(static_cast<const PopupMenu *>(p_control), p_parent_index);
-		} else if (Object::cast_to<const TabBar>(p_control)) {
-			_add_tab_bar_tabs(static_cast<const TabBar *>(p_control), p_parent_index);
-		} else if (Object::cast_to<const TabContainer>(p_control)) {
-			_add_tab_container_tabs(static_cast<const TabContainer *>(p_control), p_parent_index);
+	void _add_virtual_children(const Node *p_node, int p_parent_index) {
+		if (const Tree *tree = Object::cast_to<const Tree>(p_node)) {
+			_add_tree_items(tree, p_parent_index);
+		} else if (const ItemList *item_list = Object::cast_to<const ItemList>(p_node)) {
+			_add_item_list_items(item_list, p_parent_index);
+		} else if (const PopupMenu *popup_menu = Object::cast_to<const PopupMenu>(p_node)) {
+			_add_popup_menu_items(popup_menu, p_parent_index);
+		} else if (const TabBar *tab_bar = Object::cast_to<const TabBar>(p_node)) {
+			_add_tab_bar_tabs(tab_bar, p_parent_index);
+		} else if (const TabContainer *tab_container = Object::cast_to<const TabContainer>(p_node)) {
+			_add_tab_container_tabs(tab_container, p_parent_index);
 		}
 	}
 
-	bool _should_skip_child(const Control *p_parent, Node *p_child) const {
+	bool _should_skip_child(const Node *p_parent, Node *p_child) const {
 		if (Object::cast_to<const SubViewportContainer>(p_parent)) {
 			return true;
 		}
@@ -325,35 +356,45 @@ class EditorAutomationSnapshotBuilder {
 		return false;
 	}
 
-	int _add_control(Control *p_control, int p_parent_index, bool p_is_root) {
-		if (!p_control->is_visible_in_tree()) {
+	bool _node_is_focused(const Node *p_node) const {
+		if (const Control *control = Object::cast_to<const Control>(p_node)) {
+			return control->has_focus();
+		}
+		if (const Window *window = Object::cast_to<const Window>(p_node)) {
+			return window->has_focus();
+		}
+		return false;
+	}
+
+	int _add_node(Node *p_node, int p_parent_index, bool p_is_root) {
+		if (!_node_is_visible(p_node)) {
 			return -1;
 		}
 
 		EditorAutomationElement element;
-		element.object_id = p_control->get_instance_id();
+		element.object_id = p_node->get_instance_id();
 		element.id = EditorAutomationSnapshot::make_control_element_id(data.generation, element.object_id);
-		element.role = _control_role(p_control);
-		element.name = _control_name(p_control);
-		element.text = _control_text(p_control);
-		element.class_name = p_control->get_class();
-		element.path = _node_path(p_control);
-		element.visible = p_control->is_visible_in_tree();
-		element.enabled = _control_is_enabled(p_control);
-		element.focused = p_control->has_focus();
-		element.bounds = _control_bounds_global(p_control);
+		element.role = _node_role(p_node);
+		element.name = _node_name(p_node);
+		element.text = _node_text(p_node);
+		element.class_name = p_node->get_class();
+		element.path = _node_path(p_node);
+		element.visible = _node_is_visible(p_node);
+		element.enabled = _node_is_enabled(p_node);
+		element.focused = _node_is_focused(p_node);
+		element.bounds = _node_bounds_global(p_node);
 		element.parent_index = p_parent_index;
-		_append_actions(p_control, element.role, element.actions);
+		_append_actions(p_node, element.role, element.actions);
 
-		if (const BaseButton *button = Object::cast_to<const BaseButton>(p_control)) {
+		if (const BaseButton *button = Object::cast_to<const BaseButton>(p_node)) {
 			element.pressed = button->is_pressed();
 		}
-		if (const Window *window = Object::cast_to<const Window>(p_control)) {
+		if (const Window *window = Object::cast_to<const Window>(p_node)) {
 			element.selected = window->has_focus();
 		}
 
 		if (p_parent_index >= 0) {
-			data.elements[p_parent_index].children.push_back(data.elements.size());
+			data.elements.ptrw()[p_parent_index].children.push_back(data.elements.size());
 		} else if (p_is_root) {
 			data.root_indices.push_back(data.elements.size());
 		}
@@ -363,25 +404,25 @@ class EditorAutomationSnapshotBuilder {
 		data.elements.push_back(element);
 		const int element_index = data.elements.size() - 1;
 
-		if (focused_control == p_control) {
+		if (focused_control && p_node == focused_control) {
 			data.focused_element_id = element.id;
 		}
 
-		_add_control_children(p_control, element_index);
+		_add_virtual_children(p_node, element_index);
 
-		if (Object::cast_to<const SubViewportContainer>(p_control)) {
+		if (Object::cast_to<const SubViewportContainer>(p_node)) {
 			return element_index;
 		}
 
-		for (int i = 0; i < p_control->get_child_count(false); i++) {
-			Node *child = p_control->get_child(i, false);
-			if (_should_skip_child(p_control, child)) {
+		for (int i = 0; i < p_node->get_child_count(false); i++) {
+			Node *child = p_node->get_child(i, false);
+			if (_should_skip_child(p_node, child)) {
 				continue;
 			}
 			if (Control *child_control = Object::cast_to<Control>(child)) {
-				_add_control(child_control, element_index, false);
+				_add_node(child_control, element_index, false);
 			} else if (Window *child_window = Object::cast_to<Window>(child)) {
-				_add_control(child_window, element_index, false);
+				_add_node(child_window, element_index, false);
 			}
 		}
 
@@ -389,16 +430,7 @@ class EditorAutomationSnapshotBuilder {
 	}
 
 	void _walk_root(Node *p_root) {
-		if (Window *window = Object::cast_to<Window>(p_root)) {
-			if (!window->is_visible()) {
-				return;
-			}
-			_add_control(window, -1, true);
-			return;
-		}
-		if (Control *control = Object::cast_to<Control>(p_root)) {
-			_add_control(control, -1, true);
-		}
+		_add_node(p_root, -1, true);
 	}
 
 public:
@@ -458,11 +490,11 @@ Dictionary _element_to_dictionary(const EditorAutomationElement &p_element, cons
 } // namespace
 
 String EditorAutomationSnapshot::make_control_element_id(uint64_t p_generation, uint64_t p_object_id) {
-	return vformat("snapshot:%llu/object:%llu", p_generation, p_object_id);
+	return vformat("snapshot:%s/object:%s", String::num_uint64(p_generation), String::num_uint64(p_object_id));
 }
 
 String EditorAutomationSnapshot::make_virtual_element_id(uint64_t p_generation, const String &p_kind, const String &p_key) {
-	return vformat("snapshot:%llu/%s:%s", p_generation, p_kind, p_key);
+	return vformat("snapshot:%s/%s:%s", String::num_uint64(p_generation), p_kind, p_key);
 }
 
 bool EditorAutomationSnapshot::parse_element_id(const String &p_id, uint64_t &r_generation, String &r_kind, String &r_key) {
@@ -475,7 +507,7 @@ bool EditorAutomationSnapshot::parse_element_id(const String &p_id, uint64_t &r_
 		return false;
 	}
 	const String generation_text = p_id.substr(snapshot_pos + 9, slash_pos - (snapshot_pos + 9));
-	r_generation = generation_text.to_uint64();
+	r_generation = static_cast<uint64_t>(generation_text.to_int());
 	const String remainder = p_id.substr(slash_pos + 1);
 	const int colon_pos = remainder.find_char(':');
 	if (colon_pos < 0) {

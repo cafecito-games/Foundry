@@ -30,17 +30,22 @@
 
 #include "editor_automation_selector.h"
 
+#include "core/variant/variant.h"
+
 namespace {
 
-bool _selector_has_key(const Dictionary &p_selector, const StringName &p_key) {
-	return p_selector.has(p_key) && p_selector[p_key].get_type() != Variant::NIL;
+bool _selector_has_key(const Dictionary &p_selector, const char *p_key) {
+	if (!p_selector.has(p_key)) {
+		return false;
+	}
+	return p_selector.get(p_key, Variant()).get_type() != Variant::NIL;
 }
 
-bool _read_optional_bool(const Dictionary &p_selector, const StringName &p_key, bool &r_value) {
+bool _read_optional_bool(const Dictionary &p_selector, const char *p_key, bool &r_value) {
 	if (!_selector_has_key(p_selector, p_key)) {
 		return false;
 	}
-	const Variant value = p_selector[p_key];
+	const Variant value = p_selector.get(p_key, Variant());
 	if (value.get_type() != Variant::BOOL) {
 		return false;
 	}
@@ -48,39 +53,39 @@ bool _read_optional_bool(const Dictionary &p_selector, const StringName &p_key, 
 	return true;
 }
 
-bool _element_matches_selector(const EditorAutomationElement &p_element, const Dictionary &p_selector, bool p_check_within_only = false) {
+bool _element_matches_selector(const EditorAutomationElement &p_element, const Dictionary &p_selector) {
 	if (_selector_has_key(p_selector, "id")) {
-		if (p_element.id != String(p_selector["id"])) {
+		if (p_element.id != String(p_selector.get("id", Variant()))) {
 			return false;
 		}
 	}
 
 	if (_selector_has_key(p_selector, "role")) {
-		if (p_element.role != String(p_selector["role"])) {
+		if (p_element.role != String(p_selector.get("role", Variant()))) {
 			return false;
 		}
 	}
 
 	if (_selector_has_key(p_selector, "name")) {
-		if (p_element.name != String(p_selector["name"])) {
+		if (p_element.name != String(p_selector.get("name", Variant()))) {
 			return false;
 		}
 	}
 
 	if (_selector_has_key(p_selector, "text")) {
-		if (p_element.text != String(p_selector["text"])) {
+		if (p_element.text != String(p_selector.get("text", Variant()))) {
 			return false;
 		}
 	}
 
 	if (_selector_has_key(p_selector, "class")) {
-		if (p_element.class_name != String(p_selector["class"])) {
+		if (p_element.class_name != String(p_selector.get("class", Variant()))) {
 			return false;
 		}
 	}
 
 	if (_selector_has_key(p_selector, "path")) {
-		if (p_element.path != String(p_selector["path"])) {
+		if (p_element.path != String(p_selector.get("path", Variant()))) {
 			return false;
 		}
 	}
@@ -94,15 +99,6 @@ bool _element_matches_selector(const EditorAutomationElement &p_element, const D
 	}
 	if (_read_optional_bool(p_selector, "focused", bool_value) && p_element.focused != bool_value) {
 		return false;
-	}
-
-	if (p_check_within_only) {
-		return true;
-	}
-
-	if (_selector_has_key(p_selector, "within")) {
-		// `within` is handled by the caller.
-		return true;
 	}
 
 	return true;
@@ -139,7 +135,7 @@ EditorAutomationSelectorResult _resolve_internal(const EditorAutomationSnapshot 
 	LocalVector<int> search_indices;
 
 	if (p_allow_within && _selector_has_key(p_selector, "within")) {
-		const Dictionary within_selector = p_selector["within"];
+		const Dictionary within_selector = p_selector.get("within", Dictionary());
 		const EditorAutomationSelectorResult within_result = _resolve_internal(p_snapshot, within_selector, false);
 		if (within_result.status != EditorAutomationSelectorStatus::OK) {
 			EditorAutomationSelectorResult result = within_result;
@@ -230,7 +226,7 @@ EditorAutomationSelectorResult EditorAutomationSelector::resolve_by_id(const Edi
 
 EditorAutomationSelectorResult EditorAutomationSelector::resolve(const EditorAutomationSnapshot &p_snapshot, const Dictionary &p_selector) {
 	if (_selector_has_key(p_selector, "id")) {
-		return resolve_by_id(p_snapshot, p_selector["id"]);
+		return resolve_by_id(p_snapshot, p_selector.get("id", Variant()));
 	}
 	return _resolve_internal(p_snapshot, p_selector, true);
 }

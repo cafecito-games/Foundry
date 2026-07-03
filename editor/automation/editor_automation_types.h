@@ -30,10 +30,12 @@
 
 #pragma once
 
+#include "core/math/rect2i.h"
+#include "core/string/ustring.h"
 #include "core/templates/hash_map.h"
 #include "core/templates/local_vector.h"
 #include "core/templates/vector.h"
-#include "core/variant/dictionary.h"
+#include "core/variant/variant.h"
 
 struct EditorAutomationElement {
 	String id;

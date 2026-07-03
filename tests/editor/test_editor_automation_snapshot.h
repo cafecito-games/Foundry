@@ -159,17 +159,17 @@ TEST_CASE("[Editor][Automation] synthetic control tree snapshot") {
 }
 
 TEST_CASE("[Editor][Automation] selector role and name returns one match") {
-	Window *window = memnew(Window);
-	window->set_size(Size2i(400, 300));
-	SceneTree::get_singleton()->get_root()->add_child(window);
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
 
 	Button *button = memnew(Button);
 	button->set_text("Save Scene");
 	setup_visible_control(button);
-	window->add_child(button);
+	root->add_child(button);
 	MessageQueue::get_singleton()->flush();
 
-	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(window);
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
 
 	Dictionary selector;
 	selector["role"] = "button";
@@ -179,26 +179,26 @@ TEST_CASE("[Editor][Automation] selector role and name returns one match") {
 	REQUIRE(result.match_indices.size() == 1);
 	CHECK(snapshot.get_element(result.match_indices[0]).name == "Save Scene");
 
-	memdelete(window);
+	memdelete(root);
 }
 
 TEST_CASE("[Editor][Automation] selector role only is ambiguous") {
-	Window *window = memnew(Window);
-	window->set_size(Size2i(400, 300));
-	SceneTree::get_singleton()->get_root()->add_child(window);
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
 
 	Button *first = memnew(Button);
 	first->set_text("First");
 	setup_visible_control(first);
-	window->add_child(first);
+	root->add_child(first);
 
 	Button *second = memnew(Button);
 	second->set_text("Second");
 	setup_visible_control(second);
-	window->add_child(second);
+	root->add_child(second);
 	MessageQueue::get_singleton()->flush();
 
-	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(window);
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
 
 	Dictionary selector;
 	selector["role"] = "button";
@@ -207,18 +207,18 @@ TEST_CASE("[Editor][Automation] selector role only is ambiguous") {
 	CHECK(result.error_kind == "ambiguous_selector");
 	CHECK(result.candidates.size() == 2);
 
-	memdelete(window);
+	memdelete(root);
 }
 
 TEST_CASE("[Editor][Automation] within selector disambiguates duplicate button names") {
-	Window *window = memnew(Window);
-	window->set_size(Size2i(640, 480));
-	SceneTree::get_singleton()->get_root()->add_child(window);
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(640, 480));
+	SceneTree::get_singleton()->get_root()->add_child(root);
 
 	PanelContainer *scene_dock = memnew(PanelContainer);
 	scene_dock->set_accessibility_name("Scene");
 	setup_visible_control(scene_dock, Size2(280, 200));
-	window->add_child(scene_dock);
+	root->add_child(scene_dock);
 
 	Button *scene_button = memnew(Button);
 	scene_button->set_text("Add Child Node");
@@ -228,7 +228,7 @@ TEST_CASE("[Editor][Automation] within selector disambiguates duplicate button n
 	PanelContainer *import_dock = memnew(PanelContainer);
 	import_dock->set_accessibility_name("Import");
 	setup_visible_control(import_dock, Size2(280, 200));
-	window->add_child(import_dock);
+	root->add_child(import_dock);
 
 	Button *import_button = memnew(Button);
 	import_button->set_text("Add Child Node");
@@ -236,7 +236,7 @@ TEST_CASE("[Editor][Automation] within selector disambiguates duplicate button n
 	import_dock->add_child(import_button);
 	MessageQueue::get_singleton()->flush();
 
-	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(window);
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
 
 	Dictionary within;
 	within["role"] = "control";
@@ -252,28 +252,28 @@ TEST_CASE("[Editor][Automation] within selector disambiguates duplicate button n
 	REQUIRE(result.match_indices.size() == 1);
 	const EditorAutomationElement &match = snapshot.get_element(result.match_indices[0]);
 	CHECK(match.name == "Add Child Node");
-	CHECK(match.path == window->get_path_to(scene_button));
+	CHECK(match.path == String(root->get_path_to(scene_button)));
 
-	memdelete(window);
+	memdelete(root);
 }
 
 TEST_CASE("[Editor][Automation] stale snapshot id lookup fails") {
-	Window *window = memnew(Window);
-	window->set_size(Size2i(400, 300));
-	SceneTree::get_singleton()->get_root()->add_child(window);
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
 
 	Button *button = memnew(Button);
 	button->set_text("Run");
 	setup_visible_control(button);
-	window->add_child(button);
+	root->add_child(button);
 	MessageQueue::get_singleton()->flush();
 
-	EditorAutomationSnapshot first_snapshot = EditorAutomationSnapshot::capture_from_node(window);
+	EditorAutomationSnapshot first_snapshot = EditorAutomationSnapshot::capture_from_node(root);
 	const EditorAutomationElement *button_element = find_element_by_role_and_name(first_snapshot, "button", "Run");
 	REQUIRE(button_element != nullptr);
 	const String stale_id = button_element->id;
 
-	EditorAutomationSnapshot second_snapshot = EditorAutomationSnapshot::capture_from_node(window);
+	EditorAutomationSnapshot second_snapshot = EditorAutomationSnapshot::capture_from_node(root);
 	const EditorAutomationSelectorResult stale_result = EditorAutomationSelector::resolve_by_id(second_snapshot, stale_id);
 	CHECK(stale_result.status == EditorAutomationSelectorStatus::STALE_ID);
 	CHECK(stale_result.error_kind == "stale_snapshot_id");
@@ -288,7 +288,7 @@ TEST_CASE("[Editor][Automation] stale snapshot id lookup fails") {
 	const EditorAutomationSelectorResult valid_result = EditorAutomationSelector::resolve_by_id(second_snapshot, fresh_button->id);
 	CHECK(valid_result.status == EditorAutomationSelectorStatus::OK);
 
-	memdelete(window);
+	memdelete(root);
 }
 
 } // namespace TestEditorAutomationSnapshot
