@@ -4786,6 +4786,14 @@ void EditorNode::_update_pane_display_attachments() {
 
 		ctx->get_history()->cleanup_history();
 	}
+
+	if (editor_main_screen) {
+		const int focused = editor_data.get_focused_pane();
+		EditorScenePane *focused_pane = scene_workspace->get_pane(focused);
+		if (focused_pane && editor_main_screen->get_parent() == focused_pane->get_content_host()) {
+			focused_pane->fit_main_screen(editor_main_screen);
+		}
+	}
 }
 
 void EditorNode::_attach_active_scene_context() {
@@ -4942,8 +4950,8 @@ void EditorNode::focus_pane(int p_pane) {
 	Control *content_host = pane->get_content_host();
 	if (editor_main_screen->get_parent() != content_host) {
 		content_host->add_child(editor_main_screen);
-		editor_main_screen->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 	}
+	pane->fit_main_screen(editor_main_screen);
 
 	const int scene_idx = editor_data.get_pane_current_scene(p_pane);
 	_set_current_scene_nocheck(scene_idx);
@@ -9425,6 +9433,7 @@ EditorNode::EditorNode() {
 	scene_workspace = EditorSceneWorkspace::create_single_pane_workspace();
 	srt->add_child(scene_workspace);
 	scene_workspace->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	scene_workspace->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 
 	scene_tabs = scene_workspace->get_pane(0)->get_scene_tabs();
 	EditorSceneTabs::set_focused_singleton(scene_tabs);
@@ -9442,10 +9451,8 @@ EditorNode::EditorNode() {
 
 	editor_main_screen = memnew(EditorMainScreen);
 	editor_main_screen->set_custom_minimum_size(Size2(0, 80) * EDSCALE);
-	editor_main_screen->set_draw_behind_parent(true);
 	scene_workspace->get_pane(0)->get_content_host()->add_child(editor_main_screen);
-	editor_main_screen->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
-	editor_main_screen->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	scene_workspace->get_pane(0)->fit_main_screen(editor_main_screen);
 
 	placeholder_scene_viewport = memnew(SubViewport);
 	placeholder_scene_viewport->set_auto_translate_mode(AUTO_TRANSLATE_MODE_ALWAYS);

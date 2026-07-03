@@ -41,7 +41,6 @@ class EditorSceneTabs;
 class Label;
 class PanelContainer;
 class TextureRect;
-class VBoxContainer;
 
 class EditorScenePane : public VBoxContainer {
 	FOUNDRY_CLASS(EditorScenePane, VBoxContainer);
@@ -58,6 +57,7 @@ class EditorScenePane : public VBoxContainer {
 	void _pane_gui_input(const Ref<InputEvent> &p_event);
 	void _pane_focus_entered();
 	void _fit_content_child(Control *p_child);
+	void _fit_content_children();
 
 protected:
 	void _notification(int p_what);
@@ -70,14 +70,15 @@ public:
 
 	void set_focused_visual(bool p_focused);
 	void set_preview_mode(bool p_show_live_preview, bool p_show_3d_placeholder, const String &p_scene_name, const Ref<Texture2D> &p_icon);
+	void fit_main_screen(Control *p_main_screen);
 
 	void setup(int p_pane_index);
 
 	EditorScenePane();
 };
 
-class EditorSceneWorkspace : public Control {
-	FOUNDRY_CLASS(EditorSceneWorkspace, Control);
+class EditorSceneWorkspace : public VBoxContainer {
+	FOUNDRY_CLASS(EditorSceneWorkspace, VBoxContainer);
 
 	static inline const char *WORKSPACE_CONFIG_SECTION = "Workspace";
 
@@ -87,9 +88,8 @@ class EditorSceneWorkspace : public Control {
 	bool split_vertical = false;
 
 	void _create_pane(int p_index);
-	void _configure_pane_layout(EditorScenePane *p_pane, bool p_in_split);
+	void _configure_pane_layout(EditorScenePane *p_pane);
 	void _ensure_split_offset();
-	void _on_pane_focus_requested(int p_pane);
 
 protected:
 	void _notification(int p_what);

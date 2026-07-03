@@ -37,16 +37,18 @@
 #include "editor/editor_string_names.h"
 #include "editor/scene/editor_scene_tabs.h"
 #include "editor/themes/editor_scale.h"
+#include "scene/gui/center_container.h"
 #include "scene/gui/label.h"
 #include "scene/gui/panel_container.h"
 #include "scene/gui/texture_rect.h"
 
 void EditorScenePane::_notification(int p_what) {
 	switch (p_what) {
+		case NOTIFICATION_RESIZED: {
+			_fit_content_children();
+		} break;
+
 		case NOTIFICATION_THEME_CHANGED: {
-			if (focus_frame) {
-				focus_frame->add_theme_style_override(SceneStringName(panel), get_theme_stylebox(SNAME("Focus"), EditorStringName(EditorStyles)));
-			}
 			if (preview_placeholder) {
 				preview_placeholder->add_theme_style_override(SceneStringName(panel), get_theme_stylebox(SceneStringName(panel), SNAME("Panel")));
 			}
@@ -95,10 +97,31 @@ void EditorScenePane::set_preview_mode(bool p_show_live_preview, bool p_show_3d_
 }
 
 void EditorScenePane::_fit_content_child(Control *p_child) {
-	if (!p_child) {
+	if (!p_child || !content_host) {
 		return;
 	}
 	p_child->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+}
+
+void EditorScenePane::_fit_content_children() {
+	if (!content_host) {
+		return;
+	}
+	_fit_content_child(preview_container);
+	_fit_content_child(preview_placeholder);
+	for (int i = 0; i < content_host->get_child_count(); i++) {
+		Control *child = Object::cast_to<Control>(content_host->get_child(i));
+		if (child && child != preview_container && child != preview_placeholder) {
+			_fit_content_child(child);
+		}
+	}
+}
+
+void EditorScenePane::fit_main_screen(Control *p_main_screen) {
+	if (!p_main_screen || p_main_screen->get_parent() != content_host) {
+		return;
+	}
+	_fit_content_child(p_main_screen);
 }
 
 void EditorScenePane::setup(int p_pane_index) {
@@ -107,44 +130,39 @@ void EditorScenePane::setup(int p_pane_index) {
 	set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	add_theme_constant_override("separation", 0);
 
+	scene_tabs = memnew(EditorSceneTabs(p_pane_index));
+	add_child(scene_tabs);
+
 	focus_frame = memnew(PanelContainer);
 	focus_frame->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
 	focus_frame->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	focus_frame->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	focus_frame->set_clip_contents(true);
 	add_child(focus_frame);
-
-	VBoxContainer *inner = memnew(VBoxContainer);
-	inner->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	inner->add_theme_constant_override("separation", 0);
-	focus_frame->add_child(inner);
-
-	scene_tabs = memnew(EditorSceneTabs(p_pane_index));
-	inner->add_child(scene_tabs);
 
 	content_host = memnew(Control);
 	content_host->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	content_host->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	content_host->set_clip_contents(true);
 	content_host->set_mouse_filter(Control::MOUSE_FILTER_PASS);
-	inner->add_child(content_host);
+	focus_frame->add_child(content_host);
 
 	preview_container = memnew(SubViewportContainer);
-	preview_container->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	preview_container->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	preview_container->set_stretch(true);
 	preview_container->hide();
 	content_host->add_child(preview_container);
-	_fit_content_child(preview_container);
 
 	preview_placeholder = memnew(PanelContainer);
-	preview_placeholder->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	preview_placeholder->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	preview_placeholder->hide();
 	content_host->add_child(preview_placeholder);
-	_fit_content_child(preview_placeholder);
+
+	CenterContainer *placeholder_center = memnew(CenterContainer);
+	placeholder_center->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+	preview_placeholder->add_child(placeholder_center);
 
 	VBoxContainer *placeholder_vb = memnew(VBoxContainer);
 	placeholder_vb->set_alignment(BoxContainer::ALIGNMENT_CENTER);
-	preview_placeholder->add_child(placeholder_vb);
+	placeholder_center->add_child(placeholder_vb);
 
 	preview_placeholder_icon = memnew(TextureRect);
 	preview_placeholder_icon->set_stretch_mode(TextureRect::STRETCH_KEEP_ASPECT_CENTERED);
@@ -155,9 +173,12 @@ void EditorScenePane::setup(int p_pane_index) {
 	preview_placeholder_label->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_CENTER);
 	placeholder_vb->add_child(preview_placeholder_label);
 
+	_fit_content_children();
+
 	connect(SceneStringName(gui_input), callable_mp(this, &EditorScenePane::_pane_gui_input));
 	connect(SceneStringName(focus_entered), callable_mp(this, &EditorScenePane::_pane_focus_entered));
 	scene_tabs->connect(SceneStringName(gui_input), callable_mp(this, &EditorScenePane::_pane_gui_input));
+	content_host->connect(SceneStringName(gui_input), callable_mp(this, &EditorScenePane::_pane_gui_input));
 }
 
 EditorScenePane::EditorScenePane() {
@@ -175,16 +196,10 @@ void EditorSceneWorkspace::_notification(int p_what) {
 	}
 }
 
-void EditorSceneWorkspace::_configure_pane_layout(EditorScenePane *p_pane, bool p_in_split) {
+void EditorSceneWorkspace::_configure_pane_layout(EditorScenePane *p_pane) {
 	ERR_FAIL_NULL(p_pane);
 	p_pane->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	p_pane->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	if (p_in_split) {
-		p_pane->set_anchors_preset(Control::PRESET_TOP_LEFT);
-		p_pane->set_offsets_preset(Control::PRESET_TOP_LEFT);
-	} else {
-		p_pane->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
-	}
 }
 
 void EditorSceneWorkspace::_ensure_split_offset() {
@@ -195,8 +210,8 @@ void EditorSceneWorkspace::_ensure_split_offset() {
 	const Size2 size = split->get_size();
 	const int axis = split_vertical ? size.height : size.width;
 	if (axis <= 0) {
-		if (!is_connected(SceneStringName(resized), callable_mp(this, &EditorSceneWorkspace::_ensure_split_offset))) {
-			connect(SceneStringName(resized), callable_mp(this, &EditorSceneWorkspace::_ensure_split_offset), CONNECT_ONE_SHOT);
+		if (!split->is_connected(SceneStringName(resized), callable_mp(this, &EditorSceneWorkspace::_ensure_split_offset))) {
+			split->connect(SceneStringName(resized), callable_mp(this, &EditorSceneWorkspace::_ensure_split_offset), CONNECT_ONE_SHOT);
 		}
 		return;
 	}
@@ -208,11 +223,11 @@ void EditorSceneWorkspace::_create_pane(int p_index) {
 	EditorScenePane *pane = memnew(EditorScenePane);
 	pane->setup(p_index);
 	panes.push_back(pane);
+	_configure_pane_layout(pane);
+
 	if (panes.size() == 1) {
 		add_child(pane);
-		_configure_pane_layout(pane, false);
 	} else {
-		_configure_pane_layout(pane, true);
 		split->add_child(pane);
 	}
 }
@@ -223,8 +238,6 @@ void EditorSceneWorkspace::_bind_methods() {
 
 EditorSceneWorkspace *EditorSceneWorkspace::create_single_pane_workspace() {
 	EditorSceneWorkspace *workspace = memnew(EditorSceneWorkspace);
-	workspace->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	workspace->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	workspace->_create_pane(0);
 	workspace->update_focus_visuals();
 	return workspace;
@@ -238,17 +251,17 @@ void EditorSceneWorkspace::split_workspace(bool p_vertical) {
 	}
 
 	split_vertical = p_vertical;
-	remove_child(panes[0]);
-	_configure_pane_layout(panes[0], true);
+
+	EditorScenePane *pane_0 = panes[0];
+	remove_child(pane_0);
 
 	split = memnew(SplitContainer);
 	split->set_vertical(p_vertical);
 	split->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	split->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	split->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 	add_child(split);
 
-	split->add_child(panes[0]);
+	split->add_child(pane_0);
 	_create_pane(1);
 	update_focus_visuals();
 	callable_mp(this, &EditorSceneWorkspace::_ensure_split_offset).call_deferred();
@@ -265,7 +278,6 @@ void EditorSceneWorkspace::unsplit_workspace() {
 	split = nullptr;
 
 	add_child(panes[0]);
-	_configure_pane_layout(panes[0], false);
 
 	panes.remove_at(1);
 	memdelete(pane_1);
@@ -388,5 +400,7 @@ String EditorSceneWorkspace::get_saved_pane_current(const Ref<ConfigFile> &p_con
 }
 
 EditorSceneWorkspace::EditorSceneWorkspace() {
-	set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	add_theme_constant_override("separation", 0);
 }
