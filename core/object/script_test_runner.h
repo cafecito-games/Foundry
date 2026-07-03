@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  fs_script_extensible_native_hooks.h                                   */
+/*  script_test_runner.h                                                  */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -30,12 +30,20 @@
 
 #pragma once
 
-#include "core/string/string_name.h"
-#include "core/templates/list.h"
+#include "core/object/ref_counted.h"
+#include "core/variant/variant.h"
 
-class FSScriptExtensibleNativeHooks {
+class SceneTree;
+
+class ScriptTestRunner : public RefCounted {
+	FOUNDRY_CLASS(ScriptTestRunner, RefCounted);
+
+protected:
+	static void _bind_methods();
+
 public:
-	static bool is_allowed_override(const StringName &p_native_base, const StringName &p_method_name);
-	static bool allows_async_override_of_sync_hook(const StringName &p_native_base, const StringName &p_method_name);
-	static void collect_allowed_overrides(const StringName &p_native_base, List<StringName> &r_method_names);
+	static Variant call_run_script_hook(const Ref<ScriptTestRunner> &p_runner, const PackedStringArray &p_args);
+	static void launch_host(SceneTree *p_scene_tree, const Ref<ScriptTestRunner> &p_runner, const PackedStringArray &p_user_args);
+
+	virtual int run(const PackedStringArray &p_args);
 };

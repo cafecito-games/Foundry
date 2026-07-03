@@ -33,6 +33,7 @@
 #include "fs_utility_functions.h"
 
 #include "core/object/ref_counted.h"
+#include "core/object/script_function_state.h"
 #include "core/object/script_language.h"
 #include "core/os/thread.h"
 #include "core/string/string_name.h"
@@ -784,8 +785,8 @@ public:
 	~FSFunction();
 };
 
-class FSFunctionState : public RefCounted {
-	FOUNDRY_CLASS(FSFunctionState, RefCounted);
+class FSFunctionState : public ScriptFunctionState {
+	FOUNDRY_CLASS(FSFunctionState, ScriptFunctionState);
 	friend class FSFunction;
 	FSFunction *function = nullptr;
 	FSFunction::CallState state;

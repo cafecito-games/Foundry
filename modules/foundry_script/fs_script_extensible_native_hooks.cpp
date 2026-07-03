@@ -42,6 +42,11 @@ struct ScriptExtensibleNativeHook {
 static const ScriptExtensibleNativeHook script_extensible_native_hooks[] = {
 	{ "FoundryBuildTask", "get_config_schema" },
 	{ "FoundryBuildTask", "run" },
+	{ "ScriptTestRunner", "run" },
+};
+
+static const ScriptExtensibleNativeHook flexible_async_native_hooks[] = {
+	{ "ScriptTestRunner", "run" },
 };
 
 } // namespace
@@ -53,6 +58,21 @@ bool FSScriptExtensibleNativeHooks::is_allowed_override(
 	}
 
 	for (const ScriptExtensibleNativeHook &hook : script_extensible_native_hooks) {
+		if (p_method_name == StringName(hook.method_name) &&
+				ClassDB::is_parent_class(p_native_base, StringName(hook.native_base))) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool FSScriptExtensibleNativeHooks::allows_async_override_of_sync_hook(
+		const StringName &p_native_base, const StringName &p_method_name) {
+	if (p_native_base == StringName() || p_method_name == StringName()) {
+		return false;
+	}
+
+	for (const ScriptExtensibleNativeHook &hook : flexible_async_native_hooks) {
 		if (p_method_name == StringName(hook.method_name) &&
 				ClassDB::is_parent_class(p_native_base, StringName(hook.native_base))) {
 			return true;

@@ -43,7 +43,7 @@ const int HELP_OPTION_COLUMN_LENGTH = 36;
 
 const NounSpec NOUNS[] = {
 	{ "editor", "Open the editor or the Project Manager." },
-	{ "project", "Run, export, or import a project." },
+	{ "project", "Run, export, import, or test a project." },
 	{ "script", "Format, lint, and migrate Foundry Script code." },
 	{ "test", "Run the engine test suites." },
 	{ "lsp", "Run the Foundry Script language server." },
@@ -76,6 +76,11 @@ const CommandOption PROJECT_EXPORT_OPTIONS[] = {
 
 const CommandOption PROJECT_IMPORT_OPTIONS[] = {
 	{ "--project", "dir", PROJECT_OPTION_DESCRIPTION, false },
+};
+
+const CommandOption PROJECT_TEST_OPTIONS[] = {
+	{ "--project", "dir", PROJECT_OPTION_DESCRIPTION, false },
+	{ "--runner", "path", "ScriptTestRunner script path (res://...).", true },
 };
 
 const CommandOption SCRIPT_FORMAT_OPTIONS[] = {
@@ -151,6 +156,7 @@ const CommandSpec COMMANDS[] = {
 	{ "project", "run", "Run a project; arguments after -- go to the project.", "[--project <dir>] [--scene <path>] [--script <path>] [--check-only] [-- <user args...>]", FoundryCLIHelp::AVAILABILITY_RELEASE, PROJECT_RUN_OPTIONS, FOUNDRY_CLI_COUNT(PROJECT_RUN_OPTIONS), nullptr, 0, "foundry project run --project . --scene res://main.tscn -- --difficulty hard" },
 	{ "project", "export", "Export a project with a preset.", "[--project <dir>] --preset <name> --output <path> [--mode <release|debug|pack|patch>] [--patches <paths>] [--install-android-build-template]", FoundryCLIHelp::AVAILABILITY_EDITOR, PROJECT_EXPORT_OPTIONS, FOUNDRY_CLI_COUNT(PROJECT_EXPORT_OPTIONS), nullptr, 0, "foundry project export --project . --preset Linux --output build/game.x86_64 --mode release" },
 	{ "project", "import", "Import project resources and exit.", "[--project <dir>]", FoundryCLIHelp::AVAILABILITY_EDITOR, PROJECT_IMPORT_OPTIONS, FOUNDRY_CLI_COUNT(PROJECT_IMPORT_OPTIONS), nullptr, 0, "foundry project import --project ." },
+	{ "project", "test", "Run a project test runner script.", "[--project <dir>] --runner <path> [-- <user args...>]", FoundryCLIHelp::AVAILABILITY_RELEASE, PROJECT_TEST_OPTIONS, FOUNDRY_CLI_COUNT(PROJECT_TEST_OPTIONS), nullptr, 0, "foundry project test --project . --runner res://addons/foundrylib/testlib/cli/run.fs -- --path res://tests --filter inventory" },
 	{ "script", "format", "Format Foundry Script files or stdin.", "[--project <dir>] [--check|--write|--diff] [paths...]", FoundryCLIHelp::AVAILABILITY_RELEASE, SCRIPT_FORMAT_OPTIONS, FOUNDRY_CLI_COUNT(SCRIPT_FORMAT_OPTIONS), PATHS_POSITIONAL, FOUNDRY_CLI_COUNT(PATHS_POSITIONAL), "foundry script format --project . --check scripts" },
 	{ "script", "lint", "Lint Foundry Script files.", "[--project <dir>] [--format=<json|sarif>] [--out <path>] [--fail-on=<error|warning>] [paths...]", FoundryCLIHelp::AVAILABILITY_RELEASE, SCRIPT_LINT_OPTIONS, FOUNDRY_CLI_COUNT(SCRIPT_LINT_OPTIONS), PATHS_POSITIONAL, FOUNDRY_CLI_COUNT(PATHS_POSITIONAL), "foundry script lint --project . --format=sarif --out reports/foundry-script.sarif scripts" },
 	{ "script", "migrate", "Run the Foundry Script strict-typing migration wizard.", "--project <dir> [--apply] [--strict <null,dynamic>] [--activate-strict] [--confirm] [--allow-violations] [--acknowledge-vcs] [--follow-up <path>]", FoundryCLIHelp::AVAILABILITY_EDITOR, SCRIPT_MIGRATE_OPTIONS, FOUNDRY_CLI_COUNT(SCRIPT_MIGRATE_OPTIONS), nullptr, 0, "foundry script migrate --trusted --project . --apply --strict null,dynamic --confirm" },

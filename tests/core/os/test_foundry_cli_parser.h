@@ -312,6 +312,52 @@ TEST_CASE("[FoundryCLIParser] Diagnostics commands map to render device probes")
 			});
 }
 
+TEST_CASE("[FoundryCLIParser] Project test normalizes to internal runner flag") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"--json",
+			"project",
+			"test",
+			"--project",
+			"demo",
+			"--runner",
+			"res://run.fs",
+			"--",
+			"--filter",
+			"x",
+	}));
+
+	REQUIRE_MESSAGE(result.ok, result.error);
+	CHECK(result.json);
+	CHECK_EQ(result.command_path, make_args({ "project", "test" }));
+	CHECK_EQ(result.user_args, make_args({ "--filter", "x" }));
+	CHECK_EQ(result.normalized_args, make_args({
+											 "foundry",
+											 "--no-header",
+											 "--path",
+											 "demo",
+											 "--run-test-runner",
+											 "res://run.fs",
+											 "--",
+											 "--filter",
+											 "x",
+									 }));
+}
+
+TEST_CASE("[FoundryCLIParser] Project test requires runner") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"project",
+			"test",
+			"--project",
+			"demo",
+	}));
+
+	CHECK_FALSE(result.ok);
+	CHECK(result.error.contains("--runner"));
+	CHECK_EQ(result.command_path, make_args({ "project", "test" }));
+}
+
 TEST_CASE("[FoundryCLIParser] Missing required command arguments are rejected") {
 	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
 			"foundry",

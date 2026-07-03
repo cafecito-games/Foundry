@@ -5404,7 +5404,11 @@ void FSAnalyzer::resolve_function_signature(FSParser::FunctionNode *p_function, 
 			bool valid = p_function->is_static == method_flags.has_flag(METHOD_FLAG_STATIC);
 			const bool parent_is_coroutine = method_flags.has_flag(METHOD_FLAG_ASYNC);
 			const bool current_is_coroutine = p_function->is_coroutine;
-			const bool valid_coroutine_override = parent_is_coroutine == current_is_coroutine;
+			bool valid_coroutine_override = parent_is_coroutine == current_is_coroutine;
+			if (!valid_coroutine_override && !parent_is_coroutine && current_is_coroutine &&
+					FSScriptExtensibleNativeHooks::allows_async_override_of_sync_hook(native_base, function_name)) {
+				valid_coroutine_override = true;
+			}
 			valid = valid && valid_coroutine_override;
 
 			if (p_function->return_type != nullptr) {

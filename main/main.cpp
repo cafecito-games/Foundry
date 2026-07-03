@@ -49,7 +49,9 @@
 #include "core/io/ip.h"
 #include "core/io/resource_loader.h"
 #include "core/object/message_queue.h"
+#include "core/object/class_db.h"
 #include "core/object/script_language.h"
+#include "core/object/script_test_runner.h"
 #include "core/os/os.h"
 #include "core/os/time.h"
 #include "core/profiling/profiling.h"
@@ -3877,6 +3879,26 @@ static MainTimerSync main_timer_sync;
 // Return value should be EXIT_SUCCESS if we start successfully
 // and should move on to `OS::run`, and EXIT_FAILURE otherwise for
 // an early exit with that error code.
+static Ref<ScriptTestRunner> load_script_test_runner(const String &p_path) {
+	Ref<Script> script_res = ResourceLoader::load(p_path);
+	ERR_FAIL_COND_V_MSG(script_res.is_null(), Ref<ScriptTestRunner>(), vformat("Can't load script test runner: %s", p_path));
+	ERR_FAIL_COND_V_MSG(!script_res->is_valid(), Ref<ScriptTestRunner>(), vformat("Script test runner has parse errors: %s", p_path));
+	ERR_FAIL_COND_V_MSG(!script_res->can_instantiate(), Ref<ScriptTestRunner>(), vformat("Can't instantiate script test runner: %s", p_path));
+	ERR_FAIL_COND_V_MSG(!ClassDB::is_parent_class(script_res->get_instance_base_type(), "ScriptTestRunner"),
+			Ref<ScriptTestRunner>(), vformat("Script test runner must extend ScriptTestRunner: %s", p_path));
+
+	Object *obj = ClassDB::instantiate(script_res->get_instance_base_type());
+	ScriptTestRunner *runner_object = Object::cast_to<ScriptTestRunner>(obj);
+	if (!runner_object) {
+		if (obj) {
+			memdelete(obj);
+		}
+		runner_object = memnew(ScriptTestRunner);
+	}
+	runner_object->set_script(script_res);
+	return Ref<ScriptTestRunner>(runner_object);
+}
+
 int Main::start() {
 	FoundryProfileZone("start");
 	OS::get_singleton()->benchmark_begin_measure("Startup", "Main::Start");
@@ -3887,6 +3909,7 @@ int Main::start() {
 	String positional_arg;
 	String game_path;
 	String script;
+	String test_runner_path;
 	String main_loop_type;
 	bool check_only = false;
 
@@ -4015,6 +4038,8 @@ int Main::start() {
 			bool parsed_pair = true;
 			if (E->get() == "-s" || E->get() == "--script") {
 				script = E->next()->get();
+			} else if (E->get() == "--run-test-runner") {
+				test_runner_path = E->next()->get();
 			} else if (E->get() == "--main-loop") {
 				main_loop_type = E->next()->get();
 #ifdef TOOLS_ENABLED
@@ -4066,6 +4091,8 @@ int Main::start() {
 			}
 		} else if (E->get().begins_with("--export-")) {
 			ERR_FAIL_V_MSG(EXIT_FAILURE, "Missing export preset name, aborting.");
+		} else if (E->get() == "--run-test-runner") {
+			ERR_FAIL_V_MSG(EXIT_FAILURE, "Missing script path for --run-test-runner, aborting.");
 		}
 #ifdef TOOLS_ENABLED
 		// Handle case where no path is given to --doctool.
@@ -4074,6 +4101,21 @@ int Main::start() {
 			doc_tool_implicit_cwd = true;
 		}
 #endif
+	}
+
+	if (!test_runner_path.is_empty()) {
+#ifdef TOOLS_ENABLED
+		if (!script.is_empty() || editor || project_manager || check_only || !_export_preset.is_empty()) {
+			ERR_FAIL_V_MSG(EXIT_FAILURE,
+					"--run-test-runner cannot be combined with --script, --editor, the project manager, --check-only, or --export-* flags. Aborting.");
+		}
+#else
+		if (!script.is_empty() || check_only) {
+			ERR_FAIL_V_MSG(EXIT_FAILURE, "--run-test-runner cannot be combined with --script or --check-only. Aborting.");
+		}
+#endif
+		ERR_FAIL_COND_V_MSG(!ProjectSettings::get_singleton()->is_project_loaded(), EXIT_FAILURE,
+				"Please provide a valid project path for --run-test-runner, aborting.");
 	}
 
 	uint64_t minimum_time_msec = GLOBAL_DEF(PropertyInfo(Variant::INT, "application/boot_splash/minimum_display_time", PROPERTY_HINT_RANGE, "0,100,1,or_greater,suffix:ms"), 0);
@@ -4225,11 +4267,13 @@ int Main::start() {
 	bool disable_override = GLOBAL_GET("application/config/disable_project_settings_override");
 	if (disable_override) {
 		script = String();
+		test_runner_path = String();
 		game_path = String();
 		main_loop_type = String();
 	}
 #else
 	script = String();
+	test_runner_path = String();
 	game_path = String();
 	main_loop_type = String();
 #endif // defined(OVERRIDE_PATH_ENABLED)
@@ -4253,7 +4297,7 @@ int Main::start() {
 	}
 #endif // TOOLS_ENABLED && MODULE_FOUNDRY_SCRIPT_ENABLED
 
-	if (!skip_main_scene_resolution && script.is_empty() && game_path.is_empty()) {
+	if (!skip_main_scene_resolution && script.is_empty() && game_path.is_empty() && test_runner_path.is_empty()) {
 		const String main_scene = GLOBAL_GET("application/run/main_scene");
 		if (main_scene.begins_with("uid://")) {
 			ResourceUID::ID id = ResourceUID::get_singleton()->text_to_id(main_scene);
@@ -4268,7 +4312,7 @@ int Main::start() {
 	}
 
 #ifdef TOOLS_ENABLED
-	if (!editor && !project_manager && !cmdline_tool && script.is_empty() && game_path.is_empty()) {
+	if (!editor && !project_manager && !cmdline_tool && script.is_empty() && game_path.is_empty() && test_runner_path.is_empty()) {
 		// If we end up here, it means we didn't manage to detect what we want to run.
 		// Let's throw an error gently. The code leading to this is pretty brittle so
 		// this might end up triggered by valid usage, in which case we'll have to
@@ -4323,7 +4367,7 @@ int Main::start() {
 
 #ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 	// `--script --check-only` still loads and validates the script, so run pre_compile before script loading.
-	bool foundry_runtime_build_stages_enabled = !project_manager && !editor && (!game_path.is_empty() || !script.is_empty());
+	bool foundry_runtime_build_stages_enabled = !project_manager && !editor && (!game_path.is_empty() || !script.is_empty() || !test_runner_path.is_empty());
 #endif // MODULE_FOUNDRY_SCRIPT_ENABLED
 	bool custom_resource_handlers_registered = false;
 
@@ -4341,6 +4385,16 @@ int Main::start() {
 #endif // MODULE_FOUNDRY_SCRIPT_ENABLED
 
 	MainLoop *main_loop = nullptr;
+	Ref<ScriptTestRunner> script_test_runner;
+	if (!test_runner_path.is_empty()) {
+		if (!editor && ProjectSettings::get_singleton()->is_project_loaded() && !ProjectSettings::get_singleton()->is_using_datapack()) {
+			ScriptServer::scan_global_classes();
+		}
+
+		script_test_runner = load_script_test_runner(test_runner_path);
+		ERR_FAIL_COND_V_MSG(script_test_runner.is_null(), EXIT_FAILURE, "Failed to load script test runner.");
+	}
+
 	if (editor) {
 		main_loop = memnew(SceneTree);
 	}
@@ -4500,7 +4554,7 @@ int Main::start() {
 		}
 
 		if (!project_manager && !editor) { // game
-			if (!game_path.is_empty() || !script.is_empty()) {
+			if (!game_path.is_empty() || !script.is_empty() || !test_runner_path.is_empty()) {
 				//autoload
 				OS::get_singleton()->benchmark_begin_measure("Startup", "Load Autoloads");
 				Vector<ProjectSettings::AutoloadInfo> autoloads;
@@ -4837,6 +4891,14 @@ int Main::start() {
 					!run_foundry_build_stage_for_cli(ProjectBuildPipelineConfig::STAGE_POST_COMPILE,
 							"Foundry post_compile runtime stage")) {
 				return EXIT_FAILURE;
+			}
+			if (!test_runner_path.is_empty()) {
+				ERR_FAIL_COND_V_MSG(sml == nullptr, EXIT_FAILURE, "Script test runner requires a SceneTree main loop.");
+				PackedStringArray user_args;
+				for (const String &user_arg : OS::get_singleton()->get_cmdline_user_args()) {
+					user_args.push_back(user_arg);
+				}
+				ScriptTestRunner::launch_host(sml, script_test_runner, user_args);
 			}
 #endif // MODULE_FOUNDRY_SCRIPT_ENABLED
 		}
