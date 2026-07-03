@@ -62,6 +62,7 @@
 #include "scene/gui/popup.h"
 #include "scene/gui/rich_text_label.h"
 #include "scene/gui/split_container.h"
+#include "scene/gui/subviewport_container.h"
 #include "scene/gui/tab_container.h"
 #include "scene/main/timer.h"
 #include "scene/main/window.h"
@@ -96,6 +97,7 @@
 #include "editor/editor_interface.h"
 #include "editor/editor_log.h"
 #include "editor/editor_main_screen.h"
+#include "editor/editor_scene_context.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/export/dedicated_server_export_plugin.h"
 #include "editor/export/editor_export.h"
@@ -460,16 +462,11 @@ void EditorNode::_update_from_settings() {
 	}
 	_update_title();
 
-	int current_filter = GLOBAL_GET("rendering/textures/canvas_textures/default_texture_filter");
-	if (current_filter != scene_root->get_default_canvas_item_texture_filter()) {
-		Viewport::DefaultCanvasItemTextureFilter tf = (Viewport::DefaultCanvasItemTextureFilter)current_filter;
-		scene_root->set_default_canvas_item_texture_filter(tf);
+	_apply_scene_viewport_settings(placeholder_scene_viewport);
+	for (int i = 0; i < editor_data.get_edited_scene_count(); i++) {
+		_apply_scene_viewport_settings(editor_data.get_scene_context(i)->get_viewport());
 	}
-	int current_repeat = GLOBAL_GET("rendering/textures/canvas_textures/default_texture_repeat");
-	if (current_repeat != scene_root->get_default_canvas_item_texture_repeat()) {
-		Viewport::DefaultCanvasItemTextureRepeat tr = (Viewport::DefaultCanvasItemTextureRepeat)current_repeat;
-		scene_root->set_default_canvas_item_texture_repeat(tr);
-	}
+
 	String current_fallback_locale = GLOBAL_GET("internationalization/locale/fallback");
 	if (current_fallback_locale != TranslationServer::get_singleton()->get_fallback_locale()) {
 		TranslationServer::get_singleton()->set_fallback_locale(current_fallback_locale);
@@ -477,7 +474,7 @@ void EditorNode::_update_from_settings() {
 		if (!domain->is_enabled()) {
 			domain->set_locale_override(current_fallback_locale);
 		}
-		scene_root->propagate_notification(Control::NOTIFICATION_LAYOUT_DIRECTION_CHANGED);
+		get_scene_root()->propagate_notification(Control::NOTIFICATION_LAYOUT_DIRECTION_CHANGED);
 	}
 
 	RS::DOFBokehShape dof_shape = RS::DOFBokehShape(int(GLOBAL_GET("rendering/camera/depth_of_field/depth_of_field_bokeh_shape")));
@@ -520,30 +517,9 @@ void EditorNode::_update_from_settings() {
 	bool use_half_res_gi = GLOBAL_GET("rendering/global_illumination/gi/use_half_resolution");
 	RS::get_singleton()->gi_set_use_half_resolution(use_half_res_gi);
 
-	bool snap_2d_transforms = GLOBAL_GET("rendering/2d/snap/snap_2d_transforms_to_pixel");
-	scene_root->set_snap_2d_transforms_to_pixel(snap_2d_transforms);
-	bool snap_2d_vertices = GLOBAL_GET("rendering/2d/snap/snap_2d_vertices_to_pixel");
-	scene_root->set_snap_2d_vertices_to_pixel(snap_2d_vertices);
-
-	Viewport::SDFOversize sdf_oversize = Viewport::SDFOversize(int(GLOBAL_GET("rendering/2d/sdf/oversize")));
-	scene_root->set_sdf_oversize(sdf_oversize);
-	Viewport::SDFScale sdf_scale = Viewport::SDFScale(int(GLOBAL_GET("rendering/2d/sdf/scale")));
-	scene_root->set_sdf_scale(sdf_scale);
-
-	Viewport::MSAA msaa = Viewport::MSAA(int(GLOBAL_GET("rendering/anti_aliasing/quality/msaa_2d")));
-	scene_root->set_msaa_2d(msaa);
-
 	// 2D doesn't use a dedicated SubViewport like 3D does, so we apply it on the root viewport instead.
-	bool use_debanding = GLOBAL_GET("rendering/anti_aliasing/quality/use_debanding");
-	scene_root->set_use_debanding(use_debanding);
-	get_viewport()->set_use_debanding(use_debanding);
-
-	bool use_hdr_2d = GLOBAL_GET("rendering/viewport/hdr_2d");
-	scene_root->set_use_hdr_2d(use_hdr_2d);
-	get_viewport()->set_use_hdr_2d(use_hdr_2d);
-
-	float mesh_lod_threshold = GLOBAL_GET("rendering/mesh_lod/lod_change/threshold_pixels");
-	scene_root->set_mesh_lod_threshold(mesh_lod_threshold);
+	get_viewport()->set_use_debanding(GLOBAL_GET("rendering/anti_aliasing/quality/use_debanding"));
+	get_viewport()->set_use_hdr_2d(GLOBAL_GET("rendering/viewport/hdr_2d"));
 
 	RS::get_singleton()->decals_set_filter(RS::DecalFilter(int(GLOBAL_GET("rendering/textures/decals/filter"))));
 	RS::get_singleton()->light_projectors_set_filter(RS::LightProjectorFilter(int(GLOBAL_GET("rendering/textures/light_projectors/filter"))));
@@ -645,7 +621,7 @@ void EditorNode::_queue_translation_notification() {
 
 void EditorNode::_propagate_translation_notification() {
 	pending_translation_notification = false;
-	scene_root->propagate_notification(NOTIFICATION_TRANSLATION_CHANGED);
+	get_scene_root()->propagate_notification(NOTIFICATION_TRANSLATION_CHANGED);
 }
 
 void EditorNode::_update_theme(bool p_skip_creation) {
@@ -747,13 +723,18 @@ Ref<Texture2D> EditorNode::get_editor_theme_native_menu_icon(const StringName &p
 }
 
 void EditorNode::update_preview_themes(int p_mode) {
-	if (!scene_root->is_inside_tree()) {
+	theme_preview_mode = p_mode;
+	theme_preview_mode_set = true;
+	if (!get_scene_root()->is_inside_tree()) {
 		return; // Too early.
 	}
+	_apply_preview_themes(get_scene_root());
+}
 
+void EditorNode::_apply_preview_themes(SubViewport *p_viewport) {
 	Vector<Ref<Theme>> preview_themes;
 
-	switch (p_mode) {
+	switch (theme_preview_mode) {
 		case CanvasItemEditor::THEME_PREVIEW_PROJECT:
 			preview_themes.push_back(ThemeDB::get_singleton()->get_project_theme());
 			break;
@@ -768,11 +749,11 @@ void EditorNode::update_preview_themes(int p_mode) {
 
 	preview_themes.push_back(ThemeDB::get_singleton()->get_default_theme());
 
-	ThemeContext *preview_context = ThemeDB::get_singleton()->get_theme_context(scene_root);
+	ThemeContext *preview_context = ThemeDB::get_singleton()->get_theme_context(p_viewport);
 	if (preview_context) {
 		preview_context->set_themes(preview_themes);
 	} else {
-		ThemeDB::get_singleton()->create_theme_context(scene_root, preview_themes);
+		ThemeDB::get_singleton()->create_theme_context(p_viewport, preview_themes);
 	}
 }
 
@@ -957,6 +938,7 @@ void EditorNode::_notification(int p_what) {
 			EditorSettings::get_singleton()->save_project_metadata();
 			FileAccess::set_file_close_fail_notify_callback(nullptr);
 			log->deinit(); // Do not get messages anymore.
+			_activate_scene_context(nullptr);
 			editor_data.clear_edited_scenes();
 			get_viewport()->disconnect("size_changed", callable_mp(this, &EditorNode::_viewport_resized));
 		} break;
@@ -973,7 +955,7 @@ void EditorNode::_notification(int p_what) {
 			}
 			default_layout->set_value("docks", "dock_9", String(",").join(bottom_docks));
 
-			RenderingServer::get_singleton()->viewport_set_disable_2d(get_scene_root()->get_viewport_rid(), true);
+			set_scene_viewport_2d_disabled(true);
 			RenderingServer::get_singleton()->viewport_set_environment_mode(get_viewport()->get_viewport_rid(), RenderingServer::VIEWPORT_ENVIRONMENT_DISABLED);
 			DisplayServer::get_singleton()->screen_set_keep_on(EDITOR_GET("interface/editor/keep_screen_on"));
 
@@ -2248,7 +2230,7 @@ void EditorNode::_save_scene_with_preview(String p_file, int p_idx) {
 			img.instantiate();
 			img->initialize_data(1, 1, false, Image::FORMAT_RGB8);
 		} else if (c3d < c2d) {
-			Ref<ViewportTexture> viewport_texture = scene_root->get_texture();
+			Ref<ViewportTexture> viewport_texture = get_scene_root()->get_texture();
 			if (viewport_texture->get_width() > 0 && viewport_texture->get_height() > 0) {
 				img = viewport_texture->get_image();
 			}
@@ -2781,7 +2763,7 @@ void EditorNode::_dialog_action(String p_file) {
 			save_resource_in_path(saving_resource, p_file);
 
 			saving_resource = Ref<Resource>();
-			ObjectID current_id = editor_history.get_current();
+			ObjectID current_id = editor_history->get_current();
 			Object *current_obj = current_id.is_valid() ? ObjectDB::get_instance(current_id) : nullptr;
 			ERR_FAIL_NULL(current_obj);
 			current_obj->notify_property_list_changed();
@@ -2992,7 +2974,7 @@ void EditorNode::push_item(Object *p_object, const String &p_property, bool p_in
 }
 
 void EditorNode::edit_previous_item() {
-	if (editor_history.previous()) {
+	if (editor_history->previous()) {
 		_edit_current();
 	}
 }
@@ -3057,7 +3039,7 @@ void EditorNode::hide_unused_editors(const Object *p_editing_owner) {
 
 void EditorNode::_add_to_history(const Object *p_object, const String &p_property, bool p_inspector_only) {
 	ObjectID id = p_object->get_instance_id();
-	ObjectID history_id = editor_history.get_current();
+	ObjectID history_id = editor_history->get_current();
 	if (id != history_id) {
 		const MultiNodeEdit *multi_node_edit = Object::cast_to<const MultiNodeEdit>(p_object);
 		const MultiNodeEdit *history_multi_node_edit = ObjectDB::get_instance<MultiNodeEdit>(history_id);
@@ -3065,17 +3047,17 @@ void EditorNode::_add_to_history(const Object *p_object, const String &p_propert
 			return;
 		}
 		if (p_inspector_only) {
-			editor_history.add_object(id, String(), true);
+			editor_history->add_object(id, String(), true);
 		} else if (p_property.is_empty()) {
-			editor_history.add_object(id);
+			editor_history->add_object(id);
 		} else {
-			editor_history.add_object(id, p_property);
+			editor_history->add_object(id, p_property);
 		}
 	}
 }
 
 void EditorNode::_edit_current(bool p_skip_foreign, bool p_skip_inspector_update) {
-	ObjectID current_id = editor_history.get_current();
+	ObjectID current_id = editor_history->get_current();
 	Object *current_obj = current_id.is_valid() ? ObjectDB::get_instance(current_id) : nullptr;
 
 	Ref<Resource> res = Object::cast_to<Resource>(current_obj);
@@ -3087,7 +3069,7 @@ void EditorNode::_edit_current(bool p_skip_foreign, bool p_skip_inspector_update
 		}
 	}
 
-	bool inspector_only = editor_history.is_current_inspector_only();
+	bool inspector_only = editor_history->is_current_inspector_only();
 
 	if (!current_obj) {
 		SceneTreeDock::get_singleton()->set_selected(nullptr);
@@ -4485,10 +4467,9 @@ void EditorNode::set_edited_scene_root(Node *p_scene, bool p_auto_add) {
 	Node *old_edited_scene_root = get_editor_data().get_edited_scene_root();
 	ERR_FAIL_COND_MSG(p_scene && p_scene != old_edited_scene_root && p_scene->get_parent(), "Non-null nodes that are set as edited scene should not have a parent node.");
 
-	if (p_auto_add && old_edited_scene_root && old_edited_scene_root->get_parent() == scene_root) {
-		scene_root->remove_child(old_edited_scene_root);
-	}
-	get_editor_data().set_edited_scene_root(p_scene);
+	// The scene is parented under the active context's viewport (unless
+	// p_auto_add is false, in which case the caller places it in the tree).
+	get_editor_data().set_edited_scene_root(p_scene, p_auto_add);
 
 	if (Object::cast_to<Popup>(p_scene)) {
 		Object::cast_to<Popup>(p_scene)->show();
@@ -4496,10 +4477,6 @@ void EditorNode::set_edited_scene_root(Node *p_scene, bool p_auto_add) {
 	SceneTreeDock::get_singleton()->set_edited_scene(p_scene);
 	if (get_tree()) {
 		get_tree()->set_edited_scene_root(p_scene);
-	}
-
-	if (p_auto_add && p_scene) {
-		scene_root->add_child(p_scene, true);
 	}
 }
 
@@ -4588,7 +4565,7 @@ bool EditorNode::is_changing_scene() const {
 }
 
 void EditorNode::_set_current_scene(int p_idx) {
-	if (p_idx == editor_data.get_edited_scene()) {
+	if (p_idx == editor_data.get_edited_scene() && active_scene_context == editor_data.get_active_scene_context()) {
 		return; // Pointless.
 	}
 
@@ -4602,21 +4579,16 @@ void EditorNode::_set_current_scene_nocheck(int p_idx) {
 	}
 
 	changing_scene = true;
-	editor_data.save_edited_scene_state(editor_selection, &editor_history, _get_main_scene_state());
-
-	Node *old_scene = get_editor_data().get_edited_scene_root();
 
 	resource_count.clear();
-	editor_selection->clear();
 	SceneTreeDock::get_singleton()->clear_previous_node_selection();
 	editor_data.set_edited_scene(p_idx);
 
 	Node *new_scene = editor_data.get_edited_scene_root();
 
-	// Remove the scene only if it's a new scene, preventing performance issues when adding and removing scenes.
-	if (old_scene && new_scene != old_scene && old_scene->get_parent() == scene_root) {
-		scene_root->remove_child(old_scene);
-	}
+	// Deactivates the outgoing context (detaching its viewport, with the
+	// scene still parented to it) and attaches the new context's viewport.
+	_activate_scene_context(editor_data.get_active_scene_context());
 
 	if (Popup *p = Object::cast_to<Popup>(new_scene)) {
 		p->show();
@@ -4627,12 +4599,6 @@ void EditorNode::_set_current_scene_nocheck(int p_idx) {
 		get_tree()->set_edited_scene_root(new_scene);
 	}
 
-	if (new_scene) {
-		if (new_scene->get_parent() != scene_root) {
-			scene_root->add_child(new_scene, true);
-		}
-	}
-
 	if (editor_data.check_and_update_scene(p_idx)) {
 		if (!editor_data.get_scene_path(p_idx).is_empty()) {
 			editor_folding.load_scene_folding(editor_data.get_edited_scene_root(p_idx), editor_data.get_scene_path(p_idx));
@@ -4641,7 +4607,12 @@ void EditorNode::_set_current_scene_nocheck(int p_idx) {
 		EditorUndoRedoManager::get_singleton()->clear_history(editor_data.get_scene_history_id(p_idx), false);
 	}
 
-	Dictionary state = editor_data.restore_edited_scene_state(editor_selection, &editor_history);
+	EditorSceneContext *context = editor_data.get_active_scene_context();
+	Dictionary state;
+	if (context) {
+		editor_data.set_editor_plugin_states(context->get_editor_plugin_states());
+		state = context->get_main_state();
+	}
 	_edit_current(true);
 
 	_update_title();
@@ -4658,6 +4629,135 @@ void EditorNode::_set_current_scene_nocheck(int p_idx) {
 
 	_update_undo_redo_allowed();
 	_update_unsaved_cache();
+}
+
+void EditorNode::_activate_scene_context(EditorSceneContext *p_context) {
+	if (active_scene_context == p_context) {
+		return;
+	}
+
+	if (active_scene_context) {
+		// Stash the per-scene state that still lives in editor-wide
+		// singletons (plugin states, dock scroll offsets and filters).
+		active_scene_context->set_editor_plugin_states(editor_data.get_editor_plugin_states());
+		active_scene_context->set_main_state(_get_main_scene_state());
+		if (active_scene_context->is_active()) {
+			active_scene_context->deactivate();
+		}
+	}
+
+	active_scene_context = p_context;
+
+	if (p_context) {
+		editor_selection = p_context->get_selection();
+		editor_history = p_context->get_history();
+		if (scene_viewport_container && !p_context->is_active()) {
+			p_context->activate(scene_viewport_container);
+		}
+		_apply_scene_viewport_2d_state(p_context->get_viewport());
+		if (theme_preview_mode_set) {
+			_apply_preview_themes(p_context->get_viewport());
+		}
+	} else {
+		editor_selection = no_scene_selection;
+		editor_history = &no_scene_history;
+	}
+
+	emit_signal(SNAME("active_scene_context_changed"));
+}
+
+SubViewport *EditorNode::get_scene_root() {
+	if (active_scene_context) {
+		return active_scene_context->get_viewport();
+	}
+	return placeholder_scene_viewport;
+}
+
+void EditorNode::configure_scene_context(EditorSceneContext *p_context) {
+	ERR_FAIL_NULL(p_context);
+	_configure_editor_selection(p_context->get_selection());
+	_apply_scene_viewport_settings(p_context->get_viewport());
+}
+
+void EditorNode::scene_context_about_to_be_removed(EditorSceneContext *p_context) {
+	if (active_scene_context != p_context) {
+		return;
+	}
+	active_scene_context = nullptr;
+	editor_selection = no_scene_selection;
+	editor_history = &no_scene_history;
+	emit_signal(SNAME("active_scene_context_changed"));
+}
+
+void EditorNode::_configure_editor_selection(EditorSelection *p_selection) {
+	for (const ObjectID &plugin_id : selection_meta_plugins) {
+		Object *plugin = ObjectDB::get_instance(plugin_id);
+		if (plugin) {
+			p_selection->add_editor_plugin(plugin);
+		}
+	}
+	for (const Callable &callable : selection_changed_callables) {
+		p_selection->connect("selection_changed", callable);
+	}
+}
+
+void EditorNode::add_editor_selection_plugin(Object *p_plugin) {
+	ERR_FAIL_NULL(p_plugin);
+	selection_meta_plugins.push_back(p_plugin->get_instance_id());
+	no_scene_selection->add_editor_plugin(p_plugin);
+	for (int i = 0; i < editor_data.get_edited_scene_count(); i++) {
+		editor_data.get_scene_context(i)->get_selection()->add_editor_plugin(p_plugin);
+	}
+}
+
+void EditorNode::connect_editor_selection_changed(const Callable &p_callable) {
+	selection_changed_callables.push_back(p_callable);
+	no_scene_selection->connect("selection_changed", p_callable);
+	for (int i = 0; i < editor_data.get_edited_scene_count(); i++) {
+		editor_data.get_scene_context(i)->get_selection()->connect("selection_changed", p_callable);
+	}
+}
+
+void EditorNode::set_scene_viewport_container(SubViewportContainer *p_container) {
+	scene_viewport_container = p_container;
+	if (placeholder_scene_viewport && !placeholder_scene_viewport->get_parent()) {
+		p_container->add_child(placeholder_scene_viewport);
+	}
+	if (active_scene_context && !active_scene_context->is_active()) {
+		active_scene_context->activate(p_container);
+	}
+}
+
+void EditorNode::set_scene_viewport_2d_disabled(bool p_disabled) {
+	scene_viewport_2d_disabled = p_disabled;
+	_apply_scene_viewport_2d_state(get_scene_root());
+}
+
+void EditorNode::_apply_scene_viewport_2d_state(SubViewport *p_viewport) {
+	RenderingServer::get_singleton()->viewport_set_disable_2d(p_viewport->get_viewport_rid(), scene_viewport_2d_disabled);
+	RenderingServer::get_singleton()->viewport_set_environment_mode(p_viewport->get_viewport_rid(), scene_viewport_2d_disabled ? RS::VIEWPORT_ENVIRONMENT_DISABLED : RS::VIEWPORT_ENVIRONMENT_ENABLED);
+}
+
+void EditorNode::_apply_scene_viewport_settings(SubViewport *p_viewport) {
+	int current_filter = GLOBAL_GET("rendering/textures/canvas_textures/default_texture_filter");
+	if (current_filter != p_viewport->get_default_canvas_item_texture_filter()) {
+		Viewport::DefaultCanvasItemTextureFilter tf = (Viewport::DefaultCanvasItemTextureFilter)current_filter;
+		p_viewport->set_default_canvas_item_texture_filter(tf);
+	}
+	int current_repeat = GLOBAL_GET("rendering/textures/canvas_textures/default_texture_repeat");
+	if (current_repeat != p_viewport->get_default_canvas_item_texture_repeat()) {
+		Viewport::DefaultCanvasItemTextureRepeat tr = (Viewport::DefaultCanvasItemTextureRepeat)current_repeat;
+		p_viewport->set_default_canvas_item_texture_repeat(tr);
+	}
+
+	p_viewport->set_snap_2d_transforms_to_pixel(GLOBAL_GET("rendering/2d/snap/snap_2d_transforms_to_pixel"));
+	p_viewport->set_snap_2d_vertices_to_pixel(GLOBAL_GET("rendering/2d/snap/snap_2d_vertices_to_pixel"));
+	p_viewport->set_sdf_oversize(Viewport::SDFOversize(int(GLOBAL_GET("rendering/2d/sdf/oversize"))));
+	p_viewport->set_sdf_scale(Viewport::SDFScale(int(GLOBAL_GET("rendering/2d/sdf/scale"))));
+	p_viewport->set_msaa_2d(Viewport::MSAA(int(GLOBAL_GET("rendering/anti_aliasing/quality/msaa_2d"))));
+	p_viewport->set_use_debanding(GLOBAL_GET("rendering/anti_aliasing/quality/use_debanding"));
+	p_viewport->set_use_hdr_2d(GLOBAL_GET("rendering/viewport/hdr_2d"));
+	p_viewport->set_mesh_lod_threshold(GLOBAL_GET("rendering/mesh_lod/lod_change/threshold_pixels"));
 }
 
 void EditorNode::_nav_to_selected_scene() {
@@ -4762,7 +4862,7 @@ Error EditorNode::load_scene(const String &p_scene, bool p_ignore_broken_deps, b
 	} else {
 		EditorUndoRedoManager::get_singleton()->clear_history(editor_data.get_current_edited_scene_history_id(), false);
 
-		Dictionary state = editor_data.restore_edited_scene_state(editor_selection, &editor_history);
+		Dictionary state = editor_data.get_active_scene_context()->get_main_state();
 		callable_mp(this, &EditorNode::_set_main_scene_state).call_deferred(state, get_edited_scene()); // Do after everything else is done setting up.
 	}
 
@@ -4860,8 +4960,8 @@ Error EditorNode::load_scene(const String &p_scene, bool p_ignore_broken_deps, b
 	if (restoring_scenes) {
 		// Initialize history for restored scenes.
 		ObjectID id = new_scene->get_instance_id();
-		if (id != editor_history.get_current()) {
-			editor_history.add_object(id);
+		if (id != editor_history->get_current()) {
+			editor_history->add_object(id);
 		}
 	}
 
@@ -5222,12 +5322,17 @@ void EditorNode::get_children_nodes(Node *p_node, List<Node *> &p_nodes) {
 }
 
 void EditorNode::replace_history_reimported_nodes(Node *p_original_root_node, Node *p_new_root_node, Node *p_node) {
+	// Fix the history of the scene currently selected in editor_data (which,
+	// during reimports, is not necessarily the displayed one).
+	EditorSceneContext *scene_context = editor_data.get_active_scene_context();
+	ERR_FAIL_NULL(scene_context);
+	EditorSelectionHistory *history = scene_context->get_history();
 	NodePath scene_path_to_node = p_original_root_node->get_path_to(p_node);
 	Node *new_node = p_new_root_node->get_node_or_null(scene_path_to_node);
 	if (new_node) {
-		editor_history.replace_object(p_node->get_instance_id(), new_node->get_instance_id());
+		history->replace_object(p_node->get_instance_id(), new_node->get_instance_id());
 	} else {
-		editor_history.replace_object(p_node->get_instance_id(), ObjectID());
+		history->replace_object(p_node->get_instance_id(), ObjectID());
 	}
 
 	for (int i = 0; i < p_node->get_child_count(); i++) {
@@ -7150,11 +7255,6 @@ void EditorNode::reload_instances_with_path_in_edited_scenes() {
 		}
 	}
 
-	// Save the current scene state/selection in case of lost.
-	Dictionary editor_state = _get_main_scene_state();
-	editor_data.save_edited_scene_state(editor_selection, &editor_history, editor_state);
-	editor_selection->clear();
-
 	int original_edited_scene_idx = editor_data.get_edited_scene();
 
 	for (KeyValue<int, SceneModificationsEntry> &scene_modifications_elem : scenes_modification_table) {
@@ -7165,18 +7265,17 @@ void EditorNode::reload_instances_with_path_in_edited_scenes() {
 		editor_data.set_edited_scene(current_scene_idx);
 		Node *current_edited_scene = editor_data.get_edited_scene_root(current_scene_idx);
 
-		// Make sure the node is in the tree so that editor_selection can add node smoothly.
-		if (original_edited_scene_idx != current_scene_idx) {
-			// Prevent scene roots with the same name from being in the tree at the same time.
-			Node *original_edited_scene_root = editor_data.get_edited_scene_root(original_edited_scene_idx);
-			if (original_edited_scene_root && original_edited_scene_root->get_name() == current_edited_scene->get_name()) {
-				scene_root->remove_child(original_edited_scene_root);
+		// Each affected scene's selection is updated through its own context;
+		// scenes in other tabs stay parented to their context's viewport while
+		// their nodes are replaced.
+		EditorSceneContext *scene_context = editor_data.get_scene_context(current_scene_idx);
+		LocalVector<Node *> scene_selected_nodes;
+		for (const ObjectID &selected_node_id : scene_context->get_selected_node_ids()) {
+			Node *selected_node = ObjectDB::get_instance<Node>(selected_node_id);
+			if (selected_node) {
+				scene_selected_nodes.push_back(selected_node);
 			}
-			scene_root->add_child(current_edited_scene);
 		}
-
-		// Restore the state so that the selection can be updated.
-		editor_state = editor_data.restore_edited_scene_state(editor_selection, &editor_history);
 
 		int current_history_id = editor_data.get_current_edited_scene_history_id();
 		bool is_unsaved = EditorUndoRedoManager::get_singleton()->is_history_unsaved(current_history_id);
@@ -7294,12 +7393,24 @@ void EditorNode::reload_instances_with_path_in_edited_scenes() {
 			}
 
 			// Store all the paths for any selected nodes which are ancestors of the node we're replacing.
+			// Only top-level selected nodes (without a selected ancestor) are restored afterwards.
 			List<NodePath> selected_node_paths;
-			for (Node *selected_node : editor_selection->get_top_selected_node_list()) {
-				if (selected_node == original_node || original_node->is_ancestor_of(selected_node)) {
-					selected_node_paths.push_back(original_node->get_path_to(selected_node));
-					editor_selection->remove_node(selected_node);
+			for (int i = scene_selected_nodes.size() - 1; i >= 0; i--) {
+				Node *selected_node = scene_selected_nodes[i];
+				if (selected_node != original_node && !original_node->is_ancestor_of(selected_node)) {
+					continue;
 				}
+				bool has_selected_ancestor = false;
+				for (Node *other_selected_node : scene_selected_nodes) {
+					if (other_selected_node != selected_node && other_selected_node->is_ancestor_of(selected_node)) {
+						has_selected_ancestor = true;
+						break;
+					}
+				}
+				if (!has_selected_ancestor) {
+					selected_node_paths.push_back(original_node->get_path_to(selected_node));
+				}
+				scene_selected_nodes.remove_at(i);
 			}
 
 			// Remove all nodes which were added as additional elements (they will be restored later).
@@ -7365,7 +7476,9 @@ void EditorNode::reload_instances_with_path_in_edited_scenes() {
 				instantiated_node->set_scene_instance_state(nullptr);
 				instantiated_node->set_scene_file_path(original_node_file_path);
 				current_edited_scene = instantiated_node;
-				editor_data.set_edited_scene_root(current_edited_scene);
+				// The upcoming replace_by parents the new root under the
+				// context's viewport, so don't attach it here.
+				editor_data.set_edited_scene_root(current_edited_scene, false);
 
 				if (original_edited_scene_idx == current_scene_idx) {
 					// How that the editor executes a redraw while destroying or progressing the EditorProgress,
@@ -7431,14 +7544,11 @@ void EditorNode::reload_instances_with_path_in_edited_scenes() {
 			}
 
 			// Restore the selection.
-			if (selected_node_paths.size()) {
-				for (NodePath selected_node_path : selected_node_paths) {
-					Node *selected_node = instantiated_node->get_node_or_null(selected_node_path);
-					if (selected_node) {
-						editor_selection->add_node(selected_node);
-					}
+			for (NodePath selected_node_path : selected_node_paths) {
+				Node *selected_node = instantiated_node->get_node_or_null(selected_node_path);
+				if (selected_node) {
+					scene_selected_nodes.push_back(selected_node);
 				}
-				editor_selection->update();
 			}
 
 			// Attempt to restore the modified properties and signals for the instantitated node and all its owned children.
@@ -7466,24 +7576,18 @@ void EditorNode::reload_instances_with_path_in_edited_scenes() {
 			EditorUndoRedoManager::get_singleton()->set_history_as_unsaved(current_history_id);
 		}
 
-		// Save the current handled scene state.
-		editor_data.save_edited_scene_state(editor_selection, &editor_history, editor_state);
-		editor_selection->clear();
+		// Store the updated selection back into the scene's context.
+		Vector<ObjectID> updated_selection;
+		for (Node *selected_node : scene_selected_nodes) {
+			updated_selection.push_back(selected_node->get_instance_id());
+		}
+		scene_context->set_selected_node_ids(updated_selection);
+		if (scene_context->is_active()) {
+			editor_selection->update();
+		}
 
 		// Cleanup the history of the changes.
-		editor_history.cleanup_history();
-
-		if (original_edited_scene_idx != current_scene_idx) {
-			scene_root->remove_child(current_edited_scene);
-
-			// Ensure the current edited scene is re-added if removed earlier because it has the same name
-			// as the reimported scene. The editor could crash when reloading SceneTreeDock if the current
-			// edited scene is not in the scene tree.
-			Node *original_edited_scene_root = editor_data.get_edited_scene_root(original_edited_scene_idx);
-			if (original_edited_scene_root && !original_edited_scene_root->get_parent()) {
-				scene_root->add_child(original_edited_scene_root);
-			}
-		}
+		scene_context->get_history()->cleanup_history();
 	}
 
 	// For the whole editor, call the _notify_nodes_scene_reimported with a list of replaced nodes.
@@ -7491,8 +7595,6 @@ void EditorNode::reload_instances_with_path_in_edited_scenes() {
 	_notify_nodes_scene_reimported(this, replaced_nodes);
 
 	editor_data.set_edited_scene(original_edited_scene_idx);
-
-	editor_data.restore_edited_scene_state(editor_selection, &editor_history);
 
 	progress.step(TTR("Reloading done."), editor_data.get_edited_scene_count());
 }
@@ -8055,6 +8157,7 @@ void EditorNode::_bind_methods() {
 	ADD_SIGNAL(MethodInfo("scene_saved", PropertyInfo(Variant::STRING, "path")));
 	ADD_SIGNAL(MethodInfo("scene_changed"));
 	ADD_SIGNAL(MethodInfo("scene_closed", PropertyInfo(Variant::STRING, "path")));
+	ADD_SIGNAL(MethodInfo("active_scene_context_changed"));
 	ADD_SIGNAL(MethodInfo("preview_locale_changed"));
 	ADD_SIGNAL(MethodInfo("resource_counter_changed"));
 }
@@ -8764,7 +8867,9 @@ EditorNode::EditorNode() {
 		EditorInspector::add_inspector_plugin(ppm);
 	}
 
-	editor_selection = memnew(EditorSelection);
+	no_scene_selection = memnew(EditorSelection);
+	editor_selection = no_scene_selection;
+	editor_history = &no_scene_history;
 
 	EditorFileSystem *efs = memnew(EditorFileSystem);
 	add_child(efs);
@@ -8960,13 +9065,13 @@ EditorNode::EditorNode() {
 	srt->add_child(editor_main_screen);
 	editor_main_screen->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 
-	scene_root = memnew(SubViewport);
-	scene_root->set_auto_translate_mode(AUTO_TRANSLATE_MODE_ALWAYS);
-	scene_root->set_translation_domain(StringName());
-	scene_root->set_embedding_subwindows(true);
-	scene_root->set_disable_3d(true);
-	scene_root->set_disable_input(true);
-	scene_root->set_as_audio_listener_2d(true);
+	placeholder_scene_viewport = memnew(SubViewport);
+	placeholder_scene_viewport->set_auto_translate_mode(AUTO_TRANSLATE_MODE_ALWAYS);
+	placeholder_scene_viewport->set_translation_domain(StringName());
+	placeholder_scene_viewport->set_embedding_subwindows(true);
+	placeholder_scene_viewport->set_disable_3d(true);
+	placeholder_scene_viewport->set_disable_input(true);
+	placeholder_scene_viewport->set_as_audio_listener_2d(true);
 
 	accept = memnew(AcceptDialog);
 	accept->set_autowrap(true);
@@ -9259,7 +9364,7 @@ EditorNode::EditorNode() {
 
 	// Instantiate and place editor docks.
 
-	memnew(SceneTreeDock(scene_root, editor_selection, editor_data));
+	memnew(SceneTreeDock(editor_selection, editor_data));
 	editor_dock_manager->add_dock(SceneTreeDock::get_singleton());
 
 	memnew(ImportDock);
@@ -9684,6 +9789,7 @@ EditorNode::EditorNode() {
 
 	editor_data.add_edited_scene(-1);
 	editor_data.set_edited_scene(0);
+	_activate_scene_context(editor_data.get_active_scene_context());
 	scene_tabs->update_scene_tabs();
 
 	ImportDock::get_singleton()->initialize_import_options();
@@ -9741,7 +9847,7 @@ EditorNode::~EditorNode() {
 #ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 	memdelete(build_task_bootstrap_loader);
 #endif
-	memdelete(editor_selection);
+	memdelete(no_scene_selection);
 	memdelete(editor_plugins_over);
 	memdelete(editor_plugins_force_over);
 	memdelete(editor_plugins_force_input_forwarding);

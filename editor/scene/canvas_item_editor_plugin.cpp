@@ -4630,6 +4630,15 @@ void CanvasItemEditor::_update_oversampling() {
 	EditorNode::get_singleton()->get_scene_root()->set_oversampling_override(auto_resampling_enabled ? zoom : 0.0);
 }
 
+void CanvasItemEditor::_active_scene_context_changed() {
+	editor_selection = EditorNode::get_singleton()->get_editor_selection();
+	// The displayed viewport changed, so re-apply the viewport-level state
+	// this editor manages.
+	EditorNode::get_singleton()->get_scene_root()->set_snap_controls_to_pixels(GLOBAL_GET("gui/common/snap_controls_to_pixels"));
+	_update_oversampling();
+	update_viewport();
+}
+
 void CanvasItemEditor::_shortcut_zoom_set(real_t p_zoom) {
 	_zoom_on_position(p_zoom * MAX(1, EDSCALE), viewport->get_local_mouse_position());
 }
@@ -5569,9 +5578,10 @@ CanvasItemEditor::CanvasItemEditor() {
 	snap_target[1] = SNAP_TARGET_NONE;
 
 	editor_selection = EditorNode::get_singleton()->get_editor_selection();
-	editor_selection->add_editor_plugin(this);
-	editor_selection->connect("selection_changed", callable_mp((CanvasItem *)this, &CanvasItem::queue_redraw));
-	editor_selection->connect("selection_changed", callable_mp(this, &CanvasItemEditor::_selection_changed));
+	EditorNode::get_singleton()->add_editor_selection_plugin(this);
+	EditorNode::get_singleton()->connect_editor_selection_changed(callable_mp((CanvasItem *)this, &CanvasItem::queue_redraw));
+	EditorNode::get_singleton()->connect_editor_selection_changed(callable_mp(this, &CanvasItemEditor::_selection_changed));
+	EditorNode::get_singleton()->connect("active_scene_context_changed", callable_mp(this, &CanvasItemEditor::_active_scene_context_changed));
 
 	SceneTreeDock::get_singleton()->connect("node_created", callable_mp(this, &CanvasItemEditor::_adjust_new_node_position));
 	SceneTreeDock::get_singleton()->connect("add_node_used", callable_mp(this, &CanvasItemEditor::_reset_create_position));
@@ -5613,7 +5623,7 @@ CanvasItemEditor::CanvasItemEditor() {
 	viewport_scrollable->add_child(scene_tree);
 	scene_tree->set_stretch(true);
 	scene_tree->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
-	scene_tree->add_child(EditorNode::get_singleton()->get_scene_root());
+	EditorNode::get_singleton()->set_scene_viewport_container(scene_tree);
 
 	controls_vb = memnew(VBoxContainer);
 	controls_vb->set_begin(Point2(5, 5));
@@ -6093,15 +6103,13 @@ void CanvasItemEditorPlugin::make_visible(bool p_visible) {
 	if (p_visible) {
 		canvas_item_editor->show();
 		canvas_item_editor->set_process(true);
-		RenderingServer::get_singleton()->viewport_set_disable_2d(EditorNode::get_singleton()->get_scene_root()->get_viewport_rid(), false);
-		RenderingServer::get_singleton()->viewport_set_environment_mode(EditorNode::get_singleton()->get_scene_root()->get_viewport_rid(), RS::VIEWPORT_ENVIRONMENT_ENABLED);
-
 	} else {
 		canvas_item_editor->hide();
 		canvas_item_editor->set_process(false);
-		RenderingServer::get_singleton()->viewport_set_disable_2d(EditorNode::get_singleton()->get_scene_root()->get_viewport_rid(), true);
-		RenderingServer::get_singleton()->viewport_set_environment_mode(EditorNode::get_singleton()->get_scene_root()->get_viewport_rid(), RS::VIEWPORT_ENVIRONMENT_DISABLED);
 	}
+	// Stored by EditorNode and re-applied whenever another scene context's
+	// viewport becomes the displayed one.
+	EditorNode::get_singleton()->set_scene_viewport_2d_disabled(!p_visible);
 }
 
 Dictionary CanvasItemEditorPlugin::get_state() const {
@@ -6212,7 +6220,9 @@ void CanvasItemEditorViewport::_remove_preview() {
 			node->queue_free();
 			preview_node->remove_child(node);
 		}
-		EditorNode::get_singleton()->get_scene_root()->remove_child(preview_node);
+		// The displayed viewport may have changed since the preview was added,
+		// so remove the preview from its actual parent.
+		preview_node->get_parent()->remove_child(preview_node);
 
 		label->hide();
 		label_desc->hide();

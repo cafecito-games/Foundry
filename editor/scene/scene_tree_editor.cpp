@@ -1749,10 +1749,22 @@ void SceneTreeEditor::set_valid_types(const Vector<StringName> &p_valid) {
 }
 
 void SceneTreeEditor::set_editor_selection(EditorSelection *p_selection) {
+	if (editor_selection == p_selection) {
+		return;
+	}
+	Callable selection_changed_callable = callable_mp(this, &SceneTreeEditor::_selection_changed);
+	if (editor_selection && editor_selection->is_connected("selection_changed", selection_changed_callable)) {
+		editor_selection->disconnect("selection_changed", selection_changed_callable);
+	}
 	editor_selection = p_selection;
+	if (!editor_selection) {
+		return;
+	}
 	tree->set_select_mode(Tree::SELECT_MULTI);
 	tree->set_cursor_can_exit_tree(false);
-	editor_selection->connect("selection_changed", callable_mp(this, &SceneTreeEditor::_selection_changed));
+	if (!editor_selection->is_connected("selection_changed", selection_changed_callable)) {
+		editor_selection->connect("selection_changed", selection_changed_callable);
+	}
 }
 
 void SceneTreeEditor::_update_selection(TreeItem *item) {

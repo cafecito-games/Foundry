@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  editor_object_selector.h                                              */
+/*  editor_scene_context.h                                                */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -30,38 +30,58 @@
 
 #pragma once
 
-#include "scene/gui/box_container.h"
-#include "scene/gui/button.h"
-#include "scene/gui/label.h"
-#include "scene/gui/popup_menu.h"
-#include "scene/gui/texture_rect.h"
+#include "editor/editor_data.h"
 
-class EditorSelectionHistory;
+class Node;
+class SubViewport;
 
-class EditorObjectSelector : public Button {
-	FOUNDRY_CLASS(EditorObjectSelector, Button);
-
-	TextureRect *current_object_icon = nullptr;
-	Label *current_object_label = nullptr;
-	TextureRect *sub_objects_icon = nullptr;
-	PopupMenu *sub_objects_menu = nullptr;
-
-	Vector<ObjectID> objects;
-
-	void _show_popup();
-	void _id_pressed(int p_idx);
-	void _about_to_show();
-	void _add_children_to_popup(Object *p_obj, int p_depth = 0);
-
-protected:
-	void _notification(int p_what);
+/**
+ * Owns the editing state of a single edited scene: the scene root, the
+ * SubViewport hosting it, the selection, the inspector navigation history,
+ * the per-plugin editor state, and the undo history id.
+ *
+ * The scene root stays parented to the context's viewport for its whole
+ * lifetime. Activating a context attaches its viewport to the display
+ * container (entering the tree); deactivating detaches it, so inactive
+ * scenes neither render nor leak content into the shared editor world.
+ * While a context is inactive its selection is tracked by object id, since
+ * out-of-tree nodes cannot live in an EditorSelection.
+ */
+class EditorSceneContext {
+	SubViewport *viewport = nullptr;
+	Node *scene_root_node = nullptr;
+	EditorSelection *selection = nullptr;
+	EditorSelectionHistory history;
+	Dictionary editor_plugin_states;
+	Dictionary main_state;
+	int history_id = 0;
+	Vector<ObjectID> retained_selection_ids;
+	bool active = false;
 
 public:
-	virtual Size2 get_minimum_size() const override;
+	SubViewport *get_viewport() const { return viewport; }
+	EditorSelection *get_selection() const { return selection; }
+	EditorSelectionHistory *get_history() { return &history; }
 
-	void update_path();
-	void clear_path();
-	void enable_path();
+	void set_scene_root_node(Node *p_scene_root, bool p_attach_to_viewport = true);
+	Node *get_scene_root_node() const { return scene_root_node; }
 
-	EditorObjectSelector();
+	void set_editor_plugin_states(const Dictionary &p_states) { editor_plugin_states = p_states; }
+	Dictionary get_editor_plugin_states() const { return editor_plugin_states; }
+
+	void set_main_state(const Dictionary &p_state) { main_state = p_state; }
+	Dictionary get_main_state() const { return main_state; }
+
+	void set_history_id(int p_history_id) { history_id = p_history_id; }
+	int get_history_id() const { return history_id; }
+
+	bool is_active() const { return active; }
+	void activate(Node *p_display_parent);
+	void deactivate();
+
+	Vector<ObjectID> get_selected_node_ids() const;
+	void set_selected_node_ids(const Vector<ObjectID> &p_ids);
+
+	EditorSceneContext();
+	~EditorSceneContext();
 };

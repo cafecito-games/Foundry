@@ -100,6 +100,7 @@ public:
 	EditorSelectionHistory();
 };
 
+class EditorSceneContext;
 class EditorSelection;
 
 class EditorData {
@@ -111,17 +112,13 @@ public:
 	};
 
 	struct EditedScene {
-		Node *root = nullptr;
+		EditorSceneContext *context = nullptr;
 		String path;
 		uint64_t file_modified_time = 0;
-		Dictionary editor_states;
-		List<Node *> selection;
-		Vector<EditorSelectionHistory::HistoryElement> history_stored;
-		int history_current = 0;
-		Dictionary custom_state;
 		NodePath live_edit_root;
-		int history_id = 0;
 		uint64_t last_checked_version = 0;
+
+		Node *get_root() const;
 	};
 
 private:
@@ -202,7 +199,9 @@ public:
 	void move_edited_scene_index(int p_idx, int p_to_idx);
 	void remove_scene(int p_idx);
 	void set_edited_scene(int p_idx);
-	void set_edited_scene_root(Node *p_root);
+	void set_edited_scene_root(Node *p_root, bool p_attach_to_viewport = true);
+	EditorSceneContext *get_scene_context(int p_idx) const;
+	EditorSceneContext *get_active_scene_context() const;
 	int get_edited_scene() const;
 	int get_edited_scene_from_path(const String &p_path) const;
 	Node *get_edited_scene_root(int p_idx = -1);
@@ -235,8 +234,6 @@ public:
 	void set_plugin_window_layout(Ref<ConfigFile> p_layout);
 	void get_plugin_window_layout(Ref<ConfigFile> p_layout);
 
-	void save_edited_scene_state(EditorSelection *p_selection, EditorSelectionHistory *p_history, const Dictionary &p_custom);
-	Dictionary restore_edited_scene_state(EditorSelection *p_selection, EditorSelectionHistory *p_history);
 	void notify_edited_scene_changed();
 	void notify_resource_saved(const Ref<Resource> &p_resource);
 	void notify_scene_saved(const String &p_path);

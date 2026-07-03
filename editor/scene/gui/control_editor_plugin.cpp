@@ -937,6 +937,10 @@ List<Control *> ControlEditorToolbar::_get_edited_controls() {
 	return selection;
 }
 
+void ControlEditorToolbar::_update_editor_selection() {
+	editor_selection = EditorNode::get_singleton()->get_editor_selection();
+}
+
 void ControlEditorToolbar::_selection_changed() {
 	// Update toolbar visibility.
 	bool has_controls = false;
@@ -1145,8 +1149,9 @@ ControlEditorToolbar::ControlEditorToolbar() {
 
 	// Editor connections.
 	editor_selection = EditorNode::get_singleton()->get_editor_selection();
-	editor_selection->add_editor_plugin(this);
-	editor_selection->connect("selection_changed", callable_mp(this, &ControlEditorToolbar::_selection_changed));
+	EditorNode::get_singleton()->add_editor_selection_plugin(this);
+	EditorNode::get_singleton()->connect_editor_selection_changed(callable_mp(this, &ControlEditorToolbar::_selection_changed));
+	EditorNode::get_singleton()->connect("active_scene_context_changed", callable_mp(this, &ControlEditorToolbar::_update_editor_selection));
 
 	singleton = this;
 }

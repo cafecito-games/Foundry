@@ -2024,7 +2024,7 @@ void SceneTreeDock::fill_path_renames(Node *p_node, Node *p_new_parent, HashMap<
 
 bool SceneTreeDock::_update_node_path(Node *p_root_node, NodePath &r_node_path, HashMap<Node *, NodePath> *p_renames) const {
 	Node *target_node = p_root_node->get_node_or_null(r_node_path);
-	ERR_FAIL_NULL_V_MSG(target_node, false, "Found invalid node path '" + String(r_node_path) + "' on node '" + String(scene_root->get_path_to(p_root_node)) + "'");
+	ERR_FAIL_NULL_V_MSG(target_node, false, "Found invalid node path '" + String(r_node_path) + "' on node '" + String(EditorNode::get_singleton()->get_scene_root()->get_path_to(p_root_node)) + "'");
 
 	// Try to find the target node in modified node paths.
 	HashMap<Node *, NodePath>::Iterator found_node_path = p_renames->find(target_node);
@@ -2378,7 +2378,7 @@ bool SceneTreeDock::_validate_no_instance() {
 }
 
 void SceneTreeDock::_node_reparent(NodePath p_path, bool p_keep_global_xform) {
-	Node *new_parent = scene_root->get_node(p_path);
+	Node *new_parent = EditorNode::get_singleton()->get_scene_root()->get_node(p_path);
 	ERR_FAIL_NULL(new_parent);
 
 	const List<Node *> selection = editor_selection->get_top_selected_node_list();
@@ -2961,6 +2961,11 @@ void SceneTreeDock::_queue_update_script_button() {
 	callable_mp(this, &SceneTreeDock::_update_script_button).call_deferred();
 }
 
+void SceneTreeDock::_update_editor_selection() {
+	editor_selection = EditorNode::get_singleton()->get_editor_selection();
+	scene_tree->set_editor_selection(editor_selection);
+}
+
 void SceneTreeDock::_selection_changed() {
 	int selection_size = editor_selection->get_selection().size();
 	if (selection_size > 1) {
@@ -3064,7 +3069,7 @@ void SceneTreeDock::_create() {
 
 		} else {
 			// If no root exist in edited scene
-			parent = scene_root;
+			parent = EditorNode::get_singleton()->get_scene_root();
 			ERR_FAIL_NULL(parent);
 		}
 
@@ -3098,7 +3103,7 @@ void SceneTreeDock::_create() {
 
 		Node *first = selection.front()->get();
 		ERR_FAIL_NULL(first);
-		int smaller_path_to_top = first->get_path_to(scene_root).get_name_count();
+		int smaller_path_to_top = first->get_path_to(EditorNode::get_singleton()->get_scene_root()).get_name_count();
 		Node *top_node = first;
 
 		bool center_parent = EDITOR_GET("docks/scene_tree/center_node_on_reparent");
@@ -3108,7 +3113,7 @@ void SceneTreeDock::_create() {
 			Node *n = E->get();
 			ERR_FAIL_NULL(n);
 
-			int path_length = n->get_path_to(scene_root).get_name_count();
+			int path_length = n->get_path_to(EditorNode::get_singleton()->get_scene_root()).get_name_count();
 
 			if (top_node != n) {
 				if (smaller_path_to_top > path_length) {
@@ -4796,7 +4801,7 @@ void SceneTreeDock::_update_configuration_warning() {
 	}
 }
 
-SceneTreeDock::SceneTreeDock(Node *p_scene_root, EditorSelection *p_editor_selection, EditorData &p_editor_data) {
+SceneTreeDock::SceneTreeDock(EditorSelection *p_editor_selection, EditorData &p_editor_data) {
 	set_name(TTRC("Scene"));
 	set_icon_name("PackedScene");
 	set_dock_shortcut(ED_SHORTCUT_AND_COMMAND("docks/open_scene", TTRC("Open Scene Dock")));
@@ -4805,7 +4810,6 @@ SceneTreeDock::SceneTreeDock(Node *p_scene_root, EditorSelection *p_editor_selec
 	singleton = this;
 	editor_data = &p_editor_data;
 	editor_selection = p_editor_selection;
-	scene_root = p_scene_root;
 
 	VBoxContainer *main_vbox = memnew(VBoxContainer);
 	add_child(main_vbox);
@@ -4959,7 +4963,8 @@ SceneTreeDock::SceneTreeDock(Node *p_scene_root, EditorSelection *p_editor_selec
 	scene_tree->get_scene_tree()->connect(SceneStringName(gui_input), callable_mp(this, &SceneTreeDock::_scene_tree_gui_input));
 	scene_tree->get_scene_tree()->connect("item_icon_double_clicked", callable_mp(this, &SceneTreeDock::_focus_node));
 
-	editor_selection->connect("selection_changed", callable_mp(this, &SceneTreeDock::_selection_changed));
+	EditorNode::get_singleton()->connect_editor_selection_changed(callable_mp(this, &SceneTreeDock::_selection_changed));
+	EditorNode::get_singleton()->connect("active_scene_context_changed", callable_mp(this, &SceneTreeDock::_update_editor_selection));
 
 	scene_tree->set_as_scene_tree_dock();
 	scene_tree->set_editor_selection(editor_selection);

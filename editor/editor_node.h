@@ -88,8 +88,10 @@ class EditorPluginList;
 class EditorResourcePreview;
 class EditorResourceConversionPlugin;
 class EditorRunBar;
+class EditorSceneContext;
 class EditorSceneTabs;
 class EditorSelectionHistory;
+class SubViewportContainer;
 class EditorSettingsDialog;
 class EditorTitleBar;
 class ExportTemplateManager;
@@ -258,7 +260,32 @@ private:
 
 	EditorData editor_data;
 	EditorFolding editor_folding;
-	EditorSelectionHistory editor_history;
+
+	// Selection/history state for when no scene context is active yet (during
+	// startup, before the first scene tab exists). Once contexts exist, the
+	// active context's objects are used instead.
+	EditorSelection *no_scene_selection = nullptr;
+	EditorSelectionHistory no_scene_history;
+
+	// The scene context whose viewport is currently displayed and whose
+	// selection/history the editor is wired to.
+	EditorSceneContext *active_scene_context = nullptr;
+
+	// Objects registered as metadata providers for every editor selection
+	// (see EditorSelection::add_editor_plugin), and callables connected to
+	// every editor selection's "selection_changed" signal.
+	LocalVector<ObjectID> selection_meta_plugins;
+	LocalVector<Callable> selection_changed_callables;
+
+	// Whether 2D rendering of the edited-scene viewport is currently disabled
+	// (i.e. a non-2D main screen is active). Re-applied to the active
+	// context's viewport on every context switch.
+	bool scene_viewport_2d_disabled = false;
+
+	// Last theme preview mode applied through update_preview_themes();
+	// re-applied to a context's viewport when it activates.
+	int theme_preview_mode = 0;
+	bool theme_preview_mode_set = false;
 
 	EditorCommandPalette *command_palette = nullptr;
 	EditorQuickOpenDialog *quick_open_dialog = nullptr;
@@ -270,7 +297,8 @@ private:
 	EditorPluginList *editor_plugins_over = nullptr;
 	EditorQuickOpenDialog *quick_open_color_palette = nullptr;
 	EditorResourcePreview *resource_preview = nullptr;
-	EditorSelection *editor_selection = nullptr;
+	EditorSelection *editor_selection = nullptr; // Always points at the active context's selection (or no_scene_selection).
+	EditorSelectionHistory *editor_history = nullptr; // Always points at the active context's history (or no_scene_history).
 	EditorSettingsDialog *editor_settings_dialog = nullptr;
 	HistoryDock *history_dock = nullptr;
 	RunTargetsPanel *run_targets_dock = nullptr;
@@ -461,7 +489,12 @@ private:
 
 	int current_menu_option = 0;
 
-	SubViewport *scene_root = nullptr; // Root of the scene being edited.
+	// Placeholder viewport shown before the first scene context activates; it
+	// also keeps get_scene_root() non-null during startup.
+	SubViewport *placeholder_scene_viewport = nullptr;
+	// Container (inside the 2D editor) that displays the active context's
+	// viewport; registered by CanvasItemEditor during construction.
+	SubViewportContainer *scene_viewport_container = nullptr;
 
 	Ref<Resource> saving_resource;
 	HashSet<Ref<Resource>> saving_resources_in_path;
@@ -588,6 +621,11 @@ private:
 
 	void _set_current_scene(int p_idx);
 	void _set_current_scene_nocheck(int p_idx);
+	void _activate_scene_context(EditorSceneContext *p_context);
+	void _configure_editor_selection(EditorSelection *p_selection);
+	void _apply_scene_viewport_settings(SubViewport *p_viewport);
+	void _apply_scene_viewport_2d_state(SubViewport *p_viewport);
+	void _apply_preview_themes(SubViewport *p_viewport);
 	void _nav_to_selected_scene();
 	bool _validate_scene_recursive(const String &p_filename, Node *p_node);
 	void _save_scene(String p_file, int idx = -1);
@@ -801,7 +839,7 @@ public:
 	EditorPluginList *get_editor_plugins_force_over() { return editor_plugins_force_over; }
 	EditorPluginList *get_editor_plugins_over() { return editor_plugins_over; }
 	EditorSelection *get_editor_selection() { return editor_selection; }
-	EditorSelectionHistory *get_editor_selection_history() { return &editor_history; }
+	EditorSelectionHistory *get_editor_selection_history() { return editor_history; }
 
 	ProjectSettingsEditor *get_project_settings() { return project_settings_editor; }
 
@@ -856,7 +894,29 @@ public:
 
 	bool is_changing_scene() const;
 
-	SubViewport *get_scene_root() { return scene_root; } // Root of the scene being edited.
+	// Viewport hosting the scene being edited (the active context's viewport,
+	// or the startup placeholder when no scene tab exists yet).
+	SubViewport *get_scene_root();
+	EditorSceneContext *get_active_scene_context() { return active_scene_context; }
+
+	// Wires a freshly created scene context into the editor: registers
+	// selection metadata providers, relays its selection signal, and applies
+	// the per-viewport project settings.
+	void configure_scene_context(EditorSceneContext *p_context);
+	// Called by EditorData right before a context is freed, so the editor
+	// stops pointing at its selection/history/viewport.
+	void scene_context_about_to_be_removed(EditorSceneContext *p_context);
+	// Registers a metadata provider applied to every editor selection
+	// (existing and future). See EditorSelection::add_editor_plugin.
+	void add_editor_selection_plugin(Object *p_plugin);
+	// Connects the callable to the "selection_changed" signal of every editor
+	// selection (existing and future). Only the active selection ever emits.
+	void connect_editor_selection_changed(const Callable &p_callable);
+	// Registered by CanvasItemEditor; hosts the active context's viewport.
+	void set_scene_viewport_container(SubViewportContainer *p_container);
+	// Toggles 2D rendering of the edited-scene viewport (2D vs other main
+	// screens); the state is re-applied on every context switch.
+	void set_scene_viewport_2d_disabled(bool p_disabled);
 
 	void set_edited_scene(Node *p_scene);
 	void set_edited_scene_root(Node *p_scene, bool p_auto_add);
