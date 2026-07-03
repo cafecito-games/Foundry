@@ -122,6 +122,7 @@ void EditorScenePane::fit_main_screen(Control *p_main_screen) {
 		return;
 	}
 	_fit_content_child(p_main_screen);
+	p_main_screen->set_size(content_host->get_size());
 }
 
 void EditorScenePane::setup(int p_pane_index) {
@@ -184,6 +185,7 @@ void EditorScenePane::setup(int p_pane_index) {
 EditorScenePane::EditorScenePane() {
 	set_mouse_filter(Control::MOUSE_FILTER_PASS);
 	set_focus_mode(Control::FOCUS_ALL);
+	set_clip_contents(true);
 }
 
 void EditorSceneWorkspace::_notification(int p_what) {
@@ -200,6 +202,8 @@ void EditorSceneWorkspace::_configure_pane_layout(EditorScenePane *p_pane) {
 	ERR_FAIL_NULL(p_pane);
 	p_pane->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	p_pane->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	p_pane->set_stretch_ratio(1.0);
+	p_pane->set_custom_minimum_size(Size2(120, 120) * EDSCALE);
 }
 
 void EditorSceneWorkspace::_ensure_split_offset() {
@@ -216,7 +220,9 @@ void EditorSceneWorkspace::_ensure_split_offset() {
 		return;
 	}
 
-	split->set_split_offset(axis / 2);
+	// Split offset is relative to the default dragger position (already ~50/50).
+	split->set_split_offset(0);
+	split->clamp_split_offset(0);
 }
 
 void EditorSceneWorkspace::_create_pane(int p_index) {
@@ -264,6 +270,7 @@ void EditorSceneWorkspace::split_workspace(bool p_vertical) {
 	split->add_child(pane_0);
 	_create_pane(1);
 	update_focus_visuals();
+	queue_sort();
 	callable_mp(this, &EditorSceneWorkspace::_ensure_split_offset).call_deferred();
 }
 

@@ -4162,6 +4162,9 @@ void EditorNode::_update_file_menu_opened() {
 		file_menu->set_item_tooltip(file_menu->get_item_index(SCENE_SAVE_ALL_SCENES), TTR("All scenes are already saved."));
 	}
 	_update_undo_redo_allowed();
+	if (file_menu && scene_workspace) {
+		file_menu->set_item_disabled(file_menu->get_item_index(WORKSPACE_CLOSE_SPLIT), !scene_workspace->is_split());
+	}
 }
 
 void EditorNode::_palette_quick_open_dialog() {
@@ -4903,8 +4906,13 @@ void EditorNode::_split_workspace(bool p_vertical) {
 		editor_data.set_pane_current_scene(1, editor_data.get_pane_current_scene(1));
 		_bind_pane_docks(0);
 		_bind_pane_docks(1);
+		update_all_scene_tabs();
+		_update_pane_display_attachments();
 	} else {
 		scene_workspace->split_workspace(p_vertical);
+	}
+	if (file_menu) {
+		file_menu->set_item_disabled(file_menu->get_item_index(WORKSPACE_CLOSE_SPLIT), false);
 	}
 	save_editor_layout_delayed();
 }
@@ -4930,6 +4938,9 @@ void EditorNode::_unsplit_workspace() {
 	editor_data.set_focused_pane(0);
 	focus_pane(0);
 	update_all_scene_tabs();
+	if (file_menu) {
+		file_menu->set_item_disabled(file_menu->get_item_index(WORKSPACE_CLOSE_SPLIT), true);
+	}
 	save_editor_layout_delayed();
 }
 

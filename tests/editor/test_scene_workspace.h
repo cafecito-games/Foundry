@@ -226,4 +226,36 @@ TEST_CASE("[SceneTree][Editor] workspace-config-round-trip") {
 	editor_data.remove_scene(a);
 }
 
+TEST_CASE("[SceneTree][Editor] workspace-split-pane-sizes") {
+	Window *tree_root = SceneTree::get_singleton()->get_root();
+	VBoxContainer *host = memnew(VBoxContainer);
+	host->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+	tree_root->add_child(host);
+
+	EditorSceneWorkspace *workspace = EditorSceneWorkspace::create_single_pane_workspace();
+	workspace->set_custom_minimum_size(Size2(800, 600));
+	workspace->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	workspace->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	host->add_child(workspace);
+
+	SceneTree::get_singleton()->process(0.016);
+	MessageQueue::get_singleton()->flush();
+
+	workspace->split_workspace(false);
+	SceneTree::get_singleton()->process(0.016);
+	MessageQueue::get_singleton()->flush();
+
+	REQUIRE(workspace->is_split());
+	REQUIRE(workspace->get_pane_count() == 2);
+
+	EditorScenePane *pane_0 = workspace->get_pane(0);
+	EditorScenePane *pane_1 = workspace->get_pane(1);
+	CHECK(pane_0->get_size().x > 100);
+	CHECK(pane_1->get_size().x > 100);
+
+	memdelete(workspace);
+	tree_root->remove_child(host);
+	memdelete(host);
+}
+
 } // namespace TestSceneWorkspace
