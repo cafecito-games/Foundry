@@ -142,11 +142,22 @@ TEST_CASE("[Editor][Automation] set_text on LineEdit") {
 	options["text"] = "New Value";
 	options["route"] = "semantic";
 
+	// A real user typing emits text_changed; semantic set_text must do the same
+	// so reactive UIs (incremental search, live filters) respond.
+	SIGNAL_WATCH(line_edit, SNAME("text_changed"));
+
 	const EditorAutomationActionResult result = EditorAutomationDriver::perform(snapshot, "set_text", target, options);
 	CHECK(result.ok);
 	CHECK(result.route == EditorAutomationActionRouteNames::SEMANTIC_SET_TEXT);
 	CHECK(line_edit->get_text() == "New Value");
 	CHECK(result.events.has("text_changed"));
+
+	Array expected_args;
+	Array call_args;
+	call_args.push_back("New Value");
+	expected_args.push_back(call_args);
+	SIGNAL_CHECK(SNAME("text_changed"), expected_args);
+	SIGNAL_UNWATCH(line_edit, SNAME("text_changed"));
 
 	memdelete(root);
 }

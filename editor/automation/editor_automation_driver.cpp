@@ -30,12 +30,12 @@
 
 #include "editor_automation_driver.h"
 
-#include "editor/automation/editor_automation_log.h"
-#include "editor/automation/editor_automation_selector.h"
-#include "editor/automation/editor_automation_trace.h"
 #include "core/input/input_event.h"
 #include "core/object/object.h"
 #include "core/os/keyboard.h"
+#include "editor/automation/editor_automation_log.h"
+#include "editor/automation/editor_automation_selector.h"
+#include "editor/automation/editor_automation_trace.h"
 #include "scene/gui/base_button.h"
 #include "scene/gui/code_edit.h"
 #include "scene/gui/control.h"
@@ -311,18 +311,24 @@ EditorAutomationActionResult _action_set_text(
 
 	if (LineEdit *line_edit = Object::cast_to<LineEdit>(node)) {
 		line_edit->set_text(p_text);
+		// LineEdit::set_text() intentionally does not emit text_changed, but a
+		// real user typing does. Emit it so reactive UIs (incremental search,
+		// live validation, filters) respond the same way they would to input.
+		line_edit->emit_signal(SceneStringName(text_changed), p_text);
 		EditorAutomationActionResult result = EditorAutomationActionResult::success(EditorAutomationActionRouteNames::SEMANTIC_SET_TEXT, p_element.id);
 		result.events.push_back("text_changed");
 		return result;
 	}
 	if (TextEdit *text_edit = Object::cast_to<TextEdit>(node)) {
 		text_edit->set_text(p_text);
+		text_edit->emit_signal(SceneStringName(text_changed));
 		EditorAutomationActionResult result = EditorAutomationActionResult::success(EditorAutomationActionRouteNames::SEMANTIC_SET_TEXT, p_element.id);
 		result.events.push_back("text_changed");
 		return result;
 	}
 	if (CodeEdit *code_edit = Object::cast_to<CodeEdit>(node)) {
 		code_edit->set_text(p_text);
+		code_edit->emit_signal(SceneStringName(text_changed));
 		EditorAutomationActionResult result = EditorAutomationActionResult::success(EditorAutomationActionRouteNames::SEMANTIC_SET_TEXT, p_element.id);
 		result.events.push_back("text_changed");
 		return result;
