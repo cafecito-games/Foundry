@@ -9,8 +9,20 @@ This repository is a CafecitoGames fork of Godot Engine with active work around 
 - `python -m pip install scons pre-commit`: install the usual local build and hook tooling.
 - `scons platform=macos target=editor dev_build=yes tests=yes`: build a macOS editor binary with development checks and unit tests enabled. Use `platform=linuxbsd` on Linux.
 - `scons platform=macos target=editor dev_mode=yes tests=yes`: closer to CI defaults; enables extra warnings, strict checks, and warnings-as-errors.
-- `./bin/godot.* --test --force-colors`: run compiled C++ tests. Use `--headless` for CI/Linux displayless runs.
+- `./bin/foundry.* --headless test run --force-colors`: run the compiled C++ and Foundry Script test suites with the supported command-first CLI.
 - `pre-commit run --all-files`: run formatting, linting, spelling, XML/doc checks, and generated-doc dry runs configured in `.pre-commit-config.yaml`.
+
+## Foundry CLI Usage
+
+Use the supported command-first CLI: `foundry <command> <subcommand> [options]`. Do not use deprecated legacy invocations in agent instructions, scripts, or verification commands: `--test`, `--path`, `--editor`, `--project-manager`, `--import`, `--foundry_script-generate-tests`, or `--foundry_script-generate-format-tests`. Prefer `--case <pattern>` on `test run` instead of raw doctest `--test-case=...` filters. Use `--project <dir>` for project paths.
+
+- Help is hierarchical: `./bin/foundry.* --help`, `./bin/foundry.* test --help`, `./bin/foundry.* test run --help`, or `./bin/foundry.* --json --help`.
+- Full engine and Foundry Script tests: `./bin/foundry.* --headless test run --force-colors`.
+- Scoped doctest run: `./bin/foundry.* --headless test run --case "*FoundryCLI*" --force-colors`.
+- Regenerate Foundry Script `.out` fixtures: `./bin/foundry.* --headless test generate-fixtures modules/foundry_script/tests/scripts`.
+- Regenerate formatter `expected.fs` fixtures: `./bin/foundry.* --headless test generate-format-fixtures modules/foundry_script/tests/scripts/format`.
+- Run a project test runner script: `./bin/foundry.* --headless project test --project <project> --runner res://path/to/runner.fs -- <runner args>`.
+- Open the editor GUI: `DISPLAY=:1 ./bin/foundry.* editor open --project <project>`.
 
 ## Coding Style & Naming Conventions
 
@@ -51,8 +63,10 @@ This is a Godot Engine fork; the only product is the single `foundry` binary (ed
   - CI additionally uses `dev_mode=yes` (warnings-as-errors). Prefer `dev_build=yes` for local iteration; use `dev_mode=yes` only when you need to reproduce CI warning failures.
   - SCons build cache: always pass `cache_path="$HOME/.scons_cache"`. The cache lives in `$HOME` (NOT the repo tree) on purpose, so it is captured by the Cloud VM snapshot and survives whatever git refresh runs on a fresh agent. It is pre-populated, so even a full `--clean` rebuild on a new agent retrieves objects from cache and finishes in ~1.5 min instead of ~15 min. Keep the same build flags: changing flags (e.g. `dev_mode`, target) produces different object hashes and misses the cache. The cache is content-addressed and self-maintaining; do not delete `$HOME/.scons_cache`.
 - Output binary: `bin/foundry.linuxbsd.editor.dev.x86_64` (this fork renames the binary from `godot` to `foundry`).
-- Run the full C++ + Foundry Script test suite: `./bin/foundry.linuxbsd.editor.dev.x86_64 --headless --test --force-colors`. Always pass `--headless`. The run prints `ObjectDB instances leaked`/`resources still in use at exit` and may exit non-zero at cleanup even when every test passes; trust the `[doctest] Status: SUCCESS!` summary line.
-- Regenerate Foundry Script `.out` fixtures after intentional behavior changes: `./bin/foundry.linuxbsd.editor.dev.x86_64 test generate-fixtures modules/foundry_script/tests/scripts`.
-- Foundry Script files use the `.fs` extension, and a project's config file is `project.foundry` (NOT `project.godot`); the Project Manager and `--editor` will not recognize a project that only has `project.godot`.
-- The editor GUI does launch on the desktop (display `:1`) via `DISPLAY=:1 ./bin/foundry.linuxbsd.editor.dev.x86_64 --path <project> --editor`, but the VM has no GPU: Vulkan init prints `VK_KHR_surface not found` errors and rendering falls back to OpenGL/llvmpipe software rendering. These errors are expected and non-blocking. For scripted/automated runs, prefer `--headless`.
+- Run the full C++ + Foundry Script test suite: `./bin/foundry.linuxbsd.editor.dev.x86_64 --headless test run --force-colors`. Always pass `--headless` in scripted/CI-style runs. The run prints `ObjectDB instances leaked`/`resources still in use at exit` and may exit non-zero at cleanup even when every test passes; trust the `[doctest] Status: SUCCESS!` summary line.
+- Run a focused doctest filter: `./bin/foundry.linuxbsd.editor.dev.x86_64 --headless test run --case "*FoundryCLI*" --force-colors`.
+- Regenerate Foundry Script `.out` fixtures after intentional behavior changes: `./bin/foundry.linuxbsd.editor.dev.x86_64 --headless test generate-fixtures modules/foundry_script/tests/scripts`.
+- Regenerate formatter fixtures after intentional formatting changes: `./bin/foundry.linuxbsd.editor.dev.x86_64 --headless test generate-format-fixtures modules/foundry_script/tests/scripts/format`.
+- Foundry Script files use the `.fs` extension, and a project's config file is `project.foundry` (NOT `project.godot`); editor commands will not recognize a project that only has `project.godot`.
+- The editor GUI does launch on the desktop (display `:1`) via `DISPLAY=:1 ./bin/foundry.linuxbsd.editor.dev.x86_64 editor open --project <project>`, but the VM has no GPU: Vulkan init prints `VK_KHR_surface not found` errors and rendering falls back to OpenGL/llvmpipe software rendering. These errors are expected and non-blocking. For scripted/automated runs, prefer `--headless`.
 - Lint/format gate (optional, not engine validation): `pre-commit run --all-files`.
