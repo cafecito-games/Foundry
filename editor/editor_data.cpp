@@ -1342,6 +1342,11 @@ void EditorSelection::update() {
 	}
 }
 
+void EditorSelection::mark_changed() {
+	changed = true;
+	node_list_changed = true;
+}
+
 void EditorSelection::_emit_change() {
 	emit_signal(SNAME("selection_changed"));
 	emitted = false;

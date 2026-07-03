@@ -316,6 +316,11 @@ public:
 	void update();
 	void clear();
 
+	// Forces the next update() to emit "selection_changed", e.g. after the
+	// active scene context (and thus the effective selection) switched
+	// without this selection's content changing.
+	void mark_changed();
+
 	// Returns only the top level selected nodes.
 	// That is, if the selection includes some node and a child of that node, only the parent is returned.
 	List<Node *> get_top_selected_node_list();

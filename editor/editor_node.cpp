@@ -4666,6 +4666,11 @@ void EditorNode::_activate_scene_context(EditorSceneContext *p_context) {
 		editor_history = &no_scene_history;
 	}
 
+	// The effective selection changed with the context even if the incoming
+	// selection's content did not (e.g. it is empty), so make sure consumers
+	// deriving UI state from the selection get notified.
+	editor_selection->mark_changed();
+
 	emit_signal(SNAME("active_scene_context_changed"));
 }
 
@@ -4689,6 +4694,7 @@ void EditorNode::scene_context_about_to_be_removed(EditorSceneContext *p_context
 	active_scene_context = nullptr;
 	editor_selection = no_scene_selection;
 	editor_history = &no_scene_history;
+	editor_selection->mark_changed();
 	emit_signal(SNAME("active_scene_context_changed"));
 }
 
