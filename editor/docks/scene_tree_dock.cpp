@@ -1798,7 +1798,7 @@ void SceneTreeDock::_notification(int p_what) {
 		case NOTIFICATION_PROCESS: {
 			bool show_create_root = bool(EDITOR_GET("interface/editors/show_scene_tree_root_selection")) && get_tree()->get_edited_scene_root() == nullptr;
 
-			if (show_create_root != create_root_dialog->is_visible_in_tree() && !remote_tree->is_visible()) {
+			if (create_root_dialog && show_create_root != create_root_dialog->is_visible_in_tree() && (!remote_tree || !remote_tree->is_visible())) {
 				if (show_create_root) {
 					main_mc->set_theme_type_variation("");
 					create_root_dialog->show();
