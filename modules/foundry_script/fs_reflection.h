@@ -37,6 +37,7 @@
 class FoundryScript;
 class FSAnnotation;
 class FSMethodDescriptor;
+class FSProjectScripts;
 class FSPropertyDescriptor;
 
 // Read-only introspection surface for FoundryScript, exposed as `godot.reflection`.
@@ -113,20 +114,22 @@ public:
 	Ref<RefCounted> create_delegating_proxy(const Ref<Script> &p_type, const Variant &p_target, const Dictionary &p_interceptor) const;
 };
 
-// The `foundry` global namespace object. Currently it only exposes the read-only
-// `reflection` member; this is the nested-singleton binding for the
-// `foundry.reflection.*` surface (a true language namespace is not available).
+// The `foundry` global namespace object. Currently it exposes the read-only
+// `reflection` and `project_scripts` members; this is the nested-singleton binding
+// for the `foundry.reflection.*` and `foundry.project_scripts.*` surfaces (a true
+// language namespace is not available).
 class FSNamespace : public RefCounted {
 	FOUNDRY_CLASS(FSNamespace, RefCounted);
 
 	Ref<FSReflection> reflection;
+	Ref<FSProjectScripts> project_scripts;
 
 protected:
 	static void _bind_methods();
 
 public:
-	void set_reflection(const Ref<FSReflection> &p_reflection) { reflection = p_reflection; }
-	// Returns a Ref (not a raw pointer) so the binding carries
-	// PROPERTY_HINT_RESOURCE_TYPE for the reference return, as ClassDB expects.
-	Ref<FSReflection> get_reflection() const { return reflection; }
+	void set_reflection(const Ref<FSReflection> &p_reflection);
+	Ref<FSReflection> get_reflection() const;
+	void set_project_scripts(const Ref<FSProjectScripts> &p_project_scripts);
+	Ref<FSProjectScripts> get_project_scripts() const;
 };

@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="FSScriptDescriptor" inherits="RefCounted" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Parser-level metadata for a single FoundryScript file.
+	</brief_description>
+	<description>
+		A read-only snapshot of a script's indexed metadata, produced by [FSProjectScripts] without loading or executing the file. Fields are populated from parser-level data at interface-resolved status; [method load_script] performs a full load only when a runner is ready to instantiate a suite.
+		When [member indexed_ok] is [code]false[/code], indexing failed and [method get_index_diagnostics] returns non-empty error dictionaries (with [code]message[/code], [code]line[/code], and [code]column[/code] keys). Discovery itself does not print those diagnostics to the console.
+		Class, method, and parameter annotations are exposed through the same [FSAnnotation] and [FSMethodDescriptor] types used by [FSReflection].
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="base_type" type="StringName" setter="" getter="get_base_type">
+			The native base or base script class name declared by the script.
+		</member>
+		<member name="fully_qualified_name" type="StringName" setter="" getter="get_fully_qualified_name">
+			The namespace-qualified fully qualified class name when the script declares a namespace.
+		</member>
+		<member name="global_class_name" type="StringName" setter="" getter="get_global_class_name">
+			The [code]class_name[/code] identity when declared; empty otherwise.
+		</member>
+		<member name="indexed_ok" type="bool" setter="" getter="get_indexed_ok">
+			[code]false[/code] when parsing or indexing failed. Runners should treat the file as broken rather than silently skipping it.
+		</member>
+		<member name="is_abstract" type="bool" setter="" getter="get_is_abstract">
+			[code]true[/code] when the script is declared [code]abstract[/code].
+		</member>
+		<member name="is_trait" type="bool" setter="" getter="get_is_trait">
+			[code]true[/code] when the script is a trait declaration.
+		</member>
+		<member name="path" type="String" setter="" getter="get_path">
+			The script resource path, for example [code]res://tests/inventory_tests.fs[/code].
+		</member>
+	</members>
+	<methods>
+		<method name="get_class_annotations" qualifiers="const">
+			<return type="FSAnnotation[]" />
+			<description>
+				Returns passive class annotations declared on the script. Empty when [member indexed_ok] is [code]false[/code].
+			</description>
+		</method>
+		<method name="get_index_diagnostics" qualifiers="const">
+			<return type="Dictionary[]" />
+			<description>
+				Indexing errors and warnings for the script. Each dictionary contains [code]message[/code], [code]line[/code], and [code]column[/code]. Empty when [member indexed_ok] is [code]true[/code].
+			</description>
+		</method>
+		<method name="get_methods" qualifiers="const">
+			<return type="FSMethodDescriptor[]" />
+			<description>
+				Returns method descriptors for functions declared in the script, including method and parameter annotations. Empty when [member indexed_ok] is [code]false[/code].
+			</description>
+		</method>
+		<method name="implements_trait" qualifiers="const">
+			<return type="bool" />
+			<param index="0" name="trait_name" type="StringName" />
+			<description>
+				Returns [code]true[/code] when the indexed script implements the given trait. Accepts the fully qualified trait identity; short-name matching follows the same rules as [method FSReflection.implements_trait], including traits inherited from a base script.
+			</description>
+		</method>
+		<method name="load_script" qualifiers="const">
+			<return type="Script" />
+			<description>
+				Performs a full script load equivalent to [code]load(path)[/code]. Returns a null [code]Ref[/code] on failure. Descriptor metadata is not recomputed by this call.
+			</description>
+		</method>
+	</methods>
+</class>

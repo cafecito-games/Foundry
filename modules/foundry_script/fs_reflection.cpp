@@ -31,6 +31,7 @@
 #include "fs_reflection.h"
 
 #include "foundry_script.h"
+#include "fs_project_scripts.h"
 #include "fs_proxy.h"
 
 #include "core/variant/container_type_validate.h"
@@ -509,5 +510,23 @@ void FSReflection::_bind_methods() {
 
 void FSNamespace::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_reflection"), &FSNamespace::get_reflection);
+	ClassDB::bind_method(D_METHOD("get_project_scripts"), &FSNamespace::get_project_scripts);
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "reflection", PROPERTY_HINT_RESOURCE_TYPE, "FSReflection", PROPERTY_USAGE_NONE), "", "get_reflection");
+	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "project_scripts", PROPERTY_HINT_RESOURCE_TYPE, "FSProjectScripts", PROPERTY_USAGE_NONE), "", "get_project_scripts");
+}
+
+void FSNamespace::set_reflection(const Ref<FSReflection> &p_reflection) {
+	reflection = p_reflection;
+}
+
+Ref<FSReflection> FSNamespace::get_reflection() const {
+	return reflection;
+}
+
+void FSNamespace::set_project_scripts(const Ref<FSProjectScripts> &p_project_scripts) {
+	project_scripts = p_project_scripts;
+}
+
+Ref<FSProjectScripts> FSNamespace::get_project_scripts() const {
+	return project_scripts;
 }
