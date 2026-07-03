@@ -31,15 +31,17 @@
 #include "fs_project_scripts.h"
 
 #include "foundry_script.h"
+
+#include "core/config/project_settings.h"
+#include "core/io/dir_access.h"
+#include "core/io/resource_loader.h"
+
+#ifndef FOUNDRY_SCRIPT_NO_FRONTEND
+
 #include "fs_cache.h"
 #include "fs_compiler.h"
 #include "fs_parser.h"
 #include "fs_trait_utils.h"
-
-#include "core/config/project_settings.h"
-#include "core/io/dir_access.h"
-#include "core/io/file_access.h"
-#include "core/io/resource_loader.h"
 
 #ifdef DEBUG_ENABLED
 #include "fs_warning.h"
@@ -60,45 +62,6 @@ HashMap<StringName, TypedArray<FSAnnotation>> parameter_usages_to_descriptors(co
 		result[entry.key] = usages_to_descriptors(entry.value);
 	}
 	return result;
-}
-
-void collect_script_paths_recursive(ProjectSettings *p_project_settings, const String &p_directory_path, bool p_recursive, Vector<String> &r_paths) {
-	Ref<DirAccess> dir = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
-	if (dir.is_null() || dir->change_dir(p_directory_path) != OK) {
-		return;
-	}
-
-	dir->list_dir_begin();
-	for (String entry = dir->get_next(); !entry.is_empty(); entry = dir->get_next()) {
-		if (entry == "." || entry == "..") {
-			continue;
-		}
-		if (entry.begins_with(".")) {
-			continue;
-		}
-
-		const String absolute_entry = dir->get_current_dir().path_join(entry);
-		if (dir->current_is_dir()) {
-			if (p_recursive) {
-				collect_script_paths_recursive(p_project_settings, absolute_entry, true, r_paths);
-			}
-			continue;
-		}
-
-		if (entry.ends_with(".fs")) {
-			r_paths.push_back(p_project_settings->localize_path(absolute_entry));
-		}
-	}
-	dir->list_dir_end();
-}
-
-void collect_script_paths(const String &p_root_path, bool p_recursive, Vector<String> &r_paths) {
-	ProjectSettings *project_settings = ProjectSettings::get_singleton();
-	ERR_FAIL_NULL(project_settings);
-
-	const String absolute_root = project_settings->globalize_path(p_root_path);
-	collect_script_paths_recursive(project_settings, absolute_root, p_recursive, r_paths);
-	r_paths.sort();
 }
 
 TypedArray<Dictionary> collect_index_diagnostics(const FSParser *p_parser) {
@@ -187,17 +150,12 @@ Ref<FSParserRef> fetch_indexed_parser(const String &p_path, TypedArray<Dictionar
 	r_indexed_ok = false;
 	r_diagnostics = TypedArray<Dictionary>();
 
-#ifndef FOUNDRY_SCRIPT_NO_FRONTEND
 	Error err = OK;
 	Ref<FSParserRef> parser_ref = FSCache::get_parser(p_path, FSParserRef::INTERFACE_SOLVED, err);
 	FSParser *parser = parser_ref.is_valid() ? parser_ref->get_parser() : nullptr;
 	r_diagnostics = collect_index_diagnostics(parser);
 	r_indexed_ok = err == OK && parser != nullptr && parser->get_errors().is_empty();
 	return parser_ref;
-#else
-	(void)p_path;
-	return Ref<FSParserRef>();
-#endif // FOUNDRY_SCRIPT_NO_FRONTEND
 }
 
 StringName base_type_name_from_class(const FSParser::ClassNode *p_class) {
@@ -208,11 +166,55 @@ StringName base_type_name_from_class(const FSParser::ClassNode *p_class) {
 }
 } // namespace
 
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND
+
+namespace {
+void collect_script_paths_recursive(ProjectSettings *p_project_settings, const String &p_directory_path, bool p_recursive, Vector<String> &r_paths) {
+	Ref<DirAccess> dir = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+	if (dir.is_null() || dir->change_dir(p_directory_path) != OK) {
+		return;
+	}
+
+	dir->list_dir_begin();
+	for (String entry = dir->get_next(); !entry.is_empty(); entry = dir->get_next()) {
+		if (entry == "." || entry == "..") {
+			continue;
+		}
+		if (entry.begins_with(".")) {
+			continue;
+		}
+
+		const String absolute_entry = dir->get_current_dir().path_join(entry);
+		if (dir->current_is_dir()) {
+			if (p_recursive) {
+				collect_script_paths_recursive(p_project_settings, absolute_entry, true, r_paths);
+			}
+			continue;
+		}
+
+		if (entry.ends_with(".fs")) {
+			r_paths.push_back(p_project_settings->localize_path(absolute_entry));
+		}
+	}
+	dir->list_dir_end();
+}
+
+void collect_script_paths(const String &p_root_path, bool p_recursive, Vector<String> &r_paths) {
+	ProjectSettings *project_settings = ProjectSettings::get_singleton();
+	ERR_FAIL_NULL(project_settings);
+
+	const String absolute_root = project_settings->globalize_path(p_root_path);
+	collect_script_paths_recursive(project_settings, absolute_root, p_recursive, r_paths);
+	r_paths.sort();
+}
+} // namespace
+
 Ref<FSScriptDescriptor> FSScriptDescriptor::build(const String &p_path) {
 	Ref<FSScriptDescriptor> descriptor;
 	descriptor.instantiate();
 	descriptor->path = p_path;
 
+#ifndef FOUNDRY_SCRIPT_NO_FRONTEND
 	bool indexed_ok = false;
 	TypedArray<Dictionary> diagnostics;
 	Ref<FSParserRef> parser_ref = fetch_indexed_parser(p_path, diagnostics, indexed_ok);
@@ -227,12 +229,16 @@ Ref<FSScriptDescriptor> FSScriptDescriptor::build(const String &p_path) {
 		descriptor->is_trait = root->is_trait;
 		descriptor->is_abstract = root->is_abstract;
 	}
+#else
+	descriptor->indexed_ok = false;
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND
 
 	return descriptor;
 }
 
 TypedArray<FSAnnotation> FSScriptDescriptor::get_class_annotations() const {
 	TypedArray<FSAnnotation> result;
+#ifndef FOUNDRY_SCRIPT_NO_FRONTEND
 	if (!indexed_ok) {
 		return result;
 	}
@@ -248,10 +254,15 @@ TypedArray<FSAnnotation> FSScriptDescriptor::get_class_annotations() const {
 	Vector<FoundryScript::AnnotationUsage> usages;
 	FSCompiler::collect_passive_annotations(root->annotations, usages);
 	return usages_to_descriptors(usages);
+#else
+	(void)indexed_ok;
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND
+	return result;
 }
 
 TypedArray<FSMethodDescriptor> FSScriptDescriptor::get_methods() const {
 	TypedArray<FSMethodDescriptor> result;
+#ifndef FOUNDRY_SCRIPT_NO_FRONTEND
 	if (!indexed_ok) {
 		return result;
 	}
@@ -279,11 +290,14 @@ TypedArray<FSMethodDescriptor> FSScriptDescriptor::get_methods() const {
 				true,
 				parameter_usages_to_descriptors(parameter_usages)));
 	}
-
+#else
+	(void)indexed_ok;
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND
 	return result;
 }
 
 bool FSScriptDescriptor::implements_trait(const StringName &p_trait_name) const {
+#ifndef FOUNDRY_SCRIPT_NO_FRONTEND
 	if (!indexed_ok || p_trait_name == StringName()) {
 		return false;
 	}
@@ -293,6 +307,10 @@ bool FSScriptDescriptor::implements_trait(const StringName &p_trait_name) const 
 	Ref<FSParserRef> parser_ref = fetch_indexed_parser(path, diagnostics, indexed);
 	const FSParser::ClassNode *root = parser_ref.is_valid() ? resolve_descriptor_class(get_root_class(parser_ref->get_parser())) : nullptr;
 	return fs_class_has_named_trait(root, p_trait_name);
+#else
+	(void)p_trait_name;
+	return false;
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND
 }
 
 Ref<Script> FSScriptDescriptor::load_script() const {

@@ -30,8 +30,11 @@
 
 #pragma once
 
+#ifndef FOUNDRY_SCRIPT_NO_FRONTEND
+
 #include "../fs_cache.h"
 #include "../fs_project_scripts.h"
+#include "../fs_reflection.h"
 #include "../foundry_script.h"
 #include "fs_temporary_project_tree.h"
 
@@ -298,3 +301,5 @@ TEST_CASE("[Modules][FoundryScript][ProjectScripts] foundry namespace exposes pr
 }
 
 } // namespace FSTests
+
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND

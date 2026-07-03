@@ -16,6 +16,9 @@
 /* permit persons to whom the Software is furnished to do so, subject to  */
 /* the following conditions:                                              */
 /*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
 /* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
 /* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
 /* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
@@ -26,6 +29,8 @@
 /**************************************************************************/
 
 #include "fs_trait_utils.h"
+
+#ifndef FOUNDRY_SCRIPT_NO_FRONTEND
 
 #include "fs_cache.h"
 #include "fs_conformance_registry.h"
@@ -71,3 +76,13 @@ bool fs_class_has_named_trait(const FSParser::ClassNode *p_class, const StringNa
 
 	return false;
 }
+
+#else // FOUNDRY_SCRIPT_NO_FRONTEND
+
+bool fs_class_has_named_trait(const FSParser::ClassNode *p_class, const StringName &p_trait_name) {
+	(void)p_class;
+	(void)p_trait_name;
+	return false;
+}
+
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND
