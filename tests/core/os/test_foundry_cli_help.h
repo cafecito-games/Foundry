@@ -43,7 +43,11 @@ TEST_CASE("[FoundryCLIHelp] Top help lists nouns and omits legacy options") {
 	int noun_count = 0;
 	const FoundryCLIHelp::NounSpec *nouns = FoundryCLIHelp::get_nouns(noun_count);
 	for (int i = 0; i < noun_count; i++) {
-		CHECK_MESSAGE(text.contains(nouns[i].name), nouns[i].name);
+		if (FoundryCLIHelp::is_noun_in_build(nouns[i].name)) {
+			CHECK_MESSAGE(text.contains(nouns[i].name), nouns[i].name);
+		} else {
+			CHECK_FALSE_MESSAGE(text.contains(nouns[i].name), nouns[i].name);
+		}
 	}
 	CHECK(text.contains("--json"));
 	CHECK(text.contains("Run 'foundry <command> --help'"));

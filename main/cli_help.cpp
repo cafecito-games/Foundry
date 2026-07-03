@@ -194,23 +194,6 @@ const CommandOption GLOBAL_OPTIONS[] = {
 	{ "-h, --help", nullptr, "Print help; combine with a command for scoped help.", false },
 };
 
-bool is_command_in_build(const CommandSpec &p_spec) {
-#ifdef TOOLS_ENABLED
-	return true;
-#else
-	return p_spec.availability == FoundryCLIHelp::AVAILABILITY_RELEASE;
-#endif
-}
-
-bool is_noun_in_build(const String &p_noun) {
-	for (const CommandSpec &spec : COMMANDS) {
-		if (p_noun == spec.noun && is_command_in_build(spec)) {
-			return true;
-		}
-	}
-	return false;
-}
-
 String help_title(const String &p_title) {
 	return "\n\u001b[1;93m" + p_title + ":\u001b[0m\n";
 }
@@ -262,6 +245,25 @@ String usage_line(const CommandSpec &p_spec) {
 
 } // namespace
 
+bool FoundryCLIHelp::is_command_in_build(const CommandSpec &p_spec) {
+#ifdef TOOLS_ENABLED
+	return true;
+#else
+	return p_spec.availability == AVAILABILITY_RELEASE;
+#endif
+}
+
+bool FoundryCLIHelp::is_noun_in_build(const String &p_noun) {
+	int command_count = 0;
+	const CommandSpec *commands = get_commands(command_count);
+	for (int i = 0; i < command_count; i++) {
+		if (p_noun == commands[i].noun && is_command_in_build(commands[i])) {
+			return true;
+		}
+	}
+	return false;
+}
+
 const FoundryCLIHelp::NounSpec *FoundryCLIHelp::get_nouns(int &r_count) {
 	r_count = FOUNDRY_CLI_COUNT(NOUNS);
 	return NOUNS;
@@ -291,7 +293,7 @@ String FoundryCLIHelp::get_top_help_text(const String &p_binary) {
 	text += "  " + p_binary + " \u001b[96m<command> <subcommand> [options] [-- user args]\u001b[0m\n";
 	text += help_title("Commands");
 	for (const NounSpec &noun : NOUNS) {
-		if (!is_noun_in_build(noun.name)) {
+		if (!FoundryCLIHelp::is_noun_in_build(noun.name)) {
 			continue;
 		}
 		text += help_item(noun.name, noun.summary, false);
@@ -312,7 +314,7 @@ String FoundryCLIHelp::get_noun_help_text(const String &p_noun) {
 	bool any_editor_badge = false;
 	int rendered_count = 0;
 	for (const CommandSpec &spec : COMMANDS) {
-		if (p_noun != spec.noun || !is_command_in_build(spec)) {
+		if (p_noun != spec.noun || !FoundryCLIHelp::is_command_in_build(spec)) {
 			continue;
 		}
 		const bool editor_badge = spec.availability == AVAILABILITY_EDITOR;
@@ -383,7 +385,7 @@ String FoundryCLIHelp::get_scoped_help_text(const String &p_binary, const Packed
 String FoundryCLIHelp::get_help_json(const PackedStringArray &p_scope) {
 	Array commands_json;
 	for (const CommandSpec &spec : COMMANDS) {
-		if (!is_command_in_build(spec)) {
+		if (!FoundryCLIHelp::is_command_in_build(spec)) {
 			continue;
 		}
 		if (p_scope.size() >= 1 && p_scope[0] != spec.noun) {

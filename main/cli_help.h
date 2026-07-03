@@ -79,6 +79,8 @@ public:
 	static const CommandSpec *get_commands(int &r_count);
 	static bool has_noun(const String &p_noun);
 	static bool has_command(const String &p_noun, const String &p_verb);
+	static bool is_command_in_build(const CommandSpec &p_spec);
+	static bool is_noun_in_build(const String &p_noun);
 
 	static String get_top_help_text(const String &p_binary);
 	static String get_noun_help_text(const String &p_noun);
