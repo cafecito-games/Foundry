@@ -4,7 +4,11 @@ import argparse
 import os
 import re
 import sys
+from pathlib import Path
 from subprocess import call
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "misc" / "scripts"))
+from copyright_headers import generate_copyright_header
 
 
 def main():
@@ -48,36 +52,8 @@ def main():
         sys.exit(1)
     with open(file_path, "w", encoding="utf-8", newline="\n") as file:
         file.write(
-            """/**************************************************************************/
-/*  test_{name_snake_case}.h {padding} */
-/**************************************************************************/
-/*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
-/*                        https://godotengine.org                         */
-/**************************************************************************/
-/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
-/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
-/*                                                                        */
-/* Permission is hereby granted, free of charge, to any person obtaining  */
-/* a copy of this software and associated documentation files (the        */
-/* "Software"), to deal in the Software without restriction, including    */
-/* without limitation the rights to use, copy, modify, merge, publish,    */
-/* distribute, sublicense, and/or sell copies of the Software, and to     */
-/* permit persons to whom the Software is furnished to do so, subject to  */
-/* the following conditions:                                              */
-/*                                                                        */
-/* The above copyright notice and this permission notice shall be         */
-/* included in all copies or substantial portions of the Software.        */
-/*                                                                        */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
-/**************************************************************************/
-
+            generate_copyright_header(f"test_{name_snake_case}.h")
+            + """
 #pragma once
 
 #include "tests/test_macros.h"
@@ -90,12 +66,9 @@ TEST_CASE("[{name_pascal_case}] Example test case") {{
 
 }} // namespace Test{name_pascal_case}
 """.format(
-                name_snake_case=name_snake_case,
                 # Capitalize the first letter but keep capitalization for the rest of the string.
                 # This is done in case the user passes a camelCase string instead of PascalCase.
                 name_pascal_case=args.name[0].upper() + args.name[1:],
-                # The padding length depends on the test name length.
-                padding=" " * (61 - len(name_snake_case)),
             )
         )
 
