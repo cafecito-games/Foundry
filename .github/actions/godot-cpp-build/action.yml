@@ -31,7 +31,9 @@ runs:
 
     - name: Extract API
       shell: sh
-      run: ${{ inputs.bin }} --headless --dump-foundryextension-interface --dump-extension-api
+      run: |
+        ${{ inputs.bin }} extension dump-interface --headless
+        ${{ inputs.bin }} docs generate-api --headless
 
     - name: SCons Build
       shell: sh

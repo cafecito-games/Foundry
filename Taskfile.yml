@@ -133,7 +133,7 @@ tasks:
           fi
         fi
         test -x "$binary" || { echo "Missing $binary. Run 'task build' or set BINARY=path/to/foundry."; exit 1; }
-        "$binary" --headless --test --force-colors
+        "$binary" test run --force-colors
 
   check:
     desc: Build, then run the headless test suite.

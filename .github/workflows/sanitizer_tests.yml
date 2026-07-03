@@ -97,4 +97,4 @@ jobs:
           "${FOUNDRY_BIN}" --version
           "${FOUNDRY_BIN}" --help
           # shellcheck disable=SC2086 # TEST_ARGS is an optional operator-supplied argument string.
-          "${FOUNDRY_BIN}" --headless --test --force-colors ${TEST_ARGS}
+          "${FOUNDRY_BIN}" test run --force-colors ${TEST_ARGS}

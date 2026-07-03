@@ -173,7 +173,7 @@ gate4_functional() {
   if [ ! -x "$BIN" ]; then fail "engine binary not found at $BIN"; return; fi
 
   note "running full C++ test suite ..."
-  local out; out=$("$BIN" --headless --test 2>&1)
+  local out; out=$("$BIN" test run 2>&1)
   if printf '%s' "$out" | "$GREP" -qE 'Status:.*SUCCESS' \
      && ! printf '%s' "$out" | "$GREP" -qE 'failures: *[1-9]'; then
     pass "full test suite SUCCESS ($(printf '%s' "$out" | "$GREP" -oE 'test cases: *[0-9]+' | head -1))"
