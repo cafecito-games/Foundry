@@ -101,6 +101,8 @@ public:
 	// file yields an empty target list (not an error). Returns the load error for
 	// a malformed/unreadable file.
 	Error load(const String &p_path);
+	Error get_last_load_error() const { return last_load_error; }
+	bool has_loaded_config_path() const { return !config_path.is_empty(); }
 
 	// Persists the current targets and active selection back to the loaded path.
 	Error save();
@@ -131,6 +133,7 @@ private:
 	Vector<RunTarget> targets;
 	String active_target_name;
 	String config_path;
+	Error last_load_error = ERR_UNCONFIGURED;
 	HashMap<String, RunTargetPlatform *> adapters;
 	PresetProvider *preset_provider = nullptr;
 

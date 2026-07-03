@@ -509,6 +509,37 @@ TEST_CASE("[Editor][RunTarget] A failed load leaves prior state untouched") {
 	CHECK_EQ(reloaded[0].name, "My iPhone");
 }
 
+TEST_CASE("[Editor][RunTarget] Manager exposes failed load state") {
+	const String path = TestUtils::get_temp_path("run_targets_load_state_bad.cfg");
+	{
+		Ref<FileAccess> file = FileAccess::open(path, FileAccess::WRITE);
+		REQUIRE(file.is_valid());
+		file->store_string("[target.0\nname=bad\n");
+	}
+
+	RunTargetManager manager;
+	ERR_PRINT_OFF;
+	const Error load_error = manager.load(path);
+	ERR_PRINT_ON;
+
+	CHECK_NE(load_error, OK);
+	CHECK_EQ(manager.get_last_load_error(), load_error);
+	CHECK_FALSE(manager.has_loaded_config_path());
+}
+
+TEST_CASE("[Editor][RunTarget] Manager reports loaded config path after successful load") {
+	const String path = TestUtils::get_temp_path("run_targets_load_state_good.cfg");
+
+	Vector<RunTarget> initial;
+	initial.push_back(make_target("My iPhone"));
+	REQUIRE_EQ(RunTarget::save_all(path, initial), OK);
+
+	RunTargetManager manager;
+	CHECK_EQ(manager.load(path), OK);
+	CHECK_EQ(manager.get_last_load_error(), OK);
+	CHECK(manager.has_loaded_config_path());
+}
+
 TEST_CASE("[Editor][RunTarget] First-open configuration marker round-trips and is consumed once") {
 	const String path = TestUtils::get_temp_path("run_targets_first_open.cfg");
 	if (FileAccess::exists(path)) {

@@ -103,6 +103,7 @@ Error RunTargetManager::load(const String &p_path) {
 	Error error = OK;
 	const Vector<RunTarget> loaded_targets = RunTarget::load_all(p_path, &error);
 	if (error != OK) {
+		last_load_error = error;
 		return error;
 	}
 
@@ -131,6 +132,7 @@ Error RunTargetManager::load(const String &p_path) {
 	config_path = p_path;
 	targets = loaded_targets;
 	active_target_name = loaded_active;
+	last_load_error = OK;
 	return OK;
 }
 

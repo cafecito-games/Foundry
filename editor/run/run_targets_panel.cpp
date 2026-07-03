@@ -162,18 +162,34 @@ void RunTargetsPanel::_ensure_manager() {
 		return;
 	}
 
+	auto mark_config_read_only = [this](Error p_load_error) {
+		// A malformed/unreadable run_targets.cfg leaves the manager without a save
+		// path; editing would silently lose changes, so keep the panel read-only and
+		// tell the user instead of pretending edits persist.
+		config_writable = false;
+		ERR_PRINT(vformat("Run Targets: could not load \"%s\" (error %d). The panel is read-only until the file is fixed.", String(RUN_TARGETS_CONFIG_PATH), p_load_error));
+	};
+
+	auto use_shared_manager = [this, &mark_config_read_only](RunTargetManager *p_manager) {
+		if (p_manager == nullptr) {
+			return false;
+		}
+
+		manager = p_manager;
+		if (manager->get_last_load_error() != OK || !manager->has_loaded_config_path()) {
+			mark_config_read_only(manager->get_last_load_error());
+		}
+		return true;
+	};
+
 	EditorRunNative *run_native = EditorRunNative::get_singleton();
-	if (run_native != nullptr) {
-		manager = run_native->get_run_target_manager();
-	}
-	if (manager != nullptr) {
+	if (run_native != nullptr && use_shared_manager(run_native->get_run_target_manager())) {
 		// The run bar's deploy dropdown owns the live manager; consume it without
 		// taking ownership so configuration edits update the same state.
 		return;
 	}
 
-	manager = RunTargetManager::get_singleton();
-	if (manager != nullptr) {
+	if (use_shared_manager(RunTargetManager::get_singleton())) {
 		// Fallback compatibility for callers that still publish a manager through
 		// the legacy singleton path.
 		return;
@@ -186,11 +202,7 @@ void RunTargetsPanel::_ensure_manager() {
 	owns_manager = true;
 	const Error load_error = manager->load(RUN_TARGETS_CONFIG_PATH);
 	if (load_error != OK) {
-		// A malformed/unreadable run_targets.cfg leaves the manager without a save
-		// path; editing would silently lose changes, so keep the panel read-only and
-		// tell the user instead of pretending edits persist.
-		config_writable = false;
-		ERR_PRINT(vformat("Run Targets: could not load \"%s\" (error %d). The panel is read-only until the file is fixed.", String(RUN_TARGETS_CONFIG_PATH), load_error));
+		mark_config_read_only(load_error);
 	}
 
 #ifdef MACOS_ENABLED
