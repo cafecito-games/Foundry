@@ -36,12 +36,11 @@ hdr()  { printf '\n=== %s ===\n' "$1"; }
 #   thirdparty            never renamed (vendored upstream)
 #   tools/foundry-rename  the rename map literally contains the old strings
 #   *.po / *.pot          translations, pending regeneration
-#   CHANGELOG / docs      historical records
+#   docs                  historical records
 #   LICENSE/COPYRIGHT/... inherited attribution kept verbatim by design
 EXCLUDE_CODE=(
   ':!thirdparty'
   ':!tools/foundry-rename'
-  ':!CHANGELOG.md'
   ':!docs/superpowers'
 )
 
