@@ -948,8 +948,10 @@ TEST_CASE("[Editor][BottomDrawerGeometry] Island width and position") {
 	// Nominal: 64% of the window.
 	CHECK(BottomDrawerGeometry::island_width(2000, 480, 48) == 1280);
 	CHECK(BottomDrawerGeometry::island_x(2000, 1280) == 360);
-	// Narrow window: margin clamp wins over 64%.
-	CHECK(BottomDrawerGeometry::island_width(700, 480, 48) == 604);
+	// Tiny window with a small minimum: the margin clamp binds (64% would exceed it).
+	CHECK(BottomDrawerGeometry::island_width(260, 100, 48) == 164);
+	// Narrow window where 64% falls below the minimum: the width floor wins.
+	CHECK(BottomDrawerGeometry::island_width(700, 480, 48) == 480);
 	// Narrower still: minimum width floor wins over the margin clamp.
 	CHECK(BottomDrawerGeometry::island_width(500, 480, 48) == 480);
 	// Degenerate: window narrower than the minimum; minimum still wins.
@@ -1056,14 +1058,14 @@ Construction wiring in the `.cpp`: connect `bottom_panel->get_tab_bar()` "tab_ch
 **Files:**
 - Modify: `editor/editor_node.cpp` (reparent `bottom_panel` to `gui_base` after `main_vbox`; keep `center_overlay` + `top_split` inset)
 - Modify: `editor/gui/editor_bottom_panel.h/.cpp` (manual-rect geometry replacing anchors; island stylebox; hide-on-close)
-- Modify: `editor/docks/editor_dock_manager.cpp` (bottom drag hint covers strip ∪ panel)
-- Modify: `editor/themes/editor_theme_manager.cpp` (island stylebox: rounded top corners + border; registered under EditorStyles)
+- Modify: `editor/docks/editor_dock_manager.cpp` (bottom drag hint covers the strip)
+- Modify: `editor/themes/theme_classic.cpp` and `editor/themes/theme_modern.cpp` (island stylebox: rounded top corners + border; the `BottomPanel` style family lives per theme variant in these files, not in `editor_theme_manager.cpp`; strip styled via a `BottomDrawerStrip` theme type variation — a stylebox override applied from THEME_CHANGED recurses)
 
 **Acceptance Criteria:**
 - [ ] Unpinned open: centered island (width from `island_width(window, 480 * EDSCALE, 48 * EDSCALE)`), bottom flush on the strip's top edge, floats over dock columns and workspace, rounded-top bordered stylebox
 - [ ] Pinned open: rect matches the center column's x/width (from `top_split` global rect), square style, workspace inset = height (existing behavior)
 - [ ] Expanded: full height above the strip minus `24 * EDSCALE` top margin (island keeps side margins when unpinned)
-- [ ] Closed: panel hidden; strip remains; drag-and-drop of a dock onto the strip drops into the bottom slot (drag hint rect special case at `editor_dock_manager.cpp:276`: for `DOCK_SLOT_BOTTOM`, use the union of the container rect (if visible) and the strip's global rect via a new `EditorNode::get_bottom_drawer_strip()` accessor)
+- [ ] Closed: panel hidden; strip remains; drag-and-drop of a dock onto the strip drops into the bottom slot (drag hint rect special case at `editor_dock_manager.cpp:276`: for `DOCK_SLOT_BOTTOM`, use the strip's global rect — always, open or closed — via a new `EditorNode::get_bottom_drawer_strip()` accessor; a strip∪panel union was rejected because the bounding box captures drops aimed at the side dock columns)
 - [ ] Slide animation tweens the island's y from the strip top; pin/drag/setting-off instant paths unchanged; Esc unchanged
 - [ ] Full suite passes; editor boots clean
 

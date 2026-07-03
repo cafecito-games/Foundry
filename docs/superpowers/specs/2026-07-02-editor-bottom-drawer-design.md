@@ -105,7 +105,7 @@ Auto-raise events (debugger errors, output on run) open the drawer in whatever m
 
 **Geometry:** island/pinned rect math goes into `BottomDrawerGeometry` as pure helpers (testable ints in, rect out). The slide animation tweens the island's y position from the strip's top edge; the existing target-change tween lifecycle carries over. The grabber stays on the island's top edge.
 
-**Drag-and-drop while closed:** `EditorDockDragHint` sizes its drop rect from the slot container's global rect (`editor/docks/editor_dock_manager.cpp:276`). With the panel hidden when closed, the bottom slot's hint must instead cover the strip (union of strip and island rects when open). Without this, docks cannot be dragged into a closed drawer.
+**Drag-and-drop:** `EditorDockDragHint` sizes its drop rect from the slot container's global rect (`editor/docks/editor_dock_manager.cpp:276`). For the bottom slot the drop target is the **strip's global rect, always** — dropping a dock onto the strip docks it in the drawer, open or closed. (A union of strip and island rects was considered and rejected: `Rect2::merge` produces a bounding box that captures drops intended for the bottom of the side dock columns.)
 
 **Theme:** two new editor styleboxes — the island card (rounded top corners, border, opaque panel fill) and the strip background — registered alongside the existing `BottomPanel` styles in the editor theme.
 
@@ -121,3 +121,6 @@ Auto-raise events (debugger errors, output on run) open the drawer in whatever m
 | Right-click a strip toggle | DockContextPopup opens for that dock (move/float/close/lock) |
 | Toaster + version button | Render in the strip's right side; toasts still appear |
 | Very narrow window | Island clamps to `window - 48 * EDSCALE`, never underflows |
+| Drag a dock onto the strip while the island is open | Drop accepted; no drops captured over the side dock columns |
+| Switch editor theme preset with an open unpinned drawer | Island stylebox and chrome height refresh without restart |
+| Grabber drag to minimum height | Clamps at the panel content's minimum; no visual glitch |
