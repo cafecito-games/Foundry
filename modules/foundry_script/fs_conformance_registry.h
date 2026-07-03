@@ -135,6 +135,10 @@ public:
 	// The witnesses for the (target, trait) conformance, or an empty map when none exists.
 	WitnessMap get_witnesses(const String &p_target_key, const StringName &p_trait_name) const;
 
+	// The declaring file and trait identity of a witness for `(target, method)`, or empty values when
+	// none exists. Used for diagnosing cross-file witness method-name collisions.
+	String get_witness_source(const String &p_target_key, const StringName &p_method, StringName &r_trait_name) const;
+
 	// Replaces every compiled runtime witness previously registered by `p_source_file`. The
 	// `FSFunction *` in `p_conformances` stay owned by the declaring script; the registry borrows
 	// them until the next re-registration or `clear_runtime_witnesses`.

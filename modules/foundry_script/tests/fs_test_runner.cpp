@@ -37,6 +37,7 @@
 #include "../fs_bytecode_loader.h"
 #include "../fs_cache.h"
 #include "../fs_compiler.h"
+#include "../fs_conformance_registry.h"
 #include "../fs_parser.h"
 #include "../fs_tokenizer_buffer.h"
 
@@ -694,6 +695,10 @@ static Error load_fixture_from_bytecode(const Vector<uint8_t> &p_buffer, const S
 
 FSTest::TestResult FSTest::execute_test_code(bool p_is_generating) {
 	disable_stdout();
+
+	// Each fixture is an isolated mini-project: drop conformances registered by prior fixtures so
+	// cross-file coherence checks only see dependencies resolved within this test.
+	FSConformanceRegistry::get_singleton()->clear();
 
 	TestResult result;
 	result.status = FS_TEST_OK;
