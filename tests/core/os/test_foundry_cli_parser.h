@@ -539,6 +539,70 @@ TEST_CASE("[FoundryCLIParser] Editor project-manager records project path") {
 	CHECK_EQ(result.invocation.project_path, "/opt/foundry");
 }
 
+TEST_CASE("[FoundryCLIParser] Editor open accepts automation options") {
+	FoundryCLIParser::ParseResult with_transport = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"editor",
+			"open",
+			"--project",
+			"/tmp/project",
+			"--automation",
+			"--automation-transport=mcp",
+	}));
+	REQUIRE_MESSAGE(with_transport.ok, with_transport.error);
+	CHECK_EQ(with_transport.invocation.kind, Kind::EDITOR_OPEN);
+	CHECK(with_transport.invocation.automation);
+	CHECK_EQ(with_transport.invocation.automation_transport, "mcp");
+
+	FoundryCLIParser::ParseResult with_port = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"editor",
+			"open",
+			"--project",
+			"/tmp/project",
+			"--automation",
+			"--automation-port",
+			"0",
+	}));
+	REQUIRE_MESSAGE(with_port.ok, with_port.error);
+	CHECK(with_port.invocation.automation);
+	CHECK_EQ(with_port.invocation.automation_port, 0);
+	CHECK_EQ(with_port.invocation.automation_transport, "mcp");
+}
+
+TEST_CASE("[FoundryCLIParser] Editor automation transport rejects unsupported values") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"editor",
+			"open",
+			"--automation-transport=http",
+	}));
+	CHECK_FALSE(result.ok);
+	CHECK(result.error.contains("--automation-transport"));
+}
+
+TEST_CASE("[FoundryCLIParser] Automation options are rejected outside editor open") {
+	FoundryCLIParser::ParseResult test_run = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"test",
+			"run",
+			"--automation",
+	}));
+	CHECK_FALSE(test_run.ok);
+	CHECK(test_run.error.contains("Unknown option"));
+	CHECK(test_run.error.contains("--automation"));
+
+	FoundryCLIParser::ParseResult project_manager = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"editor",
+			"project-manager",
+			"--automation",
+	}));
+	CHECK_FALSE(project_manager.ok);
+	CHECK(project_manager.error.contains("Unknown option"));
+	CHECK(project_manager.error.contains("--automation"));
+}
+
 TEST_CASE("[FoundryCLIParser] Removed legacy workflow flags are rejected") {
 	auto expect_removed = [](const std::initializer_list<String> &p_input, const String &p_flag) {
 		FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args(p_input));

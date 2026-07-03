@@ -151,6 +151,41 @@ static bool consume_common_project_option(CLIParseState &r_state, const String &
 	return true;
 }
 
+static bool is_automation_option(const String &p_arg) {
+	return p_arg == "--automation" || p_arg.begins_with("--automation-");
+}
+
+static bool reject_automation_option(CLIParseState &r_state, const String &p_arg, const String &p_context) {
+	if (!is_automation_option(p_arg)) {
+		return false;
+	}
+	fail(r_state.result, "Unknown option for " + p_context + ": " + p_arg + ".");
+	return true;
+}
+
+static bool consume_automation_transport_option(CLIParseState &r_state, const String &p_arg, String &r_transport) {
+	if (p_arg.begins_with("--automation-transport=")) {
+		r_transport = p_arg.get_slicec('=', 1);
+		r_state.index++;
+		return true;
+	}
+	if (p_arg == "--automation-transport") {
+		if (!require_value(r_state, p_arg, r_transport)) {
+			return true;
+		}
+		return true;
+	}
+	return false;
+}
+
+static bool validate_automation_transport(FoundryCLIParser::ParseResult &r_result, const String &p_transport) {
+	if (p_transport.is_empty() || p_transport == "mcp") {
+		return true;
+	}
+	fail(r_result, "Invalid value for --automation-transport: " + p_transport + ". Only mcp is supported.");
+	return false;
+}
+
 static bool consume_common_global_option(CLIParseState &r_state, const String &p_arg) {
 	static const char *value_options[] = {
 		"--audio-driver",
@@ -338,6 +373,8 @@ static void parse_project_test(CLIParseState &r_state) {
 			if (!require_value(r_state, arg, runner)) {
 				return;
 			}
+		} else if (reject_automation_option(r_state, arg, "project test")) {
+			return;
 		} else {
 			fail(r_state.result, "Unknown option for project test: " + arg + ".");
 			return;
@@ -415,6 +452,9 @@ static void parse_script_format(CLIParseState &r_state) {
 			}
 			continue;
 		}
+		if (reject_automation_option(r_state, arg, "script format")) {
+			return;
+		}
 		append(r_state.result.invocation.command_args, r_state.args[r_state.index++]);
 	}
 
@@ -437,6 +477,9 @@ static void parse_script_lint(CLIParseState &r_state) {
 				return;
 			}
 			continue;
+		}
+		if (reject_automation_option(r_state, arg, "script lint")) {
+			return;
 		}
 		append(r_state.result.invocation.command_args, r_state.args[r_state.index++]);
 	}
@@ -630,6 +673,8 @@ static void parse_test_run(CLIParseState &r_state) {
 			if (!require_value(r_state, arg, r_state.result.invocation.test_case)) {
 				return;
 			}
+		} else if (reject_automation_option(r_state, arg, "test run")) {
+			return;
 		} else {
 			append(passthrough, arg);
 			r_state.index++;
@@ -682,6 +727,11 @@ static void parse_editor(CLIParseState &r_state) {
 			? FoundryCLIParser::CLIInvocation::EDITOR_OPEN
 			: FoundryCLIParser::CLIInvocation::EDITOR_PROJECT_MANAGER;
 
+	bool automation = false;
+	String automation_transport;
+	int automation_port = -1;
+	String automation_token;
+
 	PackedStringArray passthrough;
 	while (r_state.index < r_state.args.size()) {
 		const String arg = r_state.args[r_state.index];
@@ -695,15 +745,61 @@ static void parse_editor(CLIParseState &r_state) {
 			}
 			continue;
 		}
-		if (command == "open" && !arg.begins_with("-")) {
-			append(passthrough, arg);
-			r_state.index++;
-			continue;
+		if (command == "open") {
+			if (arg == "--automation") {
+				automation = true;
+				r_state.index++;
+				continue;
+			}
+			if (consume_automation_transport_option(r_state, arg, automation_transport)) {
+				if (parse_stopped(r_state)) {
+					return;
+				}
+				continue;
+			}
+			if (arg == "--automation-port") {
+				String port_value;
+				if (!require_value(r_state, arg, port_value)) {
+					return;
+				}
+				if (!port_value.is_valid_int()) {
+					fail(r_state.result, "Invalid value for --automation-port: " + port_value + ".");
+					return;
+				}
+				const int port = port_value.to_int();
+				if (port < 0 || port > 65535) {
+					fail(r_state.result, "--automation-port must be between 0 and 65535.");
+					return;
+				}
+				automation_port = port;
+				continue;
+			}
+			if (arg == "--automation-token") {
+				if (!require_value(r_state, arg, automation_token)) {
+					return;
+				}
+				continue;
+			}
+			if (!arg.begins_with("-")) {
+				append(passthrough, arg);
+				r_state.index++;
+				continue;
+			}
+		} else if (reject_automation_option(r_state, arg, "editor project-manager")) {
+			return;
 		}
 		fail(r_state.result, "Unknown option for editor " + command + ": " + arg + ".");
 		return;
 	}
 
+	if (!validate_automation_transport(r_state.result, automation_transport)) {
+		return;
+	}
+
+	r_state.result.invocation.automation = automation;
+	r_state.result.invocation.automation_transport = automation_transport.is_empty() && automation ? String("mcp") : automation_transport;
+	r_state.result.invocation.automation_port = automation_port;
+	r_state.result.invocation.automation_token = automation_token;
 	r_state.result.invocation.project_path = r_state.project_path;
 	r_state.result.invocation.passthrough_args = passthrough;
 	finalize_global_args(r_state);
