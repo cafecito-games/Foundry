@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  editor_automation_types.h                                             */
+/*  editor_automation_workflow.h                                          */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -16,9 +16,6 @@
 /* permit persons to whom the Software is furnished to do so, subject to  */
 /* the following conditions:                                              */
 /*                                                                        */
-/* The above copyright notice and this permission notice shall be         */
-/* included in all copies or substantial portions of the Software.        */
-/*                                                                        */
 /* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
 /* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
 /* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
@@ -30,56 +27,20 @@
 
 #pragma once
 
-#include "core/math/rect2i.h"
 #include "core/string/ustring.h"
-#include "core/templates/hash_map.h"
-#include "core/templates/local_vector.h"
-#include "core/templates/vector.h"
-#include "core/variant/variant.h"
+#include "core/variant/dictionary.h"
 
-struct EditorAutomationElement {
-	String id;
-	String role;
-	String name;
-	String text;
-	String class_name;
-	String path;
-	bool visible = false;
-	bool enabled = true;
-	bool focused = false;
-	bool pressed = false;
-	bool selected = false;
-	Rect2i bounds;
-	PackedStringArray actions;
-	Dictionary metadata;
-	Vector<int> children;
-	uint64_t object_id = 0;
-	int parent_index = -1;
-};
+class ItemList;
+class Node;
+class Tree;
+class TreeItem;
 
-struct EditorAutomationSnapshotData {
-	uint64_t generation = 0;
-	Vector<EditorAutomationElement> elements;
-	HashMap<String, int> id_to_index;
-	HashMap<uint64_t, int> object_id_to_index;
-	Vector<int> root_indices;
-	String focused_element_id;
-};
+class EditorAutomationWorkflow {
+public:
+	static String role_for_node(const Node *p_node);
+	static Dictionary metadata_for_node(const Node *p_node);
+	static Dictionary metadata_for_tree_item(const Tree *p_tree, TreeItem *p_item);
+	static Dictionary metadata_for_list_item(const ItemList *p_list, int p_index);
 
-enum class EditorAutomationSelectorStatus {
-	OK,
-	NO_MATCH,
-	AMBIGUOUS,
-	STALE_ID,
-	INVALID_SELECTOR,
-};
-
-struct EditorAutomationSelectorResult {
-	EditorAutomationSelectorStatus status = EditorAutomationSelectorStatus::INVALID_SELECTOR;
-	Vector<int> match_indices;
-	String error_kind;
-	String message;
-	Array candidates;
-
-	Dictionary to_dictionary() const;
+	static bool select_tree_item_ui(Tree *p_tree, TreeItem *p_item);
 };

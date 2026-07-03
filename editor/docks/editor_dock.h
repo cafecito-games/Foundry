@@ -95,6 +95,7 @@ private:
 
 protected:
 	static void _bind_methods();
+	void _notification(int p_what);
 
 	FOUNDRY_VIRTUAL1(_update_layout, int)
 	FOUNDRY_VIRTUAL2C(_save_layout_to_config, Ref<ConfigFile>, const String &)

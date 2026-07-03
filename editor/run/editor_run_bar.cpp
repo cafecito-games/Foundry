@@ -589,6 +589,7 @@ void EditorRunBar::_bind_methods() {
 
 EditorRunBar::EditorRunBar() {
 	singleton = this;
+	set_accessibility_name(TTRC("Run Bar"));
 
 	outer_hbox = memnew(HBoxContainer);
 	add_child(outer_hbox);
@@ -654,6 +655,7 @@ EditorRunBar::EditorRunBar() {
 	ED_SHORTCUT_OVERRIDE("editor/run_project", "macos", KeyModifierMask::META | Key::B);
 	play_button->set_shortcut(ED_GET_SHORTCUT("editor/run_project"));
 	play_button->set_tooltip_text(TTRC("Run the project's main scene."));
+	play_button->set_accessibility_name(TTRC("Run Project"));
 	play_button->connect(SceneStringName(pressed), callable_mp(this, &EditorRunBar::play_main_scene).bind(false, Vector<String>()));
 
 	run_options_button = memnew(MenuButton);
@@ -676,6 +678,7 @@ EditorRunBar::EditorRunBar() {
 	pause_button->set_toggle_mode(true);
 	pause_button->set_focus_mode(Control::FOCUS_ACCESSIBILITY);
 	pause_button->set_tooltip_text(TTRC("Pause the running project's execution for debugging."));
+	pause_button->set_accessibility_name(TTRC("Pause Running Project"));
 	pause_button->set_disabled(true);
 
 	ED_SHORTCUT("editor/pause_running_project", TTRC("Pause Running Project"), Key::F7);
@@ -687,6 +690,7 @@ EditorRunBar::EditorRunBar() {
 	stop_button->set_theme_type_variation("RunBarButton");
 	stop_button->set_focus_mode(Control::FOCUS_ACCESSIBILITY);
 	stop_button->set_tooltip_text(TTRC("Stop the currently running project."));
+	stop_button->set_accessibility_name(TTRC("Stop Running Project"));
 	stop_button->set_disabled(true);
 	stop_button->connect(SceneStringName(pressed), callable_mp(this, &EditorRunBar::stop_playing));
 
@@ -729,6 +733,7 @@ EditorRunBar::EditorRunBar() {
 	main_hbox->add_child(play_scene_button);
 
 	play_scene_button->set_tooltip_text(TTRC("Play the currently edited scene."));
+	play_scene_button->set_accessibility_name(TTRC("Run Current Scene"));
 	play_scene_button->set_theme_type_variation("RunBarButton");
 	play_scene_button->set_focus_mode(Control::FOCUS_ACCESSIBILITY);
 
@@ -752,6 +757,7 @@ EditorRunBar::EditorRunBar() {
 	main_hbox->add_child(play_custom_scene_button);
 
 	play_custom_scene_button->set_tooltip_text(TTRC("Play a custom scene."));
+	play_custom_scene_button->set_accessibility_name(TTRC("Run Specific Scene"));
 	play_custom_scene_button->set_theme_type_variation("RunBarButton");
 	play_custom_scene_button->set_focus_mode(Control::FOCUS_ACCESSIBILITY);
 

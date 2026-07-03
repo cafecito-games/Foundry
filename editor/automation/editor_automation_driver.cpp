@@ -36,6 +36,7 @@
 #include "editor/automation/editor_automation_log.h"
 #include "editor/automation/editor_automation_selector.h"
 #include "editor/automation/editor_automation_trace.h"
+#include "editor/automation/editor_automation_workflow.h"
 #include "scene/gui/base_button.h"
 #include "scene/gui/code_edit.h"
 #include "scene/gui/control.h"
@@ -408,7 +409,7 @@ EditorAutomationActionResult _action_select_virtual(
 		ERR_FAIL_NULL_V(tree, EditorAutomationActionResult::failure("invalid_element", "Tree item parent is no longer available."));
 		TreeItem *item = _resolve_tree_item(tree, path);
 		ERR_FAIL_NULL_V(item, EditorAutomationActionResult::failure("invalid_element", "Tree item is no longer available."));
-		tree->set_selected(item, 0);
+		ERR_FAIL_COND_V(!EditorAutomationWorkflow::select_tree_item_ui(tree, item), EditorAutomationActionResult::failure("unsupported_action", "Tree item selection failed."));
 		EditorAutomationActionResult result = EditorAutomationActionResult::success(EditorAutomationActionRouteNames::SEMANTIC_SELECT, p_element.id);
 		result.events.push_back("selected");
 		result.focus = _focused_element_id(p_snapshot);

@@ -121,6 +121,20 @@ void EditorDock::_bind_methods() {
 	FOUNDRY_VIRTUAL_BIND(_load_layout_from_config, "config", "section");
 }
 
+void EditorDock::_notification(int p_what) {
+	switch (p_what) {
+		case NOTIFICATION_ENTER_TREE:
+		case NOTIFICATION_TRANSLATION_CHANGED: {
+			const String display_title = get_display_title();
+			if (!display_title.is_empty()) {
+				set_accessibility_name(display_title);
+			}
+		} break;
+		default:
+			break;
+	}
+}
+
 void EditorDock::open() {
 	if (!is_open) {
 		EditorDockManager::get_singleton()->open_dock(this, false);
@@ -142,6 +156,7 @@ void EditorDock::set_title(const String &p_title) {
 		return;
 	}
 	title = p_title;
+	set_accessibility_name(get_display_title());
 	_emit_changed();
 }
 
