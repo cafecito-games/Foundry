@@ -113,6 +113,7 @@
 #include "tests/core/object/test_method_bind.h"
 #include "tests/core/object/test_object.h"
 #include "tests/core/object/test_script_diagnostic_capture.h"
+#include "tests/core/object/test_script_diagnostic_capture_scope.h"
 #include "tests/core/object/test_undo_redo.h"
 #include "tests/core/os/test_foundry_cli_help.h"
 #include "tests/core/os/test_foundry_cli_parser.h"

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="ScriptDiagnosticCaptureResult" inherits="RefCounted" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+	<brief_description>
+		Return value and captured diagnostics from [method ScriptDiagnosticCaptureScope.capture] or [method ScriptDiagnosticCaptureScope.capture_async].
+	</brief_description>
+	<description>
+		Produced when a scoped capture helper finishes running a callable. [member return_value] is [code]null[/code] when the callable ended via runtime error. [member capture] is the stopped capture containing every recorded event.
+	</description>
+	<members>
+		<member name="capture" type="ScriptDiagnosticCapture" setter="" getter="get_capture">
+			The stopped capture with all recorded diagnostic events.
+		</member>
+		<member name="return_value" type="Variant" setter="" getter="get_return_value">
+			The callable's return value, or [code]null[/code] when the callable ended via runtime error.
+		</member>
+	</members>
+</class>

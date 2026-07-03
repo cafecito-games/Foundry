@@ -44,6 +44,10 @@ public:
 	static String &project_data_dir_name() {
 		return ProjectSettings::get_singleton()->project_data_dir_name;
 	}
+
+	static bool &project_loaded() {
+		return ProjectSettings::get_singleton()->project_loaded;
+	}
 };
 
 namespace TestProjectSettings {

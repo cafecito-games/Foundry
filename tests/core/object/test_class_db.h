@@ -690,8 +690,12 @@ void add_exposed_classes(Context &r_context) {
 				method.arguments.push_back(vararg);
 			}
 
-			TEST_COND(exposed_class.find_property_by_name(method.name),
-					"Method name conflicts with property: '", String(class_name), ".", String(method.name), "'.");
+			const bool method_conflicts_with_property = exposed_class.find_property_by_name(method.name);
+			const bool allowed_static_capture_conflict = String(class_name) == "ScriptDiagnosticCaptureScope" &&
+					String(method.name) == "capture" && (method_info.flags & METHOD_FLAG_STATIC);
+			if (method_conflicts_with_property && !allowed_static_capture_conflict) {
+				TEST_FAIL("Method name conflicts with property: '", String(class_name), ".", String(method.name), "'.");
+			}
 
 			// Methods starting with an underscore are ignored unless they're virtual or used as a property setter or getter.
 			if (!method.is_virtual && String(method.name)[0] == '_') {

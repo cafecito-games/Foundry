@@ -29,6 +29,11 @@ func async_abort() -> void:
 	ScriptTestAbort.abort_current("async abort")
 	abort_ran_after = true
 
+func async_capture_diagnostic() -> int:
+	await get_tree().process_frame
+	push_error("async capture error")
+	return 13
+
 func runtime_error() -> void:
 	var values: Array[int] = []
 	values[0] = 1
