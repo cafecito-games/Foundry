@@ -1039,7 +1039,7 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 	String audio_driver = "";
 	String project_path = ".";
 	String debug_uri = "";
-#if defined(TOOLS_ENABLED) && (defined(WINDOWS_ENABLED) || defined(LINUXBSD_ENABLED))
+#ifdef TOOLS_ENABLED
 	bool test_rd_creation = false;
 	bool test_rd_support = false;
 #endif
