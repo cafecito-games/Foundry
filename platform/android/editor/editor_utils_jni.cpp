@@ -33,6 +33,7 @@
 #include "jni_utils.h"
 
 #ifdef TOOLS_ENABLED
+#include "core/config/project_settings.h"
 #include "editor/debugger/editor_debugger_node.h"
 #include "editor/debugger/script_editor_debugger.h"
 #include "editor/run/editor_run_bar.h"
@@ -76,6 +77,14 @@ JNIEXPORT void JNICALL Java_games_cafecito_foundry_editor_utils_EditorUtils_runS
 
 		for (const String &a : Main::get_forwardable_cli_arguments(Main::CLI_SCOPE_PROJECT)) {
 			args.push_back(a);
+		}
+
+		const String resource_path = ProjectSettings::get_singleton()->get_resource_path();
+		if (!resource_path.is_empty()) {
+			args.push_back("project");
+			args.push_back("run");
+			args.push_back("--project");
+			args.push_back(resource_path);
 		}
 
 		for (const String &arg : scene_args) {

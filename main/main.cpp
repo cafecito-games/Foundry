@@ -991,6 +991,13 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 		goto error;
 	}
 
+	if (!cli_parse.used_new_cli) {
+		const String deprecation_notice = FoundryCLIParser::get_legacy_deprecation_notice(raw_cli_args);
+		if (!deprecation_notice.is_empty()) {
+			OS::get_singleton()->printerr("%s\n", deprecation_notice.utf8().get_data());
+		}
+	}
+
 	for (int i = 0; i < cli_parse.normalized_args.size(); i++) {
 		args.push_back(cli_parse.normalized_args[i]);
 	}

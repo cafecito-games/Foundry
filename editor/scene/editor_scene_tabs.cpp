@@ -382,7 +382,8 @@ void EditorSceneTabs::_global_menu_scene(const Variant &p_tag) {
 void EditorSceneTabs::_global_menu_new_window(const Variant &p_tag) {
 	if (OS::get_singleton()->get_main_loop()) {
 		List<String> args;
-		args.push_back("-p");
+		args.push_back("editor");
+		args.push_back("project-manager");
 		OS::get_singleton()->create_instance(args);
 	}
 }

@@ -151,7 +151,7 @@ const Positional DOCTEST_ARGS_POSITIONAL[] = {
 #define FOUNDRY_CLI_COUNT(m_array) ((int)(sizeof(m_array) / sizeof((m_array)[0])))
 
 const CommandSpec COMMANDS[] = {
-	{ "editor", "open", "Open a project in the editor.", "[--project <dir>]", FoundryCLIHelp::AVAILABILITY_EDITOR, EDITOR_OPEN_OPTIONS, FOUNDRY_CLI_COUNT(EDITOR_OPEN_OPTIONS), nullptr, 0, "foundry editor open --project ." },
+	{ "editor", "open", "Open a project in the editor.", "[--project <dir>] [scene-path]", FoundryCLIHelp::AVAILABILITY_EDITOR, EDITOR_OPEN_OPTIONS, FOUNDRY_CLI_COUNT(EDITOR_OPEN_OPTIONS), nullptr, 0, "foundry editor open --project . res://main.tscn" },
 	{ "editor", "project-manager", "Open the Project Manager.", "", FoundryCLIHelp::AVAILABILITY_EDITOR, nullptr, 0, nullptr, 0, "foundry editor project-manager" },
 	{ "project", "run", "Run a project; arguments after -- go to the project.", "[--project <dir>] [--scene <path>] [--script <path>] [--check-only] [-- <user args...>]", FoundryCLIHelp::AVAILABILITY_RELEASE, PROJECT_RUN_OPTIONS, FOUNDRY_CLI_COUNT(PROJECT_RUN_OPTIONS), nullptr, 0, "foundry project run --project . --scene res://main.tscn -- --difficulty hard" },
 	{ "project", "export", "Export a project with a preset.", "[--project <dir>] --preset <name> --output <path> [--mode <release|debug|pack|patch>] [--patches <paths>] [--install-android-build-template]", FoundryCLIHelp::AVAILABILITY_EDITOR, PROJECT_EXPORT_OPTIONS, FOUNDRY_CLI_COUNT(PROJECT_EXPORT_OPTIONS), nullptr, 0, "foundry project export --project . --preset Linux --output build/game.x86_64 --mode release" },

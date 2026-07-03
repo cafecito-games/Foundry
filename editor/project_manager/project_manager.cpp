@@ -544,7 +544,9 @@ void ProjectManager::_run_project_confirm() {
 			args.push_back(a);
 		}
 
-		args.push_back("--path");
+		args.push_back("project");
+		args.push_back("run");
+		args.push_back("--project");
 		args.push_back(path);
 
 		Error err = OS::get_singleton()->create_instance(args);
@@ -575,10 +577,10 @@ void ProjectManager::_open_selected_projects() {
 			args.push_back(a);
 		}
 
-		args.push_back("--path");
+		args.push_back("editor");
+		args.push_back("open");
+		args.push_back("--project");
 		args.push_back(path);
-
-		args.push_back("--editor");
 
 		if (open_in_recovery_mode) {
 			args.push_back("--recovery-mode");

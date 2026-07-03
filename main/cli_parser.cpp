@@ -191,7 +191,8 @@ static bool consume_common_global_option(CLIParseState &r_state, const String &p
 		return true;
 	}
 	if (p_arg == "--quiet" || p_arg == "-q" || p_arg == "--verbose" || p_arg == "-v" ||
-			p_arg == "--no-header" || p_arg == "--headless" || p_arg == "--disable-crash-handler") {
+			p_arg == "--no-header" || p_arg == "--headless" || p_arg == "--disable-crash-handler" ||
+			p_arg == "--recovery-mode" || p_arg == "--quit") {
 		if (p_arg == "--no-header") {
 			r_state.result.no_header = true;
 		}
@@ -238,6 +239,7 @@ static void parse_project_run(CLIParseState &r_state) {
 	String scene;
 	String script;
 	bool check_only = false;
+	PackedStringArray passthrough;
 
 	while (r_state.index < r_state.args.size()) {
 		const String arg = r_state.args[r_state.index];
@@ -263,8 +265,8 @@ static void parse_project_run(CLIParseState &r_state) {
 			check_only = true;
 			r_state.index++;
 		} else {
-			fail(r_state.result, "Unknown option for project run: " + arg + ".");
-			return;
+			append(passthrough, arg);
+			r_state.index++;
 		}
 	}
 
@@ -278,6 +280,9 @@ static void parse_project_run(CLIParseState &r_state) {
 	}
 	if (check_only) {
 		append(normalized, "--check-only");
+	}
+	for (int i = 0; i < passthrough.size(); i++) {
+		append(normalized, passthrough[i]);
 	}
 	append_user_args(normalized, r_state.result.user_args);
 	r_state.result.normalized_args = normalized;
@@ -696,6 +701,7 @@ static void parse_editor(CLIParseState &r_state) {
 	}
 	set_command_path(r_state.result, "editor", command);
 
+	PackedStringArray passthrough;
 	while (r_state.index < r_state.args.size()) {
 		const String arg = r_state.args[r_state.index];
 		if (is_help_flag(arg)) {
@@ -707,17 +713,25 @@ static void parse_editor(CLIParseState &r_state) {
 				return;
 			}
 			continue;
-		} else {
-			fail(r_state.result, "Unknown option for editor " + command + ": " + arg + ".");
-			return;
 		}
+		if (command == "open" && !arg.begins_with("-")) {
+			append(passthrough, arg);
+			r_state.index++;
+			continue;
+		}
+		fail(r_state.result, "Unknown option for editor " + command + ": " + arg + ".");
+		return;
 	}
 
 	PackedStringArray normalized = base_args(r_state);
 	if (command == "open") {
 		append_project(normalized, r_state.project_path);
 		append(normalized, "--editor");
+		for (int i = 0; i < passthrough.size(); i++) {
+			append(normalized, passthrough[i]);
+		}
 	} else if (command == "project-manager") {
+		append_project(normalized, r_state.project_path);
 		append(normalized, "--project-manager");
 	}
 	r_state.result.normalized_args = normalized;
@@ -1112,6 +1126,71 @@ FoundryCLIParser::ParseResult FoundryCLIParser::parse(const PackedStringArray &p
 		fail(state.result, "Expected a Foundry command after global options.");
 	}
 	return state.result;
+}
+
+String FoundryCLIParser::get_legacy_deprecation_notice(const PackedStringArray &p_args) {
+	int start_index = 0;
+	if (!p_args.is_empty() && !is_new_cli_command(p_args[0]) && p_args[0] != "help" && !is_help_flag(p_args[0]) &&
+			!p_args[0].begins_with("-")) {
+		start_index = 1;
+	}
+
+	bool has_editor = false;
+	bool has_project_manager = false;
+	bool has_import = false;
+	bool has_test = false;
+	bool has_path = false;
+	bool has_dump_extension_api = false;
+	bool has_dump_interface = false;
+	bool has_validate_extension_api = false;
+
+	for (int i = start_index; i < p_args.size(); i++) {
+		const String &arg = p_args[i];
+		if (arg == "--editor" || arg == "-e") {
+			has_editor = true;
+		} else if (arg == "--project-manager" || arg == "-p") {
+			has_project_manager = true;
+		} else if (arg == "--import") {
+			has_import = true;
+		} else if (arg == "--test") {
+			has_test = true;
+		} else if (arg == "--path") {
+			has_path = true;
+		} else if (arg == "--dump-extension-api" || arg == "--dump-extension-api-with-docs") {
+			has_dump_extension_api = true;
+		} else if (arg == "--dump-foundryextension-interface" || arg == "--dump-foundryextension-interface-json") {
+			has_dump_interface = true;
+		} else if (arg == "--validate-extension-api") {
+			has_validate_extension_api = true;
+		}
+	}
+
+	if (has_editor) {
+		return "Deprecated CLI: use `foundry editor open --project <dir>` instead of `--editor`/`--path`.";
+	}
+	if (has_project_manager) {
+		return "Deprecated CLI: use `foundry editor project-manager` instead of `--project-manager`/`-p`.";
+	}
+	if (has_import) {
+		return "Deprecated CLI: use `foundry project import --project <dir>` instead of `--import --path`.";
+	}
+	if (has_test) {
+		return "Deprecated CLI: use `foundry test run` instead of `--test`.";
+	}
+	if (has_dump_extension_api) {
+		return "Deprecated CLI: use `foundry docs generate-api` instead of `--dump-extension-api`.";
+	}
+	if (has_dump_interface) {
+		return "Deprecated CLI: use `foundry extension dump-interface` instead of `--dump-foundryextension-interface`.";
+	}
+	if (has_validate_extension_api) {
+		return "Deprecated CLI: use `foundry extension validate-api --input <path>` instead of `--validate-extension-api`.";
+	}
+	if (has_path) {
+		return "Deprecated CLI: use `--project <dir>` with a Foundry command instead of `--path`.";
+	}
+
+	return String();
 }
 
 FoundryCLIParser::ParseResult FoundryCLIParser::parse(int p_argc, char *p_argv[]) {

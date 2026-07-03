@@ -51,4 +51,5 @@ public:
 	static ParseResult parse(const PackedStringArray &p_args);
 	static ParseResult parse(int p_argc, char *p_argv[]);
 	static bool is_new_cli_command(const String &p_arg);
+	static String get_legacy_deprecation_notice(const PackedStringArray &p_args);
 };
