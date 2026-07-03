@@ -327,4 +327,128 @@ TEST_CASE("[FoundryCLIParser] Missing required command arguments are rejected") 
 	CHECK(result.error.contains("--output"));
 }
 
+TEST_CASE("[FoundryCLIParser] Help flag at top level is detected") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({ "foundry", "--help" }));
+	REQUIRE_MESSAGE(result.ok, result.error);
+	CHECK(result.help_requested);
+	CHECK(result.command_path.is_empty());
+}
+
+TEST_CASE("[FoundryCLIParser] Help flag scoped to a noun") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({ "foundry", "script", "--help" }));
+	REQUIRE_MESSAGE(result.ok, result.error);
+	CHECK(result.help_requested);
+	CHECK_EQ(result.command_path, make_args({ "script" }));
+}
+
+TEST_CASE("[FoundryCLIParser] Help flag scoped to a command") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({ "foundry", "script", "format", "--help" }));
+	REQUIRE_MESSAGE(result.ok, result.error);
+	CHECK(result.help_requested);
+	CHECK_EQ(result.command_path, make_args({ "script", "format" }));
+}
+
+TEST_CASE("[FoundryCLIParser] Help flag skips required option validation") {
+	// script migrate requires --project, but a help request must not fail on it.
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({ "foundry", "script", "migrate", "--apply", "--help" }));
+	REQUIRE_MESSAGE(result.ok, result.error);
+	CHECK(result.help_requested);
+	CHECK_EQ(result.command_path, make_args({ "script", "migrate" }));
+}
+
+TEST_CASE("[FoundryCLIParser] Short and DOS help flags are recognized") {
+	for (const String &flag : { String("-h"), String("/?") }) {
+		FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({ "foundry", "project", flag }));
+		REQUIRE_MESSAGE(result.ok, result.error);
+		CHECK(result.help_requested);
+		CHECK_EQ(result.command_path, make_args({ "project" }));
+	}
+}
+
+TEST_CASE("[FoundryCLIParser] Help alias routes scope") {
+	FoundryCLIParser::ParseResult top = FoundryCLIParser::parse(make_args({ "foundry", "help" }));
+	REQUIRE_MESSAGE(top.ok, top.error);
+	CHECK(top.help_requested);
+	CHECK(top.command_path.is_empty());
+
+	FoundryCLIParser::ParseResult noun = FoundryCLIParser::parse(make_args({ "foundry", "help", "script" }));
+	REQUIRE_MESSAGE(noun.ok, noun.error);
+	CHECK(noun.help_requested);
+	CHECK_EQ(noun.command_path, make_args({ "script" }));
+
+	FoundryCLIParser::ParseResult verb = FoundryCLIParser::parse(make_args({ "foundry", "help", "script", "format" }));
+	REQUIRE_MESSAGE(verb.ok, verb.error);
+	CHECK(verb.help_requested);
+	CHECK_EQ(verb.command_path, make_args({ "script", "format" }));
+}
+
+TEST_CASE("[FoundryCLIParser] JSON global option combines with help") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({ "foundry", "--json", "script", "format", "--help" }));
+	REQUIRE_MESSAGE(result.ok, result.error);
+	CHECK(result.json);
+	CHECK(result.help_requested);
+	CHECK_EQ(result.command_path, make_args({ "script", "format" }));
+}
+
+TEST_CASE("[FoundryCLIParser] Bare noun error records noun scope") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({ "foundry", "script" }));
+	CHECK_FALSE(result.ok);
+	CHECK_FALSE(result.help_requested);
+	CHECK_EQ(result.command_path, make_args({ "script" }));
+}
+
+TEST_CASE("[FoundryCLIParser] Unknown verb error keeps noun scope") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({ "foundry", "script", "fmt" }));
+	CHECK_FALSE(result.ok);
+	CHECK_EQ(result.command_path, make_args({ "script" }));
+}
+
+TEST_CASE("[FoundryCLIParser] Help flag as an option value requests help") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({ "foundry", "project", "export", "--preset", "--help" }));
+	REQUIRE_MESSAGE(result.ok, result.error);
+	CHECK(result.help_requested);
+	CHECK_EQ(result.command_path, make_args({ "project", "export" }));
+
+	FoundryCLIParser::ParseResult global_value = FoundryCLIParser::parse(make_args({ "foundry", "script", "format", "--project", "--help" }));
+	REQUIRE_MESSAGE(global_value.ok, global_value.error);
+	CHECK(global_value.help_requested);
+	CHECK_EQ(global_value.command_path, make_args({ "script", "format" }));
+}
+
+TEST_CASE("[FoundryCLIParser] Unknown verb scope is the noun for every dispatcher") {
+	for (const String &noun : { String("editor"), String("lsp"), String("docs"), String("extension"), String("diagnostics") }) {
+		FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({ "foundry", noun, "bogus" }));
+		CHECK_FALSE(result.ok);
+		CHECK_EQ(result.command_path, make_args({ noun }));
+	}
+}
+
+TEST_CASE("[FoundryCLIParser] Help flag after user argument separator stays a user argument") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({ "foundry", "project", "run", "--project", "demo", "--", "--help" }));
+	REQUIRE_MESSAGE(result.ok, result.error);
+	CHECK_FALSE(result.help_requested);
+	CHECK_EQ(result.user_args, make_args({ "--help" }));
+}
+
+TEST_CASE("[FoundryCLIParser] Help flag after legacy token stays legacy") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({ "foundry", "--fullscreen", "--help" }));
+	REQUIRE_MESSAGE(result.ok, result.error);
+	CHECK_FALSE(result.help_requested);
+	CHECK_FALSE(result.used_new_cli);
+}
+
+TEST_CASE("[FoundryCLIParser] No-header global option is reported for help") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({ "foundry", "--no-header", "script", "--help" }));
+	REQUIRE_MESSAGE(result.ok, result.error);
+	CHECK(result.help_requested);
+	CHECK(result.no_header);
+}
+
+TEST_CASE("[FoundryCLIParser] No-header after the verb is reported for help") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({ "foundry", "script", "format", "--no-header", "--help" }));
+	REQUIRE_MESSAGE(result.ok, result.error);
+	CHECK(result.help_requested);
+	CHECK(result.no_header);
+}
+
 } // namespace TestFoundryCLIParser
