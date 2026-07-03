@@ -497,4 +497,32 @@ TEST_CASE("[FoundryCLIParser] No-header after the verb is reported for help") {
 	CHECK(result.no_header);
 }
 
+TEST_CASE("[FoundryCLIParser] Help alias accepts trailing global flags") {
+	FoundryCLIParser::ParseResult top = FoundryCLIParser::parse(make_args({ "foundry", "help", "--json" }));
+	REQUIRE_MESSAGE(top.ok, top.error);
+	CHECK(top.help_requested);
+	CHECK(top.json);
+	CHECK(top.command_path.is_empty());
+
+	FoundryCLIParser::ParseResult scoped = FoundryCLIParser::parse(make_args({ "foundry", "help", "script", "--json" }));
+	REQUIRE_MESSAGE(scoped.ok, scoped.error);
+	CHECK(scoped.help_requested);
+	CHECK(scoped.json);
+	CHECK_EQ(scoped.command_path, make_args({ "script" }));
+}
+
+TEST_CASE("[FoundryCLIParser] Help flag accepts trailing global flags") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({ "foundry", "script", "format", "--help", "--json" }));
+	REQUIRE_MESSAGE(result.ok, result.error);
+	CHECK(result.help_requested);
+	CHECK(result.json);
+	CHECK_EQ(result.command_path, make_args({ "script", "format" }));
+
+	FoundryCLIParser::ParseResult no_header = FoundryCLIParser::parse(make_args({ "foundry", "script", "format", "--help", "--no-header" }));
+	REQUIRE_MESSAGE(no_header.ok, no_header.error);
+	CHECK(no_header.help_requested);
+	CHECK(no_header.no_header);
+	CHECK_EQ(no_header.command_path, make_args({ "script", "format" }));
+}
+
 } // namespace TestFoundryCLIParser
