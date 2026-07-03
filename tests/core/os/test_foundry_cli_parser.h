@@ -525,4 +525,71 @@ TEST_CASE("[FoundryCLIParser] Help flag accepts trailing global flags") {
 	CHECK_EQ(no_header.command_path, make_args({ "script", "format" }));
 }
 
+TEST_CASE("[FoundryCLIParser] Project run forwards internal runtime flags") {
+	require_normalized({
+							   "foundry",
+							   "project",
+							   "run",
+							   "--project",
+							   "demo",
+							   "--scene",
+							   "res://main.tscn",
+							   "--remote-debug",
+							   "tcp://127.0.0.1:6007",
+							   "--editor-pid",
+							   "42",
+					   },
+			{
+					"foundry",
+					"--path",
+					"demo",
+					"--scene",
+					"res://main.tscn",
+					"--remote-debug",
+					"tcp://127.0.0.1:6007",
+					"--editor-pid",
+					"42",
+			});
+}
+
+TEST_CASE("[FoundryCLIParser] Editor open accepts a scene path to reopen") {
+	require_normalized({
+							   "foundry",
+							   "editor",
+							   "open",
+							   "--project",
+							   "demo",
+							   "res://main.tscn",
+					   },
+			{
+					"foundry",
+					"--path",
+					"demo",
+					"--editor",
+					"res://main.tscn",
+			});
+}
+
+TEST_CASE("[FoundryCLIParser] Editor project-manager maps project path") {
+	require_normalized({
+							   "foundry",
+							   "editor",
+							   "project-manager",
+							   "--project",
+							   "/opt/foundry",
+					   },
+			{
+					"foundry",
+					"--path",
+					"/opt/foundry",
+					"--project-manager",
+			});
+}
+
+TEST_CASE("[FoundryCLIParser] Legacy deprecation notice points to replacements") {
+	CHECK(FoundryCLIParser::get_legacy_deprecation_notice(make_args({ "foundry", "--editor", "--path", "." })).contains("editor open"));
+	CHECK(FoundryCLIParser::get_legacy_deprecation_notice(make_args({ "foundry", "-p" })).contains("project-manager"));
+	CHECK(FoundryCLIParser::get_legacy_deprecation_notice(make_args({ "foundry", "test", "run" })).is_empty());
+}
+
 } // namespace TestFoundryCLIParser

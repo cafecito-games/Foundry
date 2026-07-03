@@ -208,6 +208,19 @@ TEST_CASE("[FoundryCLIHelp] JSON help distinguishes option value styles") {
 	CHECK(saw_space);
 }
 
+#ifndef TOOLS_ENABLED
+TEST_CASE("[FoundryCLIHelp] Release builds hide editor-only commands from top help") {
+	const String text = FoundryCLIHelp::get_top_help_text("foundry");
+	CHECK_FALSE(text.contains("editor"));
+	CHECK_FALSE(text.contains("lsp"));
+	CHECK_FALSE(text.contains("docs"));
+	CHECK_FALSE(text.contains("extension"));
+	CHECK(text.contains("project"));
+	CHECK(text.contains("script"));
+	CHECK(text.contains("test"));
+}
+#endif
+
 // The first "|" alternative of value_name doubles as a sample value the
 // parser must accept (e.g. "release|debug|pack|patch" -> "release").
 static String drift_option_value(const FoundryCLIHelp::CommandOption &p_option) {
@@ -294,7 +307,7 @@ static bool drift_command_is_passthrough(const FoundryCLIHelp::CommandSpec &p_sp
 	// option-acceptance test above is vacuous for them and unknown options
 	// cannot be rejected at this layer.
 	const String label = String(p_spec.noun) + " " + p_spec.verb;
-	return label == "script format" || label == "script lint" || label == "test run";
+	return label == "script format" || label == "script lint" || label == "test run" || label == "project run";
 }
 
 TEST_CASE("[FoundryCLIHelp] Strict commands reject unknown options") {

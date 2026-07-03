@@ -1503,7 +1503,8 @@ void ProjectList::update_dock_menu() {
 
 void ProjectList::_global_menu_new_window(const Variant &p_tag) {
 	List<String> args;
-	args.push_back("-p");
+	args.push_back("editor");
+	args.push_back("project-manager");
 	OS::get_singleton()->create_instance(args);
 }
 
@@ -1511,9 +1512,11 @@ void ProjectList::_global_menu_open_project(const Variant &p_tag) {
 	int idx = (int)p_tag;
 
 	if (idx >= 0 && idx < _projects.size()) {
-		String conf = _projects[idx].path.path_join("project.foundry");
 		List<String> args;
-		args.push_back(conf);
+		args.push_back("editor");
+		args.push_back("open");
+		args.push_back("--project");
+		args.push_back(_projects[idx].path);
 		OS::get_singleton()->create_instance(args);
 	}
 }

@@ -191,14 +191,14 @@ func _initialize():
 FS
 
   note "opening project.foundry in editor + checking for .foundry/ data dir ..."
-  timeout 120 "$BIN" --headless --editor --path "$proj" --quit >/dev/null 2>&1
+  timeout 120 "$BIN" editor open --project "$proj" --headless --quit >/dev/null 2>&1
   if [ -d "$proj/.foundry" ]; then pass "engine created .foundry/ data dir (not .godot/)";
   else fail ".foundry/ data dir not created"; fi
   [ -d "$proj/.godot" ] && fail "stale .godot/ data dir created" \
                         || pass "no legacy .godot/ data dir"
 
   note "running a .fs script via --script ..."
-  if timeout 90 "$BIN" --headless --path "$proj" --script hello.fs 2>&1 | "$GREP" -q 'FOUNDRY_SCRIPT_RAN'; then
+  if timeout 90 "$BIN" project run --project "$proj" --headless --script hello.fs 2>&1 | "$GREP" -q 'FOUNDRY_SCRIPT_RAN'; then
     pass ".fs script loaded and executed (FoundryScript)"
   else
     fail ".fs script did not run"; fi
