@@ -132,9 +132,6 @@
 #include "main/splash_editor.gen.h"
 #endif
 
-#ifndef DISABLE_DEPRECATED
-#include "editor/project_upgrade/project_converter_3_to_4.h"
-#endif // DISABLE_DEPRECATED
 #endif // TOOLS_ENABLED
 
 #if defined(STEAMAPI_ENABLED)
@@ -233,11 +230,6 @@ static bool auto_build_solutions = false;
 static String debug_server_uri;
 static bool wait_for_import = false;
 static bool restore_editor_window_layout = true;
-#ifndef DISABLE_DEPRECATED
-static int converter_max_kb_file = 4 * 1024; // 4MB
-static int converter_max_line_length = 100000;
-#endif // DISABLE_DEPRECATED
-
 HashMap<Main::CLIScope, Vector<String>> forwardable_cli_arguments;
 #endif
 static bool single_threaded_scene = false;
@@ -1581,36 +1573,6 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 		} else if (arg == "--export") { // For users used to 3.x syntax.
 			OS::get_singleton()->print("The Godot 3 --export option was changed to more explicit --export-release / --export-debug / --export-pack options.\nSee the --help output for details.\n");
 			goto error;
-		} else if (arg == "--convert-3to4") {
-			// Actually handling is done in start().
-			cmdline_tool = true;
-			main_args.push_back(arg);
-
-			if (N && !N->get().begins_with("-")) {
-				if (itos(N->get().to_int()) == N->get()) {
-					converter_max_kb_file = N->get().to_int();
-				}
-				if (N->next() && !N->next()->get().begins_with("-")) {
-					if (itos(N->next()->get().to_int()) == N->next()->get()) {
-						converter_max_line_length = N->next()->get().to_int();
-					}
-				}
-			}
-		} else if (arg == "--validate-conversion-3to4") {
-			// Actually handling is done in start().
-			cmdline_tool = true;
-			main_args.push_back(arg);
-
-			if (N && !N->get().begins_with("-")) {
-				if (itos(N->get().to_int()) == N->get()) {
-					converter_max_kb_file = N->get().to_int();
-				}
-				if (N->next() && !N->next()->get().begins_with("-")) {
-					if (itos(N->next()->get().to_int()) == N->next()->get()) {
-						converter_max_line_length = N->next()->get().to_int();
-					}
-				}
-			}
 #endif // DISABLE_DEPRECATED
 		} else if (arg == "--doctool") {
 			// Actually handling is done in start().
@@ -3937,10 +3899,6 @@ int Main::start() {
 	bool fs_migrate_acknowledge_vcs = false;
 	String fs_migrate_follow_up_path;
 #endif
-#ifndef DISABLE_DEPRECATED
-	bool converting_project = false;
-	bool validating_converting_project = false;
-#endif // DISABLE_DEPRECATED
 #endif // TOOLS_ENABLED
 
 	main_timer_sync.init(OS::get_singleton()->get_ticks_usec());
@@ -3959,12 +3917,6 @@ int Main::start() {
 		} else if (E->get() == "--foundryextension-docs") {
 			gen_flags.set_flag(DocTools::GENERATE_FLAG_SKIP_BASIC_TYPES);
 			gen_flags.set_flag(DocTools::GENERATE_FLAG_EXTENSION_CLASSES_ONLY);
-#ifndef DISABLE_DEPRECATED
-		} else if (E->get() == "--convert-3to4") {
-			converting_project = true;
-		} else if (E->get() == "--validate-conversion-3to4") {
-			validating_converting_project = true;
-#endif // DISABLE_DEPRECATED
 		} else if (E->get() == "-e" || E->get() == "--editor") {
 			editor = true;
 		} else if (E->get() == "-p" || E->get() == "--project-manager") {
@@ -4249,17 +4201,6 @@ int Main::start() {
 			return valid ? EXIT_SUCCESS : EXIT_FAILURE;
 		}
 	}
-
-#ifndef DISABLE_DEPRECATED
-	if (converting_project) {
-		int ret = ProjectConverter3To4(converter_max_kb_file, converter_max_line_length).convert();
-		return ret ? EXIT_SUCCESS : EXIT_FAILURE;
-	}
-	if (validating_converting_project) {
-		bool ret = ProjectConverter3To4(converter_max_kb_file, converter_max_line_length).validate_conversion();
-		return ret ? EXIT_SUCCESS : EXIT_FAILURE;
-	}
-#endif // DISABLE_DEPRECATED
 
 #endif // TOOLS_ENABLED
 

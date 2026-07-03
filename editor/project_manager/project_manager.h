@@ -68,7 +68,6 @@ class ProjectManager : public Control {
 	enum PostDuplicateAction {
 		POST_DUPLICATE_ACTION_NONE,
 		POST_DUPLICATE_ACTION_OPEN,
-		POST_DUPLICATE_ACTION_FULL_CONVERSION,
 	};
 
 	PostDuplicateAction post_duplicate_action = POST_DUPLICATE_ACTION_NONE;
@@ -238,14 +237,12 @@ class ProjectManager : public Control {
 	void _set_new_tag_name(const String p_name);
 	void _create_new_tag();
 
-	// Project converter/migration tool.
+	// Project migration prompts.
 
-	ConfirmationDialog *ask_full_convert_dialog = nullptr;
 	ConfirmationDialog *ask_update_settings = nullptr;
 	VBoxContainer *ask_update_vb = nullptr;
 	Label *ask_update_label = nullptr;
 	CheckBox *ask_update_backup = nullptr;
-	Button *full_convert_button = nullptr;
 	Button *migration_guide_button = nullptr;
 
 	String version_convert_feature;
@@ -255,9 +252,7 @@ class ProjectManager : public Control {
 #ifndef DISABLE_DEPRECATED
 	void _minor_project_migrate();
 #endif
-	void _full_convert_button_pressed();
 	void _migration_guide_button_pressed();
-	void _perform_full_project_conversion();
 
 	// Input and I/O.
 

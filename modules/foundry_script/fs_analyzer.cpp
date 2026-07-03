@@ -52,8 +52,6 @@
 #include "scene/main/node.h"
 
 #if defined(TOOLS_ENABLED) && !defined(DISABLE_DEPRECATED)
-#define SUGGEST_GODOT4_RENAMES
-#include "editor/project_upgrade/renames_map_3_to_4.h"
 #endif
 
 #define UNNAMED_ENUM "<anonymous enum>"
@@ -7781,60 +7779,6 @@ void FSAnalyzer::reduce_binary_op(FSParser::BinaryOpNode *p_binary_op) {
 	p_binary_op->set_datatype(result);
 }
 
-#ifdef SUGGEST_GODOT4_RENAMES
-const char *get_rename_from_map(const char *map[][2], String key) {
-	for (int index = 0; map[index][0]; index++) {
-		if (map[index][0] == key) {
-			return map[index][1];
-		}
-	}
-	return nullptr;
-}
-
-// Checks if an identifier/function name has been renamed in Godot 4, uses ProjectConverter3To4 for rename map.
-// Returns the new name if found, nullptr otherwise.
-const char *check_for_renamed_identifier(String identifier, FSParser::Node::Type type) {
-	switch (type) {
-		case FSParser::Node::IDENTIFIER: {
-			// Check properties
-			const char *result = get_rename_from_map(RenamesMap3To4::fs_properties_renames, identifier);
-			if (result) {
-				return result;
-			}
-			// Check enum values
-			result = get_rename_from_map(RenamesMap3To4::enum_renames, identifier);
-			if (result) {
-				return result;
-			}
-			// Check color constants
-			result = get_rename_from_map(RenamesMap3To4::color_renames, identifier);
-			if (result) {
-				return result;
-			}
-			// Check type names
-			result = get_rename_from_map(RenamesMap3To4::class_renames, identifier);
-			if (result) {
-				return result;
-			}
-			return get_rename_from_map(RenamesMap3To4::builtin_types_renames, identifier);
-		}
-		case FSParser::Node::CALL: {
-			const char *result = get_rename_from_map(RenamesMap3To4::fs_function_renames, identifier);
-			if (result) {
-				return result;
-			}
-			// Built-in Types are mistaken for function calls when the built-in type is not found.
-			// Check built-in types if function rename not found
-			return get_rename_from_map(RenamesMap3To4::builtin_types_renames, identifier);
-		}
-		// Signal references don't get parsed through the FSAnalyzer. No support for signal rename hints.
-		default:
-			// No rename found, return null
-			return nullptr;
-	}
-}
-#endif // SUGGEST_GODOT4_RENAMES
-
 void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p_is_root) {
 	bool all_is_constant = true;
 	HashMap<int, FSParser::ArrayNode *> arrays; // For array literal to potentially type when passing.
@@ -8565,18 +8509,7 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 		}
 		if (!found && (is_self || (base_type.is_hard_type() && base_type.kind == FSParser::DataType::BUILTIN))) {
 			String base_name = is_self && !p_call->is_super ? "self" : base_type.to_string();
-#ifdef SUGGEST_GODOT4_RENAMES
-			String rename_hint;
-			if (GLOBAL_GET_CACHED(bool, "debug/foundry_script/warnings/renamed_in_godot_4_hint")) {
-				const char *renamed_function_name = check_for_renamed_identifier(p_call->function_name, p_call->type);
-				if (renamed_function_name) {
-					rename_hint = " " + vformat(R"(Did you mean to use "%s"?)", String(renamed_function_name) + "()");
-				}
-			}
-			push_error(vformat(R"*(Function "%s()" not found in base %s.%s)*", p_call->function_name, base_name, rename_hint), p_call->is_super ? p_call : p_call->callee);
-#else
 			push_error(vformat(R"*(Function "%s()" not found in base %s.)*", p_call->function_name, base_name), p_call->is_super ? p_call : p_call->callee);
-#endif // SUGGEST_GODOT4_RENAMES
 		} else if (!found && (!p_call->is_super && base_type.is_hard_type() && base_type.is_meta_type)) {
 			push_error(vformat(R"*(Static function "%s()" not found in base "%s".)*", p_call->function_name, base_type.to_string()), p_call);
 		}
@@ -11234,18 +11167,7 @@ void FSAnalyzer::reduce_identifier_from_base(FSParser::IdentifierNode *p_identif
 			}
 
 			if (!valid && base.is_hard_type()) {
-#ifdef SUGGEST_GODOT4_RENAMES
-				String rename_hint;
-				if (GLOBAL_GET_CACHED(bool, "debug/foundry_script/warnings/renamed_in_godot_4_hint")) {
-					const char *renamed_identifier_name = check_for_renamed_identifier(name, p_identifier->type);
-					if (renamed_identifier_name) {
-						rename_hint = " " + vformat(R"(Did you mean to use "%s"?)", renamed_identifier_name);
-					}
-				}
-				push_error(vformat(R"(Cannot find member "%s" in base "%s".%s)", name, base.to_string(), rename_hint), p_identifier);
-#else
 				push_error(vformat(R"(Cannot find member "%s" in base "%s".)", name, base.to_string()), p_identifier);
-#endif // SUGGEST_GODOT4_RENAMES
 			}
 		} else {
 			switch (base.builtin_type) {
@@ -11278,18 +11200,7 @@ void FSAnalyzer::reduce_identifier_from_base(FSParser::IdentifierNode *p_identif
 						return;
 					}
 					if (base.is_hard_type()) {
-#ifdef SUGGEST_GODOT4_RENAMES
-						String rename_hint;
-						if (GLOBAL_GET_CACHED(bool, "debug/foundry_script/warnings/renamed_in_godot_4_hint")) {
-							const char *renamed_identifier_name = check_for_renamed_identifier(name, p_identifier->type);
-							if (renamed_identifier_name) {
-								rename_hint = " " + vformat(R"(Did you mean to use "%s"?)", renamed_identifier_name);
-							}
-						}
-						push_error(vformat(R"(Cannot find member "%s" in base "%s".%s)", name, base.to_string(), rename_hint), p_identifier);
-#else
 						push_error(vformat(R"(Cannot find member "%s" in base "%s".)", name, base.to_string()), p_identifier);
-#endif // SUGGEST_GODOT4_RENAMES
 					}
 				}
 			}
@@ -11881,18 +11792,7 @@ void FSAnalyzer::reduce_identifier(FSParser::IdentifierNode *p_identifier, bool 
 	}
 
 	// Not found.
-#ifdef SUGGEST_GODOT4_RENAMES
-	String rename_hint;
-	if (GLOBAL_GET_CACHED(bool, "debug/foundry_script/warnings/renamed_in_godot_4_hint")) {
-		const char *renamed_identifier_name = check_for_renamed_identifier(name, p_identifier->type);
-		if (renamed_identifier_name) {
-			rename_hint = " " + vformat(R"(Did you mean to use "%s"?)", renamed_identifier_name);
-		}
-	}
-	push_error(vformat(R"(Identifier "%s" not declared in the current scope.%s)", name, rename_hint), p_identifier);
-#else
 	push_error(vformat(R"(Identifier "%s" not declared in the current scope.)", name), p_identifier);
-#endif // SUGGEST_GODOT4_RENAMES
 	FSParser::DataType dummy;
 	dummy.kind = FSParser::DataType::VARIANT;
 	p_identifier->set_datatype(dummy); // Just so type is set to something.
