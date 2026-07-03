@@ -169,7 +169,7 @@ void RunTargetsPanel::_ensure_manager() {
 		return;
 	}
 
-	// No manager has been installed yet. Create a minimal one so the dock works on
+	// No manager has been installed yet. Create a minimal one so the panel works on
 	// its own, load the project's targets, register the iOS adapter on macOS, and
 	// publish it so the rest of the editor shares this single instance.
 	manager = memnew(RunTargetManager);
@@ -177,10 +177,10 @@ void RunTargetsPanel::_ensure_manager() {
 	const Error load_error = manager->load(RUN_TARGETS_CONFIG_PATH);
 	if (load_error != OK) {
 		// A malformed/unreadable run_targets.cfg leaves the manager without a save
-		// path; editing would silently lose changes, so keep the dock read-only and
+		// path; editing would silently lose changes, so keep the panel read-only and
 		// tell the user instead of pretending edits persist.
 		config_writable = false;
-		ERR_PRINT(vformat("Run Targets: could not load \"%s\" (error %d). The dock is read-only until the file is fixed.", String(RUN_TARGETS_CONFIG_PATH), load_error));
+		ERR_PRINT(vformat("Run Targets: could not load \"%s\" (error %d). The panel is read-only until the file is fixed.", String(RUN_TARGETS_CONFIG_PATH), load_error));
 	}
 
 #ifdef MACOS_ENABLED
@@ -504,7 +504,7 @@ void RunTargetsPanel::_refresh_unconfigured_devices() {
 
 	const HashMap<String, Vector<RunTargetDevice>> devices_by_platform = _gather_devices_by_platform();
 	// build_menu_model already partitions devices into configured-target rows and
-	// SETUP_DEVICE rows for connected devices no target claims; reuse it so the dock
+	// SETUP_DEVICE rows for connected devices no target claims; reuse it so the panel
 	// and the run-bar selector agree on which devices still need setting up.
 	const Vector<RunTargetMenuEntry> entries = EditorRunNative::build_menu_model(manager->get_targets(), devices_by_platform);
 
@@ -883,7 +883,6 @@ void RunTargetsPanel::_notification(int p_what) {
 
 RunTargetsPanel::RunTargetsPanel() {
 	set_name(TTRC("Run Targets"));
-	set_default_slot(EditorDock::DOCK_SLOT_RIGHT_BR);
 
 	HSplitContainer *split = memnew(HSplitContainer);
 	split->set_v_size_flags(SIZE_EXPAND_FILL);
