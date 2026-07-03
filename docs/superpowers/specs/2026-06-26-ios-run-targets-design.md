@@ -80,7 +80,7 @@ team_id = "ABCDE12345"        # selected once, remembered
 | `RunTargetManager` | Load/save targets, resolve target → (preset, device, flags), own the active target | `editor/run/` (new) |
 | `RunTargetReadiness` (Doctor) | Detect prerequisite state for the active target; emit ordered, actionable steps | `editor/run/` (new) + per-platform probe |
 | Run-bar dropdown | Surface targets + live devices at the Play button; selection sets active target | extends `editor/run/editor_run_native.cpp` |
-| Targets panel (dock) | Configure targets, signing, devices; embed the Doctor's guidance | `editor/` (new dock) |
+| Run Targets configuration panel | Configure targets, signing, devices; embed the Doctor's guidance | `editor/` |
 
 ### Per-platform adapter interface
 
@@ -158,9 +158,9 @@ into the primary surface:
 - Implemented by extending `editor/run/editor_run_native.cpp` (already owns
   device enumeration and the deploy menu).
 
-### B. Targets panel (the config + troubleshoot hub)
+### B. Run Targets configuration panel
 
-A dockable panel (live, glanceable readiness — not a modal Project Settings
+A configuration panel (live, glanceable readiness — not a Project Settings
 page). Opened from "Manage targets…". Three regions:
 
 1. **Targets list** — add/remove/rename targets, each bound to an export preset
@@ -187,8 +187,8 @@ before the editor opens:
 - Creates a default `RunTarget` "iOS Device" bound to that preset,
   `signing_mode = automatic`, `device_id = auto`, empty `team_id` (filled on
   first run via the Doctor).
-- On first editor open, the Targets dock opens to the Readiness ladder, landing
-  the user on "here's what's left to run on your phone."
+- On first editor open, Run Targets configuration opens to the Readiness ladder,
+  landing the user on "here's what's left to run on your phone."
 
 Deliberately minimal: no signing attempts, no device detection at create time
 (no device is plugged in then). It only removes the "build an export preset from

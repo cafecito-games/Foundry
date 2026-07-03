@@ -45,9 +45,9 @@ Refactor the current dock-specific surface into modal-friendly pieces:
 - Keep the existing content and helper methods together unless implementation reveals a cleaner low-risk split.
 - Add an `AcceptDialog` owner in `EditorRunBar` containing the run-target configuration control.
 - Add a run-options menu item enum in `EditorRunBar` so future items can be added without reusing raw ids.
-- Remove `run_targets_dock` registration and dock focus calls from `EditorNode`.
+- Remove the old dock registration and focus calls for Run Targets from `EditorNode`.
 
-`EditorRunNative` remains the owner of the shared `RunTargetManager` and platform adapters. The modal continues to consume `RunTargetManager::get_singleton()` through the existing path, so the run bar selector and configuration UI share the same source of truth.
+`EditorRunNative` remains the owner of the shared `RunTargetManager` and platform adapters. The modal consumes that shared manager through `EditorRunNative::get_singleton()->get_run_target_manager()` when available, so the run bar selector and configuration UI share the same source of truth.
 
 ## First-Open Flow
 

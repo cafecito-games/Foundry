@@ -23,7 +23,7 @@ This is one editor run-workflow subsystem. It touches run bar UI placement, the 
 - `editor/run/run_target_manager.h`: Add modal-neutral first-open marker API names while keeping legacy wrappers.
 - `editor/run/run_target_manager.cpp`: Implement the renamed first-open marker API and preserve the existing config key.
 - `editor/editor_node.h`: Remove the dock field and rename the first-open helper.
-- `editor/editor_node.cpp`: Stop registering a Run Targets dock and open the run-target modal on the first-open marker.
+- `editor/editor_node.cpp`: Stop registering Run Targets as a dock and open the run-target modal on the first-open marker.
 - `editor/project_manager/ios_project_template.cpp`: Use the renamed first-open marker request API.
 - `tests/editor/run/test_editor_run_bar.h`: New headless tests for the run-options menu model.
 - `tests/editor/run/test_run_target.h`: Update and extend first-open marker tests.
@@ -575,17 +575,9 @@ In `editor/editor_node.h`, remove:
 class RunTargetsPanel;
 ```
 
-Remove this member:
+Remove the old `RunTargetsPanel *` dock member.
 
-```cpp
-	RunTargetsPanel *run_targets_dock = nullptr;
-```
-
-Replace this declaration:
-
-```cpp
-	void _show_run_targets_dock_on_first_open();
-```
+Replace the old first-open dock helper declaration.
 
 with:
 
@@ -630,12 +622,7 @@ void EditorNode::_show_run_targets_configuration_on_first_open() {
 }
 ```
 
-Remove these lines from the dock setup block:
-
-```cpp
-	run_targets_dock = memnew(RunTargetsPanel);
-	editor_dock_manager->add_dock(run_targets_dock);
-```
+Remove the old `RunTargetsPanel` allocation and `editor_dock_manager->add_dock(...)` call from the dock setup block.
 
 - [ ] **Step 3: Build**
 
@@ -668,13 +655,9 @@ git commit -m "Open run targets configuration from first-open marker"
 
 - [ ] **Step 1: Replace stale dock wording**
 
-Run:
+Run a stale Run Targets UI wording scan over `editor/run` and `editor/project_manager/ios_project_template.h`.
 
-```bash
-rg -n "Targets dock|Run Targets dock|dock" editor/run editor/project_manager/ios_project_template.h
-```
-
-Edit only references that describe the old Run Targets dock. Use these replacement phrases:
+Edit only references that describe the old dock-based Run Targets UI. Use these replacement phrases:
 
 ```text
 Run Targets configuration
@@ -684,34 +667,14 @@ modal
 
 Specific replacements to make:
 
-In `editor/run/editor_run_native.h`, change:
+In `editor/run/editor_run_native.h`, describe Run Targets configuration as the shared manager consumer.
 
-```cpp
-	// Targets dock (and any other surface) reaches the same instance through
-```
-
-to:
-
-```cpp
-	// Run Targets configuration (and any other surface) reaches the same instance through
-```
-
-In `editor/run/editor_run_native.cpp`, change:
-
-```cpp
-			// lives in the Targets dock, so only configured targets are enriched here.
-```
-
-to:
-
-```cpp
-			// lives in Run Targets configuration, so only configured targets are enriched here.
-```
+In `editor/run/editor_run_native.cpp`, describe the guided setup affordance as living in Run Targets configuration.
 
 In `editor/run/run_targets_panel.cpp`, change this error text:
 
 ```cpp
-		ERR_PRINT(vformat("Run Targets: could not load \"%s\" (error %d). The dock is read-only until the file is fixed.", String(RUN_TARGETS_CONFIG_PATH), load_error));
+		ERR_PRINT(vformat("Run Targets: could not load \"%s\" (error %d). Configuration is read-only until the file is fixed.", String(RUN_TARGETS_CONFIG_PATH), load_error));
 ```
 
 to:
@@ -720,15 +683,11 @@ to:
 		ERR_PRINT(vformat("Run Targets: could not load \"%s\" (error %d). Configuration is read-only until the file is fixed.", String(RUN_TARGETS_CONFIG_PATH), load_error));
 ```
 
-In `editor/project_manager/ios_project_template.h`, update comments mentioning the Targets dock to mention Run Targets configuration.
+In `editor/project_manager/ios_project_template.h`, update comments mentioning the old dock-based UI to mention Run Targets configuration.
 
-- [ ] **Step 2: Verify no stale Run Targets dock wording remains**
+- [ ] **Step 2: Verify no stale Run Targets UI wording remains**
 
-Run:
-
-```bash
-rg -n "Targets dock|Run Targets dock|run_targets_dock|show_run_targets_dock" editor tests
-```
+Run the stale wording scan from the task brief over `editor` and `tests`.
 
 Expected: no output.
 
