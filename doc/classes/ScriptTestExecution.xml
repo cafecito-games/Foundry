@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="ScriptTestExecution" inherits="RefCounted" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+	<brief_description>
+		Guards a single FoundryScript callable with timeout, abort, and structured completion semantics.
+	</brief_description>
+	<description>
+		[ScriptTestExecution] is a low-level primitive for project test runners. It runs one method call under an execution guard that can time out tight script loops, abort cooperatively, and return a structured [ScriptTestExecutionResult] instead of hanging the process.
+		When the guarded call suspends on [code]await[/code], [method callv] returns a pending [ScriptFunctionState] handle whose [signal ScriptFunctionState.completed] emits the final result.
+		Each [ScriptTestExecution] instance is single-use per guarded call: calling [method callv] again while a previous call is still pending returns [constant ScriptTestExecutionResult.STATUS_RUNTIME_ERROR].
+		Nested guards are supported. [method ScriptTestAbort.abort_current] and checkpoint enforcement always target the innermost active guard on the calling thread.
+		[b]Cleanup guarantees[/b]
+		After a timeout or abort the engine unwinds the guarded script stack, releases parked coroutine handles, clears their signal connections, and restores the thread-local guard state so the runner can continue with [code]after_each[/code] and the rest of the suite.
+		The engine does [i]not[/i] undo test side effects such as spawned nodes, files, singletons, or global environment changes.
+		[b]Known limitations[/b]
+		A single blocking native call cannot be interrupted; enforcement happens at script line checkpoints and [code]await[/code] boundaries only.
+		Release-profile compiled-bytecode exports strip line checkpoints, so CPU-loop timeouts fall back to await-boundary enforcement there. Editor and headless project test runs retain line checkpoints.
+	</description>
+	<methods>
+		<method name="callv">
+			<return type="Variant" />
+			<param index="0" name="object" type="Object" />
+			<param index="1" name="method" type="StringName" />
+			<param index="2" name="args" type="Array" />
+			<description>
+				Runs [param method] on [param object] with [param args] under this guard. Returns a [ScriptTestExecutionResult] immediately when the call completes synchronously, or a pending [ScriptFunctionState] handle when the call suspends.
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="abort_on_fatal" type="bool" setter="set_abort_on_fatal" getter="get_abort_on_fatal" default="false">
+			When [code]true[/code], error-severity diagnostics reported on the guarded thread flag an abort at the next checkpoint. Defaults to [code]false[/code]; the engine never decides by itself that a diagnostic fails a test.
+		</member>
+		<member name="timeout_seconds" type="float" setter="set_timeout_seconds" getter="get_timeout_seconds" default="0.0">
+			Maximum wall time for the guarded call. [code]0.0[/code] disables timeout enforcement.
+		</member>
+	</members>
+</class>

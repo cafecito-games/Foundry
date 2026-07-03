@@ -43,6 +43,7 @@
 #include "fs_project_scripts.h"
 #include "fs_reflection.h"
 #include "fs_rpc_callable.h"
+#include "fs_script_test_guard.h"
 #ifndef FOUNDRY_SCRIPT_NO_FRONTEND
 #include "fs_tokenizer_buffer.h"
 #endif // FOUNDRY_SCRIPT_NO_FRONTEND
@@ -3457,6 +3458,7 @@ void FSLanguage::reload_tool_script(const Ref<Script> &p_script, bool p_soft_rel
 }
 
 void FSLanguage::frame() {
+	FSScriptTestGuard::poll_timeouts();
 #ifdef DEBUG_ENABLED
 	if (profiling) {
 		MutexLock lock(mutex);

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="ScriptTestAbort" inherits="Object" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+	<brief_description>
+		Cooperative abort primitive for the innermost active [ScriptTestExecution] guard.
+	</brief_description>
+	<description>
+		Static helpers that let guarded test code request an immediate abort at the next script checkpoint. Abort unwinds are internal to the guard and are not catchable by test code.
+	</description>
+	<methods>
+		<method name="abort_current" qualifiers="static">
+			<return type="bool" />
+			<param index="0" name="message" type="String" />
+			<description>
+				Flags the innermost active guard on the calling thread for abort with [param message]. Returns [code]false[/code] when no guard is active.
+			</description>
+		</method>
+		<method name="is_available" qualifiers="static">
+			<return type="bool" />
+			<description>
+				Returns [code]true[/code] when a [ScriptTestExecution] guard is active on the calling thread.
+			</description>
+		</method>
+	</methods>
+</class>
