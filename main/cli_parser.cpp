@@ -68,9 +68,31 @@ static bool is_help_flag(const String &p_arg) {
 	return p_arg == "-h" || p_arg == "--help" || p_arg == "/?";
 }
 
+static bool is_help_global_flag(const String &p_arg) {
+	return p_arg == "--json" || p_arg == "--no-header";
+}
+
+static void consume_help_global_flag(CLIParseState &r_state, const String &p_arg) {
+	if (p_arg == "--json") {
+		r_state.result.json = true;
+		r_state.result.used_new_cli = true;
+	} else if (p_arg == "--no-header") {
+		r_state.result.no_header = true;
+	}
+}
+
+static void scan_remaining_help_global_flags(CLIParseState &r_state, int p_start_index) {
+	for (int i = p_start_index; i < r_state.args.size(); i++) {
+		if (is_help_global_flag(r_state.args[i])) {
+			consume_help_global_flag(r_state, r_state.args[i]);
+		}
+	}
+}
+
 static void request_help(CLIParseState &r_state) {
 	r_state.result.help_requested = true;
 	r_state.result.used_new_cli = true;
+	scan_remaining_help_global_flags(r_state, r_state.index + 1);
 }
 
 static bool parse_stopped(const CLIParseState &p_state) {
@@ -1004,7 +1026,10 @@ FoundryCLIParser::ParseResult FoundryCLIParser::parse(const PackedStringArray &p
 		if (arg == "help") {
 			request_help(state);
 			for (int scope_index = state.index + 1; scope_index < state.args.size(); scope_index++) {
-				append(state.result.command_path, state.args[scope_index]);
+				const String &scope_arg = state.args[scope_index];
+				if (!is_help_global_flag(scope_arg)) {
+					append(state.result.command_path, scope_arg);
+				}
 			}
 			return state.result;
 		}
