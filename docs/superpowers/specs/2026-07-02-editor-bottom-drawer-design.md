@@ -1,7 +1,7 @@
 # Editor Bottom Drawer — Design
 
 **Date:** 2026-07-02
-**Status:** Approved
+**Status:** Approved (v1 implemented; presentation v2 approved 2026-07-02, see final section)
 **Scope:** Convert the editor's in-flow bottom panel into an overlay drawer that slides up over the workspace, can host any dock, and can be pinned back into the layout flow per panel.
 
 ## Problem
@@ -92,3 +92,32 @@ Auto-raise events (debugger errors, output on run) open the drawer in whatever m
 - `editor/editor_node.cpp:8863-8982,9344-9351` — center layout construction and panel registration
 - `editor/docks/editor_dock_manager.cpp:467,1003,1124` — dock moves, slot registration, availability gate
 - `editor/docks/dock_constants.h:35-53` — slots and layout flags
+
+## Presentation v2 — floating island and status strip
+
+**Approved 2026-07-02** after the user reviewed v1 against reference footage of the desired experience. v1's drawer mechanics (dock slot, per-panel heights, pin persistence, tween, any-dock acceptance, Esc) are kept; the visible presentation changes in three ways:
+
+1. **The open drawer is a floating island, not an edge-to-edge strip.** A horizontally centered card with equal side margins, rounded top corners and a subtle border, hovering directly over the content (no backdrop dim). Island width is 64% of the window width, clamped to `[480 * EDSCALE, window_width - 48 * EDSCALE]`; height is the panel's stored body height. The island's bottom edge sits flush on the status strip.
+2. **The island overlays the whole window, not just the center column.** `EditorBottomPanel` reparents from `center_overlay` to `gui_base` (a plain `Panel` that already hosts the dock drag hints), drawn above `main_vbox`, positioned with a manual rect on every geometry update. `center_overlay` remains for the workspace inset only.
+3. **The visible tab bar is replaced by a slim full-window status strip.** A new `EditorBottomDrawerStrip` control is the last child of `main_vbox` (below `main_hsplit`, spanning under the dock columns). Left side: one toggle per bottom dock (icon + short title), a close `×` on the active one, and right-click on a toggle opens the existing `DockContextPopup` for that dock. Right side: the `EditorToaster`, the version button, and the pin + expand toggles (these two visible only while a panel is open) — all of which move out of the TabContainer's tab-bar `bottom_hbox`. The TabContainer's own tab bar is hidden (`set_tabs_visible(false)`); the TabContainer remains the registered `DOCK_SLOT_BOTTOM` container and the strip mirrors its tabs via its signals, so `add_item`/`remove_item`/`make_item_visible`/shortcut toggles/auto-raise keep working unmodified.
+
+**Pin semantics (geometry-only, kept from v1):** unpinned + open = the centered island. Pinned + open = the panel's rect aligns flush over the center column (x/width taken from `top_split`'s global rect), square-cornered, with the existing workspace inset reserving its height — visually identical to a docked panel, still no reparenting between modes. Expanded = full height above the strip (island keeps its side margins when unpinned). Closed = the panel hides entirely; the strip is the collapsed representation.
+
+**Geometry:** island/pinned rect math goes into `BottomDrawerGeometry` as pure helpers (testable ints in, rect out). The slide animation tweens the island's y position from the strip's top edge; the existing target-change tween lifecycle carries over. The grabber stays on the island's top edge.
+
+**Drag-and-drop while closed:** `EditorDockDragHint` sizes its drop rect from the slot container's global rect (`editor/docks/editor_dock_manager.cpp:276`). With the panel hidden when closed, the bottom slot's hint must instead cover the strip (union of strip and island rects when open). Without this, docks cannot be dragged into a closed drawer.
+
+**Theme:** two new editor styleboxes — the island card (rounded top corners, border, opaque panel fill) and the strip background — registered alongside the existing `BottomPanel` styles in the editor theme.
+
+**Out of scope for v2:** horizontal island resizing, per-panel island widths, backdrop dim, and any change to persistence keys (heights and pin states carry over unchanged).
+
+### v2 verification additions
+
+| Scenario | Expect |
+|---|---|
+| Open each panel unpinned | Centered island with margins floats over docks and workspace; strip stays visible |
+| Pin a panel | Panel snaps flush over the center column; workspace shrinks; square corners |
+| Drag a dock onto the strip while the drawer is closed | Drop accepted into the bottom slot |
+| Right-click a strip toggle | DockContextPopup opens for that dock (move/float/close/lock) |
+| Toaster + version button | Render in the strip's right side; toasts still appear |
+| Very narrow window | Island clamps to `window - 48 * EDSCALE`, never underflows |

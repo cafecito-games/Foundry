@@ -911,3 +911,189 @@ pre-commit run --all-files
 - [ ] **Step 3: Fix anything that failed, re-run, commit fixes**
 
 Each fix gets its own focused commit describing the failure it addresses.
+
+---
+
+# Presentation v2 — floating island and status strip
+
+Approved follow-up iteration (spec: "Presentation v2" section). v1 mechanics stay; the drawer becomes a window-level centered floating island and the visible tab bar is replaced by a slim full-window status strip. Facts verified against the tree at 4388f9823e:
+
+- `gui_base` is a plain `Panel` (`editor/editor_node.cpp:8809`) hosting `main_vbox` (`:8837`) and, later, all `EditorDockDragHint`s (`editor/docks/editor_dock_manager.cpp:1034`), so children added after `main_vbox` draw above the whole editor.
+- Drag hints size their drop rect from `dock_slots[i].container->get_global_rect()` on drag begin (`editor_dock_manager.cpp:276`) — the bottom slot needs a strip-aware special case once the panel hides when closed.
+- The dock context popup opens via private `_dock_container_popup` (`editor_dock_manager.cpp:294-304`); the strip needs a small public wrapper on `EditorDockManager`.
+- `TabContainer::set_tabs_visible(false)` exists (`scene/gui/tab_container.h:179`).
+- `EditorDock::get_display_title()` / `get_icon_name()` / `get_dock_icon()` provide strip toggle content.
+
+### Task 7: Island geometry helpers with unit tests
+
+**Goal:** Pure island/pinned rect math in `BottomDrawerGeometry`, covered by doctests.
+
+**Files:**
+- Modify: `editor/gui/bottom_drawer_geometry.h`
+- Modify: `tests/editor/test_bottom_drawer_geometry.h`
+
+**Acceptance Criteria:**
+- [ ] `island_width`, `island_x`, `island_height` helpers, pure ints, no engine includes
+- [ ] Doctests cover the 64% nominal case, the min-width floor, the narrow-window margin clamp (margin wins over 64%), degenerate window narrower than min width (min wins), centering including odd widths, and expanded height with top margin
+- [ ] `--test-case="*BottomDrawerGeometry*"` passes
+
+**Verify:** `./bin/foundry.macos.editor.dev.arm64 --test --test-case="*BottomDrawerGeometry*" --force-colors`
+
+**Steps:**
+
+- [ ] **Step 1: Failing tests** — add to `tests/editor/test_bottom_drawer_geometry.h`:
+
+```cpp
+TEST_CASE("[Editor][BottomDrawerGeometry] Island width and position") {
+	// Nominal: 64% of the window.
+	CHECK(BottomDrawerGeometry::island_width(2000, 480, 48) == 1280);
+	CHECK(BottomDrawerGeometry::island_x(2000, 1280) == 360);
+	// Narrow window: margin clamp wins over 64%.
+	CHECK(BottomDrawerGeometry::island_width(700, 480, 48) == 604);
+	// Narrower still: minimum width floor wins over the margin clamp.
+	CHECK(BottomDrawerGeometry::island_width(500, 480, 48) == 480);
+	// Degenerate: window narrower than the minimum; minimum still wins.
+	CHECK(BottomDrawerGeometry::island_width(300, 480, 48) == 480);
+	// Odd leftover pixels center deterministically.
+	CHECK(BottomDrawerGeometry::island_x(1001, 640) == 180);
+}
+
+TEST_CASE("[Editor][BottomDrawerGeometry] Island height") {
+	// Not expanded: strip + body, capped by the area.
+	CHECK(BottomDrawerGeometry::island_height(false, 200, 600, 24) == 200);
+	CHECK(BottomDrawerGeometry::island_height(false, 900, 600, 24) == 576);
+	// Expanded: full area minus the top margin.
+	CHECK(BottomDrawerGeometry::island_height(true, 200, 600, 24) == 576);
+	// Degenerate area smaller than the margin never goes negative.
+	CHECK(BottomDrawerGeometry::island_height(true, 200, 20, 24) == 0);
+}
+```
+
+- [ ] **Step 2: Implement** in `editor/gui/bottom_drawer_geometry.h`:
+
+```cpp
+	// The island is the floating card shown for an unpinned open drawer.
+	// Width targets 64% of the window, kept inside a minimum side margin,
+	// with an absolute minimum so panel content stays usable.
+	static int island_width(int p_window_width, int p_min_width, int p_min_side_margin) {
+		int nominal = (p_window_width * 64) / 100;
+		int max_width = p_window_width - 2 * p_min_side_margin;
+		int width = nominal < max_width ? nominal : max_width;
+		return width > p_min_width ? width : p_min_width;
+	}
+
+	static int island_x(int p_window_width, int p_island_width) {
+		return (p_window_width - p_island_width) / 2;
+	}
+
+	// Height of the island body region (excludes nothing; the strip is a
+	// separate control in v2). Expanded fills the area minus a top margin.
+	static int island_height(bool p_expanded, int p_body_height, int p_area_height, int p_top_margin) {
+		int max_height = p_area_height - p_top_margin;
+		if (max_height < 0) {
+			max_height = 0;
+		}
+		if (p_expanded) {
+			return max_height;
+		}
+		return p_body_height < max_height ? p_body_height : max_height;
+	}
+```
+
+- [ ] **Step 3: Build, run filtered tests, commit** (`git add` both files; message `Add island geometry helpers for the bottom drawer`).
+
+### Task 8: EditorBottomDrawerStrip widget
+
+**Goal:** A slim full-window status strip replaces the visible tab bar: per-dock toggles with close `×` and right-click context popup, hosting the toaster, version button, and the pin/expand toggles.
+
+**Files:**
+- Create: `editor/gui/editor_bottom_drawer_strip.h`, `editor/gui/editor_bottom_drawer_strip.cpp`
+- Modify: `editor/gui/editor_bottom_panel.h`, `editor/gui/editor_bottom_panel.cpp` (hide tab bar; surrender toaster/version construction; expose pin/expand buttons)
+- Modify: `editor/docks/editor_dock_manager.h`, `editor/docks/editor_dock_manager.cpp` (public `show_dock_context_popup`)
+- Modify: `editor/editor_node.cpp` (instantiate strip as last child of `main_vbox`, below `main_hsplit`)
+
+**Acceptance Criteria:**
+- [ ] Strip spans the full window width at the very bottom (under the dock columns); TabContainer tab bar hidden
+- [ ] One toggle per bottom dock (icon + display title), mirrored live from the TabContainer (`tab_changed` + `child_order_changed` signals); clicking toggles open/close; active toggle shows a close `×`
+- [ ] Right-click on a toggle opens the DockContextPopup for that dock via a new public `EditorDockManager::show_dock_context_popup(EditorDock *p_dock, const Point2 &p_screen_position)` that wraps the private popup exactly like `_dock_container_popup` (`editor_dock_manager.cpp:294-304`)
+- [ ] Toaster and version button render on the strip's right side and still function; pin/expand buttons live on the strip's right side and only show while a panel is open
+- [ ] `add_item`/`remove_item`/`make_item_visible`/dock shortcuts/auto-raise keep working with zero changes to their code paths (they all go through the TabContainer)
+- [ ] Full suite passes; editor boots clean
+
+**Key skeleton** (`editor_bottom_drawer_strip.h`, engine header + conventions):
+
+```cpp
+class EditorBottomDrawerStrip : public PanelContainer {
+	FOUNDRY_CLASS(EditorBottomDrawerStrip, PanelContainer);
+
+	EditorBottomPanel *bottom_panel = nullptr;
+	HBoxContainer *main_hbox = nullptr;
+	HBoxContainer *toggles_hbox = nullptr;
+	Button *close_button = nullptr;
+
+	void _rebuild_toggles();
+	void _toggle_pressed(int p_tab_index);
+	void _toggle_gui_input(const Ref<InputEvent> &p_event, int p_tab_index);
+	void _close_pressed();
+	void _update_active_states();
+
+protected:
+	void _notification(int p_what);
+
+public:
+	EditorBottomDrawerStrip(EditorBottomPanel *p_bottom_panel);
+};
+```
+
+Construction wiring in the `.cpp`: connect `bottom_panel->get_tab_bar()` "tab_changed" → `_update_active_states`, `bottom_panel` "child_order_changed" → `_rebuild_toggles` (deferred). `_rebuild_toggles` clears `toggles_hbox` and creates one flat toggle `Button` per tab (`Object::cast_to<EditorDock>(bottom_panel->get_tab_control(i))`, text = `get_display_title()`, icon = `get_dock_icon()` or editor theme icon from `get_icon_name()`), pressed → `_toggle_pressed(i)` which calls `bottom_panel->set_current_tab(i == bottom_panel->get_current_tab() ? -1 : i)`. The single close `×` button repositions next to the active toggle (`move_child`). Right side, in order: `EditorToaster` (constructed here now), spacer, version button, pin button, expand button (the last two fetched from `EditorBottomPanel` via new `Button *get_pin_button()` / `Button *get_expand_button()` accessors and reparented in). In `EditorBottomPanel`: `set_tabs_visible(false)` in the constructor, delete the `bottom_hbox`/`icon_spacer`/toaster/version-button construction and the tab-bar margin logic in `_theme_changed` (keep only the panel stylebox swap), keep pin/expand button construction (logic stays), and keep `previous_tab`/`_repaint` behavior.
+
+**Verify:** build + full suite + boot; then commit (`Replace bottom drawer tab bar with status strip`).
+
+### Task 9: Window-level island geometry
+
+**Goal:** The open drawer renders as the centered floating island over the whole window (unpinned) or flush over the center column (pinned); hidden entirely when closed; slide animation and grabber carry over; docks can still be dragged into a closed drawer via the strip.
+
+**Files:**
+- Modify: `editor/editor_node.cpp` (reparent `bottom_panel` to `gui_base` after `main_vbox`; keep `center_overlay` + `top_split` inset)
+- Modify: `editor/gui/editor_bottom_panel.h/.cpp` (manual-rect geometry replacing anchors; island stylebox; hide-on-close)
+- Modify: `editor/docks/editor_dock_manager.cpp` (bottom drag hint covers strip ∪ panel)
+- Modify: `editor/themes/editor_theme_manager.cpp` (island stylebox: rounded top corners + border; registered under EditorStyles)
+
+**Acceptance Criteria:**
+- [ ] Unpinned open: centered island (width from `island_width(window, 480 * EDSCALE, 48 * EDSCALE)`), bottom flush on the strip's top edge, floats over dock columns and workspace, rounded-top bordered stylebox
+- [ ] Pinned open: rect matches the center column's x/width (from `top_split` global rect), square style, workspace inset = height (existing behavior)
+- [ ] Expanded: full height above the strip minus `24 * EDSCALE` top margin (island keeps side margins when unpinned)
+- [ ] Closed: panel hidden; strip remains; drag-and-drop of a dock onto the strip drops into the bottom slot (drag hint rect special case at `editor_dock_manager.cpp:276`: for `DOCK_SLOT_BOTTOM`, use the union of the container rect (if visible) and the strip's global rect via a new `EditorNode::get_bottom_drawer_strip()` accessor)
+- [ ] Slide animation tweens the island's y from the strip top; pin/drag/setting-off instant paths unchanged; Esc unchanged
+- [ ] Full suite passes; editor boots clean
+
+**Geometry core** (replaces the anchored-offset model; positions are in `gui_base` coordinates):
+
+```cpp
+	// Region available to the drawer: gui_base's rect above the strip.
+	const Rect2 strip_rect = strip->get_global_rect();
+	const Rect2 base_rect = get_parent_control()->get_global_rect();
+	const int area_height = strip_rect.position.y - base_rect.position.y;
+	const int window_width = base_rect.size.width;
+	...
+	int width, x;
+	if (pinned) {
+		const Rect2 column_rect = EditorNode::get_top_split()->get_global_rect();
+		x = column_rect.position.x - base_rect.position.x;
+		width = column_rect.size.width;
+	} else {
+		width = BottomDrawerGeometry::island_width(window_width, 480 * EDSCALE, 48 * EDSCALE);
+		x = BottomDrawerGeometry::island_x(window_width, width);
+	}
+	const int height = BottomDrawerGeometry::island_height(drawer_expanded, body_height, area_height, 24 * EDSCALE);
+	set_size(Size2(width, height));
+	set_position(Point2(x, area_height - height));
+```
+
+with the existing tween now driving the y position (`_set_drawer_y(float)` sets `set_position(Point2(x, p_y))` and repositions the grabber) from `area_height` (hidden below strip line) to `area_height - height`. Closed state: `hide()` after the close tween completes (or immediately when animation is off). Visibility must be restored (`show()`) before an open tween starts. The workspace inset keeps using `strip visible height + (pinned ? height : 0)` semantics — note the strip is now OUTSIDE `center_overlay`, so `top_split`'s inset no longer includes the strip height; recompute accordingly (the inset becomes `pinned && open && !expanded ? height : 0`).
+
+**Verify:** build + full suite + boot + temporary-instrumentation checks of rect values in all states (remove before commit); commit (`Render bottom drawer as floating island`).
+
+### Task 10: v2 verification pass
+
+Same structure as Task 6: full suite, `pre-commit` on branch files, plus the spec's "v2 verification additions" manual matrix rows on top of the original matrix.
