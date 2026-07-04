@@ -5659,7 +5659,7 @@ void DisplayServerX11::_update_context(WindowData &wd) {
 				class_str = config_name.utf8();
 			}
 		} else {
-			class_str = "Godot";
+			class_str = FOUNDRY_VERSION_NAME;
 		}
 
 		classHint->res_class = class_str.ptrw();
@@ -6532,7 +6532,7 @@ DisplayServerX11::WindowID DisplayServerX11::_create_window(WindowMode p_mode, V
 		}
 
 		/* set the titlebar name */
-		XStoreName(x11_display, wd.x11_window, "Godot");
+		XStoreName(x11_display, wd.x11_window, FOUNDRY_VERSION_NAME);
 		XSetWMProtocols(x11_display, wd.x11_window, &wm_delete, 1);
 		if (xdnd_aware != None) {
 			XChangeProperty(x11_display, wd.x11_window, xdnd_aware, XA_ATOM, 32, PropModeReplace, (unsigned char *)&xdnd_version, 1);

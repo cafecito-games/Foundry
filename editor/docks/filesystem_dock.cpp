@@ -4335,6 +4335,7 @@ FileSystemDock::FileSystemDock() {
 	button_hist_prev->set_disabled(true);
 	button_hist_prev->set_focus_mode(FOCUS_ACCESSIBILITY);
 	button_hist_prev->set_tooltip_text(TTRC("Go to previous selected folder/file."));
+	button_hist_prev->set_accessibility_name(TTRC("Previous Folder/File"));
 	nav_hbc->add_child(button_hist_prev);
 
 	button_hist_next = memnew(Button);
@@ -4342,6 +4343,7 @@ FileSystemDock::FileSystemDock() {
 	button_hist_next->set_disabled(true);
 	button_hist_next->set_focus_mode(FOCUS_ACCESSIBILITY);
 	button_hist_next->set_tooltip_text(TTRC("Go to next selected folder/file."));
+	button_hist_next->set_accessibility_name(TTRC("Next Folder/File"));
 	nav_hbc->add_child(button_hist_next);
 
 	current_path_line_edit = memnew(LineEdit);
@@ -4355,6 +4357,7 @@ FileSystemDock::FileSystemDock() {
 	button_toggle_display_mode->connect(SceneStringName(pressed), callable_mp(this, &FileSystemDock::_change_split_mode));
 	button_toggle_display_mode->set_focus_mode(FOCUS_ACCESSIBILITY);
 	button_toggle_display_mode->set_tooltip_text(TTRC("Change Split Mode"));
+	button_toggle_display_mode->set_accessibility_name(TTRC("Change Split Mode"));
 	button_toggle_display_mode->set_theme_type_variation("FlatMenuButton");
 	toolbar_hbc->add_child(button_toggle_display_mode);
 

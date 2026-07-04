@@ -33,6 +33,8 @@
 #include "editor/automation/editor_automation_driver.h"
 #include "editor/automation/editor_automation_selector.h"
 #include "editor/automation/editor_automation_snapshot.h"
+#include "editor/docks/scene_tree_dock.h"
+#include "editor/editor_data.h"
 
 #include "scene/gui/button.h"
 #include "scene/gui/check_box.h"
@@ -666,6 +668,120 @@ TEST_CASE("[Editor][Automation] virtual element durable handle reconciliation") 
 	CHECK(diagnostic.has("durable_key_strategy"));
 
 	memdelete(root);
+}
+
+TEST_CASE("[Editor][Automation] icon-only button falls back to tooltip as automation name") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	// An icon-only toolbar/dock button has no text and no accessibility name;
+	// the snapshot must expose its tooltip as the semantic name instead of the
+	// implementation-only node name (e.g. "@Button@4790").
+	Button *button = memnew(Button);
+	button->set_tooltip_text("Add Child Node");
+	setup_visible_control(button);
+	root->add_child(button);
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	const EditorAutomationElement *tooltip_button = find_element_by_role_and_name(snapshot, "button", "Add Child Node");
+	REQUIRE(tooltip_button != nullptr);
+	CHECK(tooltip_button->name == "Add Child Node");
+	// The volatile node name must not leak as the name.
+	CHECK_FALSE(tooltip_button->name.begins_with("@"));
+
+	// The tooltip-derived name is addressable by a role/name selector.
+	Dictionary selector;
+	selector["role"] = "button";
+	selector["name"] = "Add Child Node";
+	const EditorAutomationSelectorResult result = EditorAutomationSelector::resolve(snapshot, selector);
+	CHECK(result.status == EditorAutomationSelectorStatus::OK);
+	REQUIRE(result.match_indices.size() == 1);
+
+	memdelete(root);
+}
+
+TEST_CASE("[Editor][Automation] accessibility name wins over tooltip and node name") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	Button *button = memnew(Button);
+	button->set_name("VolatileNodeName");
+	button->set_accessibility_name("Add Child Node");
+	button->set_tooltip_text("Add/Create a New Node.");
+	setup_visible_control(button);
+	root->add_child(button);
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	const EditorAutomationElement *named = find_element_by_role_and_name(snapshot, "button", "Add Child Node");
+	REQUIRE(named != nullptr);
+	// Accessibility name takes precedence; tooltip and node name are not used.
+	CHECK(named->name == "Add Child Node");
+	CHECK(find_element_by_role_and_name(snapshot, "button", "Add/Create a New Node.") == nullptr);
+	CHECK(find_element_by_role_and_name(snapshot, "button", "VolatileNodeName") == nullptr);
+
+	memdelete(root);
+}
+
+TEST_CASE("[Editor][Automation] button text wins over tooltip fallback") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	Button *button = memnew(Button);
+	button->set_text("Create");
+	button->set_tooltip_text("Create the node");
+	setup_visible_control(button);
+	root->add_child(button);
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	// Text buttons keep using their visible text as the automation name.
+	const EditorAutomationElement *text_button = find_element_by_role_and_name(snapshot, "button", "Create");
+	REQUIRE(text_button != nullptr);
+	CHECK(find_element_by_role_and_name(snapshot, "button", "Create the node") == nullptr);
+
+	memdelete(root);
+}
+
+TEST_CASE("[Editor][Automation] scene dock icon-only controls are addressable by role and name") {
+	// Focused smoke coverage for real editor dock controls: the Scene dock's
+	// icon-only toolbar buttons must be discoverable by role/name selectors
+	// without relying on volatile node paths.
+	Window *tree_root = SceneTree::get_singleton()->get_root();
+	EditorData editor_data;
+	EditorSelection *selection = memnew(EditorSelection);
+
+	SceneTreeDock *dock = memnew(SceneTreeDock(selection, editor_data));
+	dock->set_name("Scene");
+	dock->set_anchors_and_offsets_preset(Control::PRESET_TOP_LEFT);
+	dock->set_size(Size2(320, 480));
+	dock->set_visible(true);
+	tree_root->add_child(dock);
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(dock);
+
+	const EditorAutomationElement *add_child = find_element_by_role_and_name(snapshot, "button", "Add Child Node");
+	REQUIRE(add_child != nullptr);
+	CHECK_FALSE(add_child->name.begins_with("@"));
+
+	const EditorAutomationElement *instance = find_element_by_role_and_name(snapshot, "button", "Instantiate Child Scene");
+	REQUIRE(instance != nullptr);
+
+	Dictionary selector;
+	selector["role"] = "button";
+	selector["name"] = "Add Child Node";
+	const EditorAutomationSelectorResult result = EditorAutomationSelector::resolve(snapshot, selector);
+	CHECK(result.status == EditorAutomationSelectorStatus::OK);
+	REQUIRE(result.match_indices.size() == 1);
+
+	tree_root->remove_child(dock);
+	memdelete(dock);
+	memdelete(selection);
 }
 
 } // namespace TestEditorAutomationSnapshot

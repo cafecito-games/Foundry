@@ -40,6 +40,7 @@
 #endif
 
 #include "core/os/main_loop.h"
+#include "core/version.h"
 #include "servers/rendering/dummy/rasterizer_dummy.h"
 
 #ifdef VULKAN_ENABLED
@@ -809,7 +810,7 @@ DisplayServer::WindowID DisplayServerWayland::create_sub_window(WindowMode p_mod
 	// can only know once we show it.
 	wd.rect = p_rect;
 
-	wd.title = "Godot";
+	wd.title = FOUNDRY_VERSION_NAME;
 	wd.parent_id = p_transient_parent;
 	return id;
 }
@@ -2251,7 +2252,7 @@ DisplayServerWayland::DisplayServerWayland(const String &p_rendering_driver, Win
 	wd.flags = p_flags;
 	wd.vsync_mode = p_vsync_mode;
 	wd.rect.size = p_resolution;
-	wd.title = "Godot";
+	wd.title = FOUNDRY_VERSION_NAME;
 
 #ifdef ACCESSKIT_ENABLED
 	if (accessibility_driver && !accessibility_driver->window_create(wd.id, nullptr)) {

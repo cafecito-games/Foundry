@@ -176,6 +176,29 @@ static String workflow_fixture_project_path() {
 	return TestUtils::get_executable_dir().path_join("../tests/fixtures/editor_automation_mvp").simplify_path();
 }
 
+// The MVP workflow mutates the project (it adds a node and saves the scene), so
+// running it in-place would dirty the committed fixture. Copy the tracked
+// project files into a fresh temp directory and run there instead.
+static String workflow_prepare_temp_project() {
+	const String source = workflow_fixture_project_path();
+	const String temp_project = TestUtils::get_temp_path("editor_automation_mvp_" + String::num_uint64(OS::get_singleton()->get_ticks_usec()));
+
+	Ref<DirAccess> da = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+	if (da.is_null()) {
+		return String();
+	}
+	if (da->make_dir_recursive(temp_project.path_join("scenes")) != OK) {
+		return String();
+	}
+	if (da->copy(source.path_join("project.foundry"), temp_project.path_join("project.foundry")) != OK) {
+		return String();
+	}
+	if (da->copy(source.path_join("scenes").path_join("main.tscn"), temp_project.path_join("scenes").path_join("main.tscn")) != OK) {
+		return String();
+	}
+	return temp_project;
+}
+
 static bool workflow_has_display() {
 	return OS::get_singleton()->has_environment("DISPLAY") && !OS::get_singleton()->get_environment("DISPLAY").is_empty();
 }
@@ -329,9 +352,14 @@ TEST_CASE("[Editor][EditorAutomation] MVP acceptance workflow subprocess") {
 		return;
 	}
 
-	const String project_path = workflow_fixture_project_path();
-	CHECK_MESSAGE(DirAccess::exists(project_path), "Fixture project missing at ", project_path);
-	CHECK_MESSAGE(FileAccess::exists(project_path.path_join("project.foundry")), "Fixture is missing project.foundry");
+	const String fixture_path = workflow_fixture_project_path();
+	CHECK_MESSAGE(DirAccess::exists(fixture_path), "Fixture project missing at ", fixture_path);
+	CHECK_MESSAGE(FileAccess::exists(fixture_path.path_join("project.foundry")), "Fixture is missing project.foundry");
+
+	// Run against a disposable copy so the workflow's save step never mutates
+	// the committed fixture (the workflow adds a Node2D and saves the scene).
+	const String project_path = workflow_prepare_temp_project();
+	REQUIRE_MESSAGE(!project_path.is_empty(), "Failed to prepare a temporary MVP project copy.");
 
 	List<String> arguments;
 	arguments.push_back("editor");
@@ -366,8 +394,13 @@ TEST_CASE("[Editor][EditorAutomation][MCP] launched editor smoke handshake") {
 		return;
 	}
 
-	const String project_path = workflow_fixture_project_path();
-	CHECK_MESSAGE(DirAccess::exists(project_path), "Fixture project missing at ", project_path);
+	const String fixture_path = workflow_fixture_project_path();
+	CHECK_MESSAGE(DirAccess::exists(fixture_path), "Fixture project missing at ", fixture_path);
+
+	// Use a disposable copy so opening the project does not leave editor caches
+	// inside the committed fixture directory.
+	const String project_path = workflow_prepare_temp_project();
+	REQUIRE_MESSAGE(!project_path.is_empty(), "Failed to prepare a temporary MVP project copy.");
 
 	List<String> arguments;
 	arguments.push_back("editor");
