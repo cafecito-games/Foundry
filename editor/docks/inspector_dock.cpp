@@ -954,26 +954,10 @@ InspectorDock::InspectorDock(EditorData &p_editor_data, bool p_register_open_com
 		FileSystemDock::get_singleton()->connect("files_moved", callable_mp(this, &InspectorDock::_files_moved));
 	}
 
-	Ref<Shortcut> expand_all_shortcut = ED_SHORTCUT("property_editor/expand_all", TTRC("Expand All"));
-	if (EditorCommandPalette::get_singleton() != nullptr) {
-		List<String> existing_commands;
-		EditorCommandPalette::get_singleton()->get_actions_list(&existing_commands);
-		bool has_expand_all = false;
-		for (const String &command : existing_commands) {
-			if (command == "property_editor/expand_all") {
-				has_expand_all = true;
-				break;
-			}
-		}
-		if (!has_expand_all) {
-			EditorCommandPalette::get_singleton()->add_command(
-					TTR("Expand All Inspector Properties"),
-					"property_editor/expand_all",
-					callable_mp(this, &InspectorDock::_menu_expandall),
-					varray(),
-					expand_all_shortcut);
-		}
-	}
+	// The "property_editor/expand_all" palette command is registered once at
+	// the editor level (see EditorNode) and targets the focused tile's
+	// inspector; per-instance registration would dangle once a tile closes.
+	ED_SHORTCUT("property_editor/expand_all", TTRC("Expand All"));
 
 	set_process_shortcut_input(true);
 }

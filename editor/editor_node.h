@@ -640,6 +640,9 @@ private:
 	void _on_tile_added(int p_tile_id);
 	void _on_tile_removing(int p_tile_id);
 	void _on_tile_drop_completed(int p_tile_id);
+	void _focus_tile_scene_tree_dock();
+	void _focus_tile_inspector_dock();
+	void _expand_all_inspector_properties();
 	void _collapse_empty_tiles();
 	void _load_workspace_from_config(const Ref<ConfigFile> &p_config);
 	void _configure_editor_selection(EditorSelection *p_selection);

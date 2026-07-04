@@ -5008,6 +5008,26 @@ void EditorNode::_on_tile_drop_completed(int p_tile_id) {
 	save_editor_layout_delayed();
 }
 
+void EditorNode::_focus_tile_scene_tree_dock() {
+	SceneTreeDock *dock = SceneTreeDock::get_singleton();
+	if (dock) {
+		dock->get_tree_editor()->get_scene_tree()->grab_focus();
+	}
+}
+
+void EditorNode::_focus_tile_inspector_dock() {
+	InspectorDock *dock = InspectorDock::get_singleton();
+	if (dock && dock->get_inspector()) {
+		dock->get_inspector()->grab_focus();
+	}
+}
+
+void EditorNode::_expand_all_inspector_properties() {
+	if (InspectorDock::get_inspector_singleton()) {
+		InspectorDock::get_inspector_singleton()->expand_all_folding();
+	}
+}
+
 void EditorNode::_collapse_empty_tiles() {
 	if (!scene_workspace || _is_closing_editor() || exiting) {
 		return;
@@ -9775,7 +9795,14 @@ EditorNode::EditorNode() {
 
 	// Instantiate and place editor docks. The scene tree and inspector docks
 	// live inside workspace tiles (one pair per tile) and are never registered
-	// in the global dock slots.
+	// in the global dock slots; their open commands focus the focused tile's
+	// instances instead.
+
+	// Registered without a shortcut: the commands are directly runnable
+	// callables (focus the focused tile's dock), not key-binding relays.
+	EditorCommandPalette::get_singleton()->add_command(TTR("Open Scene Dock"), "docks/open_scene", callable_mp(this, &EditorNode::_focus_tile_scene_tree_dock), varray(), Ref<Shortcut>());
+	EditorCommandPalette::get_singleton()->add_command(TTR("Open Inspector Dock"), "docks/open_inspector", callable_mp(this, &EditorNode::_focus_tile_inspector_dock), varray(), Ref<Shortcut>());
+	EditorCommandPalette::get_singleton()->add_command(TTR("Expand All Inspector Properties"), "property_editor/expand_all", callable_mp(this, &EditorNode::_expand_all_inspector_properties), varray(), Ref<Shortcut>());
 
 	memnew(ImportDock);
 	editor_dock_manager->add_dock(ImportDock::get_singleton());
