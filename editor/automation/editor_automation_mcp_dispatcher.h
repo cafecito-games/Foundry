@@ -102,6 +102,7 @@ private:
 	Dictionary _tool_read_editor_log(const Dictionary &p_args, bool &r_is_error);
 	Dictionary _tool_run_command(const Dictionary &p_args, bool &r_is_error);
 	Dictionary _tool_list_commands(const Dictionary &p_args, bool &r_is_error);
+	Dictionary _tool_poll_events(const Dictionary &p_args, bool &r_is_error);
 
 	Dictionary _resource_payload(const String &p_uri, bool &r_ok);
 
@@ -128,4 +129,5 @@ public:
 
 	static Array build_tools_list();
 	static Array build_resources_list();
+	static Array build_resource_templates_list();
 };

@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  editor_automation_state.h                                             */
+/*  editor_automation_mcp_schemas.h                                       */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -32,11 +32,15 @@
 
 #include "core/variant/variant.h"
 
-class Node;
-
-class EditorAutomationState {
+class EditorAutomationMCPSchemas {
 public:
-	static Dictionary read_editor_state();
-	static Dictionary read_scene_tree(Node *p_snapshot_root = nullptr);
-	static Array capture_modal_stack(Node *p_root = nullptr);
+	static Dictionary selector_schema();
+	static Dictionary action_args_schema();
+	static Dictionary wait_condition_schema();
+	static Dictionary log_marker_schema();
+	static Dictionary event_marker_schema();
+
+	static Array build_tools_list();
+	static Array build_resource_templates_list();
+	static Array build_resources_list();
 };

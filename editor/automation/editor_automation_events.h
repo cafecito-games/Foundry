@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  editor_automation_state.h                                             */
+/*  editor_automation_events.h                                             */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -32,11 +32,21 @@
 
 #include "core/variant/variant.h"
 
-class Node;
+struct EditorAutomationEventMarker {
+	int event_index = 0;
+};
 
-class EditorAutomationState {
+// Shared automation event queue for editor log/error notifications and
+// automation lifecycle events. MCP exposes pull-based polling because the
+// current POST-only transport cannot push server notifications.
+class EditorAutomationEvents {
 public:
-	static Dictionary read_editor_state();
-	static Dictionary read_scene_tree(Node *p_snapshot_root = nullptr);
-	static Array capture_modal_stack(Node *p_root = nullptr);
+	static void reset();
+	static void poll_sources();
+	static void push_automation_event(const String &p_kind, const Dictionary &p_payload = Dictionary());
+
+	static EditorAutomationEventMarker create_marker();
+	static int get_event_count();
+	static Array read_since(const EditorAutomationEventMarker &p_marker, const PackedStringArray &p_kinds = PackedStringArray(), int p_limit = 64);
+	static void clear_test_events();
 };

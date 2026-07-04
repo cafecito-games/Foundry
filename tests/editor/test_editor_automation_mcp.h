@@ -30,6 +30,8 @@
 
 #pragma once
 
+#include "editor/automation/editor_automation_events.h"
+#include "editor/automation/editor_automation_log.h"
 #include "editor/automation/editor_automation_mcp_dispatcher.h"
 #include "editor/automation/editor_automation_mcp_server.h"
 #include "editor/automation/editor_automation_wait.h"
@@ -69,14 +71,29 @@ static Dictionary make_request(const Variant &p_id, const String &p_method, cons
 	return request;
 }
 
-static bool tools_contains(const Array &p_tools, const String &p_name) {
+static Dictionary tool_named(const Array &p_tools, const String &p_name) {
 	for (int i = 0; i < p_tools.size(); i++) {
 		const Dictionary tool = p_tools[i];
 		if (String(tool.get("name", String())) == p_name) {
-			return true;
+			return tool;
 		}
 	}
-	return false;
+	return Dictionary();
+}
+
+static PanelContainer *mcp_make_large_button_tree(int p_count) {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+	for (int i = 0; i < p_count; i++) {
+		Button *button = memnew(Button);
+		button->set_text(vformat("Bulk %d", i));
+		button->set_anchors_and_offsets_preset(Control::PRESET_TOP_LEFT);
+		button->set_size(Size2(120, 32));
+		root->add_child(button);
+	}
+	mcp_flush_frames();
+	return root;
 }
 
 TEST_CASE("[Editor][Automation][MCP] initialize handshake succeeds") {
@@ -118,37 +135,38 @@ TEST_CASE("[Editor][Automation][MCP] notifications/initialized has no response a
 	CHECK(dispatcher.is_initialized());
 }
 
-TEST_CASE("[Editor][Automation][MCP] tools/list includes the eight expected tools") {
+TEST_CASE("[Editor][Automation][MCP] tools/list includes the nine expected tools") {
 	EditorAutomationMCPDispatcher dispatcher;
 	const Dictionary response = dispatcher.handle_message(make_request(2, "tools/list"));
 	CHECK(response.has("result"));
 	const Dictionary result = response["result"];
 	const Array tools = result["tools"];
 
-	CHECK(tools.size() == 8);
-	CHECK(tools_contains(tools, "observe_ui"));
-	CHECK(tools_contains(tools, "find_elements"));
-	CHECK(tools_contains(tools, "act"));
-	CHECK(tools_contains(tools, "wait_for"));
-	CHECK(tools_contains(tools, "read_editor_state"));
-	CHECK(tools_contains(tools, "read_editor_log"));
-	CHECK(tools_contains(tools, "run_command"));
-	CHECK(tools_contains(tools, "list_commands"));
+	CHECK(tools.size() == 9);
+	CHECK(!tool_named(tools, "observe_ui").is_empty());
+	CHECK(!tool_named(tools, "find_elements").is_empty());
+	CHECK(!tool_named(tools, "act").is_empty());
+	CHECK(!tool_named(tools, "wait_for").is_empty());
+	CHECK(!tool_named(tools, "read_editor_state").is_empty());
+	CHECK(!tool_named(tools, "read_editor_log").is_empty());
+	CHECK(!tool_named(tools, "run_command").is_empty());
+	CHECK(!tool_named(tools, "list_commands").is_empty());
+	CHECK(!tool_named(tools, "poll_events").is_empty());
 
-	// Every tool must expose an inputSchema.
 	for (int i = 0; i < tools.size(); i++) {
 		const Dictionary tool = tools[i];
 		CHECK(tool.has("inputSchema"));
+		CHECK(tool.has("outputSchema"));
 	}
 }
 
-TEST_CASE("[Editor][Automation][MCP] resources/list includes the five expected resources") {
+TEST_CASE("[Editor][Automation][MCP] resources/list includes the six expected resources") {
 	EditorAutomationMCPDispatcher dispatcher;
 	const Dictionary response = dispatcher.handle_message(make_request(3, "resources/list"));
 	CHECK(response.has("result"));
 	const Dictionary result = response["result"];
 	const Array resources = result["resources"];
-	CHECK(resources.size() == 5);
+	CHECK(resources.size() == 6);
 
 	PackedStringArray uris;
 	for (int i = 0; i < resources.size(); i++) {
@@ -159,6 +177,7 @@ TEST_CASE("[Editor][Automation][MCP] resources/list includes the five expected r
 	CHECK(uris.has("foundry://editor/state"));
 	CHECK(uris.has("foundry://editor/log"));
 	CHECK(uris.has("foundry://scene/active"));
+	CHECK(uris.has("foundry://scene/tree"));
 	CHECK(uris.has("foundry://commands"));
 }
 
@@ -1032,5 +1051,232 @@ TEST_CASE("[Editor][Automation][MCP] scene_tree/add_child_node shortcut is disco
 }
 
 #endif // TOOLS_ENABLED
+
+TEST_CASE("[Editor][Automation][MCP] tool schemas expose typed contracts") {
+	const Array tools = EditorAutomationMCPDispatcher::build_tools_list();
+	REQUIRE(tools.size() == 9);
+
+	const Dictionary act = tool_named(tools, "act");
+	REQUIRE_FALSE(act.is_empty());
+	const Dictionary act_input = act["inputSchema"];
+	const Dictionary act_props = act_input["properties"];
+	const Dictionary action_schema = act_props["action"];
+	CHECK(action_schema.has("enum"));
+	const Dictionary route_schema = act_props["route"];
+	CHECK(route_schema.has("enum"));
+
+	const Dictionary wait_for = tool_named(tools, "wait_for");
+	const Dictionary wait_props = ((Dictionary)wait_for["inputSchema"])["properties"];
+	CHECK(wait_props.has("condition"));
+	CHECK(wait_props.has("selector"));
+
+	const Dictionary observe = tool_named(tools, "observe_ui");
+	const Dictionary observe_output = observe["outputSchema"];
+	CHECK(observe_output.has("properties"));
+}
+
+TEST_CASE("[Editor][Automation][MCP] resources/templates/list exposes targeted URI templates") {
+	EditorAutomationMCPDispatcher dispatcher;
+	const Dictionary response = dispatcher.handle_message(make_request(40, "resources/templates/list"));
+	CHECK(response.has("result"));
+	const Dictionary templates_result = response["result"];
+	const Array templates = templates_result["resourceTemplates"];
+	CHECK(templates.size() == 4);
+	PackedStringArray patterns;
+	for (int i = 0; i < templates.size(); i++) {
+		const Dictionary entry = templates[i];
+		patterns.push_back(entry.get("uriTemplate", String()));
+	}
+	CHECK(patterns.has("foundry://element/{id}"));
+	CHECK(patterns.has("foundry://ui/subtree/{id}"));
+	CHECK(patterns.has("foundry://scene/tree"));
+}
+
+TEST_CASE("[Editor][Automation][MCP] observe_ui paginates large child lists via subtree cursors") {
+	PanelContainer *root = mcp_make_large_button_tree(40);
+
+	EditorAutomationMCPDispatcher dispatcher;
+	EditorAutomationMCPDispatcher::Options options;
+	options.snapshot_root = root;
+	dispatcher.set_options(options);
+
+	Dictionary arguments;
+	arguments["max_children"] = 5;
+	arguments["max_depth"] = 2;
+	Dictionary params;
+	params["name"] = "observe_ui";
+	params["arguments"] = arguments;
+	const Dictionary response = dispatcher.handle_message(make_request(41, "tools/call", params));
+	const Dictionary result = response["result"];
+	const Dictionary structured = result["structuredContent"];
+	const Array tree = structured["tree"];
+	REQUIRE(tree.size() == 1);
+	const Dictionary root_element = tree[0];
+	CHECK((bool)root_element["children_truncated"]);
+	CHECK(root_element.has("children_next_cursor"));
+
+	String cursor = root_element["children_next_cursor"];
+	int pages = 1;
+	while (!cursor.is_empty() && pages < 20) {
+		Dictionary page_args;
+		page_args["subtree_cursor"] = cursor;
+		Dictionary page_params;
+		page_params["name"] = "observe_ui";
+		page_params["arguments"] = page_args;
+		const Dictionary page_response = dispatcher.handle_message(make_request(41 + pages, "tools/call", page_params));
+		const Dictionary page_result = page_response["result"];
+		const Dictionary page_structured = page_result["structuredContent"];
+		CHECK(page_structured.has("subtree"));
+		const Dictionary subtree = page_structured["subtree"];
+		const Array children = subtree["children"];
+		CHECK(children.size() > 0);
+		cursor = subtree.get("children_next_cursor", String());
+		pages++;
+	}
+	CHECK(pages >= 8);
+
+	memdelete(root);
+}
+
+TEST_CASE("[Editor][Automation][MCP] find_elements paginates large match sets") {
+	PanelContainer *root = mcp_make_large_button_tree(25);
+
+	EditorAutomationMCPDispatcher dispatcher;
+	EditorAutomationMCPDispatcher::Options options;
+	options.snapshot_root = root;
+	dispatcher.set_options(options);
+
+	Dictionary selector;
+	selector["role"] = "button";
+	selector["name_contains"] = "Bulk";
+	Dictionary arguments;
+	arguments["selector"] = selector;
+	arguments["max_results"] = 10;
+	Dictionary params;
+	params["name"] = "find_elements";
+	params["arguments"] = arguments;
+
+	const Dictionary first_response = dispatcher.handle_message(make_request(60, "tools/call", params));
+	const Dictionary first_result = first_response["result"];
+	const Dictionary first_structured = first_result["structuredContent"];
+	CHECK((bool)first_structured["truncated"]);
+	CHECK((int)first_structured["match_count"] == 25);
+	CHECK(((Array)first_structured["elements"]).size() == 10);
+	const String next_cursor = first_structured["next_cursor"];
+	CHECK_FALSE(next_cursor.is_empty());
+
+	Dictionary page_two_args = arguments;
+	page_two_args["cursor"] = next_cursor;
+	Dictionary page_two_params;
+	page_two_params["name"] = "find_elements";
+	page_two_params["arguments"] = page_two_args;
+	const Dictionary second_response = dispatcher.handle_message(make_request(61, "tools/call", page_two_params));
+	const Dictionary second_result = second_response["result"];
+	const Dictionary second_structured = second_result["structuredContent"];
+	CHECK((int)second_structured["match_count"] == 25);
+	CHECK(((Array)second_structured["elements"]).size() == 10);
+
+	memdelete(root);
+}
+
+TEST_CASE("[Editor][Automation][MCP] targeted element and subtree resources avoid full observe_ui") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+	Button *button = memnew(Button);
+	button->set_text("Resource Target");
+	root->add_child(button);
+	mcp_flush_frames();
+
+	EditorAutomationMCPDispatcher dispatcher;
+	EditorAutomationMCPDispatcher::Options options;
+	options.snapshot_root = root;
+	dispatcher.set_options(options);
+
+	Dictionary observe_params;
+	observe_params["name"] = "observe_ui";
+	observe_params["arguments"] = Dictionary();
+	const Dictionary observe_response = dispatcher.handle_message(make_request(70, "tools/call", observe_params));
+	const Dictionary observe_result = observe_response["result"];
+	const Dictionary observe_structured = observe_result["structuredContent"];
+	const Array observe_tree = observe_structured["tree"];
+	const Dictionary root_element = observe_tree[0];
+	const Array children = root_element["children"];
+	REQUIRE(children.size() >= 1);
+	const Dictionary button_element = children[0];
+	const String element_handle = button_element["handle"];
+	CHECK_FALSE(element_handle.is_empty());
+
+	Dictionary element_read;
+	element_read["uri"] = vformat("foundry://element/%s", element_handle);
+	const Dictionary element_response = dispatcher.handle_message(make_request(71, "resources/read", element_read));
+	CHECK(element_response.has("result"));
+	const Dictionary element_result = element_response["result"];
+	const Array element_contents = element_result["contents"];
+	const Dictionary element_content = element_contents[0];
+	const String element_text = element_content["text"];
+	CHECK(element_text.contains("Resource Target"));
+
+	Dictionary subtree_read;
+	subtree_read["uri"] = vformat("foundry://ui/subtree/%s/depth/2", element_handle);
+	const Dictionary subtree_response = dispatcher.handle_message(make_request(72, "resources/read", subtree_read));
+	CHECK(subtree_response.has("result"));
+	const Dictionary subtree_result = subtree_response["result"];
+	const Array subtree_contents = subtree_result["contents"];
+	const Dictionary subtree_content = subtree_contents[0];
+	const String subtree_text = subtree_content["text"];
+	CHECK(subtree_text.contains("subtree"));
+
+	Dictionary scene_read;
+	scene_read["uri"] = "foundry://scene/tree";
+	const Dictionary scene_response = dispatcher.handle_message(make_request(73, "resources/read", scene_read));
+	CHECK(scene_response.has("result"));
+
+	memdelete(root);
+}
+
+TEST_CASE("[Editor][Automation][MCP] poll_events exposes queued editor log notifications") {
+	EditorAutomationLog::clear_test_messages();
+	EditorAutomationEvents::clear_test_events();
+	EditorAutomationEvents::reset();
+
+	EditorAutomationLog::push_test_message("Synthetic warning", "warning");
+	EditorAutomationLog::push_test_message("Synthetic error", "error");
+
+	EditorAutomationMCPDispatcher dispatcher;
+	Dictionary params;
+	params["name"] = "poll_events";
+	params["arguments"] = Dictionary();
+	const Dictionary response = dispatcher.handle_message(make_request(80, "tools/call", params));
+	const Dictionary result = response["result"];
+	const Dictionary structured = result["structuredContent"];
+	const Array events = structured["events"];
+	CHECK(events.size() >= 2);
+	CHECK(structured.has("transport"));
+	CHECK_FALSE((bool)((Dictionary)structured["transport"])["server_push"]);
+
+	EditorAutomationLog::clear_test_messages();
+	EditorAutomationEvents::clear_test_events();
+}
+
+TEST_CASE("[Editor][Automation][MCP] initialize/list/call/read compatibility regression") {
+	EditorAutomationMCPDispatcher dispatcher;
+
+	Dictionary init_params;
+	init_params["protocolVersion"] = EditorAutomationMCPDispatcher::PROTOCOL_VERSION;
+	CHECK(dispatcher.handle_message(make_request(90, "initialize", init_params)).has("result"));
+	CHECK(dispatcher.handle_message(make_request(91, "tools/list")).has("result"));
+	CHECK(dispatcher.handle_message(make_request(92, "resources/list")).has("result"));
+	CHECK(dispatcher.handle_message(make_request(93, "resources/templates/list")).has("result"));
+
+	Dictionary read_params;
+	read_params["uri"] = "foundry://editor/state";
+	CHECK(dispatcher.handle_message(make_request(94, "resources/read", read_params)).has("result"));
+
+	Dictionary state_call;
+	state_call["name"] = "read_editor_state";
+	state_call["arguments"] = Dictionary();
+	CHECK(dispatcher.handle_message(make_request(95, "tools/call", state_call)).has("result"));
+}
 
 } // namespace TestEditorAutomationMCP

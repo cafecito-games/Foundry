@@ -33,7 +33,9 @@
 #include "editor/automation/editor_automation_commands.h"
 #include "editor/automation/editor_automation_diagnostics.h"
 #include "editor/automation/editor_automation_driver.h"
+#include "editor/automation/editor_automation_events.h"
 #include "editor/automation/editor_automation_log.h"
+#include "editor/automation/editor_automation_mcp_schemas.h"
 #include "editor/automation/editor_automation_selector.h"
 #include "editor/automation/editor_automation_snapshot.h"
 #include "editor/automation/editor_automation_state.h"
@@ -48,6 +50,75 @@ const char *EditorAutomationMCPDispatcher::PROTOCOL_VERSION = "2025-11-25";
 namespace {
 
 const int MAX_TREE_RESULT_LIMIT = 20;
+const int DEFAULT_MAX_CHILDREN_PER_NODE = 32;
+const String SUBTREE_CURSOR_PREFIX = "subtree:v1:";
+
+String _encode_subtree_cursor(
+		const String &p_parent_handle,
+		int p_offset,
+		int p_max_children,
+		int p_max_depth,
+		bool p_include_hidden,
+		uint64_t p_generation) {
+	return vformat("%s%s|%d|%d|%d|%d|%d",
+			SUBTREE_CURSOR_PREFIX,
+			p_parent_handle,
+			p_offset,
+			p_max_children,
+			p_max_depth,
+			p_include_hidden ? 1 : 0,
+			(int64_t)p_generation);
+}
+
+bool _decode_subtree_cursor(
+		const String &p_cursor,
+		String &r_parent_handle,
+		int &r_offset,
+		int &r_max_children,
+		int &r_max_depth,
+		bool &r_include_hidden,
+		uint64_t &r_generation) {
+	if (!p_cursor.begins_with(SUBTREE_CURSOR_PREFIX)) {
+		return false;
+	}
+	const PackedStringArray parts = p_cursor.substr(SUBTREE_CURSOR_PREFIX.length()).split("|", false);
+	if (parts.size() != 6) {
+		return false;
+	}
+	r_parent_handle = parts[0];
+	r_offset = parts[1].to_int();
+	r_max_children = parts[2].to_int();
+	r_max_depth = parts[3].to_int();
+	r_include_hidden = parts[4].to_int() != 0;
+	r_generation = (uint64_t)parts[5].to_int();
+	return !r_parent_handle.is_empty();
+}
+
+int _resolve_element_index(const EditorAutomationSnapshot &p_snapshot, const String &p_id_or_handle) {
+	const EditorAutomationSnapshotData &data = p_snapshot.get_data();
+	const int *by_id = data.id_to_index.getptr(p_id_or_handle);
+	if (by_id != nullptr) {
+		return *by_id;
+	}
+	const EditorAutomationElement *by_handle = p_snapshot.find_by_handle(p_id_or_handle);
+	if (by_handle == nullptr) {
+		return -1;
+	}
+	const int *by_handle_index = data.handle_to_index.getptr(by_handle->handle);
+	return by_handle_index != nullptr ? *by_handle_index : -1;
+}
+
+String _encode_find_cursor(int p_offset) {
+	return vformat("find:v1:%d", p_offset);
+}
+
+bool _decode_find_cursor(const String &p_cursor, int &r_offset) {
+	if (!p_cursor.begins_with("find:v1:")) {
+		return false;
+	}
+	r_offset = p_cursor.substr(8).to_int();
+	return r_offset >= 0;
+}
 
 String _read_string(const Dictionary &p_dict, const char *p_key, const String &p_default = String()) {
 	if (!p_dict.has(p_key)) {
@@ -93,9 +164,17 @@ Dictionary _read_dict(const Dictionary &p_dict, const char *p_key) {
 	return value;
 }
 
-// Depth-limited element tree with truncation metadata, walking the snapshot data
-// directly so both max_depth and include_hidden can be enforced.
-Dictionary _element_tree(const EditorAutomationSnapshotData &p_data, int p_index, int p_depth, int p_max_depth, bool p_include_hidden, bool &r_truncated) {
+// Depth-limited element tree with truncation metadata and child pagination.
+Dictionary _element_tree(
+		const EditorAutomationSnapshotData &p_data,
+		int p_index,
+		int p_depth,
+		int p_max_depth,
+		bool p_include_hidden,
+		int p_max_children,
+		int p_child_offset,
+		bool &r_truncated,
+		bool p_emit_child_cursors) {
 	const EditorAutomationElement &element = p_data.elements[p_index];
 	Dictionary dict;
 	dict["id"] = element.id;
@@ -122,260 +201,106 @@ Dictionary _element_tree(const EditorAutomationSnapshotData &p_data, int p_index
 		dict["metadata"] = element.metadata;
 	}
 
-	int total_children = 0;
-	Array children;
+	LocalVector<int> visible_children;
 	for (int child_index : element.children) {
 		const EditorAutomationElement &child = p_data.elements[child_index];
 		if (!p_include_hidden && !child.visible) {
 			continue;
 		}
-		total_children++;
+		visible_children.push_back(child_index);
+	}
+
+	const int total_children = visible_children.size();
+	int emitted_children = 0;
+	Array children;
+	const int effective_max_children = p_max_children > 0 ? p_max_children : total_children;
+	for (int i = p_child_offset; i < total_children; i++) {
+		if (emitted_children >= effective_max_children) {
+			r_truncated = true;
+			break;
+		}
+		const int child_index = visible_children[i];
 		if (p_depth + 1 > p_max_depth) {
 			r_truncated = true;
 			continue;
 		}
-		children.push_back(_element_tree(p_data, child_index, p_depth + 1, p_max_depth, p_include_hidden, r_truncated));
+		children.push_back(_element_tree(p_data, child_index, p_depth + 1, p_max_depth, p_include_hidden, p_max_children, 0, r_truncated, p_emit_child_cursors));
+		emitted_children++;
 	}
 	dict["children"] = children;
-	if (children.size() < total_children) {
+	if (children.size() < total_children || p_child_offset > 0 || (p_child_offset + emitted_children) < total_children) {
 		dict["children_truncated"] = true;
 		dict["child_count"] = total_children;
+		if (p_emit_child_cursors && (p_child_offset + emitted_children) < total_children) {
+			dict["children_next_cursor"] = _encode_subtree_cursor(
+					element.handle,
+					p_child_offset + emitted_children,
+					effective_max_children,
+					p_max_depth,
+					p_include_hidden,
+					p_data.generation);
+		}
+	} else if (p_depth + 1 > p_max_depth && total_children > 0) {
+		dict["children_truncated"] = true;
+		dict["child_count"] = total_children;
+		if (p_emit_child_cursors) {
+			dict["children_next_cursor"] = _encode_subtree_cursor(
+					element.handle,
+					0,
+					effective_max_children,
+					p_max_depth + 4,
+					p_include_hidden,
+					p_data.generation);
+		}
 	}
 	return dict;
 }
 
-Dictionary _string_schema(const String &p_description) {
-	Dictionary schema;
-	schema["type"] = "string";
-	if (!p_description.is_empty()) {
-		schema["description"] = p_description;
+Dictionary _element_summary(const EditorAutomationElement &p_element) {
+	Dictionary dict;
+	dict["id"] = p_element.id;
+	dict["handle"] = p_element.handle;
+	dict["role"] = p_element.role;
+	dict["name"] = p_element.name;
+	dict["text"] = p_element.text;
+	dict["class"] = p_element.class_name;
+	dict["path"] = p_element.path;
+	dict["visible"] = p_element.visible;
+	dict["enabled"] = p_element.enabled;
+	dict["focused"] = p_element.focused;
+	dict["pressed"] = p_element.pressed;
+	dict["selected"] = p_element.selected;
+	Array bounds;
+	bounds.push_back(p_element.bounds.position.x);
+	bounds.push_back(p_element.bounds.position.y);
+	bounds.push_back(p_element.bounds.size.x);
+	bounds.push_back(p_element.bounds.size.y);
+	dict["bounds"] = bounds;
+	dict["actions"] = p_element.actions;
+	if (!p_element.metadata.is_empty()) {
+		dict["metadata"] = p_element.metadata;
 	}
-	return schema;
-}
-
-Dictionary _object_schema() {
-	Dictionary schema;
-	schema["type"] = "object";
-	return schema;
-}
-
-Dictionary _selector_schema() {
-	Dictionary schema;
-	schema["type"] = "object";
-	schema["description"] = "Semantic selector by role, name, text, class, path, state, and containment. Snapshot-scoped `id` values and durable `handle` values from observe_ui reconcile across later snapshots when the underlying object or virtual key is still valid.";
-
-	Dictionary props;
-	props["id"] = _string_schema("Snapshot-scoped opaque element id from observe_ui/find_elements.");
-	props["handle"] = _string_schema("Durable element handle from observe_ui/find_elements.");
-	props["role"] = _string_schema("Exact semantic role, e.g. button, text_field, checkbox, dialog, tab.");
-	props["role_contains"] = _string_schema("Substring match against role.");
-	props["name"] = _string_schema("Exact accessible/visible name.");
-	props["name_contains"] = _string_schema("Substring match against the accessible/visible name.");
-	props["text"] = _string_schema("Exact visible text/value.");
-	props["text_contains"] = _string_schema("Substring match against the visible text/value.");
-	props["class"] = _string_schema("Exact engine class name, e.g. Button.");
-	props["class_contains"] = _string_schema("Substring match against the class name.");
-	props["path"] = _string_schema("Exact node path.");
-	props["path_contains"] = _string_schema("Substring match against the node path.");
-
-	Dictionary visible = _string_schema("Match elements whose visibility equals this exact value.");
-	visible["type"] = "boolean";
-	props["visible"] = visible;
-	Dictionary enabled = _string_schema("Match elements whose enabled state equals this exact value.");
-	enabled["type"] = "boolean";
-	props["enabled"] = enabled;
-	Dictionary focused = _string_schema("Match elements whose focus state equals this exact value.");
-	focused["type"] = "boolean";
-	props["focused"] = focused;
-	Dictionary visible_only = _string_schema("When true, keep only visible elements. Ignored when false.");
-	visible_only["type"] = "boolean";
-	props["visible_only"] = visible_only;
-	Dictionary enabled_only = _string_schema("When true, keep only enabled elements. Ignored when false.");
-	enabled_only["type"] = "boolean";
-	props["enabled_only"] = enabled_only;
-
-	Dictionary selected = _string_schema("Match elements whose selected state equals this exact value.");
-	selected["type"] = "boolean";
-	props["selected"] = selected;
-
-	Dictionary metadata_schema = _object_schema();
-	metadata_schema["description"] = "Match elements whose metadata dictionary contains these exact key/value pairs (e.g. node_name, node_path, label).";
-	props["metadata"] = metadata_schema;
-
-	Dictionary case_sensitive = _string_schema("Whether string field matching (exact and *_contains) is case-sensitive. Default true.");
-	case_sensitive["type"] = "boolean";
-	props["case_sensitive"] = case_sensitive;
-
-	Dictionary nth = _string_schema("Deterministic disambiguation: pick the Nth match (0-based, negative counts from the end) after all filters are applied, in stable snapshot order.");
-	nth["type"] = "integer";
-	props["nth"] = nth;
-	Dictionary index = _string_schema("Synonym for `nth`.");
-	index["type"] = "integer";
-	props["index"] = index;
-
-	props["within"] = _object_schema();
-	schema["properties"] = props;
-	return schema;
-}
-
-Dictionary _make_tool(const String &p_name, const String &p_description, const Dictionary &p_properties, const Array &p_required) {
-	Dictionary tool;
-	tool["name"] = p_name;
-	tool["description"] = p_description;
-
-	Dictionary input_schema;
-	input_schema["type"] = "object";
-	input_schema["properties"] = p_properties;
-	if (!p_required.is_empty()) {
-		input_schema["required"] = p_required;
-	}
-	tool["inputSchema"] = input_schema;
-	return tool;
-}
-
-Dictionary _make_resource(const String &p_uri, const String &p_name, const String &p_description) {
-	Dictionary resource;
-	resource["uri"] = p_uri;
-	resource["name"] = p_name;
-	resource["description"] = p_description;
-	resource["mimeType"] = "application/json";
-	return resource;
+	return dict;
 }
 
 } // namespace
 
 Array EditorAutomationMCPDispatcher::build_tools_list() {
-	Array tools;
-
-	{
-		Dictionary props;
-		Dictionary max_depth = _string_schema("Maximum tree depth to include (default 8).");
-		max_depth["type"] = "integer";
-		props["max_depth"] = max_depth;
-		Dictionary include_hidden = _string_schema("Include hidden elements (default false).");
-		include_hidden["type"] = "boolean";
-		props["include_hidden"] = include_hidden;
-		tools.push_back(_make_tool("observe_ui",
-				"Returns the current windows, focused element, modal stack, and visible semantic tree.",
-				props, Array()));
-	}
-
-	{
-		Dictionary props;
-		props["selector"] = _selector_schema();
-		Dictionary max_results = _string_schema("Maximum number of matches to return (default 20).");
-		max_results["type"] = "integer";
-		props["max_results"] = max_results;
-		Array required;
-		required.push_back("selector");
-		tools.push_back(_make_tool("find_elements",
-				"Resolves selectors and returns matches or structured no-match/ambiguous diagnostics.",
-				props, required));
-	}
-
-	{
-		Dictionary props;
-		props["selector"] = _selector_schema();
-		props["action"] = _string_schema("Action to perform, e.g. click, focus, type_text, set_text, submit, press_key, drag, select, activate, expand, collapse, scroll, choose_menu_item, set_value.");
-		props["route"] = _string_schema("Route preference: auto, semantic, or input.");
-		Dictionary args_schema = _object_schema();
-		args_schema["description"] = "Action arguments such as text, key, or value.";
-		props["args"] = args_schema;
-		Dictionary wait_schema = _object_schema();
-		wait_schema["description"] = "Optional wait/settle clause after the action. Accepts a full condition object (type, selector, marker, ...) or shorthand { \"condition\": \"editor_idle\" }.";
-		props["wait"] = wait_schema;
-		Dictionary wait_timeout = _string_schema("Timeout in milliseconds for the optional wait clause (default 5000).");
-		wait_timeout["type"] = "integer";
-		props["wait_timeout_ms"] = wait_timeout;
-		Array required;
-		required.push_back("action");
-		tools.push_back(_make_tool("act",
-				"Performs a semantic or input action on a selected element and optionally waits for a UI condition in one call.",
-				props, required));
-	}
-
-	{
-		Dictionary props;
-		props["condition"] = _string_schema("Wait condition, e.g. selector_appears, selector_disappears, focus_matches, modal_stack_changed, filesystem_idle, log_contains, no_new_errors.");
-		props["selector"] = _selector_schema();
-		Dictionary timeout = _string_schema("Timeout in milliseconds (default 5000).");
-		timeout["type"] = "integer";
-		props["timeout_ms"] = timeout;
-		Dictionary wait_id = _string_schema("Poll or cancel an existing cooperative wait by id.");
-		props["wait_id"] = wait_id;
-		Dictionary cancel = _string_schema("When true with wait_id, cancel the pending wait.");
-		cancel["type"] = "boolean";
-		props["cancel"] = cancel;
-		Dictionary cooperative = _string_schema("When true (default), return immediately while the wait is pending instead of blocking the server.");
-		cooperative["type"] = "boolean";
-		props["cooperative"] = cooperative;
-		tools.push_back(_make_tool("wait_for",
-				"Waits cooperatively for a UI condition and returns success/failure diagnostics without blocking the editor for the full timeout.",
-				props, Array()));
-	}
-
-	{
-		Dictionary props;
-		tools.push_back(_make_tool("read_editor_state",
-				"Returns selected nodes, open scenes, active scene, current script, playing state, and unsaved state.",
-				props, Array()));
-	}
-
-	{
-		Dictionary props;
-		props["severity"] = _string_schema("Optional severity filter: error, warning, editor, stdout, stdout_rich.");
-		Dictionary since = _object_schema();
-		since["description"] = "Optional log marker {\"message_index\": N} to read entries since.";
-		props["since"] = since;
-		Dictionary limit = _string_schema("Maximum recent entries when no marker is provided (default 64).");
-		limit["type"] = "integer";
-		props["limit"] = limit;
-		tools.push_back(_make_tool("read_editor_log",
-				"Returns editor log entries, optionally filtered by severity and since-marker.",
-				props, Array()));
-	}
-
-	{
-		Dictionary props;
-		props["command"] = _string_schema("Command palette command key or editor shortcut path, e.g. editor/save_scene or scene_tree/add_child_node.");
-		Array required;
-		required.push_back("command");
-		tools.push_back(_make_tool("run_command",
-				"Executes a command palette command or editor shortcut action by key via the existing editor registries.",
-				props, required));
-	}
-
-	{
-		Dictionary props;
-		props["query"] = _string_schema("Optional substring or subsequence filter against command keys and labels.");
-		props["category"] = _string_schema("Optional category prefix filter, e.g. scene_tree or editor.");
-		Dictionary runnable_only = _string_schema("When true, include only commands runnable by run_command.");
-		runnable_only["type"] = "boolean";
-		props["runnable_only"] = runnable_only;
-		Dictionary limit = _string_schema("Optional maximum number of commands to return.");
-		limit["type"] = "integer";
-		props["limit"] = limit;
-		tools.push_back(_make_tool("list_commands",
-				"Lists command palette commands and editor shortcut actions with runnable metadata.",
-				props, Array()));
-	}
-
-	return tools;
+	return EditorAutomationMCPSchemas::build_tools_list();
 }
 
 Array EditorAutomationMCPDispatcher::build_resources_list() {
-	Array resources;
-	resources.push_back(_make_resource("foundry://ui/tree", "UI Tree", "Current visible semantic UI tree."));
-	resources.push_back(_make_resource("foundry://editor/state", "Editor State", "Current editor state readback."));
-	resources.push_back(_make_resource("foundry://editor/log", "Editor Log", "Recent editor log entries."));
-	resources.push_back(_make_resource("foundry://scene/active", "Active Scene", "Active scene and edited root information."));
-	resources.push_back(_make_resource("foundry://commands", "Editor Commands", "Command palette commands and editor shortcut actions with runnable metadata."));
-	return resources;
+	return EditorAutomationMCPSchemas::build_resources_list();
+}
+
+Array EditorAutomationMCPDispatcher::build_resource_templates_list() {
+	return EditorAutomationMCPSchemas::build_resource_templates_list();
 }
 
 void EditorAutomationMCPDispatcher::reset() {
 	initialized = false;
 	negotiated_protocol_version = String();
+	EditorAutomationEvents::reset();
 }
 
 Dictionary EditorAutomationMCPDispatcher::_make_result(const Variant &p_id, const Variant &p_result) {
@@ -488,6 +413,12 @@ Dictionary EditorAutomationMCPDispatcher::handle_message(const Dictionary &p_mes
 		return _make_result(id, d);
 	}
 
+	if (method == "resources/templates/list") {
+		Dictionary d;
+		d["resourceTemplates"] = build_resource_templates_list();
+		return _make_result(id, d);
+	}
+
 	if (method == "resources/read") {
 		bool ok = false;
 		Dictionary error;
@@ -521,16 +452,20 @@ Dictionary EditorAutomationMCPDispatcher::_handle_initialize(const Dictionary &p
 	resources_cap["listChanged"] = false;
 	resources_cap["subscribe"] = false;
 	capabilities["resources"] = resources_cap;
+	Dictionary logging_cap;
+	logging_cap["poll_events"] = true;
+	logging_cap["server_push"] = false;
+	capabilities["logging"] = logging_cap;
 
 	Dictionary server_info;
 	server_info["name"] = "foundry-editor-automation";
-	server_info["version"] = "1.0.0";
+	server_info["version"] = "1.1.0";
 
 	Dictionary result;
 	result["protocolVersion"] = PROTOCOL_VERSION;
 	result["capabilities"] = capabilities;
 	result["serverInfo"] = server_info;
-	result["instructions"] = "Local editor automation. Use tools/list to discover generic observe/act tools backed by the shared automation core.";
+	result["instructions"] = "Local editor automation backed by the shared automation core. Use tools/list for typed input/output schemas. Large UI trees paginate via children_next_cursor, find_elements next_cursor, and foundry://ui/subtree/{id} resources. The POST-only transport cannot push notifications; poll poll_events (preferred) or read_editor_log as a fallback.";
 
 	r_ok = true;
 	return result;
@@ -564,6 +499,8 @@ Dictionary EditorAutomationMCPDispatcher::_handle_tools_call(const Dictionary &p
 		structured = _tool_run_command(arguments, is_error);
 	} else if (name == "list_commands") {
 		structured = _tool_list_commands(arguments, is_error);
+	} else if (name == "poll_events") {
+		structured = _tool_poll_events(arguments, is_error);
 	} else {
 		r_ok = false;
 		r_error["code"] = METHOD_NOT_FOUND;
@@ -577,16 +514,63 @@ Dictionary EditorAutomationMCPDispatcher::_handle_tools_call(const Dictionary &p
 
 Dictionary EditorAutomationMCPDispatcher::_tool_observe_ui(const Dictionary &p_args, bool &r_is_error) {
 	r_is_error = false;
+	const String subtree_cursor = _read_string(p_args, "subtree_cursor");
+	const EditorAutomationSnapshot snapshot = _snapshot_root() != nullptr
+			? EditorAutomationSnapshot::capture_from_node(_snapshot_root())
+			: EditorAutomationSnapshot::capture_from_editor();
+	const EditorAutomationSnapshotData &data = snapshot.get_data();
+
+	if (!subtree_cursor.is_empty()) {
+		String parent_handle;
+		int offset = 0;
+		int max_children = DEFAULT_MAX_CHILDREN_PER_NODE;
+		int max_depth = options.max_tree_depth;
+		bool include_hidden = false;
+		uint64_t generation = 0;
+		if (!_decode_subtree_cursor(subtree_cursor, parent_handle, offset, max_children, max_depth, include_hidden, generation)) {
+			r_is_error = true;
+			Dictionary result;
+			result["ok"] = false;
+			result["kind"] = "invalid_params";
+			result["message"] = "Invalid subtree_cursor.";
+			return result;
+		}
+
+		const int parent_index = _resolve_element_index(snapshot, parent_handle);
+		if (parent_index < 0) {
+			r_is_error = true;
+			Dictionary result;
+			result["ok"] = false;
+			result["kind"] = "stale_element";
+			result["message"] = vformat("Unknown element handle '%s'.", parent_handle);
+			return result;
+		}
+
+		bool truncated = false;
+		Dictionary subtree = _element_tree(data, parent_index, 0, max_depth, include_hidden, max_children, offset, truncated, true);
+		Dictionary result;
+		result["generation"] = snapshot.get_generation();
+		result["subtree"] = subtree;
+		result["subtree_cursor"] = subtree_cursor;
+		Dictionary limits;
+		limits["max_depth"] = max_depth;
+		limits["max_children"] = max_children;
+		limits["include_hidden"] = include_hidden;
+		limits["offset"] = offset;
+		limits["truncated"] = truncated;
+		result["limits"] = limits;
+		return result;
+	}
+
 	int max_depth = _read_int(p_args, "max_depth", options.max_tree_depth);
 	if (max_depth < 0) {
 		max_depth = 0;
 	}
 	const bool include_hidden = _read_bool(p_args, "include_hidden", false);
-
-	const EditorAutomationSnapshot snapshot = _snapshot_root() != nullptr
-			? EditorAutomationSnapshot::capture_from_node(_snapshot_root())
-			: EditorAutomationSnapshot::capture_from_editor();
-	const EditorAutomationSnapshotData &data = snapshot.get_data();
+	int max_children = _read_int(p_args, "max_children", DEFAULT_MAX_CHILDREN_PER_NODE);
+	if (max_children <= 0) {
+		max_children = DEFAULT_MAX_CHILDREN_PER_NODE;
+	}
 
 	bool truncated = false;
 	Array roots;
@@ -595,7 +579,7 @@ Dictionary EditorAutomationMCPDispatcher::_tool_observe_ui(const Dictionary &p_a
 		if (!include_hidden && !root.visible) {
 			continue;
 		}
-		roots.push_back(_element_tree(data, root_index, 0, max_depth, include_hidden, truncated));
+		roots.push_back(_element_tree(data, root_index, 0, max_depth, include_hidden, max_children, 0, truncated, true));
 	}
 
 	Dictionary result;
@@ -608,6 +592,7 @@ Dictionary EditorAutomationMCPDispatcher::_tool_observe_ui(const Dictionary &p_a
 
 	Dictionary limits;
 	limits["max_depth"] = max_depth;
+	limits["max_children"] = max_children;
 	limits["include_hidden"] = include_hidden;
 	limits["truncated"] = truncated;
 	result["limits"] = limits;
@@ -620,6 +605,16 @@ Dictionary EditorAutomationMCPDispatcher::_tool_find_elements(const Dictionary &
 	if (max_results <= 0) {
 		max_results = MAX_TREE_RESULT_LIMIT;
 	}
+	int offset = 0;
+	const String cursor = _read_string(p_args, "cursor");
+	if (!cursor.is_empty() && !_decode_find_cursor(cursor, offset)) {
+		r_is_error = true;
+		Dictionary result;
+		result["ok"] = false;
+		result["kind"] = "invalid_params";
+		result["message"] = "Invalid cursor.";
+		return result;
+	}
 
 	const EditorAutomationSnapshot snapshot = _snapshot_root() != nullptr
 			? EditorAutomationSnapshot::capture_from_node(_snapshot_root())
@@ -628,9 +623,6 @@ Dictionary EditorAutomationMCPDispatcher::_tool_find_elements(const Dictionary &
 	const EditorAutomationSelectorResult selector_result = EditorAutomationSelector::resolve(snapshot, selector);
 	Dictionary result = selector_result.to_dictionary();
 
-	// find_elements is a multi-match tool: a selector that resolves to several
-	// elements (AMBIGUOUS for single-target callers) is a valid result here, not
-	// an error. Only genuine no-match / stale / invalid selectors are failures.
 	const bool has_matches = (selector_result.status == EditorAutomationSelectorStatus::OK ||
 									 selector_result.status == EditorAutomationSelectorStatus::AMBIGUOUS) &&
 			!selector_result.match_indices.is_empty();
@@ -642,19 +634,22 @@ Dictionary EditorAutomationMCPDispatcher::_tool_find_elements(const Dictionary &
 		Array elements;
 		const int total = selector_result.match_indices.size();
 		bool truncated = false;
-		for (int i = 0; i < total; i++) {
+		for (int i = offset; i < total; i++) {
 			if (elements.size() >= max_results) {
 				truncated = true;
 				break;
 			}
-			bool ignored = false;
-			elements.push_back(_element_tree(snapshot.get_data(), selector_result.match_indices[i], 0, 0, true, ignored));
+			const EditorAutomationElement &element = snapshot.get_element(selector_result.match_indices[i]);
+			elements.push_back(_element_summary(element));
 		}
 		result["elements"] = elements;
 		result["match_count"] = total;
 		result["truncated"] = truncated;
+		result["cursor"] = cursor;
+		if (truncated) {
+			result["next_cursor"] = _encode_find_cursor(offset + elements.size());
+		}
 	} else {
-		// No-match / stale / invalid are structured automation failures.
 		r_is_error = true;
 	}
 	return result;
@@ -1036,6 +1031,57 @@ Dictionary EditorAutomationMCPDispatcher::_tool_list_commands(const Dictionary &
 	return EditorAutomationCommands::list_commands(p_args);
 }
 
+Dictionary EditorAutomationMCPDispatcher::_tool_poll_events(const Dictionary &p_args, bool &r_is_error) {
+	r_is_error = false;
+	EditorAutomationEvents::poll_sources();
+
+	EditorAutomationEventMarker marker;
+	if (p_args.has("since")) {
+		const Dictionary since = _read_dict(p_args, "since");
+		marker.event_index = _read_int(since, "event_index", 0);
+	}
+
+	PackedStringArray kinds;
+	if (p_args.has("kinds")) {
+		const Variant raw = p_args.get("kinds", Variant());
+		if (raw.get_type() == Variant::ARRAY) {
+			const Array array = raw;
+			for (int i = 0; i < array.size(); i++) {
+				kinds.push_back(array[i]);
+			}
+		} else if (raw.get_type() == Variant::STRING || raw.get_type() == Variant::STRING_NAME) {
+			kinds.push_back(raw);
+		}
+	}
+
+	int limit = _read_int(p_args, "limit", 64);
+	if (limit <= 0) {
+		limit = 64;
+	}
+
+	const int requested_limit = limit;
+	Array events = EditorAutomationEvents::read_since(marker, kinds, requested_limit + 1);
+	bool has_more = false;
+	if (events.size() > requested_limit) {
+		has_more = true;
+		events.resize(requested_limit);
+	}
+
+	Dictionary result;
+	result["events"] = events;
+	result["count"] = events.size();
+	Dictionary marker_dict;
+	marker_dict["event_index"] = EditorAutomationEvents::get_event_count();
+	result["marker"] = marker_dict;
+	result["has_more"] = has_more;
+	Dictionary transport;
+	transport["server_push"] = false;
+	transport["poll_tool"] = "poll_events";
+	transport["fallback_tool"] = "read_editor_log";
+	result["transport"] = transport;
+	return result;
+}
+
 Dictionary EditorAutomationMCPDispatcher::_resource_payload(const String &p_uri, bool &r_ok) {
 	r_ok = true;
 	if (p_uri == "foundry://ui/tree") {
@@ -1064,6 +1110,53 @@ Dictionary EditorAutomationMCPDispatcher::_resource_payload(const String &p_uri,
 	}
 	if (p_uri == "foundry://commands") {
 		return EditorAutomationCommands::list_commands();
+	}
+	if (p_uri == "foundry://scene/tree") {
+		return EditorAutomationState::read_scene_tree(_snapshot_root());
+	}
+	if (p_uri.begins_with("foundry://element/")) {
+		const String element_ref = p_uri.substr(String("foundry://element/").length());
+		const EditorAutomationSnapshot snapshot = _snapshot_root() != nullptr
+				? EditorAutomationSnapshot::capture_from_node(_snapshot_root())
+				: EditorAutomationSnapshot::capture_from_editor();
+		const int element_index = _resolve_element_index(snapshot, element_ref);
+		if (element_index < 0) {
+			r_ok = false;
+			return Dictionary();
+		}
+		const EditorAutomationElement &element = snapshot.get_element(element_index);
+		Dictionary payload;
+		payload["element"] = _element_summary(element);
+		payload["generation"] = snapshot.get_generation();
+		return payload;
+	}
+	if (p_uri.begins_with("foundry://ui/subtree/")) {
+		String remainder = p_uri.substr(String("foundry://ui/subtree/").length());
+		int max_depth = options.max_tree_depth;
+		const String depth_marker = "/depth/";
+		const int depth_pos = remainder.rfind(depth_marker);
+		if (depth_pos >= 0) {
+			max_depth = remainder.substr(depth_pos + depth_marker.length()).to_int();
+			remainder = remainder.substr(0, depth_pos);
+		}
+		const String element_ref = remainder;
+		const EditorAutomationSnapshot snapshot = _snapshot_root() != nullptr
+				? EditorAutomationSnapshot::capture_from_node(_snapshot_root())
+				: EditorAutomationSnapshot::capture_from_editor();
+		const int element_index = _resolve_element_index(snapshot, element_ref);
+		if (element_index < 0) {
+			r_ok = false;
+			return Dictionary();
+		}
+		bool truncated = false;
+		Dictionary payload;
+		payload["generation"] = snapshot.get_generation();
+		payload["subtree"] = _element_tree(snapshot.get_data(), element_index, 0, max_depth, false, DEFAULT_MAX_CHILDREN_PER_NODE, 0, truncated, true);
+		Dictionary limits;
+		limits["max_depth"] = max_depth;
+		limits["truncated"] = truncated;
+		payload["limits"] = limits;
+		return payload;
 	}
 	r_ok = false;
 	return Dictionary();
