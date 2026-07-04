@@ -125,7 +125,15 @@ bool EditorAutomationInput::push_key_event(
 		event->set_unicode(p_unicode);
 	}
 	apply_modifiers(event, p_modifiers);
-	_dispatch_input_event(event);
+	// Text entry must be routed through the target viewport so popup and modal
+	// LineEdits receive unicode keys. Global parse_input_event only reaches the
+	// root window focus chain and misses exclusive child windows.
+	if (p_unicode != 0) {
+		p_viewport->push_input(event);
+		MessageQueue::get_singleton()->flush();
+	} else {
+		_dispatch_input_event(event);
+	}
 
 	if (p_pressed) {
 		r_events.push_back("key_pressed");
@@ -158,7 +166,8 @@ bool EditorAutomationInput::push_input_action(
 			if (key_event.is_valid()) {
 				key_event->set_pressed(p_pressed);
 				if (p_pressed) {
-					_dispatch_input_event(key_event);
+					p_viewport->push_input(key_event);
+					MessageQueue::get_singleton()->flush();
 				}
 			}
 		}

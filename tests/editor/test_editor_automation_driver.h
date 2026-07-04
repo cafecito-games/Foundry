@@ -705,6 +705,46 @@ TEST_CASE("[Editor][Automation] viewport click uses relative coordinates") {
 	memdelete(root);
 }
 
+TEST_CASE("[Editor][Automation] type_text edits popup LineEdit through input events") {
+	Window *root = memnew(Window);
+	root->set_title("Main Window");
+	root->set_size(Size2i(640, 480));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+	root->set_visible(true);
+	MessageQueue::get_singleton()->flush();
+
+	Window *popup = memnew(Window);
+	popup->set_title("Popup Input");
+	popup->set_size(Size2i(360, 120));
+	LineEdit *line_edit = memnew(LineEdit);
+	line_edit->set_accessibility_name("PopupField");
+	setup_visible_control(line_edit, Size2(300, 32));
+	line_edit->set_position(Vector2(20, 20));
+	popup->add_child(line_edit);
+	root->add_child(popup);
+	popup->popup_exclusive_centered(root);
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	const EditorAutomationElement *field = find_element_by_role_and_name(snapshot, "text_field", "PopupField");
+	REQUIRE(field != nullptr);
+
+	Dictionary target;
+	target["id"] = field->id;
+
+	Dictionary options;
+	options["text"] = "Node";
+	options["route"] = "input";
+
+	const EditorAutomationActionResult result = EditorAutomationDriver::perform(snapshot, "type_text", target, options);
+	MessageQueue::get_singleton()->flush();
+	CHECK(result.ok);
+	CHECK(result.route == EditorAutomationActionRouteNames::INPUT_TEXT);
+	CHECK(line_edit->get_text() == "Node");
+
+	memdelete(root);
+}
+
 TEST_CASE("[Editor][Automation] popup action focuses owning window before click") {
 	Window *root = memnew(Window);
 	root->set_title("Main Window");
