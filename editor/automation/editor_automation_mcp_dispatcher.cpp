@@ -163,6 +163,50 @@ Dictionary _selector_schema() {
 	Dictionary schema;
 	schema["type"] = "object";
 	schema["description"] = "Semantic selector by role, name, text, class, path, state, and containment. Snapshot-scoped `id` values and durable `handle` values from observe_ui reconcile across later snapshots when the underlying object or virtual key is still valid.";
+
+	Dictionary props;
+	props["id"] = _string_schema("Snapshot-scoped opaque element id from observe_ui/find_elements.");
+	props["handle"] = _string_schema("Durable element handle from observe_ui/find_elements.");
+	props["role"] = _string_schema("Exact semantic role, e.g. button, text_field, checkbox, dialog, tab.");
+	props["role_contains"] = _string_schema("Substring match against role.");
+	props["name"] = _string_schema("Exact accessible/visible name.");
+	props["name_contains"] = _string_schema("Substring match against the accessible/visible name.");
+	props["text"] = _string_schema("Exact visible text/value.");
+	props["text_contains"] = _string_schema("Substring match against the visible text/value.");
+	props["class"] = _string_schema("Exact engine class name, e.g. Button.");
+	props["class_contains"] = _string_schema("Substring match against the class name.");
+	props["path"] = _string_schema("Exact node path.");
+	props["path_contains"] = _string_schema("Substring match against the node path.");
+
+	Dictionary visible = _string_schema("Match elements whose visibility equals this exact value.");
+	visible["type"] = "boolean";
+	props["visible"] = visible;
+	Dictionary enabled = _string_schema("Match elements whose enabled state equals this exact value.");
+	enabled["type"] = "boolean";
+	props["enabled"] = enabled;
+	Dictionary focused = _string_schema("Match elements whose focus state equals this exact value.");
+	focused["type"] = "boolean";
+	props["focused"] = focused;
+	Dictionary visible_only = _string_schema("When true, keep only visible elements. Ignored when false.");
+	visible_only["type"] = "boolean";
+	props["visible_only"] = visible_only;
+	Dictionary enabled_only = _string_schema("When true, keep only enabled elements. Ignored when false.");
+	enabled_only["type"] = "boolean";
+	props["enabled_only"] = enabled_only;
+
+	Dictionary case_sensitive = _string_schema("Whether string field matching (exact and *_contains) is case-sensitive. Default true.");
+	case_sensitive["type"] = "boolean";
+	props["case_sensitive"] = case_sensitive;
+
+	Dictionary nth = _string_schema("Deterministic disambiguation: pick the Nth match (0-based, negative counts from the end) after all filters are applied, in stable snapshot order.");
+	nth["type"] = "integer";
+	props["nth"] = nth;
+	Dictionary index = _string_schema("Synonym for `nth`.");
+	index["type"] = "integer";
+	props["index"] = index;
+
+	props["within"] = _object_schema();
+	schema["properties"] = props;
 	return schema;
 }
 
