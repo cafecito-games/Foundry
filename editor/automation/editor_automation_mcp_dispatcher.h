@@ -30,6 +30,9 @@
 
 #pragma once
 
+#include "editor/automation/editor_automation_log.h"
+#include "editor/automation/editor_automation_wait.h"
+
 #include "core/variant/variant.h"
 
 class Node;
@@ -84,6 +87,18 @@ private:
 	Dictionary _tool_act(const Dictionary &p_args, bool &r_is_error);
 	Dictionary _tool_wait_for(const Dictionary &p_args, bool &r_is_error);
 	Dictionary _tool_read_editor_state(const Dictionary &p_args, bool &r_is_error);
+
+	Dictionary _build_condition_from_args(const Dictionary &p_args);
+	Dictionary _wait_context_from_handle(const EditorAutomationCooperativeWaitHandle &p_handle);
+	Dictionary _cooperative_wait_response(const EditorAutomationCooperativeWaitHandle &p_handle, bool &r_is_error);
+	Dictionary _compose_act_wait_result(
+			const Dictionary &p_action_result,
+			const EditorAutomationCooperativeWaitHandle &p_handle,
+			const Dictionary &p_condition,
+			const Dictionary &p_selector,
+			const String &p_action,
+			const EditorAutomationLogMarker &p_log_marker,
+			bool &r_is_error);
 	Dictionary _tool_read_editor_log(const Dictionary &p_args, bool &r_is_error);
 	Dictionary _tool_run_command(const Dictionary &p_args, bool &r_is_error);
 	Dictionary _tool_list_commands(const Dictionary &p_args, bool &r_is_error);

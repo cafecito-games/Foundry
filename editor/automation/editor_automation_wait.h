@@ -54,6 +54,29 @@ struct EditorAutomationWaitResult {
 	Dictionary to_dictionary() const;
 };
 
+struct EditorAutomationActWaitContext {
+	bool active = false;
+	String action;
+	Dictionary selector;
+	Dictionary action_result;
+	EditorAutomationLogMarker log_marker;
+};
+
+enum class EditorAutomationCooperativeWaitStatus {
+	PENDING,
+	COMPLETE,
+	CANCELLED,
+};
+
+struct EditorAutomationCooperativeWaitHandle {
+	String wait_id;
+	EditorAutomationCooperativeWaitStatus status = EditorAutomationCooperativeWaitStatus::PENDING;
+	EditorAutomationWaitResult result;
+	Dictionary condition;
+	double elapsed_sec = 0.0;
+	EditorAutomationActWaitContext act_context;
+};
+
 class EditorAutomationWait {
 public:
 	static EditorAutomationWaitResult wait_for(
@@ -65,5 +88,21 @@ public:
 			const Dictionary &p_condition,
 			const EditorAutomationSnapshot &p_snapshot,
 			const EditorAutomationWaitContext &p_context,
-			EditorAutomationWaitResult &r_failure);
+			EditorAutomationWaitResult &r_failure,
+			int p_processed_frames = 0,
+			const Array &p_previous_modal_stack = Array(),
+			bool p_has_previous_modal_stack = false,
+			int p_settled_frames = 0);
+
+	static String begin_cooperative(
+			const Dictionary &p_condition,
+			double p_timeout_sec,
+			const EditorAutomationWaitContext &p_context,
+			const EditorAutomationActWaitContext &p_act_context = EditorAutomationActWaitContext());
+
+	static bool poll_cooperative(const String &p_wait_id, EditorAutomationCooperativeWaitHandle &r_handle);
+	static bool cancel_cooperative(const String &p_wait_id, EditorAutomationCooperativeWaitHandle &r_handle);
+	static int poll_all_cooperative(int p_max_steps = 1);
+	static void clear_all_cooperative();
+	static bool has_pending_cooperative();
 };

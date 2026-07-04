@@ -32,6 +32,7 @@
 
 #include "editor/automation/editor_automation_acceptance_workflow.h"
 #include "editor/automation/editor_automation_mcp_server.h"
+#include "editor/automation/editor_automation_wait.h"
 #include "editor/automation/editor_workflow_test_driver.h"
 
 #include "core/crypto/crypto_core.h"
@@ -231,6 +232,7 @@ void EditorAutomationServer::_notification(int p_what) {
 				}
 			}
 			if (started && mcp_server != nullptr) {
+				EditorAutomationWait::poll_all_cooperative();
 				mcp_server->poll();
 			}
 		} break;

@@ -32,6 +32,7 @@
 
 #include "editor/automation/editor_automation_mcp_dispatcher.h"
 #include "editor/automation/editor_automation_mcp_server.h"
+#include "editor/automation/editor_automation_wait.h"
 
 #include "core/io/json.h"
 #include "core/object/message_queue.h"
@@ -42,6 +43,7 @@
 #endif
 
 #include "scene/gui/button.h"
+#include "scene/gui/line_edit.h"
 #include "scene/gui/panel_container.h"
 #include "scene/main/scene_tree.h"
 
@@ -398,6 +400,281 @@ TEST_CASE("[Editor][Automation][MCP] act consumes handle returned by observe_ui 
 	CHECK((bool)act_details["reconciled"]);
 	CHECK((uint64_t)act_details["snapshot_generation"] > (uint64_t)observe_structured["generation"]);
 
+	memdelete(root);
+}
+
+TEST_CASE("[Editor][Automation][MCP] cooperative wait_for does not block read_editor_state and can be cancelled") {
+	EditorAutomationWait::clear_all_cooperative();
+
+	EditorAutomationMCPDispatcher dispatcher;
+
+	Dictionary wait_args;
+	wait_args["condition"] = "selector_appears";
+	Dictionary selector;
+	selector["role"] = "button";
+	selector["name"] = "Never Appears";
+	wait_args["selector"] = selector;
+	wait_args["timeout_ms"] = 60000;
+	wait_args["cooperative"] = true;
+
+	Dictionary wait_params;
+	wait_params["name"] = "wait_for";
+	wait_params["arguments"] = wait_args;
+	const Dictionary wait_response = dispatcher.handle_message(make_request(30, "tools/call", wait_params));
+	CHECK(wait_response.has("result"));
+	const Dictionary wait_response_result = wait_response["result"];
+	CHECK_FALSE((bool)wait_response_result["isError"]);
+	const Dictionary wait_structured = wait_response_result["structuredContent"];
+	CHECK(wait_structured["status"] == "pending");
+	CHECK(wait_structured.has("wait_id"));
+	const String wait_id = wait_structured["wait_id"];
+
+	Dictionary state_params;
+	state_params["name"] = "read_editor_state";
+	state_params["arguments"] = Dictionary();
+	const Dictionary state_response = dispatcher.handle_message(make_request(31, "tools/call", state_params));
+	CHECK(state_response.has("result"));
+	const Dictionary state_response_result = state_response["result"];
+	CHECK_FALSE((bool)state_response_result["isError"]);
+
+	Dictionary cancel_args;
+	cancel_args["wait_id"] = wait_id;
+	cancel_args["cancel"] = true;
+	Dictionary cancel_params;
+	cancel_params["name"] = "wait_for";
+	cancel_params["arguments"] = cancel_args;
+	const Dictionary cancel_response = dispatcher.handle_message(make_request(32, "tools/call", cancel_params));
+	const Dictionary cancel_response_result = cancel_response["result"];
+	const Dictionary cancel_structured = cancel_response_result["structuredContent"];
+	CHECK(cancel_structured["status"] == "cancelled");
+
+	EditorAutomationWait::clear_all_cooperative();
+}
+
+TEST_CASE("[Editor][Automation][MCP] act with wait clause succeeds when condition is met") {
+	EditorAutomationWait::clear_all_cooperative();
+
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	LineEdit *first = memnew(LineEdit);
+	first->set_name("FirstField");
+	first->set_anchors_and_offsets_preset(Control::PRESET_TOP_LEFT);
+	first->set_size(Size2(120, 32));
+	root->add_child(first);
+
+	LineEdit *second = memnew(LineEdit);
+	second->set_name("SecondField");
+	second->set_anchors_and_offsets_preset(Control::PRESET_TOP_LEFT);
+	second->set_size(Size2(120, 32));
+	root->add_child(second);
+	mcp_flush_frames();
+
+	EditorAutomationMCPDispatcher dispatcher;
+	EditorAutomationMCPDispatcher::Options options;
+	options.snapshot_root = root;
+	dispatcher.set_options(options);
+
+	Dictionary target;
+	target["role"] = "text_field";
+	target["name"] = "SecondField";
+
+	Dictionary wait;
+	wait["type"] = "focus_matches";
+	wait["selector"] = target;
+
+	Dictionary arguments;
+	arguments["action"] = "focus";
+	arguments["selector"] = target;
+	arguments["wait"] = wait;
+	arguments["wait_timeout_ms"] = 1000;
+
+	Dictionary params;
+	params["name"] = "act";
+	params["arguments"] = arguments;
+
+	const Dictionary response = dispatcher.handle_message(make_request(33, "tools/call", params));
+	const Dictionary response_result = response["result"];
+	CHECK_FALSE((bool)response_result["isError"]);
+	const Dictionary structured = response_result["structuredContent"];
+	CHECK((bool)structured["ok"]);
+	CHECK(structured.has("action"));
+	CHECK(structured.has("wait"));
+	CHECK((bool)((Dictionary)structured["action"])["ok"]);
+	CHECK((bool)((Dictionary)structured["wait"])["ok"]);
+
+	EditorAutomationWait::clear_all_cooperative();
+	memdelete(root);
+}
+
+TEST_CASE("[Editor][Automation][MCP] act success with wait timeout reports partial success shape") {
+	EditorAutomationWait::clear_all_cooperative();
+
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	Button *button = memnew(Button);
+	button->set_text("Click Me");
+	button->set_anchors_and_offsets_preset(Control::PRESET_TOP_LEFT);
+	button->set_size(Size2(120, 32));
+	root->add_child(button);
+	mcp_flush_frames();
+
+	EditorAutomationMCPDispatcher dispatcher;
+	EditorAutomationMCPDispatcher::Options options;
+	options.snapshot_root = root;
+	dispatcher.set_options(options);
+
+	Dictionary selector;
+	selector["role"] = "button";
+	selector["name"] = "Click Me";
+
+	Dictionary wait;
+	wait["type"] = "selector_appears";
+	Dictionary missing;
+	missing["role"] = "button";
+	missing["name"] = "Missing Dialog";
+	wait["selector"] = missing;
+
+	Dictionary arguments;
+	arguments["action"] = "click";
+	arguments["selector"] = selector;
+	arguments["wait"] = wait;
+	arguments["wait_timeout_ms"] = 50;
+
+	Dictionary params;
+	params["name"] = "act";
+	params["arguments"] = arguments;
+
+	Dictionary response = dispatcher.handle_message(make_request(34, "tools/call", params));
+	Dictionary response_result = response["result"];
+	Dictionary structured = response_result["structuredContent"];
+	String wait_id = structured.get("wait_id", String());
+
+	while (structured.get("status", String()) == "pending" && !wait_id.is_empty()) {
+		mcp_flush_frames(2);
+		Dictionary poll_args;
+		poll_args["wait_id"] = wait_id;
+		Dictionary poll_params;
+		poll_params["name"] = "act";
+		poll_params["arguments"] = poll_args;
+		response = dispatcher.handle_message(make_request(35, "tools/call", poll_params));
+		response_result = response["result"];
+		structured = response_result["structuredContent"];
+		wait_id = structured.get("wait_id", wait_id);
+	}
+
+	CHECK_FALSE((bool)structured["ok"]);
+	CHECK(structured["kind"] == "wait_timeout");
+	CHECK((bool)((Dictionary)structured["action"])["ok"]);
+	CHECK(structured.has("details"));
+	CHECK(((Dictionary)structured["details"]).has("condition"));
+	CHECK(((Dictionary)structured["details"]).has("action_trace"));
+	CHECK(((Dictionary)structured["details"]).has("modal_stack"));
+
+	EditorAutomationWait::clear_all_cooperative();
+	memdelete(root);
+}
+
+TEST_CASE("[Editor][Automation][MCP] act failure before wait reports action_failed shape") {
+	EditorAutomationWait::clear_all_cooperative();
+
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	Button *first = memnew(Button);
+	first->set_text("Duplicate");
+	first->set_anchors_and_offsets_preset(Control::PRESET_TOP_LEFT);
+	first->set_size(Size2(120, 32));
+	root->add_child(first);
+
+	Button *second = memnew(Button);
+	second->set_text("Duplicate");
+	second->set_anchors_and_offsets_preset(Control::PRESET_TOP_LEFT);
+	second->set_size(Size2(120, 32));
+	root->add_child(second);
+	mcp_flush_frames();
+
+	EditorAutomationMCPDispatcher dispatcher;
+	EditorAutomationMCPDispatcher::Options options;
+	options.snapshot_root = root;
+	dispatcher.set_options(options);
+
+	Dictionary selector;
+	selector["role"] = "button";
+	selector["name"] = "Duplicate";
+
+	Dictionary wait;
+	wait["type"] = "editor_idle";
+
+	Dictionary arguments;
+	arguments["action"] = "click";
+	arguments["selector"] = selector;
+	arguments["wait"] = wait;
+
+	Dictionary params;
+	params["name"] = "act";
+	params["arguments"] = arguments;
+
+	const Dictionary response = dispatcher.handle_message(make_request(36, "tools/call", params));
+	const Dictionary response_result = response["result"];
+	const Dictionary structured = response_result["structuredContent"];
+	CHECK((bool)response_result["isError"]);
+	CHECK(structured["kind"] == "action_failed");
+	CHECK(structured.has("action"));
+	CHECK_FALSE(structured.has("wait"));
+	CHECK_FALSE(EditorAutomationWait::has_pending_cooperative());
+
+	EditorAutomationWait::clear_all_cooperative();
+	memdelete(root);
+}
+
+TEST_CASE("[Editor][Automation][MCP] synchronous wait_for regression via cooperative=false") {
+	EditorAutomationWait::clear_all_cooperative();
+
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	Button *button = memnew(Button);
+	button->set_text("Appear Later");
+	button->set_visible(false);
+	button->set_anchors_and_offsets_preset(Control::PRESET_TOP_LEFT);
+	button->set_size(Size2(120, 32));
+	root->add_child(button);
+	mcp_flush_frames();
+
+	EditorAutomationMCPDispatcher dispatcher;
+	EditorAutomationMCPDispatcher::Options options;
+	options.snapshot_root = root;
+	dispatcher.set_options(options);
+
+	Dictionary wait_args;
+	wait_args["condition"] = "selector_appears";
+	Dictionary selector;
+	selector["role"] = "button";
+	selector["name"] = "Appear Later";
+	selector["visible"] = true;
+	wait_args["selector"] = selector;
+	wait_args["timeout_ms"] = 1000;
+	wait_args["cooperative"] = false;
+
+	button->set_visible(true);
+	mcp_flush_frames();
+
+	Dictionary wait_params;
+	wait_params["name"] = "wait_for";
+	wait_params["arguments"] = wait_args;
+	const Dictionary response = dispatcher.handle_message(make_request(37, "tools/call", wait_params));
+	const Dictionary response_result = response["result"];
+	const Dictionary structured = response_result["structuredContent"];
+	CHECK((bool)structured["ok"]);
+	CHECK_FALSE(structured.has("status"));
+
+	EditorAutomationWait::clear_all_cooperative();
 	memdelete(root);
 }
 

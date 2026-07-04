@@ -33,7 +33,6 @@
 #include "editor/automation/editor_automation_selector.h"
 #include "editor/automation/editor_automation_state.h"
 #include "editor/automation/editor_automation_trace.h"
-#include "editor/editor_node.h"
 #include "editor/file_system/editor_file_system.h"
 #include "core/object/message_queue.h"
 #include "scene/main/scene_tree.h"
@@ -56,6 +55,26 @@ enum class WaitConditionKind {
 	NO_NEW_ERRORS,
 	UNSUPPORTED,
 };
+
+struct PendingWait {
+	String wait_id;
+	Dictionary condition;
+	WaitConditionKind kind = WaitConditionKind::UNSUPPORTED;
+	EditorAutomationWaitContext context;
+	double timeout_sec = 0.0;
+	double elapsed_sec = 0.0;
+	int processed_frames = 0;
+	Array previous_modal_stack;
+	bool has_previous_modal_stack = false;
+	int settled_frames = 0;
+	bool cancelled = false;
+	EditorAutomationActWaitContext act_context;
+	EditorAutomationCooperativeWaitStatus status = EditorAutomationCooperativeWaitStatus::PENDING;
+	EditorAutomationWaitResult result;
+};
+
+HashMap<String, PendingWait> pending_waits;
+uint64_t next_wait_serial = 1;
 
 String _read_string(const Dictionary &p_dict, const char *p_key) {
 	if (!p_dict.has(p_key)) {
@@ -224,7 +243,6 @@ bool _is_import_reload_idle() {
 	if (filesystem == nullptr) {
 		return true;
 	}
-	// Covers active filesystem scans and import/reimport work tracked by EditorFileSystem.
 	return !filesystem->is_scanning() && !filesystem->is_importing();
 }
 
@@ -237,6 +255,131 @@ void _advance_one_frame(double p_delta) {
 	if (MessageQueue::get_singleton() != nullptr) {
 		MessageQueue::get_singleton()->flush();
 	}
+}
+
+EditorAutomationWaitResult _immediate_failure_for_kind(WaitConditionKind p_kind, const Dictionary &p_condition) {
+	if (p_kind == WaitConditionKind::SCRIPT_ANALYSIS_IDLE) {
+		return EditorAutomationWaitResult::failure(
+				"unsupported_condition",
+				"script_analysis_idle is not observable yet. No central Foundry Script analysis idle API is available.");
+	}
+	if (p_kind == WaitConditionKind::UNSUPPORTED) {
+		return EditorAutomationWaitResult::failure(
+				"unsupported_condition",
+				vformat("Unsupported wait condition '%s'.", _read_string(p_condition, "type")));
+	}
+	return EditorAutomationWaitResult();
+}
+
+Dictionary _success_details(const Dictionary &p_condition, double p_elapsed, WaitConditionKind p_kind, const EditorAutomationWaitContext &p_context) {
+	Dictionary details;
+	details["condition"] = p_condition;
+	details["elapsed_sec"] = p_elapsed;
+	if (p_kind == WaitConditionKind::MODAL_STACK_SETTLED || p_kind == WaitConditionKind::MODAL_STACK_CHANGED) {
+		details["modal_stack"] = EditorAutomationState::capture_modal_stack(p_context.snapshot_root);
+	}
+	return details;
+}
+
+Dictionary _timeout_details(const Dictionary &p_condition, double p_elapsed, double p_timeout_sec) {
+	Dictionary timeout_details;
+	timeout_details["condition"] = p_condition;
+	timeout_details["elapsed_sec"] = p_elapsed;
+	timeout_details["timeout_sec"] = p_timeout_sec;
+	return timeout_details;
+}
+
+bool _evaluate_wait_step(PendingWait &p_wait, EditorAutomationWaitResult &r_immediate_failure) {
+	const EditorAutomationSnapshot snapshot = _capture_snapshot(p_wait.context);
+	bool satisfied = false;
+	r_immediate_failure = EditorAutomationWaitResult();
+
+	switch (p_wait.kind) {
+		case WaitConditionKind::NEXT_FRAME:
+			satisfied = p_wait.processed_frames >= 1;
+			break;
+		case WaitConditionKind::EDITOR_IDLE:
+			satisfied = p_wait.processed_frames >= 1 && !EditorAutomationTrace::get_singleton().has_pending_actions();
+			break;
+		case WaitConditionKind::MODAL_STACK_CHANGED: {
+			const Array baseline = p_wait.condition.has("baseline") ? (Array)p_wait.condition.get("baseline", Array()) : Array();
+			const Array current = EditorAutomationState::capture_modal_stack(p_wait.context.snapshot_root);
+			satisfied = !_modal_stacks_equal(baseline, current);
+			break;
+		}
+		case WaitConditionKind::MODAL_STACK_SETTLED: {
+			const Array current = EditorAutomationState::capture_modal_stack(p_wait.context.snapshot_root);
+			if (p_wait.has_previous_modal_stack && _modal_stacks_equal(p_wait.previous_modal_stack, current)) {
+				p_wait.settled_frames++;
+			} else {
+				p_wait.settled_frames = 0;
+			}
+			p_wait.previous_modal_stack = current;
+			p_wait.has_previous_modal_stack = true;
+			satisfied = p_wait.settled_frames >= 1;
+			break;
+		}
+		default:
+			satisfied = EditorAutomationWait::evaluate_condition_once(
+					p_wait.condition, snapshot, p_wait.context, r_immediate_failure,
+					p_wait.processed_frames, p_wait.previous_modal_stack, p_wait.has_previous_modal_stack, p_wait.settled_frames);
+			break;
+	}
+
+	if (!r_immediate_failure.kind.is_empty()) {
+		return false;
+	}
+	return satisfied;
+}
+
+void _poll_pending_wait(PendingWait &p_wait) {
+	if (p_wait.status != EditorAutomationCooperativeWaitStatus::PENDING) {
+		return;
+	}
+	if (p_wait.cancelled) {
+		p_wait.status = EditorAutomationCooperativeWaitStatus::CANCELLED;
+		p_wait.result = EditorAutomationWaitResult::failure("cancelled", "Wait was cancelled.");
+		Dictionary details;
+		details["condition"] = p_wait.condition;
+		details["elapsed_sec"] = p_wait.elapsed_sec;
+		details["wait_id"] = p_wait.wait_id;
+		p_wait.result.details = details;
+		return;
+	}
+
+	EditorAutomationWaitResult immediate_failure;
+	if (_evaluate_wait_step(p_wait, immediate_failure)) {
+		p_wait.status = EditorAutomationCooperativeWaitStatus::COMPLETE;
+		p_wait.result = EditorAutomationWaitResult::success(_success_details(p_wait.condition, p_wait.elapsed_sec, p_wait.kind, p_wait.context));
+		return;
+	}
+	if (!immediate_failure.kind.is_empty()) {
+		p_wait.status = EditorAutomationCooperativeWaitStatus::COMPLETE;
+		p_wait.result = immediate_failure;
+		return;
+	}
+
+	if (p_wait.elapsed_sec > p_wait.timeout_sec) {
+		p_wait.status = EditorAutomationCooperativeWaitStatus::COMPLETE;
+		p_wait.result = EditorAutomationWaitResult::failure(
+				"timeout", "Timed out waiting for condition.", _timeout_details(p_wait.condition, p_wait.elapsed_sec, p_wait.timeout_sec));
+		return;
+	}
+
+	_advance_one_frame(p_wait.context.poll_interval_sec);
+	p_wait.processed_frames++;
+	p_wait.elapsed_sec += p_wait.context.poll_interval_sec;
+}
+
+EditorAutomationCooperativeWaitHandle _handle_from_pending(const PendingWait &p_wait) {
+	EditorAutomationCooperativeWaitHandle handle;
+	handle.wait_id = p_wait.wait_id;
+	handle.status = p_wait.status;
+	handle.result = p_wait.result;
+	handle.condition = p_wait.condition;
+	handle.elapsed_sec = p_wait.elapsed_sec;
+	handle.act_context = p_wait.act_context;
+	return handle;
 }
 
 } // namespace
@@ -276,15 +419,23 @@ bool EditorAutomationWait::evaluate_condition_once(
 		const Dictionary &p_condition,
 		const EditorAutomationSnapshot &p_snapshot,
 		const EditorAutomationWaitContext &p_context,
-		EditorAutomationWaitResult &r_failure) {
-	(void)p_context;
+		EditorAutomationWaitResult &r_failure,
+		int p_processed_frames,
+		const Array &p_previous_modal_stack,
+		bool p_has_previous_modal_stack,
+		int p_settled_frames) {
+	(void)p_processed_frames;
+	(void)p_previous_modal_stack;
+	(void)p_has_previous_modal_stack;
+	(void)p_settled_frames;
 	const WaitConditionKind kind = _parse_condition_kind(p_condition);
 
 	switch (kind) {
 		case WaitConditionKind::NEXT_FRAME:
-			return false;
 		case WaitConditionKind::EDITOR_IDLE:
-			return !EditorAutomationTrace::get_singleton().has_pending_actions();
+		case WaitConditionKind::MODAL_STACK_CHANGED:
+		case WaitConditionKind::MODAL_STACK_SETTLED:
+			return false;
 		case WaitConditionKind::SELECTOR_APPEARS:
 			return _selector_has_matches(p_snapshot, _read_dictionary(p_condition, "selector"));
 		case WaitConditionKind::SELECTOR_DISAPPEARS:
@@ -305,13 +456,6 @@ bool EditorAutomationWait::evaluate_condition_once(
 		}
 		case WaitConditionKind::FOCUS_MATCHES:
 			return _focus_matches_selector(p_snapshot, _read_dictionary(p_condition, "selector"));
-		case WaitConditionKind::MODAL_STACK_CHANGED: {
-			const Array baseline = p_condition.has("baseline") ? (Array)p_condition.get("baseline", Array()) : Array();
-			const Array current = EditorAutomationState::capture_modal_stack(p_context.snapshot_root);
-			return !_modal_stacks_equal(baseline, current);
-		}
-		case WaitConditionKind::MODAL_STACK_SETTLED:
-			return true;
 		case WaitConditionKind::FILESYSTEM_IDLE:
 			return _is_filesystem_idle();
 		case WaitConditionKind::IMPORT_RELOAD_IDLE:
@@ -355,83 +499,122 @@ EditorAutomationWaitResult EditorAutomationWait::wait_for(
 		double p_timeout_sec,
 		const EditorAutomationWaitContext &p_context) {
 	const WaitConditionKind kind = _parse_condition_kind(p_condition);
-	if (kind == WaitConditionKind::UNSUPPORTED) {
-		return EditorAutomationWaitResult::failure(
-				"unsupported_condition",
-				vformat("Unsupported wait condition '%s'.", _read_string(p_condition, "type")));
-	}
-	if (kind == WaitConditionKind::SCRIPT_ANALYSIS_IDLE) {
-		return EditorAutomationWaitResult::failure(
-				"unsupported_condition",
-				"script_analysis_idle is not observable yet. No central Foundry Script analysis idle API is available.");
+	const EditorAutomationWaitResult immediate = _immediate_failure_for_kind(kind, p_condition);
+	if (!immediate.kind.is_empty()) {
+		return immediate;
 	}
 
-	if (kind == WaitConditionKind::NEXT_FRAME) {
-		_advance_one_frame(p_context.poll_interval_sec);
-		Dictionary details;
-		details["condition"] = p_condition;
-		return EditorAutomationWaitResult::success(details);
+	PendingWait wait;
+	wait.condition = p_condition;
+	wait.kind = kind;
+	wait.context = p_context;
+	wait.timeout_sec = p_timeout_sec;
+
+	while (wait.status == EditorAutomationCooperativeWaitStatus::PENDING) {
+		_poll_pending_wait(wait);
 	}
 
-	double elapsed = 0.0;
-	Array previous_modal_stack;
-	bool has_previous_modal_stack = false;
-	int settled_frames = 0;
-	int processed_frames = 0;
+	return wait.result;
+}
 
-	while (elapsed <= p_timeout_sec) {
-		const EditorAutomationSnapshot snapshot = _capture_snapshot(p_context);
-		EditorAutomationWaitResult immediate_failure;
-		bool satisfied = false;
+String EditorAutomationWait::begin_cooperative(
+		const Dictionary &p_condition,
+		double p_timeout_sec,
+		const EditorAutomationWaitContext &p_context,
+		const EditorAutomationActWaitContext &p_act_context) {
+	const WaitConditionKind kind = _parse_condition_kind(p_condition);
+	const EditorAutomationWaitResult immediate = _immediate_failure_for_kind(kind, p_condition);
+	if (!immediate.kind.is_empty()) {
+		PendingWait wait;
+		wait.wait_id = vformat("wait:%d", (int64_t)next_wait_serial++);
+		wait.condition = p_condition;
+		wait.kind = kind;
+		wait.context = p_context;
+		wait.timeout_sec = p_timeout_sec;
+		wait.act_context = p_act_context;
+		wait.status = EditorAutomationCooperativeWaitStatus::COMPLETE;
+		wait.result = immediate;
+		pending_waits.insert(wait.wait_id, wait);
+		return wait.wait_id;
+	}
 
-		switch (kind) {
-			case WaitConditionKind::EDITOR_IDLE:
-				satisfied = processed_frames >= 1 && !EditorAutomationTrace::get_singleton().has_pending_actions();
-				break;
-			case WaitConditionKind::MODAL_STACK_CHANGED: {
-				const Array baseline = p_condition.has("baseline") ? (Array)p_condition.get("baseline", Array()) : Array();
-				const Array current = EditorAutomationState::capture_modal_stack(p_context.snapshot_root);
-				satisfied = !_modal_stacks_equal(baseline, current);
-				break;
-			}
-			case WaitConditionKind::MODAL_STACK_SETTLED: {
-				const Array current = EditorAutomationState::capture_modal_stack(p_context.snapshot_root);
-				if (has_previous_modal_stack && _modal_stacks_equal(previous_modal_stack, current)) {
-					settled_frames++;
-				} else {
-					settled_frames = 0;
-				}
-				previous_modal_stack = current;
-				has_previous_modal_stack = true;
-				satisfied = settled_frames >= 1;
-				break;
-			}
-			default:
-				satisfied = evaluate_condition_once(p_condition, snapshot, p_context, immediate_failure);
-				if (!immediate_failure.kind.is_empty()) {
-					return immediate_failure;
-				}
-				break;
+	PendingWait wait;
+	wait.wait_id = vformat("wait:%d", (int64_t)next_wait_serial++);
+	wait.condition = p_condition;
+	wait.kind = kind;
+	wait.context = p_context;
+	wait.timeout_sec = p_timeout_sec;
+	wait.act_context = p_act_context;
+	pending_waits.insert(wait.wait_id, wait);
+	return wait.wait_id;
+}
+
+bool EditorAutomationWait::poll_cooperative(const String &p_wait_id, EditorAutomationCooperativeWaitHandle &r_handle) {
+	PendingWait *wait = pending_waits.getptr(p_wait_id);
+	if (wait == nullptr) {
+		return false;
+	}
+	if (wait->status == EditorAutomationCooperativeWaitStatus::PENDING) {
+		_poll_pending_wait(*wait);
+	}
+	r_handle = _handle_from_pending(*wait);
+	if (wait->status != EditorAutomationCooperativeWaitStatus::PENDING) {
+		pending_waits.erase(p_wait_id);
+	}
+	return true;
+}
+
+bool EditorAutomationWait::cancel_cooperative(const String &p_wait_id, EditorAutomationCooperativeWaitHandle &r_handle) {
+	PendingWait *wait = pending_waits.getptr(p_wait_id);
+	if (wait == nullptr) {
+		return false;
+	}
+	wait->cancelled = true;
+	_poll_pending_wait(*wait);
+	r_handle = _handle_from_pending(*wait);
+	pending_waits.erase(p_wait_id);
+	return true;
+}
+
+int EditorAutomationWait::poll_all_cooperative(int p_max_steps) {
+	if (p_max_steps <= 0) {
+		return 0;
+	}
+
+	int polled = 0;
+	LocalVector<String> wait_ids;
+	wait_ids.resize(pending_waits.size());
+	int index = 0;
+	for (const KeyValue<String, PendingWait> &entry : pending_waits) {
+		wait_ids[index++] = entry.key;
+	}
+
+	for (const String &wait_id : wait_ids) {
+		PendingWait *wait = pending_waits.getptr(wait_id);
+		if (wait == nullptr || wait->status != EditorAutomationCooperativeWaitStatus::PENDING) {
+			continue;
 		}
-
-		if (satisfied) {
-			Dictionary details;
-			details["condition"] = p_condition;
-			details["elapsed_sec"] = elapsed;
-			if (kind == WaitConditionKind::MODAL_STACK_SETTLED || kind == WaitConditionKind::MODAL_STACK_CHANGED) {
-				details["modal_stack"] = EditorAutomationState::capture_modal_stack(p_context.snapshot_root);
-			}
-			return EditorAutomationWaitResult::success(details);
+		_poll_pending_wait(*wait);
+		polled++;
+		if (wait->status != EditorAutomationCooperativeWaitStatus::PENDING) {
+			pending_waits.erase(wait_id);
 		}
-
-		_advance_one_frame(p_context.poll_interval_sec);
-		processed_frames++;
-		elapsed += p_context.poll_interval_sec;
+		if (polled >= p_max_steps) {
+			break;
+		}
 	}
+	return polled;
+}
 
-	Dictionary timeout_details;
-	timeout_details["condition"] = p_condition;
-	timeout_details["elapsed_sec"] = elapsed;
-	timeout_details["timeout_sec"] = p_timeout_sec;
-	return EditorAutomationWaitResult::failure("timeout", "Timed out waiting for condition.", timeout_details);
+void EditorAutomationWait::clear_all_cooperative() {
+	pending_waits.clear();
+}
+
+bool EditorAutomationWait::has_pending_cooperative() {
+	for (const KeyValue<String, PendingWait> &entry : pending_waits) {
+		if (entry.value.status == EditorAutomationCooperativeWaitStatus::PENDING) {
+			return true;
+		}
+	}
+	return false;
 }

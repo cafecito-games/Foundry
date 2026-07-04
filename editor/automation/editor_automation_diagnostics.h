@@ -57,4 +57,14 @@ public:
 			const EditorAutomationSnapshot &p_snapshot,
 			const EditorAutomationLogMarker &p_log_marker,
 			int p_trace_count = 16);
+
+	static EditorAutomationDiagnostics build_for_wait_failure(
+			const String &p_kind,
+			const String &p_message,
+			const Dictionary &p_condition,
+			const Dictionary &p_action,
+			const Dictionary &p_selector,
+			const EditorAutomationSnapshot &p_snapshot,
+			const EditorAutomationLogMarker &p_log_marker,
+			int p_trace_count = 16);
 };

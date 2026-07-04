@@ -166,3 +166,49 @@ EditorAutomationDiagnostics EditorAutomationDiagnosticsBuilder::build_for_action
 	diagnostics.details = details;
 	return diagnostics;
 }
+
+EditorAutomationDiagnostics EditorAutomationDiagnosticsBuilder::build_for_wait_failure(
+		const String &p_kind,
+		const String &p_message,
+		const Dictionary &p_condition,
+		const Dictionary &p_action,
+		const Dictionary &p_selector,
+		const EditorAutomationSnapshot &p_snapshot,
+		const EditorAutomationLogMarker &p_log_marker,
+		int p_trace_count) {
+	EditorAutomationDiagnostics diagnostics;
+	diagnostics.kind = p_kind;
+	diagnostics.message = p_message;
+
+	Dictionary details;
+	if (!p_condition.is_empty()) {
+		details["condition"] = p_condition;
+	}
+	if (!p_action.is_empty()) {
+		details["action"] = p_action;
+	}
+	if (!p_selector.is_empty()) {
+		details["selector"] = p_selector;
+	}
+
+	const String &focused_id = p_snapshot.get_focused_element_id();
+	if (!focused_id.is_empty()) {
+		const EditorAutomationElement *focused = p_snapshot.find_by_id(focused_id);
+		if (focused != nullptr) {
+			details["focused_element"] = _element_to_summary(*focused);
+		} else {
+			details["focused_element_id"] = focused_id;
+		}
+	}
+
+	details["modal_stack"] = EditorAutomationState::capture_modal_stack();
+	Dictionary marker_dict;
+	marker_dict["message_index"] = p_log_marker.message_index;
+	details["log_marker"] = marker_dict;
+	details["log_entries"] = EditorAutomationLog::read_since(p_log_marker);
+	details["action_trace"] = EditorAutomationTrace::get_singleton().get_recent(p_trace_count);
+	details["ui_subtree"] = element_subtree_for_selector(p_snapshot, p_selector);
+
+	diagnostics.details = details;
+	return diagnostics;
+}
