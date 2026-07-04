@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  editor_automation_wait.h                                              */
+/*  editor_automation_screenshot.h                                         */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -30,81 +30,60 @@
 
 #pragma once
 
-#include "editor/automation/editor_automation_log.h"
 #include "editor/automation/editor_automation_snapshot.h"
 
+#include "core/io/image.h"
 #include "core/variant/variant.h"
 
 class Node;
+class Viewport;
 
-struct EditorAutomationWaitContext {
+struct EditorAutomationScreenshotOptions {
+	bool enabled = false;
+	String format = "png";
+	int max_bytes = 512 * 1024;
+	bool crop_to_target = true;
+	int crop_padding_px = 16;
 	Node *snapshot_root = nullptr;
-	double poll_interval_sec = 1.0 / 60.0;
 };
 
-struct EditorAutomationWaitResult {
-	bool ok = false;
-	String kind;
-	String message;
-	Dictionary details;
-
-	static EditorAutomationWaitResult success(const Dictionary &p_details = Dictionary());
-	static EditorAutomationWaitResult failure(const String &p_kind, const String &p_message, const Dictionary &p_details = Dictionary());
+struct EditorAutomationScreenshotAttachment {
+	String status; // "available", "unavailable", "truncated"
+	String reason;
+	String format;
+	String encoding;
+	String data;
+	String capture_mode; // "full_window", "cropped"
+	Dictionary viewport;
+	Dictionary image;
+	Dictionary crop;
+	Dictionary highlight;
+	int byte_size = 0;
+	int encoded_byte_size = 0;
+	int max_bytes = 0;
 
 	Dictionary to_dictionary() const;
 };
 
-struct EditorAutomationActWaitContext {
-	bool active = false;
-	String action;
-	Dictionary selector;
-	Dictionary action_result;
-	EditorAutomationLogMarker log_marker;
-	bool attach_screenshot_on_failure = false;
-	int max_screenshot_bytes = 0;
-};
-
-enum class EditorAutomationCooperativeWaitStatus {
-	PENDING,
-	COMPLETE,
-	CANCELLED,
-};
-
-struct EditorAutomationCooperativeWaitHandle {
-	String wait_id;
-	EditorAutomationCooperativeWaitStatus status = EditorAutomationCooperativeWaitStatus::PENDING;
-	EditorAutomationWaitResult result;
-	Dictionary condition;
-	double elapsed_sec = 0.0;
-	EditorAutomationActWaitContext act_context;
-};
-
-class EditorAutomationWait {
+class EditorAutomationScreenshot {
 public:
-	static EditorAutomationWaitResult wait_for(
-			const Dictionary &p_condition,
-			double p_timeout_sec = 5.0,
-			const EditorAutomationWaitContext &p_context = EditorAutomationWaitContext());
+	static constexpr int DEFAULT_MAX_BYTES = 512 * 1024;
 
-	static bool evaluate_condition_once(
-			const Dictionary &p_condition,
+	static EditorAutomationScreenshotAttachment capture_for_failure(
 			const EditorAutomationSnapshot &p_snapshot,
-			const EditorAutomationWaitContext &p_context,
-			EditorAutomationWaitResult &r_failure,
-			int p_processed_frames = 0,
-			const Array &p_previous_modal_stack = Array(),
-			bool p_has_previous_modal_stack = false,
-			int p_settled_frames = 0);
+			const Dictionary &p_selector,
+			const EditorAutomationScreenshotOptions &p_options);
 
-	static String begin_cooperative(
-			const Dictionary &p_condition,
-			double p_timeout_sec,
-			const EditorAutomationWaitContext &p_context,
-			const EditorAutomationActWaitContext &p_act_context = EditorAutomationActWaitContext());
+	static EditorAutomationScreenshotAttachment encode_image_attachment(
+			const Ref<Image> &p_image,
+			const EditorAutomationScreenshotOptions &p_options,
+			const String &p_capture_mode,
+			const Dictionary &p_viewport,
+			const Dictionary &p_crop,
+			const Dictionary &p_highlight);
 
-	static bool poll_cooperative(const String &p_wait_id, EditorAutomationCooperativeWaitHandle &r_handle);
-	static bool cancel_cooperative(const String &p_wait_id, EditorAutomationCooperativeWaitHandle &r_handle);
-	static int poll_all_cooperative(int p_max_steps = 1);
-	static void clear_all_cooperative();
-	static bool has_pending_cooperative();
+private:
+	static Viewport *_resolve_capture_viewport(Node *p_snapshot_root);
+	static Rect2i _resolve_highlight_rect(const EditorAutomationSnapshot &p_snapshot, const Dictionary &p_selector);
+	static Dictionary _rect_to_dictionary(const Rect2i &p_rect);
 };
