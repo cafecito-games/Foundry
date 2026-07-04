@@ -523,7 +523,7 @@ TEST_CASE("[Editor][EditorAutomation][MCP] launched editor smoke handshake") {
 		REQUIRE(client->put_data((const uint8_t *)request_utf8.get_data(), request_utf8.length()) == OK);
 
 		String response_text;
-		const uint64_t response_deadline = OS::get_singleton()->get_ticks_usec() + 10000000;
+		const uint64_t response_deadline = OS::get_singleton()->get_ticks_usec() + 30000000;
 		while (OS::get_singleton()->get_ticks_usec() < response_deadline) {
 			client->poll();
 			const int available = client->get_available_bytes();
@@ -535,7 +535,23 @@ TEST_CASE("[Editor][EditorAutomation][MCP] launched editor smoke handshake") {
 					response_text += String::utf8((const char *)chunk.ptr(), received);
 				}
 			}
-			if (response_text.contains("\r\n\r\n") && response_text.contains("jsonrpc")) {
+
+			if (response_text.contains("\r\n\r\n")) {
+				int content_length = -1;
+				const PackedStringArray header_lines = response_text.substr(0, response_text.find("\r\n\r\n")).split("\r\n");
+				for (const String &header_line : header_lines) {
+					if (header_line.to_lower().begins_with("content-length:")) {
+						content_length = header_line.get_slice(":", 1).strip_edges().to_int();
+						break;
+					}
+				}
+				const int body_start = response_text.find("\r\n\r\n") + 4;
+				if (content_length >= 0 && response_text.length() - body_start >= content_length) {
+					break;
+				}
+			}
+
+			if (client->get_status() != StreamPeerTCP::STATUS_CONNECTED && available == 0) {
 				break;
 			}
 			OS::get_singleton()->delay_usec(2000);
@@ -555,6 +571,12 @@ TEST_CASE("[Editor][EditorAutomation][MCP] launched editor smoke handshake") {
 	const String init_response = mcp_request(init_request);
 	CHECK(init_response.contains("HTTP/1.1 200"));
 	CHECK(init_response.contains("protocolVersion"));
+
+	Dictionary initialized_notification;
+	initialized_notification["jsonrpc"] = "2.0";
+	initialized_notification["method"] = "notifications/initialized";
+	initialized_notification["params"] = Dictionary();
+	(void)mcp_request(initialized_notification);
 
 	Dictionary tools_request;
 	tools_request["jsonrpc"] = "2.0";

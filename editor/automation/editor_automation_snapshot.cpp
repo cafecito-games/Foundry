@@ -277,19 +277,19 @@ class EditorAutomationSnapshotBuilder {
 		}
 
 		if (p_kind == "tree_item") {
-			for (const String &action : { "select", "activate", "expand", "collapse" }) {
+			for (const char *action : { "select", "activate", "expand", "collapse" }) {
 				if (!r_actions.has(action)) {
 					r_actions.push_back(action);
 				}
 			}
 		} else if (p_kind == "list_item") {
-			for (const String &action : { "select", "activate" }) {
+			for (const char *action : { "select", "activate" }) {
 				if (!r_actions.has(action)) {
 					r_actions.push_back(action);
 				}
 			}
 		} else if (p_kind == "menu_item") {
-			for (const String &action : { "select", "activate", "choose_menu_item" }) {
+			for (const char *action : { "select", "activate", "choose_menu_item" }) {
 				if (!r_actions.has(action)) {
 					r_actions.push_back(action);
 				}
