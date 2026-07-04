@@ -59,6 +59,9 @@
 
 namespace TestEditorAutomationWorkflow {
 
+static const uint64_t WORKFLOW_SUBPROCESS_TIMEOUT_MSEC = 30000;
+static const uint64_t WORKFLOW_BOOT_TIMEOUT_MSEC = 30000;
+
 static Dictionary make_request(const Variant &p_id, const String &p_method, const Dictionary &p_params = Dictionary()) {
 	Dictionary request;
 	request["jsonrpc"] = "2.0";
@@ -237,55 +240,78 @@ static bool workflow_has_display() {
 	return OS::get_singleton()->has_environment("DISPLAY") && !OS::get_singleton()->get_environment("DISPLAY").is_empty();
 }
 
-static String workflow_run_subprocess(const List<String> &p_arguments, int &r_exit_code) {
-	Vector<uint8_t> stdout_bytes;
-	Vector<uint8_t> stderr_bytes;
-
-	Dictionary environment;
-	if (workflow_has_display()) {
-		environment["DISPLAY"] = OS::get_singleton()->get_environment("DISPLAY");
+static String workflow_shell_quote(const String &p_arg) {
+	if (p_arg.is_empty()) {
+		return "''";
 	}
+	if (p_arg.find_char(' ') < 0 && p_arg.find_char('\'') < 0 && p_arg.find_char('"') < 0 && p_arg.find_char('\t') < 0) {
+		return p_arg;
+	}
+	String quoted = "'";
+	for (int i = 0; i < p_arg.length(); i++) {
+		const char32_t c = p_arg[i];
+		if (c == '\'') {
+			quoted += "'\\''";
+		} else {
+			quoted += String::chr(c);
+		}
+	}
+	quoted += "'";
+	return quoted;
+}
 
-	Dictionary pipe_info = OS::get_singleton()->execute_with_pipe(
-			OS::get_singleton()->get_executable_path(), p_arguments, false, String(), environment, false);
-	if (pipe_info.is_empty()) {
+static String workflow_find_script_command() {
+	const char *candidates[] = { "/usr/bin/script", "/bin/script" };
+	for (const char *path : candidates) {
+		if (FileAccess::exists(path)) {
+			return path;
+		}
+	}
+	return String();
+}
+
+static uint64_t workflow_pump_pipe(const Ref<FileAccess> &p_pipe, Vector<uint8_t> &r_bytes) {
+	if (p_pipe.is_null() || !p_pipe->is_open()) {
+		return 0;
+	}
+	const uint64_t available = p_pipe->get_length();
+	if (available == 0) {
+		return 0;
+	}
+	Vector<uint8_t> chunk;
+	chunk.resize(available);
+	const uint64_t read = p_pipe->get_buffer(chunk.ptrw(), available);
+	if (read > 0) {
+		const int offset = r_bytes.size();
+		r_bytes.resize(offset + read);
+		memcpy(r_bytes.ptrw() + offset, chunk.ptr(), read);
+	}
+	return read;
+}
+
+static bool workflow_collect_subprocess_output(const Dictionary &p_pipe_info, Vector<uint8_t> &r_stdout_bytes, Vector<uint8_t> &r_stderr_bytes, int &r_exit_code, uint64_t p_timeout_msec) {
+	if (p_pipe_info.is_empty()) {
 		r_exit_code = -1;
-		return String();
+		return false;
 	}
 
-	Ref<FileAccess> stdout_pipe = pipe_info["stdio"];
-	Ref<FileAccess> stderr_pipe = pipe_info["stderr"];
-	const OS::ProcessID pid = pipe_info["pid"];
+	Ref<FileAccess> stdout_pipe = p_pipe_info["stdio"];
+	Ref<FileAccess> stderr_pipe = p_pipe_info["stderr"];
+	const OS::ProcessID pid = p_pipe_info["pid"];
 
-	auto pump_pipe = [](const Ref<FileAccess> &p_pipe, Vector<uint8_t> &r_bytes) -> uint64_t {
-		if (p_pipe.is_null() || !p_pipe->is_open()) {
-			return 0;
-		}
-		const uint64_t available = p_pipe->get_length();
-		if (available == 0) {
-			return 0;
-		}
-		Vector<uint8_t> chunk;
-		chunk.resize(available);
-		const uint64_t read = p_pipe->get_buffer(chunk.ptrw(), available);
-		if (read > 0) {
-			const int offset = r_bytes.size();
-			r_bytes.resize(offset + read);
-			memcpy(r_bytes.ptrw() + offset, chunk.ptr(), read);
-		}
-		return read;
-	};
-
-	const uint64_t deadline = OS::get_singleton()->get_ticks_msec() + 180000;
+	const uint64_t deadline = OS::get_singleton()->get_ticks_msec() + p_timeout_msec;
 	while (OS::get_singleton()->get_ticks_msec() < deadline) {
-		pump_pipe(stdout_pipe, stdout_bytes);
-		pump_pipe(stderr_pipe, stderr_bytes);
-		if (!OS::get_singleton()->is_process_running(pid)) {
-			pump_pipe(stdout_pipe, stdout_bytes);
-			pump_pipe(stderr_pipe, stderr_bytes);
-			break;
+		const uint64_t read_out = workflow_pump_pipe(stdout_pipe, r_stdout_bytes);
+		const uint64_t read_err = workflow_pump_pipe(stderr_pipe, r_stderr_bytes);
+		if (read_out == 0 && read_err == 0) {
+			if (!OS::get_singleton()->is_process_running(pid)) {
+				workflow_pump_pipe(stdout_pipe, r_stdout_bytes);
+				workflow_pump_pipe(stderr_pipe, r_stderr_bytes);
+				break;
+			}
+			OS::get_singleton()->delay_usec(20000);
+			continue;
 		}
-		OS::get_singleton()->delay_usec(20000);
 	}
 
 	if (stdout_pipe.is_valid()) {
@@ -296,6 +322,51 @@ static String workflow_run_subprocess(const List<String> &p_arguments, int &r_ex
 	}
 
 	r_exit_code = OS::get_singleton()->get_process_exit_code(pid);
+	return true;
+}
+
+static String workflow_run_subprocess(const List<String> &p_arguments, int &r_exit_code, bool p_use_gui_pty = false) {
+	Vector<uint8_t> stdout_bytes;
+	Vector<uint8_t> stderr_bytes;
+
+	Dictionary environment;
+	if (workflow_has_display()) {
+		environment["DISPLAY"] = OS::get_singleton()->get_environment("DISPLAY");
+	}
+
+	Dictionary pipe_info;
+#if defined(UNIX_ENABLED)
+	// Full GUI workflow subprocesses need a controlling TTY for clean shutdown.
+	// Plain pipes make stdout non-TTY and the editor can SIGSEGV during teardown.
+	if (p_use_gui_pty) {
+		const String script_path = workflow_find_script_command();
+		if (!script_path.is_empty()) {
+			String command = workflow_shell_quote(OS::get_singleton()->get_executable_path());
+			for (const String &arg : p_arguments) {
+				command += " " + workflow_shell_quote(arg);
+			}
+
+			List<String> script_arguments;
+			script_arguments.push_back("-q");
+			script_arguments.push_back("-c");
+			script_arguments.push_back(command);
+			script_arguments.push_back("/dev/null");
+
+			pipe_info = OS::get_singleton()->execute_with_pipe(
+					script_path, script_arguments, false, String(), environment, false);
+		}
+	}
+#endif
+	if (pipe_info.is_empty()) {
+		pipe_info = OS::get_singleton()->execute_with_pipe(
+				OS::get_singleton()->get_executable_path(), p_arguments, false, String(), environment, false);
+	}
+
+	if (!workflow_collect_subprocess_output(pipe_info, stdout_bytes, stderr_bytes, r_exit_code, WORKFLOW_SUBPROCESS_TIMEOUT_MSEC)) {
+		r_exit_code = -1;
+		return String();
+	}
+
 	String output = String::utf8((const char *)stdout_bytes.ptr(), stdout_bytes.size());
 	output += String::utf8((const char *)stderr_bytes.ptr(), stderr_bytes.size());
 	return output;
@@ -404,7 +475,7 @@ TEST_CASE("[Editor][EditorAutomation] MVP acceptance workflow subprocess") {
 	arguments.push_back("--automation-run-workflow=mvp");
 
 	int exit_code = -1;
-	const String output = workflow_run_subprocess(arguments, exit_code);
+	const String output = workflow_run_subprocess(arguments, exit_code, true);
 	INFO("Subprocess output:\n", output);
 	CHECK_MESSAGE(output.contains("FOUNDRY_AUTOMATION_WORKFLOW"), "Workflow result line was not printed.");
 
@@ -527,7 +598,7 @@ TEST_CASE("[Editor][EditorAutomation] rapid relaunch reuses released automation 
 	Ref<FileAccess> first_stdout = first_pipe["stdio"];
 	const OS::ProcessID first_pid = first_pipe["pid"];
 	String first_output;
-	REQUIRE(workflow_wait_for_output_line(first_stdout, "FOUNDRY_AUTOMATION", first_output, first_pid, 120000));
+	REQUIRE(workflow_wait_for_output_line(first_stdout, "FOUNDRY_AUTOMATION", first_output, first_pid, WORKFLOW_BOOT_TIMEOUT_MSEC));
 
 	if (first_stdout.is_valid()) {
 		first_stdout->close();
@@ -553,7 +624,7 @@ TEST_CASE("[Editor][EditorAutomation] rapid relaunch reuses released automation 
 	Ref<FileAccess> second_stdout = second_pipe["stdio"];
 	const OS::ProcessID second_pid = second_pipe["pid"];
 	String second_output;
-	REQUIRE(workflow_wait_for_output_line(second_stdout, "FOUNDRY_AUTOMATION", second_output, second_pid, 120000));
+	REQUIRE(workflow_wait_for_output_line(second_stdout, "FOUNDRY_AUTOMATION", second_output, second_pid, WORKFLOW_BOOT_TIMEOUT_MSEC));
 	INFO("Second launch output:\n", second_output);
 	CHECK_FALSE(second_output.contains("FOUNDRY_AUTOMATION_ERROR"));
 
@@ -600,7 +671,7 @@ TEST_CASE("[Editor][EditorAutomation][MCP] launched editor smoke handshake") {
 	const OS::ProcessID pid = pipe_info["pid"];
 
 	String boot_output;
-	const uint64_t boot_deadline = OS::get_singleton()->get_ticks_msec() + 120000;
+	const uint64_t boot_deadline = OS::get_singleton()->get_ticks_msec() + WORKFLOW_BOOT_TIMEOUT_MSEC;
 	while (OS::get_singleton()->get_ticks_msec() < boot_deadline) {
 		if (stdout_pipe.is_valid() && stdout_pipe->is_open()) {
 			const uint64_t available = stdout_pipe->get_length();

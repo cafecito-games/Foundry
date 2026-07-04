@@ -30,8 +30,10 @@
 
 #include "editor_scene_context.h"
 
+#include "editor/editor_node.h"
 #include "scene/3d/node_3d.h"
 #include "scene/main/viewport.h"
+#include "scene/resources/3d/world_3d.h"
 
 void EditorSceneContext::_recompute_3d_content() {
 	has_3d_content = false;
@@ -117,7 +119,11 @@ void EditorSceneContext::deactivate() {
 	}
 
 	if (viewport->get_parent()) {
-		viewport->get_parent()->remove_child(viewport);
+		Node *parent = viewport->get_parent();
+		const bool skip_detach = EditorNode::get_singleton() && EditorNode::get_singleton()->is_exiting();
+		if (!skip_detach && !parent->is_queued_for_deletion()) {
+			parent->remove_child(viewport);
+		}
 	}
 	selection->clear();
 	active = false;
@@ -187,6 +193,8 @@ void EditorSceneContext::set_selected_node_ids(const Vector<ObjectID> &p_ids) {
 
 EditorSceneContext::EditorSceneContext() {
 	viewport = memnew(SubViewport);
+	world_3d.instantiate();
+	viewport->set_world_3d(world_3d);
 	viewport->set_auto_translate_mode(Node::AUTO_TRANSLATE_MODE_ALWAYS);
 	viewport->set_translation_domain(StringName());
 	viewport->set_embedding_subwindows(true);
@@ -200,7 +208,10 @@ EditorSceneContext::EditorSceneContext() {
 EditorSceneContext::~EditorSceneContext() {
 	if (viewport) {
 		if (viewport->get_parent()) {
-			viewport->get_parent()->remove_child(viewport);
+			Node *parent = viewport->get_parent();
+			if (!parent->is_queued_for_deletion()) {
+				parent->remove_child(viewport);
+			}
 		}
 		// The scene root (if any) is a child of the viewport and is freed
 		// with it.

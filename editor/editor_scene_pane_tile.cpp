@@ -37,12 +37,16 @@
 #include "editor/editor_string_names.h"
 #include "editor/editor_tile_drop_overlay.h"
 #include "editor/scene/editor_scene_tabs.h"
+#include "editor/scene/canvas_item_editor_plugin.h"
+#include "editor/scene/3d/node_3d_editor_plugin.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/gui/center_container.h"
 #include "scene/gui/label.h"
 #include "scene/gui/panel_container.h"
 #include "scene/gui/texture_rect.h"
 #include "scene/main/viewport.h"
+#include "scene/3d/camera_3d.h"
+#include "scene/resources/3d/world_3d.h"
 
 void ScenePaneTile::_notification(int p_what) {
 	switch (p_what) {
@@ -118,19 +122,55 @@ void ScenePaneTile::set_focused_visual(bool p_focused) {
 	}
 }
 
-void ScenePaneTile::set_preview_mode(bool p_live_2d, bool p_placeholder_3d, const String &p_scene_name, const Ref<Texture2D> &p_icon) {
+void ScenePaneTile::set_preview_mode(TilePreviewMode p_mode, const String &p_scene_name, const Ref<Texture2D> &p_icon) {
 	if (preview_container) {
-		preview_container->set_visible(p_live_2d);
+		preview_container->set_visible(p_mode == TilePreviewMode::LIVE_2D);
+	}
+	if (preview_3d_container) {
+		preview_3d_container->set_visible(p_mode == TilePreviewMode::LIVE_3D && !spatial_view);
+	}
+	if (spatial_view) {
+		spatial_view->set_visible(p_mode == TilePreviewMode::LIVE_3D);
+	}
+	if (canvas_view && canvas_view->get_viewport_scrollable()) {
+		canvas_view->get_viewport_scrollable()->set_visible(p_mode == TilePreviewMode::LIVE_2D);
+	}
+	if (context_viewport_host) {
+		context_viewport_host->set_visible(p_mode == TilePreviewMode::LIVE_3D);
 	}
 	if (preview_placeholder) {
-		preview_placeholder->set_visible(p_placeholder_3d);
+		preview_placeholder->set_visible(p_mode == TilePreviewMode::PLACEHOLDER_3D);
 	}
-	if (p_placeholder_3d && preview_placeholder_label) {
+	if (p_mode == TilePreviewMode::PLACEHOLDER_3D && preview_placeholder_label) {
 		preview_placeholder_label->set_text(vformat(TTR("%s\nFocus to edit 3D scene"), p_scene_name));
 	}
 	if (preview_placeholder_icon) {
 		preview_placeholder_icon->set_texture(p_icon);
 	}
+}
+
+void ScenePaneTile::bind_3d_preview_world(const Ref<World3D> &p_world) {
+	if (preview_3d_viewport) {
+		preview_3d_viewport->set_world_3d(p_world);
+	}
+}
+
+void ScenePaneTile::apply_3d_preview_camera_state(const Dictionary &p_viewport_state) {
+	if (!preview_3d_camera) {
+		return;
+	}
+
+	const Vector3 pos = p_viewport_state.get("position", Vector3());
+	const real_t x_rot = p_viewport_state.get("x_rotation", 0.35);
+	const real_t y_rot = p_viewport_state.get("y_rotation", 0.5);
+	const real_t distance = p_viewport_state.get("distance", 4.0);
+
+	Transform3D camera_transform;
+	camera_transform.translate_local(pos);
+	camera_transform.basis.rotate(Vector3(1, 0, 0), -x_rot);
+	camera_transform.basis.rotate(Vector3(0, 1, 0), -y_rot);
+	camera_transform.translate_local(0, 0, distance);
+	preview_3d_camera->set_transform(camera_transform);
 }
 
 void ScenePaneTile::_fit_content_child(Control *p_child) {
@@ -149,7 +189,7 @@ void ScenePaneTile::_fit_content_children() {
 	}
 }
 
-void ScenePaneTile::setup(int p_tile_id, EditorSelection *p_editor_selection, EditorData &p_editor_data) {
+void ScenePaneTile::setup(int p_tile_id, EditorSelection *p_editor_selection, EditorData &p_editor_data, bool p_register_open_commands) {
 	tile_id = p_tile_id;
 	set_process_input(true);
 	set_v_size_flags(Control::SIZE_EXPAND_FILL);
@@ -164,7 +204,7 @@ void ScenePaneTile::setup(int p_tile_id, EditorSelection *p_editor_selection, Ed
 	body->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	add_child(body);
 
-	scene_tree_dock = memnew(SceneTreeDock(p_editor_selection, p_editor_data, false));
+	scene_tree_dock = memnew(SceneTreeDock(p_editor_selection, p_editor_data, p_register_open_commands));
 	scene_tree_dock->set_custom_minimum_size(Size2(220, 0) * EDSCALE);
 	body->add_child(scene_tree_dock);
 
@@ -181,7 +221,7 @@ void ScenePaneTile::setup(int p_tile_id, EditorSelection *p_editor_selection, Ed
 	content_host->set_mouse_filter(Control::MOUSE_FILTER_PASS);
 	focus_frame->add_child(content_host);
 
-	inspector_dock = memnew(InspectorDock(p_editor_data, false));
+	inspector_dock = memnew(InspectorDock(p_editor_data, p_register_open_commands));
 	inspector_dock->set_custom_minimum_size(Size2(220, 0) * EDSCALE);
 	body->add_child(inspector_dock);
 
@@ -189,6 +229,28 @@ void ScenePaneTile::setup(int p_tile_id, EditorSelection *p_editor_selection, Ed
 	preview_container->set_stretch(true);
 	preview_container->hide();
 	content_host->add_child(preview_container);
+
+	context_viewport_host = memnew(SubViewportContainer);
+	context_viewport_host->set_stretch(true);
+	context_viewport_host->hide();
+	context_viewport_host->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	content_host->add_child(context_viewport_host);
+
+	preview_3d_container = memnew(SubViewportContainer);
+	preview_3d_container->set_stretch(true);
+	preview_3d_container->hide();
+	content_host->add_child(preview_3d_container);
+
+	preview_3d_viewport = memnew(SubViewport);
+	preview_3d_viewport->set_disable_input(true);
+	preview_3d_viewport->set_disable_3d(false);
+	preview_3d_container->add_child(preview_3d_viewport);
+
+	preview_3d_camera = memnew(Camera3D);
+	preview_3d_camera->set_disable_gizmos(true);
+	preview_3d_viewport->add_child(preview_3d_camera);
+	preview_3d_camera->make_current();
+	apply_3d_preview_camera_state(Dictionary());
 
 	preview_placeholder = memnew(PanelContainer);
 	preview_placeholder->hide();

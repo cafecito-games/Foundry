@@ -479,6 +479,7 @@ private:
 	bool convert_old = false;
 	bool immediate_dialog_confirmed = false;
 	bool restoring_scenes = false;
+	bool tile_display_attachments_update_pending = false;
 	bool settings_overrides_changed = false;
 	bool unsaved_cache = false;
 
@@ -629,6 +630,8 @@ private:
 	void _activate_scene_context(EditorSceneContext *p_context);
 	void _attach_active_scene_context();
 	void _update_tile_display_attachments();
+	void _update_tile_display_attachments_deferred();
+	void _flush_tile_display_attachments();
 	bool _is_context_tile_current(EditorSceneContext *p_context) const;
 	void _sync_scene_viewport_2d_state_with_main_screen();
 	void _bind_tile_docks(int p_tile_id);
@@ -1077,6 +1080,8 @@ public:
 	void reload_instances_with_path_in_edited_scenes();
 
 	bool is_exiting() const { return exiting; }
+	void quit_editor(int p_exit_code);
+	void quit_for_automation_workflow(int p_exit_code);
 
 	Dictionary drag_resource(const Ref<Resource> &p_res, Control *p_from);
 	Dictionary drag_files_and_dirs(const Vector<String> &p_paths, Control *p_from);

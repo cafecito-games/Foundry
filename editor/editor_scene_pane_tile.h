@@ -34,7 +34,12 @@
 #include "scene/gui/split_container.h"
 #include "scene/gui/subviewport_container.h"
 
+class World3D;
+
+class Camera3D;
+class CanvasItemEditorView;
 class Control;
+class Node3DEditorViewport;
 class EditorData;
 class EditorSceneTabs;
 class EditorSelection;
@@ -44,6 +49,13 @@ class Label;
 class PanelContainer;
 class SceneTreeDock;
 class TextureRect;
+
+enum class TilePreviewMode {
+	FOCUSED_LIVE,
+	LIVE_2D,
+	LIVE_3D,
+	PLACEHOLDER_3D,
+};
 
 // A self-contained editing tile: a scene tab strip over a row of
 // [scene tree dock | content host | inspector dock]. The content host shows the
@@ -61,6 +73,12 @@ class ScenePaneTile : public VBoxContainer {
 	Control *content_host = nullptr;
 	InspectorDock *inspector_dock = nullptr;
 	SubViewportContainer *preview_container = nullptr;
+	SubViewportContainer *preview_3d_container = nullptr;
+	SubViewport *preview_3d_viewport = nullptr;
+	Camera3D *preview_3d_camera = nullptr;
+	SubViewportContainer *context_viewport_host = nullptr;
+	CanvasItemEditorView *canvas_view = nullptr;
+	Node3DEditorViewport *spatial_view = nullptr;
 	PanelContainer *preview_placeholder = nullptr;
 	Label *preview_placeholder_label = nullptr;
 	TextureRect *preview_placeholder_icon = nullptr;
@@ -81,11 +99,21 @@ public:
 	InspectorDock *get_inspector_dock() const { return inspector_dock; }
 	Control *get_content_host() const { return content_host; }
 	SubViewportContainer *get_preview_container() const { return preview_container; }
+	SubViewportContainer *get_preview_3d_container() const { return preview_3d_container; }
+	SubViewportContainer *get_context_viewport_host() const { return context_viewport_host; }
+	CanvasItemEditorView *get_canvas_view() const { return canvas_view; }
+	Node3DEditorViewport *get_spatial_view() const { return spatial_view; }
+	Camera3D *get_preview_3d_camera() const { return preview_3d_camera; }
+
+	void set_canvas_view(CanvasItemEditorView *p_view) { canvas_view = p_view; }
+	void set_spatial_view(Node3DEditorViewport *p_view) { spatial_view = p_view; }
 
 	void set_focused_visual(bool p_focused);
-	void set_preview_mode(bool p_live_2d, bool p_placeholder_3d, const String &p_scene_name, const Ref<Texture2D> &p_icon);
+	void set_preview_mode(TilePreviewMode p_mode, const String &p_scene_name = String(), const Ref<Texture2D> &p_icon = Ref<Texture2D>());
+	void bind_3d_preview_world(const Ref<World3D> &p_world);
+	void apply_3d_preview_camera_state(const Dictionary &p_viewport_state);
 
-	void setup(int p_tile_id, EditorSelection *p_editor_selection, EditorData &p_editor_data);
+	void setup(int p_tile_id, EditorSelection *p_editor_selection, EditorData &p_editor_data, bool p_register_open_commands = false);
 
 	ScenePaneTile();
 };

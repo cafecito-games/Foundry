@@ -237,6 +237,8 @@ class GridMapEditor : public VBoxContainer {
 	void _clear_clipboard_data();
 	void _set_clipboard_data();
 	void _update_paste_indicator();
+	RID _get_overlay_scenario() const;
+	void _rebind_overlay_scenarios();
 	void _do_paste();
 	void _cancel_pending_move();
 	void _show_viewports_transform_gizmo(bool p_value);

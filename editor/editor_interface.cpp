@@ -36,6 +36,7 @@
 #include "editor/docks/inspector_dock.h"
 #include "editor/editor_main_screen.h"
 #include "editor/editor_node.h"
+#include "editor/editor_scene_context.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/file_system/editor_paths.h"
 #include "editor/gui/create_dialog.h"
@@ -413,11 +414,18 @@ ScriptEditor *EditorInterface::get_script_editor() const {
 }
 
 SubViewport *EditorInterface::get_editor_viewport_2d() const {
+	EditorSceneContext *context = EditorNode::get_singleton()->get_active_scene_context();
+	if (context) {
+		return context->get_viewport();
+	}
 	return EditorNode::get_singleton()->get_scene_root();
 }
 
 SubViewport *EditorInterface::get_editor_viewport_3d(int p_idx) const {
 	ERR_FAIL_INDEX_V(p_idx, static_cast<int>(Node3DEditor::VIEWPORTS_COUNT), nullptr);
+	if (!Node3DEditor::get_singleton()->is_visible()) {
+		return nullptr;
+	}
 	return Node3DEditor::get_singleton()->get_editor_viewport(p_idx)->get_viewport_node();
 }
 

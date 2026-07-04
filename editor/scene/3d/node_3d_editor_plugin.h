@@ -38,6 +38,8 @@
 #include "scene/gui/button.h"
 #include "scene/gui/spin_box.h"
 #include "scene/resources/gradient.h"
+
+class EditorSceneContext;
 #include "scene/resources/immediate_mesh.h"
 
 class AcceptDialog;
@@ -656,6 +658,7 @@ public:
 
 class Node3DEditor : public VBoxContainer {
 	FOUNDRY_CLASS(Node3DEditor, VBoxContainer);
+	friend class Node3DEditorViewport;
 
 public:
 	static const unsigned int VIEWPORTS_COUNT = 4;
@@ -725,6 +728,16 @@ private:
 	Ref<Node3DGizmo> current_hover_gizmo;
 	int current_hover_gizmo_handle;
 	bool current_hover_gizmo_handle_secondary;
+
+	Vector<Node3DEditorViewport *> secondary_viewports;
+
+	struct WorldEditorFurniture {
+		RID origin_instance;
+		RID grid_instance[3];
+	};
+	HashMap<uint64_t, WorldEditorFurniture> world_furniture;
+
+	void _ensure_world_furniture(const Ref<World3D> &p_world);
 
 	DynamicBVH gizmo_bvh;
 
@@ -877,6 +890,8 @@ private:
 
 	void _selection_changed();
 	void _active_scene_context_changed();
+	void _rebind_editor_world_furniture();
+	Ref<World3D> _get_edited_world_3d() const;
 	void _refresh_menu_icons();
 
 	bool do_snap_selected_nodes_to_floor = false;
@@ -1064,6 +1079,8 @@ public:
 	}
 	Node3DEditorViewport *get_last_used_viewport();
 
+	Node3DEditorViewport *create_secondary_viewport(EditorSceneContext *p_context, Control *p_parent);
+
 	void set_freelook_viewport(Node3DEditorViewport *p_viewport) { freelook_viewport = p_viewport; }
 	Node3DEditorViewport *get_freelook_viewport() const { return freelook_viewport; }
 
@@ -1073,8 +1090,8 @@ public:
 	DynamicBVH::ID insert_gizmo_bvh_node(Node3D *p_node, const AABB &p_aabb);
 	void update_gizmo_bvh_node(DynamicBVH::ID p_id, const AABB &p_aabb);
 	void remove_gizmo_bvh_node(DynamicBVH::ID p_id);
-	Vector<Node3D *> gizmo_bvh_ray_query(const Vector3 &p_ray_start, const Vector3 &p_ray_end);
-	Vector<Node3D *> gizmo_bvh_frustum_query(const Vector<Plane> &p_frustum);
+	Vector<Node3D *> gizmo_bvh_ray_query(const Vector3 &p_ray_start, const Vector3 &p_ray_end, const Ref<World3D> &p_world_filter = Ref<World3D>());
+	Vector<Node3D *> gizmo_bvh_frustum_query(const Vector<Plane> &p_frustum, const Ref<World3D> &p_world_filter = Ref<World3D>());
 
 	void edit(Node3D *p_spatial);
 	void clear();

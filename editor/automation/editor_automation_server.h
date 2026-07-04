@@ -64,6 +64,8 @@ private:
 	bool start_attempted = false;
 	bool workflow_run_attempted = false;
 	bool workflow_run_completed = false;
+	int workflow_quit_frames_remaining = 0;
+	int workflow_quit_exit_code = 0;
 
 	EditorAutomationMCPServer *mcp_server = nullptr;
 #if defined(DEV_ENABLED)

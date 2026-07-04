@@ -42,6 +42,7 @@
 #include "editor/docks/scene_tree_dock.h"
 #include "editor/editor_main_screen.h"
 #include "editor/editor_node.h"
+#include "editor/editor_scene_context.h"
 #include "editor/editor_string_names.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/gui/editor_spin_slider.h"
@@ -869,7 +870,7 @@ ObjectID Node3DEditorViewport::_select_ray(const Point2 &p_pos) const {
 	Node *item = nullptr;
 	float closest_dist = 1e20;
 
-	Vector<Node3D *> nodes_with_gizmos = Node3DEditor::get_singleton()->gizmo_bvh_ray_query(pos, pos + ray * camera->get_far());
+	Vector<Node3D *> nodes_with_gizmos = Node3DEditor::get_singleton()->gizmo_bvh_ray_query(pos, pos + ray * camera->get_far(), viewport->get_world_3d());
 
 	for (Node3D *spat : nodes_with_gizmos) {
 		if (!spat || _is_node_locked(spat)) {
@@ -924,7 +925,7 @@ void Node3DEditorViewport::_find_items_at_pos(const Point2 &p_pos, Vector<_RayRe
 	Vector3 ray = get_ray(p_pos);
 	Vector3 pos = get_ray_pos(p_pos);
 
-	Vector<Node3D *> nodes_with_gizmos = Node3DEditor::get_singleton()->gizmo_bvh_ray_query(pos, pos + ray * camera->get_far());
+	Vector<Node3D *> nodes_with_gizmos = Node3DEditor::get_singleton()->gizmo_bvh_ray_query(pos, pos + ray * camera->get_far(), viewport->get_world_3d());
 
 	HashSet<Node3D *> found_nodes;
 
@@ -1106,7 +1107,7 @@ void Node3DEditorViewport::_select_region() {
 		_clear_selected();
 	}
 
-	Vector<Node3D *> nodes_with_gizmos = Node3DEditor::get_singleton()->gizmo_bvh_frustum_query(frustum);
+	Vector<Node3D *> nodes_with_gizmos = Node3DEditor::get_singleton()->gizmo_bvh_frustum_query(frustum, viewport->get_world_3d());
 	HashSet<Node3D *> found_nodes;
 	Vector<Node *> selected;
 
@@ -4408,11 +4409,12 @@ void Node3DEditorViewport::_update_centered_labels() {
 
 void Node3DEditorViewport::_init_gizmo_instance(int p_idx) {
 	uint32_t layer = 1 << (GIZMO_BASE_LAYER + p_idx);
+	const RID scenario = spatial_editor->_get_edited_world_3d()->get_scenario();
 
 	for (int i = 0; i < 3; i++) {
 		move_gizmo_instance[i] = RS::get_singleton()->instance_create();
 		RS::get_singleton()->instance_set_base(move_gizmo_instance[i], spatial_editor->get_move_gizmo(i)->get_rid());
-		RS::get_singleton()->instance_set_scenario(move_gizmo_instance[i], get_tree()->get_root()->get_world_3d()->get_scenario());
+		RS::get_singleton()->instance_set_scenario(move_gizmo_instance[i], scenario);
 		RS::get_singleton()->instance_set_visible(move_gizmo_instance[i], false);
 		RS::get_singleton()->instance_geometry_set_cast_shadows_setting(move_gizmo_instance[i], RS::SHADOW_CASTING_SETTING_OFF);
 		RS::get_singleton()->instance_set_layer_mask(move_gizmo_instance[i], layer);
@@ -4421,7 +4423,7 @@ void Node3DEditorViewport::_init_gizmo_instance(int p_idx) {
 
 		move_plane_gizmo_instance[i] = RS::get_singleton()->instance_create();
 		RS::get_singleton()->instance_set_base(move_plane_gizmo_instance[i], spatial_editor->get_move_plane_gizmo(i)->get_rid());
-		RS::get_singleton()->instance_set_scenario(move_plane_gizmo_instance[i], get_tree()->get_root()->get_world_3d()->get_scenario());
+		RS::get_singleton()->instance_set_scenario(move_plane_gizmo_instance[i], scenario);
 		RS::get_singleton()->instance_set_visible(move_plane_gizmo_instance[i], false);
 		RS::get_singleton()->instance_geometry_set_cast_shadows_setting(move_plane_gizmo_instance[i], RS::SHADOW_CASTING_SETTING_OFF);
 		RS::get_singleton()->instance_set_layer_mask(move_plane_gizmo_instance[i], layer);
@@ -4430,7 +4432,7 @@ void Node3DEditorViewport::_init_gizmo_instance(int p_idx) {
 
 		scale_gizmo_instance[i] = RS::get_singleton()->instance_create();
 		RS::get_singleton()->instance_set_base(scale_gizmo_instance[i], spatial_editor->get_scale_gizmo(i)->get_rid());
-		RS::get_singleton()->instance_set_scenario(scale_gizmo_instance[i], get_tree()->get_root()->get_world_3d()->get_scenario());
+		RS::get_singleton()->instance_set_scenario(scale_gizmo_instance[i], scenario);
 		RS::get_singleton()->instance_set_visible(scale_gizmo_instance[i], false);
 		RS::get_singleton()->instance_geometry_set_cast_shadows_setting(scale_gizmo_instance[i], RS::SHADOW_CASTING_SETTING_OFF);
 		RS::get_singleton()->instance_set_layer_mask(scale_gizmo_instance[i], layer);
@@ -4439,7 +4441,7 @@ void Node3DEditorViewport::_init_gizmo_instance(int p_idx) {
 
 		scale_plane_gizmo_instance[i] = RS::get_singleton()->instance_create();
 		RS::get_singleton()->instance_set_base(scale_plane_gizmo_instance[i], spatial_editor->get_scale_plane_gizmo(i)->get_rid());
-		RS::get_singleton()->instance_set_scenario(scale_plane_gizmo_instance[i], get_tree()->get_root()->get_world_3d()->get_scenario());
+		RS::get_singleton()->instance_set_scenario(scale_plane_gizmo_instance[i], scenario);
 		RS::get_singleton()->instance_set_visible(scale_plane_gizmo_instance[i], false);
 		RS::get_singleton()->instance_geometry_set_cast_shadows_setting(scale_plane_gizmo_instance[i], RS::SHADOW_CASTING_SETTING_OFF);
 		RS::get_singleton()->instance_set_layer_mask(scale_plane_gizmo_instance[i], layer);
@@ -4451,7 +4453,7 @@ void Node3DEditorViewport::_init_gizmo_instance(int p_idx) {
 
 	for (int i = 0; i < 3; i++) {
 		RS::get_singleton()->instance_set_base(axis_gizmo_instance[i], spatial_editor->get_axis_gizmo(i)->get_rid());
-		RS::get_singleton()->instance_set_scenario(axis_gizmo_instance[i], get_tree()->get_root()->get_world_3d()->get_scenario());
+		RS::get_singleton()->instance_set_scenario(axis_gizmo_instance[i], scenario);
 		RS::get_singleton()->instance_set_visible(axis_gizmo_instance[i], true);
 		RS::get_singleton()->instance_geometry_set_cast_shadows_setting(axis_gizmo_instance[i], RS::SHADOW_CASTING_SETTING_OFF);
 		RS::get_singleton()->instance_set_layer_mask(axis_gizmo_instance[i], layer);
@@ -4462,7 +4464,7 @@ void Node3DEditorViewport::_init_gizmo_instance(int p_idx) {
 	for (int i = 0; i < 4; i++) {
 		rotate_gizmo_instance[i] = RS::get_singleton()->instance_create();
 		RS::get_singleton()->instance_set_base(rotate_gizmo_instance[i], spatial_editor->get_rotate_gizmo(i)->get_rid());
-		RS::get_singleton()->instance_set_scenario(rotate_gizmo_instance[i], get_tree()->get_root()->get_world_3d()->get_scenario());
+		RS::get_singleton()->instance_set_scenario(rotate_gizmo_instance[i], scenario);
 		RS::get_singleton()->instance_set_visible(rotate_gizmo_instance[i], false);
 		RS::get_singleton()->instance_geometry_set_cast_shadows_setting(rotate_gizmo_instance[i], RS::SHADOW_CASTING_SETTING_OFF);
 		RS::get_singleton()->instance_set_layer_mask(rotate_gizmo_instance[i], layer);
@@ -4968,7 +4970,7 @@ Vector3 Node3DEditorViewport::_get_instance_position(const Point2 &p_pos, Node3D
 	Vector3 world_ray = get_ray(p_pos);
 	Vector3 world_pos = get_ray_pos(p_pos);
 
-	PhysicsDirectSpaceState3D *ss = get_tree()->get_root()->get_world_3d()->get_direct_space_state();
+	PhysicsDirectSpaceState3D *ss = viewport->get_world_3d()->get_direct_space_state();
 
 	HashSet<RID> rids;
 
@@ -7801,7 +7803,7 @@ void fragment() {
 			}
 		}
 
-		origin_instance = RenderingServer::get_singleton()->instance_create2(origin_multimesh, get_tree()->get_root()->get_world_3d()->get_scenario());
+		origin_instance = RenderingServer::get_singleton()->instance_create2(origin_multimesh, _get_edited_world_3d()->get_scenario());
 		RS::get_singleton()->instance_set_layer_mask(origin_instance, 1 << Node3DEditorViewport::GIZMO_GRID_LAYER);
 		RS::get_singleton()->instance_geometry_set_flag(origin_instance, RS::INSTANCE_FLAG_IGNORE_OCCLUSION_CULLING, true);
 		RS::get_singleton()->instance_geometry_set_flag(origin_instance, RS::INSTANCE_FLAG_USE_BAKED_LIGHT, false);
@@ -8489,7 +8491,7 @@ void Node3DEditor::_init_grid() {
 		d[RenderingServer::ARRAY_NORMAL] = (Vector<Vector3>)grid_normals[c];
 		RenderingServer::get_singleton()->mesh_add_surface_from_arrays(grid[c], RenderingServer::PRIMITIVE_LINES, d);
 		RenderingServer::get_singleton()->mesh_surface_set_material(grid[c], 0, grid_mat[c]->get_rid());
-		grid_instance[c] = RenderingServer::get_singleton()->instance_create2(grid[c], get_tree()->get_root()->get_world_3d()->get_scenario());
+		grid_instance[c] = RenderingServer::get_singleton()->instance_create2(grid[c], _get_edited_world_3d()->get_scenario());
 
 		// Yes, the end of this line is supposed to be a.
 		RenderingServer::get_singleton()->instance_set_visible(grid_instance[c], grid_visible[a]);
@@ -8560,13 +8562,55 @@ void Node3DEditor::update_grid() {
 	}
 }
 
+Ref<World3D> Node3DEditor::_get_edited_world_3d() const {
+	EditorSceneContext *context = EditorNode::get_singleton()->get_active_scene_context();
+	if (context) {
+		return context->get_world_3d();
+	}
+	return get_tree()->get_root()->get_world_3d();
+}
+
+void Node3DEditor::_rebind_editor_world_furniture() {
+	_ensure_world_furniture(_get_edited_world_3d());
+	EditorSceneContext *context = EditorNode::get_singleton()->get_active_scene_context();
+	SubViewport *context_viewport = context ? context->get_viewport() : nullptr;
+
+	if (preview_sun) {
+		if (preview_sun->get_parent() && preview_sun->get_parent() != context_viewport) {
+			preview_sun->get_parent()->remove_child(preview_sun);
+		}
+		if (context_viewport && !preview_sun_dangling && sun_button && sun_button->is_pressed() && directional_light_count == 0) {
+			if (!preview_sun->get_parent()) {
+				context_viewport->add_child(preview_sun, true);
+			}
+		}
+	}
+
+	if (preview_environment) {
+		if (preview_environment->get_parent() && preview_environment->get_parent() != context_viewport) {
+			preview_environment->get_parent()->remove_child(preview_environment);
+		}
+		if (context_viewport && !preview_env_dangling && environ_button && environ_button->is_pressed() && world_env_count == 0) {
+			if (!preview_environment->get_parent()) {
+				context_viewport->add_child(preview_environment);
+			}
+		}
+	}
+}
+
 void Node3DEditor::_active_scene_context_changed() {
 	editor_selection = EditorNode::get_singleton()->get_editor_selection();
+	EditorSceneContext *context = EditorNode::get_singleton()->get_active_scene_context();
+	Ref<World3D> world = context ? context->get_world_3d() : get_tree()->get_root()->get_world_3d();
 	for (uint32_t i = 0; i < VIEWPORTS_COUNT; i++) {
 		if (viewports[i]) {
 			viewports[i]->editor_selection = editor_selection;
+			if (viewports[i]->get_viewport_node()) {
+				viewports[i]->get_viewport_node()->set_world_3d(world);
+			}
 		}
 	}
+	_rebind_editor_world_furniture();
 	_selection_changed();
 }
 
@@ -8790,7 +8834,7 @@ void Node3DEditor::_snap_selected_nodes_to_floor() {
 		}
 	}
 
-	PhysicsDirectSpaceState3D *ss = get_tree()->get_root()->get_world_3d()->get_direct_space_state();
+	PhysicsDirectSpaceState3D *ss = _get_edited_world_3d()->get_direct_space_state();
 	PhysicsDirectSpaceState3D::RayResult result;
 
 	// The maximum height an object can travel to be snapped
@@ -9562,6 +9606,9 @@ void Node3DEditor::_update_preview_environment() {
 
 	sun_button->set_disabled(directional_light_count > 0);
 
+	EditorSceneContext *context = EditorNode::get_singleton()->get_active_scene_context();
+	SubViewport *context_viewport = context ? context->get_viewport() : nullptr;
+
 	if (disable_light) {
 		if (preview_sun->get_parent()) {
 			preview_sun->get_parent()->remove_child(preview_sun);
@@ -9578,7 +9625,11 @@ void Node3DEditor::_update_preview_environment() {
 
 	} else {
 		if (!preview_sun->get_parent()) {
-			add_child(preview_sun, true);
+			if (context_viewport) {
+				context_viewport->add_child(preview_sun, true);
+			} else {
+				add_child(preview_sun, true);
+			}
 			sun_state->hide();
 			sun_vb->show();
 			preview_sun_dangling = false;
@@ -9607,7 +9658,11 @@ void Node3DEditor::_update_preview_environment() {
 
 	} else {
 		if (!preview_environment->get_parent()) {
-			add_child(preview_environment);
+			if (context_viewport) {
+				context_viewport->add_child(preview_environment);
+			} else {
+				add_child(preview_environment);
+			}
 			environ_state->hide();
 			environ_vb->show();
 			preview_env_dangling = false;
@@ -10577,30 +10632,102 @@ void Node3DEditor::remove_gizmo_bvh_node(DynamicBVH::ID p_id) {
 	gizmo_bvh.remove(p_id);
 }
 
-Vector<Node3D *> Node3DEditor::gizmo_bvh_ray_query(const Vector3 &p_ray_start, const Vector3 &p_ray_end) {
+void Node3DEditor::_ensure_world_furniture(const Ref<World3D> &p_world) {
+	ERR_FAIL_COND(p_world.is_null());
+	const uint64_t world_id = p_world->get_instance_id();
+	if (world_furniture.has(world_id)) {
+		const WorldEditorFurniture &furniture = world_furniture[world_id];
+		origin_instance = furniture.origin_instance;
+		for (int i = 0; i < 3; i++) {
+			grid_instance[i] = furniture.grid_instance[i];
+		}
+		return;
+	}
+
+	if (!origin_multimesh.is_valid()) {
+		return;
+	}
+
+	WorldEditorFurniture furniture;
+	furniture.origin_instance = RenderingServer::get_singleton()->instance_create2(origin_multimesh, p_world->get_scenario());
+	RS::get_singleton()->instance_set_layer_mask(furniture.origin_instance, 1 << Node3DEditorViewport::GIZMO_GRID_LAYER);
+	RS::get_singleton()->instance_geometry_set_flag(furniture.origin_instance, RS::INSTANCE_FLAG_IGNORE_OCCLUSION_CULLING, true);
+	RS::get_singleton()->instance_geometry_set_flag(furniture.origin_instance, RS::INSTANCE_FLAG_USE_BAKED_LIGHT, false);
+	RenderingServer::get_singleton()->instance_geometry_set_cast_shadows_setting(furniture.origin_instance, RS::SHADOW_CASTING_SETTING_OFF);
+	RenderingServer::get_singleton()->instance_set_visible(furniture.origin_instance, origin_enabled);
+
+	for (int i = 0; i < 3; i++) {
+		furniture.grid_instance[i] = RID();
+		if (grid[i].is_valid()) {
+			furniture.grid_instance[i] = RenderingServer::get_singleton()->instance_create2(grid[i], p_world->get_scenario());
+			RenderingServer::get_singleton()->instance_set_visible(furniture.grid_instance[i], grid_visible[i]);
+			RenderingServer::get_singleton()->instance_geometry_set_cast_shadows_setting(furniture.grid_instance[i], RS::SHADOW_CASTING_SETTING_OFF);
+			RS::get_singleton()->instance_set_layer_mask(furniture.grid_instance[i], 1 << Node3DEditorViewport::GIZMO_GRID_LAYER);
+			RS::get_singleton()->instance_geometry_set_flag(furniture.grid_instance[i], RS::INSTANCE_FLAG_IGNORE_OCCLUSION_CULLING, true);
+			RS::get_singleton()->instance_geometry_set_flag(furniture.grid_instance[i], RS::INSTANCE_FLAG_USE_BAKED_LIGHT, false);
+		}
+	}
+
+	world_furniture[world_id] = furniture;
+	origin_instance = furniture.origin_instance;
+	for (int i = 0; i < 3; i++) {
+		grid_instance[i] = furniture.grid_instance[i];
+	}
+}
+
+Node3DEditorViewport *Node3DEditor::create_secondary_viewport(EditorSceneContext *p_context, Control *p_parent) {
+	ERR_FAIL_NULL_V(p_context, nullptr);
+	ERR_FAIL_NULL_V(p_parent, nullptr);
+
+	_ensure_world_furniture(p_context->get_world_3d());
+
+	Node3DEditorViewport *viewport_instance = memnew(Node3DEditorViewport(this, 0));
+	viewport_instance->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+	viewport_instance->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	viewport_instance->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	p_parent->add_child(viewport_instance);
+	viewport_instance->get_viewport_node()->set_world_3d(p_context->get_world_3d());
+	viewport_instance->editor_selection = EditorNode::get_singleton()->get_editor_selection();
+	secondary_viewports.push_back(viewport_instance);
+	return viewport_instance;
+}
+
+Vector<Node3D *> Node3DEditor::gizmo_bvh_ray_query(const Vector3 &p_ray_start, const Vector3 &p_ray_end, const Ref<World3D> &p_world_filter) {
 	struct Result {
 		Vector<Node3D *> nodes;
+		Ref<World3D> world_filter;
 		bool operator()(void *p_data) {
-			nodes.append((Node3D *)p_data);
+			Node3D *node = (Node3D *)p_data;
+			if (world_filter.is_valid() && node->get_world_3d() != world_filter) {
+				return false;
+			}
+			nodes.append(node);
 			return false;
 		}
 	} result;
+	result.world_filter = p_world_filter;
 
 	gizmo_bvh.ray_query(p_ray_start, p_ray_end, result);
 
 	return result.nodes;
 }
 
-Vector<Node3D *> Node3DEditor::gizmo_bvh_frustum_query(const Vector<Plane> &p_frustum) {
+Vector<Node3D *> Node3DEditor::gizmo_bvh_frustum_query(const Vector<Plane> &p_frustum, const Ref<World3D> &p_world_filter) {
 	Vector<Vector3> points = Geometry3D::compute_convex_mesh_points(&p_frustum[0], p_frustum.size());
 
 	struct Result {
 		Vector<Node3D *> nodes;
+		Ref<World3D> world_filter;
 		bool operator()(void *p_data) {
-			nodes.append((Node3D *)p_data);
+			Node3D *node = (Node3D *)p_data;
+			if (world_filter.is_valid() && node->get_world_3d() != world_filter) {
+				return false;
+			}
+			nodes.append(node);
 			return false;
 		}
 	} result;
+	result.world_filter = p_world_filter;
 
 	gizmo_bvh.convex_query(p_frustum.ptr(), p_frustum.size(), points.ptr(), points.size(), result);
 
