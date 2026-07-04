@@ -24,6 +24,39 @@ Use the supported command-first CLI: `foundry <command> <subcommand> [options]`.
 - Run a project test runner script: `./bin/foundry.* --headless project test --project <project> --runner res://path/to/runner.fs -- <runner args>`.
 - Open the editor GUI: `DISPLAY=:1 ./bin/foundry.* editor open --project <project>`.
 
+## Editor MCP Automation
+
+The Foundry editor embeds a local MCP (Model Context Protocol) server that lets agents drive the real editor GUI — clicking buttons, filling dialogs, editing inspector properties, running scenes — without screenshots or pixel coordinates. Use it whenever a task needs to operate or verify the editor UI itself (reproducing editor bugs, testing editor-facing features, exercising dialogs and docks end-to-end).
+
+### Starting and connecting
+
+- Launch the editor with automation enabled: `DISPLAY=:1 ./bin/foundry.* editor open --project <project> --automation` (optionally `--automation-port <port>` and `--automation-token <token>`; the transport defaults to `mcp`).
+- On startup the editor prints a machine-readable line to stdout: `FOUNDRY_AUTOMATION {"transport":"mcp","endpoint":"http://127.0.0.1:<port>/mcp","token":"...","local_only":true}`. Parse it for the endpoint and bearer token.
+- The transport is POST-only JSON-RPC 2.0 over HTTP. Every request needs `Authorization: Bearer <token>` and `Content-Type: application/json`. Start with an `initialize` request, then send `notifications/initialized`, then use `tools/call` and `resources/read`. There are no server-push notifications; poll `poll_events` for editor errors/warnings.
+
+### Tools and typical loop
+
+`tools/list` returns full input/output schemas. The core loop is observe → select → act → wait:
+
+- `observe_ui`: semantic UI tree (windows, roles, names, actions, focus, modal stack). Large trees paginate via `children_next_cursor`; fetch element subtrees with the `foundry://ui/subtree/{id}` resource.
+- `find_elements`: resolve a semantic selector (`role`, `name`, `text_contains`, `within`, ...) to element summaries.
+- `act`: perform `click`, `set_text`, `type_text`, `select`, `choose_menu_item`, `set_value`, ... on a selected element, optionally combined with a `wait` condition in one call.
+- `wait_for`: wait for conditions like `selector_appears`, `modal_stack_settled`, `import_reload_idle`, or `log_contains` instead of sleeping.
+- `read_editor_state`, `read_editor_log`, `run_command`, `list_commands`, `poll_events`: state readback, log readback, and command-palette execution.
+
+Default snapshots hide internal implementation children of controls (a `SpinBox`'s embedded `LineEdit`, `Tree`/`ItemList` scrollbars) but always include `Window`/dialog internals such as OK/Cancel buttons. Pass `include_internal: true` to `observe_ui`/`find_elements`/`act` to inspect or drive internals; such elements are flagged `"internal": true` and should not be depended on by default. See the internal-child policy in `docs/superpowers/specs/2026-07-03-editor-agent-automation-design.md`.
+
+### Reasonable use cases
+
+- Reproducing and verifying editor bug fixes through the same GUI path a user takes (open a dialog, click Create, assert the scene tree changed).
+- End-to-end testing of editor features: create nodes via the Scene dock, edit inspector properties, save scenes, run a scene and read errors from the log.
+- Debugging UI state: dump the semantic tree of a misbehaving dock or dialog, check focus/modal state, or inspect a control's internals with `include_internal`.
+- Driving reproduction projects attached to issues: script the exact click/type sequence and capture structured diagnostics on failure (`attach_screenshot_on_failure`).
+
+### Improving the capability
+
+If the MCP surface is not enough to complete a task — a control has no stable role/name, an action or wait condition is missing, internal children you need are not exposed, or results are too large/noisy — do not fall back to brittle workarounds silently. Prefer improving the automation layer itself (`editor/automation/`): add the missing role/action/metadata, selector field, wait condition, or snapshot option, with tests, as part of your change or as a proposed follow-up. At minimum, report the concrete gap in your summary so the capability keeps improving.
+
 ## Coding Style & Naming Conventions
 
 Follow `.editorconfig`: UTF-8, LF line endings, final newline, 120-column limit, and trimmed trailing whitespace. C/C++ and most engine files use tabs with width 4; Python, `SConstruct`, and `SCsub` use 4 spaces; YAML and clang config files use 2 spaces. C++ formatting is enforced by `.clang-format`; Python/SCons formatting and imports are handled by Ruff, with mypy checks for Python. Keep filenames and APIs consistent with nearby Godot conventions, such as `snake_case` file names and test headers named `test_<area>.h`.
