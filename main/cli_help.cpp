@@ -60,6 +60,7 @@ const CommandOption EDITOR_OPEN_OPTIONS[] = {
 	{ "--automation-transport", "mcp", "Automation transport (only mcp is supported).", false, true },
 	{ "--automation-port", "0", "Local automation port; 0 auto-selects later.", false },
 	{ "--automation-token", "token", "Deterministic session token for tests.", false },
+	{ "--automation-run-workflow", "mvp", "Run an acceptance workflow when the editor is ready, then exit.", false, true },
 };
 
 const CommandOption PROJECT_RUN_OPTIONS[] = {

@@ -96,6 +96,7 @@ public:
 		String automation_transport;
 		int automation_port = -1;
 		String automation_token;
+		String automation_run_workflow;
 
 		bool docs_include_docs = false;
 		String docs_engine_output;

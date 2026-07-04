@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  editor_automation_server.h                                            */
+/*  editor_automation_acceptance_workflow.h                               */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -30,62 +30,23 @@
 
 #pragma once
 
-#include "editor/plugins/editor_plugin.h"
-#include "main/cli_parser.h"
+#include "core/string/ustring.h"
+#include "core/variant/dictionary.h"
 
-class EditorAutomationMCPServer;
+class EditorWorkflowTestDriver;
 
-class EditorAutomationServer : public EditorPlugin {
-	FOUNDRY_CLASS(EditorAutomationServer, EditorPlugin);
-
+class EditorAutomationAcceptanceWorkflow {
 public:
-	enum class Transport {
-		NONE,
-		MCP,
+	struct Result {
+		bool ok = false;
+		String workflow;
+		String message;
+		Dictionary details;
 	};
 
-private:
-	static EditorAutomationServer *singleton;
-	static bool cli_enabled;
-	static String cli_transport;
-	static int cli_port;
-	static String cli_token;
-	static String cli_run_workflow;
+	// MVP acceptance workflow exercising scene tree, create dialog, inspector,
+	// save, run/stop, and editor-log assertions through EditorWorkflowTestDriver.
+	static Result run_mvp(EditorWorkflowTestDriver &p_driver, const String &p_scene_path = "res://scenes/main.tscn");
 
-	bool enabled = false;
-	Transport transport = Transport::NONE;
-	int port = 0;
-	String token;
-	String endpoint;
-	bool local_only = true;
-	bool started = false;
-	bool start_attempted = false;
-	bool workflow_run_attempted = false;
-	bool workflow_run_completed = false;
-
-	EditorAutomationMCPServer *mcp_server = nullptr;
-
-	String _generate_token() const;
-	void _show_dev_indicator() const;
-	bool _start_mcp_transport();
-	void _run_acceptance_workflow_if_requested();
-	void _notification(int p_what);
-
-public:
-	static void apply_cli_options(const FoundryCLIParser::CLIInvocation &p_invocation);
-	static EditorAutomationServer *get_singleton();
-
-	EditorAutomationServer();
-	~EditorAutomationServer();
-
-	bool is_enabled() const { return enabled; }
-	String get_transport_name() const;
-	int get_port() const { return port; }
-	const String &get_token() const { return token; }
-	const String &get_endpoint() const { return endpoint; }
-	bool is_local_only() const { return local_only; }
-	bool is_started() const { return started; }
-
-	void start();
-	void stop();
+	static void print_result(const Result &p_result);
 };
