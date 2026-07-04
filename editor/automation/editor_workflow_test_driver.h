@@ -73,7 +73,7 @@ private:
 	Dictionary last_selector;
 	Failure failure;
 
-	EditorAutomationSnapshot _capture_snapshot() const;
+	EditorAutomationSnapshot _capture_snapshot(bool p_include_internal = false) const;
 	EditorAutomationFailureAttachmentOptions _failure_attachment_options() const;
 	void _record_failure(const String &p_kind, const String &p_message, const Dictionary &p_selector, const EditorAutomationSnapshot &p_snapshot, const Array &p_candidates = Array());
 	void _record_wait_failure(
@@ -97,7 +97,7 @@ public:
 	const Failure &get_failure() const { return failure; }
 	bool has_failed() const { return failure.failed; }
 
-	Dictionary observe_ui(int p_max_depth = -1, bool p_include_hidden = false);
+	Dictionary observe_ui(int p_max_depth = -1, bool p_include_hidden = false, bool p_include_internal = false);
 	Dictionary find(const Dictionary &p_selector, int p_max_results = 20);
 	Dictionary act(const Dictionary &p_selector, const String &p_action, const Dictionary &p_args = Dictionary(), const String &p_route = String());
 	Dictionary wait_for(const Dictionary &p_condition, int p_timeout_ms = -1);

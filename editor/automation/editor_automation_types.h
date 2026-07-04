@@ -50,6 +50,11 @@ struct EditorAutomationElement {
 	bool focused = false;
 	bool pressed = false;
 	bool selected = false;
+	// True for implementation-detail elements that a default snapshot hides
+	// (internal children of non-Window controls, e.g. a SpinBox line edit or
+	// Tree scrollbars) and that were exposed via an include_internal opt-in.
+	// Agents should not depend on internal elements by default.
+	bool internal = false;
 	Rect2i bounds;
 	PackedStringArray actions;
 	Dictionary metadata;

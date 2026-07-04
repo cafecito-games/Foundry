@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "core/io/json.h"
 #include "editor/automation/editor_automation_driver.h"
 #include "editor/automation/editor_automation_selector.h"
 #include "editor/automation/editor_automation_snapshot.h"
@@ -42,7 +43,9 @@
 #include "scene/gui/line_edit.h"
 #include "scene/gui/panel_container.h"
 #include "scene/gui/item_list.h"
+#include "scene/gui/spin_box.h"
 #include "scene/gui/tab_container.h"
+#include "scene/gui/tree.h"
 #include "scene/main/window.h"
 
 #include "tests/test_macros.h"
@@ -53,6 +56,16 @@ static const EditorAutomationElement *find_element_by_role_and_name(const Editor
 	for (int i = 0; i < p_snapshot.get_element_count(); i++) {
 		const EditorAutomationElement &element = p_snapshot.get_element(i);
 		if (element.role == p_role && element.name == p_name) {
+			return &element;
+		}
+	}
+	return nullptr;
+}
+
+static const EditorAutomationElement *find_element_by_class(const EditorAutomationSnapshot &p_snapshot, const String &p_class_name) {
+	for (int i = 0; i < p_snapshot.get_element_count(); i++) {
+		const EditorAutomationElement &element = p_snapshot.get_element(i);
+		if (element.class_name == p_class_name) {
 			return &element;
 		}
 	}
@@ -78,9 +91,101 @@ TEST_CASE("[Editor][Automation] dialog action buttons (Window internal children)
 
 	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(dialog);
 	const EditorAutomationElement *ok_button = find_element_by_role_and_name(snapshot, "button", "Create");
-	CHECK(ok_button != nullptr);
+	REQUIRE(ok_button != nullptr);
+	// Window/dialog internals are part of the supported automation surface;
+	// they must not be flagged as implementation-internal.
+	CHECK_FALSE(ok_button->internal);
+	CHECK(ok_button->actions.has("click"));
+
+	// The same holds with the internal-child opt-in enabled.
+	EditorAutomationSnapshotOptions opt_in;
+	opt_in.include_internal = true;
+	const EditorAutomationSnapshot internal_snapshot = EditorAutomationSnapshot::capture_from_node(dialog, opt_in);
+	const EditorAutomationElement *opt_in_ok_button = find_element_by_role_and_name(internal_snapshot, "button", "Create");
+	REQUIRE(opt_in_ok_button != nullptr);
+	CHECK_FALSE(opt_in_ok_button->internal);
 
 	memdelete(dialog);
+}
+
+TEST_CASE("[Editor][Automation] default snapshot hides non-window control internals") {
+	// A SpinBox embeds an internal LineEdit and a Tree owns internal
+	// scrollbars. Default snapshots must keep hiding those implementation
+	// details so agents see user-facing controls only.
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	SpinBox *spin_box = memnew(SpinBox);
+	spin_box->set_name("Amount");
+	setup_visible_control(spin_box);
+	root->add_child(spin_box);
+
+	Tree *tree = memnew(Tree);
+	tree->set_name("Hierarchy");
+	setup_visible_control(tree, Size2(200, 150));
+	root->add_child(tree);
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	// The SpinBox itself stays visible with its user-facing role.
+	const EditorAutomationElement *spin_element = find_element_by_role_and_name(snapshot, "spinbox", "Amount");
+	REQUIRE(spin_element != nullptr);
+	CHECK(spin_element->children.is_empty());
+	// Its embedded LineEdit and any scrollbars are hidden by default.
+	CHECK(find_element_by_class(snapshot, "SpinBoxLineEdit") == nullptr);
+	CHECK(find_element_by_class(snapshot, "HScrollBar") == nullptr);
+	CHECK(find_element_by_class(snapshot, "VScrollBar") == nullptr);
+	for (int i = 0; i < snapshot.get_element_count(); i++) {
+		CHECK_FALSE(snapshot.get_element(i).internal);
+	}
+
+	memdelete(root);
+}
+
+TEST_CASE("[Editor][Automation] include_internal exposes control internals flagged as internal") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	SpinBox *spin_box = memnew(SpinBox);
+	spin_box->set_name("Amount");
+	spin_box->set_value(3);
+	setup_visible_control(spin_box);
+	root->add_child(spin_box);
+	MessageQueue::get_singleton()->flush();
+
+	EditorAutomationSnapshotOptions opt_in;
+	opt_in.include_internal = true;
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root, opt_in);
+
+	// The embedded LineEdit is now exposed, flagged internal, and keeps the
+	// stable role/actions of a regular text field so it can be automated.
+	const EditorAutomationElement *line_edit = find_element_by_class(snapshot, "SpinBoxLineEdit");
+	REQUIRE(line_edit != nullptr);
+	CHECK(line_edit->internal);
+	CHECK(line_edit->role == "text_field");
+	CHECK(line_edit->actions.has("set_text"));
+	CHECK(line_edit->actions.has("type_text"));
+
+	// The internal element hangs off its owning SpinBox in the tree.
+	const EditorAutomationElement *spin_element = find_element_by_role_and_name(snapshot, "spinbox", "Amount");
+	REQUIRE(spin_element != nullptr);
+	CHECK_FALSE(spin_element->internal);
+	bool found_internal_child = false;
+	for (int child_index : spin_element->children) {
+		if (snapshot.get_element(child_index).class_name == "SpinBoxLineEdit") {
+			found_internal_child = true;
+		}
+	}
+	CHECK(found_internal_child);
+
+	// Serialization marks internal elements and omits the key elsewhere.
+	const Dictionary serialized = snapshot.to_dictionary();
+	const String serialized_json = JSON::stringify(serialized, "", false);
+	CHECK(serialized_json.contains("\"internal\":true"));
+
+	memdelete(root);
 }
 
 TEST_CASE("[Editor][Automation] synthetic control tree snapshot") {

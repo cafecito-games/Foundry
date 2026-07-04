@@ -48,6 +48,7 @@
 #include "scene/gui/button.h"
 #include "scene/gui/line_edit.h"
 #include "scene/gui/panel_container.h"
+#include "scene/gui/spin_box.h"
 #include "scene/main/scene_tree.h"
 
 #include "tests/test_macros.h"
@@ -1314,6 +1315,158 @@ TEST_CASE("[Editor][Automation][MCP] observe_ui paginates large child lists via 
 		pages++;
 	}
 	CHECK(pages >= 8);
+
+	memdelete(root);
+}
+
+static Dictionary mcp_find_tree_element_by_class(const Dictionary &p_element, const String &p_class) {
+	if (String(p_element.get("class", String())) == p_class) {
+		return p_element;
+	}
+	const Array children = p_element.get("children", Array());
+	for (int i = 0; i < children.size(); i++) {
+		const Dictionary found = mcp_find_tree_element_by_class(children[i], p_class);
+		if (!found.is_empty()) {
+			return found;
+		}
+	}
+	return Dictionary();
+}
+
+TEST_CASE("[Editor][Automation][MCP] observe_ui include_internal argument exposes flagged internals") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	SpinBox *spin_box = memnew(SpinBox);
+	spin_box->set_name("Amount");
+	spin_box->set_anchors_and_offsets_preset(Control::PRESET_TOP_LEFT);
+	spin_box->set_size(Size2(120, 32));
+	root->add_child(spin_box);
+	mcp_flush_frames();
+
+	EditorAutomationMCPDispatcher dispatcher;
+	EditorAutomationMCPDispatcher::Options options;
+	options.snapshot_root = root;
+	dispatcher.set_options(options);
+
+	// The tool schema advertises the new argument.
+	const Dictionary tools_response = dispatcher.handle_message(make_request(60, "tools/list"));
+	const Dictionary tools_result = tools_response["result"];
+	const Dictionary observe_tool = tool_named(tools_result["tools"], "observe_ui");
+	REQUIRE_FALSE(observe_tool.is_empty());
+	const Dictionary observe_schema = observe_tool["inputSchema"];
+	const Dictionary observe_props = observe_schema["properties"];
+	CHECK(observe_props.has("include_internal"));
+
+	SUBCASE("default snapshot hides the SpinBox internal LineEdit") {
+		Dictionary params;
+		params["name"] = "observe_ui";
+		params["arguments"] = Dictionary();
+		const Dictionary response = dispatcher.handle_message(make_request(61, "tools/call", params));
+		const Dictionary result = response["result"];
+		CHECK_FALSE((bool)result["isError"]);
+		const Dictionary structured = result["structuredContent"];
+		const Dictionary limits = structured["limits"];
+		CHECK_FALSE((bool)limits["include_internal"]);
+		const Array tree = structured["tree"];
+		REQUIRE(tree.size() == 1);
+		CHECK(mcp_find_tree_element_by_class(tree[0], "SpinBox").has("id"));
+		CHECK(mcp_find_tree_element_by_class(tree[0], "SpinBoxLineEdit").is_empty());
+		// The serialized JSON never mentions the internal flag by default.
+		const Array content = result["content"];
+		const Dictionary first = content[0];
+		CHECK_FALSE(String(first["text"]).contains("\"internal\":true"));
+	}
+
+	SUBCASE("include_internal exposes the LineEdit flagged internal") {
+		Dictionary arguments;
+		arguments["include_internal"] = true;
+		Dictionary params;
+		params["name"] = "observe_ui";
+		params["arguments"] = arguments;
+		const Dictionary response = dispatcher.handle_message(make_request(62, "tools/call", params));
+		const Dictionary result = response["result"];
+		CHECK_FALSE((bool)result["isError"]);
+		const Dictionary structured = result["structuredContent"];
+		const Dictionary limits = structured["limits"];
+		CHECK((bool)limits["include_internal"]);
+		const Array tree = structured["tree"];
+		REQUIRE(tree.size() == 1);
+		const Dictionary line_edit = mcp_find_tree_element_by_class(tree[0], "SpinBoxLineEdit");
+		REQUIRE(line_edit.has("id"));
+		CHECK((bool)line_edit["internal"]);
+		CHECK(String(line_edit["role"]) == "text_field");
+	}
+
+	memdelete(root);
+}
+
+TEST_CASE("[Editor][Automation][MCP] subtree cursors preserve include_internal across pages") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+	for (int i = 0; i < 3; i++) {
+		Button *button = memnew(Button);
+		button->set_text(vformat("Bulk %d", i));
+		button->set_anchors_and_offsets_preset(Control::PRESET_TOP_LEFT);
+		button->set_size(Size2(120, 32));
+		root->add_child(button);
+	}
+	SpinBox *spin_box = memnew(SpinBox);
+	spin_box->set_name("Amount");
+	spin_box->set_anchors_and_offsets_preset(Control::PRESET_TOP_LEFT);
+	spin_box->set_size(Size2(120, 32));
+	root->add_child(spin_box);
+	mcp_flush_frames();
+
+	EditorAutomationMCPDispatcher dispatcher;
+	EditorAutomationMCPDispatcher::Options options;
+	options.snapshot_root = root;
+	dispatcher.set_options(options);
+
+	Dictionary arguments;
+	arguments["include_internal"] = true;
+	arguments["max_children"] = 2;
+	arguments["max_depth"] = 4;
+	Dictionary params;
+	params["name"] = "observe_ui";
+	params["arguments"] = arguments;
+	const Dictionary response = dispatcher.handle_message(make_request(63, "tools/call", params));
+	const Dictionary result = response["result"];
+	const Dictionary structured = result["structuredContent"];
+	const Array tree = structured["tree"];
+	REQUIRE(tree.size() == 1);
+	const Dictionary root_element = tree[0];
+	CHECK((bool)root_element["children_truncated"]);
+	REQUIRE(root_element.has("children_next_cursor"));
+
+	// The SpinBox (and its internal LineEdit) live on a later page; following
+	// the cursor must keep the internal-child expansion from the first call.
+	String cursor = root_element["children_next_cursor"];
+	bool found_internal_line_edit = false;
+	int pages = 0;
+	while (!cursor.is_empty() && pages < 10) {
+		Dictionary page_args;
+		page_args["subtree_cursor"] = cursor;
+		Dictionary page_params;
+		page_params["name"] = "observe_ui";
+		page_params["arguments"] = page_args;
+		const Dictionary page_response = dispatcher.handle_message(make_request(64 + pages, "tools/call", page_params));
+		const Dictionary page_result = page_response["result"];
+		CHECK_FALSE((bool)page_result["isError"]);
+		const Dictionary page_structured = page_result["structuredContent"];
+		const Dictionary page_limits = page_structured["limits"];
+		CHECK((bool)page_limits["include_internal"]);
+		const Dictionary subtree = page_structured["subtree"];
+		const Dictionary line_edit = mcp_find_tree_element_by_class(subtree, "SpinBoxLineEdit");
+		if (line_edit.has("id") && (bool)line_edit.get("internal", false)) {
+			found_internal_line_edit = true;
+		}
+		cursor = subtree.get("children_next_cursor", String());
+		pages++;
+	}
+	CHECK(found_internal_line_edit);
 
 	memdelete(root);
 }

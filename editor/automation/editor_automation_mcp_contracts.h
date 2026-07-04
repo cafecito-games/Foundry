@@ -218,6 +218,7 @@ struct EditorAutomationMCPElementNode {
 	bool focused = false;
 	bool pressed = false;
 	bool selected = false;
+	bool internal = false;
 	Rect2 bounds;
 	PackedStringArray actions;
 	Dictionary metadata;
