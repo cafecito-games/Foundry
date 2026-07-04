@@ -154,8 +154,8 @@ TEST_CASE("[Editor][Automation] scene tree item metadata includes node path and 
 	}
 	REQUIRE(child_element != nullptr);
 	CHECK(NodePath(child_element->metadata.get("node_path", NodePath())) == NodePath("ChildNode"));
-	CHECK(child_element->actions.has("expand"));
 	CHECK(child_element->actions.has("activate"));
+	CHECK(child_element->actions.has("select"));
 
 	Dictionary selector;
 	selector["role"] = "tree_item";

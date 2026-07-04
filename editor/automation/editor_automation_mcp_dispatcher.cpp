@@ -201,8 +201,9 @@ Dictionary _selector_schema() {
 	selected["type"] = "boolean";
 	props["selected"] = selected;
 
-	props["metadata"] = _object_schema();
-	props["metadata"]["description"] = "Match elements whose metadata dictionary contains these exact key/value pairs (e.g. node_name, node_path, label).";
+	Dictionary metadata_schema = _object_schema();
+	metadata_schema["description"] = "Match elements whose metadata dictionary contains these exact key/value pairs (e.g. node_name, node_path, label).";
+	props["metadata"] = metadata_schema;
 
 	Dictionary case_sensitive = _string_schema("Whether string field matching (exact and *_contains) is case-sensitive. Default true.");
 	case_sensitive["type"] = "boolean";

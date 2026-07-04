@@ -64,6 +64,9 @@
 
 namespace {
 
+String _read_string_option(const Dictionary &p_options, const char *p_key);
+Variant _read_variant_option(const Dictionary &p_options, const char *p_key);
+
 EditorAutomationActionResult _selector_failure(const EditorAutomationSelectorResult &p_selector_result) {
 	String kind = p_selector_result.error_kind;
 	if (p_selector_result.status == EditorAutomationSelectorStatus::STALE_ID) {
@@ -803,7 +806,7 @@ EditorAutomationActionResult _action_scroll(
 		}
 		scroll_bar = tree->get_vscroll_bar();
 	} else if (ItemList *item_list = Object::cast_to<ItemList>(node)) {
-		scroll_bar = horizontal ? item_list->get_h_scroll_bar() : item_list->get_v_scroll_bar();
+		scroll_bar = horizontal ? (ScrollBar *)item_list->get_h_scroll_bar() : item_list->get_v_scroll_bar();
 	} else if (ScrollContainer *scroll_container = Object::cast_to<ScrollContainer>(node)) {
 		if (amount > 0.0) {
 			scrolled = _scroll_scroll_container(scroll_container, horizontal, sign * amount);
