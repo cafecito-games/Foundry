@@ -422,9 +422,9 @@ TEST_CASE("[Editor][Automation][MCP] cooperative wait_for does not block read_ed
 	wait_params["arguments"] = wait_args;
 	const Dictionary wait_response = dispatcher.handle_message(make_request(30, "tools/call", wait_params));
 	CHECK(wait_response.has("result"));
-	const Dictionary wait_result = wait_response["result"];
-	CHECK_FALSE((bool)wait_result["isError"]);
-	const Dictionary wait_structured = wait_result["structuredContent"];
+	const Dictionary wait_response_result = wait_response["result"];
+	CHECK_FALSE((bool)wait_response_result["isError"]);
+	const Dictionary wait_structured = wait_response_result["structuredContent"];
 	CHECK(wait_structured["status"] == "pending");
 	CHECK(wait_structured.has("wait_id"));
 	const String wait_id = wait_structured["wait_id"];
@@ -434,7 +434,8 @@ TEST_CASE("[Editor][Automation][MCP] cooperative wait_for does not block read_ed
 	state_params["arguments"] = Dictionary();
 	const Dictionary state_response = dispatcher.handle_message(make_request(31, "tools/call", state_params));
 	CHECK(state_response.has("result"));
-	CHECK_FALSE((bool)state_response["result"]["isError"]);
+	const Dictionary state_response_result = state_response["result"];
+	CHECK_FALSE((bool)state_response_result["isError"]);
 
 	Dictionary cancel_args;
 	cancel_args["wait_id"] = wait_id;
@@ -443,7 +444,8 @@ TEST_CASE("[Editor][Automation][MCP] cooperative wait_for does not block read_ed
 	cancel_params["name"] = "wait_for";
 	cancel_params["arguments"] = cancel_args;
 	const Dictionary cancel_response = dispatcher.handle_message(make_request(32, "tools/call", cancel_params));
-	const Dictionary cancel_structured = cancel_response["result"]["structuredContent"];
+	const Dictionary cancel_response_result = cancel_response["result"];
+	const Dictionary cancel_structured = cancel_response_result["structuredContent"];
 	CHECK(cancel_structured["status"] == "cancelled");
 
 	EditorAutomationWait::clear_all_cooperative();
@@ -493,9 +495,9 @@ TEST_CASE("[Editor][Automation][MCP] act with wait clause succeeds when conditio
 	params["arguments"] = arguments;
 
 	const Dictionary response = dispatcher.handle_message(make_request(33, "tools/call", params));
-	const Dictionary result = response["result"];
-	CHECK_FALSE((bool)result["isError"]);
-	const Dictionary structured = result["structuredContent"];
+	const Dictionary response_result = response["result"];
+	CHECK_FALSE((bool)response_result["isError"]);
+	const Dictionary structured = response_result["structuredContent"];
 	CHECK((bool)structured["ok"]);
 	CHECK(structured.has("action"));
 	CHECK(structured.has("wait"));
@@ -547,7 +549,8 @@ TEST_CASE("[Editor][Automation][MCP] act success with wait timeout reports parti
 	params["arguments"] = arguments;
 
 	Dictionary response = dispatcher.handle_message(make_request(34, "tools/call", params));
-	Dictionary structured = response["result"]["structuredContent"];
+	Dictionary response_result = response["result"];
+	Dictionary structured = response_result["structuredContent"];
 	String wait_id = structured.get("wait_id", String());
 
 	while (structured.get("status", String()) == "pending" && !wait_id.is_empty()) {
@@ -558,7 +561,8 @@ TEST_CASE("[Editor][Automation][MCP] act success with wait timeout reports parti
 		poll_params["name"] = "act";
 		poll_params["arguments"] = poll_args;
 		response = dispatcher.handle_message(make_request(35, "tools/call", poll_params));
-		structured = response["result"]["structuredContent"];
+		response_result = response["result"];
+		structured = response_result["structuredContent"];
 		wait_id = structured.get("wait_id", wait_id);
 	}
 
@@ -616,8 +620,9 @@ TEST_CASE("[Editor][Automation][MCP] act failure before wait reports action_fail
 	params["arguments"] = arguments;
 
 	const Dictionary response = dispatcher.handle_message(make_request(36, "tools/call", params));
-	const Dictionary structured = response["result"]["structuredContent"];
-	CHECK((bool)response["result"]["isError"]);
+	const Dictionary response_result = response["result"];
+	const Dictionary structured = response_result["structuredContent"];
+	CHECK((bool)response_result["isError"]);
 	CHECK(structured["kind"] == "action_failed");
 	CHECK(structured.has("action"));
 	CHECK_FALSE(structured.has("wait"));
@@ -664,7 +669,8 @@ TEST_CASE("[Editor][Automation][MCP] synchronous wait_for regression via coopera
 	wait_params["name"] = "wait_for";
 	wait_params["arguments"] = wait_args;
 	const Dictionary response = dispatcher.handle_message(make_request(37, "tools/call", wait_params));
-	const Dictionary structured = response["result"]["structuredContent"];
+	const Dictionary response_result = response["result"];
+	const Dictionary structured = response_result["structuredContent"];
 	CHECK((bool)structured["ok"]);
 	CHECK_FALSE(structured.has("status"));
 

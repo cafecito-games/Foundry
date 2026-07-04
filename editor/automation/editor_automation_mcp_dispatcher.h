@@ -30,6 +30,9 @@
 
 #pragma once
 
+#include "editor/automation/editor_automation_log.h"
+#include "editor/automation/editor_automation_wait.h"
+
 #include "core/variant/variant.h"
 
 class Node;
