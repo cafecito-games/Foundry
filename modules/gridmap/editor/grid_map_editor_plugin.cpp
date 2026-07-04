@@ -34,6 +34,7 @@
 #include "core/os/keyboard.h"
 #include "editor/editor_main_screen.h"
 #include "editor/editor_node.h"
+#include "editor/editor_scene_context.h"
 #include "editor/editor_string_names.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/gui/editor_bottom_panel.h"
@@ -599,12 +600,49 @@ void GridMapEditor::_clear_clipboard_data() {
 	clipboard_is_move = false;
 }
 
+RID GridMapEditor::_get_overlay_scenario() const {
+	if (node) {
+		return node->get_world_3d()->get_scenario();
+	}
+	EditorSceneContext *context = EditorNode::get_singleton()->get_active_scene_context();
+	if (context) {
+		return context->get_world_3d()->get_scenario();
+	}
+	return get_tree()->get_root()->get_world_3d()->get_scenario();
+}
+
+void GridMapEditor::_rebind_overlay_scenarios() {
+	const RID scenario = _get_overlay_scenario();
+	for (int i = 0; i < 3; i++) {
+		if (grid_instance[i].is_valid()) {
+			RS::get_singleton()->instance_set_scenario(grid_instance[i], scenario);
+		}
+		if (selection_level_instance[i].is_valid()) {
+			RS::get_singleton()->instance_set_scenario(selection_level_instance[i], scenario);
+		}
+	}
+	if (cursor_instance.is_valid()) {
+		RS::get_singleton()->instance_set_scenario(cursor_instance, scenario);
+	}
+	if (selection_instance.is_valid()) {
+		RS::get_singleton()->instance_set_scenario(selection_instance, scenario);
+	}
+	if (paste_instance.is_valid()) {
+		RS::get_singleton()->instance_set_scenario(paste_instance, scenario);
+	}
+	for (const ClipboardItem &item : clipboard_items) {
+		if (item.instance.is_valid()) {
+			RS::get_singleton()->instance_set_scenario(item.instance, scenario);
+		}
+	}
+}
+
 void GridMapEditor::_set_clipboard_data() {
 	_clear_clipboard_data();
 
 	Ref<MeshLibrary> meshLibrary = node->get_mesh_library();
 
-	const RID scenario = get_tree()->get_root()->get_world_3d()->get_scenario();
+	const RID scenario = _get_overlay_scenario();
 
 	for (int i = selection.begin.x; i <= selection.end.x; i++) {
 		for (int j = selection.begin.y; j <= selection.end.y; j++) {
@@ -1185,6 +1223,7 @@ void GridMapEditor::edit(GridMap *p_gridmap) {
 
 	node->connect(SNAME("cell_size_changed"), callable_mp(this, &GridMapEditor::_draw_grids));
 	node->connect(CoreStringName(changed), callable_mp(this, &GridMapEditor::_update_mesh_library));
+	_rebind_overlay_scenarios();
 	_update_mesh_library();
 }
 
@@ -1279,7 +1318,7 @@ void GridMapEditor::_update_theme() {
 void GridMapEditor::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_ENTER_TREE: {
-			const RID scenario = get_tree()->get_root()->get_world_3d()->get_scenario();
+			const RID scenario = _get_overlay_scenario();
 
 			for (int i = 0; i < 3; i++) {
 				grid[i] = RS::get_singleton()->mesh_create();
@@ -1379,7 +1418,7 @@ void GridMapEditor::_update_cursor_instance() {
 	}
 	cursor_instance = RID();
 
-	const RID scenario = get_tree()->get_root()->get_world_3d()->get_scenario();
+	const RID scenario = _get_overlay_scenario();
 
 	if (mode_buttons_group->get_pressed_button() == paint_mode_button) {
 		if (selected_palette >= 0 && node && node->get_mesh_library().is_valid()) {

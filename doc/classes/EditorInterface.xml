@@ -151,14 +151,14 @@
 		<method name="get_editor_viewport_2d" qualifiers="const">
 			<return type="SubViewport" />
 			<description>
-				Returns the 2D editor [SubViewport]. It does not have a camera. Instead, the view transforms are done directly and can be accessed with [member Viewport.global_canvas_transform].
+				Returns the 2D [SubViewport] for the [b]focused[/b] scene tile. It does not have a camera. Instead, the view transforms are done directly and can be accessed with [member Viewport.global_canvas_transform].
 			</description>
 		</method>
 		<method name="get_editor_viewport_3d" qualifiers="const">
 			<return type="SubViewport" />
 			<param index="0" name="idx" type="int" default="0" />
 			<description>
-				Returns the specified 3D editor [SubViewport], from [code]0[/code] to [code]3[/code]. The viewport can be used to access the active editor cameras with [method Viewport.get_camera_3d].
+				Returns the specified 3D editor [SubViewport] for the [b]focused[/b] scene tile, from [code]0[/code] to [code]3[/code]. The viewport can be used to access the active editor cameras with [method Viewport.get_camera_3d].
 			</description>
 		</method>
 		<method name="get_file_system_dock" qualifiers="const">

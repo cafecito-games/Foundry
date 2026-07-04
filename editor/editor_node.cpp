@@ -1583,7 +1583,7 @@ void EditorNode::_reload_modified_scenes() {
 	focus_tile(focused_tile_id);
 	_set_current_scene(current_idx);
 	update_all_scene_tabs();
-	_update_tile_display_attachments();
+	_update_tile_display_attachments_deferred();
 	disk_changed->hide();
 }
 
@@ -3003,7 +3003,13 @@ void EditorNode::push_item_no_inspector(Object *p_object) {
 }
 
 void EditorNode::save_default_environment() {
-	Ref<Environment> fallback = get_tree()->get_root()->get_world_3d()->get_fallback_environment();
+	Ref<Environment> fallback;
+	if (active_scene_context) {
+		fallback = active_scene_context->get_world_3d()->get_fallback_environment();
+	}
+	if (fallback.is_null()) {
+		fallback = get_tree()->get_root()->get_world_3d()->get_fallback_environment();
+	}
 
 	if (fallback.is_valid() && fallback->get_path().is_resource_file()) {
 		HashMap<Ref<Resource>, bool> processed;
@@ -4134,7 +4140,7 @@ void EditorNode::_discard_changes(const String &p_str) {
 			EditorUndoRedoManager::get_singleton()->clear_history(editor_data.get_current_edited_scene_history_id(), false);
 			focus_tile(focused_tile_id);
 			update_all_scene_tabs();
-			_update_tile_display_attachments();
+			_update_tile_display_attachments_deferred();
 
 			confirmation->hide();
 		} break;
@@ -4502,7 +4508,7 @@ void EditorNode::_remove_scene(int index, bool p_change_tab, bool p_allow_collap
 				scene_workspace->collapse_tile(tile);
 			}
 			update_all_scene_tabs();
-			_update_tile_display_attachments();
+			_update_tile_display_attachments_deferred();
 		}
 	}
 }
@@ -4681,8 +4687,9 @@ void EditorNode::_set_current_scene_nocheck(int p_idx) {
 
 	// Attach each context's viewport into its tile (live editor in the focused
 	// tile, 2D preview or 3D placeholder elsewhere) after the SceneTree's
-	// edited-scene root points at the focused scene.
-	_update_tile_display_attachments();
+	// edited-scene root points at the focused scene. Defer so secondary views
+	// and viewport reparenting do not run while parents are still entering tree.
+	_update_tile_display_attachments_deferred();
 
 	if (p_idx >= 0 && editor_data.check_and_update_scene(p_idx)) {
 		if (!editor_data.get_scene_path(p_idx).is_empty()) {
@@ -4862,6 +4869,19 @@ void EditorNode::_reparent_main_screen_into(ScenePaneTile *p_tile) {
 	editor_main_screen->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 }
 
+void EditorNode::_update_tile_display_attachments_deferred() {
+	if (tile_display_attachments_update_pending) {
+		return;
+	}
+	tile_display_attachments_update_pending = true;
+	callable_mp(this, &EditorNode::_flush_tile_display_attachments).call_deferred();
+}
+
+void EditorNode::_flush_tile_display_attachments() {
+	tile_display_attachments_update_pending = false;
+	_update_tile_display_attachments();
+}
+
 void EditorNode::_update_tile_display_attachments() {
 	if (!scene_workspace) {
 		_attach_active_scene_context();
@@ -4892,7 +4912,7 @@ void EditorNode::_update_tile_display_attachments() {
 		if (is_focused_tile) {
 			// The focused tile hosts the single live editor via the reparented
 			// main screen and its scene_viewport_container.
-			tile->set_preview_mode(false, false, scene_name, icon);
+			tile->set_preview_mode(TilePreviewMode::FOCUSED_LIVE, scene_name, icon);
 			if (scene_viewport_container) {
 				ctx->set_display_parent(scene_viewport_container, true, true);
 			}
@@ -4908,41 +4928,73 @@ void EditorNode::_update_tile_display_attachments() {
 				_apply_preview_themes(ctx->get_viewport());
 			}
 		} else if (ctx->scene_has_3d_content()) {
-			// Live 3D preview is deferred; show a placeholder instead.
-			tile->set_preview_mode(false, true, scene_name, icon);
-			if (ctx->is_active()) {
-				ctx->deactivate();
+			tile->set_preview_mode(TilePreviewMode::LIVE_3D, scene_name, icon);
+			SubViewportContainer *context_host = tile->get_context_viewport_host();
+			ctx->set_display_parent(context_host, false);
+
+			Node3DEditorViewport *spatial_view = tile->get_spatial_view();
+			if (!spatial_view && Node3DEditor::get_singleton()) {
+				spatial_view = Node3DEditor::get_singleton()->create_secondary_viewport(ctx, tile->get_content_host());
+				tile->set_spatial_view(spatial_view);
+			} else if (spatial_view) {
+				spatial_view->get_viewport_node()->set_world_3d(ctx->get_world_3d());
 			}
+
+			Dictionary viewport_state;
+			const Dictionary plugin_states = ctx->get_editor_plugin_states();
+			if (plugin_states.has("3D")) {
+				const Dictionary spatial_state = plugin_states["3D"];
+				if (spatial_state.has("viewports")) {
+					const Array viewports = spatial_state["viewports"];
+					if (viewports.size() > 0) {
+						viewport_state = viewports[0];
+					}
+				}
+			}
+			if (spatial_view && !viewport_state.is_empty()) {
+				spatial_view->set_state(viewport_state);
+			} else {
+				tile->bind_3d_preview_world(ctx->get_world_3d());
+				tile->apply_3d_preview_camera_state(viewport_state);
+			}
+
+			ctx->get_viewport()->set_update_mode(context_host->is_visible_in_tree() ? SubViewport::UPDATE_ALWAYS : SubViewport::UPDATE_DISABLED);
+			context_host->recalc_force_viewport_sizes();
+			context_host->queue_redraw();
+			if (spatial_view) {
+				spatial_view->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+				spatial_view->queue_redraw();
+			}
+			RenderingServer::get_singleton()->viewport_set_disable_2d(ctx->get_viewport()->get_viewport_rid(), true);
+			RenderingServer::get_singleton()->viewport_set_disable_3d(ctx->get_viewport()->get_viewport_rid(), false);
 		} else {
-			tile->set_preview_mode(true, false, scene_name, icon);
-			SubViewportContainer *preview = tile->get_preview_container();
-			ctx->set_display_parent(preview, false);
-			// SubViewportContainer only (re)configures its child viewports from
-			// its own ENTER_TREE/RESIZED/VISIBILITY notifications, none of which
-			// fire when a live viewport is reparented into an already-mounted
-			// container. Drive the container's own sizing (which uses
-			// set_size_force, so it works with stretch enabled) and set the
-			// viewport's update mode explicitly, otherwise the preview renders a
-			// black rect.
-			ctx->get_viewport()->set_update_mode(preview->is_visible_in_tree() ? SubViewport::UPDATE_ALWAYS : SubViewport::UPDATE_DISABLED);
-			preview->recalc_force_viewport_sizes();
-			preview->queue_redraw();
-			// This branch only runs for 2D scenes (3D scenes fall to the placeholder
-			// branch above), so the preview must always render its 2D content. The
-			// shared scene_viewport_2d_disabled flag tracks the focused live editor's
-			// 2D/3D mode and can leave this viewport with 2D disabled (e.g. it was the
-			// focused tile while the main screen briefly defaulted to the 3D editor on
-			// startup); force 2D rendering on so the preview never blacks out.
+			tile->set_preview_mode(TilePreviewMode::LIVE_2D, scene_name, icon);
+			CanvasItemEditorView *canvas_view = tile->get_canvas_view();
+			if (!canvas_view && CanvasItemEditor::get_singleton()) {
+				canvas_view = CanvasItemEditor::create_secondary_view(ctx, tile->get_content_host());
+				tile->set_canvas_view(canvas_view);
+			} else if (canvas_view) {
+				canvas_view->bind_context(ctx);
+				const Dictionary plugin_states = ctx->get_editor_plugin_states();
+				if (plugin_states.has("2D")) {
+					canvas_view->set_view_state(plugin_states["2D"]);
+				}
+			}
+
+			SubViewportContainer *preview = canvas_view ? canvas_view->get_scene_viewport_container() : tile->get_preview_container();
+			if (preview) {
+				ctx->set_display_parent(preview, false);
+				ctx->get_viewport()->set_update_mode(preview->is_visible_in_tree() ? SubViewport::UPDATE_ALWAYS : SubViewport::UPDATE_DISABLED);
+				preview->recalc_force_viewport_sizes();
+				preview->queue_redraw();
+			}
+			if (canvas_view) {
+				canvas_view->push_viewport_state();
+				canvas_view->update_viewport();
+			}
 			RenderingServer::get_singleton()->viewport_set_disable_2d(ctx->get_viewport()->get_viewport_rid(), false);
 			RenderingServer::get_singleton()->viewport_set_environment_mode(ctx->get_viewport()->get_viewport_rid(), RenderingServer::VIEWPORT_ENVIRONMENT_ENABLED);
-			// The canvas transform (zoom/pan) is otherwise left untouched so each
-			// pane keeps its own independent view and toggling focus never changes
-			// what a pane shows. But a pane that has never been focused (e.g. right
-			// after restoring a multi-scene layout) still has the viewport's default
-			// identity transform, which renders the scene at 1:1 from the origin.
-			// Seed those with the editor's default framed view so they look right
-			// before being focused; a pane that already has a view keeps it.
-			if (CanvasItemEditor::get_singleton() && ctx->get_viewport()->get_global_canvas_transform() == Transform2D()) {
+			if (!canvas_view && CanvasItemEditor::get_singleton() && ctx->get_viewport()->get_global_canvas_transform() == Transform2D()) {
 				ctx->get_viewport()->set_global_canvas_transform(CanvasItemEditor::get_singleton()->get_default_view_transform());
 			}
 		}
@@ -5019,7 +5071,7 @@ void EditorNode::handle_tile_scene_drop(int p_target_tile_id, int p_region, int 
 	_bind_all_tile_docks();
 	update_all_scene_tabs();
 	focus_tile(dest_tile->get_tile_id());
-	_update_tile_display_attachments();
+	_update_tile_display_attachments_deferred();
 	save_editor_layout_delayed();
 }
 
@@ -7553,7 +7605,7 @@ void EditorNode::reload_scene(const String &p_path) {
 	// Restore focus to the originally focused tile and refresh every strip.
 	focus_tile(focused_tile_id);
 	update_all_scene_tabs();
-	_update_tile_display_attachments();
+	_update_tile_display_attachments_deferred();
 }
 
 void EditorNode::find_all_instances_inheriting_path_in_node(Node *p_root, Node *p_node, const String &p_instance_path, HashSet<Node *> &p_instance_list) {

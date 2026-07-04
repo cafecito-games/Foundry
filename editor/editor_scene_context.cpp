@@ -32,6 +32,7 @@
 
 #include "scene/3d/node_3d.h"
 #include "scene/main/viewport.h"
+#include "scene/resources/3d/world_3d.h"
 
 void EditorSceneContext::_recompute_3d_content() {
 	has_3d_content = false;
@@ -187,6 +188,8 @@ void EditorSceneContext::set_selected_node_ids(const Vector<ObjectID> &p_ids) {
 
 EditorSceneContext::EditorSceneContext() {
 	viewport = memnew(SubViewport);
+	world_3d.instantiate();
+	viewport->set_world_3d(world_3d);
 	viewport->set_auto_translate_mode(Node::AUTO_TRANSLATE_MODE_ALWAYS);
 	viewport->set_translation_domain(StringName());
 	viewport->set_embedding_subwindows(true);

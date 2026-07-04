@@ -59,6 +59,9 @@
 
 namespace TestEditorAutomationWorkflow {
 
+static const uint64_t WORKFLOW_SUBPROCESS_TIMEOUT_MSEC = 30000;
+static const uint64_t WORKFLOW_BOOT_TIMEOUT_MSEC = 30000;
+
 static Dictionary make_request(const Variant &p_id, const String &p_method, const Dictionary &p_params = Dictionary()) {
 	Dictionary request;
 	request["jsonrpc"] = "2.0";
@@ -276,7 +279,7 @@ static String workflow_run_subprocess(const List<String> &p_arguments, int &r_ex
 		return read;
 	};
 
-	const uint64_t deadline = OS::get_singleton()->get_ticks_msec() + 180000;
+	const uint64_t deadline = OS::get_singleton()->get_ticks_msec() + WORKFLOW_SUBPROCESS_TIMEOUT_MSEC;
 	while (OS::get_singleton()->get_ticks_msec() < deadline) {
 		pump_pipe(stdout_pipe, stdout_bytes);
 		pump_pipe(stderr_pipe, stderr_bytes);
@@ -527,7 +530,7 @@ TEST_CASE("[Editor][EditorAutomation] rapid relaunch reuses released automation 
 	Ref<FileAccess> first_stdout = first_pipe["stdio"];
 	const OS::ProcessID first_pid = first_pipe["pid"];
 	String first_output;
-	REQUIRE(workflow_wait_for_output_line(first_stdout, "FOUNDRY_AUTOMATION", first_output, first_pid, 120000));
+	REQUIRE(workflow_wait_for_output_line(first_stdout, "FOUNDRY_AUTOMATION", first_output, first_pid, WORKFLOW_BOOT_TIMEOUT_MSEC));
 
 	if (first_stdout.is_valid()) {
 		first_stdout->close();
@@ -553,7 +556,7 @@ TEST_CASE("[Editor][EditorAutomation] rapid relaunch reuses released automation 
 	Ref<FileAccess> second_stdout = second_pipe["stdio"];
 	const OS::ProcessID second_pid = second_pipe["pid"];
 	String second_output;
-	REQUIRE(workflow_wait_for_output_line(second_stdout, "FOUNDRY_AUTOMATION", second_output, second_pid, 120000));
+	REQUIRE(workflow_wait_for_output_line(second_stdout, "FOUNDRY_AUTOMATION", second_output, second_pid, WORKFLOW_BOOT_TIMEOUT_MSEC));
 	INFO("Second launch output:\n", second_output);
 	CHECK_FALSE(second_output.contains("FOUNDRY_AUTOMATION_ERROR"));
 
@@ -600,7 +603,7 @@ TEST_CASE("[Editor][EditorAutomation][MCP] launched editor smoke handshake") {
 	const OS::ProcessID pid = pipe_info["pid"];
 
 	String boot_output;
-	const uint64_t boot_deadline = OS::get_singleton()->get_ticks_msec() + 120000;
+	const uint64_t boot_deadline = OS::get_singleton()->get_ticks_msec() + WORKFLOW_BOOT_TIMEOUT_MSEC;
 	while (OS::get_singleton()->get_ticks_msec() < boot_deadline) {
 		if (stdout_pipe.is_valid() && stdout_pipe->is_open()) {
 			const uint64_t available = stdout_pipe->get_length();

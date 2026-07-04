@@ -34,6 +34,7 @@
 
 class Node;
 class SubViewport;
+class World3D;
 
 /**
  * Owns the editing state of a single edited scene: the scene root, the
@@ -48,6 +49,7 @@ class SubViewport;
  * out-of-tree nodes cannot live in an EditorSelection.
  */
 class EditorSceneContext {
+	Ref<World3D> world_3d;
 	SubViewport *viewport = nullptr;
 	Node *scene_root_node = nullptr;
 	EditorSelection *selection = nullptr;
@@ -62,6 +64,7 @@ class EditorSceneContext {
 	void _recompute_3d_content();
 
 public:
+	Ref<World3D> get_world_3d() const { return world_3d; }
 	SubViewport *get_viewport() const { return viewport; }
 	EditorSelection *get_selection() const { return selection; }
 	EditorSelectionHistory *get_history() { return &history; }
