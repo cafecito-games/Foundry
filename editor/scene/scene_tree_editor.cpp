@@ -2,7 +2,7 @@
 /*  scene_tree_editor.cpp                                                 */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -96,9 +96,7 @@ void SceneTreeEditor::_cell_button_pressed(Object *p_item, int p_column, int p_i
 	TreeItem *item = Object::cast_to<TreeItem>(p_item);
 	ERR_FAIL_NULL(item);
 
-	NodePath np = item->get_metadata(0);
-
-	Node *n = get_node(np);
+	Node *n = _get_node_from_item(item);
 	ERR_FAIL_NULL(n);
 
 	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
@@ -268,6 +266,44 @@ void SceneTreeEditor::_update_node_path(Node *p_node, bool p_recursive) {
 		Node *c = p_node->get_child(i, false);
 		_update_node_path(c, p_recursive);
 	}
+}
+
+Node *SceneTreeEditor::_get_node_from_item(TreeItem *p_item) const {
+	if (!p_item) {
+		return nullptr;
+	}
+
+	NodePath np = p_item->get_metadata(0);
+	if (np.is_empty()) {
+		return nullptr;
+	}
+
+	// Item metadata always stores absolute node paths, which cannot resolve
+	// while this editor is detached from the tree.
+	if (!is_inside_tree()) {
+		return nullptr;
+	}
+
+	return get_node_or_null(np);
+}
+
+bool SceneTreeEditor::_is_node_displayable(Node *p_node) const {
+	if (!p_node || !p_node->is_inside_tree()) {
+		return false;
+	}
+
+	// Detached editors cannot check displayability, so keep the node (its
+	// selection is retained until the editor re-enters the tree).
+	if (!is_inside_tree()) {
+		return true;
+	}
+
+	Node *scene_node = get_scene_node();
+	if (!scene_node || !scene_node->is_inside_tree()) {
+		return false;
+	}
+
+	return p_node == scene_node || scene_node->is_ancestor_of(p_node);
 }
 
 void SceneTreeEditor::_update_node_subtree(Node *p_node, TreeItem *p_parent, bool p_force) {
@@ -933,6 +969,16 @@ void SceneTreeEditor::_update_tree(bool p_scroll_to_selected) {
 	}
 
 	Node *scene_node = get_scene_node();
+	if (scene_node && !scene_node->is_inside_tree()) {
+		// The bound scene is detached (e.g. a non-focused tile), so there is
+		// nothing to display; clear the tree instead of resolving stale paths.
+		_reset();
+		marked.clear();
+		tree_dirty = false;
+		node_cache.force_update = false;
+		return;
+	}
+
 	const ObjectID scene_id = scene_node ? scene_node->get_instance_id() : ObjectID();
 	if (node_cache.current_scene_id != scene_id) {
 		_reset();
@@ -1002,26 +1048,29 @@ bool SceneTreeEditor::_update_filter(TreeItem *p_parent, bool p_scroll_to_select
 
 	bool selectable = keep;
 	bool is_root = p_parent == tree->get_root();
+	Node *item_node = _get_node_from_item(p_parent);
 
 	if (keep) {
-		Node *n = get_node(p_parent->get_metadata(0));
-		if (!p_parent->is_visible() || (is_root && tree->is_root_hidden())) {
+		if (!item_node) {
+			keep = false;
+			selectable = false;
+		} else if (!p_parent->is_visible() || (is_root && tree->is_root_hidden())) {
 			// Place back moved out children from when this item has hidden.
-			HashMap<Node *, CachedNode>::Iterator I = node_cache.get(n, false);
+			HashMap<Node *, CachedNode>::Iterator I = node_cache.get(item_node, false);
 			if (I && I->value.has_moved_children) {
 				_update_node_subtree(I->value.node, nullptr, true);
 			}
 		}
 
-		if (!valid_types.is_empty()) {
+		if (item_node && !valid_types.is_empty()) {
 			selectable = false;
 			for (const StringName &E : valid_types) {
-				if (n->is_class(E) ||
-						EditorNode::get_singleton()->is_object_of_custom_type(n, E)) {
+				if (item_node->is_class(E) ||
+						EditorNode::get_singleton()->is_object_of_custom_type(item_node, E)) {
 					selectable = true;
 					break;
 				} else {
-					Ref<Script> node_script = n->get_script();
+					Ref<Script> node_script = item_node->get_script();
 					while (node_script.is_valid()) {
 						if (node_script->get_path() == E) {
 							selectable = true;
@@ -1089,7 +1138,7 @@ bool SceneTreeEditor::_update_filter(TreeItem *p_parent, bool p_scroll_to_select
 						ti->select(0);
 					}
 
-					HashMap<Node *, CachedNode>::Iterator I = node_cache.get(get_node(p_parent->get_metadata(0)), false);
+					HashMap<Node *, CachedNode>::Iterator I = node_cache.get(item_node, false);
 					if (I) {
 						I->value.has_moved_children = true;
 					}
@@ -1110,9 +1159,8 @@ bool SceneTreeEditor::_update_filter(TreeItem *p_parent, bool p_scroll_to_select
 	}
 
 	if (editor_selection) {
-		Node *n = get_node(p_parent->get_metadata(0));
 		if (selectable) {
-			if (p_scroll_to_selected && n && editor_selection->is_selected(n)) {
+			if (p_scroll_to_selected && item_node && editor_selection->is_selected(item_node)) {
 				// Needs to be deferred to account for possible root visibility change.
 				callable_mp(tree, &Tree::scroll_to_item).call_deferred(p_parent, false);
 			}
@@ -1164,13 +1212,19 @@ bool SceneTreeEditor::_item_matches_all_terms(TreeItem *p_item, const PackedStri
 
 			if (parameter == "type" || parameter == "t") {
 				// Filter by Type.
-				Node *item_node = get_node(p_item->get_metadata(0));
+				Node *item_node = _get_node_from_item(p_item);
+				if (!item_node) {
+					return false;
+				}
 				if (!_node_matches_class_term(item_node, argument)) {
 					return false;
 				}
 			} else if (parameter == "group" || parameter == "g") {
 				// Filter by Group.
-				Node *node = get_node(p_item->get_metadata(0));
+				Node *node = _get_node_from_item(p_item);
+				if (!node) {
+					return false;
+				}
 
 				if (argument.is_empty()) {
 					// When argument is empty, match all Nodes belonging to any exposed group.
@@ -1278,9 +1332,8 @@ void SceneTreeEditor::_tree_changed() {
 void SceneTreeEditor::_selected_changed() {
 	TreeItem *s = tree->get_selected();
 	ERR_FAIL_NULL(s);
-	NodePath np = s->get_metadata(0);
 
-	Node *n = get_node(np);
+	Node *n = _get_node_from_item(s);
 
 	if (n == selected) {
 		return;
@@ -1309,9 +1362,7 @@ void SceneTreeEditor::_cell_multi_selected(Object *p_object, int p_cell, bool p_
 		return;
 	}
 
-	NodePath np = item->get_metadata(0);
-
-	Node *n = get_node(np);
+	Node *n = _get_node_from_item(item);
 
 	if (!n) {
 		return;
@@ -1390,12 +1441,18 @@ void SceneTreeEditor::_notification(int p_what) {
 				TreeItem *item = nullptr;
 				if (selected) {
 					// Scroll to selected node.
-					item = _find(tree->get_root(), selected->get_path());
+					if (_is_node_displayable(selected)) {
+						item = _find(tree->get_root(), selected->get_path());
+					} else {
+						selected = nullptr;
+					}
 				} else if (marked.size() == 1) {
 					// Scroll to a single marked node.
 					Node *marked_node = *marked.begin();
-					if (marked_node) {
+					if (_is_node_displayable(marked_node)) {
 						item = _find(tree->get_root(), marked_node->get_path());
+					} else {
+						marked.erase(marked_node);
 					}
 				}
 
@@ -1447,7 +1504,17 @@ void SceneTreeEditor::set_selected(Node *p_node, bool p_emit_selected) {
 		_update_tree();
 	}
 
-	if (selected == p_node) {
+	if (selected == p_node && (!p_node || _is_node_displayable(p_node))) {
+		return;
+	}
+
+	if (p_node && !_is_node_displayable(p_node)) {
+		// The requested node lives in a detached scene (e.g. a non-focused tile);
+		// clear the selection rather than resolving its path against this tree.
+		selected = nullptr;
+		if (p_emit_selected) {
+			emit_signal(SNAME("node_selected"));
+		}
 		return;
 	}
 
@@ -1656,7 +1723,7 @@ void SceneTreeEditor::_edited() {
 	if (is_scene_tree_dock && tree->get_next_selected(which)) {
 		List<Node *> nodes_to_rename;
 		for (TreeItem *item = which; item; item = tree->get_next_selected(item)) {
-			Node *n = get_node(item->get_metadata(0));
+			Node *n = _get_node_from_item(item);
 			ERR_FAIL_NULL(n);
 			nodes_to_rename.push_back(n);
 		}
@@ -1674,7 +1741,7 @@ void SceneTreeEditor::_edited() {
 
 		undo_redo->commit_action();
 	} else {
-		Node *n = get_node(which->get_metadata(0));
+		Node *n = _get_node_from_item(which);
 		ERR_FAIL_NULL(n);
 		rename_node(n, which->get_text(0));
 	}
@@ -1758,10 +1825,15 @@ void SceneTreeEditor::set_editor_selection(EditorSelection *p_selection) {
 		return;
 	}
 	Callable selection_changed_callable = callable_mp(this, &SceneTreeEditor::_selection_changed);
-	if (editor_selection && editor_selection->is_connected("selection_changed", selection_changed_callable)) {
-		editor_selection->disconnect("selection_changed", selection_changed_callable);
+	// The previously bound selection may already have been freed together with
+	// its edited scene, so resolve it through ObjectDB rather than dereferencing
+	// a possibly-stale pointer while disconnecting.
+	EditorSelection *previous_selection = ObjectDB::get_instance<EditorSelection>(editor_selection_id);
+	if (previous_selection && previous_selection->is_connected("selection_changed", selection_changed_callable)) {
+		previous_selection->disconnect("selection_changed", selection_changed_callable);
 	}
 	editor_selection = p_selection;
+	editor_selection_id = p_selection ? p_selection->get_instance_id() : ObjectID();
 	if (!editor_selection) {
 		return;
 	}
@@ -1775,13 +1847,7 @@ void SceneTreeEditor::set_editor_selection(EditorSelection *p_selection) {
 void SceneTreeEditor::_update_selection(TreeItem *item) {
 	ERR_FAIL_NULL(item);
 
-	NodePath np = item->get_metadata(0);
-
-	if (!has_node(np)) {
-		return;
-	}
-
-	Node *n = get_node(np);
+	Node *n = _get_node_from_item(item);
 
 	if (!n) {
 		return;
@@ -1837,9 +1903,7 @@ void SceneTreeEditor::_cell_collapsed(Object *p_obj) {
 
 	bool collapsed = ti->is_collapsed();
 
-	NodePath np = ti->get_metadata(0);
-
-	Node *n = get_node(np);
+	Node *n = _get_node_from_item(ti);
 	ERR_FAIL_NULL(n);
 
 	n->set_display_folded(collapsed);
@@ -1858,9 +1922,7 @@ Variant SceneTreeEditor::get_drag_data_fw(const Point2 &p_point, Control *p_from
 	Vector<Ref<Texture2D>> icons;
 	TreeItem *next = tree->get_next_selected(nullptr);
 	while (next) {
-		NodePath np = next->get_metadata(0);
-
-		Node *n = get_node(np);
+		Node *n = _get_node_from_item(next);
 		if (n) {
 			selected_nodes.push_back(n);
 			icons.push_back(next->get_icon(0));
@@ -2000,7 +2062,7 @@ bool SceneTreeEditor::can_drop_data_fw(const Point2 &p_point, const Variant &p_d
 		Array nodes = d["nodes"];
 
 		for (int i = 0; i < nodes.size(); i++) {
-			Node *n = get_node(nodes[i]);
+			Node *n = get_node_or_null(nodes[i]);
 			// Nodes from an instantiated scene can't be rearranged.
 			if (n && n->get_owner() && n->get_owner() != get_scene_node() && n->get_owner()->is_instance()) {
 				return false;
@@ -2028,7 +2090,7 @@ void SceneTreeEditor::drop_data_fw(const Point2 &p_point, const Variant &p_data,
 	}
 
 	NodePath np = item->get_metadata(0);
-	Node *n = get_node(np);
+	Node *n = _get_node_from_item(item);
 	if (!n) {
 		return;
 	}

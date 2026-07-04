@@ -2,7 +2,7 @@
 /*  inspector_dock.h                                                      */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -158,6 +158,9 @@ public:
 	// explicit dock/context reference instead of relying on these
 	// focused-context singletons.
 	static InspectorDock *get_singleton() { return singleton; }
+	// Repoints the focused-context singleton at a specific tile's dock as focus
+	// moves between tiles.
+	static void set_focused_instance(InspectorDock *p_instance) { singleton = p_instance; }
 	static EditorInspector *get_inspector_singleton() { return singleton ? singleton->inspector : nullptr; }
 
 protected:
@@ -181,6 +184,6 @@ public:
 	void store_script_properties(Object *p_object);
 	void apply_script_properties(Object *p_object);
 
-	InspectorDock(EditorData &p_editor_data);
+	InspectorDock(EditorData &p_editor_data, bool p_register_open_command = true);
 	~InspectorDock();
 };

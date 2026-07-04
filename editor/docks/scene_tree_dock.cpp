@@ -2,7 +2,7 @@
 /*  scene_tree_dock.cpp                                                   */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -1798,7 +1798,7 @@ void SceneTreeDock::_notification(int p_what) {
 		case NOTIFICATION_PROCESS: {
 			bool show_create_root = bool(EDITOR_GET("interface/editors/show_scene_tree_root_selection")) && get_tree()->get_edited_scene_root() == nullptr;
 
-			if (show_create_root != create_root_dialog->is_visible_in_tree() && !remote_tree->is_visible()) {
+			if (create_root_dialog && show_create_root != create_root_dialog->is_visible_in_tree() && (!remote_tree || !remote_tree->is_visible())) {
 				if (show_create_root) {
 					main_mc->set_theme_type_variation("");
 					create_root_dialog->show();
@@ -3013,13 +3013,16 @@ void SceneTreeDock::set_scene_context(EditorSceneContext *p_context) {
 	}
 
 	// Stop listening to the previously bound context's selection.
-	if (editor_selection && editor_selection->is_connected("selection_changed", callable_mp(this, &SceneTreeDock::_selection_changed))) {
-		editor_selection->disconnect("selection_changed", callable_mp(this, &SceneTreeDock::_selection_changed));
-	}
+	_disconnect_selection_changed();
 
 	scene_context = p_context;
 	editor_selection = p_context ? p_context->get_selection() : nullptr;
+	editor_selection_id = editor_selection ? editor_selection->get_instance_id() : ObjectID();
 
+	// The tree editor's selected item is UI-local state, so clear it before
+	// rebinding to avoid keeping a pointer to a node from the previous context
+	// after that context leaves the tree.
+	scene_tree->set_selected(nullptr, false);
 	// Push the new selection down to the tree editor so its edits target the
 	// bound context's selection, and start listening for its changes.
 	scene_tree->set_editor_selection(editor_selection);
@@ -3028,6 +3031,16 @@ void SceneTreeDock::set_scene_context(EditorSceneContext *p_context) {
 	}
 
 	update_tree();
+}
+
+void SceneTreeDock::_disconnect_selection_changed() {
+	// Resolve through ObjectDB in case the selection (owned by its scene context)
+	// was already freed without the dock being rebound first.
+	EditorSelection *selection = ObjectDB::get_instance<EditorSelection>(editor_selection_id);
+	if (selection && selection->is_connected("selection_changed", callable_mp(this, &SceneTreeDock::_selection_changed))) {
+		selection->disconnect("selection_changed", callable_mp(this, &SceneTreeDock::_selection_changed));
+	}
+	editor_selection_id = ObjectID();
 }
 
 void SceneTreeDock::_selection_changed() {
@@ -4871,18 +4884,25 @@ void SceneTreeDock::_update_configuration_warning() {
 	}
 }
 
-SceneTreeDock::SceneTreeDock(EditorSelection *p_editor_selection, EditorData &p_editor_data) {
+SceneTreeDock::SceneTreeDock(EditorSelection *p_editor_selection, EditorData &p_editor_data, bool p_register_open_command) {
 	set_name(TTRC("Scene"));
 	set_icon_name("PackedScene");
-	set_dock_shortcut(ED_SHORTCUT_AND_COMMAND("docks/open_scene", TTRC("Open Scene Dock")));
+	// Only one instance may register the editor-wide "Open Scene Dock" command;
+	// per-tile instances skip it so the command stays unique.
+	if (p_register_open_command) {
+		set_dock_shortcut(ED_SHORTCUT_AND_COMMAND("docks/open_scene", TTRC("Open Scene Dock")));
+	}
 	set_default_slot(EditorDock::DOCK_SLOT_LEFT_UR);
-	// Primary instance keeps the bare layout key; secondary instances (future
-	// phases) get "Scene:<n>". See EditorDock::get_effective_layout_key().
+	// The first instance keeps the bare layout key; per-tile instances get
+	// "Scene:<n>". See EditorDock::get_effective_layout_key().
 	set_layout_key("Scene");
 
-	singleton = this;
+	// The focused-instance singleton defaults to the first dock constructed;
+	// EditorNode repoints it as focus moves between tiles.
+	singleton = singleton ? singleton : this;
 	editor_data = &p_editor_data;
 	editor_selection = p_editor_selection;
+	editor_selection_id = editor_selection ? editor_selection->get_instance_id() : ObjectID();
 
 	VBoxContainer *main_vbox = memnew(VBoxContainer);
 	add_child(main_vbox);
@@ -5135,10 +5155,11 @@ SceneTreeDock::SceneTreeDock(EditorSelection *p_editor_selection, EditorData &p_
 }
 
 SceneTreeDock::~SceneTreeDock() {
-	singleton = nullptr;
-	if (editor_selection && editor_selection->is_connected("selection_changed", callable_mp(this, &SceneTreeDock::_selection_changed))) {
-		editor_selection->disconnect("selection_changed", callable_mp(this, &SceneTreeDock::_selection_changed));
+	if (singleton == this) {
+		singleton = nullptr;
 	}
+	_disconnect_selection_changed();
+	editor_selection = nullptr;
 	if (!node_clipboard.is_empty()) {
 		_clear_clipboard();
 	}

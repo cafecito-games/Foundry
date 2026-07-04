@@ -2,7 +2,7 @@
 /*  scene_tree_dock.h                                                     */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -146,6 +146,10 @@ class SceneTreeDock : public EditorDock {
 	// EditorNode globals.
 	EditorSceneContext *scene_context = nullptr;
 	EditorSelection *editor_selection = nullptr;
+	// The bound selection's object id, so it can be disconnected safely through
+	// ObjectDB even after the selection (owned by its scene context) is freed.
+	ObjectID editor_selection_id;
+	void _disconnect_selection_changed();
 	LocalVector<ObjectID> node_previous_selection;
 	bool update_script_button_queued = false;
 
@@ -322,6 +326,9 @@ public:
 	// act on a specific context should hold an explicit dock/context reference
 	// instead of relying on this focused-context singleton.
 	static SceneTreeDock *get_singleton() { return singleton; }
+	// Repoints the focused-context singleton at a specific tile's dock as focus
+	// moves between tiles.
+	static void set_focused_instance(SceneTreeDock *p_instance) { singleton = p_instance; }
 
 protected:
 	void _notification(int p_what);
@@ -373,6 +380,6 @@ public:
 		return script_create_dialog;
 	}
 
-	SceneTreeDock(EditorSelection *p_editor_selection, EditorData &p_editor_data);
+	SceneTreeDock(EditorSelection *p_editor_selection, EditorData &p_editor_data, bool p_register_open_command = true);
 	~SceneTreeDock();
 };

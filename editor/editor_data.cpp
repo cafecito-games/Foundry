@@ -2,7 +2,7 @@
 /*  editor_data.cpp                                                       */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -424,6 +424,9 @@ bool EditorData::is_scene_changed(int p_idx) {
 	if (p_idx == -1) {
 		p_idx = current_edited_scene;
 	}
+	if (p_idx < 0) {
+		return false;
+	}
 	ERR_FAIL_INDEX_V(p_idx, edited_scene.size(), false);
 
 	uint64_t current_scene_version = undo_redo_manager->get_or_create_history(edited_scene[p_idx].context->get_history_id()).undo_redo->get_version();
@@ -617,6 +620,7 @@ int EditorData::add_edited_scene(int p_at_pos) {
 	es.live_edit_root = NodePath(String("/root"));
 	es.context = memnew(EditorSceneContext);
 	es.context->set_history_id(last_created_scene++);
+	es.tile_id = focused_tile_id;
 	if (EditorNode::get_singleton()) {
 		EditorNode::get_singleton()->configure_scene_context(es.context);
 	}
@@ -630,6 +634,9 @@ int EditorData::add_edited_scene(int p_at_pos) {
 	if (current_edited_scene < 0) {
 		current_edited_scene = 0;
 	}
+
+	set_tile_current_scene(focused_tile_id, p_at_pos);
+
 	return p_at_pos;
 }
 
@@ -652,13 +659,40 @@ void EditorData::remove_scene(int p_idx) {
 		}
 	}
 
-	if (current_edited_scene > p_idx) {
-		current_edited_scene--;
-	} else if (current_edited_scene == p_idx && current_edited_scene > 0) {
-		current_edited_scene--;
+	for (KeyValue<int, int> &tile : tile_current_scene) {
+		const int cur = tile.value;
+		if (cur == p_idx) {
+			// Fall back to the neighboring tab (next, else previous), matching
+			// set_scene_tile() and normal tab-close behavior.
+			int replacement = -1;
+			const Vector<int> tile_scenes = get_tile_scene_indices(tile.key);
+			for (int i = 0; i < tile_scenes.size(); i++) {
+				if (tile_scenes[i] != p_idx) {
+					continue;
+				}
+				if (i + 1 < tile_scenes.size()) {
+					replacement = tile_scenes[i + 1];
+				} else if (i > 0) {
+					replacement = tile_scenes[i - 1];
+				}
+				break;
+			}
+			if (replacement > p_idx) {
+				replacement--;
+			}
+			tile.value = replacement;
+		} else if (cur > p_idx) {
+			tile.value--;
+		}
 	}
 
-	if (!edited_scene[p_idx].path.is_empty()) {
+	if (current_edited_scene > p_idx) {
+		current_edited_scene--;
+	} else if (current_edited_scene == p_idx) {
+		current_edited_scene = get_tile_current_scene(focused_tile_id);
+	}
+
+	if (!edited_scene[p_idx].path.is_empty() && EditorNode::get_singleton()) {
 		EditorNode::get_singleton()->emit_signal("scene_closed", edited_scene[p_idx].path);
 	}
 
@@ -786,6 +820,13 @@ int EditorData::get_edited_scene_from_path(const String &p_path) const {
 void EditorData::set_edited_scene(int p_idx) {
 	ERR_FAIL_INDEX(p_idx, edited_scene.size());
 	current_edited_scene = p_idx;
+	// Only the focused tile's current tab tracks the edited scene. Iterating
+	// scenes in other tiles (e.g. the save-all and reload-from-disk loops) must
+	// not hijack those tiles' visible tabs.
+	const int tile = edited_scene[p_idx].tile_id;
+	if (tile == focused_tile_id) {
+		tile_current_scene[tile] = p_idx;
+	}
 }
 
 Node *EditorData::EditedScene::get_root() const {
@@ -809,12 +850,13 @@ EditorSceneContext *EditorData::get_active_scene_context() const {
 
 Node *EditorData::get_edited_scene_root(int p_idx) {
 	if (p_idx < 0) {
-		ERR_FAIL_INDEX_V(current_edited_scene, edited_scene.size(), nullptr);
-		return edited_scene[current_edited_scene].get_root();
-	} else {
-		ERR_FAIL_INDEX_V(p_idx, edited_scene.size(), nullptr);
-		return edited_scene[p_idx].get_root();
+		p_idx = current_edited_scene;
 	}
+	if (p_idx < 0) {
+		return nullptr;
+	}
+	ERR_FAIL_INDEX_V(p_idx, edited_scene.size(), nullptr);
+	return edited_scene[p_idx].get_root();
 }
 
 void EditorData::set_edited_scene_root(Node *p_root, bool p_attach_to_viewport) {
@@ -873,10 +915,127 @@ void EditorData::move_edited_scene_to_index(int p_idx) {
 	ERR_FAIL_INDEX(current_edited_scene, edited_scene.size());
 	ERR_FAIL_INDEX(p_idx, edited_scene.size());
 
+	const int from_idx = current_edited_scene;
+	auto remap_index = [&](int p_scene_idx) -> int {
+		if (p_scene_idx < 0) {
+			return -1;
+		}
+		if (p_scene_idx == from_idx) {
+			return p_idx;
+		}
+		if (from_idx < p_idx) {
+			if (p_scene_idx > from_idx && p_scene_idx <= p_idx) {
+				return p_scene_idx - 1;
+			}
+		} else if (from_idx > p_idx) {
+			if (p_scene_idx >= p_idx && p_scene_idx < from_idx) {
+				return p_scene_idx + 1;
+			}
+		}
+		return p_scene_idx;
+	};
+
+	for (KeyValue<int, int> &tile : tile_current_scene) {
+		tile.value = remap_index(tile.value);
+	}
+
 	EditedScene es = edited_scene[current_edited_scene];
 	edited_scene.remove_at(current_edited_scene);
 	edited_scene.insert(p_idx, es);
 	current_edited_scene = p_idx;
+}
+
+int EditorData::get_scene_tile(int p_idx) const {
+	ERR_FAIL_INDEX_V(p_idx, edited_scene.size(), -1);
+	return edited_scene[p_idx].tile_id;
+}
+
+Vector<int> EditorData::get_tile_scene_indices(int p_tile_id) const {
+	Vector<int> result;
+	for (int i = 0; i < edited_scene.size(); i++) {
+		if (edited_scene[i].tile_id == p_tile_id) {
+			result.push_back(i);
+		}
+	}
+	return result;
+}
+
+int EditorData::tile_tab_to_scene_index(int p_tile_id, int p_tab) const {
+	const Vector<int> indices = get_tile_scene_indices(p_tile_id);
+	if (p_tab < 0 || p_tab >= indices.size()) {
+		return -1;
+	}
+	return indices[p_tab];
+}
+
+int EditorData::scene_index_to_tile_tab(int p_idx) const {
+	ERR_FAIL_INDEX_V(p_idx, edited_scene.size(), -1);
+	const int tile = edited_scene[p_idx].tile_id;
+	const Vector<int> indices = get_tile_scene_indices(tile);
+	for (int i = 0; i < indices.size(); i++) {
+		if (indices[i] == p_idx) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+int EditorData::get_tile_current_scene(int p_tile_id) const {
+	const int *v = tile_current_scene.getptr(p_tile_id);
+	return v ? *v : -1;
+}
+
+void EditorData::set_tile_current_scene(int p_tile_id, int p_idx) {
+	tile_current_scene[p_tile_id] = p_idx;
+	if (p_tile_id == focused_tile_id) {
+		current_edited_scene = p_idx;
+	}
+#ifdef DEV_ENABLED
+	if (p_idx >= 0) {
+		ERR_FAIL_COND(p_idx >= edited_scene.size());
+		ERR_FAIL_COND(edited_scene[p_idx].tile_id != p_tile_id);
+	}
+	ERR_FAIL_COND_MSG(current_edited_scene != get_tile_current_scene(focused_tile_id), "EditorData tile current invariant broken.");
+#endif
+}
+
+int EditorData::get_focused_tile() const {
+	return focused_tile_id;
+}
+
+void EditorData::set_focused_tile(int p_tile_id) {
+	focused_tile_id = p_tile_id;
+	current_edited_scene = get_tile_current_scene(p_tile_id);
+}
+
+void EditorData::set_scene_tile(int p_idx, int p_tile_id) {
+	ERR_FAIL_INDEX(p_idx, edited_scene.size());
+	const int old_tile = edited_scene[p_idx].tile_id;
+	if (old_tile == p_tile_id) {
+		return;
+	}
+	int old_tile_replacement = -1;
+	if (get_tile_current_scene(old_tile) == p_idx) {
+		const Vector<int> old_scenes = get_tile_scene_indices(old_tile);
+		for (int i = 0; i < old_scenes.size(); i++) {
+			if (old_scenes[i] != p_idx) {
+				continue;
+			}
+			if (i + 1 < old_scenes.size()) {
+				old_tile_replacement = old_scenes[i + 1];
+			} else if (i > 0) {
+				old_tile_replacement = old_scenes[i - 1];
+			}
+			break;
+		}
+	}
+	edited_scene.write[p_idx].tile_id = p_tile_id;
+	if (get_tile_current_scene(old_tile) == p_idx) {
+		set_tile_current_scene(old_tile, old_tile_replacement);
+	}
+	if (get_tile_current_scene(p_tile_id) < 0) {
+		set_tile_current_scene(p_tile_id, p_idx);
+	}
 }
 
 Ref<Script> EditorData::get_scene_root_script(int p_idx) const {
@@ -952,12 +1111,20 @@ String EditorData::get_scene_path(int p_idx) const {
 }
 
 void EditorData::set_edited_scene_live_edit_root(const NodePath &p_root) {
+	// A focused tile with no open scene has no live-edit root to record.
+	if (current_edited_scene < 0) {
+		return;
+	}
 	ERR_FAIL_INDEX(current_edited_scene, edited_scene.size());
 
 	edited_scene.write[current_edited_scene].live_edit_root = p_root;
 }
 
 NodePath EditorData::get_edited_scene_live_edit_root() {
+	// A focused tile with no open scene has no live-edit root.
+	if (current_edited_scene < 0) {
+		return NodePath(String("/root"));
+	}
 	ERR_FAIL_INDEX_V(current_edited_scene, edited_scene.size(), String());
 
 	return edited_scene[current_edited_scene].live_edit_root;
@@ -969,6 +1136,8 @@ void EditorData::clear_edited_scenes() {
 	}
 	edited_scene.clear();
 	current_edited_scene = -1;
+	tile_current_scene.clear();
+	focused_tile_id = 0;
 	SceneTree::get_singleton()->set_edited_scene_root(nullptr);
 }
 

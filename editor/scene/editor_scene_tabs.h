@@ -2,7 +2,7 @@
 /*  editor_scene_tabs.h                                                   */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -47,6 +47,11 @@ class EditorSceneTabs : public MarginContainer {
 	inline static EditorSceneTabs *singleton = nullptr;
 
 public:
+	// TabBar rearrange group shared by every tile's scene strip so a scene tab
+	// can be dragged from one strip and dropped onto another tile. Kept distinct
+	// from the editor dock tab rearrange group.
+	static constexpr int TILE_TAB_REARRANGE_GROUP = 100;
+
 	enum {
 		SCENE_SHOW_IN_FILESYSTEM = 1000, // Prevents conflicts with EditorNode options.
 		SCENE_RUN,
@@ -55,6 +60,7 @@ public:
 	};
 
 private:
+	int tile_id = 0;
 	PanelContainer *tabbar_panel = nullptr;
 	HBoxContainer *tabbar_container = nullptr;
 
@@ -68,6 +74,7 @@ private:
 	TextureRect *tab_preview = nullptr;
 
 	int last_hovered_tab = -1;
+	bool menu_initialized = false;
 
 	void _scene_tab_changed(int p_tab);
 	void _scene_tab_script_edited(int p_tab);
@@ -96,7 +103,13 @@ protected:
 	static void _bind_methods();
 
 public:
+	// Returns the focused tile's tab strip. Callers that need a specific tile's
+	// strip should hold an explicit ScenePaneTile/EditorSceneTabs reference
+	// instead of relying on this focused-instance singleton.
 	static EditorSceneTabs *get_singleton() { return singleton; }
+	static void set_focused_singleton(EditorSceneTabs *p_tabs) { singleton = p_tabs; }
+
+	int get_tile_id() const { return tile_id; }
 
 	void add_extra_button(Button *p_button);
 
@@ -105,5 +118,6 @@ public:
 
 	void update_scene_tabs();
 
-	EditorSceneTabs();
+	EditorSceneTabs(int p_tile_id = 0);
+	~EditorSceneTabs();
 };

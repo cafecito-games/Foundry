@@ -2,7 +2,7 @@
 /*  test_dock_scene_context_binding.h                                     */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -274,6 +274,69 @@ TEST_CASE("[SceneTree][Editor] Colliding dock layout keys are uniquified") {
 
 	memdelete(dock_a);
 	memdelete(dock_b);
+}
+
+TEST_CASE("[SceneTree][Editor] SceneTreeDock rebinds safely after its bound context is freed") {
+	// A dock bound to a non-focused tile's context must not keep a dangling
+	// EditorSelection* after that scene (and its selection) is freed: rebinding
+	// resolves the previous selection through ObjectDB instead of dereferencing
+	// the freed pointer while disconnecting from it.
+	EditorData editor_data;
+	EditorSelection *selection = memnew(EditorSelection);
+	SceneTreeDock *dock = memnew(SceneTreeDock(selection, editor_data));
+
+	EditorSceneContext *context_a = memnew(EditorSceneContext);
+	const ObjectID freed_selection_id = context_a->get_selection()->get_instance_id();
+	dock->set_scene_context(context_a);
+
+	memdelete(context_a);
+	CHECK(ObjectDB::get_instance(freed_selection_id) == nullptr);
+
+	EditorSceneContext *context_b = memnew(EditorSceneContext);
+	dock->set_scene_context(context_b);
+	CHECK(dock->get_scene_context() == context_b);
+
+	memdelete(dock);
+	memdelete(selection);
+	memdelete(context_b);
+}
+
+TEST_CASE("[SceneTree][Editor] SceneTreeDock destructor tolerates deleted bound selection") {
+	EditorData editor_data;
+	EditorSelection *selection = memnew(EditorSelection);
+	SceneTreeDock *dock = memnew(SceneTreeDock(selection, editor_data));
+
+	EditorSceneContext *context = memnew(EditorSceneContext);
+	dock->set_scene_context(context);
+
+	memdelete(context);
+	memdelete(dock);
+	memdelete(selection);
+}
+
+TEST_CASE("[SceneTree][Editor] Docks resolve get_singleton to the focused instance") {
+	EditorData editor_data;
+	EditorSelection *selection = memnew(EditorSelection);
+
+	SceneTreeDock *first_tree = memnew(SceneTreeDock(selection, editor_data, false));
+	SceneTreeDock *second_tree = memnew(SceneTreeDock(selection, editor_data, false));
+	SceneTreeDock::set_focused_instance(second_tree);
+	CHECK(SceneTreeDock::get_singleton() == second_tree);
+	SceneTreeDock::set_focused_instance(first_tree);
+	CHECK(SceneTreeDock::get_singleton() == first_tree);
+
+	InspectorDock *first_inspector = memnew(InspectorDock(editor_data, false));
+	InspectorDock *second_inspector = memnew(InspectorDock(editor_data, false));
+	InspectorDock::set_focused_instance(second_inspector);
+	CHECK(InspectorDock::get_singleton() == second_inspector);
+	InspectorDock::set_focused_instance(first_inspector);
+	CHECK(InspectorDock::get_singleton() == first_inspector);
+
+	memdelete(second_inspector);
+	memdelete(first_inspector);
+	memdelete(second_tree);
+	memdelete(first_tree);
+	memdelete(selection);
 }
 
 } // namespace TestDockSceneContextBinding
