@@ -319,7 +319,7 @@ void EditorAutomationServer::_run_acceptance_workflow_if_requested() {
 	workflow_run_completed = true;
 	stop();
 
-	if (SceneTree *tree = get_tree()) {
+	if (get_tree()) {
 		workflow_quit_exit_code = workflow_result.ok ? EXIT_SUCCESS : EXIT_FAILURE;
 		// Let deferred editor startup reparents settle before tearing down.
 		workflow_quit_frames_remaining = 10;
