@@ -4897,8 +4897,9 @@ void EditorNode::_reparent_main_screen_into(ScenePaneTile *p_tile) {
 			editor_main_screen->get_parent()->remove_child(editor_main_screen);
 		}
 		host->add_child(editor_main_screen);
-		editor_main_screen->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-		editor_main_screen->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		// The content host is a plain clipping Control (so the main screen's
+		// minimum size never constrains tile layout); fill it via anchors.
+		editor_main_screen->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 	}
 }
 
@@ -9490,11 +9491,10 @@ EditorNode::EditorNode() {
 
 	editor_main_screen = memnew(EditorMainScreen);
 	editor_main_screen->set_custom_minimum_size(Size2(0, 80) * EDSCALE);
-	editor_main_screen->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	editor_main_screen->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	// The main screen lives inside the focused tile's content host and is
 	// reparented between tiles as focus moves (see _reparent_main_screen_into).
 	initial_tile->get_content_host()->add_child(editor_main_screen);
+	editor_main_screen->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 
 	placeholder_scene_viewport = memnew(SubViewport);
 	placeholder_scene_viewport->set_auto_translate_mode(AUTO_TRANSLATE_MODE_ALWAYS);

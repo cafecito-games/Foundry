@@ -101,10 +101,6 @@ void ScenePaneTile::input(const Ref<InputEvent> &p_event) {
 	}
 }
 
-Control *ScenePaneTile::get_content_host() const {
-	return content_host;
-}
-
 void ScenePaneTile::set_focused_visual(bool p_focused) {
 	if (!focus_frame) {
 		return;
@@ -158,31 +154,35 @@ void ScenePaneTile::setup(int p_tile_id, EditorSelection *p_editor_selection, Ed
 	// open-command/shortcut registration, which only makes sense for
 	// manager-owned docks.
 	scene_tree_dock = memnew(SceneTreeDock(p_editor_selection, p_editor_data, false));
-	scene_tree_dock->set_custom_minimum_size(Size2(220, 0) * EDSCALE);
+	scene_tree_dock->set_custom_minimum_size(Size2(180, 0) * EDSCALE);
 	scene_tree_dock->set_h_size_flags(Control::SIZE_FILL);
 	body->add_child(scene_tree_dock);
 
-	content_host = memnew(MarginContainer);
+	content_host = memnew(Control);
 	content_host->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	content_host->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	content_host->set_clip_contents(true);
+	content_host->set_mouse_filter(Control::MOUSE_FILTER_PASS);
 	body->add_child(content_host);
 
 	inspector_dock = memnew(InspectorDock(p_editor_data, false));
-	inspector_dock->set_custom_minimum_size(Size2(220, 0) * EDSCALE);
+	inspector_dock->set_custom_minimum_size(Size2(180, 0) * EDSCALE);
 	inspector_dock->set_h_size_flags(Control::SIZE_FILL);
 	body->add_child(inspector_dock);
 
 	preview_container = memnew(SubViewportContainer);
 	preview_container->set_stretch(true);
+	preview_container->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 	preview_container->hide();
 	content_host->add_child(preview_container);
 
 	preview_placeholder = memnew(PanelContainer);
+	preview_placeholder->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 	preview_placeholder->hide();
 	content_host->add_child(preview_placeholder);
 
 	CenterContainer *placeholder_center = memnew(CenterContainer);
+	placeholder_center->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 	preview_placeholder->add_child(placeholder_center);
 
 	VBoxContainer *placeholder_vb = memnew(VBoxContainer);

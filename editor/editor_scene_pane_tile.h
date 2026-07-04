@@ -38,7 +38,6 @@ class EditorSelection;
 class HSplitContainer;
 class InspectorDock;
 class Label;
-class MarginContainer;
 class PanelContainer;
 class SceneTreeDock;
 class SceneTreeEditor;
@@ -60,7 +59,10 @@ class ScenePaneTile : public VBoxContainer {
 	EditorSceneTabs *scene_tabs = nullptr;
 	HSplitContainer *body = nullptr;
 	SceneTreeDock *scene_tree_dock = nullptr; // Left, in-tile.
-	MarginContainer *content_host = nullptr; // Center.
+	// Center. A plain clipping Control (children use full-rect anchors) so
+	// hosted content (the main screen, previews) never inflates the tile's
+	// minimum size and tiles stay freely resizable.
+	Control *content_host = nullptr;
 	InspectorDock *inspector_dock = nullptr; // Right, in-tile.
 	SubViewportContainer *preview_container = nullptr; // Non-focused 2D live preview.
 	PanelContainer *preview_placeholder = nullptr; // Non-focused 3D placeholder.
@@ -79,7 +81,7 @@ public:
 	EditorSceneTabs *get_scene_tabs() const { return scene_tabs; }
 	SceneTreeDock *get_scene_tree_dock() const { return scene_tree_dock; }
 	InspectorDock *get_inspector_dock() const { return inspector_dock; }
-	Control *get_content_host() const;
+	Control *get_content_host() const { return content_host; }
 	SubViewportContainer *get_preview_container() const { return preview_container; }
 
 	void set_focused_visual(bool p_focused);

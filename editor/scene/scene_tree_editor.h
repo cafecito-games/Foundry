@@ -47,6 +47,9 @@ class SceneTreeEditor : public Control {
 	// selection through ObjectDB instead of dereferencing a pointer that may
 	// have been freed (each edited scene owns its own selection).
 	ObjectID editor_selection_id;
+	// Optional resolver for the displayed scene root; per-tile docks bind it
+	// to their scene context so each tile's tree shows its own scene.
+	Callable scene_node_getter;
 
 	enum SceneTreeEditorButton {
 		BUTTON_SUBSCENE = 0,
@@ -233,6 +236,10 @@ class SceneTreeEditor : public Control {
 public:
 	// Public for use with callable_mp.
 	void _update_tree(bool p_scroll_to_selected = false);
+
+	// Optional resolver for the displayed scene root; per-tile docks bind it
+	// to their scene context so each tile's tree shows its own scene.
+	void set_scene_node_getter(const Callable &p_getter);
 
 	void rename_node(Node *p_node, const String &p_name, TreeItem *p_item = nullptr);
 

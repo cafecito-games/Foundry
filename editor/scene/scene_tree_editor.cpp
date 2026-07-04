@@ -54,7 +54,18 @@
 Node *SceneTreeEditor::get_scene_node() const {
 	ERR_FAIL_COND_V(!is_inside_tree(), nullptr);
 
+	// A per-tile dock displays its bound scene context's root; the global
+	// edited root only applies to editors without a custom resolver.
+	if (scene_node_getter.is_valid()) {
+		Variant result = scene_node_getter.call();
+		return Object::cast_to<Node>(result.operator Object *());
+	}
+
 	return get_tree()->get_edited_scene_root();
+}
+
+void SceneTreeEditor::set_scene_node_getter(const Callable &p_getter) {
+	scene_node_getter = p_getter;
 }
 
 PackedStringArray SceneTreeEditor::_get_node_configuration_warnings(Node *p_node) {

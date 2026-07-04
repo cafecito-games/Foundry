@@ -5046,6 +5046,9 @@ SceneTreeDock::SceneTreeDock(EditorSelection *p_editor_selection, EditorData &p_
 
 	scene_tree = memnew(SceneTreeEditor(false, true, true));
 	main_mc->add_child(scene_tree);
+	// Display the bound context's root, not the global edited root, so each
+	// workspace tile's tree shows its own scene.
+	scene_tree->set_scene_node_getter(callable_mp(this, &SceneTreeDock::_get_edited_scene_root));
 	scene_tree->get_scene_tree()->set_scroll_hint_mode(Tree::SCROLL_HINT_MODE_TOP);
 	scene_tree->connect("rmb_pressed", callable_mp(this, &SceneTreeDock::_tree_rmb));
 

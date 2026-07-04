@@ -58,10 +58,12 @@ public:
 		SCENE_CLOSE_RIGHT,
 	};
 
-	// Shared TabBar rearrange group for all scene strips, distinct from the
-	// dock group (1). Cross-strip drops are handled by the workspace drop
-	// overlay, never by TabBar's internal cross-bar move.
-	static constexpr int TAB_REARRANGE_GROUP = 100;
+	// Per-strip TabBar rearrange group base, distinct from the dock group (1).
+	// Each strip gets its own group (base + tile id) so TabBar's internal
+	// cross-bar move (which emits no signal) can never transfer tabs between
+	// strips behind the scene model's back; cross-strip drops are handled by
+	// the workspace drop overlay instead.
+	static constexpr int TAB_REARRANGE_GROUP_BASE = 100;
 
 private:
 	int tile_id = 0;

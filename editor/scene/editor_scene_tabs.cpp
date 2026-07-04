@@ -475,7 +475,7 @@ EditorSceneTabs::EditorSceneTabs(int p_tile_id) {
 	scene_tabs->set_tab_close_display_policy((TabBar::CloseButtonDisplayPolicy)EDITOR_GET("interface/scene_tabs/display_close_button").operator int());
 	scene_tabs->set_max_tab_width(int(EDITOR_GET("interface/scene_tabs/maximum_width")) * EDSCALE);
 	scene_tabs->set_drag_to_rearrange_enabled(true);
-	scene_tabs->set_tabs_rearrange_group(TAB_REARRANGE_GROUP);
+	scene_tabs->set_tabs_rearrange_group(TAB_REARRANGE_GROUP_BASE + p_tile_id);
 	scene_tabs->set_auto_translate_mode(AUTO_TRANSLATE_MODE_DISABLED);
 	scene_tabs->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	tabbar_container->add_child(scene_tabs);
