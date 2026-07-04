@@ -549,8 +549,12 @@ TEST_CASE("[Editor][Automation][MCP] socket listen, auth handshake, and shutdown
 
 #ifdef TOOLS_ENABLED
 
-struct AutomationCommandProbe {
+class AutomationCommandProbe : public Object {
+	FOUNDRY_CLASS(AutomationCommandProbe, Object);
+
+public:
 	bool executed = false;
+
 	void mark() {
 		executed = true;
 	}
@@ -579,7 +583,8 @@ static Dictionary command_entry_for_key(const Array &p_commands, const String &p
 TEST_CASE("[Editor][Automation][MCP] list_commands exposes command discovery schema") {
 	EditorAutomationMCPDispatcher dispatcher;
 	const Dictionary response = dispatcher.handle_message(make_request(20, "tools/list"));
-	const Array tools = response["result"]["tools"];
+	const Dictionary result = response.get("result", Dictionary());
+	const Array tools = result.get("tools", Array());
 
 	bool found = false;
 	for (int i = 0; i < tools.size(); i++) {
@@ -634,7 +639,8 @@ TEST_CASE("[Editor][Automation][MCP] list_commands and foundry://commands report
 	read_params["uri"] = "foundry://commands";
 	const Dictionary read_response = dispatcher.handle_message(make_request(22, "resources/read", read_params));
 	CHECK(read_response.has("result"));
-	const Array contents = read_response["result"]["contents"];
+	const Dictionary read_result = read_response.get("result", Dictionary());
+	const Array contents = read_result.get("contents", Array());
 	REQUIRE(contents.size() >= 1);
 	const Dictionary content = contents[0];
 	CHECK(String(content.get("uri", String())) == "foundry://commands");
@@ -705,7 +711,8 @@ TEST_CASE("[Editor][Automation][MCP] disabled shortcut command is reported as no
 	list_params["name"] = "list_commands";
 	list_params["arguments"] = Dictionary();
 	const Dictionary list_response = dispatcher.handle_message(make_request(25, "tools/call", list_params));
-	const Dictionary list_structured = list_response["result"]["structuredContent"];
+	const Dictionary list_result = list_response.get("result", Dictionary());
+	const Dictionary list_structured = list_result.get("structuredContent", Dictionary());
 	const Dictionary disabled_entry = command_entry_for_key(list_structured.get("commands", Array()), "automation/disabled_command");
 	CHECK((bool)disabled_entry.get("enabled", true) == false);
 	CHECK((bool)disabled_entry.get("runnable_by_run_command", true) == false);
@@ -717,7 +724,8 @@ TEST_CASE("[Editor][Automation][MCP] disabled shortcut command is reported as no
 	run_args["command"] = "automation/disabled_command";
 	run_params["arguments"] = run_args;
 	const Dictionary run_response = dispatcher.handle_message(make_request(26, "tools/call", run_params));
-	const Dictionary run_structured = run_response["result"]["structuredContent"];
+	const Dictionary run_result = run_response.get("result", Dictionary());
+	const Dictionary run_structured = run_result.get("structuredContent", Dictionary());
 	CHECK((bool)run_structured.get("ok", true) == false);
 	CHECK(String(run_structured.get("kind", String())) == "disabled_command");
 
@@ -734,7 +742,8 @@ TEST_CASE("[Editor][Automation][MCP] scene_tree/add_child_node shortcut is disco
 	list_args["query"] = "add_child";
 	list_params["arguments"] = list_args;
 	const Dictionary list_response = dispatcher.handle_message(make_request(27, "tools/call", list_params));
-	const Dictionary list_structured = list_response["result"]["structuredContent"];
+	const Dictionary list_result = list_response.get("result", Dictionary());
+	const Dictionary list_structured = list_result.get("structuredContent", Dictionary());
 	const Dictionary entry = command_entry_for_key(list_structured.get("commands", Array()), "scene_tree/add_child_node");
 	CHECK(String(entry.get("key", String())) == "scene_tree/add_child_node");
 	CHECK(String(entry.get("label", String())) == "Add Child Node...");

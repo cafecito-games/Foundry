@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "core/input/shortcut.h"
 #include "core/variant/variant.h"
 
 // Shared command discovery and execution for editor automation clients.
