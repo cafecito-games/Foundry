@@ -396,19 +396,45 @@ EditorAutomationWindowFocusResult EditorAutomationInput::ensure_window_focus(Nod
 		return result;
 	}
 
+	Window *root_window = p_node->get_window();
+	if (root_window != nullptr) {
+		Window *exclusive = root_window->get_exclusive_child();
+		while (exclusive != nullptr) {
+			if (exclusive == result.window || exclusive->is_ancestor_of(result.window)) {
+				result.ok = true;
+				return result;
+			}
+			exclusive = exclusive->get_exclusive_child();
+		}
+	}
+
 	if (!result.window->is_visible()) {
 		result.message = vformat("Window '%s' is not visible.", result.window->get_title());
 		return result;
 	}
 
+	if (Control *control = Object::cast_to<Control>(p_node)) {
+		control->grab_focus();
+		MessageQueue::get_singleton()->flush();
+		if (control->has_focus()) {
+			result.ok = true;
+			return result;
+		}
+	}
+
 	result.window->grab_focus();
 	MessageQueue::get_singleton()->flush();
 
-	if (!result.window->has_focus()) {
-		result.message = vformat("Failed to focus window '%s'. Another window may own focus.", result.window->get_title());
+	if (result.window->has_focus()) {
+		result.ok = true;
 		return result;
 	}
 
-	result.ok = true;
+	if (root_window != nullptr && root_window->has_focus_or_active_popup() && result.window == root_window) {
+		result.ok = true;
+		return result;
+	}
+
+	result.message = vformat("Failed to focus window '%s'. Another window may own focus.", result.window->get_title());
 	return result;
 }
