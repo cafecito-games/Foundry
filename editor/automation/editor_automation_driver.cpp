@@ -37,7 +37,10 @@
 #include "editor/automation/editor_automation_selector.h"
 #include "editor/automation/editor_automation_trace.h"
 #include "editor/automation/editor_automation_workflow.h"
+#include "editor/inspector/editor_inspector.h"
+#include "editor/inspector/editor_properties.h"
 #include "scene/gui/base_button.h"
+#include "scene/gui/check_box.h"
 #include "scene/gui/code_edit.h"
 #include "scene/gui/control.h"
 #include "scene/gui/item_list.h"
@@ -143,7 +146,25 @@ String _focused_element_id(const EditorAutomationSnapshot &p_snapshot) {
 }
 
 bool _semantic_click_available(Node *p_node) {
-	return Object::cast_to<BaseButton>(p_node) != nullptr;
+	return Object::cast_to<BaseButton>(p_node) != nullptr ||
+			Object::cast_to<EditorPropertyCheck>(p_node) != nullptr;
+}
+
+bool _perform_semantic_property_check_click(EditorPropertyCheck *p_property, PackedStringArray &r_events) {
+	CheckBox *checkbox = nullptr;
+	for (int i = 0; i < p_property->get_child_count(false); i++) {
+		Node *child = p_property->get_child(i, false);
+		checkbox = Object::cast_to<CheckBox>(child);
+		if (checkbox != nullptr) {
+			break;
+		}
+	}
+	ERR_FAIL_NULL_V(checkbox, false);
+
+	checkbox->set_pressed(!checkbox->is_pressed());
+	checkbox->emit_signal(SceneStringName(pressed));
+	r_events.push_back("pressed");
+	return true;
 }
 
 bool _semantic_set_text_available(Node *p_node) {
@@ -262,13 +283,21 @@ EditorAutomationActionResult _action_click(
 	const bool try_input = p_route_preference != EditorAutomationRoutePreference::SEMANTIC;
 
 	if (try_semantic) {
-		BaseButton *button = Object::cast_to<BaseButton>(node);
 		PackedStringArray events;
-		if (button != nullptr && _perform_semantic_click(button, events)) {
-			EditorAutomationActionResult result = EditorAutomationActionResult::success(EditorAutomationActionRouteNames::SEMANTIC_CLICK, p_element.id);
-			result.events = events;
-			result.focus = _focused_element_id(p_snapshot);
-			return result;
+		if (BaseButton *button = Object::cast_to<BaseButton>(node)) {
+			if (_perform_semantic_click(button, events)) {
+				EditorAutomationActionResult result = EditorAutomationActionResult::success(EditorAutomationActionRouteNames::SEMANTIC_CLICK, p_element.id);
+				result.events = events;
+				result.focus = _focused_element_id(p_snapshot);
+				return result;
+			}
+		} else if (EditorPropertyCheck *check_property = Object::cast_to<EditorPropertyCheck>(node)) {
+			if (_perform_semantic_property_check_click(check_property, events)) {
+				EditorAutomationActionResult result = EditorAutomationActionResult::success(EditorAutomationActionRouteNames::SEMANTIC_CLICK, p_element.id);
+				result.events = events;
+				result.focus = _focused_element_id(p_snapshot);
+				return result;
+			}
 		}
 		if (p_route_preference == EditorAutomationRoutePreference::SEMANTIC) {
 			return EditorAutomationActionResult::failure("unsupported_route", "Semantic click is unavailable for the selected control.");
@@ -532,6 +561,26 @@ EditorAutomationActionResult _action_tree_item_state(
 	return result;
 }
 
+EditorAutomationActionResult _action_inspector_section_state(
+		const EditorAutomationSnapshot &p_snapshot,
+		const EditorAutomationElement &p_element,
+		bool p_expand) {
+	Node *node = _resolve_node_from_object_id(p_element.object_id);
+	EditorInspectorSection *section = Object::cast_to<EditorInspectorSection>(node);
+	ERR_FAIL_NULL_V(section, EditorAutomationActionResult::failure("unsupported_action", "Expand/collapse is only supported for inspector sections."));
+
+	if (p_expand) {
+		section->unfold();
+	} else {
+		section->fold();
+	}
+
+	EditorAutomationActionResult result = EditorAutomationActionResult::success(EditorAutomationActionRouteNames::SEMANTIC_SELECT, p_element.id);
+	result.events.push_back(p_expand ? "expanded" : "collapsed");
+	result.focus = _focused_element_id(p_snapshot);
+	return result;
+}
+
 EditorAutomationActionResult _action_set_value(
 		const EditorAutomationSnapshot &p_snapshot,
 		const EditorAutomationElement &p_element,
@@ -701,10 +750,18 @@ EditorAutomationActionResult EditorAutomationDriver::perform(
 			result = _action_select(p_snapshot, element, _read_variant_option(p_options, "value"));
 			break;
 		case EditorAutomationActionKind::EXPAND:
-			result = _action_tree_item_state(p_snapshot, element, true);
+			if (element.role == "inspector_section") {
+				result = _action_inspector_section_state(p_snapshot, element, true);
+			} else {
+				result = _action_tree_item_state(p_snapshot, element, true);
+			}
 			break;
 		case EditorAutomationActionKind::COLLAPSE:
-			result = _action_tree_item_state(p_snapshot, element, false);
+			if (element.role == "inspector_section") {
+				result = _action_inspector_section_state(p_snapshot, element, false);
+			} else {
+				result = _action_tree_item_state(p_snapshot, element, false);
+			}
 			break;
 		case EditorAutomationActionKind::CHOOSE_MENU_ITEM: {
 			String kind;

@@ -30,25 +30,31 @@
 
 #include "editor_automation_server.h"
 
+#include "editor/automation/editor_automation_acceptance_workflow.h"
 #include "editor/automation/editor_automation_mcp_server.h"
+#include "editor/automation/editor_workflow_test_driver.h"
 
 #include "core/crypto/crypto_core.h"
 #include "core/io/json.h"
+#include "core/object/message_queue.h"
 #include "core/os/os.h"
 #include "editor/editor_log.h"
 #include "editor/editor_node.h"
+#include "scene/main/scene_tree.h"
 
 EditorAutomationServer *EditorAutomationServer::singleton = nullptr;
 bool EditorAutomationServer::cli_enabled = false;
 String EditorAutomationServer::cli_transport;
 int EditorAutomationServer::cli_port = -1;
 String EditorAutomationServer::cli_token;
+String EditorAutomationServer::cli_run_workflow;
 
 void EditorAutomationServer::apply_cli_options(const FoundryCLIParser::CLIInvocation &p_invocation) {
 	cli_enabled = p_invocation.automation;
 	cli_transport = p_invocation.automation_transport;
 	cli_port = p_invocation.automation_port;
 	cli_token = p_invocation.automation_token;
+	cli_run_workflow = p_invocation.automation_run_workflow;
 }
 
 EditorAutomationServer *EditorAutomationServer::get_singleton() {
@@ -173,6 +179,35 @@ void EditorAutomationServer::stop() {
 	EditorNode::get_log()->add_message("--- Editor automation stopped ---", EditorLog::MSG_TYPE_EDITOR);
 }
 
+void EditorAutomationServer::_run_acceptance_workflow_if_requested() {
+	if (cli_run_workflow.is_empty() || workflow_run_attempted) {
+		return;
+	}
+	workflow_run_attempted = true;
+
+	EditorWorkflowTestDriver driver;
+	EditorWorkflowTestDriver::Options options;
+	options.default_wait_timeout_ms = 60000;
+	driver.configure(options);
+
+	EditorAutomationAcceptanceWorkflow::Result workflow_result;
+	if (cli_run_workflow == "mvp") {
+		workflow_result = EditorAutomationAcceptanceWorkflow::run_mvp(driver);
+	} else {
+		workflow_result.ok = false;
+		workflow_result.workflow = cli_run_workflow;
+		workflow_result.message = vformat("Unknown automation workflow '%s'.", cli_run_workflow);
+	}
+
+	EditorAutomationAcceptanceWorkflow::print_result(workflow_result);
+	workflow_run_completed = true;
+	stop();
+
+	if (SceneTree *tree = get_tree()) {
+		tree->quit(workflow_result.ok ? EXIT_SUCCESS : EXIT_FAILURE);
+	}
+}
+
 void EditorAutomationServer::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_EXIT_TREE: {
@@ -190,6 +225,10 @@ void EditorAutomationServer::_notification(int p_what) {
 				}
 				start_attempted = true;
 				start();
+				if (!cli_run_workflow.is_empty()) {
+					_run_acceptance_workflow_if_requested();
+					break;
+				}
 			}
 			if (started && mcp_server != nullptr) {
 				mcp_server->poll();

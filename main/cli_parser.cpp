@@ -178,6 +178,21 @@ static bool consume_automation_transport_option(CLIParseState &r_state, const St
 	return false;
 }
 
+static bool consume_automation_run_workflow_option(CLIParseState &r_state, const String &p_arg, String &r_workflow) {
+	if (p_arg.begins_with("--automation-run-workflow=")) {
+		r_workflow = p_arg.get_slicec('=', 1);
+		r_state.index++;
+		return true;
+	}
+	if (p_arg == "--automation-run-workflow") {
+		if (!require_value(r_state, p_arg, r_workflow)) {
+			return true;
+		}
+		return true;
+	}
+	return false;
+}
+
 static bool validate_automation_transport(FoundryCLIParser::ParseResult &r_result, const String &p_transport) {
 	if (p_transport.is_empty() || p_transport == "mcp") {
 		return true;
@@ -731,6 +746,7 @@ static void parse_editor(CLIParseState &r_state) {
 	String automation_transport;
 	int automation_port = -1;
 	String automation_token;
+	String automation_run_workflow;
 
 	PackedStringArray passthrough;
 	while (r_state.index < r_state.args.size()) {
@@ -780,6 +796,12 @@ static void parse_editor(CLIParseState &r_state) {
 				}
 				continue;
 			}
+			if (consume_automation_run_workflow_option(r_state, arg, automation_run_workflow)) {
+				if (parse_stopped(r_state)) {
+					return;
+				}
+				continue;
+			}
 			if (!arg.begins_with("-")) {
 				append(passthrough, arg);
 				r_state.index++;
@@ -795,11 +817,16 @@ static void parse_editor(CLIParseState &r_state) {
 	if (!validate_automation_transport(r_state.result, automation_transport)) {
 		return;
 	}
+	if (!automation_run_workflow.is_empty() && !automation) {
+		fail(r_state.result, "--automation-run-workflow requires --automation.");
+		return;
+	}
 
 	r_state.result.invocation.automation = automation;
 	r_state.result.invocation.automation_transport = automation_transport.is_empty() && automation ? String("mcp") : automation_transport;
 	r_state.result.invocation.automation_port = automation_port;
 	r_state.result.invocation.automation_token = automation_token;
+	r_state.result.invocation.automation_run_workflow = automation_run_workflow;
 	r_state.result.invocation.project_path = r_state.project_path;
 	r_state.result.invocation.passthrough_args = passthrough;
 	finalize_global_args(r_state);
