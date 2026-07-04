@@ -714,6 +714,43 @@ void EditorDebuggerNode::clear_remote_tree_selection() {
 	get_current_debugger()->clear_inspector(remote_scene_tree_clear_msg);
 }
 
+void EditorDebuggerNode::attach_remote_tree_to(SceneTreeDock *p_dock) {
+	ERR_FAIL_NULL(p_dock);
+	if (!remote_scene_tree) {
+		return;
+	}
+
+	// Detach from the dock currently hosting the remote tree (if any).
+	for (Node *node = remote_scene_tree->get_parent(); node; node = node->get_parent()) {
+		SceneTreeDock *host = Object::cast_to<SceneTreeDock>(node);
+		if (host) {
+			if (host == p_dock) {
+				return;
+			}
+			host->remove_remote_tree_editor();
+			break;
+		}
+	}
+
+	p_dock->add_remote_tree_editor(remote_scene_tree);
+	if (!p_dock->is_connected("remote_tree_selected", callable_mp(this, &EditorDebuggerNode::request_remote_tree))) {
+		p_dock->connect("remote_tree_selected", callable_mp(this, &EditorDebuggerNode::request_remote_tree));
+	}
+
+	// Sync the local/remote switcher with the current session state.
+	bool session_active = false;
+	_for_all(tabs, [&](ScriptEditorDebugger *p_debugger) {
+		if (p_debugger->is_session_active()) {
+			session_active = true;
+		}
+	});
+	if (session_active) {
+		p_dock->show_tab_buttons();
+	} else {
+		p_dock->hide_tab_buttons();
+	}
+}
+
 void EditorDebuggerNode::stop_waiting_inspection() {
 	inspect_edited_object_timeout = EDITOR_GET("debugger/remote_inspect_refresh_interval");
 	inspect_edited_object_wait = false;

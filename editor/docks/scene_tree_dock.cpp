@@ -4580,6 +4580,21 @@ void SceneTreeDock::add_remote_tree_editor(Tree *p_remote) {
 	remote_tree->connect("open", callable_mp(this, &SceneTreeDock::_load_request));
 }
 
+void SceneTreeDock::remove_remote_tree_editor() {
+	// The single remote (debugger) tree follows the focused workspace tile's
+	// dock; detach it so another dock can host it (or so it survives this
+	// dock's teardown).
+	if (!remote_tree) {
+		return;
+	}
+	if (remote_tree->is_visible()) {
+		_local_tree_selected();
+	}
+	remote_tree->disconnect("open", callable_mp(this, &SceneTreeDock::_load_request));
+	main_mc->remove_child(remote_tree);
+	remote_tree = nullptr;
+}
+
 void SceneTreeDock::show_remote_tree() {
 	_remote_tree_selected();
 }

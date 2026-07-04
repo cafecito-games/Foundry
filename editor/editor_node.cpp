@@ -4886,6 +4886,11 @@ void EditorNode::_update_focused_dock_singletons(ScenePaneTile *p_tile) {
 	if (distraction_free) {
 		scene_tabs->add_extra_button(distraction_free);
 	}
+
+	// The single remote (debugger) tree rides in the focused tile's dock.
+	if (EditorDebuggerNode::get_singleton()) {
+		EditorDebuggerNode::get_singleton()->attach_remote_tree_to(p_tile->get_scene_tree_dock());
+	}
 }
 
 void EditorNode::_reparent_main_screen_into(ScenePaneTile *p_tile) {
@@ -4983,6 +4988,8 @@ void EditorNode::_on_tile_removing(int p_tile_id) {
 	if (distraction_free && tile->is_ancestor_of(distraction_free)) {
 		distraction_free->get_parent()->remove_child(distraction_free);
 	}
+	// The shared remote (debugger) tree must outlive the dock hosting it.
+	tile->get_scene_tree_dock()->remove_remote_tree_editor();
 	if (scene_tabs == tile->get_scene_tabs()) {
 		scene_tabs = nullptr;
 	}

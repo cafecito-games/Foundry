@@ -38,6 +38,7 @@ class Button;
 class DebugAdapterParser;
 class EditorDebuggerPlugin;
 class EditorDebuggerTree;
+class SceneTreeDock;
 class EditorDebuggerRemoteObjects;
 class MenuButton;
 class ScriptEditorDebugger;
@@ -196,6 +197,9 @@ public:
 	void request_remote_tree();
 	void set_remote_selection(const TypedArray<int64_t> &p_ids);
 	void clear_remote_tree_selection();
+	// The single remote (debugger) scene tree rides in the focused workspace
+	// tile's scene dock; reattach it when the focused dock changes.
+	void attach_remote_tree_to(SceneTreeDock *p_dock);
 	void stop_waiting_inspection();
 	bool match_remote_selection(const TypedArray<uint64_t> &p_ids) const;
 	static void _methods_changed(void *p_ud, Object *p_base, const StringName &p_name, const Variant **p_args, int p_argcount);
