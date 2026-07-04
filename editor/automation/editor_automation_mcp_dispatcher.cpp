@@ -223,7 +223,7 @@ Array EditorAutomationMCPDispatcher::build_tools_list() {
 	{
 		Dictionary props;
 		props["selector"] = _selector_schema();
-		props["action"] = _string_schema("Action to perform, e.g. click, focus, type_text, set_text, press_key, select, expand, collapse, choose_menu_item, set_value.");
+		props["action"] = _string_schema("Action to perform, e.g. click, focus, type_text, set_text, press_key, drag, select, expand, collapse, choose_menu_item, set_value.");
 		props["route"] = _string_schema("Route preference: auto, semantic, or input.");
 		Dictionary args_schema = _object_schema();
 		args_schema["description"] = "Action arguments such as text, key, or value.";

@@ -40,8 +40,10 @@ struct EditorAutomationActionRouteNames {
 	static inline const char *SEMANTIC_SELECT = "semantic_select";
 	static inline const char *SEMANTIC_SET_VALUE = "semantic_set_value";
 	static inline const char *INPUT_MOUSE_CLICK = "input_mouse_click";
+	static inline const char *INPUT_VIEWPORT_CLICK = "input_viewport_click";
 	static inline const char *INPUT_KEY = "input_key";
 	static inline const char *INPUT_TEXT = "input_text";
+	static inline const char *INPUT_DRAG = "input_drag";
 	static inline const char *UNSUPPORTED = "unsupported";
 };
 
@@ -64,6 +66,7 @@ enum class EditorAutomationActionKind {
 	SET_VALUE,
 	INCREMENT,
 	DECREMENT,
+	DRAG,
 	UNKNOWN,
 };
 
@@ -76,6 +79,7 @@ struct EditorAutomationActionResult {
 	PackedStringArray events;
 	String focus;
 	Array candidates;
+	Dictionary details;
 
 	static EditorAutomationActionResult success(const String &p_route, const String &p_element_id);
 	static EditorAutomationActionResult failure(const String &p_kind, const String &p_message, const Array &p_candidates = Array());

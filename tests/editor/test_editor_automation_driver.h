@@ -34,9 +34,17 @@
 #include "editor/automation/editor_automation_selector.h"
 #include "editor/automation/editor_automation_snapshot.h"
 
+#include "core/input/input_event.h"
+#include "core/input/shortcut.h"
 #include "scene/gui/button.h"
+#include "scene/gui/code_edit.h"
+#include "scene/gui/label.h"
 #include "scene/gui/line_edit.h"
 #include "scene/gui/panel_container.h"
+#include "scene/gui/subviewport_container.h"
+#include "scene/gui/text_edit.h"
+#include "scene/gui/dialogs.h"
+#include "scene/main/viewport.h"
 
 #include "tests/test_macros.h"
 
@@ -275,7 +283,7 @@ TEST_CASE("[Editor][Automation] unsupported action error shape") {
 	target["role"] = "button";
 	target["name"] = "Action";
 
-	const EditorAutomationActionResult result = EditorAutomationDriver::perform(snapshot, "drag", target);
+	const EditorAutomationActionResult result = EditorAutomationDriver::perform(snapshot, "unsupported_action_name", target);
 	CHECK_FALSE(result.ok);
 	CHECK(result.kind == "unsupported_action");
 	CHECK_FALSE(result.message.is_empty());
@@ -390,6 +398,378 @@ TEST_CASE("[Editor][Automation] press_key routes through focused viewport") {
 	MessageQueue::get_singleton()->flush();
 	CHECK(capture->key_press_count >= 1);
 	CHECK(capture->last_key == Key::A);
+
+	memdelete(root);
+}
+
+class AutomationDragSource : public Control {
+	FOUNDRY_CLASS(AutomationDragSource, Control);
+
+public:
+	Variant get_drag_data(const Point2 &p_point) override {
+		return "automation_payload";
+	}
+};
+
+class AutomationDropTarget : public Control {
+	FOUNDRY_CLASS(AutomationDropTarget, Control);
+
+public:
+	bool dropped = false;
+	Variant dropped_data;
+
+	bool can_drop_data(const Point2 &p_point, const Variant &p_data) const override {
+		return p_data.get_type() == Variant::STRING;
+	}
+
+	void drop_data(const Point2 &p_point, const Variant &p_data) override {
+		dropped = true;
+		dropped_data = p_data;
+	}
+};
+
+class AutomationViewportClickTracker : public Control {
+	FOUNDRY_CLASS(AutomationViewportClickTracker, Control);
+
+public:
+	bool clicked = false;
+
+protected:
+	void gui_input(const Ref<InputEvent> &p_event) override {
+		Ref<InputEventMouseButton> mouse_button = p_event;
+		if (mouse_button.is_valid() && mouse_button->is_pressed() && mouse_button->get_button_index() == MouseButton::LEFT) {
+			clicked = true;
+		}
+	}
+};
+
+TEST_CASE("[Editor][Automation] drag routes through input and performs drop") {
+	Window *root = memnew(Window);
+	root->set_title("Drag Root");
+	root->set_size(Size2i(500, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+	root->set_visible(true);
+	MessageQueue::get_singleton()->flush();
+
+	AutomationDragSource *source = memnew(AutomationDragSource);
+	source->set_name("DragSource");
+	setup_visible_control(source, Size2(120, 40));
+	root->add_child(source);
+
+	AutomationDropTarget *drop_target_control = memnew(AutomationDropTarget);
+	drop_target_control->set_name("DropTarget");
+	setup_visible_control(drop_target_control, Size2(120, 40));
+	drop_target_control->set_position(Vector2(300, 0));
+	root->add_child(drop_target_control);
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	const EditorAutomationElement *source_element = find_element_by_role_and_name(snapshot, "control", "DragSource");
+	const EditorAutomationElement *target_element = find_element_by_role_and_name(snapshot, "control", "DropTarget");
+	REQUIRE(source_element != nullptr);
+	REQUIRE(target_element != nullptr);
+
+	Dictionary source_target;
+	source_target["id"] = source_element->id;
+
+	Dictionary options;
+	Dictionary drop_target;
+	drop_target["id"] = target_element->id;
+	options["target"] = drop_target;
+	options["route"] = "input";
+
+	const EditorAutomationActionResult result = EditorAutomationDriver::perform(snapshot, "drag", source_target, options);
+	MessageQueue::get_singleton()->flush();
+	CHECK(result.ok);
+	CHECK(result.route == EditorAutomationActionRouteNames::INPUT_DRAG);
+	CHECK(result.events.has("mouse_pressed"));
+	CHECK(result.events.has("mouse_motion"));
+	CHECK(result.events.has("mouse_released"));
+	CHECK(drop_target_control->dropped);
+	CHECK(String(drop_target_control->dropped_data) == "automation_payload");
+
+	memdelete(root);
+}
+
+TEST_CASE("[Editor][Automation] press_key with modifiers triggers shortcut") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	Button *button = memnew(Button);
+	button->set_text("Shortcut Target");
+	setup_visible_control(button);
+	root->add_child(button);
+
+	PressTracker tracker;
+	button->connect(SceneStringName(pressed), callable_mp(&tracker, &PressTracker::on_pressed));
+
+	Ref<Shortcut> shortcut;
+	shortcut.instantiate();
+	Ref<InputEventKey> shortcut_key;
+	shortcut_key.instantiate();
+	shortcut_key->set_keycode(Key::S);
+	shortcut_key->set_ctrl_pressed(true);
+	Array shortcut_events;
+	shortcut_events.push_back(shortcut_key);
+	shortcut->set_events(shortcut_events);
+	button->set_shortcut(shortcut);
+	button->grab_focus();
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+
+	Dictionary target;
+	target["id"] = snapshot.get_focused_element_id();
+
+	Dictionary options;
+	options["key"] = "S";
+	Array modifiers;
+	modifiers.push_back("ctrl");
+	options["modifiers"] = modifiers;
+	options["route"] = "input";
+
+	const EditorAutomationActionResult result = EditorAutomationDriver::perform(snapshot, "press_key", target, options);
+	MessageQueue::get_singleton()->flush();
+	CHECK(result.ok);
+	CHECK(result.route == EditorAutomationActionRouteNames::INPUT_KEY);
+	CHECK(tracker.pressed);
+
+	memdelete(root);
+}
+
+TEST_CASE("[Editor][Automation] type_text edits LineEdit through input events") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	LineEdit *line_edit = memnew(LineEdit);
+	line_edit->set_name("TypedField");
+	line_edit->set_text("old");
+	setup_visible_control(line_edit);
+	root->add_child(line_edit);
+	line_edit->select_all();
+	line_edit->grab_focus();
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	const EditorAutomationElement *field = find_element_by_role_and_name(snapshot, "text_field", "TypedField");
+	REQUIRE(field != nullptr);
+
+	Dictionary target;
+	target["id"] = field->id;
+
+	Dictionary options;
+	options["text"] = "new";
+	options["route"] = "input";
+
+	const EditorAutomationActionResult result = EditorAutomationDriver::perform(snapshot, "type_text", target, options);
+	MessageQueue::get_singleton()->flush();
+	CHECK(result.ok);
+	CHECK(result.route == EditorAutomationActionRouteNames::INPUT_TEXT);
+	CHECK(line_edit->get_text() == "new");
+
+	memdelete(root);
+}
+
+TEST_CASE("[Editor][Automation] type_text edits CodeEdit and TextEdit through input events") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	CodeEdit *code_edit = memnew(CodeEdit);
+	code_edit->set_name("CodeField");
+	code_edit->set_text("old");
+	setup_visible_control(code_edit, Size2(300, 120));
+	root->add_child(code_edit);
+
+	TextEdit *text_edit = memnew(TextEdit);
+	text_edit->set_name("TextArea");
+	text_edit->set_text("line");
+	setup_visible_control(text_edit, Size2(300, 120));
+	text_edit->set_position(Vector2(0, 140));
+	root->add_child(text_edit);
+	MessageQueue::get_singleton()->flush();
+
+	EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	const EditorAutomationElement *code_field_initial = find_element_by_role_and_name(snapshot, "code_editor", "CodeField");
+	REQUIRE(code_field_initial != nullptr);
+
+	Dictionary code_target;
+	code_target["id"] = code_field_initial->id;
+	Dictionary code_options;
+	code_options["text"] = "new\nnext";
+	code_options["route"] = "input";
+	const EditorAutomationActionResult code_result = EditorAutomationDriver::perform(snapshot, "type_text", code_target, code_options);
+	MessageQueue::get_singleton()->flush();
+	CHECK(code_result.ok);
+	CHECK(code_edit->get_text().contains("new"));
+	CHECK(code_edit->get_text().contains("next"));
+
+	code_edit->set_text("replace_me");
+	code_edit->select_all();
+	code_edit->grab_focus();
+	MessageQueue::get_singleton()->flush();
+	snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	const EditorAutomationElement *code_field = find_element_by_role_and_name(snapshot, "code_editor", "CodeField");
+	REQUIRE(code_field != nullptr);
+	code_target["id"] = code_field->id;
+	Dictionary replace_options;
+	replace_options["text"] = "done";
+	replace_options["route"] = "input";
+	const EditorAutomationActionResult replace_result = EditorAutomationDriver::perform(snapshot, "type_text", code_target, replace_options);
+	MessageQueue::get_singleton()->flush();
+	CHECK(replace_result.ok);
+	CHECK(code_edit->get_text() == "done");
+
+	memdelete(root);
+}
+
+TEST_CASE("[Editor][Automation] type_text backspace on TextEdit through input actions") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	TextEdit *text_edit = memnew(TextEdit);
+	text_edit->set_name("BackspaceArea");
+	text_edit->set_text("line!");
+	setup_visible_control(text_edit, Size2(300, 120));
+	root->add_child(text_edit);
+	text_edit->set_caret_line(0);
+	text_edit->set_caret_column(text_edit->get_text().length());
+	text_edit->grab_focus();
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	const EditorAutomationElement *text_field = find_element_by_role_and_name(snapshot, "text_area", "BackspaceArea");
+	REQUIRE(text_field != nullptr);
+
+	Dictionary target;
+	target["id"] = text_field->id;
+
+	Dictionary options;
+	options["text"] = String::chr(8);
+	options["route"] = "input";
+
+	const EditorAutomationActionResult result = EditorAutomationDriver::perform(snapshot, "type_text", target, options);
+	MessageQueue::get_singleton()->flush();
+	CHECK(result.ok);
+	CHECK(result.route == EditorAutomationActionRouteNames::INPUT_TEXT);
+	CHECK(result.events.has("action_pressed:ui_text_backspace"));
+	CHECK(text_edit->get_text() == "line");
+
+	memdelete(root);
+}
+
+TEST_CASE("[Editor][Automation] viewport click uses relative coordinates") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	SubViewportContainer *viewport_container = memnew(SubViewportContainer);
+	viewport_container->set_name("EditorViewport");
+	viewport_container->set_stretch(true);
+	viewport_container->set_stretch_shrink(1);
+	viewport_container->set_custom_minimum_size(Size2(240, 180));
+	setup_visible_control(viewport_container, Size2(240, 180));
+	root->add_child(viewport_container);
+
+	SubViewport *sub_viewport = memnew(SubViewport);
+	sub_viewport->set_size(Vector2i(240, 180));
+	sub_viewport->set_disable_input(false);
+	viewport_container->add_child(sub_viewport);
+
+	AutomationViewportClickTracker *tracker = memnew(AutomationViewportClickTracker);
+	tracker->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+	sub_viewport->add_child(tracker);
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	const EditorAutomationElement *viewport_element = find_element_by_role_and_name(snapshot, "viewport", "EditorViewport");
+	REQUIRE(viewport_element != nullptr);
+
+	Dictionary target;
+	target["id"] = viewport_element->id;
+
+	Dictionary options;
+	options["x"] = 0.5;
+	options["y"] = 0.5;
+	options["route"] = "input";
+
+	const EditorAutomationActionResult result = EditorAutomationDriver::perform(snapshot, "click", target, options);
+	MessageQueue::get_singleton()->flush();
+	CHECK(result.ok);
+	CHECK(result.route == EditorAutomationActionRouteNames::INPUT_VIEWPORT_CLICK);
+	CHECK(tracker->clicked);
+
+	memdelete(root);
+}
+
+TEST_CASE("[Editor][Automation] popup action focuses owning window before click") {
+	Window *root = memnew(Window);
+	root->set_title("Main Window");
+	root->set_size(Size2i(640, 480));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+	root->set_visible(true);
+	MessageQueue::get_singleton()->flush();
+
+	AcceptDialog *dialog = memnew(AcceptDialog);
+	dialog->set_title("Popup Test");
+	dialog->set_ok_button_text("Confirm Popup");
+	root->add_child(dialog);
+	dialog->popup_centered();
+	MessageQueue::get_singleton()->flush();
+
+	root->grab_focus();
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	const EditorAutomationElement *popup_button = find_element_by_role_and_name(snapshot, "button", "Confirm Popup");
+	REQUIRE(popup_button != nullptr);
+	CHECK(popup_button->metadata.has("window_object_id"));
+	CHECK(popup_button->metadata.has("window_title"));
+
+	Dictionary target;
+	target["id"] = popup_button->id;
+
+	Dictionary options;
+	options["route"] = "input";
+
+	const EditorAutomationActionResult result = EditorAutomationDriver::perform(snapshot, "click", target, options);
+	MessageQueue::get_singleton()->flush();
+	CHECK(result.ok);
+	CHECK(result.route == EditorAutomationActionRouteNames::INPUT_MOUSE_CLICK);
+	CHECK(result.events.has("mouse_pressed"));
+
+	memdelete(root);
+}
+
+TEST_CASE("[Editor][Automation] drag failure includes source and target diagnostics") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	AutomationDragSource *source = memnew(AutomationDragSource);
+	source->set_name("DragSource");
+	setup_visible_control(source);
+	root->add_child(source);
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	const EditorAutomationElement *source_element = find_element_by_role_and_name(snapshot, "control", "DragSource");
+	REQUIRE(source_element != nullptr);
+
+	Dictionary target;
+	target["id"] = source_element->id;
+
+	Dictionary options;
+	options["route"] = "input";
+
+	const EditorAutomationActionResult result = EditorAutomationDriver::perform(snapshot, "drag", target, options);
+	CHECK_FALSE(result.ok);
+	CHECK(result.kind == "invalid_parameter");
+	CHECK(result.details.has("source_element"));
+	CHECK(result.details.has("modal_stack"));
 
 	memdelete(root);
 }

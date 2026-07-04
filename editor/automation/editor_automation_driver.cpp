@@ -33,8 +33,11 @@
 #include "core/input/input_event.h"
 #include "core/object/object.h"
 #include "core/os/keyboard.h"
+#include "editor/automation/editor_automation_diagnostics.h"
+#include "editor/automation/editor_automation_input.h"
 #include "editor/automation/editor_automation_log.h"
 #include "editor/automation/editor_automation_selector.h"
+#include "editor/automation/editor_automation_state.h"
 #include "editor/automation/editor_automation_trace.h"
 #include "editor/automation/editor_automation_workflow.h"
 #include "editor/inspector/editor_inspector.h"
@@ -53,6 +56,7 @@
 #include "scene/gui/tab_container.h"
 #include "scene/gui/text_edit.h"
 #include "scene/gui/tree.h"
+#include "scene/gui/subviewport_container.h"
 #include "scene/main/viewport.h"
 #include "scene/main/window.h"
 
@@ -117,10 +121,63 @@ TreeItem *_resolve_tree_item(Tree *p_tree, const String &p_path) {
 }
 
 Viewport *_viewport_for_node(Node *p_node) {
-	if (p_node == nullptr || !p_node->is_inside_tree()) {
-		return nullptr;
+	return EditorAutomationInput::viewport_for_node(p_node);
+}
+
+Dictionary _element_summary_dict(const EditorAutomationSnapshot &p_snapshot, const EditorAutomationElement &p_element) {
+	return EditorAutomationDiagnosticsBuilder::element_summary(p_element);
+}
+
+Dictionary _drag_failure_details(
+		const EditorAutomationSnapshot &p_snapshot,
+		const EditorAutomationElement *p_source,
+		const EditorAutomationElement *p_target,
+		const String &p_message) {
+	Dictionary details;
+	if (p_source != nullptr) {
+		details["source_element"] = _element_summary_dict(p_snapshot, *p_source);
 	}
-	return p_node->get_viewport();
+	if (p_target != nullptr) {
+		details["target_element"] = _element_summary_dict(p_snapshot, *p_target);
+	}
+	details["focused_element_id"] = p_snapshot.get_focused_element_id();
+	details["modal_stack"] = EditorAutomationState::capture_modal_stack();
+	if (!p_message.is_empty()) {
+		details["reason"] = p_message;
+	}
+	return details;
+}
+
+EditorAutomationActionResult _drag_failure(
+		const String &p_kind,
+		const String &p_message,
+		const EditorAutomationSnapshot &p_snapshot,
+		const EditorAutomationElement *p_source,
+		const EditorAutomationElement *p_target) {
+	EditorAutomationActionResult result = EditorAutomationActionResult::failure(p_kind, p_message);
+	result.details = _drag_failure_details(p_snapshot, p_source, p_target, p_message);
+	return result;
+}
+
+EditorAutomationActionResult _prepare_element_for_input(
+		const EditorAutomationSnapshot &p_snapshot,
+		const EditorAutomationElement &p_element,
+		Node *&r_node) {
+	r_node = _resolve_node_from_object_id(p_element.object_id);
+	if (r_node == nullptr) {
+		return EditorAutomationActionResult::failure("invalid_element", "The selected element is no longer available.");
+	}
+
+	const EditorAutomationWindowFocusResult focus_result = EditorAutomationInput::ensure_window_focus(r_node);
+	if (!focus_result.ok) {
+		EditorAutomationActionResult result = EditorAutomationActionResult::failure("window_focus_failed", focus_result.message);
+		result.details = _drag_failure_details(p_snapshot, &p_element, nullptr, focus_result.message);
+		if (focus_result.window != nullptr) {
+			result.details["target_window_object_id"] = String::num_uint64(focus_result.window->get_instance_id());
+		}
+		return result;
+	}
+	return EditorAutomationActionResult::success(EditorAutomationActionRouteNames::SEMANTIC_FOCUS, p_element.id);
 }
 
 String _focused_element_id(const EditorAutomationSnapshot &p_snapshot) {
@@ -143,11 +200,6 @@ String _focused_element_id(const EditorAutomationSnapshot &p_snapshot) {
 		return EditorAutomationSnapshot::make_control_element_id(p_snapshot.get_generation(), focus_owner->get_instance_id());
 	}
 	return String();
-}
-
-bool _semantic_click_available(Node *p_node) {
-	return Object::cast_to<BaseButton>(p_node) != nullptr ||
-			Object::cast_to<EditorPropertyCheck>(p_node) != nullptr;
 }
 
 bool _perform_semantic_property_check_click(EditorPropertyCheck *p_property, PackedStringArray &r_events) {
@@ -182,56 +234,29 @@ bool _perform_semantic_click(BaseButton *p_button, PackedStringArray &r_events) 
 	return true;
 }
 
-bool _push_mouse_click(Control *p_control, const Rect2i &p_bounds, PackedStringArray &r_events) {
-	Viewport *viewport = _viewport_for_node(p_control);
+bool _push_mouse_click(Control *p_control, const Rect2i &p_bounds, const Dictionary &p_options, bool p_viewport_target, PackedStringArray &r_events) {
+	Node *node = p_control;
+	const EditorAutomationWindowFocusResult focus_result = EditorAutomationInput::ensure_window_focus(node);
+	ERR_FAIL_COND_V(!focus_result.ok, false);
+
+	const Vector2 global_position = EditorAutomationInput::resolve_position_in_bounds(p_bounds, p_options);
+	Vector2 input_position = global_position;
+	Viewport *viewport = EditorAutomationInput::input_viewport_for_control(p_control, input_position, global_position);
 	ERR_FAIL_NULL_V(viewport, false);
 
-	const Vector2 global_position = Rect2(p_bounds.position, p_bounds.size).get_center();
-	Vector2 local_position = global_position;
-	if (p_control->is_inside_tree()) {
-		local_position = p_control->get_global_transform_with_canvas().affine_inverse().xform(global_position);
+	const EditorAutomationInputModifiers modifiers = EditorAutomationInput::parse_modifiers(p_options.get("modifiers", Variant()));
+	const MouseButton button = EditorAutomationInput::parse_mouse_button(String(p_options.get("button", Variant())));
+	const MouseButtonMask button_mask = EditorAutomationInput::mouse_button_to_mask(button);
+	const bool local_coords = p_viewport_target || Object::cast_to<SubViewport>(viewport) != nullptr;
+
+	if (!EditorAutomationInput::push_mouse_button(viewport, input_position, button, true, button_mask, modifiers, r_events, local_coords)) {
+		return false;
 	}
-
-	Ref<InputEventMouseButton> press;
-	press.instantiate();
-	press->set_button_index(MouseButton::LEFT);
-	press->set_pressed(true);
-	press->set_position(local_position);
-	press->set_global_position(global_position);
-	viewport->push_input(press);
-
-	Ref<InputEventMouseButton> release;
-	release.instantiate();
-	release->set_button_index(MouseButton::LEFT);
-	release->set_pressed(false);
-	release->set_position(local_position);
-	release->set_global_position(global_position);
-	viewport->push_input(release);
-
-	r_events.push_back("mouse_pressed");
-	r_events.push_back("mouse_released");
-	return true;
+	return EditorAutomationInput::push_mouse_button(viewport, input_position, button, false, MouseButtonMask::NONE, modifiers, r_events, local_coords);
 }
 
-bool _push_key_event(Viewport *p_viewport, Key p_key, bool p_pressed, char32_t p_unicode, PackedStringArray &r_events) {
-	ERR_FAIL_NULL_V(p_viewport, false);
-
-	Ref<InputEventKey> event;
-	event.instantiate();
-	event->set_keycode(p_key);
-	event->set_physical_keycode(p_key);
-	event->set_pressed(p_pressed);
-	if (p_unicode != 0) {
-		event->set_unicode(p_unicode);
-	}
-	p_viewport->push_input(event);
-
-	if (p_pressed) {
-		r_events.push_back("key_pressed");
-	} else {
-		r_events.push_back("key_released");
-	}
-	return true;
+bool _push_key_event(Viewport *p_viewport, Key p_key, bool p_pressed, char32_t p_unicode, const EditorAutomationInputModifiers &p_modifiers, PackedStringArray &r_events) {
+	return EditorAutomationInput::push_key_event(p_viewport, p_key, p_pressed, p_unicode, p_modifiers, r_events);
 }
 
 Viewport *_focused_viewport(const EditorAutomationSnapshot &p_snapshot) {
@@ -252,7 +277,12 @@ EditorAutomationActionResult _action_focus(
 		EditorAutomationRoutePreference p_route_preference) {
 	(void)p_route_preference;
 
-	Node *node = _resolve_node_from_object_id(p_element.object_id);
+	Node *node = nullptr;
+	const EditorAutomationActionResult prepare_result = _prepare_element_for_input(p_snapshot, p_element, node);
+	if (!prepare_result.ok) {
+		return prepare_result;
+	}
+
 	if (Control *control = Object::cast_to<Control>(node)) {
 		control->grab_focus();
 		EditorAutomationActionResult result = EditorAutomationActionResult::success(EditorAutomationActionRouteNames::SEMANTIC_FOCUS, p_element.id);
@@ -273,14 +303,20 @@ EditorAutomationActionResult _action_focus(
 EditorAutomationActionResult _action_click(
 		const EditorAutomationSnapshot &p_snapshot,
 		const EditorAutomationElement &p_element,
+		const Dictionary &p_options,
 		EditorAutomationRoutePreference p_route_preference) {
-	Node *node = _resolve_node_from_object_id(p_element.object_id);
+	Node *node = nullptr;
+	const EditorAutomationActionResult prepare_result = _prepare_element_for_input(p_snapshot, p_element, node);
+	if (!prepare_result.ok && prepare_result.kind == "window_focus_failed") {
+		return prepare_result;
+	}
+
 	Control *control = Object::cast_to<Control>(node);
 	ERR_FAIL_NULL_V(control, EditorAutomationActionResult::failure("invalid_element", "The selected element is not a control."));
 
-	const bool semantic_available = _semantic_click_available(node);
-	const bool try_semantic = p_route_preference != EditorAutomationRoutePreference::INPUT && semantic_available;
-	const bool try_input = p_route_preference != EditorAutomationRoutePreference::SEMANTIC;
+	const bool is_viewport = p_element.role == "viewport";
+	const bool try_input = p_route_preference != EditorAutomationRoutePreference::SEMANTIC || is_viewport;
+	const bool try_semantic = !is_viewport && p_route_preference != EditorAutomationRoutePreference::INPUT;
 
 	if (try_semantic) {
 		PackedStringArray events;
@@ -306,8 +342,9 @@ EditorAutomationActionResult _action_click(
 
 	if (try_input) {
 		PackedStringArray events;
-		if (_push_mouse_click(control, p_element.bounds, events)) {
-			EditorAutomationActionResult result = EditorAutomationActionResult::success(EditorAutomationActionRouteNames::INPUT_MOUSE_CLICK, p_element.id);
+		if (_push_mouse_click(control, p_element.bounds, p_options, is_viewport, events)) {
+			const char *route = is_viewport ? EditorAutomationActionRouteNames::INPUT_VIEWPORT_CLICK : EditorAutomationActionRouteNames::INPUT_MOUSE_CLICK;
+			EditorAutomationActionResult result = EditorAutomationActionResult::success(route, p_element.id);
 			result.events = events;
 			result.focus = _focused_element_id(p_snapshot);
 			return result;
@@ -371,25 +408,69 @@ EditorAutomationActionResult _action_type_text(
 		const EditorAutomationSnapshot &p_snapshot,
 		const EditorAutomationElement &p_element,
 		const String &p_text,
+		const Dictionary &p_options,
 		EditorAutomationRoutePreference p_route_preference) {
 	if (p_route_preference == EditorAutomationRoutePreference::SEMANTIC) {
 		return EditorAutomationActionResult::failure("unsupported_route", "type_text requires synthesized input events. Use set_text with route=semantic instead.");
 	}
 
-	Node *node = _resolve_node_from_object_id(p_element.object_id);
+	Node *node = nullptr;
+	const EditorAutomationActionResult prepare_result = _prepare_element_for_input(p_snapshot, p_element, node);
+	if (!prepare_result.ok) {
+		return prepare_result;
+	}
+
 	Control *control = Object::cast_to<Control>(node);
 	ERR_FAIL_NULL_V(control, EditorAutomationActionResult::failure("invalid_element", "The selected element is not a text control."));
 
+	const bool had_focus = control->has_focus();
 	control->grab_focus();
+	if (!had_focus) {
+		if (LineEdit *line_edit = Object::cast_to<LineEdit>(control)) {
+			if (!line_edit->has_selection()) {
+				line_edit->set_caret_column(line_edit->get_text().length());
+			}
+		} else if (TextEdit *text_edit = Object::cast_to<TextEdit>(control)) {
+			if (!text_edit->has_selection()) {
+				const int last_line = text_edit->get_line_count() - 1;
+				text_edit->set_caret_line(last_line);
+				text_edit->set_caret_column(text_edit->get_line(last_line).length());
+			}
+		} else if (CodeEdit *code_edit = Object::cast_to<CodeEdit>(control)) {
+			if (!code_edit->has_selection()) {
+				const int last_line = code_edit->get_line_count() - 1;
+				code_edit->set_caret_line(last_line);
+				code_edit->set_caret_column(code_edit->get_line(last_line).length());
+			}
+		}
+	}
 	Viewport *viewport = _viewport_for_node(control);
 	ERR_FAIL_NULL_V(viewport, EditorAutomationActionResult::failure("unsupported_route", "No viewport is available for text input."));
 
+	const EditorAutomationInputModifiers modifiers = EditorAutomationInput::parse_modifiers(p_options.get("modifiers", Variant()));
 	PackedStringArray events;
+
+	auto type_codepoint = [&](char32_t p_codepoint) {
+		const Key key = Key(p_codepoint);
+		_push_key_event(viewport, key, true, p_codepoint, modifiers, events);
+		_push_key_event(viewport, key, false, p_codepoint, modifiers, events);
+	};
+
 	for (int i = 0; i < p_text.length(); i++) {
 		const char32_t codepoint = p_text[i];
-		const Key key = Key(codepoint);
-		_push_key_event(viewport, key, true, codepoint, events);
-		_push_key_event(viewport, key, false, codepoint, events);
+		if (codepoint == '\n') {
+			EditorAutomationInput::push_input_action(viewport, SNAME("ui_text_newline"), true, events);
+		} else if (codepoint == '\b') {
+			EditorAutomationInput::push_input_action(viewport, SNAME("ui_text_backspace"), true, events);
+		} else if (codepoint >= 32 && codepoint < 127) {
+			type_codepoint(codepoint);
+		} else {
+			// Non-ASCII/IME composition is not synthesized here. Callers must use
+			// semantic set_text or platform-specific composition hooks when added.
+			return EditorAutomationActionResult::failure(
+					"unsupported_text",
+					vformat("type_text only synthesizes plain ASCII input events. Unsupported codepoint U+%04X.", (unsigned int)codepoint));
+		}
 	}
 
 	EditorAutomationActionResult result = EditorAutomationActionResult::success(EditorAutomationActionRouteNames::INPUT_TEXT, p_element.id);
@@ -401,6 +482,7 @@ EditorAutomationActionResult _action_type_text(
 EditorAutomationActionResult _action_press_key(
 		const EditorAutomationSnapshot &p_snapshot,
 		const String &p_key_name,
+		const Dictionary &p_options,
 		EditorAutomationRoutePreference p_route_preference) {
 	if (p_route_preference == EditorAutomationRoutePreference::SEMANTIC) {
 		return EditorAutomationActionResult::failure("unsupported_route", "press_key requires synthesized input events.");
@@ -414,9 +496,10 @@ EditorAutomationActionResult _action_press_key(
 	Viewport *viewport = _focused_viewport(p_snapshot);
 	ERR_FAIL_NULL_V(viewport, EditorAutomationActionResult::failure("unsupported_route", "No focused viewport is available for key input."));
 
+	const EditorAutomationInputModifiers modifiers = EditorAutomationInput::parse_modifiers(p_options.get("modifiers", Variant()));
 	PackedStringArray events;
-	_push_key_event(viewport, key, true, 0, events);
-	_push_key_event(viewport, key, false, 0, events);
+	_push_key_event(viewport, key, true, 0, modifiers, events);
+	_push_key_event(viewport, key, false, 0, modifiers, events);
 
 	EditorAutomationActionResult result = EditorAutomationActionResult::success(EditorAutomationActionRouteNames::INPUT_KEY, String());
 	result.events = events;
@@ -632,6 +715,90 @@ EditorAutomationActionResult _action_adjust_value(
 	return result;
 }
 
+Vector<Vector2> _read_waypoints(const Dictionary &p_options) {
+	Vector<Vector2> waypoints;
+	if (!p_options.has("waypoints") && !p_options.has("path")) {
+		return waypoints;
+	}
+	const Variant raw = p_options.has("waypoints") ? p_options.get("waypoints", Variant()) : p_options.get("path", Variant());
+	if (raw.get_type() != Variant::ARRAY) {
+		return waypoints;
+	}
+	const Array points = raw;
+	for (int i = 0; i < points.size(); i++) {
+		const Variant point_value = points[i];
+		if (point_value.get_type() == Variant::VECTOR2) {
+			waypoints.push_back(point_value);
+		} else if (point_value.get_type() == Variant::ARRAY) {
+			const Array point = point_value;
+			if (point.size() >= 2) {
+				waypoints.push_back(Vector2(point[0], point[1]));
+			}
+		}
+	}
+	return waypoints;
+}
+
+EditorAutomationActionResult _action_drag(
+		const EditorAutomationSnapshot &p_snapshot,
+		const EditorAutomationElement &p_source_element,
+		const Dictionary &p_options,
+		EditorAutomationRoutePreference p_route_preference) {
+	if (p_route_preference == EditorAutomationRoutePreference::SEMANTIC) {
+		return EditorAutomationActionResult::failure("unsupported_route", "drag requires synthesized input events.");
+	}
+
+	Node *source_node = nullptr;
+	const EditorAutomationActionResult prepare_result = _prepare_element_for_input(p_snapshot, p_source_element, source_node);
+	if (!prepare_result.ok) {
+		return _drag_failure(prepare_result.kind, prepare_result.message, p_snapshot, &p_source_element, nullptr);
+	}
+
+	Control *source_control = Object::cast_to<Control>(source_node);
+	ERR_FAIL_NULL_V(source_control, _drag_failure("invalid_element", "Drag source is not a control.", p_snapshot, &p_source_element, nullptr));
+
+	const Vector2 source_position = EditorAutomationInput::resolve_position_in_bounds(p_source_element.bounds, p_options);
+	Vector2 target_position;
+	const EditorAutomationElement *target_element = nullptr;
+
+	if (p_options.has("target")) {
+		const Dictionary target_selector = p_options.get("target", Variant());
+		const EditorAutomationSelectorResult target_result = EditorAutomationSelector::resolve(p_snapshot, target_selector);
+		if (target_result.status != EditorAutomationSelectorStatus::OK || target_result.match_indices.size() != 1) {
+			const String message = target_result.message.is_empty() ? "Drag target selector did not resolve to exactly one element." : target_result.message;
+			return _drag_failure("invalid_target", message, p_snapshot, &p_source_element, nullptr);
+		}
+		target_element = &p_snapshot.get_element(target_result.match_indices[0]);
+		Node *target_node = nullptr;
+		const EditorAutomationActionResult target_prepare = _prepare_element_for_input(p_snapshot, *target_element, target_node);
+		if (!target_prepare.ok) {
+			return _drag_failure(target_prepare.kind, target_prepare.message, p_snapshot, &p_source_element, target_element);
+		}
+		target_position = EditorAutomationInput::resolve_position_in_bounds(target_element->bounds, p_options);
+	} else if (p_options.has("target_point")) {
+		target_position = EditorAutomationInput::resolve_position_in_bounds(Rect2i(), p_options);
+	} else {
+		return _drag_failure("invalid_parameter", "drag requires a `target` selector or `target_point`.", p_snapshot, &p_source_element, nullptr);
+	}
+
+	Viewport *viewport = _viewport_for_node(source_control);
+	ERR_FAIL_NULL_V(viewport, _drag_failure("unsupported_route", "No viewport is available for drag input.", p_snapshot, &p_source_element, target_element));
+
+	const EditorAutomationInputModifiers modifiers = EditorAutomationInput::parse_modifiers(p_options.get("modifiers", Variant()));
+	const MouseButton button = EditorAutomationInput::parse_mouse_button(String(p_options.get("button", Variant())));
+	const Vector<Vector2> waypoints = _read_waypoints(p_options);
+
+	PackedStringArray events;
+	if (!EditorAutomationInput::push_mouse_drag(viewport, source_position, target_position, waypoints, button, modifiers, events)) {
+		return _drag_failure("unsupported_route", "Drag input could not be dispatched.", p_snapshot, &p_source_element, target_element);
+	}
+
+	EditorAutomationActionResult result = EditorAutomationActionResult::success(EditorAutomationActionRouteNames::INPUT_DRAG, p_source_element.id);
+	result.events = events;
+	result.focus = _focused_element_id(p_snapshot);
+	return result;
+}
+
 String _read_string_option(const Dictionary &p_options, const char *p_key) {
 	if (!p_options.has(p_key)) {
 		return String();
@@ -704,8 +871,24 @@ EditorAutomationActionResult EditorAutomationDriver::perform(
 			EditorAutomationTrace::get_singleton().end_action();
 			return result;
 		}
-		EditorAutomationActionResult result = _action_press_key(p_snapshot, key_name, route_preference);
+		EditorAutomationActionResult result = _action_press_key(p_snapshot, key_name, p_options, route_preference);
 		_record_action_trace(p_action, p_target, p_snapshot, nullptr, result, log_marker);
+		EditorAutomationTrace::get_singleton().end_action();
+		return result;
+	}
+
+	if (action_kind == EditorAutomationActionKind::DRAG) {
+		const EditorAutomationSelectorResult selector_result = _resolve_target(p_snapshot, p_target);
+		if (selector_result.status != EditorAutomationSelectorStatus::OK) {
+			EditorAutomationActionResult result = _selector_failure(selector_result);
+			_record_action_trace(p_action, p_target, p_snapshot, nullptr, result, log_marker);
+			EditorAutomationTrace::get_singleton().end_action();
+			return result;
+		}
+		ERR_FAIL_COND_V(selector_result.match_indices.size() != 1, EditorAutomationActionResult::failure("ambiguous_selector", "Selector matched multiple elements."));
+		const EditorAutomationElement &source_element = p_snapshot.get_element(selector_result.match_indices[0]);
+		EditorAutomationActionResult result = _action_drag(p_snapshot, source_element, p_options, route_preference);
+		_record_action_trace(p_action, p_target, p_snapshot, &source_element, result, log_marker);
 		EditorAutomationTrace::get_singleton().end_action();
 		return result;
 	}
@@ -726,7 +909,7 @@ EditorAutomationActionResult EditorAutomationDriver::perform(
 			result = _action_focus(p_snapshot, element, route_preference);
 			break;
 		case EditorAutomationActionKind::CLICK:
-			result = _action_click(p_snapshot, element, route_preference);
+			result = _action_click(p_snapshot, element, p_options, route_preference);
 			break;
 		case EditorAutomationActionKind::SET_TEXT: {
 			if (!p_options.has("text")) {
@@ -743,7 +926,7 @@ EditorAutomationActionResult EditorAutomationDriver::perform(
 				result = EditorAutomationActionResult::failure("invalid_parameter", "type_text requires a `text` option.");
 				break;
 			}
-			result = _action_type_text(p_snapshot, element, text, route_preference);
+			result = _action_type_text(p_snapshot, element, text, p_options, route_preference);
 			break;
 		}
 		case EditorAutomationActionKind::SELECT:
