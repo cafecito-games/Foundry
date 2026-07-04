@@ -599,6 +599,85 @@ Dictionary EditorAutomationMCPDispatcher::_tool_observe_ui(const Dictionary &p_a
 	return result;
 }
 
+EditorAutomationFailureAttachmentOptions EditorAutomationMCPDispatcher::_failure_attachment_options(const Dictionary &p_args) const {
+	EditorAutomationFailureAttachmentOptions attachment_options;
+	if (p_args.has("attach_screenshot_on_failure")) {
+		attachment_options.attach_screenshot = _read_bool(p_args, "attach_screenshot_on_failure", false);
+	} else {
+		attachment_options.attach_screenshot = options.attach_screenshot_on_failure;
+	}
+	attachment_options.snapshot_root = _snapshot_root();
+	attachment_options.max_screenshot_bytes = options.max_screenshot_bytes;
+	if (p_args.has("max_screenshot_bytes")) {
+		attachment_options.max_screenshot_bytes = _read_int(p_args, "max_screenshot_bytes", options.max_screenshot_bytes);
+	}
+	return attachment_options;
+}
+
+EditorAutomationFailureAttachmentOptions EditorAutomationMCPDispatcher::_failure_attachment_options_from_act_context(const EditorAutomationActWaitContext &p_act_context) const {
+	EditorAutomationFailureAttachmentOptions attachment_options;
+	attachment_options.attach_screenshot = p_act_context.attach_screenshot_on_failure;
+	attachment_options.snapshot_root = _snapshot_root();
+	attachment_options.max_screenshot_bytes = p_act_context.max_screenshot_bytes > 0
+			? p_act_context.max_screenshot_bytes
+			: options.max_screenshot_bytes;
+	return attachment_options;
+}
+
+Dictionary EditorAutomationMCPDispatcher::_enrich_action_failure(
+		const Dictionary &p_action_dict,
+		const EditorAutomationActionResult &p_action_result,
+		const Dictionary &p_selector,
+		const EditorAutomationSnapshot &p_snapshot,
+		const EditorAutomationLogMarker &p_log_marker,
+		const Dictionary &p_args) const {
+	const EditorAutomationFailureAttachmentOptions attachment_options = _failure_attachment_options(p_args);
+	if (!attachment_options.attach_screenshot) {
+		return p_action_dict;
+	}
+
+	const EditorAutomationDiagnostics diagnostics = EditorAutomationDiagnosticsBuilder::build_for_action_failure(
+			p_action_result.kind,
+			p_action_result.message,
+			p_selector,
+			p_action_result.candidates,
+			p_snapshot,
+			p_log_marker,
+			16,
+			attachment_options);
+
+	Dictionary result = p_action_dict;
+	result["details"] = diagnostics.details;
+	return result;
+}
+
+Dictionary EditorAutomationMCPDispatcher::_enrich_selector_failure(
+		const Dictionary &p_result,
+		const EditorAutomationSelectorResult &p_selector_result,
+		const Dictionary &p_selector,
+		const EditorAutomationSnapshot &p_snapshot,
+		const Dictionary &p_args) const {
+	const EditorAutomationFailureAttachmentOptions attachment_options = _failure_attachment_options(p_args);
+	if (!attachment_options.attach_screenshot) {
+		return p_result;
+	}
+
+	const String kind = p_selector_result.error_kind.is_empty() ? "selector_failed" : p_selector_result.error_kind;
+	const EditorAutomationDiagnostics diagnostics = EditorAutomationDiagnosticsBuilder::build_for_action_failure(
+			kind,
+			p_selector_result.message,
+			p_selector,
+			p_selector_result.candidates,
+			p_snapshot,
+			EditorAutomationLog::create_marker(),
+			16,
+			attachment_options);
+
+	Dictionary result = p_result;
+	result["details"] = diagnostics.details;
+	return result;
+}
+
 Dictionary EditorAutomationMCPDispatcher::_tool_find_elements(const Dictionary &p_args, bool &r_is_error) {
 	const Dictionary selector = _read_dict(p_args, "selector");
 	int max_results = _read_int(p_args, "max_results", MAX_TREE_RESULT_LIMIT);
@@ -651,6 +730,7 @@ Dictionary EditorAutomationMCPDispatcher::_tool_find_elements(const Dictionary &
 		}
 	} else {
 		r_is_error = true;
+		result = _enrich_selector_failure(result, selector_result, selector, snapshot, p_args);
 	}
 	return result;
 }
@@ -711,7 +791,7 @@ Dictionary EditorAutomationMCPDispatcher::_wait_context_from_handle(const Editor
 	return result;
 }
 
-Dictionary EditorAutomationMCPDispatcher::_cooperative_wait_response(const EditorAutomationCooperativeWaitHandle &p_handle, bool &r_is_error) {
+Dictionary EditorAutomationMCPDispatcher::_cooperative_wait_response(const EditorAutomationCooperativeWaitHandle &p_handle, bool &r_is_error, const Dictionary &p_args) {
 	Dictionary result = _wait_context_from_handle(p_handle);
 	if (p_handle.act_context.active) {
 		result["action"] = p_handle.act_context.action_result;
@@ -740,6 +820,9 @@ Dictionary EditorAutomationMCPDispatcher::_cooperative_wait_response(const Edito
 		const EditorAutomationSnapshot snapshot = _snapshot_root() != nullptr
 				? EditorAutomationSnapshot::capture_from_node(_snapshot_root())
 				: EditorAutomationSnapshot::capture_from_editor();
+		const EditorAutomationFailureAttachmentOptions attachment_options = p_handle.act_context.active
+				? _failure_attachment_options_from_act_context(p_handle.act_context)
+				: _failure_attachment_options(p_args);
 		const EditorAutomationDiagnostics diagnostics = EditorAutomationDiagnosticsBuilder::build_for_wait_failure(
 				String(result["kind"]),
 				p_handle.result.message,
@@ -747,7 +830,9 @@ Dictionary EditorAutomationMCPDispatcher::_cooperative_wait_response(const Edito
 				p_handle.act_context.action_result,
 				p_handle.act_context.selector,
 				snapshot,
-				p_handle.act_context.log_marker);
+				p_handle.act_context.log_marker,
+				16,
+				attachment_options);
 		result["details"] = diagnostics.details;
 		r_is_error = true;
 		return result;
@@ -758,6 +843,7 @@ Dictionary EditorAutomationMCPDispatcher::_cooperative_wait_response(const Edito
 		const EditorAutomationSnapshot snapshot = _snapshot_root() != nullptr
 				? EditorAutomationSnapshot::capture_from_node(_snapshot_root())
 				: EditorAutomationSnapshot::capture_from_editor();
+		const EditorAutomationFailureAttachmentOptions attachment_options = _failure_attachment_options(p_args);
 		const EditorAutomationDiagnostics diagnostics = EditorAutomationDiagnosticsBuilder::build_for_wait_failure(
 				"timeout",
 				p_handle.result.message,
@@ -765,7 +851,9 @@ Dictionary EditorAutomationMCPDispatcher::_cooperative_wait_response(const Edito
 				Dictionary(),
 				Dictionary(),
 				snapshot,
-				EditorAutomationLog::create_marker());
+				EditorAutomationLog::create_marker(),
+				16,
+				attachment_options);
 		result["details"] = diagnostics.details;
 	}
 
@@ -832,6 +920,9 @@ Dictionary EditorAutomationMCPDispatcher::_compose_act_wait_result(
 	const EditorAutomationSnapshot snapshot = _snapshot_root() != nullptr
 			? EditorAutomationSnapshot::capture_from_node(_snapshot_root())
 			: EditorAutomationSnapshot::capture_from_editor();
+	const EditorAutomationFailureAttachmentOptions attachment_options = p_handle.act_context.active
+			? _failure_attachment_options_from_act_context(p_handle.act_context)
+			: _failure_attachment_options(Dictionary());
 	const EditorAutomationDiagnostics diagnostics = EditorAutomationDiagnosticsBuilder::build_for_wait_failure(
 			String(result["kind"]),
 			p_handle.result.message,
@@ -839,7 +930,9 @@ Dictionary EditorAutomationMCPDispatcher::_compose_act_wait_result(
 			p_action_result,
 			p_selector,
 			snapshot,
-			p_log_marker);
+			p_log_marker,
+			16,
+			attachment_options);
 	result["details"] = diagnostics.details;
 	r_is_error = true;
 	return result;
@@ -867,7 +960,7 @@ Dictionary EditorAutomationMCPDispatcher::_tool_act(const Dictionary &p_args, bo
 					handle.act_context.log_marker,
 					r_is_error);
 		}
-		return _cooperative_wait_response(handle, r_is_error);
+		return _cooperative_wait_response(handle, r_is_error, p_args);
 	}
 
 	const String action = _read_string(p_args, "action");
@@ -890,7 +983,7 @@ Dictionary EditorAutomationMCPDispatcher::_tool_act(const Dictionary &p_args, bo
 	const Dictionary wait_clause = _read_dict(p_args, "wait");
 	if (wait_clause.is_empty()) {
 		r_is_error = !action_result.ok;
-		return action_dict;
+		return _enrich_action_failure(action_dict, action_result, selector, snapshot, log_marker, p_args);
 	}
 
 	if (!action_result.ok) {
@@ -898,7 +991,7 @@ Dictionary EditorAutomationMCPDispatcher::_tool_act(const Dictionary &p_args, bo
 		result["ok"] = false;
 		result["kind"] = "action_failed";
 		result["message"] = action_result.message;
-		result["action"] = action_dict;
+		result["action"] = _enrich_action_failure(action_dict, action_result, selector, snapshot, log_marker, p_args);
 		r_is_error = true;
 		return result;
 	}
@@ -918,6 +1011,9 @@ Dictionary EditorAutomationMCPDispatcher::_tool_act(const Dictionary &p_args, bo
 	act_context.selector = selector;
 	act_context.action_result = action_dict;
 	act_context.log_marker = log_marker;
+	const EditorAutomationFailureAttachmentOptions attachment_options = _failure_attachment_options(p_args);
+	act_context.attach_screenshot_on_failure = attachment_options.attach_screenshot;
+	act_context.max_screenshot_bytes = attachment_options.max_screenshot_bytes;
 
 	const String new_wait_id = EditorAutomationWait::begin_cooperative(condition, wait_timeout_ms / 1000.0, context, act_context);
 	EditorAutomationCooperativeWaitHandle handle;
@@ -938,7 +1034,7 @@ Dictionary EditorAutomationMCPDispatcher::_tool_wait_for(const Dictionary &p_arg
 				result["message"] = vformat("Unknown wait id '%s'.", wait_id);
 				return result;
 			}
-			return _cooperative_wait_response(handle, r_is_error);
+			return _cooperative_wait_response(handle, r_is_error, p_args);
 		}
 
 		EditorAutomationCooperativeWaitHandle handle;
@@ -950,7 +1046,7 @@ Dictionary EditorAutomationMCPDispatcher::_tool_wait_for(const Dictionary &p_arg
 			result["message"] = vformat("Unknown wait id '%s'.", wait_id);
 			return result;
 		}
-		return _cooperative_wait_response(handle, r_is_error);
+		return _cooperative_wait_response(handle, r_is_error, p_args);
 	}
 
 	const Dictionary condition = _build_condition_from_args(p_args);
@@ -973,14 +1069,32 @@ Dictionary EditorAutomationMCPDispatcher::_tool_wait_for(const Dictionary &p_arg
 	const bool cooperative = _read_bool(p_args, "cooperative", true);
 	if (!cooperative) {
 		const EditorAutomationWaitResult wait_result = EditorAutomationWait::wait_for(condition, timeout_ms / 1000.0, context);
+		Dictionary result = wait_result.to_dictionary();
+		if (!wait_result.ok) {
+			const EditorAutomationSnapshot snapshot = _snapshot_root() != nullptr
+					? EditorAutomationSnapshot::capture_from_node(_snapshot_root())
+					: EditorAutomationSnapshot::capture_from_editor();
+			const Dictionary selector = _read_dict(condition, "selector");
+			const EditorAutomationDiagnostics diagnostics = EditorAutomationDiagnosticsBuilder::build_for_wait_failure(
+					wait_result.kind,
+					wait_result.message,
+					condition,
+					Dictionary(),
+					selector,
+					snapshot,
+					EditorAutomationLog::create_marker(),
+					16,
+					_failure_attachment_options(p_args));
+			result["details"] = diagnostics.details;
+		}
 		r_is_error = !wait_result.ok;
-		return wait_result.to_dictionary();
+		return result;
 	}
 
 	const String new_wait_id = EditorAutomationWait::begin_cooperative(condition, timeout_ms / 1000.0, context);
 	EditorAutomationCooperativeWaitHandle handle;
 	EditorAutomationWait::poll_cooperative(new_wait_id, handle);
-	return _cooperative_wait_response(handle, r_is_error);
+	return _cooperative_wait_response(handle, r_is_error, p_args);
 }
 
 Dictionary EditorAutomationMCPDispatcher::_tool_read_editor_state(const Dictionary &p_args, bool &r_is_error) {

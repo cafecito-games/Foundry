@@ -53,6 +53,7 @@ String EditorAutomationServer::cli_transport;
 int EditorAutomationServer::cli_port = -1;
 String EditorAutomationServer::cli_token;
 String EditorAutomationServer::cli_run_workflow;
+bool EditorAutomationServer::cli_failure_screenshots = false;
 
 void EditorAutomationServer::apply_cli_options(const FoundryCLIParser::CLIInvocation &p_invocation) {
 	cli_enabled = p_invocation.automation;
@@ -60,6 +61,7 @@ void EditorAutomationServer::apply_cli_options(const FoundryCLIParser::CLIInvoca
 	cli_port = p_invocation.automation_port;
 	cli_token = p_invocation.automation_token;
 	cli_run_workflow = p_invocation.automation_run_workflow;
+	cli_failure_screenshots = p_invocation.automation_failure_screenshots;
 }
 
 EditorAutomationServer *EditorAutomationServer::get_singleton() {
@@ -188,6 +190,7 @@ bool EditorAutomationServer::_start_mcp_transport() {
 
 	EditorAutomationMCPDispatcher::Options options;
 	options.snapshot_root = nullptr; // Capture from the live editor.
+	options.attach_screenshot_on_failure = cli_failure_screenshots;
 	mcp_server->set_dispatcher_options(options);
 
 	const int requested_port = port < 0 ? 0 : port;
@@ -300,6 +303,7 @@ void EditorAutomationServer::_run_acceptance_workflow_if_requested() {
 	EditorWorkflowTestDriver driver;
 	EditorWorkflowTestDriver::Options options;
 	options.default_wait_timeout_ms = 60000;
+	options.attach_screenshot_on_failure = cli_failure_screenshots;
 	driver.configure(options);
 
 	EditorAutomationAcceptanceWorkflow::Result workflow_result;

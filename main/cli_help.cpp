@@ -61,6 +61,7 @@ const CommandOption EDITOR_OPEN_OPTIONS[] = {
 	{ "--automation-port", "0", "Local automation port; 0 auto-selects later.", false },
 	{ "--automation-token", "token", "Deterministic session token for tests.", false },
 	{ "--automation-run-workflow", "mvp", "Run an acceptance workflow when the editor is ready, then exit.", false, true },
+	{ "--automation-failure-screenshots", nullptr, "Attach viewport screenshots to failed act/wait/find_elements results.", false },
 };
 
 const CommandOption PROJECT_RUN_OPTIONS[] = {

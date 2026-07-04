@@ -747,6 +747,7 @@ static void parse_editor(CLIParseState &r_state) {
 	int automation_port = -1;
 	String automation_token;
 	String automation_run_workflow;
+	bool automation_failure_screenshots = false;
 
 	PackedStringArray passthrough;
 	while (r_state.index < r_state.args.size()) {
@@ -802,6 +803,11 @@ static void parse_editor(CLIParseState &r_state) {
 				}
 				continue;
 			}
+			if (arg == "--automation-failure-screenshots") {
+				automation_failure_screenshots = true;
+				r_state.index++;
+				continue;
+			}
 			if (!arg.begins_with("-")) {
 				append(passthrough, arg);
 				r_state.index++;
@@ -827,6 +833,7 @@ static void parse_editor(CLIParseState &r_state) {
 	r_state.result.invocation.automation_port = automation_port;
 	r_state.result.invocation.automation_token = automation_token;
 	r_state.result.invocation.automation_run_workflow = automation_run_workflow;
+	r_state.result.invocation.automation_failure_screenshots = automation_failure_screenshots;
 	r_state.result.invocation.project_path = r_state.project_path;
 	r_state.result.invocation.passthrough_args = passthrough;
 	finalize_global_args(r_state);

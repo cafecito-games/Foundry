@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  editor_automation_server.h                                            */
+/*  editor_automation_screenshot.h                                         */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -30,74 +30,60 @@
 
 #pragma once
 
-#include "editor/plugins/editor_plugin.h"
-#include "main/cli_parser.h"
+#include "editor/automation/editor_automation_snapshot.h"
 
-class EditorAutomationIndicator;
-class EditorAutomationMCPServer;
+#include "core/io/image.h"
+#include "core/variant/variant.h"
 
-class EditorAutomationServer : public EditorPlugin {
-	FOUNDRY_CLASS(EditorAutomationServer, EditorPlugin);
+class Node;
+class Viewport;
 
+struct EditorAutomationScreenshotOptions {
+	bool enabled = false;
+	String format = "png";
+	int max_bytes = 512 * 1024;
+	bool crop_to_target = true;
+	int crop_padding_px = 16;
+	Node *snapshot_root = nullptr;
+};
+
+struct EditorAutomationScreenshotAttachment {
+	String status; // "available", "unavailable", "truncated"
+	String reason;
+	String format;
+	String encoding;
+	String data;
+	String capture_mode; // "full_window", "cropped"
+	Dictionary viewport;
+	Dictionary image;
+	Dictionary crop;
+	Dictionary highlight;
+	int byte_size = 0;
+	int encoded_byte_size = 0;
+	int max_bytes = 0;
+
+	Dictionary to_dictionary() const;
+};
+
+class EditorAutomationScreenshot {
 public:
-	enum class Transport {
-		NONE,
-		MCP,
-	};
+	static constexpr int DEFAULT_MAX_BYTES = 512 * 1024;
+
+	static EditorAutomationScreenshotAttachment capture_for_failure(
+			const EditorAutomationSnapshot &p_snapshot,
+			const Dictionary &p_selector,
+			const EditorAutomationScreenshotOptions &p_options);
+
+	static EditorAutomationScreenshotAttachment encode_image_attachment(
+			const Ref<Image> &p_image,
+			const EditorAutomationScreenshotOptions &p_options,
+			const String &p_capture_mode,
+			const Dictionary &p_viewport,
+			const Dictionary &p_crop,
+			const Dictionary &p_highlight);
 
 private:
-	static EditorAutomationServer *singleton;
-	static bool cli_enabled;
-	static String cli_transport;
-	static int cli_port;
-	static String cli_token;
-	static String cli_run_workflow;
-	static bool cli_failure_screenshots;
-
-	bool enabled = false;
-	Transport transport = Transport::NONE;
-	int port = 0;
-	String token;
-	String endpoint;
-	bool local_only = true;
-	bool started = false;
-	bool start_attempted = false;
-	bool workflow_run_attempted = false;
-	bool workflow_run_completed = false;
-
-	EditorAutomationMCPServer *mcp_server = nullptr;
-#if defined(DEV_ENABLED)
-	EditorAutomationIndicator *indicator = nullptr;
-#endif
-
-	String _generate_token() const;
-	void _show_dev_indicator();
-	void _hide_dev_indicator();
-	void _apply_dev_indicator();
-	void _ensure_dev_indicator();
-	bool _start_mcp_transport();
-	void _fail_startup(const String &p_message, int p_requested_port, Error p_error);
-	void _run_acceptance_workflow_if_requested();
-	void _notification(int p_what);
-
-public:
-	static void apply_cli_options(const FoundryCLIParser::CLIInvocation &p_invocation);
-	static EditorAutomationServer *get_singleton();
-
-	EditorAutomationServer();
-	~EditorAutomationServer();
-
-	bool is_enabled() const { return enabled; }
-	String get_transport_name() const;
-	int get_port() const { return port; }
-	const String &get_token() const { return token; }
-	const String &get_endpoint() const { return endpoint; }
-	bool is_local_only() const { return local_only; }
-	bool is_started() const { return started; }
-#if defined(DEV_ENABLED)
-	bool is_indicator_visible() const;
-#endif
-
-	void start();
-	void stop();
+	static Viewport *_resolve_capture_viewport(Node *p_snapshot_root);
+	static Rect2i _resolve_highlight_rect(const EditorAutomationSnapshot &p_snapshot, const Dictionary &p_selector);
+	static Dictionary _rect_to_dictionary(const Rect2i &p_rect);
 };

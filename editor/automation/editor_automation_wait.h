@@ -60,6 +60,8 @@ struct EditorAutomationActWaitContext {
 	Dictionary selector;
 	Dictionary action_result;
 	EditorAutomationLogMarker log_marker;
+	bool attach_screenshot_on_failure = false;
+	int max_screenshot_bytes = 0;
 };
 
 enum class EditorAutomationCooperativeWaitStatus {

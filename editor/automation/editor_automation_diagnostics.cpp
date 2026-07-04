@@ -30,6 +30,7 @@
 
 #include "editor_automation_diagnostics.h"
 
+#include "editor/automation/editor_automation_screenshot.h"
 #include "editor/automation/editor_automation_selector.h"
 #include "editor/automation/editor_automation_state.h"
 #include "editor/automation/editor_automation_trace.h"
@@ -112,6 +113,27 @@ Dictionary EditorAutomationDiagnosticsBuilder::element_subtree_for_selector(cons
 	return Dictionary();
 }
 
+void EditorAutomationDiagnosticsBuilder::_attach_failure_screenshot(
+		Dictionary &r_details,
+		const EditorAutomationSnapshot &p_snapshot,
+		const Dictionary &p_selector,
+		const EditorAutomationFailureAttachmentOptions &p_attachments) {
+	if (!p_attachments.attach_screenshot) {
+		return;
+	}
+
+	EditorAutomationScreenshotOptions screenshot_options;
+	screenshot_options.enabled = true;
+	screenshot_options.format = p_attachments.screenshot_format;
+	screenshot_options.max_bytes = p_attachments.max_screenshot_bytes;
+	screenshot_options.crop_to_target = p_attachments.crop_screenshot_to_target;
+	screenshot_options.snapshot_root = p_attachments.snapshot_root;
+
+	const EditorAutomationScreenshotAttachment attachment = EditorAutomationScreenshot::capture_for_failure(
+			p_snapshot, p_selector, screenshot_options);
+	r_details["screenshot"] = attachment.to_dictionary();
+}
+
 EditorAutomationDiagnostics EditorAutomationDiagnosticsBuilder::build_for_action_failure(
 		const String &p_kind,
 		const String &p_message,
@@ -119,7 +141,8 @@ EditorAutomationDiagnostics EditorAutomationDiagnosticsBuilder::build_for_action
 		const Array &p_candidates,
 		const EditorAutomationSnapshot &p_snapshot,
 		const EditorAutomationLogMarker &p_log_marker,
-		int p_trace_count) {
+		int p_trace_count,
+		const EditorAutomationFailureAttachmentOptions &p_attachments) {
 	EditorAutomationDiagnostics diagnostics;
 	diagnostics.kind = p_kind;
 	diagnostics.message = p_message;
@@ -162,6 +185,7 @@ EditorAutomationDiagnostics EditorAutomationDiagnosticsBuilder::build_for_action
 	details["log_entries"] = EditorAutomationLog::read_since(p_log_marker);
 	details["action_trace"] = EditorAutomationTrace::get_singleton().get_recent(p_trace_count);
 	details["ui_subtree"] = element_subtree_for_selector(p_snapshot, p_selector);
+	_attach_failure_screenshot(details, p_snapshot, p_selector, p_attachments);
 
 	diagnostics.details = details;
 	return diagnostics;
@@ -175,7 +199,8 @@ EditorAutomationDiagnostics EditorAutomationDiagnosticsBuilder::build_for_wait_f
 		const Dictionary &p_selector,
 		const EditorAutomationSnapshot &p_snapshot,
 		const EditorAutomationLogMarker &p_log_marker,
-		int p_trace_count) {
+		int p_trace_count,
+		const EditorAutomationFailureAttachmentOptions &p_attachments) {
 	EditorAutomationDiagnostics diagnostics;
 	diagnostics.kind = p_kind;
 	diagnostics.message = p_message;
@@ -208,6 +233,7 @@ EditorAutomationDiagnostics EditorAutomationDiagnosticsBuilder::build_for_wait_f
 	details["log_entries"] = EditorAutomationLog::read_since(p_log_marker);
 	details["action_trace"] = EditorAutomationTrace::get_singleton().get_recent(p_trace_count);
 	details["ui_subtree"] = element_subtree_for_selector(p_snapshot, p_selector);
+	_attach_failure_screenshot(details, p_snapshot, p_selector, p_attachments);
 
 	diagnostics.details = details;
 	return diagnostics;

@@ -30,7 +30,10 @@
 
 #pragma once
 
+#include "editor/automation/editor_automation_action.h"
+#include "editor/automation/editor_automation_diagnostics.h"
 #include "editor/automation/editor_automation_log.h"
+#include "editor/automation/editor_automation_types.h"
 #include "editor/automation/editor_automation_wait.h"
 
 #include "core/variant/variant.h"
@@ -66,6 +69,8 @@ public:
 		Node *snapshot_root = nullptr;
 		double default_wait_timeout_sec = 5.0;
 		int max_tree_depth = 8;
+		bool attach_screenshot_on_failure = false;
+		int max_screenshot_bytes = 512 * 1024;
 	};
 
 private:
@@ -90,7 +95,7 @@ private:
 
 	Dictionary _build_condition_from_args(const Dictionary &p_args);
 	Dictionary _wait_context_from_handle(const EditorAutomationCooperativeWaitHandle &p_handle);
-	Dictionary _cooperative_wait_response(const EditorAutomationCooperativeWaitHandle &p_handle, bool &r_is_error);
+	Dictionary _cooperative_wait_response(const EditorAutomationCooperativeWaitHandle &p_handle, bool &r_is_error, const Dictionary &p_args = Dictionary());
 	Dictionary _compose_act_wait_result(
 			const Dictionary &p_action_result,
 			const EditorAutomationCooperativeWaitHandle &p_handle,
@@ -99,6 +104,21 @@ private:
 			const String &p_action,
 			const EditorAutomationLogMarker &p_log_marker,
 			bool &r_is_error);
+	EditorAutomationFailureAttachmentOptions _failure_attachment_options(const Dictionary &p_args) const;
+	EditorAutomationFailureAttachmentOptions _failure_attachment_options_from_act_context(const EditorAutomationActWaitContext &p_act_context) const;
+	Dictionary _enrich_action_failure(
+			const Dictionary &p_action_dict,
+			const EditorAutomationActionResult &p_action_result,
+			const Dictionary &p_selector,
+			const EditorAutomationSnapshot &p_snapshot,
+			const EditorAutomationLogMarker &p_log_marker,
+			const Dictionary &p_args) const;
+	Dictionary _enrich_selector_failure(
+			const Dictionary &p_result,
+			const EditorAutomationSelectorResult &p_selector_result,
+			const Dictionary &p_selector,
+			const EditorAutomationSnapshot &p_snapshot,
+			const Dictionary &p_args) const;
 	Dictionary _tool_read_editor_log(const Dictionary &p_args, bool &r_is_error);
 	Dictionary _tool_run_command(const Dictionary &p_args, bool &r_is_error);
 	Dictionary _tool_list_commands(const Dictionary &p_args, bool &r_is_error);

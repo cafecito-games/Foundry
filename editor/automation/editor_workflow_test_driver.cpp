@@ -117,6 +117,14 @@ EditorAutomationSnapshot EditorWorkflowTestDriver::_capture_snapshot() const {
 	return EditorAutomationSnapshot::capture_from_editor();
 }
 
+EditorAutomationFailureAttachmentOptions EditorWorkflowTestDriver::_failure_attachment_options() const {
+	EditorAutomationFailureAttachmentOptions attachment_options;
+	attachment_options.attach_screenshot = options.attach_screenshot_on_failure;
+	attachment_options.snapshot_root = options.snapshot_root;
+	attachment_options.max_screenshot_bytes = options.max_screenshot_bytes;
+	return attachment_options;
+}
+
 void EditorWorkflowTestDriver::_record_failure(const String &p_kind, const String &p_message, const Dictionary &p_selector, const EditorAutomationSnapshot &p_snapshot, const Array &p_candidates) {
 	if (failure.failed) {
 		return;
@@ -129,7 +137,29 @@ void EditorWorkflowTestDriver::_record_failure(const String &p_kind, const Strin
 	failure.selector = p_selector.is_empty() ? last_selector : p_selector;
 
 	const EditorAutomationDiagnostics diagnostics = EditorAutomationDiagnosticsBuilder::build_for_action_failure(
-			p_kind, p_message, failure.selector, p_candidates, p_snapshot, log_marker);
+			p_kind, p_message, failure.selector, p_candidates, p_snapshot, log_marker, 16, _failure_attachment_options());
+	failure.diagnostics = diagnostics.to_dictionary();
+}
+
+void EditorWorkflowTestDriver::_record_wait_failure(
+		const String &p_kind,
+		const String &p_message,
+		const Dictionary &p_condition,
+		const Dictionary &p_action,
+		const Dictionary &p_selector,
+		const EditorAutomationSnapshot &p_snapshot) {
+	if (failure.failed) {
+		return;
+	}
+	failure.failed = true;
+	failure.step = current_step;
+	failure.message = p_message;
+	failure.action = last_action;
+	failure.route = last_route;
+	failure.selector = p_selector.is_empty() ? last_selector : p_selector;
+
+	const EditorAutomationDiagnostics diagnostics = EditorAutomationDiagnosticsBuilder::build_for_wait_failure(
+			p_kind, p_message, p_condition, p_action, failure.selector, p_snapshot, log_marker, 16, _failure_attachment_options());
 	failure.diagnostics = diagnostics.to_dictionary();
 }
 
@@ -250,7 +280,7 @@ Dictionary EditorWorkflowTestDriver::wait_for(const Dictionary &p_condition, int
 	Dictionary result = wait_result.to_dictionary();
 	if (!wait_result.ok) {
 		const EditorAutomationSnapshot snapshot = _capture_snapshot();
-		_record_failure(wait_result.kind, wait_result.message, last_selector, snapshot);
+		_record_wait_failure(wait_result.kind, wait_result.message, p_condition, Dictionary(), last_selector, snapshot);
 	}
 	return result;
 }
