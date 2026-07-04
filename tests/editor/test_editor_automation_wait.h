@@ -45,6 +45,42 @@
 
 namespace TestEditorAutomationWait {
 
+// Mirrors EditorAutomationServer: polls cooperative waits from the scene
+// process notification. Cooperative wait polling pumps frames through
+// SceneTree::process(), so this re-enters the wait machinery exactly like the
+// live editor does.
+class WaitPollReentrancyProbe : public Node {
+	FOUNDRY_CLASS(WaitPollReentrancyProbe, Node);
+
+protected:
+	void _notification(int p_what) {
+		if (p_what != NOTIFICATION_PROCESS) {
+			return;
+		}
+		nested_notifications++;
+		const int polled = EditorAutomationWait::poll_all_cooperative();
+		if (polled > max_nested_polled) {
+			max_nested_polled = polled;
+		}
+		if (!wait_id.is_empty()) {
+			EditorAutomationCooperativeWaitHandle nested_handle;
+			if (EditorAutomationWait::poll_cooperative(wait_id, nested_handle)) {
+				nested_poll_cooperative_succeeded = true;
+				if (nested_handle.status != EditorAutomationCooperativeWaitStatus::PENDING) {
+					nested_saw_non_pending = true;
+				}
+			}
+		}
+	}
+
+public:
+	String wait_id;
+	int nested_notifications = 0;
+	int max_nested_polled = 0;
+	bool nested_poll_cooperative_succeeded = false;
+	bool nested_saw_non_pending = false;
+};
+
 static void setup_visible_control(Control *p_control, const Size2 &p_size = Size2(120, 32)) {
 	p_control->set_anchors_and_offsets_preset(Control::PRESET_TOP_LEFT);
 	p_control->set_size(p_size);
@@ -321,6 +357,60 @@ TEST_CASE("[Editor][Automation] wait_for no_new_errors distinguishes new log ent
 	CHECK(dirty_result.kind == "timeout");
 
 	EditorAutomationLog::clear_test_messages();
+}
+
+TEST_CASE("[Editor][Automation] cooperative wait polling survives process-notification re-entry") {
+	// Regression test: pumping frames from a cooperative wait poll delivers
+	// NOTIFICATION_PROCESS to EditorAutomationServer, which polls cooperative
+	// waits again. This used to recurse into the same pending wait until the
+	// editor crashed with a stack overflow (e.g. any `act` with a `wait`
+	// clause over MCP).
+	EditorAutomationWait::clear_all_cooperative();
+	EditorAutomationTrace::get_singleton().clear();
+
+	WaitPollReentrancyProbe *probe = memnew(WaitPollReentrancyProbe);
+	SceneTree::get_singleton()->get_root()->add_child(probe);
+	probe->set_process(true);
+
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+	flush_frames();
+
+	EditorAutomationWaitContext context;
+	context.snapshot_root = root;
+
+	Dictionary condition;
+	condition["type"] = "selector_appears";
+	Dictionary selector;
+	selector["role"] = "button";
+	selector["name"] = "Never Appears";
+	condition["selector"] = selector;
+
+	const String wait_id = EditorAutomationWait::begin_cooperative(condition, 0.05, context);
+	probe->wait_id = wait_id;
+
+	EditorAutomationCooperativeWaitHandle handle;
+	int outer_polls = 0;
+	do {
+		REQUIRE(EditorAutomationWait::poll_cooperative(wait_id, handle));
+		outer_polls++;
+	} while (handle.status == EditorAutomationCooperativeWaitStatus::PENDING && outer_polls < 100);
+
+	// The wait completes normally (timeout) instead of crashing.
+	CHECK(handle.status == EditorAutomationCooperativeWaitStatus::COMPLETE);
+	CHECK(handle.result.kind == "timeout");
+
+	// Frame pumping really re-entered the wait machinery...
+	CHECK(probe->nested_notifications > 0);
+	CHECK(probe->nested_poll_cooperative_succeeded);
+	// ...but nested polls never advanced or finalized the pending wait.
+	CHECK(probe->max_nested_polled == 0);
+	CHECK_FALSE(probe->nested_saw_non_pending);
+
+	EditorAutomationWait::clear_all_cooperative();
+	memdelete(root);
+	memdelete(probe);
 }
 
 } // namespace TestEditorAutomationWait

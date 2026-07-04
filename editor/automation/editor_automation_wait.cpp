@@ -75,6 +75,28 @@ struct PendingWait {
 
 HashMap<String, PendingWait> pending_waits;
 uint64_t next_wait_serial = 1;
+// True while a wait poll is pumping frames. Polling advances frames through
+// SceneTree::process(), which re-delivers NOTIFICATION_PROCESS to
+// EditorAutomationServer, which polls cooperative waits (and the MCP server)
+// again. Without this guard the same pending wait re-enters
+// _poll_pending_wait recursively until the stack overflows, and nested polls
+// can erase map entries that outer stack frames still reference.
+bool poll_in_progress = false;
+
+struct PollReentrancyGuard {
+	bool owned = false;
+	PollReentrancyGuard() {
+		owned = !poll_in_progress;
+		if (owned) {
+			poll_in_progress = true;
+		}
+	}
+	~PollReentrancyGuard() {
+		if (owned) {
+			poll_in_progress = false;
+		}
+	}
+};
 
 String _read_string(const Dictionary &p_dict, const char *p_key) {
 	if (!p_dict.has(p_key)) {
@@ -510,6 +532,7 @@ EditorAutomationWaitResult EditorAutomationWait::wait_for(
 	wait.context = p_context;
 	wait.timeout_sec = p_timeout_sec;
 
+	const PollReentrancyGuard guard;
 	while (wait.status == EditorAutomationCooperativeWaitStatus::PENDING) {
 		_poll_pending_wait(wait);
 	}
@@ -554,6 +577,14 @@ bool EditorAutomationWait::poll_cooperative(const String &p_wait_id, EditorAutom
 	if (wait == nullptr) {
 		return false;
 	}
+	// While an outer poll is pumping frames, only report the current state:
+	// polling or erasing here would recurse into frame processing and/or
+	// invalidate the PendingWait an outer stack frame is still using.
+	if (poll_in_progress) {
+		r_handle = _handle_from_pending(*wait);
+		return true;
+	}
+	const PollReentrancyGuard guard;
 	if (wait->status == EditorAutomationCooperativeWaitStatus::PENDING) {
 		_poll_pending_wait(*wait);
 	}
@@ -570,6 +601,14 @@ bool EditorAutomationWait::cancel_cooperative(const String &p_wait_id, EditorAut
 		return false;
 	}
 	wait->cancelled = true;
+	// See poll_cooperative: never finalize/erase while an outer poll still
+	// holds a pointer into pending_waits. The outer poll observes `cancelled`
+	// and completes the wait on its own next step.
+	if (poll_in_progress) {
+		r_handle = _handle_from_pending(*wait);
+		return true;
+	}
+	const PollReentrancyGuard guard;
 	_poll_pending_wait(*wait);
 	r_handle = _handle_from_pending(*wait);
 	pending_waits.erase(p_wait_id);
@@ -580,6 +619,13 @@ int EditorAutomationWait::poll_all_cooperative(int p_max_steps) {
 	if (p_max_steps <= 0) {
 		return 0;
 	}
+	// Pumping a frame from a wait poll re-enters this function through
+	// EditorAutomationServer's process notification; skip nested polls so a
+	// pending wait cannot recurse into itself until the stack overflows.
+	if (poll_in_progress) {
+		return 0;
+	}
+	const PollReentrancyGuard guard;
 
 	int polled = 0;
 	LocalVector<String> wait_ids;
