@@ -47,11 +47,6 @@ class EditorSceneTabs : public MarginContainer {
 	inline static EditorSceneTabs *singleton = nullptr;
 
 public:
-	// TabBar rearrange group shared by every tile's scene strip so a scene tab
-	// can be dragged from one strip and dropped onto another tile. Kept distinct
-	// from the editor dock tab rearrange group.
-	static constexpr int TILE_TAB_REARRANGE_GROUP = 100;
-
 	enum {
 		SCENE_SHOW_IN_FILESYSTEM = 1000, // Prevents conflicts with EditorNode options.
 		SCENE_RUN,

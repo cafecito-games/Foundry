@@ -476,11 +476,12 @@ EditorSceneTabs::EditorSceneTabs(int p_tile_id) {
 	scene_tabs->add_tab("unsaved");
 	scene_tabs->set_tab_close_display_policy((TabBar::CloseButtonDisplayPolicy)EDITOR_GET("interface/scene_tabs/display_close_button").operator int());
 	scene_tabs->set_max_tab_width(int(EDITOR_GET("interface/scene_tabs/maximum_width")) * EDSCALE);
+	// Enables intra-strip tab reordering and produces a drag payload for a tab
+	// dragged out of the strip. A rearrange group is deliberately NOT set: that
+	// would let another tile's TabBar accept the drop directly and move only the
+	// visual tab, bypassing the tile ownership model. Cross-tile drops are
+	// instead handled by the tile drop overlay over the content area.
 	scene_tabs->set_drag_to_rearrange_enabled(true);
-	// A shared rearrange group lets a scene tab be dragged out of its strip and
-	// over another tile; the drop itself is intercepted by the tile drop overlay
-	// (distinct from the editor dock tab group).
-	scene_tabs->set_tabs_rearrange_group(TILE_TAB_REARRANGE_GROUP);
 	scene_tabs->set_auto_translate_mode(AUTO_TRANSLATE_MODE_DISABLED);
 	scene_tabs->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	tabbar_container->add_child(scene_tabs);

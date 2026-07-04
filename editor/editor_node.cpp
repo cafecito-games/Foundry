@@ -4431,7 +4431,7 @@ bool EditorNode::is_addon_plugin_enabled(const String &p_addon) const {
 	return addon_name_to_plugin.has("res://addons/" + p_addon + "/plugin.cfg");
 }
 
-void EditorNode::_remove_edited_scene(bool p_change_tab) {
+void EditorNode::_remove_edited_scene(bool p_change_tab, bool p_allow_collapse) {
 	// When scene gets closed no node is edited anymore, so make sure the editors are notified before nodes are freed.
 	hide_unused_editors(SceneTreeDock::get_singleton());
 	if (SceneTreeDock::get_singleton()) {
@@ -4446,7 +4446,7 @@ void EditorNode::_remove_edited_scene(bool p_change_tab) {
 	editor_data.remove_scene(old_index);
 
 	const bool tile_emptied = editor_data.get_tile_scene_indices(tile_id).is_empty();
-	if (tile_emptied && scene_workspace && scene_workspace->get_tile_count() > 1) {
+	if (p_allow_collapse && tile_emptied && scene_workspace && scene_workspace->get_tile_count() > 1) {
 		// The tile has no scenes left; collapse it. If it was the focused tile,
 		// collapse_tile() emits tile_focus_requested, re-syncing focus/display.
 		ScenePaneTile *tile = scene_workspace->get_tile_by_id(tile_id);
@@ -4467,7 +4467,7 @@ void EditorNode::_remove_edited_scene(bool p_change_tab) {
 	update_all_scene_tabs();
 }
 
-void EditorNode::_remove_scene(int index, bool p_change_tab) {
+void EditorNode::_remove_scene(int index, bool p_change_tab, bool p_allow_collapse) {
 	// Clear icon cache in case some scripts are no longer needed or class icons are outdated.
 	// FIXME: Ideally the cache should never be cleared and only updated on per-script basis, when an icon changes.
 	editor_data.clear_script_icon_cache();
@@ -4475,10 +4475,20 @@ void EditorNode::_remove_scene(int index, bool p_change_tab) {
 
 	if (editor_data.get_edited_scene() == index) {
 		// Scene to remove is current scene.
-		_remove_edited_scene(p_change_tab);
+		_remove_edited_scene(p_change_tab, p_allow_collapse);
 	} else {
-		// Scene to remove is not active scene.
+		// Scene to remove is not active scene. It may be the last scene of some
+		// non-focused tile, so collapse that tile if the removal empties it.
+		const int tile_id = editor_data.get_scene_tile(index);
 		editor_data.remove_scene(index);
+		if (p_allow_collapse && scene_workspace && scene_workspace->get_tile_count() > 1 && editor_data.get_tile_scene_indices(tile_id).is_empty()) {
+			ScenePaneTile *tile = scene_workspace->get_tile_by_id(tile_id);
+			if (tile) {
+				scene_workspace->collapse_tile(tile);
+			}
+			update_all_scene_tabs();
+			_update_tile_display_attachments();
+		}
 	}
 }
 
@@ -7430,16 +7440,29 @@ void EditorNode::reload_scene(const String &p_path) {
 		_save_editor_states(p_path);
 	}
 
+	// Preserve the reloaded scene's tile ownership across the reload. load_scene()
+	// always creates the replacement in the focused tile, so focus the scene's
+	// own tile first; the replacement then lands there directly. Collapsing is
+	// suppressed so the tile survives even when the reloaded scene was its only
+	// one, and the original focus is restored afterwards.
+	const int scene_tile_id = editor_data.get_scene_tile(scene_idx);
+	const int focused_tile_id = editor_data.get_focused_tile();
+	if (scene_workspace && scene_tile_id != focused_tile_id && scene_workspace->get_tile_by_id(scene_tile_id)) {
+		focus_tile(scene_tile_id);
+	}
+
 	// Reload scene.
-	_remove_scene(scene_idx, false);
+	_remove_scene(scene_idx, false, false);
 	load_scene(p_path, true, false, true);
 
-	// Adjust index so tab is back a the previous position.
+	// Adjust index so tab is back at the previous position.
 	editor_data.move_edited_scene_to_index(scene_idx);
 	EditorUndoRedoManager::get_singleton()->clear_history(editor_data.get_scene_history_id(scene_idx), false);
 
-	// Recover the tab.
-	scene_tabs->set_current_tab(current_tab);
+	// Restore focus to the originally focused tile and refresh every strip.
+	focus_tile(focused_tile_id);
+	update_all_scene_tabs();
+	_update_tile_display_attachments();
 }
 
 void EditorNode::find_all_instances_inheriting_path_in_node(Node *p_root, Node *p_node, const String &p_instance_path, HashSet<Node *> &p_instance_list) {

@@ -70,9 +70,11 @@ bool EditorTileDropOverlay::_resolve_source(const Variant &p_data, int &r_source
 	}
 	Node *from_node = tree->get_root()->get_node_or_null(d["from_path"]);
 	TabBar *from_bar = Object::cast_to<TabBar>(from_node);
-	if (!from_bar || from_bar->get_tabs_rearrange_group() != EditorSceneTabs::TILE_TAB_REARRANGE_GROUP) {
+	if (!from_bar) {
 		return false;
 	}
+	// The drag is a scene-tab drag only if the source TabBar belongs to some
+	// tile's EditorSceneTabs strip (a dock or other TabBar has no such ancestor).
 	for (Node *node = from_bar; node; node = node->get_parent()) {
 		EditorSceneTabs *tabs = Object::cast_to<EditorSceneTabs>(node);
 		if (tabs) {

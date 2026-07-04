@@ -201,17 +201,14 @@ void EditorSceneWorkspace::update_focus_visuals() {
 }
 
 void EditorSceneWorkspace::_clear_tree() {
-	for (ScenePaneTile *tile : tiles) {
-		Node *parent = tile->get_parent();
-		if (parent) {
-			parent->remove_child(tile);
-		}
-	}
+	// Freeing the single direct child recursively frees the whole tree (nested
+	// SplitContainers and every tile with its docks/tabs). The tiles vector only
+	// holds borrowed pointers, so clearing it must not free anything itself.
 	tiles.clear();
 	while (get_child_count() > 0) {
 		Node *child = get_child(0);
 		remove_child(child);
-		memdelete(child); // Frees any SplitContainers left over from the old tree.
+		memdelete(child);
 	}
 }
 
