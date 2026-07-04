@@ -4935,10 +4935,16 @@ void EditorNode::_update_tile_display_attachments() {
 			// startup); force 2D rendering on so the preview never blacks out.
 			RenderingServer::get_singleton()->viewport_set_disable_2d(ctx->get_viewport()->get_viewport_rid(), false);
 			RenderingServer::get_singleton()->viewport_set_environment_mode(ctx->get_viewport()->get_viewport_rid(), RenderingServer::VIEWPORT_ENVIRONMENT_ENABLED);
-			// Note: the viewport's canvas transform (zoom/pan) is intentionally left
-			// as-is so each pane keeps its own independent view. The CanvasItemEditor
-			// only drives the focused pane's transform; a non-focused pane keeps the
-			// last view it had, so toggling focus does not change what a pane shows.
+			// The canvas transform (zoom/pan) is otherwise left untouched so each
+			// pane keeps its own independent view and toggling focus never changes
+			// what a pane shows. But a pane that has never been focused (e.g. right
+			// after restoring a multi-scene layout) still has the viewport's default
+			// identity transform, which renders the scene at 1:1 from the origin.
+			// Seed those with the editor's default framed view so they look right
+			// before being focused; a pane that already has a view keeps it.
+			if (CanvasItemEditor::get_singleton() && ctx->get_viewport()->get_global_canvas_transform() == Transform2D()) {
+				ctx->get_viewport()->set_global_canvas_transform(CanvasItemEditor::get_singleton()->get_default_view_transform());
+			}
 		}
 
 		ctx->get_history()->cleanup_history();

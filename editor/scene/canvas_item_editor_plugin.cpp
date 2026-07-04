@@ -5587,6 +5587,19 @@ void CanvasItemEditor::center_at(const Point2 &p_pos) {
 	update_viewport();
 }
 
+Transform2D CanvasItemEditor::get_default_view_transform() const {
+	// Mirrors the initial view established in clear(): a not-yet-opened scene is
+	// framed at this zoom/offset rather than at 1:1 from the origin. Used to seed
+	// the canvas transform of scene viewports shown as non-focused previews that
+	// have never been given an editor view of their own.
+	const real_t default_zoom = 1.0 / MAX(1, EDSCALE);
+	const Point2 default_view_offset = Point2(-150 - ruler_width_scaled, -95 - ruler_width_scaled);
+	Transform2D xform;
+	xform.scale_basis(Size2(default_zoom, default_zoom));
+	xform.columns[2] = -default_view_offset * default_zoom;
+	return xform;
+}
+
 CanvasItemEditor::CanvasItemEditor() {
 	snap_target[0] = SNAP_TARGET_NONE;
 	snap_target[1] = SNAP_TARGET_NONE;
