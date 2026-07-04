@@ -2,7 +2,7 @@
 /*  node_3d_editor_plugin.cpp                                             */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -3600,12 +3600,20 @@ void Node3DEditorViewport::_notification(int p_what) {
 		} break;
 
 		case NOTIFICATION_ENTER_TREE: {
-			surface->connect(SceneStringName(draw), callable_mp(this, &Node3DEditorViewport::_draw));
-			surface->connect(SceneStringName(gui_input), callable_mp(this, &Node3DEditorViewport::_sinput));
-			surface->connect(SceneStringName(mouse_entered), callable_mp(this, &Node3DEditorViewport::_surface_mouse_enter));
-			surface->connect(SceneStringName(mouse_exited), callable_mp(this, &Node3DEditorViewport::_surface_mouse_exit));
-			surface->connect(SceneStringName(focus_entered), callable_mp(this, &Node3DEditorViewport::_surface_focus_enter));
-			surface->connect(SceneStringName(focus_exited), callable_mp(this, &Node3DEditorViewport::_surface_focus_exit));
+			// The main screen (and this viewport with it) is reparented between
+			// scene tiles, so re-entering the tree must not connect surface a
+			// second time.
+			auto connect_surface_once = [&](const StringName &p_signal, const Callable &p_callable) {
+				if (!surface->is_connected(p_signal, p_callable)) {
+					surface->connect(p_signal, p_callable);
+				}
+			};
+			connect_surface_once(SceneStringName(draw), callable_mp(this, &Node3DEditorViewport::_draw));
+			connect_surface_once(SceneStringName(gui_input), callable_mp(this, &Node3DEditorViewport::_sinput));
+			connect_surface_once(SceneStringName(mouse_entered), callable_mp(this, &Node3DEditorViewport::_surface_mouse_enter));
+			connect_surface_once(SceneStringName(mouse_exited), callable_mp(this, &Node3DEditorViewport::_surface_mouse_exit));
+			connect_surface_once(SceneStringName(focus_entered), callable_mp(this, &Node3DEditorViewport::_surface_focus_enter));
+			connect_surface_once(SceneStringName(focus_exited), callable_mp(this, &Node3DEditorViewport::_surface_focus_exit));
 
 			_init_gizmo_instance(index);
 		} break;
@@ -4556,6 +4564,14 @@ void Node3DEditorViewport::set_can_preview(Camera3D *p_preview) {
 
 void Node3DEditorViewport::update_transform_gizmo_view() {
 	if (!is_visible_in_tree()) {
+		return;
+	}
+
+	// While the main screen is being reparented between scene tiles this can run
+	// (via VISIBILITY_CHANGED) before the editing viewport's camera is back in a
+	// valid world, so it cannot project yet. Skip until it can; a later frame
+	// updates the gizmo view.
+	if (!camera || !camera->is_inside_tree()) {
 		return;
 	}
 

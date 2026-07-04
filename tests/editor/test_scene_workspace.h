@@ -325,6 +325,54 @@ TEST_CASE("[SceneTree][Editor] workspace-collapse-noop-on-last-tile") {
 	CHECK(fixture.workspace->get_tile_count() == 1);
 }
 
+// Stands in for EditorNode: rescues a borrowed control (the shared main screen)
+// out of a collapsing focused tile when focus is handed to a survivor.
+class BorrowedContentRescuer : public Object {
+public:
+	EditorSceneWorkspace *workspace = nullptr;
+	Control *borrowed = nullptr;
+	void on_focus(int p_tile_id) {
+		ScenePaneTile *tile = workspace->get_tile_by_id(p_tile_id);
+		if (tile && borrowed && borrowed->get_parent()) {
+			borrowed->get_parent()->remove_child(borrowed);
+			tile->get_content_host()->add_child(borrowed);
+		}
+	}
+};
+
+TEST_CASE("[SceneTree][Editor] workspace-collapse-emits-focus-before-freeing-tile") {
+	WorkspaceFixture fixture;
+	ScenePaneTile *tile_a = fixture.workspace->get_focused_tile();
+	ScenePaneTile *tile_b = fixture.workspace->split_tile(tile_a, false, false);
+	fixture.settle();
+	REQUIRE(tile_b);
+	fixture.workspace->set_focused_tile(tile_a->get_tile_id());
+
+	// Borrow a control into the focused tile, as EditorNode does with the main
+	// screen. It must survive the collapse because the focus handler moves it out
+	// before the tile subtree is freed.
+	Control *borrowed = memnew(Control);
+	tile_a->get_content_host()->add_child(borrowed);
+	const ObjectID borrowed_id = borrowed->get_instance_id();
+
+	BorrowedContentRescuer *rescuer = memnew(BorrowedContentRescuer);
+	rescuer->workspace = fixture.workspace;
+	rescuer->borrowed = borrowed;
+	fixture.workspace->connect("tile_focus_requested", callable_mp(rescuer, &BorrowedContentRescuer::on_focus));
+
+	fixture.workspace->collapse_tile(tile_a);
+	fixture.settle();
+
+	CHECK(fixture.workspace->get_tile_count() == 1);
+	// The borrowed control was rescued into the survivor, not freed with tile_a.
+	CHECK(ObjectDB::get_instance(borrowed_id) != nullptr);
+	CHECK(borrowed->get_parent() == fixture.workspace->get_tiles()[0]->get_content_host());
+
+	fixture.workspace->get_tiles()[0]->get_content_host()->remove_child(borrowed);
+	memdelete(borrowed);
+	memdelete(rescuer);
+}
+
 TEST_CASE("[SceneTree][Editor] tile-drop-center-moves-scene") {
 	WorkspaceFixture fixture;
 	EditorData &editor_data = fixture.editor_data;
@@ -407,42 +455,45 @@ TEST_CASE("[SceneTree][Editor] workspace-config-round-trip") {
 	EditorSceneWorkspace::save_to_config(config, editor_data, fixture.workspace);
 	CHECK(EditorSceneWorkspace::has_workspace_session(config));
 
-	const PackedStringArray saved_paths = EditorSceneWorkspace::get_saved_scene_paths(config);
-	CHECK(saved_paths.has("res://a.tscn"));
-	CHECK(saved_paths.has("res://b.tscn"));
-	CHECK(saved_paths.has("res://c.tscn"));
+	const int tile_a_id = tile_a->get_tile_id();
+	const int tile_b_id = tile_b->get_tile_id();
+	const int tile_c_id = tile_c->get_tile_id();
 
-	// A fresh workspace with the same scenes pre-loaded rebuilds the same tree.
+	// A fresh workspace rebuilds the same structure and reports, per rebuilt leaf,
+	// the scenes it should host (the caller loads them afterwards).
 	Window *tree_root = SceneTree::get_singleton()->get_root();
+	EditorData restored_data;
 	EditorSelection *restored_selection = memnew(EditorSelection);
 	VBoxContainer *restored_host = memnew(VBoxContainer);
 	restored_host->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 	tree_root->add_child(restored_host);
 
-	EditorData restored_data;
-	const int ra = restored_data.add_edited_scene(-1);
-	restored_data.set_scene_path(ra, "res://a.tscn");
-	const int rb = restored_data.add_edited_scene(-1);
-	restored_data.set_scene_path(rb, "res://b.tscn");
-	const int rc = restored_data.add_edited_scene(-1);
-	restored_data.set_scene_path(rc, "res://c.tscn");
-
 	EditorSceneWorkspace *restored = EditorSceneWorkspace::create_single_tile_workspace(restored_selection, &restored_data);
 	restored->set_custom_minimum_size(Size2(800, 600));
 	restored_host->add_child(restored);
-	restored->restore_from_config(config);
+	Vector<EditorSceneWorkspace::RestoredLeaf> leaves = restored->restore_from_config(config);
 	SceneTree::get_singleton()->process(0.016);
 	MessageQueue::get_singleton()->flush();
 
 	CHECK(restored->get_tile_count() == 3);
 	CHECK(restored->get_focused_tile_id() == focused_id);
-	REQUIRE(restored->get_tile_by_id(tile_a->get_tile_id()) != nullptr);
-	REQUIRE(restored->get_tile_by_id(tile_b->get_tile_id()) != nullptr);
-	REQUIRE(restored->get_tile_by_id(tile_c->get_tile_id()) != nullptr);
-	CHECK(restored_data.get_tile_scene_indices(tile_a->get_tile_id()) == Vector<int>{ ra });
-	CHECK(restored_data.get_tile_scene_indices(tile_b->get_tile_id()) == Vector<int>{ rb });
-	CHECK(restored_data.get_tile_scene_indices(tile_c->get_tile_id()) == Vector<int>{ rc });
-	CHECK(restored_data.get_tile_current_scene(focused_id) == rc);
+	REQUIRE(restored->get_tile_by_id(tile_a_id) != nullptr);
+	REQUIRE(restored->get_tile_by_id(tile_b_id) != nullptr);
+	REQUIRE(restored->get_tile_by_id(tile_c_id) != nullptr);
+
+	REQUIRE(leaves.size() == 3);
+	HashMap<int, EditorSceneWorkspace::RestoredLeaf> by_tile;
+	for (const EditorSceneWorkspace::RestoredLeaf &leaf : leaves) {
+		REQUIRE(leaf.tile != nullptr);
+		by_tile[leaf.tile->get_tile_id()] = leaf;
+	}
+	REQUIRE(by_tile.has(tile_a_id));
+	REQUIRE(by_tile.has(tile_b_id));
+	REQUIRE(by_tile.has(tile_c_id));
+	CHECK(by_tile[tile_a_id].scenes == PackedStringArray{ "res://a.tscn" });
+	CHECK(by_tile[tile_b_id].scenes == PackedStringArray{ "res://b.tscn" });
+	CHECK(by_tile[tile_c_id].scenes == PackedStringArray{ "res://c.tscn" });
+	CHECK(by_tile[tile_c_id].current == "res://c.tscn");
 
 	memdelete(restored);
 	tree_root->remove_child(restored_host);

@@ -138,12 +138,17 @@ void EditorSceneWorkspace::collapse_tile(ScenePaneTile *p_tile) {
 	_fit_root_child();
 
 	tiles.erase(p_tile);
-	memdelete(p_tile); // Frees its docks + tabs.
 
+	// If the focused tile is being collapsed, hand focus to a survivor BEFORE
+	// freeing this tile. The focus handler (EditorNode) reparents the shared
+	// main screen out of this tile first, so memdelete() below never frees
+	// borrowed content that outlives the tile.
 	if (focused_tile_id == collapsed_tile_id && !tiles.is_empty()) {
 		set_focused_tile(tiles[0]->get_tile_id());
 		emit_signal("tile_focus_requested", tiles[0]->get_tile_id());
 	}
+
+	memdelete(p_tile); // Frees its docks + tabs.
 
 	update_focus_visuals();
 }
@@ -212,7 +217,7 @@ void EditorSceneWorkspace::_clear_tree() {
 	}
 }
 
-Control *EditorSceneWorkspace::_restore_node(const Ref<ConfigFile> &p_config, int p_node_index, int &r_max_tile_id) {
+Control *EditorSceneWorkspace::_restore_node(const Ref<ConfigFile> &p_config, int p_node_index, int &r_max_tile_id, Vector<RestoredLeaf> &r_leaves) {
 	const String type = p_config->get_value(WORKSPACE_CONFIG_SECTION, vformat("node_%d_type", p_node_index), "leaf");
 	if (type == "split") {
 		SplitContainer *split = memnew(SplitContainer);
@@ -223,10 +228,10 @@ Control *EditorSceneWorkspace::_restore_node(const Ref<ConfigFile> &p_config, in
 		const int child_a = p_config->get_value(WORKSPACE_CONFIG_SECTION, vformat("node_%d_child_a", p_node_index), -1);
 		const int child_b = p_config->get_value(WORKSPACE_CONFIG_SECTION, vformat("node_%d_child_b", p_node_index), -1);
 		if (child_a >= 0) {
-			split->add_child(_restore_node(p_config, child_a, r_max_tile_id));
+			split->add_child(_restore_node(p_config, child_a, r_max_tile_id, r_leaves));
 		}
 		if (child_b >= 0) {
-			split->add_child(_restore_node(p_config, child_b, r_max_tile_id));
+			split->add_child(_restore_node(p_config, child_b, r_max_tile_id, r_leaves));
 		}
 		split->set_split_offset(p_config->get_value(WORKSPACE_CONFIG_SECTION, vformat("node_%d_offset", p_node_index), 0));
 		return split;
@@ -236,26 +241,21 @@ Control *EditorSceneWorkspace::_restore_node(const Ref<ConfigFile> &p_config, in
 	r_max_tile_id = MAX(r_max_tile_id, tile_id);
 	ScenePaneTile *tile = _create_tile(tile_id);
 
-	// Re-tile any already-loaded scenes recorded for this leaf, matched by path.
-	if (editor_data) {
-		const PackedStringArray scenes = p_config->get_value(WORKSPACE_CONFIG_SECTION, vformat("node_%d_scenes", p_node_index), PackedStringArray());
-		for (const String &path : scenes) {
-			const int scene_idx = editor_data->get_edited_scene_from_path(path);
-			if (scene_idx >= 0) {
-				editor_data->set_scene_tile(scene_idx, tile_id);
-			}
-		}
-		const String current_path = p_config->get_value(WORKSPACE_CONFIG_SECTION, vformat("node_%d_current", p_node_index), String());
-		const int current_idx = current_path.is_empty() ? -1 : editor_data->get_edited_scene_from_path(current_path);
-		editor_data->set_tile_current_scene(tile_id, current_idx);
-	}
+	// Record the scenes this leaf should host; the caller loads them once the
+	// structure is fully in place (so scenes never load into a churning tree).
+	RestoredLeaf leaf;
+	leaf.tile = tile;
+	leaf.scenes = p_config->get_value(WORKSPACE_CONFIG_SECTION, vformat("node_%d_scenes", p_node_index), PackedStringArray());
+	leaf.current = p_config->get_value(WORKSPACE_CONFIG_SECTION, vformat("node_%d_current", p_node_index), String());
+	r_leaves.push_back(leaf);
 
 	return tile;
 }
 
-void EditorSceneWorkspace::restore_from_config(const Ref<ConfigFile> &p_config) {
+Vector<EditorSceneWorkspace::RestoredLeaf> EditorSceneWorkspace::restore_from_config(const Ref<ConfigFile> &p_config) {
+	Vector<RestoredLeaf> leaves;
 	if (!has_workspace_session(p_config)) {
-		return;
+		return leaves;
 	}
 
 	const int root_node = p_config->get_value(WORKSPACE_CONFIG_SECTION, "root_node", 0);
@@ -263,7 +263,7 @@ void EditorSceneWorkspace::restore_from_config(const Ref<ConfigFile> &p_config) 
 	_clear_tree();
 
 	int max_tile_id = 0;
-	Control *root = _restore_node(p_config, root_node, max_tile_id);
+	Control *root = _restore_node(p_config, root_node, max_tile_id, leaves);
 	add_child(root);
 	_fit_root_child();
 	next_tile_id = max_tile_id + 1;
@@ -272,10 +272,8 @@ void EditorSceneWorkspace::restore_from_config(const Ref<ConfigFile> &p_config) 
 	if (!get_tile_by_id(focused_tile_id) && !tiles.is_empty()) {
 		focused_tile_id = tiles[0]->get_tile_id();
 	}
-	if (editor_data) {
-		editor_data->set_focused_tile(focused_tile_id);
-	}
 	update_focus_visuals();
+	return leaves;
 }
 
 static int _save_workspace_node(const Ref<ConfigFile> &p_config, const char *p_section, const EditorData &p_data, Node *p_node, int &r_counter) {
@@ -363,25 +361,6 @@ bool EditorSceneWorkspace::has_workspace_session(const Ref<ConfigFile> &p_config
 		}
 	}
 	return false;
-}
-
-PackedStringArray EditorSceneWorkspace::get_saved_scene_paths(const Ref<ConfigFile> &p_config) {
-	PackedStringArray paths;
-	ERR_FAIL_COND_V(p_config.is_null(), paths);
-	if (!p_config->has_section(WORKSPACE_CONFIG_SECTION)) {
-		return paths;
-	}
-	const int node_count = p_config->get_value(WORKSPACE_CONFIG_SECTION, "node_count", 0);
-	for (int i = 0; i < node_count; i++) {
-		if (String(p_config->get_value(WORKSPACE_CONFIG_SECTION, vformat("node_%d_type", i), "leaf")) != "leaf") {
-			continue;
-		}
-		const PackedStringArray scenes = p_config->get_value(WORKSPACE_CONFIG_SECTION, vformat("node_%d_scenes", i), PackedStringArray());
-		for (const String &path : scenes) {
-			paths.push_back(path);
-		}
-	}
-	return paths;
 }
 
 EditorSceneWorkspace::EditorSceneWorkspace() {

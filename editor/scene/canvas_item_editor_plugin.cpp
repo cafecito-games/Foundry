@@ -2,7 +2,7 @@
 /*  canvas_item_editor_plugin.cpp                                         */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -4469,13 +4469,27 @@ void CanvasItemEditor::_notification(int p_what) {
 			select_sb->set_texture_margin_all(4);
 			select_sb->set_content_margin_all(4);
 
-			AnimationPlayerEditor::get_singleton()->get_track_editor()->connect("keying_changed", callable_mp(this, &CanvasItemEditor::_keying_changed));
-			AnimationPlayerEditor::get_singleton()->connect("animation_selected", callable_mp(this, &CanvasItemEditor::_keying_changed).unbind(1));
+			// These connections must survive the main screen being reparented
+			// between scene tiles: re-entering the tree must not connect them a
+			// second time.
+			const Callable keying_changed_callable = callable_mp(this, &CanvasItemEditor::_keying_changed);
+			if (!AnimationPlayerEditor::get_singleton()->get_track_editor()->is_connected("keying_changed", keying_changed_callable)) {
+				AnimationPlayerEditor::get_singleton()->get_track_editor()->connect("keying_changed", keying_changed_callable);
+			}
+			const Callable animation_selected_callable = callable_mp(this, &CanvasItemEditor::_keying_changed).unbind(1);
+			if (!AnimationPlayerEditor::get_singleton()->is_connected("animation_selected", animation_selected_callable)) {
+				AnimationPlayerEditor::get_singleton()->connect("animation_selected", animation_selected_callable);
+			}
 			_keying_changed();
 			_update_editor_settings();
 
-			connect("item_lock_status_changed", callable_mp(this, &CanvasItemEditor::_update_lock_and_group_button));
-			connect("item_group_status_changed", callable_mp(this, &CanvasItemEditor::_update_lock_and_group_button));
+			const Callable lock_group_callable = callable_mp(this, &CanvasItemEditor::_update_lock_and_group_button);
+			if (!is_connected("item_lock_status_changed", lock_group_callable)) {
+				connect("item_lock_status_changed", lock_group_callable);
+			}
+			if (!is_connected("item_group_status_changed", lock_group_callable)) {
+				connect("item_group_status_changed", lock_group_callable);
+			}
 		} break;
 
 		case EditorSettings::NOTIFICATION_EDITOR_SETTINGS_CHANGED: {

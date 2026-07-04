@@ -1549,7 +1549,8 @@ void EditorNode::_resave_externally_modified_scenes(String p_str) {
 }
 
 void EditorNode::_reload_modified_scenes() {
-	int current_idx = editor_data.get_edited_scene();
+	const int current_idx = editor_data.get_edited_scene();
+	const int focused_tile_id = editor_data.get_focused_tile();
 
 	for (int i = 0; i < editor_data.get_edited_scene_count(); i++) {
 		if (editor_data.get_scene_path(i) == "") {
@@ -1561,8 +1562,15 @@ void EditorNode::_reload_modified_scenes() {
 
 		if (date > last_date) {
 			String filename = editor_data.get_scene_path(i);
+			// Reload the scene inside its own tile so a non-focused tile keeps
+			// ownership (load_scene creates the replacement in the focused tile);
+			// collapsing is suppressed so the tile survives the in-place remove.
+			const int scene_tile_id = editor_data.get_scene_tile(i);
+			if (scene_workspace && scene_tile_id != editor_data.get_focused_tile() && scene_workspace->get_tile_by_id(scene_tile_id)) {
+				focus_tile(scene_tile_id);
+			}
 			editor_data.set_edited_scene(i);
-			_remove_edited_scene(false);
+			_remove_edited_scene(false, false);
 
 			Error err = load_scene(filename, false, false, false, true);
 			if (err != OK) {
@@ -1572,8 +1580,10 @@ void EditorNode::_reload_modified_scenes() {
 		}
 	}
 
+	focus_tile(focused_tile_id);
 	_set_current_scene(current_idx);
 	update_all_scene_tabs();
+	_update_tile_display_attachments();
 	disk_changed->hide();
 }
 
@@ -4110,8 +4120,11 @@ void EditorNode::_discard_changes(const String &p_str) {
 		case SCENE_RELOAD_SAVED_SCENE: {
 			int cur_idx = editor_data.get_edited_scene();
 			const String scene_filename = editor_data.get_scene_path(cur_idx);
+			const int focused_tile_id = editor_data.get_focused_tile();
 
-			_remove_edited_scene();
+			// Reload the focused tile's current scene in place without collapsing
+			// the tile when it is the tile's only scene.
+			_remove_edited_scene(false, false);
 
 			Error err = load_scene(scene_filename);
 			if (err != OK) {
@@ -4119,7 +4132,9 @@ void EditorNode::_discard_changes(const String &p_str) {
 			}
 			editor_data.move_edited_scene_to_index(cur_idx);
 			EditorUndoRedoManager::get_singleton()->clear_history(editor_data.get_current_edited_scene_history_id(), false);
-			scene_tabs->set_current_tab(cur_idx);
+			focus_tile(focused_tile_id);
+			update_all_scene_tabs();
+			_update_tile_display_attachments();
 
 			confirmation->hide();
 		} break;
@@ -6744,21 +6759,51 @@ void EditorNode::_load_workspace_from_config(const Ref<ConfigFile> &p_config) {
 		return;
 	}
 
+	if (!scene_workspace) {
+		return;
+	}
+
 	restoring_scenes = true;
 
-	// Load every scene referenced by any tile first, so the workspace can
-	// re-tile them by path when it rebuilds the tree.
-	const PackedStringArray scenes = EditorSceneWorkspace::get_saved_scene_paths(p_config);
-	for (const String &path : scenes) {
-		if (FileAccess::exists(path) && editor_data.get_edited_scene_from_path(path) < 0) {
-			load_scene(path);
-		}
+	// Rebuild the tile structure BEFORE loading any scene. At this point the only
+	// open scene is the initial empty one, so freeing and rebuilding the tile tree
+	// churns nothing live (no scene viewport, no ViewportTextures to re-resolve).
+	// Detach the shared main screen first so restore's teardown does not free it
+	// with the initial tile, then deactivate the empty scene so its (empty)
+	// viewport is not freed either.
+	if (editor_main_screen && editor_main_screen->get_parent()) {
+		editor_main_screen->get_parent()->remove_child(editor_main_screen);
+	}
+	if (active_scene_context && active_scene_context != no_scene_context && active_scene_context->is_active()) {
+		active_scene_context->deactivate();
 	}
 
-	if (scene_workspace) {
-		scene_workspace->restore_from_config(p_config);
-		focus_tile(scene_workspace->get_focused_tile_id());
+	Vector<EditorSceneWorkspace::RestoredLeaf> leaves = scene_workspace->restore_from_config(p_config);
+
+	// Move the leftover initial empty scene into the first leaf so the first
+	// load_scene() reuses it instead of leaving an orphan tab.
+	if (!leaves.is_empty() && editor_data.get_edited_scene_count() == 1) {
+		const int first_tile = leaves[0].tile->get_tile_id();
+		editor_data.set_scene_tile(0, first_tile);
+		editor_data.set_focused_tile(first_tile);
+		editor_data.set_tile_current_scene(first_tile, 0);
 	}
+
+	// Load each leaf's scenes into its own tile: focus the tile so load_scene()
+	// targets it, then repoint the tile's current tab by the saved path.
+	for (const EditorSceneWorkspace::RestoredLeaf &leaf : leaves) {
+		const int tile_id = leaf.tile->get_tile_id();
+		focus_tile(tile_id);
+		for (const String &path : leaf.scenes) {
+			if (FileAccess::exists(path) && editor_data.get_edited_scene_from_path(path) < 0) {
+				load_scene(path);
+			}
+		}
+		const int current_idx = leaf.current.is_empty() ? -1 : editor_data.get_edited_scene_from_path(leaf.current);
+		editor_data.set_tile_current_scene(tile_id, current_idx);
+	}
+
+	focus_tile(scene_workspace->get_focused_tile_id());
 
 	save_editor_layout_delayed();
 

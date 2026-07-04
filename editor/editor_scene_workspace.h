@@ -44,6 +44,15 @@ class EditorSceneWorkspace : public Control {
 	FOUNDRY_CLASS(EditorSceneWorkspace, Control);
 
 public:
+	// One rebuilt leaf tile plus the scene paths (and current) it should host.
+	// The caller (EditorNode) loads the scenes into the tile after the structure
+	// is in place, so scenes never load into a churning tree.
+	struct RestoredLeaf {
+		ScenePaneTile *tile = nullptr;
+		PackedStringArray scenes;
+		String current;
+	};
+
 	enum TileDropRegion {
 		DROP_CENTER,
 		DROP_LEFT,
@@ -62,7 +71,7 @@ private:
 	EditorData *editor_data = nullptr;
 
 	ScenePaneTile *_create_tile(int p_tile_id);
-	Control *_restore_node(const Ref<ConfigFile> &p_config, int p_node_index, int &r_max_tile_id);
+	Control *_restore_node(const Ref<ConfigFile> &p_config, int p_node_index, int &r_max_tile_id, Vector<RestoredLeaf> &r_leaves);
 	void _clear_tree();
 	// The workspace is a plain Control, so its single direct child (a tile or the
 	// root split) is anchored full-rect to follow the workspace's size.
@@ -94,10 +103,9 @@ public:
 	// Persistence.
 	static void save_to_config(const Ref<ConfigFile> &p_config, const EditorData &p_data, const EditorSceneWorkspace *p_workspace);
 	static bool has_workspace_session(const Ref<ConfigFile> &p_config);
-	// Every scene path recorded across all saved leaves, in leaf order. Used to
-	// pre-load scenes before rebuilding the tree.
-	static PackedStringArray get_saved_scene_paths(const Ref<ConfigFile> &p_config);
-	void restore_from_config(const Ref<ConfigFile> &p_config); // Rebuilds the tree.
+	// Rebuilds the tile structure from the saved session and returns the leaf
+	// tiles with the scenes they should host (loaded by the caller afterwards).
+	Vector<RestoredLeaf> restore_from_config(const Ref<ConfigFile> &p_config);
 
 	EditorSceneWorkspace();
 };
