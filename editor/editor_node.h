@@ -2,7 +2,7 @@
 /*  editor_node.h                                                         */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -90,6 +90,10 @@ class EditorResourceConversionPlugin;
 class EditorRunBar;
 class EditorSceneContext;
 class EditorSceneTabs;
+class EditorSceneWorkspace;
+class InspectorDock;
+class ScenePaneTile;
+class SceneTreeDock;
 class EditorSelectionHistory;
 class SubViewportContainer;
 class EditorSettingsDialog;
@@ -336,7 +340,8 @@ private:
 	DockSplitContainer *right_r_vsplit = nullptr;
 	Control *center_overlay = nullptr;
 
-	// Main tabs.
+	// Main tabs. `scene_tabs` tracks the focused tile's tab strip.
+	EditorSceneWorkspace *scene_workspace = nullptr;
 	EditorSceneTabs *scene_tabs = nullptr;
 
 	int tab_closing_idx = 0;
@@ -623,6 +628,14 @@ private:
 	void _set_current_scene_nocheck(int p_idx);
 	void _activate_scene_context(EditorSceneContext *p_context);
 	void _attach_active_scene_context();
+	void _update_tile_display_attachments();
+	bool _is_context_tile_current(EditorSceneContext *p_context) const;
+	void _sync_scene_viewport_2d_state_with_main_screen();
+	void _bind_tile_docks(int p_tile_id);
+	void _bind_all_tile_docks();
+	void _reparent_main_screen_into(ScenePaneTile *p_tile);
+	void _save_workspace_to_config(Ref<ConfigFile> p_layout);
+	void _load_workspace_from_config(const Ref<ConfigFile> &p_config);
 	void _configure_editor_selection(EditorSelection *p_selection);
 	void _apply_scene_viewport_settings(SubViewport *p_viewport);
 	void _apply_scene_viewport_2d_state(SubViewport *p_viewport);
@@ -677,8 +690,8 @@ private:
 
 	bool has_main_screen() const { return true; }
 
-	void _remove_edited_scene(bool p_change_tab = true);
-	void _remove_scene(int index, bool p_change_tab = true);
+	void _remove_edited_scene(bool p_change_tab = true, bool p_allow_collapse = true);
+	void _remove_scene(int index, bool p_change_tab = true, bool p_allow_collapse = true);
 	bool _find_and_save_resource(Ref<Resource> p_res, HashMap<Ref<Resource>, bool> &processed, int32_t flags);
 	bool _find_and_save_edited_subresources(Object *obj, HashMap<Ref<Resource>, bool> &processed, int32_t flags);
 	void _save_edited_subresources(Node *scene, HashMap<Ref<Resource>, bool> &processed, int32_t flags);
@@ -706,9 +719,6 @@ private:
 	void _load_central_editor_layout_from_config(Ref<ConfigFile> p_config_file);
 
 	void _save_window_settings_to_config(Ref<ConfigFile> p_layout, const String &p_section);
-
-	void _save_open_scenes_to_config(Ref<ConfigFile> p_layout);
-	void _load_open_scenes_from_config(Ref<ConfigFile> p_layout);
 
 	void _update_layouts_menu();
 	void _layout_menu_option(int p_id);
@@ -918,6 +928,13 @@ public:
 	// Toggles 2D rendering of the edited-scene viewport (2D vs other main
 	// screens); the state is re-applied on every context switch.
 	void set_scene_viewport_2d_disabled(bool p_disabled);
+
+	void focus_tile(int p_tile_id);
+	void on_tile_tab_changed(int p_tile_id, int p_tab);
+	void on_tile_tab_closed(int p_scene_idx);
+	void update_all_scene_tabs();
+	void focus_scene_in_tile(int p_scene_idx);
+	void handle_tile_scene_drop(int p_target_tile_id, int p_region, int p_source_tile_id, int p_source_tab);
 
 	void set_edited_scene(Node *p_scene);
 	void set_edited_scene_root(Node *p_scene, bool p_auto_add);

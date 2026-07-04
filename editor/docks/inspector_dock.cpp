@@ -2,7 +2,7 @@
 /*  inspector_dock.cpp                                                    */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -754,14 +754,20 @@ void InspectorDock::set_scene_context(EditorSceneContext *p_context) {
 	update(current);
 }
 
-InspectorDock::InspectorDock(EditorData &p_editor_data) {
-	singleton = this;
+InspectorDock::InspectorDock(EditorData &p_editor_data, bool p_register_open_command) {
+	// The focused-instance singleton defaults to the first dock constructed;
+	// EditorNode repoints it as focus moves between tiles.
+	singleton = singleton ? singleton : this;
 	set_name(TTRC("Inspector"));
 	set_icon_name("AnimationTrackList");
-	set_dock_shortcut(ED_SHORTCUT_AND_COMMAND("docks/open_inspector", TTRC("Open Inspector Dock")));
+	// Only one instance may register the editor-wide "Open Inspector Dock"
+	// command; per-tile instances skip it so the command stays unique.
+	if (p_register_open_command) {
+		set_dock_shortcut(ED_SHORTCUT_AND_COMMAND("docks/open_inspector", TTRC("Open Inspector Dock")));
+	}
 	set_default_slot(EditorDock::DOCK_SLOT_RIGHT_UL);
-	// Primary instance keeps the bare layout key; secondary instances (future
-	// phases) get "Inspector:<n>". See EditorDock::get_effective_layout_key().
+	// The first instance keeps the bare layout key; per-tile instances get
+	// "Inspector:<n>". See EditorDock::get_effective_layout_key().
 	set_layout_key("Inspector");
 
 	VBoxContainer *main_vb = memnew(VBoxContainer);
@@ -975,5 +981,7 @@ InspectorDock::InspectorDock(EditorData &p_editor_data) {
 }
 
 InspectorDock::~InspectorDock() {
-	singleton = nullptr;
+	if (singleton == this) {
+		singleton = nullptr;
+	}
 }

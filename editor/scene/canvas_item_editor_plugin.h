@@ -2,7 +2,7 @@
 /*  canvas_item_editor_plugin.h                                           */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -580,6 +580,7 @@ public:
 	real_t snap_angle(real_t p_target, real_t p_start = 0) const;
 
 	Transform2D get_canvas_transform() const { return transform; }
+	Transform2D get_default_view_transform() const;
 
 	static CanvasItemEditor *get_singleton() { return singleton; }
 	Dictionary get_state() const;

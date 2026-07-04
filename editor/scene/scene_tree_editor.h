@@ -2,7 +2,7 @@
 /*  scene_tree_editor.h                                                   */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -35,6 +35,7 @@
 #include "scene/gui/dialogs.h"
 #include "scene/gui/tree.h"
 
+class EditorSceneContext;
 class EditorSelection;
 class TextureRect;
 class Timer;
@@ -43,6 +44,14 @@ class SceneTreeEditor : public Control {
 	FOUNDRY_CLASS(SceneTreeEditor, Control);
 
 	EditorSelection *editor_selection = nullptr;
+	// Tracks the bound selection by id so a rebind can validate the previous
+	// selection through ObjectDB instead of dereferencing a pointer that may
+	// have been freed (each edited scene owns its own selection).
+	ObjectID editor_selection_id;
+	// When set, this tree edits a specific scene context's root rather than the
+	// globally focused edited scene, so each tile's scene tree shows its own
+	// scene. Null for standalone trees (dialogs), which use the focused scene.
+	EditorSceneContext *scene_context = nullptr;
 
 	enum SceneTreeEditorButton {
 		BUTTON_SUBSCENE = 0,
@@ -142,6 +151,8 @@ class SceneTreeEditor : public Control {
 	void _update_node_subtree(Node *p_node, TreeItem *p_parent, bool p_force = false);
 	void _update_node(Node *p_node, TreeItem *p_item, bool p_part_of_subscene);
 	void _update_if_clean();
+	Node *_get_node_from_item(TreeItem *p_item) const;
+	bool _is_node_displayable(Node *p_node) const;
 
 	void _test_update_tree();
 	bool _update_filter(TreeItem *p_parent = nullptr, bool p_scroll_to_selected = false);
@@ -244,6 +255,9 @@ public:
 	Node *get_selected();
 	void set_can_rename(bool p_can_rename) { can_rename = p_can_rename; }
 	void set_editor_selection(EditorSelection *p_selection);
+	// Binds this tree to a specific scene context so it shows that context's
+	// scene root instead of the globally focused edited scene.
+	void set_scene_context(EditorSceneContext *p_context) { scene_context = p_context; }
 
 	void set_show_enabled_subscene(bool p_show) { show_enabled_subscene = p_show; }
 	void set_valid_types(const Vector<StringName> &p_valid);

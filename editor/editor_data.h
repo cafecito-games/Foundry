@@ -2,7 +2,7 @@
 /*  editor_data.h                                                         */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -117,6 +117,7 @@ public:
 		uint64_t file_modified_time = 0;
 		NodePath live_edit_root;
 		uint64_t last_checked_version = 0;
+		int tile_id = 0;
 
 		Node *get_root() const;
 	};
@@ -139,6 +140,8 @@ private:
 	Vector<EditedScene> edited_scene;
 	int current_edited_scene = -1;
 	int last_created_scene = 1;
+	HashMap<int, int> tile_current_scene; // tile_id -> edited_scene index; absent/-1 means none.
+	int focused_tile_id = 0;
 
 	bool _find_updated_instances(Node *p_root, Node *p_node, HashSet<String> &checked_paths);
 
@@ -221,6 +224,16 @@ public:
 	bool check_and_update_scene(int p_idx);
 	bool reload_scene_from_memory(int p_idx, bool p_mark_unsaved);
 	void move_edited_scene_to_index(int p_idx);
+
+	int get_scene_tile(int p_idx) const;
+	Vector<int> get_tile_scene_indices(int p_tile_id) const;
+	int tile_tab_to_scene_index(int p_tile_id, int p_tab) const;
+	int scene_index_to_tile_tab(int p_idx) const;
+	void set_scene_tile(int p_idx, int p_tile_id);
+	int get_tile_current_scene(int p_tile_id) const;
+	void set_tile_current_scene(int p_tile_id, int p_idx);
+	int get_focused_tile() const;
+	void set_focused_tile(int p_tile_id);
 
 	bool call_build();
 

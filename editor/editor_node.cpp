@@ -2,7 +2,7 @@
 /*  editor_node.cpp                                                       */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -98,6 +98,8 @@
 #include "editor/editor_log.h"
 #include "editor/editor_main_screen.h"
 #include "editor/editor_scene_context.h"
+#include "editor/editor_scene_pane_tile.h"
+#include "editor/editor_scene_workspace.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/export/dedicated_server_export_plugin.h"
 #include "editor/export/editor_export.h"
@@ -821,7 +823,7 @@ void EditorNode::_notification(int p_what) {
 
 		case NOTIFICATION_PROCESS: {
 			if (editor_data.is_scene_changed(-1)) {
-				scene_tabs->update_scene_tabs();
+				update_all_scene_tabs();
 			}
 
 			// Update the animation frame of the update spinner.
@@ -1074,7 +1076,7 @@ void EditorNode::_notification(int p_what) {
 			}
 
 			if (EditorSettings::get_singleton()->check_changed_settings_in_group("interface/scene_tabs")) {
-				scene_tabs->update_scene_tabs();
+				update_all_scene_tabs();
 			}
 
 			if (EditorSettings::get_singleton()->check_changed_settings_in_group("docks/filesystem")) {
@@ -1396,7 +1398,7 @@ void EditorNode::_resources_reimporting(const Vector<String> &p_resources) {
 }
 
 void EditorNode::_resources_reimported(const Vector<String> &p_resources) {
-	int current_tab = scene_tabs->get_current_tab();
+	int current_tab = editor_data.get_edited_scene();
 
 	for (const String &res_path : resources_reimported) {
 		if (!ResourceCache::has(res_path)) {
@@ -1547,7 +1549,8 @@ void EditorNode::_resave_externally_modified_scenes(String p_str) {
 }
 
 void EditorNode::_reload_modified_scenes() {
-	int current_idx = editor_data.get_edited_scene();
+	const int current_idx = editor_data.get_edited_scene();
+	const int focused_tile_id = editor_data.get_focused_tile();
 
 	for (int i = 0; i < editor_data.get_edited_scene_count(); i++) {
 		if (editor_data.get_scene_path(i) == "") {
@@ -1559,8 +1562,15 @@ void EditorNode::_reload_modified_scenes() {
 
 		if (date > last_date) {
 			String filename = editor_data.get_scene_path(i);
+			// Reload the scene inside its own tile so a non-focused tile keeps
+			// ownership (load_scene creates the replacement in the focused tile);
+			// collapsing is suppressed so the tile survives the in-place remove.
+			const int scene_tile_id = editor_data.get_scene_tile(i);
+			if (scene_workspace && scene_tile_id != editor_data.get_focused_tile() && scene_workspace->get_tile_by_id(scene_tile_id)) {
+				focus_tile(scene_tile_id);
+			}
 			editor_data.set_edited_scene(i);
-			_remove_edited_scene(false);
+			_remove_edited_scene(false, false);
 
 			Error err = load_scene(filename, false, false, false, true);
 			if (err != OK) {
@@ -1570,8 +1580,10 @@ void EditorNode::_reload_modified_scenes() {
 		}
 	}
 
+	focus_tile(focused_tile_id);
 	_set_current_scene(current_idx);
-	scene_tabs->update_scene_tabs();
+	update_all_scene_tabs();
+	_update_tile_display_attachments();
 	disk_changed->hide();
 }
 
@@ -2512,7 +2524,7 @@ void EditorNode::_save_scene(String p_file, int idx) {
 		editor_folding.save_scene_folding(scene, p_file);
 
 		_update_title();
-		scene_tabs->update_scene_tabs();
+		update_all_scene_tabs();
 	} else {
 		_dialog_display_save_error(p_file, err);
 	}
@@ -2613,7 +2625,7 @@ void EditorNode::_mark_unsaved_scenes() {
 	}
 
 	_update_title();
-	scene_tabs->update_scene_tabs();
+	update_all_scene_tabs();
 }
 
 bool EditorNode::_is_scene_unsaved(int p_idx) {
@@ -3068,7 +3080,7 @@ void EditorNode::_edit_current(bool p_skip_foreign, bool p_skip_inspector_update
 
 	Ref<Resource> res = Object::cast_to<Resource>(current_obj);
 	if (p_skip_foreign && res.is_valid()) {
-		const int current_tab = scene_tabs->get_current_tab();
+		const int current_tab = editor_data.get_edited_scene();
 		if (res->get_path().contains("::") && res->get_path().get_slice("::", 0) != editor_data.get_scene_path(current_tab)) {
 			// Trying to edit resource that belongs to another scene; abort.
 			current_obj = nullptr;
@@ -3355,18 +3367,22 @@ void EditorNode::_menu_option_confirm(int p_option, bool p_confirmed) {
 		} break;
 		case EditorSceneTabs::SCENE_CLOSE_OTHERS: {
 			tab_closing_menu_option = -1;
-			for (int i = 0; i < editor_data.get_edited_scene_count(); i++) {
-				if (i == editor_data.get_edited_scene()) {
-					continue;
+			const int focused_tile = editor_data.get_focused_tile();
+			const int current = editor_data.get_edited_scene();
+			for (int idx : editor_data.get_tile_scene_indices(focused_tile)) {
+				if (idx != current) {
+					tabs_to_close.push_back(editor_data.get_scene_path(idx));
 				}
-				tabs_to_close.push_back(editor_data.get_scene_path(i));
 			}
 			_proceed_closing_scene_tabs();
 		} break;
 		case EditorSceneTabs::SCENE_CLOSE_RIGHT: {
 			tab_closing_menu_option = -1;
-			for (int i = editor_data.get_edited_scene() + 1; i < editor_data.get_edited_scene_count(); i++) {
-				tabs_to_close.push_back(editor_data.get_scene_path(i));
+			const int focused_tile = editor_data.get_focused_tile();
+			const Vector<int> tile_scenes = editor_data.get_tile_scene_indices(focused_tile);
+			const int current_tab = editor_data.scene_index_to_tile_tab(editor_data.get_edited_scene());
+			for (int tab = current_tab + 1; tab < tile_scenes.size(); tab++) {
+				tabs_to_close.push_back(editor_data.get_scene_path(tile_scenes[tab]));
 			}
 			_proceed_closing_scene_tabs();
 		} break;
@@ -4097,15 +4113,18 @@ void EditorNode::_discard_changes(const String &p_str) {
 			// Don't close tabs when exiting the editor (required for "restore_scenes_on_load" setting).
 			if (!_is_closing_editor()) {
 				_remove_scene(tab_closing_idx);
-				scene_tabs->update_scene_tabs();
+				update_all_scene_tabs();
 			}
 			_proceed_closing_scene_tabs();
 		} break;
 		case SCENE_RELOAD_SAVED_SCENE: {
 			int cur_idx = editor_data.get_edited_scene();
 			const String scene_filename = editor_data.get_scene_path(cur_idx);
+			const int focused_tile_id = editor_data.get_focused_tile();
 
-			_remove_edited_scene();
+			// Reload the focused tile's current scene in place without collapsing
+			// the tile when it is the tile's only scene.
+			_remove_edited_scene(false, false);
 
 			Error err = load_scene(scene_filename);
 			if (err != OK) {
@@ -4113,7 +4132,9 @@ void EditorNode::_discard_changes(const String &p_str) {
 			}
 			editor_data.move_edited_scene_to_index(cur_idx);
 			EditorUndoRedoManager::get_singleton()->clear_history(editor_data.get_current_edited_scene_history_id(), false);
-			scene_tabs->set_current_tab(cur_idx);
+			focus_tile(focused_tile_id);
+			update_all_scene_tabs();
+			_update_tile_display_attachments();
 
 			confirmation->hide();
 		} break;
@@ -4425,32 +4446,43 @@ bool EditorNode::is_addon_plugin_enabled(const String &p_addon) const {
 	return addon_name_to_plugin.has("res://addons/" + p_addon + "/plugin.cfg");
 }
 
-void EditorNode::_remove_edited_scene(bool p_change_tab) {
+void EditorNode::_remove_edited_scene(bool p_change_tab, bool p_allow_collapse) {
 	// When scene gets closed no node is edited anymore, so make sure the editors are notified before nodes are freed.
 	hide_unused_editors(SceneTreeDock::get_singleton());
-	SceneTreeDock::get_singleton()->clear_previous_node_selection();
-
-	int new_index = editor_data.get_edited_scene();
-	int old_index = new_index;
-
-	if (new_index > 0) {
-		new_index = new_index - 1;
-	} else if (editor_data.get_edited_scene_count() > 1) {
-		new_index = 1;
-	} else {
-		editor_data.add_edited_scene(-1);
-		new_index = 1;
+	if (SceneTreeDock::get_singleton()) {
+		SceneTreeDock::get_singleton()->clear_previous_node_selection();
 	}
 
-	if (p_change_tab) {
-		_set_current_scene(new_index);
-	}
+	const int old_index = editor_data.get_edited_scene();
+	const int tile_id = old_index >= 0 ? editor_data.get_scene_tile(old_index) : editor_data.get_focused_tile();
+
+	// remove_scene() repoints the focused tile's current tab to a same-tile
+	// neighbor (or -1 when the tile empties).
 	editor_data.remove_scene(old_index);
+
+	const bool tile_emptied = editor_data.get_tile_scene_indices(tile_id).is_empty();
+	if (p_allow_collapse && tile_emptied && scene_workspace && scene_workspace->get_tile_count() > 1) {
+		// The tile has no scenes left; collapse it. If it was the focused tile,
+		// collapse_tile() emits tile_focus_requested, re-syncing focus/display.
+		ScenePaneTile *tile = scene_workspace->get_tile_by_id(tile_id);
+		if (tile) {
+			scene_workspace->collapse_tile(tile);
+		}
+	} else {
+		// Keep at least one scene open overall.
+		if (editor_data.get_edited_scene_count() == 0) {
+			editor_data.add_edited_scene(-1);
+		}
+		if (p_change_tab) {
+			_set_current_scene_nocheck(editor_data.get_tile_current_scene(editor_data.get_focused_tile()));
+		}
+	}
+
 	_update_title();
-	scene_tabs->update_scene_tabs();
+	update_all_scene_tabs();
 }
 
-void EditorNode::_remove_scene(int index, bool p_change_tab) {
+void EditorNode::_remove_scene(int index, bool p_change_tab, bool p_allow_collapse) {
 	// Clear icon cache in case some scripts are no longer needed or class icons are outdated.
 	// FIXME: Ideally the cache should never be cleared and only updated on per-script basis, when an icon changes.
 	editor_data.clear_script_icon_cache();
@@ -4458,10 +4490,20 @@ void EditorNode::_remove_scene(int index, bool p_change_tab) {
 
 	if (editor_data.get_edited_scene() == index) {
 		// Scene to remove is current scene.
-		_remove_edited_scene(p_change_tab);
+		_remove_edited_scene(p_change_tab, p_allow_collapse);
 	} else {
-		// Scene to remove is not active scene.
+		// Scene to remove is not active scene. It may be the last scene of some
+		// non-focused tile, so collapse that tile if the removal empties it.
+		const int tile_id = editor_data.get_scene_tile(index);
 		editor_data.remove_scene(index);
+		if (p_allow_collapse && scene_workspace && scene_workspace->get_tile_count() > 1 && editor_data.get_tile_scene_indices(tile_id).is_empty()) {
+			ScenePaneTile *tile = scene_workspace->get_tile_by_id(tile_id);
+			if (tile) {
+				scene_workspace->collapse_tile(tile);
+			}
+			update_all_scene_tabs();
+			_update_tile_display_attachments();
+		}
 	}
 }
 
@@ -4591,43 +4633,58 @@ void EditorNode::_set_current_scene(int p_idx) {
 
 void EditorNode::_set_current_scene_nocheck(int p_idx) {
 	// Save the folding in case the scene gets reloaded.
-	if (editor_data.get_scene_path(p_idx) != "" && editor_data.get_edited_scene_root(p_idx)) {
+	if (p_idx >= 0 && editor_data.get_scene_path(p_idx) != "" && editor_data.get_edited_scene_root(p_idx)) {
 		editor_folding.save_scene_folding(editor_data.get_edited_scene_root(p_idx), editor_data.get_scene_path(p_idx));
 	}
 
 	changing_scene = true;
 
 	resource_count.clear();
-	SceneTreeDock::get_singleton()->clear_previous_node_selection();
+	if (SceneTreeDock::get_singleton()) {
+		SceneTreeDock::get_singleton()->clear_previous_node_selection();
+	}
 
 	// Deactivates the outgoing context (detaching its viewport, with the
 	// scene still parented to it) and points the editor at the new context.
 	// This happens while the outgoing scene is still the current one, since
 	// stashing its editor plugin states runs plugin get_state()
 	// implementations that resolve node paths through the current scene.
-	_activate_scene_context(editor_data.get_scene_context(p_idx));
+	EditorSceneContext *new_context = p_idx >= 0 ? editor_data.get_scene_context(p_idx) : nullptr;
+	if (p_idx >= 0) {
+		editor_data.set_edited_scene(p_idx);
+	} else {
+		// The focused tile has no open scene.
+		editor_data.set_tile_current_scene(editor_data.get_focused_tile(), -1);
+	}
 
-	editor_data.set_edited_scene(p_idx);
+	_activate_scene_context(new_context);
+	// Keep every tile's in-tile docks bound to that tile's current scene.
+	_bind_all_tile_docks();
 
-	Node *new_scene = editor_data.get_edited_scene_root();
+	Node *new_scene = p_idx >= 0 ? editor_data.get_edited_scene_root(p_idx) : nullptr;
 
 	if (Popup *p = Object::cast_to<Popup>(new_scene)) {
 		p->show();
 	}
 
-	// The bound scene context already holds the new root; refresh the dock's
-	// tree so it reflects it.
-	SceneTreeDock::get_singleton()->update_tree();
-	if (get_tree()) {
+	// The bound scene context already holds the new root; refresh the focused
+	// dock's tree so it reflects it.
+	if (SceneTreeDock::get_singleton()) {
+		SceneTreeDock::get_singleton()->update_tree();
+	}
+	// is_inside_tree() rather than get_tree(): the latter prints an error when
+	// the node is out of tree, which happens when this runs during EditorNode
+	// construction (before the editor is mounted).
+	if (is_inside_tree()) {
 		get_tree()->set_edited_scene_root(new_scene);
 	}
 
-	// Attach the new context's viewport only after the SceneTree's
-	// edited-scene root points at its scene, so enter-tree handlers observe
-	// the correct edited root.
-	_attach_active_scene_context();
+	// Attach each context's viewport into its tile (live editor in the focused
+	// tile, 2D preview or 3D placeholder elsewhere) after the SceneTree's
+	// edited-scene root points at the focused scene.
+	_update_tile_display_attachments();
 
-	if (editor_data.check_and_update_scene(p_idx)) {
+	if (p_idx >= 0 && editor_data.check_and_update_scene(p_idx)) {
 		if (!editor_data.get_scene_path(p_idx).is_empty()) {
 			editor_folding.load_scene_folding(editor_data.get_edited_scene_root(p_idx), editor_data.get_scene_path(p_idx));
 		}
@@ -4635,7 +4692,7 @@ void EditorNode::_set_current_scene_nocheck(int p_idx) {
 		EditorUndoRedoManager::get_singleton()->clear_history(editor_data.get_scene_history_id(p_idx), false);
 	}
 
-	EditorSceneContext *context = editor_data.get_active_scene_context();
+	EditorSceneContext *context = active_scene_context;
 	Dictionary state;
 	if (context) {
 		editor_data.set_editor_plugin_states(context->get_editor_plugin_states());
@@ -4644,7 +4701,7 @@ void EditorNode::_set_current_scene_nocheck(int p_idx) {
 	_edit_current(true);
 
 	_update_title();
-	callable_mp(scene_tabs, &EditorSceneTabs::update_scene_tabs).call_deferred();
+	update_all_scene_tabs();
 
 	if (tabs_to_close.is_empty() && !restoring_scenes) {
 		callable_mp(this, &EditorNode::_set_main_scene_state).call_deferred(state, get_edited_scene()); // Do after everything else is done setting up.
@@ -4657,6 +4714,7 @@ void EditorNode::_set_current_scene_nocheck(int p_idx) {
 
 	_update_undo_redo_allowed();
 	_update_unsaved_cache();
+	changing_scene = false;
 }
 
 void EditorNode::_activate_scene_context(EditorSceneContext *p_context) {
@@ -4676,7 +4734,10 @@ void EditorNode::_activate_scene_context(EditorSceneContext *p_context) {
 		// singletons (plugin states, dock scroll offsets and filters).
 		active_scene_context->set_editor_plugin_states(editor_data.get_editor_plugin_states());
 		active_scene_context->set_main_state(_get_main_scene_state());
-		if (active_scene_context->is_active()) {
+		// Keep it attached if it is still the current scene of some tile (shown
+		// there as a live 2D preview); _update_tile_display_attachments() owns
+		// its attachment in that case.
+		if (active_scene_context->is_active() && !_is_context_tile_current(active_scene_context)) {
 			active_scene_context->deactivate();
 		}
 	}
@@ -4720,6 +4781,248 @@ void EditorNode::_attach_active_scene_context() {
 	}
 }
 
+void EditorNode::_sync_scene_viewport_2d_state_with_main_screen() {
+	if (!editor_main_screen) {
+		return;
+	}
+	const int selected_main_screen = editor_main_screen->get_selected_index();
+	if (selected_main_screen >= 0) {
+		scene_viewport_2d_disabled = selected_main_screen != EditorMainScreen::EDITOR_2D;
+	}
+}
+
+bool EditorNode::_is_context_tile_current(EditorSceneContext *p_context) const {
+	if (!p_context || !scene_workspace) {
+		return false;
+	}
+	for (ScenePaneTile *tile : scene_workspace->get_tiles()) {
+		const int scene_idx = editor_data.get_tile_current_scene(tile->get_tile_id());
+		if (scene_idx >= 0 && editor_data.get_scene_context(scene_idx) == p_context) {
+			return true;
+		}
+	}
+	return false;
+}
+
+void EditorNode::update_all_scene_tabs() {
+	if (!scene_workspace) {
+		if (scene_tabs) {
+			update_all_scene_tabs();
+		}
+		return;
+	}
+	for (ScenePaneTile *tile : scene_workspace->get_tiles()) {
+		tile->get_scene_tabs()->update_scene_tabs();
+	}
+}
+
+void EditorNode::_bind_tile_docks(int p_tile_id) {
+	if (!scene_workspace) {
+		return;
+	}
+	ScenePaneTile *tile = scene_workspace->get_tile_by_id(p_tile_id);
+	if (!tile) {
+		return;
+	}
+	const int scene_idx = editor_data.get_tile_current_scene(p_tile_id);
+	EditorSceneContext *context = scene_idx >= 0 ? editor_data.get_scene_context(scene_idx) : no_scene_context;
+	if (tile->get_scene_tree_dock()) {
+		tile->get_scene_tree_dock()->set_scene_context(context);
+	}
+	if (tile->get_inspector_dock()) {
+		tile->get_inspector_dock()->set_scene_context(context);
+	}
+}
+
+void EditorNode::_bind_all_tile_docks() {
+	if (!scene_workspace) {
+		return;
+	}
+	for (ScenePaneTile *tile : scene_workspace->get_tiles()) {
+		_bind_tile_docks(tile->get_tile_id());
+	}
+}
+
+void EditorNode::_reparent_main_screen_into(ScenePaneTile *p_tile) {
+	if (!editor_main_screen || !p_tile) {
+		return;
+	}
+	Control *host = p_tile->get_content_host();
+	if (!host || editor_main_screen->get_parent() == host) {
+		return;
+	}
+	if (editor_main_screen->get_parent()) {
+		editor_main_screen->get_parent()->remove_child(editor_main_screen);
+	}
+	host->add_child(editor_main_screen);
+	// content_host is a plain Control, so fill it explicitly (the tile also
+	// re-fits its content children on resize).
+	editor_main_screen->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+	editor_main_screen->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	editor_main_screen->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+}
+
+void EditorNode::_update_tile_display_attachments() {
+	if (!scene_workspace) {
+		_attach_active_scene_context();
+		return;
+	}
+
+	for (int i = 0; i < editor_data.get_edited_scene_count(); i++) {
+		EditorSceneContext *ctx = editor_data.get_scene_context(i);
+		const int tile_id = editor_data.get_scene_tile(i);
+		ScenePaneTile *tile = scene_workspace->get_tile_by_id(tile_id);
+		const bool is_tile_current = tile && editor_data.get_tile_current_scene(tile_id) == i;
+
+		if (!is_tile_current) {
+			if (ctx->is_active()) {
+				ctx->deactivate();
+			}
+			continue;
+		}
+
+		const bool is_focused_tile = tile_id == editor_data.get_focused_tile();
+		Node *scene_root = editor_data.get_edited_scene_root(i);
+		Ref<Texture2D> icon;
+		if (scene_root) {
+			icon = get_object_icon(scene_root);
+		}
+		const String scene_name = editor_data.get_scene_title(i);
+
+		if (is_focused_tile) {
+			// The focused tile hosts the single live editor via the reparented
+			// main screen and its scene_viewport_container.
+			tile->set_preview_mode(false, false, scene_name, icon);
+			if (scene_viewport_container) {
+				ctx->set_display_parent(scene_viewport_container, true, true);
+			}
+			// Reparenting a live SubViewport into the already-mounted
+			// scene_viewport_container does not fire the container's
+			// ENTER_TREE/RESIZED/VISIBILITY notifications, so the viewport keeps a
+			// stale update mode (often UPDATE_DISABLED) and renders a blank/black
+			// texture. Drive its update mode explicitly, matching the preview path.
+			ctx->get_viewport()->set_update_mode(SubViewport::UPDATE_ALWAYS);
+			_sync_scene_viewport_2d_state_with_main_screen();
+			_apply_scene_viewport_2d_state(ctx->get_viewport());
+			if (last_theme_preview_mode_set) {
+				_apply_preview_themes(ctx->get_viewport());
+			}
+		} else if (ctx->scene_has_3d_content()) {
+			// Live 3D preview is deferred; show a placeholder instead.
+			tile->set_preview_mode(false, true, scene_name, icon);
+			if (ctx->is_active()) {
+				ctx->deactivate();
+			}
+		} else {
+			tile->set_preview_mode(true, false, scene_name, icon);
+			SubViewportContainer *preview = tile->get_preview_container();
+			ctx->set_display_parent(preview, false);
+			// SubViewportContainer only (re)configures its child viewports from
+			// its own ENTER_TREE/RESIZED/VISIBILITY notifications, none of which
+			// fire when a live viewport is reparented into an already-mounted
+			// container. Drive the container's own sizing (which uses
+			// set_size_force, so it works with stretch enabled) and set the
+			// viewport's update mode explicitly, otherwise the preview renders a
+			// black rect.
+			ctx->get_viewport()->set_update_mode(preview->is_visible_in_tree() ? SubViewport::UPDATE_ALWAYS : SubViewport::UPDATE_DISABLED);
+			preview->recalc_force_viewport_sizes();
+			preview->queue_redraw();
+			// This branch only runs for 2D scenes (3D scenes fall to the placeholder
+			// branch above), so the preview must always render its 2D content. The
+			// shared scene_viewport_2d_disabled flag tracks the focused live editor's
+			// 2D/3D mode and can leave this viewport with 2D disabled (e.g. it was the
+			// focused tile while the main screen briefly defaulted to the 3D editor on
+			// startup); force 2D rendering on so the preview never blacks out.
+			RenderingServer::get_singleton()->viewport_set_disable_2d(ctx->get_viewport()->get_viewport_rid(), false);
+			RenderingServer::get_singleton()->viewport_set_environment_mode(ctx->get_viewport()->get_viewport_rid(), RenderingServer::VIEWPORT_ENVIRONMENT_ENABLED);
+			// The canvas transform (zoom/pan) is otherwise left untouched so each
+			// pane keeps its own independent view and toggling focus never changes
+			// what a pane shows. But a pane that has never been focused (e.g. right
+			// after restoring a multi-scene layout) still has the viewport's default
+			// identity transform, which renders the scene at 1:1 from the origin.
+			// Seed those with the editor's default framed view so they look right
+			// before being focused; a pane that already has a view keeps it.
+			if (CanvasItemEditor::get_singleton() && ctx->get_viewport()->get_global_canvas_transform() == Transform2D()) {
+				ctx->get_viewport()->set_global_canvas_transform(CanvasItemEditor::get_singleton()->get_default_view_transform());
+			}
+		}
+
+		ctx->get_history()->cleanup_history();
+	}
+}
+
+void EditorNode::focus_tile(int p_tile_id) {
+	ERR_FAIL_NULL(scene_workspace);
+	ScenePaneTile *tile = scene_workspace->get_tile_by_id(p_tile_id);
+	ERR_FAIL_NULL(tile);
+
+	const int scene_idx = editor_data.get_tile_current_scene(p_tile_id);
+	EditorSceneContext *expected_context = scene_idx >= 0 ? editor_data.get_scene_context(scene_idx) : no_scene_context;
+	const bool already_focused = editor_data.get_focused_tile() == p_tile_id && scene_workspace->get_focused_tile_id() == p_tile_id;
+	const bool already_current = editor_data.get_edited_scene() == scene_idx && active_scene_context == expected_context;
+
+	editor_data.set_focused_tile(p_tile_id);
+	scene_workspace->set_focused_tile(p_tile_id);
+	scene_tabs = tile->get_scene_tabs();
+	EditorSceneTabs::set_focused_singleton(tile->get_scene_tabs());
+	SceneTreeDock::set_focused_instance(tile->get_scene_tree_dock());
+	InspectorDock::set_focused_instance(tile->get_inspector_dock());
+	// If the remote debugger tree was parked because its previous host dock was
+	// freed by a workspace teardown, re-home it into the newly focused dock.
+	if (EditorDebuggerNode::get_singleton() && !EditorDebuggerNode::get_singleton()->has_remote_scene_tree_host() && tile->get_scene_tree_dock()) {
+		EditorDebuggerNode::get_singleton()->adopt_remote_scene_tree_host(tile->get_scene_tree_dock());
+	}
+	_reparent_main_screen_into(tile);
+
+	if (already_focused && already_current) {
+		return;
+	}
+
+	_set_current_scene_nocheck(scene_idx);
+}
+
+void EditorNode::on_tile_tab_changed(int p_tile_id, int p_tab) {
+	const int scene_idx = editor_data.tile_tab_to_scene_index(p_tile_id, p_tab);
+	if (scene_idx < 0) {
+		return;
+	}
+	focus_tile(p_tile_id);
+	_set_current_scene(scene_idx);
+}
+
+void EditorNode::on_tile_tab_closed(int p_scene_idx) {
+	_scene_tab_closed(p_scene_idx);
+}
+
+void EditorNode::focus_scene_in_tile(int p_scene_idx) {
+	ERR_FAIL_INDEX(p_scene_idx, editor_data.get_edited_scene_count());
+	const int tile_id = editor_data.get_scene_tile(p_scene_idx);
+	focus_tile(tile_id);
+	_set_current_scene(p_scene_idx);
+}
+
+void EditorNode::handle_tile_scene_drop(int p_target_tile_id, int p_region, int p_source_tile_id, int p_source_tab) {
+	ERR_FAIL_NULL(scene_workspace);
+	ScenePaneTile *target_tile = scene_workspace->get_tile_by_id(p_target_tile_id);
+	ERR_FAIL_NULL(target_tile);
+
+	const int scene_idx = editor_data.tile_tab_to_scene_index(p_source_tile_id, p_source_tab);
+	if (scene_idx < 0) {
+		return;
+	}
+
+	ScenePaneTile *dest_tile = scene_workspace->handle_scene_drop(scene_idx, target_tile, (EditorSceneWorkspace::TileDropRegion)p_region);
+	if (!dest_tile) {
+		return;
+	}
+
+	_bind_all_tile_docks();
+	update_all_scene_tabs();
+	focus_tile(dest_tile->get_tile_id());
+	_update_tile_display_attachments();
+	save_editor_layout_delayed();
+}
+
 SubViewport *EditorNode::get_scene_root() {
 	// The no_scene_context stands in for "no real scene", so fall back to the
 	// placeholder viewport in that case just like before it existed.
@@ -4736,23 +5039,34 @@ void EditorNode::configure_scene_context(EditorSceneContext *p_context) {
 }
 
 void EditorNode::scene_context_about_to_be_removed(EditorSceneContext *p_context) {
-	if (active_scene_context != p_context) {
+	if (!p_context) {
 		return;
 	}
-	// The context is about to be freed, so fall back to the persistent
-	// no_scene_context and rebind the docks so they never hold the stale
-	// pointer.
-	active_scene_context = no_scene_context;
-	editor_selection = no_scene_context->get_selection();
-	editor_history = no_scene_context->get_history();
-	editor_selection->mark_changed();
-	if (SceneTreeDock::get_singleton()) {
-		SceneTreeDock::get_singleton()->set_scene_context(no_scene_context);
+
+	// The context is about to be freed. Rebind every tile dock currently bound
+	// to it to the persistent no_scene_context so none is left holding a stale
+	// selection/history pointer. Each tile's docks bind independently and any of
+	// them may point at a non-focused, non-active context, so this cannot be
+	// limited to the focused/singleton docks or to the active context.
+	if (scene_workspace) {
+		for (ScenePaneTile *tile : scene_workspace->get_tiles()) {
+			if (tile->get_scene_tree_dock() && tile->get_scene_tree_dock()->get_scene_context() == p_context) {
+				tile->get_scene_tree_dock()->set_scene_context(no_scene_context);
+			}
+			if (tile->get_inspector_dock() && tile->get_inspector_dock()->get_scene_context() == p_context) {
+				tile->get_inspector_dock()->set_scene_context(no_scene_context);
+			}
+		}
 	}
-	if (InspectorDock::get_singleton()) {
-		InspectorDock::get_singleton()->set_scene_context(no_scene_context);
+
+	if (active_scene_context == p_context) {
+		// Fall back the editor-wide selection/history singletons as well.
+		active_scene_context = no_scene_context;
+		editor_selection = no_scene_context->get_selection();
+		editor_history = no_scene_context->get_history();
+		editor_selection->mark_changed();
+		emit_signal(SNAME("active_scene_context_changed"));
 	}
-	emit_signal(SNAME("active_scene_context_changed"));
 }
 
 void EditorNode::_configure_editor_selection(EditorSelection *p_selection) {
@@ -4826,7 +5140,8 @@ void EditorNode::_apply_scene_viewport_settings(SubViewport *p_viewport) {
 
 void EditorNode::_nav_to_selected_scene() {
 	select_current_scene_file_requested = false;
-	const String scene_path = editor_data.get_scene_path(scene_tabs->get_current_tab());
+	const int current_scene_idx = editor_data.get_edited_scene();
+	const String scene_path = current_scene_idx >= 0 ? editor_data.get_scene_path(current_scene_idx) : String();
 	if (!scene_path.is_empty()) {
 		FileSystemDock::get_singleton()->navigate_to_path(scene_path);
 	}
@@ -4870,14 +5185,20 @@ int EditorNode::new_scene() {
 		for (int i = 0; i < editor_data.get_edited_scene_count() - 1; i++) {
 			bool unsaved = EditorUndoRedoManager::get_singleton()->is_history_unsaved(editor_data.get_scene_history_id(i));
 			if (!unsaved && editor_data.get_scene_path(i).is_empty() && editor_data.get_edited_scene_root(i) == nullptr) {
-				editor_data.remove_scene(i);
+				// Route through _remove_scene() rather than editor_data.remove_scene()
+				// directly: if this placeholder was the only scene of a non-focused
+				// tile, that tile must be collapsed and the tile display attachments
+				// refreshed, otherwise the emptied tile is left showing stale content.
+				// p_change_tab is false because the newly added scene is already the
+				// current one and is not the scene being removed.
+				_remove_scene(i, false, true);
 				idx--;
 			}
 		}
 	}
 
 	editor_data.clear_editor_states();
-	scene_tabs->update_scene_tabs();
+	update_all_scene_tabs();
 	return idx;
 }
 
@@ -4893,6 +5214,15 @@ Error EditorNode::load_scene(const String &p_scene, bool p_ignore_broken_deps, b
 	if (!p_set_inherited) {
 		for (int i = 0; i < editor_data.get_edited_scene_count(); i++) {
 			if (editor_data.get_scene_path(i) == lpath) {
+				// The scene is already open, possibly in another tile. Focus the
+				// tile that owns it so its tab is selected, instead of retargeting
+				// the focused tile (which holds a different scene).
+				if (scene_workspace) {
+					const int scene_tile = editor_data.get_scene_tile(i);
+					if (scene_tile != editor_data.get_focused_tile()) {
+						focus_tile(scene_tile);
+					}
+				}
 				_set_current_scene(i);
 				return OK;
 			}
@@ -5055,7 +5385,7 @@ Error EditorNode::load_scene(const String &p_scene, bool p_ignore_broken_deps, b
 	}
 
 	_update_title();
-	scene_tabs->update_scene_tabs();
+	update_all_scene_tabs();
 	if (!restoring_scenes) {
 		_add_to_recent_scenes(lpath);
 	}
@@ -6337,7 +6667,7 @@ void EditorNode::_save_editor_layout() {
 	config->load(EditorPaths::get_singleton()->get_project_settings_dir().path_join("editor_layout.cfg"));
 
 	editor_dock_manager->save_docks_to_config(config, "docks");
-	_save_open_scenes_to_config(config);
+	_save_workspace_to_config(config);
 	_save_central_editor_layout_to_config(config);
 	_save_window_settings_to_config(config, "EditorWindow");
 	editor_data.get_plugin_window_layout(config);
@@ -6345,19 +6675,10 @@ void EditorNode::_save_editor_layout() {
 	config->save(EditorPaths::get_singleton()->get_project_settings_dir().path_join("editor_layout.cfg"));
 }
 
-void EditorNode::_save_open_scenes_to_config(Ref<ConfigFile> p_layout) {
-	PackedStringArray scenes;
-	for (int i = 0; i < editor_data.get_edited_scene_count(); i++) {
-		String path = editor_data.get_scene_path(i);
-		if (path.is_empty()) {
-			continue;
-		}
-		scenes.push_back(path);
+void EditorNode::_save_workspace_to_config(Ref<ConfigFile> p_layout) {
+	if (scene_workspace) {
+		EditorSceneWorkspace::save_to_config(p_layout, editor_data, scene_workspace);
 	}
-	p_layout->set_value(EDITOR_NODE_CONFIG_SECTION, "open_scenes", scenes);
-
-	String currently_edited_scene_path = editor_data.get_scene_path(editor_data.get_edited_scene());
-	p_layout->set_value(EDITOR_NODE_CONFIG_SECTION, "current_scene", currently_edited_scene_path);
 }
 
 void EditorNode::save_editor_layout_delayed() {
@@ -6394,7 +6715,7 @@ void EditorNode::_load_editor_layout() {
 		editor_dock_manager->load_docks_from_config(config, "docks", true);
 
 		ep.step(TTR("Reopening scenes..."), 2, true);
-		_load_open_scenes_from_config(config);
+		_load_workspace_from_config(config);
 
 		ep.step(TTR("Loading central editor layout..."), 3, true);
 		_load_central_editor_layout_from_config(config);
@@ -6471,7 +6792,7 @@ void EditorNode::_save_window_settings_to_config(Ref<ConfigFile> p_layout, const
 	}
 }
 
-void EditorNode::_load_open_scenes_from_config(Ref<ConfigFile> p_layout) {
+void EditorNode::_load_workspace_from_config(const Ref<ConfigFile> &p_config) {
 	if (Engine::get_singleton()->is_recovery_mode_hint()) {
 		return;
 	}
@@ -6480,29 +6801,55 @@ void EditorNode::_load_open_scenes_from_config(Ref<ConfigFile> p_layout) {
 		return;
 	}
 
-	if (!p_layout->has_section(EDITOR_NODE_CONFIG_SECTION) ||
-			!p_layout->has_section_key(EDITOR_NODE_CONFIG_SECTION, "open_scenes")) {
+	if (!EditorSceneWorkspace::has_workspace_session(p_config)) {
+		return;
+	}
+
+	if (!scene_workspace) {
 		return;
 	}
 
 	restoring_scenes = true;
 
-	PackedStringArray scenes = p_layout->get_value(EDITOR_NODE_CONFIG_SECTION, "open_scenes");
-	for (int i = 0; i < scenes.size(); i++) {
-		if (FileAccess::exists(scenes[i])) {
-			load_scene(scenes[i]);
-		}
+	// Rebuild the tile structure BEFORE loading any scene. At this point the only
+	// open scene is the initial empty one, so freeing and rebuilding the tile tree
+	// churns nothing live (no scene viewport, no ViewportTextures to re-resolve).
+	// Detach the shared main screen first so restore's teardown does not free it
+	// with the initial tile, then deactivate the empty scene so its (empty)
+	// viewport is not freed either.
+	if (editor_main_screen && editor_main_screen->get_parent()) {
+		editor_main_screen->get_parent()->remove_child(editor_main_screen);
+	}
+	if (active_scene_context && active_scene_context != no_scene_context && active_scene_context->is_active()) {
+		active_scene_context->deactivate();
 	}
 
-	if (p_layout->has_section_key(EDITOR_NODE_CONFIG_SECTION, "current_scene")) {
-		String current_scene = p_layout->get_value(EDITOR_NODE_CONFIG_SECTION, "current_scene");
-		for (int i = 0; i < editor_data.get_edited_scene_count(); i++) {
-			if (editor_data.get_scene_path(i) == current_scene) {
-				_set_current_scene(i);
-				break;
+	Vector<EditorSceneWorkspace::RestoredLeaf> leaves = scene_workspace->restore_from_config(p_config);
+
+	// Move the leftover initial empty scene into the first leaf so the first
+	// load_scene() reuses it instead of leaving an orphan tab.
+	if (!leaves.is_empty() && editor_data.get_edited_scene_count() == 1) {
+		const int first_tile = leaves[0].tile->get_tile_id();
+		editor_data.set_scene_tile(0, first_tile);
+		editor_data.set_focused_tile(first_tile);
+		editor_data.set_tile_current_scene(first_tile, 0);
+	}
+
+	// Load each leaf's scenes into its own tile: focus the tile so load_scene()
+	// targets it, then repoint the tile's current tab by the saved path.
+	for (const EditorSceneWorkspace::RestoredLeaf &leaf : leaves) {
+		const int tile_id = leaf.tile->get_tile_id();
+		focus_tile(tile_id);
+		for (const String &path : leaf.scenes) {
+			if (FileAccess::exists(path) && editor_data.get_edited_scene_from_path(path) < 0) {
+				load_scene(path);
 			}
 		}
+		const int current_idx = leaf.current.is_empty() ? -1 : editor_data.get_edited_scene_from_path(leaf.current);
+		editor_data.set_tile_current_scene(tile_id, current_idx);
 	}
+
+	focus_tile(scene_workspace->get_focused_tile_id());
 
 	save_editor_layout_delayed();
 
@@ -6519,11 +6866,7 @@ bool EditorNode::has_scenes_in_session() {
 	if (err != OK) {
 		return false;
 	}
-	if (!config->has_section(EDITOR_NODE_CONFIG_SECTION) || !config->has_section_key(EDITOR_NODE_CONFIG_SECTION, "open_scenes")) {
-		return false;
-	}
-	Array scenes = config->get_value(EDITOR_NODE_CONFIG_SECTION, "open_scenes");
-	return !scenes.is_empty();
+	return EditorSceneWorkspace::has_workspace_session(config);
 }
 
 void EditorNode::undo() {
@@ -6849,8 +7192,10 @@ void EditorNode::_scene_tab_closed(int p_tab) {
 	}
 
 	if (!unsaved_message.is_empty()) {
-		if (scene_tabs->get_current_tab() != p_tab) {
-			_set_current_scene(p_tab);
+		// p_tab is a global scene index; focus the tile it lives in so the
+		// confirmation targets the right scene.
+		if (editor_data.get_edited_scene() != p_tab) {
+			focus_scene_in_tile(p_tab);
 		}
 
 		save_confirmation->set_ok_button_text(TTR("Save & Close"));
@@ -6862,7 +7207,7 @@ void EditorNode::_scene_tab_closed(int p_tab) {
 	}
 
 	save_editor_layout_delayed();
-	scene_tabs->update_scene_tabs();
+	update_all_scene_tabs();
 }
 
 void EditorNode::_cancel_close_scene_tab() {
@@ -7186,16 +7531,29 @@ void EditorNode::reload_scene(const String &p_path) {
 		_save_editor_states(p_path);
 	}
 
+	// Preserve the reloaded scene's tile ownership across the reload. load_scene()
+	// always creates the replacement in the focused tile, so focus the scene's
+	// own tile first; the replacement then lands there directly. Collapsing is
+	// suppressed so the tile survives even when the reloaded scene was its only
+	// one, and the original focus is restored afterwards.
+	const int scene_tile_id = editor_data.get_scene_tile(scene_idx);
+	const int focused_tile_id = editor_data.get_focused_tile();
+	if (scene_workspace && scene_tile_id != focused_tile_id && scene_workspace->get_tile_by_id(scene_tile_id)) {
+		focus_tile(scene_tile_id);
+	}
+
 	// Reload scene.
-	_remove_scene(scene_idx, false);
+	_remove_scene(scene_idx, false, false);
 	load_scene(p_path, true, false, true);
 
-	// Adjust index so tab is back a the previous position.
+	// Adjust index so tab is back at the previous position.
 	editor_data.move_edited_scene_to_index(scene_idx);
 	EditorUndoRedoManager::get_singleton()->clear_history(editor_data.get_scene_history_id(scene_idx), false);
 
-	// Recover the tab.
-	scene_tabs->set_current_tab(current_tab);
+	// Restore focus to the originally focused tile and refresh every strip.
+	focus_tile(focused_tile_id);
+	update_all_scene_tabs();
+	_update_tile_display_attachments();
 }
 
 void EditorNode::find_all_instances_inheriting_path_in_node(Node *p_root, Node *p_node, const String &p_instance_path, HashSet<Node *> &p_instance_list) {
@@ -9112,10 +9470,16 @@ EditorNode::EditorNode() {
 	srt->add_theme_constant_override("separation", 0);
 	top_split->add_child(srt);
 
-	scene_tabs = memnew(EditorSceneTabs);
-	srt->add_child(scene_tabs);
-	scene_tabs->connect("tab_changed", callable_mp(this, &EditorNode::_set_current_scene));
-	scene_tabs->connect("tab_closed", callable_mp(this, &EditorNode::_scene_tab_closed));
+	scene_workspace = EditorSceneWorkspace::create_single_tile_workspace(editor_selection, &editor_data);
+	srt->add_child(scene_workspace);
+	scene_workspace->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	scene_workspace->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	scene_workspace->connect("tile_focus_requested", callable_mp(this, &EditorNode::focus_tile));
+
+	scene_tabs = scene_workspace->get_focused_tile()->get_scene_tabs();
+	EditorSceneTabs::set_focused_singleton(scene_tabs);
+	SceneTreeDock::set_focused_instance(scene_workspace->get_focused_tile()->get_scene_tree_dock());
+	InspectorDock::set_focused_instance(scene_workspace->get_focused_tile()->get_inspector_dock());
 
 	distraction_free = memnew(Button);
 	distraction_free->set_theme_type_variation("FlatMenuButton");
@@ -9130,9 +9494,9 @@ EditorNode::EditorNode() {
 
 	editor_main_screen = memnew(EditorMainScreen);
 	editor_main_screen->set_custom_minimum_size(Size2(0, 80) * EDSCALE);
-	editor_main_screen->set_draw_behind_parent(true);
-	srt->add_child(editor_main_screen);
-	editor_main_screen->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	// The single live editor is hosted inside the focused tile's content area;
+	// it is reparented there whenever tile focus changes.
+	_reparent_main_screen_into(scene_workspace->get_focused_tile());
 
 	placeholder_scene_viewport = memnew(SubViewport);
 	placeholder_scene_viewport->set_auto_translate_mode(AUTO_TRANSLATE_MODE_ALWAYS);
@@ -9431,11 +9795,9 @@ EditorNode::EditorNode() {
 	p->add_item(TTRC("Hide Update Spinner"), SPINNER_UPDATE_SPINNER_HIDE);
 	_update_update_spinner();
 
-	// Instantiate and place editor docks.
-
-	memnew(SceneTreeDock(editor_selection, editor_data));
-	SceneTreeDock::get_singleton()->set_scene_context(no_scene_context);
-	editor_dock_manager->add_dock(SceneTreeDock::get_singleton());
+	// Instantiate and place editor docks. The Scene and Inspector docks are not
+	// registered here: each tile owns its own in-tile instances (created by the
+	// scene workspace above). The remaining docks stay in the global slots.
 
 	memnew(ImportDock);
 	editor_dock_manager->add_dock(ImportDock::get_singleton());
@@ -9446,10 +9808,6 @@ EditorNode::EditorNode() {
 	filesystem_dock->connect("display_mode_changed", callable_mp(this, &EditorNode::_save_editor_layout));
 	get_project_settings()->connect_filesystem_dock_signals(filesystem_dock);
 	editor_dock_manager->add_dock(filesystem_dock);
-
-	memnew(InspectorDock(editor_data));
-	InspectorDock::get_singleton()->set_scene_context(no_scene_context);
-	editor_dock_manager->add_dock(InspectorDock::get_singleton());
 
 	memnew(SignalsDock);
 	editor_dock_manager->add_dock(SignalsDock::get_singleton());
@@ -9857,9 +10215,8 @@ EditorNode::EditorNode() {
 
 	editor_data.add_edited_scene(-1);
 	editor_data.set_edited_scene(0);
-	_activate_scene_context(editor_data.get_active_scene_context());
-	_attach_active_scene_context();
-	scene_tabs->update_scene_tabs();
+	focus_tile(scene_workspace->get_focused_tile_id());
+	update_all_scene_tabs();
 
 	ImportDock::get_singleton()->initialize_import_options();
 
@@ -9917,6 +10274,17 @@ EditorNode::~EditorNode() {
 	memdelete(build_task_bootstrap_loader);
 #endif
 	memdelete(no_scene_context);
+	// The placeholder viewport is owned by EditorNode, not by the scene tree:
+	// once a real scene attaches exclusively to the scene viewport container it
+	// is detached and never reparented, so free it explicitly instead of relying
+	// on tree teardown.
+	if (placeholder_scene_viewport) {
+		if (placeholder_scene_viewport->get_parent()) {
+			placeholder_scene_viewport->get_parent()->remove_child(placeholder_scene_viewport);
+		}
+		memdelete(placeholder_scene_viewport);
+		placeholder_scene_viewport = nullptr;
+	}
 	memdelete(editor_plugins_over);
 	memdelete(editor_plugins_force_over);
 	memdelete(editor_plugins_force_input_forwarding);

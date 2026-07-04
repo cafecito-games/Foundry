@@ -2,7 +2,7 @@
 /*  canvas_item_editor_plugin.cpp                                         */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -4469,13 +4469,27 @@ void CanvasItemEditor::_notification(int p_what) {
 			select_sb->set_texture_margin_all(4);
 			select_sb->set_content_margin_all(4);
 
-			AnimationPlayerEditor::get_singleton()->get_track_editor()->connect("keying_changed", callable_mp(this, &CanvasItemEditor::_keying_changed));
-			AnimationPlayerEditor::get_singleton()->connect("animation_selected", callable_mp(this, &CanvasItemEditor::_keying_changed).unbind(1));
+			// These connections must survive the main screen being reparented
+			// between scene tiles: re-entering the tree must not connect them a
+			// second time.
+			const Callable keying_changed_callable = callable_mp(this, &CanvasItemEditor::_keying_changed);
+			if (!AnimationPlayerEditor::get_singleton()->get_track_editor()->is_connected("keying_changed", keying_changed_callable)) {
+				AnimationPlayerEditor::get_singleton()->get_track_editor()->connect("keying_changed", keying_changed_callable);
+			}
+			const Callable animation_selected_callable = callable_mp(this, &CanvasItemEditor::_keying_changed).unbind(1);
+			if (!AnimationPlayerEditor::get_singleton()->is_connected("animation_selected", animation_selected_callable)) {
+				AnimationPlayerEditor::get_singleton()->connect("animation_selected", animation_selected_callable);
+			}
 			_keying_changed();
 			_update_editor_settings();
 
-			connect("item_lock_status_changed", callable_mp(this, &CanvasItemEditor::_update_lock_and_group_button));
-			connect("item_group_status_changed", callable_mp(this, &CanvasItemEditor::_update_lock_and_group_button));
+			const Callable lock_group_callable = callable_mp(this, &CanvasItemEditor::_update_lock_and_group_button);
+			if (!is_connected("item_lock_status_changed", lock_group_callable)) {
+				connect("item_lock_status_changed", lock_group_callable);
+			}
+			if (!is_connected("item_group_status_changed", lock_group_callable)) {
+				connect("item_group_status_changed", lock_group_callable);
+			}
 		} break;
 
 		case EditorSettings::NOTIFICATION_EDITOR_SETTINGS_CHANGED: {
@@ -5571,6 +5585,19 @@ void CanvasItemEditor::center_at(const Point2 &p_pos) {
 	Vector2 offset = viewport->get_size() / 2 - EditorNode::get_singleton()->get_scene_root()->get_global_canvas_transform().xform(p_pos);
 	view_offset -= (offset / zoom).round();
 	update_viewport();
+}
+
+Transform2D CanvasItemEditor::get_default_view_transform() const {
+	// Mirrors the initial view established in clear(): a not-yet-opened scene is
+	// framed at this zoom/offset rather than at 1:1 from the origin. Used to seed
+	// the canvas transform of scene viewports shown as non-focused previews that
+	// have never been given an editor view of their own.
+	const real_t default_zoom = 1.0 / MAX(1, EDSCALE);
+	const Point2 default_view_offset = Point2(-150 - ruler_width_scaled, -95 - ruler_width_scaled);
+	Transform2D xform;
+	xform.scale_basis(Size2(default_zoom, default_zoom));
+	xform.columns[2] = -default_view_offset * default_zoom;
+	return xform;
 }
 
 CanvasItemEditor::CanvasItemEditor() {
