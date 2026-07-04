@@ -35,6 +35,7 @@
 #include "editor/automation/editor_automation_driver.h"
 #include "editor/automation/editor_automation_events.h"
 #include "editor/automation/editor_automation_log.h"
+#include "editor/automation/editor_automation_mcp_contracts.h"
 #include "editor/automation/editor_automation_mcp_schemas.h"
 #include "editor/automation/editor_automation_selector.h"
 #include "editor/automation/editor_automation_snapshot.h"
@@ -164,6 +165,22 @@ Dictionary _read_dict(const Dictionary &p_dict, const char *p_key) {
 	return value;
 }
 
+template <typename TInput>
+bool _parse_tool_input(const String &p_tool_name, const Dictionary &p_arguments, TInput &r_input, Dictionary &r_error) {
+	const EditorAutomationMCPParseResult<TInput> parsed = TInput::parse(p_arguments);
+	if (parsed.ok) {
+		r_input = parsed.value;
+		return true;
+	}
+
+	r_error["code"] = EditorAutomationMCPDispatcher::INVALID_PARAMS;
+	r_error["message"] = vformat("Invalid arguments for '%s': %s", p_tool_name, parsed.error.message);
+	Dictionary data;
+	data["field"] = parsed.error.field;
+	r_error["data"] = data;
+	return false;
+}
+
 // Depth-limited element tree with truncation metadata and child pagination.
 Dictionary _element_tree(
 		const EditorAutomationSnapshotData &p_data,
@@ -176,30 +193,7 @@ Dictionary _element_tree(
 		bool &r_truncated,
 		bool p_emit_child_cursors) {
 	const EditorAutomationElement &element = p_data.elements[p_index];
-	Dictionary dict;
-	dict["id"] = element.id;
-	dict["handle"] = element.handle;
-	dict["role"] = element.role;
-	dict["name"] = element.name;
-	dict["text"] = element.text;
-	dict["class"] = element.class_name;
-	dict["path"] = element.path;
-	dict["visible"] = element.visible;
-	dict["enabled"] = element.enabled;
-	dict["focused"] = element.focused;
-	dict["pressed"] = element.pressed;
-	dict["selected"] = element.selected;
-
-	Array bounds;
-	bounds.push_back(element.bounds.position.x);
-	bounds.push_back(element.bounds.position.y);
-	bounds.push_back(element.bounds.size.x);
-	bounds.push_back(element.bounds.size.y);
-	dict["bounds"] = bounds;
-	dict["actions"] = element.actions;
-	if (!element.metadata.is_empty()) {
-		dict["metadata"] = element.metadata;
-	}
+	EditorAutomationMCPElementNode node = EditorAutomationMCPElementNode::from_element(element);
 
 	LocalVector<int> visible_children;
 	for (int child_index : element.children) {
@@ -227,12 +221,13 @@ Dictionary _element_tree(
 		children.push_back(_element_tree(p_data, child_index, p_depth + 1, p_max_depth, p_include_hidden, p_max_children, 0, r_truncated, p_emit_child_cursors));
 		emitted_children++;
 	}
-	dict["children"] = children;
+	node.has_children = true;
+	node.children = children;
 	if (children.size() < total_children || p_child_offset > 0 || (p_child_offset + emitted_children) < total_children) {
-		dict["children_truncated"] = true;
-		dict["child_count"] = total_children;
+		node.children_truncated = true;
+		node.child_count = total_children;
 		if (p_emit_child_cursors && (p_child_offset + emitted_children) < total_children) {
-			dict["children_next_cursor"] = _encode_subtree_cursor(
+			node.children_next_cursor = _encode_subtree_cursor(
 					element.handle,
 					p_child_offset + emitted_children,
 					effective_max_children,
@@ -241,10 +236,10 @@ Dictionary _element_tree(
 					p_data.generation);
 		}
 	} else if (p_depth + 1 > p_max_depth && total_children > 0) {
-		dict["children_truncated"] = true;
-		dict["child_count"] = total_children;
+		node.children_truncated = true;
+		node.child_count = total_children;
 		if (p_emit_child_cursors) {
-			dict["children_next_cursor"] = _encode_subtree_cursor(
+			node.children_next_cursor = _encode_subtree_cursor(
 					element.handle,
 					0,
 					effective_max_children,
@@ -253,34 +248,11 @@ Dictionary _element_tree(
 					p_data.generation);
 		}
 	}
-	return dict;
+	return node.to_dictionary();
 }
 
 Dictionary _element_summary(const EditorAutomationElement &p_element) {
-	Dictionary dict;
-	dict["id"] = p_element.id;
-	dict["handle"] = p_element.handle;
-	dict["role"] = p_element.role;
-	dict["name"] = p_element.name;
-	dict["text"] = p_element.text;
-	dict["class"] = p_element.class_name;
-	dict["path"] = p_element.path;
-	dict["visible"] = p_element.visible;
-	dict["enabled"] = p_element.enabled;
-	dict["focused"] = p_element.focused;
-	dict["pressed"] = p_element.pressed;
-	dict["selected"] = p_element.selected;
-	Array bounds;
-	bounds.push_back(p_element.bounds.position.x);
-	bounds.push_back(p_element.bounds.position.y);
-	bounds.push_back(p_element.bounds.size.x);
-	bounds.push_back(p_element.bounds.size.y);
-	dict["bounds"] = bounds;
-	dict["actions"] = p_element.actions;
-	if (!p_element.metadata.is_empty()) {
-		dict["metadata"] = p_element.metadata;
-	}
-	return dict;
+	return EditorAutomationMCPElementNode::from_element(p_element).to_dictionary();
 }
 
 } // namespace
@@ -479,28 +451,83 @@ Dictionary EditorAutomationMCPDispatcher::_handle_tools_call(const Dictionary &p
 		r_error["message"] = "tools/call requires a 'name'.";
 		return Dictionary();
 	}
-	const Dictionary arguments = _read_dict(p_params, "arguments");
+	Dictionary arguments;
+	if (p_params.has("arguments")) {
+		const Variant raw_arguments = p_params.get("arguments", Variant());
+		if (raw_arguments.get_type() != Variant::DICTIONARY) {
+			r_ok = false;
+			r_error["code"] = INVALID_PARAMS;
+			r_error["message"] = "tools/call 'arguments' must be an object.";
+			return Dictionary();
+		}
+		arguments = raw_arguments;
+	}
 
 	bool is_error = false;
 	Dictionary structured;
 	if (name == "observe_ui") {
-		structured = _tool_observe_ui(arguments, is_error);
+		EditorAutomationMCPObserveUIInput input;
+		if (!_parse_tool_input(name, arguments, input, r_error)) {
+			r_ok = false;
+			return Dictionary();
+		}
+		structured = _tool_observe_ui(input.to_dictionary(), is_error);
 	} else if (name == "find_elements") {
-		structured = _tool_find_elements(arguments, is_error);
+		EditorAutomationMCPFindElementsInput input;
+		if (!_parse_tool_input(name, arguments, input, r_error)) {
+			r_ok = false;
+			return Dictionary();
+		}
+		structured = _tool_find_elements(input.to_dictionary(), is_error);
 	} else if (name == "act") {
-		structured = _tool_act(arguments, is_error);
+		EditorAutomationMCPActInput input;
+		if (!_parse_tool_input(name, arguments, input, r_error)) {
+			r_ok = false;
+			return Dictionary();
+		}
+		structured = _tool_act(input.to_dictionary(), is_error);
 	} else if (name == "wait_for") {
-		structured = _tool_wait_for(arguments, is_error);
+		EditorAutomationMCPWaitForInput input;
+		if (!_parse_tool_input(name, arguments, input, r_error)) {
+			r_ok = false;
+			return Dictionary();
+		}
+		structured = _tool_wait_for(input.to_dictionary(), is_error);
 	} else if (name == "read_editor_state") {
-		structured = _tool_read_editor_state(arguments, is_error);
+		EditorAutomationMCPReadEditorStateInput input;
+		if (!_parse_tool_input(name, arguments, input, r_error)) {
+			r_ok = false;
+			return Dictionary();
+		}
+		structured = _tool_read_editor_state(input.to_dictionary(), is_error);
 	} else if (name == "read_editor_log") {
-		structured = _tool_read_editor_log(arguments, is_error);
+		EditorAutomationMCPReadEditorLogInput input;
+		if (!_parse_tool_input(name, arguments, input, r_error)) {
+			r_ok = false;
+			return Dictionary();
+		}
+		structured = _tool_read_editor_log(input.to_dictionary(), is_error);
 	} else if (name == "run_command") {
-		structured = _tool_run_command(arguments, is_error);
+		EditorAutomationMCPRunCommandInput input;
+		if (!_parse_tool_input(name, arguments, input, r_error)) {
+			r_ok = false;
+			return Dictionary();
+		}
+		structured = _tool_run_command(input.to_dictionary(), is_error);
 	} else if (name == "list_commands") {
-		structured = _tool_list_commands(arguments, is_error);
+		EditorAutomationMCPListCommandsInput input;
+		if (!_parse_tool_input(name, arguments, input, r_error)) {
+			r_ok = false;
+			return Dictionary();
+		}
+		structured = _tool_list_commands(input.to_dictionary(), is_error);
 	} else if (name == "poll_events") {
-		structured = _tool_poll_events(arguments, is_error);
+		EditorAutomationMCPPollEventsInput input;
+		if (!_parse_tool_input(name, arguments, input, r_error)) {
+			r_ok = false;
+			return Dictionary();
+		}
+		structured = _tool_poll_events(input.to_dictionary(), is_error);
 	} else {
 		r_ok = false;
 		r_error["code"] = METHOD_NOT_FOUND;

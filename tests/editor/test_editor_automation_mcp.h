@@ -32,6 +32,7 @@
 
 #include "editor/automation/editor_automation_events.h"
 #include "editor/automation/editor_automation_log.h"
+#include "editor/automation/editor_automation_mcp_contracts.h"
 #include "editor/automation/editor_automation_mcp_dispatcher.h"
 #include "editor/automation/editor_automation_mcp_server.h"
 #include "editor/automation/editor_automation_wait.h"
@@ -1073,6 +1074,128 @@ TEST_CASE("[Editor][Automation][MCP] tool schemas expose typed contracts") {
 	const Dictionary observe = tool_named(tools, "observe_ui");
 	const Dictionary observe_output = observe["outputSchema"];
 	CHECK(observe_output.has("properties"));
+}
+
+TEST_CASE("[Editor][Automation][MCP] typed contract schemas expose stable fields") {
+	const Array tools = EditorAutomationMCPContracts::build_tools_list();
+	REQUIRE(tools.size() == 9);
+
+	const Dictionary act = tool_named(tools, "act");
+	REQUIRE_FALSE(act.is_empty());
+	const Dictionary input = act["inputSchema"];
+	const Dictionary props = input["properties"];
+	CHECK(props.has("selector"));
+	CHECK(props.has("action"));
+	CHECK(props.has("args"));
+	CHECK(props.has("wait"));
+	const Dictionary action_schema = props["action"];
+	CHECK(action_schema.has("enum"));
+}
+
+TEST_CASE("[Editor][Automation][MCP] typed tool inputs reject wrong argument types") {
+	Dictionary bad_find;
+	bad_find["selector"] = "button";
+	const EditorAutomationMCPParseResult<EditorAutomationMCPFindElementsInput> find_result =
+			EditorAutomationMCPFindElementsInput::parse(bad_find);
+	CHECK_FALSE(find_result.ok);
+	CHECK(find_result.error.field == "selector");
+
+	Dictionary bad_act;
+	bad_act["action"] = 42;
+	const EditorAutomationMCPParseResult<EditorAutomationMCPActInput> act_result =
+			EditorAutomationMCPActInput::parse(bad_act);
+	CHECK_FALSE(act_result.ok);
+	CHECK(act_result.error.field == "action");
+}
+
+TEST_CASE("[Editor][Automation][MCP] typed tool input parsers cover all tools") {
+	Dictionary bad_observe;
+	bad_observe["max_depth"] = "deep";
+	const EditorAutomationMCPParseResult<EditorAutomationMCPObserveUIInput> observe_result =
+			EditorAutomationMCPObserveUIInput::parse(bad_observe);
+	CHECK_FALSE(observe_result.ok);
+	CHECK(observe_result.error.field == "max_depth");
+
+	const EditorAutomationMCPParseResult<EditorAutomationMCPWaitForInput> wait_result =
+			EditorAutomationMCPWaitForInput::parse(Dictionary());
+	CHECK_FALSE(wait_result.ok);
+	CHECK(wait_result.error.field == "condition");
+
+	Dictionary bad_log;
+	bad_log["since"] = 7;
+	const EditorAutomationMCPParseResult<EditorAutomationMCPReadEditorLogInput> log_result =
+			EditorAutomationMCPReadEditorLogInput::parse(bad_log);
+	CHECK_FALSE(log_result.ok);
+	CHECK(log_result.error.field == "since");
+
+	const EditorAutomationMCPParseResult<EditorAutomationMCPRunCommandInput> run_result =
+			EditorAutomationMCPRunCommandInput::parse(Dictionary());
+	CHECK_FALSE(run_result.ok);
+	CHECK(run_result.error.field == "command");
+
+	Dictionary bad_list;
+	bad_list["limit"] = "many";
+	const EditorAutomationMCPParseResult<EditorAutomationMCPListCommandsInput> list_result =
+			EditorAutomationMCPListCommandsInput::parse(bad_list);
+	CHECK_FALSE(list_result.ok);
+	CHECK(list_result.error.field == "limit");
+
+	Dictionary bad_poll;
+	bad_poll["kinds"] = 12;
+	const EditorAutomationMCPParseResult<EditorAutomationMCPPollEventsInput> poll_result =
+			EditorAutomationMCPPollEventsInput::parse(bad_poll);
+	CHECK_FALSE(poll_result.ok);
+	CHECK(poll_result.error.field == "kinds");
+
+	const EditorAutomationMCPParseResult<EditorAutomationMCPReadEditorStateInput> state_result =
+			EditorAutomationMCPReadEditorStateInput::parse(Dictionary());
+	CHECK(state_result.ok);
+}
+
+TEST_CASE("[Editor][Automation][MCP] typed element output serializes stable fields") {
+	EditorAutomationElement element;
+	element.id = "snapshot:1/object:2";
+	element.handle = "object:2";
+	element.role = "button";
+	element.name = "Run";
+	element.text = "Run";
+	element.class_name = "Button";
+	element.path = "/root/Button";
+	element.visible = true;
+	element.enabled = true;
+	element.focused = false;
+	element.pressed = false;
+	element.selected = false;
+	element.bounds = Rect2(10, 20, 30, 40);
+	element.actions.push_back("click");
+
+	const EditorAutomationMCPElementNode node = EditorAutomationMCPElementNode::from_element(element);
+	const Dictionary serialized = node.to_dictionary();
+	CHECK(String(serialized["id"]) == "snapshot:1/object:2");
+	CHECK(String(serialized["class"]) == "Button");
+	const Array bounds = serialized["bounds"];
+	REQUIRE(bounds.size() == 4);
+	CHECK((int)bounds[0] == 10);
+	CHECK((int)bounds[3] == 40);
+	const Array actions = serialized["actions"];
+	REQUIRE(actions.size() == 1);
+	CHECK(String(actions[0]) == "click");
+}
+
+TEST_CASE("[Editor][Automation][MCP] tools/call reports invalid params for wrong argument types") {
+	EditorAutomationMCPDispatcher dispatcher;
+
+	Dictionary arguments;
+	arguments["selector"] = "button";
+	Dictionary params;
+	params["name"] = "find_elements";
+	params["arguments"] = arguments;
+
+	const Dictionary response = dispatcher.handle_message(make_request(50, "tools/call", params));
+	CHECK(response.has("error"));
+	const Dictionary error = response["error"];
+	CHECK((int)error["code"] == EditorAutomationMCPDispatcher::INVALID_PARAMS);
+	CHECK(String(error["message"]).contains("selector"));
 }
 
 TEST_CASE("[Editor][Automation][MCP] resources/templates/list exposes targeted URI templates") {
