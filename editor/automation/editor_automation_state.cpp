@@ -84,6 +84,53 @@ String _main_screen_name(int p_index) {
 
 } // namespace
 
+Dictionary _scene_node_tree(Node *p_node, int p_depth, int p_max_depth) {
+	Dictionary dict;
+	if (p_node == nullptr) {
+		return dict;
+	}
+	dict["name"] = p_node->get_name();
+	dict["class"] = p_node->get_class();
+	dict["path"] = String(p_node->get_path());
+	if (p_depth >= p_max_depth) {
+		return dict;
+	}
+	Array children;
+	for (int i = 0; i < p_node->get_child_count(); i++) {
+		children.push_back(_scene_node_tree(p_node->get_child(i), p_depth + 1, p_max_depth));
+	}
+	dict["children"] = children;
+	return dict;
+}
+
+Dictionary EditorAutomationState::read_scene_tree(Node *p_snapshot_root) {
+	Dictionary payload;
+	if (p_snapshot_root != nullptr) {
+		payload["root"] = _scene_node_tree(p_snapshot_root, 0, 16);
+		payload["source"] = "snapshot_root";
+		return payload;
+	}
+
+	EditorNode *editor_node = EditorNode::get_singleton();
+	if (editor_node == nullptr || !editor_node->is_editor_ready()) {
+		payload["root"] = Dictionary();
+		payload["source"] = "unavailable";
+		return payload;
+	}
+
+	Node *edited_root = EditorNode::get_editor_data().get_edited_scene_root();
+	if (edited_root == nullptr) {
+		payload["root"] = Dictionary();
+		payload["source"] = "no_active_scene";
+		return payload;
+	}
+
+	payload["root"] = _scene_node_tree(edited_root, 0, 16);
+	payload["active_scene_path"] = EditorNode::get_editor_data().get_scene_path(EditorNode::get_editor_data().get_edited_scene());
+	payload["source"] = "edited_scene_root";
+	return payload;
+}
+
 Array EditorAutomationState::capture_modal_stack(Node *p_root) {
 	Array stack;
 	Node *root_node = p_root;
