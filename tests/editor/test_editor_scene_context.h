@@ -70,7 +70,7 @@ TEST_CASE("[SceneTree][Editor] EditorSceneContext keeps the scene parented to it
 	CHECK_FALSE(context->get_viewport()->is_inside_tree());
 	CHECK_FALSE(context->is_active());
 
-	context->activate(tree_root);
+	context->set_display_parent(tree_root, true);
 	CHECK(context->is_active());
 	CHECK(context->get_viewport()->is_inside_tree());
 	CHECK(context->get_viewport()->get_parent() == tree_root);
@@ -85,7 +85,7 @@ TEST_CASE("[SceneTree][Editor] EditorSceneContext keeps the scene parented to it
 	// The scene is never reparented; it stays under its context viewport.
 	CHECK(scene->get_parent() == context->get_viewport());
 
-	context->activate(tree_root);
+	context->set_display_parent(tree_root, true);
 	CHECK(scene->is_inside_tree());
 	CHECK(scene->get_parent() == context->get_viewport());
 	context->deactivate();
@@ -102,7 +102,7 @@ TEST_CASE("[SceneTree][Editor] EditorSceneContext retains its selection across d
 	Node2D *child = memnew(Node2D);
 	scene->add_child(child);
 
-	context->activate(tree_root);
+	context->set_display_parent(tree_root, true);
 
 	EditorSelection *selection = context->get_selection();
 	selection->add_node(child);
@@ -116,7 +116,7 @@ TEST_CASE("[SceneTree][Editor] EditorSceneContext retains its selection across d
 	REQUIRE(retained.size() == 1);
 	CHECK(retained[0] == child->get_instance_id());
 
-	context->activate(tree_root);
+	context->set_display_parent(tree_root, true);
 	// Same selection object, repopulated.
 	CHECK(context->get_selection() == selection);
 	CHECK(selection->is_selected(child));
@@ -141,7 +141,7 @@ TEST_CASE("[SceneTree][Editor] EditorSceneContext selected node ids can be rewri
 	context->set_selected_node_ids(ids);
 	CHECK(context->get_selected_node_ids() == ids);
 
-	context->activate(tree_root);
+	context->set_display_parent(tree_root, true);
 	CHECK(context->get_selection()->is_selected(child));
 
 	context->deactivate();
@@ -157,13 +157,13 @@ TEST_CASE("[SceneTree][Editor] EditorSceneContext drops freed nodes from the ret
 	Node2D *child = memnew(Node2D);
 	scene->add_child(child);
 
-	context->activate(tree_root);
+	context->set_display_parent(tree_root, true);
 	context->get_selection()->add_node(child);
 	context->deactivate();
 
 	memdelete(child);
 
-	context->activate(tree_root);
+	context->set_display_parent(tree_root, true);
 	CHECK(context->get_selection()->get_full_selected_node_list().is_empty());
 	CHECK(context->get_selected_node_ids().is_empty());
 
@@ -178,14 +178,14 @@ TEST_CASE("[SceneTree][Editor] EditorSceneContext preserves inspector history ac
 	Node2D *scene = memnew(Node2D);
 	context->set_scene_root_node(scene);
 
-	context->activate(tree_root);
+	context->set_display_parent(tree_root, true);
 
 	EditorSelectionHistory *history = context->get_history();
 	history->add_object(scene->get_instance_id());
 	CHECK(history->get_history_len() == 1);
 
 	context->deactivate();
-	context->activate(tree_root);
+	context->set_display_parent(tree_root, true);
 
 	// History is owned by the context; no copy in or out happens on switches.
 	CHECK(context->get_history() == history);
@@ -228,7 +228,7 @@ TEST_CASE("[SceneTree][Editor] EditorSceneContext supports in-place root replace
 	EditorSceneContext *context = memnew(EditorSceneContext);
 	Node2D *old_root = memnew(Node2D);
 	context->set_scene_root_node(old_root);
-	context->activate(tree_root);
+	context->set_display_parent(tree_root, true);
 
 	// Mirrors SceneTreeDock's change-root-type flow: the context is told
 	// about the new root first, then replace_by moves it into the old root's

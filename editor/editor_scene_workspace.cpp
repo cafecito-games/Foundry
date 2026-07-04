@@ -40,6 +40,7 @@
 #include "scene/gui/label.h"
 #include "scene/gui/panel_container.h"
 #include "scene/gui/texture_rect.h"
+#include "scene/main/viewport.h"
 
 void EditorScenePane::_notification(int p_what) {
 	switch (p_what) {
@@ -65,20 +66,37 @@ void EditorScenePane::_request_focus() {
 	}
 }
 
-void EditorScenePane::_pane_gui_input(const Ref<InputEvent> &p_event) {
-	Ref<InputEventMouseButton> mb = p_event;
-	if (mb.is_valid() && mb->is_pressed() && mb->get_button_index() == MouseButton::LEFT) {
-		_request_focus();
-	}
-}
-
-void EditorScenePane::_pane_focus_entered() {
-	_request_focus();
-}
-
 void EditorScenePane::input(const Ref<InputEvent> &p_event) {
+	Viewport *pane_viewport = get_viewport();
+	if (!pane_viewport || !is_visible_in_tree()) {
+		return;
+	}
+
+	// input() ignores z-order, so a global position inside this pane's rect may
+	// actually be over a control drawn on top of it (e.g. the FileSystem dock
+	// sharing the bottom drawer). Only act when the control under the cursor
+	// really belongs to this pane.
+	auto cursor_is_over_this_pane = [&](const Point2 &p_global) {
+		if (!get_global_rect().has_point(p_global)) {
+			return false;
+		}
+		Control *hovered = pane_viewport->gui_get_hovered_control();
+		return hovered == this || (hovered && is_ancestor_of(hovered));
+	};
+
+	// Focus-follows-drag: while a drag is under way, focus the pane the cursor
+	// moves over so the drop is handled by that pane's live editor (which only
+	// exists in the focused pane). request_pane_focus() no-ops once focused.
+	if (pane_viewport->gui_is_dragging()) {
+		Ref<InputEventMouseMotion> mm = p_event;
+		if (mm.is_valid() && cursor_is_over_this_pane(mm->get_global_position())) {
+			_request_focus();
+		}
+		return;
+	}
+
 	Ref<InputEventMouseButton> mb = p_event;
-	if (mb.is_valid() && mb->is_pressed() && mb->get_button_index() == MouseButton::LEFT && is_visible_in_tree() && get_global_rect().has_point(mb->get_global_position())) {
+	if (mb.is_valid() && mb->is_pressed() && mb->get_button_index() == MouseButton::LEFT && cursor_is_over_this_pane(mb->get_global_position())) {
 		_request_focus();
 	}
 }
@@ -184,11 +202,6 @@ void EditorScenePane::setup(int p_pane_index) {
 	placeholder_vb->add_child(preview_placeholder_label);
 
 	_fit_content_children();
-
-	connect(SceneStringName(gui_input), callable_mp(this, &EditorScenePane::_pane_gui_input));
-	connect(SceneStringName(focus_entered), callable_mp(this, &EditorScenePane::_pane_focus_entered));
-	scene_tabs->connect(SceneStringName(gui_input), callable_mp(this, &EditorScenePane::_pane_gui_input));
-	content_host->connect(SceneStringName(gui_input), callable_mp(this, &EditorScenePane::_pane_gui_input));
 }
 
 EditorScenePane::EditorScenePane() {
@@ -213,25 +226,6 @@ void EditorSceneWorkspace::_configure_pane_layout(EditorScenePane *p_pane) {
 	p_pane->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	p_pane->set_stretch_ratio(1.0);
 	p_pane->set_custom_minimum_size(Size2(120, 120) * EDSCALE);
-}
-
-void EditorSceneWorkspace::_ensure_split_offset() {
-	if (!split || panes.size() < 2) {
-		return;
-	}
-
-	const Size2 size = split->get_size();
-	const int axis = split_vertical ? size.height : size.width;
-	if (axis <= 0) {
-		if (!split->is_connected(SceneStringName(resized), callable_mp(this, &EditorSceneWorkspace::_ensure_split_offset))) {
-			split->connect(SceneStringName(resized), callable_mp(this, &EditorSceneWorkspace::_ensure_split_offset), CONNECT_ONE_SHOT);
-		}
-		return;
-	}
-
-	// Split offset is relative to the default dragger position (already ~50/50).
-	split->set_split_offset(0);
-	split->clamp_split_offset(0);
 }
 
 void EditorSceneWorkspace::_create_pane(int p_index) {
@@ -280,7 +274,6 @@ void EditorSceneWorkspace::split_workspace(bool p_vertical) {
 	_create_pane(1);
 	update_focus_visuals();
 	queue_sort();
-	callable_mp(this, &EditorSceneWorkspace::_ensure_split_offset).call_deferred();
 }
 
 void EditorSceneWorkspace::unsplit_workspace() {

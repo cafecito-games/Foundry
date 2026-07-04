@@ -41,8 +41,8 @@ class SubViewport;
  * the per-plugin editor state, and the undo history id.
  *
  * The scene root stays parented to the context's viewport for its whole
- * lifetime. Activating a context attaches its viewport to the display
- * container (entering the tree); deactivating detaches it, so inactive
+ * lifetime. set_display_parent() attaches the viewport to a display
+ * container (entering the tree); deactivate() detaches it, so inactive
  * scenes neither render nor leak content into the shared editor world.
  * While a context is inactive its selection is tracked by object id, since
  * out-of-tree nodes cannot live in an EditorSelection.
@@ -83,7 +83,6 @@ public:
 	int get_history_id() const { return history_id; }
 
 	bool is_active() const { return active; }
-	void activate(Node *p_display_parent);
 	void deactivate();
 	void set_display_parent(Node *p_parent, bool p_audio_listener_2d, bool p_exclusive_viewport_parent = false);
 	bool scene_has_3d_content() const { return has_3d_content; }

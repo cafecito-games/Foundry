@@ -663,13 +663,20 @@ void EditorData::remove_scene(int p_idx) {
 	for (int p = 0; p < pane_current_scenes.size(); p++) {
 		int cur = pane_current_scenes[p];
 		if (cur == p_idx) {
+			// Fall back to the neighbouring tab (next, else previous), matching
+			// set_scene_pane() and normal tab-close behaviour.
 			int replacement = -1;
 			const Vector<int> pane_scenes = get_pane_scene_indices(p);
 			for (int i = 0; i < pane_scenes.size(); i++) {
 				if (pane_scenes[i] != p_idx) {
-					replacement = pane_scenes[i];
-					break;
+					continue;
 				}
+				if (i + 1 < pane_scenes.size()) {
+					replacement = pane_scenes[i + 1];
+				} else if (i > 0) {
+					replacement = pane_scenes[i - 1];
+				}
+				break;
 			}
 			if (replacement > p_idx) {
 				replacement--;
@@ -814,9 +821,14 @@ int EditorData::get_edited_scene_from_path(const String &p_path) const {
 void EditorData::set_edited_scene(int p_idx) {
 	ERR_FAIL_INDEX(p_idx, edited_scene.size());
 	current_edited_scene = p_idx;
+	// Only the focused pane's current tab tracks the edited scene. Iterating
+	// scenes in other panes (e.g. the save-all and reload-from-disk loops) must
+	// not hijack those panes' visible tabs.
 	const int pane = edited_scene[p_idx].pane;
-	_ensure_pane_capacity(pane + 1);
-	pane_current_scenes.write[pane] = p_idx;
+	if (pane == focused_pane) {
+		_ensure_pane_capacity(pane + 1);
+		pane_current_scenes.write[pane] = p_idx;
+	}
 }
 
 Node *EditorData::EditedScene::get_root() const {
@@ -933,8 +945,8 @@ void EditorData::move_edited_scene_to_index(int p_idx) {
 	edited_scene.remove_at(current_edited_scene);
 	edited_scene.insert(p_idx, es);
 	current_edited_scene = p_idx;
-	_ensure_pane_capacity(es.pane + 1);
-	pane_current_scenes.write[es.pane] = p_idx;
+	// pane_current_scenes was already remapped above (the moved scene maps from
+	// its old index to p_idx), so no extra write is needed here.
 }
 
 void EditorData::_ensure_pane_capacity(int p_pane) {
@@ -1049,9 +1061,6 @@ void EditorData::set_focused_pane(int p_pane) {
 	focused_pane = p_pane;
 	_ensure_pane_capacity(p_pane + 1);
 	current_edited_scene = pane_current_scenes[p_pane];
-#ifdef DEV_ENABLED
-	ERR_FAIL_COND_MSG(current_edited_scene != get_pane_current_scene(focused_pane), "EditorData pane current invariant broken.");
-#endif
 }
 
 Ref<Script> EditorData::get_scene_root_script(int p_idx) const {
@@ -1127,12 +1136,20 @@ String EditorData::get_scene_path(int p_idx) const {
 }
 
 void EditorData::set_edited_scene_live_edit_root(const NodePath &p_root) {
+	// A focused pane with no open scene has no live-edit root to record.
+	if (current_edited_scene < 0) {
+		return;
+	}
 	ERR_FAIL_INDEX(current_edited_scene, edited_scene.size());
 
 	edited_scene.write[current_edited_scene].live_edit_root = p_root;
 }
 
 NodePath EditorData::get_edited_scene_live_edit_root() {
+	// A focused pane with no open scene has no live-edit root.
+	if (current_edited_scene < 0) {
+		return NodePath(String("/root"));
+	}
 	ERR_FAIL_INDEX_V(current_edited_scene, edited_scene.size(), String());
 
 	return edited_scene[current_edited_scene].live_edit_root;

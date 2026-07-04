@@ -943,20 +943,16 @@ InspectorDock::InspectorDock(EditorData &p_editor_data, bool p_register_open_com
 	}
 
 	set_process_shortcut_input(true);
-
-	main_vb->connect(SceneStringName(focus_entered), callable_mp(this, &InspectorDock::_dock_focus_entered));
-	main_vb->connect(SceneStringName(gui_input), callable_mp(this, &InspectorDock::_dock_gui_input));
+	set_process_input(true);
 }
 
-void InspectorDock::_dock_focus_entered() {
-	if (EditorNode::get_singleton()) {
-		EditorNode::get_singleton()->focus_pane(owning_pane);
-	}
-}
+void InspectorDock::input(const Ref<InputEvent> &p_event) {
+	ERR_FAIL_COND(p_event.is_null());
 
-void InspectorDock::_dock_gui_input(const Ref<InputEvent> &p_event) {
+	// A press anywhere inside this dock focuses the pane it is bound to, so
+	// inspector edits target the right scene when the workspace is split.
 	Ref<InputEventMouseButton> mb = p_event;
-	if (mb.is_valid() && mb->is_pressed() && mb->get_button_index() == MouseButton::LEFT && EditorNode::get_singleton()) {
+	if (mb.is_valid() && mb->is_pressed() && is_visible_in_tree() && get_global_rect().has_point(mb->get_global_position()) && EditorNode::get_singleton()) {
 		EditorNode::get_singleton()->focus_pane(owning_pane);
 	}
 }

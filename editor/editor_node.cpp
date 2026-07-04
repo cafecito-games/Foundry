@@ -4600,7 +4600,8 @@ void EditorNode::_set_main_scene_state(Dictionary p_state, Node *p_for_scene) {
 	// This should only happen at the very end.
 
 	EditorDebuggerNode::get_singleton()->update_live_edit_root();
-	ScriptEditor::get_singleton()->set_scene_root_script(editor_data.get_scene_root_script(editor_data.get_edited_scene()));
+	const int current_scene_idx = editor_data.get_edited_scene();
+	ScriptEditor::get_singleton()->set_scene_root_script(current_scene_idx >= 0 ? editor_data.get_scene_root_script(current_scene_idx) : Ref<Script>());
 	editor_data.notify_edited_scene_changed();
 	emit_signal(SNAME("scene_changed"));
 
@@ -4848,9 +4849,6 @@ void EditorNode::_sync_scene_viewport_2d_state_with_main_screen() {
 
 void EditorNode::update_all_scene_tabs() {
 	if (!scene_workspace) {
-		if (scene_tabs) {
-			update_all_scene_tabs();
-		}
 		return;
 	}
 	for (int p = 0; p < scene_workspace->get_pane_count(); p++) {
@@ -4946,7 +4944,6 @@ void EditorNode::_split_workspace(bool p_vertical) {
 		_create_secondary_docks();
 		scene_workspace->split_workspace(p_vertical);
 		_connect_pane_layout_signals(1);
-		editor_data.set_pane_current_scene(1, editor_data.get_pane_current_scene(1));
 		_bind_pane_docks(0);
 		_bind_pane_docks(1);
 		update_all_scene_tabs();
@@ -5047,29 +5044,35 @@ void EditorNode::transfer_scene_to_pane(int p_scene_idx, int p_target_pane, int 
 		_split_workspace(false);
 	}
 
-	const int source_pane = editor_data.get_edited_scenes()[p_scene_idx].pane;
-	editor_data.set_scene_pane(p_scene_idx, p_target_pane);
-
-	const Vector<int> target_scenes = editor_data.get_pane_scene_indices(p_target_pane);
-	int global_target = p_target_tab;
-	if (p_target_tab >= 0 && p_target_tab < target_scenes.size()) {
-		global_target = target_scenes[p_target_tab];
-	} else if (!target_scenes.is_empty()) {
-		global_target = target_scenes[target_scenes.size() - 1];
-	} else {
-		global_target = p_scene_idx;
+	// Resolve the drop position against the target pane's tabs as they are
+	// *before* the scene moves in, so p_target_tab refers to an existing slot.
+	// anchor_global is the global scene index the dropped tab should land in
+	// front of; -1 means the target pane is empty (nothing to reorder against).
+	const Vector<int> target_before = editor_data.get_pane_scene_indices(p_target_pane);
+	int anchor_global = -1;
+	if (p_target_tab >= 0 && p_target_tab < target_before.size()) {
+		anchor_global = target_before[p_target_tab];
+	} else if (!target_before.is_empty()) {
+		anchor_global = target_before[target_before.size() - 1] + 1; // Dropped past the last tab.
 	}
 
+	editor_data.set_scene_pane(p_scene_idx, p_target_pane);
 	editor_data.set_edited_scene(p_scene_idx);
-	editor_data.move_edited_scene_to_index(global_target);
+
+	if (anchor_global >= 0) {
+		// Removing the scene from its old slot shifts the anchor left by one when
+		// it sat after the scene, so bias the destination index accordingly.
+		const int target_index = p_scene_idx < anchor_global ? anchor_global - 1 : anchor_global;
+		editor_data.move_edited_scene_to_index(target_index);
+	}
 	const int moved_scene_idx = editor_data.get_edited_scene();
 
-	if (editor_data.get_pane_current_scene(source_pane) == moved_scene_idx) {
-		editor_data.set_pane_current_scene(source_pane, -1);
-	}
-	editor_data.set_pane_current_scene(p_target_pane, moved_scene_idx);
-
+	// Focus the destination pane before pointing it at the moved scene so the
+	// pane-current invariant (current scene == focused pane's current) holds
+	// across the update. set_scene_pane() already fixed the source pane's
+	// current when the moved scene was the one being shown there.
 	focus_pane(p_target_pane);
+	editor_data.set_pane_current_scene(p_target_pane, moved_scene_idx);
 	_set_current_scene(moved_scene_idx);
 	update_all_scene_tabs();
 }

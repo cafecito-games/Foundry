@@ -457,6 +457,11 @@ class EditorInspectorSection : public Container {
 
 	bool checkbox_only = false;
 
+	// The inspector this section connected its "property_edited" handler to.
+	// Kept so the disconnect always targets the same inspector even when the
+	// focused-inspector singleton has since moved to another workspace pane.
+	EditorInspector *property_edited_inspector = nullptr;
+
 	HashSet<StringName> revertable_properties;
 
 	void _test_unfold();

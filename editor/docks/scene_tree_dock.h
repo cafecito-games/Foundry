@@ -147,8 +147,6 @@ class SceneTreeDock : public EditorDock {
 	EditorSceneContext *scene_context = nullptr;
 	int owning_pane = 0;
 
-	void _dock_focus_entered();
-	void _dock_gui_input(const Ref<InputEvent> &p_event);
 	void _disconnect_selection_changed();
 	EditorSelection *editor_selection = nullptr;
 	ObjectID editor_selection_id;
@@ -344,7 +342,6 @@ public:
 	void add_root_node(Node *p_node);
 	void set_scene_context(EditorSceneContext *p_context);
 	void set_owning_pane(int p_pane) { owning_pane = p_pane; }
-	int get_owning_pane() const { return owning_pane; }
 	EditorSceneContext *get_scene_context() const { return scene_context; }
 	void update_tree();
 	void instantiate(const String &p_file);

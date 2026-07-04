@@ -114,4 +114,5 @@ public:
 	void update_scene_tabs();
 
 	EditorSceneTabs(int p_pane_index = 0);
+	~EditorSceneTabs();
 };

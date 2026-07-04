@@ -146,6 +146,12 @@ void SceneTreeDock::input(const Ref<InputEvent> &p_event) {
 
 	Ref<InputEventMouseButton> mb = p_event;
 
+	// A press anywhere inside this dock focuses the pane it is bound to, so
+	// actions routed through the focused-dock singleton target the right scene.
+	if (mb.is_valid() && mb->is_pressed() && is_visible_in_tree() && get_global_rect().has_point(mb->get_global_position()) && EditorNode::get_singleton()) {
+		EditorNode::get_singleton()->focus_pane(owning_pane);
+	}
+
 	if (mb.is_valid() && (mb->get_button_index() == MouseButton::LEFT || mb->get_button_index() == MouseButton::RIGHT)) {
 		Tree *tree = scene_tree->get_scene_tree();
 		if (mb->is_pressed() && tree->get_rect().has_point(tree->get_local_mouse_position())) {
@@ -5141,22 +5147,6 @@ SceneTreeDock::SceneTreeDock(EditorSelection *p_editor_selection, EditorData &p_
 	EDITOR_DEF("_use_favorites_root_selection", false);
 
 	Resource::_update_configuration_warning = _update_configuration_warning;
-
-	main_vbox->connect(SceneStringName(focus_entered), callable_mp(this, &SceneTreeDock::_dock_focus_entered));
-	main_vbox->connect(SceneStringName(gui_input), callable_mp(this, &SceneTreeDock::_dock_gui_input));
-}
-
-void SceneTreeDock::_dock_focus_entered() {
-	if (EditorNode::get_singleton()) {
-		EditorNode::get_singleton()->focus_pane(owning_pane);
-	}
-}
-
-void SceneTreeDock::_dock_gui_input(const Ref<InputEvent> &p_event) {
-	Ref<InputEventMouseButton> mb = p_event;
-	if (mb.is_valid() && mb->is_pressed() && mb->get_button_index() == MouseButton::LEFT && EditorNode::get_singleton()) {
-		EditorNode::get_singleton()->focus_pane(owning_pane);
-	}
 }
 
 SceneTreeDock::~SceneTreeDock() {

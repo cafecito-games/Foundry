@@ -278,7 +278,9 @@ Node *SceneTreeEditor::_get_node_from_item(TreeItem *p_item) const {
 		return nullptr;
 	}
 
-	if (!is_inside_tree() && np.is_absolute()) {
+	// Item metadata always stores absolute node paths, which cannot resolve
+	// while this editor is detached from the tree.
+	if (!is_inside_tree()) {
 		return nullptr;
 	}
 
@@ -290,11 +292,13 @@ bool SceneTreeEditor::_is_node_displayable(Node *p_node) const {
 		return false;
 	}
 
+	// Detached editors cannot check displayability, so keep the node (its
+	// selection is retained until the editor re-enters the tree).
 	if (!is_inside_tree()) {
 		return true;
 	}
 
-	Node *scene_node = get_tree()->get_edited_scene_root();
+	Node *scene_node = get_scene_node();
 	if (!scene_node || !scene_node->is_inside_tree()) {
 		return false;
 	}

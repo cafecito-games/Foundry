@@ -148,8 +148,8 @@ TEST_CASE("[SceneTree][Editor] SceneTreeDock rebinding switches which selection 
 	root_b->add_child(child_b);
 
 	// Nodes must be inside the tree for the live EditorSelection to hold them.
-	context_a->activate(tree_root);
-	context_b->activate(tree_root);
+	context_a->set_display_parent(tree_root, true);
+	context_b->set_display_parent(tree_root, true);
 
 	EditorSelection *selection = memnew(EditorSelection);
 	SceneTreeDock *dock = memnew(SceneTreeDock(selection, editor_data));
@@ -195,7 +195,7 @@ TEST_CASE("[SceneTree][Editor] SceneTreeDock rebinding clears stale selected tre
 	Node2D *root_b = memnew(Node2D);
 	context_b->set_scene_root_node(root_b);
 
-	context_a->activate(tree_root);
+	context_a->set_display_parent(tree_root, true);
 
 	EditorSelection *selection = memnew(EditorSelection);
 	SceneTreeDock *dock = memnew(SceneTreeDock(selection, editor_data));

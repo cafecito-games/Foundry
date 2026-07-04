@@ -55,8 +55,6 @@ class EditorScenePane : public VBoxContainer {
 	PanelContainer *focus_frame = nullptr;
 
 	void _request_focus();
-	void _pane_gui_input(const Ref<InputEvent> &p_event);
-	void _pane_focus_entered();
 	void _fit_content_child(Control *p_child);
 	void _fit_content_children();
 
@@ -90,7 +88,6 @@ class EditorSceneWorkspace : public VBoxContainer {
 
 	void _create_pane(int p_index);
 	void _configure_pane_layout(EditorScenePane *p_pane);
-	void _ensure_split_offset();
 
 protected:
 	void _notification(int p_what);

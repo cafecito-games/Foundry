@@ -82,29 +82,6 @@ void EditorSceneContext::attach_scene_root_node() {
 	}
 }
 
-void EditorSceneContext::activate(Node *p_display_parent) {
-	ERR_FAIL_COND(active);
-	ERR_FAIL_NULL(p_display_parent);
-
-	if (viewport->get_parent() != p_display_parent) {
-		if (viewport->get_parent()) {
-			viewport->get_parent()->remove_child(viewport);
-		}
-		p_display_parent->add_child(viewport);
-	}
-	active = true;
-
-	// Nodes are back in the tree, so the retained selection can become a live
-	// selection again. Nodes freed while the context was inactive are skipped.
-	for (const ObjectID &node_id : retained_selection_ids) {
-		Node *node = ObjectDB::get_instance<Node>(node_id);
-		if (node && node->is_inside_tree()) {
-			selection->add_node(node);
-		}
-	}
-	retained_selection_ids.clear();
-}
-
 void EditorSceneContext::deactivate() {
 	ERR_FAIL_COND(!active);
 

@@ -201,6 +201,77 @@ TEST_CASE("[SceneTree][Editor] pane-model-moving-current-scene-updates-source-cu
 	editor_data.remove_scene(a);
 }
 
+TEST_CASE("[SceneTree][Editor] pane-model-set-edited-scene-does-not-hijack-other-pane") {
+	EditorData editor_data;
+
+	const int a = editor_data.add_edited_scene(-1);
+	const int b = editor_data.add_edited_scene(-1);
+	const int c = editor_data.add_edited_scene(-1);
+	editor_data.set_scene_pane(a, 0);
+	editor_data.set_scene_pane(b, 1);
+	editor_data.set_scene_pane(c, 1);
+	editor_data.set_focused_pane(0);
+	editor_data.set_pane_current_scene(0, a);
+	editor_data.set_pane_current_scene(1, b);
+
+	// Selecting a scene that lives in a non-focused pane (as the save-all and
+	// reload-from-disk loops do while iterating every open scene) must move the
+	// edited-scene cursor without changing that pane's visible current tab.
+	editor_data.set_edited_scene(c);
+	CHECK(editor_data.get_edited_scene() == c);
+	CHECK(editor_data.get_pane_current_scene(1) == b);
+	CHECK(editor_data.get_pane_current_scene(0) == a);
+
+	editor_data.set_edited_scene(a); // Restore the focused-pane cursor.
+	editor_data.clear_edited_scenes();
+}
+
+TEST_CASE("[SceneTree][Editor] pane-model-transfer-order-preserves-invariant") {
+	EditorData editor_data;
+
+	const int a = editor_data.add_edited_scene(-1);
+	const int b = editor_data.add_edited_scene(-1);
+	const int c = editor_data.add_edited_scene(-1);
+	editor_data.set_scene_pane(a, 0);
+	editor_data.set_scene_pane(b, 0);
+	editor_data.set_scene_pane(c, 1);
+	editor_data.set_focused_pane(0);
+	editor_data.set_pane_current_scene(0, a);
+	editor_data.set_pane_current_scene(1, c);
+
+	const int moved_history_id = editor_data.get_scene_history_id(a);
+
+	// Mirror EditorNode::transfer_scene_to_pane's data updates: resolve the drop
+	// anchor, move scene `a` into pane 1 at tab 0, then focus the destination
+	// pane *before* repointing its current tab. Doing it in this order keeps the
+	// "current scene == focused pane's current" invariant intact throughout.
+	ErrorDetector error_detector;
+	const Vector<int> target_before = editor_data.get_pane_scene_indices(1);
+	int anchor_global = -1;
+	if (!target_before.is_empty()) {
+		anchor_global = target_before[0];
+	}
+	editor_data.set_scene_pane(a, 1);
+	editor_data.set_edited_scene(a);
+	if (anchor_global >= 0) {
+		const int target_index = a < anchor_global ? anchor_global - 1 : anchor_global;
+		editor_data.move_edited_scene_to_index(target_index);
+	}
+	const int moved = editor_data.get_edited_scene();
+	editor_data.set_focused_pane(1);
+	editor_data.set_pane_current_scene(1, moved);
+
+	CHECK_FALSE(error_detector.has_error);
+	CHECK(editor_data.get_focused_pane() == 1);
+	CHECK(editor_data.get_pane_current_scene(1) == moved);
+	CHECK(editor_data.get_scene_history_id(moved) == moved_history_id);
+	// The dropped scene leads pane 1's tabs (it was dropped at tab 0).
+	REQUIRE(editor_data.get_pane_scene_indices(1).size() == 2);
+	CHECK(editor_data.get_pane_scene_indices(1)[0] == moved);
+
+	editor_data.clear_edited_scenes();
+}
+
 TEST_CASE("[SceneTree][Editor] context-dual-attach") {
 	Window *tree_root = SceneTree::get_singleton()->get_root();
 	SubViewportContainer *container_a = memnew(SubViewportContainer);
@@ -330,6 +401,16 @@ TEST_CASE("[SceneTree][Editor] workspace-split-pane-sizes") {
 	EditorScenePane *pane_1 = workspace->get_pane(1);
 	CHECK(pane_0->get_size().x > 100);
 	CHECK(pane_1->get_size().x > 100);
+	// A fresh split centers on the default dragger position, so the panes are
+	// close to equal width without any explicit re-centering.
+	CHECK(Math::abs(pane_0->get_size().x - pane_1->get_size().x) < 40.0f);
+
+	// A chosen split offset must survive a layout pass (the workspace no longer
+	// re-centers the split on idle, which used to clobber restored offsets).
+	workspace->get_split()->set_split_offset(120);
+	SceneTree::get_singleton()->process(0.016);
+	MessageQueue::get_singleton()->flush();
+	CHECK(workspace->get_split()->get_split_offset() == 120);
 
 	memdelete(workspace);
 	tree_root->remove_child(host);
