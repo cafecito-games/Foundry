@@ -754,14 +754,18 @@ void InspectorDock::set_scene_context(EditorSceneContext *p_context) {
 	update(current);
 }
 
-InspectorDock::InspectorDock(EditorData &p_editor_data) {
-	singleton = this;
+InspectorDock::InspectorDock(EditorData &p_editor_data, bool p_register_open_command) {
+	// The focused-tile instance owns the class singleton; the first
+	// constructed dock is the default until a tile is explicitly focused.
+	singleton = singleton ? singleton : this;
 	set_name(TTRC("Inspector"));
 	set_icon_name("AnimationTrackList");
-	set_dock_shortcut(ED_SHORTCUT_AND_COMMAND("docks/open_inspector", TTRC("Open Inspector Dock")));
+	if (p_register_open_command) {
+		set_dock_shortcut(ED_SHORTCUT_AND_COMMAND("docks/open_inspector", TTRC("Open Inspector Dock")));
+	}
 	set_default_slot(EditorDock::DOCK_SLOT_RIGHT_UL);
-	// Primary instance keeps the bare layout key; secondary instances (future
-	// phases) get "Inspector:<n>". See EditorDock::get_effective_layout_key().
+	// Primary instance keeps the bare layout key; secondary instances get
+	// "Inspector:<n>". See EditorDock::get_effective_layout_key().
 	set_layout_key("Inspector");
 
 	VBoxContainer *main_vb = memnew(VBoxContainer);
@@ -975,5 +979,7 @@ InspectorDock::InspectorDock(EditorData &p_editor_data) {
 }
 
 InspectorDock::~InspectorDock() {
-	singleton = nullptr;
+	if (singleton == this) {
+		singleton = nullptr;
+	}
 }

@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  editor_main_screen.h                                                  */
+/*  editor_scene_pane_tile.h                                              */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -30,64 +30,62 @@
 
 #pragma once
 
-#include "scene/gui/panel_container.h"
+#include "scene/gui/box_container.h"
 
-class Button;
-class ConfigFile;
-class EditorPlugin;
-class HBoxContainer;
-class VBoxContainer;
+class EditorData;
+class EditorSceneTabs;
+class EditorSelection;
+class HSplitContainer;
+class InspectorDock;
+class Label;
+class MarginContainer;
+class PanelContainer;
+class SceneTreeDock;
+class SceneTreeEditor;
+class SubViewportContainer;
+class TextureRect;
 
-class EditorMainScreen : public PanelContainer {
-	FOUNDRY_CLASS(EditorMainScreen, PanelContainer);
+/**
+ * One self-contained editing unit of the scene workspace:
+ * [scene tab strip] + [scene tree dock | content host | inspector dock].
+ *
+ * The focused tile's content host hosts the single EditorMainScreen (as a
+ * real laid-out child); non-focused tiles show a live 2D preview or a 3D
+ * placeholder instead. Any interaction inside the tile focuses it first.
+ */
+class ScenePaneTile : public VBoxContainer {
+	FOUNDRY_CLASS(ScenePaneTile, VBoxContainer);
 
-public:
-	enum EditorTable {
-		EDITOR_2D = 0,
-		EDITOR_3D,
-		EDITOR_SCRIPT,
-		EDITOR_GAME,
-		EDITOR_ASSETLIB,
-	};
+	int tile_id = 0;
+	EditorSceneTabs *scene_tabs = nullptr;
+	HSplitContainer *body = nullptr;
+	SceneTreeDock *scene_tree_dock = nullptr; // Left, in-tile.
+	MarginContainer *content_host = nullptr; // Center.
+	InspectorDock *inspector_dock = nullptr; // Right, in-tile.
+	SubViewportContainer *preview_container = nullptr; // Non-focused 2D live preview.
+	PanelContainer *preview_placeholder = nullptr; // Non-focused 3D placeholder.
+	Label *preview_placeholder_label = nullptr;
+	TextureRect *preview_placeholder_icon = nullptr;
+	PanelContainer *focus_frame = nullptr; // Accent border when focused.
 
-private:
-	VBoxContainer *main_screen_vbox = nullptr;
-	EditorPlugin *selected_plugin = nullptr;
-
-	HBoxContainer *button_hb = nullptr;
-	Vector<Button *> buttons;
-	Vector<EditorPlugin *> editor_table;
-	HashMap<String, EditorPlugin *> main_editor_plugins;
-
-	int _get_current_main_editor() const;
-	bool _reselect_if_current(EditorPlugin *p_editor);
+	void _request_focus();
 
 protected:
 	void _notification(int p_what);
+	virtual void input(const Ref<InputEvent> &p_event) override;
 
 public:
-	void set_button_container(HBoxContainer *p_button_hb);
+	int get_tile_id() const { return tile_id; }
+	EditorSceneTabs *get_scene_tabs() const { return scene_tabs; }
+	SceneTreeDock *get_scene_tree_dock() const { return scene_tree_dock; }
+	InspectorDock *get_inspector_dock() const { return inspector_dock; }
+	Control *get_content_host() const;
+	SubViewportContainer *get_preview_container() const { return preview_container; }
 
-	void save_layout_to_config(Ref<ConfigFile> p_config_file, const String &p_section) const;
-	void load_layout_from_config(Ref<ConfigFile> p_config_file, const String &p_section);
+	void set_focused_visual(bool p_focused);
+	void set_preview_mode(bool p_live_2d, bool p_placeholder_3d, const String &p_scene_name, const Ref<Texture2D> &p_icon);
 
-	void set_button_enabled(int p_index, bool p_enabled);
-	bool is_button_enabled(int p_index) const;
+	void setup(int p_tile_id, EditorSelection *p_editor_selection, EditorData &p_editor_data);
 
-	void select_next();
-	void select_prev();
-	void select_by_name(const String &p_name);
-	void select(int p_index);
-	int get_selected_index() const;
-	int get_plugin_index(EditorPlugin *p_editor) const;
-	EditorPlugin *get_selected_plugin() const;
-	EditorPlugin *get_plugin_by_name(const String &p_plugin_name) const;
-	bool can_auto_switch_screens() const;
-
-	VBoxContainer *get_control() const;
-
-	void add_main_plugin(EditorPlugin *p_editor);
-	void remove_main_plugin(EditorPlugin *p_editor);
-
-	EditorMainScreen();
+	ScenePaneTile();
 };

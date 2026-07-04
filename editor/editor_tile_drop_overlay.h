@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  editor_main_screen.h                                                  */
+/*  editor_tile_drop_overlay.h                                            */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -30,64 +30,50 @@
 
 #pragma once
 
-#include "scene/gui/panel_container.h"
+#include "editor/editor_scene_workspace.h"
 
-class Button;
-class ConfigFile;
-class EditorPlugin;
-class HBoxContainer;
-class VBoxContainer;
+#include "scene/gui/control.h"
 
-class EditorMainScreen : public PanelContainer {
-	FOUNDRY_CLASS(EditorMainScreen, PanelContainer);
+class EditorSceneTabs;
+class ScenePaneTile;
 
-public:
-	enum EditorTable {
-		EDITOR_2D = 0,
-		EDITOR_3D,
-		EDITOR_SCRIPT,
-		EDITOR_GAME,
-		EDITOR_ASSETLIB,
-	};
+/**
+ * Full-workspace overlay that turns a scene-tab drag into tile operations.
+ * While a scene tab from this workspace is being dragged, the overlay covers
+ * every tile and hit-tests five drop regions per tile: center (move the scene
+ * into that tile) and four edges (split the tile in that direction, the new
+ * tile receiving the scene). The source strip's own rect is excluded from the
+ * overlay hit area so native same-strip tab reordering keeps working.
+ */
+class EditorTileDropOverlay : public Control {
+	FOUNDRY_CLASS(EditorTileDropOverlay, Control);
 
-private:
-	VBoxContainer *main_screen_vbox = nullptr;
-	EditorPlugin *selected_plugin = nullptr;
+	EditorSceneWorkspace *workspace = nullptr;
+	ObjectID source_tabs_id; // The strip the current drag originates from.
+	int source_tile_id = -1;
 
-	HBoxContainer *button_hb = nullptr;
-	Vector<Button *> buttons;
-	Vector<EditorPlugin *> editor_table;
-	HashMap<String, EditorPlugin *> main_editor_plugins;
+	mutable int hovered_tile_id = -1;
+	mutable EditorSceneWorkspace::DropRegion hovered_region = EditorSceneWorkspace::DROP_REGION_CENTER;
 
-	int _get_current_main_editor() const;
-	bool _reselect_if_current(EditorPlugin *p_editor);
+	EditorSceneTabs *_resolve_source_tabs(const Variant &p_data) const;
+	ScenePaneTile *_tile_at(const Point2 &p_local_point) const;
+	EditorSceneWorkspace::DropRegion _region_for(ScenePaneTile *p_tile, const Point2 &p_local_point) const;
+	Rect2 _tile_local_rect(ScenePaneTile *p_tile) const;
+	Rect2 _region_rect(const Rect2 &p_tile_rect, EditorSceneWorkspace::DropRegion p_region) const;
+	void _begin_drag(EditorSceneTabs *p_source_tabs);
+	void _end_drag();
 
 protected:
 	void _notification(int p_what);
 
 public:
-	void set_button_container(HBoxContainer *p_button_hb);
+	virtual bool has_point(const Point2 &p_point) const override;
+	virtual bool can_drop_data(const Point2 &p_point, const Variant &p_data) const override;
+	virtual void drop_data(const Point2 &p_point, const Variant &p_data) override;
 
-	void save_layout_to_config(Ref<ConfigFile> p_config_file, const String &p_section) const;
-	void load_layout_from_config(Ref<ConfigFile> p_config_file, const String &p_section);
+	bool is_drag_active() const { return source_tile_id >= 0; }
 
-	void set_button_enabled(int p_index, bool p_enabled);
-	bool is_button_enabled(int p_index) const;
+	void setup(EditorSceneWorkspace *p_workspace);
 
-	void select_next();
-	void select_prev();
-	void select_by_name(const String &p_name);
-	void select(int p_index);
-	int get_selected_index() const;
-	int get_plugin_index(EditorPlugin *p_editor) const;
-	EditorPlugin *get_selected_plugin() const;
-	EditorPlugin *get_plugin_by_name(const String &p_plugin_name) const;
-	bool can_auto_switch_screens() const;
-
-	VBoxContainer *get_control() const;
-
-	void add_main_plugin(EditorPlugin *p_editor);
-	void remove_main_plugin(EditorPlugin *p_editor);
-
-	EditorMainScreen();
+	EditorTileDropOverlay();
 };

@@ -2481,12 +2481,17 @@ void EditorInspectorSection::set_checkable(const String &p_related_check_propert
 	checked = p_checked;
 	related_enable_property = p_related_check_property;
 
-	if (InspectorDock::get_singleton()) {
-		if (checkable) {
-			InspectorDock::get_inspector_singleton()->connect("property_edited", callable_mp(this, &EditorInspectorSection::_property_edited));
-		} else {
-			InspectorDock::get_inspector_singleton()->disconnect("property_edited", callable_mp(this, &EditorInspectorSection::_property_edited));
+	if (checkable) {
+		// Connect to this section's own inspector (not the focused-pane
+		// singleton) and remember it, so the disconnect below always matches.
+		EditorInspector *inspector = _get_parent_inspector();
+		if (inspector) {
+			inspector->connect("property_edited", callable_mp(this, &EditorInspectorSection::_property_edited));
+			property_edited_inspector = inspector;
 		}
+	} else if (property_edited_inspector) {
+		property_edited_inspector->disconnect("property_edited", callable_mp(this, &EditorInspectorSection::_property_edited));
+		property_edited_inspector = nullptr;
 	}
 
 	if (!checkbox_only && checkable && !checked) {
@@ -2574,8 +2579,9 @@ EditorInspectorSection::~EditorInspectorSection() {
 		memdelete(vbox);
 	}
 
-	if (checkable && InspectorDock::get_singleton()) {
-		InspectorDock::get_inspector_singleton()->disconnect("property_edited", callable_mp(this, &EditorInspectorSection::_property_edited));
+	if (property_edited_inspector) {
+		property_edited_inspector->disconnect("property_edited", callable_mp(this, &EditorInspectorSection::_property_edited));
+		property_edited_inspector = nullptr;
 	}
 }
 

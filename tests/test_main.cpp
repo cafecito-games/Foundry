@@ -60,6 +60,7 @@
 #include "tests/editor/test_editor_scene_context.h"
 #include "tests/editor/test_extract_method_name_prompt.h"
 #include "tests/editor/test_refactor_diff_preview.h"
+#include "tests/editor/test_scene_workspace.h"
 #include "tests/editor/test_script_refactor_apply.h"
 #include "tests/editor/test_script_refactor_vcs_guard.h"
 #endif // TOOLS_ENABLED

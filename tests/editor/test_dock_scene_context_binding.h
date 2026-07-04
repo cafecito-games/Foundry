@@ -36,6 +36,7 @@
 #include "editor/docks/scene_tree_dock.h"
 #include "editor/editor_data.h"
 #include "editor/editor_scene_context.h"
+#include "editor/scene/scene_tree_editor.h"
 
 #include "scene/2d/node_2d.h"
 #include "scene/gui/button.h"
@@ -43,6 +44,7 @@
 #include "scene/main/window.h"
 
 #include "tests/test_macros.h"
+#include "tests/test_tools.h"
 
 // Reads the InspectorDock's history-dependent chrome; declared as a friend of
 // InspectorDock so the binding tests can assert button states.
@@ -177,6 +179,163 @@ TEST_CASE("[SceneTree][Editor] SceneTreeDock rebinding switches which selection 
 	context_b->deactivate();
 	memdelete(context_a);
 	memdelete(context_b);
+}
+
+TEST_CASE("[SceneTree][Editor] SceneTreeDock rebinding clears stale selected tree items") {
+	Window *tree_root = SceneTree::get_singleton()->get_root();
+	EditorData editor_data;
+
+	EditorSceneContext *context_a = memnew(EditorSceneContext);
+	Node2D *root_a = memnew(Node2D);
+	context_a->set_scene_root_node(root_a);
+	Node2D *child_a = memnew(Node2D);
+	root_a->add_child(child_a);
+
+	EditorSceneContext *context_b = memnew(EditorSceneContext);
+	Node2D *root_b = memnew(Node2D);
+	context_b->set_scene_root_node(root_b);
+
+	context_a->set_display_parent(tree_root, true);
+
+	EditorSelection *selection = memnew(EditorSelection);
+	SceneTreeDock *dock = memnew(SceneTreeDock(selection, editor_data));
+
+	dock->set_scene_context(context_a);
+	dock->set_selected(child_a);
+	CHECK(dock->get_tree_editor()->get_selected() == child_a);
+
+	context_a->deactivate();
+	dock->set_scene_context(context_b);
+
+	CHECK(dock->get_tree_editor()->get_selected() == nullptr);
+
+	memdelete(dock);
+	memdelete(selection);
+	memdelete(context_a);
+	memdelete(context_b);
+}
+
+TEST_CASE("[SceneTree][Editor] SceneTreeEditor ignores detached and empty-path selections") {
+	SceneTreeEditor *scene_tree = memnew(SceneTreeEditor(false, false, false));
+
+	Node2D *detached = memnew(Node2D);
+	ErrorDetector detached_error_detector;
+	scene_tree->set_selected(detached);
+	CHECK_FALSE(detached_error_detector.has_error);
+	CHECK(scene_tree->get_selected() == nullptr);
+	memdelete(detached);
+
+	TreeItem *root_item = scene_tree->get_scene_tree()->create_item();
+	root_item->set_text(0, "Root");
+	ErrorDetector empty_path_error_detector;
+	scene_tree->set_filter("");
+	CHECK_FALSE(empty_path_error_detector.has_error);
+
+	memdelete(scene_tree);
+}
+
+TEST_CASE("[SceneTree][Editor] SceneTreeEditor skips detached edited scene roots") {
+	Window *tree_root = SceneTree::get_singleton()->get_root();
+	Node *previous_edited_scene_root = SceneTree::get_singleton()->get_edited_scene_root();
+
+	SceneTreeEditor *scene_tree = memnew(SceneTreeEditor(false, false, false));
+	tree_root->add_child(scene_tree);
+
+	Node2D *detached_root = memnew(Node2D);
+	SceneTree::get_singleton()->set_edited_scene_root(detached_root);
+
+	ErrorDetector error_detector;
+	scene_tree->update_tree();
+	CHECK_FALSE(error_detector.has_error);
+
+	SceneTree::get_singleton()->set_edited_scene_root(previous_edited_scene_root);
+	tree_root->remove_child(scene_tree);
+	memdelete(scene_tree);
+	memdelete(detached_root);
+}
+
+TEST_CASE("[SceneTree][Editor] SceneTreeDock destructor tolerates deleted bound selection") {
+	EditorData editor_data;
+	EditorSelection *selection = memnew(EditorSelection);
+	SceneTreeDock *dock = memnew(SceneTreeDock(selection, editor_data));
+
+	EditorSceneContext *context = memnew(EditorSceneContext);
+	dock->set_scene_context(context);
+
+	memdelete(context);
+	memdelete(dock);
+	memdelete(selection);
+}
+
+TEST_CASE("[SceneTree][Editor] SceneTreeDock rebinds safely after its bound context is freed") {
+	// Guards against a crash where a dock bound to a scene context in a
+	// non-focused tile kept a dangling EditorSelection* after that scene was
+	// removed: each edited scene owns its own selection and it dies with the
+	// scene, but the dock was never rebound, so the next set_scene_context()
+	// dereferenced the freed selection while disconnecting from it.
+	EditorData editor_data;
+	EditorSelection *selection = memnew(EditorSelection);
+	SceneTreeDock *dock = memnew(SceneTreeDock(selection, editor_data));
+
+	EditorSceneContext *context_a = memnew(EditorSceneContext);
+	const ObjectID freed_selection_id = context_a->get_selection()->get_instance_id();
+	dock->set_scene_context(context_a);
+
+	// Free the bound context (and its selection) without rebinding the dock,
+	// so the tree editor is left holding a dangling EditorSelection*.
+	memdelete(context_a);
+	CHECK(ObjectDB::get_instance(freed_selection_id) == nullptr);
+
+	// Rebinding must resolve the previous selection through ObjectDB rather
+	// than dereferencing the freed pointer while disconnecting from it.
+	EditorSceneContext *context_b = memnew(EditorSceneContext);
+	dock->set_scene_context(context_b);
+	CHECK(dock->get_scene_context() == context_b);
+
+	memdelete(dock);
+	memdelete(selection);
+	memdelete(context_b);
+}
+
+TEST_CASE("[SceneTree][Editor] Dock focused instances follow set_focused_instance") {
+	EditorData editor_data;
+	EditorSelection *selection_a = memnew(EditorSelection);
+	EditorSelection *selection_b = memnew(EditorSelection);
+
+	SceneTreeDock *previous_tree_singleton = SceneTreeDock::get_singleton();
+	InspectorDock *previous_inspector_singleton = InspectorDock::get_singleton();
+
+	SceneTreeDock *tree_dock_a = memnew(SceneTreeDock(selection_a, editor_data));
+	SceneTreeDock *tree_dock_b = memnew(SceneTreeDock(selection_b, editor_data, false));
+	InspectorDock *inspector_dock_a = memnew(InspectorDock(editor_data));
+	InspectorDock *inspector_dock_b = memnew(InspectorDock(editor_data, false));
+
+	SceneTreeDock::set_focused_instance(tree_dock_b);
+	InspectorDock::set_focused_instance(inspector_dock_b);
+	CHECK(SceneTreeDock::get_singleton() == tree_dock_b);
+	CHECK(InspectorDock::get_singleton() == inspector_dock_b);
+	CHECK(InspectorDock::get_inspector_singleton() == inspector_dock_b->get_inspector());
+
+	SceneTreeDock::set_focused_instance(tree_dock_a);
+	InspectorDock::set_focused_instance(inspector_dock_a);
+	CHECK(SceneTreeDock::get_singleton() == tree_dock_a);
+	CHECK(InspectorDock::get_singleton() == inspector_dock_a);
+
+	// Destroying a non-focused instance never clears the focused singleton;
+	// destroying the focused one does (so get_singleton() cannot dangle).
+	memdelete(tree_dock_b);
+	memdelete(inspector_dock_b);
+	CHECK(SceneTreeDock::get_singleton() == tree_dock_a);
+	CHECK(InspectorDock::get_singleton() == inspector_dock_a);
+	memdelete(tree_dock_a);
+	memdelete(inspector_dock_a);
+	CHECK(SceneTreeDock::get_singleton() == nullptr);
+	CHECK(InspectorDock::get_singleton() == nullptr);
+
+	SceneTreeDock::set_focused_instance(previous_tree_singleton);
+	InspectorDock::set_focused_instance(previous_inspector_singleton);
+	memdelete(selection_a);
+	memdelete(selection_b);
 }
 
 TEST_CASE("[SceneTree][Editor] InspectorDock history follows the bound context") {

@@ -43,6 +43,10 @@ class SceneTreeEditor : public Control {
 	FOUNDRY_CLASS(SceneTreeEditor, Control);
 
 	EditorSelection *editor_selection = nullptr;
+	// Tracks the bound selection by id so a rebind can validate the previous
+	// selection through ObjectDB instead of dereferencing a pointer that may
+	// have been freed (each edited scene owns its own selection).
+	ObjectID editor_selection_id;
 
 	enum SceneTreeEditorButton {
 		BUTTON_SUBSCENE = 0,
@@ -142,6 +146,8 @@ class SceneTreeEditor : public Control {
 	void _update_node_subtree(Node *p_node, TreeItem *p_parent, bool p_force = false);
 	void _update_node(Node *p_node, TreeItem *p_item, bool p_part_of_subscene);
 	void _update_if_clean();
+	Node *_get_node_from_item(TreeItem *p_item) const;
+	bool _is_node_displayable(Node *p_node) const;
 
 	void _test_update_tree();
 	bool _update_filter(TreeItem *p_parent = nullptr, bool p_scroll_to_selected = false);

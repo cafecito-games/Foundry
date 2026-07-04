@@ -50,6 +50,7 @@ class InspectorDock : public EditorDock {
 
 	// Grants the dock-binding unit tests read access to the history-dependent
 	// chrome (back/forward/history-menu button states).
+	friend class EditorNode;
 	friend class InspectorDockTestAccess;
 
 	enum MenuOptions {
@@ -158,6 +159,7 @@ public:
 	// explicit dock/context reference instead of relying on these
 	// focused-context singletons.
 	static InspectorDock *get_singleton() { return singleton; }
+	static void set_focused_instance(InspectorDock *p_instance) { singleton = p_instance; }
 	static EditorInspector *get_inspector_singleton() { return singleton ? singleton->inspector : nullptr; }
 
 protected:
@@ -181,6 +183,6 @@ public:
 	void store_script_properties(Object *p_object);
 	void apply_script_properties(Object *p_object);
 
-	InspectorDock(EditorData &p_editor_data);
+	InspectorDock(EditorData &p_editor_data, bool p_register_open_command = true);
 	~InspectorDock();
 };

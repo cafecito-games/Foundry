@@ -146,8 +146,14 @@ class SceneTreeDock : public EditorDock {
 	// EditorNode globals.
 	EditorSceneContext *scene_context = nullptr;
 	EditorSelection *editor_selection = nullptr;
+	// Tracks the bound selection by id so a rebind can validate the previous
+	// selection through ObjectDB instead of dereferencing a pointer that may
+	// have been freed (each edited scene owns its own selection).
+	ObjectID editor_selection_id;
 	LocalVector<ObjectID> node_previous_selection;
 	bool update_script_button_queued = false;
+
+	void _disconnect_selection_changed();
 
 	List<Node *> node_clipboard;
 	HashSet<Node *> node_clipboard_edited_scene_owned;
@@ -322,6 +328,7 @@ public:
 	// act on a specific context should hold an explicit dock/context reference
 	// instead of relying on this focused-context singleton.
 	static SceneTreeDock *get_singleton() { return singleton; }
+	static void set_focused_instance(SceneTreeDock *p_instance) { singleton = p_instance; }
 
 protected:
 	void _notification(int p_what);
@@ -373,6 +380,6 @@ public:
 		return script_create_dialog;
 	}
 
-	SceneTreeDock(EditorSelection *p_editor_selection, EditorData &p_editor_data);
+	SceneTreeDock(EditorSelection *p_editor_selection, EditorData &p_editor_data, bool p_register_open_command = true);
 	~SceneTreeDock();
 };

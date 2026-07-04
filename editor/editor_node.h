@@ -90,7 +90,11 @@ class EditorResourceConversionPlugin;
 class EditorRunBar;
 class EditorSceneContext;
 class EditorSceneTabs;
+class EditorSceneWorkspace;
 class EditorSelectionHistory;
+class InspectorDock;
+class ScenePaneTile;
+class SceneTreeDock;
 class SubViewportContainer;
 class EditorSettingsDialog;
 class EditorTitleBar;
@@ -336,7 +340,9 @@ private:
 	DockSplitContainer *right_r_vsplit = nullptr;
 	Control *center_overlay = nullptr;
 
-	// Main tabs.
+	// Tiled scene workspace. scene_tabs always points at the focused tile's
+	// strip (kept in sync by focus_tile()).
+	EditorSceneWorkspace *scene_workspace = nullptr;
 	EditorSceneTabs *scene_tabs = nullptr;
 
 	int tab_closing_idx = 0;
@@ -621,8 +627,21 @@ private:
 
 	void _set_current_scene(int p_idx);
 	void _set_current_scene_nocheck(int p_idx);
+	void _apply_scene_state_for_index(int p_idx);
 	void _activate_scene_context(EditorSceneContext *p_context);
 	void _attach_active_scene_context();
+	void _update_tile_display_attachments();
+	bool _is_context_tile_current(EditorSceneContext *p_context) const;
+	void _sync_scene_viewport_2d_state_with_main_screen();
+	void _update_focused_dock_singletons(ScenePaneTile *p_tile);
+	void _bind_tile_docks(int p_tile_id);
+	void _reparent_main_screen_into(ScenePaneTile *p_tile);
+	void _wire_tile(ScenePaneTile *p_tile);
+	void _on_tile_added(int p_tile_id);
+	void _on_tile_removing(int p_tile_id);
+	void _on_tile_drop_completed(int p_tile_id);
+	void _collapse_empty_tiles();
+	void _load_workspace_from_config(const Ref<ConfigFile> &p_config);
 	void _configure_editor_selection(EditorSelection *p_selection);
 	void _apply_scene_viewport_settings(SubViewport *p_viewport);
 	void _apply_scene_viewport_2d_state(SubViewport *p_viewport);
@@ -707,8 +726,7 @@ private:
 
 	void _save_window_settings_to_config(Ref<ConfigFile> p_layout, const String &p_section);
 
-	void _save_open_scenes_to_config(Ref<ConfigFile> p_layout);
-	void _load_open_scenes_from_config(Ref<ConfigFile> p_layout);
+	void _save_workspace_to_config(Ref<ConfigFile> p_layout);
 
 	void _update_layouts_menu();
 	void _layout_menu_option(int p_id);
@@ -918,6 +936,15 @@ public:
 	// Toggles 2D rendering of the edited-scene viewport (2D vs other main
 	// screens); the state is re-applied on every context switch.
 	void set_scene_viewport_2d_disabled(bool p_disabled);
+
+	// Tiled scene workspace routing. The focused tile's scene is the global
+	// current scene; all global machinery keeps its existing meaning.
+	EditorSceneWorkspace *get_scene_workspace() const { return scene_workspace; }
+	void focus_tile(int p_tile_id);
+	void on_tile_tab_changed(int p_tab, int p_tile_id);
+	void on_tile_tab_closed(int p_tab, int p_tile_id);
+	void focus_scene_in_tile(int p_scene_idx);
+	void update_all_scene_tabs();
 
 	void set_edited_scene(Node *p_scene);
 	void set_edited_scene_root(Node *p_scene, bool p_auto_add);

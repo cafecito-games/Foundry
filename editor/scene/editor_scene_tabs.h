@@ -44,7 +44,11 @@ class TextureRect;
 class EditorSceneTabs : public MarginContainer {
 	FOUNDRY_CLASS(EditorSceneTabs, MarginContainer);
 
-	inline static EditorSceneTabs *singleton = nullptr;
+	// The focused workspace tile's strip. get_singleton() resolves to it so
+	// existing call sites keep working with multiple per-tile instances.
+	inline static EditorSceneTabs *focused_singleton = nullptr;
+	// The instance managing the system dock menu (first-constructed).
+	inline static EditorSceneTabs *native_menu_owner = nullptr;
 
 public:
 	enum {
@@ -54,7 +58,15 @@ public:
 		SCENE_CLOSE_RIGHT,
 	};
 
+	// Shared TabBar rearrange group for all scene strips, distinct from the
+	// dock group (1). Cross-strip drops are handled by the workspace drop
+	// overlay, never by TabBar's internal cross-bar move.
+	static constexpr int TAB_REARRANGE_GROUP = 100;
+
 private:
+	int tile_id = 0;
+	bool menu_initialized = false;
+
 	PanelContainer *tabbar_panel = nullptr;
 	HBoxContainer *tabbar_container = nullptr;
 
@@ -96,7 +108,11 @@ protected:
 	static void _bind_methods();
 
 public:
-	static EditorSceneTabs *get_singleton() { return singleton; }
+	static EditorSceneTabs *get_singleton() { return focused_singleton; }
+	static void set_focused_singleton(EditorSceneTabs *p_tabs) { focused_singleton = p_tabs; }
+
+	int get_tile_id() const { return tile_id; }
+	TabBar *get_tab_bar() const { return scene_tabs; }
 
 	void add_extra_button(Button *p_button);
 
@@ -105,5 +121,6 @@ public:
 
 	void update_scene_tabs();
 
-	EditorSceneTabs();
+	EditorSceneTabs(int p_tile_id = 0);
+	~EditorSceneTabs();
 };
