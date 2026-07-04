@@ -123,16 +123,24 @@ void EditorSceneContext::deactivate() {
 	active = false;
 }
 
-void EditorSceneContext::set_display_parent(Node *p_parent, bool p_audio_listener_2d) {
+void EditorSceneContext::set_display_parent(Node *p_parent, bool p_audio_listener_2d, bool p_exclusive_viewport_parent) {
 	ERR_FAIL_NULL(p_parent);
 
-	const Vector<ObjectID> selected_before = active ? get_selected_node_ids() : Vector<ObjectID>();
+	const Vector<ObjectID> selected_before = get_selected_node_ids();
 
 	if (viewport->get_parent() != p_parent) {
 		if (viewport->get_parent()) {
 			viewport->get_parent()->remove_child(viewport);
 		}
 		p_parent->add_child(viewport);
+	}
+	if (p_exclusive_viewport_parent) {
+		for (int i = p_parent->get_child_count() - 1; i >= 0; i--) {
+			SubViewport *sibling_viewport = Object::cast_to<SubViewport>(p_parent->get_child(i));
+			if (sibling_viewport && sibling_viewport != viewport) {
+				p_parent->remove_child(sibling_viewport);
+			}
+		}
 	}
 
 	viewport->set_as_audio_listener_2d(p_audio_listener_2d);

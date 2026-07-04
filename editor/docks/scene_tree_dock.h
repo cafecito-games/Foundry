@@ -149,7 +149,9 @@ class SceneTreeDock : public EditorDock {
 
 	void _dock_focus_entered();
 	void _dock_gui_input(const Ref<InputEvent> &p_event);
+	void _disconnect_selection_changed();
 	EditorSelection *editor_selection = nullptr;
+	ObjectID editor_selection_id;
 	LocalVector<ObjectID> node_previous_selection;
 	bool update_script_button_queued = false;
 

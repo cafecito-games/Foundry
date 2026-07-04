@@ -86,6 +86,9 @@ void EditorSceneTabs::_scene_tab_changed(int p_tab) {
 
 void EditorSceneTabs::_scene_tab_script_edited(int p_tab) {
 	const int scene_idx = EditorNode::get_editor_data().pane_tab_to_scene_index(pane_index, p_tab);
+	if (scene_idx < 0) {
+		return;
+	}
 	Ref<Script> scr = EditorNode::get_editor_data().get_scene_root_script(scene_idx);
 	if (scr.is_valid()) {
 		InspectorDock::get_singleton()->edit_resource(scr);
@@ -94,6 +97,9 @@ void EditorSceneTabs::_scene_tab_script_edited(int p_tab) {
 
 void EditorSceneTabs::_scene_tab_closed(int p_tab) {
 	const int scene_idx = EditorNode::get_editor_data().pane_tab_to_scene_index(pane_index, p_tab);
+	if (scene_idx < 0) {
+		return;
+	}
 	EditorNode::get_singleton()->on_pane_tab_closed(scene_idx);
 }
 
@@ -114,7 +120,12 @@ void EditorSceneTabs::_scene_tab_hovered(int p_tab) {
 	if (p_tab == current_tab || p_tab < 0) {
 		tab_preview_panel->hide();
 	} else {
-		String path = EditorNode::get_editor_data().get_scene_path(EditorNode::get_editor_data().pane_tab_to_scene_index(pane_index, p_tab));
+		const int scene_idx = EditorNode::get_editor_data().pane_tab_to_scene_index(pane_index, p_tab);
+		if (scene_idx < 0) {
+			tab_preview_panel->hide();
+			return;
+		}
+		String path = EditorNode::get_editor_data().get_scene_path(scene_idx);
 		if (!path.is_empty()) {
 			EditorResourcePreview::get_singleton()->queue_resource_preview(path, callable_mp(this, &EditorSceneTabs::_tab_preview_done).bind(p_tab));
 		}
@@ -163,6 +174,9 @@ void EditorSceneTabs::unhandled_key_input(const Ref<InputEvent> &p_event) {
 void EditorSceneTabs::_reposition_active_tab(int p_to_index) {
 	const int current_scene = EditorNode::get_editor_data().pane_tab_to_scene_index(pane_index, scene_tabs->get_current_tab());
 	const int target_scene = EditorNode::get_editor_data().pane_tab_to_scene_index(pane_index, p_to_index);
+	if (current_scene < 0 || target_scene < 0) {
+		return;
+	}
 	EditorNode::get_editor_data().set_edited_scene(current_scene);
 	EditorNode::get_editor_data().move_edited_scene_to_index(target_scene);
 	EditorNode::get_singleton()->update_all_scene_tabs();
@@ -249,12 +263,21 @@ void EditorSceneTabs::_custom_menu_option(int p_option) {
 	if (p_option == SCENE_MOVE_TO_OTHER_PANE) {
 		if (last_hovered_tab >= 0) {
 			const int scene_idx = EditorNode::get_editor_data().pane_tab_to_scene_index(pane_index, last_hovered_tab);
-			EditorNode::get_singleton()->move_scene_to_other_pane(scene_idx);
+			if (scene_idx >= 0) {
+				EditorNode::get_singleton()->move_scene_to_other_pane(scene_idx);
+			}
 		}
 		return;
 	}
 	if (p_option >= EditorContextMenuPlugin::BASE_ID) {
-		EditorContextMenuPluginManager::get_singleton()->activate_custom_option(EditorContextMenuPlugin::CONTEXT_SLOT_SCENE_TABS, p_option, last_hovered_tab >= 0 ? EditorNode::get_editor_data().get_scene_path(EditorNode::get_editor_data().pane_tab_to_scene_index(pane_index, last_hovered_tab)) : String());
+		String scene_path;
+		if (last_hovered_tab >= 0) {
+			const int scene_idx = EditorNode::get_editor_data().pane_tab_to_scene_index(pane_index, last_hovered_tab);
+			if (scene_idx >= 0) {
+				scene_path = EditorNode::get_editor_data().get_scene_path(scene_idx);
+			}
+		}
+		EditorContextMenuPluginManager::get_singleton()->activate_custom_option(EditorContextMenuPlugin::CONTEXT_SLOT_SCENE_TABS, p_option, scene_path);
 	}
 }
 
@@ -391,12 +414,37 @@ void EditorSceneTabs::_global_menu_scene(const Variant &p_tag) {
 	EditorNode::get_singleton()->focus_scene_in_pane(scene_idx);
 }
 
+bool EditorSceneTabs::_resolve_tab_transfer_panes(TabBar *p_from_tab_bar, int p_receiver_pane, int &r_source_pane, int &r_target_pane) {
+	r_source_pane = -1;
+	r_target_pane = -1;
+
+	if (!p_from_tab_bar || p_receiver_pane < 0) {
+		return false;
+	}
+
+	for (Node *node = p_from_tab_bar; node; node = node->get_parent()) {
+		EditorSceneTabs *source_tabs = Object::cast_to<EditorSceneTabs>(node);
+		if (source_tabs) {
+			r_source_pane = source_tabs->pane_index;
+			r_target_pane = p_receiver_pane;
+			return r_source_pane != r_target_pane;
+		}
+	}
+
+	return false;
+}
+
 void EditorSceneTabs::_tab_transferred(TabBar *p_from_tab_bar, int p_from_index, int p_to_index) {
-	if (p_from_tab_bar != scene_tabs) {
+	int source_pane = -1;
+	int target_pane = -1;
+	if (!_resolve_tab_transfer_panes(p_from_tab_bar, pane_index, source_pane, target_pane)) {
 		return;
 	}
-	const int scene_idx = EditorNode::get_editor_data().pane_tab_to_scene_index(pane_index, p_from_index);
-	const int target_pane = pane_index == 0 ? 1 : 0;
+
+	const int scene_idx = EditorNode::get_editor_data().pane_tab_to_scene_index(source_pane, p_from_index);
+	if (scene_idx < 0) {
+		return;
+	}
 	EditorNode::get_singleton()->transfer_scene_to_pane(scene_idx, target_pane, p_to_index);
 }
 

@@ -638,10 +638,13 @@ private:
 	void _attach_active_scene_context();
 	void _update_pane_display_attachments();
 	bool _is_context_pane_current(EditorSceneContext *p_context) const;
+	void _sync_scene_viewport_2d_state_with_main_screen();
 	void _update_focused_dock_singletons();
 	void _bind_pane_docks(int p_pane);
 	void _create_secondary_docks();
 	void _destroy_secondary_docks();
+	void _connect_pane_layout_signals(int p_pane);
+	void _fit_main_screen_to_focused_pane();
 	void _split_workspace(bool p_vertical);
 	void _unsplit_workspace();
 	void _load_workspace_from_config(const Ref<ConfigFile> &p_config);

@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  editor_main_screen.h                                                  */
+/*  test_editor_main_screen.h                                             */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -30,65 +30,66 @@
 
 #pragma once
 
-#include "scene/gui/panel_container.h"
+#include "editor/editor_main_screen.h"
+#include "editor/plugins/editor_plugin.h"
 
-class Button;
-class ConfigFile;
-class EditorPlugin;
-class HBoxContainer;
-class VBoxContainer;
+#include "tests/test_macros.h"
 
-class EditorMainScreen : public PanelContainer {
-	FOUNDRY_CLASS(EditorMainScreen, PanelContainer);
-	friend class EditorMainScreenTestAccess;
-
+class EditorMainScreenTestAccess {
 public:
-	enum EditorTable {
-		EDITOR_2D = 0,
-		EDITOR_3D,
-		EDITOR_SCRIPT,
-		EDITOR_GAME,
-		EDITOR_ASSETLIB,
-	};
+	static void set_selected_plugin(EditorMainScreen *p_main_screen, EditorPlugin *p_plugin) {
+		p_main_screen->selected_plugin = p_plugin;
+	}
 
-private:
-	VBoxContainer *main_screen_vbox = nullptr;
-	EditorPlugin *selected_plugin = nullptr;
-
-	HBoxContainer *button_hb = nullptr;
-	Vector<Button *> buttons;
-	Vector<EditorPlugin *> editor_table;
-	HashMap<String, EditorPlugin *> main_editor_plugins;
-
-	int _get_current_main_editor() const;
-	bool _reselect_if_current(EditorPlugin *p_editor);
-
-protected:
-	void _notification(int p_what);
-
-public:
-	void set_button_container(HBoxContainer *p_button_hb);
-
-	void save_layout_to_config(Ref<ConfigFile> p_config_file, const String &p_section) const;
-	void load_layout_from_config(Ref<ConfigFile> p_config_file, const String &p_section);
-
-	void set_button_enabled(int p_index, bool p_enabled);
-	bool is_button_enabled(int p_index) const;
-
-	void select_next();
-	void select_prev();
-	void select_by_name(const String &p_name);
-	void select(int p_index);
-	int get_selected_index() const;
-	int get_plugin_index(EditorPlugin *p_editor) const;
-	EditorPlugin *get_selected_plugin() const;
-	EditorPlugin *get_plugin_by_name(const String &p_plugin_name) const;
-	bool can_auto_switch_screens() const;
-
-	VBoxContainer *get_control() const;
-
-	void add_main_plugin(EditorPlugin *p_editor);
-	void remove_main_plugin(EditorPlugin *p_editor);
-
-	EditorMainScreen();
+	static bool reselect_if_current(EditorMainScreen *p_main_screen, EditorPlugin *p_plugin) {
+		return p_main_screen->_reselect_if_current(p_plugin);
+	}
 };
+
+namespace TestEditorMainScreen {
+
+class CountingMainScreenPlugin : public EditorPlugin {
+	FOUNDRY_CLASS(CountingMainScreenPlugin, EditorPlugin);
+
+public:
+	int visible_true_count = 0;
+	int visible_false_count = 0;
+
+	virtual String get_plugin_name() const override {
+		return "Counting";
+	}
+
+	virtual bool has_main_screen() const override {
+		return true;
+	}
+
+	virtual void make_visible(bool p_visible) override {
+		if (p_visible) {
+			visible_true_count++;
+		} else {
+			visible_false_count++;
+		}
+	}
+};
+
+TEST_CASE("[Editor][MainScreen] reselecting current plugin reapplies visibility") {
+	EditorMainScreen *main_screen = memnew(EditorMainScreen);
+	CountingMainScreenPlugin *plugin = memnew(CountingMainScreenPlugin);
+	CountingMainScreenPlugin *other_plugin = memnew(CountingMainScreenPlugin);
+
+	EditorMainScreenTestAccess::set_selected_plugin(main_screen, plugin);
+
+	CHECK(EditorMainScreenTestAccess::reselect_if_current(main_screen, plugin));
+	CHECK(plugin->visible_true_count == 1);
+	CHECK(plugin->visible_false_count == 0);
+
+	CHECK_FALSE(EditorMainScreenTestAccess::reselect_if_current(main_screen, other_plugin));
+	CHECK(plugin->visible_true_count == 1);
+	CHECK(other_plugin->visible_true_count == 0);
+
+	memdelete(other_plugin);
+	memdelete(plugin);
+	memdelete(main_screen);
+}
+
+} // namespace TestEditorMainScreen

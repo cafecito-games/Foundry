@@ -94,6 +94,8 @@ private:
 	virtual void shortcut_input(const Ref<InputEvent> &p_event) override;
 
 protected:
+	static bool _resolve_tab_transfer_panes(TabBar *p_from_tab_bar, int p_receiver_pane, int &r_source_pane, int &r_target_pane);
+
 	void _notification(int p_what);
 	virtual void unhandled_key_input(const Ref<InputEvent> &p_event) override;
 	static void _bind_methods();

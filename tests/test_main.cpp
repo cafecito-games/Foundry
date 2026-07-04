@@ -57,6 +57,7 @@
 #include "tests/editor/test_editor_automation_workflow.h"
 #include "tests/editor/test_editor_export_platform_autoload.h"
 #include "tests/editor/test_editor_help_type_links.h"
+#include "tests/editor/test_editor_main_screen.h"
 #include "tests/editor/test_editor_scene_context.h"
 #include "tests/editor/test_scene_workspace.h"
 #include "tests/editor/test_extract_method_name_prompt.h"

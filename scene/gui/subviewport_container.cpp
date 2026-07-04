@@ -255,7 +255,19 @@ bool SubViewportContainer::is_mouse_target_enabled() {
 }
 
 void SubViewportContainer::add_child_notify(Node *p_child) {
-	if (Object::cast_to<SubViewport>(p_child)) {
+	SubViewport *viewport = Object::cast_to<SubViewport>(p_child);
+	if (viewport) {
+		if (stretch) {
+			viewport->set_size_force(get_size() / shrink);
+		}
+		if (is_inside_tree()) {
+			if (is_visible_in_tree()) {
+				viewport->set_update_mode(SubViewport::UPDATE_ALWAYS);
+			} else {
+				viewport->set_update_mode(SubViewport::UPDATE_DISABLED);
+			}
+			viewport->set_handle_input_locally(false); //do not handle input locally here
+		}
 		queue_redraw();
 	}
 }

@@ -85,7 +85,7 @@ public:
 	bool is_active() const { return active; }
 	void activate(Node *p_display_parent);
 	void deactivate();
-	void set_display_parent(Node *p_parent, bool p_audio_listener_2d);
+	void set_display_parent(Node *p_parent, bool p_audio_listener_2d, bool p_exclusive_viewport_parent = false);
 	bool scene_has_3d_content() const { return has_3d_content; }
 
 	Vector<ObjectID> get_selected_node_ids() const;

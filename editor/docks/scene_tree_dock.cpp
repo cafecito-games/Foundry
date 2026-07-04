@@ -3013,21 +3013,32 @@ void SceneTreeDock::set_scene_context(EditorSceneContext *p_context) {
 	}
 
 	// Stop listening to the previously bound context's selection.
-	if (editor_selection && editor_selection->is_connected("selection_changed", callable_mp(this, &SceneTreeDock::_selection_changed))) {
-		editor_selection->disconnect("selection_changed", callable_mp(this, &SceneTreeDock::_selection_changed));
-	}
+	_disconnect_selection_changed();
 
 	scene_context = p_context;
 	editor_selection = p_context ? p_context->get_selection() : nullptr;
+	editor_selection_id = editor_selection ? editor_selection->get_instance_id() : ObjectID();
 
 	// Push the new selection down to the tree editor so its edits target the
-	// bound context's selection, and start listening for its changes.
+	// bound context's selection, and start listening for its changes. The tree
+	// editor's selected item is UI-local state, so clear it before rebinding to
+	// avoid keeping a pointer to a node from the previous scene context after
+	// that context leaves the tree.
+	scene_tree->set_selected(nullptr, false);
 	scene_tree->set_editor_selection(editor_selection);
 	if (editor_selection && !editor_selection->is_connected("selection_changed", callable_mp(this, &SceneTreeDock::_selection_changed))) {
 		editor_selection->connect("selection_changed", callable_mp(this, &SceneTreeDock::_selection_changed));
 	}
 
 	update_tree();
+}
+
+void SceneTreeDock::_disconnect_selection_changed() {
+	EditorSelection *selection = ObjectDB::get_instance<EditorSelection>(editor_selection_id);
+	if (selection && selection->is_connected("selection_changed", callable_mp(this, &SceneTreeDock::_selection_changed))) {
+		selection->disconnect("selection_changed", callable_mp(this, &SceneTreeDock::_selection_changed));
+	}
+	editor_selection_id = ObjectID();
 }
 
 void SceneTreeDock::_selection_changed() {
@@ -4885,6 +4896,7 @@ SceneTreeDock::SceneTreeDock(EditorSelection *p_editor_selection, EditorData &p_
 	singleton = singleton ? singleton : this;
 	editor_data = &p_editor_data;
 	editor_selection = p_editor_selection;
+	editor_selection_id = editor_selection ? editor_selection->get_instance_id() : ObjectID();
 
 	VBoxContainer *main_vbox = memnew(VBoxContainer);
 	add_child(main_vbox);
@@ -5151,9 +5163,8 @@ SceneTreeDock::~SceneTreeDock() {
 	if (singleton == this) {
 		singleton = nullptr;
 	}
-	if (editor_selection && editor_selection->is_connected("selection_changed", callable_mp(this, &SceneTreeDock::_selection_changed))) {
-		editor_selection->disconnect("selection_changed", callable_mp(this, &SceneTreeDock::_selection_changed));
-	}
+	_disconnect_selection_changed();
+	editor_selection = nullptr;
 	if (!node_clipboard.is_empty()) {
 		_clear_clipboard();
 	}

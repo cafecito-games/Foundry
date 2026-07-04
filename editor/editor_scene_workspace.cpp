@@ -33,7 +33,6 @@
 #include "core/config/project_settings.h"
 #include "core/io/config_file.h"
 #include "editor/editor_data.h"
-#include "editor/editor_node.h"
 #include "editor/editor_string_names.h"
 #include "editor/scene/editor_scene_tabs.h"
 #include "editor/themes/editor_scale.h"
@@ -56,15 +55,32 @@ void EditorScenePane::_notification(int p_what) {
 	}
 }
 
+void EditorScenePane::_request_focus() {
+	for (Node *node = get_parent(); node; node = node->get_parent()) {
+		EditorSceneWorkspace *workspace = Object::cast_to<EditorSceneWorkspace>(node);
+		if (workspace) {
+			workspace->request_pane_focus(pane_index);
+			return;
+		}
+	}
+}
+
 void EditorScenePane::_pane_gui_input(const Ref<InputEvent> &p_event) {
 	Ref<InputEventMouseButton> mb = p_event;
 	if (mb.is_valid() && mb->is_pressed() && mb->get_button_index() == MouseButton::LEFT) {
-		EditorNode::get_singleton()->focus_pane(pane_index);
+		_request_focus();
 	}
 }
 
 void EditorScenePane::_pane_focus_entered() {
-	EditorNode::get_singleton()->focus_pane(pane_index);
+	_request_focus();
+}
+
+void EditorScenePane::input(const Ref<InputEvent> &p_event) {
+	Ref<InputEventMouseButton> mb = p_event;
+	if (mb.is_valid() && mb->is_pressed() && mb->get_button_index() == MouseButton::LEFT && is_visible_in_tree() && get_global_rect().has_point(mb->get_global_position())) {
+		_request_focus();
+	}
 }
 
 void EditorScenePane::set_focused_visual(bool p_focused) {
@@ -117,16 +133,9 @@ void EditorScenePane::_fit_content_children() {
 	}
 }
 
-void EditorScenePane::fit_main_screen(Control *p_main_screen) {
-	if (!p_main_screen || p_main_screen->get_parent() != content_host) {
-		return;
-	}
-	_fit_content_child(p_main_screen);
-	p_main_screen->set_size(content_host->get_size());
-}
-
 void EditorScenePane::setup(int p_pane_index) {
 	pane_index = p_pane_index;
+	set_process_input(true);
 	set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	add_theme_constant_override("separation", 0);
@@ -288,6 +297,7 @@ void EditorSceneWorkspace::unsplit_workspace() {
 
 	panes.remove_at(1);
 	memdelete(pane_1);
+	focused_pane = 0;
 	update_focus_visuals();
 }
 
@@ -297,9 +307,29 @@ void EditorSceneWorkspace::set_focused_pane(int p_pane) {
 	update_focus_visuals();
 }
 
+void EditorSceneWorkspace::request_pane_focus(int p_pane) {
+	ERR_FAIL_INDEX(p_pane, panes.size());
+	if (focused_pane == p_pane) {
+		return;
+	}
+	emit_signal("pane_focus_requested", p_pane);
+}
+
 EditorScenePane *EditorSceneWorkspace::get_pane(int p_pane) const {
 	ERR_FAIL_INDEX_V(p_pane, panes.size(), nullptr);
 	return panes[p_pane];
+}
+
+void EditorSceneWorkspace::fit_overlay_to_focused_pane(Control *p_overlay) const {
+	ERR_FAIL_NULL(p_overlay);
+	EditorScenePane *pane = get_pane(focused_pane);
+	ERR_FAIL_NULL(pane);
+	Control *content_host = pane->get_content_host();
+	ERR_FAIL_NULL(content_host);
+
+	p_overlay->set_anchors_and_offsets_preset(Control::PRESET_TOP_LEFT);
+	p_overlay->set_global_position(content_host->get_global_position());
+	p_overlay->set_size(content_host->get_size());
 }
 
 void EditorSceneWorkspace::update_focus_visuals() {

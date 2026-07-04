@@ -776,7 +776,7 @@ bool EditorData::reload_scene_from_memory(int p_idx, bool p_mark_unsaved) {
 	Vector<ObjectID> new_selection;
 	for (const ObjectID &node_id : context->get_selected_node_ids()) {
 		Node *selected_node = ObjectDB::get_instance<Node>(node_id);
-		if (!selected_node) {
+		if (!selected_node || (selected_node != old_root && !old_root->is_ancestor_of(selected_node))) {
 			continue;
 		}
 		NodePath p = old_root->get_path_to(selected_node);
@@ -955,7 +955,9 @@ Vector<int> EditorData::get_pane_scene_indices(int p_pane) const {
 
 int EditorData::pane_tab_to_scene_index(int p_pane, int p_tab) const {
 	const Vector<int> indices = get_pane_scene_indices(p_pane);
-	ERR_FAIL_INDEX_V(p_tab, indices.size(), -1);
+	if (p_tab < 0 || p_tab >= indices.size()) {
+		return -1;
+	}
 	return indices[p_tab];
 }
 
@@ -974,7 +976,45 @@ int EditorData::scene_index_to_pane_tab(int p_idx) const {
 void EditorData::set_scene_pane(int p_idx, int p_pane) {
 	ERR_FAIL_INDEX(p_idx, edited_scene.size());
 	ERR_FAIL_COND(p_pane < 0);
+	const int old_pane = edited_scene[p_idx].pane;
+	if (old_pane == p_pane) {
+		return;
+	}
+
+	_ensure_pane_capacity(MAX(old_pane, p_pane) + 1);
+
+	int old_pane_replacement = -1;
+	if (pane_current_scenes[old_pane] == p_idx) {
+		const Vector<int> old_pane_scenes = get_pane_scene_indices(old_pane);
+		for (int i = 0; i < old_pane_scenes.size(); i++) {
+			if (old_pane_scenes[i] != p_idx) {
+				continue;
+			}
+
+			if (i + 1 < old_pane_scenes.size()) {
+				old_pane_replacement = old_pane_scenes[i + 1];
+			} else if (i > 0) {
+				old_pane_replacement = old_pane_scenes[i - 1];
+			}
+			break;
+		}
+	}
+
 	edited_scene.write[p_idx].pane = p_pane;
+
+	if (pane_current_scenes[old_pane] == p_idx) {
+		pane_current_scenes.write[old_pane] = old_pane_replacement;
+		if (focused_pane == old_pane) {
+			current_edited_scene = old_pane_replacement;
+		}
+	}
+
+	if (pane_current_scenes[p_pane] < 0) {
+		pane_current_scenes.write[p_pane] = p_idx;
+		if (focused_pane == p_pane) {
+			current_edited_scene = p_idx;
+		}
+	}
 }
 
 int EditorData::get_pane_current_scene(int p_pane) const {

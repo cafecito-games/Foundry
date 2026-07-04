@@ -54,6 +54,7 @@ class EditorScenePane : public VBoxContainer {
 	TextureRect *preview_placeholder_icon = nullptr;
 	PanelContainer *focus_frame = nullptr;
 
+	void _request_focus();
 	void _pane_gui_input(const Ref<InputEvent> &p_event);
 	void _pane_focus_entered();
 	void _fit_content_child(Control *p_child);
@@ -61,6 +62,7 @@ class EditorScenePane : public VBoxContainer {
 
 protected:
 	void _notification(int p_what);
+	virtual void input(const Ref<InputEvent> &p_event) override;
 
 public:
 	int get_pane_index() const { return pane_index; }
@@ -70,7 +72,6 @@ public:
 
 	void set_focused_visual(bool p_focused);
 	void set_preview_mode(bool p_show_live_preview, bool p_show_3d_placeholder, const String &p_scene_name, const Ref<Texture2D> &p_icon);
-	void fit_main_screen(Control *p_main_screen);
 
 	void setup(int p_pane_index);
 
@@ -101,9 +102,11 @@ public:
 	void split_workspace(bool p_vertical);
 	void unsplit_workspace();
 	void set_focused_pane(int p_pane);
+	void request_pane_focus(int p_pane);
 	int get_focused_pane() const { return focused_pane; }
 	EditorScenePane *get_pane(int p_pane) const;
 	int get_pane_count() const { return panes.size(); }
+	void fit_overlay_to_focused_pane(Control *p_overlay) const;
 	bool is_split() const { return panes.size() > 1; }
 	bool is_split_vertical() const { return split_vertical; }
 	SplitContainer *get_split() const { return split; }

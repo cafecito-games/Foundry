@@ -30,6 +30,8 @@
 
 #pragma once
 
+#include "core/io/resource.h"
+
 #include "scene/2d/node_2d.h"
 #include "scene/gui/control.h"
 #include "scene/gui/subviewport_container.h"
@@ -44,8 +46,15 @@
 #endif // PHYSICS_2D_DISABLED
 
 #include "tests/test_macros.h"
+#include "tests/test_tools.h"
 
 namespace TestViewport {
+
+static Node *detached_viewport_texture_local_scene = nullptr;
+
+static Node *_get_detached_viewport_texture_local_scene() {
+	return detached_viewport_texture_local_scene;
+}
 
 class NotificationControlViewport : public Control {
 	FOUNDRY_CLASS(NotificationControlViewport, Control);
@@ -158,6 +167,26 @@ public:
 		valid_drop = true;
 	}
 };
+
+TEST_CASE("[SceneTree][Viewport] ViewportTexture skips detached local scene during viewport path updates") {
+	Node *(*previous_local_scene_func)() = Resource::_get_local_scene_func;
+	Node2D *detached_scene = memnew(Node2D);
+	detached_viewport_texture_local_scene = detached_scene;
+	Resource::_get_local_scene_func = _get_detached_viewport_texture_local_scene;
+
+	Window *root = SceneTree::get_singleton()->get_root();
+	SubViewport *viewport = memnew(SubViewport);
+
+	ErrorDetector error_detector;
+	root->add_child(viewport);
+	CHECK_FALSE(error_detector.has_error);
+
+	root->remove_child(viewport);
+	memdelete(viewport);
+	Resource::_get_local_scene_func = previous_local_scene_func;
+	detached_viewport_texture_local_scene = nullptr;
+	memdelete(detached_scene);
+}
 
 TEST_CASE("[SceneTree][Viewport] Controls and InputEvent handling") {
 	DragStart *node_a = memnew(DragStart);
@@ -1551,6 +1580,31 @@ TEST_CASE("[SceneTree][Viewport] Control mouse cursor shape") {
 		memdelete(node_b);
 		memdelete(node_a);
 	}
+}
+
+TEST_CASE("[SceneTree][Viewport] SubViewportContainer configures late-added child viewports") {
+	Window *root = SceneTree::get_singleton()->get_root();
+
+	SubViewportContainer *container = memnew(SubViewportContainer);
+	container->set_name("SubViewportContainer");
+	container->set_size(Size2i(320, 180));
+	container->set_stretch(true);
+	container->set_stretch_shrink(2);
+	root->add_child(container);
+
+	SubViewport *viewport = memnew(SubViewport);
+	viewport->set_name("SubViewport");
+	viewport->set_size(Size2i(64, 64));
+	viewport->set_update_mode(SubViewport::UPDATE_DISABLED);
+	viewport->set_handle_input_locally(true);
+	container->add_child(viewport);
+
+	CHECK(viewport->get_size() == Size2i(160, 90));
+	CHECK(viewport->get_update_mode() == SubViewport::UPDATE_ALWAYS);
+	CHECK_FALSE(viewport->is_handling_input_locally());
+
+	memdelete(viewport);
+	memdelete(container);
 }
 
 #ifndef PHYSICS_2D_DISABLED

@@ -34,6 +34,7 @@
 #include "editor/editor_scene_context.h"
 
 #include "scene/2d/node_2d.h"
+#include "scene/gui/subviewport_container.h"
 #include "scene/main/viewport.h"
 #include "scene/main/window.h"
 
@@ -193,6 +194,32 @@ TEST_CASE("[SceneTree][Editor] EditorSceneContext preserves inspector history ac
 
 	context->deactivate();
 	memdelete(context);
+}
+
+TEST_CASE("[SceneTree][Editor] EditorSceneContext exclusive display parent removes stale viewport siblings") {
+	Window *tree_root = SceneTree::get_singleton()->get_root();
+
+	SubViewportContainer *display_parent = memnew(SubViewportContainer);
+	tree_root->add_child(display_parent);
+	SubViewport *stale_viewport = memnew(SubViewport);
+	display_parent->add_child(stale_viewport);
+
+	EditorSceneContext *context = memnew(EditorSceneContext);
+	Node2D *scene = memnew(Node2D);
+	context->set_scene_root_node(scene);
+
+	context->set_display_parent(display_parent, true, true);
+
+	CHECK(context->is_active());
+	CHECK(context->get_viewport()->get_parent() == display_parent);
+	CHECK(stale_viewport->get_parent() == nullptr);
+	CHECK(display_parent->get_child_count() == 1);
+	CHECK(display_parent->get_child(0) == context->get_viewport());
+
+	memdelete(context);
+	memdelete(stale_viewport);
+	tree_root->remove_child(display_parent);
+	memdelete(display_parent);
 }
 
 TEST_CASE("[SceneTree][Editor] EditorSceneContext supports in-place root replacement") {

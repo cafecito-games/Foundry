@@ -124,6 +124,15 @@ int EditorMainScreen::_get_current_main_editor() const {
 	return 0;
 }
 
+bool EditorMainScreen::_reselect_if_current(EditorPlugin *p_editor) {
+	if (selected_plugin != p_editor) {
+		return false;
+	}
+
+	selected_plugin->make_visible(true);
+	return true;
+}
+
 void EditorMainScreen::select_next() {
 	int editor = _get_current_main_editor();
 
@@ -183,7 +192,7 @@ void EditorMainScreen::select(int p_index) {
 	EditorPlugin *new_editor = editor_table[p_index];
 	ERR_FAIL_NULL(new_editor);
 
-	if (selected_plugin == new_editor) {
+	if (_reselect_if_current(new_editor)) {
 		return;
 	}
 

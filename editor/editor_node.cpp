@@ -939,6 +939,18 @@ void EditorNode::_notification(int p_what) {
 			FileAccess::set_file_close_fail_notify_callback(nullptr);
 			log->deinit(); // Do not get messages anymore.
 			_activate_scene_context(nullptr);
+			if (scene_tree_dock_primary) {
+				scene_tree_dock_primary->set_scene_context(nullptr);
+			}
+			if (scene_tree_dock_secondary) {
+				scene_tree_dock_secondary->set_scene_context(nullptr);
+			}
+			if (inspector_dock_primary) {
+				inspector_dock_primary->set_scene_context(nullptr);
+			}
+			if (inspector_dock_secondary) {
+				inspector_dock_secondary->set_scene_context(nullptr);
+			}
 			editor_data.clear_edited_scenes();
 			get_viewport()->disconnect("size_changed", callable_mp(this, &EditorNode::_viewport_resized));
 		} break;
@@ -955,7 +967,8 @@ void EditorNode::_notification(int p_what) {
 			}
 			default_layout->set_value("docks", "dock_9", String(",").join(bottom_docks));
 
-			set_scene_viewport_2d_disabled(true);
+			_sync_scene_viewport_2d_state_with_main_screen();
+			_apply_scene_viewport_2d_state(get_scene_root());
 			RenderingServer::get_singleton()->viewport_set_environment_mode(get_viewport()->get_viewport_rid(), RenderingServer::VIEWPORT_ENVIRONMENT_DISABLED);
 			DisplayServer::get_singleton()->screen_set_keep_on(EDITOR_GET("interface/editor/keep_screen_on"));
 
@@ -2103,7 +2116,7 @@ void EditorNode::_save_editor_states(const String &p_file, int p_idx) {
 	if (scene_context) {
 		for (const ObjectID &selected_node_id : scene_context->get_selected_node_ids()) {
 			Node *selected_node = ObjectDB::get_instance<Node>(selected_node_id);
-			if (selected_node) {
+			if (selected_node && (selected_node == scene || scene->is_ancestor_of(selected_node))) {
 				selection_paths.push_back(scene->get_path_to(selected_node));
 			}
 		}
@@ -4617,13 +4630,13 @@ void EditorNode::_set_current_scene_nocheck(int p_idx) {
 	SceneTreeDock::get_singleton()->clear_previous_node_selection();
 
 	EditorSceneContext *new_context = p_idx >= 0 ? editor_data.get_scene_context(p_idx) : nullptr;
-	_activate_scene_context(new_context);
-
 	if (p_idx >= 0) {
 		editor_data.set_edited_scene(p_idx);
 	} else {
 		editor_data.set_pane_current_scene(editor_data.get_focused_pane(), -1);
 	}
+
+	_activate_scene_context(new_context);
 	_bind_pane_docks(editor_data.get_focused_pane());
 
 	_apply_scene_state_for_index(p_idx);
@@ -4771,8 +4784,9 @@ void EditorNode::_update_pane_display_attachments() {
 		if (is_focused_pane) {
 			pane->set_preview_mode(false, false, scene_name, icon);
 			if (scene_viewport_container) {
-				ctx->set_display_parent(scene_viewport_container, true);
+				ctx->set_display_parent(scene_viewport_container, true, true);
 			}
+			_sync_scene_viewport_2d_state_with_main_screen();
 			_apply_scene_viewport_2d_state(ctx->get_viewport());
 			if (last_theme_preview_mode_set) {
 				_apply_preview_themes(ctx->get_viewport());
@@ -4791,11 +4805,7 @@ void EditorNode::_update_pane_display_attachments() {
 	}
 
 	if (editor_main_screen) {
-		const int focused = editor_data.get_focused_pane();
-		EditorScenePane *focused_pane = scene_workspace->get_pane(focused);
-		if (focused_pane && editor_main_screen->get_parent() == focused_pane->get_content_host()) {
-			focused_pane->fit_main_screen(editor_main_screen);
-		}
+		_fit_main_screen_to_focused_pane();
 	}
 }
 
@@ -4805,12 +4815,11 @@ void EditorNode::_attach_active_scene_context() {
 	if (!active_scene_context || active_scene_context == no_scene_context || !scene_viewport_container) {
 		return;
 	}
-	if (!active_scene_context->is_active()) {
-		active_scene_context->activate(scene_viewport_container);
-	}
+	active_scene_context->set_display_parent(scene_viewport_container, true, true);
 	// With the scene back in the tree, stale history entries (e.g. nodes
 	// freed while the context was inactive) can be pruned.
 	active_scene_context->get_history()->cleanup_history();
+	_sync_scene_viewport_2d_state_with_main_screen();
 	_apply_scene_viewport_2d_state(active_scene_context->get_viewport());
 	if (last_theme_preview_mode_set) {
 		_apply_preview_themes(active_scene_context->get_viewport());
@@ -4824,6 +4833,17 @@ SubViewport *EditorNode::get_scene_root() {
 		return active_scene_context->get_viewport();
 	}
 	return placeholder_scene_viewport;
+}
+
+void EditorNode::_sync_scene_viewport_2d_state_with_main_screen() {
+	if (!editor_main_screen) {
+		return;
+	}
+
+	const int selected_main_screen = editor_main_screen->get_selected_index();
+	if (selected_main_screen >= 0) {
+		scene_viewport_2d_disabled = selected_main_screen != EditorMainScreen::EDITOR_2D;
+	}
 }
 
 void EditorNode::update_all_scene_tabs() {
@@ -4896,6 +4916,28 @@ void EditorNode::_destroy_secondary_docks() {
 	inspector_dock_secondary = nullptr;
 }
 
+void EditorNode::_connect_pane_layout_signals(int p_pane) {
+	if (!scene_workspace) {
+		return;
+	}
+	EditorScenePane *pane = scene_workspace->get_pane(p_pane);
+	if (!pane) {
+		return;
+	}
+	Control *content_host = pane->get_content_host();
+	Callable fit_callable = callable_mp(this, &EditorNode::_fit_main_screen_to_focused_pane);
+	if (content_host && !content_host->is_connected(SceneStringName(resized), fit_callable)) {
+		content_host->connect(SceneStringName(resized), fit_callable);
+	}
+}
+
+void EditorNode::_fit_main_screen_to_focused_pane() {
+	if (!scene_workspace || !editor_main_screen) {
+		return;
+	}
+	scene_workspace->fit_overlay_to_focused_pane(editor_main_screen);
+}
+
 void EditorNode::_split_workspace(bool p_vertical) {
 	if (!scene_workspace) {
 		return;
@@ -4903,6 +4945,7 @@ void EditorNode::_split_workspace(bool p_vertical) {
 	if (!scene_workspace->is_split()) {
 		_create_secondary_docks();
 		scene_workspace->split_workspace(p_vertical);
+		_connect_pane_layout_signals(1);
 		editor_data.set_pane_current_scene(1, editor_data.get_pane_current_scene(1));
 		_bind_pane_docks(0);
 		_bind_pane_docks(1);
@@ -4910,6 +4953,7 @@ void EditorNode::_split_workspace(bool p_vertical) {
 		_update_pane_display_attachments();
 	} else {
 		scene_workspace->split_workspace(p_vertical);
+		_fit_main_screen_to_focused_pane();
 	}
 	if (file_menu) {
 		file_menu->set_item_disabled(file_menu->get_item_index(WORKSPACE_CLOSE_SPLIT), false);
@@ -4935,7 +4979,6 @@ void EditorNode::_unsplit_workspace() {
 
 	_destroy_secondary_docks();
 	scene_workspace->unsplit_workspace();
-	editor_data.set_focused_pane(0);
 	focus_pane(0);
 	update_all_scene_tabs();
 	if (file_menu) {
@@ -4948,7 +4991,12 @@ void EditorNode::focus_pane(int p_pane) {
 	ERR_FAIL_COND(!scene_workspace);
 	ERR_FAIL_INDEX(p_pane, scene_workspace->get_pane_count());
 
-	if (editor_data.get_focused_pane() == p_pane) {
+	const int scene_idx = editor_data.get_pane_current_scene(p_pane);
+	EditorSceneContext *expected_context = scene_idx >= 0 ? editor_data.get_scene_context(scene_idx) : no_scene_context;
+	const bool already_focused = editor_data.get_focused_pane() == p_pane && scene_workspace->get_focused_pane() == p_pane;
+	const bool already_current = editor_data.get_edited_scene() == scene_idx && active_scene_context == expected_context;
+	if (already_focused && already_current) {
+		_fit_main_screen_to_focused_pane();
 		return;
 	}
 
@@ -4956,24 +5004,19 @@ void EditorNode::focus_pane(int p_pane) {
 	scene_workspace->set_focused_pane(p_pane);
 	EditorSceneTabs::set_focused_singleton(scene_workspace->get_pane(p_pane)->get_scene_tabs());
 	_update_focused_dock_singletons();
+	_fit_main_screen_to_focused_pane();
 
-	EditorScenePane *pane = scene_workspace->get_pane(p_pane);
-	Control *content_host = pane->get_content_host();
-	if (editor_main_screen->get_parent() != content_host) {
-		content_host->add_child(editor_main_screen);
-	}
-	pane->fit_main_screen(editor_main_screen);
-
-	const int scene_idx = editor_data.get_pane_current_scene(p_pane);
 	_set_current_scene_nocheck(scene_idx);
 }
 
 void EditorNode::on_pane_tab_changed(int p_pane, int p_tab) {
-	focus_pane(p_pane);
 	const int scene_idx = editor_data.pane_tab_to_scene_index(p_pane, p_tab);
-	if (scene_idx >= 0) {
-		_set_current_scene(scene_idx);
+	if (scene_idx < 0) {
+		return;
 	}
+
+	focus_pane(p_pane);
+	_set_current_scene(scene_idx);
 }
 
 void EditorNode::on_pane_tab_closed(int p_scene_idx) {
@@ -5019,14 +5062,15 @@ void EditorNode::transfer_scene_to_pane(int p_scene_idx, int p_target_pane, int 
 
 	editor_data.set_edited_scene(p_scene_idx);
 	editor_data.move_edited_scene_to_index(global_target);
+	const int moved_scene_idx = editor_data.get_edited_scene();
 
-	if (editor_data.get_pane_current_scene(source_pane) == p_scene_idx) {
+	if (editor_data.get_pane_current_scene(source_pane) == moved_scene_idx) {
 		editor_data.set_pane_current_scene(source_pane, -1);
 	}
-	editor_data.set_pane_current_scene(p_target_pane, p_scene_idx);
+	editor_data.set_pane_current_scene(p_target_pane, moved_scene_idx);
 
 	focus_pane(p_target_pane);
-	_set_current_scene(p_scene_idx);
+	_set_current_scene(moved_scene_idx);
 	update_all_scene_tabs();
 }
 
@@ -6820,12 +6864,7 @@ void EditorNode::_load_workspace_from_config(const Ref<ConfigFile> &p_config) {
 		}
 	}
 
-	const int focused = EditorSceneWorkspace::get_saved_focused_pane(p_config);
-	editor_data.set_focused_pane(focused);
-	if (scene_workspace) {
-		scene_workspace->set_focused_pane(focused);
-		EditorSceneTabs::set_focused_singleton(scene_workspace->get_pane(focused)->get_scene_tabs());
-	}
+	const int focused = scene_workspace ? CLAMP(EditorSceneWorkspace::get_saved_focused_pane(p_config), 0, scene_workspace->get_pane_count() - 1) : 0;
 	focus_pane(focused);
 
 	const int current = editor_data.get_pane_current_scene(focused);
@@ -7661,7 +7700,7 @@ void EditorNode::reload_instances_with_path_in_edited_scenes() {
 		LocalVector<Node *> scene_selected_nodes;
 		for (const ObjectID &selected_node_id : scene_context->get_selected_node_ids()) {
 			Node *selected_node = ObjectDB::get_instance<Node>(selected_node_id);
-			if (selected_node) {
+			if (selected_node && (selected_node == current_edited_scene || current_edited_scene->is_ancestor_of(selected_node))) {
 				scene_selected_nodes.push_back(selected_node);
 			}
 		}
@@ -9445,6 +9484,7 @@ EditorNode::EditorNode() {
 	srt->add_child(scene_workspace);
 	scene_workspace->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	scene_workspace->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	scene_workspace->connect("pane_focus_requested", callable_mp(this, &EditorNode::focus_pane));
 
 	scene_tabs = scene_workspace->get_pane(0)->get_scene_tabs();
 	EditorSceneTabs::set_focused_singleton(scene_tabs);
@@ -9462,8 +9502,10 @@ EditorNode::EditorNode() {
 
 	editor_main_screen = memnew(EditorMainScreen);
 	editor_main_screen->set_custom_minimum_size(Size2(0, 80) * EDSCALE);
-	scene_workspace->get_pane(0)->get_content_host()->add_child(editor_main_screen);
-	scene_workspace->get_pane(0)->fit_main_screen(editor_main_screen);
+	center_overlay->add_child(editor_main_screen);
+	_connect_pane_layout_signals(0);
+	center_overlay->connect(SceneStringName(resized), callable_mp(this, &EditorNode::_fit_main_screen_to_focused_pane));
+	_fit_main_screen_to_focused_pane();
 
 	placeholder_scene_viewport = memnew(SubViewport);
 	placeholder_scene_viewport->set_auto_translate_mode(AUTO_TRANSLATE_MODE_ALWAYS);
