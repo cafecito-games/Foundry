@@ -37,6 +37,7 @@
 #include "editor/automation/editor_automation_selector.h"
 #include "editor/automation/editor_automation_snapshot.h"
 #include "editor/automation/editor_automation_state.h"
+#include "editor/automation/editor_automation_trace.h"
 #include "editor/automation/editor_automation_wait.h"
 
 #include "core/io/json.h"
@@ -280,10 +281,16 @@ Array EditorAutomationMCPDispatcher::build_tools_list() {
 		Dictionary args_schema = _object_schema();
 		args_schema["description"] = "Action arguments such as text, key, or value.";
 		props["args"] = args_schema;
+		Dictionary wait_schema = _object_schema();
+		wait_schema["description"] = "Optional wait/settle clause after the action. Accepts a full condition object (type, selector, marker, ...) or shorthand { \"condition\": \"editor_idle\" }.";
+		props["wait"] = wait_schema;
+		Dictionary wait_timeout = _string_schema("Timeout in milliseconds for the optional wait clause (default 5000).");
+		wait_timeout["type"] = "integer";
+		props["wait_timeout_ms"] = wait_timeout;
 		Array required;
 		required.push_back("action");
 		tools.push_back(_make_tool("act",
-				"Performs a semantic or input action on a selected element and returns the structured result.",
+				"Performs a semantic or input action on a selected element and optionally waits for a UI condition in one call.",
 				props, required));
 	}
 
@@ -294,11 +301,17 @@ Array EditorAutomationMCPDispatcher::build_tools_list() {
 		Dictionary timeout = _string_schema("Timeout in milliseconds (default 5000).");
 		timeout["type"] = "integer";
 		props["timeout_ms"] = timeout;
-		Array required;
-		required.push_back("condition");
+		Dictionary wait_id = _string_schema("Poll or cancel an existing cooperative wait by id.");
+		props["wait_id"] = wait_id;
+		Dictionary cancel = _string_schema("When true with wait_id, cancel the pending wait.");
+		cancel["type"] = "boolean";
+		props["cancel"] = cancel;
+		Dictionary cooperative = _string_schema("When true (default), return immediately while the wait is pending instead of blocking the server.");
+		cooperative["type"] = "boolean";
+		props["cooperative"] = cooperative;
 		tools.push_back(_make_tool("wait_for",
-				"Waits for a UI condition and returns success/failure diagnostics.",
-				props, required));
+				"Waits cooperatively for a UI condition and returns success/failure diagnostics without blocking the editor for the full timeout.",
+				props, Array()));
 	}
 
 	{
@@ -647,7 +660,221 @@ Dictionary EditorAutomationMCPDispatcher::_tool_find_elements(const Dictionary &
 	return result;
 }
 
+Dictionary EditorAutomationMCPDispatcher::_build_condition_from_args(const Dictionary &p_args) {
+	Dictionary condition;
+	if (p_args.has("type")) {
+		condition["type"] = _read_string(p_args, "type");
+	} else {
+		condition["type"] = _read_string(p_args, "condition");
+	}
+	if (p_args.has("selector")) {
+		condition["selector"] = _read_dict(p_args, "selector");
+	}
+	static const char *passthrough_keys[] = { "text", "severity", "severities", "marker", "fields", "baseline" };
+	for (const char *key : passthrough_keys) {
+		if (p_args.has(key)) {
+			condition[key] = p_args.get(key, Variant());
+		}
+	}
+	return condition;
+}
+
+Dictionary EditorAutomationMCPDispatcher::_wait_context_from_handle(const EditorAutomationCooperativeWaitHandle &p_handle) {
+	Dictionary result;
+	result["wait_id"] = p_handle.wait_id;
+	result["condition"] = p_handle.condition;
+	result["elapsed_sec"] = p_handle.elapsed_sec;
+
+	switch (p_handle.status) {
+		case EditorAutomationCooperativeWaitStatus::PENDING:
+			result["status"] = "pending";
+			result["ok"] = false;
+			break;
+		case EditorAutomationCooperativeWaitStatus::CANCELLED:
+			result["status"] = "cancelled";
+			result["ok"] = false;
+			result["kind"] = p_handle.result.kind;
+			result["message"] = p_handle.result.message;
+			if (!p_handle.result.details.is_empty()) {
+				result["details"] = p_handle.result.details;
+			}
+			break;
+		case EditorAutomationCooperativeWaitStatus::COMPLETE:
+			result["status"] = "complete";
+			result["ok"] = p_handle.result.ok;
+			if (!p_handle.result.kind.is_empty()) {
+				result["kind"] = p_handle.result.kind;
+			}
+			if (!p_handle.result.message.is_empty()) {
+				result["message"] = p_handle.result.message;
+			}
+			if (!p_handle.result.details.is_empty()) {
+				result["details"] = p_handle.result.details;
+			}
+			break;
+	}
+	return result;
+}
+
+Dictionary EditorAutomationMCPDispatcher::_cooperative_wait_response(const EditorAutomationCooperativeWaitHandle &p_handle, bool &r_is_error) {
+	Dictionary result = _wait_context_from_handle(p_handle);
+	if (p_handle.act_context.active) {
+		result["action"] = p_handle.act_context.action_result;
+		if (!p_handle.act_context.action.is_empty()) {
+			result["action_name"] = p_handle.act_context.action;
+		}
+		if (!p_handle.act_context.selector.is_empty()) {
+			result["selector"] = p_handle.act_context.selector;
+		}
+		Dictionary marker_dict;
+		marker_dict["message_index"] = p_handle.act_context.log_marker.message_index;
+		result["log_marker"] = marker_dict;
+		result["action_trace"] = EditorAutomationTrace::get_singleton().get_recent(16);
+	}
+
+	if (p_handle.status == EditorAutomationCooperativeWaitStatus::PENDING) {
+		r_is_error = false;
+		return result;
+	}
+
+	if (p_handle.act_context.active && p_handle.act_context.action_result.get("ok", false) && !p_handle.result.ok) {
+		result["ok"] = false;
+		result["kind"] = p_handle.result.kind == "timeout" ? "wait_timeout" : "wait_failed";
+		result["message"] = p_handle.result.message;
+
+		const EditorAutomationSnapshot snapshot = _snapshot_root() != nullptr
+				? EditorAutomationSnapshot::capture_from_node(_snapshot_root())
+				: EditorAutomationSnapshot::capture_from_editor();
+		const EditorAutomationDiagnostics diagnostics = EditorAutomationDiagnosticsBuilder::build_for_wait_failure(
+				String(result["kind"]),
+				p_handle.result.message,
+				p_handle.condition,
+				p_handle.act_context.action_result,
+				p_handle.act_context.selector,
+				snapshot,
+				p_handle.act_context.log_marker);
+		result["details"] = diagnostics.details;
+		r_is_error = true;
+		return result;
+	}
+
+	if (!p_handle.result.ok && p_handle.status == EditorAutomationCooperativeWaitStatus::COMPLETE &&
+			p_handle.result.kind == "timeout" && !p_handle.act_context.active) {
+		const EditorAutomationSnapshot snapshot = _snapshot_root() != nullptr
+				? EditorAutomationSnapshot::capture_from_node(_snapshot_root())
+				: EditorAutomationSnapshot::capture_from_editor();
+		const EditorAutomationDiagnostics diagnostics = EditorAutomationDiagnosticsBuilder::build_for_wait_failure(
+				"timeout",
+				p_handle.result.message,
+				p_handle.condition,
+				Dictionary(),
+				Dictionary(),
+				snapshot,
+				EditorAutomationLog::create_marker());
+		result["details"] = diagnostics.details;
+	}
+
+	r_is_error = !p_handle.result.ok && p_handle.status != EditorAutomationCooperativeWaitStatus::CANCELLED;
+	if (p_handle.status == EditorAutomationCooperativeWaitStatus::CANCELLED) {
+		r_is_error = true;
+	}
+	return result;
+}
+
+Dictionary EditorAutomationMCPDispatcher::_compose_act_wait_result(
+		const Dictionary &p_action_result,
+		const EditorAutomationCooperativeWaitHandle &p_handle,
+		const Dictionary &p_condition,
+		const Dictionary &p_selector,
+		const String &p_action,
+		const EditorAutomationLogMarker &p_log_marker,
+		bool &r_is_error) {
+	if (p_handle.status == EditorAutomationCooperativeWaitStatus::PENDING) {
+		Dictionary result;
+		result["ok"] = false;
+		result["status"] = "pending";
+		result["wait_id"] = p_handle.wait_id;
+		result["action"] = p_action_result;
+		result["condition"] = p_condition;
+		result["elapsed_sec"] = p_handle.elapsed_sec;
+		Dictionary marker_dict;
+		marker_dict["message_index"] = p_log_marker.message_index;
+		result["log_marker"] = marker_dict;
+		r_is_error = false;
+		return result;
+	}
+
+	Dictionary result;
+	result["action"] = p_action_result;
+	result["wait"] = _wait_context_from_handle(p_handle);
+	result["condition"] = p_condition;
+	Dictionary marker_dict;
+	marker_dict["message_index"] = p_log_marker.message_index;
+	result["log_marker"] = marker_dict;
+	result["action_trace"] = EditorAutomationTrace::get_singleton().get_recent(16);
+
+	const bool action_ok = (bool)p_action_result.get("ok", false);
+	const bool wait_ok = p_handle.result.ok;
+	result["ok"] = action_ok && wait_ok;
+
+	if (action_ok && wait_ok) {
+		r_is_error = false;
+		return result;
+	}
+
+	if (!action_ok) {
+		result["ok"] = false;
+		result["kind"] = "action_failed";
+		result["message"] = p_action_result.get("message", "Action failed before wait.");
+		r_is_error = true;
+		return result;
+	}
+
+	result["ok"] = false;
+	result["kind"] = p_handle.result.kind == "timeout" ? "wait_timeout" : "wait_failed";
+	result["message"] = p_handle.result.message;
+
+	const EditorAutomationSnapshot snapshot = _snapshot_root() != nullptr
+			? EditorAutomationSnapshot::capture_from_node(_snapshot_root())
+			: EditorAutomationSnapshot::capture_from_editor();
+	const EditorAutomationDiagnostics diagnostics = EditorAutomationDiagnosticsBuilder::build_for_wait_failure(
+			String(result["kind"]),
+			p_handle.result.message,
+			p_condition,
+			p_action_result,
+			p_selector,
+			snapshot,
+			p_log_marker);
+	result["details"] = diagnostics.details;
+	r_is_error = true;
+	return result;
+}
+
 Dictionary EditorAutomationMCPDispatcher::_tool_act(const Dictionary &p_args, bool &r_is_error) {
+	const String wait_id = _read_string(p_args, "wait_id");
+	if (!wait_id.is_empty()) {
+		EditorAutomationCooperativeWaitHandle handle;
+		if (!EditorAutomationWait::poll_cooperative(wait_id, handle)) {
+			r_is_error = true;
+			Dictionary result;
+			result["ok"] = false;
+			result["kind"] = "unknown_wait";
+			result["message"] = vformat("Unknown wait id '%s'.", wait_id);
+			return result;
+		}
+		if (handle.act_context.active) {
+			return _compose_act_wait_result(
+					handle.act_context.action_result,
+					handle,
+					handle.condition,
+					handle.act_context.selector,
+					handle.act_context.action,
+					handle.act_context.log_marker,
+					r_is_error);
+		}
+		return _cooperative_wait_response(handle, r_is_error);
+	}
+
 	const String action = _read_string(p_args, "action");
 	const Dictionary selector = _read_dict(p_args, "selector");
 
@@ -661,25 +888,85 @@ Dictionary EditorAutomationMCPDispatcher::_tool_act(const Dictionary &p_args, bo
 			? EditorAutomationSnapshot::capture_from_node(_snapshot_root())
 			: EditorAutomationSnapshot::capture_from_editor();
 
+	const EditorAutomationLogMarker log_marker = EditorAutomationLog::create_marker();
 	const EditorAutomationActionResult action_result = EditorAutomationDriver::perform(snapshot, action, selector, options_dict);
-	r_is_error = !action_result.ok;
-	return action_result.to_dictionary();
+	const Dictionary action_dict = action_result.to_dictionary();
+
+	const Dictionary wait_clause = _read_dict(p_args, "wait");
+	if (wait_clause.is_empty()) {
+		r_is_error = !action_result.ok;
+		return action_dict;
+	}
+
+	if (!action_result.ok) {
+		Dictionary result;
+		result["ok"] = false;
+		result["kind"] = "action_failed";
+		result["message"] = action_result.message;
+		result["action"] = action_dict;
+		r_is_error = true;
+		return result;
+	}
+
+	Dictionary condition = _build_condition_from_args(wait_clause);
+	int wait_timeout_ms = _read_int(p_args, "wait_timeout_ms", (int)(options.default_wait_timeout_sec * 1000.0));
+	if (wait_timeout_ms < 0) {
+		wait_timeout_ms = 0;
+	}
+
+	EditorAutomationWaitContext context;
+	context.snapshot_root = _snapshot_root();
+
+	EditorAutomationActWaitContext act_context;
+	act_context.active = true;
+	act_context.action = action;
+	act_context.selector = selector;
+	act_context.action_result = action_dict;
+	act_context.log_marker = log_marker;
+
+	const String new_wait_id = EditorAutomationWait::begin_cooperative(condition, wait_timeout_ms / 1000.0, context, act_context);
+	EditorAutomationCooperativeWaitHandle handle;
+	EditorAutomationWait::poll_cooperative(new_wait_id, handle);
+	return _compose_act_wait_result(action_dict, handle, condition, selector, action, log_marker, r_is_error);
 }
 
 Dictionary EditorAutomationMCPDispatcher::_tool_wait_for(const Dictionary &p_args, bool &r_is_error) {
-	Dictionary condition;
-	condition["type"] = _read_string(p_args, "condition");
-	if (p_args.has("selector")) {
-		condition["selector"] = _read_dict(p_args, "selector");
-	}
-	// Pass through any extra condition fields (text, severity, marker, fields, baseline).
-	static const char *passthrough_keys[] = { "text", "severity", "severities", "marker", "fields", "baseline" };
-	for (const char *key : passthrough_keys) {
-		if (p_args.has(key)) {
-			condition[key] = p_args.get(key, Variant());
+	const String wait_id = _read_string(p_args, "wait_id");
+	if (!wait_id.is_empty()) {
+		if (_read_bool(p_args, "cancel", false)) {
+			EditorAutomationCooperativeWaitHandle handle;
+			if (!EditorAutomationWait::cancel_cooperative(wait_id, handle)) {
+				r_is_error = true;
+				Dictionary result;
+				result["ok"] = false;
+				result["kind"] = "unknown_wait";
+				result["message"] = vformat("Unknown wait id '%s'.", wait_id);
+				return result;
+			}
+			return _cooperative_wait_response(handle, r_is_error);
 		}
+
+		EditorAutomationCooperativeWaitHandle handle;
+		if (!EditorAutomationWait::poll_cooperative(wait_id, handle)) {
+			r_is_error = true;
+			Dictionary result;
+			result["ok"] = false;
+			result["kind"] = "unknown_wait";
+			result["message"] = vformat("Unknown wait id '%s'.", wait_id);
+			return result;
+		}
+		return _cooperative_wait_response(handle, r_is_error);
 	}
 
+	const Dictionary condition = _build_condition_from_args(p_args);
+	if (_read_string(condition, "type").is_empty()) {
+		r_is_error = true;
+		Dictionary result;
+		result["ok"] = false;
+		result["kind"] = "invalid_params";
+		result["message"] = "wait_for requires 'condition' or 'wait_id'.";
+		return result;
+	}
 	int timeout_ms = _read_int(p_args, "timeout_ms", (int)(options.default_wait_timeout_sec * 1000.0));
 	if (timeout_ms < 0) {
 		timeout_ms = 0;
@@ -688,9 +975,17 @@ Dictionary EditorAutomationMCPDispatcher::_tool_wait_for(const Dictionary &p_arg
 	EditorAutomationWaitContext context;
 	context.snapshot_root = _snapshot_root();
 
-	const EditorAutomationWaitResult wait_result = EditorAutomationWait::wait_for(condition, timeout_ms / 1000.0, context);
-	r_is_error = !wait_result.ok;
-	return wait_result.to_dictionary();
+	const bool cooperative = _read_bool(p_args, "cooperative", true);
+	if (!cooperative) {
+		const EditorAutomationWaitResult wait_result = EditorAutomationWait::wait_for(condition, timeout_ms / 1000.0, context);
+		r_is_error = !wait_result.ok;
+		return wait_result.to_dictionary();
+	}
+
+	const String new_wait_id = EditorAutomationWait::begin_cooperative(condition, timeout_ms / 1000.0, context);
+	EditorAutomationCooperativeWaitHandle handle;
+	EditorAutomationWait::poll_cooperative(new_wait_id, handle);
+	return _cooperative_wait_response(handle, r_is_error);
 }
 
 Dictionary EditorAutomationMCPDispatcher::_tool_read_editor_state(const Dictionary &p_args, bool &r_is_error) {
