@@ -65,6 +65,7 @@ uint64_t next_snapshot_generation = 1;
 
 class EditorAutomationSnapshotBuilder {
 	EditorAutomationSnapshotData &data;
+	EditorAutomationSnapshotOptions options;
 	Node *path_root = nullptr;
 	Control *focused_control = nullptr;
 
@@ -437,12 +438,13 @@ class EditorAutomationSnapshotBuilder {
 		return false;
 	}
 
-	int _add_node(Node *p_node, int p_parent_index, bool p_is_root) {
+	int _add_node(Node *p_node, int p_parent_index, bool p_is_root, bool p_internal = false) {
 		if (!_node_is_visible(p_node)) {
 			return -1;
 		}
 
 		EditorAutomationElement element;
+		element.internal = p_internal;
 		element.object_id = p_node->get_instance_id();
 		element.id = EditorAutomationSnapshot::make_control_element_id(data.generation, element.object_id);
 		element.handle = EditorAutomationSnapshot::make_durable_handle("object", String::num_uint64(element.object_id));
@@ -497,22 +499,27 @@ class EditorAutomationSnapshotBuilder {
 			return element_index;
 		}
 
-		// Descend into internal children only for Window nodes. Dialogs
+		// Internal-child policy (see EditorAutomationSnapshotOptions): by default,
+		// descend into internal children only for Window nodes. Dialogs
 		// (AcceptDialog/ConfirmationDialog and subclasses like CreateDialog) add
 		// their action buttons (OK/Cancel/custom) via an internal buttons HBox, so
 		// without this those buttons are invisible to automation and dialogs can
 		// never be confirmed. Regular Controls keep hiding their internal parts
-		// (e.g. SpinBox line edit, Tree/ItemList scrollbars) to avoid noise.
-		const bool include_internal = Object::cast_to<Window>(p_node) != nullptr;
+		// (e.g. SpinBox line edit, Tree/ItemList scrollbars) to avoid noise unless
+		// the caller opts in with include_internal; opted-in internal subtrees are
+		// flagged `internal` so agents can avoid depending on them by default.
+		const bool parent_is_window = Object::cast_to<Window>(p_node) != nullptr;
+		const bool include_internal = parent_is_window || options.include_internal;
 		for (int i = 0; i < p_node->get_child_count(include_internal); i++) {
 			Node *child = p_node->get_child(i, include_internal);
 			if (_should_skip_child(p_node, child)) {
 				continue;
 			}
+			const bool child_internal = p_internal || (child->is_internal() && !parent_is_window);
 			if (Control *child_control = Object::cast_to<Control>(child)) {
-				_add_node(child_control, element_index, false);
+				_add_node(child_control, element_index, false, child_internal);
 			} else if (Window *child_window = Object::cast_to<Window>(child)) {
-				_add_node(child_window, element_index, false);
+				_add_node(child_window, element_index, false, child_internal);
 			}
 		}
 
@@ -524,8 +531,8 @@ class EditorAutomationSnapshotBuilder {
 	}
 
 public:
-	explicit EditorAutomationSnapshotBuilder(EditorAutomationSnapshotData &p_data) :
-			data(p_data) {
+	EditorAutomationSnapshotBuilder(EditorAutomationSnapshotData &p_data, const EditorAutomationSnapshotOptions &p_options) :
+			data(p_data), options(p_options) {
 		data.generation = next_snapshot_generation++;
 	}
 
@@ -561,6 +568,9 @@ Dictionary _element_to_dictionary(const EditorAutomationElement &p_element, cons
 	dict["focused"] = p_element.focused;
 	dict["pressed"] = p_element.pressed;
 	dict["selected"] = p_element.selected;
+	if (p_element.internal) {
+		dict["internal"] = true;
+	}
 
 	Array bounds;
 	bounds.push_back(p_element.bounds.position.x);
@@ -634,22 +644,22 @@ bool EditorAutomationSnapshot::is_virtual_durable_kind(const String &p_kind) {
 	return p_kind == "tree_item" || p_kind == "list_item" || p_kind == "menu_item" || p_kind == "tab";
 }
 
-EditorAutomationSnapshot EditorAutomationSnapshot::capture_from_node(Node *p_root) {
+EditorAutomationSnapshot EditorAutomationSnapshot::capture_from_node(Node *p_root, const EditorAutomationSnapshotOptions &p_options) {
 	LocalVector<Node *> roots;
 	if (p_root != nullptr) {
 		roots.push_back(p_root);
 	}
-	return capture_from_roots(roots);
+	return capture_from_roots(roots, p_options);
 }
 
-EditorAutomationSnapshot EditorAutomationSnapshot::capture_from_roots(const LocalVector<Node *> &p_roots) {
+EditorAutomationSnapshot EditorAutomationSnapshot::capture_from_roots(const LocalVector<Node *> &p_roots, const EditorAutomationSnapshotOptions &p_options) {
 	EditorAutomationSnapshot snapshot;
-	EditorAutomationSnapshotBuilder builder(snapshot.data);
+	EditorAutomationSnapshotBuilder builder(snapshot.data, p_options);
 	builder.build_from_roots(p_roots);
 	return snapshot;
 }
 
-EditorAutomationSnapshot EditorAutomationSnapshot::capture_from_editor() {
+EditorAutomationSnapshot EditorAutomationSnapshot::capture_from_editor(const EditorAutomationSnapshotOptions &p_options) {
 	LocalVector<Node *> roots;
 	EditorNode *editor_node = EditorNode::get_singleton();
 	if (editor_node != nullptr && editor_node->is_editor_ready() && editor_node->is_inside_tree()) {
@@ -667,7 +677,7 @@ EditorAutomationSnapshot EditorAutomationSnapshot::capture_from_editor() {
 			}
 		}
 	}
-	return capture_from_roots(roots);
+	return capture_from_roots(roots, p_options);
 }
 
 const EditorAutomationElement *EditorAutomationSnapshot::find_by_id(const String &p_id) const {

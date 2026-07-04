@@ -257,6 +257,7 @@ Ref<EditorAutomationMCPJsonSchema> _element_node_schema() {
 	schema->add_property("focused", EditorAutomationMCPJsonSchema::boolean("Whether the element currently has keyboard focus."));
 	schema->add_property("pressed", EditorAutomationMCPJsonSchema::boolean("Whether the element is in a pressed/toggled state."));
 	schema->add_property("selected", EditorAutomationMCPJsonSchema::boolean("Whether the element is in a selected state."));
+	schema->add_property("internal", EditorAutomationMCPJsonSchema::boolean("True for implementation-detail elements exposed only via include_internal (a SpinBox line edit, Tree/ItemList scrollbars, ...). Absent/false for the stable, user-facing surface; avoid depending on internal elements by default."));
 	schema->add_property("bounds", EditorAutomationMCPJsonSchema::array(EditorAutomationMCPJsonSchema::integer("Coordinate or size component."), "Viewport bounds as [x, y, width, height]."));
 	schema->add_property("actions", EditorAutomationMCPJsonSchema::array(EditorAutomationMCPJsonSchema::string("Semantic action name."), "Semantic actions the element advertises as likely supported."));
 	schema->add_property("metadata", EditorAutomationMCPJsonSchema::object("Additional element metadata for specialized selector matching."));
@@ -823,6 +824,7 @@ EditorAutomationMCPElementNode EditorAutomationMCPElementNode::from_element(cons
 	node.focused = p_element.focused;
 	node.pressed = p_element.pressed;
 	node.selected = p_element.selected;
+	node.internal = p_element.internal;
 	node.bounds = p_element.bounds;
 	node.actions = p_element.actions;
 	node.metadata = p_element.metadata;
@@ -843,6 +845,9 @@ Dictionary EditorAutomationMCPElementNode::to_dictionary() const {
 	dict["focused"] = focused;
 	dict["pressed"] = pressed;
 	dict["selected"] = selected;
+	if (internal) {
+		dict["internal"] = true;
+	}
 
 	Array bounds_array;
 	bounds_array.push_back(bounds.position.x);
@@ -873,8 +878,9 @@ Ref<EditorAutomationMCPJsonSchema> EditorAutomationMCPObserveUIInput::schema() {
 			"Prefer subtree_cursor pagination over raising max_depth or max_children for large trees.");
 	schema->add_property("max_depth", EditorAutomationMCPJsonSchema::integer("Maximum tree depth to include from each root (default 8)."));
 	schema->add_property("include_hidden", EditorAutomationMCPJsonSchema::boolean("Include hidden elements when true. Defaults to false for action-oriented snapshots."));
+	schema->add_property("include_internal", EditorAutomationMCPJsonSchema::boolean("Include internal implementation children of controls (SpinBox line edits, Tree/ItemList scrollbars, ...) flagged internal:true (default false). Window/dialog internals such as dialog buttons are always included."));
 	schema->add_property("max_children", EditorAutomationMCPJsonSchema::integer("Maximum children per node before pagination (default 32)."));
-	schema->add_property("subtree_cursor", EditorAutomationMCPJsonSchema::string("Opaque cursor from children_next_cursor to fetch the next child page without refreshing the whole tree."));
+	schema->add_property("subtree_cursor", EditorAutomationMCPJsonSchema::string("Opaque cursor from children_next_cursor to fetch the next child page without refreshing the whole tree. The cursor remembers include_hidden/include_internal from the originating call."));
 	return schema;
 }
 
@@ -885,6 +891,9 @@ EditorAutomationMCPParseResult<EditorAutomationMCPObserveUIInput> EditorAutomati
 		return EditorAutomationMCPParseResult<EditorAutomationMCPObserveUIInput>::invalid(error.field, error.message);
 	}
 	if (!_read_optional_bool(p_dict, "include_hidden", input.values, error)) {
+		return EditorAutomationMCPParseResult<EditorAutomationMCPObserveUIInput>::invalid(error.field, error.message);
+	}
+	if (!_read_optional_bool(p_dict, "include_internal", input.values, error)) {
 		return EditorAutomationMCPParseResult<EditorAutomationMCPObserveUIInput>::invalid(error.field, error.message);
 	}
 	if (!_read_optional_int(p_dict, "max_children", input.values, error)) {
@@ -906,6 +915,7 @@ Ref<EditorAutomationMCPJsonSchema> EditorAutomationMCPFindElementsInput::schema(
 	schema->add_property("selector", EditorAutomationMCPSelector::schema());
 	schema->add_property("max_results", EditorAutomationMCPJsonSchema::integer("Maximum number of matches to return per page (default 20)."));
 	schema->add_property("cursor", EditorAutomationMCPJsonSchema::string("Opaque pagination cursor returned as next_cursor from a previous find_elements response."));
+	schema->add_property("include_internal", EditorAutomationMCPJsonSchema::boolean("Match against internal implementation children too (default false)."));
 	EditorAutomationMCPFailureAttachmentOptionsInput::add_schema_properties(schema);
 	schema->add_required("selector");
 	return schema;
@@ -927,6 +937,9 @@ EditorAutomationMCPParseResult<EditorAutomationMCPFindElementsInput> EditorAutom
 		return EditorAutomationMCPParseResult<EditorAutomationMCPFindElementsInput>::invalid(error.field, error.message);
 	}
 	if (!_read_optional_string(p_dict, "cursor", input.values, error)) {
+		return EditorAutomationMCPParseResult<EditorAutomationMCPFindElementsInput>::invalid(error.field, error.message);
+	}
+	if (!_read_optional_bool(p_dict, "include_internal", input.values, error)) {
 		return EditorAutomationMCPParseResult<EditorAutomationMCPFindElementsInput>::invalid(error.field, error.message);
 	}
 	const EditorAutomationMCPParseResult<EditorAutomationMCPFailureAttachmentOptionsInput> attachments = EditorAutomationMCPFailureAttachmentOptionsInput::parse(p_dict);
@@ -953,6 +966,7 @@ Ref<EditorAutomationMCPJsonSchema> EditorAutomationMCPActInput::schema() {
 	schema->add_property("wait", EditorAutomationMCPWaitCondition::schema());
 	schema->add_property("wait_timeout_ms", EditorAutomationMCPJsonSchema::integer("Timeout in milliseconds for the optional wait clause (default 5000)."));
 	schema->add_property("wait_id", EditorAutomationMCPJsonSchema::string("Poll or continue an existing cooperative act+wait by id."));
+	schema->add_property("include_internal", EditorAutomationMCPJsonSchema::boolean("Resolve the selector against internal implementation children too (default false). Required when targeting an element observed with include_internal."));
 	EditorAutomationMCPFailureAttachmentOptionsInput::add_schema_properties(schema);
 	// `action` is required only for new interactions. Polling an existing
 	// cooperative act+wait uses wait_id without repeating action/selector; the
@@ -999,6 +1013,9 @@ EditorAutomationMCPParseResult<EditorAutomationMCPActInput> EditorAutomationMCPA
 		input.values["wait"] = wait.value.to_dictionary();
 	}
 	if (!_read_optional_int(p_dict, "wait_timeout_ms", input.values, error)) {
+		return EditorAutomationMCPParseResult<EditorAutomationMCPActInput>::invalid(error.field, error.message);
+	}
+	if (!_read_optional_bool(p_dict, "include_internal", input.values, error)) {
 		return EditorAutomationMCPParseResult<EditorAutomationMCPActInput>::invalid(error.field, error.message);
 	}
 	const EditorAutomationMCPParseResult<EditorAutomationMCPFailureAttachmentOptionsInput> attachments = EditorAutomationMCPFailureAttachmentOptionsInput::parse(p_dict);

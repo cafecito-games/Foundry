@@ -35,13 +35,29 @@
 class Control;
 class Node;
 
+// Internal-child snapshot policy:
+//
+// By default the snapshot walk descends into internal children only for
+// Window nodes. Dialogs (AcceptDialog/ConfirmationDialog and subclasses) add
+// their action buttons via an internal buttons HBox, so window internals are
+// part of the supported, user-facing automation surface and are NOT marked
+// `internal`. Internal children of regular Controls (a SpinBox's embedded
+// LineEdit, Tree/ItemList scrollbars, ScrollContainer scrollbars, ...) are
+// implementation details: they are hidden by default to keep snapshots
+// readable, and only exposed when `include_internal` is requested. Every
+// element exposed through that opt-in (and its whole subtree) is flagged
+// `internal = true` so agents can avoid depending on it by default.
+struct EditorAutomationSnapshotOptions {
+	bool include_internal = false;
+};
+
 class EditorAutomationSnapshot {
 	EditorAutomationSnapshotData data;
 
 public:
-	static EditorAutomationSnapshot capture_from_editor();
-	static EditorAutomationSnapshot capture_from_node(Node *p_root);
-	static EditorAutomationSnapshot capture_from_roots(const LocalVector<Node *> &p_roots);
+	static EditorAutomationSnapshot capture_from_editor(const EditorAutomationSnapshotOptions &p_options = EditorAutomationSnapshotOptions());
+	static EditorAutomationSnapshot capture_from_node(Node *p_root, const EditorAutomationSnapshotOptions &p_options = EditorAutomationSnapshotOptions());
+	static EditorAutomationSnapshot capture_from_roots(const LocalVector<Node *> &p_roots, const EditorAutomationSnapshotOptions &p_options = EditorAutomationSnapshotOptions());
 
 	uint64_t get_generation() const { return data.generation; }
 	int get_element_count() const { return data.elements.size(); }

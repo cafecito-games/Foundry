@@ -138,6 +138,17 @@ Semantic selectors remain the most robust option when UI structure may change:
 
 Selectors may match zero, one, or many elements. Ambiguous selectors fail with diagnostics instead of choosing arbitrarily.
 
+#### Internal-child snapshot policy
+
+Godot controls frequently build themselves out of internal child nodes (added with `Node::INTERNAL_MODE_*`). The snapshot walk applies an explicit policy to those internals:
+
+- **Window internals are always exposed and are part of the supported surface.** Dialogs (`AcceptDialog`, `ConfirmationDialog`, and subclasses such as `CreateDialog`) add their action buttons (OK/Cancel/custom) through an internal buttons container. Hiding them would make dialogs impossible to confirm, so the walk always descends into `Window` internal children and does not mark the results as internal. Their roles/names/actions (`button` / button text / `click`, `activate`) are stable and safe to depend on.
+- **Internal children of regular controls are hidden by default.** A `SpinBox`'s embedded `LineEdit`, `Tree`/`ItemList` scrollbars, `ScrollContainer` scrollbars, and similar parts are implementation details. Default snapshots stay focused on user-facing controls and never include them, keeping `observe_ui` output readable.
+- **`include_internal` opts into targeted internal inspection.** `observe_ui`, `find_elements`, and `act` accept an `include_internal` boolean (default `false`, also available on the snapshot capture API as `EditorAutomationSnapshotOptions`). When enabled, the walk descends into internal children of all controls. Every element that only exists because of the opt-in — and its entire subtree — carries `"internal": true` so agents can recognize implementation details and avoid depending on them by default. Exposed internals keep the normal role/name/action mapping (for example the SpinBox line edit is a `text_field` with `set_text`/`type_text`), so they remain automatable for debugging and advanced workflows.
+- **Pagination composes with internal expansion.** `children_next_cursor` subtree cursors remember the `include_internal` (and `include_hidden`) flags of the originating call, so paginating through an internally-expanded tree keeps returning the same expansion.
+
+Changes to which internal children are exposed must update this policy and the regression tests in `tests/editor/test_editor_automation_snapshot.h` and `tests/editor/test_editor_automation_mcp.h` so control coverage changes stay intentional.
+
 ### 6. Action model
 
 Actions return structured outcomes:

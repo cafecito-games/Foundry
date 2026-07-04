@@ -60,15 +60,17 @@ String _encode_subtree_cursor(
 		int p_max_children,
 		int p_max_depth,
 		bool p_include_hidden,
+		bool p_include_internal,
 		uint64_t p_generation) {
-	return vformat("%s%s|%d|%d|%d|%d|%d",
+	return vformat("%s%s|%d|%d|%d|%d|%d|%d",
 			SUBTREE_CURSOR_PREFIX,
 			p_parent_handle,
 			p_offset,
 			p_max_children,
 			p_max_depth,
 			p_include_hidden ? 1 : 0,
-			(int64_t)p_generation);
+			(int64_t)p_generation,
+			p_include_internal ? 1 : 0);
 }
 
 bool _decode_subtree_cursor(
@@ -78,12 +80,15 @@ bool _decode_subtree_cursor(
 		int &r_max_children,
 		int &r_max_depth,
 		bool &r_include_hidden,
+		bool &r_include_internal,
 		uint64_t &r_generation) {
 	if (!p_cursor.begins_with(SUBTREE_CURSOR_PREFIX)) {
 		return false;
 	}
 	const PackedStringArray parts = p_cursor.substr(SUBTREE_CURSOR_PREFIX.length()).split("|", false);
-	if (parts.size() != 6) {
+	// include_internal was appended later; older 6-part cursors decode with it
+	// disabled so in-flight pagination keeps working.
+	if (parts.size() != 6 && parts.size() != 7) {
 		return false;
 	}
 	r_parent_handle = parts[0];
@@ -92,6 +97,7 @@ bool _decode_subtree_cursor(
 	r_max_depth = parts[3].to_int();
 	r_include_hidden = parts[4].to_int() != 0;
 	r_generation = (uint64_t)parts[5].to_int();
+	r_include_internal = parts.size() >= 7 && parts[6].to_int() != 0;
 	return !r_parent_handle.is_empty();
 }
 
@@ -188,6 +194,7 @@ Dictionary _element_tree(
 		int p_depth,
 		int p_max_depth,
 		bool p_include_hidden,
+		bool p_include_internal,
 		int p_max_children,
 		int p_child_offset,
 		bool &r_truncated,
@@ -218,7 +225,7 @@ Dictionary _element_tree(
 			r_truncated = true;
 			continue;
 		}
-		children.push_back(_element_tree(p_data, child_index, p_depth + 1, p_max_depth, p_include_hidden, p_max_children, 0, r_truncated, p_emit_child_cursors));
+		children.push_back(_element_tree(p_data, child_index, p_depth + 1, p_max_depth, p_include_hidden, p_include_internal, p_max_children, 0, r_truncated, p_emit_child_cursors));
 		emitted_children++;
 	}
 	node.has_children = true;
@@ -233,6 +240,7 @@ Dictionary _element_tree(
 					effective_max_children,
 					p_max_depth,
 					p_include_hidden,
+					p_include_internal,
 					p_data.generation);
 		}
 	} else if (p_depth + 1 > p_max_depth && total_children > 0) {
@@ -245,6 +253,7 @@ Dictionary _element_tree(
 					effective_max_children,
 					p_max_depth + 4,
 					p_include_hidden,
+					p_include_internal,
 					p_data.generation);
 		}
 	}
@@ -542,10 +551,6 @@ Dictionary EditorAutomationMCPDispatcher::_handle_tools_call(const Dictionary &p
 Dictionary EditorAutomationMCPDispatcher::_tool_observe_ui(const Dictionary &p_args, bool &r_is_error) {
 	r_is_error = false;
 	const String subtree_cursor = _read_string(p_args, "subtree_cursor");
-	const EditorAutomationSnapshot snapshot = _snapshot_root() != nullptr
-			? EditorAutomationSnapshot::capture_from_node(_snapshot_root())
-			: EditorAutomationSnapshot::capture_from_editor();
-	const EditorAutomationSnapshotData &data = snapshot.get_data();
 
 	if (!subtree_cursor.is_empty()) {
 		String parent_handle;
@@ -553,8 +558,9 @@ Dictionary EditorAutomationMCPDispatcher::_tool_observe_ui(const Dictionary &p_a
 		int max_children = DEFAULT_MAX_CHILDREN_PER_NODE;
 		int max_depth = options.max_tree_depth;
 		bool include_hidden = false;
+		bool include_internal = false;
 		uint64_t generation = 0;
-		if (!_decode_subtree_cursor(subtree_cursor, parent_handle, offset, max_children, max_depth, include_hidden, generation)) {
+		if (!_decode_subtree_cursor(subtree_cursor, parent_handle, offset, max_children, max_depth, include_hidden, include_internal, generation)) {
 			r_is_error = true;
 			Dictionary result;
 			result["ok"] = false;
@@ -562,6 +568,15 @@ Dictionary EditorAutomationMCPDispatcher::_tool_observe_ui(const Dictionary &p_a
 			result["message"] = "Invalid subtree_cursor.";
 			return result;
 		}
+
+		// Recapture with the same internal-child policy the cursor was created
+		// under, so paginated internal subtrees stay resolvable and complete.
+		EditorAutomationSnapshotOptions snapshot_options;
+		snapshot_options.include_internal = include_internal;
+		const EditorAutomationSnapshot snapshot = _snapshot_root() != nullptr
+				? EditorAutomationSnapshot::capture_from_node(_snapshot_root(), snapshot_options)
+				: EditorAutomationSnapshot::capture_from_editor(snapshot_options);
+		const EditorAutomationSnapshotData &data = snapshot.get_data();
 
 		const int parent_index = _resolve_element_index(snapshot, parent_handle);
 		if (parent_index < 0) {
@@ -574,7 +589,7 @@ Dictionary EditorAutomationMCPDispatcher::_tool_observe_ui(const Dictionary &p_a
 		}
 
 		bool truncated = false;
-		Dictionary subtree = _element_tree(data, parent_index, 0, max_depth, include_hidden, max_children, offset, truncated, true);
+		Dictionary subtree = _element_tree(data, parent_index, 0, max_depth, include_hidden, include_internal, max_children, offset, truncated, true);
 		Dictionary result;
 		result["generation"] = snapshot.get_generation();
 		result["subtree"] = subtree;
@@ -583,6 +598,7 @@ Dictionary EditorAutomationMCPDispatcher::_tool_observe_ui(const Dictionary &p_a
 		limits["max_depth"] = max_depth;
 		limits["max_children"] = max_children;
 		limits["include_hidden"] = include_hidden;
+		limits["include_internal"] = include_internal;
 		limits["offset"] = offset;
 		limits["truncated"] = truncated;
 		result["limits"] = limits;
@@ -594,10 +610,18 @@ Dictionary EditorAutomationMCPDispatcher::_tool_observe_ui(const Dictionary &p_a
 		max_depth = 0;
 	}
 	const bool include_hidden = _read_bool(p_args, "include_hidden", false);
+	const bool include_internal = _read_bool(p_args, "include_internal", false);
 	int max_children = _read_int(p_args, "max_children", DEFAULT_MAX_CHILDREN_PER_NODE);
 	if (max_children <= 0) {
 		max_children = DEFAULT_MAX_CHILDREN_PER_NODE;
 	}
+
+	EditorAutomationSnapshotOptions snapshot_options;
+	snapshot_options.include_internal = include_internal;
+	const EditorAutomationSnapshot snapshot = _snapshot_root() != nullptr
+			? EditorAutomationSnapshot::capture_from_node(_snapshot_root(), snapshot_options)
+			: EditorAutomationSnapshot::capture_from_editor(snapshot_options);
+	const EditorAutomationSnapshotData &data = snapshot.get_data();
 
 	bool truncated = false;
 	Array roots;
@@ -606,7 +630,7 @@ Dictionary EditorAutomationMCPDispatcher::_tool_observe_ui(const Dictionary &p_a
 		if (!include_hidden && !root.visible) {
 			continue;
 		}
-		roots.push_back(_element_tree(data, root_index, 0, max_depth, include_hidden, max_children, 0, truncated, true));
+		roots.push_back(_element_tree(data, root_index, 0, max_depth, include_hidden, include_internal, max_children, 0, truncated, true));
 	}
 
 	Dictionary result;
@@ -621,6 +645,7 @@ Dictionary EditorAutomationMCPDispatcher::_tool_observe_ui(const Dictionary &p_a
 	limits["max_depth"] = max_depth;
 	limits["max_children"] = max_children;
 	limits["include_hidden"] = include_hidden;
+	limits["include_internal"] = include_internal;
 	limits["truncated"] = truncated;
 	result["limits"] = limits;
 	return result;
@@ -722,9 +747,11 @@ Dictionary EditorAutomationMCPDispatcher::_tool_find_elements(const Dictionary &
 		return result;
 	}
 
+	EditorAutomationSnapshotOptions snapshot_options;
+	snapshot_options.include_internal = _read_bool(p_args, "include_internal", false);
 	const EditorAutomationSnapshot snapshot = _snapshot_root() != nullptr
-			? EditorAutomationSnapshot::capture_from_node(_snapshot_root())
-			: EditorAutomationSnapshot::capture_from_editor();
+			? EditorAutomationSnapshot::capture_from_node(_snapshot_root(), snapshot_options)
+			: EditorAutomationSnapshot::capture_from_editor(snapshot_options);
 
 	const EditorAutomationSelectorResult selector_result = EditorAutomationSelector::resolve(snapshot, selector);
 	Dictionary result = selector_result.to_dictionary();
@@ -999,9 +1026,13 @@ Dictionary EditorAutomationMCPDispatcher::_tool_act(const Dictionary &p_args, bo
 		options_dict["route"] = route;
 	}
 
+	// Opt-in so selectors/handles targeting internal implementation children
+	// (from observe_ui/find_elements with include_internal) stay resolvable.
+	EditorAutomationSnapshotOptions snapshot_options;
+	snapshot_options.include_internal = _read_bool(p_args, "include_internal", false);
 	const EditorAutomationSnapshot snapshot = _snapshot_root() != nullptr
-			? EditorAutomationSnapshot::capture_from_node(_snapshot_root())
-			: EditorAutomationSnapshot::capture_from_editor();
+			? EditorAutomationSnapshot::capture_from_node(_snapshot_root(), snapshot_options)
+			: EditorAutomationSnapshot::capture_from_editor(snapshot_options);
 
 	const EditorAutomationLogMarker log_marker = EditorAutomationLog::create_marker();
 	const EditorAutomationActionResult action_result = EditorAutomationDriver::perform(snapshot, action, selector, options_dict);
@@ -1292,7 +1323,7 @@ Dictionary EditorAutomationMCPDispatcher::_resource_payload(const String &p_uri,
 		bool truncated = false;
 		Dictionary payload;
 		payload["generation"] = snapshot.get_generation();
-		payload["subtree"] = _element_tree(snapshot.get_data(), element_index, 0, max_depth, false, DEFAULT_MAX_CHILDREN_PER_NODE, 0, truncated, true);
+		payload["subtree"] = _element_tree(snapshot.get_data(), element_index, 0, max_depth, false, false, DEFAULT_MAX_CHILDREN_PER_NODE, 0, truncated, true);
 		Dictionary limits;
 		limits["max_depth"] = max_depth;
 		limits["truncated"] = truncated;

@@ -57,6 +57,9 @@ Dictionary _element_tree(const EditorAutomationSnapshotData &p_data, int p_index
 	dict["focused"] = element.focused;
 	dict["pressed"] = element.pressed;
 	dict["selected"] = element.selected;
+	if (element.internal) {
+		dict["internal"] = true;
+	}
 
 	Array bounds;
 	bounds.push_back(element.bounds.position.x);
@@ -110,11 +113,13 @@ void EditorWorkflowTestDriver::set_step(const String &p_step) {
 	current_step = p_step;
 }
 
-EditorAutomationSnapshot EditorWorkflowTestDriver::_capture_snapshot() const {
+EditorAutomationSnapshot EditorWorkflowTestDriver::_capture_snapshot(bool p_include_internal) const {
+	EditorAutomationSnapshotOptions snapshot_options;
+	snapshot_options.include_internal = p_include_internal;
 	if (options.snapshot_root != nullptr) {
-		return EditorAutomationSnapshot::capture_from_node(options.snapshot_root);
+		return EditorAutomationSnapshot::capture_from_node(options.snapshot_root, snapshot_options);
 	}
-	return EditorAutomationSnapshot::capture_from_editor();
+	return EditorAutomationSnapshot::capture_from_editor(snapshot_options);
 }
 
 EditorAutomationFailureAttachmentOptions EditorWorkflowTestDriver::_failure_attachment_options() const {
@@ -178,13 +183,13 @@ bool EditorWorkflowTestDriver::_check_result(const Dictionary &p_result, const S
 	return true;
 }
 
-Dictionary EditorWorkflowTestDriver::observe_ui(int p_max_depth, bool p_include_hidden) {
+Dictionary EditorWorkflowTestDriver::observe_ui(int p_max_depth, bool p_include_hidden, bool p_include_internal) {
 	int max_depth = p_max_depth < 0 ? options.max_tree_depth : p_max_depth;
 	if (max_depth < 0) {
 		max_depth = 0;
 	}
 
-	const EditorAutomationSnapshot snapshot = _capture_snapshot();
+	const EditorAutomationSnapshot snapshot = _capture_snapshot(p_include_internal);
 	const EditorAutomationSnapshotData &data = snapshot.get_data();
 
 	bool truncated = false;
@@ -209,6 +214,7 @@ Dictionary EditorWorkflowTestDriver::observe_ui(int p_max_depth, bool p_include_
 	Dictionary limits;
 	limits["max_depth"] = max_depth;
 	limits["include_hidden"] = p_include_hidden;
+	limits["include_internal"] = p_include_internal;
 	limits["truncated"] = truncated;
 	result["limits"] = limits;
 	return result;
