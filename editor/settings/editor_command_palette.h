@@ -92,6 +92,8 @@ protected:
 public:
 	void open_popup();
 	void get_actions_list(List<String> *p_list) const;
+	bool has_command(const String &p_key_name) const;
+	bool get_command_details(const String &p_key_name, String *r_display_name, String *r_shortcut_text, Ref<Shortcut> *r_shortcut) const;
 	void add_command(String p_command_name, String p_key_name, Callable p_action, Vector<Variant> arguments, const Ref<Shortcut> &p_shortcut);
 	void execute_command(const String &p_command_name);
 	void register_shortcuts_as_command();

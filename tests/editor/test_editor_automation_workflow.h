@@ -194,6 +194,8 @@ TEST_CASE("[Editor][Automation][MCP] run_command rejects unknown command") {
 	const Dictionary structured = result["structuredContent"];
 	CHECK((bool)structured.get("ok", true) == false);
 	CHECK(String(structured.get("kind", String())) == "unknown_command");
+	CHECK(structured.has("suggestions"));
+	CHECK(structured.has("candidates"));
 }
 
 static void workflow_flush_frames(int p_count = 1) {

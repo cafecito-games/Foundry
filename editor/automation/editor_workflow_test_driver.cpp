@@ -30,6 +30,7 @@
 
 #include "editor_workflow_test_driver.h"
 
+#include "editor/automation/editor_automation_commands.h"
 #include "editor/automation/editor_automation_diagnostics.h"
 #include "editor/automation/editor_automation_driver.h"
 #include "editor/automation/editor_automation_log.h"
@@ -39,10 +40,6 @@
 #include "editor/automation/editor_automation_wait.h"
 
 #include "core/io/json.h"
-
-#ifdef TOOLS_ENABLED
-#include "editor/settings/editor_command_palette.h"
-#endif
 
 namespace {
 
@@ -292,64 +289,23 @@ Dictionary EditorWorkflowTestDriver::read_editor_log(const EditorAutomationLogMa
 
 Dictionary EditorWorkflowTestDriver::run_command(const String &p_command) {
 	last_action = "run_command";
-	last_route = "command_palette";
+	last_route = String();
 	Dictionary selector;
 	selector["command"] = p_command;
 	last_selector = selector;
 
-	Dictionary result;
-	result["command"] = p_command;
-
-	if (p_command.is_empty()) {
-		result["ok"] = false;
-		result["kind"] = "invalid_parameter";
-		result["message"] = "run_command requires a non-empty command.";
-		const EditorAutomationSnapshot snapshot = _capture_snapshot();
-		_record_failure("invalid_parameter", result["message"], selector, snapshot);
+	const Dictionary result = EditorAutomationCommands::execute(p_command);
+	if ((bool)result.get("ok", false)) {
+		last_route = result.get("route", String());
 		return result;
 	}
 
-#ifdef TOOLS_ENABLED
-	EditorCommandPalette *palette = EditorCommandPalette::get_singleton();
-	if (palette == nullptr) {
-		result["ok"] = false;
-		result["kind"] = "unavailable";
-		result["message"] = "EditorCommandPalette is not available.";
-		const EditorAutomationSnapshot snapshot = _capture_snapshot();
-		_record_failure("unavailable", result["message"], selector, snapshot);
-		return result;
-	}
-
-	List<String> actions;
-	palette->get_actions_list(&actions);
-	bool found = false;
-	for (const String &action : actions) {
-		if (action == p_command) {
-			found = true;
-			break;
-		}
-	}
-	if (!found) {
-		result["ok"] = false;
-		result["kind"] = "unknown_command";
-		result["message"] = vformat("Unknown command '%s'.", p_command);
-		const EditorAutomationSnapshot snapshot = _capture_snapshot();
-		_record_failure("unknown_command", result["message"], selector, snapshot);
-		return result;
-	}
-
-	palette->execute_command(p_command);
-	result["ok"] = true;
-	result["route"] = "command_palette";
-	return result;
-#else
-	result["ok"] = false;
-	result["kind"] = "unavailable";
-	result["message"] = "Command palette is only available in editor builds.";
 	const EditorAutomationSnapshot snapshot = _capture_snapshot();
-	_record_failure("unavailable", result["message"], selector, snapshot);
+	const String kind = result.get("kind", String());
+	const String message = result.get("message", vformat("run_command failed for '%s'.", p_command));
+	const Array candidates = result.get("candidates", Array());
+	_record_failure(kind, message, selector, snapshot, candidates);
 	return result;
-#endif
 }
 
 bool EditorWorkflowTestDriver::assert_no_new_errors(const PackedStringArray &p_severities) {
