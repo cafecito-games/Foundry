@@ -54,6 +54,7 @@
 #include "tests/editor/test_editor_automation_driver.h"
 #include "tests/editor/test_editor_automation_mcp.h"
 #include "tests/editor/test_editor_automation_screenshot.h"
+#include "tests/editor/test_editor_automation_server.h"
 #include "tests/editor/test_editor_automation_wait.h"
 #include "tests/editor/test_editor_automation_workflow.h"
 #include "tests/editor/test_editor_export_platform_autoload.h"

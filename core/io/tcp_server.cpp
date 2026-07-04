@@ -31,12 +31,12 @@
 #include "tcp_server.h"
 
 void TCPServer::_bind_methods() {
-	ClassDB::bind_method(D_METHOD("listen", "port", "bind_address"), &TCPServer::listen, DEFVAL("*"));
+	ClassDB::bind_method(D_METHOD("listen", "port", "bind_address", "reuse_address"), &TCPServer::listen, DEFVAL("*"), DEFVAL(true));
 	ClassDB::bind_method(D_METHOD("get_local_port"), &TCPServer::get_local_port);
 	ClassDB::bind_method(D_METHOD("take_connection"), &TCPServer::take_connection);
 }
 
-Error TCPServer::listen(uint16_t p_port, const IPAddress &p_bind_address) {
+Error TCPServer::listen(uint16_t p_port, const IPAddress &p_bind_address, bool p_reuse_address) {
 	ERR_FAIL_COND_V(_sock.is_null(), ERR_UNAVAILABLE);
 	ERR_FAIL_COND_V(_sock->is_open(), ERR_ALREADY_IN_USE);
 	ERR_FAIL_COND_V(!p_bind_address.is_valid() && !p_bind_address.is_wildcard(), ERR_INVALID_PARAMETER);
@@ -53,7 +53,7 @@ Error TCPServer::listen(uint16_t p_port, const IPAddress &p_bind_address) {
 
 	ERR_FAIL_COND_V(err != OK, ERR_CANT_CREATE);
 
-	_sock->set_reuse_address_enabled(true);
+	_sock->set_reuse_address_enabled(p_reuse_address);
 
 	return _listen(NetSocket::Address(p_bind_address, p_port));
 }

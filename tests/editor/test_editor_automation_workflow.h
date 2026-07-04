@@ -32,6 +32,7 @@
 
 #include "editor/automation/editor_automation_log.h"
 #include "editor/automation/editor_automation_mcp_dispatcher.h"
+#include "editor/automation/editor_automation_mcp_server.h"
 #include "editor/automation/editor_automation_selector.h"
 #include "editor/automation/editor_automation_snapshot.h"
 #include "editor/automation/editor_automation_state.h"
@@ -421,6 +422,147 @@ TEST_CASE("[Editor][EditorAutomation] MVP acceptance workflow subprocess") {
 	CHECK(exit_code == 0);
 }
 
+static int workflow_reserve_local_port() {
+	EditorAutomationMCPServer blocker;
+	blocker.set_token("port-blocker");
+	if (blocker.listen(0, IPAddress("127.0.0.1")) != OK) {
+		return -1;
+	}
+	const int port = blocker.get_port();
+	blocker.stop();
+	return port;
+}
+
+static bool workflow_wait_for_output_line(const Ref<FileAccess> &p_stdout_pipe, const String &p_marker, String &r_output, const OS::ProcessID p_pid, uint64_t p_timeout_msec) {
+	const uint64_t deadline = OS::get_singleton()->get_ticks_msec() + p_timeout_msec;
+	while (OS::get_singleton()->get_ticks_msec() < deadline) {
+		if (p_stdout_pipe.is_valid() && p_stdout_pipe->is_open()) {
+			const uint64_t available = p_stdout_pipe->get_length();
+			if (available > 0) {
+				Vector<uint8_t> chunk;
+				chunk.resize(available);
+				const uint64_t read = p_stdout_pipe->get_buffer(chunk.ptrw(), available);
+				if (read > 0) {
+					r_output += String::utf8((const char *)chunk.ptr(), read);
+				}
+			}
+		}
+		if (r_output.contains(p_marker)) {
+			return true;
+		}
+		if (!OS::get_singleton()->is_process_running(p_pid)) {
+			return r_output.contains(p_marker);
+		}
+		OS::get_singleton()->delay_usec(20000);
+	}
+	return r_output.contains(p_marker);
+}
+
+TEST_CASE("[Editor][EditorAutomation] explicit automation port conflict subprocess") {
+	if (!workflow_has_display()) {
+		MESSAGE("Requires a GUI display. Run an editor against an occupied --automation-port to verify the conflict error.");
+		return;
+	}
+
+	const int reserved_port = workflow_reserve_local_port();
+	REQUIRE_MESSAGE(reserved_port > 0, "Failed to reserve a local automation port.");
+
+	EditorAutomationMCPServer blocker;
+	blocker.set_token("port-blocker");
+	REQUIRE(blocker.listen(reserved_port, IPAddress("127.0.0.1"), false) == OK);
+
+	const String project_path = workflow_prepare_temp_project();
+	REQUIRE_MESSAGE(!project_path.is_empty(), "Failed to prepare a temporary MVP project copy.");
+
+	List<String> arguments;
+	arguments.push_back("editor");
+	arguments.push_back("open");
+	arguments.push_back("--project");
+	arguments.push_back(project_path);
+	arguments.push_back("--automation");
+	arguments.push_back("--automation-port");
+	arguments.push_back(String::num_int64(reserved_port));
+	arguments.push_back("--automation-token");
+	arguments.push_back("conflict-token");
+
+	int exit_code = -1;
+	const String output = workflow_run_subprocess(arguments, exit_code);
+	blocker.stop();
+
+	INFO("Editor output:\n", output);
+	CHECK(output.contains("FOUNDRY_AUTOMATION_ERROR"));
+	CHECK(output.contains("already in use"));
+	CHECK(exit_code != 0);
+}
+
+TEST_CASE("[Editor][EditorAutomation] rapid relaunch reuses released automation port") {
+	if (!workflow_has_display()) {
+		MESSAGE("Requires a GUI display. Relaunch the editor on the same automation port after shutdown.");
+		return;
+	}
+
+	const int reserved_port = workflow_reserve_local_port();
+	REQUIRE_MESSAGE(reserved_port > 0, "Failed to reserve a local automation port.");
+
+	const String project_path = workflow_prepare_temp_project();
+	REQUIRE_MESSAGE(!project_path.is_empty(), "Failed to prepare a temporary MVP project copy.");
+
+	List<String> arguments;
+	arguments.push_back("editor");
+	arguments.push_back("open");
+	arguments.push_back("--project");
+	arguments.push_back(project_path);
+	arguments.push_back("--automation");
+	arguments.push_back("--automation-port");
+	arguments.push_back(String::num_int64(reserved_port));
+	arguments.push_back("--automation-token");
+	arguments.push_back("relaunch-a");
+
+	Dictionary environment;
+	environment["DISPLAY"] = OS::get_singleton()->get_environment("DISPLAY");
+	Dictionary first_pipe = OS::get_singleton()->execute_with_pipe(
+			OS::get_singleton()->get_executable_path(), arguments, false, String(), environment, false);
+	REQUIRE_FALSE(first_pipe.is_empty());
+
+	Ref<FileAccess> first_stdout = first_pipe["stdio"];
+	const OS::ProcessID first_pid = first_pipe["pid"];
+	String first_output;
+	REQUIRE(workflow_wait_for_output_line(first_stdout, "FOUNDRY_AUTOMATION", first_output, first_pid, 120000));
+
+	if (first_stdout.is_valid()) {
+		first_stdout->close();
+	}
+	OS::get_singleton()->kill(first_pid);
+	OS::get_singleton()->delay_usec(250000);
+
+	arguments.clear();
+	arguments.push_back("editor");
+	arguments.push_back("open");
+	arguments.push_back("--project");
+	arguments.push_back(project_path);
+	arguments.push_back("--automation");
+	arguments.push_back("--automation-port");
+	arguments.push_back(String::num_int64(reserved_port));
+	arguments.push_back("--automation-token");
+	arguments.push_back("relaunch-b");
+
+	Dictionary second_pipe = OS::get_singleton()->execute_with_pipe(
+			OS::get_singleton()->get_executable_path(), arguments, false, String(), environment, false);
+	REQUIRE_FALSE(second_pipe.is_empty());
+
+	Ref<FileAccess> second_stdout = second_pipe["stdio"];
+	const OS::ProcessID second_pid = second_pipe["pid"];
+	String second_output;
+	REQUIRE(workflow_wait_for_output_line(second_stdout, "FOUNDRY_AUTOMATION", second_output, second_pid, 120000));
+	INFO("Second launch output:\n", second_output);
+	CHECK_FALSE(second_output.contains("FOUNDRY_AUTOMATION_ERROR"));
+
+	if (second_stdout.is_valid()) {
+		second_stdout->close();
+	}
+	OS::get_singleton()->kill(second_pid);
+}
+
 TEST_CASE("[Editor][EditorAutomation][MCP] launched editor smoke handshake") {
 	if (!workflow_has_display()) {
 		MESSAGE("Requires a GUI display. Run with DISPLAY=:1 ./bin/foundry.linuxbsd.editor.dev.x86_64 editor open --project <project> --automation --automation-transport=mcp --automation-port 0");
@@ -494,11 +636,13 @@ TEST_CASE("[Editor][EditorAutomation][MCP] launched editor smoke handshake") {
 	const Dictionary automation_line = automation_parser.get_data();
 	const String endpoint = automation_line.get("endpoint", String());
 	const String token = automation_line.get("token", String());
+	const int reported_port = automation_line.get("port", 0);
 	REQUIRE_FALSE(endpoint.is_empty());
 	REQUIRE(token == "smoke-token");
 
 	const int port = endpoint.get_slicec(':', 2).get_slicec('/', 0).to_int();
 	REQUIRE(port > 0);
+	CHECK(reported_port == port);
 
 	auto mcp_request = [&](const Dictionary &p_request) -> String {
 		Ref<StreamPeerTCP> client;

@@ -103,7 +103,7 @@ public:
 	const String &get_token() const { return token; }
 	void set_dispatcher_options(const EditorAutomationMCPDispatcher::Options &p_options) { dispatcher.set_options(p_options); }
 
-	Error listen(int p_port, const IPAddress &p_bind_ip = IPAddress("127.0.0.1"));
+	Error listen(int p_port, const IPAddress &p_bind_ip = IPAddress("127.0.0.1"), bool p_reuse_address = true);
 	void poll();
 	void stop();
 

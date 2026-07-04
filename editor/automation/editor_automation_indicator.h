@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  editor_automation_server.h                                            */
+/*  editor_automation_indicator.h                                          */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -30,74 +30,26 @@
 
 #pragma once
 
-#include "editor/plugins/editor_plugin.h"
-#include "main/cli_parser.h"
+#include "scene/gui/panel_container.h"
 
-class EditorAutomationIndicator;
-class EditorAutomationMCPServer;
+class Label;
+class TextureRect;
 
-class EditorAutomationServer : public EditorPlugin {
-	FOUNDRY_CLASS(EditorAutomationServer, EditorPlugin);
+// Persistent title-bar affordance shown while editor automation is active.
+class EditorAutomationIndicator : public PanelContainer {
+	FOUNDRY_CLASS(EditorAutomationIndicator, PanelContainer);
 
-public:
-	enum class Transport {
-		NONE,
-		MCP,
-	};
+	TextureRect *icon = nullptr;
+	Label *status_label = nullptr;
+	bool active = false;
 
-private:
-	static EditorAutomationServer *singleton;
-	static bool cli_enabled;
-	static String cli_transport;
-	static int cli_port;
-	static String cli_token;
-	static String cli_run_workflow;
-	static bool cli_failure_screenshots;
-
-	bool enabled = false;
-	Transport transport = Transport::NONE;
-	int port = 0;
-	String token;
-	String endpoint;
-	bool local_only = true;
-	bool started = false;
-	bool start_attempted = false;
-	bool workflow_run_attempted = false;
-	bool workflow_run_completed = false;
-
-	EditorAutomationMCPServer *mcp_server = nullptr;
-#if defined(DEV_ENABLED)
-	EditorAutomationIndicator *indicator = nullptr;
-#endif
-
-	String _generate_token() const;
-	void _show_dev_indicator();
-	void _hide_dev_indicator();
-	void _apply_dev_indicator();
-	void _ensure_dev_indicator();
-	bool _start_mcp_transport();
-	void _fail_startup(const String &p_message, int p_requested_port, Error p_error);
-	void _run_acceptance_workflow_if_requested();
 	void _notification(int p_what);
+	void _apply_theme();
 
 public:
-	static void apply_cli_options(const FoundryCLIParser::CLIInvocation &p_invocation);
-	static EditorAutomationServer *get_singleton();
+	EditorAutomationIndicator();
 
-	EditorAutomationServer();
-	~EditorAutomationServer();
-
-	bool is_enabled() const { return enabled; }
-	String get_transport_name() const;
-	int get_port() const { return port; }
-	const String &get_token() const { return token; }
-	const String &get_endpoint() const { return endpoint; }
-	bool is_local_only() const { return local_only; }
-	bool is_started() const { return started; }
-#if defined(DEV_ENABLED)
-	bool is_indicator_visible() const;
-#endif
-
-	void start();
-	void stop();
+	void set_active(const String &p_transport, int p_port, const String &p_endpoint);
+	void clear_active();
+	bool is_active() const { return active; }
 };
