@@ -32,6 +32,8 @@
 
 #include "editor/automation/editor_automation_workflow.h"
 
+#include "editor/automation/editor_automation_input.h"
+
 #include "core/object/object.h"
 #include "editor/editor_node.h"
 #include "scene/gui/base_button.h"
@@ -222,6 +224,8 @@ class EditorAutomationSnapshotBuilder {
 
 		if (p_role == "button" || p_role == "checkbox") {
 			add_unique("click");
+		} else if (p_role == "viewport") {
+			add_unique("click");
 		} else if (p_role == "text_field" || p_role == "text_area" || p_role == "code_editor") {
 			add_unique("set_text");
 			add_unique("type_text");
@@ -394,6 +398,11 @@ class EditorAutomationSnapshotBuilder {
 		element.bounds = _node_bounds_global(p_node);
 		element.parent_index = p_parent_index;
 		element.metadata = EditorAutomationWorkflow::metadata_for_node(p_node);
+		if (Window *owner_window = EditorAutomationInput::window_for_node(p_node)) {
+			element.metadata["window_object_id"] = String::num_uint64(owner_window->get_instance_id());
+			element.metadata["window_title"] = owner_window->get_title();
+			element.metadata["window_focused"] = owner_window->has_focus();
+		}
 		_append_actions(p_node, element.role, element.actions);
 
 		if (const BaseButton *button = Object::cast_to<const BaseButton>(p_node)) {

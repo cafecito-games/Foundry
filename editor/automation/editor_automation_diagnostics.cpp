@@ -45,6 +45,17 @@ Dictionary _element_to_summary(const EditorAutomationElement &p_element) {
 	summary["class"] = p_element.class_name;
 	summary["path"] = p_element.path;
 	summary["focused"] = p_element.focused;
+	if (!p_element.metadata.is_empty()) {
+		if (p_element.metadata.has("window_object_id")) {
+			summary["window_object_id"] = p_element.metadata["window_object_id"];
+		}
+		if (p_element.metadata.has("window_title")) {
+			summary["window_title"] = p_element.metadata["window_title"];
+		}
+		if (p_element.metadata.has("window_focused")) {
+			summary["window_focused"] = p_element.metadata["window_focused"];
+		}
+	}
 	return summary;
 }
 

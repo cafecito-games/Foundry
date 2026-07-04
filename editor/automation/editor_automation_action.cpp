@@ -71,6 +71,9 @@ Dictionary EditorAutomationActionResult::to_dictionary() const {
 	if (!candidates.is_empty()) {
 		dict["candidates"] = candidates;
 	}
+	if (!details.is_empty()) {
+		dict["details"] = details;
+	}
 	return dict;
 }
 
@@ -111,6 +114,9 @@ EditorAutomationActionKind editor_automation_action_kind_from_string(const Strin
 	}
 	if (action == "decrement") {
 		return EditorAutomationActionKind::DECREMENT;
+	}
+	if (action == "drag") {
+		return EditorAutomationActionKind::DRAG;
 	}
 	return EditorAutomationActionKind::UNKNOWN;
 }
