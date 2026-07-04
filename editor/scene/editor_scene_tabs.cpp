@@ -290,9 +290,11 @@ void EditorSceneTabs::update_scene_tabs() {
 	}
 	menu_initialized = true;
 
-	// Only the first tile drives the platform-global scene list (it enumerates
-	// every open scene regardless of tile).
-	if (tile_id == 0 && NativeMenu::get_singleton()->has_feature(NativeMenu::FEATURE_GLOBAL_MENU)) {
+	// Only the focused tile's strip drives the platform-global scene list (it
+	// enumerates every open scene regardless of tile). Keying off the focused
+	// singleton rather than a fixed tile id keeps it working after the original
+	// tile is collapsed.
+	if (this == get_singleton() && NativeMenu::get_singleton()->has_feature(NativeMenu::FEATURE_GLOBAL_MENU)) {
 		RID dock_rid = NativeMenu::get_singleton()->get_system_menu(NativeMenu::DOCK_MENU_ID);
 		NativeMenu::get_singleton()->clear(dock_rid);
 		for (int i = 0; i < EditorNode::get_editor_data().get_edited_scene_count(); i++) {

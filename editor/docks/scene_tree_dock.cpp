@@ -3023,6 +3023,9 @@ void SceneTreeDock::set_scene_context(EditorSceneContext *p_context) {
 	// rebinding to avoid keeping a pointer to a node from the previous context
 	// after that context leaves the tree.
 	scene_tree->set_selected(nullptr, false);
+	// Bind the tree to this context's scene root so a non-focused tile shows its
+	// own scene rather than the globally focused one.
+	scene_tree->set_scene_context(p_context);
 	// Push the new selection down to the tree editor so its edits target the
 	// bound context's selection, and start listening for its changes.
 	scene_tree->set_editor_selection(editor_selection);

@@ -217,7 +217,21 @@ void EditorSceneWorkspace::_clear_tree() {
 	}
 }
 
-Control *EditorSceneWorkspace::_restore_node(const Ref<ConfigFile> &p_config, int p_node_index, int &r_max_tile_id, Vector<RestoredLeaf> &r_leaves) {
+Control *EditorSceneWorkspace::_restore_node(const Ref<ConfigFile> &p_config, int p_node_index, int p_node_count, int &r_max_tile_id, Vector<RestoredLeaf> &r_leaves, HashSet<int> &r_visited) {
+	// Guard against a corrupted/hand-edited layout: an out-of-range index or a
+	// cycle (a split referencing an already-visited node) would otherwise recurse
+	// forever. Fall back to a plain leaf so restore still yields a usable tree.
+	if (p_node_index < 0 || p_node_index >= p_node_count || r_visited.has(p_node_index)) {
+		const int fallback_tile_id = next_tile_id + r_leaves.size();
+		r_max_tile_id = MAX(r_max_tile_id, fallback_tile_id);
+		ScenePaneTile *fallback = _create_tile(fallback_tile_id);
+		RestoredLeaf leaf;
+		leaf.tile = fallback;
+		r_leaves.push_back(leaf);
+		return fallback;
+	}
+	r_visited.insert(p_node_index);
+
 	const String type = p_config->get_value(WORKSPACE_CONFIG_SECTION, vformat("node_%d_type", p_node_index), "leaf");
 	if (type == "split") {
 		SplitContainer *split = memnew(SplitContainer);
@@ -227,12 +241,8 @@ Control *EditorSceneWorkspace::_restore_node(const Ref<ConfigFile> &p_config, in
 
 		const int child_a = p_config->get_value(WORKSPACE_CONFIG_SECTION, vformat("node_%d_child_a", p_node_index), -1);
 		const int child_b = p_config->get_value(WORKSPACE_CONFIG_SECTION, vformat("node_%d_child_b", p_node_index), -1);
-		if (child_a >= 0) {
-			split->add_child(_restore_node(p_config, child_a, r_max_tile_id, r_leaves));
-		}
-		if (child_b >= 0) {
-			split->add_child(_restore_node(p_config, child_b, r_max_tile_id, r_leaves));
-		}
+		split->add_child(_restore_node(p_config, child_a, p_node_count, r_max_tile_id, r_leaves, r_visited));
+		split->add_child(_restore_node(p_config, child_b, p_node_count, r_max_tile_id, r_leaves, r_visited));
 		split->set_split_offset(p_config->get_value(WORKSPACE_CONFIG_SECTION, vformat("node_%d_offset", p_node_index), 0));
 		return split;
 	}
@@ -259,11 +269,13 @@ Vector<EditorSceneWorkspace::RestoredLeaf> EditorSceneWorkspace::restore_from_co
 	}
 
 	const int root_node = p_config->get_value(WORKSPACE_CONFIG_SECTION, "root_node", 0);
+	const int node_count = p_config->get_value(WORKSPACE_CONFIG_SECTION, "node_count", 0);
 
 	_clear_tree();
 
 	int max_tile_id = 0;
-	Control *root = _restore_node(p_config, root_node, max_tile_id, leaves);
+	HashSet<int> visited;
+	Control *root = _restore_node(p_config, root_node, node_count, max_tile_id, leaves, visited);
 	add_child(root);
 	_fit_root_child();
 	next_tile_id = max_tile_id + 1;

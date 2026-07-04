@@ -4909,7 +4909,20 @@ void EditorNode::_update_tile_display_attachments() {
 			}
 		} else {
 			tile->set_preview_mode(true, false, scene_name, icon);
-			ctx->set_display_parent(tile->get_preview_container(), false);
+			SubViewportContainer *preview = tile->get_preview_container();
+			ctx->set_display_parent(preview, false);
+			// SubViewportContainer only (re)configures its child viewports from
+			// its own ENTER_TREE/RESIZED/VISIBILITY notifications, none of which
+			// fire when a live viewport is reparented into an already-mounted
+			// container. Configure the reparented viewport explicitly so the
+			// preview renders instead of showing a black rect.
+			SubViewport *preview_viewport = ctx->get_viewport();
+			preview_viewport->set_update_mode(preview->is_visible_in_tree() ? SubViewport::UPDATE_ALWAYS : SubViewport::UPDATE_DISABLED);
+			const int shrink = MAX(1, preview->get_stretch_shrink());
+			const Size2 preview_size = preview->get_size();
+			if (preview_size.x > 0 && preview_size.y > 0) {
+				preview_viewport->set_size(preview_size / shrink);
+			}
 		}
 
 		ctx->get_history()->cleanup_history();

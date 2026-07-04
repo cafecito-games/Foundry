@@ -35,6 +35,7 @@
 #include "scene/gui/dialogs.h"
 #include "scene/gui/tree.h"
 
+class EditorSceneContext;
 class EditorSelection;
 class TextureRect;
 class Timer;
@@ -47,6 +48,10 @@ class SceneTreeEditor : public Control {
 	// selection through ObjectDB instead of dereferencing a pointer that may
 	// have been freed (each edited scene owns its own selection).
 	ObjectID editor_selection_id;
+	// When set, this tree edits a specific scene context's root rather than the
+	// globally focused edited scene, so each tile's scene tree shows its own
+	// scene. Null for standalone trees (dialogs), which use the focused scene.
+	EditorSceneContext *scene_context = nullptr;
 
 	enum SceneTreeEditorButton {
 		BUTTON_SUBSCENE = 0,
@@ -250,6 +255,9 @@ public:
 	Node *get_selected();
 	void set_can_rename(bool p_can_rename) { can_rename = p_can_rename; }
 	void set_editor_selection(EditorSelection *p_selection);
+	// Binds this tree to a specific scene context so it shows that context's
+	// scene root instead of the globally focused edited scene.
+	void set_scene_context(EditorSceneContext *p_context) { scene_context = p_context; }
 
 	void set_show_enabled_subscene(bool p_show) { show_enabled_subscene = p_show; }
 	void set_valid_types(const Vector<StringName> &p_valid);

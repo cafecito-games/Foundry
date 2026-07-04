@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "core/templates/hash_set.h"
 #include "scene/gui/control.h"
 
 class ConfigFile;
@@ -71,7 +72,7 @@ private:
 	EditorData *editor_data = nullptr;
 
 	ScenePaneTile *_create_tile(int p_tile_id);
-	Control *_restore_node(const Ref<ConfigFile> &p_config, int p_node_index, int &r_max_tile_id, Vector<RestoredLeaf> &r_leaves);
+	Control *_restore_node(const Ref<ConfigFile> &p_config, int p_node_index, int p_node_count, int &r_max_tile_id, Vector<RestoredLeaf> &r_leaves, HashSet<int> &r_visited);
 	void _clear_tree();
 	// The workspace is a plain Control, so its single direct child (a tile or the
 	// root split) is anchored full-rect to follow the workspace's size.

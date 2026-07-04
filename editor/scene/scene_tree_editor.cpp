@@ -37,6 +37,7 @@
 #include "editor/docks/groups_dock.h"
 #include "editor/docks/signals_dock.h"
 #include "editor/editor_node.h"
+#include "editor/editor_scene_context.h"
 #include "editor/editor_string_names.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/file_system/editor_file_system.h"
@@ -52,6 +53,11 @@
 #include "scene/resources/packed_scene.h"
 
 Node *SceneTreeEditor::get_scene_node() const {
+	// A tile-bound tree edits its own context's scene, so every tile shows its
+	// own scene rather than the globally focused one.
+	if (scene_context) {
+		return scene_context->get_scene_root_node();
+	}
 	ERR_FAIL_COND_V(!is_inside_tree(), nullptr);
 
 	return get_tree()->get_edited_scene_root();
