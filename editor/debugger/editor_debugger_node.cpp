@@ -2,7 +2,7 @@
 /*  editor_debugger_node.cpp                                              */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -95,7 +95,7 @@ EditorDebuggerNode::EditorDebuggerNode() {
 	remote_scene_tree->connect("selection_cleared", callable_mp(this, &EditorDebuggerNode::_remote_selection_cleared));
 	remote_scene_tree->connect("save_node", callable_mp(this, &EditorDebuggerNode::_save_node_requested));
 	remote_scene_tree->connect("button_clicked", callable_mp(this, &EditorDebuggerNode::_remote_tree_button_pressed));
-	SceneTreeDock::get_singleton()->add_remote_tree_editor(remote_scene_tree);
+	adopt_remote_scene_tree_host(SceneTreeDock::get_singleton());
 	SceneTreeDock::get_singleton()->connect("remote_tree_selected", callable_mp(this, &EditorDebuggerNode::request_remote_tree));
 
 	remote_scene_tree_timeout = EDITOR_GET("debugger/remote_scene_tree_refresh_interval");
@@ -106,6 +106,14 @@ EditorDebuggerNode::EditorDebuggerNode() {
 	}
 
 	EditorRunBar::get_singleton()->get_pause_button()->connect(SceneStringName(pressed), callable_mp(this, &EditorDebuggerNode::_paused));
+}
+
+EditorDebuggerNode::~EditorDebuggerNode() {
+	// Clear the singleton so anything freed after this node (e.g. a SceneTreeDock
+	// hosting the remote scene tree) does not call back into a dangling pointer.
+	if (singleton == this) {
+		singleton = nullptr;
+	}
 }
 
 ScriptEditorDebugger *EditorDebuggerNode::_add_debugger() {
@@ -712,6 +720,36 @@ void EditorDebuggerNode::set_remote_selection(const TypedArray<int64_t> &p_ids) 
 void EditorDebuggerNode::clear_remote_tree_selection() {
 	remote_scene_tree->clear_selection();
 	get_current_debugger()->clear_inspector(remote_scene_tree_clear_msg);
+}
+
+void EditorDebuggerNode::adopt_remote_scene_tree_host(SceneTreeDock *p_dock) {
+	ERR_FAIL_NULL(p_dock);
+	if (remote_scene_tree_host == p_dock) {
+		return;
+	}
+	if (remote_scene_tree_host) {
+		remote_scene_tree_host->detach_remote_tree_editor();
+	} else if (remote_scene_tree->get_parent()) {
+		// Currently parked on this node (or unparented); detach before re-homing.
+		remote_scene_tree->get_parent()->remove_child(remote_scene_tree);
+	}
+	remote_scene_tree_host = p_dock;
+	p_dock->add_remote_tree_editor(remote_scene_tree);
+}
+
+void EditorDebuggerNode::release_remote_scene_tree_host(SceneTreeDock *p_dock) {
+	if (remote_scene_tree_host != p_dock) {
+		return;
+	}
+	// The hosting dock is being freed. Detach the remote tree so it is not
+	// destroyed with the dock, and park it on this node until a dock re-adopts it
+	// (the next focused tile does so through adopt_remote_scene_tree_host()).
+	p_dock->detach_remote_tree_editor();
+	remote_scene_tree_host = nullptr;
+	if (!remote_scene_tree->get_parent()) {
+		add_child(remote_scene_tree);
+		remote_scene_tree->hide();
+	}
 }
 
 void EditorDebuggerNode::stop_waiting_inspection() {

@@ -40,6 +40,7 @@
 #include "scene/2d/node_2d.h"
 #include "scene/gui/button.h"
 #include "scene/gui/menu_button.h"
+#include "scene/gui/tree.h"
 #include "scene/main/window.h"
 
 #include "tests/test_macros.h"
@@ -70,6 +71,38 @@ TEST_CASE("[SceneTree][Editor] SceneTreeDock constructs without an EditorNode") 
 
 	tree_root->remove_child(dock);
 	memdelete(dock);
+	memdelete(selection);
+}
+
+TEST_CASE("[SceneTree][Editor] Remote tree editor survives its host dock being freed") {
+	Window *tree_root = SceneTree::get_singleton()->get_root();
+	EditorData editor_data;
+	EditorSelection *selection = memnew(EditorSelection);
+	SceneTreeDock *dock = memnew(SceneTreeDock(selection, editor_data));
+	tree_root->add_child(dock);
+	MessageQueue::get_singleton()->flush();
+
+	// The remote debugger tree is owned by EditorDebuggerNode and only parented
+	// into a dock for display. In a tiled workspace those docks are freed as tiles
+	// are collapsed/rebuilt, so it must be detachable without being destroyed.
+	Tree *remote = memnew(Tree);
+	dock->add_remote_tree_editor(remote);
+	CHECK(remote->get_parent() != nullptr);
+
+	// Detaching returns the same tree, unparents it, and clears the dock's handle.
+	Tree *detached = dock->detach_remote_tree_editor();
+	CHECK(detached == remote);
+	CHECK(remote->get_parent() == nullptr);
+	// A second detach is a no-op now that the dock no longer holds the tree.
+	CHECK(dock->detach_remote_tree_editor() == nullptr);
+
+	// Freeing the dock must not free the detached tree.
+	const ObjectID remote_id = remote->get_instance_id();
+	tree_root->remove_child(dock);
+	memdelete(dock);
+	CHECK(ObjectDB::get_instance(remote_id) == remote);
+
+	memdelete(remote);
 	memdelete(selection);
 }
 

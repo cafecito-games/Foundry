@@ -2,7 +2,7 @@
 /*  editor_debugger_node.h                                                */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -40,6 +40,7 @@ class EditorDebuggerPlugin;
 class EditorDebuggerTree;
 class EditorDebuggerRemoteObjects;
 class MenuButton;
+class SceneTreeDock;
 class ScriptEditorDebugger;
 class TabContainer;
 class UndoRedo;
@@ -104,6 +105,10 @@ private:
 	bool inspect_edited_object_wait = false;
 	float inspect_edited_object_timeout = 0;
 	EditorDebuggerTree *remote_scene_tree = nullptr;
+	// The dock currently displaying remote_scene_tree. The tree is owned by this
+	// node but parented into a dock for display; when that dock is freed it must
+	// be handed back here so the pointer above never dangles.
+	SceneTreeDock *remote_scene_tree_host = nullptr;
 	bool remote_scene_tree_wait = false;
 	float remote_scene_tree_timeout = 0.0;
 	bool remote_scene_tree_clear_msg = true;
@@ -127,6 +132,7 @@ private:
 	friend class DebugAdapterParser;
 	static EditorDebuggerNode *singleton;
 	EditorDebuggerNode();
+	~EditorDebuggerNode();
 
 protected:
 	void _debugger_stopped(int p_id);
@@ -196,6 +202,13 @@ public:
 	void request_remote_tree();
 	void set_remote_selection(const TypedArray<int64_t> &p_ids);
 	void clear_remote_tree_selection();
+
+	// Remote scene tree hosting. The remote tree is parented into a SceneTreeDock
+	// for display, but with a tiled workspace those docks are created and freed as
+	// tiles split/collapse/restore, so ownership is tracked here explicitly.
+	void adopt_remote_scene_tree_host(SceneTreeDock *p_dock);
+	void release_remote_scene_tree_host(SceneTreeDock *p_dock);
+	bool has_remote_scene_tree_host() const { return remote_scene_tree_host != nullptr; }
 	void stop_waiting_inspection();
 	bool match_remote_selection(const TypedArray<uint64_t> &p_ids) const;
 	static void _methods_changed(void *p_ud, Object *p_base, const StringName &p_name, const Variant **p_args, int p_argcount);

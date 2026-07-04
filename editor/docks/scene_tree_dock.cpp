@@ -1646,6 +1646,18 @@ void SceneTreeDock::add_root_node(Node *p_node) {
 
 void SceneTreeDock::_notification(int p_what) {
 	switch (p_what) {
+		case NOTIFICATION_PREDELETE: {
+			// PREDELETE is dispatched most-derived-first, so this runs before Node
+			// frees our children. The remote debugger scene tree is owned by
+			// EditorDebuggerNode and only parented here for display; hand it back
+			// now so it is not destroyed with this dock, which would leave the
+			// debugger node holding a dangling pointer (e.g. when a tiled workspace
+			// tears down and rebuilds its docks on restore/collapse).
+			if (remote_tree && EditorDebuggerNode::get_singleton()) {
+				EditorDebuggerNode::get_singleton()->release_remote_scene_tree_host(this);
+			}
+		} break;
+
 		case NOTIFICATION_READY: {
 			if (!first_enter) {
 				break;
@@ -4578,6 +4590,21 @@ void SceneTreeDock::add_remote_tree_editor(Tree *p_remote) {
 	remote_tree->set_scroll_hint_mode(Tree::SCROLL_HINT_MODE_TOP);
 	remote_tree->hide();
 	remote_tree->connect("open", callable_mp(this, &SceneTreeDock::_load_request));
+}
+
+Tree *SceneTreeDock::detach_remote_tree_editor() {
+	if (!remote_tree) {
+		return nullptr;
+	}
+	Tree *tree = remote_tree;
+	if (tree->is_connected("open", callable_mp(this, &SceneTreeDock::_load_request))) {
+		tree->disconnect("open", callable_mp(this, &SceneTreeDock::_load_request));
+	}
+	if (tree->get_parent() == main_mc) {
+		main_mc->remove_child(tree);
+	}
+	remote_tree = nullptr;
+	return tree;
 }
 
 void SceneTreeDock::show_remote_tree() {

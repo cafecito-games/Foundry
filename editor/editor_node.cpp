@@ -4943,6 +4943,11 @@ void EditorNode::focus_tile(int p_tile_id) {
 	EditorSceneTabs::set_focused_singleton(tile->get_scene_tabs());
 	SceneTreeDock::set_focused_instance(tile->get_scene_tree_dock());
 	InspectorDock::set_focused_instance(tile->get_inspector_dock());
+	// If the remote debugger tree was parked because its previous host dock was
+	// freed by a workspace teardown, re-home it into the newly focused dock.
+	if (EditorDebuggerNode::get_singleton() && !EditorDebuggerNode::get_singleton()->has_remote_scene_tree_host() && tile->get_scene_tree_dock()) {
+		EditorDebuggerNode::get_singleton()->adopt_remote_scene_tree_host(tile->get_scene_tree_dock());
+	}
 	_reparent_main_screen_into(tile);
 
 	if (already_focused && already_current) {

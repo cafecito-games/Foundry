@@ -357,6 +357,7 @@ public:
 	EditorData *get_editor_data() { return editor_data; }
 
 	void add_remote_tree_editor(Tree *p_remote);
+	Tree *detach_remote_tree_editor();
 	void show_remote_tree();
 	void hide_remote_tree();
 	void show_tab_buttons();
