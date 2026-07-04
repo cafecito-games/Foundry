@@ -334,6 +334,66 @@ TEST_CASE("[Editor][Automation][MCP] act delegates to the action driver") {
 	memdelete(root);
 }
 
+TEST_CASE("[Editor][Automation][MCP] act consumes handle returned by observe_ui across snapshots") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	Button *button = memnew(Button);
+	button->set_text("Observe Then Act");
+	button->set_anchors_and_offsets_preset(Control::PRESET_TOP_LEFT);
+	button->set_size(Size2(160, 32));
+	root->add_child(button);
+	mcp_flush_frames();
+
+	EditorAutomationMCPDispatcher dispatcher;
+	EditorAutomationMCPDispatcher::Options options;
+	options.snapshot_root = root;
+	dispatcher.set_options(options);
+
+	Dictionary observe_params;
+	observe_params["name"] = "observe_ui";
+	observe_params["arguments"] = Dictionary();
+	const Dictionary observe_response = dispatcher.handle_message(make_request(11, "tools/call", observe_params));
+	CHECK(observe_response.has("result"));
+	const Dictionary observe_result = observe_response["result"];
+	CHECK_FALSE((bool)observe_result["isError"]);
+	const Dictionary observe_structured = observe_result["structuredContent"];
+	const Array tree = observe_structured["tree"];
+	REQUIRE(tree.size() == 1);
+
+	const Dictionary root_element = tree[0];
+	const Array children = root_element["children"];
+	REQUIRE(children.size() >= 1);
+	const Dictionary button_element = children[0];
+	const String observed_id = button_element["id"];
+	const String observed_handle = button_element["handle"];
+	CHECK_FALSE(observed_id.is_empty());
+	CHECK_FALSE(observed_handle.is_empty());
+
+	mcp_flush_frames();
+
+	Dictionary selector;
+	selector["id"] = observed_id;
+	Dictionary arguments;
+	arguments["selector"] = selector;
+	arguments["action"] = "click";
+	Dictionary act_params;
+	act_params["name"] = "act";
+	act_params["arguments"] = arguments;
+	const Dictionary act_response = dispatcher.handle_message(make_request(12, "tools/call", act_params));
+	CHECK(act_response.has("result"));
+	const Dictionary act_result = act_response["result"];
+	CHECK_FALSE((bool)act_result["isError"]);
+	const Dictionary act_structured = act_result["structuredContent"];
+	CHECK((bool)act_structured["ok"]);
+	const Dictionary act_details = act_structured["details"];
+	CHECK((bool)act_details["reconciled"]);
+	CHECK((uint64_t)act_details["snapshot_generation"] > (uint64_t)observe_structured["generation"]);
+
+	memdelete(root);
+}
+
 // --- HTTP transport (socket-free) tests. ---
 
 static EditorAutomationMCPServer::HTTPRequest make_http_request(const String &p_method, const String &p_body, const String &p_token, const String &p_origin = String()) {

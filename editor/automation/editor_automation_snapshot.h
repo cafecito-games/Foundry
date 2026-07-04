@@ -50,12 +50,17 @@ public:
 	const String &get_focused_element_id() const { return data.focused_element_id; }
 
 	const EditorAutomationElement *find_by_id(const String &p_id) const;
+	const EditorAutomationElement *find_by_handle(const String &p_handle) const;
 	const EditorAutomationElement *find_by_object_id(uint64_t p_object_id) const;
+	const EditorAutomationElement *find_by_durable_key(const String &p_kind, const String &p_key) const;
 
 	Dictionary to_dictionary() const;
 	Array get_root_elements() const;
 
 	static String make_control_element_id(uint64_t p_generation, uint64_t p_object_id);
 	static String make_virtual_element_id(uint64_t p_generation, const String &p_kind, const String &p_key);
+	static String make_durable_handle(const String &p_kind, const String &p_key);
 	static bool parse_element_id(const String &p_id, uint64_t &r_generation, String &r_kind, String &r_key);
+	static bool parse_durable_handle(const String &p_handle, String &r_kind, String &r_key);
+	static bool is_virtual_durable_kind(const String &p_kind);
 };

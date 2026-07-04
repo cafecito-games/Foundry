@@ -102,6 +102,7 @@ Dictionary _element_tree(const EditorAutomationSnapshotData &p_data, int p_index
 	const EditorAutomationElement &element = p_data.elements[p_index];
 	Dictionary dict;
 	dict["id"] = element.id;
+	dict["handle"] = element.handle;
 	dict["role"] = element.role;
 	dict["name"] = element.name;
 	dict["text"] = element.text;
@@ -161,7 +162,7 @@ Dictionary _object_schema() {
 Dictionary _selector_schema() {
 	Dictionary schema;
 	schema["type"] = "object";
-	schema["description"] = "Semantic selector matching by role, name, text, class, path, state, and containment.";
+	schema["description"] = "Semantic selector by role, name, text, class, path, state, and containment. Snapshot-scoped `id` values and durable `handle` values from observe_ui reconcile across later snapshots when the underlying object or virtual key is still valid.";
 	return schema;
 }
 

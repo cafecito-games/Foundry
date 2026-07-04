@@ -36,4 +36,5 @@ class EditorAutomationSelector {
 public:
 	static EditorAutomationSelectorResult resolve(const EditorAutomationSnapshot &p_snapshot, const Dictionary &p_selector);
 	static EditorAutomationSelectorResult resolve_by_id(const EditorAutomationSnapshot &p_snapshot, const String &p_id);
+	static EditorAutomationSelectorResult resolve_by_handle(const EditorAutomationSnapshot &p_snapshot, const String &p_handle);
 };

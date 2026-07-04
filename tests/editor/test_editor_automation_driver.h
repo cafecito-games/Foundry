@@ -205,7 +205,7 @@ TEST_CASE("[Editor][Automation] focus changes focus and reports focused element"
 	memdelete(root);
 }
 
-TEST_CASE("[Editor][Automation] stale element ID rejection") {
+TEST_CASE("[Editor][Automation] act reconciles stale snapshot id across generations") {
 	PanelContainer *root = memnew(PanelContainer);
 	root->set_size(Size2(400, 300));
 	SceneTree::get_singleton()->get_root()->add_child(root);
@@ -219,17 +219,48 @@ TEST_CASE("[Editor][Automation] stale element ID rejection") {
 	const EditorAutomationSnapshot first_snapshot = EditorAutomationSnapshot::capture_from_node(root);
 	const EditorAutomationElement *button_element = find_element_by_role_and_name(first_snapshot, "button", "Save");
 	REQUIRE(button_element != nullptr);
-	const String stale_id = button_element->id;
 
 	const EditorAutomationSnapshot second_snapshot = EditorAutomationSnapshot::capture_from_node(root);
 
 	Dictionary target;
-	target["id"] = stale_id;
+	target["id"] = button_element->id;
+
+	const EditorAutomationActionResult result = EditorAutomationDriver::perform(second_snapshot, "click", target);
+	CHECK(result.ok);
+	CHECK(result.kind.is_empty());
+	CHECK((bool)result.details["reconciled"]);
+	CHECK(String(result.details["current_element_id"]) == String(result.element_id));
+
+	memdelete(root);
+}
+
+TEST_CASE("[Editor][Automation] freed control action returns freed_element") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	Button *button = memnew(Button);
+	button->set_text("Delete Me");
+	setup_visible_control(button);
+	root->add_child(button);
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot first_snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	const EditorAutomationElement *button_element = find_element_by_role_and_name(first_snapshot, "button", "Delete Me");
+	REQUIRE(button_element != nullptr);
+
+	root->remove_child(button);
+	memdelete(button);
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot second_snapshot = EditorAutomationSnapshot::capture_from_node(root);
+
+	Dictionary target;
+	target["handle"] = button_element->handle;
 
 	const EditorAutomationActionResult result = EditorAutomationDriver::perform(second_snapshot, "click", target);
 	CHECK_FALSE(result.ok);
-	CHECK(result.kind == "stale_element");
-	CHECK_FALSE(result.message.is_empty());
+	CHECK(result.kind == "freed_element");
 
 	memdelete(root);
 }

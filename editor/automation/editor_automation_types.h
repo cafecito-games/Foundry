@@ -39,6 +39,7 @@
 
 struct EditorAutomationElement {
 	String id;
+	String handle;
 	String role;
 	String name;
 	String text;
@@ -61,6 +62,7 @@ struct EditorAutomationSnapshotData {
 	uint64_t generation = 0;
 	Vector<EditorAutomationElement> elements;
 	HashMap<String, int> id_to_index;
+	HashMap<String, int> handle_to_index;
 	HashMap<uint64_t, int> object_id_to_index;
 	Vector<int> root_indices;
 	String focused_element_id;
@@ -80,6 +82,10 @@ struct EditorAutomationSelectorResult {
 	String error_kind;
 	String message;
 	Array candidates;
+	bool reconciled = false;
+	String requested_reference;
+	String current_element_id;
+	uint64_t snapshot_generation = 0;
 
 	Dictionary to_dictionary() const;
 };
