@@ -55,7 +55,70 @@ bool _read_optional_bool(const Dictionary &p_selector, const char *p_key, bool &
 	return true;
 }
 
-bool _element_matches_selector(const EditorAutomationElement &p_element, const Dictionary &p_selector) {
+bool _read_optional_int(const Dictionary &p_selector, const char *p_key, int64_t &r_value) {
+	if (!_selector_has_key(p_selector, p_key)) {
+		return false;
+	}
+	const Variant value = p_selector.get(p_key, Variant());
+	if (value.get_type() != Variant::INT && value.get_type() != Variant::FLOAT) {
+		return false;
+	}
+	r_value = value;
+	return true;
+}
+
+// Reads the optional `nth`/`index` disambiguator. `nth` and `index` are
+// synonyms; when both are present they must agree.
+bool _read_disambiguator(const Dictionary &p_selector, int64_t &r_value, bool &r_valid) {
+	r_valid = true;
+	int64_t nth = 0;
+	int64_t index = 0;
+	const bool has_nth = _read_optional_int(p_selector, "nth", nth);
+	const bool has_index = _read_optional_int(p_selector, "index", index);
+	if (!has_nth && !has_index) {
+		return false;
+	}
+	if (has_nth && has_index && nth != index) {
+		r_valid = false;
+		return true;
+	}
+	r_value = has_nth ? nth : index;
+	return true;
+}
+
+bool _string_equals(const String &p_value, const String &p_expected, bool p_case_sensitive) {
+	if (p_case_sensitive) {
+		return p_value == p_expected;
+	}
+	return p_value.nocasecmp_to(p_expected) == 0;
+}
+
+bool _string_contains(const String &p_value, const String &p_needle, bool p_case_sensitive) {
+	if (p_case_sensitive) {
+		return p_value.contains(p_needle);
+	}
+	return p_value.containsn(p_needle);
+}
+
+// Matches an exact field (`p_exact_key`) and/or a substring field
+// (`p_contains_key`) against `p_value`, honoring case sensitivity.
+bool _match_text_field(const Dictionary &p_selector, const char *p_exact_key, const char *p_contains_key, const String &p_value, bool p_case_sensitive) {
+	if (_selector_has_key(p_selector, p_exact_key)) {
+		if (!_string_equals(p_value, String(p_selector.get(p_exact_key, Variant())), p_case_sensitive)) {
+			return false;
+		}
+	}
+	if (p_contains_key != nullptr && _selector_has_key(p_selector, p_contains_key)) {
+		if (!_string_contains(p_value, String(p_selector.get(p_contains_key, Variant())), p_case_sensitive)) {
+			return false;
+		}
+	}
+	return true;
+}
+
+bool _element_matches_selector(const EditorAutomationElement &p_element, const Dictionary &p_selector, bool p_case_sensitive) {
+	// Opaque references are always matched case-sensitively; they are not
+	// human-authored labels.
 	if (_selector_has_key(p_selector, "handle")) {
 		if (p_element.handle != String(p_selector.get("handle", Variant()))) {
 			return false;
@@ -68,34 +131,20 @@ bool _element_matches_selector(const EditorAutomationElement &p_element, const D
 		}
 	}
 
-	if (_selector_has_key(p_selector, "role")) {
-		if (p_element.role != String(p_selector.get("role", Variant()))) {
-			return false;
-		}
+	if (!_match_text_field(p_selector, "role", "role_contains", p_element.role, p_case_sensitive)) {
+		return false;
 	}
-
-	if (_selector_has_key(p_selector, "name")) {
-		if (p_element.name != String(p_selector.get("name", Variant()))) {
-			return false;
-		}
+	if (!_match_text_field(p_selector, "name", "name_contains", p_element.name, p_case_sensitive)) {
+		return false;
 	}
-
-	if (_selector_has_key(p_selector, "text")) {
-		if (p_element.text != String(p_selector.get("text", Variant()))) {
-			return false;
-		}
+	if (!_match_text_field(p_selector, "text", "text_contains", p_element.text, p_case_sensitive)) {
+		return false;
 	}
-
-	if (_selector_has_key(p_selector, "class")) {
-		if (p_element.class_name != String(p_selector.get("class", Variant()))) {
-			return false;
-		}
+	if (!_match_text_field(p_selector, "class", "class_contains", p_element.class_name, p_case_sensitive)) {
+		return false;
 	}
-
-	if (_selector_has_key(p_selector, "path")) {
-		if (p_element.path != String(p_selector.get("path", Variant()))) {
-			return false;
-		}
+	if (!_match_text_field(p_selector, "path", "path_contains", p_element.path, p_case_sensitive)) {
+		return false;
 	}
 
 	bool bool_value = false;
@@ -109,6 +158,15 @@ bool _element_matches_selector(const EditorAutomationElement &p_element, const D
 		return false;
 	}
 
+	// Agent-friendly filters. Unlike the exact-state selectors above, these
+	// only restrict when set to true and are ignored when false.
+	if (_read_optional_bool(p_selector, "visible_only", bool_value) && bool_value && !p_element.visible) {
+		return false;
+	}
+	if (_read_optional_bool(p_selector, "enabled_only", bool_value) && bool_value && !p_element.enabled) {
+		return false;
+	}
+
 	return true;
 }
 
@@ -119,14 +177,80 @@ void _collect_descendants(const Vector<EditorAutomationElement> &p_elements, int
 	}
 }
 
-Dictionary _candidate_from_element(const EditorAutomationElement &p_element) {
+// Closeness of a substring match: 1.0 for an exact-length hit, approaching 0
+// as the containing text grows relative to the needle. Used only to rank
+// otherwise-equal candidates so agents can prefer the tightest match.
+double _substring_ratio(const String &p_needle, const String &p_haystack) {
+	if (p_haystack.is_empty()) {
+		return p_needle.is_empty() ? 1.0 : 0.0;
+	}
+	const double ratio = (double)p_needle.length() / (double)p_haystack.length();
+	return ratio > 1.0 ? 1.0 : ratio;
+}
+
+double _candidate_score(const EditorAutomationElement &p_element, const Dictionary &p_selector, bool p_case_sensitive, String &r_reason) {
+	double score = 1.0;
+	Vector<String> reasons;
+	if (_selector_has_key(p_selector, "role")) {
+		reasons.push_back("role");
+	}
+	if (_selector_has_key(p_selector, "name")) {
+		reasons.push_back("name");
+	}
+	if (_selector_has_key(p_selector, "text")) {
+		reasons.push_back("text");
+	}
+	if (_selector_has_key(p_selector, "class")) {
+		reasons.push_back("class");
+	}
+	if (_selector_has_key(p_selector, "path")) {
+		reasons.push_back("path");
+	}
+	if (_selector_has_key(p_selector, "name_contains")) {
+		score *= _substring_ratio(String(p_selector.get("name_contains", Variant())), p_element.name);
+		reasons.push_back("name_contains");
+	}
+	if (_selector_has_key(p_selector, "text_contains")) {
+		score *= _substring_ratio(String(p_selector.get("text_contains", Variant())), p_element.text);
+		reasons.push_back("text_contains");
+	}
+	if (_selector_has_key(p_selector, "class_contains")) {
+		score *= _substring_ratio(String(p_selector.get("class_contains", Variant())), p_element.class_name);
+		reasons.push_back("class_contains");
+	}
+	if (_selector_has_key(p_selector, "path_contains")) {
+		score *= _substring_ratio(String(p_selector.get("path_contains", Variant())), p_element.path);
+		reasons.push_back("path_contains");
+	}
+	if (_selector_has_key(p_selector, "role_contains")) {
+		reasons.push_back("role_contains");
+	}
+	if (reasons.is_empty()) {
+		r_reason = "matched all elements (no field filters)";
+	} else {
+		r_reason = "matched " + String(", ").join(reasons);
+	}
+	return score;
+}
+
+Dictionary _candidate_from_element(const EditorAutomationElement &p_element, int p_nth, double p_score, const String &p_reason) {
 	Dictionary candidate;
 	candidate["id"] = p_element.id;
+	candidate["handle"] = p_element.handle;
 	candidate["role"] = p_element.role;
 	candidate["name"] = p_element.name;
 	candidate["text"] = p_element.text;
 	candidate["class"] = p_element.class_name;
 	candidate["path"] = p_element.path;
+	candidate["visible"] = p_element.visible;
+	candidate["enabled"] = p_element.enabled;
+	candidate["focused"] = p_element.focused;
+	// Ordinal within the ranked candidate list (stable snapshot order). Pass
+	// this back as `nth`/`index` in the selector to pick this candidate.
+	candidate["nth"] = p_nth;
+	candidate["index"] = p_nth;
+	candidate["score"] = p_score;
+	candidate["reason"] = p_reason;
 	return candidate;
 }
 
@@ -163,9 +287,19 @@ EditorAutomationSelectorResult _resolve_internal(const EditorAutomationSnapshot 
 		selector_without_within.erase("within");
 	}
 
+	bool case_sensitive = true;
+	_read_optional_bool(selector_without_within, "case_sensitive", case_sensitive);
+
+	int64_t disambiguator = 0;
+	bool disambiguator_valid = true;
+	const bool has_disambiguator = _read_disambiguator(selector_without_within, disambiguator, disambiguator_valid);
+	if (has_disambiguator && !disambiguator_valid) {
+		return _make_result(EditorAutomationSelectorStatus::INVALID_SELECTOR, "invalid_disambiguator", "The `nth` and `index` disambiguators disagree.");
+	}
+
 	Vector<int> matches;
 	for (int element_index : search_indices) {
-		if (_element_matches_selector(data.elements[element_index], selector_without_within)) {
+		if (_element_matches_selector(data.elements[element_index], selector_without_within, case_sensitive)) {
 			matches.push_back(element_index);
 		}
 	}
@@ -173,10 +307,37 @@ EditorAutomationSelectorResult _resolve_internal(const EditorAutomationSnapshot 
 	if (matches.is_empty()) {
 		return _make_result(EditorAutomationSelectorStatus::NO_MATCH, "no_match", "No elements matched the selector.");
 	}
+
+	// Deterministic disambiguation is applied after all filters, over the
+	// candidate list in stable snapshot order. Negative indices count from the
+	// end (nth=-1 is the last match).
+	if (has_disambiguator) {
+		int64_t resolved_index = disambiguator;
+		if (resolved_index < 0) {
+			resolved_index += matches.size();
+		}
+		if (resolved_index < 0 || resolved_index >= matches.size()) {
+			EditorAutomationSelectorResult result = _make_result(EditorAutomationSelectorStatus::NO_MATCH, "index_out_of_range", vformat("The disambiguator %d is out of range for %d matches.", (int)disambiguator, matches.size()));
+			for (int i = 0; i < matches.size(); i++) {
+				String reason;
+				const double score = _candidate_score(data.elements[matches[i]], selector_without_within, case_sensitive, reason);
+				result.candidates.push_back(_candidate_from_element(data.elements[matches[i]], i, score, reason));
+			}
+			result.match_indices = matches;
+			return result;
+		}
+		EditorAutomationSelectorResult result;
+		result.status = EditorAutomationSelectorStatus::OK;
+		result.match_indices.push_back(matches[resolved_index]);
+		return result;
+	}
+
 	if (matches.size() > 1) {
-		EditorAutomationSelectorResult result = _make_result(EditorAutomationSelectorStatus::AMBIGUOUS, "ambiguous_selector", "Multiple elements matched the selector.");
-		for (int match_index : matches) {
-			result.candidates.push_back(_candidate_from_element(data.elements[match_index]));
+		EditorAutomationSelectorResult result = _make_result(EditorAutomationSelectorStatus::AMBIGUOUS, "ambiguous_selector", "Multiple elements matched the selector. Add `nth`/`index` to disambiguate.");
+		for (int i = 0; i < matches.size(); i++) {
+			String reason;
+			const double score = _candidate_score(data.elements[matches[i]], selector_without_within, case_sensitive, reason);
+			result.candidates.push_back(_candidate_from_element(data.elements[matches[i]], i, score, reason));
 		}
 		result.match_indices = matches;
 		return result;

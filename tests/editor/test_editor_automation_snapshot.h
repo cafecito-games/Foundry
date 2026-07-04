@@ -278,6 +278,221 @@ TEST_CASE("[Editor][Automation] within selector disambiguates duplicate button n
 	memdelete(root);
 }
 
+TEST_CASE("[Editor][Automation] name_contains and text_contains partial matching") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	Button *button = memnew(Button);
+	button->set_accessibility_name("SaveSceneButton");
+	button->set_text("Save Scene As...");
+	setup_visible_control(button);
+	root->add_child(button);
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+
+	Dictionary name_selector;
+	name_selector["role"] = "button";
+	name_selector["name_contains"] = "SaveScene";
+	const EditorAutomationSelectorResult name_result = EditorAutomationSelector::resolve(snapshot, name_selector);
+	CHECK(name_result.status == EditorAutomationSelectorStatus::OK);
+	REQUIRE(name_result.match_indices.size() == 1);
+	CHECK(snapshot.get_element(name_result.match_indices[0]).name == "SaveSceneButton");
+
+	Dictionary text_selector;
+	text_selector["text_contains"] = "Save Scene";
+	const EditorAutomationSelectorResult text_result = EditorAutomationSelector::resolve(snapshot, text_selector);
+	CHECK(text_result.status == EditorAutomationSelectorStatus::OK);
+	REQUIRE(text_result.match_indices.size() == 1);
+	CHECK(snapshot.get_element(text_result.match_indices[0]).text == "Save Scene As...");
+
+	Dictionary miss_selector;
+	miss_selector["name_contains"] = "DoesNotExist";
+	const EditorAutomationSelectorResult miss_result = EditorAutomationSelector::resolve(snapshot, miss_selector);
+	CHECK(miss_result.status == EditorAutomationSelectorStatus::NO_MATCH);
+
+	memdelete(root);
+}
+
+TEST_CASE("[Editor][Automation] case-insensitive matching for exact and contains fields") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	Button *button = memnew(Button);
+	button->set_text("Add Child Node");
+	setup_visible_control(button);
+	root->add_child(button);
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+
+	// Default (case-sensitive) mismatch on casing must fail.
+	Dictionary sensitive_selector;
+	sensitive_selector["role"] = "button";
+	sensitive_selector["text"] = "add child node";
+	const EditorAutomationSelectorResult sensitive_result = EditorAutomationSelector::resolve(snapshot, sensitive_selector);
+	CHECK(sensitive_result.status == EditorAutomationSelectorStatus::NO_MATCH);
+
+	// Case-insensitive exact match.
+	Dictionary exact_selector;
+	exact_selector["role"] = "button";
+	exact_selector["text"] = "add child node";
+	exact_selector["case_sensitive"] = false;
+	const EditorAutomationSelectorResult exact_result = EditorAutomationSelector::resolve(snapshot, exact_selector);
+	CHECK(exact_result.status == EditorAutomationSelectorStatus::OK);
+	REQUIRE(exact_result.match_indices.size() == 1);
+
+	// Case-insensitive contains match.
+	Dictionary contains_selector;
+	contains_selector["text_contains"] = "CHILD";
+	contains_selector["case_sensitive"] = false;
+	const EditorAutomationSelectorResult contains_result = EditorAutomationSelector::resolve(snapshot, contains_selector);
+	CHECK(contains_result.status == EditorAutomationSelectorStatus::OK);
+	REQUIRE(contains_result.match_indices.size() == 1);
+
+	memdelete(root);
+}
+
+TEST_CASE("[Editor][Automation] nth/index disambiguation across repeated labels") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	Button *first = memnew(Button);
+	first->set_accessibility_name("FirstAdd");
+	first->set_text("Add");
+	setup_visible_control(first);
+	root->add_child(first);
+
+	Button *second = memnew(Button);
+	second->set_accessibility_name("SecondAdd");
+	second->set_text("Add");
+	setup_visible_control(second);
+	root->add_child(second);
+
+	Button *third = memnew(Button);
+	third->set_accessibility_name("ThirdAdd");
+	third->set_text("Add");
+	setup_visible_control(third);
+	root->add_child(third);
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+
+	// Without a disambiguator, repeated labels stay ambiguous with ordered candidates.
+	Dictionary ambiguous_selector;
+	ambiguous_selector["role"] = "button";
+	ambiguous_selector["text"] = "Add";
+	const EditorAutomationSelectorResult ambiguous_result = EditorAutomationSelector::resolve(snapshot, ambiguous_selector);
+	CHECK(ambiguous_result.status == EditorAutomationSelectorStatus::AMBIGUOUS);
+	REQUIRE(ambiguous_result.candidates.size() == 3);
+	const Dictionary first_candidate = ambiguous_result.candidates[0];
+	CHECK((int)first_candidate["nth"] == 0);
+	CHECK((int)first_candidate["index"] == 0);
+	CHECK(first_candidate.has("score"));
+	CHECK(first_candidate.has("reason"));
+	CHECK(first_candidate.has("handle"));
+
+	// `nth` selects deterministically in stable snapshot order.
+	Dictionary nth_selector;
+	nth_selector["role"] = "button";
+	nth_selector["text"] = "Add";
+	nth_selector["nth"] = 1;
+	const EditorAutomationSelectorResult nth_result = EditorAutomationSelector::resolve(snapshot, nth_selector);
+	CHECK(nth_result.status == EditorAutomationSelectorStatus::OK);
+	REQUIRE(nth_result.match_indices.size() == 1);
+	CHECK(snapshot.get_element(nth_result.match_indices[0]).name == "SecondAdd");
+
+	// `index` is a synonym for `nth`.
+	Dictionary index_selector;
+	index_selector["role"] = "button";
+	index_selector["text"] = "Add";
+	index_selector["index"] = 2;
+	const EditorAutomationSelectorResult index_result = EditorAutomationSelector::resolve(snapshot, index_selector);
+	CHECK(index_result.status == EditorAutomationSelectorStatus::OK);
+	REQUIRE(index_result.match_indices.size() == 1);
+	CHECK(snapshot.get_element(index_result.match_indices[0]).name == "ThirdAdd");
+
+	// Negative index counts from the end.
+	Dictionary negative_selector;
+	negative_selector["role"] = "button";
+	negative_selector["text"] = "Add";
+	negative_selector["nth"] = -1;
+	const EditorAutomationSelectorResult negative_result = EditorAutomationSelector::resolve(snapshot, negative_selector);
+	CHECK(negative_result.status == EditorAutomationSelectorStatus::OK);
+	CHECK(snapshot.get_element(negative_result.match_indices[0]).name == "ThirdAdd");
+
+	// Out-of-range disambiguator reports a machine-readable error with candidates.
+	Dictionary oob_selector;
+	oob_selector["role"] = "button";
+	oob_selector["text"] = "Add";
+	oob_selector["nth"] = 7;
+	const EditorAutomationSelectorResult oob_result = EditorAutomationSelector::resolve(snapshot, oob_selector);
+	CHECK(oob_result.status == EditorAutomationSelectorStatus::NO_MATCH);
+	CHECK(oob_result.error_kind == "index_out_of_range");
+	CHECK(oob_result.candidates.size() == 3);
+
+	memdelete(root);
+}
+
+TEST_CASE("[Editor][Automation] visible_only and enabled_only filtering") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	Button *visible_enabled = memnew(Button);
+	visible_enabled->set_accessibility_name("VisibleEnabled");
+	visible_enabled->set_text("Action");
+	setup_visible_control(visible_enabled);
+	root->add_child(visible_enabled);
+
+	Button *disabled = memnew(Button);
+	disabled->set_accessibility_name("DisabledButton");
+	disabled->set_text("Action");
+	setup_visible_control(disabled);
+	disabled->set_disabled(true);
+	root->add_child(disabled);
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+
+	// Both buttons match text; enabled_only narrows to the enabled one.
+	Dictionary enabled_selector;
+	enabled_selector["role"] = "button";
+	enabled_selector["text"] = "Action";
+	enabled_selector["enabled_only"] = true;
+	const EditorAutomationSelectorResult enabled_result = EditorAutomationSelector::resolve(snapshot, enabled_selector);
+	CHECK(enabled_result.status == EditorAutomationSelectorStatus::OK);
+	REQUIRE(enabled_result.match_indices.size() == 1);
+	CHECK(snapshot.get_element(enabled_result.match_indices[0]).name == "VisibleEnabled");
+
+	// enabled_only:false is a no-op filter, so the selector stays ambiguous.
+	Dictionary noop_selector;
+	noop_selector["role"] = "button";
+	noop_selector["text"] = "Action";
+	noop_selector["enabled_only"] = false;
+	const EditorAutomationSelectorResult noop_result = EditorAutomationSelector::resolve(snapshot, noop_selector);
+	CHECK(noop_result.status == EditorAutomationSelectorStatus::AMBIGUOUS);
+
+	// visible_only narrows to the visible one after hiding a control.
+	disabled->set_disabled(false);
+	visible_enabled->set_visible(false);
+	MessageQueue::get_singleton()->flush();
+	const EditorAutomationSnapshot visible_snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	Dictionary visible_selector;
+	visible_selector["role"] = "button";
+	visible_selector["text"] = "Action";
+	visible_selector["visible_only"] = true;
+	const EditorAutomationSelectorResult visible_result = EditorAutomationSelector::resolve(visible_snapshot, visible_selector);
+	CHECK(visible_result.status == EditorAutomationSelectorStatus::OK);
+	REQUIRE(visible_result.match_indices.size() == 1);
+	CHECK(visible_snapshot.get_element(visible_result.match_indices[0]).name == "DisabledButton");
+
+	memdelete(root);
+}
+
 TEST_CASE("[Editor][Automation] stale snapshot id reconciles for live controls") {
 	PanelContainer *root = memnew(PanelContainer);
 	root->set_size(Size2(400, 300));
