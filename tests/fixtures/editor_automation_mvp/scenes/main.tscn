@@ -1,3 +1,9 @@
-[gd_scene format=3 uid="uid://editorautomationmvp"]
+[gd_scene format=3 uid="uid://qfoal7m7rnn2"]
 
-[node name="Main" type="Node2D"]
+[node name="Main" type="Node2D" unique_id=1579459023]
+
+[node name="Node2D" type="Node2D" parent="." unique_id=121030452]
+visible = false
+
+[node name="Node2D" type="Node2D" parent="Node2D" unique_id=1140476058]
+visible = false

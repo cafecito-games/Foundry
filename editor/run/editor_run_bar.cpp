@@ -694,7 +694,7 @@ EditorRunBar::EditorRunBar() {
 	stop_button->set_disabled(true);
 	stop_button->connect(SceneStringName(pressed), callable_mp(this, &EditorRunBar::stop_playing));
 
-	ED_SHORTCUT("editor/stop_running_project", TTRC("Stop Running Project"), Key::F8);
+	ED_SHORTCUT_AND_COMMAND("editor/stop_running_project", TTRC("Stop Running Project"), Key::F8);
 	ED_SHORTCUT_OVERRIDE("editor/stop_running_project", "macos", KeyModifierMask::META | Key::PERIOD);
 	stop_button->set_shortcut(ED_GET_SHORTCUT("editor/stop_running_project"));
 

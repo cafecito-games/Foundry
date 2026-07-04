@@ -864,6 +864,7 @@ InspectorDock::InspectorDock(EditorData &p_editor_data) {
 	search = memnew(LineEdit);
 	search->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	search->set_placeholder(TTRC("Filter Properties"));
+	search->set_accessibility_name(TTRC("Filter Properties"));
 	search->set_clear_button_enabled(true);
 	property_tools_hb->add_child(search);
 
@@ -939,6 +940,14 @@ InspectorDock::InspectorDock(EditorData &p_editor_data) {
 	if (FileSystemDock::get_singleton()) {
 		FileSystemDock::get_singleton()->connect("files_moved", callable_mp(this, &InspectorDock::_files_moved));
 	}
+
+	Ref<Shortcut> expand_all_shortcut = ED_SHORTCUT("property_editor/expand_all", TTRC("Expand All"));
+	EditorCommandPalette::get_singleton()->add_command(
+			TTR("Expand All Inspector Properties"),
+			"property_editor/expand_all",
+			callable_mp(this, &InspectorDock::_menu_expandall),
+			varray(),
+			expand_all_shortcut);
 
 	set_process_shortcut_input(true);
 }

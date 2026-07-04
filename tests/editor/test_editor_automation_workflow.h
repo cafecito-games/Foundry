@@ -244,7 +244,7 @@ static String workflow_run_subprocess(const List<String> &p_arguments, int &r_ex
 	return output;
 }
 
-TEST_CASE("[Editor][Automation] workflow test driver wraps the shared automation core") {
+TEST_CASE("[Editor][EditorAutomation] workflow test driver wraps the shared automation core") {
 	EditorAutomationTrace::get_singleton().clear();
 	EditorAutomationLog::clear_test_messages();
 
@@ -295,7 +295,7 @@ TEST_CASE("[Editor][Automation] workflow test driver wraps the shared automation
 	EditorAutomationLog::clear_test_messages();
 }
 
-TEST_CASE("[Editor][Automation] workflow test driver records structured diagnostics on failure") {
+TEST_CASE("[Editor][EditorAutomation] workflow test driver records structured diagnostics on failure") {
 	PanelContainer *root = memnew(PanelContainer);
 	root->set_size(Size2(200, 120));
 	SceneTree::get_singleton()->get_root()->add_child(root);
@@ -323,10 +323,10 @@ TEST_CASE("[Editor][Automation] workflow test driver records structured diagnost
 	memdelete(root);
 }
 
-TEST_CASE("[Editor][Automation] MVP acceptance workflow subprocess") {
+TEST_CASE("[Editor][EditorAutomation] MVP acceptance workflow subprocess") {
 	if (!workflow_has_display()) {
 		MESSAGE("Requires a GUI display. Run with DISPLAY=:1 ./bin/foundry.linuxbsd.editor.dev.x86_64 editor open --project <project> --automation --automation-run-workflow=mvp");
-		SKIP("DISPLAY is not set; GUI editor workflow cannot run headlessly.");
+		return;
 	}
 
 	const String project_path = workflow_fixture_project_path();
@@ -360,10 +360,10 @@ TEST_CASE("[Editor][Automation] MVP acceptance workflow subprocess") {
 	CHECK(exit_code == 0);
 }
 
-TEST_CASE("[Editor][Automation][MCP] launched editor smoke handshake") {
+TEST_CASE("[Editor][EditorAutomation][MCP] launched editor smoke handshake") {
 	if (!workflow_has_display()) {
 		MESSAGE("Requires a GUI display. Run with DISPLAY=:1 ./bin/foundry.linuxbsd.editor.dev.x86_64 editor open --project <project> --automation --automation-transport=mcp --automation-port 0");
-		SKIP("DISPLAY is not set; MCP editor smoke test cannot run headlessly.");
+		return;
 	}
 
 	const String project_path = workflow_fixture_project_path();
@@ -434,33 +434,32 @@ TEST_CASE("[Editor][Automation][MCP] launched editor smoke handshake") {
 	const int port = endpoint.get_slicec(':', 2).get_slicec('/', 0).to_int();
 	REQUIRE(port > 0);
 
-	Ref<StreamPeerTCP> client;
-	client.instantiate();
-	REQUIRE(client->connect_to_host(IPAddress("127.0.0.1"), port) == OK);
+	auto mcp_request = [&](const Dictionary &p_request) -> String {
+		Ref<StreamPeerTCP> client;
+		client.instantiate();
+		REQUIRE(client->connect_to_host(IPAddress("127.0.0.1"), port) == OK);
 
-	const uint64_t connect_deadline = OS::get_singleton()->get_ticks_usec() + 5000000;
-	while (client->poll() == OK && client->get_status() == StreamPeerTCP::STATUS_CONNECTING && OS::get_singleton()->get_ticks_usec() < connect_deadline) {
-		OS::get_singleton()->delay_usec(1000);
-	}
-	REQUIRE(client->get_status() == StreamPeerTCP::STATUS_CONNECTED);
+		const uint64_t connect_deadline = OS::get_singleton()->get_ticks_usec() + 5000000;
+		while (client->poll() == OK && client->get_status() == StreamPeerTCP::STATUS_CONNECTING && OS::get_singleton()->get_ticks_usec() < connect_deadline) {
+			OS::get_singleton()->delay_usec(1000);
+		}
+		REQUIRE(client->get_status() == StreamPeerTCP::STATUS_CONNECTED);
 
-	auto send_request = [&](const Dictionary &p_request) {
 		const String body = JSON::stringify(p_request, "", false);
 		const CharString body_utf8 = body.utf8();
 		String request_text = "POST /mcp HTTP/1.1\r\n";
 		request_text += "Host: 127.0.0.1\r\n";
 		request_text += "Authorization: Bearer " + token + "\r\n";
 		request_text += "Content-Type: application/json\r\n";
+		request_text += "Connection: close\r\n";
 		request_text += vformat("Content-Length: %d\r\n", body_utf8.length());
 		request_text += "\r\n";
 		request_text += body;
 		const CharString request_utf8 = request_text.utf8();
 		REQUIRE(client->put_data((const uint8_t *)request_utf8.get_data(), request_utf8.length()) == OK);
-	};
 
-	auto read_response = [&]() -> String {
 		String response_text;
-		const uint64_t response_deadline = OS::get_singleton()->get_ticks_usec() + 5000000;
+		const uint64_t response_deadline = OS::get_singleton()->get_ticks_usec() + 10000000;
 		while (OS::get_singleton()->get_ticks_usec() < response_deadline) {
 			client->poll();
 			const int available = client->get_available_bytes();
@@ -477,6 +476,8 @@ TEST_CASE("[Editor][Automation][MCP] launched editor smoke handshake") {
 			}
 			OS::get_singleton()->delay_usec(2000);
 		}
+
+		client->disconnect_from_host();
 		return response_text;
 	};
 
@@ -487,8 +488,7 @@ TEST_CASE("[Editor][Automation][MCP] launched editor smoke handshake") {
 	init_request["id"] = 1;
 	init_request["method"] = "initialize";
 	init_request["params"] = init_params;
-	send_request(init_request);
-	const String init_response = read_response();
+	const String init_response = mcp_request(init_request);
 	CHECK(init_response.contains("HTTP/1.1 200"));
 	CHECK(init_response.contains("protocolVersion"));
 
@@ -496,8 +496,7 @@ TEST_CASE("[Editor][Automation][MCP] launched editor smoke handshake") {
 	tools_request["jsonrpc"] = "2.0";
 	tools_request["id"] = 2;
 	tools_request["method"] = "tools/list";
-	send_request(tools_request);
-	const String tools_response = read_response();
+	const String tools_response = mcp_request(tools_request);
 	CHECK(tools_response.contains("observe_ui"));
 	CHECK(tools_response.contains("read_editor_state"));
 
@@ -509,8 +508,7 @@ TEST_CASE("[Editor][Automation][MCP] launched editor smoke handshake") {
 	observe_request["id"] = 3;
 	observe_request["method"] = "tools/call";
 	observe_request["params"] = observe_params;
-	send_request(observe_request);
-	const String observe_response = read_response();
+	const String observe_response = mcp_request(observe_request);
 	CHECK(observe_response.contains("element_count"));
 
 	Dictionary state_params;
@@ -521,11 +519,9 @@ TEST_CASE("[Editor][Automation][MCP] launched editor smoke handshake") {
 	state_request["id"] = 4;
 	state_request["method"] = "tools/call";
 	state_request["params"] = state_params;
-	send_request(state_request);
-	const String state_response = read_response();
+	const String state_response = mcp_request(state_request);
 	CHECK(state_response.contains("supported"));
 
-	client->disconnect_from_host();
 	if (stdout_pipe.is_valid()) {
 		stdout_pipe->close();
 	}

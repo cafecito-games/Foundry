@@ -72,12 +72,12 @@ void _flush_frames(int p_count = 1) {
 	}
 }
 
-bool _selected_nodes_contain_class(EditorWorkflowTestDriver &p_driver, const String &p_class_name) {
+bool _selected_nodes_contain_name(EditorWorkflowTestDriver &p_driver, const String &p_name) {
 	const Dictionary state = p_driver.read_editor_state();
 	const Array selected = state.get("selected_nodes", Array());
 	for (int i = 0; i < selected.size(); i++) {
 		const Dictionary entry = selected[i];
-		if (String(entry.get("class", String())) == p_class_name) {
+		if (String(entry.get("name", String())) == p_name) {
 			return true;
 		}
 	}
@@ -94,6 +94,24 @@ bool _is_playing(EditorWorkflowTestDriver &p_driver) {
 	const Dictionary state = p_driver.read_editor_state();
 	const Dictionary playing = state.get("playing", Dictionary());
 	return (bool)playing.get("is_playing", false);
+}
+
+void _expand_inspector(EditorWorkflowTestDriver &p_driver) {
+	if (!p_driver.require_ok(p_driver.run_command("property_editor/expand_all"), "expand_inspector")) {
+		return;
+	}
+	_flush_frames(15);
+}
+
+Dictionary _inspector_visible_property_selector() {
+	Dictionary inspector_dock;
+	inspector_dock["role"] = "dock";
+	inspector_dock["name"] = "Inspector";
+	Dictionary selector;
+	selector["role"] = "property_row";
+	selector["class"] = "EditorPropertyCheck";
+	selector["within"] = inspector_dock;
+	return selector;
 }
 
 EditorAutomationAcceptanceWorkflow::Result _failure_from_driver(EditorWorkflowTestDriver &p_driver, const String &p_workflow, const String &p_message = String()) {
@@ -193,13 +211,13 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	// 3. Confirm Node2D is selected in the scene tree.
 	p_driver.set_step("verify_node2d_selected");
 	Dictionary wait_selected;
-	wait_selected["type"] = "next_frame";
-	p_driver.wait_for(wait_selected, 1000);
-	if (!_selected_nodes_contain_class(p_driver, "Node2D")) {
+	wait_selected["type"] = "editor_idle";
+	p_driver.wait_for(wait_selected, 5000);
+	if (!_selected_nodes_contain_name(p_driver, "Node2D")) {
 		Result fail;
 		fail.ok = false;
 		fail.workflow = result.workflow;
-		fail.message = "Expected Node2D to be selected in the scene tree.";
+		fail.message = "Expected the new Node2D child to be selected in the scene tree.";
 		Dictionary details;
 		details["step"] = "verify_node2d_selected";
 		details["editor_state"] = p_driver.read_editor_state();
@@ -207,26 +225,90 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 		return fail;
 	}
 
-	// 4. Edit position.x through the inspector spinbox UI.
-	p_driver.set_step("edit_inspector_position_x");
+	// 4. Edit the Visible property through the inspector property row UI.
+	p_driver.set_step("open_inspector_dock");
+	if (!p_driver.require_ok(p_driver.run_command("docks/open_inspector"), "open_inspector_dock")) {
+		return _failure_from_driver(p_driver, result.workflow);
+	}
+	_flush_frames(15);
+
+	p_driver.set_step("expand_inspector");
+	_expand_inspector(p_driver);
+	if (p_driver.has_failed()) {
+		return _failure_from_driver(p_driver, result.workflow);
+	}
+
+	p_driver.set_step("filter_inspector_visible");
 	Dictionary inspector_dock;
 	inspector_dock["role"] = "dock";
 	inspector_dock["name"] = "Inspector";
-	Dictionary within_inspector;
-	within_inspector["role"] = "dock";
-	within_inspector["name"] = "Inspector";
-	Dictionary within_position;
-	within_position["role"] = "property_row";
-	within_position["name"] = "Position";
-	within_position["within"] = within_inspector;
-	Dictionary position_x_spin;
-	position_x_spin["role"] = "control";
-	position_x_spin["name"] = "x";
-	position_x_spin["within"] = within_position;
-	Dictionary position_args;
-	position_args["value"] = 42.0;
-	if (!p_driver.require_ok(p_driver.act(position_x_spin, "set_value", position_args), "edit_inspector_position_x")) {
+	Dictionary filter_field;
+	filter_field["role"] = "text_field";
+	filter_field["name"] = "Filter Properties";
+	filter_field["within"] = inspector_dock;
+	Dictionary filter_args;
+	filter_args["text"] = "Visible";
+	if (!p_driver.require_ok(p_driver.act(filter_field, "set_text", filter_args), "filter_inspector_visible")) {
 		return _failure_from_driver(p_driver, result.workflow);
+	}
+	_flush_frames(10);
+
+	p_driver.set_step("edit_inspector_visible");
+	const Dictionary visible_property = _inspector_visible_property_selector();
+	const uint64_t inspector_deadline = OS::get_singleton()->get_ticks_msec() + 15000;
+	bool edited_visible = false;
+	while (OS::get_singleton()->get_ticks_msec() < inspector_deadline) {
+		const Dictionary found = p_driver.find(visible_property);
+		if ((bool)found.get("ok", false) && (int)found.get("match_count", 0) == 1) {
+			if (p_driver.require_ok(p_driver.act(visible_property, "click"), "edit_inspector_visible")) {
+				edited_visible = true;
+				break;
+			}
+			return _failure_from_driver(p_driver, result.workflow);
+		}
+		_flush_frames(5);
+	}
+	if (!edited_visible) {
+		Result fail;
+		fail.ok = false;
+		fail.workflow = result.workflow;
+		fail.message = "Could not find the Visible inspector property row.";
+		Dictionary details;
+		details["step"] = "edit_inspector_visible";
+		const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_editor();
+		details["snapshot_element_count"] = snapshot.get_element_count();
+		int inspector_path_hits = 0;
+		int property_row_hits = 0;
+		int checkbox_hits = 0;
+		for (int i = 0; i < snapshot.get_element_count(); i++) {
+			const EditorAutomationElement &element = snapshot.get_element(i);
+			if (element.path.contains("Inspector")) {
+				inspector_path_hits++;
+			}
+			if (element.role == "property_row") {
+				property_row_hits++;
+			}
+			if (element.role == "checkbox") {
+				checkbox_hits++;
+			}
+		}
+		details["inspector_path_hits"] = inspector_path_hits;
+		details["property_row_hits"] = property_row_hits;
+		details["checkbox_hits"] = checkbox_hits;
+		PackedStringArray inspector_classes;
+		for (int i = 0; i < snapshot.get_element_count(); i++) {
+			const EditorAutomationElement &element = snapshot.get_element(i);
+			if (!element.path.contains("Inspector")) {
+				continue;
+			}
+			const String class_name = element.class_name;
+			if (!inspector_classes.has(class_name)) {
+				inspector_classes.push_back(class_name);
+			}
+		}
+		details["inspector_classes"] = inspector_classes;
+		fail.details = details;
+		return fail;
 	}
 	_flush_frames(10);
 

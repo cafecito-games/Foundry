@@ -35,6 +35,7 @@
 #include "core/variant/variant.h"
 
 class Node;
+class EditorAutomationSnapshot;
 
 // Direct test-facing client for editor workflow automation.
 //
