@@ -103,14 +103,22 @@ class EditorAutomationSnapshotBuilder {
 	}
 
 	static String _node_name(const Node *p_node) {
+		// Prefer explicit accessibility names: they are stable, user-facing labels
+		// intended for both assistive tech and automation selectors.
 		if (const Control *control = Object::cast_to<const Control>(p_node)) {
 			const String accessibility_name = control->get_accessibility_name().strip_edges();
 			if (!accessibility_name.is_empty()) {
 				return accessibility_name;
 			}
 		}
+		// Text-specific sources come next. Only use them when they carry a real
+		// label; an icon-only Button has empty text and must not shadow the
+		// tooltip/node-name fallbacks below.
 		if (const Button *button = Object::cast_to<const Button>(p_node)) {
-			return button->get_text();
+			const String button_text = button->get_text();
+			if (!button_text.is_empty()) {
+				return button_text;
+			}
 		}
 		if (const Window *window = Object::cast_to<const Window>(p_node)) {
 			const String title = window->get_title();
@@ -124,6 +132,16 @@ class EditorAutomationSnapshotBuilder {
 				return option_button->get_item_text(selected);
 			}
 		}
+		// Fall back to tooltip text so unnamed icon-only controls (toolbar and
+		// dock buttons) remain addressable by a semantic, editor-facing label
+		// instead of exposing a volatile node name like "@Button@4790".
+		if (const Control *control = Object::cast_to<const Control>(p_node)) {
+			const String tooltip = control->get_tooltip_text().strip_edges();
+			if (!tooltip.is_empty()) {
+				return tooltip;
+			}
+		}
+		// Raw node name is the last resort only.
 		return p_node->get_name();
 	}
 
