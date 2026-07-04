@@ -1821,10 +1821,15 @@ void SceneTreeEditor::set_editor_selection(EditorSelection *p_selection) {
 		return;
 	}
 	Callable selection_changed_callable = callable_mp(this, &SceneTreeEditor::_selection_changed);
-	if (editor_selection && editor_selection->is_connected("selection_changed", selection_changed_callable)) {
-		editor_selection->disconnect("selection_changed", selection_changed_callable);
+	// The previously bound selection may already have been freed together with
+	// its edited scene, so resolve it through ObjectDB rather than dereferencing
+	// a possibly-stale pointer while disconnecting.
+	EditorSelection *previous_selection = ObjectDB::get_instance<EditorSelection>(editor_selection_id);
+	if (previous_selection && previous_selection->is_connected("selection_changed", selection_changed_callable)) {
+		previous_selection->disconnect("selection_changed", selection_changed_callable);
 	}
 	editor_selection = p_selection;
+	editor_selection_id = p_selection ? p_selection->get_instance_id() : ObjectID();
 	if (!editor_selection) {
 		return;
 	}

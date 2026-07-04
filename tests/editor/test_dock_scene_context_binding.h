@@ -267,6 +267,36 @@ TEST_CASE("[SceneTree][Editor] SceneTreeDock destructor tolerates deleted bound 
 	memdelete(selection);
 }
 
+TEST_CASE("[SceneTree][Editor] SceneTreeDock rebinds safely after its bound context is freed") {
+	// Reproduces a crash where a dock bound to a scene context in a non-focused
+	// pane kept a dangling EditorSelection* after that scene was removed: each
+	// edited scene owns its own selection and it dies with the scene, but the
+	// dock was never rebound, so the next set_scene_context() dereferenced the
+	// freed selection while disconnecting from it.
+	EditorData editor_data;
+	EditorSelection *selection = memnew(EditorSelection);
+	SceneTreeDock *dock = memnew(SceneTreeDock(selection, editor_data));
+
+	EditorSceneContext *context_a = memnew(EditorSceneContext);
+	const ObjectID freed_selection_id = context_a->get_selection()->get_instance_id();
+	dock->set_scene_context(context_a);
+
+	// Free the bound context (and its selection) without rebinding the dock, so
+	// the tree editor is left holding a dangling EditorSelection*.
+	memdelete(context_a);
+	CHECK(ObjectDB::get_instance(freed_selection_id) == nullptr);
+
+	// Rebinding must resolve the previous selection through ObjectDB rather than
+	// dereferencing the freed pointer while disconnecting from it.
+	EditorSceneContext *context_b = memnew(EditorSceneContext);
+	dock->set_scene_context(context_b);
+	CHECK(dock->get_scene_context() == context_b);
+
+	memdelete(dock);
+	memdelete(selection);
+	memdelete(context_b);
+}
+
 TEST_CASE("[SceneTree][Editor] InspectorDock history follows the bound context") {
 	EditorData editor_data;
 

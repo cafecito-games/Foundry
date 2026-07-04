@@ -43,6 +43,10 @@ class SceneTreeEditor : public Control {
 	FOUNDRY_CLASS(SceneTreeEditor, Control);
 
 	EditorSelection *editor_selection = nullptr;
+	// Tracks the bound selection by id so a rebind can validate the previous
+	// selection through ObjectDB instead of dereferencing a pointer that may
+	// have been freed (each edited scene owns its own selection).
+	ObjectID editor_selection_id;
 
 	enum SceneTreeEditorButton {
 		BUTTON_SUBSCENE = 0,

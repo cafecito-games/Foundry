@@ -4930,10 +4930,10 @@ void EditorNode::_connect_pane_layout_signals(int p_pane) {
 }
 
 void EditorNode::_fit_main_screen_to_focused_pane() {
-	if (!scene_workspace || !editor_main_screen) {
+	if (!scene_workspace || !main_screen_clip) {
 		return;
 	}
-	scene_workspace->fit_overlay_to_focused_pane(editor_main_screen);
+	scene_workspace->fit_overlay_to_focused_pane(main_screen_clip);
 }
 
 void EditorNode::_split_workspace(bool p_vertical) {
@@ -5091,23 +5091,36 @@ void EditorNode::configure_scene_context(EditorSceneContext *p_context) {
 }
 
 void EditorNode::scene_context_about_to_be_removed(EditorSceneContext *p_context) {
-	if (active_scene_context != p_context) {
+	if (!p_context) {
 		return;
 	}
-	// The context is about to be freed, so fall back to the persistent
-	// no_scene_context and rebind the docks so they never hold the stale
-	// pointer.
-	active_scene_context = no_scene_context;
-	editor_selection = no_scene_context->get_selection();
-	editor_history = no_scene_context->get_history();
-	editor_selection->mark_changed();
-	if (SceneTreeDock::get_singleton()) {
-		SceneTreeDock::get_singleton()->set_scene_context(no_scene_context);
+	// The context is about to be freed. Rebind every dock currently bound to it
+	// to the persistent no_scene_context so none is left holding a stale
+	// selection/history pointer. Each pane's docks bind independently and any of
+	// them may point at a non-focused, non-active context, so this cannot be
+	// limited to the focused/singleton docks or to the active context.
+	SceneTreeDock *tree_docks[] = { scene_tree_dock_primary, scene_tree_dock_secondary };
+	for (SceneTreeDock *dock : tree_docks) {
+		if (dock && dock->get_scene_context() == p_context) {
+			dock->set_scene_context(no_scene_context);
+		}
 	}
-	if (InspectorDock::get_singleton()) {
-		InspectorDock::get_singleton()->set_scene_context(no_scene_context);
+	InspectorDock *inspector_docks[] = { inspector_dock_primary, inspector_dock_secondary };
+	for (InspectorDock *dock : inspector_docks) {
+		if (dock && dock->get_scene_context() == p_context) {
+			dock->set_scene_context(no_scene_context);
+		}
 	}
-	emit_signal(SNAME("active_scene_context_changed"));
+
+	if (active_scene_context == p_context) {
+		// Fall back the editor-wide selection/history singletons to the
+		// persistent no_scene_context as well.
+		active_scene_context = no_scene_context;
+		editor_selection = no_scene_context->get_selection();
+		editor_history = no_scene_context->get_history();
+		editor_selection->mark_changed();
+		emit_signal(SNAME("active_scene_context_changed"));
+	}
 }
 
 void EditorNode::_configure_editor_selection(EditorSelection *p_selection) {
@@ -5248,6 +5261,16 @@ Error EditorNode::load_scene(const String &p_scene, bool p_ignore_broken_deps, b
 	if (!p_set_inherited) {
 		for (int i = 0; i < editor_data.get_edited_scene_count(); i++) {
 			if (editor_data.get_scene_path(i) == lpath) {
+				// The scene is already open, possibly in a non-focused pane.
+				// Focus the pane it lives in so its tab is selected and revealed,
+				// instead of retargeting the focused pane (which owns a different
+				// scene) and leaving nothing visibly changed.
+				if (scene_workspace) {
+					const int scene_pane = editor_data.get_edited_scenes()[i].pane;
+					if (scene_pane != editor_data.get_focused_pane()) {
+						focus_pane(scene_pane);
+					}
+				}
 				_set_current_scene(i);
 				return OK;
 			}
@@ -9503,9 +9526,16 @@ EditorNode::EditorNode() {
 	scene_tabs->add_extra_button(distraction_free);
 	distraction_free->connect(SceneStringName(pressed), callable_mp(this, &EditorNode::_toggle_distraction_free_mode));
 
+	main_screen_clip = memnew(Control);
+	main_screen_clip->set_name("MainScreenClip");
+	main_screen_clip->set_clip_contents(true);
+	main_screen_clip->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	center_overlay->add_child(main_screen_clip);
+
 	editor_main_screen = memnew(EditorMainScreen);
 	editor_main_screen->set_custom_minimum_size(Size2(0, 80) * EDSCALE);
-	center_overlay->add_child(editor_main_screen);
+	main_screen_clip->add_child(editor_main_screen);
+	editor_main_screen->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 	_connect_pane_layout_signals(0);
 	center_overlay->connect(SceneStringName(resized), callable_mp(this, &EditorNode::_fit_main_screen_to_focused_pane));
 	_fit_main_screen_to_focused_pane();
@@ -10297,6 +10327,17 @@ EditorNode::~EditorNode() {
 	memdelete(build_task_bootstrap_loader);
 #endif
 	memdelete(no_scene_context);
+	// The placeholder viewport is owned by EditorNode, not by the scene tree:
+	// once a real scene attaches exclusively to the scene viewport container it
+	// is detached and never reparented, so free it explicitly instead of relying
+	// on tree teardown.
+	if (placeholder_scene_viewport) {
+		if (placeholder_scene_viewport->get_parent()) {
+			placeholder_scene_viewport->get_parent()->remove_child(placeholder_scene_viewport);
+		}
+		memdelete(placeholder_scene_viewport);
+		placeholder_scene_viewport = nullptr;
+	}
 	memdelete(editor_plugins_over);
 	memdelete(editor_plugins_force_over);
 	memdelete(editor_plugins_force_input_forwarding);

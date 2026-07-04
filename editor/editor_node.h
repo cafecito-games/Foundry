@@ -450,6 +450,11 @@ private:
 	EditorFileDialog *file_pack_zip = nullptr;
 	MenuButton *update_spinner = nullptr;
 
+	// Clipping wrapper hosting editor_main_screen. The main screen overlay floats
+	// over the focused pane and has a large minimum size; the wrapper is fitted to
+	// the pane and clips the overlay so a pane narrower than that minimum does not
+	// let the overlay bleed over the neighbouring pane.
+	Control *main_screen_clip = nullptr;
 	EditorMainScreen *editor_main_screen = nullptr;
 
 	AudioStreamPreviewGenerator *audio_preview_gen = nullptr;
