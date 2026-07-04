@@ -47,7 +47,7 @@ void EditorSceneWorkspace::_bind_methods() {
 
 ScenePaneTile *EditorSceneWorkspace::_create_tile(int p_tile_id) {
 	ScenePaneTile *tile = memnew(ScenePaneTile);
-	tile->setup(p_tile_id, editor_selection, *editor_data);
+	tile->setup(p_tile_id, editor_selection, *editor_data, tiles.is_empty());
 	tiles.push_back(tile);
 	return tile;
 }

@@ -279,7 +279,12 @@ CanvasItemEditorView::~CanvasItemEditorView() {
 		return;
 	}
 	if (viewport_scrollable->get_parent()) {
-		viewport_scrollable->get_parent()->remove_child(viewport_scrollable);
+		Node *parent = viewport_scrollable->get_parent();
+		if (parent->is_queued_for_deletion()) {
+			viewport_scrollable = nullptr;
+			return;
+		}
+		parent->remove_child(viewport_scrollable);
 	}
 	memdelete(viewport_scrollable);
 	viewport_scrollable = nullptr;

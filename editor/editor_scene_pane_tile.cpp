@@ -189,7 +189,7 @@ void ScenePaneTile::_fit_content_children() {
 	}
 }
 
-void ScenePaneTile::setup(int p_tile_id, EditorSelection *p_editor_selection, EditorData &p_editor_data) {
+void ScenePaneTile::setup(int p_tile_id, EditorSelection *p_editor_selection, EditorData &p_editor_data, bool p_register_open_commands) {
 	tile_id = p_tile_id;
 	set_process_input(true);
 	set_v_size_flags(Control::SIZE_EXPAND_FILL);
@@ -204,7 +204,7 @@ void ScenePaneTile::setup(int p_tile_id, EditorSelection *p_editor_selection, Ed
 	body->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	add_child(body);
 
-	scene_tree_dock = memnew(SceneTreeDock(p_editor_selection, p_editor_data, false));
+	scene_tree_dock = memnew(SceneTreeDock(p_editor_selection, p_editor_data, p_register_open_commands));
 	scene_tree_dock->set_custom_minimum_size(Size2(220, 0) * EDSCALE);
 	body->add_child(scene_tree_dock);
 
@@ -221,7 +221,7 @@ void ScenePaneTile::setup(int p_tile_id, EditorSelection *p_editor_selection, Ed
 	content_host->set_mouse_filter(Control::MOUSE_FILTER_PASS);
 	focus_frame->add_child(content_host);
 
-	inspector_dock = memnew(InspectorDock(p_editor_data, false));
+	inspector_dock = memnew(InspectorDock(p_editor_data, p_register_open_commands));
 	inspector_dock->set_custom_minimum_size(Size2(220, 0) * EDSCALE);
 	body->add_child(inspector_dock);
 

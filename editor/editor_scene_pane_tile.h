@@ -113,7 +113,7 @@ public:
 	void bind_3d_preview_world(const Ref<World3D> &p_world);
 	void apply_3d_preview_camera_state(const Dictionary &p_viewport_state);
 
-	void setup(int p_tile_id, EditorSelection *p_editor_selection, EditorData &p_editor_data);
+	void setup(int p_tile_id, EditorSelection *p_editor_selection, EditorData &p_editor_data, bool p_register_open_commands = false);
 
 	ScenePaneTile();
 };

@@ -320,7 +320,9 @@ void EditorAutomationServer::_run_acceptance_workflow_if_requested() {
 	stop();
 
 	if (SceneTree *tree = get_tree()) {
-		tree->quit(workflow_result.ok ? EXIT_SUCCESS : EXIT_FAILURE);
+		workflow_quit_exit_code = workflow_result.ok ? EXIT_SUCCESS : EXIT_FAILURE;
+		// Let deferred editor startup reparents settle before tearing down.
+		workflow_quit_frames_remaining = 10;
 	}
 }
 
@@ -332,6 +334,17 @@ void EditorAutomationServer::_notification(int p_what) {
 
 		case NOTIFICATION_INTERNAL_PROCESS: {
 			if (!enabled) {
+				break;
+			}
+			if (workflow_quit_frames_remaining > 0) {
+				workflow_quit_frames_remaining--;
+				if (workflow_quit_frames_remaining == 0) {
+					if (EditorNode *editor_node = EditorNode::get_singleton()) {
+						callable_mp(editor_node, &EditorNode::quit_for_automation_workflow).call_deferred(workflow_quit_exit_code);
+					} else if (SceneTree *tree = get_tree()) {
+						tree->quit(workflow_quit_exit_code);
+					}
+				}
 				break;
 			}
 			if (!start_attempted) {

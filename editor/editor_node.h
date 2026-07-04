@@ -1080,6 +1080,8 @@ public:
 	void reload_instances_with_path_in_edited_scenes();
 
 	bool is_exiting() const { return exiting; }
+	void quit_editor(int p_exit_code);
+	void quit_for_automation_workflow(int p_exit_code);
 
 	Dictionary drag_resource(const Ref<Resource> &p_res, Control *p_from);
 	Dictionary drag_files_and_dirs(const Vector<String> &p_paths, Control *p_from);

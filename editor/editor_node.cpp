@@ -4097,6 +4097,19 @@ void EditorNode::_exit_editor(int p_exit_code) {
 	get_tree()->quit(p_exit_code);
 }
 
+void EditorNode::quit_editor(int p_exit_code) {
+	_exit_editor(p_exit_code);
+}
+
+void EditorNode::quit_for_automation_workflow(int p_exit_code) {
+	exiting = true;
+	waiting_for_first_scan = false;
+	if (resource_preview) {
+		resource_preview->stop();
+	}
+	get_tree()->quit(p_exit_code);
+}
+
 void EditorNode::unload_editor_addons() {
 	for (const KeyValue<String, EditorPlugin *> &E : addon_name_to_plugin) {
 		print_verbose(vformat("Unloading addon: %s", E.key));
@@ -4859,9 +4872,19 @@ void EditorNode::_reparent_main_screen_into(ScenePaneTile *p_tile) {
 		return;
 	}
 	if (editor_main_screen->get_parent()) {
-		editor_main_screen->get_parent()->remove_child(editor_main_screen);
+		Node *old_parent = editor_main_screen->get_parent();
+		const bool defer_reparent = !is_editor_ready();
+		if (defer_reparent && old_parent->is_inside_tree()) {
+			old_parent->call_deferred(SNAME("remove_child"), editor_main_screen);
+		} else {
+			old_parent->remove_child(editor_main_screen);
+		}
 	}
-	host->add_child(editor_main_screen);
+	if (host->is_inside_tree() && !is_editor_ready()) {
+		host->call_deferred(SNAME("add_child"), editor_main_screen);
+	} else {
+		host->add_child(editor_main_screen);
+	}
 	// content_host is a plain Control, so fill it explicitly (the tile also
 	// re-fits its content children on resize).
 	editor_main_screen->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
@@ -10332,7 +10355,10 @@ EditorNode::~EditorNode() {
 	// on tree teardown.
 	if (placeholder_scene_viewport) {
 		if (placeholder_scene_viewport->get_parent()) {
-			placeholder_scene_viewport->get_parent()->remove_child(placeholder_scene_viewport);
+			Node *parent = placeholder_scene_viewport->get_parent();
+			if (!parent->is_queued_for_deletion()) {
+				parent->remove_child(placeholder_scene_viewport);
+			}
 		}
 		memdelete(placeholder_scene_viewport);
 		placeholder_scene_viewport = nullptr;
