@@ -38,11 +38,15 @@
 #include "core/input/shortcut.h"
 #include "scene/gui/button.h"
 #include "scene/gui/code_edit.h"
+#include "scene/gui/item_list.h"
 #include "scene/gui/label.h"
 #include "scene/gui/line_edit.h"
 #include "scene/gui/panel_container.h"
+#include "scene/gui/scroll_container.h"
 #include "scene/gui/subviewport_container.h"
 #include "scene/gui/text_edit.h"
+#include "scene/gui/tree.h"
+#include "scene/gui/box_container.h"
 #include "scene/gui/dialogs.h"
 #include "scene/main/viewport.h"
 
@@ -841,6 +845,257 @@ TEST_CASE("[Editor][Automation] drag failure includes source and target diagnost
 	CHECK(result.kind == "invalid_parameter");
 	CHECK(result.details.has("source_element"));
 	CHECK(result.details.has("modal_stack"));
+
+	memdelete(root);
+}
+
+class TreeActivateTracker : public Object {
+	FOUNDRY_CLASS(TreeActivateTracker, Object);
+
+public:
+	bool activated = false;
+
+	void on_activated() {
+		activated = true;
+	}
+};
+
+class ItemListActivateTracker : public Object {
+	FOUNDRY_CLASS(ItemListActivateTracker, Object);
+
+public:
+	int activated_index = -1;
+
+	void on_activated(int p_index) {
+		activated_index = p_index;
+	}
+};
+
+class LineEditSubmitTracker : public Object {
+	FOUNDRY_CLASS(LineEditSubmitTracker, Object);
+
+public:
+	String submitted_text;
+
+	void on_submitted(const String &p_text) {
+		submitted_text = p_text;
+	}
+};
+
+static const EditorAutomationElement *find_virtual_element(const EditorAutomationSnapshot &p_snapshot, const String &p_role, const String &p_name) {
+	for (int i = 0; i < p_snapshot.get_element_count(); i++) {
+		const EditorAutomationElement &element = p_snapshot.get_element(i);
+		if (element.role == p_role && element.name == p_name) {
+			return &element;
+		}
+	}
+	return nullptr;
+}
+
+TEST_CASE("[Editor][Automation] tree item select expand collapse and activate") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	Tree *tree = memnew(Tree);
+	tree->set_name("TestTree");
+	setup_visible_control(tree, Size2(200, 200));
+	root->add_child(tree);
+
+	TreeItem *root_item = tree->create_item();
+	TreeItem *parent_item = tree->create_item(root_item);
+	parent_item->set_text(0, "Parent");
+	TreeItem *child_item = tree->create_item(parent_item);
+	child_item->set_text(0, "Child");
+	parent_item->set_collapsed(true);
+
+	TreeActivateTracker tracker;
+	tree->connect("item_activated", callable_mp(&tracker, &TreeActivateTracker::on_activated));
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	const EditorAutomationElement *parent = find_virtual_element(snapshot, "tree_item", "Parent");
+	const EditorAutomationElement *child = find_virtual_element(snapshot, "tree_item", "Child");
+	REQUIRE(parent != nullptr);
+	REQUIRE(child != nullptr);
+	CHECK(parent->actions.has("select"));
+	CHECK(parent->actions.has("activate"));
+	CHECK(parent->actions.has("expand"));
+	CHECK(String(parent->metadata.get("label", String())) == "Parent");
+	CHECK((bool)parent->metadata.get("expanded", true) == false);
+	CHECK((bool)parent->metadata.get("has_children", false) == true);
+
+	Dictionary parent_target;
+	parent_target["id"] = parent->id;
+
+	const EditorAutomationActionResult expand_result = EditorAutomationDriver::perform(snapshot, "expand", parent_target, Dictionary());
+	CHECK(expand_result.ok);
+	CHECK(expand_result.route == EditorAutomationActionRouteNames::SEMANTIC_SELECT);
+	CHECK(expand_result.events.has("expanded"));
+	CHECK(!parent_item->is_collapsed());
+
+	const EditorAutomationActionResult collapse_result = EditorAutomationDriver::perform(snapshot, "collapse", parent_target, Dictionary());
+	CHECK(collapse_result.ok);
+	CHECK(collapse_result.events.has("collapsed"));
+	CHECK(parent_item->is_collapsed());
+
+	const EditorAutomationActionResult expand_again = EditorAutomationDriver::perform(snapshot, "expand", parent_target, Dictionary());
+	CHECK(expand_again.ok);
+	CHECK(!parent_item->is_collapsed());
+
+	Dictionary child_target;
+	child_target["id"] = child->id;
+	const EditorAutomationActionResult select_result = EditorAutomationDriver::perform(snapshot, "select", child_target, Dictionary());
+	CHECK(select_result.ok);
+	CHECK(child_item->is_selected(0));
+
+	const EditorAutomationActionResult activate_result = EditorAutomationDriver::perform(snapshot, "activate", child_target, Dictionary());
+	CHECK(activate_result.ok);
+	CHECK(activate_result.route == EditorAutomationActionRouteNames::SEMANTIC_ACTIVATE);
+	CHECK(activate_result.events.has("activated"));
+	CHECK(tracker.activated);
+
+	memdelete(root);
+}
+
+TEST_CASE("[Editor][Automation] item list select and activate") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	ItemList *item_list = memnew(ItemList);
+	item_list->set_name("TestList");
+	setup_visible_control(item_list, Size2(200, 200));
+	root->add_child(item_list);
+	item_list->add_item("Alpha");
+	item_list->add_item("Beta");
+
+	ItemListActivateTracker tracker;
+	item_list->connect("item_activated", callable_mp(&tracker, &ItemListActivateTracker::on_activated));
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	const EditorAutomationElement *beta_item = find_virtual_element(snapshot, "list_item", "Beta");
+	REQUIRE(beta_item != nullptr);
+	CHECK(beta_item->actions.has("activate"));
+	CHECK((int)beta_item->metadata.get("index", -1) == 1);
+	CHECK(String(beta_item->metadata.get("label", String())) == "Beta");
+
+	Dictionary target;
+	target["id"] = beta_item->id;
+
+	const EditorAutomationActionResult select_result = EditorAutomationDriver::perform(snapshot, "select", target, Dictionary());
+	CHECK(select_result.ok);
+	CHECK(item_list->is_selected(1));
+
+	const EditorAutomationActionResult activate_result = EditorAutomationDriver::perform(snapshot, "activate", target, Dictionary());
+	CHECK(activate_result.ok);
+	CHECK(activate_result.route == EditorAutomationActionRouteNames::SEMANTIC_ACTIVATE);
+	CHECK(activate_result.events.has("activated"));
+	CHECK(tracker.activated_index == 1);
+
+	memdelete(root);
+}
+
+TEST_CASE("[Editor][Automation] submit on LineEdit emits text_submitted") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	LineEdit *line_edit = memnew(LineEdit);
+	line_edit->set_name("Search");
+	line_edit->set_text("Node2D");
+	setup_visible_control(line_edit);
+	root->add_child(line_edit);
+
+	LineEditSubmitTracker tracker;
+	line_edit->connect(SceneStringName(text_submitted), callable_mp(&tracker, &LineEditSubmitTracker::on_submitted));
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	const EditorAutomationElement *field = find_element_by_role_and_name(snapshot, "text_field", "Search");
+	REQUIRE(field != nullptr);
+	CHECK(field->actions.has("submit"));
+
+	Dictionary target;
+	target["id"] = field->id;
+
+	const EditorAutomationActionResult result = EditorAutomationDriver::perform(snapshot, "submit", target, Dictionary());
+	CHECK(result.ok);
+	CHECK(result.route == EditorAutomationActionRouteNames::SEMANTIC_SUBMIT);
+	CHECK(result.events.has("text_submitted"));
+	CHECK(String(result.details.get("submitted_text", String())) == "Node2D");
+	CHECK(tracker.submitted_text == "Node2D");
+
+	memdelete(root);
+}
+
+TEST_CASE("[Editor][Automation] scroll action reports whether scrolling occurred") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	ScrollContainer *scroll_container = memnew(ScrollContainer);
+	scroll_container->set_name("ScrollArea");
+	setup_visible_control(scroll_container, Size2(120, 80));
+	root->add_child(scroll_container);
+
+	VBoxContainer *content = memnew(VBoxContainer);
+	for (int i = 0; i < 20; i++) {
+		Label *label = memnew(Label);
+		label->set_text(vformat("Row %d", i));
+		content->add_child(label);
+	}
+	scroll_container->add_child(content);
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	const EditorAutomationElement *scroll_element = find_element_by_role_and_name(snapshot, "control", "ScrollArea");
+	REQUIRE(scroll_element != nullptr);
+	CHECK(scroll_element->actions.has("scroll"));
+
+	Dictionary target;
+	target["id"] = scroll_element->id;
+
+	Dictionary options;
+	options["direction"] = "down";
+
+	const int before = scroll_container->get_v_scroll();
+	const EditorAutomationActionResult result = EditorAutomationDriver::perform(snapshot, "scroll", target, options);
+	CHECK(result.ok);
+	CHECK(result.route == EditorAutomationActionRouteNames::SEMANTIC_SCROLL);
+	CHECK((bool)result.details.get("scrolled", false));
+	CHECK(result.events.has("scrolled"));
+	CHECK(scroll_container->get_v_scroll() > before);
+
+	memdelete(root);
+}
+
+TEST_CASE("[Editor][Automation] selector matches tree items by metadata label") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	Tree *tree = memnew(Tree);
+	setup_visible_control(tree, Size2(200, 200));
+	root->add_child(tree);
+
+	TreeItem *root_item = tree->create_item();
+	TreeItem *child_item = tree->create_item(root_item);
+	child_item->set_text(0, "ChildNode");
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+
+	Dictionary selector;
+	selector["role"] = "tree_item";
+	Dictionary metadata;
+	metadata["label"] = "ChildNode";
+	selector["metadata"] = metadata;
+
+	const EditorAutomationSelectorResult selector_result = EditorAutomationSelector::resolve(snapshot, selector);
+	CHECK(selector_result.status == EditorAutomationSelectorStatus::OK);
+	CHECK(selector_result.match_indices.size() == 1);
 
 	memdelete(root);
 }

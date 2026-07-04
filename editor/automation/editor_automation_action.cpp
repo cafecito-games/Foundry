@@ -97,6 +97,15 @@ EditorAutomationActionKind editor_automation_action_kind_from_string(const Strin
 	if (action == "select") {
 		return EditorAutomationActionKind::SELECT;
 	}
+	if (action == "activate") {
+		return EditorAutomationActionKind::ACTIVATE;
+	}
+	if (action == "submit") {
+		return EditorAutomationActionKind::SUBMIT;
+	}
+	if (action == "scroll") {
+		return EditorAutomationActionKind::SCROLL;
+	}
 	if (action == "expand") {
 		return EditorAutomationActionKind::EXPAND;
 	}

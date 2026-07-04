@@ -32,6 +32,7 @@
 
 #include "editor/automation/editor_automation_log.h"
 #include "editor/automation/editor_automation_mcp_dispatcher.h"
+#include "editor/automation/editor_automation_selector.h"
 #include "editor/automation/editor_automation_snapshot.h"
 #include "editor/automation/editor_automation_state.h"
 #include "editor/automation/editor_automation_trace.h"
@@ -131,11 +132,41 @@ TEST_CASE("[Editor][Automation] scene tree item metadata includes node path and 
 	TreeItem *child_item = tree->create_item(root_item);
 	child_item->set_text(0, "ChildNode");
 	child_item->set_metadata(0, NodePath("ChildNode"));
+	MessageQueue::get_singleton()->flush();
 
 	const Dictionary metadata = EditorAutomationWorkflow::metadata_for_tree_item(tree, child_item);
 	CHECK(String(metadata.get("node_name", String())) == "ChildNode");
 	CHECK(String(metadata.get("node_class", String())) == "Node");
 	CHECK(NodePath(metadata.get("node_path", NodePath())) == NodePath("ChildNode"));
+	CHECK(String(metadata.get("label", String())) == "ChildNode");
+	CHECK((bool)metadata.get("selected", true) == false);
+	CHECK(metadata.has("supported_actions"));
+	CHECK(PackedStringArray(metadata.get("supported_actions", PackedStringArray())).has("activate"));
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(window);
+	const EditorAutomationElement *child_element = nullptr;
+	for (int i = 0; i < snapshot.get_element_count(); i++) {
+		const EditorAutomationElement &element = snapshot.get_element(i);
+		if (element.role == "tree_item" && element.name == "ChildNode") {
+			child_element = &element;
+			break;
+		}
+	}
+	REQUIRE(child_element != nullptr);
+	CHECK(NodePath(child_element->metadata.get("node_path", NodePath())) == NodePath("ChildNode"));
+	CHECK(child_element->actions.has("expand"));
+	CHECK(child_element->actions.has("activate"));
+
+	Dictionary selector;
+	selector["role"] = "tree_item";
+	Dictionary metadata_selector;
+	metadata_selector["node_path"] = NodePath("ChildNode");
+	selector["metadata"] = metadata_selector;
+	Dictionary within;
+	within["role"] = "tree";
+	selector["within"] = within;
+	const EditorAutomationSelectorResult selector_result = EditorAutomationSelector::resolve(snapshot, selector);
+	CHECK(selector_result.status == EditorAutomationSelectorStatus::OK);
 
 	window->queue_free();
 }

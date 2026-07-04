@@ -113,6 +113,71 @@ String _variant_summary(const Variant &p_value) {
 
 } // namespace
 
+String EditorAutomationWorkflow::tree_item_stable_path(TreeItem *p_item) {
+	PackedStringArray parts;
+	while (p_item && p_item->get_parent()) {
+		parts.push_back(String::num_int64(p_item->get_index()));
+		p_item = p_item->get_parent();
+	}
+	parts.reverse();
+	return String("/").join(parts);
+}
+
+namespace {
+
+PackedStringArray _tree_item_supported_actions(TreeItem *p_item) {
+	PackedStringArray actions;
+	actions.push_back("select");
+	actions.push_back("activate");
+	if (p_item != nullptr && p_item->get_first_child() != nullptr) {
+		actions.push_back("expand");
+		actions.push_back("collapse");
+	}
+	return actions;
+}
+
+PackedStringArray _list_item_supported_actions() {
+	PackedStringArray actions;
+	actions.push_back("select");
+	actions.push_back("activate");
+	return actions;
+}
+
+void _append_common_tree_item_metadata(TreeItem *p_item, Dictionary &r_metadata) {
+	ERR_FAIL_NULL(p_item);
+	r_metadata["label"] = p_item->get_text(0);
+	r_metadata["index"] = p_item->get_index();
+	r_metadata["tree_item_path"] = EditorAutomationWorkflow::tree_item_stable_path(p_item);
+	r_metadata["selected"] = p_item->is_selected(0);
+	r_metadata["expanded"] = !p_item->is_collapsed();
+	r_metadata["has_children"] = p_item->get_first_child() != nullptr;
+
+	int depth = 0;
+	TreeItem *parent = p_item->get_parent();
+	while (parent && parent->get_parent()) {
+		depth++;
+		parent = parent->get_parent();
+	}
+	r_metadata["depth"] = depth;
+	r_metadata["supported_actions"] = _tree_item_supported_actions(p_item);
+}
+
+void _append_common_list_item_metadata(const ItemList *p_list, int p_index, Dictionary &r_metadata) {
+	ERR_FAIL_NULL(p_list);
+	ERR_FAIL_INDEX(p_index, p_list->get_item_count());
+	r_metadata["label"] = p_list->get_item_text(p_index);
+	r_metadata["index"] = p_index;
+	r_metadata["selected"] = p_list->is_selected(p_index);
+	r_metadata["supported_actions"] = _list_item_supported_actions();
+
+	const Variant item_metadata = p_list->get_item_metadata(p_index);
+	if (item_metadata.get_type() != Variant::NIL) {
+		r_metadata["item_metadata"] = item_metadata;
+	}
+}
+
+} // namespace
+
 String EditorAutomationWorkflow::role_for_node(const Node *p_node) {
 	if (Object::cast_to<const EditorDock>(p_node)) {
 		return "dock";
@@ -177,6 +242,8 @@ Dictionary EditorAutomationWorkflow::metadata_for_tree_item(const Tree *p_tree, 
 	ERR_FAIL_NULL_V(p_tree, metadata);
 	ERR_FAIL_NULL_V(p_item, metadata);
 
+	_append_common_tree_item_metadata(p_item, metadata);
+
 	const TreeContextKind context = _tree_context_kind(p_tree);
 	const Variant item_metadata = p_item->get_metadata(0);
 
@@ -223,7 +290,6 @@ Dictionary EditorAutomationWorkflow::metadata_for_tree_item(const Tree *p_tree, 
 				}
 			}
 		}
-		metadata["expanded"] = !p_item->is_collapsed();
 		return metadata;
 	}
 
@@ -234,6 +300,8 @@ Dictionary EditorAutomationWorkflow::metadata_for_list_item(const ItemList *p_li
 	Dictionary metadata;
 	ERR_FAIL_NULL_V(p_list, metadata);
 	ERR_FAIL_INDEX_V(p_index, p_list->get_item_count(), metadata);
+
+	_append_common_list_item_metadata(p_list, p_index, metadata);
 
 	if (_item_list_context_kind(p_list) == ItemListContextKind::FILESYSTEM_LIST) {
 		const String path = p_list->get_item_metadata(p_index);
@@ -261,5 +329,19 @@ bool EditorAutomationWorkflow::select_tree_item_ui(Tree *p_tree, TreeItem *p_ite
 	p_item->select(0);
 	p_item->set_as_cursor(0);
 	p_tree->ensure_cursor_is_visible();
+	return true;
+}
+
+bool EditorAutomationWorkflow::activate_tree_item_ui(Tree *p_tree, TreeItem *p_item) {
+	ERR_FAIL_COND_V(!select_tree_item_ui(p_tree, p_item), false);
+	p_tree->emit_signal(SNAME("item_activated"));
+	return true;
+}
+
+bool EditorAutomationWorkflow::activate_list_item_ui(ItemList *p_list, int p_index) {
+	ERR_FAIL_NULL_V(p_list, false);
+	ERR_FAIL_INDEX_V(p_index, p_list->get_item_count(), false);
+	p_list->select(p_index);
+	p_list->emit_signal(SNAME("item_activated"), p_index);
 	return true;
 }

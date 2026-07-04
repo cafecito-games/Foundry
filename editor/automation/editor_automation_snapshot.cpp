@@ -47,6 +47,7 @@
 #include "scene/gui/option_button.h"
 #include "scene/gui/popup_menu.h"
 #include "scene/gui/range.h"
+#include "scene/gui/scroll_container.h"
 #include "scene/gui/slider.h"
 #include "scene/gui/spin_box.h"
 #include "scene/gui/subviewport_container.h"
@@ -242,15 +243,61 @@ class EditorAutomationSnapshotBuilder {
 
 		if (p_role == "button" || p_role == "checkbox") {
 			add_unique("click");
+			add_unique("activate");
 		} else if (p_role == "viewport") {
 			add_unique("click");
 		} else if (p_role == "text_field" || p_role == "text_area" || p_role == "code_editor") {
 			add_unique("set_text");
 			add_unique("type_text");
+			add_unique("submit");
+		} else if (p_role == "tree" || p_role == "list") {
+			add_unique("scroll");
 		} else if (p_role == "spinbox" || p_role == "slider") {
 			add_unique("set_value");
 			add_unique("increment");
 			add_unique("decrement");
+		}
+
+		if (Object::cast_to<const ScrollContainer>(p_node)) {
+			add_unique("scroll");
+		}
+	}
+
+	static void _append_virtual_actions(const String &p_kind, const Dictionary &p_metadata, PackedStringArray &r_actions) {
+		if (p_metadata.has("supported_actions")) {
+			const Variant actions_value = p_metadata.get("supported_actions", Variant());
+			if (actions_value.get_type() == Variant::PACKED_STRING_ARRAY) {
+				for (const String &action : PackedStringArray(actions_value)) {
+					if (!r_actions.has(action)) {
+						r_actions.push_back(action);
+					}
+				}
+			}
+			return;
+		}
+
+		if (p_kind == "tree_item") {
+			for (const String &action : { "select", "activate", "expand", "collapse" }) {
+				if (!r_actions.has(action)) {
+					r_actions.push_back(action);
+				}
+			}
+		} else if (p_kind == "list_item") {
+			for (const String &action : { "select", "activate" }) {
+				if (!r_actions.has(action)) {
+					r_actions.push_back(action);
+				}
+			}
+		} else if (p_kind == "menu_item") {
+			for (const String &action : { "select", "activate", "choose_menu_item" }) {
+				if (!r_actions.has(action)) {
+					r_actions.push_back(action);
+				}
+			}
+		} else if (p_kind == "tab") {
+			if (!r_actions.has("select")) {
+				r_actions.push_back("select");
+			}
 		}
 	}
 
@@ -274,6 +321,7 @@ class EditorAutomationSnapshotBuilder {
 		element.selected = p_selected;
 		element.metadata = p_metadata;
 		element.parent_index = p_parent_index;
+		_append_virtual_actions(p_kind, p_metadata, element.actions);
 		if (p_parent_index >= 0) {
 			data.elements.ptrw()[p_parent_index].children.push_back(data.elements.size());
 		} else {
@@ -286,13 +334,7 @@ class EditorAutomationSnapshotBuilder {
 	}
 
 	String _tree_item_path(TreeItem *p_item) {
-		PackedStringArray parts;
-		while (p_item && p_item->get_parent()) {
-			parts.push_back(String::num_int64(p_item->get_index()));
-			p_item = p_item->get_parent();
-		}
-		parts.reverse();
-		return String("/").join(parts);
+		return EditorAutomationWorkflow::tree_item_stable_path(p_item);
 	}
 
 	void _add_tree_items(const Tree *p_tree, int p_parent_index) {

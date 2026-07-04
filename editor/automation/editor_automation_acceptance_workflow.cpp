@@ -199,11 +199,7 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	_flush_frames(3);
 
 	p_driver.set_step("confirm_create_node");
-	Dictionary create_button;
-	create_button["role"] = "button";
-	create_button["name"] = "Create";
-	create_button["within"] = search_within;
-	if (!p_driver.require_ok(p_driver.act(create_button, "click"), "confirm_create_node")) {
+	if (!p_driver.require_ok(p_driver.act(node2d_item, "activate"), "confirm_create_node")) {
 		return _failure_from_driver(p_driver, result.workflow);
 	}
 	_flush_frames(20);
