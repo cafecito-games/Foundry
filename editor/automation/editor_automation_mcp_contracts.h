@@ -38,6 +38,11 @@
 #include "core/templates/local_vector.h"
 #include "core/variant/variant.h"
 
+// Typed MCP contracts are the single source of truth for the editor automation
+// MCP surface. Each contract owns the JSON Schema advertised through tools/list,
+// the boundary parser used by tools/call, and the Dictionary shape passed to the
+// existing automation internals. Keep schema(), parse(), and to_dictionary() in
+// lockstep so clients, tests, and runtime validation describe the same contract.
 class EditorAutomationMCPJsonSchema : public RefCounted {
 	FOUNDRY_SOFTCLASS(EditorAutomationMCPJsonSchema, RefCounted);
 
@@ -226,6 +231,10 @@ struct EditorAutomationMCPElementNode {
 	Dictionary to_dictionary() const;
 };
 
+// Tool input structs intentionally preserve optional fields in `values` rather
+// than normalizing everything into C++ members. This keeps the dispatcher
+// compatible with the existing Dictionary-based automation core while still
+// giving the MCP boundary typed field validation and documented schemas.
 struct EditorAutomationMCPObserveUIInput {
 	Dictionary values;
 
@@ -302,6 +311,9 @@ struct EditorAutomationMCPPollEventsInput {
 
 class EditorAutomationMCPContracts {
 public:
+	// Shared enum helpers are used by both schemas and parsers. Adding an enum
+	// value in only one side silently breaks MCP clients, so route all shared
+	// value lists through these helpers.
 	static PackedStringArray action_names();
 	static PackedStringArray route_enum_values();
 	static PackedStringArray severity_enum_values();

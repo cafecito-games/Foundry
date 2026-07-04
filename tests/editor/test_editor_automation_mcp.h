@@ -82,6 +82,18 @@ static Dictionary tool_named(const Array &p_tools, const String &p_name) {
 	return Dictionary();
 }
 
+static void check_direct_schema_property_descriptions(const Dictionary &p_schema) {
+	if (!p_schema.has("properties")) {
+		return;
+	}
+	const Dictionary properties = p_schema["properties"];
+	const Array keys = properties.keys();
+	for (int i = 0; i < keys.size(); i++) {
+		const Dictionary property_schema = properties[keys[i]];
+		CHECK_FALSE(String(property_schema.get("description", String())).is_empty());
+	}
+}
+
 static PanelContainer *mcp_make_large_button_tree(int p_count) {
 	PanelContainer *root = memnew(PanelContainer);
 	root->set_size(Size2(400, 300));
@@ -1090,6 +1102,51 @@ TEST_CASE("[Editor][Automation][MCP] typed contract schemas expose stable fields
 	CHECK(props.has("wait"));
 	const Dictionary action_schema = props["action"];
 	CHECK(action_schema.has("enum"));
+}
+
+TEST_CASE("[Editor][Automation][MCP] tool schemas include agent-facing descriptions") {
+	const Array tools = EditorAutomationMCPContracts::build_tools_list();
+	REQUIRE(tools.size() == 9);
+
+	for (int i = 0; i < tools.size(); i++) {
+		const Dictionary tool = tools[i];
+		CHECK_FALSE(String(tool.get("description", String())).is_empty());
+
+		const Dictionary input_schema = tool.get("inputSchema", Dictionary());
+		const Dictionary output_schema = tool.get("outputSchema", Dictionary());
+		CHECK_FALSE(String(input_schema.get("description", String())).is_empty());
+		CHECK_FALSE(String(output_schema.get("description", String())).is_empty());
+		check_direct_schema_property_descriptions(input_schema);
+		check_direct_schema_property_descriptions(output_schema);
+	}
+
+	const Dictionary act = tool_named(tools, "act");
+	REQUIRE_FALSE(act.is_empty());
+	const Dictionary act_input = act["inputSchema"];
+	CHECK(String(act_input.get("description", String())).contains("wait_id"));
+	if (act_input.has("required")) {
+		const Array act_required = act_input["required"];
+		CHECK_FALSE(act_required.has("action"));
+	}
+
+	const Dictionary observe = tool_named(tools, "observe_ui");
+	REQUIRE_FALSE(observe.is_empty());
+	const Dictionary observe_input = observe["inputSchema"];
+	CHECK(String(observe_input.get("description", String())).contains("subtree_cursor"));
+
+	const Array resources = EditorAutomationMCPContracts::build_resources_list();
+	REQUIRE(resources.size() == 6);
+	for (int i = 0; i < resources.size(); i++) {
+		const Dictionary resource = resources[i];
+		CHECK_FALSE(String(resource.get("description", String())).is_empty());
+	}
+
+	const Array templates = EditorAutomationMCPContracts::build_resource_templates_list();
+	REQUIRE(templates.size() == 4);
+	for (int i = 0; i < templates.size(); i++) {
+		const Dictionary resource_template = templates[i];
+		CHECK_FALSE(String(resource_template.get("description", String())).is_empty());
+	}
 }
 
 TEST_CASE("[Editor][Automation][MCP] typed tool inputs reject wrong argument types") {

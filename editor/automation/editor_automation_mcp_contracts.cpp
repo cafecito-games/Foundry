@@ -242,32 +242,35 @@ bool _read_optional_point_path(const Dictionary &p_dict, const char *p_key, Dict
 }
 
 Ref<EditorAutomationMCPJsonSchema> _element_node_schema() {
-	Ref<EditorAutomationMCPJsonSchema> schema = EditorAutomationMCPJsonSchema::object("Semantic UI element node.");
-	schema->add_property("id", EditorAutomationMCPJsonSchema::string("Snapshot-scoped element id."));
-	schema->add_property("handle", EditorAutomationMCPJsonSchema::string("Durable element handle."));
-	schema->add_property("role", EditorAutomationMCPJsonSchema::string("Semantic role."));
-	schema->add_property("name", EditorAutomationMCPJsonSchema::string("Accessible/visible name."));
-	schema->add_property("text", EditorAutomationMCPJsonSchema::string("Visible text/value."));
-	schema->add_property("class", EditorAutomationMCPJsonSchema::string("Engine class name."));
-	schema->add_property("path", EditorAutomationMCPJsonSchema::string("Node path."));
-	schema->add_property("visible", EditorAutomationMCPJsonSchema::boolean("Visibility."));
-	schema->add_property("enabled", EditorAutomationMCPJsonSchema::boolean("Enabled state."));
-	schema->add_property("focused", EditorAutomationMCPJsonSchema::boolean("Focus state."));
-	schema->add_property("pressed", EditorAutomationMCPJsonSchema::boolean("Pressed state."));
-	schema->add_property("selected", EditorAutomationMCPJsonSchema::boolean("Selected state."));
-	schema->add_property("bounds", EditorAutomationMCPJsonSchema::array(EditorAutomationMCPJsonSchema::integer("Coordinate or size component."), "Bounds as [x, y, width, height]."));
-	schema->add_property("actions", EditorAutomationMCPJsonSchema::array(EditorAutomationMCPJsonSchema::string("Semantic action name."), "Supported semantic actions."));
-	schema->add_property("metadata", EditorAutomationMCPJsonSchema::object("Additional element metadata."));
-	schema->add_property("children", EditorAutomationMCPJsonSchema::array(EditorAutomationMCPJsonSchema::object(), "Child element nodes."));
-	schema->add_property("children_truncated", EditorAutomationMCPJsonSchema::boolean("True when additional children were omitted."));
-	schema->add_property("child_count", EditorAutomationMCPJsonSchema::integer("Total child count when truncated."));
-	schema->add_property("children_next_cursor", EditorAutomationMCPJsonSchema::string("Opaque cursor to fetch the next page of children."));
+	Ref<EditorAutomationMCPJsonSchema> schema = EditorAutomationMCPJsonSchema::object(
+			"Semantic UI element node returned by observe_ui, find_elements, and targeted resources. "
+			"Use id for immediate same-snapshot follow-up and handle when a later request needs to refer to the same element.");
+	schema->add_property("id", EditorAutomationMCPJsonSchema::string("Snapshot-scoped element id. It is precise for the current response, but may be reconciled on later snapshots."));
+	schema->add_property("handle", EditorAutomationMCPJsonSchema::string("Durable element handle. Prefer this for targeted resources or follow-up actions that may happen after a new snapshot."));
+	schema->add_property("role", EditorAutomationMCPJsonSchema::string("Semantic role, such as button, text_field, menu_item, or panel."));
+	schema->add_property("name", EditorAutomationMCPJsonSchema::string("Accessible or visible name used by selector name/name_contains."));
+	schema->add_property("text", EditorAutomationMCPJsonSchema::string("Visible text or current value used by selector text/text_contains."));
+	schema->add_property("class", EditorAutomationMCPJsonSchema::string("Engine class name for class/class_contains selectors."));
+	schema->add_property("path", EditorAutomationMCPJsonSchema::string("Node path, useful as a fallback selector when semantic labels are ambiguous."));
+	schema->add_property("visible", EditorAutomationMCPJsonSchema::boolean("Whether the element is visible in the current snapshot."));
+	schema->add_property("enabled", EditorAutomationMCPJsonSchema::boolean("Whether the element can currently accept interaction."));
+	schema->add_property("focused", EditorAutomationMCPJsonSchema::boolean("Whether the element currently has keyboard focus."));
+	schema->add_property("pressed", EditorAutomationMCPJsonSchema::boolean("Whether the element is in a pressed/toggled state."));
+	schema->add_property("selected", EditorAutomationMCPJsonSchema::boolean("Whether the element is in a selected state."));
+	schema->add_property("bounds", EditorAutomationMCPJsonSchema::array(EditorAutomationMCPJsonSchema::integer("Coordinate or size component."), "Viewport bounds as [x, y, width, height]."));
+	schema->add_property("actions", EditorAutomationMCPJsonSchema::array(EditorAutomationMCPJsonSchema::string("Semantic action name."), "Semantic actions the element advertises as likely supported."));
+	schema->add_property("metadata", EditorAutomationMCPJsonSchema::object("Additional element metadata for specialized selector matching."));
+	schema->add_property("children", EditorAutomationMCPJsonSchema::array(EditorAutomationMCPJsonSchema::object("Child semantic UI element node."), "Child element nodes included in this page."));
+	schema->add_property("children_truncated", EditorAutomationMCPJsonSchema::boolean("True when additional children were omitted and children_next_cursor should be used."));
+	schema->add_property("child_count", EditorAutomationMCPJsonSchema::integer("Total child count when children are truncated."));
+	schema->add_property("children_next_cursor", EditorAutomationMCPJsonSchema::string("Opaque cursor for observe_ui subtree_cursor to fetch the next page of children."));
 	return schema;
 }
 
 Ref<EditorAutomationMCPJsonSchema> _ok_result_schema() {
-	Ref<EditorAutomationMCPJsonSchema> schema = EditorAutomationMCPJsonSchema::object("Structured tool result.");
-	schema->add_property("ok", EditorAutomationMCPJsonSchema::boolean("Whether the operation succeeded."));
+	Ref<EditorAutomationMCPJsonSchema> schema = EditorAutomationMCPJsonSchema::object(
+			"Common structured tool result. When ok is false, inspect kind, message, and details in the same payload when present.");
+	schema->add_property("ok", EditorAutomationMCPJsonSchema::boolean("Whether the requested operation succeeded at the automation layer."));
 	return schema;
 }
 
@@ -280,11 +283,12 @@ Ref<EditorAutomationMCPJsonSchema> _failure_attachment_schema() {
 	capture_modes.push_back("full_window");
 	capture_modes.push_back("cropped");
 
-	Ref<EditorAutomationMCPJsonSchema> schema = EditorAutomationMCPJsonSchema::object("Optional failure screenshot attachment.");
-	schema->add_property("status", EditorAutomationMCPJsonSchema::enum_string(statuses, "Screenshot capture status."));
+	Ref<EditorAutomationMCPJsonSchema> schema = EditorAutomationMCPJsonSchema::object(
+			"Optional screenshot attachment included in failure details when attach_screenshot_on_failure was requested.");
+	schema->add_property("status", EditorAutomationMCPJsonSchema::enum_string(statuses, "Screenshot capture status: available, unavailable, or truncated."));
 	schema->add_property("reason", EditorAutomationMCPJsonSchema::string("Reason when status is unavailable or truncated."));
-	schema->add_property("format", EditorAutomationMCPJsonSchema::string("Image format (png)."));
-	schema->add_property("encoding", EditorAutomationMCPJsonSchema::string("Inline encoding (base64)."));
+	schema->add_property("format", EditorAutomationMCPJsonSchema::string("Image format. Currently png when data is available."));
+	schema->add_property("encoding", EditorAutomationMCPJsonSchema::string("Inline payload encoding. Currently base64 when data is available."));
 	schema->add_property("data", EditorAutomationMCPJsonSchema::string("Inline image payload when available."));
 	schema->add_property("capture_mode", EditorAutomationMCPJsonSchema::enum_string(capture_modes, "Whether the image is full-window or cropped to the target/focused element."));
 	schema->add_property("viewport", EditorAutomationMCPJsonSchema::object("Captured viewport/window metadata."));
@@ -297,7 +301,8 @@ Ref<EditorAutomationMCPJsonSchema> _failure_attachment_schema() {
 }
 
 void _add_failure_details_output_props(const Ref<EditorAutomationMCPJsonSchema> &p_output_schema) {
-	Ref<EditorAutomationMCPJsonSchema> details_schema = EditorAutomationMCPJsonSchema::object("Failure details payload.");
+	Ref<EditorAutomationMCPJsonSchema> details_schema = EditorAutomationMCPJsonSchema::object(
+			"Failure details payload. Agents should read this before retrying because it may include selector diagnostics, traces, modal state, and screenshots.");
 	details_schema->add_property("screenshot", _failure_attachment_schema());
 	p_output_schema->add_property("details", details_schema);
 }
@@ -446,8 +451,9 @@ Dictionary EditorAutomationMCPResourceTemplateDefinition::to_dictionary() const 
 }
 
 Ref<EditorAutomationMCPJsonSchema> EditorAutomationMCPLogMarker::schema() {
-	Ref<EditorAutomationMCPJsonSchema> schema = EditorAutomationMCPJsonSchema::object("Log read marker.");
-	schema->add_property("message_index", EditorAutomationMCPJsonSchema::integer("Exclusive lower bound message index."));
+	Ref<EditorAutomationMCPJsonSchema> schema = EditorAutomationMCPJsonSchema::object(
+			"Log read marker returned by read_editor_log. Pass it back as since to read only entries after the previous response.");
+	schema->add_property("message_index", EditorAutomationMCPJsonSchema::integer("Exclusive lower bound message index from the previous marker."));
 	return schema;
 }
 
@@ -478,8 +484,9 @@ Dictionary EditorAutomationMCPLogMarker::to_dictionary() const {
 }
 
 Ref<EditorAutomationMCPJsonSchema> EditorAutomationMCPEventMarker::schema() {
-	Ref<EditorAutomationMCPJsonSchema> schema = EditorAutomationMCPJsonSchema::object("Automation event read marker.");
-	schema->add_property("event_index", EditorAutomationMCPJsonSchema::integer("Exclusive lower bound event index."));
+	Ref<EditorAutomationMCPJsonSchema> schema = EditorAutomationMCPJsonSchema::object(
+			"Automation event marker returned by poll_events. Pass it back as since to continue polling without duplicates.");
+	schema->add_property("event_index", EditorAutomationMCPJsonSchema::integer("Exclusive lower bound event index from the previous marker."));
 	return schema;
 }
 
@@ -510,8 +517,8 @@ Dictionary EditorAutomationMCPEventMarker::to_dictionary() const {
 }
 
 void EditorAutomationMCPFailureAttachmentOptionsInput::add_schema_properties(const Ref<EditorAutomationMCPJsonSchema> &p_schema) {
-	p_schema->add_property("attach_screenshot_on_failure", EditorAutomationMCPJsonSchema::boolean("When true, attach an optional viewport screenshot to failure diagnostics."));
-	p_schema->add_property("max_screenshot_bytes", EditorAutomationMCPJsonSchema::integer("Maximum inline screenshot payload size in bytes (default 524288)."));
+	p_schema->add_property("attach_screenshot_on_failure", EditorAutomationMCPJsonSchema::boolean("When true, attach an optional viewport screenshot to failure diagnostics. Use this for ambiguous/no-match/action failures that need visual context."));
+	p_schema->add_property("max_screenshot_bytes", EditorAutomationMCPJsonSchema::integer("Maximum inline screenshot payload size in bytes (default 524288). Larger captures are reported as truncated."));
 }
 
 EditorAutomationMCPParseResult<EditorAutomationMCPFailureAttachmentOptionsInput> EditorAutomationMCPFailureAttachmentOptionsInput::parse(const Dictionary &p_dict) {
@@ -545,28 +552,30 @@ void EditorAutomationMCPFailureAttachmentOptionsInput::append_to_dictionary(Dict
 }
 
 Ref<EditorAutomationMCPJsonSchema> EditorAutomationMCPSelector::schema() {
-	Ref<EditorAutomationMCPJsonSchema> schema = EditorAutomationMCPJsonSchema::object("Semantic selector by role, name, text, class, path, state, and containment.");
-	schema->add_property("id", EditorAutomationMCPJsonSchema::string("Snapshot-scoped opaque element id from observe_ui/find_elements."));
-	schema->add_property("handle", EditorAutomationMCPJsonSchema::string("Durable element handle from observe_ui/find_elements."));
-	schema->add_property("role", EditorAutomationMCPJsonSchema::string("Exact semantic role."));
-	schema->add_property("role_contains", EditorAutomationMCPJsonSchema::string("Substring match against role."));
-	schema->add_property("name", EditorAutomationMCPJsonSchema::string("Exact accessible/visible name."));
-	schema->add_property("name_contains", EditorAutomationMCPJsonSchema::string("Substring match against name."));
-	schema->add_property("text", EditorAutomationMCPJsonSchema::string("Exact visible text/value."));
-	schema->add_property("text_contains", EditorAutomationMCPJsonSchema::string("Substring match against text."));
-	schema->add_property("class", EditorAutomationMCPJsonSchema::string("Exact engine class name."));
-	schema->add_property("class_contains", EditorAutomationMCPJsonSchema::string("Substring match against class name."));
-	schema->add_property("path", EditorAutomationMCPJsonSchema::string("Exact node path."));
+	Ref<EditorAutomationMCPJsonSchema> schema = EditorAutomationMCPJsonSchema::object(
+			"Semantic selector used by find_elements, act, wait_for, and nested action targets. Prefer role plus name/text "
+			"for resilient automation; use id for immediate follow-up or handle when reusing an element across snapshots.");
+	schema->add_property("id", EditorAutomationMCPJsonSchema::string("Snapshot-scoped opaque element id returned by observe_ui/find_elements."));
+	schema->add_property("handle", EditorAutomationMCPJsonSchema::string("Durable element handle returned by observe_ui/find_elements."));
+	schema->add_property("role", EditorAutomationMCPJsonSchema::string("Exact semantic role, such as button, text_field, menu_item, or panel."));
+	schema->add_property("role_contains", EditorAutomationMCPJsonSchema::string("Substring match against role when an exact role is not known."));
+	schema->add_property("name", EditorAutomationMCPJsonSchema::string("Exact accessible or visible name."));
+	schema->add_property("name_contains", EditorAutomationMCPJsonSchema::string("Substring match against name for partially known labels."));
+	schema->add_property("text", EditorAutomationMCPJsonSchema::string("Exact visible text or current value."));
+	schema->add_property("text_contains", EditorAutomationMCPJsonSchema::string("Substring match against visible text or current value."));
+	schema->add_property("class", EditorAutomationMCPJsonSchema::string("Exact engine class name for low-level disambiguation."));
+	schema->add_property("class_contains", EditorAutomationMCPJsonSchema::string("Substring match against engine class name."));
+	schema->add_property("path", EditorAutomationMCPJsonSchema::string("Exact node path. Use only when semantic role/name/text are insufficient."));
 	schema->add_property("path_contains", EditorAutomationMCPJsonSchema::string("Substring match against node path."));
-	schema->add_property("visible", EditorAutomationMCPJsonSchema::boolean("Match visibility."));
-	schema->add_property("enabled", EditorAutomationMCPJsonSchema::boolean("Match enabled state."));
-	schema->add_property("focused", EditorAutomationMCPJsonSchema::boolean("Match focus state."));
+	schema->add_property("visible", EditorAutomationMCPJsonSchema::boolean("Match the element's visible state exactly."));
+	schema->add_property("enabled", EditorAutomationMCPJsonSchema::boolean("Match the element's enabled state exactly."));
+	schema->add_property("focused", EditorAutomationMCPJsonSchema::boolean("Match the element's focus state exactly."));
 	schema->add_property("visible_only", EditorAutomationMCPJsonSchema::boolean("Keep only visible elements when true."));
 	schema->add_property("enabled_only", EditorAutomationMCPJsonSchema::boolean("Keep only enabled elements when true."));
-	schema->add_property("selected", EditorAutomationMCPJsonSchema::boolean("Match selected state."));
-	schema->add_property("metadata", EditorAutomationMCPJsonSchema::object("Metadata key/value pairs to match."));
-	schema->add_property("case_sensitive", EditorAutomationMCPJsonSchema::boolean("Case-sensitive string matching."));
-	schema->add_property("nth", EditorAutomationMCPJsonSchema::integer("Pick the Nth match after filtering."));
+	schema->add_property("selected", EditorAutomationMCPJsonSchema::boolean("Match selected/toggled state when the element exposes one."));
+	schema->add_property("metadata", EditorAutomationMCPJsonSchema::object("Metadata key/value pairs to match for specialized controls."));
+	schema->add_property("case_sensitive", EditorAutomationMCPJsonSchema::boolean("Use case-sensitive string matching. Defaults to false."));
+	schema->add_property("nth", EditorAutomationMCPJsonSchema::integer("Pick the zero-based Nth match after filtering."));
 	schema->add_property("index", EditorAutomationMCPJsonSchema::integer("Synonym for nth."));
 	schema->add_property("within", EditorAutomationMCPJsonSchema::object("Nested selector scope. Accepts the same selector fields as the parent selector."));
 	return schema;
@@ -580,8 +589,18 @@ EditorAutomationMCPParseResult<EditorAutomationMCPSelector> EditorAutomationMCPS
 	EditorAutomationMCPSelector selector;
 	EditorAutomationMCPParseError error;
 	const char *string_keys[] = {
-		"id", "handle", "role", "role_contains", "name", "name_contains", "text", "text_contains",
-		"class", "class_contains", "path", "path_contains",
+		"id",
+		"handle",
+		"role",
+		"role_contains",
+		"name",
+		"name_contains",
+		"text",
+		"text_contains",
+		"class",
+		"class_contains",
+		"path",
+		"path_contains",
 	};
 	for (const char *key : string_keys) {
 		if (!_read_optional_string(dict, key, selector.values, error)) {
@@ -618,20 +637,21 @@ Dictionary EditorAutomationMCPSelector::to_dictionary() const {
 }
 
 Ref<EditorAutomationMCPJsonSchema> EditorAutomationMCPActionArgs::schema() {
-	Ref<EditorAutomationMCPJsonSchema> schema = EditorAutomationMCPJsonSchema::object("Action-specific arguments passed to act.");
-	schema->add_property("text", EditorAutomationMCPJsonSchema::string("Text for type_text/set_text."));
-	schema->add_property("key", EditorAutomationMCPJsonSchema::string("Key name for press_key."));
-	schema->add_property("value", EditorAutomationMCPJsonSchema::string("Value for set_value."));
-	schema->add_property("route", EditorAutomationMCPJsonSchema::enum_string(EditorAutomationMCPContracts::route_enum_values(), "Route preference override."));
-	schema->add_property("button", EditorAutomationMCPJsonSchema::string("Mouse button for click/drag."));
-	schema->add_property("modifiers", EditorAutomationMCPJsonSchema::array(EditorAutomationMCPJsonSchema::string("Modifier key name."), "Modifier keys."));
-	schema->add_property("position", EditorAutomationMCPJsonSchema::array(EditorAutomationMCPJsonSchema::number("Coordinate component."), "Relative click position [x, y]."));
+	Ref<EditorAutomationMCPJsonSchema> schema = EditorAutomationMCPJsonSchema::object(
+			"Action-specific arguments passed to act. Only provide fields used by the chosen action.");
+	schema->add_property("text", EditorAutomationMCPJsonSchema::string("Text for type_text or set_text actions."));
+	schema->add_property("key", EditorAutomationMCPJsonSchema::string("Key name for press_key, using the editor's key naming conventions."));
+	schema->add_property("value", EditorAutomationMCPJsonSchema::string("Value for set_value actions."));
+	schema->add_property("route", EditorAutomationMCPJsonSchema::enum_string(EditorAutomationMCPContracts::route_enum_values(), "Route preference override for this action."));
+	schema->add_property("button", EditorAutomationMCPJsonSchema::string("Mouse button for click or drag actions."));
+	schema->add_property("modifiers", EditorAutomationMCPJsonSchema::array(EditorAutomationMCPJsonSchema::string("Modifier key name."), "Modifier keys to hold during input-routed actions."));
+	schema->add_property("position", EditorAutomationMCPJsonSchema::array(EditorAutomationMCPJsonSchema::number("Coordinate component."), "Relative click position [x, y] inside the selected element."));
 	schema->add_property("direction", EditorAutomationMCPJsonSchema::enum_string(EditorAutomationMCPContracts::scroll_direction_enum_values(), "Scroll direction."));
-	schema->add_property("amount", EditorAutomationMCPJsonSchema::integer("Scroll amount."));
+	schema->add_property("amount", EditorAutomationMCPJsonSchema::integer("Scroll amount in wheel steps unless page is true."));
 	schema->add_property("page", EditorAutomationMCPJsonSchema::boolean("Scroll by page when true."));
 	schema->add_property("target", EditorAutomationMCPSelector::schema());
-	schema->add_property("target_point", EditorAutomationMCPJsonSchema::array(EditorAutomationMCPJsonSchema::number("Coordinate component."), "Absolute drag target point."));
-	schema->add_property("waypoints", EditorAutomationMCPJsonSchema::array(EditorAutomationMCPJsonSchema::array(EditorAutomationMCPJsonSchema::number("Coordinate component.")), "Drag path."));
+	schema->add_property("target_point", EditorAutomationMCPJsonSchema::array(EditorAutomationMCPJsonSchema::number("Coordinate component."), "Absolute drag target point for drag actions."));
+	schema->add_property("waypoints", EditorAutomationMCPJsonSchema::array(EditorAutomationMCPJsonSchema::array(EditorAutomationMCPJsonSchema::number("Coordinate component.")), "Drag path as absolute [x, y] waypoint arrays."));
 	schema->add_property("path", EditorAutomationMCPJsonSchema::array(EditorAutomationMCPJsonSchema::array(EditorAutomationMCPJsonSchema::number("Coordinate component.")), "Alias for waypoints."));
 	return schema;
 }
@@ -694,16 +714,17 @@ Dictionary EditorAutomationMCPActionArgs::to_dictionary() const {
 }
 
 Ref<EditorAutomationMCPJsonSchema> EditorAutomationMCPWaitCondition::schema() {
-	Ref<EditorAutomationMCPJsonSchema> schema = EditorAutomationMCPJsonSchema::object("Wait condition object.");
+	Ref<EditorAutomationMCPJsonSchema> schema = EditorAutomationMCPJsonSchema::object(
+			"Wait condition object used by act.wait. Use type or condition, plus the fields required by that condition kind.");
 	schema->add_property("type", EditorAutomationMCPJsonSchema::enum_string(EditorAutomationMCPContracts::wait_condition_types(), "Wait condition kind."));
 	schema->add_property("condition", EditorAutomationMCPJsonSchema::enum_string(EditorAutomationMCPContracts::wait_condition_types(), "Shorthand alias for type."));
 	schema->add_property("selector", EditorAutomationMCPSelector::schema());
-	schema->add_property("text", EditorAutomationMCPJsonSchema::string("Substring for log_contains."));
+	schema->add_property("text", EditorAutomationMCPJsonSchema::string("Substring for log_contains conditions."));
 	schema->add_property("severity", EditorAutomationMCPJsonSchema::enum_string(EditorAutomationMCPContracts::severity_enum_values(), "Severity filter."));
 	schema->add_property("severities", EditorAutomationMCPJsonSchema::array(EditorAutomationMCPJsonSchema::string("Log severity."), "Multiple severities."));
 	schema->add_property("marker", EditorAutomationMCPLogMarker::schema());
 	schema->add_property("fields", EditorAutomationMCPJsonSchema::object("Field equality checks for selector_matches."));
-	schema->add_property("baseline", EditorAutomationMCPJsonSchema::object("Baseline modal stack for modal_stack_changed."));
+	schema->add_property("baseline", EditorAutomationMCPJsonSchema::object("Baseline modal stack for modal_stack_changed conditions."));
 	return schema;
 }
 
@@ -764,11 +785,12 @@ bool EditorAutomationMCPWaitCondition::is_empty() const {
 }
 
 Ref<EditorAutomationMCPJsonSchema> EditorAutomationMCPToolFailure::schema() {
-	Ref<EditorAutomationMCPJsonSchema> schema = EditorAutomationMCPJsonSchema::object("Structured failure.");
-	schema->add_property("ok", EditorAutomationMCPJsonSchema::boolean("Whether the operation succeeded."));
-	schema->add_property("kind", EditorAutomationMCPJsonSchema::string("Failure kind."));
-	schema->add_property("message", EditorAutomationMCPJsonSchema::string("Failure message."));
-	schema->add_property("details", EditorAutomationMCPJsonSchema::object("Structured failure diagnostics."));
+	Ref<EditorAutomationMCPJsonSchema> schema = EditorAutomationMCPJsonSchema::object(
+			"Structured automation failure. Tool results use this shape inside structuredContent while transport errors use JSON-RPC errors.");
+	schema->add_property("ok", EditorAutomationMCPJsonSchema::boolean("Always false for structured automation failures."));
+	schema->add_property("kind", EditorAutomationMCPJsonSchema::string("Stable failure kind suitable for branching retry logic."));
+	schema->add_property("message", EditorAutomationMCPJsonSchema::string("Human-readable failure message."));
+	schema->add_property("details", EditorAutomationMCPJsonSchema::object("Structured failure diagnostics for selectors, action traces, modal state, or screenshots."));
 	return schema;
 }
 
@@ -846,11 +868,13 @@ Dictionary EditorAutomationMCPElementNode::to_dictionary() const {
 }
 
 Ref<EditorAutomationMCPJsonSchema> EditorAutomationMCPObserveUIInput::schema() {
-	Ref<EditorAutomationMCPJsonSchema> schema = EditorAutomationMCPJsonSchema::object();
-	schema->add_property("max_depth", EditorAutomationMCPJsonSchema::integer("Maximum tree depth to include (default 8)."));
-	schema->add_property("include_hidden", EditorAutomationMCPJsonSchema::boolean("Include hidden elements (default false)."));
+	Ref<EditorAutomationMCPJsonSchema> schema = EditorAutomationMCPJsonSchema::object(
+			"Input for observe_ui. Use this first when an agent needs a fresh semantic UI snapshot. "
+			"Prefer subtree_cursor pagination over raising max_depth or max_children for large trees.");
+	schema->add_property("max_depth", EditorAutomationMCPJsonSchema::integer("Maximum tree depth to include from each root (default 8)."));
+	schema->add_property("include_hidden", EditorAutomationMCPJsonSchema::boolean("Include hidden elements when true. Defaults to false for action-oriented snapshots."));
 	schema->add_property("max_children", EditorAutomationMCPJsonSchema::integer("Maximum children per node before pagination (default 32)."));
-	schema->add_property("subtree_cursor", EditorAutomationMCPJsonSchema::string("Opaque cursor from children_next_cursor to fetch the next child page."));
+	schema->add_property("subtree_cursor", EditorAutomationMCPJsonSchema::string("Opaque cursor from children_next_cursor to fetch the next child page without refreshing the whole tree."));
 	return schema;
 }
 
@@ -877,10 +901,11 @@ Dictionary EditorAutomationMCPObserveUIInput::to_dictionary() const {
 }
 
 Ref<EditorAutomationMCPJsonSchema> EditorAutomationMCPFindElementsInput::schema() {
-	Ref<EditorAutomationMCPJsonSchema> schema = EditorAutomationMCPJsonSchema::object();
+	Ref<EditorAutomationMCPJsonSchema> schema = EditorAutomationMCPJsonSchema::object(
+			"Input for find_elements. Use this to resolve a selector before acting, inspect ambiguity, or page through large match sets.");
 	schema->add_property("selector", EditorAutomationMCPSelector::schema());
 	schema->add_property("max_results", EditorAutomationMCPJsonSchema::integer("Maximum number of matches to return per page (default 20)."));
-	schema->add_property("cursor", EditorAutomationMCPJsonSchema::string("Opaque pagination cursor from next_cursor."));
+	schema->add_property("cursor", EditorAutomationMCPJsonSchema::string("Opaque pagination cursor returned as next_cursor from a previous find_elements response."));
 	EditorAutomationMCPFailureAttachmentOptionsInput::add_schema_properties(schema);
 	schema->add_required("selector");
 	return schema;
@@ -918,16 +943,20 @@ Dictionary EditorAutomationMCPFindElementsInput::to_dictionary() const {
 }
 
 Ref<EditorAutomationMCPJsonSchema> EditorAutomationMCPActInput::schema() {
-	Ref<EditorAutomationMCPJsonSchema> schema = EditorAutomationMCPJsonSchema::object();
+	Ref<EditorAutomationMCPJsonSchema> schema = EditorAutomationMCPJsonSchema::object(
+			"Input for act. Provide action and selector for a new interaction; optionally include wait to combine action and postcondition. "
+			"When polling a pending cooperative act+wait, pass wait_id without repeating selector/action.");
 	schema->add_property("selector", EditorAutomationMCPSelector::schema());
-	schema->add_property("action", EditorAutomationMCPJsonSchema::enum_string(EditorAutomationMCPContracts::action_names(), "Action to perform."));
-	schema->add_property("route", EditorAutomationMCPJsonSchema::enum_string(EditorAutomationMCPContracts::route_enum_values(), "Route preference."));
+	schema->add_property("action", EditorAutomationMCPJsonSchema::enum_string(EditorAutomationMCPContracts::action_names(), "Action to perform for a new interaction."));
+	schema->add_property("route", EditorAutomationMCPJsonSchema::enum_string(EditorAutomationMCPContracts::route_enum_values(), "Route preference: auto, semantic, or input."));
 	schema->add_property("args", EditorAutomationMCPActionArgs::schema());
 	schema->add_property("wait", EditorAutomationMCPWaitCondition::schema());
 	schema->add_property("wait_timeout_ms", EditorAutomationMCPJsonSchema::integer("Timeout in milliseconds for the optional wait clause (default 5000)."));
 	schema->add_property("wait_id", EditorAutomationMCPJsonSchema::string("Poll or continue an existing cooperative act+wait by id."));
 	EditorAutomationMCPFailureAttachmentOptionsInput::add_schema_properties(schema);
-	schema->add_required("action");
+	// `action` is required only for new interactions. Polling an existing
+	// cooperative act+wait uses wait_id without repeating action/selector; the
+	// parser enforces that conditional requirement.
 	return schema;
 }
 
@@ -986,15 +1015,16 @@ Dictionary EditorAutomationMCPActInput::to_dictionary() const {
 }
 
 Ref<EditorAutomationMCPJsonSchema> EditorAutomationMCPWaitForInput::schema() {
-	Ref<EditorAutomationMCPJsonSchema> schema = EditorAutomationMCPJsonSchema::object();
+	Ref<EditorAutomationMCPJsonSchema> schema = EditorAutomationMCPJsonSchema::object(
+			"Input for wait_for. Start a wait with condition/type, or pass wait_id to poll/cancel a cooperative wait returned earlier.");
 	schema->add_property("condition", EditorAutomationMCPJsonSchema::enum_string(EditorAutomationMCPContracts::wait_condition_types(), "Wait condition shorthand."));
 	schema->add_property("type", EditorAutomationMCPJsonSchema::enum_string(EditorAutomationMCPContracts::wait_condition_types(), "Wait condition kind."));
 	schema->add_property("selector", EditorAutomationMCPSelector::schema());
 	schema->add_property("timeout_ms", EditorAutomationMCPJsonSchema::integer("Timeout in milliseconds (default 5000)."));
 	schema->add_property("wait_id", EditorAutomationMCPJsonSchema::string("Poll or cancel an existing cooperative wait by id."));
 	schema->add_property("cancel", EditorAutomationMCPJsonSchema::boolean("When true with wait_id, cancel the pending wait."));
-	schema->add_property("cooperative", EditorAutomationMCPJsonSchema::boolean("When true (default), return immediately while the wait is pending."));
-	schema->add_property("text", EditorAutomationMCPJsonSchema::string("Substring for log_contains."));
+	schema->add_property("cooperative", EditorAutomationMCPJsonSchema::boolean("When true (default), return quickly with wait_id while the wait is pending instead of blocking until timeout."));
+	schema->add_property("text", EditorAutomationMCPJsonSchema::string("Substring for log_contains conditions."));
 	schema->add_property("severity", EditorAutomationMCPJsonSchema::string("Severity filter for log conditions."));
 	schema->add_property("marker", EditorAutomationMCPLogMarker::schema());
 	schema->add_property("fields", EditorAutomationMCPJsonSchema::object("Field equality checks for selector_matches."));
@@ -1064,7 +1094,8 @@ Dictionary EditorAutomationMCPWaitForInput::to_dictionary() const {
 }
 
 Ref<EditorAutomationMCPJsonSchema> EditorAutomationMCPReadEditorStateInput::schema() {
-	return EditorAutomationMCPJsonSchema::object();
+	return EditorAutomationMCPJsonSchema::object(
+			"Input for read_editor_state. No arguments are currently accepted; call this for a lightweight editor/session summary.");
 }
 
 EditorAutomationMCPParseResult<EditorAutomationMCPReadEditorStateInput> EditorAutomationMCPReadEditorStateInput::parse(const Dictionary &p_dict) {
@@ -1076,7 +1107,8 @@ Dictionary EditorAutomationMCPReadEditorStateInput::to_dictionary() const {
 }
 
 Ref<EditorAutomationMCPJsonSchema> EditorAutomationMCPReadEditorLogInput::schema() {
-	Ref<EditorAutomationMCPJsonSchema> schema = EditorAutomationMCPJsonSchema::object();
+	Ref<EditorAutomationMCPJsonSchema> schema = EditorAutomationMCPJsonSchema::object(
+			"Input for read_editor_log. Use since with the marker from the previous response for incremental log polling.");
 	schema->add_property("severity", EditorAutomationMCPJsonSchema::enum_string(EditorAutomationMCPContracts::severity_enum_values(), "Optional severity filter."));
 	schema->add_property("since", EditorAutomationMCPLogMarker::schema());
 	schema->add_property("limit", EditorAutomationMCPJsonSchema::integer("Maximum recent entries when no marker is provided (default 64)."));
@@ -1107,8 +1139,9 @@ Dictionary EditorAutomationMCPReadEditorLogInput::to_dictionary() const {
 }
 
 Ref<EditorAutomationMCPJsonSchema> EditorAutomationMCPRunCommandInput::schema() {
-	Ref<EditorAutomationMCPJsonSchema> schema = EditorAutomationMCPJsonSchema::object();
-	schema->add_property("command", EditorAutomationMCPJsonSchema::string("Command palette command key or editor shortcut path."));
+	Ref<EditorAutomationMCPJsonSchema> schema = EditorAutomationMCPJsonSchema::object(
+			"Input for run_command. Get valid command keys from list_commands or foundry://commands before executing.");
+	schema->add_property("command", EditorAutomationMCPJsonSchema::string("Command palette command key or editor shortcut path to execute."));
 	schema->add_required("command");
 	return schema;
 }
@@ -1129,7 +1162,8 @@ Dictionary EditorAutomationMCPRunCommandInput::to_dictionary() const {
 }
 
 Ref<EditorAutomationMCPJsonSchema> EditorAutomationMCPListCommandsInput::schema() {
-	Ref<EditorAutomationMCPJsonSchema> schema = EditorAutomationMCPJsonSchema::object();
+	Ref<EditorAutomationMCPJsonSchema> schema = EditorAutomationMCPJsonSchema::object(
+			"Input for list_commands. Use this to discover command keys before calling run_command.");
 	schema->add_property("query", EditorAutomationMCPJsonSchema::string("Optional substring filter against command keys and labels."));
 	schema->add_property("category", EditorAutomationMCPJsonSchema::string("Optional category prefix filter."));
 	schema->add_property("runnable_only", EditorAutomationMCPJsonSchema::boolean("When true, include only commands runnable by run_command."));
@@ -1165,7 +1199,8 @@ Ref<EditorAutomationMCPJsonSchema> EditorAutomationMCPPollEventsInput::schema() 
 	kinds.push_back("editor_log_warning");
 	kinds.push_back("automation");
 
-	Ref<EditorAutomationMCPJsonSchema> schema = EditorAutomationMCPJsonSchema::object();
+	Ref<EditorAutomationMCPJsonSchema> schema = EditorAutomationMCPJsonSchema::object(
+			"Input for poll_events. Prefer this over read_editor_log when an MCP client needs notification-like updates over POST-only transport.");
 	schema->add_property("since", EditorAutomationMCPEventMarker::schema());
 	schema->add_property("kinds", EditorAutomationMCPJsonSchema::array(EditorAutomationMCPJsonSchema::enum_string(kinds, "Automation event kind."), "Optional event kind filter."));
 	schema->add_property("limit", EditorAutomationMCPJsonSchema::integer("Maximum events to return (default 64)."));
@@ -1276,33 +1311,35 @@ Array EditorAutomationMCPContracts::build_tools_list() {
 	Array tools;
 
 	{
-		Ref<EditorAutomationMCPJsonSchema> output = EditorAutomationMCPJsonSchema::object("observe_ui structured result.");
-		output->add_property("generation", EditorAutomationMCPJsonSchema::integer("Snapshot generation."));
-		output->add_property("focused_element_id", EditorAutomationMCPJsonSchema::string("Focused element id."));
-		output->add_property("tree", EditorAutomationMCPJsonSchema::array(_element_node_schema(), "Root element trees."));
-		output->add_property("windows", EditorAutomationMCPJsonSchema::array(_element_node_schema(), "Alias of tree."));
-		output->add_property("modal_stack", EditorAutomationMCPJsonSchema::array(EditorAutomationMCPJsonSchema::object(), "Modal stack entries."));
+		Ref<EditorAutomationMCPJsonSchema> output = EditorAutomationMCPJsonSchema::object(
+				"Output from observe_ui. Treat tree/windows as a semantic snapshot for selecting elements and use cursors for truncated children.");
+		output->add_property("generation", EditorAutomationMCPJsonSchema::integer("Snapshot generation used to correlate ids and diagnostics."));
+		output->add_property("focused_element_id", EditorAutomationMCPJsonSchema::string("Snapshot-scoped id of the focused element, when any."));
+		output->add_property("tree", EditorAutomationMCPJsonSchema::array(_element_node_schema(), "Root element trees for the current editor windows."));
+		output->add_property("windows", EditorAutomationMCPJsonSchema::array(_element_node_schema(), "Alias of tree for clients that model top-level windows explicitly."));
+		output->add_property("modal_stack", EditorAutomationMCPJsonSchema::array(EditorAutomationMCPJsonSchema::object("Modal stack entry."), "Modal stack entries from bottom to top."));
 		output->add_property("element_count", EditorAutomationMCPJsonSchema::integer("Total elements in snapshot."));
 		output->add_property("limits", EditorAutomationMCPJsonSchema::object("Applied limits and truncation flags."));
 		output->add_property("subtree", _element_node_schema());
 		tools.push_back(_make_tool("observe_ui",
 				"Returns the current windows, focused element, modal stack, and visible semantic tree.",
 				EditorAutomationMCPObserveUIInput::schema(), output)
-								.to_dictionary());
+						.to_dictionary());
 	}
 
 	{
-		Ref<EditorAutomationMCPJsonSchema> output = EditorAutomationMCPJsonSchema::object("find_elements structured result.");
-		output->add_property("ok", EditorAutomationMCPJsonSchema::boolean("Whether matches were found."));
-		output->add_property("elements", EditorAutomationMCPJsonSchema::array(_element_node_schema(), "Matched element summaries."));
-		output->add_property("match_count", EditorAutomationMCPJsonSchema::integer("Total match count."));
-		output->add_property("truncated", EditorAutomationMCPJsonSchema::boolean("True when more matches remain."));
+		Ref<EditorAutomationMCPJsonSchema> output = EditorAutomationMCPJsonSchema::object(
+				"Output from find_elements. Use elements for selector refinement or follow-up actions; inspect details when ok is false.");
+		output->add_property("ok", EditorAutomationMCPJsonSchema::boolean("True when at least one match was found."));
+		output->add_property("elements", EditorAutomationMCPJsonSchema::array(_element_node_schema(), "Matched element summaries for this page."));
+		output->add_property("match_count", EditorAutomationMCPJsonSchema::integer("Total match count before pagination."));
+		output->add_property("truncated", EditorAutomationMCPJsonSchema::boolean("True when more matches remain after this page."));
 		output->add_property("next_cursor", EditorAutomationMCPJsonSchema::string("Cursor for the next page of matches."));
 		_add_failure_details_output_props(output);
 		tools.push_back(_make_tool("find_elements",
 				"Resolves selectors and returns matches or structured no-match/ambiguous diagnostics.",
 				EditorAutomationMCPFindElementsInput::schema(), output)
-								.to_dictionary());
+						.to_dictionary());
 	}
 
 	{
@@ -1311,54 +1348,57 @@ Array EditorAutomationMCPContracts::build_tools_list() {
 		tools.push_back(_make_tool("act",
 				"Performs a semantic or input action on a selected element and optionally waits for a UI condition in one call.",
 				EditorAutomationMCPActInput::schema(), act_output)
-								.to_dictionary());
+						.to_dictionary());
 	}
 
 	{
 		Ref<EditorAutomationMCPJsonSchema> output = _ok_result_schema();
-		output->add_property("status", EditorAutomationMCPJsonSchema::enum_string(wait_status_enum_values(), "Cooperative wait status."));
-		output->add_property("wait_id", EditorAutomationMCPJsonSchema::string("Cooperative wait id."));
+		output->add_property("status", EditorAutomationMCPJsonSchema::enum_string(wait_status_enum_values(), "Cooperative wait status when the wait is pending, complete, or cancelled."));
+		output->add_property("wait_id", EditorAutomationMCPJsonSchema::string("Cooperative wait id to pass back to wait_for for polling or cancellation."));
 		_add_failure_details_output_props(output);
 		tools.push_back(_make_tool("wait_for",
 				"Waits cooperatively for a UI condition and returns success/failure diagnostics without blocking the editor for the full timeout.",
 				EditorAutomationMCPWaitForInput::schema(), output)
-								.to_dictionary());
+						.to_dictionary());
 	}
 
 	tools.push_back(_make_tool("read_editor_state",
 			"Returns selected nodes, open scenes, active scene, current script, playing state, and unsaved state.",
-			EditorAutomationMCPReadEditorStateInput::schema(), EditorAutomationMCPJsonSchema::object("Current editor state."))
-							.to_dictionary());
+			EditorAutomationMCPReadEditorStateInput::schema(), EditorAutomationMCPJsonSchema::object("Output from read_editor_state with a lightweight snapshot of editor/session state."))
+					.to_dictionary());
 
 	{
-		Ref<EditorAutomationMCPJsonSchema> output = EditorAutomationMCPJsonSchema::object("Editor log readback.");
-		output->add_property("entries", EditorAutomationMCPJsonSchema::array(EditorAutomationMCPJsonSchema::object(), "Log entries."));
+		Ref<EditorAutomationMCPJsonSchema> output = EditorAutomationMCPJsonSchema::object(
+				"Output from read_editor_log. Store marker and pass it as since on the next call to avoid duplicate entries.");
+		output->add_property("entries", EditorAutomationMCPJsonSchema::array(EditorAutomationMCPJsonSchema::object("Editor log entry."), "Log entries."));
 		output->add_property("count", EditorAutomationMCPJsonSchema::integer("Returned entry count."));
 		output->add_property("marker", EditorAutomationMCPLogMarker::schema());
 		tools.push_back(_make_tool("read_editor_log",
 				"Returns editor log entries, optionally filtered by severity and since-marker. For push notifications, use poll_events; this tool remains the polling fallback.",
 				EditorAutomationMCPReadEditorLogInput::schema(), output)
-								.to_dictionary());
+						.to_dictionary());
 	}
 
 	tools.push_back(_make_tool("run_command",
 			"Executes a command palette command or editor shortcut action by key via the existing editor registries.",
 			EditorAutomationMCPRunCommandInput::schema(), _ok_result_schema())
-							.to_dictionary());
+					.to_dictionary());
 
 	{
-		Ref<EditorAutomationMCPJsonSchema> output = EditorAutomationMCPJsonSchema::object("Command discovery result.");
+		Ref<EditorAutomationMCPJsonSchema> output = EditorAutomationMCPJsonSchema::object(
+				"Output from list_commands. Use runnable_by_run_command before passing a command key to run_command.");
 		output->add_property("ok", EditorAutomationMCPJsonSchema::boolean("Whether listing succeeded."));
-		output->add_property("commands", EditorAutomationMCPJsonSchema::array(EditorAutomationMCPJsonSchema::object(), "Command entries."));
+		output->add_property("commands", EditorAutomationMCPJsonSchema::array(EditorAutomationMCPJsonSchema::object("Editor command entry."), "Command entries."));
 		tools.push_back(_make_tool("list_commands",
 				"Lists command palette commands and editor shortcut actions with runnable metadata.",
 				EditorAutomationMCPListCommandsInput::schema(), output)
-								.to_dictionary());
+						.to_dictionary());
 	}
 
 	{
-		Ref<EditorAutomationMCPJsonSchema> output = EditorAutomationMCPJsonSchema::object("Automation event poll result.");
-		output->add_property("events", EditorAutomationMCPJsonSchema::array(EditorAutomationMCPJsonSchema::object(), "Automation events since the marker."));
+		Ref<EditorAutomationMCPJsonSchema> output = EditorAutomationMCPJsonSchema::object(
+				"Output from poll_events. Store marker and pass it as since on the next poll to avoid duplicate events.");
+		output->add_property("events", EditorAutomationMCPJsonSchema::array(EditorAutomationMCPJsonSchema::object("Automation event entry."), "Automation events since the marker."));
 		output->add_property("count", EditorAutomationMCPJsonSchema::integer("Returned event count."));
 		output->add_property("marker", EditorAutomationMCPEventMarker::schema());
 		output->add_property("has_more", EditorAutomationMCPJsonSchema::boolean("True when additional events remain after this page."));
@@ -1366,7 +1406,7 @@ Array EditorAutomationMCPContracts::build_tools_list() {
 		tools.push_back(_make_tool("poll_events",
 				"Returns queued editor log/automation events. The POST-only MCP transport cannot push notifications; poll this tool (or read_editor_log) instead.",
 				EditorAutomationMCPPollEventsInput::schema(), output)
-								.to_dictionary());
+						.to_dictionary());
 	}
 
 	return tools;
@@ -1374,20 +1414,40 @@ Array EditorAutomationMCPContracts::build_tools_list() {
 
 Array EditorAutomationMCPContracts::build_resource_templates_list() {
 	Array templates;
-	templates.push_back(_make_resource_template("foundry://element/{id}", "Element", "Single semantic UI element summary.").to_dictionary());
-	templates.push_back(_make_resource_template("foundry://ui/subtree/{id}", "UI Subtree", "Semantic UI subtree rooted at an element id.").to_dictionary());
-	templates.push_back(_make_resource_template("foundry://ui/subtree/{id}/depth/{depth}", "UI Subtree (depth)", "Semantic UI subtree with an explicit max depth.").to_dictionary());
-	templates.push_back(_make_resource_template("foundry://scene/tree", "Scene Tree", "Edited scene node hierarchy.").to_dictionary());
+	templates.push_back(_make_resource_template("foundry://element/{id}", "Element",
+			"Read a single semantic UI element summary by id or handle without requesting a full UI tree.")
+					.to_dictionary());
+	templates.push_back(_make_resource_template("foundry://ui/subtree/{id}", "UI Subtree",
+			"Read a semantic UI subtree rooted at an element id or handle when observe_ui returned truncated children.")
+					.to_dictionary());
+	templates.push_back(_make_resource_template("foundry://ui/subtree/{id}/depth/{depth}", "UI Subtree (depth)",
+			"Read a semantic UI subtree with an explicit max depth to inspect a focused region of the editor UI.")
+					.to_dictionary());
+	templates.push_back(_make_resource_template("foundry://scene/tree", "Scene Tree",
+			"Read the edited scene node hierarchy. Query parameters may narrow future scene-tree projections.")
+					.to_dictionary());
 	return templates;
 }
 
 Array EditorAutomationMCPContracts::build_resources_list() {
 	Array resources;
-	resources.push_back(_make_resource("foundry://ui/tree", "UI Tree", "Current visible semantic UI tree.").to_dictionary());
-	resources.push_back(_make_resource("foundry://editor/state", "Editor State", "Current editor state readback.").to_dictionary());
-	resources.push_back(_make_resource("foundry://editor/log", "Editor Log", "Recent editor log entries.").to_dictionary());
-	resources.push_back(_make_resource("foundry://scene/active", "Active Scene", "Active scene and edited root information.").to_dictionary());
-	resources.push_back(_make_resource("foundry://scene/tree", "Scene Tree", "Edited scene node hierarchy.").to_dictionary());
-	resources.push_back(_make_resource("foundry://commands", "Editor Commands", "Command palette commands and editor shortcut actions with runnable metadata.").to_dictionary());
+	resources.push_back(_make_resource("foundry://ui/tree", "UI Tree",
+			"Read the current visible semantic UI tree. Prefer observe_ui when tool output metadata is also needed.")
+					.to_dictionary());
+	resources.push_back(_make_resource("foundry://editor/state", "Editor State",
+			"Read the current editor/session state: scenes, selection, script, play state, and unsaved status.")
+					.to_dictionary());
+	resources.push_back(_make_resource("foundry://editor/log", "Editor Log",
+			"Read recent editor log entries. Prefer poll_events for notification-like incremental updates.")
+					.to_dictionary());
+	resources.push_back(_make_resource("foundry://scene/active", "Active Scene",
+			"Read active scene and edited root information for scene-aware automation.")
+					.to_dictionary());
+	resources.push_back(_make_resource("foundry://scene/tree", "Scene Tree",
+			"Read the edited scene node hierarchy.")
+					.to_dictionary());
+	resources.push_back(_make_resource("foundry://commands", "Editor Commands",
+			"Read command palette commands and editor shortcut actions with runnable metadata for run_command.")
+					.to_dictionary());
 	return resources;
 }
