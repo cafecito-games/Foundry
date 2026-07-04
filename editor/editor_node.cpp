@@ -5161,7 +5161,13 @@ int EditorNode::new_scene() {
 		for (int i = 0; i < editor_data.get_edited_scene_count() - 1; i++) {
 			bool unsaved = EditorUndoRedoManager::get_singleton()->is_history_unsaved(editor_data.get_scene_history_id(i));
 			if (!unsaved && editor_data.get_scene_path(i).is_empty() && editor_data.get_edited_scene_root(i) == nullptr) {
-				editor_data.remove_scene(i);
+				// Route through _remove_scene() rather than editor_data.remove_scene()
+				// directly: if this placeholder was the only scene of a non-focused
+				// tile, that tile must be collapsed and the tile display attachments
+				// refreshed, otherwise the emptied tile is left showing stale content.
+				// p_change_tab is false because the newly added scene is already the
+				// current one and is not the scene being removed.
+				_remove_scene(i, false, true);
 				idx--;
 			}
 		}
