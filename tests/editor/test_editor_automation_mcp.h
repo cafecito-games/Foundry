@@ -1006,14 +1006,21 @@ TEST_CASE("[Editor][Automation][MCP] run_command executes palette command and re
 	palette->remove_command("automation/execute_palette_command");
 }
 
-TEST_CASE("[Editor][Automation][MCP] disabled shortcut command is reported as non-runnable") {
+TEST_CASE("[Editor][Automation][MCP] palette command without a key binding is still runnable") {
+	// Regression for the MVP acceptance workflow: shortcut-backed palette
+	// commands such as docks/open_inspector are registered via
+	// ED_SHORTCUT_AND_COMMAND with no default key. EditorCommandPalette runs
+	// their callable directly (a push of InputEventShortcut resolved by
+	// shortcut identity), so run_command must execute them instead of
+	// rejecting them as "disabled" just because the shortcut has no key.
 	EditorCommandPalette *palette = EditorCommandPalette::get_singleton();
 	REQUIRE(palette != nullptr);
 
-	Ref<Shortcut> disabled_shortcut;
-	disabled_shortcut.instantiate();
-	disabled_shortcut->set_name("Disabled Automation Shortcut");
-	palette->add_command("Disabled Automation Command", "automation/disabled_command", callable_mp(palette, &EditorCommandPalette::open_popup), varray(), disabled_shortcut);
+	AutomationCommandProbe probe;
+	Ref<Shortcut> unbound_shortcut;
+	unbound_shortcut.instantiate();
+	unbound_shortcut->set_name("Unbound Automation Shortcut");
+	palette->add_command("Unbound Automation Command", "automation/unbound_command", callable_mp(&probe, &AutomationCommandProbe::mark), varray(), unbound_shortcut);
 
 	EditorAutomationMCPDispatcher dispatcher;
 
@@ -1023,23 +1030,26 @@ TEST_CASE("[Editor][Automation][MCP] disabled shortcut command is reported as no
 	const Dictionary list_response = dispatcher.handle_message(make_request(25, "tools/call", list_params));
 	const Dictionary list_result = list_response.get("result", Dictionary());
 	const Dictionary list_structured = list_result.get("structuredContent", Dictionary());
-	const Dictionary disabled_entry = command_entry_for_key(list_structured.get("commands", Array()), "automation/disabled_command");
-	CHECK((bool)disabled_entry.get("enabled", true) == false);
-	CHECK((bool)disabled_entry.get("runnable_by_run_command", true) == false);
-	CHECK_FALSE(String(disabled_entry.get("non_runnable_reason", String())).is_empty());
+	const Dictionary entry = command_entry_for_key(list_structured.get("commands", Array()), "automation/unbound_command");
+	CHECK((bool)entry.get("enabled", false) == true);
+	CHECK((bool)entry.get("runnable_by_run_command", false) == true);
+	// The missing key binding is reported as metadata, not as a blocker.
+	CHECK((bool)entry.get("has_shortcut_binding", true) == false);
 
 	Dictionary run_params;
 	run_params["name"] = "run_command";
 	Dictionary run_args;
-	run_args["command"] = "automation/disabled_command";
+	run_args["command"] = "automation/unbound_command";
 	run_params["arguments"] = run_args;
 	const Dictionary run_response = dispatcher.handle_message(make_request(26, "tools/call", run_params));
 	const Dictionary run_result = run_response.get("result", Dictionary());
+	CHECK_FALSE((bool)run_result.get("isError", true));
 	const Dictionary run_structured = run_result.get("structuredContent", Dictionary());
-	CHECK((bool)run_structured.get("ok", true) == false);
-	CHECK(String(run_structured.get("kind", String())) == "disabled_command");
+	CHECK((bool)run_structured.get("ok", false) == true);
+	CHECK(String(run_structured.get("route", String())) == "command_palette");
+	CHECK(probe.executed);
 
-	palette->remove_command("automation/disabled_command");
+	palette->remove_command("automation/unbound_command");
 }
 
 TEST_CASE("[Editor][Automation][MCP] scene_tree/add_child_node shortcut is discoverable") {

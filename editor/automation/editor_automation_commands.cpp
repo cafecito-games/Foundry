@@ -126,16 +126,17 @@ Dictionary EditorAutomationCommands::_entry_from_palette(const String &p_key, co
 	}
 	entry["shortcut_text"] = shortcut_text;
 
-	const bool shortcut_enabled = p_shortcut.is_null() || p_shortcut->has_valid_event();
-	entry["enabled"] = shortcut_enabled;
-
+	// Command-palette commands always run through EditorCommandPalette::
+	// execute_command(), which invokes the command's callable directly. For
+	// shortcut-backed commands (ED_SHORTCUT_AND_COMMAND / add_shortcut_command)
+	// that callable pushes an InputEventShortcut that Shortcut::matches_event()
+	// resolves by shortcut identity, not by any bound key. So a palette command
+	// is runnable whether or not its shortcut has an assigned key binding; the
+	// key binding is presentation metadata (shortcut_text) only.
+	entry["enabled"] = true;
 	entry["runnable"] = true;
 	entry["runnable_by_run_command"] = true;
-	if (!shortcut_enabled) {
-		entry["non_runnable_reason"] = "Command shortcut has no assigned key binding.";
-		entry["runnable"] = false;
-		entry["runnable_by_run_command"] = false;
-	}
+	entry["has_shortcut_binding"] = p_shortcut.is_valid() && p_shortcut->has_valid_event();
 	return entry;
 }
 
@@ -332,18 +333,12 @@ Dictionary EditorAutomationCommands::execute(const String &p_command) {
 #ifdef TOOLS_ENABLED
 	EditorCommandPalette *palette = EditorCommandPalette::get_singleton();
 	if (palette != nullptr && palette->has_command(p_command)) {
-		String display_name;
-		String shortcut_text;
-		Ref<Shortcut> shortcut;
-		palette->get_command_details(p_command, &display_name, &shortcut_text, &shortcut);
-		if (shortcut.is_valid() && !shortcut->has_valid_event()) {
-			result["ok"] = false;
-			result["kind"] = "disabled_command";
-			result["message"] = vformat("Command '%s' is disabled because its shortcut has no assigned key binding.", p_command);
-			result["candidates"] = suggest_commands(p_command);
-			return result;
-		}
-
+		// Palette commands run their callable directly through execute_command().
+		// Shortcut-backed palette commands (e.g. docks/open_inspector, registered
+		// via ED_SHORTCUT_AND_COMMAND with no default key) push an
+		// InputEventShortcut that resolves by shortcut identity, so they run
+		// correctly even without an assigned key binding. Do not gate on
+		// has_valid_event(); the palette itself never does.
 		palette->execute_command(p_command);
 		result["ok"] = true;
 		result["route"] = "command_palette";
