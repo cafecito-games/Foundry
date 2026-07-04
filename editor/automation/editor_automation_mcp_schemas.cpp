@@ -322,6 +322,50 @@ Dictionary EditorAutomationMCPSchemas::event_marker_schema() {
 	return schema;
 }
 
+static Dictionary _failure_attachment_schema() {
+	Dictionary schema = _object_schema("Optional failure screenshot attachment.");
+	Dictionary props;
+	props["status"] = _enum_string_schema([]() {
+		Array values;
+		values.push_back("available");
+		values.push_back("unavailable");
+		values.push_back("truncated");
+		return values;
+	}(), "Screenshot capture status.");
+	props["reason"] = _string_schema("Reason when status is unavailable or truncated.");
+	props["format"] = _string_schema("Image format (png).");
+	props["encoding"] = _string_schema("Inline encoding (base64).");
+	props["data"] = _string_schema("Inline image payload when available.");
+	props["capture_mode"] = _enum_string_schema([]() {
+		Array values;
+		values.push_back("full_window");
+		values.push_back("cropped");
+		return values;
+	}(), "Whether the image is full-window or cropped to the target/focused element.");
+	props["viewport"] = _object_schema("Captured viewport/window metadata.");
+	props["image"] = _object_schema("Returned image dimensions.");
+	props["crop"] = _object_schema("Source crop rectangle in viewport coordinates.");
+	props["highlight"] = _object_schema("Target/focused element bounds in viewport coordinates.");
+	props["byte_size"] = _integer_schema("Raw encoded image size in bytes.");
+	props["max_bytes"] = _integer_schema("Configured max inline payload size.");
+	schema["properties"] = props;
+	return schema;
+}
+
+static void _add_failure_attachment_input_props(Dictionary &r_props) {
+	r_props["attach_screenshot_on_failure"] = _boolean_schema("When true, attach an optional viewport screenshot to failure diagnostics.");
+	r_props["max_screenshot_bytes"] = _integer_schema("Maximum inline screenshot payload size in bytes (default 524288).");
+}
+
+static void _add_failure_details_output_props(Dictionary &r_output_props) {
+	r_output_props["details"] = _object_schema("Structured failure diagnostics.");
+	Dictionary details_props;
+	details_props["screenshot"] = _failure_attachment_schema();
+	Dictionary details_schema = _object_schema("Failure details payload.");
+	details_schema["properties"] = details_props;
+	r_output_props["details"] = details_schema;
+}
+
 Array EditorAutomationMCPSchemas::build_tools_list() {
 	Array tools;
 
@@ -352,6 +396,7 @@ Array EditorAutomationMCPSchemas::build_tools_list() {
 		props["selector"] = selector_schema();
 		props["max_results"] = _integer_schema("Maximum number of matches to return per page (default 20).");
 		props["cursor"] = _string_schema("Opaque pagination cursor from next_cursor.");
+		_add_failure_attachment_input_props(props);
 		Array required;
 		required.push_back("selector");
 		Dictionary output = _object_schema("find_elements structured result.");
@@ -361,6 +406,7 @@ Array EditorAutomationMCPSchemas::build_tools_list() {
 		output_props["match_count"] = _integer_schema("Total match count.");
 		output_props["truncated"] = _boolean_schema("True when more matches remain.");
 		output_props["next_cursor"] = _string_schema("Cursor for the next page of matches.");
+		_add_failure_details_output_props(output_props);
 		output["properties"] = output_props;
 		tools.push_back(_make_tool("find_elements",
 				"Resolves selectors and returns matches or structured no-match/ambiguous diagnostics.",
@@ -376,11 +422,16 @@ Array EditorAutomationMCPSchemas::build_tools_list() {
 		props["wait"] = wait_condition_schema();
 		props["wait_timeout_ms"] = _integer_schema("Timeout in milliseconds for the optional wait clause (default 5000).");
 		props["wait_id"] = _string_schema("Poll or continue an existing cooperative act+wait by id.");
+		_add_failure_attachment_input_props(props);
 		Array required;
 		required.push_back("action");
+		Dictionary act_output = _ok_result_schema();
+		Dictionary act_output_props = act_output["properties"];
+		_add_failure_details_output_props(act_output_props);
+		act_output["properties"] = act_output_props;
 		tools.push_back(_make_tool("act",
 				"Performs a semantic or input action on a selected element and optionally waits for a UI condition in one call.",
-				props, required, _ok_result_schema()));
+				props, required, act_output));
 	}
 
 	{
@@ -397,10 +448,12 @@ Array EditorAutomationMCPSchemas::build_tools_list() {
 		props["severity"] = _string_schema("Severity filter for log conditions.");
 		props["marker"] = log_marker_schema();
 		props["fields"] = _object_schema("Field equality checks for selector_matches.");
+		_add_failure_attachment_input_props(props);
 		Dictionary output = _ok_result_schema();
 		Dictionary output_props = output["properties"];
 		output_props["status"] = _enum_string_schema(_wait_status_enum_values(), "Cooperative wait status.");
 		output_props["wait_id"] = _string_schema("Cooperative wait id.");
+		_add_failure_details_output_props(output_props);
 		tools.push_back(_make_tool("wait_for",
 				"Waits cooperatively for a UI condition and returns success/failure diagnostics without blocking the editor for the full timeout.",
 				props, Array(), output));

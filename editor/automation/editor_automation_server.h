@@ -51,6 +51,7 @@ private:
 	static int cli_port;
 	static String cli_token;
 	static String cli_run_workflow;
+	static bool cli_failure_screenshots;
 
 	bool enabled = false;
 	Transport transport = Transport::NONE;

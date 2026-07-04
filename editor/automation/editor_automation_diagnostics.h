@@ -43,6 +43,14 @@ struct EditorAutomationDiagnostics {
 	Dictionary to_dictionary() const;
 };
 
+struct EditorAutomationFailureAttachmentOptions {
+	bool attach_screenshot = false;
+	Node *snapshot_root = nullptr;
+	int max_screenshot_bytes = 512 * 1024;
+	String screenshot_format = "png";
+	bool crop_screenshot_to_target = true;
+};
+
 class EditorAutomationDiagnosticsBuilder {
 public:
 	static Dictionary element_summary(const EditorAutomationElement &p_element);
@@ -56,7 +64,8 @@ public:
 			const Array &p_candidates,
 			const EditorAutomationSnapshot &p_snapshot,
 			const EditorAutomationLogMarker &p_log_marker,
-			int p_trace_count = 16);
+			int p_trace_count = 16,
+			const EditorAutomationFailureAttachmentOptions &p_attachments = EditorAutomationFailureAttachmentOptions());
 
 	static EditorAutomationDiagnostics build_for_wait_failure(
 			const String &p_kind,
@@ -66,5 +75,13 @@ public:
 			const Dictionary &p_selector,
 			const EditorAutomationSnapshot &p_snapshot,
 			const EditorAutomationLogMarker &p_log_marker,
-			int p_trace_count = 16);
+			int p_trace_count = 16,
+			const EditorAutomationFailureAttachmentOptions &p_attachments = EditorAutomationFailureAttachmentOptions());
+
+private:
+	static void _attach_failure_screenshot(
+			Dictionary &r_details,
+			const EditorAutomationSnapshot &p_snapshot,
+			const Dictionary &p_selector,
+			const EditorAutomationFailureAttachmentOptions &p_attachments);
 };

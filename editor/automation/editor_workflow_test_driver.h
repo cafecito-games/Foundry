@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "editor/automation/editor_automation_diagnostics.h"
 #include "editor/automation/editor_automation_log.h"
 
 #include "core/variant/variant.h"
@@ -49,6 +50,8 @@ public:
 		Node *snapshot_root = nullptr;
 		int default_wait_timeout_ms = 30000;
 		int max_tree_depth = 8;
+		bool attach_screenshot_on_failure = false;
+		int max_screenshot_bytes = 512 * 1024;
 	};
 
 	struct Failure {
@@ -71,7 +74,15 @@ private:
 	Failure failure;
 
 	EditorAutomationSnapshot _capture_snapshot() const;
+	EditorAutomationFailureAttachmentOptions _failure_attachment_options() const;
 	void _record_failure(const String &p_kind, const String &p_message, const Dictionary &p_selector, const EditorAutomationSnapshot &p_snapshot, const Array &p_candidates = Array());
+	void _record_wait_failure(
+			const String &p_kind,
+			const String &p_message,
+			const Dictionary &p_condition,
+			const Dictionary &p_action,
+			const Dictionary &p_selector,
+			const EditorAutomationSnapshot &p_snapshot);
 	bool _check_result(const Dictionary &p_result, const String &p_context, const Dictionary &p_selector, const EditorAutomationSnapshot &p_snapshot);
 
 public:
