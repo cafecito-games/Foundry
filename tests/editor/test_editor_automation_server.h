@@ -77,7 +77,7 @@ TEST_CASE("[Editor][Automation][MCP] explicit port conflict fails to bind") {
 
 	EditorAutomationMCPServer second;
 	second.set_token("token-b");
-	CHECK(second.listen(bound_port, IPAddress("127.0.0.1")) == ERR_ALREADY_IN_USE);
+	CHECK(second.listen(bound_port, IPAddress("127.0.0.1"), false) == ERR_ALREADY_IN_USE);
 
 	first.stop();
 }
@@ -92,7 +92,7 @@ TEST_CASE("[Editor][Automation][MCP] shutdown releases port for rapid relisten")
 
 	EditorAutomationMCPServer second;
 	second.set_token("token-b");
-	CHECK(second.listen(bound_port, IPAddress("127.0.0.1")) == OK);
+	CHECK(second.listen(bound_port, IPAddress("127.0.0.1"), false) == OK);
 	second.stop();
 }
 

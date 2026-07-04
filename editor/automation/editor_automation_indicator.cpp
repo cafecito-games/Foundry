@@ -63,17 +63,25 @@ void EditorAutomationIndicator::_apply_theme() {
 		return;
 	}
 
-	icon->set_texture(get_editor_theme_icon(SNAME("Tools")));
+	if (has_theme_icon(SNAME("Tools"), EditorStringName(EditorIcons))) {
+		icon->set_texture(get_editor_theme_icon(SNAME("Tools")));
+	}
 
-	const Ref<Font> font = get_theme_font(SNAME("main"), EditorStringName(EditorFonts));
-	const int font_size = get_theme_font_size(SNAME("main_size"), EditorStringName(EditorFonts));
-	status_label->add_theme_font_override(SceneStringName(font), font);
-	status_label->add_theme_font_size_override(SceneStringName(font_size), font_size);
+	if (has_theme_font(SNAME("main"), EditorStringName(EditorFonts))) {
+		const Ref<Font> font = get_theme_font(SNAME("main"), EditorStringName(EditorFonts));
+		const int font_size = get_theme_font_size(SNAME("main_size"), EditorStringName(EditorFonts));
+		status_label->add_theme_font_override(SceneStringName(font), font);
+		status_label->add_theme_font_size_override(SceneStringName(font_size), font_size);
+	}
 
-	const Color accent = get_theme_color(SNAME("accent_color"), EditorStringName(Editor));
-	status_label->add_theme_color_override(SceneStringName(font_color), accent.lightened(0.15));
+	if (has_theme_color(SNAME("accent_color"), EditorStringName(Editor))) {
+		const Color accent = get_theme_color(SNAME("accent_color"), EditorStringName(Editor));
+		status_label->add_theme_color_override(SceneStringName(font_color), accent.lightened(0.15));
+	}
 
-	add_theme_style_override(SceneStringName(panel), get_theme_stylebox(SNAME("LaunchPadMovieMode"), EditorStringName(EditorStyles)));
+	if (has_theme_stylebox(SNAME("LaunchPadMovieMode"), EditorStringName(EditorStyles))) {
+		add_theme_style_override(SceneStringName(panel), get_theme_stylebox(SNAME("LaunchPadMovieMode"), EditorStringName(EditorStyles)));
+	}
 }
 
 void EditorAutomationIndicator::set_active(const String &p_transport, int p_port, const String &p_endpoint) {

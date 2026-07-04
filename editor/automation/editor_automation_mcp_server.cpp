@@ -191,12 +191,12 @@ EditorAutomationMCPServer::HTTPResponse EditorAutomationMCPServer::process_http_
 	return _make_json_response(200, "OK", JSON::stringify(response, "", false));
 }
 
-Error EditorAutomationMCPServer::listen(int p_port, const IPAddress &p_bind_ip) {
+Error EditorAutomationMCPServer::listen(int p_port, const IPAddress &p_bind_ip, bool p_reuse_address) {
 	ERR_FAIL_COND_V(server.is_null(), ERR_UNCONFIGURED);
 	if (listening) {
 		return ERR_ALREADY_IN_USE;
 	}
-	const Error err = server->listen(p_port, p_bind_ip);
+	const Error err = server->listen(p_port, p_bind_ip, p_reuse_address);
 	if (err != OK) {
 		return err;
 	}

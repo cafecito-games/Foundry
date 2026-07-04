@@ -460,54 +460,39 @@ static bool workflow_wait_for_output_line(const Ref<FileAccess> &p_stdout_pipe, 
 
 TEST_CASE("[Editor][EditorAutomation] explicit automation port conflict subprocess") {
 	if (!workflow_has_display()) {
-		MESSAGE("Requires a GUI display. Run two editors with the same --automation-port to verify the conflict error.");
+		MESSAGE("Requires a GUI display. Run an editor against an occupied --automation-port to verify the conflict error.");
 		return;
 	}
 
 	const int reserved_port = workflow_reserve_local_port();
 	REQUIRE_MESSAGE(reserved_port > 0, "Failed to reserve a local automation port.");
 
-	const String fixture_path = workflow_fixture_project_path();
+	EditorAutomationMCPServer blocker;
+	blocker.set_token("port-blocker");
+	REQUIRE(blocker.listen(reserved_port, IPAddress("127.0.0.1"), false) == OK);
+
 	const String project_path = workflow_prepare_temp_project();
 	REQUIRE_MESSAGE(!project_path.is_empty(), "Failed to prepare a temporary MVP project copy.");
 
-	List<String> first_arguments;
-	first_arguments.push_back("editor");
-	first_arguments.push_back("open");
-	first_arguments.push_back("--project");
-	first_arguments.push_back(project_path);
-	first_arguments.push_back("--automation");
-	first_arguments.push_back("--automation-port");
-	first_arguments.push_back(String::num(reserved_port));
-	first_arguments.push_back("--automation-token");
-	first_arguments.push_back("first-token");
+	List<String> arguments;
+	arguments.push_back("editor");
+	arguments.push_back("open");
+	arguments.push_back("--project");
+	arguments.push_back(project_path);
+	arguments.push_back("--automation");
+	arguments.push_back("--automation-port");
+	arguments.push_back(String::num_int64(reserved_port));
+	arguments.push_back("--automation-token");
+	arguments.push_back("conflict-token");
 
-	Dictionary environment;
-	environment["DISPLAY"] = OS::get_singleton()->get_environment("DISPLAY");
-	Dictionary first_pipe = OS::get_singleton()->execute_with_pipe(
-			OS::get_singleton()->get_executable_path(), first_arguments, false, String(), environment, false);
-	REQUIRE_FALSE(first_pipe.is_empty());
+	int exit_code = -1;
+	const String output = workflow_run_subprocess(arguments, exit_code);
+	blocker.stop();
 
-	Ref<FileAccess> first_stdout = first_pipe["stdio"];
-	const OS::ProcessID first_pid = first_pipe["pid"];
-	String first_output;
-	REQUIRE(workflow_wait_for_output_line(first_stdout, "FOUNDRY_AUTOMATION", first_output, first_pid, 120000));
-
-	List<String> second_arguments = first_arguments;
-	second_arguments.pop_back();
-	second_arguments.push_back("second-token");
-
-	int second_exit_code = -1;
-	const String second_output = workflow_run_subprocess(second_arguments, second_exit_code);
-	INFO("Second editor output:\n", second_output);
-	CHECK(second_output.contains("FOUNDRY_AUTOMATION_ERROR"));
-	CHECK(second_output.contains("already in use"));
-	CHECK(second_exit_code != 0);
-
-	if (first_stdout.is_valid()) {
-		first_stdout->close();
-	}
-	OS::get_singleton()->kill(first_pid);
+	INFO("Editor output:\n", output);
+	CHECK(output.contains("FOUNDRY_AUTOMATION_ERROR"));
+	CHECK(output.contains("already in use"));
+	CHECK(exit_code != 0);
 }
 
 TEST_CASE("[Editor][EditorAutomation] rapid relaunch reuses released automation port") {
@@ -529,7 +514,7 @@ TEST_CASE("[Editor][EditorAutomation] rapid relaunch reuses released automation 
 	arguments.push_back(project_path);
 	arguments.push_back("--automation");
 	arguments.push_back("--automation-port");
-	arguments.push_back(String::num(reserved_port));
+	arguments.push_back(String::num_int64(reserved_port));
 	arguments.push_back("--automation-token");
 	arguments.push_back("relaunch-a");
 
@@ -557,7 +542,7 @@ TEST_CASE("[Editor][EditorAutomation] rapid relaunch reuses released automation 
 	arguments.push_back(project_path);
 	arguments.push_back("--automation");
 	arguments.push_back("--automation-port");
-	arguments.push_back(String::num(reserved_port));
+	arguments.push_back(String::num_int64(reserved_port));
 	arguments.push_back("--automation-token");
 	arguments.push_back("relaunch-b");
 

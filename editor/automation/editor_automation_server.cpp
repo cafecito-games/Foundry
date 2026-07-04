@@ -184,7 +184,8 @@ bool EditorAutomationServer::_start_mcp_transport() {
 	mcp_server->set_dispatcher_options(options);
 
 	const int requested_port = port < 0 ? 0 : port;
-	const Error err = mcp_server->listen(requested_port, IPAddress("127.0.0.1"));
+	const bool allow_port_reuse = requested_port == 0;
+	const Error err = mcp_server->listen(requested_port, IPAddress("127.0.0.1"), allow_port_reuse);
 	if (err != OK) {
 		String failure;
 		if (err == ERR_ALREADY_IN_USE) {
