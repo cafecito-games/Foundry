@@ -51,6 +51,8 @@
 #include "scene/gui/option_button.h"
 #include "scene/gui/popup_menu.h"
 #include "scene/gui/range.h"
+#include "scene/gui/scroll_bar.h"
+#include "scene/gui/scroll_container.h"
 #include "scene/gui/spin_box.h"
 #include "scene/gui/tab_bar.h"
 #include "scene/gui/tab_container.h"
@@ -61,6 +63,9 @@
 #include "scene/main/window.h"
 
 namespace {
+
+String _read_string_option(const Dictionary &p_options, const char *p_key);
+Variant _read_variant_option(const Dictionary &p_options, const char *p_key);
 
 EditorAutomationActionResult _selector_failure(const EditorAutomationSelectorResult &p_selector_result) {
 	String kind = p_selector_result.error_kind;
@@ -606,6 +611,236 @@ EditorAutomationActionResult _action_select_virtual(
 	return EditorAutomationActionResult::failure("unsupported_action", vformat("Selection is unavailable for virtual element kind '%s'.", p_kind));
 }
 
+EditorAutomationActionResult _action_activate_virtual(
+		const EditorAutomationSnapshot &p_snapshot,
+		const EditorAutomationElement &p_element,
+		const String &p_kind,
+		const String &p_key) {
+	if (p_kind == "tree_item") {
+		const int separator = p_key.find_char(':');
+		ERR_FAIL_COND_V(separator < 0, EditorAutomationActionResult::failure("invalid_element", "Malformed tree item id."));
+		const uint64_t tree_id = p_key.substr(0, separator).to_int();
+		const String path = p_key.substr(separator + 1);
+		Tree *tree = Object::cast_to<Tree>(ObjectDB::get_instance(ObjectID(tree_id)));
+		ERR_FAIL_NULL_V(tree, EditorAutomationActionResult::failure("invalid_element", "Tree item parent is no longer available."));
+		TreeItem *item = _resolve_tree_item(tree, path);
+		ERR_FAIL_NULL_V(item, EditorAutomationActionResult::failure("invalid_element", "Tree item is no longer available."));
+		ERR_FAIL_COND_V(!EditorAutomationWorkflow::activate_tree_item_ui(tree, item), EditorAutomationActionResult::failure("unsupported_action", "Tree item activation failed."));
+		EditorAutomationActionResult result = EditorAutomationActionResult::success(EditorAutomationActionRouteNames::SEMANTIC_ACTIVATE, p_element.id);
+		result.events.push_back("activated");
+		result.focus = _focused_element_id(p_snapshot);
+		return result;
+	}
+	if (p_kind == "list_item") {
+		const int separator = p_key.find_char(':');
+		ERR_FAIL_COND_V(separator < 0, EditorAutomationActionResult::failure("invalid_element", "Malformed list item id."));
+		const uint64_t list_id = p_key.substr(0, separator).to_int();
+		const int index = p_key.substr(separator + 1).to_int();
+		ItemList *item_list = Object::cast_to<ItemList>(ObjectDB::get_instance(ObjectID(list_id)));
+		ERR_FAIL_NULL_V(item_list, EditorAutomationActionResult::failure("invalid_element", "List item parent is no longer available."));
+		ERR_FAIL_INDEX_V(index, item_list->get_item_count(), EditorAutomationActionResult::failure("invalid_element", "List item index is out of range."));
+		ERR_FAIL_COND_V(!EditorAutomationWorkflow::activate_list_item_ui(item_list, index), EditorAutomationActionResult::failure("unsupported_action", "List item activation failed."));
+		EditorAutomationActionResult result = EditorAutomationActionResult::success(EditorAutomationActionRouteNames::SEMANTIC_ACTIVATE, p_element.id);
+		result.events.push_back("activated");
+		result.focus = _focused_element_id(p_snapshot);
+		return result;
+	}
+	if (p_kind == "menu_item") {
+		const int separator = p_key.find_char(':');
+		ERR_FAIL_COND_V(separator < 0, EditorAutomationActionResult::failure("invalid_element", "Malformed menu item id."));
+		const uint64_t menu_id = p_key.substr(0, separator).to_int();
+		const int index = p_key.substr(separator + 1).to_int();
+		PopupMenu *popup_menu = Object::cast_to<PopupMenu>(ObjectDB::get_instance(ObjectID(menu_id)));
+		ERR_FAIL_NULL_V(popup_menu, EditorAutomationActionResult::failure("invalid_element", "Menu item parent is no longer available."));
+		ERR_FAIL_INDEX_V(index, popup_menu->get_item_count(), EditorAutomationActionResult::failure("invalid_element", "Menu item index is out of range."));
+		popup_menu->activate_item(index);
+		EditorAutomationActionResult result = EditorAutomationActionResult::success(EditorAutomationActionRouteNames::SEMANTIC_ACTIVATE, p_element.id);
+		result.events.push_back("activated");
+		result.focus = _focused_element_id(p_snapshot);
+		return result;
+	}
+	return EditorAutomationActionResult::failure("unsupported_action", vformat("Activation is unavailable for virtual element kind '%s'.", p_kind));
+}
+
+EditorAutomationActionResult _action_activate(
+		const EditorAutomationSnapshot &p_snapshot,
+		const EditorAutomationElement &p_element,
+		EditorAutomationRoutePreference p_route_preference) {
+	if (p_element.object_id == 0) {
+		String kind;
+		String key;
+		ERR_FAIL_COND_V(!_parse_virtual_key(p_element, kind, key), EditorAutomationActionResult::failure("invalid_element", "Malformed virtual element id."));
+		return _action_activate_virtual(p_snapshot, p_element, kind, key);
+	}
+
+	if (p_route_preference == EditorAutomationRoutePreference::INPUT) {
+		return EditorAutomationActionResult::failure("unsupported_route", "activate requires semantic control APIs for the selected element.");
+	}
+
+	Node *node = nullptr;
+	const EditorAutomationActionResult prepare_result = _prepare_element_for_input(p_snapshot, p_element, node);
+	if (!prepare_result.ok && prepare_result.kind == "window_focus_failed") {
+		return prepare_result;
+	}
+
+	if (BaseButton *button = Object::cast_to<BaseButton>(node)) {
+		PackedStringArray events;
+		if (_perform_semantic_click(button, events)) {
+			EditorAutomationActionResult result = EditorAutomationActionResult::success(EditorAutomationActionRouteNames::SEMANTIC_ACTIVATE, p_element.id);
+			result.events = events;
+			result.focus = _focused_element_id(p_snapshot);
+			return result;
+		}
+	}
+
+	return EditorAutomationActionResult::failure("unsupported_action", "Activation is unavailable for the selected control.");
+}
+
+EditorAutomationActionResult _action_submit(
+		const EditorAutomationSnapshot &p_snapshot,
+		const EditorAutomationElement &p_element,
+		EditorAutomationRoutePreference p_route_preference) {
+	(void)p_snapshot;
+	if (p_route_preference == EditorAutomationRoutePreference::INPUT) {
+		return EditorAutomationActionResult::failure("unsupported_route", "submit requires semantic control APIs.");
+	}
+
+	Node *node = _resolve_node_from_object_id(p_element.object_id);
+	LineEdit *line_edit = Object::cast_to<LineEdit>(node);
+	ERR_FAIL_NULL_V(line_edit, EditorAutomationActionResult::failure("unsupported_action", "Submit is only supported on LineEdit controls."));
+
+	const String text = line_edit->get_text();
+	line_edit->emit_signal(SceneStringName(text_submitted), text);
+
+	EditorAutomationActionResult result = EditorAutomationActionResult::success(EditorAutomationActionRouteNames::SEMANTIC_SUBMIT, p_element.id);
+	result.events.push_back("text_submitted");
+	result.details["submitted_text"] = text;
+	return result;
+}
+
+bool _scroll_scroll_bar(ScrollBar *p_bar, double p_delta) {
+	if (p_bar == nullptr || !p_bar->is_visible()) {
+		return false;
+	}
+	const double previous = p_bar->get_value();
+	if (p_delta == 0.0) {
+		return false;
+	}
+	p_bar->scroll(p_delta);
+	return p_bar->get_value() != previous;
+}
+
+bool _scroll_scroll_container(ScrollContainer *p_container, bool p_horizontal, double p_delta) {
+	ERR_FAIL_NULL_V(p_container, false);
+	if (p_horizontal) {
+		const int previous = p_container->get_h_scroll();
+		p_container->set_h_scroll(previous + (int)p_delta);
+		return p_container->get_h_scroll() != previous;
+	}
+	const int previous = p_container->get_v_scroll();
+	p_container->set_v_scroll(previous + (int)p_delta);
+	return p_container->get_v_scroll() != previous;
+}
+
+bool _parse_scroll_direction(const String &p_direction, bool &r_horizontal, double &r_sign) {
+	const String direction = p_direction.to_lower();
+	if (direction == "up") {
+		r_horizontal = false;
+		r_sign = -1.0;
+		return true;
+	}
+	if (direction == "down") {
+		r_horizontal = false;
+		r_sign = 1.0;
+		return true;
+	}
+	if (direction == "left") {
+		r_horizontal = true;
+		r_sign = -1.0;
+		return true;
+	}
+	if (direction == "right") {
+		r_horizontal = true;
+		r_sign = 1.0;
+		return true;
+	}
+	return false;
+}
+
+EditorAutomationActionResult _action_scroll(
+		const EditorAutomationSnapshot &p_snapshot,
+		const EditorAutomationElement &p_element,
+		const Dictionary &p_options,
+		EditorAutomationRoutePreference p_route_preference) {
+	(void)p_snapshot;
+	if (p_route_preference == EditorAutomationRoutePreference::INPUT) {
+		return EditorAutomationActionResult::failure("unsupported_route", "scroll requires semantic control APIs.");
+	}
+
+	Node *node = _resolve_node_from_object_id(p_element.object_id);
+	ERR_FAIL_NULL_V(node, EditorAutomationActionResult::failure("invalid_element", "The selected element is no longer available."));
+
+	bool horizontal = false;
+	double sign = 1.0;
+	const String direction = _read_string_option(p_options, "direction");
+	if (!direction.is_empty() && !_parse_scroll_direction(direction, horizontal, sign)) {
+		return EditorAutomationActionResult::failure("invalid_parameter", vformat("Unknown scroll direction '%s'.", direction));
+	}
+
+	const bool page = p_options.has("page") && (bool)p_options.get("page", Variant());
+	double amount = 0.0;
+	if (p_options.has("amount")) {
+		const Variant amount_value = p_options.get("amount", Variant());
+		if (amount_value.get_type() == Variant::INT || amount_value.get_type() == Variant::FLOAT) {
+			amount = amount_value;
+		} else {
+			return EditorAutomationActionResult::failure("invalid_parameter", "scroll `amount` must be numeric.");
+		}
+	}
+
+	bool scrolled = false;
+	ScrollBar *scroll_bar = nullptr;
+	if (Tree *tree = Object::cast_to<Tree>(node)) {
+		if (horizontal) {
+			return EditorAutomationActionResult::failure("unsupported_action", "Horizontal scroll is not available for Tree controls.");
+		}
+		scroll_bar = tree->get_vscroll_bar();
+	} else if (ItemList *item_list = Object::cast_to<ItemList>(node)) {
+		scroll_bar = horizontal ? (ScrollBar *)item_list->get_h_scroll_bar() : item_list->get_v_scroll_bar();
+	} else if (ScrollContainer *scroll_container = Object::cast_to<ScrollContainer>(node)) {
+		if (amount > 0.0) {
+			scrolled = _scroll_scroll_container(scroll_container, horizontal, sign * amount);
+		} else if (page) {
+			const int page_amount = horizontal ? scroll_container->get_size().x : scroll_container->get_size().y;
+			scrolled = _scroll_scroll_container(scroll_container, horizontal, sign * MAX(page_amount, 1));
+		} else {
+			const int line_amount = MAX((horizontal ? scroll_container->get_size().x : scroll_container->get_size().y) / 8, 1);
+			scrolled = _scroll_scroll_container(scroll_container, horizontal, sign * line_amount);
+		}
+	} else {
+		return EditorAutomationActionResult::failure("unsupported_action", "Scroll is only supported on Tree, ItemList, and ScrollContainer controls.");
+	}
+
+	if (scroll_bar != nullptr) {
+		double delta = 0.0;
+		if (amount > 0.0) {
+			delta = sign * amount;
+		} else if (page) {
+			delta = sign * scroll_bar->get_page();
+		} else {
+			delta = sign * scroll_bar->get_page() / ScrollBar::PAGE_DIVISOR;
+		}
+		scrolled = _scroll_scroll_bar(scroll_bar, delta);
+	}
+
+	EditorAutomationActionResult result = EditorAutomationActionResult::success(EditorAutomationActionRouteNames::SEMANTIC_SCROLL, p_element.id);
+	result.details["scrolled"] = scrolled;
+	if (scrolled) {
+		result.events.push_back("scrolled");
+	}
+	return result;
+}
+
 EditorAutomationActionResult _action_select(
 		const EditorAutomationSnapshot &p_snapshot,
 		const EditorAutomationElement &p_element,
@@ -960,6 +1195,15 @@ EditorAutomationActionResult EditorAutomationDriver::perform(
 		}
 		case EditorAutomationActionKind::SELECT:
 			result = _action_select(p_snapshot, element, _read_variant_option(p_options, "value"));
+			break;
+		case EditorAutomationActionKind::ACTIVATE:
+			result = _action_activate(p_snapshot, element, route_preference);
+			break;
+		case EditorAutomationActionKind::SUBMIT:
+			result = _action_submit(p_snapshot, element, route_preference);
+			break;
+		case EditorAutomationActionKind::SCROLL:
+			result = _action_scroll(p_snapshot, element, p_options, route_preference);
 			break;
 		case EditorAutomationActionKind::EXPAND:
 			if (element.role == "inspector_section") {

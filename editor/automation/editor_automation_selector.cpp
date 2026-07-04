@@ -116,6 +116,30 @@ bool _match_text_field(const Dictionary &p_selector, const char *p_exact_key, co
 	return true;
 }
 
+bool _variant_metadata_equals(const Variant &p_actual, const Variant &p_expected) {
+	if (p_expected.get_type() == Variant::NODE_PATH && p_actual.get_type() == Variant::NODE_PATH) {
+		return NodePath(p_expected) == NodePath(p_actual);
+	}
+	return p_actual == p_expected;
+}
+
+bool _metadata_matches(const Dictionary &p_element_metadata, const Dictionary &p_selector_metadata) {
+	if (p_selector_metadata.is_empty()) {
+		return true;
+	}
+	const Array keys = p_selector_metadata.keys();
+	for (int i = 0; i < keys.size(); i++) {
+		const String key = keys[i];
+		if (!p_element_metadata.has(key)) {
+			return false;
+		}
+		if (!_variant_metadata_equals(p_element_metadata.get(key, Variant()), p_selector_metadata.get(key, Variant()))) {
+			return false;
+		}
+	}
+	return true;
+}
+
 bool _element_matches_selector(const EditorAutomationElement &p_element, const Dictionary &p_selector, bool p_case_sensitive) {
 	// Opaque references are always matched case-sensitively; they are not
 	// human-authored labels.
@@ -165,6 +189,19 @@ bool _element_matches_selector(const EditorAutomationElement &p_element, const D
 	}
 	if (_read_optional_bool(p_selector, "enabled_only", bool_value) && bool_value && !p_element.enabled) {
 		return false;
+	}
+	if (_read_optional_bool(p_selector, "selected", bool_value) && p_element.selected != bool_value) {
+		return false;
+	}
+
+	if (_selector_has_key(p_selector, "metadata")) {
+		const Variant metadata_value = p_selector.get("metadata", Variant());
+		if (metadata_value.get_type() != Variant::DICTIONARY) {
+			return false;
+		}
+		if (!_metadata_matches(p_element.metadata, Dictionary(metadata_value))) {
+			return false;
+		}
 	}
 
 	return true;

@@ -41,6 +41,9 @@ public:
 	static Dictionary metadata_for_node(const Node *p_node);
 	static Dictionary metadata_for_tree_item(const Tree *p_tree, TreeItem *p_item);
 	static Dictionary metadata_for_list_item(const ItemList *p_list, int p_index);
+	static String tree_item_stable_path(TreeItem *p_item);
 
 	static bool select_tree_item_ui(Tree *p_tree, TreeItem *p_item);
+	static bool activate_tree_item_ui(Tree *p_tree, TreeItem *p_item);
+	static bool activate_list_item_ui(ItemList *p_list, int p_index);
 };

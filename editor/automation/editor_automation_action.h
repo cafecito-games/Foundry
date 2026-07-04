@@ -38,8 +38,13 @@ struct EditorAutomationActionRouteNames {
 	static inline const char *SEMANTIC_CLICK = "semantic_click";
 	static inline const char *SEMANTIC_SET_TEXT = "semantic_set_text";
 	static inline const char *SEMANTIC_SELECT = "semantic_select";
+	static inline const char *SEMANTIC_ACTIVATE = "semantic_activate";
+	static inline const char *SEMANTIC_SUBMIT = "semantic_submit";
+	static inline const char *SEMANTIC_SCROLL = "semantic_scroll";
 	static inline const char *SEMANTIC_SET_VALUE = "semantic_set_value";
 	static inline const char *INPUT_MOUSE_CLICK = "input_mouse_click";
+	static inline const char *INPUT_DOUBLE_CLICK = "input_double_click";
+	static inline const char *INPUT_SCROLL = "input_scroll";
 	static inline const char *INPUT_VIEWPORT_CLICK = "input_viewport_click";
 	static inline const char *INPUT_KEY = "input_key";
 	static inline const char *INPUT_TEXT = "input_text";
@@ -60,6 +65,9 @@ enum class EditorAutomationActionKind {
 	SET_TEXT,
 	PRESS_KEY,
 	SELECT,
+	ACTIVATE,
+	SUBMIT,
+	SCROLL,
 	EXPAND,
 	COLLAPSE,
 	CHOOSE_MENU_ITEM,

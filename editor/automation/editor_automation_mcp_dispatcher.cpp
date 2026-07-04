@@ -121,6 +121,9 @@ Dictionary _element_tree(const EditorAutomationSnapshotData &p_data, int p_index
 	bounds.push_back(element.bounds.size.y);
 	dict["bounds"] = bounds;
 	dict["actions"] = element.actions;
+	if (!element.metadata.is_empty()) {
+		dict["metadata"] = element.metadata;
+	}
 
 	int total_children = 0;
 	Array children;
@@ -193,6 +196,14 @@ Dictionary _selector_schema() {
 	Dictionary enabled_only = _string_schema("When true, keep only enabled elements. Ignored when false.");
 	enabled_only["type"] = "boolean";
 	props["enabled_only"] = enabled_only;
+
+	Dictionary selected = _string_schema("Match elements whose selected state equals this exact value.");
+	selected["type"] = "boolean";
+	props["selected"] = selected;
+
+	Dictionary metadata_schema = _object_schema();
+	metadata_schema["description"] = "Match elements whose metadata dictionary contains these exact key/value pairs (e.g. node_name, node_path, label).";
+	props["metadata"] = metadata_schema;
 
 	Dictionary case_sensitive = _string_schema("Whether string field matching (exact and *_contains) is case-sensitive. Default true.");
 	case_sensitive["type"] = "boolean";
@@ -268,7 +279,7 @@ Array EditorAutomationMCPDispatcher::build_tools_list() {
 	{
 		Dictionary props;
 		props["selector"] = _selector_schema();
-		props["action"] = _string_schema("Action to perform, e.g. click, focus, type_text, set_text, press_key, drag, select, expand, collapse, choose_menu_item, set_value.");
+		props["action"] = _string_schema("Action to perform, e.g. click, focus, type_text, set_text, submit, press_key, drag, select, activate, expand, collapse, scroll, choose_menu_item, set_value.");
 		props["route"] = _string_schema("Route preference: auto, semantic, or input.");
 		Dictionary args_schema = _object_schema();
 		args_schema["description"] = "Action arguments such as text, key, or value.";
