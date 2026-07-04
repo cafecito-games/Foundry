@@ -59,7 +59,7 @@ EditorAutomationIndicator::EditorAutomationIndicator() {
 }
 
 void EditorAutomationIndicator::_apply_theme() {
-	if (!is_inside_tree()) {
+	if (!is_inside_tree() || !is_ready()) {
 		return;
 	}
 
@@ -90,7 +90,6 @@ void EditorAutomationIndicator::set_active(const String &p_transport, int p_port
 	set_tooltip_text(vformat(TTR("Editor automation is active.\nTransport: %s\nEndpoint: %s"), p_transport, p_endpoint));
 	active = true;
 	set_visible(true);
-	_apply_theme();
 }
 
 void EditorAutomationIndicator::clear_active() {
@@ -101,6 +100,12 @@ void EditorAutomationIndicator::clear_active() {
 
 void EditorAutomationIndicator::_notification(int p_what) {
 	switch (p_what) {
+		case NOTIFICATION_ENTER_TREE: {
+			if (active) {
+				_apply_theme();
+			}
+		} break;
+
 		case NOTIFICATION_THEME_CHANGED: {
 			if (active) {
 				_apply_theme();

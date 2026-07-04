@@ -72,6 +72,7 @@ private:
 	String _generate_token() const;
 	void _show_dev_indicator();
 	void _hide_dev_indicator();
+	void _apply_dev_indicator();
 	void _ensure_dev_indicator();
 	bool _start_mcp_transport();
 	void _fail_startup(const String &p_message, int p_requested_port, Error p_error);

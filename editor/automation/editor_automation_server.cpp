@@ -146,16 +146,23 @@ void EditorAutomationServer::_ensure_dev_indicator() {
 #endif
 }
 
+void EditorAutomationServer::_apply_dev_indicator() {
+#if defined(DEV_ENABLED)
+	_ensure_dev_indicator();
+	if (indicator != nullptr) {
+		indicator->set_active(get_transport_name(), port, endpoint);
+	}
+#endif
+}
+
 void EditorAutomationServer::_show_dev_indicator() {
 	EditorNode *editor_node = EditorNode::get_singleton();
 	if (editor_node != nullptr && editor_node->get_log() != nullptr) {
 		editor_node->get_log()->add_message("--- Automation Active ---", EditorLog::MSG_TYPE_EDITOR);
 	}
 #if defined(DEV_ENABLED)
-	_ensure_dev_indicator();
-	if (indicator != nullptr) {
-		indicator->set_active(get_transport_name(), port, endpoint);
-	}
+	// Defer UI mutation until after the current editor frame finishes laying out.
+	callable_mp(this, &EditorAutomationServer::_apply_dev_indicator).call_deferred();
 #endif
 }
 
