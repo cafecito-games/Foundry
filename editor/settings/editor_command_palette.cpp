@@ -225,6 +225,27 @@ void EditorCommandPalette::get_actions_list(List<String> *p_list) const {
 	}
 }
 
+bool EditorCommandPalette::has_command(const String &p_key_name) const {
+	return commands.has(p_key_name);
+}
+
+bool EditorCommandPalette::get_command_details(const String &p_key_name, String *r_display_name, String *r_shortcut_text, Ref<Shortcut> *r_shortcut) const {
+	if (!commands.has(p_key_name)) {
+		return false;
+	}
+	const Command &command = commands[p_key_name];
+	if (r_display_name != nullptr) {
+		*r_display_name = command.name;
+	}
+	if (r_shortcut_text != nullptr) {
+		*r_shortcut_text = command.shortcut_text;
+	}
+	if (r_shortcut != nullptr) {
+		*r_shortcut = command.shortcut;
+	}
+	return true;
+}
+
 void EditorCommandPalette::remove_command(String p_key_name) {
 	ERR_FAIL_COND_MSG(!commands.has(p_key_name), "The Command '" + String(p_key_name) + "' doesn't exists. Unable to remove it.");
 

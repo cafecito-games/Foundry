@@ -86,6 +86,7 @@ private:
 	Dictionary _tool_read_editor_state(const Dictionary &p_args, bool &r_is_error);
 	Dictionary _tool_read_editor_log(const Dictionary &p_args, bool &r_is_error);
 	Dictionary _tool_run_command(const Dictionary &p_args, bool &r_is_error);
+	Dictionary _tool_list_commands(const Dictionary &p_args, bool &r_is_error);
 
 	Dictionary _resource_payload(const String &p_uri, bool &r_ok);
 

@@ -30,6 +30,7 @@
 
 #include "editor_automation_mcp_dispatcher.h"
 
+#include "editor/automation/editor_automation_commands.h"
 #include "editor/automation/editor_automation_diagnostics.h"
 #include "editor/automation/editor_automation_driver.h"
 #include "editor/automation/editor_automation_log.h"
@@ -40,11 +41,6 @@
 
 #include "core/io/json.h"
 #include "core/math/math_funcs.h"
-
-#ifdef TOOLS_ENABLED
-#include "editor/editor_node.h"
-#include "editor/settings/editor_command_palette.h"
-#endif
 
 const char *EditorAutomationMCPDispatcher::PROTOCOL_VERSION = "2025-11-25";
 
@@ -328,12 +324,27 @@ Array EditorAutomationMCPDispatcher::build_tools_list() {
 
 	{
 		Dictionary props;
-		props["command"] = _string_schema("Command palette command key or name, e.g. editor/save_scene.");
+		props["command"] = _string_schema("Command palette command key or editor shortcut path, e.g. editor/save_scene or scene_tree/add_child_node.");
 		Array required;
 		required.push_back("command");
 		tools.push_back(_make_tool("run_command",
-				"Executes a command palette command by key/name via the existing EditorCommandPalette.",
+				"Executes a command palette command or editor shortcut action by key via the existing editor registries.",
 				props, required));
+	}
+
+	{
+		Dictionary props;
+		props["query"] = _string_schema("Optional substring or subsequence filter against command keys and labels.");
+		props["category"] = _string_schema("Optional category prefix filter, e.g. scene_tree or editor.");
+		Dictionary runnable_only = _string_schema("When true, include only commands runnable by run_command.");
+		runnable_only["type"] = "boolean";
+		props["runnable_only"] = runnable_only;
+		Dictionary limit = _string_schema("Optional maximum number of commands to return.");
+		limit["type"] = "integer";
+		props["limit"] = limit;
+		tools.push_back(_make_tool("list_commands",
+				"Lists command palette commands and editor shortcut actions with runnable metadata.",
+				props, Array()));
 	}
 
 	return tools;
@@ -345,6 +356,7 @@ Array EditorAutomationMCPDispatcher::build_resources_list() {
 	resources.push_back(_make_resource("foundry://editor/state", "Editor State", "Current editor state readback."));
 	resources.push_back(_make_resource("foundry://editor/log", "Editor Log", "Recent editor log entries."));
 	resources.push_back(_make_resource("foundry://scene/active", "Active Scene", "Active scene and edited root information."));
+	resources.push_back(_make_resource("foundry://commands", "Editor Commands", "Command palette commands and editor shortcut actions with runnable metadata."));
 	return resources;
 }
 
@@ -537,6 +549,8 @@ Dictionary EditorAutomationMCPDispatcher::_handle_tools_call(const Dictionary &p
 		structured = _tool_read_editor_log(arguments, is_error);
 	} else if (name == "run_command") {
 		structured = _tool_run_command(arguments, is_error);
+	} else if (name == "list_commands") {
+		structured = _tool_list_commands(arguments, is_error);
 	} else {
 		r_ok = false;
 		r_error["code"] = METHOD_NOT_FOUND;
@@ -717,56 +731,14 @@ Dictionary EditorAutomationMCPDispatcher::_tool_read_editor_log(const Dictionary
 
 Dictionary EditorAutomationMCPDispatcher::_tool_run_command(const Dictionary &p_args, bool &r_is_error) {
 	const String command = _read_string(p_args, "command");
-	Dictionary result;
-	result["command"] = command;
+	const Dictionary result = EditorAutomationCommands::execute(command);
+	r_is_error = !(bool)result.get("ok", false);
+	return result;
+}
 
-	if (command.is_empty()) {
-		r_is_error = true;
-		result["ok"] = false;
-		result["kind"] = "invalid_parameter";
-		result["message"] = "run_command requires a non-empty 'command'.";
-		return result;
-	}
-
-#ifdef TOOLS_ENABLED
-	EditorCommandPalette *palette = EditorCommandPalette::get_singleton();
-	if (palette == nullptr) {
-		r_is_error = true;
-		result["ok"] = false;
-		result["kind"] = "unavailable";
-		result["message"] = "EditorCommandPalette is not available.";
-		return result;
-	}
-
-	List<String> actions;
-	palette->get_actions_list(&actions);
-	bool found = false;
-	for (const String &action : actions) {
-		if (action == command) {
-			found = true;
-			break;
-		}
-	}
-	if (!found) {
-		r_is_error = true;
-		result["ok"] = false;
-		result["kind"] = "unknown_command";
-		result["message"] = vformat("Unknown command '%s'.", command);
-		return result;
-	}
-
-	palette->execute_command(command);
+Dictionary EditorAutomationMCPDispatcher::_tool_list_commands(const Dictionary &p_args, bool &r_is_error) {
 	r_is_error = false;
-	result["ok"] = true;
-	result["route"] = "command_palette";
-	return result;
-#else
-	r_is_error = true;
-	result["ok"] = false;
-	result["kind"] = "unavailable";
-	result["message"] = "Command palette is only available in editor builds.";
-	return result;
-#endif
+	return EditorAutomationCommands::list_commands(p_args);
 }
 
 Dictionary EditorAutomationMCPDispatcher::_resource_payload(const String &p_uri, bool &r_ok) {
@@ -794,6 +766,9 @@ Dictionary EditorAutomationMCPDispatcher::_resource_payload(const String &p_uri,
 		payload["selected_nodes"] = state.get("selected_nodes", Array());
 		payload["unsaved"] = state.get("unsaved", Dictionary());
 		return payload;
+	}
+	if (p_uri == "foundry://commands") {
+		return EditorAutomationCommands::list_commands();
 	}
 	r_ok = false;
 	return Dictionary();

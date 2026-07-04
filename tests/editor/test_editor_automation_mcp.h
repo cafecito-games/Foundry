@@ -36,6 +36,11 @@
 #include "core/io/json.h"
 #include "core/object/message_queue.h"
 
+#ifdef TOOLS_ENABLED
+#include "editor/settings/editor_command_palette.h"
+#include "editor/settings/editor_settings.h"
+#endif
+
 #include "scene/gui/button.h"
 #include "scene/gui/panel_container.h"
 #include "scene/main/scene_tree.h"
@@ -111,14 +116,14 @@ TEST_CASE("[Editor][Automation][MCP] notifications/initialized has no response a
 	CHECK(dispatcher.is_initialized());
 }
 
-TEST_CASE("[Editor][Automation][MCP] tools/list includes the seven expected tools") {
+TEST_CASE("[Editor][Automation][MCP] tools/list includes the eight expected tools") {
 	EditorAutomationMCPDispatcher dispatcher;
 	const Dictionary response = dispatcher.handle_message(make_request(2, "tools/list"));
 	CHECK(response.has("result"));
 	const Dictionary result = response["result"];
 	const Array tools = result["tools"];
 
-	CHECK(tools.size() == 7);
+	CHECK(tools.size() == 8);
 	CHECK(tools_contains(tools, "observe_ui"));
 	CHECK(tools_contains(tools, "find_elements"));
 	CHECK(tools_contains(tools, "act"));
@@ -126,6 +131,7 @@ TEST_CASE("[Editor][Automation][MCP] tools/list includes the seven expected tool
 	CHECK(tools_contains(tools, "read_editor_state"));
 	CHECK(tools_contains(tools, "read_editor_log"));
 	CHECK(tools_contains(tools, "run_command"));
+	CHECK(tools_contains(tools, "list_commands"));
 
 	// Every tool must expose an inputSchema.
 	for (int i = 0; i < tools.size(); i++) {
@@ -134,13 +140,13 @@ TEST_CASE("[Editor][Automation][MCP] tools/list includes the seven expected tool
 	}
 }
 
-TEST_CASE("[Editor][Automation][MCP] resources/list includes the four expected resources") {
+TEST_CASE("[Editor][Automation][MCP] resources/list includes the five expected resources") {
 	EditorAutomationMCPDispatcher dispatcher;
 	const Dictionary response = dispatcher.handle_message(make_request(3, "resources/list"));
 	CHECK(response.has("result"));
 	const Dictionary result = response["result"];
 	const Array resources = result["resources"];
-	CHECK(resources.size() == 4);
+	CHECK(resources.size() == 5);
 
 	PackedStringArray uris;
 	for (int i = 0; i < resources.size(); i++) {
@@ -151,6 +157,7 @@ TEST_CASE("[Editor][Automation][MCP] resources/list includes the four expected r
 	CHECK(uris.has("foundry://editor/state"));
 	CHECK(uris.has("foundry://editor/log"));
 	CHECK(uris.has("foundry://scene/active"));
+	CHECK(uris.has("foundry://commands"));
 }
 
 TEST_CASE("[Editor][Automation][MCP] unknown method returns method_not_found") {
@@ -539,5 +546,205 @@ TEST_CASE("[Editor][Automation][MCP] socket listen, auth handshake, and shutdown
 	CHECK(server_again.listen(port, IPAddress("127.0.0.1")) == OK);
 	server_again.stop();
 }
+
+#ifdef TOOLS_ENABLED
+
+struct AutomationCommandProbe {
+	bool executed = false;
+	void mark() {
+		executed = true;
+	}
+};
+
+static bool command_entries_contain_key(const Array &p_commands, const String &p_key) {
+	for (int i = 0; i < p_commands.size(); i++) {
+		const Dictionary entry = p_commands[i];
+		if (String(entry.get("key", String())) == p_key) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static Dictionary command_entry_for_key(const Array &p_commands, const String &p_key) {
+	for (int i = 0; i < p_commands.size(); i++) {
+		const Dictionary entry = p_commands[i];
+		if (String(entry.get("key", String())) == p_key) {
+			return entry;
+		}
+	}
+	return Dictionary();
+}
+
+TEST_CASE("[Editor][Automation][MCP] list_commands exposes command discovery schema") {
+	EditorAutomationMCPDispatcher dispatcher;
+	const Dictionary response = dispatcher.handle_message(make_request(20, "tools/list"));
+	const Array tools = response["result"]["tools"];
+
+	bool found = false;
+	for (int i = 0; i < tools.size(); i++) {
+		const Dictionary tool = tools[i];
+		if (String(tool.get("name", String())) == "list_commands") {
+			found = true;
+			CHECK(tool.has("inputSchema"));
+			const Dictionary schema = tool["inputSchema"];
+			CHECK(schema.has("properties"));
+			break;
+		}
+	}
+	CHECK(found);
+}
+
+TEST_CASE("[Editor][Automation][MCP] list_commands and foundry://commands report registered commands") {
+	EditorCommandPalette *palette = EditorCommandPalette::get_singleton();
+	REQUIRE(palette != nullptr);
+
+	AutomationCommandProbe probe;
+	palette->add_command("Automation Test Command", "automation/test_palette_command", callable_mp(&probe, &AutomationCommandProbe::mark), varray(), Ref<Shortcut>());
+
+	Ref<Shortcut> shortcut = ED_SHORTCUT("automation/test_shortcut_action", "Automation Test Shortcut", Key::F24);
+
+	EditorAutomationMCPDispatcher dispatcher;
+
+	Dictionary list_params;
+	list_params["name"] = "list_commands";
+	list_params["arguments"] = Dictionary();
+	const Dictionary list_response = dispatcher.handle_message(make_request(21, "tools/call", list_params));
+	CHECK(list_response.has("result"));
+	const Dictionary list_result = list_response["result"];
+	CHECK_FALSE((bool)list_result["isError"]);
+	const Dictionary list_structured = list_result["structuredContent"];
+	CHECK((bool)list_structured["ok"]);
+	const Array commands = list_structured["commands"];
+	CHECK(command_entries_contain_key(commands, "automation/test_palette_command"));
+	CHECK(command_entries_contain_key(commands, "automation/test_shortcut_action"));
+
+	const Dictionary palette_entry = command_entry_for_key(commands, "automation/test_palette_command");
+	CHECK(String(palette_entry.get("source", String())) == "command_palette");
+	CHECK((bool)palette_entry.get("runnable_by_run_command", false));
+
+	const Dictionary shortcut_entry = command_entry_for_key(commands, "automation/test_shortcut_action");
+	CHECK(String(shortcut_entry.get("source", String())) == "shortcut");
+	CHECK(String(shortcut_entry.get("label", String())) == "Automation Test Shortcut");
+	CHECK((bool)shortcut_entry.get("enabled", false));
+	CHECK_FALSE((bool)shortcut_entry.get("runnable_by_run_command", true));
+	CHECK(String(shortcut_entry.get("non_runnable_reason", String())).contains("viewport"));
+
+	Dictionary read_params;
+	read_params["uri"] = "foundry://commands";
+	const Dictionary read_response = dispatcher.handle_message(make_request(22, "resources/read", read_params));
+	CHECK(read_response.has("result"));
+	const Array contents = read_response["result"]["contents"];
+	REQUIRE(contents.size() >= 1);
+	const Dictionary content = contents[0];
+	CHECK(String(content.get("uri", String())) == "foundry://commands");
+
+	JSON json;
+	REQUIRE(json.parse(content.get("text", String())) == OK);
+	const Dictionary payload = json.get_data();
+	CHECK((bool)payload.get("ok", false));
+	CHECK(command_entries_contain_key(payload.get("commands", Array()), "automation/test_palette_command"));
+
+	palette->remove_command("automation/test_palette_command");
+	EditorSettings::get_singleton()->remove_shortcut("automation/test_shortcut_action");
+}
+
+TEST_CASE("[Editor][Automation][MCP] run_command executes palette command and reports unknown suggestions") {
+	EditorCommandPalette *palette = EditorCommandPalette::get_singleton();
+	REQUIRE(palette != nullptr);
+
+	AutomationCommandProbe probe;
+	palette->add_command("Automation Execute Command", "automation/execute_palette_command", callable_mp(&probe, &AutomationCommandProbe::mark), varray(), Ref<Shortcut>());
+
+	EditorAutomationMCPDispatcher dispatcher;
+
+	Dictionary run_params;
+	run_params["name"] = "run_command";
+	Dictionary run_args;
+	run_args["command"] = "automation/execute_palette_command";
+	run_params["arguments"] = run_args;
+	const Dictionary run_response = dispatcher.handle_message(make_request(23, "tools/call", run_params));
+	CHECK(run_response.has("result"));
+	const Dictionary run_result = run_response["result"];
+	CHECK_FALSE((bool)run_result["isError"]);
+	const Dictionary run_structured = run_result["structuredContent"];
+	CHECK((bool)run_structured["ok"]);
+	CHECK(String(run_structured.get("route", String())) == "command_palette");
+	CHECK(probe.executed);
+
+	Dictionary unknown_params;
+	unknown_params["name"] = "run_command";
+	Dictionary unknown_args;
+	unknown_args["command"] = "automation/missing_command";
+	unknown_params["arguments"] = unknown_args;
+	const Dictionary unknown_response = dispatcher.handle_message(make_request(24, "tools/call", unknown_params));
+	CHECK(unknown_response.has("result"));
+	const Dictionary unknown_result = unknown_response["result"];
+	CHECK((bool)unknown_result["isError"]);
+	const Dictionary unknown_structured = unknown_result["structuredContent"];
+	CHECK((bool)unknown_structured.get("ok", true) == false);
+	CHECK(String(unknown_structured.get("kind", String())) == "unknown_command");
+	CHECK(unknown_structured.has("suggestions"));
+	CHECK(unknown_structured.has("candidates"));
+
+	palette->remove_command("automation/execute_palette_command");
+}
+
+TEST_CASE("[Editor][Automation][MCP] disabled shortcut command is reported as non-runnable") {
+	EditorCommandPalette *palette = EditorCommandPalette::get_singleton();
+	REQUIRE(palette != nullptr);
+
+	Ref<Shortcut> disabled_shortcut;
+	disabled_shortcut.instantiate();
+	disabled_shortcut->set_name("Disabled Automation Shortcut");
+	palette->add_command("Disabled Automation Command", "automation/disabled_command", callable_mp(palette, &EditorCommandPalette::open_popup), varray(), disabled_shortcut);
+
+	EditorAutomationMCPDispatcher dispatcher;
+
+	Dictionary list_params;
+	list_params["name"] = "list_commands";
+	list_params["arguments"] = Dictionary();
+	const Dictionary list_response = dispatcher.handle_message(make_request(25, "tools/call", list_params));
+	const Dictionary list_structured = list_response["result"]["structuredContent"];
+	const Dictionary disabled_entry = command_entry_for_key(list_structured.get("commands", Array()), "automation/disabled_command");
+	CHECK((bool)disabled_entry.get("enabled", true) == false);
+	CHECK((bool)disabled_entry.get("runnable_by_run_command", true) == false);
+	CHECK_FALSE(String(disabled_entry.get("non_runnable_reason", String())).is_empty());
+
+	Dictionary run_params;
+	run_params["name"] = "run_command";
+	Dictionary run_args;
+	run_args["command"] = "automation/disabled_command";
+	run_params["arguments"] = run_args;
+	const Dictionary run_response = dispatcher.handle_message(make_request(26, "tools/call", run_params));
+	const Dictionary run_structured = run_response["result"]["structuredContent"];
+	CHECK((bool)run_structured.get("ok", true) == false);
+	CHECK(String(run_structured.get("kind", String())) == "disabled_command");
+
+	palette->remove_command("automation/disabled_command");
+}
+
+TEST_CASE("[Editor][Automation][MCP] scene_tree/add_child_node shortcut is discoverable") {
+	Ref<Shortcut> shortcut = ED_SHORTCUT("scene_tree/add_child_node", "Add Child Node...", KeyModifierMask::CMD_OR_CTRL | Key::A);
+
+	EditorAutomationMCPDispatcher dispatcher;
+	Dictionary list_params;
+	list_params["name"] = "list_commands";
+	Dictionary list_args;
+	list_args["query"] = "add_child";
+	list_params["arguments"] = list_args;
+	const Dictionary list_response = dispatcher.handle_message(make_request(27, "tools/call", list_params));
+	const Dictionary list_structured = list_response["result"]["structuredContent"];
+	const Dictionary entry = command_entry_for_key(list_structured.get("commands", Array()), "scene_tree/add_child_node");
+	CHECK(String(entry.get("key", String())) == "scene_tree/add_child_node");
+	CHECK(String(entry.get("label", String())) == "Add Child Node...");
+	CHECK(String(entry.get("source", String())) == "shortcut");
+	CHECK((bool)entry.get("enabled", false));
+	CHECK_FALSE((bool)entry.get("runnable_by_run_command", true));
+
+	EditorSettings::get_singleton()->remove_shortcut("scene_tree/add_child_node");
+}
+
+#endif // TOOLS_ENABLED
 
 } // namespace TestEditorAutomationMCP
