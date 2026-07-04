@@ -2,7 +2,7 @@
 /*  test_main.cpp                                                         */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -50,9 +50,9 @@
 #include "tests/editor/test_bottom_drawer_layout.h"
 #include "tests/editor/test_dock_scene_context_binding.h"
 #include "tests/editor/test_editor_autoload_settings.h"
-#include "tests/editor/test_editor_automation_snapshot.h"
 #include "tests/editor/test_editor_automation_driver.h"
 #include "tests/editor/test_editor_automation_mcp.h"
+#include "tests/editor/test_editor_automation_snapshot.h"
 #include "tests/editor/test_editor_automation_wait.h"
 #include "tests/editor/test_editor_automation_workflow.h"
 #include "tests/editor/test_editor_export_platform_autoload.h"

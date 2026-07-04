@@ -2,7 +2,7 @@
 /*  test_scene_workspace.h                                                */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -108,7 +108,7 @@ TEST_CASE("[SceneTree][Editor] tile-model-cross-move") {
 	CHECK(editor_data.get_tile_current_scene(0) == a);
 	CHECK(editor_data.get_edited_scene() == editor_data.get_tile_current_scene(editor_data.get_focused_tile()));
 
-	// Moving the source tile's current scene falls back to a neighbour tab.
+	// Moving the source tile's current scene falls back to a neighbor tab.
 	editor_data.set_focused_tile(0);
 	editor_data.set_tile_current_scene(0, a);
 	editor_data.set_scene_tile(a, 7);
@@ -163,7 +163,7 @@ TEST_CASE("[SceneTree][Editor] tile-model-current-fixup") {
 	editor_data.set_tile_current_scene(0, a);
 
 	// Moving the focused tile's current scene away repoints the tile at the
-	// neighbouring tab and keeps invariant I1 intact.
+	// neighboring tab and keeps invariant I1 intact.
 	editor_data.set_scene_tile(a, 3);
 	CHECK(editor_data.get_tile_current_scene(0) == b);
 	CHECK(editor_data.get_edited_scene() == b);

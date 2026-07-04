@@ -2,7 +2,7 @@
 /*  editor_data.cpp                                                       */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -669,8 +669,8 @@ void EditorData::remove_scene(int p_idx) {
 	for (KeyValue<int, int> &E : tile_current_scene) {
 		const int cur = E.value;
 		if (cur == p_idx) {
-			// Fall back to the neighbouring tab (next, else previous), matching
-			// set_scene_tile() and normal tab-close behaviour.
+			// Fall back to the neighboring tab (next, else previous), matching
+			// set_scene_tile() and normal tab-close behavior.
 			int replacement = -1;
 			const Vector<int> tile_scenes = get_tile_scene_indices(E.key);
 			for (int i = 0; i < tile_scenes.size(); i++) {

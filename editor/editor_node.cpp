@@ -2,7 +2,7 @@
 /*  editor_node.cpp                                                       */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -4452,7 +4452,7 @@ void EditorNode::_remove_edited_scene(bool p_change_tab) {
 	const int old_index = editor_data.get_edited_scene();
 	const int tile_id = editor_data.get_focused_tile();
 
-	// Prefer the neighbouring tab inside the same tile (next, else previous).
+	// Prefer the neighboring tab inside the same tile (next, else previous).
 	int new_index = -1;
 	const Vector<int> tile_scenes = editor_data.get_tile_scene_indices(tile_id);
 	for (int i = 0; i < tile_scenes.size(); i++) {
