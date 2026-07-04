@@ -4476,9 +4476,19 @@ void Node3DEditorViewport::_finish_gizmo_instances() {
 		RS::get_singleton()->free_rid(scale_gizmo_instance[i]);
 		RS::get_singleton()->free_rid(scale_plane_gizmo_instance[i]);
 		RS::get_singleton()->free_rid(axis_gizmo_instance[i]);
+		// Null the RIDs so gizmo updates racing a tree re-entry (e.g. while
+		// the main screen reparents between workspace tiles) can detect and
+		// skip the freed instances.
+		move_gizmo_instance[i] = RID();
+		move_plane_gizmo_instance[i] = RID();
+		rotate_gizmo_instance[i] = RID();
+		scale_gizmo_instance[i] = RID();
+		scale_plane_gizmo_instance[i] = RID();
+		axis_gizmo_instance[i] = RID();
 	}
 	// Rotation white outline
 	RS::get_singleton()->free_rid(rotate_gizmo_instance[3]);
+	rotate_gizmo_instance[3] = RID();
 }
 
 void Node3DEditorViewport::_toggle_camera_preview(bool p_activate) {
@@ -4560,6 +4570,11 @@ void Node3DEditorViewport::set_can_preview(Camera3D *p_preview) {
 
 void Node3DEditorViewport::update_transform_gizmo_view() {
 	if (!is_visible_in_tree()) {
+		return;
+	}
+	// The gizmo instances are torn down while the viewport is out of the tree
+	// (e.g. mid-reparent between workspace tiles); skip until re-created.
+	if (move_gizmo_instance[0].is_null() || !camera->is_inside_tree()) {
 		return;
 	}
 

@@ -161,10 +161,11 @@ void EditorSceneWorkspace::collapse_tile(ScenePaneTile *p_tile) {
 	grand->add_child(sibling);
 	grand->move_child(sibling, sidx);
 
-	tiles.erase(p_tile);
 	// Let the owner detach anything it hosts inside the tile (e.g. the
-	// reparented main screen) before the tile and its docks are freed.
+	// reparented main screen and strip-hosted buttons) before the tile and
+	// its docks are freed. Emitted while the tile is still resolvable by id.
 	emit_signal(SNAME("tile_removing"), collapsed_tile_id);
+	tiles.erase(p_tile);
 	memdelete(p_tile); // Frees its docks and tab strip.
 
 	if (focused_tile_id == collapsed_tile_id && !tiles.is_empty()) {
@@ -233,15 +234,23 @@ bool EditorSceneWorkspace::perform_tab_drop(int p_src_tile_id, int p_src_tab, in
 		focus_id = nt->get_tile_id();
 	}
 
-	// Collapse the source tile when the move emptied it.
-	ScenePaneTile *src = get_tile_by_id(p_src_tile_id);
-	if (src && p_src_tile_id != focus_id && editor_data->get_tile_scene_indices(p_src_tile_id).is_empty()) {
-		collapse_tile(src);
+	// Collapse the source tile when the move emptied it. Deferred so the tile
+	// (and its tab strip, which is the drag source) is never freed inside the
+	// viewport's active drag-and-drop callstack.
+	if (p_src_tile_id != focus_id && editor_data->get_tile_scene_indices(p_src_tile_id).is_empty()) {
+		callable_mp(this, &EditorSceneWorkspace::_collapse_tile_if_empty).call_deferred(p_src_tile_id);
 	}
 
 	set_focused_tile(focus_id);
 	emit_signal(SNAME("tile_drop_completed"), focus_id);
 	return true;
+}
+
+void EditorSceneWorkspace::_collapse_tile_if_empty(int p_tile_id) {
+	ScenePaneTile *tile = get_tile_by_id(p_tile_id);
+	if (tile && editor_data && editor_data->get_tile_scene_indices(p_tile_id).is_empty()) {
+		collapse_tile(tile);
+	}
 }
 
 // Persistence.

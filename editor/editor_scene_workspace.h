@@ -63,6 +63,7 @@ class EditorSceneWorkspace : public Container {
 	ScenePaneTile *_create_tile(int p_tile_id);
 	Control *_get_structural_root() const;
 	Control *_restore_node_from_config(const Ref<ConfigFile> &p_config, int p_node);
+	void _collapse_tile_if_empty(int p_tile_id);
 
 protected:
 	void _notification(int p_what);
