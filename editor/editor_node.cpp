@@ -4896,6 +4896,12 @@ void EditorNode::_update_tile_display_attachments() {
 			if (scene_viewport_container) {
 				ctx->set_display_parent(scene_viewport_container, true, true);
 			}
+			// Reparenting a live SubViewport into the already-mounted
+			// scene_viewport_container does not fire the container's
+			// ENTER_TREE/RESIZED/VISIBILITY notifications, so the viewport keeps a
+			// stale update mode (often UPDATE_DISABLED) and renders a blank/black
+			// texture. Drive its update mode explicitly, matching the preview path.
+			ctx->get_viewport()->set_update_mode(SubViewport::UPDATE_ALWAYS);
 			_sync_scene_viewport_2d_state_with_main_screen();
 			_apply_scene_viewport_2d_state(ctx->get_viewport());
 			if (last_theme_preview_mode_set) {
@@ -4921,6 +4927,18 @@ void EditorNode::_update_tile_display_attachments() {
 			ctx->get_viewport()->set_update_mode(preview->is_visible_in_tree() ? SubViewport::UPDATE_ALWAYS : SubViewport::UPDATE_DISABLED);
 			preview->recalc_force_viewport_sizes();
 			preview->queue_redraw();
+			// This branch only runs for 2D scenes (3D scenes fall to the placeholder
+			// branch above), so the preview must always render its 2D content. The
+			// shared scene_viewport_2d_disabled flag tracks the focused live editor's
+			// 2D/3D mode and can leave this viewport with 2D disabled (e.g. it was the
+			// focused tile while the main screen briefly defaulted to the 3D editor on
+			// startup); force 2D rendering on so the preview never blacks out.
+			RenderingServer::get_singleton()->viewport_set_disable_2d(ctx->get_viewport()->get_viewport_rid(), false);
+			RenderingServer::get_singleton()->viewport_set_environment_mode(ctx->get_viewport()->get_viewport_rid(), RenderingServer::VIEWPORT_ENVIRONMENT_ENABLED);
+			// Note: the viewport's canvas transform (zoom/pan) is intentionally left
+			// as-is so each pane keeps its own independent view. The CanvasItemEditor
+			// only drives the focused pane's transform; a non-focused pane keeps the
+			// last view it had, so toggling focus does not change what a pane shows.
 		}
 
 		ctx->get_history()->cleanup_history();
