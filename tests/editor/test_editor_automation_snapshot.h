@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "editor/automation/editor_automation_driver.h"
 #include "editor/automation/editor_automation_selector.h"
 #include "editor/automation/editor_automation_snapshot.h"
 
@@ -38,6 +39,7 @@
 #include "scene/gui/dialogs.h"
 #include "scene/gui/line_edit.h"
 #include "scene/gui/panel_container.h"
+#include "scene/gui/item_list.h"
 #include "scene/gui/tab_container.h"
 #include "scene/main/window.h"
 
@@ -276,7 +278,7 @@ TEST_CASE("[Editor][Automation] within selector disambiguates duplicate button n
 	memdelete(root);
 }
 
-TEST_CASE("[Editor][Automation] stale snapshot id lookup fails") {
+TEST_CASE("[Editor][Automation] stale snapshot id reconciles for live controls") {
 	PanelContainer *root = memnew(PanelContainer);
 	root->set_size(Size2(400, 300));
 	SceneTree::get_singleton()->get_root()->add_child(root);
@@ -287,25 +289,166 @@ TEST_CASE("[Editor][Automation] stale snapshot id lookup fails") {
 	root->add_child(button);
 	MessageQueue::get_singleton()->flush();
 
-	EditorAutomationSnapshot first_snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	const EditorAutomationSnapshot first_snapshot = EditorAutomationSnapshot::capture_from_node(root);
 	const EditorAutomationElement *button_element = find_element_by_role_and_name(first_snapshot, "button", "Run");
+	REQUIRE(button_element != nullptr);
+	CHECK_FALSE(button_element->handle.is_empty());
+
+	const EditorAutomationSnapshot second_snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	const EditorAutomationSelectorResult stale_result = EditorAutomationSelector::resolve_by_id(second_snapshot, button_element->id);
+	CHECK(stale_result.status == EditorAutomationSelectorStatus::OK);
+	CHECK(stale_result.reconciled);
+	CHECK(stale_result.snapshot_generation == second_snapshot.get_generation());
+	CHECK(stale_result.current_element_id != button_element->id);
+
+	const EditorAutomationSelectorResult handle_result = EditorAutomationSelector::resolve_by_handle(second_snapshot, button_element->handle);
+	CHECK(handle_result.status == EditorAutomationSelectorStatus::OK);
+	CHECK_FALSE(handle_result.reconciled);
+
+	Dictionary action_target;
+	action_target["id"] = button_element->id;
+	const EditorAutomationActionResult action_result = EditorAutomationDriver::perform(second_snapshot, "click", action_target);
+	CHECK(action_result.ok);
+	CHECK((bool)action_result.details["reconciled"]);
+	CHECK((uint64_t)action_result.details["snapshot_generation"] == second_snapshot.get_generation());
+
+	memdelete(root);
+}
+
+TEST_CASE("[Editor][Automation] freed control stale handle fails with machine-readable error") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	Button *button = memnew(Button);
+	button->set_text("Save");
+	setup_visible_control(button);
+	root->add_child(button);
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot first_snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	const EditorAutomationElement *button_element = find_element_by_role_and_name(first_snapshot, "button", "Save");
+	REQUIRE(button_element != nullptr);
+	const String stale_id = button_element->id;
+	const String durable_handle = button_element->handle;
+
+	root->remove_child(button);
+	memdelete(button);
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot second_snapshot = EditorAutomationSnapshot::capture_from_node(root);
+
+	const EditorAutomationSelectorResult id_result = EditorAutomationSelector::resolve_by_id(second_snapshot, stale_id);
+	CHECK(id_result.status == EditorAutomationSelectorStatus::STALE_ID);
+	CHECK(id_result.error_kind == "freed_object");
+	CHECK(id_result.candidates.size() > 0);
+
+	const EditorAutomationSelectorResult handle_result = EditorAutomationSelector::resolve_by_handle(second_snapshot, durable_handle);
+	CHECK(handle_result.status == EditorAutomationSelectorStatus::STALE_ID);
+	CHECK(handle_result.error_kind == "freed_object");
+
+	Dictionary action_target;
+	action_target["id"] = stale_id;
+	const EditorAutomationActionResult action_result = EditorAutomationDriver::perform(second_snapshot, "click", action_target);
+	CHECK_FALSE(action_result.ok);
+	CHECK(action_result.kind == "freed_element");
+	CHECK(action_result.candidates.size() > 0);
+
+	memdelete(root);
+}
+
+TEST_CASE("[Editor][Automation] hidden control stale handle fails with visibility diagnostic") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	Button *button = memnew(Button);
+	button->set_text("Hide Me");
+	setup_visible_control(button);
+	root->add_child(button);
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot first_snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	const EditorAutomationElement *button_element = find_element_by_role_and_name(first_snapshot, "button", "Hide Me");
 	REQUIRE(button_element != nullptr);
 	const String stale_id = button_element->id;
 
-	EditorAutomationSnapshot second_snapshot = EditorAutomationSnapshot::capture_from_node(root);
-	const EditorAutomationSelectorResult stale_result = EditorAutomationSelector::resolve_by_id(second_snapshot, stale_id);
-	CHECK(stale_result.status == EditorAutomationSelectorStatus::STALE_ID);
-	CHECK(stale_result.error_kind == "stale_snapshot_id");
-	CHECK_FALSE(stale_result.message.is_empty());
-	CHECK(stale_result.candidates.size() > 0);
+	button->set_visible(false);
+	MessageQueue::get_singleton()->flush();
 
-	const EditorAutomationSelectorResult current_result = EditorAutomationSelector::resolve_by_id(second_snapshot, button_element->id);
-	CHECK(current_result.status == EditorAutomationSelectorStatus::STALE_ID);
+	const EditorAutomationSnapshot second_snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	const EditorAutomationSelectorResult result = EditorAutomationSelector::resolve_by_id(second_snapshot, stale_id);
+	CHECK(result.status == EditorAutomationSelectorStatus::STALE_ID);
+	CHECK(result.error_kind == "element_not_visible");
+	CHECK(result.candidates.size() > 0);
 
-	const EditorAutomationElement *fresh_button = find_element_by_role_and_name(second_snapshot, "button", "Run");
-	REQUIRE(fresh_button != nullptr);
-	const EditorAutomationSelectorResult valid_result = EditorAutomationSelector::resolve_by_id(second_snapshot, fresh_button->id);
-	CHECK(valid_result.status == EditorAutomationSelectorStatus::OK);
+	const Dictionary diagnostic = result.candidates[0];
+	CHECK(diagnostic.has("object_id"));
+	CHECK(diagnostic.has("node_class"));
+
+	memdelete(root);
+}
+
+TEST_CASE("[Editor][Automation] virtual element durable handle reconciliation") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	TabContainer *tab_container = memnew(TabContainer);
+	tab_container->set_name("MainTabs");
+	setup_visible_control(tab_container, Size2(300, 200));
+	root->add_child(tab_container);
+
+	Control *scene_tab = memnew(Control);
+	scene_tab->set_name("SceneTab");
+	tab_container->add_child(scene_tab);
+	Control *import_tab = memnew(Control);
+	import_tab->set_name("ImportTab");
+	tab_container->add_child(import_tab);
+	tab_container->set_tab_title(0, "Scene");
+	tab_container->set_tab_title(1, "Import");
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot first_snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	const EditorAutomationElement *tabs = find_element_by_role_and_name(first_snapshot, "tab_list", "MainTabs");
+	REQUIRE(tabs != nullptr);
+	REQUIRE(tabs->children.size() >= 2);
+
+	const EditorAutomationElement &scene_tab_element = first_snapshot.get_element(tabs->children[0]);
+	CHECK(scene_tab_element.role == "tab");
+	CHECK_FALSE(scene_tab_element.handle.is_empty());
+
+	const EditorAutomationSnapshot second_snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	const EditorAutomationSelectorResult reconciled = EditorAutomationSelector::resolve_by_id(second_snapshot, scene_tab_element.id);
+	CHECK(reconciled.status == EditorAutomationSelectorStatus::OK);
+	CHECK(reconciled.reconciled);
+
+	ItemList *item_list = memnew(ItemList);
+	item_list->set_name("Files");
+	setup_visible_control(item_list, Size2(280, 120));
+	root->add_child(item_list);
+	item_list->add_item("Alpha");
+	item_list->add_item("Beta");
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot list_snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	const EditorAutomationElement *list_element = find_element_by_role_and_name(list_snapshot, "list", "Files");
+	REQUIRE(list_element != nullptr);
+	REQUIRE(list_element->children.size() >= 2);
+	const EditorAutomationElement &beta_item = list_snapshot.get_element(list_element->children[1]);
+	CHECK(beta_item.role == "list_item");
+	const String beta_handle = beta_item.handle;
+
+	item_list->remove_item(1);
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot changed_snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	const EditorAutomationSelectorResult unavailable = EditorAutomationSelector::resolve_by_handle(changed_snapshot, beta_handle);
+	CHECK(unavailable.status == EditorAutomationSelectorStatus::STALE_ID);
+	CHECK(unavailable.error_kind == "virtual_element_unavailable");
+	CHECK(unavailable.candidates.size() > 0);
+	const Dictionary diagnostic = unavailable.candidates[0];
+	CHECK(diagnostic.has("durable_key_strategy"));
 
 	memdelete(root);
 }

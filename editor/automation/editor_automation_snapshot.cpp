@@ -246,6 +246,7 @@ class EditorAutomationSnapshotBuilder {
 	int _add_virtual_element(int p_parent_index, const String &p_kind, const String &p_key, const String &p_role, const String &p_name, const String &p_text, bool p_selected = false, const Dictionary &p_metadata = Dictionary()) {
 		EditorAutomationElement element;
 		element.id = EditorAutomationSnapshot::make_virtual_element_id(data.generation, p_kind, p_key);
+		element.handle = EditorAutomationSnapshot::make_durable_handle(p_kind, p_key);
 		element.role = p_role;
 		element.name = p_name;
 		element.text = p_text;
@@ -261,6 +262,7 @@ class EditorAutomationSnapshotBuilder {
 			data.root_indices.push_back(data.elements.size());
 		}
 		data.id_to_index.insert(element.id, data.elements.size());
+		data.handle_to_index.insert(element.handle, data.elements.size());
 		data.elements.push_back(element);
 		return data.elements.size() - 1;
 	}
@@ -383,6 +385,7 @@ class EditorAutomationSnapshotBuilder {
 		EditorAutomationElement element;
 		element.object_id = p_node->get_instance_id();
 		element.id = EditorAutomationSnapshot::make_control_element_id(data.generation, element.object_id);
+		element.handle = EditorAutomationSnapshot::make_durable_handle("object", String::num_uint64(element.object_id));
 		element.role = _node_role(p_node);
 		const String workflow_role = EditorAutomationWorkflow::role_for_node(p_node);
 		if (!workflow_role.is_empty()) {
@@ -419,6 +422,7 @@ class EditorAutomationSnapshotBuilder {
 		}
 
 		data.id_to_index.insert(element.id, data.elements.size());
+		data.handle_to_index.insert(element.handle, data.elements.size());
 		data.object_id_to_index.insert(element.object_id, data.elements.size());
 		data.elements.push_back(element);
 		const int element_index = data.elements.size() - 1;
@@ -486,6 +490,7 @@ public:
 Dictionary _element_to_dictionary(const EditorAutomationElement &p_element, const Vector<EditorAutomationElement> &p_elements) {
 	Dictionary dict;
 	dict["id"] = p_element.id;
+	dict["handle"] = p_element.handle;
 	dict["role"] = p_element.role;
 	dict["name"] = p_element.name;
 	dict["text"] = p_element.text;
@@ -547,6 +552,28 @@ bool EditorAutomationSnapshot::parse_element_id(const String &p_id, uint64_t &r_
 	return true;
 }
 
+String EditorAutomationSnapshot::make_durable_handle(const String &p_kind, const String &p_key) {
+	return vformat("%s:%s", p_kind, p_key);
+}
+
+bool EditorAutomationSnapshot::parse_durable_handle(const String &p_handle, String &r_kind, String &r_key) {
+	if (p_handle.begins_with("snapshot:")) {
+		uint64_t generation = 0;
+		return parse_element_id(p_handle, generation, r_kind, r_key);
+	}
+	const int colon_pos = p_handle.find_char(':');
+	if (colon_pos < 0) {
+		return false;
+	}
+	r_kind = p_handle.substr(0, colon_pos);
+	r_key = p_handle.substr(colon_pos + 1);
+	return !r_kind.is_empty();
+}
+
+bool EditorAutomationSnapshot::is_virtual_durable_kind(const String &p_kind) {
+	return p_kind == "tree_item" || p_kind == "list_item" || p_kind == "menu_item" || p_kind == "tab";
+}
+
 EditorAutomationSnapshot EditorAutomationSnapshot::capture_from_node(Node *p_root) {
 	LocalVector<Node *> roots;
 	if (p_root != nullptr) {
@@ -591,6 +618,18 @@ const EditorAutomationElement *EditorAutomationSnapshot::find_by_id(const String
 	return &data.elements[*index];
 }
 
+const EditorAutomationElement *EditorAutomationSnapshot::find_by_handle(const String &p_handle) const {
+	const int *index = data.handle_to_index.getptr(p_handle);
+	if (index == nullptr) {
+		return nullptr;
+	}
+	return &data.elements[*index];
+}
+
+const EditorAutomationElement *EditorAutomationSnapshot::find_by_durable_key(const String &p_kind, const String &p_key) const {
+	return find_by_handle(make_durable_handle(p_kind, p_key));
+}
+
 const EditorAutomationElement *EditorAutomationSnapshot::find_by_object_id(uint64_t p_object_id) const {
 	const int *index = data.object_id_to_index.getptr(p_object_id);
 	if (index == nullptr) {
@@ -618,6 +657,18 @@ Dictionary EditorAutomationSnapshot::to_dictionary() const {
 Dictionary EditorAutomationSelectorResult::to_dictionary() const {
 	Dictionary dict;
 	dict["ok"] = status == EditorAutomationSelectorStatus::OK;
+	if (snapshot_generation > 0) {
+		dict["snapshot_generation"] = snapshot_generation;
+	}
+	if (reconciled) {
+		dict["reconciled"] = true;
+	}
+	if (!requested_reference.is_empty()) {
+		dict["requested_reference"] = requested_reference;
+	}
+	if (!current_element_id.is_empty()) {
+		dict["current_element_id"] = current_element_id;
+	}
 	if (!error_kind.is_empty()) {
 		dict["kind"] = error_kind;
 	}

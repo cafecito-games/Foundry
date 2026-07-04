@@ -67,6 +67,12 @@ EditorAutomationActionResult _selector_failure(const EditorAutomationSelectorRes
 	if (p_selector_result.status == EditorAutomationSelectorStatus::STALE_ID) {
 		if (kind == "invalid_snapshot_handle") {
 			kind = "invalid_element";
+		} else if (kind == "freed_object") {
+			kind = "freed_element";
+		} else if (kind == "element_not_visible") {
+			kind = "element_not_visible";
+		} else if (kind == "virtual_element_unavailable") {
+			kind = "virtual_element_unavailable";
 		} else {
 			kind = "stale_element";
 		}
@@ -79,6 +85,12 @@ EditorAutomationActionResult _selector_failure(const EditorAutomationSelectorRes
 	}
 
 	EditorAutomationActionResult result = EditorAutomationActionResult::failure(kind, p_selector_result.message, p_selector_result.candidates);
+	if (p_selector_result.snapshot_generation > 0) {
+		result.details["snapshot_generation"] = p_selector_result.snapshot_generation;
+	}
+	if (!p_selector_result.requested_reference.is_empty()) {
+		result.details["requested_reference"] = p_selector_result.requested_reference;
+	}
 	return result;
 }
 
@@ -91,6 +103,20 @@ EditorAutomationSelectorResult _resolve_target(const EditorAutomationSnapshot &p
 		return result;
 	}
 	return EditorAutomationSelector::resolve(p_snapshot, p_target);
+}
+
+void _enrich_action_result(
+		EditorAutomationActionResult &r_result,
+		const EditorAutomationSnapshot &p_snapshot,
+		const EditorAutomationSelectorResult &p_selector_result,
+		const EditorAutomationElement &p_element) {
+	r_result.element_id = p_element.id;
+	r_result.details["snapshot_generation"] = p_snapshot.get_generation();
+	if (p_selector_result.reconciled) {
+		r_result.details["reconciled"] = true;
+		r_result.details["requested_reference"] = p_selector_result.requested_reference;
+		r_result.details["current_element_id"] = p_element.id;
+	}
 }
 
 Node *_resolve_node_from_object_id(uint64_t p_object_id) {
@@ -888,6 +914,9 @@ EditorAutomationActionResult EditorAutomationDriver::perform(
 		ERR_FAIL_COND_V(selector_result.match_indices.size() != 1, EditorAutomationActionResult::failure("ambiguous_selector", "Selector matched multiple elements."));
 		const EditorAutomationElement &source_element = p_snapshot.get_element(selector_result.match_indices[0]);
 		EditorAutomationActionResult result = _action_drag(p_snapshot, source_element, p_options, route_preference);
+		if (result.ok) {
+			_enrich_action_result(result, p_snapshot, selector_result, source_element);
+		}
 		_record_action_trace(p_action, p_target, p_snapshot, &source_element, result, log_marker);
 		EditorAutomationTrace::get_singleton().end_action();
 		return result;
@@ -968,6 +997,10 @@ EditorAutomationActionResult EditorAutomationDriver::perform(
 		default:
 			result = EditorAutomationActionResult::failure("unsupported_action", vformat("Unsupported action '%s'.", p_action));
 			break;
+	}
+
+	if (result.ok) {
+		_enrich_action_result(result, p_snapshot, selector_result, element);
 	}
 
 	_record_action_trace(p_action, p_target, p_snapshot, &element, result, log_marker);

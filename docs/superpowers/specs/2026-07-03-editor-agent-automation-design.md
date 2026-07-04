@@ -116,7 +116,17 @@ Elements are returned as structured records:
 }
 ```
 
-Element IDs are opaque handles for a specific UI snapshot or generation. Agents should prefer selectors over hardcoded IDs:
+Element IDs are opaque snapshot-scoped handles for a specific UI generation. Each element also exposes a durable `handle` that omits the generation prefix (`object:<object_id>` for controls, `<virtual_kind>:<parent_object_id>:<path_or_index>` for virtual items). Agents should prefer semantic selectors for long-lived workflows, but `id` or `handle` values returned by `observe_ui` reconcile across later snapshots when the underlying object or virtual key is still valid.
+
+```json
+{
+  "id": "snapshot:42/object:284",
+  "handle": "object:284",
+  "role": "button",
+  "name": "Add Child Node",
+```
+
+Semantic selectors remain the most robust option when UI structure may change:
 
 ```json
 {
