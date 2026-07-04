@@ -47,7 +47,7 @@ vars:
   JOBS:
     sh: 'printf "%s\n" "${JOBS:-{{.HOST_JOBS}}}"'
   CACHE_PATH:
-    sh: 'printf "%s\n" "${CACHE_PATH-}"'
+    sh: 'printf "%s\n" "${CACHE_PATH-$HOME/.scons_cache}"'
   SCONS_FLAGS:
     sh: 'printf "%s\n" "${SCONS_FLAGS:-}"'
 
