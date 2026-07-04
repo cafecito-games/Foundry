@@ -1,4 +1,4 @@
-# Design: Self-contained tiled scene panes (GDStudio-style multi-scene workspace)
+# Design: Self-contained tiled scene panes (multi-scene workspace)
 
 Status: approved for spec review
 Date: 2026-07-04
@@ -8,13 +8,12 @@ Phase D (#828); supersedes the current Phase C branch `csueiras/multi-scene-phas
 ## Motivation
 
 The current split-pane branch is Phase C as originally specced: exactly two panes in a
-single `SplitContainer`, the second scene tree + inspector registered in Godot's **global**
+single `SplitContainer`, the second scene tree + inspector registered in the editor's **global**
 dock slots (tabbed behind the primaries), and only the focused pane hosting a live editor
-(others show a static preview). After reviewing the GDStudio reference
-(`https://gdstudio.dev/videos/showcase-multi-scene.webm` and its published description —
-*"Open multiple scenes at once, in tabs or split panes. Each scene gets its own inspector
-and scene tree… arrange any way you like, even placed on a separate monitor"*), the target
-model is different in three ways that conflict with Phase C's locked decisions:
+(others show a static preview). The target model refines this into a more flexible workflow —
+open multiple scenes at once, each with its own inspector and scene tree, arranged into freely
+subdividable areas (and, as later stretch work, torn off to a separate window/monitor). That
+target differs from Phase C's locked decisions in three ways:
 
 | Phase C locked decision | New target |
 | --- | --- |
@@ -44,7 +43,7 @@ plumbing is salvaged; its superseded UI is replaced.
 **Explicitly deferred (later "A" work, not a redo):**
 - Tear-off a tile/panel to a separate OS `Window`/monitor.
 - Arbitrary non-scene panels (FileSystem, Output, Debugger) as free-floating dockable tiles.
-- Unifying/absorbing Godot's global `EditorDockManager` slot model into the tree.
+- Unifying/absorbing the global `EditorDockManager` slot model into the tree.
 
 **Deferred within B (follow-up issues, staged after milestone 1):**
 - Moving signals (`ConnectionsDock`), groups, node, and history docks **into** the tile.
@@ -112,8 +111,8 @@ VBoxContainer (tile):
   `"Scene:2"`/`"Inspector:2"` global-slot registration (`editor/editor_node.cpp:4886`).
 - **Responsibility split:** *per-scene* docks (scene tree, inspector; later signals/groups/
   node/history) live in the tile. *Project-global* docks (FileSystem, Output/log, Debugger,
-  Import) stay in the editor shell / bottom drawer — mirroring GDStudio's collapsible bottom
-  drawer for filesystem/logs.
+  Import) stay in the editor shell / bottom drawer — consistent with the editor's collapsible
+  bottom drawer for filesystem/logs.
 - The center viewport host is where the live editor surface (milestone 1: focused tile only;
   milestone 2: every tile) or the non-focused preview renders.
 
