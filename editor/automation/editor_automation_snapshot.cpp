@@ -30,6 +30,8 @@
 
 #include "editor_automation_snapshot.h"
 
+#include "editor/automation/editor_automation_workflow.h"
+
 #include "core/object/object.h"
 #include "editor/editor_node.h"
 #include "scene/gui/base_button.h"
@@ -237,7 +239,7 @@ class EditorAutomationSnapshotBuilder {
 		return String(path_root->get_path_to(p_node));
 	}
 
-	int _add_virtual_element(int p_parent_index, const String &p_kind, const String &p_key, const String &p_role, const String &p_name, const String &p_text, bool p_selected = false) {
+	int _add_virtual_element(int p_parent_index, const String &p_kind, const String &p_key, const String &p_role, const String &p_name, const String &p_text, bool p_selected = false, const Dictionary &p_metadata = Dictionary()) {
 		EditorAutomationElement element;
 		element.id = EditorAutomationSnapshot::make_virtual_element_id(data.generation, p_kind, p_key);
 		element.role = p_role;
@@ -247,6 +249,7 @@ class EditorAutomationSnapshotBuilder {
 		element.visible = true;
 		element.enabled = true;
 		element.selected = p_selected;
+		element.metadata = p_metadata;
 		element.parent_index = p_parent_index;
 		if (p_parent_index >= 0) {
 			data.elements.ptrw()[p_parent_index].children.push_back(data.elements.size());
@@ -279,7 +282,8 @@ class EditorAutomationSnapshotBuilder {
 			if (item->is_visible_in_tree()) {
 				const String key = vformat("%s:%s", String::num_uint64(tree_id), _tree_item_path(item));
 				const String item_text = item->get_text(0);
-				_add_virtual_element(p_parent_index, "tree_item", key, "tree_item", item_text, item_text, item->is_selected(0));
+				const Dictionary metadata = EditorAutomationWorkflow::metadata_for_tree_item(p_tree, item);
+				_add_virtual_element(p_parent_index, "tree_item", key, "tree_item", item_text, item_text, item->is_selected(0), metadata);
 			}
 			item = item->get_next_in_tree();
 		}
@@ -290,7 +294,8 @@ class EditorAutomationSnapshotBuilder {
 		for (int i = 0; i < p_item_list->get_item_count(); i++) {
 			const String item_text = p_item_list->get_item_text(i);
 			const String key = vformat("%s:%d", String::num_uint64(list_id), i);
-			_add_virtual_element(p_parent_index, "list_item", key, "list_item", item_text, item_text, p_item_list->is_selected(i));
+			const Dictionary metadata = EditorAutomationWorkflow::metadata_for_list_item(p_item_list, i);
+			_add_virtual_element(p_parent_index, "list_item", key, "list_item", item_text, item_text, p_item_list->is_selected(i), metadata);
 		}
 	}
 
@@ -375,6 +380,10 @@ class EditorAutomationSnapshotBuilder {
 		element.object_id = p_node->get_instance_id();
 		element.id = EditorAutomationSnapshot::make_control_element_id(data.generation, element.object_id);
 		element.role = _node_role(p_node);
+		const String workflow_role = EditorAutomationWorkflow::role_for_node(p_node);
+		if (!workflow_role.is_empty()) {
+			element.role = workflow_role;
+		}
 		element.name = _node_name(p_node);
 		element.text = _node_text(p_node);
 		element.class_name = p_node->get_class();
@@ -384,6 +393,7 @@ class EditorAutomationSnapshotBuilder {
 		element.focused = _node_is_focused(p_node);
 		element.bounds = _node_bounds_global(p_node);
 		element.parent_index = p_parent_index;
+		element.metadata = EditorAutomationWorkflow::metadata_for_node(p_node);
 		_append_actions(p_node, element.role, element.actions);
 
 		if (const BaseButton *button = Object::cast_to<const BaseButton>(p_node)) {
@@ -485,6 +495,9 @@ Dictionary _element_to_dictionary(const EditorAutomationElement &p_element, cons
 	bounds.push_back(p_element.bounds.size.y);
 	dict["bounds"] = bounds;
 	dict["actions"] = p_element.actions;
+	if (!p_element.metadata.is_empty()) {
+		dict["metadata"] = p_element.metadata;
+	}
 
 	Array children;
 	for (int child_index : p_element.children) {

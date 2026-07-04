@@ -4537,6 +4537,7 @@ ScriptEditor::ScriptEditor(WindowWrapper *p_wrapper) {
 
 	tab_container = memnew(TabContainer);
 	tab_container->set_tabs_visible(false);
+	tab_container->set_accessibility_name(TTRC("Script Tabs"));
 	tab_container->set_custom_minimum_size(Size2(200, 0) * EDSCALE);
 	code_editor_container->add_child(tab_container);
 	tab_container->set_h_size_flags(SIZE_EXPAND_FILL);
@@ -4554,6 +4555,7 @@ ScriptEditor::ScriptEditor(WindowWrapper *p_wrapper) {
 	ED_SHORTCUT("script_editor/prev_script", TTRC("Previous Script"), KeyModifierMask::CMD_OR_CTRL | KeyModifierMask::SHIFT | Key::COMMA);
 	set_process_input(true);
 	set_process_shortcut_input(true);
+	set_accessibility_name(TTRC("Script Editor"));
 
 	file_menu = memnew(MenuButton);
 	file_menu->set_flat(false);

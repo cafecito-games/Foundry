@@ -126,6 +126,9 @@ Dictionary EditorAutomationState::read_editor_state() {
 		state["edited_scene_root"] = Dictionary();
 		state["selected_nodes"] = Array();
 		state["selected_paths"] = Array();
+		Dictionary filesystem_state;
+		filesystem_state["supported"] = false;
+		state["filesystem"] = filesystem_state;
 		state["script"] = Dictionary();
 		state["playing"] = Dictionary();
 		state["unsaved"] = Dictionary();
@@ -180,6 +183,17 @@ Dictionary EditorAutomationState::read_editor_state() {
 		}
 	}
 	state["selected_paths"] = selected_paths;
+
+	Dictionary filesystem_state;
+	if (editor_interface != nullptr) {
+		filesystem_state["supported"] = true;
+		filesystem_state["current_path"] = editor_interface->get_current_path();
+		filesystem_state["current_directory"] = editor_interface->get_current_directory();
+		filesystem_state["selected_paths"] = selected_paths;
+	} else {
+		filesystem_state["supported"] = false;
+	}
+	state["filesystem"] = filesystem_state;
 
 	Dictionary script_state;
 	ScriptEditor *script_editor = ScriptEditor::get_singleton();

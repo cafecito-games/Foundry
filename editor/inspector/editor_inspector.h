@@ -253,6 +253,7 @@ public:
 
 	Object *get_edited_object();
 	StringName get_edited_property() const;
+	String get_property_path() const { return property_path; }
 	inline Variant get_edited_property_value() const {
 		ERR_FAIL_NULL_V(object, Variant());
 		return object->get(property);
@@ -423,6 +424,7 @@ public:
 
 	virtual Size2 get_minimum_size() const override;
 	virtual Control *make_custom_tooltip(const String &p_text) const override;
+	String get_label() const { return label; }
 
 	EditorInspectorCategory();
 };
