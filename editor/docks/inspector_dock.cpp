@@ -606,7 +606,7 @@ void InspectorDock::update(Object *p_object) {
 	PopupMenu *p = object_menu->get_popup();
 
 	p->clear();
-	p->add_icon_shortcut(get_editor_theme_icon(SNAME("GuiTreeArrowDown")), ED_SHORTCUT("property_editor/expand_all", TTRC("Expand All")), EXPAND_ALL);
+	p->add_icon_shortcut(get_editor_theme_icon(SNAME("GuiTreeArrowDown")), ED_GET_SHORTCUT("property_editor/expand_all"), EXPAND_ALL);
 	p->add_icon_shortcut(get_editor_theme_icon(SNAME("GuiTreeArrowRight")), ED_SHORTCUT("property_editor/collapse_all", TTRC("Collapse All")), COLLAPSE_ALL);
 	// Calling it 'revertable' internally, because that's what the implementation is based on, but labeling it as 'non-default' because that's more user friendly, even if not 100% accurate.
 	p->add_shortcut(ED_SHORTCUT("property_editor/expand_revertable", TTRC("Expand Non-Default")), EXPAND_REVERTABLE);
@@ -942,12 +942,25 @@ InspectorDock::InspectorDock(EditorData &p_editor_data) {
 	}
 
 	Ref<Shortcut> expand_all_shortcut = ED_SHORTCUT("property_editor/expand_all", TTRC("Expand All"));
-	EditorCommandPalette::get_singleton()->add_command(
-			TTR("Expand All Inspector Properties"),
-			"property_editor/expand_all",
-			callable_mp(this, &InspectorDock::_menu_expandall),
-			varray(),
-			expand_all_shortcut);
+	if (EditorCommandPalette::get_singleton() != nullptr) {
+		List<String> existing_commands;
+		EditorCommandPalette::get_singleton()->get_actions_list(&existing_commands);
+		bool has_expand_all = false;
+		for (const String &command : existing_commands) {
+			if (command == "property_editor/expand_all") {
+				has_expand_all = true;
+				break;
+			}
+		}
+		if (!has_expand_all) {
+			EditorCommandPalette::get_singleton()->add_command(
+					TTR("Expand All Inspector Properties"),
+					"property_editor/expand_all",
+					callable_mp(this, &InspectorDock::_menu_expandall),
+					varray(),
+					expand_all_shortcut);
+		}
+	}
 
 	set_process_shortcut_input(true);
 }

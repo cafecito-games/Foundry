@@ -234,11 +234,17 @@ static String drift_option_value(const FoundryCLIHelp::CommandOption &p_option) 
 static void drift_append_option(PackedStringArray &r_args, const FoundryCLIHelp::CommandOption &p_option) {
 	if (p_option.value_name && p_option.equals_form) {
 		r_args.push_back(String(p_option.flag) + "=" + drift_option_value(p_option));
+		if (String(p_option.flag) == "--automation-run-workflow") {
+			r_args.push_back("--automation");
+		}
 		return;
 	}
 	r_args.push_back(p_option.flag);
 	if (p_option.value_name) {
 		r_args.push_back(drift_option_value(p_option));
+	}
+	if (String(p_option.flag) == "--automation-run-workflow") {
+		r_args.push_back("--automation");
 	}
 }
 
