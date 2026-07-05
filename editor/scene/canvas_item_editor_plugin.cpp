@@ -365,6 +365,9 @@ void CanvasItemEditor::_snap_other_nodes(
 }
 
 Point2 CanvasItemEditor::snap_point(Point2 p_target, unsigned int p_modes, unsigned int p_forced_modes, const CanvasItem *p_self_canvas_item, const List<CanvasItem *> &p_other_nodes_exceptions) {
+	// snap_point() is global controller logic but writes per-view scratch on view_state
+	// (snap_target, snap_transform). Safe while there is exactly one view; when multiple
+	// views exist (U2/U3) this must resolve to the focused/acting view's state.
 	view_state.snap_target[0] = CanvasItemEditorViewState::SNAP_TARGET_NONE;
 	view_state.snap_target[1] = CanvasItemEditorViewState::SNAP_TARGET_NONE;
 
@@ -5220,9 +5223,12 @@ void CanvasItemEditor::_bind_methods() {
 }
 
 Dictionary CanvasItemEditor::get_state() const {
+	// Per-scene layout/config round-trip. Global config (snap_*, show_*, grid_visibility,
+	// grid_*) is still serialized here per scene — unchanged from before U1. Reconciling
+	// that with the shared-controller model is deferred to #929 (U3).
 	Dictionary state;
 	// Take the editor scale into account.
-	state["view_state.zoom"] = view_state.zoom / MAX(1, EDSCALE);
+	state["zoom"] = view_state.zoom / MAX(1, EDSCALE);
 	state["ofs"] = view_state.view_offset;
 	state["grid_offset"] = grid_offset;
 	state["grid_step"] = grid_step;
@@ -5257,12 +5263,15 @@ Dictionary CanvasItemEditor::get_state() const {
 }
 
 void CanvasItemEditor::set_state(const Dictionary &p_state) {
+	// Per-scene layout/config round-trip. Global config (snap_*, show_*, grid_visibility,
+	// grid_*) is still deserialized here per scene — unchanged from before U1. Reconciling
+	// that with the shared-controller model is deferred to #929 (U3).
 	bool update_scrollbars = false;
 	Dictionary state = p_state;
-	if (state.has("view_state.zoom")) {
+	if (state.has("zoom")) {
 		// Compensate the editor scale, so that the editor scale can be changed
-		// and the view_state.zoom level will still be the same (relative to the editor scale).
-		view_state.zoom = real_t(p_state["view_state.zoom"]) * MAX(1, EDSCALE);
+		// and the zoom level will still be the same (relative to the editor scale).
+		view_state.zoom = real_t(p_state["zoom"]) * MAX(1, EDSCALE);
 		zoom_widget->set_zoom(view_state.zoom);
 		if (auto_resampling_enabled) {
 			resample_timer->start();

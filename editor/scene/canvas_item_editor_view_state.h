@@ -183,7 +183,10 @@ struct CanvasItemEditorViewState {
 
 	// --- Snap-in-progress (written during snap_point(), cleared each call) ---
 
-	// Closest snap target found so far on each axis during snap_point().
+	// Scratch written by CanvasItemEditor::snap_point() (global controller logic) via
+	// _snap_if_closer_* while resolving a snap. Fine with a single view; when multiple
+	// views exist (U2/U3) snap_point() must write the acting/focused view's state, not
+	// an arbitrary one.
 	SnapTarget snap_target[2];
 	// Rotation + translation encoding the active snap alignment for smart-snap drawing.
 	Transform2D snap_transform;
