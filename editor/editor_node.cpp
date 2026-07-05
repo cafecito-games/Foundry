@@ -4867,6 +4867,17 @@ void EditorNode::reveal_script_leaf() {
 	if (!scene_workspace) {
 		return;
 	}
+
+	// The script leaf lives in the workspace, which is hidden while a global screen
+	// (Game) is showing. Return to a scene mode first so the leaf is not masked.
+	if (editor_main_screen && editor_main_screen->is_global_screen_selected()) {
+		if (editor_main_screen->is_button_enabled(EditorMainScreen::EDITOR_2D)) {
+			editor_main_screen->select(EditorMainScreen::EDITOR_2D);
+		} else if (editor_main_screen->is_button_enabled(EditorMainScreen::EDITOR_3D)) {
+			editor_main_screen->select(EditorMainScreen::EDITOR_3D);
+		}
+	}
+
 	// Split beside the focused scene tile; fall back to any scene leaf.
 	WorkspaceLeafNode *source = scene_workspace->get_focused_leaf();
 	if (!source || !source->get_pane_tile()) {
