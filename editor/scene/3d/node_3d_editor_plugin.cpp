@@ -3602,12 +3602,30 @@ void Node3DEditorViewport::_notification(int p_what) {
 		} break;
 
 		case NOTIFICATION_ENTER_TREE: {
-			surface->connect(SceneStringName(draw), callable_mp(this, &Node3DEditorViewport::_draw));
-			surface->connect(SceneStringName(gui_input), callable_mp(this, &Node3DEditorViewport::_sinput));
-			surface->connect(SceneStringName(mouse_entered), callable_mp(this, &Node3DEditorViewport::_surface_mouse_enter));
-			surface->connect(SceneStringName(mouse_exited), callable_mp(this, &Node3DEditorViewport::_surface_mouse_exit));
-			surface->connect(SceneStringName(focus_entered), callable_mp(this, &Node3DEditorViewport::_surface_focus_enter));
-			surface->connect(SceneStringName(focus_exited), callable_mp(this, &Node3DEditorViewport::_surface_focus_exit));
+			Callable draw_cb = callable_mp(this, &Node3DEditorViewport::_draw);
+			Callable input_cb = callable_mp(this, &Node3DEditorViewport::_sinput);
+			Callable mouse_enter_cb = callable_mp(this, &Node3DEditorViewport::_surface_mouse_enter);
+			Callable mouse_exit_cb = callable_mp(this, &Node3DEditorViewport::_surface_mouse_exit);
+			Callable focus_enter_cb = callable_mp(this, &Node3DEditorViewport::_surface_focus_enter);
+			Callable focus_exit_cb = callable_mp(this, &Node3DEditorViewport::_surface_focus_exit);
+			if (!surface->is_connected(SceneStringName(draw), draw_cb)) {
+				surface->connect(SceneStringName(draw), draw_cb);
+			}
+			if (!surface->is_connected(SceneStringName(gui_input), input_cb)) {
+				surface->connect(SceneStringName(gui_input), input_cb);
+			}
+			if (!surface->is_connected(SceneStringName(mouse_entered), mouse_enter_cb)) {
+				surface->connect(SceneStringName(mouse_entered), mouse_enter_cb);
+			}
+			if (!surface->is_connected(SceneStringName(mouse_exited), mouse_exit_cb)) {
+				surface->connect(SceneStringName(mouse_exited), mouse_exit_cb);
+			}
+			if (!surface->is_connected(SceneStringName(focus_entered), focus_enter_cb)) {
+				surface->connect(SceneStringName(focus_entered), focus_enter_cb);
+			}
+			if (!surface->is_connected(SceneStringName(focus_exited), focus_exit_cb)) {
+				surface->connect(SceneStringName(focus_exited), focus_exit_cb);
+			}
 
 			_init_gizmo_instance(index);
 		} break;

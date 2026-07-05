@@ -1661,15 +1661,35 @@ void SceneTreeDock::_notification(int p_what) {
 
 			CanvasItemEditorPlugin *canvas_item_plugin = Object::cast_to<CanvasItemEditorPlugin>(editor_data->get_editor_by_name("2D"));
 			if (canvas_item_plugin) {
-				canvas_item_plugin->get_canvas_item_editor()->connect("item_lock_status_changed", callable_mp(scene_tree, &SceneTreeEditor::_update_tree).bind(false));
-				canvas_item_plugin->get_canvas_item_editor()->connect("item_group_status_changed", callable_mp(scene_tree, &SceneTreeEditor::_update_tree).bind(false));
-				scene_tree->connect("node_changed", callable_mp((CanvasItem *)canvas_item_plugin->get_canvas_item_editor()->get_viewport_control(), &CanvasItem::queue_redraw));
+				CanvasItemEditor *canvas_item_editor = canvas_item_plugin->get_canvas_item_editor();
+				Control *viewport_control = canvas_item_editor ? canvas_item_editor->get_viewport_control() : nullptr;
+				if (canvas_item_editor && viewport_control) {
+					Callable tree_update_cb = callable_mp(scene_tree, &SceneTreeEditor::_update_tree).bind(false);
+					if (!canvas_item_editor->is_connected("item_lock_status_changed", tree_update_cb)) {
+						canvas_item_editor->connect("item_lock_status_changed", tree_update_cb);
+					}
+					if (!canvas_item_editor->is_connected("item_group_status_changed", tree_update_cb)) {
+						canvas_item_editor->connect("item_group_status_changed", tree_update_cb);
+					}
+					Callable queue_redraw_cb = callable_mp((CanvasItem *)viewport_control, &CanvasItem::queue_redraw);
+					if (!scene_tree->is_connected("node_changed", queue_redraw_cb)) {
+						scene_tree->connect("node_changed", queue_redraw_cb);
+					}
+				}
 			}
 
 			Node3DEditorPlugin *spatial_editor_plugin = Object::cast_to<Node3DEditorPlugin>(editor_data->get_editor_by_name("3D"));
 			if (spatial_editor_plugin) {
-				spatial_editor_plugin->get_spatial_editor()->connect("item_lock_status_changed", callable_mp(scene_tree, &SceneTreeEditor::_update_tree).bind(false));
-				spatial_editor_plugin->get_spatial_editor()->connect("item_group_status_changed", callable_mp(scene_tree, &SceneTreeEditor::_update_tree).bind(false));
+				Node3DEditor *spatial_editor = spatial_editor_plugin->get_spatial_editor();
+				if (spatial_editor) {
+					Callable tree_update_cb = callable_mp(scene_tree, &SceneTreeEditor::_update_tree).bind(false);
+					if (!spatial_editor->is_connected("item_lock_status_changed", tree_update_cb)) {
+						spatial_editor->connect("item_lock_status_changed", tree_update_cb);
+					}
+					if (!spatial_editor->is_connected("item_group_status_changed", tree_update_cb)) {
+						spatial_editor->connect("item_group_status_changed", tree_update_cb);
+					}
+				}
 			}
 
 			filter->set_clear_button_enabled(true);

@@ -6864,6 +6864,12 @@ void EditorNode::_load_workspace_from_config(const Ref<ConfigFile> &p_config_fil
 		return;
 	}
 
+	// restore_from_config() frees the outgoing workspace tree. Detach the shared
+	// main screen first so it is not destroyed with the old tile's content host.
+	if (editor_main_screen && editor_main_screen->get_parent()) {
+		editor_main_screen->get_parent()->remove_child(editor_main_screen);
+	}
+
 	scene_workspace->restore_from_config(p_config_file);
 
 	for (WorkspaceLeafNode *leaf : scene_workspace->get_leaves()) {

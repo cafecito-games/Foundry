@@ -1445,21 +1445,36 @@ void CanvasItemEditor::_notification(int p_what) {
 			// The signal only exists once EditorNode's bindings are set up,
 			// which happens after its constructor (and this editor) ran; a
 			// context may also have activated before this connection existed.
-			if (!EditorNode::get_singleton()->is_connected("active_scene_context_changed", callable_mp(this, &CanvasItemEditor::_active_scene_context_changed))) {
-				EditorNode::get_singleton()->connect("active_scene_context_changed", callable_mp(this, &CanvasItemEditor::_active_scene_context_changed));
+			Callable active_context_cb = callable_mp(this, &CanvasItemEditor::_active_scene_context_changed);
+			if (EditorNode::get_singleton() && !EditorNode::get_singleton()->is_connected("active_scene_context_changed", active_context_cb)) {
+				EditorNode::get_singleton()->connect("active_scene_context_changed", active_context_cb);
 				_active_scene_context_changed();
 			}
 			select_sb->set_texture(get_editor_theme_icon(SNAME("EditorRect2D")));
 			select_sb->set_texture_margin_all(4);
 			select_sb->set_content_margin_all(4);
 
-			AnimationPlayerEditor::get_singleton()->get_track_editor()->connect("keying_changed", callable_mp(this, &CanvasItemEditor::_keying_changed));
-			AnimationPlayerEditor::get_singleton()->connect("animation_selected", callable_mp(this, &CanvasItemEditor::_keying_changed).unbind(1));
+			AnimationPlayerEditor *animation_player_editor = AnimationPlayerEditor::get_singleton();
+			if (animation_player_editor) {
+				Callable keying_cb = callable_mp(this, &CanvasItemEditor::_keying_changed);
+				if (animation_player_editor->get_track_editor() && !animation_player_editor->get_track_editor()->is_connected("keying_changed", keying_cb)) {
+					animation_player_editor->get_track_editor()->connect("keying_changed", keying_cb);
+				}
+				Callable animation_selected_cb = callable_mp(this, &CanvasItemEditor::_keying_changed).unbind(1);
+				if (!animation_player_editor->is_connected("animation_selected", animation_selected_cb)) {
+					animation_player_editor->connect("animation_selected", animation_selected_cb);
+				}
+			}
 			_keying_changed();
 			_update_editor_settings();
 
-			connect("item_lock_status_changed", callable_mp(this, &CanvasItemEditor::_update_lock_and_group_button));
-			connect("item_group_status_changed", callable_mp(this, &CanvasItemEditor::_update_lock_and_group_button));
+			Callable lock_cb = callable_mp(this, &CanvasItemEditor::_update_lock_and_group_button);
+			if (!is_connected("item_lock_status_changed", lock_cb)) {
+				connect("item_lock_status_changed", lock_cb);
+			}
+			if (!is_connected("item_group_status_changed", lock_cb)) {
+				connect("item_group_status_changed", lock_cb);
+			}
 		} break;
 
 		case EditorSettings::NOTIFICATION_EDITOR_SETTINGS_CHANGED: {
