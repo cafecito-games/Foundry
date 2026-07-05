@@ -7886,20 +7886,22 @@ void Node3DEditor::_create_world_grid_instances(const Ref<World3D> &p_world) {
 	if (!grid_enabled || p_world.is_null()) {
 		return;
 	}
-	EditorWorldFurniture &furniture = _ensure_world_furniture(p_world);
+	// Called from _ensure_world_furniture after the entry exists; do not recurse.
+	EditorWorldFurniture *furniture = _get_world_furniture(p_world);
+	ERR_FAIL_NULL(furniture);
 	for (int c = 0; c < 3; c++) {
 		if (!grid[c].is_valid()) {
 			continue;
 		}
-		if (!furniture.grid_instance[c].is_valid()) {
-			furniture.grid_instance[c] = RenderingServer::get_singleton()->instance_create2(grid[c], p_world->get_scenario());
-			RenderingServer::get_singleton()->instance_geometry_set_cast_shadows_setting(furniture.grid_instance[c], RS::SHADOW_CASTING_SETTING_OFF);
-			RS::get_singleton()->instance_set_layer_mask(furniture.grid_instance[c], 1 << Node3DEditorViewport::GIZMO_GRID_LAYER);
-			RS::get_singleton()->instance_geometry_set_flag(furniture.grid_instance[c], RS::INSTANCE_FLAG_IGNORE_OCCLUSION_CULLING, true);
-			RS::get_singleton()->instance_geometry_set_flag(furniture.grid_instance[c], RS::INSTANCE_FLAG_USE_BAKED_LIGHT, false);
+		if (!furniture->grid_instance[c].is_valid()) {
+			furniture->grid_instance[c] = RenderingServer::get_singleton()->instance_create2(grid[c], p_world->get_scenario());
+			RenderingServer::get_singleton()->instance_geometry_set_cast_shadows_setting(furniture->grid_instance[c], RS::SHADOW_CASTING_SETTING_OFF);
+			RS::get_singleton()->instance_set_layer_mask(furniture->grid_instance[c], 1 << Node3DEditorViewport::GIZMO_GRID_LAYER);
+			RS::get_singleton()->instance_geometry_set_flag(furniture->grid_instance[c], RS::INSTANCE_FLAG_IGNORE_OCCLUSION_CULLING, true);
+			RS::get_singleton()->instance_geometry_set_flag(furniture->grid_instance[c], RS::INSTANCE_FLAG_USE_BAKED_LIGHT, false);
 		}
 		const int plane = c;
-		RenderingServer::get_singleton()->instance_set_visible(furniture.grid_instance[c], grid_visible[plane]);
+		RenderingServer::get_singleton()->instance_set_visible(furniture->grid_instance[c], grid_visible[plane]);
 	}
 }
 
