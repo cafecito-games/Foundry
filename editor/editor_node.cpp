@@ -6705,6 +6705,10 @@ void EditorNode::_focus_tile(int p_tile_id) {
 		return;
 	}
 
+	if (scene_idx < 0) {
+		return;
+	}
+
 	_set_current_scene_nocheck(scene_idx);
 }
 
@@ -6747,9 +6751,11 @@ void EditorNode::handle_tile_scene_drop(int p_target_tile_id, int p_region, int 
 		return;
 	}
 
+	const int dest_tile_id = dest_leaf->get_leaf_id();
+	editor_data.set_tile_current_scene(dest_tile_id, scene_idx);
+	_focus_tile(dest_tile_id);
 	_bind_all_leaf_docks();
 	_update_all_scene_tabs();
-	_focus_tile(dest_leaf->get_leaf_id());
 	_update_tile_display_attachments();
 	save_editor_layout_delayed();
 }
@@ -6791,6 +6797,10 @@ void EditorNode::handle_tile_scene_tab_bar_drop(int p_target_tile_id, const Vari
 		return;
 	}
 
+	const int dest_tile_id = dest_leaf->get_leaf_id();
+	editor_data.set_tile_current_scene(dest_tile_id, scene_idx);
+	_focus_tile(dest_tile_id);
+
 	ScenePaneTile *dest_tile = dest_leaf->get_pane_tile();
 	ERR_FAIL_NULL(dest_tile);
 	TabBar *dest_bar = dest_tile->get_scene_tabs()->get_tab_bar();
@@ -6806,15 +6816,25 @@ void EditorNode::handle_tile_scene_tab_bar_drop(int p_target_tile_id, const Vari
 		insert_tab = dest_bar->get_tab_count();
 	}
 
-	const Vector<int> dest_scenes = editor_data.get_tile_scene_indices(dest_leaf->get_leaf_id());
-	if (insert_tab >= 0 && insert_tab < dest_scenes.size()) {
-		editor_data.set_edited_scene(scene_idx);
-		editor_data.move_edited_scene_to_index(dest_scenes[insert_tab]);
+	const Vector<int> dest_scenes = editor_data.get_tile_scene_indices(dest_tile_id);
+	int from_tab = -1;
+	for (int i = 0; i < dest_scenes.size(); i++) {
+		if (dest_scenes[i] == scene_idx) {
+			from_tab = i;
+			break;
+		}
+	}
+	if (from_tab >= 0 && insert_tab >= 0 && from_tab != insert_tab) {
+		const int clamped_insert = MIN(insert_tab, dest_scenes.size() - 1);
+		const int target_global_idx = dest_scenes[clamped_insert];
+		if (target_global_idx != editor_data.get_edited_scene()) {
+			editor_data.move_edited_scene_to_index(target_global_idx);
+			editor_data.set_tile_current_scene(dest_tile_id, editor_data.get_edited_scene());
+		}
 	}
 
 	_bind_all_leaf_docks();
 	_update_all_scene_tabs();
-	_focus_tile(dest_leaf->get_leaf_id());
 	_update_tile_display_attachments();
 	save_editor_layout_delayed();
 }

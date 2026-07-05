@@ -52,7 +52,7 @@ static const Color ROSETTE_AIMED_BORDER = Color(0.62352943f, 0.827451f, 1.0f); /
 static const Color ROSETTE_IDLE_ICON = Color(0.68235296f, 0.72156864f, 0.7764706f); // #AEB8C6
 static const Color ROSETTE_AIMED_ICON = Color(0.02352941f, 0.12941177f, 0.23529412f); // #06213C
 
-bool EditorTileDropOverlay::_is_scene_tab_drag(const Variant &p_data) {
+bool EditorTileDropOverlay::is_scene_tab_drag(const Variant &p_data) {
 	if (p_data.get_type() != Variant::DICTIONARY) {
 		return false;
 	}
@@ -160,19 +160,44 @@ void EditorTileDropOverlay::_draw_guide_rosette(const Point2 &p_center, EditorSc
 	_draw_rosette_button(center_rect, p_aimed_region == EditorSceneWorkspace::DROP_CENTER, icon_tab, accent);
 }
 
+void EditorTileDropOverlay::_update_drag_active() {
+	const bool should_be_active = scene_tab_drag && get_global_rect().has_point(get_global_mouse_position());
+	if (should_be_active == drag_active) {
+		if (drag_active) {
+			const EditorSceneWorkspace::TileDropRegion region = _region_at(get_local_mouse_position());
+			if (region != hovered_region) {
+				hovered_region = region;
+				queue_redraw();
+			}
+		}
+		return;
+	}
+
+	drag_active = should_be_active;
+	set_mouse_filter(drag_active ? Control::MOUSE_FILTER_STOP : Control::MOUSE_FILTER_IGNORE);
+	if (drag_active) {
+		hovered_region = _region_at(get_local_mouse_position());
+	}
+	queue_redraw();
+}
+
 void EditorTileDropOverlay::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_DRAG_BEGIN: {
-			drag_active = get_viewport() && _is_scene_tab_drag(get_viewport()->gui_get_drag_data());
-			set_mouse_filter(drag_active ? Control::MOUSE_FILTER_STOP : Control::MOUSE_FILTER_IGNORE);
-			set_process_internal(drag_active);
-			if (drag_active) {
-				hovered_region = _region_at(get_local_mouse_position());
+			Viewport *viewport = get_viewport();
+			scene_tab_drag = viewport && is_scene_tab_drag(viewport->gui_get_drag_data());
+			set_process_internal(scene_tab_drag);
+			if (!scene_tab_drag) {
+				drag_active = false;
+				set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+				queue_redraw();
+				break;
 			}
-			queue_redraw();
+			_update_drag_active();
 		} break;
 
 		case NOTIFICATION_DRAG_END: {
+			scene_tab_drag = false;
 			drag_active = false;
 			set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
 			set_process_internal(false);
@@ -180,11 +205,7 @@ void EditorTileDropOverlay::_notification(int p_what) {
 		} break;
 
 		case NOTIFICATION_INTERNAL_PROCESS: {
-			const EditorSceneWorkspace::TileDropRegion region = _region_at(get_local_mouse_position());
-			if (region != hovered_region) {
-				hovered_region = region;
-				queue_redraw();
-			}
+			_update_drag_active();
 		} break;
 
 		case NOTIFICATION_DRAW: {
@@ -201,7 +222,7 @@ void EditorTileDropOverlay::_notification(int p_what) {
 }
 
 bool EditorTileDropOverlay::can_drop_data(const Point2 &p_point, const Variant &p_data) const {
-	if (!_is_scene_tab_drag(p_data)) {
+	if (!is_scene_tab_drag(p_data)) {
 		return false;
 	}
 	int source_tile_id = -1;

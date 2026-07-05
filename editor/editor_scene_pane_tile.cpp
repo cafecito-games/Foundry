@@ -98,11 +98,16 @@ void ScenePaneTile::input(const Ref<InputEvent> &p_event) {
 	// Focus-follows-drag: while a drag is under way, focus the tile the
 	// cursor moves over so the drop is handled by that tile's live editor
 	// (which only exists in the focused tile). request_leaf_focus() no-ops
-	// once focused.
+	// once focused. Scene-tab drags are mediated by EditorTileDropOverlay
+	// and EditorSceneTabBar, so retargeting focus mid-drag only churns editor
+	// state and spams errors.
 	if (tile_viewport->gui_is_dragging()) {
 		Ref<InputEventMouseMotion> mm = p_event;
 		if (mm.is_valid() && cursor_is_over_this_tile(mm->get_global_position())) {
-			_request_focus();
+			const Variant drag_data = tile_viewport->gui_get_drag_data();
+			if (!EditorTileDropOverlay::is_scene_tab_drag(drag_data)) {
+				_request_focus();
+			}
 		}
 		return;
 	}

@@ -337,7 +337,7 @@ void EditorSceneTabs::_update_tab_titles() {
 
 	const int tile_current = EditorNode::get_editor_data().get_tile_current_scene(tile_id);
 	int current_tab = EditorNode::get_editor_data().scene_index_to_tile_tab(tile_current);
-	if (scene_tabs->get_tab_count() > 0 && scene_tabs->get_current_tab() != current_tab) {
+	if (scene_tabs->get_tab_count() > 0 && current_tab >= 0 && scene_tabs->get_current_tab() != current_tab) {
 		scene_tabs->set_block_signals(true);
 		scene_tabs->set_current_tab(current_tab);
 		scene_tabs->set_block_signals(false);
