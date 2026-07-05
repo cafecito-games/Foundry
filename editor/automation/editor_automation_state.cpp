@@ -30,6 +30,7 @@
 
 #include "editor_automation_state.h"
 
+#include "editor/automation/editor_automation_workspace.h"
 #include "editor/editor_data.h"
 #include "editor/editor_interface.h"
 #include "editor/editor_main_screen.h"
@@ -181,6 +182,8 @@ Dictionary EditorAutomationState::read_editor_state() {
 		state["unsaved"] = Dictionary();
 		state["main_screen"] = Dictionary();
 		state["modal_stack"] = Array();
+		state["focused_tile_id"] = 0;
+		state["workspace"] = Dictionary();
 		return state;
 	}
 
@@ -307,6 +310,10 @@ Dictionary EditorAutomationState::read_editor_state() {
 	}
 	state["main_screen"] = main_screen;
 	state["modal_stack"] = capture_modal_stack(editor_node);
+
+	const int focused_tile_id = editor_data.get_focused_tile_id();
+	state["focused_tile_id"] = focused_tile_id;
+	state["workspace"] = EditorAutomationWorkspace::capture_workspace_state(&editor_data, EditorNode::get_scene_workspace());
 
 	return state;
 }

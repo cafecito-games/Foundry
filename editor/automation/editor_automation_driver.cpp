@@ -40,6 +40,9 @@
 #include "editor/automation/editor_automation_state.h"
 #include "editor/automation/editor_automation_trace.h"
 #include "editor/automation/editor_automation_workflow.h"
+#include "editor/automation/editor_automation_workspace.h"
+#include "editor/editor_node.h"
+#include "editor/editor_scene_pane_tile.h"
 #include "editor/inspector/editor_inspector.h"
 #include "editor/inspector/editor_properties.h"
 #include "scene/gui/base_button.h"
@@ -1063,6 +1066,85 @@ EditorAutomationActionResult _action_drag(
 	return result;
 }
 
+EditorAutomationActionResult _action_dock(
+		const EditorAutomationSnapshot &p_snapshot,
+		const EditorAutomationElement &p_source_element,
+		const Dictionary &p_options,
+		EditorAutomationRoutePreference p_route_preference) {
+	String region_name = _read_string_option(p_options, "region");
+	if (region_name.is_empty()) {
+		region_name = "center";
+	}
+	const EditorSceneWorkspace::TileDropRegion region = EditorAutomationWorkspace::parse_drop_region(region_name);
+	const int target_tile_id = EditorAutomationWorkspace::resolve_target_tile_id(p_options, p_snapshot);
+	if (target_tile_id < 0) {
+		return _drag_failure(
+				"invalid_parameter",
+				"dock requires `target_tile_id` or a tile container `target_tile`/`target` selector.",
+				p_snapshot,
+				&p_source_element,
+				nullptr);
+	}
+
+	int source_tile_id = -1;
+	int source_tab = -1;
+	if (EditorAutomationWorkspace::resolve_scene_tab_source(p_source_element, source_tile_id, source_tab)) {
+		EditorNode *editor_node = EditorNode::get_singleton();
+		EditorData *editor_data = editor_node != nullptr ? &EditorNode::get_editor_data() : nullptr;
+		EditorSceneWorkspace *workspace = EditorNode::get_scene_workspace();
+		if (editor_data != nullptr && workspace != nullptr &&
+				EditorAutomationWorkspace::dock_scene_tab(editor_data, workspace, source_tile_id, source_tab, target_tile_id, region, editor_node)) {
+			EditorAutomationActionResult result = EditorAutomationActionResult::success(EditorAutomationActionRouteNames::SEMANTIC_DOCK, p_source_element.id);
+			result.details["target_tile_id"] = target_tile_id;
+			result.details["region"] = EditorAutomationWorkspace::drop_region_name(region);
+			result.details["source_tile_id"] = source_tile_id;
+			result.details["source_tab"] = source_tab;
+			return result;
+		}
+	}
+
+	if (p_route_preference == EditorAutomationRoutePreference::SEMANTIC) {
+		return EditorAutomationActionResult::failure("unsupported_route", "dock requires synthesized input events for non-tab sources.");
+	}
+
+	EditorSceneWorkspace *workspace = EditorNode::get_scene_workspace();
+	if (workspace == nullptr) {
+		return _drag_failure("unsupported_route", "No workspace is available for dock input.", p_snapshot, &p_source_element, nullptr);
+	}
+	ScenePaneTile *target_tile = workspace->get_tile_by_id(target_tile_id);
+	ERR_FAIL_NULL_V(target_tile, _drag_failure("invalid_target", "Target tile was not found.", p_snapshot, &p_source_element, nullptr));
+
+	Node *source_node = nullptr;
+	const EditorAutomationActionResult prepare_result = _prepare_element_for_input(p_snapshot, p_source_element, source_node);
+	if (!prepare_result.ok) {
+		return _drag_failure(prepare_result.kind, prepare_result.message, p_snapshot, &p_source_element, nullptr);
+	}
+	Control *source_control = Object::cast_to<Control>(source_node);
+	ERR_FAIL_NULL_V(source_control, _drag_failure("invalid_element", "Dock source is not a control.", p_snapshot, &p_source_element, nullptr));
+
+	const Vector2 source_position = EditorAutomationInput::resolve_position_in_bounds(
+			p_source_element.bounds, EditorAutomationInput::position_options_for_source(p_options));
+	const Vector2 target_position = EditorAutomationWorkspace::global_drop_point(target_tile, region);
+	Viewport *viewport = _viewport_for_node(source_control);
+	ERR_FAIL_NULL_V(viewport, _drag_failure("unsupported_route", "No viewport is available for dock input.", p_snapshot, &p_source_element, nullptr));
+
+	const EditorAutomationInputModifiers modifiers = EditorAutomationInput::parse_modifiers(p_options.get("modifiers", Variant()));
+	const MouseButton button = EditorAutomationInput::parse_mouse_button(String(p_options.get("button", Variant())));
+	const Vector<Vector2> waypoints = _read_waypoints(p_options);
+
+	PackedStringArray events;
+	if (!EditorAutomationInput::push_mouse_drag(viewport, source_position, target_position, waypoints, button, modifiers, events)) {
+		return _drag_failure("unsupported_route", "Dock input could not be dispatched.", p_snapshot, &p_source_element, nullptr);
+	}
+
+	EditorAutomationActionResult result = EditorAutomationActionResult::success(EditorAutomationActionRouteNames::INPUT_DOCK, p_source_element.id);
+	result.events = events;
+	result.focus = _focused_element_id(p_snapshot);
+	result.details["target_tile_id"] = target_tile_id;
+	result.details["region"] = EditorAutomationWorkspace::drop_region_name(region);
+	return result;
+}
+
 String _read_string_option(const Dictionary &p_options, const char *p_key) {
 	if (!p_options.has(p_key)) {
 		return String();
@@ -1152,6 +1234,25 @@ EditorAutomationActionResult EditorAutomationDriver::perform(
 		ERR_FAIL_COND_V(selector_result.match_indices.size() != 1, EditorAutomationActionResult::failure("ambiguous_selector", "Selector matched multiple elements."));
 		const EditorAutomationElement &source_element = p_snapshot.get_element(selector_result.match_indices[0]);
 		EditorAutomationActionResult result = _action_drag(p_snapshot, source_element, p_options, route_preference);
+		if (result.ok) {
+			_enrich_action_result(result, p_snapshot, selector_result, source_element);
+		}
+		_record_action_trace(p_action, p_target, p_snapshot, &source_element, result, log_marker);
+		EditorAutomationTrace::get_singleton().end_action();
+		return result;
+	}
+
+	if (action_kind == EditorAutomationActionKind::DOCK) {
+		const EditorAutomationSelectorResult selector_result = _resolve_target(p_snapshot, p_target);
+		if (selector_result.status != EditorAutomationSelectorStatus::OK) {
+			EditorAutomationActionResult result = _selector_failure(selector_result);
+			_record_action_trace(p_action, p_target, p_snapshot, nullptr, result, log_marker);
+			EditorAutomationTrace::get_singleton().end_action();
+			return result;
+		}
+		ERR_FAIL_COND_V(selector_result.match_indices.size() != 1, EditorAutomationActionResult::failure("ambiguous_selector", "Selector matched multiple elements."));
+		const EditorAutomationElement &source_element = p_snapshot.get_element(selector_result.match_indices[0]);
+		EditorAutomationActionResult result = _action_dock(p_snapshot, source_element, p_options, route_preference);
 		if (result.ok) {
 			_enrich_action_result(result, p_snapshot, selector_result, source_element);
 		}

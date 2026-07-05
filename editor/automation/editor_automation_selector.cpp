@@ -30,6 +30,7 @@
 
 #include "editor_automation_selector.h"
 
+#include "editor/automation/editor_automation_workspace.h"
 #include "core/object/object.h"
 #include "core/variant/variant.h"
 #include "scene/main/node.h"
@@ -300,6 +301,24 @@ EditorAutomationSelectorResult _make_result(EditorAutomationSelectorStatus p_sta
 }
 
 EditorAutomationSelectorResult _resolve_internal(const EditorAutomationSnapshot &p_snapshot, const Dictionary &p_selector, bool p_allow_within) {
+	if (EditorAutomationWorkspace::selector_is_tile_container(p_selector)) {
+		Dictionary tile_only = p_selector;
+		if (tile_only.has("within")) {
+			return _make_result(EditorAutomationSelectorStatus::INVALID_SELECTOR, "invalid_tile_selector", "Tile container selectors cannot be combined with `within`.");
+		}
+		bool has_non_tile_field = false;
+		const char *non_tile_keys[] = { "role", "name", "text", "class", "path", "handle", "id", "role_contains", "name_contains", "text_contains", "class_contains", "path_contains" };
+		for (const char *key : non_tile_keys) {
+			if (_selector_has_key(tile_only, key)) {
+				has_non_tile_field = true;
+				break;
+			}
+		}
+		if (!has_non_tile_field) {
+			return EditorAutomationWorkspace::resolve_tile_container(p_snapshot, tile_only);
+		}
+	}
+
 	const EditorAutomationSnapshotData &data = p_snapshot.get_data();
 	LocalVector<int> search_indices;
 
