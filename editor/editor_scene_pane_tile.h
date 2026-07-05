@@ -42,6 +42,7 @@ class PanelContainer;
 class SceneTreeDock;
 class SubViewportContainer;
 class EditorTileDropOverlay;
+class TextureRect;
 
 /**
  * One self-contained editing unit of the scene workspace:

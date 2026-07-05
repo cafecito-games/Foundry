@@ -38,7 +38,7 @@ class MenuButton;
 class Panel;
 class PanelContainer;
 class PopupMenu;
-class EditorSceneTabBar;
+#include "editor/scene/editor_scene_tab_bar.h"
 class TextureRect;
 
 class EditorSceneTabs : public MarginContainer {

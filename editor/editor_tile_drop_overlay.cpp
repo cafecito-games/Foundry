@@ -36,6 +36,8 @@
 #include "editor/themes/editor_scale.h"
 #include "scene/gui/tab_bar.h"
 #include "scene/main/viewport.h"
+#include "scene/main/window.h"
+#include "scene/resources/style_box_flat.h"
 
 // Guide rosette dimensions from the locked #933 spec (scaled by EDSCALE).
 static constexpr float ROSETTE_GUIDE_SIZE = 100.0f;
@@ -97,29 +99,40 @@ EditorSceneWorkspace::TileDropRegion EditorTileDropOverlay::_region_at(const Poi
 	return EditorSceneWorkspace::drop_region_at(get_size(), p_local);
 }
 
-void EditorTileDropOverlay::_draw_region_preview(const Rect2 &p_preview_rect, const Color &p_accent) const {
-	const float radius = PREVIEW_CORNER_RADIUS * EDSCALE;
-	draw_rect(p_preview_rect, Color(p_accent, 0.17f), true, radius);
-	draw_rect(p_preview_rect, Color(p_accent, 0.95f), false, radius, 2.0f * EDSCALE);
+static Ref<StyleBoxFlat> _make_style_box(const Color &p_bg, const Color &p_border, float p_radius, int p_border_width) {
+	Ref<StyleBoxFlat> style;
+	style.instantiate();
+	style->set_bg_color(p_bg);
+	style->set_border_color(p_border);
+	style->set_border_width_all(p_border_width);
+	style->set_corner_radius_all(p_radius);
+	style->set_corner_detail(8);
+	return style;
 }
 
-void EditorTileDropOverlay::_draw_rosette_button(const Rect2 &p_rect, bool p_aimed, const Ref<Texture2D> &p_icon, const Color &p_accent) const {
+void EditorTileDropOverlay::_draw_region_preview(const Rect2 &p_preview_rect, const Color &p_accent) {
+	const float radius = PREVIEW_CORNER_RADIUS * EDSCALE;
+	const float border_width = 2.0f * EDSCALE;
+	Ref<StyleBoxFlat> fill = _make_style_box(Color(p_accent, 0.17f), Color(p_accent, 0.95f), radius, border_width);
+	draw_style_box(fill, p_preview_rect);
+}
+
+void EditorTileDropOverlay::_draw_rosette_button(const Rect2 &p_rect, bool p_aimed, const Ref<Texture2D> &p_icon, const Color &p_accent) {
 	const float radius = ROSETTE_BUTTON_RADIUS * EDSCALE;
 	const Color fill = p_aimed ? p_accent : ROSETTE_IDLE_FILL;
 	const Color border = p_aimed ? ROSETTE_AIMED_BORDER : ROSETTE_IDLE_BORDER;
-	const Color icon_mod = p_aimed ? ROSETTE_AIMED_ICON : ROSETTE_IDLE_ICON;
-
-	draw_rect(p_rect, fill, true, radius);
-	draw_rect(p_rect, border, false, radius, 1.0f * EDSCALE);
+	Ref<StyleBoxFlat> box = _make_style_box(fill, border, radius, 1);
+	draw_style_box(box, p_rect);
 
 	if (p_icon.is_valid()) {
+		const Color icon_mod = p_aimed ? ROSETTE_AIMED_ICON : ROSETTE_IDLE_ICON;
 		const Size2 icon_size = p_icon->get_size();
 		const Point2 icon_pos = p_rect.position + (p_rect.size - icon_size) * 0.5f;
 		draw_texture_rect(p_icon, Rect2(icon_pos, icon_size), false, icon_mod);
 	}
 }
 
-void EditorTileDropOverlay::_draw_guide_rosette(const Point2 &p_center, EditorSceneWorkspace::TileDropRegion p_aimed_region) const {
+void EditorTileDropOverlay::_draw_guide_rosette(const Point2 &p_center, EditorSceneWorkspace::TileDropRegion p_aimed_region) {
 	const float scale = EDSCALE;
 	const float guide = ROSETTE_GUIDE_SIZE * scale;
 	const float button = ROSETTE_BUTTON_SIZE * scale;

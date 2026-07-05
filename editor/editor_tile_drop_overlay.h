@@ -46,9 +46,9 @@ class EditorTileDropOverlay : public Control {
 	EditorSceneWorkspace::TileDropRegion _region_at(const Point2 &p_local) const;
 	static bool _is_scene_tab_drag(const Variant &p_data);
 	static bool _resolve_source(const Variant &p_data, int &r_source_tile_id, int &r_source_tab);
-	void _draw_region_preview(const Rect2 &p_preview_rect, const Color &p_accent) const;
-	void _draw_guide_rosette(const Point2 &p_center, EditorSceneWorkspace::TileDropRegion p_aimed_region) const;
-	void _draw_rosette_button(const Rect2 &p_rect, bool p_aimed, const Ref<Texture2D> &p_icon, const Color &p_accent) const;
+	void _draw_region_preview(const Rect2 &p_preview_rect, const Color &p_accent);
+	void _draw_guide_rosette(const Point2 &p_center, EditorSceneWorkspace::TileDropRegion p_aimed_region);
+	void _draw_rosette_button(const Rect2 &p_rect, bool p_aimed, const Ref<Texture2D> &p_icon, const Color &p_accent);
 
 protected:
 	void _notification(int p_what);
