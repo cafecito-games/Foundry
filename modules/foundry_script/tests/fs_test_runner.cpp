@@ -137,6 +137,11 @@ static bool saved_project_loaded = false;
 static String saved_app_name;
 static bool saved_project_settings = false;
 
+// Resource path established by the first `init_language()` setup in the current cycle.
+// Per-test ProjectSettings restore guards can revert `resource_path` while the hoisted
+// language stays live; the early-return path below re-applies this root when needed.
+static String language_project_path;
+
 // Counts how many times the heavy language setup actually ran. Suite fixtures
 // assert this stays at one per suite; it is purely test instrumentation.
 static uint64_t init_language_count = 0;
@@ -145,6 +150,14 @@ void init_language(const String &p_base_path) {
 	// Idempotent so repeated `initialize()` calls within a suite reuse the
 	// already-initialized language instead of paying the setup cost each case.
 	if (language_initialized) {
+		ProjectSettings *settings = ProjectSettings::get_singleton();
+		if (!language_project_path.is_empty() &&
+				(!settings->is_project_loaded() || settings->get_resource_path() != language_project_path)) {
+			const Error err = settings->setup(language_project_path, String(), true);
+			if (err) {
+				print_line("Could not reload project settings.");
+			}
+		}
 		return;
 	}
 
@@ -159,6 +172,8 @@ void init_language(const String &p_base_path) {
 	if (err) {
 		print_line("Could not load project settings.");
 		// Keep going since some scripts still work without this.
+	} else {
+		language_project_path = ProjectSettings::get_singleton()->get_resource_path();
 	}
 
 	// Initialize the language for the test routine.
@@ -176,6 +191,7 @@ bool is_fs_language_active() {
 void finish_language() {
 	if (!is_fs_language_active()) {
 		language_initialized = false;
+		language_project_path = String();
 		if (saved_project_settings) {
 			TestProjectSettingsInternalsAccessor::resource_path() = saved_resource_path;
 			TestProjectSettingsInternalsAccessor::project_loaded() = saved_project_loaded;
@@ -188,6 +204,7 @@ void finish_language() {
 	FSLanguage::get_singleton()->finish();
 	ScriptServer::global_classes_clear();
 	language_initialized = false;
+	language_project_path = String();
 	if (saved_project_settings) {
 		TestProjectSettingsInternalsAccessor::resource_path() = saved_resource_path;
 		TestProjectSettingsInternalsAccessor::project_loaded() = saved_project_loaded;
