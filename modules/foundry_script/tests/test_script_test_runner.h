@@ -115,6 +115,12 @@ TEST_CASE("[Modules][FoundryScript][ScriptTestRunner][SceneTree] Sync runtime er
 	CHECK_EQ(run_host_to_completion(runner, PackedStringArray()), EXIT_FAILURE);
 }
 
+TEST_CASE("[Modules][FoundryScript][ScriptTestRunner][SceneTree] Guarded runtime error does not override runner exit code") {
+	prepare_test_runner_project();
+	const Ref<ScriptTestRunner> runner = load_runner_script("res://test_runner_host/sync_guarded_runtime_error.notest.fs");
+	CHECK_EQ(run_host_to_completion(runner, PackedStringArray()), 0);
+}
+
 TEST_CASE("[Modules][FoundryScript][ScriptTestRunner][SceneTree] Async runtime error exits with failure") {
 	prepare_test_runner_project();
 	const Ref<ScriptTestRunner> runner = load_runner_script("res://test_runner_host/async_runtime_error.notest.fs");

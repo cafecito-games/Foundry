@@ -36,6 +36,16 @@
 #include "scene/main/scene_tree.h"
 #include "scene/main/window.h"
 
+ScriptTestRunner::ScriptErrorGuardedCallback ScriptTestRunner::script_error_guarded_callback = nullptr;
+
+void ScriptTestRunner::set_script_error_guarded_callback(ScriptErrorGuardedCallback p_callback) {
+	script_error_guarded_callback = p_callback;
+}
+
+bool ScriptTestRunner::is_script_error_guarded() {
+	return script_error_guarded_callback != nullptr && script_error_guarded_callback();
+}
+
 class ScriptTestRunnerInvoker : public Node {
 	FOUNDRY_CLASS(ScriptTestRunnerInvoker, Node);
 
@@ -49,7 +59,7 @@ class ScriptTestRunnerInvoker : public Node {
 
 	static void _error_handler(void *p_userdata, const char *p_function, const char *p_file, int p_line, const char *p_error, const char *p_explanation, bool p_editor_notify, ErrorHandlerType p_type) {
 		ScriptTestRunnerInvoker *self = static_cast<ScriptTestRunnerInvoker *>(p_userdata);
-		if (p_type == ERR_HANDLER_SCRIPT) {
+		if (p_type == ERR_HANDLER_SCRIPT && !ScriptTestRunner::is_script_error_guarded()) {
 			self->had_script_error = true;
 		}
 	}
