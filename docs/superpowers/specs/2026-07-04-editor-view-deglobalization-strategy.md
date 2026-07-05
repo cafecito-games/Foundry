@@ -101,7 +101,40 @@ flags `.h:244-262`, grid config, toolbar buttons `.h:343-355`, shortcuts). The r
 extraction the engine never did: carve a `CanvasItemEditorView` (+ its State) out of the
 singleton, State first.
 
-## 4. Sequencing — five parallelizable tracks of bite-size units
+## 3.3 Workspace content model — panes, docks, scripts, and cross-pane DnD
+
+A pane (tile) is a **self-contained editing unit bound to one `EditorSceneContext`**. The
+organizing rule: *scene-bound* things live in the pane; *project/app-global* things stay shared.
+
+- **In the pane (per-context):** its scene tab strip, scene tree, inspector, and — extending
+  Phase B to the rest — signals (`ConnectionsDock`), groups (`GroupsEditor`), and history
+  (`HistoryDock`). On `develop @ b51a8d5938` only `SceneTreeDock`/`InspectorDock` expose
+  `set_scene_context()`; the other three are still global singletons (U12), and all of them
+  relocate into the pane with a persisted per-pane dock layout (U13).
+- **Global (shared / app-level):** the tool/snap/toolbar/gizmo controller; the **Game** view
+  (one running game, a single app-level screen); FileSystem, Output, Debugger, Import.
+- **Removed:** the **AssetLib** editor is dropped entirely (separate cleanup issue).
+
+**The workspace holds typed leaves, not just scenes (U14).** `EditorMainScreen`'s modes split
+into *per-pane scene modes* (2D/3D, chosen by scene root type) and *global screens* (Game). U6's
+"honest reparent" therefore reparents only the **2D/3D scene-editing surface** into the focused
+pane, not the whole fullscreen mode switcher. The `LeafNode` gains a generic content type so a
+non-scene leaf can coexist with scene leaves.
+
+**Scripts are a workspace leaf (U15), not a fullscreen mode.** A script is a project resource
+(not scene-owned), so a `ScriptLeaf` carries no `EditorSceneContext`; it is splittable beside any
+scene leaf. This is forced by the node→script drag: the scene tree emits a `"nodes"` drag payload
+(`editor/scene/scene_tree_editor.cpp:1903`) that the script editor consumes as a `get_node(...)`
+reference. That drag is ordinary same-window Control DnD, so it works across panes for free — its
+*only* requirement is that source and target are co-visible, which a script leaf beside a scene
+leaf provides (today it only works because the scene tree is a global side dock).
+
+**Cross-pane DnD with drop-focus.** A reference may be grabbed from **any** pane and dropped onto
+**any** pane with a valid target; completing the drop **focuses the receiving pane** before the
+payload is applied (so its context/edit target is current). This extends #905's "interaction
+focuses the tile first" rule to drop targets, and is a general workspace rule, not script-specific.
+
+## 4. Sequencing — parallelizable tracks of bite-size units
 
 Tracks 1, 2, and 3 touch disjoint files (2D plugin / 3D plugin / new container files) and can
 proceed in parallel. Each unit lands green on `develop` with single-scene parity before the
@@ -159,12 +192,28 @@ next in its track. Liveness (Track 4) is mostly mechanical wiring once the hard 
   untouched). The foundational (single-context) assertions land early alongside U1–U5; the
   cross-tile assertions extend after U6.
 
+### Track 6 — Per-scene docks in the pane
+- **U12 — Signals/groups/history docks per-context.** Extend Phase B's `set_scene_context()` to
+  `ConnectionsDock`, `GroupsEditor`, `HistoryDock`. Parity-only.
+- **U13 — Relocate per-context docks into the pane + per-pane dock layout.** Inspector, signals,
+  groups, history live in the pane bound to its context; persisted per-pane dock arrangement.
+  Depends U12 + U6.
+
+### Track 7 — Workspace content model
+- **U14 — Partition `EditorMainScreen` + generic leaf model.** 2D/3D per-pane scene modes; Game
+  global; `LeafNode` generalized to typed content. Defines U6's reparent boundary. (Assumes the
+  standalone AssetLib-removal cleanup.)
+- **U15 — Scripts as workspace leaves.** `ScriptLeaf` (no `EditorSceneContext`), splittable beside
+  a scene; cross-pane node→script drag with drop-focus. Depends U14 + U6.
+
 ### Dependency summary
 ```
 U1 → U2 → U3 ┐
 U4 → U5 ─────┤→ U8 (needs U3,U6) ─┐
 U6 → U7 ─────┘  U9 (needs U5,U6) ─┴→ U10 → (U11 grows across all)
+U12 → U13 (into pane; needs U6)     U14 → U15 (typed leaves, scripts; needs U6)
 ```
+Standalone cleanup (not a unit): Remove the AssetLib editor plugin (assumed by U14).
 
 ## 5. Observability strategy (the missing safety net)
 
@@ -206,9 +255,11 @@ U6 → U7 ─────┘  U9 (needs U5,U6) ─┴→ U10 → (U11 grows acro
 
 - Fully independent per-tile editors (own toolbar/tool/snap, two concurrently-live `edit()`
   targets, forwarding to multiple views).
-- Tear-off tiles to a separate `Window`/monitor; arbitrary non-scene dockable panels; unifying
-  `EditorDockManager`.
-- Moving signals/groups/node/history docks into the tile (later follow-up).
+- Tear-off tiles to a separate `Window`/monitor; unifying `EditorDockManager`.
+- Game/other main-screen modes as per-pane leaves (Game stays a single global screen); only
+  scenes (U14) and scripts (U15) are pane content in this epic.
+- Full per-leaf script-editor de-globalization (many distinct scripts in distinct leaves at once);
+  U15 delivers script-as-leaf + cross-pane drag first and may stage the deeper extraction.
 
 ## 9. Open questions
 
