@@ -61,9 +61,7 @@ void ScriptLeaf::set_tab_title(const String &p_title) {
 
 void ScriptLeaf::set_script_path(const String &p_path) {
 	script_path = p_path;
-	if (!script_path.is_empty()) {
-		set_tab_title(script_path.get_file());
-	}
+	set_tab_title(script_path.is_empty() ? String("Script") : script_path.get_file());
 }
 
 StringName ScriptLeaf::get_content_type() const {

@@ -4871,6 +4871,10 @@ void EditorNode::_sync_script_leaf_path() {
 	int column = 0;
 	if (ScriptEditor::get_singleton()->get_current_script_view_state(path, line, column) && !path.is_empty()) {
 		script_leaf->set_script_path(path);
+	} else {
+		// No script is open in the shared surface (e.g. the last tab was closed);
+		// clear the leaf so a stale script is not persisted and reopened.
+		script_leaf->set_script_path(String());
 	}
 }
 
@@ -4941,11 +4945,13 @@ void EditorNode::reveal_script_leaf() {
 	// ScriptEditor signals carry a script argument the handler does not need.
 	if (ScriptEditor *script_editor = ScriptEditor::get_singleton()) {
 		const Callable sync = callable_mp(this, &EditorNode::_sync_script_leaf_path).unbind(1);
+		// Deferred: script_close fires before the tab is removed, so run the sync
+		// once the editor's current-script state has settled.
 		if (!script_editor->is_connected("editor_script_changed", sync)) {
-			script_editor->connect("editor_script_changed", sync);
+			script_editor->connect("editor_script_changed", sync, CONNECT_DEFERRED);
 		}
 		if (!script_editor->is_connected("script_close", sync)) {
-			script_editor->connect("script_close", sync);
+			script_editor->connect("script_close", sync, CONNECT_DEFERRED);
 		}
 	}
 	_sync_script_leaf_path();
