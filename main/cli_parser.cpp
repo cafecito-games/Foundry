@@ -688,6 +688,48 @@ static void parse_test_run(CLIParseState &r_state) {
 			if (!require_value(r_state, arg, r_state.result.invocation.test_case)) {
 				return;
 			}
+		} else if (arg == "--progress") {
+			r_state.result.invocation.test_progress = true;
+			r_state.index++;
+		} else if (arg == "--progress-format" || arg.begins_with("--progress-format=")) {
+			String format;
+			if (arg == "--progress-format") {
+				if (!require_value(r_state, arg, format)) {
+					return;
+				}
+			} else {
+				format = arg.get_slice("=", 1);
+				r_state.index++;
+			}
+			if (format != "text" && format != "jsonl") {
+				fail(r_state.result, "Invalid value for --progress-format: " + format + " (expected text or jsonl).");
+				return;
+			}
+			r_state.result.invocation.test_progress_format = format;
+		} else if (arg == "--progress-file" || arg.begins_with("--progress-file=")) {
+			if (arg == "--progress-file") {
+				if (!require_value(r_state, arg, r_state.result.invocation.test_progress_file)) {
+					return;
+				}
+			} else {
+				r_state.result.invocation.test_progress_file = arg.get_slice("=", 1);
+				r_state.index++;
+			}
+		} else if (arg == "--progress-heartbeat-seconds" || arg.begins_with("--progress-heartbeat-seconds=")) {
+			String heartbeat;
+			if (arg == "--progress-heartbeat-seconds") {
+				if (!require_value(r_state, arg, heartbeat)) {
+					return;
+				}
+			} else {
+				heartbeat = arg.get_slice("=", 1);
+				r_state.index++;
+			}
+			if (!heartbeat.is_valid_int()) {
+				fail(r_state.result, "Invalid value for --progress-heartbeat-seconds: " + heartbeat + ".");
+				return;
+			}
+			r_state.result.invocation.test_progress_heartbeat_seconds = heartbeat.to_int();
 		} else if (reject_automation_option(r_state, arg, "test run")) {
 			return;
 		} else {

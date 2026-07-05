@@ -88,6 +88,11 @@ public:
 
 		String test_case;
 
+		bool test_progress = false;
+		String test_progress_format;
+		String test_progress_file;
+		int test_progress_heartbeat_seconds = -1;
+
 		bool print_filenames = false;
 
 		String lsp_port;

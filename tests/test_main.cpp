@@ -34,6 +34,8 @@
 #include "core/io/dir_access.h"
 #include "modules/modules_enabled.gen.h"
 
+#include <cstring>
+
 #ifdef TOOLS_ENABLED
 #include "editor/file_system/editor_paths.h"
 #include "editor/inspector/editor_property_name_processor.h"
@@ -132,6 +134,7 @@
 #include "tests/core/object/test_undo_redo.h"
 #include "tests/core/os/test_foundry_cli_help.h"
 #include "tests/core/os/test_foundry_cli_parser.h"
+#include "tests/core/os/test_foundry_test_progress.h"
 #include "tests/core/os/test_os.h"
 #include "tests/core/string/test_fuzzy_search.h"
 #include "tests/core/string/test_node_path.h"
@@ -251,6 +254,7 @@
 #include "modules/modules_tests.gen.h"
 
 #include "tests/display_server_mock.h"
+#include "tests/foundry_test_progress.h"
 #include "tests/test_macros.h"
 
 #include "scene/theme/theme_db.h"
@@ -283,6 +287,34 @@ static Error cleanup_test_temp_path() {
 	err = DirAccess::remove_absolute(test_path);
 	ERR_FAIL_COND_V_MSG(err != OK, err, "Failed to delete test temp directory");
 	return OK;
+}
+
+static int apply_doctest_args(doctest::Context &p_context, const LocalVector<String> &p_args) {
+	if (p_args.is_empty()) {
+		return 0;
+	}
+
+	char **doctest_args = new char *[p_args.size()];
+	for (uint32_t x = 0; x < p_args.size(); x++) {
+		CharString cs = p_args[x].utf8();
+		const char *str = cs.get_data();
+		doctest_args[x] = new char[strlen(str) + 1];
+		memcpy(doctest_args[x], str, strlen(str) + 1);
+	}
+
+	p_context.applyCommandLine(p_args.size(), doctest_args);
+
+	for (uint32_t x = 0; x < p_args.size(); x++) {
+		delete[] doctest_args[x];
+	}
+	delete[] doctest_args;
+	return 0;
+}
+
+static int run_doctest_context(const LocalVector<String> &p_args) {
+	doctest::Context test_context;
+	ERR_FAIL_COND_V_MSG(apply_doctest_args(test_context, p_args) != 0, 1, "Failed to apply doctest arguments.");
+	return test_context.run();
 }
 
 int test_main(int argc, char *argv[]) {
@@ -321,7 +353,6 @@ int test_main(int argc, char *argv[]) {
 		}
 	}
 	// Doctest runner.
-	doctest::Context test_context;
 	LocalVector<String> test_args;
 
 	// Clean arguments of "--test" from the args.
@@ -332,28 +363,28 @@ int test_main(int argc, char *argv[]) {
 		}
 	}
 
-	if (test_args.size() > 0) {
-		// Convert Godot command line arguments back to standard arguments.
-		char **doctest_args = new char *[test_args.size()];
-		for (uint32_t x = 0; x < test_args.size(); x++) {
-			// Operation to convert Godot string to non wchar string.
-			CharString cs = test_args[x].utf8();
-			const char *str = cs.get_data();
-			// Allocate the string copy.
-			doctest_args[x] = new char[strlen(str) + 1];
-			// Copy this into memory.
-			memcpy(doctest_args[x], str, strlen(str) + 1);
+	for (uint32_t i = 0; i < test_args.size(); i++) {
+		const String &arg = test_args[i];
+		if (arg == "--quiet" || arg == "-q") {
+			FoundryTestProgress::set_doctest_quiet(true);
 		}
-
-		test_context.applyCommandLine(test_args.size(), doctest_args);
-
-		for (uint32_t x = 0; x < test_args.size(); x++) {
-			delete[] doctest_args[x];
-		}
-		delete[] doctest_args;
 	}
 
-	const int result = test_context.run();
+	int result = EXIT_SUCCESS;
+	if (FoundryTestProgress::is_enabled()) {
+		LocalVector<String> count_args = test_args;
+		count_args.push_back("--count");
+		count_args.push_back("--quiet");
+		FoundryTestProgress::begin_counting_pass();
+		result = run_doctest_context(count_args);
+		FoundryTestProgress::end_counting_pass();
+		if (result != EXIT_SUCCESS) {
+			ERR_FAIL_COND_V_MSG(cleanup_test_temp_path() != OK, result != 0 ? result : 1, "Failed to clean test temp path");
+			return result;
+		}
+	}
+
+	result = run_doctest_context(test_args);
 
 #ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 	// Break static/preload reference cycles and drop compiled scripts before ObjectDB

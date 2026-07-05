@@ -199,6 +199,38 @@ TEST_CASE("[FoundryCLIParser] Test run records case filter") {
 	CHECK(has_arg(result.global_args, "--headless"));
 }
 
+TEST_CASE("[FoundryCLIParser] Test run records progress options") {
+	FoundryCLIParser::ParseResult text = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"test",
+			"run",
+			"--progress",
+			"--case",
+			"*FoundryCLIParser*",
+	}));
+	REQUIRE_MESSAGE(text.ok, text.error);
+	CHECK(text.invocation.test_progress);
+	CHECK(text.invocation.test_progress_format.is_empty());
+	CHECK(text.invocation.test_progress_file.is_empty());
+	CHECK_EQ(text.invocation.test_progress_heartbeat_seconds, -1);
+
+	FoundryCLIParser::ParseResult jsonl_file = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"test",
+			"run",
+			"--progress-format=jsonl",
+			"--progress-file",
+			"/tmp/progress.jsonl",
+			"--progress-heartbeat-seconds",
+			"0",
+	}));
+	REQUIRE_MESSAGE(jsonl_file.ok, jsonl_file.error);
+	CHECK_FALSE(jsonl_file.invocation.test_progress);
+	CHECK_EQ(jsonl_file.invocation.test_progress_format, "jsonl");
+	CHECK_EQ(jsonl_file.invocation.test_progress_file, "/tmp/progress.jsonl");
+	CHECK_EQ(jsonl_file.invocation.test_progress_heartbeat_seconds, 0);
+}
+
 TEST_CASE("[FoundryCLIParser] Test fixture generators record paths") {
 	FoundryCLIParser::ParseResult fixtures = FoundryCLIParser::parse(make_args({
 			"foundry",

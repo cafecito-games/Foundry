@@ -117,6 +117,10 @@ const CommandOption SCRIPT_MIGRATE_OPTIONS[] = {
 const CommandOption TEST_RUN_OPTIONS[] = {
 	{ "--project", "dir", PROJECT_OPTION_DESCRIPTION, false },
 	{ "--case", "pattern", "doctest test case filter pattern.", false },
+	{ "--progress", nullptr, "Emit compact doctest progress on stdout.", false },
+	{ "--progress-format", "text|jsonl", "Progress event encoding (default: text).", false, true },
+	{ "--progress-file", "path", "Write progress events to a separate JSONL file.", false },
+	{ "--progress-heartbeat-seconds", "30", "Heartbeat interval while a test runs (0 disables).", false },
 };
 
 const CommandOption TEST_GENERATE_FIXTURES_OPTIONS[] = {
@@ -175,7 +179,7 @@ const CommandSpec COMMANDS[] = {
 	{ "script", "format", "Format Foundry Script files or stdin.", "[--project <dir>] [--check|--write|--diff] [paths...]", FoundryCLIHelp::AVAILABILITY_RELEASE, SCRIPT_FORMAT_OPTIONS, FOUNDRY_CLI_COUNT(SCRIPT_FORMAT_OPTIONS), PATHS_POSITIONAL, FOUNDRY_CLI_COUNT(PATHS_POSITIONAL), "foundry script format --project . --check scripts" },
 	{ "script", "lint", "Lint Foundry Script files.", "[--project <dir>] [--format=<json|sarif>] [--out <path>] [--fail-on=<error|warning>] [paths...]", FoundryCLIHelp::AVAILABILITY_RELEASE, SCRIPT_LINT_OPTIONS, FOUNDRY_CLI_COUNT(SCRIPT_LINT_OPTIONS), PATHS_POSITIONAL, FOUNDRY_CLI_COUNT(PATHS_POSITIONAL), "foundry script lint --project . --format=sarif --out reports/foundry-script.sarif scripts" },
 	{ "script", "migrate", "Run the Foundry Script strict-typing migration wizard.", "--project <dir> [--apply] [--strict <null,dynamic>] [--activate-strict] [--confirm] [--allow-violations] [--acknowledge-vcs] [--follow-up <path>]", FoundryCLIHelp::AVAILABILITY_EDITOR, SCRIPT_MIGRATE_OPTIONS, FOUNDRY_CLI_COUNT(SCRIPT_MIGRATE_OPTIONS), nullptr, 0, "foundry script migrate --trusted --project . --apply --strict null,dynamic --confirm" },
-	{ "test", "run", "Run the engine doctest suites.", "[--project <dir>] [--case <pattern>] [doctest-args...]", FoundryCLIHelp::AVAILABILITY_RELEASE, TEST_RUN_OPTIONS, FOUNDRY_CLI_COUNT(TEST_RUN_OPTIONS), DOCTEST_ARGS_POSITIONAL, FOUNDRY_CLI_COUNT(DOCTEST_ARGS_POSITIONAL), "foundry test run --case \"*FoundryScript*\"" },
+	{ "test", "run", "Run the engine doctest suites.", "[--project <dir>] [--case <pattern>] [--progress] [--progress-format=<text|jsonl>] [--progress-file <path>] [--progress-heartbeat-seconds <n>] [doctest-args...]", FoundryCLIHelp::AVAILABILITY_RELEASE, TEST_RUN_OPTIONS, FOUNDRY_CLI_COUNT(TEST_RUN_OPTIONS), DOCTEST_ARGS_POSITIONAL, FOUNDRY_CLI_COUNT(DOCTEST_ARGS_POSITIONAL), "foundry test run --case \"*FoundryScript*\"" },
 	{ "test", "generate-fixtures", "Regenerate Foundry Script integration test .out fixtures.", "[--project <dir>] [--print-filenames] [paths...]", FoundryCLIHelp::AVAILABILITY_EDITOR, TEST_GENERATE_FIXTURES_OPTIONS, FOUNDRY_CLI_COUNT(TEST_GENERATE_FIXTURES_OPTIONS), PATHS_POSITIONAL, FOUNDRY_CLI_COUNT(PATHS_POSITIONAL), "foundry test generate-fixtures modules/foundry_script/tests/scripts" },
 	{ "test", "generate-format-fixtures", "Regenerate formatter golden expected.fs fixtures.", "[--project <dir>] [paths...]", FoundryCLIHelp::AVAILABILITY_EDITOR, TEST_GENERATE_FORMAT_FIXTURES_OPTIONS, FOUNDRY_CLI_COUNT(TEST_GENERATE_FORMAT_FIXTURES_OPTIONS), PATHS_POSITIONAL, FOUNDRY_CLI_COUNT(PATHS_POSITIONAL), "foundry test generate-format-fixtures modules/foundry_script/tests/scripts/format" },
 	{ "lsp", "serve", "Start the Foundry Script language server.", "[--project <dir>] [--port <port>]", FoundryCLIHelp::AVAILABILITY_EDITOR, LSP_SERVE_OPTIONS, FOUNDRY_CLI_COUNT(LSP_SERVE_OPTIONS), nullptr, 0, "foundry lsp serve --project . --port 6005" },
