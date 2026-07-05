@@ -380,11 +380,14 @@ static int add_test_scene(EditorData &p_data, int p_tile_id, Node2D *p_root = nu
 	p_data.register_tile(p_tile_id);
 	p_data.set_focused_tile_id(p_tile_id);
 	const int idx = p_data.add_edited_scene(-1);
+	if (p_data.get_scene_tile(idx) != p_tile_id) {
+		p_data.set_scene_tile(idx, p_tile_id);
+	}
+	p_data.set_edited_scene(idx);
 	if (p_root) {
 		EditorSceneContext *context = p_data.get_scene_context(idx);
 		context->set_scene_root_node(p_root);
 	}
-	p_data.set_tile_current_scene(p_tile_id, idx);
 	return idx;
 }
 
@@ -411,7 +414,6 @@ TEST_CASE("[SceneTree][Editor] focus-invariant") {
 	const int scene_b = add_test_scene(h.editor_data, tile_a, root_b);
 	h.pump();
 
-	h.editor_data.set_focused_tile_id(tile_a);
 	h.editor_data.set_tile_current_scene(tile_a, scene_a);
 	h.editor_data.set_edited_scene(scene_a);
 	check_focus_invariant(h.editor_data, h.workspace);
@@ -428,13 +430,11 @@ TEST_CASE("[SceneTree][Editor] focus-invariant") {
 
 	h.workspace->set_focused_leaf(tile_b);
 	h.editor_data.set_focused_tile_id(tile_b);
-	h.editor_data.set_tile_current_scene(tile_b, scene_c);
 	h.editor_data.set_edited_scene(scene_c);
 	check_focus_invariant(h.editor_data, h.workspace);
 
 	h.workspace->set_focused_leaf(tile_a);
 	h.editor_data.set_focused_tile_id(tile_a);
-	h.editor_data.set_tile_current_scene(tile_a, scene_b);
 	h.editor_data.set_edited_scene(scene_b);
 	check_focus_invariant(h.editor_data, h.workspace);
 

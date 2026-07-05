@@ -7886,7 +7886,9 @@ void Node3DEditor::_create_world_grid_instances(const Ref<World3D> &p_world) {
 	if (!grid_enabled || p_world.is_null()) {
 		return;
 	}
-	EditorWorldFurniture &furniture = _ensure_world_furniture(p_world);
+	EditorWorldFurniture *furniture_ptr = _get_world_furniture(p_world);
+	ERR_FAIL_NULL(furniture_ptr);
+	EditorWorldFurniture &furniture = *furniture_ptr;
 	for (int c = 0; c < 3; c++) {
 		if (!grid[c].is_valid()) {
 			continue;
