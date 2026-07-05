@@ -719,6 +719,7 @@ private:
 	void _reparent_script_surface_into(ScriptLeaf *p_leaf);
 	void _detach_script_surface();
 	void _close_script_leaf();
+	void _sync_script_leaf_path();
 	void _update_tile_display_attachments();
 	void _sync_scene_viewport_2d_state_with_main_screen();
 	void _update_focused_dock_singletons(ScenePaneTile *p_tile);

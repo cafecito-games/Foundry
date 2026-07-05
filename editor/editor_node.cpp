@@ -4447,15 +4447,20 @@ void EditorNode::_remove_edited_scene(bool p_change_tab, bool p_allow_collapse) 
 	editor_data.remove_scene(old_index);
 
 	const bool tile_emptied = editor_data.get_tile_scene_indices(tile_id).is_empty();
-	// Only collapse the emptied scene tile when another scene tile remains; script
-	// leaves are not scene tiles, so counting them here could collapse the last
-	// scene tile and leave the workspace with no ScenePaneTile.
+	// Only collapse the emptied scene tile when it would promote another scene
+	// tile. Script leaves are not scene tiles, so collapsing into one (e.g. a
+	// script opened beside this tile) would focus a non-scene leaf; keep an empty
+	// scene in the tile instead.
+	bool collapsed_tile = false;
 	if (p_allow_collapse && tile_emptied && scene_workspace && scene_workspace->get_tile_count() > 1) {
 		WorkspaceLeafNode *leaf = scene_workspace->get_leaf_by_id(tile_id);
-		if (leaf) {
+		WorkspaceLeafNode *successor = leaf ? scene_workspace->peek_collapse_successor(leaf) : nullptr;
+		if (leaf && successor && successor->get_pane_tile()) {
 			scene_workspace->collapse(leaf);
+			collapsed_tile = true;
 		}
-	} else {
+	}
+	if (!collapsed_tile) {
 		if (editor_data.get_edited_scene_count() == 0) {
 			editor_data.add_edited_scene(-1);
 		}
@@ -4482,11 +4487,13 @@ void EditorNode::_remove_scene(int index, bool p_change_tab, bool p_allow_collap
 		editor_data.remove_scene(index);
 		if (p_allow_collapse && scene_workspace && scene_workspace->get_tile_count() > 1 && editor_data.get_tile_scene_indices(tile_id).is_empty()) {
 			WorkspaceLeafNode *leaf = scene_workspace->get_leaf_by_id(tile_id);
-			if (leaf) {
+			WorkspaceLeafNode *successor = leaf ? scene_workspace->peek_collapse_successor(leaf) : nullptr;
+			// Only collapse into another scene tile, never into a script leaf.
+			if (leaf && successor && successor->get_pane_tile()) {
 				scene_workspace->collapse(leaf);
+				_update_all_scene_tabs();
+				_update_tile_display_attachments();
 			}
-			_update_all_scene_tabs();
-			_update_tile_display_attachments();
 		}
 	}
 }
@@ -4847,6 +4854,26 @@ void EditorNode::_detach_script_surface() {
 	}
 }
 
+void EditorNode::_sync_script_leaf_path() {
+	if (!scene_workspace || !ScriptEditor::get_singleton()) {
+		return;
+	}
+	WorkspaceLeafNode *leaf = scene_workspace->get_script_leaf();
+	if (!leaf || !leaf->get_leaf_content()) {
+		return;
+	}
+	ScriptLeaf *script_leaf = Object::cast_to<ScriptLeaf>(leaf->get_leaf_content()->get_root_control());
+	if (!script_leaf) {
+		return;
+	}
+	String path;
+	int line = 0;
+	int column = 0;
+	if (ScriptEditor::get_singleton()->get_current_script_view_state(path, line, column) && !path.is_empty()) {
+		script_leaf->set_script_path(path);
+	}
+}
+
 void EditorNode::_close_script_leaf() {
 	if (!scene_workspace) {
 		return;
@@ -4908,6 +4935,16 @@ void EditorNode::reveal_script_leaf() {
 	if (script_leaf) {
 		_reparent_script_surface_into(script_leaf);
 	}
+
+	// Keep the leaf's recorded script in sync when the embedded editor switches or
+	// closes its current tab, so persistence and the tab title stay accurate.
+	if (ScriptEditor *script_editor = ScriptEditor::get_singleton()) {
+		const Callable sync = callable_mp(this, &EditorNode::_sync_script_leaf_path);
+		if (!script_editor->is_connected("edited_script_changed", sync)) {
+			script_editor->connect("edited_script_changed", sync);
+		}
+	}
+	_sync_script_leaf_path();
 }
 
 void EditorNode::_update_tile_display_attachments() {
@@ -7082,7 +7119,10 @@ void EditorNode::_load_workspace_from_config(const Ref<ConfigFile> &p_config_fil
 		ScriptLeaf *script_leaf = content ? Object::cast_to<ScriptLeaf>(content->get_root_control()) : nullptr;
 		if (script_leaf) {
 			const String script_path = script_leaf->get_script_path();
-			if (!script_path.is_empty() && ScriptEditor::get_singleton()) {
+			// Respect the user's "restore open scripts on load" preference; the
+			// ScriptEditor's own layout restore handles reopening otherwise.
+			const bool restore_scripts = bool(EDITOR_GET("text_editor/behavior/files/restore_scripts_on_load"));
+			if (restore_scripts && !script_path.is_empty() && ScriptEditor::get_singleton()) {
 				Ref<Script> script = ResourceLoader::load(script_path, "Script");
 				if (script.is_valid()) {
 					ScriptEditor::get_singleton()->edit(script, false);

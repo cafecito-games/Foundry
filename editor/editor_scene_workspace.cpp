@@ -466,6 +466,28 @@ void EditorSceneWorkspace::collapse(WorkspaceLeafNode *p_leaf) {
 	queue_sort();
 }
 
+WorkspaceLeafNode *EditorSceneWorkspace::peek_collapse_successor(WorkspaceLeafNode *p_leaf) const {
+	if (!p_leaf || leaves.size() <= 1) {
+		return nullptr;
+	}
+	SplitContainer *sc = Object::cast_to<SplitContainer>(p_leaf->get_parent());
+	if (!sc) {
+		return nullptr;
+	}
+	Control *sibling = nullptr;
+	for (int i = 0; i < sc->get_child_count(false); i++) {
+		Control *child = Object::cast_to<Control>(sc->get_child(i, false));
+		if (child && child != p_leaf) {
+			sibling = child;
+			break;
+		}
+	}
+	if (!sibling) {
+		return nullptr;
+	}
+	return _find_first_leaf(sibling);
+}
+
 bool EditorSceneWorkspace::move_content(WorkspaceLeafNode *p_from_leaf, WorkspaceLeafNode *p_to_leaf) {
 	ERR_FAIL_NULL_V(p_from_leaf, false);
 	ERR_FAIL_NULL_V(p_to_leaf, false);

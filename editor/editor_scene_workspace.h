@@ -148,6 +148,9 @@ public:
 	WorkspaceLeafNode *split(WorkspaceLeafNode *p_leaf, bool p_vertical, SplitSide p_side);
 	WorkspaceLeafNode *split_with_content(WorkspaceLeafNode *p_leaf, bool p_vertical, SplitSide p_side, const StringName &p_content_type);
 	void collapse(WorkspaceLeafNode *p_leaf);
+	// The leaf that collapse(p_leaf) would promote (its sibling subtree's first
+	// leaf), without mutating the tree. Null if p_leaf cannot be collapsed.
+	WorkspaceLeafNode *peek_collapse_successor(WorkspaceLeafNode *p_leaf) const;
 	bool move_content(WorkspaceLeafNode *p_from_leaf, WorkspaceLeafNode *p_to_leaf);
 
 	// Script leaves (U15a): at most one script leaf hosts the shared script surface.
