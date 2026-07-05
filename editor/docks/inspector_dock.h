@@ -161,6 +161,7 @@ public:
 	static InspectorDock *get_singleton() { return singleton; }
 	static void set_focused_instance(InspectorDock *p_instance) { singleton = p_instance; }
 	static EditorInspector *get_inspector_singleton() { return singleton ? singleton->inspector : nullptr; }
+	static void expand_all_focused();
 
 protected:
 	static void _bind_methods();

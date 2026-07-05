@@ -33,6 +33,8 @@
 #include "core/io/config_file.h"
 #include "editor/editor_data.h"
 #include "editor/editor_scene_pane_tile.h"
+#include "editor/editor_script_leaf.h"
+#include "editor/editor_workspace_leaf_content.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/gui/split_container.h"
 
@@ -127,37 +129,81 @@ WorkspaceLeafNode *EditorSceneWorkspace::handle_scene_drop(int p_scene_idx, Work
 
 // --- WorkspaceLeafNode ---
 
+String EditorSceneWorkspace::leaf_layout_section(int p_leaf_id) {
+	return vformat("WorkspaceLeaf_%d", p_leaf_id);
+}
+
 void WorkspaceLeafNode::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_SORT_CHILDREN: {
-			if (pane_tile) {
-				fit_child_in_rect(pane_tile, Rect2(Point2(), get_size()));
+			if (leaf_content && leaf_content->get_root_control()) {
+				fit_child_in_rect(leaf_content->get_root_control(), Rect2(Point2(), get_size()));
 			}
 		} break;
 	}
 }
 
-WorkspaceLeafNode *WorkspaceLeafNode::create(int p_leaf_id, EditorSelection *p_editor_selection, EditorData *p_editor_data, const String &p_content_descriptor) {
+WorkspaceLeafNode *WorkspaceLeafNode::create(int p_leaf_id, EditorSelection *p_editor_selection, EditorData *p_editor_data, const StringName &p_content_type) {
 	ERR_FAIL_NULL_V(p_editor_data, nullptr);
 	WorkspaceLeafNode *leaf = memnew(WorkspaceLeafNode);
 	leaf->leaf_id = p_leaf_id;
-	leaf->content_descriptor = p_content_descriptor;
-	leaf->pane_tile = memnew(ScenePaneTile);
-	leaf->pane_tile->setup(p_leaf_id, p_editor_selection, *p_editor_data);
-	leaf->add_child(leaf->pane_tile);
+
+	WorkspaceLeafContent *content = nullptr;
+	if (p_content_type == StringName("script")) {
+		content = memnew(ScriptLeaf);
+	} else {
+		ScenePaneTile *tile = memnew(ScenePaneTile);
+		tile->setup(p_leaf_id, p_editor_selection, *p_editor_data);
+		content = tile;
+	}
+	leaf->set_leaf_content(content);
+
 	leaf->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	leaf->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	leaf->set_custom_minimum_size(Size2(120, 120) * EDSCALE);
 	return leaf;
 }
 
+void WorkspaceLeafNode::set_leaf_content(WorkspaceLeafContent *p_content) {
+	if (leaf_content && leaf_content->get_root_control() && leaf_content->get_root_control()->get_parent() == this) {
+		remove_child(leaf_content->get_root_control());
+	}
+	leaf_content = p_content;
+	if (leaf_content && leaf_content->get_root_control()) {
+		add_child(leaf_content->get_root_control());
+		queue_sort();
+	}
+}
+
+WorkspaceLeafContent *WorkspaceLeafNode::take_leaf_content() {
+	WorkspaceLeafContent *content = leaf_content;
+	if (content && content->get_root_control() && content->get_root_control()->get_parent() == this) {
+		remove_child(content->get_root_control());
+	}
+	leaf_content = nullptr;
+	return content;
+}
+
+ScenePaneTile *WorkspaceLeafNode::get_pane_tile() const {
+	if (leaf_content && leaf_content->get_content_type() == StringName("scene")) {
+		return static_cast<ScenePaneTile *>(leaf_content->get_root_control());
+	}
+	return nullptr;
+}
+
 Control *WorkspaceLeafNode::get_content_host() const {
-	return pane_tile ? pane_tile->get_content_host() : nullptr;
+	ScenePaneTile *tile = get_pane_tile();
+	return tile ? tile->get_content_host() : nullptr;
 }
 
 WorkspaceLeafNode::WorkspaceLeafNode() {
 	set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	set_h_size_flags(Control::SIZE_EXPAND_FILL);
+}
+
+WorkspaceLeafNode::~WorkspaceLeafNode() {
+	// Leaf content controls are freed by the Container child cleanup.
+	leaf_content = nullptr;
 }
 
 // --- WorkspaceSplitNode ---
@@ -263,11 +309,27 @@ WorkspaceLeafNode *EditorSceneWorkspace::_find_first_leaf(Control *p_node) const
 	return nullptr;
 }
 
-WorkspaceLeafNode *EditorSceneWorkspace::_create_leaf(int p_leaf_id, const String &p_content_descriptor) {
+WorkspaceLeafContent *EditorSceneWorkspace::_create_leaf_content(int p_leaf_id, const StringName &p_content_type) {
+	if (p_content_type == StringName("script")) {
+		return memnew(ScriptLeaf);
+	}
+	ScenePaneTile *tile = memnew(ScenePaneTile);
+	tile->setup(p_leaf_id, editor_selection, *editor_data);
+	return tile;
+}
+
+void EditorSceneWorkspace::_mount_leaf_content(WorkspaceLeafNode *p_leaf, WorkspaceLeafContent *p_content) {
+	ERR_FAIL_NULL(p_leaf);
+	p_leaf->set_leaf_content(p_content);
+}
+
+WorkspaceLeafNode *EditorSceneWorkspace::_create_leaf(int p_leaf_id, const StringName &p_content_type) {
 	ERR_FAIL_NULL_V(editor_data, nullptr);
-	WorkspaceLeafNode *leaf = WorkspaceLeafNode::create(p_leaf_id, editor_selection, editor_data, p_content_descriptor);
+	WorkspaceLeafNode *leaf = WorkspaceLeafNode::create(p_leaf_id, editor_selection, editor_data, p_content_type);
 	leaves.push_back(leaf);
-	emit_signal(SNAME("leaf_added"), p_leaf_id);
+	if (!restoring_from_config) {
+		emit_signal(SNAME("leaf_added"), p_leaf_id);
+	}
 	return leaf;
 }
 
@@ -283,7 +345,7 @@ EditorSceneWorkspace *EditorSceneWorkspace::create_single_leaf_workspace(EditorS
 	EditorSceneWorkspace *workspace = memnew(EditorSceneWorkspace);
 	workspace->editor_selection = p_editor_selection;
 	workspace->editor_data = p_editor_data;
-	WorkspaceLeafNode *leaf = workspace->_create_leaf(workspace->next_leaf_id++, "main");
+	WorkspaceLeafNode *leaf = workspace->_create_leaf(workspace->next_leaf_id++, StringName("scene"));
 	workspace->add_child(leaf);
 	workspace->set_focused_leaf(leaf->get_leaf_id());
 	return workspace;
@@ -370,17 +432,17 @@ void EditorSceneWorkspace::collapse(WorkspaceLeafNode *p_leaf) {
 	queue_sort();
 }
 
-bool EditorSceneWorkspace::move_content(const String &p_content, WorkspaceLeafNode *p_from_leaf, WorkspaceLeafNode *p_to_leaf) {
-	ERR_FAIL_COND_V(p_content.is_empty(), false);
+bool EditorSceneWorkspace::move_content(WorkspaceLeafNode *p_from_leaf, WorkspaceLeafNode *p_to_leaf) {
 	ERR_FAIL_NULL_V(p_from_leaf, false);
 	ERR_FAIL_NULL_V(p_to_leaf, false);
 	ERR_FAIL_COND_V(p_from_leaf == p_to_leaf, false);
 	ERR_FAIL_COND_V(!leaves.has(p_from_leaf), false);
 	ERR_FAIL_COND_V(!leaves.has(p_to_leaf), false);
-	ERR_FAIL_COND_V(p_from_leaf->get_content_descriptor() != p_content, false);
 
-	p_from_leaf->set_content_descriptor(String());
-	p_to_leaf->set_content_descriptor(p_content);
+	WorkspaceLeafContent *from_content = p_from_leaf->take_leaf_content();
+	WorkspaceLeafContent *to_content = p_to_leaf->take_leaf_content();
+	p_from_leaf->set_leaf_content(to_content);
+	p_to_leaf->set_leaf_content(from_content);
 	return true;
 }
 
@@ -395,8 +457,15 @@ WorkspaceLeafNode *EditorSceneWorkspace::get_leaf_by_id(int p_id) const {
 
 void EditorSceneWorkspace::set_focused_leaf(int p_id) {
 	ERR_FAIL_NULL(get_leaf_by_id(p_id));
+	if (focused_leaf_id == p_id) {
+		return;
+	}
 	focused_leaf_id = p_id;
 	_update_focus_visuals();
+	WorkspaceLeafNode *leaf = get_leaf_by_id(p_id);
+	if (leaf && leaf->get_leaf_content()) {
+		leaf->get_leaf_content()->on_focus_entered();
+	}
 }
 
 void EditorSceneWorkspace::request_leaf_focus(int p_leaf_id) {
@@ -410,8 +479,9 @@ void EditorSceneWorkspace::request_leaf_focus(int p_leaf_id) {
 void EditorSceneWorkspace::_update_focus_visuals() {
 	const bool show_focus = leaves.size() > 1;
 	for (WorkspaceLeafNode *leaf : leaves) {
-		if (leaf->get_pane_tile()) {
-			leaf->get_pane_tile()->set_focused_visual(show_focus && leaf->get_leaf_id() == focused_leaf_id);
+		ScenePaneTile *tile = leaf->get_pane_tile();
+		if (tile) {
+			tile->set_focused_visual(show_focus && leaf->get_leaf_id() == focused_leaf_id);
 		}
 	}
 }
@@ -435,6 +505,16 @@ Vector<ScenePaneTile *> EditorSceneWorkspace::get_tiles() const {
 	return tiles;
 }
 
+int EditorSceneWorkspace::get_tile_count() const {
+	int count = 0;
+	for (WorkspaceLeafNode *leaf : leaves) {
+		if (leaf->get_pane_tile()) {
+			count++;
+		}
+	}
+	return count;
+}
+
 // Persistence.
 //
 // Flat, index-addressed node list:
@@ -442,7 +522,7 @@ Vector<ScenePaneTile *> EditorSceneWorkspace::get_tiles() const {
 //   node_<i>_type = "split" | "leaf"
 //   split: node_<i>_vertical (bool), node_<i>_offset (int),
 //          node_<i>_child_a (int), node_<i>_child_b (int)
-//   leaf:  node_<i>_leaf_id (int), node_<i>_content (String)
+//   leaf:  node_<i>_leaf_id (int), node_<i>_content_type (String)
 
 struct WorkspaceSaveWalker {
 	Ref<ConfigFile> config;
@@ -454,7 +534,11 @@ struct WorkspaceSaveWalker {
 		if (leaf) {
 			config->set_value("Workspace", vformat("node_%d_type", index), "leaf");
 			config->set_value("Workspace", vformat("node_%d_leaf_id", index), leaf->get_leaf_id());
-			config->set_value("Workspace", vformat("node_%d_content", index), leaf->get_content_descriptor());
+			if (leaf->get_leaf_content()) {
+				config->set_value("Workspace", vformat("node_%d_content_type", index), leaf->get_leaf_content()->get_content_type());
+				const String layout_section = EditorSceneWorkspace::leaf_layout_section(leaf->get_leaf_id());
+				leaf->get_leaf_content()->save_layout(config, layout_section);
+			}
 			return index;
 		}
 
@@ -544,9 +628,17 @@ Control *EditorSceneWorkspace::_restore_node_from_config(const Ref<ConfigFile> &
 	}
 
 	const int leaf_id = int(p_config->get_value(WORKSPACE_CONFIG_SECTION, vformat("node_%d_leaf_id", p_node), 0));
-	const String content = p_config->get_value(WORKSPACE_CONFIG_SECTION, vformat("node_%d_content", p_node), String());
-	WorkspaceLeafNode *leaf = _create_leaf(leaf_id, content);
+	String content_type = p_config->get_value(WORKSPACE_CONFIG_SECTION, vformat("node_%d_content_type", p_node), String());
+	if (content_type.is_empty()) {
+		// Legacy sessions stored an opaque content descriptor string.
+		content_type = "scene";
+	}
+	WorkspaceLeafNode *leaf = _create_leaf(leaf_id, content_type);
 	next_leaf_id = MAX(next_leaf_id, leaf_id + 1);
+	if (leaf && leaf->get_leaf_content()) {
+		const String layout_section = leaf_layout_section(leaf_id);
+		leaf->get_leaf_content()->load_layout(p_config, layout_section);
+	}
 	return leaf;
 }
 
@@ -568,6 +660,7 @@ void EditorSceneWorkspace::restore_from_config(const Ref<ConfigFile> &p_config) 
 	const int root_node = int(p_config->get_value(WORKSPACE_CONFIG_SECTION, "root_node", 0));
 	const int node_count = int(p_config->get_value(WORKSPACE_CONFIG_SECTION, "node_count", 0));
 
+	restoring_from_config = true;
 	_clear_tree();
 
 	HashSet<int> visited;
@@ -582,6 +675,7 @@ void EditorSceneWorkspace::restore_from_config(const Ref<ConfigFile> &p_config) 
 	}
 	set_focused_leaf(saved_focus);
 	queue_sort();
+	restoring_from_config = false;
 }
 
 EditorSceneWorkspace::EditorSceneWorkspace() {

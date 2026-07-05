@@ -398,6 +398,7 @@ TEST_CASE("[Editor][EditorAutomation] MVP acceptance workflow subprocess") {
 	List<String> arguments;
 	arguments.push_back("editor");
 	arguments.push_back("open");
+	arguments.push_back("--headless");
 	arguments.push_back("--project");
 	arguments.push_back(project_path);
 	arguments.push_back("--automation");
@@ -477,6 +478,7 @@ TEST_CASE("[Editor][EditorAutomation] explicit automation port conflict subproce
 	List<String> arguments;
 	arguments.push_back("editor");
 	arguments.push_back("open");
+	arguments.push_back("--headless");
 	arguments.push_back("--project");
 	arguments.push_back(project_path);
 	arguments.push_back("--automation");
@@ -510,6 +512,7 @@ TEST_CASE("[Editor][EditorAutomation] rapid relaunch reuses released automation 
 	List<String> arguments;
 	arguments.push_back("editor");
 	arguments.push_back("open");
+	arguments.push_back("--headless");
 	arguments.push_back("--project");
 	arguments.push_back(project_path);
 	arguments.push_back("--automation");
@@ -538,6 +541,7 @@ TEST_CASE("[Editor][EditorAutomation] rapid relaunch reuses released automation 
 	arguments.clear();
 	arguments.push_back("editor");
 	arguments.push_back("open");
+	arguments.push_back("--headless");
 	arguments.push_back("--project");
 	arguments.push_back(project_path);
 	arguments.push_back("--automation");
@@ -580,6 +584,7 @@ TEST_CASE("[Editor][EditorAutomation][MCP] launched editor smoke handshake") {
 	List<String> arguments;
 	arguments.push_back("editor");
 	arguments.push_back("open");
+	arguments.push_back("--headless");
 	arguments.push_back("--project");
 	arguments.push_back(project_path);
 	arguments.push_back("--automation");

@@ -88,7 +88,16 @@ Tree operations:
 
 The node type is intentionally general so **A** can later add a `TabNode` (stack arbitrary
 panels), non-scene leaf types, and a per-`Window` host for tear-off, **without** reshaping
-this layer. In B, leaf contents are constrained to `ScenePaneTile`.
+this layer. In B, leaf contents are constrained to `ScenePaneTile` and stub `ScriptLeaf` types via the
+`WorkspaceLeafContent` interface (#941 U14); tree ops and persistence are content-type-agnostic.
+
+### 1b. Global Game screen presentation (#941 U14)
+
+Game is **not** a workspace leaf. The Game top-bar toggle selects a single app-level screen
+(`EditorMainScreen::global_screen_vbox`) parented under `GlobalScreenHost` in the editor
+center overlay. While Game is active, the host is shown and the tiled workspace is hidden;
+embedded play reparents the running game into this global region. There is exactly one running
+game instance shared across the editor shell.
 
 ### 2. `ScenePaneTile` — the self-contained editing unit
 
@@ -154,9 +163,12 @@ Unchanged from Phase C — this is the merged, load-bearing compatibility trick 
 ### 5. Liveness — two milestones
 
 **Milestone 1 (structure; revises #827):** honest reparent, no overlay.
-- The single `EditorMainScreen` (2D/3D/Script switcher) is **reparented as a real child** of
-  the focused tile's viewport host and laid out by the container — **not** absolute-positioned
-  and manually fitted. This deletes the overlay-fit machinery
+- Only the **scene-mode surface** (`EditorMainScreen::scene_mode_vbox`, hosting 2D/3D) is
+  **reparented as a real child** of the focused tile's viewport host and laid out by the
+  container — **not** absolute-positioned and manually fitted. Script remains an app-level
+  screen (`app_screen_vbox`); **Game is a single global screen** (`global_screen_vbox`) that
+  overlays the workspace region while running and is never a workspace leaf (#941 U14).
+  This deletes the overlay-fit machinery
   (`fit_overlay_to_focused_pane()` at `editor/editor_scene_workspace.cpp:316`,
   `_fit_main_screen_to_focused_pane()` at `editor/editor_node.cpp:4932`) and the two engine
   band-aid patches (`scene/gui/subviewport_container.cpp` update-mode override,

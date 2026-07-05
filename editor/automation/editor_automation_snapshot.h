@@ -49,6 +49,11 @@ class Node;
 // `internal = true` so agents can avoid depending on it by default.
 struct EditorAutomationSnapshotOptions {
 	bool include_internal = false;
+	// When true, roots registered via set_relaxed_visibility_roots() are walked
+	// even if CanvasItem::is_visible_in_tree() is false. Used for focused
+	// in-tile scene/inspector docks that remain the active editing surface while
+	// layout parents are still settling visibility during startup.
+	bool relaxed_visibility_roots = false;
 };
 
 class EditorAutomationSnapshot {

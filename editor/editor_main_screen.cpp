@@ -79,6 +79,16 @@ void EditorMainScreen::set_button_container(HBoxContainer *p_button_hb) {
 	button_hb = p_button_hb;
 }
 
+EditorMainScreen::ScreenPlacement EditorMainScreen::_get_plugin_placement(const String &p_plugin_name) const {
+	if (p_plugin_name == "Game") {
+		return SCREEN_GLOBAL;
+	}
+	if (p_plugin_name == "Script") {
+		return SCREEN_APP;
+	}
+	return SCREEN_SCENE_MODE;
+}
+
 void EditorMainScreen::save_layout_to_config(Ref<ConfigFile> p_config_file, const String &p_section) const {
 	int selected_main_editor_idx = -1;
 	for (int i = 0; i < buttons.size(); i++) {
@@ -195,6 +205,14 @@ void EditorMainScreen::select(int p_index) {
 	selected_plugin->make_visible(true);
 	selected_plugin->selected_notify();
 
+	const ScreenPlacement placement = _get_plugin_placement(selected_plugin->get_plugin_name());
+	if (app_screen_vbox) {
+		app_screen_vbox->set_visible(placement == SCREEN_APP);
+	}
+	if (global_screen_vbox) {
+		global_screen_vbox->set_visible(placement == SCREEN_GLOBAL);
+	}
+
 	EditorData &editor_data = EditorNode::get_editor_data();
 	int plugin_count = editor_data.get_editor_plugin_count();
 	for (int i = 0; i < plugin_count; i++) {
@@ -202,6 +220,7 @@ void EditorMainScreen::select(int p_index) {
 	}
 
 	EditorNode::get_singleton()->update_distraction_free_mode();
+	EditorNode::get_singleton()->update_global_screen_visibility();
 }
 
 int EditorMainScreen::get_selected_index() const {
@@ -252,8 +271,34 @@ bool EditorMainScreen::can_auto_switch_screens() const {
 	return false;
 }
 
+bool EditorMainScreen::is_scene_mode_selected() const {
+	if (!selected_plugin) {
+		return false;
+	}
+	return _get_plugin_placement(selected_plugin->get_plugin_name()) == SCREEN_SCENE_MODE;
+}
+
+bool EditorMainScreen::is_global_screen_selected() const {
+	if (!selected_plugin) {
+		return false;
+	}
+	return _get_plugin_placement(selected_plugin->get_plugin_name()) == SCREEN_GLOBAL;
+}
+
+VBoxContainer *EditorMainScreen::get_scene_mode_control() const {
+	return scene_mode_vbox;
+}
+
+VBoxContainer *EditorMainScreen::get_app_screen_control() const {
+	return app_screen_vbox;
+}
+
+VBoxContainer *EditorMainScreen::get_global_screen_control() const {
+	return global_screen_vbox;
+}
+
 VBoxContainer *EditorMainScreen::get_control() const {
-	return main_screen_vbox;
+	return scene_mode_vbox;
 }
 
 void EditorMainScreen::add_main_plugin(EditorPlugin *p_editor) {
@@ -314,9 +359,22 @@ void EditorMainScreen::remove_main_plugin(EditorPlugin *p_editor) {
 }
 
 EditorMainScreen::EditorMainScreen() {
-	main_screen_vbox = memnew(VBoxContainer);
-	main_screen_vbox->set_name("MainScreen");
-	main_screen_vbox->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	main_screen_vbox->add_theme_constant_override("separation", 0);
-	add_child(main_screen_vbox);
+	scene_mode_vbox = memnew(VBoxContainer);
+	scene_mode_vbox->set_name("SceneModeScreen");
+	scene_mode_vbox->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	scene_mode_vbox->add_theme_constant_override("separation", 0);
+
+	app_screen_vbox = memnew(VBoxContainer);
+	app_screen_vbox->set_name("AppScreen");
+	app_screen_vbox->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	app_screen_vbox->add_theme_constant_override("separation", 0);
+	app_screen_vbox->hide();
+
+	global_screen_vbox = memnew(VBoxContainer);
+	global_screen_vbox->set_name("GlobalScreen");
+	global_screen_vbox->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	global_screen_vbox->add_theme_constant_override("separation", 0);
+	global_screen_vbox->hide();
+
+	set_v_size_flags(Control::SIZE_EXPAND_FILL);
 }

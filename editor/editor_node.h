@@ -340,6 +340,7 @@ private:
 	DockSplitContainer *right_r_vsplit = nullptr;
 	Control *center_overlay = nullptr;
 	EditorSceneWorkspace *scene_workspace = nullptr;
+	Control *global_screen_host = nullptr;
 
 	// Main tabs.
 	EditorSceneTabs *scene_tabs = nullptr;
@@ -712,7 +713,7 @@ private:
 
 	void _save_workspace_to_config(Ref<ConfigFile> p_config_file);
 	void _load_workspace_from_config(const Ref<ConfigFile> &p_config_file);
-	void _reparent_main_screen_into(ScenePaneTile *p_tile);
+	void _reparent_scene_mode_into(ScenePaneTile *p_tile);
 	void _update_tile_display_attachments();
 	void _sync_scene_viewport_2d_state_with_main_screen();
 	void _update_focused_dock_singletons(ScenePaneTile *p_tile);
@@ -874,6 +875,7 @@ public:
 	void new_inherited_scene() { _menu_option_confirm(SCENE_NEW_INHERITED_SCENE, false); }
 
 	void update_distraction_free_mode();
+	void update_global_screen_visibility();
 	void set_distraction_free_mode(bool p_enter);
 	bool is_distraction_free_mode_enabled() const;
 	void update_distraction_free_button_theme();

@@ -37,6 +37,8 @@
 #include "editor/editor_scene_context.h"
 #include "editor/editor_scene_pane_tile.h"
 #include "editor/editor_scene_workspace.h"
+#include "editor/editor_script_leaf.h"
+#include "editor/editor_workspace_leaf_content.h"
 #include "editor/scene/editor_scene_tabs.h"
 
 #include "scene/2d/node_2d.h"
@@ -282,6 +284,17 @@ TEST_CASE("[SceneTree][Editor] tree-split-collapse") {
 	h.unmount();
 }
 
+static void replace_leaf_with_script(WorkspaceLeafNode *p_leaf, const String &p_title) {
+	ERR_FAIL_NULL(p_leaf);
+	WorkspaceLeafContent *previous = p_leaf->take_leaf_content();
+	if (previous) {
+		memdelete(previous->get_root_control());
+	}
+	ScriptLeaf *script = memnew(ScriptLeaf);
+	script->set_tab_title(p_title);
+	p_leaf->set_leaf_content(script);
+}
+
 TEST_CASE("[SceneTree][Editor] tree-move") {
 	WorkspaceHarness h;
 	h.mount();
@@ -291,16 +304,24 @@ TEST_CASE("[SceneTree][Editor] tree-move") {
 	h.pump();
 	REQUIRE(second != nullptr);
 
-	first->set_content_descriptor("pane_a");
-	second->set_content_descriptor(String());
+	REQUIRE(first->get_leaf_content() != nullptr);
+	REQUIRE(second->get_leaf_content() != nullptr);
+	CHECK(first->get_leaf_content()->get_content_type() == StringName("scene"));
+	CHECK(second->get_leaf_content()->get_content_type() == StringName("scene"));
 
-	CHECK(h.workspace->move_content("pane_a", first, second));
-	CHECK(first->get_content_descriptor().is_empty());
-	CHECK(second->get_content_descriptor() == "pane_a");
+	replace_leaf_with_script(first, "pane_a");
+	CHECK(first->get_leaf_content()->get_content_type() == StringName("script"));
 
-	// Moving content that is not present fails cleanly.
-	CHECK_FALSE(h.workspace->move_content("pane_a", first, second));
-	CHECK_FALSE(h.workspace->move_content("pane_a", second, second));
+	CHECK(h.workspace->move_content(first, second));
+	CHECK(first->get_leaf_content()->get_content_type() == StringName("scene"));
+	CHECK(second->get_leaf_content()->get_content_type() == StringName("script"));
+	CHECK(second->get_leaf_content()->get_tab_title() == "pane_a");
+
+	CHECK(h.workspace->move_content(first, second));
+	CHECK(first->get_leaf_content()->get_content_type() == StringName("script"));
+	CHECK(second->get_leaf_content()->get_content_type() == StringName("scene"));
+
+	CHECK_FALSE(h.workspace->move_content(first, first));
 
 	h.unmount();
 }
@@ -310,14 +331,13 @@ TEST_CASE("[SceneTree][Editor] tree-persist") {
 	h.mount();
 
 	WorkspaceLeafNode *first = h.workspace->get_focused_leaf();
-	first->set_content_descriptor("main");
 	WorkspaceLeafNode *second = h.workspace->split(first, false, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
 	h.pump();
 	WorkspaceLeafNode *third = h.workspace->split(second, true, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
 	h.pump();
 	REQUIRE(h.workspace->get_leaf_count() == 3);
 
-	second->set_content_descriptor("aux");
+	replace_leaf_with_script(second, "aux");
 	h.workspace->set_focused_leaf(second->get_leaf_id());
 
 	WorkspaceSplitNode *root_split = Object::cast_to<WorkspaceSplitNode>(h.workspace->get_child(0, false));
@@ -334,7 +354,6 @@ TEST_CASE("[SceneTree][Editor] tree-persist") {
 
 	const Vector<int> expected_leaf_ids = { first->get_leaf_id(), second->get_leaf_id(), third->get_leaf_id() };
 	const int saved_focus = second->get_leaf_id();
-	const String saved_main = "main";
 	const String saved_aux = "aux";
 
 	h.unmount();
@@ -350,19 +369,15 @@ TEST_CASE("[SceneTree][Editor] tree-persist") {
 	}
 	CHECK(h2.workspace->get_focused_leaf_id() == saved_focus);
 
-	WorkspaceLeafNode *restored_main = nullptr;
-	WorkspaceLeafNode *restored_aux = nullptr;
+	WorkspaceLeafNode *restored_script = nullptr;
 	for (WorkspaceLeafNode *leaf : h2.workspace->get_leaves()) {
-		if (leaf->get_content_descriptor() == saved_main) {
-			restored_main = leaf;
-		}
-		if (leaf->get_content_descriptor() == saved_aux) {
-			restored_aux = leaf;
+		if (leaf->get_leaf_content() && leaf->get_leaf_content()->get_content_type() == StringName("script")) {
+			restored_script = leaf;
 		}
 	}
-	REQUIRE(restored_main != nullptr);
-	REQUIRE(restored_aux != nullptr);
-	CHECK(restored_aux->get_leaf_id() == saved_focus);
+	REQUIRE(restored_script != nullptr);
+	CHECK(restored_script->get_leaf_content()->get_tab_title() == saved_aux);
+	CHECK(restored_script->get_leaf_id() == saved_focus);
 
 	WorkspaceSplitNode *restored_root = Object::cast_to<WorkspaceSplitNode>(h2.workspace->get_child(0, false));
 	REQUIRE(restored_root != nullptr);
@@ -530,9 +545,9 @@ TEST_CASE("[SceneTree][Editor] tile-id-model") {
 	CHECK(h.editor_data.get_tile_scene_indices(tile_a).size() == 2);
 	CHECK(h.editor_data.get_tile_scene_indices(tile_b).size() == 1);
 
-	h.workspace->move_content("main", h.workspace->get_leaf_by_id(tile_a), second);
+	h.workspace->move_content(h.workspace->get_leaf_by_id(tile_a), second);
 	h.pump();
-	CHECK(second->get_content_descriptor() == "main");
+	CHECK(second->get_leaf_content()->get_content_type() == StringName("scene"));
 
 	Ref<ConfigFile> config;
 	config.instantiate();
@@ -745,6 +760,67 @@ TEST_CASE("[SceneTree][Editor] preview-camera-state") {
 	CHECK(expected_origin.is_equal_approx(Vector3(1, 2, 11)));
 
 	memdelete(tile);
+}
+
+TEST_CASE("[SceneTree][Editor] leaf-content-generic") {
+	WorkspaceHarness h;
+	h.mount();
+
+	WorkspaceLeafNode *scene_leaf = h.workspace->get_focused_leaf();
+	REQUIRE(scene_leaf != nullptr);
+	REQUIRE(scene_leaf->get_leaf_content() != nullptr);
+	CHECK(scene_leaf->get_leaf_content()->get_content_type() == StringName("scene"));
+	CHECK(scene_leaf->get_pane_tile() != nullptr);
+
+	WorkspaceLeafNode *script_leaf_node = h.workspace->split(scene_leaf, false, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
+	h.pump();
+	REQUIRE(script_leaf_node != nullptr);
+	replace_leaf_with_script(script_leaf_node, "ScriptPane");
+	CHECK(script_leaf_node->get_leaf_content()->get_content_type() == StringName("script"));
+	CHECK(script_leaf_node->get_leaf_content()->get_scene_context() == nullptr);
+	CHECK(scene_leaf->get_leaf_content()->get_scene_context() == nullptr); // no open scene in harness
+
+	CHECK(h.workspace->move_content(scene_leaf, script_leaf_node));
+	CHECK(scene_leaf->get_leaf_content()->get_content_type() == StringName("script"));
+	CHECK(script_leaf_node->get_leaf_content()->get_content_type() == StringName("scene"));
+	CHECK(script_leaf_node->get_pane_tile() != nullptr);
+
+	WorkspaceLeafNode *third = h.workspace->split(script_leaf_node, true, EditorSceneWorkspace::SPLIT_SIDE_FIRST);
+	h.pump();
+	REQUIRE(third != nullptr);
+	CHECK(h.workspace->get_leaf_count() == 3);
+
+	h.workspace->collapse(third);
+	h.pump();
+	CHECK(h.workspace->get_leaf_count() == 2);
+
+	Ref<ConfigFile> config;
+	config.instantiate();
+	EditorSceneWorkspace::save_to_config(config, h.workspace);
+
+	const int scene_leaf_id = scene_leaf->get_leaf_id();
+	const int script_leaf_id = script_leaf_node->get_leaf_id();
+	const String saved_script_title = scene_leaf->get_leaf_content()->get_tab_title();
+
+	h.unmount();
+
+	WorkspaceHarness h2;
+	h2.mount();
+	h2.workspace->restore_from_config(config);
+	h2.pump();
+
+	CHECK(h2.workspace->get_leaf_count() == 2);
+	WorkspaceLeafNode *restored_scene = h2.workspace->get_leaf_by_id(script_leaf_id);
+	WorkspaceLeafNode *restored_script = h2.workspace->get_leaf_by_id(scene_leaf_id);
+	REQUIRE(restored_scene != nullptr);
+	REQUIRE(restored_script != nullptr);
+	CHECK(restored_scene->get_leaf_content()->get_content_type() == StringName("scene"));
+	CHECK(restored_script->get_leaf_content()->get_content_type() == StringName("script"));
+	CHECK(restored_script->get_leaf_content()->get_tab_title() == saved_script_title);
+	CHECK(restored_scene->get_leaf_content()->get_scene_context() == nullptr);
+	CHECK(restored_script->get_leaf_content()->get_scene_context() == nullptr);
+
+	h2.unmount();
 }
 
 } // namespace TestSceneWorkspace

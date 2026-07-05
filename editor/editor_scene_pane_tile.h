@@ -32,9 +32,13 @@
 
 #include "scene/gui/box_container.h"
 
+#include "editor/editor_workspace_leaf_content.h"
+
 class Camera3D;
 class CanvasItemEditorView;
+class ConfigFile;
 class EditorData;
+class EditorSceneContext;
 class EditorSceneTabs;
 class EditorSelection;
 class HSplitContainer;
@@ -46,6 +50,7 @@ class SceneTreeDock;
 class SubViewport;
 class SubViewportContainer;
 class EditorTileDropOverlay;
+class Texture2D;
 class TextureRect;
 class World3D;
 
@@ -59,15 +64,16 @@ enum class TilePreviewMode {
  * One self-contained editing unit of the scene workspace:
  * [scene tab strip] + [scene tree dock | content host | inspector dock].
  *
- * The focused tile's content host hosts the single EditorMainScreen (as a
- * real laid-out child); non-focused 2D tiles host a live CanvasItemEditorView
- * and non-focused 3D tiles host a live Node3DEditorViewport. Any interaction
- * inside the tile focuses it first.
+ * The focused tile's content host hosts the single scene-mode surface (2D/3D
+ * only) as a real laid-out child; non-focused 2D tiles host a live
+ * CanvasItemEditorView and non-focused 3D tiles host a live Node3DEditorViewport.
+ * Any interaction inside the tile focuses it first.
  */
-class ScenePaneTile : public VBoxContainer {
+class ScenePaneTile : public VBoxContainer, public WorkspaceLeafContent {
 	FOUNDRY_CLASS(ScenePaneTile, VBoxContainer);
 
 	int tile_id = 0;
+	EditorData *editor_data = nullptr;
 	EditorSceneTabs *scene_tabs = nullptr;
 	HSplitContainer *body = nullptr;
 	SceneTreeDock *scene_tree_dock = nullptr; // Left, in-tile.
@@ -118,6 +124,15 @@ public:
 	void apply_3d_preview_camera_state(const Dictionary &p_viewport_state);
 
 	void setup(int p_tile_id, EditorSelection *p_editor_selection, EditorData &p_editor_data);
+
+	StringName get_content_type() const override;
+	Control *get_root_control() const override;
+	String get_tab_title() const override;
+	Ref<Texture2D> get_tab_icon() const override;
+	EditorSceneContext *get_scene_context() const override;
+	void on_focus_entered() override;
+	void save_layout(const Ref<ConfigFile> &p_config, const String &p_section) const override;
+	void load_layout(const Ref<ConfigFile> &p_config, const String &p_section) override;
 
 	ScenePaneTile();
 	~ScenePaneTile();

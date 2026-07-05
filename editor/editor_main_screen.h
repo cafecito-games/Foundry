@@ -38,6 +38,15 @@ class EditorPlugin;
 class HBoxContainer;
 class VBoxContainer;
 
+/**
+ * Main-screen switcher for the editor shell.
+ *
+ * Scene modes (2D/3D) live in scene_mode_vbox and are reparented into the
+ * focused workspace tile. Script lives in app_screen_vbox at the workspace
+ * level. Game lives in global_screen_vbox and overlays the workspace region
+ * as the single app-level running-game screen (see docs/superpowers/specs/
+ * 2026-07-04-multi-scene-tiled-workspace-design.md).
+ */
 class EditorMainScreen : public PanelContainer {
 	FOUNDRY_CLASS(EditorMainScreen, PanelContainer);
 
@@ -47,11 +56,18 @@ public:
 		EDITOR_3D,
 		EDITOR_SCRIPT,
 		EDITOR_GAME,
-		EDITOR_ASSETLIB,
+	};
+
+	enum ScreenPlacement {
+		SCREEN_SCENE_MODE,
+		SCREEN_APP,
+		SCREEN_GLOBAL,
 	};
 
 private:
-	VBoxContainer *main_screen_vbox = nullptr;
+	VBoxContainer *scene_mode_vbox = nullptr;
+	VBoxContainer *app_screen_vbox = nullptr;
+	VBoxContainer *global_screen_vbox = nullptr;
 	EditorPlugin *selected_plugin = nullptr;
 
 	HBoxContainer *button_hb = nullptr;
@@ -60,6 +76,7 @@ private:
 	HashMap<String, EditorPlugin *> main_editor_plugins;
 
 	int _get_current_main_editor() const;
+	ScreenPlacement _get_plugin_placement(const String &p_plugin_name) const;
 
 protected:
 	void _notification(int p_what);
@@ -82,7 +99,12 @@ public:
 	EditorPlugin *get_selected_plugin() const;
 	EditorPlugin *get_plugin_by_name(const String &p_plugin_name) const;
 	bool can_auto_switch_screens() const;
+	bool is_scene_mode_selected() const;
+	bool is_global_screen_selected() const;
 
+	VBoxContainer *get_scene_mode_control() const;
+	VBoxContainer *get_app_screen_control() const;
+	VBoxContainer *get_global_screen_control() const;
 	VBoxContainer *get_control() const;
 
 	void add_main_plugin(EditorPlugin *p_editor);
