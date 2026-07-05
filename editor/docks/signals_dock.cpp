@@ -30,6 +30,7 @@
 
 #include "signals_dock.h"
 
+#include "editor/editor_scene_context.h"
 #include "editor/scene/connections_dialog.h"
 #include "editor/settings/editor_command_palette.h"
 
@@ -39,6 +40,14 @@ void SignalsDock::update_lists() {
 
 void SignalsDock::set_object(Object *p_object) {
 	connections->set_object(p_object);
+}
+
+void SignalsDock::set_scene_context(EditorSceneContext *p_context) {
+	connections->set_scene_context(p_context);
+}
+
+EditorSceneContext *SignalsDock::get_scene_context() const {
+	return connections->get_scene_context();
 }
 
 SignalsDock::SignalsDock() {

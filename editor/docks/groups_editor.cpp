@@ -32,6 +32,7 @@
 
 #include "editor/docks/scene_tree_dock.h"
 #include "editor/editor_node.h"
+#include "editor/editor_scene_context.h"
 #include "editor/editor_string_names.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/gui/editor_validation_panel.h"
@@ -44,11 +45,11 @@
 #include "scene/gui/label.h"
 #include "scene/resources/packed_scene.h"
 
-static bool can_edit(Node *p_node, const String &p_group) {
+static bool can_edit(Node *p_node, Node *p_edited_scene, const String &p_group) {
 	Node *n = p_node;
 	bool can_edit = true;
 	while (n) {
-		Ref<SceneState> ss = (n == EditorNode::get_singleton()->get_edited_scene()) ? n->get_scene_inherited_state() : n->get_scene_instance_state();
+		Ref<SceneState> ss = (n == p_edited_scene) ? n->get_scene_inherited_state() : n->get_scene_instance_state();
 		if (ss.is_valid()) {
 			int path = ss->find_node_by_path(n->get_path_to(p_node));
 			if (path != -1) {
@@ -121,7 +122,7 @@ void GroupsEditor::_get_group_mask(const StringName &p_name, Array &r_nodes, boo
 
 bool GroupsEditor::_can_edit(const StringName &p_group) {
 	for (Node *p_node : selection) {
-		if (!can_edit(p_node, p_group)) {
+		if (!can_edit(p_node, _get_edited_scene(), p_group)) {
 			return false;
 		}
 	}
@@ -164,7 +165,7 @@ void GroupsEditor::_load_scene_groups(Node *p_node) {
 			continue;
 		}
 
-		bool is_editable = can_edit(p_node, gi.name);
+		bool is_editable = can_edit(p_node, _get_edited_scene(), gi.name);
 		if (scene_groups.has(gi.name)) {
 			scene_groups[gi.name] = scene_groups[gi.name] && is_editable;
 		} else {
@@ -334,6 +335,14 @@ void GroupsEditor::_update_scene_groups(const ObjectID &p_id) {
 }
 
 void GroupsEditor::_cache_scene_groups(const ObjectID &p_id) {
+	if (scene_context) {
+		Node *edited_scene_root = scene_context->get_scene_root_node();
+		if (edited_scene_root && p_id == edited_scene_root->get_instance_id()) {
+			scene_groups_cache[p_id] = scene_groups_for_caching;
+		}
+		return;
+	}
+
 	const int edited_scene_count = EditorNode::get_editor_data().get_edited_scene_count();
 	for (int i = 0; i < edited_scene_count; i++) {
 		Node *edited_scene_root = EditorNode::get_editor_data().get_edited_scene_root(i);
@@ -357,10 +366,13 @@ void GroupsEditor::set_selection(const Vector<Node *> &p_nodes) {
 	holder->show();
 	select_a_node->hide();
 
-	if (scene_tree->get_edited_scene_root() != scene_root_node) {
-		scene_root_node = scene_tree->get_edited_scene_root();
-		_update_scene_groups(scene_root_node->get_instance_id());
-		_update_groups();
+	Node *edited_root = _get_edited_scene_root();
+	if (edited_root != scene_root_node) {
+		scene_root_node = edited_root;
+		if (scene_root_node) {
+			_update_scene_groups(scene_root_node->get_instance_id());
+			_update_groups();
+		}
 	}
 
 	_update_tree();
@@ -882,6 +894,50 @@ void GroupsEditor::_node_removed(Node *p_node) {
 	}
 }
 
+Node *GroupsEditor::_get_edited_scene_root() const {
+	if (scene_context) {
+		return scene_context->get_scene_root_node();
+	}
+	return scene_tree ? scene_tree->get_edited_scene_root() : nullptr;
+}
+
+Node *GroupsEditor::_get_edited_scene() const {
+	if (scene_context) {
+		return scene_context->get_scene_root_node();
+	}
+	if (EditorNode::get_singleton()) {
+		return EditorNode::get_singleton()->get_edited_scene();
+	}
+	return nullptr;
+}
+
+void GroupsEditor::set_scene_context(EditorSceneContext *p_context) {
+	if (scene_context == p_context) {
+		return;
+	}
+	if (scene_context) {
+		scene_context->unregister_groups_editor(this);
+	}
+	scene_context = p_context;
+	if (scene_context) {
+		scene_context->register_groups_editor(this);
+	}
+
+	Node *edited_root = _get_edited_scene_root();
+	if (edited_root != scene_root_node) {
+		scene_root_node = edited_root;
+		if (scene_root_node) {
+			_update_scene_groups(scene_root_node->get_instance_id());
+			_update_groups();
+		} else {
+			scene_groups.clear();
+		}
+	}
+	if (!selection.is_empty()) {
+		_update_tree();
+	}
+}
+
 GroupsEditor::GroupsEditor() {
 	scene_tree = SceneTree::get_singleton();
 
@@ -941,5 +997,15 @@ GroupsEditor::GroupsEditor() {
 	select_a_node->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
 	add_child(select_a_node);
 
-	ProjectSettingsEditor::get_singleton()->get_group_settings()->connect("group_changed", callable_mp(this, &GroupsEditor::_update_groups_and_tree));
+	ProjectSettingsEditor *project_settings_editor = ProjectSettingsEditor::get_singleton();
+	if (project_settings_editor) {
+		project_settings_editor->get_group_settings()->connect("group_changed", callable_mp(this, &GroupsEditor::_update_groups_and_tree));
+	}
+}
+
+GroupsEditor::~GroupsEditor() {
+	if (scene_context) {
+		scene_context->unregister_groups_editor(this);
+	}
+	scene_context = nullptr;
 }

@@ -30,10 +30,19 @@
 
 #include "groups_dock.h"
 
+#include "editor/editor_scene_context.h"
 #include "editor/settings/editor_command_palette.h"
 
 void GroupsDock::set_selection(const Vector<Node *> &p_nodes) {
 	groups->set_selection(p_nodes);
+}
+
+void GroupsDock::set_scene_context(EditorSceneContext *p_context) {
+	groups->set_scene_context(p_context);
+}
+
+EditorSceneContext *GroupsDock::get_scene_context() const {
+	return groups->get_scene_context();
 }
 
 GroupsDock::GroupsDock() {

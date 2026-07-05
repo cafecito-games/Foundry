@@ -4729,6 +4729,7 @@ void EditorNode::_activate_scene_context(EditorSceneContext *p_context) {
 			InspectorDock::get_singleton()->set_scene_context(p_context);
 		}
 	}
+	_bind_focus_following_docks(p_context);
 
 	emit_signal(SNAME("active_scene_context_changed"));
 }
@@ -4954,6 +4955,7 @@ void EditorNode::scene_context_about_to_be_removed(EditorSceneContext *p_context
 			InspectorDock::get_singleton()->set_scene_context(no_scene_context);
 		}
 	}
+	_bind_focus_following_docks(no_scene_context);
 	emit_signal(SNAME("active_scene_context_changed"));
 }
 
@@ -6680,6 +6682,18 @@ void EditorNode::_bind_all_leaf_docks() {
 	}
 	for (WorkspaceLeafNode *leaf : scene_workspace->get_leaves()) {
 		_bind_leaf_docks(leaf->get_leaf_id());
+	}
+}
+
+void EditorNode::_bind_focus_following_docks(EditorSceneContext *p_context) {
+	if (SignalsDock::get_singleton()) {
+		SignalsDock::get_singleton()->set_scene_context(p_context);
+	}
+	if (GroupsDock::get_singleton()) {
+		GroupsDock::get_singleton()->set_scene_context(p_context);
+	}
+	if (history_dock) {
+		history_dock->set_scene_context(p_context);
 	}
 }
 

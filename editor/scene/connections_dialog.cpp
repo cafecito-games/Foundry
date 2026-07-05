@@ -37,6 +37,7 @@
 #include "editor/docks/signals_dock.h"
 #include "editor/editor_main_screen.h"
 #include "editor/editor_node.h"
+#include "editor/editor_scene_context.h"
 #include "editor/editor_string_names.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/gui/editor_variant_type_selectors.h"
@@ -1504,6 +1505,19 @@ void ConnectionsDock::_bind_methods() {
 	ClassDB::bind_method("update_tree", &ConnectionsDock::update_tree);
 }
 
+void ConnectionsDock::set_scene_context(EditorSceneContext *p_context) {
+	if (scene_context == p_context) {
+		return;
+	}
+	if (scene_context) {
+		scene_context->unregister_connections_dock(this);
+	}
+	scene_context = p_context;
+	if (scene_context) {
+		scene_context->register_connections_dock(this);
+	}
+}
+
 void ConnectionsDock::set_object(Object *p_object) {
 	if (p_object == nullptr) {
 		select_an_object->show();
@@ -1530,7 +1544,10 @@ void ConnectionsDock::update_tree() {
 
 	TreeItem *root = tree->create_item();
 	DocTools *doc_data = EditorHelp::get_doc_data();
-	EditorData &editor_data = EditorNode::get_editor_data();
+	EditorData *editor_data = nullptr;
+	if (EditorNode::get_singleton()) {
+		editor_data = &EditorNode::get_editor_data();
+	}
 	StringName native_base = selected_object->get_class();
 	Ref<Script> script_base = selected_object->get_script();
 
@@ -1554,7 +1571,7 @@ void ConnectionsDock::update_tree() {
 				doc_class_name = String();
 			}
 
-			class_icon = editor_data.get_script_icon(script_base->get_path());
+			class_icon = editor_data ? editor_data->get_script_icon(script_base->get_path()) : Ref<Texture2D>();
 			if (class_icon.is_null() && has_theme_icon(native_base, EditorStringName(EditorIcons))) {
 				class_icon = get_editor_theme_icon(native_base);
 			}
@@ -1794,4 +1811,11 @@ ConnectionsDock::ConnectionsDock() {
 	select_an_object->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_CENTER);
 	select_an_object->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
 	add_child(select_an_object);
+}
+
+ConnectionsDock::~ConnectionsDock() {
+	if (scene_context) {
+		scene_context->unregister_connections_dock(this);
+	}
+	scene_context = nullptr;
 }
