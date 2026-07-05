@@ -37,6 +37,7 @@
 class AcceptDialog;
 class Button;
 class ButtonGroup;
+class CanvasItemEditorView;
 class CanvasItemEditorViewport;
 class ConfirmationDialog;
 class EditorData;
@@ -160,11 +161,7 @@ private:
 	bool selection_menu_additive_selection = false;
 
 	Tool tool = TOOL_SELECT;
-	Control *viewport = nullptr;
-	Control *viewport_scrollable = nullptr;
-
-	HScrollBar *h_scroll = nullptr;
-	VScrollBar *v_scroll = nullptr;
+	CanvasItemEditorView *editor_view = nullptr;
 
 	// Used for secondary menu items which are displayed depending on the currently selected node
 	// (such as MeshInstance's "Mesh" menu).
@@ -317,10 +314,6 @@ private:
 	Ref<Shortcut> reset_transform_rotation_shortcut;
 	Ref<Shortcut> reset_transform_scale_shortcut;
 
-	Ref<ViewPanner> panner;
-	void _pan_callback(Vector2 p_scroll_vec, Ref<InputEvent> p_event);
-	void _zoom_callback(float p_zoom_factor, Vector2 p_origin, Ref<InputEvent> p_event);
-
 	bool _is_node_locked(const Node *p_node) const;
 	bool _is_node_movable(const Node *p_node, bool p_popup_warning = false);
 	void _find_canvas_items_at_pos(const Point2 &p_pos, Node *p_node, Vector<_SelectResult> &r_items, const Transform2D &p_parent_xform = Transform2D(), const Transform2D &p_canvas_xform = Transform2D());
@@ -342,7 +335,6 @@ private:
 
 	void _prepare_view_menu();
 	void _popup_callback(int p_op);
-	void _update_scroll(real_t);
 	void _update_scrollbars();
 	void _snap_changed();
 	void _selection_result_pressed(int);
@@ -384,45 +376,7 @@ private:
 
 	virtual void shortcut_input(const Ref<InputEvent> &p_ev) override;
 
-	void _draw_text_at_position(Point2 p_position, const String &p_string, Side p_side);
-	void _draw_margin_at_position(int p_value, Point2 p_position, Side p_side);
-	void _draw_percentage_at_position(real_t p_value, Point2 p_position, Side p_side);
-	void _draw_straight_line(Point2 p_from, Point2 p_to, Color p_color);
-
-	void _draw_smart_snapping();
-	void _draw_rulers();
-	void _draw_guides();
-	void _draw_focus();
-	void _draw_grid();
-	void _draw_ruler_tool();
-	void _draw_control_anchors(Control *control);
-	void _draw_control_helpers(Control *control);
-	void _draw_selection();
-	void _draw_axis();
-	void _draw_invisible_nodes_positions(Node *p_node, const Transform2D &p_parent_xform = Transform2D(), const Transform2D &p_canvas_xform = Transform2D());
-	void _draw_locks_and_groups(Node *p_node, const Transform2D &p_parent_xform = Transform2D(), const Transform2D &p_canvas_xform = Transform2D());
-	void _draw_hover();
-	void _draw_message();
-
-	void _draw_viewport();
-
-	bool _gui_input_anchors(const Ref<InputEvent> &p_event);
-	bool _gui_input_move(const Ref<InputEvent> &p_event);
-	bool _gui_input_open_scene_on_double_click(const Ref<InputEvent> &p_event);
-	bool _gui_input_scale(const Ref<InputEvent> &p_event);
-	bool _gui_input_pivot(const Ref<InputEvent> &p_event);
-	bool _gui_input_resize(const Ref<InputEvent> &p_event);
-	bool _gui_input_rotate(const Ref<InputEvent> &p_event);
-	bool _gui_input_select(const Ref<InputEvent> &p_event);
-	bool _gui_input_ruler_tool(const Ref<InputEvent> &p_event);
-	bool _gui_input_zoom_or_pan(const Ref<InputEvent> &p_event, bool p_already_accepted);
-	bool _gui_input_rulers_and_guides(const Ref<InputEvent> &p_event);
-	bool _gui_input_hover(const Ref<InputEvent> &p_event);
-
 	void _commit_drag();
-
-	void _gui_input_viewport(const Ref<InputEvent> &p_event);
-	void _update_cursor();
 	void _update_lock_and_group_button();
 
 	void _selection_changed();
@@ -449,12 +403,6 @@ private:
 			const SnapTarget p_snap_target, List<const CanvasItem *> p_exceptions,
 			const Node *p_current);
 
-	VBoxContainer *controls_vb = nullptr;
-	Button *button_center_view = nullptr;
-	EditorZoomWidget *zoom_widget = nullptr;
-	void _update_zoom(real_t p_zoom);
-	void _shortcut_zoom_set(real_t p_zoom);
-	void _zoom_on_position(real_t p_zoom, Point2 p_position = Point2());
 	void _button_toggle_local_space(bool p_status);
 	void _button_toggle_smart_snap(bool p_status);
 	void _button_toggle_grid_snap(bool p_status);
@@ -467,7 +415,10 @@ private:
 	void _set_owner_for_node_and_children(Node *p_node, Node *p_owner);
 
 	friend class CanvasItemEditorPlugin;
+	friend class CanvasItemEditorView;
 	friend class CanvasItemEditorViewport;
+
+	CanvasItemEditorViewport *_get_viewport() const;
 
 protected:
 	void _notification(int p_what);
@@ -511,9 +462,9 @@ public:
 
 	VSplitContainer *get_bottom_split();
 
-	Control *get_viewport_control() { return viewport; }
+	Control *get_viewport_control();
 
-	Control *get_controls_container() { return controls_vb; }
+	Control *get_controls_container();
 
 	void update_viewport();
 
@@ -571,6 +522,7 @@ class CanvasItemEditorViewport : public Control {
 	Point2 drop_pos;
 
 	CanvasItemEditor *canvas_item_editor = nullptr;
+	CanvasItemEditorView *canvas_item_editor_view = nullptr;
 	Control *preview_node = nullptr;
 	AcceptDialog *accept = nullptr;
 	AcceptDialog *texture_node_type_selector = nullptr;
@@ -602,6 +554,6 @@ public:
 	virtual bool can_drop_data(const Point2 &p_point, const Variant &p_data) const override;
 	virtual void drop_data(const Point2 &p_point, const Variant &p_data) override;
 
-	CanvasItemEditorViewport(CanvasItemEditor *p_canvas_item_editor);
+	CanvasItemEditorViewport(CanvasItemEditor *p_canvas_item_editor, CanvasItemEditorView *p_canvas_item_editor_view);
 	~CanvasItemEditorViewport();
 };
