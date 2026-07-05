@@ -38,10 +38,18 @@ class SceneTree;
 class ScriptTestRunner : public RefCounted {
 	FOUNDRY_CLASS(ScriptTestRunner, RefCounted);
 
+public:
+	typedef bool (*ScriptErrorGuardedCallback)();
+
 protected:
 	static void _bind_methods();
 
+	static ScriptErrorGuardedCallback script_error_guarded_callback;
+
 public:
+	static void set_script_error_guarded_callback(ScriptErrorGuardedCallback p_callback);
+	static bool is_script_error_guarded();
+
 	static Variant call_run_script_hook(const Ref<ScriptTestRunner> &p_runner, const PackedStringArray &p_args);
 	static void launch_host(SceneTree *p_scene_tree, const Ref<ScriptTestRunner> &p_runner, const PackedStringArray &p_user_args);
 
