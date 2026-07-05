@@ -41,7 +41,7 @@ class CanvasItem;
 //
 // Plain data only — no Control, no signals — so pan/zoom/select transitions can be
 // unit-tested without instantiating widgets. One instance is owned per editing surface
-// (today a single instance on the CanvasItemEditor singleton; multi-instance comes with U2).
+// (today a single instance on the CanvasItemEditor singleton; multi-instance comes with #928).
 //
 // Classification rule when adding fields:
 //   - Per-view (belongs here): written/read during viewport input, draw, or scroll sync.
@@ -185,7 +185,7 @@ struct CanvasItemEditorViewState {
 
 	// Scratch written by CanvasItemEditor::snap_point() (global controller logic) via
 	// _snap_if_closer_* while resolving a snap. Fine with a single view; when multiple
-	// views exist (U2/U3) snap_point() must write the acting/focused view's state, not
+	// views exist (#928/#929) snap_point() must write the acting/focused view's state, not
 	// an arbitrary one.
 	SnapTarget snap_target[2];
 	// Rotation + translation encoding the active snap alignment for smart-snap drawing.
