@@ -4937,11 +4937,15 @@ void EditorNode::reveal_script_leaf() {
 	}
 
 	// Keep the leaf's recorded script in sync when the embedded editor switches or
-	// closes its current tab, so persistence and the tab title stay accurate.
+	// closes its current tab, so persistence and the tab title stay accurate. The
+	// ScriptEditor signals carry a script argument the handler does not need.
 	if (ScriptEditor *script_editor = ScriptEditor::get_singleton()) {
-		const Callable sync = callable_mp(this, &EditorNode::_sync_script_leaf_path);
-		if (!script_editor->is_connected("edited_script_changed", sync)) {
-			script_editor->connect("edited_script_changed", sync);
+		const Callable sync = callable_mp(this, &EditorNode::_sync_script_leaf_path).unbind(1);
+		if (!script_editor->is_connected("editor_script_changed", sync)) {
+			script_editor->connect("editor_script_changed", sync);
+		}
+		if (!script_editor->is_connected("script_close", sync)) {
+			script_editor->connect("script_close", sync);
 		}
 	}
 	_sync_script_leaf_path();
@@ -7099,6 +7103,18 @@ void EditorNode::_load_workspace_from_config(const Ref<ConfigFile> &p_config_fil
 
 	for (WorkspaceLeafNode *leaf : scene_workspace->get_leaves()) {
 		_on_leaf_added(leaf->get_leaf_id());
+	}
+
+	// The persisted focus can point at a script leaf, but the editor's focused tile
+	// must be a scene tile; fall back to the first scene tile when it is not.
+	WorkspaceLeafNode *restored_focus = scene_workspace->get_focused_leaf();
+	if (!restored_focus || !restored_focus->get_pane_tile()) {
+		for (WorkspaceLeafNode *leaf : scene_workspace->get_leaves()) {
+			if (leaf->get_pane_tile()) {
+				scene_workspace->set_focused_leaf(leaf->get_leaf_id());
+				break;
+			}
+		}
 	}
 	editor_data.set_focused_tile_id(scene_workspace->get_focused_leaf_id());
 	_bind_all_leaf_docks();
