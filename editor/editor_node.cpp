@@ -71,6 +71,7 @@
 #include "scene/resources/image_texture.h"
 #include "scene/resources/packed_scene.h"
 #include "scene/resources/portable_compressed_texture.h"
+#include "scene/resources/3d/world_3d.h"
 #include "scene/theme/theme_db.h"
 #include "servers/display/display_server.h"
 #include "servers/navigation_2d/navigation_server_2d.h"
@@ -2992,7 +2993,11 @@ void EditorNode::push_item_no_inspector(Object *p_object) {
 }
 
 void EditorNode::save_default_environment() {
-	Ref<Environment> fallback = get_tree()->get_root()->get_world_3d()->get_fallback_environment();
+	Ref<World3D> world = get_edited_world_3d();
+	if (world.is_null()) {
+		return;
+	}
+	Ref<Environment> fallback = world->get_fallback_environment();
 
 	if (fallback.is_valid() && fallback->get_path().is_resource_file()) {
 		HashMap<Ref<Resource>, bool> processed;
@@ -4728,6 +4733,19 @@ SubViewport *EditorNode::get_scene_root() {
 		return active_scene_context->get_viewport();
 	}
 	return placeholder_scene_viewport;
+}
+
+Ref<World3D> EditorNode::get_edited_world_3d() const {
+	if (active_scene_context && active_scene_context->get_world_3d().is_valid()) {
+		return active_scene_context->get_world_3d();
+	}
+	if (get_tree()) {
+		Window *root = get_tree()->get_root();
+		if (root) {
+			return root->get_world_3d();
+		}
+	}
+	return Ref<World3D>();
 }
 
 void EditorNode::configure_scene_context(EditorSceneContext *p_context) {

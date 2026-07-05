@@ -61,6 +61,7 @@ class SubViewportContainer;
 class VSeparator;
 class VSplitContainer;
 class ViewportNavigationControl;
+class World3D;
 class WorldEnvironment;
 class MeshInstance3D;
 
@@ -508,6 +509,7 @@ private:
 	void _toggle_cinema_preview(bool);
 	void _init_gizmo_instance(int p_idx);
 	void _finish_gizmo_instances();
+	void _rebind_gizmo_scenarios(const Ref<World3D> &p_world);
 	void _selection_result_pressed(int);
 	void _selection_menu_hide();
 	void _list_select(Ref<InputEventMouseButton> b);
@@ -878,6 +880,10 @@ private:
 	void _selection_changed();
 	void _active_scene_context_changed();
 	void _refresh_menu_icons();
+	Ref<World3D> _get_edited_world_3d() const;
+	void _rebind_editor_world_furniture();
+	void _rebind_preview_sun_env_parent();
+	void _sync_preview_environment_parenting();
 
 	bool do_snap_selected_nodes_to_floor = false;
 	void _snap_selected_nodes_to_floor();

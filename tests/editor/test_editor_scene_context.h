@@ -34,8 +34,12 @@
 #include "editor/editor_scene_context.h"
 
 #include "scene/2d/node_2d.h"
+#include "scene/3d/mesh_instance_3d.h"
+#include "scene/3d/node_3d.h"
 #include "scene/main/viewport.h"
 #include "scene/main/window.h"
+#include "scene/resources/3d/world_3d.h"
+#include "scene/resources/mesh.h"
 
 #include "tests/test_macros.h"
 
@@ -244,6 +248,89 @@ TEST_CASE("[SceneTree][Editor] EditorData creates one context per edited scene")
 	editor_data.remove_scene(index_b);
 	editor_data.remove_scene(index_a);
 	CHECK(editor_data.get_edited_scene_count() == 0);
+}
+
+TEST_CASE("[SceneTree][Editor] context-own-world") {
+	EditorSceneContext *context_a = memnew(EditorSceneContext);
+	EditorSceneContext *context_b = memnew(EditorSceneContext);
+
+	Ref<World3D> world_a = context_a->get_world_3d();
+	Ref<World3D> world_b = context_b->get_world_3d();
+	REQUIRE(world_a.is_valid());
+	REQUIRE(world_b.is_valid());
+	CHECK(world_a != world_b);
+	CHECK(world_a->get_scenario() != world_b->get_scenario());
+
+	Window *tree_root = SceneTree::get_singleton()->get_root();
+
+	Node3D *scene_a = memnew(Node3D);
+	context_a->set_scene_root_node(scene_a);
+	MeshInstance3D *mesh_a = memnew(MeshInstance3D);
+	scene_a->add_child(mesh_a);
+	Ref<ArrayMesh> mesh_resource;
+	mesh_resource.instantiate();
+	mesh_a->set_mesh(mesh_resource);
+
+	Node3D *scene_b = memnew(Node3D);
+	context_b->set_scene_root_node(scene_b);
+	MeshInstance3D *mesh_b = memnew(MeshInstance3D);
+	scene_b->add_child(mesh_b);
+	mesh_b->set_mesh(mesh_resource);
+
+	context_a->activate(tree_root);
+	CHECK(mesh_a->get_world_3d() == world_a);
+	CHECK(mesh_a->get_instance().is_valid());
+
+	context_a->deactivate();
+	context_b->activate(tree_root);
+	CHECK(mesh_b->get_world_3d() == world_b);
+	CHECK(mesh_b->get_instance().is_valid());
+
+	context_b->deactivate();
+
+	world_a.unref();
+	world_b.unref();
+	memdelete(context_a);
+	memdelete(context_b);
+	CHECK_FALSE(world_a.is_valid());
+	CHECK_FALSE(world_b.is_valid());
+}
+
+TEST_CASE("[SceneTree][Editor] world-rebind") {
+	Window *tree_root = SceneTree::get_singleton()->get_root();
+
+	EditorSceneContext *context_a = memnew(EditorSceneContext);
+	EditorSceneContext *context_b = memnew(EditorSceneContext);
+	Ref<World3D> world_a = context_a->get_world_3d();
+	Ref<World3D> world_b = context_b->get_world_3d();
+
+	Node3D *scene_a = memnew(Node3D);
+	context_a->set_scene_root_node(scene_a);
+	Node3D *scene_b = memnew(Node3D);
+	context_b->set_scene_root_node(scene_b);
+
+	MeshInstance3D *mesh = memnew(MeshInstance3D);
+	scene_a->add_child(mesh);
+	Ref<ArrayMesh> mesh_resource;
+	mesh_resource.instantiate();
+	mesh->set_mesh(mesh_resource);
+
+	context_a->activate(tree_root);
+	REQUIRE(mesh->is_inside_tree());
+	CHECK(mesh->get_world_3d() == world_a);
+
+	scene_a->remove_child(mesh);
+	CHECK_FALSE(mesh->is_inside_tree());
+
+	context_a->deactivate();
+	context_b->activate(tree_root);
+	scene_b->add_child(mesh);
+	REQUIRE(mesh->is_inside_tree());
+	CHECK(mesh->get_world_3d() == world_b);
+
+	context_b->deactivate();
+	memdelete(context_a);
+	memdelete(context_b);
 }
 
 } // namespace TestEditorSceneContext

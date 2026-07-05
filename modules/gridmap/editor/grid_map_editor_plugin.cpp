@@ -43,6 +43,7 @@
 #include "editor/settings/editor_settings.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/3d/camera_3d.h"
+#include "scene/resources/3d/world_3d.h"
 #include "scene/gui/dialogs.h"
 #include "scene/gui/label.h"
 #include "scene/gui/margin_container.h"
@@ -604,7 +605,7 @@ void GridMapEditor::_set_clipboard_data() {
 
 	Ref<MeshLibrary> meshLibrary = node->get_mesh_library();
 
-	const RID scenario = get_tree()->get_root()->get_world_3d()->get_scenario();
+	const RID scenario = EditorNode::get_singleton()->get_edited_world_3d()->get_scenario();
 
 	for (int i = selection.begin.x; i <= selection.end.x; i++) {
 		for (int j = selection.begin.y; j <= selection.end.y; j++) {
@@ -1276,10 +1277,41 @@ void GridMapEditor::_update_theme() {
 	options->set_button_icon(get_theme_icon(SNAME("Tools"), EditorStringName(EditorIcons)));
 }
 
+void GridMapEditor::_rebind_editor_scenarios() {
+	Ref<World3D> world = EditorNode::get_singleton()->get_edited_world_3d();
+	if (world.is_null()) {
+		return;
+	}
+	const RID scenario = world->get_scenario();
+
+	for (int i = 0; i < 3; i++) {
+		if (grid_instance[i].is_valid()) {
+			RS::get_singleton()->instance_set_scenario(grid_instance[i], scenario);
+		}
+		if (selection_level_instance[i].is_valid()) {
+			RS::get_singleton()->instance_set_scenario(selection_level_instance[i], scenario);
+		}
+	}
+	if (cursor_instance.is_valid()) {
+		RS::get_singleton()->instance_set_scenario(cursor_instance, scenario);
+	}
+	if (selection_instance.is_valid()) {
+		RS::get_singleton()->instance_set_scenario(selection_instance, scenario);
+	}
+	if (paste_instance.is_valid()) {
+		RS::get_singleton()->instance_set_scenario(paste_instance, scenario);
+	}
+	for (const ClipboardItem &item : clipboard_items) {
+		if (item.instance.is_valid()) {
+			RS::get_singleton()->instance_set_scenario(item.instance, scenario);
+		}
+	}
+}
+
 void GridMapEditor::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_ENTER_TREE: {
-			const RID scenario = get_tree()->get_root()->get_world_3d()->get_scenario();
+			const RID scenario = EditorNode::get_singleton()->get_edited_world_3d()->get_scenario();
 
 			for (int i = 0; i < 3; i++) {
 				grid[i] = RS::get_singleton()->mesh_create();
@@ -1300,9 +1332,14 @@ void GridMapEditor::_notification(int p_what) {
 			_update_selection_transform();
 			_update_paste_indicator();
 			_update_theme();
+
+			EditorNode::get_singleton()->connect("active_scene_context_changed", callable_mp(this, &GridMapEditor::_rebind_editor_scenarios));
 		} break;
 
 		case NOTIFICATION_EXIT_TREE: {
+			if (EditorNode::get_singleton()->is_connected("active_scene_context_changed", callable_mp(this, &GridMapEditor::_rebind_editor_scenarios))) {
+				EditorNode::get_singleton()->disconnect("active_scene_context_changed", callable_mp(this, &GridMapEditor::_rebind_editor_scenarios));
+			}
 			_cancel_pending_move();
 			_clear_clipboard_data();
 
@@ -1379,7 +1416,7 @@ void GridMapEditor::_update_cursor_instance() {
 	}
 	cursor_instance = RID();
 
-	const RID scenario = get_tree()->get_root()->get_world_3d()->get_scenario();
+	const RID scenario = EditorNode::get_singleton()->get_edited_world_3d()->get_scenario();
 
 	if (mode_buttons_group->get_pressed_button() == paint_mode_button) {
 		if (selected_palette >= 0 && node && node->get_mesh_library().is_valid()) {
