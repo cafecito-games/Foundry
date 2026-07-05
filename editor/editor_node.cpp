@@ -4461,8 +4461,15 @@ void EditorNode::_remove_edited_scene(bool p_change_tab, bool p_allow_collapse) 
 		}
 	}
 	if (!collapsed_tile) {
-		if (editor_data.get_edited_scene_count() == 0) {
-			editor_data.add_edited_scene(-1);
+		if (editor_data.get_tile_scene_indices(tile_id).is_empty()) {
+			// The emptied tile was kept (single workspace, or its only sibling is a
+			// script leaf). Give it a blank scene so the focused tile always has a
+			// valid current scene rather than resolving to -1.
+			const int blank_scene = editor_data.add_edited_scene(-1);
+			if (editor_data.get_scene_tile(blank_scene) != tile_id) {
+				editor_data.set_scene_tile(blank_scene, tile_id);
+			}
+			editor_data.set_tile_current_scene(tile_id, blank_scene);
 		}
 		if (p_change_tab) {
 			_set_current_scene_nocheck(editor_data.get_tile_current_scene(editor_data.get_focused_tile_id()));
@@ -4854,6 +4861,24 @@ void EditorNode::_detach_script_surface() {
 	}
 }
 
+void EditorNode::_connect_script_leaf_sync() {
+	ScriptEditor *script_editor = ScriptEditor::get_singleton();
+	if (!script_editor) {
+		return;
+	}
+	// Keep the leaf's recorded script in sync when the embedded editor switches or
+	// closes its current tab. The signals carry a script argument the handler does
+	// not need, and are deferred because script_close fires before the tab is
+	// removed, so the sync runs once the current-script state has settled.
+	const Callable sync = callable_mp(this, &EditorNode::_sync_script_leaf_path).unbind(1);
+	if (!script_editor->is_connected("editor_script_changed", sync)) {
+		script_editor->connect("editor_script_changed", sync, CONNECT_DEFERRED);
+	}
+	if (!script_editor->is_connected("script_close", sync)) {
+		script_editor->connect("script_close", sync, CONNECT_DEFERRED);
+	}
+}
+
 void EditorNode::_sync_script_leaf_path() {
 	if (!scene_workspace || !ScriptEditor::get_singleton()) {
 		return;
@@ -4940,20 +4965,7 @@ void EditorNode::reveal_script_leaf() {
 		_reparent_script_surface_into(script_leaf);
 	}
 
-	// Keep the leaf's recorded script in sync when the embedded editor switches or
-	// closes its current tab, so persistence and the tab title stay accurate. The
-	// ScriptEditor signals carry a script argument the handler does not need.
-	if (ScriptEditor *script_editor = ScriptEditor::get_singleton()) {
-		const Callable sync = callable_mp(this, &EditorNode::_sync_script_leaf_path).unbind(1);
-		// Deferred: script_close fires before the tab is removed, so run the sync
-		// once the editor's current-script state has settled.
-		if (!script_editor->is_connected("editor_script_changed", sync)) {
-			script_editor->connect("editor_script_changed", sync, CONNECT_DEFERRED);
-		}
-		if (!script_editor->is_connected("script_close", sync)) {
-			script_editor->connect("script_close", sync, CONNECT_DEFERRED);
-		}
-	}
+	_connect_script_leaf_sync();
 	_sync_script_leaf_path();
 }
 
@@ -7151,6 +7163,10 @@ void EditorNode::_load_workspace_from_config(const Ref<ConfigFile> &p_config_fil
 				}
 			}
 			_reparent_script_surface_into(script_leaf);
+			// Install the same tab-change/close sync used when opening a script, so a
+			// restored leaf keeps its recorded script current across later edits.
+			_connect_script_leaf_sync();
+			_sync_script_leaf_path();
 		}
 	}
 
