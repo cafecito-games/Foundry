@@ -39,7 +39,7 @@
 #include "scene/main/viewport.h"
 #include "scene/main/window.h"
 #include "scene/resources/3d/world_3d.h"
-#include "scene/resources/array_mesh.h"
+#include "scene/resources/mesh.h"
 
 #include "tests/test_macros.h"
 

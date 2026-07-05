@@ -4401,7 +4401,7 @@ void Node3DEditorViewport::_update_centered_labels() {
 
 void Node3DEditorViewport::_init_gizmo_instance(int p_idx) {
 	uint32_t layer = 1 << (GIZMO_BASE_LAYER + p_idx);
-	const RID scenario = spatial_editor->_get_edited_world_3d()->get_scenario();
+	const RID scenario = EditorNode::get_singleton()->get_edited_world_3d()->get_scenario();
 
 	for (int i = 0; i < 3; i++) {
 		move_gizmo_instance[i] = RS::get_singleton()->instance_create();
