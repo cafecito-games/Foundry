@@ -30,9 +30,12 @@
 
 #pragma once
 
+#include "core/templates/hash_set.h"
 #include "editor/editor_data.h"
 
+class InspectorDock;
 class Node;
+class SceneTreeDock;
 class SubViewport;
 class World3D;
 
@@ -58,10 +61,14 @@ class EditorSceneContext {
 	Dictionary main_state;
 	int history_id = 0;
 	Vector<ObjectID> retained_selection_ids;
+	HashSet<ObjectID> bound_scene_tree_docks;
+	HashSet<ObjectID> bound_inspector_docks;
 	bool active = false;
 	bool has_3d_content = false;
 
 	void _recompute_3d_content();
+
+	void _detach_bound_docks();
 
 public:
 	SubViewport *get_viewport() const { return viewport; }
@@ -93,6 +100,11 @@ public:
 
 	Vector<ObjectID> get_selected_node_ids() const;
 	void set_selected_node_ids(const Vector<ObjectID> &p_ids);
+
+	void register_scene_tree_dock(SceneTreeDock *p_dock);
+	void unregister_scene_tree_dock(SceneTreeDock *p_dock);
+	void register_inspector_dock(InspectorDock *p_dock);
+	void unregister_inspector_dock(InspectorDock *p_dock);
 
 	EditorSceneContext();
 	~EditorSceneContext();

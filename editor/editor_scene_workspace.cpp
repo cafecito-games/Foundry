@@ -148,6 +148,32 @@ bool EditorSceneWorkspace::_is_split_node(Control *p_node) const {
 	return Object::cast_to<WorkspaceSplitNode>(p_node) != nullptr;
 }
 
+WorkspaceLeafNode *EditorSceneWorkspace::_find_first_leaf(Control *p_node) const {
+	ERR_FAIL_NULL_V(p_node, nullptr);
+
+	WorkspaceLeafNode *leaf = Object::cast_to<WorkspaceLeafNode>(p_node);
+	if (leaf) {
+		return leaf;
+	}
+
+	WorkspaceSplitNode *split_node = Object::cast_to<WorkspaceSplitNode>(p_node);
+	ERR_FAIL_NULL_V(split_node, nullptr);
+	SplitContainer *sc = split_node->get_split_container();
+	ERR_FAIL_NULL_V(sc, nullptr);
+
+	for (int i = 0; i < sc->get_child_count(false); i++) {
+		Control *child = Object::cast_to<Control>(sc->get_child(i, false));
+		if (!child) {
+			continue;
+		}
+		WorkspaceLeafNode *child_leaf = _find_first_leaf(child);
+		if (child_leaf) {
+			return child_leaf;
+		}
+	}
+	return nullptr;
+}
+
 WorkspaceLeafNode *EditorSceneWorkspace::_create_leaf(int p_leaf_id, const String &p_content_descriptor) {
 	ERR_FAIL_NULL_V(editor_data, nullptr);
 	WorkspaceLeafNode *leaf = WorkspaceLeafNode::create(p_leaf_id, editor_selection, editor_data, p_content_descriptor);
@@ -225,6 +251,8 @@ void EditorSceneWorkspace::collapse(WorkspaceLeafNode *p_leaf) {
 		}
 	}
 	ERR_FAIL_NULL(sibling);
+	WorkspaceLeafNode *successor_leaf = _find_first_leaf(sibling);
+	ERR_FAIL_NULL(successor_leaf);
 
 	Node *grand = split_node->get_parent();
 	ERR_FAIL_NULL(grand);
@@ -239,14 +267,14 @@ void EditorSceneWorkspace::collapse(WorkspaceLeafNode *p_leaf) {
 	grand->move_child(sibling, split_index);
 
 	const int collapsed_leaf_id = p_leaf->get_leaf_id();
-	int successor_leaf_id = sibling && _is_leaf_node(sibling) ? Object::cast_to<WorkspaceLeafNode>(sibling)->get_leaf_id() : focused_leaf_id;
+	const int successor_leaf_id = successor_leaf->get_leaf_id();
 	leaves.erase(p_leaf);
 	emit_signal(SNAME("leaf_removed"), collapsed_leaf_id, successor_leaf_id);
 	memdelete(p_leaf);
 
 	if (focused_leaf_id == collapsed_leaf_id && !leaves.is_empty()) {
-		set_focused_leaf(leaves[0]->get_leaf_id());
-		emit_signal(SNAME("leaf_focus_requested"), leaves[0]->get_leaf_id());
+		set_focused_leaf(successor_leaf_id);
+		emit_signal(SNAME("leaf_focus_requested"), successor_leaf_id);
 	}
 
 	_update_focus_visuals();

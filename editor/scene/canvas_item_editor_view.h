@@ -146,7 +146,7 @@ public:
 	void center_at(const Point2 &p_pos);
 	void active_scene_context_changed();
 	void set_cursor_shape_override(Control::CursorShape p_shape = Control::CURSOR_ARROW);
-	Control::CursorShape get_cursor_shape(const Point2 &p_pos) const;
+	Control::CursorShape get_cursor_shape(const Point2 &p_pos) const override;
 
 	// Test-only counter incremented by update_viewport(); used by unit tests.
 	uint64_t test_update_viewport_invocations = 0;

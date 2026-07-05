@@ -72,10 +72,6 @@
 #include "scene/resources/packed_scene.h"
 #include "scene/resources/style_box_texture.h"
 
-#define DRAG_THRESHOLD (8 * EDSCALE)
-constexpr real_t SCALE_HANDLE_DISTANCE = 25;
-constexpr real_t MOVE_HANDLE_DISTANCE = 25;
-
 CanvasItemEditorViewport *CanvasItemEditor::_get_viewport() const {
 	const CanvasItemEditorView *view = get_focused_view();
 	if (!view) {

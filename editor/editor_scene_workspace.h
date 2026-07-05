@@ -114,6 +114,7 @@ private:
 	WorkspaceLeafNode *_create_leaf(int p_leaf_id, const String &p_content_descriptor = String());
 	Control *_get_structural_root() const;
 	Control *_restore_node_from_config(const Ref<ConfigFile> &p_config, int p_node, int p_node_count, HashSet<int> &r_visited);
+	WorkspaceLeafNode *_find_first_leaf(Control *p_node) const;
 	void _clear_tree();
 	bool _is_leaf_node(Control *p_node) const;
 	bool _is_split_node(Control *p_node) const;
