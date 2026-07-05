@@ -234,6 +234,7 @@ public:
 	int tile_tab_to_scene_index(int p_tile_id, int p_tab) const;
 	int scene_index_to_tile_tab(int p_idx) const;
 	void set_scene_tile(int p_idx, int p_tile_id);
+	int get_scene_tile(int p_idx) const;
 	int get_tile_current_scene(int p_tile_id) const;
 	void set_tile_current_scene(int p_tile_id, int p_idx);
 	int get_focused_tile_id() const;

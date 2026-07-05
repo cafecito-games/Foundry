@@ -40,7 +40,10 @@
 #include "editor/scene/editor_scene_tabs.h"
 
 #include "scene/2d/node_2d.h"
+#include "scene/gui/panel_container.h"
 #include "scene/gui/split_container.h"
+#include "scene/gui/subviewport_container.h"
+#include "scene/main/viewport.h"
 #include "scene/main/window.h"
 
 #include "tests/test_macros.h"
@@ -495,6 +498,131 @@ TEST_CASE("[SceneTree][Editor] tile-id-model") {
 	CHECK(fourth->get_leaf_id() > tile_b);
 
 	h2.unmount();
+}
+
+static void reparent_stand_in_main_screen(Control *p_main_screen, ScenePaneTile *p_tile) {
+	ERR_FAIL_NULL(p_main_screen);
+	ERR_FAIL_NULL(p_tile);
+	Control *host = p_tile->get_content_host();
+	ERR_FAIL_NULL(host);
+	if (p_main_screen->get_parent() == host) {
+		return;
+	}
+	if (p_main_screen->get_parent()) {
+		p_main_screen->get_parent()->remove_child(p_main_screen);
+	}
+	host->add_child(p_main_screen);
+	p_main_screen->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+}
+
+static void attach_tile_scene_display(
+		EditorData &p_data,
+		EditorSceneWorkspace *p_workspace,
+		SubViewportContainer *p_live_container,
+		int p_focused_tile_id) {
+	for (int i = 0; i < p_data.get_edited_scene_count(); i++) {
+		EditorSceneContext *ctx = p_data.get_scene_context(i);
+		const int tile_id = p_data.get_scene_tile(i);
+		ScenePaneTile *tile = p_workspace->get_tile_by_id(tile_id);
+		const bool is_tile_current = tile && p_data.get_tile_current_scene(tile_id) == i;
+
+		if (!is_tile_current) {
+			if (ctx->is_active()) {
+				ctx->deactivate();
+			}
+			continue;
+		}
+
+		const bool is_focused_tile = tile_id == p_focused_tile_id;
+		if (is_focused_tile) {
+			tile->set_preview_mode(false, false, String(), Ref<Texture2D>());
+			ctx->set_display_parent(p_live_container, true, true);
+			ctx->get_viewport()->set_update_mode(SubViewport::UPDATE_ALWAYS);
+		} else if (ctx->scene_has_3d_content()) {
+			tile->set_preview_mode(false, true, String(), Ref<Texture2D>());
+			if (ctx->is_active()) {
+				ctx->deactivate();
+			}
+		} else {
+			tile->set_preview_mode(true, false, String(), Ref<Texture2D>());
+			SubViewportContainer *preview = tile->get_preview_container();
+			ctx->set_display_parent(preview, false);
+			ctx->get_viewport()->set_update_mode(preview->is_visible_in_tree() ? SubViewport::UPDATE_ALWAYS : SubViewport::UPDATE_DISABLED);
+			preview->recalc_force_viewport_sizes();
+			preview->queue_redraw();
+		}
+	}
+}
+
+TEST_CASE("[SceneTree][Editor] reparent-render") {
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspaceLeafNode *first = h.workspace->get_focused_leaf();
+	WorkspaceLeafNode *second = h.workspace->split(first, false, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
+	h.pump();
+	REQUIRE(second != nullptr);
+
+	ScenePaneTile *tile_a = first->get_pane_tile();
+	ScenePaneTile *tile_b = second->get_pane_tile();
+	REQUIRE(tile_a != nullptr);
+	REQUIRE(tile_b != nullptr);
+
+	const int tile_a_id = tile_a->get_tile_id();
+	const int tile_b_id = tile_b->get_tile_id();
+	h.editor_data.register_tile(tile_a_id);
+	h.editor_data.register_tile(tile_b_id);
+
+	Node2D *root_a = memnew(Node2D);
+	const int scene_a = add_test_scene(h.editor_data, tile_a_id, root_a);
+	Node2D *root_b = memnew(Node2D);
+	const int scene_b = add_test_scene(h.editor_data, tile_b_id, root_b);
+	h.pump();
+
+	PanelContainer *main_screen = memnew(PanelContainer);
+	main_screen->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	main_screen->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	SubViewportContainer *live_container = memnew(SubViewportContainer);
+	live_container->set_stretch(true);
+	live_container->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	live_container->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	main_screen->add_child(live_container);
+
+	auto check_focused_live = [&](int p_focused_tile_id, int p_focused_scene_idx, int p_preview_scene_idx, int p_preview_tile_id) {
+		reparent_stand_in_main_screen(main_screen, h.workspace->get_tile_by_id(p_focused_tile_id));
+		h.workspace->set_focused_leaf(p_focused_tile_id);
+		h.editor_data.set_focused_tile_id(p_focused_tile_id);
+		attach_tile_scene_display(h.editor_data, h.workspace, live_container, p_focused_tile_id);
+		h.pump();
+
+		EditorSceneContext *focused_ctx = h.editor_data.get_scene_context(p_focused_scene_idx);
+		EditorSceneContext *preview_ctx = h.editor_data.get_scene_context(p_preview_scene_idx);
+		ScenePaneTile *preview_tile = h.workspace->get_tile_by_id(p_preview_tile_id);
+
+		CHECK(main_screen->get_parent() == h.workspace->get_tile_by_id(p_focused_tile_id)->get_content_host());
+		CHECK(focused_ctx->get_viewport()->get_parent() == live_container);
+		CHECK(focused_ctx->get_viewport()->get_update_mode() == SubViewport::UPDATE_ALWAYS);
+		CHECK(focused_ctx->get_viewport()->is_inside_tree());
+		CHECK(preview_ctx->get_viewport()->get_parent() == preview_tile->get_preview_container());
+		CHECK(preview_ctx->get_viewport()->get_update_mode() == SubViewport::UPDATE_ALWAYS);
+		CHECK(preview_ctx->get_viewport()->is_inside_tree());
+	};
+
+	check_focused_live(tile_a_id, scene_a, scene_b, tile_b_id);
+
+	// Focus switch must keep both tiles rendering (no stale UPDATE_DISABLED black panes).
+	check_focused_live(tile_b_id, scene_b, scene_a, tile_a_id);
+
+	// Switch back to the first tile and verify the live path again.
+	check_focused_live(tile_a_id, scene_a, scene_b, tile_b_id);
+
+	if (main_screen->get_parent()) {
+		main_screen->get_parent()->remove_child(main_screen);
+	}
+	memdelete(main_screen);
+
+	h.unmount();
 }
 
 } // namespace TestSceneWorkspace

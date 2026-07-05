@@ -4632,7 +4632,11 @@ void EditorNode::_set_current_scene_nocheck(int p_idx) {
 	// Attach the new context's viewport only after the SceneTree's
 	// edited-scene root points at its scene, so enter-tree handlers observe
 	// the correct edited root.
-	_attach_active_scene_context();
+	if (scene_workspace) {
+		_update_tile_display_attachments();
+	} else {
+		_attach_active_scene_context();
+	}
 
 	if (editor_data.check_and_update_scene(p_idx)) {
 		if (!editor_data.get_scene_path(p_idx).is_empty()) {
@@ -4720,6 +4724,10 @@ void EditorNode::_activate_scene_context(EditorSceneContext *p_context) {
 void EditorNode::_attach_active_scene_context() {
 	// The no_scene_context has no scene to show, so its (empty) viewport is
 	// never attached to the display container.
+	if (scene_workspace) {
+		_update_tile_display_attachments();
+		return;
+	}
 	if (!active_scene_context || active_scene_context == no_scene_context || !scene_viewport_container) {
 		return;
 	}
@@ -4732,6 +4740,96 @@ void EditorNode::_attach_active_scene_context() {
 	_apply_scene_viewport_2d_state(active_scene_context->get_viewport());
 	if (last_theme_preview_mode_set) {
 		_apply_preview_themes(active_scene_context->get_viewport());
+	}
+}
+
+void EditorNode::_sync_scene_viewport_2d_state_with_main_screen() {
+	if (!editor_main_screen) {
+		return;
+	}
+	const int selected_main_screen = editor_main_screen->get_selected_index();
+	if (selected_main_screen >= 0) {
+		scene_viewport_2d_disabled = selected_main_screen != EditorMainScreen::EDITOR_2D;
+	}
+}
+
+void EditorNode::_reparent_main_screen_into(ScenePaneTile *p_tile) {
+	if (!editor_main_screen || !p_tile) {
+		return;
+	}
+	Control *host = p_tile->get_content_host();
+	if (!host || editor_main_screen->get_parent() == host) {
+		return;
+	}
+	if (editor_main_screen->get_parent()) {
+		editor_main_screen->get_parent()->remove_child(editor_main_screen);
+	}
+	host->add_child(editor_main_screen);
+	editor_main_screen->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+	editor_main_screen->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	editor_main_screen->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+}
+
+void EditorNode::_update_tile_display_attachments() {
+	if (!scene_workspace) {
+		_attach_active_scene_context();
+		return;
+	}
+
+	for (int i = 0; i < editor_data.get_edited_scene_count(); i++) {
+		EditorSceneContext *ctx = editor_data.get_scene_context(i);
+		const int tile_id = editor_data.get_scene_tile(i);
+		ScenePaneTile *tile = scene_workspace->get_tile_by_id(tile_id);
+		const bool is_tile_current = tile && editor_data.get_tile_current_scene(tile_id) == i;
+
+		if (!is_tile_current) {
+			if (ctx->is_active()) {
+				ctx->deactivate();
+			}
+			continue;
+		}
+
+		const bool is_focused_tile = tile_id == editor_data.get_focused_tile_id();
+		Node *scene_root = editor_data.get_edited_scene_root(i);
+		Ref<Texture2D> icon;
+		if (scene_root) {
+			icon = get_object_icon(scene_root);
+		}
+		const String scene_name = editor_data.get_scene_title(i);
+
+		if (is_focused_tile) {
+			tile->set_preview_mode(false, false, scene_name, icon);
+			if (scene_viewport_container) {
+				ctx->set_display_parent(scene_viewport_container, true, true);
+			}
+			// Reparenting a live SubViewport into the already-mounted
+			// scene_viewport_container does not fire the container's
+			// ENTER_TREE/RESIZED/VISIBILITY notifications, so the viewport keeps a
+			// stale update mode (often UPDATE_DISABLED) and renders a blank/black
+			// texture. Drive its update mode explicitly, matching the preview path.
+			ctx->get_viewport()->set_update_mode(SubViewport::UPDATE_ALWAYS);
+			_sync_scene_viewport_2d_state_with_main_screen();
+			_apply_scene_viewport_2d_state(ctx->get_viewport());
+			if (last_theme_preview_mode_set) {
+				_apply_preview_themes(ctx->get_viewport());
+			}
+		} else if (ctx->scene_has_3d_content()) {
+			tile->set_preview_mode(false, true, scene_name, icon);
+			if (ctx->is_active()) {
+				ctx->deactivate();
+			}
+		} else {
+			tile->set_preview_mode(true, false, scene_name, icon);
+			SubViewportContainer *preview = tile->get_preview_container();
+			ctx->set_display_parent(preview, false);
+			ctx->get_viewport()->set_update_mode(preview->is_visible_in_tree() ? SubViewport::UPDATE_ALWAYS : SubViewport::UPDATE_DISABLED);
+			preview->recalc_force_viewport_sizes();
+			preview->queue_redraw();
+			RenderingServer::get_singleton()->viewport_set_disable_2d(ctx->get_viewport()->get_viewport_rid(), false);
+			RenderingServer::get_singleton()->viewport_set_environment_mode(ctx->get_viewport()->get_viewport_rid(), RenderingServer::VIEWPORT_ENVIRONMENT_ENABLED);
+		}
+
+		ctx->get_history()->cleanup_history();
 	}
 }
 
@@ -6573,9 +6671,6 @@ void EditorNode::_focus_tile(int p_tile_id) {
 	EditorSceneContext *expected_context = scene_idx >= 0 ? editor_data.get_scene_context(scene_idx) : no_scene_context;
 	const bool already_focused = editor_data.get_focused_tile_id() == p_tile_id && scene_workspace->get_focused_leaf_id() == p_tile_id;
 	const bool already_current = editor_data.get_edited_scene() == scene_idx && active_scene_context == expected_context;
-	if (already_focused && already_current) {
-		return;
-	}
 
 	scene_workspace->set_focused_leaf(p_tile_id);
 	editor_data.set_focused_tile_id(p_tile_id);
@@ -6586,8 +6681,12 @@ void EditorNode::_focus_tile(int p_tile_id) {
 	ERR_FAIL_NULL(tile);
 
 	_update_focused_dock_singletons(tile);
-	_remount_workspace_pane();
+	_reparent_main_screen_into(tile);
 	_bind_all_leaf_docks();
+
+	if (already_focused && already_current) {
+		return;
+	}
 
 	_set_current_scene_nocheck(scene_idx);
 }
@@ -6657,34 +6756,8 @@ void EditorNode::_load_workspace_from_config(const Ref<ConfigFile> &p_config_fil
 	if (focused_leaf && focused_leaf->get_pane_tile()) {
 		_update_focused_dock_singletons(focused_leaf->get_pane_tile());
 	}
-	_remount_workspace_pane();
+	_reparent_main_screen_into(scene_workspace->get_focused_tile());
 	_set_current_scene_nocheck(editor_data.get_tile_current_scene(editor_data.get_focused_tile_id()));
-}
-
-void EditorNode::_remount_workspace_pane() {
-	ERR_FAIL_NULL(scene_workspace);
-	ERR_FAIL_NULL(editor_main_screen);
-
-	WorkspaceLeafNode *target_leaf = scene_workspace->get_focused_leaf();
-	if (!target_leaf) {
-		for (WorkspaceLeafNode *leaf : scene_workspace->get_leaves()) {
-			if (leaf->get_content_descriptor() == "main") {
-				target_leaf = leaf;
-				break;
-			}
-		}
-	}
-	ERR_FAIL_NULL(target_leaf);
-
-	Control *host = target_leaf->get_content_host();
-	ERR_FAIL_NULL(host);
-	if (editor_main_screen->get_parent() != host) {
-		if (editor_main_screen->get_parent()) {
-			editor_main_screen->get_parent()->remove_child(editor_main_screen);
-		}
-		host->add_child(editor_main_screen);
-		editor_main_screen->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
-	}
 }
 
 void EditorNode::_save_window_settings_to_config(Ref<ConfigFile> p_layout, const String &p_section) {
@@ -9390,8 +9463,7 @@ EditorNode::EditorNode() {
 
 	editor_main_screen = memnew(EditorMainScreen);
 	editor_main_screen->set_custom_minimum_size(Size2(0, 80) * EDSCALE);
-	editor_main_screen->set_draw_behind_parent(true);
-	_remount_workspace_pane();
+	_reparent_main_screen_into(initial_tile);
 
 	placeholder_scene_viewport = memnew(SubViewport);
 	placeholder_scene_viewport->set_auto_translate_mode(AUTO_TRANSLATE_MODE_ALWAYS);
