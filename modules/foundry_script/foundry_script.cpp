@@ -418,7 +418,17 @@ void FoundryScript::_super_implicit_constructor(FoundryScript *p_script, FSInsta
 			return;
 		}
 	}
-	ERR_FAIL_NULL(p_script->implicit_initializer);
+	if (unlikely(p_script->implicit_initializer == nullptr)) {
+		// Compilation always produces an `@implicit_new()` function, so a missing one means this
+		// script was cleared (e.g. language shutdown while a stale Ref/ResourceCache entry kept it
+		// alive) or never compiled. A cleared script is also marked invalid, so a valid script
+		// missing its initializer is an engine bug.
+		DEV_ASSERT(!p_script->valid);
+		// Propagate the failure through `r_error` so `_create_instance` tears the instance down
+		// instead of returning a half-constructed instance whose member defaults never ran.
+		r_error.error = Callable::CallError::CALL_ERROR_INVALID_METHOD;
+		ERR_FAIL_MSG(vformat("Cannot construct an instance of script \"%s\": missing compiled implicit initializer (the script was cleared or failed to compile).", p_script->get_script_path()));
+	}
 	if (likely(p_script->valid)) {
 		p_script->implicit_initializer->call(p_instance, nullptr, 0, r_error);
 	} else {
@@ -2060,6 +2070,12 @@ void FoundryScript::clear() {
 		return;
 	}
 	clearing = true;
+
+	// Every compiled function is deleted below, so this script can no longer run. Mark it invalid
+	// so `can_instantiate()`/`instance_create()`/`_new()` fail loudly instead of producing
+	// half-constructed instances. This matters for scripts that outlive language shutdown through
+	// a stale Ref or ResourceCache entry and get handed out again by a later cache-hit load.
+	valid = false;
 
 	RBSet<FSFunction *> functions_to_clear;
 

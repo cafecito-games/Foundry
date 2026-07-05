@@ -239,12 +239,20 @@ static Ref<ScriptDiagnosticCaptureResult> run_capture_async(Node *p_suite, const
 
 	ScriptDiagnosticCapturePendingState *pending_state = Object::cast_to<ScriptDiagnosticCapturePendingState>(pending);
 	REQUIRE(pending_state != nullptr);
+	if (pending_state == nullptr) {
+		// Exceptions are disabled, so a failed REQUIRE does not abort the test case. Bail out
+		// instead of dereferencing null and killing the whole suite run with a SIGSEGV.
+		return Ref<ScriptDiagnosticCaptureResult>();
+	}
 
 	CaptureAsyncListener listener;
 	pending_state->connect(SNAME("completed"), callable_mp(&listener, &CaptureAsyncListener::on_completed), Object::CONNECT_ONE_SHOT);
 
 	SceneTree *tree = SceneTree::get_singleton();
 	REQUIRE(tree != nullptr);
+	if (tree == nullptr) {
+		return Ref<ScriptDiagnosticCaptureResult>();
+	}
 	for (int frame = 0; frame < p_max_frames && !listener.done; frame++) {
 		tree->process(1.0 / 60.0);
 		if (FSLanguage::get_singleton()) {
@@ -263,6 +271,11 @@ TEST_CASE("[ScriptDiagnosticCaptureScope][SceneTree] capture_async records async
 
 	DiagnosticCaptureFixture fixture;
 	const Ref<ScriptDiagnosticCaptureResult> result = run_capture_async(fixture.suite, SNAME("async_capture_diagnostic"), true);
+	REQUIRE(result.is_valid());
+	if (result.is_null()) {
+		CoreGlobals::print_error_enabled = errors_enabled_before;
+		return;
+	}
 
 	CHECK_EQ(int(result->get_return_value()), 13);
 	CHECK(result->get_capture().is_valid());
@@ -279,6 +292,11 @@ TEST_CASE("[ScriptDiagnosticCaptureScope][SceneTree] capture_async runtime error
 
 	DiagnosticCaptureFixture fixture;
 	const Ref<ScriptDiagnosticCaptureResult> result = run_capture_async(fixture.suite, SNAME("runtime_error"), true);
+	REQUIRE(result.is_valid());
+	if (result.is_null()) {
+		CoreGlobals::print_error_enabled = errors_enabled_before;
+		return;
+	}
 
 	CHECK(result->get_return_value().get_type() == Variant::NIL);
 	CHECK(result->get_capture().is_valid());
