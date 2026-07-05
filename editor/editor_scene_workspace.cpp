@@ -352,6 +352,10 @@ EditorSceneWorkspace *EditorSceneWorkspace::create_single_leaf_workspace(EditorS
 }
 
 WorkspaceLeafNode *EditorSceneWorkspace::split(WorkspaceLeafNode *p_leaf, bool p_vertical, SplitSide p_side) {
+	return split_with_content(p_leaf, p_vertical, p_side, StringName("scene"));
+}
+
+WorkspaceLeafNode *EditorSceneWorkspace::split_with_content(WorkspaceLeafNode *p_leaf, bool p_vertical, SplitSide p_side, const StringName &p_content_type) {
 	ERR_FAIL_NULL_V(p_leaf, nullptr);
 	ERR_FAIL_COND_V(!leaves.has(p_leaf), nullptr);
 
@@ -366,7 +370,7 @@ WorkspaceLeafNode *EditorSceneWorkspace::split(WorkspaceLeafNode *p_leaf, bool p
 	parent->add_child(split_node);
 	parent->move_child(split_node, idx);
 
-	WorkspaceLeafNode *new_leaf = _create_leaf(next_leaf_id++);
+	WorkspaceLeafNode *new_leaf = _create_leaf(next_leaf_id++, p_content_type);
 	const bool insert_before = p_side == SPLIT_SIDE_FIRST;
 	if (insert_before) {
 		sc->add_child(new_leaf);
@@ -379,6 +383,36 @@ WorkspaceLeafNode *EditorSceneWorkspace::split(WorkspaceLeafNode *p_leaf, bool p
 	_update_focus_visuals();
 	queue_sort();
 	return new_leaf;
+}
+
+WorkspaceLeafNode *EditorSceneWorkspace::get_script_leaf() const {
+	for (WorkspaceLeafNode *leaf : leaves) {
+		if (leaf->get_leaf_content() && leaf->get_leaf_content()->get_content_type() == StringName("script")) {
+			return leaf;
+		}
+	}
+	return nullptr;
+}
+
+WorkspaceLeafNode *EditorSceneWorkspace::open_script_leaf(WorkspaceLeafNode *p_source_leaf, const String &p_script_path) {
+	ERR_FAIL_NULL_V(p_source_leaf, nullptr);
+	ERR_FAIL_COND_V(!leaves.has(p_source_leaf), nullptr);
+
+	// U15a hosts a single shared script surface, so reuse an existing script leaf
+	// rather than opening a second one (multiple script leaves is U15c).
+	WorkspaceLeafNode *target = get_script_leaf();
+	if (!target) {
+		target = split_with_content(p_source_leaf, false, SPLIT_SIDE_SECOND, StringName("script"));
+		ERR_FAIL_NULL_V(target, nullptr);
+	}
+
+	if (!p_script_path.is_empty() && target->get_leaf_content()) {
+		ScriptLeaf *script_leaf = Object::cast_to<ScriptLeaf>(target->get_leaf_content()->get_root_control());
+		if (script_leaf) {
+			script_leaf->set_script_path(p_script_path);
+		}
+	}
+	return target;
 }
 
 void EditorSceneWorkspace::collapse(WorkspaceLeafNode *p_leaf) {

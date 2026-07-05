@@ -113,6 +113,11 @@ void EditorMainScreen::load_layout_from_config(Ref<ConfigFile> p_config_file, co
 
 void EditorMainScreen::set_button_enabled(int p_index, bool p_enabled) {
 	ERR_FAIL_INDEX(p_index, buttons.size());
+	// The Script plugin has no toolbar tab (it opens as a workspace leaf); keep its
+	// button hidden regardless of feature-profile toggling.
+	if (p_index < editor_table.size() && editor_table[p_index] && _get_plugin_placement(editor_table[p_index]->get_plugin_name()) == SCREEN_APP) {
+		return;
+	}
 	buttons[p_index]->set_visible(p_enabled);
 	if (!p_enabled && buttons[p_index]->is_pressed()) {
 		select(EDITOR_2D);
@@ -182,6 +187,13 @@ void EditorMainScreen::select(int p_index) {
 
 	ERR_FAIL_INDEX(p_index, editor_table.size());
 
+	// Script is no longer a main screen; it lives as a workspace leaf. Route any
+	// request to select it into revealing that leaf instead of swapping screens.
+	if (editor_table[p_index] && _get_plugin_placement(editor_table[p_index]->get_plugin_name()) == SCREEN_APP) {
+		EditorNode::get_singleton()->reveal_script_leaf();
+		return;
+	}
+
 	if (!buttons[p_index]->is_visible()) { // Button hidden, no editor.
 		return;
 	}
@@ -206,9 +218,8 @@ void EditorMainScreen::select(int p_index) {
 	selected_plugin->selected_notify();
 
 	const ScreenPlacement placement = _get_plugin_placement(selected_plugin->get_plugin_name());
-	if (app_screen_vbox) {
-		app_screen_vbox->set_visible(placement == SCREEN_APP);
-	}
+	// app_screen_vbox (the script surface) is owned by the workspace ScriptLeaf that
+	// hosts it, so it is not toggled here; only the global (Game) screen is.
 	if (global_screen_vbox) {
 		global_screen_vbox->set_visible(placement == SCREEN_GLOBAL);
 	}
@@ -325,6 +336,12 @@ void EditorMainScreen::add_main_plugin(EditorPlugin *p_editor) {
 
 	tb->connect(SceneStringName(pressed), callable_mp(this, &EditorMainScreen::select).bind(buttons.size()));
 
+	// Script is a workspace leaf, not a main screen: keep the plugin registered
+	// (so it still handles/edits scripts) but never show its toolbar tab.
+	if (_get_plugin_placement(p_editor->get_plugin_name()) == SCREEN_APP) {
+		tb->hide();
+	}
+
 	buttons.push_back(tb);
 	button_hb->add_child(tb);
 	editor_table.push_back(p_editor);
@@ -337,7 +354,7 @@ void EditorMainScreen::remove_main_plugin(EditorPlugin *p_editor) {
 	for (int i = buttons.size() - 1; i >= 0; i--) {
 		if (p_editor->get_plugin_name() == buttons[i]->get_text()) {
 			if (buttons[i]->is_pressed()) {
-				select(EDITOR_SCRIPT);
+				select(EDITOR_2D);
 			}
 
 			memdelete(buttons[i]);

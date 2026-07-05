@@ -37,20 +37,34 @@
 class Label;
 
 /**
- * Stub non-scene workspace leaf for U15. Holds a placeholder panel with no
- * EditorSceneContext until the full script-leaf integration lands.
+ * Non-scene workspace leaf that hosts the editor's script surface (U15a). It
+ * carries the path of the script it represents but has no EditorSceneContext,
+ * since a script is a project resource rather than a scene. The live script
+ * editing surface is mounted into get_surface_host() by EditorNode; a
+ * placeholder label is shown while no surface is mounted.
  */
 class ScriptLeaf : public Control, public WorkspaceLeafContent {
 	FOUNDRY_CLASS(ScriptLeaf, Control);
 
 	String tab_title = "Script";
-	Label *title_label = nullptr;
+	String script_path;
+	Label *placeholder_label = nullptr;
+	Control *surface_host = nullptr;
+
+	void _update_placeholder_visibility();
 
 protected:
 	void _notification(int p_what);
 
 public:
 	void set_tab_title(const String &p_title);
+
+	// The res:// path of the script this leaf represents (empty if none yet).
+	void set_script_path(const String &p_path);
+	String get_script_path() const { return script_path; }
+
+	// Container the live script editing surface is reparented into by EditorNode.
+	Control *get_surface_host() const { return surface_host; }
 
 	StringName get_content_type() const override;
 	Control *get_root_control() const override;

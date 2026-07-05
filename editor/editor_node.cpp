@@ -100,6 +100,7 @@
 #include "editor/editor_scene_context.h"
 #include "editor/editor_scene_workspace.h"
 #include "editor/editor_scene_pane_tile.h"
+#include "editor/editor_script_leaf.h"
 #include "editor/editor_tile_drop_overlay.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/export/dedicated_server_export_plugin.h"
@@ -166,6 +167,7 @@
 #include "editor/scene/material_editor_plugin.h"
 #include "editor/scene/particle_process_material_editor_plugin.h"
 #include "editor/script/editor_script.h"
+#include "editor/script/script_editor_plugin.h"
 #include "editor/script/script_text_editor.h"
 #include "editor/script/text_editor.h"
 #include "editor/settings/editor_build_profile.h"
@@ -3236,7 +3238,10 @@ void EditorNode::_edit_current(bool p_skip_foreign, bool p_skip_inspector_update
 		EditorPlugin *main_plugin = editor_data.get_handling_main_editor(current_obj);
 
 		int plugin_index = editor_main_screen->get_plugin_index(main_plugin);
-		if (main_plugin && plugin_index >= 0 && !editor_main_screen->is_button_enabled(plugin_index)) {
+		// The Script plugin has no toolbar tab (it opens as a workspace leaf), so its
+		// button being hidden must not disable routing scripts to it.
+		const bool is_script_plugin = main_plugin && main_plugin->get_plugin_name() == "Script";
+		if (main_plugin && !is_script_plugin && plugin_index >= 0 && !editor_main_screen->is_button_enabled(plugin_index)) {
 			main_plugin = nullptr;
 		}
 		EditorPlugin *editor_plugin_screen = editor_main_screen->get_selected_plugin();
@@ -3247,12 +3252,14 @@ void EditorNode::_edit_current(bool p_skip_foreign, bool p_skip_inspector_update
 			Script *current_script = Object::cast_to<Script>(current_obj);
 			if (current_script) {
 				if (!changing_scene) {
-					// Only update main editor screen if using in-engine editor.
+					// Load the script first so revealing its leaf associates the leaf
+					// with the freshly-opened script rather than the previous one.
+					main_plugin->edit(current_script);
+
+					// Only reveal the script leaf when using the in-engine editor.
 					if (current_script->is_built_in() || (!bool(EDITOR_GET("text_editor/external/use_external_editor")) && !current_script->get_language()->overrides_external_editor())) {
 						editor_main_screen->select(plugin_index);
 					}
-
-					main_plugin->edit(current_script);
 				}
 			} else if (main_plugin != editor_plugin_screen) {
 				// Unedit previous plugin.
@@ -4786,6 +4793,84 @@ void EditorNode::_reparent_scene_mode_into(ScenePaneTile *p_tile) {
 	scene_mode->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	if (EditorTileDropOverlay *overlay = p_tile->get_drop_overlay()) {
 		host->move_child(overlay, -1);
+	}
+}
+
+void EditorNode::_reparent_script_surface_into(ScriptLeaf *p_leaf) {
+	if (!editor_main_screen || !p_leaf) {
+		return;
+	}
+	VBoxContainer *app_screen = editor_main_screen->get_app_screen_control();
+	if (!app_screen) {
+		return;
+	}
+	Control *host = p_leaf->get_surface_host();
+	if (!host) {
+		return;
+	}
+	if (app_screen->get_parent() != host) {
+		if (app_screen->get_parent()) {
+			app_screen->get_parent()->remove_child(app_screen);
+		}
+		host->add_child(app_screen);
+		app_screen->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+		app_screen->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+		app_screen->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	}
+	app_screen->show();
+}
+
+void EditorNode::_detach_script_surface() {
+	if (!editor_main_screen || !script_surface_home) {
+		return;
+	}
+	VBoxContainer *app_screen = editor_main_screen->get_app_screen_control();
+	if (!app_screen) {
+		return;
+	}
+	if (app_screen->get_parent() != script_surface_home) {
+		if (app_screen->get_parent()) {
+			app_screen->get_parent()->remove_child(app_screen);
+		}
+		script_surface_home->add_child(app_screen);
+		app_screen->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	}
+	app_screen->hide();
+}
+
+void EditorNode::reveal_script_leaf() {
+	if (!scene_workspace) {
+		return;
+	}
+	// Split beside the focused scene tile; fall back to any scene leaf.
+	WorkspaceLeafNode *source = scene_workspace->get_focused_leaf();
+	if (!source || !source->get_pane_tile()) {
+		source = nullptr;
+		for (WorkspaceLeafNode *leaf : scene_workspace->get_leaves()) {
+			if (leaf->get_pane_tile()) {
+				source = leaf;
+				break;
+			}
+		}
+	}
+	if (!source) {
+		return;
+	}
+
+	// Associate the leaf with whatever script the shared surface is currently editing.
+	String script_path;
+	if (ScriptEditor::get_singleton()) {
+		int line = 0;
+		int column = 0;
+		ScriptEditor::get_singleton()->get_current_script_view_state(script_path, line, column);
+	}
+
+	WorkspaceLeafNode *leaf = scene_workspace->open_script_leaf(source, script_path);
+	ERR_FAIL_NULL(leaf);
+	WorkspaceLeafContent *content = leaf->get_leaf_content();
+	ScriptLeaf *script_leaf = content ? Object::cast_to<ScriptLeaf>(content->get_root_control()) : nullptr;
+	if (script_leaf) {
+		_reparent_script_surface_into(script_leaf);
 	}
 }
 
@@ -6729,6 +6814,11 @@ void EditorNode::_on_leaf_added(int p_leaf_id) {
 }
 
 void EditorNode::_on_leaf_removed(int p_leaf_id, int p_successor_leaf_id) {
+	// If the closed leaf hosted the shared script surface, rescue the surface back
+	// to its home before the leaf (and its surface host) is freed by collapse.
+	if (scene_workspace && !scene_workspace->get_script_leaf()) {
+		_detach_script_surface();
+	}
 	editor_data.migrate_tile_scenes(p_leaf_id, p_successor_leaf_id);
 	editor_data.unregister_tile(p_leaf_id);
 	_update_all_scene_tabs();
@@ -6921,7 +7011,8 @@ void EditorNode::_load_workspace_from_config(const Ref<ConfigFile> &p_config_fil
 	}
 
 	// restore_from_config() frees the outgoing workspace tree. Detach the shared
-	// scene-mode surface first so it is not destroyed with the old tile's content host.
+	// scene-mode and script surfaces first so they are not destroyed with the old
+	// tile/leaf content hosts.
 	if (editor_main_screen) {
 		if (VBoxContainer *scene_mode = editor_main_screen->get_scene_mode_control()) {
 			if (scene_mode->get_parent()) {
@@ -6929,6 +7020,7 @@ void EditorNode::_load_workspace_from_config(const Ref<ConfigFile> &p_config_fil
 			}
 		}
 	}
+	_detach_script_surface();
 
 	scene_workspace->restore_from_config(p_config_file);
 
@@ -6943,6 +7035,23 @@ void EditorNode::_load_workspace_from_config(const Ref<ConfigFile> &p_config_fil
 		_update_focused_dock_singletons(focused_leaf->get_pane_tile());
 	}
 	_reparent_scene_mode_into(scene_workspace->get_focused_tile());
+
+	// Re-host the script surface into a restored script leaf and reopen its script.
+	if (WorkspaceLeafNode *script_leaf_node = scene_workspace->get_script_leaf()) {
+		WorkspaceLeafContent *content = script_leaf_node->get_leaf_content();
+		ScriptLeaf *script_leaf = content ? Object::cast_to<ScriptLeaf>(content->get_root_control()) : nullptr;
+		if (script_leaf) {
+			const String script_path = script_leaf->get_script_path();
+			if (!script_path.is_empty() && ScriptEditor::get_singleton()) {
+				Ref<Script> script = ResourceLoader::load(script_path, "Script");
+				if (script.is_valid()) {
+					ScriptEditor::get_singleton()->edit(script, false);
+				}
+			}
+			_reparent_script_surface_into(script_leaf);
+		}
+	}
+
 	_set_current_scene_nocheck(editor_data.get_tile_current_scene(editor_data.get_focused_tile_id()));
 }
 
@@ -7425,11 +7534,8 @@ void EditorNode::update_global_screen_visibility() {
 	const bool show_global = editor_main_screen->is_global_screen_selected();
 	global_screen_host->set_visible(show_global);
 	scene_workspace->set_visible(!show_global);
-	if (VBoxContainer *app_screen = editor_main_screen->get_app_screen_control()) {
-		if (Control *app_parent = Object::cast_to<Control>(app_screen->get_parent())) {
-			app_parent->set_visible(!show_global && app_screen->is_visible());
-		}
-	}
+	// The script surface (app_screen) is hosted inside a workspace ScriptLeaf, so it
+	// follows the workspace visibility above; it is not toggled separately here.
 }
 
 void EditorNode::set_distraction_free_mode(bool p_enter) {
@@ -9642,6 +9748,9 @@ EditorNode::EditorNode() {
 	srt->add_child(app_screen);
 	app_screen->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	app_screen->hide();
+	// The script surface lives here until a ScriptLeaf hosts it; it returns here
+	// when the last script leaf is closed.
+	script_surface_home = srt;
 
 	global_screen_host = memnew(Control);
 	global_screen_host->set_name("GlobalScreenHost");

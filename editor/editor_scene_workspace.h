@@ -146,8 +146,15 @@ public:
 
 	// Tree ops.
 	WorkspaceLeafNode *split(WorkspaceLeafNode *p_leaf, bool p_vertical, SplitSide p_side);
+	WorkspaceLeafNode *split_with_content(WorkspaceLeafNode *p_leaf, bool p_vertical, SplitSide p_side, const StringName &p_content_type);
 	void collapse(WorkspaceLeafNode *p_leaf);
 	bool move_content(WorkspaceLeafNode *p_from_leaf, WorkspaceLeafNode *p_to_leaf);
+
+	// Script leaves (U15a): at most one script leaf hosts the shared script surface.
+	WorkspaceLeafNode *get_script_leaf() const;
+	// Reveal the script leaf pointed at p_script_path, splitting beside p_source_leaf
+	// if none exists yet. Returns the script leaf.
+	WorkspaceLeafNode *open_script_leaf(WorkspaceLeafNode *p_source_leaf, const String &p_script_path);
 
 	// Drag-a-tab drop resolution (center = move scene; edge = split + move).
 	WorkspaceLeafNode *handle_scene_drop(int p_scene_idx, WorkspaceLeafNode *p_target_leaf, TileDropRegion p_region);

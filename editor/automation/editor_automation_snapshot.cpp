@@ -447,6 +447,14 @@ class EditorAutomationSnapshotBuilder {
 	}
 
 	int _add_node(Node *p_node, int p_parent_index, bool p_is_root, bool p_internal = false, bool p_relax_visibility = false) {
+		// A single node can be reached through more than one capture root (e.g. an
+		// open dialog is reachable from gui_base, from the exclusive-window chain,
+		// and from a dock pushed as its own root). Emit it once so selectors do not
+		// see the same element multiple times and report a false ambiguity.
+		if (const int *existing_index = data.object_id_to_index.getptr(p_node->get_instance_id())) {
+			return *existing_index;
+		}
+
 		if (!p_relax_visibility && !_node_is_visible(p_node)) {
 			return -1;
 		}
