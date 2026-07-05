@@ -31,8 +31,15 @@
 #pragma once
 
 #include "core/io/config_file.h"
+#include "editor/docks/inspector_dock.h"
+#include "editor/docks/scene_tree_dock.h"
+#include "editor/editor_data.h"
+#include "editor/editor_scene_context.h"
+#include "editor/editor_scene_pane_tile.h"
 #include "editor/editor_scene_workspace.h"
+#include "editor/scene/editor_scene_tabs.h"
 
+#include "scene/2d/node_2d.h"
 #include "scene/gui/split_container.h"
 #include "scene/main/window.h"
 
@@ -43,13 +50,16 @@ namespace TestSceneWorkspace {
 
 struct WorkspaceHarness {
 	Control *host = nullptr;
+	EditorData editor_data;
+	EditorSelection *selection = nullptr;
 	EditorSceneWorkspace *workspace = nullptr;
 
 	void mount() {
 		host = memnew(Control);
 		host->set_custom_minimum_size(Size2(800, 600));
 		SceneTree::get_singleton()->get_root()->add_child(host);
-		workspace = EditorSceneWorkspace::create_single_leaf_workspace();
+		selection = memnew(EditorSelection);
+		workspace = EditorSceneWorkspace::create_single_leaf_workspace(selection, &editor_data);
 		host->add_child(workspace);
 		workspace->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 		host->set_size(Size2(800, 600));
@@ -65,8 +75,150 @@ struct WorkspaceHarness {
 		memdelete(workspace);
 		SceneTree::get_singleton()->get_root()->remove_child(host);
 		memdelete(host);
+		memdelete(selection);
 	}
 };
+
+TEST_CASE("[SceneTree][Editor] tile-self-contained") {
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	ScenePaneTile *tile = h.workspace->get_focused_tile();
+	REQUIRE(tile != nullptr);
+
+	REQUIRE(tile->get_scene_tabs() != nullptr);
+	REQUIRE(tile->get_scene_tree_dock() != nullptr);
+	REQUIRE(tile->get_inspector_dock() != nullptr);
+	REQUIRE(tile->get_content_host() != nullptr);
+	CHECK(tile->is_ancestor_of(tile->get_scene_tabs()));
+	CHECK(tile->is_ancestor_of(tile->get_scene_tree_dock()));
+	CHECK(tile->is_ancestor_of(tile->get_inspector_dock()));
+	CHECK(tile->is_ancestor_of(tile->get_content_host()));
+	CHECK(tile->get_scene_tabs()->get_tile_id() == tile->get_tile_id());
+
+	EditorSceneContext *context = memnew(EditorSceneContext);
+	Node2D *root = memnew(Node2D);
+	root->set_name("TileScene");
+	context->set_scene_root_node(root);
+	Node2D *child = memnew(Node2D);
+	child->set_name("TileChild");
+	root->add_child(child);
+
+	SceneTreeDock *tree_dock = tile->get_scene_tree_dock();
+	InspectorDock *inspector_dock = tile->get_inspector_dock();
+
+	tree_dock->set_scene_context(context);
+	inspector_dock->set_scene_context(context);
+	h.pump();
+
+	CHECK(tree_dock->get_scene_context() == context);
+	CHECK(inspector_dock->get_scene_context() == context);
+	CHECK(String(tree_dock->get_scene_context()->get_scene_root_node()->get_name()) == "TileScene");
+
+	context->activate(SceneTree::get_singleton()->get_root());
+	Vector<Node *> select;
+	select.push_back(child);
+	tree_dock->set_selection(select);
+	h.pump();
+	CHECK(context->get_selection()->is_selected(child));
+
+	EditorSceneContext *other_context = memnew(EditorSceneContext);
+	Node2D *other_root = memnew(Node2D);
+	other_context->set_scene_root_node(other_root);
+	tree_dock->set_scene_context(other_context);
+	inspector_dock->set_scene_context(other_context);
+	h.pump();
+
+	CHECK(tree_dock->get_scene_context() == other_context);
+	CHECK(inspector_dock->get_scene_context() == other_context);
+	CHECK(context->get_selection()->is_selected(child));
+
+	tree_dock->set_scene_context(nullptr);
+	inspector_dock->set_scene_context(nullptr);
+	inspector_dock->update(nullptr);
+	h.pump();
+
+	CHECK(tree_dock->get_scene_context() == nullptr);
+	CHECK(inspector_dock->get_scene_context() == nullptr);
+
+	// Rebind to a fresh context after the previous binding was cleared.
+	EditorSceneContext *replacement = memnew(EditorSceneContext);
+	tree_dock->set_scene_context(replacement);
+	inspector_dock->set_scene_context(replacement);
+	h.pump();
+	CHECK(tree_dock->get_scene_context() == replacement);
+
+	context->deactivate();
+	memdelete(context);
+	memdelete(replacement);
+	memdelete(other_context);
+
+	h.unmount();
+}
+
+TEST_CASE("[SceneTree][Editor] tile-isolation-across-leaves") {
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspaceLeafNode *first = h.workspace->get_focused_leaf();
+	WorkspaceLeafNode *second = h.workspace->split(first, false, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
+	h.pump();
+	REQUIRE(second != nullptr);
+
+	ScenePaneTile *tile_a = first->get_pane_tile();
+	ScenePaneTile *tile_b = second->get_pane_tile();
+	REQUIRE(tile_a != nullptr);
+	REQUIRE(tile_b != nullptr);
+
+	EditorSceneContext *context_a = memnew(EditorSceneContext);
+	Node2D *root_a = memnew(Node2D);
+	context_a->set_scene_root_node(root_a);
+	Node2D *child_a = memnew(Node2D);
+	root_a->add_child(child_a);
+
+	EditorSceneContext *context_b = memnew(EditorSceneContext);
+	Node2D *root_b = memnew(Node2D);
+	context_b->set_scene_root_node(root_b);
+	Node2D *child_b = memnew(Node2D);
+	root_b->add_child(child_b);
+
+	context_a->activate(SceneTree::get_singleton()->get_root());
+	context_b->activate(SceneTree::get_singleton()->get_root());
+
+	tile_a->get_scene_tree_dock()->set_scene_context(context_a);
+	tile_a->get_inspector_dock()->set_scene_context(context_a);
+	tile_b->get_scene_tree_dock()->set_scene_context(context_b);
+	tile_b->get_inspector_dock()->set_scene_context(context_b);
+
+	Vector<Node *> select_a;
+	select_a.push_back(child_a);
+	tile_a->get_scene_tree_dock()->set_selection(select_a);
+	h.pump();
+
+	CHECK(context_a->get_selection()->is_selected(child_a));
+	CHECK_FALSE(context_b->get_selection()->is_selected(child_b));
+
+	Vector<Node *> select_b;
+	select_b.push_back(child_b);
+	tile_b->get_scene_tree_dock()->set_selection(select_b);
+	h.pump();
+
+	CHECK(context_b->get_selection()->is_selected(child_b));
+	// Selecting in tile B must not alter tile A's bound context or selection.
+	CHECK(context_a->get_selection()->is_selected(child_a));
+	CHECK_FALSE(context_b->get_selection()->is_selected(child_a));
+	CHECK(tile_a->get_scene_tree_dock()->get_scene_context() == context_a);
+	CHECK(tile_b->get_scene_tree_dock()->get_scene_context() == context_b);
+
+	context_a->deactivate();
+	context_b->deactivate();
+	memdelete(context_a);
+	memdelete(context_b);
+
+	h.unmount();
+}
 
 TEST_CASE("[SceneTree][Editor] tree-split-collapse") {
 	WorkspaceHarness h;
