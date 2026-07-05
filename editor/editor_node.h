@@ -61,6 +61,7 @@ class Tree;
 class VBoxContainer;
 class VSplitContainer;
 class Window;
+class World3D;
 
 class AudioStreamImportSettingsDialog;
 class AudioStreamPreviewGenerator;
@@ -899,6 +900,7 @@ public:
 	// or the startup placeholder when no scene tab exists yet).
 	SubViewport *get_scene_root();
 	EditorSceneContext *get_active_scene_context() { return active_scene_context; }
+	Ref<World3D> get_edited_world_3d() const;
 
 	// Wires a freshly created scene context into the editor: registers
 	// selection metadata providers, relays its selection signal, and applies
