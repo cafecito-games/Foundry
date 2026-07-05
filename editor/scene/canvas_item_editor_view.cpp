@@ -143,6 +143,8 @@ void CanvasItemEditorView::build_ui(Control *p_parent, bool p_register_primary_c
 	ERR_FAIL_NULL(p_parent);
 	ERR_FAIL_NULL(editor);
 
+	plugin_forwarding_target = p_register_primary_container;
+
 	viewport_scrollable = memnew(Control);
 	p_parent->add_child(viewport_scrollable);
 	viewport_scrollable->set_mouse_filter(Control::MOUSE_FILTER_PASS);
@@ -1789,7 +1791,7 @@ void CanvasItemEditorView::_gui_input_viewport(const Ref<InputEvent> &p_event) {
 		accepted = true;
 		if (_gui_input_rulers_and_guides(p_event)) {
 			// print_line("Rulers and guides");
-		} else if (EditorNode::get_singleton()->get_editor_plugins_over()->forward_gui_input(p_event)) {
+		} else if (plugin_forwarding_target && EditorNode::get_singleton()->get_editor_plugins_over()->forward_gui_input(p_event)) {
 			// print_line("Plugin");
 		} else if (_gui_input_open_scene_on_double_click(p_event)) {
 			// print_line("Open scene on double click");
@@ -3282,8 +3284,10 @@ void CanvasItemEditorView::_draw_viewport() {
 	RID ci = viewport->get_canvas_item();
 	RenderingServer::get_singleton()->canvas_item_add_set_transform(ci, Transform2D());
 
-	EditorNode::get_singleton()->get_editor_plugins_over()->forward_canvas_draw_over_viewport(viewport);
-	EditorNode::get_singleton()->get_editor_plugins_force_over()->forward_canvas_force_draw_over_viewport(viewport);
+	if (plugin_forwarding_target) {
+		EditorNode::get_singleton()->get_editor_plugins_over()->forward_canvas_draw_over_viewport(viewport);
+		EditorNode::get_singleton()->get_editor_plugins_force_over()->forward_canvas_force_draw_over_viewport(viewport);
+	}
 
 	if (editor->show_rulers) {
 		_draw_rulers();

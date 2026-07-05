@@ -65,6 +65,7 @@ class CanvasItemEditorView : public Control {
 	Button *button_center_view = nullptr;
 	EditorZoomWidget *zoom_widget = nullptr;
 	Ref<ViewPanner> panner;
+	bool plugin_forwarding_target = false;
 
 	void _pan_callback(Vector2 p_scroll_vec, Ref<InputEvent> p_event);
 	void _zoom_callback(float p_zoom_factor, Vector2 p_origin, Ref<InputEvent> p_event);
@@ -147,6 +148,7 @@ public:
 	void active_scene_context_changed();
 	void set_cursor_shape_override(Control::CursorShape p_shape = Control::CURSOR_ARROW);
 	Control::CursorShape get_cursor_shape(const Point2 &p_pos) const override;
+	bool is_plugin_forwarding_target() const { return plugin_forwarding_target; }
 
 	// Test-only counter incremented by update_viewport(); used by unit tests.
 	uint64_t test_update_viewport_invocations = 0;

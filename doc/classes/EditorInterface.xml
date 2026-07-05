@@ -105,7 +105,7 @@
 		<method name="get_editor_main_screen" qualifiers="const">
 			<return type="VBoxContainer" />
 			<description>
-				Returns the editor control responsible for main screen plugins and tools. Use it with plugins that implement [method EditorPlugin._has_main_screen].
+				Returns the editor control responsible for main screen plugins and tools. Use it with plugins that implement [method EditorPlugin._has_main_screen]. The container is reparented into the [i]focused[/i] workspace tile, so its contents always belong to the tile that currently has editor focus.
 				[b]Note:[/b] This node is a [VBoxContainer], which means that if you add a [Control] child to it, you need to set the child's [member Control.size_flags_vertical] to [constant Control.SIZE_EXPAND_FILL] to make it use the full available space.
 				[b]Warning:[/b] Removing and freeing this node will render a part of the editor useless and may cause a crash.
 			</description>
@@ -151,14 +151,14 @@
 		<method name="get_editor_viewport_2d" qualifiers="const">
 			<return type="SubViewport" />
 			<description>
-				Returns the 2D editor [SubViewport]. It does not have a camera. Instead, the view transforms are done directly and can be accessed with [member Viewport.global_canvas_transform].
+				Returns the 2D editor [SubViewport] for the [i]focused[/i] tile's current scene. It does not have a camera. Instead, the view transforms are done directly and can be accessed with [member Viewport.global_canvas_transform]. This is the same viewport shown in the focused tile when the 2D main screen is active.
 			</description>
 		</method>
 		<method name="get_editor_viewport_3d" qualifiers="const">
 			<return type="SubViewport" />
 			<param index="0" name="idx" type="int" default="0" />
 			<description>
-				Returns the specified 3D editor [SubViewport], from [code]0[/code] to [code]3[/code]. The viewport can be used to access the active editor cameras with [method Viewport.get_camera_3d].
+				Returns the specified primary 3D editor [SubViewport] for the [i]focused[/i] tile, from [code]0[/code] to [code]3[/code]. The viewport can be used to access the active editor cameras with [method Viewport.get_camera_3d]. These indices always refer to the focused tile's four-viewport 3D editor when the 3D main screen is active; live 3D views in other tiles are not exposed here.
 			</description>
 		</method>
 		<method name="get_file_system_dock" qualifiers="const">

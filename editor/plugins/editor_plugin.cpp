@@ -254,23 +254,33 @@ void EditorPlugin::forward_canvas_force_draw_over_viewport(Control *p_overlay) {
 	FOUNDRY_VIRTUAL_CALL(_forward_canvas_force_draw_over_viewport, p_overlay);
 }
 
-// Updates the overlays of the 2D viewport or, if in 3D mode, of every 3D viewport.
+// Updates overlays on the focused tile's editor surfaces: all four primary 3D
+// viewports when the 3D main screen is active, otherwise the focused 2D view.
 int EditorPlugin::update_overlays() const {
-	if (Node3DEditor::get_singleton()->is_visible()) {
+	Node3DEditor *node_3d_editor = Node3DEditor::get_singleton();
+	if (node_3d_editor && node_3d_editor->is_visible()) {
 		int count = 0;
 		for (uint32_t i = 0; i < Node3DEditor::VIEWPORTS_COUNT; i++) {
-			Node3DEditorViewport *vp = Node3DEditor::get_singleton()->get_editor_viewport(i);
+			Node3DEditorViewport *vp = node_3d_editor->get_editor_viewport(i);
 			if (vp->is_visible()) {
 				vp->update_surface();
 				count++;
 			}
 		}
 		return count;
-	} else {
-		// This will update the normal viewport itself as well
-		CanvasItemEditor::get_singleton()->get_viewport_control()->queue_redraw();
-		return 1;
 	}
+
+	CanvasItemEditor *canvas_item_editor = CanvasItemEditor::get_singleton();
+	if (!canvas_item_editor) {
+		return 0;
+	}
+	Control *viewport_control = canvas_item_editor->get_viewport_control();
+	if (!viewport_control) {
+		return 0;
+	}
+	// Redraws the focused tile's 2D overlay control (and the scene viewport with it).
+	viewport_control->queue_redraw();
+	return 1;
 }
 
 EditorPlugin::AfterGUIInput EditorPlugin::forward_3d_gui_input(Camera3D *p_camera, const Ref<InputEvent> &p_event) {

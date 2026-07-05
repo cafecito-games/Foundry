@@ -1847,7 +1847,7 @@ void Node3DEditorViewport::_sinput(const Ref<InputEvent> &p_event) {
 	}
 
 	EditorPlugin::AfterGUIInput after = EditorPlugin::AFTER_GUI_INPUT_PASS;
-	{
+	if (!is_secondary_view()) {
 		EditorNode *en = EditorNode::get_singleton();
 
 		switch (en->get_editor_plugins_force_input_forwarding()->forward_3d_gui_input(camera, p_event, true)) {
@@ -3815,8 +3815,10 @@ static void draw_indicator_bar(Control &p_surface, real_t p_fill, const Ref<Text
 }
 
 void Node3DEditorViewport::_draw() {
-	EditorNode::get_singleton()->get_editor_plugins_over()->forward_3d_draw_over_viewport(surface);
-	EditorNode::get_singleton()->get_editor_plugins_force_over()->forward_3d_force_draw_over_viewport(surface);
+	if (!is_secondary_view()) {
+		EditorNode::get_singleton()->get_editor_plugins_over()->forward_3d_draw_over_viewport(surface);
+		EditorNode::get_singleton()->get_editor_plugins_force_over()->forward_3d_force_draw_over_viewport(surface);
+	}
 
 	if (surface->has_focus() || rotation_control->has_focus()) {
 		Size2 size = surface->get_size();
