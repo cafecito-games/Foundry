@@ -191,6 +191,12 @@ next in its track. Liveness (Track 4) is mostly mechanical wiring once the hard 
   automation that drives real tiles and asserts cross-tile isolation (select in tile A → tile B
   untouched). The foundational (single-context) assertions land early alongside U1–U5; the
   cross-tile assertions extend after U6.
+- **U16 — MCP editor automation: multi-pane awareness.** The automation surface is single-scene
+  today (`read_editor_state` reports one main screen / edited scene; `within` can't name a tile;
+  no semantic dock/drag). Extend it to report the workspace tree + focused tile, scope selectors
+  by tile, add a semantic dock/drag action, and add tile-lifecycle wait conditions. **Enables**
+  U11's cross-tile scenario and makes the #933 (drag-to-dock) and U15b (cross-pane drag) manual
+  checklists scriptable. Needs U6c (tile ids + focus).
 
 ### Track 6 — Per-scene docks in the pane
 - **U12 — Signals/groups/history docks per-context.** Extend Phase B's `set_scene_context()` to
