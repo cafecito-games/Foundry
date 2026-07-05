@@ -617,8 +617,6 @@ bool EditorAutomationWait::evaluate_condition_once(
 			}
 			return EditorAutomationWorkspace::get_focused_tile_id() != baseline_focus;
 		}
-		case WaitConditionKind::WORKSPACE_SETTLED:
-			return false;
 		case WaitConditionKind::UNSUPPORTED:
 			r_failure = EditorAutomationWaitResult::failure(
 					"unsupported_condition",
