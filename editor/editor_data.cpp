@@ -617,6 +617,7 @@ int EditorData::add_edited_scene(int p_at_pos) {
 	es.live_edit_root = NodePath(String("/root"));
 	es.context = memnew(EditorSceneContext);
 	es.context->set_history_id(last_created_scene++);
+	es.tile_id = focused_tile_id;
 	if (EditorNode::get_singleton()) {
 		EditorNode::get_singleton()->configure_scene_context(es.context);
 	}
@@ -630,6 +631,13 @@ int EditorData::add_edited_scene(int p_at_pos) {
 	if (current_edited_scene < 0) {
 		current_edited_scene = 0;
 	}
+
+	_ensure_tile_registered(focused_tile_id);
+	tile_current_scenes[focused_tile_id] = p_at_pos;
+#ifdef DEV_ENABLED
+	_check_focus_invariant();
+#endif
+
 	return p_at_pos;
 }
 
@@ -652,10 +660,30 @@ void EditorData::remove_scene(int p_idx) {
 		}
 	}
 
+	for (KeyValue<int, int> &E : tile_current_scenes) {
+		int cur = E.value;
+		if (cur == p_idx) {
+			int replacement = -1;
+			const Vector<int> tile_scenes = get_tile_scene_indices(E.key);
+			for (int i = 0; i < tile_scenes.size(); i++) {
+				if (tile_scenes[i] != p_idx) {
+					replacement = tile_scenes[i];
+					break;
+				}
+			}
+			if (replacement > p_idx) {
+				replacement--;
+			}
+			E.value = replacement;
+		} else if (cur > p_idx) {
+			E.value--;
+		}
+	}
+
 	if (current_edited_scene > p_idx) {
 		current_edited_scene--;
-	} else if (current_edited_scene == p_idx && current_edited_scene > 0) {
-		current_edited_scene--;
+	} else if (current_edited_scene == p_idx) {
+		current_edited_scene = get_tile_current_scene(focused_tile_id);
 	}
 
 	if (!edited_scene[p_idx].path.is_empty()) {
@@ -786,6 +814,12 @@ int EditorData::get_edited_scene_from_path(const String &p_path) const {
 void EditorData::set_edited_scene(int p_idx) {
 	ERR_FAIL_INDEX(p_idx, edited_scene.size());
 	current_edited_scene = p_idx;
+	const int tile_id = edited_scene[p_idx].tile_id;
+	_ensure_tile_registered(tile_id);
+	tile_current_scenes[tile_id] = p_idx;
+#ifdef DEV_ENABLED
+	_check_focus_invariant();
+#endif
 }
 
 Node *EditorData::EditedScene::get_root() const {
@@ -873,10 +907,205 @@ void EditorData::move_edited_scene_to_index(int p_idx) {
 	ERR_FAIL_INDEX(current_edited_scene, edited_scene.size());
 	ERR_FAIL_INDEX(p_idx, edited_scene.size());
 
+	const int from_idx = current_edited_scene;
+	auto remap_index = [&](int p_scene_idx) -> int {
+		if (p_scene_idx < 0) {
+			return -1;
+		}
+		if (p_scene_idx == from_idx) {
+			return p_idx;
+		}
+		if (from_idx < p_idx) {
+			if (p_scene_idx > from_idx && p_scene_idx <= p_idx) {
+				return p_scene_idx - 1;
+			}
+		} else if (from_idx > p_idx) {
+			if (p_scene_idx >= p_idx && p_scene_idx < from_idx) {
+				return p_scene_idx + 1;
+			}
+		}
+		return p_scene_idx;
+	};
+
+	for (KeyValue<int, int> &E : tile_current_scenes) {
+		E.value = remap_index(E.value);
+	}
+
 	EditedScene es = edited_scene[current_edited_scene];
 	edited_scene.remove_at(current_edited_scene);
 	edited_scene.insert(p_idx, es);
 	current_edited_scene = p_idx;
+	_ensure_tile_registered(es.tile_id);
+	tile_current_scenes[es.tile_id] = p_idx;
+#ifdef DEV_ENABLED
+	_check_focus_invariant();
+#endif
+}
+
+void EditorData::_ensure_tile_registered(int p_tile_id) {
+	ERR_FAIL_COND(p_tile_id < 0);
+	if (!tile_current_scenes.has(p_tile_id)) {
+		tile_current_scenes[p_tile_id] = -1;
+	}
+}
+
+#ifdef DEV_ENABLED
+void EditorData::_check_focus_invariant() const {
+	ERR_FAIL_COND_MSG(current_edited_scene != get_tile_current_scene(focused_tile_id), "EditorData focus invariant broken: current_edited_scene != current_scene_of(focused_tile).");
+}
+#endif
+
+Vector<int> EditorData::get_tile_scene_indices(int p_tile_id) const {
+	Vector<int> result;
+	for (int i = 0; i < edited_scene.size(); i++) {
+		if (edited_scene[i].tile_id == p_tile_id) {
+			result.push_back(i);
+		}
+	}
+	return result;
+}
+
+int EditorData::tile_tab_to_scene_index(int p_tile_id, int p_tab) const {
+	const Vector<int> indices = get_tile_scene_indices(p_tile_id);
+	if (p_tab < 0 || p_tab >= indices.size()) {
+		return -1;
+	}
+	return indices[p_tab];
+}
+
+int EditorData::scene_index_to_tile_tab(int p_idx) const {
+	ERR_FAIL_INDEX_V(p_idx, edited_scene.size(), -1);
+	const int tile_id = edited_scene[p_idx].tile_id;
+	const Vector<int> indices = get_tile_scene_indices(tile_id);
+	for (int i = 0; i < indices.size(); i++) {
+		if (indices[i] == p_idx) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+void EditorData::set_scene_tile(int p_idx, int p_tile_id) {
+	ERR_FAIL_INDEX(p_idx, edited_scene.size());
+	ERR_FAIL_COND(p_tile_id < 0);
+	const int old_tile_id = edited_scene[p_idx].tile_id;
+	if (old_tile_id == p_tile_id) {
+		return;
+	}
+
+	_ensure_tile_registered(old_tile_id);
+	_ensure_tile_registered(p_tile_id);
+
+	int old_tile_replacement = -1;
+	if (tile_current_scenes[old_tile_id] == p_idx) {
+		const Vector<int> old_tile_scenes = get_tile_scene_indices(old_tile_id);
+		for (int i = 0; i < old_tile_scenes.size(); i++) {
+			if (old_tile_scenes[i] != p_idx) {
+				continue;
+			}
+
+			if (i + 1 < old_tile_scenes.size()) {
+				old_tile_replacement = old_tile_scenes[i + 1];
+			} else if (i > 0) {
+				old_tile_replacement = old_tile_scenes[i - 1];
+			}
+			break;
+		}
+	}
+
+	edited_scene.write[p_idx].tile_id = p_tile_id;
+
+	if (tile_current_scenes[old_tile_id] == p_idx) {
+		tile_current_scenes[old_tile_id] = old_tile_replacement;
+		if (focused_tile_id == old_tile_id) {
+			current_edited_scene = old_tile_replacement;
+		}
+	}
+
+	if (tile_current_scenes[p_tile_id] < 0) {
+		tile_current_scenes[p_tile_id] = p_idx;
+		if (focused_tile_id == p_tile_id) {
+			current_edited_scene = p_idx;
+		}
+	}
+#ifdef DEV_ENABLED
+	_check_focus_invariant();
+#endif
+}
+
+int EditorData::get_tile_current_scene(int p_tile_id) const {
+	if (p_tile_id < 0 || !tile_current_scenes.has(p_tile_id)) {
+		return -1;
+	}
+	return tile_current_scenes[p_tile_id];
+}
+
+void EditorData::set_tile_current_scene(int p_tile_id, int p_idx) {
+	ERR_FAIL_COND(p_tile_id < 0);
+	_ensure_tile_registered(p_tile_id);
+	tile_current_scenes[p_tile_id] = p_idx;
+	if (p_tile_id == focused_tile_id) {
+		current_edited_scene = p_idx;
+	}
+#ifdef DEV_ENABLED
+	if (p_idx >= 0) {
+		ERR_FAIL_INDEX(p_idx, edited_scene.size());
+		ERR_FAIL_COND(edited_scene[p_idx].tile_id != p_tile_id);
+	}
+	_check_focus_invariant();
+#endif
+}
+
+int EditorData::get_focused_tile_id() const {
+	return focused_tile_id;
+}
+
+void EditorData::set_focused_tile_id(int p_tile_id) {
+	ERR_FAIL_COND(p_tile_id < 0);
+	focused_tile_id = p_tile_id;
+	_ensure_tile_registered(p_tile_id);
+	current_edited_scene = tile_current_scenes[p_tile_id];
+#ifdef DEV_ENABLED
+	_check_focus_invariant();
+#endif
+}
+
+void EditorData::register_tile(int p_tile_id) {
+	_ensure_tile_registered(p_tile_id);
+}
+
+void EditorData::unregister_tile(int p_tile_id) {
+	tile_current_scenes.erase(p_tile_id);
+}
+
+void EditorData::migrate_tile_scenes(int p_from_tile_id, int p_to_tile_id) {
+	ERR_FAIL_COND(p_from_tile_id < 0);
+	ERR_FAIL_COND(p_to_tile_id < 0);
+	ERR_FAIL_COND(p_from_tile_id == p_to_tile_id);
+
+	_ensure_tile_registered(p_to_tile_id);
+
+	for (int i = 0; i < edited_scene.size(); i++) {
+		if (edited_scene[i].tile_id == p_from_tile_id) {
+			edited_scene.write[i].tile_id = p_to_tile_id;
+		}
+	}
+
+	if (tile_current_scenes.has(p_from_tile_id)) {
+		const int from_current = tile_current_scenes[p_from_tile_id];
+		if (from_current >= 0 && tile_current_scenes[p_to_tile_id] < 0) {
+			tile_current_scenes[p_to_tile_id] = from_current;
+		}
+		tile_current_scenes.erase(p_from_tile_id);
+	}
+
+	if (focused_tile_id == p_from_tile_id) {
+		focused_tile_id = p_to_tile_id;
+		current_edited_scene = get_tile_current_scene(p_to_tile_id);
+	}
+#ifdef DEV_ENABLED
+	_check_focus_invariant();
+#endif
 }
 
 Ref<Script> EditorData::get_scene_root_script(int p_idx) const {
@@ -969,6 +1198,8 @@ void EditorData::clear_edited_scenes() {
 	}
 	edited_scene.clear();
 	current_edited_scene = -1;
+	tile_current_scenes.clear();
+	focused_tile_id = 0;
 	SceneTree::get_singleton()->set_edited_scene_root(nullptr);
 }
 

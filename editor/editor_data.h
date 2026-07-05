@@ -117,6 +117,7 @@ public:
 		uint64_t file_modified_time = 0;
 		NodePath live_edit_root;
 		uint64_t last_checked_version = 0;
+		int tile_id = 0;
 
 		Node *get_root() const;
 	};
@@ -139,6 +140,13 @@ private:
 	Vector<EditedScene> edited_scene;
 	int current_edited_scene = -1;
 	int last_created_scene = 1;
+	HashMap<int, int> tile_current_scenes;
+	int focused_tile_id = 0;
+
+	void _ensure_tile_registered(int p_tile_id);
+#ifdef DEV_ENABLED
+	void _check_focus_invariant() const;
+#endif
 
 	bool _find_updated_instances(Node *p_root, Node *p_node, HashSet<String> &checked_paths);
 
@@ -221,6 +229,18 @@ public:
 	bool check_and_update_scene(int p_idx);
 	bool reload_scene_from_memory(int p_idx, bool p_mark_unsaved);
 	void move_edited_scene_to_index(int p_idx);
+
+	Vector<int> get_tile_scene_indices(int p_tile_id) const;
+	int tile_tab_to_scene_index(int p_tile_id, int p_tab) const;
+	int scene_index_to_tile_tab(int p_idx) const;
+	void set_scene_tile(int p_idx, int p_tile_id);
+	int get_tile_current_scene(int p_tile_id) const;
+	void set_tile_current_scene(int p_tile_id, int p_idx);
+	int get_focused_tile_id() const;
+	void set_focused_tile_id(int p_tile_id);
+	void register_tile(int p_tile_id);
+	void unregister_tile(int p_tile_id);
+	void migrate_tile_scenes(int p_from_tile_id, int p_to_tile_id);
 
 	bool call_build();
 

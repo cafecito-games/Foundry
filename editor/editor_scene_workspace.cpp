@@ -137,6 +137,7 @@ void EditorSceneWorkspace::_notification(int p_what) {
 void EditorSceneWorkspace::_bind_methods() {
 	ADD_SIGNAL(MethodInfo("leaf_focus_requested", PropertyInfo(Variant::INT, "leaf_id")));
 	ADD_SIGNAL(MethodInfo("leaf_added", PropertyInfo(Variant::INT, "leaf_id")));
+	ADD_SIGNAL(MethodInfo("leaf_removed", PropertyInfo(Variant::INT, "leaf_id"), PropertyInfo(Variant::INT, "successor_leaf_id")));
 }
 
 bool EditorSceneWorkspace::_is_leaf_node(Control *p_node) const {
@@ -238,7 +239,9 @@ void EditorSceneWorkspace::collapse(WorkspaceLeafNode *p_leaf) {
 	grand->move_child(sibling, split_index);
 
 	const int collapsed_leaf_id = p_leaf->get_leaf_id();
+	int successor_leaf_id = sibling && _is_leaf_node(sibling) ? Object::cast_to<WorkspaceLeafNode>(sibling)->get_leaf_id() : focused_leaf_id;
 	leaves.erase(p_leaf);
+	emit_signal(SNAME("leaf_removed"), collapsed_leaf_id, successor_leaf_id);
 	memdelete(p_leaf);
 
 	if (focused_leaf_id == collapsed_leaf_id && !leaves.is_empty()) {
