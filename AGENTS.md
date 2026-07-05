@@ -24,7 +24,36 @@ Use the supported command-first CLI: `foundry <command> <subcommand> [options]`.
 - Run a project test runner script: `./bin/foundry.* --headless project test --project <project> --runner res://path/to/runner.fs -- <runner args>`.
 - Open the editor GUI: `DISPLAY=:1 ./bin/foundry.* editor open --project <project>`.
 
-## Editor MCP Automation
+### Test run progress events
+
+Full doctest runs can be quiet for long stretches while individual test cases execute. Normal stdout/stderr also mixes expected negative-test diagnostics, engine warnings, leak reports, and the final doctest summary, which makes it hard for agents to tell whether a run is healthy or hung.
+
+`foundry test run` supports an opt-in progress stream for monitoring and automation:
+
+- `--progress`: compact human-readable lines on stdout (`[foundry-test] START 42/2779 ...`).
+- `--progress-format=text|jsonl`: choose the event encoding (`--progress` defaults to text).
+- `--progress-file <path>`: write newline-delimited JSON events to a separate file. **Prefer this for agents** so progress can be tailed without scraping mixed engine/doctest output.
+- `--progress-heartbeat-seconds <n>`: emit periodic `test_heartbeat` events while a test case is still running (default `30`; use `0` to disable heartbeats but keep start/end events).
+
+Progress is off by default. When enabled, the runner emits structured events: `run_start`, `test_start`, `test_heartbeat`, `test_end`, and `run_end`. JSONL records include `version`, `event`, `index`, `test_count` (for the filtered set), test `name`/`suite`/`file`/`line`, `status`, `duration_ms`, and run-level counters on `run_end`.
+
+Example agent-friendly usage:
+
+```sh
+./bin/foundry.* --headless test run --progress-format=jsonl --progress-file /tmp/foundry-test-progress.jsonl --force-colors
+./bin/foundry.* --headless test run --progress --case "*FoundryCLI*" --force-colors
+./bin/foundry.* --headless test run --progress-format=jsonl --progress-file /tmp/progress.jsonl --progress-heartbeat-seconds 30 --case "*Editor*" --force-colors
+```
+
+When monitoring a long run:
+
+- Tail `--progress-file` for the current test identity and heartbeat timestamps instead of guessing from silence.
+- Use `test_start`/`test_heartbeat` to detect stalls on a specific case before the suite finishes.
+- Use `test_end`/`run_end` for structured pass/fail/skip counts without parsing doctest's mixed console output.
+- `--quiet` still suppresses stdout progress, but `--progress-file` continues to emit events.
+
+Do not scrape doctest console output for progress when `--progress-file` is available.
+
 
 The Foundry editor embeds a local MCP (Model Context Protocol) server that lets agents drive the real editor GUI — clicking buttons, filling dialogs, editing inspector properties, running scenes — without screenshots or pixel coordinates. Use it whenever a task needs to operate or verify the editor UI itself (reproducing editor bugs, testing editor-facing features, exercising dialogs and docks end-to-end).
 
@@ -97,7 +126,7 @@ This is a Godot Engine fork; the only product is the single `foundry` binary (ed
   - `dev_mode=yes` enables stricter checks and warnings-as-errors. Use `dev_build=yes` without `dev_mode=yes` only for temporary local iteration, never as the final validation before a PR.
   - SCons build cache: always pass `cache_path="$HOME/.scons_cache"`. The cache lives in `$HOME` (NOT the repo tree) on purpose, so it is captured by the Cloud VM snapshot and survives whatever git refresh runs on a fresh agent. It is pre-populated, so even a full `--clean` rebuild on a new agent retrieves objects from cache and finishes in ~1.5 min instead of ~15 min. Keep the same build flags: changing flags (e.g. `dev_mode`, target) produces different object hashes and misses the cache. The cache is content-addressed and self-maintaining; do not delete `$HOME/.scons_cache`.
 - Output binary: `bin/foundry.linuxbsd.editor.dev.x86_64` (this fork renames the binary from `godot` to `foundry`).
-- Run the full C++ + Foundry Script test suite: `DISPLAY=:1 ./bin/foundry.linuxbsd.editor.dev.x86_64 --headless test run --force-colors`. Always pass `--headless` in scripted/CI-style runs. The run prints `ObjectDB instances leaked`/`resources still in use at exit` and may exit non-zero at cleanup even when every test passes; trust the `[doctest] Status: SUCCESS!` summary line.
+- Run the full C++ + Foundry Script test suite: `DISPLAY=:1 ./bin/foundry.linuxbsd.editor.dev.x86_64 --headless test run --force-colors`. For long full-suite runs, add `--progress-format=jsonl --progress-file /tmp/foundry-test-progress.jsonl` (and optionally `--progress-heartbeat-seconds 30`) so you can tail structured progress instead of inferring health from silence. Always pass `--headless` in scripted/CI-style runs. The run prints `ObjectDB instances leaked`/`resources still in use at exit` and may exit non-zero at cleanup even when every test passes; trust the `[doctest] Status: SUCCESS!` summary line.
 - Prefix the full-suite run with `DISPLAY=:1` (as shown above). Some tests, such as the editor automation MVP acceptance workflow, launch a real editor GUI subprocess and self-skip when no display is available. Without `DISPLAY=:1` those tests silently skip instead of running, so a green `--headless`-only run can hide GUI-dependent failures. Keep `--headless` for the tool's own render mode; `DISPLAY=:1` only provides the X display those subprocesses need.
 - Run a focused doctest filter: `./bin/foundry.linuxbsd.editor.dev.x86_64 --headless test run --case "*FoundryCLI*" --force-colors`.
 - Debug a focused doctest filter with GDB: `python3 scripts/agent_debug.py --case "*FoundryCLI*"`. Use `--build-first` to compile before launching GDB, and `--batch` to run non-interactively and print backtraces. The cloud image should provide `gdb`; if it is missing, install it before debugging.
