@@ -85,6 +85,11 @@ private:
 	int header_end = -1;
 	int content_length = -1;
 	uint64_t connection_time = 0;
+	// True while _finish_request is dispatching a JSON-RPC payload. Frame pumps
+	// triggered by synchronous tools/call handlers (for example cooperative=false
+	// wait_for) re-enter poll(); without this guard the buffered request would be
+	// processed again and the connection reset before the outer response is sent.
+	bool request_in_progress = false;
 
 	void _reset_connection();
 	void _accept_connection();

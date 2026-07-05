@@ -354,6 +354,19 @@ bool _evaluate_wait_step(PendingWait &p_wait, EditorAutomationWaitResult &r_imme
 	return satisfied;
 }
 
+void _finalize_cancelled_wait(PendingWait &p_wait) {
+	if (p_wait.status != EditorAutomationCooperativeWaitStatus::PENDING) {
+		return;
+	}
+	p_wait.status = EditorAutomationCooperativeWaitStatus::CANCELLED;
+	p_wait.result = EditorAutomationWaitResult::failure("cancelled", "Wait was cancelled.");
+	Dictionary details;
+	details["condition"] = p_wait.condition;
+	details["elapsed_sec"] = p_wait.elapsed_sec;
+	details["wait_id"] = p_wait.wait_id;
+	p_wait.result.details = details;
+}
+
 void _poll_pending_wait(PendingWait &p_wait) {
 	if (p_wait.status != EditorAutomationCooperativeWaitStatus::PENDING) {
 		return;
@@ -601,10 +614,12 @@ bool EditorAutomationWait::cancel_cooperative(const String &p_wait_id, EditorAut
 		return false;
 	}
 	wait->cancelled = true;
-	// See poll_cooperative: never finalize/erase while an outer poll still
-	// holds a pointer into pending_waits. The outer poll observes `cancelled`
-	// and completes the wait on its own next step.
+	// MCP cancel can arrive while an outer cooperative poll is pumping frames
+	// (poll_all_cooperative -> _advance_one_frame -> EditorAutomationServer poll).
+	// Finalize status immediately for the caller, but defer erasing until the outer
+	// poll observes a non-pending wait.
 	if (poll_in_progress) {
+		_finalize_cancelled_wait(*wait);
 		r_handle = _handle_from_pending(*wait);
 		return true;
 	}
@@ -637,7 +652,11 @@ int EditorAutomationWait::poll_all_cooperative(int p_max_steps) {
 
 	for (const String &wait_id : wait_ids) {
 		PendingWait *wait = pending_waits.getptr(wait_id);
-		if (wait == nullptr || wait->status != EditorAutomationCooperativeWaitStatus::PENDING) {
+		if (wait == nullptr) {
+			continue;
+		}
+		if (wait->status != EditorAutomationCooperativeWaitStatus::PENDING) {
+			pending_waits.erase(wait_id);
 			continue;
 		}
 		_poll_pending_wait(*wait);

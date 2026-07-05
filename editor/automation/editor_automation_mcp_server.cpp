@@ -258,6 +258,11 @@ bool EditorAutomationMCPServer::_parse_headers(HTTPRequest &r_request) {
 }
 
 void EditorAutomationMCPServer::_finish_request() {
+	if (request_in_progress) {
+		return;
+	}
+	request_in_progress = true;
+
 	HTTPRequest request;
 	if (!_parse_headers(request)) {
 		HTTPResponse bad;
@@ -265,6 +270,7 @@ void EditorAutomationMCPServer::_finish_request() {
 		bad.reason = "Bad Request";
 		bad.body = "{\"error\":\"bad_request\"}";
 		_send_response(bad);
+		request_in_progress = false;
 		return;
 	}
 
@@ -276,6 +282,7 @@ void EditorAutomationMCPServer::_finish_request() {
 
 	const HTTPResponse response = process_http_request(request);
 	_send_response(response);
+	request_in_progress = false;
 }
 
 void EditorAutomationMCPServer::_send_response(const HTTPResponse &p_response) {
@@ -300,6 +307,9 @@ void EditorAutomationMCPServer::_send_response(const HTTPResponse &p_response) {
 
 void EditorAutomationMCPServer::poll() {
 	if (!listening || server.is_null()) {
+		return;
+	}
+	if (request_in_progress) {
 		return;
 	}
 
