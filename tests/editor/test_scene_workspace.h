@@ -363,7 +363,7 @@ TEST_CASE("[SceneTree][Editor] tree-persist") {
 static int add_test_scene(EditorData &p_data, int p_tile_id, Node2D *p_root = nullptr) {
 	p_data.register_tile(p_tile_id);
 	p_data.set_focused_tile_id(p_tile_id);
-	const int idx = p_data.add_edited_scene();
+	const int idx = p_data.add_edited_scene(-1);
 	if (p_root) {
 		EditorSceneContext *context = p_data.get_scene_context(idx);
 		context->set_scene_root_node(p_root);
