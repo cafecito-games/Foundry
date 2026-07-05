@@ -102,6 +102,16 @@ public:
 		SPLIT_SIDE_SECOND,
 	};
 
+	// Drop target for drag-a-scene-tab-to-a-tile: center moves the scene into
+	// the target tile; an edge splits the tile and places the scene in the new leaf.
+	enum TileDropRegion {
+		DROP_CENTER,
+		DROP_LEFT,
+		DROP_RIGHT,
+		DROP_TOP,
+		DROP_BOTTOM,
+	};
+
 private:
 	static inline const char *WORKSPACE_CONFIG_SECTION = "Workspace";
 
@@ -119,6 +129,7 @@ private:
 	bool _is_leaf_node(Control *p_node) const;
 	bool _is_split_node(Control *p_node) const;
 	void _update_focus_visuals();
+	void _collapse_if_empty(int p_tile_id);
 
 protected:
 	void _notification(int p_what);
@@ -131,6 +142,13 @@ public:
 	WorkspaceLeafNode *split(WorkspaceLeafNode *p_leaf, bool p_vertical, SplitSide p_side);
 	void collapse(WorkspaceLeafNode *p_leaf);
 	bool move_content(const String &p_content, WorkspaceLeafNode *p_from_leaf, WorkspaceLeafNode *p_to_leaf);
+
+	// Drag-a-tab drop resolution (center = move scene; edge = split + move).
+	WorkspaceLeafNode *handle_scene_drop(int p_scene_idx, WorkspaceLeafNode *p_target_leaf, TileDropRegion p_region);
+
+	// Hit-test and preview helpers (testable without GUI).
+	static TileDropRegion drop_region_at(const Size2 &p_size, const Point2 &p_local);
+	static Rect2 drop_preview_rect(const Size2 &p_size, TileDropRegion p_region);
 
 	WorkspaceLeafNode *get_leaf_by_id(int p_id) const;
 	WorkspaceLeafNode *get_focused_leaf() const { return get_leaf_by_id(focused_leaf_id); }

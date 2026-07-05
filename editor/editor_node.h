@@ -682,8 +682,8 @@ private:
 
 	bool has_main_screen() const { return true; }
 
-	void _remove_edited_scene(bool p_change_tab = true);
-	void _remove_scene(int index, bool p_change_tab = true);
+	void _remove_edited_scene(bool p_change_tab = true, bool p_allow_collapse = true);
+	void _remove_scene(int index, bool p_change_tab = true, bool p_allow_collapse = true);
 	bool _find_and_save_resource(Ref<Resource> p_res, HashMap<Ref<Resource>, bool> &processed, int32_t flags);
 	bool _find_and_save_edited_subresources(Object *obj, HashMap<Ref<Resource>, bool> &processed, int32_t flags);
 	void _save_edited_subresources(Node *scene, HashMap<Ref<Resource>, bool> &processed, int32_t flags);
@@ -1112,6 +1112,10 @@ public:
 	bool is_editor_dimmed() const;
 
 	void edit_current() { _edit_current(); }
+
+	// Multi-tile workspace: scene-tab drag/drop mediation.
+	void handle_tile_scene_drop(int p_target_tile_id, int p_region, int p_source_tile_id, int p_source_tab);
+	void handle_tile_scene_tab_bar_drop(int p_target_tile_id, const Variant &p_data, const Point2 &p_point);
 
 	bool has_scenes_in_session();
 

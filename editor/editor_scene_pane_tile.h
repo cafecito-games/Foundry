@@ -44,6 +44,7 @@ class PanelContainer;
 class SceneTreeDock;
 class SubViewport;
 class SubViewportContainer;
+class EditorTileDropOverlay;
 class TextureRect;
 class World3D;
 
@@ -80,6 +81,7 @@ class ScenePaneTile : public VBoxContainer {
 	Camera3D *preview_3d_camera = nullptr;
 	Node3DEditorViewport *spatial_view = nullptr; // World-bound 3D editing surface.
 	PanelContainer *focus_frame = nullptr; // Accent border when focused.
+	EditorTileDropOverlay *drop_overlay = nullptr;
 
 	void _request_focus();
 	void _interaction_gui_input(const Ref<InputEvent> &p_event);
@@ -98,6 +100,7 @@ public:
 	InspectorDock *get_inspector_dock() const { return inspector_dock; }
 	Control *get_content_host() const { return content_host; }
 	SubViewportContainer *get_preview_container() const { return preview_container; }
+	EditorTileDropOverlay *get_drop_overlay() const { return drop_overlay; }
 	SubViewportContainer *get_context_viewport_host() const { return context_viewport_host; }
 	Node3DEditorViewport *get_spatial_view() const { return spatial_view; }
 	Camera3D *get_preview_3d_camera() const { return preview_3d_camera; }

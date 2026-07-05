@@ -36,6 +36,95 @@
 #include "editor/themes/editor_scale.h"
 #include "scene/gui/split_container.h"
 
+// Central inset for tab (center) drops: matches the rosette center button (30/100).
+static constexpr float DROP_CENTER_INSET_FRACTION = 0.30f;
+
+EditorSceneWorkspace::TileDropRegion EditorSceneWorkspace::drop_region_at(const Size2 &p_size, const Point2 &p_local) {
+	if (p_size.x <= 0.0f || p_size.y <= 0.0f) {
+		return DROP_CENTER;
+	}
+
+	const Point2 center = p_size * 0.5f;
+	const float dx = Math::abs(p_local.x - center.x);
+	const float dy = Math::abs(p_local.y - center.y);
+	const float inset_x = p_size.x * DROP_CENTER_INSET_FRACTION * 0.5f;
+	const float inset_y = p_size.y * DROP_CENTER_INSET_FRACTION * 0.5f;
+
+	if (dx <= inset_x && dy <= inset_y) {
+		return DROP_CENTER;
+	}
+
+	if (dx > dy) {
+		return p_local.x < center.x ? DROP_LEFT : DROP_RIGHT;
+	}
+	if (dy > dx) {
+		return p_local.y < center.y ? DROP_TOP : DROP_BOTTOM;
+	}
+
+	// On the diagonal (near-corner), favor the axis with the larger relative offset.
+	const float rel_x = dx / (p_size.x * 0.5f);
+	const float rel_y = dy / (p_size.y * 0.5f);
+	if (rel_x >= rel_y) {
+		return p_local.x < center.x ? DROP_LEFT : DROP_RIGHT;
+	}
+	return p_local.y < center.y ? DROP_TOP : DROP_BOTTOM;
+}
+
+Rect2 EditorSceneWorkspace::drop_preview_rect(const Size2 &p_size, TileDropRegion p_region) {
+	const Point2 origin;
+	switch (p_region) {
+		case DROP_LEFT:
+			return Rect2(origin, Size2(p_size.x * 0.5f, p_size.y));
+		case DROP_RIGHT:
+			return Rect2(origin + Point2(p_size.x * 0.5f, 0), Size2(p_size.x * 0.5f, p_size.y));
+		case DROP_TOP:
+			return Rect2(origin, Size2(p_size.x, p_size.y * 0.5f));
+		case DROP_BOTTOM:
+			return Rect2(origin + Point2(0, p_size.y * 0.5f), Size2(p_size.x, p_size.y * 0.5f));
+		case DROP_CENTER:
+			return Rect2(origin, p_size);
+	}
+	return Rect2(origin, p_size);
+}
+
+void EditorSceneWorkspace::_collapse_if_empty(int p_tile_id) {
+	WorkspaceLeafNode *leaf = get_leaf_by_id(p_tile_id);
+	if (!leaf || !editor_data) {
+		return;
+	}
+	if (editor_data->get_tile_scene_indices(p_tile_id).is_empty() && leaves.size() > 1) {
+		collapse(leaf);
+	}
+}
+
+WorkspaceLeafNode *EditorSceneWorkspace::handle_scene_drop(int p_scene_idx, WorkspaceLeafNode *p_target_leaf, TileDropRegion p_region) {
+	ERR_FAIL_NULL_V(p_target_leaf, nullptr);
+	ERR_FAIL_NULL_V(editor_data, nullptr);
+	ERR_FAIL_INDEX_V(p_scene_idx, editor_data->get_edited_scene_count(), nullptr);
+	ERR_FAIL_COND_V(!leaves.has(p_target_leaf), nullptr);
+
+	const int source_tile_id = editor_data->get_scene_tile(p_scene_idx);
+	WorkspaceLeafNode *source_leaf = get_leaf_by_id(source_tile_id);
+
+	WorkspaceLeafNode *dest_leaf = p_target_leaf;
+	if (p_region != DROP_CENTER) {
+		const bool vertical = p_region == DROP_TOP || p_region == DROP_BOTTOM;
+		const SplitSide side = (p_region == DROP_LEFT || p_region == DROP_TOP) ? SPLIT_SIDE_FIRST : SPLIT_SIDE_SECOND;
+		dest_leaf = split(p_target_leaf, vertical, side);
+		ERR_FAIL_NULL_V(dest_leaf, nullptr);
+	} else if (source_tile_id == p_target_leaf->get_leaf_id()) {
+		return nullptr;
+	}
+
+	editor_data->set_scene_tile(p_scene_idx, dest_leaf->get_leaf_id());
+
+	if (source_leaf && source_leaf != dest_leaf && editor_data->get_tile_scene_indices(source_tile_id).is_empty() && leaves.size() > 1) {
+		callable_mp(this, &EditorSceneWorkspace::_collapse_if_empty).call_deferred(source_tile_id);
+	}
+
+	return dest_leaf;
+}
+
 // --- WorkspaceLeafNode ---
 
 void WorkspaceLeafNode::_notification(int p_what) {

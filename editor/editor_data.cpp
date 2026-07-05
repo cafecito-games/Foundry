@@ -971,6 +971,9 @@ int EditorData::tile_tab_to_scene_index(int p_tile_id, int p_tab) const {
 }
 
 int EditorData::scene_index_to_tile_tab(int p_idx) const {
+	if (p_idx < 0) {
+		return -1;
+	}
 	ERR_FAIL_INDEX_V(p_idx, edited_scene.size(), -1);
 	const int tile_id = edited_scene[p_idx].tile_id;
 	const Vector<int> indices = get_tile_scene_indices(tile_id);
@@ -1149,7 +1152,8 @@ String EditorData::get_scene_title(int p_idx, bool p_always_strip_extension) con
 			continue;
 		}
 
-		if (edited_scene[i].get_root() && basename == edited_scene[i].get_root()->get_scene_file_path().get_file().get_basename()) {
+		Node *root = edited_scene[i].get_root();
+		if (root && root->is_inside_tree() && basename == root->get_scene_file_path().get_file().get_basename()) {
 			return filename;
 		}
 	}
