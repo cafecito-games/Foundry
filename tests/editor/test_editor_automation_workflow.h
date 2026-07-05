@@ -623,7 +623,16 @@ TEST_CASE("[Editor][EditorAutomation][MCP] launched editor smoke handshake") {
 	}
 
 	INFO("Editor boot output:\n", boot_output);
-	REQUIRE(boot_output.contains("FOUNDRY_AUTOMATION"));
+	if (!boot_output.contains("FOUNDRY_AUTOMATION")) {
+		if (stdout_pipe.is_valid()) {
+			stdout_pipe->close();
+		}
+		if (OS::get_singleton()->is_process_running(pid)) {
+			OS::get_singleton()->kill(pid);
+		}
+		FAIL("Editor subprocess did not print FOUNDRY_AUTOMATION before the boot deadline.");
+		return;
+	}
 
 	const int automation_start = boot_output.find("FOUNDRY_AUTOMATION") + String("FOUNDRY_AUTOMATION ").length();
 	const int automation_end = boot_output.find_char('\n', automation_start);
