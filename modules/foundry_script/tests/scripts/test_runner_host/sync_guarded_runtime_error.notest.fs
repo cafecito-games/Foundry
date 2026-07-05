@@ -1,11 +1,12 @@
 extends ScriptTestRunner
 
-const FIXTURE := preload("res://script_test_execution/fixture.notest.fs")
+func runtime_error() -> void:
+	var values: Array[int] = []
+	values[0] = 1
 
 func run(args: PackedStringArray) -> int:
-	var suite := FIXTURE.new()
 	var execution := ScriptTestExecution.new()
-	var result: Variant = execution.guard_callv(suite, &"runtime_error", [])
+	var result: Variant = execution.guard_callv(self, &"runtime_error", [])
 	var parsed: ScriptTestExecutionResult = result as ScriptTestExecutionResult
 	if parsed == null:
 		return 1
