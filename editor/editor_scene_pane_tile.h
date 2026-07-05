@@ -41,7 +41,7 @@ class Label;
 class PanelContainer;
 class SceneTreeDock;
 class SubViewportContainer;
-class TextureRect;
+class EditorTileDropOverlay;
 
 /**
  * One self-contained editing unit of the scene workspace:
@@ -68,6 +68,7 @@ class ScenePaneTile : public VBoxContainer {
 	Label *preview_placeholder_label = nullptr;
 	TextureRect *preview_placeholder_icon = nullptr;
 	PanelContainer *focus_frame = nullptr; // Accent border when focused.
+	EditorTileDropOverlay *drop_overlay = nullptr;
 
 	void _request_focus();
 	void _interaction_gui_input(const Ref<InputEvent> &p_event);

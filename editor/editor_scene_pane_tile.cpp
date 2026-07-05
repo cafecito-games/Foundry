@@ -32,7 +32,7 @@
 
 #include "editor/docks/inspector_dock.h"
 #include "editor/docks/scene_tree_dock.h"
-#include "editor/editor_scene_workspace.h"
+#include "editor/editor_tile_drop_overlay.h"
 #include "editor/editor_string_names.h"
 #include "editor/scene/editor_scene_tabs.h"
 #include "editor/themes/editor_scale.h"
@@ -214,6 +214,10 @@ void ScenePaneTile::setup(int p_tile_id, EditorSelection *p_editor_selection, Ed
 	_bind_focus_on_interaction(scene_tree_dock);
 	_bind_focus_on_interaction(inspector_dock);
 	_bind_focus_on_interaction(content_host);
+
+	drop_overlay = memnew(EditorTileDropOverlay);
+	drop_overlay->set_owning_tile_id(p_tile_id);
+	focus_frame->add_child(drop_overlay);
 }
 
 ScenePaneTile::ScenePaneTile() {
