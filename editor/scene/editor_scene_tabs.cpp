@@ -162,7 +162,6 @@ void EditorSceneTabs::unhandled_key_input(const Ref<InputEvent> &p_event) {
 }
 
 void EditorSceneTabs::_reposition_active_tab(int p_to_tab) {
-	const int current_scene = EditorNode::get_editor_data().get_tile_current_scene(tile_id);
 	const Vector<int> tile_scenes = EditorNode::get_editor_data().get_tile_scene_indices(tile_id);
 	if (p_to_tab < 0 || p_to_tab >= tile_scenes.size()) {
 		return;
