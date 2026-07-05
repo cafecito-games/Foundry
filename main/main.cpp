@@ -111,6 +111,7 @@
 
 #ifdef TESTS_ENABLED
 #include "tests/test_main.h"
+#include "tests/foundry_test_progress.h"
 #endif
 
 #ifdef TOOLS_ENABLED
@@ -893,6 +894,7 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 		for (int i = 0; i < cli_parse.invocation.passthrough_args.size(); i++) {
 			push_test_arg(cli_parse.invocation.passthrough_args[i]);
 		}
+		FoundryTestProgress::configure_from_invocation(cli_parse.invocation);
 		status = test_main(test_argv.size(), test_argv.ptrw());
 #ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 	} else if (kind == Kind::TEST_GENERATE_FIXTURES) {
