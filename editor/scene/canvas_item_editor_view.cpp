@@ -2,7 +2,8 @@
 /*  canvas_item_editor_view.cpp                                           */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
+/*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
 /* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
@@ -15,7 +16,7 @@
 /* permit persons to whom the Software is furnished to do so, subject to  */
 /* the following conditions:                                              */
 /*                                                                        */
-/* THE above copyright notice and this permission notice shall be         */
+/* The above copyright notice and this permission notice shall be         */
 /* included in all copies or substantial portions of the Software.        */
 /*                                                                        */
 /* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
@@ -33,21 +34,21 @@
 #include "editor/docks/scene_tree_dock.h"
 #include "editor/editor_node.h"
 #include "editor/editor_scene_context.h"
-#include "editor/gui/editor_toaster.h"
-#include "editor/settings/editor_settings.h"
 #include "editor/editor_string_names.h"
 #include "editor/editor_undo_redo_manager.h"
-#include "editor/plugins/editor_plugin_list.h"
-#include "scene/2d/node_2d.h"
-#include "scene/main/canvas_layer.h"
+#include "editor/gui/editor_toaster.h"
 #include "editor/gui/editor_zoom_widget.h"
-#include "scene/gui/view_panner.h"
+#include "editor/plugins/editor_plugin_list.h"
 #include "editor/settings/editor_feature_profile.h"
+#include "editor/settings/editor_settings.h"
 #include "editor/themes/editor_scale.h"
 #include "editor/translations/editor_translation_preview_button.h"
+#include "scene/2d/node_2d.h"
 #include "scene/gui/box_container.h"
 #include "scene/gui/subviewport_container.h"
+#include "scene/gui/view_panner.h"
 #include "scene/main/canvas_item.h"
+#include "scene/main/canvas_layer.h"
 #include "scene/main/timer.h"
 
 #include "core/config/project_settings.h"
@@ -141,6 +142,9 @@ void CanvasItemEditorView::push_viewport_state() {
 
 void CanvasItemEditorView::build_ui(Control *p_parent, bool p_register_primary_container) {
 	ERR_FAIL_NULL(p_parent);
+
+	plugin_forwarding_target = p_register_primary_container;
+
 	ERR_FAIL_NULL(editor);
 
 	viewport_scrollable = memnew(Control);
@@ -1789,7 +1793,7 @@ void CanvasItemEditorView::_gui_input_viewport(const Ref<InputEvent> &p_event) {
 		accepted = true;
 		if (_gui_input_rulers_and_guides(p_event)) {
 			// print_line("Rulers and guides");
-		} else if (EditorNode::get_singleton()->get_editor_plugins_over()->forward_gui_input(p_event)) {
+		} else if (plugin_forwarding_target && EditorNode::get_singleton()->get_editor_plugins_over()->forward_gui_input(p_event)) {
 			// print_line("Plugin");
 		} else if (_gui_input_open_scene_on_double_click(p_event)) {
 			// print_line("Open scene on double click");
@@ -3282,8 +3286,10 @@ void CanvasItemEditorView::_draw_viewport() {
 	RID ci = viewport->get_canvas_item();
 	RenderingServer::get_singleton()->canvas_item_add_set_transform(ci, Transform2D());
 
-	EditorNode::get_singleton()->get_editor_plugins_over()->forward_canvas_draw_over_viewport(viewport);
-	EditorNode::get_singleton()->get_editor_plugins_force_over()->forward_canvas_force_draw_over_viewport(viewport);
+	if (plugin_forwarding_target) {
+		EditorNode::get_singleton()->get_editor_plugins_over()->forward_canvas_draw_over_viewport(viewport);
+		EditorNode::get_singleton()->get_editor_plugins_force_over()->forward_canvas_force_draw_over_viewport(viewport);
+	}
 
 	if (editor->show_rulers) {
 		_draw_rulers();
@@ -3448,4 +3454,3 @@ void CanvasItemEditorView::update_center_button_icon(const Ref<Texture2D> &p_ico
 		button_center_view->set_button_icon(p_icon);
 	}
 }
-

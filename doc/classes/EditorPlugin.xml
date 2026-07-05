@@ -56,6 +56,7 @@
 			<param index="0" name="viewport_control" type="Control" />
 			<description>
 				Called by the engine when the 3D editor's viewport is updated. [param viewport_control] is an overlay on top of the viewport and it can be used for drawing. You can update the viewport manually by calling [method update_overlays].
+				In a tiled workspace, forwarding hooks are single-target: they run only on the [i]focused[/i] tile's primary 3D viewports (indices [code]0[/code] through [code]3[/code] of [method EditorInterface.get_editor_viewport_3d]). Live 3D views in other tiles still show native gizmos but do not receive plugin overlays or forwarded input.
 				[codeblocks]
 				[foundry_script]
 				func _forward_3d_draw_over_viewport(overlay):
@@ -104,6 +105,7 @@
 			<param index="1" name="event" type="InputEvent" />
 			<description>
 				Called when there is a root node in the current edited scene, [method _handles] is implemented, and an [InputEvent] happens in the 3D viewport. The return value decides whether the [InputEvent] is consumed or forwarded to other [EditorPlugin]s. See [enum AfterGUIInput] for options.
+				In a tiled workspace, this hook is invoked only for input on the [i]focused[/i] tile's primary 3D viewports. Other tiles remain manipulation-ready with native gizmos but do not forward plugin input.
 				[codeblocks]
 				[foundry_script]
 				# Prevents the InputEvent from reaching other Editor classes.
@@ -140,6 +142,7 @@
 			<param index="0" name="viewport_control" type="Control" />
 			<description>
 				Called by the engine when the 2D editor's viewport is updated. [param viewport_control] is an overlay on top of the viewport and it can be used for drawing. You can update the viewport manually by calling [method update_overlays].
+				In a tiled workspace, forwarding hooks are single-target: they run only on the [i]focused[/i] tile's 2D editor view (see [method EditorInterface.get_editor_viewport_2d]). Live 2D views in other tiles still show native gizmos but do not receive plugin overlays or forwarded input.
 				[codeblocks]
 				[foundry_script]
 				func _forward_canvas_draw_over_viewport(overlay):
@@ -187,6 +190,7 @@
 			<param index="0" name="event" type="InputEvent" />
 			<description>
 				Called when there is a root node in the current edited scene, [method _handles] is implemented, and an [InputEvent] happens in the 2D viewport. If this method returns [code]true[/code], [param event] is intercepted by this [EditorPlugin], otherwise [param event] is forwarded to other Editor classes.
+				In a tiled workspace, this hook is invoked only for input on the [i]focused[/i] tile's 2D editor view. Other tiles remain manipulation-ready with native gizmos but do not forward plugin input.
 				[codeblocks]
 				[foundry_script]
 				# Prevents the InputEvent from reaching other Editor classes.
@@ -761,7 +765,7 @@
 		<method name="update_overlays" qualifiers="const">
 			<return type="int" />
 			<description>
-				Updates the overlays of the 2D and 3D editor viewport. Causes methods [method _forward_canvas_draw_over_viewport], [method _forward_canvas_force_draw_over_viewport], [method _forward_3d_draw_over_viewport] and [method _forward_3d_force_draw_over_viewport] to be called.
+				Updates overlays on the [i]focused[/i] tile's editor surfaces and causes [method _forward_canvas_draw_over_viewport], [method _forward_canvas_force_draw_over_viewport], [method _forward_3d_draw_over_viewport], and [method _forward_3d_force_draw_over_viewport] to be called. When the 3D main screen is active, all four primary 3D viewports of the focused tile are updated; otherwise the focused tile's 2D overlay is updated. Returns the number of surfaces redrawn.
 			</description>
 		</method>
 	</methods>
@@ -807,28 +811,28 @@
 			Main editor toolbar, next to play buttons.
 		</constant>
 		<constant name="CONTAINER_SPATIAL_EDITOR_MENU" value="1" enum="CustomControlContainer">
-			The toolbar that appears when 3D editor is active.
+			The toolbar that appears when 3D editor is active. Controls added here are shown on the focused tile's 3D editor.
 		</constant>
 		<constant name="CONTAINER_SPATIAL_EDITOR_SIDE_LEFT" value="2" enum="CustomControlContainer">
-			Left sidebar of the 3D editor.
+			Left sidebar of the 3D editor on the focused tile.
 		</constant>
 		<constant name="CONTAINER_SPATIAL_EDITOR_SIDE_RIGHT" value="3" enum="CustomControlContainer">
-			Right sidebar of the 3D editor.
+			Right sidebar of the 3D editor on the focused tile.
 		</constant>
 		<constant name="CONTAINER_SPATIAL_EDITOR_BOTTOM" value="4" enum="CustomControlContainer">
-			Bottom panel of the 3D editor.
+			Bottom panel of the 3D editor on the focused tile.
 		</constant>
 		<constant name="CONTAINER_CANVAS_EDITOR_MENU" value="5" enum="CustomControlContainer">
-			The toolbar that appears when 2D editor is active.
+			The toolbar that appears when 2D editor is active. Controls added here are shown on the focused tile's 2D editor.
 		</constant>
 		<constant name="CONTAINER_CANVAS_EDITOR_SIDE_LEFT" value="6" enum="CustomControlContainer">
-			Left sidebar of the 2D editor.
+			Left sidebar of the 2D editor on the focused tile.
 		</constant>
 		<constant name="CONTAINER_CANVAS_EDITOR_SIDE_RIGHT" value="7" enum="CustomControlContainer">
-			Right sidebar of the 2D editor.
+			Right sidebar of the 2D editor on the focused tile.
 		</constant>
 		<constant name="CONTAINER_CANVAS_EDITOR_BOTTOM" value="8" enum="CustomControlContainer">
-			Bottom panel of the 2D editor.
+			Bottom panel of the 2D editor on the focused tile.
 		</constant>
 		<constant name="CONTAINER_INSPECTOR_BOTTOM" value="9" enum="CustomControlContainer">
 			Bottom section of the inspector.
