@@ -413,4 +413,53 @@ TEST_CASE("[Editor][Automation] cooperative wait polling survives process-notifi
 	memdelete(probe);
 }
 
+class CancelDuringPollProbe : public Node {
+	FOUNDRY_CLASS(CancelDuringPollProbe, Node);
+
+protected:
+	void _notification(int p_what) {
+		if (p_what != NOTIFICATION_PROCESS || cancel_attempted || wait_id.is_empty()) {
+			return;
+		}
+		cancel_attempted = true;
+		EditorAutomationCooperativeWaitHandle handle;
+		cancel_succeeded = EditorAutomationWait::cancel_cooperative(wait_id, handle);
+		cancel_status = handle.status;
+	}
+
+public:
+	String wait_id;
+	bool cancel_attempted = false;
+	bool cancel_succeeded = false;
+	EditorAutomationCooperativeWaitStatus cancel_status = EditorAutomationCooperativeWaitStatus::PENDING;
+};
+
+TEST_CASE("[Editor][Automation] cooperative cancel finalizes during frame-pump re-entry") {
+	EditorAutomationWait::clear_all_cooperative();
+
+	CancelDuringPollProbe *probe = memnew(CancelDuringPollProbe);
+	SceneTree::get_singleton()->get_root()->add_child(probe);
+	probe->set_process(true);
+
+	Dictionary condition;
+	condition["type"] = "selector_appears";
+	Dictionary selector;
+	selector["role"] = "button";
+	selector["name"] = "Never Appears";
+	condition["selector"] = selector;
+
+	EditorAutomationWaitContext context;
+	probe->wait_id = EditorAutomationWait::begin_cooperative(condition, 60.0, context);
+
+	EditorAutomationCooperativeWaitHandle handle;
+	REQUIRE(EditorAutomationWait::poll_cooperative(probe->wait_id, handle));
+	CHECK(probe->cancel_attempted);
+	CHECK(probe->cancel_succeeded);
+	CHECK(probe->cancel_status == EditorAutomationCooperativeWaitStatus::CANCELLED);
+	CHECK(handle.status == EditorAutomationCooperativeWaitStatus::CANCELLED);
+
+	EditorAutomationWait::clear_all_cooperative();
+	memdelete(probe);
+}
+
 } // namespace TestEditorAutomationWait

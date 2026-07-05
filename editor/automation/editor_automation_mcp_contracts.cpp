@@ -164,6 +164,75 @@ bool _read_optional_number_array(const Dictionary &p_dict, const char *p_key, Di
 	return true;
 }
 
+bool _read_optional_number(const Dictionary &p_dict, const char *p_key, Dictionary &r_values, EditorAutomationMCPParseError &r_error) {
+	if (!p_dict.has(p_key)) {
+		return true;
+	}
+	const Variant value = p_dict.get(p_key, Variant());
+	if (!value.is_num()) {
+		r_error = _make_error(p_key, vformat("'%s' must be a number.", p_key));
+		return false;
+	}
+	r_values[p_key] = value;
+	return true;
+}
+
+bool _validate_position_spec_dictionary(const Dictionary &p_dict, const String &p_field, EditorAutomationMCPParseError &r_error) {
+	if (p_dict.has("position")) {
+		const Variant value = p_dict.get("position", Variant());
+		if (value.get_type() != Variant::ARRAY) {
+			r_error = _make_error("position", "'position' must be an array.");
+			r_error.field = p_field + ".position";
+			return false;
+		}
+		const Array array = value;
+		for (int i = 0; i < array.size(); i++) {
+			if (!array[i].is_num()) {
+				r_error = _make_error("position", "'position' must contain only numbers.");
+				r_error.field = p_field + ".position";
+				return false;
+			}
+		}
+	}
+	if (p_dict.has("anchor")) {
+		const Variant value = p_dict.get("anchor", Variant());
+		if (value.get_type() != Variant::STRING && value.get_type() != Variant::STRING_NAME) {
+			r_error = _make_error("anchor", "'anchor' must be a string.");
+			r_error.field = p_field + ".anchor";
+			return false;
+		}
+		if (!_enum_has_value(EditorAutomationMCPContracts::pointer_anchor_enum_values(), value)) {
+			r_error = _make_error("anchor", vformat("'%s' has unsupported value '%s'.", "anchor", String(value)));
+			r_error.field = p_field + ".anchor";
+			return false;
+		}
+	}
+	if (p_dict.has("x")) {
+		if (!p_dict.get("x", Variant()).is_num()) {
+			r_error = _make_error("x", "'x' must be a number.");
+			r_error.field = p_field + ".x";
+			return false;
+		}
+	}
+	if (p_dict.has("y")) {
+		if (!p_dict.get("y", Variant()).is_num()) {
+			r_error = _make_error("y", "'y' must be a number.");
+			r_error.field = p_field + ".y";
+			return false;
+		}
+	}
+	return true;
+}
+
+Ref<EditorAutomationMCPJsonSchema> _position_spec_schema(const String &p_description) {
+	Ref<EditorAutomationMCPJsonSchema> schema = EditorAutomationMCPJsonSchema::object(p_description);
+	schema->add_property("position", EditorAutomationMCPJsonSchema::array(EditorAutomationMCPJsonSchema::number("Coordinate component."), "Relative [x, y] offset inside the element bounds."));
+	schema->add_property("anchor", EditorAutomationMCPJsonSchema::enum_string(EditorAutomationMCPContracts::pointer_anchor_enum_values(), "Named anchor within the element bounds."));
+	schema->add_property("x", EditorAutomationMCPJsonSchema::number("Horizontal offset. Values in [0, 1] are normalized; otherwise treated as pixels from the element origin."));
+	schema->add_property("y", EditorAutomationMCPJsonSchema::number("Vertical offset. Values in [0, 1] are normalized; otherwise treated as pixels from the element origin."));
+	return schema;
+}
+
 bool _read_optional_string_array(const Dictionary &p_dict, const char *p_key, Dictionary &r_values, EditorAutomationMCPParseError &r_error, const PackedStringArray &p_enum_values = PackedStringArray(), bool p_accept_single_string = false) {
 	if (!p_dict.has(p_key)) {
 		return true;
@@ -646,12 +715,20 @@ Ref<EditorAutomationMCPJsonSchema> EditorAutomationMCPActionArgs::schema() {
 	schema->add_property("route", EditorAutomationMCPJsonSchema::enum_string(EditorAutomationMCPContracts::route_enum_values(), "Route preference override for this action."));
 	schema->add_property("button", EditorAutomationMCPJsonSchema::string("Mouse button for click or drag actions."));
 	schema->add_property("modifiers", EditorAutomationMCPJsonSchema::array(EditorAutomationMCPJsonSchema::string("Modifier key name."), "Modifier keys to hold during input-routed actions."));
-	schema->add_property("position", EditorAutomationMCPJsonSchema::array(EditorAutomationMCPJsonSchema::number("Coordinate component."), "Relative click position [x, y] inside the selected element."));
+	schema->add_property("position", EditorAutomationMCPJsonSchema::array(EditorAutomationMCPJsonSchema::number("Coordinate component."), "Source-side relative click/drag start position [x, y] inside the selected element."));
+	schema->add_property("anchor", EditorAutomationMCPJsonSchema::enum_string(EditorAutomationMCPContracts::pointer_anchor_enum_values(), "Source-side anchor for click/drag start within the selected element."));
+	schema->add_property("x", EditorAutomationMCPJsonSchema::number("Source-side horizontal offset for click/drag start. Values in [0, 1] are normalized."));
+	schema->add_property("y", EditorAutomationMCPJsonSchema::number("Source-side vertical offset for click/drag start. Values in [0, 1] are normalized."));
+	schema->add_property("source", _position_spec_schema("Source-side positioning override for drag/click. Top-level position/anchor/x/y are shorthand for these fields."));
 	schema->add_property("direction", EditorAutomationMCPJsonSchema::enum_string(EditorAutomationMCPContracts::scroll_direction_enum_values(), "Scroll direction."));
 	schema->add_property("amount", EditorAutomationMCPJsonSchema::integer("Scroll amount in wheel steps unless page is true."));
 	schema->add_property("page", EditorAutomationMCPJsonSchema::boolean("Scroll by page when true."));
 	schema->add_property("target", EditorAutomationMCPSelector::schema());
-	schema->add_property("target_point", EditorAutomationMCPJsonSchema::array(EditorAutomationMCPJsonSchema::number("Coordinate component."), "Absolute drag target point for drag actions."));
+	schema->add_property("target_position", _position_spec_schema("Target-side positioning when drag uses a target selector. Does not apply to target_point."));
+	schema->add_property("target_anchor", EditorAutomationMCPJsonSchema::enum_string(EditorAutomationMCPContracts::pointer_anchor_enum_values(), "Target-side anchor shorthand when drag uses a target selector."));
+	schema->add_property("target_x", EditorAutomationMCPJsonSchema::number("Target-side horizontal offset shorthand when drag uses a target selector."));
+	schema->add_property("target_y", EditorAutomationMCPJsonSchema::number("Target-side vertical offset shorthand when drag uses a target selector."));
+	schema->add_property("target_point", EditorAutomationMCPJsonSchema::array(EditorAutomationMCPJsonSchema::number("Coordinate component."), "Absolute drag release point [x, y] in global coordinates."));
 	schema->add_property("waypoints", EditorAutomationMCPJsonSchema::array(EditorAutomationMCPJsonSchema::array(EditorAutomationMCPJsonSchema::number("Coordinate component.")), "Drag path as absolute [x, y] waypoint arrays."));
 	schema->add_property("path", EditorAutomationMCPJsonSchema::array(EditorAutomationMCPJsonSchema::array(EditorAutomationMCPJsonSchema::number("Coordinate component.")), "Alias for waypoints."));
 	return schema;
@@ -682,6 +759,26 @@ EditorAutomationMCPParseResult<EditorAutomationMCPActionArgs> EditorAutomationMC
 	if (!_read_optional_number_array(dict, "position", args.values, error)) {
 		return EditorAutomationMCPParseResult<EditorAutomationMCPActionArgs>::invalid(p_field + "." + error.field, error.message);
 	}
+	if (!_read_optional_string(dict, "anchor", args.values, error, EditorAutomationMCPContracts::pointer_anchor_enum_values())) {
+		return EditorAutomationMCPParseResult<EditorAutomationMCPActionArgs>::invalid(p_field + "." + error.field, error.message);
+	}
+	if (!_read_optional_number(dict, "x", args.values, error)) {
+		return EditorAutomationMCPParseResult<EditorAutomationMCPActionArgs>::invalid(p_field + "." + error.field, error.message);
+	}
+	if (!_read_optional_number(dict, "y", args.values, error)) {
+		return EditorAutomationMCPParseResult<EditorAutomationMCPActionArgs>::invalid(p_field + "." + error.field, error.message);
+	}
+	if (dict.has("source")) {
+		const Variant source_value = dict.get("source", Variant());
+		if (source_value.get_type() != Variant::DICTIONARY) {
+			return EditorAutomationMCPParseResult<EditorAutomationMCPActionArgs>::invalid(p_field + ".source", "'source' must be an object.");
+		}
+		const Dictionary source_dict = source_value;
+		if (!_validate_position_spec_dictionary(source_dict, p_field + ".source", error)) {
+			return EditorAutomationMCPParseResult<EditorAutomationMCPActionArgs>::invalid(error.field, error.message);
+		}
+		args.values["source"] = source_dict;
+	}
 	if (!_read_optional_string(dict, "direction", args.values, error, EditorAutomationMCPContracts::scroll_direction_enum_values())) {
 		return EditorAutomationMCPParseResult<EditorAutomationMCPActionArgs>::invalid(p_field + "." + error.field, error.message);
 	}
@@ -697,6 +794,26 @@ EditorAutomationMCPParseResult<EditorAutomationMCPActionArgs> EditorAutomationMC
 			return EditorAutomationMCPParseResult<EditorAutomationMCPActionArgs>::invalid(target.error.field, target.error.message);
 		}
 		args.values["target"] = target.value.to_dictionary();
+	}
+	if (dict.has("target_position")) {
+		const Variant target_position_value = dict.get("target_position", Variant());
+		if (target_position_value.get_type() != Variant::DICTIONARY) {
+			return EditorAutomationMCPParseResult<EditorAutomationMCPActionArgs>::invalid(p_field + ".target_position", "'target_position' must be an object.");
+		}
+		const Dictionary target_position_dict = target_position_value;
+		if (!_validate_position_spec_dictionary(target_position_dict, p_field + ".target_position", error)) {
+			return EditorAutomationMCPParseResult<EditorAutomationMCPActionArgs>::invalid(error.field, error.message);
+		}
+		args.values["target_position"] = target_position_dict;
+	}
+	if (!_read_optional_string(dict, "target_anchor", args.values, error, EditorAutomationMCPContracts::pointer_anchor_enum_values())) {
+		return EditorAutomationMCPParseResult<EditorAutomationMCPActionArgs>::invalid(p_field + "." + error.field, error.message);
+	}
+	if (!_read_optional_number(dict, "target_x", args.values, error)) {
+		return EditorAutomationMCPParseResult<EditorAutomationMCPActionArgs>::invalid(p_field + "." + error.field, error.message);
+	}
+	if (!_read_optional_number(dict, "target_y", args.values, error)) {
+		return EditorAutomationMCPParseResult<EditorAutomationMCPActionArgs>::invalid(p_field + "." + error.field, error.message);
 	}
 	if (!_read_optional_number_array(dict, "target_point", args.values, error)) {
 		return EditorAutomationMCPParseResult<EditorAutomationMCPActionArgs>::invalid(p_field + "." + error.field, error.message);
@@ -1295,6 +1412,16 @@ PackedStringArray EditorAutomationMCPContracts::scroll_direction_enum_values() {
 	values.push_back("down");
 	values.push_back("left");
 	values.push_back("right");
+	return values;
+}
+
+PackedStringArray EditorAutomationMCPContracts::pointer_anchor_enum_values() {
+	PackedStringArray values;
+	values.push_back("top_left");
+	values.push_back("top_right");
+	values.push_back("bottom_left");
+	values.push_back("bottom_right");
+	values.push_back("center");
 	return values;
 }
 

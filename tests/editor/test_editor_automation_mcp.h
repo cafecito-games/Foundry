@@ -857,6 +857,76 @@ TEST_CASE("[Editor][Automation][MCP] socket listen, auth handshake, and shutdown
 	server_again.stop();
 }
 
+TEST_CASE("[Editor][Automation][MCP] synchronous wait_for over HTTP survives nested poll") {
+	EditorAutomationMCPServer server;
+	server.set_token("reentrancy-token");
+	REQUIRE(server.listen(0, IPAddress("127.0.0.1")) == OK);
+	const int port = server.get_port();
+
+	Ref<StreamPeerTCP> client;
+	client.instantiate();
+	REQUIRE(client->connect_to_host(IPAddress("127.0.0.1"), port) == OK);
+
+	const uint64_t connect_deadline = OS::get_singleton()->get_ticks_usec() + 2000000;
+	while (client->poll() == OK && client->get_status() == StreamPeerTCP::STATUS_CONNECTING && OS::get_singleton()->get_ticks_usec() < connect_deadline) {
+		OS::get_singleton()->delay_usec(1000);
+	}
+	REQUIRE(client->get_status() == StreamPeerTCP::STATUS_CONNECTED);
+
+	Dictionary wait_args;
+	wait_args["condition"] = "next_frame";
+	wait_args["timeout_ms"] = 1000;
+	wait_args["cooperative"] = false;
+	Dictionary call_params;
+	call_params["name"] = "wait_for";
+	call_params["arguments"] = wait_args;
+	const String json_body = JSON::stringify(make_request(39, "tools/call", call_params), "", false);
+	const CharString body_utf8 = json_body.utf8();
+
+	String request_text = "POST /mcp HTTP/1.1\r\n";
+	request_text += "Host: 127.0.0.1\r\n";
+	request_text += "Authorization: Bearer reentrancy-token\r\n";
+	request_text += "Content-Type: application/json\r\n";
+	request_text += vformat("Content-Length: %d\r\n", body_utf8.length());
+	request_text += "\r\n";
+	request_text += json_body;
+	const CharString request_utf8 = request_text.utf8();
+	REQUIRE(client->put_data((const uint8_t *)request_utf8.get_data(), request_utf8.length()) == OK);
+
+	String response_text;
+	const uint64_t response_deadline = OS::get_singleton()->get_ticks_usec() + 5000000;
+	while (OS::get_singleton()->get_ticks_usec() < response_deadline) {
+		// Frame pumps during synchronous wait_for re-enter poll(); the guard must
+		// keep the in-flight request from being processed twice.
+		server.poll();
+		server.poll();
+		if (SceneTree::get_singleton() != nullptr) {
+			SceneTree::get_singleton()->process(1.0 / 60.0);
+			MessageQueue::get_singleton()->flush();
+		}
+		client->poll();
+		const int available = client->get_available_bytes();
+		if (available > 0) {
+			Vector<uint8_t> chunk;
+			chunk.resize(available);
+			int received = 0;
+			if (client->get_partial_data(chunk.ptrw(), available, received) == OK && received > 0) {
+				response_text += String::utf8((const char *)chunk.ptr(), received);
+			}
+		}
+		if (response_text.contains("\r\n\r\n") && response_text.contains("\"ok\":true")) {
+			break;
+		}
+		OS::get_singleton()->delay_usec(2000);
+	}
+
+	CHECK(response_text.contains("HTTP/1.1 200"));
+	CHECK(response_text.contains("\"ok\":true"));
+
+	client->disconnect_from_host();
+	server.stop();
+}
+
 #ifdef TOOLS_ENABLED
 
 class AutomationCommandProbe : public Object {

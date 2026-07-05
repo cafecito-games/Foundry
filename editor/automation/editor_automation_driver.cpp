@@ -270,7 +270,8 @@ bool _push_mouse_click(Control *p_control, const Rect2i &p_bounds, const Diction
 	const EditorAutomationWindowFocusResult focus_result = EditorAutomationInput::ensure_window_focus(node);
 	ERR_FAIL_COND_V(!focus_result.ok, false);
 
-	const Vector2 global_position = EditorAutomationInput::resolve_position_in_bounds(p_bounds, p_options);
+	const Vector2 global_position = EditorAutomationInput::resolve_position_in_bounds(
+			p_bounds, EditorAutomationInput::position_options_for_source(p_options));
 	Vector2 input_position = global_position;
 	Viewport *viewport = EditorAutomationInput::input_viewport_for_control(p_control, input_position, global_position);
 	ERR_FAIL_NULL_V(viewport, false);
@@ -1018,7 +1019,8 @@ EditorAutomationActionResult _action_drag(
 	Control *source_control = Object::cast_to<Control>(source_node);
 	ERR_FAIL_NULL_V(source_control, _drag_failure("invalid_element", "Drag source is not a control.", p_snapshot, &p_source_element, nullptr));
 
-	const Vector2 source_position = EditorAutomationInput::resolve_position_in_bounds(p_source_element.bounds, p_options);
+	const Vector2 source_position = EditorAutomationInput::resolve_position_in_bounds(
+			p_source_element.bounds, EditorAutomationInput::position_options_for_source(p_options));
 	Vector2 target_position;
 	const EditorAutomationElement *target_element = nullptr;
 
@@ -1035,9 +1037,10 @@ EditorAutomationActionResult _action_drag(
 		if (!target_prepare.ok) {
 			return _drag_failure(target_prepare.kind, target_prepare.message, p_snapshot, &p_source_element, target_element);
 		}
-		target_position = EditorAutomationInput::resolve_position_in_bounds(target_element->bounds, p_options);
+		target_position = EditorAutomationInput::resolve_position_in_bounds(
+				target_element->bounds, EditorAutomationInput::position_options_for_target_element(p_options));
 	} else if (p_options.has("target_point")) {
-		target_position = EditorAutomationInput::resolve_position_in_bounds(Rect2i(), p_options);
+		target_position = EditorAutomationInput::resolve_target_point(p_options);
 	} else {
 		return _drag_failure("invalid_parameter", "drag requires a `target` selector or `target_point`.", p_snapshot, &p_source_element, nullptr);
 	}
