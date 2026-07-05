@@ -3238,10 +3238,7 @@ void EditorNode::_edit_current(bool p_skip_foreign, bool p_skip_inspector_update
 		EditorPlugin *main_plugin = editor_data.get_handling_main_editor(current_obj);
 
 		int plugin_index = editor_main_screen->get_plugin_index(main_plugin);
-		// The Script plugin has no toolbar tab (it opens as a workspace leaf), so its
-		// button being hidden must not disable routing scripts to it.
-		const bool is_script_plugin = main_plugin && main_plugin->get_plugin_name() == "Script";
-		if (main_plugin && !is_script_plugin && plugin_index >= 0 && !editor_main_screen->is_button_enabled(plugin_index)) {
+		if (main_plugin && plugin_index >= 0 && !editor_main_screen->is_button_enabled(plugin_index)) {
 			main_plugin = nullptr;
 		}
 		EditorPlugin *editor_plugin_screen = editor_main_screen->get_selected_plugin();
@@ -4450,7 +4447,10 @@ void EditorNode::_remove_edited_scene(bool p_change_tab, bool p_allow_collapse) 
 	editor_data.remove_scene(old_index);
 
 	const bool tile_emptied = editor_data.get_tile_scene_indices(tile_id).is_empty();
-	if (p_allow_collapse && tile_emptied && scene_workspace && scene_workspace->get_leaf_count() > 1) {
+	// Only collapse the emptied scene tile when another scene tile remains; script
+	// leaves are not scene tiles, so counting them here could collapse the last
+	// scene tile and leave the workspace with no ScenePaneTile.
+	if (p_allow_collapse && tile_emptied && scene_workspace && scene_workspace->get_tile_count() > 1) {
 		WorkspaceLeafNode *leaf = scene_workspace->get_leaf_by_id(tile_id);
 		if (leaf) {
 			scene_workspace->collapse(leaf);
@@ -4480,7 +4480,7 @@ void EditorNode::_remove_scene(int index, bool p_change_tab, bool p_allow_collap
 	} else {
 		const int tile_id = editor_data.get_scene_tile(index);
 		editor_data.remove_scene(index);
-		if (p_allow_collapse && scene_workspace && scene_workspace->get_leaf_count() > 1 && editor_data.get_tile_scene_indices(tile_id).is_empty()) {
+		if (p_allow_collapse && scene_workspace && scene_workspace->get_tile_count() > 1 && editor_data.get_tile_scene_indices(tile_id).is_empty()) {
 			WorkspaceLeafNode *leaf = scene_workspace->get_leaf_by_id(tile_id);
 			if (leaf) {
 				scene_workspace->collapse(leaf);
@@ -4818,6 +4818,12 @@ void EditorNode::_reparent_script_surface_into(ScriptLeaf *p_leaf) {
 		app_screen->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	}
 	app_screen->show();
+
+	// The script editor keeps its own wrapper hidden until made visible; without
+	// this the leaf would host an empty app-screen container instead of the editor.
+	if (EditorPlugin *script_plugin = editor_main_screen->get_plugin_by_name("Script")) {
+		script_plugin->make_visible(true);
+	}
 }
 
 void EditorNode::_detach_script_surface() {

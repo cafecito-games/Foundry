@@ -447,14 +447,6 @@ class EditorAutomationSnapshotBuilder {
 	}
 
 	int _add_node(Node *p_node, int p_parent_index, bool p_is_root, bool p_internal = false, bool p_relax_visibility = false) {
-		// A single node can be reached through more than one capture root (e.g. an
-		// open dialog is reachable from gui_base, from the exclusive-window chain,
-		// and from a dock pushed as its own root). Emit it once so selectors do not
-		// see the same element multiple times and report a false ambiguity.
-		if (const int *existing_index = data.object_id_to_index.getptr(p_node->get_instance_id())) {
-			return *existing_index;
-		}
-
 		if (!p_relax_visibility && !_node_is_visible(p_node)) {
 			return -1;
 		}
@@ -550,6 +542,14 @@ class EditorAutomationSnapshotBuilder {
 
 	void _walk_root(Node *p_root) {
 		const bool relax_visibility = options.relaxed_visibility_roots && relaxed_visibility_roots.has(p_root);
+		// A node can be reachable from more than one capture root (e.g. an open
+		// dialog under gui_base is also pushed via the exclusive-window chain and
+		// its owning dock). Skip re-walking a root already captured from an earlier
+		// root so it is emitted once instead of tripping a false ambiguous-selector
+		// error. Relaxed roots still re-walk to expose otherwise-hidden descendants.
+		if (!relax_visibility && data.object_id_to_index.has(p_root->get_instance_id())) {
+			return;
+		}
 		_add_node(p_root, -1, true, false, relax_visibility);
 	}
 

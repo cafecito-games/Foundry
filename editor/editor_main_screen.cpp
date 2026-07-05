@@ -114,8 +114,9 @@ void EditorMainScreen::load_layout_from_config(Ref<ConfigFile> p_config_file, co
 void EditorMainScreen::set_button_enabled(int p_index, bool p_enabled) {
 	ERR_FAIL_INDEX(p_index, buttons.size());
 	// The Script plugin has no toolbar tab (it opens as a workspace leaf); keep its
-	// button hidden regardless of feature-profile toggling.
+	// button hidden but still honor feature-profile enable/disable via a flag.
 	if (p_index < editor_table.size() && editor_table[p_index] && _get_plugin_placement(editor_table[p_index]->get_plugin_name()) == SCREEN_APP) {
+		app_screen_enabled = p_enabled;
 		return;
 	}
 	buttons[p_index]->set_visible(p_enabled);
@@ -126,6 +127,9 @@ void EditorMainScreen::set_button_enabled(int p_index, bool p_enabled) {
 
 bool EditorMainScreen::is_button_enabled(int p_index) const {
 	ERR_FAIL_INDEX_V(p_index, buttons.size(), false);
+	if (p_index < editor_table.size() && editor_table[p_index] && _get_plugin_placement(editor_table[p_index]->get_plugin_name()) == SCREEN_APP) {
+		return app_screen_enabled;
+	}
 	return buttons[p_index]->is_visible();
 }
 
@@ -188,9 +192,12 @@ void EditorMainScreen::select(int p_index) {
 	ERR_FAIL_INDEX(p_index, editor_table.size());
 
 	// Script is no longer a main screen; it lives as a workspace leaf. Route any
-	// request to select it into revealing that leaf instead of swapping screens.
+	// request to select it into revealing that leaf instead of swapping screens,
+	// unless the script feature is disabled by the active feature profile.
 	if (editor_table[p_index] && _get_plugin_placement(editor_table[p_index]->get_plugin_name()) == SCREEN_APP) {
-		EditorNode::get_singleton()->reveal_script_leaf();
+		if (app_screen_enabled) {
+			EditorNode::get_singleton()->reveal_script_leaf();
+		}
 		return;
 	}
 
