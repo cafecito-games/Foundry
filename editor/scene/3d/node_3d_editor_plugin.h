@@ -581,6 +581,7 @@ public:
 	void update_transform_gizmo_view();
 
 	void set_can_preview(Camera3D *p_preview);
+	void apply_preview_camera_state(const Dictionary &p_state);
 	void set_state(const Dictionary &p_state);
 	Dictionary get_state() const;
 	void reset();
@@ -1111,7 +1112,7 @@ public:
 	Node3DEditorViewport *get_last_used_viewport();
 	Node3DEditorViewport *get_focused_viewport();
 
-	Node3DEditorViewport *create_secondary_viewport(const Ref<World3D> &p_world, SubViewport *p_preview_parent_viewport = nullptr);
+	Node3DEditorViewport *create_secondary_viewport(const Ref<World3D> &p_world, SubViewport *p_preview_parent_viewport = nullptr, Control *p_parent = nullptr);
 	void release_secondary_viewport(Node3DEditorViewport *p_viewport);
 
 	void set_freelook_viewport(Node3DEditorViewport *p_viewport) { freelook_viewport = p_viewport; }
