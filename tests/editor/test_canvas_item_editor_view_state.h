@@ -67,7 +67,7 @@ TEST_CASE("[Editor][canvas-viewstate-transitions] Integer zoom aligns view offse
 
 	CanvasItemEditorViewMath::apply_zoom_at_point(state, 2.0, Point2());
 
-	CHECK(Math::is_equal_approx(state.zoom, 2.0));
+	CHECK(Math::is_equal_approx(state.zoom, real_t(2.0)));
 	CHECK(state.view_offset.is_equal_approx(Point2(10.5, 7.5)));
 }
 
