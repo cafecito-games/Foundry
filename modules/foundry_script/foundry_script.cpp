@@ -65,6 +65,7 @@
 #include "core/config/project_settings.h"
 #include "core/core_constants.h"
 #include "core/io/file_access.h"
+#include "core/io/resource.h"
 #include "core/variant/container_type_validate.h"
 
 #include "scene/resources/packed_scene.h"
@@ -3073,6 +3074,11 @@ void FSLanguage::finish() {
 			// Clear backup for scripts that could slip out of the cyclic reference
 			// check
 			scr->clear();
+			if (!scr->get_path().is_empty()) {
+				// Drop cleared scripts from ResourceCache so a later cache-hit load cannot
+				// resurrect a half-torn-down script after finish()/init() cycles.
+				scr->set_path("");
+			}
 		}
 	}
 	scripts_to_clear.clear();
@@ -3095,6 +3101,19 @@ void FSLanguage::finish() {
 	namespace_singleton.unref();
 	project_scripts_singleton.unref();
 	reflection_singleton.unref();
+
+#ifdef DEV_ENABLED
+	{
+		List<Ref<Resource>> cached_resources;
+		ResourceCache::get_cached_resources(&cached_resources);
+		for (const Ref<Resource> &res : cached_resources) {
+			const Ref<FoundryScript> script = res;
+			if (script.is_valid()) {
+				ERR_FAIL_MSG(vformat("FoundryScript '%s' still registered in ResourceCache after FSLanguage::finish().", script->get_path()));
+			}
+		}
+	}
+#endif // DEV_ENABLED
 
 	finishing = false;
 }

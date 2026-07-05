@@ -40,6 +40,7 @@
 #include "core/object/object.h"
 #include "core/object/script_function_state.h"
 #include "scene/main/scene_tree.h"
+#include "tests/core/config/test_project_settings.h"
 #include "tests/test_macros.h"
 
 namespace FSTests {
@@ -61,6 +62,7 @@ public:
 
 struct ScriptExecutionFixture {
 	Node *suite = nullptr;
+	TestProjectSettingsRestoreScope project_settings;
 
 	explicit ScriptExecutionFixture() {
 		const String scripts_path = String(script_test_execution_root);
