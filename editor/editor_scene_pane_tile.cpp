@@ -32,7 +32,7 @@
 
 #include "editor/docks/inspector_dock.h"
 #include "editor/docks/scene_tree_dock.h"
-#include "editor/editor_scene_workspace.h"
+#include "editor/editor_tile_drop_overlay.h"
 #include "editor/editor_string_names.h"
 #include "editor/scene/3d/node_3d_editor_plugin.h"
 #include "editor/scene/canvas_item_editor_plugin.h"
@@ -97,11 +97,16 @@ void ScenePaneTile::input(const Ref<InputEvent> &p_event) {
 	// Focus-follows-drag: while a drag is under way, focus the tile the
 	// cursor moves over so the drop is handled by that tile's live editor
 	// (which only exists in the focused tile). request_leaf_focus() no-ops
-	// once focused.
+	// once focused. Scene-tab drags are mediated by EditorTileDropOverlay
+	// and EditorSceneTabBar, so retargeting focus mid-drag only churns editor
+	// state and spams errors.
 	if (tile_viewport->gui_is_dragging()) {
 		Ref<InputEventMouseMotion> mm = p_event;
 		if (mm.is_valid() && cursor_is_over_this_tile(mm->get_global_position())) {
-			_request_focus();
+			const Variant drag_data = tile_viewport->gui_get_drag_data();
+			if (!EditorTileDropOverlay::is_scene_tab_drag(drag_data)) {
+				_request_focus();
+			}
 		}
 		return;
 	}
@@ -259,6 +264,12 @@ void ScenePaneTile::setup(int p_tile_id, EditorSelection *p_editor_selection, Ed
 	_bind_focus_on_interaction(scene_tree_dock);
 	_bind_focus_on_interaction(inspector_dock);
 	_bind_focus_on_interaction(content_host);
+
+	drop_overlay = memnew(EditorTileDropOverlay);
+	drop_overlay->set_owning_tile_id(p_tile_id);
+	drop_overlay->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+	drop_overlay->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	content_host->add_child(drop_overlay);
 
 	_fit_content_children();
 }

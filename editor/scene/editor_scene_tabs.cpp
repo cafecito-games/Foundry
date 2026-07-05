@@ -47,7 +47,7 @@
 #include "scene/gui/panel.h"
 #include "scene/gui/panel_container.h"
 #include "scene/gui/popup_menu.h"
-#include "scene/gui/tab_bar.h"
+#include "editor/scene/editor_scene_tab_bar.h"
 #include "scene/gui/texture_rect.h"
 
 void EditorSceneTabs::_notification(int p_what) {
@@ -337,7 +337,7 @@ void EditorSceneTabs::_update_tab_titles() {
 
 	const int tile_current = EditorNode::get_editor_data().get_tile_current_scene(tile_id);
 	int current_tab = EditorNode::get_editor_data().scene_index_to_tile_tab(tile_current);
-	if (scene_tabs->get_tab_count() > 0 && scene_tabs->get_current_tab() != current_tab) {
+	if (scene_tabs->get_tab_count() > 0 && current_tab >= 0 && scene_tabs->get_current_tab() != current_tab) {
 		scene_tabs->set_block_signals(true);
 		scene_tabs->set_current_tab(current_tab);
 		scene_tabs->set_block_signals(false);
@@ -459,13 +459,14 @@ EditorSceneTabs::EditorSceneTabs(int p_tile_id) {
 	tabbar_container = memnew(HBoxContainer);
 	tabbar_panel->add_child(tabbar_container);
 
-	scene_tabs = memnew(TabBar);
+	scene_tabs = memnew(EditorSceneTabBar);
+	static_cast<EditorSceneTabBar *>(scene_tabs)->set_tile_id(p_tile_id);
 	scene_tabs->set_select_with_rmb(true);
 	scene_tabs->add_tab("unsaved");
 	scene_tabs->set_tab_close_display_policy((TabBar::CloseButtonDisplayPolicy)EDITOR_GET("interface/scene_tabs/display_close_button").operator int());
 	scene_tabs->set_max_tab_width(int(EDITOR_GET("interface/scene_tabs/maximum_width")) * EDSCALE);
 	scene_tabs->set_drag_to_rearrange_enabled(true);
-	scene_tabs->set_tabs_rearrange_group(TAB_REARRANGE_GROUP_BASE + p_tile_id);
+	scene_tabs->set_tabs_rearrange_group(SCENE_TABS_REARRANGE_GROUP);
 	scene_tabs->set_auto_translate_mode(AUTO_TRANSLATE_MODE_DISABLED);
 	scene_tabs->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	tabbar_container->add_child(scene_tabs);

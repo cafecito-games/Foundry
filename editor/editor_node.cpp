@@ -101,6 +101,7 @@
 #include "editor/editor_scene_context.h"
 #include "editor/editor_scene_workspace.h"
 #include "editor/editor_scene_pane_tile.h"
+#include "editor/editor_tile_drop_overlay.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/export/dedicated_server_export_plugin.h"
 #include "editor/export/editor_export.h"
@@ -4434,32 +4435,36 @@ bool EditorNode::is_addon_plugin_enabled(const String &p_addon) const {
 	return addon_name_to_plugin.has("res://addons/" + p_addon + "/plugin.cfg");
 }
 
-void EditorNode::_remove_edited_scene(bool p_change_tab) {
+void EditorNode::_remove_edited_scene(bool p_change_tab, bool p_allow_collapse) {
 	// When scene gets closed no node is edited anymore, so make sure the editors are notified before nodes are freed.
 	hide_unused_editors(SceneTreeDock::get_singleton());
 	SceneTreeDock::get_singleton()->clear_previous_node_selection();
 
-	int new_index = editor_data.get_edited_scene();
-	int old_index = new_index;
+	const int old_index = editor_data.get_edited_scene();
+	const int tile_id = old_index >= 0 ? editor_data.get_scene_tile(old_index) : editor_data.get_focused_tile_id();
 
-	if (new_index > 0) {
-		new_index = new_index - 1;
-	} else if (editor_data.get_edited_scene_count() > 1) {
-		new_index = 1;
-	} else {
-		editor_data.add_edited_scene(-1);
-		new_index = 1;
-	}
-
-	if (p_change_tab) {
-		_set_current_scene(new_index);
-	}
 	editor_data.remove_scene(old_index);
+
+	const bool tile_emptied = editor_data.get_tile_scene_indices(tile_id).is_empty();
+	if (p_allow_collapse && tile_emptied && scene_workspace && scene_workspace->get_leaf_count() > 1) {
+		WorkspaceLeafNode *leaf = scene_workspace->get_leaf_by_id(tile_id);
+		if (leaf) {
+			scene_workspace->collapse(leaf);
+		}
+	} else {
+		if (editor_data.get_edited_scene_count() == 0) {
+			editor_data.add_edited_scene(-1);
+		}
+		if (p_change_tab) {
+			_set_current_scene_nocheck(editor_data.get_tile_current_scene(editor_data.get_focused_tile_id()));
+		}
+	}
+
 	_update_title();
-	scene_tabs->update_scene_tabs();
+	_update_all_scene_tabs();
 }
 
-void EditorNode::_remove_scene(int index, bool p_change_tab) {
+void EditorNode::_remove_scene(int index, bool p_change_tab, bool p_allow_collapse) {
 	// Clear icon cache in case some scripts are no longer needed or class icons are outdated.
 	// FIXME: Ideally the cache should never be cleared and only updated on per-script basis, when an icon changes.
 	editor_data.clear_script_icon_cache();
@@ -4467,10 +4472,18 @@ void EditorNode::_remove_scene(int index, bool p_change_tab) {
 
 	if (editor_data.get_edited_scene() == index) {
 		// Scene to remove is current scene.
-		_remove_edited_scene(p_change_tab);
+		_remove_edited_scene(p_change_tab, p_allow_collapse);
 	} else {
-		// Scene to remove is not active scene.
+		const int tile_id = editor_data.get_scene_tile(index);
 		editor_data.remove_scene(index);
+		if (p_allow_collapse && scene_workspace && scene_workspace->get_leaf_count() > 1 && editor_data.get_tile_scene_indices(tile_id).is_empty()) {
+			WorkspaceLeafNode *leaf = scene_workspace->get_leaf_by_id(tile_id);
+			if (leaf) {
+				scene_workspace->collapse(leaf);
+			}
+			_update_all_scene_tabs();
+			_update_tile_display_attachments();
+		}
 	}
 }
 
@@ -4770,6 +4783,9 @@ void EditorNode::_reparent_main_screen_into(ScenePaneTile *p_tile) {
 	editor_main_screen->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 	editor_main_screen->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	editor_main_screen->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	if (EditorTileDropOverlay *overlay = p_tile->get_drop_overlay()) {
+		host->move_child(overlay, -1);
+	}
 }
 
 void EditorNode::_update_tile_display_attachments() {
@@ -6712,6 +6728,7 @@ void EditorNode::_on_leaf_removed(int p_leaf_id, int p_successor_leaf_id) {
 	editor_data.unregister_tile(p_leaf_id);
 	_update_all_scene_tabs();
 	_bind_all_leaf_docks();
+	_update_tile_display_attachments();
 }
 
 void EditorNode::_focus_tile(int p_tile_id) {
@@ -6736,6 +6753,10 @@ void EditorNode::_focus_tile(int p_tile_id) {
 	_bind_all_leaf_docks();
 
 	if (already_focused && already_current) {
+		return;
+	}
+
+	if (scene_idx < 0) {
 		return;
 	}
 
@@ -6766,6 +6787,109 @@ void EditorNode::_on_tile_tab_closed(int p_tab, int p_tile_id) {
 	}
 }
 
+void EditorNode::handle_tile_scene_drop(int p_target_tile_id, int p_region, int p_source_tile_id, int p_source_tab) {
+	ERR_FAIL_NULL(scene_workspace);
+	WorkspaceLeafNode *target_leaf = scene_workspace->get_leaf_by_id(p_target_tile_id);
+	ERR_FAIL_NULL(target_leaf);
+
+	const int scene_idx = editor_data.tile_tab_to_scene_index(p_source_tile_id, p_source_tab);
+	if (scene_idx < 0) {
+		return;
+	}
+
+	WorkspaceLeafNode *dest_leaf = scene_workspace->handle_scene_drop(scene_idx, target_leaf, (EditorSceneWorkspace::TileDropRegion)p_region);
+	if (!dest_leaf) {
+		return;
+	}
+
+	const int dest_tile_id = dest_leaf->get_leaf_id();
+	editor_data.set_tile_current_scene(dest_tile_id, scene_idx);
+	_focus_tile(dest_tile_id);
+	_bind_all_leaf_docks();
+	_update_all_scene_tabs();
+	_update_tile_display_attachments();
+	save_editor_layout_delayed();
+}
+
+void EditorNode::handle_tile_scene_tab_bar_drop(int p_target_tile_id, const Variant &p_data, const Point2 &p_point) {
+	ERR_FAIL_NULL(scene_workspace);
+	WorkspaceLeafNode *target_leaf = scene_workspace->get_leaf_by_id(p_target_tile_id);
+	ERR_FAIL_NULL(target_leaf);
+
+	Dictionary d = p_data;
+	if (!d.has("from_path") || !d.has("tab_index")) {
+		return;
+	}
+
+	SceneTree *tree = get_tree();
+	ERR_FAIL_NULL(tree);
+	Node *from_node = tree->get_root()->get_node_or_null(d["from_path"]);
+	TabBar *from_bar = Object::cast_to<TabBar>(from_node);
+	ERR_FAIL_NULL(from_bar);
+
+	int source_tile_id = -1;
+	for (Node *node = from_bar; node; node = node->get_parent()) {
+		EditorSceneTabs *tabs = Object::cast_to<EditorSceneTabs>(node);
+		if (tabs) {
+			source_tile_id = tabs->get_tile_id();
+			break;
+		}
+	}
+	ERR_FAIL_COND(source_tile_id < 0);
+
+	const int source_tab = d["tab_index"];
+	const int scene_idx = editor_data.tile_tab_to_scene_index(source_tile_id, source_tab);
+	if (scene_idx < 0) {
+		return;
+	}
+
+	WorkspaceLeafNode *dest_leaf = scene_workspace->handle_scene_drop(scene_idx, target_leaf, EditorSceneWorkspace::DROP_CENTER);
+	if (!dest_leaf) {
+		return;
+	}
+
+	const int dest_tile_id = dest_leaf->get_leaf_id();
+	editor_data.set_tile_current_scene(dest_tile_id, scene_idx);
+	_focus_tile(dest_tile_id);
+
+	ScenePaneTile *dest_tile = dest_leaf->get_pane_tile();
+	ERR_FAIL_NULL(dest_tile);
+	TabBar *dest_bar = dest_tile->get_scene_tabs()->get_tab_bar();
+	ERR_FAIL_NULL(dest_bar);
+
+	int insert_tab = dest_bar->get_closest_tab_idx_to_point(p_point);
+	if (insert_tab != -1) {
+		Rect2 tab_rect = dest_bar->get_tab_rect(insert_tab);
+		if (dest_bar->is_layout_rtl() ^ (p_point.x > tab_rect.position.x + tab_rect.size.width / 2)) {
+			insert_tab += 1;
+		}
+	} else {
+		insert_tab = dest_bar->get_tab_count();
+	}
+
+	const Vector<int> dest_scenes = editor_data.get_tile_scene_indices(dest_tile_id);
+	int from_tab = -1;
+	for (int i = 0; i < dest_scenes.size(); i++) {
+		if (dest_scenes[i] == scene_idx) {
+			from_tab = i;
+			break;
+		}
+	}
+	if (from_tab >= 0 && insert_tab >= 0 && from_tab != insert_tab) {
+		const int clamped_insert = MIN(insert_tab, dest_scenes.size() - 1);
+		const int target_global_idx = dest_scenes[clamped_insert];
+		if (target_global_idx != editor_data.get_edited_scene()) {
+			editor_data.move_edited_scene_to_index(target_global_idx);
+			editor_data.set_tile_current_scene(dest_tile_id, editor_data.get_edited_scene());
+		}
+	}
+
+	_bind_all_leaf_docks();
+	_update_all_scene_tabs();
+	_update_tile_display_attachments();
+	save_editor_layout_delayed();
+}
+
 void EditorNode::_focus_leaf_scene_tree_dock() {
 	SceneTreeDock *dock = SceneTreeDock::get_singleton();
 	if (dock) {
@@ -6789,6 +6913,12 @@ void EditorNode::_save_workspace_to_config(Ref<ConfigFile> p_config_file) {
 void EditorNode::_load_workspace_from_config(const Ref<ConfigFile> &p_config_file) {
 	if (!scene_workspace || !EditorSceneWorkspace::has_workspace_session(p_config_file)) {
 		return;
+	}
+
+	// restore_from_config() frees the outgoing workspace tree. Detach the shared
+	// main screen first so it is not destroyed with the old tile's content host.
+	if (editor_main_screen && editor_main_screen->get_parent()) {
+		editor_main_screen->get_parent()->remove_child(editor_main_screen);
 	}
 
 	scene_workspace->restore_from_config(p_config_file);

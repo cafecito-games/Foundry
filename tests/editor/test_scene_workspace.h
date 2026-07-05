@@ -695,6 +695,37 @@ TEST_CASE("[SceneTree][Editor] reparent-render") {
 	h.unmount();
 }
 
+TEST_CASE("[SceneTree][Editor] drop-region-select") {
+	const Size2 pane(400, 300);
+
+	CHECK(EditorSceneWorkspace::drop_region_at(pane, Point2(200, 150)) == EditorSceneWorkspace::DROP_CENTER);
+	CHECK(EditorSceneWorkspace::drop_region_at(pane, Point2(200, 140)) == EditorSceneWorkspace::DROP_CENTER);
+	CHECK(EditorSceneWorkspace::drop_region_at(pane, Point2(190, 150)) == EditorSceneWorkspace::DROP_CENTER);
+
+	CHECK(EditorSceneWorkspace::drop_region_at(pane, Point2(10, 150)) == EditorSceneWorkspace::DROP_LEFT);
+	CHECK(EditorSceneWorkspace::drop_region_at(pane, Point2(390, 150)) == EditorSceneWorkspace::DROP_RIGHT);
+	CHECK(EditorSceneWorkspace::drop_region_at(pane, Point2(200, 10)) == EditorSceneWorkspace::DROP_TOP);
+	CHECK(EditorSceneWorkspace::drop_region_at(pane, Point2(200, 290)) == EditorSceneWorkspace::DROP_BOTTOM);
+
+	// Near-corner: dominant axis wins (|dx| vs |dy|).
+	CHECK(EditorSceneWorkspace::drop_region_at(pane, Point2(10, 10)) == EditorSceneWorkspace::DROP_LEFT);
+	CHECK(EditorSceneWorkspace::drop_region_at(pane, Point2(390, 10)) == EditorSceneWorkspace::DROP_RIGHT);
+	CHECK(EditorSceneWorkspace::drop_region_at(pane, Point2(10, 290)) == EditorSceneWorkspace::DROP_LEFT);
+	CHECK(EditorSceneWorkspace::drop_region_at(pane, Point2(390, 290)) == EditorSceneWorkspace::DROP_RIGHT);
+
+	// On the diagonal of a square pane, relative offsets break the tie.
+	const Size2 square(400, 400);
+	CHECK(EditorSceneWorkspace::drop_region_at(square, Point2(50, 50)) == EditorSceneWorkspace::DROP_LEFT);
+
+	// Preview rects cover real halves / whole pane.
+	const Rect2 left_preview = EditorSceneWorkspace::drop_preview_rect(pane, EditorSceneWorkspace::DROP_LEFT);
+	CHECK(left_preview.size.x == doctest::Approx(pane.x * 0.5f));
+	CHECK(left_preview.size.y == doctest::Approx(pane.y));
+
+	const Rect2 center_preview = EditorSceneWorkspace::drop_preview_rect(pane, EditorSceneWorkspace::DROP_CENTER);
+	CHECK(center_preview.size == pane);
+}
+
 TEST_CASE("[SceneTree][Editor] preview-camera-state") {
 	ScenePaneTile *tile = memnew(ScenePaneTile);
 	EditorSelection selection;

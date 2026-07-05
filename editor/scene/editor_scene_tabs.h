@@ -38,7 +38,7 @@ class MenuButton;
 class Panel;
 class PanelContainer;
 class PopupMenu;
-class TabBar;
+#include "editor/scene/editor_scene_tab_bar.h"
 class TextureRect;
 
 class EditorSceneTabs : public MarginContainer {
@@ -54,8 +54,9 @@ public:
 		SCENE_CLOSE_RIGHT,
 	};
 
-	// Per-strip TabBar rearrange group base, distinct from the dock group (1).
-	static constexpr int TAB_REARRANGE_GROUP_BASE = 100;
+	// Shared across every tile strip so scene tabs can be dragged between tiles.
+	// Cross-strip drops are mediated by EditorSceneTabBar / the drop overlay.
+	static constexpr int SCENE_TABS_REARRANGE_GROUP = 100;
 
 private:
 	int tile_id = 0;
@@ -63,7 +64,7 @@ private:
 	PanelContainer *tabbar_panel = nullptr;
 	HBoxContainer *tabbar_container = nullptr;
 
-	TabBar *scene_tabs = nullptr;
+	EditorSceneTabBar *scene_tabs = nullptr;
 	PopupMenu *scene_tabs_context_menu = nullptr;
 	MenuButton *scene_list = nullptr;
 	Button *scene_tab_add = nullptr;
@@ -105,6 +106,7 @@ public:
 	static void set_focused_singleton(EditorSceneTabs *p_tabs) { focused_singleton = p_tabs; }
 
 	int get_tile_id() const { return tile_id; }
+	TabBar *get_tab_bar() const { return scene_tabs; }
 
 	void add_extra_button(Button *p_button);
 
