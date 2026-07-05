@@ -40,6 +40,7 @@
 #include "editor/scene/editor_scene_tabs.h"
 
 #include "scene/2d/node_2d.h"
+#include "scene/3d/camera_3d.h"
 #include "scene/gui/panel_container.h"
 #include "scene/gui/split_container.h"
 #include "scene/gui/subviewport_container.h"
@@ -380,11 +381,14 @@ static int add_test_scene(EditorData &p_data, int p_tile_id, Node2D *p_root = nu
 	p_data.register_tile(p_tile_id);
 	p_data.set_focused_tile_id(p_tile_id);
 	const int idx = p_data.add_edited_scene(-1);
+	if (p_data.get_scene_tile(idx) != p_tile_id) {
+		p_data.set_scene_tile(idx, p_tile_id);
+	}
+	p_data.set_edited_scene(idx);
 	if (p_root) {
 		EditorSceneContext *context = p_data.get_scene_context(idx);
 		context->set_scene_root_node(p_root);
 	}
-	p_data.set_tile_current_scene(p_tile_id, idx);
 	return idx;
 }
 
@@ -411,7 +415,6 @@ TEST_CASE("[SceneTree][Editor] focus-invariant") {
 	const int scene_b = add_test_scene(h.editor_data, tile_a, root_b);
 	h.pump();
 
-	h.editor_data.set_focused_tile_id(tile_a);
 	h.editor_data.set_tile_current_scene(tile_a, scene_a);
 	h.editor_data.set_edited_scene(scene_a);
 	check_focus_invariant(h.editor_data, h.workspace);
@@ -428,13 +431,11 @@ TEST_CASE("[SceneTree][Editor] focus-invariant") {
 
 	h.workspace->set_focused_leaf(tile_b);
 	h.editor_data.set_focused_tile_id(tile_b);
-	h.editor_data.set_tile_current_scene(tile_b, scene_c);
 	h.editor_data.set_edited_scene(scene_c);
 	check_focus_invariant(h.editor_data, h.workspace);
 
 	h.workspace->set_focused_leaf(tile_a);
 	h.editor_data.set_focused_tile_id(tile_a);
-	h.editor_data.set_tile_current_scene(tile_a, scene_b);
 	h.editor_data.set_edited_scene(scene_b);
 	check_focus_invariant(h.editor_data, h.workspace);
 
@@ -596,16 +597,20 @@ static void attach_tile_scene_display(
 
 		const bool is_focused_tile = tile_id == p_focused_tile_id;
 		if (is_focused_tile) {
-			tile->set_preview_mode(false, false, String(), Ref<Texture2D>());
+			tile->set_preview_mode(TilePreviewMode::FOCUSED_LIVE);
 			ctx->set_display_parent(p_live_container, true, true);
 			ctx->get_viewport()->set_update_mode(SubViewport::UPDATE_ALWAYS);
 		} else if (ctx->scene_has_3d_content()) {
-			tile->set_preview_mode(false, true, String(), Ref<Texture2D>());
-			if (ctx->is_active()) {
-				ctx->deactivate();
-			}
+			tile->set_preview_mode(TilePreviewMode::LIVE_3D);
+			SubViewportContainer *context_host = tile->get_context_viewport_host();
+			ctx->set_display_parent(context_host, false);
+			tile->bind_3d_preview_world(ctx->get_world_3d());
+			tile->apply_3d_preview_camera_state(Dictionary());
+			ctx->get_viewport()->set_update_mode(context_host->is_visible_in_tree() ? SubViewport::UPDATE_ALWAYS : SubViewport::UPDATE_DISABLED);
+			context_host->recalc_force_viewport_sizes();
+			context_host->queue_redraw();
 		} else {
-			tile->set_preview_mode(true, false, String(), Ref<Texture2D>());
+			tile->set_preview_mode(TilePreviewMode::LIVE_2D);
 			SubViewportContainer *preview = tile->get_preview_container();
 			ctx->set_display_parent(preview, false);
 			ctx->get_viewport()->set_update_mode(preview->is_visible_in_tree() ? SubViewport::UPDATE_ALWAYS : SubViewport::UPDATE_DISABLED);
@@ -719,6 +724,27 @@ TEST_CASE("[SceneTree][Editor] drop-region-select") {
 
 	const Rect2 center_preview = EditorSceneWorkspace::drop_preview_rect(pane, EditorSceneWorkspace::DROP_CENTER);
 	CHECK(center_preview.size == pane);
+}
+
+TEST_CASE("[SceneTree][Editor] preview-camera-state") {
+	ScenePaneTile *tile = memnew(ScenePaneTile);
+	EditorSelection selection;
+	EditorData editor_data;
+	tile->setup(0, &selection, editor_data);
+
+	Dictionary viewport_state;
+	viewport_state["position"] = Vector3(1, 2, 3);
+	viewport_state["x_rotation"] = 0.0;
+	viewport_state["y_rotation"] = 0.0;
+	viewport_state["distance"] = 8.0;
+	tile->apply_3d_preview_camera_state(viewport_state);
+
+	Camera3D *camera = tile->get_preview_3d_camera();
+	REQUIRE(camera != nullptr);
+	const Vector3 expected_origin = camera->get_transform().origin;
+	CHECK(expected_origin.is_equal_approx(Vector3(1, 2, 11)));
+
+	memdelete(tile);
 }
 
 } // namespace TestSceneWorkspace

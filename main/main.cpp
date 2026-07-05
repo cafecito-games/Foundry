@@ -111,6 +111,7 @@
 
 #ifdef TESTS_ENABLED
 #include "tests/test_main.h"
+#include "tests/foundry_test_progress.h"
 #endif
 
 #ifdef TOOLS_ENABLED
@@ -893,6 +894,7 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 		for (int i = 0; i < cli_parse.invocation.passthrough_args.size(); i++) {
 			push_test_arg(cli_parse.invocation.passthrough_args[i]);
 		}
+		FoundryTestProgress::configure_from_invocation(cli_parse.invocation);
 		status = test_main(test_argv.size(), test_argv.ptrw());
 #ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 	} else if (kind == Kind::TEST_GENERATE_FIXTURES) {
@@ -2353,10 +2355,10 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 		OS::get_singleton()->add_logger(memnew(RotatedFileLogger(base_path, max_files)));
 	}
 
-	// A `project run --script <path>` invocation is applied later in `Main::start()`, after this
-	// check runs. Treat a pending CLI script as a valid run target so a project without a main
-	// scene can still execute the script instead of aborting here.
-	if (main_args.is_empty() && foundry_cli_parse.invocation.script.is_empty() && String(GLOBAL_GET("application/run/main_scene")) == "") {
+	// A `project run --script <path>` or `project test --runner <path>` invocation is applied later
+	// in `Main::start()`, after this check runs. Treat a pending CLI script or test runner as a
+	// valid run target so a project without a main scene can still execute instead of aborting here.
+	if (main_args.is_empty() && foundry_cli_parse.invocation.script.is_empty() && foundry_cli_parse.invocation.runner.is_empty() && String(GLOBAL_GET("application/run/main_scene")) == "") {
 #ifdef TOOLS_ENABLED
 		if (!editor && !project_manager) {
 #endif
@@ -3995,8 +3997,9 @@ static Ref<ScriptTestRunner> load_script_test_runner(const String &p_path) {
 		}
 		runner_object = memnew(ScriptTestRunner);
 	}
-	runner_object->set_script(script_res);
-	return Ref<ScriptTestRunner>(runner_object);
+	Ref<ScriptTestRunner> runner(runner_object);
+	runner->set_script(script_res);
+	return runner;
 }
 
 int Main::start() {

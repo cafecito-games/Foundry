@@ -32,25 +32,35 @@
 
 #include "scene/gui/box_container.h"
 
+class Camera3D;
 class EditorData;
 class EditorSceneTabs;
 class EditorSelection;
 class HSplitContainer;
 class InspectorDock;
 class Label;
+class Node3DEditorViewport;
 class PanelContainer;
 class SceneTreeDock;
+class SubViewport;
 class SubViewportContainer;
 class EditorTileDropOverlay;
 class TextureRect;
+class World3D;
+
+enum class TilePreviewMode {
+	FOCUSED_LIVE,
+	LIVE_2D,
+	LIVE_3D,
+};
 
 /**
  * One self-contained editing unit of the scene workspace:
  * [scene tab strip] + [scene tree dock | content host | inspector dock].
  *
  * The focused tile's content host hosts the single EditorMainScreen (as a
- * real laid-out child); non-focused tiles show a live 2D preview or a 3D
- * placeholder instead. Any interaction inside the tile focuses it first.
+ * real laid-out child); non-focused tiles show a live 2D preview or a live 3D
+ * editing view instead. Any interaction inside the tile focuses it first.
  */
 class ScenePaneTile : public VBoxContainer {
 	FOUNDRY_CLASS(ScenePaneTile, VBoxContainer);
@@ -65,15 +75,19 @@ class ScenePaneTile : public VBoxContainer {
 	Control *content_host = nullptr;
 	InspectorDock *inspector_dock = nullptr; // Right, in-tile.
 	SubViewportContainer *preview_container = nullptr; // Non-focused 2D live preview.
-	PanelContainer *preview_placeholder = nullptr; // Non-focused 3D placeholder.
-	Label *preview_placeholder_label = nullptr;
-	TextureRect *preview_placeholder_icon = nullptr;
+	SubViewportContainer *context_viewport_host = nullptr; // Non-focused 3D scene viewport host.
+	SubViewportContainer *preview_3d_container = nullptr; // Camera-only 3D preview fallback.
+	SubViewport *preview_3d_viewport = nullptr;
+	Camera3D *preview_3d_camera = nullptr;
+	Node3DEditorViewport *spatial_view = nullptr; // World-bound 3D editing surface.
 	PanelContainer *focus_frame = nullptr; // Accent border when focused.
 	EditorTileDropOverlay *drop_overlay = nullptr;
 
 	void _request_focus();
 	void _interaction_gui_input(const Ref<InputEvent> &p_event);
 	void _bind_focus_on_interaction(Control *p_control);
+	void _fit_content_child(Control *p_child);
+	void _fit_content_children();
 
 protected:
 	void _notification(int p_what);
@@ -87,11 +101,19 @@ public:
 	Control *get_content_host() const { return content_host; }
 	SubViewportContainer *get_preview_container() const { return preview_container; }
 	EditorTileDropOverlay *get_drop_overlay() const { return drop_overlay; }
+	SubViewportContainer *get_context_viewport_host() const { return context_viewport_host; }
+	Node3DEditorViewport *get_spatial_view() const { return spatial_view; }
+	Camera3D *get_preview_3d_camera() const { return preview_3d_camera; }
+
+	void set_spatial_view(Node3DEditorViewport *p_view) { spatial_view = p_view; }
 
 	void set_focused_visual(bool p_focused);
-	void set_preview_mode(bool p_live_2d, bool p_placeholder_3d, const String &p_scene_name, const Ref<Texture2D> &p_icon);
+	void set_preview_mode(TilePreviewMode p_mode);
+	void bind_3d_preview_world(const Ref<World3D> &p_world);
+	void apply_3d_preview_camera_state(const Dictionary &p_viewport_state);
 
 	void setup(int p_tile_id, EditorSelection *p_editor_selection, EditorData &p_editor_data);
 
 	ScenePaneTile();
+	~ScenePaneTile();
 };

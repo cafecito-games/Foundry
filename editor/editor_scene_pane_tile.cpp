@@ -34,23 +34,20 @@
 #include "editor/docks/scene_tree_dock.h"
 #include "editor/editor_tile_drop_overlay.h"
 #include "editor/editor_string_names.h"
+#include "editor/scene/3d/node_3d_editor_plugin.h"
 #include "editor/scene/editor_scene_tabs.h"
 #include "editor/themes/editor_scale.h"
-#include "scene/gui/center_container.h"
-#include "scene/gui/label.h"
-#include "scene/gui/margin_container.h"
+#include "scene/3d/camera_3d.h"
 #include "scene/gui/panel_container.h"
 #include "scene/gui/split_container.h"
 #include "scene/gui/subviewport_container.h"
-#include "scene/gui/texture_rect.h"
 #include "scene/main/viewport.h"
+#include "scene/resources/3d/world_3d.h"
 
 void ScenePaneTile::_notification(int p_what) {
 	switch (p_what) {
-		case NOTIFICATION_THEME_CHANGED: {
-			if (preview_placeholder) {
-				preview_placeholder->add_theme_style_override(SceneStringName(panel), get_theme_stylebox(SceneStringName(panel), SNAME("Panel")));
-			}
+		case NOTIFICATION_RESIZED: {
+			_fit_content_children();
 		} break;
 	}
 }
@@ -130,18 +127,58 @@ void ScenePaneTile::set_focused_visual(bool p_focused) {
 	}
 }
 
-void ScenePaneTile::set_preview_mode(bool p_live_2d, bool p_placeholder_3d, const String &p_scene_name, const Ref<Texture2D> &p_icon) {
+void ScenePaneTile::set_preview_mode(TilePreviewMode p_mode) {
 	if (preview_container) {
-		preview_container->set_visible(p_live_2d);
+		preview_container->set_visible(p_mode == TilePreviewMode::LIVE_2D);
 	}
-	if (preview_placeholder) {
-		preview_placeholder->set_visible(p_placeholder_3d);
+	if (preview_3d_container) {
+		preview_3d_container->set_visible(p_mode == TilePreviewMode::LIVE_3D && !spatial_view);
 	}
-	if (preview_placeholder_label && p_placeholder_3d) {
-		preview_placeholder_label->set_text(vformat(TTR("%s\nFocus to edit 3D scene"), p_scene_name));
+	if (spatial_view) {
+		spatial_view->set_visible(p_mode == TilePreviewMode::LIVE_3D);
 	}
-	if (preview_placeholder_icon) {
-		preview_placeholder_icon->set_texture(p_icon);
+	if (context_viewport_host) {
+		context_viewport_host->set_visible(p_mode == TilePreviewMode::LIVE_3D);
+	}
+}
+
+void ScenePaneTile::bind_3d_preview_world(const Ref<World3D> &p_world) {
+	if (preview_3d_viewport) {
+		preview_3d_viewport->set_world_3d(p_world);
+	}
+}
+
+void ScenePaneTile::apply_3d_preview_camera_state(const Dictionary &p_viewport_state) {
+	if (!preview_3d_camera) {
+		return;
+	}
+
+	const Vector3 pos = p_viewport_state.get("position", Vector3());
+	const real_t x_rot = p_viewport_state.get("x_rotation", 0.35);
+	const real_t y_rot = p_viewport_state.get("y_rotation", 0.5);
+	const real_t distance = p_viewport_state.get("distance", 4.0);
+
+	Transform3D camera_transform;
+	camera_transform.translate_local(pos);
+	camera_transform.basis.rotate(Vector3(1, 0, 0), -x_rot);
+	camera_transform.basis.rotate(Vector3(0, 1, 0), -y_rot);
+	camera_transform.translate_local(0, 0, distance);
+	preview_3d_camera->set_transform(camera_transform);
+}
+
+void ScenePaneTile::_fit_content_child(Control *p_child) {
+	if (!p_child || !content_host) {
+		return;
+	}
+	p_child->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+}
+
+void ScenePaneTile::_fit_content_children() {
+	if (!content_host) {
+		return;
+	}
+	for (int i = 0; i < content_host->get_child_count(); i++) {
+		_fit_content_child(Object::cast_to<Control>(content_host->get_child(i)));
 	}
 }
 
@@ -193,27 +230,29 @@ void ScenePaneTile::setup(int p_tile_id, EditorSelection *p_editor_selection, Ed
 	preview_container->hide();
 	content_host->add_child(preview_container);
 
-	preview_placeholder = memnew(PanelContainer);
-	preview_placeholder->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
-	preview_placeholder->hide();
-	content_host->add_child(preview_placeholder);
+	context_viewport_host = memnew(SubViewportContainer);
+	context_viewport_host->set_stretch(true);
+	context_viewport_host->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+	context_viewport_host->hide();
+	context_viewport_host->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	content_host->add_child(context_viewport_host);
 
-	CenterContainer *placeholder_center = memnew(CenterContainer);
-	placeholder_center->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
-	preview_placeholder->add_child(placeholder_center);
+	preview_3d_container = memnew(SubViewportContainer);
+	preview_3d_container->set_stretch(true);
+	preview_3d_container->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+	preview_3d_container->hide();
+	content_host->add_child(preview_3d_container);
 
-	VBoxContainer *placeholder_vb = memnew(VBoxContainer);
-	placeholder_vb->set_alignment(BoxContainer::ALIGNMENT_CENTER);
-	placeholder_center->add_child(placeholder_vb);
+	preview_3d_viewport = memnew(SubViewport);
+	preview_3d_viewport->set_disable_input(true);
+	preview_3d_viewport->set_disable_3d(false);
+	preview_3d_container->add_child(preview_3d_viewport);
 
-	preview_placeholder_icon = memnew(TextureRect);
-	preview_placeholder_icon->set_stretch_mode(TextureRect::STRETCH_KEEP_ASPECT_CENTERED);
-	preview_placeholder_icon->set_custom_minimum_size(Size2(64, 64) * EDSCALE);
-	placeholder_vb->add_child(preview_placeholder_icon);
-
-	preview_placeholder_label = memnew(Label);
-	preview_placeholder_label->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_CENTER);
-	placeholder_vb->add_child(preview_placeholder_label);
+	preview_3d_camera = memnew(Camera3D);
+	preview_3d_camera->set_disable_gizmos(true);
+	preview_3d_viewport->add_child(preview_3d_camera);
+	preview_3d_camera->make_current();
+	apply_3d_preview_camera_state(Dictionary());
 
 	_bind_focus_on_interaction(scene_tabs);
 	_bind_focus_on_interaction(scene_tree_dock);
@@ -225,10 +264,19 @@ void ScenePaneTile::setup(int p_tile_id, EditorSelection *p_editor_selection, Ed
 	drop_overlay->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 	drop_overlay->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
 	content_host->add_child(drop_overlay);
+
+	_fit_content_children();
 }
 
 ScenePaneTile::ScenePaneTile() {
 	set_mouse_filter(Control::MOUSE_FILTER_PASS);
 	set_focus_mode(Control::FOCUS_ALL);
 	set_clip_contents(true);
+}
+
+ScenePaneTile::~ScenePaneTile() {
+	if (spatial_view && Node3DEditor::get_singleton()) {
+		Node3DEditor::get_singleton()->release_secondary_viewport(spatial_view);
+		spatial_view = nullptr;
+	}
 }

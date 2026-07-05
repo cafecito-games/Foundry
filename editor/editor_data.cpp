@@ -628,12 +628,9 @@ int EditorData::add_edited_scene(int p_at_pos) {
 		edited_scene.insert(p_at_pos, es);
 	}
 
-	if (current_edited_scene < 0) {
-		current_edited_scene = 0;
-	}
-
 	_ensure_tile_registered(focused_tile_id);
 	tile_current_scenes[focused_tile_id] = p_at_pos;
+	current_edited_scene = p_at_pos;
 #ifdef DEV_ENABLED
 	_check_focus_invariant();
 #endif

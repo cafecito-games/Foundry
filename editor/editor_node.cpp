@@ -4806,15 +4806,9 @@ void EditorNode::_update_tile_display_attachments() {
 		}
 
 		const bool is_focused_tile = tile_id == editor_data.get_focused_tile_id();
-		Node *scene_root = editor_data.get_edited_scene_root(i);
-		Ref<Texture2D> icon;
-		if (scene_root) {
-			icon = get_object_icon(scene_root);
-		}
-		const String scene_name = editor_data.get_scene_title(i);
 
 		if (is_focused_tile) {
-			tile->set_preview_mode(false, false, scene_name, icon);
+			tile->set_preview_mode(TilePreviewMode::FOCUSED_LIVE);
 			if (scene_viewport_container) {
 				ctx->set_display_parent(scene_viewport_container, true, true);
 			}
@@ -4830,12 +4824,49 @@ void EditorNode::_update_tile_display_attachments() {
 				_apply_preview_themes(ctx->get_viewport());
 			}
 		} else if (ctx->scene_has_3d_content()) {
-			tile->set_preview_mode(false, true, scene_name, icon);
-			if (ctx->is_active()) {
-				ctx->deactivate();
+			tile->set_preview_mode(TilePreviewMode::LIVE_3D);
+			SubViewportContainer *context_host = tile->get_context_viewport_host();
+			ctx->set_display_parent(context_host, false);
+
+			Node3DEditorViewport *spatial_view = tile->get_spatial_view();
+			if (!spatial_view && Node3DEditor::get_singleton()) {
+				spatial_view = Node3DEditor::get_singleton()->create_secondary_viewport(
+						ctx->get_world_3d(), ctx->get_viewport(), tile->get_content_host());
+				tile->set_spatial_view(spatial_view);
+			} else if (spatial_view) {
+				spatial_view->bind_world(ctx->get_world_3d(), ctx->get_viewport());
 			}
+
+			Dictionary viewport_state;
+			const Dictionary plugin_states = ctx->get_editor_plugin_states();
+			if (plugin_states.has("3D")) {
+				const Dictionary spatial_state = plugin_states["3D"];
+				if (spatial_state.has("viewports")) {
+					const Array viewports = spatial_state["viewports"];
+					if (viewports.size() > 0) {
+						viewport_state = viewports[0];
+					}
+				}
+			}
+			if (spatial_view) {
+				spatial_view->apply_preview_camera_state(viewport_state);
+			} else {
+				tile->bind_3d_preview_world(ctx->get_world_3d());
+				tile->apply_3d_preview_camera_state(viewport_state);
+			}
+
+			ctx->get_viewport()->set_update_mode(context_host->is_visible_in_tree() ? SubViewport::UPDATE_ALWAYS : SubViewport::UPDATE_DISABLED);
+			context_host->recalc_force_viewport_sizes();
+			context_host->queue_redraw();
+			if (spatial_view) {
+				spatial_view->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+				spatial_view->queue_redraw();
+			}
+			RenderingServer::get_singleton()->viewport_set_disable_2d(ctx->get_viewport()->get_viewport_rid(), true);
+			RenderingServer::get_singleton()->viewport_set_disable_3d(ctx->get_viewport()->get_viewport_rid(), false);
+			RenderingServer::get_singleton()->viewport_set_environment_mode(ctx->get_viewport()->get_viewport_rid(), RenderingServer::VIEWPORT_ENVIRONMENT_ENABLED);
 		} else {
-			tile->set_preview_mode(true, false, scene_name, icon);
+			tile->set_preview_mode(TilePreviewMode::LIVE_2D);
 			SubViewportContainer *preview = tile->get_preview_container();
 			ctx->set_display_parent(preview, false);
 			ctx->get_viewport()->set_update_mode(preview->is_visible_in_tree() ? SubViewport::UPDATE_ALWAYS : SubViewport::UPDATE_DISABLED);
