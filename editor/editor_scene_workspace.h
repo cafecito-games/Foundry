@@ -37,31 +37,34 @@ class EditorData;
 class EditorSelection;
 class ScenePaneTile;
 class SplitContainer;
+class WorkspaceLeafContent;
 
 /**
- * A leaf of the recursive tiling tree. Holds exactly one self-contained
- * ScenePaneTile (tab strip + in-tile scene tree + viewport host + inspector).
+ * A leaf of the recursive tiling tree. Holds exactly one WorkspaceLeafContent
+ * (scene tile, script leaf, etc.).
  */
 class WorkspaceLeafNode : public Container {
 	FOUNDRY_CLASS(WorkspaceLeafNode, Container);
 
 	int leaf_id = 0;
-	String content_descriptor;
-	ScenePaneTile *pane_tile = nullptr;
+	WorkspaceLeafContent *leaf_content = nullptr;
 
 protected:
 	void _notification(int p_what);
 
 public:
-	static WorkspaceLeafNode *create(int p_leaf_id, EditorSelection *p_editor_selection, EditorData *p_editor_data, const String &p_content_descriptor = String());
+	static WorkspaceLeafNode *create(int p_leaf_id, EditorSelection *p_editor_selection, EditorData *p_editor_data, const StringName &p_content_type = StringName("scene"));
 
 	int get_leaf_id() const { return leaf_id; }
-	const String &get_content_descriptor() const { return content_descriptor; }
-	void set_content_descriptor(const String &p_descriptor) { content_descriptor = p_descriptor; }
-	ScenePaneTile *get_pane_tile() const { return pane_tile; }
+	WorkspaceLeafContent *get_leaf_content() const { return leaf_content; }
+	void set_leaf_content(WorkspaceLeafContent *p_content);
+	WorkspaceLeafContent *take_leaf_content();
+
+	ScenePaneTile *get_pane_tile() const;
 	Control *get_content_host() const;
 
 	WorkspaceLeafNode();
+	~WorkspaceLeafNode();
 };
 
 /**
@@ -121,7 +124,9 @@ private:
 	EditorSelection *editor_selection = nullptr;
 	EditorData *editor_data = nullptr;
 
-	WorkspaceLeafNode *_create_leaf(int p_leaf_id, const String &p_content_descriptor = String());
+	WorkspaceLeafContent *_create_leaf_content(int p_leaf_id, const StringName &p_content_type);
+	WorkspaceLeafNode *_create_leaf(int p_leaf_id, const StringName &p_content_type = StringName("scene"));
+	void _mount_leaf_content(WorkspaceLeafNode *p_leaf, WorkspaceLeafContent *p_content);
 	Control *_get_structural_root() const;
 	Control *_restore_node_from_config(const Ref<ConfigFile> &p_config, int p_node, int p_node_count, HashSet<int> &r_visited);
 	WorkspaceLeafNode *_find_first_leaf(Control *p_node) const;
@@ -141,7 +146,7 @@ public:
 	// Tree ops.
 	WorkspaceLeafNode *split(WorkspaceLeafNode *p_leaf, bool p_vertical, SplitSide p_side);
 	void collapse(WorkspaceLeafNode *p_leaf);
-	bool move_content(const String &p_content, WorkspaceLeafNode *p_from_leaf, WorkspaceLeafNode *p_to_leaf);
+	bool move_content(WorkspaceLeafNode *p_from_leaf, WorkspaceLeafNode *p_to_leaf);
 
 	// Drag-a-tab drop resolution (center = move scene; edge = split + move).
 	WorkspaceLeafNode *handle_scene_drop(int p_scene_idx, WorkspaceLeafNode *p_target_leaf, TileDropRegion p_region);
@@ -158,13 +163,14 @@ public:
 	int get_leaf_count() const { return leaves.size(); }
 	Vector<WorkspaceLeafNode *> get_leaves() const { return leaves; }
 
-	// Tile accessors (each leaf owns one ScenePaneTile; leaf id == tile id).
+	// Tile accessors (scene leaves only; leaf id == tile id for scene content).
 	ScenePaneTile *get_tile_by_id(int p_id) const;
 	ScenePaneTile *get_focused_tile() const;
 	Vector<ScenePaneTile *> get_tiles() const;
-	int get_tile_count() const { return leaves.size(); }
+	int get_tile_count() const;
 
 	// Persistence (nested tree, flat index-addressed node list).
+	static String leaf_layout_section(int p_leaf_id);
 	static void save_to_config(const Ref<ConfigFile> &p_config, const EditorSceneWorkspace *p_workspace);
 	static bool has_workspace_session(const Ref<ConfigFile> &p_config);
 	void restore_from_config(const Ref<ConfigFile> &p_config);

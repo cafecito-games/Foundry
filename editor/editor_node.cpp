@@ -79,7 +79,6 @@
 #include "servers/rendering/rendering_server.h"
 
 #include "editor/animation/animation_player_editor_plugin.h"
-#include "editor/asset_library/asset_library_editor_plugin.h"
 #include "editor/audio/audio_stream_preview.h"
 #include "editor/audio/editor_audio_buses.h"
 #include "editor/debugger/debugger_editor_plugin.h"
@@ -436,8 +435,6 @@ void EditorNode::shortcut_input(const Ref<InputEvent> &p_event) {
 			editor_main_screen->select(EditorMainScreen::EDITOR_GAME);
 		} else if (ED_IS_SHORTCUT("editor/editor_help", p_event)) {
 			emit_signal(SNAME("request_help_search"), "");
-		} else if (ED_IS_SHORTCUT("editor/editor_assetlib", p_event) && AssetLibraryEditorPlugin::is_available()) {
-			editor_main_screen->select(EditorMainScreen::EDITOR_ASSETLIB);
 		} else if (ED_IS_SHORTCUT("editor/editor_next", p_event)) {
 			editor_main_screen->select_next();
 		} else if (ED_IS_SHORTCUT("editor/editor_prev", p_event)) {
@@ -4768,21 +4765,25 @@ void EditorNode::_sync_scene_viewport_2d_state_with_main_screen() {
 	}
 }
 
-void EditorNode::_reparent_main_screen_into(ScenePaneTile *p_tile) {
+void EditorNode::_reparent_scene_mode_into(ScenePaneTile *p_tile) {
 	if (!editor_main_screen || !p_tile) {
 		return;
 	}
-	Control *host = p_tile->get_content_host();
-	if (!host || editor_main_screen->get_parent() == host) {
+	VBoxContainer *scene_mode = editor_main_screen->get_scene_mode_control();
+	if (!scene_mode) {
 		return;
 	}
-	if (editor_main_screen->get_parent()) {
-		editor_main_screen->get_parent()->remove_child(editor_main_screen);
+	Control *host = p_tile->get_content_host();
+	if (!host || scene_mode->get_parent() == host) {
+		return;
 	}
-	host->add_child(editor_main_screen);
-	editor_main_screen->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
-	editor_main_screen->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	editor_main_screen->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	if (scene_mode->get_parent()) {
+		scene_mode->get_parent()->remove_child(scene_mode);
+	}
+	host->add_child(scene_mode);
+	scene_mode->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+	scene_mode->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	scene_mode->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	if (EditorTileDropOverlay *overlay = p_tile->get_drop_overlay()) {
 		host->move_child(overlay, -1);
 	}
@@ -6749,7 +6750,7 @@ void EditorNode::_focus_tile(int p_tile_id) {
 	ERR_FAIL_NULL(tile);
 
 	_update_focused_dock_singletons(tile);
-	_reparent_main_screen_into(tile);
+	_reparent_scene_mode_into(tile);
 	_bind_all_leaf_docks();
 
 	if (already_focused && already_current) {
@@ -6937,7 +6938,7 @@ void EditorNode::_load_workspace_from_config(const Ref<ConfigFile> &p_config_fil
 	if (focused_leaf && focused_leaf->get_pane_tile()) {
 		_update_focused_dock_singletons(focused_leaf->get_pane_tile());
 	}
-	_reparent_main_screen_into(scene_workspace->get_focused_tile());
+	_reparent_scene_mode_into(scene_workspace->get_focused_tile());
 	_set_current_scene_nocheck(editor_data.get_tile_current_scene(editor_data.get_focused_tile_id()));
 }
 
@@ -7410,6 +7411,20 @@ void EditorNode::update_distraction_free_mode() {
 		set_distraction_free_mode(script_distraction_free);
 	} else {
 		set_distraction_free_mode(scene_distraction_free);
+	}
+}
+
+void EditorNode::update_global_screen_visibility() {
+	if (!editor_main_screen || !global_screen_host || !scene_workspace) {
+		return;
+	}
+	const bool show_global = editor_main_screen->is_global_screen_selected();
+	global_screen_host->set_visible(show_global);
+	scene_workspace->set_visible(!show_global);
+	if (VBoxContainer *app_screen = editor_main_screen->get_app_screen_control()) {
+		if (Control *app_parent = Object::cast_to<Control>(app_screen->get_parent())) {
+			app_parent->set_visible(!show_global && app_screen->is_visible());
+		}
 	}
 }
 
@@ -8693,9 +8708,6 @@ void EditorNode::_feature_profile_changed() {
 		if (!Engine::get_singleton()->is_recovery_mode_hint()) {
 			editor_main_screen->set_button_enabled(EditorMainScreen::EDITOR_GAME, !profile->is_feature_disabled(EditorFeatureProfile::FEATURE_GAME));
 		}
-		if (AssetLibraryEditorPlugin::is_available()) {
-			editor_main_screen->set_button_enabled(EditorMainScreen::EDITOR_ASSETLIB, !profile->is_feature_disabled(EditorFeatureProfile::FEATURE_ASSET_LIB));
-		}
 	} else {
 		editor_dock_manager->set_dock_enabled(ImportDock::get_singleton(), true);
 		editor_dock_manager->set_dock_enabled(SignalsDock::get_singleton(), true);
@@ -8706,9 +8718,6 @@ void EditorNode::_feature_profile_changed() {
 		editor_main_screen->set_button_enabled(EditorMainScreen::EDITOR_SCRIPT, true);
 		if (!Engine::get_singleton()->is_recovery_mode_hint()) {
 			editor_main_screen->set_button_enabled(EditorMainScreen::EDITOR_GAME, true);
-		}
-		if (AssetLibraryEditorPlugin::is_available()) {
-			editor_main_screen->set_button_enabled(EditorMainScreen::EDITOR_ASSETLIB, true);
 		}
 	}
 }
@@ -9621,6 +9630,28 @@ EditorNode::EditorNode() {
 	scene_workspace->connect("leaf_added", callable_mp(this, &EditorNode::_on_leaf_added));
 	scene_workspace->connect("leaf_removed", callable_mp(this, &EditorNode::_on_leaf_removed));
 
+	editor_main_screen = memnew(EditorMainScreen);
+	editor_main_screen->hide();
+	add_child(editor_main_screen);
+
+	VBoxContainer *app_screen = editor_main_screen->get_app_screen_control();
+	srt->add_child(app_screen);
+	app_screen->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	app_screen->hide();
+
+	global_screen_host = memnew(Control);
+	global_screen_host->set_name("GlobalScreenHost");
+	global_screen_host->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	top_split->add_child(global_screen_host);
+	global_screen_host->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+	global_screen_host->hide();
+
+	VBoxContainer *global_screen = editor_main_screen->get_global_screen_control();
+	global_screen_host->add_child(global_screen);
+	global_screen->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+	global_screen->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	global_screen->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+
 	WorkspaceLeafNode *initial_leaf = scene_workspace->get_focused_leaf();
 	ERR_FAIL_NULL(initial_leaf);
 	editor_data.register_tile(initial_leaf->get_leaf_id());
@@ -9642,9 +9673,7 @@ EditorNode::EditorNode() {
 	distraction_free->set_toggle_mode(true);
 	distraction_free->connect(SceneStringName(pressed), callable_mp(this, &EditorNode::_toggle_distraction_free_mode));
 
-	editor_main_screen = memnew(EditorMainScreen);
-	editor_main_screen->set_custom_minimum_size(Size2(0, 80) * EDSCALE);
-	_reparent_main_screen_into(initial_tile);
+	_reparent_scene_mode_into(initial_tile);
 
 	placeholder_scene_viewport = memnew(SubViewport);
 	placeholder_scene_viewport->set_auto_translate_mode(AUTO_TRANSLATE_MODE_ALWAYS);
@@ -10187,12 +10216,6 @@ EditorNode::EditorNode() {
 
 	ScriptTextEditor::register_editor(); // Register one for text scripts.
 	TextEditor::register_editor();
-
-	if (AssetLibraryEditorPlugin::is_available()) {
-		add_editor_plugin(memnew(AssetLibraryEditorPlugin));
-	} else {
-		print_verbose("Asset Library not available (due to using Web editor, or SSL support disabled).");
-	}
 
 	// More visually meaningful to have this later.
 	add_editor_plugin(memnew(AnimationPlayerEditorPlugin));

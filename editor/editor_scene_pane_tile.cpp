@@ -32,6 +32,8 @@
 
 #include "editor/docks/inspector_dock.h"
 #include "editor/docks/scene_tree_dock.h"
+#include "editor/editor_data.h"
+#include "editor/editor_scene_context.h"
 #include "editor/editor_tile_drop_overlay.h"
 #include "editor/editor_string_names.h"
 #include "editor/scene/3d/node_3d_editor_plugin.h"
@@ -39,6 +41,7 @@
 #include "editor/scene/canvas_item_editor_view.h"
 #include "editor/scene/editor_scene_tabs.h"
 #include "editor/themes/editor_scale.h"
+#include "core/io/config_file.h"
 #include "scene/3d/camera_3d.h"
 #include "scene/gui/panel_container.h"
 #include "scene/gui/split_container.h"
@@ -190,6 +193,7 @@ void ScenePaneTile::_fit_content_children() {
 
 void ScenePaneTile::setup(int p_tile_id, EditorSelection *p_editor_selection, EditorData &p_editor_data) {
 	tile_id = p_tile_id;
+	editor_data = &p_editor_data;
 	set_process_input(true);
 	set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	set_h_size_flags(Control::SIZE_EXPAND_FILL);
@@ -278,6 +282,63 @@ ScenePaneTile::ScenePaneTile() {
 	set_mouse_filter(Control::MOUSE_FILTER_PASS);
 	set_focus_mode(Control::FOCUS_ALL);
 	set_clip_contents(true);
+}
+
+StringName ScenePaneTile::get_content_type() const {
+	return StringName("scene");
+}
+
+Control *ScenePaneTile::get_root_control() const {
+	return const_cast<ScenePaneTile *>(this);
+}
+
+String ScenePaneTile::get_tab_title() const {
+	if (!editor_data) {
+		return String();
+	}
+	const int current_scene = editor_data->get_tile_current_scene(tile_id);
+	if (current_scene < 0) {
+		return TTR("Scene");
+	}
+	return editor_data->get_scene_title(current_scene);
+}
+
+Ref<Texture2D> ScenePaneTile::get_tab_icon() const {
+	EditorSceneContext *ctx = get_scene_context();
+	if (!ctx) {
+		return Ref<Texture2D>();
+	}
+	const StringName icon_name = ctx->scene_has_3d_content() ? SNAME("Node3D") : SNAME("Node2D");
+	if (has_theme_icon(icon_name, EditorStringName(EditorIcons))) {
+		return get_theme_icon(icon_name, EditorStringName(EditorIcons));
+	}
+	return Ref<Texture2D>();
+}
+
+EditorSceneContext *ScenePaneTile::get_scene_context() const {
+	if (!editor_data) {
+		return nullptr;
+	}
+	const int current_scene = editor_data->get_tile_current_scene(tile_id);
+	if (current_scene < 0) {
+		return nullptr;
+	}
+	return editor_data->get_scene_context(current_scene);
+}
+
+void ScenePaneTile::on_focus_entered() {
+	_request_focus();
+}
+
+void ScenePaneTile::save_layout(const Ref<ConfigFile> &p_config, const String &p_section) const {
+	ERR_FAIL_COND(p_config.is_null());
+	p_config->set_value(p_section, "tile_id", tile_id);
+}
+
+void ScenePaneTile::load_layout(const Ref<ConfigFile> &p_config, const String &p_section) {
+	ERR_FAIL_COND(p_config.is_null());
+	// tile_id is assigned structurally when the leaf is created.
+	p_config->get_value(p_section, "tile_id", tile_id);
 }
 
 ScenePaneTile::~ScenePaneTile() {
