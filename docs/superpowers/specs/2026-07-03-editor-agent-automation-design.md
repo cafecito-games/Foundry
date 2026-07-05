@@ -230,6 +230,18 @@ Editor workflow tests should launch the editor with the automation flag in a loc
 
 Manual validation remains useful for early development, especially around focus, modal behavior, and drag/drop, but the goal is to turn stable workflows into automated tests.
 
+## Multi-pane workspace (Track U16)
+
+The tiled scene workspace exposes additional automation surfaces:
+
+- `read_editor_state` returns `focused_tile_id` and a `workspace` object with the split tree plus per-tile `{ tile_id, scenes[], current_scene, focused }`. Legacy fields such as `active_scene_path`, `edited_scene_root`, and `main_screen` continue to describe the focused tile for back-compat.
+- Snapshots tag in-tile elements with `metadata.tile_id` and expose each `ScenePaneTile` as `role: "tile"`.
+- Selectors accept `tile_id`, `tile_scene`, or `tile: "focused"` (including inside `within`) to scope duplicated per-tile docks.
+- `act` supports `dock` / `drag_to_region` with `target_tile_id` or a tile selector and a `region` of `center|left|right|top|bottom`.
+- `wait_for` adds `tile_split`, `tile_collapsed`, `focused_tile_changed`, and `workspace_settled`.
+
+Regression coverage lives in `tests/editor/test_editor_automation_workspace.h` (`mcp-workspace-state`, `mcp-tile-scoped-selector`, `mcp-dock-action`).
+
 ## References
 
 - MCP transports: https://modelcontextprotocol.io/specification/2025-11-25/basic/transports

@@ -821,6 +821,7 @@ public:
 	static EditorBottomPanel *get_bottom_panel() { return singleton->bottom_panel; }
 	static EditorBottomDrawerStrip *get_bottom_drawer_strip() { return singleton->bottom_drawer_strip; }
 	static EditorMainScreen *get_editor_main_screen() { return singleton->editor_main_screen; }
+	static EditorSceneWorkspace *get_scene_workspace() { return singleton ? singleton->scene_workspace : nullptr; }
 
 	static Button *get_distraction_free_button() { return singleton->distraction_free; }
 

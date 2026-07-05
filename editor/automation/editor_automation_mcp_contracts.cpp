@@ -647,7 +647,10 @@ Ref<EditorAutomationMCPJsonSchema> EditorAutomationMCPSelector::schema() {
 	schema->add_property("case_sensitive", EditorAutomationMCPJsonSchema::boolean("Use case-sensitive string matching. Defaults to false."));
 	schema->add_property("nth", EditorAutomationMCPJsonSchema::integer("Pick the zero-based Nth match after filtering."));
 	schema->add_property("index", EditorAutomationMCPJsonSchema::integer("Synonym for nth."));
-	schema->add_property("within", EditorAutomationMCPJsonSchema::object("Nested selector scope. Accepts the same selector fields as the parent selector."));
+	schema->add_property("within", EditorAutomationMCPJsonSchema::object("Nested selector scope. Accepts the same selector fields as the parent selector, including tile_id/tile_scene/tile."));
+	schema->add_property("tile_id", EditorAutomationMCPJsonSchema::integer("Select a workspace tile container by stable tile id."));
+	schema->add_property("tile_scene", EditorAutomationMCPJsonSchema::string("Select a tile container by hosted scene path (res://...)."));
+	schema->add_property("tile", EditorAutomationMCPJsonSchema::string("Select a tile container by id string or \"focused\"."));
 	return schema;
 }
 
@@ -692,6 +695,15 @@ EditorAutomationMCPParseResult<EditorAutomationMCPSelector> EditorAutomationMCPS
 	if (!_read_optional_dictionary(dict, "metadata", selector.values, error)) {
 		return EditorAutomationMCPParseResult<EditorAutomationMCPSelector>::invalid(p_field + "." + error.field, error.message);
 	}
+	if (!_read_optional_int(dict, "tile_id", selector.values, error)) {
+		return EditorAutomationMCPParseResult<EditorAutomationMCPSelector>::invalid(p_field + "." + error.field, error.message);
+	}
+	if (!_read_optional_string(dict, "tile_scene", selector.values, error)) {
+		return EditorAutomationMCPParseResult<EditorAutomationMCPSelector>::invalid(p_field + "." + error.field, error.message);
+	}
+	if (!_read_optional_string(dict, "tile", selector.values, error)) {
+		return EditorAutomationMCPParseResult<EditorAutomationMCPSelector>::invalid(p_field + "." + error.field, error.message);
+	}
 	if (dict.has("within")) {
 		const EditorAutomationMCPParseResult<EditorAutomationMCPSelector> within = parse(dict.get("within", Variant()), p_field + ".within");
 		if (!within.ok) {
@@ -731,6 +743,9 @@ Ref<EditorAutomationMCPJsonSchema> EditorAutomationMCPActionArgs::schema() {
 	schema->add_property("target_point", EditorAutomationMCPJsonSchema::array(EditorAutomationMCPJsonSchema::number("Coordinate component."), "Absolute drag release point [x, y] in global coordinates."));
 	schema->add_property("waypoints", EditorAutomationMCPJsonSchema::array(EditorAutomationMCPJsonSchema::array(EditorAutomationMCPJsonSchema::number("Coordinate component.")), "Drag path as absolute [x, y] waypoint arrays."));
 	schema->add_property("path", EditorAutomationMCPJsonSchema::array(EditorAutomationMCPJsonSchema::array(EditorAutomationMCPJsonSchema::number("Coordinate component.")), "Alias for waypoints."));
+	schema->add_property("target_tile_id", EditorAutomationMCPJsonSchema::integer("Target workspace tile id for dock/drag_to_region actions."));
+	schema->add_property("target_tile", EditorAutomationMCPJsonSchema::object("Tile container selector for dock/drag_to_region actions."));
+	schema->add_property("region", EditorAutomationMCPJsonSchema::enum_string(EditorAutomationMCPContracts::tile_drop_region_enum_values(), "Tile drop region for dock/drag_to_region actions."));
 	return schema;
 }
 
@@ -824,6 +839,19 @@ EditorAutomationMCPParseResult<EditorAutomationMCPActionArgs> EditorAutomationMC
 	if (!_read_optional_point_path(dict, "path", args.values, error)) {
 		return EditorAutomationMCPParseResult<EditorAutomationMCPActionArgs>::invalid(p_field + "." + error.field, error.message);
 	}
+	if (!_read_optional_int(dict, "target_tile_id", args.values, error)) {
+		return EditorAutomationMCPParseResult<EditorAutomationMCPActionArgs>::invalid(p_field + "." + error.field, error.message);
+	}
+	if (dict.has("target_tile")) {
+		const EditorAutomationMCPParseResult<EditorAutomationMCPSelector> target_tile = EditorAutomationMCPSelector::parse(dict.get("target_tile", Variant()), p_field + ".target_tile");
+		if (!target_tile.ok) {
+			return EditorAutomationMCPParseResult<EditorAutomationMCPActionArgs>::invalid(target_tile.error.field, target_tile.error.message);
+		}
+		args.values["target_tile"] = target_tile.value.to_dictionary();
+	}
+	if (!_read_optional_string(dict, "region", args.values, error, EditorAutomationMCPContracts::tile_drop_region_enum_values())) {
+		return EditorAutomationMCPParseResult<EditorAutomationMCPActionArgs>::invalid(p_field + "." + error.field, error.message);
+	}
 	return EditorAutomationMCPParseResult<EditorAutomationMCPActionArgs>::success(args);
 }
 
@@ -843,6 +871,8 @@ Ref<EditorAutomationMCPJsonSchema> EditorAutomationMCPWaitCondition::schema() {
 	schema->add_property("marker", EditorAutomationMCPLogMarker::schema());
 	schema->add_property("fields", EditorAutomationMCPJsonSchema::object("Field equality checks for selector_matches."));
 	schema->add_property("baseline", EditorAutomationMCPJsonSchema::object("Baseline modal stack for modal_stack_changed conditions."));
+	schema->add_property("baseline_tile_count", EditorAutomationMCPJsonSchema::integer("Baseline tile count for tile_split/tile_collapsed conditions."));
+	schema->add_property("baseline_focused_tile_id", EditorAutomationMCPJsonSchema::integer("Baseline focused tile id for focused_tile_changed conditions."));
 	return schema;
 }
 
@@ -889,6 +919,12 @@ EditorAutomationMCPParseResult<EditorAutomationMCPWaitCondition> EditorAutomatio
 		return EditorAutomationMCPParseResult<EditorAutomationMCPWaitCondition>::invalid(p_field + "." + error.field, error.message);
 	}
 	if (!_read_optional_dictionary(dict, "baseline", condition.values, error)) {
+		return EditorAutomationMCPParseResult<EditorAutomationMCPWaitCondition>::invalid(p_field + "." + error.field, error.message);
+	}
+	if (!_read_optional_int(dict, "baseline_tile_count", condition.values, error)) {
+		return EditorAutomationMCPParseResult<EditorAutomationMCPWaitCondition>::invalid(p_field + "." + error.field, error.message);
+	}
+	if (!_read_optional_int(dict, "baseline_focused_tile_id", condition.values, error)) {
 		return EditorAutomationMCPParseResult<EditorAutomationMCPWaitCondition>::invalid(p_field + "." + error.field, error.message);
 	}
 	return EditorAutomationMCPParseResult<EditorAutomationMCPWaitCondition>::success(condition);
@@ -1378,6 +1414,8 @@ PackedStringArray EditorAutomationMCPContracts::action_names() {
 	actions.push_back("submit");
 	actions.push_back("press_key");
 	actions.push_back("drag");
+	actions.push_back("dock");
+	actions.push_back("drag_to_region");
 	actions.push_back("select");
 	actions.push_back("activate");
 	actions.push_back("expand");
@@ -1440,7 +1478,21 @@ PackedStringArray EditorAutomationMCPContracts::wait_condition_types() {
 	types.push_back("script_analysis_idle");
 	types.push_back("log_contains");
 	types.push_back("no_new_errors");
+	types.push_back("tile_split");
+	types.push_back("tile_collapsed");
+	types.push_back("focused_tile_changed");
+	types.push_back("workspace_settled");
 	return types;
+}
+
+PackedStringArray EditorAutomationMCPContracts::tile_drop_region_enum_values() {
+	PackedStringArray values;
+	values.push_back("center");
+	values.push_back("left");
+	values.push_back("right");
+	values.push_back("top");
+	values.push_back("bottom");
+	return values;
 }
 
 PackedStringArray EditorAutomationMCPContracts::wait_status_enum_values() {
@@ -1507,8 +1559,8 @@ Array EditorAutomationMCPContracts::build_tools_list() {
 	}
 
 	tools.push_back(_make_tool("read_editor_state",
-			"Returns selected nodes, open scenes, active scene, current script, playing state, and unsaved state.",
-			EditorAutomationMCPReadEditorStateInput::schema(), EditorAutomationMCPJsonSchema::object("Output from read_editor_state with a lightweight snapshot of editor/session state."))
+			"Returns selected nodes, open scenes, active scene, current script, playing state, unsaved state, and the multi-pane workspace tree.",
+			EditorAutomationMCPReadEditorStateInput::schema(), EditorAutomationMCPJsonSchema::object("Output from read_editor_state with a lightweight snapshot of editor/session state, including workspace tiles and focused_tile_id."))
 					.to_dictionary());
 
 	{

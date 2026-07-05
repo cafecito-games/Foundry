@@ -36,6 +36,8 @@
 #include "editor/docks/editor_dock.h"
 #include "editor/docks/filesystem_dock.h"
 #include "editor/editor_log.h"
+#include "editor/editor_node.h"
+#include "editor/editor_scene_pane_tile.h"
 #include "editor/inspector/editor_inspector.h"
 #include "editor/run/editor_run_bar.h"
 #include "editor/scene/scene_tree_editor.h"
@@ -179,6 +181,9 @@ void _append_common_list_item_metadata(const ItemList *p_list, int p_index, Dict
 } // namespace
 
 String EditorAutomationWorkflow::role_for_node(const Node *p_node) {
+	if (Object::cast_to<const ScenePaneTile>(p_node)) {
+		return "tile";
+	}
 	if (Object::cast_to<const EditorDock>(p_node)) {
 		return "dock";
 	}
@@ -205,6 +210,30 @@ String EditorAutomationWorkflow::role_for_node(const Node *p_node) {
 
 Dictionary EditorAutomationWorkflow::metadata_for_node(const Node *p_node) {
 	Dictionary metadata;
+
+	if (const ScenePaneTile *tile = Object::cast_to<const ScenePaneTile>(p_node)) {
+		const int tile_id = tile->get_tile_id();
+		metadata["tile_id"] = tile_id;
+		if (EditorNode *editor_node = EditorNode::get_singleton()) {
+			if (editor_node->is_editor_ready()) {
+				EditorData &editor_data = EditorNode::get_editor_data();
+				const int focused_tile_id = editor_data.get_focused_tile_id();
+				metadata["tile_focused"] = tile_id == focused_tile_id;
+				const int current_scene_index = editor_data.get_tile_current_scene(tile_id);
+				metadata["current_scene"] = current_scene_index;
+				metadata["current_scene_path"] = current_scene_index >= 0 ? editor_data.get_scene_path(current_scene_index) : String();
+				Array scenes;
+				for (int scene_index : editor_data.get_tile_scene_indices(tile_id)) {
+					Dictionary scene_entry;
+					scene_entry["index"] = scene_index;
+					scene_entry["path"] = editor_data.get_scene_path(scene_index);
+					scenes.push_back(scene_entry);
+				}
+				metadata["scenes"] = scenes;
+			}
+		}
+		return metadata;
+	}
 
 	if (const EditorDock *dock = Object::cast_to<const EditorDock>(p_node)) {
 		metadata["dock_title"] = dock->get_display_title();

@@ -321,6 +321,7 @@ public:
 	static PackedStringArray scroll_direction_enum_values();
 	static PackedStringArray pointer_anchor_enum_values();
 	static PackedStringArray wait_condition_types();
+	static PackedStringArray tile_drop_region_enum_values();
 	static PackedStringArray wait_status_enum_values();
 
 	static Array build_tools_list();
