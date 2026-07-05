@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="500" viewBox="0 0 760 500" font-family="ui-monospace, 'JetBrains Mono', Menlo, monospace">
+  <defs>
+    <radialGradient id="view" cx="50%" cy="40%" r="75%">
+      <stop offset="0" stop-color="#212936"/><stop offset="1" stop-color="#171b22"/>
+    </radialGradient>
+    <filter id="soft" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.4"/>
+    </filter>
+  </defs>
+
+  <rect width="760" height="500" fill="#0f1217"/>
+
+  <!-- pane -->
+  <rect x="20" y="16" width="720" height="440" rx="10" fill="#15181e" stroke="#2b313b"/>
+  <!-- tabs -->
+  <rect x="30" y="24" width="96" height="22" rx="5" fill="#232a34"/>
+  <text x="42" y="39" font-size="11" fill="#cdd4de">level.tscn</text>
+  <rect x="130" y="24" width="84" height="22" rx="5" fill="#1c2129"/>
+  <text x="140" y="39" font-size="11" fill="#79828f">hud.tscn</text>
+  <!-- tree -->
+  <rect x="30" y="54" width="110" height="394" rx="7" fill="#1c2129"/>
+  <rect x="42" y="70" width="82" height="7" rx="3" fill="#2c333e"/>
+  <rect x="52" y="86" width="64" height="7" rx="3" fill="#2c333e"/>
+  <rect x="52" y="102" width="60" height="7" rx="3" fill="#2c333e"/>
+  <rect x="42" y="118" width="78" height="7" rx="3" fill="#2c333e"/>
+  <!-- view -->
+  <rect x="148" y="54" width="474" height="394" rx="7" fill="url(#view)"/>
+  <rect x="295" y="176" width="180" height="150" rx="4" fill="none" stroke="#38414e" stroke-dasharray="4 4"/>
+  <!-- inspector -->
+  <rect x="630" y="54" width="100" height="394" rx="7" fill="#1c2129"/>
+  <rect x="642" y="70" width="76" height="6" rx="3" fill="#2c333e"/>
+  <rect x="642" y="82" width="76" height="6" rx="3" fill="#2c333e"/>
+  <rect x="642" y="94" width="60" height="6" rx="3" fill="#2c333e"/>
+  <rect x="642" y="106" width="76" height="6" rx="3" fill="#2c333e"/>
+
+  <!-- guide rosette (neutral: shown over the hovered pane, nothing aimed) -->
+  <g filter="url(#soft)" stroke-linecap="round" stroke-linejoin="round">
+    <!-- center (add as tab) -->
+    <rect x="365" y="221" width="30" height="30" rx="7" fill="#1c222c" stroke="#788ca8" stroke-opacity="0.5"/>
+    <rect x="372" y="230" width="16" height="13" rx="2" fill="none" stroke="#aeb8c6" stroke-width="2"/>
+    <path d="M376 230 v-2 h8 v2" fill="none" stroke="#aeb8c6" stroke-width="2"/>
+    <!-- left -->
+    <rect x="330" y="221" width="30" height="30" rx="7" fill="#1c222c" stroke="#788ca8" stroke-opacity="0.5"/>
+    <polyline points="348,229 340,236 348,243" fill="none" stroke="#aeb8c6" stroke-width="2.2"/>
+    <!-- top -->
+    <rect x="365" y="186" width="30" height="30" rx="7" fill="#1c222c" stroke="#788ca8" stroke-opacity="0.5"/>
+    <polyline points="373,205 380,197 387,205" fill="none" stroke="#aeb8c6" stroke-width="2.2"/>
+    <!-- right -->
+    <rect x="400" y="221" width="30" height="30" rx="7" fill="#1c222c" stroke="#788ca8" stroke-opacity="0.5"/>
+    <polyline points="412,229 420,236 412,243" fill="none" stroke="#aeb8c6" stroke-width="2.2"/>
+    <!-- bottom -->
+    <rect x="365" y="256" width="30" height="30" rx="7" fill="#1c222c" stroke="#788ca8" stroke-opacity="0.5"/>
+    <polyline points="373,267 380,275 387,267" fill="none" stroke="#aeb8c6" stroke-width="2.2"/>
+  </g>
+
+  <text x="20" y="484" font-size="12.5" fill="#8a94a3">Neutral — the guide appears centered over the pane you drag onto; no direction aimed yet.</text>
+</svg>

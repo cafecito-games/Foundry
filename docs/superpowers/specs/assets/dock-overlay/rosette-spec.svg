@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="470" viewBox="0 0 760 470" font-family="ui-monospace, 'JetBrains Mono', Menlo, monospace">
+  <defs>
+    <filter id="soft" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#000" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+
+  <rect width="760" height="470" fill="#0f1217"/>
+  <text x="32" y="44" font-size="16" fill="#d4d9e1">Guide rosette — component spec</text>
+  <text x="32" y="64" font-size="12" fill="#8a94a3">Same 5 hit regions as the reference; only the NOTIFICATION_DRAW body changes.</text>
+
+  <!-- enlarged rosette (2×) -->
+  <g filter="url(#soft)" stroke-linecap="round" stroke-linejoin="round">
+    <!-- center -->
+    <rect x="210" y="190" width="60" height="60" rx="14" fill="#1c222c" stroke="#788ca8" stroke-opacity="0.5" stroke-width="1.5"/>
+    <rect x="224" y="206" width="32" height="26" rx="4" fill="none" stroke="#aeb8c6" stroke-width="3"/>
+    <path d="M232 206 v-4 h16 v4" fill="none" stroke="#aeb8c6" stroke-width="3"/>
+    <!-- left -->
+    <rect x="140" y="190" width="60" height="60" rx="14" fill="#1c222c" stroke="#788ca8" stroke-opacity="0.5" stroke-width="1.5"/>
+    <polyline points="176,204 158,220 176,236" fill="none" stroke="#aeb8c6" stroke-width="3.4"/>
+    <!-- top -->
+    <rect x="210" y="120" width="60" height="60" rx="14" fill="#1c222c" stroke="#788ca8" stroke-opacity="0.5" stroke-width="1.5"/>
+    <polyline points="224,166 240,148 256,166" fill="none" stroke="#aeb8c6" stroke-width="3.4"/>
+    <!-- right (shown ACTIVE) -->
+    <rect x="280" y="190" width="60" height="60" rx="14" fill="#3ea6ff" stroke="#9fd3ff" stroke-width="1.5"/>
+    <polyline points="304,204 322,220 304,236" fill="none" stroke="#06213c" stroke-width="3.4"/>
+    <!-- bottom -->
+    <rect x="210" y="260" width="60" height="60" rx="14" fill="#1c222c" stroke="#788ca8" stroke-opacity="0.5" stroke-width="1.5"/>
+    <polyline points="224,274 240,292 256,274" fill="none" stroke="#aeb8c6" stroke-width="3.4"/>
+  </g>
+
+  <!-- dimension annotations -->
+  <g stroke="#4a5566" stroke-width="1" fill="#8a94a3" font-size="11">
+    <line x1="140" y1="336" x2="340" y2="336"/>
+    <line x1="140" y1="330" x2="140" y2="342"/><line x1="340" y1="330" x2="340" y2="342"/>
+    <text x="200" y="354" fill="#aeb8c6">guide 100 × 100 px</text>
+    <line x1="356" y1="190" x2="356" y2="250"/>
+    <line x1="350" y1="190" x2="362" y2="190"/><line x1="350" y1="250" x2="362" y2="250"/>
+    <text x="366" y="224" fill="#aeb8c6">button 30 px · r7</text>
+    <text x="243" y="182" fill="#8a94a3">gap 5</text>
+  </g>
+
+  <!-- legend -->
+  <g font-size="12">
+    <text x="452" y="118" font-size="13" fill="#d4d9e1">Tokens</text>
+
+    <rect x="452" y="132" width="26" height="26" rx="7" fill="#1c222c" stroke="#788ca8" stroke-opacity="0.5"/>
+    <text x="490" y="143" fill="#c7ccd4">Idle button</text>
+    <text x="490" y="157" fill="#8a94a3">fill #1C222C · border #788CA8 @ 50%</text>
+
+    <rect x="452" y="170" width="26" height="26" rx="7" fill="#3ea6ff" stroke="#9fd3ff"/>
+    <text x="490" y="181" fill="#c7ccd4">Aimed button</text>
+    <text x="490" y="195" fill="#8a94a3">fill = accent · border #9FD3FF · scale 1.08</text>
+
+    <rect x="452" y="208" width="26" height="26" rx="6" fill="#3ea6ff" fill-opacity="0.17" stroke="#3ea6ff" stroke-opacity="0.95" stroke-width="2"/>
+    <text x="490" y="219" fill="#c7ccd4">Region preview</text>
+    <text x="490" y="233" fill="#8a94a3">accent @ 17% fill · accent @ 95% 2px · r8</text>
+
+    <rect x="452" y="246" width="26" height="26" rx="6" fill="#aeb8c6"/>
+    <text x="490" y="257" fill="#c7ccd4">Idle icon #AEB8C6 · aimed icon #06213C</text>
+
+    <line x1="452" y1="290" x2="728" y2="290" stroke="#272d38"/>
+    <text x="452" y="312" fill="#c7ccd4">accent = get_theme_color("accent_color", "Editor")</text>
+    <text x="452" y="334" fill="#8a94a3">Hit-test: diagonal quadrants + central rect for tab</text>
+    <text x="452" y="350" fill="#8a94a3">(|dx| vs |dy| from center; not fixed 25% edges).</text>
+    <text x="452" y="372" fill="#8a94a3">Preview fills the resulting half / whole pane —</text>
+    <text x="452" y="388" fill="#8a94a3">the shape the split actually produces.</text>
+  </g>
+</svg>
