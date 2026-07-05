@@ -561,6 +561,10 @@ void Node3DEditorViewport::_view_settings_confirmed(real_t p_interp_delta) {
 }
 
 void Node3DEditorViewport::_update_navigation_controls_visibility() {
+	if (!rotation_control || !position_control || !look_control) {
+		return;
+	}
+
 	bool show_viewport_rotation_gizmo = EDITOR_GET("editors/3d/navigation/show_viewport_rotation_gizmo") && (!previewing_cinema && !previewing_camera);
 	rotation_control->set_visible(show_viewport_rotation_gizmo);
 
@@ -656,10 +660,18 @@ void Node3DEditorViewport::_update_camera(real_t p_interp_delta) {
 		}
 
 		update_transform_gizmo_view();
-		rotation_control->queue_redraw();
-		position_control->queue_redraw();
-		look_control->queue_redraw();
-		spatial_editor->update_grid();
+		if (rotation_control) {
+			rotation_control->queue_redraw();
+		}
+		if (position_control) {
+			position_control->queue_redraw();
+		}
+		if (look_control) {
+			look_control->queue_redraw();
+		}
+		if (spatial_editor) {
+			spatial_editor->update_grid();
+		}
 	}
 }
 
@@ -3279,7 +3291,9 @@ void Node3DEditorViewport::_notification(int p_what) {
 
 		case NOTIFICATION_READY: {
 			ProjectSettings::get_singleton()->connect("settings_changed", callable_mp(this, &Node3DEditorViewport::_project_settings_changed));
-			_update_navigation_controls_visibility();
+			if (viewport_binding != ViewportBinding::SECONDARY) {
+				_update_navigation_controls_visibility();
+			}
 		} break;
 
 		case NOTIFICATION_VISIBILITY_CHANGED: {
@@ -3287,6 +3301,16 @@ void Node3DEditorViewport::_notification(int p_what) {
 
 			set_process(vp_visible);
 			set_physics_process(vp_visible);
+
+			if (viewport_binding == ViewportBinding::SECONDARY) {
+				if (vp_visible) {
+					_update_camera(0);
+				} else {
+					set_freelook_active(false);
+				}
+				callable_mp(this, &Node3DEditorViewport::update_transform_gizmo_view).call_deferred();
+				break;
+			}
 
 			if (vp_visible) {
 				orthogonal = view_display_menu->get_popup()->is_item_checked(view_display_menu->get_popup()->get_item_index(VIEW_ORTHOGONAL));
@@ -3303,6 +3327,76 @@ void Node3DEditorViewport::_notification(int p_what) {
 		} break;
 
 		case NOTIFICATION_PROCESS: {
+			if (viewport_binding == ViewportBinding::SECONDARY) {
+				real_t delta = get_process_delta_time();
+				_update_freelook(delta);
+				if (_camera_moved_externally()) {
+					_apply_camera_transform_to_cursor();
+					_update_camera(0);
+				} else {
+					_update_camera(delta);
+				}
+
+				const HashMap<ObjectID, Object *> &selection = editor_selection->get_selection();
+				bool changed = false;
+				bool exist = false;
+
+				for (const KeyValue<ObjectID, Object *> &E : selection) {
+					Node3D *sp = ObjectDB::get_instance<Node3D>(E.key);
+					if (!sp) {
+						continue;
+					}
+
+					Node3DEditorSelectedItem *se = editor_selection->get_node_editor_data<Node3DEditorSelectedItem>(sp);
+					if (!se) {
+						continue;
+					}
+
+					Transform3D t = sp->get_global_gizmo_transform();
+					if (!t.is_finite()) {
+						continue;
+					}
+					AABB new_aabb = _calculate_spatial_bounds(sp);
+
+					exist = true;
+					if (se->last_xform == t && se->aabb == new_aabb && !se->last_xform_dirty) {
+						continue;
+					}
+					changed = true;
+					se->last_xform_dirty = false;
+					se->last_xform = t;
+
+					se->aabb = new_aabb;
+
+					Transform3D t_offset = t;
+
+					{
+						const Vector3 offset(0.005, 0.005, 0.005);
+						Basis aabb_s;
+						aabb_s.scale(se->aabb.size + offset);
+						t.translate_local(se->aabb.position - offset / 2);
+						t.basis = t.basis * aabb_s;
+					}
+					{
+						const Vector3 offset(0.01, 0.01, 0.01);
+						Basis aabb_s;
+						aabb_s.scale(se->aabb.size + offset);
+						t_offset.translate_local(se->aabb.position - offset / 2);
+						t_offset.basis = t_offset.basis * aabb_s;
+					}
+
+					RenderingServer::get_singleton()->instance_set_transform(se->sbox_instance, t);
+					RenderingServer::get_singleton()->instance_set_transform(se->sbox_instance_offset, t_offset);
+					RenderingServer::get_singleton()->instance_set_transform(se->sbox_instance_xray, t);
+					RenderingServer::get_singleton()->instance_set_transform(se->sbox_instance_xray_offset, t_offset);
+				}
+
+				if (changed || (spatial_editor->is_gizmo_visible() && !exist)) {
+					spatial_editor->update_transform_gizmo();
+				}
+				break;
+			}
+
 			if (ruler->is_inside_tree()) {
 				Vector3 start_pos = ruler_start_point->get_global_position();
 				Vector3 end_pos = ruler_end_point->get_global_position();
@@ -4703,6 +4797,16 @@ void Node3DEditorViewport::update_transform_gizmo_view() {
 	rs->instance_set_visible(axis_gizmo_instance[0], show_axes && (_edit.plane == TRANSFORM_X_AXIS || _edit.plane == TRANSFORM_XY || _edit.plane == TRANSFORM_XZ));
 	rs->instance_set_visible(axis_gizmo_instance[1], show_axes && (_edit.plane == TRANSFORM_Y_AXIS || _edit.plane == TRANSFORM_XY || _edit.plane == TRANSFORM_YZ));
 	rs->instance_set_visible(axis_gizmo_instance[2], show_axes && (_edit.plane == TRANSFORM_Z_AXIS || _edit.plane == TRANSFORM_XZ || _edit.plane == TRANSFORM_YZ));
+}
+
+void Node3DEditorViewport::apply_preview_camera_state(const Dictionary &p_state) {
+	cursor.pos = p_state.get("position", Vector3());
+	cursor.x_rot = p_state.get("x_rotation", 0.35);
+	cursor.unsnapped_x_rot = cursor.x_rot;
+	cursor.y_rot = p_state.get("y_rotation", 0.5);
+	cursor.unsnapped_y_rot = cursor.y_rot;
+	cursor.distance = p_state.get("distance", 4.0);
+	_update_camera(0);
 }
 
 void Node3DEditorViewport::set_state(const Dictionary &p_state) {
@@ -9519,9 +9623,15 @@ void Node3DEditor::_secondary_viewport_clicked(Node3DEditorViewport *p_viewport)
 	_set_focused_viewport(p_viewport);
 }
 
-Node3DEditorViewport *Node3DEditor::create_secondary_viewport(const Ref<World3D> &p_world, SubViewport *p_preview_parent_viewport) {
+Node3DEditorViewport *Node3DEditor::create_secondary_viewport(const Ref<World3D> &p_world, SubViewport *p_preview_parent_viewport, Control *p_parent) {
 	ERR_FAIL_COND_V(p_world.is_null(), nullptr);
 	Node3DEditorViewport *viewport = memnew(Node3DEditorViewport(this, VIEWPORTS_COUNT, Node3DEditorViewport::ViewportBinding::SECONDARY));
+	if (p_parent) {
+		viewport->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+		viewport->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+		viewport->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+		p_parent->add_child(viewport);
+	}
 	viewport->bind_world(p_world, p_preview_parent_viewport);
 	secondary_viewports.push_back(viewport);
 	viewport->connect("clicked", callable_mp(this, &Node3DEditor::_secondary_viewport_clicked).bind(viewport));
