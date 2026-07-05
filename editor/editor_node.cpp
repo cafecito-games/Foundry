@@ -6711,13 +6711,17 @@ void EditorNode::_on_leaf_added(int p_leaf_id) {
 	editor_data.register_tile(p_leaf_id);
 	WorkspaceLeafNode *leaf = scene_workspace->get_leaf_by_id(p_leaf_id);
 	ERR_FAIL_NULL(leaf);
+	ScenePaneTile *tile = leaf->get_pane_tile();
+	if (!tile) {
+		return;
+	}
 	_wire_leaf_tile(leaf);
 	_bind_leaf_docks(p_leaf_id);
-	leaf->get_pane_tile()->get_scene_tabs()->update_scene_tabs();
+	tile->get_scene_tabs()->update_scene_tabs();
 
 	FileSystemDock *filesystem_dock = FileSystemDock::get_singleton();
 	if (filesystem_dock) {
-		InspectorDock *tile_inspector = leaf->get_pane_tile()->get_inspector_dock();
+		InspectorDock *tile_inspector = tile->get_inspector_dock();
 		if (!filesystem_dock->is_connected("files_moved", callable_mp(tile_inspector, &InspectorDock::_files_moved))) {
 			filesystem_dock->connect("files_moved", callable_mp(tile_inspector, &InspectorDock::_files_moved));
 		}
@@ -6917,21 +6921,21 @@ void EditorNode::_load_workspace_from_config(const Ref<ConfigFile> &p_config_fil
 	}
 
 	// restore_from_config() frees the outgoing workspace tree. Detach the shared
-	// main screen first so it is not destroyed with the old tile's content host.
-	if (editor_main_screen && editor_main_screen->get_parent()) {
-		editor_main_screen->get_parent()->remove_child(editor_main_screen);
+	// scene-mode surface first so it is not destroyed with the old tile's content host.
+	if (editor_main_screen) {
+		if (VBoxContainer *scene_mode = editor_main_screen->get_scene_mode_control()) {
+			if (scene_mode->get_parent()) {
+				scene_mode->get_parent()->remove_child(scene_mode);
+			}
+		}
 	}
 
 	scene_workspace->restore_from_config(p_config_file);
 
 	for (WorkspaceLeafNode *leaf : scene_workspace->get_leaves()) {
-		editor_data.register_tile(leaf->get_leaf_id());
+		_on_leaf_added(leaf->get_leaf_id());
 	}
 	editor_data.set_focused_tile_id(scene_workspace->get_focused_leaf_id());
-
-	for (WorkspaceLeafNode *leaf : scene_workspace->get_leaves()) {
-		_wire_leaf_tile(leaf);
-	}
 	_bind_all_leaf_docks();
 
 	WorkspaceLeafNode *focused_leaf = scene_workspace->get_focused_leaf();

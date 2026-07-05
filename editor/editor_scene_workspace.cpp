@@ -327,7 +327,9 @@ WorkspaceLeafNode *EditorSceneWorkspace::_create_leaf(int p_leaf_id, const Strin
 	ERR_FAIL_NULL_V(editor_data, nullptr);
 	WorkspaceLeafNode *leaf = WorkspaceLeafNode::create(p_leaf_id, editor_selection, editor_data, p_content_type);
 	leaves.push_back(leaf);
-	emit_signal(SNAME("leaf_added"), p_leaf_id);
+	if (!restoring_from_config) {
+		emit_signal(SNAME("leaf_added"), p_leaf_id);
+	}
 	return leaf;
 }
 
@@ -658,6 +660,7 @@ void EditorSceneWorkspace::restore_from_config(const Ref<ConfigFile> &p_config) 
 	const int root_node = int(p_config->get_value(WORKSPACE_CONFIG_SECTION, "root_node", 0));
 	const int node_count = int(p_config->get_value(WORKSPACE_CONFIG_SECTION, "node_count", 0));
 
+	restoring_from_config = true;
 	_clear_tree();
 
 	HashSet<int> visited;
@@ -672,6 +675,7 @@ void EditorSceneWorkspace::restore_from_config(const Ref<ConfigFile> &p_config) 
 	}
 	set_focused_leaf(saved_focus);
 	queue_sort();
+	restoring_from_config = false;
 }
 
 EditorSceneWorkspace::EditorSceneWorkspace() {

@@ -369,14 +369,12 @@ EditorMainScreen::EditorMainScreen() {
 	app_screen_vbox->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	app_screen_vbox->add_theme_constant_override("separation", 0);
 	app_screen_vbox->hide();
-	add_child(app_screen_vbox);
 
 	global_screen_vbox = memnew(VBoxContainer);
 	global_screen_vbox->set_name("GlobalScreen");
 	global_screen_vbox->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	global_screen_vbox->add_theme_constant_override("separation", 0);
 	global_screen_vbox->hide();
-	add_child(global_screen_vbox);
 
 	set_v_size_flags(Control::SIZE_EXPAND_FILL);
 }

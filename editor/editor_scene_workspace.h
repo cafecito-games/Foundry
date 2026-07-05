@@ -121,6 +121,7 @@ private:
 	Vector<WorkspaceLeafNode *> leaves;
 	int focused_leaf_id = 0;
 	int next_leaf_id = 0;
+	bool restoring_from_config = false;
 	EditorSelection *editor_selection = nullptr;
 	EditorData *editor_data = nullptr;
 

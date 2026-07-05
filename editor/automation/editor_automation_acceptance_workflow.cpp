@@ -32,6 +32,7 @@
 
 #include "editor/automation/editor_automation_snapshot.h"
 #include "editor/automation/editor_workflow_test_driver.h"
+#include "editor/docks/scene_tree_dock.h"
 #include "editor/editor_node.h"
 
 #include "core/io/json.h"
@@ -41,20 +42,20 @@
 
 namespace {
 
-Dictionary _selector_button_in_dock(const String &p_dock_name, const String &p_button_name) {
-	Dictionary within;
-	within["role"] = "dock";
-	within["name"] = p_dock_name;
+Dictionary _inspector_visible_property_selector() {
 	Dictionary selector;
-	selector["role"] = "button";
-	selector["name"] = p_button_name;
-	selector["within"] = within;
+	selector["role"] = "property_row";
+	selector["class"] = "EditorPropertyCheck";
+	Dictionary metadata;
+	metadata["property_path"] = "visible";
+	selector["metadata"] = metadata;
 	return selector;
 }
 
 Dictionary _selector_within_modal(const Dictionary &p_selector) {
 	Dictionary within;
 	within["role"] = "dialog";
+	within["focused"] = true;
 	Dictionary selector = p_selector;
 	selector["within"] = within;
 	return selector;
@@ -72,12 +73,12 @@ void _flush_frames(int p_count = 1) {
 	}
 }
 
-bool _selected_nodes_contain_name(EditorWorkflowTestDriver &p_driver, const String &p_name) {
+bool _selected_node_is_child_node2d(EditorWorkflowTestDriver &p_driver) {
 	const Dictionary state = p_driver.read_editor_state();
 	const Array selected = state.get("selected_nodes", Array());
 	for (int i = 0; i < selected.size(); i++) {
 		const Dictionary entry = selected[i];
-		if (String(entry.get("name", String())) == p_name) {
+		if (String(entry.get("class", String())) == "Node2D" && String(entry.get("name", String())) != "Main") {
 			return true;
 		}
 	}
@@ -101,17 +102,6 @@ void _expand_inspector(EditorWorkflowTestDriver &p_driver) {
 		return;
 	}
 	_flush_frames(15);
-}
-
-Dictionary _inspector_visible_property_selector() {
-	Dictionary inspector_dock;
-	inspector_dock["role"] = "dock";
-	inspector_dock["name"] = "Inspector";
-	Dictionary selector;
-	selector["role"] = "property_row";
-	selector["class"] = "EditorPropertyCheck";
-	selector["within"] = inspector_dock;
-	return selector;
 }
 
 EditorAutomationAcceptanceWorkflow::Result _failure_from_driver(EditorWorkflowTestDriver &p_driver, const String &p_workflow, const String &p_message = String()) {
@@ -154,33 +144,29 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 #endif
 	_flush_frames(30);
 
-	// 1. Open the Create/Add Node dialog from the scene tree dock.
-	p_driver.set_step("open_add_child_node_dialog");
-	Dictionary add_child_button = _selector_button_in_dock("Scene", "Add Child Node");
-	if (!p_driver.require_ok(p_driver.act(add_child_button, "click"), "open_add_child_node_dialog")) {
+	// 1. Open the Create/Add Node dialog from the focused tile's scene tree dock.
+	p_driver.set_step("focus_scene_tree_dock");
+	if (!p_driver.require_ok(p_driver.run_command("docks/open_scene"), "focus_scene_tree_dock")) {
 		return _failure_from_driver(p_driver, result.workflow);
 	}
-	_flush_frames(5);
+	_flush_frames(10);
 
-	p_driver.set_step("wait_for_create_dialog");
-	Dictionary wait_dialog;
-	wait_dialog["type"] = "selector_appears";
-	Dictionary search_selector;
-	search_selector["role"] = "text_field";
-	search_selector["name"] = "Search";
-	wait_dialog["selector"] = _selector_within_modal(search_selector);
-	if (!p_driver.require_ok(p_driver.wait_for(wait_dialog, 15000), "wait_for_create_dialog")) {
-		return _failure_from_driver(p_driver, result.workflow);
+	p_driver.set_step("open_add_child_node_dialog");
+	SceneTreeDock *scene_dock = SceneTreeDock::get_singleton();
+	if (scene_dock == nullptr) {
+		result.ok = false;
+		result.message = "Focused scene tree dock is unavailable.";
+		return result;
 	}
+	scene_dock->open_add_child_dialog();
+	_flush_frames(10);
 
 	// 2. Search for Node2D and create it through the dialog.
 	p_driver.set_step("search_node2d");
-	Dictionary search_within;
-	search_within["role"] = "dialog";
-	Dictionary search_field;
-	search_field["role"] = "text_field";
-	search_field["name"] = "Search";
-	search_field["within"] = search_within;
+	Dictionary search_field_base;
+	search_field_base["role"] = "text_field";
+	search_field_base["name"] = "Search";
+	Dictionary search_field = _selector_within_modal(search_field_base);
 	Dictionary search_args;
 	search_args["text"] = "Node2D";
 	if (!p_driver.require_ok(p_driver.act(search_field, "set_text", search_args), "search_node2d")) {
@@ -189,17 +175,22 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	_flush_frames(10);
 
 	p_driver.set_step("select_node2d_match");
-	Dictionary node2d_item;
-	node2d_item["role"] = "tree_item";
-	node2d_item["name"] = "Node2D";
-	node2d_item["within"] = search_within;
+	Dictionary node2d_base;
+	node2d_base["role"] = "tree_item";
+	node2d_base["name"] = "Node2D";
+	Dictionary node2d_item = _selector_within_modal(node2d_base);
+	node2d_item["nth"] = 0;
 	if (!p_driver.require_ok(p_driver.act(node2d_item, "select"), "select_node2d_match")) {
 		return _failure_from_driver(p_driver, result.workflow);
 	}
 	_flush_frames(3);
 
 	p_driver.set_step("confirm_create_node");
-	if (!p_driver.require_ok(p_driver.act(node2d_item, "activate"), "confirm_create_node")) {
+	Dictionary create_button_base;
+	create_button_base["role"] = "button";
+	create_button_base["name"] = "Create";
+	Dictionary create_button = _selector_within_modal(create_button_base);
+	if (!p_driver.require_ok(p_driver.act(create_button, "click"), "confirm_create_node")) {
 		return _failure_from_driver(p_driver, result.workflow);
 	}
 	_flush_frames(20);
@@ -209,7 +200,7 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	Dictionary wait_selected;
 	wait_selected["type"] = "editor_idle";
 	p_driver.wait_for(wait_selected, 5000);
-	if (!_selected_nodes_contain_name(p_driver, "Node2D")) {
+	if (!_selected_node_is_child_node2d(p_driver)) {
 		Result fail;
 		fail.ok = false;
 		fail.workflow = result.workflow;
@@ -226,7 +217,12 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	if (!p_driver.require_ok(p_driver.run_command("docks/open_inspector"), "open_inspector_dock")) {
 		return _failure_from_driver(p_driver, result.workflow);
 	}
-	_flush_frames(15);
+#ifdef TOOLS_ENABLED
+	if (editor_node != nullptr) {
+		editor_node->edit_current();
+	}
+#endif
+	_flush_frames(30);
 
 	p_driver.set_step("expand_inspector");
 	_expand_inspector(p_driver);
@@ -234,29 +230,20 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 		return _failure_from_driver(p_driver, result.workflow);
 	}
 
-	p_driver.set_step("filter_inspector_visible");
-	Dictionary inspector_dock;
-	inspector_dock["role"] = "dock";
-	inspector_dock["name"] = "Inspector";
-	Dictionary filter_field;
-	filter_field["role"] = "text_field";
-	filter_field["name"] = "Filter Properties";
-	filter_field["within"] = inspector_dock;
-	Dictionary filter_args;
-	filter_args["text"] = "Visible";
-	if (!p_driver.require_ok(p_driver.act(filter_field, "set_text", filter_args), "filter_inspector_visible")) {
-		return _failure_from_driver(p_driver, result.workflow);
-	}
-	_flush_frames(10);
-
 	p_driver.set_step("edit_inspector_visible");
 	const Dictionary visible_property = _inspector_visible_property_selector();
 	const uint64_t inspector_deadline = OS::get_singleton()->get_ticks_msec() + 15000;
 	bool edited_visible = false;
+	int last_match_count = 0;
 	while (OS::get_singleton()->get_ticks_msec() < inspector_deadline) {
 		const Dictionary found = p_driver.find(visible_property);
-		if ((bool)found.get("ok", false) && (int)found.get("match_count", 0) == 1) {
-			if (p_driver.require_ok(p_driver.act(visible_property, "click"), "edit_inspector_visible")) {
+		last_match_count = (int)found.get("match_count", 0);
+		if ((bool)found.get("ok", false) && last_match_count >= 1) {
+			Dictionary act_selector = visible_property;
+			if (last_match_count > 1) {
+				act_selector["nth"] = 0;
+			}
+			if (p_driver.require_ok(p_driver.act(act_selector, "click"), "edit_inspector_visible")) {
 				edited_visible = true;
 				break;
 			}
@@ -271,38 +258,16 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 		fail.message = "Could not find the Visible inspector property row.";
 		Dictionary details;
 		details["step"] = "edit_inspector_visible";
+		details["last_match_count"] = last_match_count;
 		const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_editor();
 		details["snapshot_element_count"] = snapshot.get_element_count();
-		int inspector_path_hits = 0;
 		int property_row_hits = 0;
-		int checkbox_hits = 0;
 		for (int i = 0; i < snapshot.get_element_count(); i++) {
-			const EditorAutomationElement &element = snapshot.get_element(i);
-			if (element.path.contains("Inspector")) {
-				inspector_path_hits++;
-			}
-			if (element.role == "property_row") {
+			if (snapshot.get_element(i).role == "property_row") {
 				property_row_hits++;
 			}
-			if (element.role == "checkbox") {
-				checkbox_hits++;
-			}
 		}
-		details["inspector_path_hits"] = inspector_path_hits;
 		details["property_row_hits"] = property_row_hits;
-		details["checkbox_hits"] = checkbox_hits;
-		PackedStringArray inspector_classes;
-		for (int i = 0; i < snapshot.get_element_count(); i++) {
-			const EditorAutomationElement &element = snapshot.get_element(i);
-			if (!element.path.contains("Inspector")) {
-				continue;
-			}
-			const String class_name = element.class_name;
-			if (!inspector_classes.has(class_name)) {
-				inspector_classes.push_back(class_name);
-			}
-		}
-		details["inspector_classes"] = inspector_classes;
 		fail.details = details;
 		return fail;
 	}

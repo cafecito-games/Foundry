@@ -462,6 +462,14 @@ void InspectorDock::_menu_expandall() {
 	inspector->expand_all_folding();
 }
 
+void InspectorDock::expand_all_focused() {
+	if (InspectorDock *dock = get_singleton()) {
+		if (dock->inspector) {
+			dock->inspector->expand_all_folding();
+		}
+	}
+}
+
 void InspectorDock::_menu_expand_revertable() {
 	inspector->expand_revertable();
 }
@@ -975,7 +983,7 @@ InspectorDock::InspectorDock(EditorData &p_editor_data, bool p_register_open_com
 			EditorCommandPalette::get_singleton()->add_command(
 					TTR("Expand All Inspector Properties"),
 					"property_editor/expand_all",
-					callable_mp(this, &InspectorDock::_menu_expandall),
+					callable_mp_static(&InspectorDock::expand_all_focused),
 					varray(),
 					expand_all_shortcut);
 		}

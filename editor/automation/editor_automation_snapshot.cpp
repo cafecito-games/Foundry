@@ -33,9 +33,10 @@
 #include "editor/automation/editor_automation_workflow.h"
 
 #include "editor/automation/editor_automation_input.h"
-
-#include "core/object/object.h"
+#include "editor/docks/inspector_dock.h"
+#include "editor/docks/scene_tree_dock.h"
 #include "editor/editor_node.h"
+#include "editor/inspector/editor_inspector.h"
 #include "scene/gui/base_button.h"
 #include "scene/gui/button.h"
 #include "scene/gui/check_box.h"
@@ -68,6 +69,7 @@ class EditorAutomationSnapshotBuilder {
 	EditorAutomationSnapshotOptions options;
 	Node *path_root = nullptr;
 	Control *focused_control = nullptr;
+	HashSet<Node *> relaxed_visibility_roots;
 
 	static Rect2i _node_bounds_global(const Node *p_node) {
 		// Bounds are expressed in global/screen coordinates for automation clients.
@@ -111,6 +113,12 @@ class EditorAutomationSnapshotBuilder {
 			const String accessibility_name = control->get_accessibility_name().strip_edges();
 			if (!accessibility_name.is_empty()) {
 				return accessibility_name;
+			}
+		}
+		if (const EditorProperty *property = Object::cast_to<const EditorProperty>(p_node)) {
+			const String property_label = property->get_label().strip_edges();
+			if (!property_label.is_empty()) {
+				return property_label;
 			}
 		}
 		// Text-specific sources come next. Only use them when they carry a real
@@ -242,7 +250,7 @@ class EditorAutomationSnapshotBuilder {
 			add_unique("focus");
 		}
 
-		if (p_role == "button" || p_role == "checkbox") {
+		if (p_role == "button" || p_role == "checkbox" || p_role == "property_row") {
 			add_unique("click");
 			add_unique("activate");
 		} else if (p_role == "viewport") {
@@ -438,8 +446,8 @@ class EditorAutomationSnapshotBuilder {
 		return false;
 	}
 
-	int _add_node(Node *p_node, int p_parent_index, bool p_is_root, bool p_internal = false) {
-		if (!_node_is_visible(p_node)) {
+	int _add_node(Node *p_node, int p_parent_index, bool p_is_root, bool p_internal = false, bool p_relax_visibility = false) {
+		if (!p_relax_visibility && !_node_is_visible(p_node)) {
 			return -1;
 		}
 
@@ -516,10 +524,16 @@ class EditorAutomationSnapshotBuilder {
 				continue;
 			}
 			const bool child_internal = p_internal || (child->is_internal() && !parent_is_window);
+			bool child_relax = p_relax_visibility;
+			if (child_relax && !_node_is_visible(child) && Object::cast_to<Window>(child) != nullptr) {
+				// Hidden embedded dialogs (resource pickers, confirmations, etc.) live
+				// inside the inspector dock but must not pollute relaxed snapshots.
+				continue;
+			}
 			if (Control *child_control = Object::cast_to<Control>(child)) {
-				_add_node(child_control, element_index, false, child_internal);
+				_add_node(child_control, element_index, false, child_internal, child_relax);
 			} else if (Window *child_window = Object::cast_to<Window>(child)) {
-				_add_node(child_window, element_index, false, child_internal);
+				_add_node(child_window, element_index, false, child_internal, child_relax);
 			}
 		}
 
@@ -527,7 +541,8 @@ class EditorAutomationSnapshotBuilder {
 	}
 
 	void _walk_root(Node *p_root) {
-		_add_node(p_root, -1, true);
+		const bool relax_visibility = options.relaxed_visibility_roots && relaxed_visibility_roots.has(p_root);
+		_add_node(p_root, -1, true, false, relax_visibility);
 	}
 
 public:
@@ -538,6 +553,11 @@ public:
 
 	void set_path_root(Node *p_root) { path_root = p_root; }
 	void set_focused_control(Control *p_focused_control) { focused_control = p_focused_control; }
+	void add_relaxed_visibility_root(Node *p_root) {
+		if (p_root != nullptr) {
+			relaxed_visibility_roots.insert(p_root);
+		}
+	}
 
 	void build_from_roots(const LocalVector<Node *> &p_roots) {
 		for (Node *root : p_roots) {
@@ -676,6 +696,43 @@ EditorAutomationSnapshot EditorAutomationSnapshot::capture_from_editor(const Edi
 				roots.push_back(root_window);
 			}
 		}
+
+		// Exclusive modal windows (CreateDialog, AcceptDialog, etc.) are not
+		// reachable from gui_base, but agents must be able to act inside them.
+		if (Window *root_window = editor_node->get_window()) {
+			for (Window *exclusive = root_window->get_exclusive_child(); exclusive != nullptr; exclusive = exclusive->get_exclusive_child()) {
+				roots.push_back(exclusive);
+			}
+		}
+
+		LocalVector<Node *> relaxed_roots;
+		if (SceneTreeDock *scene_tree_dock = SceneTreeDock::get_singleton()) {
+			if (scene_tree_dock->is_inside_tree()) {
+				roots.push_back(scene_tree_dock);
+			}
+		}
+		if (InspectorDock *inspector_dock = InspectorDock::get_singleton()) {
+			if (inspector_dock->is_inside_tree()) {
+				roots.push_back(inspector_dock);
+				relaxed_roots.push_back(inspector_dock);
+				if (EditorInspector *inspector = inspector_dock->get_inspector()) {
+					if (inspector->is_inside_tree()) {
+						roots.push_back(inspector);
+						relaxed_roots.push_back(inspector);
+					}
+				}
+			}
+		}
+
+		EditorAutomationSnapshotOptions options = p_options;
+		options.relaxed_visibility_roots = !relaxed_roots.is_empty();
+		EditorAutomationSnapshot snapshot;
+		EditorAutomationSnapshotBuilder builder(snapshot.data, options);
+		for (Node *root : relaxed_roots) {
+			builder.add_relaxed_visibility_root(root);
+		}
+		builder.build_from_roots(roots);
+		return snapshot;
 	}
 	return capture_from_roots(roots, p_options);
 }
