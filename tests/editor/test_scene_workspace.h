@@ -57,7 +57,7 @@ struct WorkspaceHarness {
 	}
 
 	void pump() {
-		SceneTree::get_singleton()->process_frame();
+		SceneTree::get_singleton()->process(0.016);
 		MessageQueue::get_singleton()->flush();
 	}
 

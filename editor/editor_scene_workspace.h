@@ -39,8 +39,8 @@ class SplitContainer;
  * A leaf of the recursive tiling tree. Holds exactly one content unit via a
  * descriptor string and a host Control where the owner mounts pane UI.
  */
-class WorkspaceLeafNode : public Control {
-	FOUNDRY_CLASS(WorkspaceLeafNode, Control);
+class WorkspaceLeafNode : public Container {
+	FOUNDRY_CLASS(WorkspaceLeafNode, Container);
 
 	int leaf_id = 0;
 	String content_descriptor;
@@ -64,8 +64,8 @@ public:
  * A split node of the recursive tiling tree. Wraps a two-child SplitContainer
  * (horizontal or vertical) with a persisted divider offset.
  */
-class WorkspaceSplitNode : public Control {
-	FOUNDRY_CLASS(WorkspaceSplitNode, Control);
+class WorkspaceSplitNode : public Container {
+	FOUNDRY_CLASS(WorkspaceSplitNode, Container);
 
 	SplitContainer *split_container = nullptr;
 

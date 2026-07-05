@@ -170,13 +170,13 @@ WorkspaceLeafNode *EditorSceneWorkspace::split(WorkspaceLeafNode *p_leaf, bool p
 	const int idx = p_leaf->get_index(false);
 
 	WorkspaceSplitNode *split_node = WorkspaceSplitNode::create(p_vertical);
+	SplitContainer *sc = split_node->get_split_container();
 
 	parent->remove_child(p_leaf);
 	parent->add_child(split_node);
 	parent->move_child(split_node, idx);
 
 	WorkspaceLeafNode *new_leaf = _create_leaf(next_leaf_id++);
-	SplitContainer *sc = split_node->get_split_container();
 	const bool insert_before = p_side == SPLIT_SIDE_FIRST;
 	if (insert_before) {
 		sc->add_child(new_leaf);
@@ -197,10 +197,10 @@ void EditorSceneWorkspace::collapse(WorkspaceLeafNode *p_leaf) {
 		return;
 	}
 
-	WorkspaceSplitNode *split_node = Object::cast_to<WorkspaceSplitNode>(p_leaf->get_parent());
-	ERR_FAIL_NULL(split_node);
-	SplitContainer *sc = split_node->get_split_container();
+	SplitContainer *sc = Object::cast_to<SplitContainer>(p_leaf->get_parent());
 	ERR_FAIL_NULL(sc);
+	WorkspaceSplitNode *split_node = Object::cast_to<WorkspaceSplitNode>(sc->get_parent());
+	ERR_FAIL_NULL(split_node);
 
 	Control *sibling = nullptr;
 	for (int i = 0; i < sc->get_child_count(false); i++) {
