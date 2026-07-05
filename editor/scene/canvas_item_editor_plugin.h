@@ -31,6 +31,7 @@
 #pragma once
 
 #include "editor/plugins/editor_plugin.h"
+#include "editor/scene/canvas_item_editor_view_state.h"
 #include "scene/gui/box_container.h"
 
 class AcceptDialog;
@@ -95,17 +96,6 @@ public:
 	};
 
 private:
-	enum SnapTarget {
-		SNAP_TARGET_NONE = 0,
-		SNAP_TARGET_PARENT,
-		SNAP_TARGET_SELF_ANCHORS,
-		SNAP_TARGET_SELF,
-		SNAP_TARGET_OTHER_NODE,
-		SNAP_TARGET_GUIDE,
-		SNAP_TARGET_GRID,
-		SNAP_TARGET_PIXEL
-	};
-
 	enum MenuOption {
 		SNAP_USE,
 		SNAP_USE_NODE_PARENT,
@@ -150,37 +140,8 @@ private:
 		AUTO_RESAMPLE_CANVAS_ITEMS,
 	};
 
-	enum DragType {
-		DRAG_NONE,
-		DRAG_BOX_SELECTION,
-		DRAG_LEFT,
-		DRAG_TOP_LEFT,
-		DRAG_TOP,
-		DRAG_TOP_RIGHT,
-		DRAG_RIGHT,
-		DRAG_BOTTOM_RIGHT,
-		DRAG_BOTTOM,
-		DRAG_BOTTOM_LEFT,
-		DRAG_ANCHOR_TOP_LEFT,
-		DRAG_ANCHOR_TOP_RIGHT,
-		DRAG_ANCHOR_BOTTOM_RIGHT,
-		DRAG_ANCHOR_BOTTOM_LEFT,
-		DRAG_ANCHOR_ALL,
-		DRAG_QUEUED,
-		DRAG_MOVE,
-		DRAG_MOVE_X,
-		DRAG_MOVE_Y,
-		DRAG_SCALE_X,
-		DRAG_SCALE_Y,
-		DRAG_SCALE_BOTH,
-		DRAG_ROTATE,
-		DRAG_PIVOT,
-		DRAG_TEMP_PIVOT,
-		DRAG_V_GUIDE,
-		DRAG_H_GUIDE,
-		DRAG_DOUBLE_GUIDE,
-		DRAG_KEY_MOVE
-	};
+	using DragType = CanvasItemEditorViewState::DragType;
+	using SnapTarget = CanvasItemEditorViewState::SnapTarget;
 
 	enum GridVisibility {
 		GRID_VISIBILITY_SHOW,
@@ -213,7 +174,7 @@ private:
 
 	void _update_context_toolbar();
 
-	Transform2D transform;
+	CanvasItemEditorViewState view_state;
 	GridVisibility grid_visibility = GRID_VISIBILITY_SHOW_WHEN_SNAPPING;
 	bool show_rulers = true;
 	bool show_guides = true;
@@ -224,10 +185,6 @@ private:
 	bool show_lock_gizmos = true;
 	bool show_group_gizmos = true;
 	bool show_transformation_gizmos = true;
-
-	real_t zoom = 1.0;
-	Point2 view_offset;
-	Point2 previous_update_view_offset;
 
 	Timer *resample_timer = nullptr;
 	bool auto_resampling_enabled = true;
@@ -265,36 +222,14 @@ private:
 	bool key_rot = true;
 	bool key_scale = false;
 
-	bool pan_pressed = false;
-	Vector2 temp_pivot = Vector2(Math::INF, Math::INF);
-
-	bool ruler_tool_active = false;
-	Point2 ruler_tool_origin;
 	real_t ruler_width_scaled = 16.0;
 	int ruler_font_size = 8;
-	Point2 node_create_position;
-	real_t grab_distance = 0.0;
 	bool simple_panning = false;
 
 	MenuOption last_option;
 
-	struct _SelectResult {
-		CanvasItem *item = nullptr;
-		real_t z_index = 0;
-		bool has_z = true;
-		_FORCE_INLINE_ bool operator<(const _SelectResult &p_rr) const {
-			return has_z && p_rr.has_z ? p_rr.z_index < z_index : p_rr.has_z;
-		}
-	};
-	Vector<_SelectResult> selection_results;
-	Vector<_SelectResult> selection_results_menu;
-
-	struct _HoverResult {
-		Point2 position;
-		Ref<Texture2D> icon;
-		String name;
-	};
-	Vector<_HoverResult> hovering_results;
+	using _SelectResult = CanvasItemEditorViewState::SelectResult;
+	using _HoverResult = CanvasItemEditorViewState::HoverResult;
 
 	struct BoneList {
 		Transform2D xform;
@@ -370,23 +305,6 @@ private:
 	Control *top_ruler = nullptr;
 	Control *left_ruler = nullptr;
 
-	Point2 drag_start_origin;
-	DragType drag_type = DRAG_NONE;
-	Point2 drag_from;
-	Point2 drag_to;
-	Point2 drag_rotation_center;
-	List<CanvasItem *> drag_selection;
-	int dragged_guide_index = -1;
-	Point2 dragged_guide_pos;
-	bool is_hovering_h_guide = false;
-	bool is_hovering_v_guide = false;
-
-	bool updating_value_dialog = false;
-	Transform2D original_transform;
-
-	Point2 box_selecting_to;
-	CursorShape cursor_shape_override = CURSOR_ARROW;
-
 	Ref<StyleBoxTexture> select_sb;
 	Ref<Texture2D> select_handle;
 	Ref<Texture2D> anchor_handle;
@@ -424,7 +342,6 @@ private:
 
 	void _prepare_view_menu();
 	void _popup_callback(int p_op);
-	bool updating_scroll = false;
 	void _update_scroll(real_t);
 	void _update_scrollbars();
 	void _snap_changed();
@@ -514,8 +431,6 @@ private:
 
 	void _project_settings_changed();
 
-	SnapTarget snap_target[2];
-	Transform2D snap_transform;
 	void _snap_if_closer_float(
 			const real_t p_value,
 			real_t &r_current_snap, SnapTarget &r_current_snap_target,
@@ -552,6 +467,7 @@ private:
 	void _set_owner_for_node_and_children(Node *p_node, Node *p_owner);
 
 	friend class CanvasItemEditorPlugin;
+	friend class CanvasItemEditorViewport;
 
 protected:
 	void _notification(int p_what);
@@ -574,12 +490,10 @@ public:
 		SNAP_DEFAULT = SNAP_GRID | SNAP_GUIDES | SNAP_PIXEL,
 	};
 
-	String message;
-
 	Point2 snap_point(Point2 p_target, unsigned int p_modes = SNAP_DEFAULT, unsigned int p_forced_modes = 0, const CanvasItem *p_self_canvas_item = nullptr, const List<CanvasItem *> &p_other_nodes_exceptions = List<CanvasItem *>());
 	real_t snap_angle(real_t p_target, real_t p_start = 0) const;
 
-	Transform2D get_canvas_transform() const { return transform; }
+	Transform2D get_canvas_transform() const { return view_state.transform; }
 
 	static CanvasItemEditor *get_singleton() { return singleton; }
 	Dictionary get_state() const;
