@@ -120,7 +120,7 @@ const CommandOption TEST_RUN_OPTIONS[] = {
 	{ "--progress", nullptr, "Emit compact doctest progress on stdout.", false },
 	{ "--progress-format", "text|jsonl", "Progress event encoding (default: text).", false, true },
 	{ "--progress-file", "path", "Write progress events to a separate JSONL file.", false },
-	{ "--progress-heartbeat-seconds", "seconds", "Heartbeat interval while a test runs (0 disables).", false },
+	{ "--progress-heartbeat-seconds", "30", "Heartbeat interval while a test runs (0 disables).", false },
 };
 
 const CommandOption TEST_GENERATE_FIXTURES_OPTIONS[] = {
