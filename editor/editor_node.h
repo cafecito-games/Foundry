@@ -475,7 +475,6 @@ private:
 	ConfirmationDialog *project_data_missing = nullptr;
 
 	bool scene_distraction_free = false;
-	bool script_distraction_free = false;
 
 	bool changing_scene = false;
 	bool cmdline_mode = false;
