@@ -322,6 +322,7 @@ public:
 	// act on a specific context should hold an explicit dock/context reference
 	// instead of relying on this focused-context singleton.
 	static SceneTreeDock *get_singleton() { return singleton; }
+	static void set_focused_instance(SceneTreeDock *p_instance) { singleton = p_instance; }
 
 protected:
 	void _notification(int p_what);
@@ -373,6 +374,6 @@ public:
 		return script_create_dialog;
 	}
 
-	SceneTreeDock(EditorSelection *p_editor_selection, EditorData &p_editor_data);
+	SceneTreeDock(EditorSelection *p_editor_selection, EditorData &p_editor_data, bool p_register_open_command = true);
 	~SceneTreeDock();
 };

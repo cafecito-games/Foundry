@@ -31,6 +31,8 @@
 #include "editor_scene_workspace.h"
 
 #include "core/io/config_file.h"
+#include "editor/editor_data.h"
+#include "editor/editor_scene_pane_tile.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/gui/split_container.h"
 
@@ -39,25 +41,29 @@
 void WorkspaceLeafNode::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_SORT_CHILDREN: {
-			if (content_host) {
-				fit_child_in_rect(content_host, Rect2(Point2(), get_size()));
+			if (pane_tile) {
+				fit_child_in_rect(pane_tile, Rect2(Point2(), get_size()));
 			}
 		} break;
 	}
 }
 
-WorkspaceLeafNode *WorkspaceLeafNode::create(int p_leaf_id, const String &p_content_descriptor) {
+WorkspaceLeafNode *WorkspaceLeafNode::create(int p_leaf_id, EditorSelection *p_editor_selection, EditorData *p_editor_data, const String &p_content_descriptor) {
+	ERR_FAIL_NULL_V(p_editor_data, nullptr);
 	WorkspaceLeafNode *leaf = memnew(WorkspaceLeafNode);
 	leaf->leaf_id = p_leaf_id;
 	leaf->content_descriptor = p_content_descriptor;
-	leaf->content_host = memnew(Control);
-	leaf->content_host->set_anchors_preset(Control::PRESET_FULL_RECT);
-	leaf->content_host->set_mouse_filter(Control::MOUSE_FILTER_PASS);
-	leaf->add_child(leaf->content_host);
+	leaf->pane_tile = memnew(ScenePaneTile);
+	leaf->pane_tile->setup(p_leaf_id, p_editor_selection, *p_editor_data);
+	leaf->add_child(leaf->pane_tile);
 	leaf->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	leaf->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	leaf->set_custom_minimum_size(Size2(120, 120) * EDSCALE);
 	return leaf;
+}
+
+Control *WorkspaceLeafNode::get_content_host() const {
+	return pane_tile ? pane_tile->get_content_host() : nullptr;
 }
 
 WorkspaceLeafNode::WorkspaceLeafNode() {
@@ -130,6 +136,7 @@ void EditorSceneWorkspace::_notification(int p_what) {
 
 void EditorSceneWorkspace::_bind_methods() {
 	ADD_SIGNAL(MethodInfo("leaf_focus_requested", PropertyInfo(Variant::INT, "leaf_id")));
+	ADD_SIGNAL(MethodInfo("leaf_added", PropertyInfo(Variant::INT, "leaf_id")));
 }
 
 bool EditorSceneWorkspace::_is_leaf_node(Control *p_node) const {
@@ -141,8 +148,10 @@ bool EditorSceneWorkspace::_is_split_node(Control *p_node) const {
 }
 
 WorkspaceLeafNode *EditorSceneWorkspace::_create_leaf(int p_leaf_id, const String &p_content_descriptor) {
-	WorkspaceLeafNode *leaf = WorkspaceLeafNode::create(p_leaf_id, p_content_descriptor);
+	ERR_FAIL_NULL_V(editor_data, nullptr);
+	WorkspaceLeafNode *leaf = WorkspaceLeafNode::create(p_leaf_id, editor_selection, editor_data, p_content_descriptor);
 	leaves.push_back(leaf);
+	emit_signal(SNAME("leaf_added"), p_leaf_id);
 	return leaf;
 }
 
@@ -153,8 +162,11 @@ Control *EditorSceneWorkspace::_get_structural_root() const {
 	return Object::cast_to<Control>(get_child(0, false));
 }
 
-EditorSceneWorkspace *EditorSceneWorkspace::create_single_leaf_workspace() {
+EditorSceneWorkspace *EditorSceneWorkspace::create_single_leaf_workspace(EditorSelection *p_editor_selection, EditorData *p_editor_data) {
+	ERR_FAIL_NULL_V(p_editor_data, nullptr);
 	EditorSceneWorkspace *workspace = memnew(EditorSceneWorkspace);
+	workspace->editor_selection = p_editor_selection;
+	workspace->editor_data = p_editor_data;
 	WorkspaceLeafNode *leaf = workspace->_create_leaf(workspace->next_leaf_id++, "main");
 	workspace->add_child(leaf);
 	workspace->set_focused_leaf(leaf->get_leaf_id());
@@ -186,6 +198,7 @@ WorkspaceLeafNode *EditorSceneWorkspace::split(WorkspaceLeafNode *p_leaf, bool p
 		sc->add_child(new_leaf);
 	}
 
+	_update_focus_visuals();
 	queue_sort();
 	return new_leaf;
 }
@@ -233,6 +246,7 @@ void EditorSceneWorkspace::collapse(WorkspaceLeafNode *p_leaf) {
 		emit_signal(SNAME("leaf_focus_requested"), leaves[0]->get_leaf_id());
 	}
 
+	_update_focus_visuals();
 	queue_sort();
 }
 
@@ -262,6 +276,43 @@ WorkspaceLeafNode *EditorSceneWorkspace::get_leaf_by_id(int p_id) const {
 void EditorSceneWorkspace::set_focused_leaf(int p_id) {
 	ERR_FAIL_NULL(get_leaf_by_id(p_id));
 	focused_leaf_id = p_id;
+	_update_focus_visuals();
+}
+
+void EditorSceneWorkspace::request_leaf_focus(int p_leaf_id) {
+	if (p_leaf_id == focused_leaf_id) {
+		return;
+	}
+	ERR_FAIL_NULL(get_leaf_by_id(p_leaf_id));
+	emit_signal(SNAME("leaf_focus_requested"), p_leaf_id);
+}
+
+void EditorSceneWorkspace::_update_focus_visuals() {
+	const bool show_focus = leaves.size() > 1;
+	for (WorkspaceLeafNode *leaf : leaves) {
+		if (leaf->get_pane_tile()) {
+			leaf->get_pane_tile()->set_focused_visual(show_focus && leaf->get_leaf_id() == focused_leaf_id);
+		}
+	}
+}
+
+ScenePaneTile *EditorSceneWorkspace::get_tile_by_id(int p_id) const {
+	WorkspaceLeafNode *leaf = get_leaf_by_id(p_id);
+	return leaf ? leaf->get_pane_tile() : nullptr;
+}
+
+ScenePaneTile *EditorSceneWorkspace::get_focused_tile() const {
+	return get_tile_by_id(focused_leaf_id);
+}
+
+Vector<ScenePaneTile *> EditorSceneWorkspace::get_tiles() const {
+	Vector<ScenePaneTile *> tiles;
+	for (WorkspaceLeafNode *leaf : leaves) {
+		if (leaf->get_pane_tile()) {
+			tiles.push_back(leaf->get_pane_tile());
+		}
+	}
+	return tiles;
 }
 
 // Persistence.

@@ -44,7 +44,7 @@ class TextureRect;
 class EditorSceneTabs : public MarginContainer {
 	FOUNDRY_CLASS(EditorSceneTabs, MarginContainer);
 
-	inline static EditorSceneTabs *singleton = nullptr;
+	inline static EditorSceneTabs *focused_singleton = nullptr;
 
 public:
 	enum {
@@ -54,7 +54,12 @@ public:
 		SCENE_CLOSE_RIGHT,
 	};
 
+	// Per-strip TabBar rearrange group base, distinct from the dock group (1).
+	static constexpr int TAB_REARRANGE_GROUP_BASE = 100;
+
 private:
+	int tile_id = 0;
+
 	PanelContainer *tabbar_panel = nullptr;
 	HBoxContainer *tabbar_container = nullptr;
 
@@ -96,7 +101,10 @@ protected:
 	static void _bind_methods();
 
 public:
-	static EditorSceneTabs *get_singleton() { return singleton; }
+	static EditorSceneTabs *get_singleton() { return focused_singleton; }
+	static void set_focused_singleton(EditorSceneTabs *p_tabs) { focused_singleton = p_tabs; }
+
+	int get_tile_id() const { return tile_id; }
 
 	void add_extra_button(Button *p_button);
 
@@ -105,5 +113,5 @@ public:
 
 	void update_scene_tabs();
 
-	EditorSceneTabs();
+	EditorSceneTabs(int p_tile_id = 0);
 };

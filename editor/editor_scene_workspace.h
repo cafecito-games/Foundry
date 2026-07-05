@@ -33,29 +33,33 @@
 #include "scene/gui/container.h"
 
 class ConfigFile;
+class EditorData;
+class EditorSelection;
+class ScenePaneTile;
 class SplitContainer;
 
 /**
- * A leaf of the recursive tiling tree. Holds exactly one content unit via a
- * descriptor string and a host Control where the owner mounts pane UI.
+ * A leaf of the recursive tiling tree. Holds exactly one self-contained
+ * ScenePaneTile (tab strip + in-tile scene tree + viewport host + inspector).
  */
 class WorkspaceLeafNode : public Container {
 	FOUNDRY_CLASS(WorkspaceLeafNode, Container);
 
 	int leaf_id = 0;
 	String content_descriptor;
-	Control *content_host = nullptr;
+	ScenePaneTile *pane_tile = nullptr;
 
 protected:
 	void _notification(int p_what);
 
 public:
-	static WorkspaceLeafNode *create(int p_leaf_id, const String &p_content_descriptor = String());
+	static WorkspaceLeafNode *create(int p_leaf_id, EditorSelection *p_editor_selection, EditorData *p_editor_data, const String &p_content_descriptor = String());
 
 	int get_leaf_id() const { return leaf_id; }
 	const String &get_content_descriptor() const { return content_descriptor; }
 	void set_content_descriptor(const String &p_descriptor) { content_descriptor = p_descriptor; }
-	Control *get_content_host() const { return content_host; }
+	ScenePaneTile *get_pane_tile() const { return pane_tile; }
+	Control *get_content_host() const;
 
 	WorkspaceLeafNode();
 };
@@ -104,6 +108,8 @@ private:
 	Vector<WorkspaceLeafNode *> leaves;
 	int focused_leaf_id = 0;
 	int next_leaf_id = 0;
+	EditorSelection *editor_selection = nullptr;
+	EditorData *editor_data = nullptr;
 
 	WorkspaceLeafNode *_create_leaf(int p_leaf_id, const String &p_content_descriptor = String());
 	Control *_get_structural_root() const;
@@ -111,13 +117,14 @@ private:
 	void _clear_tree();
 	bool _is_leaf_node(Control *p_node) const;
 	bool _is_split_node(Control *p_node) const;
+	void _update_focus_visuals();
 
 protected:
 	void _notification(int p_what);
 	static void _bind_methods();
 
 public:
-	static EditorSceneWorkspace *create_single_leaf_workspace();
+	static EditorSceneWorkspace *create_single_leaf_workspace(EditorSelection *p_editor_selection, EditorData *p_editor_data);
 
 	// Tree ops.
 	WorkspaceLeafNode *split(WorkspaceLeafNode *p_leaf, bool p_vertical, SplitSide p_side);
@@ -128,8 +135,15 @@ public:
 	WorkspaceLeafNode *get_focused_leaf() const { return get_leaf_by_id(focused_leaf_id); }
 	int get_focused_leaf_id() const { return focused_leaf_id; }
 	void set_focused_leaf(int p_id);
+	void request_leaf_focus(int p_leaf_id);
 	int get_leaf_count() const { return leaves.size(); }
 	Vector<WorkspaceLeafNode *> get_leaves() const { return leaves; }
+
+	// Tile accessors (each leaf owns one ScenePaneTile; leaf id == tile id).
+	ScenePaneTile *get_tile_by_id(int p_id) const;
+	ScenePaneTile *get_focused_tile() const;
+	Vector<ScenePaneTile *> get_tiles() const;
+	int get_tile_count() const { return leaves.size(); }
 
 	// Persistence (nested tree, flat index-addressed node list).
 	static void save_to_config(const Ref<ConfigFile> &p_config, const EditorSceneWorkspace *p_workspace);

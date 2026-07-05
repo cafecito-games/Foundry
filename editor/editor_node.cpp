@@ -99,6 +99,7 @@
 #include "editor/editor_main_screen.h"
 #include "editor/editor_scene_context.h"
 #include "editor/editor_scene_workspace.h"
+#include "editor/editor_scene_pane_tile.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/export/dedicated_server_export_plugin.h"
 #include "editor/export/editor_export.h"
@@ -4692,12 +4693,20 @@ void EditorNode::_activate_scene_context(EditorSceneContext *p_context) {
 	// deriving UI state from the selection get notified.
 	editor_selection->mark_changed();
 
-	// Rebind the single instance of each dock to the newly focused context.
-	if (SceneTreeDock::get_singleton()) {
-		SceneTreeDock::get_singleton()->set_scene_context(p_context);
-	}
-	if (InspectorDock::get_singleton()) {
-		InspectorDock::get_singleton()->set_scene_context(p_context);
+	// Rebind the focused tile's in-tile docks to the newly focused context.
+	if (scene_workspace) {
+		WorkspaceLeafNode *leaf = scene_workspace->get_focused_leaf();
+		if (leaf && leaf->get_pane_tile()) {
+			leaf->get_pane_tile()->get_scene_tree_dock()->set_scene_context(p_context);
+			leaf->get_pane_tile()->get_inspector_dock()->set_scene_context(p_context);
+		}
+	} else {
+		if (SceneTreeDock::get_singleton()) {
+			SceneTreeDock::get_singleton()->set_scene_context(p_context);
+		}
+		if (InspectorDock::get_singleton()) {
+			InspectorDock::get_singleton()->set_scene_context(p_context);
+		}
 	}
 
 	emit_signal(SNAME("active_scene_context_changed"));
@@ -4747,11 +4756,19 @@ void EditorNode::scene_context_about_to_be_removed(EditorSceneContext *p_context
 	editor_selection = no_scene_context->get_selection();
 	editor_history = no_scene_context->get_history();
 	editor_selection->mark_changed();
-	if (SceneTreeDock::get_singleton()) {
-		SceneTreeDock::get_singleton()->set_scene_context(no_scene_context);
-	}
-	if (InspectorDock::get_singleton()) {
-		InspectorDock::get_singleton()->set_scene_context(no_scene_context);
+	if (scene_workspace) {
+		WorkspaceLeafNode *leaf = scene_workspace->get_focused_leaf();
+		if (leaf && leaf->get_pane_tile()) {
+			leaf->get_pane_tile()->get_scene_tree_dock()->set_scene_context(no_scene_context);
+			leaf->get_pane_tile()->get_inspector_dock()->set_scene_context(no_scene_context);
+		}
+	} else {
+		if (SceneTreeDock::get_singleton()) {
+			SceneTreeDock::get_singleton()->set_scene_context(no_scene_context);
+		}
+		if (InspectorDock::get_singleton()) {
+			InspectorDock::get_singleton()->set_scene_context(no_scene_context);
+		}
 	}
 	emit_signal(SNAME("active_scene_context_changed"));
 }
@@ -6444,6 +6461,91 @@ void EditorNode::_load_central_editor_layout_from_config(Ref<ConfigFile> p_confi
 	editor_main_screen->load_layout_from_config(p_config_file, EDITOR_NODE_CONFIG_SECTION);
 }
 
+void EditorNode::_update_focused_dock_singletons(ScenePaneTile *p_tile) {
+	ERR_FAIL_NULL(p_tile);
+	scene_tabs = p_tile->get_scene_tabs();
+	EditorSceneTabs::set_focused_singleton(scene_tabs);
+	SceneTreeDock::set_focused_instance(p_tile->get_scene_tree_dock());
+	InspectorDock::set_focused_instance(p_tile->get_inspector_dock());
+
+	if (distraction_free && distraction_free->get_parent() != nullptr) {
+		distraction_free->get_parent()->remove_child(distraction_free);
+	}
+	if (distraction_free) {
+		scene_tabs->add_extra_button(distraction_free);
+	}
+}
+
+void EditorNode::_bind_leaf_docks(int p_leaf_id) {
+	if (!scene_workspace) {
+		return;
+	}
+	ScenePaneTile *tile = scene_workspace->get_tile_by_id(p_leaf_id);
+	if (!tile) {
+		return;
+	}
+	EditorSceneContext *context = active_scene_context ? active_scene_context : no_scene_context;
+	if (p_leaf_id != scene_workspace->get_focused_leaf_id()) {
+		context = no_scene_context;
+	}
+	tile->get_scene_tree_dock()->set_scene_context(context);
+	tile->get_inspector_dock()->set_scene_context(context);
+}
+
+void EditorNode::_wire_leaf_tile(WorkspaceLeafNode *p_leaf) {
+	ERR_FAIL_NULL(p_leaf);
+	ScenePaneTile *tile = p_leaf->get_pane_tile();
+	ERR_FAIL_NULL(tile);
+	tile->get_scene_tabs()->connect("tab_changed", callable_mp(this, &EditorNode::_set_current_scene));
+	tile->get_scene_tabs()->connect("tab_closed", callable_mp(this, &EditorNode::_scene_tab_closed));
+	tile->get_scene_tree_dock()->set_scene_context(no_scene_context);
+	tile->get_inspector_dock()->set_scene_context(no_scene_context);
+}
+
+void EditorNode::_on_leaf_added(int p_leaf_id) {
+	ERR_FAIL_NULL(scene_workspace);
+	WorkspaceLeafNode *leaf = scene_workspace->get_leaf_by_id(p_leaf_id);
+	ERR_FAIL_NULL(leaf);
+	_wire_leaf_tile(leaf);
+	_bind_leaf_docks(p_leaf_id);
+	leaf->get_pane_tile()->get_scene_tabs()->update_scene_tabs();
+
+	FileSystemDock *filesystem_dock = FileSystemDock::get_singleton();
+	if (filesystem_dock) {
+		InspectorDock *tile_inspector = leaf->get_pane_tile()->get_inspector_dock();
+		if (!filesystem_dock->is_connected("files_moved", callable_mp(tile_inspector, &InspectorDock::_files_moved))) {
+			filesystem_dock->connect("files_moved", callable_mp(tile_inspector, &InspectorDock::_files_moved));
+		}
+	}
+}
+
+void EditorNode::_on_leaf_focus_requested(int p_leaf_id) {
+	ERR_FAIL_NULL(scene_workspace);
+	WorkspaceLeafNode *leaf = scene_workspace->get_leaf_by_id(p_leaf_id);
+	ERR_FAIL_NULL(leaf);
+	ScenePaneTile *tile = leaf->get_pane_tile();
+	ERR_FAIL_NULL(tile);
+
+	scene_workspace->set_focused_leaf(p_leaf_id);
+	_update_focused_dock_singletons(tile);
+	_remount_workspace_pane();
+	_bind_leaf_docks(p_leaf_id);
+}
+
+void EditorNode::_focus_leaf_scene_tree_dock() {
+	SceneTreeDock *dock = SceneTreeDock::get_singleton();
+	if (dock) {
+		dock->get_tree_editor()->get_scene_tree()->grab_focus();
+	}
+}
+
+void EditorNode::_focus_leaf_inspector_dock() {
+	InspectorDock *dock = InspectorDock::get_singleton();
+	if (dock && dock->get_inspector()) {
+		dock->get_inspector()->grab_focus();
+	}
+}
+
 void EditorNode::_save_workspace_to_config(Ref<ConfigFile> p_config_file) {
 	if (scene_workspace) {
 		EditorSceneWorkspace::save_to_config(p_config_file, scene_workspace);
@@ -6455,38 +6557,43 @@ void EditorNode::_load_workspace_from_config(const Ref<ConfigFile> &p_config_fil
 		return;
 	}
 
-	if (top_split && top_split->get_parent()) {
-		top_split->get_parent()->remove_child(top_split);
+	scene_workspace->restore_from_config(p_config_file);
+
+	for (WorkspaceLeafNode *leaf : scene_workspace->get_leaves()) {
+		_wire_leaf_tile(leaf);
+		_bind_leaf_docks(leaf->get_leaf_id());
 	}
 
-	scene_workspace->restore_from_config(p_config_file);
+	WorkspaceLeafNode *focused_leaf = scene_workspace->get_focused_leaf();
+	if (focused_leaf && focused_leaf->get_pane_tile()) {
+		_update_focused_dock_singletons(focused_leaf->get_pane_tile());
+	}
 	_remount_workspace_pane();
 }
 
 void EditorNode::_remount_workspace_pane() {
 	ERR_FAIL_NULL(scene_workspace);
-	ERR_FAIL_NULL(top_split);
+	ERR_FAIL_NULL(editor_main_screen);
 
-	WorkspaceLeafNode *target_leaf = nullptr;
-	for (WorkspaceLeafNode *leaf : scene_workspace->get_leaves()) {
-		if (leaf->get_content_descriptor() == "main") {
-			target_leaf = leaf;
-			break;
-		}
-	}
+	WorkspaceLeafNode *target_leaf = scene_workspace->get_focused_leaf();
 	if (!target_leaf) {
-		target_leaf = scene_workspace->get_focused_leaf();
+		for (WorkspaceLeafNode *leaf : scene_workspace->get_leaves()) {
+			if (leaf->get_content_descriptor() == "main") {
+				target_leaf = leaf;
+				break;
+			}
+		}
 	}
 	ERR_FAIL_NULL(target_leaf);
 
 	Control *host = target_leaf->get_content_host();
 	ERR_FAIL_NULL(host);
-	if (top_split->get_parent() != host) {
-		if (top_split->get_parent()) {
-			top_split->get_parent()->remove_child(top_split);
+	if (editor_main_screen->get_parent() != host) {
+		if (editor_main_screen->get_parent()) {
+			editor_main_screen->get_parent()->remove_child(editor_main_screen);
 		}
-		host->add_child(top_split);
-		top_split->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+		host->add_child(editor_main_screen);
+		editor_main_screen->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 	}
 }
 
@@ -9154,22 +9261,29 @@ EditorNode::EditorNode() {
 	add_child(scan_changes_timer);
 
 	top_split = memnew(VSplitContainer);
+	center_overlay->add_child(top_split);
 	top_split->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 	top_split->set_collapsed(true);
-
-	scene_workspace = EditorSceneWorkspace::create_single_leaf_workspace();
-	center_overlay->add_child(scene_workspace);
-	scene_workspace->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 
 	VBoxContainer *srt = memnew(VBoxContainer);
 	srt->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	srt->add_theme_constant_override("separation", 0);
 	top_split->add_child(srt);
 
-	scene_tabs = memnew(EditorSceneTabs);
-	srt->add_child(scene_tabs);
-	scene_tabs->connect("tab_changed", callable_mp(this, &EditorNode::_set_current_scene));
-	scene_tabs->connect("tab_closed", callable_mp(this, &EditorNode::_scene_tab_closed));
+	scene_workspace = EditorSceneWorkspace::create_single_leaf_workspace(editor_selection, &editor_data);
+	srt->add_child(scene_workspace);
+	scene_workspace->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	scene_workspace->connect("leaf_focus_requested", callable_mp(this, &EditorNode::_on_leaf_focus_requested));
+	scene_workspace->connect("leaf_added", callable_mp(this, &EditorNode::_on_leaf_added));
+
+	WorkspaceLeafNode *initial_leaf = scene_workspace->get_focused_leaf();
+	ERR_FAIL_NULL(initial_leaf);
+	ScenePaneTile *initial_tile = initial_leaf->get_pane_tile();
+	ERR_FAIL_NULL(initial_tile);
+	_wire_leaf_tile(initial_leaf);
+	scene_tabs = initial_tile->get_scene_tabs();
+	_update_focused_dock_singletons(initial_tile);
+	_bind_leaf_docks(initial_leaf->get_leaf_id());
 
 	distraction_free = memnew(Button);
 	distraction_free->set_theme_type_variation("FlatMenuButton");
@@ -9179,14 +9293,11 @@ EditorNode::EditorNode() {
 	distraction_free->set_shortcut(ED_GET_SHORTCUT("editor/distraction_free_mode"));
 	distraction_free->set_tooltip_text(TTRC("Toggle distraction-free mode."));
 	distraction_free->set_toggle_mode(true);
-	scene_tabs->add_extra_button(distraction_free);
 	distraction_free->connect(SceneStringName(pressed), callable_mp(this, &EditorNode::_toggle_distraction_free_mode));
 
 	editor_main_screen = memnew(EditorMainScreen);
 	editor_main_screen->set_custom_minimum_size(Size2(0, 80) * EDSCALE);
 	editor_main_screen->set_draw_behind_parent(true);
-	srt->add_child(editor_main_screen);
-	editor_main_screen->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	_remount_workspace_pane();
 
 	placeholder_scene_viewport = memnew(SubViewport);
@@ -9486,11 +9597,8 @@ EditorNode::EditorNode() {
 	p->add_item(TTRC("Hide Update Spinner"), SPINNER_UPDATE_SPINNER_HIDE);
 	_update_update_spinner();
 
-	// Instantiate and place editor docks.
-
-	memnew(SceneTreeDock(editor_selection, editor_data));
-	SceneTreeDock::get_singleton()->set_scene_context(no_scene_context);
-	editor_dock_manager->add_dock(SceneTreeDock::get_singleton());
+	// Instantiate and place editor docks. Scene tree and inspector live inside
+	// workspace tiles, not in the global EditorDockManager slots.
 
 	memnew(ImportDock);
 	editor_dock_manager->add_dock(ImportDock::get_singleton());
@@ -9502,9 +9610,12 @@ EditorNode::EditorNode() {
 	get_project_settings()->connect_filesystem_dock_signals(filesystem_dock);
 	editor_dock_manager->add_dock(filesystem_dock);
 
-	memnew(InspectorDock(editor_data));
-	InspectorDock::get_singleton()->set_scene_context(no_scene_context);
-	editor_dock_manager->add_dock(InspectorDock::get_singleton());
+	for (ScenePaneTile *tile : scene_workspace->get_tiles()) {
+		InspectorDock *tile_inspector = tile->get_inspector_dock();
+		if (!filesystem_dock->is_connected("files_moved", callable_mp(tile_inspector, &InspectorDock::_files_moved))) {
+			filesystem_dock->connect("files_moved", callable_mp(tile_inspector, &InspectorDock::_files_moved));
+		}
+	}
 
 	memnew(SignalsDock);
 	editor_dock_manager->add_dock(SignalsDock::get_singleton());
@@ -9514,6 +9625,9 @@ EditorNode::EditorNode() {
 
 	history_dock = memnew(HistoryDock);
 	editor_dock_manager->add_dock(history_dock);
+
+	EditorCommandPalette::get_singleton()->add_command(TTR("Open Scene Dock"), "docks/open_scene", callable_mp(this, &EditorNode::_focus_leaf_scene_tree_dock), varray(), Ref<Shortcut>());
+	EditorCommandPalette::get_singleton()->add_command(TTR("Open Inspector Dock"), "docks/open_inspector", callable_mp(this, &EditorNode::_focus_leaf_inspector_dock), varray(), Ref<Shortcut>());
 
 	// Add some offsets to make LEFT_R and RIGHT_L docks wider than minsize.
 	const int dock_hsize = 280;
@@ -9526,9 +9640,10 @@ EditorNode::EditorNode() {
 	const String docks_section = "docks";
 	default_layout.instantiate();
 	// Dock numbers are based on DockSlot enum value + 1.
-	default_layout->set_value(docks_section, "dock_3", "Scene,Import");
+	// Scene tree and inspector docks live inside workspace tiles, not in these slots.
+	default_layout->set_value(docks_section, "dock_3", "Import");
 	default_layout->set_value(docks_section, "dock_4", "FileSystem,History");
-	default_layout->set_value(docks_section, "dock_5", "Inspector,Signals,Groups");
+	default_layout->set_value(docks_section, "dock_5", "Signals,Groups");
 
 	int hsplits[] = { 0, dock_hsize, -dock_hsize, 0 };
 	for (int i = 0; i < (int)std_size(hsplits); i++) {

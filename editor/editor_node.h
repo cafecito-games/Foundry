@@ -92,7 +92,9 @@ class EditorSceneContext;
 class EditorSceneWorkspace;
 class EditorSceneTabs;
 class EditorSelectionHistory;
+class ScenePaneTile;
 class SubViewportContainer;
+class WorkspaceLeafNode;
 class EditorSettingsDialog;
 class EditorTitleBar;
 class ExportTemplateManager;
@@ -710,6 +712,13 @@ private:
 	void _save_workspace_to_config(Ref<ConfigFile> p_config_file);
 	void _load_workspace_from_config(const Ref<ConfigFile> &p_config_file);
 	void _remount_workspace_pane();
+	void _update_focused_dock_singletons(ScenePaneTile *p_tile);
+	void _bind_leaf_docks(int p_leaf_id);
+	void _wire_leaf_tile(WorkspaceLeafNode *p_leaf);
+	void _on_leaf_added(int p_leaf_id);
+	void _on_leaf_focus_requested(int p_leaf_id);
+	void _focus_leaf_scene_tree_dock();
+	void _focus_leaf_inspector_dock();
 
 	void _save_window_settings_to_config(Ref<ConfigFile> p_layout, const String &p_section);
 
