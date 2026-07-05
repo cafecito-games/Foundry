@@ -31,6 +31,8 @@
 #pragma once
 
 #include "editor/automation/editor_automation_driver.h"
+#include "editor/automation/editor_automation_input.h"
+#include "editor/automation/editor_automation_mcp_contracts.h"
 #include "editor/automation/editor_automation_selector.h"
 #include "editor/automation/editor_automation_snapshot.h"
 
@@ -817,6 +819,146 @@ TEST_CASE("[Editor][Automation] popup action focuses owning window before click"
 	CHECK(result.events.has("mouse_pressed"));
 
 	memdelete(root);
+}
+
+TEST_CASE("[Editor][Automation] resolve_position_in_bounds honors position array") {
+	const Rect2i bounds(100, 50, 200, 80);
+	Dictionary options;
+	Array position;
+	position.push_back(12);
+	position.push_back(18);
+	options["position"] = position;
+	const Vector2 resolved = EditorAutomationInput::resolve_position_in_bounds(bounds, options);
+	CHECK(resolved == Vector2(112, 68));
+}
+
+TEST_CASE("[Editor][Automation] drag resolves independent source and target points") {
+	EditorAutomationInput::set_mouse_trace_enabled(true);
+
+	Window *root = memnew(Window);
+	root->set_title("Drag Position Root");
+	root->set_size(Size2i(500, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+	root->set_visible(true);
+	MessageQueue::get_singleton()->flush();
+
+	AutomationDragSource *source = memnew(AutomationDragSource);
+	source->set_name("DragSource");
+	setup_visible_control(source, Size2(120, 40));
+	root->add_child(source);
+
+	AutomationDropTarget *drop_target_control = memnew(AutomationDropTarget);
+	drop_target_control->set_name("DropTarget");
+	setup_visible_control(drop_target_control, Size2(120, 40));
+	drop_target_control->set_position(Vector2(300, 0));
+	root->add_child(drop_target_control);
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	const EditorAutomationElement *source_element = find_element_by_role_and_name(snapshot, "control", "DragSource");
+	const EditorAutomationElement *target_element = find_element_by_role_and_name(snapshot, "control", "DropTarget");
+	REQUIRE(source_element != nullptr);
+	REQUIRE(target_element != nullptr);
+
+	Dictionary source_options;
+	Array source_position;
+	source_position.push_back(10);
+	source_position.push_back(8);
+	source_options["position"] = source_position;
+	const Vector2 expected_source = EditorAutomationInput::resolve_position_in_bounds(
+			source_element->bounds, EditorAutomationInput::position_options_for_source(source_options));
+
+	Dictionary target_options;
+	target_options["target_anchor"] = "top_right";
+	const Vector2 expected_target = EditorAutomationInput::resolve_position_in_bounds(
+			target_element->bounds, EditorAutomationInput::position_options_for_target_element(target_options));
+
+	Dictionary source_target;
+	source_target["id"] = source_element->id;
+
+	Dictionary options;
+	Dictionary drop_target;
+	drop_target["id"] = target_element->id;
+	options["target"] = drop_target;
+	options["route"] = "input";
+	options["position"] = source_position;
+	options["target_anchor"] = "top_right";
+
+	const EditorAutomationActionResult result = EditorAutomationDriver::perform(snapshot, "drag", source_target, options);
+	MessageQueue::get_singleton()->flush();
+	CHECK(result.ok);
+	CHECK(result.events.has("mouse_pressed"));
+	CHECK(result.events.has("mouse_released"));
+	CHECK(EditorAutomationInput::get_mouse_trace_press_global().is_equal_approx(expected_source));
+	CHECK(EditorAutomationInput::get_mouse_trace_release_global().is_equal_approx(expected_target));
+	CHECK_FALSE(EditorAutomationInput::get_mouse_trace_press_global().is_equal_approx(expected_target));
+
+	EditorAutomationInput::set_mouse_trace_enabled(false);
+	memdelete(root);
+}
+
+TEST_CASE("[Editor][Automation] drag with target_point presses at source and releases at target") {
+	EditorAutomationInput::set_mouse_trace_enabled(true);
+
+	Window *root = memnew(Window);
+	root->set_title("Drag Target Point Root");
+	root->set_size(Size2i(500, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+	root->set_visible(true);
+	MessageQueue::get_singleton()->flush();
+
+	AutomationDragSource *source = memnew(AutomationDragSource);
+	source->set_name("DragSource");
+	setup_visible_control(source, Size2(120, 40));
+	root->add_child(source);
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	const EditorAutomationElement *source_element = find_element_by_role_and_name(snapshot, "control", "DragSource");
+	REQUIRE(source_element != nullptr);
+
+	const Vector2 expected_source = EditorAutomationInput::global_center_of_bounds(source_element->bounds);
+	Array target_point;
+	target_point.push_back(420);
+	target_point.push_back(180);
+	Dictionary target_point_options;
+	target_point_options["target_point"] = target_point;
+	const Vector2 expected_target = EditorAutomationInput::resolve_target_point(target_point_options);
+
+	Dictionary source_target;
+	source_target["id"] = source_element->id;
+
+	Dictionary options;
+	options["route"] = "input";
+	options["target_point"] = target_point;
+
+	const EditorAutomationActionResult result = EditorAutomationDriver::perform(snapshot, "drag", source_target, options);
+	MessageQueue::get_singleton()->flush();
+	CHECK(result.ok);
+	CHECK(EditorAutomationInput::get_mouse_trace_press_global().is_equal_approx(expected_source));
+	CHECK(EditorAutomationInput::get_mouse_trace_release_global().is_equal_approx(expected_target));
+	CHECK_FALSE(EditorAutomationInput::get_mouse_trace_press_global().is_equal_approx(expected_target));
+
+	EditorAutomationInput::set_mouse_trace_enabled(false);
+	memdelete(root);
+}
+
+TEST_CASE("[Editor][Automation][MCP] act args schema declares honored positioning fields") {
+	const Ref<EditorAutomationMCPJsonSchema> schema = EditorAutomationMCPActionArgs::schema();
+	const Dictionary properties = schema->to_dictionary()["properties"];
+	CHECK(properties.has("position"));
+	CHECK(properties.has("anchor"));
+	CHECK(properties.has("x"));
+	CHECK(properties.has("y"));
+	CHECK(properties.has("source"));
+	CHECK(properties.has("target_position"));
+	CHECK(properties.has("target_anchor"));
+	CHECK(properties.has("target_x"));
+	CHECK(properties.has("target_y"));
+	CHECK(properties.has("target_point"));
+
+	const Dictionary position_schema = properties["position"];
+	CHECK_FALSE(String(position_schema.get("description", String())).is_empty());
 }
 
 TEST_CASE("[Editor][Automation] drag failure includes source and target diagnostics") {
