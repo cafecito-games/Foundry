@@ -459,7 +459,9 @@ EditorSceneTabs::EditorSceneTabs(int p_tile_id) {
 
 	scene_tabs_context_menu = memnew(PopupMenu);
 	tabbar_container->add_child(scene_tabs_context_menu);
-	scene_tabs_context_menu->connect(SceneStringName(id_pressed), callable_mp(EditorNode::get_singleton(), &EditorNode::trigger_menu_option).bind(false));
+	if (EditorNode::get_singleton()) {
+		scene_tabs_context_menu->connect(SceneStringName(id_pressed), callable_mp(EditorNode::get_singleton(), &EditorNode::trigger_menu_option).bind(false));
+	}
 	scene_tabs_context_menu->connect(SceneStringName(id_pressed), callable_mp(this, &EditorSceneTabs::_custom_menu_option));
 
 	scene_tab_add = memnew(Button);
@@ -467,7 +469,9 @@ EditorSceneTabs::EditorSceneTabs(int p_tile_id) {
 	scene_tab_add->set_tooltip_text(TTR("Add a new scene."));
 	scene_tab_add->set_accessibility_name(TTRC("Add a New Scene"));
 	scene_tabs->add_child(scene_tab_add);
-	scene_tab_add->connect(SceneStringName(pressed), callable_mp(EditorNode::get_singleton(), &EditorNode::trigger_menu_option).bind(EditorNode::SCENE_NEW_SCENE, false));
+	if (EditorNode::get_singleton()) {
+		scene_tab_add->connect(SceneStringName(pressed), callable_mp(EditorNode::get_singleton(), &EditorNode::trigger_menu_option).bind(EditorNode::SCENE_NEW_SCENE, false));
+	}
 
 	scene_tab_add_ph = memnew(Control);
 	scene_tab_add_ph->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);

@@ -37,6 +37,7 @@
 #include "editor/editor_scene_context.h"
 #include "editor/editor_scene_pane_tile.h"
 #include "editor/editor_scene_workspace.h"
+#include "editor/scene/editor_scene_tabs.h"
 
 #include "scene/2d/node_2d.h"
 #include "scene/gui/split_container.h"
@@ -141,8 +142,16 @@ TEST_CASE("[SceneTree][Editor] tile-self-contained") {
 	CHECK(tree_dock->get_scene_context() == nullptr);
 	CHECK(inspector_dock->get_scene_context() == nullptr);
 
+	// Rebind to a fresh context after the previous binding was cleared.
+	EditorSceneContext *replacement = memnew(EditorSceneContext);
+	tree_dock->set_scene_context(replacement);
+	inspector_dock->set_scene_context(replacement);
+	h.pump();
+	CHECK(tree_dock->get_scene_context() == replacement);
+
 	context->deactivate();
 	memdelete(context);
+	memdelete(replacement);
 	memdelete(other_context);
 
 	h.unmount();
@@ -197,7 +206,11 @@ TEST_CASE("[SceneTree][Editor] tile-isolation-across-leaves") {
 	h.pump();
 
 	CHECK(context_b->get_selection()->is_selected(child_b));
-	CHECK_FALSE(context_a->get_selection()->is_selected(child_a));
+	// Selecting in tile B must not alter tile A's bound context or selection.
+	CHECK(context_a->get_selection()->is_selected(child_a));
+	CHECK_FALSE(context_b->get_selection()->is_selected(child_a));
+	CHECK(tile_a->get_scene_tree_dock()->get_scene_context() == context_a);
+	CHECK(tile_b->get_scene_tree_dock()->get_scene_context() == context_b);
 
 	context_a->deactivate();
 	context_b->deactivate();

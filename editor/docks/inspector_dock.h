@@ -50,6 +50,7 @@ class InspectorDock : public EditorDock {
 
 	// Grants the dock-binding unit tests read access to the history-dependent
 	// chrome (back/forward/history-menu button states).
+	friend class EditorNode;
 	friend class InspectorDockTestAccess;
 
 	enum MenuOptions {
