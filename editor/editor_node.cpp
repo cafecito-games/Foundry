@@ -4920,11 +4920,16 @@ void EditorNode::_ensure_scene_tile_has_scene(int p_tile_id) {
 	if (!editor_data.get_tile_scene_indices(p_tile_id).is_empty()) {
 		return;
 	}
-	const int blank_scene = editor_data.add_edited_scene(-1);
-	if (editor_data.get_scene_tile(blank_scene) != p_tile_id) {
-		editor_data.set_scene_tile(blank_scene, p_tile_id);
-	}
-	editor_data.set_tile_current_scene(p_tile_id, blank_scene);
+	// add_edited_scene() assigns the new scene to the focused tile and makes it the
+	// current edited scene. Focus the target tile only while adding so the blank
+	// scene lands there, then restore focus: set_focused_tile_id() re-syncs the
+	// current edited scene, so a background repair of a non-focused tile never
+	// changes the active scene/tab of the tile the user is working in.
+	const int prev_focused_tile = editor_data.get_focused_tile_id();
+	editor_data.set_focused_tile_id(p_tile_id);
+	editor_data.add_edited_scene(-1);
+	editor_data.set_focused_tile_id(prev_focused_tile);
+
 	_update_all_scene_tabs();
 	_bind_all_leaf_docks();
 	_update_tile_display_attachments();
