@@ -2,7 +2,7 @@
 /*  test_foundry_script.cpp                                               */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -2999,6 +2999,61 @@ var map: Dictionary[String, DocTarget]
 	CHECK_EQ(docs[0].properties[0].type, "characters.DocTarget");
 	CHECK_EQ(docs[0].properties[1].type, "characters.DocTarget[]");
 	CHECK_EQ(docs[0].properties[2].type, "Dictionary[String, characters.DocTarget]");
+}
+
+TEST_CASE("[Modules][FoundryScript] Cleared script refuses to instantiate") {
+	// Regression test: `clear()` deletes every compiled function (this is what
+	// `FSLanguage::finish()` does to all live scripts), but a stale Ref or ResourceCache entry
+	// can keep the cleared script alive and hand it out again on a later cache-hit load.
+	// Such a script must report itself as non-instantiable and fail construction loudly instead
+	// of producing a half-constructed instance whose member defaults never ran.
+	if (!FSLanguage::get_singleton()->has_any_global_constant(SNAME("RefCounted"))) {
+		FSLanguage::get_singleton()->init();
+	}
+
+	const String source =
+			"var health: int = 10\n"
+			"\n"
+			"func doubled() -> int:\n"
+			"\treturn health * 2\n";
+
+	Ref<FoundryScript> script;
+	script.instantiate();
+	script->set_path("user://cleared_script_target.fs");
+	script->set_source_code(source);
+	const Error err = script->reload();
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+	CHECK(script->can_instantiate());
+
+	// Sanity: the freshly compiled script instantiates and runs.
+	Callable::CallError call_error;
+	call_error.error = Callable::CallError::CALL_OK;
+	Variant instance = script->_new(nullptr, 0, call_error);
+	CHECK_EQ(call_error.error, Callable::CallError::CALL_OK);
+	CHECK_EQ(instance.get_type(), Variant::OBJECT);
+	instance = Variant();
+
+	script->clear();
+
+	CHECK_FALSE(script->is_valid());
+	CHECK_FALSE(script->can_instantiate());
+
+	// `new()` must fail cleanly with a call error, not return a broken instance.
+	call_error.error = Callable::CallError::CALL_OK;
+	const Variant cleared_instance = script->_new(nullptr, 0, call_error);
+	CHECK_EQ(call_error.error, Callable::CallError::CALL_ERROR_INVALID_METHOD);
+	CHECK_EQ(cleared_instance.get_type(), Variant::NIL);
+
+	// Attaching the cleared script to an object must not create a script instance.
+	Object *object = memnew(Object);
+	ERR_PRINT_OFF;
+	object->set_script(script);
+	ERR_PRINT_ON;
+	CHECK(object->get_script_instance() == nullptr);
+	memdelete(object);
 }
 
 TEST_CASE("[Modules][FoundryScript] Docs are generated lazily on request after reload()") {
