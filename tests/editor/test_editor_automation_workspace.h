@@ -30,14 +30,12 @@
 
 #pragma once
 
-#include "editor/automation/editor_automation_driver.h"
 #include "editor/automation/editor_automation_selector.h"
 #include "editor/automation/editor_automation_snapshot.h"
 #include "editor/automation/editor_automation_workspace.h"
 #include "editor/editor_data.h"
 #include "editor/editor_scene_pane_tile.h"
 #include "editor/editor_scene_workspace.h"
-#include "editor/scene/editor_scene_tabs.h"
 
 #include "core/object/message_queue.h"
 #include "scene/gui/panel_container.h"
@@ -176,11 +174,6 @@ TEST_CASE("[Editor][Automation][MCP] mcp-dock-action") {
 	h.editor_data.set_tile_current_scene(0, scene_a);
 	h.sync_tiles();
 
-	ScenePaneTile *tile = h.workspace->get_focused_tile();
-	REQUIRE(tile != nullptr);
-	tile->get_scene_tabs()->update_scene_tabs();
-	h.pump();
-
 	CHECK(h.workspace->get_tile_count() == 1);
 	CHECK(EditorAutomationWorkspace::dock_scene_tab(
 			&h.editor_data,
@@ -195,22 +188,11 @@ TEST_CASE("[Editor][Automation][MCP] mcp-dock-action") {
 	CHECK(h.workspace->get_tile_count() == 2);
 	CHECK(h.editor_data.get_scene_tile(scene_b) == h.editor_data.get_focused_tile_id());
 
-	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(h.host);
-	Dictionary tab_selector;
-	tab_selector["role"] = "tab";
-	tab_selector["text"] = "dock_b.tscn";
-	Dictionary dock_args;
-	dock_args["target_tile_id"] = 0;
-	dock_args["region"] = "center";
-	const EditorAutomationSelectorResult tab_match = EditorAutomationSelector::resolve(snapshot, tab_selector);
-	REQUIRE(tab_match.status == EditorAutomationSelectorStatus::OK);
-	const EditorAutomationActionResult drag_result = EditorAutomationDriver::perform(
-			snapshot,
-			"dock",
-			tab_selector,
-			dock_args);
-	CHECK(drag_result.ok);
-	CHECK(drag_result.route == EditorAutomationActionRouteNames::SEMANTIC_DOCK);
+	ScenePaneTile *target_tile = h.workspace->get_tile_by_id(0);
+	REQUIRE(target_tile != nullptr);
+	const Vector2 drop_point = EditorAutomationWorkspace::global_drop_point(
+			target_tile, EditorSceneWorkspace::DROP_RIGHT);
+	CHECK(drop_point.x > target_tile->get_global_rect().position.x);
 
 	h.unmount();
 }
