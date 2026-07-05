@@ -50,6 +50,28 @@ public:
 	}
 };
 
+// RAII guard for tests that call ProjectSettings::setup() against a temporary
+// project root. Restores the fields that affect res:// and user:// resolution
+// so later cases keep a writable user:// mapping under arbitrary --case filters.
+class TestProjectSettingsRestoreScope {
+	String saved_resource_path;
+	bool saved_project_loaded = false;
+	String saved_app_name;
+
+public:
+	TestProjectSettingsRestoreScope() {
+		saved_resource_path = ProjectSettings::get_singleton()->get_resource_path();
+		saved_project_loaded = ProjectSettings::get_singleton()->is_project_loaded();
+		saved_app_name = GLOBAL_GET("application/config/name");
+	}
+
+	~TestProjectSettingsRestoreScope() {
+		TestProjectSettingsInternalsAccessor::resource_path() = saved_resource_path;
+		TestProjectSettingsInternalsAccessor::project_loaded() = saved_project_loaded;
+		ProjectSettings::get_singleton()->set_setting("application/config/name", saved_app_name);
+	}
+};
+
 namespace TestProjectSettings {
 
 TEST_CASE("[ProjectSettings] Get existing setting") {

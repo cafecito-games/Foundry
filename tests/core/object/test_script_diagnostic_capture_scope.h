@@ -192,15 +192,9 @@ public:
 
 struct DiagnosticCaptureFixture {
 	Node *suite = nullptr;
-	String saved_resource_path;
-	bool saved_project_loaded = false;
-	String saved_app_name;
+	TestProjectSettingsRestoreScope project_settings;
 
 	explicit DiagnosticCaptureFixture() {
-		saved_resource_path = ProjectSettings::get_singleton()->get_resource_path();
-		saved_project_loaded = ProjectSettings::get_singleton()->is_project_loaded();
-		saved_app_name = GLOBAL_GET("application/config/name");
-
 		const String scripts_path = String("modules/foundry_script/tests/scripts");
 		const Error err = ProjectSettings::get_singleton()->setup(scripts_path, String(), true);
 		REQUIRE_MESSAGE(err == OK, "Failed to set up diagnostic capture project.");
@@ -221,10 +215,6 @@ struct DiagnosticCaptureFixture {
 			suite->queue_free();
 			suite = nullptr;
 		}
-
-		TestProjectSettingsInternalsAccessor::resource_path() = saved_resource_path;
-		TestProjectSettingsInternalsAccessor::project_loaded() = saved_project_loaded;
-		ProjectSettings::get_singleton()->set_setting("application/config/name", saved_app_name);
 	}
 };
 
