@@ -712,7 +712,9 @@ private:
 
 	void _save_workspace_to_config(Ref<ConfigFile> p_config_file);
 	void _load_workspace_from_config(const Ref<ConfigFile> &p_config_file);
-	void _remount_workspace_pane();
+	void _reparent_main_screen_into(ScenePaneTile *p_tile);
+	void _update_tile_display_attachments();
+	void _sync_scene_viewport_2d_state_with_main_screen();
 	void _update_focused_dock_singletons(ScenePaneTile *p_tile);
 	void _bind_leaf_docks(int p_leaf_id);
 	void _bind_all_leaf_docks();

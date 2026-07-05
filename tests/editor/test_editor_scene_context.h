@@ -224,6 +224,61 @@ TEST_CASE("[SceneTree][Editor] EditorSceneContext supports in-place root replace
 	memdelete(context);
 }
 
+TEST_CASE("[SceneTree][Editor] context-dual-attach") {
+	Window *tree_root = SceneTree::get_singleton()->get_root();
+	SubViewportContainer *container_a = memnew(SubViewportContainer);
+	SubViewportContainer *container_b = memnew(SubViewportContainer);
+	tree_root->add_child(container_a);
+	tree_root->add_child(container_b);
+
+	EditorSceneContext *context_a = memnew(EditorSceneContext);
+	EditorSceneContext *context_b = memnew(EditorSceneContext);
+	Node2D *scene_a = memnew(Node2D);
+	Node2D *scene_b = memnew(Node2D);
+	Node2D *child_a = memnew(Node2D);
+	Node2D *child_b = memnew(Node2D);
+	scene_a->add_child(child_a);
+	scene_b->add_child(child_b);
+	context_a->set_scene_root_node(scene_a);
+	context_b->set_scene_root_node(scene_b);
+
+	context_a->set_display_parent(container_a, true);
+	context_b->set_display_parent(container_b, false);
+
+	CHECK(context_a->get_viewport()->is_inside_tree());
+	CHECK(context_b->get_viewport()->is_inside_tree());
+	context_a->get_selection()->add_node(child_a);
+	context_b->get_selection()->add_node(child_b);
+
+	// Reparenting the viewport between display containers preserves the selection.
+	context_a->set_display_parent(container_b, false);
+	CHECK(context_a->get_selection()->is_selected(child_a));
+
+	context_a->set_display_parent(container_a, true);
+	CHECK(context_a->get_selection()->is_selected(child_a));
+
+	memdelete(context_a);
+	memdelete(context_b);
+	tree_root->remove_child(container_a);
+	tree_root->remove_child(container_b);
+	memdelete(container_a);
+	memdelete(container_b);
+}
+
+TEST_CASE("[SceneTree][Editor] context-3d-heuristic") {
+	EditorSceneContext *context = memnew(EditorSceneContext);
+	Node2D *scene_2d = memnew(Node2D);
+	context->set_scene_root_node(scene_2d);
+	CHECK_FALSE(context->scene_has_3d_content());
+
+	Node3D *scene_3d = memnew(Node3D);
+	context->set_scene_root_node(scene_3d);
+	memdelete(scene_2d);
+	CHECK(context->scene_has_3d_content());
+
+	memdelete(context);
+}
+
 TEST_CASE("[SceneTree][Editor] EditorData creates one context per edited scene") {
 	EditorData editor_data;
 

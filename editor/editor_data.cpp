@@ -1033,6 +1033,11 @@ void EditorData::set_scene_tile(int p_idx, int p_tile_id) {
 #endif
 }
 
+int EditorData::get_scene_tile(int p_idx) const {
+	ERR_FAIL_INDEX_V(p_idx, edited_scene.size(), 0);
+	return edited_scene[p_idx].tile_id;
+}
+
 int EditorData::get_tile_current_scene(int p_tile_id) const {
 	if (p_tile_id < 0 || !tile_current_scenes.has(p_tile_id)) {
 		return -1;
