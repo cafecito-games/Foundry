@@ -3016,6 +3016,9 @@ void SceneTreeDock::set_scene_context(EditorSceneContext *p_context) {
 	if (editor_selection && editor_selection->is_connected("selection_changed", callable_mp(this, &SceneTreeDock::_selection_changed))) {
 		editor_selection->disconnect("selection_changed", callable_mp(this, &SceneTreeDock::_selection_changed));
 	}
+	if (scene_context) {
+		scene_context->unregister_scene_tree_dock(this);
+	}
 
 	scene_context = p_context;
 	editor_selection = p_context ? p_context->get_selection() : nullptr;
@@ -3023,6 +3026,9 @@ void SceneTreeDock::set_scene_context(EditorSceneContext *p_context) {
 	// Push the new selection down to the tree editor so its edits target the
 	// bound context's selection, and start listening for its changes.
 	scene_tree->set_editor_selection(editor_selection);
+	if (scene_context) {
+		scene_context->register_scene_tree_dock(this);
+	}
 	if (editor_selection && !editor_selection->is_connected("selection_changed", callable_mp(this, &SceneTreeDock::_selection_changed))) {
 		editor_selection->connect("selection_changed", callable_mp(this, &SceneTreeDock::_selection_changed));
 	}
@@ -5139,10 +5145,20 @@ SceneTreeDock::SceneTreeDock(EditorSelection *p_editor_selection, EditorData &p_
 }
 
 SceneTreeDock::~SceneTreeDock() {
-	singleton = nullptr;
+	if (singleton == this) {
+		singleton = nullptr;
+	}
+	if (scene_context) {
+		scene_context->unregister_scene_tree_dock(this);
+	}
+	if (scene_tree) {
+		scene_tree->set_editor_selection(nullptr);
+	}
 	if (editor_selection && editor_selection->is_connected("selection_changed", callable_mp(this, &SceneTreeDock::_selection_changed))) {
 		editor_selection->disconnect("selection_changed", callable_mp(this, &SceneTreeDock::_selection_changed));
 	}
+	editor_selection = nullptr;
+	scene_context = nullptr;
 	if (!node_clipboard.is_empty()) {
 		_clear_clipboard();
 	}

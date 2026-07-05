@@ -51,6 +51,19 @@
 
 namespace TestSceneWorkspace {
 
+class LeafRemovedTracker : public Object {
+	FOUNDRY_CLASS(LeafRemovedTracker, Object);
+
+public:
+	int removed_leaf_id = -1;
+	int successor_leaf_id = -1;
+
+	void on_leaf_removed(int p_leaf_id, int p_successor_leaf_id) {
+		removed_leaf_id = p_leaf_id;
+		successor_leaf_id = p_successor_leaf_id;
+	}
+};
+
 struct WorkspaceHarness {
 	Control *host = nullptr;
 	EditorData editor_data;
@@ -433,6 +446,54 @@ TEST_CASE("[SceneTree][Editor] focus-invariant") {
 	h.editor_data.unregister_tile(collapsed_id);
 	check_focus_invariant(h.editor_data, h.workspace);
 	CHECK(h.editor_data.get_tile_scene_indices(survivor->get_leaf_id()).has(scene_c));
+
+	h.unmount();
+}
+
+TEST_CASE("[SceneTree][Editor] collapse-focused-leaf-with-split-sibling-migrates-to-surviving-tile") {
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	const int tile_a = h.workspace->get_focused_leaf_id();
+	Node2D *root_a = memnew(Node2D);
+	const int scene_a = add_test_scene(h.editor_data, tile_a, root_a);
+
+	WorkspaceLeafNode *leaf_a = h.workspace->get_leaf_by_id(tile_a);
+	WorkspaceLeafNode *leaf_b = h.workspace->split(leaf_a, false, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
+	h.pump();
+	REQUIRE(leaf_b != nullptr);
+	const int tile_b = leaf_b->get_leaf_id();
+	h.editor_data.register_tile(tile_b);
+
+	WorkspaceLeafNode *leaf_c = h.workspace->split(leaf_b, true, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
+	h.pump();
+	REQUIRE(leaf_c != nullptr);
+	const int tile_c = leaf_c->get_leaf_id();
+	h.editor_data.register_tile(tile_c);
+
+	h.workspace->set_focused_leaf(tile_a);
+	h.editor_data.set_focused_tile_id(tile_a);
+	h.editor_data.set_tile_current_scene(tile_a, scene_a);
+	h.editor_data.set_edited_scene(scene_a);
+	check_focus_invariant(h.editor_data, h.workspace);
+
+	LeafRemovedTracker tracker;
+	h.workspace->connect("leaf_removed", callable_mp(&tracker, &LeafRemovedTracker::on_leaf_removed));
+
+	h.workspace->collapse(leaf_a);
+	h.pump();
+
+	CHECK(tracker.removed_leaf_id == tile_a);
+	CHECK(tracker.successor_leaf_id != tile_a);
+	CHECK(h.workspace->get_leaf_by_id(tracker.successor_leaf_id) != nullptr);
+	CHECK((tracker.successor_leaf_id == tile_b || tracker.successor_leaf_id == tile_c));
+
+	if (tracker.successor_leaf_id != tile_a && h.workspace->get_leaf_by_id(tracker.successor_leaf_id)) {
+		h.editor_data.migrate_tile_scenes(tile_a, tracker.successor_leaf_id);
+		h.editor_data.unregister_tile(tile_a);
+		CHECK(h.editor_data.get_tile_scene_indices(tracker.successor_leaf_id).has(scene_a));
+	}
 
 	h.unmount();
 }

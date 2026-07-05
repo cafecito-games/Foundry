@@ -744,7 +744,13 @@ void InspectorDock::set_scene_context(EditorSceneContext *p_context) {
 	if (scene_context == p_context) {
 		return;
 	}
+	if (scene_context) {
+		scene_context->unregister_inspector_dock(this);
+	}
 	scene_context = p_context;
+	if (scene_context) {
+		scene_context->register_inspector_dock(this);
+	}
 
 	// Re-inject the bound context's history into the object selector and
 	// refresh the history-dependent chrome (back/forward buttons, history
@@ -979,5 +985,11 @@ InspectorDock::InspectorDock(EditorData &p_editor_data, bool p_register_open_com
 }
 
 InspectorDock::~InspectorDock() {
-	singleton = nullptr;
+	if (singleton == this) {
+		singleton = nullptr;
+	}
+	if (scene_context) {
+		scene_context->unregister_inspector_dock(this);
+	}
+	scene_context = nullptr;
 }

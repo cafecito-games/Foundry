@@ -30,9 +30,39 @@
 
 #include "editor_scene_context.h"
 
+#include "editor/docks/inspector_dock.h"
+#include "editor/docks/scene_tree_dock.h"
 #include "scene/3d/node_3d.h"
 #include "scene/main/viewport.h"
 #include "scene/resources/3d/world_3d.h"
+
+void EditorSceneContext::_detach_bound_docks() {
+	Vector<ObjectID> scene_tree_dock_ids;
+	for (const ObjectID &dock_id : bound_scene_tree_docks) {
+		scene_tree_dock_ids.push_back(dock_id);
+	}
+	bound_scene_tree_docks.clear();
+
+	Vector<ObjectID> inspector_dock_ids;
+	for (const ObjectID &dock_id : bound_inspector_docks) {
+		inspector_dock_ids.push_back(dock_id);
+	}
+	bound_inspector_docks.clear();
+
+	for (const ObjectID &dock_id : scene_tree_dock_ids) {
+		SceneTreeDock *dock = ObjectDB::get_instance<SceneTreeDock>(dock_id);
+		if (dock && dock->get_scene_context() == this) {
+			dock->set_scene_context(nullptr);
+		}
+	}
+
+	for (const ObjectID &dock_id : inspector_dock_ids) {
+		InspectorDock *dock = ObjectDB::get_instance<InspectorDock>(dock_id);
+		if (dock && dock->get_scene_context() == this) {
+			dock->set_scene_context(nullptr);
+		}
+	}
+}
 
 void EditorSceneContext::_recompute_3d_content() {
 	has_3d_content = false;
@@ -186,6 +216,26 @@ void EditorSceneContext::set_selected_node_ids(const Vector<ObjectID> &p_ids) {
 	}
 }
 
+void EditorSceneContext::register_scene_tree_dock(SceneTreeDock *p_dock) {
+	ERR_FAIL_NULL(p_dock);
+	bound_scene_tree_docks.insert(p_dock->get_instance_id());
+}
+
+void EditorSceneContext::unregister_scene_tree_dock(SceneTreeDock *p_dock) {
+	ERR_FAIL_NULL(p_dock);
+	bound_scene_tree_docks.erase(p_dock->get_instance_id());
+}
+
+void EditorSceneContext::register_inspector_dock(InspectorDock *p_dock) {
+	ERR_FAIL_NULL(p_dock);
+	bound_inspector_docks.insert(p_dock->get_instance_id());
+}
+
+void EditorSceneContext::unregister_inspector_dock(InspectorDock *p_dock) {
+	ERR_FAIL_NULL(p_dock);
+	bound_inspector_docks.erase(p_dock->get_instance_id());
+}
+
 EditorSceneContext::EditorSceneContext() {
 	viewport = memnew(SubViewport);
 	world_3d.instantiate();
@@ -201,6 +251,7 @@ EditorSceneContext::EditorSceneContext() {
 }
 
 EditorSceneContext::~EditorSceneContext() {
+	_detach_bound_docks();
 	if (viewport) {
 		if (viewport->get_parent()) {
 			viewport->get_parent()->remove_child(viewport);
