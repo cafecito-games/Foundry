@@ -30,7 +30,6 @@
 
 #include "signals_dock.h"
 
-#include "editor/editor_scene_context.h"
 #include "editor/scene/connections_dialog.h"
 #include "editor/settings/editor_command_palette.h"
 

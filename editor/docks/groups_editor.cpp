@@ -43,6 +43,7 @@
 #include "scene/gui/check_button.h"
 #include "scene/gui/grid_container.h"
 #include "scene/gui/label.h"
+#include "scene/resources/3d/world_3d.h"
 #include "scene/resources/packed_scene.h"
 
 static bool can_edit(Node *p_node, Node *p_edited_scene, const String &p_group) {

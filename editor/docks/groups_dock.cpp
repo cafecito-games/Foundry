@@ -30,7 +30,6 @@
 
 #include "groups_dock.h"
 
-#include "editor/editor_scene_context.h"
 #include "editor/settings/editor_command_palette.h"
 
 void GroupsDock::set_selection(const Vector<Node *> &p_nodes) {
