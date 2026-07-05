@@ -206,6 +206,14 @@ struct CanvasItemEditorViewState {
 	void clear_selection_results();
 };
 
+// Per-scene geometry round-trip for the 2D editor (#929). Snap/show/grid config is global
+// on CanvasItemEditor and is intentionally excluded so switching scenes cannot clobber it.
+struct CanvasItemEditorSceneGeometryState {
+	static Dictionary to_dict(const CanvasItemEditorViewState &p_state);
+	static void apply(CanvasItemEditorViewState &p_state, const Dictionary &p_dict);
+	static bool is_geometry_key(const StringName &p_key);
+};
+
 // Pure view math that operates on CanvasItemEditorViewState without Control dependencies.
 struct CanvasItemEditorViewMath {
 	// Applies a pan scroll delta to view_offset, accounting for the current zoom.

@@ -64,6 +64,34 @@ CanvasItemEditorView::CanvasItemEditorView(CanvasItemEditor *p_editor, CanvasIte
 
 CanvasItemEditorView::~CanvasItemEditorView() = default;
 
+CanvasItemEditorView *CanvasItemEditorViewRouting::get_focused_view(const Vector<CanvasItemEditorView *> &p_views) {
+	return p_views.is_empty() ? nullptr : p_views[0];
+}
+
+Transform2D CanvasItemEditorViewRouting::get_canvas_transform(const Vector<CanvasItemEditorView *> &p_views) {
+	const CanvasItemEditorView *view = get_focused_view(p_views);
+	return view ? view->get_canvas_transform() : Transform2D();
+}
+
+Control *CanvasItemEditorViewRouting::get_viewport_control(const Vector<CanvasItemEditorView *> &p_views) {
+	CanvasItemEditorView *view = get_focused_view(p_views);
+	return view ? view->get_viewport_control() : nullptr;
+}
+
+void CanvasItemEditorViewRouting::set_cursor_shape_override(const Vector<CanvasItemEditorView *> &p_views, Control::CursorShape p_shape) {
+	if (CanvasItemEditorView *view = get_focused_view(p_views)) {
+		view->set_cursor_shape_override(p_shape);
+	}
+}
+
+void CanvasItemEditorViewRouting::update_all_viewports(const Vector<CanvasItemEditorView *> &p_views) {
+	for (CanvasItemEditorView *view : p_views) {
+		if (view) {
+			view->update_viewport();
+		}
+	}
+}
+
 SubViewport *CanvasItemEditorView::get_scene_viewport() const {
 	if (scene_context) {
 		return scene_context->get_viewport();
@@ -3269,6 +3297,10 @@ void CanvasItemEditorView::_draw_viewport() {
 }
 
 void CanvasItemEditorView::update_viewport() {
+	test_update_viewport_invocations++;
+	if (!viewport) {
+		return;
+	}
 	_update_scrollbars();
 	viewport->queue_redraw();
 }

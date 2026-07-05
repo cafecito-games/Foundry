@@ -77,14 +77,27 @@ constexpr real_t SCALE_HANDLE_DISTANCE = 25;
 constexpr real_t MOVE_HANDLE_DISTANCE = 25;
 
 CanvasItemEditorViewport *CanvasItemEditor::_get_viewport() const {
-	if (!editor_view) {
+	const CanvasItemEditorView *view = get_focused_view();
+	if (!view) {
 		return nullptr;
 	}
-	return Object::cast_to<CanvasItemEditorViewport>(editor_view->get_viewport_control());
+	return Object::cast_to<CanvasItemEditorViewport>(view->get_viewport_control());
+}
+
+CanvasItemEditorView *CanvasItemEditor::get_focused_view() {
+	return CanvasItemEditorViewRouting::get_focused_view(views);
+}
+
+const CanvasItemEditorView *CanvasItemEditor::get_focused_view() const {
+	return CanvasItemEditorViewRouting::get_focused_view(views);
+}
+
+Transform2D CanvasItemEditor::get_canvas_transform() const {
+	return CanvasItemEditorViewRouting::get_canvas_transform(views);
 }
 
 Control *CanvasItemEditor::get_viewport_control() {
-	return editor_view ? editor_view->get_viewport_control() : nullptr;
+	return CanvasItemEditorViewRouting::get_viewport_control(views);
 }
 
 Control *CanvasItemEditor::get_controls_container() {
@@ -92,9 +105,7 @@ Control *CanvasItemEditor::get_controls_container() {
 }
 
 void CanvasItemEditor::update_viewport() {
-	if (editor_view) {
-		editor_view->update_viewport();
-	}
+	CanvasItemEditorViewRouting::update_all_viewports(views);
 }
 
 void CanvasItemEditor::center_at(const Point2 &p_pos) {
@@ -104,9 +115,7 @@ void CanvasItemEditor::center_at(const Point2 &p_pos) {
 }
 
 void CanvasItemEditor::set_cursor_shape_override(CursorShape p_shape) {
-	if (editor_view) {
-		editor_view->set_cursor_shape_override(p_shape);
-	}
+	CanvasItemEditorViewRouting::set_cursor_shape_override(views, p_shape);
 }
 
 CanvasItemEditor::CursorShape CanvasItemEditor::get_cursor_shape(const Point2 &p_pos) const {
@@ -432,10 +441,10 @@ void CanvasItemEditor::_snap_other_nodes(
 
 Point2 CanvasItemEditor::snap_point(Point2 p_target, unsigned int p_modes, unsigned int p_forced_modes, const CanvasItem *p_self_canvas_item, const List<CanvasItem *> &p_other_nodes_exceptions) {
 	// snap_point() is global controller logic but writes per-view scratch on view_state
-	// (snap_target, snap_transform). Safe while there is exactly one view; when multiple
-	// views exist (#928/#929) this must resolve to the focused/acting view's state.
-	view_state.snap_target[0] = CanvasItemEditorViewState::SNAP_TARGET_NONE;
-	view_state.snap_target[1] = CanvasItemEditorViewState::SNAP_TARGET_NONE;
+	// (snap_target, snap_transform). Must resolve to the focused/acting view's state.
+	CanvasItemEditorViewState &snap_state = get_focused_view() ? get_focused_view()->get_view_state() : view_state;
+	snap_state.snap_target[0] = CanvasItemEditorViewState::SNAP_TARGET_NONE;
+	snap_state.snap_target[1] = CanvasItemEditorViewState::SNAP_TARGET_NONE;
 
 	bool is_snap_active = smart_snap_active ^ Input::get_singleton()->is_key_pressed(Key::CMD_OR_CTRL);
 
@@ -451,19 +460,19 @@ Point2 CanvasItemEditor::snap_point(Point2 p_target, unsigned int p_modes, unsig
 			if (const Control *c = Object::cast_to<Control>(p_self_canvas_item)) {
 				Point2 begin = p_self_canvas_item->get_screen_transform().xform(_anchor_to_position(c, Point2(0, 0)));
 				Point2 end = p_self_canvas_item->get_screen_transform().xform(_anchor_to_position(c, Point2(1, 1)));
-				_snap_if_closer_point(p_target, output, view_state.snap_target, begin, CanvasItemEditorViewState::SNAP_TARGET_PARENT, rotation);
-				_snap_if_closer_point(p_target, output, view_state.snap_target, (begin + end) / 2.0, CanvasItemEditorViewState::SNAP_TARGET_PARENT, rotation);
-				_snap_if_closer_point(p_target, output, view_state.snap_target, end, CanvasItemEditorViewState::SNAP_TARGET_PARENT, rotation);
+				_snap_if_closer_point(p_target, output, snap_state.snap_target, begin, CanvasItemEditorViewState::SNAP_TARGET_PARENT, rotation);
+				_snap_if_closer_point(p_target, output, snap_state.snap_target, (begin + end) / 2.0, CanvasItemEditorViewState::SNAP_TARGET_PARENT, rotation);
+				_snap_if_closer_point(p_target, output, snap_state.snap_target, end, CanvasItemEditorViewState::SNAP_TARGET_PARENT, rotation);
 			} else if (const CanvasItem *parent_ci = Object::cast_to<CanvasItem>(p_self_canvas_item->get_parent())) {
 				if (parent_ci->_edit_use_rect()) {
 					Point2 begin = p_self_canvas_item->get_transform().affine_inverse().xform(parent_ci->_edit_get_rect().get_position());
 					Point2 end = p_self_canvas_item->get_transform().affine_inverse().xform(parent_ci->_edit_get_rect().get_position() + parent_ci->_edit_get_rect().get_size());
-					_snap_if_closer_point(p_target, output, view_state.snap_target, begin, CanvasItemEditorViewState::SNAP_TARGET_PARENT, rotation);
-					_snap_if_closer_point(p_target, output, view_state.snap_target, (begin + end) / 2.0, CanvasItemEditorViewState::SNAP_TARGET_PARENT, rotation);
-					_snap_if_closer_point(p_target, output, view_state.snap_target, end, CanvasItemEditorViewState::SNAP_TARGET_PARENT, rotation);
+					_snap_if_closer_point(p_target, output, snap_state.snap_target, begin, CanvasItemEditorViewState::SNAP_TARGET_PARENT, rotation);
+					_snap_if_closer_point(p_target, output, snap_state.snap_target, (begin + end) / 2.0, CanvasItemEditorViewState::SNAP_TARGET_PARENT, rotation);
+					_snap_if_closer_point(p_target, output, snap_state.snap_target, end, CanvasItemEditorViewState::SNAP_TARGET_PARENT, rotation);
 				} else {
 					Point2 position = p_self_canvas_item->get_transform().affine_inverse().xform(Point2());
-					_snap_if_closer_point(p_target, output, view_state.snap_target, position, CanvasItemEditorViewState::SNAP_TARGET_PARENT, rotation);
+					_snap_if_closer_point(p_target, output, snap_state.snap_target, position, CanvasItemEditorViewState::SNAP_TARGET_PARENT, rotation);
 				}
 			}
 		}
@@ -473,8 +482,8 @@ Point2 CanvasItemEditor::snap_point(Point2 p_target, unsigned int p_modes, unsig
 			if (const Control *c = Object::cast_to<Control>(p_self_canvas_item)) {
 				Point2 begin = p_self_canvas_item->get_screen_transform().xform(_anchor_to_position(c, Point2(c->get_anchor(SIDE_LEFT), c->get_anchor(SIDE_TOP))));
 				Point2 end = p_self_canvas_item->get_screen_transform().xform(_anchor_to_position(c, Point2(c->get_anchor(SIDE_RIGHT), c->get_anchor(SIDE_BOTTOM))));
-				_snap_if_closer_point(p_target, output, view_state.snap_target, begin, CanvasItemEditorViewState::SNAP_TARGET_SELF_ANCHORS, rotation);
-				_snap_if_closer_point(p_target, output, view_state.snap_target, end, CanvasItemEditorViewState::SNAP_TARGET_SELF_ANCHORS, rotation);
+				_snap_if_closer_point(p_target, output, snap_state.snap_target, begin, CanvasItemEditorViewState::SNAP_TARGET_SELF_ANCHORS, rotation);
+				_snap_if_closer_point(p_target, output, snap_state.snap_target, end, CanvasItemEditorViewState::SNAP_TARGET_SELF_ANCHORS, rotation);
 			}
 		}
 
@@ -483,8 +492,8 @@ Point2 CanvasItemEditor::snap_point(Point2 p_target, unsigned int p_modes, unsig
 			if (p_self_canvas_item->_edit_use_rect()) {
 				Point2 begin = p_self_canvas_item->get_screen_transform().xform(p_self_canvas_item->_edit_get_rect().get_position());
 				Point2 end = p_self_canvas_item->get_screen_transform().xform(p_self_canvas_item->_edit_get_rect().get_position() + p_self_canvas_item->_edit_get_rect().get_size());
-				_snap_if_closer_point(p_target, output, view_state.snap_target, begin, CanvasItemEditorViewState::SNAP_TARGET_SELF, rotation);
-				_snap_if_closer_point(p_target, output, view_state.snap_target, end, CanvasItemEditorViewState::SNAP_TARGET_SELF, rotation);
+				_snap_if_closer_point(p_target, output, snap_state.snap_target, begin, CanvasItemEditorViewState::SNAP_TARGET_SELF, rotation);
+				_snap_if_closer_point(p_target, output, snap_state.snap_target, end, CanvasItemEditorViewState::SNAP_TARGET_SELF, rotation);
 			}
 		}
 
@@ -492,10 +501,10 @@ Point2 CanvasItemEditor::snap_point(Point2 p_target, unsigned int p_modes, unsig
 		if ((is_snap_active && snap_node_center && (p_modes & SNAP_NODE_CENTER)) || (p_forced_modes & SNAP_NODE_CENTER)) {
 			if (p_self_canvas_item->_edit_use_rect()) {
 				Point2 center = p_self_canvas_item->get_screen_transform().xform(p_self_canvas_item->_edit_get_rect().get_center());
-				_snap_if_closer_point(p_target, output, view_state.snap_target, center, CanvasItemEditorViewState::SNAP_TARGET_SELF, rotation);
+				_snap_if_closer_point(p_target, output, snap_state.snap_target, center, CanvasItemEditorViewState::SNAP_TARGET_SELF, rotation);
 			} else {
 				Point2 position = p_self_canvas_item->get_screen_transform().xform(Point2());
-				_snap_if_closer_point(p_target, output, view_state.snap_target, position, CanvasItemEditorViewState::SNAP_TARGET_SELF, rotation);
+				_snap_if_closer_point(p_target, output, snap_state.snap_target, position, CanvasItemEditorViewState::SNAP_TARGET_SELF, rotation);
 			}
 		}
 	}
@@ -514,7 +523,7 @@ Point2 CanvasItemEditor::snap_point(Point2 p_target, unsigned int p_modes, unsig
 
 		_snap_other_nodes(
 				p_target, to_snap_transform,
-				output, view_state.snap_target,
+				output, snap_state.snap_target,
 				CanvasItemEditorViewState::SNAP_TARGET_OTHER_NODE,
 				exceptions,
 				get_tree()->get_edited_scene_root());
@@ -525,12 +534,12 @@ Point2 CanvasItemEditor::snap_point(Point2 p_target, unsigned int p_modes, unsig
 		if (Node *scene = EditorNode::get_singleton()->get_edited_scene()) {
 			Array vguides = scene->get_meta("_edit_vertical_guides_", Array());
 			for (int i = 0; i < vguides.size(); i++) {
-				_snap_if_closer_float(p_target.x, output.x, view_state.snap_target[0], vguides[i], CanvasItemEditorViewState::SNAP_TARGET_GUIDE);
+				_snap_if_closer_float(p_target.x, output.x, snap_state.snap_target[0], vguides[i], CanvasItemEditorViewState::SNAP_TARGET_GUIDE);
 			}
 
 			Array hguides = scene->get_meta("_edit_horizontal_guides_", Array());
 			for (int i = 0; i < hguides.size(); i++) {
-				_snap_if_closer_float(p_target.y, output.y, view_state.snap_target[1], hguides[i], CanvasItemEditorViewState::SNAP_TARGET_GUIDE);
+				_snap_if_closer_float(p_target.y, output.y, snap_state.snap_target[1], hguides[i], CanvasItemEditorViewState::SNAP_TARGET_GUIDE);
 			}
 		}
 	}
@@ -549,7 +558,7 @@ Point2 CanvasItemEditor::snap_point(Point2 p_target, unsigned int p_modes, unsig
 		Point2 grid_output;
 		grid_output.x = Math::snapped(p_target.x - offset.x, grid_step.x * Math::pow(2.0, grid_step_multiplier)) + offset.x;
 		grid_output.y = Math::snapped(p_target.y - offset.y, grid_step.y * Math::pow(2.0, grid_step_multiplier)) + offset.y;
-		_snap_if_closer_point(p_target, output, view_state.snap_target, grid_output, CanvasItemEditorViewState::SNAP_TARGET_GRID, 0.0, -1.0);
+		_snap_if_closer_point(p_target, output, snap_state.snap_target, grid_output, CanvasItemEditorViewState::SNAP_TARGET_GRID, 0.0, -1.0);
 	}
 
 	if (((snap_pixel && (p_modes & SNAP_PIXEL)) || (p_forced_modes & SNAP_PIXEL)) && rotation == 0.0) {
@@ -557,7 +566,7 @@ Point2 CanvasItemEditor::snap_point(Point2 p_target, unsigned int p_modes, unsig
 		output = output.snappedf(1);
 	}
 
-	view_state.snap_transform = Transform2D(rotation, output);
+	snap_state.snap_transform = Transform2D(rotation, output);
 
 	return output;
 }
@@ -2098,229 +2107,46 @@ void CanvasItemEditor::_bind_methods() {
 }
 
 Dictionary CanvasItemEditor::get_state() const {
-	// Per-scene layout/config round-trip. Global config (snap_*, show_*, grid_visibility,
-	// grid_*) is still serialized here per scene — unchanged from before #927. Reconciling
-	// that with the shared-controller model is deferred to #929.
-	Dictionary state;
-	// Take the editor scale into account.
-	state["zoom"] = view_state.zoom / MAX(1, EDSCALE);
-	state["ofs"] = view_state.view_offset;
-	state["grid_offset"] = grid_offset;
-	state["grid_step"] = grid_step;
-	state["primary_grid_step"] = primary_grid_step;
-	state["snap_rotation_offset"] = snap_rotation_offset;
-	state["snap_rotation_step"] = snap_rotation_step;
-	state["snap_scale_step"] = snap_scale_step;
-	state["smart_snap_active"] = smart_snap_active;
-	state["grid_snap_active"] = grid_snap_active;
-	state["snap_node_parent"] = snap_node_parent;
-	state["snap_node_anchors"] = snap_node_anchors;
-	state["snap_node_sides"] = snap_node_sides;
-	state["snap_node_center"] = snap_node_center;
-	state["snap_other_nodes"] = snap_other_nodes;
-	state["snap_guides"] = snap_guides;
-	state["grid_visibility"] = grid_visibility;
-	state["show_origin"] = show_origin;
-	state["show_viewport"] = show_viewport;
-	state["show_rulers"] = show_rulers;
-	state["show_guides"] = show_guides;
-	state["show_helpers"] = show_helpers;
-	state["show_zoom_control"] = editor_view->get_zoom_widget()->is_visible();
-	state["show_position_gizmos"] = show_position_gizmos;
-	state["show_lock_gizmos"] = show_lock_gizmos;
-	state["show_group_gizmos"] = show_group_gizmos;
-	state["show_transformation_gizmos"] = show_transformation_gizmos;
-	state["snap_rotation"] = snap_rotation;
-	state["snap_scale"] = snap_scale;
-	state["snap_relative"] = snap_relative;
-	state["snap_pixel"] = snap_pixel;
+	// Per-scene geometry only (zoom/pan). Global snap/show/grid config lives on the
+	// shared controller and is not round-tripped per scene (#929).
+	Dictionary state = CanvasItemEditorSceneGeometryState::to_dict(view_state);
+	if (const CanvasItemEditorView *view = get_focused_view()) {
+		state["show_zoom_control"] = view->get_zoom_widget()->is_visible();
+	}
 	return state;
 }
 
 void CanvasItemEditor::set_state(const Dictionary &p_state) {
-	// Per-scene layout/config round-trip. Global config (snap_*, show_*, grid_visibility,
-	// grid_*) is still deserialized here per scene — unchanged from before #927. Reconciling
-	// that with the shared-controller model is deferred to #929.
+	// Per-scene geometry only. Legacy dictionaries may still carry global config keys
+	// from older editors; those are ignored so scene switches cannot clobber toolbar state.
 	bool update_scrollbars = false;
-	Dictionary state = p_state;
-	if (state.has("zoom")) {
-		// Compensate the editor scale, so that the editor scale can be changed
-		// and the zoom level will still be the same (relative to the editor scale).
-		view_state.zoom = real_t(p_state["zoom"]) * MAX(1, EDSCALE);
-		editor_view->get_zoom_widget()->set_zoom(view_state.zoom);
+	CanvasItemEditorSceneGeometryState::apply(view_state, p_state);
+
+	if (p_state.has("zoom")) {
+		if (CanvasItemEditorView *view = get_focused_view()) {
+			view->get_zoom_widget()->set_zoom(view_state.zoom);
+		}
 		if (auto_resampling_enabled) {
 			resample_timer->start();
 		}
 	}
 
-	if (state.has("ofs")) {
-		view_state.view_offset = p_state["ofs"];
-		view_state.previous_update_view_offset = view_state.view_offset;
+	if (p_state.has("ofs")) {
 		update_scrollbars = true;
 	}
 
-	if (state.has("grid_offset")) {
-		grid_offset = state["grid_offset"];
-	}
-
-	if (state.has("grid_step")) {
-		grid_step = state["grid_step"];
-	}
-
-	if (state.has("primary_grid_step")) {
-		primary_grid_step = state["primary_grid_step"];
-	}
-
-	if (state.has("snap_rotation_step")) {
-		snap_rotation_step = state["snap_rotation_step"];
-	}
-
-	if (state.has("snap_rotation_offset")) {
-		snap_rotation_offset = state["snap_rotation_offset"];
-	}
-
-	if (state.has("snap_scale_step")) {
-		snap_scale_step = state["snap_scale_step"];
-	}
-
-	if (state.has("smart_snap_active")) {
-		smart_snap_active = state["smart_snap_active"];
-		smart_snap_button->set_pressed(smart_snap_active);
-	}
-
-	if (state.has("grid_snap_active")) {
-		grid_snap_active = state["grid_snap_active"];
-		grid_snap_button->set_pressed(grid_snap_active);
-	}
-
-	if (state.has("snap_node_parent")) {
-		snap_node_parent = state["snap_node_parent"];
-		int idx = smartsnap_config_popup->get_item_index(SNAP_USE_NODE_PARENT);
-		smartsnap_config_popup->set_item_checked(idx, snap_node_parent);
-	}
-
-	if (state.has("snap_node_anchors")) {
-		snap_node_anchors = state["snap_node_anchors"];
-		int idx = smartsnap_config_popup->get_item_index(SNAP_USE_NODE_ANCHORS);
-		smartsnap_config_popup->set_item_checked(idx, snap_node_anchors);
-	}
-
-	if (state.has("snap_node_sides")) {
-		snap_node_sides = state["snap_node_sides"];
-		int idx = smartsnap_config_popup->get_item_index(SNAP_USE_NODE_SIDES);
-		smartsnap_config_popup->set_item_checked(idx, snap_node_sides);
-	}
-
-	if (state.has("snap_node_center")) {
-		snap_node_center = state["snap_node_center"];
-		int idx = smartsnap_config_popup->get_item_index(SNAP_USE_NODE_CENTER);
-		smartsnap_config_popup->set_item_checked(idx, snap_node_center);
-	}
-
-	if (state.has("snap_other_nodes")) {
-		snap_other_nodes = state["snap_other_nodes"];
-		int idx = smartsnap_config_popup->get_item_index(SNAP_USE_OTHER_NODES);
-		smartsnap_config_popup->set_item_checked(idx, snap_other_nodes);
-	}
-
-	if (state.has("snap_guides")) {
-		snap_guides = state["snap_guides"];
-		int idx = smartsnap_config_popup->get_item_index(SNAP_USE_GUIDES);
-		smartsnap_config_popup->set_item_checked(idx, snap_guides);
-	}
-
-	if (state.has("grid_visibility")) {
-		grid_visibility = (GridVisibility)(int)(state["grid_visibility"]);
-	}
-
-	if (state.has("show_origin")) {
-		show_origin = state["show_origin"];
-		int idx = view_menu->get_popup()->get_item_index(SHOW_ORIGIN);
-		view_menu->get_popup()->set_item_checked(idx, show_origin);
-	}
-
-	if (state.has("show_viewport")) {
-		show_viewport = state["show_viewport"];
-		int idx = view_menu->get_popup()->get_item_index(SHOW_VIEWPORT);
-		view_menu->get_popup()->set_item_checked(idx, show_viewport);
-	}
-
-	if (state.has("show_rulers")) {
-		show_rulers = state["show_rulers"];
-		int idx = view_menu->get_popup()->get_item_index(SHOW_RULERS);
-		view_menu->get_popup()->set_item_checked(idx, show_rulers);
-		update_scrollbars = true;
-	}
-
-	if (state.has("show_guides")) {
-		show_guides = state["show_guides"];
-		int idx = view_menu->get_popup()->get_item_index(SHOW_GUIDES);
-		view_menu->get_popup()->set_item_checked(idx, show_guides);
-	}
-
-	if (state.has("show_helpers")) {
-		show_helpers = state["show_helpers"];
-		int idx = view_menu->get_popup()->get_item_index(SHOW_HELPERS);
-		view_menu->get_popup()->set_item_checked(idx, show_helpers);
-	}
-
-	if (state.has("show_position_gizmos")) {
-		show_position_gizmos = state["show_position_gizmos"];
-		int idx = gizmos_menu->get_item_index(SHOW_POSITION_GIZMOS);
-		gizmos_menu->set_item_checked(idx, show_position_gizmos);
-	}
-
-	if (state.has("show_lock_gizmos")) {
-		show_lock_gizmos = state["show_lock_gizmos"];
-		int idx = gizmos_menu->get_item_index(SHOW_LOCK_GIZMOS);
-		gizmos_menu->set_item_checked(idx, show_lock_gizmos);
-	}
-
-	if (state.has("show_group_gizmos")) {
-		show_group_gizmos = state["show_group_gizmos"];
-		int idx = gizmos_menu->get_item_index(SHOW_GROUP_GIZMOS);
-		gizmos_menu->set_item_checked(idx, show_group_gizmos);
-	}
-
-	if (state.has("show_transformation_gizmos")) {
-		show_transformation_gizmos = state["show_transformation_gizmos"];
-		int idx = gizmos_menu->get_item_index(SHOW_TRANSFORMATION_GIZMOS);
-		gizmos_menu->set_item_checked(idx, show_transformation_gizmos);
-	}
-
-	if (state.has("show_zoom_control")) {
-		// This one is not user-controllable, but instrumentable
-		editor_view->get_zoom_widget()->set_visible(state["show_zoom_control"]);
-	}
-
-	if (state.has("snap_rotation")) {
-		snap_rotation = state["snap_rotation"];
-		int idx = snap_config_menu->get_popup()->get_item_index(SNAP_USE_ROTATION);
-		snap_config_menu->get_popup()->set_item_checked(idx, snap_rotation);
-	}
-
-	if (state.has("snap_scale")) {
-		snap_scale = state["snap_scale"];
-		int idx = snap_config_menu->get_popup()->get_item_index(SNAP_USE_SCALE);
-		snap_config_menu->get_popup()->set_item_checked(idx, snap_scale);
-	}
-
-	if (state.has("snap_relative")) {
-		snap_relative = state["snap_relative"];
-		int idx = snap_config_menu->get_popup()->get_item_index(SNAP_RELATIVE);
-		snap_config_menu->get_popup()->set_item_checked(idx, snap_relative);
-	}
-
-	if (state.has("snap_pixel")) {
-		snap_pixel = state["snap_pixel"];
-		int idx = snap_config_menu->get_popup()->get_item_index(SNAP_USE_PIXEL);
-		snap_config_menu->get_popup()->set_item_checked(idx, snap_pixel);
+	if (p_state.has("show_zoom_control")) {
+		if (CanvasItemEditorView *view = get_focused_view()) {
+			view->get_zoom_widget()->set_visible(p_state["show_zoom_control"]);
+		}
 	}
 
 	if (update_scrollbars) {
 		_update_scrollbars();
 	}
-	_get_viewport()->queue_redraw();
+	if (CanvasItemEditorViewport *viewport = _get_viewport()) {
+		viewport->queue_redraw();
+	}
 }
 
 void CanvasItemEditor::clear() {
@@ -2494,6 +2320,7 @@ CanvasItemEditor::CanvasItemEditor() {
 			{ int32_t(Key::KEY_5), int32_t(Key::KP_5) });
 
 	editor_view = memnew(CanvasItemEditorView(this, view_state));
+	views.push_back(editor_view);
 	editor_view->build_ui(right_panel_split);
 
 	select_button = memnew(Button);

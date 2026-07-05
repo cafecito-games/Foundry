@@ -162,6 +162,7 @@ private:
 
 	Tool tool = TOOL_SELECT;
 	CanvasItemEditorView *editor_view = nullptr;
+	Vector<CanvasItemEditorView *> views;
 
 	// Used for secondary menu items which are displayed depending on the currently selected node
 	// (such as MeshInstance's "Mesh" menu).
@@ -444,9 +445,11 @@ public:
 	Point2 snap_point(Point2 p_target, unsigned int p_modes = SNAP_DEFAULT, unsigned int p_forced_modes = 0, const CanvasItem *p_self_canvas_item = nullptr, const List<CanvasItem *> &p_other_nodes_exceptions = List<CanvasItem *>());
 	real_t snap_angle(real_t p_target, real_t p_start = 0) const;
 
-	Transform2D get_canvas_transform() const { return view_state.transform; }
+	Transform2D get_canvas_transform() const;
 
 	static CanvasItemEditor *get_singleton() { return singleton; }
+	CanvasItemEditorView *get_focused_view();
+	const CanvasItemEditorView *get_focused_view() const;
 	Dictionary get_state() const;
 	void set_state(const Dictionary &p_state);
 	void clear();
