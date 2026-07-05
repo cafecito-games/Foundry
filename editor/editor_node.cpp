@@ -4500,6 +4500,9 @@ void EditorNode::_remove_scene(int index, bool p_change_tab, bool p_allow_collap
 				scene_workspace->collapse(leaf);
 				_update_all_scene_tabs();
 				_update_tile_display_attachments();
+			} else {
+				// Kept the emptied tile (its sibling is a script leaf); keep it valid.
+				_ensure_scene_tile_has_scene(tile_id);
 			}
 		}
 	}
@@ -4901,6 +4904,30 @@ void EditorNode::_sync_script_leaf_path() {
 		// clear the leaf so a stale script is not persisted and reopened.
 		script_leaf->set_script_path(String());
 	}
+}
+
+void EditorNode::_ensure_scene_tile_has_scene(int p_tile_id) {
+	if (!scene_workspace) {
+		return;
+	}
+	WorkspaceLeafNode *leaf = scene_workspace->get_leaf_by_id(p_tile_id);
+	// Only applies to a surviving scene tile that ended up with no scenes (e.g. its
+	// last scene was closed or dragged away but it could not collapse into a script
+	// leaf). Give it a blank scene so a scene tile always has a valid current scene.
+	if (!leaf || !leaf->get_pane_tile()) {
+		return;
+	}
+	if (!editor_data.get_tile_scene_indices(p_tile_id).is_empty()) {
+		return;
+	}
+	const int blank_scene = editor_data.add_edited_scene(-1);
+	if (editor_data.get_scene_tile(blank_scene) != p_tile_id) {
+		editor_data.set_scene_tile(blank_scene, p_tile_id);
+	}
+	editor_data.set_tile_current_scene(p_tile_id, blank_scene);
+	_update_all_scene_tabs();
+	_bind_all_leaf_docks();
+	_update_tile_display_attachments();
 }
 
 void EditorNode::_close_script_leaf() {
@@ -6998,6 +7025,12 @@ void EditorNode::handle_tile_scene_drop(int p_target_tile_id, int p_region, int 
 	_bind_all_leaf_docks();
 	_update_all_scene_tabs();
 	_update_tile_display_attachments();
+
+	// The source tile may be left empty if it could not collapse into a script-leaf
+	// sibling. handle_scene_drop() collapses deferred, so run this after it to give
+	// any surviving empty source tile a blank scene.
+	callable_mp(this, &EditorNode::_ensure_scene_tile_has_scene).call_deferred(p_source_tile_id);
+
 	save_editor_layout_delayed();
 }
 
