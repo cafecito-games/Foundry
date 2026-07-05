@@ -2,7 +2,7 @@
 /*  test_main.cpp                                                         */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -49,28 +49,28 @@
 #include "tests/editor/run/test_run_target_readiness.h"
 #include "tests/editor/run/test_run_targets_panel.h"
 #include "tests/editor/test_bottom_drawer_geometry.h"
-#include "tests/editor/test_canvas_item_editor_view_state.h"
-#include "tests/editor/test_canvas_item_editor_view.h"
-#include "tests/editor/test_editor_plugin_focused_tile_forwarding.h"
+#include "tests/editor/test_bottom_drawer_layout.h"
 #include "tests/editor/test_canvas_item_editor_focused_accessor.h"
 #include "tests/editor/test_canvas_item_editor_secondary_view.h"
-#include "tests/editor/test_bottom_drawer_layout.h"
+#include "tests/editor/test_canvas_item_editor_view.h"
+#include "tests/editor/test_canvas_item_editor_view_state.h"
 #include "tests/editor/test_dock_scene_context_binding.h"
 #include "tests/editor/test_editor_autoload_settings.h"
-#include "tests/editor/test_editor_automation_snapshot.h"
 #include "tests/editor/test_editor_automation_driver.h"
 #include "tests/editor/test_editor_automation_mcp.h"
 #include "tests/editor/test_editor_automation_screenshot.h"
 #include "tests/editor/test_editor_automation_server.h"
+#include "tests/editor/test_editor_automation_snapshot.h"
 #include "tests/editor/test_editor_automation_wait.h"
 #include "tests/editor/test_editor_automation_workflow.h"
 #include "tests/editor/test_editor_export_platform_autoload.h"
 #include "tests/editor/test_editor_help_type_links.h"
+#include "tests/editor/test_editor_plugin_focused_tile_forwarding.h"
 #include "tests/editor/test_editor_scene_context.h"
-#include "tests/editor/test_node_3d_editor_world_scope.h"
-#include "tests/editor/test_scene_workspace.h"
 #include "tests/editor/test_extract_method_name_prompt.h"
+#include "tests/editor/test_node_3d_editor_world_scope.h"
 #include "tests/editor/test_refactor_diff_preview.h"
+#include "tests/editor/test_scene_workspace.h"
 #include "tests/editor/test_script_refactor_apply.h"
 #include "tests/editor/test_script_refactor_vcs_guard.h"
 #endif // TOOLS_ENABLED

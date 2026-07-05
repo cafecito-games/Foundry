@@ -2,7 +2,7 @@
 /*  node_3d_editor_plugin.cpp                                             */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -8046,8 +8046,8 @@ void Node3DEditor::_init_shared_furniture_resources() {
 	origin_enabled = true;
 	grid_enabled = true;
 
-		Ref<Shader> origin_shader = memnew(Shader);
-		origin_shader->set_code(R"(
+	Ref<Shader> origin_shader = memnew(Shader);
+	origin_shader->set_code(R"(
 // 3D editor origin line shader.
 
 shader_type spatial;
@@ -8094,78 +8094,78 @@ void fragment() {
 }
 )");
 
-		origin_mat.instantiate();
-		origin_mat->set_shader(origin_shader);
+	origin_mat.instantiate();
+	origin_mat->set_shader(origin_shader);
 
-		Vector<Vector3> origin_points;
-		origin_points.resize(6);
+	Vector<Vector3> origin_points;
+	origin_points.resize(6);
 
-		origin_points.set(0, Vector3(0.0, -0.5, 0.0));
-		origin_points.set(1, Vector3(0.0, -0.5, 1.0));
-		origin_points.set(2, Vector3(0.0, 0.5, 1.0));
+	origin_points.set(0, Vector3(0.0, -0.5, 0.0));
+	origin_points.set(1, Vector3(0.0, -0.5, 1.0));
+	origin_points.set(2, Vector3(0.0, 0.5, 1.0));
 
-		origin_points.set(3, Vector3(0.0, -0.5, 0.0));
-		origin_points.set(4, Vector3(0.0, 0.5, 1.0));
-		origin_points.set(5, Vector3(0.0, 0.5, 0.0));
+	origin_points.set(3, Vector3(0.0, -0.5, 0.0));
+	origin_points.set(4, Vector3(0.0, 0.5, 1.0));
+	origin_points.set(5, Vector3(0.0, 0.5, 0.0));
 
-		Array d;
-		d.resize(RS::ARRAY_MAX);
-		d[RenderingServer::ARRAY_VERTEX] = origin_points;
+	Array d;
+	d.resize(RS::ARRAY_MAX);
+	d[RenderingServer::ARRAY_VERTEX] = origin_points;
 
-		origin_mesh = RenderingServer::get_singleton()->mesh_create();
+	origin_mesh = RenderingServer::get_singleton()->mesh_create();
 
-		RenderingServer::get_singleton()->mesh_add_surface_from_arrays(origin_mesh, RenderingServer::PRIMITIVE_TRIANGLES, d);
-		RenderingServer::get_singleton()->mesh_surface_set_material(origin_mesh, 0, origin_mat->get_rid());
+	RenderingServer::get_singleton()->mesh_add_surface_from_arrays(origin_mesh, RenderingServer::PRIMITIVE_TRIANGLES, d);
+	RenderingServer::get_singleton()->mesh_surface_set_material(origin_mesh, 0, origin_mat->get_rid());
 
-		origin_multimesh = RenderingServer::get_singleton()->multimesh_create();
-		RenderingServer::get_singleton()->multimesh_set_mesh(origin_multimesh, origin_mesh);
-		RenderingServer::get_singleton()->multimesh_allocate_data(origin_multimesh, 12, RS::MultimeshTransformFormat::MULTIMESH_TRANSFORM_3D, true, false);
-		RenderingServer::get_singleton()->multimesh_set_visible_instances(origin_multimesh, -1);
+	origin_multimesh = RenderingServer::get_singleton()->multimesh_create();
+	RenderingServer::get_singleton()->multimesh_set_mesh(origin_multimesh, origin_mesh);
+	RenderingServer::get_singleton()->multimesh_allocate_data(origin_multimesh, 12, RS::MultimeshTransformFormat::MULTIMESH_TRANSFORM_3D, true, false);
+	RenderingServer::get_singleton()->multimesh_set_visible_instances(origin_multimesh, -1);
 
-		LocalVector<float> distances;
-		distances.resize(5);
-		distances[0] = -1000000.0;
-		distances[1] = -1000.0;
-		distances[2] = 0.0;
-		distances[3] = 1000.0;
-		distances[4] = 1000000.0;
+	LocalVector<float> distances;
+	distances.resize(5);
+	distances[0] = -1000000.0;
+	distances[1] = -1000.0;
+	distances[2] = 0.0;
+	distances[3] = 1000.0;
+	distances[4] = 1000000.0;
 
-		for (int i = 0; i < 3; i++) {
-			Color origin_color;
-			switch (i) {
-				case 0:
-					origin_color = get_theme_color(SNAME("axis_x_color"), EditorStringName(Editor));
-					break;
-				case 1:
-					origin_color = get_theme_color(SNAME("axis_y_color"), EditorStringName(Editor));
-					break;
-				case 2:
-					origin_color = get_theme_color(SNAME("axis_z_color"), EditorStringName(Editor));
-					break;
-				default:
-					origin_color = Color();
-					break;
-			}
-
-			Vector3 axis;
-			axis[i] = 1;
-
-			for (int j = 0; j < 4; j++) {
-				Transform3D t = Transform3D();
-				if (distances[j] > 0.0) {
-					t = t.scaled(axis * distances[j + 1]);
-					t = t.translated(axis * distances[j]);
-				} else {
-					t = t.scaled(axis * distances[j]);
-					t = t.translated(axis * distances[j + 1]);
-				}
-				RenderingServer::get_singleton()->multimesh_instance_set_transform(origin_multimesh, i * 4 + j, t);
-				RenderingServer::get_singleton()->multimesh_instance_set_color(origin_multimesh, i * 4 + j, origin_color);
-			}
+	for (int i = 0; i < 3; i++) {
+		Color origin_color;
+		switch (i) {
+			case 0:
+				origin_color = get_theme_color(SNAME("axis_x_color"), EditorStringName(Editor));
+				break;
+			case 1:
+				origin_color = get_theme_color(SNAME("axis_y_color"), EditorStringName(Editor));
+				break;
+			case 2:
+				origin_color = get_theme_color(SNAME("axis_z_color"), EditorStringName(Editor));
+				break;
+			default:
+				origin_color = Color();
+				break;
 		}
 
-		Ref<Shader> grid_shader = memnew(Shader);
-		grid_shader->set_code(R"(
+		Vector3 axis;
+		axis[i] = 1;
+
+		for (int j = 0; j < 4; j++) {
+			Transform3D t = Transform3D();
+			if (distances[j] > 0.0) {
+				t = t.scaled(axis * distances[j + 1]);
+				t = t.translated(axis * distances[j]);
+			} else {
+				t = t.scaled(axis * distances[j]);
+				t = t.translated(axis * distances[j + 1]);
+			}
+			RenderingServer::get_singleton()->multimesh_instance_set_transform(origin_multimesh, i * 4 + j, t);
+			RenderingServer::get_singleton()->multimesh_instance_set_color(origin_multimesh, i * 4 + j, origin_color);
+		}
+	}
+
+	Ref<Shader> grid_shader = memnew(Shader);
+	grid_shader->set_code(R"(
 // 3D editor grid shader.
 
 shader_type spatial;
