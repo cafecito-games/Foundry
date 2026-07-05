@@ -4842,6 +4842,25 @@ void EditorNode::_detach_script_surface() {
 		app_screen->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	}
 	app_screen->hide();
+	if (EditorPlugin *script_plugin = editor_main_screen ? editor_main_screen->get_plugin_by_name("Script") : nullptr) {
+		script_plugin->make_visible(false);
+	}
+}
+
+void EditorNode::_close_script_leaf() {
+	if (!scene_workspace) {
+		return;
+	}
+	WorkspaceLeafNode *leaf = scene_workspace->get_script_leaf();
+	if (!leaf) {
+		return;
+	}
+	// Rescue the shared script surface back to its home before the leaf (and its
+	// surface host) is freed, then remove the now-empty script leaf.
+	_detach_script_surface();
+	if (scene_workspace->get_leaf_count() > 1) {
+		scene_workspace->collapse(leaf);
+	}
 }
 
 void EditorNode::reveal_script_leaf() {
@@ -7043,7 +7062,11 @@ void EditorNode::_load_workspace_from_config(const Ref<ConfigFile> &p_config_fil
 	_reparent_scene_mode_into(scene_workspace->get_focused_tile());
 
 	// Re-host the script surface into a restored script leaf and reopen its script.
-	if (WorkspaceLeafNode *script_leaf_node = scene_workspace->get_script_leaf()) {
+	// A feature profile that disables scripts is applied before layout restore, so
+	// honor it by closing the restored script leaf instead of reopening it.
+	if (editor_main_screen && !editor_main_screen->is_button_enabled(EditorMainScreen::EDITOR_SCRIPT)) {
+		_close_script_leaf();
+	} else if (WorkspaceLeafNode *script_leaf_node = scene_workspace->get_script_leaf()) {
 		WorkspaceLeafContent *content = script_leaf_node->get_leaf_content();
 		ScriptLeaf *script_leaf = content ? Object::cast_to<ScriptLeaf>(content->get_root_control()) : nullptr;
 		if (script_leaf) {
@@ -8835,6 +8858,12 @@ void EditorNode::_feature_profile_changed() {
 		if (!Engine::get_singleton()->is_recovery_mode_hint()) {
 			editor_main_screen->set_button_enabled(EditorMainScreen::EDITOR_GAME, true);
 		}
+	}
+
+	// The script editor now lives in a workspace leaf rather than a toolbar tab, so
+	// disabling the script feature must also close any open script leaf.
+	if (editor_main_screen && !editor_main_screen->is_button_enabled(EditorMainScreen::EDITOR_SCRIPT)) {
+		_close_script_leaf();
 	}
 }
 
