@@ -3997,8 +3997,9 @@ static Ref<ScriptTestRunner> load_script_test_runner(const String &p_path) {
 		}
 		runner_object = memnew(ScriptTestRunner);
 	}
-	runner_object->set_script(script_res);
-	return Ref<ScriptTestRunner>(runner_object);
+	Ref<ScriptTestRunner> runner(runner_object);
+	runner->set_script(script_res);
+	return runner;
 }
 
 int Main::start() {
