@@ -715,9 +715,15 @@ private:
 	void _remount_workspace_pane();
 	void _update_focused_dock_singletons(ScenePaneTile *p_tile);
 	void _bind_leaf_docks(int p_leaf_id);
+	void _bind_all_leaf_docks();
 	void _wire_leaf_tile(WorkspaceLeafNode *p_leaf);
 	void _on_leaf_added(int p_leaf_id);
+	void _on_leaf_removed(int p_leaf_id, int p_successor_leaf_id);
 	void _on_leaf_focus_requested(int p_leaf_id);
+	void _focus_tile(int p_tile_id);
+	void _on_tile_tab_changed(int p_tab, int p_tile_id);
+	void _on_tile_tab_closed(int p_tab, int p_tile_id);
+	void _update_all_scene_tabs();
 	void _focus_leaf_scene_tree_dock();
 	void _focus_leaf_inspector_dock();
 

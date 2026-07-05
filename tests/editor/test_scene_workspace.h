@@ -360,4 +360,141 @@ TEST_CASE("[SceneTree][Editor] tree-persist") {
 	h2.unmount();
 }
 
+static int add_test_scene(EditorData &p_data, int p_tile_id, Node2D *p_root = nullptr) {
+	p_data.register_tile(p_tile_id);
+	p_data.set_focused_tile_id(p_tile_id);
+	const int idx = p_data.add_edited_scene();
+	if (p_root) {
+		EditorSceneContext *context = p_data.get_scene_context(idx);
+		context->set_scene_root_node(p_root);
+	}
+	p_data.set_tile_current_scene(p_tile_id, idx);
+	return idx;
+}
+
+static void check_focus_invariant(const EditorData &p_data, const EditorSceneWorkspace *p_workspace) {
+	const int focused_tile = p_data.get_focused_tile_id();
+	CHECK(p_data.get_edited_scene() == p_data.get_tile_current_scene(focused_tile));
+	if (p_workspace) {
+		CHECK(focused_tile == p_workspace->get_focused_leaf_id());
+	}
+}
+
+TEST_CASE("[SceneTree][Editor] focus-invariant") {
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	const int tile_a = h.workspace->get_focused_leaf_id();
+	h.editor_data.register_tile(tile_a);
+	h.editor_data.set_focused_tile_id(tile_a);
+
+	Node2D *root_a = memnew(Node2D);
+	const int scene_a = add_test_scene(h.editor_data, tile_a, root_a);
+	Node2D *root_b = memnew(Node2D);
+	const int scene_b = add_test_scene(h.editor_data, tile_a, root_b);
+	h.pump();
+
+	h.editor_data.set_focused_tile_id(tile_a);
+	h.editor_data.set_tile_current_scene(tile_a, scene_a);
+	h.editor_data.set_edited_scene(scene_a);
+	check_focus_invariant(h.editor_data, h.workspace);
+
+	WorkspaceLeafNode *second = h.workspace->split(h.workspace->get_focused_leaf(), false, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
+	h.pump();
+	REQUIRE(second != nullptr);
+	const int tile_b = second->get_leaf_id();
+	h.editor_data.register_tile(tile_b);
+
+	Node2D *root_c = memnew(Node2D);
+	const int scene_c = add_test_scene(h.editor_data, tile_b, root_c);
+	h.pump();
+
+	h.workspace->set_focused_leaf(tile_b);
+	h.editor_data.set_focused_tile_id(tile_b);
+	h.editor_data.set_tile_current_scene(tile_b, scene_c);
+	h.editor_data.set_edited_scene(scene_c);
+	check_focus_invariant(h.editor_data, h.workspace);
+
+	h.workspace->set_focused_leaf(tile_a);
+	h.editor_data.set_focused_tile_id(tile_a);
+	h.editor_data.set_tile_current_scene(tile_a, scene_b);
+	h.editor_data.set_edited_scene(scene_b);
+	check_focus_invariant(h.editor_data, h.workspace);
+
+	const int collapsed_id = tile_b;
+	WorkspaceLeafNode *survivor = h.workspace->get_focused_leaf();
+	h.workspace->collapse(second);
+	h.pump();
+	h.editor_data.migrate_tile_scenes(collapsed_id, survivor->get_leaf_id());
+	h.editor_data.unregister_tile(collapsed_id);
+	check_focus_invariant(h.editor_data, h.workspace);
+	CHECK(h.editor_data.get_tile_scene_indices(survivor->get_leaf_id()).has(scene_c));
+
+	h.unmount();
+}
+
+TEST_CASE("[SceneTree][Editor] tile-id-model") {
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	const int tile_a = h.workspace->get_focused_leaf_id();
+	Node2D *root_a = memnew(Node2D);
+	const int scene_a = add_test_scene(h.editor_data, tile_a, root_a);
+	Node2D *root_b = memnew(Node2D);
+	const int scene_b = add_test_scene(h.editor_data, tile_a, root_b);
+	h.pump();
+
+	CHECK(h.editor_data.get_edited_scenes()[scene_a].tile_id == tile_a);
+	CHECK(h.editor_data.get_edited_scenes()[scene_b].tile_id == tile_a);
+	CHECK(h.editor_data.get_tile_current_scene(tile_a) == scene_b);
+
+	WorkspaceLeafNode *second = h.workspace->split(h.workspace->get_focused_leaf(), true, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
+	h.pump();
+	REQUIRE(second != nullptr);
+	const int tile_b = second->get_leaf_id();
+	h.editor_data.register_tile(tile_b);
+
+	Node2D *root_c = memnew(Node2D);
+	const int scene_c = add_test_scene(h.editor_data, tile_b, root_c);
+	h.pump();
+
+	CHECK(h.editor_data.get_edited_scenes()[scene_a].tile_id == tile_a);
+	CHECK(h.editor_data.get_edited_scenes()[scene_c].tile_id == tile_b);
+	CHECK(h.editor_data.get_tile_scene_indices(tile_a).size() == 2);
+	CHECK(h.editor_data.get_tile_scene_indices(tile_b).size() == 1);
+
+	h.workspace->move_content("main", h.workspace->get_leaf_by_id(tile_a), second);
+	h.pump();
+	CHECK(second->get_content_descriptor() == "main");
+
+	Ref<ConfigFile> config;
+	config.instantiate();
+	EditorSceneWorkspace::save_to_config(config, h.workspace);
+	const Vector<int> saved_tile_ids = { tile_a, tile_b };
+	const int saved_focus = h.workspace->get_focused_leaf_id();
+
+	h.unmount();
+
+	WorkspaceHarness h2;
+	h2.mount();
+	h2.workspace->restore_from_config(config);
+	h2.pump();
+
+	for (int tile_id : saved_tile_ids) {
+		CHECK(h2.workspace->get_leaf_by_id(tile_id) != nullptr);
+	}
+	CHECK(h2.workspace->get_focused_leaf_id() == saved_focus);
+
+	WorkspaceLeafNode *fourth = h2.workspace->split(h2.workspace->get_focused_leaf(), false, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
+	h2.pump();
+	for (int tile_id : saved_tile_ids) {
+		CHECK(fourth->get_leaf_id() != tile_id);
+	}
+	CHECK(fourth->get_leaf_id() > tile_b);
+
+	h2.unmount();
+}
+
 } // namespace TestSceneWorkspace

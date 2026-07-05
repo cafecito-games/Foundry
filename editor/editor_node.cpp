@@ -6502,26 +6502,47 @@ void EditorNode::_bind_leaf_docks(int p_leaf_id) {
 	if (!tile) {
 		return;
 	}
-	EditorSceneContext *context = active_scene_context ? active_scene_context : no_scene_context;
-	if (p_leaf_id != scene_workspace->get_focused_leaf_id()) {
-		context = no_scene_context;
-	}
+	const int scene_idx = editor_data.get_tile_current_scene(p_leaf_id);
+	EditorSceneContext *context = scene_idx >= 0 ? editor_data.get_scene_context(scene_idx) : no_scene_context;
 	tile->get_scene_tree_dock()->set_scene_context(context);
 	tile->get_inspector_dock()->set_scene_context(context);
+}
+
+void EditorNode::_bind_all_leaf_docks() {
+	if (!scene_workspace) {
+		return;
+	}
+	for (WorkspaceLeafNode *leaf : scene_workspace->get_leaves()) {
+		_bind_leaf_docks(leaf->get_leaf_id());
+	}
+}
+
+void EditorNode::_update_all_scene_tabs() {
+	if (!scene_workspace) {
+		if (scene_tabs) {
+			scene_tabs->update_scene_tabs();
+		}
+		return;
+	}
+	for (ScenePaneTile *tile : scene_workspace->get_tiles()) {
+		tile->get_scene_tabs()->update_scene_tabs();
+	}
 }
 
 void EditorNode::_wire_leaf_tile(WorkspaceLeafNode *p_leaf) {
 	ERR_FAIL_NULL(p_leaf);
 	ScenePaneTile *tile = p_leaf->get_pane_tile();
 	ERR_FAIL_NULL(tile);
-	tile->get_scene_tabs()->connect("tab_changed", callable_mp(this, &EditorNode::_set_current_scene));
-	tile->get_scene_tabs()->connect("tab_closed", callable_mp(this, &EditorNode::_scene_tab_closed));
+	const int leaf_id = p_leaf->get_leaf_id();
+	tile->get_scene_tabs()->connect("tab_changed", callable_mp(this, &EditorNode::_on_tile_tab_changed).bind(leaf_id));
+	tile->get_scene_tabs()->connect("tab_closed", callable_mp(this, &EditorNode::_on_tile_tab_closed).bind(leaf_id));
 	tile->get_scene_tree_dock()->set_scene_context(no_scene_context);
 	tile->get_inspector_dock()->set_scene_context(no_scene_context);
 }
 
 void EditorNode::_on_leaf_added(int p_leaf_id) {
 	ERR_FAIL_NULL(scene_workspace);
+	editor_data.register_tile(p_leaf_id);
 	WorkspaceLeafNode *leaf = scene_workspace->get_leaf_by_id(p_leaf_id);
 	ERR_FAIL_NULL(leaf);
 	_wire_leaf_tile(leaf);
@@ -6537,17 +6558,62 @@ void EditorNode::_on_leaf_added(int p_leaf_id) {
 	}
 }
 
-void EditorNode::_on_leaf_focus_requested(int p_leaf_id) {
+void EditorNode::_on_leaf_removed(int p_leaf_id, int p_successor_leaf_id) {
+	editor_data.migrate_tile_scenes(p_leaf_id, p_successor_leaf_id);
+	editor_data.unregister_tile(p_leaf_id);
+	_update_all_scene_tabs();
+	_bind_all_leaf_docks();
+}
+
+void EditorNode::_focus_tile(int p_tile_id) {
 	ERR_FAIL_NULL(scene_workspace);
-	WorkspaceLeafNode *leaf = scene_workspace->get_leaf_by_id(p_leaf_id);
+	ERR_FAIL_NULL(scene_workspace->get_leaf_by_id(p_tile_id));
+
+	const int scene_idx = editor_data.get_tile_current_scene(p_tile_id);
+	EditorSceneContext *expected_context = scene_idx >= 0 ? editor_data.get_scene_context(scene_idx) : no_scene_context;
+	const bool already_focused = editor_data.get_focused_tile_id() == p_tile_id && scene_workspace->get_focused_leaf_id() == p_tile_id;
+	const bool already_current = editor_data.get_edited_scene() == scene_idx && active_scene_context == expected_context;
+	if (already_focused && already_current) {
+		return;
+	}
+
+	scene_workspace->set_focused_leaf(p_tile_id);
+	editor_data.set_focused_tile_id(p_tile_id);
+
+	WorkspaceLeafNode *leaf = scene_workspace->get_leaf_by_id(p_tile_id);
 	ERR_FAIL_NULL(leaf);
 	ScenePaneTile *tile = leaf->get_pane_tile();
 	ERR_FAIL_NULL(tile);
 
-	scene_workspace->set_focused_leaf(p_leaf_id);
 	_update_focused_dock_singletons(tile);
 	_remount_workspace_pane();
-	_bind_leaf_docks(p_leaf_id);
+	_bind_all_leaf_docks();
+
+	_set_current_scene_nocheck(scene_idx);
+}
+
+void EditorNode::_on_leaf_focus_requested(int p_leaf_id) {
+	ERR_FAIL_NULL(scene_workspace);
+	WorkspaceLeafNode *leaf = scene_workspace->get_leaf_by_id(p_leaf_id);
+	ERR_FAIL_NULL(leaf);
+	ERR_FAIL_NULL(leaf->get_pane_tile());
+	_focus_tile(p_leaf_id);
+}
+
+void EditorNode::_on_tile_tab_changed(int p_tab, int p_tile_id) {
+	_focus_tile(p_tile_id);
+	const int scene_idx = editor_data.tile_tab_to_scene_index(p_tile_id, p_tab);
+	if (scene_idx >= 0) {
+		_set_current_scene(scene_idx);
+	}
+}
+
+void EditorNode::_on_tile_tab_closed(int p_tab, int p_tile_id) {
+	const int scene_idx = editor_data.tile_tab_to_scene_index(p_tile_id, p_tab);
+	if (scene_idx >= 0) {
+		_focus_tile(p_tile_id);
+		_scene_tab_closed(scene_idx);
+	}
 }
 
 void EditorNode::_focus_leaf_scene_tree_dock() {
@@ -6578,15 +6644,21 @@ void EditorNode::_load_workspace_from_config(const Ref<ConfigFile> &p_config_fil
 	scene_workspace->restore_from_config(p_config_file);
 
 	for (WorkspaceLeafNode *leaf : scene_workspace->get_leaves()) {
-		_wire_leaf_tile(leaf);
-		_bind_leaf_docks(leaf->get_leaf_id());
+		editor_data.register_tile(leaf->get_leaf_id());
 	}
+	editor_data.set_focused_tile_id(scene_workspace->get_focused_leaf_id());
+
+	for (WorkspaceLeafNode *leaf : scene_workspace->get_leaves()) {
+		_wire_leaf_tile(leaf);
+	}
+	_bind_all_leaf_docks();
 
 	WorkspaceLeafNode *focused_leaf = scene_workspace->get_focused_leaf();
 	if (focused_leaf && focused_leaf->get_pane_tile()) {
 		_update_focused_dock_singletons(focused_leaf->get_pane_tile());
 	}
 	_remount_workspace_pane();
+	_set_current_scene_nocheck(editor_data.get_tile_current_scene(editor_data.get_focused_tile_id()));
 }
 
 void EditorNode::_remount_workspace_pane() {
@@ -9293,15 +9365,18 @@ EditorNode::EditorNode() {
 	scene_workspace->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	scene_workspace->connect("leaf_focus_requested", callable_mp(this, &EditorNode::_on_leaf_focus_requested));
 	scene_workspace->connect("leaf_added", callable_mp(this, &EditorNode::_on_leaf_added));
+	scene_workspace->connect("leaf_removed", callable_mp(this, &EditorNode::_on_leaf_removed));
 
 	WorkspaceLeafNode *initial_leaf = scene_workspace->get_focused_leaf();
 	ERR_FAIL_NULL(initial_leaf);
+	editor_data.register_tile(initial_leaf->get_leaf_id());
+	editor_data.set_focused_tile_id(initial_leaf->get_leaf_id());
 	ScenePaneTile *initial_tile = initial_leaf->get_pane_tile();
 	ERR_FAIL_NULL(initial_tile);
 	_wire_leaf_tile(initial_leaf);
 	scene_tabs = initial_tile->get_scene_tabs();
 	_update_focused_dock_singletons(initial_tile);
-	_bind_leaf_docks(initial_leaf->get_leaf_id());
+	_bind_all_leaf_docks();
 
 	distraction_free = memnew(Button);
 	distraction_free->set_theme_type_variation("FlatMenuButton");

@@ -70,6 +70,8 @@ class ScenePaneTile : public VBoxContainer {
 	PanelContainer *focus_frame = nullptr; // Accent border when focused.
 
 	void _request_focus();
+	void _interaction_gui_input(const Ref<InputEvent> &p_event);
+	void _bind_focus_on_interaction(Control *p_control);
 
 protected:
 	void _notification(int p_what);

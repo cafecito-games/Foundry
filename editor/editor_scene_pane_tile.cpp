@@ -55,6 +55,18 @@ void ScenePaneTile::_notification(int p_what) {
 	}
 }
 
+void ScenePaneTile::_interaction_gui_input(const Ref<InputEvent> &p_event) {
+	Ref<InputEventMouseButton> mb = p_event;
+	if (mb.is_valid() && mb->is_pressed() && mb->get_button_index() == MouseButton::LEFT) {
+		_request_focus();
+	}
+}
+
+void ScenePaneTile::_bind_focus_on_interaction(Control *p_control) {
+	ERR_FAIL_NULL(p_control);
+	p_control->connect(SceneStringName(gui_input), callable_mp(this, &ScenePaneTile::_interaction_gui_input));
+}
+
 void ScenePaneTile::_request_focus() {
 	for (Node *node = get_parent(); node; node = node->get_parent()) {
 		EditorSceneWorkspace *workspace = Object::cast_to<EditorSceneWorkspace>(node);
@@ -197,6 +209,11 @@ void ScenePaneTile::setup(int p_tile_id, EditorSelection *p_editor_selection, Ed
 	preview_placeholder_label = memnew(Label);
 	preview_placeholder_label->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_CENTER);
 	placeholder_vb->add_child(preview_placeholder_label);
+
+	_bind_focus_on_interaction(scene_tabs);
+	_bind_focus_on_interaction(scene_tree_dock);
+	_bind_focus_on_interaction(inspector_dock);
+	_bind_focus_on_interaction(content_host);
 }
 
 ScenePaneTile::ScenePaneTile() {
