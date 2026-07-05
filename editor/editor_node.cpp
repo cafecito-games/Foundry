@@ -101,6 +101,7 @@
 #include "editor/editor_scene_context.h"
 #include "editor/editor_scene_workspace.h"
 #include "editor/editor_scene_pane_tile.h"
+#include "editor/editor_tile_drop_overlay.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/export/dedicated_server_export_plugin.h"
 #include "editor/export/editor_export.h"
@@ -4780,6 +4781,9 @@ void EditorNode::_reparent_main_screen_into(ScenePaneTile *p_tile) {
 	editor_main_screen->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 	editor_main_screen->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	editor_main_screen->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	if (EditorTileDropOverlay *overlay = p_tile->get_drop_overlay()) {
+		host->move_child(overlay, -1);
+	}
 }
 
 void EditorNode::_update_tile_display_attachments() {

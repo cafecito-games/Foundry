@@ -86,6 +86,7 @@ public:
 	InspectorDock *get_inspector_dock() const { return inspector_dock; }
 	Control *get_content_host() const { return content_host; }
 	SubViewportContainer *get_preview_container() const { return preview_container; }
+	EditorTileDropOverlay *get_drop_overlay() const { return drop_overlay; }
 
 	void set_focused_visual(bool p_focused);
 	void set_preview_mode(bool p_live_2d, bool p_placeholder_3d, const String &p_scene_name, const Ref<Texture2D> &p_icon);

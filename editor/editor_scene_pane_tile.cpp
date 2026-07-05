@@ -217,7 +217,9 @@ void ScenePaneTile::setup(int p_tile_id, EditorSelection *p_editor_selection, Ed
 
 	drop_overlay = memnew(EditorTileDropOverlay);
 	drop_overlay->set_owning_tile_id(p_tile_id);
-	focus_frame->add_child(drop_overlay);
+	drop_overlay->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+	drop_overlay->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	content_host->add_child(drop_overlay);
 }
 
 ScenePaneTile::ScenePaneTile() {
