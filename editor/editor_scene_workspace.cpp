@@ -95,7 +95,12 @@ void EditorSceneWorkspace::_collapse_if_empty(int p_tile_id) {
 		return;
 	}
 	if (editor_data->get_tile_scene_indices(p_tile_id).is_empty() && leaves.size() > 1) {
-		collapse(leaf);
+		// Only collapse into another scene tile; collapsing into a script leaf would
+		// promote a non-scene leaf as the successor tile. Keep the empty tile instead.
+		WorkspaceLeafNode *successor = peek_collapse_successor(leaf);
+		if (successor && successor->get_pane_tile()) {
+			collapse(leaf);
+		}
 	}
 }
 
