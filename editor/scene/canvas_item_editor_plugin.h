@@ -39,6 +39,7 @@ class Button;
 class ButtonGroup;
 class CanvasItemEditorView;
 class CanvasItemEditorViewport;
+class EditorSceneContext;
 class ConfirmationDialog;
 class EditorData;
 class EditorSelection;
@@ -163,6 +164,11 @@ private:
 	Tool tool = TOOL_SELECT;
 	CanvasItemEditorView *editor_view = nullptr;
 	Vector<CanvasItemEditorView *> views;
+	HashMap<CanvasItemEditorView *, CanvasItemEditorViewState *> secondary_view_states;
+
+	static int _claim_view_slot(Vector<CanvasItemEditorView *> &p_views, CanvasItemEditorView *p_view);
+	static bool _release_view_slot(Vector<CanvasItemEditorView *> &p_views, const CanvasItemEditorView *p_focused_view, CanvasItemEditorView *p_view);
+	static void _init_secondary_view_state(CanvasItemEditorViewState &p_state, real_t p_ruler_width_scaled);
 
 	// Used for secondary menu items which are displayed depending on the currently selected node
 	// (such as MeshInstance's "Mesh" menu).
@@ -450,6 +456,8 @@ public:
 	static CanvasItemEditor *get_singleton() { return singleton; }
 	CanvasItemEditorView *get_focused_view();
 	const CanvasItemEditorView *get_focused_view() const;
+	static CanvasItemEditorView *create_secondary_view(EditorSceneContext *p_context, Control *p_parent);
+	static void destroy_secondary_view(CanvasItemEditorView *p_view);
 	Dictionary get_state() const;
 	void set_state(const Dictionary &p_state);
 	void clear();

@@ -34,6 +34,8 @@
 #include "editor/docks/scene_tree_dock.h"
 #include "editor/editor_scene_workspace.h"
 #include "editor/editor_string_names.h"
+#include "editor/scene/canvas_item_editor_plugin.h"
+#include "editor/scene/canvas_item_editor_view.h"
 #include "editor/scene/editor_scene_tabs.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/gui/center_container.h"
@@ -126,8 +128,12 @@ void ScenePaneTile::set_focused_visual(bool p_focused) {
 }
 
 void ScenePaneTile::set_preview_mode(bool p_live_2d, bool p_placeholder_3d, const String &p_scene_name, const Ref<Texture2D> &p_icon) {
+	const bool show_canvas_view = p_live_2d && canvas_view;
 	if (preview_container) {
-		preview_container->set_visible(p_live_2d);
+		preview_container->set_visible(p_live_2d && !show_canvas_view);
+	}
+	if (canvas_view && canvas_view->get_viewport_scrollable()) {
+		canvas_view->get_viewport_scrollable()->set_visible(show_canvas_view);
 	}
 	if (preview_placeholder) {
 		preview_placeholder->set_visible(p_placeholder_3d);
@@ -220,4 +226,11 @@ ScenePaneTile::ScenePaneTile() {
 	set_mouse_filter(Control::MOUSE_FILTER_PASS);
 	set_focus_mode(Control::FOCUS_ALL);
 	set_clip_contents(true);
+}
+
+ScenePaneTile::~ScenePaneTile() {
+	if (canvas_view) {
+		CanvasItemEditor::destroy_secondary_view(canvas_view);
+		canvas_view = nullptr;
+	}
 }
