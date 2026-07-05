@@ -272,6 +272,7 @@ void EditorNode3DGizmo::_update_bvh() {
 	}
 
 	Node3DEditor::get_singleton()->update_gizmo_bvh_node(
+			spatial_node,
 			bvh_node_id,
 			aabb);
 }
@@ -835,7 +836,7 @@ void EditorNode3DGizmo::free() {
 
 	clear();
 
-	Node3DEditor::get_singleton()->remove_gizmo_bvh_node(bvh_node_id);
+	Node3DEditor::get_singleton()->remove_gizmo_bvh_node(spatial_node, bvh_node_id);
 	bvh_node_id = DynamicBVH::ID();
 
 	valid = false;
