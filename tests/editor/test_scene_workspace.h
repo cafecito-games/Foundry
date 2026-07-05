@@ -617,10 +617,14 @@ TEST_CASE("[SceneTree][Editor] reparent-render") {
 	// Switch back to the first tile and verify the live path again.
 	check_focused_live(tile_a_id, scene_a, scene_b, tile_b_id);
 
+	for (int i = 0; i < h.editor_data.get_edited_scene_count(); i++) {
+		h.editor_data.get_scene_context(i)->deactivate();
+	}
 	if (main_screen->get_parent()) {
 		main_screen->get_parent()->remove_child(main_screen);
 	}
 	memdelete(main_screen);
+	h.editor_data.clear_edited_scenes();
 
 	h.unmount();
 }
