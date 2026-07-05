@@ -41,6 +41,7 @@
 #include "editor/docks/scene_tree_dock.h"
 #include "editor/editor_main_screen.h"
 #include "editor/editor_node.h"
+#include "editor/editor_scene_context.h"
 #include "editor/editor_string_names.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/gui/editor_toaster.h"
@@ -2715,6 +2716,100 @@ CanvasItemEditor::CanvasItemEditor() {
 }
 
 CanvasItemEditor *CanvasItemEditor::singleton = nullptr;
+
+int CanvasItemEditor::_claim_view_slot(Vector<CanvasItemEditorView *> &p_views, CanvasItemEditorView *p_view) {
+	ERR_FAIL_NULL_V(p_view, -1);
+
+	int empty_slot = -1;
+	for (int i = 0; i < p_views.size(); i++) {
+		if (p_views[i] == p_view) {
+			return i;
+		}
+		if (!p_views[i] && empty_slot < 0) {
+			empty_slot = i;
+		}
+	}
+
+	if (empty_slot >= 0) {
+		p_views.write[empty_slot] = p_view;
+		return empty_slot;
+	}
+
+	p_views.push_back(p_view);
+	return p_views.size() - 1;
+}
+
+bool CanvasItemEditor::_release_view_slot(Vector<CanvasItemEditorView *> &p_views, const CanvasItemEditorView *p_focused_view, CanvasItemEditorView *p_view) {
+	if (!p_view || p_view == p_focused_view) {
+		return false;
+	}
+
+	for (int i = 0; i < p_views.size(); i++) {
+		if (p_views[i] == p_view) {
+			p_views.write[i] = nullptr;
+			return true;
+		}
+	}
+
+	return false;
+}
+
+void CanvasItemEditor::_init_secondary_view_state(CanvasItemEditorViewState &p_state, real_t p_ruler_width_scaled) {
+	p_state.zoom = 1.0 / MAX(1, EDSCALE);
+	p_state.view_offset = Point2(-150 - p_ruler_width_scaled, -95 - p_ruler_width_scaled);
+	p_state.previous_update_view_offset = p_state.view_offset;
+}
+
+CanvasItemEditorView *CanvasItemEditor::create_secondary_view(EditorSceneContext *p_context, Control *p_parent) {
+	ERR_FAIL_NULL_V(CanvasItemEditor::get_singleton(), nullptr);
+	ERR_FAIL_NULL_V(p_parent, nullptr);
+
+	CanvasItemEditor *editor = CanvasItemEditor::get_singleton();
+	CanvasItemEditorViewState *state = memnew(CanvasItemEditorViewState);
+	_init_secondary_view_state(*state, editor->ruler_width_scaled);
+	CanvasItemEditorView *view = memnew(CanvasItemEditorView(editor, *state));
+	editor->secondary_view_states[view] = state;
+	const int view_index = _claim_view_slot(editor->views, view);
+	if (view_index < 0) {
+		editor->secondary_view_states.erase(view);
+		memdelete(view);
+		memdelete(state);
+		ERR_FAIL_V_MSG(nullptr, "Unable to register secondary canvas view.");
+	}
+	view->build_ui(p_parent, false);
+	if (Control *scrollable = view->get_viewport_scrollable()) {
+		scrollable->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+	}
+	view->bind_context(p_context);
+	if (p_context) {
+		const Dictionary plugin_states = p_context->get_editor_plugin_states();
+		if (plugin_states.has("2D")) {
+			CanvasItemEditorSceneGeometryState::apply(*state, plugin_states["2D"]);
+		}
+	}
+	view->push_viewport_state();
+	return view;
+}
+
+void CanvasItemEditor::destroy_secondary_view(CanvasItemEditorView *p_view) {
+	CanvasItemEditor *editor = CanvasItemEditor::get_singleton();
+	if (!editor || !p_view || p_view == editor->editor_view) {
+		return;
+	}
+	if (!_release_view_slot(editor->views, editor->editor_view, p_view)) {
+		return;
+	}
+
+	CanvasItemEditorViewState *state = nullptr;
+	if (editor->secondary_view_states.has(p_view)) {
+		state = editor->secondary_view_states[p_view];
+	}
+	editor->secondary_view_states.erase(p_view);
+	memdelete(p_view);
+	if (state) {
+		memdelete(state);
+	}
+}
 
 void CanvasItemEditorPlugin::edit(Object *p_object) {
 	canvas_item_editor->edit(Object::cast_to<CanvasItem>(p_object));

@@ -33,6 +33,7 @@
 #include "scene/gui/box_container.h"
 
 class Camera3D;
+class CanvasItemEditorView;
 class EditorData;
 class EditorSceneTabs;
 class EditorSelection;
@@ -59,8 +60,9 @@ enum class TilePreviewMode {
  * [scene tab strip] + [scene tree dock | content host | inspector dock].
  *
  * The focused tile's content host hosts the single EditorMainScreen (as a
- * real laid-out child); non-focused tiles show a live 2D preview or a live 3D
- * editing view instead. Any interaction inside the tile focuses it first.
+ * real laid-out child); non-focused 2D tiles host a live CanvasItemEditorView
+ * and non-focused 3D tiles host a live Node3DEditorViewport. Any interaction
+ * inside the tile focuses it first.
  */
 class ScenePaneTile : public VBoxContainer {
 	FOUNDRY_CLASS(ScenePaneTile, VBoxContainer);
@@ -74,7 +76,8 @@ class ScenePaneTile : public VBoxContainer {
 	// minimum size and tiles stay freely resizable.
 	Control *content_host = nullptr;
 	InspectorDock *inspector_dock = nullptr; // Right, in-tile.
-	SubViewportContainer *preview_container = nullptr; // Non-focused 2D live preview.
+	SubViewportContainer *preview_container = nullptr; // Fallback when no canvas view exists.
+	CanvasItemEditorView *canvas_view = nullptr; // Non-focused 2D live editor view.
 	SubViewportContainer *context_viewport_host = nullptr; // Non-focused 3D scene viewport host.
 	SubViewportContainer *preview_3d_container = nullptr; // Camera-only 3D preview fallback.
 	SubViewport *preview_3d_viewport = nullptr;
@@ -100,6 +103,8 @@ public:
 	InspectorDock *get_inspector_dock() const { return inspector_dock; }
 	Control *get_content_host() const { return content_host; }
 	SubViewportContainer *get_preview_container() const { return preview_container; }
+	CanvasItemEditorView *get_canvas_view() const { return canvas_view; }
+	void set_canvas_view(CanvasItemEditorView *p_view) { canvas_view = p_view; }
 	EditorTileDropOverlay *get_drop_overlay() const { return drop_overlay; }
 	SubViewportContainer *get_context_viewport_host() const { return context_viewport_host; }
 	Node3DEditorViewport *get_spatial_view() const { return spatial_view; }

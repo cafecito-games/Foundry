@@ -35,6 +35,8 @@
 #include "editor/editor_tile_drop_overlay.h"
 #include "editor/editor_string_names.h"
 #include "editor/scene/3d/node_3d_editor_plugin.h"
+#include "editor/scene/canvas_item_editor_plugin.h"
+#include "editor/scene/canvas_item_editor_view.h"
 #include "editor/scene/editor_scene_tabs.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/3d/camera_3d.h"
@@ -128,8 +130,12 @@ void ScenePaneTile::set_focused_visual(bool p_focused) {
 }
 
 void ScenePaneTile::set_preview_mode(TilePreviewMode p_mode) {
+	const bool show_canvas_view = p_mode == TilePreviewMode::LIVE_2D && canvas_view;
 	if (preview_container) {
-		preview_container->set_visible(p_mode == TilePreviewMode::LIVE_2D);
+		preview_container->set_visible(p_mode == TilePreviewMode::LIVE_2D && !show_canvas_view);
+	}
+	if (canvas_view && canvas_view->get_viewport_scrollable()) {
+		canvas_view->get_viewport_scrollable()->set_visible(show_canvas_view);
 	}
 	if (preview_3d_container) {
 		preview_3d_container->set_visible(p_mode == TilePreviewMode::LIVE_3D && !spatial_view);
@@ -275,6 +281,10 @@ ScenePaneTile::ScenePaneTile() {
 }
 
 ScenePaneTile::~ScenePaneTile() {
+	if (canvas_view) {
+		CanvasItemEditor::destroy_secondary_view(canvas_view);
+		canvas_view = nullptr;
+	}
 	if (spatial_view && Node3DEditor::get_singleton()) {
 		Node3DEditor::get_singleton()->release_secondary_viewport(spatial_view);
 		spatial_view = nullptr;

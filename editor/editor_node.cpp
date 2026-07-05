@@ -161,6 +161,8 @@
 #include "editor/scene/3d/node_3d_editor_plugin.h"
 #include "editor/scene/3d/root_motion_editor_plugin.h"
 #include "editor/scene/canvas_item_editor_plugin.h"
+#include "editor/scene/canvas_item_editor_view.h"
+#include "editor/scene/canvas_item_editor_view_state.h"
 #include "editor/scene/editor_scene_tabs.h"
 #include "editor/scene/material_editor_plugin.h"
 #include "editor/scene/particle_process_material_editor_plugin.h"
@@ -4867,11 +4869,29 @@ void EditorNode::_update_tile_display_attachments() {
 			RenderingServer::get_singleton()->viewport_set_environment_mode(ctx->get_viewport()->get_viewport_rid(), RenderingServer::VIEWPORT_ENVIRONMENT_ENABLED);
 		} else {
 			tile->set_preview_mode(TilePreviewMode::LIVE_2D);
-			SubViewportContainer *preview = tile->get_preview_container();
-			ctx->set_display_parent(preview, false);
-			ctx->get_viewport()->set_update_mode(preview->is_visible_in_tree() ? SubViewport::UPDATE_ALWAYS : SubViewport::UPDATE_DISABLED);
-			preview->recalc_force_viewport_sizes();
-			preview->queue_redraw();
+			CanvasItemEditorView *canvas_view = tile->get_canvas_view();
+			if (!canvas_view && CanvasItemEditor::get_singleton()) {
+				canvas_view = CanvasItemEditor::create_secondary_view(ctx, tile->get_content_host());
+				tile->set_canvas_view(canvas_view);
+			} else if (canvas_view) {
+				canvas_view->bind_context(ctx);
+				const Dictionary plugin_states = ctx->get_editor_plugin_states();
+				if (plugin_states.has("2D")) {
+					CanvasItemEditorSceneGeometryState::apply(canvas_view->get_view_state(), plugin_states["2D"]);
+				}
+			}
+
+			SubViewportContainer *preview = canvas_view ? canvas_view->get_scene_viewport_container() : tile->get_preview_container();
+			if (preview) {
+				ctx->set_display_parent(preview, false);
+				ctx->get_viewport()->set_update_mode(preview->is_visible_in_tree() ? SubViewport::UPDATE_ALWAYS : SubViewport::UPDATE_DISABLED);
+				preview->recalc_force_viewport_sizes();
+				preview->queue_redraw();
+			}
+			if (canvas_view) {
+				canvas_view->push_viewport_state();
+				canvas_view->update_viewport();
+			}
 			RenderingServer::get_singleton()->viewport_set_disable_2d(ctx->get_viewport()->get_viewport_rid(), false);
 			RenderingServer::get_singleton()->viewport_set_environment_mode(ctx->get_viewport()->get_viewport_rid(), RenderingServer::VIEWPORT_ENVIRONMENT_ENABLED);
 		}

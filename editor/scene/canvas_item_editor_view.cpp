@@ -86,9 +86,10 @@ void CanvasItemEditorViewRouting::set_cursor_shape_override(const Vector<CanvasI
 
 void CanvasItemEditorViewRouting::update_all_viewports(const Vector<CanvasItemEditorView *> &p_views) {
 	for (CanvasItemEditorView *view : p_views) {
-		if (view) {
-			view->update_viewport();
+		if (!view) {
+			continue;
 		}
+		view->update_viewport();
 	}
 }
 
