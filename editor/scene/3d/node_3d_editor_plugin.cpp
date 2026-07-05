@@ -42,6 +42,7 @@
 #include "editor/docks/scene_tree_dock.h"
 #include "editor/editor_main_screen.h"
 #include "editor/editor_node.h"
+#include "editor/editor_scene_context.h"
 #include "editor/editor_string_names.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/gui/editor_spin_slider.h"
@@ -870,7 +871,7 @@ ObjectID Node3DEditorViewport::_select_ray(const Point2 &p_pos) const {
 	Node *item = nullptr;
 	float closest_dist = 1e20;
 
-	Vector<Node3D *> nodes_with_gizmos = Node3DEditor::get_singleton()->gizmo_bvh_ray_query(pos, pos + ray * camera->get_far());
+	Vector<Node3D *> nodes_with_gizmos = Node3DEditor::get_singleton()->gizmo_bvh_ray_query(pos, pos + ray * camera->get_far(), viewport->get_world_3d());
 
 	for (Node3D *spat : nodes_with_gizmos) {
 		if (!spat || _is_node_locked(spat)) {
@@ -925,7 +926,7 @@ void Node3DEditorViewport::_find_items_at_pos(const Point2 &p_pos, Vector<_RayRe
 	Vector3 ray = get_ray(p_pos);
 	Vector3 pos = get_ray_pos(p_pos);
 
-	Vector<Node3D *> nodes_with_gizmos = Node3DEditor::get_singleton()->gizmo_bvh_ray_query(pos, pos + ray * camera->get_far());
+	Vector<Node3D *> nodes_with_gizmos = Node3DEditor::get_singleton()->gizmo_bvh_ray_query(pos, pos + ray * camera->get_far(), viewport->get_world_3d());
 
 	HashSet<Node3D *> found_nodes;
 
@@ -1107,7 +1108,7 @@ void Node3DEditorViewport::_select_region() {
 		_clear_selected();
 	}
 
-	Vector<Node3D *> nodes_with_gizmos = Node3DEditor::get_singleton()->gizmo_bvh_frustum_query(frustum);
+	Vector<Node3D *> nodes_with_gizmos = Node3DEditor::get_singleton()->gizmo_bvh_frustum_query(frustum, viewport->get_world_3d());
 	HashSet<Node3D *> found_nodes;
 	Vector<Node *> selected;
 
@@ -3616,6 +3617,9 @@ void Node3DEditorViewport::_notification(int p_what) {
 		} break;
 
 		case NOTIFICATION_THEME_CHANGED: {
+			if (viewport_binding == ViewportBinding::SECONDARY) {
+				break;
+			}
 			_update_centered_labels();
 
 			view_display_menu->set_button_icon(get_editor_theme_icon(SNAME("GuiTabMenuHlDarkBackground")));
@@ -6138,7 +6142,7 @@ void Node3DEditorViewport::_load_viewport_inputs() {
 	register_shortcut_action("spatial_editor/freelook_slow_modifier", TTRC("Freelook Slow Modifier"), Key::ALT);
 }
 
-Node3DEditorViewport::Node3DEditorViewport(Node3DEditor *p_spatial_editor, int p_index) {
+Node3DEditorViewport::Node3DEditorViewport(Node3DEditor *p_spatial_editor, int p_index, ViewportBinding p_binding) {
 	cpu_time_history_index = 0;
 	gpu_time_history_index = 0;
 
@@ -6151,6 +6155,7 @@ Node3DEditorViewport::Node3DEditorViewport(Node3DEditor *p_spatial_editor, int p
 	_edit.gizmo_handle_secondary = false;
 
 	index = p_index;
+	viewport_binding = p_binding;
 	editor_selection = EditorNode::get_singleton()->get_editor_selection();
 
 	orthogonal = false;
@@ -6180,6 +6185,28 @@ Node3DEditorViewport::Node3DEditorViewport(Node3DEditor *p_spatial_editor, int p
 	viewport->add_child(camera);
 	camera->make_current();
 	surface->set_focus_mode(FOCUS_ALL);
+
+	if (viewport_binding == ViewportBinding::SECONDARY) {
+		Ref<World3D> world = EditorNode::get_singleton() ? EditorNode::get_singleton()->get_edited_world_3d() : Ref<World3D>();
+		if (world.is_valid()) {
+			bound_world = world;
+			viewport->set_world_3d(world);
+		}
+		gizmo_scale = 1.0;
+		previewing = nullptr;
+		preview_node = nullptr;
+		accept = nullptr;
+		freelook_active = false;
+		freelook_speed = EDITOR_GET("editors/3d/freelook/freelook_base_speed");
+		selection_menu = memnew(PopupMenu);
+		add_child(selection_menu);
+		selection_menu->set_min_size(Size2(100, 0) * EDSCALE);
+		selection_menu->connect(SceneStringName(id_pressed), callable_mp(this, &Node3DEditorViewport::_selection_result_pressed));
+		selection_menu->connect("popup_hide", callable_mp(this, &Node3DEditorViewport::_selection_menu_hide));
+		view_type = VIEW_TYPE_USER;
+		_update_name();
+		return;
+	}
 
 	VBoxContainer *vbox = memnew(VBoxContainer);
 	surface->add_child(vbox);
@@ -6533,8 +6560,28 @@ Node3DEditorViewport::Node3DEditorViewport(Node3DEditor *p_spatial_editor, int p
 }
 
 Node3DEditorViewport::~Node3DEditorViewport() {
-	memdelete(ruler);
-	memdelete(frame_time_gradient);
+	if (viewport_binding == ViewportBinding::FOCUSED_TILE) {
+		memdelete(ruler);
+		memdelete(frame_time_gradient);
+	}
+}
+
+void Node3DEditorViewport::bind_world(const Ref<World3D> &p_world, SubViewport *p_preview_parent_viewport) {
+	ERR_FAIL_COND(p_world.is_null());
+	bound_world = p_world;
+	preview_parent_viewport = p_preview_parent_viewport;
+	viewport->set_world_3d(p_world);
+	if (is_inside_tree()) {
+		_rebind_gizmo_scenarios(p_world);
+	}
+	if (spatial_editor) {
+		spatial_editor->_note_world_view_bound(p_world, p_preview_parent_viewport);
+	}
+}
+
+void Node3DEditorViewport::bind_context(EditorSceneContext *p_context) {
+	ERR_FAIL_NULL(p_context);
+	bind_world(p_context->get_world_3d(), p_context->get_viewport());
 }
 
 //////////////////////////////////////////////////////////////
@@ -7247,7 +7294,10 @@ void Node3DEditor::set_state(const Dictionary &p_state) {
 
 		if (use != view_layout_menu->get_popup()->is_item_checked(view_layout_menu->get_popup()->get_item_index(MENU_VIEW_ORIGIN))) {
 			view_layout_menu->get_popup()->set_item_checked(view_layout_menu->get_popup()->get_item_index(MENU_VIEW_ORIGIN), use);
-			RenderingServer::get_singleton()->instance_set_visible(origin_instance, use);
+			EditorWorldFurniture *furniture = _get_world_furniture(_get_edited_world_3d());
+			if (furniture && furniture->origin_instance.is_valid()) {
+				RenderingServer::get_singleton()->instance_set_visible(furniture->origin_instance, use);
+			}
 		}
 	}
 
@@ -7568,7 +7618,10 @@ void Node3DEditor::_menu_item_pressed(int p_option) {
 			bool is_checked = view_layout_menu->get_popup()->is_item_checked(view_layout_menu->get_popup()->get_item_index(p_option));
 
 			origin_enabled = !is_checked;
-			RenderingServer::get_singleton()->instance_set_visible(origin_instance, origin_enabled);
+			EditorWorldFurniture *furniture = _get_world_furniture(_get_edited_world_3d());
+			if (furniture && furniture->origin_instance.is_valid()) {
+				RenderingServer::get_singleton()->instance_set_visible(furniture->origin_instance, origin_enabled);
+			}
 			// Update the grid since its appearance depends on whether the origin is enabled
 			_finish_grid();
 			_init_grid();
@@ -7691,10 +7744,180 @@ void Node3DEditor::_menu_item_pressed(int p_option) {
 	}
 }
 
-void Node3DEditor::_init_indicators() {
-	{
-		origin_enabled = true;
-		grid_enabled = true;
+EditorWorldFurniture &Node3DEditor::_ensure_world_furniture(const Ref<World3D> &p_world, SubViewport *p_preview_parent_viewport) {
+	static EditorWorldFurniture fallback;
+	ERR_FAIL_COND_V(p_world.is_null(), fallback);
+	const ObjectID world_id = p_world->get_instance_id();
+	if (!world_furniture.has(world_id)) {
+		EditorWorldFurniture furniture;
+		if (p_preview_parent_viewport) {
+			furniture.preview_parent_viewport = p_preview_parent_viewport;
+		}
+		world_furniture.insert(world_id, furniture);
+	}
+	EditorWorldFurniture &furniture = world_furniture[world_id];
+	if (p_preview_parent_viewport) {
+		furniture.preview_parent_viewport = p_preview_parent_viewport;
+	}
+
+	if (!shared_furniture_resources_ready) {
+		_init_shared_furniture_resources();
+	}
+
+	if (!furniture.origin_instance.is_valid()) {
+		furniture.origin_instance = RenderingServer::get_singleton()->instance_create2(origin_multimesh, p_world->get_scenario());
+		RS::get_singleton()->instance_set_layer_mask(furniture.origin_instance, 1 << Node3DEditorViewport::GIZMO_GRID_LAYER);
+		RS::get_singleton()->instance_geometry_set_flag(furniture.origin_instance, RS::INSTANCE_FLAG_IGNORE_OCCLUSION_CULLING, true);
+		RS::get_singleton()->instance_geometry_set_flag(furniture.origin_instance, RS::INSTANCE_FLAG_USE_BAKED_LIGHT, false);
+		RenderingServer::get_singleton()->instance_geometry_set_cast_shadows_setting(furniture.origin_instance, RS::SHADOW_CASTING_SETTING_OFF);
+		RenderingServer::get_singleton()->instance_set_visible(furniture.origin_instance, origin_enabled);
+	}
+
+	if (!furniture.preview_sun) {
+		furniture.preview_sun = memnew(DirectionalLight3D);
+		furniture.preview_sun->set_shadow(true);
+		furniture.preview_sun->set_shadow_mode(DirectionalLight3D::SHADOW_PARALLEL_4_SPLITS);
+	}
+	if (!furniture.preview_environment) {
+		furniture.preview_environment = memnew(WorldEnvironment);
+		Ref<Environment> world_environment = environment;
+		if (world_environment.is_null()) {
+			world_environment.instantiate();
+		}
+		furniture.preview_environment->set_environment(world_environment->duplicate(true));
+		if (camera_attributes.is_valid()) {
+			furniture.preview_environment->set_camera_attributes(camera_attributes->duplicate(true));
+		}
+	}
+
+	_create_world_grid_instances(p_world);
+	return furniture;
+}
+
+EditorWorldFurniture *Node3DEditor::_get_world_furniture(const Ref<World3D> &p_world) {
+	if (p_world.is_null()) {
+		return nullptr;
+	}
+	const ObjectID world_id = p_world->get_instance_id();
+	if (!world_furniture.has(world_id)) {
+		return nullptr;
+	}
+	return &world_furniture[world_id];
+}
+
+const EditorWorldFurniture *Node3DEditor::_get_world_furniture(const Ref<World3D> &p_world) const {
+	if (p_world.is_null()) {
+		return nullptr;
+	}
+	const ObjectID world_id = p_world->get_instance_id();
+	if (!world_furniture.has(world_id)) {
+		return nullptr;
+	}
+	return &world_furniture[world_id];
+}
+
+EditorWorldFurniture &Node3DEditor::_get_edited_world_furniture() {
+	Ref<World3D> world = _get_edited_world_3d();
+	return _ensure_world_furniture(world, EditorNode::get_singleton() ? EditorNode::get_singleton()->get_scene_root() : nullptr);
+}
+
+void Node3DEditor::_release_world_furniture(const Ref<World3D> &p_world) {
+	if (p_world.is_null()) {
+		return;
+	}
+	const ObjectID world_id = p_world->get_instance_id();
+	if (!world_furniture.has(world_id)) {
+		return;
+	}
+	EditorWorldFurniture &furniture = world_furniture[world_id];
+	if (furniture.live_view_count > 0) {
+		return;
+	}
+
+	if (furniture.origin_instance.is_valid()) {
+		RenderingServer::get_singleton()->free_rid(furniture.origin_instance);
+		furniture.origin_instance = RID();
+	}
+	_free_world_grid_instances(furniture);
+
+	if (furniture.preview_sun) {
+		if (furniture.preview_sun->get_parent()) {
+			furniture.preview_sun->get_parent()->remove_child(furniture.preview_sun);
+		}
+		if (furniture.preview_sun_dangling) {
+			memdelete(furniture.preview_sun);
+		}
+		furniture.preview_sun = nullptr;
+	}
+	if (furniture.preview_environment) {
+		if (furniture.preview_environment->get_parent()) {
+			furniture.preview_environment->get_parent()->remove_child(furniture.preview_environment);
+		}
+		if (furniture.preview_env_dangling) {
+			memdelete(furniture.preview_environment);
+		}
+		furniture.preview_environment = nullptr;
+	}
+
+	world_furniture.erase(world_id);
+	gizmo_bvh.clear_world(p_world);
+}
+
+void Node3DEditor::_note_world_view_bound(const Ref<World3D> &p_world, SubViewport *p_preview_parent_viewport) {
+	EditorWorldFurniture &furniture = _ensure_world_furniture(p_world, p_preview_parent_viewport);
+	furniture.live_view_count++;
+	_rebind_preview_sun_env_parent();
+}
+
+void Node3DEditor::_note_world_view_unbound(const Ref<World3D> &p_world) {
+	EditorWorldFurniture *furniture = _get_world_furniture(p_world);
+	if (!furniture) {
+		return;
+	}
+	furniture->live_view_count = MAX(furniture->live_view_count - 1, 0);
+	if (furniture->live_view_count == 0) {
+		_release_world_furniture(p_world);
+	} else {
+		_rebind_preview_sun_env_parent();
+	}
+}
+
+void Node3DEditor::_create_world_grid_instances(const Ref<World3D> &p_world) {
+	if (!grid_enabled || p_world.is_null()) {
+		return;
+	}
+	EditorWorldFurniture &furniture = _ensure_world_furniture(p_world);
+	for (int c = 0; c < 3; c++) {
+		if (!grid[c].is_valid()) {
+			continue;
+		}
+		if (!furniture.grid_instance[c].is_valid()) {
+			furniture.grid_instance[c] = RenderingServer::get_singleton()->instance_create2(grid[c], p_world->get_scenario());
+			RenderingServer::get_singleton()->instance_geometry_set_cast_shadows_setting(furniture.grid_instance[c], RS::SHADOW_CASTING_SETTING_OFF);
+			RS::get_singleton()->instance_set_layer_mask(furniture.grid_instance[c], 1 << Node3DEditorViewport::GIZMO_GRID_LAYER);
+			RS::get_singleton()->instance_geometry_set_flag(furniture.grid_instance[c], RS::INSTANCE_FLAG_IGNORE_OCCLUSION_CULLING, true);
+			RS::get_singleton()->instance_geometry_set_flag(furniture.grid_instance[c], RS::INSTANCE_FLAG_USE_BAKED_LIGHT, false);
+		}
+		const int plane = c;
+		RenderingServer::get_singleton()->instance_set_visible(furniture.grid_instance[c], grid_visible[plane]);
+	}
+}
+
+void Node3DEditor::_free_world_grid_instances(EditorWorldFurniture &p_furniture) {
+	for (int i = 0; i < 3; i++) {
+		if (p_furniture.grid_instance[i].is_valid()) {
+			RenderingServer::get_singleton()->free_rid(p_furniture.grid_instance[i]);
+			p_furniture.grid_instance[i] = RID();
+		}
+	}
+}
+
+void Node3DEditor::_init_shared_furniture_resources() {
+	if (shared_furniture_resources_ready) {
+		return;
+	}
+	origin_enabled = true;
+	grid_enabled = true;
 
 		Ref<Shader> origin_shader = memnew(Shader);
 		origin_shader->set_code(R"(
@@ -7814,13 +8037,6 @@ void fragment() {
 			}
 		}
 
-		origin_instance = RenderingServer::get_singleton()->instance_create2(origin_multimesh, _get_edited_world_3d()->get_scenario());
-		RS::get_singleton()->instance_set_layer_mask(origin_instance, 1 << Node3DEditorViewport::GIZMO_GRID_LAYER);
-		RS::get_singleton()->instance_geometry_set_flag(origin_instance, RS::INSTANCE_FLAG_IGNORE_OCCLUSION_CULLING, true);
-		RS::get_singleton()->instance_geometry_set_flag(origin_instance, RS::INSTANCE_FLAG_USE_BAKED_LIGHT, false);
-
-		RenderingServer::get_singleton()->instance_geometry_set_cast_shadows_setting(origin_instance, RS::SHADOW_CASTING_SETTING_OFF);
-
 		Ref<Shader> grid_shader = memnew(Shader);
 		grid_shader->set_code(R"(
 // 3D editor grid shader.
@@ -7856,20 +8072,38 @@ void fragment() {
 }
 )");
 
-		for (int i = 0; i < 3; i++) {
-			grid_mat[i].instantiate();
-			grid_mat[i]->set_shader(grid_shader);
-		}
-
-		grid_enable[0] = EDITOR_GET("editors/3d/grid_xy_plane");
-		grid_enable[1] = EDITOR_GET("editors/3d/grid_yz_plane");
-		grid_enable[2] = EDITOR_GET("editors/3d/grid_xz_plane");
-		grid_visible[0] = grid_enable[0];
-		grid_visible[1] = grid_enable[1];
-		grid_visible[2] = grid_enable[2];
-
-		_init_grid();
+	for (int i = 0; i < 3; i++) {
+		grid_mat[i].instantiate();
+		grid_mat[i]->set_shader(grid_shader);
 	}
+
+	grid_enable[0] = EDITOR_GET("editors/3d/grid_xy_plane");
+	grid_enable[1] = EDITOR_GET("editors/3d/grid_yz_plane");
+	grid_enable[2] = EDITOR_GET("editors/3d/grid_xz_plane");
+	grid_visible[0] = grid_enable[0];
+	grid_visible[1] = grid_enable[1];
+	grid_visible[2] = grid_enable[2];
+
+	shared_furniture_resources_ready = true;
+}
+
+void Node3DEditor::_finish_shared_furniture_resources() {
+	if (!shared_furniture_resources_ready) {
+		return;
+	}
+	RenderingServer::get_singleton()->free_rid(origin_multimesh);
+	RenderingServer::get_singleton()->free_rid(origin_mesh);
+	_finish_grid();
+	shared_furniture_resources_ready = false;
+}
+
+void Node3DEditor::_init_indicators() {
+	_init_shared_furniture_resources();
+	Ref<World3D> edited_world = _get_edited_world_3d();
+	if (edited_world.is_valid()) {
+		_ensure_world_furniture(edited_world, EditorNode::get_singleton() ? EditorNode::get_singleton()->get_scene_root() : nullptr);
+	}
+	_init_grid();
 
 	{
 		//move gizmo
@@ -8502,34 +8736,48 @@ void Node3DEditor::_init_grid() {
 		d[RenderingServer::ARRAY_NORMAL] = (Vector<Vector3>)grid_normals[c];
 		RenderingServer::get_singleton()->mesh_add_surface_from_arrays(grid[c], RenderingServer::PRIMITIVE_LINES, d);
 		RenderingServer::get_singleton()->mesh_surface_set_material(grid[c], 0, grid_mat[c]->get_rid());
-		grid_instance[c] = RenderingServer::get_singleton()->instance_create2(grid[c], _get_edited_world_3d()->get_scenario());
+	}
 
-		// Yes, the end of this line is supposed to be a.
-		RenderingServer::get_singleton()->instance_set_visible(grid_instance[c], grid_visible[a]);
-		RenderingServer::get_singleton()->instance_geometry_set_cast_shadows_setting(grid_instance[c], RS::SHADOW_CASTING_SETTING_OFF);
-		RS::get_singleton()->instance_set_layer_mask(grid_instance[c], 1 << Node3DEditorViewport::GIZMO_GRID_LAYER);
-		RS::get_singleton()->instance_geometry_set_flag(grid_instance[c], RS::INSTANCE_FLAG_IGNORE_OCCLUSION_CULLING, true);
-		RS::get_singleton()->instance_geometry_set_flag(grid_instance[c], RS::INSTANCE_FLAG_USE_BAKED_LIGHT, false);
+	for (const KeyValue<ObjectID, EditorWorldFurniture> &world_entry : world_furniture) {
+		Ref<World3D> world = ObjectDB::get_instance<World3D>(world_entry.key);
+		if (world.is_valid()) {
+			_create_world_grid_instances(world);
+		}
 	}
 }
 
 void Node3DEditor::_finish_indicators() {
-	RenderingServer::get_singleton()->free_rid(origin_instance);
-	RenderingServer::get_singleton()->free_rid(origin_multimesh);
-	RenderingServer::get_singleton()->free_rid(origin_mesh);
-
-	_finish_grid();
+	Vector<Ref<World3D>> worlds;
+	worlds.reserve(world_furniture.size());
+	for (const KeyValue<ObjectID, EditorWorldFurniture> &world_entry : world_furniture) {
+		Ref<World3D> world = ObjectDB::get_instance<World3D>(world_entry.key);
+		if (world.is_valid()) {
+			worlds.push_back(world);
+		}
+	}
+	for (const Ref<World3D> &world : worlds) {
+		if (EditorWorldFurniture *furniture = _get_world_furniture(world)) {
+			furniture->live_view_count = 0;
+		}
+		_release_world_furniture(world);
+	}
+	_finish_shared_furniture_resources();
 }
 
 void Node3DEditor::_finish_grid() {
+	for (KeyValue<ObjectID, EditorWorldFurniture> &world_entry : world_furniture) {
+		_free_world_grid_instances(world_entry.value);
+	}
 	for (int i = 0; i < 3; i++) {
-		RenderingServer::get_singleton()->free_rid(grid_instance[i]);
-		RenderingServer::get_singleton()->free_rid(grid[i]);
+		if (grid[i].is_valid()) {
+			RenderingServer::get_singleton()->free_rid(grid[i]);
+			grid[i] = RID();
+		}
 	}
 }
 
 void Node3DEditor::update_gizmo_opacity() {
-	if (!origin_instance.is_valid()) {
+	if (!shared_furniture_resources_ready) {
 		return;
 	}
 
@@ -8592,20 +8840,17 @@ Ref<World3D> Node3DEditor::_get_edited_world_3d() const {
 void Node3DEditor::_rebind_editor_world_furniture() {
 	Ref<World3D> world = _get_edited_world_3d();
 	ERR_FAIL_COND(world.is_null());
-	const RID scenario = world->get_scenario();
-
-	if (origin_instance.is_valid()) {
-		RS::get_singleton()->instance_set_scenario(origin_instance, scenario);
-	}
-	for (int i = 0; i < 3; i++) {
-		if (grid_instance[i].is_valid()) {
-			RS::get_singleton()->instance_set_scenario(grid_instance[i], scenario);
-		}
-	}
+	_ensure_world_furniture(world, EditorNode::get_singleton() ? EditorNode::get_singleton()->get_scene_root() : nullptr);
 	for (uint32_t i = 0; i < VIEWPORTS_COUNT; i++) {
 		if (viewports[i]) {
+			viewports[i]->bound_world = world;
 			viewports[i]->viewport->set_world_3d(world);
 			viewports[i]->_rebind_gizmo_scenarios(world);
+		}
+	}
+	for (Node3DEditorViewport *secondary_viewport : secondary_viewports) {
+		if (secondary_viewport && secondary_viewport->bound_world.is_valid()) {
+			_ensure_world_furniture(secondary_viewport->bound_world, secondary_viewport->preview_parent_viewport);
 		}
 	}
 }
@@ -8615,36 +8860,48 @@ void Node3DEditor::_rebind_preview_sun_env_parent() {
 }
 
 void Node3DEditor::_sync_preview_environment_parenting() {
-	SubViewport *context_viewport = EditorNode::get_singleton()->get_scene_root();
-	ERR_FAIL_NULL(context_viewport);
-
 	const bool disable_light = directional_light_count > 0 || !sun_button->is_pressed();
 	const bool disable_env = world_env_count > 0 || !environ_button->is_pressed();
 
-	if (disable_light) {
-		if (preview_sun->get_parent()) {
-			preview_sun->get_parent()->remove_child(preview_sun);
-			preview_sun_dangling = true;
+	for (KeyValue<ObjectID, EditorWorldFurniture> &world_entry : world_furniture) {
+		EditorWorldFurniture &furniture = world_entry.value;
+		SubViewport *context_viewport = furniture.preview_parent_viewport;
+		if (!context_viewport && EditorNode::get_singleton()) {
+			Ref<World3D> world = ObjectDB::get_instance<World3D>(world_entry.key);
+			if (world.is_valid() && world == _get_edited_world_3d()) {
+				context_viewport = EditorNode::get_singleton()->get_scene_root();
+				furniture.preview_parent_viewport = context_viewport;
+			}
 		}
-	} else if (preview_sun->get_parent() != context_viewport) {
-		if (preview_sun->get_parent()) {
-			preview_sun->get_parent()->remove_child(preview_sun);
-		}
-		context_viewport->add_child(preview_sun, true);
-		preview_sun_dangling = false;
-	}
+		ERR_CONTINUE(!context_viewport);
+		ERR_CONTINUE(!furniture.preview_sun);
+		ERR_CONTINUE(!furniture.preview_environment);
 
-	if (disable_env) {
-		if (preview_environment->get_parent()) {
-			preview_environment->get_parent()->remove_child(preview_environment);
-			preview_env_dangling = true;
+		if (disable_light) {
+			if (furniture.preview_sun->get_parent()) {
+				furniture.preview_sun->get_parent()->remove_child(furniture.preview_sun);
+				furniture.preview_sun_dangling = true;
+			}
+		} else if (furniture.preview_sun->get_parent() != context_viewport) {
+			if (furniture.preview_sun->get_parent()) {
+				furniture.preview_sun->get_parent()->remove_child(furniture.preview_sun);
+			}
+			context_viewport->add_child(furniture.preview_sun, true);
+			furniture.preview_sun_dangling = false;
 		}
-	} else if (preview_environment->get_parent() != context_viewport) {
-		if (preview_environment->get_parent()) {
-			preview_environment->get_parent()->remove_child(preview_environment);
+
+		if (disable_env) {
+			if (furniture.preview_environment->get_parent()) {
+				furniture.preview_environment->get_parent()->remove_child(furniture.preview_environment);
+				furniture.preview_env_dangling = true;
+			}
+		} else if (furniture.preview_environment->get_parent() != context_viewport) {
+			if (furniture.preview_environment->get_parent()) {
+				furniture.preview_environment->get_parent()->remove_child(furniture.preview_environment);
+			}
+			context_viewport->add_child(furniture.preview_environment);
+			furniture.preview_env_dangling = false;
 		}
-		context_viewport->add_child(preview_environment);
-		preview_env_dangling = false;
 	}
 }
 
@@ -8972,7 +9229,7 @@ void Node3DEditor::_add_sun_to_scene(bool p_already_added_environment) {
 		base = get_tree()->get_edited_scene_root();
 	}
 	ERR_FAIL_NULL(base);
-	Node *new_sun = preview_sun->duplicate();
+	Node *new_sun = _get_edited_world_furniture().preview_sun->duplicate();
 
 	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
 	undo_redo->create_action(TTR("Add Preview Sun to Scene"));
@@ -9003,9 +9260,9 @@ void Node3DEditor::_add_environment_to_scene(bool p_already_added_sun) {
 	ERR_FAIL_NULL(base);
 
 	WorldEnvironment *new_env = memnew(WorldEnvironment);
-	new_env->set_environment(preview_environment->get_environment()->duplicate(true));
+	new_env->set_environment(_get_edited_world_furniture().preview_environment->get_environment()->duplicate(true));
 	if (GLOBAL_GET("rendering/lights_and_shadows/use_physical_light_units")) {
-		new_env->set_camera_attributes(preview_environment->get_camera_attributes()->duplicate(true));
+		new_env->set_camera_attributes(_get_edited_world_furniture().preview_environment->get_camera_attributes()->duplicate(true));
 	}
 
 	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
@@ -9245,7 +9502,41 @@ VSplitContainer *Node3DEditor::get_shader_split() {
 }
 
 Node3DEditorViewport *Node3DEditor::get_last_used_viewport() {
-	return viewports[last_used_viewport];
+	return Node3DEditorViewRouting::get_focused_viewport(focused_viewport, viewports, VIEWPORTS_COUNT, last_used_viewport);
+}
+
+Node3DEditorViewport *Node3DEditor::get_focused_viewport() {
+	return get_last_used_viewport();
+}
+
+void Node3DEditor::_set_focused_viewport(Node3DEditorViewport *p_viewport) {
+	focused_viewport = p_viewport;
+}
+
+void Node3DEditor::_secondary_viewport_clicked(Node3DEditorViewport *p_viewport) {
+	_set_focused_viewport(p_viewport);
+}
+
+Node3DEditorViewport *Node3DEditor::create_secondary_viewport(const Ref<World3D> &p_world, SubViewport *p_preview_parent_viewport) {
+	ERR_FAIL_COND_V(p_world.is_null(), nullptr);
+	Node3DEditorViewport *viewport = memnew(Node3DEditorViewport(this, VIEWPORTS_COUNT, Node3DEditorViewport::ViewportBinding::SECONDARY));
+	viewport->bind_world(p_world, p_preview_parent_viewport);
+	secondary_viewports.push_back(viewport);
+	viewport->connect("clicked", callable_mp(this, &Node3DEditor::_secondary_viewport_clicked).bind(viewport));
+	return viewport;
+}
+
+void Node3DEditor::release_secondary_viewport(Node3DEditorViewport *p_viewport) {
+	ERR_FAIL_NULL(p_viewport);
+	ERR_FAIL_COND(!p_viewport->is_secondary_view());
+	if (focused_viewport == p_viewport) {
+		focused_viewport = viewports[last_used_viewport];
+	}
+	secondary_viewports.erase(p_viewport);
+	if (p_viewport->bound_world.is_valid()) {
+		_note_world_view_unbound(p_viewport->bound_world);
+	}
+	memdelete(p_viewport);
 }
 
 void Node3DEditor::add_control_to_left_panel(Control *p_control) {
@@ -9427,6 +9718,7 @@ void Node3DEditor::_toggle_maximize_view(Object *p_viewport) {
 
 void Node3DEditor::_viewport_clicked(int p_viewport_idx) {
 	last_used_viewport = p_viewport_idx;
+	_set_focused_viewport(viewports[p_viewport_idx]);
 }
 
 void Node3DEditor::_node_added(Node *p_node) {
@@ -9540,8 +9832,10 @@ void Node3DEditor::clear() {
 		viewports[i]->reset();
 	}
 
-	if (origin_instance.is_valid()) {
-		RenderingServer::get_singleton()->instance_set_visible(origin_instance, true);
+	if (EditorWorldFurniture *furniture = _get_world_furniture(_get_edited_world_3d())) {
+		if (furniture->origin_instance.is_valid()) {
+			RenderingServer::get_singleton()->instance_set_visible(furniture->origin_instance, true);
+		}
 	}
 
 	view_layout_menu->get_popup()->set_item_checked(view_layout_menu->get_popup()->get_item_index(MENU_VIEW_ORIGIN), true);
@@ -9562,6 +9856,10 @@ void Node3DEditor::clear() {
 }
 
 void Node3DEditor::_sun_direction_draw() {
+	DirectionalLight3D *preview_sun = _get_edited_world_furniture().preview_sun;
+	if (!preview_sun) {
+		return;
+	}
 	sun_direction->draw_rect(Rect2(Vector2(), sun_direction->get_size()), Color(1, 1, 1, 1));
 	Vector3 z_axis = preview_sun->get_transform().basis.get_column(Vector3::AXIS_Z);
 	z_axis = get_editor_viewport(0)->camera->get_camera_transform().basis.xform_inv(z_axis);
@@ -9576,15 +9874,18 @@ void Node3DEditor::_preview_settings_changed() {
 	}
 
 	{ // preview sun
-		sun_rotation.x = Math::deg_to_rad(-sun_angle_altitude->get_value());
-		sun_rotation.y = Math::deg_to_rad(180.0 - sun_angle_azimuth->get_value());
-		Transform3D t;
-		t.basis = Basis::from_euler(Vector3(sun_rotation.x, sun_rotation.y, 0));
-		preview_sun->set_transform(t);
-		sun_direction->queue_redraw();
-		preview_sun->set_param(Light3D::PARAM_ENERGY, sun_energy->get_value());
-		preview_sun->set_param(Light3D::PARAM_SHADOW_MAX_DISTANCE, sun_shadow_max_distance->get_value());
-		preview_sun->set_color(sun_color->get_pick_color());
+		DirectionalLight3D *preview_sun = _get_edited_world_furniture().preview_sun;
+		if (preview_sun) {
+			sun_rotation.x = Math::deg_to_rad(-sun_angle_altitude->get_value());
+			sun_rotation.y = Math::deg_to_rad(180.0 - sun_angle_azimuth->get_value());
+			Transform3D t;
+			t.basis = Basis::from_euler(Vector3(sun_rotation.x, sun_rotation.y, 0));
+			preview_sun->set_transform(t);
+			sun_direction->queue_redraw();
+			preview_sun->set_param(Light3D::PARAM_ENERGY, sun_energy->get_value());
+			preview_sun->set_param(Light3D::PARAM_SHADOW_MAX_DISTANCE, sun_shadow_max_distance->get_value());
+			preview_sun->set_color(sun_color->get_pick_color());
+		}
 	}
 
 	{ //preview env
@@ -9601,6 +9902,17 @@ void Node3DEditor::_preview_settings_changed() {
 		environment->set_glow_enabled(environ_glow_button->is_pressed());
 		environment->set_sdfgi_enabled(environ_gi_button->is_pressed());
 		environment->set_tonemapper(environ_tonemap_button->is_pressed() ? Environment::TONE_MAPPER_FILMIC : Environment::TONE_MAPPER_LINEAR);
+
+		for (KeyValue<ObjectID, EditorWorldFurniture> &world_entry : world_furniture) {
+			WorldEnvironment *preview_environment = world_entry.value.preview_environment;
+			if (!preview_environment) {
+				continue;
+			}
+			preview_environment->set_environment(environment->duplicate(true));
+			if (camera_attributes.is_valid()) {
+				preview_environment->set_camera_attributes(camera_attributes->duplicate(true));
+			}
+		}
 	}
 }
 
@@ -9719,7 +10031,7 @@ void Node3DEditor::_sun_set_color(const Color &p_color) {
 	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
 	undo_redo->create_action(TTR("Set Preview Sun Color"), UndoRedo::MergeMode::MERGE_ENDS);
 	undo_redo->add_do_method(sun_color, "set_pick_color", p_color);
-	undo_redo->add_undo_method(sun_color, "set_pick_color", preview_sun->get_color());
+	undo_redo->add_undo_method(sun_color, "set_pick_color", _get_edited_world_furniture().preview_sun ? _get_edited_world_furniture().preview_sun->get_color() : sun_color->get_pick_color());
 	undo_redo->add_do_method(this, "_preview_settings_changed");
 	undo_redo->add_undo_method(this, "_preview_settings_changed");
 	undo_redo->commit_action();
@@ -9729,7 +10041,7 @@ void Node3DEditor::_sun_set_energy(float p_energy) {
 	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
 	undo_redo->create_action(TTR("Set Preview Sun Energy"), UndoRedo::MergeMode::MERGE_ENDS);
 	undo_redo->add_do_method(sun_energy, "set_value_no_signal", p_energy);
-	undo_redo->add_undo_method(sun_energy, "set_value_no_signal", preview_sun->get_param(Light3D::PARAM_ENERGY));
+	undo_redo->add_undo_method(sun_energy, "set_value_no_signal", _get_edited_world_furniture().preview_sun ? _get_edited_world_furniture().preview_sun->get_param(Light3D::PARAM_ENERGY) : sun_energy->get_value());
 	undo_redo->add_do_method(this, "_preview_settings_changed");
 	undo_redo->add_undo_method(this, "_preview_settings_changed");
 	undo_redo->commit_action();
@@ -9739,7 +10051,7 @@ void Node3DEditor::_sun_set_shadow_max_distance(float p_shadow_max_distance) {
 	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
 	undo_redo->create_action(TTR("Set Preview Sun Max Shadow Distance"), UndoRedo::MergeMode::MERGE_ENDS);
 	undo_redo->add_do_method(sun_shadow_max_distance, "set_value_no_signal", p_shadow_max_distance);
-	undo_redo->add_undo_method(sun_shadow_max_distance, "set_value_no_signal", preview_sun->get_param(Light3D::PARAM_SHADOW_MAX_DISTANCE));
+	undo_redo->add_undo_method(sun_shadow_max_distance, "set_value_no_signal", _get_edited_world_furniture().preview_sun ? _get_edited_world_furniture().preview_sun->get_param(Light3D::PARAM_SHADOW_MAX_DISTANCE) : sun_shadow_max_distance->get_value());
 	undo_redo->add_do_method(this, "_preview_settings_changed");
 	undo_redo->add_undo_method(this, "_preview_settings_changed");
 	undo_redo->commit_action();
@@ -10471,15 +10783,9 @@ void fragment() {
 		environ_state->set_vertical_alignment(VERTICAL_ALIGNMENT_CENTER);
 		environ_state->set_h_size_flags(SIZE_EXPAND_FILL);
 
-		preview_sun = memnew(DirectionalLight3D);
-		preview_sun->set_shadow(true);
-		preview_sun->set_shadow_mode(DirectionalLight3D::SHADOW_PARALLEL_4_SPLITS);
-		preview_environment = memnew(WorldEnvironment);
 		environment.instantiate();
-		preview_environment->set_environment(environment);
 		if (GLOBAL_GET("rendering/lights_and_shadows/use_physical_light_units")) {
 			camera_attributes.instantiate();
-			preview_environment->set_camera_attributes(camera_attributes);
 		}
 		Ref<Sky> sky;
 		sky.instantiate();
@@ -10491,19 +10797,17 @@ void fragment() {
 		sun_environ_popup->set_process_shortcut_input(true);
 
 		_load_default_preview_settings();
-		_preview_settings_changed();
 	}
 	clear(); // Make sure values are initialized. Will call _snap_update() for us.
+	focused_viewport = viewports[0];
 }
 Node3DEditor::~Node3DEditor() {
 	singleton = nullptr;
 	memdelete(preview_node);
-	if (preview_sun_dangling && preview_sun) {
-		memdelete(preview_sun);
+	for (Node3DEditorViewport *secondary_viewport : secondary_viewports) {
+		memdelete(secondary_viewport);
 	}
-	if (preview_env_dangling && preview_environment) {
-		memdelete(preview_environment);
-	}
+	secondary_viewports.clear();
 }
 
 void Node3DEditorPlugin::make_visible(bool p_visible) {
@@ -10626,46 +10930,23 @@ void Node3DEditor::remove_gizmo_plugin(Ref<EditorNode3DGizmoPlugin> p_plugin) {
 }
 
 DynamicBVH::ID Node3DEditor::insert_gizmo_bvh_node(Node3D *p_node, const AABB &p_aabb) {
-	return gizmo_bvh.insert(p_aabb, p_node);
+	return gizmo_bvh.insert(p_node, p_aabb);
 }
 
-void Node3DEditor::update_gizmo_bvh_node(DynamicBVH::ID p_id, const AABB &p_aabb) {
-	gizmo_bvh.update(p_id, p_aabb);
-	gizmo_bvh.optimize_incremental(1);
+void Node3DEditor::update_gizmo_bvh_node(Node3D *p_node, DynamicBVH::ID p_id, const AABB &p_aabb) {
+	gizmo_bvh.update(p_node, p_id, p_aabb);
 }
 
-void Node3DEditor::remove_gizmo_bvh_node(DynamicBVH::ID p_id) {
-	gizmo_bvh.remove(p_id);
+void Node3DEditor::remove_gizmo_bvh_node(Node3D *p_node, DynamicBVH::ID p_id) {
+	gizmo_bvh.remove(p_node, p_id);
 }
 
-Vector<Node3D *> Node3DEditor::gizmo_bvh_ray_query(const Vector3 &p_ray_start, const Vector3 &p_ray_end) {
-	struct Result {
-		Vector<Node3D *> nodes;
-		bool operator()(void *p_data) {
-			nodes.append((Node3D *)p_data);
-			return false;
-		}
-	} result;
-
-	gizmo_bvh.ray_query(p_ray_start, p_ray_end, result);
-
-	return result.nodes;
+Vector<Node3D *> Node3DEditor::gizmo_bvh_ray_query(const Vector3 &p_ray_start, const Vector3 &p_ray_end, const Ref<World3D> &p_world) {
+	return gizmo_bvh.ray_query(p_ray_start, p_ray_end, p_world);
 }
 
-Vector<Node3D *> Node3DEditor::gizmo_bvh_frustum_query(const Vector<Plane> &p_frustum) {
-	Vector<Vector3> points = Geometry3D::compute_convex_mesh_points(&p_frustum[0], p_frustum.size());
-
-	struct Result {
-		Vector<Node3D *> nodes;
-		bool operator()(void *p_data) {
-			nodes.append((Node3D *)p_data);
-			return false;
-		}
-	} result;
-
-	gizmo_bvh.convex_query(p_frustum.ptr(), p_frustum.size(), points.ptr(), points.size(), result);
-
-	return result.nodes;
+Vector<Node3D *> Node3DEditor::gizmo_bvh_frustum_query(const Vector<Plane> &p_frustum, const Ref<World3D> &p_world) {
+	return gizmo_bvh.frustum_query(p_frustum, p_world);
 }
 
 Node3DEditorPlugin::Node3DEditorPlugin() {

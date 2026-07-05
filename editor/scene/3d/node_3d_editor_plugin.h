@@ -33,6 +33,7 @@
 #include "core/math/dynamic_bvh.h"
 #include "editor/plugins/editor_plugin.h"
 #include "editor/scene/3d/node_3d_editor_gizmos.h"
+#include "editor/scene/3d/node_3d_editor_world_scope.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/gui/box_container.h"
 #include "scene/gui/button.h"
@@ -106,11 +107,19 @@ public:
 	void set_viewport(Node3DEditorViewport *p_viewport);
 };
 
+class EditorSceneContext;
+
 class Node3DEditorViewport : public Control {
 	FOUNDRY_CLASS(Node3DEditorViewport, Control);
 	friend class Node3DEditor;
 	friend class ViewportNavigationControl;
 	friend class ViewportRotationControl;
+
+public:
+	enum class ViewportBinding {
+		FOCUSED_TILE,
+		SECONDARY,
+	};
 	enum {
 		VIEW_TOP,
 		VIEW_BOTTOM,
@@ -231,6 +240,9 @@ private:
 	Ref<StandardMaterial3D> ruler_material_xray;
 
 	int index;
+	ViewportBinding viewport_binding = ViewportBinding::FOCUSED_TILE;
+	Ref<World3D> bound_world;
+	SubViewport *preview_parent_viewport = nullptr;
 	ViewType view_type;
 	void _menu_option(int p_option);
 	void _set_auto_orthogonal();
@@ -588,8 +600,13 @@ public:
 	SubViewport *get_viewport_node() { return viewport; }
 	Camera3D *get_camera_3d() { return camera; } // return the default camera object.
 	Control *get_surface() { return surface; }
+	Ref<World3D> get_bound_world() const { return bound_world; }
+	bool is_secondary_view() const { return viewport_binding == ViewportBinding::SECONDARY; }
 
-	Node3DEditorViewport(Node3DEditor *p_spatial_editor, int p_index);
+	void bind_world(const Ref<World3D> &p_world, SubViewport *p_preview_parent_viewport = nullptr);
+	void bind_context(EditorSceneContext *p_context);
+
+	Node3DEditorViewport(Node3DEditor *p_spatial_editor, int p_index, ViewportBinding p_binding = ViewportBinding::FOCUSED_TILE);
 	~Node3DEditorViewport();
 };
 
@@ -656,8 +673,20 @@ public:
 	Node3DEditorViewportContainer();
 };
 
+struct EditorWorldFurniture {
+	RID origin_instance;
+	RID grid_instance[3];
+	DirectionalLight3D *preview_sun = nullptr;
+	WorldEnvironment *preview_environment = nullptr;
+	SubViewport *preview_parent_viewport = nullptr;
+	bool preview_sun_dangling = false;
+	bool preview_env_dangling = false;
+	int live_view_count = 0;
+};
+
 class Node3DEditor : public VBoxContainer {
 	FOUNDRY_CLASS(Node3DEditor, VBoxContainer);
+	friend class Node3DEditorViewport;
 
 public:
 	static const unsigned int VIEWPORTS_COUNT = 4;
@@ -693,6 +722,8 @@ private:
 
 	Node3DEditorViewportContainer *viewport_base = nullptr;
 	Node3DEditorViewport *viewports[VIEWPORTS_COUNT];
+	Vector<Node3DEditorViewport *> secondary_viewports;
+	Node3DEditorViewport *focused_viewport = nullptr;
 	int last_used_viewport = 0;
 
 	VSplitContainer *shader_split = nullptr;
@@ -705,10 +736,10 @@ private:
 
 	RID origin_mesh;
 	RID origin_multimesh;
-	RID origin_instance;
 	bool origin_enabled = false;
+	bool shared_furniture_resources_ready = false;
 	RID grid[3];
-	RID grid_instance[3];
+	HashMap<ObjectID, EditorWorldFurniture> world_furniture;
 	bool grid_visible[3] = { false, false, false }; //currently visible
 	bool grid_enable[3] = { false, false, false }; //should be always visible if true
 	bool grid_enabled = false;
@@ -728,7 +759,7 @@ private:
 	int current_hover_gizmo_handle;
 	bool current_hover_gizmo_handle_secondary;
 
-	DynamicBVH gizmo_bvh;
+	Node3DEditorWorldGizmoBVH gizmo_bvh;
 
 	real_t snap_translate_value;
 	real_t snap_rotate_value;
@@ -842,11 +873,24 @@ private:
 	void _generate_selection_boxes();
 
 	void _init_indicators();
+	void _init_shared_furniture_resources();
+	void _finish_shared_furniture_resources();
+	EditorWorldFurniture &_ensure_world_furniture(const Ref<World3D> &p_world, SubViewport *p_preview_parent_viewport = nullptr);
+	EditorWorldFurniture *_get_world_furniture(const Ref<World3D> &p_world);
+	const EditorWorldFurniture *_get_world_furniture(const Ref<World3D> &p_world) const;
+	EditorWorldFurniture &_get_edited_world_furniture();
+	void _release_world_furniture(const Ref<World3D> &p_world);
+	void _note_world_view_bound(const Ref<World3D> &p_world, SubViewport *p_preview_parent_viewport);
+	void _note_world_view_unbound(const Ref<World3D> &p_world);
+	void _create_world_grid_instances(const Ref<World3D> &p_world);
+	void _free_world_grid_instances(EditorWorldFurniture &p_furniture);
 	void _update_gizmos_menu();
 	void _update_gizmos_menu_theme();
 	void _init_grid();
 	void _finish_indicators();
 	void _finish_grid();
+	void _set_focused_viewport(Node3DEditorViewport *p_viewport);
+	void _secondary_viewport_clicked(Node3DEditorViewport *p_viewport);
 
 	void _toggle_maximize_view(Object *p_viewport);
 	void _viewport_clicked(int p_viewport_idx);
@@ -933,10 +977,6 @@ private:
 
 	Button *sun_environ_settings = nullptr;
 
-	DirectionalLight3D *preview_sun = nullptr;
-	bool preview_sun_dangling = false;
-	WorldEnvironment *preview_environment = nullptr;
-	bool preview_env_dangling = false;
 	Ref<Environment> environment;
 	Ref<CameraAttributesPractical> camera_attributes;
 	Ref<ProceduralSkyMaterial> sky_material;
@@ -1069,6 +1109,10 @@ public:
 		return viewports[p_idx];
 	}
 	Node3DEditorViewport *get_last_used_viewport();
+	Node3DEditorViewport *get_focused_viewport();
+
+	Node3DEditorViewport *create_secondary_viewport(const Ref<World3D> &p_world, SubViewport *p_preview_parent_viewport = nullptr);
+	void release_secondary_viewport(Node3DEditorViewport *p_viewport);
 
 	void set_freelook_viewport(Node3DEditorViewport *p_viewport) { freelook_viewport = p_viewport; }
 	Node3DEditorViewport *get_freelook_viewport() const { return freelook_viewport; }
@@ -1077,10 +1121,10 @@ public:
 	void remove_gizmo_plugin(Ref<EditorNode3DGizmoPlugin> p_plugin);
 
 	DynamicBVH::ID insert_gizmo_bvh_node(Node3D *p_node, const AABB &p_aabb);
-	void update_gizmo_bvh_node(DynamicBVH::ID p_id, const AABB &p_aabb);
-	void remove_gizmo_bvh_node(DynamicBVH::ID p_id);
-	Vector<Node3D *> gizmo_bvh_ray_query(const Vector3 &p_ray_start, const Vector3 &p_ray_end);
-	Vector<Node3D *> gizmo_bvh_frustum_query(const Vector<Plane> &p_frustum);
+	void update_gizmo_bvh_node(Node3D *p_node, DynamicBVH::ID p_id, const AABB &p_aabb);
+	void remove_gizmo_bvh_node(Node3D *p_node, DynamicBVH::ID p_id);
+	Vector<Node3D *> gizmo_bvh_ray_query(const Vector3 &p_ray_start, const Vector3 &p_ray_end, const Ref<World3D> &p_world);
+	Vector<Node3D *> gizmo_bvh_frustum_query(const Vector<Plane> &p_frustum, const Ref<World3D> &p_world);
 
 	void edit(Node3D *p_spatial);
 	void clear();
