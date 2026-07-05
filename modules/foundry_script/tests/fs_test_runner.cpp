@@ -52,6 +52,7 @@
 #include "core/templates/hash_set.h"
 #include "scene/resources/packed_scene.h"
 
+#include "tests/core/config/test_project_settings.h"
 #include "tests/test_macros.h"
 
 namespace FSTests {
@@ -130,6 +131,12 @@ void init_autoloads() {
 // `test_suite_language_fixture.h`) instead of running once per `TEST_CASE`.
 static bool language_initialized = false;
 
+// Saved ProjectSettings state from before the first `init_language()` in a cycle.
+static String saved_resource_path;
+static bool saved_project_loaded = false;
+static String saved_app_name;
+static bool saved_project_settings = false;
+
 // Counts how many times the heavy language setup actually ran. Suite fixtures
 // assert this stays at one per suite; it is purely test instrumentation.
 static uint64_t init_language_count = 0;
@@ -140,6 +147,11 @@ void init_language(const String &p_base_path) {
 	if (language_initialized) {
 		return;
 	}
+
+	saved_resource_path = ProjectSettings::get_singleton()->get_resource_path();
+	saved_project_loaded = ProjectSettings::get_singleton()->is_project_loaded();
+	saved_app_name = GLOBAL_GET("application/config/name");
+	saved_project_settings = true;
 
 	// Setup project settings since it's needed by the languages to get the global scripts.
 	// This also sets up the base resource path.
@@ -164,12 +176,24 @@ bool is_fs_language_active() {
 void finish_language() {
 	if (!is_fs_language_active()) {
 		language_initialized = false;
+		if (saved_project_settings) {
+			TestProjectSettingsInternalsAccessor::resource_path() = saved_resource_path;
+			TestProjectSettingsInternalsAccessor::project_loaded() = saved_project_loaded;
+			ProjectSettings::get_singleton()->set_setting("application/config/name", saved_app_name);
+			saved_project_settings = false;
+		}
 		return;
 	}
 	FSLanguage::get_singleton()->clear_global_annotations();
 	FSLanguage::get_singleton()->finish();
 	ScriptServer::global_classes_clear();
 	language_initialized = false;
+	if (saved_project_settings) {
+		TestProjectSettingsInternalsAccessor::resource_path() = saved_resource_path;
+		TestProjectSettingsInternalsAccessor::project_loaded() = saved_project_loaded;
+		ProjectSettings::get_singleton()->set_setting("application/config/name", saved_app_name);
+		saved_project_settings = false;
+	}
 }
 
 void reset_language_state() {
