@@ -7110,6 +7110,12 @@ void EditorNode::handle_tile_scene_tab_bar_drop(int p_target_tile_id, const Vari
 	_bind_all_leaf_docks();
 	_update_all_scene_tabs();
 	_update_tile_display_attachments();
+
+	// As with pane drops, the source tile may be left empty if it could not collapse
+	// into a script-leaf sibling; handle_scene_drop() collapses deferred, so ensure
+	// any surviving empty source tile gets a blank scene afterwards.
+	callable_mp(this, &EditorNode::_ensure_scene_tile_has_scene).call_deferred(source_tile_id);
+
 	save_editor_layout_delayed();
 }
 
