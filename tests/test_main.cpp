@@ -47,6 +47,7 @@
 #include "tests/editor/run/test_run_target_readiness.h"
 #include "tests/editor/run/test_run_targets_panel.h"
 #include "tests/editor/test_bottom_drawer_geometry.h"
+#include "tests/editor/test_canvas_item_editor_view_state.h"
 #include "tests/editor/test_bottom_drawer_layout.h"
 #include "tests/editor/test_dock_scene_context_binding.h"
 #include "tests/editor/test_editor_autoload_settings.h"
