@@ -44,6 +44,38 @@ namespace {
 
 Vector2 editor_automation_last_mouse_position;
 
+#ifdef TESTS_ENABLED
+struct AutomationMouseTrace {
+	static bool enabled;
+	static Vector2 press_global;
+	static Vector2 release_global;
+};
+
+bool AutomationMouseTrace::enabled = false;
+Vector2 AutomationMouseTrace::press_global;
+Vector2 AutomationMouseTrace::release_global;
+#endif // TESTS_ENABLED
+
+void _copy_option_if_present(const Dictionary &p_from, Dictionary &r_to, const char *p_key) {
+	if (p_from.has(p_key)) {
+		r_to[p_key] = p_from.get(p_key, Variant());
+	}
+}
+
+void _merge_position_spec(const Dictionary &p_from, Dictionary &r_to) {
+	_copy_option_if_present(p_from, r_to, "position");
+	_copy_option_if_present(p_from, r_to, "anchor");
+	_copy_option_if_present(p_from, r_to, "x");
+	_copy_option_if_present(p_from, r_to, "y");
+}
+
+void _copy_prefixed_position_option(const Dictionary &p_from, Dictionary &r_to, const char *p_prefix, const char *p_key) {
+	const String prefixed = String(p_prefix) + String(p_key);
+	if (p_from.has(prefixed)) {
+		r_to[p_key] = p_from.get(prefixed, Variant());
+	}
+}
+
 void _dispatch_input_event(const Ref<InputEvent> &p_event) {
 	Input::get_singleton()->parse_input_event(p_event);
 	MessageQueue::get_singleton()->flush();
@@ -212,8 +244,18 @@ bool EditorAutomationInput::push_mouse_button(
 
 	if (p_pressed) {
 		r_events.push_back("mouse_pressed");
+#ifdef TESTS_ENABLED
+		if (AutomationMouseTrace::enabled && !p_local_coords) {
+			AutomationMouseTrace::press_global = p_position;
+		}
+#endif // TESTS_ENABLED
 	} else {
 		r_events.push_back("mouse_released");
+#ifdef TESTS_ENABLED
+		if (AutomationMouseTrace::enabled && !p_local_coords) {
+			AutomationMouseTrace::release_global = p_position;
+		}
+#endif // TESTS_ENABLED
 	}
 	return true;
 }
@@ -319,11 +361,24 @@ Vector2 EditorAutomationInput::resolve_position_in_bounds(const Rect2i &p_bounds
 		return rect.get_center();
 	}
 
+	if (p_options.has("position")) {
+		const Variant position_value = p_options.get("position", Variant());
+		if (position_value.get_type() == Variant::VECTOR2) {
+			return rect.position + Vector2(position_value);
+		}
+		if (position_value.get_type() == Variant::ARRAY) {
+			const Array position = position_value;
+			if (position.size() >= 2) {
+				return rect.position + Vector2(position[0], position[1]);
+			}
+		}
+	}
+
 	if (p_options.has("x") && p_options.has("y")) {
 		const Variant x_value = p_options.get("x", Variant());
 		const Variant y_value = p_options.get("y", Variant());
 		Vector2 position = rect.position;
-		if (x_value.get_type() == Variant::FLOAT || x_value.get_type() == Variant::INT) {
+		if (x_value.is_num()) {
 			const double x = x_value;
 			if (x >= 0.0 && x <= 1.0 && rect.size.x > 0) {
 				position.x += float(x) * rect.size.x;
@@ -331,7 +386,7 @@ Vector2 EditorAutomationInput::resolve_position_in_bounds(const Rect2i &p_bounds
 				position.x += float(x);
 			}
 		}
-		if (y_value.get_type() == Variant::FLOAT || y_value.get_type() == Variant::INT) {
+		if (y_value.is_num()) {
 			const double y = y_value;
 			if (y >= 0.0 && y <= 1.0 && rect.size.y > 0) {
 				position.y += float(y) * rect.size.y;
@@ -342,21 +397,73 @@ Vector2 EditorAutomationInput::resolve_position_in_bounds(const Rect2i &p_bounds
 		return position;
 	}
 
-	if (p_options.has("target_point")) {
-		const Variant point_value = p_options.get("target_point", Variant());
-		if (point_value.get_type() == Variant::VECTOR2) {
-			return point_value;
-		}
-		if (point_value.get_type() == Variant::ARRAY) {
-			const Array point = point_value;
-			if (point.size() >= 2) {
-				return Vector2(point[0], point[1]);
-			}
-		}
-	}
-
 	return rect.get_center();
 }
+
+Dictionary EditorAutomationInput::position_options_for_source(const Dictionary &p_options) {
+	Dictionary result;
+	if (p_options.has("source")) {
+		const Variant source_value = p_options.get("source", Variant());
+		if (source_value.get_type() == Variant::DICTIONARY) {
+			_merge_position_spec(source_value, result);
+		}
+	}
+	_merge_position_spec(p_options, result);
+	_copy_prefixed_position_option(p_options, result, "source_", "position");
+	_copy_prefixed_position_option(p_options, result, "source_", "anchor");
+	_copy_prefixed_position_option(p_options, result, "source_", "x");
+	_copy_prefixed_position_option(p_options, result, "source_", "y");
+	return result;
+}
+
+Dictionary EditorAutomationInput::position_options_for_target_element(const Dictionary &p_options) {
+	Dictionary result;
+	if (p_options.has("target_position")) {
+		const Variant target_position_value = p_options.get("target_position", Variant());
+		if (target_position_value.get_type() == Variant::DICTIONARY) {
+			_merge_position_spec(target_position_value, result);
+		}
+	}
+	_copy_prefixed_position_option(p_options, result, "target_", "anchor");
+	_copy_prefixed_position_option(p_options, result, "target_", "x");
+	_copy_prefixed_position_option(p_options, result, "target_", "y");
+	return result;
+}
+
+Vector2 EditorAutomationInput::resolve_target_point(const Dictionary &p_options) {
+	if (!p_options.has("target_point")) {
+		return Vector2();
+	}
+	const Variant point_value = p_options.get("target_point", Variant());
+	if (point_value.get_type() == Variant::VECTOR2) {
+		return point_value;
+	}
+	if (point_value.get_type() == Variant::ARRAY) {
+		const Array point = point_value;
+		if (point.size() >= 2) {
+			return Vector2(point[0], point[1]);
+		}
+	}
+	return Vector2();
+}
+
+#ifdef TESTS_ENABLED
+void EditorAutomationInput::set_mouse_trace_enabled(bool p_enabled) {
+	AutomationMouseTrace::enabled = p_enabled;
+	if (!p_enabled) {
+		AutomationMouseTrace::press_global = Vector2();
+		AutomationMouseTrace::release_global = Vector2();
+	}
+}
+
+Vector2 EditorAutomationInput::get_mouse_trace_press_global() {
+	return AutomationMouseTrace::press_global;
+}
+
+Vector2 EditorAutomationInput::get_mouse_trace_release_global() {
+	return AutomationMouseTrace::release_global;
+}
+#endif // TESTS_ENABLED
 
 Viewport *EditorAutomationInput::viewport_for_node(Node *p_node) {
 	if (p_node == nullptr || !p_node->is_inside_tree()) {

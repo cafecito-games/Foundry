@@ -107,7 +107,16 @@ public:
 			PackedStringArray &r_events);
 
 	static Vector2 resolve_position_in_bounds(const Rect2i &p_bounds, const Dictionary &p_options);
+	static Dictionary position_options_for_source(const Dictionary &p_options);
+	static Dictionary position_options_for_target_element(const Dictionary &p_options);
+	static Vector2 resolve_target_point(const Dictionary &p_options);
 	static Vector2 global_center_of_bounds(const Rect2i &p_bounds);
+
+#ifdef TESTS_ENABLED
+	static void set_mouse_trace_enabled(bool p_enabled);
+	static Vector2 get_mouse_trace_press_global();
+	static Vector2 get_mouse_trace_release_global();
+#endif // TESTS_ENABLED
 
 	static Viewport *viewport_for_node(Node *p_node);
 	static Viewport *input_viewport_for_control(Control *p_control, Vector2 &r_local_position, const Vector2 &p_global_position);
