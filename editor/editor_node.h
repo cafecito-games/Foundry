@@ -89,6 +89,7 @@ class EditorResourcePreview;
 class EditorResourceConversionPlugin;
 class EditorRunBar;
 class EditorSceneContext;
+class EditorSceneWorkspace;
 class EditorSceneTabs;
 class EditorSelectionHistory;
 class SubViewportContainer;
@@ -335,6 +336,7 @@ private:
 	DockSplitContainer *right_l_vsplit = nullptr;
 	DockSplitContainer *right_r_vsplit = nullptr;
 	Control *center_overlay = nullptr;
+	EditorSceneWorkspace *scene_workspace = nullptr;
 
 	// Main tabs.
 	EditorSceneTabs *scene_tabs = nullptr;
@@ -704,6 +706,10 @@ private:
 
 	void _save_central_editor_layout_to_config(Ref<ConfigFile> p_config_file);
 	void _load_central_editor_layout_from_config(Ref<ConfigFile> p_config_file);
+
+	void _save_workspace_to_config(Ref<ConfigFile> p_config_file);
+	void _load_workspace_from_config(const Ref<ConfigFile> &p_config_file);
+	void _remount_workspace_pane();
 
 	void _save_window_settings_to_config(Ref<ConfigFile> p_layout, const String &p_section);
 
