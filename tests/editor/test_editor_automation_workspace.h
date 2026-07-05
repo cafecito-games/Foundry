@@ -35,7 +35,9 @@
 #include "editor/automation/editor_automation_snapshot.h"
 #include "editor/automation/editor_automation_workspace.h"
 #include "editor/editor_data.h"
+#include "editor/editor_scene_pane_tile.h"
 #include "editor/editor_scene_workspace.h"
+#include "editor/scene/editor_scene_tabs.h"
 
 #include "core/object/message_queue.h"
 #include "scene/gui/panel_container.h"
@@ -202,7 +204,6 @@ TEST_CASE("[Editor][Automation][MCP] mcp-dock-action") {
 	dock_args["region"] = "center";
 	const EditorAutomationSelectorResult tab_match = EditorAutomationSelector::resolve(snapshot, tab_selector);
 	REQUIRE(tab_match.status == EditorAutomationSelectorStatus::OK);
-	const EditorAutomationElement &tab = snapshot.get_element(tab_match.match_indices[0]);
 	const EditorAutomationActionResult drag_result = EditorAutomationDriver::perform(
 			snapshot,
 			"dock",
