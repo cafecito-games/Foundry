@@ -134,6 +134,7 @@
 #include "tests/core/object/test_undo_redo.h"
 #include "tests/core/os/test_foundry_cli_help.h"
 #include "tests/core/os/test_foundry_cli_parser.h"
+#include "tests/core/os/test_foundry_cli_project_test.h"
 #include "tests/core/os/test_foundry_test_progress.h"
 #include "tests/core/os/test_os.h"
 #include "tests/core/string/test_fuzzy_search.h"

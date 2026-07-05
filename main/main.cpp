@@ -2355,10 +2355,10 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 		OS::get_singleton()->add_logger(memnew(RotatedFileLogger(base_path, max_files)));
 	}
 
-	// A `project run --script <path>` invocation is applied later in `Main::start()`, after this
-	// check runs. Treat a pending CLI script as a valid run target so a project without a main
-	// scene can still execute the script instead of aborting here.
-	if (main_args.is_empty() && foundry_cli_parse.invocation.script.is_empty() && String(GLOBAL_GET("application/run/main_scene")) == "") {
+	// A `project run --script <path>` or `project test --runner <path>` invocation is applied later
+	// in `Main::start()`, after this check runs. Treat a pending CLI script or test runner as a
+	// valid run target so a project without a main scene can still execute instead of aborting here.
+	if (main_args.is_empty() && foundry_cli_parse.invocation.script.is_empty() && foundry_cli_parse.invocation.runner.is_empty() && String(GLOBAL_GET("application/run/main_scene")) == "") {
 #ifdef TOOLS_ENABLED
 		if (!editor && !project_manager) {
 #endif
