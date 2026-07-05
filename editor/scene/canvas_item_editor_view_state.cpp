@@ -30,6 +30,7 @@
 
 #include "canvas_item_editor_view_state.h"
 
+#include "editor/themes/editor_scale.h"
 #include "scene/main/canvas_item.h"
 
 void CanvasItemEditorViewState::reset_drag() {
@@ -91,4 +92,27 @@ void CanvasItemEditorViewMath::accumulate_select_result(Vector<CanvasItemEditorV
 	result.z_index = p_z_index;
 	result.has_z = p_has_z;
 	p_results.push_back(result);
+}
+
+bool CanvasItemEditorSceneGeometryState::is_geometry_key(const StringName &p_key) {
+	return p_key == StringName("zoom") || p_key == StringName("ofs") || p_key == StringName("show_zoom_control");
+}
+
+Dictionary CanvasItemEditorSceneGeometryState::to_dict(const CanvasItemEditorViewState &p_state) {
+	Dictionary state;
+	// Take the editor scale into account.
+	state["zoom"] = p_state.zoom / MAX(1, EDSCALE);
+	state["ofs"] = p_state.view_offset;
+	return state;
+}
+
+void CanvasItemEditorSceneGeometryState::apply(CanvasItemEditorViewState &p_state, const Dictionary &p_dict) {
+	if (p_dict.has("zoom")) {
+		p_state.zoom = real_t(p_dict["zoom"]) * MAX(1, EDSCALE);
+	}
+
+	if (p_dict.has("ofs")) {
+		p_state.view_offset = p_dict["ofs"];
+		p_state.previous_update_view_offset = p_state.view_offset;
+	}
 }

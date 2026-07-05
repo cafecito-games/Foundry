@@ -128,6 +128,8 @@ public:
 	CanvasItemEditorViewState &get_view_state() { return view_state; }
 	const CanvasItemEditorViewState &get_view_state() const { return view_state; }
 
+	Transform2D get_canvas_transform() const { return view_state.transform; }
+
 	Control *get_viewport_control() const { return viewport; }
 	Control *get_viewport_scrollable() const { return viewport_scrollable; }
 	SubViewportContainer *get_scene_viewport_container() const { return scene_tree; }
@@ -145,4 +147,17 @@ public:
 	void active_scene_context_changed();
 	void set_cursor_shape_override(Control::CursorShape p_shape = Control::CURSOR_ARROW);
 	Control::CursorShape get_cursor_shape(const Point2 &p_pos) const;
+
+	// Test-only counter incremented by update_viewport(); used by unit tests.
+	uint64_t test_update_viewport_invocations = 0;
+};
+
+// Shared routing for external per-view accessors (#929). CanvasItemEditor delegates here
+// so focused-view selection and all-view fan-out stay unit-testable without EditorNode.
+struct CanvasItemEditorViewRouting {
+	static CanvasItemEditorView *get_focused_view(const Vector<CanvasItemEditorView *> &p_views);
+	static Transform2D get_canvas_transform(const Vector<CanvasItemEditorView *> &p_views);
+	static Control *get_viewport_control(const Vector<CanvasItemEditorView *> &p_views);
+	static void set_cursor_shape_override(const Vector<CanvasItemEditorView *> &p_views, Control::CursorShape p_shape);
+	static void update_all_viewports(const Vector<CanvasItemEditorView *> &p_views);
 };
