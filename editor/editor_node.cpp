@@ -98,6 +98,7 @@
 #include "editor/editor_log.h"
 #include "editor/editor_main_screen.h"
 #include "editor/editor_scene_context.h"
+#include "editor/editor_scene_workspace.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/export/dedicated_server_export_plugin.h"
 #include "editor/export/editor_export.h"
@@ -6337,6 +6338,7 @@ void EditorNode::_save_editor_layout() {
 	config->load(EditorPaths::get_singleton()->get_project_settings_dir().path_join("editor_layout.cfg"));
 
 	editor_dock_manager->save_docks_to_config(config, "docks");
+	_save_workspace_to_config(config);
 	_save_open_scenes_to_config(config);
 	_save_central_editor_layout_to_config(config);
 	_save_window_settings_to_config(config, "EditorWindow");
@@ -6365,7 +6367,7 @@ void EditorNode::save_editor_layout_delayed() {
 }
 
 void EditorNode::_load_editor_layout() {
-	EditorProgress ep("loading_editor_layout", TTR("Loading editor"), 5);
+	EditorProgress ep("loading_editor_layout", TTR("Loading editor"), 6);
 	ep.step(TTR("Loading editor layout..."), 0, true);
 	Ref<ConfigFile> config;
 	config.instantiate();
@@ -6396,13 +6398,16 @@ void EditorNode::_load_editor_layout() {
 		ep.step(TTR("Reopening scenes..."), 2, true);
 		_load_open_scenes_from_config(config);
 
-		ep.step(TTR("Loading central editor layout..."), 3, true);
+		ep.step(TTR("Loading workspace..."), 3, true);
+		_load_workspace_from_config(config);
+
+		ep.step(TTR("Loading central editor layout..."), 4, true);
 		_load_central_editor_layout_from_config(config);
 
-		ep.step(TTR("Loading plugin window layout..."), 4, true);
+		ep.step(TTR("Loading plugin window layout..."), 5, true);
 		editor_data.set_plugin_window_layout(config);
 
-		ep.step(TTR("Editor layout ready."), 5, true);
+		ep.step(TTR("Editor layout ready."), 6, true);
 	}
 	load_editor_layout_done = true;
 }
@@ -6437,6 +6442,52 @@ void EditorNode::_load_central_editor_layout_from_config(Ref<ConfigFile> p_confi
 	// Main editor (plugin).
 
 	editor_main_screen->load_layout_from_config(p_config_file, EDITOR_NODE_CONFIG_SECTION);
+}
+
+void EditorNode::_save_workspace_to_config(Ref<ConfigFile> p_config_file) {
+	if (scene_workspace) {
+		EditorSceneWorkspace::save_to_config(p_config_file, scene_workspace);
+	}
+}
+
+void EditorNode::_load_workspace_from_config(const Ref<ConfigFile> &p_config_file) {
+	if (!scene_workspace || !EditorSceneWorkspace::has_workspace_session(p_config_file)) {
+		return;
+	}
+
+	if (top_split && top_split->get_parent()) {
+		top_split->get_parent()->remove_child(top_split);
+	}
+
+	scene_workspace->restore_from_config(p_config_file);
+	_remount_workspace_pane();
+}
+
+void EditorNode::_remount_workspace_pane() {
+	ERR_FAIL_NULL(scene_workspace);
+	ERR_FAIL_NULL(top_split);
+
+	WorkspaceLeafNode *target_leaf = nullptr;
+	for (WorkspaceLeafNode *leaf : scene_workspace->get_leaves()) {
+		if (leaf->get_content_descriptor() == "main") {
+			target_leaf = leaf;
+			break;
+		}
+	}
+	if (!target_leaf) {
+		target_leaf = scene_workspace->get_focused_leaf();
+	}
+	ERR_FAIL_NULL(target_leaf);
+
+	Control *host = target_leaf->get_content_host();
+	ERR_FAIL_NULL(host);
+	if (top_split->get_parent() != host) {
+		if (top_split->get_parent()) {
+			top_split->get_parent()->remove_child(top_split);
+		}
+		host->add_child(top_split);
+		top_split->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+	}
 }
 
 void EditorNode::_save_window_settings_to_config(Ref<ConfigFile> p_layout, const String &p_section) {
@@ -9103,9 +9154,12 @@ EditorNode::EditorNode() {
 	add_child(scan_changes_timer);
 
 	top_split = memnew(VSplitContainer);
-	center_overlay->add_child(top_split);
 	top_split->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 	top_split->set_collapsed(true);
+
+	scene_workspace = EditorSceneWorkspace::create_single_leaf_workspace();
+	center_overlay->add_child(scene_workspace);
+	scene_workspace->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 
 	VBoxContainer *srt = memnew(VBoxContainer);
 	srt->set_v_size_flags(Control::SIZE_EXPAND_FILL);
@@ -9133,6 +9187,7 @@ EditorNode::EditorNode() {
 	editor_main_screen->set_draw_behind_parent(true);
 	srt->add_child(editor_main_screen);
 	editor_main_screen->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	_remount_workspace_pane();
 
 	placeholder_scene_viewport = memnew(SubViewport);
 	placeholder_scene_viewport->set_auto_translate_mode(AUTO_TRANSLATE_MODE_ALWAYS);
