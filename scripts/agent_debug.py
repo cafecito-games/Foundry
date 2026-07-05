@@ -26,7 +26,9 @@ def resolve_executable(name: str) -> str | None:
 def build_first(args: argparse.Namespace) -> int:
     command = [sys.executable, str(BUILD_SCRIPT)]
 
-    if args.dev_mode:
+    if args.dev_build:
+        command.append("--dev-build")
+    elif args.dev_mode:
         command.append("--dev-mode")
     if args.jobs is not None:
         command.extend(["--jobs", str(args.jobs)])
@@ -88,7 +90,16 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     )
     parser.add_argument("--case", dest="test_case", help="Run a focused doctest case under GDB.")
     parser.add_argument("--build-first", action="store_true", help="Build Foundry before launching GDB.")
-    parser.add_argument("--dev-mode", action="store_true", help="With --build-first, build with dev_mode=yes.")
+    parser.add_argument(
+        "--dev-build",
+        action="store_true",
+        help="With --build-first, use faster dev_build=yes instead of the default CI-style dev_mode=yes build.",
+    )
+    parser.add_argument(
+        "--dev-mode",
+        action="store_true",
+        help="Compatibility no-op for --build-first; dev_mode=yes is now the default.",
+    )
     parser.add_argument("--jobs", type=int, help="With --build-first, set the SCons job count.")
     parser.add_argument(
         "--log",
@@ -115,6 +126,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="Extra Foundry arguments appended after the default test command. Use `--` before these args.",
     )
     args = parser.parse_args(argv)
+    if args.dev_mode and args.dev_build:
+        parser.error("--dev-mode and --dev-build cannot be combined")
     if args.jobs is not None and args.jobs < 1:
         parser.error("--jobs must be at least 1")
     return args

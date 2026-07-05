@@ -129,14 +129,14 @@ def scons_prefix() -> list[str] | None:
 
 
 def build_command(args: argparse.Namespace) -> list[str]:
-    build_mode = "dev_mode=yes" if args.dev_mode else "dev_build=yes"
+    build_modes = ["dev_build=yes"] if args.dev_build else ["dev_mode=yes", "dev_build=yes"]
     prefix = scons_prefix()
     if prefix is None:
         raise RuntimeError("SCons is not available")
     command = prefix + [
         "platform=linuxbsd",
         "target=editor",
-        build_mode,
+        *build_modes,
         "tests=yes",
         "module_text_server_fb_enabled=yes",
         f"cache_path={DEFAULT_CACHE_PATH}",
@@ -167,7 +167,16 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     )
     parser.add_argument("--test", action="store_true", help="Run the Foundry test suite after a successful build.")
     parser.add_argument("--case", dest="test_case", help="Run a focused doctest case after building. Implies --test.")
-    parser.add_argument("--dev-mode", action="store_true", help="Use dev_mode=yes instead of dev_build=yes.")
+    parser.add_argument(
+        "--dev-build",
+        action="store_true",
+        help="Use faster dev_build=yes instead of the default CI-style dev_mode=yes build.",
+    )
+    parser.add_argument(
+        "--dev-mode",
+        action="store_true",
+        help="Compatibility no-op; dev_mode=yes is now the default.",
+    )
     parser.add_argument("--jobs", type=int, default=os.cpu_count() or 1, help="Parallel SCons jobs. Default: CPU count.")
     parser.add_argument("--log", type=Path, default=DEFAULT_LOG, help=f"Build log path. Default: {DEFAULT_LOG}.")
     parser.add_argument("--append-log", action="store_true", help="Append to the log instead of replacing it.")
@@ -189,6 +198,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="Append one extra raw argument to the SCons command. Repeat as needed.",
     )
     args = parser.parse_args(argv)
+    if args.dev_mode and args.dev_build:
+        parser.error("--dev-mode and --dev-build cannot be combined")
     if args.test_case:
         args.test = True
     if args.jobs < 1:
