@@ -883,6 +883,7 @@ private:
 	Ref<World3D> _get_edited_world_3d() const;
 	void _rebind_editor_world_furniture();
 	void _rebind_preview_sun_env_parent();
+	void _sync_preview_environment_parenting();
 
 	bool do_snap_selected_nodes_to_floor = false;
 	void _snap_selected_nodes_to_floor();

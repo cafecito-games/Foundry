@@ -8611,21 +8611,40 @@ void Node3DEditor::_rebind_editor_world_furniture() {
 }
 
 void Node3DEditor::_rebind_preview_sun_env_parent() {
+	call_deferred(SNAME("_sync_preview_environment_parenting"));
+}
+
+void Node3DEditor::_sync_preview_environment_parenting() {
 	SubViewport *context_viewport = EditorNode::get_singleton()->get_scene_root();
 	ERR_FAIL_NULL(context_viewport);
 
-	if (preview_sun && !preview_sun_dangling && preview_sun->get_parent() != context_viewport) {
+	const bool disable_light = directional_light_count > 0 || !sun_button->is_pressed();
+	const bool disable_env = world_env_count > 0 || !environ_button->is_pressed();
+
+	if (disable_light) {
+		if (preview_sun->get_parent()) {
+			preview_sun->get_parent()->remove_child(preview_sun);
+			preview_sun_dangling = true;
+		}
+	} else if (preview_sun->get_parent() != context_viewport) {
 		if (preview_sun->get_parent()) {
 			preview_sun->get_parent()->remove_child(preview_sun);
 		}
 		context_viewport->add_child(preview_sun, true);
+		preview_sun_dangling = false;
 	}
 
-	if (preview_environment && !preview_env_dangling && preview_environment->get_parent() != context_viewport) {
+	if (disable_env) {
+		if (preview_environment->get_parent()) {
+			preview_environment->get_parent()->remove_child(preview_environment);
+			preview_env_dangling = true;
+		}
+	} else if (preview_environment->get_parent() != context_viewport) {
 		if (preview_environment->get_parent()) {
 			preview_environment->get_parent()->remove_child(preview_environment);
 		}
 		context_viewport->add_child(preview_environment);
+		preview_env_dangling = false;
 	}
 }
 
@@ -9622,29 +9641,16 @@ void Node3DEditor::_update_preview_environment() {
 	sun_button->set_disabled(directional_light_count > 0);
 
 	if (disable_light) {
-		if (preview_sun->get_parent()) {
-			preview_sun->get_parent()->remove_child(preview_sun);
-			sun_state->show();
-			sun_vb->hide();
-			preview_sun_dangling = true;
-		}
-
 		if (directional_light_count > 0) {
 			sun_state->set_text(TTRC("Scene contains\nDirectionalLight3D.\nPreview disabled."));
 		} else {
 			sun_state->set_text(TTRC("Preview disabled."));
 		}
-
+		sun_state->show();
+		sun_vb->hide();
 	} else {
-		if (!preview_sun->get_parent()) {
-			SubViewport *context_viewport = EditorNode::get_singleton()->get_scene_root();
-			if (context_viewport) {
-				context_viewport->add_child(preview_sun, true);
-			}
-			sun_state->hide();
-			sun_vb->show();
-			preview_sun_dangling = false;
-		}
+		sun_state->hide();
+		sun_vb->show();
 	}
 
 	sun_angle_altitude->set_value_no_signal(-Math::rad_to_deg(sun_rotation.x));
@@ -9655,29 +9661,19 @@ void Node3DEditor::_update_preview_environment() {
 	environ_button->set_disabled(world_env_count > 0);
 
 	if (disable_env) {
-		if (preview_environment->get_parent()) {
-			preview_environment->get_parent()->remove_child(preview_environment);
-			environ_state->show();
-			environ_vb->hide();
-			preview_env_dangling = true;
-		}
 		if (world_env_count > 0) {
 			environ_state->set_text(TTRC("Scene contains\nWorldEnvironment.\nPreview disabled."));
 		} else {
 			environ_state->set_text(TTRC("Preview disabled."));
 		}
-
+		environ_state->show();
+		environ_vb->hide();
 	} else {
-		if (!preview_environment->get_parent()) {
-			SubViewport *context_viewport = EditorNode::get_singleton()->get_scene_root();
-			if (context_viewport) {
-				context_viewport->add_child(preview_environment);
-			}
-			environ_state->hide();
-			environ_vb->show();
-			preview_env_dangling = false;
-		}
+		environ_state->hide();
+		environ_vb->show();
 	}
+
+	call_deferred(SNAME("_sync_preview_environment_parenting"));
 }
 
 void Node3DEditor::_sun_direction_input(const Ref<InputEvent> &p_event) {
