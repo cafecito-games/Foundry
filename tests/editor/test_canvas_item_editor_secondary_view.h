@@ -63,18 +63,18 @@ TEST_CASE("[SceneTree][Editor] tile-preview-mode-prefers-canvas-view-host") {
 	REQUIRE(tile != nullptr);
 	REQUIRE(tile->get_preview_container() != nullptr);
 
-	tile->set_preview_mode(true, false, "Scene", Ref<Texture2D>());
+	tile->set_preview_mode(TilePreviewMode::LIVE_2D);
 	CHECK(tile->get_preview_container()->is_visible());
 
 	CanvasItemEditorViewState view_state;
 	CanvasItemEditorView *view = memnew(CanvasItemEditorView(nullptr, view_state));
 	tile->set_canvas_view(view);
-	tile->set_preview_mode(true, false, "Scene", Ref<Texture2D>());
+	tile->set_preview_mode(TilePreviewMode::LIVE_2D);
 
 	CHECK_FALSE(tile->get_preview_container()->is_visible());
 
 	tile->set_canvas_view(nullptr);
-	tile->set_preview_mode(true, false, "Scene", Ref<Texture2D>());
+	tile->set_preview_mode(TilePreviewMode::LIVE_2D);
 	CHECK(tile->get_preview_container()->is_visible());
 
 	memdelete(view);
