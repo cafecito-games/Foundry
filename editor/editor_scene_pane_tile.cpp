@@ -288,3 +288,10 @@ ScenePaneTile::ScenePaneTile() {
 	set_focus_mode(Control::FOCUS_ALL);
 	set_clip_contents(true);
 }
+
+ScenePaneTile::~ScenePaneTile() {
+	if (canvas_view) {
+		CanvasItemEditor::destroy_secondary_view(canvas_view);
+		canvas_view = nullptr;
+	}
+}

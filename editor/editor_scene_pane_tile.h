@@ -116,4 +116,5 @@ public:
 	void setup(int p_tile_id, EditorSelection *p_editor_selection, EditorData &p_editor_data, bool p_register_open_commands = false);
 
 	ScenePaneTile();
+	~ScenePaneTile();
 };

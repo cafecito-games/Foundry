@@ -9396,32 +9396,32 @@ void Node3DEditor::_viewport_clicked(int p_viewport_idx) {
 }
 
 void Node3DEditor::_node_added(Node *p_node) {
-	if (EditorNode::get_singleton()->get_scene_root()->is_ancestor_of(p_node)) {
+	if (p_node != preview_sun && p_node != preview_environment && EditorNode::get_singleton()->get_scene_root()->is_ancestor_of(p_node)) {
 		if (Object::cast_to<WorldEnvironment>(p_node)) {
 			world_env_count++;
 			if (world_env_count == 1) {
-				_update_preview_environment();
+				callable_mp(this, &Node3DEditor::_update_preview_environment).call_deferred();
 			}
 		} else if (Object::cast_to<DirectionalLight3D>(p_node)) {
 			directional_light_count++;
 			if (directional_light_count == 1) {
-				_update_preview_environment();
+				callable_mp(this, &Node3DEditor::_update_preview_environment).call_deferred();
 			}
 		}
 	}
 }
 
 void Node3DEditor::_node_removed(Node *p_node) {
-	if (EditorNode::get_singleton()->get_scene_root()->is_ancestor_of(p_node)) {
+	if (p_node != preview_sun && p_node != preview_environment && EditorNode::get_singleton()->get_scene_root()->is_ancestor_of(p_node)) {
 		if (Object::cast_to<WorldEnvironment>(p_node)) {
 			world_env_count--;
 			if (world_env_count == 0) {
-				_update_preview_environment();
+				callable_mp(this, &Node3DEditor::_update_preview_environment).call_deferred();
 			}
 		} else if (Object::cast_to<DirectionalLight3D>(p_node)) {
 			directional_light_count--;
 			if (directional_light_count == 0) {
-				_update_preview_environment();
+				callable_mp(this, &Node3DEditor::_update_preview_environment).call_deferred();
 			}
 		}
 	}
@@ -10682,6 +10682,7 @@ Node3DEditorViewport *Node3DEditor::create_secondary_viewport(EditorSceneContext
 	_ensure_world_furniture(p_context->get_world_3d());
 
 	Node3DEditorViewport *viewport_instance = memnew(Node3DEditorViewport(this, 0));
+	viewport_instance->assign_pending_data_pointers(preview_node, &preview_bounds, accept);
 	viewport_instance->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 	viewport_instance->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	viewport_instance->set_h_size_flags(Control::SIZE_EXPAND_FILL);

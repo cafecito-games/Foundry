@@ -4579,6 +4579,9 @@ void CanvasItemEditor::_update_editor_settings() {
 
 void CanvasItemEditor::_project_settings_changed() {
 	for (CanvasItemEditorView *view : views) {
+		if (!view) {
+			continue;
+		}
 		view->push_viewport_state();
 	}
 }
@@ -4897,6 +4900,9 @@ void CanvasItemEditor::_active_scene_context_changed() {
 		focused_view->push_viewport_state();
 	}
 	for (CanvasItemEditorView *view : views) {
+		if (!view) {
+			continue;
+		}
 		view->push_viewport_state();
 	}
 	update_viewport();
@@ -5846,6 +5852,9 @@ CanvasItemEditorView *CanvasItemEditor::_get_view_for_context(EditorSceneContext
 		return focused_view;
 	}
 	for (CanvasItemEditorView *view : views) {
+		if (!view) {
+			continue;
+		}
 		if (view->get_bound_context() == p_context) {
 			return view;
 		}
@@ -5862,65 +5871,134 @@ int CanvasItemEditor::_view_index_of(const CanvasItemEditorView *p_view) const {
 	return -1;
 }
 
+int CanvasItemEditor::_claim_view_slot(Vector<CanvasItemEditorView *> &p_views, CanvasItemEditorView *p_view) {
+	ERR_FAIL_NULL_V(p_view, -1);
+
+	int empty_slot = -1;
+	for (int i = 0; i < p_views.size(); i++) {
+		if (p_views[i] == p_view) {
+			return i;
+		}
+		if (!p_views[i] && empty_slot < 0) {
+			empty_slot = i;
+		}
+	}
+
+	if (empty_slot >= 0) {
+		p_views.write[empty_slot] = p_view;
+		return empty_slot;
+	}
+
+	p_views.push_back(p_view);
+	return p_views.size() - 1;
+}
+
+bool CanvasItemEditor::_release_view_slot(Vector<CanvasItemEditorView *> &p_views, const CanvasItemEditorView *p_focused_view, CanvasItemEditorView *p_view) {
+	if (!p_view || p_view == p_focused_view) {
+		return false;
+	}
+
+	for (int i = 0; i < p_views.size(); i++) {
+		if (p_views[i] == p_view) {
+			p_views.write[i] = nullptr;
+			return true;
+		}
+	}
+
+	return false;
+}
+
 void CanvasItemEditor::_view_draw_viewport(int p_view_index) {
 	ERR_FAIL_INDEX(p_view_index, views.size());
-	views[p_view_index]->_draw_viewport();
+	CanvasItemEditorView *view = views[p_view_index];
+	ERR_FAIL_NULL(view);
+	view->_draw_viewport();
 }
 
-void CanvasItemEditor::_view_gui_input_viewport(int p_view_index, const Ref<InputEvent> &p_event) {
+void CanvasItemEditor::_view_gui_input_viewport(const Ref<InputEvent> &p_event, int p_view_index) {
 	ERR_FAIL_INDEX(p_view_index, views.size());
-	views[p_view_index]->_gui_input_viewport(p_event);
+	CanvasItemEditorView *view = views[p_view_index];
+	ERR_FAIL_NULL(view);
+	view->_gui_input_viewport(p_event);
 }
 
-void CanvasItemEditor::_view_update_scroll(int p_view_index, real_t p_value) {
+void CanvasItemEditor::_view_update_scroll(real_t p_value, int p_view_index) {
 	ERR_FAIL_INDEX(p_view_index, views.size());
-	views[p_view_index]->_update_scroll(p_value);
+	CanvasItemEditorView *view = views[p_view_index];
+	ERR_FAIL_NULL(view);
+	view->_update_scroll(p_value);
 }
 
 void CanvasItemEditor::_view_update_scrollbars(int p_view_index) {
 	ERR_FAIL_INDEX(p_view_index, views.size());
-	views[p_view_index]->_update_scrollbars();
+	CanvasItemEditorView *view = views[p_view_index];
+	ERR_FAIL_NULL(view);
+	view->_update_scrollbars();
 }
 
-void CanvasItemEditor::_view_update_zoom(int p_view_index, real_t p_zoom) {
+void CanvasItemEditor::_view_update_zoom(real_t p_zoom, int p_view_index) {
 	ERR_FAIL_INDEX(p_view_index, views.size());
-	views[p_view_index]->_update_zoom(p_zoom);
+	CanvasItemEditorView *view = views[p_view_index];
+	ERR_FAIL_NULL(view);
+	view->_update_zoom(p_zoom);
 }
 
-void CanvasItemEditor::_view_pan_callback(int p_view_index, Vector2 p_scroll_vec, Ref<InputEvent> p_event) {
+void CanvasItemEditor::_view_pan_callback(Vector2 p_scroll_vec, Ref<InputEvent> p_event, int p_view_index) {
 	ERR_FAIL_INDEX(p_view_index, views.size());
-	views[p_view_index]->_pan_callback(p_scroll_vec, p_event);
+	CanvasItemEditorView *view = views[p_view_index];
+	ERR_FAIL_NULL(view);
+	view->_pan_callback(p_scroll_vec, p_event);
 }
 
-void CanvasItemEditor::_view_zoom_callback(int p_view_index, float p_zoom_factor, Vector2 p_origin, Ref<InputEvent> p_event) {
+void CanvasItemEditor::_view_zoom_callback(float p_zoom_factor, Vector2 p_origin, Ref<InputEvent> p_event, int p_view_index) {
 	ERR_FAIL_INDEX(p_view_index, views.size());
-	views[p_view_index]->_zoom_callback(p_zoom_factor, p_origin, p_event);
+	CanvasItemEditorView *view = views[p_view_index];
+	ERR_FAIL_NULL(view);
+	view->_zoom_callback(p_zoom_factor, p_origin, p_event);
 }
 
-void CanvasItemEditor::_view_selection_result_pressed(int p_view_index, int p_result) {
+void CanvasItemEditor::_view_selection_result_pressed(int p_result, int p_view_index) {
 	ERR_FAIL_INDEX(p_view_index, views.size());
-	views[p_view_index]->_selection_result_pressed(p_result);
+	CanvasItemEditorView *view = views[p_view_index];
+	ERR_FAIL_NULL(view);
+	view->_selection_result_pressed(p_result);
 }
 
 void CanvasItemEditor::_view_selection_menu_hide(int p_view_index) {
 	ERR_FAIL_INDEX(p_view_index, views.size());
-	views[p_view_index]->_selection_menu_hide();
+	CanvasItemEditorView *view = views[p_view_index];
+	ERR_FAIL_NULL(view);
+	view->_selection_menu_hide();
 }
 
 void CanvasItemEditor::_view_update_oversampling(int p_view_index) {
 	ERR_FAIL_INDEX(p_view_index, views.size());
-	views[p_view_index]->_update_oversampling();
+	CanvasItemEditorView *view = views[p_view_index];
+	ERR_FAIL_NULL(view);
+	view->_update_oversampling();
 }
 
 CanvasItemEditorView *CanvasItemEditor::create_secondary_view(EditorSceneContext *p_context, Control *p_parent) {
 	ERR_FAIL_NULL_V(CanvasItemEditor::get_singleton(), nullptr);
+	ERR_FAIL_NULL_V(p_parent, nullptr);
+
 	CanvasItemEditor *editor = CanvasItemEditor::get_singleton();
 	CanvasItemEditorView *view = memnew(CanvasItemEditorView(editor));
-	editor->views.push_back(view);
+	const int view_index = _claim_view_slot(editor->views, view);
+	ERR_FAIL_COND_V_MSG(view_index < 0, nullptr, "Unable to register secondary canvas view.");
 	view->build_ui(p_parent, false);
 	view->bind_context(p_context);
 	view->clear();
 	return view;
+}
+
+void CanvasItemEditor::destroy_secondary_view(CanvasItemEditorView *p_view) {
+	CanvasItemEditor *editor = CanvasItemEditor::get_singleton();
+	if (!editor || !_release_view_slot(editor->views, editor->focused_view, p_view)) {
+		return;
+	}
+
+	memdelete(p_view);
 }
 
 Transform2D CanvasItemEditor::get_canvas_transform() const {
@@ -5947,6 +6025,9 @@ Control *CanvasItemEditor::get_viewport_control() {
 
 void CanvasItemEditor::update_viewport() {
 	for (CanvasItemEditorView *view : views) {
+		if (!view) {
+			continue;
+		}
 		view->update_viewport();
 	}
 }
@@ -5968,6 +6049,9 @@ Control::CursorShape CanvasItemEditor::get_cursor_shape(const Point2 &p_pos) con
 
 CanvasItemEditor::~CanvasItemEditor() {
 	for (CanvasItemEditorView *view : views) {
+		if (!view) {
+			continue;
+		}
 		memdelete(view);
 	}
 	views.clear();

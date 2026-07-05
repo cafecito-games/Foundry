@@ -4919,7 +4919,7 @@ SceneTreeDock::SceneTreeDock(EditorSelection *p_editor_selection, EditorData &p_
 	set_icon_name("PackedScene");
 	// Only one instance may register the editor-wide "Open Scene Dock" command;
 	// per-tile instances skip it so the command stays unique.
-	if (p_register_open_command) {
+	if (p_register_open_command && !EditorCommandPalette::get_singleton()->has_command("docks/open_scene")) {
 		set_dock_shortcut(ED_SHORTCUT_AND_COMMAND("docks/open_scene", TTRC("Open Scene Dock")));
 	}
 	set_default_slot(EditorDock::DOCK_SLOT_LEFT_UR);

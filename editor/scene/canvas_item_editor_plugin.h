@@ -56,6 +56,10 @@ class VScrollBar;
 class VSeparator;
 class VSplitContainer;
 
+namespace TestMultiScenePhaseD {
+struct CanvasItemEditorCallbackAccess;
+}
+
 enum class CanvasItemEditorSnapTarget {
 	NONE = 0,
 	PARENT,
@@ -541,16 +545,18 @@ private:
 	CanvasItemEditorView *_get_view_for_context(EditorSceneContext *p_context) const;
 
 	void _view_draw_viewport(int p_view_index);
-	void _view_gui_input_viewport(int p_view_index, const Ref<InputEvent> &p_event);
-	void _view_update_scroll(int p_view_index, real_t p_value);
+	void _view_gui_input_viewport(const Ref<InputEvent> &p_event, int p_view_index);
+	void _view_update_scroll(real_t p_value, int p_view_index);
 	void _view_update_scrollbars(int p_view_index);
-	void _view_update_zoom(int p_view_index, real_t p_zoom);
-	void _view_pan_callback(int p_view_index, Vector2 p_scroll_vec, Ref<InputEvent> p_event);
-	void _view_zoom_callback(int p_view_index, float p_zoom_factor, Vector2 p_origin, Ref<InputEvent> p_event);
-	void _view_selection_result_pressed(int p_view_index, int p_result);
+	void _view_update_zoom(real_t p_zoom, int p_view_index);
+	void _view_pan_callback(Vector2 p_scroll_vec, Ref<InputEvent> p_event, int p_view_index);
+	void _view_zoom_callback(float p_zoom_factor, Vector2 p_origin, Ref<InputEvent> p_event, int p_view_index);
+	void _view_selection_result_pressed(int p_result, int p_view_index);
 	void _view_selection_menu_hide(int p_view_index);
 	void _view_update_oversampling(int p_view_index);
 	int _view_index_of(const CanvasItemEditorView *p_view) const;
+	static int _claim_view_slot(Vector<CanvasItemEditorView *> &p_views, CanvasItemEditorView *p_view);
+	static bool _release_view_slot(Vector<CanvasItemEditorView *> &p_views, const CanvasItemEditorView *p_focused_view, CanvasItemEditorView *p_view);
 
 	bool _is_node_locked(const Node *p_node) const;
 	bool _is_node_movable(const Node *p_node, bool p_popup_warning = false);
@@ -630,6 +636,7 @@ private:
 
 	friend class CanvasItemEditorPlugin;
 	friend class CanvasItemEditorView;
+	friend struct TestMultiScenePhaseD::CanvasItemEditorCallbackAccess;
 
 protected:
 	void _notification(int p_what);
@@ -661,6 +668,7 @@ public:
 	static CanvasItemEditor *get_singleton() { return singleton; }
 	CanvasItemEditorView *get_focused_view() const { return focused_view; }
 	static CanvasItemEditorView *create_secondary_view(EditorSceneContext *p_context, Control *p_parent);
+	static void destroy_secondary_view(CanvasItemEditorView *p_view);
 
 	Dictionary get_state() const;
 	void set_state(const Dictionary &p_state);

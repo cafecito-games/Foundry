@@ -35,6 +35,7 @@
 #include "editor/editor_scene_context.h"
 #include "editor/editor_scene_pane_tile.h"
 #include "editor/editor_scene_workspace.h"
+#include "editor/settings/editor_command_palette.h"
 
 #include "scene/2d/node_2d.h"
 #include "scene/3d/node_3d.h"
@@ -272,6 +273,38 @@ TEST_CASE("[SceneTree][Editor] tile-widget-builds-in-tile-docks") {
 	CHECK(tile->is_ancestor_of(tile->get_scene_tree_dock()));
 	CHECK(tile->is_ancestor_of(tile->get_inspector_dock()));
 	CHECK(tile->is_ancestor_of(tile->get_content_host()));
+}
+
+TEST_CASE("[SceneTree][Editor] repeated-workspace-construction-keeps-dock-commands-unique") {
+	EditorCommandPalette *palette = EditorCommandPalette::get_singleton();
+	Window *tree_root = SceneTree::get_singleton()->get_root();
+	const bool palette_was_in_tree = palette->is_inside_tree();
+	if (!palette_was_in_tree) {
+		tree_root->add_child(palette);
+	}
+
+	const bool had_scene_command = palette->has_command("docks/open_scene");
+	const bool had_inspector_command = palette->has_command("docks/open_inspector");
+	if (!had_scene_command) {
+		palette->add_command("Open Scene Dock", "docks/open_scene", Callable(), Vector<Variant>(), Ref<Shortcut>());
+	}
+	if (!had_inspector_command) {
+		palette->add_command("Open Inspector Dock", "docks/open_inspector", Callable(), Vector<Variant>(), Ref<Shortcut>());
+	}
+
+	ErrorDetector error_detector;
+	WorkspaceFixture fixture;
+	CHECK_FALSE(error_detector.has_error);
+
+	if (!had_inspector_command) {
+		palette->remove_command("docks/open_inspector");
+	}
+	if (!had_scene_command) {
+		palette->remove_command("docks/open_scene");
+	}
+	if (!palette_was_in_tree) {
+		tree_root->remove_child(palette);
+	}
 }
 
 TEST_CASE("[SceneTree][Editor] workspace-single-tile") {

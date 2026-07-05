@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "core/io/resource.h"
 #include "scene/2d/node_2d.h"
 #include "scene/gui/control.h"
 #include "scene/gui/subviewport_container.h"
@@ -44,8 +45,30 @@
 #endif // PHYSICS_2D_DISABLED
 
 #include "tests/test_macros.h"
+#include "tests/test_tools.h"
 
 namespace TestViewport {
+
+static Node *test_viewport_texture_local_scene = nullptr;
+
+static Node *get_test_viewport_texture_local_scene() {
+	return test_viewport_texture_local_scene;
+}
+
+struct ViewportTextureLocalSceneFuncGuard {
+	Node *(*previous_func)() = nullptr;
+
+	ViewportTextureLocalSceneFuncGuard(Node *p_local_scene) {
+		previous_func = Resource::_get_local_scene_func;
+		test_viewport_texture_local_scene = p_local_scene;
+		Resource::_get_local_scene_func = get_test_viewport_texture_local_scene;
+	}
+
+	~ViewportTextureLocalSceneFuncGuard() {
+		Resource::_get_local_scene_func = previous_func;
+		test_viewport_texture_local_scene = nullptr;
+	}
+};
 
 class NotificationControlViewport : public Control {
 	FOUNDRY_CLASS(NotificationControlViewport, Control);
@@ -158,6 +181,27 @@ public:
 		valid_drop = true;
 	}
 };
+
+TEST_CASE("[SceneTree][Viewport] viewport texture path update skips detached local scene") {
+	Window *root = SceneTree::get_singleton()->get_root();
+	Node *local_scene = memnew(Node);
+	Node *host = memnew(Node);
+	SubViewport *viewport = memnew(SubViewport);
+
+	root->add_child(host);
+
+	ViewportTextureLocalSceneFuncGuard local_scene_func_guard(local_scene);
+	ErrorDetector error_detector;
+	host->add_child(viewport);
+
+	CHECK_FALSE(error_detector.has_error);
+
+	host->remove_child(viewport);
+	root->remove_child(host);
+	memdelete(viewport);
+	memdelete(host);
+	memdelete(local_scene);
+}
 
 TEST_CASE("[SceneTree][Viewport] Controls and InputEvent handling") {
 	DragStart *node_a = memnew(DragStart);

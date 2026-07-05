@@ -45,7 +45,69 @@
 
 #include "tests/test_macros.h"
 
+#include <type_traits>
+
 namespace TestMultiScenePhaseD {
+
+struct CanvasItemEditorCallbackAccess {
+	static bool emitted_argument_callbacks_accept_bound_view_index_last() {
+		return std::is_same_v<decltype(&CanvasItemEditor::_view_gui_input_viewport), void (CanvasItemEditor::*)(const Ref<InputEvent> &, int)> &&
+				std::is_same_v<decltype(&CanvasItemEditor::_view_update_scroll), void (CanvasItemEditor::*)(real_t, int)> &&
+				std::is_same_v<decltype(&CanvasItemEditor::_view_update_zoom), void (CanvasItemEditor::*)(real_t, int)> &&
+				std::is_same_v<decltype(&CanvasItemEditor::_view_pan_callback), void (CanvasItemEditor::*)(Vector2, Ref<InputEvent>, int)> &&
+				std::is_same_v<decltype(&CanvasItemEditor::_view_zoom_callback), void (CanvasItemEditor::*)(float, Vector2, Ref<InputEvent>, int)> &&
+				std::is_same_v<decltype(&CanvasItemEditor::_view_selection_result_pressed), void (CanvasItemEditor::*)(int, int)>;
+	}
+
+	static bool has_registered_view(CanvasItemEditor *p_editor, const CanvasItemEditorView *p_view) {
+		if (!p_editor) {
+			return false;
+		}
+		for (CanvasItemEditorView *view : p_editor->views) {
+			if (view == p_view) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	static int claim_view_slot(Vector<CanvasItemEditorView *> &p_views, CanvasItemEditorView *p_view) {
+		return CanvasItemEditor::_claim_view_slot(p_views, p_view);
+	}
+
+	static bool release_view_slot(Vector<CanvasItemEditorView *> &p_views, const CanvasItemEditorView *p_focused_view, CanvasItemEditorView *p_view) {
+		return CanvasItemEditor::_release_view_slot(p_views, p_focused_view, p_view);
+	}
+};
+
+TEST_CASE("[SceneTree][Editor] canvas-view-bound-callback-signatures") {
+	CHECK(CanvasItemEditorCallbackAccess::emitted_argument_callbacks_accept_bound_view_index_last());
+}
+
+TEST_CASE("[SceneTree][Editor] canvas-view-registry-keeps-stable-slots") {
+	CanvasItemEditorView primary(nullptr);
+	CanvasItemEditorView view_a(nullptr);
+	CanvasItemEditorView view_b(nullptr);
+	CanvasItemEditorView replacement(nullptr);
+	Vector<CanvasItemEditorView *> views;
+
+	CHECK(CanvasItemEditorCallbackAccess::claim_view_slot(views, &primary) == 0);
+	CHECK(CanvasItemEditorCallbackAccess::claim_view_slot(views, &view_a) == 1);
+	CHECK(CanvasItemEditorCallbackAccess::claim_view_slot(views, &view_b) == 2);
+
+	CHECK_FALSE(CanvasItemEditorCallbackAccess::release_view_slot(views, &primary, &primary));
+	CHECK(CanvasItemEditorCallbackAccess::release_view_slot(views, &primary, &view_a));
+	REQUIRE(views.size() == 3);
+	CHECK(views[0] == &primary);
+	CHECK(views[1] == nullptr);
+	CHECK(views[2] == &view_b);
+
+	CHECK(CanvasItemEditorCallbackAccess::claim_view_slot(views, &replacement) == 1);
+	REQUIRE(views.size() == 3);
+	CHECK(views[0] == &primary);
+	CHECK(views[1] == &replacement);
+	CHECK(views[2] == &view_b);
+}
 
 TEST_CASE("[SceneTree][Editor] context-own-world") {
 	EditorSceneContext *context_a = memnew(EditorSceneContext);

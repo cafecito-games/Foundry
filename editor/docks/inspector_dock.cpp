@@ -762,7 +762,7 @@ InspectorDock::InspectorDock(EditorData &p_editor_data, bool p_register_open_com
 	set_icon_name("AnimationTrackList");
 	// Only one instance may register the editor-wide "Open Inspector Dock"
 	// command; per-tile instances skip it so the command stays unique.
-	if (p_register_open_command) {
+	if (p_register_open_command && !EditorCommandPalette::get_singleton()->has_command("docks/open_inspector")) {
 		set_dock_shortcut(ED_SHORTCUT_AND_COMMAND("docks/open_inspector", TTRC("Open Inspector Dock")));
 	}
 	set_default_slot(EditorDock::DOCK_SLOT_RIGHT_UL);

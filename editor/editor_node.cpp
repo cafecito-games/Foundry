@@ -4630,7 +4630,9 @@ void EditorNode::_set_main_scene_state(Dictionary p_state, Node *p_for_scene) {
 	// This should only happen at the very end.
 
 	EditorDebuggerNode::get_singleton()->update_live_edit_root();
-	ScriptEditor::get_singleton()->set_scene_root_script(editor_data.get_scene_root_script(editor_data.get_edited_scene()));
+	const int edited_scene_idx = editor_data.get_edited_scene();
+	const Ref<Script> root_script = edited_scene_idx >= 0 ? editor_data.get_scene_root_script(edited_scene_idx) : Ref<Script>();
+	ScriptEditor::get_singleton()->set_scene_root_script(root_script);
 	editor_data.notify_edited_scene_changed();
 	emit_signal(SNAME("scene_changed"));
 
@@ -5444,7 +5446,11 @@ Error EditorNode::load_scene(const String &p_scene, bool p_ignore_broken_deps, b
 		TypedArray<NodePath> selected_node_list = editor_state_cf->get_value("editor_states", "selected_nodes", TypedArray<String>());
 
 		for (int i = 0; i < selected_node_list.size(); i++) {
-			Node *selected_node = new_scene->get_node_or_null(selected_node_list[i]);
+			NodePath selected_node_path = selected_node_list[i];
+			if (selected_node_path.is_absolute() && !new_scene->is_inside_tree()) {
+				continue;
+			}
+			Node *selected_node = new_scene->get_node_or_null(selected_node_path);
 			if (selected_node) {
 				editor_selection->add_node(selected_node);
 			}
