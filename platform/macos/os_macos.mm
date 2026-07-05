@@ -1266,6 +1266,11 @@ void OS_MacOS_Headless::run() {
 	Main::cleanup();
 }
 
+void OS_MacOS_Headless::alert(const String &p_alert, const String &p_title) {
+	// Bypass OS_MacOS::alert()'s blocking NSAlert modal, which a headless run has no user to dismiss.
+	OS::alert(p_alert, p_title);
+}
+
 OS_MacOS_Headless::OS_MacOS_Headless(const char *p_execpath, int p_argc, char **p_argv) :
 		OS_MacOS(p_execpath, p_argc, p_argv) {
 }
