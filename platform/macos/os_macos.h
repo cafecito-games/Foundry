@@ -191,6 +191,10 @@ class OS_MacOS_Headless : public OS_MacOS {
 public:
 	virtual void run() override;
 
+	// Print alerts to stderr instead of showing a blocking modal dialog. A headless run has no
+	// user to dismiss an NSAlert, so the GUI implementation inherited from OS_MacOS would hang.
+	virtual void alert(const String &p_alert, const String &p_title = "ALERT!") override;
+
 	OS_MacOS_Headless(const char *p_execpath, int p_argc, char **p_argv);
 };
 
