@@ -263,11 +263,15 @@ void HistoryDock::set_scene_context(EditorSceneContext *p_context) {
 	refresh_history();
 }
 
-HistoryDock::HistoryDock() {
+HistoryDock::HistoryDock(bool p_register_open_command) {
+	singleton = singleton ? singleton : this;
 	set_name(TTRC("History"));
 	set_icon_name("History");
-	set_dock_shortcut(ED_SHORTCUT_AND_COMMAND("docks/open_history", TTRC("Open History Dock")));
+	if (p_register_open_command) {
+		set_dock_shortcut(ED_SHORTCUT_AND_COMMAND("docks/open_history", TTRC("Open History Dock")));
+	}
 	set_default_slot(EditorDock::DOCK_SLOT_LEFT_BR);
+	set_layout_key("History");
 
 	ur_manager = EditorUndoRedoManager::get_singleton();
 	if (ur_manager) {

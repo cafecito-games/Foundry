@@ -35,8 +35,15 @@
 class ConnectionsDock;
 class EditorSceneContext;
 
+namespace TestSceneWorkspace {
+class TileConnectionsDockTestAccess;
+class TileHistoryDockTestAccess;
+} // namespace TestSceneWorkspace
+
 class SignalsDock : public EditorDock {
 	FOUNDRY_CLASS(SignalsDock, EditorDock);
+
+	friend class TestSceneWorkspace::TileConnectionsDockTestAccess;
 
 	ConnectionsDock *connections = nullptr;
 
@@ -44,6 +51,7 @@ class SignalsDock : public EditorDock {
 
 public:
 	static SignalsDock *get_singleton() { return singleton; }
+	static void set_focused_instance(SignalsDock *p_instance) { singleton = p_instance; }
 
 	void set_object(Object *p_object);
 
@@ -51,6 +59,6 @@ public:
 	void set_scene_context(EditorSceneContext *p_context);
 	EditorSceneContext *get_scene_context() const;
 
-	SignalsDock();
+	SignalsDock(bool p_register_open_command = true);
 	~SignalsDock();
 };

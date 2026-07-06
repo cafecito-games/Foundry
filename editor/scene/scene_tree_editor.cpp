@@ -47,6 +47,7 @@
 #include "scene/2d/node_2d.h"
 #include "scene/gui/flow_container.h"
 #include "scene/gui/label.h"
+#include "scene/gui/tab_container.h"
 #include "scene/gui/texture_rect.h"
 #include "scene/main/window.h"
 #include "scene/resources/packed_scene.h"
@@ -195,14 +196,28 @@ void SceneTreeEditor::_cell_button_pressed(Object *p_item, int p_column, int p_i
 
 		set_selected(n);
 
-		EditorDockManager::get_singleton()->focus_dock(SignalsDock::get_singleton());
+		SignalsDock *signals = SignalsDock::get_singleton();
+		if (signals) {
+			TabContainer *tabs = Object::cast_to<TabContainer>(signals->get_parent());
+			if (tabs) {
+				tabs->set_current_tab(signals->get_index());
+			}
+			signals->grab_focus();
+		}
 	} else if (p_id == BUTTON_GROUPS) {
 		editor_selection->clear();
 		editor_selection->add_node(n);
 
 		set_selected(n);
 
-		EditorDockManager::get_singleton()->focus_dock(GroupsDock::get_singleton());
+		GroupsDock *groups = GroupsDock::get_singleton();
+		if (groups) {
+			TabContainer *tabs = Object::cast_to<TabContainer>(groups->get_parent());
+			if (tabs) {
+				tabs->set_current_tab(groups->get_index());
+			}
+			groups->grab_focus();
+		}
 	} else if (p_id == BUTTON_UNIQUE) {
 		bool ask_before_revoking_unique_name = EDITOR_GET("docks/scene_tree/ask_before_revoking_unique_name");
 		revoke_node = n;

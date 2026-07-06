@@ -30,10 +30,14 @@
 
 #include "editor_scene_pane_tile.h"
 
+#include "editor/docks/groups_dock.h"
+#include "editor/docks/history_dock.h"
 #include "editor/docks/inspector_dock.h"
 #include "editor/docks/scene_tree_dock.h"
+#include "editor/docks/signals_dock.h"
 #include "editor/editor_data.h"
 #include "editor/editor_scene_context.h"
+#include "editor/editor_tile_dock_region.h"
 #include "editor/editor_tile_drop_overlay.h"
 #include "editor/editor_string_names.h"
 #include "editor/scene/3d/node_3d_editor_plugin.h"
@@ -218,6 +222,8 @@ void ScenePaneTile::setup(int p_tile_id, EditorSelection *p_editor_selection, Ed
 	// open-command/shortcut registration, which only makes sense for
 	// manager-owned docks.
 	scene_tree_dock = memnew(SceneTreeDock(p_editor_selection, p_editor_data, false));
+	scene_tree_dock->set_layout_key(EditorTileDockRegion::layout_key_for_tile("Scene", p_tile_id));
+	scene_tree_dock->set_global(false);
 	scene_tree_dock->set_custom_minimum_size(Size2(180, 0) * EDSCALE);
 	scene_tree_dock->set_h_size_flags(Control::SIZE_FILL);
 	body->add_child(scene_tree_dock);
@@ -229,10 +235,27 @@ void ScenePaneTile::setup(int p_tile_id, EditorSelection *p_editor_selection, Ed
 	content_host->set_mouse_filter(Control::MOUSE_FILTER_PASS);
 	body->add_child(content_host);
 
+	dock_region.attach(body, content_host);
+
 	inspector_dock = memnew(InspectorDock(p_editor_data, false));
-	inspector_dock->set_custom_minimum_size(Size2(180, 0) * EDSCALE);
-	inspector_dock->set_h_size_flags(Control::SIZE_FILL);
-	body->add_child(inspector_dock);
+	inspector_dock->set_layout_key(EditorTileDockRegion::layout_key_for_tile("Inspector", p_tile_id));
+	inspector_dock->set_global(false);
+	dock_region.add_right(inspector_dock);
+
+	signals_dock = memnew(SignalsDock(false));
+	signals_dock->set_layout_key(EditorTileDockRegion::layout_key_for_tile("Signals", p_tile_id));
+	signals_dock->set_global(false);
+	dock_region.add_right(signals_dock);
+
+	groups_dock = memnew(GroupsDock(false));
+	groups_dock->set_layout_key(EditorTileDockRegion::layout_key_for_tile("Groups", p_tile_id));
+	groups_dock->set_global(false);
+	dock_region.add_right(groups_dock);
+
+	history_dock = memnew(HistoryDock(false));
+	history_dock->set_layout_key(EditorTileDockRegion::layout_key_for_tile("History", p_tile_id));
+	history_dock->set_global(false);
+	dock_region.add_right(history_dock);
 
 	preview_container = memnew(SubViewportContainer);
 	preview_container->set_stretch(true);
@@ -267,6 +290,9 @@ void ScenePaneTile::setup(int p_tile_id, EditorSelection *p_editor_selection, Ed
 	_bind_focus_on_interaction(scene_tabs);
 	_bind_focus_on_interaction(scene_tree_dock);
 	_bind_focus_on_interaction(inspector_dock);
+	_bind_focus_on_interaction(signals_dock);
+	_bind_focus_on_interaction(groups_dock);
+	_bind_focus_on_interaction(history_dock);
 	_bind_focus_on_interaction(content_host);
 
 	drop_overlay = memnew(EditorTileDropOverlay);
@@ -330,15 +356,29 @@ void ScenePaneTile::on_focus_entered() {
 	_request_focus();
 }
 
+void ScenePaneTile::set_signals_dock_enabled(bool p_enabled) {
+	dock_region.set_dock_enabled(signals_dock, p_enabled);
+}
+
+void ScenePaneTile::set_groups_dock_enabled(bool p_enabled) {
+	dock_region.set_dock_enabled(groups_dock, p_enabled);
+}
+
+void ScenePaneTile::set_history_dock_enabled(bool p_enabled) {
+	dock_region.set_dock_enabled(history_dock, p_enabled);
+}
+
 void ScenePaneTile::save_layout(const Ref<ConfigFile> &p_config, const String &p_section) const {
 	ERR_FAIL_COND(p_config.is_null());
 	p_config->set_value(p_section, "tile_id", tile_id);
+	dock_region.save_layout(p_config, p_section);
 }
 
 void ScenePaneTile::load_layout(const Ref<ConfigFile> &p_config, const String &p_section) {
 	ERR_FAIL_COND(p_config.is_null());
 	// tile_id is assigned structurally when the leaf is created.
 	p_config->get_value(p_section, "tile_id", tile_id);
+	dock_region.load_layout(p_config, p_section);
 }
 
 ScenePaneTile::~ScenePaneTile() {

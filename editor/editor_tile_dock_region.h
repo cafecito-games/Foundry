@@ -1,8 +1,8 @@
 /**************************************************************************/
-/*  signals_dock.cpp                                                      */
+/*  editor_tile_dock_region.h                                             */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -28,42 +28,38 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-#include "signals_dock.h"
+#pragma once
 
-#include "editor/scene/connections_dialog.h"
-#include "editor/settings/editor_command_palette.h"
+#include "core/io/config_file.h"
 
-void SignalsDock::update_lists() {
-	connections->update_tree();
-}
+class Control;
+class EditorDock;
+class HSplitContainer;
+class TabContainer;
 
-void SignalsDock::set_object(Object *p_object) {
-	connections->set_object(p_object);
-}
+/**
+ * Manages the in-tile dock strip: [left dock | center host | right tab stack].
+ * Docks live here instead of the global EditorDockManager slots.
+ */
+class EditorTileDockRegion {
+	HSplitContainer *body = nullptr;
+	TabContainer *right_tabs = nullptr;
+	Control *center_host = nullptr;
 
-void SignalsDock::set_scene_context(EditorSceneContext *p_context) {
-	connections->set_scene_context(p_context);
-}
+public:
+	static String layout_key_for_tile(const String &p_base_key, int p_tile_id);
 
-EditorSceneContext *SignalsDock::get_scene_context() const {
-	return connections->get_scene_context();
-}
+	void attach(HSplitContainer *p_body, Control *p_center_host);
+	HSplitContainer *get_body() const { return body; }
+	TabContainer *get_right_tabs() const { return right_tabs; }
+	Control *get_center_host() const { return center_host; }
 
-SignalsDock::SignalsDock(bool p_register_open_command) {
-	singleton = singleton ? singleton : this;
-	set_name(TTRC("Signals"));
-	set_icon_name("Signals");
-	if (p_register_open_command) {
-		set_dock_shortcut(ED_SHORTCUT_AND_COMMAND("docks/open_signals", TTRC("Open Signals Dock")));
-	}
-	set_default_slot(EditorDock::DOCK_SLOT_RIGHT_UL);
-	set_layout_key("Signals");
+	void place_left(EditorDock *p_dock);
+	void add_right(EditorDock *p_dock);
 
-	connections = memnew(ConnectionsDock);
-	connections->set_v_size_flags(SIZE_EXPAND_FILL);
-	add_child(connections);
-}
+	void focus_dock(EditorDock *p_dock);
+	void set_dock_enabled(EditorDock *p_dock, bool p_enabled);
 
-SignalsDock::~SignalsDock() {
-	singleton = nullptr;
-}
+	void save_layout(const Ref<ConfigFile> &p_config, const String &p_section) const;
+	void load_layout(const Ref<ConfigFile> &p_config, const String &p_section);
+};
