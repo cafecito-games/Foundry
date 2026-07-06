@@ -8085,7 +8085,7 @@ public:
 	}
 
 	void _open_inspector(Ref<Resource> p_resource) {
-		InspectorDock::get_inspector_singleton()->edit(p_resource.ptr());
+		EditorNode::get_singleton()->get_focused_inspector()->edit(p_resource.ptr());
 	}
 
 	bool updating = false;

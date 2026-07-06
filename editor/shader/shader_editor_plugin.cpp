@@ -498,10 +498,10 @@ void ShaderEditorPlugin::_menu_item_pressed(int p_index) {
 			shader_create_dialog->popup_centered();
 		} break;
 		case FILE_MENU_OPEN: {
-			InspectorDock::get_singleton()->open_resource("Shader");
+			EditorNode::get_singleton()->get_focused_inspector_dock()->open_resource("Shader");
 		} break;
 		case FILE_MENU_OPEN_INCLUDE: {
-			InspectorDock::get_singleton()->open_resource("ShaderInclude");
+			EditorNode::get_singleton()->get_focused_inspector_dock()->open_resource("ShaderInclude");
 		} break;
 		case FILE_MENU_SAVE: {
 			int index = shader_tabs->get_current_tab();

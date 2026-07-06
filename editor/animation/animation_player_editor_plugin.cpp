@@ -1971,7 +1971,7 @@ void AnimationPlayerEditor::_stop_onion_skinning() {
 }
 
 void AnimationPlayerEditor::_pin_pressed() {
-	SceneTreeDock::get_singleton()->get_tree_editor()->update_tree();
+	EditorNode::get_singleton()->get_focused_scene_tree_dock()->get_tree_editor()->update_tree();
 }
 
 AnimationMixer *AnimationPlayerEditor::fetch_mixer_for_library() const {
@@ -2339,9 +2339,9 @@ void AnimationPlayerEditorPlugin::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_READY: {
 			Node3DEditor::get_singleton()->connect(SNAME("transform_key_request"), callable_mp(this, &AnimationPlayerEditorPlugin::_transform_key_request));
-			InspectorDock::get_inspector_singleton()->connect(SNAME("property_keyed"), callable_mp(this, &AnimationPlayerEditorPlugin::_property_keyed));
+			EditorNode::get_singleton()->get_focused_inspector()->connect(SNAME("property_keyed"), callable_mp(this, &AnimationPlayerEditorPlugin::_property_keyed));
 			anim_editor->get_track_editor()->connect(SNAME("keying_changed"), callable_mp(this, &AnimationPlayerEditorPlugin::_update_keying));
-			InspectorDock::get_inspector_singleton()->connect(SNAME("edited_object_changed"), callable_mp(anim_editor->get_track_editor(), &AnimationTrackEditor::update_keying));
+			EditorNode::get_singleton()->get_focused_inspector()->connect(SNAME("edited_object_changed"), callable_mp(anim_editor->get_track_editor(), &AnimationTrackEditor::update_keying));
 			set_force_draw_over_forwarding_enabled();
 		} break;
 	}
@@ -2370,7 +2370,7 @@ void AnimationPlayerEditorPlugin::_transform_key_request(Object *sp, const Strin
 }
 
 void AnimationPlayerEditorPlugin::_update_keying() {
-	InspectorDock::get_inspector_singleton()->set_keying(anim_editor->get_track_editor()->has_keying());
+	EditorNode::get_singleton()->get_focused_inspector()->set_keying(anim_editor->get_track_editor()->has_keying());
 }
 
 void AnimationPlayerEditorPlugin::edit(Object *p_object) {

@@ -79,7 +79,7 @@ void ParticlesEditorPlugin::_menu_callback(int p_idx) {
 
 			EditorUndoRedoManager *ur = EditorUndoRedoManager::get_singleton();
 			ur->create_action(conversion_option_name, UndoRedo::MERGE_DISABLE, edited_node);
-			SceneTreeDock::get_singleton()->replace_node(edited_node, converted_node);
+			EditorNode::get_singleton()->get_focused_scene_tree_dock()->replace_node(edited_node, converted_node);
 			ur->commit_action(false);
 		} break;
 

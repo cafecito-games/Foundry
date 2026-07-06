@@ -89,7 +89,7 @@ void EditorSceneTabs::_scene_tab_script_edited(int p_tab) {
 	const int scene_idx = EditorNode::get_editor_data().tile_tab_to_scene_index(tile_id, p_tab);
 	Ref<Script> scr = EditorNode::get_editor_data().get_scene_root_script(scene_idx);
 	if (scr.is_valid()) {
-		InspectorDock::get_singleton()->edit_resource(scr);
+		EditorNode::get_singleton()->get_focused_inspector_dock()->edit_resource(scr);
 	}
 }
 

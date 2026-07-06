@@ -314,16 +314,6 @@ class SceneTreeDock : public EditorDock {
 	bool _check_node_recursive(Variant &r_variant, Node *p_node, Node *p_by_node, const String type_hint, String &r_warn_message);
 	void _replace_node(Node *p_node, Node *p_by_node, bool p_keep_properties = true, bool p_remove_old = true);
 
-private:
-	static SceneTreeDock *singleton;
-
-public:
-	// Returns the dock bound to the focused scene context. Call sites that must
-	// act on a specific context should hold an explicit dock/context reference
-	// instead of relying on this focused-context singleton.
-	static SceneTreeDock *get_singleton() { return singleton; }
-	static void set_focused_instance(SceneTreeDock *p_instance) { singleton = p_instance; }
-
 protected:
 	void _notification(int p_what);
 	static void _bind_methods();

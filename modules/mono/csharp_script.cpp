@@ -1027,7 +1027,7 @@ void CSharpLanguage::reload_assemblies(bool p_soft_reload) {
 #ifdef TOOLS_ENABLED
 	// FIXME: Hack to refresh editor in order to display new properties and signals. See if there is a better alternative.
 	if (Engine::get_singleton()->is_editor_hint()) {
-		InspectorDock::get_inspector_singleton()->update_tree();
+		EditorNode::get_singleton()->get_focused_inspector()->update_tree();
 		if (EditorNode *editor = EditorNode::get_singleton()) {
 			if (SignalsDock *signals_dock = editor->get_focused_signals_dock()) {
 				signals_dock->update_lists();

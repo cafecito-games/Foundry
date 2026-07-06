@@ -737,12 +737,12 @@ EditorAutomationSnapshot EditorAutomationSnapshot::capture_from_editor(const Edi
 		}
 
 		LocalVector<Node *> relaxed_roots;
-		if (SceneTreeDock *scene_tree_dock = SceneTreeDock::get_singleton()) {
+		if (SceneTreeDock *scene_tree_dock = EditorNode::get_singleton()->get_focused_scene_tree_dock()) {
 			if (scene_tree_dock->is_inside_tree()) {
 				roots.push_back(scene_tree_dock);
 			}
 		}
-		if (InspectorDock *inspector_dock = InspectorDock::get_singleton()) {
+		if (InspectorDock *inspector_dock = EditorNode::get_singleton()->get_focused_inspector_dock()) {
 			if (inspector_dock->is_inside_tree()) {
 				roots.push_back(inspector_dock);
 				relaxed_roots.push_back(inspector_dock);

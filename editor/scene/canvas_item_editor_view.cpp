@@ -1518,7 +1518,7 @@ bool CanvasItemEditorView::_gui_input_select(const Ref<InputEvent> &p_event) {
 			editor->add_node_menu->clear();
 			editor->add_node_menu->add_icon_item(get_editor_theme_icon(SNAME("Add")), TTRC("Add Node Here..."), CanvasItemEditor::ADD_NODE);
 			editor->add_node_menu->add_icon_item(get_editor_theme_icon(SNAME("Instance")), TTRC("Instantiate Scene Here..."), CanvasItemEditor::ADD_INSTANCE);
-			for (Node *node : SceneTreeDock::get_singleton()->get_node_clipboard()) {
+			for (Node *node : EditorNode::get_singleton()->get_focused_scene_tree_dock()->get_node_clipboard()) {
 				if (Object::cast_to<CanvasItem>(node)) {
 					editor->add_node_menu->add_icon_item(get_editor_theme_icon(SNAME("ActionPaste")), TTRC("Paste Node(s) Here"), CanvasItemEditor::ADD_PASTE);
 					break;

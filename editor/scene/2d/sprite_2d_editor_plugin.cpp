@@ -320,7 +320,7 @@ void Sprite2DEditor::_convert_to_mesh_2d_node() {
 
 	EditorUndoRedoManager *ur = EditorUndoRedoManager::get_singleton();
 	ur->create_action(TTR("Convert to MeshInstance2D"), UndoRedo::MERGE_DISABLE, node);
-	SceneTreeDock::get_singleton()->replace_node(node, mesh_instance);
+	EditorNode::get_singleton()->get_focused_scene_tree_dock()->replace_node(node, mesh_instance);
 	ur->commit_action(false);
 }
 
@@ -375,7 +375,7 @@ void Sprite2DEditor::_convert_to_polygon_2d_node() {
 
 	EditorUndoRedoManager *ur = EditorUndoRedoManager::get_singleton();
 	ur->create_action(TTR("Convert to Polygon2D"), UndoRedo::MERGE_DISABLE, node);
-	SceneTreeDock::get_singleton()->replace_node(node, polygon_2d_instance);
+	EditorNode::get_singleton()->get_focused_scene_tree_dock()->replace_node(node, polygon_2d_instance);
 	ur->commit_action(false);
 }
 

@@ -112,9 +112,9 @@ void SceneTreeDock::_inspect_hovered_node() {
 	if (editor_history) {
 		editor_history->add_object(node_hovered_now->get_instance_id());
 	}
-	InspectorDock::get_inspector_singleton()->edit(node_hovered_now);
-	InspectorDock::get_inspector_singleton()->propagate_notification(NOTIFICATION_DRAG_BEGIN); // Enable inspector drag preview after it updated.
-	InspectorDock::get_singleton()->update(node_hovered_now);
+	EditorNode::get_singleton()->get_focused_inspector()->edit(node_hovered_now);
+	EditorNode::get_singleton()->get_focused_inspector()->propagate_notification(NOTIFICATION_DRAG_BEGIN); // Enable inspector drag preview after it updated.
+	EditorNode::get_singleton()->get_focused_inspector_dock()->update(node_hovered_now);
 	EditorNode::get_singleton()->hide_unused_editors();
 }
 
@@ -1441,7 +1441,7 @@ void SceneTreeDock::_tool_selected(int p_tool, bool p_confirm_override) {
 					node->set_scene_inherited_state(Ref<SceneState>());
 					editor_data->reload_scene_from_memory(editor_data->get_edited_scene(), true);
 					scene_tree->clear_cache();
-					InspectorDock::get_inspector_singleton()->update_tree();
+					EditorNode::get_singleton()->get_focused_inspector()->update_tree();
 				}
 			}
 		} break;
@@ -1844,7 +1844,7 @@ void SceneTreeDock::_notification(int p_what) {
 				return;
 			}
 			if (!hovered_but_reparenting) {
-				InspectorDock *inspector_dock = InspectorDock::get_singleton();
+				InspectorDock *inspector_dock = EditorNode::get_singleton()->get_focused_inspector_dock();
 				if (!inspector_dock->get_rect().has_point(inspector_dock->get_local_mouse_position())) {
 					List<Node *> full_selection = editor_selection->get_full_selected_node_list();
 					editor_selection->clear();
@@ -1854,7 +1854,7 @@ void SceneTreeDock::_notification(int p_what) {
 					return;
 				}
 				if (select_node_hovered_at_end_of_drag) {
-					Node *node_inspected = Object::cast_to<Node>(InspectorDock::get_inspector_singleton()->get_edited_object());
+					Node *node_inspected = Object::cast_to<Node>(EditorNode::get_singleton()->get_focused_inspector()->get_edited_object());
 					if (node_inspected) {
 						editor_selection->clear();
 						editor_selection->add_node(node_inspected);
@@ -2669,24 +2669,24 @@ void SceneTreeDock::_script_created(Ref<Script> p_script) {
 	undo_redo->create_action(TTR("Attach Script"), UndoRedo::MERGE_DISABLE, selected.front()->get());
 	for (Node *E : selected) {
 		Ref<Script> existing = E->get_script();
-		undo_redo->add_do_method(InspectorDock::get_singleton(), "store_script_properties", E);
-		undo_redo->add_undo_method(InspectorDock::get_singleton(), "store_script_properties", E);
+		undo_redo->add_do_method(EditorNode::get_singleton()->get_focused_inspector_dock(), "store_script_properties", E);
+		undo_redo->add_undo_method(EditorNode::get_singleton()->get_focused_inspector_dock(), "store_script_properties", E);
 		undo_redo->add_do_method(E, "set_script", p_script);
 		undo_redo->add_undo_method(E, "set_script", existing);
-		undo_redo->add_do_method(InspectorDock::get_singleton(), "apply_script_properties", E);
-		undo_redo->add_undo_method(InspectorDock::get_singleton(), "apply_script_properties", E);
+		undo_redo->add_do_method(EditorNode::get_singleton()->get_focused_inspector_dock(), "apply_script_properties", E);
+		undo_redo->add_undo_method(EditorNode::get_singleton()->get_focused_inspector_dock(), "apply_script_properties", E);
 		undo_redo->add_do_method(this, "_queue_update_script_button");
 		undo_redo->add_undo_method(this, "_queue_update_script_button");
 	}
 	undo_redo->commit_action();
 
 	// Avoid changing the currently edited object.
-	Object *edited_object = InspectorDock::get_inspector_singleton()->get_edited_object();
+	Object *edited_object = EditorNode::get_singleton()->get_focused_inspector()->get_edited_object();
 
 	EditorNode::get_singleton()->push_item_no_inspector(p_script.ptr());
 	_queue_update_script_button();
 
-	InspectorDock::get_inspector_singleton()->edit(edited_object);
+	EditorNode::get_singleton()->get_focused_inspector()->edit(edited_object);
 }
 
 void SceneTreeDock::_shader_created(Ref<Shader> p_shader) {
@@ -2954,8 +2954,8 @@ void SceneTreeDock::_delete_confirm(bool p_cut) {
 	if (scene_context) {
 		scene_context->get_history()->cleanup_history();
 	}
-	InspectorDock::get_singleton()->call("_prepare_history");
-	InspectorDock::get_singleton()->update(nullptr);
+	EditorNode::get_singleton()->get_focused_inspector_dock()->call("_prepare_history");
+	EditorNode::get_singleton()->get_focused_inspector_dock()->update(nullptr);
 	if (SignalsDock *signals_dock = EditorNode::get_singleton()->get_focused_signals_dock()) {
 		signals_dock->set_object(nullptr);
 	}
@@ -3776,7 +3776,7 @@ void SceneTreeDock::_files_dropped(const Vector<String> &p_files, NodePath p_to,
 			property_drop_node = node;
 			resource_drop_path = res_path;
 
-			const EditorPropertyNameProcessor::Style style = InspectorDock::get_singleton()->get_property_name_style();
+			const EditorPropertyNameProcessor::Style style = EditorNode::get_singleton()->get_focused_inspector_dock()->get_property_name_style();
 			menu_properties->clear();
 			for (const String &p : valid_properties) {
 				menu_properties->add_item(EditorPropertyNameProcessor::get_singleton()->process_name(p, style, p, node->get_class_name()));
@@ -3864,12 +3864,12 @@ void SceneTreeDock::_script_dropped(const String &p_file, NodePath p_to) {
 		}
 
 		undo_redo->create_action(TTR("Attach Script"), UndoRedo::MERGE_DISABLE, n);
-		undo_redo->add_do_method(InspectorDock::get_singleton(), "store_script_properties", n);
-		undo_redo->add_undo_method(InspectorDock::get_singleton(), "store_script_properties", n);
+		undo_redo->add_do_method(EditorNode::get_singleton()->get_focused_inspector_dock(), "store_script_properties", n);
+		undo_redo->add_undo_method(EditorNode::get_singleton()->get_focused_inspector_dock(), "store_script_properties", n);
 		undo_redo->add_do_method(n, "set_script", scr);
 		undo_redo->add_undo_method(n, "set_script", n->get_script());
-		undo_redo->add_do_method(InspectorDock::get_singleton(), "apply_script_properties", n);
-		undo_redo->add_undo_method(InspectorDock::get_singleton(), "apply_script_properties", n);
+		undo_redo->add_do_method(EditorNode::get_singleton()->get_focused_inspector_dock(), "apply_script_properties", n);
+		undo_redo->add_undo_method(EditorNode::get_singleton()->get_focused_inspector_dock(), "apply_script_properties", n);
 		undo_redo->add_do_method(this, "_queue_update_script_button");
 		undo_redo->add_undo_method(this, "_queue_update_script_button");
 		undo_redo->commit_action();
@@ -4897,11 +4897,11 @@ void SceneTreeDock::_bind_methods() {
 	ADD_SIGNAL(MethodInfo("node_created", PropertyInfo(Variant::OBJECT, "node", PROPERTY_HINT_RESOURCE_TYPE, "Node")));
 }
 
-SceneTreeDock *SceneTreeDock::singleton = nullptr;
-
 void SceneTreeDock::_update_configuration_warning() {
-	if (singleton) {
-		callable_mp(singleton->scene_tree, &SceneTreeEditor::update_warning).call_deferred();
+	if (EditorNode *editor = EditorNode::get_singleton()) {
+		if (SceneTreeDock *dock = editor->get_focused_scene_tree_dock()) {
+			callable_mp(dock->scene_tree, &SceneTreeEditor::update_warning).call_deferred();
+		}
 	}
 }
 
@@ -4916,9 +4916,6 @@ SceneTreeDock::SceneTreeDock(EditorSelection *p_editor_selection, EditorData &p_
 	// "Scene:<n>". See EditorDock::get_effective_layout_key().
 	set_layout_key("Scene");
 
-	// The focused-tile instance owns the class singleton; the first
-	// constructed dock is the default until a tile is explicitly focused.
-	singleton = singleton ? singleton : this;
 	editor_data = &p_editor_data;
 	editor_selection = p_editor_selection;
 
@@ -5173,9 +5170,6 @@ SceneTreeDock::SceneTreeDock(EditorSelection *p_editor_selection, EditorData &p_
 }
 
 SceneTreeDock::~SceneTreeDock() {
-	if (singleton == this) {
-		singleton = nullptr;
-	}
 	if (scene_context) {
 		scene_context->unregister_scene_tree_dock(this);
 	}

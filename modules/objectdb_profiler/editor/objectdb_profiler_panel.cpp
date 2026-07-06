@@ -245,7 +245,7 @@ void ObjectDBProfilerPanel::clear_snapshot(bool p_update_view_tabs) {
 		view->clear_snapshot();
 	}
 
-	const Object *edited_object = InspectorDock::get_inspector_singleton()->get_edited_object();
+	const Object *edited_object = EditorNode::get_singleton()->get_focused_inspector()->get_edited_object();
 	if (Object::cast_to<SnapshotDataObject>(edited_object)) {
 		EditorNode::get_singleton()->push_item(nullptr);
 	}

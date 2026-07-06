@@ -158,6 +158,8 @@ public:
 
 	// Focused scene tile's in-tile dock instances (not global shell docks).
 	ScenePaneTile *get_focused_tile() const;
+	SceneTreeDock *get_focused_scene_tree_dock() const;
+	InspectorDock *get_focused_inspector_dock() const;
 	SignalsDock *get_focused_signals_dock() const;
 	GroupsDock *get_focused_groups_dock() const;
 	HistoryDock *get_focused_history_dock() const;

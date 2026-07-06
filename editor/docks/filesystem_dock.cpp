@@ -3234,7 +3234,7 @@ void FileSystemDock::drop_data_fw(const Point2 &p_point, const Variant &p_data, 
 		if (to_dir.is_empty()) {
 			to_dir = get_current_directory();
 		}
-		SceneTreeDock::get_singleton()->save_branch_to_file(to_dir);
+		EditorNode::get_singleton()->get_focused_scene_tree_dock()->save_branch_to_file(to_dir);
 	}
 }
 

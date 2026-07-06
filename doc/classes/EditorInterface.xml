@@ -192,6 +192,18 @@
 				Returns the [HistoryDock] instance belonging to the focused scene tile (not a global shell dock).
 			</description>
 		</method>
+		<method name="get_focused_scene_tree_dock" qualifiers="const">
+			<return type="SceneTreeDock" />
+			<description>
+				Returns the [SceneTreeDock] instance belonging to the focused scene tile (not a global shell dock).
+			</description>
+		</method>
+		<method name="get_focused_inspector_dock" qualifiers="const">
+			<return type="InspectorDock" />
+			<description>
+				Returns the [InspectorDock] instance belonging to the focused scene tile (not a global shell dock).
+			</description>
+		</method>
 		<method name="get_inspector" qualifiers="const">
 			<return type="EditorInspector" />
 			<description>
