@@ -7006,8 +7006,27 @@ void EditorNode::_on_leaf_focus_requested(int p_leaf_id) {
 	ERR_FAIL_NULL(scene_workspace);
 	WorkspaceLeafNode *leaf = scene_workspace->get_leaf_by_id(p_leaf_id);
 	ERR_FAIL_NULL(leaf);
-	ERR_FAIL_NULL(leaf->get_pane_tile());
-	_focus_tile(p_leaf_id);
+	if (leaf->get_pane_tile()) {
+		_focus_tile(p_leaf_id);
+		return;
+	}
+	if (leaf->get_leaf_content() && leaf->get_leaf_content()->get_content_type() == StringName("script")) {
+		_focus_script_leaf(p_leaf_id);
+	}
+}
+
+void EditorNode::_focus_script_leaf(int p_leaf_id) {
+	ERR_FAIL_NULL(scene_workspace);
+	WorkspaceLeafNode *leaf = scene_workspace->get_leaf_by_id(p_leaf_id);
+	ERR_FAIL_NULL(leaf);
+	ScriptLeaf *script_leaf = leaf->get_leaf_content() ? Object::cast_to<ScriptLeaf>(leaf->get_leaf_content()->get_root_control()) : nullptr;
+	ERR_FAIL_NULL(script_leaf);
+
+	scene_workspace->set_focused_leaf(p_leaf_id);
+	_reparent_script_surface_into(script_leaf);
+	if (editor_main_screen) {
+		editor_main_screen->select(EditorMainScreen::EDITOR_SCRIPT);
+	}
 }
 
 void EditorNode::_on_tile_tab_changed(int p_tab, int p_tile_id) {

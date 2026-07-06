@@ -41,6 +41,8 @@
 #include "editor/docks/filesystem_dock.h"
 #include "editor/editor_interface.h"
 #include "editor/editor_node.h"
+#include "editor/editor_script_leaf.h"
+#include "editor/editor_script_node_drop.h"
 #include "editor/editor_string_names.h"
 #include "editor/gui/editor_toaster.h"
 #include "editor/inspector/editor_context_menu_plugin.h"
@@ -2329,6 +2331,40 @@ Variant ScriptTextEditor::get_drag_data_fw(const Point2 &p_point, Control *p_fro
 	return Variant();
 }
 
+static ScriptLeaf *_find_parent_script_leaf(const Control *p_control) {
+	for (Node *node = p_control->get_parent(); node; node = node->get_parent()) {
+		ScriptLeaf *leaf = Object::cast_to<ScriptLeaf>(node);
+		if (leaf) {
+			return leaf;
+		}
+	}
+	return nullptr;
+}
+
+static Node *_resolve_script_associated_scene(const ScriptTextEditor *p_editor) {
+	if (ScriptLeaf *leaf = _find_parent_script_leaf(p_editor)) {
+		return leaf->get_associated_scene_root();
+	}
+	return p_editor->get_tree()->get_edited_scene_root();
+}
+
+static bool _requires_associated_scene(const ScriptTextEditor *p_editor) {
+	return _find_parent_script_leaf(p_editor) != nullptr;
+}
+
+bool ScriptTextEditor::_validate_nodes_drop(const Dictionary &p_data, EditorScriptNodeDrop::DropValidation &r_validation) const {
+	const bool require_associated_scene = _requires_associated_scene(this);
+	Node *script_scene = _resolve_script_associated_scene(this);
+	r_validation = EditorScriptNodeDrop::validate_nodes_drop(p_data, script_scene, script, require_associated_scene);
+	return r_validation.reason == EditorScriptNodeDrop::DROP_OK;
+}
+
+void ScriptTextEditor::_request_script_leaf_focus() const {
+	if (ScriptLeaf *leaf = _find_parent_script_leaf(this)) {
+		leaf->request_workspace_focus();
+	}
+}
+
 bool ScriptTextEditor::can_drop_data_fw(const Point2 &p_point, const Variant &p_data, Control *p_from) const {
 	Dictionary d = p_data;
 	if (d.has("type") &&
@@ -2337,6 +2373,10 @@ bool ScriptTextEditor::can_drop_data_fw(const Point2 &p_point, const Variant &p_
 					String(d["type"]) == "nodes" ||
 					String(d["type"]) == "obj_property" ||
 					String(d["type"]) == "files_and_dirs")) {
+		if (String(d["type"]) == "nodes") {
+			EditorScriptNodeDrop::DropValidation validation;
+			return _validate_nodes_drop(d, validation);
+		}
 		return true;
 	}
 
@@ -2430,6 +2470,8 @@ String ScriptTextEditor::_get_dropped_resource_as_exported_member(const Ref<Reso
 void ScriptTextEditor::drop_data_fw(const Point2 &p_point, const Variant &p_data, Control *p_from) {
 	Dictionary d = p_data;
 
+	_request_script_leaf_focus();
+
 	CodeEdit *te = code_editor->get_text_editor();
 	Point2i pos = (p_point == Vector2(Math::INF, Math::INF)) ? Point2i(te->get_caret_line(0), te->get_caret_column(0)) : te->get_line_column_at_pos(p_point);
 	int drop_at_line = pos.y;
@@ -2443,8 +2485,6 @@ void ScriptTextEditor::drop_data_fw(const Point2 &p_point, const Variant &p_data
 		drop_at_column = te->get_selection_from_column(selection_index);
 		is_empty_line = drop_at_column <= te->get_first_non_whitespace_column(drop_at_line) && te->get_selection_to_column(selection_index) == te->get_line(te->get_selection_to_line(selection_index)).length();
 	}
-
-	Node *scene_root = get_tree()->get_edited_scene_root();
 
 	const bool member_drop_modifier_pressed = Input::get_singleton()->is_key_pressed(Key::CMD_OR_CTRL);
 	const bool export_drop_modifier_pressed = Input::get_singleton()->is_key_pressed(Key::ALT);
@@ -2534,71 +2574,39 @@ void ScriptTextEditor::drop_data_fw(const Point2 &p_point, const Variant &p_data
 	}
 
 	if (type == "nodes") {
-		if (!scene_root) {
-			EditorNode::get_singleton()->show_warning(TTR("Can't drop nodes without an open scene."));
+		EditorScriptNodeDrop::DropValidation validation;
+		if (!_validate_nodes_drop(d, validation)) {
+			switch (validation.reason) {
+				case EditorScriptNodeDrop::DROP_REJECT_NO_SCRIPT_SCENE:
+					EditorToaster::get_singleton()->popup_str(TTR("Can't drop nodes because this script has no associated scene."), EditorToaster::SEVERITY_WARNING);
+					break;
+				case EditorScriptNodeDrop::DROP_REJECT_CROSS_SCENE:
+					EditorToaster::get_singleton()->popup_str(TTR("Can't drop nodes from a different scene into this script."), EditorToaster::SEVERITY_WARNING);
+					break;
+				case EditorScriptNodeDrop::DROP_REJECT_NOT_NODE_SCRIPT:
+					EditorToaster::get_singleton()->popup_str(vformat(TTR("Can't drop nodes because script '%s' does not inherit Node."), get_name()), EditorToaster::SEVERITY_WARNING);
+					break;
+				default:
+					break;
+			}
 			return;
 		}
 
-		if (!ClassDB::is_parent_class(script->get_instance_base_type(), "Node")) {
-			EditorToaster::get_singleton()->popup_str(vformat(TTR("Can't drop nodes because script '%s' does not inherit Node."), get_name()), EditorToaster::SEVERITY_WARNING);
-			return;
-		}
-
-		Node *sn = _find_script_node(scene_root, script);
-		if (!sn) {
-			sn = scene_root;
-		}
-
-		Array nodes = d["nodes"];
+		const bool use_type = EDITOR_GET("text_editor/completion/add_type_hints");
 
 		if (member_drop_modifier_pressed) {
-			const bool use_type = EDITOR_GET("text_editor/completion/add_type_hints");
 			add_new_line = !is_empty_line && drop_at_column != 0;
-
-			for (int i = 0; i < nodes.size(); i++) {
-				NodePath np = nodes[i];
-				Node *node = get_node(np);
-				if (!node) {
-					continue;
-				}
-
-				bool is_unique = node->is_unique_name_in_owner() && (node->get_owner() == sn || node->get_owner() == sn->get_owner());
-				String path = is_unique ? String(node->get_name()) : String(sn->get_path_to(node));
-				for (const String &segment : path.split("/")) {
-					if (!segment.is_valid_unicode_identifier()) {
-						path = _quote_drop_data(path);
-						break;
-					}
-				}
-
-				String variable_name = String(node->get_name()).to_snake_case().validate_unicode_identifier();
-				if (use_type) {
-					StringName class_name = node->get_class_name();
-					Ref<Script> node_script = node->get_script();
-					if (node_script.is_valid()) {
-						StringName global_node_script_name = node_script->get_global_name();
-						if (!global_node_script_name.is_empty()) {
-							class_name = global_node_script_name;
-						}
-					}
-					text_to_drop += vformat("@onready var %s: %s = %c%s", variable_name, class_name, is_unique ? '%' : '$', path);
-				} else {
-					text_to_drop += vformat("@onready var %s = %c%s", variable_name, is_unique ? '%' : '$', path);
-				}
-				if (i < nodes.size() - 1) {
-					text_to_drop += "\n";
-				}
-			}
-
+			text_to_drop = EditorScriptNodeDrop::build_nodes_drop_text(d, validation, true, use_type);
 			if (is_empty_line || drop_at_column == 0) {
 				text_to_drop += "\n";
 			}
 		} else if (export_drop_modifier_pressed) {
 			Vector<ObjectID> obj_ids = _get_objects_for_export_assignment();
 
+			Array nodes = d["nodes"];
 			for (int i = 0; i < nodes.size(); i++) {
 				NodePath np = nodes[i];
-				Node *node = get_node(np);
+				Node *node = validation.drag_scene_root->get_node(np);
 				if (!node) {
 					continue;
 				}
@@ -2619,27 +2627,7 @@ void ScriptTextEditor::drop_data_fw(const Point2 &p_point, const Variant &p_data
 				}
 			}
 		} else {
-			for (int i = 0; i < nodes.size(); i++) {
-				if (i > 0) {
-					text_to_drop += ", ";
-				}
-
-				NodePath np = nodes[i];
-				Node *node = get_node(np);
-				if (!node) {
-					continue;
-				}
-
-				bool is_unique = node->is_unique_name_in_owner() && (node->get_owner() == sn || node->get_owner() == sn->get_owner());
-				String path = is_unique ? String(node->get_name()) : String(sn->get_path_to(node));
-				for (const String &segment : path.split("/")) {
-					if (!segment.is_valid_ascii_identifier()) {
-						path = _quote_drop_data(path);
-						break;
-					}
-				}
-				text_to_drop += (is_unique ? "%" : "$") + path;
-			}
+			text_to_drop = EditorScriptNodeDrop::build_nodes_drop_text(d, validation, false, use_type);
 		}
 	}
 

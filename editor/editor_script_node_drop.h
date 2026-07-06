@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  editor_script_leaf.h                                                 */
+/*  editor_script_node_drop.h                                            */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                              GODOT ENGINE                              */
@@ -30,63 +30,33 @@
 
 #pragma once
 
-#include "editor/editor_workspace_leaf_content.h"
+#include "core/object/ref_counted.h"
+#include "core/variant/dictionary.h"
 
-#include "scene/gui/control.h"
-
-class EditorSceneWorkspace;
-class Label;
+class Node;
+class Script;
 
 /**
- * Non-scene workspace leaf that hosts the editor's script surface (U15a). It
- * carries the path of the script it represents but has no EditorSceneContext,
- * since a script is a project resource rather than a scene. The live script
- * editing surface is mounted into get_surface_host() by EditorNode; a
- * placeholder label is shown while no surface is mounted.
+ * Shared node→script drop validation and reference formatting (U15b). Used by
+ * ScriptTextEditor and unit tests.
  */
-class ScriptLeaf : public Control, public WorkspaceLeafContent {
-	FOUNDRY_CLASS(ScriptLeaf, Control);
-
-	String tab_title = "Script";
-	String script_path;
-	String associated_scene_path;
-	ObjectID associated_scene_root_id;
-	Label *placeholder_label = nullptr;
-	Control *surface_host = nullptr;
-
-	void _update_placeholder_visibility();
-	void _interaction_gui_input(const Ref<InputEvent> &p_event);
-	void _request_focus();
-
-protected:
-	void _notification(int p_what);
-
+class EditorScriptNodeDrop {
 public:
-	void set_tab_title(const String &p_title);
+	enum DropRejectReason {
+		DROP_OK = 0,
+		DROP_REJECT_NO_SCRIPT_SCENE,
+		DROP_REJECT_CROSS_SCENE,
+		DROP_REJECT_NOT_NODE_SCRIPT,
+	};
 
-	// The res:// path of the script this leaf represents (empty if none yet).
-	void set_script_path(const String &p_path);
-	String get_script_path() const { return script_path; }
+	struct DropValidation {
+		DropRejectReason reason = DROP_OK;
+		Node *drag_scene_root = nullptr;
+		Node *script_scene_root = nullptr;
+		Node *script_anchor_node = nullptr;
+	};
 
-	// Container the live script editing surface is reparented into by EditorNode.
-	Control *get_surface_host() const { return surface_host; }
-
-	// Scene the open script is attached to (resolved when the leaf opens). Empty
-	// when the script has no associated scene.
-	void set_associated_scene_root(Node *p_scene_root);
-	Node *get_associated_scene_root() const;
-	bool has_associated_scene() const { return !associated_scene_path.is_empty(); }
-
-	void request_workspace_focus();
-
-	StringName get_content_type() const override;
-	Control *get_root_control() const override;
-	String get_tab_title() const override;
-	Ref<Texture2D> get_tab_icon() const override;
-	EditorSceneContext *get_scene_context() const override;
-	void save_layout(const Ref<ConfigFile> &p_config, const String &p_section) const override;
-	void load_layout(const Ref<ConfigFile> &p_config, const String &p_section) override;
-	void on_focus_entered() override;
-
-	ScriptLeaf();
+	static DropValidation validate_nodes_drop(const Dictionary &p_drag_data, Node *p_script_associated_scene, const Ref<Script> &p_script, bool p_require_associated_scene);
+	static String format_node_reference(Node *p_anchor_node, Node *p_node);
+	static String build_nodes_drop_text(const Dictionary &p_drag_data, const DropValidation &p_validation, bool p_member_drop, bool p_use_type_hints);
 };

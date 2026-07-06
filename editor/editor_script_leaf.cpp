@@ -31,8 +31,10 @@
 #include "editor_script_leaf.h"
 
 #include "core/io/config_file.h"
+#include "editor/editor_scene_workspace.h"
 #include "editor/editor_string_names.h"
 #include "scene/gui/label.h"
+#include "scene/main/node.h"
 
 void ScriptLeaf::_notification(int p_what) {
 	switch (p_what) {
@@ -50,6 +52,53 @@ void ScriptLeaf::_update_placeholder_visibility() {
 	}
 	// Show the placeholder only while no live script surface is mounted.
 	placeholder_label->set_visible(surface_host->get_child_count() == 0);
+}
+
+void ScriptLeaf::_interaction_gui_input(const Ref<InputEvent> &p_event) {
+	Ref<InputEventMouseButton> mb = p_event;
+	if (mb.is_valid() && mb->is_pressed() && mb->get_button_index() == MouseButton::LEFT) {
+		_request_focus();
+	}
+}
+
+void ScriptLeaf::_request_focus() {
+	request_workspace_focus();
+}
+
+void ScriptLeaf::request_workspace_focus() {
+	for (Node *node = get_parent(); node; node = node->get_parent()) {
+		EditorSceneWorkspace *workspace = Object::cast_to<EditorSceneWorkspace>(node);
+		if (workspace) {
+			for (WorkspaceLeafNode *leaf : workspace->get_leaves()) {
+				if (leaf->get_leaf_content() && leaf->get_leaf_content()->get_root_control() == this) {
+					workspace->request_leaf_focus(leaf->get_leaf_id());
+					return;
+				}
+			}
+			return;
+		}
+	}
+}
+
+void ScriptLeaf::set_associated_scene_root(Node *p_scene_root) {
+	associated_scene_root_id = p_scene_root ? p_scene_root->get_instance_id() : ObjectID();
+	if (p_scene_root) {
+		const String scene_file_path = p_scene_root->get_scene_file_path();
+		associated_scene_path = scene_file_path.is_empty() ? p_scene_root->get_path() : scene_file_path;
+	} else {
+		associated_scene_path.clear();
+	}
+}
+
+Node *ScriptLeaf::get_associated_scene_root() const {
+	if (associated_scene_root_id.is_valid()) {
+		return Object::cast_to<Node>(ObjectDB::get_instance(associated_scene_root_id));
+	}
+	return nullptr;
+}
+
+void ScriptLeaf::on_focus_entered() {
+	_request_focus();
 }
 
 void ScriptLeaf::set_tab_title(const String &p_title) {
@@ -91,6 +140,7 @@ void ScriptLeaf::save_layout(const Ref<ConfigFile> &p_config, const String &p_se
 	ERR_FAIL_COND(p_config.is_null());
 	p_config->set_value(p_section, "tab_title", tab_title);
 	p_config->set_value(p_section, "script_path", script_path);
+	p_config->set_value(p_section, "associated_scene_path", associated_scene_path);
 }
 
 void ScriptLeaf::load_layout(const Ref<ConfigFile> &p_config, const String &p_section) {
@@ -102,6 +152,8 @@ void ScriptLeaf::load_layout(const Ref<ConfigFile> &p_config, const String &p_se
 	if (!stored_path.is_empty()) {
 		set_script_path(stored_path);
 	}
+	associated_scene_path = p_config->get_value(p_section, "associated_scene_path", String());
+	associated_scene_root_id = ObjectID();
 }
 
 ScriptLeaf::ScriptLeaf() {
@@ -118,6 +170,8 @@ ScriptLeaf::ScriptLeaf() {
 	// exit side is deferred so the child count reflects the removal.
 	surface_host->connect(SNAME("child_entered_tree"), callable_mp(this, &ScriptLeaf::_update_placeholder_visibility).unbind(1));
 	surface_host->connect(SNAME("child_exiting_tree"), callable_mp(this, &ScriptLeaf::_update_placeholder_visibility).unbind(1), CONNECT_DEFERRED);
+
+	connect(SceneStringName(gui_input), callable_mp(this, &ScriptLeaf::_interaction_gui_input));
 
 	placeholder_label = memnew(Label);
 	placeholder_label->set_text(tab_title);
