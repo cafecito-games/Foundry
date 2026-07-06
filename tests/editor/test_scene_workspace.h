@@ -49,6 +49,9 @@
 #include "editor/editor_workspace_leaf_content.h"
 #include "editor/scene/editor_scene_tabs.h"
 #include "editor/themes/editor_scale.h"
+#include "editor/workspace/workspace_pane.h"
+#include "editor/workspace/workspace_tab_registry.h"
+#include "editor/workspace/workspace_tab_type.h"
 
 #include "scene/2d/node_2d.h"
 #include "scene/3d/camera_3d.h"
@@ -63,6 +66,48 @@
 #include "tests/test_tools.h"
 
 namespace TestSceneWorkspace {
+
+static WorkspacePane *get_leaf_pane(WorkspaceLeafNode *p_leaf) {
+	return p_leaf ? p_leaf->get_workspace_pane() : nullptr;
+}
+
+static ScriptLeaf *get_leaf_script(WorkspaceLeafNode *p_leaf) {
+	WorkspacePane *pane = get_leaf_pane(p_leaf);
+	return pane ? pane->get_script_leaf() : nullptr;
+}
+
+class RecordingTabType : public WorkspaceTabType {
+public:
+	int mount_count = 0;
+	int unmount_count = 0;
+	mutable int last_mounted_stable_id = -1;
+	mutable int last_unmounted_stable_id = -1;
+
+	StringName type_id() const override { return StringName("recording"); }
+	bool can_open(const String &p_resource) const override { return true; }
+	WorkspaceTab make_tab(const String &p_resource, int p_stable_id) const override {
+		WorkspaceTab tab;
+		tab.set_stable_id(p_stable_id);
+		tab.set_type_id(type_id());
+		tab.set_resource_key(p_resource);
+		tab.set_title_cache(p_resource);
+		return tab;
+	}
+	String get_title(const WorkspaceTab &p_tab) const override { return p_tab.get_title_cache(); }
+	Ref<Texture2D> get_icon(const WorkspaceTab &p_tab) const override { return Ref<Texture2D>(); }
+	void mount(WorkspaceTab &p_tab, Control *p_chrome_host) override {
+		mount_count++;
+		last_mounted_stable_id = p_tab.get_stable_id();
+	}
+	void unmount(WorkspaceTab &p_tab) override {
+		unmount_count++;
+		last_unmounted_stable_id = p_tab.get_stable_id();
+	}
+	void activate(WorkspaceTab &p_tab) override {}
+	WorkspaceTabCloseResult request_close(WorkspaceTab &p_tab) override { return WorkspaceTabCloseResult::CLOSE; }
+	Dictionary save_payload(const WorkspaceTab &p_tab) const override { return Dictionary(); }
+	void restore_payload(WorkspaceTab &p_tab, const Dictionary &p_payload) const override {}
+};
 
 class LeafRemovedTracker : public Object {
 	FOUNDRY_CLASS(LeafRemovedTracker, Object);
@@ -108,7 +153,7 @@ struct WorkspaceHarness {
 	}
 };
 
-TEST_CASE("[SceneTree][Editor] tile-self-contained") {
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] tile-self-contained") {
 	WorkspaceHarness h;
 	h.mount();
 	h.pump();
@@ -186,7 +231,7 @@ TEST_CASE("[SceneTree][Editor] tile-self-contained") {
 	h.unmount();
 }
 
-TEST_CASE("[SceneTree][Editor] tile-isolation-across-leaves") {
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] tile-isolation-across-leaves") {
 	WorkspaceHarness h;
 	h.mount();
 	h.pump();
@@ -249,7 +294,7 @@ TEST_CASE("[SceneTree][Editor] tile-isolation-across-leaves") {
 	h.unmount();
 }
 
-TEST_CASE("[SceneTree][Editor] tree-split-collapse") {
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] tree-split-collapse") {
 	WorkspaceHarness h;
 	h.mount();
 
@@ -296,16 +341,19 @@ TEST_CASE("[SceneTree][Editor] tree-split-collapse") {
 
 static void replace_leaf_with_script(WorkspaceLeafNode *p_leaf, const String &p_title) {
 	ERR_FAIL_NULL(p_leaf);
+	WorkspacePane *old_pane = get_leaf_pane(p_leaf);
+	ERR_FAIL_NULL(old_pane);
 	WorkspaceLeafContent *previous = p_leaf->take_leaf_content();
 	if (previous) {
 		memdelete(previous->get_root_control());
 	}
-	ScriptLeaf *script = memnew(ScriptLeaf);
-	script->set_tab_title(p_title);
-	p_leaf->set_leaf_content(script);
+	WorkspacePane *pane = memnew(WorkspacePane);
+	pane->setup(p_leaf->get_leaf_id(), old_pane->get_editor_selection(), old_pane->get_editor_data(), StringName("script"));
+	pane->get_script_leaf()->set_tab_title(p_title);
+	p_leaf->set_leaf_content(pane);
 }
 
-TEST_CASE("[SceneTree][Editor] tree-move") {
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] tree-move") {
 	WorkspaceHarness h;
 	h.mount();
 
@@ -316,27 +364,27 @@ TEST_CASE("[SceneTree][Editor] tree-move") {
 
 	REQUIRE(first->get_leaf_content() != nullptr);
 	REQUIRE(second->get_leaf_content() != nullptr);
-	CHECK(first->get_leaf_content()->get_content_type() == StringName("scene"));
-	CHECK(second->get_leaf_content()->get_content_type() == StringName("scene"));
+	CHECK(get_leaf_pane(first)->is_scene_pane());
+	CHECK(get_leaf_pane(second)->is_scene_pane());
 
 	replace_leaf_with_script(first, "pane_a");
-	CHECK(first->get_leaf_content()->get_content_type() == StringName("script"));
+	CHECK(get_leaf_pane(first)->is_script_pane());
 
 	CHECK(h.workspace->move_content(first, second));
-	CHECK(first->get_leaf_content()->get_content_type() == StringName("scene"));
-	CHECK(second->get_leaf_content()->get_content_type() == StringName("script"));
+	CHECK(get_leaf_pane(first)->is_scene_pane());
+	CHECK(get_leaf_pane(second)->is_script_pane());
 	CHECK(second->get_leaf_content()->get_tab_title() == "pane_a");
 
 	CHECK(h.workspace->move_content(first, second));
-	CHECK(first->get_leaf_content()->get_content_type() == StringName("script"));
-	CHECK(second->get_leaf_content()->get_content_type() == StringName("scene"));
+	CHECK(get_leaf_pane(first)->is_script_pane());
+	CHECK(get_leaf_pane(second)->is_scene_pane());
 
 	CHECK_FALSE(h.workspace->move_content(first, first));
 
 	h.unmount();
 }
 
-TEST_CASE("[SceneTree][Editor] tree-persist") {
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] tree-persist") {
 	WorkspaceHarness h;
 	h.mount();
 
@@ -381,8 +429,10 @@ TEST_CASE("[SceneTree][Editor] tree-persist") {
 
 	WorkspaceLeafNode *restored_script = nullptr;
 	for (WorkspaceLeafNode *leaf : h2.workspace->get_leaves()) {
-		if (leaf->get_leaf_content() && leaf->get_leaf_content()->get_content_type() == StringName("script")) {
-			restored_script = leaf;
+		if (WorkspacePane *pane = get_leaf_pane(leaf)) {
+			if (pane->is_script_pane()) {
+				restored_script = leaf;
+			}
 		}
 	}
 	REQUIRE(restored_script != nullptr);
@@ -417,7 +467,7 @@ static int add_test_scene(EditorData &p_data, int p_tile_id, Node2D *p_root = nu
 	return idx;
 }
 
-TEST_CASE("[SceneTree][Editor] restored-script-leaf-associated-scenes-resolve-all-leaves") {
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] restored-script-leaf-associated-scenes-resolve-all-leaves") {
 	WorkspaceHarness h;
 	h.mount();
 	h.pump();
@@ -430,8 +480,8 @@ TEST_CASE("[SceneTree][Editor] restored-script-leaf-associated-scenes-resolve-al
 	replace_leaf_with_script(leaf_a, "script_a");
 	replace_leaf_with_script(leaf_b, "script_b");
 
-	ScriptLeaf *script_a = Object::cast_to<ScriptLeaf>(leaf_a->get_leaf_content()->get_root_control());
-	ScriptLeaf *script_b = Object::cast_to<ScriptLeaf>(leaf_b->get_leaf_content()->get_root_control());
+	ScriptLeaf *script_a = get_leaf_script(leaf_a);
+	ScriptLeaf *script_b = get_leaf_script(leaf_b);
 	REQUIRE(script_a != nullptr);
 	REQUIRE(script_b != nullptr);
 
@@ -470,7 +520,7 @@ static void check_focus_invariant(const EditorData &p_data, const EditorSceneWor
 	}
 }
 
-TEST_CASE("[SceneTree][Editor] focus-invariant") {
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] focus-invariant") {
 	WorkspaceHarness h;
 	h.mount();
 	h.pump();
@@ -521,7 +571,7 @@ TEST_CASE("[SceneTree][Editor] focus-invariant") {
 	h.unmount();
 }
 
-TEST_CASE("[SceneTree][Editor] collapse-focused-leaf-with-split-sibling-migrates-to-surviving-tile") {
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] collapse-focused-leaf-with-split-sibling-migrates-to-surviving-tile") {
 	WorkspaceHarness h;
 	h.mount();
 	h.pump();
@@ -569,7 +619,7 @@ TEST_CASE("[SceneTree][Editor] collapse-focused-leaf-with-split-sibling-migrates
 	h.unmount();
 }
 
-TEST_CASE("[SceneTree][Editor] tile-id-model") {
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] tile-id-model") {
 	WorkspaceHarness h;
 	h.mount();
 	h.pump();
@@ -602,7 +652,7 @@ TEST_CASE("[SceneTree][Editor] tile-id-model") {
 
 	h.workspace->move_content(h.workspace->get_leaf_by_id(tile_a), second);
 	h.pump();
-	CHECK(second->get_leaf_content()->get_content_type() == StringName("scene"));
+	CHECK(get_leaf_pane(second)->is_scene_pane());
 
 	Ref<ConfigFile> config;
 	config.instantiate();
@@ -690,7 +740,7 @@ static void attach_tile_scene_display(
 	}
 }
 
-TEST_CASE("[SceneTree][Editor] reparent-render") {
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] reparent-render") {
 	WorkspaceHarness h;
 	h.mount();
 	h.pump();
@@ -765,7 +815,7 @@ TEST_CASE("[SceneTree][Editor] reparent-render") {
 	h.unmount();
 }
 
-TEST_CASE("[SceneTree][Editor] drop-region-select") {
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] drop-region-select") {
 	const Size2 pane(400, 300);
 
 	CHECK(EditorSceneWorkspace::drop_region_at(pane, Point2(200, 150)) == EditorSceneWorkspace::DROP_CENTER);
@@ -796,7 +846,7 @@ TEST_CASE("[SceneTree][Editor] drop-region-select") {
 	CHECK(center_preview.size == pane);
 }
 
-TEST_CASE("[SceneTree][Editor] preview-camera-state") {
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] preview-camera-state") {
 	ScenePaneTile *tile = memnew(ScenePaneTile);
 	EditorSelection selection;
 	EditorData editor_data;
@@ -817,27 +867,29 @@ TEST_CASE("[SceneTree][Editor] preview-camera-state") {
 	memdelete(tile);
 }
 
-TEST_CASE("[SceneTree][Editor] leaf-content-generic") {
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] leaf-content-generic") {
 	WorkspaceHarness h;
 	h.mount();
 
 	WorkspaceLeafNode *scene_leaf = h.workspace->get_focused_leaf();
 	REQUIRE(scene_leaf != nullptr);
 	REQUIRE(scene_leaf->get_leaf_content() != nullptr);
-	CHECK(scene_leaf->get_leaf_content()->get_content_type() == StringName("scene"));
+	CHECK(scene_leaf->get_leaf_content()->get_content_type() == StringName("pane"));
 	CHECK(scene_leaf->get_pane_tile() != nullptr);
+	CHECK(get_leaf_pane(scene_leaf)->is_scene_pane());
 
 	WorkspaceLeafNode *script_leaf_node = h.workspace->split(scene_leaf, false, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
 	h.pump();
 	REQUIRE(script_leaf_node != nullptr);
 	replace_leaf_with_script(script_leaf_node, "ScriptPane");
-	CHECK(script_leaf_node->get_leaf_content()->get_content_type() == StringName("script"));
+	CHECK(script_leaf_node->get_leaf_content()->get_content_type() == StringName("pane"));
+	CHECK(get_leaf_pane(script_leaf_node)->is_script_pane());
 	CHECK(script_leaf_node->get_leaf_content()->get_scene_context() == nullptr);
 	CHECK(scene_leaf->get_leaf_content()->get_scene_context() == nullptr); // no open scene in harness
 
 	CHECK(h.workspace->move_content(scene_leaf, script_leaf_node));
-	CHECK(scene_leaf->get_leaf_content()->get_content_type() == StringName("script"));
-	CHECK(script_leaf_node->get_leaf_content()->get_content_type() == StringName("scene"));
+	CHECK(get_leaf_pane(scene_leaf)->is_script_pane());
+	CHECK(get_leaf_pane(script_leaf_node)->is_scene_pane());
 	CHECK(script_leaf_node->get_pane_tile() != nullptr);
 
 	WorkspaceLeafNode *third = h.workspace->split(script_leaf_node, true, EditorSceneWorkspace::SPLIT_SIDE_FIRST);
@@ -869,13 +921,178 @@ TEST_CASE("[SceneTree][Editor] leaf-content-generic") {
 	WorkspaceLeafNode *restored_script = h2.workspace->get_leaf_by_id(scene_leaf_id);
 	REQUIRE(restored_scene != nullptr);
 	REQUIRE(restored_script != nullptr);
-	CHECK(restored_scene->get_leaf_content()->get_content_type() == StringName("scene"));
-	CHECK(restored_script->get_leaf_content()->get_content_type() == StringName("script"));
+	CHECK(get_leaf_pane(restored_scene)->is_scene_pane());
+	CHECK(get_leaf_pane(restored_script)->is_script_pane());
 	CHECK(restored_script->get_leaf_content()->get_tab_title() == saved_script_title);
 	CHECK(restored_scene->get_leaf_content()->get_scene_context() == nullptr);
 	CHECK(restored_script->get_leaf_content()->get_scene_context() == nullptr);
 
 	h2.unmount();
+}
+
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] pane-hosts-mixed-tabs") {
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspacePane *pane = get_leaf_pane(h.workspace->get_focused_leaf());
+	REQUIRE(pane != nullptr);
+
+	WorkspaceTabRegistry registry;
+	registry.reset_stable_id_counter();
+	registry.clear_canonical_index();
+	pane->set_tab_registry(&registry);
+
+	WorkspaceTabType *scene_type = registry.find_type(StringName("scene"));
+	WorkspaceTabType *script_type = registry.find_type(StringName("script"));
+	REQUIRE(scene_type != nullptr);
+	REQUIRE(script_type != nullptr);
+
+	WorkspaceTab scene_tab = scene_type->make_tab("res://a.tscn", registry.allocate_stable_id());
+	WorkspaceTab script_tab = script_type->make_tab("res://player.fs", registry.allocate_stable_id());
+	pane->add_tab(scene_tab);
+	pane->add_tab(script_tab);
+
+	CHECK(pane->get_tab_count() == 2);
+	CHECK(pane->get_tab(0).get_type_id() == StringName("scene"));
+	CHECK(pane->get_tab(1).get_type_id() == StringName("script"));
+
+	ScenePaneTile *scene_tile = pane->get_scene_tile();
+	REQUIRE(scene_tile != nullptr);
+	pane->set_active_tab(1);
+	CHECK(scene_tile->get_parent() == pane->get_chrome_host());
+	CHECK(scene_tile->is_visible() == false);
+	pane->set_active_tab(0);
+	CHECK(scene_tile->is_visible());
+
+	h.unmount();
+}
+
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] pane-active-tab-switch-mounts") {
+	Control *host = memnew(Control);
+	SceneTree::get_singleton()->get_root()->add_child(host);
+
+	WorkspacePane *pane = memnew(WorkspacePane);
+	host->add_child(pane);
+
+	WorkspaceTabRegistry registry;
+	registry.reset_stable_id_counter();
+	registry.clear_canonical_index();
+	RecordingTabType recording_type;
+	registry.register_type(&recording_type);
+	pane->set_tab_registry(&registry);
+
+	WorkspaceTab first = recording_type.make_tab("first", registry.allocate_stable_id());
+	WorkspaceTab second = recording_type.make_tab("second", registry.allocate_stable_id());
+	pane->add_tab(first);
+	pane->add_tab(second);
+	CHECK(recording_type.mount_count == 1);
+	CHECK(recording_type.last_mounted_stable_id == first.get_stable_id());
+
+	pane->set_active_tab(1);
+	CHECK(recording_type.unmount_count == 1);
+	CHECK(recording_type.last_unmounted_stable_id == first.get_stable_id());
+	CHECK(recording_type.mount_count == 2);
+	CHECK(recording_type.last_mounted_stable_id == second.get_stable_id());
+
+	SceneTree::get_singleton()->get_root()->remove_child(host);
+	memdelete(host);
+}
+
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] pane-remove-active-tab") {
+	Control *host = memnew(Control);
+	SceneTree::get_singleton()->get_root()->add_child(host);
+
+	WorkspacePane *pane = memnew(WorkspacePane);
+	host->add_child(pane);
+
+	WorkspaceTabRegistry registry;
+	registry.reset_stable_id_counter();
+	registry.clear_canonical_index();
+	RecordingTabType recording_type;
+	registry.register_type(&recording_type);
+	pane->set_tab_registry(&registry);
+
+	WorkspaceTab first = recording_type.make_tab("first", registry.allocate_stable_id());
+	WorkspaceTab second = recording_type.make_tab("second", registry.allocate_stable_id());
+	WorkspaceTab third = recording_type.make_tab("third", registry.allocate_stable_id());
+	pane->add_tab(first);
+	pane->add_tab(second);
+	pane->add_tab(third);
+	CHECK(pane->get_active_tab_index() == 0);
+
+	pane->remove_tab(0);
+	CHECK(pane->get_tab_count() == 2);
+	CHECK(pane->get_active_tab_index() == 0);
+	CHECK(pane->get_tab(0).get_resource_key() == "second");
+	CHECK(recording_type.mount_count >= 2);
+
+	SceneTree::get_singleton()->get_root()->remove_child(host);
+	memdelete(host);
+}
+
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] pane-empty-placeholder") {
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspacePane *pane = get_leaf_pane(h.workspace->get_focused_leaf());
+	REQUIRE(pane != nullptr);
+	REQUIRE(pane->get_scene_tile() != nullptr);
+	CHECK(pane->get_scene_tile()->get_scene_tabs()->is_visible());
+	CHECK(pane->get_empty_placeholder()->is_visible());
+	CHECK(pane->get_tab_strip()->is_visible() == false);
+	CHECK(pane->get_scene_context() == nullptr);
+
+	WorkspaceTabRegistry registry;
+	registry.reset_stable_id_counter();
+	registry.clear_canonical_index();
+	pane->set_tab_registry(&registry);
+
+	WorkspaceTabType *scene_type = registry.find_type(StringName("scene"));
+	REQUIRE(scene_type != nullptr);
+	WorkspaceTab scene_tab = scene_type->make_tab("res://only.tscn", registry.allocate_stable_id());
+	pane->add_tab(scene_tab);
+	CHECK(pane->get_empty_placeholder()->is_visible() == false);
+	CHECK(pane->get_tab_strip()->is_visible());
+
+	pane->remove_tab(0);
+	CHECK(pane->get_tab_count() == 0);
+	CHECK(pane->get_empty_placeholder()->is_visible());
+	CHECK(pane->get_tab_strip()->is_visible() == false);
+	CHECK(pane->get_scene_context() == nullptr);
+
+	Ref<ConfigFile> config;
+	config.instantiate();
+	pane->save_layout(config, "PaneEmpty");
+	pane->load_layout(config, "PaneEmpty");
+
+	h.unmount();
+}
+
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] pane-scene-only-layout-renders") {
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspaceLeafNode *leaf = h.workspace->get_focused_leaf();
+	REQUIRE(leaf != nullptr);
+	WorkspacePane *pane = get_leaf_pane(leaf);
+	REQUIRE(pane != nullptr);
+	CHECK(pane->get_leaf_id() == leaf->get_leaf_id());
+	CHECK(pane->get_scene_tile() != nullptr);
+	CHECK(pane->get_scene_tile()->get_tile_id() == leaf->get_leaf_id());
+
+	const int scene_idx = h.editor_data.add_edited_scene(-1);
+	h.editor_data.set_scene_path(scene_idx, "res://pane_scene.tscn");
+	h.editor_data.set_scene_tile(scene_idx, leaf->get_leaf_id());
+	h.editor_data.set_tile_current_scene(leaf->get_leaf_id(), scene_idx);
+	h.pump();
+
+	CHECK(pane->get_scene_context() != nullptr);
+	CHECK(String(h.editor_data.get_scene_path(scene_idx)) == "res://pane_scene.tscn");
+
+	h.unmount();
 }
 
 class TileHistoryDockTestAccess {
@@ -908,7 +1125,7 @@ static int _right_tab_index(TabContainer *p_tabs, EditorDock *p_dock) {
 	return -1;
 }
 
-TEST_CASE("[SceneTree][Editor] tile-dock-region") {
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] tile-dock-region") {
 	Window *tree_root = SceneTree::get_singleton()->get_root();
 	EditorUndoRedoManager *ur_manager = memnew(EditorUndoRedoManager);
 
@@ -1079,7 +1296,7 @@ TEST_CASE("[SceneTree][Editor] tile-dock-region") {
 	memdelete(ur_manager);
 }
 
-TEST_CASE("[SceneTree][Editor] script-leaf-open") {
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] script-leaf-open") {
 	WorkspaceHarness h;
 	h.mount();
 	h.pump();
@@ -1099,11 +1316,12 @@ TEST_CASE("[SceneTree][Editor] script-leaf-open") {
 	CHECK(script_leaf_node != scene_leaf);
 	CHECK(h.workspace->get_leaf_count() == 2);
 	REQUIRE(script_leaf_node->get_leaf_content() != nullptr);
-	CHECK(script_leaf_node->get_leaf_content()->get_content_type() == StringName("script"));
+	CHECK(script_leaf_node->get_leaf_content()->get_content_type() == StringName("pane"));
+	CHECK(get_leaf_pane(script_leaf_node)->is_script_pane());
 	CHECK(script_leaf_node->get_leaf_content()->get_scene_context() == nullptr);
 	CHECK(h.workspace->get_script_leaf() == script_leaf_node);
 
-	ScriptLeaf *script_leaf = Object::cast_to<ScriptLeaf>(script_leaf_node->get_leaf_content()->get_root_control());
+	ScriptLeaf *script_leaf = get_leaf_script(script_leaf_node);
 	REQUIRE(script_leaf != nullptr);
 	CHECK(script_leaf->get_script_path() == "res://player.fs");
 	CHECK(script_leaf->get_tab_title() == "player.fs");
@@ -1115,7 +1333,7 @@ TEST_CASE("[SceneTree][Editor] script-leaf-open") {
 	CHECK(second != script_leaf_node);
 	CHECK(h.workspace->get_leaf_count() == 3);
 	CHECK(h.workspace->get_script_leaves().size() == 2);
-	ScriptLeaf *enemy_leaf = Object::cast_to<ScriptLeaf>(second->get_leaf_content()->get_root_control());
+	ScriptLeaf *enemy_leaf = get_leaf_script(second);
 	REQUIRE(enemy_leaf != nullptr);
 	CHECK(enemy_leaf->get_script_path() == "res://enemy.fs");
 
@@ -1142,7 +1360,7 @@ TEST_CASE("[SceneTree][Editor] script-leaf-open") {
 	CHECK(h2.workspace->get_script_leaves().size() == 2);
 	WorkspaceLeafNode *restored_enemy = h2.workspace->get_leaf_by_id(enemy_leaf_id);
 	REQUIRE(restored_enemy != nullptr);
-	ScriptLeaf *restored_enemy_leaf = Object::cast_to<ScriptLeaf>(restored_enemy->get_leaf_content()->get_root_control());
+	ScriptLeaf *restored_enemy_leaf = get_leaf_script(restored_enemy);
 	REQUIRE(restored_enemy_leaf != nullptr);
 	CHECK(restored_enemy_leaf->get_script_path() == "res://enemy.fs");
 
@@ -1150,7 +1368,7 @@ TEST_CASE("[SceneTree][Editor] script-leaf-open") {
 	memdelete(controller2);
 }
 
-TEST_CASE("[SceneTree][Editor] script-leaf-collapse-keeps-scene-focus") {
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] script-leaf-collapse-keeps-scene-focus") {
 	WorkspaceHarness h;
 	h.mount();
 	h.pump();
@@ -1177,7 +1395,7 @@ TEST_CASE("[SceneTree][Editor] script-leaf-collapse-keeps-scene-focus") {
 	WorkspaceLeafNode *focused = h.workspace->get_focused_leaf();
 	REQUIRE(focused != nullptr);
 	CHECK(focused->get_pane_tile() != nullptr);
-	CHECK(focused->get_leaf_content()->get_content_type() == StringName("scene"));
+	CHECK(get_leaf_pane(focused)->is_scene_pane());
 	CHECK(h.workspace->get_script_leaf() == script_leaf);
 
 	h.unmount();
@@ -1215,7 +1433,7 @@ public:
 	}
 };
 
-TEST_CASE("[SceneTree][Editor] focused-scenetree-inspector-accessor") {
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] focused-scenetree-inspector-accessor") {
 	Window *tree_root = SceneTree::get_singleton()->get_root();
 
 	WorkspaceHarness h;
@@ -1273,7 +1491,7 @@ TEST_CASE("[SceneTree][Editor] focused-scenetree-inspector-accessor") {
 	h.unmount();
 }
 
-TEST_CASE("[SceneTree][Editor] focused-dock-accessor") {
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] focused-dock-accessor") {
 	Window *tree_root = SceneTree::get_singleton()->get_root();
 	EditorUndoRedoManager *ur_manager = memnew(EditorUndoRedoManager);
 
@@ -1343,7 +1561,7 @@ TEST_CASE("[SceneTree][Editor] focused-dock-accessor") {
 	memdelete(ur_manager);
 }
 
-TEST_CASE("[SceneTree][Editor] stale-singleton-guard") {
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] stale-singleton-guard") {
 	Window *tree_root = SceneTree::get_singleton()->get_root();
 	EditorUndoRedoManager *ur_manager = memnew(EditorUndoRedoManager);
 

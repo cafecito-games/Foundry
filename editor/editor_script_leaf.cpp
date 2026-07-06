@@ -28,7 +28,7 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-#include "editor_script_leaf.h"
+#include "editor/editor_script_leaf.h"
 
 #include "core/io/config_file.h"
 #include "core/io/resource_loader.h"
@@ -36,6 +36,7 @@
 #include "editor/editor_string_names.h"
 #include "editor/script/script_editor_controller.h"
 #include "editor/script/script_editor_view.h"
+#include "editor/workspace/workspace_pane.h"
 #include "scene/gui/label.h"
 #include "scene/main/node.h"
 #include "scene/main/viewport.h"
@@ -123,7 +124,8 @@ void ScriptLeaf::request_workspace_focus() {
 		EditorSceneWorkspace *workspace = Object::cast_to<EditorSceneWorkspace>(node);
 		if (workspace) {
 			for (WorkspaceLeafNode *leaf : workspace->get_leaves()) {
-				if (leaf->get_leaf_content() && leaf->get_leaf_content()->get_root_control() == this) {
+				WorkspacePane *pane = leaf->get_workspace_pane();
+				if (pane && pane->get_script_leaf() == this) {
 					workspace->request_leaf_focus(leaf->get_leaf_id());
 					return;
 				}

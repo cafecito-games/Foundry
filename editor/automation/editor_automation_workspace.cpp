@@ -34,7 +34,9 @@
 #include "editor/editor_data.h"
 #include "editor/editor_node.h"
 #include "editor/editor_scene_pane_tile.h"
+#include "editor/editor_scene_workspace.h"
 #include "editor/scene/editor_scene_tabs.h"
+#include "editor/workspace/workspace_pane.h"
 #include "core/object/object.h"
 #include "scene/gui/split_container.h"
 #include "scene/gui/tab_bar.h"
@@ -50,6 +52,10 @@ Dictionary _serialize_workspace_tree(Control *p_node) {
 	if (WorkspaceLeafNode *leaf = Object::cast_to<WorkspaceLeafNode>(p_node)) {
 		dict["type"] = "leaf";
 		dict["tile_id"] = leaf->get_leaf_id();
+		dict["content_type"] = "pane";
+		if (WorkspacePane *pane = leaf->get_workspace_pane()) {
+			dict["initial_content_type"] = pane->get_initial_content_type();
+		}
 		return dict;
 	}
 

@@ -131,7 +131,7 @@ TEST_CASE("[SceneTree][Editor] drop-focuses-target") {
 	REQUIRE(script_leaf_node != nullptr);
 
 	TestSceneWorkspace::replace_leaf_with_script(script_leaf_node, "ScriptPane");
-	ScriptLeaf *script_leaf = Object::cast_to<ScriptLeaf>(script_leaf_node->get_leaf_content()->get_root_control());
+	ScriptLeaf *script_leaf = TestSceneWorkspace::get_leaf_script(script_leaf_node);
 	REQUIRE(script_leaf != nullptr);
 
 	const int scene_leaf_id = scene_leaf->get_leaf_id();

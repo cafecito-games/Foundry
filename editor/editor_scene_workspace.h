@@ -38,6 +38,7 @@ class EditorSelection;
 class ScenePaneTile;
 class SplitContainer;
 class WorkspaceLeafContent;
+class WorkspacePane;
 
 /**
  * A leaf of the recursive tiling tree. Holds exactly one WorkspaceLeafContent
@@ -60,6 +61,7 @@ public:
 	void set_leaf_content(WorkspaceLeafContent *p_content);
 	WorkspaceLeafContent *take_leaf_content();
 
+	WorkspacePane *get_workspace_pane() const;
 	ScenePaneTile *get_pane_tile() const;
 	Control *get_content_host() const;
 

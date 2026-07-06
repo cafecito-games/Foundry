@@ -36,6 +36,7 @@
 #include "editor/editor_data.h"
 #include "editor/editor_scene_pane_tile.h"
 #include "editor/editor_scene_workspace.h"
+#include "editor/workspace/workspace_pane.h"
 
 #include "core/object/message_queue.h"
 #include "scene/gui/panel_container.h"
@@ -68,6 +69,14 @@ struct WorkspaceHarness {
 			editor_data.register_tile(leaf->get_leaf_id());
 		}
 		editor_data.set_focused_tile_id(workspace->get_focused_leaf_id());
+	}
+
+	void sync_panes() {
+		for (WorkspaceLeafNode *leaf : workspace->get_leaves()) {
+			if (WorkspacePane *pane = leaf->get_workspace_pane()) {
+				pane->sync_from_editor_data();
+			}
+		}
 	}
 
 	void pump() {
@@ -127,6 +136,13 @@ TEST_CASE("[Editor][Automation][MCP] mcp-workspace-state") {
 
 	const Dictionary tree = workspace_state.get("tree", Dictionary());
 	CHECK(String(tree.get("type", String())) == "split");
+	Array tree_children = tree.get("children", Array());
+	REQUIRE(tree_children.size() == 2);
+	for (int i = 0; i < tree_children.size(); i++) {
+		const Dictionary leaf = tree_children[i];
+		CHECK(String(leaf.get("type", String())) == "leaf");
+		CHECK(String(leaf.get("content_type", String())) == "pane");
+	}
 
 	h.unmount();
 }
@@ -134,6 +150,18 @@ TEST_CASE("[Editor][Automation][MCP] mcp-workspace-state") {
 TEST_CASE("[Editor][Automation][MCP] mcp-tile-scoped-selector") {
 	WorkspaceHarness h;
 	prepare_two_tile_workspace(h);
+
+	const int scene_a = h.editor_data.add_edited_scene(-1);
+	h.editor_data.set_scene_path(scene_a, "res://tile_a.tscn");
+	h.editor_data.set_scene_tile(scene_a, 0);
+	const int scene_b = h.editor_data.add_edited_scene(-1);
+	h.editor_data.set_scene_path(scene_b, "res://tile_b.tscn");
+	h.editor_data.set_scene_tile(scene_b, 1);
+	h.editor_data.set_tile_current_scene(0, scene_a);
+	h.editor_data.set_tile_current_scene(1, scene_b);
+	h.editor_data.set_focused_tile_id(1);
+	h.workspace->set_focused_leaf(1);
+	h.sync_panes();
 	h.pump();
 
 	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(h.host);

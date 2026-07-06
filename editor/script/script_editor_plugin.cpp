@@ -52,6 +52,7 @@
 #include "editor/editor_main_screen.h"
 #include "editor/editor_node.h"
 #include "editor/editor_scene_workspace.h"
+#include "editor/workspace/workspace_pane.h"
 #include "editor/editor_script_leaf.h"
 #include "editor/script/script_editor_controller.h"
 #include "editor/editor_string_names.h"
@@ -683,7 +684,8 @@ void ScriptEditorPlugin::set_window_layout(Ref<ConfigFile> p_layout) {
 	if (p_layout->has_section_key("ScriptEditor", "open_scripts")) {
 		if (EditorNode::get_singleton() && EditorNode::get_singleton()->get_scene_workspace()) {
 			for (WorkspaceLeafNode *leaf : EditorNode::get_singleton()->get_scene_workspace()->get_script_leaves()) {
-				ScriptLeaf *script_leaf = Object::cast_to<ScriptLeaf>(leaf->get_leaf_content()->get_root_control());
+				WorkspacePane *pane = leaf->get_workspace_pane();
+				ScriptLeaf *script_leaf = pane ? pane->get_script_leaf() : nullptr;
 				if (script_leaf && script_leaf->get_script_editor_view()) {
 					const String section = EditorSceneWorkspace::leaf_layout_section(leaf->get_leaf_id());
 					if (p_layout->has_section_key(section, "open_scripts")) {

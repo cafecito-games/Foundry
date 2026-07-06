@@ -36,6 +36,7 @@
 #include "editor/editor_scene_pane_tile.h"
 #include "editor/editor_script_leaf.h"
 #include "editor/editor_workspace_leaf_content.h"
+#include "editor/workspace/workspace_pane.h"
 #include "editor/script/script_editor_view.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/gui/split_container.h"
@@ -152,15 +153,10 @@ WorkspaceLeafNode *WorkspaceLeafNode::create(int p_leaf_id, EditorSelection *p_e
 	WorkspaceLeafNode *leaf = memnew(WorkspaceLeafNode);
 	leaf->leaf_id = p_leaf_id;
 
-	WorkspaceLeafContent *content = nullptr;
-	if (p_content_type == StringName("script")) {
-		content = memnew(ScriptLeaf);
-	} else {
-		ScenePaneTile *tile = memnew(ScenePaneTile);
-		tile->setup(p_leaf_id, p_editor_selection, *p_editor_data);
-		content = tile;
-	}
-	leaf->set_leaf_content(content);
+	const StringName initial_content_type = p_content_type == StringName("script") ? StringName("script") : StringName("scene");
+	WorkspacePane *pane = memnew(WorkspacePane);
+	pane->setup(p_leaf_id, p_editor_selection, p_editor_data, initial_content_type);
+	leaf->set_leaf_content(pane);
 
 	leaf->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	leaf->set_h_size_flags(Control::SIZE_EXPAND_FILL);
@@ -188,9 +184,18 @@ WorkspaceLeafContent *WorkspaceLeafNode::take_leaf_content() {
 	return content;
 }
 
+WorkspacePane *WorkspaceLeafNode::get_workspace_pane() const {
+	if (leaf_content && leaf_content->get_content_type() == StringName("pane")) {
+		return Object::cast_to<WorkspacePane>(leaf_content->get_root_control());
+	}
+	return nullptr;
+}
+
 ScenePaneTile *WorkspaceLeafNode::get_pane_tile() const {
-	if (leaf_content && leaf_content->get_content_type() == StringName("scene")) {
-		return static_cast<ScenePaneTile *>(leaf_content->get_root_control());
+	WorkspacePane *pane = get_workspace_pane();
+	if (pane) {
+		pane->sync_from_editor_data();
+		return pane->get_scene_tile();
 	}
 	return nullptr;
 }
@@ -314,12 +319,10 @@ WorkspaceLeafNode *EditorSceneWorkspace::_find_first_leaf(Control *p_node) const
 }
 
 WorkspaceLeafContent *EditorSceneWorkspace::_create_leaf_content(int p_leaf_id, const StringName &p_content_type) {
-	if (p_content_type == StringName("script")) {
-		return memnew(ScriptLeaf);
-	}
-	ScenePaneTile *tile = memnew(ScenePaneTile);
-	tile->setup(p_leaf_id, editor_selection, *editor_data);
-	return tile;
+	const StringName initial_content_type = p_content_type == StringName("script") ? StringName("script") : StringName("scene");
+	WorkspacePane *pane = memnew(WorkspacePane);
+	pane->setup(p_leaf_id, editor_selection, editor_data, initial_content_type);
+	return pane;
 }
 
 void EditorSceneWorkspace::_mount_leaf_content(WorkspaceLeafNode *p_leaf, WorkspaceLeafContent *p_content) {
@@ -400,7 +403,8 @@ WorkspaceLeafNode *EditorSceneWorkspace::get_script_leaf() const {
 Vector<WorkspaceLeafNode *> EditorSceneWorkspace::get_script_leaves() const {
 	Vector<WorkspaceLeafNode *> script_leaves;
 	for (WorkspaceLeafNode *leaf : leaves) {
-		if (leaf->get_leaf_content() && leaf->get_leaf_content()->get_content_type() == StringName("script")) {
+		WorkspacePane *pane = leaf->get_workspace_pane();
+		if (pane && pane->is_script_pane()) {
 			script_leaves.push_back(leaf);
 		}
 	}
@@ -409,7 +413,18 @@ Vector<WorkspaceLeafNode *> EditorSceneWorkspace::get_script_leaves() const {
 
 WorkspaceLeafNode *EditorSceneWorkspace::get_focused_script_leaf() const {
 	WorkspaceLeafNode *focused = get_focused_leaf();
-	if (focused && focused->get_leaf_content() && focused->get_leaf_content()->get_content_type() == StringName("script")) {
+	if (!focused) {
+		return nullptr;
+	}
+	WorkspacePane *pane = focused->get_workspace_pane();
+	if (!pane) {
+		return nullptr;
+	}
+	if (pane->is_script_pane() && pane->get_script_leaf()) {
+		return focused;
+	}
+	const int active_tab = pane->get_active_tab_index();
+	if (active_tab >= 0 && pane->get_tab(active_tab).get_type_id() == StringName("script") && pane->get_script_leaf()) {
 		return focused;
 	}
 	return nullptr;
@@ -420,7 +435,8 @@ WorkspaceLeafNode *EditorSceneWorkspace::find_script_leaf_for_path(const String 
 		return nullptr;
 	}
 	for (WorkspaceLeafNode *leaf : get_script_leaves()) {
-		ScriptLeaf *script_leaf = Object::cast_to<ScriptLeaf>(leaf->get_leaf_content()->get_root_control());
+		WorkspacePane *pane = leaf->get_workspace_pane();
+		ScriptLeaf *script_leaf = pane ? pane->get_script_leaf() : nullptr;
 		if (!script_leaf) {
 			continue;
 		}
@@ -438,8 +454,8 @@ WorkspaceLeafNode *EditorSceneWorkspace::find_script_leaf_for_path(const String 
 
 void EditorSceneWorkspace::resolve_script_leaf_associated_scenes(EditorData &p_editor_data) {
 	for (WorkspaceLeafNode *script_leaf_node : get_script_leaves()) {
-		WorkspaceLeafContent *content = script_leaf_node->get_leaf_content();
-		ScriptLeaf *script_leaf = content ? Object::cast_to<ScriptLeaf>(content->get_root_control()) : nullptr;
+		WorkspacePane *pane = script_leaf_node->get_workspace_pane();
+		ScriptLeaf *script_leaf = pane ? pane->get_script_leaf() : nullptr;
 		if (!script_leaf || script_leaf->get_associated_scene_root() || script_leaf->get_associated_scene_path().is_empty()) {
 			continue;
 		}
@@ -470,8 +486,9 @@ WorkspaceLeafNode *EditorSceneWorkspace::open_script_leaf(WorkspaceLeafNode *p_s
 		ERR_FAIL_NULL_V(target, nullptr);
 	}
 
-	if (!p_script_path.is_empty() && target->get_leaf_content()) {
-		ScriptLeaf *script_leaf = Object::cast_to<ScriptLeaf>(target->get_leaf_content()->get_root_control());
+	if (!p_script_path.is_empty()) {
+		WorkspacePane *target_pane = target->get_workspace_pane();
+		ScriptLeaf *script_leaf = target_pane ? target_pane->get_script_leaf() : nullptr;
 		if (script_leaf) {
 			script_leaf->set_script_path(p_script_path);
 			script_leaf->on_focus_entered();
@@ -486,12 +503,14 @@ WorkspaceLeafNode *EditorSceneWorkspace::open_script_leaf(WorkspaceLeafNode *p_s
 		}
 	}
 
-	if (ScriptLeaf *script_leaf = target->get_leaf_content() ? Object::cast_to<ScriptLeaf>(target->get_leaf_content()->get_root_control()) : nullptr) {
-		Node *associated_scene = nullptr;
-		if (ScenePaneTile *source_tile = p_source_leaf->get_pane_tile()) {
-			associated_scene = source_tile->get_current_scene_root();
+	if (WorkspacePane *target_pane = target->get_workspace_pane()) {
+		if (ScriptLeaf *script_leaf = target_pane->get_script_leaf()) {
+			Node *associated_scene = nullptr;
+			if (ScenePaneTile *source_tile = p_source_leaf->get_pane_tile()) {
+				associated_scene = source_tile->get_current_scene_root();
+			}
+			script_leaf->set_associated_scene_root(associated_scene);
 		}
-		script_leaf->set_associated_scene_root(associated_scene);
 	}
 	return target;
 }
@@ -772,11 +791,17 @@ Control *EditorSceneWorkspace::_restore_node_from_config(const Ref<ConfigFile> &
 
 	const int leaf_id = int(p_config->get_value(WORKSPACE_CONFIG_SECTION, vformat("node_%d_leaf_id", p_node), 0));
 	String content_type = p_config->get_value(WORKSPACE_CONFIG_SECTION, vformat("node_%d_content_type", p_node), String());
-	if (content_type.is_empty()) {
+	StringName initial_content_type = StringName("scene");
+	if (content_type == "script") {
+		initial_content_type = StringName("script");
+	} else if (content_type == "pane") {
+		const String layout_section = leaf_layout_section(leaf_id);
+		initial_content_type = p_config->get_value(layout_section, "initial_content_type", StringName("scene"));
+	} else if (content_type.is_empty()) {
 		// Legacy sessions stored an opaque content descriptor string.
-		content_type = "scene";
+		initial_content_type = StringName("scene");
 	}
-	WorkspaceLeafNode *leaf = _create_leaf(leaf_id, content_type);
+	WorkspaceLeafNode *leaf = _create_leaf(leaf_id, initial_content_type);
 	next_leaf_id = MAX(next_leaf_id, leaf_id + 1);
 	if (leaf && leaf->get_leaf_content()) {
 		const String layout_section = leaf_layout_section(leaf_id);
