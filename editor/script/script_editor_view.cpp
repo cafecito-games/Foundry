@@ -1326,14 +1326,16 @@ void ScriptEditorView::_tab_changed(int p_which) {
 void ScriptEditorView::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_ENTER_TREE: {
-			EditorRunBar::get_singleton()->connect("stop_pressed", callable_mp(this, &ScriptEditorView::_editor_stop));
+			if (EditorRunBar *run_bar = EditorRunBar::get_singleton()) {
+				run_bar->connect("stop_pressed", callable_mp(this, &ScriptEditorView::_editor_stop));
+			}
 			_apply_editor_settings();
 			[[fallthrough]];
 		}
 
 		case NOTIFICATION_TRANSLATION_CHANGED: {
 			_update_online_doc();
-			if (!make_floating->is_disabled()) {
+			if (make_floating && !make_floating->is_disabled()) {
 				// Override default ScreenSelect tooltip if multi-window support is available.
 				make_floating->set_tooltip_text(TTR("Make the script editor floating.") + "\n" + TTR("Right-click to open the screen selector."));
 			}
@@ -1381,14 +1383,18 @@ void ScriptEditorView::_notification(int p_what) {
 			add_theme_style_override(SceneStringName(panel), get_theme_stylebox(SNAME("ScriptEditorPanel"), EditorStringName(EditorStyles)));
 
 			get_tree()->connect("tree_changed", callable_mp(this, &ScriptEditorView::_tree_changed));
-			EditorNode::get_singleton()->get_focused_inspector_dock()->connect("request_help", callable_mp(this, &ScriptEditorView::_help_class_open));
-			EditorNode::get_singleton()->connect("request_help_search", callable_mp(this, &ScriptEditorView::_help_search));
-			EditorNode::get_singleton()->connect("scene_closed", callable_mp(this, &ScriptEditorView::_close_builtin_scripts_from_scene));
-			EditorNode::get_singleton()->connect("script_add_function_request", callable_mp(this, &ScriptEditorView::_add_callback));
-			EditorNode::get_singleton()->connect("resource_saved", callable_mp(this, &ScriptEditorView::_res_saved_callback));
-			EditorNode::get_singleton()->connect("scene_saved", callable_mp(this, &ScriptEditorView::_scene_saved_callback));
-			FileSystemDock::get_singleton()->connect("files_moved", callable_mp(controller, &ScriptEditorController::_files_moved));
-			FileSystemDock::get_singleton()->connect("file_removed", callable_mp(controller, &ScriptEditorController::_file_removed));
+			if (EditorNode *editor_node = EditorNode::get_singleton()) {
+				editor_node->get_focused_inspector_dock()->connect("request_help", callable_mp(this, &ScriptEditorView::_help_class_open));
+				editor_node->connect("request_help_search", callable_mp(this, &ScriptEditorView::_help_search));
+				editor_node->connect("scene_closed", callable_mp(this, &ScriptEditorView::_close_builtin_scripts_from_scene));
+				editor_node->connect("script_add_function_request", callable_mp(this, &ScriptEditorView::_add_callback));
+				editor_node->connect("resource_saved", callable_mp(this, &ScriptEditorView::_res_saved_callback));
+				editor_node->connect("scene_saved", callable_mp(this, &ScriptEditorView::_scene_saved_callback));
+			}
+			if (FileSystemDock *filesystem_dock = FileSystemDock::get_singleton()) {
+				filesystem_dock->connect("files_moved", callable_mp(controller, &ScriptEditorController::_files_moved));
+				filesystem_dock->connect("file_removed", callable_mp(controller, &ScriptEditorController::_file_removed));
+			}
 			script_list->connect(SceneStringName(item_selected), callable_mp(this, &ScriptEditorView::_script_selected));
 
 			members_overview->connect(SceneStringName(item_selected), callable_mp(this, &ScriptEditorView::_members_overview_selected));
@@ -1396,7 +1402,9 @@ void ScriptEditorView::_notification(int p_what) {
 			script_split->connect("dragged", callable_mp(this, &ScriptEditorView::_split_dragged));
 			list_split->connect("dragged", callable_mp(this, &ScriptEditorView::_split_dragged));
 
-			EditorFileSystem::get_singleton()->connect("filesystem_changed", callable_mp(controller, &ScriptEditorController::_filesystem_changed));
+			if (EditorFileSystem *editor_file_system = EditorFileSystem::get_singleton()) {
+				editor_file_system->connect("filesystem_changed", callable_mp(controller, &ScriptEditorController::_filesystem_changed));
+			}
 #ifdef ANDROID_ENABLED
 			set_process(true);
 #endif
@@ -1446,7 +1454,15 @@ void ScriptEditorView::_notification(int p_what) {
 #endif
 
 		case NOTIFICATION_EXIT_TREE: {
-			EditorRunBar::get_singleton()->disconnect("stop_pressed", callable_mp(this, &ScriptEditorView::_editor_stop));
+			if (EditorRunBar *run_bar = EditorRunBar::get_singleton()) {
+				run_bar->disconnect("stop_pressed", callable_mp(this, &ScriptEditorView::_editor_stop));
+			}
+		} break;
+
+		case NOTIFICATION_PREDELETE: {
+			if (controller) {
+				controller->unregister_view(this);
+			}
 		} break;
 
 		case NOTIFICATION_APPLICATION_FOCUS_IN: {
@@ -1744,7 +1760,10 @@ void ScriptEditorView::_update_script_names() {
 	}
 
 	HashSet<Ref<Script>> used;
-	Node *edited = EditorNode::get_singleton()->get_edited_scene();
+	Node *edited = nullptr;
+	if (EditorNode *editor_node = EditorNode::get_singleton()) {
+		edited = editor_node->get_edited_scene();
+	}
 	if (edited && EDITOR_GET("text_editor/script_list/highlight_scene_scripts")) {
 		_find_scripts(edited, edited, used);
 	}
@@ -2002,7 +2021,9 @@ Error ScriptEditorView::_save_text_file(Ref<TextFile> p_text_file, const String 
 		p_text_file->set_last_modified_time(FileAccess::get_modified_time(p_path));
 	}
 
-	EditorFileSystem::get_singleton()->update_file(p_path);
+	if (EditorFileSystem *editor_file_system = EditorFileSystem::get_singleton()) {
+		editor_file_system->update_file(p_path);
+	}
 
 	_res_saved_callback(sqscr);
 	return OK;
@@ -2022,7 +2043,8 @@ bool ScriptEditorView::edit(const Ref<Resource> &p_resource, int p_line, int p_c
 	use_external_editor = use_external_editor && !(scr.is_valid() && scr->is_built_in()); // Ignore external editor for built-in scripts.
 	const bool open_dominant = EDITOR_GET("text_editor/behavior/files/open_dominant_script_on_scene_change");
 
-	const bool should_open = (open_dominant && !use_external_editor) || !EditorNode::get_singleton()->is_changing_scene();
+	EditorNode *editor_node = EditorNode::get_singleton();
+	const bool should_open = (open_dominant && !use_external_editor) || !editor_node || !editor_node->is_changing_scene();
 
 	if (scr.is_valid() && scr->get_language()->overrides_external_editor()) {
 		if (should_open) {
@@ -2221,7 +2243,9 @@ void ScriptEditorView::save_current_script() {
 	}
 
 	warn_if_saving_declared_build_output(resource->get_path());
-	EditorNode::get_singleton()->save_resource(resource);
+	if (EditorNode *editor_node = EditorNode::get_singleton()) {
+		editor_node->save_resource(resource);
+	}
 
 	if (scr.is_valid()) {
 		update_docs_from_script(scr);
@@ -2492,7 +2516,9 @@ void ScriptEditorView::_save_layout() {
 		return;
 	}
 
-	EditorNode::get_singleton()->save_editor_layout_delayed();
+	if (EditorNode *editor_node = EditorNode::get_singleton()) {
+		editor_node->save_editor_layout_delayed();
+	}
 }
 
 void ScriptEditorView::_apply_editor_settings() {
@@ -2951,8 +2977,12 @@ void ScriptEditorView::set_window_layout(Ref<ConfigFile> p_layout) {
 				controller->get_script_editor_cache()->erase_section(path);
 			}
 			continue;
-		} else if (!path.is_resource_file() && !EditorNode::get_singleton()->is_scene_open(path.get_slice("::", 0))) {
-			continue;
+		} else if (!path.is_resource_file()) {
+			if (EditorNode *editor_node = EditorNode::get_singleton()) {
+				if (!editor_node->is_scene_open(path.get_slice("::", 0))) {
+					continue;
+				}
+			}
 		}
 		loaded_scripts.insert(path);
 
@@ -2963,8 +2993,6 @@ void ScriptEditorView::set_window_layout(Ref<ConfigFile> p_layout) {
 			Ref<Script> scr = ResourceCache::get_ref(path);
 			if (scr.is_valid()) {
 				is_script = true;
-			} else {
-				continue;
 			}
 		}
 
@@ -3329,8 +3357,10 @@ void ScriptEditorView::_help_search(const String &p_text) {
 
 
 void ScriptEditorView::_script_changed() {
-	if (SignalsDock *signals_dock = EditorNode::get_singleton()->get_focused_signals_dock()) {
-		signals_dock->update_lists();
+	if (EditorNode *editor_node = EditorNode::get_singleton()) {
+		if (SignalsDock *signals_dock = editor_node->get_focused_signals_dock()) {
+			signals_dock->update_lists();
+		}
 	}
 }
 
@@ -3350,7 +3380,9 @@ void ScriptEditorView::_update_code_editor_zoom_factor(CodeTextEditor *p_code_te
 }
 
 void ScriptEditorView::_window_changed(bool p_visible) {
-	make_floating->set_visible(!p_visible);
+	if (make_floating) {
+		make_floating->set_visible(!p_visible);
+	}
 	is_floating = p_visible;
 }
 
@@ -3701,8 +3733,6 @@ void ScriptEditorView::sync_script_leaf_path() {
 	int column = 0;
 	if (get_current_script_view_state(path, line, column) && !path.is_empty()) {
 		script_leaf->set_script_path(path);
-	} else {
-		script_leaf->set_script_path(String());
 	}
 }
 
@@ -3773,8 +3803,12 @@ void ScriptEditorView::set_view_layout(const Ref<ConfigFile> &p_layout, const St
 				controller->get_script_editor_cache()->erase_section(path);
 			}
 			continue;
-		} else if (!path.is_resource_file() && !EditorNode::get_singleton()->is_scene_open(path.get_slice("::", 0))) {
-			continue;
+		} else if (!path.is_resource_file()) {
+			if (EditorNode *editor_node = EditorNode::get_singleton()) {
+				if (!editor_node->is_scene_open(path.get_slice("::", 0))) {
+					continue;
+				}
+			}
 		}
 		loaded_scripts.insert(path);
 
@@ -3785,8 +3819,6 @@ void ScriptEditorView::set_view_layout(const Ref<ConfigFile> &p_layout, const St
 			Ref<Script> scr = ResourceCache::get_ref(path);
 			if (scr.is_valid()) {
 				is_script = true;
-			} else {
-				continue;
 			}
 		}
 

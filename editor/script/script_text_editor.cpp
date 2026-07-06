@@ -4155,7 +4155,11 @@ void ScriptTextEditor::register_editor() {
 	ED_SHORTCUT("script_text_editor/goto_next_breakpoint", TTRC("Go to Next Breakpoint"), KeyModifierMask::CTRL | Key::PERIOD);
 	ED_SHORTCUT("script_text_editor/goto_previous_breakpoint", TTRC("Go to Previous Breakpoint"), KeyModifierMask::CTRL | Key::COMMA);
 
-	ScriptEditor::register_create_script_editor_function(create_editor);
+	static bool create_func_registered = false;
+	if (!create_func_registered) {
+		ScriptEditor::register_create_script_editor_function(create_editor);
+		create_func_registered = true;
+	}
 }
 
 void ScriptTextEditor::validate() {

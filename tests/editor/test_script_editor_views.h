@@ -28,6 +28,7 @@
 #pragma once
 
 #include "core/io/config_file.h"
+#include "core/os/os.h"
 #include "editor/editor_data.h"
 #include "editor/editor_scene_workspace.h"
 #include "editor/editor_script_leaf.h"
@@ -72,6 +73,18 @@ static Ref<TextFile> make_text_file(const String &p_path, const String &p_source
 	text_file->set_path(p_path);
 	text_file->set_text(p_source);
 	return text_file;
+}
+
+static String write_temp_text_file(const String &p_name, const String &p_source) {
+	const String dir = OS::get_singleton()->get_cache_path().path_join("script_view_persist");
+	Ref<DirAccess> da = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+	ERR_FAIL_COND_V(da.is_null(), String());
+	da->make_dir_recursive(dir);
+	const String path = dir.path_join(p_name);
+	Ref<FileAccess> file = FileAccess::open(path, FileAccess::WRITE);
+	ERR_FAIL_COND_V(file.is_null(), String());
+	file->store_string(p_source);
+	return path;
 }
 
 TEST_CASE("[Editor][two-scripts-two-leaves] Distinct script leaves keep independent tabs") {
@@ -209,8 +222,8 @@ TEST_CASE("[Editor][script-view-persistence] Multi script leaves round-trip per-
 	WorkspaceLeafNode *scene_leaf = h.workspace->get_focused_leaf();
 	REQUIRE(scene_leaf != nullptr);
 
-	WorkspaceLeafNode *script_a = h.workspace->open_script_leaf(scene_leaf, "res://a.fs", true);
-	WorkspaceLeafNode *script_b = h.workspace->open_script_leaf(scene_leaf, "res://b.fs", true);
+	WorkspaceLeafNode *script_a = h.workspace->open_script_leaf(scene_leaf, String(), true);
+	WorkspaceLeafNode *script_b = h.workspace->open_script_leaf(scene_leaf, String(), true);
 	h.pump();
 	REQUIRE(script_a != nullptr);
 	REQUIRE(script_b != nullptr);
@@ -222,8 +235,12 @@ TEST_CASE("[Editor][script-view-persistence] Multi script leaves round-trip per-
 	REQUIRE(leaf_content_a != nullptr);
 	REQUIRE(leaf_content_b != nullptr);
 
-	Ref<TextFile> file_a = make_text_file("res://a.fs", "a");
-	Ref<TextFile> file_b = make_text_file("res://b.fs", "b");
+	const String path_a = write_temp_text_file("a.txt", "a");
+	const String path_b = write_temp_text_file("b.txt", "b");
+	REQUIRE_FALSE(path_a.is_empty());
+	REQUIRE_FALSE(path_b.is_empty());
+	Ref<TextFile> file_a = make_text_file(path_a, "a");
+	Ref<TextFile> file_b = make_text_file(path_b, "b");
 	leaf_content_a->get_script_editor_view()->edit(file_a, true);
 	leaf_content_b->get_script_editor_view()->edit(file_b, true);
 	h.pump();
@@ -256,12 +273,12 @@ TEST_CASE("[Editor][script-view-persistence] Multi script leaves round-trip per-
 	ScriptLeaf *restored_leaf_b = Object::cast_to<ScriptLeaf>(restored_b->get_leaf_content()->get_root_control());
 	REQUIRE(restored_leaf_a != nullptr);
 	REQUIRE(restored_leaf_b != nullptr);
-	CHECK(restored_leaf_a->get_script_path() == "res://a.fs");
-	CHECK(restored_leaf_b->get_script_path() == "res://b.fs");
+	CHECK(restored_leaf_a->get_script_path() == path_a);
+	CHECK(restored_leaf_b->get_script_path() == path_b);
 	REQUIRE(restored_leaf_a->get_script_editor_view() != nullptr);
 	REQUIRE(restored_leaf_b->get_script_editor_view() != nullptr);
-	CHECK(restored_leaf_a->get_script_editor_view()->get_open_editor_for_path("res://a.fs") != nullptr);
-	CHECK(restored_leaf_b->get_script_editor_view()->get_open_editor_for_path("res://b.fs") != nullptr);
+	CHECK(restored_leaf_a->get_script_editor_view()->get_open_editor_for_path(path_a) != nullptr);
+	CHECK(restored_leaf_b->get_script_editor_view()->get_open_editor_for_path(path_b) != nullptr);
 
 	h2.unmount();
 	memdelete(controller2);

@@ -35,6 +35,7 @@
 #include "editor/shader/shader_editor_plugin.h"
 #include "editor/shader/text_shader_editor.h"
 #include "script_text_editor.h"
+#include "text_editor.h"
 #include "servers/display/display_server.h"
 #include "scene/main/timer.h"
 #include "scene/gui/tab_container.h"
@@ -43,8 +44,18 @@ ScriptEditorController *ScriptEditorController::singleton = nullptr;
 int ScriptEditorController::script_editor_func_count = 0;
 CreateScriptEditorFunc ScriptEditorController::script_editor_funcs[ScriptEditorController::SCRIPT_EDITOR_FUNC_MAX];
 
+static void ensure_script_editor_registrations() {
+	ScriptTextEditor::register_editor();
+	TextEditor::register_editor();
+	ED_SHORTCUT("script_text_editor/convert_to_uppercase", TTRC("Uppercase"), KeyModifierMask::SHIFT | Key::F4);
+	ED_SHORTCUT("script_text_editor/convert_to_lowercase", TTRC("Lowercase"), KeyModifierMask::SHIFT | Key::F5);
+	ED_SHORTCUT("script_text_editor/capitalize", TTRC("Capitalize"), KeyModifierMask::SHIFT | Key::F6);
+}
+
 ScriptEditorController::ScriptEditorController() {
 	singleton = this;
+
+	ensure_script_editor_registrations();
 
 	ED_SHORTCUT("script_editor/reopen_closed_script", TTRC("Reopen Closed Script"), KeyModifierMask::CMD_OR_CTRL | KeyModifierMask::SHIFT | Key::T);
 	ED_SHORTCUT("script_editor/clear_recent", TTRC("Clear Recent Scripts"));
@@ -74,6 +85,10 @@ ScriptEditorController::ScriptEditorController() {
 }
 
 ScriptEditorController::~ScriptEditorController() {
+	views.clear();
+	focused_view = nullptr;
+	primary_view = nullptr;
+	file_dialog_view = nullptr;
 	if (singleton == this) {
 		singleton = nullptr;
 	}
