@@ -30,6 +30,7 @@
 
 #include "editor_automation_workspace.h"
 
+#include "core/object/object.h"
 #include "editor/automation/editor_automation_workspace.h"
 #include "editor/editor_data.h"
 #include "editor/editor_node.h"
@@ -37,7 +38,6 @@
 #include "editor/editor_scene_workspace.h"
 #include "editor/scene/editor_scene_tabs.h"
 #include "editor/workspace/workspace_pane.h"
-#include "core/object/object.h"
 #include "scene/gui/split_container.h"
 #include "scene/gui/tab_bar.h"
 
@@ -307,6 +307,13 @@ bool EditorAutomationWorkspace::resolve_scene_tab_source(const EditorAutomationE
 	for (Node *node = tab_bar_node; node != nullptr; node = node->get_parent()) {
 		if (EditorSceneTabs *scene_tabs = Object::cast_to<EditorSceneTabs>(node)) {
 			r_tile_id = scene_tabs->get_tile_id();
+			r_tab_index = tab_index;
+			return r_tile_id >= 0 && r_tab_index >= 0;
+		}
+		// The generic pane tab strip is a plain TabBar owned by a WorkspacePane
+		// (no EditorSceneTabs ancestor); resolve its owning pane/leaf directly.
+		if (WorkspacePane *pane = Object::cast_to<WorkspacePane>(node)) {
+			r_tile_id = pane->get_leaf_id();
 			r_tab_index = tab_index;
 			return r_tile_id >= 0 && r_tab_index >= 0;
 		}

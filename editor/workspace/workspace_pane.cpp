@@ -349,9 +349,9 @@ void WorkspacePane::sync_from_editor_data() const {
 	const_cast<WorkspacePane *>(this)->_update_pane_state(false);
 }
 
-void WorkspacePane::sync_scene_tabs_from_editor_data() {
+void WorkspacePane::sync_scene_tabs_from_editor_data(bool p_activate) {
 	if (!editor_data || !is_scene_pane()) {
-		_update_pane_state();
+		_update_pane_state(p_activate);
 		return;
 	}
 
@@ -364,7 +364,7 @@ void WorkspacePane::sync_scene_tabs_from_editor_data() {
 		}
 	}
 	if (tile_scenes.is_empty() && !had_scene_tabs) {
-		_update_pane_state();
+		_update_pane_state(p_activate);
 		return;
 	}
 
@@ -431,7 +431,10 @@ void WorkspacePane::sync_scene_tabs_from_editor_data() {
 
 	_refresh_canonical_locations();
 	_sync_tab_strip();
-	_update_pane_state();
+	// Only the focused pane activates its scene tab; activation reparents the
+	// single shared scene editor into this tile, so activating every pane on a
+	// bulk sync would thrash that heavy reparent between tiles.
+	_update_pane_state(p_activate);
 }
 
 void WorkspacePane::add_tab(const WorkspaceTab &p_tab) {

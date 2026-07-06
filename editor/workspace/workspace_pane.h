@@ -139,7 +139,10 @@ public:
 	WorkspaceTabCloseResult request_close_active_tab();
 
 	void sync_from_editor_data() const;
-	void sync_scene_tabs_from_editor_data();
+	// p_activate=false re-mounts the active scene tab without running its
+	// activation side effects (focusing this tile and reparenting the shared
+	// scene editor into it); the workspace passes true only for the focused pane.
+	void sync_scene_tabs_from_editor_data(bool p_activate = true);
 
 	EditorData *get_editor_data() const { return editor_data; }
 	EditorSelection *get_editor_selection() const { return editor_selection; }

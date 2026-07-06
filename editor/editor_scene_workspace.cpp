@@ -737,7 +737,9 @@ void EditorSceneWorkspace::sync_scene_tabs_from_editor_data() {
 	WorkspacePane::get_shared_tab_registry().clear_canonical_for_type(StringName("scene"));
 	for (WorkspaceLeafNode *leaf : leaves) {
 		if (WorkspacePane *pane = leaf->get_workspace_pane()) {
-			pane->sync_scene_tabs_from_editor_data();
+			// Activate only the focused pane; a non-focused pane re-mounting its
+			// active scene tab must not reparent the shared scene editor into it.
+			pane->sync_scene_tabs_from_editor_data(leaf->get_leaf_id() == focused_leaf_id);
 		}
 	}
 }
