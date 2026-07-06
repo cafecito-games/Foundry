@@ -254,6 +254,8 @@ void ScriptTestExecutionPendingState::_finalize_from_guard() {
 	}
 	finalized = true;
 
+	Ref<ScriptTestExecutionPendingState> keep_alive(this);
+
 	Ref<ScriptTestExecutionResult> result;
 	result.instantiate();
 
@@ -293,6 +295,8 @@ void ScriptTestExecutionPendingState::_on_coroutine_completed(const Variant &p_r
 		return;
 	}
 	finalized = true;
+
+	Ref<ScriptTestExecutionPendingState> keep_alive(this);
 
 	Ref<ScriptTestExecutionResult> result;
 	result.instantiate();

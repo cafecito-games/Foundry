@@ -61,6 +61,19 @@ public:
 	}
 };
 
+class AsyncFSMethodCapture : public Object {
+	FOUNDRY_CLASS(AsyncFSMethodCapture, Object);
+
+public:
+	Variant result;
+	bool done = false;
+
+	void on_completed(const Variant &p_result) {
+		result = p_result;
+		done = true;
+	}
+};
+
 struct ScriptExecutionFixture {
 	Node *suite = nullptr;
 	TestProjectSettingsRestoreScope project_settings;
@@ -124,25 +137,27 @@ static Ref<ScriptTestExecutionResult> run_guarded_call(Node *p_suite, const Stri
 }
 
 static Variant run_async_fs_method(Node *p_node, const StringName &p_method, int p_max_frames = 360) {
-	Variant ret = p_node->call(p_method);
+	const Variant ret = p_node->call(p_method);
 	FSFunctionState *state = Object::cast_to<FSFunctionState>(ret);
+	if (!state) {
+		return ret;
+	}
+
+	AsyncFSMethodCapture capture;
+	state->connect(SNAME("completed"), callable_mp(&capture, &AsyncFSMethodCapture::on_completed), Object::CONNECT_ONE_SHOT);
+
 	SceneTree *tree = SceneTree::get_singleton();
 	REQUIRE(tree != nullptr);
-
-	for (int frame = 0; frame < p_max_frames; frame++) {
-		if (!state || !state->is_valid()) {
-			break;
-		}
+	for (int frame = 0; frame < p_max_frames && !capture.done; frame++) {
 		tree->process(1.0 / 60.0);
 		if (FSLanguage::get_singleton()) {
 			FSLanguage::get_singleton()->frame();
 		}
 		FSScriptTestGuard::poll_timeouts();
-		ret = state->resume(Variant());
-		state = Object::cast_to<FSFunctionState>(ret);
 	}
 
-	return ret;
+	REQUIRE(capture.done);
+	return capture.result;
 }
 
 TEST_CASE("[Modules][FoundryScript][ScriptTestExecution] guard_callv is registered with object, method, and args") {
