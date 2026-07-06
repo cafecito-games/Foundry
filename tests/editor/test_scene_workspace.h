@@ -1259,7 +1259,6 @@ TEST_CASE("[SceneTree][Editor] stale-singleton-guard") {
 
 	for (ScenePaneTile *tile : { tile_a, tile_b }) {
 		EditorSceneContext *ctx = tile == tile_a ? context_a : context_b;
-		Node2D *node = tile == tile_a ? node_a : node_b;
 		tile->get_signals_dock()->set_scene_context(ctx);
 		tile->get_groups_dock()->set_scene_context(ctx);
 		tile->get_history_dock()->set_scene_context(ctx);
