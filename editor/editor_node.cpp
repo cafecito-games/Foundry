@@ -6784,7 +6784,9 @@ void EditorNode::_sync_focused_tile_chrome(ScenePaneTile *p_tile) {
 }
 
 ScenePaneTile *EditorNode::get_focused_tile() const {
-	return scene_workspace ? scene_workspace->get_focused_tile() : nullptr;
+	// Resolve against the effective scene tile so the scene/inspector docks stay
+	// valid when a tile-less script leaf currently holds workspace focus.
+	return scene_workspace ? scene_workspace->get_effective_focused_tile() : nullptr;
 }
 
 SceneTreeDock *EditorNode::get_focused_scene_tree_dock() const {

@@ -120,6 +120,9 @@ private:
 
 	Vector<WorkspaceLeafNode *> leaves;
 	int focused_leaf_id = 0;
+	// Last leaf that was focused while hosting a scene tile. Scene/inspector docks
+	// fall back to this tile when the focused leaf is a tile-less script leaf.
+	int last_focused_tile_id = 0;
 	int next_leaf_id = 0;
 	bool restoring_from_config = false;
 	EditorSelection *editor_selection = nullptr;
@@ -177,6 +180,10 @@ public:
 	// Tile accessors (scene leaves only; leaf id == tile id for scene content).
 	ScenePaneTile *get_tile_by_id(int p_id) const;
 	ScenePaneTile *get_focused_tile() const;
+	// Focused tile, or the most recently focused (still-live) scene tile when the
+	// focused leaf hosts no tile (e.g. a script leaf). Used to keep scene/inspector
+	// docks valid while a script leaf holds workspace focus.
+	ScenePaneTile *get_effective_focused_tile() const;
 	Vector<ScenePaneTile *> get_tiles() const;
 	int get_tile_count() const;
 

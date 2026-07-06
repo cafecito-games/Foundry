@@ -571,6 +571,9 @@ void EditorSceneWorkspace::set_focused_leaf(int p_id) {
 	focused_leaf_id = p_id;
 	_update_focus_visuals();
 	WorkspaceLeafNode *leaf = get_leaf_by_id(p_id);
+	if (leaf && leaf->get_pane_tile()) {
+		last_focused_tile_id = p_id;
+	}
 	if (leaf && leaf->get_leaf_content()) {
 		leaf->get_leaf_content()->on_focus_entered();
 	}
@@ -601,6 +604,20 @@ ScenePaneTile *EditorSceneWorkspace::get_tile_by_id(int p_id) const {
 
 ScenePaneTile *EditorSceneWorkspace::get_focused_tile() const {
 	return get_tile_by_id(focused_leaf_id);
+}
+
+ScenePaneTile *EditorSceneWorkspace::get_effective_focused_tile() const {
+	if (ScenePaneTile *tile = get_tile_by_id(focused_leaf_id)) {
+		return tile;
+	}
+	// Focused leaf hosts no tile (e.g. a script leaf); fall back to the last
+	// focused scene tile, then to any scene tile, so scene/inspector docks stay
+	// valid instead of being resolved against a null tile.
+	if (ScenePaneTile *tile = get_tile_by_id(last_focused_tile_id)) {
+		return tile;
+	}
+	Vector<ScenePaneTile *> tiles = get_tiles();
+	return tiles.is_empty() ? nullptr : tiles[0];
 }
 
 Vector<ScenePaneTile *> EditorSceneWorkspace::get_tiles() const {
