@@ -9535,7 +9535,10 @@ void Node3DEditor::_notification(int p_what) {
 
 		case NOTIFICATION_ENTER_TREE: {
 			_update_theme();
-			_register_all_gizmos();
+			if (!builtin_gizmos_registered) {
+				_register_all_gizmos();
+				builtin_gizmos_registered = true;
+			}
 			_init_indicators();
 			update_all_gizmos();
 		} break;
