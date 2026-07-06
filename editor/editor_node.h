@@ -347,7 +347,6 @@ private:
 	Control *center_overlay = nullptr;
 	EditorSceneWorkspace *scene_workspace = nullptr;
 	Control *global_screen_host = nullptr;
-	Control *script_surface_home = nullptr; // Parent the script surface returns to when no script leaf hosts it.
 
 	// Main tabs.
 	EditorSceneTabs *scene_tabs = nullptr;
@@ -721,8 +720,6 @@ private:
 	void _load_workspace_from_config(const Ref<ConfigFile> &p_config_file);
 	void _resolve_restored_script_leaf_associated_scenes();
 	void _reparent_scene_mode_into(ScenePaneTile *p_tile);
-	void _reparent_script_surface_into(ScriptLeaf *p_leaf);
-	void _detach_script_surface();
 	void _close_script_leaf();
 	void _sync_script_leaf_path();
 	void _connect_script_leaf_sync();

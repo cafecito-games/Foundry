@@ -43,6 +43,7 @@
 #include "editor/editor_scene_pane_tile.h"
 #include "editor/editor_scene_workspace.h"
 #include "editor/editor_script_leaf.h"
+#include "editor/script/script_editor_controller.h"
 #include "editor/editor_tile_dock_region.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/editor_workspace_leaf_content.h"
@@ -1038,10 +1039,13 @@ TEST_CASE("[SceneTree][Editor] script-leaf-open") {
 	h.mount();
 	h.pump();
 
+	ScriptEditorController *controller = memnew(ScriptEditorController);
+	controller->init_global_services(h.host);
+
 	WorkspaceLeafNode *scene_leaf = h.workspace->get_focused_leaf();
 	REQUIRE(scene_leaf != nullptr);
 	CHECK(h.workspace->get_leaf_count() == 1);
-	CHECK(h.workspace->get_script_leaf() == nullptr);
+	CHECK(h.workspace->get_script_leaves().is_empty());
 
 	// Opening a script from the scene tile creates a script leaf beside it.
 	WorkspaceLeafNode *script_leaf_node = h.workspace->open_script_leaf(scene_leaf, "res://player.fs");
@@ -1058,42 +1062,47 @@ TEST_CASE("[SceneTree][Editor] script-leaf-open") {
 	REQUIRE(script_leaf != nullptr);
 	CHECK(script_leaf->get_script_path() == "res://player.fs");
 	CHECK(script_leaf->get_tab_title() == "player.fs");
+	REQUIRE(script_leaf->get_script_editor_view() != nullptr);
 
-	// Re-opening reuses the single script leaf (one embedded surface in U15a) and
-	// re-points it rather than opening a second one.
-	WorkspaceLeafNode *again = h.workspace->open_script_leaf(scene_leaf, "res://enemy.fs");
+	// U15c: opening a different script in a new leaf creates a second script leaf.
+	WorkspaceLeafNode *second = h.workspace->open_script_leaf(scene_leaf, "res://enemy.fs", true);
 	h.pump();
-	CHECK(again == script_leaf_node);
-	CHECK(h.workspace->get_leaf_count() == 2);
-	CHECK(script_leaf->get_script_path() == "res://enemy.fs");
-	CHECK(script_leaf->get_tab_title() == "enemy.fs");
+	CHECK(second != script_leaf_node);
+	CHECK(h.workspace->get_leaf_count() == 3);
+	CHECK(h.workspace->get_script_leaves().size() == 2);
+	ScriptLeaf *enemy_leaf = Object::cast_to<ScriptLeaf>(second->get_leaf_content()->get_root_control());
+	REQUIRE(enemy_leaf != nullptr);
+	CHECK(enemy_leaf->get_script_path() == "res://enemy.fs");
 
-	// The script leaf (with its script path) round-trips through persistence.
+	// Each script leaf round-trips through persistence with its own tabs.
 	Ref<ConfigFile> config;
 	config.instantiate();
 	EditorSceneWorkspace::save_to_config(config, h.workspace);
 	const int scene_leaf_id = scene_leaf->get_leaf_id();
-	const int script_leaf_id = script_leaf_node->get_leaf_id();
+	const int enemy_leaf_id = second->get_leaf_id();
 
 	h.unmount();
+	memdelete(controller);
 
 	WorkspaceHarness h2;
 	h2.mount();
+	h2.pump();
+	ScriptEditorController *controller2 = memnew(ScriptEditorController);
+	controller2->init_global_services(h2.host);
 	h2.workspace->restore_from_config(config);
 	h2.pump();
 
-	CHECK(h2.workspace->get_leaf_count() == 2);
+	CHECK(h2.workspace->get_leaf_count() == 3);
 	CHECK(h2.workspace->get_leaf_by_id(scene_leaf_id) != nullptr);
-	WorkspaceLeafNode *restored = h2.workspace->get_script_leaf();
-	REQUIRE(restored != nullptr);
-	CHECK(restored->get_leaf_id() == script_leaf_id);
-	REQUIRE(restored->get_leaf_content() != nullptr);
-	ScriptLeaf *restored_leaf = Object::cast_to<ScriptLeaf>(restored->get_leaf_content()->get_root_control());
-	REQUIRE(restored_leaf != nullptr);
-	CHECK(restored_leaf->get_script_path() == "res://enemy.fs");
-	CHECK(restored_leaf->get_tab_title() == "enemy.fs");
+	CHECK(h2.workspace->get_script_leaves().size() == 2);
+	WorkspaceLeafNode *restored_enemy = h2.workspace->get_leaf_by_id(enemy_leaf_id);
+	REQUIRE(restored_enemy != nullptr);
+	ScriptLeaf *restored_enemy_leaf = Object::cast_to<ScriptLeaf>(restored_enemy->get_leaf_content()->get_root_control());
+	REQUIRE(restored_enemy_leaf != nullptr);
+	CHECK(restored_enemy_leaf->get_script_path() == "res://enemy.fs");
 
 	h2.unmount();
+	memdelete(controller2);
 }
 
 TEST_CASE("[SceneTree][Editor] script-leaf-collapse-keeps-scene-focus") {

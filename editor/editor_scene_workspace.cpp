@@ -31,10 +31,12 @@
 #include "editor_scene_workspace.h"
 
 #include "core/io/config_file.h"
+#include "core/io/resource_loader.h"
 #include "editor/editor_data.h"
 #include "editor/editor_scene_pane_tile.h"
 #include "editor/editor_script_leaf.h"
 #include "editor/editor_workspace_leaf_content.h"
+#include "editor/script/script_editor_view.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/gui/split_container.h"
 
@@ -388,21 +390,63 @@ WorkspaceLeafNode *EditorSceneWorkspace::split_with_content(WorkspaceLeafNode *p
 }
 
 WorkspaceLeafNode *EditorSceneWorkspace::get_script_leaf() const {
+	if (WorkspaceLeafNode *focused = get_focused_script_leaf()) {
+		return focused;
+	}
+	Vector<WorkspaceLeafNode *> script_leaves = get_script_leaves();
+	return script_leaves.is_empty() ? nullptr : script_leaves[0];
+}
+
+Vector<WorkspaceLeafNode *> EditorSceneWorkspace::get_script_leaves() const {
+	Vector<WorkspaceLeafNode *> script_leaves;
 	for (WorkspaceLeafNode *leaf : leaves) {
 		if (leaf->get_leaf_content() && leaf->get_leaf_content()->get_content_type() == StringName("script")) {
+			script_leaves.push_back(leaf);
+		}
+	}
+	return script_leaves;
+}
+
+WorkspaceLeafNode *EditorSceneWorkspace::get_focused_script_leaf() const {
+	WorkspaceLeafNode *focused = get_focused_leaf();
+	if (focused && focused->get_leaf_content() && focused->get_leaf_content()->get_content_type() == StringName("script")) {
+		return focused;
+	}
+	return nullptr;
+}
+
+WorkspaceLeafNode *EditorSceneWorkspace::find_script_leaf_for_path(const String &p_script_path) const {
+	if (p_script_path.is_empty()) {
+		return nullptr;
+	}
+	for (WorkspaceLeafNode *leaf : get_script_leaves()) {
+		ScriptLeaf *script_leaf = Object::cast_to<ScriptLeaf>(leaf->get_leaf_content()->get_root_control());
+		if (!script_leaf) {
+			continue;
+		}
+		if (ScriptEditorView *view = script_leaf->get_script_editor_view()) {
+			if (view->get_open_editor_for_path(p_script_path)) {
+				return leaf;
+			}
+		}
+		if (script_leaf->get_script_path() == p_script_path) {
 			return leaf;
 		}
 	}
 	return nullptr;
 }
 
-WorkspaceLeafNode *EditorSceneWorkspace::open_script_leaf(WorkspaceLeafNode *p_source_leaf, const String &p_script_path) {
+WorkspaceLeafNode *EditorSceneWorkspace::open_script_leaf(WorkspaceLeafNode *p_source_leaf, const String &p_script_path, bool p_force_new_leaf) {
 	ERR_FAIL_NULL_V(p_source_leaf, nullptr);
 	ERR_FAIL_COND_V(!leaves.has(p_source_leaf), nullptr);
 
-	// U15a hosts a single shared script surface, so reuse an existing script leaf
-	// rather than opening a second one (multiple script leaves is U15c).
-	WorkspaceLeafNode *target = get_script_leaf();
+	WorkspaceLeafNode *target = nullptr;
+	if (!p_force_new_leaf && !p_script_path.is_empty()) {
+		target = find_script_leaf_for_path(p_script_path);
+	}
+	if (!target && !p_force_new_leaf) {
+		target = get_focused_script_leaf();
+	}
 	if (!target) {
 		target = split_with_content(p_source_leaf, false, SPLIT_SIDE_SECOND, StringName("script"));
 		ERR_FAIL_NULL_V(target, nullptr);
@@ -412,6 +456,15 @@ WorkspaceLeafNode *EditorSceneWorkspace::open_script_leaf(WorkspaceLeafNode *p_s
 		ScriptLeaf *script_leaf = Object::cast_to<ScriptLeaf>(target->get_leaf_content()->get_root_control());
 		if (script_leaf) {
 			script_leaf->set_script_path(p_script_path);
+			script_leaf->on_focus_entered();
+			if (ScriptEditorView *view = script_leaf->get_script_editor_view()) {
+				if (ResourceLoader::exists(p_script_path)) {
+					Ref<Resource> resource = ResourceLoader::load(p_script_path);
+					if (resource.is_valid()) {
+						view->edit(resource, true);
+					}
+				}
+			}
 		}
 	}
 

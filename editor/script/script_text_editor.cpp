@@ -30,6 +30,8 @@
 
 #include "script_text_editor.h"
 
+#include "script_editor_view.h"
+
 #include "core/config/project_settings.h"
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
@@ -1220,7 +1222,7 @@ static void _find_changed_scripts_for_external_editor(Node *p_base, Node *p_curr
 	}
 }
 
-void ScriptEditor::_update_modified_scripts_for_external_editor(Ref<Script> p_for_script) {
+void ScriptEditorView::_update_modified_scripts_for_external_editor(Ref<Script> p_for_script) {
 	bool use_external_editor = bool(EDITOR_GET("text_editor/external/use_external_editor"));
 
 	ERR_FAIL_NULL(get_tree());
@@ -1257,7 +1259,7 @@ void ScriptEditor::_update_modified_scripts_for_external_editor(Ref<Script> p_fo
 			scr->set_last_modified_time(rel_scr->get_last_modified_time());
 			scr->update_exports();
 
-			trigger_live_script_reload(scr->get_path());
+			controller->trigger_live_script_reload(scr->get_path());
 		}
 	}
 }
