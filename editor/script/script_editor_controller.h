@@ -100,8 +100,11 @@ class ScriptEditorController : public Object {
 
 	Vector<ScriptEditorView *> views;
 	ScriptEditorView *focused_view = nullptr;
-	ScriptEditorView *primary_view = nullptr;
 	ScriptEditorView *file_dialog_view = nullptr;
+
+	// The view global actions resolve against: the focused view, else any open
+	// view. Returns nullptr only when no script view exists.
+	ScriptEditorView *_active_view() const;
 
 	void _on_file_dialog_selected(const String &p_file);
 
@@ -137,12 +140,10 @@ public:
 
 	void init_global_services(Node *p_dialog_parent);
 	ScriptEditorView *create_view_for_leaf(ScriptLeaf *p_leaf);
-	ScriptEditorView *create_primary_view(WindowWrapper *p_wrapper);
 	void register_view(ScriptEditorView *p_view);
 	void unregister_view(ScriptEditorView *p_view);
 	void set_focused_view(ScriptEditorView *p_view);
 	ScriptEditorView *get_focused_view() const { return focused_view; }
-	ScriptEditorView *get_primary_view() const { return primary_view; }
 	const Vector<ScriptEditorView *> &get_views() const { return views; }
 
 	Ref<ConfigFile> get_script_editor_cache() const { return script_editor_cache; }

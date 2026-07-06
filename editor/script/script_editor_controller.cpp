@@ -50,6 +50,20 @@ static void ensure_script_editor_registrations() {
 	ED_SHORTCUT("script_text_editor/convert_to_uppercase", TTRC("Uppercase"), KeyModifierMask::SHIFT | Key::F4);
 	ED_SHORTCUT("script_text_editor/convert_to_lowercase", TTRC("Lowercase"), KeyModifierMask::SHIFT | Key::F5);
 	ED_SHORTCUT("script_text_editor/capitalize", TTRC("Capitalize"), KeyModifierMask::SHIFT | Key::F6);
+
+	// These script_editor/* shortcuts used to be registered eagerly by the
+	// monolithic ScriptEditor at editor startup. Other subsystems (shader editor
+	// menus, code editor / help "toggle files" buttons) resolve them through
+	// ED_GET_SHORTCUT before any ScriptEditorView exists, so register them here
+	// rather than lazily in ScriptEditorView::setup_view_chrome(). ED_SHORTCUT is
+	// idempotent, so the view's own registrations still return these instances.
+	ED_SHORTCUT("script_editor/save", TTRC("Save"), KeyModifierMask::ALT | KeyModifierMask::CMD_OR_CTRL | Key::S);
+	ED_SHORTCUT("script_editor/save_as", TTRC("Save As..."));
+	ED_SHORTCUT("script_editor/close_file", TTRC("Close"), KeyModifierMask::CMD_OR_CTRL | Key::W);
+	ED_SHORTCUT("script_editor/close_all", TTRC("Close All"));
+	ED_SHORTCUT("script_editor/close_other_tabs", TTRC("Close Other Tabs"));
+	ED_SHORTCUT("script_editor/show_in_file_system", TTRC("Show in FileSystem"));
+	ED_SHORTCUT("script_editor/toggle_files_panel", TTRC("Toggle Files Panel"), KeyModifierMask::CMD_OR_CTRL | Key::BACKSLASH);
 }
 
 ScriptEditorController::ScriptEditorController() {
@@ -87,11 +101,17 @@ ScriptEditorController::ScriptEditorController() {
 ScriptEditorController::~ScriptEditorController() {
 	views.clear();
 	focused_view = nullptr;
-	primary_view = nullptr;
 	file_dialog_view = nullptr;
 	if (singleton == this) {
 		singleton = nullptr;
 	}
+}
+
+ScriptEditorView *ScriptEditorController::_active_view() const {
+	if (focused_view) {
+		return focused_view;
+	}
+	return views.is_empty() ? nullptr : views[0];
 }
 
 void ScriptEditorController::_on_file_dialog_selected(const String &p_file) {
@@ -184,7 +204,10 @@ ScriptEditorView *ScriptEditorController::create_view_for_leaf(ScriptLeaf *p_lea
 
 	p_leaf->set_script_editor_view(view);
 
-	if (!p_leaf->get_script_path().is_empty()) {
+	// Only open the leaf's script once the leaf is in the scene tree. Editing
+	// while detached drives ScriptTextEditor validation through a null get_tree();
+	// detached leaves open their script from ScriptLeaf once they enter the tree.
+	if (p_leaf->is_inside_tree() && !p_leaf->get_script_path().is_empty()) {
 		if (ResourceLoader::exists(p_leaf->get_script_path())) {
 			Ref<Resource> resource = ResourceLoader::load(p_leaf->get_script_path());
 			if (resource.is_valid()) {
@@ -193,20 +216,6 @@ ScriptEditorView *ScriptEditorController::create_view_for_leaf(ScriptLeaf *p_lea
 		}
 	}
 
-	if (focused_view == nullptr) {
-		focused_view = view;
-	}
-
-	return view;
-}
-
-ScriptEditorView *ScriptEditorController::create_primary_view(WindowWrapper *p_wrapper) {
-	ERR_FAIL_NULL_V(p_wrapper, nullptr);
-	init_global_services(p_wrapper);
-	ScriptEditorView *view = memnew(ScriptEditorView(this));
-	view->setup_view_chrome(p_wrapper);
-
-	primary_view = view;
 	if (focused_view == nullptr) {
 		focused_view = view;
 	}
@@ -225,9 +234,6 @@ void ScriptEditorController::unregister_view(ScriptEditorView *p_view) {
 	views.erase(p_view);
 	if (focused_view == p_view) {
 		focused_view = views.is_empty() ? nullptr : views[0];
-	}
-	if (primary_view == p_view) {
-		primary_view = nullptr;
 	}
 }
 
@@ -264,8 +270,8 @@ void ScriptEditorController::add_recent_script(const String &p_path) {
 		rc.resize(10);
 	}
 	EditorSettings::get_singleton()->set_project_metadata("recent_files", "scripts", rc);
-	if (primary_view) {
-		primary_view->_update_recent_scripts();
+	for (ScriptEditorView *view : views) {
+		view->_update_recent_scripts();
 	}
 }
 
@@ -327,13 +333,13 @@ void ScriptEditorController::ensure_select_current() {
 }
 
 bool ScriptEditorController::toggle_files_panel() {
-	ScriptEditorView *view = focused_view ? focused_view : primary_view;
+	ScriptEditorView *view = _active_view();
 	ERR_FAIL_NULL_V(view, false);
 	return view->toggle_files_panel();
 }
 
 bool ScriptEditorController::is_files_panel_toggled() {
-	ScriptEditorView *view = focused_view ? focused_view : primary_view;
+	ScriptEditorView *view = _active_view();
 	ERR_FAIL_NULL_V(view, false);
 	return view->is_files_panel_toggled();
 }
@@ -362,8 +368,8 @@ void ScriptEditorController::open_find_in_files_dialog(const String &text) {
 }
 
 void ScriptEditorController::open_script_create_dialog(const String &p_base_name, const String &p_base_path) {
-	if (primary_view) {
-		primary_view->_menu_option(ScriptEditorView::FILE_MENU_NEW);
+	if (ScriptEditorView *view = _active_view()) {
+		view->_menu_option(ScriptEditorView::FILE_MENU_NEW);
 	}
 	if (script_create_dialog) {
 		script_create_dialog->config(p_base_name, p_base_path);
@@ -371,8 +377,8 @@ void ScriptEditorController::open_script_create_dialog(const String &p_base_name
 }
 
 void ScriptEditorController::open_text_file_create_dialog(const String &p_base_path, const String &p_base_name) {
-	if (primary_view) {
-		primary_view->_menu_option(ScriptEditorView::FILE_MENU_NEW_TEXTFILE);
+	if (ScriptEditorView *view = _active_view()) {
+		view->_menu_option(ScriptEditorView::FILE_MENU_NEW_TEXTFILE);
 	}
 	if (file_dialog) {
 		file_dialog->set_current_dir(p_base_path);
@@ -381,35 +387,35 @@ void ScriptEditorController::open_text_file_create_dialog(const String &p_base_p
 }
 
 Ref<Resource> ScriptEditorController::open_file(const String &p_file) {
-	ScriptEditorView *view = focused_view ? focused_view : primary_view;
+	ScriptEditorView *view = _active_view();
 	ERR_FAIL_NULL_V(view, Ref<Resource>());
 	return view->open_file(p_file);
 }
 
 bool ScriptEditorController::apply_script_refactor_plan(const ScriptRefactorApplyPlan &p_plan, String &r_error_message) {
-	ScriptEditorView *view = focused_view ? focused_view : primary_view;
+	ScriptEditorView *view = _active_view();
 	ERR_FAIL_NULL_V(view, false);
 	return view->apply_script_refactor_plan(p_plan, r_error_message);
 }
 
 bool ScriptEditorController::can_undo_script_refactor() const {
-	ScriptEditorView *view = focused_view ? focused_view : primary_view;
+	ScriptEditorView *view = _active_view();
 	return view ? view->can_undo_script_refactor() : false;
 }
 
 bool ScriptEditorController::can_redo_script_refactor() const {
-	ScriptEditorView *view = focused_view ? focused_view : primary_view;
+	ScriptEditorView *view = _active_view();
 	return view ? view->can_redo_script_refactor() : false;
 }
 
 bool ScriptEditorController::undo_script_refactor() {
-	ScriptEditorView *view = focused_view ? focused_view : primary_view;
+	ScriptEditorView *view = _active_view();
 	ERR_FAIL_NULL_V(view, false);
 	return view->undo_script_refactor();
 }
 
 bool ScriptEditorController::redo_script_refactor() {
-	ScriptEditorView *view = focused_view ? focused_view : primary_view;
+	ScriptEditorView *view = _active_view();
 	ERR_FAIL_NULL_V(view, false);
 	return view->redo_script_refactor();
 }
@@ -460,10 +466,8 @@ PackedStringArray ScriptEditorController::get_unsaved_scripts() const {
 }
 
 void ScriptEditorController::save_current_script() {
-	if (focused_view) {
-		focused_view->save_current_script();
-	} else if (primary_view) {
-		primary_view->save_current_script();
+	if (ScriptEditorView *view = _active_view()) {
+		view->save_current_script();
 	}
 }
 
@@ -531,24 +535,18 @@ void ScriptEditorController::update_script_times() {
 void ScriptEditorController::set_window_layout(Ref<ConfigFile> p_layout) {
 	if (!views.is_empty()) {
 		views[0]->set_window_layout(p_layout);
-	} else if (primary_view) {
-		primary_view->set_window_layout(p_layout);
 	}
 }
 
 void ScriptEditorController::get_window_layout(Ref<ConfigFile> p_layout) {
 	if (views.size() == 1) {
 		views[0]->get_window_layout(p_layout);
-	} else if (primary_view) {
-		primary_view->get_window_layout(p_layout);
 	}
 }
 
 void ScriptEditorController::set_scene_root_script(Ref<Script> p_script) {
-	if (focused_view) {
-		focused_view->set_scene_root_script(p_script);
-	} else if (primary_view) {
-		primary_view->set_scene_root_script(p_script);
+	if (ScriptEditorView *view = _active_view()) {
+		view->set_scene_root_script(p_script);
 	}
 }
 
@@ -561,11 +559,8 @@ Vector<Ref<Script>> ScriptEditorController::get_open_scripts() const {
 }
 
 bool ScriptEditorController::get_current_script_view_state(String &r_path, int &r_line, int &r_column) const {
-	if (focused_view) {
-		return focused_view->get_current_script_view_state(r_path, r_line, r_column);
-	}
-	if (primary_view) {
-		return primary_view->get_current_script_view_state(r_path, r_line, r_column);
+	if (ScriptEditorView *view = _active_view()) {
+		return view->get_current_script_view_state(r_path, r_line, r_column);
 	}
 	return false;
 }
@@ -599,8 +594,8 @@ void ScriptEditorController::goto_help(const String &p_desc) {
 }
 
 void ScriptEditorController::update_doc(const String &p_name) {
-	if (primary_view) {
-		primary_view->update_doc(p_name);
+	for (ScriptEditorView *view : views) {
+		view->update_doc(p_name);
 	}
 }
 
@@ -638,7 +633,7 @@ void ScriptEditorController::register_create_script_editor_function(CreateScript
 }
 
 VSplitContainer *ScriptEditorController::get_left_list_split() {
-	ScriptEditorView *view = focused_view ? focused_view : primary_view;
+	ScriptEditorView *view = _active_view();
 	return view ? view->get_left_list_split() : nullptr;
 }
 
@@ -663,9 +658,9 @@ void ScriptEditorController::_open_script_request(const String &p_path) {
 		edit(json, false);
 		return;
 	}
-	if (primary_view) {
+	if (ScriptEditorView *view = _active_view()) {
 		Error err;
-		Ref<TextFile> text_file = primary_view->_load_text_file(p_path, &err);
+		Ref<TextFile> text_file = view->_load_text_file(p_path, &err);
 		if (text_file.is_valid()) {
 			edit(text_file, false);
 		}
@@ -700,9 +695,9 @@ void ScriptEditorController::_start_find_in_files(bool with_replace) {
 }
 
 void ScriptEditorController::_on_find_in_files_modified_files(const PackedStringArray &paths) {
-	if (primary_view) {
-		primary_view->_test_script_times_on_disk();
-		primary_view->_update_modified_scripts_for_external_editor();
+	for (ScriptEditorView *view : views) {
+		view->_test_script_times_on_disk();
+		view->_update_modified_scripts_for_external_editor();
 	}
 }
 
@@ -894,8 +889,8 @@ void ScriptEditorController::_clear_breakpoints() {
 }
 
 void ScriptEditorController::_help_class_goto(const String &p_desc) {
-	if (primary_view) {
-		primary_view->goto_help(p_desc);
+	if (ScriptEditorView *view = _active_view()) {
+		view->goto_help(p_desc);
 	}
 }
 

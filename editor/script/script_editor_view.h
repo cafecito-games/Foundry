@@ -310,8 +310,6 @@ private:
 	void _window_changed(bool p_visible);
 	void _close_builtin_scripts_from_scene(const String &p_scene);
 
-	void _on_focus_entered();
-
 protected:
 	void _notification(int p_what);
 	static void _bind_methods();
@@ -378,5 +376,4 @@ public:
 	VSplitContainer *get_list_split() const { return list_split; }
 
 	void setup_view_chrome(WindowWrapper *p_wrapper = nullptr);
-	void setup_primary_chrome(WindowWrapper *p_wrapper) { setup_view_chrome(p_wrapper); }
 };

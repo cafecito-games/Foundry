@@ -715,9 +715,16 @@ void ScriptEditorPlugin::edited_scene_changed() {
 
 ScriptEditorPlugin::ScriptEditorPlugin() {
 	if (!ScriptEditorController::get_singleton()) {
-		ScriptEditorController *controller = memnew(ScriptEditorController);
-		controller->init_global_services(EditorNode::get_singleton());
+		owned_controller = memnew(ScriptEditorController);
+		owned_controller->init_global_services(EditorNode::get_singleton());
 	}
 
 	ScriptServer::set_reload_scripts_on_save(EDITOR_GET("text_editor/behavior/files/auto_reload_and_parse_scripts_on_save"));
+}
+
+ScriptEditorPlugin::~ScriptEditorPlugin() {
+	if (owned_controller) {
+		memdelete(owned_controller);
+		owned_controller = nullptr;
+	}
 }

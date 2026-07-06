@@ -3886,10 +3886,6 @@ void ScriptEditorView::set_view_layout(const Ref<ConfigFile> &p_layout, const St
 	sync_script_leaf_path();
 }
 
-void ScriptEditorView::_on_focus_entered() {
-	controller->set_focused_view(this);
-}
-
 void ScriptEditorView::_bind_methods() {
 	ClassDB::bind_method("_help_tab_goto", &ScriptEditorView::_help_tab_goto);
 	ClassDB::bind_method("get_current_editor", &ScriptEditorView::_get_current_editor);

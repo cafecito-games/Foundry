@@ -266,6 +266,9 @@ class ScriptEditorPlugin : public EditorPlugin {
 	FOUNDRY_CLASS(ScriptEditorPlugin, EditorPlugin);
 
 	String last_editor;
+	// The controller is a plain Object (not owned by the scene tree), so the
+	// plugin that created it is responsible for freeing it.
+	ScriptEditorController *owned_controller = nullptr;
 
 	void _save_last_editor(const String &p_editor);
 
@@ -294,4 +297,5 @@ public:
 	virtual void edited_scene_changed() override;
 
 	ScriptEditorPlugin();
+	~ScriptEditorPlugin();
 };
