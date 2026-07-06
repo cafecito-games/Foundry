@@ -37,6 +37,8 @@
 #include "editor/editor_scene_workspace.h"
 #include "editor/editor_script_leaf.h"
 #include "editor/editor_string_names.h"
+#include "editor/scene/editor_scene_tabs.h"
+#include "editor/workspace/scene_tab.h"
 #include "editor/workspace/workspace_tab_type.h"
 #include "scene/gui/label.h"
 #include "scene/resources/3d/world_3d.h"
@@ -53,12 +55,22 @@ void WorkspacePane::_on_tab_strip_changed(int p_index) {
 	set_active_tab(p_index);
 }
 
+void WorkspacePane::_on_tab_strip_rearranged(int p_to_index) {
+	if (suppress_tab_strip_callback) {
+		return;
+	}
+	move_tab(active_tab_index, p_to_index);
+}
+
 void WorkspacePane::_bind_tab_strip() {
 	if (!tab_strip) {
 		return;
 	}
 	if (!tab_strip->is_connected(SNAME("tab_changed"), callable_mp(this, &WorkspacePane::_on_tab_strip_changed))) {
 		tab_strip->connect(SNAME("tab_changed"), callable_mp(this, &WorkspacePane::_on_tab_strip_changed));
+	}
+	if (!tab_strip->is_connected(SNAME("active_tab_rearranged"), callable_mp(this, &WorkspacePane::_on_tab_strip_rearranged))) {
+		tab_strip->connect(SNAME("active_tab_rearranged"), callable_mp(this, &WorkspacePane::_on_tab_strip_rearranged));
 	}
 }
 
@@ -78,6 +90,27 @@ void WorkspacePane::_sync_tab_strip() {
 	}
 	tab_strip->set_visible(!tabs.is_empty());
 	tab_strip->set_block_signals(false);
+}
+
+void WorkspacePane::_refresh_canonical_locations() {
+	if (!tab_registry) {
+		return;
+	}
+	for (int i = 0; i < tabs.size(); i++) {
+		WorkspaceTabLocation location;
+		location.pane_id = leaf_id;
+		location.tab_index = i;
+		tab_registry->set_canonical(tabs[i], location);
+	}
+}
+
+void WorkspacePane::_fit_chrome_child(Control *p_child) {
+	if (!p_child) {
+		return;
+	}
+	p_child->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	p_child->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	p_child->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 }
 
 void WorkspacePane::_detach_ephemeral_chrome() {
@@ -136,6 +169,10 @@ void WorkspacePane::_mount_scene_bridge() {
 	ERR_FAIL_NULL(scene_tile);
 	_detach_ephemeral_chrome();
 	_set_bridge_visibility(true, false);
+	_fit_chrome_child(scene_tile);
+	if (scene_tile->get_scene_tabs()) {
+		scene_tile->get_scene_tabs()->show();
+	}
 }
 
 void WorkspacePane::_mount_script_bridge() {
@@ -145,7 +182,7 @@ void WorkspacePane::_mount_script_bridge() {
 	_set_bridge_visibility(false, true);
 }
 
-void WorkspacePane::_mount_active_tab() {
+void WorkspacePane::_mount_active_tab(bool p_activate) {
 	ERR_FAIL_NULL(chrome_host);
 	ERR_FAIL_NULL(tab_registry);
 	ERR_FAIL_COND(active_tab_index < 0 || active_tab_index >= tabs.size());
@@ -155,7 +192,9 @@ void WorkspacePane::_mount_active_tab() {
 	ERR_FAIL_NULL(type);
 
 	if (mounted_tab_stable_id == tab.get_stable_id()) {
-		type->activate(tab);
+		if (p_activate) {
+			type->activate(tab);
+		}
 		return;
 	}
 
@@ -171,9 +210,15 @@ void WorkspacePane::_mount_active_tab() {
 	// bridge is shown here.
 	if (tab.get_type_id() == StringName("scene") && scene_tile) {
 		scene_tile->show();
+		_fit_chrome_child(scene_tile);
+	} else if (tab.get_type_id() == StringName("script") && script_leaf) {
+		script_leaf->show();
+		_fit_chrome_child(script_leaf);
 	}
 
-	type->activate(tab);
+	if (p_activate) {
+		type->activate(tab);
+	}
 }
 
 WorkspaceTabType *WorkspacePane::_active_tab_type() const {
@@ -197,7 +242,7 @@ WorkspaceTab *WorkspacePane::_active_tab_mut() {
 	return &tabs.write[active_tab_index];
 }
 
-void WorkspacePane::_update_pane_state() {
+void WorkspacePane::_update_pane_state(bool p_activate) {
 	const bool has_tabs = !tabs.is_empty();
 	const bool legacy_scene_bridge = !has_tabs && _has_legacy_scene_content();
 	const bool legacy_script_bridge = !has_tabs && _has_legacy_script_content();
@@ -214,7 +259,7 @@ void WorkspacePane::_update_pane_state() {
 	}
 
 	if (has_tabs && active_tab_index >= 0) {
-		_mount_active_tab();
+		_mount_active_tab(p_activate);
 	} else if (legacy_scene_bridge) {
 		_mount_scene_bridge();
 	} else if (legacy_script_bridge) {
@@ -257,9 +302,11 @@ void WorkspacePane::setup(int p_leaf_id, EditorSelection *p_editor_selection, Ed
 		scene_tile = memnew(ScenePaneTile);
 		scene_tile->setup(leaf_id, editor_selection, *editor_data);
 		chrome_host->add_child(scene_tile);
+		_fit_chrome_child(scene_tile);
 	} else if (is_script_pane()) {
 		script_leaf = memnew(ScriptLeaf);
 		chrome_host->add_child(script_leaf);
+		_fit_chrome_child(script_leaf);
 	}
 
 	_update_pane_state();
@@ -270,7 +317,92 @@ void WorkspacePane::set_tab_registry(WorkspaceTabRegistry *p_registry) {
 }
 
 void WorkspacePane::sync_from_editor_data() const {
-	const_cast<WorkspacePane *>(this)->_update_pane_state();
+	const_cast<WorkspacePane *>(this)->_update_pane_state(false);
+}
+
+void WorkspacePane::sync_scene_tabs_from_editor_data() {
+	if (!editor_data || !is_scene_pane()) {
+		_update_pane_state();
+		return;
+	}
+
+	const Vector<int> tile_scenes = editor_data->get_tile_scene_indices(leaf_id);
+	bool had_scene_tabs = false;
+	for (const WorkspaceTab &tab : tabs) {
+		if (tab.get_type_id() == StringName("scene")) {
+			had_scene_tabs = true;
+			break;
+		}
+	}
+	if (tile_scenes.is_empty() && !had_scene_tabs) {
+		_update_pane_state();
+		return;
+	}
+
+	const int previous_active_history = (active_tab_index >= 0 && active_tab_index < tabs.size() && tabs[active_tab_index].get_type_id() == StringName("scene") && tabs[active_tab_index].get_payload().has("scene_history_id")) ? int(tabs[active_tab_index].get_payload()["scene_history_id"]) : -1;
+
+	HashMap<int, WorkspaceTab> existing_scene_tabs_by_history;
+	HashMap<String, WorkspaceTab> existing_scene_tabs_by_key;
+	Vector<WorkspaceTab> non_scene_tabs;
+	for (const WorkspaceTab &tab : tabs) {
+		if (tab.get_type_id() != StringName("scene")) {
+			non_scene_tabs.push_back(tab);
+			continue;
+		}
+		if (tab.get_payload().has("scene_history_id")) {
+			existing_scene_tabs_by_history[int(tab.get_payload()["scene_history_id"])] = tab;
+		}
+		existing_scene_tabs_by_key[tab.get_resource_key()] = tab;
+		if (tab_registry) {
+			tab_registry->remove_canonical(tab.get_type_id(), tab.get_resource_key());
+		}
+	}
+
+	_unmount_active_tab();
+	active_tab_index = -1;
+
+	Vector<WorkspaceTab> rebuilt_tabs;
+	for (int scene_idx : tile_scenes) {
+		const int history_id = editor_data->get_scene_history_id(scene_idx);
+		const String key = SceneTabType::resource_key_for_scene(*editor_data, scene_idx);
+		int stable_id = tab_registry ? tab_registry->allocate_stable_id() : scene_idx;
+		if (WorkspaceTab *existing_history_tab = existing_scene_tabs_by_history.getptr(history_id)) {
+			stable_id = existing_history_tab->get_stable_id();
+		} else if (WorkspaceTab *existing_key_tab = existing_scene_tabs_by_key.getptr(key)) {
+			stable_id = existing_key_tab->get_stable_id();
+		}
+		rebuilt_tabs.push_back(SceneTabType::make_tab_for_scene(*editor_data, scene_idx, stable_id));
+	}
+	for (const WorkspaceTab &tab : non_scene_tabs) {
+		rebuilt_tabs.push_back(tab);
+	}
+	tabs = rebuilt_tabs;
+
+	const int current_scene = editor_data->get_tile_current_scene(leaf_id);
+	if (current_scene >= 0) {
+		const String current_key = SceneTabType::resource_key_for_scene(*editor_data, current_scene);
+		for (int i = 0; i < tabs.size(); i++) {
+			if (tabs[i].get_type_id() == StringName("scene") && tabs[i].get_resource_key() == current_key) {
+				active_tab_index = i;
+				break;
+			}
+		}
+	}
+	if (active_tab_index < 0 && previous_active_history >= 0) {
+		for (int i = 0; i < tabs.size(); i++) {
+			if (tabs[i].get_type_id() == StringName("scene") && tabs[i].get_payload().has("scene_history_id") && int(tabs[i].get_payload()["scene_history_id"]) == previous_active_history) {
+				active_tab_index = i;
+				break;
+			}
+		}
+	}
+	if (active_tab_index < 0 && !tabs.is_empty()) {
+		active_tab_index = 0;
+	}
+
+	_refresh_canonical_locations();
+	_sync_tab_strip();
+	_update_pane_state();
 }
 
 void WorkspacePane::add_tab(const WorkspaceTab &p_tab) {
@@ -326,6 +458,40 @@ void WorkspacePane::remove_tab(int p_index) {
 		return;
 	}
 
+	_update_pane_state();
+}
+
+void WorkspacePane::move_tab(int p_from, int p_to) {
+	ERR_FAIL_INDEX(p_from, tabs.size());
+	ERR_FAIL_INDEX(p_to, tabs.size());
+	if (p_from == p_to) {
+		return;
+	}
+
+	const WorkspaceTab moving_tab = tabs[p_from];
+	if (moving_tab.get_type_id() == StringName("scene") && editor_data) {
+		const int scene_idx = SceneTabType::find_scene_index(*editor_data, moving_tab);
+		const int target_scene_idx = editor_data->tile_tab_to_scene_index(leaf_id, p_to);
+		if (scene_idx >= 0 && target_scene_idx >= 0) {
+			editor_data->set_tile_current_scene(leaf_id, scene_idx);
+			editor_data->set_focused_tile_id(leaf_id);
+			editor_data->move_edited_scene_to_index(target_scene_idx);
+			sync_scene_tabs_from_editor_data();
+			return;
+		}
+	}
+
+	tabs.remove_at(p_from);
+	tabs.insert(p_to, moving_tab);
+	if (active_tab_index == p_from) {
+		active_tab_index = p_to;
+	} else if (p_from < active_tab_index && p_to >= active_tab_index) {
+		active_tab_index--;
+	} else if (p_from > active_tab_index && p_to <= active_tab_index) {
+		active_tab_index++;
+	}
+	_refresh_canonical_locations();
+	_sync_tab_strip();
 	_update_pane_state();
 }
 
@@ -394,6 +560,18 @@ WorkspaceTabCloseResult WorkspacePane::request_close_active_tab() {
 	const WorkspaceTabCloseResult result = type->request_close(*tab, on_deferred_close);
 	if (result == WorkspaceTabCloseResult::CLOSE) {
 		remove_tab(active_tab_index);
+	}
+	return result;
+}
+
+WorkspaceTabCloseResult WorkspacePane::request_close_tab(int p_index) {
+	ERR_FAIL_INDEX_V(p_index, tabs.size(), WorkspaceTabCloseResult::CANCEL);
+	WorkspaceTabType *type = tab_registry ? tab_registry->find_type(tabs[p_index].get_type_id()) : nullptr;
+	ERR_FAIL_NULL_V(type, WorkspaceTabCloseResult::CANCEL);
+
+	WorkspaceTabCloseResult result = type->request_close(tabs.write[p_index]);
+	if (result == WorkspaceTabCloseResult::CLOSE) {
+		remove_tab(p_index);
 	}
 	return result;
 }
@@ -512,6 +690,7 @@ WorkspacePane::WorkspacePane() {
 
 	tab_strip = memnew(TabBar);
 	tab_strip->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	tab_strip->set_drag_to_rearrange_enabled(true);
 	tab_strip->hide();
 	add_child(tab_strip);
 	_bind_tab_strip();

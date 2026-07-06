@@ -167,6 +167,8 @@ public:
 
 	// Drag-a-tab drop resolution (center = move scene; edge = split + move).
 	WorkspaceLeafNode *handle_scene_drop(int p_scene_idx, WorkspaceLeafNode *p_target_leaf, TileDropRegion p_region);
+	void sync_scene_tabs_from_editor_data();
+	bool focus_scene_tab(int p_scene_idx);
 
 	// Hit-test and preview helpers (testable without GUI).
 	static TileDropRegion drop_region_at(const Size2 &p_size, const Point2 &p_local);

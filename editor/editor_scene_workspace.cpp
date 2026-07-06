@@ -36,6 +36,7 @@
 #include "editor/editor_scene_pane_tile.h"
 #include "editor/editor_script_leaf.h"
 #include "editor/editor_workspace_leaf_content.h"
+#include "editor/workspace/scene_tab.h"
 #include "editor/workspace/workspace_pane.h"
 #include "editor/script/script_editor_view.h"
 #include "editor/themes/editor_scale.h"
@@ -124,6 +125,7 @@ WorkspaceLeafNode *EditorSceneWorkspace::handle_scene_drop(int p_scene_idx, Work
 	}
 
 	editor_data->set_scene_tile(p_scene_idx, dest_leaf->get_leaf_id());
+	sync_scene_tabs_from_editor_data();
 
 	if (source_leaf && source_leaf != dest_leaf && editor_data->get_tile_scene_indices(source_tile_id).is_empty() && leaves.size() > 1) {
 		callable_mp(this, &EditorSceneWorkspace::_collapse_if_empty).call_deferred(source_tile_id);
@@ -322,6 +324,7 @@ WorkspaceLeafContent *EditorSceneWorkspace::_create_leaf_content(int p_leaf_id, 
 	const StringName initial_content_type = p_content_type == StringName("script") ? StringName("script") : StringName("scene");
 	WorkspacePane *pane = memnew(WorkspacePane);
 	pane->setup(p_leaf_id, editor_selection, editor_data, initial_content_type);
+	pane->set_workspace(this);
 	return pane;
 }
 
@@ -333,6 +336,9 @@ void EditorSceneWorkspace::_mount_leaf_content(WorkspaceLeafNode *p_leaf, Worksp
 WorkspaceLeafNode *EditorSceneWorkspace::_create_leaf(int p_leaf_id, const StringName &p_content_type) {
 	ERR_FAIL_NULL_V(editor_data, nullptr);
 	WorkspaceLeafNode *leaf = WorkspaceLeafNode::create(p_leaf_id, editor_selection, editor_data, p_content_type);
+	if (WorkspacePane *pane = leaf->get_workspace_pane()) {
+		pane->set_workspace(this);
+	}
 	leaves.push_back(leaf);
 	if (!restoring_from_config) {
 		emit_signal(SNAME("leaf_added"), p_leaf_id);
@@ -665,6 +671,37 @@ Vector<ScenePaneTile *> EditorSceneWorkspace::get_tiles() const {
 		}
 	}
 	return tiles;
+}
+
+void EditorSceneWorkspace::sync_scene_tabs_from_editor_data() {
+	WorkspacePane::get_shared_tab_registry().clear_canonical_for_type(StringName("scene"));
+	for (WorkspaceLeafNode *leaf : leaves) {
+		if (WorkspacePane *pane = leaf->get_workspace_pane()) {
+			pane->sync_scene_tabs_from_editor_data();
+		}
+	}
+}
+
+bool EditorSceneWorkspace::focus_scene_tab(int p_scene_idx) {
+	ERR_FAIL_NULL_V(editor_data, false);
+	ERR_FAIL_INDEX_V(p_scene_idx, editor_data->get_edited_scene_count(), false);
+
+	sync_scene_tabs_from_editor_data();
+	const String key = SceneTabType::resource_key_for_scene(*editor_data, p_scene_idx);
+	for (WorkspaceLeafNode *leaf : leaves) {
+		WorkspacePane *pane = leaf->get_workspace_pane();
+		if (!pane) {
+			continue;
+		}
+		for (int i = 0; i < pane->get_tab_count(); i++) {
+			if (pane->get_tab(i).get_type_id() == StringName("scene") && pane->get_tab(i).get_resource_key() == key) {
+				pane->set_active_tab(i);
+				set_focused_leaf(leaf->get_leaf_id());
+				return true;
+			}
+		}
+	}
+	return false;
 }
 
 int EditorSceneWorkspace::get_tile_count() const {

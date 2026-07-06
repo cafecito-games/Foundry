@@ -367,6 +367,7 @@ bool EditorAutomationWorkspace::dock_scene_tab(
 	p_editor_data->set_tile_current_scene(dest_tile_id, scene_idx);
 	p_workspace->set_focused_leaf(dest_tile_id);
 	p_editor_data->set_focused_tile_id(dest_tile_id);
+	p_workspace->sync_scene_tabs_from_editor_data();
 	return true;
 }
 

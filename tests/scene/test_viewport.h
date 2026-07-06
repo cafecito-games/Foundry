@@ -32,6 +32,7 @@
 
 #include "scene/2d/node_2d.h"
 #include "scene/gui/control.h"
+#include "scene/gui/popup_menu.h"
 #include "scene/gui/subviewport_container.h"
 #include "scene/main/canvas_layer.h"
 #include "scene/main/window.h"
@@ -46,6 +47,12 @@
 #include "tests/test_macros.h"
 
 namespace TestViewport {
+
+Node *viewport_texture_test_local_scene = nullptr;
+
+Node *_get_viewport_texture_test_local_scene() {
+	return viewport_texture_test_local_scene;
+}
 
 class NotificationControlViewport : public Control {
 	FOUNDRY_CLASS(NotificationControlViewport, Control);
@@ -87,6 +94,28 @@ public:
 	bool mouse_over = false;
 	bool mouse_over_self = false;
 	bool invalid_order = false;
+};
+
+struct ViewportErrorCounter {
+	int common_parent_errors = 0;
+	ErrorHandlerList handler;
+
+	static void on_error(void *p_userdata, const char *, const char *, int, const char *p_error, const char *, bool, ErrorHandlerType) {
+		ViewportErrorCounter *counter = static_cast<ViewportErrorCounter *>(p_userdata);
+		if (counter && String(p_error).contains("common_parent")) {
+			counter->common_parent_errors++;
+		}
+	}
+
+	ViewportErrorCounter() {
+		handler.errfunc = on_error;
+		handler.userdata = this;
+		add_error_handler(&handler);
+	}
+
+	~ViewportErrorCounter() {
+		remove_error_handler(&handler);
+	}
 };
 
 // `NotificationControlViewport`-derived class that additionally
@@ -1955,6 +1984,29 @@ TEST_CASE("[SceneTree][Viewport] Physics Picking 2D") {
 	}
 }
 #endif // PHYSICS_2D_DISABLED
+
+TEST_CASE("[SceneTree][Viewport] unrelated local scene viewport texture does not update path") {
+	Node2D *local_scene = memnew(Node2D);
+	PopupMenu *popup = memnew(PopupMenu);
+
+	Ref<ViewportTexture> texture = popup->get_texture();
+	ViewportErrorCounter error_counter;
+	Node *(*previous_local_scene_func)() = Resource::_get_local_scene_func;
+	viewport_texture_test_local_scene = local_scene;
+	Resource::_get_local_scene_func = _get_viewport_texture_test_local_scene;
+
+	ERR_PRINT_OFF;
+	SceneTree::get_singleton()->get_root()->add_child(popup);
+	ERR_PRINT_ON;
+
+	CHECK(error_counter.common_parent_errors == 0);
+
+	Resource::_get_local_scene_func = previous_local_scene_func;
+	viewport_texture_test_local_scene = nullptr;
+	SceneTree::get_singleton()->get_root()->remove_child(popup);
+	memdelete(popup);
+	memdelete(local_scene);
+}
 
 TEST_CASE("[SceneTree][Viewport] Embedded Windows") {
 	Window *root = SceneTree::get_singleton()->get_root();

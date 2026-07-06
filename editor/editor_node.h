@@ -978,6 +978,8 @@ public:
 	void set_edited_scene(Node *p_scene);
 	void set_edited_scene_root(Node *p_scene, bool p_auto_add);
 	Node *get_edited_scene() { return editor_data.get_edited_scene_root(); }
+	void activate_workspace_scene_tab(int p_scene_idx, int p_tile_id);
+	void request_workspace_scene_tab_close(int p_scene_idx);
 
 	String get_preview_locale() const;
 	void set_preview_locale(const String &p_locale);

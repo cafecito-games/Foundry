@@ -47,8 +47,10 @@
 #include "editor/editor_tile_dock_region.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/editor_workspace_leaf_content.h"
+#include "editor/scene/scene_tree_editor.h"
 #include "editor/scene/editor_scene_tabs.h"
 #include "editor/themes/editor_scale.h"
+#include "editor/workspace/scene_tab.h"
 #include "editor/workspace/workspace_pane.h"
 #include "editor/workspace/workspace_tab_registry.h"
 #include "editor/workspace/workspace_tab_type.h"
@@ -107,6 +109,18 @@ public:
 	WorkspaceTabCloseResult request_close(WorkspaceTab &p_tab, const Callable &p_on_deferred_close = Callable()) override { return WorkspaceTabCloseResult::CLOSE; }
 	Dictionary save_payload(const WorkspaceTab &p_tab) const override { return Dictionary(); }
 	void restore_payload(WorkspaceTab &p_tab, const Dictionary &p_payload) const override {}
+};
+
+class RecordingSceneTabType : public SceneTabType {
+public:
+	int requested_close_scene = -1;
+	WorkspaceTabCloseResult close_result = WorkspaceTabCloseResult::DEFERRED;
+
+protected:
+	WorkspaceTabCloseResult request_editor_close(int p_scene_idx) override {
+		requested_close_scene = p_scene_idx;
+		return close_result;
+	}
 };
 
 class LeafRemovedTracker : public Object {
@@ -229,6 +243,36 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] tile-self-contained") {
 	memdelete(other_context);
 
 	h.unmount();
+}
+
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] scene-tree-update-skips-detached-root") {
+	SceneTreeEditor *detached_editor = memnew(SceneTreeEditor(false, false, false));
+	{
+		ErrorDetector error_detector;
+		detached_editor->update_warning();
+		CHECK_FALSE(error_detector.has_error);
+	}
+	memdelete(detached_editor);
+
+	Window *tree_root = SceneTree::get_singleton()->get_root();
+	SceneTreeEditor *editor = memnew(SceneTreeEditor(false, false, false));
+	tree_root->add_child(editor);
+
+	Node2D *root = memnew(Node2D);
+	root->set_name("DetachedRoot");
+	tree_root->add_child(root);
+	SceneTree::get_singleton()->set_edited_scene_root(root);
+
+	tree_root->remove_child(root);
+	ErrorDetector error_detector;
+	editor->update_tree();
+	CHECK_FALSE(error_detector.has_error);
+
+	SceneTree::get_singleton()->set_edited_scene_root(nullptr);
+	MessageQueue::get_singleton()->flush();
+	memdelete(root);
+	tree_root->remove_child(editor);
+	memdelete(editor);
 }
 
 TEST_CASE("[SceneWorkspace][SceneTree][Editor] tile-isolation-across-leaves") {
@@ -1079,18 +1123,252 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] pane-scene-only-layout-renders") 
 	REQUIRE(leaf != nullptr);
 	WorkspacePane *pane = get_leaf_pane(leaf);
 	REQUIRE(pane != nullptr);
+
+	Node2D *root = memnew(Node2D);
+	const int scene_idx = add_test_scene(h.editor_data, leaf->get_leaf_id(), root);
+	h.editor_data.set_scene_path(scene_idx, "res://pane_scene.tscn");
+	h.workspace->sync_scene_tabs_from_editor_data();
+	h.pump();
+
 	CHECK(pane->get_leaf_id() == leaf->get_leaf_id());
 	CHECK(pane->get_scene_tile() != nullptr);
 	CHECK(pane->get_scene_tile()->get_tile_id() == leaf->get_leaf_id());
-
-	const int scene_idx = h.editor_data.add_edited_scene(-1);
-	h.editor_data.set_scene_path(scene_idx, "res://pane_scene.tscn");
-	h.editor_data.set_scene_tile(scene_idx, leaf->get_leaf_id());
-	h.editor_data.set_tile_current_scene(leaf->get_leaf_id(), scene_idx);
+	CHECK(Math::is_equal_approx(pane->get_scene_tile()->get_anchor(SIDE_LEFT), real_t(Control::ANCHOR_BEGIN)));
+	CHECK(Math::is_equal_approx(pane->get_scene_tile()->get_anchor(SIDE_TOP), real_t(Control::ANCHOR_BEGIN)));
+	CHECK(Math::is_equal_approx(pane->get_scene_tile()->get_anchor(SIDE_RIGHT), real_t(Control::ANCHOR_END)));
+	CHECK(Math::is_equal_approx(pane->get_scene_tile()->get_anchor(SIDE_BOTTOM), real_t(Control::ANCHOR_END)));
+	for (int i = 0; i < 4 && pane->get_chrome_host()->get_size().is_zero_approx(); i++) {
+		h.pump();
+	}
+	CHECK(pane->get_chrome_host()->get_size().x > 0);
+	CHECK(pane->get_chrome_host()->get_size().y > 0);
+	CHECK(pane->get_scene_tile()->get_rect().is_equal_approx(Rect2(Point2(), pane->get_chrome_host()->get_size())));
 	h.pump();
 
 	CHECK(pane->get_scene_context() != nullptr);
 	CHECK(String(h.editor_data.get_scene_path(scene_idx)) == "res://pane_scene.tscn");
+
+	h.unmount();
+}
+
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] scene-tab-open-reveal") {
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspaceLeafNode *leaf = h.workspace->get_focused_leaf();
+	REQUIRE(leaf != nullptr);
+	WorkspacePane *pane = get_leaf_pane(leaf);
+	REQUIRE(pane != nullptr);
+
+	Node2D *root = memnew(Node2D);
+	const int scene = add_test_scene(h.editor_data, leaf->get_leaf_id(), root);
+	h.editor_data.set_scene_path(scene, "res://already_open.tscn");
+
+	h.workspace->sync_scene_tabs_from_editor_data();
+	h.pump();
+	CHECK(pane->get_tab_count() == 1);
+	CHECK(pane->get_tab(0).get_resource_key() == "res://already_open.tscn");
+	REQUIRE(pane->get_scene_tile() != nullptr);
+	CHECK(pane->get_tab_strip()->is_visible());
+	CHECK_FALSE(pane->get_scene_tile()->get_scene_tabs()->is_visible());
+	CHECK(pane->get_chrome_host()->get_size().x > 0);
+	CHECK(pane->get_chrome_host()->get_size().y > 0);
+	CHECK(pane->get_scene_tile()->get_rect().is_equal_approx(Rect2(Point2(), pane->get_chrome_host()->get_size())));
+	CHECK(pane->get_scene_tile()->get_content_host()->get_size().x > 0);
+	CHECK(pane->get_scene_tile()->get_content_host()->get_size().y > 0);
+
+	CHECK(h.workspace->focus_scene_tab(scene));
+	h.workspace->sync_scene_tabs_from_editor_data();
+	h.pump();
+	CHECK(pane->get_tab_count() == 1);
+	CHECK(pane->get_scene_tile()->get_rect().is_equal_approx(Rect2(Point2(), pane->get_chrome_host()->get_size())));
+
+	WorkspaceTab found;
+	WorkspaceTabLocation location;
+	CHECK(WorkspacePane::get_shared_tab_registry().find_canonical(StringName("scene"), SceneTabType::resource_key_for_scene(h.editor_data, scene), found, location));
+	CHECK(location.pane_id == leaf->get_leaf_id());
+	CHECK(location.tab_index == 0);
+
+	h.unmount();
+}
+
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] passive-pane-sync-keeps-pending-scene-current") {
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspaceLeafNode *leaf = h.workspace->get_focused_leaf();
+	REQUIRE(leaf != nullptr);
+	WorkspacePane *pane = get_leaf_pane(leaf);
+	REQUIRE(pane != nullptr);
+
+	Node2D *root_a = memnew(Node2D);
+	const int scene_a = add_test_scene(h.editor_data, leaf->get_leaf_id(), root_a);
+	h.editor_data.set_scene_path(scene_a, "res://scene_a.tscn");
+	h.workspace->sync_scene_tabs_from_editor_data();
+	h.pump();
+	REQUIRE(pane->get_tab_count() == 1);
+	CHECK(h.editor_data.get_edited_scene() == scene_a);
+
+	const int pending_scene = h.editor_data.add_edited_scene(-1);
+	REQUIRE(pending_scene != scene_a);
+	CHECK(h.editor_data.get_edited_scene() == pending_scene);
+
+	pane->sync_from_editor_data();
+	CHECK(h.editor_data.get_edited_scene() == pending_scene);
+	CHECK(h.editor_data.get_tile_current_scene(leaf->get_leaf_id()) == pending_scene);
+
+	h.unmount();
+}
+
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] scene-tab-activate-sets-current") {
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	const int tile_id = h.workspace->get_focused_leaf_id();
+	Node2D *root_a = memnew(Node2D);
+	const int scene_a = add_test_scene(h.editor_data, tile_id, root_a);
+	h.editor_data.set_scene_path(scene_a, "res://scene_a.tscn");
+	Node2D *root_b = memnew(Node2D);
+	const int scene_b = add_test_scene(h.editor_data, tile_id, root_b);
+	h.editor_data.set_scene_path(scene_b, "res://scene_b.tscn");
+
+	h.workspace->sync_scene_tabs_from_editor_data();
+	WorkspacePane *pane = get_leaf_pane(h.workspace->get_focused_leaf());
+	REQUIRE(pane != nullptr);
+	REQUIRE(pane->get_tab_count() == 2);
+
+	pane->set_active_tab(0);
+	CHECK(h.editor_data.get_tile_current_scene(tile_id) == scene_a);
+	CHECK(h.editor_data.get_edited_scene() == scene_a);
+	check_focus_invariant(h.editor_data, h.workspace);
+
+	pane->set_active_tab(1);
+	CHECK(h.editor_data.get_tile_current_scene(tile_id) == scene_b);
+	CHECK(h.editor_data.get_edited_scene() == scene_b);
+	check_focus_invariant(h.editor_data, h.workspace);
+
+	h.unmount();
+}
+
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] scene-tab-move-keeps-edit-state") {
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspaceLeafNode *leaf_a = h.workspace->get_focused_leaf();
+	REQUIRE(leaf_a != nullptr);
+	const int tile_a = leaf_a->get_leaf_id();
+
+	Node2D *root = memnew(Node2D);
+	Node2D *selected = memnew(Node2D);
+	root->add_child(selected);
+	const int scene = add_test_scene(h.editor_data, tile_a, root);
+	h.editor_data.set_scene_path(scene, "res://move_me.tscn");
+	Vector<ObjectID> selected_ids;
+	selected_ids.push_back(selected->get_instance_id());
+	h.editor_data.get_scene_context(scene)->set_selected_node_ids(selected_ids);
+	EditorUndoRedoManager::get_singleton()->set_history_as_unsaved(h.editor_data.get_scene_history_id(scene));
+
+	WorkspaceLeafNode *leaf_b = h.workspace->split(leaf_a, false, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
+	h.pump();
+	REQUIRE(leaf_b != nullptr);
+	const int tile_b = leaf_b->get_leaf_id();
+	h.editor_data.register_tile(tile_b);
+
+	h.workspace->sync_scene_tabs_from_editor_data();
+	REQUIRE(h.workspace->handle_scene_drop(scene, leaf_b, EditorSceneWorkspace::DROP_CENTER) == leaf_b);
+	CHECK(h.workspace->focus_scene_tab(scene));
+
+	CHECK(h.editor_data.get_scene_tile(scene) == tile_b);
+	CHECK(h.editor_data.get_edited_scene_root(scene) == root);
+	CHECK(h.editor_data.get_scene_context(scene)->get_selected_node_ids().has(selected->get_instance_id()));
+	CHECK(EditorUndoRedoManager::get_singleton()->is_history_unsaved(h.editor_data.get_scene_history_id(scene)));
+
+	h.unmount();
+}
+
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] scene-tab-close-runs-flow") {
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspaceLeafNode *leaf = h.workspace->get_focused_leaf();
+	REQUIRE(leaf != nullptr);
+	WorkspacePane *pane = get_leaf_pane(leaf);
+	REQUIRE(pane != nullptr);
+
+	WorkspaceTabRegistry registry;
+	registry.reset_stable_id_counter();
+	registry.clear_canonical_index();
+	RecordingSceneTabType scene_type;
+	registry.register_type(&scene_type);
+	pane->set_tab_registry(&registry);
+
+	Node2D *root = memnew(Node2D);
+	const int scene = add_test_scene(h.editor_data, leaf->get_leaf_id(), root);
+	h.editor_data.set_scene_path(scene, "res://dirty_close.tscn");
+
+	pane->sync_scene_tabs_from_editor_data();
+	REQUIRE(pane->get_tab_count() == 1);
+
+	const WorkspaceTabCloseResult result = pane->request_close_tab(0);
+	CHECK(result == WorkspaceTabCloseResult::DEFERRED);
+	CHECK(scene_type.requested_close_scene == scene);
+	CHECK(pane->get_tab_count() == 1);
+
+	h.unmount();
+}
+
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] scene-tab-order-matches-editordata") {
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	const int tile_id = h.workspace->get_focused_leaf_id();
+	Node2D *root_a = memnew(Node2D);
+	const int scene_a = add_test_scene(h.editor_data, tile_id, root_a);
+	h.editor_data.set_scene_path(scene_a, "res://a.tscn");
+	Node2D *root_b = memnew(Node2D);
+	const int scene_b = add_test_scene(h.editor_data, tile_id, root_b);
+	h.editor_data.set_scene_path(scene_b, "res://b.tscn");
+	Node2D *root_c = memnew(Node2D);
+	const int scene_c = add_test_scene(h.editor_data, tile_id, root_c);
+	h.editor_data.set_scene_path(scene_c, "res://c.tscn");
+
+	h.workspace->sync_scene_tabs_from_editor_data();
+	WorkspacePane *pane = get_leaf_pane(h.workspace->get_focused_leaf());
+	REQUIRE(pane != nullptr);
+	REQUIRE(pane->get_tab_count() == 3);
+
+	pane->move_tab(0, 2);
+
+	Vector<String> pane_keys;
+	for (int i = 0; i < pane->get_tab_count(); i++) {
+		pane_keys.push_back(pane->get_tab(i).get_resource_key());
+	}
+
+	Vector<String> editor_data_keys;
+	for (int scene_idx : h.editor_data.get_tile_scene_indices(tile_id)) {
+		editor_data_keys.push_back(SceneTabType::resource_key_for_scene(h.editor_data, scene_idx));
+	}
+
+	CHECK(pane_keys == editor_data_keys);
+	CHECK(pane_keys[0] == "res://b.tscn");
+	CHECK(pane_keys[1] == "res://c.tscn");
+	CHECK(pane_keys[2] == "res://a.tscn");
 
 	h.unmount();
 }

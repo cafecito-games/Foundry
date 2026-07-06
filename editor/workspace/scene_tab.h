@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  workspace_tab_registry.h                                              */
+/*  scene_tab.h                                                           */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                              GODOT ENGINE                              */
@@ -30,54 +30,38 @@
 
 #pragma once
 
-#include "core/string/string_name.h"
-#include "core/string/ustring.h"
+#include "core/object/object_id.h"
 #include "core/templates/hash_map.h"
+#include "core/templates/hash_set.h"
 
-#include "editor/workspace/workspace_tab.h"
+#include "editor/workspace/workspace_tab_type.h"
 
-class WorkspaceTabType;
+class EditorData;
+class WorkspacePane;
 
-struct WorkspaceTabLocation {
-	int pane_id = -1;
-	int tab_index = -1;
+class SceneTabType : public WorkspaceTabType {
+	HashMap<int, ObjectID> mounted_panes;
+	HashSet<int> activating_tabs;
 
-	bool is_valid() const { return pane_id >= 0 && tab_index >= 0; }
-	bool operator==(const WorkspaceTabLocation &p_other) const {
-		return pane_id == p_other.pane_id && tab_index == p_other.tab_index;
-	}
-};
+	WorkspacePane *_get_mounted_pane(const WorkspaceTab &p_tab) const;
 
-enum class WorkspaceTabInsertResult {
-	INSERTED,
-	REVEALED_EXISTING,
-};
-
-/**
- * Registry of workspace tab types and the canonical (type_id, resource_key)
- * index used for open/reveal deduplication.
- */
-class WorkspaceTabRegistry {
-	HashMap<StringName, WorkspaceTabType *> types;
-	HashMap<StringName, HashMap<String, WorkspaceTab>> canonical_tabs;
-	HashMap<StringName, HashMap<String, WorkspaceTabLocation>> canonical_locations;
-	int next_stable_id = 0;
+protected:
+	virtual WorkspaceTabCloseResult request_editor_close(int p_scene_idx);
 
 public:
-	WorkspaceTabRegistry();
+	static String resource_key_for_scene(const EditorData &p_editor_data, int p_scene_idx);
+	static int find_scene_index(const EditorData &p_editor_data, const WorkspaceTab &p_tab);
+	static WorkspaceTab make_tab_for_scene(const EditorData &p_editor_data, int p_scene_idx, int p_stable_id);
 
-	void register_type(WorkspaceTabType *p_type);
-	WorkspaceTabType *find_type(const StringName &p_type_id);
-
-	int allocate_stable_id();
-	void reset_stable_id_counter(int p_next_stable_id = 0) { next_stable_id = p_next_stable_id; }
-
-	WorkspaceTabInsertResult insert_canonical(const WorkspaceTab &p_tab, const WorkspaceTabLocation &p_location, WorkspaceTab *r_existing_tab = nullptr, WorkspaceTabLocation *r_existing_location = nullptr);
-	void set_canonical(const WorkspaceTab &p_tab, const WorkspaceTabLocation &p_location);
-	bool find_canonical(const StringName &p_type_id, const String &p_resource_key, WorkspaceTab &r_tab, WorkspaceTabLocation &r_location) const;
-	bool remove_canonical(const StringName &p_type_id, const String &p_resource_key);
-	void clear_canonical_for_type(const StringName &p_type_id);
-	void clear_canonical_index();
-
-	void register_builtin_tab_types();
+	StringName type_id() const override;
+	bool can_open(const String &p_resource) const override;
+	WorkspaceTab make_tab(const String &p_resource, int p_stable_id) const override;
+	String get_title(const WorkspaceTab &p_tab) const override;
+	Ref<Texture2D> get_icon(const WorkspaceTab &p_tab) const override;
+	void mount(WorkspaceTab &p_tab, Control *p_chrome_host) override;
+	void unmount(WorkspaceTab &p_tab) override;
+	void activate(WorkspaceTab &p_tab) override;
+	WorkspaceTabCloseResult request_close(WorkspaceTab &p_tab, const Callable &p_on_deferred_close = Callable()) override;
+	Dictionary save_payload(const WorkspaceTab &p_tab) const override;
+	void restore_payload(WorkspaceTab &p_tab, const Dictionary &p_payload) const override;
 };
