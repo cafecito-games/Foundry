@@ -204,6 +204,12 @@ next in its track. Liveness (Track 4) is mostly mechanical wiring once the hard 
 - **U13 — Relocate per-context docks into the pane + per-pane dock layout.** Inspector, signals,
   groups, history live in the pane bound to its context; persisted per-pane dock arrangement.
   Depends U12 + U6.
+- **U13b — Remove the focused-tile dock singleton indirection.** U6/U12/U13 keep a
+  compatibility trick — `EditorNode::_update_focused_dock_singletons()` repoints each dock's
+  static `get_singleton()` to the focused tile. Replace it with explicit focused-tile accessors
+  and delete the repoint machinery (slice 1: signals/groups/history; slice 2: scene tree +
+  inspector → delete the function). Follow-up to U13; keeps new code from silently breaking
+  multi-tile behavior via `::get_singleton()`.
 
 ### Track 7 — Workspace content model
 - **U14 — Partition `EditorMainScreen` + generic leaf model.** 2D/3D per-pane scene modes; Game
