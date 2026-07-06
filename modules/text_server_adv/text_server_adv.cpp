@@ -69,6 +69,7 @@ using namespace godot;
 
 #ifdef MODULE_MSDFGEN_ENABLED
 FOUNDRY_GCC_WARNING_PUSH_AND_IGNORE("-Wshadow")
+FOUNDRY_CLANG_WARNING_PUSH_AND_IGNORE("-Wshadow-field-in-constructor")
 FOUNDRY_MSVC_WARNING_PUSH_AND_IGNORE(4458) // "Declaration of 'identifier' hides class member".
 
 #include <core/EdgeHolder.h>
@@ -78,6 +79,7 @@ FOUNDRY_MSVC_WARNING_PUSH_AND_IGNORE(4458) // "Declaration of 'identifier' hides
 #include <msdfgen.h>
 
 FOUNDRY_GCC_WARNING_POP
+FOUNDRY_CLANG_WARNING_POP
 FOUNDRY_MSVC_WARNING_POP
 #endif
 

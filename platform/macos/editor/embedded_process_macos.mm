@@ -105,12 +105,12 @@ void EmbeddedProcessMacOS::reset() {
 	if (current_process_id != 0 && is_embedding_completed()) {
 		ds->remove_embedded_process(current_process_id);
 	}
-	DisplayServer *ds = DisplayServer::get_singleton();
+	DisplayServer *display_server = DisplayServer::get_singleton();
 	for (int i = 0; i < DisplayServer::CURSOR_MAX; i++) {
-		ds->cursor_set_custom_image(Ref<Resource>(), (DisplayServer::CursorShape)i, Vector2());
+		display_server->cursor_set_custom_image(Ref<Resource>(), (DisplayServer::CursorShape)i, Vector2());
 	}
-	if (ds->mouse_get_mode() != DisplayServer::MOUSE_MODE_VISIBLE) {
-		ds->mouse_set_mode(DisplayServer::MOUSE_MODE_VISIBLE);
+	if (display_server->mouse_get_mode() != DisplayServer::MOUSE_MODE_VISIBLE) {
+		display_server->mouse_set_mode(DisplayServer::MOUSE_MODE_VISIBLE);
 	}
 	current_process_id = 0;
 	embedding_state = EmbeddingState::IDLE;

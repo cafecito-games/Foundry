@@ -60,9 +60,9 @@ Error MIDIDriverCoreMidi::open() {
 	ERR_FAIL_COND_V_MSG(client || core_midi_closed, FAILED,
 			"MIDIDriverCoreMidi cannot be reopened.");
 
-	CFStringRef name = CFStringCreateWithCString(nullptr, "Godot", kCFStringEncodingASCII);
-	OSStatus result = MIDIClientCreate(name, nullptr, nullptr, &client);
-	CFRelease(name);
+	CFStringRef client_name = CFStringCreateWithCString(nullptr, "Godot", kCFStringEncodingASCII);
+	OSStatus result = MIDIClientCreate(client_name, nullptr, nullptr, &client);
+	CFRelease(client_name);
 	if (result != noErr) {
 		ERR_PRINT("MIDIClientCreate failed, code: " + itos(result));
 		return ERR_CANT_OPEN;
@@ -87,11 +87,11 @@ Error MIDIDriverCoreMidi::open() {
 				connected_sources.push_back(conn);
 
 				CFStringRef nameRef = nullptr;
-				char name[256];
+				char source_name[256];
 				MIDIObjectGetStringProperty(source, kMIDIPropertyDisplayName, &nameRef);
-				CFStringGetCString(nameRef, name, sizeof(name), kCFStringEncodingUTF8);
+				CFStringGetCString(nameRef, source_name, sizeof(source_name), kCFStringEncodingUTF8);
 				CFRelease(nameRef);
-				connected_input_names.push_back(name);
+				connected_input_names.push_back(source_name);
 
 				connection_index++; // Contiguous index for successfully connected inputs.
 			}

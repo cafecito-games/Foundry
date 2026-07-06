@@ -162,8 +162,8 @@ Error AudioDriverCoreAudio::init() {
 	ERR_FAIL_COND_V(result != noErr, FAILED);
 #endif
 
-	unsigned int buffer_size = buffer_frames * channels;
-	samples_in.resize(buffer_size);
+	unsigned int sample_buffer_size = buffer_frames * channels;
+	samples_in.resize(sample_buffer_size);
 
 	print_verbose("CoreAudio: detected " + itos(channels) + " channels");
 	print_verbose("CoreAudio: output sampling rate: " + itos(mix_rate) + " Hz");
