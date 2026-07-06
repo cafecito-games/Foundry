@@ -31,6 +31,7 @@
 #include "particles_editor_plugin.h"
 
 #include "editor/docks/scene_tree_dock.h"
+#include "editor/editor_node.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/settings/editor_settings.h"
 #include "scene/gui/box_container.h"

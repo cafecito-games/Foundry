@@ -45,6 +45,10 @@ class EditorFileDialog;
 class EditorObjectSelector;
 class EditorSceneContext;
 
+namespace TestSceneWorkspace {
+class TileInspectorDockTestAccess;
+}
+
 class InspectorDock : public EditorDock {
 	FOUNDRY_CLASS(InspectorDock, EditorDock);
 
@@ -52,7 +56,7 @@ class InspectorDock : public EditorDock {
 	// chrome (back/forward/history-menu button states).
 	friend class EditorNode;
 	friend class InspectorDockTestAccess;
-	friend class TileInspectorDockTestAccess;
+	friend class TestSceneWorkspace::TileInspectorDockTestAccess;
 
 	enum MenuOptions {
 		RESOURCE_LOAD,

@@ -52,6 +52,8 @@ class GroupsDock;
 class HistoryDock;
 class Mesh;
 class ScenePaneTile;
+class SceneTreeDock;
+class InspectorDock;
 class SignalsDock;
 class Node;
 class PropertySelector;
