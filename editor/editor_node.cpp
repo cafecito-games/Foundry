@@ -4447,29 +4447,18 @@ void EditorNode::_remove_edited_scene(bool p_change_tab, bool p_allow_collapse) 
 	editor_data.remove_scene(old_index);
 
 	const bool tile_emptied = editor_data.get_tile_scene_indices(tile_id).is_empty();
-	// Only collapse the emptied scene tile when it would promote another scene
-	// tile. Script leaves are not scene tiles, so collapsing into one (e.g. a
-	// script opened beside this tile) would focus a non-scene leaf; keep an empty
-	// scene in the tile instead.
-	bool collapsed_tile = false;
+	// Collapse the emptied scene tile when another scene tile remains (counting
+	// scene tiles, not total leaves, so an adjacent script leaf does not keep a
+	// dead tile alive). collapse() keeps focus on a scene tile if it merges into a
+	// script-leaf sibling.
 	if (p_allow_collapse && tile_emptied && scene_workspace && scene_workspace->get_tile_count() > 1) {
 		WorkspaceLeafNode *leaf = scene_workspace->get_leaf_by_id(tile_id);
-		WorkspaceLeafNode *successor = leaf ? scene_workspace->peek_collapse_successor(leaf) : nullptr;
-		if (leaf && successor && successor->get_pane_tile()) {
+		if (leaf) {
 			scene_workspace->collapse(leaf);
-			collapsed_tile = true;
 		}
-	}
-	if (!collapsed_tile) {
-		if (editor_data.get_tile_scene_indices(tile_id).is_empty()) {
-			// The emptied tile was kept (single workspace, or its only sibling is a
-			// script leaf). Give it a blank scene so the focused tile always has a
-			// valid current scene rather than resolving to -1.
-			const int blank_scene = editor_data.add_edited_scene(-1);
-			if (editor_data.get_scene_tile(blank_scene) != tile_id) {
-				editor_data.set_scene_tile(blank_scene, tile_id);
-			}
-			editor_data.set_tile_current_scene(tile_id, blank_scene);
+	} else {
+		if (editor_data.get_edited_scene_count() == 0) {
+			editor_data.add_edited_scene(-1);
 		}
 		if (p_change_tab) {
 			_set_current_scene_nocheck(editor_data.get_tile_current_scene(editor_data.get_focused_tile_id()));
@@ -4494,15 +4483,11 @@ void EditorNode::_remove_scene(int index, bool p_change_tab, bool p_allow_collap
 		editor_data.remove_scene(index);
 		if (p_allow_collapse && scene_workspace && scene_workspace->get_tile_count() > 1 && editor_data.get_tile_scene_indices(tile_id).is_empty()) {
 			WorkspaceLeafNode *leaf = scene_workspace->get_leaf_by_id(tile_id);
-			WorkspaceLeafNode *successor = leaf ? scene_workspace->peek_collapse_successor(leaf) : nullptr;
-			// Only collapse into another scene tile, never into a script leaf.
-			if (leaf && successor && successor->get_pane_tile()) {
+			// collapse() keeps focus on a scene tile even when merging into a script leaf.
+			if (leaf) {
 				scene_workspace->collapse(leaf);
 				_update_all_scene_tabs();
 				_update_tile_display_attachments();
-			} else {
-				// Kept the emptied tile (its sibling is a script leaf); keep it valid.
-				_ensure_scene_tile_has_scene(tile_id);
 			}
 		}
 	}
@@ -4904,35 +4889,6 @@ void EditorNode::_sync_script_leaf_path() {
 		// clear the leaf so a stale script is not persisted and reopened.
 		script_leaf->set_script_path(String());
 	}
-}
-
-void EditorNode::_ensure_scene_tile_has_scene(int p_tile_id) {
-	if (!scene_workspace) {
-		return;
-	}
-	WorkspaceLeafNode *leaf = scene_workspace->get_leaf_by_id(p_tile_id);
-	// Only applies to a surviving scene tile that ended up with no scenes (e.g. its
-	// last scene was closed or dragged away but it could not collapse into a script
-	// leaf). Give it a blank scene so a scene tile always has a valid current scene.
-	if (!leaf || !leaf->get_pane_tile()) {
-		return;
-	}
-	if (!editor_data.get_tile_scene_indices(p_tile_id).is_empty()) {
-		return;
-	}
-	// add_edited_scene() assigns the new scene to the focused tile and makes it the
-	// current edited scene. Focus the target tile only while adding so the blank
-	// scene lands there, then restore focus: set_focused_tile_id() re-syncs the
-	// current edited scene, so a background repair of a non-focused tile never
-	// changes the active scene/tab of the tile the user is working in.
-	const int prev_focused_tile = editor_data.get_focused_tile_id();
-	editor_data.set_focused_tile_id(p_tile_id);
-	editor_data.add_edited_scene(-1);
-	editor_data.set_focused_tile_id(prev_focused_tile);
-
-	_update_all_scene_tabs();
-	_bind_all_leaf_docks();
-	_update_tile_display_attachments();
 }
 
 void EditorNode::_close_script_leaf() {
@@ -7030,12 +6986,6 @@ void EditorNode::handle_tile_scene_drop(int p_target_tile_id, int p_region, int 
 	_bind_all_leaf_docks();
 	_update_all_scene_tabs();
 	_update_tile_display_attachments();
-
-	// The source tile may be left empty if it could not collapse into a script-leaf
-	// sibling. handle_scene_drop() collapses deferred, so run this after it to give
-	// any surviving empty source tile a blank scene.
-	callable_mp(this, &EditorNode::_ensure_scene_tile_has_scene).call_deferred(p_source_tile_id);
-
 	save_editor_layout_delayed();
 }
 
@@ -7115,12 +7065,6 @@ void EditorNode::handle_tile_scene_tab_bar_drop(int p_target_tile_id, const Vari
 	_bind_all_leaf_docks();
 	_update_all_scene_tabs();
 	_update_tile_display_attachments();
-
-	// As with pane drops, the source tile may be left empty if it could not collapse
-	// into a script-leaf sibling; handle_scene_drop() collapses deferred, so ensure
-	// any surviving empty source tile gets a blank scene afterwards.
-	callable_mp(this, &EditorNode::_ensure_scene_tile_has_scene).call_deferred(source_tile_id);
-
 	save_editor_layout_delayed();
 }
 
@@ -7200,9 +7144,12 @@ void EditorNode::_load_workspace_from_config(const Ref<ConfigFile> &p_config_fil
 			// script here: ScriptEditorPlugin::set_window_layout() restores the open
 			// scripts later in _load_editor_layout() (honoring restore_scripts_on_load
 			// and the saved tab order). Pre-opening would force this leaf's script to
-			// the front. Just keep the leaf's recorded script in sync afterwards.
+			// the front. Keep the leaf in sync with the editor afterwards; the deferred
+			// sync runs after that layout load, so it reflects (and, when scripts were
+			// not restored, clears) the leaf's recorded script correctly.
 			_reparent_script_surface_into(script_leaf);
 			_connect_script_leaf_sync();
+			callable_mp(this, &EditorNode::_sync_script_leaf_path).call_deferred();
 		}
 	}
 

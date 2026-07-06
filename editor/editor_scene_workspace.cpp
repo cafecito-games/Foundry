@@ -94,13 +94,10 @@ void EditorSceneWorkspace::_collapse_if_empty(int p_tile_id) {
 	if (!leaf || !editor_data) {
 		return;
 	}
-	if (editor_data->get_tile_scene_indices(p_tile_id).is_empty() && leaves.size() > 1) {
-		// Only collapse into another scene tile; collapsing into a script leaf would
-		// promote a non-scene leaf as the successor tile. Keep the empty tile instead.
-		WorkspaceLeafNode *successor = peek_collapse_successor(leaf);
-		if (successor && successor->get_pane_tile()) {
-			collapse(leaf);
-		}
+	// Collapse the emptied tile as long as another scene tile remains. If it merges
+	// into a script-leaf sibling, collapse() keeps focus on a scene tile.
+	if (editor_data->get_tile_scene_indices(p_tile_id).is_empty() && get_tile_count() > 1) {
+		collapse(leaf);
 	}
 }
 
@@ -463,34 +460,23 @@ void EditorSceneWorkspace::collapse(WorkspaceLeafNode *p_leaf) {
 	memdelete(p_leaf);
 
 	if (focused_leaf_id == collapsed_leaf_id && !leaves.is_empty()) {
-		set_focused_leaf(successor_leaf_id);
-		emit_signal(SNAME("leaf_focus_requested"), successor_leaf_id);
+		// Focus must land on a scene tile; the structural successor may be a script
+		// leaf (which is not a focusable scene tile). Prefer a scene tile if so.
+		int focus_target = successor_leaf_id;
+		if (!successor_leaf->get_pane_tile()) {
+			for (WorkspaceLeafNode *candidate : leaves) {
+				if (candidate->get_pane_tile()) {
+					focus_target = candidate->get_leaf_id();
+					break;
+				}
+			}
+		}
+		set_focused_leaf(focus_target);
+		emit_signal(SNAME("leaf_focus_requested"), focus_target);
 	}
 
 	_update_focus_visuals();
 	queue_sort();
-}
-
-WorkspaceLeafNode *EditorSceneWorkspace::peek_collapse_successor(WorkspaceLeafNode *p_leaf) const {
-	if (!p_leaf || leaves.size() <= 1) {
-		return nullptr;
-	}
-	SplitContainer *sc = Object::cast_to<SplitContainer>(p_leaf->get_parent());
-	if (!sc) {
-		return nullptr;
-	}
-	Control *sibling = nullptr;
-	for (int i = 0; i < sc->get_child_count(false); i++) {
-		Control *child = Object::cast_to<Control>(sc->get_child(i, false));
-		if (child && child != p_leaf) {
-			sibling = child;
-			break;
-		}
-	}
-	if (!sibling) {
-		return nullptr;
-	}
-	return _find_first_leaf(sibling);
 }
 
 bool EditorSceneWorkspace::move_content(WorkspaceLeafNode *p_from_leaf, WorkspaceLeafNode *p_to_leaf) {

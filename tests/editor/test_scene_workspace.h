@@ -886,35 +886,35 @@ TEST_CASE("[SceneTree][Editor] script-leaf-open") {
 	h2.unmount();
 }
 
-TEST_CASE("[SceneTree][Editor] script-leaf-collapse-successor") {
+TEST_CASE("[SceneTree][Editor] script-leaf-collapse-keeps-scene-focus") {
 	WorkspaceHarness h;
 	h.mount();
 	h.pump();
 
-	WorkspaceLeafNode *scene_leaf = h.workspace->get_focused_leaf();
-	REQUIRE(scene_leaf != nullptr);
+	WorkspaceLeafNode *scene_a = h.workspace->get_focused_leaf();
+	REQUIRE(scene_a != nullptr);
 
-	// Open a script leaf beside the scene tile.
-	WorkspaceLeafNode *script_leaf = h.workspace->open_script_leaf(scene_leaf, "res://a.fs");
+	// Two scene tiles, with a script leaf opened beside the second one, so that
+	// scene_b's collapse successor is the (non-scene) script leaf.
+	WorkspaceLeafNode *scene_b = h.workspace->split(scene_a, false, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
+	h.pump();
+	REQUIRE(scene_b != nullptr);
+	WorkspaceLeafNode *script_leaf = h.workspace->open_script_leaf(scene_b, "res://a.fs");
 	h.pump();
 	REQUIRE(script_leaf != nullptr);
-	REQUIRE(script_leaf->get_leaf_content() != nullptr);
-	CHECK(script_leaf->get_leaf_content()->get_content_type() == StringName("script"));
 	CHECK(script_leaf->get_pane_tile() == nullptr);
 
-	// Collapsing the scene tile here would promote the script leaf, so callers must
-	// detect that and keep the tile instead of collapsing into a non-scene leaf.
-	WorkspaceLeafNode *successor = h.workspace->peek_collapse_successor(scene_leaf);
-	CHECK(successor == script_leaf);
-	CHECK(successor->get_pane_tile() == nullptr);
-
-	// Splitting the scene tile gives it a scene sibling, which is a valid successor.
-	WorkspaceLeafNode *scene_leaf_c = h.workspace->split(scene_leaf, false, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
+	// Collapsing the focused scene tile promotes the script leaf structurally, but
+	// focus must land on a scene tile rather than the non-focusable script leaf.
+	h.workspace->set_focused_leaf(scene_b->get_leaf_id());
+	h.workspace->collapse(scene_b);
 	h.pump();
-	REQUIRE(scene_leaf_c != nullptr);
-	WorkspaceLeafNode *scene_successor = h.workspace->peek_collapse_successor(scene_leaf);
-	REQUIRE(scene_successor != nullptr);
-	CHECK(scene_successor->get_pane_tile() != nullptr);
+
+	WorkspaceLeafNode *focused = h.workspace->get_focused_leaf();
+	REQUIRE(focused != nullptr);
+	CHECK(focused->get_pane_tile() != nullptr);
+	CHECK(focused->get_leaf_content()->get_content_type() == StringName("scene"));
+	CHECK(h.workspace->get_script_leaf() == script_leaf);
 
 	h.unmount();
 }

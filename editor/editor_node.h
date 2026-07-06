@@ -720,7 +720,6 @@ private:
 	void _close_script_leaf();
 	void _sync_script_leaf_path();
 	void _connect_script_leaf_sync();
-	void _ensure_scene_tile_has_scene(int p_tile_id);
 	void _update_tile_display_attachments();
 	void _sync_scene_viewport_2d_state_with_main_screen();
 	void _update_focused_dock_singletons(ScenePaneTile *p_tile);
