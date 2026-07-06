@@ -35,6 +35,7 @@
 #include "editor/automation/editor_automation_indicator.h"
 #include "editor/automation/editor_automation_mcp_server.h"
 #include "editor/automation/editor_automation_wait.h"
+#include "editor/automation/editor_automation_workflow_registry.h"
 #include "editor/automation/editor_workflow_test_driver.h"
 
 #include "core/crypto/crypto_core.h"
@@ -75,7 +76,11 @@ EditorAutomationServer::EditorAutomationServer() {
 		return;
 	}
 
-	transport = Transport::MCP;
+	if (cli_transport == "none") {
+		transport = Transport::NONE;
+	} else {
+		transport = Transport::MCP;
+	}
 	port = cli_port >= 0 ? cli_port : 0;
 	token = cli_token;
 	set_process_internal(true);
@@ -258,17 +263,30 @@ void EditorAutomationServer::start() {
 	}
 
 	const String transport_name = get_transport_name();
-	const String message = vformat("Editor automation enabled (transport=%s, endpoint=%s)", transport_name, endpoint);
+	String message;
+	if (transport == Transport::MCP) {
+		message = vformat("Editor automation enabled (transport=%s, endpoint=%s)", transport_name, endpoint);
+	} else {
+		message = "Editor automation enabled (workflow-only mode, no transport).";
+	}
 	OS::get_singleton()->print("%s\n", message.utf8().get_data());
 
 	// Machine-readable line for launching test harnesses / agent hosts.
-	Dictionary machine_line;
-	machine_line["transport"] = transport_name;
-	machine_line["endpoint"] = endpoint;
-	machine_line["port"] = port;
-	machine_line["token"] = token;
-	machine_line["local_only"] = local_only;
-	OS::get_singleton()->print("FOUNDRY_AUTOMATION %s\n", JSON::stringify(machine_line, "", false).utf8().get_data());
+	if (transport == Transport::MCP) {
+		Dictionary machine_line;
+		machine_line["transport"] = transport_name;
+		machine_line["endpoint"] = endpoint;
+		machine_line["port"] = port;
+		machine_line["token"] = token;
+		machine_line["local_only"] = local_only;
+		OS::get_singleton()->print("FOUNDRY_AUTOMATION %s\n", JSON::stringify(machine_line, "", false).utf8().get_data());
+	} else if (!cli_run_workflow.is_empty()) {
+		Dictionary machine_line;
+		machine_line["transport"] = "none";
+		machine_line["workflow_only"] = true;
+		machine_line["workflow"] = EditorAutomationWorkflowRegistry::resolve_canonical_name(cli_run_workflow);
+		OS::get_singleton()->print("FOUNDRY_AUTOMATION %s\n", JSON::stringify(machine_line, "", false).utf8().get_data());
+	}
 
 	EditorNode *editor_node = EditorNode::get_singleton();
 	if (editor_node != nullptr && editor_node->get_log() != nullptr) {
@@ -306,13 +324,9 @@ void EditorAutomationServer::_run_acceptance_workflow_if_requested() {
 	options.attach_screenshot_on_failure = cli_failure_screenshots;
 	driver.configure(options);
 
-	EditorAutomationAcceptanceWorkflow::Result workflow_result;
-	if (cli_run_workflow == "mvp") {
-		workflow_result = EditorAutomationAcceptanceWorkflow::run_mvp(driver);
-	} else {
-		workflow_result.ok = false;
-		workflow_result.workflow = cli_run_workflow;
-		workflow_result.message = vformat("Unknown automation workflow '%s'.", cli_run_workflow);
+	EditorAutomationAcceptanceWorkflow::Result workflow_result = EditorAutomationWorkflowRegistry::run(cli_run_workflow, driver);
+	if (!workflow_result.ok && workflow_result.message.is_empty()) {
+		workflow_result.message = EditorAutomationWorkflowRegistry::format_unknown_workflow_message(cli_run_workflow);
 	}
 
 	EditorAutomationAcceptanceWorkflow::print_result(workflow_result);
@@ -346,10 +360,12 @@ void EditorAutomationServer::_notification(int p_what) {
 					break;
 				}
 			}
-			if (started && mcp_server != nullptr) {
+			if (started && (mcp_server != nullptr || !cli_run_workflow.is_empty())) {
 				EditorAutomationEvents::poll_sources();
 				EditorAutomationWait::poll_all_cooperative();
-				mcp_server->poll();
+				if (mcp_server != nullptr) {
+					mcp_server->poll();
+				}
 			}
 		} break;
 	}

@@ -36,8 +36,12 @@
 #include "editor/editor_main_screen.h"
 #include "editor/editor_node.h"
 #include "editor/editor_undo_redo_manager.h"
+#include "editor/inspector/editor_inspector.h"
 #include "editor/run/editor_run_bar.h"
+#include "editor/scene/canvas_item_editor_plugin.h"
+#include "editor/scene/3d/node_3d_editor_plugin.h"
 #include "editor/script/script_editor_plugin.h"
+#include "scene/3d/camera_3d.h"
 #include "scene/main/window.h"
 
 namespace {
@@ -81,6 +85,54 @@ String _main_screen_name(int p_index) {
 		return MAIN_SCREEN_NAMES[p_index];
 	}
 	return String();
+}
+
+String _canvas_tool_name(CanvasItemEditor::Tool p_tool) {
+	switch (p_tool) {
+		case CanvasItemEditor::TOOL_SELECT:
+			return "select";
+		case CanvasItemEditor::TOOL_LIST_SELECT:
+			return "list_select";
+		case CanvasItemEditor::TOOL_MOVE:
+			return "move";
+		case CanvasItemEditor::TOOL_SCALE:
+			return "scale";
+		case CanvasItemEditor::TOOL_ROTATE:
+			return "rotate";
+		case CanvasItemEditor::TOOL_EDIT_PIVOT:
+			return "edit_pivot";
+		case CanvasItemEditor::TOOL_PAN:
+			return "pan";
+		case CanvasItemEditor::TOOL_RULER:
+			return "ruler";
+		default:
+			return "unknown";
+	}
+}
+
+String _node3d_tool_name(Node3DEditor::ToolMode p_tool) {
+	switch (p_tool) {
+		case Node3DEditor::TOOL_MODE_TRANSFORM:
+			return "transform";
+		case Node3DEditor::TOOL_MODE_MOVE:
+			return "move";
+		case Node3DEditor::TOOL_MODE_ROTATE:
+			return "rotate";
+		case Node3DEditor::TOOL_MODE_SCALE:
+			return "scale";
+		case Node3DEditor::TOOL_MODE_SELECT:
+			return "select";
+		case Node3DEditor::TOOL_MODE_LIST_SELECT:
+			return "list_select";
+		default:
+			return "unknown";
+	}
+}
+
+Dictionary _empty_subsystem_state() {
+	Dictionary state;
+	state["supported"] = false;
+	return state;
 }
 
 } // namespace
@@ -184,6 +236,10 @@ Dictionary EditorAutomationState::read_editor_state() {
 		state["modal_stack"] = Array();
 		state["focused_tile_id"] = 0;
 		state["workspace"] = Dictionary();
+		state["inspector"] = _empty_subsystem_state();
+		state["undo_redo"] = _empty_subsystem_state();
+		state["view_2d"] = _empty_subsystem_state();
+		state["view_3d"] = _empty_subsystem_state();
 		return state;
 	}
 
@@ -314,6 +370,80 @@ Dictionary EditorAutomationState::read_editor_state() {
 	const int focused_tile_id = editor_data.get_focused_tile_id();
 	state["focused_tile_id"] = focused_tile_id;
 	state["workspace"] = EditorAutomationWorkspace::capture_workspace_state(&editor_data, EditorNode::get_scene_workspace());
+
+	Dictionary inspector_state;
+	EditorInspector *inspector = editor_node->get_focused_inspector();
+	if (inspector != nullptr) {
+		Object *edited_object = inspector->get_edited_object();
+		inspector_state["supported"] = true;
+		if (edited_object != nullptr) {
+			inspector_state["target_class"] = edited_object->get_class();
+			if (Node *edited_node = Object::cast_to<Node>(edited_object)) {
+				inspector_state["target_name"] = edited_node->get_name();
+				inspector_state["target_path"] = String(edited_node->get_path());
+			} else {
+				inspector_state["target_name"] = String();
+			}
+		} else {
+			inspector_state["target_class"] = String();
+			inspector_state["target_name"] = String();
+		}
+	} else {
+		inspector_state["supported"] = false;
+	}
+	state["inspector"] = inspector_state;
+
+	Dictionary undo_redo_state;
+	if (undo_redo != nullptr) {
+		undo_redo_state["supported"] = true;
+		undo_redo_state["current_action_name"] = undo_redo->get_current_action_name();
+		undo_redo_state["current_history_id"] = undo_redo->get_current_action_history_id();
+		undo_redo_state["current_redo_action_name"] = undo_redo->get_current_redo_action_name();
+		undo_redo_state["current_redo_history_id"] = undo_redo->get_current_redo_action_history_id();
+		undo_redo_state["has_undo"] = undo_redo->has_undo();
+		undo_redo_state["has_redo"] = undo_redo->has_redo();
+	} else {
+		undo_redo_state["supported"] = false;
+	}
+	state["undo_redo"] = undo_redo_state;
+
+	Dictionary view_2d_state;
+	if (CanvasItemEditor *canvas_editor = CanvasItemEditor::get_singleton()) {
+		view_2d_state["supported"] = true;
+		view_2d_state["tool"] = _canvas_tool_name(canvas_editor->get_current_tool());
+		const Dictionary geometry = canvas_editor->get_state();
+		if (geometry.has("zoom")) {
+			view_2d_state["zoom"] = geometry["zoom"];
+		}
+		if (geometry.has("ofs")) {
+			view_2d_state["view_offset"] = geometry["ofs"];
+		}
+	} else {
+		view_2d_state["supported"] = false;
+	}
+	state["view_2d"] = view_2d_state;
+
+	Dictionary view_3d_state;
+	if (Node3DEditor *node_3d_editor = Node3DEditor::get_singleton()) {
+		view_3d_state["supported"] = true;
+		view_3d_state["tool"] = _node3d_tool_name(node_3d_editor->get_tool_mode());
+		const Dictionary spatial_state = node_3d_editor->get_state();
+		view_3d_state["editor_state"] = spatial_state;
+		if (Node3DEditorViewport *viewport = node_3d_editor->get_focused_viewport()) {
+			const Dictionary viewport_state = viewport->get_state();
+			view_3d_state["viewport_state"] = viewport_state;
+			if (viewport_state.has("position")) {
+				view_3d_state["camera_position"] = viewport_state["position"];
+			}
+			if (Camera3D *camera = viewport->get_camera_3d()) {
+				view_3d_state["camera_transform"] = camera->get_global_transform();
+				view_3d_state["camera_projection"] = camera->get_projection() == Camera3D::PROJECTION_ORTHOGONAL ? "orthogonal" : "perspective";
+			}
+		}
+	} else {
+		view_3d_state["supported"] = false;
+	}
+	state["view_3d"] = view_3d_state;
 
 	return state;
 }

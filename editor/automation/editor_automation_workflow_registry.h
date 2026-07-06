@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  editor_automation_acceptance_workflow.h                               */
+/*  editor_automation_workflow_registry.h                                 */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -30,28 +30,37 @@
 
 #pragma once
 
+#include "editor/automation/editor_automation_acceptance_workflow.h"
+
 #include "core/string/ustring.h"
-#include "core/variant/dictionary.h"
+#include "core/templates/hash_map.h"
+#include "core/templates/vector.h"
+#include "core/variant/variant.h"
 
 class EditorWorkflowTestDriver;
 
-class EditorAutomationAcceptanceWorkflow {
+class EditorAutomationWorkflowRegistry {
 public:
-	struct Result {
-		bool ok = false;
-		String workflow;
-		String message;
-		Dictionary details;
+	using WorkflowFn = EditorAutomationAcceptanceWorkflow::Result (*)(EditorWorkflowTestDriver &);
+
+	static void register_builtin_workflows();
+	static String resolve_canonical_name(const String &p_name);
+	static bool has_workflow(const String &p_name);
+	static EditorAutomationAcceptanceWorkflow::Result run(const String &p_name, EditorWorkflowTestDriver &p_driver);
+	static PackedStringArray list_workflow_names();
+	static String format_unknown_workflow_message(const String &p_name);
+
+private:
+	struct WorkflowEntry {
+		String canonical_name;
+		WorkflowFn run = nullptr;
+		PackedStringArray aliases;
 	};
 
-	// Basic scene-editing smoke workflow exercising scene tree, create dialog,
-	// inspector, save, run/stop, and editor-log assertions through EditorWorkflowTestDriver.
-	static Result run_basic_scene_editing(EditorWorkflowTestDriver &p_driver, const String &p_scene_path = "res://scenes/main.tscn");
+	static HashMap<String, WorkflowEntry> workflows;
+	static HashMap<String, String> alias_to_canonical;
+	static bool initialized;
 
-	// Deprecated alias kept for backward compatibility with older CLI/tests.
-	static Result run_mvp(EditorWorkflowTestDriver &p_driver, const String &p_scene_path = "res://scenes/main.tscn") {
-		return run_basic_scene_editing(p_driver, p_scene_path);
-	}
-
-	static void print_result(const Result &p_result);
+	static void _register_workflow(const String &p_canonical_name, WorkflowFn p_run, const PackedStringArray &p_aliases = PackedStringArray());
+	static void _ensure_initialized();
 };
