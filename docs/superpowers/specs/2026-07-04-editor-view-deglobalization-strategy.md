@@ -207,9 +207,12 @@ next in its track. Liveness (Track 4) is mostly mechanical wiring once the hard 
 - **U13b — Remove the focused-tile dock singleton indirection.** U6/U12/U13 keep a
   compatibility trick — `EditorNode::_update_focused_dock_singletons()` repoints each dock's
   static `get_singleton()` to the focused tile. Replace it with explicit focused-tile accessors
-  and delete the repoint machinery (slice 1: signals/groups/history; slice 2: scene tree +
-  inspector → delete the function). Follow-up to U13; keeps new code from silently breaking
-  multi-tile behavior via `::get_singleton()`.
+  and delete the repoint machinery. Follow-up to U13; keeps new code from silently breaking
+  multi-tile behavior via `::get_singleton()`. Delivered in two slices:
+- **U13b — slice 1:** signals/groups/history migrated to `get_focused_*` accessors; their
+  singletons removed (PR #988).
+- **U13c — slice 2:** extend to scene tree + inspector (the ~69 + ~89 census sites), then delete
+  `_update_focused_dock_singletons()` entirely. Depends U13b.
 
 ### Track 7 — Workspace content model
 - **U14 — Partition `EditorMainScreen` + generic leaf model.** 2D/3D per-pane scene modes; Game
