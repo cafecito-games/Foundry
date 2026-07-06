@@ -152,7 +152,7 @@ TEST_CASE("[Editor][script-view-parity] Single script leaf preserves open/edit s
 	h.pump();
 	REQUIRE(script_leaf_node != nullptr);
 
-	ScriptLeaf *script_leaf = Object::cast_to<ScriptLeaf>(script_leaf_node->get_leaf_content()->get_root_control());
+	ScriptLeaf *script_leaf = TestSceneWorkspace::get_leaf_script(script_leaf_node);
 	REQUIRE(script_leaf != nullptr);
 	ScriptEditorView *view = script_leaf->get_script_editor_view();
 	REQUIRE(view != nullptr);
@@ -230,8 +230,8 @@ TEST_CASE("[Editor][script-view-persistence] Multi script leaves round-trip per-
 	CHECK(script_a != script_b);
 	CHECK(h.workspace->get_script_leaves().size() == 2);
 
-	ScriptLeaf *leaf_content_a = Object::cast_to<ScriptLeaf>(script_a->get_leaf_content()->get_root_control());
-	ScriptLeaf *leaf_content_b = Object::cast_to<ScriptLeaf>(script_b->get_leaf_content()->get_root_control());
+	ScriptLeaf *leaf_content_a = TestSceneWorkspace::get_leaf_script(script_a);
+	ScriptLeaf *leaf_content_b = TestSceneWorkspace::get_leaf_script(script_b);
 	REQUIRE(leaf_content_a != nullptr);
 	REQUIRE(leaf_content_b != nullptr);
 
@@ -269,8 +269,8 @@ TEST_CASE("[Editor][script-view-persistence] Multi script leaves round-trip per-
 	REQUIRE(restored_a != nullptr);
 	REQUIRE(restored_b != nullptr);
 
-	ScriptLeaf *restored_leaf_a = Object::cast_to<ScriptLeaf>(restored_a->get_leaf_content()->get_root_control());
-	ScriptLeaf *restored_leaf_b = Object::cast_to<ScriptLeaf>(restored_b->get_leaf_content()->get_root_control());
+	ScriptLeaf *restored_leaf_a = TestSceneWorkspace::get_leaf_script(restored_a);
+	ScriptLeaf *restored_leaf_b = TestSceneWorkspace::get_leaf_script(restored_b);
 	REQUIRE(restored_leaf_a != nullptr);
 	REQUIRE(restored_leaf_b != nullptr);
 	CHECK(restored_leaf_a->get_script_path() == path_a);

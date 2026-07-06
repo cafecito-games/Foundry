@@ -127,6 +127,13 @@ TEST_CASE("[Editor][Automation][MCP] mcp-workspace-state") {
 
 	const Dictionary tree = workspace_state.get("tree", Dictionary());
 	CHECK(String(tree.get("type", String())) == "split");
+	Array tree_children = tree.get("children", Array());
+	REQUIRE(tree_children.size() == 2);
+	for (int i = 0; i < tree_children.size(); i++) {
+		const Dictionary leaf = tree_children[i];
+		CHECK(String(leaf.get("type", String())) == "leaf");
+		CHECK(String(leaf.get("content_type", String())) == "pane");
+	}
 
 	h.unmount();
 }

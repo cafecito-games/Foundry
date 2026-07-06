@@ -100,6 +100,7 @@
 #include "editor/editor_main_screen.h"
 #include "editor/editor_scene_context.h"
 #include "editor/editor_scene_workspace.h"
+#include "editor/workspace/workspace_pane.h"
 #include "editor/editor_scene_pane_tile.h"
 #include "editor/editor_script_leaf.h"
 #include "editor/editor_tile_drop_overlay.h"
@@ -4871,7 +4872,8 @@ void EditorNode::_sync_script_leaf_path() {
 		return;
 	}
 	for (WorkspaceLeafNode *leaf : scene_workspace->get_script_leaves()) {
-		ScriptLeaf *script_leaf = Object::cast_to<ScriptLeaf>(leaf->get_leaf_content()->get_root_control());
+		WorkspacePane *pane = leaf->get_workspace_pane();
+		ScriptLeaf *script_leaf = pane ? pane->get_script_leaf() : nullptr;
 		if (script_leaf && script_leaf->get_script_editor_view()) {
 			script_leaf->get_script_editor_view()->sync_script_leaf_path();
 		}
@@ -6976,16 +6978,18 @@ void EditorNode::_on_leaf_focus_requested(int p_leaf_id) {
 		_focus_tile(p_leaf_id);
 		return;
 	}
-	if (leaf->get_leaf_content() && leaf->get_leaf_content()->get_content_type() == StringName("script")) {
-		scene_workspace->set_focused_leaf(p_leaf_id);
-		Viewport *editor_viewport = get_viewport();
-		if (editor_viewport && editor_viewport->gui_is_dragging()) {
-			// Workspace focus must land before the drop applies, but reparenting the
-			// shared script surface mid-drag/drop can tear down the active drop target.
-			callable_mp(this, &EditorNode::_complete_script_leaf_focus).call_deferred(p_leaf_id);
-			return;
+	if (WorkspacePane *pane = leaf->get_workspace_pane()) {
+		if (pane->is_script_pane()) {
+			scene_workspace->set_focused_leaf(p_leaf_id);
+			Viewport *editor_viewport = get_viewport();
+			if (editor_viewport && editor_viewport->gui_is_dragging()) {
+				// Workspace focus must land before the drop applies, but reparenting the
+				// shared script surface mid-drag/drop can tear down the active drop target.
+				callable_mp(this, &EditorNode::_complete_script_leaf_focus).call_deferred(p_leaf_id);
+				return;
+			}
+			_complete_script_leaf_focus(p_leaf_id);
 		}
-		_complete_script_leaf_focus(p_leaf_id);
 	}
 }
 
@@ -6999,7 +7003,8 @@ void EditorNode::_complete_script_leaf_focus(int p_leaf_id) {
 	ERR_FAIL_NULL(scene_workspace);
 	WorkspaceLeafNode *leaf = scene_workspace->get_leaf_by_id(p_leaf_id);
 	ERR_FAIL_NULL(leaf);
-	ScriptLeaf *script_leaf = leaf->get_leaf_content() ? Object::cast_to<ScriptLeaf>(leaf->get_leaf_content()->get_root_control()) : nullptr;
+	WorkspacePane *pane = leaf->get_workspace_pane();
+	ScriptLeaf *script_leaf = pane ? pane->get_script_leaf() : nullptr;
 	ERR_FAIL_NULL(script_leaf);
 
 	script_leaf->on_focus_entered();
