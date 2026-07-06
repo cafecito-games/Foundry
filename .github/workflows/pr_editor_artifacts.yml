@@ -154,6 +154,22 @@ jobs:
           EOF
           gh issue comment "$PR_NUMBER" --body-file /tmp/pr-editor-artifact-comment.md
 
+      - name: Comment on started artifact build
+        if: ${{ steps.existing.outputs.found != 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ needs.preflight.outputs.pr_number }}
+          LABEL: ${{ matrix.label }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SHORT_SHA: ${{ needs.preflight.outputs.pr_short_sha }}
+        run: |
+          cat > /tmp/pr-editor-artifact-comment.md <<EOF
+          Building the ${LABEL} editor for \`${SHORT_SHA}\`.
+
+          Workflow run: ${RUN_URL}
+          EOF
+          gh issue comment "$PR_NUMBER" --body-file /tmp/pr-editor-artifact-comment.md
+
       - name: Checkout pull request head
         if: ${{ steps.existing.outputs.found != 'true' }}
         uses: actions/checkout@v6

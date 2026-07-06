@@ -73,6 +73,6 @@ keyed by PR head SHA and OS with `cancel-in-progress: false`.
 - [ ] **Step 3: Validate workflow references and YAML syntax.**
 
 Run:
-`python3 .github/scripts/test_pr_editor_artifact_request.py && python3 -c "import pathlib, yaml; [yaml.safe_load(path.read_text()) for path in pathlib.Path('.github').rglob('*.yml')]"`
+`python3 -m unittest discover -s .github/scripts -p 'test_*.py' && python3 -c "import pathlib, yaml; [yaml.safe_load(path.read_text()) for path in pathlib.Path('.github').rglob('*.yml')]"`
 
 Expected: PASS and exit code 0.

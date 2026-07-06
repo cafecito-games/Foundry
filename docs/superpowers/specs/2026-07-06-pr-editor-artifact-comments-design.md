@@ -35,9 +35,10 @@ existing artifact before doing work.
 
 ## User feedback
 
-The workflow comments when a request is accepted, when an artifact already exists, when a build succeeds, and when a
-build fails. Success comments include the artifact download link and workflow run link. Failure comments include the
-requested OS, PR SHA, and workflow run link.
+The workflow comments when a request is accepted, when a platform build starts, when an artifact already exists, when a
+build succeeds, and when a build fails. Build-start comments include the requested platform and workflow run link. Success
+comments include the artifact download link and workflow run link. Failure comments include the requested OS, PR SHA, and
+workflow run link.
 
 ## Security notes
 
