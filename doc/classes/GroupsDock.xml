@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="GroupsDock" inherits="EditorDock" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+	<brief_description>
+		Editor dock for viewing and editing node groups.
+	</brief_description>
+	<description>
+		Built-in editor dock hosted inside each scene tile's dock region. Access the focused tile's instance via [method EditorInterface.get_focused_groups_dock].
+	</description>
+</class>
