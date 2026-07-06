@@ -1567,7 +1567,7 @@ void ConnectionsDock::update_tree() {
 			if (doc_class_name.is_empty()) {
 				doc_class_name = script_base->get_path().trim_prefix("res://").quote();
 			}
-			if (!doc_class_name.is_empty() && !doc_data->class_list.find(doc_class_name)) {
+			if (!doc_class_name.is_empty() && doc_data && !doc_data->class_list.find(doc_class_name)) {
 				doc_class_name = String();
 			}
 
@@ -1601,7 +1601,7 @@ void ConnectionsDock::update_tree() {
 			class_name = native_base;
 			doc_class_name = native_base;
 
-			if (!doc_data->class_list.find(doc_class_name)) {
+			if (doc_data && !doc_data->class_list.find(doc_class_name)) {
 				doc_class_name = String();
 			}
 
