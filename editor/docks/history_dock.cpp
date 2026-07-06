@@ -32,8 +32,10 @@
 
 #include "core/io/config_file.h"
 #include "editor/editor_node.h"
+#include "editor/editor_scene_context.h"
 #include "editor/editor_string_names.h"
 #include "editor/editor_undo_redo_manager.h"
+#include "scene/resources/3d/world_3d.h"
 #include "editor/settings/editor_command_palette.h"
 #include "editor/settings/editor_settings.h"
 #include "scene/gui/check_box.h"
@@ -44,6 +46,16 @@ struct SortActionsByTimestamp {
 		return l.timestamp > r.timestamp;
 	}
 };
+
+int HistoryDock::_get_scene_history_id() const {
+	if (scene_context) {
+		return scene_context->get_history_id();
+	}
+	if (EditorNode::get_singleton()) {
+		return EditorNode::get_editor_data().get_current_edited_scene_history_id();
+	}
+	return EditorUndoRedoManager::INVALID_HISTORY;
+}
 
 void HistoryDock::on_history_changed() {
 	if (is_visible_in_tree()) {
@@ -64,7 +76,7 @@ void HistoryDock::refresh_history() {
 		return;
 	}
 
-	const EditorUndoRedoManager::History &current_scene_history = ur_manager->get_or_create_history(EditorNode::get_editor_data().get_current_edited_scene_history_id());
+	const EditorUndoRedoManager::History &current_scene_history = ur_manager->get_or_create_history(_get_scene_history_id());
 	const EditorUndoRedoManager::History &global_history = ur_manager->get_or_create_history(EditorUndoRedoManager::GLOBAL_HISTORY);
 
 	Vector<EditorUndoRedoManager::Action> full_history;
@@ -133,7 +145,7 @@ void HistoryDock::refresh_version() {
 		return;
 	}
 
-	const EditorUndoRedoManager::History &current_scene_history = ur_manager->get_or_create_history(EditorNode::get_editor_data().get_current_edited_scene_history_id());
+	const EditorUndoRedoManager::History &current_scene_history = ur_manager->get_or_create_history(_get_scene_history_id());
 	const EditorUndoRedoManager::History &global_history = ur_manager->get_or_create_history(EditorUndoRedoManager::GLOBAL_HISTORY);
 	double newest_undo_timestamp = 0;
 
@@ -194,7 +206,7 @@ void HistoryDock::seek_history(int p_index) {
 	if (!include_scene && !include_global) {
 		return;
 	}
-	int current_scene_id = EditorNode::get_editor_data().get_current_edited_scene_history_id();
+	int current_scene_id = _get_scene_history_id();
 
 	while (current_version < p_index) {
 		if (include_scene) {
@@ -224,7 +236,9 @@ void HistoryDock::seek_history(int p_index) {
 void HistoryDock::_notification(int p_notification) {
 	switch (p_notification) {
 		case NOTIFICATION_READY: {
-			EditorNode::get_singleton()->connect("scene_changed", callable_mp(this, &HistoryDock::on_history_changed));
+			if (EditorNode::get_singleton()) {
+				EditorNode::get_singleton()->connect("scene_changed", callable_mp(this, &HistoryDock::on_history_changed));
+			}
 		} break;
 
 		case NOTIFICATION_VISIBILITY_CHANGED: {
@@ -235,6 +249,20 @@ void HistoryDock::_notification(int p_notification) {
 	}
 }
 
+void HistoryDock::set_scene_context(EditorSceneContext *p_context) {
+	if (scene_context == p_context) {
+		return;
+	}
+	if (scene_context) {
+		scene_context->unregister_history_dock(this);
+	}
+	scene_context = p_context;
+	if (scene_context) {
+		scene_context->register_history_dock(this);
+	}
+	refresh_history();
+}
+
 HistoryDock::HistoryDock() {
 	set_name(TTRC("History"));
 	set_icon_name("History");
@@ -242,8 +270,10 @@ HistoryDock::HistoryDock() {
 	set_default_slot(EditorDock::DOCK_SLOT_LEFT_BR);
 
 	ur_manager = EditorUndoRedoManager::get_singleton();
-	ur_manager->connect("history_changed", callable_mp(this, &HistoryDock::on_history_changed));
-	ur_manager->connect("version_changed", callable_mp(this, &HistoryDock::on_version_changed));
+	if (ur_manager) {
+		ur_manager->connect("history_changed", callable_mp(this, &HistoryDock::on_history_changed));
+		ur_manager->connect("version_changed", callable_mp(this, &HistoryDock::on_version_changed));
+	}
 
 	VBoxContainer *main_vb = memnew(VBoxContainer);
 	add_child(main_vb);
@@ -280,4 +310,11 @@ HistoryDock::HistoryDock() {
 	mc->add_child(action_list);
 	action_list->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	action_list->connect(SceneStringName(item_selected), callable_mp(this, &HistoryDock::seek_history));
+}
+
+HistoryDock::~HistoryDock() {
+	if (scene_context) {
+		scene_context->unregister_history_dock(this);
+	}
+	scene_context = nullptr;
 }

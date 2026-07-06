@@ -2,7 +2,7 @@
 /*  foundry_script.cpp                                                    */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -65,6 +65,7 @@
 #include "core/config/project_settings.h"
 #include "core/core_constants.h"
 #include "core/io/file_access.h"
+#include "core/io/resource.h"
 #include "core/variant/container_type_validate.h"
 
 #include "scene/resources/packed_scene.h"
@@ -418,7 +419,17 @@ void FoundryScript::_super_implicit_constructor(FoundryScript *p_script, FSInsta
 			return;
 		}
 	}
-	ERR_FAIL_NULL(p_script->implicit_initializer);
+	if (unlikely(p_script->implicit_initializer == nullptr)) {
+		// Compilation always produces an `@implicit_new()` function, so a missing one means this
+		// script was cleared (e.g. language shutdown while a stale Ref/ResourceCache entry kept it
+		// alive) or never compiled. A cleared script is also marked invalid, so a valid script
+		// missing its initializer is an engine bug.
+		DEV_ASSERT(!p_script->valid);
+		// Propagate the failure through `r_error` so `_create_instance` tears the instance down
+		// instead of returning a half-constructed instance whose member defaults never ran.
+		r_error.error = Callable::CallError::CALL_ERROR_INVALID_METHOD;
+		ERR_FAIL_MSG(vformat("Cannot construct an instance of script \"%s\": missing compiled implicit initializer (the script was cleared or failed to compile).", p_script->get_script_path()));
+	}
 	if (likely(p_script->valid)) {
 		p_script->implicit_initializer->call(p_instance, nullptr, 0, r_error);
 	} else {
@@ -2061,6 +2072,12 @@ void FoundryScript::clear() {
 	}
 	clearing = true;
 
+	// Every compiled function is deleted below, so this script can no longer run. Mark it invalid
+	// so `can_instantiate()`/`instance_create()`/`_new()` fail loudly instead of producing
+	// half-constructed instances. This matters for scripts that outlive language shutdown through
+	// a stale Ref or ResourceCache entry and get handed out again by a later cache-hit load.
+	valid = false;
+
 	RBSet<FSFunction *> functions_to_clear;
 
 	{
@@ -3057,6 +3074,11 @@ void FSLanguage::finish() {
 			// Clear backup for scripts that could slip out of the cyclic reference
 			// check
 			scr->clear();
+			if (!scr->get_path().is_empty()) {
+				// Drop cleared scripts from ResourceCache so a later cache-hit load cannot
+				// resurrect a half-torn-down script after finish()/init() cycles.
+				scr->set_path("");
+			}
 		}
 	}
 	scripts_to_clear.clear();
@@ -3079,6 +3101,19 @@ void FSLanguage::finish() {
 	namespace_singleton.unref();
 	project_scripts_singleton.unref();
 	reflection_singleton.unref();
+
+#ifdef DEV_ENABLED
+	{
+		List<Ref<Resource>> cached_resources;
+		ResourceCache::get_cached_resources(&cached_resources);
+		for (const Ref<Resource> &res : cached_resources) {
+			const Ref<FoundryScript> script = res;
+			if (script.is_valid()) {
+				ERR_FAIL_MSG(vformat("FoundryScript '%s' still registered in ResourceCache after FSLanguage::finish().", script->get_path()));
+			}
+		}
+	}
+#endif // DEV_ENABLED
 
 	finishing = false;
 }

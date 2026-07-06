@@ -33,6 +33,8 @@
 #include "editor/docks/editor_dock.h"
 #include "editor/docks/groups_editor.h"
 
+class EditorSceneContext;
+
 class GroupsDock : public EditorDock {
 	FOUNDRY_CLASS(GroupsDock, EditorDock);
 
@@ -44,6 +46,8 @@ public:
 	static GroupsDock *get_singleton() { return singleton; }
 
 	void set_selection(const Vector<Node *> &p_nodes);
+	void set_scene_context(EditorSceneContext *p_context);
+	EditorSceneContext *get_scene_context() const;
 
 	GroupsDock();
 	~GroupsDock();

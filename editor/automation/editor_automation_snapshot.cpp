@@ -36,6 +36,8 @@
 #include "editor/docks/inspector_dock.h"
 #include "editor/docks/scene_tree_dock.h"
 #include "editor/editor_node.h"
+#include "editor/editor_scene_pane_tile.h"
+#include "editor/scene/editor_scene_tabs.h"
 #include "editor/inspector/editor_inspector.h"
 #include "scene/gui/base_button.h"
 #include "scene/gui/button.h"
@@ -386,15 +388,29 @@ class EditorAutomationSnapshotBuilder {
 		}
 	}
 
-	void _add_tab_bar_tabs(const TabBar *p_tab_bar, int p_parent_index) {
+	void _add_tab_bar_tabs(const TabBar *p_tab_bar, int p_parent_index, int p_active_tile_id = -1) {
 		const uint64_t tab_bar_id = p_tab_bar->get_instance_id();
+		int tile_id = p_active_tile_id;
+		if (tile_id < 0) {
+			for (Node *node = p_tab_bar->get_parent(); node != nullptr; node = node->get_parent()) {
+				if (EditorSceneTabs *scene_tabs = Object::cast_to<EditorSceneTabs>(node)) {
+					tile_id = scene_tabs->get_tile_id();
+					break;
+				}
+			}
+		}
 		for (int i = 0; i < p_tab_bar->get_tab_count(); i++) {
 			if (p_tab_bar->is_tab_hidden(i)) {
 				continue;
 			}
 			const String tab_title = p_tab_bar->get_tab_title(i);
 			const String key = vformat("%s:%d", String::num_uint64(tab_bar_id), i);
-			_add_virtual_element(p_parent_index, "tab", key, "tab", tab_title, tab_title, p_tab_bar->get_current_tab() == i);
+			Dictionary metadata;
+			if (tile_id >= 0) {
+				metadata["tile_id"] = tile_id;
+			}
+			metadata["tab_index"] = i;
+			_add_virtual_element(p_parent_index, "tab", key, "tab", tab_title, tab_title, p_tab_bar->get_current_tab() == i, metadata);
 		}
 	}
 
@@ -410,7 +426,7 @@ class EditorAutomationSnapshotBuilder {
 		}
 	}
 
-	void _add_virtual_children(const Node *p_node, int p_parent_index) {
+	void _add_virtual_children(const Node *p_node, int p_parent_index, int p_active_tile_id = -1) {
 		if (const Tree *tree = Object::cast_to<const Tree>(p_node)) {
 			_add_tree_items(tree, p_parent_index);
 		} else if (const ItemList *item_list = Object::cast_to<const ItemList>(p_node)) {
@@ -418,7 +434,7 @@ class EditorAutomationSnapshotBuilder {
 		} else if (const PopupMenu *popup_menu = Object::cast_to<const PopupMenu>(p_node)) {
 			_add_popup_menu_items(popup_menu, p_parent_index);
 		} else if (const TabBar *tab_bar = Object::cast_to<const TabBar>(p_node)) {
-			_add_tab_bar_tabs(tab_bar, p_parent_index);
+			_add_tab_bar_tabs(tab_bar, p_parent_index, p_active_tile_id);
 		} else if (const TabContainer *tab_container = Object::cast_to<const TabContainer>(p_node)) {
 			_add_tab_container_tabs(tab_container, p_parent_index);
 		}
@@ -446,7 +462,7 @@ class EditorAutomationSnapshotBuilder {
 		return false;
 	}
 
-	int _add_node(Node *p_node, int p_parent_index, bool p_is_root, bool p_internal = false, bool p_relax_visibility = false) {
+	int _add_node(Node *p_node, int p_parent_index, bool p_is_root, bool p_internal = false, bool p_relax_visibility = false, int p_active_tile_id = -1) {
 		if (!p_relax_visibility && !_node_is_visible(p_node)) {
 			return -1;
 		}
@@ -471,6 +487,13 @@ class EditorAutomationSnapshotBuilder {
 		element.bounds = _node_bounds_global(p_node);
 		element.parent_index = p_parent_index;
 		element.metadata = EditorAutomationWorkflow::metadata_for_node(p_node);
+		int active_tile_id = p_active_tile_id;
+		if (const ScenePaneTile *tile = Object::cast_to<const ScenePaneTile>(p_node)) {
+			active_tile_id = tile->get_tile_id();
+		}
+		if (active_tile_id >= 0) {
+			element.metadata["tile_id"] = active_tile_id;
+		}
 		if (Window *owner_window = EditorAutomationInput::window_for_node(p_node)) {
 			element.metadata["window_object_id"] = String::num_uint64(owner_window->get_instance_id());
 			element.metadata["window_title"] = owner_window->get_title();
@@ -501,7 +524,7 @@ class EditorAutomationSnapshotBuilder {
 			data.focused_element_id = element.id;
 		}
 
-		_add_virtual_children(p_node, element_index);
+		_add_virtual_children(p_node, element_index, active_tile_id);
 
 		if (Object::cast_to<const SubViewportContainer>(p_node)) {
 			return element_index;
@@ -531,9 +554,9 @@ class EditorAutomationSnapshotBuilder {
 				continue;
 			}
 			if (Control *child_control = Object::cast_to<Control>(child)) {
-				_add_node(child_control, element_index, false, child_internal, child_relax);
+				_add_node(child_control, element_index, false, child_internal, child_relax, active_tile_id);
 			} else if (Window *child_window = Object::cast_to<Window>(child)) {
-				_add_node(child_window, element_index, false, child_internal, child_relax);
+				_add_node(child_window, element_index, false, child_internal, child_relax, active_tile_id);
 			}
 		}
 

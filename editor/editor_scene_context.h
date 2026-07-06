@@ -33,6 +33,9 @@
 #include "core/templates/hash_set.h"
 #include "editor/editor_data.h"
 
+class ConnectionsDock;
+class GroupsEditor;
+class HistoryDock;
 class InspectorDock;
 class Node;
 class SceneTreeDock;
@@ -63,6 +66,9 @@ class EditorSceneContext {
 	Vector<ObjectID> retained_selection_ids;
 	HashSet<ObjectID> bound_scene_tree_docks;
 	HashSet<ObjectID> bound_inspector_docks;
+	HashSet<ObjectID> bound_connections_docks;
+	HashSet<ObjectID> bound_groups_editors;
+	HashSet<ObjectID> bound_history_docks;
 	bool active = false;
 	bool has_3d_content = false;
 
@@ -105,6 +111,12 @@ public:
 	void unregister_scene_tree_dock(SceneTreeDock *p_dock);
 	void register_inspector_dock(InspectorDock *p_dock);
 	void unregister_inspector_dock(InspectorDock *p_dock);
+	void register_connections_dock(ConnectionsDock *p_dock);
+	void unregister_connections_dock(ConnectionsDock *p_dock);
+	void register_groups_editor(GroupsEditor *p_editor);
+	void unregister_groups_editor(GroupsEditor *p_editor);
+	void register_history_dock(HistoryDock *p_dock);
+	void unregister_history_dock(HistoryDock *p_dock);
 
 	EditorSceneContext();
 	~EditorSceneContext();

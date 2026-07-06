@@ -127,6 +127,9 @@ EditorAutomationActionKind editor_automation_action_kind_from_string(const Strin
 	if (action == "drag") {
 		return EditorAutomationActionKind::DRAG;
 	}
+	if (action == "dock" || action == "drag_to_region") {
+		return EditorAutomationActionKind::DOCK;
+	}
 	return EditorAutomationActionKind::UNKNOWN;
 }
 

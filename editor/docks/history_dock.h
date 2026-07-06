@@ -35,13 +35,17 @@
 class CheckBox;
 class ConfigFile;
 class ItemList;
+class EditorSceneContext;
 class EditorUndoRedoManager;
 
 class HistoryDock : public EditorDock {
 	FOUNDRY_CLASS(HistoryDock, EditorDock);
 
+	friend class HistoryDockTestAccess;
+
 	EditorUndoRedoManager *ur_manager;
 	ItemList *action_list = nullptr;
+	EditorSceneContext *scene_context = nullptr;
 
 	CheckBox *current_scene_checkbox = nullptr;
 	CheckBox *global_history_checkbox = nullptr;
@@ -53,6 +57,7 @@ class HistoryDock : public EditorDock {
 	void refresh_history();
 	void on_version_changed();
 	void refresh_version();
+	int _get_scene_history_id() const;
 
 protected:
 	void _notification(int p_notification);
@@ -62,6 +67,9 @@ protected:
 
 public:
 	void seek_history(int p_index);
+	void set_scene_context(EditorSceneContext *p_context);
+	EditorSceneContext *get_scene_context() const { return scene_context; }
 
 	HistoryDock();
+	~HistoryDock();
 };

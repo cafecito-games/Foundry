@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  signals_dock.h                                                        */
+/*  editor_automation_workspace.h                                         */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -30,27 +30,36 @@
 
 #pragma once
 
-#include "editor/docks/editor_dock.h"
+#include "editor/automation/editor_automation_snapshot.h"
+#include "editor/editor_scene_workspace.h"
 
-class ConnectionsDock;
-class EditorSceneContext;
+class EditorData;
+class EditorNode;
+class ScenePaneTile;
 
-class SignalsDock : public EditorDock {
-	FOUNDRY_CLASS(SignalsDock, EditorDock);
-
-	ConnectionsDock *connections = nullptr;
-
-	static inline SignalsDock *singleton = nullptr;
-
+class EditorAutomationWorkspace {
 public:
-	static SignalsDock *get_singleton() { return singleton; }
+	static Dictionary capture_workspace_state(EditorData *p_editor_data, EditorSceneWorkspace *p_workspace);
 
-	void set_object(Object *p_object);
+	static bool selector_is_tile_container(const Dictionary &p_selector);
+	static EditorAutomationSelectorResult resolve_tile_container(const EditorAutomationSnapshot &p_snapshot, const Dictionary &p_selector);
 
-	void update_lists();
-	void set_scene_context(EditorSceneContext *p_context);
-	EditorSceneContext *get_scene_context() const;
+	static EditorSceneWorkspace::TileDropRegion parse_drop_region(const String &p_region);
+	static String drop_region_name(EditorSceneWorkspace::TileDropRegion p_region);
+	static Vector2 global_drop_point(ScenePaneTile *p_tile, EditorSceneWorkspace::TileDropRegion p_region);
 
-	SignalsDock();
-	~SignalsDock();
+	static bool resolve_scene_tab_source(const EditorAutomationElement &p_element, int &r_tile_id, int &r_tab_index);
+	static int resolve_target_tile_id(const Dictionary &p_options, const EditorAutomationSnapshot &p_snapshot);
+
+	static bool dock_scene_tab(
+			EditorData *p_editor_data,
+			EditorSceneWorkspace *p_workspace,
+			int p_source_tile_id,
+			int p_source_tab,
+			int p_target_tile_id,
+			EditorSceneWorkspace::TileDropRegion p_region,
+			EditorNode *p_editor_node = nullptr);
+
+	static int get_focused_tile_id();
+	static int get_tile_count(EditorSceneWorkspace *p_workspace);
 };

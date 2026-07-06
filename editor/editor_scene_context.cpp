@@ -30,8 +30,11 @@
 
 #include "editor_scene_context.h"
 
+#include "editor/docks/groups_editor.h"
+#include "editor/docks/history_dock.h"
 #include "editor/docks/inspector_dock.h"
 #include "editor/docks/scene_tree_dock.h"
+#include "editor/scene/connections_dialog.h"
 #include "scene/3d/node_3d.h"
 #include "scene/main/viewport.h"
 #include "scene/resources/3d/world_3d.h"
@@ -49,6 +52,24 @@ void EditorSceneContext::_detach_bound_docks() {
 	}
 	bound_inspector_docks.clear();
 
+	Vector<ObjectID> connections_dock_ids;
+	for (const ObjectID &dock_id : bound_connections_docks) {
+		connections_dock_ids.push_back(dock_id);
+	}
+	bound_connections_docks.clear();
+
+	Vector<ObjectID> groups_editor_ids;
+	for (const ObjectID &dock_id : bound_groups_editors) {
+		groups_editor_ids.push_back(dock_id);
+	}
+	bound_groups_editors.clear();
+
+	Vector<ObjectID> history_dock_ids;
+	for (const ObjectID &dock_id : bound_history_docks) {
+		history_dock_ids.push_back(dock_id);
+	}
+	bound_history_docks.clear();
+
 	for (const ObjectID &dock_id : scene_tree_dock_ids) {
 		SceneTreeDock *dock = ObjectDB::get_instance<SceneTreeDock>(dock_id);
 		if (dock && dock->get_scene_context() == this) {
@@ -58,6 +79,27 @@ void EditorSceneContext::_detach_bound_docks() {
 
 	for (const ObjectID &dock_id : inspector_dock_ids) {
 		InspectorDock *dock = ObjectDB::get_instance<InspectorDock>(dock_id);
+		if (dock && dock->get_scene_context() == this) {
+			dock->set_scene_context(nullptr);
+		}
+	}
+
+	for (const ObjectID &dock_id : connections_dock_ids) {
+		ConnectionsDock *dock = ObjectDB::get_instance<ConnectionsDock>(dock_id);
+		if (dock && dock->get_scene_context() == this) {
+			dock->set_scene_context(nullptr);
+		}
+	}
+
+	for (const ObjectID &dock_id : groups_editor_ids) {
+		GroupsEditor *editor = ObjectDB::get_instance<GroupsEditor>(dock_id);
+		if (editor && editor->get_scene_context() == this) {
+			editor->set_scene_context(nullptr);
+		}
+	}
+
+	for (const ObjectID &dock_id : history_dock_ids) {
+		HistoryDock *dock = ObjectDB::get_instance<HistoryDock>(dock_id);
 		if (dock && dock->get_scene_context() == this) {
 			dock->set_scene_context(nullptr);
 		}
@@ -234,6 +276,36 @@ void EditorSceneContext::register_inspector_dock(InspectorDock *p_dock) {
 void EditorSceneContext::unregister_inspector_dock(InspectorDock *p_dock) {
 	ERR_FAIL_NULL(p_dock);
 	bound_inspector_docks.erase(p_dock->get_instance_id());
+}
+
+void EditorSceneContext::register_connections_dock(ConnectionsDock *p_dock) {
+	ERR_FAIL_NULL(p_dock);
+	bound_connections_docks.insert(p_dock->get_instance_id());
+}
+
+void EditorSceneContext::unregister_connections_dock(ConnectionsDock *p_dock) {
+	ERR_FAIL_NULL(p_dock);
+	bound_connections_docks.erase(p_dock->get_instance_id());
+}
+
+void EditorSceneContext::register_groups_editor(GroupsEditor *p_editor) {
+	ERR_FAIL_NULL(p_editor);
+	bound_groups_editors.insert(p_editor->get_instance_id());
+}
+
+void EditorSceneContext::unregister_groups_editor(GroupsEditor *p_editor) {
+	ERR_FAIL_NULL(p_editor);
+	bound_groups_editors.erase(p_editor->get_instance_id());
+}
+
+void EditorSceneContext::register_history_dock(HistoryDock *p_dock) {
+	ERR_FAIL_NULL(p_dock);
+	bound_history_docks.insert(p_dock->get_instance_id());
+}
+
+void EditorSceneContext::unregister_history_dock(HistoryDock *p_dock) {
+	ERR_FAIL_NULL(p_dock);
+	bound_history_docks.erase(p_dock->get_instance_id());
 }
 
 EditorSceneContext::EditorSceneContext() {

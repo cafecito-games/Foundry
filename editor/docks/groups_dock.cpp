@@ -36,6 +36,14 @@ void GroupsDock::set_selection(const Vector<Node *> &p_nodes) {
 	groups->set_selection(p_nodes);
 }
 
+void GroupsDock::set_scene_context(EditorSceneContext *p_context) {
+	groups->set_scene_context(p_context);
+}
+
+EditorSceneContext *GroupsDock::get_scene_context() const {
+	return groups->get_scene_context();
+}
+
 GroupsDock::GroupsDock() {
 	singleton = this;
 	set_name(TTRC("Groups"));

@@ -33,6 +33,8 @@
 #include "editor/automation/editor_automation_selector.h"
 #include "editor/automation/editor_automation_state.h"
 #include "editor/automation/editor_automation_trace.h"
+#include "editor/automation/editor_automation_workspace.h"
+#include "editor/editor_node.h"
 #include "editor/file_system/editor_file_system.h"
 #include "core/object/message_queue.h"
 #include "scene/main/scene_tree.h"
@@ -53,6 +55,10 @@ enum class WaitConditionKind {
 	SCRIPT_ANALYSIS_IDLE,
 	LOG_CONTAINS,
 	NO_NEW_ERRORS,
+	TILE_SPLIT,
+	TILE_COLLAPSED,
+	FOCUSED_TILE_CHANGED,
+	WORKSPACE_SETTLED,
 	UNSUPPORTED,
 };
 
@@ -67,6 +73,9 @@ struct PendingWait {
 	Array previous_modal_stack;
 	bool has_previous_modal_stack = false;
 	int settled_frames = 0;
+	int baseline_tile_count = -1;
+	int baseline_focused_tile_id = -1;
+	int workspace_settled_frames = 0;
 	bool cancelled = false;
 	EditorAutomationActWaitContext act_context;
 	EditorAutomationCooperativeWaitStatus status = EditorAutomationCooperativeWaitStatus::PENDING;
@@ -171,6 +180,18 @@ WaitConditionKind _parse_condition_kind(const Dictionary &p_condition) {
 	if (type == "no_new_errors") {
 		return WaitConditionKind::NO_NEW_ERRORS;
 	}
+	if (type == "tile_split") {
+		return WaitConditionKind::TILE_SPLIT;
+	}
+	if (type == "tile_collapsed") {
+		return WaitConditionKind::TILE_COLLAPSED;
+	}
+	if (type == "focused_tile_changed") {
+		return WaitConditionKind::FOCUSED_TILE_CHANGED;
+	}
+	if (type == "workspace_settled") {
+		return WaitConditionKind::WORKSPACE_SETTLED;
+	}
 	return WaitConditionKind::UNSUPPORTED;
 }
 
@@ -179,6 +200,43 @@ EditorAutomationSnapshot _capture_snapshot(const EditorAutomationWaitContext &p_
 		return EditorAutomationSnapshot::capture_from_node(p_context.snapshot_root);
 	}
 	return EditorAutomationSnapshot::capture_from_editor();
+}
+
+bool _read_optional_int(const Dictionary &p_dict, const char *p_key, int &r_value) {
+	if (!p_dict.has(p_key)) {
+		return false;
+	}
+	const Variant value = p_dict.get(p_key, Variant());
+	if (value.get_type() != Variant::INT && value.get_type() != Variant::FLOAT) {
+		return false;
+	}
+	r_value = value;
+	return true;
+}
+
+int _baseline_tile_count(const Dictionary &p_condition) {
+	int baseline = -1;
+	if (_read_optional_int(p_condition, "baseline_tile_count", baseline)) {
+		return baseline;
+	}
+	return baseline;
+}
+
+int _baseline_focused_tile_id(const Dictionary &p_condition) {
+	int baseline = -1;
+	if (_read_optional_int(p_condition, "baseline_focused_tile_id", baseline)) {
+		return baseline;
+	}
+	return baseline;
+}
+
+int _current_tile_count() {
+	EditorSceneWorkspace *workspace = EditorNode::get_scene_workspace();
+	return EditorAutomationWorkspace::get_tile_count(workspace);
+}
+
+bool _is_editor_idle(int p_processed_frames) {
+	return p_processed_frames >= 1 && !EditorAutomationTrace::get_singleton().has_pending_actions();
 }
 
 bool _element_matches_fields(const EditorAutomationElement &p_element, const Dictionary &p_fields) {
@@ -341,6 +399,23 @@ bool _evaluate_wait_step(PendingWait &p_wait, EditorAutomationWaitResult &r_imme
 			satisfied = p_wait.settled_frames >= 1;
 			break;
 		}
+		case WaitConditionKind::WORKSPACE_SETTLED: {
+			const int tile_count = _current_tile_count();
+			const int focused_tile = EditorAutomationWorkspace::get_focused_tile_id();
+			if (p_wait.has_previous_modal_stack &&
+					p_wait.baseline_tile_count == tile_count &&
+					p_wait.baseline_focused_tile_id == focused_tile &&
+					_is_editor_idle(p_wait.processed_frames)) {
+				p_wait.workspace_settled_frames++;
+			} else {
+				p_wait.workspace_settled_frames = 0;
+			}
+			p_wait.baseline_tile_count = tile_count;
+			p_wait.baseline_focused_tile_id = focused_tile;
+			p_wait.has_previous_modal_stack = true;
+			satisfied = p_wait.workspace_settled_frames >= 1;
+			break;
+		}
 		default:
 			satisfied = EditorAutomationWait::evaluate_condition_once(
 					p_wait.condition, snapshot, p_wait.context, r_immediate_failure,
@@ -470,6 +545,7 @@ bool EditorAutomationWait::evaluate_condition_once(
 		case WaitConditionKind::EDITOR_IDLE:
 		case WaitConditionKind::MODAL_STACK_CHANGED:
 		case WaitConditionKind::MODAL_STACK_SETTLED:
+		case WaitConditionKind::WORKSPACE_SETTLED:
 			return false;
 		case WaitConditionKind::SELECTOR_APPEARS:
 			return _selector_has_matches(p_snapshot, _read_dictionary(p_condition, "selector"));
@@ -520,6 +596,27 @@ bool EditorAutomationWait::evaluate_condition_once(
 			}
 			return !EditorAutomationLog::has_new_messages_since(marker, severities);
 		}
+		case WaitConditionKind::TILE_SPLIT: {
+			const int baseline_count = _baseline_tile_count(p_condition);
+			if (baseline_count < 0) {
+				return false;
+			}
+			return _current_tile_count() > baseline_count;
+		}
+		case WaitConditionKind::TILE_COLLAPSED: {
+			const int baseline_count = _baseline_tile_count(p_condition);
+			if (baseline_count < 0) {
+				return false;
+			}
+			return _current_tile_count() < baseline_count;
+		}
+		case WaitConditionKind::FOCUSED_TILE_CHANGED: {
+			const int baseline_focus = _baseline_focused_tile_id(p_condition);
+			if (baseline_focus < 0) {
+				return false;
+			}
+			return EditorAutomationWorkspace::get_focused_tile_id() != baseline_focus;
+		}
 		case WaitConditionKind::UNSUPPORTED:
 			r_failure = EditorAutomationWaitResult::failure(
 					"unsupported_condition",
@@ -527,6 +624,28 @@ bool EditorAutomationWait::evaluate_condition_once(
 			return false;
 	}
 	return false;
+}
+
+void _initialize_workspace_wait_baselines(PendingWait &p_wait) {
+	switch (p_wait.kind) {
+		case WaitConditionKind::TILE_SPLIT:
+		case WaitConditionKind::TILE_COLLAPSED:
+			if (!p_wait.condition.has("baseline_tile_count")) {
+				p_wait.condition["baseline_tile_count"] = _current_tile_count();
+			}
+			break;
+		case WaitConditionKind::FOCUSED_TILE_CHANGED:
+			if (!p_wait.condition.has("baseline_focused_tile_id")) {
+				p_wait.condition["baseline_focused_tile_id"] = EditorAutomationWorkspace::get_focused_tile_id();
+			}
+			break;
+		case WaitConditionKind::WORKSPACE_SETTLED:
+			p_wait.baseline_tile_count = _current_tile_count();
+			p_wait.baseline_focused_tile_id = EditorAutomationWorkspace::get_focused_tile_id();
+			break;
+		default:
+			break;
+	}
 }
 
 EditorAutomationWaitResult EditorAutomationWait::wait_for(
@@ -544,6 +663,7 @@ EditorAutomationWaitResult EditorAutomationWait::wait_for(
 	wait.kind = kind;
 	wait.context = p_context;
 	wait.timeout_sec = p_timeout_sec;
+	_initialize_workspace_wait_baselines(wait);
 
 	const PollReentrancyGuard guard;
 	while (wait.status == EditorAutomationCooperativeWaitStatus::PENDING) {
@@ -581,6 +701,7 @@ String EditorAutomationWait::begin_cooperative(
 	wait.context = p_context;
 	wait.timeout_sec = p_timeout_sec;
 	wait.act_context = p_act_context;
+	_initialize_workspace_wait_baselines(wait);
 	pending_waits.insert(wait.wait_id, wait);
 	return wait.wait_id;
 }

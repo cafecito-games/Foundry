@@ -725,6 +725,7 @@ private:
 	void _update_focused_dock_singletons(ScenePaneTile *p_tile);
 	void _bind_leaf_docks(int p_leaf_id);
 	void _bind_all_leaf_docks();
+	void _bind_focus_following_docks(EditorSceneContext *p_context);
 	void _wire_leaf_tile(WorkspaceLeafNode *p_leaf);
 	void _on_leaf_added(int p_leaf_id);
 	void _on_leaf_removed(int p_leaf_id, int p_successor_leaf_id);
@@ -827,6 +828,7 @@ public:
 	static EditorBottomPanel *get_bottom_panel() { return singleton->bottom_panel; }
 	static EditorBottomDrawerStrip *get_bottom_drawer_strip() { return singleton->bottom_drawer_strip; }
 	static EditorMainScreen *get_editor_main_screen() { return singleton->editor_main_screen; }
+	static EditorSceneWorkspace *get_scene_workspace() { return singleton ? singleton->scene_workspace : nullptr; }
 
 	static Button *get_distraction_free_button() { return singleton->distraction_free; }
 

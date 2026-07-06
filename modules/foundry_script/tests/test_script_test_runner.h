@@ -39,20 +39,25 @@
 #include "core/object/script_test_runner.h"
 #include "core/os/os.h"
 #include "scene/main/scene_tree.h"
+#include "tests/core/config/test_project_settings.h"
 #include "tests/test_macros.h"
 
 namespace FSTests {
 
 static const char *test_runner_scripts_root = "modules/foundry_script/tests/scripts";
 
-static void prepare_test_runner_project() {
-	const String scripts_path = String(test_runner_scripts_root);
-	const Error err = ProjectSettings::get_singleton()->setup(scripts_path, String(), true);
-	REQUIRE_MESSAGE(err == OK, "Failed to set up test runner project.");
-	if (!is_fs_language_active()) {
-		init_language(scripts_path);
+struct ScriptTestRunnerProjectFixture {
+	TestProjectSettingsRestoreScope project_settings;
+
+	explicit ScriptTestRunnerProjectFixture() {
+		const String scripts_path = String(test_runner_scripts_root);
+		const Error err = ProjectSettings::get_singleton()->setup(scripts_path, String(), true);
+		REQUIRE_MESSAGE(err == OK, "Failed to set up test runner project.");
+		if (!is_fs_language_active()) {
+			init_language(scripts_path);
+		}
 	}
-}
+};
 
 TEST_CASE("[Modules][FoundryScript][ScriptTestRunner] Script test runner hook is registered as script-extensible") {
 	CHECK(FSScriptExtensibleNativeHooks::is_allowed_override(SNAME("ScriptTestRunner"), SNAME("run")));
@@ -92,43 +97,43 @@ static int run_host_to_completion(const Ref<ScriptTestRunner> &p_runner, const P
 }
 
 TEST_CASE("[Modules][FoundryScript][ScriptTestRunner][SceneTree] Sync run returns process exit code 0") {
-	prepare_test_runner_project();
+	ScriptTestRunnerProjectFixture project;
 	const Ref<ScriptTestRunner> runner = load_runner_script("res://test_runner_host/sync_exit_0.notest.fs");
 	CHECK_EQ(run_host_to_completion(runner, PackedStringArray()), 0);
 }
 
 TEST_CASE("[Modules][FoundryScript][ScriptTestRunner][SceneTree] Sync run returns process exit code 3") {
-	prepare_test_runner_project();
+	ScriptTestRunnerProjectFixture project;
 	const Ref<ScriptTestRunner> runner = load_runner_script("res://test_runner_host/sync_exit_3.notest.fs");
 	CHECK_EQ(run_host_to_completion(runner, PackedStringArray()), 3);
 }
 
 TEST_CASE("[Modules][FoundryScript][ScriptTestRunner][SceneTree] Async run returns process exit code 1") {
-	prepare_test_runner_project();
+	ScriptTestRunnerProjectFixture project;
 	const Ref<ScriptTestRunner> runner = load_runner_script("res://test_runner_host/async_exit_1.notest.fs");
 	CHECK_EQ(run_host_to_completion(runner, PackedStringArray(), 240, true), 1);
 }
 
 TEST_CASE("[Modules][FoundryScript][ScriptTestRunner][SceneTree] Sync runtime error exits with failure") {
-	prepare_test_runner_project();
+	ScriptTestRunnerProjectFixture project;
 	const Ref<ScriptTestRunner> runner = load_runner_script("res://test_runner_host/sync_runtime_error.notest.fs");
 	CHECK_EQ(run_host_to_completion(runner, PackedStringArray()), EXIT_FAILURE);
 }
 
 TEST_CASE("[Modules][FoundryScript][ScriptTestRunner][SceneTree] Guarded runtime error does not override runner exit code") {
-	prepare_test_runner_project();
+	ScriptTestRunnerProjectFixture project;
 	const Ref<ScriptTestRunner> runner = load_runner_script("res://test_runner_host/sync_guarded_runtime_error.notest.fs");
 	CHECK_EQ(run_host_to_completion(runner, PackedStringArray()), 0);
 }
 
 TEST_CASE("[Modules][FoundryScript][ScriptTestRunner][SceneTree] Async runtime error exits with failure") {
-	prepare_test_runner_project();
+	ScriptTestRunnerProjectFixture project;
 	const Ref<ScriptTestRunner> runner = load_runner_script("res://test_runner_host/async_runtime_error.notest.fs");
 	CHECK_EQ(run_host_to_completion(runner, PackedStringArray(), 240, true), EXIT_FAILURE);
 }
 
 TEST_CASE("[Modules][FoundryScript][ScriptTestRunner][SceneTree] User args passthrough") {
-	prepare_test_runner_project();
+	ScriptTestRunnerProjectFixture project;
 	const Ref<ScriptTestRunner> runner = load_runner_script("res://test_runner_host/user_args.notest.fs");
 	PackedStringArray user_args;
 	user_args.push_back("--filter");
@@ -137,7 +142,7 @@ TEST_CASE("[Modules][FoundryScript][ScriptTestRunner][SceneTree] User args passt
 }
 
 TEST_CASE("[Modules][FoundryScript][ScriptTestRunner][SceneTree] Async Object::call result casts to ScriptFunctionState") {
-	prepare_test_runner_project();
+	ScriptTestRunnerProjectFixture project;
 
 	const Ref<ScriptTestRunner> runner = load_runner_script("res://test_runner_host/async_contract.notest.fs");
 	const Variant result = ScriptTestRunner::call_run_script_hook(runner, PackedStringArray());
