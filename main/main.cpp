@@ -692,6 +692,20 @@ void Main::test_cleanup() {
 }
 #endif
 
+static bool foundry_cli_has_run_target_without_main_scene(const FoundryCLIParser::CLIInvocation &p_invocation) {
+	if (!p_invocation.script.is_empty() || !p_invocation.runner.is_empty()) {
+		return true;
+	}
+	switch (p_invocation.kind) {
+		case FoundryCLIParser::CLIInvocation::SCRIPT_FORMAT:
+		case FoundryCLIParser::CLIInvocation::SCRIPT_LINT:
+		case FoundryCLIParser::CLIInvocation::SCRIPT_MIGRATE:
+			return true;
+		default:
+			return false;
+	}
+}
+
 #if defined(TOOLS_ENABLED)
 static void apply_foundry_cli_project_path(const String &p_project_path, String &r_project_path) {
 	if (p_project_path.is_empty()) {
@@ -708,20 +722,6 @@ static void apply_foundry_cli_project_path(const String &p_project_path, String 
 			"`--project` was specified on the command line, but this Foundry binary was compiled without support for path overrides. Aborting.\n"
 			"To be able to use it, use the `disable_path_overrides=no` SCons option when compiling Foundry.\n");
 #endif
-}
-
-static bool foundry_cli_has_run_target_without_main_scene(const FoundryCLIParser::CLIInvocation &p_invocation) {
-	if (!p_invocation.script.is_empty() || !p_invocation.runner.is_empty()) {
-		return true;
-	}
-	switch (p_invocation.kind) {
-		case FoundryCLIParser::CLIInvocation::SCRIPT_FORMAT:
-		case FoundryCLIParser::CLIInvocation::SCRIPT_LINT:
-		case FoundryCLIParser::CLIInvocation::SCRIPT_MIGRATE:
-			return true;
-		default:
-			return false;
-	}
 }
 
 static void apply_foundry_cli_invocation(
