@@ -344,6 +344,13 @@ public:
 	void save_current_script();
 	void update_script_times();
 
+	// Close the active editor tab, routing through the existing save/discard/cancel
+	// prompt when it has unsaved changes. Returns true when the prompt was shown
+	// (close deferred to the user's choice), false when the tab closed immediately
+	// or there was nothing to close. Used by the workspace ScriptResourceTab close
+	// path so tab close reuses this view's dirty-close flow.
+	bool request_close_active_tab();
+
 	void set_window_layout(Ref<ConfigFile> p_layout);
 	void get_window_layout(Ref<ConfigFile> p_layout);
 

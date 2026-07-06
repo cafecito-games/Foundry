@@ -626,6 +626,24 @@ void ScriptEditorView::_ask_close_current_unsaved_tab(ScriptEditorBase *current)
 	erase_tab_confirm->popup_centered();
 }
 
+bool ScriptEditorView::request_close_active_tab() {
+	ERR_FAIL_NULL_V(tab_container, false);
+	const int current_idx = tab_container->get_current_tab();
+	if (current_idx < 0) {
+		return false;
+	}
+	ScriptEditorBase *se = Object::cast_to<ScriptEditorBase>(tab_container->get_tab_control(current_idx));
+	if (se && se->is_unsaved()) {
+		// Same prompt the script tab close path uses: Save/Discard/Cancel. Its
+		// confirmed/custom_action handlers close this view's tab; cancel (dismiss)
+		// leaves the tab untouched.
+		_ask_close_current_unsaved_tab(se);
+		return true;
+	}
+	_close_current_tab(false, false);
+	return false;
+}
+
 
 void ScriptEditorView::_res_saved_callback(const Ref<Resource> &p_res) {
 	for (int i = 0; i < tab_container->get_tab_count(); i++) {
@@ -3460,6 +3478,10 @@ ScriptEditorView::ScriptEditorView(ScriptEditorController *p_controller, ScriptL
 	script_split->add_child(code_editor_container);
 
 	tab_container = memnew(TabContainer);
+	// Kept as an internal helper container only. Since the workspace tab model
+	// (ScriptResourceTab) owns the visible tab identity of each open script, this
+	// per-view TabContainer is no longer the top-level workspace tab owner; each
+	// view hosts a single script and its tab strip stays hidden.
 	tab_container->set_tabs_visible(false);
 	tab_container->set_accessibility_name(TTRC("Script Tabs"));
 	tab_container->set_custom_minimum_size(Size2(200, 0) * EDSCALE);
