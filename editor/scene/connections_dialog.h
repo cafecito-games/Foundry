@@ -39,6 +39,7 @@ class CheckBox;
 class CheckButton;
 class ConnectDialogBinds;
 class EditorInspector;
+class EditorSceneContext;
 class EditorVariantTypeOptionButton;
 class Label;
 class LineEdit;
@@ -209,6 +210,8 @@ class ConnectionsDockTree : public Tree {
 class ConnectionsDock : public VBoxContainer {
 	FOUNDRY_CLASS(ConnectionsDock, VBoxContainer);
 
+	friend class ConnectionsDockTestAccess;
+
 	enum TreeItemType {
 		TREE_ITEM_TYPE_ROOT,
 		TREE_ITEM_TYPE_CLASS,
@@ -236,6 +239,7 @@ class ConnectionsDock : public VBoxContainer {
 	Label *select_an_object = nullptr;
 
 	Object *selected_object = nullptr;
+	EditorSceneContext *scene_context = nullptr;
 	ConnectionsDockTree *tree = nullptr;
 
 	ConfirmationDialog *disconnect_all_dialog = nullptr;
@@ -282,6 +286,9 @@ protected:
 public:
 	void set_object(Object *p_object);
 	void update_tree();
+	void set_scene_context(EditorSceneContext *p_context);
+	EditorSceneContext *get_scene_context() const { return scene_context; }
 
 	ConnectionsDock();
+	~ConnectionsDock();
 };

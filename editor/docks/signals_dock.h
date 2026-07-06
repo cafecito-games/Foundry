@@ -33,6 +33,7 @@
 #include "editor/docks/editor_dock.h"
 
 class ConnectionsDock;
+class EditorSceneContext;
 
 class SignalsDock : public EditorDock {
 	FOUNDRY_CLASS(SignalsDock, EditorDock);
@@ -47,6 +48,8 @@ public:
 	void set_object(Object *p_object);
 
 	void update_lists();
+	void set_scene_context(EditorSceneContext *p_context);
+	EditorSceneContext *get_scene_context() const;
 
 	SignalsDock();
 	~SignalsDock();

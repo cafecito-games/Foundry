@@ -35,6 +35,7 @@
 class Button;
 class CheckBox;
 class CheckButton;
+class EditorSceneContext;
 class EditorValidationPanel;
 class Label;
 class LineEdit;
@@ -45,6 +46,8 @@ class TreeItem;
 class GroupsEditor : public VBoxContainer {
 	FOUNDRY_CLASS(GroupsEditor, VBoxContainer);
 
+	friend class GroupsEditorTestAccess;
+
 	const String GLOBAL_GROUP_PREFIX = "global_group/";
 
 	bool updating_tree = false;
@@ -54,6 +57,7 @@ class GroupsEditor : public VBoxContainer {
 
 	LocalVector<Node *> selection;
 	Node *scene_root_node = nullptr;
+	EditorSceneContext *scene_context = nullptr;
 	SceneTree *scene_tree = nullptr;
 
 	ConfirmationDialog *add_group_dialog = nullptr;
@@ -122,6 +126,9 @@ class GroupsEditor : public VBoxContainer {
 
 	void _groups_gui_input(Ref<InputEvent> p_event);
 
+	Node *_get_edited_scene_root() const;
+	Node *_get_edited_scene() const;
+
 	void _node_removed(Node *p_node);
 
 	void _add_to_group(const StringName &p_name, bool p_persist, const Array &p_nodes);
@@ -142,6 +149,9 @@ public:
 	};
 
 	void set_selection(const Vector<Node *> &p_nodes);
+	void set_scene_context(EditorSceneContext *p_context);
+	EditorSceneContext *get_scene_context() const { return scene_context; }
 
 	GroupsEditor();
+	~GroupsEditor();
 };

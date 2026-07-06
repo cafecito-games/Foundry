@@ -32,14 +32,19 @@
 
 #include "editor/docks/editor_dock.h"
 #include "editor/docks/editor_dock_manager.h"
+#include "editor/docks/groups_editor.h"
+#include "editor/docks/history_dock.h"
 #include "editor/docks/inspector_dock.h"
 #include "editor/docks/scene_tree_dock.h"
 #include "editor/editor_data.h"
 #include "editor/editor_scene_context.h"
+#include "editor/editor_undo_redo_manager.h"
+#include "editor/scene/connections_dialog.h"
 
 #include "scene/2d/node_2d.h"
 #include "scene/gui/button.h"
 #include "scene/gui/menu_button.h"
+#include "scene/gui/tree.h"
 #include "scene/main/window.h"
 
 #include "tests/test_macros.h"
@@ -51,6 +56,41 @@ public:
 	static bool backward_disabled(InspectorDock *p_dock) { return p_dock->backward_button->is_disabled(); }
 	static bool forward_disabled(InspectorDock *p_dock) { return p_dock->forward_button->is_disabled(); }
 	static bool history_menu_disabled(InspectorDock *p_dock) { return p_dock->history_menu->is_disabled(); }
+};
+
+class HistoryDockTestAccess {
+public:
+	static void refresh(HistoryDock *p_dock) { p_dock->refresh_history(); }
+	static int action_count(HistoryDock *p_dock) {
+		const int count = p_dock->action_list->get_item_count();
+		return count > 0 ? count - 1 : 0; // Excludes the trailing "The Beginning".
+	}
+	static String newest_action_name(HistoryDock *p_dock) {
+		if (p_dock->action_list->get_item_count() <= 1) {
+			return String();
+		}
+		return p_dock->action_list->get_item_text(0);
+	}
+};
+
+class GroupsEditorTestAccess {
+public:
+	static bool tree_has_group(GroupsEditor *p_editor, const String &p_name) {
+		return p_editor->tree->get_item_with_text(p_name) != nullptr;
+	}
+	static bool tree_group_checked(GroupsEditor *p_editor, const String &p_name) {
+		TreeItem *item = p_editor->tree->get_item_with_text(p_name);
+		return item ? item->is_checked(0) : false;
+	}
+};
+
+class ConnectionsDockTestAccess {
+public:
+	static Object *selected_object(ConnectionsDock *p_dock) { return p_dock->selected_object; }
+	static int signal_tree_root_children(ConnectionsDock *p_dock) {
+		TreeItem *root = p_dock->tree->get_root();
+		return root ? root->get_child_count() : 0;
+	}
 };
 
 namespace TestDockSceneContextBinding {
@@ -274,6 +314,119 @@ TEST_CASE("[SceneTree][Editor] Colliding dock layout keys are uniquified") {
 
 	memdelete(dock_a);
 	memdelete(dock_b);
+}
+
+TEST_CASE("[SceneTree][Editor] perscene-docks-bind") {
+	Window *tree_root = SceneTree::get_singleton()->get_root();
+	EditorUndoRedoManager *ur_manager = memnew(EditorUndoRedoManager);
+
+	EditorSceneContext *context_a = memnew(EditorSceneContext);
+	context_a->set_history_id(42);
+	Node2D *root_a = memnew(Node2D);
+	root_a->set_name("SceneA");
+	context_a->set_scene_root_node(root_a);
+	Node2D *node_a = memnew(Node2D);
+	node_a->set_name("NodeA");
+	root_a->add_child(node_a);
+	node_a->add_to_group("test_group_a", true);
+
+	ur_manager->create_action_for_history("Action A", 42);
+	ur_manager->add_do_method(node_a, "set_name", "RenamedA");
+	ur_manager->commit_action();
+
+	EditorSceneContext *context_b = memnew(EditorSceneContext);
+	context_b->set_history_id(99);
+	Node2D *root_b = memnew(Node2D);
+	root_b->set_name("SceneB");
+	context_b->set_scene_root_node(root_b);
+	Node2D *node_b = memnew(Node2D);
+	node_b->set_name("NodeB");
+	root_b->add_child(node_b);
+	node_b->add_to_group("test_group_b", true);
+
+	ur_manager->create_action_for_history("Action B", 99);
+	ur_manager->add_do_method(node_b, "set_name", "RenamedB");
+	ur_manager->commit_action();
+
+	ConnectionsDock *signals_dock = memnew(ConnectionsDock);
+	GroupsEditor *groups_editor = memnew(GroupsEditor);
+	HistoryDock *history_dock = memnew(HistoryDock);
+	tree_root->add_child(signals_dock);
+	tree_root->add_child(groups_editor);
+	tree_root->add_child(history_dock);
+	signals_dock->show();
+	groups_editor->show();
+	history_dock->show();
+	MessageQueue::get_singleton()->flush();
+
+	signals_dock->set_scene_context(context_a);
+	groups_editor->set_scene_context(context_a);
+	history_dock->set_scene_context(context_a);
+
+	CHECK(signals_dock->get_scene_context() == context_a);
+	CHECK(groups_editor->get_scene_context() == context_a);
+	CHECK(history_dock->get_scene_context() == context_a);
+
+	signals_dock->set_object(node_a);
+	MessageQueue::get_singleton()->flush();
+	CHECK(ConnectionsDockTestAccess::selected_object(signals_dock) == node_a);
+	CHECK(ConnectionsDockTestAccess::signal_tree_root_children(signals_dock) > 0);
+
+	context_a->activate(tree_root);
+	Vector<Node *> select_a;
+	select_a.push_back(node_a);
+	groups_editor->set_selection(select_a);
+	MessageQueue::get_singleton()->flush();
+	CHECK(GroupsEditorTestAccess::tree_has_group(groups_editor, "test_group_a"));
+	CHECK(GroupsEditorTestAccess::tree_group_checked(groups_editor, "test_group_a"));
+
+	HistoryDockTestAccess::refresh(history_dock);
+	CHECK(HistoryDockTestAccess::newest_action_name(history_dock) == "Action A");
+
+	history_dock->set_scene_context(context_b);
+	groups_editor->set_scene_context(context_b);
+	signals_dock->set_scene_context(context_b);
+	signals_dock->set_object(node_b);
+	context_b->activate(tree_root);
+	Vector<Node *> select_b;
+	select_b.push_back(node_b);
+	groups_editor->set_selection(select_b);
+	MessageQueue::get_singleton()->flush();
+
+	HistoryDockTestAccess::refresh(history_dock);
+	CHECK(HistoryDockTestAccess::newest_action_name(history_dock) == "Action B");
+	CHECK(GroupsEditorTestAccess::tree_has_group(groups_editor, "test_group_b"));
+	CHECK(GroupsEditorTestAccess::tree_group_checked(groups_editor, "test_group_b"));
+	CHECK(ConnectionsDockTestAccess::selected_object(signals_dock) == node_b);
+
+	// Freeing a bound context must detach without crashing.
+	signals_dock->set_scene_context(nullptr);
+	groups_editor->set_scene_context(nullptr);
+	history_dock->set_scene_context(nullptr);
+	context_a->deactivate();
+	memdelete(context_a);
+
+	EditorSceneContext *replacement = memnew(EditorSceneContext);
+	replacement->set_history_id(100);
+	signals_dock->set_scene_context(replacement);
+	groups_editor->set_scene_context(replacement);
+	history_dock->set_scene_context(replacement);
+	MessageQueue::get_singleton()->flush();
+
+	CHECK(signals_dock->get_scene_context() == replacement);
+	CHECK(groups_editor->get_scene_context() == replacement);
+	CHECK(history_dock->get_scene_context() == replacement);
+
+	context_b->deactivate();
+	tree_root->remove_child(signals_dock);
+	tree_root->remove_child(groups_editor);
+	tree_root->remove_child(history_dock);
+	memdelete(signals_dock);
+	memdelete(groups_editor);
+	memdelete(history_dock);
+	memdelete(replacement);
+	memdelete(context_b);
+	memdelete(ur_manager);
 }
 
 } // namespace TestDockSceneContextBinding

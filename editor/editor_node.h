@@ -719,6 +719,7 @@ private:
 	void _update_focused_dock_singletons(ScenePaneTile *p_tile);
 	void _bind_leaf_docks(int p_leaf_id);
 	void _bind_all_leaf_docks();
+	void _bind_focus_following_docks(EditorSceneContext *p_context);
 	void _wire_leaf_tile(WorkspaceLeafNode *p_leaf);
 	void _on_leaf_added(int p_leaf_id);
 	void _on_leaf_removed(int p_leaf_id, int p_successor_leaf_id);
