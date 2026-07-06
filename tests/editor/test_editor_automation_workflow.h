@@ -38,6 +38,7 @@
 #include "editor/automation/editor_automation_state.h"
 #include "editor/automation/editor_automation_trace.h"
 #include "editor/automation/editor_automation_workflow.h"
+#include "editor/automation/editor_automation_workflow_registry.h"
 #include "editor/automation/editor_workflow_test_driver.h"
 #include "editor/docks/editor_dock.h"
 #include "editor/scene/scene_tree_editor.h"
@@ -54,6 +55,7 @@
 #include "scene/gui/tree.h"
 #include "scene/main/window.h"
 
+#include "tests/editor/editor_workflow_test_fixtures.h"
 #include "tests/test_macros.h"
 #include "tests/test_utils.h"
 
@@ -207,98 +209,42 @@ static void workflow_flush_frames(int p_count = 1) {
 }
 
 static String workflow_fixture_project_path() {
-	return TestUtils::get_executable_dir().path_join("../tests/fixtures/editor_automation_mvp").simplify_path();
+	return EditorWorkflowTestFixtures::fixture_project_path("editor_automation_mvp");
 }
 
-// The MVP workflow mutates the project (it adds a node and saves the scene), so
-// running it in-place would dirty the committed fixture. Copy the tracked
-// project files into a fresh temp directory and run there instead.
 static String workflow_prepare_temp_project() {
-	const String source = workflow_fixture_project_path();
-	const String temp_project = TestUtils::get_temp_path("editor_automation_mvp_" + String::num_uint64(OS::get_singleton()->get_ticks_usec()));
-
-	Ref<DirAccess> da = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
-	if (da.is_null()) {
-		return String();
-	}
-	if (da->make_dir_recursive(temp_project.path_join("scenes")) != OK) {
-		return String();
-	}
-	if (da->copy(source.path_join("project.foundry"), temp_project.path_join("project.foundry")) != OK) {
-		return String();
-	}
-	if (da->copy(source.path_join("scenes").path_join("main.tscn"), temp_project.path_join("scenes").path_join("main.tscn")) != OK) {
-		return String();
-	}
-	return temp_project;
+	return EditorWorkflowTestFixtures::prepare_basic_scene_project();
 }
 
 static bool workflow_has_display() {
-	return OS::get_singleton()->has_environment("DISPLAY") && !OS::get_singleton()->get_environment("DISPLAY").is_empty();
+	return EditorWorkflowTestFixtures::workflow_has_display();
 }
 
 static String workflow_run_subprocess(const List<String> &p_arguments, int &r_exit_code) {
-	Vector<uint8_t> stdout_bytes;
-	Vector<uint8_t> stderr_bytes;
+	return EditorWorkflowTestFixtures::workflow_run_subprocess(p_arguments, r_exit_code);
+}
 
-	Dictionary environment;
-	if (workflow_has_display()) {
-		environment["DISPLAY"] = OS::get_singleton()->get_environment("DISPLAY");
-	}
+TEST_CASE("[Editor][Automation] workflow registry resolves canonical names and aliases") {
+	EditorAutomationWorkflowRegistry::register_builtin_workflows();
+	CHECK(EditorAutomationWorkflowRegistry::has_workflow("basic_scene_editing"));
+	CHECK(EditorAutomationWorkflowRegistry::has_workflow("mvp"));
+	CHECK(EditorAutomationWorkflowRegistry::resolve_canonical_name("mvp") == "basic_scene_editing");
+	CHECK(EditorAutomationWorkflowRegistry::resolve_canonical_name("basic_scene_editing") == "basic_scene_editing");
+	CHECK_FALSE(EditorAutomationWorkflowRegistry::has_workflow("does_not_exist"));
 
-	Dictionary pipe_info = OS::get_singleton()->execute_with_pipe(
-			OS::get_singleton()->get_executable_path(), p_arguments, false, String(), environment, false);
-	if (pipe_info.is_empty()) {
-		r_exit_code = -1;
-		return String();
-	}
+	const PackedStringArray names = EditorAutomationWorkflowRegistry::list_workflow_names();
+	CHECK(names.has("basic_scene_editing"));
+	CHECK(EditorAutomationWorkflowRegistry::format_unknown_workflow_message("missing").contains("basic_scene_editing"));
+}
 
-	Ref<FileAccess> stdout_pipe = pipe_info["stdio"];
-	Ref<FileAccess> stderr_pipe = pipe_info["stderr"];
-	const OS::ProcessID pid = pipe_info["pid"];
-
-	auto pump_pipe = [](const Ref<FileAccess> &p_pipe, Vector<uint8_t> &r_bytes) -> uint64_t {
-		if (p_pipe.is_null() || !p_pipe->is_open()) {
-			return 0;
-		}
-		const uint64_t available = p_pipe->get_length();
-		if (available == 0) {
-			return 0;
-		}
-		Vector<uint8_t> chunk;
-		chunk.resize(available);
-		const uint64_t read = p_pipe->get_buffer(chunk.ptrw(), available);
-		if (read > 0) {
-			const int offset = r_bytes.size();
-			r_bytes.resize(offset + read);
-			memcpy(r_bytes.ptrw() + offset, chunk.ptr(), read);
-		}
-		return read;
-	};
-
-	const uint64_t deadline = OS::get_singleton()->get_ticks_msec() + 180000;
-	while (OS::get_singleton()->get_ticks_msec() < deadline) {
-		pump_pipe(stdout_pipe, stdout_bytes);
-		pump_pipe(stderr_pipe, stderr_bytes);
-		if (!OS::get_singleton()->is_process_running(pid)) {
-			pump_pipe(stdout_pipe, stdout_bytes);
-			pump_pipe(stderr_pipe, stderr_bytes);
-			break;
-		}
-		OS::get_singleton()->delay_usec(20000);
-	}
-
-	if (stdout_pipe.is_valid()) {
-		stdout_pipe->close();
-	}
-	if (stderr_pipe.is_valid()) {
-		stderr_pipe->close();
-	}
-
-	r_exit_code = OS::get_singleton()->get_process_exit_code(pid);
-	String output = String::utf8((const char *)stdout_bytes.ptr(), stdout_bytes.size());
-	output += String::utf8((const char *)stderr_bytes.ptr(), stderr_bytes.size());
-	return output;
+TEST_CASE("[Editor][Automation] disposable workflow project helper copies multi-scene assets") {
+	const String project_path = EditorWorkflowTestFixtures::prepare_disposable_project();
+	REQUIRE_FALSE(project_path.is_empty());
+	CHECK(FileAccess::exists(project_path.path_join("project.foundry")));
+	CHECK(FileAccess::exists(project_path.path_join("scenes/main.tscn")));
+	CHECK(FileAccess::exists(project_path.path_join("scenes/secondary.tscn")));
+	CHECK(FileAccess::exists(project_path.path_join("scripts/player.fs")));
+	CHECK(FileAccess::exists(project_path.path_join("layout/editor_layout.cfg")));
 }
 
 TEST_CASE("[Editor][EditorAutomation] workflow test driver wraps the shared automation core") {
@@ -342,6 +288,10 @@ TEST_CASE("[Editor][EditorAutomation] workflow test driver wraps the shared auto
 
 	const Dictionary state = driver.read_editor_state();
 	CHECK(state.has("supported"));
+	CHECK(state.has("inspector"));
+	CHECK(state.has("undo_redo"));
+	CHECK(state.has("view_2d"));
+	CHECK(state.has("view_3d"));
 
 	const Dictionary log = driver.read_editor_log();
 	CHECK((bool)log["ok"]);
@@ -380,9 +330,9 @@ TEST_CASE("[Editor][EditorAutomation] workflow test driver records structured di
 	memdelete(root);
 }
 
-TEST_CASE("[Editor][EditorAutomation] MVP acceptance workflow subprocess") {
+TEST_CASE("[Editor][EditorAutomation] basic scene-editing workflow subprocess") {
 	if (!workflow_has_display()) {
-		MESSAGE("Requires a GUI display. Run with DISPLAY=:1 ./bin/foundry.linuxbsd.editor.dev.x86_64 editor open --project <project> --automation --automation-run-workflow=mvp");
+		MESSAGE("Requires a GUI display. Run with DISPLAY=:1 ./bin/foundry.linuxbsd.editor.dev.x86_64 editor open --project <project> --automation --automation-run-workflow=basic_scene_editing");
 		return;
 	}
 
@@ -390,10 +340,47 @@ TEST_CASE("[Editor][EditorAutomation] MVP acceptance workflow subprocess") {
 	CHECK_MESSAGE(DirAccess::exists(fixture_path), "Fixture project missing at ", fixture_path);
 	CHECK_MESSAGE(FileAccess::exists(fixture_path.path_join("project.foundry")), "Fixture is missing project.foundry");
 
-	// Run against a disposable copy so the workflow's save step never mutates
-	// the committed fixture (the workflow adds a Node2D and saves the scene).
 	const String project_path = workflow_prepare_temp_project();
-	REQUIRE_MESSAGE(!project_path.is_empty(), "Failed to prepare a temporary MVP project copy.");
+	REQUIRE_MESSAGE(!project_path.is_empty(), "Failed to prepare a temporary workflow project copy.");
+
+	List<String> arguments;
+	arguments.push_back("editor");
+	arguments.push_back("open");
+	arguments.push_back("--headless");
+	arguments.push_back("--project");
+	arguments.push_back(project_path);
+	arguments.push_back("--automation");
+	arguments.push_back("--automation-run-workflow=basic_scene_editing");
+
+	int exit_code = -1;
+	const String output = workflow_run_subprocess(arguments, exit_code);
+	INFO("Subprocess output:\n", output);
+	CHECK_MESSAGE(output.contains("FOUNDRY_AUTOMATION_WORKFLOW"), "Workflow result line was not printed.");
+	CHECK(output.contains("FOUNDRY_AUTOMATION"));
+	CHECK(output.contains("\"transport\":\"none\""));
+
+	JSON json;
+	if (output.contains("FOUNDRY_AUTOMATION_WORKFLOW")) {
+		const int line_start = output.find("FOUNDRY_AUTOMATION_WORKFLOW") + String("FOUNDRY_AUTOMATION_WORKFLOW ").length();
+		const int line_end = output.find_char('\n', line_start);
+		const String json_text = line_end >= 0 ? output.substr(line_start, line_end - line_start) : output.substr(line_start);
+		REQUIRE(json.parse(json_text.strip_edges()) == OK);
+		const Dictionary payload = json.get_data();
+		CHECK(String(payload.get("workflow", String())) == "basic_scene_editing");
+		CHECK((bool)payload.get("ok", false));
+	}
+
+	CHECK(exit_code == 0);
+}
+
+TEST_CASE("[Editor][EditorAutomation] mvp workflow alias subprocess") {
+	if (!workflow_has_display()) {
+		MESSAGE("Requires a GUI display. Run with DISPLAY=:1 ./bin/foundry.linuxbsd.editor.dev.x86_64 editor open --project <project> --automation --automation-run-workflow=mvp");
+		return;
+	}
+
+	const String project_path = workflow_prepare_temp_project();
+	REQUIRE_MESSAGE(!project_path.is_empty(), "Failed to prepare a temporary workflow project copy.");
 
 	List<String> arguments;
 	arguments.push_back("editor");
@@ -407,7 +394,7 @@ TEST_CASE("[Editor][EditorAutomation] MVP acceptance workflow subprocess") {
 	int exit_code = -1;
 	const String output = workflow_run_subprocess(arguments, exit_code);
 	INFO("Subprocess output:\n", output);
-	CHECK_MESSAGE(output.contains("FOUNDRY_AUTOMATION_WORKFLOW"), "Workflow result line was not printed.");
+	CHECK(output.contains("FOUNDRY_AUTOMATION_WORKFLOW"));
 
 	JSON json;
 	if (output.contains("FOUNDRY_AUTOMATION_WORKFLOW")) {
@@ -416,11 +403,37 @@ TEST_CASE("[Editor][EditorAutomation] MVP acceptance workflow subprocess") {
 		const String json_text = line_end >= 0 ? output.substr(line_start, line_end - line_start) : output.substr(line_start);
 		REQUIRE(json.parse(json_text.strip_edges()) == OK);
 		const Dictionary payload = json.get_data();
-		CHECK(String(payload.get("workflow", String())) == "mvp");
+		CHECK(String(payload.get("workflow", String())) == "basic_scene_editing");
 		CHECK((bool)payload.get("ok", false));
 	}
 
 	CHECK(exit_code == 0);
+}
+
+TEST_CASE("[Editor][EditorAutomation] unknown workflow subprocess exits with guidance") {
+	if (!workflow_has_display()) {
+		return;
+	}
+
+	const String project_path = workflow_prepare_temp_project();
+	REQUIRE_MESSAGE(!project_path.is_empty(), "Failed to prepare a temporary workflow project copy.");
+
+	List<String> arguments;
+	arguments.push_back("editor");
+	arguments.push_back("open");
+	arguments.push_back("--headless");
+	arguments.push_back("--project");
+	arguments.push_back(project_path);
+	arguments.push_back("--automation");
+	arguments.push_back("--automation-run-workflow=not_a_real_workflow");
+
+	int exit_code = -1;
+	const String output = workflow_run_subprocess(arguments, exit_code);
+	INFO("Subprocess output:\n", output);
+	CHECK(output.contains("FOUNDRY_AUTOMATION_WORKFLOW"));
+	CHECK(output.contains("Unknown automation workflow"));
+	CHECK(output.contains("basic_scene_editing"));
+	CHECK(exit_code != 0);
 }
 
 static int workflow_reserve_local_port() {

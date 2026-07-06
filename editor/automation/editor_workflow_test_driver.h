@@ -67,6 +67,7 @@ public:
 private:
 	Options options;
 	EditorAutomationLogMarker log_marker;
+	EditorAutomationLogMarker step_log_marker;
 	String current_step;
 	String last_action;
 	String last_route;
@@ -76,6 +77,7 @@ private:
 	EditorAutomationSnapshot _capture_snapshot(bool p_include_internal = false) const;
 	EditorAutomationFailureAttachmentOptions _failure_attachment_options() const;
 	void _record_failure(const String &p_kind, const String &p_message, const Dictionary &p_selector, const EditorAutomationSnapshot &p_snapshot, const Array &p_candidates = Array());
+	void _record_assertion_failure(const String &p_message);
 	void _record_wait_failure(
 			const String &p_kind,
 			const String &p_message,
@@ -91,7 +93,18 @@ public:
 
 	void begin_workflow();
 	void set_step(const String &p_step);
+	void end_step();
 	const String &get_current_step() const { return current_step; }
+
+	void flush_frames(int p_count = 1);
+	bool wait_editor_idle(int p_timeout_ms = -1);
+	bool wait_import_idle(int p_timeout_ms = -1);
+	bool wait_workspace_settled(int p_timeout_ms = -1);
+	bool wait_filesystem_idle(int p_timeout_ms = -1);
+	bool wait_script_analysis_idle(int p_timeout_ms = -1);
+
+	Dictionary capture_workspace_context() const;
+	Dictionary make_failure_details(const String &p_step = String()) const;
 
 	const EditorAutomationLogMarker &get_log_marker() const { return log_marker; }
 	const Failure &get_failure() const { return failure; }
@@ -106,7 +119,19 @@ public:
 	Dictionary run_command(const String &p_command);
 
 	bool assert_no_new_errors(const PackedStringArray &p_severities = PackedStringArray());
+	bool assert_no_new_errors_since_step(const PackedStringArray &p_severities = PackedStringArray());
 	bool require_ok(const Dictionary &p_result, const String &p_context = String());
+
+	bool assert_focused_tile_id(int p_tile_id);
+	bool assert_active_scene_path(const String &p_path);
+	bool assert_selected_node_class(const String &p_class, const String &p_exclude_name = String(), bool p_require_match = true);
+	bool assert_selected_paths(const PackedStringArray &p_paths);
+	bool assert_inspector_target_class(const String &p_class);
+	bool assert_undo_history_id(int p_history_id);
+	bool assert_scene_unsaved(bool p_expected = true);
+	bool assert_playing(bool p_expected, int p_timeout_ms = -1);
+	bool assert_view_2d_has_zoom();
+	bool assert_view_3d_has_camera();
 
 	String format_failure_report() const;
 };

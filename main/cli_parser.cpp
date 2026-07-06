@@ -194,10 +194,10 @@ static bool consume_automation_run_workflow_option(CLIParseState &r_state, const
 }
 
 static bool validate_automation_transport(FoundryCLIParser::ParseResult &r_result, const String &p_transport) {
-	if (p_transport.is_empty() || p_transport == "mcp") {
+	if (p_transport.is_empty() || p_transport == "mcp" || p_transport == "none") {
 		return true;
 	}
-	fail(r_result, "Invalid value for --automation-transport: " + p_transport + ". Only mcp is supported.");
+	fail(r_result, "Invalid value for --automation-transport: " + p_transport + ". Supported values: mcp, none.");
 	return false;
 }
 
@@ -871,7 +871,15 @@ static void parse_editor(CLIParseState &r_state) {
 	}
 
 	r_state.result.invocation.automation = automation;
-	r_state.result.invocation.automation_transport = automation_transport.is_empty() && automation ? String("mcp") : automation_transport;
+	if (!automation_transport.is_empty()) {
+		r_state.result.invocation.automation_transport = automation_transport;
+	} else if (!automation_run_workflow.is_empty()) {
+		r_state.result.invocation.automation_transport = "none";
+	} else if (automation) {
+		r_state.result.invocation.automation_transport = "mcp";
+	} else {
+		r_state.result.invocation.automation_transport = automation_transport;
+	}
 	r_state.result.invocation.automation_port = automation_port;
 	r_state.result.invocation.automation_token = automation_token;
 	r_state.result.invocation.automation_run_workflow = automation_run_workflow;

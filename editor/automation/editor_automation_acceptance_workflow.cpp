@@ -36,9 +36,7 @@
 #include "editor/editor_node.h"
 
 #include "core/io/json.h"
-#include "core/object/message_queue.h"
 #include "core/os/os.h"
-#include "scene/main/scene_tree.h"
 
 namespace {
 
@@ -61,47 +59,11 @@ Dictionary _selector_within_modal(const Dictionary &p_selector) {
 	return selector;
 }
 
-void _flush_frames(int p_count = 1) {
-	for (int i = 0; i < p_count; i++) {
-		if (SceneTree::get_singleton() != nullptr) {
-			SceneTree::get_singleton()->process(1.0 / 60.0);
-		}
-		if (MessageQueue::get_singleton() != nullptr) {
-			MessageQueue::get_singleton()->flush();
-		}
-		OS::get_singleton()->delay_usec(1000);
-	}
-}
-
-bool _selected_node_is_child_node2d(EditorWorkflowTestDriver &p_driver) {
-	const Dictionary state = p_driver.read_editor_state();
-	const Array selected = state.get("selected_nodes", Array());
-	for (int i = 0; i < selected.size(); i++) {
-		const Dictionary entry = selected[i];
-		if (String(entry.get("class", String())) == "Node2D" && String(entry.get("name", String())) != "Main") {
-			return true;
-		}
-	}
-	return false;
-}
-
-bool _scene_is_unsaved(EditorWorkflowTestDriver &p_driver) {
-	const Dictionary state = p_driver.read_editor_state();
-	const Dictionary unsaved = state.get("unsaved", Dictionary());
-	return (bool)unsaved.get("current_scene", false);
-}
-
-bool _is_playing(EditorWorkflowTestDriver &p_driver) {
-	const Dictionary state = p_driver.read_editor_state();
-	const Dictionary playing = state.get("playing", Dictionary());
-	return (bool)playing.get("is_playing", false);
-}
-
 void _expand_inspector(EditorWorkflowTestDriver &p_driver) {
 	if (!p_driver.require_ok(p_driver.run_command("property_editor/expand_all"), "expand_inspector")) {
 		return;
 	}
-	_flush_frames(15);
+	p_driver.flush_frames(15);
 }
 
 EditorAutomationAcceptanceWorkflow::Result _failure_from_driver(EditorWorkflowTestDriver &p_driver, const String &p_workflow, const String &p_message = String()) {
@@ -109,21 +71,15 @@ EditorAutomationAcceptanceWorkflow::Result _failure_from_driver(EditorWorkflowTe
 	result.ok = false;
 	result.workflow = p_workflow;
 	result.message = p_message.is_empty() ? p_driver.get_failure().message : p_message;
-	Dictionary details;
-	details["step"] = p_driver.get_current_step();
-	details["failure_report"] = p_driver.format_failure_report();
-	if (!p_driver.get_failure().diagnostics.is_empty()) {
-		details["diagnostics"] = p_driver.get_failure().diagnostics;
-	}
-	result.details = details;
+	result.details = p_driver.make_failure_details();
 	return result;
 }
 
 } // namespace
 
-EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::run_mvp(EditorWorkflowTestDriver &p_driver, const String &p_scene_path) {
+EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::run_basic_scene_editing(EditorWorkflowTestDriver &p_driver, const String &p_scene_path) {
 	Result result;
-	result.workflow = "mvp";
+	result.workflow = "basic_scene_editing";
 
 	p_driver.begin_workflow();
 
@@ -142,14 +98,14 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 		return result;
 	}
 #endif
-	_flush_frames(30);
+	p_driver.flush_frames(30);
 
 	// 1. Open the Create/Add Node dialog from the focused tile's scene tree dock.
 	p_driver.set_step("focus_scene_tree_dock");
 	if (!p_driver.require_ok(p_driver.run_command("docks/open_scene"), "focus_scene_tree_dock")) {
 		return _failure_from_driver(p_driver, result.workflow);
 	}
-	_flush_frames(10);
+	p_driver.flush_frames(10);
 
 	p_driver.set_step("open_add_child_node_dialog");
 	SceneTreeDock *scene_dock = EditorNode::get_singleton()->get_focused_scene_tree_dock();
@@ -159,7 +115,7 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 		return result;
 	}
 	scene_dock->open_add_child_dialog();
-	_flush_frames(10);
+	p_driver.flush_frames(10);
 
 	// 2. Search for Node2D and create it through the dialog.
 	p_driver.set_step("search_node2d");
@@ -172,7 +128,7 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	if (!p_driver.require_ok(p_driver.act(search_field, "set_text", search_args), "search_node2d")) {
 		return _failure_from_driver(p_driver, result.workflow);
 	}
-	_flush_frames(10);
+	p_driver.flush_frames(10);
 
 	p_driver.set_step("select_node2d_match");
 	Dictionary node2d_base;
@@ -183,7 +139,7 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	if (!p_driver.require_ok(p_driver.act(node2d_item, "select"), "select_node2d_match")) {
 		return _failure_from_driver(p_driver, result.workflow);
 	}
-	_flush_frames(3);
+	p_driver.flush_frames(3);
 
 	p_driver.set_step("confirm_create_node");
 	Dictionary create_button_base;
@@ -193,22 +149,19 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	if (!p_driver.require_ok(p_driver.act(create_button, "click"), "confirm_create_node")) {
 		return _failure_from_driver(p_driver, result.workflow);
 	}
-	_flush_frames(20);
+	p_driver.flush_frames(20);
 
 	// 3. Confirm Node2D is selected in the scene tree.
 	p_driver.set_step("verify_node2d_selected");
-	Dictionary wait_selected;
-	wait_selected["type"] = "editor_idle";
-	p_driver.wait_for(wait_selected, 5000);
-	if (!_selected_node_is_child_node2d(p_driver)) {
+	if (!p_driver.wait_editor_idle(5000)) {
+		return _failure_from_driver(p_driver, result.workflow);
+	}
+	if (!p_driver.assert_selected_node_class("Node2D", "Main")) {
 		Result fail;
 		fail.ok = false;
 		fail.workflow = result.workflow;
 		fail.message = "Expected the new Node2D child to be selected in the scene tree.";
-		Dictionary details;
-		details["step"] = "verify_node2d_selected";
-		details["editor_state"] = p_driver.read_editor_state();
-		fail.details = details;
+		fail.details = p_driver.make_failure_details("verify_node2d_selected");
 		return fail;
 	}
 
@@ -222,7 +175,7 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 		editor_node->edit_current();
 	}
 #endif
-	_flush_frames(30);
+	p_driver.flush_frames(30);
 
 	p_driver.set_step("expand_inspector");
 	_expand_inspector(p_driver);
@@ -249,7 +202,7 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 			}
 			return _failure_from_driver(p_driver, result.workflow);
 		}
-		_flush_frames(5);
+		p_driver.flush_frames(5);
 	}
 	if (!edited_visible) {
 		Result fail;
@@ -271,18 +224,15 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 		fail.details = details;
 		return fail;
 	}
-	_flush_frames(10);
+	p_driver.flush_frames(10);
 
 	p_driver.set_step("verify_undo_unsaved_state");
-	if (!_scene_is_unsaved(p_driver)) {
+	if (!p_driver.assert_scene_unsaved()) {
 		Result fail;
 		fail.ok = false;
 		fail.workflow = result.workflow;
 		fail.message = "Inspector edit did not mark the scene unsaved (undo/redo history).";
-		Dictionary details;
-		details["step"] = "verify_undo_unsaved_state";
-		details["editor_state"] = p_driver.read_editor_state();
-		fail.details = details;
+		fail.details = p_driver.make_failure_details("verify_undo_unsaved_state");
 		return fail;
 	}
 
@@ -291,12 +241,10 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	if (!p_driver.require_ok(p_driver.run_command("editor/save_scene"), "save_scene")) {
 		return _failure_from_driver(p_driver, result.workflow);
 	}
-	_flush_frames(30);
+	p_driver.flush_frames(30);
 
 	p_driver.set_step("wait_after_save");
-	Dictionary wait_idle;
-	wait_idle["type"] = "editor_idle";
-	if (!p_driver.require_ok(p_driver.wait_for(wait_idle, 15000), "wait_after_save")) {
+	if (!p_driver.wait_editor_idle(15000)) {
 		return _failure_from_driver(p_driver, result.workflow);
 	}
 
@@ -307,22 +255,12 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	}
 
 	p_driver.set_step("wait_for_playing");
-	uint64_t play_deadline = OS::get_singleton()->get_ticks_msec() + 20000;
-	while (OS::get_singleton()->get_ticks_msec() < play_deadline) {
-		_flush_frames(5);
-		if (_is_playing(p_driver)) {
-			break;
-		}
-	}
-	if (!_is_playing(p_driver)) {
+	if (!p_driver.assert_playing(true, 20000)) {
 		Result fail;
 		fail.ok = false;
 		fail.workflow = result.workflow;
 		fail.message = "Scene did not enter playing state after run_current_scene.";
-		Dictionary details;
-		details["step"] = "wait_for_playing";
-		details["editor_state"] = p_driver.read_editor_state();
-		fail.details = details;
+		fail.details = p_driver.make_failure_details("wait_for_playing");
 		return fail;
 	}
 
@@ -332,22 +270,12 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	}
 
 	p_driver.set_step("wait_for_stopped");
-	uint64_t stop_deadline = OS::get_singleton()->get_ticks_msec() + 20000;
-	while (OS::get_singleton()->get_ticks_msec() < stop_deadline) {
-		_flush_frames(5);
-		if (!_is_playing(p_driver)) {
-			break;
-		}
-	}
-	if (_is_playing(p_driver)) {
+	if (!p_driver.assert_playing(false, 20000)) {
 		Result fail;
 		fail.ok = false;
 		fail.workflow = result.workflow;
 		fail.message = "Scene did not stop after stop_running_project.";
-		Dictionary details;
-		details["step"] = "wait_for_stopped";
-		details["editor_state"] = p_driver.read_editor_state();
-		fail.details = details;
+		fail.details = p_driver.make_failure_details("wait_for_stopped");
 		return fail;
 	}
 
@@ -358,7 +286,7 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	}
 
 	result.ok = true;
-	result.message = "MVP editor automation acceptance workflow completed.";
+	result.message = "Basic scene-editing automation workflow completed.";
 	return result;
 }
 

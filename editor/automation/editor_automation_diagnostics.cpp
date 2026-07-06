@@ -227,6 +227,35 @@ EditorAutomationDiagnostics EditorAutomationDiagnosticsBuilder::build_for_wait_f
 	}
 
 	details["modal_stack"] = EditorAutomationState::capture_modal_stack();
+	const Dictionary editor_state = EditorAutomationState::read_editor_state();
+	details["editor_state"] = editor_state;
+	if (editor_state.get("selected_nodes", Array()).get_type() == Variant::ARRAY) {
+		details["selected_nodes"] = editor_state["selected_nodes"];
+	}
+	if (editor_state.has("open_scenes")) {
+		details["open_scenes"] = editor_state["open_scenes"];
+	}
+	if (editor_state.has("active_scene_path")) {
+		details["active_scene_path"] = editor_state["active_scene_path"];
+	}
+	if (editor_state.has("focused_tile_id")) {
+		details["focused_tile_id"] = editor_state["focused_tile_id"];
+	}
+	if (editor_state.has("workspace")) {
+		details["workspace"] = editor_state["workspace"];
+	}
+	if (editor_state.has("inspector")) {
+		details["inspector"] = editor_state["inspector"];
+	}
+	if (editor_state.has("view_2d")) {
+		details["view_2d"] = editor_state["view_2d"];
+	}
+	if (editor_state.has("view_3d")) {
+		details["view_3d"] = editor_state["view_3d"];
+	}
+	if (editor_state.has("undo_redo")) {
+		details["undo_redo"] = editor_state["undo_redo"];
+	}
 	Dictionary marker_dict;
 	marker_dict["message_index"] = p_log_marker.message_index;
 	details["log_marker"] = marker_dict;
