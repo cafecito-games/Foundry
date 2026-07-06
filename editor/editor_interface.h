@@ -48,7 +48,11 @@ class EditorSettings;
 class EditorToaster;
 class EditorUndoRedoManager;
 class FileSystemDock;
+class GroupsDock;
+class HistoryDock;
 class Mesh;
+class ScenePaneTile;
+class SignalsDock;
 class Node;
 class PropertySelector;
 class SceneTreeDialog;
@@ -151,6 +155,13 @@ public:
 	// Editor docks.
 
 	FileSystemDock *get_file_system_dock() const;
+
+	// Focused scene tile's in-tile dock instances (not global shell docks).
+	ScenePaneTile *get_focused_tile() const;
+	SignalsDock *get_focused_signals_dock() const;
+	GroupsDock *get_focused_groups_dock() const;
+	HistoryDock *get_focused_history_dock() const;
+
 	void select_file(const String &p_file);
 	Vector<String> get_selected_paths() const;
 	String get_current_path() const;

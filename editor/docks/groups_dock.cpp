@@ -45,7 +45,6 @@ EditorSceneContext *GroupsDock::get_scene_context() const {
 }
 
 GroupsDock::GroupsDock(bool p_register_open_command) {
-	singleton = singleton ? singleton : this;
 	set_name(TTRC("Groups"));
 	set_icon_name("Groups");
 	if (p_register_open_command) {
@@ -60,5 +59,4 @@ GroupsDock::GroupsDock(bool p_register_open_command) {
 }
 
 GroupsDock::~GroupsDock() {
-	singleton = nullptr;
 }

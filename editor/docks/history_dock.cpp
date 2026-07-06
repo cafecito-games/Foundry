@@ -264,7 +264,6 @@ void HistoryDock::set_scene_context(EditorSceneContext *p_context) {
 }
 
 HistoryDock::HistoryDock(bool p_register_open_command) {
-	singleton = singleton ? singleton : this;
 	set_name(TTRC("History"));
 	set_icon_name("History");
 	if (p_register_open_command) {

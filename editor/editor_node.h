@@ -95,6 +95,8 @@ class EditorSceneWorkspace;
 class EditorSceneTabs;
 class EditorSelectionHistory;
 class ScenePaneTile;
+class SignalsDock;
+class GroupsDock;
 class ScriptLeaf;
 class SubViewportContainer;
 class WorkspaceLeafNode;
@@ -832,6 +834,12 @@ public:
 	static EditorBottomDrawerStrip *get_bottom_drawer_strip() { return singleton->bottom_drawer_strip; }
 	static EditorMainScreen *get_editor_main_screen() { return singleton->editor_main_screen; }
 	static EditorSceneWorkspace *get_scene_workspace() { return singleton ? singleton->scene_workspace : nullptr; }
+
+	// Returns the focused scene tile's in-tile dock instances (not global shell docks).
+	ScenePaneTile *get_focused_tile() const;
+	SignalsDock *get_focused_signals_dock() const;
+	GroupsDock *get_focused_groups_dock() const;
+	HistoryDock *get_focused_history_dock() const;
 
 	static Button *get_distraction_free_button() { return singleton->distraction_free; }
 

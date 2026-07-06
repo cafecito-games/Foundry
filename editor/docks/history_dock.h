@@ -48,8 +48,6 @@ class HistoryDock : public EditorDock {
 	friend class HistoryDockTestAccess;
 	friend class TestSceneWorkspace::TileHistoryDockTestAccess;
 
-	static inline HistoryDock *singleton = nullptr;
-
 	EditorUndoRedoManager *ur_manager;
 	ItemList *action_list = nullptr;
 	EditorSceneContext *scene_context = nullptr;
@@ -73,9 +71,6 @@ protected:
 	virtual void load_layout_from_config(const Ref<ConfigFile> &p_layout, const String &p_section) override;
 
 public:
-	static HistoryDock *get_singleton() { return singleton; }
-	static void set_focused_instance(HistoryDock *p_instance) { singleton = p_instance; }
-
 	void seek_history(int p_index);
 	void set_scene_context(EditorSceneContext *p_context);
 	EditorSceneContext *get_scene_context() const { return scene_context; }

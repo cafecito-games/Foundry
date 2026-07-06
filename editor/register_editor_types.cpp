@@ -38,6 +38,10 @@
 #include "editor/debugger/debug_adapter/debug_adapter_server.h"
 #include "editor/debugger/editor_debugger_plugin.h"
 #include "editor/docks/filesystem_dock.h"
+#include "editor/docks/groups_dock.h"
+#include "editor/docks/history_dock.h"
+#include "editor/docks/signals_dock.h"
+#include "editor/editor_scene_pane_tile.h"
 #include "editor/editor_interface.h"
 #include "editor/editor_node.h"
 #include "editor/editor_string_names.h"
@@ -185,6 +189,10 @@ void register_editor_types() {
 	FOUNDRY_REGISTER_CLASS(EditorContextMenuPlugin);
 
 	FOUNDRY_REGISTER_ABSTRACT_CLASS(FileSystemDock);
+	FOUNDRY_REGISTER_ABSTRACT_CLASS(SignalsDock);
+	FOUNDRY_REGISTER_ABSTRACT_CLASS(GroupsDock);
+	FOUNDRY_REGISTER_ABSTRACT_CLASS(HistoryDock);
+	FOUNDRY_REGISTER_ABSTRACT_CLASS(ScenePaneTile);
 	FOUNDRY_REGISTER_VIRTUAL_CLASS(EditorFileSystemImportFormatSupportQuery);
 
 	FOUNDRY_REGISTER_CLASS(EditorScenePostImport);

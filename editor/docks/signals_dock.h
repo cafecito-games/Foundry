@@ -37,7 +37,6 @@ class EditorSceneContext;
 
 namespace TestSceneWorkspace {
 class TileConnectionsDockTestAccess;
-class TileHistoryDockTestAccess;
 } // namespace TestSceneWorkspace
 
 class SignalsDock : public EditorDock {
@@ -47,14 +46,8 @@ class SignalsDock : public EditorDock {
 
 	ConnectionsDock *connections = nullptr;
 
-	static inline SignalsDock *singleton = nullptr;
-
 public:
-	static SignalsDock *get_singleton() { return singleton; }
-	static void set_focused_instance(SignalsDock *p_instance) { singleton = p_instance; }
-
 	void set_object(Object *p_object);
-
 	void update_lists();
 	void set_scene_context(EditorSceneContext *p_context);
 	EditorSceneContext *get_scene_context() const;

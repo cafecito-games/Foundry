@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="ScenePaneTile" inherits="VBoxContainer" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+	<brief_description>
+		Self-contained scene editing unit in the tiled workspace.
+	</brief_description>
+	<description>
+		Each scene tile hosts its own scene tabs, scene tree, viewport content, inspector, signals, groups, and history docks. Access the focused tile via [method EditorInterface.get_focused_tile].
+	</description>
+</class>
