@@ -54,6 +54,7 @@ class ScriptEditorBase;
 class ScriptEditorController;
 class ScriptLeaf;
 class TabContainer;
+class TreeItem;
 class VSplitContainer;
 class WindowWrapper;
 struct ScriptRefactorApplyPlan;
@@ -203,7 +204,7 @@ private:
 	void _prepare_file_menu();
 	void _file_menu_closed();
 
-	bool _test_script_times_on_disk(Ref<Resource> p_for_script = Ref<Resource>());
+	void _collect_scripts_modified_on_disk(TreeItem *p_root, bool &r_need_ask, bool &r_need_reload, Ref<Resource> p_for_script = Ref<Resource>());
 	bool _script_exists(const String &p_path) const;
 
 	void _open_recent_script(int p_idx);

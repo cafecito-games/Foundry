@@ -95,8 +95,7 @@ EditorDebuggerNode::EditorDebuggerNode() {
 	remote_scene_tree->connect("selection_cleared", callable_mp(this, &EditorDebuggerNode::_remote_selection_cleared));
 	remote_scene_tree->connect("save_node", callable_mp(this, &EditorDebuggerNode::_save_node_requested));
 	remote_scene_tree->connect("button_clicked", callable_mp(this, &EditorDebuggerNode::_remote_tree_button_pressed));
-	EditorNode::get_singleton()->get_focused_scene_tree_dock()->add_remote_tree_editor(remote_scene_tree);
-	EditorNode::get_singleton()->get_focused_scene_tree_dock()->connect("remote_tree_selected", callable_mp(this, &EditorDebuggerNode::request_remote_tree));
+	rebind_remote_scene_tree();
 
 	remote_scene_tree_timeout = EDITOR_GET("debugger/remote_scene_tree_refresh_interval");
 	inspect_edited_object_timeout = EDITOR_GET("debugger/remote_inspect_refresh_interval");
@@ -547,11 +546,17 @@ void EditorDebuggerNode::_debug_data(const String &p_msg, const Array &p_data, i
 	}
 }
 
-void EditorDebuggerNode::set_script_debug_button(MenuButton *p_button) {
-	script_menu = p_button;
-	script_menu->set_text(TTRC("Debug"));
-	script_menu->set_switch_on_hover(true);
-	PopupMenu *p = script_menu->get_popup();
+void EditorDebuggerNode::register_script_debug_button(MenuButton *p_button) {
+	ERR_FAIL_NULL(p_button);
+	if (script_menus.has(p_button)) {
+		return;
+	}
+
+	script_menus.push_back(p_button);
+	p_button->set_text(TTRC("Debug"));
+	p_button->set_switch_on_hover(true);
+	PopupMenu *p = p_button->get_popup();
+	p->clear();
 	p->add_shortcut(ED_GET_SHORTCUT("debugger/step_into"), DEBUG_STEP);
 	p->add_shortcut(ED_GET_SHORTCUT("debugger/step_over"), DEBUG_NEXT);
 	p->add_separator();
@@ -559,28 +564,71 @@ void EditorDebuggerNode::set_script_debug_button(MenuButton *p_button) {
 	p->add_shortcut(ED_GET_SHORTCUT("debugger/continue"), DEBUG_CONTINUE);
 	p->add_separator();
 	p->add_check_shortcut(ED_GET_SHORTCUT("debugger/debug_with_external_editor"), DEBUG_WITH_EXTERNAL_EDITOR);
-	p->connect(SceneStringName(id_pressed), callable_mp(this, &EditorDebuggerNode::_menu_option));
+	Callable menu_option = callable_mp(this, &EditorDebuggerNode::_menu_option);
+	if (!p->is_connected(SceneStringName(id_pressed), menu_option)) {
+		p->connect(SceneStringName(id_pressed), menu_option);
+	}
 
-	_break_state_changed();
-	script_menu->show();
+	_update_script_menu_state(p_button);
+	p_button->show();
+}
+
+void EditorDebuggerNode::unregister_script_debug_button(MenuButton *p_button) {
+	ERR_FAIL_NULL(p_button);
+	script_menus.erase(p_button);
+	PopupMenu *p = p_button->get_popup();
+	Callable menu_option = callable_mp(this, &EditorDebuggerNode::_menu_option);
+	if (p->is_connected(SceneStringName(id_pressed), menu_option)) {
+		p->disconnect(SceneStringName(id_pressed), menu_option);
+	}
 }
 
 void EditorDebuggerNode::_break_state_changed() {
 	const bool breaked = get_current_debugger()->is_breaked();
-	const bool can_debug = get_current_debugger()->is_debuggable();
 	if (breaked) { // Show debugger.
 		EditorDockManager::get_singleton()->focus_dock(this);
 	}
 
 	// Update script menu.
-	if (!script_menu) {
-		return;
+	for (MenuButton *script_menu : script_menus) {
+		_update_script_menu_state(script_menu);
 	}
-	PopupMenu *p = script_menu->get_popup();
-	p->set_item_disabled(p->get_item_index(DEBUG_NEXT), !(breaked && can_debug));
-	p->set_item_disabled(p->get_item_index(DEBUG_STEP), !(breaked && can_debug));
-	p->set_item_disabled(p->get_item_index(DEBUG_BREAK), breaked);
-	p->set_item_disabled(p->get_item_index(DEBUG_CONTINUE), !breaked);
+}
+
+void EditorDebuggerNode::_update_script_menu_state(MenuButton *p_menu) {
+	ERR_FAIL_NULL(p_menu);
+
+	PopupMenu *p = p_menu->get_popup();
+	const int next_idx = p->get_item_index(DEBUG_NEXT);
+	const int step_idx = p->get_item_index(DEBUG_STEP);
+	const int break_idx = p->get_item_index(DEBUG_BREAK);
+	const int continue_idx = p->get_item_index(DEBUG_CONTINUE);
+	const int external_editor_idx = p->get_item_index(DEBUG_WITH_EXTERNAL_EDITOR);
+
+	const bool breaked = get_current_debugger()->is_breaked();
+	const bool can_debug = get_current_debugger()->is_debuggable();
+	if (next_idx >= 0) {
+		p->set_item_disabled(next_idx, !(breaked && can_debug));
+	}
+	if (step_idx >= 0) {
+		p->set_item_disabled(step_idx, !(breaked && can_debug));
+	}
+	if (break_idx >= 0) {
+		p->set_item_disabled(break_idx, breaked);
+	}
+	if (continue_idx >= 0) {
+		p->set_item_disabled(continue_idx, !breaked);
+	}
+	if (external_editor_idx >= 0) {
+		p->set_item_checked(external_editor_idx, debug_with_external_editor);
+	}
+}
+
+void EditorDebuggerNode::_set_debug_with_external_editor_checked(bool p_checked) {
+	debug_with_external_editor = p_checked;
+	for (MenuButton *script_menu : script_menus) {
+		_update_script_menu_state(script_menu);
+	}
 }
 
 void EditorDebuggerNode::_menu_option(int p_id) {
@@ -598,20 +646,16 @@ void EditorDebuggerNode::_menu_option(int p_id) {
 			debug_continue();
 		} break;
 		case DEBUG_WITH_EXTERNAL_EDITOR: {
-			bool ischecked = script_menu->get_popup()->is_item_checked(script_menu->get_popup()->get_item_index(DEBUG_WITH_EXTERNAL_EDITOR));
-			debug_with_external_editor = !ischecked;
-			script_menu->get_popup()->set_item_checked(script_menu->get_popup()->get_item_index(DEBUG_WITH_EXTERNAL_EDITOR), !ischecked);
+			_set_debug_with_external_editor_checked(!debug_with_external_editor);
 			if (!initializing) {
-				EditorSettings::get_singleton()->set_project_metadata("debug_options", "debug_with_external_editor", !ischecked);
+				EditorSettings::get_singleton()->set_project_metadata("debug_options", "debug_with_external_editor", debug_with_external_editor);
 			}
 		} break;
 	}
 }
 
 void EditorDebuggerNode::_update_debug_options() {
-	if (EditorSettings::get_singleton()->get_project_metadata("debug_options", "debug_with_external_editor", false).operator bool()) {
-		_menu_option(DEBUG_WITH_EXTERNAL_EDITOR);
-	}
+	_set_debug_with_external_editor_checked(EditorSettings::get_singleton()->get_project_metadata("debug_options", "debug_with_external_editor", false).operator bool());
 }
 
 void EditorDebuggerNode::_paused() {
@@ -700,6 +744,42 @@ String EditorDebuggerNode::get_var_value(const String &p_var) const {
 }
 
 // LiveEdit/Inspector
+void EditorDebuggerNode::_set_remote_scene_tree_dock(SceneTreeDock *p_dock) {
+	if (!remote_scene_tree || remote_scene_tree_dock == p_dock) {
+		return;
+	}
+
+	const Callable request_remote_tree_callback = callable_mp(this, &EditorDebuggerNode::request_remote_tree);
+	if (remote_scene_tree_dock) {
+		if (remote_scene_tree_dock->is_connected("remote_tree_selected", request_remote_tree_callback)) {
+			remote_scene_tree_dock->disconnect("remote_tree_selected", request_remote_tree_callback);
+		}
+		remote_scene_tree_dock->remove_remote_tree_editor(remote_scene_tree);
+	}
+
+	remote_scene_tree_dock = p_dock;
+	if (!remote_scene_tree_dock) {
+		return;
+	}
+
+	remote_scene_tree_dock->add_remote_tree_editor(remote_scene_tree);
+	if (!remote_scene_tree_dock->is_connected("remote_tree_selected", request_remote_tree_callback)) {
+		remote_scene_tree_dock->connect("remote_tree_selected", request_remote_tree_callback);
+	}
+}
+
+void EditorDebuggerNode::detach_remote_scene_tree() {
+	_set_remote_scene_tree_dock(nullptr);
+}
+
+void EditorDebuggerNode::rebind_remote_scene_tree() {
+	EditorNode *editor_node = EditorNode::get_singleton();
+	if (!editor_node) {
+		return;
+	}
+	_set_remote_scene_tree_dock(editor_node->get_focused_scene_tree_dock());
+}
+
 void EditorDebuggerNode::request_remote_tree() {
 	get_current_debugger()->request_remote_tree();
 }

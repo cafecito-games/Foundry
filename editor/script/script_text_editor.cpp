@@ -1327,7 +1327,9 @@ void ScriptTextEditor::_breakpoint_item_pressed(int p_idx) {
 void ScriptTextEditor::_breakpoint_toggled(int p_row) {
 	const CodeEdit *ce = code_editor->get_text_editor();
 	bool enabled = p_row < ce->get_line_count() && ce->is_line_breakpointed(p_row);
-	EditorDebuggerNode::get_singleton()->set_breakpoint(script->get_path(), p_row + 1, enabled);
+	if (EditorDebuggerNode *debugger = EditorDebuggerNode::get_singleton()) {
+		debugger->set_breakpoint(script->get_path(), p_row + 1, enabled);
+	}
 }
 
 void ScriptTextEditor::_on_caret_moved() {
@@ -1625,8 +1627,11 @@ void ScriptTextEditor::_show_symbol_tooltip(const String &p_symbol, int p_row, i
 		}
 	}
 
-	// NOTE: See also `ScriptEditor::_get_debug_tooltip()` for documentation tooltips disabled.
-	String debug_value = EditorDebuggerNode::get_singleton()->get_var_value(p_symbol);
+	// NOTE: See also `ScriptEditorView::_get_debug_tooltip()` for documentation tooltips disabled.
+	String debug_value;
+	if (EditorDebuggerNode *debugger = EditorDebuggerNode::get_singleton()) {
+		debug_value = debugger->get_var_value(p_symbol);
+	}
 	if (!debug_value.is_empty()) {
 		constexpr int DISPLAY_LIMIT = 1024;
 		if (debug_value.size() > DISPLAY_LIMIT) {
@@ -2121,7 +2126,9 @@ void ScriptTextEditor::_edit_option(int p_op) {
 				int line = bpoints[i];
 				bool dobreak = !tx->is_line_breakpointed(line);
 				tx->set_line_as_breakpoint(line, dobreak);
-				EditorDebuggerNode::get_singleton()->set_breakpoint(script->get_path(), line + 1, dobreak);
+				if (EditorDebuggerNode *debugger = EditorDebuggerNode::get_singleton()) {
+					debugger->set_breakpoint(script->get_path(), line + 1, dobreak);
+				}
 			}
 		} break;
 		case DEBUG_GOTO_NEXT_BREAKPOINT: {

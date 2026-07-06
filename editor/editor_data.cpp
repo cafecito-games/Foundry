@@ -40,6 +40,7 @@
 #include "editor/inspector/editor_context_menu_plugin.h"
 #include "editor/inspector/multi_node_edit.h"
 #include "editor/plugins/editor_plugin.h"
+#include "editor/script/script_editor_controller.h"
 #include "scene/property_utils.h"
 #include "scene/resources/packed_scene.h"
 
@@ -684,7 +685,10 @@ void EditorData::remove_scene(int p_idx) {
 	}
 
 	if (!edited_scene[p_idx].path.is_empty()) {
-		EditorNode::get_singleton()->emit_signal("scene_closed", edited_scene[p_idx].path);
+		if (ScriptEditorController *script_editor = ScriptEditorController::get_singleton()) {
+			script_editor->notify_scene_closed(edited_scene[p_idx].path);
+		}
+		EditorNode::get_singleton()->emit_signal(SNAME("scene_closed"), edited_scene[p_idx].path);
 	}
 
 	if (undo_redo_manager->has_history(edited_scene[p_idx].context->get_history_id())) { // Might not exist if scene failed to load.

@@ -42,6 +42,7 @@
 #include "editor/doc/editor_help.h"
 #include "editor/editor_node.h"
 #include "editor/file_system/editor_file_system.h"
+#include "editor/script/script_editor_controller.h"
 #include "editor/settings/editor_settings.h"
 #include "scene/resources/packed_scene.h"
 
@@ -106,14 +107,14 @@ void FSWorkspace::apply_new_signal(Object *obj, String function, PackedStringArr
 }
 
 void FSWorkspace::_connect_editor_signals() {
-	EditorNode *editor_node = EditorNode::get_singleton();
-	if (editor_node == nullptr) {
+	ScriptEditorController *script_editor = ScriptEditorController::get_singleton();
+	if (script_editor == nullptr) {
 		return;
 	}
 
 	const Callable add_function_request = callable_mp(this, &FSWorkspace::apply_new_signal);
-	if (!editor_node->is_connected("script_add_function_request", add_function_request)) {
-		editor_node->connect("script_add_function_request", add_function_request);
+	if (!script_editor->is_connected("script_add_function_request", add_function_request)) {
+		script_editor->connect("script_add_function_request", add_function_request);
 	}
 }
 

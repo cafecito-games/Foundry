@@ -100,6 +100,12 @@ TEST_CASE("[SceneTree][Editor] bvh-world-filter") {
 	Vector<Node3D *> misses = bvh.ray_query(Vector3(20, 0, 5), Vector3(20, 0, -5), world_a);
 	CHECK(misses.is_empty());
 
+	bvh.clear();
+	hits_a = bvh.ray_query(ray_start, ray_end, world_a);
+	hits_b = bvh.ray_query(ray_start, ray_end, world_b);
+	CHECK(hits_a.is_empty());
+	CHECK(hits_b.is_empty());
+
 	bvh.remove(node_a, id_a);
 	bvh.remove(node_b, id_b);
 	hits_a = bvh.ray_query(ray_start, ray_end, world_a);

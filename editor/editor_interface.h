@@ -59,7 +59,6 @@ class Node;
 class PropertySelector;
 class SceneTreeDialog;
 class ScriptEditorController;
-typedef ScriptEditorController ScriptEditor;
 class SubViewport;
 class Texture2D;
 class Theme;
@@ -121,7 +120,7 @@ public:
 
 	Control *get_base_control() const;
 	VBoxContainer *get_editor_main_screen() const;
-	ScriptEditor *get_script_editor() const;
+	ScriptEditorController *get_script_editor() const;
 	SubViewport *get_editor_viewport_2d() const;
 	SubViewport *get_editor_viewport_3d(int p_idx = 0) const;
 

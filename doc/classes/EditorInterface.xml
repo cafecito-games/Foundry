@@ -4,7 +4,7 @@
 		Godot editor's interface.
 	</brief_description>
 	<description>
-		[EditorInterface] gives you control over Godot editor's window. It allows customizing the window, saving and (re-)loading scenes, rendering mesh previews, inspecting and editing resources and objects, and provides access to [EditorSettings], [EditorFileSystem], [EditorResourcePreview], [ScriptEditor], the editor viewport, and information about scenes.
+		[EditorInterface] gives you control over Godot editor's window. It allows customizing the window, saving and (re-)loading scenes, rendering mesh previews, inspecting and editing resources and objects, and provides access to [EditorSettings], [EditorFileSystem], [EditorResourcePreview], [ScriptEditorController], the editor viewport, and information about scenes.
 		[b]Note:[/b] This class shouldn't be instantiated directly. Instead, access the singleton directly by its name.
 		[codeblocks]
 		[foundry_script]
@@ -260,10 +260,9 @@
 			</description>
 		</method>
 		<method name="get_script_editor" qualifiers="const">
-			<return type="ScriptEditor" />
+			<return type="ScriptEditorController" />
 			<description>
-				Returns the editor's [ScriptEditor] instance.
-				[b]Warning:[/b] Removing and freeing this node will render a part of the editor useless and may cause a crash.
+				Returns the editor's [ScriptEditorController] instance.
 			</description>
 		</method>
 		<method name="get_selected_paths" qualifiers="const">

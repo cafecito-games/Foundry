@@ -51,6 +51,7 @@ public:
 	void update(Node3D *p_node, DynamicBVH::ID p_id, const AABB &p_aabb);
 	void remove(Node3D *p_node, DynamicBVH::ID p_id);
 	void clear_world(const Ref<World3D> &p_world);
+	void clear();
 
 	Vector<Node3D *> ray_query(const Vector3 &p_ray_start, const Vector3 &p_ray_end, const Ref<World3D> &p_world);
 	Vector<Node3D *> frustum_query(const Vector<Plane> &p_frustum, const Ref<World3D> &p_world);

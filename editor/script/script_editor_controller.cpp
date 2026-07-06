@@ -17,6 +17,8 @@
 #include "editor/doc/editor_help.h"
 #include "editor/doc/editor_help_search.h"
 #include "editor/docks/editor_dock_manager.h"
+#include "editor/docks/filesystem_dock.h"
+#include "editor/docks/inspector_dock.h"
 #include "scene/gui/box_container.h"
 #include "scene/gui/dialogs.h"
 #include "scene/gui/tree.h"
@@ -64,6 +66,26 @@ static void ensure_script_editor_registrations() {
 	ED_SHORTCUT("script_editor/close_other_tabs", TTRC("Close Other Tabs"));
 	ED_SHORTCUT("script_editor/show_in_file_system", TTRC("Show in FileSystem"));
 	ED_SHORTCUT("script_editor/toggle_files_panel", TTRC("Toggle Files Panel"), KeyModifierMask::CMD_OR_CTRL | Key::BACKSLASH);
+}
+
+static void connect_if_needed(Object *p_object, const StringName &p_signal, const Callable &p_callable) {
+	ERR_FAIL_NULL(p_object);
+	if (!p_object->has_signal(p_signal)) {
+		return;
+	}
+	if (!p_object->is_connected(p_signal, p_callable)) {
+		p_object->connect(p_signal, p_callable);
+	}
+}
+
+static bool script_path_exists(const String &p_path) {
+	if (p_path.is_empty()) {
+		return false;
+	}
+	if (p_path.is_resource_file()) {
+		return FileAccess::exists(p_path);
+	}
+	return FileAccess::exists(p_path.get_slice("::", 0));
 }
 
 ScriptEditorController::ScriptEditorController() {
@@ -188,6 +210,91 @@ void ScriptEditorController::init_global_services(Node *p_dialog_parent) {
 	autosave_timer->connect(SceneStringName(tree_entered), callable_mp(this, &ScriptEditorController::_update_autosave_timer));
 	autosave_timer->connect("timeout", callable_mp(this, &ScriptEditorController::_autosave_scripts));
 	p_dialog_parent->add_child(autosave_timer);
+
+	_connect_global_signals();
+}
+
+void ScriptEditorController::_connect_global_signals() {
+	if (EditorNode *editor_node = EditorNode::get_singleton()) {
+		if (InspectorDock *inspector = editor_node->get_focused_inspector_dock()) {
+			connect_if_needed(inspector, SNAME("request_help"), callable_mp(this, &ScriptEditorController::_on_request_help));
+		}
+	}
+
+	if (FileSystemDock *filesystem_dock = FileSystemDock::get_singleton()) {
+		connect_if_needed(filesystem_dock, SNAME("files_moved"), callable_mp(this, &ScriptEditorController::_files_moved));
+		connect_if_needed(filesystem_dock, SNAME("file_removed"), callable_mp(this, &ScriptEditorController::_file_removed));
+	}
+
+	if (EditorFileSystem *editor_file_system = EditorFileSystem::get_singleton()) {
+		connect_if_needed(editor_file_system, SNAME("filesystem_changed"), callable_mp(this, &ScriptEditorController::_filesystem_changed));
+	}
+
+	if (EditorDebuggerNode *debugger = EditorDebuggerNode::get_singleton()) {
+		connect_if_needed(debugger, SNAME("goto_script_line"), callable_mp(this, &ScriptEditorController::_goto_script_line));
+		connect_if_needed(debugger, SNAME("set_execution"), callable_mp(this, &ScriptEditorController::_set_execution));
+		connect_if_needed(debugger, SNAME("clear_execution"), callable_mp(this, &ScriptEditorController::_clear_execution));
+		connect_if_needed(debugger, SNAME("breaked"), callable_mp(this, &ScriptEditorController::_breaked));
+		connect_if_needed(debugger, SNAME("breakpoint_set_in_tree"), callable_mp(this, &ScriptEditorController::_set_breakpoint));
+		connect_if_needed(debugger, SNAME("breakpoints_cleared_in_tree"), callable_mp(this, &ScriptEditorController::_clear_breakpoints));
+	}
+}
+
+void ScriptEditorController::_on_request_help(const String &p_topic) {
+	if (ScriptEditorView *view = _active_view()) {
+		view->_help_class_open(p_topic);
+	}
+}
+
+void ScriptEditorController::_on_request_help_search(const String &p_text) {
+	if (ScriptEditorView *view = _active_view()) {
+		view->_help_search(p_text);
+	}
+}
+
+void ScriptEditorController::notify_request_help_search(const String &p_text) {
+	_on_request_help_search(p_text);
+}
+
+void ScriptEditorController::_on_scene_closed(const String &p_path) {
+	for (ScriptEditorView *view : views) {
+		view->_close_builtin_scripts_from_scene(p_path);
+	}
+}
+
+void ScriptEditorController::notify_scene_closed(const String &p_path) {
+	_on_scene_closed(p_path);
+}
+
+void ScriptEditorController::_on_script_add_function_request(Object *p_obj, const String &p_function, const PackedStringArray &p_args) {
+	if (ScriptEditorView *view = _active_view()) {
+		view->_add_callback(p_obj, p_function, p_args);
+	}
+}
+
+void ScriptEditorController::notify_script_add_function_request(Object *p_obj, const String &p_function, const PackedStringArray &p_args) {
+	_on_script_add_function_request(p_obj, p_function, p_args);
+	emit_signal(SNAME("script_add_function_request"), p_obj, p_function, p_args);
+}
+
+void ScriptEditorController::_on_resource_saved(const Ref<Resource> &p_res) {
+	for (ScriptEditorView *view : views) {
+		view->_res_saved_callback(p_res);
+	}
+}
+
+void ScriptEditorController::notify_resource_saved(const Ref<Resource> &p_res) {
+	_on_resource_saved(p_res);
+}
+
+void ScriptEditorController::_on_scene_saved(const String &p_path) {
+	for (ScriptEditorView *view : views) {
+		view->_scene_saved_callback(p_path);
+	}
+}
+
+void ScriptEditorController::notify_scene_saved(const String &p_path) {
+	_on_scene_saved(p_path);
 }
 
 ScriptEditorView *ScriptEditorController::create_view_for_leaf(ScriptLeaf *p_leaf) {
@@ -255,6 +362,47 @@ Array ScriptEditorController::get_cached_breakpoints_for_script(const String &p_
 		return Array();
 	}
 	return state["breakpoints"];
+}
+
+void ScriptEditorController::restore_cached_breakpoints() {
+	EditorDebuggerNode *debugger = EditorDebuggerNode::get_singleton();
+
+	HashSet<String> loaded_scripts;
+	for (ScriptEditorView *view : views) {
+		for (int i = 0; i < view->get_tab_container()->get_tab_count(); i++) {
+			ScriptEditorBase *se = Object::cast_to<ScriptEditorBase>(view->get_tab_container()->get_tab_control(i));
+			if (!se) {
+				continue;
+			}
+			Ref<Resource> edited_res = se->get_edited_resource();
+			if (edited_res.is_valid()) {
+				loaded_scripts.insert(edited_res->get_path());
+			}
+		}
+	}
+
+	Vector<String> cached_editors = script_editor_cache->get_sections();
+	for (const String &E : cached_editors) {
+		if (loaded_scripts.has(E)) {
+			continue;
+		}
+
+		if (!script_path_exists(E)) {
+			script_editor_cache->erase_section(E);
+			continue;
+		}
+
+		Array breakpoints = get_cached_breakpoints_for_script(E);
+		for (int breakpoint : breakpoints) {
+			if (debugger) {
+				debugger->set_breakpoint(E, (int)breakpoint + 1, true);
+			}
+		}
+	}
+}
+
+void ScriptEditorController::save_script_editor_cache() const {
+	script_editor_cache->save(EditorPaths::get_singleton()->get_project_settings_dir().path_join("script_editor_cache.cfg"));
 }
 
 void ScriptEditorController::add_recent_script(const String &p_path) {
@@ -532,16 +680,44 @@ void ScriptEditorController::update_script_times() {
 	}
 }
 
+bool ScriptEditorController::test_script_times_on_disk(Ref<Resource> p_for_script) {
+	if (!disk_changed_list || !disk_changed) {
+		return false;
+	}
+
+	disk_changed_list->clear();
+	TreeItem *root = disk_changed_list->create_item();
+
+	bool need_ask = false;
+	bool need_reload = false;
+	for (ScriptEditorView *view : views) {
+		view->_collect_scripts_modified_on_disk(root, need_ask, need_reload, p_for_script);
+	}
+
+	if (need_reload) {
+		if (!need_ask) {
+			reload_scripts();
+			need_reload = false;
+		} else {
+			callable_mp((Window *)disk_changed, &Window::popup_centered_ratio).call_deferred(0.3);
+		}
+	}
+
+	return need_reload;
+}
+
 void ScriptEditorController::set_window_layout(Ref<ConfigFile> p_layout) {
 	if (!views.is_empty()) {
 		views[0]->set_window_layout(p_layout);
 	}
+	restore_cached_breakpoints();
 }
 
 void ScriptEditorController::get_window_layout(Ref<ConfigFile> p_layout) {
 	if (views.size() == 1) {
 		views[0]->get_window_layout(p_layout);
 	}
+	save_script_editor_cache();
 }
 
 void ScriptEditorController::set_scene_root_script(Ref<Script> p_script) {
@@ -695,8 +871,8 @@ void ScriptEditorController::_start_find_in_files(bool with_replace) {
 }
 
 void ScriptEditorController::_on_find_in_files_modified_files(const PackedStringArray &paths) {
+	test_script_times_on_disk();
 	for (ScriptEditorView *view : views) {
-		view->_test_script_times_on_disk();
 		view->_update_modified_scripts_for_external_editor();
 	}
 }
@@ -764,7 +940,9 @@ void ScriptEditorController::trigger_live_script_reload(const String &p_script_p
 
 void ScriptEditorController::_live_auto_reload_running_scripts() {
 	pending_auto_reload = false;
-	EditorDebuggerNode::get_singleton()->reload_scripts(script_paths_to_reload);
+	if (EditorDebuggerNode *debugger = EditorDebuggerNode::get_singleton()) {
+		debugger->reload_scripts(script_paths_to_reload);
+	}
 	script_paths_to_reload.clear();
 }
 
@@ -862,7 +1040,9 @@ void ScriptEditorController::_set_breakpoint(Ref<RefCounted> p_script, int p_lin
 	}
 	state["breakpoints"] = breakpoints;
 	script_editor_cache->set_value(scr->get_path(), "state", state);
-	EditorDebuggerNode::get_singleton()->set_breakpoint(scr->get_path(), p_line + 1, p_enabled);
+	if (EditorDebuggerNode *debugger = EditorDebuggerNode::get_singleton()) {
+		debugger->set_breakpoint(scr->get_path(), p_line + 1, p_enabled);
+	}
 }
 
 void ScriptEditorController::_clear_breakpoints() {
@@ -875,10 +1055,13 @@ void ScriptEditorController::_clear_breakpoints() {
 		}
 	}
 	Vector<String> cached_editors = script_editor_cache->get_sections();
+	EditorDebuggerNode *debugger = EditorDebuggerNode::get_singleton();
 	for (const String &E : cached_editors) {
 		Array breakpoints = get_cached_breakpoints_for_script(E);
 		for (int breakpoint : breakpoints) {
-			EditorDebuggerNode::get_singleton()->set_breakpoint(E, (int)breakpoint + 1, false);
+			if (debugger) {
+				debugger->set_breakpoint(E, (int)breakpoint + 1, false);
+			}
 		}
 		if (breakpoints.size() > 0) {
 			Dictionary state = script_editor_cache->get_value(E, "state");
@@ -923,5 +1106,5 @@ void ScriptEditorController::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("clear_docs_from_script", "script"), &ScriptEditorController::clear_docs_from_script);
 	ADD_SIGNAL(MethodInfo("editor_script_changed", PropertyInfo(Variant::OBJECT, "script", PROPERTY_HINT_RESOURCE_TYPE, "Script")));
 	ADD_SIGNAL(MethodInfo("script_close", PropertyInfo(Variant::OBJECT, "script", PROPERTY_HINT_RESOURCE_TYPE, "Script")));
+	ADD_SIGNAL(MethodInfo("script_add_function_request", PropertyInfo(Variant::OBJECT, "obj"), PropertyInfo(Variant::STRING, "function"), PropertyInfo(Variant::PACKED_STRING_ARRAY, "args")));
 }
-

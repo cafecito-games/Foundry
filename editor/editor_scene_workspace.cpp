@@ -436,6 +436,24 @@ WorkspaceLeafNode *EditorSceneWorkspace::find_script_leaf_for_path(const String 
 	return nullptr;
 }
 
+void EditorSceneWorkspace::resolve_script_leaf_associated_scenes(EditorData &p_editor_data) {
+	for (WorkspaceLeafNode *script_leaf_node : get_script_leaves()) {
+		WorkspaceLeafContent *content = script_leaf_node->get_leaf_content();
+		ScriptLeaf *script_leaf = content ? Object::cast_to<ScriptLeaf>(content->get_root_control()) : nullptr;
+		if (!script_leaf || script_leaf->get_associated_scene_root() || script_leaf->get_associated_scene_path().is_empty()) {
+			continue;
+		}
+
+		const String scene_path = script_leaf->get_associated_scene_path();
+		for (int i = 0; i < p_editor_data.get_edited_scene_count(); i++) {
+			if (p_editor_data.get_scene_path(i) == scene_path) {
+				script_leaf->set_associated_scene_root(p_editor_data.get_edited_scene_root(i));
+				break;
+			}
+		}
+	}
+}
+
 WorkspaceLeafNode *EditorSceneWorkspace::open_script_leaf(WorkspaceLeafNode *p_source_leaf, const String &p_script_path, bool p_force_new_leaf) {
 	ERR_FAIL_NULL_V(p_source_leaf, nullptr);
 	ERR_FAIL_COND_V(!leaves.has(p_source_leaf), nullptr);

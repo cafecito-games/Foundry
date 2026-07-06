@@ -679,8 +679,8 @@ void ScriptEditorPlugin::set_window_layout(Ref<ConfigFile> p_layout) {
 
 	// Legacy single-surface layout: apply to the first script leaf when per-leaf
 	// open_scripts were not persisted yet.
+	bool has_per_leaf_layout = false;
 	if (p_layout->has_section_key("ScriptEditor", "open_scripts")) {
-		bool has_per_leaf_layout = false;
 		if (EditorNode::get_singleton() && EditorNode::get_singleton()->get_scene_workspace()) {
 			for (WorkspaceLeafNode *leaf : EditorNode::get_singleton()->get_scene_workspace()->get_script_leaves()) {
 				ScriptLeaf *script_leaf = Object::cast_to<ScriptLeaf>(leaf->get_leaf_content()->get_root_control());
@@ -696,6 +696,9 @@ void ScriptEditorPlugin::set_window_layout(Ref<ConfigFile> p_layout) {
 		if (!has_per_leaf_layout) {
 			controller->set_window_layout(p_layout);
 		}
+	}
+	if (has_per_leaf_layout || !p_layout->has_section_key("ScriptEditor", "open_scripts")) {
+		controller->restore_cached_breakpoints();
 	}
 }
 

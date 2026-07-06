@@ -437,6 +437,9 @@ void EditorNode::shortcut_input(const Ref<InputEvent> &p_event) {
 		} else if (ED_IS_SHORTCUT("editor/editor_game", p_event)) {
 			editor_main_screen->select(EditorMainScreen::EDITOR_GAME);
 		} else if (ED_IS_SHORTCUT("editor/editor_help", p_event)) {
+			if (ScriptEditorController *script_editor = ScriptEditorController::get_singleton()) {
+				script_editor->notify_request_help_search("");
+			}
 			emit_signal(SNAME("request_help_search"), "");
 		} else if (ED_IS_SHORTCUT("editor/editor_next", p_event)) {
 			editor_main_screen->select_next();
@@ -446,6 +449,16 @@ void EditorNode::shortcut_input(const Ref<InputEvent> &p_event) {
 			_open_command_palette();
 		} else if (ED_IS_SHORTCUT("editor/toggle_last_opened_bottom_panel", p_event)) {
 			bottom_panel->toggle_last_opened_bottom_panel();
+		} else if (ED_IS_SHORTCUT("docks/open_scene", p_event)) {
+			_focus_leaf_scene_tree_dock();
+		} else if (ED_IS_SHORTCUT("docks/open_inspector", p_event)) {
+			_focus_leaf_inspector_dock();
+		} else if (ED_IS_SHORTCUT("docks/open_signals", p_event)) {
+			_focus_leaf_signals_dock();
+		} else if (ED_IS_SHORTCUT("docks/open_groups", p_event)) {
+			_focus_leaf_groups_dock();
+		} else if (ED_IS_SHORTCUT("docks/open_history", p_event)) {
+			_focus_leaf_history_dock();
 		} else {
 			is_handled = false;
 		}
@@ -1712,6 +1725,9 @@ void EditorNode::save_resource_in_path(const Ref<Resource> &p_resource, const St
 
 	_resource_saved(p_resource, path);
 	clear_node_reference(p_resource); // // Check if Resource is saved to disk to potentially remove it from resource_count
+	if (ScriptEditorController *script_editor = ScriptEditorController::get_singleton()) {
+		script_editor->notify_resource_saved(p_resource);
+	}
 	emit_signal(SNAME("resource_saved"), p_resource);
 	editor_data.notify_resource_saved(p_resource);
 
@@ -2485,7 +2501,10 @@ void EditorNode::_save_scene(String p_file, int idx) {
 
 	err = ResourceSaver::save(sdata, p_file, flg);
 
-	// This needs to be emitted before saving external resources.
+	// This needs to run before saving external resources.
+	if (ScriptEditorController *script_editor = ScriptEditorController::get_singleton()) {
+		script_editor->notify_scene_saved(p_file);
+	}
 	emit_signal(SNAME("scene_saved"), p_file);
 	editor_data.notify_scene_saved(p_file);
 
@@ -3846,6 +3865,9 @@ void EditorNode::_menu_option_confirm(int p_option, bool p_confirmed) {
 
 		} break;
 		case HELP_SEARCH: {
+			if (ScriptEditorController *script_editor = ScriptEditorController::get_singleton()) {
+				script_editor->notify_request_help_search("");
+			}
 			emit_signal(SNAME("request_help_search"), "");
 		} break;
 		case EDITOR_COMMAND_PALETTE: {
@@ -5035,8 +5057,8 @@ Ref<World3D> EditorNode::get_edited_world_3d() const {
 	if (active_scene_context && active_scene_context->get_world_3d().is_valid()) {
 		return active_scene_context->get_world_3d();
 	}
-	if (get_tree()) {
-		Window *root = get_tree()->get_root();
+	if (SceneTree *tree = SceneTree::get_singleton()) {
+		Window *root = tree->get_root();
 		if (root) {
 			return root->get_world_3d();
 		}
@@ -6862,8 +6884,16 @@ void EditorNode::_wire_leaf_tile(WorkspaceLeafNode *p_leaf) {
 	ScenePaneTile *tile = p_leaf->get_pane_tile();
 	ERR_FAIL_NULL(tile);
 	const int leaf_id = p_leaf->get_leaf_id();
-	tile->get_scene_tabs()->connect("tab_changed", callable_mp(this, &EditorNode::_on_tile_tab_changed).bind(leaf_id));
-	tile->get_scene_tabs()->connect("tab_closed", callable_mp(this, &EditorNode::_on_tile_tab_closed).bind(leaf_id));
+	EditorSceneTabs *tile_scene_tabs = tile->get_scene_tabs();
+	ERR_FAIL_NULL(tile_scene_tabs);
+	const Callable tab_changed = callable_mp(this, &EditorNode::_on_tile_tab_changed).bind(leaf_id);
+	if (!tile_scene_tabs->is_connected("tab_changed", tab_changed)) {
+		tile_scene_tabs->connect("tab_changed", tab_changed);
+	}
+	const Callable tab_closed = callable_mp(this, &EditorNode::_on_tile_tab_closed).bind(leaf_id);
+	if (!tile_scene_tabs->is_connected("tab_closed", tab_closed)) {
+		tile_scene_tabs->connect("tab_closed", tab_closed, CONNECT_DEFERRED);
+	}
 	tile->get_scene_tree_dock()->set_scene_context(no_scene_context);
 	tile->get_inspector_dock()->set_scene_context(no_scene_context);
 	tile->get_signals_dock()->set_scene_context(no_scene_context);
@@ -6894,8 +6924,10 @@ void EditorNode::_on_leaf_added(int p_leaf_id) {
 }
 
 void EditorNode::_on_leaf_removed(int p_leaf_id, int p_successor_leaf_id) {
-	editor_data.migrate_tile_scenes(p_leaf_id, p_successor_leaf_id);
-	editor_data.unregister_tile(p_leaf_id);
+	if (p_leaf_id != p_successor_leaf_id) {
+		editor_data.migrate_tile_scenes(p_leaf_id, p_successor_leaf_id);
+		editor_data.unregister_tile(p_leaf_id);
+	}
 	_update_all_scene_tabs();
 	_bind_all_leaf_docks();
 	_update_tile_display_attachments();
@@ -6921,6 +6953,9 @@ void EditorNode::_focus_tile(int p_tile_id) {
 	_sync_focused_tile_chrome(tile);
 	_reparent_scene_mode_into(tile);
 	_bind_all_leaf_docks();
+	if (EditorDebuggerNode *debugger = EditorDebuggerNode::get_singleton()) {
+		debugger->rebind_remote_scene_tree();
+	}
 
 	if (already_focused && already_current) {
 		return;
@@ -7139,25 +7174,7 @@ void EditorNode::_resolve_restored_script_leaf_associated_scenes() {
 	if (!scene_workspace) {
 		return;
 	}
-
-	WorkspaceLeafNode *script_leaf_node = scene_workspace->get_script_leaf();
-	if (!script_leaf_node) {
-		return;
-	}
-
-	WorkspaceLeafContent *content = script_leaf_node->get_leaf_content();
-	ScriptLeaf *script_leaf = content ? Object::cast_to<ScriptLeaf>(content->get_root_control()) : nullptr;
-	if (!script_leaf || script_leaf->get_associated_scene_root() || script_leaf->get_associated_scene_path().is_empty()) {
-		return;
-	}
-
-	const String scene_path = script_leaf->get_associated_scene_path();
-	for (int i = 0; i < editor_data.get_edited_scene_count(); i++) {
-		if (editor_data.get_scene_path(i) == scene_path) {
-			script_leaf->set_associated_scene_root(editor_data.get_edited_scene_root(i));
-			return;
-		}
-	}
+	scene_workspace->resolve_script_leaf_associated_scenes(editor_data);
 }
 
 void EditorNode::_load_workspace_from_config(const Ref<ConfigFile> &p_config_file) {
@@ -7167,6 +7184,9 @@ void EditorNode::_load_workspace_from_config(const Ref<ConfigFile> &p_config_fil
 
 	// restore_from_config() frees the outgoing workspace tree. Detach the shared
 	// scene-mode surface first so it is not destroyed with the old tile hosts.
+	if (EditorDebuggerNode *debugger = EditorDebuggerNode::get_singleton()) {
+		debugger->detach_remote_scene_tree();
+	}
 	if (editor_main_screen) {
 		if (VBoxContainer *scene_mode = editor_main_screen->get_scene_mode_control()) {
 			if (scene_mode->get_parent()) {
@@ -7194,6 +7214,9 @@ void EditorNode::_load_workspace_from_config(const Ref<ConfigFile> &p_config_fil
 	}
 	editor_data.set_focused_tile_id(scene_workspace->get_focused_leaf_id());
 	_bind_all_leaf_docks();
+	if (EditorDebuggerNode *debugger = EditorDebuggerNode::get_singleton()) {
+		debugger->rebind_remote_scene_tree();
+	}
 
 	WorkspaceLeafNode *focused_leaf = scene_workspace->get_focused_leaf();
 	if (focused_leaf && focused_leaf->get_pane_tile()) {
@@ -7600,6 +7623,9 @@ void EditorNode::_restart_editor(bool p_goto_project_manager) {
 }
 
 void EditorNode::_scene_tab_closed(int p_tab) {
+	if (p_tab < 0 || p_tab >= editor_data.get_edited_scene_count()) {
+		return;
+	}
 	current_menu_option = SCENE_TAB_CLOSE;
 	tab_closing_idx = p_tab;
 	Node *scene = editor_data.get_edited_scene_root(p_tab);
@@ -9466,6 +9492,14 @@ EditorNode::EditorNode() {
 	DEV_ASSERT(!singleton);
 	singleton = this;
 
+	add_user_signal(MethodInfo("request_help_search"));
+	add_user_signal(MethodInfo("script_add_function_request", PropertyInfo(Variant::OBJECT, "obj"), PropertyInfo(Variant::STRING, "function"), PropertyInfo(Variant::PACKED_STRING_ARRAY, "args")));
+	add_user_signal(MethodInfo("resource_saved", PropertyInfo(Variant::OBJECT, "obj")));
+	add_user_signal(MethodInfo("scene_saved", PropertyInfo(Variant::STRING, "path")));
+	add_user_signal(MethodInfo("scene_changed"));
+	add_user_signal(MethodInfo("scene_closed", PropertyInfo(Variant::STRING, "path")));
+	add_user_signal(MethodInfo("active_scene_context_changed"));
+
 #ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 	build_task_bootstrap_loader = memnew(FoundryBuildTaskBootstrapLoader);
 #endif
@@ -10274,18 +10308,16 @@ EditorNode::EditorNode() {
 		}
 	}
 
-	EditorCommandPalette::get_singleton()->add_command(TTR("Open Scene Dock"), "docks/open_scene", callable_mp(this, &EditorNode::_focus_leaf_scene_tree_dock), varray(), Ref<Shortcut>());
-	EditorCommandPalette::get_singleton()->add_command(TTR("Open Inspector Dock"), "docks/open_inspector", callable_mp(this, &EditorNode::_focus_leaf_inspector_dock), varray(), Ref<Shortcut>());
-	EditorCommandPalette::get_singleton()->add_command(TTR("Open Signals Dock"), "docks/open_signals", callable_mp(this, &EditorNode::_focus_leaf_signals_dock), varray(), Ref<Shortcut>());
-	EditorCommandPalette::get_singleton()->add_command(TTR("Open Groups Dock"), "docks/open_groups", callable_mp(this, &EditorNode::_focus_leaf_groups_dock), varray(), Ref<Shortcut>());
-	EditorCommandPalette::get_singleton()->add_command(TTR("Open History Dock"), "docks/open_history", callable_mp(this, &EditorNode::_focus_leaf_history_dock), varray(), Ref<Shortcut>());
-
-	ED_SHORTCUT_AND_COMMAND("docks/open_signals", TTRC("Open Signals Dock"));
-	ED_SHORTCUT_AND_COMMAND("docks/open_groups", TTRC("Open Groups Dock"));
-	ED_SHORTCUT_AND_COMMAND("docks/open_history", TTRC("Open History Dock"));
-	ED_GET_SHORTCUT("docks/open_signals")->connect(SceneStringName(pressed), callable_mp(this, &EditorNode::_focus_leaf_signals_dock));
-	ED_GET_SHORTCUT("docks/open_groups")->connect(SceneStringName(pressed), callable_mp(this, &EditorNode::_focus_leaf_groups_dock));
-	ED_GET_SHORTCUT("docks/open_history")->connect(SceneStringName(pressed), callable_mp(this, &EditorNode::_focus_leaf_history_dock));
+	Ref<Shortcut> open_scene_dock_shortcut = ED_SHORTCUT("docks/open_scene", TTRC("Open Scene Dock"));
+	Ref<Shortcut> open_inspector_dock_shortcut = ED_SHORTCUT("docks/open_inspector", TTRC("Open Inspector Dock"));
+	Ref<Shortcut> open_signals_dock_shortcut = ED_SHORTCUT("docks/open_signals", TTRC("Open Signals Dock"));
+	Ref<Shortcut> open_groups_dock_shortcut = ED_SHORTCUT("docks/open_groups", TTRC("Open Groups Dock"));
+	Ref<Shortcut> open_history_dock_shortcut = ED_SHORTCUT("docks/open_history", TTRC("Open History Dock"));
+	EditorCommandPalette::get_singleton()->add_command(TTR("Open Scene Dock"), "docks/open_scene", callable_mp(this, &EditorNode::_focus_leaf_scene_tree_dock), varray(), open_scene_dock_shortcut);
+	EditorCommandPalette::get_singleton()->add_command(TTR("Open Inspector Dock"), "docks/open_inspector", callable_mp(this, &EditorNode::_focus_leaf_inspector_dock), varray(), open_inspector_dock_shortcut);
+	EditorCommandPalette::get_singleton()->add_command(TTR("Open Signals Dock"), "docks/open_signals", callable_mp(this, &EditorNode::_focus_leaf_signals_dock), varray(), open_signals_dock_shortcut);
+	EditorCommandPalette::get_singleton()->add_command(TTR("Open Groups Dock"), "docks/open_groups", callable_mp(this, &EditorNode::_focus_leaf_groups_dock), varray(), open_groups_dock_shortcut);
+	EditorCommandPalette::get_singleton()->add_command(TTR("Open History Dock"), "docks/open_history", callable_mp(this, &EditorNode::_focus_leaf_history_dock), varray(), open_history_dock_shortcut);
 
 	// Add some offsets to make LEFT_R and RIGHT_L docks wider than minsize.
 	const int dock_hsize = 280;

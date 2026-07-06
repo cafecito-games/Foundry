@@ -31,6 +31,7 @@
 #pragma once
 
 #include "core/object/script_language.h"
+#include "core/templates/vector.h"
 #include "editor/debugger/editor_debugger_server.h"
 #include "editor/docks/editor_dock.h"
 
@@ -40,6 +41,7 @@ class EditorDebuggerPlugin;
 class EditorDebuggerTree;
 class EditorDebuggerRemoteObjects;
 class MenuButton;
+class SceneTreeDock;
 class ScriptEditorDebugger;
 class TabContainer;
 class UndoRedo;
@@ -93,7 +95,7 @@ private:
 
 	Ref<EditorDebuggerServer> server;
 	TabContainer *tabs = nullptr;
-	MenuButton *script_menu = nullptr;
+	Vector<MenuButton *> script_menus;
 
 	Ref<Script> stack_script; // Why?!?
 
@@ -104,6 +106,7 @@ private:
 	bool inspect_edited_object_wait = false;
 	float inspect_edited_object_timeout = 0;
 	EditorDebuggerTree *remote_scene_tree = nullptr;
+	SceneTreeDock *remote_scene_tree_dock = nullptr;
 	bool remote_scene_tree_wait = false;
 	float remote_scene_tree_timeout = 0.0;
 	bool remote_scene_tree_clear_msg = true;
@@ -137,6 +140,7 @@ protected:
 	void _remote_tree_clear_selection_requested(int p_debugger);
 	void _remote_tree_updated(int p_debugger);
 	void _remote_tree_button_pressed(Object *p_item, int p_column, int p_id, MouseButton p_button);
+	void _set_remote_scene_tree_dock(SceneTreeDock *p_dock);
 	void _remote_objects_updated(EditorDebuggerRemoteObjects *p_objs, int p_debugger);
 	void _remote_object_property_updated(ObjectID p_id, const String &p_property, int p_debugger);
 	void _remote_objects_requested(const TypedArray<uint64_t> &p_ids, int p_debugger);
@@ -159,6 +163,8 @@ protected:
 	void _break_state_changed();
 	void _menu_option(int p_id);
 	void _update_debug_options();
+	void _update_script_menu_state(MenuButton *p_menu);
+	void _set_debug_with_external_editor_checked(bool p_checked);
 
 protected:
 	void _notification(int p_what);
@@ -178,7 +184,9 @@ public:
 	void debug_break();
 	void debug_continue();
 
-	void set_script_debug_button(MenuButton *p_button);
+	void register_script_debug_button(MenuButton *p_button);
+	void unregister_script_debug_button(MenuButton *p_button);
+	void set_script_debug_button(MenuButton *p_button) { register_script_debug_button(p_button); }
 
 	String get_var_value(const String &p_var) const;
 	Ref<Script> get_dump_stack_script() const { return stack_script; } // Why do we need this?
@@ -196,6 +204,8 @@ public:
 	void request_remote_tree();
 	void set_remote_selection(const TypedArray<int64_t> &p_ids);
 	void clear_remote_tree_selection();
+	void detach_remote_scene_tree();
+	void rebind_remote_scene_tree();
 	void stop_waiting_inspection();
 	bool match_remote_selection(const TypedArray<uint64_t> &p_ids) const;
 	static void _methods_changed(void *p_ud, Object *p_base, const StringName &p_name, const Variant **p_args, int p_argcount);

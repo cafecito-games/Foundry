@@ -164,7 +164,7 @@ void register_editor_types() {
 	FOUNDRY_REGISTER_ABSTRACT_CLASS(EditorFileSystem);
 	FOUNDRY_REGISTER_CLASS(EditorFileSystemDirectory);
 	FOUNDRY_REGISTER_CLASS(EditorVCSInterface);
-	FOUNDRY_REGISTER_ABSTRACT_CLASS(ScriptEditor);
+	FOUNDRY_REGISTER_ABSTRACT_CLASS(ScriptEditorController);
 	FOUNDRY_REGISTER_ABSTRACT_CLASS(ScriptEditorBase);
 	FOUNDRY_REGISTER_CLASS(EditorSyntaxHighlighter);
 	FOUNDRY_REGISTER_ABSTRACT_CLASS(EditorInterface);

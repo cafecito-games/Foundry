@@ -49,7 +49,7 @@ class FindInFilesDialog;
 class ScriptCreateDialog;
 class ScriptEditorBase;
 class ScriptEditorView;
-class ScriptRefactorApplyPlan;
+struct ScriptRefactorApplyPlan;
 class VSplitContainer;
 class WindowWrapper;
 
@@ -107,8 +107,21 @@ class ScriptEditorController : public Object {
 	ScriptEditorView *_active_view() const;
 
 	void _on_file_dialog_selected(const String &p_file);
+	void _connect_global_signals();
+	void _on_request_help(const String &p_topic);
+	void _on_request_help_search(const String &p_text);
+	void _on_scene_closed(const String &p_path);
+	void _on_script_add_function_request(Object *p_obj, const String &p_function, const PackedStringArray &p_args);
+	void _on_resource_saved(const Ref<Resource> &p_res);
+	void _on_scene_saved(const String &p_path);
 
 public:
+	void notify_request_help_search(const String &p_text);
+	void notify_scene_closed(const String &p_path);
+	void notify_script_add_function_request(Object *p_obj, const String &p_function, const PackedStringArray &p_args);
+	void notify_resource_saved(const Ref<Resource> &p_res);
+	void notify_scene_saved(const String &p_path);
+
 	void _script_created(Ref<Script> p_script);
 	void _open_script_request(const String &p_path);
 	void _on_replace_in_files_requested(const String &text);
@@ -148,6 +161,8 @@ public:
 
 	Ref<ConfigFile> get_script_editor_cache() const { return script_editor_cache; }
 	Array get_cached_breakpoints_for_script(const String &p_path) const;
+	void restore_cached_breakpoints();
+	void save_script_editor_cache() const;
 
 	const Vector<Ref<EditorSyntaxHighlighter>> &get_syntax_highlighters() const { return syntax_highlighters; }
 	int get_script_editor_func_count() const { return script_editor_func_count; }
@@ -226,6 +241,7 @@ public:
 	void save_current_script();
 	void save_all_scripts();
 	void update_script_times();
+	bool test_script_times_on_disk(Ref<Resource> p_for_script = Ref<Resource>());
 
 	void set_window_layout(Ref<ConfigFile> p_layout);
 	void get_window_layout(Ref<ConfigFile> p_layout);

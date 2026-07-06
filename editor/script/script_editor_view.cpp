@@ -145,7 +145,10 @@ String ScriptEditorView::_get_debug_tooltip(const String &p_text, Node *p_se) {
 	}
 
 	// NOTE: See also `ScriptTextEditor::_show_symbol_tooltip()` for documentation tooltips enabled.
-	String debug_value = EditorDebuggerNode::get_singleton()->get_var_value(p_text);
+	String debug_value;
+	if (EditorDebuggerNode *debugger = EditorDebuggerNode::get_singleton()) {
+		debug_value = debugger->get_var_value(p_text);
+	}
 	if (!debug_value.is_empty()) {
 		constexpr int DISPLAY_LIMIT = 1024;
 		if (debug_value.size() > DISPLAY_LIMIT) {
@@ -683,12 +686,8 @@ void ScriptEditorView::_mark_built_in_scripts_as_saved(const String &p_parent_pa
 }
 
 
-bool ScriptEditorView::_test_script_times_on_disk(Ref<Resource> p_for_script) {
-	controller->get_disk_changed_list()->clear();
-	TreeItem *r = controller->get_disk_changed_list()->create_item();
-
-	bool need_ask = false;
-	bool need_reload = false;
+void ScriptEditorView::_collect_scripts_modified_on_disk(TreeItem *p_root, bool &r_need_ask, bool &r_need_reload, Ref<Resource> p_for_script) {
+	ERR_FAIL_NULL(p_root);
 	bool use_autoreload = EDITOR_GET("text_editor/behavior/files/auto_reload_scripts_on_external_change");
 
 	for (int i = 0; i < tab_container->get_tab_count(); i++) {
@@ -707,27 +706,16 @@ bool ScriptEditorView::_test_script_times_on_disk(Ref<Resource> p_for_script) {
 			uint64_t date = FileAccess::get_modified_time(se->edited_file_data.path);
 
 			if (last_date != date) {
-				TreeItem *ti = controller->get_disk_changed_list()->create_item(r);
+				TreeItem *ti = controller->get_disk_changed_list()->create_item(p_root);
 				ti->set_text(0, se->edited_file_data.path.get_file());
 
 				if (!use_autoreload || se->is_unsaved()) {
-					need_ask = true;
+					r_need_ask = true;
 				}
-				need_reload = true;
+				r_need_reload = true;
 			}
 		}
 	}
-
-	if (need_reload) {
-		if (!need_ask) {
-			controller->reload_scripts();
-			need_reload = false;
-		} else {
-			callable_mp((Window *)controller->get_disk_changed(), &Window::popup_centered_ratio).call_deferred(0.3);
-		}
-	}
-
-	return need_reload;
 }
 
 void _import_text_editor_theme(const String &p_file) {
@@ -972,7 +960,7 @@ void ScriptEditorView::_menu_option(int p_option) {
 			}
 		} break;
 		case FILE_MENU_SAVE_ALL: {
-			if (_test_script_times_on_disk()) {
+			if (controller->test_script_times_on_disk()) {
 				return;
 			}
 
@@ -1383,18 +1371,6 @@ void ScriptEditorView::_notification(int p_what) {
 			add_theme_style_override(SceneStringName(panel), get_theme_stylebox(SNAME("ScriptEditorPanel"), EditorStringName(EditorStyles)));
 
 			get_tree()->connect("tree_changed", callable_mp(this, &ScriptEditorView::_tree_changed));
-			if (EditorNode *editor_node = EditorNode::get_singleton()) {
-				editor_node->get_focused_inspector_dock()->connect("request_help", callable_mp(this, &ScriptEditorView::_help_class_open));
-				editor_node->connect("request_help_search", callable_mp(this, &ScriptEditorView::_help_search));
-				editor_node->connect("scene_closed", callable_mp(this, &ScriptEditorView::_close_builtin_scripts_from_scene));
-				editor_node->connect("script_add_function_request", callable_mp(this, &ScriptEditorView::_add_callback));
-				editor_node->connect("resource_saved", callable_mp(this, &ScriptEditorView::_res_saved_callback));
-				editor_node->connect("scene_saved", callable_mp(this, &ScriptEditorView::_scene_saved_callback));
-			}
-			if (FileSystemDock *filesystem_dock = FileSystemDock::get_singleton()) {
-				filesystem_dock->connect("files_moved", callable_mp(controller, &ScriptEditorController::_files_moved));
-				filesystem_dock->connect("file_removed", callable_mp(controller, &ScriptEditorController::_file_removed));
-			}
 			script_list->connect(SceneStringName(item_selected), callable_mp(this, &ScriptEditorView::_script_selected));
 
 			members_overview->connect(SceneStringName(item_selected), callable_mp(this, &ScriptEditorView::_members_overview_selected));
@@ -1402,9 +1378,6 @@ void ScriptEditorView::_notification(int p_what) {
 			script_split->connect("dragged", callable_mp(this, &ScriptEditorView::_split_dragged));
 			list_split->connect("dragged", callable_mp(this, &ScriptEditorView::_split_dragged));
 
-			if (EditorFileSystem *editor_file_system = EditorFileSystem::get_singleton()) {
-				editor_file_system->connect("filesystem_changed", callable_mp(controller, &ScriptEditorController::_filesystem_changed));
-			}
 #ifdef ANDROID_ENABLED
 			set_process(true);
 #endif
@@ -1460,15 +1433,23 @@ void ScriptEditorView::_notification(int p_what) {
 		} break;
 
 		case NOTIFICATION_PREDELETE: {
+			if (debug_menu) {
+				if (EditorDebuggerNode *debugger = EditorDebuggerNode::get_singleton()) {
+					debugger->unregister_script_debug_button(debug_menu);
+				}
+				debug_menu = nullptr;
+			}
 			if (controller) {
 				controller->unregister_view(this);
 			}
 		} break;
 
 		case NOTIFICATION_APPLICATION_FOCUS_IN: {
-			if (is_inside_tree()) {
-				_test_script_times_on_disk();
-				_update_modified_scripts_for_external_editor();
+			if (is_inside_tree() && controller->get_focused_view() == this) {
+				controller->test_script_times_on_disk();
+				for (ScriptEditorView *view : controller->get_views()) {
+					view->_update_modified_scripts_for_external_editor();
+				}
 			}
 		} break;
 	}
@@ -2056,8 +2037,12 @@ bool ScriptEditorView::edit(const Ref<Resource> &p_resource, int p_line, int p_c
 		return false;
 	}
 
+	EditorDebuggerNode *debugger = EditorDebuggerNode::get_singleton();
+	const bool debugger_allows_external_editor = !debugger ||
+			debugger->get_dump_stack_script() != p_resource ||
+			debugger->get_debug_with_external_editor();
 	if (use_external_editor &&
-			(EditorDebuggerNode::get_singleton()->get_dump_stack_script() != p_resource || EditorDebuggerNode::get_singleton()->get_debug_with_external_editor()) &&
+			debugger_allows_external_editor &&
 			p_resource->get_path().is_resource_file()) {
 		if (ScriptEditorPlugin::open_in_external_editor(ProjectSettings::get_singleton()->globalize_path(p_resource->get_path()), p_line, p_col)) {
 			return false;
@@ -2191,7 +2176,7 @@ bool ScriptEditorView::edit(const Ref<Resource> &p_resource, int p_line, int p_c
 
 	//test for modification, maybe the script was not edited but was loaded
 
-	_test_script_times_on_disk(p_resource);
+	controller->test_script_times_on_disk(p_resource);
 	_update_modified_scripts_for_external_editor(p_resource);
 
 	if (p_line >= 0) {
@@ -2205,7 +2190,7 @@ bool ScriptEditorView::edit(const Ref<Resource> &p_resource, int p_line, int p_c
 
 void ScriptEditorView::save_current_script() {
 	ScriptEditorBase *current = _get_current_editor();
-	if (!current || _test_script_times_on_disk()) {
+	if (!current || controller->test_script_times_on_disk(current->get_edited_resource())) {
 		return;
 	}
 
@@ -2959,7 +2944,6 @@ void ScriptEditorView::set_window_layout(Ref<ConfigFile> p_layout) {
 
 	restoring_layout = true;
 
-	HashSet<String> loaded_scripts;
 	List<String> extensions;
 	ResourceLoader::get_recognized_extensions_for_type("Script", &extensions);
 	ResourceLoader::get_recognized_extensions_for_type("JSON", &extensions);
@@ -2984,8 +2968,6 @@ void ScriptEditorView::set_window_layout(Ref<ConfigFile> p_layout) {
 				}
 			}
 		}
-		loaded_scripts.insert(path);
-
 		bool is_script = false;
 		if (path.is_resource_file()) {
 			is_script = extensions.find(path.get_extension());
@@ -3043,25 +3025,6 @@ void ScriptEditorView::set_window_layout(Ref<ConfigFile> p_layout) {
 		list_split->set_split_offset(p_layout->get_value("ScriptEditor", "list_split_offset"));
 	}
 
-	// Remove any deleted editors that have been removed between launches.
-	// and if a Script, register breakpoints with the debugger.
-	Vector<String> cached_editors = controller->get_script_editor_cache()->get_sections();
-	for (const String &E : cached_editors) {
-		if (loaded_scripts.has(E)) {
-			continue;
-		}
-
-		if (!_script_exists(E)) {
-			controller->get_script_editor_cache()->erase_section(E);
-			continue;
-		}
-
-		Array breakpoints = controller->get_cached_breakpoints_for_script(E);
-		for (int breakpoint : breakpoints) {
-			EditorDebuggerNode::get_singleton()->set_breakpoint(E, (int)breakpoint + 1, true);
-		}
-	}
-
 	_set_script_zoom_factor(p_layout->get_value("ScriptEditor", "zoom_factor", 1.0f));
 
 	restoring_layout = false;
@@ -3116,7 +3079,7 @@ void ScriptEditorView::get_window_layout(Ref<ConfigFile> p_layout) {
 	p_layout->set_value("ScriptEditor", "zoom_factor", zoom_factor);
 
 	// Save the cache.
-	controller->get_script_editor_cache()->save(EditorPaths::get_singleton()->get_project_settings_dir().path_join("script_editor_cache.cfg"));
+	controller->save_script_editor_cache();
 }
 
 void ScriptEditorView::_help_class_open(const String &p_class) {
@@ -3606,20 +3569,14 @@ void ScriptEditorView::setup_view_chrome(WindowWrapper *p_wrapper) {
 	script_search_menu->get_popup()->connect(SceneStringName(id_pressed), callable_mp(this, &ScriptEditorView::_menu_option));
 	menu_hb->add_child(script_search_menu);
 
-	MenuButton *debug_menu_btn = memnew(MenuButton);
-	debug_menu_btn->set_flat(false);
-	debug_menu_btn->set_theme_type_variation("FlatMenuButton");
-	menu_hb->add_child(debug_menu_btn);
-	debug_menu_btn->hide();
+	debug_menu = memnew(MenuButton);
+	debug_menu->set_flat(false);
+	debug_menu->set_theme_type_variation("FlatMenuButton");
+	menu_hb->add_child(debug_menu);
+	debug_menu->hide();
 
 	if (EditorDebuggerNode *debugger = EditorDebuggerNode::get_singleton()) {
-		debugger->set_script_debug_button(debug_menu_btn);
-		debugger->connect("goto_script_line", callable_mp(controller, &ScriptEditorController::_goto_script_line));
-		debugger->connect("set_execution", callable_mp(controller, &ScriptEditorController::_set_execution));
-		debugger->connect("clear_execution", callable_mp(controller, &ScriptEditorController::_clear_execution));
-		debugger->connect("breaked", callable_mp(controller, &ScriptEditorController::_breaked));
-		debugger->connect("breakpoint_set_in_tree", callable_mp(controller, &ScriptEditorController::_set_breakpoint));
-		debugger->connect("breakpoints_cleared_in_tree", callable_mp(controller, &ScriptEditorController::_clear_breakpoints));
+		debugger->register_script_debug_button(debug_menu);
 	}
 
 	script_name_label = memnew(Label);
@@ -3770,6 +3727,7 @@ void ScriptEditorView::get_view_layout(Ref<ConfigFile> p_layout, const String &p
 	p_layout->set_value(p_section, "script_split_offset", script_split->get_split_offset());
 	p_layout->set_value(p_section, "list_split_offset", list_split->get_split_offset());
 	p_layout->set_value(p_section, "zoom_factor", zoom_factor);
+	controller->save_script_editor_cache();
 }
 
 void ScriptEditorView::set_view_layout(const Ref<ConfigFile> &p_layout, const String &p_section) {
@@ -3786,7 +3744,6 @@ void ScriptEditorView::set_view_layout(const Ref<ConfigFile> &p_layout, const St
 
 	restoring_layout = true;
 
-	HashSet<String> loaded_scripts;
 	List<String> extensions;
 	ResourceLoader::get_recognized_extensions_for_type("Script", &extensions);
 	ResourceLoader::get_recognized_extensions_for_type("JSON", &extensions);
@@ -3810,8 +3767,6 @@ void ScriptEditorView::set_view_layout(const Ref<ConfigFile> &p_layout, const St
 				}
 			}
 		}
-		loaded_scripts.insert(path);
-
 		bool is_script = false;
 		if (path.is_resource_file()) {
 			is_script = extensions.find(path.get_extension());

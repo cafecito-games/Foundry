@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <class name="ScriptEditorBase" inherits="VBoxContainer" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
 	<brief_description>
-		Base editor for editing scripts in the [ScriptEditor].
+		Base editor for editing scripts in the [ScriptEditorController].
 	</brief_description>
 	<description>
-		Base editor for editing scripts in the [ScriptEditor]. This does not include documentation items.
+		Base editor for editing scripts in the [ScriptEditorController]. This does not include documentation items.
 	</description>
 	<tutorials>
 	</tutorials>

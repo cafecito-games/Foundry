@@ -158,6 +158,7 @@ public:
 	Vector<WorkspaceLeafNode *> get_script_leaves() const;
 	WorkspaceLeafNode *get_focused_script_leaf() const;
 	WorkspaceLeafNode *find_script_leaf_for_path(const String &p_script_path) const;
+	void resolve_script_leaf_associated_scenes(EditorData &p_editor_data);
 	// Reveal the script leaf pointed at p_script_path, splitting beside p_source_leaf
 	// when no leaf already hosts that script. Returns the script leaf.
 	WorkspaceLeafNode *open_script_leaf(WorkspaceLeafNode *p_source_leaf, const String &p_script_path, bool p_force_new_leaf = false);
