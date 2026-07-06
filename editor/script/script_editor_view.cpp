@@ -3580,14 +3580,15 @@ void ScriptEditorView::setup_view_chrome(WindowWrapper *p_wrapper) {
 	menu_hb->add_child(debug_menu_btn);
 	debug_menu_btn->hide();
 
-	EditorDebuggerNode *debugger = EditorDebuggerNode::get_singleton();
-	debugger->set_script_debug_button(debug_menu_btn);
-	debugger->connect("goto_script_line", callable_mp(controller, &ScriptEditorController::_goto_script_line));
-	debugger->connect("set_execution", callable_mp(controller, &ScriptEditorController::_set_execution));
-	debugger->connect("clear_execution", callable_mp(controller, &ScriptEditorController::_clear_execution));
-	debugger->connect("breaked", callable_mp(controller, &ScriptEditorController::_breaked));
-	debugger->connect("breakpoint_set_in_tree", callable_mp(controller, &ScriptEditorController::_set_breakpoint));
-	debugger->connect("breakpoints_cleared_in_tree", callable_mp(controller, &ScriptEditorController::_clear_breakpoints));
+	if (EditorDebuggerNode *debugger = EditorDebuggerNode::get_singleton()) {
+		debugger->set_script_debug_button(debug_menu_btn);
+		debugger->connect("goto_script_line", callable_mp(controller, &ScriptEditorController::_goto_script_line));
+		debugger->connect("set_execution", callable_mp(controller, &ScriptEditorController::_set_execution));
+		debugger->connect("clear_execution", callable_mp(controller, &ScriptEditorController::_clear_execution));
+		debugger->connect("breaked", callable_mp(controller, &ScriptEditorController::_breaked));
+		debugger->connect("breakpoint_set_in_tree", callable_mp(controller, &ScriptEditorController::_set_breakpoint));
+		debugger->connect("breakpoints_cleared_in_tree", callable_mp(controller, &ScriptEditorController::_clear_breakpoints));
+	}
 
 	script_name_label = memnew(Label);
 	script_name_label->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_CENTER);

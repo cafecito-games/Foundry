@@ -46,6 +46,10 @@ CreateScriptEditorFunc ScriptEditorController::script_editor_funcs[ScriptEditorC
 ScriptEditorController::ScriptEditorController() {
 	singleton = this;
 
+	ED_SHORTCUT("script_editor/reopen_closed_script", TTRC("Reopen Closed Script"), KeyModifierMask::CMD_OR_CTRL | KeyModifierMask::SHIFT | Key::T);
+	ED_SHORTCUT("script_editor/clear_recent", TTRC("Clear Recent Scripts"));
+	ED_SHORTCUT("script_editor/replace_in_files", TTRC("Replace in Files..."), KeyModifierMask::CMD_OR_CTRL | KeyModifierMask::SHIFT | Key::R);
+
 	script_editor_cache.instantiate();
 	script_editor_cache->load(EditorPaths::get_singleton()->get_project_settings_dir().path_join("script_editor_cache.cfg"));
 
@@ -136,11 +140,13 @@ void ScriptEditorController::init_global_services(Node *p_dialog_parent) {
 	find_in_files_dialog->connect(FindInFilesDialog::SIGNAL_REPLACE_REQUESTED, callable_mp(this, &ScriptEditorController::_start_find_in_files).bind(true));
 	p_dialog_parent->add_child(find_in_files_dialog);
 
-	find_in_files = memnew(FindInFilesContainer);
-	EditorDockManager::get_singleton()->add_dock(find_in_files);
-	find_in_files->close();
-	find_in_files->connect("result_selected", callable_mp(this, &ScriptEditorController::_on_find_in_files_result_selected));
-	find_in_files->connect("files_modified", callable_mp(this, &ScriptEditorController::_on_find_in_files_modified_files));
+	if (EditorNode::get_singleton() && EditorDockManager::get_singleton()) {
+		find_in_files = memnew(FindInFilesContainer);
+		EditorDockManager::get_singleton()->add_dock(find_in_files);
+		find_in_files->close();
+		find_in_files->connect("result_selected", callable_mp(this, &ScriptEditorController::_on_find_in_files_result_selected));
+		find_in_files->connect("files_modified", callable_mp(this, &ScriptEditorController::_on_find_in_files_modified_files));
+	}
 
 	autosave_timer = memnew(Timer);
 	autosave_timer->set_one_shot(false);
