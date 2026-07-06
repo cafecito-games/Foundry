@@ -1,0 +1,319 @@
+name: PR Editor Artifact Requests
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+  pull-requests: read
+
+env:
+  LINUX_SCONS_FLAGS: >-
+    dev_mode=yes
+    dev_build=yes
+    tests=yes
+    module_text_server_fb_enabled=yes
+  MACOS_SCONS_FLAGS: >-
+    dev_mode=yes
+    module_text_server_fb_enabled=yes
+    "accesskit_sdk_path=${{ github.workspace }}/accesskit-c-0.21.2/"
+
+jobs:
+  preflight:
+    name: Parse request
+    runs-on: ubuntu-24.04
+    outputs:
+      requested: ${{ steps.plan.outputs.requested }}
+      authorized: ${{ steps.plan.outputs.authorized }}
+      matrix: ${{ steps.plan.outputs.matrix }}
+      pr_number: ${{ steps.plan.outputs.pr_number }}
+      pr_head_sha: ${{ steps.plan.outputs.pr_head_sha }}
+      pr_short_sha: ${{ steps.plan.outputs.pr_short_sha }}
+      pr_head_repo: ${{ steps.plan.outputs.pr_head_repo }}
+      platforms_label: ${{ steps.plan.outputs.platforms_label }}
+
+    steps:
+      - name: Checkout workflow helpers
+        uses: actions/checkout@v6
+
+      - name: Resolve commenter permission
+        id: permission
+        if: ${{ github.event.issue.pull_request != null }}
+        env:
+          COMMENT_AUTHOR: ${{ github.event.comment.user.login }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          permission="$(gh api "repos/${GITHUB_REPOSITORY}/collaborators/${COMMENT_AUTHOR}/permission" --jq ".permission" 2>/dev/null || true)"
+          if [ -z "$permission" ]; then
+            permission="none"
+          fi
+          echo "permission=$permission" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve pull request head
+        id: pr
+        if: ${{ github.event.issue.pull_request != null }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          echo "head_sha=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq ".head.sha")" >> "$GITHUB_OUTPUT"
+          echo "head_repo=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq ".head.repo.full_name")" >> "$GITHUB_OUTPUT"
+
+      - name: Plan requested artifacts
+        id: plan
+        env:
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          IS_PR: ${{ github.event.issue.pull_request != null }}
+          PERMISSION: ${{ steps.permission.outputs.permission || 'none' }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+          HEAD_SHA: ${{ steps.pr.outputs.head_sha || github.sha }}
+          HEAD_REPO: ${{ steps.pr.outputs.head_repo || github.repository }}
+        run: |
+          is_pr_arg="--no-is-pr"
+          if [ "$IS_PR" = "true" ]; then
+            is_pr_arg="--is-pr"
+          fi
+
+          python3 .github/scripts/pr_editor_artifact_request.py plan \
+            --body "$COMMENT_BODY" \
+            --permission "$PERMISSION" \
+            "$is_pr_arg" \
+            --pr-number "$PR_NUMBER" \
+            --head-sha "$HEAD_SHA" \
+            --head-repo "$HEAD_REPO"
+
+      - name: Comment on unauthorized request
+        if: ${{ steps.plan.outputs.requested == 'true' && steps.plan.outputs.authorized != 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          gh issue comment "$PR_NUMBER" --body "I can only build PR editor artifacts for comments from users with write access or higher."
+
+      - name: Comment on accepted request
+        if: ${{ steps.plan.outputs.requested == 'true' && steps.plan.outputs.authorized == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+          PLATFORMS_LABEL: ${{ steps.plan.outputs.platforms_label }}
+          SHORT_SHA: ${{ steps.plan.outputs.pr_short_sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          cat > /tmp/pr-editor-artifact-comment.md <<EOF
+          Accepted request for ${PLATFORMS_LABEL} editor artifact(s) from PR #${PR_NUMBER} at \`${SHORT_SHA}\`.
+
+          Workflow run: ${RUN_URL}
+          EOF
+          gh issue comment "$PR_NUMBER" --body-file /tmp/pr-editor-artifact-comment.md
+
+  build:
+    name: Build ${{ matrix.label }} editor
+    needs: preflight
+    if: ${{ needs.preflight.outputs.requested == 'true' && needs.preflight.outputs.authorized == 'true' }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.preflight.outputs.matrix) }}
+    concurrency:
+      group: pr-editor-artifact-${{ matrix.os }}-${{ needs.preflight.outputs.pr_head_sha }}
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout workflow helpers
+        uses: actions/checkout@v6
+
+      - name: Check for existing artifact
+        id: existing
+        env:
+          ARTIFACT_NAME: ${{ matrix.artifact_name }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python3 .github/scripts/pr_editor_artifact_request.py find-artifact \
+            --repository "$GITHUB_REPOSITORY" \
+            --artifact-name "$ARTIFACT_NAME"
+
+      - name: Comment on existing artifact
+        if: ${{ steps.existing.outputs.found == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ needs.preflight.outputs.pr_number }}
+          LABEL: ${{ matrix.label }}
+          ARTIFACT_URL: ${{ steps.existing.outputs.artifact_url }}
+          RUN_URL: ${{ steps.existing.outputs.run_url }}
+          SHORT_SHA: ${{ needs.preflight.outputs.pr_short_sha }}
+        run: |
+          cat > /tmp/pr-editor-artifact-comment.md <<EOF
+          ${LABEL} editor artifact already exists for \`${SHORT_SHA}\`.
+
+          Download: ${ARTIFACT_URL}
+          Workflow run: ${RUN_URL}
+          EOF
+          gh issue comment "$PR_NUMBER" --body-file /tmp/pr-editor-artifact-comment.md
+
+      - name: Comment on started artifact build
+        if: ${{ steps.existing.outputs.found != 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ needs.preflight.outputs.pr_number }}
+          LABEL: ${{ matrix.label }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SHORT_SHA: ${{ needs.preflight.outputs.pr_short_sha }}
+        run: |
+          cat > /tmp/pr-editor-artifact-comment.md <<EOF
+          Building the ${LABEL} editor for \`${SHORT_SHA}\`.
+
+          Workflow run: ${RUN_URL}
+          EOF
+          gh issue comment "$PR_NUMBER" --body-file /tmp/pr-editor-artifact-comment.md
+
+      - name: Checkout pull request head
+        if: ${{ steps.existing.outputs.found != 'true' }}
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ needs.preflight.outputs.pr_head_repo }}
+          ref: ${{ needs.preflight.outputs.pr_head_sha }}
+          submodules: recursive
+
+      - name: Setup Linux dependencies
+        if: ${{ matrix.os == 'linux' && steps.existing.outputs.found != 'true' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libwayland-bin
+
+      - name: Free Linux runner disk space
+        if: ${{ matrix.os == 'linux' && steps.existing.outputs.found != 'true' }}
+        run: |
+          echo "Disk usage before:" && df -h
+          sudo rm -rf /usr/local/lib/android
+          echo "Disk usage after:" && df -h
+
+      - name: Select Xcode 26
+        if: ${{ matrix.os == 'macos' && steps.existing.outputs.found != 'true' }}
+        run: sudo xcode-select -s /Applications/Xcode_26.0.1.app
+
+      - name: Restore Foundry build cache
+        if: ${{ steps.existing.outputs.found != 'true' }}
+        uses: ./.github/actions/foundry-cache-restore
+        with:
+          cache-name: pr-editor-artifact-${{ matrix.os }}
+        continue-on-error: true
+
+      - name: Setup Python and SCons
+        if: ${{ steps.existing.outputs.found != 'true' }}
+        uses: ./.github/actions/foundry-deps
+
+      - name: Download pre-built AccessKit
+        if: ${{ matrix.os == 'macos' && steps.existing.outputs.found != 'true' }}
+        uses: dsaltares/fetch-gh-release-asset@1.1.2
+        with:
+          repo: godotengine/godot-accesskit-c-static
+          version: tags/0.21.2
+          file: accesskit-c-0.21.2.zip
+          target: accesskit-c-0.21.2/accesskit_c.zip
+
+      - name: Extract pre-built AccessKit
+        if: ${{ matrix.os == 'macos' && steps.existing.outputs.found != 'true' }}
+        run: unzip -o accesskit-c-0.21.2/accesskit_c.zip
+
+      - name: Setup Vulkan SDK
+        id: vulkan-sdk
+        if: ${{ matrix.os == 'macos' && steps.existing.outputs.found != 'true' }}
+        run: |
+          if sh misc/scripts/install_vulkan_sdk_macos.sh; then
+            echo "VULKAN_ENABLED=yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::macOS: Vulkan SDK installation failed, building without Vulkan support."
+            echo "VULKAN_ENABLED=no" >> "$GITHUB_OUTPUT"
+          fi
+        continue-on-error: true
+
+      - name: Compile Linux editor
+        if: ${{ matrix.os == 'linux' && steps.existing.outputs.found != 'true' }}
+        uses: ./.github/actions/foundry-build
+        with:
+          scons-flags: ${{ env.LINUX_SCONS_FLAGS }}
+          platform: linuxbsd
+          target: editor
+
+      - name: Compile macOS editor (x86_64)
+        if: ${{ matrix.os == 'macos' && steps.existing.outputs.found != 'true' }}
+        uses: ./.github/actions/foundry-build
+        with:
+          scons-flags: ${{ env.MACOS_SCONS_FLAGS }} arch=x86_64 vulkan=${{ steps.vulkan-sdk.outputs.VULKAN_ENABLED }}
+          platform: macos
+          target: editor
+
+      - name: Compile macOS editor (arm64)
+        if: ${{ matrix.os == 'macos' && steps.existing.outputs.found != 'true' }}
+        uses: ./.github/actions/foundry-build
+        with:
+          scons-flags: ${{ env.MACOS_SCONS_FLAGS }} arch=arm64 vulkan=${{ steps.vulkan-sdk.outputs.VULKAN_ENABLED }}
+          platform: macos
+          target: editor
+
+      - name: Save Foundry build cache
+        if: ${{ steps.existing.outputs.found != 'true' }}
+        uses: ./.github/actions/foundry-cache-save
+        with:
+          cache-name: pr-editor-artifact-${{ matrix.os }}
+        continue-on-error: true
+
+      - name: Prepare Linux artifact
+        if: ${{ matrix.os == 'linux' && steps.existing.outputs.found != 'true' }}
+        run: |
+          strip bin/foundry.linuxbsd.editor.dev.x86_64
+          chmod +x bin/foundry.linuxbsd.editor.dev.x86_64
+
+      - name: Prepare macOS artifact
+        if: ${{ matrix.os == 'macos' && steps.existing.outputs.found != 'true' }}
+        run: |
+          lipo -create ./bin/foundry.macos.editor.x86_64 ./bin/foundry.macos.editor.arm64 -output ./bin/foundry.macos.editor.universal
+          rm ./bin/foundry.macos.editor.x86_64 ./bin/foundry.macos.editor.arm64
+          strip bin/foundry.macos.editor.universal
+          chmod +x bin/foundry.macos.editor.universal
+
+      - name: Upload editor artifact
+        id: upload
+        if: ${{ steps.existing.outputs.found != 'true' }}
+        uses: ./.github/actions/upload-artifact
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_path }}
+
+      - name: Comment on successful artifact
+        if: ${{ success() && steps.existing.outputs.found != 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ needs.preflight.outputs.pr_number }}
+          LABEL: ${{ matrix.label }}
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SHORT_SHA: ${{ needs.preflight.outputs.pr_short_sha }}
+        run: |
+          cat > /tmp/pr-editor-artifact-comment.md <<EOF
+          ${LABEL} editor artifact is ready for \`${SHORT_SHA}\`.
+
+          Download: ${ARTIFACT_URL}
+          Workflow run: ${RUN_URL}
+          EOF
+          gh issue comment "$PR_NUMBER" --body-file /tmp/pr-editor-artifact-comment.md
+
+      - name: Comment on failed artifact build
+        if: ${{ failure() && steps.existing.outputs.found != 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ needs.preflight.outputs.pr_number }}
+          LABEL: ${{ matrix.label }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SHORT_SHA: ${{ needs.preflight.outputs.pr_short_sha }}
+        run: |
+          cat > /tmp/pr-editor-artifact-comment.md <<EOF
+          ${LABEL} editor artifact build failed for \`${SHORT_SHA}\`.
+
+          Workflow run: ${RUN_URL}
+          EOF
+          gh issue comment "$PR_NUMBER" --body-file /tmp/pr-editor-artifact-comment.md

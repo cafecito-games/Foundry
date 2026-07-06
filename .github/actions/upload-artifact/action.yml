@@ -10,10 +10,22 @@ inputs:
     required: true
     default: bin/*
 
+outputs:
+  artifact-id:
+    description: The ID of the uploaded artifact.
+    value: ${{ steps.upload.outputs.artifact-id }}
+  artifact-url:
+    description: The URL of the uploaded artifact.
+    value: ${{ steps.upload.outputs.artifact-url }}
+  artifact-digest:
+    description: The SHA-256 digest of the uploaded artifact.
+    value: ${{ steps.upload.outputs.artifact-digest }}
+
 runs:
   using: composite
   steps:
     - name: Upload Foundry Artifact
+      id: upload
       uses: actions/upload-artifact@v7
       with:
         name: ${{ inputs.name }}
