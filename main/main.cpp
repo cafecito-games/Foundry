@@ -2358,7 +2358,15 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 	// A `project run --script <path>` or `project test --runner <path>` invocation is applied later
 	// in `Main::start()`, after this check runs. Treat a pending CLI script or test runner as a
 	// valid run target so a project without a main scene can still execute instead of aborting here.
-	if (main_args.is_empty() && foundry_cli_parse.invocation.script.is_empty() && foundry_cli_parse.invocation.runner.is_empty() && String(GLOBAL_GET("application/run/main_scene")) == "") {
+	// Foundry Script CLI tools (`script format`, `script lint`, `script migrate`) are also handled
+	// later in `Main::start()` and never require a main scene.
+	const bool has_cli_run_target_without_main_scene =
+			!foundry_cli_parse.invocation.script.is_empty() ||
+			!foundry_cli_parse.invocation.runner.is_empty() ||
+			foundry_cli_parse.invocation.kind == FoundryCLIParser::CLIInvocation::SCRIPT_FORMAT ||
+			foundry_cli_parse.invocation.kind == FoundryCLIParser::CLIInvocation::SCRIPT_LINT ||
+			foundry_cli_parse.invocation.kind == FoundryCLIParser::CLIInvocation::SCRIPT_MIGRATE;
+	if (main_args.is_empty() && !has_cli_run_target_without_main_scene && String(GLOBAL_GET("application/run/main_scene")) == "") {
 #ifdef TOOLS_ENABLED
 		if (!editor && !project_manager) {
 #endif
