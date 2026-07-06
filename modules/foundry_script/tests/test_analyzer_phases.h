@@ -107,16 +107,17 @@ func run() -> int:
 
 	CHECK_EQ(parser_ref->raise_status(FSParserRef::INHERITANCE_SOLVED), OK);
 	CHECK_EQ(parser_ref->get_status(), FSParserRef::INHERITANCE_SOLVED);
-	CHECK(parser_ref->get_parser()->head != nullptr);
-	CHECK_FALSE(parser_ref->get_parser()->head->base_type.has_no_type());
+	const FSParser::ClassNode *head = parser_ref->get_parser()->get_tree();
+	REQUIRE(head != nullptr);
+	CHECK_FALSE(head->base_type.has_no_type());
 
 	CHECK_EQ(parser_ref->raise_status(FSParserRef::INTERFACE_SOLVED), OK);
 	CHECK_EQ(parser_ref->get_status(), FSParserRef::INTERFACE_SOLVED);
-	CHECK(parser_ref->get_parser()->head->resolved_interface);
+	CHECK(head->resolved_interface);
 
 	CHECK_EQ(parser_ref->raise_status(FSParserRef::FULLY_SOLVED), OK);
 	CHECK_EQ(parser_ref->get_status(), FSParserRef::FULLY_SOLVED);
-	CHECK(parser_ref->get_parser()->head->resolved_body);
+	CHECK(head->resolved_body);
 
 	FSCache::remove_parser(path);
 }
