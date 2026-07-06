@@ -254,6 +254,8 @@ void ScriptTestExecutionPendingState::_finalize_from_guard() {
 	}
 	finalized = true;
 
+	Ref<ScriptTestExecutionPendingState> keep_alive(this);
+
 	Ref<ScriptTestExecutionResult> result;
 	result.instantiate();
 
@@ -280,11 +282,12 @@ void ScriptTestExecutionPendingState::_finalize_from_guard() {
 	FSScriptTestGuard::unregister_pending(this);
 
 	result->configure(status, Variant(), message, elapsed, guard.timeout_seconds);
-	emit_signal(SNAME("completed"), result);
 
 	if (execution.is_valid()) {
 		execution->_pending_finalized(this);
 	}
+
+	emit_signal(SNAME("completed"), result);
 }
 
 void ScriptTestExecutionPendingState::_on_coroutine_completed(const Variant &p_result) {
@@ -292,6 +295,8 @@ void ScriptTestExecutionPendingState::_on_coroutine_completed(const Variant &p_r
 		return;
 	}
 	finalized = true;
+
+	Ref<ScriptTestExecutionPendingState> keep_alive(this);
 
 	Ref<ScriptTestExecutionResult> result;
 	result.instantiate();
@@ -320,11 +325,12 @@ void ScriptTestExecutionPendingState::_on_coroutine_completed(const Variant &p_r
 	FSScriptTestGuard::unregister_pending(this);
 
 	result->configure(status, return_value, message, elapsed, guard.timeout_seconds);
-	emit_signal(SNAME("completed"), result);
 
 	if (execution.is_valid()) {
 		execution->_pending_finalized(this);
 	}
+
+	emit_signal(SNAME("completed"), result);
 }
 
 void ScriptTestExecution::_bind_methods() {

@@ -207,6 +207,28 @@ TEST_CASE("[FoundryCLI][ProjectTest] Missing runner reports runner error without
 	CHECK_NE(exit_code, 0);
 }
 
+TEST_CASE("[FoundryCLI][ProjectTest] Script format works without a main scene") {
+	TemporaryNoMainSceneProject project("foundry_cli_project_test_script_format");
+	project.write_file("scripts/sample.fs",
+			"func f() -> int:\n"
+			"\treturn 1\n");
+
+	List<String> arguments;
+	arguments.push_back("--headless");
+	arguments.push_back("script");
+	arguments.push_back("format");
+	arguments.push_back("--project");
+	arguments.push_back(project.root);
+	arguments.push_back("--check");
+	arguments.push_back("scripts/sample.fs");
+
+	int exit_code = -1;
+	const String output = run_foundry_subprocess(arguments, exit_code);
+	INFO("Subprocess output:\n", output);
+	CHECK_FALSE(output.contains("no main scene defined"));
+	CHECK_EQ(exit_code, 0);
+}
+
 #endif // MODULE_FOUNDRY_SCRIPT_ENABLED
 
 } // namespace TestFoundryCLIProjectTest

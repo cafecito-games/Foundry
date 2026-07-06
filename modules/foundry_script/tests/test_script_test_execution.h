@@ -33,6 +33,7 @@
 #include "../fs_script_test_execution.h"
 #include "../fs_script_test_guard.h"
 #include "../foundry_script.h"
+#include "../fs_function.h"
 #include "fs_test_runner.h"
 
 #include "core/io/resource_loader.h"
@@ -52,6 +53,19 @@ class ScriptTestExecutionCapture : public Object {
 
 public:
 	Ref<ScriptTestExecutionResult> result;
+	bool done = false;
+
+	void on_completed(const Variant &p_result) {
+		result = p_result;
+		done = true;
+	}
+};
+
+class AsyncFSMethodCapture : public Object {
+	FOUNDRY_CLASS(AsyncFSMethodCapture, Object);
+
+public:
+	Variant result;
 	bool done = false;
 
 	void on_completed(const Variant &p_result) {
@@ -119,6 +133,30 @@ static Ref<ScriptTestExecutionResult> run_guarded_call(Node *p_suite, const Stri
 
 	REQUIRE(capture.done);
 	REQUIRE(capture.result.is_valid());
+	return capture.result;
+}
+
+static Variant run_async_fs_method(Node *p_node, const StringName &p_method, int p_max_frames = 360) {
+	const Variant ret = p_node->call(p_method);
+	FSFunctionState *state = Object::cast_to<FSFunctionState>(ret);
+	if (!state) {
+		return ret;
+	}
+
+	AsyncFSMethodCapture capture;
+	state->connect(SNAME("completed"), callable_mp(&capture, &AsyncFSMethodCapture::on_completed), Object::CONNECT_ONE_SHOT);
+
+	SceneTree *tree = SceneTree::get_singleton();
+	REQUIRE(tree != nullptr);
+	for (int frame = 0; frame < p_max_frames && !capture.done; frame++) {
+		tree->process(1.0 / 60.0);
+		if (FSLanguage::get_singleton()) {
+			FSLanguage::get_singleton()->frame();
+		}
+		FSScriptTestGuard::poll_timeouts();
+	}
+
+	REQUIRE(capture.done);
 	return capture.result;
 }
 
@@ -262,6 +300,12 @@ TEST_CASE("[Modules][FoundryScript][ScriptTestExecution][SceneTree] Awaiting a S
 	REQUIRE(capture.result.is_valid());
 	CHECK_EQ(capture.result->get_status(), ScriptTestExecutionResult::STATUS_COMPLETED);
 	CHECK_EQ(int(capture.result->get_return_value()), 7);
+}
+
+TEST_CASE("[Modules][FoundryScript][ScriptTestExecution][SceneTree] Awaiting guard_callv from FoundryScript completes without lifetime crash") {
+	ScriptExecutionFixture fixture;
+	const Variant result = run_async_fs_method(fixture.suite, SNAME("await_guard_call_pattern"));
+	CHECK_EQ(int(result), 7);
 }
 
 } // namespace FSTests
