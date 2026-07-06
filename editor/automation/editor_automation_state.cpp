@@ -54,12 +54,19 @@ static const char *MAIN_SCREEN_NAMES[] = {
 	"assetlib",
 };
 
+String _node_tree_path(Node *p_node) {
+	if (p_node == nullptr || !p_node->is_inside_tree()) {
+		return String();
+	}
+	return String(p_node->get_path());
+}
+
 Dictionary _node_selection_entry(Node *p_node) {
 	Dictionary entry;
 	if (p_node == nullptr) {
 		return entry;
 	}
-	entry["path"] = p_node->get_path();
+	entry["path"] = _node_tree_path(p_node);
 	entry["name"] = p_node->get_name();
 	entry["class"] = p_node->get_class();
 	return entry;
@@ -73,7 +80,7 @@ Dictionary _scene_entry(int p_index, const String &p_path, Node *p_root, bool p_
 	if (p_root != nullptr) {
 		entry["root_name"] = p_root->get_name();
 		entry["root_class"] = p_root->get_class();
-		entry["root_path"] = p_root->get_path();
+		entry["root_path"] = _node_tree_path(p_root);
 	}
 	entry["unsaved"] = p_unsaved;
 	return entry;
@@ -380,7 +387,7 @@ Dictionary EditorAutomationState::read_editor_state() {
 			inspector_state["target_class"] = edited_object->get_class();
 			if (Node *edited_node = Object::cast_to<Node>(edited_object)) {
 				inspector_state["target_name"] = edited_node->get_name();
-				inspector_state["target_path"] = String(edited_node->get_path());
+				inspector_state["target_path"] = _node_tree_path(edited_node);
 			} else {
 				inspector_state["target_name"] = String();
 			}

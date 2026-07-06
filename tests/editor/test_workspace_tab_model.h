@@ -150,12 +150,12 @@ TEST_CASE("[workspace-tab] canonical-resource-distinct-per-type") {
 
 TEST_CASE("[workspace-tab] tab-record-roundtrip") {
 	WorkspaceTabRegistry registry;
-	WorkspaceTabType *scene_type = registry.find_type(StringName("scene"));
-	REQUIRE(scene_type != nullptr);
+	WorkspaceTabType *script_type = registry.find_type(StringName("script"));
+	REQUIRE(script_type != nullptr);
 
-	WorkspaceTab original = scene_type->make_tab("res://roundtrip.tscn", 42);
-	original.set_title_cache("Roundtrip Scene");
-	original.set_icon_key_cache("EditorScene");
+	WorkspaceTab original = script_type->make_tab("res://roundtrip.fs", 42);
+	original.set_title_cache("Roundtrip Script");
+	original.set_icon_key_cache("EditorScript");
 	Dictionary payload;
 	payload["caret_line"] = 7;
 	payload["fold_state"] = "collapsed";
@@ -164,10 +164,10 @@ TEST_CASE("[workspace-tab] tab-record-roundtrip") {
 	Ref<ConfigFile> config;
 	config.instantiate();
 	const String section = "Tab_42";
-	original.save_to_config(config, section, scene_type);
+	original.save_to_config(config, section, script_type);
 
 	WorkspaceTab restored;
-	restored.load_from_config(config, section, scene_type);
+	restored.load_from_config(config, section, script_type);
 	CHECK(restored == original);
 }
 

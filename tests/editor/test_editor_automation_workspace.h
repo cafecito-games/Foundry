@@ -36,9 +36,11 @@
 #include "editor/editor_data.h"
 #include "editor/editor_scene_pane_tile.h"
 #include "editor/editor_scene_workspace.h"
+#include "editor/editor_undo_redo_manager.h"
 #include "editor/workspace/workspace_pane.h"
 
 #include "core/object/message_queue.h"
+#include "scene/2d/node_2d.h"
 #include "scene/gui/panel_container.h"
 
 #include "tests/test_macros.h"
@@ -196,9 +198,19 @@ TEST_CASE("[Editor][Automation][MCP] mcp-dock-action") {
 	const int scene_a = h.editor_data.add_edited_scene(-1);
 	h.editor_data.set_scene_path(scene_a, "res://dock_a.tscn");
 	h.editor_data.set_scene_tile(scene_a, 0);
+	Node2D *root_a = memnew(Node2D);
+	h.editor_data.get_scene_context(scene_a)->set_scene_root_node(root_a);
 	const int scene_b = h.editor_data.add_edited_scene(-1);
 	h.editor_data.set_scene_path(scene_b, "res://dock_b.tscn");
 	h.editor_data.set_scene_tile(scene_b, 0);
+	Node2D *root_b = memnew(Node2D);
+	Node2D *selected_b = memnew(Node2D);
+	root_b->add_child(selected_b);
+	h.editor_data.get_scene_context(scene_b)->set_scene_root_node(root_b);
+	Vector<ObjectID> selected_b_ids;
+	selected_b_ids.push_back(selected_b->get_instance_id());
+	h.editor_data.get_scene_context(scene_b)->set_selected_node_ids(selected_b_ids);
+	EditorUndoRedoManager::get_singleton()->set_history_as_unsaved(h.editor_data.get_scene_history_id(scene_b));
 	h.editor_data.set_tile_current_scene(0, scene_a);
 	h.sync_tiles();
 
@@ -215,6 +227,9 @@ TEST_CASE("[Editor][Automation][MCP] mcp-dock-action") {
 
 	CHECK(h.workspace->get_tile_count() == 2);
 	CHECK(h.editor_data.get_scene_tile(scene_b) == h.editor_data.get_focused_tile_id());
+	CHECK(h.editor_data.get_edited_scene_root(scene_b) == root_b);
+	CHECK(h.editor_data.get_scene_context(scene_b)->get_selected_node_ids().has(selected_b->get_instance_id()));
+	CHECK(EditorUndoRedoManager::get_singleton()->is_history_unsaved(h.editor_data.get_scene_history_id(scene_b)));
 
 	ScenePaneTile *target_tile = h.workspace->get_tile_by_id(0);
 	REQUIRE(target_tile != nullptr);

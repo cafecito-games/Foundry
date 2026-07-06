@@ -841,7 +841,7 @@ void EditorNode::_notification(int p_what) {
 
 		case NOTIFICATION_PROCESS: {
 			if (editor_data.is_scene_changed(-1)) {
-				scene_tabs->update_scene_tabs();
+				_update_all_scene_tabs();
 			}
 
 			// Update the animation frame of the update spinner.
@@ -1094,7 +1094,7 @@ void EditorNode::_notification(int p_what) {
 			}
 
 			if (EditorSettings::get_singleton()->check_changed_settings_in_group("interface/scene_tabs")) {
-				scene_tabs->update_scene_tabs();
+				_update_all_scene_tabs();
 			}
 
 			if (EditorSettings::get_singleton()->check_changed_settings_in_group("docks/filesystem")) {
@@ -1591,7 +1591,7 @@ void EditorNode::_reload_modified_scenes() {
 	}
 
 	_set_current_scene(current_idx);
-	scene_tabs->update_scene_tabs();
+	_update_all_scene_tabs();
 	disk_changed->hide();
 }
 
@@ -2538,7 +2538,7 @@ void EditorNode::_save_scene(String p_file, int idx) {
 		editor_folding.save_scene_folding(scene, p_file);
 
 		_update_title();
-		scene_tabs->update_scene_tabs();
+		_update_all_scene_tabs();
 	} else {
 		_dialog_display_save_error(p_file, err);
 	}
@@ -2639,7 +2639,7 @@ void EditorNode::_mark_unsaved_scenes() {
 	}
 
 	_update_title();
-	scene_tabs->update_scene_tabs();
+	_update_all_scene_tabs();
 }
 
 bool EditorNode::_is_scene_unsaved(int p_idx) {
@@ -4159,7 +4159,7 @@ void EditorNode::_discard_changes(const String &p_str) {
 			// Don't close tabs when exiting the editor (required for "restore_scenes_on_load" setting).
 			if (!_is_closing_editor()) {
 				_remove_scene(tab_closing_idx);
-				scene_tabs->update_scene_tabs();
+				_update_all_scene_tabs();
 			}
 			_proceed_closing_scene_tabs();
 		} break;
@@ -4548,6 +4548,33 @@ void EditorNode::set_edited_scene(Node *p_scene) {
 	set_edited_scene_root(p_scene, true);
 }
 
+void EditorNode::activate_workspace_scene_tab(int p_scene_idx, int p_tile_id) {
+	ERR_FAIL_INDEX(p_scene_idx, editor_data.get_edited_scene_count());
+	ERR_FAIL_COND(p_tile_id < 0);
+
+	if (editor_data.get_scene_tile(p_scene_idx) != p_tile_id) {
+		editor_data.set_scene_tile(p_scene_idx, p_tile_id);
+	}
+	editor_data.set_tile_current_scene(p_tile_id, p_scene_idx);
+	editor_data.set_focused_tile_id(p_tile_id);
+
+	if (scene_workspace) {
+		if (ScenePaneTile *tile = scene_workspace->get_tile_by_id(p_tile_id)) {
+			_sync_focused_tile_chrome(tile);
+			_reparent_scene_mode_into(tile);
+			_bind_all_leaf_docks();
+		}
+	}
+
+	if (editor_data.get_edited_scene() != p_scene_idx || active_scene_context != editor_data.get_scene_context(p_scene_idx)) {
+		_set_current_scene_nocheck(p_scene_idx);
+	}
+}
+
+void EditorNode::request_workspace_scene_tab_close(int p_scene_idx) {
+	_scene_tab_closed(p_scene_idx);
+}
+
 void EditorNode::set_edited_scene_root(Node *p_scene, bool p_auto_add) {
 	Node *old_edited_scene_root = get_editor_data().get_edited_scene_root();
 	ERR_FAIL_COND_MSG(p_scene && p_scene != old_edited_scene_root && p_scene->get_parent(), "Non-null nodes that are set as edited scene should not have a parent node.");
@@ -4727,7 +4754,7 @@ void EditorNode::_set_current_scene_nocheck(int p_idx) {
 	_edit_current(true);
 
 	_update_title();
-	callable_mp(scene_tabs, &EditorSceneTabs::update_scene_tabs).call_deferred();
+	callable_mp(this, &EditorNode::_update_all_scene_tabs).call_deferred();
 
 	if (tabs_to_close.is_empty() && !restoring_scenes) {
 		callable_mp(this, &EditorNode::_set_main_scene_state).call_deferred(state, get_edited_scene()); // Do after everything else is done setting up.
@@ -5228,7 +5255,7 @@ int EditorNode::new_scene() {
 	}
 
 	editor_data.clear_editor_states();
-	scene_tabs->update_scene_tabs();
+	_update_all_scene_tabs();
 	return idx;
 }
 
@@ -5245,6 +5272,9 @@ Error EditorNode::load_scene(const String &p_scene, bool p_ignore_broken_deps, b
 		for (int i = 0; i < editor_data.get_edited_scene_count(); i++) {
 			if (editor_data.get_scene_path(i) == lpath) {
 				_set_current_scene(i);
+				if (scene_workspace) {
+					scene_workspace->focus_scene_tab(i);
+				}
 				return OK;
 			}
 		}
@@ -5406,7 +5436,7 @@ Error EditorNode::load_scene(const String &p_scene, bool p_ignore_broken_deps, b
 	}
 
 	_update_title();
-	scene_tabs->update_scene_tabs();
+	_update_all_scene_tabs();
 	if (!restoring_scenes) {
 		_add_to_recent_scenes(lpath);
 	}
@@ -6876,6 +6906,7 @@ void EditorNode::_update_all_scene_tabs() {
 		}
 		return;
 	}
+	scene_workspace->sync_scene_tabs_from_editor_data();
 	for (ScenePaneTile *tile : scene_workspace->get_tiles()) {
 		tile->get_scene_tabs()->update_scene_tabs();
 	}
@@ -7672,7 +7703,7 @@ void EditorNode::_scene_tab_closed(int p_tab) {
 	}
 
 	save_editor_layout_delayed();
-	scene_tabs->update_scene_tabs();
+	_update_all_scene_tabs();
 }
 
 void EditorNode::_cancel_close_scene_tab() {
@@ -10717,7 +10748,7 @@ EditorNode::EditorNode() {
 	editor_data.set_edited_scene(0);
 	_activate_scene_context(editor_data.get_active_scene_context());
 	_attach_active_scene_context();
-	scene_tabs->update_scene_tabs();
+	_update_all_scene_tabs();
 
 	ImportDock::get_singleton()->initialize_import_options();
 

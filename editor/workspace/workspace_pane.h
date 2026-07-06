@@ -73,17 +73,20 @@ class WorkspacePane : public VBoxContainer, public WorkspaceLeafContent {
 
 	void _bind_tab_strip();
 	void _on_tab_strip_changed(int p_index);
+	void _on_tab_strip_rearranged(int p_to_index);
 	void _sync_tab_strip();
+	void _refresh_canonical_locations();
+	void _fit_chrome_child(Control *p_child);
 	void _detach_ephemeral_chrome();
 	void _set_bridge_visibility(bool p_scene_visible, bool p_script_visible);
 	bool _has_legacy_scene_content() const;
 	bool _has_legacy_script_content() const;
 	void _mount_scene_bridge();
 	void _mount_script_bridge();
-	void _mount_active_tab();
+	void _mount_active_tab(bool p_activate);
 	void _unmount_active_tab();
-	void _update_pane_state();
 	void _on_deferred_tab_closed(int p_stable_id);
+	void _update_pane_state(bool p_activate = true);
 	WorkspaceTabType *_active_tab_type() const;
 	const WorkspaceTab *_active_tab() const;
 	WorkspaceTab *_active_tab_mut();
@@ -96,6 +99,7 @@ public:
 
 	void setup(int p_leaf_id, EditorSelection *p_editor_selection, EditorData *p_editor_data, const StringName &p_initial_content_type = StringName("scene"));
 	void set_workspace(EditorSceneWorkspace *p_workspace) { workspace = p_workspace; }
+	EditorSceneWorkspace *get_workspace() const { return workspace; }
 
 	int get_leaf_id() const { return leaf_id; }
 	const StringName &get_initial_content_type() const { return initial_content_type; }
@@ -110,7 +114,9 @@ public:
 
 	void add_tab(const WorkspaceTab &p_tab);
 	void remove_tab(int p_index);
+	void move_tab(int p_from, int p_to);
 	void set_active_tab(int p_index);
+	WorkspaceTabCloseResult request_close_tab(int p_index);
 
 	// Detach a tab for a move: unmounts it (capturing its type payload) and
 	// removes it from this pane, returning the tab record so it can be added to
@@ -123,6 +129,7 @@ public:
 	WorkspaceTabCloseResult request_close_active_tab();
 
 	void sync_from_editor_data() const;
+	void sync_scene_tabs_from_editor_data();
 
 	EditorData *get_editor_data() const { return editor_data; }
 	EditorSelection *get_editor_selection() const { return editor_selection; }

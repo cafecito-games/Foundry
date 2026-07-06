@@ -30,6 +30,7 @@
 
 #include "workspace_tab_registry.h"
 
+#include "editor/workspace/scene_tab.h"
 #include "editor/workspace/script_resource_tab.h"
 #include "workspace_tab_stub_types.h"
 
@@ -79,6 +80,13 @@ WorkspaceTabInsertResult WorkspaceTabRegistry::insert_canonical(const WorkspaceT
 	return WorkspaceTabInsertResult::INSERTED;
 }
 
+void WorkspaceTabRegistry::set_canonical(const WorkspaceTab &p_tab, const WorkspaceTabLocation &p_location) {
+	ERR_FAIL_COND(!p_tab.is_valid());
+
+	canonical_tabs[p_tab.get_type_id()][p_tab.get_resource_key()] = p_tab;
+	canonical_locations[p_tab.get_type_id()][p_tab.get_resource_key()] = p_location;
+}
+
 bool WorkspaceTabRegistry::find_canonical(const StringName &p_type_id, const String &p_resource_key, WorkspaceTab &r_tab, WorkspaceTabLocation &r_location) const {
 	const HashMap<String, WorkspaceTab> *tabs_for_type = canonical_tabs.getptr(p_type_id);
 	if (!tabs_for_type) {
@@ -113,13 +121,18 @@ bool WorkspaceTabRegistry::remove_canonical(const StringName &p_type_id, const S
 	return true;
 }
 
+void WorkspaceTabRegistry::clear_canonical_for_type(const StringName &p_type_id) {
+	canonical_tabs.erase(p_type_id);
+	canonical_locations.erase(p_type_id);
+}
+
 void WorkspaceTabRegistry::clear_canonical_index() {
 	canonical_tabs.clear();
 	canonical_locations.clear();
 }
 
 void WorkspaceTabRegistry::register_builtin_tab_types() {
-	static SceneTabStub scene_tab(StringName("scene"));
+	static SceneTabType scene_tab;
 	static ScriptResourceTabType script_tab(StringName("script"));
 	register_type(&scene_tab);
 	register_type(&script_tab);

@@ -71,6 +71,10 @@ Node *SceneTreeEditor::_get_node_from_tree_item(TreeItem *p_item) const {
 	return get_node_or_null(np);
 }
 
+bool SceneTreeEditor::_can_use_node_path(Node *p_node) const {
+	return p_node && p_node->is_inside_tree();
+}
+
 PackedStringArray SceneTreeEditor::_get_node_configuration_warnings(Node *p_node) {
 	PackedStringArray warnings = p_node->get_configuration_warnings();
 	if (p_node == get_scene_node()) {
@@ -276,7 +280,7 @@ void SceneTreeEditor::_toggle_visible(Node *p_node) {
 }
 
 void SceneTreeEditor::_update_node_path(Node *p_node, bool p_recursive) {
-	if (!p_node) {
+	if (!_can_use_node_path(p_node)) {
 		return;
 	}
 
@@ -736,6 +740,10 @@ void SceneTreeEditor::_node_visibility_changed(Node *p_node) {
 	}
 
 	TreeItem *item;
+	if (!_can_use_node_path(p_node)) {
+		return;
+	}
+
 	if (I->value.item && I->value.item->get_metadata(0) == p_node->get_path()) {
 		item = I->value.item;
 	} else {
@@ -937,6 +945,10 @@ void SceneTreeEditor::_node_renamed(Node *p_node) {
 		return;
 	}
 
+	if (!_can_use_node_path(p_node)) {
+		return;
+	}
+
 	if (p_node != get_scene_node() && !get_scene_node()->is_ancestor_of(p_node)) {
 		return;
 	}
@@ -967,6 +979,13 @@ void SceneTreeEditor::_update_tree(bool p_scroll_to_selected) {
 		marked.clear();
 		node_cache.current_scene_id = scene_id;
 		node_cache.force_update = true;
+	}
+
+	if (scene_node && !scene_node->is_inside_tree()) {
+		if (update_timer && update_timer->is_inside_tree() && update_timer->is_stopped()) {
+			update_timer->start();
+		}
+		return;
 	}
 
 	if (tree->is_editing()) {
@@ -1420,18 +1439,18 @@ void SceneTreeEditor::_notification(int p_what) {
 		} break;
 
 		case NOTIFICATION_VISIBILITY_CHANGED: {
-			if (is_visible()) {
-				TreeItem *item = nullptr;
-				if (selected) {
-					// Scroll to selected node.
-					item = _find(tree->get_root(), selected->get_path());
-				} else if (marked.size() == 1) {
-					// Scroll to a single marked node.
-					Node *marked_node = *marked.begin();
-					if (marked_node) {
-						item = _find(tree->get_root(), marked_node->get_path());
+				if (is_visible()) {
+					TreeItem *item = nullptr;
+					if (_can_use_node_path(selected)) {
+						// Scroll to selected node.
+						item = _find(tree->get_root(), selected->get_path());
+					} else if (marked.size() == 1) {
+						// Scroll to a single marked node.
+						Node *marked_node = *marked.begin();
+						if (_can_use_node_path(marked_node)) {
+							item = _find(tree->get_root(), marked_node->get_path());
+						}
 					}
-				}
 
 				bool has_item = item;
 
@@ -1485,7 +1504,7 @@ void SceneTreeEditor::set_selected(Node *p_node, bool p_emit_selected) {
 		return;
 	}
 
-	TreeItem *item = p_node ? _find(tree->get_root(), p_node->get_path()) : nullptr;
+	TreeItem *item = _can_use_node_path(p_node) ? _find(tree->get_root(), p_node->get_path()) : nullptr;
 
 	if (item) {
 		selected = p_node;
@@ -1530,6 +1549,11 @@ void SceneTreeEditor::set_selected(Node *p_node, bool p_emit_selected) {
 }
 
 void SceneTreeEditor::rename_node(Node *p_node, const String &p_name, TreeItem *p_item) {
+	ERR_FAIL_NULL(p_node);
+	if (!_can_use_node_path(p_node)) {
+		return;
+	}
+
 	TreeItem *item;
 	if (p_item) {
 		item = p_item; // During batch rename the paths may change, so using _find() is unreliable.
@@ -2112,7 +2136,9 @@ void SceneTreeEditor::_warning_changed(Node *p_for_node) {
 	node_cache.mark_dirty(p_for_node);
 
 	// Should use a timer.
-	update_timer->start();
+	if (update_timer && update_timer->is_inside_tree()) {
+		update_timer->start();
+	}
 }
 
 void SceneTreeEditor::set_auto_expand_selected(bool p_auto, bool p_update_settings) {
