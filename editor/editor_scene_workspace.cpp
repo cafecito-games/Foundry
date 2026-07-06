@@ -193,7 +193,11 @@ WorkspacePane *WorkspaceLeafNode::get_workspace_pane() const {
 
 ScenePaneTile *WorkspaceLeafNode::get_pane_tile() const {
 	WorkspacePane *pane = get_workspace_pane();
-	return pane ? pane->get_scene_tile() : nullptr;
+	if (pane) {
+		pane->sync_from_editor_data();
+		return pane->get_scene_tile();
+	}
+	return nullptr;
 }
 
 Control *WorkspaceLeafNode::get_content_host() const {
@@ -416,11 +420,11 @@ WorkspaceLeafNode *EditorSceneWorkspace::get_focused_script_leaf() const {
 	if (!pane) {
 		return nullptr;
 	}
-	if (pane->is_script_pane()) {
+	if (pane->is_script_pane() && pane->get_script_leaf()) {
 		return focused;
 	}
 	const int active_tab = pane->get_active_tab_index();
-	if (active_tab >= 0 && pane->get_tab(active_tab).get_type_id() == StringName("script")) {
+	if (active_tab >= 0 && pane->get_tab(active_tab).get_type_id() == StringName("script") && pane->get_script_leaf()) {
 		return focused;
 	}
 	return nullptr;

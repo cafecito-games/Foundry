@@ -73,7 +73,10 @@ class WorkspacePane : public VBoxContainer, public WorkspaceLeafContent {
 	void _bind_tab_strip();
 	void _on_tab_strip_changed(int p_index);
 	void _sync_tab_strip();
-	void _clear_chrome_host();
+	void _detach_ephemeral_chrome();
+	void _set_bridge_visibility(bool p_scene_visible, bool p_script_visible);
+	bool _has_legacy_scene_content() const;
+	bool _has_legacy_script_content() const;
 	void _mount_scene_bridge();
 	void _mount_script_bridge();
 	void _mount_active_tab();
@@ -106,6 +109,8 @@ public:
 	void add_tab(const WorkspaceTab &p_tab);
 	void remove_tab(int p_index);
 	void set_active_tab(int p_index);
+
+	void sync_from_editor_data() const;
 
 	EditorData *get_editor_data() const { return editor_data; }
 	EditorSelection *get_editor_selection() const { return editor_selection; }

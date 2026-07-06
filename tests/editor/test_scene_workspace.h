@@ -957,6 +957,14 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] pane-hosts-mixed-tabs") {
 	CHECK(pane->get_tab(0).get_type_id() == StringName("scene"));
 	CHECK(pane->get_tab(1).get_type_id() == StringName("script"));
 
+	ScenePaneTile *scene_tile = pane->get_scene_tile();
+	REQUIRE(scene_tile != nullptr);
+	pane->set_active_tab(1);
+	CHECK(scene_tile->get_parent() == pane->get_chrome_host());
+	CHECK(scene_tile->is_visible() == false);
+	pane->set_active_tab(0);
+	CHECK(scene_tile->is_visible());
+
 	h.unmount();
 }
 
@@ -991,12 +999,50 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] pane-active-tab-switch-mounts") {
 	memdelete(host);
 }
 
-TEST_CASE("[SceneWorkspace][SceneTree][Editor] pane-empty-placeholder") {
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] pane-remove-active-tab") {
 	Control *host = memnew(Control);
 	SceneTree::get_singleton()->get_root()->add_child(host);
 
 	WorkspacePane *pane = memnew(WorkspacePane);
 	host->add_child(pane);
+
+	WorkspaceTabRegistry registry;
+	registry.reset_stable_id_counter();
+	registry.clear_canonical_index();
+	RecordingTabType recording_type;
+	registry.register_type(&recording_type);
+	pane->set_tab_registry(&registry);
+
+	WorkspaceTab first = recording_type.make_tab("first", registry.allocate_stable_id());
+	WorkspaceTab second = recording_type.make_tab("second", registry.allocate_stable_id());
+	WorkspaceTab third = recording_type.make_tab("third", registry.allocate_stable_id());
+	pane->add_tab(first);
+	pane->add_tab(second);
+	pane->add_tab(third);
+	CHECK(pane->get_active_tab_index() == 0);
+
+	pane->remove_tab(0);
+	CHECK(pane->get_tab_count() == 2);
+	CHECK(pane->get_active_tab_index() == 0);
+	CHECK(pane->get_tab(0).get_resource_key() == "second");
+	CHECK(recording_type.mount_count >= 2);
+
+	SceneTree::get_singleton()->get_root()->remove_child(host);
+	memdelete(host);
+}
+
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] pane-empty-placeholder") {
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspacePane *pane = get_leaf_pane(h.workspace->get_focused_leaf());
+	REQUIRE(pane != nullptr);
+	REQUIRE(pane->get_scene_tile() != nullptr);
+	CHECK(pane->get_scene_tile()->get_scene_tabs()->is_visible());
+	CHECK(pane->get_empty_placeholder()->is_visible());
+	CHECK(pane->get_tab_strip()->is_visible() == false);
+	CHECK(pane->get_scene_context() == nullptr);
 
 	WorkspaceTabRegistry registry;
 	registry.reset_stable_id_counter();
@@ -1008,10 +1054,12 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] pane-empty-placeholder") {
 	WorkspaceTab scene_tab = scene_type->make_tab("res://only.tscn", registry.allocate_stable_id());
 	pane->add_tab(scene_tab);
 	CHECK(pane->get_empty_placeholder()->is_visible() == false);
+	CHECK(pane->get_tab_strip()->is_visible());
 
 	pane->remove_tab(0);
 	CHECK(pane->get_tab_count() == 0);
 	CHECK(pane->get_empty_placeholder()->is_visible());
+	CHECK(pane->get_tab_strip()->is_visible() == false);
 	CHECK(pane->get_scene_context() == nullptr);
 
 	Ref<ConfigFile> config;
@@ -1019,8 +1067,7 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] pane-empty-placeholder") {
 	pane->save_layout(config, "PaneEmpty");
 	pane->load_layout(config, "PaneEmpty");
 
-	SceneTree::get_singleton()->get_root()->remove_child(host);
-	memdelete(host);
+	h.unmount();
 }
 
 TEST_CASE("[SceneWorkspace][SceneTree][Editor] pane-scene-only-layout-renders") {
