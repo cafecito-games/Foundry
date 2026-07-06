@@ -118,6 +118,9 @@ public:
 	// True while a legacy scene/script bridge still owns content (no explicit tabs);
 	// such a pane is not considered empty for collapse purposes.
 	bool has_bridge_content() const { return _has_legacy_scene_content() || _has_legacy_script_content(); }
+	// True if the pane holds any tab that is not a scene tab (e.g. a script tab).
+	// Closing the pane's last scene must not collapse it while such tabs remain.
+	bool has_non_scene_tabs() const;
 	EditorTileDropOverlay *get_drop_overlay() const { return drop_overlay; }
 
 	void set_tab_registry(WorkspaceTabRegistry *p_registry);

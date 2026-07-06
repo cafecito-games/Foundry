@@ -132,6 +132,16 @@ WorkspaceLeafNode *EditorSceneWorkspace::handle_tab_drop(int p_source_pane_id, i
 		return nullptr;
 	}
 
+	// A scene tab bridges through the destination pane's scene tile; a script-only
+	// pane has none, so a center drop there would drop the scene from the model.
+	// Reject it (an edge drop still works: it splits into a fresh scene pane).
+	if (p_region == DROP_CENTER && is_scene_tab) {
+		WorkspacePane *target_pane = p_target_leaf->get_workspace_pane();
+		if (!target_pane || !target_pane->is_scene_pane()) {
+			return nullptr;
+		}
+	}
+
 	WorkspaceLeafNode *dest_leaf = p_target_leaf;
 	if (p_region != DROP_CENTER) {
 		const bool vertical = p_region == DROP_TOP || p_region == DROP_BOTTOM;

@@ -576,6 +576,15 @@ WorkspaceTab WorkspacePane::take_tab(int p_index) {
 	return taken;
 }
 
+bool WorkspacePane::has_non_scene_tabs() const {
+	for (const WorkspaceTab &tab : tabs) {
+		if (tab.get_type_id() != StringName("scene")) {
+			return true;
+		}
+	}
+	return false;
+}
+
 int WorkspacePane::find_scene_tab_index(int p_scene_idx) const {
 	if (!editor_data || p_scene_idx < 0 || p_scene_idx >= editor_data->get_edited_scene_count()) {
 		return -1;

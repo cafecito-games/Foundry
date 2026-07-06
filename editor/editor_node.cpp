@@ -4495,21 +4495,17 @@ void EditorNode::_remove_edited_scene(bool p_change_tab, bool p_allow_collapse) 
 	const int old_index = editor_data.get_edited_scene();
 	const int tile_id = old_index >= 0 ? editor_data.get_scene_tile(old_index) : editor_data.get_focused_tile_id();
 
-	editor_data.remove_scene(old_index);
-
-	const bool tile_emptied = editor_data.get_tile_scene_indices(tile_id).is_empty();
-	// Collapse the emptied scene tile when another scene tile remains (counting
-	// scene tiles, not total leaves, so an adjacent script leaf does not keep a
-	// dead tile alive). collapse() keeps focus on a scene tile if it merges into a
-	// script-leaf sibling.
-	if (p_allow_collapse && tile_emptied && scene_workspace && scene_workspace->get_tile_count() > 1) {
-		WorkspaceLeafNode *leaf = scene_workspace->get_leaf_by_id(tile_id);
-		if (leaf) {
-			// Removing the current scene left current_edited_scene pointing at the
-			// emptied tile's (now absent) current scene, i.e. -1. Move focus and the
-			// current scene onto a surviving scene tile before collapsing so nothing
-			// runs against an invalid current scene during or after the collapse.
-			int survivor_tile_id = -1;
+	// If closing the current scene will empty its tile and another scene tile
+	// remains, adopt a surviving scene tile as the focused/current scene *before*
+	// the removal. Otherwise remove_scene repoints the current scene to the emptied
+	// tile's (now absent) current scene, i.e. -1, and anything that runs while the
+	// removal is in flight (scene_closed handlers, plugin notifications) reads an
+	// invalid current scene.
+	int survivor_tile_id = -1;
+	{
+		const Vector<int> closing_tile_scenes = editor_data.get_tile_scene_indices(tile_id);
+		const bool will_empty_tile = closing_tile_scenes.size() == 1 && closing_tile_scenes[0] == old_index;
+		if (p_allow_collapse && will_empty_tile && scene_workspace && scene_workspace->get_tile_count() > 1) {
 			for (ScenePaneTile *survivor : scene_workspace->get_tiles()) {
 				if (survivor->get_tile_id() != tile_id && !editor_data.get_tile_scene_indices(survivor->get_tile_id()).is_empty()) {
 					survivor_tile_id = survivor->get_tile_id();
@@ -4517,6 +4513,29 @@ void EditorNode::_remove_edited_scene(bool p_change_tab, bool p_allow_collapse) 
 				}
 			}
 			if (survivor_tile_id >= 0) {
+				editor_data.set_focused_tile_id(survivor_tile_id);
+			}
+		}
+	}
+
+	editor_data.remove_scene(old_index);
+
+	const bool tile_emptied = editor_data.get_tile_scene_indices(tile_id).is_empty();
+	// The pane may still host non-scene tabs (e.g. a script tab) after its last
+	// scene closes; collapsing then would destroy those tabs, so keep it alive.
+	WorkspaceLeafNode *closing_leaf = scene_workspace ? scene_workspace->get_leaf_by_id(tile_id) : nullptr;
+	WorkspacePane *closing_pane = closing_leaf ? closing_leaf->get_workspace_pane() : nullptr;
+	const bool pane_keeps_tabs = closing_pane && closing_pane->has_non_scene_tabs();
+	// Collapse the emptied scene tile when another scene tile remains (counting
+	// scene tiles, not total leaves, so an adjacent script leaf does not keep a
+	// dead tile alive). collapse() keeps focus on a scene tile if it merges into a
+	// script-leaf sibling.
+	if (p_allow_collapse && tile_emptied && !pane_keeps_tabs && scene_workspace && scene_workspace->get_tile_count() > 1) {
+		WorkspaceLeafNode *leaf = closing_leaf;
+		if (leaf) {
+			if (survivor_tile_id >= 0) {
+				// Finalize the pre-selected survivor: reparent the shared scene editor
+				// and rebind its docks now that the emptied tile is going away.
 				_focus_tile(survivor_tile_id);
 			}
 			scene_workspace->collapse(leaf);
@@ -4528,6 +4547,10 @@ void EditorNode::_remove_edited_scene(bool p_change_tab, bool p_allow_collapse) 
 				_set_current_scene_nocheck(editor_data.get_tile_current_scene(editor_data.get_focused_tile_id()));
 			}
 		}
+	} else if (survivor_tile_id >= 0) {
+		// The emptied tile kept non-scene tabs (no collapse): focus/current already
+		// moved to a surviving scene tile before the removal; finalize that focus.
+		_focus_tile(survivor_tile_id);
 	} else {
 		if (editor_data.get_edited_scene_count() == 0) {
 			editor_data.add_edited_scene(-1);
@@ -4553,8 +4576,12 @@ void EditorNode::_remove_scene(int index, bool p_change_tab, bool p_allow_collap
 	} else {
 		const int tile_id = editor_data.get_scene_tile(index);
 		editor_data.remove_scene(index);
-		if (p_allow_collapse && scene_workspace && scene_workspace->get_tile_count() > 1 && editor_data.get_tile_scene_indices(tile_id).is_empty()) {
-			WorkspaceLeafNode *leaf = scene_workspace->get_leaf_by_id(tile_id);
+		WorkspaceLeafNode *leaf = scene_workspace ? scene_workspace->get_leaf_by_id(tile_id) : nullptr;
+		WorkspacePane *pane = leaf ? leaf->get_workspace_pane() : nullptr;
+		// Keep the tile if its pane still hosts non-scene tabs; collapsing would
+		// destroy them.
+		const bool pane_keeps_tabs = pane && pane->has_non_scene_tabs();
+		if (p_allow_collapse && !pane_keeps_tabs && scene_workspace && scene_workspace->get_tile_count() > 1 && editor_data.get_tile_scene_indices(tile_id).is_empty()) {
 			// collapse() keeps focus on a scene tile even when merging into a script leaf.
 			if (leaf) {
 				scene_workspace->collapse(leaf);
