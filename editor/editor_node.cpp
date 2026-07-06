@@ -67,11 +67,11 @@
 #include "scene/main/timer.h"
 #include "scene/main/window.h"
 #include "scene/property_utils.h"
+#include "scene/resources/3d/world_3d.h"
 #include "scene/resources/dpi_texture.h"
 #include "scene/resources/image_texture.h"
 #include "scene/resources/packed_scene.h"
 #include "scene/resources/portable_compressed_texture.h"
-#include "scene/resources/3d/world_3d.h"
 #include "scene/theme/theme_db.h"
 #include "servers/display/display_server.h"
 #include "servers/navigation_2d/navigation_server_2d.h"
@@ -99,9 +99,8 @@
 #include "editor/editor_log.h"
 #include "editor/editor_main_screen.h"
 #include "editor/editor_scene_context.h"
-#include "editor/editor_scene_workspace.h"
-#include "editor/workspace/workspace_pane.h"
 #include "editor/editor_scene_pane_tile.h"
+#include "editor/editor_scene_workspace.h"
 #include "editor/editor_script_leaf.h"
 #include "editor/editor_tile_drop_overlay.h"
 #include "editor/editor_undo_redo_manager.h"
@@ -187,6 +186,7 @@
 #include "editor/translations/editor_translation_parser.h"
 #include "editor/translations/packed_scene_translation_parser_plugin.h"
 #include "editor/version_control/version_control_editor_plugin.h"
+#include "editor/workspace/workspace_pane.h"
 
 #ifdef VULKAN_ENABLED
 #include "editor/shader/shader_baker/shader_baker_export_plugin_platform_vulkan.h"
@@ -3278,7 +3278,7 @@ void EditorNode::_edit_current(bool p_skip_foreign, bool p_skip_inspector_update
 			info_is_warning);
 
 	Object *editor_owner = (is_node || current_obj->is_class("MultiNodeEdit")) ? (Object *)get_focused_scene_tree_dock() : is_resource ? (Object *)get_focused_inspector()
-																																		: (Object *)this;
+																																	   : (Object *)this;
 
 	// Take care of the main editor plugin.
 
@@ -4875,9 +4875,8 @@ void EditorNode::_reparent_scene_mode_into(ScenePaneTile *p_tile) {
 	scene_mode->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 	scene_mode->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	scene_mode->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	if (EditorTileDropOverlay *overlay = p_tile->get_drop_overlay()) {
-		host->move_child(overlay, -1);
-	}
+	// The pane's drop overlay lives in the pane chrome host above this tile, so it
+	// stays on top of the reparented scene-mode surface without any extra reorder.
 }
 
 void EditorNode::_connect_script_leaf_sync() {
@@ -7058,6 +7057,30 @@ void EditorNode::_on_tile_tab_closed(int p_tab, int p_tile_id) {
 		_focus_tile(p_tile_id);
 		_scene_tab_closed(scene_idx);
 	}
+}
+
+void EditorNode::handle_tile_tab_drop(int p_target_pane_id, int p_region, int p_source_pane_id, int p_source_tab_index) {
+	ERR_FAIL_NULL(scene_workspace);
+	WorkspaceLeafNode *target_leaf = scene_workspace->get_leaf_by_id(p_target_pane_id);
+	ERR_FAIL_NULL(target_leaf);
+
+	WorkspaceLeafNode *dest_leaf = scene_workspace->handle_tab_drop(p_source_pane_id, p_source_tab_index, target_leaf, (EditorSceneWorkspace::TileDropRegion)p_region);
+	if (!dest_leaf) {
+		return;
+	}
+
+	const int dest_leaf_id = dest_leaf->get_leaf_id();
+	// A scene tab landing in the destination pane makes that pane the focused scene
+	// tile; a script (or other) tab just takes workspace focus.
+	if (dest_leaf->get_pane_tile()) {
+		_focus_tile(dest_leaf_id);
+	} else {
+		scene_workspace->request_leaf_focus(dest_leaf_id);
+	}
+	_bind_all_leaf_docks();
+	_update_all_scene_tabs();
+	_update_tile_display_attachments();
+	save_editor_layout_delayed();
 }
 
 void EditorNode::handle_tile_scene_drop(int p_target_tile_id, int p_region, int p_source_tile_id, int p_source_tab) {

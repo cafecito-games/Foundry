@@ -43,6 +43,7 @@ class EditorData;
 class EditorSceneContext;
 class EditorSceneWorkspace;
 class EditorSelection;
+class EditorTileDropOverlay;
 class Label;
 class ScenePaneTile;
 class ScriptLeaf;
@@ -66,6 +67,7 @@ class WorkspacePane : public VBoxContainer, public WorkspaceLeafContent {
 	TabBar *tab_strip = nullptr;
 	Control *chrome_host = nullptr;
 	Control *empty_placeholder = nullptr;
+	EditorTileDropOverlay *drop_overlay = nullptr;
 	ScenePaneTile *scene_tile = nullptr;
 	ScriptLeaf *script_leaf = nullptr;
 	int mounted_tab_stable_id = -1;
@@ -74,6 +76,8 @@ class WorkspacePane : public VBoxContainer, public WorkspaceLeafContent {
 	void _bind_tab_strip();
 	void _on_tab_strip_changed(int p_index);
 	void _on_tab_strip_rearranged(int p_to_index);
+	void _on_tab_strip_close_pressed(int p_index);
+	void _collapse_self_if_empty();
 	void _sync_tab_strip();
 	void _refresh_canonical_locations();
 	void _fit_chrome_child(Control *p_child);
@@ -109,6 +113,12 @@ public:
 	int get_tab_count() const { return tabs.size(); }
 	const WorkspaceTab &get_tab(int p_index) const { return tabs[p_index]; }
 	int get_active_tab_index() const { return active_tab_index; }
+	// Index of the scene tab bound to p_scene_idx, or -1 if this pane does not host it.
+	int find_scene_tab_index(int p_scene_idx) const;
+	// True while a legacy scene/script bridge still owns content (no explicit tabs);
+	// such a pane is not considered empty for collapse purposes.
+	bool has_bridge_content() const { return _has_legacy_scene_content() || _has_legacy_script_content(); }
+	EditorTileDropOverlay *get_drop_overlay() const { return drop_overlay; }
 
 	void set_tab_registry(WorkspaceTabRegistry *p_registry);
 

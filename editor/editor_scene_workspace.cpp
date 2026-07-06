@@ -36,10 +36,10 @@
 #include "editor/editor_scene_pane_tile.h"
 #include "editor/editor_script_leaf.h"
 #include "editor/editor_workspace_leaf_content.h"
-#include "editor/workspace/scene_tab.h"
-#include "editor/workspace/workspace_pane.h"
 #include "editor/script/script_editor_view.h"
 #include "editor/themes/editor_scale.h"
+#include "editor/workspace/scene_tab.h"
+#include "editor/workspace/workspace_pane.h"
 #include "scene/gui/split_container.h"
 
 // Central inset for tab (center) drops: matches the rosette center button (30/100).
@@ -93,16 +93,80 @@ Rect2 EditorSceneWorkspace::drop_preview_rect(const Size2 &p_size, TileDropRegio
 	return Rect2(origin, p_size);
 }
 
-void EditorSceneWorkspace::_collapse_if_empty(int p_tile_id) {
-	WorkspaceLeafNode *leaf = get_leaf_by_id(p_tile_id);
-	if (!leaf || !editor_data) {
+void EditorSceneWorkspace::_collapse_if_empty(int p_leaf_id) {
+	WorkspaceLeafNode *leaf = get_leaf_by_id(p_leaf_id);
+	if (!leaf) {
 		return;
 	}
-	// Collapse the emptied tile as long as another scene tile remains. If it merges
-	// into a script-leaf sibling, collapse() keeps focus on a scene tile.
-	if (editor_data->get_tile_scene_indices(p_tile_id).is_empty() && get_tile_count() > 1) {
+	WorkspacePane *pane = leaf->get_workspace_pane();
+	if (!pane) {
+		return;
+	}
+	// Collapse the emptied pane as long as another leaf remains. If it merges into
+	// a script-leaf sibling, collapse() keeps focus on a scene tile.
+	if (pane->get_tab_count() == 0 && !pane->has_bridge_content() && get_leaf_count() > 1) {
 		collapse(leaf);
 	}
+}
+
+void EditorSceneWorkspace::collapse_if_empty_deferred(int p_leaf_id) {
+	callable_mp(this, &EditorSceneWorkspace::_collapse_if_empty).call_deferred(p_leaf_id);
+}
+
+WorkspaceLeafNode *EditorSceneWorkspace::handle_tab_drop(int p_source_pane_id, int p_source_tab_index, WorkspaceLeafNode *p_target_leaf, TileDropRegion p_region) {
+	ERR_FAIL_NULL_V(p_target_leaf, nullptr);
+	ERR_FAIL_COND_V(!leaves.has(p_target_leaf), nullptr);
+
+	WorkspaceLeafNode *source_leaf = get_leaf_by_id(p_source_pane_id);
+	ERR_FAIL_NULL_V(source_leaf, nullptr);
+	WorkspacePane *source_pane = source_leaf->get_workspace_pane();
+	ERR_FAIL_NULL_V(source_pane, nullptr);
+	ERR_FAIL_INDEX_V(p_source_tab_index, source_pane->get_tab_count(), nullptr);
+
+	const WorkspaceTab source_tab = source_pane->get_tab(p_source_tab_index);
+	const bool is_scene_tab = source_tab.get_type_id() == StringName("scene");
+
+	// A center drop onto the same pane is a no-op; intra-pane reordering is handled
+	// by the tab strip, not the rosette overlay.
+	if (p_region == DROP_CENTER && source_leaf == p_target_leaf) {
+		return nullptr;
+	}
+
+	WorkspaceLeafNode *dest_leaf = p_target_leaf;
+	if (p_region != DROP_CENTER) {
+		const bool vertical = p_region == DROP_TOP || p_region == DROP_BOTTOM;
+		const SplitSide side = (p_region == DROP_LEFT || p_region == DROP_TOP) ? SPLIT_SIDE_FIRST : SPLIT_SIDE_SECOND;
+		const StringName content_type = is_scene_tab ? StringName("scene") : StringName("script");
+		dest_leaf = split_with_content(p_target_leaf, vertical, side, content_type);
+		ERR_FAIL_NULL_V(dest_leaf, nullptr);
+	}
+
+	const int dest_leaf_id = dest_leaf->get_leaf_id();
+
+	if (is_scene_tab) {
+		ERR_FAIL_NULL_V(editor_data, nullptr);
+		const int scene_idx = SceneTabType::find_scene_index(*editor_data, source_tab);
+		if (scene_idx < 0) {
+			return nullptr;
+		}
+		// Route scene-tab moves through EditorData membership so the scene tile
+		// ownership stays canonical, then rebuild every pane's scene tabs.
+		editor_data->set_scene_tile(scene_idx, dest_leaf_id);
+		editor_data->set_tile_current_scene(dest_leaf_id, scene_idx);
+		sync_scene_tabs_from_editor_data();
+	} else {
+		// Generic move: take_tab captures the type payload and removes it from the
+		// source pane; add_tab mounts it in the destination. Never prompts.
+		WorkspaceTab taken = source_pane->take_tab(p_source_tab_index);
+		WorkspacePane *dest_pane = dest_leaf->get_workspace_pane();
+		ERR_FAIL_NULL_V(dest_pane, nullptr);
+		dest_pane->add_tab(taken);
+	}
+
+	if (source_leaf != dest_leaf) {
+		collapse_if_empty_deferred(p_source_pane_id);
+	}
+	return dest_leaf;
 }
 
 WorkspaceLeafNode *EditorSceneWorkspace::handle_scene_drop(int p_scene_idx, WorkspaceLeafNode *p_target_leaf, TileDropRegion p_region) {
@@ -112,26 +176,22 @@ WorkspaceLeafNode *EditorSceneWorkspace::handle_scene_drop(int p_scene_idx, Work
 	ERR_FAIL_COND_V(!leaves.has(p_target_leaf), nullptr);
 
 	const int source_tile_id = editor_data->get_scene_tile(p_scene_idx);
-	WorkspaceLeafNode *source_leaf = get_leaf_by_id(source_tile_id);
 
-	WorkspaceLeafNode *dest_leaf = p_target_leaf;
-	if (p_region != DROP_CENTER) {
-		const bool vertical = p_region == DROP_TOP || p_region == DROP_BOTTOM;
-		const SplitSide side = (p_region == DROP_LEFT || p_region == DROP_TOP) ? SPLIT_SIDE_FIRST : SPLIT_SIDE_SECOND;
-		dest_leaf = split(p_target_leaf, vertical, side);
-		ERR_FAIL_NULL_V(dest_leaf, nullptr);
-	} else if (source_tile_id == p_target_leaf->get_leaf_id()) {
-		return nullptr;
+	// Scenes are always represented as scene tabs in their owning pane; resolve the
+	// tab index and delegate to the generic path, syncing once if the pane's tab
+	// strip has not been materialized yet.
+	for (int attempt = 0; attempt < 2; attempt++) {
+		WorkspaceLeafNode *source_leaf = get_leaf_by_id(source_tile_id);
+		WorkspacePane *source_pane = source_leaf ? source_leaf->get_workspace_pane() : nullptr;
+		const int tab_index = source_pane ? source_pane->find_scene_tab_index(p_scene_idx) : -1;
+		if (tab_index >= 0) {
+			return handle_tab_drop(source_tile_id, tab_index, p_target_leaf, p_region);
+		}
+		if (attempt == 0) {
+			sync_scene_tabs_from_editor_data();
+		}
 	}
-
-	editor_data->set_scene_tile(p_scene_idx, dest_leaf->get_leaf_id());
-	sync_scene_tabs_from_editor_data();
-
-	if (source_leaf && source_leaf != dest_leaf && editor_data->get_tile_scene_indices(source_tile_id).is_empty() && leaves.size() > 1) {
-		callable_mp(this, &EditorSceneWorkspace::_collapse_if_empty).call_deferred(source_tile_id);
-	}
-
-	return dest_leaf;
+	return nullptr;
 }
 
 // --- WorkspaceLeafNode ---

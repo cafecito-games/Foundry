@@ -32,8 +32,8 @@
 
 #include "editor/editor_node.h"
 #include "editor/editor_string_names.h"
-#include "editor/scene/editor_scene_tabs.h"
 #include "editor/themes/editor_scale.h"
+#include "editor/workspace/workspace_pane.h"
 #include "scene/gui/tab_bar.h"
 #include "scene/main/viewport.h"
 #include "scene/main/window.h"
@@ -52,7 +52,7 @@ static const Color ROSETTE_AIMED_BORDER = Color(0.62352943f, 0.827451f, 1.0f); /
 static const Color ROSETTE_IDLE_ICON = Color(0.68235296f, 0.72156864f, 0.7764706f); // #AEB8C6
 static const Color ROSETTE_AIMED_ICON = Color(0.02352941f, 0.12941177f, 0.23529412f); // #06213C
 
-bool EditorTileDropOverlay::is_scene_tab_drag(const Variant &p_data) {
+bool EditorTileDropOverlay::is_workspace_tab_drag(const Variant &p_data) {
 	if (p_data.get_type() != Variant::DICTIONARY) {
 		return false;
 	}
@@ -60,14 +60,14 @@ bool EditorTileDropOverlay::is_scene_tab_drag(const Variant &p_data) {
 	if (String(d.get("type", "")) != "tab" || String(d.get("tab_type", "")) != "tab_bar_tab") {
 		return false;
 	}
-	int source_tile_id = -1;
-	int source_tab = -1;
-	return _resolve_source(p_data, source_tile_id, source_tab);
+	int source_pane_id = -1;
+	int source_tab_index = -1;
+	return _resolve_source(p_data, source_pane_id, source_tab_index);
 }
 
-bool EditorTileDropOverlay::_resolve_source(const Variant &p_data, int &r_source_tile_id, int &r_source_tab) {
-	r_source_tile_id = -1;
-	r_source_tab = -1;
+bool EditorTileDropOverlay::_resolve_source(const Variant &p_data, int &r_source_pane_id, int &r_source_tab_index) {
+	r_source_pane_id = -1;
+	r_source_tab_index = -1;
 	if (p_data.get_type() != Variant::DICTIONARY) {
 		return false;
 	}
@@ -84,11 +84,17 @@ bool EditorTileDropOverlay::_resolve_source(const Variant &p_data, int &r_source
 	if (!from_bar) {
 		return false;
 	}
+	// The dragged strip belongs to a WorkspacePane; resolve that pane and the tab
+	// index within it. This is the one payload shape for every tab type.
 	for (Node *node = from_bar; node; node = node->get_parent()) {
-		EditorSceneTabs *tabs = Object::cast_to<EditorSceneTabs>(node);
-		if (tabs) {
-			r_source_tile_id = tabs->get_tile_id();
-			r_source_tab = d["tab_index"];
+		WorkspacePane *pane = Object::cast_to<WorkspacePane>(node);
+		if (pane) {
+			const int tab_index = int(d["tab_index"]);
+			if (tab_index < 0 || tab_index >= pane->get_tab_count()) {
+				return false;
+			}
+			r_source_pane_id = pane->get_leaf_id();
+			r_source_tab_index = tab_index;
 			return true;
 		}
 	}
@@ -161,7 +167,7 @@ void EditorTileDropOverlay::_draw_guide_rosette(const Point2 &p_center, EditorSc
 }
 
 void EditorTileDropOverlay::_update_drag_active() {
-	const bool should_be_active = scene_tab_drag && get_global_rect().has_point(get_global_mouse_position());
+	const bool should_be_active = workspace_tab_drag && get_global_rect().has_point(get_global_mouse_position());
 	if (should_be_active == drag_active) {
 		if (drag_active) {
 			const EditorSceneWorkspace::TileDropRegion region = _region_at(get_local_mouse_position());
@@ -185,19 +191,29 @@ void EditorTileDropOverlay::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_DRAG_BEGIN: {
 			Viewport *viewport = get_viewport();
-			scene_tab_drag = viewport && is_scene_tab_drag(viewport->gui_get_drag_data());
-			set_process_internal(scene_tab_drag);
-			if (!scene_tab_drag) {
+			workspace_tab_drag = viewport && is_workspace_tab_drag(viewport->gui_get_drag_data());
+			set_process_internal(workspace_tab_drag);
+			if (!workspace_tab_drag) {
 				drag_active = false;
 				set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
 				queue_redraw();
 				break;
 			}
+			// Raise to the top of the pane body only now that a drag is active, so
+			// the rosette paints over the mounted content and hit-tests before it.
+			// Doing this here (rather than on every pane-state update) avoids
+			// reordering while the parent is still adding its children.
+			if (Node *parent = get_parent()) {
+				const int last = parent->get_child_count(false) - 1;
+				if (get_index(false) != last) {
+					parent->move_child(this, last);
+				}
+			}
 			_update_drag_active();
 		} break;
 
 		case NOTIFICATION_DRAG_END: {
-			scene_tab_drag = false;
+			workspace_tab_drag = false;
 			drag_active = false;
 			set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
 			set_process_internal(false);
@@ -222,31 +238,32 @@ void EditorTileDropOverlay::_notification(int p_what) {
 }
 
 bool EditorTileDropOverlay::can_drop_data(const Point2 &p_point, const Variant &p_data) const {
-	if (!is_scene_tab_drag(p_data)) {
+	if (!is_workspace_tab_drag(p_data)) {
 		return false;
 	}
-	int source_tile_id = -1;
-	int source_tab = -1;
-	if (!_resolve_source(p_data, source_tile_id, source_tab)) {
+	int source_pane_id = -1;
+	int source_tab_index = -1;
+	if (!_resolve_source(p_data, source_pane_id, source_tab_index)) {
 		return false;
 	}
+	// A center drop back onto the same pane is a no-op; edges still split it.
 	const EditorSceneWorkspace::TileDropRegion region = _region_at(p_point);
-	if (source_tile_id == owning_tile_id && region == EditorSceneWorkspace::DROP_CENTER) {
+	if (source_pane_id == owning_pane_id && region == EditorSceneWorkspace::DROP_CENTER) {
 		return false;
 	}
 	return true;
 }
 
 void EditorTileDropOverlay::drop_data(const Point2 &p_point, const Variant &p_data) {
-	int source_tile_id = -1;
-	int source_tab = -1;
-	if (!_resolve_source(p_data, source_tile_id, source_tab)) {
+	int source_pane_id = -1;
+	int source_tab_index = -1;
+	if (!_resolve_source(p_data, source_pane_id, source_tab_index)) {
 		return;
 	}
 	if (!EditorNode::get_singleton()) {
 		return;
 	}
-	EditorNode::get_singleton()->handle_tile_scene_drop(owning_tile_id, _region_at(p_point), source_tile_id, source_tab);
+	EditorNode::get_singleton()->handle_tile_tab_drop(owning_pane_id, _region_at(p_point), source_pane_id, source_tab_index);
 }
 
 EditorTileDropOverlay::EditorTileDropOverlay() {

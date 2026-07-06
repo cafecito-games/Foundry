@@ -37,6 +37,7 @@
 #include "editor/editor_scene_workspace.h"
 #include "editor/editor_script_leaf.h"
 #include "editor/editor_string_names.h"
+#include "editor/editor_tile_drop_overlay.h"
 #include "editor/scene/editor_scene_tabs.h"
 #include "editor/workspace/scene_tab.h"
 #include "editor/workspace/workspace_tab_type.h"
@@ -62,6 +63,16 @@ void WorkspacePane::_on_tab_strip_rearranged(int p_to_index) {
 	move_tab(active_tab_index, p_to_index);
 }
 
+void WorkspacePane::_on_tab_strip_close_pressed(int p_index) {
+	if (suppress_tab_strip_callback) {
+		return;
+	}
+	ERR_FAIL_INDEX(p_index, tabs.size());
+	// Every close routes through the tab type's tri-state request_close; the pane
+	// only drops the tab (and possibly collapses) once the flow resolves to CLOSE.
+	request_close_tab(p_index);
+}
+
 void WorkspacePane::_bind_tab_strip() {
 	if (!tab_strip) {
 		return;
@@ -72,6 +83,20 @@ void WorkspacePane::_bind_tab_strip() {
 	if (!tab_strip->is_connected(SNAME("active_tab_rearranged"), callable_mp(this, &WorkspacePane::_on_tab_strip_rearranged))) {
 		tab_strip->connect(SNAME("active_tab_rearranged"), callable_mp(this, &WorkspacePane::_on_tab_strip_rearranged));
 	}
+	if (!tab_strip->is_connected(SNAME("tab_close_pressed"), callable_mp(this, &WorkspacePane::_on_tab_strip_close_pressed))) {
+		tab_strip->connect(SNAME("tab_close_pressed"), callable_mp(this, &WorkspacePane::_on_tab_strip_close_pressed));
+	}
+}
+
+void WorkspacePane::_collapse_self_if_empty() {
+	if (!tabs.is_empty() || has_bridge_content() || !workspace) {
+		return;
+	}
+	// The final pane in the workspace stays visible with its empty placeholder.
+	if (workspace->get_leaf_count() <= 1) {
+		return;
+	}
+	workspace->collapse_if_empty_deferred(leaf_id);
 }
 
 void WorkspacePane::_sync_tab_strip() {
@@ -120,7 +145,7 @@ void WorkspacePane::_detach_ephemeral_chrome() {
 	mounted_tab_stable_id = -1;
 	for (int i = chrome_host->get_child_count(false) - 1; i >= 0; i--) {
 		Node *child = chrome_host->get_child(i, false);
-		if (child == scene_tile || child == script_leaf) {
+		if (child == scene_tile || child == script_leaf || child == drop_overlay) {
 			continue;
 		}
 		chrome_host->remove_child(child);
@@ -297,6 +322,10 @@ void WorkspacePane::setup(int p_leaf_id, EditorSelection *p_editor_selection, Ed
 	}
 
 	ERR_FAIL_NULL(chrome_host);
+
+	if (drop_overlay) {
+		drop_overlay->set_owning_pane_id(leaf_id);
+	}
 
 	if (is_scene_pane()) {
 		scene_tile = memnew(ScenePaneTile);
@@ -544,24 +573,24 @@ WorkspaceTab WorkspacePane::take_tab(int p_index) {
 	return taken;
 }
 
+int WorkspacePane::find_scene_tab_index(int p_scene_idx) const {
+	if (!editor_data || p_scene_idx < 0 || p_scene_idx >= editor_data->get_edited_scene_count()) {
+		return -1;
+	}
+	const String key = SceneTabType::resource_key_for_scene(*editor_data, p_scene_idx);
+	for (int i = 0; i < tabs.size(); i++) {
+		if (tabs[i].get_type_id() == StringName("scene") && tabs[i].get_resource_key() == key) {
+			return i;
+		}
+	}
+	return -1;
+}
+
 WorkspaceTabCloseResult WorkspacePane::request_close_active_tab() {
-	WorkspaceTab *tab = _active_tab_mut();
-	if (!tab) {
+	if (active_tab_index < 0) {
 		return WorkspaceTabCloseResult::CLOSE;
 	}
-	WorkspaceTabType *type = _active_tab_type();
-	if (!type) {
-		return WorkspaceTabCloseResult::CLOSE;
-	}
-	// The tab is identified by its stable id so a deferred close (an async
-	// save/discard prompt) removes the right tab even if the index shifted.
-	const int stable_id = tab->get_stable_id();
-	const Callable on_deferred_close = callable_mp(this, &WorkspacePane::_on_deferred_tab_closed).bind(stable_id);
-	const WorkspaceTabCloseResult result = type->request_close(*tab, on_deferred_close);
-	if (result == WorkspaceTabCloseResult::CLOSE) {
-		remove_tab(active_tab_index);
-	}
-	return result;
+	return request_close_tab(active_tab_index);
 }
 
 WorkspaceTabCloseResult WorkspacePane::request_close_tab(int p_index) {
@@ -569,9 +598,16 @@ WorkspaceTabCloseResult WorkspacePane::request_close_tab(int p_index) {
 	WorkspaceTabType *type = tab_registry ? tab_registry->find_type(tabs[p_index].get_type_id()) : nullptr;
 	ERR_FAIL_NULL_V(type, WorkspaceTabCloseResult::CANCEL);
 
-	WorkspaceTabCloseResult result = type->request_close(tabs.write[p_index]);
+	// Identify the tab by stable id so a deferred close (an async save/discard
+	// prompt) drops the right tab even if the index shifted while the prompt was
+	// open. On CANCEL nothing is removed; on DEFERRED the type drives its own flow
+	// and only invokes the callback if it ultimately resolves to a close.
+	const int stable_id = tabs[p_index].get_stable_id();
+	const Callable on_deferred_close = callable_mp(this, &WorkspacePane::_on_deferred_tab_closed).bind(stable_id);
+	const WorkspaceTabCloseResult result = type->request_close(tabs.write[p_index], on_deferred_close);
 	if (result == WorkspaceTabCloseResult::CLOSE) {
 		remove_tab(p_index);
+		_collapse_self_if_empty();
 	}
 	return result;
 }
@@ -580,6 +616,7 @@ void WorkspacePane::_on_deferred_tab_closed(int p_stable_id) {
 	for (int i = 0; i < tabs.size(); i++) {
 		if (tabs[i].get_stable_id() == p_stable_id) {
 			remove_tab(i);
+			_collapse_self_if_empty();
 			return;
 		}
 	}
@@ -691,6 +728,7 @@ WorkspacePane::WorkspacePane() {
 	tab_strip = memnew(TabBar);
 	tab_strip->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	tab_strip->set_drag_to_rearrange_enabled(true);
+	tab_strip->set_tab_close_display_policy(TabBar::CLOSE_BUTTON_SHOW_ACTIVE_ONLY);
 	tab_strip->hide();
 	add_child(tab_strip);
 	_bind_tab_strip();
@@ -700,6 +738,13 @@ WorkspacePane::WorkspacePane() {
 	chrome_host->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	chrome_host->set_clip_contents(true);
 	add_child(chrome_host);
+
+	// One rosette drop overlay per pane, painted over the pane body while any
+	// workspace tab is dragged. It stays MOUSE_FILTER_IGNORE until a drag begins.
+	drop_overlay = memnew(EditorTileDropOverlay);
+	drop_overlay->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+	drop_overlay->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	chrome_host->add_child(drop_overlay);
 
 	empty_placeholder = memnew(Control);
 	empty_placeholder->set_v_size_flags(Control::SIZE_EXPAND_FILL);
