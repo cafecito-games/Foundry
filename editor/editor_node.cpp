@@ -85,6 +85,7 @@
 #include "editor/debugger/editor_debugger_node.h"
 #include "editor/debugger/script_editor_debugger.h"
 #include "editor/doc/editor_help.h"
+#include "editor/docks/editor_dock.h"
 #include "editor/docks/editor_dock_manager.h"
 #include "editor/docks/filesystem_dock.h"
 #include "editor/docks/groups_dock.h"
@@ -4718,8 +4719,12 @@ void EditorNode::_activate_scene_context(EditorSceneContext *p_context) {
 	if (scene_workspace) {
 		WorkspaceLeafNode *leaf = scene_workspace->get_focused_leaf();
 		if (leaf && leaf->get_pane_tile()) {
-			leaf->get_pane_tile()->get_scene_tree_dock()->set_scene_context(p_context);
-			leaf->get_pane_tile()->get_inspector_dock()->set_scene_context(p_context);
+			ScenePaneTile *tile = leaf->get_pane_tile();
+			tile->get_scene_tree_dock()->set_scene_context(p_context);
+			tile->get_inspector_dock()->set_scene_context(p_context);
+			tile->get_signals_dock()->set_scene_context(p_context);
+			tile->get_groups_dock()->set_scene_context(p_context);
+			tile->get_history_dock()->set_scene_context(p_context);
 		}
 	} else {
 		if (SceneTreeDock::get_singleton()) {
@@ -4729,7 +4734,6 @@ void EditorNode::_activate_scene_context(EditorSceneContext *p_context) {
 			InspectorDock::get_singleton()->set_scene_context(p_context);
 		}
 	}
-	_bind_focus_following_docks(p_context);
 
 	emit_signal(SNAME("active_scene_context_changed"));
 }
@@ -4944,8 +4948,12 @@ void EditorNode::scene_context_about_to_be_removed(EditorSceneContext *p_context
 	if (scene_workspace) {
 		WorkspaceLeafNode *leaf = scene_workspace->get_focused_leaf();
 		if (leaf && leaf->get_pane_tile()) {
-			leaf->get_pane_tile()->get_scene_tree_dock()->set_scene_context(no_scene_context);
-			leaf->get_pane_tile()->get_inspector_dock()->set_scene_context(no_scene_context);
+			ScenePaneTile *tile = leaf->get_pane_tile();
+			tile->get_scene_tree_dock()->set_scene_context(no_scene_context);
+			tile->get_inspector_dock()->set_scene_context(no_scene_context);
+			tile->get_signals_dock()->set_scene_context(no_scene_context);
+			tile->get_groups_dock()->set_scene_context(no_scene_context);
+			tile->get_history_dock()->set_scene_context(no_scene_context);
 		}
 	} else {
 		if (SceneTreeDock::get_singleton()) {
@@ -4955,7 +4963,6 @@ void EditorNode::scene_context_about_to_be_removed(EditorSceneContext *p_context
 			InspectorDock::get_singleton()->set_scene_context(no_scene_context);
 		}
 	}
-	_bind_focus_following_docks(no_scene_context);
 	emit_signal(SNAME("active_scene_context_changed"));
 }
 
@@ -6653,6 +6660,9 @@ void EditorNode::_update_focused_dock_singletons(ScenePaneTile *p_tile) {
 	EditorSceneTabs::set_focused_singleton(scene_tabs);
 	SceneTreeDock::set_focused_instance(p_tile->get_scene_tree_dock());
 	InspectorDock::set_focused_instance(p_tile->get_inspector_dock());
+	SignalsDock::set_focused_instance(p_tile->get_signals_dock());
+	GroupsDock::set_focused_instance(p_tile->get_groups_dock());
+	HistoryDock::set_focused_instance(p_tile->get_history_dock());
 
 	if (distraction_free && distraction_free->get_parent() != nullptr) {
 		distraction_free->get_parent()->remove_child(distraction_free);
@@ -6674,6 +6684,9 @@ void EditorNode::_bind_leaf_docks(int p_leaf_id) {
 	EditorSceneContext *context = scene_idx >= 0 ? editor_data.get_scene_context(scene_idx) : no_scene_context;
 	tile->get_scene_tree_dock()->set_scene_context(context);
 	tile->get_inspector_dock()->set_scene_context(context);
+	tile->get_signals_dock()->set_scene_context(context);
+	tile->get_groups_dock()->set_scene_context(context);
+	tile->get_history_dock()->set_scene_context(context);
 }
 
 void EditorNode::_bind_all_leaf_docks() {
@@ -6682,18 +6695,6 @@ void EditorNode::_bind_all_leaf_docks() {
 	}
 	for (WorkspaceLeafNode *leaf : scene_workspace->get_leaves()) {
 		_bind_leaf_docks(leaf->get_leaf_id());
-	}
-}
-
-void EditorNode::_bind_focus_following_docks(EditorSceneContext *p_context) {
-	if (SignalsDock::get_singleton()) {
-		SignalsDock::get_singleton()->set_scene_context(p_context);
-	}
-	if (GroupsDock::get_singleton()) {
-		GroupsDock::get_singleton()->set_scene_context(p_context);
-	}
-	if (history_dock) {
-		history_dock->set_scene_context(p_context);
 	}
 }
 
@@ -6718,6 +6719,9 @@ void EditorNode::_wire_leaf_tile(WorkspaceLeafNode *p_leaf) {
 	tile->get_scene_tabs()->connect("tab_closed", callable_mp(this, &EditorNode::_on_tile_tab_closed).bind(leaf_id));
 	tile->get_scene_tree_dock()->set_scene_context(no_scene_context);
 	tile->get_inspector_dock()->set_scene_context(no_scene_context);
+	tile->get_signals_dock()->set_scene_context(no_scene_context);
+	tile->get_groups_dock()->set_scene_context(no_scene_context);
+	tile->get_history_dock()->set_scene_context(no_scene_context);
 }
 
 void EditorNode::_on_leaf_added(int p_leaf_id) {
@@ -6909,6 +6913,16 @@ void EditorNode::handle_tile_scene_tab_bar_drop(int p_target_tile_id, const Vari
 	save_editor_layout_delayed();
 }
 
+void EditorNode::_focus_leaf_dock(EditorDock *p_dock) {
+	if (!p_dock || !scene_workspace) {
+		return;
+	}
+	ScenePaneTile *tile = scene_workspace->get_focused_tile();
+	if (tile) {
+		tile->get_dock_region()->focus_dock(p_dock);
+	}
+}
+
 void EditorNode::_focus_leaf_scene_tree_dock() {
 	SceneTreeDock *dock = SceneTreeDock::get_singleton();
 	if (dock) {
@@ -6919,8 +6933,21 @@ void EditorNode::_focus_leaf_scene_tree_dock() {
 void EditorNode::_focus_leaf_inspector_dock() {
 	InspectorDock *dock = InspectorDock::get_singleton();
 	if (dock && dock->get_inspector()) {
+		_focus_leaf_dock(dock);
 		dock->get_inspector()->grab_focus();
 	}
+}
+
+void EditorNode::_focus_leaf_signals_dock() {
+	_focus_leaf_dock(SignalsDock::get_singleton());
+}
+
+void EditorNode::_focus_leaf_groups_dock() {
+	_focus_leaf_dock(GroupsDock::get_singleton());
+}
+
+void EditorNode::_focus_leaf_history_dock() {
+	_focus_leaf_dock(HistoryDock::get_singleton());
 }
 
 void EditorNode::_save_workspace_to_config(Ref<ConfigFile> p_config_file) {
@@ -8713,13 +8740,21 @@ void EditorNode::_resource_loaded(Ref<Resource> p_resource, const String &p_path
 void EditorNode::_feature_profile_changed() {
 	Ref<EditorFeatureProfile> profile = feature_profile_manager->get_current_profile();
 	if (profile.is_valid()) {
-		editor_dock_manager->set_dock_enabled(SignalsDock::get_singleton(), !profile->is_feature_disabled(EditorFeatureProfile::FEATURE_SIGNALS_DOCK));
-		editor_dock_manager->set_dock_enabled(GroupsDock::get_singleton(), !profile->is_feature_disabled(EditorFeatureProfile::FEATURE_GROUPS_DOCK));
 		// The Import dock is useless without the FileSystem dock. Ensure the configuration is valid.
 		bool fs_dock_disabled = profile->is_feature_disabled(EditorFeatureProfile::FEATURE_FILESYSTEM_DOCK);
 		editor_dock_manager->set_dock_enabled(FileSystemDock::get_singleton(), !fs_dock_disabled);
 		editor_dock_manager->set_dock_enabled(ImportDock::get_singleton(), !fs_dock_disabled && !profile->is_feature_disabled(EditorFeatureProfile::FEATURE_IMPORT_DOCK));
-		editor_dock_manager->set_dock_enabled(history_dock, !profile->is_feature_disabled(EditorFeatureProfile::FEATURE_HISTORY_DOCK));
+
+		if (scene_workspace) {
+			const bool signals_disabled = profile->is_feature_disabled(EditorFeatureProfile::FEATURE_SIGNALS_DOCK);
+			const bool groups_disabled = profile->is_feature_disabled(EditorFeatureProfile::FEATURE_GROUPS_DOCK);
+			const bool history_disabled = profile->is_feature_disabled(EditorFeatureProfile::FEATURE_HISTORY_DOCK);
+			for (ScenePaneTile *tile : scene_workspace->get_tiles()) {
+				tile->set_signals_dock_enabled(!signals_disabled);
+				tile->set_groups_dock_enabled(!groups_disabled);
+				tile->set_history_dock_enabled(!history_disabled);
+			}
+		}
 
 		editor_main_screen->set_button_enabled(EditorMainScreen::EDITOR_3D, !profile->is_feature_disabled(EditorFeatureProfile::FEATURE_3D));
 		editor_main_screen->set_button_enabled(EditorMainScreen::EDITOR_SCRIPT, !profile->is_feature_disabled(EditorFeatureProfile::FEATURE_SCRIPT));
@@ -8728,10 +8763,14 @@ void EditorNode::_feature_profile_changed() {
 		}
 	} else {
 		editor_dock_manager->set_dock_enabled(ImportDock::get_singleton(), true);
-		editor_dock_manager->set_dock_enabled(SignalsDock::get_singleton(), true);
-		editor_dock_manager->set_dock_enabled(GroupsDock::get_singleton(), true);
 		editor_dock_manager->set_dock_enabled(FileSystemDock::get_singleton(), true);
-		editor_dock_manager->set_dock_enabled(history_dock, true);
+		if (scene_workspace) {
+			for (ScenePaneTile *tile : scene_workspace->get_tiles()) {
+				tile->set_signals_dock_enabled(true);
+				tile->set_groups_dock_enabled(true);
+				tile->set_history_dock_enabled(true);
+			}
+		}
 		editor_main_screen->set_button_enabled(EditorMainScreen::EDITOR_3D, true);
 		editor_main_screen->set_button_enabled(EditorMainScreen::EDITOR_SCRIPT, true);
 		if (!Engine::get_singleton()->is_recovery_mode_hint()) {
@@ -9990,8 +10029,9 @@ EditorNode::EditorNode() {
 	p->add_item(TTRC("Hide Update Spinner"), SPINNER_UPDATE_SPINNER_HIDE);
 	_update_update_spinner();
 
-	// Instantiate and place editor docks. Scene tree and inspector live inside
-	// workspace tiles, not in the global EditorDockManager slots.
+	// Instantiate and place editor docks. Scene tree, inspector, signals,
+	// groups, and history live inside workspace tiles, not in the global
+	// EditorDockManager slots.
 
 	memnew(ImportDock);
 	editor_dock_manager->add_dock(ImportDock::get_singleton());
@@ -10010,17 +10050,18 @@ EditorNode::EditorNode() {
 		}
 	}
 
-	memnew(SignalsDock);
-	editor_dock_manager->add_dock(SignalsDock::get_singleton());
-
-	memnew(GroupsDock);
-	editor_dock_manager->add_dock(GroupsDock::get_singleton());
-
-	history_dock = memnew(HistoryDock);
-	editor_dock_manager->add_dock(history_dock);
-
 	EditorCommandPalette::get_singleton()->add_command(TTR("Open Scene Dock"), "docks/open_scene", callable_mp(this, &EditorNode::_focus_leaf_scene_tree_dock), varray(), Ref<Shortcut>());
 	EditorCommandPalette::get_singleton()->add_command(TTR("Open Inspector Dock"), "docks/open_inspector", callable_mp(this, &EditorNode::_focus_leaf_inspector_dock), varray(), Ref<Shortcut>());
+	EditorCommandPalette::get_singleton()->add_command(TTR("Open Signals Dock"), "docks/open_signals", callable_mp(this, &EditorNode::_focus_leaf_signals_dock), varray(), Ref<Shortcut>());
+	EditorCommandPalette::get_singleton()->add_command(TTR("Open Groups Dock"), "docks/open_groups", callable_mp(this, &EditorNode::_focus_leaf_groups_dock), varray(), Ref<Shortcut>());
+	EditorCommandPalette::get_singleton()->add_command(TTR("Open History Dock"), "docks/open_history", callable_mp(this, &EditorNode::_focus_leaf_history_dock), varray(), Ref<Shortcut>());
+
+	ED_SHORTCUT_AND_COMMAND("docks/open_signals", TTRC("Open Signals Dock"));
+	ED_SHORTCUT_AND_COMMAND("docks/open_groups", TTRC("Open Groups Dock"));
+	ED_SHORTCUT_AND_COMMAND("docks/open_history", TTRC("Open History Dock"));
+	ED_GET_SHORTCUT("docks/open_signals")->connect(SceneStringName(pressed), callable_mp(this, &EditorNode::_focus_leaf_signals_dock));
+	ED_GET_SHORTCUT("docks/open_groups")->connect(SceneStringName(pressed), callable_mp(this, &EditorNode::_focus_leaf_groups_dock));
+	ED_GET_SHORTCUT("docks/open_history")->connect(SceneStringName(pressed), callable_mp(this, &EditorNode::_focus_leaf_history_dock));
 
 	// Add some offsets to make LEFT_R and RIGHT_L docks wider than minsize.
 	const int dock_hsize = 280;
@@ -10033,10 +10074,9 @@ EditorNode::EditorNode() {
 	const String docks_section = "docks";
 	default_layout.instantiate();
 	// Dock numbers are based on DockSlot enum value + 1.
-	// Scene tree and inspector docks live inside workspace tiles, not in these slots.
+	// Scene tree, inspector, signals, groups, and history docks live inside workspace tiles, not in these slots.
 	default_layout->set_value(docks_section, "dock_3", "Import");
-	default_layout->set_value(docks_section, "dock_4", "FileSystem,History");
-	default_layout->set_value(docks_section, "dock_5", "Signals,Groups");
+	default_layout->set_value(docks_section, "dock_4", "FileSystem");
 
 	int hsplits[] = { 0, dock_hsize, -dock_hsize, 0 };
 	for (int i = 0; i < (int)std_size(hsplits); i++) {

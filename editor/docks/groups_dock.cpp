@@ -44,12 +44,15 @@ EditorSceneContext *GroupsDock::get_scene_context() const {
 	return groups->get_scene_context();
 }
 
-GroupsDock::GroupsDock() {
-	singleton = this;
+GroupsDock::GroupsDock(bool p_register_open_command) {
+	singleton = singleton ? singleton : this;
 	set_name(TTRC("Groups"));
 	set_icon_name("Groups");
-	set_dock_shortcut(ED_SHORTCUT_AND_COMMAND("docks/open_groups", TTRC("Open Groups Dock")));
+	if (p_register_open_command) {
+		set_dock_shortcut(ED_SHORTCUT_AND_COMMAND("docks/open_groups", TTRC("Open Groups Dock")));
+	}
 	set_default_slot(EditorDock::DOCK_SLOT_RIGHT_UL);
+	set_layout_key("Groups");
 
 	groups = memnew(GroupsEditor);
 	groups->set_v_size_flags(SIZE_EXPAND_FILL);

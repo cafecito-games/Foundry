@@ -33,6 +33,7 @@
 #include "scene/gui/box_container.h"
 
 #include "editor/editor_workspace_leaf_content.h"
+#include "editor/editor_tile_dock_region.h"
 
 class Camera3D;
 class CanvasItemEditorView;
@@ -42,13 +43,17 @@ class EditorSceneContext;
 class EditorSceneTabs;
 class EditorSelection;
 class HSplitContainer;
+class GroupsDock;
+class HistoryDock;
 class InspectorDock;
 class Label;
+class SignalsDock;
 class Node3DEditorViewport;
 class PanelContainer;
 class SceneTreeDock;
 class SubViewport;
 class SubViewportContainer;
+class EditorTileDockRegion;
 class EditorTileDropOverlay;
 class Texture2D;
 class TextureRect;
@@ -76,12 +81,16 @@ class ScenePaneTile : public VBoxContainer, public WorkspaceLeafContent {
 	EditorData *editor_data = nullptr;
 	EditorSceneTabs *scene_tabs = nullptr;
 	HSplitContainer *body = nullptr;
+	EditorTileDockRegion dock_region;
 	SceneTreeDock *scene_tree_dock = nullptr; // Left, in-tile.
 	// Center. A plain clipping Control (children use full-rect anchors) so
 	// hosted content (the main screen, previews) never inflates the tile's
 	// minimum size and tiles stay freely resizable.
 	Control *content_host = nullptr;
-	InspectorDock *inspector_dock = nullptr; // Right, in-tile.
+	InspectorDock *inspector_dock = nullptr; // Right tab stack, in-tile.
+	SignalsDock *signals_dock = nullptr;
+	GroupsDock *groups_dock = nullptr;
+	HistoryDock *history_dock = nullptr;
 	SubViewportContainer *preview_container = nullptr; // Fallback when no canvas view exists.
 	CanvasItemEditorView *canvas_view = nullptr; // Non-focused 2D live editor view.
 	SubViewportContainer *context_viewport_host = nullptr; // Non-focused 3D scene viewport host.
@@ -107,6 +116,15 @@ public:
 	EditorSceneTabs *get_scene_tabs() const { return scene_tabs; }
 	SceneTreeDock *get_scene_tree_dock() const { return scene_tree_dock; }
 	InspectorDock *get_inspector_dock() const { return inspector_dock; }
+	SignalsDock *get_signals_dock() const { return signals_dock; }
+	GroupsDock *get_groups_dock() const { return groups_dock; }
+	HistoryDock *get_history_dock() const { return history_dock; }
+	EditorTileDockRegion *get_dock_region() { return &dock_region; }
+	const EditorTileDockRegion *get_dock_region() const { return &dock_region; }
+
+	void set_signals_dock_enabled(bool p_enabled);
+	void set_groups_dock_enabled(bool p_enabled);
+	void set_history_dock_enabled(bool p_enabled);
 	Control *get_content_host() const { return content_host; }
 	SubViewportContainer *get_preview_container() const { return preview_container; }
 	CanvasItemEditorView *get_canvas_view() const { return canvas_view; }

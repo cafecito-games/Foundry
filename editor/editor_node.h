@@ -75,6 +75,7 @@ class EditorBuildProfileManager;
 class EditorBottomDrawerStrip;
 class EditorBottomPanel;
 class EditorCommandPalette;
+class EditorDock;
 class EditorDockManager;
 class EditorExport;
 class EditorExportPreset;
@@ -305,7 +306,6 @@ private:
 	EditorSelection *editor_selection = nullptr; // Always points at the active context's selection (the no_scene_context's when no scene is open).
 	EditorSelectionHistory *editor_history = nullptr; // Always points at the active context's history (the no_scene_context's when no scene is open).
 	EditorSettingsDialog *editor_settings_dialog = nullptr;
-	HistoryDock *history_dock = nullptr;
 
 	ProjectExportDialog *project_export = nullptr;
 	ProjectSettingsEditor *project_settings_editor = nullptr;
@@ -719,7 +719,6 @@ private:
 	void _update_focused_dock_singletons(ScenePaneTile *p_tile);
 	void _bind_leaf_docks(int p_leaf_id);
 	void _bind_all_leaf_docks();
-	void _bind_focus_following_docks(EditorSceneContext *p_context);
 	void _wire_leaf_tile(WorkspaceLeafNode *p_leaf);
 	void _on_leaf_added(int p_leaf_id);
 	void _on_leaf_removed(int p_leaf_id, int p_successor_leaf_id);
@@ -730,6 +729,10 @@ private:
 	void _update_all_scene_tabs();
 	void _focus_leaf_scene_tree_dock();
 	void _focus_leaf_inspector_dock();
+	void _focus_leaf_signals_dock();
+	void _focus_leaf_groups_dock();
+	void _focus_leaf_history_dock();
+	void _focus_leaf_dock(EditorDock *p_dock);
 
 	void _save_window_settings_to_config(Ref<ConfigFile> p_layout, const String &p_section);
 

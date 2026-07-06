@@ -43,6 +43,10 @@ class PopupMenu;
 class Tree;
 class TreeItem;
 
+namespace TestSceneWorkspace {
+class TileGroupsEditorTestAccess;
+} // namespace TestSceneWorkspace
+
 class GroupsEditor : public VBoxContainer {
 	FOUNDRY_CLASS(GroupsEditor, VBoxContainer);
 

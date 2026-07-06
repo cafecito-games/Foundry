@@ -31,21 +31,30 @@
 #pragma once
 
 #include "core/io/config_file.h"
+#include "editor/docks/editor_dock.h"
+#include "editor/docks/groups_dock.h"
+#include "editor/docks/groups_editor.h"
+#include "editor/docks/history_dock.h"
 #include "editor/docks/inspector_dock.h"
 #include "editor/docks/scene_tree_dock.h"
+#include "editor/docks/signals_dock.h"
 #include "editor/editor_data.h"
 #include "editor/editor_scene_context.h"
 #include "editor/editor_scene_pane_tile.h"
 #include "editor/editor_scene_workspace.h"
 #include "editor/editor_script_leaf.h"
+#include "editor/editor_tile_dock_region.h"
+#include "editor/editor_undo_redo_manager.h"
 #include "editor/editor_workspace_leaf_content.h"
 #include "editor/scene/editor_scene_tabs.h"
+#include "editor/themes/editor_scale.h"
 
 #include "scene/2d/node_2d.h"
 #include "scene/3d/camera_3d.h"
 #include "scene/gui/panel_container.h"
 #include "scene/gui/split_container.h"
 #include "scene/gui/subviewport_container.h"
+#include "scene/gui/tab_container.h"
 #include "scene/main/viewport.h"
 #include "scene/main/window.h"
 
@@ -821,6 +830,207 @@ TEST_CASE("[SceneTree][Editor] leaf-content-generic") {
 	CHECK(restored_script->get_leaf_content()->get_scene_context() == nullptr);
 
 	h2.unmount();
+}
+
+class TileHistoryDockTestAccess {
+public:
+	static void refresh(HistoryDock *p_dock) { p_dock->refresh_history(); }
+	static String newest_action_name(HistoryDock *p_dock) {
+		if (p_dock->action_list->get_item_count() <= 1) {
+			return String();
+		}
+		return p_dock->action_list->get_item_text(0);
+	}
+};
+
+class TileConnectionsDockTestAccess {
+public:
+	static Object *selected_object(SignalsDock *p_dock) {
+		return p_dock->connections ? p_dock->connections->selected_object : nullptr;
+	}
+};
+
+static int _right_tab_index(TabContainer *p_tabs, EditorDock *p_dock) {
+	if (!p_tabs || !p_dock) {
+		return -1;
+	}
+	for (int i = 0; i < p_tabs->get_tab_count(); i++) {
+		if (p_tabs->get_tab_control(i) == p_dock) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+TEST_CASE("[SceneTree][Editor] tile-dock-region") {
+	Window *tree_root = SceneTree::get_singleton()->get_root();
+	EditorUndoRedoManager *ur_manager = memnew(EditorUndoRedoManager);
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspaceLeafNode *first = h.workspace->get_focused_leaf();
+	WorkspaceLeafNode *second = h.workspace->split(first, false, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
+	h.pump();
+	REQUIRE(second != nullptr);
+
+	ScenePaneTile *tile_a = first->get_pane_tile();
+	ScenePaneTile *tile_b = second->get_pane_tile();
+	REQUIRE(tile_a != nullptr);
+	REQUIRE(tile_b != nullptr);
+
+	CHECK(tile_a->get_signals_dock() != nullptr);
+	CHECK(tile_a->get_groups_dock() != nullptr);
+	CHECK(tile_a->get_history_dock() != nullptr);
+	CHECK(tile_a->is_ancestor_of(tile_a->get_signals_dock()));
+	CHECK(tile_a->is_ancestor_of(tile_a->get_groups_dock()));
+	CHECK(tile_a->is_ancestor_of(tile_a->get_history_dock()));
+
+	EditorSceneContext *context_a = memnew(EditorSceneContext);
+	context_a->set_history_id(42);
+	Node2D *root_a = memnew(Node2D);
+	context_a->set_scene_root_node(root_a);
+	Node2D *node_a = memnew(Node2D);
+	root_a->add_child(node_a);
+	node_a->add_to_group("tile_a_group", false);
+
+	ur_manager->create_action_for_history("Tile A action", 42);
+	ur_manager->add_do_method(node_a, "set_name", "RenamedA");
+	ur_manager->commit_action();
+
+	EditorSceneContext *context_b = memnew(EditorSceneContext);
+	context_b->set_history_id(99);
+	Node2D *root_b = memnew(Node2D);
+	context_b->set_scene_root_node(root_b);
+	Node2D *node_b = memnew(Node2D);
+	root_b->add_child(node_b);
+	node_b->add_to_group("tile_b_group", false);
+
+	ur_manager->create_action_for_history("Tile B action", 99);
+	ur_manager->add_do_method(node_b, "set_name", "RenamedB");
+	ur_manager->commit_action();
+
+	tile_a->get_scene_tree_dock()->set_scene_context(context_a);
+	tile_a->get_inspector_dock()->set_scene_context(context_a);
+	tile_a->get_signals_dock()->set_scene_context(context_a);
+	tile_a->get_groups_dock()->set_scene_context(context_a);
+	tile_a->get_history_dock()->set_scene_context(context_a);
+
+	tile_b->get_scene_tree_dock()->set_scene_context(context_b);
+	tile_b->get_inspector_dock()->set_scene_context(context_b);
+	tile_b->get_signals_dock()->set_scene_context(context_b);
+	tile_b->get_groups_dock()->set_scene_context(context_b);
+	tile_b->get_history_dock()->set_scene_context(context_b);
+
+	tile_a->get_signals_dock()->show();
+	tile_a->get_groups_dock()->show();
+	tile_a->get_history_dock()->show();
+	tile_b->get_signals_dock()->show();
+	tile_b->get_groups_dock()->show();
+	tile_b->get_history_dock()->show();
+	h.pump();
+
+	// GroupsEditor defers group-tree rebuilds until visible; rebind after show().
+	tile_a->get_groups_dock()->set_scene_context(context_a);
+	tile_b->get_groups_dock()->set_scene_context(context_b);
+	h.pump();
+
+	tile_a->get_signals_dock()->set_object(node_a);
+	context_a->activate(tree_root);
+	Vector<Node *> select_a;
+	select_a.push_back(node_a);
+	tile_a->get_groups_dock()->set_selection(select_a);
+	h.pump();
+
+	CHECK(TileConnectionsDockTestAccess::selected_object(tile_a->get_signals_dock()) == node_a);
+	CHECK(tile_a->get_groups_dock()->get_scene_context() == context_a);
+	TileHistoryDockTestAccess::refresh(tile_a->get_history_dock());
+	CHECK(TileHistoryDockTestAccess::newest_action_name(tile_a->get_history_dock()) == "Tile A action");
+
+	tile_b->get_signals_dock()->set_object(node_b);
+	context_b->activate(tree_root);
+	Vector<Node *> select_b;
+	select_b.push_back(node_b);
+	tile_b->get_groups_dock()->set_selection(select_b);
+	h.pump();
+
+	CHECK(TileConnectionsDockTestAccess::selected_object(tile_b->get_signals_dock()) == node_b);
+	CHECK(tile_b->get_groups_dock()->get_scene_context() == context_b);
+	TileHistoryDockTestAccess::refresh(tile_b->get_history_dock());
+	CHECK(TileHistoryDockTestAccess::newest_action_name(tile_b->get_history_dock()) == "Tile B action");
+
+	// Tile B edits must not bleed into tile A's bound panels.
+	CHECK(TileConnectionsDockTestAccess::selected_object(tile_a->get_signals_dock()) == node_a);
+	CHECK(tile_a->get_groups_dock()->get_scene_context() == context_a);
+	CHECK(TileHistoryDockTestAccess::newest_action_name(tile_a->get_history_dock()) == "Tile A action");
+
+	TabContainer *right_tabs = tile_a->get_dock_region()->get_right_tabs();
+	REQUIRE(right_tabs != nullptr);
+	const int history_tab = _right_tab_index(right_tabs, tile_a->get_history_dock());
+	REQUIRE(history_tab >= 0);
+	right_tabs->set_current_tab(history_tab);
+
+	HSplitContainer *body = tile_a->get_dock_region()->get_body();
+	REQUIRE(body != nullptr);
+	h.host->set_size(Size2(900, 600));
+	h.pump();
+	PackedInt32Array offsets = body->get_split_offsets();
+	if (offsets.size() < 2) {
+		offsets.resize(2);
+	}
+	offsets.write[0] = 220;
+	offsets.write[1] = -240;
+	body->set_split_offsets(offsets);
+	h.pump();
+
+	Ref<ConfigFile> config;
+	config.instantiate();
+	EditorSceneWorkspace::save_to_config(config, h.workspace);
+
+	const String layout_section = EditorSceneWorkspace::leaf_layout_section(tile_a->get_tile_id());
+	CHECK(config->has_section_key(layout_section, "tile_dock_right"));
+	CHECK(int(config->get_value(layout_section, "tile_dock_hsplit_1")) == 220);
+	CHECK(int(config->get_value(layout_section, "tile_dock_hsplit_2")) == -240);
+	CHECK(int(config->get_value(layout_section, "tile_dock_right_selected_tab_idx")) == history_tab);
+
+	const int tile_a_id = tile_a->get_tile_id();
+	const int tile_b_id = tile_b->get_tile_id();
+
+	context_a->deactivate();
+	context_b->deactivate();
+	memdelete(context_a);
+	memdelete(context_b);
+
+	h.unmount();
+
+	WorkspaceHarness h2;
+	h2.mount();
+	h2.workspace->restore_from_config(config);
+	h2.pump();
+
+	ScenePaneTile *restored_a = h2.workspace->get_tile_by_id(tile_a_id);
+	ScenePaneTile *restored_b = h2.workspace->get_tile_by_id(tile_b_id);
+	REQUIRE(restored_a != nullptr);
+	REQUIRE(restored_b != nullptr);
+
+	TabContainer *restored_tabs = restored_a->get_dock_region()->get_right_tabs();
+	REQUIRE(restored_tabs != nullptr);
+	const int restored_history_tab = _right_tab_index(restored_tabs, restored_a->get_history_dock());
+	REQUIRE(restored_history_tab >= 0);
+	CHECK(restored_tabs->get_current_tab() == restored_history_tab);
+
+	HSplitContainer *restored_body = restored_a->get_dock_region()->get_body();
+	REQUIRE(restored_body != nullptr);
+	h2.host->set_size(Size2(900, 600));
+	h2.pump();
+	PackedInt32Array restored_offsets = restored_body->get_split_offsets();
+	REQUIRE(restored_offsets.size() >= 2);
+	CHECK(restored_offsets[0] == 220 * EDSCALE);
+	CHECK(restored_offsets[1] == -240 * EDSCALE);
+
+	h2.unmount();
+	memdelete(ur_manager);
 }
 
 } // namespace TestSceneWorkspace

@@ -35,6 +35,11 @@
 
 class EditorSceneContext;
 
+namespace TestSceneWorkspace {
+class TileConnectionsDockTestAccess;
+class TileHistoryDockTestAccess;
+} // namespace TestSceneWorkspace
+
 class GroupsDock : public EditorDock {
 	FOUNDRY_CLASS(GroupsDock, EditorDock);
 
@@ -44,11 +49,12 @@ class GroupsDock : public EditorDock {
 
 public:
 	static GroupsDock *get_singleton() { return singleton; }
+	static void set_focused_instance(GroupsDock *p_instance) { singleton = p_instance; }
 
 	void set_selection(const Vector<Node *> &p_nodes);
 	void set_scene_context(EditorSceneContext *p_context);
 	EditorSceneContext *get_scene_context() const;
 
-	GroupsDock();
+	GroupsDock(bool p_register_open_command = true);
 	~GroupsDock();
 };

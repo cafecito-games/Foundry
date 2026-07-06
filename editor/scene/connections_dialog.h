@@ -207,10 +207,15 @@ class ConnectionsDockTree : public Tree {
 	virtual Control *make_custom_tooltip(const String &p_text) const;
 };
 
+namespace TestSceneWorkspace {
+class TileConnectionsDockTestAccess;
+} // namespace TestSceneWorkspace
+
 class ConnectionsDock : public VBoxContainer {
 	FOUNDRY_CLASS(ConnectionsDock, VBoxContainer);
 
 	friend class ConnectionsDockTestAccess;
+	friend class TestSceneWorkspace::TileConnectionsDockTestAccess;
 
 	enum TreeItemType {
 		TREE_ITEM_TYPE_ROOT,
