@@ -41,6 +41,7 @@
 #ifdef TESTS_ENABLED
 namespace FSTests {
 class TestFSAnalyzerAccessor;
+class TestFSAnalyzerDependencyAccessAccessor;
 }
 #endif // TESTS_ENABLED
 
@@ -133,14 +134,47 @@ private:
 		~FlattenedTraitFinalNodesScope();
 	};
 
-	// Documents dependency/parser-cache access for one external-parser lookup.
+	// Phase 1 helper: dependency/parser-cache access for external scripts and classes.
+	// Requested status guide:
+	// - PARSED: cache-walk lookup and external class delegation before local phase work.
+	// - INHERITANCE_SOLVED: extends chains, global class/enum metadata, trait identity, autoload typing.
+	// - INTERFACE_SOLVED: annotation libraries, trait surfaces, conformance targets, preload conformances.
+	// - FULLY_SOLVED: directly applied external trait bodies before flattening (body phase exception).
+	class DependencyParserAccess {
+		FSAnalyzer *analyzer = nullptr;
+		HashMap<const FSParser::ClassNode *, Ref<FSParserRef>> external_class_parser_cache;
+
+		void mark_dependency_phase_completed();
+
+	public:
+		explicit DependencyParserAccess(FSAnalyzer *p_analyzer);
+
+		Ref<FSParserRef> ensure_cached_external_parser_for_class(const FSParser::ClassNode *p_class, const FSParser::ClassNode *p_from_class, const char *p_context, const FSParser::Node *p_source);
+		Ref<FSParserRef> find_cached_external_parser_for_class(const FSParser::ClassNode *p_class, const Ref<FSParserRef> &p_dependant_parser);
+		Ref<FSParserRef> find_cached_external_parser_for_class(const FSParser::ClassNode *p_class, FSParser *p_dependant_parser);
+
+		Ref<FSParserRef> depended_parser_for(const String &p_path, FSParserRef::Status p_required_status);
+		Error raise_depended_parser_for(const String &p_path, FSParserRef::Status p_required_status, Ref<FSParserRef> &r_parser_ref);
+		Error raise_parser_to_status(const Ref<FSParserRef> &p_parser_ref, FSParserRef::Status p_required_status);
+
+#ifdef TESTS_ENABLED
+		int test_external_class_parser_cache_size() const {
+			return external_class_parser_cache.size();
+		}
+#endif // TESTS_ENABLED
+	};
+
+	// Marks dependency/parse availability for one analyzer lookup sequence.
 	class DependencyParserAccessScope {
 		FSAnalyzer *analyzer = nullptr;
 
 	public:
 		explicit DependencyParserAccessScope(FSAnalyzer *p_analyzer);
+		DependencyParserAccess &access();
 		~DependencyParserAccessScope();
 	};
+
+	DependencyParserAccess dependency_parser_access;
 
 	// Ensures deferred lambda bodies are resolved before leaving body analysis.
 	class PendingLambdaBodiesScope {
@@ -181,7 +215,6 @@ private:
 	const FSParser::EnumNode *current_enum = nullptr;
 	FSParser::LambdaNode *current_lambda = nullptr;
 	List<FSParser::LambdaNode *> pending_body_resolution_lambdas;
-	HashMap<const FSParser::ClassNode *, Ref<FSParserRef>> external_class_parser_cache;
 	HashMap<const FSParser::Node *, FSParser::DataType> flow_narrowed_types;
 	HashMap<const FSParser::Node *, bool> flow_narrowing_captured_sources;
 	bool static_context = false;
@@ -509,9 +542,6 @@ private:
 	void mark_lambda_use_self();
 	void resolve_pending_lambda_bodies();
 	void reduce_identifier_from_base_set_class(FSParser::IdentifierNode *p_identifier, FSParser::DataType p_identifier_datatype);
-	Ref<FSParserRef> ensure_cached_external_parser_for_class(const FSParser::ClassNode *p_class, const FSParser::ClassNode *p_from_class, const char *p_context, const FSParser::Node *p_source);
-	Ref<FSParserRef> find_cached_external_parser_for_class(const FSParser::ClassNode *p_class, const Ref<FSParserRef> &p_dependant_parser);
-	Ref<FSParserRef> find_cached_external_parser_for_class(const FSParser::ClassNode *p_class, FSParser *p_dependant_parser);
 	Ref<FoundryScript> get_depended_shallow_script(const String &p_path, Error &r_error);
 #ifdef DEBUG_ENABLED
 	void is_shadowing(FSParser::IdentifierNode *p_identifier, const String &p_context, const bool p_in_local_scope);
@@ -542,11 +572,15 @@ public:
 	bool test_would_violate_phase_order(AnalyzerPhase p_requested_phase, AnalyzerPhase p_required_predecessor) const;
 	AnalyzerPhase test_get_highest_completed_phase() const { return highest_completed_phase; }
 	void test_mark_analyzer_phase_completed(AnalyzerPhase p_phase) { mark_analyzer_phase_completed(p_phase); }
+	static FSParserRef::Status test_get_depended_parser_status(const FSAnalyzer *p_analyzer, const String &p_path);
+	static Ref<FSParserRef> test_get_depended_parser_ref(const FSAnalyzer *p_analyzer, const String &p_path);
+	static int test_get_external_parser_cache_size(const FSAnalyzer *p_analyzer);
 #endif // TESTS_ENABLED
 
 #ifdef TESTS_ENABLED
 	// Grants unit tests access to the private PropertyInfo decode path so the encode/decode round-trip
 	// of typed callable/signal signatures can be exercised directly (see test_foundry_script_type.h).
 	friend class FSTests::TestFSAnalyzerAccessor;
+	friend class FSTests::TestFSAnalyzerDependencyAccessAccessor;
 #endif // TESTS_ENABLED
 };

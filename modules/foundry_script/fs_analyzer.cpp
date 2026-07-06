@@ -218,11 +218,49 @@ FSAnalyzer::FlattenedTraitFinalNodesScope::~FlattenedTraitFinalNodesScope() {
 	}
 }
 
+FSAnalyzer::DependencyParserAccess::DependencyParserAccess(FSAnalyzer *p_analyzer) {
+	analyzer = p_analyzer;
+}
+
+void FSAnalyzer::DependencyParserAccess::mark_dependency_phase_completed() {
+	if (analyzer != nullptr) {
+		analyzer->mark_analyzer_phase_completed(AnalyzerPhase::DEPENDENCY_PARSE_AVAILABILITY);
+	}
+}
+
+Error FSAnalyzer::DependencyParserAccess::raise_parser_to_status(const Ref<FSParserRef> &p_parser_ref, FSParserRef::Status p_required_status) {
+	if (p_parser_ref.is_null()) {
+		return ERR_PARSE_ERROR;
+	}
+	return p_parser_ref->raise_status(p_required_status);
+}
+
+Ref<FSParserRef> FSAnalyzer::DependencyParserAccess::depended_parser_for(const String &p_path, FSParserRef::Status p_required_status) {
+	Ref<FSParserRef> parser_ref;
+	raise_depended_parser_for(p_path, p_required_status, parser_ref);
+	return parser_ref;
+}
+
+Error FSAnalyzer::DependencyParserAccess::raise_depended_parser_for(const String &p_path, FSParserRef::Status p_required_status, Ref<FSParserRef> &r_parser_ref) {
+	mark_dependency_phase_completed();
+	r_parser_ref = Ref<FSParserRef>();
+	if (analyzer == nullptr || analyzer->parser == nullptr) {
+		return ERR_PARSE_ERROR;
+	}
+	r_parser_ref = analyzer->parser->get_depended_parser_for(p_path);
+	return raise_parser_to_status(r_parser_ref, p_required_status);
+}
+
 FSAnalyzer::DependencyParserAccessScope::DependencyParserAccessScope(FSAnalyzer *p_analyzer) {
 	analyzer = p_analyzer;
 	if (analyzer != nullptr) {
 		analyzer->mark_analyzer_phase_completed(AnalyzerPhase::DEPENDENCY_PARSE_AVAILABILITY);
 	}
+}
+
+FSAnalyzer::DependencyParserAccess &FSAnalyzer::DependencyParserAccessScope::access() {
+	ERR_FAIL_NULL_V(analyzer, analyzer->dependency_parser_access);
+	return analyzer->dependency_parser_access;
 }
 
 FSAnalyzer::DependencyParserAccessScope::~DependencyParserAccessScope() {
@@ -390,7 +428,7 @@ Error FSAnalyzer::run_phase_final_diagnostics_and_dependencies() {
 		if (K.value.is_null()) {
 			return ERR_PARSE_ERROR;
 		}
-		K.value->raise_status(FSParserRef::INHERITANCE_SOLVED);
+		dependency_parser_access.raise_parser_to_status(K.value, FSParserRef::INHERITANCE_SOLVED);
 	}
 
 	return parser->errors.is_empty() ? OK : ERR_PARSE_ERROR;
@@ -420,6 +458,37 @@ bool FSAnalyzer::test_would_violate_phase_order(AnalyzerPhase p_requested_phase,
 
 String FSAnalyzer::test_format_phase_order_violation(AnalyzerPhase p_requested_phase, AnalyzerPhase p_required_predecessor) const {
 	return make_analyzer_phase_order_violation_message(p_requested_phase, p_required_predecessor);
+}
+
+FSParserRef::Status FSAnalyzer::test_get_depended_parser_status(const FSAnalyzer *p_analyzer, const String &p_path) {
+	if (p_analyzer == nullptr || p_analyzer->parser == nullptr) {
+		return FSParserRef::EMPTY;
+	}
+	const HashMap<String, Ref<FSParserRef>> &depended = p_analyzer->parser->get_depended_parsers();
+	if (const Ref<FSParserRef> *found = depended.getptr(p_path)) {
+		if (found->is_valid()) {
+			return (*found)->get_status();
+		}
+	}
+	return FSParserRef::EMPTY;
+}
+
+Ref<FSParserRef> FSAnalyzer::test_get_depended_parser_ref(const FSAnalyzer *p_analyzer, const String &p_path) {
+	if (p_analyzer == nullptr || p_analyzer->parser == nullptr) {
+		return Ref<FSParserRef>();
+	}
+	const HashMap<String, Ref<FSParserRef>> &depended = p_analyzer->parser->get_depended_parsers();
+	if (const Ref<FSParserRef> *found = depended.getptr(p_path)) {
+		return *found;
+	}
+	return Ref<FSParserRef>();
+}
+
+int FSAnalyzer::test_get_external_parser_cache_size(const FSAnalyzer *p_analyzer) {
+	if (p_analyzer == nullptr) {
+		return 0;
+	}
+	return p_analyzer->dependency_parser_access.test_external_class_parser_cache_size();
 }
 #endif // TESTS_ENABLED
 
@@ -1709,10 +1778,10 @@ Error FSAnalyzer::resolve_class_inheritance(FSParser::ClassNode *p_class, const 
 		p_source = p_class;
 	}
 
-	Ref<FSParserRef> parser_ref = ensure_cached_external_parser_for_class(p_class, nullptr, "Trying to resolve class inheritance", p_source);
+	Ref<FSParserRef> parser_ref = dependency_parser_access.ensure_cached_external_parser_for_class(p_class, nullptr, "Trying to resolve class inheritance", p_source);
 	Finally finally([&]() {
 		for (FSParser::ClassNode *look_class = p_class; look_class != nullptr; look_class = look_class->base_type.class_type) {
-			ensure_cached_external_parser_for_class(look_class->base_type.class_type, look_class, "Trying to resolve class inheritance", p_source);
+			dependency_parser_access.ensure_cached_external_parser_for_class(look_class->base_type.class_type, look_class, "Trying to resolve class inheritance", p_source);
 		}
 	});
 
@@ -1732,7 +1801,7 @@ Error FSAnalyzer::resolve_class_inheritance(FSParser::ClassNode *p_class, const 
 			return ERR_PARSE_ERROR;
 		}
 
-		Error err = parser_ref->raise_status(FSParserRef::PARSED);
+		Error err = dependency_parser_access.raise_parser_to_status(parser_ref, FSParserRef::PARSED);
 		if (err) {
 			push_error(vformat(R"(Could not parse script "%s": %s.)", p_class->get_datatype().script_path, error_names[err]), p_source);
 			return ERR_PARSE_ERROR;
@@ -1815,13 +1884,13 @@ Error FSAnalyzer::resolve_class_inheritance(FSParser::ClassNode *p_class, const 
 			if (p_class->extends_path.is_relative_path()) {
 				p_class->extends_path = class_type.script_path.get_base_dir().path_join(p_class->extends_path).simplify_path();
 			}
-			Ref<FSParserRef> ext_parser = parser->get_depended_parser_for(p_class->extends_path);
+			Ref<FSParserRef> ext_parser;
+			Error err = dependency_parser_access.raise_depended_parser_for(p_class->extends_path, FSParserRef::INHERITANCE_SOLVED, ext_parser);
 			if (ext_parser.is_null()) {
 				push_error(vformat(R"(Could not resolve super class path "%s".)", p_class->extends_path), p_class);
 				return ERR_PARSE_ERROR;
 			}
 
-			Error err = ext_parser->raise_status(FSParserRef::INHERITANCE_SOLVED);
 			if (err != OK) {
 				push_error(vformat(R"(Could not resolve super class inheritance from "%s".)", p_class->extends_path), p_class);
 				return err;
@@ -1853,13 +1922,13 @@ Error FSAnalyzer::resolve_class_inheritance(FSParser::ClassNode *p_class, const 
 				if (FoundryScript::is_canonically_equal_paths(base_path, parser->script_path)) {
 					base = parser->head->get_datatype();
 				} else {
-					Ref<FSParserRef> base_parser = parser->get_depended_parser_for(base_path);
+					Ref<FSParserRef> base_parser;
+					Error err = dependency_parser_access.raise_depended_parser_for(base_path, FSParserRef::INHERITANCE_SOLVED, base_parser);
 					if (base_parser.is_null()) {
 						push_error(vformat(R"(Could not resolve super class "%s".)", name), id);
 						return ERR_PARSE_ERROR;
 					}
 
-					Error err = base_parser->raise_status(FSParserRef::INHERITANCE_SOLVED);
 					if (err != OK) {
 						push_error(vformat(R"(Could not resolve super class inheritance from "%s".)", name), id);
 						return err;
@@ -2174,8 +2243,8 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 			} else if (Ref<Script>(local.constant->initializer->reduced_value).is_valid()) {
 				Ref<FoundryScript> foundry_script = local.constant->initializer->reduced_value;
 				if (foundry_script.is_valid()) {
-					Ref<FSParserRef> ref = parser->get_depended_parser_for(foundry_script->get_script_path());
-					if (ref->raise_status(FSParserRef::INHERITANCE_SOLVED) != OK) {
+					Ref<FSParserRef> ref = dependency_parser_access.depended_parser_for(foundry_script->get_script_path(), FSParserRef::INHERITANCE_SOLVED);
+					if (ref.is_null() || ref->get_status() < FSParserRef::INHERITANCE_SOLVED) {
 						push_error(vformat(R"(Could not parse script from "%s".)", foundry_script->get_script_path()), first_id);
 						return bad_type;
 					}
@@ -2342,8 +2411,8 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 					String path = ScriptServer::get_global_class_path(first);
 					String ext = path.get_extension();
 					if (ext == FSLanguage::get_singleton()->get_extension()) {
-						Ref<FSParserRef> ref = parser->get_depended_parser_for(path);
-						if (ref.is_null() || ref->raise_status(FSParserRef::INHERITANCE_SOLVED) != OK) {
+						Ref<FSParserRef> ref = dependency_parser_access.depended_parser_for(path, FSParserRef::INHERITANCE_SOLVED);
+						if (ref.is_null() || ref->get_status() < FSParserRef::INHERITANCE_SOLVED) {
 							push_error(vformat(R"(Could not parse global class "%s" from "%s".)", first, ScriptServer::get_global_class_path(first)), p_type);
 							return bad_type;
 						}
@@ -2397,8 +2466,8 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 							} else if (Ref<Script>(member.constant->initializer->reduced_value).is_valid()) {
 								Ref<FoundryScript> foundry_script = member.constant->initializer->reduced_value;
 								if (foundry_script.is_valid()) {
-									Ref<FSParserRef> ref = parser->get_depended_parser_for(foundry_script->get_script_path());
-									if (ref->raise_status(FSParserRef::INHERITANCE_SOLVED) != OK) {
+									Ref<FSParserRef> ref = dependency_parser_access.depended_parser_for(foundry_script->get_script_path(), FSParserRef::INHERITANCE_SOLVED);
+									if (ref.is_null() || ref->get_status() < FSParserRef::INHERITANCE_SOLVED) {
 										push_error(vformat(R"(Could not parse script from "%s".)", foundry_script->get_script_path()), p_type);
 										return bad_type;
 									}
@@ -2845,12 +2914,12 @@ void FSAnalyzer::resolve_class_member(FSParser::ClassNode *p_class, int p_index,
 		p_source = member.get_source_node();
 	}
 
-	Ref<FSParserRef> parser_ref = ensure_cached_external_parser_for_class(p_class, nullptr, "Trying to resolve class member", p_source);
+	Ref<FSParserRef> parser_ref = dependency_parser_access.ensure_cached_external_parser_for_class(p_class, nullptr, "Trying to resolve class member", p_source);
 	Finally finally([&]() {
-		ensure_cached_external_parser_for_class(member.get_datatype().class_type, p_class, "Trying to resolve datatype of class member", p_source);
+		dependency_parser_access.ensure_cached_external_parser_for_class(member.get_datatype().class_type, p_class, "Trying to resolve datatype of class member", p_source);
 		FSParser::DataType member_type = member.get_datatype();
 		for (int i = 0; i < member_type.get_container_element_type_count(); ++i) {
-			ensure_cached_external_parser_for_class(member_type.get_container_element_type(i).class_type, p_class, "Trying to resolve datatype of class member", p_source);
+			dependency_parser_access.ensure_cached_external_parser_for_class(member_type.get_container_element_type(i).class_type, p_class, "Trying to resolve datatype of class member", p_source);
 		}
 	});
 
@@ -2877,7 +2946,7 @@ void FSAnalyzer::resolve_class_member(FSParser::ClassNode *p_class, int p_index,
 			return;
 		}
 
-		Error err = parser_ref->raise_status(FSParserRef::PARSED);
+		Error err = dependency_parser_access.raise_parser_to_status(parser_ref, FSParserRef::PARSED);
 		if (err) {
 			push_error(vformat(R"(Could not parse script "%s": %s (While resolving external class member "%s").)", p_class->get_datatype().script_path, error_names[err], member.get_name()), p_source);
 			return;
@@ -3144,7 +3213,7 @@ void FSAnalyzer::resolve_class_interface(FSParser::ClassNode *p_class, const FSP
 		p_source = p_class;
 	}
 
-	Ref<FSParserRef> parser_ref = ensure_cached_external_parser_for_class(p_class, nullptr, "Trying to resolve class interface", p_source);
+	Ref<FSParserRef> parser_ref = dependency_parser_access.ensure_cached_external_parser_for_class(p_class, nullptr, "Trying to resolve class interface", p_source);
 
 	if (!p_class->resolved_interface) {
 #ifdef DEBUG_ENABLED
@@ -3157,7 +3226,7 @@ void FSAnalyzer::resolve_class_interface(FSParser::ClassNode *p_class, const FSP
 				return;
 			}
 
-			Error err = parser_ref->raise_status(FSParserRef::PARSED);
+			Error err = dependency_parser_access.raise_parser_to_status(parser_ref, FSParserRef::PARSED);
 			if (err) {
 				push_error(vformat(R"(Could not parse script "%s": %s.)", p_class->get_datatype().script_path, error_names[err]), p_source);
 				return;
@@ -3261,7 +3330,7 @@ void FSAnalyzer::resolve_class_body(FSParser::ClassNode *p_class, const FSParser
 		p_source = p_class;
 	}
 
-	Ref<FSParserRef> parser_ref = ensure_cached_external_parser_for_class(p_class, nullptr, "Trying to resolve class body", p_source);
+	Ref<FSParserRef> parser_ref = dependency_parser_access.ensure_cached_external_parser_for_class(p_class, nullptr, "Trying to resolve class body", p_source);
 
 	if (p_class->resolved_body) {
 		return;
@@ -3273,7 +3342,7 @@ void FSAnalyzer::resolve_class_body(FSParser::ClassNode *p_class, const FSParser
 			return;
 		}
 
-		Error err = parser_ref->raise_status(FSParserRef::PARSED);
+		Error err = dependency_parser_access.raise_parser_to_status(parser_ref, FSParserRef::PARSED);
 		if (err) {
 			push_error(vformat(R"(Could not parse script "%s": %s.)", p_class->get_datatype().script_path, error_names[err]), p_source);
 			return;
@@ -3312,9 +3381,9 @@ void FSAnalyzer::resolve_class_body(FSParser::ClassNode *p_class, const FSParser
 		if (trait == nullptr) {
 			continue;
 		}
-		Ref<FSParserRef> trait_parser_ref = ensure_cached_external_parser_for_class(trait, p_class, "Trying to resolve trait body for flattening", p_source);
+		Ref<FSParserRef> trait_parser_ref = dependency_parser_access.ensure_cached_external_parser_for_class(trait, p_class, "Trying to resolve trait body for flattening", p_source);
 		if (trait_parser_ref.is_valid()) {
-			Error err = trait_parser_ref->raise_status(FSParserRef::FULLY_SOLVED);
+			Error err = dependency_parser_access.raise_parser_to_status(trait_parser_ref, FSParserRef::FULLY_SOLVED);
 			if (err != OK) {
 				push_error(vformat(R"(Could not resolve body of trait "%s" applied by "%s".)", _class_or_trait_name(trait), _class_or_trait_name(p_class)), p_source);
 			}
@@ -5316,8 +5385,8 @@ FSParser::AnnotationDeclarationNode *FSAnalyzer::load_external_annotation_declar
 		return nullptr;
 	}
 
-	Ref<FSParserRef> ref = parser->get_depended_parser_for(path);
-	if (ref.is_null() || ref->raise_status(FSParserRef::INTERFACE_SOLVED) != OK) {
+	Ref<FSParserRef> ref = dependency_parser_access.depended_parser_for(path, FSParserRef::INTERFACE_SOLVED);
+	if (ref.is_null() || ref->get_status() < FSParserRef::INTERFACE_SOLVED) {
 		return nullptr;
 	}
 
@@ -9099,7 +9168,8 @@ FSParser::DataType FSAnalyzer::make_global_class_meta_type(const StringName &p_c
 
 	String ext = path.get_extension();
 	if (ext == FSLanguage::get_singleton()->get_extension()) {
-		Ref<FSParserRef> ref = parser->get_depended_parser_for(path);
+		Ref<FSParserRef> ref;
+		Error err = dependency_parser_access.raise_depended_parser_for(path, FSParserRef::INHERITANCE_SOLVED, ref);
 		if (ref.is_null()) {
 			push_error(vformat(R"(Could not find script for class "%s".)", p_class_name), p_source);
 			type.type_source = FSParser::DataType::UNDETECTED;
@@ -9107,7 +9177,6 @@ FSParser::DataType FSAnalyzer::make_global_class_meta_type(const StringName &p_c
 			return type;
 		}
 
-		Error err = ref->raise_status(FSParserRef::INHERITANCE_SOLVED);
 		if (err) {
 			push_error(vformat(R"(Could not resolve class "%s", because of a parser error.)", p_class_name), p_source);
 			type.type_source = FSParser::DataType::UNDETECTED;
@@ -9210,13 +9279,13 @@ FSParser::DataType FSAnalyzer::make_global_enum_type_from_path(const StringName 
 		return make_global_enum_type_from_current_parser(p_global_name, p_source);
 	}
 
-	Ref<FSParserRef> ref = parser->get_depended_parser_for(p_path);
+	Ref<FSParserRef> ref;
+	Error err = dependency_parser_access.raise_depended_parser_for(p_path, FSParserRef::INHERITANCE_SOLVED, ref);
 	if (ref.is_null()) {
 		push_error(vformat(R"(Could not find script for enum "%s".)", p_global_name), p_source);
 		return error_type;
 	}
 
-	Error err = ref->raise_status(FSParserRef::INHERITANCE_SOLVED);
 	if (err != OK) {
 		push_error(vformat(R"(Could not resolve enum "%s", because of a parser error.)", p_global_name), p_source);
 		return error_type;
@@ -9270,10 +9339,9 @@ bool FSAnalyzer::get_autoload_singleton_value_type(const StringName &p_name, FSP
 	}
 
 	if (!script_path.is_empty()) {
-		Ref<FSParserRef> single_parser = parser->get_depended_parser_for(script_path);
+		Ref<FSParserRef> single_parser = dependency_parser_access.depended_parser_for(script_path, FSParserRef::INHERITANCE_SOLVED);
 		if (single_parser.is_valid()) {
-			Error err = single_parser->raise_status(FSParserRef::INHERITANCE_SOLVED);
-			if (err == OK) {
+			if (single_parser->get_status() >= FSParserRef::INHERITANCE_SOLVED) {
 				result = type_from_metatype(single_parser->get_parser()->head->get_datatype());
 			}
 		}
@@ -9635,12 +9703,12 @@ FSParser::ClassNode *FSAnalyzer::resolve_global_trait_reference(const StringName
 	if (FoundryScript::is_canonically_equal_paths(path, parser->script_path)) {
 		global_class = parser->head;
 	} else {
-		Ref<FSParserRef> ref = parser->get_depended_parser_for(path);
+		Ref<FSParserRef> ref;
+		Error err = dependency_parser_access.raise_depended_parser_for(path, FSParserRef::INHERITANCE_SOLVED, ref);
 		if (ref.is_null()) {
 			push_error(vformat(R"(Could not parse global trait "%s" from "%s".)", p_global_class_name, path), p_source);
 			return nullptr;
 		}
-		Error err = ref->raise_status(FSParserRef::INHERITANCE_SOLVED);
 		if (err != OK) {
 			push_error(vformat(R"(Could not resolve inheritance for global trait "%s" from "%s".)",
 							   p_global_class_name, path),
@@ -9742,8 +9810,8 @@ bool FSAnalyzer::datatype_derives_from_datatype(FSParser::DataType p_type,
 
 		if (p_type.kind == FSParser::DataType::SCRIPT) {
 			if (!p_type.script_path.is_empty()) {
-				Ref<FSParserRef> parser_ref = parser->get_depended_parser_for(p_type.script_path);
-				if (parser_ref.is_valid() && parser_ref->raise_status(FSParserRef::INHERITANCE_SOLVED) == OK) {
+				Ref<FSParserRef> parser_ref = dependency_parser_access.depended_parser_for(p_type.script_path, FSParserRef::INHERITANCE_SOLVED);
+				if (parser_ref.is_valid() && parser_ref->get_status() >= FSParserRef::INHERITANCE_SOLVED) {
 					p_type = parser_ref->get_parser()->head->base_type;
 					continue;
 				}
@@ -9878,7 +9946,7 @@ Error FSAnalyzer::resolve_trait_uses(FSParser::ClassNode *p_class, const FSParse
 		p_source = p_class;
 	}
 
-	Ref<FSParserRef> parser_ref = ensure_cached_external_parser_for_class(p_class, nullptr,
+	Ref<FSParserRef> parser_ref = dependency_parser_access.ensure_cached_external_parser_for_class(p_class, nullptr,
 			"Trying to resolve trait uses", p_source);
 
 	if (!parser->has_class(p_class)) {
@@ -9886,7 +9954,7 @@ Error FSAnalyzer::resolve_trait_uses(FSParser::ClassNode *p_class, const FSParse
 			return ERR_PARSE_ERROR;
 		}
 
-		Error err = parser_ref->raise_status(FSParserRef::INTERFACE_SOLVED);
+		Error err = dependency_parser_access.raise_parser_to_status(parser_ref, FSParserRef::INTERFACE_SOLVED);
 		if (err != OK) {
 			push_error(vformat(R"(Could not resolve trait uses for class "%s".)", p_class->fqcn), p_source);
 			return err;
@@ -10096,8 +10164,8 @@ bool FSAnalyzer::find_trait_implementation(FSParser::ClassNode *p_class, const S
 			current_class = current_class->base_type.class_type;
 		} else if (current_class->base_type.kind == FSParser::DataType::SCRIPT) {
 			if (!current_class->base_type.script_path.is_empty()) {
-				Ref<FSParserRef> base_parser_ref = parser->get_depended_parser_for(current_class->base_type.script_path);
-				if (base_parser_ref.is_valid() && base_parser_ref->raise_status(FSParserRef::INTERFACE_SOLVED) == OK) {
+				Ref<FSParserRef> base_parser_ref = dependency_parser_access.depended_parser_for(current_class->base_type.script_path, FSParserRef::INTERFACE_SOLVED);
+				if (base_parser_ref.is_valid() && base_parser_ref->get_status() >= FSParserRef::INTERFACE_SOLVED) {
 					current_class = base_parser_ref->get_parser()->head;
 					continue;
 				}
@@ -10844,8 +10912,8 @@ FSParser::ClassNode *FSAnalyzer::resolve_conformance_target(FSParser::Conformanc
 	}
 	if (r_target_type.kind == FSParser::DataType::SCRIPT && !r_target_type.script_path.is_empty() &&
 			r_target_type.script_path.get_extension() == FSLanguage::get_singleton()->get_extension()) {
-		Ref<FSParserRef> ref = parser->get_depended_parser_for(r_target_type.script_path);
-		if (ref.is_valid() && ref->raise_status(FSParserRef::INTERFACE_SOLVED) == OK) {
+		Ref<FSParserRef> ref = dependency_parser_access.depended_parser_for(r_target_type.script_path, FSParserRef::INTERFACE_SOLVED);
+		if (ref.is_valid() && ref->get_status() >= FSParserRef::INTERFACE_SOLVED) {
 			return ref->get_parser()->head;
 		}
 	}
@@ -11409,8 +11477,8 @@ void FSAnalyzer::validate_mixed_namespace_directory() {
 }
 #endif // DEBUG_ENABLED
 
-Ref<FSParserRef> FSAnalyzer::ensure_cached_external_parser_for_class(const FSParser::ClassNode *p_class, const FSParser::ClassNode *p_from_class, const char *p_context, const FSParser::Node *p_source) {
-	DependencyParserAccessScope dependency_scope(this);
+Ref<FSParserRef> FSAnalyzer::DependencyParserAccess::ensure_cached_external_parser_for_class(const FSParser::ClassNode *p_class, const FSParser::ClassNode *p_from_class, const char *p_context, const FSParser::Node *p_source) {
+	mark_dependency_phase_completed();
 
 	// Delicate piece of code that intentionally doesn't use the FoundryScript cache or `get_depended_parser_for`.
 	// Search dependencies for the parser that owns `p_class` and make a cache entry for it.
@@ -11418,7 +11486,7 @@ Ref<FSParserRef> FSAnalyzer::ensure_cached_external_parser_for_class(const FSPar
 	// Since https://github.com/godotengine/godot/pull/94871 there can technically be multiple parsers for the same script in the same parser tree.
 	// Even if unlikely, getting the wrong parser could lead to strange undefined behavior without errors.
 
-	if (p_class == nullptr) {
+	if (p_class == nullptr || analyzer == nullptr || analyzer->parser == nullptr) {
 		return nullptr;
 	}
 
@@ -11434,6 +11502,7 @@ Ref<FSParserRef> FSAnalyzer::ensure_cached_external_parser_for_class(const FSPar
 		return E->value;
 	}
 
+	FSParser *parser = analyzer->parser;
 	if (parser->has_class(p_class)) {
 		return nullptr;
 	}
@@ -11468,7 +11537,7 @@ Ref<FSParserRef> FSAnalyzer::ensure_cached_external_parser_for_class(const FSPar
 	}
 
 	if (parser_ref.is_null()) {
-		push_error(vformat(R"(Parser bug (please report): Could not find external parser for class "%s". (%s))", p_class->fqcn, p_context), p_source);
+		analyzer->push_error(vformat(R"(Parser bug (please report): Could not find external parser for class "%s". (%s))", p_class->fqcn, p_context), p_source);
 		// A null parser will be inserted into the cache, so this error won't spam for the same class.
 		// This is ok, the values of external_class_parser_cache are not assumed to be valid references.
 	}
@@ -11477,15 +11546,15 @@ Ref<FSParserRef> FSAnalyzer::ensure_cached_external_parser_for_class(const FSPar
 	return parser_ref;
 }
 
-Ref<FSParserRef> FSAnalyzer::find_cached_external_parser_for_class(const FSParser::ClassNode *p_class, const Ref<FSParserRef> &p_dependant_parser) {
+Ref<FSParserRef> FSAnalyzer::DependencyParserAccess::find_cached_external_parser_for_class(const FSParser::ClassNode *p_class, const Ref<FSParserRef> &p_dependant_parser) {
 	if (p_dependant_parser.is_null()) {
 		return nullptr;
 	}
 
-	if (HashMap<const FSParser::ClassNode *, Ref<FSParserRef>>::Iterator E = p_dependant_parser->get_analyzer()->external_class_parser_cache.find(p_class)) {
+	if (HashMap<const FSParser::ClassNode *, Ref<FSParserRef>>::Iterator E = p_dependant_parser->get_analyzer()->dependency_parser_access.external_class_parser_cache.find(p_class)) {
 		if (E->value.is_valid()) {
 			// Silently ensure it's parsed.
-			E->value->raise_status(FSParserRef::PARSED);
+			raise_parser_to_status(E->value, FSParserRef::PARSED);
 			if (E->value->get_parser()->has_class(p_class)) {
 				return E->value;
 			}
@@ -11497,11 +11566,11 @@ Ref<FSParserRef> FSAnalyzer::find_cached_external_parser_for_class(const FSParse
 	}
 
 	// Silently ensure it's parsed.
-	p_dependant_parser->raise_status(FSParserRef::PARSED);
+	raise_parser_to_status(p_dependant_parser, FSParserRef::PARSED);
 	return find_cached_external_parser_for_class(p_class, p_dependant_parser->get_parser());
 }
 
-Ref<FSParserRef> FSAnalyzer::find_cached_external_parser_for_class(const FSParser::ClassNode *p_class, FSParser *p_dependant_parser) {
+Ref<FSParserRef> FSAnalyzer::DependencyParserAccess::find_cached_external_parser_for_class(const FSParser::ClassNode *p_class, FSParser *p_dependant_parser) {
 	if (p_dependant_parser == nullptr) {
 		return nullptr;
 	}
@@ -11510,7 +11579,7 @@ Ref<FSParserRef> FSAnalyzer::find_cached_external_parser_for_class(const FSParse
 	if (HashMap<String, Ref<FSParserRef>>::Iterator E = p_dependant_parser->depended_parsers.find(script_path)) {
 		if (E->value.is_valid()) {
 			// Silently ensure it's parsed.
-			E->value->raise_status(FSParserRef::PARSED);
+			raise_parser_to_status(E->value, FSParserRef::PARSED);
 			if (E->value->get_parser()->has_class(p_class)) {
 				return E->value;
 			}
@@ -11521,7 +11590,7 @@ Ref<FSParserRef> FSAnalyzer::find_cached_external_parser_for_class(const FSParse
 		if (dep.value.is_null()) {
 			continue;
 		}
-		dep.value->raise_status(FSParserRef::PARSED);
+		raise_parser_to_status(dep.value, FSParserRef::PARSED);
 		Ref<FSParserRef> found = find_cached_external_parser_for_class(p_class, dep.value->get_parser());
 		if (found.is_valid()) {
 			return found;
@@ -12313,18 +12382,18 @@ void FSAnalyzer::reduce_preload(FSParser::PreloadNode *p_preload) {
 		p_preload->set_datatype(type_from_variant(p_preload->reduced_value, p_preload));
 
 		// TODO: Not sure if this is necessary anymore.
-		// 'type_from_variant()' should call 'resolve_class_inheritance()' which would call 'ensure_cached_external_parser_for_class()'
+		// 'type_from_variant()' should call 'resolve_class_inheritance()' which would call 'dependency_parser_access.ensure_cached_external_parser_for_class()'
 		// Better safe than sorry.
-		ensure_cached_external_parser_for_class(p_preload->get_datatype().class_type, nullptr, "Trying to resolve preload", p_preload);
+		dependency_parser_access.ensure_cached_external_parser_for_class(p_preload->get_datatype().class_type, nullptr, "Trying to resolve preload", p_preload);
 	};
 
 	auto raise_preloaded_script_conformances = [&]() {
 		const String depended_path = ResourceUID::ensure_path(p_preload->resolved_path);
-		Ref<FSParserRef> depended_ref = parser->get_depended_parser_for(depended_path);
-		if (depended_ref.is_valid() && depended_ref->raise_status(FSParserRef::PARSED) == OK) {
+		Ref<FSParserRef> depended_ref;
+		if (dependency_parser_access.raise_depended_parser_for(depended_path, FSParserRef::PARSED, depended_ref) == OK) {
 			const FSParser *depended_parser = depended_ref->get_parser();
 			if (depended_parser != nullptr && depended_parser->head != nullptr && !depended_parser->head->conformances.is_empty()) {
-				depended_ref->raise_status(FSParserRef::INTERFACE_SOLVED);
+				dependency_parser_access.raise_parser_to_status(depended_ref, FSParserRef::INTERFACE_SOLVED);
 			}
 		}
 	};
@@ -13386,14 +13455,14 @@ FSParser::DataType FSAnalyzer::type_from_variant(const Variant &p_value, const F
 				// This might be an inner class, so we want to get the parser for the root.
 				// But still get the inner class from that tree.
 				String script_path = gds->get_script_path();
-				Ref<FSParserRef> ref = parser->get_depended_parser_for(script_path);
+				Ref<FSParserRef> ref;
+				Error err = dependency_parser_access.raise_depended_parser_for(script_path, FSParserRef::INHERITANCE_SOLVED, ref);
 				if (ref.is_null()) {
 					push_error(vformat(R"(Could not find script "%s".)", script_path), p_source);
 					FSParser::DataType error_type;
 					error_type.kind = FSParser::DataType::VARIANT;
 					return error_type;
 				}
-				Error err = ref->raise_status(FSParserRef::INHERITANCE_SOLVED);
 				FSParser::ClassNode *found = nullptr;
 				if (err == OK) {
 					found = ref->get_parser()->find_class(gds->fully_qualified_name);
@@ -16603,8 +16672,9 @@ Error FSAnalyzer::analyze() {
 	return run_phase_final_diagnostics_and_dependencies();
 }
 
-FSAnalyzer::FSAnalyzer(FSParser *p_parser) {
-	parser = p_parser;
+FSAnalyzer::FSAnalyzer(FSParser *p_parser) :
+		parser(p_parser),
+		dependency_parser_access(this) {
 	strict_null_checks = GLOBAL_GET_CACHED(bool, "debug/foundry_script/analysis/strict_null_checks");
 	strict_dynamic_checks = GLOBAL_GET_CACHED(bool, "debug/foundry_script/analysis/strict_dynamic_checks");
 }
