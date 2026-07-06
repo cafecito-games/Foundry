@@ -60,6 +60,7 @@ class ScriptLeaf : public Control, public WorkspaceLeafContent {
 
 protected:
 	void _notification(int p_what);
+	void gui_input(const Ref<InputEvent> &p_event) override;
 
 public:
 	void set_tab_title(const String &p_title);

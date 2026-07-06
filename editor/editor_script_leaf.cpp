@@ -35,6 +35,7 @@
 #include "editor/editor_string_names.h"
 #include "scene/gui/label.h"
 #include "scene/main/node.h"
+#include "scene/main/viewport.h"
 
 void ScriptLeaf::_notification(int p_what) {
 	switch (p_what) {
@@ -84,7 +85,7 @@ void ScriptLeaf::set_associated_scene_root(Node *p_scene_root) {
 	associated_scene_root_id = p_scene_root ? p_scene_root->get_instance_id() : ObjectID();
 	if (p_scene_root) {
 		const String scene_file_path = p_scene_root->get_scene_file_path();
-		associated_scene_path = scene_file_path.is_empty() ? p_scene_root->get_path() : scene_file_path;
+		associated_scene_path = scene_file_path.is_empty() ? String(p_scene_root->get_path()) : scene_file_path;
 	} else {
 		associated_scene_path.clear();
 	}
@@ -99,6 +100,10 @@ Node *ScriptLeaf::get_associated_scene_root() const {
 
 void ScriptLeaf::on_focus_entered() {
 	_request_focus();
+}
+
+void ScriptLeaf::gui_input(const Ref<InputEvent> &p_event) {
+	_interaction_gui_input(p_event);
 }
 
 void ScriptLeaf::set_tab_title(const String &p_title) {
@@ -170,8 +175,6 @@ ScriptLeaf::ScriptLeaf() {
 	// exit side is deferred so the child count reflects the removal.
 	surface_host->connect(SNAME("child_entered_tree"), callable_mp(this, &ScriptLeaf::_update_placeholder_visibility).unbind(1));
 	surface_host->connect(SNAME("child_exiting_tree"), callable_mp(this, &ScriptLeaf::_update_placeholder_visibility).unbind(1), CONNECT_DEFERRED);
-
-	connect(SceneStringName(gui_input), callable_mp(this, &ScriptLeaf::_interaction_gui_input));
 
 	placeholder_label = memnew(Label);
 	placeholder_label->set_text(tab_title);

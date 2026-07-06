@@ -30,7 +30,7 @@
 
 #pragma once
 
-#include "core/io/resource_loader.h"
+#include "core/object/script_language.h"
 #include "editor/editor_scene_context.h"
 #include "editor/editor_scene_workspace.h"
 #include "editor/editor_script_leaf.h"
@@ -44,9 +44,44 @@
 
 namespace TestScriptLeafNodeDrop {
 
-static Ref<Script> load_node_test_script() {
-	Ref<Script> script = ResourceLoader::load("res://modules/foundry_script/tests/scripts/script_test_execution/fixture.notest.fs");
-	REQUIRE_MESSAGE(script.is_valid(), "Expected node test script fixture to load.");
+class TestNodeDropScript : public Script {
+	FOUNDRY_CLASS(TestNodeDropScript, Script);
+
+protected:
+	static void _bind_methods() {}
+
+public:
+	bool can_instantiate() const override { return false; }
+	Ref<Script> get_base_script() const override { return Ref<Script>(); }
+	StringName get_global_name() const override { return StringName(); }
+	bool inherits_script(const Ref<Script> &p_script) const override { return false; }
+	StringName get_instance_base_type() const override { return StringName("Node"); }
+	ScriptInstance *instance_create(Object *p_this) override { return nullptr; }
+	bool instance_has(const Object *p_this) const override { return false; }
+	bool has_source_code() const override { return false; }
+	String get_source_code() const override { return String(); }
+	void set_source_code(const String &p_code) override {}
+	Error reload(bool p_keep_state = false) override { return OK; }
+	StringName get_doc_class_name() const override { return StringName(); }
+	Vector<DocData::ClassDoc> get_documentation() const override { return Vector<DocData::ClassDoc>(); }
+	String get_class_icon_path() const override { return String(); }
+	bool has_method(const StringName &p_method) const override { return false; }
+	MethodInfo get_method_info(const StringName &p_method) const override { return MethodInfo(); }
+	bool is_tool() const override { return false; }
+	bool is_valid() const override { return true; }
+	bool is_abstract() const override { return false; }
+	ScriptLanguage *get_language() const override { return nullptr; }
+	bool has_script_signal(const StringName &p_signal) const override { return false; }
+	void get_script_signal_list(List<MethodInfo> *r_signals) const override {}
+	bool get_property_default_value(const StringName &p_property, Variant &r_value) const override { return false; }
+	void get_script_method_list(List<MethodInfo> *p_list) const override {}
+	void get_script_property_list(List<PropertyInfo> *p_list) const override {}
+	const Variant get_rpc_config() const override { return Variant(); }
+};
+
+static Ref<Script> make_node_test_script() {
+	Ref<TestNodeDropScript> script;
+	script.instantiate();
 	return script;
 }
 
@@ -71,15 +106,15 @@ TEST_CASE("[SceneTree][Editor] node-to-script-drag") {
 	player->add_child(child);
 	SceneTree::get_singleton()->get_root()->add_child(scene_root);
 
-	Ref<Script> script = load_node_test_script();
-	player->set_script(script);
+	Ref<Script> script = make_node_test_script();
+	scene_root->set_script(script);
 
 	const Dictionary drag_data = make_nodes_drag_data(scene_root, child);
 	EditorScriptNodeDrop::DropValidation validation = EditorScriptNodeDrop::validate_nodes_drop(drag_data, scene_root, script, true);
 	REQUIRE(validation.reason == EditorScriptNodeDrop::DROP_OK);
 
 	const String inserted = EditorScriptNodeDrop::build_nodes_drop_text(drag_data, validation, false, false);
-	CHECK(inserted == "$Sprite");
+	CHECK(inserted == "$Player/Sprite");
 
 	scene_root->queue_free();
 }
@@ -131,7 +166,7 @@ TEST_CASE("[SceneTree][Editor] cross-scene-node-drop") {
 	SceneTree::get_singleton()->get_root()->add_child(scene_a);
 	SceneTree::get_singleton()->get_root()->add_child(scene_b);
 
-	Ref<Script> script = load_node_test_script();
+	Ref<Script> script = make_node_test_script();
 	script_owner->set_script(script);
 
 	const Dictionary drag_data = make_nodes_drag_data(scene_a, node_a);

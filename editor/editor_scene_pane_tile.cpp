@@ -352,6 +352,11 @@ EditorSceneContext *ScenePaneTile::get_scene_context() const {
 	return editor_data->get_scene_context(current_scene);
 }
 
+Node *ScenePaneTile::get_current_scene_root() const {
+	EditorSceneContext *ctx = get_scene_context();
+	return ctx ? ctx->get_scene_root_node() : nullptr;
+}
+
 void ScenePaneTile::on_focus_entered() {
 	_request_focus();
 }

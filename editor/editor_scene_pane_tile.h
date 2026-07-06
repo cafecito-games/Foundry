@@ -47,6 +47,7 @@ class GroupsDock;
 class HistoryDock;
 class InspectorDock;
 class Label;
+class Node;
 class SignalsDock;
 class Node3DEditorViewport;
 class PanelContainer;
@@ -148,6 +149,7 @@ public:
 	String get_tab_title() const override;
 	Ref<Texture2D> get_tab_icon() const override;
 	EditorSceneContext *get_scene_context() const override;
+	Node *get_current_scene_root() const;
 	void on_focus_entered() override;
 	void save_layout(const Ref<ConfigFile> &p_config, const String &p_section) const override;
 	void load_layout(const Ref<ConfigFile> &p_config, const String &p_section) override;

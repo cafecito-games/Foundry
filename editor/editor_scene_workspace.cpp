@@ -32,7 +32,6 @@
 
 #include "core/io/config_file.h"
 #include "editor/editor_data.h"
-#include "editor/editor_scene_context.h"
 #include "editor/editor_scene_pane_tile.h"
 #include "editor/editor_script_leaf.h"
 #include "editor/editor_workspace_leaf_content.h"
@@ -419,9 +418,7 @@ WorkspaceLeafNode *EditorSceneWorkspace::open_script_leaf(WorkspaceLeafNode *p_s
 	if (ScriptLeaf *script_leaf = target->get_leaf_content() ? Object::cast_to<ScriptLeaf>(target->get_leaf_content()->get_root_control()) : nullptr) {
 		Node *associated_scene = nullptr;
 		if (ScenePaneTile *source_tile = p_source_leaf->get_pane_tile()) {
-			if (EditorSceneContext *ctx = source_tile->get_scene_context()) {
-				associated_scene = ctx->get_scene_root_node();
-			}
+			associated_scene = source_tile->get_current_scene_root();
 		}
 		script_leaf->set_associated_scene_root(associated_scene);
 	}

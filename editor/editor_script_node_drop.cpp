@@ -31,8 +31,8 @@
 #include "editor_script_node_drop.h"
 
 #include "core/object/class_db.h"
+#include "core/object/script_language.h"
 #include "scene/main/node.h"
-#include "scene/resources/script.h"
 
 static Node *_find_script_node(Node *p_current_node, const Ref<Script> &p_script) {
 	if (!p_current_node || p_script.is_null()) {
