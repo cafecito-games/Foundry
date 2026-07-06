@@ -40,6 +40,8 @@
 #include "editor/docks/filesystem_dock.h"
 #include "editor/docks/groups_dock.h"
 #include "editor/docks/history_dock.h"
+#include "editor/docks/inspector_dock.h"
+#include "editor/docks/scene_tree_dock.h"
 #include "editor/docks/signals_dock.h"
 #include "editor/editor_scene_pane_tile.h"
 #include "editor/editor_interface.h"
@@ -117,6 +119,7 @@
 #include "editor/scene/material_editor_plugin.h"
 #include "editor/scene/packed_scene_editor_plugin.h"
 #include "editor/scene/resource_preloader_editor_plugin.h"
+#include "editor/scene/scene_tree_editor.h"
 #include "editor/scene/sprite_frames_editor_plugin.h"
 #include "editor/scene/texture/bit_map_editor_plugin.h"
 #include "editor/scene/texture/gradient_texture_2d_editor_plugin.h"
@@ -189,6 +192,9 @@ void register_editor_types() {
 	FOUNDRY_REGISTER_CLASS(EditorContextMenuPlugin);
 
 	FOUNDRY_REGISTER_ABSTRACT_CLASS(FileSystemDock);
+	FOUNDRY_REGISTER_ABSTRACT_CLASS(SceneTreeDock);
+	FOUNDRY_REGISTER_ABSTRACT_CLASS(SceneTreeEditor);
+	FOUNDRY_REGISTER_ABSTRACT_CLASS(InspectorDock);
 	FOUNDRY_REGISTER_ABSTRACT_CLASS(SignalsDock);
 	FOUNDRY_REGISTER_ABSTRACT_CLASS(GroupsDock);
 	FOUNDRY_REGISTER_ABSTRACT_CLASS(HistoryDock);
