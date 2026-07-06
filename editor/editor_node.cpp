@@ -4505,7 +4505,28 @@ void EditorNode::_remove_edited_scene(bool p_change_tab, bool p_allow_collapse) 
 	if (p_allow_collapse && tile_emptied && scene_workspace && scene_workspace->get_tile_count() > 1) {
 		WorkspaceLeafNode *leaf = scene_workspace->get_leaf_by_id(tile_id);
 		if (leaf) {
+			// Removing the current scene left current_edited_scene pointing at the
+			// emptied tile's (now absent) current scene, i.e. -1. Move focus and the
+			// current scene onto a surviving scene tile before collapsing so nothing
+			// runs against an invalid current scene during or after the collapse.
+			int survivor_tile_id = -1;
+			for (ScenePaneTile *survivor : scene_workspace->get_tiles()) {
+				if (survivor->get_tile_id() != tile_id && !editor_data.get_tile_scene_indices(survivor->get_tile_id()).is_empty()) {
+					survivor_tile_id = survivor->get_tile_id();
+					break;
+				}
+			}
+			if (survivor_tile_id >= 0) {
+				_focus_tile(survivor_tile_id);
+			}
 			scene_workspace->collapse(leaf);
+			if (survivor_tile_id < 0) {
+				// No surviving tile held a scene; fall back to the focused tile.
+				if (editor_data.get_edited_scene_count() == 0) {
+					editor_data.add_edited_scene(-1);
+				}
+				_set_current_scene_nocheck(editor_data.get_tile_current_scene(editor_data.get_focused_tile_id()));
+			}
 		}
 	} else {
 		if (editor_data.get_edited_scene_count() == 0) {
