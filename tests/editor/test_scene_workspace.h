@@ -43,12 +43,12 @@
 #include "editor/editor_scene_pane_tile.h"
 #include "editor/editor_scene_workspace.h"
 #include "editor/editor_script_leaf.h"
-#include "editor/script/script_editor_controller.h"
 #include "editor/editor_tile_dock_region.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/editor_workspace_leaf_content.h"
-#include "editor/scene/scene_tree_editor.h"
 #include "editor/scene/editor_scene_tabs.h"
+#include "editor/scene/scene_tree_editor.h"
+#include "editor/script/script_editor_controller.h"
 #include "editor/themes/editor_scale.h"
 #include "editor/workspace/scene_tab.h"
 #include "editor/workspace/workspace_pane.h"
@@ -121,6 +121,37 @@ protected:
 		requested_close_scene = p_scene_idx;
 		return close_result;
 	}
+};
+
+// Counts close requests and can be told which tri-state result to return, so
+// tests can assert a move never routes through request_close and that a cancel
+// leaves everything intact.
+class PromptSpyTabType : public WorkspaceTabType {
+public:
+	int close_request_count = 0;
+	WorkspaceTabCloseResult close_result = WorkspaceTabCloseResult::CLOSE;
+
+	StringName type_id() const override { return StringName("prompt_spy"); }
+	bool can_open(const String &p_resource) const override { return true; }
+	WorkspaceTab make_tab(const String &p_resource, int p_stable_id) const override {
+		WorkspaceTab tab;
+		tab.set_stable_id(p_stable_id);
+		tab.set_type_id(type_id());
+		tab.set_resource_key(p_resource);
+		tab.set_title_cache(p_resource);
+		return tab;
+	}
+	String get_title(const WorkspaceTab &p_tab) const override { return p_tab.get_title_cache(); }
+	Ref<Texture2D> get_icon(const WorkspaceTab &p_tab) const override { return Ref<Texture2D>(); }
+	void mount(WorkspaceTab &p_tab, Control *p_chrome_host) override {}
+	void unmount(WorkspaceTab &p_tab) override {}
+	void activate(WorkspaceTab &p_tab) override {}
+	WorkspaceTabCloseResult request_close(WorkspaceTab &p_tab, const Callable &p_on_deferred_close = Callable()) override {
+		close_request_count++;
+		return close_result;
+	}
+	Dictionary save_payload(const WorkspaceTab &p_tab) const override { return Dictionary(); }
+	void restore_payload(WorkspaceTab &p_tab, const Dictionary &p_payload) const override {}
 };
 
 class LeafRemovedTracker : public Object {
@@ -1953,6 +1984,382 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] stale-singleton-guard") {
 
 	h.unmount();
 	memdelete(ur_manager);
+}
+
+static WorkspaceTab add_script_tab(WorkspacePane *p_pane, const String &p_path) {
+	WorkspaceTabRegistry &registry = WorkspacePane::get_shared_tab_registry();
+	WorkspaceTabType *script_type = registry.find_type(StringName("script"));
+	ERR_FAIL_NULL_V(script_type, WorkspaceTab());
+	WorkspaceTab tab = script_type->make_tab(p_path, registry.allocate_stable_id());
+	p_pane->add_tab(tab);
+	return tab;
+}
+
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] tab-move-center") {
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	const int tile_a = h.workspace->get_focused_leaf_id();
+	Node2D *root_a = memnew(Node2D);
+	const int scene_a = add_test_scene(h.editor_data, tile_a, root_a);
+	h.editor_data.set_scene_path(scene_a, "res://a.tscn");
+	Node2D *root_b = memnew(Node2D);
+	const int scene_b = add_test_scene(h.editor_data, tile_a, root_b);
+	h.editor_data.set_scene_path(scene_b, "res://b.tscn");
+
+	WorkspaceLeafNode *leaf_a = h.workspace->get_leaf_by_id(tile_a);
+	WorkspaceLeafNode *leaf_b = h.workspace->split(leaf_a, false, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
+	h.pump();
+	REQUIRE(leaf_b != nullptr);
+	const int tile_b = leaf_b->get_leaf_id();
+	h.editor_data.register_tile(tile_b);
+
+	h.workspace->sync_scene_tabs_from_editor_data();
+	WorkspacePane *pane_a = get_leaf_pane(leaf_a);
+	WorkspacePane *pane_b = get_leaf_pane(leaf_b);
+	REQUIRE(pane_a->get_tab_count() == 2);
+	REQUIRE(pane_b->get_tab_count() == 0);
+
+	// Center-drop scene_a's tab from pane A into pane B.
+	const int move_index = pane_a->find_scene_tab_index(scene_a);
+	REQUIRE(move_index >= 0);
+	WorkspaceLeafNode *dest = h.workspace->handle_tab_drop(tile_a, move_index, leaf_b, EditorSceneWorkspace::DROP_CENTER);
+	CHECK(dest == leaf_b);
+
+	// Appended to the destination and removed from the source.
+	CHECK(pane_b->get_tab_count() == 1);
+	CHECK(pane_b->get_tab(0).get_resource_key() == "res://a.tscn");
+	CHECK(pane_a->get_tab_count() == 1);
+	CHECK(pane_a->get_tab(0).get_resource_key() == "res://b.tscn");
+	CHECK(h.editor_data.get_scene_tile(scene_a) == tile_b);
+	CHECK(h.editor_data.get_scene_tile(scene_b) == tile_a);
+
+	h.unmount();
+}
+
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] tab-move-edge-splits") {
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspaceLeafNode *leaf_a = h.workspace->get_focused_leaf();
+	WorkspacePane *pane_a = get_leaf_pane(leaf_a);
+	REQUIRE(pane_a != nullptr);
+
+	// Two script tabs so moving one out does not empty (and collapse) the source.
+	add_script_tab(pane_a, "res://keep.fs");
+	add_script_tab(pane_a, "res://move.fs");
+	REQUIRE(pane_a->get_tab_count() == 2);
+	const int move_index = 1;
+
+	// Edge-drop onto the right of pane A splits it horizontally, new pane on the
+	// second (right) side, and the tab moves into that new pane.
+	WorkspaceLeafNode *dest = h.workspace->handle_tab_drop(leaf_a->get_leaf_id(), move_index, leaf_a, EditorSceneWorkspace::DROP_RIGHT);
+	h.pump();
+	REQUIRE(dest != nullptr);
+	CHECK(dest != leaf_a);
+	CHECK(h.workspace->get_leaf_count() == 2);
+
+	SplitContainer *sc = Object::cast_to<SplitContainer>(dest->get_parent());
+	REQUIRE(sc != nullptr);
+	WorkspaceSplitNode *split_node = Object::cast_to<WorkspaceSplitNode>(sc->get_parent());
+	REQUIRE(split_node != nullptr);
+	CHECK(split_node->is_vertical() == false); // DROP_RIGHT => horizontal split.
+	CHECK(sc->get_child(1, false) == dest); // Second side hosts the new pane.
+
+	WorkspacePane *dest_pane = get_leaf_pane(dest);
+	REQUIRE(dest_pane != nullptr);
+	CHECK(dest_pane->get_tab_count() == 1);
+	CHECK(dest_pane->get_tab(0).get_resource_key() == "res://move.fs");
+	CHECK(pane_a->get_tab_count() == 1);
+	CHECK(pane_a->get_tab(0).get_resource_key() == "res://keep.fs");
+
+	h.unmount();
+}
+
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] tab-reorder-within-pane") {
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	const int tile_id = h.workspace->get_focused_leaf_id();
+	Node2D *root_a = memnew(Node2D);
+	const int scene_a = add_test_scene(h.editor_data, tile_id, root_a);
+	h.editor_data.set_scene_path(scene_a, "res://a.tscn");
+	Node2D *root_b = memnew(Node2D);
+	const int scene_b = add_test_scene(h.editor_data, tile_id, root_b);
+	h.editor_data.set_scene_path(scene_b, "res://b.tscn");
+	Node2D *root_c = memnew(Node2D);
+	const int scene_c = add_test_scene(h.editor_data, tile_id, root_c);
+	h.editor_data.set_scene_path(scene_c, "res://c.tscn");
+
+	h.workspace->sync_scene_tabs_from_editor_data();
+	WorkspacePane *pane = get_leaf_pane(h.workspace->get_focused_leaf());
+	REQUIRE(pane->get_tab_count() == 3);
+
+	// Intra-pane reorder does not add or remove panes.
+	pane->move_tab(0, 2);
+	CHECK(h.workspace->get_leaf_count() == 1);
+
+	Vector<String> pane_keys;
+	for (int i = 0; i < pane->get_tab_count(); i++) {
+		pane_keys.push_back(pane->get_tab(i).get_resource_key());
+	}
+	CHECK(pane_keys[0] == "res://b.tscn");
+	CHECK(pane_keys[1] == "res://c.tscn");
+	CHECK(pane_keys[2] == "res://a.tscn");
+
+	// The scene tab order for a scene tab reorder tracks EditorData membership.
+	Vector<String> editor_data_keys;
+	for (int scene_idx : h.editor_data.get_tile_scene_indices(tile_id)) {
+		editor_data_keys.push_back(SceneTabType::resource_key_for_scene(h.editor_data, scene_idx));
+	}
+	CHECK(pane_keys == editor_data_keys);
+
+	h.unmount();
+}
+
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] move-last-tab-collapses") {
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	const int tile_a = h.workspace->get_focused_leaf_id();
+	Node2D *root_a = memnew(Node2D);
+	const int scene_a = add_test_scene(h.editor_data, tile_a, root_a);
+	h.editor_data.set_scene_path(scene_a, "res://a.tscn");
+
+	WorkspaceLeafNode *leaf_a = h.workspace->get_leaf_by_id(tile_a);
+	WorkspaceLeafNode *leaf_b = h.workspace->split(leaf_a, false, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
+	h.pump();
+	REQUIRE(leaf_b != nullptr);
+	const int tile_b = leaf_b->get_leaf_id();
+	h.editor_data.register_tile(tile_b);
+
+	Node2D *root_b = memnew(Node2D);
+	const int scene_b = add_test_scene(h.editor_data, tile_b, root_b);
+	h.editor_data.set_scene_path(scene_b, "res://b.tscn");
+
+	h.workspace->sync_scene_tabs_from_editor_data();
+	WorkspacePane *pane_b = get_leaf_pane(leaf_b);
+	REQUIRE(pane_b->get_tab_count() == 1);
+
+	// Focus the pane we are about to empty so the collapse must redirect focus.
+	h.workspace->set_focused_leaf(tile_b);
+	h.editor_data.set_focused_tile_id(tile_b);
+
+	const int move_index = pane_b->find_scene_tab_index(scene_b);
+	REQUIRE(move_index >= 0);
+	WorkspaceLeafNode *dest = h.workspace->handle_tab_drop(tile_b, move_index, leaf_a, EditorSceneWorkspace::DROP_CENTER);
+	CHECK(dest == leaf_a);
+
+	// Emptied source collapses on the deferred pass; focus lands on a scene tile.
+	h.pump();
+	CHECK(h.workspace->get_leaf_count() == 1);
+	CHECK(h.workspace->get_leaf_by_id(tile_b) == nullptr);
+	WorkspaceLeafNode *focused = h.workspace->get_focused_leaf();
+	REQUIRE(focused != nullptr);
+	CHECK(focused->get_pane_tile() != nullptr);
+
+	h.unmount();
+}
+
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] close-last-tab-final-pane-empty") {
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspaceLeafNode *leaf = h.workspace->get_focused_leaf();
+	WorkspacePane *pane = get_leaf_pane(leaf);
+	REQUIRE(pane != nullptr);
+
+	WorkspaceTabRegistry registry;
+	registry.reset_stable_id_counter();
+	registry.clear_canonical_index();
+	RecordingTabType recording_type;
+	registry.register_type(&recording_type);
+	pane->set_tab_registry(&registry);
+
+	WorkspaceTab only = recording_type.make_tab("only", registry.allocate_stable_id());
+	pane->add_tab(only);
+	REQUIRE(pane->get_tab_count() == 1);
+	REQUIRE(h.workspace->get_leaf_count() == 1);
+
+	// Closing the last tab in the only pane leaves the empty placeholder, no
+	// collapse, no crash.
+	ErrorDetector error_detector;
+	const WorkspaceTabCloseResult result = pane->request_close_tab(0);
+	h.pump();
+	CHECK(result == WorkspaceTabCloseResult::CLOSE);
+	CHECK(pane->get_tab_count() == 0);
+	CHECK(h.workspace->get_leaf_count() == 1);
+	CHECK(pane->get_empty_placeholder()->is_visible());
+	CHECK(pane->get_tab_strip()->is_visible() == false);
+	CHECK_FALSE(error_detector.has_error);
+
+	h.unmount();
+}
+
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] drag-never-prompts") {
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+
+	// Script (generic) move must never route through request_close.
+	{
+		WorkspaceHarness h;
+		h.mount();
+		h.pump();
+
+		WorkspaceLeafNode *leaf_a = h.workspace->get_focused_leaf();
+		WorkspacePane *pane_a = get_leaf_pane(leaf_a);
+
+		WorkspaceTabRegistry registry;
+		registry.reset_stable_id_counter();
+		registry.clear_canonical_index();
+		PromptSpyTabType spy_type;
+		registry.register_type(&spy_type);
+		pane_a->set_tab_registry(&registry);
+
+		WorkspaceTab dirty = spy_type.make_tab("res://dirty.fs", registry.allocate_stable_id());
+		WorkspaceTab keep = spy_type.make_tab("res://keep.fs", registry.allocate_stable_id());
+		pane_a->add_tab(dirty);
+		pane_a->add_tab(keep);
+
+		WorkspaceLeafNode *leaf_b = h.workspace->split(leaf_a, false, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
+		h.pump();
+		get_leaf_pane(leaf_b)->set_tab_registry(&registry);
+
+		h.workspace->handle_tab_drop(leaf_a->get_leaf_id(), 0, leaf_b, EditorSceneWorkspace::DROP_CENTER);
+		h.pump();
+		CHECK(spy_type.close_request_count == 0);
+		CHECK(get_leaf_pane(leaf_b)->get_tab_count() == 1);
+
+		h.unmount();
+	}
+
+	// A dirty scene move must not close the scene or clear its unsaved state.
+	{
+		WorkspaceHarness h;
+		h.mount();
+		h.pump();
+
+		const int tile_a = h.workspace->get_focused_leaf_id();
+		Node2D *root = memnew(Node2D);
+		const int scene = add_test_scene(h.editor_data, tile_a, root);
+		h.editor_data.set_scene_path(scene, "res://dirty.tscn");
+		EditorUndoRedoManager::get_singleton()->set_history_as_unsaved(h.editor_data.get_scene_history_id(scene));
+
+		WorkspaceLeafNode *leaf_a = h.workspace->get_leaf_by_id(tile_a);
+		WorkspaceLeafNode *leaf_b = h.workspace->split(leaf_a, false, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
+		h.pump();
+		h.editor_data.register_tile(leaf_b->get_leaf_id());
+		h.workspace->sync_scene_tabs_from_editor_data();
+
+		const int move_index = get_leaf_pane(leaf_a)->find_scene_tab_index(scene);
+		REQUIRE(move_index >= 0);
+		h.workspace->handle_tab_drop(tile_a, move_index, leaf_b, EditorSceneWorkspace::DROP_CENTER);
+
+		CHECK(h.editor_data.get_edited_scene_count() == 1); // Not closed.
+		CHECK(EditorUndoRedoManager::get_singleton()->is_history_unsaved(h.editor_data.get_scene_history_id(scene)));
+
+		h.unmount();
+	}
+}
+
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] close-cancel-no-collapse") {
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspaceLeafNode *leaf_a = h.workspace->get_focused_leaf();
+	WorkspaceLeafNode *leaf_b = h.workspace->split(leaf_a, false, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
+	h.pump();
+	REQUIRE(leaf_b != nullptr);
+	REQUIRE(h.workspace->get_leaf_count() == 2);
+
+	WorkspacePane *pane_a = get_leaf_pane(leaf_a);
+
+	WorkspaceTabRegistry registry;
+	registry.reset_stable_id_counter();
+	registry.clear_canonical_index();
+	PromptSpyTabType spy_type;
+	spy_type.close_result = WorkspaceTabCloseResult::CANCEL;
+	registry.register_type(&spy_type);
+	pane_a->set_tab_registry(&registry);
+
+	WorkspaceTab only = spy_type.make_tab("res://keep.fs", registry.allocate_stable_id());
+	pane_a->add_tab(only);
+	REQUIRE(pane_a->get_tab_count() == 1);
+
+	// A cancel from request_close leaves the pane and its tab intact.
+	const WorkspaceTabCloseResult result = pane_a->request_close_tab(0);
+	h.pump();
+	CHECK(result == WorkspaceTabCloseResult::CANCEL);
+	CHECK(spy_type.close_request_count == 1);
+	CHECK(pane_a->get_tab_count() == 1);
+	CHECK(h.workspace->get_leaf_count() == 2);
+	CHECK(h.workspace->get_leaf_by_id(leaf_a->get_leaf_id()) != nullptr);
+
+	h.unmount();
+}
+
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] mixed-move-no-crash") {
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	ErrorDetector error_detector;
+
+	const int tile_a = h.workspace->get_focused_leaf_id();
+	Node2D *root_a = memnew(Node2D);
+	const int scene_a = add_test_scene(h.editor_data, tile_a, root_a);
+	h.editor_data.set_scene_path(scene_a, "res://a.tscn");
+
+	WorkspaceLeafNode *leaf_a = h.workspace->get_leaf_by_id(tile_a);
+	WorkspaceLeafNode *leaf_b = h.workspace->split(leaf_a, false, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
+	h.pump();
+	h.editor_data.register_tile(leaf_b->get_leaf_id());
+	h.workspace->sync_scene_tabs_from_editor_data();
+
+	WorkspacePane *pane_a = get_leaf_pane(leaf_a);
+	WorkspacePane *pane_b = get_leaf_pane(leaf_b);
+
+	// Mixed content: a scene tab and script tabs share pane A.
+	add_script_tab(pane_a, "res://one.fs");
+	add_script_tab(pane_a, "res://two.fs");
+	CHECK(pane_a->get_tab_count() >= 2);
+
+	// Move a script tab to pane B's edge (splits), then move the scene into pane B.
+	WorkspaceLeafNode *dest = h.workspace->handle_tab_drop(leaf_a->get_leaf_id(), pane_a->get_tab_count() - 1, leaf_b, EditorSceneWorkspace::DROP_BOTTOM);
+	h.pump();
+	REQUIRE(dest != nullptr);
+
+	const int scene_move_index = pane_a->find_scene_tab_index(scene_a);
+	if (scene_move_index >= 0) {
+		h.workspace->handle_tab_drop(leaf_a->get_leaf_id(), scene_move_index, leaf_b, EditorSceneWorkspace::DROP_CENTER);
+		h.pump();
+	}
+
+	// Close a remaining tab in pane B, then let any collapse run.
+	if (pane_b->get_tab_count() > 0) {
+		pane_b->request_close_tab(0);
+		h.pump();
+	}
+
+	CHECK(h.workspace->get_leaf_count() >= 1);
+	CHECK_FALSE(error_detector.has_error);
+
+	h.unmount();
 }
 
 } // namespace TestSceneWorkspace

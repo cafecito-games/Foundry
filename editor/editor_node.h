@@ -1147,6 +1147,7 @@ public:
 	void edit_current() { _edit_current(); }
 
 	// Multi-tile workspace: scene-tab drag/drop mediation.
+	void handle_tile_tab_drop(int p_target_pane_id, int p_region, int p_source_pane_id, int p_source_tab_index);
 	void handle_tile_scene_drop(int p_target_tile_id, int p_region, int p_source_tile_id, int p_source_tab);
 	void handle_tile_scene_tab_bar_drop(int p_target_tile_id, const Variant &p_data, const Point2 &p_point);
 

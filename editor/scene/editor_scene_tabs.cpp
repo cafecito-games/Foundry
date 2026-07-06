@@ -39,6 +39,7 @@
 #include "editor/inspector/editor_context_menu_plugin.h"
 #include "editor/inspector/editor_resource_preview.h"
 #include "editor/run/editor_run_bar.h"
+#include "editor/scene/editor_scene_tab_bar.h"
 #include "editor/settings/editor_settings.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/gui/box_container.h"
@@ -47,7 +48,6 @@
 #include "scene/gui/panel.h"
 #include "scene/gui/panel_container.h"
 #include "scene/gui/popup_menu.h"
-#include "editor/scene/editor_scene_tab_bar.h"
 #include "scene/gui/texture_rect.h"
 
 void EditorSceneTabs::_notification(int p_what) {
@@ -283,9 +283,19 @@ void EditorSceneTabs::update_scene_tabs() {
 
 	if (tile_id == 0 && NativeMenu::get_singleton()->has_feature(NativeMenu::FEATURE_GLOBAL_MENU)) {
 		RID dock_rid = NativeMenu::get_singleton()->get_system_menu(NativeMenu::DOCK_MENU_ID);
+		// The dock menu lists every edited scene, but this tab bar only holds the
+		// scenes owned by this tile. Map each global scene to its menu item, then
+		// store the menu index on the matching tab (indexing the bar by a global
+		// scene index would run past the tile's tab count).
+		HashMap<int, int> scene_to_menu_index;
 		for (int i = 0; i < EditorNode::get_editor_data().get_edited_scene_count(); i++) {
 			int global_menu_index = NativeMenu::get_singleton()->add_item(dock_rid, EditorNode::get_editor_data().get_scene_title(i), callable_mp(this, &EditorSceneTabs::_global_menu_scene), Callable(), i);
-			scene_tabs->set_tab_metadata(i, global_menu_index);
+			scene_to_menu_index[i] = global_menu_index;
+		}
+		for (int tab = 0; tab < tile_scenes.size(); tab++) {
+			if (const int *menu_index = scene_to_menu_index.getptr(tile_scenes[tab])) {
+				scene_tabs->set_tab_metadata(tab, *menu_index);
+			}
 		}
 		NativeMenu::get_singleton()->add_separator(dock_rid);
 		NativeMenu::get_singleton()->add_item(dock_rid, TTR("New Window"), callable_mp(this, &EditorSceneTabs::_global_menu_new_window));

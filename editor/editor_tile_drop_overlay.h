@@ -33,19 +33,21 @@
 #include "editor/editor_scene_workspace.h"
 #include "scene/gui/control.h"
 
-// Drop target painted over a tile's content while a scene tab is being dragged.
-// Renders a guide rosette (four edge chevrons + center tab glyph) and a
-// region-accurate preview of the resulting split or tab move.
+// Drop target painted over a pane's body while any workspace tab is being
+// dragged. Renders a guide rosette (four edge chevrons + center tab glyph) and a
+// region-accurate preview of the resulting split or tab move. The payload is a
+// generic (source pane id, source tab index) reference, so one overlay serves
+// every WorkspaceTabType.
 class EditorTileDropOverlay : public Control {
 	FOUNDRY_CLASS(EditorTileDropOverlay, Control);
 
-	int owning_tile_id = 0;
-	bool scene_tab_drag = false;
+	int owning_pane_id = 0;
+	bool workspace_tab_drag = false;
 	bool drag_active = false;
 	EditorSceneWorkspace::TileDropRegion hovered_region = EditorSceneWorkspace::DROP_CENTER;
 
 	EditorSceneWorkspace::TileDropRegion _region_at(const Point2 &p_local) const;
-	static bool _resolve_source(const Variant &p_data, int &r_source_tile_id, int &r_source_tab);
+	static bool _resolve_source(const Variant &p_data, int &r_source_pane_id, int &r_source_tab_index);
 	void _update_drag_active();
 	void _draw_region_preview(const Rect2 &p_preview_rect, const Color &p_accent);
 	void _draw_guide_rosette(const Point2 &p_center, EditorSceneWorkspace::TileDropRegion p_aimed_region);
@@ -55,9 +57,9 @@ protected:
 	void _notification(int p_what);
 
 public:
-	static bool is_scene_tab_drag(const Variant &p_data);
+	static bool is_workspace_tab_drag(const Variant &p_data);
 
-	void set_owning_tile_id(int p_tile_id) { owning_tile_id = p_tile_id; }
+	void set_owning_pane_id(int p_pane_id) { owning_pane_id = p_pane_id; }
 
 	virtual bool can_drop_data(const Point2 &p_point, const Variant &p_data) const override;
 	virtual void drop_data(const Point2 &p_point, const Variant &p_data) override;

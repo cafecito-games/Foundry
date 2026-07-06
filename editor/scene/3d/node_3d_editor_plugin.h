@@ -922,6 +922,11 @@ private:
 	void _node_removed(Node *p_node);
 	Vector<Ref<EditorNode3DGizmoPlugin>> gizmo_plugins_by_priority;
 	Vector<Ref<EditorNode3DGizmoPlugin>> gizmo_plugins_by_name;
+	// The built-in gizmos are registered once; the editor can re-enter the tree
+	// (e.g. when the workspace reparents the shared 3D view between tiles), and
+	// re-registering would append duplicate plugins and re-sort an ever-growing
+	// list on every add — a quadratic blow-up that eventually freezes the editor.
+	bool builtin_gizmos_registered = false;
 
 	void _register_all_gizmos();
 

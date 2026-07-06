@@ -140,7 +140,7 @@ private:
 	bool _is_leaf_node(Control *p_node) const;
 	bool _is_split_node(Control *p_node) const;
 	void _update_focus_visuals();
-	void _collapse_if_empty(int p_tile_id);
+	void _collapse_if_empty(int p_leaf_id);
 
 protected:
 	void _notification(int p_what);
@@ -165,8 +165,17 @@ public:
 	// when no leaf already hosts that script. Returns the script leaf.
 	WorkspaceLeafNode *open_script_leaf(WorkspaceLeafNode *p_source_leaf, const String &p_script_path, bool p_force_new_leaf = false);
 
-	// Drag-a-tab drop resolution (center = move scene; edge = split + move).
+	// Generic drag-a-tab drop resolution shared by every WorkspaceTabType:
+	// center = move the tab into the target pane; an edge splits the target pane
+	// and places the tab in the new pane. Scene tabs express the move through the
+	// EditorData scene-tile membership; other tab types move via take/add_tab.
+	WorkspaceLeafNode *handle_tab_drop(int p_source_pane_id, int p_source_tab_index, WorkspaceLeafNode *p_target_leaf, TileDropRegion p_region);
+	// Thin compatibility shim that addresses a move by scene index (editor
+	// scene-tab drops and automation) and delegates to handle_tab_drop.
 	WorkspaceLeafNode *handle_scene_drop(int p_scene_idx, WorkspaceLeafNode *p_target_leaf, TileDropRegion p_region);
+	// Collapse the pane owning p_leaf_id on the next idle frame if it has become
+	// empty and another leaf remains. Used after a tab move or close resolves.
+	void collapse_if_empty_deferred(int p_leaf_id);
 	void sync_scene_tabs_from_editor_data();
 	bool focus_scene_tab(int p_scene_idx);
 
