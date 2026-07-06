@@ -166,10 +166,11 @@ void WorkspacePane::_mount_active_tab() {
 	type->mount(tab, chrome_host);
 	mounted_tab_stable_id = tab.get_stable_id();
 
+	// The scene tab type still bridges to the pane's scene tile; the concrete
+	// ScriptResourceTabType owns and shows its own script surface, so no script
+	// bridge is shown here.
 	if (tab.get_type_id() == StringName("scene") && scene_tile) {
 		scene_tile->show();
-	} else if (tab.get_type_id() == StringName("script") && script_leaf) {
-		script_leaf->show();
 	}
 
 	type->activate(tab);
@@ -362,6 +363,48 @@ void WorkspacePane::set_active_tab(int p_index) {
 	}
 	_update_pane_state();
 	suppress_tab_strip_callback = false;
+}
+
+WorkspaceTab WorkspacePane::take_tab(int p_index) {
+	ERR_FAIL_INDEX_V(p_index, tabs.size(), WorkspaceTab());
+
+	// Unmount first so the tab type captures its current payload (caret/scroll/
+	// fold for scripts) into the tab record before it leaves this pane.
+	if (p_index == active_tab_index && mounted_tab_stable_id == tabs[p_index].get_stable_id()) {
+		_unmount_active_tab();
+	}
+	WorkspaceTab taken = tabs[p_index];
+	remove_tab(p_index);
+	return taken;
+}
+
+WorkspaceTabCloseResult WorkspacePane::request_close_active_tab() {
+	WorkspaceTab *tab = _active_tab_mut();
+	if (!tab) {
+		return WorkspaceTabCloseResult::CLOSE;
+	}
+	WorkspaceTabType *type = _active_tab_type();
+	if (!type) {
+		return WorkspaceTabCloseResult::CLOSE;
+	}
+	// The tab is identified by its stable id so a deferred close (an async
+	// save/discard prompt) removes the right tab even if the index shifted.
+	const int stable_id = tab->get_stable_id();
+	const Callable on_deferred_close = callable_mp(this, &WorkspacePane::_on_deferred_tab_closed).bind(stable_id);
+	const WorkspaceTabCloseResult result = type->request_close(*tab, on_deferred_close);
+	if (result == WorkspaceTabCloseResult::CLOSE) {
+		remove_tab(active_tab_index);
+	}
+	return result;
+}
+
+void WorkspacePane::_on_deferred_tab_closed(int p_stable_id) {
+	for (int i = 0; i < tabs.size(); i++) {
+		if (tabs[i].get_stable_id() == p_stable_id) {
+			remove_tab(i);
+			return;
+		}
+	}
 }
 
 StringName WorkspacePane::get_content_type() const {

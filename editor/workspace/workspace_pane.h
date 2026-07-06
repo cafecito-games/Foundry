@@ -36,6 +36,7 @@
 #include "editor/editor_workspace_leaf_content.h"
 #include "editor/workspace/workspace_tab.h"
 #include "editor/workspace/workspace_tab_registry.h"
+#include "editor/workspace/workspace_tab_type.h"
 
 class ConfigFile;
 class EditorData;
@@ -82,6 +83,7 @@ class WorkspacePane : public VBoxContainer, public WorkspaceLeafContent {
 	void _mount_active_tab();
 	void _unmount_active_tab();
 	void _update_pane_state();
+	void _on_deferred_tab_closed(int p_stable_id);
 	WorkspaceTabType *_active_tab_type() const;
 	const WorkspaceTab *_active_tab() const;
 	WorkspaceTab *_active_tab_mut();
@@ -109,6 +111,16 @@ public:
 	void add_tab(const WorkspaceTab &p_tab);
 	void remove_tab(int p_index);
 	void set_active_tab(int p_index);
+
+	// Detach a tab for a move: unmounts it (capturing its type payload) and
+	// removes it from this pane, returning the tab record so it can be added to
+	// another pane. A move never prompts; it only changes tab location.
+	WorkspaceTab take_tab(int p_index);
+
+	// Route a close request for the active tab through its WorkspaceTabType. A
+	// deferred result means the type is showing its own confirmation flow (e.g.
+	// a dirty script's save/discard prompt) and the tab stays until resolved.
+	WorkspaceTabCloseResult request_close_active_tab();
 
 	void sync_from_editor_data() const;
 

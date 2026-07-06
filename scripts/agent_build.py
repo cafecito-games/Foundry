@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Agent-friendly Foundry build wrapper for Linux cloud environments."""
+"""Agent-friendly Foundry build wrapper for local and cloud environments."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import argparse
 import importlib.util
 import json
 import os
+import platform as platform_module
 import queue
 import shlex
 import shutil
@@ -16,13 +17,19 @@ import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TextIO
+from typing import NamedTuple, TextIO
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_LOG = Path("/tmp/foundry-build.log")
 DEFAULT_PROGRESS_LOG = Path("/tmp/foundry-build-progress.jsonl")
-DEFAULT_BINARY = REPO_ROOT / "bin" / "foundry.linuxbsd.editor.dev.x86_64"
 DEFAULT_CACHE_PATH = Path.home() / ".scons_cache"
+SUPPORTED_SCONS_PLATFORMS = ("linuxbsd", "macos")
+
+
+class BuildTarget(NamedTuple):
+    scons_platform: str
+    binary_path: Path
+    default_display: str | None
 
 
 def format_duration(seconds: float) -> str:
@@ -224,13 +231,51 @@ def scons_prefix() -> list[str] | None:
     return None
 
 
-def build_command(args: argparse.Namespace) -> list[str]:
+def host_scons_platform(sys_platform: str | None = None) -> str:
+    host = sys_platform if sys_platform is not None else sys.platform
+    if host == "darwin":
+        return "macos"
+    if host.startswith("linux"):
+        return "linuxbsd"
+    raise RuntimeError(
+        f"Unsupported host platform {host!r}; pass --platform with one of: {', '.join(SUPPORTED_SCONS_PLATFORMS)}."
+    )
+
+
+def normalize_arch(machine: str | None = None) -> str:
+    arch = (machine if machine is not None else platform_module.machine()).lower()
+    if arch in ("amd64", "x64"):
+        return "x86_64"
+    if arch == "aarch64":
+        return "arm64"
+    return arch
+
+
+def arch_from_args(args: argparse.Namespace) -> str:
+    for raw_arg in reversed(args.scons_arg):
+        key, separator, value = raw_arg.partition("=")
+        if key == "arch" and separator and value:
+            return value
+    return normalize_arch()
+
+
+def resolve_build_target(args: argparse.Namespace) -> BuildTarget:
+    scons_platform = host_scons_platform() if args.platform == "auto" else args.platform
+    arch = arch_from_args(args)
+    binary_path = REPO_ROOT / "bin" / f"foundry.{scons_platform}.editor.dev.{arch}"
+    default_display = ":1" if scons_platform == "linuxbsd" else None
+    return BuildTarget(scons_platform=scons_platform, binary_path=binary_path, default_display=default_display)
+
+
+def build_command(args: argparse.Namespace, target: BuildTarget | None = None) -> list[str]:
+    if target is None:
+        target = resolve_build_target(args)
     build_modes = ["dev_build=yes"] if args.dev_build else ["dev_mode=yes", "dev_build=yes"]
     prefix = scons_prefix()
     if prefix is None:
         raise RuntimeError("SCons is not available")
     command = prefix + [
-        "platform=linuxbsd",
+        f"platform={target.scons_platform}",
         "target=editor",
         *build_modes,
         "tests=yes",
@@ -242,18 +287,24 @@ def build_command(args: argparse.Namespace) -> list[str]:
     return command
 
 
-def test_command(args: argparse.Namespace) -> list[str]:
-    command = [str(DEFAULT_BINARY), "--headless", "test", "run"]
+def test_command(args: argparse.Namespace, target: BuildTarget | None = None) -> list[str]:
+    if target is None:
+        target = resolve_build_target(args)
+    command = [str(target.binary_path), "--headless", "test", "run"]
     if args.test_case:
         command.extend(["--case", args.test_case])
     command.append("--force-colors")
     return command
 
 
-def test_environment(args: argparse.Namespace) -> dict[str, str]:
+def test_environment(args: argparse.Namespace, target: BuildTarget | None = None) -> dict[str, str]:
+    if target is None:
+        target = resolve_build_target(args)
     env = os.environ.copy()
-    if args.display:
+    if args.display is not None:
         env["DISPLAY"] = args.display
+    elif target.default_display is not None:
+        env["DISPLAY"] = target.default_display
     return env
 
 
@@ -263,6 +314,12 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     )
     parser.add_argument("--test", action="store_true", help="Run the Foundry test suite after a successful build.")
     parser.add_argument("--case", dest="test_case", help="Run a focused doctest case after building. Implies --test.")
+    parser.add_argument(
+        "--platform",
+        choices=["auto", *SUPPORTED_SCONS_PLATFORMS],
+        default="auto",
+        help="SCons platform to build. Default: auto-detect from the host OS.",
+    )
     parser.add_argument(
         "--dev-build",
         action="store_true",
@@ -311,8 +368,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     )
     parser.add_argument(
         "--display",
-        default=":1",
-        help="DISPLAY value for post-build test runs. Default: :1.",
+        help="DISPLAY value for post-build test runs. Default: :1 on Linux, unset on macOS.",
     )
     parser.add_argument(
         "--scons-arg",
@@ -340,6 +396,12 @@ def progress_path_from_args(args: argparse.Namespace) -> Path | None:
 
 def main(argv: list[str]) -> int:
     args = parse_args(argv)
+    try:
+        target = resolve_build_target(args)
+    except RuntimeError as exc:
+        print(f"[agent-build] {exc}", file=sys.stderr)
+        return 2
+
     if scons_prefix() is None:
         print(
             "[agent-build] SCons is not available. Install SCons for python3 or make the `scons` executable "
@@ -353,7 +415,7 @@ def main(argv: list[str]) -> int:
     human_stream = sys.stderr if progress_stdout_jsonl else sys.stdout
 
     build_exit = run_logged_command(
-        build_command(args),
+        build_command(args, target),
         label="build",
         log_path=args.log,
         heartbeat=args.heartbeat,
@@ -365,22 +427,22 @@ def main(argv: list[str]) -> int:
     if build_exit != 0:
         return build_exit
 
-    if not DEFAULT_BINARY.exists():
+    if not target.binary_path.exists():
         if args.test:
-            print(f"[agent-build] expected binary is missing after build: {DEFAULT_BINARY}", file=sys.stderr)
+            print(f"[agent-build] expected binary is missing after build: {target.binary_path}", file=sys.stderr)
             return 127
         print(
-            f"[agent-build] build command succeeded; expected binary is not present yet: {DEFAULT_BINARY}",
+            f"[agent-build] build command succeeded; expected binary is not present yet: {target.binary_path}",
             file=human_stream,
         )
         return 0
 
     if not args.test:
-        print(f"[agent-build] built binary: {DEFAULT_BINARY}", file=human_stream)
+        print(f"[agent-build] built binary: {target.binary_path}", file=human_stream)
         return 0
 
     return run_logged_command(
-        test_command(args),
+        test_command(args, target),
         label="test",
         log_path=args.log,
         heartbeat=args.heartbeat,
@@ -388,7 +450,7 @@ def main(argv: list[str]) -> int:
         progress_path=progress_path,
         append_progress=True,
         progress_stdout_jsonl=progress_stdout_jsonl,
-        env=test_environment(args),
+        env=test_environment(args, target),
     )
 
 
