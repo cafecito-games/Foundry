@@ -50,7 +50,6 @@ EditorSceneContext *SignalsDock::get_scene_context() const {
 }
 
 SignalsDock::SignalsDock(bool p_register_open_command) {
-	singleton = singleton ? singleton : this;
 	set_name(TTRC("Signals"));
 	set_icon_name("Signals");
 	if (p_register_open_command) {
@@ -65,5 +64,4 @@ SignalsDock::SignalsDock(bool p_register_open_command) {
 }
 
 SignalsDock::~SignalsDock() {
-	singleton = nullptr;
 }

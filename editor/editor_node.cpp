@@ -2974,8 +2974,12 @@ void EditorNode::push_node_item(Node *p_node) {
 void EditorNode::push_item(Object *p_object, const String &p_property, bool p_inspector_only) {
 	if (!p_object) {
 		InspectorDock::get_inspector_singleton()->edit(nullptr);
-		SignalsDock::get_singleton()->set_object(nullptr);
-		GroupsDock::get_singleton()->set_selection(Vector<Node *>());
+		if (SignalsDock *signals_dock = get_focused_signals_dock()) {
+			signals_dock->set_object(nullptr);
+		}
+		if (GroupsDock *groups_dock = get_focused_groups_dock()) {
+			groups_dock->set_selection(Vector<Node *>());
+		}
 		SceneTreeDock::get_singleton()->set_selected(nullptr);
 		InspectorDock::get_singleton()->update(nullptr);
 		hide_unused_editors();
@@ -3090,8 +3094,12 @@ void EditorNode::_edit_current(bool p_skip_foreign, bool p_skip_inspector_update
 	if (!current_obj) {
 		SceneTreeDock::get_singleton()->set_selected(nullptr);
 		InspectorDock::get_inspector_singleton()->edit(nullptr);
-		SignalsDock::get_singleton()->set_object(nullptr);
-		GroupsDock::get_singleton()->set_selection(Vector<Node *>());
+		if (SignalsDock *signals_dock = get_focused_signals_dock()) {
+			signals_dock->set_object(nullptr);
+		}
+		if (GroupsDock *groups_dock = get_focused_groups_dock()) {
+			groups_dock->set_selection(Vector<Node *>());
+		}
 		InspectorDock::get_singleton()->update(nullptr);
 		EditorDebuggerNode::get_singleton()->clear_remote_tree_selection();
 		hide_unused_editors();
@@ -3124,8 +3132,14 @@ void EditorNode::_edit_current(bool p_skip_foreign, bool p_skip_inspector_update
 		if (!p_skip_inspector_update) {
 			InspectorDock::get_inspector_singleton()->edit(current_res);
 			SceneTreeDock::get_singleton()->set_selected(nullptr);
-			SignalsDock::get_singleton()->set_object(current_res);
-			GroupsDock::get_singleton()->set_selection(Vector<Node *>());
+			SignalsDock *signals_dock = get_focused_signals_dock();
+			GroupsDock *groups_dock = get_focused_groups_dock();
+			if (signals_dock) {
+				signals_dock->set_object(current_res);
+			}
+			if (groups_dock) {
+				groups_dock->set_selection(Vector<Node *>());
+			}
 			InspectorDock::get_singleton()->update(nullptr);
 			EditorDebuggerNode::get_singleton()->clear_remote_tree_selection();
 			ImportDock::get_singleton()->set_edit_path(current_res->get_path());
@@ -3155,8 +3169,14 @@ void EditorNode::_edit_current(bool p_skip_foreign, bool p_skip_inspector_update
 
 		InspectorDock::get_inspector_singleton()->edit(current_node);
 		if (current_node->is_inside_tree()) {
-			SignalsDock::get_singleton()->set_object(current_node);
-			GroupsDock::get_singleton()->set_selection(Vector<Node *>{ current_node });
+			SignalsDock *signals_dock = get_focused_signals_dock();
+			GroupsDock *groups_dock = get_focused_groups_dock();
+			if (signals_dock) {
+				signals_dock->set_object(current_node);
+			}
+			if (groups_dock) {
+				groups_dock->set_selection(Vector<Node *>{ current_node });
+			}
 			SceneTreeDock::get_singleton()->set_selected(current_node);
 			SceneTreeDock::get_singleton()->set_selection({ current_node });
 			InspectorDock::get_singleton()->update(current_node);
@@ -3168,8 +3188,12 @@ void EditorNode::_edit_current(bool p_skip_foreign, bool p_skip_inspector_update
 				skip_main_plugin = !editor_main_screen->can_auto_switch_screens();
 			}
 		} else {
-			SignalsDock::get_singleton()->set_object(nullptr);
-			GroupsDock::get_singleton()->set_selection(Vector<Node *>());
+			if (SignalsDock *signals_dock = get_focused_signals_dock()) {
+				signals_dock->set_object(nullptr);
+			}
+			if (GroupsDock *groups_dock = get_focused_groups_dock()) {
+				groups_dock->set_selection(Vector<Node *>());
+			}
 			SceneTreeDock::get_singleton()->set_selected(nullptr);
 			InspectorDock::get_singleton()->update(nullptr);
 		}
@@ -3217,8 +3241,12 @@ void EditorNode::_edit_current(bool p_skip_foreign, bool p_skip_inspector_update
 		}
 
 		InspectorDock::get_inspector_singleton()->edit(current_obj);
-		SignalsDock::get_singleton()->set_object(nullptr);
-		GroupsDock::get_singleton()->set_selection(multi_nodes);
+		if (SignalsDock *signals_dock = get_focused_signals_dock()) {
+			signals_dock->set_object(nullptr);
+		}
+		if (GroupsDock *groups_dock = get_focused_groups_dock()) {
+			groups_dock->set_selection(multi_nodes);
+		}
 		SceneTreeDock::get_singleton()->set_selected(selected_node);
 		SceneTreeDock::get_singleton()->set_selection(multi_nodes);
 		InspectorDock::get_singleton()->update(nullptr);
@@ -6827,9 +6855,6 @@ void EditorNode::_update_focused_dock_singletons(ScenePaneTile *p_tile) {
 	EditorSceneTabs::set_focused_singleton(scene_tabs);
 	SceneTreeDock::set_focused_instance(p_tile->get_scene_tree_dock());
 	InspectorDock::set_focused_instance(p_tile->get_inspector_dock());
-	SignalsDock::set_focused_instance(p_tile->get_signals_dock());
-	GroupsDock::set_focused_instance(p_tile->get_groups_dock());
-	HistoryDock::set_focused_instance(p_tile->get_history_dock());
 
 	if (distraction_free && distraction_free->get_parent() != nullptr) {
 		distraction_free->get_parent()->remove_child(distraction_free);
@@ -6837,6 +6862,25 @@ void EditorNode::_update_focused_dock_singletons(ScenePaneTile *p_tile) {
 	if (distraction_free) {
 		scene_tabs->add_extra_button(distraction_free);
 	}
+}
+
+ScenePaneTile *EditorNode::get_focused_tile() const {
+	return scene_workspace ? scene_workspace->get_focused_tile() : nullptr;
+}
+
+SignalsDock *EditorNode::get_focused_signals_dock() const {
+	ScenePaneTile *tile = get_focused_tile();
+	return tile ? tile->get_signals_dock() : nullptr;
+}
+
+GroupsDock *EditorNode::get_focused_groups_dock() const {
+	ScenePaneTile *tile = get_focused_tile();
+	return tile ? tile->get_groups_dock() : nullptr;
+}
+
+HistoryDock *EditorNode::get_focused_history_dock() const {
+	ScenePaneTile *tile = get_focused_tile();
+	return tile ? tile->get_history_dock() : nullptr;
 }
 
 void EditorNode::_bind_leaf_docks(int p_leaf_id) {
@@ -7111,15 +7155,15 @@ void EditorNode::_focus_leaf_inspector_dock() {
 }
 
 void EditorNode::_focus_leaf_signals_dock() {
-	_focus_leaf_dock(SignalsDock::get_singleton());
+	_focus_leaf_dock(get_focused_signals_dock());
 }
 
 void EditorNode::_focus_leaf_groups_dock() {
-	_focus_leaf_dock(GroupsDock::get_singleton());
+	_focus_leaf_dock(get_focused_groups_dock());
 }
 
 void EditorNode::_focus_leaf_history_dock() {
-	_focus_leaf_dock(HistoryDock::get_singleton());
+	_focus_leaf_dock(get_focused_history_dock());
 }
 
 void EditorNode::_save_workspace_to_config(Ref<ConfigFile> p_config_file) {

@@ -36,6 +36,10 @@
 #include "editor/docks/inspector_dock.h"
 #include "editor/editor_main_screen.h"
 #include "editor/editor_node.h"
+#include "editor/editor_scene_pane_tile.h"
+#include "editor/docks/groups_dock.h"
+#include "editor/docks/history_dock.h"
+#include "editor/docks/signals_dock.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/file_system/editor_paths.h"
 #include "editor/gui/create_dialog.h"
@@ -651,6 +655,26 @@ FileSystemDock *EditorInterface::get_file_system_dock() const {
 	return FileSystemDock::get_singleton();
 }
 
+ScenePaneTile *EditorInterface::get_focused_tile() const {
+	EditorNode *editor = EditorNode::get_singleton();
+	return editor ? editor->get_focused_tile() : nullptr;
+}
+
+SignalsDock *EditorInterface::get_focused_signals_dock() const {
+	EditorNode *editor = EditorNode::get_singleton();
+	return editor ? editor->get_focused_signals_dock() : nullptr;
+}
+
+GroupsDock *EditorInterface::get_focused_groups_dock() const {
+	EditorNode *editor = EditorNode::get_singleton();
+	return editor ? editor->get_focused_groups_dock() : nullptr;
+}
+
+HistoryDock *EditorInterface::get_focused_history_dock() const {
+	EditorNode *editor = EditorNode::get_singleton();
+	return editor ? editor->get_focused_history_dock() : nullptr;
+}
+
 void EditorInterface::select_file(const String &p_file) {
 	FileSystemDock::get_singleton()->select_file(p_file);
 }
@@ -887,6 +911,10 @@ void EditorInterface::_bind_methods() {
 	// Editor docks.
 
 	ClassDB::bind_method(D_METHOD("get_file_system_dock"), &EditorInterface::get_file_system_dock);
+	ClassDB::bind_method(D_METHOD("get_focused_tile"), &EditorInterface::get_focused_tile);
+	ClassDB::bind_method(D_METHOD("get_focused_signals_dock"), &EditorInterface::get_focused_signals_dock);
+	ClassDB::bind_method(D_METHOD("get_focused_groups_dock"), &EditorInterface::get_focused_groups_dock);
+	ClassDB::bind_method(D_METHOD("get_focused_history_dock"), &EditorInterface::get_focused_history_dock);
 	ClassDB::bind_method(D_METHOD("select_file", "file"), &EditorInterface::select_file);
 	ClassDB::bind_method(D_METHOD("get_selected_paths"), &EditorInterface::get_selected_paths);
 	ClassDB::bind_method(D_METHOD("get_current_path"), &EditorInterface::get_current_path);

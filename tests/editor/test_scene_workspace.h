@@ -1129,4 +1129,192 @@ TEST_CASE("[SceneTree][Editor] script-leaf-collapse-keeps-scene-focus") {
 	h.unmount();
 }
 
+static SignalsDock *_focused_signals_dock(EditorSceneWorkspace *p_workspace) {
+	ScenePaneTile *tile = p_workspace ? p_workspace->get_focused_tile() : nullptr;
+	return tile ? tile->get_signals_dock() : nullptr;
+}
+
+static GroupsDock *_focused_groups_dock(EditorSceneWorkspace *p_workspace) {
+	ScenePaneTile *tile = p_workspace ? p_workspace->get_focused_tile() : nullptr;
+	return tile ? tile->get_groups_dock() : nullptr;
+}
+
+static HistoryDock *_focused_history_dock(EditorSceneWorkspace *p_workspace) {
+	ScenePaneTile *tile = p_workspace ? p_workspace->get_focused_tile() : nullptr;
+	return tile ? tile->get_history_dock() : nullptr;
+}
+
+TEST_CASE("[SceneTree][Editor] focused-dock-accessor") {
+	Window *tree_root = SceneTree::get_singleton()->get_root();
+	EditorUndoRedoManager *ur_manager = memnew(EditorUndoRedoManager);
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspaceLeafNode *first = h.workspace->get_focused_leaf();
+	WorkspaceLeafNode *second = h.workspace->split(first, false, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
+	h.pump();
+	REQUIRE(second != nullptr);
+
+	ScenePaneTile *tile_a = first->get_pane_tile();
+	ScenePaneTile *tile_b = second->get_pane_tile();
+	REQUIRE(tile_a != nullptr);
+	REQUIRE(tile_b != nullptr);
+
+	CHECK(_focused_signals_dock(h.workspace) == tile_a->get_signals_dock());
+	CHECK(_focused_groups_dock(h.workspace) == tile_a->get_groups_dock());
+	CHECK(_focused_history_dock(h.workspace) == tile_a->get_history_dock());
+
+	h.workspace->set_focused_leaf(tile_b->get_tile_id());
+	h.pump();
+
+	CHECK(_focused_signals_dock(h.workspace) == tile_b->get_signals_dock());
+	CHECK(_focused_groups_dock(h.workspace) == tile_b->get_groups_dock());
+	CHECK(_focused_history_dock(h.workspace) == tile_b->get_history_dock());
+
+	EditorSceneContext *context_b = memnew(EditorSceneContext);
+	context_b->set_history_id(77);
+	Node2D *root_b = memnew(Node2D);
+	context_b->set_scene_root_node(root_b);
+	Node2D *node_b = memnew(Node2D);
+	root_b->add_child(node_b);
+
+	ur_manager->create_action_for_history("Focused tile action", 77);
+	ur_manager->add_do_method(node_b, "set_name", "FocusedB");
+	ur_manager->commit_action();
+
+	tile_b->get_signals_dock()->set_scene_context(context_b);
+	tile_b->get_groups_dock()->set_scene_context(context_b);
+	tile_b->get_history_dock()->set_scene_context(context_b);
+
+	SignalsDock *signals = _focused_signals_dock(h.workspace);
+	GroupsDock *groups = _focused_groups_dock(h.workspace);
+	HistoryDock *history = _focused_history_dock(h.workspace);
+	REQUIRE(signals == tile_b->get_signals_dock());
+	REQUIRE(groups == tile_b->get_groups_dock());
+	REQUIRE(history == tile_b->get_history_dock());
+
+	signals->set_object(node_b);
+	context_b->activate(tree_root);
+	Vector<Node *> select_b;
+	select_b.push_back(node_b);
+	groups->set_selection(select_b);
+	h.pump();
+
+	CHECK(TileConnectionsDockTestAccess::selected_object(signals) == node_b);
+	CHECK(groups->get_scene_context() == context_b);
+	TileHistoryDockTestAccess::refresh(history);
+	CHECK(TileHistoryDockTestAccess::newest_action_name(history) == "Focused tile action");
+
+	context_b->deactivate();
+	memdelete(context_b);
+
+	h.unmount();
+	memdelete(ur_manager);
+}
+
+TEST_CASE("[SceneTree][Editor] stale-singleton-guard") {
+	Window *tree_root = SceneTree::get_singleton()->get_root();
+	EditorUndoRedoManager *ur_manager = memnew(EditorUndoRedoManager);
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspaceLeafNode *first = h.workspace->get_focused_leaf();
+	WorkspaceLeafNode *second = h.workspace->split(first, false, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
+	h.pump();
+	REQUIRE(second != nullptr);
+
+	ScenePaneTile *tile_a = first->get_pane_tile();
+	ScenePaneTile *tile_b = second->get_pane_tile();
+	REQUIRE(tile_a != nullptr);
+	REQUIRE(tile_b != nullptr);
+
+	CHECK(tile_a->get_signals_dock() != tile_b->get_signals_dock());
+	CHECK(tile_a->get_groups_dock() != tile_b->get_groups_dock());
+	CHECK(tile_a->get_history_dock() != tile_b->get_history_dock());
+
+	EditorSceneContext *context_a = memnew(EditorSceneContext);
+	context_a->set_history_id(11);
+	Node2D *root_a = memnew(Node2D);
+	context_a->set_scene_root_node(root_a);
+	Node2D *node_a = memnew(Node2D);
+	root_a->add_child(node_a);
+
+	EditorSceneContext *context_b = memnew(EditorSceneContext);
+	context_b->set_history_id(22);
+	Node2D *root_b = memnew(Node2D);
+	context_b->set_scene_root_node(root_b);
+	Node2D *node_b = memnew(Node2D);
+	root_b->add_child(node_b);
+
+	ur_manager->create_action_for_history("Tile A stale guard", 11);
+	ur_manager->add_do_method(node_a, "set_name", "A");
+	ur_manager->commit_action();
+	ur_manager->create_action_for_history("Tile B stale guard", 22);
+	ur_manager->add_do_method(node_b, "set_name", "B");
+	ur_manager->commit_action();
+
+	for (ScenePaneTile *tile : { tile_a, tile_b }) {
+		EditorSceneContext *ctx = tile == tile_a ? context_a : context_b;
+		Node2D *node = tile == tile_a ? node_a : node_b;
+		tile->get_signals_dock()->set_scene_context(ctx);
+		tile->get_groups_dock()->set_scene_context(ctx);
+		tile->get_history_dock()->set_scene_context(ctx);
+		tile->get_signals_dock()->show();
+		tile->get_groups_dock()->show();
+		tile->get_history_dock()->show();
+	}
+	h.pump();
+
+	// Seed tile A through the focused-tile accessor path while tile A is focused.
+	tile_a->get_signals_dock()->set_object(node_a);
+	context_a->activate(tree_root);
+	Vector<Node *> select_a;
+	select_a.push_back(node_a);
+	tile_a->get_groups_dock()->set_selection(select_a);
+	TileHistoryDockTestAccess::refresh(tile_a->get_history_dock());
+	h.pump();
+
+	CHECK(TileConnectionsDockTestAccess::selected_object(tile_a->get_signals_dock()) == node_a);
+	CHECK(TileHistoryDockTestAccess::newest_action_name(tile_a->get_history_dock()) == "Tile A stale guard");
+
+	// Focus tile B and edit only through focused-tile accessors.
+	h.workspace->set_focused_leaf(tile_b->get_tile_id());
+	h.pump();
+
+	SignalsDock *focused_signals = _focused_signals_dock(h.workspace);
+	GroupsDock *focused_groups = _focused_groups_dock(h.workspace);
+	HistoryDock *focused_history = _focused_history_dock(h.workspace);
+	REQUIRE(focused_signals == tile_b->get_signals_dock());
+	REQUIRE(focused_groups == tile_b->get_groups_dock());
+	REQUIRE(focused_history == tile_b->get_history_dock());
+
+	focused_signals->set_object(node_b);
+	context_b->activate(tree_root);
+	Vector<Node *> select_b;
+	select_b.push_back(node_b);
+	focused_groups->set_selection(select_b);
+	TileHistoryDockTestAccess::refresh(focused_history);
+	h.pump();
+
+	CHECK(TileConnectionsDockTestAccess::selected_object(tile_b->get_signals_dock()) == node_b);
+	CHECK(TileHistoryDockTestAccess::newest_action_name(tile_b->get_history_dock()) == "Tile B stale guard");
+
+	// Tile A must remain unchanged — a global singleton repoint would have overwritten this.
+	CHECK(TileConnectionsDockTestAccess::selected_object(tile_a->get_signals_dock()) == node_a);
+	CHECK(tile_a->get_groups_dock()->get_scene_context() == context_a);
+	CHECK(TileHistoryDockTestAccess::newest_action_name(tile_a->get_history_dock()) == "Tile A stale guard");
+
+	context_a->deactivate();
+	context_b->deactivate();
+	memdelete(context_a);
+	memdelete(context_b);
+
+	h.unmount();
+	memdelete(ur_manager);
+}
+
 } // namespace TestSceneWorkspace

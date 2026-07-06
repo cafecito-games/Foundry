@@ -168,6 +168,30 @@
 				[b]Warning:[/b] Removing and freeing this node will render a part of the editor useless and may cause a crash.
 			</description>
 		</method>
+		<method name="get_focused_tile" qualifiers="const">
+			<return type="ScenePaneTile" />
+			<description>
+				Returns the focused scene tile in the workspace. Each tile hosts its own in-tile docks (scene tree, inspector, signals, groups, history); this is the tile that receives editing updates.
+			</description>
+		</method>
+		<method name="get_focused_signals_dock" qualifiers="const">
+			<return type="SignalsDock" />
+			<description>
+				Returns the [SignalsDock] instance belonging to the focused scene tile (not a global shell dock).
+			</description>
+		</method>
+		<method name="get_focused_groups_dock" qualifiers="const">
+			<return type="GroupsDock" />
+			<description>
+				Returns the [GroupsDock] instance belonging to the focused scene tile (not a global shell dock).
+			</description>
+		</method>
+		<method name="get_focused_history_dock" qualifiers="const">
+			<return type="HistoryDock" />
+			<description>
+				Returns the [HistoryDock] instance belonging to the focused scene tile (not a global shell dock).
+			</description>
+		</method>
 		<method name="get_inspector" qualifiers="const">
 			<return type="EditorInspector" />
 			<description>

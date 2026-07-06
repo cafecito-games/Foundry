@@ -37,6 +37,7 @@
 #include "editor/docks/groups_dock.h"
 #include "editor/docks/signals_dock.h"
 #include "editor/editor_node.h"
+#include "editor/editor_scene_pane_tile.h"
 #include "editor/editor_string_names.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/file_system/editor_file_system.h"
@@ -45,9 +46,8 @@
 #include "editor/settings/editor_settings.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/2d/node_2d.h"
-#include "scene/gui/flow_container.h"
 #include "scene/gui/label.h"
-#include "scene/gui/tab_container.h"
+#include "scene/gui/flow_container.h"
 #include "scene/gui/texture_rect.h"
 #include "scene/main/window.h"
 #include "scene/resources/packed_scene.h"
@@ -196,11 +196,12 @@ void SceneTreeEditor::_cell_button_pressed(Object *p_item, int p_column, int p_i
 
 		set_selected(n);
 
-		SignalsDock *signals = SignalsDock::get_singleton();
+		EditorNode *editor = EditorNode::get_singleton();
+		SignalsDock *signals = editor ? editor->get_focused_signals_dock() : nullptr;
 		if (signals) {
-			TabContainer *tabs = Object::cast_to<TabContainer>(signals->get_parent());
-			if (tabs) {
-				tabs->set_current_tab(signals->get_index());
+			ScenePaneTile *tile = editor->get_focused_tile();
+			if (tile) {
+				tile->get_dock_region()->focus_dock(signals);
 			}
 			signals->grab_focus();
 		}
@@ -210,11 +211,12 @@ void SceneTreeEditor::_cell_button_pressed(Object *p_item, int p_column, int p_i
 
 		set_selected(n);
 
-		GroupsDock *groups = GroupsDock::get_singleton();
+		EditorNode *editor = EditorNode::get_singleton();
+		GroupsDock *groups = editor ? editor->get_focused_groups_dock() : nullptr;
 		if (groups) {
-			TabContainer *tabs = Object::cast_to<TabContainer>(groups->get_parent());
-			if (tabs) {
-				tabs->set_current_tab(groups->get_index());
+			ScenePaneTile *tile = editor->get_focused_tile();
+			if (tile) {
+				tile->get_dock_region()->focus_dock(groups);
 			}
 			groups->grab_focus();
 		}
