@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 from misc.utility.scons_hints import *
 
+import methods
+
 Import("env")
 Import("env_modules")
 
@@ -19,6 +21,14 @@ if "svg" in env.module_list:
 if env["builtin_msdfgen"] and msdfgen_enabled:
     env_text_server_fb.Append(CPPDEFINES=[("MSDFGEN_PUBLIC", "")])
     env_text_server_fb.Prepend(CPPPATH=["#thirdparty/msdfgen"])
+    # The msdfgen headers included here trip Clang's -Wshadow-field-in-constructor
+    # and -Wshadow-uncaptured-local inside their templated constructors, which
+    # -Werror then rejects. These are thirdparty headers we do not fix, so suppress
+    # just those two shadow warnings for this module; the module's own sources keep
+    # the rest of the warning set. Only Clang enables them (see SConstruct), so the
+    # guard keeps GCC/MSVC untouched.
+    if methods.using_clang(env):
+        env_text_server_fb.Append(CCFLAGS=["-Wno-shadow-field-in-constructor", "-Wno-shadow-uncaptured-local"])
 
 if env["builtin_freetype"] and freetype_enabled:
     env_text_server_fb.Append(CPPDEFINES=["FT_CONFIG_OPTION_USE_BROTLI"])
