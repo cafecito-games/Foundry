@@ -193,7 +193,7 @@ void ScriptResourceTabType::activate(WorkspaceTab &p_tab) {
 	_focus_surface(_resolve_surface(p_tab.get_stable_id()));
 }
 
-WorkspaceTabCloseResult ScriptResourceTabType::request_close(WorkspaceTab &p_tab) {
+WorkspaceTabCloseResult ScriptResourceTabType::request_close(WorkspaceTab &p_tab, const Callable &p_on_deferred_close) {
 	ScriptLeaf *leaf = _resolve_surface(p_tab.get_stable_id());
 	if (!leaf) {
 		return WorkspaceTabCloseResult::CLOSE;
@@ -203,9 +203,10 @@ WorkspaceTabCloseResult ScriptResourceTabType::request_close(WorkspaceTab &p_tab
 		return WorkspaceTabCloseResult::CLOSE;
 	}
 	// Route to the existing per-view save/discard/cancel prompt. When the active
-	// editor is dirty the prompt is shown and the close outcome is deferred to
-	// the user's choice; otherwise the editor tab closes immediately.
-	if (view->request_close_active_tab()) {
+	// editor is dirty the prompt is shown and the close outcome is deferred: the
+	// view invokes p_on_deferred_close once the prompt resolves to Save/Discard so
+	// the workspace can then drop the tab, and leaves it untouched on Cancel.
+	if (view->request_close_active_tab(p_on_deferred_close)) {
 		return WorkspaceTabCloseResult::DEFERRED;
 	}
 	return WorkspaceTabCloseResult::CLOSE;

@@ -83,6 +83,7 @@ class WorkspacePane : public VBoxContainer, public WorkspaceLeafContent {
 	void _mount_active_tab();
 	void _unmount_active_tab();
 	void _update_pane_state();
+	void _on_deferred_tab_closed(int p_stable_id);
 	WorkspaceTabType *_active_tab_type() const;
 	const WorkspaceTab *_active_tab() const;
 	WorkspaceTab *_active_tab_mut();

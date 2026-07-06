@@ -348,8 +348,10 @@ public:
 	// prompt when it has unsaved changes. Returns true when the prompt was shown
 	// (close deferred to the user's choice), false when the tab closed immediately
 	// or there was nothing to close. Used by the workspace ScriptResourceTab close
-	// path so tab close reuses this view's dirty-close flow.
-	bool request_close_active_tab();
+	// path so tab close reuses this view's dirty-close flow. When the prompt is
+	// shown, p_on_closed (if valid) is invoked once the user chooses Save or
+	// Discard, and is not invoked if the user cancels.
+	bool request_close_active_tab(const Callable &p_on_closed = Callable());
 
 	void set_window_layout(Ref<ConfigFile> p_layout);
 	void get_window_layout(Ref<ConfigFile> p_layout);

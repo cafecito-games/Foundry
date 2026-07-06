@@ -626,7 +626,7 @@ void ScriptEditorView::_ask_close_current_unsaved_tab(ScriptEditorBase *current)
 	erase_tab_confirm->popup_centered();
 }
 
-bool ScriptEditorView::request_close_active_tab() {
+bool ScriptEditorView::request_close_active_tab(const Callable &p_on_closed) {
 	ERR_FAIL_NULL_V(tab_container, false);
 	const int current_idx = tab_container->get_current_tab();
 	if (current_idx < 0) {
@@ -638,6 +638,20 @@ bool ScriptEditorView::request_close_active_tab() {
 		// confirmed/custom_action handlers close this view's tab; cancel (dismiss)
 		// leaves the tab untouched.
 		_ask_close_current_unsaved_tab(se);
+		if (p_on_closed.is_valid()) {
+			// Notify the caller only when the prompt resolves to an actual close
+			// (Save via "confirmed", Discard via "custom_action"), deferred so the
+			// caller can free this view after the dialog's own handlers have run.
+			// "canceled" intentionally has no connection so a cancel keeps the tab.
+			// Guard against a re-close after a prior cancel double-connecting.
+			const Callable discard_notify = p_on_closed.unbind(1);
+			if (!erase_tab_confirm->is_connected(SceneStringName(confirmed), p_on_closed)) {
+				erase_tab_confirm->connect(SceneStringName(confirmed), p_on_closed, CONNECT_ONE_SHOT | CONNECT_DEFERRED);
+			}
+			if (!erase_tab_confirm->is_connected(SNAME("custom_action"), discard_notify)) {
+				erase_tab_confirm->connect(SNAME("custom_action"), discard_notify, CONNECT_ONE_SHOT | CONNECT_DEFERRED);
+			}
+		}
 		return true;
 	}
 	_close_current_tab(false, false);

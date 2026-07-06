@@ -104,7 +104,7 @@ public:
 		last_unmounted_stable_id = p_tab.get_stable_id();
 	}
 	void activate(WorkspaceTab &p_tab) override {}
-	WorkspaceTabCloseResult request_close(WorkspaceTab &p_tab) override { return WorkspaceTabCloseResult::CLOSE; }
+	WorkspaceTabCloseResult request_close(WorkspaceTab &p_tab, const Callable &p_on_deferred_close = Callable()) override { return WorkspaceTabCloseResult::CLOSE; }
 	Dictionary save_payload(const WorkspaceTab &p_tab) const override { return Dictionary(); }
 	void restore_payload(WorkspaceTab &p_tab, const Dictionary &p_payload) const override {}
 };

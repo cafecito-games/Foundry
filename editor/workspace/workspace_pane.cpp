@@ -387,11 +387,24 @@ WorkspaceTabCloseResult WorkspacePane::request_close_active_tab() {
 	if (!type) {
 		return WorkspaceTabCloseResult::CLOSE;
 	}
-	const WorkspaceTabCloseResult result = type->request_close(*tab);
+	// The tab is identified by its stable id so a deferred close (an async
+	// save/discard prompt) removes the right tab even if the index shifted.
+	const int stable_id = tab->get_stable_id();
+	const Callable on_deferred_close = callable_mp(this, &WorkspacePane::_on_deferred_tab_closed).bind(stable_id);
+	const WorkspaceTabCloseResult result = type->request_close(*tab, on_deferred_close);
 	if (result == WorkspaceTabCloseResult::CLOSE) {
 		remove_tab(active_tab_index);
 	}
 	return result;
+}
+
+void WorkspacePane::_on_deferred_tab_closed(int p_stable_id) {
+	for (int i = 0; i < tabs.size(); i++) {
+		if (tabs[i].get_stable_id() == p_stable_id) {
+			remove_tab(i);
+			return;
+		}
+	}
 }
 
 StringName WorkspacePane::get_content_type() const {

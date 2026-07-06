@@ -43,6 +43,7 @@
 
 #include "scene/gui/code_edit.h"
 #include "scene/gui/control.h"
+#include "scene/gui/dialogs.h"
 #include "scene/main/window.h"
 #include "scene/resources/text_file.h"
 
@@ -291,6 +292,15 @@ TEST_CASE("[Editor][script-view-persistence] Multi script leaves round-trip per-
 	memdelete(controller2);
 }
 
+static ConfirmationDialog *find_erase_confirm(ScriptEditorView *p_view) {
+	for (int i = 0; i < p_view->get_child_count(); i++) {
+		if (ConfirmationDialog *dialog = Object::cast_to<ConfirmationDialog>(p_view->get_child(i))) {
+			return dialog;
+		}
+	}
+	return nullptr;
+}
+
 static ScriptLeaf *find_mounted_script_leaf(WorkspacePane *p_pane) {
 	Control *host = p_pane ? p_pane->get_chrome_host() : nullptr;
 	if (!host) {
@@ -520,11 +530,51 @@ TEST_CASE("[Editor][script-tab-dirty-close-prompts] Closing a dirty script tab r
 	h.pump();
 	REQUIRE(se->is_unsaved());
 
-	// Closing a dirty tab defers to the existing save/discard/cancel prompt and,
-	// while it is unresolved (cancel), the workspace tab stays.
-	const WorkspaceTabCloseResult result = pane->request_close_active_tab();
+	ConfirmationDialog *prompt = find_erase_confirm(view);
+	REQUIRE(prompt != nullptr);
+
+	// Closing a dirty tab defers to the existing save/discard/cancel prompt.
+	WorkspaceTabCloseResult result = pane->request_close_active_tab();
 	CHECK(result == WorkspaceTabCloseResult::DEFERRED);
 	CHECK(pane->get_tab_count() == 1);
+
+	// Cancel keeps the tab.
+	prompt->emit_signal(SNAME("canceled"));
+	h.pump();
+	CHECK(pane->get_tab_count() == 1);
+
+	// Re-request, then Discard: the workspace tab and its canonical entry go away.
+	result = pane->request_close_active_tab();
+	CHECK(result == WorkspaceTabCloseResult::DEFERRED);
+	prompt->emit_signal(SNAME("custom_action"), "discard");
+	h.pump();
+	CHECK(pane->get_tab_count() == 0);
+	WorkspaceTab discarded;
+	WorkspaceTabLocation discarded_location;
+	CHECK_FALSE(registry.find_canonical(StringName("script"), path, discarded, discarded_location));
+
+	// Save path also removes the workspace tab once the prompt confirms.
+	const String save_path = write_temp_text_file("dirty_save.txt", "content\n");
+	REQUIRE_FALSE(save_path.is_empty());
+	open_script_tab(pane, registry, save_path);
+	h.pump();
+	ScriptLeaf *save_leaf = find_mounted_script_leaf(pane);
+	REQUIRE(save_leaf != nullptr);
+	ScriptEditorView *save_view = save_leaf->get_script_editor_view();
+	REQUIRE(save_view != nullptr);
+	ScriptEditorBase *save_se = Object::cast_to<ScriptEditorBase>(save_view->get_tab_container()->get_tab_control(0));
+	REQUIRE(save_se != nullptr);
+	save_se->get_code_editor()->get_text_editor()->insert_text_at_caret("dirty");
+	h.pump();
+	REQUIRE(save_se->is_unsaved());
+
+	ConfirmationDialog *save_prompt = find_erase_confirm(save_view);
+	REQUIRE(save_prompt != nullptr);
+	result = pane->request_close_active_tab();
+	CHECK(result == WorkspaceTabCloseResult::DEFERRED);
+	save_prompt->emit_signal(SNAME("confirmed"));
+	h.pump();
+	CHECK(pane->get_tab_count() == 0);
 
 	h.unmount();
 	memdelete(controller);

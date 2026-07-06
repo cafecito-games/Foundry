@@ -125,7 +125,15 @@ void ScriptLeaf::request_workspace_focus() {
 		if (workspace) {
 			for (WorkspaceLeafNode *leaf : workspace->get_leaves()) {
 				WorkspacePane *pane = leaf->get_workspace_pane();
-				if (pane && pane->get_script_leaf() == this) {
+				if (!pane) {
+					continue;
+				}
+				// Match the pane's legacy bridge leaf as well as a script surface
+				// mounted for a ScriptResourceTab inside the pane's chrome host, so a
+				// script tab hosted beside scene content can still focus its pane.
+				const bool is_bridge_leaf = pane->get_script_leaf() == this;
+				const bool is_mounted_surface = pane->get_chrome_host() && pane->get_chrome_host()->is_ancestor_of(this);
+				if (is_bridge_leaf || is_mounted_surface) {
 					workspace->request_leaf_focus(leaf->get_leaf_id());
 					return;
 				}

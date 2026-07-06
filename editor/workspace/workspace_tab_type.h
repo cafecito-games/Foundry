@@ -33,6 +33,7 @@
 #include "core/object/ref_counted.h"
 #include "core/string/string_name.h"
 #include "core/string/ustring.h"
+#include "core/variant/callable.h"
 #include "core/variant/dictionary.h"
 
 #include "editor/workspace/workspace_tab.h"
@@ -63,7 +64,13 @@ public:
 	virtual void mount(WorkspaceTab &p_tab, Control *p_chrome_host) = 0;
 	virtual void unmount(WorkspaceTab &p_tab) = 0;
 	virtual void activate(WorkspaceTab &p_tab) = 0;
-	virtual WorkspaceTabCloseResult request_close(WorkspaceTab &p_tab) = 0;
+
+	// Request that the tab close. Returns CLOSE for an immediate close, CANCEL to
+	// abort, or DEFERRED when the type is driving its own confirmation flow. For
+	// a DEFERRED result the type invokes p_on_deferred_close once (and only once)
+	// if the flow ultimately resolves to a close; it is not invoked if the flow
+	// is cancelled. The workspace uses this to drop the tab after an async prompt.
+	virtual WorkspaceTabCloseResult request_close(WorkspaceTab &p_tab, const Callable &p_on_deferred_close = Callable()) = 0;
 	virtual Dictionary save_payload(const WorkspaceTab &p_tab) const = 0;
 	virtual void restore_payload(WorkspaceTab &p_tab, const Dictionary &p_payload) const = 0;
 };

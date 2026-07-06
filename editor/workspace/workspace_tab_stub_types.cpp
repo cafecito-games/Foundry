@@ -71,7 +71,7 @@ void SceneTabStub::unmount(WorkspaceTab &p_tab) {
 void SceneTabStub::activate(WorkspaceTab &p_tab) {
 }
 
-WorkspaceTabCloseResult SceneTabStub::request_close(WorkspaceTab &p_tab) {
+WorkspaceTabCloseResult SceneTabStub::request_close(WorkspaceTab &p_tab, const Callable &p_on_deferred_close) {
 	return WorkspaceTabCloseResult::CLOSE;
 }
 
