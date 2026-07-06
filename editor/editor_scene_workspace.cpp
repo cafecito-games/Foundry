@@ -166,11 +166,16 @@ WorkspaceLeafNode *EditorSceneWorkspace::handle_tab_drop(int p_source_pane_id, i
 		sync_scene_tabs_from_editor_data();
 	} else {
 		// Generic move: take_tab captures the type payload and removes it from the
-		// source pane; add_tab mounts it in the destination. Never prompts.
+		// source pane; add_tab appends it to the destination. Never prompts.
 		WorkspaceTab taken = source_pane->take_tab(p_source_tab_index);
 		WorkspacePane *dest_pane = dest_leaf->get_workspace_pane();
 		ERR_FAIL_NULL_V(dest_pane, nullptr);
 		dest_pane->add_tab(taken);
+		// add_tab only auto-activates the first tab in a pane; a tab dropped into a
+		// pane that already has tabs would otherwise stay inactive and unmounted,
+		// unlike a scene move which makes the moved scene current. Activate it so
+		// the dropped tab is the one shown, matching the scene path.
+		dest_pane->set_active_tab(dest_pane->get_tab_count() - 1);
 	}
 
 	if (source_leaf != dest_leaf) {
