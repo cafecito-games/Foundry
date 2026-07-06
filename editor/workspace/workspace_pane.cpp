@@ -366,10 +366,10 @@ void WorkspacePane::sync_scene_tabs_from_editor_data() {
 		const int history_id = editor_data->get_scene_history_id(scene_idx);
 		const String key = SceneTabType::resource_key_for_scene(*editor_data, scene_idx);
 		int stable_id = tab_registry ? tab_registry->allocate_stable_id() : scene_idx;
-		if (WorkspaceTab *existing = existing_scene_tabs_by_history.getptr(history_id)) {
-			stable_id = existing->get_stable_id();
-		} else if (WorkspaceTab *existing = existing_scene_tabs_by_key.getptr(key)) {
-			stable_id = existing->get_stable_id();
+		if (WorkspaceTab *existing_history_tab = existing_scene_tabs_by_history.getptr(history_id)) {
+			stable_id = existing_history_tab->get_stable_id();
+		} else if (WorkspaceTab *existing_key_tab = existing_scene_tabs_by_key.getptr(key)) {
+			stable_id = existing_key_tab->get_stable_id();
 		}
 		rebuilt_tabs.push_back(SceneTabType::make_tab_for_scene(*editor_data, scene_idx, stable_id));
 	}
