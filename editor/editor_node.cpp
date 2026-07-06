@@ -3105,7 +3105,6 @@ void EditorNode::_edit_current(bool p_skip_foreign, bool p_skip_inspector_update
 
 	bool is_resource = current_obj->is_class("Resource");
 	bool is_node = current_obj->is_class("Node");
-	bool stay_in_script_editor_on_node_selected = bool(EDITOR_GET("text_editor/behavior/navigation/stay_in_script_editor_on_node_selected"));
 	bool skip_main_plugin = false;
 
 	String editable_info; // None by default.
@@ -3161,11 +3160,11 @@ void EditorNode::_edit_current(bool p_skip_foreign, bool p_skip_inspector_update
 			SceneTreeDock::get_singleton()->set_selection({ current_node });
 			InspectorDock::get_singleton()->update(current_node);
 			if (!inspector_only && !skip_main_plugin) {
-				if (!ScriptEditor::get_singleton()->is_editor_floating() && ScriptEditor::get_singleton()->is_visible_in_tree()) {
-					skip_main_plugin = stay_in_script_editor_on_node_selected;
-				} else {
-					skip_main_plugin = !editor_main_screen->can_auto_switch_screens();
-				}
+				// The script editor is now an always-visible workspace leaf rather than
+				// a main screen, so its visibility no longer means the user is "in" the
+				// script editor. Selecting a scene node always updates the scene editor;
+				// only the normal auto-switch policy applies.
+				skip_main_plugin = !editor_main_screen->can_auto_switch_screens();
 			}
 		} else {
 			SignalsDock::get_singleton()->set_object(nullptr);
