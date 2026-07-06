@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "core/io/config_file.h"
 #include "editor/editor_workspace_leaf_content.h"
 
 #include "scene/gui/control.h"
@@ -55,7 +56,15 @@ class ScriptLeaf : public Control, public WorkspaceLeafContent {
 	Control *surface_host = nullptr;
 	ScriptEditorView *script_editor_view = nullptr;
 
+	// Layout restore runs while the leaf (and its view subtree) is still detached
+	// from the scene tree, so opening scripts is deferred until the leaf is in the
+	// tree; opening a ScriptTextEditor before then dereferences a null get_tree().
+	Ref<ConfigFile> pending_layout;
+	String pending_layout_section;
+	bool has_pending_layout = false;
+
 	void _ensure_script_editor_view();
+	void _apply_pending_layout();
 	void _interaction_gui_input(const Ref<InputEvent> &p_event);
 	void _request_focus();
 

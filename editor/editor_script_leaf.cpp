@@ -47,6 +47,15 @@ void ScriptLeaf::_notification(int p_what) {
 				placeholder_label->add_theme_color_override(SceneStringName(font_color), get_theme_color(SNAME("font_color"), EditorStringName(Editor)));
 			}
 		} break;
+
+		case NOTIFICATION_ENTER_TREE: {
+			if (has_pending_layout) {
+				// The whole leaf subtree (view + tab editors) only has a live
+				// SceneTree once children finish entering after this notification,
+				// so apply the persisted layout deferred rather than inline.
+				callable_mp(this, &ScriptLeaf::_apply_pending_layout).call_deferred();
+			}
+		} break;
 	}
 }
 
@@ -61,6 +70,33 @@ void ScriptLeaf::_ensure_script_editor_view() {
 	controller->create_view_for_leaf(this);
 	if (placeholder_label) {
 		placeholder_label->hide();
+	}
+}
+
+void ScriptLeaf::_apply_pending_layout() {
+	if (!has_pending_layout) {
+		return;
+	}
+	has_pending_layout = false;
+	const Ref<ConfigFile> config = pending_layout;
+	const String section = pending_layout_section;
+	pending_layout.unref();
+	pending_layout_section = String();
+	if (config.is_null()) {
+		return;
+	}
+
+	_ensure_script_editor_view();
+	if (script_editor_view) {
+		script_editor_view->set_view_layout(config, section);
+	} else if (!script_path.is_empty() && ResourceLoader::exists(script_path)) {
+		Ref<Resource> resource = ResourceLoader::load(script_path);
+		if (resource.is_valid()) {
+			_ensure_script_editor_view();
+			if (script_editor_view) {
+				script_editor_view->edit(resource, false);
+			}
+		}
 	}
 }
 
@@ -182,17 +218,15 @@ void ScriptLeaf::load_layout(const Ref<ConfigFile> &p_config, const String &p_se
 	}
 	associated_scene_path = p_config->get_value(p_section, "associated_scene_path", String());
 	associated_scene_root_id = ObjectID();
-	_ensure_script_editor_view();
-	if (script_editor_view) {
-		script_editor_view->set_view_layout(p_config, p_section);
-	} else if (!stored_path.is_empty() && ResourceLoader::exists(stored_path)) {
-		Ref<Resource> resource = ResourceLoader::load(stored_path);
-		if (resource.is_valid()) {
-			_ensure_script_editor_view();
-			if (script_editor_view) {
-				script_editor_view->edit(resource, false);
-			}
-		}
+
+	// Restore runs while this leaf is detached from the scene tree. Opening
+	// scripts now would drive ScriptTextEditor::enable_editor() -> validation,
+	// which dereferences a null get_tree(); defer until the leaf is in the tree.
+	pending_layout = p_config;
+	pending_layout_section = p_section;
+	has_pending_layout = true;
+	if (is_inside_tree()) {
+		callable_mp(this, &ScriptLeaf::_apply_pending_layout).call_deferred();
 	}
 }
 
