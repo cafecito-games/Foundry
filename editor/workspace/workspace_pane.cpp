@@ -230,15 +230,14 @@ void WorkspacePane::_mount_active_tab(bool p_activate) {
 	type->mount(tab, chrome_host);
 	mounted_tab_stable_id = tab.get_stable_id();
 
-	// The scene tab type still bridges to the pane's scene tile; the concrete
-	// ScriptResourceTabType owns and shows its own script surface, so no script
-	// bridge is shown here.
+	// The scene tab type has no surface of its own; it bridges to the pane's
+	// shared scene tile, so mounting a scene tab shows that tile. Every other tab
+	// type (script resource tabs included) owns and mounts its own surface under
+	// the chrome host, so the legacy script_leaf bridge is never shown here --
+	// showing it would stack a second script surface on top of the tab-owned one.
 	if (tab.get_type_id() == StringName("scene") && scene_tile) {
 		scene_tile->show();
 		_fit_chrome_child(scene_tile);
-	} else if (tab.get_type_id() == StringName("script") && script_leaf) {
-		script_leaf->show();
-		_fit_chrome_child(script_leaf);
 	}
 
 	if (p_activate) {
@@ -609,6 +608,14 @@ WorkspaceTabCloseResult WorkspacePane::request_close_tab(int p_index) {
 	ERR_FAIL_INDEX_V(p_index, tabs.size(), WorkspaceTabCloseResult::CANCEL);
 	WorkspaceTabType *type = tab_registry ? tab_registry->find_type(tabs[p_index].get_type_id()) : nullptr;
 	ERR_FAIL_NULL_V(type, WorkspaceTabCloseResult::CANCEL);
+
+	// Inactive tabs unmount their chrome, and a tab type that inspects its live
+	// surface to decide the close policy (e.g. a script tab checking unsaved state)
+	// cannot prompt once that surface is gone. Mount the target tab before asking
+	// so closing an inactive dirty tab still routes through its save/discard flow.
+	if (p_index != active_tab_index || mounted_tab_stable_id != tabs[p_index].get_stable_id()) {
+		set_active_tab(p_index);
+	}
 
 	// Identify the tab by stable id so a deferred close (an async save/discard
 	// prompt) drops the right tab even if the index shifted while the prompt was

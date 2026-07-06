@@ -84,6 +84,8 @@ public:
 	int unmount_count = 0;
 	mutable int last_mounted_stable_id = -1;
 	mutable int last_unmounted_stable_id = -1;
+	// 1 if the tab was the currently-mounted one when request_close ran, else 0.
+	mutable int last_close_mounted = -1;
 
 	StringName type_id() const override { return StringName("recording"); }
 	bool can_open(const String &p_resource) const override { return true; }
@@ -106,7 +108,10 @@ public:
 		last_unmounted_stable_id = p_tab.get_stable_id();
 	}
 	void activate(WorkspaceTab &p_tab) override {}
-	WorkspaceTabCloseResult request_close(WorkspaceTab &p_tab, const Callable &p_on_deferred_close = Callable()) override { return WorkspaceTabCloseResult::CLOSE; }
+	WorkspaceTabCloseResult request_close(WorkspaceTab &p_tab, const Callable &p_on_deferred_close = Callable()) override {
+		last_close_mounted = (last_mounted_stable_id == p_tab.get_stable_id()) ? 1 : 0;
+		return WorkspaceTabCloseResult::CLOSE;
+	}
 	Dictionary save_payload(const WorkspaceTab &p_tab) const override { return Dictionary(); }
 	void restore_payload(WorkspaceTab &p_tab, const Dictionary &p_payload) const override {}
 };
@@ -2360,6 +2365,109 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] mixed-move-no-crash") {
 	CHECK_FALSE(error_detector.has_error);
 
 	h.unmount();
+}
+
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] script-tab-mount-hides-legacy-bridge") {
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspaceLeafNode *scene_leaf = h.workspace->get_focused_leaf();
+	REQUIRE(scene_leaf != nullptr);
+
+	// A script-created pane carries the legacy script_leaf bridge. Mounting a real
+	// script resource tab into it must not also show that bridge: the tab type owns
+	// its own surface, so showing the bridge would stack two script surfaces for
+	// one active tab.
+	WorkspaceLeafNode *script_leaf_node = h.workspace->open_script_leaf(scene_leaf, "res://player.fs");
+	h.pump();
+	REQUIRE(script_leaf_node != nullptr);
+	WorkspacePane *pane = get_leaf_pane(script_leaf_node);
+	REQUIRE(pane != nullptr);
+	REQUIRE(pane->is_script_pane());
+	ScriptLeaf *legacy_bridge = pane->get_script_leaf();
+	REQUIRE(legacy_bridge != nullptr);
+
+	add_script_tab(pane, "res://enemy.fs");
+	h.pump();
+
+	REQUIRE(pane->get_tab_count() == 1);
+	REQUIRE(pane->get_active_tab_index() == 0);
+	CHECK(legacy_bridge->is_visible() == false);
+
+	h.unmount();
+}
+
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] tab-move-into-nonempty-pane-activates") {
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspaceLeafNode *leaf_a = h.workspace->get_focused_leaf();
+	WorkspacePane *pane_a = get_leaf_pane(leaf_a);
+	REQUIRE(pane_a != nullptr);
+
+	add_script_tab(pane_a, "res://keep.fs");
+	add_script_tab(pane_a, "res://move.fs");
+
+	WorkspaceLeafNode *leaf_b = h.workspace->split(leaf_a, false, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
+	h.pump();
+	WorkspacePane *pane_b = get_leaf_pane(leaf_b);
+	REQUIRE(pane_b != nullptr);
+	add_script_tab(pane_b, "res://existing.fs");
+	REQUIRE(pane_b->get_tab_count() == 1);
+	REQUIRE(pane_b->get_active_tab_index() == 0);
+
+	// Center-drop "move.fs" into the already-populated pane B. add_tab only
+	// auto-activates the first tab in a pane, so without an explicit activation the
+	// moved tab would sit inactive/unmounted behind "existing.fs". A scene move
+	// makes the moved scene current; a script move must do the same.
+	WorkspaceLeafNode *dest = h.workspace->handle_tab_drop(leaf_a->get_leaf_id(), 1, leaf_b, EditorSceneWorkspace::DROP_CENTER);
+	h.pump();
+	CHECK(dest == leaf_b);
+	REQUIRE(pane_b->get_tab_count() == 2);
+	CHECK(pane_b->get_tab(1).get_resource_key() == "res://move.fs");
+	CHECK(pane_b->get_active_tab_index() == 1);
+
+	h.unmount();
+}
+
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] inactive-tab-close-mounts-before-prompt") {
+	Control *host = memnew(Control);
+	SceneTree::get_singleton()->get_root()->add_child(host);
+
+	WorkspacePane *pane = memnew(WorkspacePane);
+	host->add_child(pane);
+
+	WorkspaceTabRegistry registry;
+	registry.reset_stable_id_counter();
+	registry.clear_canonical_index();
+	RecordingTabType recording_type;
+	registry.register_type(&recording_type);
+	pane->set_tab_registry(&registry);
+
+	WorkspaceTab first = recording_type.make_tab("first", registry.allocate_stable_id());
+	WorkspaceTab second = recording_type.make_tab("second", registry.allocate_stable_id());
+	pane->add_tab(first);
+	pane->add_tab(second);
+	// "first" is active and mounted; "second" is inactive and never mounted.
+	REQUIRE(pane->get_active_tab_index() == 0);
+
+	// Closing the inactive "second" tab must mount it first so its type inspects a
+	// live surface (e.g. a dirty script running its save/discard prompt) instead of
+	// being asked to close while unmounted, which would bypass the prompt.
+	const WorkspaceTabCloseResult result = pane->request_close_tab(1);
+	CHECK(result == WorkspaceTabCloseResult::CLOSE);
+	CHECK(recording_type.last_close_mounted == 1);
+	CHECK(pane->get_tab_count() == 1);
+	CHECK(pane->get_tab(0).get_resource_key() == "first");
+
+	SceneTree::get_singleton()->get_root()->remove_child(host);
+	memdelete(host);
 }
 
 } // namespace TestSceneWorkspace
