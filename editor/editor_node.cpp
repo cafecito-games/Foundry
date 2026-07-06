@@ -101,6 +101,7 @@
 #include "editor/editor_scene_context.h"
 #include "editor/editor_scene_workspace.h"
 #include "editor/editor_scene_pane_tile.h"
+#include "editor/editor_script_leaf.h"
 #include "editor/editor_tile_drop_overlay.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/export/dedicated_server_export_plugin.h"
@@ -167,6 +168,7 @@
 #include "editor/scene/material_editor_plugin.h"
 #include "editor/scene/particle_process_material_editor_plugin.h"
 #include "editor/script/editor_script.h"
+#include "editor/script/script_editor_plugin.h"
 #include "editor/script/script_text_editor.h"
 #include "editor/script/text_editor.h"
 #include "editor/settings/editor_build_profile.h"
@@ -3104,7 +3106,6 @@ void EditorNode::_edit_current(bool p_skip_foreign, bool p_skip_inspector_update
 
 	bool is_resource = current_obj->is_class("Resource");
 	bool is_node = current_obj->is_class("Node");
-	bool stay_in_script_editor_on_node_selected = bool(EDITOR_GET("text_editor/behavior/navigation/stay_in_script_editor_on_node_selected"));
 	bool skip_main_plugin = false;
 
 	String editable_info; // None by default.
@@ -3160,11 +3161,11 @@ void EditorNode::_edit_current(bool p_skip_foreign, bool p_skip_inspector_update
 			SceneTreeDock::get_singleton()->set_selection({ current_node });
 			InspectorDock::get_singleton()->update(current_node);
 			if (!inspector_only && !skip_main_plugin) {
-				if (!ScriptEditor::get_singleton()->is_editor_floating() && ScriptEditor::get_singleton()->is_visible_in_tree()) {
-					skip_main_plugin = stay_in_script_editor_on_node_selected;
-				} else {
-					skip_main_plugin = !editor_main_screen->can_auto_switch_screens();
-				}
+				// The script editor is now an always-visible workspace leaf rather than
+				// a main screen, so its visibility no longer means the user is "in" the
+				// script editor. Selecting a scene node always updates the scene editor;
+				// only the normal auto-switch policy applies.
+				skip_main_plugin = !editor_main_screen->can_auto_switch_screens();
 			}
 		} else {
 			SignalsDock::get_singleton()->set_object(nullptr);
@@ -3248,12 +3249,14 @@ void EditorNode::_edit_current(bool p_skip_foreign, bool p_skip_inspector_update
 			Script *current_script = Object::cast_to<Script>(current_obj);
 			if (current_script) {
 				if (!changing_scene) {
-					// Only update main editor screen if using in-engine editor.
+					// Load the script first so revealing its leaf associates the leaf
+					// with the freshly-opened script rather than the previous one.
+					main_plugin->edit(current_script);
+
+					// Only reveal the script leaf when using the in-engine editor.
 					if (current_script->is_built_in() || (!bool(EDITOR_GET("text_editor/external/use_external_editor")) && !current_script->get_language()->overrides_external_editor())) {
 						editor_main_screen->select(plugin_index);
 					}
-
-					main_plugin->edit(current_script);
 				}
 			} else if (main_plugin != editor_plugin_screen) {
 				// Unedit previous plugin.
@@ -4444,7 +4447,11 @@ void EditorNode::_remove_edited_scene(bool p_change_tab, bool p_allow_collapse) 
 	editor_data.remove_scene(old_index);
 
 	const bool tile_emptied = editor_data.get_tile_scene_indices(tile_id).is_empty();
-	if (p_allow_collapse && tile_emptied && scene_workspace && scene_workspace->get_leaf_count() > 1) {
+	// Collapse the emptied scene tile when another scene tile remains (counting
+	// scene tiles, not total leaves, so an adjacent script leaf does not keep a
+	// dead tile alive). collapse() keeps focus on a scene tile if it merges into a
+	// script-leaf sibling.
+	if (p_allow_collapse && tile_emptied && scene_workspace && scene_workspace->get_tile_count() > 1) {
 		WorkspaceLeafNode *leaf = scene_workspace->get_leaf_by_id(tile_id);
 		if (leaf) {
 			scene_workspace->collapse(leaf);
@@ -4474,13 +4481,14 @@ void EditorNode::_remove_scene(int index, bool p_change_tab, bool p_allow_collap
 	} else {
 		const int tile_id = editor_data.get_scene_tile(index);
 		editor_data.remove_scene(index);
-		if (p_allow_collapse && scene_workspace && scene_workspace->get_leaf_count() > 1 && editor_data.get_tile_scene_indices(tile_id).is_empty()) {
+		if (p_allow_collapse && scene_workspace && scene_workspace->get_tile_count() > 1 && editor_data.get_tile_scene_indices(tile_id).is_empty()) {
 			WorkspaceLeafNode *leaf = scene_workspace->get_leaf_by_id(tile_id);
+			// collapse() keeps focus on a scene tile even when merging into a script leaf.
 			if (leaf) {
 				scene_workspace->collapse(leaf);
+				_update_all_scene_tabs();
+				_update_tile_display_attachments();
 			}
-			_update_all_scene_tabs();
-			_update_tile_display_attachments();
 		}
 	}
 }
@@ -4792,6 +4800,165 @@ void EditorNode::_reparent_scene_mode_into(ScenePaneTile *p_tile) {
 	if (EditorTileDropOverlay *overlay = p_tile->get_drop_overlay()) {
 		host->move_child(overlay, -1);
 	}
+}
+
+void EditorNode::_reparent_script_surface_into(ScriptLeaf *p_leaf) {
+	if (!editor_main_screen || !p_leaf) {
+		return;
+	}
+	VBoxContainer *app_screen = editor_main_screen->get_app_screen_control();
+	if (!app_screen) {
+		return;
+	}
+	Control *host = p_leaf->get_surface_host();
+	if (!host) {
+		return;
+	}
+	if (app_screen->get_parent() != host) {
+		if (app_screen->get_parent()) {
+			app_screen->get_parent()->remove_child(app_screen);
+		}
+		host->add_child(app_screen);
+		app_screen->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+		app_screen->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+		app_screen->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	}
+	app_screen->show();
+
+	// The script editor keeps its own wrapper hidden until made visible; without
+	// this the leaf would host an empty app-screen container instead of the editor.
+	if (EditorPlugin *script_plugin = editor_main_screen->get_plugin_by_name("Script")) {
+		script_plugin->make_visible(true);
+	}
+}
+
+void EditorNode::_detach_script_surface() {
+	if (!editor_main_screen || !script_surface_home) {
+		return;
+	}
+	VBoxContainer *app_screen = editor_main_screen->get_app_screen_control();
+	if (!app_screen) {
+		return;
+	}
+	if (app_screen->get_parent() != script_surface_home) {
+		if (app_screen->get_parent()) {
+			app_screen->get_parent()->remove_child(app_screen);
+		}
+		script_surface_home->add_child(app_screen);
+		app_screen->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	}
+	app_screen->hide();
+	if (EditorPlugin *script_plugin = editor_main_screen ? editor_main_screen->get_plugin_by_name("Script") : nullptr) {
+		script_plugin->make_visible(false);
+	}
+}
+
+void EditorNode::_connect_script_leaf_sync() {
+	ScriptEditor *script_editor = ScriptEditor::get_singleton();
+	if (!script_editor) {
+		return;
+	}
+	// Keep the leaf's recorded script in sync when the embedded editor switches or
+	// closes its current tab. The signals carry a script argument the handler does
+	// not need, and are deferred because script_close fires before the tab is
+	// removed, so the sync runs once the current-script state has settled.
+	const Callable sync = callable_mp(this, &EditorNode::_sync_script_leaf_path).unbind(1);
+	if (!script_editor->is_connected("editor_script_changed", sync)) {
+		script_editor->connect("editor_script_changed", sync, CONNECT_DEFERRED);
+	}
+	if (!script_editor->is_connected("script_close", sync)) {
+		script_editor->connect("script_close", sync, CONNECT_DEFERRED);
+	}
+}
+
+void EditorNode::_sync_script_leaf_path() {
+	if (!scene_workspace || !ScriptEditor::get_singleton()) {
+		return;
+	}
+	WorkspaceLeafNode *leaf = scene_workspace->get_script_leaf();
+	if (!leaf || !leaf->get_leaf_content()) {
+		return;
+	}
+	ScriptLeaf *script_leaf = Object::cast_to<ScriptLeaf>(leaf->get_leaf_content()->get_root_control());
+	if (!script_leaf) {
+		return;
+	}
+	String path;
+	int line = 0;
+	int column = 0;
+	if (ScriptEditor::get_singleton()->get_current_script_view_state(path, line, column) && !path.is_empty()) {
+		script_leaf->set_script_path(path);
+	} else {
+		// No script is open in the shared surface (e.g. the last tab was closed);
+		// clear the leaf so a stale script is not persisted and reopened.
+		script_leaf->set_script_path(String());
+	}
+}
+
+void EditorNode::_close_script_leaf() {
+	if (!scene_workspace) {
+		return;
+	}
+	WorkspaceLeafNode *leaf = scene_workspace->get_script_leaf();
+	if (!leaf) {
+		return;
+	}
+	// Rescue the shared script surface back to its home before the leaf (and its
+	// surface host) is freed, then remove the now-empty script leaf.
+	_detach_script_surface();
+	if (scene_workspace->get_leaf_count() > 1) {
+		scene_workspace->collapse(leaf);
+	}
+}
+
+void EditorNode::reveal_script_leaf() {
+	if (!scene_workspace) {
+		return;
+	}
+
+	// The script leaf lives in the workspace, which is hidden while a global screen
+	// (Game) is showing. Return to a scene mode first so the leaf is not masked.
+	if (editor_main_screen && editor_main_screen->is_global_screen_selected()) {
+		if (editor_main_screen->is_button_enabled(EditorMainScreen::EDITOR_2D)) {
+			editor_main_screen->select(EditorMainScreen::EDITOR_2D);
+		} else if (editor_main_screen->is_button_enabled(EditorMainScreen::EDITOR_3D)) {
+			editor_main_screen->select(EditorMainScreen::EDITOR_3D);
+		}
+	}
+
+	// Split beside the focused scene tile; fall back to any scene leaf.
+	WorkspaceLeafNode *source = scene_workspace->get_focused_leaf();
+	if (!source || !source->get_pane_tile()) {
+		source = nullptr;
+		for (WorkspaceLeafNode *leaf : scene_workspace->get_leaves()) {
+			if (leaf->get_pane_tile()) {
+				source = leaf;
+				break;
+			}
+		}
+	}
+	if (!source) {
+		return;
+	}
+
+	// Associate the leaf with whatever script the shared surface is currently editing.
+	String script_path;
+	if (ScriptEditor::get_singleton()) {
+		int line = 0;
+		int column = 0;
+		ScriptEditor::get_singleton()->get_current_script_view_state(script_path, line, column);
+	}
+
+	WorkspaceLeafNode *leaf = scene_workspace->open_script_leaf(source, script_path);
+	ERR_FAIL_NULL(leaf);
+	WorkspaceLeafContent *content = leaf->get_leaf_content();
+	ScriptLeaf *script_leaf = content ? Object::cast_to<ScriptLeaf>(content->get_root_control()) : nullptr;
+	if (script_leaf) {
+		_reparent_script_surface_into(script_leaf);
+	}
+
+	_connect_script_leaf_sync();
+	_sync_script_leaf_path();
 }
 
 void EditorNode::_update_tile_display_attachments() {
@@ -6747,6 +6914,11 @@ void EditorNode::_on_leaf_added(int p_leaf_id) {
 }
 
 void EditorNode::_on_leaf_removed(int p_leaf_id, int p_successor_leaf_id) {
+	// If the closed leaf hosted the shared script surface, rescue the surface back
+	// to its home before the leaf (and its surface host) is freed by collapse.
+	if (scene_workspace && !scene_workspace->get_script_leaf()) {
+		_detach_script_surface();
+	}
 	editor_data.migrate_tile_scenes(p_leaf_id, p_successor_leaf_id);
 	editor_data.unregister_tile(p_leaf_id);
 	_update_all_scene_tabs();
@@ -6962,7 +7134,8 @@ void EditorNode::_load_workspace_from_config(const Ref<ConfigFile> &p_config_fil
 	}
 
 	// restore_from_config() frees the outgoing workspace tree. Detach the shared
-	// scene-mode surface first so it is not destroyed with the old tile's content host.
+	// scene-mode and script surfaces first so they are not destroyed with the old
+	// tile/leaf content hosts.
 	if (editor_main_screen) {
 		if (VBoxContainer *scene_mode = editor_main_screen->get_scene_mode_control()) {
 			if (scene_mode->get_parent()) {
@@ -6970,11 +7143,24 @@ void EditorNode::_load_workspace_from_config(const Ref<ConfigFile> &p_config_fil
 			}
 		}
 	}
+	_detach_script_surface();
 
 	scene_workspace->restore_from_config(p_config_file);
 
 	for (WorkspaceLeafNode *leaf : scene_workspace->get_leaves()) {
 		_on_leaf_added(leaf->get_leaf_id());
+	}
+
+	// The persisted focus can point at a script leaf, but the editor's focused tile
+	// must be a scene tile; fall back to the first scene tile when it is not.
+	WorkspaceLeafNode *restored_focus = scene_workspace->get_focused_leaf();
+	if (!restored_focus || !restored_focus->get_pane_tile()) {
+		for (WorkspaceLeafNode *leaf : scene_workspace->get_leaves()) {
+			if (leaf->get_pane_tile()) {
+				scene_workspace->set_focused_leaf(leaf->get_leaf_id());
+				break;
+			}
+		}
 	}
 	editor_data.set_focused_tile_id(scene_workspace->get_focused_leaf_id());
 	_bind_all_leaf_docks();
@@ -6984,6 +7170,29 @@ void EditorNode::_load_workspace_from_config(const Ref<ConfigFile> &p_config_fil
 		_update_focused_dock_singletons(focused_leaf->get_pane_tile());
 	}
 	_reparent_scene_mode_into(scene_workspace->get_focused_tile());
+
+	// Re-host the script surface into a restored script leaf and reopen its script.
+	// A feature profile that disables scripts is applied before layout restore, so
+	// honor it by closing the restored script leaf instead of reopening it.
+	if (editor_main_screen && !editor_main_screen->is_button_enabled(EditorMainScreen::EDITOR_SCRIPT)) {
+		_close_script_leaf();
+	} else if (WorkspaceLeafNode *script_leaf_node = scene_workspace->get_script_leaf()) {
+		WorkspaceLeafContent *content = script_leaf_node->get_leaf_content();
+		ScriptLeaf *script_leaf = content ? Object::cast_to<ScriptLeaf>(content->get_root_control()) : nullptr;
+		if (script_leaf) {
+			// Host the shared surface in the restored leaf, but do not reopen the
+			// script here: ScriptEditorPlugin::set_window_layout() restores the open
+			// scripts later in _load_editor_layout() (honoring restore_scripts_on_load
+			// and the saved tab order). Pre-opening would force this leaf's script to
+			// the front. Keep the leaf in sync with the editor afterwards; the deferred
+			// sync runs after that layout load, so it reflects (and, when scripts were
+			// not restored, clears) the leaf's recorded script correctly.
+			_reparent_script_surface_into(script_leaf);
+			_connect_script_leaf_sync();
+			callable_mp(this, &EditorNode::_sync_script_leaf_path).call_deferred();
+		}
+	}
+
 	_set_current_scene_nocheck(editor_data.get_tile_current_scene(editor_data.get_focused_tile_id()));
 }
 
@@ -7432,16 +7641,11 @@ void EditorNode::_prepare_save_confirmation_popup() {
 }
 
 void EditorNode::_toggle_distraction_free_mode() {
+	// Script now lives inside the scene workspace rather than a separate main
+	// screen, so distraction-free is a single workspace-wide state.
 	if (EDITOR_GET("interface/editor/separate_distraction_mode")) {
-		int screen = editor_main_screen->get_selected_index();
-
-		if (screen == EditorMainScreen::EDITOR_SCRIPT) {
-			script_distraction_free = !script_distraction_free;
-			set_distraction_free_mode(script_distraction_free);
-		} else {
-			scene_distraction_free = !scene_distraction_free;
-			set_distraction_free_mode(scene_distraction_free);
-		}
+		scene_distraction_free = !scene_distraction_free;
+		set_distraction_free_mode(scene_distraction_free);
 	} else {
 		set_distraction_free_mode(distraction_free->is_pressed());
 	}
@@ -7451,12 +7655,7 @@ void EditorNode::update_distraction_free_mode() {
 	if (!EDITOR_GET("interface/editor/separate_distraction_mode")) {
 		return;
 	}
-	int screen = editor_main_screen->get_selected_index();
-	if (screen == EditorMainScreen::EDITOR_SCRIPT) {
-		set_distraction_free_mode(script_distraction_free);
-	} else {
-		set_distraction_free_mode(scene_distraction_free);
-	}
+	set_distraction_free_mode(scene_distraction_free);
 }
 
 void EditorNode::update_global_screen_visibility() {
@@ -7466,11 +7665,8 @@ void EditorNode::update_global_screen_visibility() {
 	const bool show_global = editor_main_screen->is_global_screen_selected();
 	global_screen_host->set_visible(show_global);
 	scene_workspace->set_visible(!show_global);
-	if (VBoxContainer *app_screen = editor_main_screen->get_app_screen_control()) {
-		if (Control *app_parent = Object::cast_to<Control>(app_screen->get_parent())) {
-			app_parent->set_visible(!show_global && app_screen->is_visible());
-		}
-	}
+	// The script surface (app_screen) is hosted inside a workspace ScriptLeaf, so it
+	// follows the workspace visibility above; it is not toggled separately here.
 }
 
 void EditorNode::set_distraction_free_mode(bool p_enter) {
@@ -8777,6 +8973,12 @@ void EditorNode::_feature_profile_changed() {
 			editor_main_screen->set_button_enabled(EditorMainScreen::EDITOR_GAME, true);
 		}
 	}
+
+	// The script editor now lives in a workspace leaf rather than a toolbar tab, so
+	// disabling the script feature must also close any open script leaf.
+	if (editor_main_screen && !editor_main_screen->is_button_enabled(EditorMainScreen::EDITOR_SCRIPT)) {
+		_close_script_leaf();
+	}
 }
 
 void EditorNode::_bind_methods() {
@@ -9695,6 +9897,9 @@ EditorNode::EditorNode() {
 	srt->add_child(app_screen);
 	app_screen->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	app_screen->hide();
+	// The script surface lives here until a ScriptLeaf hosts it; it returns here
+	// when the last script leaf is closed.
+	script_surface_home = srt;
 
 	global_screen_host = memnew(Control);
 	global_screen_host->set_name("GlobalScreenHost");

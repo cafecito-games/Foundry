@@ -75,6 +75,10 @@ private:
 	Vector<EditorPlugin *> editor_table;
 	HashMap<String, EditorPlugin *> main_editor_plugins;
 
+	// Script has no toolbar tab (it opens as a workspace leaf), so its availability
+	// is tracked here instead of via its hidden button's visibility.
+	bool app_screen_enabled = true;
+
 	int _get_current_main_editor() const;
 	ScreenPlacement _get_plugin_placement(const String &p_plugin_name) const;
 
