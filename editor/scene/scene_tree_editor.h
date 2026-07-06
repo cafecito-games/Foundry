@@ -203,6 +203,7 @@ class SceneTreeEditor : public Control {
 
 	void _selection_changed();
 	Node *get_scene_node() const;
+	Node *_get_node_from_tree_item(TreeItem *p_item) const;
 
 	Variant get_drag_data_fw(const Point2 &p_point, Control *p_from);
 	bool can_drop_data_fw(const Point2 &p_point, const Variant &p_data, Control *p_from) const;

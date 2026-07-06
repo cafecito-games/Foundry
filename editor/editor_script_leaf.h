@@ -76,6 +76,7 @@ public:
 	// when the script has no associated scene.
 	void set_associated_scene_root(Node *p_scene_root);
 	Node *get_associated_scene_root() const;
+	String get_associated_scene_path() const { return associated_scene_path; }
 	bool has_associated_scene() const { return !associated_scene_path.is_empty(); }
 
 	void request_workspace_focus();

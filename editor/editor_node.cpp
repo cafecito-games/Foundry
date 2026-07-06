@@ -7204,6 +7204,31 @@ void EditorNode::_save_workspace_to_config(Ref<ConfigFile> p_config_file) {
 	}
 }
 
+void EditorNode::_resolve_restored_script_leaf_associated_scenes() {
+	if (!scene_workspace) {
+		return;
+	}
+
+	WorkspaceLeafNode *script_leaf_node = scene_workspace->get_script_leaf();
+	if (!script_leaf_node) {
+		return;
+	}
+
+	WorkspaceLeafContent *content = script_leaf_node->get_leaf_content();
+	ScriptLeaf *script_leaf = content ? Object::cast_to<ScriptLeaf>(content->get_root_control()) : nullptr;
+	if (!script_leaf || script_leaf->get_associated_scene_root() || script_leaf->get_associated_scene_path().is_empty()) {
+		return;
+	}
+
+	const String scene_path = script_leaf->get_associated_scene_path();
+	for (int i = 0; i < editor_data.get_edited_scene_count(); i++) {
+		if (editor_data.get_scene_path(i) == scene_path) {
+			script_leaf->set_associated_scene_root(editor_data.get_edited_scene_root(i));
+			return;
+		}
+	}
+}
+
 void EditorNode::_load_workspace_from_config(const Ref<ConfigFile> &p_config_file) {
 	if (!scene_workspace || !EditorSceneWorkspace::has_workspace_session(p_config_file)) {
 		return;
@@ -7268,6 +7293,8 @@ void EditorNode::_load_workspace_from_config(const Ref<ConfigFile> &p_config_fil
 			callable_mp(this, &EditorNode::_sync_script_leaf_path).call_deferred();
 		}
 	}
+
+	_resolve_restored_script_leaf_associated_scenes();
 
 	_set_current_scene_nocheck(editor_data.get_tile_current_scene(editor_data.get_focused_tile_id()));
 }

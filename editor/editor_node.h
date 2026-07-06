@@ -716,6 +716,7 @@ private:
 
 	void _save_workspace_to_config(Ref<ConfigFile> p_config_file);
 	void _load_workspace_from_config(const Ref<ConfigFile> &p_config_file);
+	void _resolve_restored_script_leaf_associated_scenes();
 	void _reparent_scene_mode_into(ScenePaneTile *p_tile);
 	void _reparent_script_surface_into(ScriptLeaf *p_leaf);
 	void _detach_script_surface();
