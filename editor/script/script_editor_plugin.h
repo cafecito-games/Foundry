@@ -255,6 +255,7 @@ typedef ScriptEditorBase *(*CreateScriptEditorFunc)(const Ref<Resource> &p_resou
 class EditorScriptCodeCompletionCache;
 class FindInFilesContainer;
 class FindInFilesDialog;
+class ScriptLeaf;
 struct ScriptRefactorApplyPlan;
 
 class ScriptEditor : public PanelContainer {
@@ -568,13 +569,32 @@ class ScriptEditor : public PanelContainer {
 	void _close_builtin_scripts_from_scene(const String &p_scene);
 
 	static ScriptEditor *script_editor;
+	static ScriptEditor *controller_editor;
+	static ScriptEditor *focused_leaf_editor;
+	static Vector<ScriptEditor *> leaf_editors;
+
+	bool embedded_in_leaf = false;
+	ScriptLeaf *leaf_owner = nullptr;
 
 protected:
 	void _notification(int p_what);
 	static void _bind_methods();
 
 public:
-	static ScriptEditor *get_singleton() { return script_editor; }
+	static ScriptEditor *get_singleton();
+	static ScriptEditor *get_controller() { return controller_editor; }
+	static void register_leaf_editor(ScriptEditor *p_editor);
+	static void unregister_leaf_editor(ScriptEditor *p_editor);
+	static void set_focused_leaf_editor(ScriptEditor *p_editor);
+	static void for_each_editor(const Callable &p_callback);
+	static void set_all_leaf_editors_visible(bool p_visible);
+
+	bool is_embedded_in_leaf() const { return embedded_in_leaf; }
+	ScriptLeaf *get_leaf_owner() const { return leaf_owner; }
+	void set_leaf_owner(ScriptLeaf *p_leaf) { leaf_owner = p_leaf; }
+	void inherit_syntax_highlighters_from(const ScriptEditor *p_source);
+
+	~ScriptEditor();
 
 	bool toggle_files_panel();
 	bool is_files_panel_toggled();
@@ -588,6 +608,8 @@ public:
 	void ensure_select_current();
 
 	bool is_editor_floating();
+
+	WindowWrapper *get_window_wrapper() const { return window_wrapper; }
 
 	_FORCE_INLINE_ bool edit(const Ref<Resource> &p_resource, bool p_grab_focus = true) { return edit(p_resource, -1, 0, p_grab_focus); }
 	bool edit(const Ref<Resource> &p_resource, int p_line, int p_col, bool p_grab_focus = true);
@@ -637,7 +659,7 @@ public:
 
 	static void register_create_script_editor_function(CreateScriptEditorFunc p_func);
 
-	ScriptEditor(WindowWrapper *p_wrapper);
+	ScriptEditor(WindowWrapper *p_wrapper, bool p_embedded_in_leaf = false);
 };
 
 class ScriptEditorPlugin : public EditorPlugin {

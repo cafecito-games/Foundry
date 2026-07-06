@@ -1059,21 +1059,30 @@ TEST_CASE("[SceneTree][Editor] script-leaf-open") {
 	CHECK(script_leaf->get_script_path() == "res://player.fs");
 	CHECK(script_leaf->get_tab_title() == "player.fs");
 
-	// Re-opening reuses the single script leaf (one embedded surface in U15a) and
-	// re-points it rather than opening a second one.
+	// Opening a different script creates a second script leaf (U15c).
+	WorkspaceLeafNode *second_leaf = h.workspace->open_script_leaf(scene_leaf, "res://enemy.fs");
+	h.pump();
+	CHECK(second_leaf != script_leaf_node);
+	CHECK(h.workspace->get_leaf_count() == 3);
+	CHECK(h.workspace->get_script_leaves().size() == 2);
+	ScriptLeaf *enemy_leaf = Object::cast_to<ScriptLeaf>(second_leaf->get_leaf_content()->get_root_control());
+	REQUIRE(enemy_leaf != nullptr);
+	CHECK(enemy_leaf->get_script_path() == "res://enemy.fs");
+	CHECK(script_leaf->get_script_path() == "res://player.fs");
+
+	// Re-opening the same path reuses the existing leaf rather than splitting again.
 	WorkspaceLeafNode *again = h.workspace->open_script_leaf(scene_leaf, "res://enemy.fs");
 	h.pump();
-	CHECK(again == script_leaf_node);
-	CHECK(h.workspace->get_leaf_count() == 2);
-	CHECK(script_leaf->get_script_path() == "res://enemy.fs");
-	CHECK(script_leaf->get_tab_title() == "enemy.fs");
+	CHECK(again == second_leaf);
+	CHECK(h.workspace->get_leaf_count() == 3);
 
-	// The script leaf (with its script path) round-trips through persistence.
+	// Both script leaves round-trip through persistence.
 	Ref<ConfigFile> config;
 	config.instantiate();
 	EditorSceneWorkspace::save_to_config(config, h.workspace);
 	const int scene_leaf_id = scene_leaf->get_leaf_id();
-	const int script_leaf_id = script_leaf_node->get_leaf_id();
+	const int player_leaf_id = script_leaf_node->get_leaf_id();
+	const int enemy_leaf_id = second_leaf->get_leaf_id();
 
 	h.unmount();
 
@@ -1082,16 +1091,21 @@ TEST_CASE("[SceneTree][Editor] script-leaf-open") {
 	h2.workspace->restore_from_config(config);
 	h2.pump();
 
-	CHECK(h2.workspace->get_leaf_count() == 2);
+	CHECK(h2.workspace->get_leaf_count() == 3);
 	CHECK(h2.workspace->get_leaf_by_id(scene_leaf_id) != nullptr);
-	WorkspaceLeafNode *restored = h2.workspace->get_script_leaf();
-	REQUIRE(restored != nullptr);
-	CHECK(restored->get_leaf_id() == script_leaf_id);
-	REQUIRE(restored->get_leaf_content() != nullptr);
-	ScriptLeaf *restored_leaf = Object::cast_to<ScriptLeaf>(restored->get_leaf_content()->get_root_control());
-	REQUIRE(restored_leaf != nullptr);
-	CHECK(restored_leaf->get_script_path() == "res://enemy.fs");
-	CHECK(restored_leaf->get_tab_title() == "enemy.fs");
+	CHECK(h2.workspace->get_script_leaves().size() == 2);
+	WorkspaceLeafNode *restored_player = h2.workspace->find_script_leaf_for_path("res://player.fs");
+	WorkspaceLeafNode *restored_enemy = h2.workspace->find_script_leaf_for_path("res://enemy.fs");
+	REQUIRE(restored_player != nullptr);
+	REQUIRE(restored_enemy != nullptr);
+	CHECK(restored_player->get_leaf_id() == player_leaf_id);
+	CHECK(restored_enemy->get_leaf_id() == enemy_leaf_id);
+	ScriptLeaf *restored_player_leaf = Object::cast_to<ScriptLeaf>(restored_player->get_leaf_content()->get_root_control());
+	ScriptLeaf *restored_enemy_leaf = Object::cast_to<ScriptLeaf>(restored_enemy->get_leaf_content()->get_root_control());
+	REQUIRE(restored_player_leaf != nullptr);
+	REQUIRE(restored_enemy_leaf != nullptr);
+	CHECK(restored_player_leaf->get_script_path() == "res://player.fs");
+	CHECK(restored_enemy_leaf->get_script_path() == "res://enemy.fs");
 
 	h2.unmount();
 }

@@ -36,13 +36,14 @@
 
 class EditorSceneWorkspace;
 class Label;
+class ScriptEditor;
+class WindowWrapper;
 
 /**
- * Non-scene workspace leaf that hosts the editor's script surface (U15a). It
- * carries the path of the script it represents but has no EditorSceneContext,
- * since a script is a project resource rather than a scene. The live script
- * editing surface is mounted into get_surface_host() by EditorNode; a
- * placeholder label is shown while no surface is mounted.
+ * Non-scene workspace leaf that hosts an embedded script editor surface (U15a/U15c).
+ * Each leaf owns its own ScriptEditor instance so multiple scripts can be edited
+ * side-by-side. The global ScriptEditor controller (menus, find-in-files, debug)
+ * routes actions to the focused leaf's editor.
  */
 class ScriptLeaf : public Control, public WorkspaceLeafContent {
 	FOUNDRY_CLASS(ScriptLeaf, Control);
@@ -53,10 +54,14 @@ class ScriptLeaf : public Control, public WorkspaceLeafContent {
 	ObjectID associated_scene_root_id;
 	Label *placeholder_label = nullptr;
 	Control *surface_host = nullptr;
+	WindowWrapper *window_wrapper = nullptr;
+	ScriptEditor *leaf_script_editor = nullptr;
 
 	void _update_placeholder_visibility();
 	void _interaction_gui_input(const Ref<InputEvent> &p_event);
 	void _request_focus();
+	void _sync_path_from_editor();
+	void _connect_editor_sync();
 
 protected:
 	void _notification(int p_what);
@@ -69,8 +74,13 @@ public:
 	void set_script_path(const String &p_path);
 	String get_script_path() const { return script_path; }
 
-	// Container the live script editing surface is reparented into by EditorNode.
+	// Container the live script editing surface is mounted into.
 	Control *get_surface_host() const { return surface_host; }
+
+	// Per-leaf embedded script editor (U15c).
+	void ensure_embedded_editor();
+	ScriptEditor *get_script_editor() const { return leaf_script_editor; }
+	void open_recorded_script();
 
 	// Scene the open script is attached to (resolved when the leaf opens). Empty
 	// when the script has no associated scene.

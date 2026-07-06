@@ -31,8 +31,11 @@
 #include "editor_script_leaf.h"
 
 #include "core/io/config_file.h"
+#include "core/io/resource_loader.h"
 #include "editor/editor_scene_workspace.h"
 #include "editor/editor_string_names.h"
+#include "editor/gui/window_wrapper.h"
+#include "editor/script/script_editor_plugin.h"
 #include "scene/gui/label.h"
 #include "scene/main/node.h"
 #include "scene/main/viewport.h"
@@ -42,6 +45,12 @@ void ScriptLeaf::_notification(int p_what) {
 		case NOTIFICATION_THEME_CHANGED: {
 			if (placeholder_label) {
 				placeholder_label->add_theme_color_override(SceneStringName(font_color), get_theme_color(SNAME("font_color"), EditorStringName(Editor)));
+			}
+		} break;
+
+		case NOTIFICATION_PREDELETE: {
+			if (leaf_script_editor && ScriptEditor::get_controller() && ScriptEditor::get_singleton() == leaf_script_editor) {
+				ScriptEditor::set_focused_leaf_editor(nullptr);
 			}
 		} break;
 	}
@@ -64,6 +73,69 @@ void ScriptLeaf::_interaction_gui_input(const Ref<InputEvent> &p_event) {
 
 void ScriptLeaf::_request_focus() {
 	request_workspace_focus();
+}
+
+void ScriptLeaf::_sync_path_from_editor() {
+	if (!leaf_script_editor) {
+		return;
+	}
+	String path;
+	int line = 0;
+	int column = 0;
+	if (leaf_script_editor->get_current_script_view_state(path, line, column) && !path.is_empty()) {
+		set_script_path(path);
+	} else {
+		set_script_path(String());
+	}
+}
+
+void ScriptLeaf::_connect_editor_sync() {
+	if (!leaf_script_editor) {
+		return;
+	}
+	const Callable sync = callable_mp(this, &ScriptLeaf::_sync_path_from_editor).unbind(1);
+	if (!leaf_script_editor->is_connected("editor_script_changed", sync)) {
+		leaf_script_editor->connect("editor_script_changed", sync, CONNECT_DEFERRED);
+	}
+	if (!leaf_script_editor->is_connected("script_close", sync)) {
+		leaf_script_editor->connect("script_close", sync, CONNECT_DEFERRED);
+	}
+}
+
+void ScriptLeaf::ensure_embedded_editor() {
+	if (leaf_script_editor) {
+		return;
+	}
+
+	window_wrapper = memnew(WindowWrapper);
+	window_wrapper->set_margins_enabled(true);
+
+	leaf_script_editor = memnew(ScriptEditor(window_wrapper, true));
+	leaf_script_editor->set_leaf_owner(this);
+	if (ScriptEditor *controller = ScriptEditor::get_controller()) {
+		leaf_script_editor->inherit_syntax_highlighters_from(controller);
+	}
+	window_wrapper->set_wrapped_control(leaf_script_editor, Ref<Shortcut>());
+
+	surface_host->add_child(window_wrapper);
+	window_wrapper->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+	window_wrapper->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	window_wrapper->show();
+
+	_connect_editor_sync();
+	_update_placeholder_visibility();
+}
+
+void ScriptLeaf::open_recorded_script() {
+	if (script_path.is_empty()) {
+		return;
+	}
+	ensure_embedded_editor();
+	Ref<Resource> resource = ResourceLoader::load(script_path);
+	if (resource.is_valid()) {
+		leaf_script_editor->edit(resource, -1, 0, true);
+		_sync_path_from_editor();
+	}
 }
 
 void ScriptLeaf::request_workspace_focus() {
@@ -165,14 +237,11 @@ ScriptLeaf::ScriptLeaf() {
 	set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	set_h_size_flags(Control::SIZE_EXPAND_FILL);
 
-	// Host for the live script editing surface, reparented in by EditorNode.
 	surface_host = memnew(Control);
 	surface_host->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 	surface_host->set_mouse_filter(Control::MOUSE_FILTER_PASS);
 	add_child(surface_host);
 
-	// Keep the placeholder in sync as the live surface is mounted/unmounted. The
-	// exit side is deferred so the child count reflects the removal.
 	surface_host->connect(SNAME("child_entered_tree"), callable_mp(this, &ScriptLeaf::_update_placeholder_visibility).unbind(1));
 	surface_host->connect(SNAME("child_exiting_tree"), callable_mp(this, &ScriptLeaf::_update_placeholder_visibility).unbind(1), CONNECT_DEFERRED);
 

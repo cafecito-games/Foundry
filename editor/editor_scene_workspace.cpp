@@ -387,9 +387,28 @@ WorkspaceLeafNode *EditorSceneWorkspace::split_with_content(WorkspaceLeafNode *p
 	return new_leaf;
 }
 
-WorkspaceLeafNode *EditorSceneWorkspace::get_script_leaf() const {
+Vector<WorkspaceLeafNode *> EditorSceneWorkspace::get_script_leaves() const {
+	Vector<WorkspaceLeafNode *> script_leaves;
 	for (WorkspaceLeafNode *leaf : leaves) {
 		if (leaf->get_leaf_content() && leaf->get_leaf_content()->get_content_type() == StringName("script")) {
+			script_leaves.push_back(leaf);
+		}
+	}
+	return script_leaves;
+}
+
+WorkspaceLeafNode *EditorSceneWorkspace::get_script_leaf() const {
+	const Vector<WorkspaceLeafNode *> script_leaves = get_script_leaves();
+	return script_leaves.is_empty() ? nullptr : script_leaves[0];
+}
+
+WorkspaceLeafNode *EditorSceneWorkspace::find_script_leaf_for_path(const String &p_script_path) const {
+	if (p_script_path.is_empty()) {
+		return nullptr;
+	}
+	for (WorkspaceLeafNode *leaf : get_script_leaves()) {
+		ScriptLeaf *script_leaf = leaf->get_leaf_content() ? Object::cast_to<ScriptLeaf>(leaf->get_leaf_content()->get_root_control()) : nullptr;
+		if (script_leaf && script_leaf->get_script_path() == p_script_path) {
 			return leaf;
 		}
 	}
@@ -400,9 +419,9 @@ WorkspaceLeafNode *EditorSceneWorkspace::open_script_leaf(WorkspaceLeafNode *p_s
 	ERR_FAIL_NULL_V(p_source_leaf, nullptr);
 	ERR_FAIL_COND_V(!leaves.has(p_source_leaf), nullptr);
 
-	// U15a hosts a single shared script surface, so reuse an existing script leaf
-	// rather than opening a second one (multiple script leaves is U15c).
-	WorkspaceLeafNode *target = get_script_leaf();
+	// U15c: reuse a leaf only when it already hosts the same script; otherwise
+	// split a new script leaf so different scripts can be edited side-by-side.
+	WorkspaceLeafNode *target = find_script_leaf_for_path(p_script_path);
 	if (!target) {
 		target = split_with_content(p_source_leaf, false, SPLIT_SIDE_SECOND, StringName("script"));
 		ERR_FAIL_NULL_V(target, nullptr);

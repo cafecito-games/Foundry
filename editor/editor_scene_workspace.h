@@ -150,10 +150,12 @@ public:
 	void collapse(WorkspaceLeafNode *p_leaf);
 	bool move_content(WorkspaceLeafNode *p_from_leaf, WorkspaceLeafNode *p_to_leaf);
 
-	// Script leaves (U15a): at most one script leaf hosts the shared script surface.
+	// Script leaves (U15a/U15c): each leaf hosts its own embedded script editor.
+	Vector<WorkspaceLeafNode *> get_script_leaves() const;
 	WorkspaceLeafNode *get_script_leaf() const;
-	// Reveal the script leaf pointed at p_script_path, splitting beside p_source_leaf
-	// if none exists yet. Returns the script leaf.
+	WorkspaceLeafNode *find_script_leaf_for_path(const String &p_script_path) const;
+	// Reveal a script leaf for p_script_path, splitting beside p_source_leaf when
+	// no leaf already hosts that script. Returns the script leaf.
 	WorkspaceLeafNode *open_script_leaf(WorkspaceLeafNode *p_source_leaf, const String &p_script_path);
 
 	// Drag-a-tab drop resolution (center = move scene; edge = split + move).

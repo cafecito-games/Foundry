@@ -721,11 +721,10 @@ private:
 	void _load_workspace_from_config(const Ref<ConfigFile> &p_config_file);
 	void _resolve_restored_script_leaf_associated_scenes();
 	void _reparent_scene_mode_into(ScenePaneTile *p_tile);
-	void _reparent_script_surface_into(ScriptLeaf *p_leaf);
-	void _detach_script_surface();
-	void _close_script_leaf();
-	void _sync_script_leaf_path();
-	void _connect_script_leaf_sync();
+	void _hide_controller_script_surface();
+	void _close_all_script_leaves();
+	void _sync_script_leaf_path(ScriptLeaf *p_script_leaf);
+	void _connect_script_leaf_sync(ScriptLeaf *p_script_leaf);
 	void _update_tile_display_attachments();
 	void _sync_scene_viewport_2d_state_with_main_screen();
 	void _sync_focused_tile_chrome(ScenePaneTile *p_tile);

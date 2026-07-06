@@ -532,8 +532,86 @@ ScriptEditorQuickOpen::ScriptEditorQuickOpen() {
 /////////////////////////////////
 
 ScriptEditor *ScriptEditor::script_editor = nullptr;
+ScriptEditor *ScriptEditor::controller_editor = nullptr;
+ScriptEditor *ScriptEditor::focused_leaf_editor = nullptr;
+Vector<ScriptEditor *> ScriptEditor::leaf_editors;
 
 /*** SCRIPT EDITOR ******/
+
+ScriptEditor *ScriptEditor::get_singleton() {
+	if (focused_leaf_editor) {
+		return focused_leaf_editor;
+	}
+	return controller_editor ? controller_editor : script_editor;
+}
+
+void ScriptEditor::register_leaf_editor(ScriptEditor *p_editor) {
+	ERR_FAIL_NULL(p_editor);
+	if (!leaf_editors.has(p_editor)) {
+		leaf_editors.push_back(p_editor);
+	}
+}
+
+void ScriptEditor::unregister_leaf_editor(ScriptEditor *p_editor) {
+	leaf_editors.erase(p_editor);
+	if (focused_leaf_editor == p_editor) {
+		set_focused_leaf_editor(nullptr);
+	}
+}
+
+void ScriptEditor::set_focused_leaf_editor(ScriptEditor *p_editor) {
+	if (focused_leaf_editor == p_editor) {
+		return;
+	}
+	if (focused_leaf_editor && focused_leaf_editor->menu_hb) {
+		focused_leaf_editor->menu_hb->hide();
+	}
+	focused_leaf_editor = p_editor;
+	if (focused_leaf_editor && focused_leaf_editor->menu_hb) {
+		focused_leaf_editor->menu_hb->show();
+	}
+}
+
+void ScriptEditor::for_each_editor(const Callable &p_callback) {
+	if (controller_editor) {
+		p_callback.call(controller_editor);
+	}
+	for (ScriptEditor *editor : leaf_editors) {
+		p_callback.call(editor);
+	}
+}
+
+void ScriptEditor::set_all_leaf_editors_visible(bool p_visible) {
+	for (ScriptEditor *editor : leaf_editors) {
+		if (editor && editor->window_wrapper) {
+			if (p_visible) {
+				editor->window_wrapper->show();
+			} else {
+				editor->window_wrapper->hide();
+			}
+		}
+	}
+}
+
+void ScriptEditor::inherit_syntax_highlighters_from(const ScriptEditor *p_source) {
+	ERR_FAIL_NULL(p_source);
+	for (const Ref<EditorSyntaxHighlighter> &highlighter : p_source->syntax_highlighters) {
+		register_syntax_highlighter(highlighter);
+	}
+}
+
+ScriptEditor::~ScriptEditor() {
+	if (embedded_in_leaf) {
+		unregister_leaf_editor(this);
+	}
+	if (controller_editor == this) {
+		controller_editor = nullptr;
+		script_editor = nullptr;
+	}
+	if (focused_leaf_editor == this) {
+		focused_leaf_editor = nullptr;
+	}
+}
 
 String ScriptEditor::_get_debug_tooltip(const String &p_text, Node *p_se) {
 	if (EDITOR_GET("text_editor/behavior/documentation/enable_tooltips")) {
@@ -558,13 +636,21 @@ void ScriptEditor::_breaked(bool p_breaked, bool p_can_debug) {
 		return;
 	}
 
-	for (int i = 0; i < tab_container->get_tab_count(); i++) {
-		ScriptEditorBase *se = Object::cast_to<ScriptEditorBase>(tab_container->get_tab_control(i));
-		if (!se) {
-			continue;
+	auto set_debugger = [&](ScriptEditor *p_editor) {
+		if (!p_editor) {
+			return;
 		}
-
-		se->set_debugger_active(p_breaked);
+		for (int i = 0; i < p_editor->tab_container->get_tab_count(); i++) {
+			ScriptEditorBase *se = Object::cast_to<ScriptEditorBase>(p_editor->tab_container->get_tab_control(i));
+			if (!se) {
+				continue;
+			}
+			se->set_debugger_active(p_breaked);
+		}
+	};
+	set_debugger(controller_editor);
+	for (ScriptEditor *editor : leaf_editors) {
+		set_debugger(editor);
 	}
 }
 
@@ -742,18 +828,41 @@ bool ScriptEditor::get_current_script_view_state(String &r_path, int &r_line, in
 }
 
 ScriptEditorBase *ScriptEditor::get_open_editor_for_path(const String &p_path) const {
-	for (int i = 0; i < tab_container->get_tab_count(); i++) {
-		ScriptEditorBase *se = Object::cast_to<ScriptEditorBase>(tab_container->get_tab_control(i));
-		if (!se) {
+	auto find_in_editor = [&](const ScriptEditor *p_editor) -> ScriptEditorBase * {
+		if (!p_editor) {
+			return nullptr;
+		}
+		for (int i = 0; i < p_editor->tab_container->get_tab_count(); i++) {
+			ScriptEditorBase *se = Object::cast_to<ScriptEditorBase>(p_editor->tab_container->get_tab_control(i));
+			if (!se) {
+				continue;
+			}
+
+			Ref<Resource> edited_resource = se->get_edited_resource();
+			if (edited_resource.is_valid() && edited_resource->get_path() == p_path) {
+				return se;
+			}
+			if (se->edited_file_data.path == p_path) {
+				return se;
+			}
+		}
+		return nullptr;
+	};
+
+	if (ScriptEditorBase *found = find_in_editor(this)) {
+		return found;
+	}
+	for (ScriptEditor *editor : leaf_editors) {
+		if (editor == this) {
 			continue;
 		}
-
-		Ref<Resource> edited_resource = se->get_edited_resource();
-		if (edited_resource.is_valid() && edited_resource->get_path() == p_path) {
-			return se;
+		if (ScriptEditorBase *found = find_in_editor(editor)) {
+			return found;
 		}
-		if (se->edited_file_data.path == p_path) {
-			return se;
+	}
+	if (controller_editor && controller_editor != this) {
+		if (ScriptEditorBase *found = find_in_editor(controller_editor)) {
+			return found;
 		}
 	}
 	return nullptr;
@@ -2111,37 +2220,49 @@ void ScriptEditor::notify_script_changed(const Ref<Script> &p_script) {
 Vector<String> ScriptEditor::_get_breakpoints() {
 	Vector<String> ret;
 	HashSet<String> loaded_scripts;
-	for (int i = 0; i < tab_container->get_tab_count(); i++) {
-		ScriptEditorBase *se = Object::cast_to<ScriptEditorBase>(tab_container->get_tab_control(i));
-		if (!se) {
-			continue;
-		}
 
-		Ref<Script> scr = se->get_edited_resource();
-		if (scr.is_null()) {
-			continue;
+	auto collect_from_editor = [&](ScriptEditor *p_editor) {
+		if (!p_editor) {
+			return;
 		}
+		for (int i = 0; i < p_editor->tab_container->get_tab_count(); i++) {
+			ScriptEditorBase *se = Object::cast_to<ScriptEditorBase>(p_editor->tab_container->get_tab_control(i));
+			if (!se) {
+				continue;
+			}
 
-		String base = scr->get_path();
-		loaded_scripts.insert(base);
-		if (base.is_empty() || base.begins_with("local://")) {
-			continue;
-		}
+			Ref<Script> scr = se->get_edited_resource();
+			if (scr.is_null()) {
+				continue;
+			}
 
-		PackedInt32Array bpoints = se->get_breakpoints();
-		for (int32_t bpoint : bpoints) {
-			ret.push_back(base + ":" + itos((int)bpoint + 1));
+			String base = scr->get_path();
+			loaded_scripts.insert(base);
+			if (base.is_empty() || base.begins_with("local://")) {
+				continue;
+			}
+
+			PackedInt32Array bpoints = se->get_breakpoints();
+			for (int32_t bpoint : bpoints) {
+				ret.push_back(base + ":" + itos((int)bpoint + 1));
+			}
 		}
+	};
+
+	collect_from_editor(controller_editor);
+	for (ScriptEditor *editor : leaf_editors) {
+		collect_from_editor(editor);
 	}
 
 	// Load breakpoints that are in closed scripts.
-	Vector<String> cached_editors = script_editor_cache->get_sections();
+	ScriptEditor *cache_owner = controller_editor ? controller_editor : const_cast<ScriptEditor *>(this);
+	Vector<String> cached_editors = cache_owner->script_editor_cache->get_sections();
 	for (const String &E : cached_editors) {
 		if (loaded_scripts.has(E)) {
 			continue;
 		}
 
-		Array breakpoints = _get_cached_breakpoints_for_script(E);
+		Array breakpoints = cache_owner->_get_cached_breakpoints_for_script(E);
 		for (int breakpoint : breakpoints) {
 			ret.push_back(E + ":" + itos((int)breakpoint + 1));
 		}
@@ -2151,37 +2272,49 @@ Vector<String> ScriptEditor::_get_breakpoints() {
 
 void ScriptEditor::get_breakpoints(List<String> *p_breakpoints) {
 	HashSet<String> loaded_scripts;
-	for (int i = 0; i < tab_container->get_tab_count(); i++) {
-		ScriptEditorBase *se = Object::cast_to<ScriptEditorBase>(tab_container->get_tab_control(i));
-		if (!se) {
-			continue;
-		}
 
-		Ref<Script> scr = se->get_edited_resource();
-		if (scr.is_null()) {
-			continue;
+	auto collect_from_editor = [&](ScriptEditor *p_editor) {
+		if (!p_editor) {
+			return;
 		}
+		for (int i = 0; i < p_editor->tab_container->get_tab_count(); i++) {
+			ScriptEditorBase *se = Object::cast_to<ScriptEditorBase>(p_editor->tab_container->get_tab_control(i));
+			if (!se) {
+				continue;
+			}
 
-		String base = scr->get_path();
-		loaded_scripts.insert(base);
-		if (base.is_empty() || base.begins_with("local://")) {
-			continue;
-		}
+			Ref<Script> scr = se->get_edited_resource();
+			if (scr.is_null()) {
+				continue;
+			}
 
-		PackedInt32Array bpoints = se->get_breakpoints();
-		for (int32_t bpoint : bpoints) {
-			p_breakpoints->push_back(base + ":" + itos((int)bpoint + 1));
+			String base = scr->get_path();
+			loaded_scripts.insert(base);
+			if (base.is_empty() || base.begins_with("local://")) {
+				continue;
+			}
+
+			PackedInt32Array bpoints = se->get_breakpoints();
+			for (int32_t bpoint : bpoints) {
+				p_breakpoints->push_back(base + ":" + itos((int)bpoint + 1));
+			}
 		}
+	};
+
+	collect_from_editor(controller_editor);
+	for (ScriptEditor *editor : leaf_editors) {
+		collect_from_editor(editor);
 	}
 
 	// Load breakpoints that are in closed scripts.
-	Vector<String> cached_editors = script_editor_cache->get_sections();
+	ScriptEditor *cache_owner = controller_editor ? controller_editor : this;
+	Vector<String> cached_editors = cache_owner->script_editor_cache->get_sections();
 	for (const String &E : cached_editors) {
 		if (loaded_scripts.has(E)) {
 			continue;
 		}
 
-		Array breakpoints = _get_cached_breakpoints_for_script(E);
+		Array breakpoints = cache_owner->_get_cached_breakpoints_for_script(E);
 		for (int breakpoint : breakpoints) {
 			p_breakpoints->push_back(E + ":" + itos((int)breakpoint + 1));
 		}
@@ -2890,11 +3023,21 @@ bool ScriptEditor::edit(const Ref<Resource> &p_resource, int p_line, int p_col, 
 PackedStringArray ScriptEditor::get_unsaved_scripts() const {
 	PackedStringArray unsaved_list;
 
-	for (int i = 0; i < tab_container->get_tab_count(); i++) {
-		ScriptEditorBase *se = Object::cast_to<ScriptEditorBase>(tab_container->get_tab_control(i));
-		if (se && se->is_unsaved()) {
-			unsaved_list.append(se->get_name());
+	auto collect = [&](const ScriptEditor *p_editor) {
+		if (!p_editor) {
+			return;
 		}
+		for (int i = 0; i < p_editor->tab_container->get_tab_count(); i++) {
+			ScriptEditorBase *se = Object::cast_to<ScriptEditorBase>(p_editor->tab_container->get_tab_control(i));
+			if (se && se->is_unsaved()) {
+				unsaved_list.append(se->get_name());
+			}
+		}
+	};
+
+	collect(controller_editor);
+	for (ScriptEditor *editor : leaf_editors) {
+		collect(editor);
 	}
 	return unsaved_list;
 }
@@ -2949,90 +3092,120 @@ void ScriptEditor::save_current_script() {
 void ScriptEditor::save_all_scripts() {
 	HashSet<String> scenes_to_save;
 
-	for (int i = 0; i < tab_container->get_tab_count(); i++) {
-		ScriptEditorBase *se = Object::cast_to<ScriptEditorBase>(tab_container->get_tab_control(i));
-		if (!se) {
-			continue;
+	auto save_in_editor = [&](ScriptEditor *p_editor) {
+		if (!p_editor) {
+			return;
 		}
-
-		if (convert_indent_on_save) {
-			se->convert_indent();
-		}
-
-		if (trim_trailing_whitespace_on_save) {
-			se->trim_trailing_whitespace();
-		}
-
-		if (trim_final_newlines_on_save) {
-			se->trim_final_newlines();
-		}
-
-		if (format_on_save) {
-			se->format_document(false);
-		}
-
-		if (!se->is_unsaved()) {
-			continue;
-		}
-
-		Ref<Resource> edited_res = se->get_edited_resource();
-		if (edited_res.is_valid()) {
-			se->apply_code();
-		}
-
-		Ref<Script> scr = edited_res;
-
-		if (scr.is_valid()) {
-			clear_docs_from_script(scr);
-		}
-
-		if (!edited_res->is_built_in()) {
-			Ref<TextFile> text_file = edited_res;
-			if (text_file.is_valid()) {
-				_save_text_file(text_file, text_file->get_path());
+		for (int i = 0; i < p_editor->tab_container->get_tab_count(); i++) {
+			ScriptEditorBase *se = Object::cast_to<ScriptEditorBase>(p_editor->tab_container->get_tab_control(i));
+			if (!se) {
 				continue;
 			}
 
-			// External script, save it.
-			warn_if_saving_declared_build_output(edited_res->get_path());
-			EditorNode::get_singleton()->save_resource(edited_res);
-		} else {
-			// For built-in scripts, save their scenes instead.
-			const String scene_path = edited_res->get_path().get_slice("::", 0);
-			if (!scene_path.is_empty() && !scenes_to_save.has(scene_path)) {
-				scenes_to_save.insert(scene_path);
+			if (convert_indent_on_save) {
+				se->convert_indent();
+			}
+
+			if (trim_trailing_whitespace_on_save) {
+				se->trim_trailing_whitespace();
+			}
+
+			if (trim_final_newlines_on_save) {
+				se->trim_final_newlines();
+			}
+
+			if (format_on_save) {
+				se->format_document(false);
+			}
+
+			if (!se->is_unsaved()) {
+				continue;
+			}
+
+			Ref<Resource> edited_res = se->get_edited_resource();
+			if (edited_res.is_valid()) {
+				se->apply_code();
+			}
+
+			Ref<Script> scr = edited_res;
+
+			if (scr.is_valid()) {
+				clear_docs_from_script(scr);
+			}
+
+			if (!edited_res->is_built_in()) {
+				Ref<TextFile> text_file = edited_res;
+				if (text_file.is_valid()) {
+					p_editor->_save_text_file(text_file, text_file->get_path());
+					continue;
+				}
+
+				// External script, save it.
+				warn_if_saving_declared_build_output(edited_res->get_path());
+				EditorNode::get_singleton()->save_resource(edited_res);
+			} else {
+				// For built-in scripts, save their scenes instead.
+				const String scene_path = edited_res->get_path().get_slice("::", 0);
+				if (!scene_path.is_empty() && !scenes_to_save.has(scene_path)) {
+					scenes_to_save.insert(scene_path);
+				}
+			}
+
+			if (scr.is_valid()) {
+				update_docs_from_script(scr);
 			}
 		}
+	};
 
-		if (scr.is_valid()) {
-			update_docs_from_script(scr);
-		}
+	save_in_editor(controller_editor);
+	for (ScriptEditor *editor : leaf_editors) {
+		save_in_editor(editor);
 	}
 
 	if (!scenes_to_save.is_empty()) {
 		EditorNode::get_singleton()->save_scene_list(scenes_to_save);
 	}
 
-	_update_script_names();
+	if (controller_editor) {
+		controller_editor->_update_script_names();
+	}
 }
 
 void ScriptEditor::update_script_times() {
-	for (int i = 0; i < tab_container->get_tab_count(); i++) {
-		ScriptEditorBase *se = Object::cast_to<ScriptEditorBase>(tab_container->get_tab_control(i));
-		if (se) {
-			se->edited_file_data.last_modified_time = FileAccess::get_modified_time(se->edited_file_data.path);
+	auto update_in_editor = [&](ScriptEditor *p_editor) {
+		if (!p_editor) {
+			return;
 		}
+		for (int i = 0; i < p_editor->tab_container->get_tab_count(); i++) {
+			ScriptEditorBase *se = Object::cast_to<ScriptEditorBase>(p_editor->tab_container->get_tab_control(i));
+			if (se) {
+				se->edited_file_data.last_modified_time = FileAccess::get_modified_time(se->edited_file_data.path);
+			}
+		}
+	};
+	update_in_editor(controller_editor);
+	for (ScriptEditor *editor : leaf_editors) {
+		update_in_editor(editor);
 	}
 }
 
 void ScriptEditor::apply_scripts() const {
-	for (int i = 0; i < tab_container->get_tab_count(); i++) {
-		ScriptEditorBase *se = Object::cast_to<ScriptEditorBase>(tab_container->get_tab_control(i));
-		if (!se) {
-			continue;
+	auto apply_in_editor = [&](const ScriptEditor *p_editor) {
+		if (!p_editor) {
+			return;
 		}
-		se->insert_final_newline();
-		se->apply_code();
+		for (int i = 0; i < p_editor->tab_container->get_tab_count(); i++) {
+			ScriptEditorBase *se = Object::cast_to<ScriptEditorBase>(p_editor->tab_container->get_tab_control(i));
+			if (!se) {
+				continue;
+			}
+			se->insert_final_newline();
+			se->apply_code();
+		}
+	};
+	apply_in_editor(controller_editor);
+	for (ScriptEditor *editor : leaf_editors) {
+		apply_in_editor(editor);
 	}
 }
 
@@ -4156,16 +4329,26 @@ void ScriptEditor::_history_back() {
 Vector<Ref<Script>> ScriptEditor::get_open_scripts() const {
 	Vector<Ref<Script>> out_scripts = Vector<Ref<Script>>();
 
-	for (int i = 0; i < tab_container->get_tab_count(); i++) {
-		ScriptEditorBase *se = Object::cast_to<ScriptEditorBase>(tab_container->get_tab_control(i));
-		if (!se) {
-			continue;
+	auto collect_from_editor = [&](const ScriptEditor *p_editor) {
+		if (!p_editor) {
+			return;
 		}
+		for (int i = 0; i < p_editor->tab_container->get_tab_count(); i++) {
+			ScriptEditorBase *se = Object::cast_to<ScriptEditorBase>(p_editor->tab_container->get_tab_control(i));
+			if (!se) {
+				continue;
+			}
 
-		Ref<Script> scr = se->get_edited_resource();
-		if (scr.is_valid()) {
-			out_scripts.push_back(scr);
+			Ref<Script> scr = se->get_edited_resource();
+			if (scr.is_valid()) {
+				out_scripts.push_back(scr);
+			}
 		}
+	};
+
+	collect_from_editor(controller_editor);
+	for (ScriptEditor *editor : leaf_editors) {
+		collect_from_editor(editor);
 	}
 
 	return out_scripts;
@@ -4430,7 +4613,8 @@ void ScriptEditor::_bind_methods() {
 	ADD_SIGNAL(MethodInfo("script_close", PropertyInfo(Variant::OBJECT, "script", PROPERTY_HINT_RESOURCE_TYPE, "Script")));
 }
 
-ScriptEditor::ScriptEditor(WindowWrapper *p_wrapper) {
+ScriptEditor::ScriptEditor(WindowWrapper *p_wrapper, bool p_embedded_in_leaf) {
+	embedded_in_leaf = p_embedded_in_leaf;
 	window_wrapper = p_wrapper;
 
 	script_editor_cache.instantiate();
@@ -4753,7 +4937,18 @@ ScriptEditor::ScriptEditor(WindowWrapper *p_wrapper) {
 
 	add_child(disk_changed);
 
-	script_editor = this;
+	if (embedded_in_leaf) {
+		register_leaf_editor(this);
+		if (menu_hb) {
+			menu_hb->hide();
+		}
+		if (make_floating) {
+			make_floating->hide();
+		}
+	} else {
+		controller_editor = this;
+		script_editor = this;
+	}
 
 	autosave_timer = memnew(Timer);
 	autosave_timer->set_one_shot(false);
@@ -4772,11 +4967,13 @@ ScriptEditor::ScriptEditor(WindowWrapper *p_wrapper) {
 	find_in_files_dialog->connect(FindInFilesDialog::SIGNAL_REPLACE_REQUESTED, callable_mp(this, &ScriptEditor::_start_find_in_files).bind(true));
 	add_child(find_in_files_dialog);
 
-	find_in_files = memnew(FindInFilesContainer);
-	EditorDockManager::get_singleton()->add_dock(find_in_files);
-	find_in_files->close();
-	find_in_files->connect("result_selected", callable_mp(this, &ScriptEditor::_on_find_in_files_result_selected));
-	find_in_files->connect("files_modified", callable_mp(this, &ScriptEditor::_on_find_in_files_modified_files));
+	if (!embedded_in_leaf) {
+		find_in_files = memnew(FindInFilesContainer);
+		EditorDockManager::get_singleton()->add_dock(find_in_files);
+		find_in_files->close();
+		find_in_files->connect("result_selected", callable_mp(this, &ScriptEditor::_on_find_in_files_result_selected));
+		find_in_files->connect("files_modified", callable_mp(this, &ScriptEditor::_on_find_in_files_modified_files));
+	}
 
 	history_pos = -1;
 
@@ -4897,6 +5094,10 @@ bool ScriptEditorPlugin::open_in_external_editor(const String &p_path, int p_lin
 }
 
 void ScriptEditorPlugin::edit(Object *p_object) {
+	ScriptEditor *target = ScriptEditor::get_singleton();
+	if (!target) {
+		return;
+	}
 	if (Object::cast_to<Script>(p_object)) {
 		Script *p_script = Object::cast_to<Script>(p_object);
 		String res_path = p_script->get_path().get_slice("::", 0);
@@ -4904,11 +5105,11 @@ void ScriptEditorPlugin::edit(Object *p_object) {
 		if (p_script->is_built_in() && !res_path.is_empty()) {
 			EditorNode::get_singleton()->load_scene_or_resource(res_path, false, false);
 		}
-		script_editor->edit(p_script);
+		target->edit(p_script);
 	} else if (Object::cast_to<JSON>(p_object)) {
-		script_editor->edit(Object::cast_to<JSON>(p_object));
+		target->edit(Object::cast_to<JSON>(p_object));
 	} else if (Object::cast_to<TextFile>(p_object)) {
-		script_editor->edit(Object::cast_to<TextFile>(p_object));
+		target->edit(Object::cast_to<TextFile>(p_object));
 	}
 }
 
@@ -4933,11 +5134,21 @@ bool ScriptEditorPlugin::handles(Object *p_object) const {
 }
 
 void ScriptEditorPlugin::make_visible(bool p_visible) {
+	ScriptEditor *active = ScriptEditor::get_singleton();
 	if (p_visible) {
-		window_wrapper->show();
-		script_editor->ensure_select_current();
+		if (active && active->is_embedded_in_leaf()) {
+			if (WindowWrapper *wrapper = active->get_window_wrapper()) {
+				wrapper->show();
+			}
+		} else {
+			window_wrapper->show();
+		}
+		if (active) {
+			active->ensure_select_current();
+		}
 	} else {
 		window_wrapper->hide();
+		ScriptEditor::set_all_leaf_editors_visible(false);
 	}
 }
 
