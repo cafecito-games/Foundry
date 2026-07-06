@@ -120,6 +120,9 @@ private:
 
 	Vector<WorkspaceLeafNode *> leaves;
 	int focused_leaf_id = 0;
+	// Last leaf that was focused while hosting a scene tile. Scene/inspector docks
+	// fall back to this tile when the focused leaf is a tile-less script leaf.
+	int last_focused_tile_id = 0;
 	int next_leaf_id = 0;
 	bool restoring_from_config = false;
 	EditorSelection *editor_selection = nullptr;
@@ -150,11 +153,15 @@ public:
 	void collapse(WorkspaceLeafNode *p_leaf);
 	bool move_content(WorkspaceLeafNode *p_from_leaf, WorkspaceLeafNode *p_to_leaf);
 
-	// Script leaves (U15a): at most one script leaf hosts the shared script surface.
+	// Script leaves (U15c): each leaf owns a dedicated ScriptEditorView.
 	WorkspaceLeafNode *get_script_leaf() const;
+	Vector<WorkspaceLeafNode *> get_script_leaves() const;
+	WorkspaceLeafNode *get_focused_script_leaf() const;
+	WorkspaceLeafNode *find_script_leaf_for_path(const String &p_script_path) const;
+	void resolve_script_leaf_associated_scenes(EditorData &p_editor_data);
 	// Reveal the script leaf pointed at p_script_path, splitting beside p_source_leaf
-	// if none exists yet. Returns the script leaf.
-	WorkspaceLeafNode *open_script_leaf(WorkspaceLeafNode *p_source_leaf, const String &p_script_path);
+	// when no leaf already hosts that script. Returns the script leaf.
+	WorkspaceLeafNode *open_script_leaf(WorkspaceLeafNode *p_source_leaf, const String &p_script_path, bool p_force_new_leaf = false);
 
 	// Drag-a-tab drop resolution (center = move scene; edge = split + move).
 	WorkspaceLeafNode *handle_scene_drop(int p_scene_idx, WorkspaceLeafNode *p_target_leaf, TileDropRegion p_region);
@@ -174,6 +181,10 @@ public:
 	// Tile accessors (scene leaves only; leaf id == tile id for scene content).
 	ScenePaneTile *get_tile_by_id(int p_id) const;
 	ScenePaneTile *get_focused_tile() const;
+	// Focused tile, or the most recently focused (still-live) scene tile when the
+	// focused leaf hosts no tile (e.g. a script leaf). Used to keep scene/inspector
+	// docks valid while a script leaf holds workspace focus.
+	ScenePaneTile *get_effective_focused_tile() const;
 	Vector<ScenePaneTile *> get_tiles() const;
 	int get_tile_count() const;
 

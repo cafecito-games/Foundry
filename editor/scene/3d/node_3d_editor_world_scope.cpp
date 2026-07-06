@@ -49,11 +49,15 @@ DynamicBVH &Node3DEditorWorldGizmoBVH::_bvh_for_world(const Ref<World3D> &p_worl
 	return *created;
 }
 
-Node3DEditorWorldGizmoBVH::~Node3DEditorWorldGizmoBVH() {
+void Node3DEditorWorldGizmoBVH::clear() {
 	for (const KeyValue<ObjectID, DynamicBVH *> &entry : bvhs) {
 		memdelete(entry.value);
 	}
 	bvhs.clear();
+}
+
+Node3DEditorWorldGizmoBVH::~Node3DEditorWorldGizmoBVH() {
+	clear();
 }
 
 DynamicBVH::ID Node3DEditorWorldGizmoBVH::insert(Node3D *p_node, const AABB &p_aabb) {

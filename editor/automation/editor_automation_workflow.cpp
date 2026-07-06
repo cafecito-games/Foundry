@@ -196,7 +196,7 @@ String EditorAutomationWorkflow::role_for_node(const Node *p_node) {
 	if (Object::cast_to<const EditorInspectorSection>(p_node)) {
 		return "inspector_section";
 	}
-	if (Object::cast_to<const ScriptEditor>(p_node)) {
+	if (Object::cast_to<const ScriptEditorView>(p_node)) {
 		return "script_editor";
 	}
 	if (Object::cast_to<const EditorRunBar>(p_node)) {

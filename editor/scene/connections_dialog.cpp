@@ -1067,6 +1067,9 @@ void ConnectionsDock::_make_or_edit_connection() {
 			script_function_args.push_back("extra_arg_" + itos(i) + ": " + Variant::get_type_name(cd.binds[i].get_type()));
 		}
 
+		if (ScriptEditorController *script_editor = ScriptEditorController::get_singleton()) {
+			script_editor->notify_script_add_function_request(cd.target, cd.method, script_function_args);
+		}
 		EditorNode::get_singleton()->emit_signal(SNAME("script_add_function_request"), cd.target, cd.method, script_function_args);
 	}
 

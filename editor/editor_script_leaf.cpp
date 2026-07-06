@@ -31,8 +31,11 @@
 #include "editor_script_leaf.h"
 
 #include "core/io/config_file.h"
+#include "core/io/resource_loader.h"
 #include "editor/editor_scene_workspace.h"
 #include "editor/editor_string_names.h"
+#include "editor/script/script_editor_controller.h"
+#include "editor/script/script_editor_view.h"
 #include "scene/gui/label.h"
 #include "scene/main/node.h"
 #include "scene/main/viewport.h"
@@ -44,15 +47,64 @@ void ScriptLeaf::_notification(int p_what) {
 				placeholder_label->add_theme_color_override(SceneStringName(font_color), get_theme_color(SNAME("font_color"), EditorStringName(Editor)));
 			}
 		} break;
+
+		case NOTIFICATION_ENTER_TREE: {
+			if (has_pending_layout) {
+				// The whole leaf subtree (view + tab editors) only has a live
+				// SceneTree once children finish entering after this notification,
+				// so apply the persisted layout deferred rather than inline.
+				callable_mp(this, &ScriptLeaf::_apply_pending_layout).call_deferred();
+			}
+		} break;
 	}
 }
 
-void ScriptLeaf::_update_placeholder_visibility() {
-	if (!placeholder_label || !surface_host) {
+void ScriptLeaf::_ensure_script_editor_view() {
+	if (script_editor_view || !surface_host) {
 		return;
 	}
-	// Show the placeholder only while no live script surface is mounted.
-	placeholder_label->set_visible(surface_host->get_child_count() == 0);
+	ScriptEditorController *controller = ScriptEditorController::get_singleton();
+	if (!controller) {
+		return;
+	}
+	controller->create_view_for_leaf(this);
+	if (placeholder_label) {
+		placeholder_label->hide();
+	}
+}
+
+void ScriptLeaf::_apply_pending_layout() {
+	if (!has_pending_layout) {
+		return;
+	}
+	has_pending_layout = false;
+	const Ref<ConfigFile> config = pending_layout;
+	const String section = pending_layout_section;
+	pending_layout.unref();
+	pending_layout_section = String();
+	if (config.is_null()) {
+		return;
+	}
+
+	_ensure_script_editor_view();
+	if (script_editor_view) {
+		script_editor_view->set_view_layout(config, section);
+	} else if (!script_path.is_empty() && ResourceLoader::exists(script_path)) {
+		Ref<Resource> resource = ResourceLoader::load(script_path);
+		if (resource.is_valid()) {
+			_ensure_script_editor_view();
+			if (script_editor_view) {
+				script_editor_view->edit(resource, false);
+			}
+		}
+	}
+}
+
+void ScriptLeaf::set_script_editor_view(ScriptEditorView *p_view) {
+	script_editor_view = p_view;
+	if (placeholder_label) {
+		placeholder_label->set_visible(script_editor_view == nullptr);
+	}
 }
 
 void ScriptLeaf::_interaction_gui_input(const Ref<InputEvent> &p_event) {
@@ -99,6 +151,10 @@ Node *ScriptLeaf::get_associated_scene_root() const {
 }
 
 void ScriptLeaf::on_focus_entered() {
+	_ensure_script_editor_view();
+	if (script_editor_view && ScriptEditorController::get_singleton()) {
+		ScriptEditorController::get_singleton()->set_focused_view(script_editor_view);
+	}
 	_request_focus();
 }
 
@@ -146,6 +202,9 @@ void ScriptLeaf::save_layout(const Ref<ConfigFile> &p_config, const String &p_se
 	p_config->set_value(p_section, "tab_title", tab_title);
 	p_config->set_value(p_section, "script_path", script_path);
 	p_config->set_value(p_section, "associated_scene_path", associated_scene_path);
+	if (script_editor_view) {
+		script_editor_view->get_view_layout(p_config, p_section);
+	}
 }
 
 void ScriptLeaf::load_layout(const Ref<ConfigFile> &p_config, const String &p_section) {
@@ -159,22 +218,27 @@ void ScriptLeaf::load_layout(const Ref<ConfigFile> &p_config, const String &p_se
 	}
 	associated_scene_path = p_config->get_value(p_section, "associated_scene_path", String());
 	associated_scene_root_id = ObjectID();
+
+	// Restore runs while this leaf is detached from the scene tree. Opening
+	// scripts now would drive ScriptTextEditor::enable_editor() -> validation,
+	// which dereferences a null get_tree(); defer until the leaf is in the tree.
+	pending_layout = p_config;
+	pending_layout_section = p_section;
+	has_pending_layout = true;
+	if (is_inside_tree()) {
+		callable_mp(this, &ScriptLeaf::_apply_pending_layout).call_deferred();
+	}
 }
 
 ScriptLeaf::ScriptLeaf() {
 	set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	set_h_size_flags(Control::SIZE_EXPAND_FILL);
 
-	// Host for the live script editing surface, reparented in by EditorNode.
+	// Host for the per-leaf ScriptEditorView.
 	surface_host = memnew(Control);
 	surface_host->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 	surface_host->set_mouse_filter(Control::MOUSE_FILTER_PASS);
 	add_child(surface_host);
-
-	// Keep the placeholder in sync as the live surface is mounted/unmounted. The
-	// exit side is deferred so the child count reflects the removal.
-	surface_host->connect(SNAME("child_entered_tree"), callable_mp(this, &ScriptLeaf::_update_placeholder_visibility).unbind(1));
-	surface_host->connect(SNAME("child_exiting_tree"), callable_mp(this, &ScriptLeaf::_update_placeholder_visibility).unbind(1), CONNECT_DEFERRED);
 
 	placeholder_label = memnew(Label);
 	placeholder_label->set_text(tab_title);
@@ -183,5 +247,5 @@ ScriptLeaf::ScriptLeaf() {
 	placeholder_label->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 	add_child(placeholder_label);
 
-	_update_placeholder_visibility();
+	_ensure_script_editor_view();
 }

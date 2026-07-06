@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "core/io/config_file.h"
 #include "editor/editor_workspace_leaf_content.h"
 
 #include "scene/gui/control.h"
@@ -37,12 +38,12 @@
 class EditorSceneWorkspace;
 class Label;
 
+class ScriptEditorView;
+
 /**
- * Non-scene workspace leaf that hosts the editor's script surface (U15a). It
+ * Non-scene workspace leaf that hosts a dedicated ScriptEditorView (U15c). It
  * carries the path of the script it represents but has no EditorSceneContext,
- * since a script is a project resource rather than a scene. The live script
- * editing surface is mounted into get_surface_host() by EditorNode; a
- * placeholder label is shown while no surface is mounted.
+ * since a script is a project resource rather than a scene.
  */
 class ScriptLeaf : public Control, public WorkspaceLeafContent {
 	FOUNDRY_CLASS(ScriptLeaf, Control);
@@ -53,8 +54,17 @@ class ScriptLeaf : public Control, public WorkspaceLeafContent {
 	ObjectID associated_scene_root_id;
 	Label *placeholder_label = nullptr;
 	Control *surface_host = nullptr;
+	ScriptEditorView *script_editor_view = nullptr;
 
-	void _update_placeholder_visibility();
+	// Layout restore runs while the leaf (and its view subtree) is still detached
+	// from the scene tree, so opening scripts is deferred until the leaf is in the
+	// tree; opening a ScriptTextEditor before then dereferences a null get_tree().
+	Ref<ConfigFile> pending_layout;
+	String pending_layout_section;
+	bool has_pending_layout = false;
+
+	void _ensure_script_editor_view();
+	void _apply_pending_layout();
 	void _interaction_gui_input(const Ref<InputEvent> &p_event);
 	void _request_focus();
 
@@ -69,8 +79,11 @@ public:
 	void set_script_path(const String &p_path);
 	String get_script_path() const { return script_path; }
 
-	// Container the live script editing surface is reparented into by EditorNode.
+	// Container that owns the per-leaf ScriptEditorView.
 	Control *get_surface_host() const { return surface_host; }
+
+	void set_script_editor_view(ScriptEditorView *p_view);
+	ScriptEditorView *get_script_editor_view() const { return script_editor_view; }
 
 	// Scene the open script is attached to (resolved when the leaf opens). Empty
 	// when the script has no associated scene.

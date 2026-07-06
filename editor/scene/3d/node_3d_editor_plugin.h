@@ -679,6 +679,8 @@ struct EditorWorldFurniture {
 	RID grid_instance[3];
 	DirectionalLight3D *preview_sun = nullptr;
 	WorldEnvironment *preview_environment = nullptr;
+	ObjectID preview_sun_id;
+	ObjectID preview_environment_id;
 	SubViewport *preview_parent_viewport = nullptr;
 	bool preview_sun_dangling = false;
 	bool preview_env_dangling = false;
@@ -880,6 +882,7 @@ private:
 	EditorWorldFurniture *_get_world_furniture(const Ref<World3D> &p_world);
 	const EditorWorldFurniture *_get_world_furniture(const Ref<World3D> &p_world) const;
 	EditorWorldFurniture &_get_edited_world_furniture();
+	void _free_world_furniture(EditorWorldFurniture &p_furniture);
 	void _release_world_furniture(const Ref<World3D> &p_world);
 	void _note_world_view_bound(const Ref<World3D> &p_world, SubViewport *p_preview_parent_viewport);
 	void _note_world_view_unbound(const Ref<World3D> &p_world);

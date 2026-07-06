@@ -53,6 +53,7 @@
 #include "editor/scene/3d/node_3d_editor_plugin.h"
 #include "editor/scene/editor_scene_tabs.h"
 #include "editor/scene/scene_tree_editor.h"
+#include "editor/script/script_editor_controller.h"
 #include "editor/settings/editor_command_palette.h"
 #include "editor/settings/editor_feature_profile.h"
 #include "editor/settings/editor_settings.h"
@@ -413,8 +414,8 @@ VBoxContainer *EditorInterface::get_editor_main_screen() const {
 	return EditorNode::get_singleton()->get_editor_main_screen()->get_control();
 }
 
-ScriptEditor *EditorInterface::get_script_editor() const {
-	return ScriptEditor::get_singleton();
+ScriptEditorController *EditorInterface::get_script_editor() const {
+	return ScriptEditorController::get_singleton();
 }
 
 SubViewport *EditorInterface::get_editor_viewport_2d() const {
@@ -722,7 +723,7 @@ void EditorInterface::edit_node(Node *p_node) {
 }
 
 void EditorInterface::edit_script(const Ref<Script> &p_script, int p_line, int p_col, bool p_grab_focus) {
-	ScriptEditor::get_singleton()->edit(p_script, p_line - 1, p_col - 1, p_grab_focus);
+	ScriptEditorController::get_singleton()->edit(p_script, p_line - 1, p_col - 1, p_grab_focus);
 }
 
 void EditorInterface::open_scene_from_path(const String &scene_path, bool p_set_inherited) {

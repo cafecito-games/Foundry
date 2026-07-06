@@ -30,6 +30,8 @@
 
 #include "script_text_editor.h"
 
+#include "script_editor_view.h"
+
 #include "core/config/project_settings.h"
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
@@ -1220,7 +1222,7 @@ static void _find_changed_scripts_for_external_editor(Node *p_base, Node *p_curr
 	}
 }
 
-void ScriptEditor::_update_modified_scripts_for_external_editor(Ref<Script> p_for_script) {
+void ScriptEditorView::_update_modified_scripts_for_external_editor(Ref<Script> p_for_script) {
 	bool use_external_editor = bool(EDITOR_GET("text_editor/external/use_external_editor"));
 
 	ERR_FAIL_NULL(get_tree());
@@ -1257,7 +1259,7 @@ void ScriptEditor::_update_modified_scripts_for_external_editor(Ref<Script> p_fo
 			scr->set_last_modified_time(rel_scr->get_last_modified_time());
 			scr->update_exports();
 
-			trigger_live_script_reload(scr->get_path());
+			controller->trigger_live_script_reload(scr->get_path());
 		}
 	}
 }
@@ -1325,7 +1327,9 @@ void ScriptTextEditor::_breakpoint_item_pressed(int p_idx) {
 void ScriptTextEditor::_breakpoint_toggled(int p_row) {
 	const CodeEdit *ce = code_editor->get_text_editor();
 	bool enabled = p_row < ce->get_line_count() && ce->is_line_breakpointed(p_row);
-	EditorDebuggerNode::get_singleton()->set_breakpoint(script->get_path(), p_row + 1, enabled);
+	if (EditorDebuggerNode *debugger = EditorDebuggerNode::get_singleton()) {
+		debugger->set_breakpoint(script->get_path(), p_row + 1, enabled);
+	}
 }
 
 void ScriptTextEditor::_on_caret_moved() {
@@ -1623,8 +1627,11 @@ void ScriptTextEditor::_show_symbol_tooltip(const String &p_symbol, int p_row, i
 		}
 	}
 
-	// NOTE: See also `ScriptEditor::_get_debug_tooltip()` for documentation tooltips disabled.
-	String debug_value = EditorDebuggerNode::get_singleton()->get_var_value(p_symbol);
+	// NOTE: See also `ScriptEditorView::_get_debug_tooltip()` for documentation tooltips disabled.
+	String debug_value;
+	if (EditorDebuggerNode *debugger = EditorDebuggerNode::get_singleton()) {
+		debug_value = debugger->get_var_value(p_symbol);
+	}
 	if (!debug_value.is_empty()) {
 		constexpr int DISPLAY_LIMIT = 1024;
 		if (debug_value.size() > DISPLAY_LIMIT) {
@@ -2119,7 +2126,9 @@ void ScriptTextEditor::_edit_option(int p_op) {
 				int line = bpoints[i];
 				bool dobreak = !tx->is_line_breakpointed(line);
 				tx->set_line_as_breakpoint(line, dobreak);
-				EditorDebuggerNode::get_singleton()->set_breakpoint(script->get_path(), line + 1, dobreak);
+				if (EditorDebuggerNode *debugger = EditorDebuggerNode::get_singleton()) {
+					debugger->set_breakpoint(script->get_path(), line + 1, dobreak);
+				}
 			}
 		} break;
 		case DEBUG_GOTO_NEXT_BREAKPOINT: {
@@ -4153,7 +4162,11 @@ void ScriptTextEditor::register_editor() {
 	ED_SHORTCUT("script_text_editor/goto_next_breakpoint", TTRC("Go to Next Breakpoint"), KeyModifierMask::CTRL | Key::PERIOD);
 	ED_SHORTCUT("script_text_editor/goto_previous_breakpoint", TTRC("Go to Previous Breakpoint"), KeyModifierMask::CTRL | Key::COMMA);
 
-	ScriptEditor::register_create_script_editor_function(create_editor);
+	static bool create_func_registered = false;
+	if (!create_func_registered) {
+		ScriptEditor::register_create_script_editor_function(create_editor);
+		create_func_registered = true;
+	}
 }
 
 void ScriptTextEditor::validate() {

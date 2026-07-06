@@ -4588,17 +4588,41 @@ void Node3DEditorViewport::_init_gizmo_instance(int p_idx) {
 }
 
 void Node3DEditorViewport::_finish_gizmo_instances() {
-	ERR_FAIL_NULL(RenderingServer::get_singleton());
+	RenderingServer *rs = RenderingServer::get_singleton();
+	if (!rs) {
+		return;
+	}
 	for (int i = 0; i < 3; i++) {
-		RS::get_singleton()->free_rid(move_gizmo_instance[i]);
-		RS::get_singleton()->free_rid(move_plane_gizmo_instance[i]);
-		RS::get_singleton()->free_rid(rotate_gizmo_instance[i]);
-		RS::get_singleton()->free_rid(scale_gizmo_instance[i]);
-		RS::get_singleton()->free_rid(scale_plane_gizmo_instance[i]);
-		RS::get_singleton()->free_rid(axis_gizmo_instance[i]);
+		if (move_gizmo_instance[i].is_valid()) {
+			rs->free_rid(move_gizmo_instance[i]);
+			move_gizmo_instance[i] = RID();
+		}
+		if (move_plane_gizmo_instance[i].is_valid()) {
+			rs->free_rid(move_plane_gizmo_instance[i]);
+			move_plane_gizmo_instance[i] = RID();
+		}
+		if (rotate_gizmo_instance[i].is_valid()) {
+			rs->free_rid(rotate_gizmo_instance[i]);
+			rotate_gizmo_instance[i] = RID();
+		}
+		if (scale_gizmo_instance[i].is_valid()) {
+			rs->free_rid(scale_gizmo_instance[i]);
+			scale_gizmo_instance[i] = RID();
+		}
+		if (scale_plane_gizmo_instance[i].is_valid()) {
+			rs->free_rid(scale_plane_gizmo_instance[i]);
+			scale_plane_gizmo_instance[i] = RID();
+		}
+		if (axis_gizmo_instance[i].is_valid()) {
+			rs->free_rid(axis_gizmo_instance[i]);
+			axis_gizmo_instance[i] = RID();
+		}
 	}
 	// Rotation white outline
-	RS::get_singleton()->free_rid(rotate_gizmo_instance[3]);
+	if (rotate_gizmo_instance[3].is_valid()) {
+		rs->free_rid(rotate_gizmo_instance[3]);
+		rotate_gizmo_instance[3] = RID();
+	}
 }
 
 void Node3DEditorViewport::_rebind_gizmo_scenarios(const Ref<World3D> &p_world) {
@@ -4707,6 +4731,12 @@ void Node3DEditorViewport::set_can_preview(Camera3D *p_preview) {
 
 void Node3DEditorViewport::update_transform_gizmo_view() {
 	if (!is_visible_in_tree()) {
+		return;
+	}
+	if (!camera || !camera->is_inside_tree()) {
+		return;
+	}
+	if (!move_gizmo_instance[0].is_valid()) {
 		return;
 	}
 
@@ -6688,6 +6718,7 @@ Node3DEditorViewport::Node3DEditorViewport(Node3DEditor *p_spatial_editor, int p
 }
 
 Node3DEditorViewport::~Node3DEditorViewport() {
+	_finish_gizmo_instances();
 	if (viewport_binding == ViewportBinding::FOCUSED_TILE) {
 		memdelete(ruler);
 		memdelete(frame_time_gradient);
@@ -7903,11 +7934,13 @@ EditorWorldFurniture &Node3DEditor::_ensure_world_furniture(const Ref<World3D> &
 
 	if (!furniture.preview_sun) {
 		furniture.preview_sun = memnew(DirectionalLight3D);
+		furniture.preview_sun_id = furniture.preview_sun->get_instance_id();
 		furniture.preview_sun->set_shadow(true);
 		furniture.preview_sun->set_shadow_mode(DirectionalLight3D::SHADOW_PARALLEL_4_SPLITS);
 	}
 	if (!furniture.preview_environment) {
 		furniture.preview_environment = memnew(WorldEnvironment);
+		furniture.preview_environment_id = furniture.preview_environment->get_instance_id();
 		Ref<Environment> world_environment = environment;
 		if (world_environment.is_null()) {
 			world_environment.instantiate();
@@ -7949,6 +7982,39 @@ EditorWorldFurniture &Node3DEditor::_get_edited_world_furniture() {
 	return _ensure_world_furniture(world, EditorNode::get_singleton() ? EditorNode::get_singleton()->get_scene_root() : nullptr);
 }
 
+void Node3DEditor::_free_world_furniture(EditorWorldFurniture &p_furniture) {
+	RenderingServer *rs = RenderingServer::get_singleton();
+	if (rs) {
+		if (p_furniture.origin_instance.is_valid()) {
+			rs->free_rid(p_furniture.origin_instance);
+			p_furniture.origin_instance = RID();
+		}
+		_free_world_grid_instances(p_furniture);
+	}
+
+	if (DirectionalLight3D *preview_sun = ObjectDB::get_instance<DirectionalLight3D>(p_furniture.preview_sun_id)) {
+		if (preview_sun->get_parent()) {
+			preview_sun->get_parent()->remove_child(preview_sun);
+		}
+		memdelete(preview_sun);
+	}
+	p_furniture.preview_sun = nullptr;
+	p_furniture.preview_sun_id = ObjectID();
+	p_furniture.preview_sun_dangling = false;
+
+	if (WorldEnvironment *preview_environment = ObjectDB::get_instance<WorldEnvironment>(p_furniture.preview_environment_id)) {
+		if (preview_environment->get_parent()) {
+			preview_environment->get_parent()->remove_child(preview_environment);
+		}
+		memdelete(preview_environment);
+	}
+	p_furniture.preview_environment = nullptr;
+	p_furniture.preview_environment_id = ObjectID();
+	p_furniture.preview_env_dangling = false;
+	p_furniture.preview_parent_viewport = nullptr;
+	p_furniture.live_view_count = 0;
+}
+
 void Node3DEditor::_release_world_furniture(const Ref<World3D> &p_world) {
 	if (p_world.is_null()) {
 		return;
@@ -7962,31 +8028,7 @@ void Node3DEditor::_release_world_furniture(const Ref<World3D> &p_world) {
 		return;
 	}
 
-	if (furniture.origin_instance.is_valid()) {
-		RenderingServer::get_singleton()->free_rid(furniture.origin_instance);
-		furniture.origin_instance = RID();
-	}
-	_free_world_grid_instances(furniture);
-
-	if (furniture.preview_sun) {
-		if (furniture.preview_sun->get_parent()) {
-			furniture.preview_sun->get_parent()->remove_child(furniture.preview_sun);
-		}
-		if (furniture.preview_sun_dangling) {
-			memdelete(furniture.preview_sun);
-		}
-		furniture.preview_sun = nullptr;
-	}
-	if (furniture.preview_environment) {
-		if (furniture.preview_environment->get_parent()) {
-			furniture.preview_environment->get_parent()->remove_child(furniture.preview_environment);
-		}
-		if (furniture.preview_env_dangling) {
-			memdelete(furniture.preview_environment);
-		}
-		furniture.preview_environment = nullptr;
-	}
-
+	_free_world_furniture(furniture);
 	world_furniture.erase(world_id);
 	gizmo_bvh.clear_world(p_world);
 }
@@ -8222,9 +8264,22 @@ void Node3DEditor::_finish_shared_furniture_resources() {
 	if (!shared_furniture_resources_ready) {
 		return;
 	}
-	RenderingServer::get_singleton()->free_rid(origin_multimesh);
-	RenderingServer::get_singleton()->free_rid(origin_mesh);
+	RenderingServer *rs = RenderingServer::get_singleton();
+	if (rs) {
+		if (origin_multimesh.is_valid()) {
+			rs->free_rid(origin_multimesh);
+			origin_multimesh = RID();
+		}
+		if (origin_mesh.is_valid()) {
+			rs->free_rid(origin_mesh);
+			origin_mesh = RID();
+		}
+	}
 	_finish_grid();
+	origin_mat.unref();
+	for (int i = 0; i < 3; i++) {
+		grid_mat[i].unref();
+	}
 	shared_furniture_resources_ready = false;
 }
 
@@ -8878,20 +8933,11 @@ void Node3DEditor::_init_grid() {
 }
 
 void Node3DEditor::_finish_indicators() {
-	Vector<Ref<World3D>> worlds;
-	worlds.reserve(world_furniture.size());
-	for (const KeyValue<ObjectID, EditorWorldFurniture> &world_entry : world_furniture) {
-		Ref<World3D> world = ObjectDB::get_instance<World3D>(world_entry.key);
-		if (world.is_valid()) {
-			worlds.push_back(world);
-		}
+	for (KeyValue<ObjectID, EditorWorldFurniture> &world_entry : world_furniture) {
+		_free_world_furniture(world_entry.value);
 	}
-	for (const Ref<World3D> &world : worlds) {
-		if (EditorWorldFurniture *furniture = _get_world_furniture(world)) {
-			furniture->live_view_count = 0;
-		}
-		_release_world_furniture(world);
-	}
+	world_furniture.clear();
+	gizmo_bvh.clear();
 	_finish_shared_furniture_resources();
 }
 
@@ -10939,12 +10985,18 @@ void fragment() {
 	focused_viewport = viewports[0];
 }
 Node3DEditor::~Node3DEditor() {
-	singleton = nullptr;
+	for (uint32_t i = 0; i < VIEWPORTS_COUNT; i++) {
+		if (viewports[i]) {
+			viewports[i]->_finish_gizmo_instances();
+		}
+	}
+	_finish_indicators();
 	memdelete(preview_node);
 	for (Node3DEditorViewport *secondary_viewport : secondary_viewports) {
 		memdelete(secondary_viewport);
 	}
 	secondary_viewports.clear();
+	singleton = nullptr;
 }
 
 void Node3DEditorPlugin::make_visible(bool p_visible) {

@@ -89,6 +89,9 @@ String TextEditor::get_name() {
 }
 
 Ref<Texture2D> TextEditor::get_theme_icon() {
+	if (!EditorNode::get_singleton()) {
+		return Ref<Texture2D>();
+	}
 	return EditorNode::get_singleton()->get_object_icon(edited_res.ptr());
 }
 
@@ -498,7 +501,11 @@ ScriptEditorBase *TextEditor::create_editor(const Ref<Resource> &p_resource) {
 }
 
 void TextEditor::register_editor() {
-	ScriptEditor::register_create_script_editor_function(create_editor);
+	static bool create_func_registered = false;
+	if (!create_func_registered) {
+		ScriptEditor::register_create_script_editor_function(create_editor);
+		create_func_registered = true;
+	}
 }
 
 void TextEditor::_text_edit_gui_input(const Ref<InputEvent> &ev) {

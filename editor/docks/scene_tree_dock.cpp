@@ -4591,11 +4591,27 @@ List<Node *> SceneTreeDock::get_node_clipboard() const {
 
 void SceneTreeDock::add_remote_tree_editor(Tree *p_remote) {
 	ERR_FAIL_COND(remote_tree != nullptr);
+	ERR_FAIL_COND(p_remote == nullptr);
 	main_mc->add_child(p_remote);
 	remote_tree = p_remote;
 	remote_tree->set_scroll_hint_mode(Tree::SCROLL_HINT_MODE_TOP);
 	remote_tree->hide();
 	remote_tree->connect("open", callable_mp(this, &SceneTreeDock::_load_request));
+}
+
+void SceneTreeDock::remove_remote_tree_editor(Tree *p_remote) {
+	if (!remote_tree || remote_tree != p_remote) {
+		return;
+	}
+	const Callable open_callback = callable_mp(this, &SceneTreeDock::_load_request);
+	if (remote_tree->is_connected("open", open_callback)) {
+		remote_tree->disconnect("open", open_callback);
+	}
+	if (remote_tree->get_parent()) {
+		remote_tree->get_parent()->remove_child(remote_tree);
+	}
+	remote_tree = nullptr;
+	_local_tree_selected();
 }
 
 void SceneTreeDock::show_remote_tree() {
