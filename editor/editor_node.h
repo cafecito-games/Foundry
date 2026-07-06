@@ -733,6 +733,7 @@ private:
 	void _on_leaf_focus_requested(int p_leaf_id);
 	void _focus_tile(int p_tile_id);
 	void _focus_script_leaf(int p_leaf_id);
+	void _complete_script_leaf_focus(int p_leaf_id);
 	void _on_tile_tab_changed(int p_tab, int p_tile_id);
 	void _on_tile_tab_closed(int p_tab, int p_tile_id);
 	void _update_all_scene_tabs();

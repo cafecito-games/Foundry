@@ -1684,8 +1684,12 @@ void Node3DEditorViewport::_surface_mouse_enter() {
 		return;
 	}
 
-	if (!surface->has_focus() && (!get_viewport()->gui_get_focus_owner() || !get_viewport()->gui_get_focus_owner()->is_text_field())) {
-		surface->grab_focus();
+	if (!surface->has_focus()) {
+		Viewport *editor_viewport = get_viewport();
+		Control *focus_owner = editor_viewport ? editor_viewport->gui_get_focus_owner() : nullptr;
+		if (!focus_owner || !focus_owner->is_text_field()) {
+			surface->grab_focus();
+		}
 	}
 }
 
