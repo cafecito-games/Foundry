@@ -75,6 +75,7 @@
 #include "tests/editor/test_script_leaf_node_drop.h"
 #include "tests/editor/test_script_refactor_apply.h"
 #include "tests/editor/test_script_refactor_vcs_guard.h"
+#include "tests/editor/test_workspace_tab_model.h"
 #endif // TOOLS_ENABLED
 
 #include "tests/core/config/test_foundry_build_task_registry.h"
