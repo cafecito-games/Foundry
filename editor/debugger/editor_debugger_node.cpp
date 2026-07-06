@@ -95,8 +95,8 @@ EditorDebuggerNode::EditorDebuggerNode() {
 	remote_scene_tree->connect("selection_cleared", callable_mp(this, &EditorDebuggerNode::_remote_selection_cleared));
 	remote_scene_tree->connect("save_node", callable_mp(this, &EditorDebuggerNode::_save_node_requested));
 	remote_scene_tree->connect("button_clicked", callable_mp(this, &EditorDebuggerNode::_remote_tree_button_pressed));
-	SceneTreeDock::get_singleton()->add_remote_tree_editor(remote_scene_tree);
-	SceneTreeDock::get_singleton()->connect("remote_tree_selected", callable_mp(this, &EditorDebuggerNode::request_remote_tree));
+	EditorNode::get_singleton()->get_focused_scene_tree_dock()->add_remote_tree_editor(remote_scene_tree);
+	EditorNode::get_singleton()->get_focused_scene_tree_dock()->connect("remote_tree_selected", callable_mp(this, &EditorDebuggerNode::request_remote_tree));
 
 	remote_scene_tree_timeout = EDITOR_GET("debugger/remote_scene_tree_refresh_interval");
 	inspect_edited_object_timeout = EDITOR_GET("debugger/remote_inspect_refresh_interval");
@@ -384,7 +384,7 @@ void EditorDebuggerNode::_notification(int p_what) {
 				if (inspect_edited_object_timeout < 0) {
 					inspect_edited_object_timeout = EDITOR_GET("debugger/remote_inspect_refresh_interval");
 
-					if (EditorDebuggerRemoteObjects *robjs = Object::cast_to<EditorDebuggerRemoteObjects>(InspectorDock::get_inspector_singleton()->get_edited_object())) {
+					if (EditorDebuggerRemoteObjects *robjs = Object::cast_to<EditorDebuggerRemoteObjects>(EditorNode::get_singleton()->get_focused_inspector()->get_edited_object())) {
 						inspect_edited_object_wait = true;
 						get_current_debugger()->request_remote_objects(robjs->remote_object_ids, false);
 					}
@@ -415,10 +415,10 @@ void EditorDebuggerNode::_notification(int p_what) {
 				remote_scene_tree->set_new_session();
 				auto_switch_remote_scene_tree = EDITOR_GET("debugger/auto_switch_to_remote_scene_tree");
 				if (auto_switch_remote_scene_tree) {
-					SceneTreeDock::get_singleton()->show_remote_tree();
+					EditorNode::get_singleton()->get_focused_scene_tree_dock()->show_remote_tree();
 				}
 				// Good to go.
-				SceneTreeDock::get_singleton()->show_tab_buttons();
+				EditorNode::get_singleton()->get_focused_scene_tree_dock()->show_tab_buttons();
 				debugger->set_editor_remote_tree(remote_scene_tree);
 				debugger->start(server->take_connection());
 				// Send breakpoints.
@@ -493,7 +493,7 @@ void EditorDebuggerNode::_debugger_stopped(int p_id) {
 	if (!found) {
 		EditorRunBar::get_singleton()->get_pause_button()->set_pressed(false);
 		EditorRunBar::get_singleton()->get_pause_button()->set_disabled(true);
-		SceneTreeDock *dock = SceneTreeDock::get_singleton();
+		SceneTreeDock *dock = EditorNode::get_singleton()->get_focused_scene_tree_dock();
 		if (dock->is_inside_tree()) {
 			dock->hide_remote_tree();
 			dock->hide_tab_buttons();
@@ -513,7 +513,7 @@ void EditorDebuggerNode::_debugger_changed(int p_tab) {
 	remote_scene_tree_wait = false;
 	inspect_edited_object_wait = false;
 
-	if (Object *robjs = InspectorDock::get_inspector_singleton()->get_edited_object()) {
+	if (Object *robjs = EditorNode::get_singleton()->get_focused_inspector()->get_edited_object()) {
 		if (Object::cast_to<EditorDebuggerRemoteObjects>(robjs)) {
 			// Clear inspected object, you can only inspect objects in selected debugger.
 			// Hopefully, in the future, we will have one inspector per debugger.
@@ -766,7 +766,7 @@ void EditorDebuggerNode::_remote_tree_button_pressed(Object *p_item, int p_colum
 }
 
 void EditorDebuggerNode::_remote_objects_updated(EditorDebuggerRemoteObjects *p_objs, int p_debugger) {
-	if (p_debugger == tabs->get_current_tab() && p_objs != InspectorDock::get_inspector_singleton()->get_edited_object()) {
+	if (p_debugger == tabs->get_current_tab() && p_objs != EditorNode::get_singleton()->get_focused_inspector()->get_edited_object()) {
 		EditorNode::get_singleton()->push_item(p_objs);
 	}
 }
@@ -776,9 +776,9 @@ void EditorDebuggerNode::_remote_object_property_updated(ObjectID p_id, const St
 		return;
 	}
 
-	Object *obj = InspectorDock::get_inspector_singleton()->get_edited_object();
+	Object *obj = EditorNode::get_singleton()->get_focused_inspector()->get_edited_object();
 	if (obj && obj->get_instance_id() == p_id) {
-		InspectorDock::get_inspector_singleton()->update_property(p_property);
+		EditorNode::get_singleton()->get_focused_inspector()->update_property(p_property);
 	}
 }
 

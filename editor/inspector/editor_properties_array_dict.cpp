@@ -763,7 +763,7 @@ void EditorPropertyArray::drop_data_fw(const Point2 &p_point, const Variant &p_d
 }
 
 Node *EditorPropertyArray::get_base_node() {
-	Node *base_node = Object::cast_to<Node>(InspectorDock::get_inspector_singleton()->get_edited_object());
+	Node *base_node = Object::cast_to<Node>(EditorNode::get_singleton()->get_focused_inspector()->get_edited_object());
 
 	if (!base_node) {
 		base_node = get_tree()->get_edited_scene_root();

@@ -231,7 +231,7 @@ void GroupSettingsEditor::_modify_references(const StringName &p_name, const Str
 	}
 	if (!edited_scenes_path.is_empty()) {
 		EditorNode::get_singleton()->save_scene_list(edited_scenes_path);
-		SceneTreeDock::get_singleton()->get_tree_editor()->update_tree();
+		EditorNode::get_singleton()->get_focused_scene_tree_dock()->get_tree_editor()->update_tree();
 	}
 
 	for (const String &E : scenes) {

@@ -95,6 +95,9 @@ class EditorSceneWorkspace;
 class EditorSceneTabs;
 class EditorSelectionHistory;
 class ScenePaneTile;
+class SceneTreeDock;
+class InspectorDock;
+class EditorInspector;
 class SignalsDock;
 class GroupsDock;
 class ScriptLeaf;
@@ -725,7 +728,7 @@ private:
 	void _connect_script_leaf_sync();
 	void _update_tile_display_attachments();
 	void _sync_scene_viewport_2d_state_with_main_screen();
-	void _update_focused_dock_singletons(ScenePaneTile *p_tile);
+	void _sync_focused_tile_chrome(ScenePaneTile *p_tile);
 	void _bind_leaf_docks(int p_leaf_id);
 	void _bind_all_leaf_docks();
 	void _wire_leaf_tile(WorkspaceLeafNode *p_leaf);
@@ -840,6 +843,9 @@ public:
 
 	// Returns the focused scene tile's in-tile dock instances (not global shell docks).
 	ScenePaneTile *get_focused_tile() const;
+	SceneTreeDock *get_focused_scene_tree_dock() const;
+	InspectorDock *get_focused_inspector_dock() const;
+	EditorInspector *get_focused_inspector() const;
 	SignalsDock *get_focused_signals_dock() const;
 	GroupsDock *get_focused_groups_dock() const;
 	HistoryDock *get_focused_history_dock() const;

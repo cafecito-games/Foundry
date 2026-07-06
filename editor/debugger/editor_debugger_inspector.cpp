@@ -329,7 +329,7 @@ void EditorDebuggerInspector::clear_remote_inspector() {
 		return;
 	}
 
-	const Object *obj = InspectorDock::get_inspector_singleton()->get_edited_object();
+	const Object *obj = EditorNode::get_singleton()->get_focused_inspector()->get_edited_object();
 	// Check if the inspector holds remote items, and take it out if so.
 	if (Object::cast_to<EditorDebuggerRemoteObjects>(obj)) {
 		EditorNode::get_singleton()->push_item(nullptr);
@@ -350,7 +350,7 @@ void EditorDebuggerInspector::clear_cache() {
 void EditorDebuggerInspector::invalidate_selection_from_cache(const TypedArray<uint64_t> &p_ids) {
 	for (EditorDebuggerRemoteObjects *robjs : remote_objects_list) {
 		if (robjs->remote_object_ids == p_ids) {
-			const Object *obj = InspectorDock::get_inspector_singleton()->get_edited_object();
+			const Object *obj = EditorNode::get_singleton()->get_focused_inspector()->get_edited_object();
 			if (obj == robjs) {
 				EditorNode::get_singleton()->push_item(nullptr);
 			}

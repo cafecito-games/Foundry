@@ -1537,14 +1537,14 @@ bool EditorScriptPicker::handle_menu_selected(int p_which) {
 	switch (p_which) {
 		case OBJ_MENU_NEW_SCRIPT: {
 			if (script_owner) {
-				SceneTreeDock::get_singleton()->open_script_dialog(script_owner, false);
+				EditorNode::get_singleton()->get_focused_scene_tree_dock()->open_script_dialog(script_owner, false);
 			}
 			return true;
 		}
 
 		case OBJ_MENU_EXTEND_SCRIPT: {
 			if (script_owner) {
-				SceneTreeDock::get_singleton()->open_script_dialog(script_owner, true);
+				EditorNode::get_singleton()->get_focused_scene_tree_dock()->open_script_dialog(script_owner, true);
 			}
 			return true;
 		}
@@ -1586,7 +1586,7 @@ bool EditorShaderPicker::handle_menu_selected(int p_which) {
 	switch (p_which) {
 		case OBJ_MENU_NEW_SHADER: {
 			if (ed_material.is_valid()) {
-				SceneTreeDock::get_singleton()->open_shader_dialog(ed_material, preferred_mode);
+				EditorNode::get_singleton()->get_focused_scene_tree_dock()->open_shader_dialog(ed_material, preferred_mode);
 				return true;
 			}
 		} break;

@@ -209,7 +209,7 @@ void EditorDebuggerTree::update_scene_tree(const SceneDebuggerTree *p_tree, int 
 
 	updating_scene_tree = true;
 	const String last_path = get_selected_path();
-	const String filter = SceneTreeDock::get_singleton()->get_filter();
+	const String filter = EditorNode::get_singleton()->get_focused_scene_tree_dock()->get_filter();
 	LocalVector<TreeItem *> select_items;
 	bool hide_filtered_out_parents = EDITOR_GET("docks/scene_tree/hide_filtered_out_parents");
 

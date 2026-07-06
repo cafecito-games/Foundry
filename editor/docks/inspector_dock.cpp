@@ -188,7 +188,7 @@ void InspectorDock::_menu_option_confirm(int p_option, bool p_confirmed) {
 									res = duplicates[res];
 
 									current->set(prop_info.name, res);
-									get_inspector_singleton()->update_property(prop_info.name);
+									inspector->update_property(prop_info.name);
 								}
 							}
 						}
@@ -463,9 +463,11 @@ void InspectorDock::_menu_expandall() {
 }
 
 void InspectorDock::expand_all_focused() {
-	if (InspectorDock *dock = get_singleton()) {
-		if (dock->inspector) {
-			dock->inspector->expand_all_folding();
+	if (EditorNode *editor = EditorNode::get_singleton()) {
+		if (InspectorDock *dock = editor->get_focused_inspector_dock()) {
+			if (dock->inspector) {
+				dock->inspector->expand_all_folding();
+			}
 		}
 	}
 }
@@ -537,8 +539,8 @@ void InspectorDock::_notification(int p_what) {
 }
 
 void InspectorDock::_bind_methods() {
-	ClassDB::bind_method("store_script_properties", &InspectorDock::store_script_properties);
-	ClassDB::bind_method("apply_script_properties", &InspectorDock::apply_script_properties);
+	ClassDB::bind_method(D_METHOD("store_script_properties", "object"), &InspectorDock::store_script_properties);
+	ClassDB::bind_method(D_METHOD("apply_script_properties", "object"), &InspectorDock::apply_script_properties);
 
 	ADD_SIGNAL(MethodInfo("request_help"));
 }
@@ -769,9 +771,6 @@ void InspectorDock::set_scene_context(EditorSceneContext *p_context) {
 }
 
 InspectorDock::InspectorDock(EditorData &p_editor_data, bool p_register_open_command) {
-	// The focused-tile instance owns the class singleton; the first
-	// constructed dock is the default until a tile is explicitly focused.
-	singleton = singleton ? singleton : this;
 	set_name(TTRC("Inspector"));
 	set_icon_name("AnimationTrackList");
 	if (p_register_open_command) {
@@ -993,9 +992,6 @@ InspectorDock::InspectorDock(EditorData &p_editor_data, bool p_register_open_com
 }
 
 InspectorDock::~InspectorDock() {
-	if (singleton == this) {
-		singleton = nullptr;
-	}
 	if (scene_context) {
 		scene_context->unregister_inspector_dock(this);
 	}

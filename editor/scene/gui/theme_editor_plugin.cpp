@@ -3751,7 +3751,7 @@ void ThemeEditor::_theme_close_button_cbk() {
 }
 
 void ThemeEditor::_dock_closed_cbk() {
-	if (theme.is_valid() && InspectorDock::get_inspector_singleton()->get_edited_object() == theme.ptr()) {
+	if (theme.is_valid() && EditorNode::get_singleton()->get_focused_inspector()->get_edited_object() == theme.ptr()) {
 		EditorNode::get_singleton()->push_item(nullptr);
 	}
 	theme = Ref<Theme>();

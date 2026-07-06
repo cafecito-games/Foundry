@@ -1419,7 +1419,7 @@ void EditorProperty::menu_option(int p_option) {
 		case MENU_PASTE_VALUE: {
 			EditorPropertyResource *epr = Object::cast_to<EditorPropertyResource>(this);
 			if (epr) {
-				const Ref<Resource> res = InspectorDock::get_inspector_singleton()->get_property_clipboard();
+				const Ref<Resource> res = EditorNode::get_singleton()->get_focused_inspector()->get_property_clipboard();
 				if (res.is_valid() && !epr->get_resource_picker()->is_resource_allowed(res)) {
 					return;
 				}
@@ -2481,11 +2481,13 @@ void EditorInspectorSection::set_checkable(const String &p_related_check_propert
 	checked = p_checked;
 	related_enable_property = p_related_check_property;
 
-	if (InspectorDock::get_singleton()) {
-		if (checkable) {
-			InspectorDock::get_inspector_singleton()->connect("property_edited", callable_mp(this, &EditorInspectorSection::_property_edited));
-		} else {
-			InspectorDock::get_inspector_singleton()->disconnect("property_edited", callable_mp(this, &EditorInspectorSection::_property_edited));
+	if (EditorNode *editor = EditorNode::get_singleton()) {
+		if (editor->get_focused_inspector_dock()) {
+			if (checkable) {
+				editor->get_focused_inspector()->connect("property_edited", callable_mp(this, &EditorInspectorSection::_property_edited));
+			} else {
+				editor->get_focused_inspector()->disconnect("property_edited", callable_mp(this, &EditorInspectorSection::_property_edited));
+			}
 		}
 	}
 
@@ -2574,8 +2576,12 @@ EditorInspectorSection::~EditorInspectorSection() {
 		memdelete(vbox);
 	}
 
-	if (checkable && InspectorDock::get_singleton()) {
-		InspectorDock::get_inspector_singleton()->disconnect("property_edited", callable_mp(this, &EditorInspectorSection::_property_edited));
+	if (checkable) {
+		if (EditorNode *editor = EditorNode::get_singleton()) {
+			if (editor->get_focused_inspector_dock()) {
+				editor->get_focused_inspector()->disconnect("property_edited", callable_mp(this, &EditorInspectorSection::_property_edited));
+			}
+		}
 	}
 }
 
@@ -3719,7 +3725,8 @@ void EditorInspector::cleanup_plugins() {
 }
 
 bool EditorInspector::is_main_editor_inspector() const {
-	return InspectorDock::get_singleton() && InspectorDock::get_inspector_singleton() == this;
+	EditorNode *editor = EditorNode::get_singleton();
+	return editor && editor->get_focused_inspector_dock() && editor->get_focused_inspector() == this;
 }
 
 String EditorInspector::get_selected_path() const {

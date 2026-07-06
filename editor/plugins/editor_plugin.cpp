@@ -125,7 +125,7 @@ void EditorPlugin::add_control_to_container(CustomControlContainer p_location, C
 
 		} break;
 		case CONTAINER_INSPECTOR_BOTTOM: {
-			InspectorDock::get_singleton()->get_addon_area()->add_child(p_control);
+			EditorNode::get_singleton()->get_focused_inspector_dock()->get_addon_area()->add_child(p_control);
 
 		} break;
 		case CONTAINER_PROJECT_SETTING_TAB_LEFT: {
@@ -177,7 +177,7 @@ void EditorPlugin::remove_control_from_container(CustomControlContainer p_locati
 
 		} break;
 		case CONTAINER_INSPECTOR_BOTTOM: {
-			InspectorDock::get_singleton()->get_addon_area()->remove_child(p_control);
+			EditorNode::get_singleton()->get_focused_inspector_dock()->get_addon_area()->remove_child(p_control);
 
 		} break;
 		case CONTAINER_PROJECT_SETTING_TAB_LEFT:
@@ -547,7 +547,7 @@ EditorInterface *EditorPlugin::get_editor_interface() {
 }
 
 ScriptCreateDialog *EditorPlugin::get_script_create_dialog() {
-	return SceneTreeDock::get_singleton()->get_script_create_dialog();
+	return EditorNode::get_singleton()->get_focused_scene_tree_dock()->get_script_create_dialog();
 }
 
 void EditorPlugin::add_debugger_plugin(const Ref<EditorDebuggerPlugin> &p_plugin) {

@@ -3064,7 +3064,7 @@ void EditorPropertyNodePath::_menu_option(int p_idx) {
 			Node *target_node = edited_node->get_node_or_null(np);
 			ERR_FAIL_NULL(target_node);
 
-			SceneTreeDock::get_singleton()->set_selected(target_node);
+			EditorNode::get_singleton()->get_focused_scene_tree_dock()->set_selected(target_node);
 		} break;
 	}
 }
@@ -3231,7 +3231,7 @@ Node *EditorPropertyNodePath::get_base_node() {
 	}
 
 	if (!base_node) {
-		base_node = Object::cast_to<Node>(InspectorDock::get_inspector_singleton()->get_edited_object());
+		base_node = Object::cast_to<Node>(EditorNode::get_singleton()->get_focused_inspector()->get_edited_object());
 	}
 	if (!base_node) {
 		// Try a base node within history.
@@ -3385,7 +3385,7 @@ void EditorPropertyResource::_resource_changed(const Ref<Resource> &p_resource) 
 	Ref<Script> s = p_resource;
 	if (get_edited_object() && s.is_valid() && get_edited_property() == CoreStringName(script)) {
 		is_script = true;
-		InspectorDock::get_singleton()->store_script_properties(get_edited_object());
+		EditorNode::get_singleton()->get_focused_inspector_dock()->store_script_properties(get_edited_object());
 		s->call("set_instance_base_type", get_edited_object()->get_class());
 	}
 
@@ -3420,7 +3420,7 @@ void EditorPropertyResource::_resource_changed(const Ref<Resource> &p_resource) 
 
 	if (is_script) {
 		// Restore properties if script was changed.
-		InspectorDock::get_singleton()->apply_script_properties(get_edited_object());
+		EditorNode::get_singleton()->get_focused_inspector_dock()->apply_script_properties(get_edited_object());
 	}
 
 	// Automatically suggest setting up the path for a ViewportTexture.
@@ -3500,7 +3500,7 @@ Node *EditorPropertyResource::_get_base_node() {
 	Node *base_node = Object::cast_to<Node>(get_edited_object());
 
 	if (!base_node) {
-		base_node = Object::cast_to<Node>(InspectorDock::get_inspector_singleton()->get_edited_object());
+		base_node = Object::cast_to<Node>(EditorNode::get_singleton()->get_focused_inspector()->get_edited_object());
 	}
 
 	if (!base_node) {
@@ -3607,7 +3607,7 @@ void EditorPropertyResource::update_property() {
 					sub_inspector->register_text_enter(parent_inspector->search_box);
 				}
 
-				sub_inspector->set_property_name_style(InspectorDock::get_singleton()->get_property_name_style());
+				sub_inspector->set_property_name_style(EditorNode::get_singleton()->get_focused_inspector_dock()->get_property_name_style());
 
 				sub_inspector->connect("property_keyed", callable_mp(this, &EditorPropertyResource::_sub_inspector_property_keyed));
 				sub_inspector->connect("resource_selected", callable_mp(this, &EditorPropertyResource::_sub_inspector_resource_selected));
@@ -3730,7 +3730,7 @@ void EditorPropertyResource::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_EXIT_TREE: {
 			const EditorInspector *ei = get_parent_inspector();
-			const EditorInspector *main_ei = InspectorDock::get_inspector_singleton();
+			const EditorInspector *main_ei = EditorNode::get_singleton()->get_focused_inspector();
 			if (ei && main_ei && ei != main_ei && !main_ei->is_ancestor_of(ei)) {
 				fold_resource();
 			}

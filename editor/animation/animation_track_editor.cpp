@@ -6140,7 +6140,7 @@ struct _AnimMoveRestore {
 void AnimationTrackEditor::_clear_key_edit() {
 	if (key_edit) {
 		// If key edit is the object being inspected, remove it first.
-		if (InspectorDock::get_inspector_singleton()->get_edited_object() == key_edit) {
+		if (EditorNode::get_singleton()->get_focused_inspector()->get_edited_object() == key_edit) {
 			EditorNode::get_singleton()->push_item(nullptr);
 		}
 
@@ -6150,7 +6150,7 @@ void AnimationTrackEditor::_clear_key_edit() {
 	}
 
 	if (multi_key_edit) {
-		if (InspectorDock::get_inspector_singleton()->get_edited_object() == multi_key_edit) {
+		if (EditorNode::get_singleton()->get_focused_inspector()->get_edited_object() == multi_key_edit) {
 			EditorNode::get_singleton()->push_item(nullptr);
 		}
 
@@ -8903,7 +8903,7 @@ void AnimationMarkerEdit::_update_key_edit() {
 
 		EditorNode::get_singleton()->push_item(key_edit);
 
-		InspectorDock::get_singleton()->set_info(TTR("Marker name is read-only in the inspector."), TTR("A marker's name can only be changed by right-clicking it in the animation editor and selecting \"Rename Marker\", in order to make sure that marker names are all unique."), true);
+		EditorNode::get_singleton()->get_focused_inspector_dock()->set_info(TTR("Marker name is read-only in the inspector."), TTR("A marker's name can only be changed by right-clicking it in the animation editor and selecting \"Rename Marker\", in order to make sure that marker names are all unique."), true);
 	} else if (selection.size() > 1) {
 		multi_key_edit = memnew(AnimationMultiMarkerKeyEdit);
 		multi_key_edit->animation = animation;
@@ -8920,7 +8920,7 @@ void AnimationMarkerEdit::_update_key_edit() {
 void AnimationMarkerEdit::_clear_key_edit() {
 	if (key_edit) {
 		// If key edit is the object being inspected, remove it first.
-		if (InspectorDock::get_inspector_singleton()->get_edited_object() == key_edit) {
+		if (EditorNode::get_singleton()->get_focused_inspector()->get_edited_object() == key_edit) {
 			EditorNode::get_singleton()->push_item(nullptr);
 		}
 
@@ -8930,7 +8930,7 @@ void AnimationMarkerEdit::_clear_key_edit() {
 	}
 
 	if (multi_key_edit) {
-		if (InspectorDock::get_inspector_singleton()->get_edited_object() == multi_key_edit) {
+		if (EditorNode::get_singleton()->get_focused_inspector()->get_edited_object() == multi_key_edit) {
 			EditorNode::get_singleton()->push_item(nullptr);
 		}
 

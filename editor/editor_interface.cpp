@@ -34,6 +34,7 @@
 #include "core/io/resource_loader.h"
 #include "editor/docks/filesystem_dock.h"
 #include "editor/docks/inspector_dock.h"
+#include "editor/docks/scene_tree_dock.h"
 #include "editor/editor_main_screen.h"
 #include "editor/editor_node.h"
 #include "editor/editor_scene_pane_tile.h"
@@ -675,6 +676,16 @@ HistoryDock *EditorInterface::get_focused_history_dock() const {
 	return editor ? editor->get_focused_history_dock() : nullptr;
 }
 
+SceneTreeDock *EditorInterface::get_focused_scene_tree_dock() const {
+	EditorNode *editor = EditorNode::get_singleton();
+	return editor ? editor->get_focused_scene_tree_dock() : nullptr;
+}
+
+InspectorDock *EditorInterface::get_focused_inspector_dock() const {
+	EditorNode *editor = EditorNode::get_singleton();
+	return editor ? editor->get_focused_inspector_dock() : nullptr;
+}
+
 void EditorInterface::select_file(const String &p_file) {
 	FileSystemDock::get_singleton()->select_file(p_file);
 }
@@ -692,7 +703,8 @@ String EditorInterface::get_current_directory() const {
 }
 
 EditorInspector *EditorInterface::get_inspector() const {
-	return InspectorDock::get_inspector_singleton();
+	EditorNode *editor = EditorNode::get_singleton();
+	return editor ? editor->get_focused_inspector() : nullptr;
 }
 
 // Object/Resource/Node editing.
@@ -912,6 +924,8 @@ void EditorInterface::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("get_file_system_dock"), &EditorInterface::get_file_system_dock);
 	ClassDB::bind_method(D_METHOD("get_focused_tile"), &EditorInterface::get_focused_tile);
+	ClassDB::bind_method(D_METHOD("get_focused_scene_tree_dock"), &EditorInterface::get_focused_scene_tree_dock);
+	ClassDB::bind_method(D_METHOD("get_focused_inspector_dock"), &EditorInterface::get_focused_inspector_dock);
 	ClassDB::bind_method(D_METHOD("get_focused_signals_dock"), &EditorInterface::get_focused_signals_dock);
 	ClassDB::bind_method(D_METHOD("get_focused_groups_dock"), &EditorInterface::get_focused_groups_dock);
 	ClassDB::bind_method(D_METHOD("get_focused_history_dock"), &EditorInterface::get_focused_history_dock);

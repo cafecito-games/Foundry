@@ -152,7 +152,7 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	_flush_frames(10);
 
 	p_driver.set_step("open_add_child_node_dialog");
-	SceneTreeDock *scene_dock = SceneTreeDock::get_singleton();
+	SceneTreeDock *scene_dock = EditorNode::get_singleton()->get_focused_scene_tree_dock();
 	if (scene_dock == nullptr) {
 		result.ok = false;
 		result.message = "Focused scene tree dock is unavailable.";

@@ -45,6 +45,10 @@ class EditorFileDialog;
 class EditorObjectSelector;
 class EditorSceneContext;
 
+namespace TestSceneWorkspace {
+class TileInspectorDockTestAccess;
+}
+
 class InspectorDock : public EditorDock {
 	FOUNDRY_CLASS(InspectorDock, EditorDock);
 
@@ -52,6 +56,7 @@ class InspectorDock : public EditorDock {
 	// chrome (back/forward/history-menu button states).
 	friend class EditorNode;
 	friend class InspectorDockTestAccess;
+	friend class TestSceneWorkspace::TileInspectorDockTestAccess;
 
 	enum MenuOptions {
 		RESOURCE_LOAD,
@@ -150,17 +155,7 @@ class InspectorDock : public EditorDock {
 
 	virtual void shortcut_input(const Ref<InputEvent> &p_event) override;
 
-private:
-	static inline InspectorDock *singleton = nullptr;
-
 public:
-	// Both accessors return the dock/inspector bound to the focused scene
-	// context. Call sites that must act on a specific context should hold an
-	// explicit dock/context reference instead of relying on these
-	// focused-context singletons.
-	static InspectorDock *get_singleton() { return singleton; }
-	static void set_focused_instance(InspectorDock *p_instance) { singleton = p_instance; }
-	static EditorInspector *get_inspector_singleton() { return singleton ? singleton->inspector : nullptr; }
 	static void expand_all_focused();
 
 protected:

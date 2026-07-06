@@ -1063,13 +1063,13 @@ void CanvasItemEditor::_add_node_pressed(int p_result) {
 
 	switch (p_result) {
 		case ADD_NODE: {
-			SceneTreeDock::get_singleton()->open_add_child_dialog();
+			EditorNode::get_singleton()->get_focused_scene_tree_dock()->open_add_child_dialog();
 		} break;
 		case ADD_INSTANCE: {
-			SceneTreeDock::get_singleton()->open_instance_child_dialog();
+			EditorNode::get_singleton()->get_focused_scene_tree_dock()->open_instance_child_dialog();
 		} break;
 		case ADD_PASTE: {
-			nodes_to_move = SceneTreeDock::get_singleton()->paste_nodes();
+			nodes_to_move = EditorNode::get_singleton()->get_focused_scene_tree_dock()->paste_nodes();
 			[[fallthrough]];
 		}
 		case ADD_MOVE: {
@@ -2269,8 +2269,8 @@ CanvasItemEditor::CanvasItemEditor() {
 	EditorNode::get_singleton()->connect_editor_selection_changed(callable_mp((CanvasItem *)this, &CanvasItem::queue_redraw));
 	EditorNode::get_singleton()->connect_editor_selection_changed(callable_mp(this, &CanvasItemEditor::_selection_changed));
 
-	SceneTreeDock::get_singleton()->connect("node_created", callable_mp(this, &CanvasItemEditor::_adjust_new_node_position));
-	SceneTreeDock::get_singleton()->connect("add_node_used", callable_mp(this, &CanvasItemEditor::_reset_create_position));
+	EditorNode::get_singleton()->get_focused_scene_tree_dock()->connect("node_created", callable_mp(this, &CanvasItemEditor::_adjust_new_node_position));
+	EditorNode::get_singleton()->get_focused_scene_tree_dock()->connect("add_node_used", callable_mp(this, &CanvasItemEditor::_reset_create_position));
 
 	MarginContainer *toolbar_margin = memnew(MarginContainer);
 	toolbar_margin->set_theme_type_variation("MainToolBarMargin");

@@ -3431,7 +3431,7 @@ void Node3DEditorViewport::_notification(int p_what) {
 
 			_update_freelook(delta);
 
-			Node *scene_root = SceneTreeDock::get_singleton()->get_editor_data()->get_edited_scene_root();
+			Node *scene_root = EditorNode::get_singleton()->get_focused_scene_tree_dock()->get_editor_data()->get_edited_scene_root();
 			if (previewing_cinema && scene_root != nullptr) {
 				Camera3D *cam = scene_root->get_viewport()->get_camera_3d();
 				if (cam != nullptr && cam != previewing) {
@@ -5748,7 +5748,7 @@ void Node3DEditorViewport::drop_data_fw(const Point2 &p_point, const Variant &p_
 			target_node = root_node;
 		} else {
 			// Create a root node so we can add child nodes to it.
-			SceneTreeDock::get_singleton()->add_root_node(memnew(Node3D));
+			EditorNode::get_singleton()->get_focused_scene_tree_dock()->add_root_node(memnew(Node3D));
 			target_node = get_tree()->get_edited_scene_root();
 		}
 	}
@@ -9356,7 +9356,7 @@ void Node3DEditor::_add_sun_to_scene(bool p_already_added_environment) {
 	Node *base = get_tree()->get_edited_scene_root();
 	if (!base) {
 		// Create a root node so we can add child nodes to it.
-		SceneTreeDock::get_singleton()->add_root_node(memnew(Node3D));
+		EditorNode::get_singleton()->get_focused_scene_tree_dock()->add_root_node(memnew(Node3D));
 		base = get_tree()->get_edited_scene_root();
 	}
 	ERR_FAIL_NULL(base);
@@ -9385,7 +9385,7 @@ void Node3DEditor::_add_environment_to_scene(bool p_already_added_sun) {
 	Node *base = get_tree()->get_edited_scene_root();
 	if (!base) {
 		// Create a root node so we can add child nodes to it.
-		SceneTreeDock::get_singleton()->add_root_node(memnew(Node3D));
+		EditorNode::get_singleton()->get_focused_scene_tree_dock()->add_root_node(memnew(Node3D));
 		base = get_tree()->get_edited_scene_root();
 	}
 	ERR_FAIL_NULL(base);
@@ -9463,7 +9463,7 @@ void Node3DEditor::_notification(int p_what) {
 
 			get_tree()->connect("node_removed", callable_mp(this, &Node3DEditor::_node_removed));
 			get_tree()->connect("node_added", callable_mp(this, &Node3DEditor::_node_added));
-			SceneTreeDock::get_singleton()->get_tree_editor()->connect("node_changed", callable_mp(this, &Node3DEditor::_refresh_menu_icons));
+			EditorNode::get_singleton()->get_focused_scene_tree_dock()->get_tree_editor()->connect("node_changed", callable_mp(this, &Node3DEditor::_refresh_menu_icons));
 			EditorNode::get_singleton()->connect_editor_selection_changed(callable_mp(this, &Node3DEditor::_selection_changed));
 			EditorNode::get_singleton()->connect("active_scene_context_changed", callable_mp(this, &Node3DEditor::_active_scene_context_changed));
 			// A context may have activated before this connection existed
