@@ -96,6 +96,13 @@ repos:
         pass_filenames: false
         files: ^(gles3|glsl)_builders\.py$
 
+      - id: validate-sconstruct-warnings
+        name: validate-sconstruct-warnings
+        language: python
+        entry: python tests/python_build/validate_sconstruct_warnings.py
+        pass_filenames: false
+        files: ^(SConstruct|tests/python_build/validate_sconstruct_warnings\.py)$
+
       - id: validate-xml
         name: validate-xml
         language: python

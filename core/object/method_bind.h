@@ -315,9 +315,9 @@ protected:
 	}
 
 	virtual PropertyInfo _gen_argument_type_info(int p_arg) const override {
-		PropertyInfo pi;
-		call_get_argument_type_info<P...>(p_arg, pi);
-		return pi;
+		PropertyInfo property_info;
+		call_get_argument_type_info<P...>(p_arg, property_info);
+		return property_info;
 	}
 
 public:
@@ -399,9 +399,9 @@ protected:
 	}
 
 	virtual PropertyInfo _gen_argument_type_info(int p_arg) const override {
-		PropertyInfo pi;
-		call_get_argument_type_info<P...>(p_arg, pi);
-		return pi;
+		PropertyInfo property_info;
+		call_get_argument_type_info<P...>(p_arg, property_info);
+		return property_info;
 	}
 
 public:
@@ -485,9 +485,9 @@ protected:
 
 	virtual PropertyInfo _gen_argument_type_info(int p_arg) const override {
 		if (p_arg >= 0 && p_arg < (int)sizeof...(P)) {
-			PropertyInfo pi;
-			call_get_argument_type_info<P...>(p_arg, pi);
-			return pi;
+			PropertyInfo property_info;
+			call_get_argument_type_info<P...>(p_arg, property_info);
+			return property_info;
 		} else {
 			return GetTypeInfo<R>::get_class_info();
 		}
@@ -580,9 +580,9 @@ protected:
 
 	virtual PropertyInfo _gen_argument_type_info(int p_arg) const override {
 		if (p_arg >= 0 && p_arg < (int)sizeof...(P)) {
-			PropertyInfo pi;
-			call_get_argument_type_info<P...>(p_arg, pi);
-			return pi;
+			PropertyInfo property_info;
+			call_get_argument_type_info<P...>(p_arg, property_info);
+			return property_info;
 		} else {
 			return GetTypeInfo<R>::get_class_info();
 		}
@@ -672,9 +672,9 @@ protected:
 	}
 
 	virtual PropertyInfo _gen_argument_type_info(int p_arg) const override {
-		PropertyInfo pi;
-		call_get_argument_type_info<P...>(p_arg, pi);
-		return pi;
+		PropertyInfo property_info;
+		call_get_argument_type_info<P...>(p_arg, property_info);
+		return property_info;
 	}
 
 public:
@@ -731,9 +731,9 @@ protected:
 
 	virtual PropertyInfo _gen_argument_type_info(int p_arg) const override {
 		if (p_arg >= 0 && p_arg < (int)sizeof...(P)) {
-			PropertyInfo pi;
-			call_get_argument_type_info<P...>(p_arg, pi);
-			return pi;
+			PropertyInfo property_info;
+			call_get_argument_type_info<P...>(p_arg, property_info);
+			return property_info;
 		} else {
 			return GetTypeInfo<R>::get_class_info();
 		}

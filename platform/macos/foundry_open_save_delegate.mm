@@ -86,8 +86,8 @@
 			popup = popup_check;
 		} else {
 			NSPopUpButton *popup_list = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
-			for (int i = 0; i < values.size(); i++) {
-				[popup_list addItemWithTitle:[NSString stringWithUTF8String:values[i].utf8().get_data()]];
+			for (int value_index = 0; value_index < values.size(); value_index++) {
+				[popup_list addItemWithTitle:[NSString stringWithUTF8String:values[value_index].utf8().get_data()]];
 			}
 			int tag = [self setDefaultInt:name value:default_idx];
 			[popup_list selectItemAtIndex:default_idx];

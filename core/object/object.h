@@ -169,9 +169,9 @@ struct PropertyInfo {
 	// If you are thinking about adding another member to this class, ask the maintainer (Juan) first.
 
 	_FORCE_INLINE_ PropertyInfo added_usage(uint32_t p_fl) const {
-		PropertyInfo pi = *this;
-		pi.usage |= p_fl;
-		return pi;
+		PropertyInfo property_info = *this;
+		property_info.usage |= p_fl;
+		return property_info;
 	}
 
 	operator Dictionary() const;

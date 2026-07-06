@@ -880,23 +880,23 @@ Error DisplayServerMacOS::dialog_show(String p_title, String p_description, Vect
 	[window setAlertStyle:NSAlertStyleInformational];
 
 	Variant button_pressed;
-	NSInteger ret = [window runModal];
-	if (ret == NSAlertFirstButtonReturn) {
+	NSInteger alert_result = [window runModal];
+	if (alert_result == NSAlertFirstButtonReturn) {
 		button_pressed = int64_t(0);
-	} else if (ret == NSAlertSecondButtonReturn) {
+	} else if (alert_result == NSAlertSecondButtonReturn) {
 		button_pressed = int64_t(1);
-	} else if (ret == NSAlertThirdButtonReturn) {
+	} else if (alert_result == NSAlertThirdButtonReturn) {
 		button_pressed = int64_t(2);
 	} else {
-		button_pressed = int64_t(2 + (ret - NSAlertThirdButtonReturn));
+		button_pressed = int64_t(2 + (alert_result - NSAlertThirdButtonReturn));
 	}
 
 	if (p_callback.is_valid()) {
-		Variant ret;
+		Variant callback_ret;
 		Callable::CallError ce;
 		const Variant *args[1] = { &button_pressed };
 
-		p_callback.callp(args, 1, ret, ce);
+		p_callback.callp(args, 1, callback_ret, ce);
 		if (ce.error != Callable::CallError::CALL_OK) {
 			ERR_PRINT(vformat("Failed to execute dialog callback: %s.", Variant::get_callable_error_text(p_callback, args, 1, ce)));
 		}
@@ -918,7 +918,7 @@ Error DisplayServerMacOS::_file_dialog_with_options_show(const String &p_title, 
 
 	ERR_FAIL_INDEX_V(int(p_mode), FILE_DIALOG_MODE_SAVE_MAX, FAILED);
 
-	NSString *url = [NSString stringWithUTF8String:p_current_directory.utf8().get_data()];
+	NSString *current_directory_url = [NSString stringWithUTF8String:p_current_directory.utf8().get_data()];
 
 	NSWindow *nswindow = nullptr;
 	if (windows.has(p_window_id) && !windows[p_window_id].is_popup) {
@@ -933,7 +933,7 @@ Error DisplayServerMacOS::_file_dialog_with_options_show(const String &p_title, 
 	if (p_mode == FILE_DIALOG_MODE_SAVE_FILE) {
 		NSSavePanel *panel = [NSSavePanel savePanel];
 
-		[panel setDirectoryURL:[NSURL fileURLWithPath:url]];
+		[panel setDirectoryURL:[NSURL fileURLWithPath:current_directory_url]];
 		[panel_delegate makeAccessoryView:panel filters:p_filters options:p_options];
 		[panel setExtensionHidden:YES];
 		[panel setCanSelectHiddenExtension:YES];
@@ -945,8 +945,8 @@ Error DisplayServerMacOS::_file_dialog_with_options_show(const String &p_title, 
 			[panel setNameFieldStringValue:fileurl];
 		}
 
-		void (^completion_handler)(NSInteger ret) = ^(NSInteger ret) {
-			if (ret == NSModalResponseOK) {
+		void (^completion_handler)(NSInteger response) = ^(NSInteger response) {
+			if (response == NSModalResponseOK) {
 				// Save bookmark for folder.
 				if (OS::get_singleton()->is_sandboxed()) {
 					NSArray *bookmarks = [[NSUserDefaults standardUserDefaults] arrayForKey:@"sec_bookmarks"];
@@ -971,20 +971,20 @@ Error DisplayServerMacOS::_file_dialog_with_options_show(const String &p_title, 
 				}
 				// Callback.
 				Vector<String> files;
-				String url;
-				url.append_utf8([[[panel URL] path] UTF8String]);
-				files.push_back([panel_delegate validateFilename:url]);
+				String selected_path;
+				selected_path.append_utf8([[[panel URL] path] UTF8String]);
+				files.push_back([panel_delegate validateFilename:selected_path]);
 				if (callback.is_valid()) {
 					if (p_options_in_cb) {
 						Variant v_result = true;
 						Variant v_files = files;
 						Variant v_index = [panel_delegate getIndex];
 						Variant v_opt = [panel_delegate getSelection];
-						Variant ret;
+						Variant callback_ret;
 						Callable::CallError ce;
 						const Variant *args[4] = { &v_result, &v_files, &v_index, &v_opt };
 
-						callback.callp(args, 4, ret, ce);
+						callback.callp(args, 4, callback_ret, ce);
 						if (ce.error != Callable::CallError::CALL_OK) {
 							ERR_PRINT(vformat("Failed to execute file dialog callback: %s.", Variant::get_callable_error_text(callback, args, 4, ce)));
 						}
@@ -992,11 +992,11 @@ Error DisplayServerMacOS::_file_dialog_with_options_show(const String &p_title, 
 						Variant v_result = true;
 						Variant v_files = files;
 						Variant v_index = [panel_delegate getIndex];
-						Variant ret;
+						Variant callback_ret;
 						Callable::CallError ce;
 						const Variant *args[3] = { &v_result, &v_files, &v_index };
 
-						callback.callp(args, 3, ret, ce);
+						callback.callp(args, 3, callback_ret, ce);
 						if (ce.error != Callable::CallError::CALL_OK) {
 							ERR_PRINT(vformat("Failed to execute file dialog callback: %s.", Variant::get_callable_error_text(callback, args, 3, ce)));
 						}
@@ -1009,11 +1009,11 @@ Error DisplayServerMacOS::_file_dialog_with_options_show(const String &p_title, 
 						Variant v_files = Vector<String>();
 						Variant v_index = [panel_delegate getIndex];
 						Variant v_opt = [panel_delegate getSelection];
-						Variant ret;
+						Variant callback_ret;
 						Callable::CallError ce;
 						const Variant *args[4] = { &v_result, &v_files, &v_index, &v_opt };
 
-						callback.callp(args, 4, ret, ce);
+						callback.callp(args, 4, callback_ret, ce);
 						if (ce.error != Callable::CallError::CALL_OK) {
 							ERR_PRINT(vformat("Failed to execute file dialog callback: %s.", Variant::get_callable_error_text(callback, args, 4, ce)));
 						}
@@ -1021,11 +1021,11 @@ Error DisplayServerMacOS::_file_dialog_with_options_show(const String &p_title, 
 						Variant v_result = false;
 						Variant v_files = Vector<String>();
 						Variant v_index = [panel_delegate getIndex];
-						Variant ret;
+						Variant callback_ret;
 						Callable::CallError ce;
 						const Variant *args[3] = { &v_result, &v_files, &v_index };
 
-						callback.callp(args, 3, ret, ce);
+						callback.callp(args, 3, callback_ret, ce);
 						if (ce.error != Callable::CallError::CALL_OK) {
 							ERR_PRINT(vformat("Failed to execute file dialog callback: %s.", Variant::get_callable_error_text(callback, args, 3, ce)));
 						}
@@ -1044,7 +1044,7 @@ Error DisplayServerMacOS::_file_dialog_with_options_show(const String &p_title, 
 	} else {
 		NSOpenPanel *panel = [NSOpenPanel openPanel];
 
-		[panel setDirectoryURL:[NSURL fileURLWithPath:url]];
+		[panel setDirectoryURL:[NSURL fileURLWithPath:current_directory_url]];
 		[panel_delegate makeAccessoryView:panel filters:p_filters options:p_options];
 		[panel setExtensionHidden:YES];
 		[panel setCanSelectHiddenExtension:YES];
@@ -1059,8 +1059,8 @@ Error DisplayServerMacOS::_file_dialog_with_options_show(const String &p_title, 
 		}
 		[panel setAllowsMultipleSelection:(p_mode == FILE_DIALOG_MODE_OPEN_FILES)];
 
-		void (^completion_handler)(NSInteger ret) = ^(NSInteger ret) {
-			if (ret == NSModalResponseOK) {
+		void (^completion_handler)(NSInteger response) = ^(NSInteger response) {
+			if (response == NSModalResponseOK) {
 				// Save bookmark for folder.
 				NSArray *urls = [(NSOpenPanel *)panel URLs];
 				if (OS::get_singleton()->is_sandboxed()) {
@@ -1090,9 +1090,9 @@ Error DisplayServerMacOS::_file_dialog_with_options_show(const String &p_title, 
 				// Callback.
 				Vector<String> files;
 				for (NSUInteger i = 0; i != [urls count]; ++i) {
-					String url;
-					url.append_utf8([[[urls objectAtIndex:i] path] UTF8String]);
-					files.push_back([panel_delegate validateFilename:url]);
+					String file_path;
+					file_path.append_utf8([[[urls objectAtIndex:i] path] UTF8String]);
+					files.push_back([panel_delegate validateFilename:file_path]);
 				}
 				if (callback.is_valid()) {
 					if (p_options_in_cb) {
@@ -1100,11 +1100,11 @@ Error DisplayServerMacOS::_file_dialog_with_options_show(const String &p_title, 
 						Variant v_files = files;
 						Variant v_index = [panel_delegate getIndex];
 						Variant v_opt = [panel_delegate getSelection];
-						Variant ret;
+						Variant callback_ret;
 						Callable::CallError ce;
 						const Variant *args[4] = { &v_result, &v_files, &v_index, &v_opt };
 
-						callback.callp(args, 4, ret, ce);
+						callback.callp(args, 4, callback_ret, ce);
 						if (ce.error != Callable::CallError::CALL_OK) {
 							ERR_PRINT(vformat("Failed to execute file dialog callback: %s.", Variant::get_callable_error_text(callback, args, 4, ce)));
 						}
@@ -1112,11 +1112,11 @@ Error DisplayServerMacOS::_file_dialog_with_options_show(const String &p_title, 
 						Variant v_result = true;
 						Variant v_files = files;
 						Variant v_index = [panel_delegate getIndex];
-						Variant ret;
+						Variant callback_ret;
 						Callable::CallError ce;
 						const Variant *args[3] = { &v_result, &v_files, &v_index };
 
-						callback.callp(args, 3, ret, ce);
+						callback.callp(args, 3, callback_ret, ce);
 						if (ce.error != Callable::CallError::CALL_OK) {
 							ERR_PRINT(vformat("Failed to execute file dialog callback: %s.", Variant::get_callable_error_text(callback, args, 3, ce)));
 						}
@@ -1129,11 +1129,11 @@ Error DisplayServerMacOS::_file_dialog_with_options_show(const String &p_title, 
 						Variant v_files = Vector<String>();
 						Variant v_index = [panel_delegate getIndex];
 						Variant v_opt = [panel_delegate getSelection];
-						Variant ret;
+						Variant callback_ret;
 						Callable::CallError ce;
 						const Variant *args[4] = { &v_result, &v_files, &v_index, &v_opt };
 
-						callback.callp(args, 4, ret, ce);
+						callback.callp(args, 4, callback_ret, ce);
 						if (ce.error != Callable::CallError::CALL_OK) {
 							ERR_PRINT(vformat("Failed to execute file dialog callback: %s.", Variant::get_callable_error_text(callback, args, 4, ce)));
 						}
@@ -1141,11 +1141,11 @@ Error DisplayServerMacOS::_file_dialog_with_options_show(const String &p_title, 
 						Variant v_result = false;
 						Variant v_files = Vector<String>();
 						Variant v_index = [panel_delegate getIndex];
-						Variant ret;
+						Variant callback_ret;
 						Callable::CallError ce;
 						const Variant *args[3] = { &v_result, &v_files, &v_index };
 
-						callback.callp(args, 3, ret, ce);
+						callback.callp(args, 3, callback_ret, ce);
 						if (ce.error != Callable::CallError::CALL_OK) {
 							ERR_PRINT(vformat("Failed to execute file dialog callback: %s.", Variant::get_callable_error_text(callback, args, 3, ce)));
 						}
@@ -1188,16 +1188,16 @@ Error DisplayServerMacOS::dialog_input_text(String p_title, String p_description
 
 	[window runModal];
 
-	String ret;
-	ret.append_utf8([[input stringValue] UTF8String]);
+	String input_text;
+	input_text.append_utf8([[input stringValue] UTF8String]);
 
 	if (p_callback.is_valid()) {
-		Variant v_result = ret;
-		Variant ret;
+		Variant v_result = input_text;
+		Variant callback_ret;
 		Callable::CallError ce;
 		const Variant *args[1] = { &v_result };
 
-		p_callback.callp(args, 1, ret, ce);
+		p_callback.callp(args, 1, callback_ret, ce);
 		if (ce.error != Callable::CallError::CALL_OK) {
 			ERR_PRINT(vformat("Failed to execute input dialog callback: %s.", Variant::get_callable_error_text(p_callback, args, 1, ce)));
 		}
@@ -1990,7 +1990,6 @@ void DisplayServerMacOS::reparent_check(WindowID p_window) {
 				[wd_parent.window_object removeChildWindow:wd.window_object];
 				[wd.window_object setCollectionBehavior:NSWindowCollectionBehaviorFullScreenPrimary];
 				if (wd.transient_parent != INVALID_WINDOW_ID) {
-					WindowData &wd_parent = windows[wd.transient_parent];
 					[wd.window_object orderWindow:NSWindowAbove relativeTo:[wd_parent.window_object windowNumber]];
 				} else if (p_window != MAIN_WINDOW_ID) {
 					[wd.window_object orderWindow:NSWindowAbove relativeTo:[windows[MAIN_WINDOW_ID].window_object windowNumber]];

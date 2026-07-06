@@ -11502,19 +11502,19 @@ Ref<FSParserRef> FSAnalyzer::DependencyParserAccess::ensure_cached_external_pars
 		return E->value;
 	}
 
-	FSParser *parser = analyzer->parser;
-	if (parser->has_class(p_class)) {
+	FSParser *owner_parser = analyzer->parser;
+	if (owner_parser->has_class(p_class)) {
 		return nullptr;
 	}
 
 	if (p_from_class == nullptr) {
-		p_from_class = parser->head;
+		p_from_class = owner_parser->head;
 	}
 
 	Ref<FSParserRef> parser_ref;
 	for (const FSParser::ClassNode *look_class = p_from_class; look_class != nullptr; look_class = look_class->base_type.class_type) {
-		if (parser->has_class(look_class)) {
-			parser_ref = find_cached_external_parser_for_class(p_class, parser);
+		if (owner_parser->has_class(look_class)) {
+			parser_ref = find_cached_external_parser_for_class(p_class, owner_parser);
 			if (parser_ref.is_valid()) {
 				break;
 			}
@@ -11528,7 +11528,7 @@ Ref<FSParserRef> FSAnalyzer::DependencyParserAccess::ensure_cached_external_pars
 		}
 
 		String look_class_script_path = look_class->get_datatype().script_path;
-		if (HashMap<String, Ref<FSParserRef>>::Iterator E = parser->depended_parsers.find(look_class_script_path)) {
+		if (HashMap<String, Ref<FSParserRef>>::Iterator E = owner_parser->depended_parsers.find(look_class_script_path)) {
 			parser_ref = find_cached_external_parser_for_class(p_class, E->value);
 			if (parser_ref.is_valid()) {
 				break;
