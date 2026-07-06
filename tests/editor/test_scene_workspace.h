@@ -823,4 +823,100 @@ TEST_CASE("[SceneTree][Editor] leaf-content-generic") {
 	h2.unmount();
 }
 
+TEST_CASE("[SceneTree][Editor] script-leaf-open") {
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspaceLeafNode *scene_leaf = h.workspace->get_focused_leaf();
+	REQUIRE(scene_leaf != nullptr);
+	CHECK(h.workspace->get_leaf_count() == 1);
+	CHECK(h.workspace->get_script_leaf() == nullptr);
+
+	// Opening a script from the scene tile creates a script leaf beside it.
+	WorkspaceLeafNode *script_leaf_node = h.workspace->open_script_leaf(scene_leaf, "res://player.fs");
+	h.pump();
+	REQUIRE(script_leaf_node != nullptr);
+	CHECK(script_leaf_node != scene_leaf);
+	CHECK(h.workspace->get_leaf_count() == 2);
+	REQUIRE(script_leaf_node->get_leaf_content() != nullptr);
+	CHECK(script_leaf_node->get_leaf_content()->get_content_type() == StringName("script"));
+	CHECK(script_leaf_node->get_leaf_content()->get_scene_context() == nullptr);
+	CHECK(h.workspace->get_script_leaf() == script_leaf_node);
+
+	ScriptLeaf *script_leaf = Object::cast_to<ScriptLeaf>(script_leaf_node->get_leaf_content()->get_root_control());
+	REQUIRE(script_leaf != nullptr);
+	CHECK(script_leaf->get_script_path() == "res://player.fs");
+	CHECK(script_leaf->get_tab_title() == "player.fs");
+
+	// Re-opening reuses the single script leaf (one embedded surface in U15a) and
+	// re-points it rather than opening a second one.
+	WorkspaceLeafNode *again = h.workspace->open_script_leaf(scene_leaf, "res://enemy.fs");
+	h.pump();
+	CHECK(again == script_leaf_node);
+	CHECK(h.workspace->get_leaf_count() == 2);
+	CHECK(script_leaf->get_script_path() == "res://enemy.fs");
+	CHECK(script_leaf->get_tab_title() == "enemy.fs");
+
+	// The script leaf (with its script path) round-trips through persistence.
+	Ref<ConfigFile> config;
+	config.instantiate();
+	EditorSceneWorkspace::save_to_config(config, h.workspace);
+	const int scene_leaf_id = scene_leaf->get_leaf_id();
+	const int script_leaf_id = script_leaf_node->get_leaf_id();
+
+	h.unmount();
+
+	WorkspaceHarness h2;
+	h2.mount();
+	h2.workspace->restore_from_config(config);
+	h2.pump();
+
+	CHECK(h2.workspace->get_leaf_count() == 2);
+	CHECK(h2.workspace->get_leaf_by_id(scene_leaf_id) != nullptr);
+	WorkspaceLeafNode *restored = h2.workspace->get_script_leaf();
+	REQUIRE(restored != nullptr);
+	CHECK(restored->get_leaf_id() == script_leaf_id);
+	REQUIRE(restored->get_leaf_content() != nullptr);
+	ScriptLeaf *restored_leaf = Object::cast_to<ScriptLeaf>(restored->get_leaf_content()->get_root_control());
+	REQUIRE(restored_leaf != nullptr);
+	CHECK(restored_leaf->get_script_path() == "res://enemy.fs");
+	CHECK(restored_leaf->get_tab_title() == "enemy.fs");
+
+	h2.unmount();
+}
+
+TEST_CASE("[SceneTree][Editor] script-leaf-collapse-keeps-scene-focus") {
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspaceLeafNode *scene_a = h.workspace->get_focused_leaf();
+	REQUIRE(scene_a != nullptr);
+
+	// Two scene tiles, with a script leaf opened beside the second one, so that
+	// scene_b's collapse successor is the (non-scene) script leaf.
+	WorkspaceLeafNode *scene_b = h.workspace->split(scene_a, false, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
+	h.pump();
+	REQUIRE(scene_b != nullptr);
+	WorkspaceLeafNode *script_leaf = h.workspace->open_script_leaf(scene_b, "res://a.fs");
+	h.pump();
+	REQUIRE(script_leaf != nullptr);
+	CHECK(script_leaf->get_pane_tile() == nullptr);
+
+	// Collapsing the focused scene tile promotes the script leaf structurally, but
+	// focus must land on a scene tile rather than the non-focusable script leaf.
+	h.workspace->set_focused_leaf(scene_b->get_leaf_id());
+	h.workspace->collapse(scene_b);
+	h.pump();
+
+	WorkspaceLeafNode *focused = h.workspace->get_focused_leaf();
+	REQUIRE(focused != nullptr);
+	CHECK(focused->get_pane_tile() != nullptr);
+	CHECK(focused->get_leaf_content()->get_content_type() == StringName("scene"));
+	CHECK(h.workspace->get_script_leaf() == script_leaf);
+
+	h.unmount();
+}
+
 } // namespace TestSceneWorkspace

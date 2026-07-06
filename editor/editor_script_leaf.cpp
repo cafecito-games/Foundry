@@ -37,18 +37,31 @@
 void ScriptLeaf::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_THEME_CHANGED: {
-			if (title_label) {
-				title_label->add_theme_color_override(SceneStringName(font_color), get_theme_color(SNAME("font_color"), EditorStringName(Editor)));
+			if (placeholder_label) {
+				placeholder_label->add_theme_color_override(SceneStringName(font_color), get_theme_color(SNAME("font_color"), EditorStringName(Editor)));
 			}
 		} break;
 	}
 }
 
+void ScriptLeaf::_update_placeholder_visibility() {
+	if (!placeholder_label || !surface_host) {
+		return;
+	}
+	// Show the placeholder only while no live script surface is mounted.
+	placeholder_label->set_visible(surface_host->get_child_count() == 0);
+}
+
 void ScriptLeaf::set_tab_title(const String &p_title) {
 	tab_title = p_title;
-	if (title_label) {
-		title_label->set_text(tab_title);
+	if (placeholder_label) {
+		placeholder_label->set_text(tab_title);
 	}
+}
+
+void ScriptLeaf::set_script_path(const String &p_path) {
+	script_path = p_path;
+	set_tab_title(script_path.is_empty() ? String("Script") : script_path.get_file());
 }
 
 StringName ScriptLeaf::get_content_type() const {
@@ -77,22 +90,41 @@ EditorSceneContext *ScriptLeaf::get_scene_context() const {
 void ScriptLeaf::save_layout(const Ref<ConfigFile> &p_config, const String &p_section) const {
 	ERR_FAIL_COND(p_config.is_null());
 	p_config->set_value(p_section, "tab_title", tab_title);
+	p_config->set_value(p_section, "script_path", script_path);
 }
 
 void ScriptLeaf::load_layout(const Ref<ConfigFile> &p_config, const String &p_section) {
 	ERR_FAIL_COND(p_config.is_null());
 	set_tab_title(p_config->get_value(p_section, "tab_title", tab_title));
+	// set_script_path derives the tab title from the file name, so apply it after
+	// the stored title and only when a path was actually persisted.
+	const String stored_path = p_config->get_value(p_section, "script_path", String());
+	if (!stored_path.is_empty()) {
+		set_script_path(stored_path);
+	}
 }
 
 ScriptLeaf::ScriptLeaf() {
 	set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	set_h_size_flags(Control::SIZE_EXPAND_FILL);
 
-	title_label = memnew(Label);
-	title_label->set_text(tab_title);
-	title_label->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_CENTER);
-	title_label->set_vertical_alignment(VERTICAL_ALIGNMENT_CENTER);
-	title_label->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	title_label->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	add_child(title_label);
+	// Host for the live script editing surface, reparented in by EditorNode.
+	surface_host = memnew(Control);
+	surface_host->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+	surface_host->set_mouse_filter(Control::MOUSE_FILTER_PASS);
+	add_child(surface_host);
+
+	// Keep the placeholder in sync as the live surface is mounted/unmounted. The
+	// exit side is deferred so the child count reflects the removal.
+	surface_host->connect(SNAME("child_entered_tree"), callable_mp(this, &ScriptLeaf::_update_placeholder_visibility).unbind(1));
+	surface_host->connect(SNAME("child_exiting_tree"), callable_mp(this, &ScriptLeaf::_update_placeholder_visibility).unbind(1), CONNECT_DEFERRED);
+
+	placeholder_label = memnew(Label);
+	placeholder_label->set_text(tab_title);
+	placeholder_label->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_CENTER);
+	placeholder_label->set_vertical_alignment(VERTICAL_ALIGNMENT_CENTER);
+	placeholder_label->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+	add_child(placeholder_label);
+
+	_update_placeholder_visibility();
 }

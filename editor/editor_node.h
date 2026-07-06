@@ -94,6 +94,7 @@ class EditorSceneWorkspace;
 class EditorSceneTabs;
 class EditorSelectionHistory;
 class ScenePaneTile;
+class ScriptLeaf;
 class SubViewportContainer;
 class WorkspaceLeafNode;
 class EditorSettingsDialog;
@@ -341,6 +342,7 @@ private:
 	Control *center_overlay = nullptr;
 	EditorSceneWorkspace *scene_workspace = nullptr;
 	Control *global_screen_host = nullptr;
+	Control *script_surface_home = nullptr; // Parent the script surface returns to when no script leaf hosts it.
 
 	// Main tabs.
 	EditorSceneTabs *scene_tabs = nullptr;
@@ -473,7 +475,6 @@ private:
 	ConfirmationDialog *project_data_missing = nullptr;
 
 	bool scene_distraction_free = false;
-	bool script_distraction_free = false;
 
 	bool changing_scene = false;
 	bool cmdline_mode = false;
@@ -714,6 +715,11 @@ private:
 	void _save_workspace_to_config(Ref<ConfigFile> p_config_file);
 	void _load_workspace_from_config(const Ref<ConfigFile> &p_config_file);
 	void _reparent_scene_mode_into(ScenePaneTile *p_tile);
+	void _reparent_script_surface_into(ScriptLeaf *p_leaf);
+	void _detach_script_surface();
+	void _close_script_leaf();
+	void _sync_script_leaf_path();
+	void _connect_script_leaf_sync();
 	void _update_tile_display_attachments();
 	void _sync_scene_viewport_2d_state_with_main_screen();
 	void _update_focused_dock_singletons(ScenePaneTile *p_tile);
@@ -903,6 +909,10 @@ public:
 
 	void push_item(Object *p_object, const String &p_property = "", bool p_inspector_only = false);
 	void push_item_no_inspector(Object *p_object);
+
+	// Open or reveal the workspace script leaf hosting the shared script surface,
+	// splitting beside the focused scene tile when no script leaf exists yet.
+	void reveal_script_leaf();
 	void edit_previous_item();
 	void edit_item(Object *p_object, Object *p_editing_owner);
 	void push_node_item(Node *p_node);

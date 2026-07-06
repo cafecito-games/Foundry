@@ -94,7 +94,9 @@ void EditorSceneWorkspace::_collapse_if_empty(int p_tile_id) {
 	if (!leaf || !editor_data) {
 		return;
 	}
-	if (editor_data->get_tile_scene_indices(p_tile_id).is_empty() && leaves.size() > 1) {
+	// Collapse the emptied tile as long as another scene tile remains. If it merges
+	// into a script-leaf sibling, collapse() keeps focus on a scene tile.
+	if (editor_data->get_tile_scene_indices(p_tile_id).is_empty() && get_tile_count() > 1) {
 		collapse(leaf);
 	}
 }
@@ -352,6 +354,10 @@ EditorSceneWorkspace *EditorSceneWorkspace::create_single_leaf_workspace(EditorS
 }
 
 WorkspaceLeafNode *EditorSceneWorkspace::split(WorkspaceLeafNode *p_leaf, bool p_vertical, SplitSide p_side) {
+	return split_with_content(p_leaf, p_vertical, p_side, StringName("scene"));
+}
+
+WorkspaceLeafNode *EditorSceneWorkspace::split_with_content(WorkspaceLeafNode *p_leaf, bool p_vertical, SplitSide p_side, const StringName &p_content_type) {
 	ERR_FAIL_NULL_V(p_leaf, nullptr);
 	ERR_FAIL_COND_V(!leaves.has(p_leaf), nullptr);
 
@@ -366,7 +372,7 @@ WorkspaceLeafNode *EditorSceneWorkspace::split(WorkspaceLeafNode *p_leaf, bool p
 	parent->add_child(split_node);
 	parent->move_child(split_node, idx);
 
-	WorkspaceLeafNode *new_leaf = _create_leaf(next_leaf_id++);
+	WorkspaceLeafNode *new_leaf = _create_leaf(next_leaf_id++, p_content_type);
 	const bool insert_before = p_side == SPLIT_SIDE_FIRST;
 	if (insert_before) {
 		sc->add_child(new_leaf);
@@ -379,6 +385,36 @@ WorkspaceLeafNode *EditorSceneWorkspace::split(WorkspaceLeafNode *p_leaf, bool p
 	_update_focus_visuals();
 	queue_sort();
 	return new_leaf;
+}
+
+WorkspaceLeafNode *EditorSceneWorkspace::get_script_leaf() const {
+	for (WorkspaceLeafNode *leaf : leaves) {
+		if (leaf->get_leaf_content() && leaf->get_leaf_content()->get_content_type() == StringName("script")) {
+			return leaf;
+		}
+	}
+	return nullptr;
+}
+
+WorkspaceLeafNode *EditorSceneWorkspace::open_script_leaf(WorkspaceLeafNode *p_source_leaf, const String &p_script_path) {
+	ERR_FAIL_NULL_V(p_source_leaf, nullptr);
+	ERR_FAIL_COND_V(!leaves.has(p_source_leaf), nullptr);
+
+	// U15a hosts a single shared script surface, so reuse an existing script leaf
+	// rather than opening a second one (multiple script leaves is U15c).
+	WorkspaceLeafNode *target = get_script_leaf();
+	if (!target) {
+		target = split_with_content(p_source_leaf, false, SPLIT_SIDE_SECOND, StringName("script"));
+		ERR_FAIL_NULL_V(target, nullptr);
+	}
+
+	if (!p_script_path.is_empty() && target->get_leaf_content()) {
+		ScriptLeaf *script_leaf = Object::cast_to<ScriptLeaf>(target->get_leaf_content()->get_root_control());
+		if (script_leaf) {
+			script_leaf->set_script_path(p_script_path);
+		}
+	}
+	return target;
 }
 
 void EditorSceneWorkspace::collapse(WorkspaceLeafNode *p_leaf) {
@@ -424,8 +460,19 @@ void EditorSceneWorkspace::collapse(WorkspaceLeafNode *p_leaf) {
 	memdelete(p_leaf);
 
 	if (focused_leaf_id == collapsed_leaf_id && !leaves.is_empty()) {
-		set_focused_leaf(successor_leaf_id);
-		emit_signal(SNAME("leaf_focus_requested"), successor_leaf_id);
+		// Focus must land on a scene tile; the structural successor may be a script
+		// leaf (which is not a focusable scene tile). Prefer a scene tile if so.
+		int focus_target = successor_leaf_id;
+		if (!successor_leaf->get_pane_tile()) {
+			for (WorkspaceLeafNode *candidate : leaves) {
+				if (candidate->get_pane_tile()) {
+					focus_target = candidate->get_leaf_id();
+					break;
+				}
+			}
+		}
+		set_focused_leaf(focus_target);
+		emit_signal(SNAME("leaf_focus_requested"), focus_target);
 	}
 
 	_update_focus_visuals();
