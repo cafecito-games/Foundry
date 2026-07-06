@@ -45,9 +45,36 @@ class TestFSAnalyzerAccessor;
 #endif // TESTS_ENABLED
 
 class FSAnalyzer {
+public:
+	// Canonical analyzer phase order (see `analyze()` for orchestration):
+	// 0 Preflight
+	// 1 Dependency/parse availability (on-demand during later phases)
+	// 2 Inheritance resolution
+	// 3 Interface and member surface resolution
+	// 4 Trait conformance registration
+	// 5 Body, expression, callable, and signal analysis
+	// 6 Flow/finality and trait body invariants
+	// 7 Conformance witness body analysis
+	// 8 Final diagnostics and dependency finalization
+	enum class AnalyzerPhase : int8_t {
+		NONE = -1,
+		PREFLIGHT = 0,
+		DEPENDENCY_PARSE_AVAILABILITY = 1,
+		INHERITANCE_RESOLUTION = 2,
+		INTERFACE_AND_MEMBER_SURFACE = 3,
+		TRAIT_CONFORMANCE_REGISTRATION = 4,
+		BODY_EXPRESSION_CALLABLE_SIGNAL = 5,
+		FLOW_FINALITY_INVARIANTS = 6,
+		CONFORMANCE_WITNESS_BODY = 7,
+		FINAL_DIAGNOSTICS_AND_DEPENDENCIES = 8,
+	};
+
+private:
 	FSParser *parser = nullptr;
 	FSAutoloadIndex autoload_index;
 	uint32_t autoload_index_settings_hash = 0;
+	AnalyzerPhase highest_completed_phase = AnalyzerPhase::NONE;
+	bool suppress_internal_phase_order_checks = false;
 
 	struct TraitMethodImplementation {
 		FSParser::FunctionNode *function = nullptr;
@@ -68,6 +95,88 @@ class FSAnalyzer {
 			fn();
 		}
 	};
+
+	// Restores `parser->current_class`, `parser->current_function`, `current_enum`,
+	// `current_lambda`, and `static_context` at scope exit.
+	class AnalysisScopeGuard {
+		FSAnalyzer *analyzer = nullptr;
+		FSParser::ClassNode *previous_class = nullptr;
+		FSParser::FunctionNode *previous_function = nullptr;
+		const FSParser::EnumNode *previous_enum = nullptr;
+		FSParser::LambdaNode *previous_lambda = nullptr;
+		bool previous_static_context = false;
+
+	public:
+		AnalysisScopeGuard(FSAnalyzer *p_analyzer, FSParser::ClassNode *p_class, FSParser::FunctionNode *p_function = nullptr);
+		~AnalysisScopeGuard();
+	};
+
+	// Clears and restores flow-narrowing maps for one function-body resolution pass.
+	class FlowNarrowingScope {
+		FSAnalyzer *analyzer = nullptr;
+		HashMap<const FSParser::Node *, FSParser::DataType> previous_flow_narrowed_types;
+		HashMap<const FSParser::Node *, bool> previous_flow_narrowing_captured_sources;
+		bool restore_captured_sources = false;
+
+	public:
+		explicit FlowNarrowingScope(FSAnalyzer *p_analyzer, bool p_track_captured_sources);
+		~FlowNarrowingScope();
+	};
+
+	// Owns `flattened_trait_final_nodes` for one final-assignment pass.
+	class FlattenedTraitFinalNodesScope {
+		FSAnalyzer *analyzer = nullptr;
+
+	public:
+		explicit FlattenedTraitFinalNodesScope(FSAnalyzer *p_analyzer);
+		void insert(const FSParser::VariableNode *p_variable);
+		~FlattenedTraitFinalNodesScope();
+	};
+
+	// Documents dependency/parser-cache access for one external-parser lookup.
+	class DependencyParserAccessScope {
+		FSAnalyzer *analyzer = nullptr;
+
+	public:
+		explicit DependencyParserAccessScope(FSAnalyzer *p_analyzer);
+		~DependencyParserAccessScope();
+	};
+
+	// Ensures deferred lambda bodies are resolved before leaving body analysis.
+	class PendingLambdaBodiesScope {
+		FSAnalyzer *analyzer = nullptr;
+
+	public:
+		explicit PendingLambdaBodiesScope(FSAnalyzer *p_analyzer);
+		~PendingLambdaBodiesScope();
+	};
+
+	class AnalyzerPhaseScope {
+		FSAnalyzer *analyzer = nullptr;
+		AnalyzerPhase phase = AnalyzerPhase::NONE;
+		bool completed = false;
+
+	public:
+		AnalyzerPhaseScope(FSAnalyzer *p_analyzer, AnalyzerPhase p_phase);
+		~AnalyzerPhaseScope();
+		void complete();
+	};
+
+	static const char *analyzer_phase_name(AnalyzerPhase p_phase);
+	static AnalyzerPhase analyzer_phase_predecessor(AnalyzerPhase p_phase);
+	void require_completed_analyzer_phase(AnalyzerPhase p_required_predecessor, AnalyzerPhase p_requested_phase) const;
+	void mark_analyzer_phase_completed(AnalyzerPhase p_phase);
+	String make_analyzer_phase_order_violation_message(AnalyzerPhase p_requested_phase, AnalyzerPhase p_required_predecessor) const;
+
+	Error run_phase_preflight();
+	Error run_phase_inheritance_resolution();
+	Error run_phase_interface_and_member_surface();
+	Error run_phase_trait_conformance_registration();
+	Error run_phase_body_expression_callable_signal();
+	void run_phase_flow_finality_invariants(FSParser::ClassNode *p_class);
+	Error run_phase_conformance_witness_body();
+	Error run_phase_final_diagnostics_and_dependencies();
+	void run_phase_apply_pending_warnings();
 
 	const FSParser::EnumNode *current_enum = nullptr;
 	FSParser::LambdaNode *current_lambda = nullptr;
@@ -427,6 +536,13 @@ public:
 	static String get_bootstrap_allowed_dependency_root();
 
 	FSAnalyzer(FSParser *p_parser);
+
+#ifdef TESTS_ENABLED
+	String test_format_phase_order_violation(AnalyzerPhase p_requested_phase, AnalyzerPhase p_required_predecessor) const;
+	bool test_would_violate_phase_order(AnalyzerPhase p_requested_phase, AnalyzerPhase p_required_predecessor) const;
+	AnalyzerPhase test_get_highest_completed_phase() const { return highest_completed_phase; }
+	void test_mark_analyzer_phase_completed(AnalyzerPhase p_phase) { mark_analyzer_phase_completed(p_phase); }
+#endif // TESTS_ENABLED
 
 #ifdef TESTS_ENABLED
 	// Grants unit tests access to the private PropertyInfo decode path so the encode/decode round-trip

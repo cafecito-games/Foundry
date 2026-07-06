@@ -56,6 +56,374 @@
 
 static thread_local String bootstrap_allowed_dependency_root;
 
+const char *FSAnalyzer::analyzer_phase_name(AnalyzerPhase p_phase) {
+	switch (p_phase) {
+		case AnalyzerPhase::NONE:
+			return "none";
+		case AnalyzerPhase::PREFLIGHT:
+			return "preflight";
+		case AnalyzerPhase::DEPENDENCY_PARSE_AVAILABILITY:
+			return "dependency_parse_availability";
+		case AnalyzerPhase::INHERITANCE_RESOLUTION:
+			return "inheritance_resolution";
+		case AnalyzerPhase::INTERFACE_AND_MEMBER_SURFACE:
+			return "interface_and_member_surface";
+		case AnalyzerPhase::TRAIT_CONFORMANCE_REGISTRATION:
+			return "trait_conformance_registration";
+		case AnalyzerPhase::BODY_EXPRESSION_CALLABLE_SIGNAL:
+			return "body_expression_callable_signal";
+		case AnalyzerPhase::FLOW_FINALITY_INVARIANTS:
+			return "flow_finality_invariants";
+		case AnalyzerPhase::CONFORMANCE_WITNESS_BODY:
+			return "conformance_witness_body";
+		case AnalyzerPhase::FINAL_DIAGNOSTICS_AND_DEPENDENCIES:
+			return "final_diagnostics_and_dependencies";
+	}
+	return "unknown";
+}
+
+FSAnalyzer::AnalyzerPhase FSAnalyzer::analyzer_phase_predecessor(AnalyzerPhase p_phase) {
+	switch (p_phase) {
+		case AnalyzerPhase::NONE:
+		case AnalyzerPhase::PREFLIGHT:
+		case AnalyzerPhase::DEPENDENCY_PARSE_AVAILABILITY:
+		case AnalyzerPhase::INHERITANCE_RESOLUTION:
+			return AnalyzerPhase::NONE;
+		case AnalyzerPhase::INTERFACE_AND_MEMBER_SURFACE:
+			return AnalyzerPhase::INHERITANCE_RESOLUTION;
+		case AnalyzerPhase::TRAIT_CONFORMANCE_REGISTRATION:
+			return AnalyzerPhase::INTERFACE_AND_MEMBER_SURFACE;
+		case AnalyzerPhase::BODY_EXPRESSION_CALLABLE_SIGNAL:
+			return AnalyzerPhase::INTERFACE_AND_MEMBER_SURFACE;
+		case AnalyzerPhase::FLOW_FINALITY_INVARIANTS:
+			return AnalyzerPhase::BODY_EXPRESSION_CALLABLE_SIGNAL;
+		case AnalyzerPhase::CONFORMANCE_WITNESS_BODY:
+			return AnalyzerPhase::FLOW_FINALITY_INVARIANTS;
+		case AnalyzerPhase::FINAL_DIAGNOSTICS_AND_DEPENDENCIES:
+			return AnalyzerPhase::NONE;
+	}
+	return AnalyzerPhase::NONE;
+}
+
+String FSAnalyzer::make_analyzer_phase_order_violation_message(AnalyzerPhase p_requested_phase, AnalyzerPhase p_required_predecessor) const {
+	const String script_path = parser != nullptr ? parser->script_path : String("<unknown>");
+	return vformat(
+			"FSAnalyzer phase order violation: requested phase '%s' requires predecessor phase '%s', but current completed phase is '%s' (parser: '%s').",
+			analyzer_phase_name(p_requested_phase),
+			analyzer_phase_name(p_required_predecessor),
+			analyzer_phase_name(highest_completed_phase),
+			script_path);
+}
+
+void FSAnalyzer::require_completed_analyzer_phase(AnalyzerPhase p_required_predecessor, AnalyzerPhase p_requested_phase) const {
+	if (suppress_internal_phase_order_checks || p_required_predecessor == AnalyzerPhase::NONE) {
+		return;
+	}
+	if (highest_completed_phase >= p_required_predecessor) {
+		return;
+	}
+	if (parser != nullptr && parser->head != nullptr) {
+		if (p_required_predecessor == AnalyzerPhase::INTERFACE_AND_MEMBER_SURFACE && parser->head->resolved_interface) {
+			return;
+		}
+		if (p_required_predecessor == AnalyzerPhase::BODY_EXPRESSION_CALLABLE_SIGNAL && parser->head->resolved_body) {
+			return;
+		}
+		if (p_required_predecessor == AnalyzerPhase::TRAIT_CONFORMANCE_REGISTRATION && parser->head->conformances.is_empty()) {
+			return;
+		}
+		if (p_required_predecessor == AnalyzerPhase::FLOW_FINALITY_INVARIANTS &&
+				highest_completed_phase >= AnalyzerPhase::BODY_EXPRESSION_CALLABLE_SIGNAL) {
+			return;
+		}
+	}
+#ifdef DEBUG_ENABLED
+	ERR_FAIL_MSG(make_analyzer_phase_order_violation_message(p_requested_phase, p_required_predecessor));
+#else
+	return;
+#endif
+}
+
+void FSAnalyzer::mark_analyzer_phase_completed(AnalyzerPhase p_phase) {
+	if (p_phase > highest_completed_phase) {
+		highest_completed_phase = p_phase;
+	}
+}
+
+FSAnalyzer::AnalysisScopeGuard::AnalysisScopeGuard(FSAnalyzer *p_analyzer, FSParser::ClassNode *p_class, FSParser::FunctionNode *p_function) {
+	analyzer = p_analyzer;
+	if (analyzer == nullptr || analyzer->parser == nullptr) {
+		return;
+	}
+	previous_class = analyzer->parser->current_class;
+	previous_function = analyzer->parser->current_function;
+	previous_enum = analyzer->current_enum;
+	previous_lambda = analyzer->current_lambda;
+	previous_static_context = analyzer->static_context;
+	analyzer->parser->current_class = p_class;
+	analyzer->parser->current_function = p_function;
+}
+
+FSAnalyzer::AnalysisScopeGuard::~AnalysisScopeGuard() {
+	if (analyzer == nullptr || analyzer->parser == nullptr) {
+		return;
+	}
+	analyzer->parser->current_class = previous_class;
+	analyzer->parser->current_function = previous_function;
+	analyzer->current_enum = previous_enum;
+	analyzer->current_lambda = previous_lambda;
+	analyzer->static_context = previous_static_context;
+}
+
+FSAnalyzer::FlowNarrowingScope::FlowNarrowingScope(FSAnalyzer *p_analyzer, bool p_track_captured_sources) {
+	analyzer = p_analyzer;
+	if (analyzer == nullptr) {
+		return;
+	}
+	previous_flow_narrowed_types = analyzer->flow_narrowed_types;
+	restore_captured_sources = p_track_captured_sources;
+	if (restore_captured_sources) {
+		previous_flow_narrowing_captured_sources = analyzer->flow_narrowing_captured_sources;
+		analyzer->flow_narrowing_captured_sources.clear();
+	}
+	analyzer->flow_narrowed_types.clear();
+}
+
+FSAnalyzer::FlowNarrowingScope::~FlowNarrowingScope() {
+	if (analyzer == nullptr) {
+		return;
+	}
+	analyzer->flow_narrowed_types = previous_flow_narrowed_types;
+	if (restore_captured_sources) {
+		analyzer->flow_narrowing_captured_sources = previous_flow_narrowing_captured_sources;
+	}
+}
+
+FSAnalyzer::FlattenedTraitFinalNodesScope::FlattenedTraitFinalNodesScope(FSAnalyzer *p_analyzer) {
+	analyzer = p_analyzer;
+	if (analyzer != nullptr) {
+		analyzer->flattened_trait_final_nodes.clear();
+	}
+}
+
+void FSAnalyzer::FlattenedTraitFinalNodesScope::insert(const FSParser::VariableNode *p_variable) {
+	if (analyzer != nullptr && p_variable != nullptr) {
+		analyzer->flattened_trait_final_nodes.insert(p_variable);
+	}
+}
+
+FSAnalyzer::FlattenedTraitFinalNodesScope::~FlattenedTraitFinalNodesScope() {
+	if (analyzer != nullptr) {
+		analyzer->flattened_trait_final_nodes.clear();
+	}
+}
+
+FSAnalyzer::DependencyParserAccessScope::DependencyParserAccessScope(FSAnalyzer *p_analyzer) {
+	analyzer = p_analyzer;
+	if (analyzer != nullptr) {
+		analyzer->mark_analyzer_phase_completed(AnalyzerPhase::DEPENDENCY_PARSE_AVAILABILITY);
+	}
+}
+
+FSAnalyzer::DependencyParserAccessScope::~DependencyParserAccessScope() {
+}
+
+FSAnalyzer::PendingLambdaBodiesScope::PendingLambdaBodiesScope(FSAnalyzer *p_analyzer) {
+	analyzer = p_analyzer;
+}
+
+FSAnalyzer::PendingLambdaBodiesScope::~PendingLambdaBodiesScope() {
+	if (analyzer == nullptr) {
+		return;
+	}
+	if (!analyzer->pending_body_resolution_lambdas.is_empty()) {
+		ERR_PRINT("FoundryScript bug (please report): Not all pending lambda bodies were resolved in time.");
+		analyzer->resolve_pending_lambda_bodies();
+	}
+}
+
+FSAnalyzer::AnalyzerPhaseScope::AnalyzerPhaseScope(FSAnalyzer *p_analyzer, AnalyzerPhase p_phase) :
+		analyzer(p_analyzer), phase(p_phase) {
+	if (analyzer == nullptr) {
+		return;
+	}
+	const AnalyzerPhase required = analyzer_phase_predecessor(phase);
+	analyzer->require_completed_analyzer_phase(required, phase);
+}
+
+void FSAnalyzer::AnalyzerPhaseScope::complete() {
+	if (analyzer != nullptr && !completed) {
+		analyzer->mark_analyzer_phase_completed(phase);
+		completed = true;
+	}
+}
+
+FSAnalyzer::AnalyzerPhaseScope::~AnalyzerPhaseScope() {
+	complete();
+}
+
+// Phase 0 — Preflight
+// Requires: parser source is parsed (`FSParserRef::PARSED` equivalent).
+// Produces: refreshed autoload index, validated imports and annotation declarations, cleared stale errors.
+// May report: import errors, annotation declaration errors, mixed-namespace debug warnings.
+// Must not: mark class inheritance, interface, or body as solved.
+Error FSAnalyzer::run_phase_preflight() {
+	AnalyzerPhaseScope phase_scope(this, AnalyzerPhase::PREFLIGHT);
+	parser->errors.clear();
+	ensure_autoload_index_current();
+
+	Error err = validate_imports();
+	if (err) {
+		return err;
+	}
+
+	err = validate_annotation_declarations();
+	if (err) {
+		return err;
+	}
+
+#ifdef DEBUG_ENABLED
+	validate_mixed_namespace_directory();
+#endif // DEBUG_ENABLED
+
+	return OK;
+}
+
+// Phase 2 — Inheritance resolution
+// Requires: preflight completed for full `analyze()` runs; parse availability for incremental callers.
+// Produces: solved `extends` bases, native/script base metadata, nested class inheritance.
+// May report: inheritance, cyclic reference, global class collision, and super-class resolution errors.
+// Must not: resolve ordinary function bodies.
+Error FSAnalyzer::run_phase_inheritance_resolution() {
+	AnalyzerPhaseScope phase_scope(this, AnalyzerPhase::INHERITANCE_RESOLUTION);
+	ensure_autoload_index_current();
+	Error err = resolve_class_inheritance(parser->head, true);
+	return err;
+}
+
+// Phase 3 — Interface and member surface resolution
+// Requires: inheritance resolution for owned classes.
+// Produces: trait uses, member signatures, enum values, property/signal/function surfaces.
+// May report: member conflicts, trait use errors, signature and annotation surface diagnostics.
+// Must not: analyze ordinary method bodies.
+Error FSAnalyzer::run_phase_interface_and_member_surface() {
+	AnalyzerPhaseScope phase_scope(this, AnalyzerPhase::INTERFACE_AND_MEMBER_SURFACE);
+	ensure_autoload_index_current();
+	Error err = resolve_trait_uses(parser->head, true);
+	if (err) {
+		return err;
+	}
+
+	resolve_class_interface(parser->head, true);
+	return OK;
+}
+
+// Phase 4 — Trait conformance registration
+// Requires: class interfaces available for conformance targets and traits.
+// Produces: registered retroactive conformances and validated witness signatures.
+// May report: conformance coherence, requirement satisfaction, and witness collision diagnostics.
+// Must not: resolve witness bodies.
+Error FSAnalyzer::run_phase_trait_conformance_registration() {
+	AnalyzerPhaseScope phase_scope(this, AnalyzerPhase::TRAIT_CONFORMANCE_REGISTRATION);
+	resolve_conformances(parser->head);
+
+	// Validate custom annotation declaration signatures after the class interface so constant
+	// defaults can reference resolved members and constants. Running it here resolves declarations
+	// both for the head (via `analyze()`) and for imported files raised to `INTERFACE_SOLVED`,
+	// which lets import-aware usage resolution read another file's parameter types and defaults.
+	resolve_annotation_declaration_signatures();
+
+	return parser->errors.is_empty() ? OK : ERR_PARSE_ERROR;
+}
+
+// Phase 5 — Body, expression, callable, and signal analysis
+// Requires: interface surfaces solved for the analyzed class.
+// Produces: resolved method bodies, inline accessors, lambdas, expression types, callable/signal checks.
+// May report: body typing, callable/signal, strict null/dynamic, and flow-narrowing diagnostics.
+// Must not: run final member/static/local assignment invariants or conformance witness bodies.
+Error FSAnalyzer::run_phase_body_expression_callable_signal() {
+	ensure_autoload_index_current();
+	resolve_class_body(parser->head, true);
+	mark_analyzer_phase_completed(AnalyzerPhase::BODY_EXPRESSION_CALLABLE_SIGNAL);
+	return parser->errors.is_empty() ? OK : ERR_PARSE_ERROR;
+}
+
+// Phase 6 — Flow/finality and trait body invariants
+// Requires: relevant bodies for `p_class` are resolved.
+// Produces: validated abstract requirements, trait conflicts/requirements, final assignment checks.
+// May report: abstract implementation, trait conflict/requirement, final assignment, unreachable warnings.
+// Must not: resolve conformance witness bodies.
+void FSAnalyzer::run_phase_flow_finality_invariants(FSParser::ClassNode *p_class) {
+	AnalyzerPhaseScope phase_scope(this, AnalyzerPhase::FLOW_FINALITY_INVARIANTS);
+	validate_trait_conflicts(p_class);
+	validate_trait_requirements(p_class);
+	check_final_member_assignments(p_class);
+	check_final_static_assignments(p_class);
+	check_final_local_assignments(p_class);
+}
+
+// Phase 7 — Conformance witness body analysis
+// Requires: conformance registration completed.
+// Produces: resolved witness bodies with `parser->current_class` bound to the conformance target.
+// May report: witness body typing and member-access diagnostics.
+// Must not: register new conformances.
+Error FSAnalyzer::run_phase_conformance_witness_body() {
+	AnalyzerPhaseScope phase_scope(this, AnalyzerPhase::CONFORMANCE_WITNESS_BODY);
+	resolve_conformance_bodies(parser->head);
+	return parser->errors.is_empty() ? OK : ERR_PARSE_ERROR;
+}
+
+// Phase 8 — Final diagnostics and dependency finalization
+// Requires: witness bodies analyzed for full `analyze()` runs.
+// Produces: applied pending warnings and dependency parsers raised to `INHERITANCE_SOLVED`.
+// May report: delayed `@warning_ignore` warnings and dependency resolution failures.
+// Must not: mutate parser status beyond the existing dependency-finalization step.
+void FSAnalyzer::run_phase_apply_pending_warnings() {
+#ifdef DEBUG_ENABLED
+	parser->apply_pending_warnings();
+#endif // DEBUG_ENABLED
+}
+
+Error FSAnalyzer::run_phase_final_diagnostics_and_dependencies() {
+	AnalyzerPhaseScope phase_scope(this, AnalyzerPhase::FINAL_DIAGNOSTICS_AND_DEPENDENCIES);
+	for (KeyValue<String, Ref<FSParserRef>> &K : parser->depended_parsers) {
+		if (K.value.is_null()) {
+			return ERR_PARSE_ERROR;
+		}
+		K.value->raise_status(FSParserRef::INHERITANCE_SOLVED);
+	}
+
+	return parser->errors.is_empty() ? OK : ERR_PARSE_ERROR;
+}
+
+#ifdef TESTS_ENABLED
+bool FSAnalyzer::test_would_violate_phase_order(AnalyzerPhase p_requested_phase, AnalyzerPhase p_required_predecessor) const {
+	if (p_required_predecessor == AnalyzerPhase::NONE) {
+		return false;
+	}
+	if (highest_completed_phase >= p_required_predecessor) {
+		return false;
+	}
+	if (parser != nullptr && parser->head != nullptr) {
+		if (p_required_predecessor == AnalyzerPhase::INTERFACE_AND_MEMBER_SURFACE && parser->head->resolved_interface) {
+			return false;
+		}
+		if (p_required_predecessor == AnalyzerPhase::BODY_EXPRESSION_CALLABLE_SIGNAL && parser->head->resolved_body) {
+			return false;
+		}
+		if (p_required_predecessor == AnalyzerPhase::TRAIT_CONFORMANCE_REGISTRATION && parser->head->conformances.is_empty()) {
+			return false;
+		}
+	}
+	return true;
+}
+
+String FSAnalyzer::test_format_phase_order_violation(AnalyzerPhase p_requested_phase, AnalyzerPhase p_required_predecessor) const {
+	return make_analyzer_phase_order_violation_message(p_requested_phase, p_required_predecessor);
+}
+#endif // TESTS_ENABLED
+
+
 static String _normalize_bootstrap_path(const String &p_path) {
 	return ResourceUID::ensure_path(p_path).replace_char('\\', '/').simplify_path();
 }
@@ -3122,12 +3490,8 @@ void FSAnalyzer::resolve_class_body(FSParser::ClassNode *p_class, const FSParser
 		}
 	}
 
-	validate_trait_conflicts(p_class);
-	validate_trait_requirements(p_class);
-
-	check_final_member_assignments(p_class);
-	check_final_static_assignments(p_class);
-	check_final_local_assignments(p_class);
+	mark_analyzer_phase_completed(AnalyzerPhase::BODY_EXPRESSION_CALLABLE_SIGNAL);
+	run_phase_flow_finality_invariants(p_class);
 
 	parser->current_class = previous_class;
 }
@@ -3246,6 +3610,8 @@ static void _collect_flattened_trait_members(const FSParser::ClassNode *p_class,
 // assigned exactly once, in its declaration initializer or definitely on every `_init()` path,
 // and never reassigned or read before assignment. Static and local finals are handled elsewhere.
 void FSAnalyzer::check_final_member_assignments(FSParser::ClassNode *p_class) {
+	require_completed_analyzer_phase(AnalyzerPhase::BODY_EXPRESSION_CALLABLE_SIGNAL, AnalyzerPhase::FLOW_FINALITY_INVARIANTS);
+
 	if (p_class->is_trait) {
 		// A trait's members are flattened into and checked on each implementing class.
 		return;
@@ -3318,14 +3684,14 @@ void FSAnalyzer::check_final_member_assignments(FSParser::ClassNode *p_class) {
 	// its finality is stale when the implementer shadows that slot; record every final node any applied
 	// trait declares so such a reference can be told apart from a reliable inherited final reached
 	// through the trait's base constraint.
-	flattened_trait_final_nodes.clear();
+	FlattenedTraitFinalNodesScope trait_final_nodes(this);
 	for (const FSParser::ClassNode *trait : p_class->resolved_traits) {
 		if (trait == nullptr) {
 			continue;
 		}
 		for (const FSParser::ClassNode::Member &member : trait->members) {
 			if (member.type == FSParser::ClassNode::Member::VARIABLE && member.variable->is_final && !member.variable->is_static) {
-				flattened_trait_final_nodes.insert(member.variable);
+				trait_final_nodes.insert(member.variable);
 			}
 		}
 	}
@@ -3469,6 +3835,8 @@ void FSAnalyzer::check_final_member_assignments(FSParser::ClassNode *p_class) {
 // `check_final_member_assignments` but scopes the flow analysis to static initialization and uses
 // the static-variable assignment form rather than `self`-relative member access.
 void FSAnalyzer::check_final_static_assignments(FSParser::ClassNode *p_class) {
+	require_completed_analyzer_phase(AnalyzerPhase::BODY_EXPRESSION_CALLABLE_SIGNAL, AnalyzerPhase::FLOW_FINALITY_INVARIANTS);
+
 	if (p_class->is_trait) {
 		// A trait's members are flattened into and checked on each implementing class.
 		return;
@@ -3534,14 +3902,14 @@ void FSAnalyzer::check_final_static_assignments(FSParser::ClassNode *p_class) {
 	// shadows) so a bare/`self` reference to a trait-supplied static final's stale slot is resolved by
 	// name while a reliable inherited static final is handled by the normal resolution (see the member
 	// pass).
-	flattened_trait_final_nodes.clear();
+	FlattenedTraitFinalNodesScope trait_final_nodes(this);
 	for (const FSParser::ClassNode *trait : p_class->resolved_traits) {
 		if (trait == nullptr) {
 			continue;
 		}
 		for (const FSParser::ClassNode::Member &member : trait->members) {
 			if (member.type == FSParser::ClassNode::Member::VARIABLE && member.variable->is_final && member.variable->is_static) {
-				flattened_trait_final_nodes.insert(member.variable);
+				trait_final_nodes.insert(member.variable);
 			}
 		}
 	}
@@ -3675,6 +4043,8 @@ void FSAnalyzer::check_final_static_assignments(FSParser::ClassNode *p_class) {
 // initializer fills the slot immediately, a blank `final var x` stays open until a single later
 // assignment. Use-before-assignment and reassignment are reported by the shared engine.
 void FSAnalyzer::check_final_local_assignments(FSParser::ClassNode *p_class) {
+	require_completed_analyzer_phase(AnalyzerPhase::BODY_EXPRESSION_CALLABLE_SIGNAL, AnalyzerPhase::FLOW_FINALITY_INVARIANTS);
+
 	for (int i = 0; i < p_class->members.size(); i++) {
 		const FSParser::ClassNode::Member &member = p_class->members[i];
 		if (member.type == FSParser::ClassNode::Member::FUNCTION) {
@@ -5527,6 +5897,8 @@ void FSAnalyzer::resolve_function_signature(FSParser::FunctionNode *p_function, 
 }
 
 void FSAnalyzer::resolve_function_body(FSParser::FunctionNode *p_function, bool p_is_lambda) {
+	require_completed_analyzer_phase(AnalyzerPhase::INTERFACE_AND_MEMBER_SURFACE, AnalyzerPhase::BODY_EXPRESSION_CALLABLE_SIGNAL);
+
 	if (p_function->resolved_body) {
 		return;
 	}
@@ -5554,17 +5926,9 @@ void FSAnalyzer::resolve_function_body(FSParser::FunctionNode *p_function, bool 
 	bool previous_static_context = static_context;
 	static_context = p_function->is_static;
 
-	HashMap<const FSParser::Node *, FSParser::DataType> previous_flow_narrowed_types = flow_narrowed_types;
-	HashMap<const FSParser::Node *, bool> previous_flow_narrowing_captured_sources;
-	if (!p_is_lambda) {
-		previous_flow_narrowing_captured_sources = flow_narrowing_captured_sources;
-		flow_narrowing_captured_sources.clear();
-	}
-	flow_narrowed_types.clear();
-	resolve_suite(p_function->body);
-	flow_narrowed_types = previous_flow_narrowed_types;
-	if (!p_is_lambda) {
-		flow_narrowing_captured_sources = previous_flow_narrowing_captured_sources;
+	{
+		FlowNarrowingScope flow_scope(this, !p_is_lambda);
+		resolve_suite(p_function->body);
 	}
 
 	const SuiteExitState body_exit = get_suite_exit_state(p_function->body);
@@ -10683,6 +11047,8 @@ bool FSAnalyzer::validate_conformance(FSParser::ConformanceNode *p_conformance, 
 }
 
 void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
+	require_completed_analyzer_phase(AnalyzerPhase::INTERFACE_AND_MEMBER_SURFACE, AnalyzerPhase::TRAIT_CONFORMANCE_REGISTRATION);
+
 	const String source_file = parser->script_path;
 
 	// Re-analysis of a file replaces its previously-registered conformances wholesale, mirroring how
@@ -10876,6 +11242,8 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 }
 
 void FSAnalyzer::resolve_conformance_bodies(FSParser::ClassNode *p_class) {
+	require_completed_analyzer_phase(AnalyzerPhase::TRAIT_CONFORMANCE_REGISTRATION, AnalyzerPhase::CONFORMANCE_WITNESS_BODY);
+
 	if (p_class == nullptr || p_class->conformances.is_empty()) {
 		return;
 	}
@@ -11042,6 +11410,8 @@ void FSAnalyzer::validate_mixed_namespace_directory() {
 #endif // DEBUG_ENABLED
 
 Ref<FSParserRef> FSAnalyzer::ensure_cached_external_parser_for_class(const FSParser::ClassNode *p_class, const FSParser::ClassNode *p_from_class, const char *p_context, const FSParser::Node *p_source) {
+	DependencyParserAccessScope dependency_scope(this);
+
 	// Delicate piece of code that intentionally doesn't use the FoundryScript cache or `get_depended_parser_for`.
 	// Search dependencies for the parser that owns `p_class` and make a cache entry for it.
 	// Required for how we store pointers to classes owned by other parser trees and need to call `resolve_class_member` and such on the same parser tree.
@@ -16169,90 +16539,68 @@ void FSAnalyzer::ensure_autoload_index_current() {
 }
 
 Error FSAnalyzer::resolve_inheritance() {
-	ensure_autoload_index_current();
-	return resolve_class_inheritance(parser->head, true);
+	return run_phase_inheritance_resolution();
 }
 
 Error FSAnalyzer::resolve_interface() {
-	ensure_autoload_index_current();
-	Error err = resolve_trait_uses(parser->head, true);
+	Error err = run_phase_interface_and_member_surface();
+	if (err) {
+		return err;
+	}
+	return run_phase_trait_conformance_registration();
+}
+
+Error FSAnalyzer::resolve_body() {
+	Error err = run_phase_body_expression_callable_signal();
 	if (err) {
 		return err;
 	}
 
-	resolve_class_interface(parser->head, true);
+	err = run_phase_conformance_witness_body();
+	if (err) {
+		return err;
+	}
 
-	// Resolve and validate retroactive conformances after the class interface so the target's and
-	// traits' surfaces are available, and so the registry is populated before body resolution checks
-	// `is`/`as`/assignment against externally-conformed types.
-	resolve_conformances(parser->head);
-
-	// Validate custom annotation declaration signatures after the class interface so constant
-	// defaults can reference resolved members and constants. Running it here resolves declarations
-	// both for the head (via `analyze()`) and for imported files raised to `INTERFACE_SOLVED`,
-	// which lets import-aware usage resolution read another file's parameter types and defaults.
-	resolve_annotation_declaration_signatures();
-
-	return parser->errors.is_empty() ? OK : ERR_PARSE_ERROR;
-}
-
-Error FSAnalyzer::resolve_body() {
-	ensure_autoload_index_current();
-	resolve_class_body(parser->head, true);
-
-	// Witness bodies are analyzed once the head body (and the target's interface) are solved, so type
-	// errors inside them are reported and Phase 3 can compile them.
-	resolve_conformance_bodies(parser->head);
-
-#ifdef DEBUG_ENABLED
-	// Apply here, after all `@warning_ignore`s have been resolved and applied.
-	parser->apply_pending_warnings();
-#endif // DEBUG_ENABLED
-
+	run_phase_apply_pending_warnings();
 	return parser->errors.is_empty() ? OK : ERR_PARSE_ERROR;
 }
 
 Error FSAnalyzer::resolve_dependencies() {
-	for (KeyValue<String, Ref<FSParserRef>> &K : parser->depended_parsers) {
-		if (K.value.is_null()) {
-			return ERR_PARSE_ERROR;
-		}
-		K.value->raise_status(FSParserRef::INHERITANCE_SOLVED);
-	}
-
-	return parser->errors.is_empty() ? OK : ERR_PARSE_ERROR;
+	return run_phase_final_diagnostics_and_dependencies();
 }
 
+// Canonical analyzer phase order:
+// 0 Preflight -> 1 Dependency/parse availability (on-demand) -> 2 Inheritance resolution ->
+// 3 Interface and member surface -> 4 Trait conformance registration ->
+// 5 Body/expression/callable/signal analysis -> 6 Flow/finality invariants ->
+// 7 Conformance witness bodies -> 8 Final diagnostics and dependency finalization.
 Error FSAnalyzer::analyze() {
-	parser->errors.clear();
-	ensure_autoload_index_current();
-
-	Error err = validate_imports();
+	Error err = run_phase_preflight();
 	if (err) {
 		return err;
 	}
 
-	err = validate_annotation_declarations();
+	err = run_phase_inheritance_resolution();
 	if (err) {
 		return err;
 	}
 
-#ifdef DEBUG_ENABLED
-	validate_mixed_namespace_directory();
-#endif // DEBUG_ENABLED
+	// Interface and conformance diagnostics are collected even when earlier phases reported errors.
+	run_phase_interface_and_member_surface();
+	run_phase_trait_conformance_registration();
 
-	err = resolve_inheritance();
+	err = run_phase_body_expression_callable_signal();
 	if (err) {
 		return err;
 	}
 
-	resolve_interface();
-	err = resolve_body();
+	err = run_phase_conformance_witness_body();
 	if (err) {
 		return err;
 	}
 
-	return resolve_dependencies();
+	run_phase_apply_pending_warnings();
+	return run_phase_final_diagnostics_and_dependencies();
 }
 
 FSAnalyzer::FSAnalyzer(FSParser *p_parser) {
