@@ -35,6 +35,7 @@
 #include "script_refactor_apply.h"
 
 #include "editor/gui/code_editor.h"
+#include "editor/editor_script_node_drop.h"
 #include "scene/gui/color_picker.h"
 #include "scene/gui/dialogs.h"
 #include "scene/gui/item_list.h"
@@ -349,6 +350,8 @@ protected:
 	Variant get_drag_data_fw(const Point2 &p_point, Control *p_from);
 	bool can_drop_data_fw(const Point2 &p_point, const Variant &p_data, Control *p_from) const;
 	void drop_data_fw(const Point2 &p_point, const Variant &p_data, Control *p_from);
+	bool _validate_nodes_drop(const Dictionary &p_data, EditorScriptNodeDrop::DropValidation &r_validation) const;
+	void _request_script_leaf_focus() const;
 
 	String _get_absolute_path(const String &rel_path);
 

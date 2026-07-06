@@ -72,6 +72,7 @@
 #include "tests/editor/test_node_3d_editor_world_scope.h"
 #include "tests/editor/test_refactor_diff_preview.h"
 #include "tests/editor/test_scene_workspace.h"
+#include "tests/editor/test_script_leaf_node_drop.h"
 #include "tests/editor/test_script_refactor_apply.h"
 #include "tests/editor/test_script_refactor_vcs_guard.h"
 #endif // TOOLS_ENABLED

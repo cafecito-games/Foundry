@@ -414,6 +414,14 @@ WorkspaceLeafNode *EditorSceneWorkspace::open_script_leaf(WorkspaceLeafNode *p_s
 			script_leaf->set_script_path(p_script_path);
 		}
 	}
+
+	if (ScriptLeaf *script_leaf = target->get_leaf_content() ? Object::cast_to<ScriptLeaf>(target->get_leaf_content()->get_root_control()) : nullptr) {
+		Node *associated_scene = nullptr;
+		if (ScenePaneTile *source_tile = p_source_leaf->get_pane_tile()) {
+			associated_scene = source_tile->get_current_scene_root();
+		}
+		script_leaf->set_associated_scene_root(associated_scene);
+	}
 	return target;
 }
 

@@ -93,7 +93,7 @@ void EditorDebuggerTree::_scene_tree_selected() {
 	}
 
 	if (!inspected_object_ids.is_empty()) {
-		inspected_object_ids.clear();
+		inspected_object_ids = TypedArray<uint64_t>();
 		deselect_all();
 		item->select(0);
 	}
@@ -132,7 +132,7 @@ void EditorDebuggerTree::_scene_tree_selection_changed(TreeItem *p_item, int p_c
 
 void EditorDebuggerTree::_scene_tree_nothing_selected() {
 	deselect_all();
-	inspected_object_ids.clear();
+	inspected_object_ids = TypedArray<uint64_t>();
 	emit_signal(SNAME("selection_cleared"), debugger_id);
 }
 
@@ -385,7 +385,7 @@ void EditorDebuggerTree::update_scene_tree(const SceneDebuggerTree *p_tree, int 
 		}
 	}
 
-	inspected_object_ids = ids_present;
+	inspected_object_ids = ids_present.duplicate();
 
 	debugger_id = p_debugger; // Needed by hook, could be avoided if every debugger had its own tree.
 
@@ -413,7 +413,7 @@ void EditorDebuggerTree::update_scene_tree(const SceneDebuggerTree *p_tree, int 
 void EditorDebuggerTree::select_nodes(const TypedArray<int64_t> &p_ids) {
 	// Manually select, as the tree control may be out-of-date for some reason (e.g. not shown yet).
 	selection_uncollapse_all = true;
-	inspected_object_ids = p_ids;
+	inspected_object_ids = p_ids.duplicate();
 	scrolling_to_item = true;
 
 	if (!updating_scene_tree) {
@@ -425,7 +425,7 @@ void EditorDebuggerTree::select_nodes(const TypedArray<int64_t> &p_ids) {
 }
 
 void EditorDebuggerTree::clear_selection() {
-	inspected_object_ids.clear();
+	inspected_object_ids = TypedArray<uint64_t>();
 
 	if (!updating_scene_tree) {
 		// Request a tree refresh.

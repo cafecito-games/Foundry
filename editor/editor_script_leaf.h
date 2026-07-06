@@ -34,6 +34,7 @@
 
 #include "scene/gui/control.h"
 
+class EditorSceneWorkspace;
 class Label;
 
 /**
@@ -48,13 +49,18 @@ class ScriptLeaf : public Control, public WorkspaceLeafContent {
 
 	String tab_title = "Script";
 	String script_path;
+	String associated_scene_path;
+	ObjectID associated_scene_root_id;
 	Label *placeholder_label = nullptr;
 	Control *surface_host = nullptr;
 
 	void _update_placeholder_visibility();
+	void _interaction_gui_input(const Ref<InputEvent> &p_event);
+	void _request_focus();
 
 protected:
 	void _notification(int p_what);
+	void gui_input(const Ref<InputEvent> &p_event) override;
 
 public:
 	void set_tab_title(const String &p_title);
@@ -66,6 +72,15 @@ public:
 	// Container the live script editing surface is reparented into by EditorNode.
 	Control *get_surface_host() const { return surface_host; }
 
+	// Scene the open script is attached to (resolved when the leaf opens). Empty
+	// when the script has no associated scene.
+	void set_associated_scene_root(Node *p_scene_root);
+	Node *get_associated_scene_root() const;
+	String get_associated_scene_path() const { return associated_scene_path; }
+	bool has_associated_scene() const { return !associated_scene_path.is_empty(); }
+
+	void request_workspace_focus();
+
 	StringName get_content_type() const override;
 	Control *get_root_control() const override;
 	String get_tab_title() const override;
@@ -73,6 +88,7 @@ public:
 	EditorSceneContext *get_scene_context() const override;
 	void save_layout(const Ref<ConfigFile> &p_config, const String &p_section) const override;
 	void load_layout(const Ref<ConfigFile> &p_config, const String &p_section) override;
+	void on_focus_entered() override;
 
 	ScriptLeaf();
 };
