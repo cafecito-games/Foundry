@@ -38,14 +38,14 @@
 
 namespace FSTests {
 
-// Builds a throwaway project tree on disk under the OS temp path and removes it on destruction,
-// so filesystem-walking code runs against real directories without touching the test project or
-// res://.
+// Builds a throwaway project tree on disk under the shared test scratch path and removes it on
+// destruction, so filesystem-walking code runs against real directories without touching the test
+// project or res://.
 struct TemporaryProjectTree {
 	String root;
 
 	explicit TemporaryProjectTree(const String &p_name) {
-		root = OS::get_singleton()->get_temp_path().path_join(p_name);
+		root = get_test_scratch_path(p_name);
 		// Start from a clean slate in case a previous aborted run left the tree behind.
 		remove_recursive(root);
 		Ref<DirAccess> dir = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
@@ -67,6 +67,49 @@ struct TemporaryProjectTree {
 			return;
 		}
 		file->store_string(p_contents);
+	}
+
+	static String get_test_scratch_root() {
+		if (OS::get_singleton()->has_environment("FOUNDRY_TEST_SCRATCH")) {
+			const String configured_root = OS::get_singleton()->get_environment("FOUNDRY_TEST_SCRATCH");
+			if (!configured_root.is_empty()) {
+				return configured_root.simplify_path();
+			}
+		}
+		return OS::get_singleton()->get_temp_path().path_join("foundry-tests").simplify_path();
+	}
+
+	static String get_test_scratch_path(const String &p_name) {
+		return get_test_scratch_root().path_join(p_name).simplify_path();
+	}
+
+	static String stage_project_copy(const String &p_source_root, const String &p_name) {
+		Error err = OK;
+		Ref<DirAccess> source_dir = DirAccess::open(p_source_root, &err);
+		CHECK_MESSAGE(err == OK, vformat("Cannot open source project root '%s'", p_source_root));
+		if (source_dir.is_null()) {
+			return String();
+		}
+		source_dir->set_include_hidden(true);
+
+		const String source_root = source_dir->get_current_dir().simplify_path();
+		const String staged_root = get_test_scratch_path(p_name);
+
+		static String last_source_root;
+		static String last_staged_root;
+		if (last_source_root != source_root || last_staged_root != staged_root ||
+				!FileAccess::exists(staged_root.path_join("project.foundry"))) {
+			remove_recursive(staged_root);
+			const Error copy_err = source_dir->copy_dir(source_root, staged_root);
+			CHECK_MESSAGE(copy_err == OK, vformat("Cannot stage test project '%s' at '%s'", source_root, staged_root));
+			if (copy_err != OK) {
+				return String();
+			}
+			last_source_root = source_root;
+			last_staged_root = staged_root;
+		}
+
+		return staged_root;
 	}
 
 	static void remove_recursive(const String &p_path) {

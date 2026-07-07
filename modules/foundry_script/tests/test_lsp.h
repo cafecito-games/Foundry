@@ -41,6 +41,8 @@
 #include "../language_server/fs_language_protocol.h"
 #include "../language_server/fs_workspace.h"
 
+#include "fs_temporary_project_tree.h"
+
 #include "core/config/project_build_pipeline_status.h"
 #include "core/config/project_settings.h"
 #include "core/io/dir_access.h"
@@ -130,27 +132,46 @@ namespace FSTests {
 // Cannot reset `ProjectSettings` (singleton) -> Cannot load another workspace and resources in there.
 // -> Reuse FoundryScript test project. LSP specific scripts are then placed inside `lsp` folder.
 //    Access via `res://lsp/my_script.fs`.
-const String root = "modules/foundry_script/tests/scripts/";
+const char *LSP_FIXTURE_PROJECT_ROOT = "modules/foundry_script/tests/scripts";
+
+String get_test_project_root() {
+	return TemporaryProjectTree::stage_project_copy(LSP_FIXTURE_PROJECT_ROOT, "foundry_script_lsp_project");
+}
+
+struct TestProjectRoot {
+	operator String() const {
+		return get_test_project_root();
+	}
+};
+
+const TestProjectRoot root;
 
 struct ScopedLSPTempFile {
 	String path;
+	String absolute_path;
 	bool existed = false;
 	String previous_source;
 
 	static String resolve_path(const String &p_path) {
-		String absolute_path = ProjectSettings::get_singleton()->globalize_path(p_path);
-		if (absolute_path == p_path && p_path.begins_with("res://") && FSLanguageProtocol::get_singleton() != nullptr) {
-			Ref<FSWorkspace> workspace = FSLanguageProtocol::get_singleton()->get_workspace();
-			if (workspace.is_valid() && !workspace->root.is_empty()) {
-				absolute_path = workspace->root.path_join(p_path.substr(String("res://").length()));
+		if (p_path.begins_with("res://")) {
+			const String relative_path = p_path.substr(String("res://").length());
+			if (FSLanguageProtocol::get_singleton() != nullptr) {
+				Ref<FSWorkspace> workspace = FSLanguageProtocol::get_singleton()->get_workspace();
+				if (workspace.is_valid() && !workspace->root.is_empty()) {
+					return workspace->root.path_join(relative_path);
+				}
+			}
+			const String resource_path = ProjectSettings::get_singleton()->get_resource_path();
+			if (!resource_path.is_empty()) {
+				return resource_path.path_join(relative_path);
 			}
 		}
-		return absolute_path;
+		return ProjectSettings::get_singleton()->globalize_path(p_path);
 	}
 
 	ScopedLSPTempFile(const String &p_path, const String &p_source) {
 		path = p_path;
-		const String absolute_path = resolve_path(path);
+		absolute_path = resolve_path(path);
 		const Error mkdir_err = DirAccess::make_dir_recursive_absolute(absolute_path.get_base_dir());
 		REQUIRE_EQ(mkdir_err, OK);
 		if (FileAccess::exists(absolute_path)) {
@@ -165,7 +186,6 @@ struct ScopedLSPTempFile {
 	}
 
 	~ScopedLSPTempFile() {
-		const String absolute_path = resolve_path(path);
 		if (existed) {
 			Ref<FileAccess> file = FileAccess::open(absolute_path, FileAccess::WRITE);
 			ERR_FAIL_COND(file.is_null());
@@ -613,6 +633,89 @@ void test_position_roundtrip(LSP::Position p_lsp, FoundryPosition p_gd, const Pa
 	CHECK_EQ(p_gd, actual_gd);
 	LSP::Position actual_lsp = p_gd.to_lsp(p_lines);
 	CHECK_EQ(p_lsp, actual_lsp);
+}
+
+struct ScopedEnvironmentVariable {
+	String name;
+	bool had_previous = false;
+	String previous;
+
+	ScopedEnvironmentVariable(const String &p_name, const String &p_value) {
+		name = p_name;
+		had_previous = OS::get_singleton()->has_environment(name);
+		if (had_previous) {
+			previous = OS::get_singleton()->get_environment(name);
+		}
+		OS::get_singleton()->set_environment(name, p_value);
+	}
+
+	~ScopedEnvironmentVariable() {
+		if (had_previous) {
+			OS::get_singleton()->set_environment(name, previous);
+		} else {
+			OS::get_singleton()->unset_environment(name);
+		}
+	}
+};
+
+String lsp_scratch_contract_root() {
+	return OS::get_singleton()->get_temp_path().path_join("foundry_lsp_scratch_contract");
+}
+
+String lsp_fixture_root_absolute() {
+	Error err = OK;
+	Ref<DirAccess> dir = DirAccess::open("modules/foundry_script/tests/scripts", &err);
+	REQUIRE_MESSAGE(err == OK, "Could not open Foundry Script fixture root.");
+	return dir->get_current_dir().simplify_path();
+}
+
+TEST_CASE("[Modules][FoundryScript][LSP scratch] test project root is staged under scratch") {
+	const String scratch_root = lsp_scratch_contract_root();
+	ScopedEnvironmentVariable scratch_env("FOUNDRY_TEST_SCRATCH", scratch_root);
+
+	const String test_root = String(root).simplify_path();
+	CHECK(test_root.begins_with(scratch_root.path_join("")));
+	CHECK_NE(test_root, lsp_fixture_root_absolute());
+	CHECK(FileAccess::exists(test_root.path_join("project.foundry")));
+}
+
+TEST_CASE("[Modules][FoundryScript][LSP scratch] temp files resolve inside staged project") {
+	const String scratch_root = lsp_scratch_contract_root();
+	ScopedEnvironmentVariable scratch_env("FOUNDRY_TEST_SCRATCH", scratch_root);
+	FSLanguageProtocol *proto = initialize(root);
+
+	const String temp_path = "res://lsp/scratch_probe_generated.txt";
+	const String fixture_path = lsp_fixture_root_absolute().path_join("lsp/scratch_probe_generated.txt");
+	DirAccess::remove_absolute(fixture_path);
+
+	{
+		ScopedLSPTempFile temp(temp_path, "probe\n");
+		const String absolute_path = ScopedLSPTempFile::resolve_path(temp_path).simplify_path();
+		CHECK(absolute_path.begins_with(scratch_root.path_join("")));
+		CHECK_FALSE(FileAccess::exists(fixture_path));
+	}
+
+	memdelete(proto);
+	finish_language();
+}
+
+TEST_CASE("[Modules][FoundryScript][LSP scratch] temp file cleanup uses original resolved path after language teardown") {
+	const String scratch_root = lsp_scratch_contract_root();
+	ScopedEnvironmentVariable scratch_env("FOUNDRY_TEST_SCRATCH", scratch_root);
+	const String test_root = String(root);
+	const String repo_project_path = "project.foundry";
+	DirAccess::remove_absolute(repo_project_path);
+
+	FSLanguageProtocol *proto = initialize(root);
+	{
+		ScopedLSPTempFile project_config("res://project.foundry", "[application]\nconfig/name=\"Scratch\"\n");
+		memdelete(proto);
+		finish_language();
+	}
+
+	CHECK_FALSE(FileAccess::exists(repo_project_path));
+	CHECK(FileAccess::get_file_as_string(test_root.path_join("project.foundry")).contains("GDScript Integration Test Suite"));
+	DirAccess::remove_absolute(repo_project_path);
 }
 
 // Note:

@@ -174,6 +174,14 @@ void init_language(const String &p_base_path) {
 		// Keep going since some scripts still work without this.
 	} else {
 		language_project_path = ProjectSettings::get_singleton()->get_resource_path();
+		// Switching the active project also remaps `user://` to that project's
+		// app-userdata directory (keyed on `application/config/name`). The engine
+		// creates that directory during `Main::setup()`; mirror it here so tests
+		// that write to `user://` after a project switch do not fail because the
+		// directory was never created. Without this, whether a `user://` write
+		// succeeds depends on an unrelated suite having incidentally created the
+		// directory earlier in the run.
+		OS::get_singleton()->ensure_user_data_dir();
 	}
 
 	// Initialize the language for the test routine.
