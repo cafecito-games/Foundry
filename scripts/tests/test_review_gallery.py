@@ -235,6 +235,18 @@ class GalleryTestCase(unittest.TestCase):
         rg._terminate_process(result.process)
         self.assertIsNotNone(proc.poll())  # child is no longer running
 
+    def test_regenerate_is_atomic_and_repairs_corrupt_index(self) -> None:
+        rg.add_shot(self.root, self._png("a.png"), board_title="B", mode="proof", caption="c")
+        index = self.root / "index.html"
+        index.write_text("<<< corrupted half-written page")  # simulate a bad prior write
+
+        rg.regenerate(self.root)
+        html = index.read_text()
+        self.assertTrue(html.startswith("<!DOCTYPE html>"))
+        self.assertIn("<h2>B</h2>", html)
+        # No temp file left beside the index.
+        self.assertEqual(list(self.root.glob(".index.html-*.tmp")), [])
+
     def test_normalize_basic_auth_rejects_empty_and_malformed(self) -> None:
         self.assertIsNone(rg._normalize_basic_auth(None))
         self.assertEqual(rg._normalize_basic_auth("user:pass"), "user:pass")

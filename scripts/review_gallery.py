@@ -105,25 +105,32 @@ def load_manifest(root: Path) -> dict[str, Any]:
     return manifest
 
 
-def save_manifest(root: Path, manifest: dict[str, Any]) -> None:
-    """Persist the manifest atomically so a crash mid-write can't corrupt it.
+def _atomic_write(path: Path, data: bytes) -> None:
+    """Write `data` to `path` via a unique temp file + atomic rename.
 
-    Writes to a per-call unique temp file before the atomic rename, so two
-    concurrent commands never collide on a shared temp path.
+    A reader (e.g. a live `serve`) only ever sees the old or new file, never a
+    truncated one, and an interrupted write leaves the existing file intact
+    rather than a partial one that later gets served or trusted.
     """
-    root = Path(root)
-    root.mkdir(parents=True, exist_ok=True)
-    path = root / "manifest.json"
-    payload = json.dumps(manifest, indent=2, sort_keys=False) + "\n"
-    fd, tmp_name = tempfile.mkstemp(prefix=".manifest-", suffix=".json.tmp", dir=root)
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}-", suffix=".tmp", dir=path.parent)
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(payload)
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(data)
         os.replace(tmp_name, path)
     except BaseException:
         with contextlib.suppress(OSError):
             os.unlink(tmp_name)
         raise
+
+
+def save_manifest(root: Path, manifest: dict[str, Any]) -> None:
+    """Persist the manifest atomically so a crash mid-write can't corrupt it."""
+    root = Path(root)
+    root.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps(manifest, indent=2, sort_keys=False) + "\n"
+    _atomic_write(root / "manifest.json", payload.encode("utf-8"))
 
 
 @contextlib.contextmanager
@@ -207,8 +214,10 @@ def add_shot(
     data = source.read_bytes()
     filename = _shot_filename(source, data)
     dest = shots_dir / filename
+    # Write atomically so a completed content-addressed file is always the exact
+    # hashed bytes; a present dest therefore never needs re-verifying.
     if not dest.exists():
-        shutil.copyfile(source, dest)
+        _atomic_write(dest, data)
 
     with _manifest_lock(root):
         manifest = load_manifest(root)
@@ -237,8 +246,7 @@ def regenerate(root: Path, manifest: dict[str, Any] | None = None) -> Path:
     if manifest is None:
         manifest = load_manifest(root)
     path = root / "index.html"
-    root.mkdir(parents=True, exist_ok=True)
-    path.write_text(render_html(manifest), encoding="utf-8")
+    _atomic_write(path, render_html(manifest).encode("utf-8"))
     return path
 
 
@@ -624,8 +632,9 @@ def serve(
     basic_auth = basic_auth or None
 
     root = Path(root)
-    if not (root / "index.html").is_file():
-        regenerate(root)
+    # Always regenerate so the served page reflects the current manifest and a
+    # previously corrupted index.html is repaired.
+    regenerate(root)
 
     handler = _make_handler(root, basic_auth)
     httpd = ThreadingHTTPServer(("127.0.0.1", port), handler)
