@@ -73,4 +73,11 @@ public:
 	virtual WorkspaceTabCloseResult request_close(WorkspaceTab &p_tab, const Callable &p_on_deferred_close = Callable()) = 0;
 	virtual Dictionary save_payload(const WorkspaceTab &p_tab) const = 0;
 	virtual void restore_payload(WorkspaceTab &p_tab, const Dictionary &p_payload) const = 0;
+
+	// Whether the tab's backing resource is still available when restoring a
+	// persisted session. A tab whose resource was deleted since the layout was
+	// saved is dropped with a diagnostic instead of restored. Types with no
+	// file-backed resource of their own (e.g. scene tabs, whose existence is
+	// owned by EditorData) return true.
+	virtual bool is_resource_available(const WorkspaceTab &p_tab) const { return true; }
 };

@@ -73,6 +73,12 @@ class WorkspacePane : public VBoxContainer, public WorkspaceLeafContent {
 	int mounted_tab_stable_id = -1;
 	bool suppress_tab_strip_callback = false;
 
+	// Active tab to apply after a persisted layout is restored. Restore runs while
+	// the pane is detached, so mounting the active tab (which may create a live
+	// script surface) is deferred to NOTIFICATION_ENTER_TREE.
+	int pending_active_tab_index = -1;
+	bool has_pending_active_tab = false;
+
 	void _bind_tab_strip();
 	void _on_tab_strip_changed(int p_index);
 	void _on_tab_strip_rearranged(int p_to_index);
@@ -89,6 +95,7 @@ class WorkspacePane : public VBoxContainer, public WorkspaceLeafContent {
 	void _mount_script_bridge();
 	void _mount_active_tab(bool p_activate);
 	void _unmount_active_tab();
+	void _apply_pending_active_tab();
 	void _on_deferred_tab_closed(int p_stable_id);
 	void _update_pane_state(bool p_activate = true);
 	WorkspaceTabType *_active_tab_type() const;

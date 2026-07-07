@@ -31,6 +31,7 @@
 #include "script_resource_tab.h"
 
 #include "core/io/config_file.h"
+#include "core/io/file_access.h"
 #include "core/object/object.h"
 #include "editor/editor_script_leaf.h"
 #include "editor/script/script_editor_controller.h"
@@ -222,4 +223,15 @@ Dictionary ScriptResourceTabType::save_payload(const WorkspaceTab &p_tab) const 
 
 void ScriptResourceTabType::restore_payload(WorkspaceTab &p_tab, const Dictionary &p_payload) const {
 	p_tab.set_payload(p_payload);
+}
+
+bool ScriptResourceTabType::is_resource_available(const WorkspaceTab &p_tab) const {
+	// The script surface (and its file) is owned by the tab, so the tab type is
+	// responsible for detecting that its backing script was deleted between
+	// sessions. An empty key is a blank leaf and stays available.
+	const String &path = p_tab.get_resource_key();
+	if (path.is_empty()) {
+		return true;
+	}
+	return FileAccess::exists(path);
 }

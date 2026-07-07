@@ -31,6 +31,9 @@
 #pragma once
 
 #include "core/io/config_file.h"
+#include "core/io/dir_access.h"
+#include "core/io/file_access.h"
+#include "core/os/os.h"
 #include "editor/docks/editor_dock.h"
 #include "editor/docks/groups_dock.h"
 #include "editor/docks/groups_editor.h"
@@ -2468,6 +2471,355 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] inactive-tab-close-mounts-before-
 
 	SceneTree::get_singleton()->get_root()->remove_child(host);
 	memdelete(host);
+}
+
+static String make_existing_resource_file(const String &p_name) {
+	const String dir = OS::get_singleton()->get_cache_path().path_join("workspace_persist");
+	Ref<DirAccess> da = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+	ERR_FAIL_COND_V(da.is_null(), String());
+	da->make_dir_recursive(dir);
+	const String path = dir.path_join(p_name);
+	Ref<FileAccess> file = FileAccess::open(path, FileAccess::WRITE);
+	ERR_FAIL_COND_V(file.is_null(), String());
+	file->store_string("func run(): pass\n");
+	return path;
+}
+
+static void remove_resource_file(const String &p_path) {
+	if (p_path.is_empty()) {
+		return;
+	}
+	Ref<DirAccess> da = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+	if (da.is_valid()) {
+		da->remove(p_path);
+	}
+}
+
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] persist-mixed-pane-roundtrip") {
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+	const String script_path = make_existing_resource_file("mixed_roundtrip.fs");
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspacePane *pane = get_leaf_pane(h.workspace->get_focused_leaf());
+	REQUIRE(pane != nullptr);
+
+	WorkspaceTabRegistry &registry = WorkspacePane::get_shared_tab_registry();
+	WorkspaceTabType *scene_type = registry.find_type(StringName("scene"));
+	WorkspaceTabType *script_type = registry.find_type(StringName("script"));
+	REQUIRE(scene_type != nullptr);
+	REQUIRE(script_type != nullptr);
+
+	WorkspaceTab scene_tab = scene_type->make_tab("res://level.tscn", registry.allocate_stable_id());
+	WorkspaceTab script_tab = script_type->make_tab(script_path, registry.allocate_stable_id());
+	pane->add_tab(scene_tab);
+	pane->add_tab(script_tab);
+	REQUIRE(pane->get_tab_count() == 2);
+
+	const int scene_stable = scene_tab.get_stable_id();
+	const int script_stable = script_tab.get_stable_id();
+	const int leaf_id = h.workspace->get_focused_leaf_id();
+
+	Ref<ConfigFile> config;
+	config.instantiate();
+	EditorSceneWorkspace::save_to_config(config, h.workspace);
+
+	h.unmount();
+
+	WorkspaceHarness h2;
+	h2.mount();
+	h2.workspace->restore_from_config(config);
+	h2.pump();
+
+	WorkspacePane *restored = get_leaf_pane(h2.workspace->get_leaf_by_id(leaf_id));
+	REQUIRE(restored != nullptr);
+	REQUIRE(restored->get_tab_count() == 2);
+
+	CHECK(restored->get_tab(0).get_type_id() == StringName("scene"));
+	CHECK(restored->get_tab(0).get_resource_key() == "res://level.tscn");
+	CHECK(restored->get_tab(0).get_stable_id() == scene_stable);
+
+	CHECK(restored->get_tab(1).get_type_id() == StringName("script"));
+	CHECK(restored->get_tab(1).get_resource_key() == script_path);
+	CHECK(restored->get_tab(1).get_stable_id() == script_stable);
+
+	h2.unmount();
+	remove_resource_file(script_path);
+}
+
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] persist-active-and-focused") {
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+	const String path_a = make_existing_resource_file("active_a.fs");
+	const String path_b = make_existing_resource_file("active_b.fs");
+	const String path_c = make_existing_resource_file("active_c.fs");
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspaceLeafNode *leaf_a = h.workspace->get_focused_leaf();
+	WorkspacePane *pane_a = get_leaf_pane(leaf_a);
+	REQUIRE(pane_a != nullptr);
+	add_script_tab(pane_a, path_a);
+	add_script_tab(pane_a, path_b);
+	pane_a->set_active_tab(1);
+	REQUIRE(pane_a->get_active_tab_index() == 1);
+
+	WorkspaceLeafNode *leaf_b = h.workspace->split(leaf_a, false, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
+	h.pump();
+	WorkspacePane *pane_b = get_leaf_pane(leaf_b);
+	REQUIRE(pane_b != nullptr);
+	add_script_tab(pane_b, path_c);
+
+	h.workspace->set_focused_leaf(leaf_b->get_leaf_id());
+	const int leaf_a_id = leaf_a->get_leaf_id();
+	const int leaf_b_id = leaf_b->get_leaf_id();
+
+	Ref<ConfigFile> config;
+	config.instantiate();
+	EditorSceneWorkspace::save_to_config(config, h.workspace);
+
+	h.unmount();
+
+	WorkspaceHarness h2;
+	h2.mount();
+	h2.workspace->restore_from_config(config);
+	h2.pump();
+
+	CHECK(h2.workspace->get_focused_leaf_id() == leaf_b_id);
+
+	WorkspacePane *restored_a = get_leaf_pane(h2.workspace->get_leaf_by_id(leaf_a_id));
+	WorkspacePane *restored_b = get_leaf_pane(h2.workspace->get_leaf_by_id(leaf_b_id));
+	REQUIRE(restored_a != nullptr);
+	REQUIRE(restored_b != nullptr);
+	CHECK(restored_a->get_tab_count() == 2);
+	CHECK(restored_a->get_active_tab_index() == 1);
+	CHECK(restored_b->get_tab_count() == 1);
+	CHECK(restored_b->get_active_tab_index() == 0);
+
+	h2.unmount();
+	remove_resource_file(path_a);
+	remove_resource_file(path_b);
+	remove_resource_file(path_c);
+}
+
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] persist-script-tab-payload") {
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+	const String script_path = make_existing_resource_file("payload.fs");
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspacePane *pane = get_leaf_pane(h.workspace->get_focused_leaf());
+	REQUIRE(pane != nullptr);
+
+	WorkspaceTabRegistry &registry = WorkspacePane::get_shared_tab_registry();
+	WorkspaceTabType *scene_type = registry.find_type(StringName("scene"));
+	WorkspaceTabType *script_type = registry.find_type(StringName("script"));
+	REQUIRE(scene_type != nullptr);
+	REQUIRE(script_type != nullptr);
+
+	// A scene tab is the active tab so the script tab stays unmounted; that keeps
+	// the payload we set below intact instead of being overwritten by a live
+	// (empty) surface capture on mount.
+	WorkspaceTab scene_tab = scene_type->make_tab("res://payload_scene.tscn", registry.allocate_stable_id());
+	WorkspaceTab script_tab = script_type->make_tab(script_path, registry.allocate_stable_id());
+	Dictionary payload;
+	payload["script_path"] = script_path;
+	payload["view_layout"] = "[view]\ncaret_line=12\nscroll_position=40\nfolded_lines=[3, 7]\n";
+	script_tab.set_payload(payload);
+
+	pane->add_tab(scene_tab);
+	pane->add_tab(script_tab);
+	REQUIRE(pane->get_active_tab_index() == 0);
+
+	const int leaf_id = h.workspace->get_focused_leaf_id();
+
+	Ref<ConfigFile> config;
+	config.instantiate();
+	EditorSceneWorkspace::save_to_config(config, h.workspace);
+
+	h.unmount();
+
+	WorkspaceHarness h2;
+	h2.mount();
+	h2.workspace->restore_from_config(config);
+	h2.pump();
+
+	WorkspacePane *restored = get_leaf_pane(h2.workspace->get_leaf_by_id(leaf_id));
+	REQUIRE(restored != nullptr);
+	REQUIRE(restored->get_tab_count() == 2);
+	const WorkspaceTab &restored_script = restored->get_tab(1);
+	CHECK(restored_script.get_type_id() == StringName("script"));
+	const Dictionary &restored_payload = restored_script.get_payload();
+	REQUIRE(restored_payload.has("view_layout"));
+	const String restored_layout = restored_payload["view_layout"];
+	CHECK(restored_layout.contains("caret_line=12"));
+	CHECK(restored_layout.contains("scroll_position=40"));
+
+	h2.unmount();
+	remove_resource_file(script_path);
+}
+
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] persist-missing-resource-graceful") {
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+	const String script_path = make_existing_resource_file("missing.fs");
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspacePane *pane = get_leaf_pane(h.workspace->get_focused_leaf());
+	REQUIRE(pane != nullptr);
+
+	WorkspaceTabRegistry &registry = WorkspacePane::get_shared_tab_registry();
+	WorkspaceTabType *scene_type = registry.find_type(StringName("scene"));
+	WorkspaceTab scene_tab = scene_type->make_tab("res://survives.tscn", registry.allocate_stable_id());
+	pane->add_tab(scene_tab);
+	add_script_tab(pane, script_path);
+	REQUIRE(pane->get_tab_count() == 2);
+
+	const int leaf_id = h.workspace->get_focused_leaf_id();
+
+	Ref<ConfigFile> config;
+	config.instantiate();
+	EditorSceneWorkspace::save_to_config(config, h.workspace);
+
+	h.unmount();
+
+	// The backing script is deleted between sessions, so its tab must be dropped
+	// with a diagnostic while the rest of the layout restores cleanly.
+	remove_resource_file(script_path);
+
+	ErrorDetector error_detector;
+	WorkspaceHarness h2;
+	h2.mount();
+	h2.workspace->restore_from_config(config);
+	h2.pump();
+
+	CHECK(error_detector.has_error);
+
+	WorkspacePane *restored = get_leaf_pane(h2.workspace->get_leaf_by_id(leaf_id));
+	REQUIRE(restored != nullptr);
+	CHECK(restored->get_tab_count() == 1);
+	CHECK(restored->get_tab(0).get_type_id() == StringName("scene"));
+	CHECK(restored->get_tab(0).get_resource_key() == "res://survives.tscn");
+
+	h2.unmount();
+}
+
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] persist-unknown-type-skipped") {
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspacePane *pane = get_leaf_pane(h.workspace->get_focused_leaf());
+	REQUIRE(pane != nullptr);
+
+	// Persist with a registry that knows a "recording" type; restore uses the
+	// shared registry which does not, so that tab has no registered type.
+	WorkspaceTabRegistry save_registry;
+	RecordingTabType ghost_type;
+	save_registry.register_type(&ghost_type);
+	pane->set_tab_registry(&save_registry);
+
+	WorkspaceTabType *scene_type = save_registry.find_type(StringName("scene"));
+	REQUIRE(scene_type != nullptr);
+	WorkspaceTab scene_tab = scene_type->make_tab("res://keep.tscn", save_registry.allocate_stable_id());
+	WorkspaceTab ghost_tab = ghost_type.make_tab("res://ghost.dat", save_registry.allocate_stable_id());
+	pane->add_tab(scene_tab);
+	pane->add_tab(ghost_tab);
+	REQUIRE(pane->get_tab_count() == 2);
+
+	const int leaf_id = h.workspace->get_focused_leaf_id();
+
+	Ref<ConfigFile> config;
+	config.instantiate();
+	EditorSceneWorkspace::save_to_config(config, h.workspace);
+
+	h.unmount();
+
+	ErrorDetector error_detector;
+	WorkspaceHarness h2;
+	h2.mount();
+	h2.workspace->restore_from_config(config);
+	h2.pump();
+
+	CHECK(error_detector.has_error);
+
+	WorkspacePane *restored = get_leaf_pane(h2.workspace->get_leaf_by_id(leaf_id));
+	REQUIRE(restored != nullptr);
+	CHECK(restored->get_tab_count() == 1);
+	CHECK(restored->get_tab(0).get_type_id() == StringName("scene"));
+	CHECK(restored->get_tab(0).get_resource_key() == "res://keep.tscn");
+
+	h2.unmount();
+}
+
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] persist-focus-invariant-holds") {
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+	const String script_path = make_existing_resource_file("focus_invariant.fs");
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspaceLeafNode *leaf_a = h.workspace->get_focused_leaf();
+	const int tile_a = leaf_a->get_leaf_id();
+	h.editor_data.register_tile(tile_a);
+	h.editor_data.set_focused_tile_id(tile_a);
+	Node2D *root_a = memnew(Node2D);
+	const int scene_a = add_test_scene(h.editor_data, tile_a, root_a);
+	h.editor_data.set_tile_current_scene(tile_a, scene_a);
+	h.editor_data.set_edited_scene(scene_a);
+
+	WorkspacePane *pane_a = get_leaf_pane(leaf_a);
+	REQUIRE(pane_a != nullptr);
+	// The focused pane's active tab is a script tab, but the pane is a scene pane
+	// and still exposes a scene tile the editor focus can fall back to.
+	WorkspaceTabRegistry &registry = WorkspacePane::get_shared_tab_registry();
+	WorkspaceTabType *scene_type = registry.find_type(StringName("scene"));
+	WorkspaceTab scene_tab = scene_type->make_tab("res://focus_scene.tscn", registry.allocate_stable_id());
+	pane_a->add_tab(scene_tab);
+	add_script_tab(pane_a, script_path);
+	pane_a->set_active_tab(1);
+	REQUIRE(pane_a->get_active_tab_index() == 1);
+
+	WorkspaceLeafNode *leaf_b = h.workspace->split(leaf_a, false, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
+	h.pump();
+	REQUIRE(leaf_b != nullptr);
+	h.editor_data.register_tile(leaf_b->get_leaf_id());
+	h.workspace->set_focused_leaf(tile_a);
+	h.editor_data.set_focused_tile_id(tile_a);
+	check_focus_invariant(h.editor_data, h.workspace);
+
+	Ref<ConfigFile> config;
+	config.instantiate();
+	EditorSceneWorkspace::save_to_config(config, h.workspace);
+
+	// Restore into the same workspace so editor_data (and its scene state) is kept.
+	h.workspace->restore_from_config(config);
+	h.pump();
+
+	// Mirror EditorNode's post-restore focus re-assertion: the editor's focused
+	// tile follows the restored focused pane, which must resolve to a scene tile.
+	h.editor_data.set_focused_tile_id(h.workspace->get_focused_leaf_id());
+
+	CHECK(h.workspace->get_focused_leaf_id() == tile_a);
+	WorkspacePane *restored_a = get_leaf_pane(h.workspace->get_leaf_by_id(tile_a));
+	REQUIRE(restored_a != nullptr);
+	CHECK(restored_a->get_active_tab_index() == 1);
+	CHECK(restored_a->get_tab(1).get_type_id() == StringName("script"));
+	CHECK(h.workspace->get_focused_tile() != nullptr);
+	check_focus_invariant(h.editor_data, h.workspace);
+
+	h.unmount();
+	remove_resource_file(script_path);
 }
 
 } // namespace TestSceneWorkspace
