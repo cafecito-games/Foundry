@@ -542,6 +542,63 @@ TEST_CASE("[workspace-tab] help-tab-payload-roundtrip") {
 	CHECK(int(restored.get_payload()["scroll"]) == 128);
 }
 
+TEST_CASE("[workspace-tab][SceneTree][Editor] help-tab-stale-canonical-creates-fresh") {
+	using namespace TestSceneWorkspace;
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+	install_headless_help_type();
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspaceLeafNode *source = h.workspace->get_focused_leaf();
+	REQUIRE(source != nullptr);
+	WorkspaceTabRegistry &registry = WorkspacePane::get_shared_tab_registry();
+	WorkspaceTabType *help_type = registry.find_type(StringName("help"));
+	REQUIRE(help_type != nullptr);
+
+	// Poison the canonical index with an entry that points at a tab index the pane
+	// does not have (as a restore that reused pane ids would leave behind). Opening
+	// the page must not trust it: it creates a real tab whose location resolves.
+	WorkspaceTabLocation stale_location;
+	stale_location.pane_id = source->get_leaf_id();
+	stale_location.tab_index = 999;
+	registry.set_canonical(help_type->make_tab("PoisonClass", 42), stale_location);
+
+	WorkspaceLeafNode *leaf = h.workspace->open_help_tab(source, "PoisonClass");
+	h.pump();
+	REQUIRE(leaf != nullptr);
+
+	WorkspaceTab resolved_tab;
+	WorkspaceTabLocation resolved_location;
+	REQUIRE(registry.find_canonical(StringName("help"), "PoisonClass", resolved_tab, resolved_location));
+	WorkspacePane *resolved_pane = get_leaf_pane(h.workspace->get_leaf_by_id(resolved_location.pane_id));
+	REQUIRE(resolved_pane != nullptr);
+	REQUIRE(resolved_location.tab_index < resolved_pane->get_tab_count());
+	CHECK(resolved_pane->get_tab(resolved_location.tab_index).get_type_id() == StringName("help"));
+	CHECK(resolved_pane->get_tab(resolved_location.tab_index).get_resource_key() == "PoisonClass");
+
+	// A second open now reveals the real tab rather than stacking a duplicate.
+	int help_tab_count = 0;
+	for (int i = 0; i < resolved_pane->get_tab_count(); i++) {
+		if (resolved_pane->get_tab(i).get_type_id() == StringName("help") && resolved_pane->get_tab(i).get_resource_key() == "PoisonClass") {
+			help_tab_count++;
+		}
+	}
+	CHECK(help_tab_count == 1);
+	h.workspace->open_help_tab(source, "PoisonClass");
+	h.pump();
+	int help_tab_count_after = 0;
+	for (int i = 0; i < resolved_pane->get_tab_count(); i++) {
+		if (resolved_pane->get_tab(i).get_type_id() == StringName("help") && resolved_pane->get_tab(i).get_resource_key() == "PoisonClass") {
+			help_tab_count_after++;
+		}
+	}
+	CHECK(help_tab_count_after == 1);
+
+	h.unmount();
+}
+
 TEST_CASE("[workspace-tab][SceneTree][Editor] help-tab-open-reveal-workspace") {
 	using namespace TestSceneWorkspace;
 	WorkspacePane::get_shared_tab_registry().clear_canonical_index();

@@ -58,6 +58,10 @@ class HelpTabType : public WorkspaceTabType {
 
 	EditorHelp *_resolve_surface(int p_stable_id) const;
 	EditorHelp *_create_surface(Control *p_chrome_host);
+	// Render the tab's class into the surface. go_to_class waits for the doc worker
+	// thread, so this renders as soon as the class is available; it is a no-op while
+	// the doc database is null, so it is retried from activate() (see below).
+	void _render_class(EditorHelp *p_help, const WorkspaceTab &p_tab) const;
 	void _apply_payload(EditorHelp *p_help, const WorkspaceTab &p_tab) const;
 	Dictionary _capture_payload(EditorHelp *p_help, const WorkspaceTab &p_tab) const;
 

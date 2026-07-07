@@ -711,22 +711,33 @@ WorkspaceLeafNode *EditorSceneWorkspace::open_help_tab(WorkspaceLeafNode *p_sour
 	// class name lands at the top, which mount()/go_to_class already does.
 	const bool is_deep_topic = p_topic.contains(":");
 
-	// Reveal an already-open page for this class instead of duplicating it.
+	// Reveal an already-open page for this class instead of duplicating it. The
+	// canonical index is process-global and is not rebuilt on workspace restore, so
+	// an entry can be stale (its pane/tab reused by a different tab). Confirm the
+	// located tab is still this help page before revealing it; otherwise fall
+	// through and create a fresh tab.
 	WorkspaceTab existing_tab;
 	WorkspaceTabLocation existing_location;
 	if (registry.find_canonical(StringName("help"), class_key, existing_tab, existing_location) && existing_location.is_valid()) {
 		WorkspaceLeafNode *leaf = get_leaf_by_id(existing_location.pane_id);
 		WorkspacePane *pane = leaf ? leaf->get_workspace_pane() : nullptr;
-		if (pane) {
-			pane->set_active_tab(existing_location.tab_index);
-			request_leaf_focus(existing_location.pane_id);
-			if (is_deep_topic && EditorHelp::get_doc_data()) {
-				if (EditorHelp *help = help_type->get_mounted_help(existing_tab.get_stable_id())) {
-					help->go_to_help(p_topic);
+		if (pane && existing_location.tab_index < pane->get_tab_count()) {
+			const WorkspaceTab &located = pane->get_tab(existing_location.tab_index);
+			if (located.get_type_id() == StringName("help") && located.get_resource_key() == class_key) {
+				pane->set_active_tab(existing_location.tab_index);
+				request_leaf_focus(existing_location.pane_id);
+				if (is_deep_topic && EditorHelp::get_doc_data()) {
+					if (EditorHelp *help = help_type->get_mounted_help(existing_tab.get_stable_id())) {
+						help->go_to_help(p_topic);
+					}
 				}
+				return leaf;
 			}
-			return leaf;
 		}
+		// The entry is stale (its pane/tab no longer holds this page). Drop it so the
+		// create path below re-registers a fresh canonical location instead of
+		// add_tab's insert_canonical treating the stale key as already present.
+		registry.remove_canonical(StringName("help"), class_key);
 	}
 
 	// Otherwise pick a target pane: reuse a pane already hosting help so pages

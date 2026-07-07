@@ -100,19 +100,28 @@ EditorHelp *HelpTabType::_create_surface(Control *p_chrome_host) {
 	return help;
 }
 
-void HelpTabType::_apply_payload(EditorHelp *p_help, const WorkspaceTab &p_tab) const {
+void HelpTabType::_render_class(EditorHelp *p_help, const WorkspaceTab &p_tab) const {
 	if (!p_help) {
 		return;
 	}
 	const Dictionary &payload = p_tab.get_payload();
 	const String help_class = payload.has("help_class") ? String(payload["help_class"]) : p_tab.get_resource_key();
-	// go_to_class renders from the doc database. Only drive it once the page is
-	// actually present: an empty or still-generating database would leave the
-	// surface's edited_class empty, which _capture_payload must not persist.
-	DocTools *doc = EditorHelp::get_doc_data();
-	if (!help_class.is_empty() && doc && doc->class_list.has(help_class)) {
+	// go_to_class dereferences the doc database, so guard against it being null
+	// (early startup / headless). It waits for the doc worker thread internally, so
+	// a class still being generated renders once the thread finishes; a class that
+	// never resolves leaves edited_class empty, which _capture_payload must not
+	// persist and activate() retries.
+	if (!help_class.is_empty() && EditorHelp::get_doc_data()) {
 		p_help->go_to_class(help_class);
 	}
+}
+
+void HelpTabType::_apply_payload(EditorHelp *p_help, const WorkspaceTab &p_tab) const {
+	if (!p_help) {
+		return;
+	}
+	_render_class(p_help, p_tab);
+	const Dictionary &payload = p_tab.get_payload();
 	if (payload.has("scroll")) {
 		p_help->set_scroll(int(payload["scroll"]));
 	}
@@ -200,9 +209,17 @@ void HelpTabType::unmount(WorkspaceTab &p_tab) {
 }
 
 void HelpTabType::activate(WorkspaceTab &p_tab) {
-	if (EditorHelp *help = _resolve_surface(p_tab.get_stable_id())) {
-		help->set_focused();
+	EditorHelp *help = _resolve_surface(p_tab.get_stable_id());
+	if (!help) {
+		return;
 	}
+	// Retry rendering if the page never loaded (the doc database was still
+	// generating when the tab mounted). Focusing the tab is a natural retry point --
+	// docs are almost always ready by the time the user brings a help tab forward.
+	if (help->get_class().is_empty()) {
+		_render_class(help, p_tab);
+	}
+	help->set_focused();
 }
 
 WorkspaceTabCloseResult HelpTabType::request_close(WorkspaceTab &p_tab, const Callable &p_on_deferred_close) {
