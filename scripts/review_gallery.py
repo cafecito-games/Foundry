@@ -28,7 +28,11 @@ Commands:
     review_gallery.py add <png> --board "<title>" --mode proof|design|walkthrough
         --caption "..." [--pair before|after] [--order N] [--type image|video]
     review_gallery.py board "<title>" --mode <mode>
-    review_gallery.py serve [--port N] [--basic-auth user:pass]
+    review_gallery.py serve [--port N] [--public] [--basic-auth user:pass]
+
+Serving is local-only by default; pass --public to expose an ngrok tunnel
+(prefer it with --basic-auth, since a public URL is otherwise reachable by
+anyone who has it).
 
 The gallery directory defaults to ~/.foundry-gallery and can be overridden with
 --root or the FOUNDRY_GALLERY_DIR environment variable (used by the tests).
@@ -40,6 +44,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import contextlib
 import hashlib
 import html
 import json
@@ -48,12 +53,18 @@ import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Iterator
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - non-POSIX platforms
+    fcntl = None  # type: ignore[assignment]
 
 MANIFEST_VERSION = 1
 MODES = ("proof", "design", "walkthrough")
@@ -93,13 +104,44 @@ def load_manifest(root: Path) -> dict:
 
 
 def save_manifest(root: Path, manifest: dict) -> None:
-    """Persist the manifest atomically so a crash mid-write can't corrupt it."""
+    """Persist the manifest atomically so a crash mid-write can't corrupt it.
+
+    Writes to a per-call unique temp file before the atomic rename, so two
+    concurrent commands never collide on a shared temp path.
+    """
     root = Path(root)
     root.mkdir(parents=True, exist_ok=True)
     path = root / "manifest.json"
-    tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(manifest, indent=2, sort_keys=False) + "\n", encoding="utf-8")
-    tmp.replace(path)
+    payload = json.dumps(manifest, indent=2, sort_keys=False) + "\n"
+    fd, tmp_name = tempfile.mkstemp(prefix=".manifest-", suffix=".json.tmp", dir=root)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(payload)
+        os.replace(tmp_name, path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp_name)
+        raise
+
+
+@contextlib.contextmanager
+def _manifest_lock(root: Path) -> Iterator[None]:
+    """Serialize the load->mutate->save cycle so concurrent adds don't lose shots.
+
+    Uses an advisory file lock on POSIX; degrades to a no-op where `fcntl` is
+    unavailable (the tool is agent-run and commands are typically sequential).
+    """
+    root = Path(root)
+    root.mkdir(parents=True, exist_ok=True)
+    if fcntl is None:
+        yield
+        return
+    with open(root / ".manifest.lock", "w") as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle, fcntl.LOCK_UN)
 
 
 # ---------------------------------------------------------------------------
@@ -166,23 +208,24 @@ def add_shot(
     if not dest.exists():
         shutil.copyfile(source, dest)
 
-    manifest = load_manifest(root)
-    board = ensure_board(manifest, board_title, mode)
-    if order is None:
-        order = len(board["shots"])
+    with _manifest_lock(root):
+        manifest = load_manifest(root)
+        board = ensure_board(manifest, board_title, mode)
+        if order is None:
+            order = len(board["shots"])
 
-    entry: dict = {
-        "file": f"shots/{filename}",
-        "caption": caption,
-        "type": shot_type,
-        "order": order,
-    }
-    if pair is not None:
-        entry["pair"] = pair
-    board["shots"].append(entry)
+        entry: dict = {
+            "file": f"shots/{filename}",
+            "caption": caption,
+            "type": shot_type,
+            "order": order,
+        }
+        if pair is not None:
+            entry["pair"] = pair
+        board["shots"].append(entry)
 
-    save_manifest(root, manifest)
-    regenerate(root, manifest)
+        save_manifest(root, manifest)
+        regenerate(root, manifest)
     return entry
 
 
@@ -567,9 +610,15 @@ def serve(
     *,
     port: int = 8000,
     basic_auth: str | None = None,
-    use_ngrok: bool = True,
+    public: bool = False,
 ) -> None:
-    """Serve the gallery locally and, when possible, over an ngrok tunnel."""
+    """Serve the gallery locally; only expose a public ngrok tunnel on opt-in.
+
+    Local-only is the default so screenshots (which may show unreleased UI or
+    project data) are never published without an explicit `public=True`. When
+    public and no `basic_auth` is set, a prominent warning is printed since the
+    tunnel URL is then reachable by anyone who has it.
+    """
     root = Path(root)
     if not (root / "index.html").is_file():
         regenerate(root)
@@ -578,12 +627,25 @@ def serve(
     httpd = ThreadingHTTPServer(("127.0.0.1", port), handler)
     port = httpd.server_address[1]
 
-    ngrok_path = shutil.which("ngrok") if use_ngrok else None
-    resolved = resolve_public_url(port, ngrok_path=ngrok_path)
+    if public:
+        if basic_auth is None:
+            print(
+                "WARNING: --public exposes this gallery over a URL with NO authentication; "
+                "anyone with the link can view every screenshot. Pass --basic-auth user:pass "
+                "to require a login."
+            )
+        ngrok_path = shutil.which("ngrok")
+        resolved = resolve_public_url(port, ngrok_path=ngrok_path)
+    else:
+        resolved = ServeUrl(
+            url=f"http://127.0.0.1:{port}",
+            public=False,
+            message="Serving locally only. Pass --public to expose a shareable URL via ngrok.",
+        )
 
     print(f"Serving {root} at http://127.0.0.1:{port}")
     if basic_auth:
-        print("HTTP basic auth is required for the public URL.")
+        print("HTTP basic auth is required to view the gallery.")
     print(resolved.message)
     if resolved.public:
         print(f"Open this from anywhere: {resolved.url}")
@@ -670,10 +732,11 @@ def _cmd_add(args: argparse.Namespace) -> int:
 
 def _cmd_board(args: argparse.Namespace) -> int:
     root = gallery_root(args.root)
-    manifest = load_manifest(root)
-    board = ensure_board(manifest, args.title, args.mode)
-    save_manifest(root, manifest)
-    regenerate(root, manifest)
+    with _manifest_lock(root):
+        manifest = load_manifest(root)
+        board = ensure_board(manifest, args.title, args.mode)
+        save_manifest(root, manifest)
+        regenerate(root, manifest)
     print(f"Board {board['title']!r} ({board['mode']}) ready with {len(board['shots'])} shot(s).")
     print(f"Gallery: {root / 'index.html'}")
     return 0
@@ -686,7 +749,7 @@ def _cmd_serve(args: argparse.Namespace) -> int:
         root,
         port=port,
         basic_auth=args.basic_auth,
-        use_ngrok=not args.no_ngrok,
+        public=args.public,
     )
     return 0
 
@@ -718,10 +781,14 @@ def build_parser() -> argparse.ArgumentParser:
     board.add_argument("--mode", choices=MODES, default="proof", help="Board mode.")
     board.set_defaults(func=_cmd_board)
 
-    serve_cmd = sub.add_parser("serve", help="Serve the gallery (local + ngrok tunnel).")
+    serve_cmd = sub.add_parser("serve", help="Serve the gallery (local by default; --public for ngrok).")
     serve_cmd.add_argument("--port", type=int, default=8000, help="Preferred local port (default: 8000).")
     serve_cmd.add_argument("--basic-auth", default=None, metavar="USER:PASS", help="Require HTTP basic auth.")
-    serve_cmd.add_argument("--no-ngrok", action="store_true", help="Serve locally only, skip ngrok.")
+    serve_cmd.add_argument(
+        "--public",
+        action="store_true",
+        help="Expose a shareable URL via ngrok (default: local only). Prefer with --basic-auth.",
+    )
     serve_cmd.set_defaults(func=_cmd_serve)
 
     return parser

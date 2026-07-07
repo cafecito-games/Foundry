@@ -45,9 +45,11 @@ python3 scripts/review_gallery.py add new.png --board "Inspector redesign" \
 # Create/open an empty board.
 python3 scripts/review_gallery.py board "Walkthrough: create node" --mode walkthrough
 
-# Serve locally and (if available) over an ngrok tunnel.
+# Serve locally only (default — nothing leaves the machine).
 python3 scripts/review_gallery.py serve --port 8000
-python3 scripts/review_gallery.py serve --basic-auth reviewer:secret
+
+# Expose a shareable ngrok URL (opt-in). Prefer with basic auth.
+python3 scripts/review_gallery.py serve --public --basic-auth reviewer:secret
 ```
 
 `add` copies the PNG into `shots/`, appends a manifest entry, and regenerates
@@ -55,11 +57,14 @@ python3 scripts/review_gallery.py serve --basic-auth reviewer:secret
 
 ## Serving
 
-`serve` starts a local HTTP server rooted at the gallery dir. If the `ngrok`
-binary is on `PATH` and authenticated, it also brings up a tunnel and prints the
-public URL, re-printing it if the free-tier URL rotates. Without ngrok it serves
-locally and says so rather than failing. `--basic-auth user:pass` adds HTTP basic
-auth since a public tunnel URL is otherwise public-by-obscurity.
+`serve` starts a local HTTP server rooted at the gallery dir. It is **local-only
+by default** so screenshots (which may show unreleased UI or project data) are
+never published implicitly. Pass `--public` to also bring up an ngrok tunnel and
+print the public URL (re-printed if the free-tier URL rotates); without ngrok
+installed it stays local and says so rather than failing. `--basic-auth
+user:pass` adds HTTP basic auth — prefer it whenever `--public` is used, since a
+public tunnel URL is otherwise reachable by anyone who has it. Serving public
+without auth prints a prominent warning.
 
 ## Day-two video
 

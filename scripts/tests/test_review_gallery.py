@@ -179,6 +179,29 @@ class GalleryTestCase(unittest.TestCase):
         self.assertFalse(result.public)
         self.assertIn("127.0.0.1:8000", result.url)
 
+    def test_concurrent_adds_all_land(self) -> None:
+        import threading
+
+        count = 8
+        pngs = [self._png(f"c{i}.png", i * 17 % 256) for i in range(count)]
+
+        def worker(index: int, path: Path) -> None:
+            rg.add_shot(self.root, path, board_title="C", mode="proof", caption=f"shot {index}")
+
+        threads = [threading.Thread(target=worker, args=(i, p)) for i, p in enumerate(pngs)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        manifest = rg.load_manifest(self.root)
+        self.assertEqual(len(manifest["boards"]), 1)
+        # No shot is lost to a read-modify-write race, and the manifest stays valid.
+        self.assertEqual(len(manifest["boards"][0]["shots"]), count)
+        json.loads((self.root / "manifest.json").read_text())
+        # No temp files leaked next to the manifest.
+        self.assertEqual(list(self.root.glob(".manifest-*.json.tmp")), [])
+
     def test_ngrok_tunnel_port_matching(self) -> None:
         # Only a tunnel forwarding to our local port should match.
         ours = {"config": {"addr": "http://localhost:8000"}, "public_url": "https://ours.ngrok-free.app"}
