@@ -55,6 +55,7 @@
 #include "editor/themes/editor_scale.h"
 #include "editor/workspace/scene_tab.h"
 #include "editor/workspace/workspace_pane.h"
+#include "editor/workspace/workspace_tab_bar.h"
 #include "editor/workspace/workspace_tab_registry.h"
 #include "editor/workspace/workspace_tab_type.h"
 
@@ -2435,6 +2436,277 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] tab-move-into-nonempty-pane-activ
 	REQUIRE(pane_b->get_tab_count() == 2);
 	CHECK(pane_b->get_tab(1).get_resource_key() == "res://move.fs");
 	CHECK(pane_b->get_active_tab_index() == 1);
+
+	h.unmount();
+}
+
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] pane-insert-tab-at-index") {
+	Control *host = memnew(Control);
+	SceneTree::get_singleton()->get_root()->add_child(host);
+
+	WorkspacePane *pane = memnew(WorkspacePane);
+	host->add_child(pane);
+
+	WorkspaceTabRegistry registry;
+	registry.reset_stable_id_counter();
+	registry.clear_canonical_index();
+	RecordingTabType recording_type;
+	registry.register_type(&recording_type);
+	pane->set_tab_registry(&registry);
+
+	WorkspaceTab first = recording_type.make_tab("first", registry.allocate_stable_id());
+	WorkspaceTab second = recording_type.make_tab("second", registry.allocate_stable_id());
+	pane->add_tab(first);
+	pane->add_tab(second);
+	REQUIRE(pane->get_tab_count() == 2);
+	REQUIRE(pane->get_active_tab_index() == 0);
+
+	// Insert ahead of the active tab: order becomes [mid, first, second] and the
+	// active index shifts right to stay on "first".
+	WorkspaceTab mid = recording_type.make_tab("mid", registry.allocate_stable_id());
+	pane->insert_tab(0, mid);
+	REQUIRE(pane->get_tab_count() == 3);
+	CHECK(pane->get_tab(0).get_resource_key() == "mid");
+	CHECK(pane->get_tab(1).get_resource_key() == "first");
+	CHECK(pane->get_tab(2).get_resource_key() == "second");
+	CHECK(pane->get_active_tab_index() == 1);
+
+	// The inserted tab's canonical location tracks its index.
+	WorkspaceTab found;
+	WorkspaceTabLocation location;
+	REQUIRE(registry.find_canonical(StringName("recording"), "mid", found, location));
+	CHECK(location.tab_index == 0);
+	REQUIRE(registry.find_canonical(StringName("recording"), "second", found, location));
+	CHECK(location.tab_index == 2);
+
+	// An out-of-range index clamps to the end.
+	WorkspaceTab tail = recording_type.make_tab("tail", registry.allocate_stable_id());
+	pane->insert_tab(999, tail);
+	REQUIRE(pane->get_tab_count() == 4);
+	CHECK(pane->get_tab(3).get_resource_key() == "tail");
+
+	host->remove_child(pane);
+	memdelete(pane);
+	SceneTree::get_singleton()->get_root()->remove_child(host);
+	memdelete(host);
+}
+
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] strip-drop-inserts-generic-tab-at-index") {
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspaceLeafNode *leaf_a = h.workspace->get_focused_leaf();
+	WorkspacePane *pane_a = get_leaf_pane(leaf_a);
+	REQUIRE(pane_a != nullptr);
+	add_script_tab(pane_a, "res://keep.fs");
+	add_script_tab(pane_a, "res://move.fs");
+
+	WorkspaceLeafNode *leaf_b = h.workspace->split(leaf_a, false, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
+	h.pump();
+	WorkspacePane *pane_b = get_leaf_pane(leaf_b);
+	REQUIRE(pane_b != nullptr);
+	add_script_tab(pane_b, "res://x.fs");
+	add_script_tab(pane_b, "res://y.fs");
+	REQUIRE(pane_b->get_tab_count() == 2);
+
+	// Drop "move.fs" (pane A index 1) into pane B at the hovered index 1: the strip
+	// path lands it between "x" and "y" instead of appending like the overlay path.
+	WorkspaceLeafNode *dest = h.workspace->handle_tab_strip_drop(leaf_a->get_leaf_id(), 1, leaf_b->get_leaf_id(), 1);
+	h.pump();
+	CHECK(dest == leaf_b);
+	REQUIRE(pane_b->get_tab_count() == 3);
+	CHECK(pane_b->get_tab(0).get_resource_key() == "res://x.fs");
+	CHECK(pane_b->get_tab(1).get_resource_key() == "res://move.fs");
+	CHECK(pane_b->get_tab(2).get_resource_key() == "res://y.fs");
+	CHECK(pane_b->get_active_tab_index() == 1);
+	REQUIRE(pane_a->get_tab_count() == 1);
+	CHECK(pane_a->get_tab(0).get_resource_key() == "res://keep.fs");
+
+	h.unmount();
+}
+
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] strip-drop-inserts-scene-tab-at-index") {
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	const int tile_a = h.workspace->get_focused_leaf_id();
+	Node2D *root_a = memnew(Node2D);
+	const int scene_a = add_test_scene(h.editor_data, tile_a, root_a);
+	h.editor_data.set_scene_path(scene_a, "res://a.tscn");
+	Node2D *root_b = memnew(Node2D);
+	const int scene_b = add_test_scene(h.editor_data, tile_a, root_b);
+	h.editor_data.set_scene_path(scene_b, "res://b.tscn");
+
+	WorkspaceLeafNode *leaf_a = h.workspace->get_leaf_by_id(tile_a);
+	WorkspaceLeafNode *leaf_b = h.workspace->split(leaf_a, false, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
+	h.pump();
+	const int tile_b = leaf_b->get_leaf_id();
+	h.editor_data.register_tile(tile_b);
+	Node2D *root_c = memnew(Node2D);
+	const int scene_c = add_test_scene(h.editor_data, tile_b, root_c);
+	h.editor_data.set_scene_path(scene_c, "res://c.tscn");
+	Node2D *root_d = memnew(Node2D);
+	const int scene_d = add_test_scene(h.editor_data, tile_b, root_d);
+	h.editor_data.set_scene_path(scene_d, "res://d.tscn");
+
+	h.workspace->sync_scene_tabs_from_editor_data();
+	WorkspacePane *pane_a = get_leaf_pane(leaf_a);
+	WorkspacePane *pane_b = get_leaf_pane(leaf_b);
+	REQUIRE(pane_a->get_tab_count() == 2);
+	REQUIRE(pane_b->get_tab_count() == 2);
+
+	const int move_index = pane_a->find_scene_tab_index(scene_a);
+	REQUIRE(move_index >= 0);
+	// Insert scene_a's tab into pane B at index 1: [c, a, d]. Scene ownership moves
+	// to tile B and the scene-tab order tracks the reordered EditorData membership.
+	WorkspaceLeafNode *dest = h.workspace->handle_tab_strip_drop(tile_a, move_index, tile_b, 1);
+	h.pump();
+	CHECK(dest == leaf_b);
+	REQUIRE(pane_b->get_tab_count() == 3);
+	CHECK(pane_b->get_tab(0).get_resource_key() == "res://c.tscn");
+	CHECK(pane_b->get_tab(1).get_resource_key() == "res://a.tscn");
+	CHECK(pane_b->get_tab(2).get_resource_key() == "res://d.tscn");
+	// Ownership moved: pane A keeps only scene_b. (scene_a is a positional index
+	// that the reorder above invalidates, so ownership is verified by tab identity.)
+	REQUIRE(pane_a->get_tab_count() == 1);
+	CHECK(pane_a->get_tab(0).get_resource_key() == "res://b.tscn");
+
+	h.unmount();
+}
+
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] strip-drop-rejects-scene-tab-onto-script-pane") {
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	const int tile_a = h.workspace->get_focused_leaf_id();
+	Node2D *root_a = memnew(Node2D);
+	const int scene_a = add_test_scene(h.editor_data, tile_a, root_a);
+	h.editor_data.set_scene_path(scene_a, "res://a.tscn");
+	Node2D *root_b = memnew(Node2D);
+	const int scene_b = add_test_scene(h.editor_data, tile_a, root_b);
+	h.editor_data.set_scene_path(scene_b, "res://b.tscn");
+	h.workspace->sync_scene_tabs_from_editor_data();
+
+	WorkspaceLeafNode *leaf_a = h.workspace->get_leaf_by_id(tile_a);
+	WorkspacePane *pane_a = get_leaf_pane(leaf_a);
+	REQUIRE(pane_a->get_tab_count() == 2);
+
+	// A script-only sibling pane cannot host a scene tab (it has no scene tile), so
+	// the move is refused and nothing changes rather than dropping the scene.
+	WorkspaceLeafNode *leaf_b = h.workspace->split_with_content(leaf_a, false, EditorSceneWorkspace::SPLIT_SIDE_SECOND, StringName("script"));
+	h.pump();
+	REQUIRE(leaf_b != nullptr);
+	WorkspacePane *pane_b = get_leaf_pane(leaf_b);
+	REQUIRE(pane_b != nullptr);
+	REQUIRE(pane_b->is_script_pane());
+
+	const int move_index = pane_a->find_scene_tab_index(scene_a);
+	REQUIRE(move_index >= 0);
+	WorkspaceLeafNode *dest = h.workspace->handle_tab_strip_drop(tile_a, move_index, leaf_b->get_leaf_id(), 0);
+	CHECK(dest == nullptr);
+	CHECK(pane_a->get_tab_count() == 2);
+	CHECK(h.editor_data.get_scene_tile(scene_a) == tile_a);
+
+	h.unmount();
+}
+
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] strip-drop-collapses-emptied-source") {
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspaceLeafNode *leaf_a = h.workspace->get_focused_leaf();
+	WorkspacePane *pane_a = get_leaf_pane(leaf_a);
+	REQUIRE(pane_a != nullptr);
+	add_script_tab(pane_a, "res://solo.fs");
+
+	WorkspaceLeafNode *leaf_b = h.workspace->split(leaf_a, false, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
+	h.pump();
+	WorkspacePane *pane_b = get_leaf_pane(leaf_b);
+	REQUIRE(pane_b != nullptr);
+	add_script_tab(pane_b, "res://existing.fs");
+	REQUIRE(h.workspace->get_leaf_count() == 2);
+
+	const int leaf_a_id = leaf_a->get_leaf_id();
+	// Moving the source pane's only tab out empties it, so it collapses on the
+	// deferred pass and the workspace is left with the destination pane.
+	WorkspaceLeafNode *dest = h.workspace->handle_tab_strip_drop(leaf_a_id, 0, leaf_b->get_leaf_id(), 0);
+	h.pump();
+	CHECK(dest == leaf_b);
+	REQUIRE(pane_b->get_tab_count() == 2);
+	CHECK(pane_b->get_tab(0).get_resource_key() == "res://solo.fs");
+	CHECK(pane_b->get_tab(1).get_resource_key() == "res://existing.fs");
+	CHECK(pane_b->get_active_tab_index() == 0);
+	CHECK(h.workspace->get_leaf_count() == 1);
+	CHECK(h.workspace->get_leaf_by_id(leaf_a_id) == nullptr);
+
+	h.unmount();
+}
+
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] strip-drop-data-routes-cross-pane") {
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspaceLeafNode *leaf_a = h.workspace->get_focused_leaf();
+	WorkspacePane *pane_a = get_leaf_pane(leaf_a);
+	REQUIRE(pane_a != nullptr);
+	add_script_tab(pane_a, "res://keep.fs");
+	add_script_tab(pane_a, "res://move.fs");
+
+	WorkspaceLeafNode *leaf_b = h.workspace->split(leaf_a, false, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
+	h.pump();
+	WorkspacePane *pane_b = get_leaf_pane(leaf_b);
+	REQUIRE(pane_b != nullptr);
+	add_script_tab(pane_b, "res://existing.fs");
+	h.pump();
+
+	WorkspaceTabBar *bar_a = Object::cast_to<WorkspaceTabBar>(pane_a->get_tab_strip());
+	WorkspaceTabBar *bar_b = Object::cast_to<WorkspaceTabBar>(pane_b->get_tab_strip());
+	REQUIRE(bar_a != nullptr);
+	REQUIRE(bar_b != nullptr);
+
+	// Panes share one rearrange group (so cross-pane drags are accepted) and each
+	// strip carries a back-pointer to its owning pane.
+	CHECK(bar_a->get_tabs_rearrange_group() == WorkspaceTabBar::WORKSPACE_TABS_REARRANGE_GROUP);
+	CHECK(bar_a->get_tabs_rearrange_group() == bar_b->get_tabs_rearrange_group());
+	CHECK(bar_a->get_pane() == pane_a);
+	CHECK(bar_b->get_pane() == pane_b);
+
+	// Synthesize the drag payload TabBar::get_drag_data produces for pane A's
+	// "move.fs" tab (index 1). Dropping it far to the right of pane B's strip
+	// resolves to an append; drop_data must route through the workspace model so
+	// the tab actually leaves pane A, rather than TabBar's visual-only move.
+	Dictionary drag;
+	drag["type"] = "tab";
+	drag["tab_type"] = "tab_bar_tab";
+	drag["tab_index"] = 1;
+	drag["from_path"] = bar_a->get_path();
+
+	// Control::drop_data is public and virtual; the call dispatches to the override.
+	Control *drop_target = bar_b;
+	drop_target->drop_data(Point2(100000, 0), drag);
+	h.pump();
+
+	REQUIRE(pane_b->get_tab_count() == 2);
+	CHECK(pane_b->get_tab(0).get_resource_key() == "res://existing.fs");
+	CHECK(pane_b->get_tab(1).get_resource_key() == "res://move.fs");
+	CHECK(pane_b->get_active_tab_index() == 1);
+	REQUIRE(pane_a->get_tab_count() == 1);
+	CHECK(pane_a->get_tab(0).get_resource_key() == "res://keep.fs");
 
 	h.unmount();
 }
