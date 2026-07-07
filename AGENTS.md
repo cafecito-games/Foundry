@@ -86,6 +86,21 @@ Default snapshots hide internal implementation children of controls (a `SpinBox`
 
 If the MCP surface is not enough to complete a task — a control has no stable role/name, an action or wait condition is missing, internal children you need are not exposed, or results are too large/noisy — do not fall back to brittle workarounds silently. Prefer improving the automation layer itself (`editor/automation/`): add the missing role/action/metadata, selector field, wait condition, or snapshot option, with tests, as part of your change or as a proposed follow-up. At minimum, report the concrete gap in your summary so the capability keeps improving.
 
+### Remote visual review gallery
+
+Whenever the work is substantial editor UI work — new or reworked docks, dialogs, inspectors, HUDs, themes, or any change whose correctness is judged *visually* — do not ask the reviewer to trust a prose description. Build a review gallery so the reviewer can validate the change is correct by looking at it, without a local build.
+
+Use the stdlib-only helper `scripts/review_gallery.py` (see `scripts/review_gallery.README.md`). Capture editor screenshots (via the automation `capture_screenshot` tool) and add them to captioned boards, then serve them at one URL the reviewer can open from anywhere:
+
+- Choose the board mode that makes the change *checkable*, not just visible:
+  - `proof` — a compact block that demonstrates the change works (e.g. the dock still renders after the fix).
+  - `design` — before/after pairs (`--pair before|after`) so an aesthetic or layout change can be judged against the prior state.
+  - `walkthrough` — an ordered, step-captioned storyboard (open → act → observe) so a behavioral change can be followed and verified step by step.
+- Caption every shot with what the reviewer should confirm ("dock stays docked after closing the last tab"), not just what it is. The gallery is only useful if each shot lets the reviewer decide *correct / not correct* on their own.
+- Serving is local-only by default; `python3 scripts/review_gallery.py serve --public` brings up an ngrok tunnel and prints a shareable URL for a remote reviewer (falling back to a local URL if ngrok is unavailable). Add `--basic-auth user:pass` whenever you use `--public`, since the tunnel URL is otherwise reachable by anyone who has it.
+
+The gallery ingests finished PNGs and is capture-source-agnostic, so it works today with any screenshot and improves automatically as on-demand capture evolves. Prefer producing a gallery over a wall of text for any UI-heavy change, and include the gallery URL in your summary or PR.
+
 ## Coding Style & Naming Conventions
 
 Follow `.editorconfig`: UTF-8, LF line endings, final newline, 120-column limit, and trimmed trailing whitespace. C/C++ and most engine files use tabs with width 4; Python, `SConstruct`, and `SCsub` use 4 spaces; YAML and clang config files use 2 spaces. C++ formatting is enforced by `.clang-format`; Python/SCons formatting and imports are handled by Ruff, with mypy checks for Python. Keep filenames and APIs consistent with nearby Godot conventions, such as `snake_case` file names and test headers named `test_<area>.h`.
