@@ -52,6 +52,7 @@ foundry project import --project .
 foundry script format --project . --check scripts
 foundry script lint --project . --format=sarif --out reports/foundry-script.sarif scripts
 foundry script migrate --trusted --project . --apply --strict null,dynamic --confirm
+foundry --headless script eval 'print(Engine.get_version_info()["string"])'
 
 foundry test run --project . --case "*FoundryScript*"
 foundry test generate-fixtures modules/foundry_script/tests/scripts
@@ -62,6 +63,29 @@ foundry docs generate-api --include-docs
 foundry docs generate-engine --output doc-out
 foundry extension dump-interface --format json
 foundry diagnostics render-device-support
+```
+
+## Inline script evaluation
+
+`foundry script eval <source>` runs a short inline Foundry Script snippet without
+creating a temporary `.fs` file. The snippet becomes the body of a generated
+`ScriptRunner.run(args)` override, so it executes under a live `SceneTree` main
+loop and the process exit code follows the runner contract:
+
+- A snippet with no explicit `return` exits `0`.
+- `return <int>` sets the process exit code (for example `script eval 'return 3'`
+  exits `3`).
+- Parse, analysis, compile, or runtime errors exit non-zero.
+
+The snippet may reference `args` (a `PackedStringArray`) to read user arguments
+passed after `--`. `--project <dir>` runs the snippet in a project's context so
+project `class_name` scripts and `ClassDB` are visible; a project is not required.
+This replaces the legacy `--script -e` form, which is not supported.
+
+```sh
+foundry --headless script eval 'print("ok")'
+foundry --headless script eval --project . 'print(ClassDB.class_exists("Node"))'
+foundry --headless script eval 'print(args)' -- --some-user-arg
 ```
 
 ## Argument boundary

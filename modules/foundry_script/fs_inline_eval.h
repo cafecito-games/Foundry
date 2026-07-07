@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  script_test_runner.h                                                  */
+/*  fs_inline_eval.h                                                      */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -31,27 +31,27 @@
 #pragma once
 
 #include "core/object/ref_counted.h"
-#include "core/variant/variant.h"
+#include "core/string/ustring.h"
 
-class SceneTree;
+class ScriptRunner;
 
-class ScriptTestRunner : public RefCounted {
-	FOUNDRY_CLASS(ScriptTestRunner, RefCounted);
-
+// Compiles a short inline Foundry Script snippet into a runnable ScriptRunner
+// for `foundry script eval`. The snippet is wrapped in a generated runner whose
+// `run(args)` body is the snippet, so the existing ScriptRunner host provides the
+// SceneTree main loop, async completion, and integer exit-code contract. No new
+// grammar mode is introduced and no top-level executable-statement semantics.
+class FSInlineEval {
 public:
-	typedef bool (*ScriptErrorGuardedCallback)();
+	// Synthetic in-memory source path used as the cache key and diagnostic label
+	// for the generated runner. The source never touches disk.
+	static String synthetic_source_path();
 
-protected:
-	static void _bind_methods();
+	// Wraps the user snippet in the generated runner source. Public so the exact
+	// wrapping (indentation, injected default `return 0`) is unit-testable.
+	static String build_runner_source(const String &p_user_source);
 
-	static ScriptErrorGuardedCallback script_error_guarded_callback;
-
-public:
-	static void set_script_error_guarded_callback(ScriptErrorGuardedCallback p_callback);
-	static bool is_script_error_guarded();
-
-	static Variant call_run_script_hook(const Ref<ScriptTestRunner> &p_runner, const PackedStringArray &p_args);
-	static void launch_host(SceneTree *p_scene_tree, const Ref<ScriptTestRunner> &p_runner, const PackedStringArray &p_user_args);
-
-	virtual int run(const PackedStringArray &p_args);
+	// Compiles the generated runner. Returns a null Ref and fills r_error on
+	// parse/analyze/compile failure or when the snippet does not compile to a
+	// runnable ScriptRunner.
+	static Ref<ScriptRunner> compile_runner(const String &p_user_source, String &r_error);
 };

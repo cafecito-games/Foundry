@@ -53,7 +53,7 @@ struct TemporaryNoMainSceneProject {
 				"[application]\n\n"
 				"config/name=\"No Main Scene Project\"\n");
 		write_file("runner.fs",
-				"extends ScriptTestRunner\n\n"
+				"extends ScriptRunner\n\n"
 				"func run(args: PackedStringArray) -> int:\n"
 				"\treturn 0\n");
 	}
@@ -203,7 +203,7 @@ TEST_CASE("[FoundryCLI][ProjectTest] Missing runner reports runner error without
 	const String output = run_foundry_subprocess(arguments, exit_code);
 	INFO("Subprocess output:\n", output);
 	CHECK_FALSE(output.contains("no main scene defined"));
-	CHECK(output.contains("Can't load script test runner"));
+	CHECK(output.contains("Can't load script runner"));
 	CHECK_NE(exit_code, 0);
 }
 

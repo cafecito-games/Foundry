@@ -61,10 +61,17 @@ TEST_CASE("[FoundryCLIHelp] Noun help lists its subcommands") {
 	const String text = FoundryCLIHelp::get_noun_help_text("script");
 	CHECK(text.contains("format"));
 	CHECK(text.contains("lint"));
+	CHECK(text.contains("eval"));
 #ifdef TOOLS_ENABLED
 	CHECK(text.contains("migrate"));
 #endif
 	CHECK(text.contains("Run 'foundry script <subcommand> --help'"));
+}
+
+TEST_CASE("[FoundryCLIHelp] Script eval command help documents its usage") {
+	const String text = FoundryCLIHelp::get_command_help_text("script", "eval");
+	CHECK(text.contains("source"));
+	CHECK(text.contains("foundry --headless script eval 'print(\"ok\")'"));
 }
 
 TEST_CASE("[FoundryCLIHelp] Command help documents options and example") {
@@ -259,6 +266,15 @@ static PackedStringArray drift_base_args(const FoundryCLIHelp::CommandSpec &p_sp
 			continue;
 		}
 		drift_append_option(args, option);
+	}
+	for (int i = 0; i < p_spec.positional_count; i++) {
+		const FoundryCLIHelp::Positional &positional = p_spec.positionals[i];
+		if (positional.optional) {
+			continue;
+		}
+		// A sample value for each required positional so a command whose only mandatory
+		// input is positional (e.g. `script eval <source>`) still parses in the drift check.
+		args.push_back(String("sample_") + positional.name);
 	}
 	return args;
 }

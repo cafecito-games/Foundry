@@ -1,4 +1,4 @@
-extends ScriptTestRunner
+extends ScriptRunner
 
 signal proceed
 

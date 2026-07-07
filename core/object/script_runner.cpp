@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  script_test_runner.cpp                                                */
+/*  script_runner.cpp                                                     */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -28,7 +28,7 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-#include "script_test_runner.h"
+#include "script_runner.h"
 
 #include "core/error/error_macros.h"
 #include "core/object/class_db.h"
@@ -36,20 +36,20 @@
 #include "scene/main/scene_tree.h"
 #include "scene/main/window.h"
 
-ScriptTestRunner::ScriptErrorGuardedCallback ScriptTestRunner::script_error_guarded_callback = nullptr;
+ScriptRunner::ScriptErrorGuardedCallback ScriptRunner::script_error_guarded_callback = nullptr;
 
-void ScriptTestRunner::set_script_error_guarded_callback(ScriptErrorGuardedCallback p_callback) {
+void ScriptRunner::set_script_error_guarded_callback(ScriptErrorGuardedCallback p_callback) {
 	script_error_guarded_callback = p_callback;
 }
 
-bool ScriptTestRunner::is_script_error_guarded() {
+bool ScriptRunner::is_script_error_guarded() {
 	return script_error_guarded_callback != nullptr && script_error_guarded_callback();
 }
 
-class ScriptTestRunnerInvoker : public Node {
-	FOUNDRY_CLASS(ScriptTestRunnerInvoker, Node);
+class ScriptRunnerInvoker : public Node {
+	FOUNDRY_CLASS(ScriptRunnerInvoker, Node);
 
-	Ref<ScriptTestRunner> runner;
+	Ref<ScriptRunner> runner;
 	PackedStringArray user_args;
 	SceneTree *scene_tree = nullptr;
 	bool started = false;
@@ -58,8 +58,8 @@ class ScriptTestRunnerInvoker : public Node {
 	ErrorHandlerList error_handler;
 
 	static void _error_handler(void *p_userdata, const char *p_function, const char *p_file, int p_line, const char *p_error, const char *p_explanation, bool p_editor_notify, ErrorHandlerType p_type) {
-		ScriptTestRunnerInvoker *self = static_cast<ScriptTestRunnerInvoker *>(p_userdata);
-		if (p_type == ERR_HANDLER_SCRIPT && !ScriptTestRunner::is_script_error_guarded()) {
+		ScriptRunnerInvoker *self = static_cast<ScriptRunnerInvoker *>(p_userdata);
+		if (p_type == ERR_HANDLER_SCRIPT && !ScriptRunner::is_script_error_guarded()) {
 			self->had_script_error = true;
 		}
 	}
@@ -90,7 +90,7 @@ class ScriptTestRunnerInvoker : public Node {
 		if (!had_script_error && p_result.get_type() == Variant::INT) {
 			exit_code = p_result;
 		} else if (!had_script_error) {
-			ERR_PRINT("Script test runner run() must return an int exit code.");
+			ERR_PRINT("Script runner run() must return an int exit code.");
 		}
 
 		scene_tree->quit(exit_code);
@@ -111,11 +111,11 @@ class ScriptTestRunnerInvoker : public Node {
 		ERR_FAIL_COND(runner.is_null());
 
 		_register_error_handler();
-		const Variant result = ScriptTestRunner::call_run_script_hook(runner, user_args);
+		const Variant result = ScriptRunner::call_run_script_hook(runner, user_args);
 		ScriptFunctionState *function_state_object = Object::cast_to<ScriptFunctionState>(result);
 		if (function_state_object != nullptr) {
 			Ref<ScriptFunctionState> function_state(function_state_object);
-			function_state->connect(SNAME("completed"), callable_mp(this, &ScriptTestRunnerInvoker::_on_async_completed), CONNECT_ONE_SHOT);
+			function_state->connect(SNAME("completed"), callable_mp(this, &ScriptRunnerInvoker::_on_async_completed), CONNECT_ONE_SHOT);
 			return;
 		}
 
@@ -123,7 +123,7 @@ class ScriptTestRunnerInvoker : public Node {
 	}
 
 public:
-	void setup(SceneTree *p_scene_tree, const Ref<ScriptTestRunner> &p_runner, const PackedStringArray &p_user_args) {
+	void setup(SceneTree *p_scene_tree, const Ref<ScriptRunner> &p_runner, const PackedStringArray &p_user_args) {
 		scene_tree = p_scene_tree;
 		runner = p_runner;
 		user_args = p_user_args;
@@ -134,28 +134,28 @@ public:
 	}
 };
 
-void ScriptTestRunner::_bind_methods() {
+void ScriptRunner::_bind_methods() {
 	// Script-extensible hook. Native callers must use call_run_script_hook() so FoundryScript
 	// overrides dispatch through Object::call().
-	ClassDB::bind_method(D_METHOD("run", "args"), &ScriptTestRunner::run);
+	ClassDB::bind_method(D_METHOD("run", "args"), &ScriptRunner::run);
 }
 
-Variant ScriptTestRunner::call_run_script_hook(const Ref<ScriptTestRunner> &p_runner, const PackedStringArray &p_args) {
+Variant ScriptRunner::call_run_script_hook(const Ref<ScriptRunner> &p_runner, const PackedStringArray &p_args) {
 	ERR_FAIL_COND_V(p_runner.is_null(), Variant());
 	return p_runner->call(SNAME("run"), p_args);
 }
 
-void ScriptTestRunner::launch_host(SceneTree *p_scene_tree, const Ref<ScriptTestRunner> &p_runner, const PackedStringArray &p_user_args) {
+void ScriptRunner::launch_host(SceneTree *p_scene_tree, const Ref<ScriptRunner> &p_runner, const PackedStringArray &p_user_args) {
 	ERR_FAIL_NULL(p_scene_tree);
 	ERR_FAIL_COND(p_runner.is_null());
 
-	ScriptTestRunnerInvoker *invoker = memnew(ScriptTestRunnerInvoker);
+	ScriptRunnerInvoker *invoker = memnew(ScriptRunnerInvoker);
 	invoker->setup(p_scene_tree, p_runner, p_user_args);
 	p_scene_tree->get_root()->add_child(invoker);
-	p_scene_tree->connect(SNAME("process_frame"), callable_mp(invoker, &ScriptTestRunnerInvoker::start_on_process_frame), CONNECT_ONE_SHOT);
+	p_scene_tree->connect(SNAME("process_frame"), callable_mp(invoker, &ScriptRunnerInvoker::start_on_process_frame), CONNECT_ONE_SHOT);
 }
 
-int ScriptTestRunner::run(const PackedStringArray &p_args) {
-	ERR_PRINT("ScriptTestRunner.run() must be overridden by the runner script.");
+int ScriptRunner::run(const PackedStringArray &p_args) {
+	ERR_PRINT("ScriptRunner.run() must be overridden by the runner script.");
 	return EXIT_FAILURE;
 }

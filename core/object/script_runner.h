@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  fs_script_extensible_native_hooks.cpp                                 */
+/*  script_runner.h                                                       */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -28,68 +28,30 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-#include "fs_script_extensible_native_hooks.h"
+#pragma once
 
-#include "core/object/class_db.h"
+#include "core/object/ref_counted.h"
+#include "core/variant/variant.h"
 
-namespace {
+class SceneTree;
 
-struct ScriptExtensibleNativeHook {
-	const char *native_base;
-	const char *method_name;
+class ScriptRunner : public RefCounted {
+	FOUNDRY_CLASS(ScriptRunner, RefCounted);
+
+public:
+	typedef bool (*ScriptErrorGuardedCallback)();
+
+protected:
+	static void _bind_methods();
+
+	static ScriptErrorGuardedCallback script_error_guarded_callback;
+
+public:
+	static void set_script_error_guarded_callback(ScriptErrorGuardedCallback p_callback);
+	static bool is_script_error_guarded();
+
+	static Variant call_run_script_hook(const Ref<ScriptRunner> &p_runner, const PackedStringArray &p_args);
+	static void launch_host(SceneTree *p_scene_tree, const Ref<ScriptRunner> &p_runner, const PackedStringArray &p_user_args);
+
+	virtual int run(const PackedStringArray &p_args);
 };
-
-static const ScriptExtensibleNativeHook script_extensible_native_hooks[] = {
-	{ "FoundryBuildTask", "get_config_schema" },
-	{ "FoundryBuildTask", "run" },
-	{ "ScriptRunner", "run" },
-};
-
-static const ScriptExtensibleNativeHook flexible_async_native_hooks[] = {
-	{ "ScriptRunner", "run" },
-};
-
-} // namespace
-
-bool FSScriptExtensibleNativeHooks::is_allowed_override(
-		const StringName &p_native_base, const StringName &p_method_name) {
-	if (p_native_base == StringName() || p_method_name == StringName()) {
-		return false;
-	}
-
-	for (const ScriptExtensibleNativeHook &hook : script_extensible_native_hooks) {
-		if (p_method_name == StringName(hook.method_name) &&
-				ClassDB::is_parent_class(p_native_base, StringName(hook.native_base))) {
-			return true;
-		}
-	}
-	return false;
-}
-
-bool FSScriptExtensibleNativeHooks::allows_async_override_of_sync_hook(
-		const StringName &p_native_base, const StringName &p_method_name) {
-	if (p_native_base == StringName() || p_method_name == StringName()) {
-		return false;
-	}
-
-	for (const ScriptExtensibleNativeHook &hook : flexible_async_native_hooks) {
-		if (p_method_name == StringName(hook.method_name) &&
-				ClassDB::is_parent_class(p_native_base, StringName(hook.native_base))) {
-			return true;
-		}
-	}
-	return false;
-}
-
-void FSScriptExtensibleNativeHooks::collect_allowed_overrides(
-		const StringName &p_native_base, List<StringName> &r_method_names) {
-	if (p_native_base == StringName()) {
-		return;
-	}
-
-	for (const ScriptExtensibleNativeHook &hook : script_extensible_native_hooks) {
-		if (ClassDB::is_parent_class(p_native_base, StringName(hook.native_base))) {
-			r_method_names.push_back(StringName(hook.method_name));
-		}
-	}
-}

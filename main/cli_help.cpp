@@ -44,7 +44,7 @@ const int HELP_OPTION_COLUMN_LENGTH = 36;
 const NounSpec NOUNS[] = {
 	{ "editor", "Open the editor or the Project Manager." },
 	{ "project", "Run, export, import, or test a project." },
-	{ "script", "Format, lint, and migrate Foundry Script code." },
+	{ "script", "Format, lint, migrate, and evaluate Foundry Script code." },
 	{ "test", "Run the engine test suites." },
 	{ "lsp", "Run the Foundry Script language server." },
 	{ "docs", "Generate engine and extension API documentation." },
@@ -86,7 +86,7 @@ const CommandOption PROJECT_IMPORT_OPTIONS[] = {
 
 const CommandOption PROJECT_TEST_OPTIONS[] = {
 	{ "--project", "dir", PROJECT_OPTION_DESCRIPTION, false },
-	{ "--runner", "path", "ScriptTestRunner script path (res://...).", true },
+	{ "--runner", "path", "ScriptRunner script path (res://...).", true },
 };
 
 const CommandOption SCRIPT_FORMAT_OPTIONS[] = {
@@ -112,6 +112,10 @@ const CommandOption SCRIPT_MIGRATE_OPTIONS[] = {
 	{ "--allow-violations", nullptr, "Allow the strict flip even when violations remain.", false },
 	{ "--acknowledge-vcs", nullptr, "Proceed with --apply on an unversioned or dirty tree.", false },
 	{ "--follow-up", "path", "Write the manual follow-up punch list to a file.", false },
+};
+
+const CommandOption SCRIPT_EVAL_OPTIONS[] = {
+	{ "--project", "dir", PROJECT_OPTION_DESCRIPTION, false },
 };
 
 const CommandOption TEST_RUN_OPTIONS[] = {
@@ -163,6 +167,10 @@ const Positional PATHS_POSITIONAL[] = {
 	{ "paths", true, true },
 };
 
+const Positional EVAL_SOURCE_POSITIONAL[] = {
+	{ "source", false, false },
+};
+
 const Positional DOCTEST_ARGS_POSITIONAL[] = {
 	{ "doctest-args", true, true },
 };
@@ -179,6 +187,7 @@ const CommandSpec COMMANDS[] = {
 	{ "script", "format", "Format Foundry Script files or stdin.", "[--project <dir>] [--check|--write|--diff] [paths...]", FoundryCLIHelp::AVAILABILITY_RELEASE, SCRIPT_FORMAT_OPTIONS, FOUNDRY_CLI_COUNT(SCRIPT_FORMAT_OPTIONS), PATHS_POSITIONAL, FOUNDRY_CLI_COUNT(PATHS_POSITIONAL), "foundry script format --project . --check scripts" },
 	{ "script", "lint", "Lint Foundry Script files.", "[--project <dir>] [--format=<json|sarif>] [--out <path>] [--fail-on=<error|warning>] [paths...]", FoundryCLIHelp::AVAILABILITY_RELEASE, SCRIPT_LINT_OPTIONS, FOUNDRY_CLI_COUNT(SCRIPT_LINT_OPTIONS), PATHS_POSITIONAL, FOUNDRY_CLI_COUNT(PATHS_POSITIONAL), "foundry script lint --project . --format=sarif --out reports/foundry-script.sarif scripts" },
 	{ "script", "migrate", "Run the Foundry Script strict-typing migration wizard.", "--project <dir> [--apply] [--strict <null,dynamic>] [--activate-strict] [--confirm] [--allow-violations] [--acknowledge-vcs] [--follow-up <path>]", FoundryCLIHelp::AVAILABILITY_EDITOR, SCRIPT_MIGRATE_OPTIONS, FOUNDRY_CLI_COUNT(SCRIPT_MIGRATE_OPTIONS), nullptr, 0, "foundry script migrate --trusted --project . --apply --strict null,dynamic --confirm" },
+	{ "script", "eval", "Evaluate an inline Foundry Script snippet.", "[--project <dir>] <source> [-- <runner args...>]", FoundryCLIHelp::AVAILABILITY_RELEASE, SCRIPT_EVAL_OPTIONS, FOUNDRY_CLI_COUNT(SCRIPT_EVAL_OPTIONS), EVAL_SOURCE_POSITIONAL, FOUNDRY_CLI_COUNT(EVAL_SOURCE_POSITIONAL), "foundry --headless script eval 'print(\"ok\")'" },
 	{ "test", "run", "Run the engine doctest suites.", "[--project <dir>] [--case <pattern>] [--progress] [--progress-format=<text|jsonl>] [--progress-file <path>] [--progress-heartbeat-seconds <n>] [doctest-args...]", FoundryCLIHelp::AVAILABILITY_RELEASE, TEST_RUN_OPTIONS, FOUNDRY_CLI_COUNT(TEST_RUN_OPTIONS), DOCTEST_ARGS_POSITIONAL, FOUNDRY_CLI_COUNT(DOCTEST_ARGS_POSITIONAL), "foundry test run --case \"*FoundryScript*\"" },
 	{ "test", "generate-fixtures", "Regenerate Foundry Script integration test .out fixtures.", "[--project <dir>] [--print-filenames] [paths...]", FoundryCLIHelp::AVAILABILITY_EDITOR, TEST_GENERATE_FIXTURES_OPTIONS, FOUNDRY_CLI_COUNT(TEST_GENERATE_FIXTURES_OPTIONS), PATHS_POSITIONAL, FOUNDRY_CLI_COUNT(PATHS_POSITIONAL), "foundry test generate-fixtures modules/foundry_script/tests/scripts" },
 	{ "test", "generate-format-fixtures", "Regenerate formatter golden expected.fs fixtures.", "[--project <dir>] [paths...]", FoundryCLIHelp::AVAILABILITY_EDITOR, TEST_GENERATE_FORMAT_FIXTURES_OPTIONS, FOUNDRY_CLI_COUNT(TEST_GENERATE_FORMAT_FIXTURES_OPTIONS), PATHS_POSITIONAL, FOUNDRY_CLI_COUNT(PATHS_POSITIONAL), "foundry test generate-format-fixtures modules/foundry_script/tests/scripts/format" },

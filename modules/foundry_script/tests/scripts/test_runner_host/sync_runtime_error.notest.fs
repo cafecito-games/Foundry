@@ -1,4 +1,4 @@
-extends ScriptTestRunner
+extends ScriptRunner
 
 func run(args: PackedStringArray) -> int:
 	var x: int = 1
