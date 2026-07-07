@@ -7556,10 +7556,13 @@ bool EditorNode::has_scenes_in_session() {
 	if (!bool(EDITOR_GET("interface/scene_tabs/restore_scenes_on_load"))) {
 		return false;
 	}
-	Ref<ConfigFile> config = layout_store->get_config();
-	if (config.is_null()) {
+	// Mirror the layout-load contract: any load error means no restorable session,
+	// even if a partially parsed config happens to retain an open_scenes key from
+	// before the failure point.
+	if (layout_store->load() != OK) {
 		return false;
 	}
+	Ref<ConfigFile> config = layout_store->get_config();
 	if (!config->has_section(EDITOR_NODE_CONFIG_SECTION) || !config->has_section_key(EDITOR_NODE_CONFIG_SECTION, "open_scenes")) {
 		return false;
 	}
