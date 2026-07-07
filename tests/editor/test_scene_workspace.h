@@ -2906,4 +2906,232 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] persist-restore-reserves-stable-i
 	remove_resource_file(script_path);
 }
 
+// Mimics _load_open_scenes_from_config: a scene reopened on startup lands on the
+// current focused (startup) tile and carries no per-scene tile record, so a fresh
+// session assigns it a new history id unrelated to the persisted tab payload.
+static int add_startup_scene(EditorData &p_data, const String &p_path, Node2D *p_root = nullptr) {
+	const int idx = p_data.add_edited_scene(-1);
+	p_data.set_scene_path(idx, p_path);
+	if (p_root) {
+		EditorSceneContext *context = p_data.get_scene_context(idx);
+		context->set_scene_root_node(p_root);
+	}
+	return idx;
+}
+
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] restart-restores-multipane-scene-ownership") {
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+
+	// Session 1: two panes, each owning a distinct saved scene; focus on tile_b.
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspaceLeafNode *leaf_a = h.workspace->get_focused_leaf();
+	const int tile_a = leaf_a->get_leaf_id();
+	Node2D *root_a = memnew(Node2D);
+	const int scene_a = add_test_scene(h.editor_data, tile_a, root_a);
+	h.editor_data.set_scene_path(scene_a, "res://scene_a.tscn");
+
+	WorkspaceLeafNode *leaf_b = h.workspace->split(leaf_a, false, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
+	h.pump();
+	REQUIRE(leaf_b != nullptr);
+	const int tile_b = leaf_b->get_leaf_id();
+	Node2D *root_b = memnew(Node2D);
+	const int scene_b = add_test_scene(h.editor_data, tile_b, root_b);
+	h.editor_data.set_scene_path(scene_b, "res://scene_b.tscn");
+
+	h.workspace->sync_scene_tabs_from_editor_data();
+	h.workspace->set_focused_leaf(tile_b);
+	h.editor_data.set_focused_tile_id(tile_b);
+	h.editor_data.set_edited_scene(scene_b);
+
+	Ref<ConfigFile> config;
+	config.instantiate();
+	EditorSceneWorkspace::save_to_config(config, h.workspace);
+	h.unmount();
+
+	// Session 2: a fresh EditorData reopens the scenes before the workspace tree is
+	// restored, so both land on the startup tile 0 (mirrors _load_open_scenes_from_config).
+	// Reopen in reverse order so the fresh scene_history_ids no longer line up with the
+	// persisted tab payloads -- ownership must resolve by path, not the stale history id.
+	WorkspaceHarness h2;
+	h2.mount();
+	h2.pump();
+
+	h2.editor_data.register_tile(0);
+	h2.editor_data.set_focused_tile_id(0);
+	Node2D *reopened_b_root = memnew(Node2D);
+	const int reopened_b = add_startup_scene(h2.editor_data, "res://scene_b.tscn", reopened_b_root);
+	Node2D *reopened_a_root = memnew(Node2D);
+	const int reopened_a = add_startup_scene(h2.editor_data, "res://scene_a.tscn", reopened_a_root);
+
+	h2.workspace->restore_from_config(config);
+
+	// Decoupled ownership restoration: push each restored scene tab's tile ownership
+	// into EditorData before the tab sync runs, without claiming focus for non-focused panes.
+	h2.workspace->restore_scene_tile_ownership_from_tabs();
+
+	CHECK(h2.editor_data.get_scene_tile(reopened_a) == tile_a);
+	CHECK(h2.editor_data.get_scene_tile(reopened_b) == tile_b);
+	CHECK(h2.editor_data.get_tile_scene_indices(tile_a).has(reopened_a));
+	CHECK(h2.editor_data.get_tile_scene_indices(tile_b).has(reopened_b));
+
+	// The focused tile has a current scene immediately, before any tab sync runs.
+	CHECK(h2.editor_data.get_tile_current_scene(tile_b) == reopened_b);
+
+	h2.editor_data.set_focused_tile_id(h2.workspace->get_focused_leaf_id());
+	h2.workspace->sync_scene_tabs_from_editor_data();
+	h2.pump();
+
+	CHECK(h2.workspace->get_focused_leaf_id() == tile_b);
+	WorkspacePane *restored_a = get_leaf_pane(h2.workspace->get_leaf_by_id(tile_a));
+	WorkspacePane *restored_b = get_leaf_pane(h2.workspace->get_leaf_by_id(tile_b));
+	REQUIRE(restored_a != nullptr);
+	REQUIRE(restored_b != nullptr);
+	CHECK(restored_a->find_scene_tab_index(reopened_a) >= 0);
+	CHECK(restored_b->find_scene_tab_index(reopened_b) >= 0);
+
+	h2.unmount();
+}
+
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] restart-restores-mixed-pane-scene-ownership") {
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+	const String script_path = make_existing_resource_file("mixed_restart.fs");
+
+	// Session 1: a non-focused pane holds a scene tab and a script tab; focus stays
+	// on the first pane so the mixed pane never activates.
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspaceLeafNode *leaf_a = h.workspace->get_focused_leaf();
+	const int tile_a = leaf_a->get_leaf_id();
+	Node2D *root_a = memnew(Node2D);
+	const int scene_a = add_test_scene(h.editor_data, tile_a, root_a);
+	h.editor_data.set_scene_path(scene_a, "res://mixed_a.tscn");
+
+	WorkspaceLeafNode *leaf_b = h.workspace->split(leaf_a, false, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
+	h.pump();
+	REQUIRE(leaf_b != nullptr);
+	const int tile_b = leaf_b->get_leaf_id();
+	Node2D *root_b = memnew(Node2D);
+	const int scene_b = add_test_scene(h.editor_data, tile_b, root_b);
+	h.editor_data.set_scene_path(scene_b, "res://mixed_b.tscn");
+
+	h.workspace->sync_scene_tabs_from_editor_data();
+	WorkspacePane *pane_b = get_leaf_pane(leaf_b);
+	REQUIRE(pane_b != nullptr);
+	add_script_tab(pane_b, script_path);
+	REQUIRE(pane_b->get_tab_count() == 2);
+
+	h.workspace->set_focused_leaf(tile_a);
+	h.editor_data.set_focused_tile_id(tile_a);
+	h.editor_data.set_edited_scene(scene_a);
+
+	Ref<ConfigFile> config;
+	config.instantiate();
+	EditorSceneWorkspace::save_to_config(config, h.workspace);
+	h.unmount();
+
+	// Session 2: fresh EditorData reopens both scenes onto the startup tile 0.
+	WorkspaceHarness h2;
+	h2.mount();
+	h2.pump();
+
+	h2.editor_data.register_tile(0);
+	h2.editor_data.set_focused_tile_id(0);
+	Node2D *reopened_a_root = memnew(Node2D);
+	const int reopened_a = add_startup_scene(h2.editor_data, "res://mixed_a.tscn", reopened_a_root);
+	Node2D *reopened_b_root = memnew(Node2D);
+	const int reopened_b = add_startup_scene(h2.editor_data, "res://mixed_b.tscn", reopened_b_root);
+
+	h2.workspace->restore_from_config(config);
+	h2.workspace->restore_scene_tile_ownership_from_tabs();
+
+	CHECK(h2.editor_data.get_scene_tile(reopened_a) == tile_a);
+	CHECK(h2.editor_data.get_scene_tile(reopened_b) == tile_b);
+
+	h2.editor_data.set_focused_tile_id(h2.workspace->get_focused_leaf_id());
+	h2.workspace->sync_scene_tabs_from_editor_data();
+	h2.pump();
+
+	WorkspacePane *restored_b = get_leaf_pane(h2.workspace->get_leaf_by_id(tile_b));
+	REQUIRE(restored_b != nullptr);
+	// The mixed pane keeps both its scene tab and its script tab.
+	CHECK(restored_b->find_scene_tab_index(reopened_b) >= 0);
+	bool has_script_tab = false;
+	for (int i = 0; i < restored_b->get_tab_count(); i++) {
+		if (restored_b->get_tab(i).get_type_id() == StringName("script") && restored_b->get_tab(i).get_resource_key() == script_path) {
+			has_script_tab = true;
+			break;
+		}
+	}
+	CHECK(has_script_tab);
+
+	h2.unmount();
+	remove_resource_file(script_path);
+}
+
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] restart-ignores-stale-unsaved-scene-tab") {
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+
+	// Session 1: pane_a owns a saved scene; the non-focused pane_b owns an unsaved
+	// (pathless) scene whose only stable identity is a session-local history id.
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspaceLeafNode *leaf_a = h.workspace->get_focused_leaf();
+	const int tile_a = leaf_a->get_leaf_id();
+	Node2D *root_a = memnew(Node2D);
+	const int scene_a = add_test_scene(h.editor_data, tile_a, root_a);
+	h.editor_data.set_scene_path(scene_a, "res://stale_a.tscn");
+
+	WorkspaceLeafNode *leaf_b = h.workspace->split(leaf_a, false, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
+	h.pump();
+	REQUIRE(leaf_b != nullptr);
+	const int tile_b = leaf_b->get_leaf_id();
+	Node2D *root_b = memnew(Node2D);
+	const int scene_b_unsaved = add_test_scene(h.editor_data, tile_b, root_b);
+	const int stale_history_id = h.editor_data.get_scene_history_id(scene_b_unsaved);
+
+	h.workspace->sync_scene_tabs_from_editor_data();
+	h.workspace->set_focused_leaf(tile_a);
+	h.editor_data.set_focused_tile_id(tile_a);
+	h.editor_data.set_edited_scene(scene_a);
+
+	Ref<ConfigFile> config;
+	config.instantiate();
+	EditorSceneWorkspace::save_to_config(config, h.workspace);
+	h.unmount();
+
+	// Session 2: the unsaved scene is not reopened. Its history id is recycled onto a
+	// fresh blank startup scene, so a history-id-based resolver would move that blank
+	// scene into pane_b. Ownership must resolve by path only and leave it on tile 0.
+	WorkspaceHarness h2;
+	h2.mount();
+	h2.pump();
+
+	h2.editor_data.register_tile(0);
+	h2.editor_data.set_focused_tile_id(0);
+	Node2D *reopened_a_root = memnew(Node2D);
+	const int reopened_a = add_startup_scene(h2.editor_data, "res://stale_a.tscn", reopened_a_root);
+	Node2D *blank_root = memnew(Node2D);
+	const int blank_scene = h2.editor_data.add_edited_scene(-1);
+	h2.editor_data.get_scene_context(blank_scene)->set_scene_root_node(blank_root);
+	REQUIRE(h2.editor_data.get_scene_history_id(blank_scene) == stale_history_id);
+
+	h2.workspace->restore_from_config(config);
+	h2.workspace->restore_scene_tile_ownership_from_tabs();
+
+	// The saved scene is restored to its pane; the blank scene is never claimed by the
+	// stale unsaved tab and stays on the startup tile.
+	CHECK(h2.editor_data.get_scene_tile(reopened_a) == tile_a);
+	CHECK(h2.editor_data.get_scene_tile(blank_scene) == 0);
+	CHECK_FALSE(h2.editor_data.get_tile_scene_indices(tile_b).has(blank_scene));
+
+	h2.unmount();
+}
+
 } // namespace TestSceneWorkspace

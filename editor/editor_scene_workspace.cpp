@@ -759,6 +759,59 @@ void EditorSceneWorkspace::sync_scene_tabs_from_editor_data() {
 	}
 }
 
+// Resolve a restored scene tab to its edited-scene index by its stable path only.
+// The persisted scene_history_id is reassigned every session, so it cannot identify
+// a scene across a restart. Pathless (unsaved) scenes are never reopened on restart,
+// so a stale unsaved tab must resolve to -1 rather than matching -- by a recycled
+// history id -- an unrelated fresh scene that would then be moved into its old pane.
+static int _resolve_restored_scene_index(const EditorData &p_editor_data, const WorkspaceTab &p_tab) {
+	const Dictionary &payload = p_tab.get_payload();
+	String path;
+	if (payload.has("scene_path")) {
+		path = payload["scene_path"];
+	} else if (p_tab.get_resource_key().begins_with("res://")) {
+		path = p_tab.get_resource_key();
+	}
+	if (path.is_empty()) {
+		return -1;
+	}
+	return p_editor_data.get_edited_scene_from_path(path);
+}
+
+void EditorSceneWorkspace::restore_scene_tile_ownership_from_tabs() {
+	if (!editor_data) {
+		return;
+	}
+	for (WorkspaceLeafNode *leaf : leaves) {
+		WorkspacePane *pane = leaf->get_workspace_pane();
+		if (!pane || !pane->is_scene_pane()) {
+			continue;
+		}
+		const int tile_id = leaf->get_leaf_id();
+		const int active_index = pane->get_restored_active_tab_index();
+		int active_scene_idx = -1;
+		for (int i = 0; i < pane->get_tab_count(); i++) {
+			const WorkspaceTab &tab = pane->get_tab(i);
+			if (tab.get_type_id() != StringName("scene")) {
+				continue;
+			}
+			const int scene_idx = _resolve_restored_scene_index(*editor_data, tab);
+			if (scene_idx < 0) {
+				continue;
+			}
+			editor_data->set_scene_tile(scene_idx, tile_id);
+			if (i == active_index) {
+				active_scene_idx = scene_idx;
+			}
+		}
+		// Point the tile at its restored active scene so the tab sync (and the focused
+		// tile's current scene) reflect the persisted active tab, not tile 0's leftover.
+		if (active_scene_idx >= 0) {
+			editor_data->set_tile_current_scene(tile_id, active_scene_idx);
+		}
+	}
+}
+
 bool EditorSceneWorkspace::focus_scene_tab(int p_scene_idx) {
 	ERR_FAIL_NULL_V(editor_data, false);
 	ERR_FAIL_INDEX_V(p_scene_idx, editor_data->get_edited_scene_count(), false);

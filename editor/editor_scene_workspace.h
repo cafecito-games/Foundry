@@ -177,6 +177,14 @@ public:
 	// empty and another leaf remains. Used after a tab move or close resolves.
 	void collapse_if_empty_deferred(int p_leaf_id);
 	void sync_scene_tabs_from_editor_data();
+	// Restart-restore step: after restore_from_config() rebuilds the pane tree and its
+	// per-tab records, push each restored scene tab's tile ownership into EditorData so
+	// a later sync reads the correct scene->tile mapping. Reopened scenes all land on
+	// the startup tile, and only the focused pane claims focus/activation, so ownership
+	// for non-focused panes is never restored otherwise. Ownership is resolved by the
+	// tab's stable path/resource key (not the persisted scene_history_id, which is
+	// reassigned each session), decoupling ownership restoration from focus.
+	void restore_scene_tile_ownership_from_tabs();
 	bool focus_scene_tab(int p_scene_idx);
 
 	// Hit-test and preview helpers (testable without GUI).

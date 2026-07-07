@@ -120,6 +120,10 @@ public:
 	int get_tab_count() const { return tabs.size(); }
 	const WorkspaceTab &get_tab(int p_index) const { return tabs[p_index]; }
 	int get_active_tab_index() const { return active_tab_index; }
+	// Active tab index that reflects a just-restored layout: while a restored active
+	// tab is still pending its deferred mount, active_tab_index is -1, so callers that
+	// run synchronously right after load_layout must consult the pending index instead.
+	int get_restored_active_tab_index() const { return has_pending_active_tab ? pending_active_tab_index : active_tab_index; }
 	// Index of the scene tab bound to p_scene_idx, or -1 if this pane does not host it.
 	int find_scene_tab_index(int p_scene_idx) const;
 	// True while a legacy scene/script bridge still owns content (no explicit tabs);
