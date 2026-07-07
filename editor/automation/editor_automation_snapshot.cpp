@@ -352,13 +352,21 @@ class EditorAutomationSnapshotBuilder {
 
 	// Converts a control-local item rect into global snapshot bounds so synthesized
 	// tree/list rows report a real on-screen target instead of the [0,0,0,0]
-	// default. An empty local rect (item not laid out yet) is left unset.
+	// default. The rect is clipped to the control's viewport, so a row scrolled
+	// out of view reports no bounds (left unset) rather than advertising an
+	// off-screen, non-hit-testable target; partially visible rows report only
+	// their visible region. An empty local rect (item not laid out yet) is also
+	// left unset.
 	static Rect2i _virtual_item_bounds(const Control *p_control, const Rect2 &p_local_rect) {
 		if (p_local_rect.size.x <= 0 && p_local_rect.size.y <= 0) {
 			return Rect2i();
 		}
 		const Rect2 global_rect = Rect2(p_control->get_global_position() + p_local_rect.position, p_local_rect.size);
-		return Rect2i(global_rect.position.floor(), global_rect.size.floor());
+		const Rect2 visible_rect = p_control->get_global_rect().intersection(global_rect);
+		if (visible_rect.size.x <= 0 || visible_rect.size.y <= 0) {
+			return Rect2i();
+		}
+		return Rect2i(visible_rect.position.floor(), visible_rect.size.floor());
 	}
 
 	void _add_tree_items(const Tree *p_tree, int p_parent_index) {

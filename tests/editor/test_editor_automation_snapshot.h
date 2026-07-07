@@ -838,11 +838,11 @@ TEST_CASE("[Editor][Automation] tree_item and list_item virtual elements report 
 	memdelete(window);
 }
 
-TEST_CASE("[Editor][Automation] scrolled list_item bounds follow the scroll offset") {
-	// ItemList::get_item_rect returns content-space coordinates that do not
-	// include the scroll offset the control subtracts when drawing. The snapshot
-	// must account for that so a scrolled row reports where it is actually drawn,
-	// not where it would sit at scroll 0.
+TEST_CASE("[Editor][Automation] scrolled list_item bounds track scroll and clip offscreen rows") {
+	// ItemList::get_item_rect returns content-space coordinates that omit the
+	// scroll offset drawing subtracts, so the snapshot must apply the scroll
+	// offset and clip to the viewport: rows scrolled out of view must report no
+	// bounds rather than an off-screen (non-hit-testable) target.
 	Window *window = memnew(Window);
 	window->set_size(Size2i(320, 240));
 	SceneTree::get_singleton()->get_root()->add_child(window);
@@ -852,7 +852,8 @@ TEST_CASE("[Editor][Automation] scrolled list_item bounds follow the scroll offs
 	item_list->set_name("SceneList");
 	item_list->set_position(Point2(20, 20));
 	item_list->set_max_columns(1);
-	// A short viewport with many rows forces a vertical scrollbar.
+	// A short viewport with many rows forces a vertical scrollbar so most rows
+	// sit outside the visible area at any given scroll position.
 	setup_visible_control(item_list, Size2(200, 80));
 	window->add_child(item_list);
 	for (int i = 0; i < 40; i++) {
@@ -860,23 +861,34 @@ TEST_CASE("[Editor][Automation] scrolled list_item bounds follow the scroll offs
 	}
 	MessageQueue::get_singleton()->flush();
 
-	const EditorAutomationSnapshot unscrolled = EditorAutomationSnapshot::capture_from_node(window);
-	const EditorAutomationElement *top_unscrolled = find_element_by_role_and_name(unscrolled, "list_item", "scene_0.tscn");
-	REQUIRE(top_unscrolled != nullptr);
-	const int unscrolled_y = top_unscrolled->bounds.position.y;
+	const Rect2i list_global = Rect2i(item_list->get_global_position().floor(), item_list->get_size().floor());
 
-	// Scroll down; the first row must now be reported higher up (smaller y),
-	// mirroring the on-screen shift, rather than staying at its scroll-0 origin.
+	const EditorAutomationSnapshot unscrolled = EditorAutomationSnapshot::capture_from_node(window);
+	// The first row is visible at scroll 0 and reports bounds inside the viewport.
+	const EditorAutomationElement *first_unscrolled = find_element_by_role_and_name(unscrolled, "list_item", "scene_0.tscn");
+	REQUIRE(first_unscrolled != nullptr);
+	CHECK(first_unscrolled->bounds.size.y > 0);
+	CHECK(list_global.encloses(first_unscrolled->bounds));
+	// The last row is far below the viewport, so it must report no bounds.
+	const EditorAutomationElement *last_unscrolled = find_element_by_role_and_name(unscrolled, "list_item", "scene_39.tscn");
+	REQUIRE(last_unscrolled != nullptr);
+	CHECK(last_unscrolled->bounds.size.y == 0);
+
+	// Scroll to the bottom; visibility must invert, proving the scroll offset is
+	// applied to the reported bounds (content shifts up).
 	VScrollBar *v_scroll = item_list->get_v_scroll_bar();
 	REQUIRE(v_scroll->get_max() > 0);
-	v_scroll->set_value(30);
+	v_scroll->set_value(v_scroll->get_max());
 	MessageQueue::get_singleton()->flush();
 
 	const EditorAutomationSnapshot scrolled = EditorAutomationSnapshot::capture_from_node(window);
-	const EditorAutomationElement *top_scrolled = find_element_by_role_and_name(scrolled, "list_item", "scene_0.tscn");
-	REQUIRE(top_scrolled != nullptr);
-	CHECK(top_scrolled->bounds.position.y < unscrolled_y);
-	CHECK(top_scrolled->bounds.position.y == unscrolled_y - 30);
+	const EditorAutomationElement *first_scrolled = find_element_by_role_and_name(scrolled, "list_item", "scene_0.tscn");
+	REQUIRE(first_scrolled != nullptr);
+	CHECK(first_scrolled->bounds.size.y == 0);
+	const EditorAutomationElement *last_scrolled = find_element_by_role_and_name(scrolled, "list_item", "scene_39.tscn");
+	REQUIRE(last_scrolled != nullptr);
+	CHECK(last_scrolled->bounds.size.y > 0);
+	CHECK(list_global.encloses(last_scrolled->bounds));
 
 	memdelete(window);
 }
