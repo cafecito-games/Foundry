@@ -32,6 +32,7 @@
 
 #include "core/io/config_file.h"
 #include "editor/editor_node.h"
+#include "editor/editor_scene_workspace.h"
 #include "editor/editor_string_names.h"
 #include "editor/plugins/editor_plugin.h"
 #include "editor/settings/editor_settings.h"
@@ -86,25 +87,44 @@ EditorMainScreen::ScreenPlacement EditorMainScreen::_get_plugin_placement(const 
 	return SCREEN_SCENE_MODE;
 }
 
-void EditorMainScreen::save_layout_to_config(Ref<ConfigFile> p_config_file, const String &p_section) const {
-	int selected_main_editor_idx = -1;
-	for (int i = 0; i < buttons.size(); i++) {
-		if (buttons[i]->is_pressed()) {
-			selected_main_editor_idx = i;
-			break;
+String EditorMainScreen::_active_main_screen_name() const {
+	// A focused script leaf is its own surface with no main-screen button; persist
+	// the "Script" sentinel so restore reveals the leaf via select_by_name().
+	if (EditorSceneWorkspace *workspace = EditorNode::get_scene_workspace()) {
+		if (workspace->get_focused_script_leaf()) {
+			return "Script";
 		}
 	}
-	if (selected_main_editor_idx != -1) {
-		p_config_file->set_value(p_section, "selected_main_editor_idx", selected_main_editor_idx);
+	for (int i = 0; i < buttons.size(); i++) {
+		if (buttons[i]->is_pressed()) {
+			return buttons[i]->get_text();
+		}
+	}
+	return String();
+}
+
+void EditorMainScreen::save_layout_to_config(Ref<ConfigFile> p_config_file, const String &p_section) const {
+	// Persist by plugin name, not raw button index: any change to the set/order of
+	// main-screen plugins would otherwise shift indexes and restore the wrong screen.
+	const String selected_main_editor = _active_main_screen_name();
+	if (!selected_main_editor.is_empty()) {
+		p_config_file->set_value(p_section, "selected_main_editor", selected_main_editor);
 	} else {
-		p_config_file->set_value(p_section, "selected_main_editor_idx", Variant());
+		p_config_file->set_value(p_section, "selected_main_editor", Variant());
 	}
 }
 
 void EditorMainScreen::load_layout_from_config(Ref<ConfigFile> p_config_file, const String &p_section) {
-	int selected_main_editor_idx = p_config_file->get_value(p_section, "selected_main_editor_idx", -1);
-	if (selected_main_editor_idx >= 0 && selected_main_editor_idx < buttons.size()) {
-		callable_mp(this, &EditorMainScreen::select).call_deferred(selected_main_editor_idx);
+	const String selected_main_editor = p_config_file->get_value(p_section, "selected_main_editor", String());
+	if (selected_main_editor.is_empty()) {
+		return;
+	}
+	// Resolve by name so reordering/adding/removing plugins can't restore the wrong
+	// screen. Names that no longer resolve (a removed plugin, or a pre-name layout
+	// that only carried the old int key) fall back to the default screen by doing
+	// nothing here.
+	if (selected_main_editor == "Script" || get_button_index_by_name(selected_main_editor) >= 0) {
+		callable_mp(this, &EditorMainScreen::select_by_name).call_deferred(selected_main_editor);
 	}
 }
 
@@ -170,14 +190,22 @@ void EditorMainScreen::select_by_name(const String &p_name) {
 		return;
 	}
 
-	for (int i = 0; i < buttons.size(); i++) {
-		if (buttons[i]->get_text() == p_name) {
-			select(i);
-			return;
-		}
+	const int index = get_button_index_by_name(p_name);
+	if (index >= 0) {
+		select(index);
+		return;
 	}
 
 	ERR_FAIL_MSG("The editor name '" + p_name + "' was not found.");
+}
+
+int EditorMainScreen::get_button_index_by_name(const String &p_name) const {
+	for (int i = 0; i < buttons.size(); i++) {
+		if (buttons[i]->get_text() == p_name) {
+			return i;
+		}
+	}
+	return -1;
 }
 
 void EditorMainScreen::select(int p_index) {

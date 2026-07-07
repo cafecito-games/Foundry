@@ -74,6 +74,10 @@ private:
 
 	int _get_current_main_editor() const;
 	ScreenPlacement _get_plugin_placement(const String &p_plugin_name) const;
+	// Name persisted for the currently active main screen: the pressed button's
+	// plugin name, the "Script" sentinel when a script leaf is the active surface,
+	// or an empty string when nothing is active.
+	String _active_main_screen_name() const;
 
 protected:
 	void _notification(int p_what);
@@ -93,6 +97,10 @@ public:
 	void select(int p_index);
 	int get_selected_index() const;
 	int get_plugin_index(EditorPlugin *p_editor) const;
+	// Index of the main-screen button whose plugin name matches p_name, or -1 when
+	// no current button matches. Persistence resolves screens by name through this
+	// so registration-order changes cannot restore the wrong screen.
+	int get_button_index_by_name(const String &p_name) const;
 	EditorPlugin *get_selected_plugin() const;
 	EditorPlugin *get_plugin_by_name(const String &p_plugin_name) const;
 	bool can_auto_switch_screens() const;
