@@ -219,6 +219,12 @@ void TextTabSurface::_on_discard_pressed() {
 	if (close_confirm) {
 		close_confirm->hide();
 	}
+	// Discard: drop the unsaved edits so the document is no longer dirty. Otherwise
+	// the tab type retains it as unsaved past the close, and a later Save All / quit
+	// would resurrect the very changes the user chose to discard.
+	if (document.is_valid()) {
+		document->mark_clean();
+	}
 	_finish_deferred_close();
 }
 

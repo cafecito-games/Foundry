@@ -1662,6 +1662,13 @@ bool EditorNode::_route_text_file_to_workspace(const String &p_path) {
 		return false;
 	}
 
+	// Only route files that actually exist; let a missing/unreadable path fall
+	// through to load_resource's normal ERR_CANT_OPEN handling rather than opening
+	// a silent empty buffer that looks like a successful open.
+	if (!FileAccess::exists(p_path)) {
+		return false;
+	}
+
 	WorkspaceLeafNode *source = scene_workspace->get_focused_leaf();
 	if (!source) {
 		const Vector<WorkspaceLeafNode *> workspace_leaves = scene_workspace->get_leaves();
