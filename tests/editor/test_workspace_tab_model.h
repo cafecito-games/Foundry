@@ -35,9 +35,46 @@
 #include "editor/workspace/workspace_tab_registry.h"
 #include "editor/workspace/workspace_tab_type.h"
 
+#include "tests/editor/test_scene_workspace.h"
 #include "tests/test_macros.h"
+#include "tests/test_tools.h"
 
 namespace TestWorkspaceTabModel {
+
+// A workspace tab type with no scene or script identity, used by the extension
+// guardrails (issue #1030) to prove the generic pane mechanics -- add, move,
+// edge-split, close, collapse, and persistence -- drive a brand new type through
+// the registry alone, with zero scene/script branching. It owns no live surface:
+// mount/unmount/activate are no-ops and its payload round-trips verbatim.
+class FakeTabType : public WorkspaceTabType {
+	StringName type_id_value;
+
+public:
+	explicit FakeTabType(const StringName &p_type_id = StringName("fake_guardrail")) :
+			type_id_value(p_type_id) {}
+
+	StringName type_id() const override { return type_id_value; }
+	bool can_open(const String &p_resource) const override { return true; }
+	WorkspaceTab make_tab(const String &p_resource, int p_stable_id) const override {
+		WorkspaceTab tab;
+		tab.set_stable_id(p_stable_id);
+		tab.set_type_id(type_id_value);
+		tab.set_resource_key(p_resource);
+		tab.set_title_cache(p_resource.get_file());
+		tab.set_icon_key_cache("Object");
+		return tab;
+	}
+	String get_title(const WorkspaceTab &p_tab) const override { return p_tab.get_title_cache(); }
+	Ref<Texture2D> get_icon(const WorkspaceTab &p_tab) const override { return Ref<Texture2D>(); }
+	void mount(WorkspaceTab &p_tab, Control *p_chrome_host) override {}
+	void unmount(WorkspaceTab &p_tab) override {}
+	void activate(WorkspaceTab &p_tab) override {}
+	WorkspaceTabCloseResult request_close(WorkspaceTab &p_tab, const Callable &p_on_deferred_close = Callable()) override {
+		return WorkspaceTabCloseResult::CLOSE;
+	}
+	Dictionary save_payload(const WorkspaceTab &p_tab) const override { return p_tab.get_payload(); }
+	void restore_payload(WorkspaceTab &p_tab, const Dictionary &p_payload) const override { p_tab.set_payload(p_payload); }
+};
 
 TEST_CASE("[workspace-tab] tab-identity-unique") {
 	WorkspaceTabRegistry registry;
@@ -169,6 +206,171 @@ TEST_CASE("[workspace-tab] tab-record-roundtrip") {
 	WorkspaceTab restored;
 	restored.load_from_config(config, section, script_type);
 	CHECK(restored == original);
+}
+
+// Guardrails (issue #1030): a registered type with no scene/script identity must
+// drive the generic pane mechanics end to end. These reuse the full workspace
+// harness from TestSceneWorkspace so the fake type flows through the real drag,
+// split, close, collapse, and persistence code paths -- not a stub.
+
+TEST_CASE("[workspace-tab][SceneTree][Editor] fake-tab-type-move-split-close") {
+	using namespace TestSceneWorkspace;
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+
+	// Static so the pointer handed to the shared registry stays valid for the
+	// whole process; the registry keeps raw pointers and never unregisters.
+	static FakeTabType fake_type;
+	WorkspaceTabRegistry &registry = WorkspacePane::get_shared_tab_registry();
+	registry.register_type(&fake_type);
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspaceLeafNode *leaf_a = h.workspace->get_focused_leaf();
+	WorkspacePane *pane_a = get_leaf_pane(leaf_a);
+	REQUIRE(pane_a != nullptr);
+
+	// Two fake tabs so moving one out does not empty (and collapse) the source.
+	pane_a->add_tab(fake_type.make_tab("fake://keep", registry.allocate_stable_id()));
+	pane_a->add_tab(fake_type.make_tab("fake://move", registry.allocate_stable_id()));
+	REQUIRE(pane_a->get_tab_count() == 2);
+
+	// Edge-drop splits the pane and moves the fake tab into the new pane through
+	// the same generic mechanics scene/script tabs use -- no type_id branching.
+	WorkspaceLeafNode *dest = h.workspace->handle_tab_drop(leaf_a->get_leaf_id(), 1, leaf_a, EditorSceneWorkspace::DROP_RIGHT);
+	h.pump();
+	REQUIRE(dest != nullptr);
+	CHECK(dest != leaf_a);
+	CHECK(h.workspace->get_leaf_count() == 2);
+
+	WorkspacePane *dest_pane = get_leaf_pane(dest);
+	REQUIRE(dest_pane != nullptr);
+	CHECK(dest_pane->get_tab_count() == 1);
+	CHECK(dest_pane->get_tab(0).get_type_id() == StringName("fake_guardrail"));
+	CHECK(dest_pane->get_tab(0).get_resource_key() == "fake://move");
+	CHECK(pane_a->get_tab_count() == 1);
+	CHECK(pane_a->get_tab(0).get_resource_key() == "fake://keep");
+
+	// Center-drop the fake tab back; emptying the split pane collapses it, proving
+	// the collapse path is type-agnostic too.
+	WorkspaceLeafNode *back = h.workspace->handle_tab_drop(dest->get_leaf_id(), 0, leaf_a, EditorSceneWorkspace::DROP_CENTER);
+	h.pump();
+	CHECK(back == leaf_a);
+	CHECK(h.workspace->get_leaf_count() == 1);
+	REQUIRE(pane_a->get_tab_count() == 2);
+
+	// Closing a fake tab routes through request_close -> CLOSE and removes it.
+	const WorkspaceTabCloseResult result = pane_a->request_close_tab(pane_a->get_tab_count() - 1);
+	CHECK(result == WorkspaceTabCloseResult::CLOSE);
+	CHECK(pane_a->get_tab_count() == 1);
+	CHECK(pane_a->get_tab(0).get_resource_key() == "fake://keep");
+
+	h.unmount();
+}
+
+TEST_CASE("[workspace-tab][SceneTree][Editor] fake-tab-type-persist-roundtrip") {
+	using namespace TestSceneWorkspace;
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+
+	static FakeTabType fake_type;
+	WorkspaceTabRegistry &registry = WorkspacePane::get_shared_tab_registry();
+	registry.register_type(&fake_type);
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspacePane *pane = get_leaf_pane(h.workspace->get_focused_leaf());
+	REQUIRE(pane != nullptr);
+
+	WorkspaceTab fake_tab = fake_type.make_tab("fake://persisted", registry.allocate_stable_id());
+	Dictionary payload;
+	payload["cursor"] = 99;
+	payload["note"] = "guardrail";
+	fake_tab.set_payload(payload);
+	pane->add_tab(fake_tab);
+	REQUIRE(pane->get_tab_count() == 1);
+
+	const int leaf_id = h.workspace->get_focused_leaf_id();
+
+	Ref<ConfigFile> config;
+	config.instantiate();
+	EditorSceneWorkspace::save_to_config(config, h.workspace);
+
+	h.unmount();
+
+	WorkspaceHarness h2;
+	h2.mount();
+	h2.workspace->restore_from_config(config);
+	h2.pump();
+
+	WorkspacePane *restored = get_leaf_pane(h2.workspace->get_leaf_by_id(leaf_id));
+	REQUIRE(restored != nullptr);
+	REQUIRE(restored->get_tab_count() == 1);
+	const WorkspaceTab &restored_tab = restored->get_tab(0);
+	CHECK(restored_tab.get_type_id() == StringName("fake_guardrail"));
+	CHECK(restored_tab.get_resource_key() == "fake://persisted");
+	const Dictionary &restored_payload = restored_tab.get_payload();
+	REQUIRE(restored_payload.has("cursor"));
+	CHECK(int(restored_payload["cursor"]) == 99);
+	CHECK(String(restored_payload["note"]) == "guardrail");
+
+	h2.unmount();
+}
+
+TEST_CASE("[workspace-tab][SceneTree][Editor] registry-required-for-new-type") {
+	using namespace TestSceneWorkspace;
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspacePane *pane = get_leaf_pane(h.workspace->get_focused_leaf());
+	REQUIRE(pane != nullptr);
+
+	// The tab's type is known only to a private save-side registry, so the shared
+	// registry used on restore has never seen it. A new type that skips
+	// registration cannot round-trip: it is dropped with a diagnostic. The id is
+	// distinct from the other guardrails' type so the shared registry cannot
+	// resolve it via a leftover registration.
+	WorkspaceTabRegistry save_registry;
+	FakeTabType unregistered_type(StringName("unregistered_guardrail"));
+	save_registry.register_type(&unregistered_type);
+	pane->set_tab_registry(&save_registry);
+
+	WorkspaceTabType *scene_type = save_registry.find_type(StringName("scene"));
+	REQUIRE(scene_type != nullptr);
+	pane->add_tab(scene_type->make_tab("res://keep.tscn", save_registry.allocate_stable_id()));
+	pane->add_tab(unregistered_type.make_tab("fake://unregistered", save_registry.allocate_stable_id()));
+	REQUIRE(pane->get_tab_count() == 2);
+
+	const int leaf_id = h.workspace->get_focused_leaf_id();
+
+	Ref<ConfigFile> config;
+	config.instantiate();
+	EditorSceneWorkspace::save_to_config(config, h.workspace);
+
+	h.unmount();
+
+	ErrorDetector error_detector;
+	WorkspaceHarness h2;
+	h2.mount();
+	h2.workspace->restore_from_config(config);
+	h2.pump();
+
+	// The unregistered tab is skipped with a diagnostic; the registered scene tab
+	// restores cleanly.
+	CHECK(error_detector.has_error);
+
+	WorkspacePane *restored = get_leaf_pane(h2.workspace->get_leaf_by_id(leaf_id));
+	REQUIRE(restored != nullptr);
+	CHECK(restored->get_tab_count() == 1);
+	CHECK(restored->get_tab(0).get_type_id() == StringName("scene"));
+	CHECK(restored->get_tab(0).get_resource_key() == "res://keep.tscn");
+
+	h2.unmount();
 }
 
 } // namespace TestWorkspaceTabModel
