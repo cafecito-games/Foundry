@@ -402,11 +402,16 @@ class EditorAutomationSnapshotBuilder {
 			}
 			// The generic pane tab strip is a plain TabBar owned by a WorkspacePane
 			// (the legacy EditorSceneTabs bar is hidden). Capture the owning pane so
-			// its tab elements carry the owning leaf id plus the tab's type_id and
-			// resource_key, letting selectors distinguish e.g. a scene tab from a
-			// script tab sharing one pane's strip.
+			// its strip's tab elements carry the owning leaf id plus the tab's
+			// type_id and resource_key, letting selectors distinguish e.g. a scene
+			// tab from a script tab sharing one pane's strip. Only the pane's own
+			// strip mirrors the pane tab model 1:1; other TabBars mounted inside the
+			// pane chrome (e.g. a tab bar in the active scene/script surface) must
+			// not inherit workspace tab metadata by index.
 			if (WorkspacePane *pane = Object::cast_to<WorkspacePane>(node)) {
-				owner_pane = pane;
+				if (pane->get_tab_strip() == p_tab_bar) {
+					owner_pane = pane;
+				}
 				if (tile_id < 0) {
 					tile_id = pane->get_leaf_id();
 				}

@@ -409,4 +409,52 @@ TEST_CASE("[Editor][Automation][MCP] snapshot-mixed-tabs-distinct-selectors") {
 	h.unmount();
 }
 
+TEST_CASE("[Editor][Automation][MCP] snapshot-nested-tabbar-skips-workspace-metadata") {
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspaceLeafNode *leaf = h.workspace->get_focused_leaf();
+	REQUIRE(leaf != nullptr);
+	WorkspacePane *pane = leaf->get_workspace_pane();
+	REQUIRE(pane != nullptr);
+
+	WorkspaceTabRegistry &registry = WorkspacePane::get_shared_tab_registry();
+	WorkspaceTabType *scene_type = registry.find_type(StringName("scene"));
+	REQUIRE(scene_type != nullptr);
+	pane->add_tab(scene_type->make_tab("res://alpha.tscn", registry.allocate_stable_id()));
+	h.pump();
+
+	// A TabBar that lives under the pane but is NOT the pane's own tab strip (e.g.
+	// a tab bar inside the active scene/script surface) must not inherit the
+	// workspace tab's type_id/resource_key by index.
+	TabBar *nested = memnew(TabBar);
+	nested->add_tab("Nested A");
+	nested->add_tab("Nested B");
+	pane->add_child(nested);
+	h.pump();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(h.host);
+
+	TabBar *strip = pane->get_tab_strip();
+	REQUIRE(strip != nullptr);
+	const EditorAutomationElement *strip_tab = snapshot.find_by_durable_key("tab", vformat("%s:%d", String::num_uint64(strip->get_instance_id()), 0));
+	REQUIRE(strip_tab != nullptr);
+	// The pane's own strip still carries workspace tab metadata.
+	CHECK(strip_tab->metadata.has("type_id"));
+	CHECK(strip_tab->metadata.has("resource_key"));
+
+	const EditorAutomationElement *nested_tab = snapshot.find_by_durable_key("tab", vformat("%s:%d", String::num_uint64(nested->get_instance_id()), 0));
+	REQUIRE(nested_tab != nullptr);
+	// The unrelated nested tab keeps its owning leaf id but never the workspace
+	// tab's type_id/resource_key, which would mislabel it and confuse selectors.
+	CHECK(nested_tab->metadata.has("tile_id"));
+	CHECK_FALSE(nested_tab->metadata.has("type_id"));
+	CHECK_FALSE(nested_tab->metadata.has("resource_key"));
+
+	h.unmount();
+}
+
 } // namespace TestEditorAutomationWorkspace
