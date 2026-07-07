@@ -383,15 +383,32 @@ TEST_CASE("[workspace-tab][SceneTree][Editor] registry-required-for-new-type") {
 // it in place of the real type for these cases.
 class HeadlessHelpTabType : public HelpTabType {
 public:
+	// A page whose class matches this key is reported unavailable, so a restore-time
+	// drop can be exercised without a generated doc database (the real
+	// is_resource_available keeps every page while the database is still loading).
+	String unavailable_class;
+
 	void mount(WorkspaceTab &p_tab, Control *p_chrome_host) override {}
 	void unmount(WorkspaceTab &p_tab) override {}
 	void activate(WorkspaceTab &p_tab) override {}
+	bool is_resource_available(const WorkspaceTab &p_tab) const override {
+		if (!unavailable_class.is_empty() && p_tab.get_resource_key() == unavailable_class) {
+			return false;
+		}
+		return HelpTabType::is_resource_available(p_tab);
+	}
 };
+
+// The single headless help type registered under "help"; tests reach it to set
+// which page should report unavailable for a restore-drop check.
+static HeadlessHelpTabType *headless_help_type_singleton = nullptr;
 
 // Install the headless help type into the shared registry for a workspace test.
 // Static so the pointer handed to the registry stays valid for the process.
 static void install_headless_help_type() {
 	static HeadlessHelpTabType headless_help_type;
+	headless_help_type.unavailable_class = String();
+	headless_help_type_singleton = &headless_help_type;
 	WorkspacePane::get_shared_tab_registry().register_type(&headless_help_type);
 }
 
@@ -428,6 +445,25 @@ TEST_CASE("[workspace-tab] help-tab-topic-class-key") {
 	CHECK(HelpTabType::class_key_for_topic("class_method:Node2D:queue_free") == "Node2D");
 	CHECK(HelpTabType::class_key_for_topic("class_signal:Node2D:renamed") == "Node2D");
 	CHECK(HelpTabType::class_key_for_topic("").is_empty());
+	// A built-in script class name keeps its '::' so nested pages do not collide
+	// under the wrong key.
+	CHECK(HelpTabType::class_key_for_topic("Outer::Inner") == "Outer::Inner");
+	CHECK(HelpTabType::class_key_for_topic("class_method:Outer::Inner:foo") == "Outer::Inner");
+}
+
+TEST_CASE("[workspace-tab] help-tab-availability-without-docs") {
+	WorkspaceTabRegistry registry;
+	WorkspaceTabType *help_type = registry.find_type(StringName("help"));
+	REQUIRE(help_type != nullptr);
+
+	// While the doc database is unavailable (null/empty, as in this harness) a page
+	// cannot be verified, so it is kept rather than dropping a valid layout; an
+	// empty key is never a valid page.
+	CHECK(help_type->is_resource_available(help_type->make_tab("@GlobalScope", 1)));
+	WorkspaceTab blank;
+	blank.set_stable_id(2);
+	blank.set_type_id(StringName("help"));
+	CHECK_FALSE(help_type->is_resource_available(blank));
 }
 
 TEST_CASE("[workspace-tab] help-tab-open-reveal") {
@@ -712,6 +748,12 @@ TEST_CASE("[workspace-tab][SceneTree][Editor] help-tab-missing-class-dropped") {
 	WorkspaceTabRegistry &registry = WorkspacePane::get_shared_tab_registry();
 	WorkspaceTabType *help_type = registry.find_type(StringName("help"));
 	REQUIRE(help_type != nullptr);
+	// Report this class unavailable so the restore path drops it. (The real
+	// is_resource_available consults the doc database, which cannot be generated in
+	// this harness; here the headless type stands in for a class that no longer
+	// exists so the workspace drop wiring is still exercised.)
+	REQUIRE(headless_help_type_singleton != nullptr);
+	headless_help_type_singleton->unavailable_class = "ZZZ_NotARealClass_Foundry";
 	pane->add_tab(help_type->make_tab("ZZZ_NotARealClass_Foundry", registry.allocate_stable_id()));
 	h.pump();
 

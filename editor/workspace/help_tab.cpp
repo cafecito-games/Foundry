@@ -30,8 +30,8 @@
 
 #include "help_tab.h"
 
-#include "core/object/class_db.h"
 #include "core/object/object.h"
+#include "core/templates/vector.h"
 #include "editor/doc/doc_tools.h"
 #include "editor/doc/editor_help.h"
 #include "editor/script/script_editor_controller.h"
@@ -45,14 +45,29 @@ String HelpTabType::class_key_for_topic(const String &p_topic) {
 	if (p_topic.is_empty()) {
 		return String();
 	}
-	// A deep topic ("class_method:Node2D:queue_free", "class:Node2D") names its
-	// class in the second colon-separated slice; a bare class name has no colon
-	// and is its own key. This mirrors the legacy in-view parse
-	// (ScriptEditorView::_help_class_goto) so every existing topic form resolves.
-	if (p_topic.contains(":")) {
-		return p_topic.get_slicec(':', 1);
+	// Split on ':' while keeping '::' intact -- built-in script class names use it
+	// (e.g. Outer::Inner) -- mirroring EditorHelp::_help_callback so the dedup key
+	// matches the page the viewer actually opens. A deep topic
+	// ("class_method:Node2D:queue_free") names its class in the second field; a
+	// bare class name is a single field and is its own key.
+	Vector<String> parts;
+	int from = 0;
+	int buffer_start = 0;
+	while (true) {
+		const int pos = p_topic.find_char(':', from);
+		if (pos < 0) {
+			parts.push_back(p_topic.substr(buffer_start));
+			break;
+		}
+		if (pos + 1 < p_topic.length() && p_topic[pos + 1] == ':') {
+			from = pos + 2;
+		} else {
+			parts.push_back(p_topic.substr(buffer_start, pos - buffer_start));
+			from = pos + 1;
+			buffer_start = from;
+		}
 	}
-	return p_topic;
+	return parts.size() > 1 ? parts[1] : parts[0];
 }
 
 String HelpTabType::derive_title(const String &p_class_key) {
@@ -91,9 +106,11 @@ void HelpTabType::_apply_payload(EditorHelp *p_help, const WorkspaceTab &p_tab) 
 	}
 	const Dictionary &payload = p_tab.get_payload();
 	const String help_class = payload.has("help_class") ? String(payload["help_class"]) : p_tab.get_resource_key();
-	// go_to_class renders from the doc database; skip it until that database has
-	// generated so mounting during early restore never dereferences a null doc.
-	if (!help_class.is_empty() && EditorHelp::get_doc_data()) {
+	// go_to_class renders from the doc database. Only drive it once the page is
+	// actually present: an empty or still-generating database would leave the
+	// surface's edited_class empty, which _capture_payload must not persist.
+	DocTools *doc = EditorHelp::get_doc_data();
+	if (!help_class.is_empty() && doc && doc->class_list.has(help_class)) {
 		p_help->go_to_class(help_class);
 	}
 	if (payload.has("scroll")) {
@@ -105,8 +122,16 @@ Dictionary HelpTabType::_capture_payload(EditorHelp *p_help, const WorkspaceTab 
 	if (!p_help) {
 		return p_tab.get_payload();
 	}
+	// The live surface only knows its class once go_to_class has rendered a page;
+	// while the doc database is still loading edited_class is empty, so keep the
+	// stored key rather than blanking a valid page.
+	String help_class = p_help->get_class();
+	if (help_class.is_empty()) {
+		const Dictionary &stored = p_tab.get_payload();
+		help_class = stored.has("help_class") ? String(stored["help_class"]) : p_tab.get_resource_key();
+	}
 	Dictionary payload;
-	payload["help_class"] = p_help->get_class();
+	payload["help_class"] = help_class;
 	payload["scroll"] = p_help->get_scroll();
 	return payload;
 }
@@ -199,13 +224,14 @@ bool HelpTabType::is_resource_available(const WorkspaceTab &p_tab) const {
 		return false;
 	}
 	// A page whose class no longer exists is dropped on restore. The doc database
-	// is the authoritative set of help pages (it includes script and @GlobalScope
-	// pages beyond ClassDB), but it generates asynchronously and may be empty at
-	// restore time; fall back to the engine class registry so a stale page is
-	// still dropped without discarding valid pages when docs are not yet loaded.
+	// is the authoritative set of help pages -- it includes script and @GlobalScope
+	// pages beyond ClassDB -- but it generates asynchronously and may be null or
+	// still empty at restore time. Only drop once it is populated; while it is
+	// unavailable the page cannot be verified, so keep it rather than discarding a
+	// valid layout (a @GlobalScope or script page is not a ClassDB class).
 	DocTools *doc = EditorHelp::get_doc_data();
-	if (doc && !doc->class_list.is_empty()) {
-		return doc->class_list.has(help_class);
+	if (!doc || doc->class_list.is_empty()) {
+		return true;
 	}
-	return ClassDB::class_exists(help_class);
+	return doc->class_list.has(help_class);
 }
