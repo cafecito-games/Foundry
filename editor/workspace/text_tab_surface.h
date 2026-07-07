@@ -64,6 +64,10 @@ class TextTabSurface : public VBoxContainer {
 	StringName active_mode;
 
 	Callable deferred_close;
+	// Set when the close prompt is resolved with Discard: the pending view edits
+	// must not be flushed back into the (now clean) document on teardown, or the
+	// discarded changes would re-dirty it and be resurrected by Save All / quit.
+	bool discarding = false;
 
 	void _rebuild_toggle_bar();
 	void _update_toggle_pressed();

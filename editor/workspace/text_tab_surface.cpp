@@ -168,6 +168,12 @@ int TextTabSurface::get_scroll() const {
 }
 
 void TextTabSurface::flush_to_document() {
+	// After a Discard the view still holds the rejected edits; flushing them back
+	// would re-dirty the document that _on_discard_pressed() just marked clean, so
+	// the unmount-on-close would retain and later resurrect the discarded changes.
+	if (discarding) {
+		return;
+	}
 	if (active_view.is_valid()) {
 		active_view->flush_to_document();
 	}
@@ -219,9 +225,12 @@ void TextTabSurface::_on_discard_pressed() {
 	if (close_confirm) {
 		close_confirm->hide();
 	}
-	// Discard: drop the unsaved edits so the document is no longer dirty. Otherwise
-	// the tab type retains it as unsaved past the close, and a later Save All / quit
-	// would resurrect the very changes the user chose to discard.
+	// Discard: drop the unsaved edits so the document is no longer dirty, and mark
+	// the surface discarding so the unmount that follows the close does not flush
+	// the view's rejected edits back into the document. Otherwise the tab type
+	// retains it as unsaved past the close, and a later Save All / quit would
+	// resurrect the very changes the user chose to discard.
+	discarding = true;
 	if (document.is_valid()) {
 		document->mark_clean();
 	}
