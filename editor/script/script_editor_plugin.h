@@ -279,7 +279,9 @@ public:
 	static bool open_in_external_editor(const String &p_path, int p_line, int p_col, bool p_ignore_project = false);
 
 	virtual String get_plugin_name() const override { return TTRC("Script"); }
-	bool has_main_screen() const override { return true; }
+	// The script editor is not a main screen: it edits scripts into a workspace
+	// leaf (see EditorNode::reveal_script_leaf), so it does not register a
+	// toolbar tab and inherits has_main_screen() == false from the base plugin.
 	virtual void edit(Object *p_object) override;
 	virtual bool handles(Object *p_object) const override;
 	virtual void make_visible(bool p_visible) override;

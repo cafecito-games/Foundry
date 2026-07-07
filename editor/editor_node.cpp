@@ -434,7 +434,7 @@ void EditorNode::shortcut_input(const Ref<InputEvent> &p_event) {
 		} else if (ED_IS_SHORTCUT("editor/editor_3d", p_event)) {
 			editor_main_screen->select(EditorMainScreen::EDITOR_3D);
 		} else if (ED_IS_SHORTCUT("editor/editor_script", p_event)) {
-			editor_main_screen->select(EditorMainScreen::EDITOR_SCRIPT);
+			reveal_script_leaf();
 		} else if (ED_IS_SHORTCUT("editor/editor_game", p_event)) {
 			editor_main_screen->select(EditorMainScreen::EDITOR_GAME);
 		} else if (ED_IS_SHORTCUT("editor/editor_help", p_event)) {
@@ -2898,6 +2898,11 @@ void EditorNode::edit_item(Object *p_object, Object *p_editing_owner) {
 
 	// Get a list of editor plugins that can handle this type of object.
 	Vector<EditorPlugin *> available_plugins = editor_data.get_handling_sub_editors(p_object);
+	// The script editor handles scripts/text files/JSON but is not a sub-editor:
+	// it edits into a workspace leaf via _edit_current, so exclude it here.
+	if (script_editor_plugin) {
+		available_plugins.erase(script_editor_plugin);
+	}
 	if (available_plugins.is_empty()) {
 		// None, clean up the owner context and return.
 		hide_unused_editors(p_editing_owner);
@@ -3283,43 +3288,54 @@ void EditorNode::_edit_current(bool p_skip_foreign, bool p_skip_inspector_update
 	// Take care of the main editor plugin.
 
 	if (!inspector_only) {
-		EditorPlugin *main_plugin = editor_data.get_handling_main_editor(current_obj);
-
-		int plugin_index = editor_main_screen->get_plugin_index(main_plugin);
-		if (main_plugin && plugin_index >= 0 && !editor_main_screen->is_button_enabled(plugin_index)) {
-			main_plugin = nullptr;
-		}
-		EditorPlugin *editor_plugin_screen = editor_main_screen->get_selected_plugin();
-
-		ObjectID editor_owner_id = editor_owner->get_instance_id();
-		if (main_plugin && !skip_main_plugin) {
-			// Special case if current_obj is a script.
-			Script *current_script = Object::cast_to<Script>(current_obj);
-			if (current_script) {
+		// The script editor is not a main screen: objects it owns (scripts, text
+		// files, JSON) are edited into a workspace leaf that is revealed explicitly,
+		// leaving the active scene-mode screen underneath untouched. A feature
+		// profile that disables scripts makes it stop claiming those objects.
+		const bool script_owned = script_editor_plugin && is_script_feature_enabled() && script_editor_plugin->handles(current_obj);
+		if (script_owned) {
+			if (!skip_main_plugin) {
 				if (!changing_scene) {
 					// Load the script first so revealing its leaf associates the leaf
 					// with the freshly-opened script rather than the previous one.
-					main_plugin->edit(current_script);
+					script_editor_plugin->edit(current_obj);
 
 					// Only reveal the script leaf when using the in-engine editor.
-					if (current_script->is_built_in() || (!bool(EDITOR_GET("text_editor/external/use_external_editor")) && !current_script->get_language()->overrides_external_editor())) {
-						editor_main_screen->select(plugin_index);
+					Script *current_script = Object::cast_to<Script>(current_obj);
+					const bool reveal_in_engine = !current_script || current_script->is_built_in() ||
+							(!bool(EDITOR_GET("text_editor/external/use_external_editor")) && !current_script->get_language()->overrides_external_editor());
+					if (reveal_in_engine) {
+						reveal_script_leaf();
 					}
 				}
-			} else if (main_plugin != editor_plugin_screen) {
-				// Unedit previous plugin.
-				editor_plugin_screen->edit(nullptr);
-				active_plugins[editor_owner_id].erase(editor_plugin_screen);
-				// Update screen main_plugin.
-				editor_main_screen->select(plugin_index);
-				main_plugin->edit(current_obj);
-			} else {
-				editor_plugin_screen->edit(current_obj);
+				is_main_screen_editing = true;
 			}
-			is_main_screen_editing = true;
-		} else if (!main_plugin && editor_plugin_screen && is_main_screen_editing) {
-			editor_plugin_screen->edit(nullptr);
-			is_main_screen_editing = false;
+		} else {
+			EditorPlugin *main_plugin = editor_data.get_handling_main_editor(current_obj);
+
+			int plugin_index = editor_main_screen->get_plugin_index(main_plugin);
+			if (main_plugin && plugin_index >= 0 && !editor_main_screen->is_button_enabled(plugin_index)) {
+				main_plugin = nullptr;
+			}
+			EditorPlugin *editor_plugin_screen = editor_main_screen->get_selected_plugin();
+
+			ObjectID editor_owner_id = editor_owner->get_instance_id();
+			if (main_plugin && !skip_main_plugin) {
+				if (main_plugin != editor_plugin_screen) {
+					// Unedit previous plugin.
+					editor_plugin_screen->edit(nullptr);
+					active_plugins[editor_owner_id].erase(editor_plugin_screen);
+					// Update screen main_plugin.
+					editor_main_screen->select(plugin_index);
+					main_plugin->edit(current_obj);
+				} else {
+					editor_plugin_screen->edit(current_obj);
+				}
+				is_main_screen_editing = true;
+			} else if (!main_plugin && editor_plugin_screen && is_main_screen_editing) {
+				editor_plugin_screen->edit(nullptr);
+				is_main_screen_editing = false;
+			}
 		}
 
 		edit_item(current_obj, editor_owner);
@@ -4973,8 +4989,19 @@ void EditorNode::_close_script_leaf() {
 	}
 }
 
+void EditorNode::set_script_feature_enabled(bool p_enabled) {
+	if (ScriptEditorController *controller = ScriptEditorController::get_singleton()) {
+		controller->set_feature_enabled(p_enabled);
+	}
+}
+
+bool EditorNode::is_script_feature_enabled() const {
+	ScriptEditorController *controller = ScriptEditorController::get_singleton();
+	return controller ? controller->is_feature_enabled() : true;
+}
+
 void EditorNode::reveal_script_leaf() {
-	if (!scene_workspace) {
+	if (!scene_workspace || !is_script_feature_enabled()) {
 		return;
 	}
 
@@ -7092,8 +7119,8 @@ void EditorNode::_complete_script_leaf_focus(int p_leaf_id) {
 	ERR_FAIL_NULL(script_leaf);
 
 	script_leaf->on_focus_entered();
-	if (editor_main_screen) {
-		editor_main_screen->select(EditorMainScreen::EDITOR_SCRIPT);
+	if (!is_changing_scene()) {
+		reveal_script_leaf();
 	}
 }
 
@@ -7370,7 +7397,7 @@ void EditorNode::_load_workspace_from_config(const Ref<ConfigFile> &p_config_fil
 	// Re-host the script surface into a restored script leaf and reopen its script.
 	// A feature profile that disables scripts is applied before layout restore, so
 	// honor it by closing the restored script leaf instead of reopening it.
-	if (editor_main_screen && !editor_main_screen->is_button_enabled(EditorMainScreen::EDITOR_SCRIPT)) {
+	if (!is_script_feature_enabled()) {
 		for (WorkspaceLeafNode *script_leaf_node : scene_workspace->get_script_leaves()) {
 			scene_workspace->collapse(script_leaf_node);
 		}
@@ -9144,7 +9171,7 @@ void EditorNode::_feature_profile_changed() {
 		}
 
 		editor_main_screen->set_button_enabled(EditorMainScreen::EDITOR_3D, !profile->is_feature_disabled(EditorFeatureProfile::FEATURE_3D));
-		editor_main_screen->set_button_enabled(EditorMainScreen::EDITOR_SCRIPT, !profile->is_feature_disabled(EditorFeatureProfile::FEATURE_SCRIPT));
+		set_script_feature_enabled(!profile->is_feature_disabled(EditorFeatureProfile::FEATURE_SCRIPT));
 		if (!Engine::get_singleton()->is_recovery_mode_hint()) {
 			editor_main_screen->set_button_enabled(EditorMainScreen::EDITOR_GAME, !profile->is_feature_disabled(EditorFeatureProfile::FEATURE_GAME));
 		}
@@ -9159,15 +9186,15 @@ void EditorNode::_feature_profile_changed() {
 			}
 		}
 		editor_main_screen->set_button_enabled(EditorMainScreen::EDITOR_3D, true);
-		editor_main_screen->set_button_enabled(EditorMainScreen::EDITOR_SCRIPT, true);
+		set_script_feature_enabled(true);
 		if (!Engine::get_singleton()->is_recovery_mode_hint()) {
 			editor_main_screen->set_button_enabled(EditorMainScreen::EDITOR_GAME, true);
 		}
 	}
 
-	// The script editor now lives in a workspace leaf rather than a toolbar tab, so
+	// The script editor lives in a workspace leaf rather than a toolbar tab, so
 	// disabling the script feature must also close any open script leaf.
-	if (editor_main_screen && !editor_main_screen->is_button_enabled(EditorMainScreen::EDITOR_SCRIPT)) {
+	if (!is_script_feature_enabled()) {
 		_close_script_leaf();
 	}
 }
@@ -10092,11 +10119,6 @@ EditorNode::EditorNode() {
 	editor_main_screen->hide();
 	add_child(editor_main_screen);
 
-	VBoxContainer *app_screen = editor_main_screen->get_app_screen_control();
-	srt->add_child(app_screen);
-	app_screen->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	app_screen->hide();
-
 	global_screen_host = memnew(Control);
 	global_screen_host->set_name("GlobalScreenHost");
 	global_screen_host->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
@@ -10663,7 +10685,8 @@ EditorNode::EditorNode() {
 
 	add_editor_plugin(memnew(CanvasItemEditorPlugin));
 	add_editor_plugin(memnew(Node3DEditorPlugin));
-	add_editor_plugin(memnew(ScriptEditorPlugin));
+	script_editor_plugin = memnew(ScriptEditorPlugin);
+	add_editor_plugin(script_editor_plugin);
 
 	if (!Engine::get_singleton()->is_recovery_mode_hint()) {
 		add_editor_plugin(get_game_view_plugin());

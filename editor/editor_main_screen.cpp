@@ -83,9 +83,6 @@ EditorMainScreen::ScreenPlacement EditorMainScreen::_get_plugin_placement(const 
 	if (p_plugin_name == "Game") {
 		return SCREEN_GLOBAL;
 	}
-	if (p_plugin_name == "Script") {
-		return SCREEN_APP;
-	}
 	return SCREEN_SCENE_MODE;
 }
 
@@ -113,12 +110,6 @@ void EditorMainScreen::load_layout_from_config(Ref<ConfigFile> p_config_file, co
 
 void EditorMainScreen::set_button_enabled(int p_index, bool p_enabled) {
 	ERR_FAIL_INDEX(p_index, buttons.size());
-	// The Script plugin has no toolbar tab (it opens as a workspace leaf); keep its
-	// button hidden but still honor feature-profile enable/disable via a flag.
-	if (p_index < editor_table.size() && editor_table[p_index] && _get_plugin_placement(editor_table[p_index]->get_plugin_name()) == SCREEN_APP) {
-		app_screen_enabled = p_enabled;
-		return;
-	}
 	buttons[p_index]->set_visible(p_enabled);
 	if (!p_enabled && buttons[p_index]->is_pressed()) {
 		select(EDITOR_2D);
@@ -127,9 +118,6 @@ void EditorMainScreen::set_button_enabled(int p_index, bool p_enabled) {
 
 bool EditorMainScreen::is_button_enabled(int p_index) const {
 	ERR_FAIL_INDEX_V(p_index, buttons.size(), false);
-	if (p_index < editor_table.size() && editor_table[p_index] && _get_plugin_placement(editor_table[p_index]->get_plugin_name()) == SCREEN_APP) {
-		return app_screen_enabled;
-	}
 	return buttons[p_index]->is_visible();
 }
 
@@ -174,6 +162,14 @@ void EditorMainScreen::select_prev() {
 void EditorMainScreen::select_by_name(const String &p_name) {
 	ERR_FAIL_COND(p_name.is_empty());
 
+	// The script editor is not a main-screen button, but keep the public "Script"
+	// screen name (EditorInterface::set_main_screen_editor) working by revealing
+	// its workspace leaf, mirroring the hidden Script button it replaced.
+	if (p_name == "Script") {
+		EditorNode::get_singleton()->reveal_script_leaf();
+		return;
+	}
+
 	for (int i = 0; i < buttons.size(); i++) {
 		if (buttons[i]->get_text() == p_name) {
 			select(i);
@@ -190,16 +186,6 @@ void EditorMainScreen::select(int p_index) {
 	}
 
 	ERR_FAIL_INDEX(p_index, editor_table.size());
-
-	// Script is no longer a main screen; it lives as a workspace leaf. Route any
-	// request to select it into revealing that leaf instead of swapping screens,
-	// unless the script feature is disabled by the active feature profile.
-	if (editor_table[p_index] && _get_plugin_placement(editor_table[p_index]->get_plugin_name()) == SCREEN_APP) {
-		if (app_screen_enabled) {
-			EditorNode::get_singleton()->reveal_script_leaf();
-		}
-		return;
-	}
 
 	if (!buttons[p_index]->is_visible()) { // Button hidden, no editor.
 		return;
@@ -225,8 +211,6 @@ void EditorMainScreen::select(int p_index) {
 	selected_plugin->selected_notify();
 
 	const ScreenPlacement placement = _get_plugin_placement(selected_plugin->get_plugin_name());
-	// app_screen_vbox (the script surface) is owned by the workspace ScriptLeaf that
-	// hosts it, so it is not toggled here; only the global (Game) screen is.
 	if (global_screen_vbox) {
 		global_screen_vbox->set_visible(placement == SCREEN_GLOBAL);
 	}
@@ -274,19 +258,11 @@ bool EditorMainScreen::can_auto_switch_screens() const {
 	if (selected_plugin == nullptr) {
 		return true;
 	}
-	// Only allow auto-switching if the selected button is to the left of the Script button.
-	for (int i = 0; i < button_hb->get_child_count(); i++) {
-		Button *button = Object::cast_to<Button>(button_hb->get_child(i));
-		if (button->get_text() == "Script") {
-			// Selected button is at or after the Script button.
-			return false;
-		}
-		if (button->get_text() == selected_plugin->get_plugin_name()) {
-			// Selected button is before the Script button.
-			return true;
-		}
-	}
-	return false;
+	// Only auto-switch away from the scene-mode screens (2D/3D). Full-screen app
+	// editors such as Game (and any custom main screen registered after it) must
+	// not be swapped out when the selection changes.
+	const int selected = get_selected_index();
+	return selected >= 0 && selected < EDITOR_GAME;
 }
 
 bool EditorMainScreen::is_scene_mode_selected() const {
@@ -305,10 +281,6 @@ bool EditorMainScreen::is_global_screen_selected() const {
 
 VBoxContainer *EditorMainScreen::get_scene_mode_control() const {
 	return scene_mode_vbox;
-}
-
-VBoxContainer *EditorMainScreen::get_app_screen_control() const {
-	return app_screen_vbox;
 }
 
 VBoxContainer *EditorMainScreen::get_global_screen_control() const {
@@ -342,12 +314,6 @@ void EditorMainScreen::add_main_plugin(EditorPlugin *p_editor) {
 	}
 
 	tb->connect(SceneStringName(pressed), callable_mp(this, &EditorMainScreen::select).bind(buttons.size()));
-
-	// Script is a workspace leaf, not a main screen: keep the plugin registered
-	// (so it still handles/edits scripts) but never show its toolbar tab.
-	if (_get_plugin_placement(p_editor->get_plugin_name()) == SCREEN_APP) {
-		tb->hide();
-	}
 
 	buttons.push_back(tb);
 	button_hb->add_child(tb);
@@ -387,12 +353,6 @@ EditorMainScreen::EditorMainScreen() {
 	scene_mode_vbox->set_name("SceneModeScreen");
 	scene_mode_vbox->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	scene_mode_vbox->add_theme_constant_override("separation", 0);
-
-	app_screen_vbox = memnew(VBoxContainer);
-	app_screen_vbox->set_name("AppScreen");
-	app_screen_vbox->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	app_screen_vbox->add_theme_constant_override("separation", 0);
-	app_screen_vbox->hide();
 
 	global_screen_vbox = memnew(VBoxContainer);
 	global_screen_vbox->set_name("GlobalScreen");
