@@ -377,49 +377,56 @@ class EditorAutomationSnapshotBuilder {
 		return Rect2i(visible_rect.position.floor(), visible_rect.size.floor());
 	}
 
-	// Flags a container element whose virtual rows were capped by
-	// options.max_container_rows so clients know results are incomplete and
-	// should narrow the control (search/filter/scroll) before re-snapshotting.
-	void _mark_rows_truncated(int p_parent_index) {
-		if (p_parent_index >= 0) {
-			data.elements.ptrw()[p_parent_index].metadata["rows_truncated"] = true;
-		}
-	}
-
 	void _add_tree_items(const Tree *p_tree, int p_parent_index) {
 		TreeItem *item = p_tree->get_root();
 		if (item == nullptr) {
 			return;
 		}
 		const uint64_t tree_id = p_tree->get_instance_id();
-		const int cap = options.max_container_rows;
-		int emitted = 0;
+		// Tree::get_item_rect() is O(row index) because it re-measures every
+		// preceding row (compute_item_height), so computing bounds for every row of
+		// a huge tree is O(n^2) and hung on the Search Help results tree (the whole
+		// class database). Every row is still emitted with its durable key and
+		// metadata -- those are cheap pointer/text walks -- so it stays selectable
+		// and reconcilable; only the expensive on-screen bounds are limited to the
+		// first max_measured_rows visible rows. Rows past that report no bounds
+		// (like any off-screen row) and the container is flagged bounds_truncated.
+		const int bounds_budget = options.max_measured_rows;
+		// get_item_rect anchors the row's y to the scroll offset from the last
+		// draw (theme_cache.offset), which lags a pending act(scroll) until the
+		// next redraw. Re-anchor to the live scroll value so tree_item bounds share
+		// the list_item path's reference frame and stay correct when observe_ui
+		// runs before a redraw. Only y needs correcting: the full-width row rect
+		// starts at local x=0 regardless of horizontal scroll.
+		const float scroll_correction = p_tree->get_drawn_scroll_offset().y - p_tree->get_scroll().y;
+		int measured = 0;
+		bool bounds_truncated = false;
 		item = item->get_first_child();
 		while (item) {
 			if (item->is_visible_in_tree()) {
-				if (cap > 0 && emitted >= cap) {
-					_mark_rows_truncated(p_parent_index);
-					return;
-				}
 				const String key = vformat("%s:%s", String::num_uint64(tree_id), _tree_item_path(item));
 				const String item_text = item->get_text(0);
 				const Dictionary metadata = EditorAutomationWorkflow::metadata_for_tree_item(p_tree, item);
-				// Column -1 yields the full-width row rect, which is the target an
-				// agent clicks to select/activate the item.
-				Rect2 item_rect = p_tree->get_item_rect(item, -1);
-				// get_item_rect anchors the row's y to the scroll offset from the last
-				// draw (theme_cache.offset), which lags a pending act(scroll) until the
-				// next redraw. Re-anchor to the live scroll value so tree_item bounds
-				// share the list_item path's reference frame and stay correct when
-				// observe_ui runs before a redraw. Only y needs correcting: the
-				// full-width row rect starts at local x=0 regardless of horizontal
-				// scroll.
-				item_rect.position.y += p_tree->get_drawn_scroll_offset().y - p_tree->get_scroll().y;
-				const Rect2i bounds = _virtual_item_bounds(p_tree, item_rect);
+				Rect2i bounds;
+				if (bounds_budget <= 0 || measured < bounds_budget) {
+					// Column -1 yields the full-width row rect, which is the target an
+					// agent clicks to select/activate the item.
+					Rect2 item_rect = p_tree->get_item_rect(item, -1);
+					item_rect.position.y += scroll_correction;
+					bounds = _virtual_item_bounds(p_tree, item_rect);
+					measured++;
+				} else {
+					bounds_truncated = true;
+				}
 				_add_virtual_element(p_parent_index, "tree_item", key, "tree_item", item_text, item_text, item->is_selected(0), metadata, bounds);
-				emitted++;
 			}
 			item = item->get_next_in_tree();
+		}
+		if (bounds_truncated && p_parent_index >= 0) {
+			// Rows past the measured window are present but report no bounds; flag
+			// the container so clients narrow the tree (search/filter) or select the
+			// remaining rows by label rather than by coordinate.
+			data.elements.ptrw()[p_parent_index].metadata["bounds_truncated"] = true;
 		}
 	}
 
@@ -430,14 +437,10 @@ class EditorAutomationSnapshotBuilder {
 		// the scroll offset that drawing subtracts. Subtract the current scroll
 		// values so scrolled rows report their true on-screen position. The
 		// scroll-bar accessors are non-const only; the reads themselves are const.
+		// ItemList::get_item_rect is O(1), so every row is serialized with bounds.
 		ItemList *mutable_list = const_cast<ItemList *>(p_item_list);
 		const Vector2 scroll_offset = Vector2(mutable_list->get_h_scroll_bar()->get_value(), mutable_list->get_v_scroll_bar()->get_value());
-		const int cap = options.max_container_rows;
 		for (int i = 0; i < p_item_list->get_item_count(); i++) {
-			if (cap > 0 && i >= cap) {
-				_mark_rows_truncated(p_parent_index);
-				break;
-			}
 			const String item_text = p_item_list->get_item_text(i);
 			const String key = vformat("%s:%d", String::num_uint64(list_id), i);
 			const Dictionary metadata = EditorAutomationWorkflow::metadata_for_list_item(p_item_list, i);

@@ -1296,17 +1296,42 @@ TEST_CASE("[Editor][Automation] menu button popup items are selectable while hid
 	memdelete(root);
 }
 
-// #1089: snapshotting a control whose row list is enormous (the Search Help
-// dialog holds the whole class database) must stay bounded. Rows past the cap
-// are omitted and the container is flagged so clients know to narrow first.
-TEST_CASE("[Editor][Automation] tree row serialization is bounded and flagged when truncated") {
-	PanelContainer *root = memnew(PanelContainer);
-	root->set_size(Size2(400, 300));
+static int count_role(const EditorAutomationSnapshot &p_snapshot, const String &p_role) {
+	int count = 0;
+	for (int i = 0; i < p_snapshot.get_element_count(); i++) {
+		if (p_snapshot.get_element(i).role == p_role) {
+			count++;
+		}
+	}
+	return count;
+}
+
+static int count_role_with_bounds(const EditorAutomationSnapshot &p_snapshot, const String &p_role) {
+	int count = 0;
+	for (int i = 0; i < p_snapshot.get_element_count(); i++) {
+		const EditorAutomationElement &element = p_snapshot.get_element(i);
+		if (element.role == p_role && element.bounds.size.y > 0) {
+			count++;
+		}
+	}
+	return count;
+}
+
+// #1089: snapshotting a Tree whose row list is enormous (the Search Help dialog
+// holds the whole class database) must stay bounded. get_item_rect is O(row
+// index), so bounds computation is budgeted; but every row is still emitted with
+// a durable id/metadata so it stays selectable and reconcilable. Rows past the
+// budget report no bounds and the container is flagged bounds_truncated.
+TEST_CASE("[Editor][Automation] tree bounds computation is budgeted while every row is emitted") {
+	// A plain Control root does not resize its children, so the tree keeps the
+	// explicit height below and every row lays out on-screen with real bounds.
+	Control *root = memnew(Control);
+	root->set_size(Size2(400, 2100));
 	SceneTree::get_singleton()->get_root()->add_child(root);
 
 	Tree *tree = memnew(Tree);
 	tree->set_name("HugeTree");
-	setup_visible_control(tree, Size2(200, 200));
+	setup_visible_control(tree, Size2(200, 2000));
 	root->add_child(tree);
 
 	TreeItem *tree_root = tree->create_item();
@@ -1317,36 +1342,31 @@ TEST_CASE("[Editor][Automation] tree row serialization is bounded and flagged wh
 	}
 	MessageQueue::get_singleton()->flush();
 
-	EditorAutomationSnapshotOptions options;
-	options.max_container_rows = 10;
-	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root, options);
+	EditorAutomationSnapshotOptions budgeted;
+	budgeted.max_measured_rows = 10;
+	const EditorAutomationSnapshot budgeted_snapshot = EditorAutomationSnapshot::capture_from_node(root, budgeted);
+	// All rows are present so they stay selectable/reconcilable...
+	CHECK(count_role(budgeted_snapshot, "tree_item") == total_rows);
+	// ...but only the first budgeted rows carry on-screen bounds.
+	CHECK(count_role_with_bounds(budgeted_snapshot, "tree_item") == 10);
+	// The last row is emitted (findable by label) but has no bounds.
+	const EditorAutomationElement *last_row = find_virtual_element(budgeted_snapshot, "tree_item", "Row 39");
+	REQUIRE(last_row != nullptr);
+	CHECK(last_row->bounds.size.y == 0);
+	const EditorAutomationElement *budgeted_tree = find_element_by_role_and_name(budgeted_snapshot, "tree", "HugeTree");
+	REQUIRE(budgeted_tree != nullptr);
+	CHECK((bool)budgeted_tree->metadata.get("bounds_truncated", false));
 
-	int tree_item_count = 0;
-	for (int i = 0; i < snapshot.get_element_count(); i++) {
-		if (snapshot.get_element(i).role == "tree_item") {
-			tree_item_count++;
-		}
-	}
-	CHECK(tree_item_count == 10);
-
-	const EditorAutomationElement *tree_element = find_element_by_role_and_name(snapshot, "tree", "HugeTree");
-	REQUIRE(tree_element != nullptr);
-	CHECK((bool)tree_element->metadata.get("rows_truncated", false));
-
-	// A small tree stays fully serialized and unflagged.
-	EditorAutomationSnapshotOptions unbounded;
-	unbounded.max_container_rows = 500;
-	const EditorAutomationSnapshot small_snapshot = EditorAutomationSnapshot::capture_from_node(root, unbounded);
-	const EditorAutomationElement *small_tree = find_element_by_role_and_name(small_snapshot, "tree", "HugeTree");
-	REQUIRE(small_tree != nullptr);
-	CHECK_FALSE((bool)small_tree->metadata.get("rows_truncated", false));
-	int full_count = 0;
-	for (int i = 0; i < small_snapshot.get_element_count(); i++) {
-		if (small_snapshot.get_element(i).role == "tree_item") {
-			full_count++;
-		}
-	}
-	CHECK(full_count == total_rows);
+	// With a generous budget every on-screen row carries bounds and the container
+	// is unflagged.
+	EditorAutomationSnapshotOptions full;
+	full.max_measured_rows = 500;
+	const EditorAutomationSnapshot full_snapshot = EditorAutomationSnapshot::capture_from_node(root, full);
+	const EditorAutomationElement *full_tree = find_element_by_role_and_name(full_snapshot, "tree", "HugeTree");
+	REQUIRE(full_tree != nullptr);
+	CHECK_FALSE((bool)full_tree->metadata.get("bounds_truncated", false));
+	CHECK(count_role(full_snapshot, "tree_item") == total_rows);
+	CHECK(count_role_with_bounds(full_snapshot, "tree_item") == total_rows);
 
 	memdelete(root);
 }
