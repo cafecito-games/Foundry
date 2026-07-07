@@ -358,6 +358,24 @@ class EditorAutomationSnapshotBuilder {
 		return EditorAutomationWorkflow::tree_item_stable_path(p_item);
 	}
 
+	// TreeItem::is_visible_in_tree() reflects the `visible` flag chain but not
+	// collapse, and Tree::get_next_in_tree() still walks into a collapsed branch.
+	// A row is only drawn -- occupying vertical space and having on-screen bounds
+	// -- when no ancestor is collapsed. Hidden descendants are still emitted
+	// (present and selectable) but must not advance the running row offset or
+	// claim bounds. The walk is O(depth) and the pathological large tree is flat.
+	static bool _tree_item_is_drawn(TreeItem *p_item) {
+		if (!p_item->is_visible_in_tree()) {
+			return false;
+		}
+		for (TreeItem *ancestor = p_item->get_parent(); ancestor != nullptr; ancestor = ancestor->get_parent()) {
+			if (ancestor->is_collapsed()) {
+				return false;
+			}
+		}
+		return true;
+	}
+
 	// Converts a control-local item rect into global snapshot bounds so synthesized
 	// tree/list rows report a real on-screen target instead of the [0,0,0,0]
 	// default. The rect is clipped to the control's viewport, so a row scrolled
@@ -405,24 +423,30 @@ class EditorAutomationSnapshotBuilder {
 		item = item->get_first_child();
 		while (item) {
 			if (item->is_visible_in_tree()) {
-				const int row_height = p_tree->get_item_row_height(item);
-				if (!anchored) {
-					// Derive the affine constant from the first visible row's real
-					// rect (O(1): this row sits near the tree root) so panel offset and
-					// live scroll are captured exactly.
-					Rect2 first_rect = p_tree->get_item_rect(item, -1);
-					first_rect.position.y += scroll_correction;
-					content_offset = p_tree->get_item_offset(item);
-					offset_constant = first_rect.position.y - (float)content_offset;
-					anchored = true;
-				}
 				const String key = vformat("%s:%s", String::num_uint64(tree_id), _tree_item_path(item));
 				const String item_text = item->get_text(0);
 				const Dictionary metadata = EditorAutomationWorkflow::metadata_for_tree_item(p_tree, item);
-				const Rect2 item_rect(0.0f, (float)content_offset + offset_constant, row_width, (float)row_height);
-				const Rect2i bounds = _virtual_item_bounds(p_tree, item_rect);
+				Rect2i bounds;
+				// Only drawn rows advance the running offset and carry bounds; rows
+				// inside a collapsed branch are emitted (present, selectable) with no
+				// bounds so they neither shift later siblings down nor appear on screen.
+				if (_tree_item_is_drawn(item)) {
+					const int row_height = p_tree->get_item_row_height(item);
+					if (!anchored) {
+						// Derive the affine constant from the first drawn row's real
+						// rect (O(1): this row sits near the tree root) so panel offset
+						// and live scroll are captured exactly.
+						Rect2 first_rect = p_tree->get_item_rect(item, -1);
+						first_rect.position.y += scroll_correction;
+						content_offset = p_tree->get_item_offset(item);
+						offset_constant = first_rect.position.y - (float)content_offset;
+						anchored = true;
+					}
+					const Rect2 item_rect(0.0f, (float)content_offset + offset_constant, row_width, (float)row_height);
+					bounds = _virtual_item_bounds(p_tree, item_rect);
+					content_offset += row_height;
+				}
 				_add_virtual_element(p_parent_index, "tree_item", key, "tree_item", item_text, item_text, item->is_selected(0), metadata, bounds);
-				content_offset += row_height;
 			}
 			item = item->get_next_in_tree();
 		}

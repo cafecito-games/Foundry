@@ -1363,6 +1363,55 @@ TEST_CASE("[Editor][Automation] tree rows all emitted with correct incremental b
 	memdelete(root);
 }
 
+// #1089 follow-up: rows inside a collapsed branch are still visited by
+// get_next_in_tree and pass is_visible_in_tree(), but they are not drawn. They
+// must not advance the running row offset (which would push later siblings down)
+// nor claim on-screen bounds.
+TEST_CASE("[Editor][Automation] collapsed branch does not shift sibling bounds") {
+	Control *root = memnew(Control);
+	root->set_size(Size2(400, 600));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	Tree *tree = memnew(Tree);
+	tree->set_name("CollapseTree");
+	setup_visible_control(tree, Size2(200, 500));
+	root->add_child(tree);
+
+	TreeItem *tree_root = tree->create_item();
+	TreeItem *branch = tree->create_item(tree_root);
+	branch->set_text(0, "Branch");
+	TreeItem *hidden_child = tree->create_item(branch);
+	hidden_child->set_text(0, "Hidden Child");
+	TreeItem *hidden_child2 = tree->create_item(branch);
+	hidden_child2->set_text(0, "Hidden Child 2");
+	branch->set_collapsed(true);
+	TreeItem *sibling = tree->create_item(tree_root);
+	sibling->set_text(0, "Sibling");
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+
+	const EditorAutomationElement *branch_element = find_virtual_element(snapshot, "tree_item", "Branch");
+	const EditorAutomationElement *sibling_element = find_virtual_element(snapshot, "tree_item", "Sibling");
+	const EditorAutomationElement *hidden_element = find_virtual_element(snapshot, "tree_item", "Hidden Child");
+	REQUIRE(branch_element != nullptr);
+	REQUIRE(sibling_element != nullptr);
+	// Hidden rows stay present (selectable) even though collapsed.
+	REQUIRE(hidden_element != nullptr);
+
+	// Drawn rows carry bounds; the hidden collapsed child does not.
+	CHECK(branch_element->bounds.size.y > 0);
+	CHECK(sibling_element->bounds.size.y > 0);
+	CHECK(hidden_element->bounds.size.y == 0);
+
+	// The sibling sits one row below the branch, not three: the two hidden
+	// descendants must not have pushed it down.
+	CHECK(sibling_element->bounds.position.y > branch_element->bounds.position.y);
+	CHECK(sibling_element->bounds.position.y - branch_element->bounds.position.y <= branch_element->bounds.size.y + 1);
+
+	memdelete(root);
+}
+
 class DisabledMenuTracker : public Object {
 	FOUNDRY_CLASS(DisabledMenuTracker, Object);
 
