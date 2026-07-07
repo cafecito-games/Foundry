@@ -50,6 +50,8 @@ class TextDocument : public RefCounted {
 
 	String path;
 	String text;
+	// The last saved/loaded content; dirty is text != saved_text.
+	String saved_text;
 	bool dirty = false;
 	// True when the last load() of an existing backing file failed. The buffer is
 	// then empty but does NOT reflect the file, so saving would truncate it; save()

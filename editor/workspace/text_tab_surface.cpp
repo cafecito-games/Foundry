@@ -65,6 +65,9 @@ void TextTabSurface::configure(const Ref<TextDocument> &p_document, TextViewRegi
 
 	_rebuild_toggle_bar();
 	_mount_view(mode);
+	// _mount_view sets active_mode; reflect it on the toggle bar built above so the
+	// active view's button starts pressed when more than one view is offered.
+	_update_toggle_pressed();
 }
 
 void TextTabSurface::_rebuild_toggle_bar() {

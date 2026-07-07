@@ -34,6 +34,9 @@
 #include "core/io/file_access.h"
 #include "core/os/os.h"
 
+#include "editor/gui/code_editor.h"
+#include "scene/gui/code_edit.h"
+
 #include "editor/workspace/text_document.h"
 #include "editor/workspace/text_tab.h"
 #include "editor/workspace/text_view.h"
@@ -138,6 +141,35 @@ TEST_CASE("[text-tab] text-view-registry-source-default") {
 	CHECK(registry.has_view("res://readme.md", StringName("fake_preview")));
 	// The extra view is scoped to its extension; plain text still offers only Source.
 	CHECK_FALSE(registry.has_view("res://notes.txt", StringName("fake_preview")));
+}
+
+TEST_CASE("[text-tab] text-document-dirty-tracks-saved-baseline") {
+	const String path = write_text_file("baseline.txt", "hello");
+	Ref<TextDocument> document;
+	document.instantiate();
+	document->set_path(path);
+	REQUIRE(document->load() == OK);
+	CHECK_FALSE(document->is_dirty());
+
+	document->set_text("hello world");
+	CHECK(document->is_dirty());
+
+	// Reverting to the saved contents clears the unsaved state.
+	document->set_text("hello");
+	CHECK_FALSE(document->is_dirty());
+}
+
+TEST_CASE("[text-tab] text-document-refuses-save-after-failed-load") {
+	Ref<TextDocument> document;
+	document.instantiate();
+	document->set_path("res://text_tab_missing_dir/missing.txt");
+
+	ERR_PRINT_OFF;
+	CHECK(document->load() != OK);
+	CHECK(document->is_load_failed());
+	// A failed load must not let an empty buffer overwrite the backing file.
+	CHECK(document->save() != OK);
+	ERR_PRINT_ON;
 }
 
 TEST_CASE("[text-tab] text-tab-title-is-filename") {
@@ -294,17 +326,26 @@ TEST_CASE("[text-tab][SceneTree][Editor] text-tab-dirty-close-prompts") {
 	TextTabType *text_type = shared_text_type();
 	REQUIRE(text_type != nullptr);
 
-	// Editing the backing document marks it dirty; closing then defers to a prompt.
+	CodeTextEditor *editor = Object::cast_to<CodeTextEditor>(text_type->get_active_control_for(stable_id));
+	REQUIRE(editor != nullptr);
 	Ref<TextDocument> document = text_type->get_document_for(stable_id);
 	REQUIRE(document.is_valid());
-	document->set_text("edited contents");
+	// A freshly opened tab matches its file (not dirty).
+	CHECK_FALSE(document->is_dirty());
+
+	// Edit through the mounted source view so the change flows the real path
+	// (view -> document); closing a now-dirty tab defers to a save prompt.
+	editor->get_text_editor()->set_text("edited contents");
+	editor->get_text_editor()->emit_signal(SNAME("text_changed"));
 	CHECK(document->is_dirty());
 
 	WorkspaceTab dirty_tab = pane->get_tab(index);
 	CHECK(text_type->request_close(dirty_tab) == WorkspaceTabCloseResult::DEFERRED);
 
-	// A clean tab closes immediately (no deferred prompt).
-	document->mark_clean();
+	// Reverting to the saved contents clears dirty, so a clean tab closes at once.
+	editor->get_text_editor()->set_text("original");
+	editor->get_text_editor()->emit_signal(SNAME("text_changed"));
+	CHECK_FALSE(document->is_dirty());
 	WorkspaceTab clean_tab = pane->get_tab(index);
 	CHECK(text_type->request_close(clean_tab) == WorkspaceTabCloseResult::CLOSE);
 

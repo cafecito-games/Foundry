@@ -231,6 +231,15 @@ Ref<TextDocument> TextTabType::get_document_for(int p_stable_id) const {
 	return Ref<TextDocument>();
 }
 
+Control *TextTabType::get_active_control_for(int p_stable_id) const {
+	TextTabSurface *surface = _resolve_surface(p_stable_id);
+	if (!surface) {
+		return nullptr;
+	}
+	TextView *view = surface->get_active_view();
+	return view ? view->get_control() : nullptr;
+}
+
 PackedStringArray TextTabType::get_unsaved_document_paths() const {
 	PackedStringArray paths;
 	for (const KeyValue<int, Ref<TextDocument>> &entry : documents) {

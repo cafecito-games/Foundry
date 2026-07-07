@@ -91,6 +91,9 @@ public:
 	// Test/introspection hook: the live document backing a mounted tab (or a
 	// retained dirty document), or an invalid Ref if none.
 	Ref<TextDocument> get_document_for(int p_stable_id) const;
+	// Test/introspection hook: the active view's mounted control for a tab, or
+	// null if the tab is not currently mounted.
+	Control *get_active_control_for(int p_stable_id) const;
 
 	// Editor-wide unsaved integration: paths of documents with unsaved edits, and
 	// a save-all that writes every dirty document to disk. Used by the workspace

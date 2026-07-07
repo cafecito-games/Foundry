@@ -41,7 +41,9 @@ void TextDocument::set_text(const String &p_text) {
 		return;
 	}
 	text = p_text;
-	dirty = true;
+	// Dirty tracks divergence from the last saved/loaded content, so editing and
+	// then undoing back to the saved text correctly clears the unsaved state.
+	dirty = text != saved_text;
 }
 
 Error TextDocument::load() {
@@ -61,6 +63,7 @@ Error TextDocument::load() {
 	}
 
 	text = text_file->get_text();
+	saved_text = text;
 	dirty = false;
 	load_failed = false;
 	return OK;
@@ -82,6 +85,7 @@ Error TextDocument::save() {
 		}
 	}
 
+	saved_text = text;
 	dirty = false;
 	if (EditorFileSystem *fs = EditorFileSystem::get_singleton()) {
 		fs->update_file(path);
