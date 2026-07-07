@@ -131,6 +131,33 @@ Viewport *EditorAutomationScreenshot::_resolve_capture_viewport(Node *p_snapshot
 	return nullptr;
 }
 
+Ref<Image> EditorAutomationScreenshot::_acquire_viewport_image(Node *p_snapshot_root, Dictionary &r_viewport_meta) {
+	Viewport *viewport = _resolve_capture_viewport(p_snapshot_root);
+	if (viewport == nullptr) {
+		return Ref<Image>();
+	}
+
+	Ref<ViewportTexture> texture = viewport->get_texture();
+	if (texture.is_null()) {
+		return Ref<Image>();
+	}
+
+	Ref<Image> image = texture->get_image();
+	if (image.is_null()) {
+		return Ref<Image>();
+	}
+
+	const Vector2i viewport_size = viewport->get_visible_rect().size;
+	r_viewport_meta["width"] = viewport_size.x;
+	r_viewport_meta["height"] = viewport_size.y;
+	Window *window = viewport->get_window();
+	if (window != nullptr) {
+		r_viewport_meta["window_title"] = window->get_title();
+		r_viewport_meta["window_id"] = (int64_t)window->get_instance_id();
+	}
+	return image;
+}
+
 Rect2i EditorAutomationScreenshot::_resolve_highlight_rect(const EditorAutomationSnapshot &p_snapshot, const Dictionary &p_selector) {
 	if (!p_selector.is_empty()) {
 		const EditorAutomationSelectorResult selector_result = EditorAutomationSelector::resolve(p_snapshot, p_selector);
@@ -226,35 +253,12 @@ EditorAutomationScreenshotAttachment EditorAutomationScreenshot::capture_for_fai
 		return attachment;
 	}
 
-	Viewport *viewport = _resolve_capture_viewport(p_options.snapshot_root);
-	if (viewport == nullptr) {
-		attachment.status = "unavailable";
-		attachment.reason = "screenshot_unavailable";
-		return attachment;
-	}
-
-	Ref<ViewportTexture> texture = viewport->get_texture();
-	if (texture.is_null()) {
-		attachment.status = "unavailable";
-		attachment.reason = "screenshot_unavailable";
-		return attachment;
-	}
-
-	Ref<Image> image = texture->get_image();
+	Dictionary viewport_meta;
+	Ref<Image> image = _acquire_viewport_image(p_options.snapshot_root, viewport_meta);
 	if (image.is_null()) {
 		attachment.status = "unavailable";
 		attachment.reason = "screenshot_unavailable";
 		return attachment;
-	}
-
-	const Vector2i viewport_size = viewport->get_visible_rect().size;
-	Dictionary viewport_meta;
-	viewport_meta["width"] = viewport_size.x;
-	viewport_meta["height"] = viewport_size.y;
-	Window *window = viewport->get_window();
-	if (window != nullptr) {
-		viewport_meta["window_title"] = window->get_title();
-		viewport_meta["window_id"] = (int64_t)window->get_instance_id();
 	}
 
 	const Rect2i highlight = _resolve_highlight_rect(p_snapshot, p_selector);
@@ -269,6 +273,43 @@ EditorAutomationScreenshotAttachment EditorAutomationScreenshot::capture_for_fai
 
 	if (p_options.crop_to_target && highlight.size.x > 0 && highlight.size.y > 0) {
 		Rect2i crop = highlight;
+		if (p_options.crop_padding_px > 0) {
+			crop = crop.grow(p_options.crop_padding_px);
+		}
+		const Rect2i image_bounds = Rect2i(Vector2i(), image->get_size());
+		crop = crop.intersection(image_bounds);
+		if (crop.size.x > 0 && crop.size.y > 0) {
+			output_image = image->get_region(crop);
+			crop_dict = _rect_to_dictionary(crop);
+			capture_mode = "cropped";
+		}
+	}
+
+	return encode_image_attachment(output_image, p_options, capture_mode, viewport_meta, crop_dict, highlight_dict);
+}
+
+EditorAutomationScreenshotAttachment EditorAutomationScreenshot::capture_on_demand(
+		const EditorAutomationScreenshotOptions &p_options,
+		bool p_crop_to_element,
+		const Rect2i &p_element_bounds) {
+	EditorAutomationScreenshotAttachment attachment;
+
+	Dictionary viewport_meta;
+	Ref<Image> image = _acquire_viewport_image(p_options.snapshot_root, viewport_meta);
+	if (image.is_null()) {
+		attachment.status = "unavailable";
+		attachment.reason = "screenshot_unavailable";
+		return attachment;
+	}
+
+	String capture_mode = "full_window";
+	Dictionary crop_dict;
+	Dictionary highlight_dict;
+	Ref<Image> output_image = image;
+
+	if (p_crop_to_element && p_element_bounds.size.x > 0 && p_element_bounds.size.y > 0) {
+		highlight_dict = _rect_to_dictionary(p_element_bounds);
+		Rect2i crop = p_element_bounds;
 		if (p_options.crop_padding_px > 0) {
 			crop = crop.grow(p_options.crop_padding_px);
 		}

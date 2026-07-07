@@ -149,14 +149,14 @@ TEST_CASE("[Editor][Automation][MCP] notifications/initialized has no response a
 	CHECK(dispatcher.is_initialized());
 }
 
-TEST_CASE("[Editor][Automation][MCP] tools/list includes the nine expected tools") {
+TEST_CASE("[Editor][Automation][MCP] tools/list includes the ten expected tools") {
 	EditorAutomationMCPDispatcher dispatcher;
 	const Dictionary response = dispatcher.handle_message(make_request(2, "tools/list"));
 	CHECK(response.has("result"));
 	const Dictionary result = response["result"];
 	const Array tools = result["tools"];
 
-	CHECK(tools.size() == 9);
+	CHECK(tools.size() == 10);
 	CHECK(!tool_named(tools, "observe_ui").is_empty());
 	CHECK(!tool_named(tools, "find_elements").is_empty());
 	CHECK(!tool_named(tools, "act").is_empty());
@@ -166,6 +166,7 @@ TEST_CASE("[Editor][Automation][MCP] tools/list includes the nine expected tools
 	CHECK(!tool_named(tools, "run_command").is_empty());
 	CHECK(!tool_named(tools, "list_commands").is_empty());
 	CHECK(!tool_named(tools, "poll_events").is_empty());
+	CHECK(!tool_named(tools, "capture_screenshot").is_empty());
 
 	for (int i = 0; i < tools.size(); i++) {
 		const Dictionary tool = tools[i];
@@ -1260,7 +1261,7 @@ TEST_CASE("[Editor][Automation][MCP] scene_tree/add_child_node shortcut is disco
 
 TEST_CASE("[Editor][Automation][MCP] tool schemas expose typed contracts") {
 	const Array tools = EditorAutomationMCPDispatcher::build_tools_list();
-	REQUIRE(tools.size() == 9);
+	REQUIRE(tools.size() == 10);
 
 	const Dictionary act = tool_named(tools, "act");
 	REQUIRE_FALSE(act.is_empty());
@@ -1283,7 +1284,7 @@ TEST_CASE("[Editor][Automation][MCP] tool schemas expose typed contracts") {
 
 TEST_CASE("[Editor][Automation][MCP] typed contract schemas expose stable fields") {
 	const Array tools = EditorAutomationMCPContracts::build_tools_list();
-	REQUIRE(tools.size() == 9);
+	REQUIRE(tools.size() == 10);
 
 	const Dictionary act = tool_named(tools, "act");
 	REQUIRE_FALSE(act.is_empty());
@@ -1299,7 +1300,7 @@ TEST_CASE("[Editor][Automation][MCP] typed contract schemas expose stable fields
 
 TEST_CASE("[Editor][Automation][MCP] tool schemas include agent-facing descriptions") {
 	const Array tools = EditorAutomationMCPContracts::build_tools_list();
-	REQUIRE(tools.size() == 9);
+	REQUIRE(tools.size() == 10);
 
 	for (int i = 0; i < tools.size(); i++) {
 		const Dictionary tool = tools[i];

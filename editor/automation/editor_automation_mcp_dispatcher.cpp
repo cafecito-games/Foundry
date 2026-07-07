@@ -37,6 +37,7 @@
 #include "editor/automation/editor_automation_log.h"
 #include "editor/automation/editor_automation_mcp_contracts.h"
 #include "editor/automation/editor_automation_mcp_schemas.h"
+#include "editor/automation/editor_automation_screenshot.h"
 #include "editor/automation/editor_automation_selector.h"
 #include "editor/automation/editor_automation_snapshot.h"
 #include "editor/automation/editor_automation_state.h"
@@ -537,6 +538,13 @@ Dictionary EditorAutomationMCPDispatcher::_handle_tools_call(const Dictionary &p
 			return Dictionary();
 		}
 		structured = _tool_poll_events(input.to_dictionary(), is_error);
+	} else if (name == "capture_screenshot") {
+		EditorAutomationMCPCaptureScreenshotInput input;
+		if (!_parse_tool_input(name, arguments, input, r_error)) {
+			r_ok = false;
+			return Dictionary();
+		}
+		structured = _tool_capture_screenshot(input.to_dictionary(), is_error);
 	} else {
 		r_ok = false;
 		r_error["code"] = METHOD_NOT_FOUND;
@@ -786,6 +794,70 @@ Dictionary EditorAutomationMCPDispatcher::_tool_find_elements(const Dictionary &
 		r_is_error = true;
 		result = _enrich_selector_failure(result, selector_result, selector, snapshot, p_args);
 	}
+	return result;
+}
+
+Dictionary EditorAutomationMCPDispatcher::_tool_capture_screenshot(const Dictionary &p_args, bool &r_is_error) {
+	r_is_error = false;
+
+	const Dictionary selector = _read_dict(p_args, "selector");
+	const bool include_internal = _read_bool(p_args, "include_internal", false);
+
+	EditorAutomationScreenshotOptions screenshot_options;
+	screenshot_options.enabled = true;
+	screenshot_options.format = "png";
+	screenshot_options.snapshot_root = _snapshot_root();
+	screenshot_options.max_bytes = options.max_screenshot_bytes;
+	if (p_args.has("max_screenshot_bytes")) {
+		screenshot_options.max_bytes = _read_int(p_args, "max_screenshot_bytes", options.max_screenshot_bytes);
+	}
+	if (p_args.has("padding")) {
+		const int padding = _read_int(p_args, "padding", screenshot_options.crop_padding_px);
+		screenshot_options.crop_padding_px = padding < 0 ? 0 : padding;
+	}
+
+	// Resolve the element up front so unresolvable/ambiguous selectors fail with
+	// the same structured error semantics as act (no crash, no empty image).
+	bool crop_to_element = false;
+	Rect2i element_bounds;
+	if (!selector.is_empty()) {
+		EditorAutomationSnapshotOptions snapshot_options;
+		snapshot_options.include_internal = include_internal;
+		const EditorAutomationSnapshot snapshot = _snapshot_root() != nullptr
+				? EditorAutomationSnapshot::capture_from_node(_snapshot_root(), snapshot_options)
+				: EditorAutomationSnapshot::capture_from_editor(snapshot_options);
+
+		const EditorAutomationSelectorResult selector_result = EditorAutomationSelector::resolve(snapshot, selector);
+		const bool resolved_to_single = selector_result.status == EditorAutomationSelectorStatus::OK &&
+				selector_result.match_indices.size() == 1;
+		if (!resolved_to_single) {
+			r_is_error = true;
+			Dictionary result = selector_result.to_dictionary();
+			result["ok"] = false;
+			return _enrich_selector_failure(result, selector_result, selector, snapshot, p_args);
+		}
+
+		element_bounds = snapshot.get_element(selector_result.match_indices[0]).bounds;
+		crop_to_element = true;
+	}
+
+	const EditorAutomationScreenshotAttachment attachment = EditorAutomationScreenshot::capture_on_demand(
+			screenshot_options, crop_to_element, element_bounds);
+
+	Dictionary result;
+	result["screenshot"] = attachment.to_dictionary();
+	if (attachment.status != "available") {
+		r_is_error = true;
+		result["ok"] = false;
+		result["kind"] = "screenshot_unavailable";
+		result["message"] = attachment.reason.is_empty()
+				? String("Screenshot capture is unavailable.")
+				: attachment.reason;
+		return result;
+	}
+
+	result["ok"] = true;
+	result["capture_mode"] = attachment.capture_mode;
 	return result;
 }
 
