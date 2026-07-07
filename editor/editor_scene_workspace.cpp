@@ -796,6 +796,37 @@ WorkspaceLeafNode *EditorSceneWorkspace::open_help_tab(WorkspaceLeafNode *p_sour
 	return target;
 }
 
+void EditorSceneWorkspace::refresh_help_tab(const String &p_class_key) {
+	if (p_class_key.is_empty()) {
+		return;
+	}
+
+	WorkspaceTabRegistry &registry = WorkspacePane::get_shared_tab_registry();
+	HelpTabType *help_type = static_cast<HelpTabType *>(registry.find_type(StringName("help")));
+	if (!help_type) {
+		return;
+	}
+
+	// The canonical index is only a hint (see open_help_tab): confirm the located
+	// tab is still this help page before refreshing it, so a stale entry whose
+	// pane/tab was reused by a different page is ignored rather than mis-refreshed.
+	WorkspaceTab existing_tab;
+	WorkspaceTabLocation existing_location;
+	if (!registry.find_canonical(StringName("help"), p_class_key, existing_tab, existing_location) || !existing_location.is_valid()) {
+		return;
+	}
+	WorkspaceLeafNode *leaf = get_leaf_by_id(existing_location.pane_id);
+	WorkspacePane *pane = leaf ? leaf->get_workspace_pane() : nullptr;
+	if (!pane || existing_location.tab_index >= pane->get_tab_count()) {
+		return;
+	}
+	const WorkspaceTab &located = pane->get_tab(existing_location.tab_index);
+	if (located.get_type_id() != StringName("help") || located.get_resource_key() != p_class_key) {
+		return;
+	}
+	help_type->refresh_docs(located);
+}
+
 WorkspaceLeafNode *EditorSceneWorkspace::open_text_tab(WorkspaceLeafNode *p_source_leaf, const String &p_path, bool p_force_new_leaf) {
 	ERR_FAIL_NULL_V(p_source_leaf, nullptr);
 	ERR_FAIL_COND_V(!leaves.has(p_source_leaf), nullptr);

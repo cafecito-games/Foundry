@@ -222,6 +222,21 @@ void HelpTabType::activate(WorkspaceTab &p_tab) {
 	help->set_focused();
 }
 
+void HelpTabType::refresh_docs(const WorkspaceTab &p_tab) {
+	EditorHelp *help = _resolve_surface(p_tab.get_stable_id());
+	if (!help) {
+		return;
+	}
+	// A page that has not rendered a class yet renders from the current database on
+	// activate, so there is nothing stale to refresh. Only re-render an already
+	// displayed page, and only once the script docs are loaded -- update_doc()
+	// requires the page's class to be a loaded script doc.
+	if (help->get_class().is_empty() || !EditorHelp::are_script_docs_loaded()) {
+		return;
+	}
+	help->update_doc();
+}
+
 WorkspaceTabCloseResult HelpTabType::request_close(WorkspaceTab &p_tab, const Callable &p_on_deferred_close) {
 	// Help has no unsaved state, so it always closes without a prompt.
 	return WorkspaceTabCloseResult::CLOSE;

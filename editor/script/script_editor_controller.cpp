@@ -777,6 +777,16 @@ void ScriptEditorController::update_docs_from_script(const Ref<Script> &p_script
 	for (ScriptEditorView *view : views) {
 		view->update_docs_from_script(p_script);
 	}
+	// The doc database now carries the script's latest documentation; refresh any
+	// already-open workspace help page for those classes so it stops showing stale
+	// docs until closed and reopened.
+	if (p_script.is_valid()) {
+		if (EditorSceneWorkspace *workspace = EditorNode::get_scene_workspace()) {
+			for (const DocData::ClassDoc &cd : p_script->get_documentation()) {
+				workspace->refresh_help_tab(cd.name);
+			}
+		}
+	}
 }
 
 void ScriptEditorController::set_live_auto_reload_running_scripts(bool p_enabled) {

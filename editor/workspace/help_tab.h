@@ -78,6 +78,12 @@ public:
 	// currently mounted. Used to scroll a revealed page to a deep anchor.
 	EditorHelp *get_mounted_help(int p_stable_id) const { return _resolve_surface(p_stable_id); }
 
+	// Re-render the live surface of an already-mounted page so it picks up changed
+	// class documentation. No-op when the tab is not mounted or its page has not
+	// rendered a class yet (it renders from the current database on activate).
+	// Virtual so a headless test can observe the refresh without a live surface.
+	virtual void refresh_docs(const WorkspaceTab &p_tab);
+
 	StringName type_id() const override;
 	bool can_open(const String &p_resource) const override;
 	WorkspaceTab make_tab(const String &p_resource, int p_stable_id) const override;
