@@ -7,6 +7,7 @@ or:       python3 scripts/tests/test_review_gallery.py
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import struct
 import sys
@@ -14,10 +15,17 @@ import tempfile
 import unittest
 import zlib
 from pathlib import Path
+from typing import Any
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-import review_gallery as rg  # noqa: E402
+# Load the helper by explicit file path so the test resolves it regardless of
+# the current working directory or how it is launched, and without a sys.path
+# mutation that static analysis can't follow.
+_MODULE_PATH = Path(__file__).resolve().parents[1] / "review_gallery.py"
+_spec = importlib.util.spec_from_file_location("review_gallery", _MODULE_PATH)
+assert _spec is not None and _spec.loader is not None
+rg: Any = importlib.util.module_from_spec(_spec)
+sys.modules[_spec.name] = rg
+_spec.loader.exec_module(rg)
 
 
 def _tiny_png(color: int = 0) -> bytes:
