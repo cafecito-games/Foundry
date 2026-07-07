@@ -219,15 +219,35 @@ WorkspaceLeafNode *EditorSceneWorkspace::handle_tab_strip_drop(int p_source_pane
 		if (scene_idx < 0) {
 			return nullptr;
 		}
+		// Translate the requested strip insertion index into a destination scene-tab
+		// ordinal before the scene is moved in. p_dest_index is a full strip position,
+		// but EditorData only orders scene tabs (a synced pane groups its scene tabs
+		// ahead of script tabs), so the ordinal is the count of scene tabs preceding
+		// the insertion point. Computing it in the pre-drop frame -- and reordering
+		// through EditorData rather than the pane's tab vector -- keeps the order
+		// canonical for mixed scene/script panes, where a raw strip index would not
+		// map to a scene ordinal and would leave EditorData stale.
+		const int pre_slot = CLAMP(p_dest_index, 0, dest_pane->get_tab_count());
+		int scene_ordinal = 0;
+		for (int i = 0; i < pre_slot; i++) {
+			if (dest_pane->get_tab(i).get_type_id() == StringName("scene")) {
+				scene_ordinal++;
+			}
+		}
+
 		// Move scene-tile ownership, then rebuild every pane's scene tabs so the
 		// moved scene materializes in the destination before it is reordered.
 		editor_data->set_scene_tile(scene_idx, p_dest_pane_id);
 		editor_data->set_tile_current_scene(p_dest_pane_id, scene_idx);
 		sync_scene_tabs_from_editor_data();
+
+		// move_tab's scene path reorders through EditorData; the moved scene's current
+		// tab index equals its scene ordinal (scenes are grouped first), and the
+		// target ordinal is bounded to the scene-tab count so it never falls through
+		// to a visual-only reorder.
 		const int landed = dest_pane->find_scene_tab_index(scene_idx);
-		const int clamped = CLAMP(p_dest_index, 0, MAX(0, dest_pane->get_tab_count() - 1));
-		if (landed >= 0 && landed != clamped) {
-			dest_pane->move_tab(landed, clamped);
+		if (landed >= 0 && landed != scene_ordinal) {
+			dest_pane->move_tab(landed, scene_ordinal);
 		}
 	} else {
 		// Generic move: take_tab captures the type payload and removes it from the

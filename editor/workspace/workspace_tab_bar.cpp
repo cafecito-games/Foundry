@@ -35,7 +35,10 @@
 
 int WorkspaceTabBar::_cross_pane_insert_index(const Point2 &p_point) const {
 	const int count = get_tab_count();
-	int hover_now = get_closest_tab_idx_to_point(p_point);
+	// Control::accessibility_drop() drops at the INF sentinel; like the base TabBar,
+	// resolve the hover target to the current tab instead of a pointer hit-test so a
+	// keyboard/accessibility cross-pane drop lands beside the active tab.
+	int hover_now = (p_point == Vector2(Math::INF, Math::INF)) ? get_current_tab() : get_closest_tab_idx_to_point(p_point);
 	if (hover_now != -1) {
 		// Drop to the left or right of the hovered tab depending on which half of
 		// the tab the pointer is over (mirrored under RTL).

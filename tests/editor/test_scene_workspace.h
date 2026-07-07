@@ -2580,6 +2580,70 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] strip-drop-inserts-scene-tab-at-i
 	h.unmount();
 }
 
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] strip-drop-scene-tab-into-mixed-pane") {
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	const int tile_a = h.workspace->get_focused_leaf_id();
+	Node2D *root_a = memnew(Node2D);
+	const int scene_a = add_test_scene(h.editor_data, tile_a, root_a);
+	h.editor_data.set_scene_path(scene_a, "res://a.tscn");
+	Node2D *root_b = memnew(Node2D);
+	const int scene_b = add_test_scene(h.editor_data, tile_a, root_b);
+	h.editor_data.set_scene_path(scene_b, "res://b.tscn");
+
+	WorkspaceLeafNode *leaf_a = h.workspace->get_leaf_by_id(tile_a);
+	WorkspaceLeafNode *leaf_b = h.workspace->split(leaf_a, false, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
+	h.pump();
+	const int tile_b = leaf_b->get_leaf_id();
+	h.editor_data.register_tile(tile_b);
+	Node2D *root_c = memnew(Node2D);
+	const int scene_c = add_test_scene(h.editor_data, tile_b, root_c);
+	h.editor_data.set_scene_path(scene_c, "res://c.tscn");
+	Node2D *root_d = memnew(Node2D);
+	const int scene_d = add_test_scene(h.editor_data, tile_b, root_d);
+	h.editor_data.set_scene_path(scene_d, "res://d.tscn");
+
+	h.workspace->sync_scene_tabs_from_editor_data();
+	WorkspacePane *pane_a = get_leaf_pane(leaf_a);
+	WorkspacePane *pane_b = get_leaf_pane(leaf_b);
+	// Make pane B a mixed pane: scene tabs [c, d] plus a trailing script tab. A synced
+	// pane groups its scene tabs ahead of script tabs.
+	add_script_tab(pane_b, "res://helper.fs");
+	REQUIRE(pane_b->get_tab_count() == 3);
+
+	const int move_index = pane_a->find_scene_tab_index(scene_a);
+	REQUIRE(move_index >= 0);
+	// Drop scene_a at strip index 2 (past both scene tabs, before the script tab). The
+	// full-strip index must translate to scene ordinal 2 so the reorder goes through
+	// EditorData (not a visual-only pane reorder), landing scene order [c, d, a].
+	WorkspaceLeafNode *dest = h.workspace->handle_tab_strip_drop(tile_a, move_index, tile_b, 2);
+	h.pump();
+	CHECK(dest == leaf_b);
+	REQUIRE(pane_b->get_tab_count() == 4);
+	CHECK(pane_b->get_tab(0).get_resource_key() == "res://c.tscn");
+	CHECK(pane_b->get_tab(1).get_resource_key() == "res://d.tscn");
+	CHECK(pane_b->get_tab(2).get_resource_key() == "res://a.tscn");
+	CHECK(pane_b->get_tab(3).get_resource_key() == "res://helper.fs");
+
+	// EditorData scene order for tile B is canonical [c, d, a] -- not left stale.
+	Vector<String> tile_b_order;
+	for (int scene_idx : h.editor_data.get_tile_scene_indices(tile_b)) {
+		tile_b_order.push_back(SceneTabType::resource_key_for_scene(h.editor_data, scene_idx));
+	}
+	REQUIRE(tile_b_order.size() == 3);
+	CHECK(tile_b_order[0] == "res://c.tscn");
+	CHECK(tile_b_order[1] == "res://d.tscn");
+	CHECK(tile_b_order[2] == "res://a.tscn");
+	REQUIRE(pane_a->get_tab_count() == 1);
+	CHECK(pane_a->get_tab(0).get_resource_key() == "res://b.tscn");
+
+	h.unmount();
+}
+
 TEST_CASE("[SceneWorkspace][SceneTree][Editor] strip-drop-rejects-scene-tab-onto-script-pane") {
 	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
 
