@@ -179,6 +179,34 @@ class GalleryTestCase(unittest.TestCase):
         self.assertFalse(result.public)
         self.assertIn("127.0.0.1:8000", result.url)
 
+    def test_ngrok_tunnel_port_matching(self) -> None:
+        # Only a tunnel forwarding to our local port should match.
+        ours = {"config": {"addr": "http://localhost:8000"}, "public_url": "https://ours.ngrok-free.app"}
+        other = {"config": {"addr": "http://localhost:9999"}, "public_url": "https://other.ngrok-free.app"}
+        self.assertTrue(rg._tunnel_targets_port(ours, 8000))
+        self.assertFalse(rg._tunnel_targets_port(other, 8000))
+        # Bare host:port form (no scheme) also matches.
+        self.assertTrue(rg._tunnel_targets_port({"config": {"addr": "localhost:8000"}}, 8000))
+        self.assertFalse(rg._tunnel_targets_port({"config": {}}, 8000))
+
+    def test_resolve_tracks_process_and_terminate_kills_it(self) -> None:
+        import subprocess
+
+        proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+        self.addCleanup(lambda: proc.poll() is None and proc.kill())
+        result = rg.resolve_public_url(
+            8000,
+            ngrok_path="/usr/bin/ngrok",
+            query_fn=lambda port: "https://abc.ngrok-free.app",
+            start_fn=lambda port: proc,
+        )
+        # The spawned tunnel handle is returned so serve() can tear it down.
+        self.assertIs(result.process, proc)
+        self.assertTrue(result.public)
+
+        rg._terminate_process(result.process)
+        self.assertIsNotNone(proc.poll())  # child is no longer running
+
 
 if __name__ == "__main__":
     unittest.main()

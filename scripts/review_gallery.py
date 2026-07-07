@@ -419,20 +419,39 @@ class ServeUrl:
     url: str
     public: bool
     message: str
+    process: subprocess.Popen | None = None
+
+
+def _tunnel_targets_port(tunnel: dict, port: int) -> bool:
+    """True if an ngrok tunnel forwards to our local `port`.
+
+    ngrok reports the upstream as ``config.addr`` (e.g. ``http://localhost:8000``
+    or ``localhost:8000``). Matching on it prevents advertising an unrelated
+    tunnel that happens to be running for some other local service.
+    """
+    addr = str(tunnel.get("config", {}).get("addr", ""))
+    if not addr:
+        return False
+    hostport = addr.rsplit("/", 1)[-1]  # strip any scheme://
+    return hostport.rsplit(":", 1)[-1] == str(port)
 
 
 def query_ngrok_url(port: int, *, api: str = NGROK_API, timeout: float = 2.0) -> str | None:
-    """Return the public https tunnel for `port` from ngrok's local API, or None."""
+    """Return the public tunnel that forwards to our local `port`, or None.
+
+    Only tunnels whose upstream targets `port` are considered, so a pre-existing
+    ngrok tunnel for an unrelated service is never mistaken for the gallery.
+    """
     try:
         with urllib.request.urlopen(api, timeout=timeout) as response:
             payload = json.loads(response.read().decode("utf-8"))
     except (urllib.error.URLError, OSError, ValueError):
         return None
-    tunnels = payload.get("tunnels", [])
-    https = [t.get("public_url") for t in tunnels if str(t.get("public_url", "")).startswith("https://")]
+    matching = [t for t in payload.get("tunnels", []) if _tunnel_targets_port(t, port)]
+    https = [t.get("public_url") for t in matching if str(t.get("public_url", "")).startswith("https://")]
     if https:
         return https[0]
-    for tunnel in tunnels:
+    for tunnel in matching:
         url = tunnel.get("public_url")
         if url:
             return url
@@ -478,19 +497,23 @@ def resolve_public_url(
 
     query = query_fn or query_ngrok_url
     if start_fn is not None:
-        start_fn(port)
+        process = start_fn(port)
     else:
-        _spawn_ngrok(ngrok_path, port)
+        process = _spawn_ngrok(ngrok_path, port)
+    if not isinstance(process, subprocess.Popen):
+        process = None
 
     if sleep_fn is None:
         import time
 
         sleep_fn = time.sleep
 
+    # Return the process handle on every path so the caller can tear the tunnel
+    # down; a leaked ngrok child would keep exposing whatever binds this port.
     for attempt in range(poll_attempts):
         url = query(port)
         if url:
-            return ServeUrl(url=url, public=True, message=f"Public tunnel: {url}")
+            return ServeUrl(url=url, public=True, message=f"Public tunnel: {url}", process=process)
         if attempt < poll_attempts - 1:
             sleep_fn(poll_interval)
 
@@ -501,6 +524,7 @@ def resolve_public_url(
             "ngrok is installed but no tunnel came up (not authenticated, or the "
             "agent failed to start); serving locally only."
         ),
+        process=process,
     )
 
 
@@ -567,7 +591,7 @@ def serve(
 
     last_public = resolved.url if resolved.public else None
     try:
-        if ngrok_path and use_ngrok:
+        if resolved.process is not None:
             _serve_with_rotation_watch(httpd, port, last_public)
         else:
             httpd.serve_forever()
@@ -575,6 +599,18 @@ def serve(
         pass
     finally:
         httpd.shutdown()
+        _terminate_process(resolved.process)
+
+
+def _terminate_process(process: subprocess.Popen | None) -> None:
+    """Tear down the ngrok child so the public tunnel does not outlive us."""
+    if process is None or process.poll() is not None:
+        return
+    process.terminate()
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.kill()
 
 
 def _serve_with_rotation_watch(httpd: ThreadingHTTPServer, port: int, last_public: str | None) -> None:
