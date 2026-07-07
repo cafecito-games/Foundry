@@ -91,7 +91,6 @@ public:
 		FILE_MENU_CLOSE_ALL,
 		FILE_MENU_CLOSE_OTHER_TABS,
 		FILE_MENU_CLOSE_TABS_BELOW,
-		FILE_MENU_CLOSE_DOCS,
 
 		FILE_MENU_RUN,
 
@@ -102,10 +101,6 @@ public:
 		FILE_MENU_SORT,
 
 		// Search.
-		HELP_SEARCH_FIND,
-		HELP_SEARCH_FIND_NEXT,
-		HELP_SEARCH_FIND_PREVIOUS,
-
 		SEARCH_IN_FILES,
 		REPLACE_IN_FILES,
 
@@ -157,8 +152,6 @@ private:
 	HBoxContainer *buttons_hbox = nullptr;
 	Button *members_overview_alphabeta_sort_button = nullptr;
 	bool members_overview_enabled;
-	ItemList *help_overview = nullptr;
-	bool help_overview_enabled;
 	VSplitContainer *list_split = nullptr;
 	TabContainer *tab_container = nullptr;
 	ConfirmationDialog *erase_tab_confirm = nullptr;
@@ -199,7 +192,6 @@ private:
 	void _menu_option(int p_option);
 	void _theme_option(int p_option);
 	void _show_save_theme_as_dialog();
-	bool _has_docs_tab() const;
 	bool _has_script_tab() const;
 	void _prepare_file_menu();
 	void _file_menu_closed();
@@ -215,7 +207,6 @@ private:
 
 	void _close_current_tab(bool p_save = true, bool p_history_back = true);
 	void _close_discard_current_tab(const String &p_str);
-	void _close_docs_tab();
 	void _close_other_tabs();
 	void _close_tabs_below();
 	void _close_all_tabs();
@@ -256,10 +247,6 @@ private:
 	void _members_overview_selected(int p_idx);
 	void _script_selected(int p_idx);
 
-	void _update_help_overview_visibility();
-	void _update_help_overview();
-	void _help_overview_selected(int p_idx);
-
 	void _update_online_doc();
 
 	void _find_scripts(Node *p_base, Node *p_current, HashSet<Ref<Script>> &used);
@@ -284,9 +271,6 @@ private:
 
 	void _unlock_history();
 
-	void _help_class_open(const String &p_class);
-	void _help_class_goto(const String &p_desc);
-	bool _help_tab_goto(const String &p_name, const String &p_desc);
 	void _update_history_arrows();
 	void _save_history();
 	void _save_previous_state(Dictionary p_state);
@@ -364,8 +348,6 @@ public:
 
 	void edited_scene_changed();
 
-	void goto_help(const String &p_desc);
-	void update_doc(const String &p_name);
 	void clear_docs_from_script(const Ref<Script> &p_script);
 	void update_docs_from_script(const Ref<Script> &p_script);
 

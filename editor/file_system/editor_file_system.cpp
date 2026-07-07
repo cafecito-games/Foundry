@@ -2562,10 +2562,6 @@ void EditorFileSystem::_update_script_documentation() {
 						if (scr.is_valid()) {
 							for (const DocData::ClassDoc &cd : scr->get_documentation()) {
 								EditorHelp::add_doc(cd);
-								if (!first_scan) {
-									// Update the documentation in the Script Editor if it is open.
-									ScriptEditor::get_singleton()->update_doc(cd.name);
-								}
 							}
 						}
 					}
@@ -2589,10 +2585,6 @@ void EditorFileSystem::_update_script_documentation() {
 				}
 				for (const DocData::ClassDoc &cd : scr->get_documentation()) {
 					EditorHelp::add_doc(cd);
-					if (!first_scan) {
-						// Update the documentation in the Script Editor if it is open.
-						ScriptEditor::get_singleton()->update_doc(cd.name);
-					}
 				}
 			}
 		}
