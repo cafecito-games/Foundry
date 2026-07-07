@@ -182,6 +182,12 @@ void TextTabSurface::flush_to_document() {
 	}
 }
 
+void TextTabSurface::sync_active_view_from_document() {
+	if (active_view.is_valid()) {
+		active_view->sync_from_document();
+	}
+}
+
 void TextTabSurface::focus_view() {
 	if (active_view.is_valid()) {
 		active_view->grab_view_focus();

@@ -66,7 +66,39 @@ Error TextDocument::load() {
 	saved_text = text;
 	dirty = false;
 	load_failed = false;
+	// Record the on-disk timestamp so a later external change is detectable.
+	last_modified_time = FileAccess::get_modified_time(path);
+	has_modified_time_baseline = true;
 	return OK;
+}
+
+bool TextDocument::has_external_modification() const {
+	// Without a baseline (never successfully loaded) there is nothing to compare
+	// against; a deleted file is handled by tab availability, not the reload flow.
+	if (path.is_empty() || !has_modified_time_baseline) {
+		return false;
+	}
+	if (!FileAccess::exists(path)) {
+		return false;
+	}
+	// Seconds-resolution timestamps mean any different value is an external write;
+	// mirror ScriptEditorView's inequality check rather than a strictly-newer one.
+	return FileAccess::get_modified_time(path) != last_modified_time;
+}
+
+Error TextDocument::reload() {
+	const Error err = load();
+	if (err != OK) {
+		// load() kept the previous good buffer but flagged load_failed and left the
+		// baseline unchanged, so the tab would be unsavable and would re-prompt every
+		// foreground. Since we still hold valid content, clear the failure flag and
+		// re-baseline to the current file: the stale-but-good buffer stays editable
+		// and savable, and only a subsequent (different) external write re-triggers.
+		load_failed = false;
+		last_modified_time = FileAccess::get_modified_time(path);
+		has_modified_time_baseline = true;
+	}
+	return err;
 }
 
 Error TextDocument::save() {
@@ -90,5 +122,9 @@ Error TextDocument::save() {
 	if (EditorFileSystem *fs = EditorFileSystem::get_singleton()) {
 		fs->update_file(path);
 	}
+	// Re-baseline the timestamp to this write so our own save is not later
+	// misdetected as an external change on the next editor foreground.
+	last_modified_time = FileAccess::get_modified_time(path);
+	has_modified_time_baseline = true;
 	return OK;
 }

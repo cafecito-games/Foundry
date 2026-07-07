@@ -52,6 +52,13 @@ class TextDocument : public RefCounted {
 	String text;
 	// The last saved/loaded content; dirty is text != saved_text.
 	String saved_text;
+	// The backing file's modified time captured at the last successful load/save.
+	// Mirrors ScriptEditorView's per-file timestamp so an external on-disk change
+	// (another program or a VCS operation) can be detected on editor foreground.
+	uint64_t last_modified_time = 0;
+	// False until a load/save (or an explicit set_last_modified_time) establishes a
+	// baseline; without one there is nothing to compare an on-disk mtime against.
+	bool has_modified_time_baseline = false;
 	bool dirty = false;
 	// True when the last load() of an existing backing file failed. The buffer is
 	// then empty but does NOT reflect the file, so saving would truncate it; save()
@@ -71,8 +78,28 @@ public:
 	void mark_clean() { dirty = false; }
 	bool is_load_failed() const { return load_failed; }
 
+	// The backing file's modified time recorded at the last successful load/save.
+	uint64_t get_last_modified_time() const { return last_modified_time; }
+	void set_last_modified_time(uint64_t p_time) {
+		last_modified_time = p_time;
+		has_modified_time_baseline = true;
+	}
+
+	// True when the backing file's on-disk modified time differs from the one
+	// recorded at the last load/save -- i.e. it was changed by something outside
+	// this document. Missing files and never-loaded buffers report false; deletion
+	// is handled by tab availability, not the reload flow.
+	bool has_external_modification() const;
+
 	// (Re)load the canonical text from `path` on disk; clears the dirty flag.
 	Error load();
+	// Refresh an already-loaded document from disk in response to an external change.
+	// On success behaves like load(). On failure (the new on-disk version is missing
+	// or unreadable, e.g. a partial write) the previous good buffer, dirty flag, and
+	// savability are all left intact so a transient bad write cannot brick an open
+	// tab; the timestamp is re-baselined to the current file so the same unreadable
+	// version is not re-detected on every editor foreground. Returns the load error.
+	Error reload();
 	// Write the canonical text to `path`; clears the dirty flag and notifies the
 	// editor filesystem so the change is picked up like any other file save.
 	Error save();

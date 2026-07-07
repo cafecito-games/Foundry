@@ -32,7 +32,9 @@
 
 #include "editor/plugins/editor_plugin.h"
 
+class ConfirmationDialog;
 class TextTabType;
+class Tree;
 
 /**
  * Bridges workspace TextTab documents into the editor-wide unsaved-changes flow.
@@ -40,11 +42,27 @@ class TextTabType;
  * editor, so this plugin re-reports and saves dirty TextDocuments through the
  * same get_unsaved_status()/save_external_data() aggregation used for quit,
  * reload, and Save All -- keeping unsaved text edits from being silently lost.
+ *
+ * It also drives external on-disk change detection for text tabs: on editor
+ * foreground it scans the open documents and, mirroring the script editor,
+ * silently reloads clean tabs or prompts reload/keep when a changed tab is dirty
+ * (or auto-reload is disabled), so an external edit is never silently overwritten.
  */
 class TextTabEditorPlugin : public EditorPlugin {
 	FOUNDRY_CLASS(TextTabEditorPlugin, EditorPlugin);
 
+	ConfirmationDialog *disk_changed = nullptr;
+	Tree *disk_changed_list = nullptr;
+
 	TextTabType *_text_tab_type() const;
+	void _ensure_disk_changed_dialog();
+	void _scan_external_changes();
+	void _on_disk_changed_reload();
+	void _on_disk_changed_action(const String &p_action);
+	static void _report_failures(const String &p_heading, const PackedStringArray &p_paths);
+
+protected:
+	void _notification(int p_what);
 
 public:
 	virtual String get_plugin_name() const override { return "TextTab"; }
