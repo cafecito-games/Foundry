@@ -54,6 +54,15 @@ struct EditorAutomationSnapshotOptions {
 	// in-tile scene/inspector docks that remain the active editing surface while
 	// layout parents are still settling visibility during startup.
 	bool relaxed_visibility_roots = false;
+	// Upper bound on the number of virtual rows serialized per Tree/ItemList
+	// container. This bounds snapshot latency for pathologically large controls:
+	// the Search Help dialog's results Tree holds the entire class database, and
+	// TreeItem::get_index() is O(n), so serializing every row is O(n^2) and can
+	// take minutes. When a container has more rows than this, only the first
+	// max_container_rows are emitted and the container element is flagged with
+	// metadata `rows_truncated = true`. Clients should narrow the control (type a
+	// search query, scroll/filter) and re-snapshot. 0 disables the cap.
+	int max_container_rows = 500;
 };
 
 class EditorAutomationSnapshot {

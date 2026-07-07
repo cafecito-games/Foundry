@@ -392,6 +392,41 @@ EditorAutomationActionResult _action_click(
 	return EditorAutomationActionResult::failure("unsupported_action", "Click is unavailable for the selected control.");
 }
 
+EditorAutomationActionResult _action_open_context_menu(
+		const EditorAutomationSnapshot &p_snapshot,
+		const EditorAutomationElement &p_element,
+		const Dictionary &p_options,
+		EditorAutomationRoutePreference p_route_preference) {
+	if (p_route_preference == EditorAutomationRoutePreference::SEMANTIC) {
+		return EditorAutomationActionResult::failure("unsupported_route", "open_context_menu synthesizes a right-click input event; use route=input or auto.");
+	}
+
+	Node *node = nullptr;
+	const EditorAutomationActionResult prepare_result = _prepare_element_for_input(p_snapshot, p_element, node);
+	if (!prepare_result.ok && prepare_result.kind == "window_focus_failed") {
+		return prepare_result;
+	}
+
+	Control *control = Object::cast_to<Control>(node);
+	ERR_FAIL_NULL_V(control, EditorAutomationActionResult::failure("invalid_element", "The selected element is not a control."));
+
+	// Force the right mouse button regardless of any caller-provided `button` so
+	// the control's context-menu handler (e.g. EditorInspectorCategory::_gui_input
+	// -> _popup_context_menu) fires. Positioning options (position/anchor) are
+	// still honored via the shared options dictionary.
+	Dictionary options = p_options.duplicate();
+	options["button"] = "right";
+
+	PackedStringArray events;
+	if (_push_mouse_click(control, p_element.bounds, options, false, events)) {
+		EditorAutomationActionResult result = EditorAutomationActionResult::success(EditorAutomationActionRouteNames::INPUT_CONTEXT_MENU, p_element.id);
+		result.events = events;
+		result.focus = _focused_element_id(p_snapshot);
+		return result;
+	}
+	return EditorAutomationActionResult::failure("unsupported_action", "Opening a context menu is unavailable for the selected control.");
+}
+
 EditorAutomationActionResult _action_set_text(
 		const EditorAutomationSnapshot &p_snapshot,
 		const EditorAutomationElement &p_element,
@@ -1322,6 +1357,9 @@ EditorAutomationActionResult EditorAutomationDriver::perform(
 			} else {
 				result = _action_tree_item_state(p_snapshot, element, false);
 			}
+			break;
+		case EditorAutomationActionKind::OPEN_CONTEXT_MENU:
+			result = _action_open_context_menu(p_snapshot, element, p_options, route_preference);
 			break;
 		case EditorAutomationActionKind::CHOOSE_MENU_ITEM: {
 			String kind;

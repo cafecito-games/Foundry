@@ -49,6 +49,7 @@ struct EditorAutomationActionRouteNames {
 	static inline const char *INPUT_KEY = "input_key";
 	static inline const char *INPUT_TEXT = "input_text";
 	static inline const char *INPUT_DRAG = "input_drag";
+	static inline const char *INPUT_CONTEXT_MENU = "input_context_menu";
 	static inline const char *SEMANTIC_DOCK = "semantic_dock";
 	static inline const char *INPUT_DOCK = "input_dock";
 	static inline const char *UNSUPPORTED = "unsupported";
@@ -73,6 +74,7 @@ enum class EditorAutomationActionKind {
 	EXPAND,
 	COLLAPSE,
 	CHOOSE_MENU_ITEM,
+	OPEN_CONTEXT_MENU,
 	SET_VALUE,
 	INCREMENT,
 	DECREMENT,

@@ -48,6 +48,7 @@
 #include "scene/gui/dialogs.h"
 #include "scene/gui/item_list.h"
 #include "scene/gui/line_edit.h"
+#include "scene/gui/menu_button.h"
 #include "scene/gui/option_button.h"
 #include "scene/gui/popup_menu.h"
 #include "scene/gui/range.h"
@@ -253,6 +254,13 @@ class EditorAutomationSnapshotBuilder {
 			add_unique("focus");
 		}
 
+		if (p_role == "inspector_section") {
+			// The inspector class-category header and section rows carry a
+			// right-click context menu (e.g. "Open Documentation" on a category);
+			// advertise the action so agents discover the reachable affordance.
+			add_unique("open_context_menu");
+		}
+
 		if (p_role == "button" || p_role == "checkbox" || p_role == "property_row") {
 			add_unique("click");
 			add_unique("activate");
@@ -369,15 +377,30 @@ class EditorAutomationSnapshotBuilder {
 		return Rect2i(visible_rect.position.floor(), visible_rect.size.floor());
 	}
 
+	// Flags a container element whose virtual rows were capped by
+	// options.max_container_rows so clients know results are incomplete and
+	// should narrow the control (search/filter/scroll) before re-snapshotting.
+	void _mark_rows_truncated(int p_parent_index) {
+		if (p_parent_index >= 0) {
+			data.elements.ptrw()[p_parent_index].metadata["rows_truncated"] = true;
+		}
+	}
+
 	void _add_tree_items(const Tree *p_tree, int p_parent_index) {
 		TreeItem *item = p_tree->get_root();
 		if (item == nullptr) {
 			return;
 		}
 		const uint64_t tree_id = p_tree->get_instance_id();
+		const int cap = options.max_container_rows;
+		int emitted = 0;
 		item = item->get_first_child();
 		while (item) {
 			if (item->is_visible_in_tree()) {
+				if (cap > 0 && emitted >= cap) {
+					_mark_rows_truncated(p_parent_index);
+					return;
+				}
 				const String key = vformat("%s:%s", String::num_uint64(tree_id), _tree_item_path(item));
 				const String item_text = item->get_text(0);
 				const Dictionary metadata = EditorAutomationWorkflow::metadata_for_tree_item(p_tree, item);
@@ -394,6 +417,7 @@ class EditorAutomationSnapshotBuilder {
 				item_rect.position.y += p_tree->get_drawn_scroll_offset().y - p_tree->get_scroll().y;
 				const Rect2i bounds = _virtual_item_bounds(p_tree, item_rect);
 				_add_virtual_element(p_parent_index, "tree_item", key, "tree_item", item_text, item_text, item->is_selected(0), metadata, bounds);
+				emitted++;
 			}
 			item = item->get_next_in_tree();
 		}
@@ -408,7 +432,12 @@ class EditorAutomationSnapshotBuilder {
 		// scroll-bar accessors are non-const only; the reads themselves are const.
 		ItemList *mutable_list = const_cast<ItemList *>(p_item_list);
 		const Vector2 scroll_offset = Vector2(mutable_list->get_h_scroll_bar()->get_value(), mutable_list->get_v_scroll_bar()->get_value());
+		const int cap = options.max_container_rows;
 		for (int i = 0; i < p_item_list->get_item_count(); i++) {
+			if (cap > 0 && i >= cap) {
+				_mark_rows_truncated(p_parent_index);
+				break;
+			}
 			const String item_text = p_item_list->get_item_text(i);
 			const String key = vformat("%s:%d", String::num_uint64(list_id), i);
 			const Dictionary metadata = EditorAutomationWorkflow::metadata_for_list_item(p_item_list, i);
@@ -501,6 +530,21 @@ class EditorAutomationSnapshotBuilder {
 			_add_item_list_items(item_list, p_parent_index);
 		} else if (const PopupMenu *popup_menu = Object::cast_to<const PopupMenu>(p_node)) {
 			_add_popup_menu_items(popup_menu, p_parent_index);
+		} else if (const MenuButton *menu_button = Object::cast_to<const MenuButton>(p_node)) {
+			// A MenuButton hosts its items in an attached (internal) PopupMenu.
+			// Expose those items as selectable virtual menu_item elements regardless
+			// of popup visibility so choose_menu_item/select can reach them without
+			// first synthesizing a popup open (which never happened on a plain
+			// semantic button click). Items resolve back through the popup's
+			// instance id, so activation works even while it is hidden. Skip this
+			// when the popup is both visible and walked as a real internal node
+			// (include_internal) to avoid emitting each item twice.
+			if (PopupMenu *popup = const_cast<MenuButton *>(menu_button)->get_popup()) {
+				const bool walked_as_node = options.include_internal && popup->is_visible();
+				if (!walked_as_node) {
+					_add_popup_menu_items(popup, p_parent_index);
+				}
+			}
 		} else if (const TabBar *tab_bar = Object::cast_to<const TabBar>(p_node)) {
 			_add_tab_bar_tabs(tab_bar, p_parent_index, p_active_tile_id);
 		} else if (const TabContainer *tab_container = Object::cast_to<const TabContainer>(p_node)) {

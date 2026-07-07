@@ -43,7 +43,9 @@
 #include "scene/gui/item_list.h"
 #include "scene/gui/label.h"
 #include "scene/gui/line_edit.h"
+#include "scene/gui/menu_button.h"
 #include "scene/gui/panel_container.h"
+#include "scene/gui/popup_menu.h"
 #include "scene/gui/scroll_container.h"
 #include "scene/gui/subviewport_container.h"
 #include "scene/gui/text_edit.h"
@@ -1238,6 +1240,169 @@ TEST_CASE("[Editor][Automation] selector matches tree items by metadata label") 
 	const EditorAutomationSelectorResult selector_result = EditorAutomationSelector::resolve(snapshot, selector);
 	CHECK(selector_result.status == EditorAutomationSelectorStatus::OK);
 	CHECK(selector_result.match_indices.size() == 1);
+
+	memdelete(root);
+}
+
+class MenuItemPressTracker : public Object {
+	FOUNDRY_CLASS(MenuItemPressTracker, Object);
+
+public:
+	int last_id = -1;
+
+	void on_id_pressed(int p_id) {
+		last_id = p_id;
+	}
+};
+
+// #1090: a MenuButton's attached PopupMenu items must be reachable through the
+// snapshot even while the popup is hidden, so choose_menu_item can activate them
+// without first having to synthesize a popup open.
+TEST_CASE("[Editor][Automation] menu button popup items are selectable while hidden") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	MenuButton *menu_button = memnew(MenuButton);
+	menu_button->set_text("Go To");
+	setup_visible_control(menu_button);
+	root->add_child(menu_button);
+
+	PopupMenu *popup = menu_button->get_popup();
+	popup->add_item("Look Up Symbol", 10);
+	popup->add_item("Go to Line", 11);
+
+	MenuItemPressTracker tracker;
+	popup->connect("id_pressed", callable_mp(&tracker, &MenuItemPressTracker::on_id_pressed));
+	MessageQueue::get_singleton()->flush();
+
+	// The popup is never opened; its items must still be present in the snapshot.
+	CHECK_FALSE(popup->is_visible());
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	const EditorAutomationElement *look_up = find_virtual_element(snapshot, "menu_item", "Look Up Symbol");
+	REQUIRE(look_up != nullptr);
+	CHECK(look_up->actions.has("choose_menu_item"));
+	CHECK(look_up->actions.has("activate"));
+
+	Dictionary target;
+	target["id"] = look_up->id;
+
+	const EditorAutomationActionResult result = EditorAutomationDriver::perform(snapshot, "choose_menu_item", target, Dictionary());
+	CHECK(result.ok);
+	CHECK(result.route == EditorAutomationActionRouteNames::SEMANTIC_SELECT);
+	CHECK(tracker.last_id == 10);
+
+	memdelete(root);
+}
+
+// #1089: snapshotting a control whose row list is enormous (the Search Help
+// dialog holds the whole class database) must stay bounded. Rows past the cap
+// are omitted and the container is flagged so clients know to narrow first.
+TEST_CASE("[Editor][Automation] tree row serialization is bounded and flagged when truncated") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	Tree *tree = memnew(Tree);
+	tree->set_name("HugeTree");
+	setup_visible_control(tree, Size2(200, 200));
+	root->add_child(tree);
+
+	TreeItem *tree_root = tree->create_item();
+	const int total_rows = 40;
+	for (int i = 0; i < total_rows; i++) {
+		TreeItem *item = tree->create_item(tree_root);
+		item->set_text(0, vformat("Row %d", i));
+	}
+	MessageQueue::get_singleton()->flush();
+
+	EditorAutomationSnapshotOptions options;
+	options.max_container_rows = 10;
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root, options);
+
+	int tree_item_count = 0;
+	for (int i = 0; i < snapshot.get_element_count(); i++) {
+		if (snapshot.get_element(i).role == "tree_item") {
+			tree_item_count++;
+		}
+	}
+	CHECK(tree_item_count == 10);
+
+	const EditorAutomationElement *tree_element = find_element_by_role_and_name(snapshot, "tree", "HugeTree");
+	REQUIRE(tree_element != nullptr);
+	CHECK((bool)tree_element->metadata.get("rows_truncated", false));
+
+	// A small tree stays fully serialized and unflagged.
+	EditorAutomationSnapshotOptions unbounded;
+	unbounded.max_container_rows = 500;
+	const EditorAutomationSnapshot small_snapshot = EditorAutomationSnapshot::capture_from_node(root, unbounded);
+	const EditorAutomationElement *small_tree = find_element_by_role_and_name(small_snapshot, "tree", "HugeTree");
+	REQUIRE(small_tree != nullptr);
+	CHECK_FALSE((bool)small_tree->metadata.get("rows_truncated", false));
+	int full_count = 0;
+	for (int i = 0; i < small_snapshot.get_element_count(); i++) {
+		if (small_snapshot.get_element(i).role == "tree_item") {
+			full_count++;
+		}
+	}
+	CHECK(full_count == total_rows);
+
+	memdelete(root);
+}
+
+class RightClickCaptureControl : public Control {
+	FOUNDRY_CLASS(RightClickCaptureControl, Control);
+
+public:
+	int right_click_count = 0;
+
+protected:
+	void gui_input(const Ref<InputEvent> &p_event) override {
+		Ref<InputEventMouseButton> mouse_button = p_event;
+		if (mouse_button.is_valid() && mouse_button->is_pressed() && mouse_button->get_button_index() == MouseButton::RIGHT) {
+			right_click_count++;
+		}
+	}
+};
+
+// #1091: open_context_menu synthesizes a right-click so a control's context menu
+// (e.g. the Inspector class-category "Open Documentation") can be reached.
+TEST_CASE("[Editor][Automation] open_context_menu synthesizes a right click on the element") {
+	Window *root = memnew(Window);
+	root->set_title("Context Menu Root");
+	root->set_size(Size2i(500, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+	root->set_visible(true);
+	MessageQueue::get_singleton()->flush();
+
+	RightClickCaptureControl *target_control = memnew(RightClickCaptureControl);
+	target_control->set_name("CategoryRow");
+	target_control->set_mouse_filter(Control::MOUSE_FILTER_STOP);
+	setup_visible_control(target_control, Size2(200, 40));
+	root->add_child(target_control);
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	const EditorAutomationElement *element = find_element_by_role_and_name(snapshot, "control", "CategoryRow");
+	REQUIRE(element != nullptr);
+
+	Dictionary target;
+	target["id"] = element->id;
+
+	const EditorAutomationActionResult result = EditorAutomationDriver::perform(snapshot, "open_context_menu", target, Dictionary());
+	MessageQueue::get_singleton()->flush();
+	CHECK(result.ok);
+	CHECK(result.route == EditorAutomationActionRouteNames::INPUT_CONTEXT_MENU);
+	CHECK(result.events.has("mouse_pressed"));
+	CHECK(result.events.has("mouse_released"));
+	CHECK(target_control->right_click_count >= 1);
+
+	// right_click is an accepted alias for the same behavior.
+	const EditorAutomationActionResult alias_result = EditorAutomationDriver::perform(snapshot, "right_click", target, Dictionary());
+	MessageQueue::get_singleton()->flush();
+	CHECK(alias_result.ok);
+	CHECK(target_control->right_click_count >= 2);
 
 	memdelete(root);
 }
