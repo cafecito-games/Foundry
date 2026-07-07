@@ -43,6 +43,7 @@
 #include "scene/gui/panel_container.h"
 #include "scene/main/scene_tree.h"
 #include "scene/main/viewport.h"
+#include "scene/main/window.h"
 
 #include "tests/test_macros.h"
 
@@ -540,6 +541,58 @@ TEST_CASE("[Editor][Automation] capture_screenshot fails when the element lies o
 	}
 
 	memdelete(viewport);
+}
+
+TEST_CASE("[Editor][Automation] capture_screenshot targets a window element without mis-cropping") {
+	EditorAutomationWait::clear_all_cooperative();
+
+	// A Window element reports screen-space bounds (position + size). When
+	// captured, the tool must not intersect those screen-space bounds against a
+	// window-local 0-based image and then report the window as not capturable.
+	// Rooting the snapshot at the window makes it the single match; capturing is
+	// display-dependent, so assert the contract stays coherent either way and
+	// never spuriously reports element_not_capturable for a valid window.
+	Window *win = memnew(Window);
+	win->set_title("TargetWindow");
+	win->set_position(Point2i(30, 40));
+	win->set_size(Size2i(160, 100));
+	win->set_visible(true);
+	SceneTree::get_singleton()->get_root()->add_child(win);
+	screenshot_flush_frames(4);
+
+	EditorAutomationMCPDispatcher dispatcher;
+	EditorAutomationMCPDispatcher::Options options;
+	options.snapshot_root = win;
+	dispatcher.set_options(options);
+
+	Dictionary selector;
+	selector["name"] = "TargetWindow";
+
+	Dictionary arguments;
+	arguments["selector"] = selector;
+
+	Dictionary params;
+	params["name"] = "capture_screenshot";
+	params["arguments"] = arguments;
+
+	const Dictionary response = dispatcher.handle_message(make_request(9, "tools/call", params));
+	const Dictionary response_result = response["result"];
+	const Dictionary structured = response_result["structuredContent"];
+
+	// The window has valid bounds, so a resolvable capture must never be reported
+	// as element_not_capturable; ok/isError must stay consistent.
+	CHECK((bool)response_result["isError"] == !(bool)structured["ok"]);
+	CHECK(String(structured.get("kind", String())) != "element_not_capturable");
+	if ((bool)structured["ok"]) {
+		// A native window captures whole; an embedded one crops within its
+		// embedder. Either is a valid capture_mode for a window target.
+		const String mode = structured["capture_mode"];
+		CHECK((mode == "full_window" || mode == "cropped"));
+	} else {
+		CHECK(String(structured["kind"]) == "screenshot_unavailable");
+	}
+
+	memdelete(win);
 }
 
 TEST_CASE("[Editor][Automation] capture_screenshot rejects both selector and element") {

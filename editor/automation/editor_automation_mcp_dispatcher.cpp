@@ -49,6 +49,7 @@
 #include "core/object/object.h"
 
 #include "scene/main/node.h"
+#include "scene/main/window.h"
 
 const char *EditorAutomationMCPDispatcher::PROTOCOL_VERSION = "2025-11-25";
 
@@ -865,6 +866,18 @@ Dictionary EditorAutomationMCPDispatcher::_tool_capture_screenshot(const Diction
 		if (element.object_id != 0) {
 			if (Node *element_node = Object::cast_to<Node>(ObjectDB::get_instance(ObjectID(element.object_id)))) {
 				screenshot_options.snapshot_root = element_node;
+
+				// A native (non-embedded) Window's bounds are screen coordinates,
+				// but its own viewport image is 0-based and spans exactly the
+				// window. Capture it whole instead of cropping screen-space bounds
+				// into a 0-based image. Embedded windows render into their
+				// embedder's viewport, so their bounds are already in that
+				// viewport's space and the default crop path is correct.
+				if (const Window *window_node = Object::cast_to<Window>(element_node)) {
+					if (!window_node->is_embedded()) {
+						crop_to_element = false;
+					}
+				}
 			}
 		}
 	}
