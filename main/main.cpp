@@ -4586,6 +4586,12 @@ int Main::start() {
 	}
 #ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 	else if (eval_requested) {
+		// A projectless eval is valid, but an explicit `--project` that failed to load must
+		// not silently degrade to projectless execution: a CI probe expecting project context
+		// would otherwise pass while evaluating outside the requested project.
+		ERR_FAIL_COND_V_MSG(!cli_invocation.project_path.is_empty() && !ProjectSettings::get_singleton()->is_project_loaded(), EXIT_FAILURE,
+				vformat("script eval could not load a project at \"%s\".", cli_invocation.project_path));
+
 		// Scan project global classes (in memory) so an inline snippet can reference the
 		// project's `class_name` scripts, mirroring `project run --script`.
 		if (!editor && ProjectSettings::get_singleton()->is_project_loaded() && !ProjectSettings::get_singleton()->is_using_datapack()) {

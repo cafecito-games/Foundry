@@ -282,6 +282,31 @@ TEST_CASE("[FoundryCLI][ScriptEval] Inline eval ignores a configured main scene"
 	CHECK_EQ(exit_code, 0);
 }
 
+TEST_CASE("[FoundryCLI][ScriptEval] Explicit project that fails to load is an error") {
+	// A projectless eval is allowed, but an explicit `--project` pointing at a directory with
+	// no project.foundry must fail rather than silently evaluating outside the requested project.
+	const String empty_dir = OS::get_singleton()->get_temp_path().path_join("foundry_cli_script_eval_bad_project");
+	TemporaryNoMainSceneProject::remove_recursive(empty_dir);
+	Ref<DirAccess> dir = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+	REQUIRE_EQ(dir->make_dir_recursive(empty_dir), OK);
+
+	List<String> arguments;
+	arguments.push_back("--headless");
+	arguments.push_back("script");
+	arguments.push_back("eval");
+	arguments.push_back("--project");
+	arguments.push_back(empty_dir);
+	arguments.push_back("print(\"should-not-run\")");
+
+	int exit_code = -1;
+	const String output = run_foundry_subprocess(arguments, exit_code);
+	INFO("Subprocess output:\n", output);
+	CHECK_FALSE(output.contains("should-not-run"));
+	CHECK_NE(exit_code, 0);
+
+	TemporaryNoMainSceneProject::remove_recursive(empty_dir);
+}
+
 #endif // MODULE_FOUNDRY_SCRIPT_ENABLED
 
 } // namespace TestFoundryCLIProjectTest
