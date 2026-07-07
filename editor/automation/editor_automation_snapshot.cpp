@@ -392,19 +392,30 @@ class EditorAutomationSnapshotBuilder {
 	void _add_tab_bar_tabs(const TabBar *p_tab_bar, int p_parent_index, int p_active_tile_id = -1) {
 		const uint64_t tab_bar_id = p_tab_bar->get_instance_id();
 		int tile_id = p_active_tile_id;
-		if (tile_id < 0) {
-			for (Node *node = p_tab_bar->get_parent(); node != nullptr; node = node->get_parent()) {
-				if (EditorSceneTabs *scene_tabs = Object::cast_to<EditorSceneTabs>(node)) {
+		const WorkspacePane *owner_pane = nullptr;
+		for (Node *node = p_tab_bar->get_parent(); node != nullptr; node = node->get_parent()) {
+			if (EditorSceneTabs *scene_tabs = Object::cast_to<EditorSceneTabs>(node)) {
+				if (tile_id < 0) {
 					tile_id = scene_tabs->get_tile_id();
-					break;
 				}
-				// The generic pane tab strip is a plain TabBar owned by a
-				// WorkspacePane (the legacy EditorSceneTabs bar is hidden), so its
-				// tab elements must carry the owning leaf id for the metadata path.
-				if (WorkspacePane *pane = Object::cast_to<WorkspacePane>(node)) {
+				break;
+			}
+			// The generic pane tab strip is a plain TabBar owned by a WorkspacePane
+			// (the legacy EditorSceneTabs bar is hidden). Capture the owning pane so
+			// its strip's tab elements carry the owning leaf id plus the tab's
+			// type_id and resource_key, letting selectors distinguish e.g. a scene
+			// tab from a script tab sharing one pane's strip. Only the pane's own
+			// strip mirrors the pane tab model 1:1; other TabBars mounted inside the
+			// pane chrome (e.g. a tab bar in the active scene/script surface) must
+			// not inherit workspace tab metadata by index.
+			if (WorkspacePane *pane = Object::cast_to<WorkspacePane>(node)) {
+				if (pane->get_tab_strip() == p_tab_bar) {
+					owner_pane = pane;
+				}
+				if (tile_id < 0) {
 					tile_id = pane->get_leaf_id();
-					break;
 				}
+				break;
 			}
 		}
 		for (int i = 0; i < p_tab_bar->get_tab_count(); i++) {
@@ -418,6 +429,13 @@ class EditorAutomationSnapshotBuilder {
 				metadata["tile_id"] = tile_id;
 			}
 			metadata["tab_index"] = i;
+			// The pane's tab model is 1:1 with its strip (see WorkspacePane::_sync_tab_strip),
+			// so index i maps directly to the backing WorkspaceTab.
+			if (owner_pane && i < owner_pane->get_tab_count()) {
+				const WorkspaceTab &tab = owner_pane->get_tab(i);
+				metadata["type_id"] = String(tab.get_type_id());
+				metadata["resource_key"] = tab.get_resource_key();
+			}
 			_add_virtual_element(p_parent_index, "tab", key, "tab", tab_title, tab_title, p_tab_bar->get_current_tab() == i, metadata);
 		}
 	}
