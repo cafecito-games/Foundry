@@ -307,6 +307,27 @@ TEST_CASE("[FoundryCLI][ScriptEval] Explicit project that fails to load is an er
 	TemporaryNoMainSceneProject::remove_recursive(empty_dir);
 }
 
+TEST_CASE("[FoundryCLI][ScriptEval] Nonexistent project path is an error") {
+	// The directory does not exist, so applying `--project` fails outright. Eval must not fall
+	// back to an ambient project discovered from the original working directory.
+	const String missing_dir = OS::get_singleton()->get_temp_path().path_join("foundry_cli_script_eval_missing_project_dir");
+	TemporaryNoMainSceneProject::remove_recursive(missing_dir);
+
+	List<String> arguments;
+	arguments.push_back("--headless");
+	arguments.push_back("script");
+	arguments.push_back("eval");
+	arguments.push_back("--project");
+	arguments.push_back(missing_dir);
+	arguments.push_back("print(\"should-not-run\")");
+
+	int exit_code = -1;
+	const String output = run_foundry_subprocess(arguments, exit_code);
+	INFO("Subprocess output:\n", output);
+	CHECK_FALSE(output.contains("should-not-run"));
+	CHECK_NE(exit_code, 0);
+}
+
 #endif // MODULE_FOUNDRY_SCRIPT_ENABLED
 
 } // namespace TestFoundryCLIProjectTest

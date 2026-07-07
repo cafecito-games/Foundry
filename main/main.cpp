@@ -227,6 +227,10 @@ static String log_file;
 static bool show_help = false;
 static uint64_t quit_after = 0;
 static OS::ProcessID editor_pid = 0;
+// Set when an explicit CLI `--project` path could not be applied (e.g. the directory does
+// not exist). Lets `script eval` refuse to run against a fallback/ambient project instead
+// of silently evaluating outside the project the caller requested.
+static bool foundry_cli_project_path_error = false;
 #ifdef TOOLS_ENABLED
 static bool found_project = false;
 static bool recovery_mode = false;
@@ -716,6 +720,7 @@ static void apply_foundry_cli_project_path(const String &p_project_path, String 
 #if defined(OVERRIDE_PATH_ENABLED)
 	if (OS::get_singleton()->set_cwd(p_project_path) != OK) {
 		OS::get_singleton()->printerr("Invalid project path specified: \"%s\", aborting.\n", p_project_path.utf8().get_data());
+		foundry_cli_project_path_error = true;
 		return;
 	}
 	r_project_path = p_project_path;
@@ -723,6 +728,7 @@ static void apply_foundry_cli_project_path(const String &p_project_path, String 
 	ERR_PRINT(
 			"`--project` was specified on the command line, but this Foundry binary was compiled without support for path overrides. Aborting.\n"
 			"To be able to use it, use the `disable_path_overrides=no` SCons option when compiling Foundry.\n");
+	foundry_cli_project_path_error = true;
 #endif
 }
 
@@ -4586,11 +4592,17 @@ int Main::start() {
 	}
 #ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 	else if (eval_requested) {
-		// A projectless eval is valid, but an explicit `--project` that failed to load must
-		// not silently degrade to projectless execution: a CI probe expecting project context
-		// would otherwise pass while evaluating outside the requested project.
-		ERR_FAIL_COND_V_MSG(!cli_invocation.project_path.is_empty() && !ProjectSettings::get_singleton()->is_project_loaded(), EXIT_FAILURE,
-				vformat("script eval could not load a project at \"%s\".", cli_invocation.project_path));
+		// A projectless eval is valid, but an explicit `--project` that could not be honored must
+		// not silently degrade to projectless (or ambient-project) execution: a CI probe expecting
+		// the requested project's context would otherwise pass while evaluating elsewhere. This
+		// covers both a directory that failed to apply (`foundry_cli_project_path_error`, e.g. it
+		// does not exist, so an ambient project under the original cwd may have loaded instead) and
+		// a valid directory that simply has no project to load.
+		if (!cli_invocation.project_path.is_empty() &&
+				(foundry_cli_project_path_error || !ProjectSettings::get_singleton()->is_project_loaded())) {
+			ERR_PRINT(vformat("script eval could not use the requested project at \"%s\".", cli_invocation.project_path));
+			return EXIT_FAILURE;
+		}
 
 		// Scan project global classes (in memory) so an inline snippet can reference the
 		// project's `class_name` scripts, mirroring `project run --script`.
