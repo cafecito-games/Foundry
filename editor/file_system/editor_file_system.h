@@ -46,6 +46,7 @@
 #endif
 
 class FileAccess;
+class Script;
 
 struct EditorProgressBG;
 class EditorFileSystemDirectory : public Object {
@@ -337,6 +338,7 @@ class EditorFileSystem : public Node {
 	void _queue_update_script_class(const String &p_path, const ScriptClassInfoUpdate &p_script_update);
 	void _update_script_classes();
 	void _update_script_documentation();
+	void _reindex_script_documentation(const Ref<Script> &p_script);
 	void _process_update_pending();
 	void _process_removed_files(const HashSet<String> &p_processed_files);
 	bool _should_reload_script(const String &p_path);

@@ -388,9 +388,17 @@ public:
 	// is_resource_available keeps every page while the database is still loading).
 	String unavailable_class;
 
+	// Stable ids of tabs a refresh was requested for. The real refresh_docs re-renders
+	// a live EditorHelp; there is none headless, so recording the request lets a test
+	// assert an open page is asked to refresh without a generated doc database.
+	Vector<int> refreshed_stable_ids;
+
 	void mount(WorkspaceTab &p_tab, Control *p_chrome_host) override {}
 	void unmount(WorkspaceTab &p_tab) override {}
 	void activate(WorkspaceTab &p_tab) override {}
+	void refresh_docs(const WorkspaceTab &p_tab) override {
+		refreshed_stable_ids.push_back(p_tab.get_stable_id());
+	}
 	bool is_resource_available(const WorkspaceTab &p_tab) const override {
 		if (!unavailable_class.is_empty() && p_tab.get_resource_key() == unavailable_class) {
 			return false;
@@ -408,6 +416,7 @@ static HeadlessHelpTabType *headless_help_type_singleton = nullptr;
 static void install_headless_help_type() {
 	static HeadlessHelpTabType headless_help_type;
 	headless_help_type.unavailable_class = String();
+	headless_help_type.refreshed_stable_ids.clear();
 	headless_help_type_singleton = &headless_help_type;
 	WorkspacePane::get_shared_tab_registry().register_type(&headless_help_type);
 }
@@ -731,6 +740,52 @@ TEST_CASE("[workspace-tab][SceneTree][Editor] help-tab-deep-topic-reveals-class"
 		}
 	}
 	CHECK(help_tab_count == 1);
+
+	h.unmount();
+}
+
+TEST_CASE("[workspace-tab][SceneTree][Editor] help-tab-refresh-open-page") {
+	using namespace TestSceneWorkspace;
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+	install_headless_help_type();
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspaceLeafNode *source = h.workspace->get_focused_leaf();
+	REQUIRE(source != nullptr);
+
+	WorkspaceLeafNode *leaf = h.workspace->open_help_tab(source, "Node2D");
+	h.pump();
+	REQUIRE(leaf != nullptr);
+
+	WorkspacePane *pane = get_leaf_pane(leaf);
+	REQUIRE(pane != nullptr);
+	int node_stable_id = -1;
+	for (int i = 0; i < pane->get_tab_count(); i++) {
+		if (pane->get_tab(i).get_type_id() == StringName("help") && pane->get_tab(i).get_resource_key() == "Node2D") {
+			node_stable_id = pane->get_tab(i).get_stable_id();
+		}
+	}
+	REQUIRE(node_stable_id >= 0);
+
+	// A doc update for an open class asks exactly that page to refresh, identified by
+	// its stable id (the affordance the doc-change notifications now call).
+	headless_help_type_singleton->refreshed_stable_ids.clear();
+	h.workspace->refresh_help_tab("Node2D");
+	REQUIRE(headless_help_type_singleton->refreshed_stable_ids.size() == 1);
+	CHECK(headless_help_type_singleton->refreshed_stable_ids[0] == node_stable_id);
+
+	// A class with no open page is a silent no-op, so unrelated doc updates do not
+	// touch the workspace.
+	headless_help_type_singleton->refreshed_stable_ids.clear();
+	h.workspace->refresh_help_tab("Sprite2D");
+	CHECK(headless_help_type_singleton->refreshed_stable_ids.is_empty());
+
+	// An empty class key is never a page and is ignored.
+	h.workspace->refresh_help_tab(String());
+	CHECK(headless_help_type_singleton->refreshed_stable_ids.is_empty());
 
 	h.unmount();
 }

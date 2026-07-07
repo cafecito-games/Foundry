@@ -40,6 +40,7 @@
 #include "core/variant/variant_parser.h"
 #include "editor/doc/editor_help.h"
 #include "editor/editor_node.h"
+#include "editor/editor_scene_workspace.h"
 #include "editor/file_system/editor_paths.h"
 #include "editor/inspector/editor_resource_preview.h"
 #include "editor/script/script_editor_plugin.h"
@@ -2523,6 +2524,19 @@ void EditorFileSystem::_update_script_classes() {
 	ResourceSaver::add_custom_savers();
 }
 
+void EditorFileSystem::_reindex_script_documentation(const Ref<Script> &p_script) {
+	for (const DocData::ClassDoc &cd : p_script->get_documentation()) {
+		EditorHelp::add_doc(cd);
+		if (!first_scan) {
+			// Refresh an already-open workspace help page so it reflects the updated
+			// documentation.
+			if (EditorSceneWorkspace *workspace = EditorNode::get_scene_workspace()) {
+				workspace->refresh_help_tab(cd.name);
+			}
+		}
+	}
+}
+
 void EditorFileSystem::_update_script_documentation() {
 	if (update_script_paths_documentation.is_empty()) {
 		return;
@@ -2560,9 +2574,7 @@ void EditorFileSystem::_update_script_documentation() {
 					for (Ref<Resource> sub_resource : sub_resources) {
 						Ref<Script> scr = sub_resource;
 						if (scr.is_valid()) {
-							for (const DocData::ClassDoc &cd : scr->get_documentation()) {
-								EditorHelp::add_doc(cd);
-							}
+							_reindex_script_documentation(scr);
 						}
 					}
 				}
@@ -2583,9 +2595,7 @@ void EditorFileSystem::_update_script_documentation() {
 					// return the last loaded version of the script (without the modifications).
 					scr->reload_from_file();
 				}
-				for (const DocData::ClassDoc &cd : scr->get_documentation()) {
-					EditorHelp::add_doc(cd);
-				}
+				_reindex_script_documentation(scr);
 			}
 		}
 

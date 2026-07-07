@@ -172,6 +172,12 @@ public:
 	// anchor) instead of creating a duplicate. Returns the hosting leaf.
 	WorkspaceLeafNode *open_help_tab(WorkspaceLeafNode *p_source_leaf, const String &p_topic, bool p_force_new_leaf = false);
 
+	// Refresh an already-open class-reference help page so it picks up changed
+	// documentation for p_class_key (a bare class name). No-op when no help page for
+	// the class is currently open. Wired to the doc-change notifications so an open
+	// page does not keep showing stale documentation until closed and reopened.
+	void refresh_help_tab(const String &p_class_key);
+
 	// Open-or-reveal a non-script text document (.txt, .md, text .json, README,
 	// ...) as a "text" workspace tab. Reveals an existing tab for the same file
 	// (one tab per file via the canonical index); otherwise reuses a pane that
