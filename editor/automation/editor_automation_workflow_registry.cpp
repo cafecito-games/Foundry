@@ -40,6 +40,18 @@ EditorAutomationAcceptanceWorkflow::Result _run_basic_scene_editing(EditorWorkfl
 	return EditorAutomationAcceptanceWorkflow::run_basic_scene_editing(p_driver);
 }
 
+EditorAutomationAcceptanceWorkflow::Result _run_mixed_workspace_editing(EditorWorkflowTestDriver &p_driver) {
+	return EditorAutomationAcceptanceWorkflow::run_mixed_workspace_editing(p_driver);
+}
+
+EditorAutomationAcceptanceWorkflow::Result _run_mixed_workspace_seed(EditorWorkflowTestDriver &p_driver) {
+	return EditorAutomationAcceptanceWorkflow::run_mixed_workspace_seed(p_driver);
+}
+
+EditorAutomationAcceptanceWorkflow::Result _run_mixed_workspace_restore(EditorWorkflowTestDriver &p_driver) {
+	return EditorAutomationAcceptanceWorkflow::run_mixed_workspace_restore(p_driver);
+}
+
 } // namespace
 
 HashMap<String, EditorAutomationWorkflowRegistry::WorkflowEntry> EditorAutomationWorkflowRegistry::workflows;
@@ -73,6 +85,9 @@ void EditorAutomationWorkflowRegistry::register_builtin_workflows() {
 	PackedStringArray basic_scene_aliases;
 	basic_scene_aliases.push_back("mvp");
 	_register_workflow("basic_scene_editing", &_run_basic_scene_editing, basic_scene_aliases);
+	_register_workflow("mixed_workspace_editing", &_run_mixed_workspace_editing);
+	_register_workflow("mixed_workspace_seed", &_run_mixed_workspace_seed);
+	_register_workflow("mixed_workspace_restore", &_run_mixed_workspace_restore);
 }
 
 String EditorAutomationWorkflowRegistry::resolve_canonical_name(const String &p_name) {

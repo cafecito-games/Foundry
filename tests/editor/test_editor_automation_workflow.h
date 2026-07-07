@@ -216,12 +216,32 @@ static String workflow_prepare_temp_project() {
 	return EditorWorkflowTestFixtures::prepare_basic_scene_project();
 }
 
+static String workflow_prepare_disposable_project() {
+	return EditorWorkflowTestFixtures::prepare_disposable_project();
+}
+
 static bool workflow_has_display() {
 	return EditorWorkflowTestFixtures::workflow_has_display();
 }
 
 static String workflow_run_subprocess(const List<String> &p_arguments, int &r_exit_code) {
 	return EditorWorkflowTestFixtures::workflow_run_subprocess(p_arguments, r_exit_code);
+}
+
+static bool workflow_parse_result_payload(const String &p_output, Dictionary &r_payload) {
+	if (!p_output.contains("FOUNDRY_AUTOMATION_WORKFLOW")) {
+		return false;
+	}
+	const int line_start = p_output.find("FOUNDRY_AUTOMATION_WORKFLOW") + String("FOUNDRY_AUTOMATION_WORKFLOW ").length();
+	const int line_end = p_output.find_char('\n', line_start);
+	const String json_text = line_end >= 0 ? p_output.substr(line_start, line_end - line_start) : p_output.substr(line_start);
+
+	JSON json;
+	if (json.parse(json_text.strip_edges()) != OK) {
+		return false;
+	}
+	r_payload = json.get_data();
+	return true;
 }
 
 TEST_CASE("[Editor][Automation] workflow registry resolves canonical names and aliases") {
@@ -235,6 +255,19 @@ TEST_CASE("[Editor][Automation] workflow registry resolves canonical names and a
 	const PackedStringArray names = EditorAutomationWorkflowRegistry::list_workflow_names();
 	CHECK(names.has("basic_scene_editing"));
 	CHECK(EditorAutomationWorkflowRegistry::format_unknown_workflow_message("missing").contains("basic_scene_editing"));
+}
+
+TEST_CASE("[Editor][EditorAutomation] mixed-workspace workflow registry") {
+	EditorAutomationWorkflowRegistry::register_builtin_workflows();
+	CHECK(EditorAutomationWorkflowRegistry::has_workflow("mixed_workspace_editing"));
+	CHECK(EditorAutomationWorkflowRegistry::has_workflow("mixed_workspace_seed"));
+	CHECK(EditorAutomationWorkflowRegistry::has_workflow("mixed_workspace_restore"));
+
+	const PackedStringArray names = EditorAutomationWorkflowRegistry::list_workflow_names();
+	CHECK(names.has("mixed_workspace_editing"));
+	CHECK(names.has("mixed_workspace_seed"));
+	CHECK(names.has("mixed_workspace_restore"));
+	CHECK(EditorAutomationWorkflowRegistry::format_unknown_workflow_message("missing").contains("mixed_workspace_editing"));
 }
 
 TEST_CASE("[Editor][Automation] disposable workflow project helper copies multi-scene assets") {
@@ -408,6 +441,92 @@ TEST_CASE("[Editor][EditorAutomation] mvp workflow alias subprocess") {
 	}
 
 	CHECK(exit_code == 0);
+}
+
+TEST_CASE("[Editor][EditorAutomation] mixed-workspace-editing workflow subprocess") {
+	if (!workflow_has_display()) {
+		MESSAGE("Requires a GUI display. Run with DISPLAY=:1 ./bin/foundry.linuxbsd.editor.dev.x86_64 editor open --project <project> --automation --automation-run-workflow=mixed_workspace_editing");
+		return;
+	}
+
+	const String project_path = workflow_prepare_disposable_project();
+	REQUIRE_MESSAGE(!project_path.is_empty(), "Failed to prepare a temporary mixed-workspace project copy.");
+
+	List<String> arguments;
+	arguments.push_back("editor");
+	arguments.push_back("open");
+	arguments.push_back("--headless");
+	arguments.push_back("--project");
+	arguments.push_back(project_path);
+	arguments.push_back("--automation");
+	arguments.push_back("--automation-run-workflow=mixed_workspace_editing");
+
+	int exit_code = -1;
+	const String output = workflow_run_subprocess(arguments, exit_code);
+	INFO("Subprocess output:\n", output);
+	CHECK_MESSAGE(output.contains("FOUNDRY_AUTOMATION_WORKFLOW"), "Workflow result line was not printed.");
+	CHECK(output.contains("FOUNDRY_AUTOMATION"));
+	CHECK(output.contains("\"transport\":\"none\""));
+
+	Dictionary payload;
+	REQUIRE(workflow_parse_result_payload(output, payload));
+	CHECK(String(payload.get("workflow", String())) == "mixed_workspace_editing");
+	CHECK((bool)payload.get("ok", false));
+	CHECK(exit_code == 0);
+}
+
+TEST_CASE("[Editor][EditorAutomation] mixed-workspace-restart-restore subprocess") {
+	if (!workflow_has_display()) {
+		MESSAGE("Requires a GUI display. Run with DISPLAY=:1 ./bin/foundry.linuxbsd.editor.dev.x86_64 editor open --project <project> --automation --automation-run-workflow=mixed_workspace_seed");
+		return;
+	}
+
+	const String project_path = workflow_prepare_disposable_project();
+	REQUIRE_MESSAGE(!project_path.is_empty(), "Failed to prepare a temporary mixed-workspace project copy.");
+
+	List<String> seed_arguments;
+	seed_arguments.push_back("editor");
+	seed_arguments.push_back("open");
+	seed_arguments.push_back("--headless");
+	seed_arguments.push_back("--project");
+	seed_arguments.push_back(project_path);
+	seed_arguments.push_back("--automation");
+	seed_arguments.push_back("--automation-run-workflow=mixed_workspace_seed");
+
+	int seed_exit_code = -1;
+	const String seed_output = workflow_run_subprocess(seed_arguments, seed_exit_code);
+	INFO("Seed subprocess output:\n", seed_output);
+	CHECK(seed_output.contains("FOUNDRY_AUTOMATION_WORKFLOW"));
+	CHECK(seed_output.contains("FOUNDRY_AUTOMATION"));
+	CHECK(seed_output.contains("\"transport\":\"none\""));
+
+	Dictionary seed_payload;
+	REQUIRE(workflow_parse_result_payload(seed_output, seed_payload));
+	CHECK(String(seed_payload.get("workflow", String())) == "mixed_workspace_seed");
+	CHECK((bool)seed_payload.get("ok", false));
+	REQUIRE(seed_exit_code == 0);
+
+	List<String> restore_arguments;
+	restore_arguments.push_back("editor");
+	restore_arguments.push_back("open");
+	restore_arguments.push_back("--headless");
+	restore_arguments.push_back("--project");
+	restore_arguments.push_back(project_path);
+	restore_arguments.push_back("--automation");
+	restore_arguments.push_back("--automation-run-workflow=mixed_workspace_restore");
+
+	int restore_exit_code = -1;
+	const String restore_output = workflow_run_subprocess(restore_arguments, restore_exit_code);
+	INFO("Restore subprocess output:\n", restore_output);
+	CHECK(restore_output.contains("FOUNDRY_AUTOMATION_WORKFLOW"));
+	CHECK(restore_output.contains("FOUNDRY_AUTOMATION"));
+	CHECK(restore_output.contains("\"transport\":\"none\""));
+
+	Dictionary restore_payload;
+	REQUIRE(workflow_parse_result_payload(restore_output, restore_payload));
+	CHECK(String(restore_payload.get("workflow", String())) == "mixed_workspace_restore");
+	CHECK((bool)restore_payload.get("ok", false));
+	CHECK(restore_exit_code == 0);
 }
 
 TEST_CASE("[Editor][EditorAutomation] unknown workflow subprocess exits with guidance") {

@@ -39,6 +39,7 @@
 #include "editor/editor_string_names.h"
 #include "editor/editor_tile_drop_overlay.h"
 #include "editor/scene/editor_scene_tabs.h"
+#include "editor/script/script_editor_view.h"
 #include "editor/workspace/scene_tab.h"
 #include "editor/workspace/workspace_tab_bar.h"
 #include "editor/workspace/workspace_tab_type.h"
@@ -174,7 +175,12 @@ bool WorkspacePane::_has_legacy_script_content() const {
 	if (!script_leaf || !is_script_pane()) {
 		return false;
 	}
-	return !script_leaf->get_script_path().is_empty() || script_leaf->get_script_editor_view() != nullptr;
+	if (!script_leaf->get_script_path().is_empty()) {
+		return true;
+	}
+	ScriptEditorView *view = script_leaf->get_script_editor_view();
+	TabContainer *view_tabs = view ? view->get_tab_container() : nullptr;
+	return view_tabs && view_tabs->get_tab_count() > 0;
 }
 
 void WorkspacePane::_unmount_active_tab() {
