@@ -843,6 +843,16 @@ void ScriptEditorView::_file_dialog_action(const String &p_file) {
 			break;
 		}
 		case FILE_MENU_OPEN: {
+			// Non-script text documents are owned by the workspace TextTab; route
+			// them through the shared open path so the script editor never holds a
+			// second buffer for a file a TextTab also owns. Scripts stay here.
+			List<String> script_extensions;
+			ResourceLoader::get_recognized_extensions_for_type("Script", &script_extensions);
+			if (!script_extensions.find(p_file.get_extension()) && EditorNode::get_singleton()) {
+				controller->set_file_dialog_option(-1);
+				EditorNode::get_singleton()->load_resource(p_file);
+				break;
+			}
 			if (!is_visible_in_tree()) {
 				EditorNode::get_singleton()->reveal_script_leaf();
 			}

@@ -211,10 +211,17 @@ bool TextTabType::is_resource_available(const WorkspaceTab &p_tab) const {
 	if (path.is_empty()) {
 		return true;
 	}
-	if (path.is_resource_file()) {
-		return FileAccess::exists(path);
+	const String base_path = path.is_resource_file() ? path : path.get_slice("::", 0);
+	if (!FileAccess::exists(base_path)) {
+		return false;
 	}
-	return FileAccess::exists(path.get_slice("::", 0));
+	// Also require the file to load as text: an existing-but-unreadable or
+	// invalid-UTF-8 file is dropped with a diagnostic on restore rather than
+	// mounted as an empty buffer that a later save could overwrite the file with.
+	Ref<TextDocument> probe;
+	probe.instantiate();
+	probe->set_path(path);
+	return probe->load() == OK;
 }
 
 Ref<TextDocument> TextTabType::get_document_for(int p_stable_id) const {
