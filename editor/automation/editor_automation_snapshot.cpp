@@ -383,7 +383,16 @@ class EditorAutomationSnapshotBuilder {
 				const Dictionary metadata = EditorAutomationWorkflow::metadata_for_tree_item(p_tree, item);
 				// Column -1 yields the full-width row rect, which is the target an
 				// agent clicks to select/activate the item.
-				const Rect2i bounds = _virtual_item_bounds(p_tree, p_tree->get_item_rect(item, -1));
+				Rect2 item_rect = p_tree->get_item_rect(item, -1);
+				// get_item_rect anchors the row's y to the scroll offset from the last
+				// draw (theme_cache.offset), which lags a pending act(scroll) until the
+				// next redraw. Re-anchor to the live scroll value so tree_item bounds
+				// share the list_item path's reference frame and stay correct when
+				// observe_ui runs before a redraw. Only y needs correcting: the
+				// full-width row rect starts at local x=0 regardless of horizontal
+				// scroll.
+				item_rect.position.y += p_tree->get_drawn_scroll_offset().y - p_tree->get_scroll().y;
+				const Rect2i bounds = _virtual_item_bounds(p_tree, item_rect);
 				_add_virtual_element(p_parent_index, "tree_item", key, "tree_item", item_text, item_text, item->is_selected(0), metadata, bounds);
 			}
 			item = item->get_next_in_tree();

@@ -897,6 +897,12 @@ public:
 	TreeItem *get_item_with_metadata(const Variant &p_find, int p_column = -1) const;
 
 	Point2 get_scroll() const;
+	// Scroll offset that was applied during the last draw. Item rects returned by
+	// get_item_rect() are anchored to this cached value, which lags a pending
+	// scrollbar change until the next redraw. Callers that need geometry relative
+	// to the live scroll before a redraw (e.g. the editor automation snapshot) can
+	// re-anchor with get_scroll().
+	Point2 get_drawn_scroll_offset() const;
 	void scroll_to_item(TreeItem *p_item, bool p_center_on_item = false);
 	void set_h_scroll_enabled(bool p_enable);
 	bool is_h_scroll_enabled() const;
