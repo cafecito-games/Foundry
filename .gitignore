@@ -43,6 +43,14 @@ run_ninja_env.bat
 .import/
 /foundry_extension_interface.h
 /foundry_extension_interface.json
+
+# Editor data directory produced when headless editor tests bootstrap EditorPaths
+# against the repository root. Not a project, so this is throwaway state.
+/.foundry/
+# Per-run editor UI state (script editor cache, etc.) written into the Foundry
+# Script test project's data dir. The tracked fixtures under .foundry/ (fsignore,
+# global class cache) stay committed; only the transient editor/ subdir is ignored.
+/modules/foundry_script/tests/scripts/.foundry/editor/
 extension_api.json
 logs/
 

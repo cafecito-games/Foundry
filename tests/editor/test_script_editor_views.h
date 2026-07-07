@@ -194,8 +194,12 @@ TEST_CASE("[Editor][focused-view-global-actions] Global controller routes to foc
 	ScriptEditorView *view_a = h.controller->create_view_for_leaf(leaf_a);
 	ScriptEditorView *view_b = h.controller->create_view_for_leaf(leaf_b);
 
-	Ref<TextFile> script_a = make_text_file("res://focused_a.txt", "a");
-	Ref<TextFile> script_b = make_text_file("res://focused_b.txt", "b");
+	// Back the scripts with files under the shared scratch space so save_current_script()
+	// below does not persist a stray fixture into the tracked project tree.
+	const String path_a = write_temp_text_file("focused_a.txt", "a");
+	const String path_b = write_temp_text_file("focused_b.txt", "b");
+	Ref<TextFile> script_a = make_text_file(path_a, "a");
+	Ref<TextFile> script_b = make_text_file(path_b, "b");
 	view_a->edit(script_a, false);
 	view_b->edit(script_b, false);
 	h.pump();
@@ -205,12 +209,12 @@ TEST_CASE("[Editor][focused-view-global-actions] Global controller routes to foc
 	int line = 0;
 	int column = 0;
 	CHECK(h.controller->get_current_script_view_state(path, line, column));
-	CHECK(path == "res://focused_b.txt");
+	CHECK(path == path_b);
 
 	h.controller->save_current_script();
 	h.controller->set_focused_view(view_a);
 	CHECK(h.controller->get_current_script_view_state(path, line, column));
-	CHECK(path == "res://focused_a.txt");
+	CHECK(path == path_a);
 
 	h.host->remove_child(leaf_a);
 	h.host->remove_child(leaf_b);
