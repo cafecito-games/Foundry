@@ -372,6 +372,23 @@ TEST_CASE("[Editor][script-tab-canonical-reveal] Opening a script twice reveals 
 	memdelete(controller);
 }
 
+TEST_CASE("[Editor][script-feature-gate] Controller exposes a script-feature toggle") {
+	ScriptControllerHarness h;
+	h.mount();
+
+	// The script feature is enabled by default; the editor gates script reveal on
+	// this flag instead of on a hidden main-screen button.
+	CHECK(h.controller->is_feature_enabled());
+
+	h.controller->set_feature_enabled(false);
+	CHECK_FALSE(h.controller->is_feature_enabled());
+
+	h.controller->set_feature_enabled(true);
+	CHECK(h.controller->is_feature_enabled());
+
+	h.unmount();
+}
+
 TEST_CASE("[Editor][script-tab-in-scene-pane] Script and scene tabs coexist in one pane") {
 	TestSceneWorkspace::WorkspaceHarness h;
 	h.mount();

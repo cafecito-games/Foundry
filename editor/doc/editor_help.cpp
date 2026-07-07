@@ -2501,7 +2501,7 @@ void EditorHelp::_update_doc() {
 void EditorHelp::_request_help(const String &p_string) {
 	Error err = _goto_desc(p_string);
 	if (err == OK) {
-		EditorNode::get_singleton()->get_editor_main_screen()->select(EditorMainScreen::EDITOR_SCRIPT);
+		EditorNode::get_singleton()->reveal_script_leaf();
 	}
 }
 
@@ -4411,7 +4411,7 @@ void EditorHelpBit::_go_to_url(const String &p_what) {
 
 void EditorHelpBit::_go_to_help(const String &p_what) {
 	if (ScriptEditor::get_singleton()) {
-		EditorNode::get_singleton()->get_editor_main_screen()->select(EditorMainScreen::EDITOR_SCRIPT);
+		EditorNode::get_singleton()->reveal_script_leaf();
 		ScriptEditor::get_singleton()->goto_help(p_what);
 	} else {
 		_go_to_url(p_what);

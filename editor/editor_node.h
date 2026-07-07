@@ -90,6 +90,7 @@ class EditorPluginList;
 class EditorResourcePreview;
 class EditorResourceConversionPlugin;
 class EditorRunBar;
+class ScriptEditorPlugin;
 class EditorSceneContext;
 class EditorSceneWorkspace;
 class EditorSceneTabs;
@@ -319,6 +320,9 @@ private:
 	FBXImporterManager *fbx_importer_manager = nullptr;
 
 	Vector<EditorPlugin *> editor_plugins;
+	// The script editor is not a main-screen plugin; keep a direct handle so object
+	// edits it owns (scripts, text files, JSON) route to it explicitly.
+	ScriptEditorPlugin *script_editor_plugin = nullptr;
 	bool _initializing_plugins = false;
 	HashMap<String, EditorPlugin *> addon_name_to_plugin;
 	LocalVector<String> pending_addons;
@@ -929,7 +933,14 @@ public:
 
 	// Open or reveal the workspace script leaf hosting the shared script surface,
 	// splitting beside the focused scene tile when no script leaf exists yet.
+	// Does nothing while the script feature is disabled by a feature profile.
 	void reveal_script_leaf();
+
+	// Script-feature availability, driven by the active feature profile. Replaces
+	// the hidden main-screen button that used to track this; the state lives on
+	// ScriptEditorController so the reveal path and the script leaf both honor it.
+	void set_script_feature_enabled(bool p_enabled);
+	bool is_script_feature_enabled() const;
 	void edit_previous_item();
 	void edit_item(Object *p_object, Object *p_editing_owner);
 	void push_node_item(Node *p_node);

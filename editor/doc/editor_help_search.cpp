@@ -196,7 +196,7 @@ void EditorHelpSearch::_confirmed() {
 	}
 
 	// Activate the script editor and emit the signal with the documentation link to display.
-	EditorNode::get_singleton()->get_editor_main_screen()->select(EditorMainScreen::EDITOR_SCRIPT);
+	EditorNode::get_singleton()->reveal_script_leaf();
 
 	emit_signal(SNAME("go_to_help"), item->get_metadata(0));
 

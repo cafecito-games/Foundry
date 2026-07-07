@@ -42,10 +42,10 @@ class VBoxContainer;
  * Main-screen switcher for the editor shell.
  *
  * Scene modes (2D/3D) live in scene_mode_vbox and are reparented into the
- * focused workspace tile. Script lives in app_screen_vbox at the workspace
- * level. Game lives in global_screen_vbox and overlays the workspace region
- * as the single app-level running-game screen (see docs/superpowers/specs/
- * 2026-07-04-multi-scene-tiled-workspace-design.md).
+ * focused workspace tile. Game lives in global_screen_vbox and overlays the
+ * workspace region as the single app-level running-game screen (see
+ * docs/superpowers/specs/2026-07-04-multi-scene-tiled-workspace-design.md).
+ * The script editor is not a main screen; it edits into a workspace leaf.
  */
 class EditorMainScreen : public PanelContainer {
 	FOUNDRY_CLASS(EditorMainScreen, PanelContainer);
@@ -54,19 +54,16 @@ public:
 	enum EditorTable {
 		EDITOR_2D = 0,
 		EDITOR_3D,
-		EDITOR_SCRIPT,
 		EDITOR_GAME,
 	};
 
 	enum ScreenPlacement {
 		SCREEN_SCENE_MODE,
-		SCREEN_APP,
 		SCREEN_GLOBAL,
 	};
 
 private:
 	VBoxContainer *scene_mode_vbox = nullptr;
-	VBoxContainer *app_screen_vbox = nullptr;
 	VBoxContainer *global_screen_vbox = nullptr;
 	EditorPlugin *selected_plugin = nullptr;
 
@@ -74,10 +71,6 @@ private:
 	Vector<Button *> buttons;
 	Vector<EditorPlugin *> editor_table;
 	HashMap<String, EditorPlugin *> main_editor_plugins;
-
-	// Script has no toolbar tab (it opens as a workspace leaf), so its availability
-	// is tracked here instead of via its hidden button's visibility.
-	bool app_screen_enabled = true;
 
 	int _get_current_main_editor() const;
 	ScreenPlacement _get_plugin_placement(const String &p_plugin_name) const;
@@ -107,7 +100,6 @@ public:
 	bool is_global_screen_selected() const;
 
 	VBoxContainer *get_scene_mode_control() const;
-	VBoxContainer *get_app_screen_control() const;
 	VBoxContainer *get_global_screen_control() const;
 	VBoxContainer *get_control() const;
 

@@ -838,7 +838,7 @@ void ScriptEditorView::_file_dialog_action(const String &p_file) {
 		}
 		case FILE_MENU_OPEN: {
 			if (!is_visible_in_tree()) {
-				EditorNode::get_singleton()->get_editor_main_screen()->select(EditorMainScreen::EDITOR_SCRIPT);
+				EditorNode::get_singleton()->reveal_script_leaf();
 			}
 			open_file(p_file);
 			controller->set_file_dialog_option(-1);

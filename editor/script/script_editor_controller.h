@@ -95,6 +95,7 @@ class ScriptEditorController : public Object {
 	bool convert_indent_on_save = false;
 	bool format_on_save = false;
 	bool external_editor_active = false;
+	bool feature_enabled = true;
 
 	int file_dialog_option = -1;
 
@@ -174,6 +175,12 @@ public:
 	bool get_format_on_save() const { return format_on_save; }
 	bool is_external_editor_active() const { return external_editor_active; }
 	void set_external_editor_active(bool p_active) { external_editor_active = p_active; }
+
+	// Whether the script feature is available (a feature profile can disable it).
+	// The editor gates revealing the script workspace leaf on this flag, which
+	// replaces the availability that a hidden main-screen button used to track.
+	bool is_feature_enabled() const { return feature_enabled; }
+	void set_feature_enabled(bool p_enabled) { feature_enabled = p_enabled; }
 
 	void set_trim_trailing_whitespace_on_save(bool p_enabled) { trim_trailing_whitespace_on_save = p_enabled; }
 	void set_trim_final_newlines_on_save(bool p_enabled) { trim_final_newlines_on_save = p_enabled; }
