@@ -241,12 +241,7 @@ void ScriptEditorController::_connect_global_signals() {
 }
 
 void ScriptEditorController::_on_request_help(const String &p_topic) {
-	if (_open_help_in_workspace(p_topic)) {
-		return;
-	}
-	if (ScriptEditorView *view = _active_view()) {
-		view->_help_class_open(p_topic);
-	}
+	_open_help_in_workspace(p_topic);
 }
 
 void ScriptEditorController::_on_request_help_search(const String &p_text) {
@@ -772,12 +767,6 @@ void ScriptEditorController::goto_help(const String &p_desc) {
 	_help_class_goto(p_desc);
 }
 
-void ScriptEditorController::update_doc(const String &p_name) {
-	for (ScriptEditorView *view : views) {
-		view->update_doc(p_name);
-	}
-}
-
 void ScriptEditorController::clear_docs_from_script(const Ref<Script> &p_script) {
 	for (ScriptEditorView *view : views) {
 		view->clear_docs_from_script(p_script);
@@ -1091,14 +1080,8 @@ bool ScriptEditorController::_open_help_in_workspace(const String &p_topic) {
 }
 
 void ScriptEditorController::_help_class_goto(const String &p_desc) {
-	// Class reference lives in the workspace as its own help tab. Fall back to the
-	// legacy in-view help path only when no workspace is available.
-	if (_open_help_in_workspace(p_desc)) {
-		return;
-	}
-	if (ScriptEditorView *view = _active_view()) {
-		view->goto_help(p_desc);
-	}
+	// Class reference lives in the workspace as its own help tab.
+	_open_help_in_workspace(p_desc);
 }
 
 void ScriptEditorController::_on_find_in_files_result_selected(const String &fpath, int line_number, int begin, int end) {

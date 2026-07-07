@@ -111,7 +111,7 @@ class ScriptEditorController : public Object {
 	void _connect_global_signals();
 	void _on_request_help(const String &p_topic);
 	// Route a help topic to the workspace as its own help tab. Returns false when
-	// no workspace exists so callers fall back to the legacy in-view help path.
+	// no workspace exists to host the page.
 	bool _open_help_in_workspace(const String &p_topic);
 	void _on_request_help_search(const String &p_text);
 	void _on_scene_closed(const String &p_path);
@@ -269,7 +269,6 @@ public:
 	void notify_script_changed(const Ref<Script> &p_script);
 
 	void goto_help(const String &p_desc);
-	void update_doc(const String &p_name);
 	void clear_docs_from_script(const Ref<Script> &p_script);
 	void update_docs_from_script(const Ref<Script> &p_script);
 

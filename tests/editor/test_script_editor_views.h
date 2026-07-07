@@ -646,4 +646,44 @@ TEST_CASE("[Editor][script-tab-focus-routes-controller] Focusing a script tab ro
 	memdelete(controller);
 }
 
+TEST_CASE("[Editor][script-view-help-single-home] Script view no longer hosts class reference") {
+	ScriptControllerHarness h;
+	h.mount();
+	h.pump();
+
+	ScriptLeaf *leaf = memnew(ScriptLeaf);
+	h.host->add_child(leaf);
+	h.pump();
+
+	ScriptEditorView *view = h.controller->create_view_for_leaf(leaf);
+	REQUIRE(view != nullptr);
+
+	Ref<TextFile> script = make_text_file("res://reference_home.txt", "just a script");
+	CHECK(view->edit(script, true));
+	h.pump();
+	const int scripts_only_tab_count = view->get_tab_container()->get_tab_count();
+
+	// Class reference now lives solely in the workspace as its own help tab, so the
+	// script view must not persist an "open_help" section when saving its layout.
+	Ref<ConfigFile> config;
+	config.instantiate();
+	view->get_view_layout(config, "leaf");
+	REQUIRE_FALSE(config->has_section_key("leaf", "open_help"));
+
+	// Restoring a legacy layout that still carries "open_help" must be ignored rather
+	// than reopening documentation inside the script tab strip.
+	Ref<ConfigFile> legacy;
+	legacy.instantiate();
+	Array helps;
+	helps.push_back("Node");
+	legacy->set_value("leaf", "open_help", helps);
+	view->set_view_layout(legacy, "leaf");
+	h.pump();
+	CHECK(view->get_tab_container()->get_tab_count() == scripts_only_tab_count);
+
+	h.host->remove_child(leaf);
+	memdelete(leaf);
+	h.unmount();
+}
+
 } // namespace TestScriptEditorViews
