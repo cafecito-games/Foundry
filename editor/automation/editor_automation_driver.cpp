@@ -107,7 +107,7 @@ EditorAutomationSelectorResult _resolve_target(const EditorAutomationSnapshot &p
 		EditorAutomationSelectorResult result;
 		result.status = EditorAutomationSelectorStatus::INVALID_SELECTOR;
 		result.error_kind = "invalid_target";
-		result.message = "Action target is empty.";
+		result.message = "act requires a 'selector' (use handle/id/role/name); 'target' is only the drag destination.";
 		return result;
 	}
 	return EditorAutomationSelector::resolve(p_snapshot, p_target);
