@@ -83,6 +83,18 @@ The MCP server exposes a small set of generic tools:
 - `read_editor_state`: returns selected nodes, open scenes, active scene, current script, playing state, and unsaved state.
 - `read_editor_log`: returns editor log entries, warnings, errors, and recent action-related messages.
 - `run_command`: executes command palette commands by key or name as a reliable bridge into existing editor actions.
+- `capture_screenshot`: captures an on-demand PNG of the editor — the whole window by default, or cropped to a single element when a selector is given.
+
+#### On-demand screenshots
+
+`capture_screenshot` exposes the existing screenshot infrastructure (`EditorAutomationScreenshot`) as a first-class tool so an agent can capture the current UI at any moment, not only as a failure diagnostic. This unblocks remote, asynchronous visual review: an agent can hand whole-window or element-focused images to a review surface so a human can verify an editor change without a local build.
+
+- **Input (all optional):** a `selector` (or its `element` alias, matching the shape `find_elements`/`act` accept) targeting an element for a cropped capture; `padding` pixels added around the element bounds for cropped captures (default 16); `include_internal` to resolve the selector against internal implementation children; and `max_screenshot_bytes` to bound the inline payload. With no selector, the full editor window is captured.
+- **Output:** a `screenshot` attachment identical in shape to the failure-path attachment (`encode_image_attachment`) — a base64 PNG plus `capture_mode` (`"full_window"` or `"cropped"`), pixel dimensions, viewport metadata, and the source crop rectangle — so consumers already handling failure screenshots need no new decoder. The top-level result mirrors this with `ok` and `capture_mode`.
+- **Selector semantics:** an unresolvable or ambiguous selector fails with the same structured selector diagnostics as `act`/`find_elements` (for example `no_match` or `ambiguous_selector`) rather than crashing or returning an empty image; only a selector that resolves to exactly one element is cropped. A single match that has no on-screen bounds (an off-screen/zero-size control, or a virtual item with no rect) fails with `element_not_capturable` instead of silently returning a full-window image.
+- **Coordinate space:** a cropped capture targets the matched element's own window/viewport, so the crop rectangle (the element bounds in that viewport's canvas space) aligns with the captured image even for elements in secondary windows or subviewports.
+- **Internal-child policy:** element-focused capture honors the same internal-child policy as `observe_ui`/`find_elements` — it captures the user-facing control, not its hidden internals, unless `include_internal` is set.
+- **Single capture path:** the tool reuses `EditorAutomationScreenshot` (shared viewport acquisition plus `encode_image_attachment`); it does not introduce a second capture or encode path.
 
 Read-only MCP resources expose snapshots that are useful as context:
 

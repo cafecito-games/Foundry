@@ -74,6 +74,16 @@ public:
 			const Dictionary &p_selector,
 			const EditorAutomationScreenshotOptions &p_options);
 
+	// On-demand capture of the current editor viewport. When p_crop_to_element is
+	// true the image is cropped to p_element_bounds (grown by crop_padding_px and
+	// clamped to the viewport), yielding capture_mode "cropped"; otherwise the
+	// whole window is captured as "full_window". Shares the same viewport
+	// acquisition and encode path as capture_for_failure.
+	static EditorAutomationScreenshotAttachment capture_on_demand(
+			const EditorAutomationScreenshotOptions &p_options,
+			bool p_crop_to_element,
+			const Rect2i &p_element_bounds);
+
 	static EditorAutomationScreenshotAttachment encode_image_attachment(
 			const Ref<Image> &p_image,
 			const EditorAutomationScreenshotOptions &p_options,
@@ -84,6 +94,7 @@ public:
 
 private:
 	static Viewport *_resolve_capture_viewport(Node *p_snapshot_root);
+	static Ref<Image> _acquire_viewport_image(Node *p_snapshot_root, Dictionary &r_viewport_meta);
 	static Rect2i _resolve_highlight_rect(const EditorAutomationSnapshot &p_snapshot, const Dictionary &p_selector);
 	static Dictionary _rect_to_dictionary(const Rect2i &p_rect);
 };

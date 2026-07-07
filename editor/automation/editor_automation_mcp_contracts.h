@@ -310,6 +310,14 @@ struct EditorAutomationMCPPollEventsInput {
 	Dictionary to_dictionary() const;
 };
 
+struct EditorAutomationMCPCaptureScreenshotInput {
+	Dictionary values;
+
+	static Ref<EditorAutomationMCPJsonSchema> schema();
+	static EditorAutomationMCPParseResult<EditorAutomationMCPCaptureScreenshotInput> parse(const Dictionary &p_dict);
+	Dictionary to_dictionary() const;
+};
+
 class EditorAutomationMCPContracts {
 public:
 	// Shared enum helpers are used by both schemas and parsers. Adding an enum

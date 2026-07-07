@@ -344,14 +344,19 @@ Ref<EditorAutomationMCPJsonSchema> _ok_result_schema() {
 	return schema;
 }
 
+PackedStringArray _screenshot_capture_mode_enum_values() {
+	PackedStringArray capture_modes;
+	capture_modes.push_back("full_window");
+	capture_modes.push_back("cropped");
+	return capture_modes;
+}
+
 Ref<EditorAutomationMCPJsonSchema> _failure_attachment_schema() {
 	PackedStringArray statuses;
 	statuses.push_back("available");
 	statuses.push_back("unavailable");
 	statuses.push_back("truncated");
-	PackedStringArray capture_modes;
-	capture_modes.push_back("full_window");
-	capture_modes.push_back("cropped");
+	const PackedStringArray capture_modes = _screenshot_capture_mode_enum_values();
 
 	Ref<EditorAutomationMCPJsonSchema> schema = EditorAutomationMCPJsonSchema::object(
 			"Optional screenshot attachment included in failure details when attach_screenshot_on_failure was requested.");
@@ -1415,6 +1420,50 @@ Dictionary EditorAutomationMCPPollEventsInput::to_dictionary() const {
 	return values;
 }
 
+Ref<EditorAutomationMCPJsonSchema> EditorAutomationMCPCaptureScreenshotInput::schema() {
+	Ref<EditorAutomationMCPJsonSchema> schema = EditorAutomationMCPJsonSchema::object(
+			"Input for capture_screenshot. Omit selector/element to capture the full editor window; provide a selector that resolves to exactly one element to capture a cropped screenshot of that element.");
+	schema->add_property("selector", EditorAutomationMCPSelector::schema("Semantic selector for the element to capture. When omitted, the whole editor window is captured."));
+	schema->add_property("element", EditorAutomationMCPSelector::schema("Alias for 'selector': the element to capture, matching the shape returned by observe_ui/find_elements. Provide either 'selector' or 'element', not both."));
+	schema->add_property("padding", EditorAutomationMCPJsonSchema::integer("Padding in pixels added around the element bounds for cropped captures (default 16). Ignored for full-window captures."));
+	schema->add_property("include_internal", EditorAutomationMCPJsonSchema::boolean("Resolve the selector against internal implementation children too (default false). Required when targeting an element observed with include_internal."));
+	schema->add_property("max_screenshot_bytes", EditorAutomationMCPJsonSchema::integer("Maximum inline screenshot payload size in bytes (default 524288). Larger captures are reported as truncated."));
+	return schema;
+}
+
+EditorAutomationMCPParseResult<EditorAutomationMCPCaptureScreenshotInput> EditorAutomationMCPCaptureScreenshotInput::parse(const Dictionary &p_dict) {
+	EditorAutomationMCPCaptureScreenshotInput input;
+	EditorAutomationMCPParseError error;
+
+	// `element` is an alias for `selector` because observe_ui/find_elements
+	// return `element` objects, so capturing "the element" is the intuitive shape.
+	if (p_dict.has("selector") && p_dict.has("element")) {
+		return EditorAutomationMCPParseResult<EditorAutomationMCPCaptureScreenshotInput>::invalid("element", "Provide either 'selector' or 'element' (its alias), not both.");
+	}
+	const String selector_key = p_dict.has("element") ? "element" : "selector";
+	if (p_dict.has(selector_key)) {
+		const EditorAutomationMCPParseResult<EditorAutomationMCPSelector> selector = EditorAutomationMCPSelector::parse(p_dict.get(selector_key, Variant()), selector_key);
+		if (!selector.ok) {
+			return EditorAutomationMCPParseResult<EditorAutomationMCPCaptureScreenshotInput>::invalid(selector.error.field, selector.error.message);
+		}
+		input.values["selector"] = selector.value.to_dictionary();
+	}
+	if (!_read_optional_int(p_dict, "padding", input.values, error)) {
+		return EditorAutomationMCPParseResult<EditorAutomationMCPCaptureScreenshotInput>::invalid(error.field, error.message);
+	}
+	if (!_read_optional_bool(p_dict, "include_internal", input.values, error)) {
+		return EditorAutomationMCPParseResult<EditorAutomationMCPCaptureScreenshotInput>::invalid(error.field, error.message);
+	}
+	if (!_read_optional_int(p_dict, "max_screenshot_bytes", input.values, error)) {
+		return EditorAutomationMCPParseResult<EditorAutomationMCPCaptureScreenshotInput>::invalid(error.field, error.message);
+	}
+	return EditorAutomationMCPParseResult<EditorAutomationMCPCaptureScreenshotInput>::success(input);
+}
+
+Dictionary EditorAutomationMCPCaptureScreenshotInput::to_dictionary() const {
+	return values;
+}
+
 PackedStringArray EditorAutomationMCPContracts::action_names() {
 	PackedStringArray actions;
 	actions.push_back("click");
@@ -1612,6 +1661,19 @@ Array EditorAutomationMCPContracts::build_tools_list() {
 		tools.push_back(_make_tool("poll_events",
 				"Returns queued editor log/automation events. The POST-only MCP transport cannot push notifications; poll this tool (or read_editor_log) instead.",
 				EditorAutomationMCPPollEventsInput::schema(), output)
+						.to_dictionary());
+	}
+
+	{
+		Ref<EditorAutomationMCPJsonSchema> output = EditorAutomationMCPJsonSchema::object(
+				"Output from capture_screenshot. On success, screenshot carries the base64 PNG and capture metadata; when ok is false, inspect kind, message, and details.");
+		output->add_property("ok", EditorAutomationMCPJsonSchema::boolean("True when a screenshot was captured and encoded."));
+		output->add_property("capture_mode", EditorAutomationMCPJsonSchema::enum_string(_screenshot_capture_mode_enum_values(), "Whether the returned image is the full window or cropped to the targeted element."));
+		output->add_property("screenshot", _failure_attachment_schema());
+		_add_failure_details_output_props(output);
+		tools.push_back(_make_tool("capture_screenshot",
+				"Captures an on-demand PNG screenshot of the editor: the whole window by default, or cropped to a single element when a selector is given. Reuses the same encoding as failure-path screenshots.",
+				EditorAutomationMCPCaptureScreenshotInput::schema(), output)
 						.to_dictionary());
 	}
 

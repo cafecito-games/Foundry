@@ -37,6 +37,7 @@
 #include "editor/automation/editor_automation_log.h"
 #include "editor/automation/editor_automation_mcp_contracts.h"
 #include "editor/automation/editor_automation_mcp_schemas.h"
+#include "editor/automation/editor_automation_screenshot.h"
 #include "editor/automation/editor_automation_selector.h"
 #include "editor/automation/editor_automation_snapshot.h"
 #include "editor/automation/editor_automation_state.h"
@@ -45,6 +46,10 @@
 
 #include "core/io/json.h"
 #include "core/math/math_funcs.h"
+#include "core/object/object.h"
+
+#include "scene/main/node.h"
+#include "scene/main/window.h"
 
 const char *EditorAutomationMCPDispatcher::PROTOCOL_VERSION = "2025-11-25";
 
@@ -537,6 +542,13 @@ Dictionary EditorAutomationMCPDispatcher::_handle_tools_call(const Dictionary &p
 			return Dictionary();
 		}
 		structured = _tool_poll_events(input.to_dictionary(), is_error);
+	} else if (name == "capture_screenshot") {
+		EditorAutomationMCPCaptureScreenshotInput input;
+		if (!_parse_tool_input(name, arguments, input, r_error)) {
+			r_ok = false;
+			return Dictionary();
+		}
+		structured = _tool_capture_screenshot(input.to_dictionary(), is_error);
 	} else {
 		r_ok = false;
 		r_error["code"] = METHOD_NOT_FOUND;
@@ -786,6 +798,126 @@ Dictionary EditorAutomationMCPDispatcher::_tool_find_elements(const Dictionary &
 		r_is_error = true;
 		result = _enrich_selector_failure(result, selector_result, selector, snapshot, p_args);
 	}
+	return result;
+}
+
+Dictionary EditorAutomationMCPDispatcher::_tool_capture_screenshot(const Dictionary &p_args, bool &r_is_error) {
+	r_is_error = false;
+
+	const Dictionary selector = _read_dict(p_args, "selector");
+	const bool include_internal = _read_bool(p_args, "include_internal", false);
+
+	EditorAutomationScreenshotOptions screenshot_options;
+	screenshot_options.enabled = true;
+	screenshot_options.format = "png";
+	screenshot_options.snapshot_root = _snapshot_root();
+	screenshot_options.max_bytes = options.max_screenshot_bytes;
+	if (p_args.has("max_screenshot_bytes")) {
+		screenshot_options.max_bytes = _read_int(p_args, "max_screenshot_bytes", options.max_screenshot_bytes);
+	}
+	if (p_args.has("padding")) {
+		const int padding = _read_int(p_args, "padding", screenshot_options.crop_padding_px);
+		screenshot_options.crop_padding_px = padding < 0 ? 0 : padding;
+	}
+
+	// Resolve the element up front so unresolvable/ambiguous selectors fail with
+	// the same structured error semantics as act (no crash, no empty image).
+	bool crop_to_element = false;
+	Rect2i element_bounds;
+	if (!selector.is_empty()) {
+		EditorAutomationSnapshotOptions snapshot_options;
+		snapshot_options.include_internal = include_internal;
+		const EditorAutomationSnapshot snapshot = _snapshot_root() != nullptr
+				? EditorAutomationSnapshot::capture_from_node(_snapshot_root(), snapshot_options)
+				: EditorAutomationSnapshot::capture_from_editor(snapshot_options);
+
+		const EditorAutomationSelectorResult selector_result = EditorAutomationSelector::resolve(snapshot, selector);
+		const bool resolved_to_single = selector_result.status == EditorAutomationSelectorStatus::OK &&
+				selector_result.match_indices.size() == 1;
+		if (!resolved_to_single) {
+			r_is_error = true;
+			Dictionary result = selector_result.to_dictionary();
+			result["ok"] = false;
+			return _enrich_selector_failure(result, selector_result, selector, snapshot, p_args);
+		}
+
+		const EditorAutomationElement &element = snapshot.get_element(selector_result.match_indices[0]);
+		element_bounds = element.bounds;
+
+		// A single match with no on-screen bounds (e.g. an off-screen or zero-size
+		// element, or a virtual item that never reports a rect) cannot be cropped.
+		// Fail loudly instead of silently returning a full-window image for an
+		// explicit element-focused request.
+		if (element_bounds.size.x <= 0 || element_bounds.size.y <= 0) {
+			r_is_error = true;
+			Dictionary result;
+			result["ok"] = false;
+			result["kind"] = "element_not_capturable";
+			result["message"] = "The targeted element has no on-screen bounds to crop to.";
+			result["element"] = EditorAutomationDiagnosticsBuilder::element_summary(element);
+			return result;
+		}
+		crop_to_element = true;
+
+		// Capture the matched element's own window/viewport so the crop rect
+		// (element bounds in that viewport's canvas space) aligns with the
+		// captured image, even for elements in secondary windows or subviewports.
+		// Virtual elements (object_id 0) keep the default capture viewport.
+		if (element.object_id != 0) {
+			if (Node *element_node = Object::cast_to<Node>(ObjectDB::get_instance(ObjectID(element.object_id)))) {
+				screenshot_options.snapshot_root = element_node;
+
+				// A Window node is itself a Viewport, so capturing its own texture
+				// yields exactly the window content in 0-based coordinates. A
+				// Window element's bounds, however, come from get_position()/
+				// get_size() in its parent/embedder space, so cropping by those
+				// bounds would offset into the wrong region. Capture the window
+				// whole instead — that already is the element-focused image.
+				if (Object::cast_to<Window>(element_node) != nullptr) {
+					crop_to_element = false;
+				}
+			}
+		}
+	}
+
+	const EditorAutomationScreenshotAttachment attachment = EditorAutomationScreenshot::capture_on_demand(
+			screenshot_options, crop_to_element, element_bounds);
+
+	// An explicit element-focused request that produced an image but could not
+	// actually be cropped (the element lies outside the captured viewport — e.g.
+	// scrolled off-screen or clipped) falls back to a full-window image inside
+	// capture_on_demand. Report that as element_not_capturable instead of the
+	// wrong image, regardless of whether that fallback image also tripped the
+	// size limit (status "truncated"); a size limit is not the real failure here.
+	// A fully unavailable capture keeps capture_mode set, so exclude it and let
+	// the status handling below report screenshot_unavailable.
+	if (crop_to_element && attachment.capture_mode != "cropped" &&
+			(attachment.status == "available" || attachment.status == "truncated")) {
+		r_is_error = true;
+		Dictionary result;
+		result["ok"] = false;
+		result["kind"] = "element_not_capturable";
+		result["message"] = "The targeted element is not within the captured viewport.";
+		return result;
+	}
+
+	Dictionary result;
+	result["screenshot"] = attachment.to_dictionary();
+	if (attachment.status != "available") {
+		r_is_error = true;
+		result["ok"] = false;
+		// Distinguish a size-limit failure from capture being unsupported so
+		// clients can react (e.g. raise max_screenshot_bytes) instead of
+		// treating a truncated capture as an unavailable one.
+		result["kind"] = attachment.status == "truncated" ? "screenshot_truncated" : "screenshot_unavailable";
+		result["message"] = attachment.reason.is_empty()
+				? String("Screenshot capture is unavailable.")
+				: attachment.reason;
+		return result;
+	}
+
+	result["ok"] = true;
+	result["capture_mode"] = attachment.capture_mode;
 	return result;
 }
 

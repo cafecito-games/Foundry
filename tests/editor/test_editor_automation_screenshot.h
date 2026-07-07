@@ -43,6 +43,7 @@
 #include "scene/gui/panel_container.h"
 #include "scene/main/scene_tree.h"
 #include "scene/main/viewport.h"
+#include "scene/main/window.h"
 
 #include "tests/test_macros.h"
 
@@ -209,6 +210,476 @@ TEST_CASE("[Editor][Automation] screenshot capture from subviewport when availab
 	}
 
 	memdelete(viewport);
+}
+
+TEST_CASE("[Editor][Automation] capture_screenshot tool advertises input/output schema") {
+	const Array tools = EditorAutomationMCPDispatcher::build_tools_list();
+	Dictionary capture_tool;
+	for (int i = 0; i < tools.size(); i++) {
+		const Dictionary tool = tools[i];
+		if (String(tool.get("name", String())) == "capture_screenshot") {
+			capture_tool = tool;
+			break;
+		}
+	}
+	CHECK_FALSE(capture_tool.is_empty());
+	CHECK(capture_tool.has("inputSchema"));
+	CHECK(capture_tool.has("outputSchema"));
+
+	const Dictionary input_schema = capture_tool["inputSchema"];
+	const Dictionary input_props = input_schema["properties"];
+	CHECK(input_props.has("selector"));
+	CHECK(input_props.has("element"));
+	CHECK(input_props.has("padding"));
+
+	const Dictionary output_schema = capture_tool["outputSchema"];
+	const Dictionary output_props = output_schema["properties"];
+	CHECK(output_props.has("ok"));
+	CHECK(output_props.has("capture_mode"));
+	CHECK(output_props.has("screenshot"));
+}
+
+TEST_CASE("[Editor][Automation] capture_screenshot with no target captures the full window") {
+	EditorAutomationWait::clear_all_cooperative();
+
+	SubViewport *viewport = memnew(SubViewport);
+	viewport->set_size(Vector2i(120, 80));
+	viewport->set_disable_3d(true);
+	viewport->set_transparent_background(false);
+	SceneTree::get_singleton()->get_root()->add_child(viewport);
+
+	ColorRect *rect = memnew(ColorRect);
+	rect->set_color(Color(0.0, 0.6, 0.2, 1.0));
+	rect->set_size(Size2(120, 80));
+	viewport->add_child(rect);
+	screenshot_flush_frames(4);
+
+	EditorAutomationMCPDispatcher dispatcher;
+	EditorAutomationMCPDispatcher::Options options;
+	options.snapshot_root = viewport;
+	dispatcher.set_options(options);
+
+	Dictionary params;
+	params["name"] = "capture_screenshot";
+	params["arguments"] = Dictionary();
+
+	const Dictionary response = dispatcher.handle_message(make_request(1, "tools/call", params));
+	const Dictionary response_result = response["result"];
+	const Dictionary structured = response_result["structuredContent"];
+	CHECK(structured.has("screenshot"));
+	const Dictionary screenshot = structured["screenshot"];
+
+	if (String(screenshot["status"]) == "available") {
+		CHECK_FALSE((bool)response_result["isError"]);
+		CHECK((bool)structured["ok"]);
+		CHECK(String(structured["capture_mode"]) == "full_window");
+		CHECK(String(screenshot["capture_mode"]) == "full_window");
+		const Dictionary image = screenshot["image"];
+		CHECK((int)image["width"] == 120);
+		CHECK((int)image["height"] == 80);
+		CHECK_FALSE(String(screenshot["data"]).is_empty());
+	} else {
+		CHECK((bool)response_result["isError"]);
+		CHECK_FALSE((bool)structured["ok"]);
+		CHECK(String(structured["kind"]) == "screenshot_unavailable");
+	}
+
+	memdelete(viewport);
+}
+
+TEST_CASE("[Editor][Automation] capture_screenshot reports a size-limit failure as truncated, not unavailable") {
+	EditorAutomationWait::clear_all_cooperative();
+
+	SubViewport *viewport = memnew(SubViewport);
+	viewport->set_size(Vector2i(120, 80));
+	viewport->set_disable_3d(true);
+	viewport->set_transparent_background(false);
+	SceneTree::get_singleton()->get_root()->add_child(viewport);
+
+	ColorRect *rect = memnew(ColorRect);
+	rect->set_color(Color(0.9, 0.3, 0.1, 1.0));
+	rect->set_size(Size2(120, 80));
+	viewport->add_child(rect);
+	screenshot_flush_frames(4);
+
+	EditorAutomationMCPDispatcher dispatcher;
+	EditorAutomationMCPDispatcher::Options options;
+	options.snapshot_root = viewport;
+	options.max_screenshot_bytes = 1;
+	dispatcher.set_options(options);
+
+	Dictionary params;
+	params["name"] = "capture_screenshot";
+	params["arguments"] = Dictionary();
+
+	const Dictionary response = dispatcher.handle_message(make_request(1, "tools/call", params));
+	const Dictionary response_result = response["result"];
+	const Dictionary structured = response_result["structuredContent"];
+	CHECK((bool)response_result["isError"]);
+	CHECK_FALSE((bool)structured["ok"]);
+	const Dictionary screenshot = structured["screenshot"];
+
+	// A tiny byte budget forces truncation when the viewport can be captured; a
+	// headless build without a usable viewport still reports unavailable. Either
+	// way the top-level kind must match the attachment status, never contradict it.
+	if (String(screenshot["status"]) == "truncated") {
+		CHECK(String(structured["kind"]) == "screenshot_truncated");
+	} else {
+		CHECK(String(screenshot["status"]) == "unavailable");
+		CHECK(String(structured["kind"]) == "screenshot_unavailable");
+	}
+
+	memdelete(viewport);
+}
+
+TEST_CASE("[Editor][Automation] capture_screenshot with a selector crops to the element") {
+	EditorAutomationWait::clear_all_cooperative();
+
+	// A SubViewport renders offscreen and can be captured headlessly, but it is
+	// not a CanvasItem, so the snapshot skips it and its subtree. Root the
+	// snapshot at a Control *inside* the SubViewport: the snapshot then finds the
+	// button, while capture still targets the enclosing SubViewport.
+	SubViewport *viewport = memnew(SubViewport);
+	viewport->set_size(Vector2i(200, 160));
+	viewport->set_disable_3d(true);
+	viewport->set_transparent_background(false);
+	SceneTree::get_singleton()->get_root()->add_child(viewport);
+
+	Control *container = memnew(Control);
+	container->set_size(Size2(200, 160));
+	viewport->add_child(container);
+
+	Button *button = memnew(Button);
+	button->set_text("Snap Target");
+	button->set_position(Point2(40, 30));
+	button->set_size(Size2(96, 40));
+	container->add_child(button);
+	screenshot_flush_frames(4);
+
+	EditorAutomationMCPDispatcher dispatcher;
+	EditorAutomationMCPDispatcher::Options options;
+	options.snapshot_root = container;
+	dispatcher.set_options(options);
+
+	Dictionary selector;
+	selector["role"] = "button";
+	selector["name"] = "Snap Target";
+
+	Dictionary arguments;
+	arguments["selector"] = selector;
+
+	Dictionary params;
+	params["name"] = "capture_screenshot";
+	params["arguments"] = arguments;
+
+	const Dictionary response = dispatcher.handle_message(make_request(2, "tools/call", params));
+	const Dictionary response_result = response["result"];
+	const Dictionary structured = response_result["structuredContent"];
+	CHECK(structured.has("screenshot"));
+	const Dictionary screenshot = structured["screenshot"];
+
+	if (String(screenshot["status"]) == "available") {
+		CHECK_FALSE((bool)response_result["isError"]);
+		CHECK((bool)structured["ok"]);
+		CHECK(String(structured["capture_mode"]) == "cropped");
+		CHECK(String(screenshot["capture_mode"]) == "cropped");
+		CHECK(screenshot.has("crop"));
+		const Dictionary crop = screenshot["crop"];
+		// The crop is the element bounds grown by padding and clamped to the
+		// viewport, so it must be smaller than the full window in at least one axis.
+		CHECK((int)crop["width"] <= 200);
+		CHECK((int)crop["height"] <= 160);
+		const Dictionary image = screenshot["image"];
+		CHECK((int)image["width"] == (int)crop["width"]);
+		CHECK((int)image["height"] == (int)crop["height"]);
+		CHECK_FALSE(String(screenshot["data"]).is_empty());
+	} else {
+		CHECK((bool)response_result["isError"]);
+		CHECK_FALSE((bool)structured["ok"]);
+		CHECK(String(structured["kind"]) == "screenshot_unavailable");
+	}
+
+	memdelete(viewport);
+}
+
+TEST_CASE("[Editor][Automation] capture_screenshot with an unresolved selector fails structurally") {
+	EditorAutomationWait::clear_all_cooperative();
+
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(240, 160));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+	screenshot_flush_frames();
+
+	EditorAutomationMCPDispatcher dispatcher;
+	EditorAutomationMCPDispatcher::Options options;
+	options.snapshot_root = root;
+	dispatcher.set_options(options);
+
+	Dictionary selector;
+	selector["role"] = "button";
+	selector["name"] = "Nonexistent";
+
+	Dictionary arguments;
+	arguments["selector"] = selector;
+
+	Dictionary params;
+	params["name"] = "capture_screenshot";
+	params["arguments"] = arguments;
+
+	const Dictionary response = dispatcher.handle_message(make_request(3, "tools/call", params));
+	const Dictionary response_result = response["result"];
+	CHECK((bool)response_result["isError"]);
+	const Dictionary structured = response_result["structuredContent"];
+	CHECK_FALSE((bool)structured["ok"]);
+	CHECK(String(structured["kind"]) == "no_match");
+	// A failed selector must not fabricate an available image.
+	CHECK_FALSE(structured.has("capture_mode"));
+
+	memdelete(root);
+}
+
+TEST_CASE("[Editor][Automation] capture_screenshot fails when the matched element has no bounds") {
+	EditorAutomationWait::clear_all_cooperative();
+
+	Control *root = memnew(Control);
+	root->set_size(Size2(240, 160));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	// A zero-size Control still appears in the snapshot but has no croppable area,
+	// standing in for virtual items (tree/list/menu/tab) that report empty bounds.
+	// A plain Control (unlike a Button) does not enforce a content minimum size.
+	Control *empty = memnew(Control);
+	empty->set_name("ZeroBoundsControl");
+	empty->set_position(Point2(20, 20));
+	empty->set_size(Size2(0, 0));
+	root->add_child(empty);
+	screenshot_flush_frames();
+
+	EditorAutomationMCPDispatcher dispatcher;
+	EditorAutomationMCPDispatcher::Options options;
+	options.snapshot_root = root;
+	dispatcher.set_options(options);
+
+	Dictionary selector;
+	selector["name"] = "ZeroBoundsControl";
+
+	Dictionary arguments;
+	arguments["selector"] = selector;
+
+	Dictionary params;
+	params["name"] = "capture_screenshot";
+	params["arguments"] = arguments;
+
+	const Dictionary response = dispatcher.handle_message(make_request(5, "tools/call", params));
+	const Dictionary response_result = response["result"];
+	CHECK((bool)response_result["isError"]);
+	const Dictionary structured = response_result["structuredContent"];
+	CHECK_FALSE((bool)structured["ok"]);
+	CHECK(String(structured["kind"]) == "element_not_capturable");
+	// It must not silently fall back to a full-window capture for an explicit
+	// element-focused request.
+	CHECK_FALSE(structured.has("capture_mode"));
+	CHECK_FALSE(structured.has("screenshot"));
+
+	memdelete(root);
+}
+
+TEST_CASE("[Editor][Automation] capture_screenshot fails when the element lies outside the viewport") {
+	EditorAutomationWait::clear_all_cooperative();
+
+	SubViewport *viewport = memnew(SubViewport);
+	viewport->set_size(Vector2i(120, 80));
+	viewport->set_disable_3d(true);
+	viewport->set_transparent_background(false);
+	SceneTree::get_singleton()->get_root()->add_child(viewport);
+
+	Control *container = memnew(Control);
+	container->set_size(Size2(120, 80));
+	viewport->add_child(container);
+
+	// A button with real bounds, but positioned entirely outside the 120x80
+	// viewport: the crop rect cannot intersect the captured image.
+	Button *button = memnew(Button);
+	button->set_text("Off Screen");
+	button->set_position(Point2(500, 500));
+	button->set_size(Size2(96, 40));
+	container->add_child(button);
+	screenshot_flush_frames(4);
+
+	EditorAutomationMCPDispatcher dispatcher;
+	EditorAutomationMCPDispatcher::Options options;
+	options.snapshot_root = container;
+	dispatcher.set_options(options);
+
+	Dictionary selector;
+	selector["role"] = "button";
+	selector["name"] = "Off Screen";
+
+	Dictionary arguments;
+	arguments["selector"] = selector;
+
+	Dictionary params;
+	params["name"] = "capture_screenshot";
+	params["arguments"] = arguments;
+
+	const Dictionary response = dispatcher.handle_message(make_request(6, "tools/call", params));
+	const Dictionary response_result = response["result"];
+	CHECK((bool)response_result["isError"]);
+	const Dictionary structured = response_result["structuredContent"];
+	CHECK_FALSE((bool)structured["ok"]);
+
+	// With a usable viewport the capture succeeds but cannot be cropped, so the
+	// tool must report element_not_capturable rather than a full-window image.
+	// A headless build without a usable viewport reports unavailable instead.
+	if (structured.has("screenshot")) {
+		const Dictionary screenshot = structured["screenshot"];
+		CHECK(String(screenshot["status"]) == "unavailable");
+		CHECK(String(structured["kind"]) == "screenshot_unavailable");
+	} else {
+		CHECK(String(structured["kind"]) == "element_not_capturable");
+		CHECK_FALSE(structured.has("capture_mode"));
+	}
+
+	memdelete(viewport);
+}
+
+TEST_CASE("[Editor][Automation] capture_screenshot out-of-view element reports not-capturable even under a byte limit") {
+	EditorAutomationWait::clear_all_cooperative();
+
+	SubViewport *viewport = memnew(SubViewport);
+	viewport->set_size(Vector2i(120, 80));
+	viewport->set_disable_3d(true);
+	viewport->set_transparent_background(false);
+	SceneTree::get_singleton()->get_root()->add_child(viewport);
+
+	Control *container = memnew(Control);
+	container->set_size(Size2(120, 80));
+	viewport->add_child(container);
+
+	Button *button = memnew(Button);
+	button->set_text("Off Screen");
+	button->set_position(Point2(500, 500));
+	button->set_size(Size2(96, 40));
+	container->add_child(button);
+	screenshot_flush_frames(4);
+
+	EditorAutomationMCPDispatcher dispatcher;
+	EditorAutomationMCPDispatcher::Options options;
+	options.snapshot_root = container;
+	// A tiny budget would truncate the full-window fallback, but the real failure
+	// is that the element cannot be cropped, not the size limit.
+	options.max_screenshot_bytes = 1;
+	dispatcher.set_options(options);
+
+	Dictionary selector;
+	selector["role"] = "button";
+	selector["name"] = "Off Screen";
+
+	Dictionary arguments;
+	arguments["selector"] = selector;
+
+	Dictionary params;
+	params["name"] = "capture_screenshot";
+	params["arguments"] = arguments;
+
+	const Dictionary response = dispatcher.handle_message(make_request(7, "tools/call", params));
+	const Dictionary response_result = response["result"];
+	CHECK((bool)response_result["isError"]);
+	const Dictionary structured = response_result["structuredContent"];
+	CHECK_FALSE((bool)structured["ok"]);
+
+	// When a viewport is available the out-of-view crop must win over the byte
+	// limit; a headless build without a usable viewport reports unavailable.
+	if (structured.has("screenshot")) {
+		CHECK(String(structured["kind"]) == "screenshot_unavailable");
+	} else {
+		CHECK(String(structured["kind"]) == "element_not_capturable");
+	}
+
+	memdelete(viewport);
+}
+
+TEST_CASE("[Editor][Automation] capture_screenshot targets a window element without mis-cropping") {
+	EditorAutomationWait::clear_all_cooperative();
+
+	// A Window node is its own viewport, whose texture already spans exactly the
+	// window, while a Window element's bounds are in its parent/embedder space.
+	// The tool must capture the window whole rather than crop by those bounds and
+	// then mis-crop or report the window as not capturable. Rooting the snapshot
+	// at the window makes it the single match; capturing is display-dependent, so
+	// assert the contract stays coherent and never spuriously reports
+	// element_not_capturable for a valid window.
+	Window *win = memnew(Window);
+	win->set_title("TargetWindow");
+	win->set_position(Point2i(30, 40));
+	win->set_size(Size2i(160, 100));
+	win->set_visible(true);
+	SceneTree::get_singleton()->get_root()->add_child(win);
+	screenshot_flush_frames(4);
+
+	EditorAutomationMCPDispatcher dispatcher;
+	EditorAutomationMCPDispatcher::Options options;
+	options.snapshot_root = win;
+	dispatcher.set_options(options);
+
+	Dictionary selector;
+	selector["name"] = "TargetWindow";
+
+	Dictionary arguments;
+	arguments["selector"] = selector;
+
+	Dictionary params;
+	params["name"] = "capture_screenshot";
+	params["arguments"] = arguments;
+
+	const Dictionary response = dispatcher.handle_message(make_request(9, "tools/call", params));
+	const Dictionary response_result = response["result"];
+	const Dictionary structured = response_result["structuredContent"];
+
+	// The window has valid bounds, so a resolvable capture must never be reported
+	// as element_not_capturable; ok/isError must stay consistent.
+	CHECK((bool)response_result["isError"] == !(bool)structured["ok"]);
+	CHECK(String(structured.get("kind", String())) != "element_not_capturable");
+	if ((bool)structured["ok"]) {
+		// A native window captures whole; an embedded one crops within its
+		// embedder. Either is a valid capture_mode for a window target.
+		const String mode = structured["capture_mode"];
+		CHECK((mode == "full_window" || mode == "cropped"));
+	} else {
+		CHECK(String(structured["kind"]) == "screenshot_unavailable");
+	}
+
+	memdelete(win);
+}
+
+TEST_CASE("[Editor][Automation] capture_screenshot rejects both selector and element") {
+	EditorAutomationWait::clear_all_cooperative();
+
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(240, 160));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+	screenshot_flush_frames();
+
+	EditorAutomationMCPDispatcher dispatcher;
+	EditorAutomationMCPDispatcher::Options options;
+	options.snapshot_root = root;
+	dispatcher.set_options(options);
+
+	Dictionary selector;
+	selector["role"] = "button";
+
+	Dictionary arguments;
+	arguments["selector"] = selector;
+	arguments["element"] = selector;
+
+	Dictionary params;
+	params["name"] = "capture_screenshot";
+	params["arguments"] = arguments;
+
+	const Dictionary response = dispatcher.handle_message(make_request(4, "tools/call", params));
+	CHECK(response.has("error"));
+
+	memdelete(root);
 }
 
 } // namespace TestEditorAutomationScreenshot
