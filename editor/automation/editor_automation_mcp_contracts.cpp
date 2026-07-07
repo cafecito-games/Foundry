@@ -1481,6 +1481,8 @@ PackedStringArray EditorAutomationMCPContracts::action_names() {
 	actions.push_back("collapse");
 	actions.push_back("scroll");
 	actions.push_back("choose_menu_item");
+	actions.push_back("open_context_menu");
+	actions.push_back("right_click");
 	actions.push_back("set_value");
 	return actions;
 }

@@ -115,6 +115,9 @@ EditorAutomationActionKind editor_automation_action_kind_from_string(const Strin
 	if (action == "choose_menu_item") {
 		return EditorAutomationActionKind::CHOOSE_MENU_ITEM;
 	}
+	if (action == "open_context_menu" || action == "right_click") {
+		return EditorAutomationActionKind::OPEN_CONTEXT_MENU;
+	}
 	if (action == "set_value") {
 		return EditorAutomationActionKind::SET_VALUE;
 	}

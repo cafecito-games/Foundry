@@ -51,6 +51,7 @@
 #include "scene/gui/control.h"
 #include "scene/gui/item_list.h"
 #include "scene/gui/line_edit.h"
+#include "scene/gui/menu_button.h"
 #include "scene/gui/option_button.h"
 #include "scene/gui/popup_menu.h"
 #include "scene/gui/range.h"
@@ -137,6 +138,17 @@ Node *_resolve_node_from_object_id(uint64_t p_object_id) {
 bool _parse_virtual_key(const EditorAutomationElement &p_element, String &r_kind, String &r_key) {
 	uint64_t generation = 0;
 	return EditorAutomationSnapshot::parse_element_id(p_element.id, generation, r_kind, r_key);
+}
+
+// A MenuButton keeps its popup as a hidden child until shown; while hidden the
+// popup's parent is the MenuButton. Automation exposes those hidden items, so
+// activating one must replicate what opening the menu would do. A visible popup
+// (an already-open menu) is captured directly and needs no such handling.
+MenuButton *_hidden_menu_button_owner(PopupMenu *p_popup_menu) {
+	if (p_popup_menu == nullptr || p_popup_menu->is_visible()) {
+		return nullptr;
+	}
+	return Object::cast_to<MenuButton>(p_popup_menu->get_parent());
 }
 
 TreeItem *_resolve_tree_item(Tree *p_tree, const String &p_path) {
@@ -392,6 +404,41 @@ EditorAutomationActionResult _action_click(
 	return EditorAutomationActionResult::failure("unsupported_action", "Click is unavailable for the selected control.");
 }
 
+EditorAutomationActionResult _action_open_context_menu(
+		const EditorAutomationSnapshot &p_snapshot,
+		const EditorAutomationElement &p_element,
+		const Dictionary &p_options,
+		EditorAutomationRoutePreference p_route_preference) {
+	if (p_route_preference == EditorAutomationRoutePreference::SEMANTIC) {
+		return EditorAutomationActionResult::failure("unsupported_route", "open_context_menu synthesizes a right-click input event; use route=input or auto.");
+	}
+
+	Node *node = nullptr;
+	const EditorAutomationActionResult prepare_result = _prepare_element_for_input(p_snapshot, p_element, node);
+	if (!prepare_result.ok && prepare_result.kind == "window_focus_failed") {
+		return prepare_result;
+	}
+
+	Control *control = Object::cast_to<Control>(node);
+	ERR_FAIL_NULL_V(control, EditorAutomationActionResult::failure("invalid_element", "The selected element is not a control."));
+
+	// Force the right mouse button regardless of any caller-provided `button` so
+	// the control's context-menu handler (e.g. EditorInspectorCategory::_gui_input
+	// -> _popup_context_menu) fires. Positioning options (position/anchor) are
+	// still honored via the shared options dictionary.
+	Dictionary options = p_options.duplicate();
+	options["button"] = "right";
+
+	PackedStringArray events;
+	if (_push_mouse_click(control, p_element.bounds, options, false, events)) {
+		EditorAutomationActionResult result = EditorAutomationActionResult::success(EditorAutomationActionRouteNames::INPUT_CONTEXT_MENU, p_element.id);
+		result.events = events;
+		result.focus = _focused_element_id(p_snapshot);
+		return result;
+	}
+	return EditorAutomationActionResult::failure("unsupported_action", "Opening a context menu is unavailable for the selected control.");
+}
+
 EditorAutomationActionResult _action_set_text(
 		const EditorAutomationSnapshot &p_snapshot,
 		const EditorAutomationElement &p_element,
@@ -583,7 +630,50 @@ EditorAutomationActionResult _action_select_virtual(
 		const int index = p_key.substr(separator + 1).to_int();
 		PopupMenu *popup_menu = Object::cast_to<PopupMenu>(ObjectDB::get_instance(ObjectID(menu_id)));
 		ERR_FAIL_NULL_V(popup_menu, EditorAutomationActionResult::failure("invalid_element", "Menu item parent is no longer available."));
-		ERR_FAIL_INDEX_V(index, popup_menu->get_item_count(), EditorAutomationActionResult::failure("invalid_element", "Menu item index is out of range."));
+		MenuButton *menu_owner = _hidden_menu_button_owner(popup_menu);
+		if (menu_owner != nullptr) {
+			if (menu_owner->is_disabled()) {
+				// A user cannot open a disabled MenuButton, so its commands are inert.
+				return EditorAutomationActionResult::failure("element_disabled", "The menu is disabled and cannot be opened.");
+			}
+			// Open the menu exactly as a user would. show_popup() fires both the
+			// MenuButton and PopupMenu about_to_popup signals (letting editor code
+			// populate/refresh/disable entries), and the paired activate_item()/hide()
+			// below closes it -- keeping the MenuButton's pressed/processing state
+			// balanced instead of leaving it stuck open.
+			menu_owner->show_popup();
+		}
+		if (index < 0 || index >= popup_menu->get_item_count()) {
+			if (menu_owner != nullptr) {
+				popup_menu->hide();
+			}
+			return EditorAutomationActionResult::failure("invalid_element", "Menu item index is out of range.");
+		}
+		if (menu_owner != nullptr && popup_menu->get_item_text(index) != p_element.text) {
+			// A rebuild on about_to_popup reordered/renamed entries, so the snapshot
+			// index no longer maps to the requested command; close and force a
+			// re-observe rather than firing the wrong one.
+			popup_menu->hide();
+			return EditorAutomationActionResult::failure("stale_element", "The menu changed after opening; re-observe before selecting.");
+		}
+		if (popup_menu->is_item_disabled(index)) {
+			// A disabled command is not selectable by a user, so automation must not
+			// fire its id_pressed via activate_item() either.
+			if (menu_owner != nullptr) {
+				popup_menu->hide();
+			}
+			return EditorAutomationActionResult::failure("element_disabled", "The menu item is disabled and cannot be activated.");
+		}
+		if (!popup_menu->get_item_submenu(index).is_empty() || popup_menu->get_item_submenu_node(index) != nullptr) {
+			// A submenu row opens a child menu rather than emitting an id;
+			// activate_item() would not open it, so refuse instead of firing the
+			// parent's id_pressed path. (Submenu contents are not yet reachable while
+			// the menu is hidden -- tracked as a follow-up.)
+			if (menu_owner != nullptr) {
+				popup_menu->hide();
+			}
+			return EditorAutomationActionResult::failure("unsupported_action", "This menu item opens a submenu; its items are not directly selectable.");
+		}
 		popup_menu->activate_item(index);
 		EditorAutomationActionResult result = EditorAutomationActionResult::success(EditorAutomationActionRouteNames::SEMANTIC_SELECT, p_element.id);
 		result.events.push_back("activated");
@@ -656,7 +746,50 @@ EditorAutomationActionResult _action_activate_virtual(
 		const int index = p_key.substr(separator + 1).to_int();
 		PopupMenu *popup_menu = Object::cast_to<PopupMenu>(ObjectDB::get_instance(ObjectID(menu_id)));
 		ERR_FAIL_NULL_V(popup_menu, EditorAutomationActionResult::failure("invalid_element", "Menu item parent is no longer available."));
-		ERR_FAIL_INDEX_V(index, popup_menu->get_item_count(), EditorAutomationActionResult::failure("invalid_element", "Menu item index is out of range."));
+		MenuButton *menu_owner = _hidden_menu_button_owner(popup_menu);
+		if (menu_owner != nullptr) {
+			if (menu_owner->is_disabled()) {
+				// A user cannot open a disabled MenuButton, so its commands are inert.
+				return EditorAutomationActionResult::failure("element_disabled", "The menu is disabled and cannot be opened.");
+			}
+			// Open the menu exactly as a user would. show_popup() fires both the
+			// MenuButton and PopupMenu about_to_popup signals (letting editor code
+			// populate/refresh/disable entries), and the paired activate_item()/hide()
+			// below closes it -- keeping the MenuButton's pressed/processing state
+			// balanced instead of leaving it stuck open.
+			menu_owner->show_popup();
+		}
+		if (index < 0 || index >= popup_menu->get_item_count()) {
+			if (menu_owner != nullptr) {
+				popup_menu->hide();
+			}
+			return EditorAutomationActionResult::failure("invalid_element", "Menu item index is out of range.");
+		}
+		if (menu_owner != nullptr && popup_menu->get_item_text(index) != p_element.text) {
+			// A rebuild on about_to_popup reordered/renamed entries, so the snapshot
+			// index no longer maps to the requested command; close and force a
+			// re-observe rather than firing the wrong one.
+			popup_menu->hide();
+			return EditorAutomationActionResult::failure("stale_element", "The menu changed after opening; re-observe before selecting.");
+		}
+		if (popup_menu->is_item_disabled(index)) {
+			// A disabled command is not selectable by a user, so automation must not
+			// fire its id_pressed via activate_item() either.
+			if (menu_owner != nullptr) {
+				popup_menu->hide();
+			}
+			return EditorAutomationActionResult::failure("element_disabled", "The menu item is disabled and cannot be activated.");
+		}
+		if (!popup_menu->get_item_submenu(index).is_empty() || popup_menu->get_item_submenu_node(index) != nullptr) {
+			// A submenu row opens a child menu rather than emitting an id;
+			// activate_item() would not open it, so refuse instead of firing the
+			// parent's id_pressed path. (Submenu contents are not yet reachable while
+			// the menu is hidden -- tracked as a follow-up.)
+			if (menu_owner != nullptr) {
+				popup_menu->hide();
+			}
+			return EditorAutomationActionResult::failure("unsupported_action", "This menu item opens a submenu; its items are not directly selectable.");
+		}
 		popup_menu->activate_item(index);
 		EditorAutomationActionResult result = EditorAutomationActionResult::success(EditorAutomationActionRouteNames::SEMANTIC_ACTIVATE, p_element.id);
 		result.events.push_back("activated");
@@ -1322,6 +1455,9 @@ EditorAutomationActionResult EditorAutomationDriver::perform(
 			} else {
 				result = _action_tree_item_state(p_snapshot, element, false);
 			}
+			break;
+		case EditorAutomationActionKind::OPEN_CONTEXT_MENU:
+			result = _action_open_context_menu(p_snapshot, element, p_options, route_preference);
 			break;
 		case EditorAutomationActionKind::CHOOSE_MENU_ITEM: {
 			String kind;

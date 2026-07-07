@@ -5826,6 +5826,12 @@ int Tree::get_pressed_button() const {
 	return pressed_button;
 }
 
+int Tree::get_item_row_height(TreeItem *p_item) const {
+	ERR_FAIL_NULL_V(p_item, 0);
+	ERR_FAIL_COND_V(p_item->tree != this, 0);
+	return compute_item_height(p_item) + theme_cache.v_separation;
+}
+
 Rect2 Tree::get_item_rect(TreeItem *p_item, int p_column, int p_button) const {
 	ERR_FAIL_NULL_V(p_item, Rect2());
 	ERR_FAIL_COND_V(p_item->tree != this, Rect2());

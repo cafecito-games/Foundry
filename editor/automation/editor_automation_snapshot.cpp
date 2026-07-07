@@ -48,6 +48,7 @@
 #include "scene/gui/dialogs.h"
 #include "scene/gui/item_list.h"
 #include "scene/gui/line_edit.h"
+#include "scene/gui/menu_button.h"
 #include "scene/gui/option_button.h"
 #include "scene/gui/popup_menu.h"
 #include "scene/gui/range.h"
@@ -253,6 +254,18 @@ class EditorAutomationSnapshotBuilder {
 			add_unique("focus");
 		}
 
+		if (const EditorInspectorCategory *category = Object::cast_to<const EditorInspectorCategory>(p_node)) {
+			// Only an inspector class-category header whose right-click actually opens
+			// a menu (a favorites header, or a category with a documentation class,
+			// i.e. "Open Documentation") advertises the action. Plain
+			// EditorInspectorSection rows (which share the inspector_section role) and
+			// custom categories with no documentation open no menu, so they must not
+			// advertise an action that does nothing.
+			if (category->has_context_menu()) {
+				add_unique("open_context_menu");
+			}
+		}
+
 		if (p_role == "button" || p_role == "checkbox" || p_role == "property_row") {
 			add_unique("click");
 			add_unique("activate");
@@ -320,7 +333,7 @@ class EditorAutomationSnapshotBuilder {
 		return String(path_root->get_path_to(p_node));
 	}
 
-	int _add_virtual_element(int p_parent_index, const String &p_kind, const String &p_key, const String &p_role, const String &p_name, const String &p_text, bool p_selected = false, const Dictionary &p_metadata = Dictionary(), const Rect2i &p_bounds = Rect2i()) {
+	int _add_virtual_element(int p_parent_index, const String &p_kind, const String &p_key, const String &p_role, const String &p_name, const String &p_text, bool p_selected = false, const Dictionary &p_metadata = Dictionary(), const Rect2i &p_bounds = Rect2i(), bool p_enabled = true) {
 		EditorAutomationElement element;
 		element.id = EditorAutomationSnapshot::make_virtual_element_id(data.generation, p_kind, p_key);
 		element.handle = EditorAutomationSnapshot::make_durable_handle(p_kind, p_key);
@@ -329,7 +342,7 @@ class EditorAutomationSnapshotBuilder {
 		element.text = p_text;
 		element.class_name = p_kind;
 		element.visible = true;
-		element.enabled = true;
+		element.enabled = p_enabled;
 		element.selected = p_selected;
 		element.metadata = p_metadata;
 		element.bounds = p_bounds;
@@ -348,6 +361,24 @@ class EditorAutomationSnapshotBuilder {
 
 	String _tree_item_path(TreeItem *p_item) {
 		return EditorAutomationWorkflow::tree_item_stable_path(p_item);
+	}
+
+	// TreeItem::is_visible_in_tree() reflects the `visible` flag chain but not
+	// collapse, and Tree::get_next_in_tree() still walks into a collapsed branch.
+	// A row is only drawn -- occupying vertical space and having on-screen bounds
+	// -- when no ancestor is collapsed. Hidden descendants are still emitted
+	// (present and selectable) but must not advance the running row offset or
+	// claim bounds. The walk is O(depth) and the pathological large tree is flat.
+	static bool _tree_item_is_drawn(TreeItem *p_item) {
+		if (!p_item->is_visible_in_tree()) {
+			return false;
+		}
+		for (TreeItem *ancestor = p_item->get_parent(); ancestor != nullptr; ancestor = ancestor->get_parent()) {
+			if (ancestor->is_collapsed()) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	// Converts a control-local item rect into global snapshot bounds so synthesized
@@ -375,24 +406,51 @@ class EditorAutomationSnapshotBuilder {
 			return;
 		}
 		const uint64_t tree_id = p_tree->get_instance_id();
+		// Tree::get_item_rect()/get_item_offset() are O(row index), so computing a
+		// rect per row for a huge tree (the Search Help results tree holds the whole
+		// class database) is O(n^2) and hung past client timeouts. get_item_rect
+		// reports r.position.y = content_offset - drawn_scroll + panel_offset, an
+		// affine function of the item's content-space offset with a row-independent
+		// constant. So anchor once against the first visible row's real rect, then
+		// walk rows in draw order accumulating each row's O(1) height
+		// (get_item_row_height): this reproduces every row's bounds in O(n) total.
+		// Re-anchor y to the live scroll value so bounds stay correct when
+		// observe_ui runs before the next redraw (get_item_rect uses the last-drawn
+		// scroll offset, which lags a pending act(scroll)). x/width need no
+		// correction: the full-width row rect starts at local x=0 regardless of
+		// horizontal scroll.
+		const float scroll_correction = p_tree->get_drawn_scroll_offset().y - p_tree->get_scroll().y;
+		const float row_width = p_tree->get_size().x;
+		bool anchored = false;
+		// reanchored_y(item) == content_offset(item) + offset_constant.
+		float offset_constant = 0.0f;
+		int content_offset = 0;
 		item = item->get_first_child();
 		while (item) {
 			if (item->is_visible_in_tree()) {
 				const String key = vformat("%s:%s", String::num_uint64(tree_id), _tree_item_path(item));
 				const String item_text = item->get_text(0);
 				const Dictionary metadata = EditorAutomationWorkflow::metadata_for_tree_item(p_tree, item);
-				// Column -1 yields the full-width row rect, which is the target an
-				// agent clicks to select/activate the item.
-				Rect2 item_rect = p_tree->get_item_rect(item, -1);
-				// get_item_rect anchors the row's y to the scroll offset from the last
-				// draw (theme_cache.offset), which lags a pending act(scroll) until the
-				// next redraw. Re-anchor to the live scroll value so tree_item bounds
-				// share the list_item path's reference frame and stay correct when
-				// observe_ui runs before a redraw. Only y needs correcting: the
-				// full-width row rect starts at local x=0 regardless of horizontal
-				// scroll.
-				item_rect.position.y += p_tree->get_drawn_scroll_offset().y - p_tree->get_scroll().y;
-				const Rect2i bounds = _virtual_item_bounds(p_tree, item_rect);
+				Rect2i bounds;
+				// Only drawn rows advance the running offset and carry bounds; rows
+				// inside a collapsed branch are emitted (present, selectable) with no
+				// bounds so they neither shift later siblings down nor appear on screen.
+				if (_tree_item_is_drawn(item)) {
+					const int row_height = p_tree->get_item_row_height(item);
+					if (!anchored) {
+						// Derive the affine constant from the first drawn row's real
+						// rect (O(1): this row sits near the tree root) so panel offset
+						// and live scroll are captured exactly.
+						Rect2 first_rect = p_tree->get_item_rect(item, -1);
+						first_rect.position.y += scroll_correction;
+						content_offset = p_tree->get_item_offset(item);
+						offset_constant = first_rect.position.y - (float)content_offset;
+						anchored = true;
+					}
+					const Rect2 item_rect(0.0f, (float)content_offset + offset_constant, row_width, (float)row_height);
+					bounds = _virtual_item_bounds(p_tree, item_rect);
+					content_offset += row_height;
+				}
 				_add_virtual_element(p_parent_index, "tree_item", key, "tree_item", item_text, item_text, item->is_selected(0), metadata, bounds);
 			}
 			item = item->get_next_in_tree();
@@ -406,6 +464,7 @@ class EditorAutomationSnapshotBuilder {
 		// the scroll offset that drawing subtracts. Subtract the current scroll
 		// values so scrolled rows report their true on-screen position. The
 		// scroll-bar accessors are non-const only; the reads themselves are const.
+		// ItemList::get_item_rect is O(1), so every row is serialized with bounds.
 		ItemList *mutable_list = const_cast<ItemList *>(p_item_list);
 		const Vector2 scroll_offset = Vector2(mutable_list->get_h_scroll_bar()->get_value(), mutable_list->get_v_scroll_bar()->get_value());
 		for (int i = 0; i < p_item_list->get_item_count(); i++) {
@@ -419,7 +478,7 @@ class EditorAutomationSnapshotBuilder {
 		}
 	}
 
-	void _add_popup_menu_items(const PopupMenu *p_popup_menu, int p_parent_index) {
+	void _add_popup_menu_items(const PopupMenu *p_popup_menu, int p_parent_index, bool p_owner_enabled = true) {
 		const uint64_t menu_id = p_popup_menu->get_instance_id();
 		for (int i = 0; i < p_popup_menu->get_item_count(); i++) {
 			if (p_popup_menu->is_item_separator(i)) {
@@ -427,7 +486,20 @@ class EditorAutomationSnapshotBuilder {
 			}
 			const String item_text = p_popup_menu->get_item_text(i);
 			const String key = vformat("%s:%d", String::num_uint64(menu_id), i);
-			_add_virtual_element(p_parent_index, "menu_item", key, "menu_item", item_text, item_text, false);
+			// Reflect disabled state so agents can see a command is inert; the driver
+			// additionally refuses to activate disabled items. A command hosted by a
+			// disabled MenuButton (p_owner_enabled == false) is likewise inert.
+			const bool enabled = p_owner_enabled && !p_popup_menu->is_item_disabled(i);
+			Dictionary metadata;
+			if (!p_popup_menu->get_item_submenu(i).is_empty() || p_popup_menu->get_item_submenu_node(i) != nullptr) {
+				// A submenu row opens a child menu rather than emitting an id. Expose
+				// it for visibility but with no selectable actions: its child items are
+				// not reachable while the parent menu is hidden, and activating the row
+				// itself would not open the submenu.
+				metadata["has_submenu"] = true;
+				metadata["supported_actions"] = PackedStringArray();
+			}
+			_add_virtual_element(p_parent_index, "menu_item", key, "menu_item", item_text, item_text, false, metadata, Rect2i(), enabled);
 		}
 	}
 
@@ -501,6 +573,29 @@ class EditorAutomationSnapshotBuilder {
 			_add_item_list_items(item_list, p_parent_index);
 		} else if (const PopupMenu *popup_menu = Object::cast_to<const PopupMenu>(p_node)) {
 			_add_popup_menu_items(popup_menu, p_parent_index);
+		} else if (const MenuButton *menu_button = Object::cast_to<const MenuButton>(p_node)) {
+			// A MenuButton hosts its items in an attached (internal) PopupMenu.
+			// Expose those items as selectable virtual menu_item elements regardless
+			// of popup visibility so choose_menu_item/select can reach them without
+			// first synthesizing a popup open (which never happened on a plain
+			// semantic button click). Items resolve back through the popup's
+			// instance id, so activation works even while it is hidden. Skip this
+			// when the popup is both visible and walked as a real internal node
+			// (include_internal) to avoid emitting each item twice.
+			//
+			// Limitation: menus populated only in about_to_popup (e.g. SceneTreeDock's
+			// options button) are empty until opened, so nothing is exposed here.
+			// Emitting about_to_popup during a read-only snapshot would rebuild every
+			// menu on every observe_ui, so surfacing those is deferred to a follow-up
+			// (open-the-menu-then-capture) rather than mutating during observation.
+			if (PopupMenu *popup = const_cast<MenuButton *>(menu_button)->get_popup()) {
+				const bool walked_as_node = options.include_internal && popup->is_visible();
+				if (!walked_as_node) {
+					// A disabled MenuButton cannot be opened by a user, so its commands
+					// are exposed as not enabled.
+					_add_popup_menu_items(popup, p_parent_index, !menu_button->is_disabled());
+				}
+			}
 		} else if (const TabBar *tab_bar = Object::cast_to<const TabBar>(p_node)) {
 			_add_tab_bar_tabs(tab_bar, p_parent_index, p_active_tile_id);
 		} else if (const TabContainer *tab_container = Object::cast_to<const TabContainer>(p_node)) {

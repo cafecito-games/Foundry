@@ -43,7 +43,9 @@
 #include "scene/gui/item_list.h"
 #include "scene/gui/label.h"
 #include "scene/gui/line_edit.h"
+#include "scene/gui/menu_button.h"
 #include "scene/gui/panel_container.h"
+#include "scene/gui/popup_menu.h"
 #include "scene/gui/scroll_container.h"
 #include "scene/gui/subviewport_container.h"
 #include "scene/gui/text_edit.h"
@@ -1238,6 +1240,568 @@ TEST_CASE("[Editor][Automation] selector matches tree items by metadata label") 
 	const EditorAutomationSelectorResult selector_result = EditorAutomationSelector::resolve(snapshot, selector);
 	CHECK(selector_result.status == EditorAutomationSelectorStatus::OK);
 	CHECK(selector_result.match_indices.size() == 1);
+
+	memdelete(root);
+}
+
+class MenuItemPressTracker : public Object {
+	FOUNDRY_CLASS(MenuItemPressTracker, Object);
+
+public:
+	int last_id = -1;
+
+	void on_id_pressed(int p_id) {
+		last_id = p_id;
+	}
+};
+
+// #1090: a MenuButton's attached PopupMenu items must be reachable through the
+// snapshot even while the popup is hidden, so choose_menu_item can activate them
+// without first having to synthesize a popup open.
+TEST_CASE("[Editor][Automation] menu button popup items are selectable while hidden") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	MenuButton *menu_button = memnew(MenuButton);
+	menu_button->set_text("Go To");
+	setup_visible_control(menu_button);
+	root->add_child(menu_button);
+
+	PopupMenu *popup = menu_button->get_popup();
+	popup->add_item("Look Up Symbol", 10);
+	popup->add_item("Go to Line", 11);
+
+	MenuItemPressTracker tracker;
+	popup->connect("id_pressed", callable_mp(&tracker, &MenuItemPressTracker::on_id_pressed));
+	MessageQueue::get_singleton()->flush();
+
+	// The popup is never opened; its items must still be present in the snapshot.
+	CHECK_FALSE(popup->is_visible());
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	const EditorAutomationElement *look_up = find_virtual_element(snapshot, "menu_item", "Look Up Symbol");
+	REQUIRE(look_up != nullptr);
+	CHECK(look_up->actions.has("choose_menu_item"));
+	CHECK(look_up->actions.has("activate"));
+
+	Dictionary target;
+	target["id"] = look_up->id;
+
+	const EditorAutomationActionResult result = EditorAutomationDriver::perform(snapshot, "choose_menu_item", target, Dictionary());
+	CHECK(result.ok);
+	CHECK(result.route == EditorAutomationActionRouteNames::SEMANTIC_SELECT);
+	CHECK(tracker.last_id == 10);
+
+	memdelete(root);
+}
+
+static int count_role(const EditorAutomationSnapshot &p_snapshot, const String &p_role) {
+	int count = 0;
+	for (int i = 0; i < p_snapshot.get_element_count(); i++) {
+		if (p_snapshot.get_element(i).role == p_role) {
+			count++;
+		}
+	}
+	return count;
+}
+
+static int count_role_with_bounds(const EditorAutomationSnapshot &p_snapshot, const String &p_role) {
+	int count = 0;
+	for (int i = 0; i < p_snapshot.get_element_count(); i++) {
+		const EditorAutomationElement &element = p_snapshot.get_element(i);
+		if (element.role == p_role && element.bounds.size.y > 0) {
+			count++;
+		}
+	}
+	return count;
+}
+
+// #1090 follow-up: activating a hidden MenuButton item opens the menu as a user
+// would, so the MenuButton must not be left stuck pressed / processing after the
+// menu closes -- neither on a successful activation nor on a refusal.
+TEST_CASE("[Editor][Automation] hidden menu activation leaves the button unpressed") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	MenuButton *menu_button = memnew(MenuButton);
+	menu_button->set_text("File");
+	setup_visible_control(menu_button);
+	root->add_child(menu_button);
+
+	PopupMenu *popup = menu_button->get_popup();
+	popup->add_item("Save", 1);
+	popup->add_item("Blocked", 2);
+	popup->set_item_disabled(1, true);
+
+	MenuItemPressTracker tracker;
+	popup->connect("id_pressed", callable_mp(&tracker, &MenuItemPressTracker::on_id_pressed));
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+
+	const EditorAutomationElement *save_item = find_virtual_element(snapshot, "menu_item", "Save");
+	REQUIRE(save_item != nullptr);
+	Dictionary save_target;
+	save_target["id"] = save_item->id;
+	const EditorAutomationActionResult save_result = EditorAutomationDriver::perform(snapshot, "choose_menu_item", save_target, Dictionary());
+	MessageQueue::get_singleton()->flush();
+	CHECK(save_result.ok);
+	CHECK(tracker.last_id == 1);
+	// The menu closed, so the button is not stuck pressed.
+	CHECK_FALSE(menu_button->is_pressed());
+	CHECK_FALSE(popup->is_visible());
+
+	const EditorAutomationElement *blocked_item = find_virtual_element(snapshot, "menu_item", "Blocked");
+	REQUIRE(blocked_item != nullptr);
+	Dictionary blocked_target;
+	blocked_target["id"] = blocked_item->id;
+	const EditorAutomationActionResult blocked_result = EditorAutomationDriver::perform(snapshot, "choose_menu_item", blocked_target, Dictionary());
+	MessageQueue::get_singleton()->flush();
+	CHECK_FALSE(blocked_result.ok);
+	CHECK(blocked_result.kind == "element_disabled");
+	// Even a refused activation must restore the button state.
+	CHECK_FALSE(menu_button->is_pressed());
+	CHECK_FALSE(popup->is_visible());
+
+	memdelete(root);
+}
+
+// #1090 follow-up: a submenu row opens a child menu rather than emitting an id.
+// It is exposed for visibility but not as selectable, and activating it is
+// refused instead of firing the parent's id_pressed path.
+TEST_CASE("[Editor][Automation] menu button submenu rows are not directly selectable") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	MenuButton *menu_button = memnew(MenuButton);
+	menu_button->set_text("File");
+	setup_visible_control(menu_button);
+	root->add_child(menu_button);
+
+	PopupMenu *popup = menu_button->get_popup();
+	popup->add_item("Save", 1);
+	PopupMenu *submenu = memnew(PopupMenu);
+	submenu->set_name("RecentSubmenu");
+	submenu->add_item("Recent File", 100);
+	popup->add_submenu_node_item("Open Recent", submenu, 2);
+
+	MenuItemPressTracker tracker;
+	popup->connect("id_pressed", callable_mp(&tracker, &MenuItemPressTracker::on_id_pressed));
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	const EditorAutomationElement *submenu_item = find_virtual_element(snapshot, "menu_item", "Open Recent");
+	REQUIRE(submenu_item != nullptr);
+	CHECK((bool)submenu_item->metadata.get("has_submenu", false));
+	// A submenu row advertises no direct-selection actions.
+	CHECK_FALSE(submenu_item->actions.has("choose_menu_item"));
+	CHECK_FALSE(submenu_item->actions.has("activate"));
+
+	Dictionary target;
+	target["id"] = submenu_item->id;
+	const EditorAutomationActionResult result = EditorAutomationDriver::perform(snapshot, "choose_menu_item", target, Dictionary());
+	MessageQueue::get_singleton()->flush();
+	CHECK_FALSE(result.ok);
+	CHECK(result.kind == "unsupported_action");
+	// The parent's id_pressed path must not fire.
+	CHECK(tracker.last_id == -1);
+	CHECK_FALSE(menu_button->is_pressed());
+
+	memdelete(root);
+}
+
+// #1089: snapshotting a Tree whose row list is enormous (the Search Help dialog
+// holds the whole class database) must stay bounded. Bounds are derived from a
+// single anchor row plus O(1) per-row heights, so every on-screen row is emitted
+// with correct, monotonically increasing bounds without the O(n^2) hang.
+TEST_CASE("[Editor][Automation] tree rows all emitted with correct incremental bounds") {
+	// A plain Control root does not resize its children, so the tree keeps the
+	// explicit height below and every row lays out on-screen with real bounds.
+	Control *root = memnew(Control);
+	root->set_size(Size2(400, 4100));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	Tree *tree = memnew(Tree);
+	tree->set_name("HugeTree");
+	setup_visible_control(tree, Size2(200, 4000));
+	root->add_child(tree);
+
+	TreeItem *tree_root = tree->create_item();
+	const int total_rows = 120;
+	for (int i = 0; i < total_rows; i++) {
+		TreeItem *item = tree->create_item(tree_root);
+		item->set_text(0, vformat("Row %d", i));
+	}
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	// Every row is present and, because the tall viewport fits them all, every row
+	// carries on-screen bounds derived from the incremental offset walk.
+	CHECK(count_role(snapshot, "tree_item") == total_rows);
+	CHECK(count_role_with_bounds(snapshot, "tree_item") == total_rows);
+
+	// Bounds increase monotonically down the tree, matching the incremental offset
+	// accumulation (the fix must not collapse rows onto one origin).
+	const EditorAutomationElement *first_row = find_virtual_element(snapshot, "tree_item", "Row 0");
+	const EditorAutomationElement *mid_row = find_virtual_element(snapshot, "tree_item", "Row 60");
+	const EditorAutomationElement *last_row = find_virtual_element(snapshot, "tree_item", "Row 119");
+	REQUIRE(first_row != nullptr);
+	REQUIRE(mid_row != nullptr);
+	REQUIRE(last_row != nullptr);
+	CHECK(mid_row->bounds.position.y > first_row->bounds.position.y);
+	CHECK(last_row->bounds.position.y > mid_row->bounds.position.y);
+	// Row spacing tracks the row height rather than collapsing.
+	CHECK(mid_row->bounds.position.y - first_row->bounds.position.y >= first_row->bounds.size.y * 2);
+
+	memdelete(root);
+}
+
+// #1089 follow-up: rows inside a collapsed branch are still visited by
+// get_next_in_tree and pass is_visible_in_tree(), but they are not drawn. They
+// must not advance the running row offset (which would push later siblings down)
+// nor claim on-screen bounds.
+TEST_CASE("[Editor][Automation] collapsed branch does not shift sibling bounds") {
+	Control *root = memnew(Control);
+	root->set_size(Size2(400, 600));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	Tree *tree = memnew(Tree);
+	tree->set_name("CollapseTree");
+	setup_visible_control(tree, Size2(200, 500));
+	root->add_child(tree);
+
+	TreeItem *tree_root = tree->create_item();
+	TreeItem *branch = tree->create_item(tree_root);
+	branch->set_text(0, "Branch");
+	TreeItem *hidden_child = tree->create_item(branch);
+	hidden_child->set_text(0, "Hidden Child");
+	TreeItem *hidden_child2 = tree->create_item(branch);
+	hidden_child2->set_text(0, "Hidden Child 2");
+	branch->set_collapsed(true);
+	TreeItem *sibling = tree->create_item(tree_root);
+	sibling->set_text(0, "Sibling");
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+
+	const EditorAutomationElement *branch_element = find_virtual_element(snapshot, "tree_item", "Branch");
+	const EditorAutomationElement *sibling_element = find_virtual_element(snapshot, "tree_item", "Sibling");
+	const EditorAutomationElement *hidden_element = find_virtual_element(snapshot, "tree_item", "Hidden Child");
+	REQUIRE(branch_element != nullptr);
+	REQUIRE(sibling_element != nullptr);
+	// Hidden rows stay present (selectable) even though collapsed.
+	REQUIRE(hidden_element != nullptr);
+
+	// Drawn rows carry bounds; the hidden collapsed child does not.
+	CHECK(branch_element->bounds.size.y > 0);
+	CHECK(sibling_element->bounds.size.y > 0);
+	CHECK(hidden_element->bounds.size.y == 0);
+
+	// The sibling sits one row below the branch, not three: the two hidden
+	// descendants must not have pushed it down.
+	CHECK(sibling_element->bounds.position.y > branch_element->bounds.position.y);
+	CHECK(sibling_element->bounds.position.y - branch_element->bounds.position.y <= branch_element->bounds.size.y + 1);
+
+	memdelete(root);
+}
+
+class DisabledMenuTracker : public Object {
+	FOUNDRY_CLASS(DisabledMenuTracker, Object);
+
+public:
+	int fired_count = 0;
+
+	void on_id_pressed(int p_id) {
+		fired_count++;
+	}
+};
+
+// #1090 follow-up: a disabled MenuButton command is exposed for visibility but
+// must not be activatable, since a user could not select it either.
+TEST_CASE("[Editor][Automation] disabled menu button items are not activatable") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	MenuButton *menu_button = memnew(MenuButton);
+	menu_button->set_text("Debug");
+	setup_visible_control(menu_button);
+	root->add_child(menu_button);
+
+	PopupMenu *popup = menu_button->get_popup();
+	popup->add_item("Enabled Command", 1);
+	popup->add_item("Disabled Command", 2);
+	popup->set_item_disabled(1, true);
+
+	DisabledMenuTracker tracker;
+	popup->connect("id_pressed", callable_mp(&tracker, &DisabledMenuTracker::on_id_pressed));
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	const EditorAutomationElement *disabled_item = find_virtual_element(snapshot, "menu_item", "Disabled Command");
+	REQUIRE(disabled_item != nullptr);
+	// The disabled command is visible but reported as not enabled.
+	CHECK_FALSE(disabled_item->enabled);
+
+	Dictionary target;
+	target["id"] = disabled_item->id;
+
+	const EditorAutomationActionResult result = EditorAutomationDriver::perform(snapshot, "choose_menu_item", target, Dictionary());
+	CHECK_FALSE(result.ok);
+	CHECK(result.kind == "element_disabled");
+	CHECK(tracker.fired_count == 0);
+
+	memdelete(root);
+}
+
+class AboutToPopupDisabler : public Object {
+	FOUNDRY_CLASS(AboutToPopupDisabler, Object);
+
+public:
+	PopupMenu *popup = nullptr;
+	int disable_index = -1;
+
+	void on_about_to_popup() {
+		if (popup != nullptr && disable_index >= 0) {
+			popup->set_item_disabled(disable_index, true);
+		}
+	}
+};
+
+// #1090 follow-up: editor menus commonly update/disable entries in the
+// MenuButton about_to_popup signal. Exposing hidden popup items must still honor
+// that: activating an item fires about_to_popup first, so a command the live
+// menu would disable cannot be triggered through the stale snapshot.
+TEST_CASE("[Editor][Automation] menu button activation refreshes via about_to_popup") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	MenuButton *menu_button = memnew(MenuButton);
+	menu_button->set_text("Edit");
+	setup_visible_control(menu_button);
+	root->add_child(menu_button);
+
+	PopupMenu *popup = menu_button->get_popup();
+	popup->add_item("Refreshed Command", 7);
+
+	AboutToPopupDisabler disabler;
+	disabler.popup = popup;
+	disabler.disable_index = 0;
+	menu_button->connect("about_to_popup", callable_mp(&disabler, &AboutToPopupDisabler::on_about_to_popup));
+
+	DisabledMenuTracker tracker;
+	popup->connect("id_pressed", callable_mp(&tracker, &DisabledMenuTracker::on_id_pressed));
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	const EditorAutomationElement *item = find_virtual_element(snapshot, "menu_item", "Refreshed Command");
+	REQUIRE(item != nullptr);
+	// The snapshot captured the item before about_to_popup ran, so it still looks
+	// enabled...
+	CHECK(item->enabled);
+
+	Dictionary target;
+	target["id"] = item->id;
+
+	// ...but activation fires about_to_popup, which disables it, so the command is
+	// refused rather than triggered.
+	const EditorAutomationActionResult result = EditorAutomationDriver::perform(snapshot, "choose_menu_item", target, Dictionary());
+	CHECK_FALSE(result.ok);
+	CHECK(result.kind == "element_disabled");
+	CHECK(tracker.fired_count == 0);
+
+	memdelete(root);
+}
+
+// #1090 follow-up: some editor menus connect their rebuild/disable handlers to
+// the PopupMenu's own about_to_popup rather than the MenuButton's. Activation
+// must fire both, so a command the popup-signal handler disables is refused.
+TEST_CASE("[Editor][Automation] menu button activation honors popup about_to_popup") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	MenuButton *menu_button = memnew(MenuButton);
+	menu_button->set_text("Search");
+	setup_visible_control(menu_button);
+	root->add_child(menu_button);
+
+	PopupMenu *popup = menu_button->get_popup();
+	popup->add_item("Popup Signal Command", 3);
+
+	AboutToPopupDisabler disabler;
+	disabler.popup = popup;
+	disabler.disable_index = 0;
+	// Connect to the PopupMenu's signal, not the MenuButton's.
+	popup->connect("about_to_popup", callable_mp(&disabler, &AboutToPopupDisabler::on_about_to_popup));
+
+	DisabledMenuTracker tracker;
+	popup->connect("id_pressed", callable_mp(&tracker, &DisabledMenuTracker::on_id_pressed));
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	const EditorAutomationElement *item = find_virtual_element(snapshot, "menu_item", "Popup Signal Command");
+	REQUIRE(item != nullptr);
+
+	Dictionary target;
+	target["id"] = item->id;
+
+	const EditorAutomationActionResult result = EditorAutomationDriver::perform(snapshot, "choose_menu_item", target, Dictionary());
+	CHECK_FALSE(result.ok);
+	CHECK(result.kind == "element_disabled");
+	CHECK(tracker.fired_count == 0);
+
+	memdelete(root);
+}
+
+class AboutToPopupRenamer : public Object {
+	FOUNDRY_CLASS(AboutToPopupRenamer, Object);
+
+public:
+	PopupMenu *popup = nullptr;
+	int index = -1;
+	String new_text;
+
+	void on_about_to_popup() {
+		if (popup != nullptr && index >= 0) {
+			popup->set_item_text(index, new_text);
+		}
+	}
+};
+
+// #1090 follow-up: a menu rebuilt on about_to_popup can reorder/rename entries,
+// so the snapshot's numeric index may no longer map to the requested command.
+// Activation detects the mismatch and refuses rather than firing the wrong one.
+TEST_CASE("[Editor][Automation] menu button activation refuses a stale index after rebuild") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	MenuButton *menu_button = memnew(MenuButton);
+	menu_button->set_text("Go To");
+	setup_visible_control(menu_button);
+	root->add_child(menu_button);
+
+	PopupMenu *popup = menu_button->get_popup();
+	popup->add_item("Original Command", 4);
+
+	AboutToPopupRenamer renamer;
+	renamer.popup = popup;
+	renamer.index = 0;
+	renamer.new_text = "Different Command";
+	menu_button->connect("about_to_popup", callable_mp(&renamer, &AboutToPopupRenamer::on_about_to_popup));
+
+	DisabledMenuTracker tracker;
+	popup->connect("id_pressed", callable_mp(&tracker, &DisabledMenuTracker::on_id_pressed));
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	const EditorAutomationElement *item = find_virtual_element(snapshot, "menu_item", "Original Command");
+	REQUIRE(item != nullptr);
+
+	Dictionary target;
+	target["id"] = item->id;
+
+	const EditorAutomationActionResult result = EditorAutomationDriver::perform(snapshot, "choose_menu_item", target, Dictionary());
+	CHECK_FALSE(result.ok);
+	CHECK(result.kind == "stale_element");
+	CHECK(tracker.fired_count == 0);
+
+	memdelete(root);
+}
+
+// #1090 follow-up: a disabled MenuButton cannot be opened, so its commands are
+// exposed as not enabled and cannot be activated.
+TEST_CASE("[Editor][Automation] disabled menu button exposes inert commands") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	MenuButton *menu_button = memnew(MenuButton);
+	menu_button->set_text("Debug");
+	setup_visible_control(menu_button);
+	root->add_child(menu_button);
+
+	PopupMenu *popup = menu_button->get_popup();
+	popup->add_item("Command In Disabled Menu", 9);
+	menu_button->set_disabled(true);
+
+	DisabledMenuTracker tracker;
+	popup->connect("id_pressed", callable_mp(&tracker, &DisabledMenuTracker::on_id_pressed));
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	const EditorAutomationElement *item = find_virtual_element(snapshot, "menu_item", "Command In Disabled Menu");
+	REQUIRE(item != nullptr);
+	CHECK_FALSE(item->enabled);
+
+	Dictionary target;
+	target["id"] = item->id;
+
+	const EditorAutomationActionResult result = EditorAutomationDriver::perform(snapshot, "choose_menu_item", target, Dictionary());
+	CHECK_FALSE(result.ok);
+	CHECK(result.kind == "element_disabled");
+	CHECK(tracker.fired_count == 0);
+
+	memdelete(root);
+}
+
+class RightClickCaptureControl : public Control {
+	FOUNDRY_CLASS(RightClickCaptureControl, Control);
+
+public:
+	int right_click_count = 0;
+
+protected:
+	void gui_input(const Ref<InputEvent> &p_event) override {
+		Ref<InputEventMouseButton> mouse_button = p_event;
+		if (mouse_button.is_valid() && mouse_button->is_pressed() && mouse_button->get_button_index() == MouseButton::RIGHT) {
+			right_click_count++;
+		}
+	}
+};
+
+// #1091: open_context_menu synthesizes a right-click so a control's context menu
+// (e.g. the Inspector class-category "Open Documentation") can be reached.
+TEST_CASE("[Editor][Automation] open_context_menu synthesizes a right click on the element") {
+	Window *root = memnew(Window);
+	root->set_title("Context Menu Root");
+	root->set_size(Size2i(500, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+	root->set_visible(true);
+	MessageQueue::get_singleton()->flush();
+
+	RightClickCaptureControl *target_control = memnew(RightClickCaptureControl);
+	target_control->set_name("CategoryRow");
+	target_control->set_mouse_filter(Control::MOUSE_FILTER_STOP);
+	setup_visible_control(target_control, Size2(200, 40));
+	root->add_child(target_control);
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	const EditorAutomationElement *element = find_element_by_role_and_name(snapshot, "control", "CategoryRow");
+	REQUIRE(element != nullptr);
+
+	Dictionary target;
+	target["id"] = element->id;
+
+	const EditorAutomationActionResult result = EditorAutomationDriver::perform(snapshot, "open_context_menu", target, Dictionary());
+	MessageQueue::get_singleton()->flush();
+	CHECK(result.ok);
+	CHECK(result.route == EditorAutomationActionRouteNames::INPUT_CONTEXT_MENU);
+	CHECK(result.events.has("mouse_pressed"));
+	CHECK(result.events.has("mouse_released"));
+	CHECK(target_control->right_click_count >= 1);
+
+	// right_click is an accepted alias for the same behavior.
+	const EditorAutomationActionResult alias_result = EditorAutomationDriver::perform(snapshot, "right_click", target, Dictionary());
+	MessageQueue::get_singleton()->flush();
+	CHECK(alias_result.ok);
+	CHECK(target_control->right_click_count >= 2);
 
 	memdelete(root);
 }
