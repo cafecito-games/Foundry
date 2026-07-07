@@ -1368,6 +1368,51 @@ TEST_CASE("[Editor][Automation] hidden menu activation leaves the button unpress
 	memdelete(root);
 }
 
+// #1090 follow-up: a submenu row opens a child menu rather than emitting an id.
+// It is exposed for visibility but not as selectable, and activating it is
+// refused instead of firing the parent's id_pressed path.
+TEST_CASE("[Editor][Automation] menu button submenu rows are not directly selectable") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	MenuButton *menu_button = memnew(MenuButton);
+	menu_button->set_text("File");
+	setup_visible_control(menu_button);
+	root->add_child(menu_button);
+
+	PopupMenu *popup = menu_button->get_popup();
+	popup->add_item("Save", 1);
+	PopupMenu *submenu = memnew(PopupMenu);
+	submenu->set_name("RecentSubmenu");
+	submenu->add_item("Recent File", 100);
+	popup->add_submenu_node_item("Open Recent", submenu, 2);
+
+	MenuItemPressTracker tracker;
+	popup->connect("id_pressed", callable_mp(&tracker, &MenuItemPressTracker::on_id_pressed));
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	const EditorAutomationElement *submenu_item = find_virtual_element(snapshot, "menu_item", "Open Recent");
+	REQUIRE(submenu_item != nullptr);
+	CHECK((bool)submenu_item->metadata.get("has_submenu", false));
+	// A submenu row advertises no direct-selection actions.
+	CHECK_FALSE(submenu_item->actions.has("choose_menu_item"));
+	CHECK_FALSE(submenu_item->actions.has("activate"));
+
+	Dictionary target;
+	target["id"] = submenu_item->id;
+	const EditorAutomationActionResult result = EditorAutomationDriver::perform(snapshot, "choose_menu_item", target, Dictionary());
+	MessageQueue::get_singleton()->flush();
+	CHECK_FALSE(result.ok);
+	CHECK(result.kind == "unsupported_action");
+	// The parent's id_pressed path must not fire.
+	CHECK(tracker.last_id == -1);
+	CHECK_FALSE(menu_button->is_pressed());
+
+	memdelete(root);
+}
+
 // #1089: snapshotting a Tree whose row list is enormous (the Search Help dialog
 // holds the whole class database) must stay bounded. Bounds are derived from a
 // single anchor row plus O(1) per-row heights, so every on-screen row is emitted

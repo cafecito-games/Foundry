@@ -664,6 +664,16 @@ EditorAutomationActionResult _action_select_virtual(
 			}
 			return EditorAutomationActionResult::failure("element_disabled", "The menu item is disabled and cannot be activated.");
 		}
+		if (!popup_menu->get_item_submenu(index).is_empty() || popup_menu->get_item_submenu_node(index) != nullptr) {
+			// A submenu row opens a child menu rather than emitting an id;
+			// activate_item() would not open it, so refuse instead of firing the
+			// parent's id_pressed path. (Submenu contents are not yet reachable while
+			// the menu is hidden -- tracked as a follow-up.)
+			if (menu_owner != nullptr) {
+				popup_menu->hide();
+			}
+			return EditorAutomationActionResult::failure("unsupported_action", "This menu item opens a submenu; its items are not directly selectable.");
+		}
 		popup_menu->activate_item(index);
 		EditorAutomationActionResult result = EditorAutomationActionResult::success(EditorAutomationActionRouteNames::SEMANTIC_SELECT, p_element.id);
 		result.events.push_back("activated");
@@ -769,6 +779,16 @@ EditorAutomationActionResult _action_activate_virtual(
 				popup_menu->hide();
 			}
 			return EditorAutomationActionResult::failure("element_disabled", "The menu item is disabled and cannot be activated.");
+		}
+		if (!popup_menu->get_item_submenu(index).is_empty() || popup_menu->get_item_submenu_node(index) != nullptr) {
+			// A submenu row opens a child menu rather than emitting an id;
+			// activate_item() would not open it, so refuse instead of firing the
+			// parent's id_pressed path. (Submenu contents are not yet reachable while
+			// the menu is hidden -- tracked as a follow-up.)
+			if (menu_owner != nullptr) {
+				popup_menu->hide();
+			}
+			return EditorAutomationActionResult::failure("unsupported_action", "This menu item opens a submenu; its items are not directly selectable.");
 		}
 		popup_menu->activate_item(index);
 		EditorAutomationActionResult result = EditorAutomationActionResult::success(EditorAutomationActionRouteNames::SEMANTIC_ACTIVATE, p_element.id);

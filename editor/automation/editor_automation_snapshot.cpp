@@ -490,7 +490,16 @@ class EditorAutomationSnapshotBuilder {
 			// additionally refuses to activate disabled items. A command hosted by a
 			// disabled MenuButton (p_owner_enabled == false) is likewise inert.
 			const bool enabled = p_owner_enabled && !p_popup_menu->is_item_disabled(i);
-			_add_virtual_element(p_parent_index, "menu_item", key, "menu_item", item_text, item_text, false, Dictionary(), Rect2i(), enabled);
+			Dictionary metadata;
+			if (!p_popup_menu->get_item_submenu(i).is_empty() || p_popup_menu->get_item_submenu_node(i) != nullptr) {
+				// A submenu row opens a child menu rather than emitting an id. Expose
+				// it for visibility but with no selectable actions: its child items are
+				// not reachable while the parent menu is hidden, and activating the row
+				// itself would not open the submenu.
+				metadata["has_submenu"] = true;
+				metadata["supported_actions"] = PackedStringArray();
+			}
+			_add_virtual_element(p_parent_index, "menu_item", key, "menu_item", item_text, item_text, false, metadata, Rect2i(), enabled);
 		}
 	}
 
