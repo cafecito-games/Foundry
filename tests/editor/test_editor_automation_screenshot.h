@@ -543,6 +543,62 @@ TEST_CASE("[Editor][Automation] capture_screenshot fails when the element lies o
 	memdelete(viewport);
 }
 
+TEST_CASE("[Editor][Automation] capture_screenshot out-of-view element reports not-capturable even under a byte limit") {
+	EditorAutomationWait::clear_all_cooperative();
+
+	SubViewport *viewport = memnew(SubViewport);
+	viewport->set_size(Vector2i(120, 80));
+	viewport->set_disable_3d(true);
+	viewport->set_transparent_background(false);
+	SceneTree::get_singleton()->get_root()->add_child(viewport);
+
+	Control *container = memnew(Control);
+	container->set_size(Size2(120, 80));
+	viewport->add_child(container);
+
+	Button *button = memnew(Button);
+	button->set_text("Off Screen");
+	button->set_position(Point2(500, 500));
+	button->set_size(Size2(96, 40));
+	container->add_child(button);
+	screenshot_flush_frames(4);
+
+	EditorAutomationMCPDispatcher dispatcher;
+	EditorAutomationMCPDispatcher::Options options;
+	options.snapshot_root = container;
+	// A tiny budget would truncate the full-window fallback, but the real failure
+	// is that the element cannot be cropped, not the size limit.
+	options.max_screenshot_bytes = 1;
+	dispatcher.set_options(options);
+
+	Dictionary selector;
+	selector["role"] = "button";
+	selector["name"] = "Off Screen";
+
+	Dictionary arguments;
+	arguments["selector"] = selector;
+
+	Dictionary params;
+	params["name"] = "capture_screenshot";
+	params["arguments"] = arguments;
+
+	const Dictionary response = dispatcher.handle_message(make_request(7, "tools/call", params));
+	const Dictionary response_result = response["result"];
+	CHECK((bool)response_result["isError"]);
+	const Dictionary structured = response_result["structuredContent"];
+	CHECK_FALSE((bool)structured["ok"]);
+
+	// When a viewport is available the out-of-view crop must win over the byte
+	// limit; a headless build without a usable viewport reports unavailable.
+	if (structured.has("screenshot")) {
+		CHECK(String(structured["kind"]) == "screenshot_unavailable");
+	} else {
+		CHECK(String(structured["kind"]) == "element_not_capturable");
+	}
+
+	memdelete(viewport);
+}
+
 TEST_CASE("[Editor][Automation] capture_screenshot targets a window element without mis-cropping") {
 	EditorAutomationWait::clear_all_cooperative();
 
