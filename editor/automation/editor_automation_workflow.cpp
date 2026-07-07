@@ -42,6 +42,7 @@
 #include "editor/run/editor_run_bar.h"
 #include "editor/scene/scene_tree_editor.h"
 #include "editor/script/script_editor_plugin.h"
+#include "editor/workspace/workspace_pane.h"
 #include "scene/gui/item_list.h"
 #include "scene/gui/tree.h"
 
@@ -183,6 +184,9 @@ void _append_common_list_item_metadata(const ItemList *p_list, int p_index, Dict
 String EditorAutomationWorkflow::role_for_node(const Node *p_node) {
 	if (Object::cast_to<const ScenePaneTile>(p_node)) {
 		return "tile";
+	}
+	if (Object::cast_to<const WorkspacePane>(p_node)) {
+		return "pane";
 	}
 	if (Object::cast_to<const EditorDock>(p_node)) {
 		return "dock";

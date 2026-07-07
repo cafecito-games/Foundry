@@ -291,4 +291,122 @@ TEST_CASE("[Editor][Automation][MCP] mcp-pane-strip-tab-has-tile-id") {
 	h.unmount();
 }
 
+TEST_CASE("[Editor][Automation][MCP] snapshot-pane-role-stable") {
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspaceLeafNode *leaf = h.workspace->get_focused_leaf();
+	REQUIRE(leaf != nullptr);
+	WorkspacePane *pane = leaf->get_workspace_pane();
+	REQUIRE(pane != nullptr);
+
+	const uint64_t pane_object_id = pane->get_instance_id();
+	const String pane_key = String::num_uint64(pane_object_id);
+	const String expected_handle = EditorAutomationSnapshot::make_durable_handle("object", pane_key);
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(h.host);
+
+	const EditorAutomationElement *pane_element = nullptr;
+	for (int i = 0; i < snapshot.get_element_count(); i++) {
+		if (snapshot.get_element(i).object_id == pane_object_id) {
+			pane_element = &snapshot.get_element(i);
+			break;
+		}
+	}
+	REQUIRE(pane_element != nullptr);
+
+	// A generic workspace pane reports a stable "pane" role and a durable handle so
+	// automation can address it without depending on transient geometry.
+	CHECK(pane_element->role == "pane");
+	CHECK_FALSE(pane_element->handle.is_empty());
+	CHECK(pane_element->handle == expected_handle);
+
+	// The durable handle is stable across captures (same underlying node).
+	const EditorAutomationSnapshot snapshot_again = EditorAutomationSnapshot::capture_from_node(h.host);
+	const EditorAutomationElement *pane_element_again = snapshot_again.find_by_durable_key("object", pane_key);
+	REQUIRE(pane_element_again != nullptr);
+	CHECK(pane_element_again->role == "pane");
+
+	h.unmount();
+}
+
+TEST_CASE("[Editor][Automation][MCP] snapshot-mixed-tabs-distinct-selectors") {
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspaceLeafNode *leaf = h.workspace->get_focused_leaf();
+	REQUIRE(leaf != nullptr);
+	WorkspacePane *pane = leaf->get_workspace_pane();
+	REQUIRE(pane != nullptr);
+
+	WorkspaceTabRegistry &registry = WorkspacePane::get_shared_tab_registry();
+	WorkspaceTabType *scene_type = registry.find_type(StringName("scene"));
+	WorkspaceTabType *script_type = registry.find_type(StringName("script"));
+	REQUIRE(scene_type != nullptr);
+	REQUIRE(script_type != nullptr);
+
+	// A scene tab and a script tab share one pane's tab strip.
+	const String scene_key = "res://alpha.tscn";
+	const String script_key = "res://alpha.fs";
+	pane->add_tab(scene_type->make_tab(scene_key, registry.allocate_stable_id()));
+	pane->add_tab(script_type->make_tab(script_key, registry.allocate_stable_id()));
+	h.pump();
+
+	TabBar *strip = pane->get_tab_strip();
+	REQUIRE(strip != nullptr);
+	REQUIRE(strip->get_tab_count() == 2);
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(h.host);
+
+	// Both tab elements carry type_id/resource_key metadata so a scene tab and a
+	// script tab are distinguishable even when they live in the same strip.
+	const EditorAutomationElement *scene_tab_element = snapshot.find_by_durable_key("tab", vformat("%s:%d", String::num_uint64(strip->get_instance_id()), 0));
+	const EditorAutomationElement *script_tab_element = snapshot.find_by_durable_key("tab", vformat("%s:%d", String::num_uint64(strip->get_instance_id()), 1));
+	REQUIRE(scene_tab_element != nullptr);
+	REQUIRE(script_tab_element != nullptr);
+	CHECK(String(scene_tab_element->metadata.get("type_id", String())) == "scene");
+	CHECK(String(scene_tab_element->metadata.get("resource_key", String())) == scene_key);
+	CHECK(String(script_tab_element->metadata.get("type_id", String())) == "script");
+	CHECK(String(script_tab_element->metadata.get("resource_key", String())) == script_key);
+
+	// Selecting a tab by role alone is ambiguous: two tabs match.
+	Dictionary unscoped;
+	unscoped["role"] = "tab";
+	const EditorAutomationSelectorResult ambiguous = EditorAutomationSelector::resolve(snapshot, unscoped);
+	CHECK(ambiguous.status == EditorAutomationSelectorStatus::AMBIGUOUS);
+
+	// The type_id metadata disambiguates: each type resolves to exactly one tab,
+	// scoped within the owning pane by its stable "pane" role.
+	Dictionary within_pane;
+	within_pane["role"] = "pane";
+
+	Dictionary scene_type_metadata;
+	scene_type_metadata["type_id"] = "scene";
+	Dictionary scene_selector;
+	scene_selector["role"] = "tab";
+	scene_selector["metadata"] = scene_type_metadata;
+	scene_selector["within"] = within_pane;
+	const EditorAutomationSelectorResult scene_resolved = EditorAutomationSelector::resolve(snapshot, scene_selector);
+	REQUIRE(scene_resolved.status == EditorAutomationSelectorStatus::OK);
+	REQUIRE(scene_resolved.match_indices.size() == 1);
+	CHECK(String(snapshot.get_element(scene_resolved.match_indices[0]).metadata.get("resource_key", String())) == scene_key);
+
+	Dictionary script_type_metadata;
+	script_type_metadata["type_id"] = "script";
+	Dictionary script_selector;
+	script_selector["role"] = "tab";
+	script_selector["metadata"] = script_type_metadata;
+	script_selector["within"] = within_pane;
+	const EditorAutomationSelectorResult script_resolved = EditorAutomationSelector::resolve(snapshot, script_selector);
+	REQUIRE(script_resolved.status == EditorAutomationSelectorStatus::OK);
+	REQUIRE(script_resolved.match_indices.size() == 1);
+	CHECK(String(snapshot.get_element(script_resolved.match_indices[0]).metadata.get("resource_key", String())) == script_key);
+
+	h.unmount();
+}
+
 } // namespace TestEditorAutomationWorkspace
