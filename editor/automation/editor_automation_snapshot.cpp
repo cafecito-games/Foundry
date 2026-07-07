@@ -254,10 +254,11 @@ class EditorAutomationSnapshotBuilder {
 			add_unique("focus");
 		}
 
-		if (p_role == "inspector_section") {
-			// The inspector class-category header and section rows carry a
-			// right-click context menu (e.g. "Open Documentation" on a category);
-			// advertise the action so agents discover the reachable affordance.
+		if (Object::cast_to<const EditorInspectorCategory>(p_node)) {
+			// Only the inspector class-category header handles right-click, opening a
+			// context menu with "Open Documentation". Plain EditorInspectorSection
+			// rows (which share the inspector_section role) handle left-click folding
+			// only, so they must not advertise an action that opens no menu.
 			add_unique("open_context_menu");
 		}
 

@@ -1461,6 +1461,66 @@ TEST_CASE("[Editor][Automation] disabled menu button items are not activatable")
 	memdelete(root);
 }
 
+class AboutToPopupDisabler : public Object {
+	FOUNDRY_CLASS(AboutToPopupDisabler, Object);
+
+public:
+	PopupMenu *popup = nullptr;
+	int disable_index = -1;
+
+	void on_about_to_popup() {
+		if (popup != nullptr && disable_index >= 0) {
+			popup->set_item_disabled(disable_index, true);
+		}
+	}
+};
+
+// #1090 follow-up: editor menus commonly update/disable entries in the
+// MenuButton about_to_popup signal. Exposing hidden popup items must still honor
+// that: activating an item fires about_to_popup first, so a command the live
+// menu would disable cannot be triggered through the stale snapshot.
+TEST_CASE("[Editor][Automation] menu button activation refreshes via about_to_popup") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	MenuButton *menu_button = memnew(MenuButton);
+	menu_button->set_text("Edit");
+	setup_visible_control(menu_button);
+	root->add_child(menu_button);
+
+	PopupMenu *popup = menu_button->get_popup();
+	popup->add_item("Refreshed Command", 7);
+
+	AboutToPopupDisabler disabler;
+	disabler.popup = popup;
+	disabler.disable_index = 0;
+	menu_button->connect("about_to_popup", callable_mp(&disabler, &AboutToPopupDisabler::on_about_to_popup));
+
+	DisabledMenuTracker tracker;
+	popup->connect("id_pressed", callable_mp(&tracker, &DisabledMenuTracker::on_id_pressed));
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	const EditorAutomationElement *item = find_virtual_element(snapshot, "menu_item", "Refreshed Command");
+	REQUIRE(item != nullptr);
+	// The snapshot captured the item before about_to_popup ran, so it still looks
+	// enabled...
+	CHECK(item->enabled);
+
+	Dictionary target;
+	target["id"] = item->id;
+
+	// ...but activation fires about_to_popup, which disables it, so the command is
+	// refused rather than triggered.
+	const EditorAutomationActionResult result = EditorAutomationDriver::perform(snapshot, "choose_menu_item", target, Dictionary());
+	CHECK_FALSE(result.ok);
+	CHECK(result.kind == "element_disabled");
+	CHECK(tracker.fired_count == 0);
+
+	memdelete(root);
+}
+
 class RightClickCaptureControl : public Control {
 	FOUNDRY_CLASS(RightClickCaptureControl, Control);
 

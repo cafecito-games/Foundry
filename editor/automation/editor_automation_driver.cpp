@@ -51,6 +51,7 @@
 #include "scene/gui/control.h"
 #include "scene/gui/item_list.h"
 #include "scene/gui/line_edit.h"
+#include "scene/gui/menu_button.h"
 #include "scene/gui/option_button.h"
 #include "scene/gui/popup_menu.h"
 #include "scene/gui/range.h"
@@ -137,6 +138,20 @@ Node *_resolve_node_from_object_id(uint64_t p_object_id) {
 bool _parse_virtual_key(const EditorAutomationElement &p_element, String &r_kind, String &r_key) {
 	uint64_t generation = 0;
 	return EditorAutomationSnapshot::parse_element_id(p_element.id, generation, r_kind, r_key);
+}
+
+// When a menu_item belongs to a MenuButton's attached popup that is exposed while
+// hidden, activating it directly would skip MenuButton::show_popup() and its
+// about_to_popup signal. Many editor menus update or disable entries in that
+// signal, so fire it (as opening the menu would) before reading item state, so
+// automation never activates a command a real popup would have refreshed away.
+void _prepare_menu_button_popup(PopupMenu *p_popup_menu) {
+	if (p_popup_menu == nullptr || p_popup_menu->is_visible()) {
+		return;
+	}
+	if (MenuButton *menu_button = Object::cast_to<MenuButton>(p_popup_menu->get_parent())) {
+		menu_button->emit_signal(SNAME("about_to_popup"));
+	}
 }
 
 TreeItem *_resolve_tree_item(Tree *p_tree, const String &p_path) {
@@ -618,6 +633,9 @@ EditorAutomationActionResult _action_select_virtual(
 		const int index = p_key.substr(separator + 1).to_int();
 		PopupMenu *popup_menu = Object::cast_to<PopupMenu>(ObjectDB::get_instance(ObjectID(menu_id)));
 		ERR_FAIL_NULL_V(popup_menu, EditorAutomationActionResult::failure("invalid_element", "Menu item parent is no longer available."));
+		// Refresh a hidden MenuButton popup (about_to_popup) before reading item
+		// state, so index bounds and disabled checks reflect the live menu.
+		_prepare_menu_button_popup(popup_menu);
 		ERR_FAIL_INDEX_V(index, popup_menu->get_item_count(), EditorAutomationActionResult::failure("invalid_element", "Menu item index is out of range."));
 		if (popup_menu->is_item_disabled(index)) {
 			// A disabled command is not selectable by a user, so automation must not
@@ -696,6 +714,9 @@ EditorAutomationActionResult _action_activate_virtual(
 		const int index = p_key.substr(separator + 1).to_int();
 		PopupMenu *popup_menu = Object::cast_to<PopupMenu>(ObjectDB::get_instance(ObjectID(menu_id)));
 		ERR_FAIL_NULL_V(popup_menu, EditorAutomationActionResult::failure("invalid_element", "Menu item parent is no longer available."));
+		// Refresh a hidden MenuButton popup (about_to_popup) before reading item
+		// state, so index bounds and disabled checks reflect the live menu.
+		_prepare_menu_button_popup(popup_menu);
 		ERR_FAIL_INDEX_V(index, popup_menu->get_item_count(), EditorAutomationActionResult::failure("invalid_element", "Menu item index is out of range."));
 		if (popup_menu->is_item_disabled(index)) {
 			// A disabled command is not selectable by a user, so automation must not
