@@ -162,6 +162,14 @@ void EditorMainScreen::select_prev() {
 void EditorMainScreen::select_by_name(const String &p_name) {
 	ERR_FAIL_COND(p_name.is_empty());
 
+	// The script editor is not a main-screen button, but keep the public "Script"
+	// screen name (EditorInterface::set_main_screen_editor) working by revealing
+	// its workspace leaf, mirroring the hidden Script button it replaced.
+	if (p_name == "Script") {
+		EditorNode::get_singleton()->reveal_script_leaf();
+		return;
+	}
+
 	for (int i = 0; i < buttons.size(); i++) {
 		if (buttons[i]->get_text() == p_name) {
 			select(i);
