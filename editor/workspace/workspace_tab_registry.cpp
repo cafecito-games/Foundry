@@ -30,6 +30,7 @@
 
 #include "workspace_tab_registry.h"
 
+#include "editor/workspace/help_tab.h"
 #include "editor/workspace/scene_tab.h"
 #include "editor/workspace/script_resource_tab.h"
 #include "workspace_tab_stub_types.h"
@@ -134,6 +135,8 @@ void WorkspaceTabRegistry::clear_canonical_index() {
 void WorkspaceTabRegistry::register_builtin_tab_types() {
 	static SceneTabType scene_tab;
 	static ScriptResourceTabType script_tab(StringName("script"));
+	static HelpTabType help_tab;
 	register_type(&scene_tab);
 	register_type(&script_tab);
+	register_type(&help_tab);
 }

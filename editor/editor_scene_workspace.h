@@ -136,6 +136,7 @@ private:
 	Control *_get_structural_root() const;
 	Control *_restore_node_from_config(const Ref<ConfigFile> &p_config, int p_node, int p_node_count, HashSet<int> &r_visited);
 	WorkspaceLeafNode *_find_first_leaf(Control *p_node) const;
+	WorkspaceLeafNode *_find_leaf_hosting_type(const StringName &p_type_id) const;
 	void _clear_tree();
 	bool _is_leaf_node(Control *p_node) const;
 	bool _is_split_node(Control *p_node) const;
@@ -164,6 +165,12 @@ public:
 	// Reveal the script leaf pointed at p_script_path, splitting beside p_source_leaf
 	// when no leaf already hosts that script. Returns the script leaf.
 	WorkspaceLeafNode *open_script_leaf(WorkspaceLeafNode *p_source_leaf, const String &p_script_path, bool p_force_new_leaf = false);
+
+	// Open-or-reveal a class-reference help tab. p_topic is a bare class name or a
+	// deep topic ("class_method:Node2D:queue_free"); the dedup key is its class, so
+	// requesting an already-open class reveals that tab (scrolling to the deep
+	// anchor) instead of creating a duplicate. Returns the hosting leaf.
+	WorkspaceLeafNode *open_help_tab(WorkspaceLeafNode *p_source_leaf, const String &p_topic, bool p_force_new_leaf = false);
 
 	// Generic drag-a-tab drop resolution shared by every WorkspaceTabType:
 	// center = move the tab into the target pane; an edge splits the target pane

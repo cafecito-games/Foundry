@@ -241,6 +241,9 @@ void ScriptEditorController::_connect_global_signals() {
 }
 
 void ScriptEditorController::_on_request_help(const String &p_topic) {
+	if (_open_help_in_workspace(p_topic)) {
+		return;
+	}
 	if (ScriptEditorView *view = _active_view()) {
 		view->_help_class_open(p_topic);
 	}
@@ -1071,7 +1074,28 @@ void ScriptEditorController::_clear_breakpoints() {
 	}
 }
 
+bool ScriptEditorController::_open_help_in_workspace(const String &p_topic) {
+	EditorSceneWorkspace *workspace = EditorNode::get_scene_workspace();
+	if (!workspace) {
+		return false;
+	}
+	WorkspaceLeafNode *source = workspace->get_focused_leaf();
+	if (!source) {
+		const Vector<WorkspaceLeafNode *> workspace_leaves = workspace->get_leaves();
+		if (workspace_leaves.is_empty()) {
+			return false;
+		}
+		source = workspace_leaves[0];
+	}
+	return workspace->open_help_tab(source, p_topic) != nullptr;
+}
+
 void ScriptEditorController::_help_class_goto(const String &p_desc) {
+	// Class reference lives in the workspace as its own help tab. Fall back to the
+	// legacy in-view help path only when no workspace is available.
+	if (_open_help_in_workspace(p_desc)) {
+		return;
+	}
 	if (ScriptEditorView *view = _active_view()) {
 		view->goto_help(p_desc);
 	}

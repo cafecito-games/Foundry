@@ -32,6 +32,7 @@
 
 #include "core/io/config_file.h"
 
+#include "editor/workspace/help_tab.h"
 #include "editor/workspace/workspace_tab_registry.h"
 #include "editor/workspace/workspace_tab_type.h"
 
@@ -369,6 +370,373 @@ TEST_CASE("[workspace-tab][SceneTree][Editor] registry-required-for-new-type") {
 	CHECK(restored->get_tab_count() == 1);
 	CHECK(restored->get_tab(0).get_type_id() == StringName("scene"));
 	CHECK(restored->get_tab(0).get_resource_key() == "res://keep.tscn");
+
+	h2.unmount();
+}
+
+// A HelpTabType whose mount is a no-op so the workspace open/reveal/persist logic
+// can be driven headless. The real HelpTabType mounts a live EditorHelp, which on
+// enter-tree assumes a full editor (ScriptEditor singleton, editor theme); those
+// are absent in the doctest harness. Identity, title, dedup key, payload, and
+// is_resource_available are inherited unchanged, so only the surface creation is
+// stubbed. Registered under "help" so EditorSceneWorkspace::open_help_tab resolves
+// it in place of the real type for these cases.
+class HeadlessHelpTabType : public HelpTabType {
+public:
+	void mount(WorkspaceTab &p_tab, Control *p_chrome_host) override {}
+	void unmount(WorkspaceTab &p_tab) override {}
+	void activate(WorkspaceTab &p_tab) override {}
+};
+
+// Install the headless help type into the shared registry for a workspace test.
+// Static so the pointer handed to the registry stays valid for the process.
+static void install_headless_help_type() {
+	static HeadlessHelpTabType headless_help_type;
+	WorkspacePane::get_shared_tab_registry().register_type(&headless_help_type);
+}
+
+// HelpTab (issue #1054): the first real workspace tab type beyond scene/script.
+// Identity, title, dedup, and payload are asserted at the model level (no doc DB
+// or live EditorHelp), matching the fast [workspace-tab] cases above.
+
+TEST_CASE("[workspace-tab] help-tab-title-format") {
+	WorkspaceTabRegistry registry;
+	WorkspaceTabType *help_type = registry.find_type(StringName("help"));
+	REQUIRE(help_type != nullptr);
+	CHECK(help_type->type_id() == StringName("help"));
+
+	WorkspaceTab tab = help_type->make_tab("Node2D", registry.allocate_stable_id());
+	CHECK(tab.get_resource_key() == "Node2D");
+	CHECK(help_type->get_title(tab) == "Help: Node2D");
+}
+
+TEST_CASE("[workspace-tab] help-tab-close-always") {
+	WorkspaceTabRegistry registry;
+	WorkspaceTabType *help_type = registry.find_type(StringName("help"));
+	REQUIRE(help_type != nullptr);
+
+	WorkspaceTab tab = help_type->make_tab("Node2D", registry.allocate_stable_id());
+	CHECK(help_type->request_close(tab) == WorkspaceTabCloseResult::CLOSE);
+}
+
+TEST_CASE("[workspace-tab] help-tab-topic-class-key") {
+	// A bare class name is its own key; a deep topic parses down to its class so
+	// the dedup key is the class, not the full anchor.
+	CHECK(HelpTabType::class_key_for_topic("Node2D") == "Node2D");
+	CHECK(HelpTabType::class_key_for_topic("class:Node2D") == "Node2D");
+	CHECK(HelpTabType::class_key_for_topic("class_name:Node2D") == "Node2D");
+	CHECK(HelpTabType::class_key_for_topic("class_method:Node2D:queue_free") == "Node2D");
+	CHECK(HelpTabType::class_key_for_topic("class_signal:Node2D:renamed") == "Node2D");
+	CHECK(HelpTabType::class_key_for_topic("").is_empty());
+}
+
+TEST_CASE("[workspace-tab] help-tab-open-reveal") {
+	WorkspaceTabRegistry registry;
+	registry.reset_stable_id_counter();
+	registry.clear_canonical_index();
+
+	WorkspaceTabType *help_type = registry.find_type(StringName("help"));
+	REQUIRE(help_type != nullptr);
+
+	WorkspaceTab node_tab = help_type->make_tab("Node2D", registry.allocate_stable_id());
+	WorkspaceTabLocation node_location;
+	node_location.pane_id = 0;
+	node_location.tab_index = 3;
+	CHECK(registry.insert_canonical(node_tab, node_location) == WorkspaceTabInsertResult::INSERTED);
+
+	// Opening the same class again reveals the existing tab: same location and
+	// stable id, no second record.
+	WorkspaceTab duplicate_tab = help_type->make_tab("Node2D", registry.allocate_stable_id());
+	WorkspaceTab existing_tab;
+	WorkspaceTabLocation existing_location;
+	CHECK(registry.insert_canonical(duplicate_tab, node_location, &existing_tab, &existing_location) == WorkspaceTabInsertResult::REVEALED_EXISTING);
+	CHECK(existing_tab.get_stable_id() == node_tab.get_stable_id());
+	CHECK(existing_location == node_location);
+}
+
+TEST_CASE("[workspace-tab] help-tab-distinct-classes") {
+	WorkspaceTabRegistry registry;
+	registry.reset_stable_id_counter();
+	registry.clear_canonical_index();
+
+	WorkspaceTabType *help_type = registry.find_type(StringName("help"));
+	REQUIRE(help_type != nullptr);
+
+	WorkspaceTab node_tab = help_type->make_tab("Node2D", registry.allocate_stable_id());
+	WorkspaceTab sprite_tab = help_type->make_tab("Sprite2D", registry.allocate_stable_id());
+	WorkspaceTabLocation node_location;
+	node_location.pane_id = 0;
+	node_location.tab_index = 0;
+	WorkspaceTabLocation sprite_location;
+	sprite_location.pane_id = 0;
+	sprite_location.tab_index = 1;
+
+	CHECK(registry.insert_canonical(node_tab, node_location) == WorkspaceTabInsertResult::INSERTED);
+	CHECK(registry.insert_canonical(sprite_tab, sprite_location) == WorkspaceTabInsertResult::INSERTED);
+
+	WorkspaceTab found_node;
+	WorkspaceTabLocation found_node_location;
+	WorkspaceTab found_sprite;
+	WorkspaceTabLocation found_sprite_location;
+	CHECK(registry.find_canonical(StringName("help"), "Node2D", found_node, found_node_location));
+	CHECK(registry.find_canonical(StringName("help"), "Sprite2D", found_sprite, found_sprite_location));
+	CHECK(found_node.get_stable_id() != found_sprite.get_stable_id());
+}
+
+TEST_CASE("[workspace-tab] help-tab-payload-roundtrip") {
+	WorkspaceTabRegistry registry;
+	WorkspaceTabType *help_type = registry.find_type(StringName("help"));
+	REQUIRE(help_type != nullptr);
+
+	WorkspaceTab original = help_type->make_tab("Node2D", 7);
+	Dictionary payload;
+	payload["help_class"] = "Node2D";
+	payload["scroll"] = 128;
+	original.set_payload(payload);
+
+	Ref<ConfigFile> config;
+	config.instantiate();
+	const String section = "Tab_7";
+	original.save_to_config(config, section, help_type);
+
+	WorkspaceTab restored;
+	restored.load_from_config(config, section, help_type);
+	CHECK(restored.get_resource_key() == "Node2D");
+	REQUIRE(restored.get_payload().has("scroll"));
+	CHECK(int(restored.get_payload()["scroll"]) == 128);
+}
+
+TEST_CASE("[workspace-tab][SceneTree][Editor] help-tab-open-reveal-workspace") {
+	using namespace TestSceneWorkspace;
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+	install_headless_help_type();
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspaceLeafNode *source = h.workspace->get_focused_leaf();
+	REQUIRE(source != nullptr);
+
+	WorkspaceLeafNode *first = h.workspace->open_help_tab(source, "Node2D");
+	h.pump();
+	REQUIRE(first != nullptr);
+	WorkspacePane *pane = get_leaf_pane(first);
+	REQUIRE(pane != nullptr);
+
+	int help_tab_count = 0;
+	int node_stable_id = -1;
+	for (int i = 0; i < pane->get_tab_count(); i++) {
+		if (pane->get_tab(i).get_type_id() == StringName("help")) {
+			help_tab_count++;
+			node_stable_id = pane->get_tab(i).get_stable_id();
+		}
+	}
+	CHECK(help_tab_count == 1);
+
+	// Requesting the same class again reveals the existing tab instead of adding a
+	// duplicate: the help-tab count and its stable id are unchanged.
+	WorkspaceLeafNode *revealed = h.workspace->open_help_tab(source, "Node2D");
+	h.pump();
+	CHECK(revealed == first);
+	int help_tab_count_after = 0;
+	for (int i = 0; i < pane->get_tab_count(); i++) {
+		if (pane->get_tab(i).get_type_id() == StringName("help")) {
+			help_tab_count_after++;
+			CHECK(pane->get_tab(i).get_stable_id() == node_stable_id);
+		}
+	}
+	CHECK(help_tab_count_after == 1);
+
+	h.unmount();
+}
+
+TEST_CASE("[workspace-tab][SceneTree][Editor] help-tab-distinct-classes-workspace") {
+	using namespace TestSceneWorkspace;
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+	install_headless_help_type();
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspaceLeafNode *source = h.workspace->get_focused_leaf();
+	REQUIRE(source != nullptr);
+
+	h.workspace->open_help_tab(source, "Node2D");
+	h.pump();
+	h.workspace->open_help_tab(source, "Sprite2D");
+	h.pump();
+
+	WorkspaceTabRegistry &registry = WorkspacePane::get_shared_tab_registry();
+	WorkspaceTab node_tab;
+	WorkspaceTabLocation node_location;
+	WorkspaceTab sprite_tab;
+	WorkspaceTabLocation sprite_location;
+	REQUIRE(registry.find_canonical(StringName("help"), "Node2D", node_tab, node_location));
+	REQUIRE(registry.find_canonical(StringName("help"), "Sprite2D", sprite_tab, sprite_location));
+	CHECK(node_tab.get_stable_id() != sprite_tab.get_stable_id());
+
+	// Both help tabs stack in one pane; one can be moved to a split pane through
+	// the generic drop path with no help-specific branching.
+	WorkspaceLeafNode *host_leaf = h.workspace->get_leaf_by_id(node_location.pane_id);
+	REQUIRE(host_leaf != nullptr);
+	WorkspacePane *host_pane = get_leaf_pane(host_leaf);
+	REQUIRE(host_pane != nullptr);
+
+	int sprite_index = -1;
+	for (int i = 0; i < host_pane->get_tab_count(); i++) {
+		if (host_pane->get_tab(i).get_type_id() == StringName("help") && host_pane->get_tab(i).get_resource_key() == "Sprite2D") {
+			sprite_index = i;
+			break;
+		}
+	}
+	REQUIRE(sprite_index >= 0);
+
+	const int leaf_count_before = h.workspace->get_leaf_count();
+	WorkspaceLeafNode *dest = h.workspace->handle_tab_drop(host_leaf->get_leaf_id(), sprite_index, host_leaf, EditorSceneWorkspace::DROP_RIGHT);
+	h.pump();
+	REQUIRE(dest != nullptr);
+	CHECK(dest != host_leaf);
+	CHECK(h.workspace->get_leaf_count() == leaf_count_before + 1);
+	WorkspacePane *dest_pane = get_leaf_pane(dest);
+	REQUIRE(dest_pane != nullptr);
+	CHECK(dest_pane->get_tab(0).get_type_id() == StringName("help"));
+	CHECK(dest_pane->get_tab(0).get_resource_key() == "Sprite2D");
+
+	h.unmount();
+}
+
+TEST_CASE("[workspace-tab][SceneTree][Editor] help-tab-deep-topic-reveals-class") {
+	using namespace TestSceneWorkspace;
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+	install_headless_help_type();
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspaceLeafNode *source = h.workspace->get_focused_leaf();
+	REQUIRE(source != nullptr);
+
+	// A deep topic opens the class tab; requesting the bare class then reveals the
+	// same tab because the dedup key is the class, not the full topic.
+	WorkspaceLeafNode *first = h.workspace->open_help_tab(source, "class_method:Node2D:queue_free");
+	h.pump();
+	REQUIRE(first != nullptr);
+	WorkspacePane *pane = get_leaf_pane(first);
+	REQUIRE(pane != nullptr);
+
+	WorkspaceLeafNode *revealed = h.workspace->open_help_tab(source, "Node2D");
+	h.pump();
+	CHECK(revealed == first);
+
+	int help_tab_count = 0;
+	for (int i = 0; i < pane->get_tab_count(); i++) {
+		if (pane->get_tab(i).get_type_id() == StringName("help")) {
+			help_tab_count++;
+		}
+	}
+	CHECK(help_tab_count == 1);
+
+	h.unmount();
+}
+
+TEST_CASE("[workspace-tab][SceneTree][Editor] help-tab-persist-roundtrip") {
+	using namespace TestSceneWorkspace;
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+	install_headless_help_type();
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspacePane *pane = get_leaf_pane(h.workspace->get_focused_leaf());
+	REQUIRE(pane != nullptr);
+
+	WorkspaceTabRegistry &registry = WorkspacePane::get_shared_tab_registry();
+	WorkspaceTabType *help_type = registry.find_type(StringName("help"));
+	REQUIRE(help_type != nullptr);
+	WorkspaceTab help_tab = help_type->make_tab("Node2D", registry.allocate_stable_id());
+	Dictionary payload;
+	payload["help_class"] = "Node2D";
+	payload["scroll"] = 64;
+	help_tab.set_payload(payload);
+	pane->add_tab(help_tab);
+	h.pump();
+
+	const int leaf_id = h.workspace->get_focused_leaf_id();
+
+	Ref<ConfigFile> config;
+	config.instantiate();
+	EditorSceneWorkspace::save_to_config(config, h.workspace);
+
+	h.unmount();
+
+	WorkspaceHarness h2;
+	h2.mount();
+	h2.workspace->restore_from_config(config);
+	h2.pump();
+
+	WorkspacePane *restored = get_leaf_pane(h2.workspace->get_leaf_by_id(leaf_id));
+	REQUIRE(restored != nullptr);
+	int restored_scroll = -1;
+	bool found_help = false;
+	for (int i = 0; i < restored->get_tab_count(); i++) {
+		const WorkspaceTab &tab = restored->get_tab(i);
+		if (tab.get_type_id() == StringName("help") && tab.get_resource_key() == "Node2D") {
+			found_help = true;
+			if (tab.get_payload().has("scroll")) {
+				restored_scroll = int(tab.get_payload()["scroll"]);
+			}
+		}
+	}
+	CHECK(found_help);
+	CHECK(restored_scroll == 64);
+
+	h2.unmount();
+}
+
+TEST_CASE("[workspace-tab][SceneTree][Editor] help-tab-missing-class-dropped") {
+	using namespace TestSceneWorkspace;
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+	install_headless_help_type();
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspacePane *pane = get_leaf_pane(h.workspace->get_focused_leaf());
+	REQUIRE(pane != nullptr);
+
+	WorkspaceTabRegistry &registry = WorkspacePane::get_shared_tab_registry();
+	WorkspaceTabType *help_type = registry.find_type(StringName("help"));
+	REQUIRE(help_type != nullptr);
+	pane->add_tab(help_type->make_tab("ZZZ_NotARealClass_Foundry", registry.allocate_stable_id()));
+	h.pump();
+
+	const int leaf_id = h.workspace->get_focused_leaf_id();
+
+	Ref<ConfigFile> config;
+	config.instantiate();
+	EditorSceneWorkspace::save_to_config(config, h.workspace);
+
+	h.unmount();
+
+	ErrorDetector error_detector;
+	WorkspaceHarness h2;
+	h2.mount();
+	h2.workspace->restore_from_config(config);
+	h2.pump();
+
+	// The page for a class that no longer exists is dropped with a diagnostic.
+	CHECK(error_detector.has_error);
+
+	WorkspacePane *restored = get_leaf_pane(h2.workspace->get_leaf_by_id(leaf_id));
+	REQUIRE(restored != nullptr);
+	for (int i = 0; i < restored->get_tab_count(); i++) {
+		CHECK(restored->get_tab(i).get_resource_key() != "ZZZ_NotARealClass_Foundry");
+	}
 
 	h2.unmount();
 }
