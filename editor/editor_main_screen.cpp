@@ -120,6 +120,13 @@ void EditorMainScreen::save_layout_to_config(Ref<ConfigFile> p_config_file, cons
 	} else {
 		p_config_file->set_value(p_section, "selected_main_editor", Variant());
 	}
+	// Scrub the retired raw-index key that #1064 replaced with the name above.
+	// The real save path amends the on-disk config, and ConfigFile::save preserves
+	// unrecognized keys, so a layout written before the switch would otherwise carry
+	// this dead entry forever; erase it here so the next save drops it for good.
+	if (p_config_file->has_section_key(p_section, "selected_main_editor_idx")) {
+		p_config_file->erase_section_key(p_section, "selected_main_editor_idx");
+	}
 }
 
 void EditorMainScreen::load_layout_from_config(Ref<ConfigFile> p_config_file, const String &p_section) {
