@@ -135,7 +135,11 @@ public:
 	void add_tab(const WorkspaceTab &p_tab);
 	void remove_tab(int p_index);
 	void move_tab(int p_from, int p_to);
-	void set_active_tab(int p_index);
+	// p_activate=false switches the active tab without running the tab type's
+	// activation side effects (a scene tab's activation claims workspace focus and
+	// reparents the shared scene editor). Restore uses this for non-focused panes
+	// so a deferred activation cannot overwrite the restored focused pane.
+	void set_active_tab(int p_index, bool p_activate = true);
 	WorkspaceTabCloseResult request_close_tab(int p_index);
 
 	// Detach a tab for a move: unmounts it (capturing its type payload) and

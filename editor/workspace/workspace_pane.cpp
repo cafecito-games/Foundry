@@ -327,10 +327,14 @@ void WorkspacePane::_apply_pending_active_tab() {
 	has_pending_active_tab = false;
 	const int index = pending_active_tab_index;
 	pending_active_tab_index = -1;
+	// Only the restored focused pane runs activation side effects; a non-focused
+	// pane activating a scene tab would claim workspace focus and overwrite the
+	// restored focused_leaf_id.
+	const bool activate = workspace && workspace->get_focused_leaf_id() == leaf_id;
 	if (index >= 0 && index < tabs.size()) {
-		set_active_tab(index);
+		set_active_tab(index, activate);
 	} else {
-		_update_pane_state();
+		_update_pane_state(activate);
 	}
 }
 
@@ -550,7 +554,7 @@ void WorkspacePane::move_tab(int p_from, int p_to) {
 	_update_pane_state();
 }
 
-void WorkspacePane::set_active_tab(int p_index) {
+void WorkspacePane::set_active_tab(int p_index, bool p_activate) {
 	suppress_tab_strip_callback = true;
 	if (p_index < 0 || p_index >= tabs.size()) {
 		if (active_tab_index >= 0) {
@@ -562,7 +566,7 @@ void WorkspacePane::set_active_tab(int p_index) {
 			tab_strip->set_current_tab(-1);
 			tab_strip->set_block_signals(false);
 		}
-		_update_pane_state();
+		_update_pane_state(p_activate);
 		suppress_tab_strip_callback = false;
 		return;
 	}
@@ -582,7 +586,7 @@ void WorkspacePane::set_active_tab(int p_index) {
 		tab_strip->set_current_tab(active_tab_index);
 		tab_strip->set_block_signals(false);
 	}
-	_update_pane_state();
+	_update_pane_state(p_activate);
 	suppress_tab_strip_callback = false;
 }
 
@@ -811,6 +815,11 @@ void WorkspacePane::load_layout(const Ref<ConfigFile> &p_config, const String &p
 		}
 		WorkspaceTab tab;
 		tab.load_from_config(p_config, tab_section, type);
+		// Reserve the restored id even for a dropped tab so a fresh allocation never
+		// collides with a persisted stable id elsewhere in the tree.
+		if (tab_registry) {
+			tab_registry->reserve_stable_id(tab.get_stable_id());
+		}
 		if (!type->is_resource_available(tab)) {
 			WARN_PRINT(vformat("Workspace pane %d: dropping restored tab '%s' (%s); its backing resource is missing.", leaf_id, tab.get_resource_key(), String(type_id)));
 			continue;

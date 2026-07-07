@@ -71,6 +71,9 @@ public:
 
 	int allocate_stable_id();
 	void reset_stable_id_counter(int p_next_stable_id = 0) { next_stable_id = p_next_stable_id; }
+	// Ensure a subsequent allocate_stable_id() cannot reuse an id already assigned
+	// to a restored tab. Called for each stable id read back during layout restore.
+	void reserve_stable_id(int p_stable_id) { next_stable_id = MAX(next_stable_id, p_stable_id + 1); }
 
 	WorkspaceTabInsertResult insert_canonical(const WorkspaceTab &p_tab, const WorkspaceTabLocation &p_location, WorkspaceTab *r_existing_tab = nullptr, WorkspaceTabLocation *r_existing_location = nullptr);
 	void set_canonical(const WorkspaceTab &p_tab, const WorkspaceTabLocation &p_location);

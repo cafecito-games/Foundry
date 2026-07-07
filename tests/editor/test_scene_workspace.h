@@ -2822,4 +2822,88 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] persist-focus-invariant-holds") {
 	remove_resource_file(script_path);
 }
 
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] persist-nonfocused-scene-tab-keeps-focus") {
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspaceLeafNode *leaf_a = h.workspace->get_focused_leaf();
+	const int tile_a = leaf_a->get_leaf_id();
+	h.editor_data.register_tile(tile_a);
+	h.editor_data.set_focused_tile_id(tile_a);
+	Node2D *root_a = memnew(Node2D);
+	const int scene_a = add_test_scene(h.editor_data, tile_a, root_a);
+
+	WorkspaceLeafNode *leaf_b = h.workspace->split(leaf_a, false, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
+	h.pump();
+	REQUIRE(leaf_b != nullptr);
+	const int tile_b = leaf_b->get_leaf_id();
+	h.editor_data.register_tile(tile_b);
+	Node2D *root_b = memnew(Node2D);
+	const int scene_b = add_test_scene(h.editor_data, tile_b, root_b);
+
+	h.workspace->sync_scene_tabs_from_editor_data();
+	h.workspace->set_focused_leaf(tile_b);
+	h.editor_data.set_focused_tile_id(tile_b);
+	h.editor_data.set_edited_scene(scene_b);
+	REQUIRE(get_leaf_pane(leaf_a)->find_scene_tab_index(scene_a) >= 0);
+
+	Ref<ConfigFile> config;
+	config.instantiate();
+	EditorSceneWorkspace::save_to_config(config, h.workspace);
+
+	// Restore into the same workspace so editor_data keeps both scenes; the
+	// non-focused pane's restored scene tab must not activate and steal focus.
+	h.workspace->restore_from_config(config);
+	h.pump();
+
+	CHECK(h.workspace->get_focused_leaf_id() == tile_b);
+
+	h.unmount();
+}
+
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] persist-restore-reserves-stable-ids") {
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+	const String script_path = make_existing_resource_file("reserve_ids.fs");
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspacePane *pane = get_leaf_pane(h.workspace->get_focused_leaf());
+	REQUIRE(pane != nullptr);
+
+	WorkspaceTabRegistry &registry = WorkspacePane::get_shared_tab_registry();
+	WorkspaceTabType *scene_type = registry.find_type(StringName("scene"));
+	WorkspaceTabType *script_type = registry.find_type(StringName("script"));
+	WorkspaceTab scene_tab = scene_type->make_tab("res://reserve.tscn", registry.allocate_stable_id());
+	WorkspaceTab script_tab = script_type->make_tab(script_path, registry.allocate_stable_id());
+	pane->add_tab(scene_tab);
+	pane->add_tab(script_tab);
+	const int max_stable = MAX(scene_tab.get_stable_id(), script_tab.get_stable_id());
+
+	Ref<ConfigFile> config;
+	config.instantiate();
+	EditorSceneWorkspace::save_to_config(config, h.workspace);
+
+	h.unmount();
+
+	// A fresh process starts the shared id counter below the persisted ids; restore
+	// must reserve past them so the next allocation cannot collide with a restored tab.
+	WorkspacePane::get_shared_tab_registry().reset_stable_id_counter(0);
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+
+	WorkspaceHarness h2;
+	h2.mount();
+	h2.workspace->restore_from_config(config);
+	h2.pump();
+
+	CHECK(WorkspacePane::get_shared_tab_registry().allocate_stable_id() > max_stable);
+
+	h2.unmount();
+	remove_resource_file(script_path);
+}
+
 } // namespace TestSceneWorkspace
