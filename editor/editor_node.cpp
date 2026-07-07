@@ -7409,6 +7409,13 @@ void EditorNode::_load_workspace_from_config(const Ref<ConfigFile> &p_config_fil
 	_resolve_restored_script_leaf_associated_scenes();
 
 	_set_current_scene_nocheck(editor_data.get_tile_current_scene(editor_data.get_focused_tile_id()));
+
+	// _set_current_scene_nocheck defers _update_all_scene_tabs, which rebuilds every
+	// pane's scene tabs from EditorData ownership. A restored non-default leaf whose
+	// persisted scene tab resolves to a scene owned by another leaf ends up empty once
+	// that sync runs. Defer reconciliation after it (FIFO) so any such phantom empty
+	// pane self-heals to a valid workspace instead of persisting across restarts.
+	callable_mp(scene_workspace, &EditorSceneWorkspace::reconcile_empty_leaves).call_deferred();
 }
 
 void EditorNode::_save_window_settings_to_config(Ref<ConfigFile> p_layout, const String &p_section) {

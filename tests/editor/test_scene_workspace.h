@@ -3819,4 +3819,116 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] mixed-collapse-focused-pane-with-
 	h.unmount();
 }
 
+// Issue #1063: a persisted layout can restore a non-default leaf whose tabs no
+// longer resolve to any content, leaving a phantom empty (uncollapsed) pane that
+// violates the "empty non-default panes collapse" invariant. reconcile_empty_leaves()
+// is the defensive self-heal run after a restore settles.
+
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] reconcile-empty-leaves-collapses-non-default-only") {
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	// The sole leaf is the default pane and must never be collapsed, even empty.
+	h.workspace->reconcile_empty_leaves();
+	CHECK(h.workspace->get_leaf_count() == 1);
+
+	WorkspaceLeafNode *leaf_a = h.workspace->get_focused_leaf();
+	WorkspaceLeafNode *leaf_b = h.workspace->split(leaf_a, false, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
+	h.pump();
+	REQUIRE(leaf_b != nullptr);
+	const int leaf_a_id = leaf_a->get_leaf_id();
+	const int leaf_b_id = leaf_b->get_leaf_id();
+
+	// leaf_a owns a scene (non-empty); leaf_b is an empty scene pane.
+	Node2D *root = memnew(Node2D);
+	const int scene_a = add_test_scene(h.editor_data, leaf_a_id, root);
+	h.editor_data.set_scene_path(scene_a, "res://a.tscn");
+	h.workspace->set_focused_leaf(leaf_a_id);
+	h.workspace->sync_scene_tabs_from_editor_data();
+	h.pump();
+
+	REQUIRE(get_leaf_pane(leaf_a)->get_tab_count() == 1);
+	REQUIRE(get_leaf_pane(leaf_b)->get_tab_count() == 0);
+
+	h.workspace->reconcile_empty_leaves();
+	h.pump();
+
+	// Only the empty non-default leaf collapses; the populated leaf survives intact.
+	CHECK(h.workspace->get_leaf_count() == 1);
+	CHECK(h.workspace->get_leaf_by_id(leaf_b_id) == nullptr);
+	WorkspaceLeafNode *survivor = h.workspace->get_leaf_by_id(leaf_a_id);
+	REQUIRE(survivor != nullptr);
+	CHECK(get_leaf_pane(survivor)->get_tab_count() == 1);
+
+	h.unmount();
+}
+
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] restore-then-reconcile-drops-all-tabs-dropped-leaf") {
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspaceLeafNode *leaf_a = h.workspace->get_focused_leaf();
+	WorkspaceLeafNode *leaf_b = h.workspace->split(leaf_a, false, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
+	h.pump();
+	REQUIRE(leaf_b != nullptr);
+	const int leaf_a_id = leaf_a->get_leaf_id();
+	const int leaf_b_id = leaf_b->get_leaf_id();
+
+	// A save-side registry that also knows a type the shared restore registry does
+	// not, so leaf_b's only tab is dropped on restore and leaf_b loads empty. leaf_a
+	// keeps a scene tab (scene tabs survive load unconditionally) so it stays valid.
+	WorkspaceTabRegistry save_registry;
+	save_registry.reset_stable_id_counter();
+	PromptSpyTabType unresolved_type;
+	save_registry.register_type(&unresolved_type);
+	WorkspaceTabType *scene_type = save_registry.find_type(StringName("scene"));
+	REQUIRE(scene_type != nullptr);
+
+	WorkspacePane *pane_a = get_leaf_pane(leaf_a);
+	WorkspacePane *pane_b = get_leaf_pane(leaf_b);
+	REQUIRE(pane_a != nullptr);
+	REQUIRE(pane_b != nullptr);
+	pane_a->set_tab_registry(&save_registry);
+	pane_b->set_tab_registry(&save_registry);
+
+	pane_a->add_tab(scene_type->make_tab("res://keep.tscn", save_registry.allocate_stable_id()));
+	pane_b->add_tab(unresolved_type.make_tab("res://gone", save_registry.allocate_stable_id()));
+	REQUIRE(pane_a->get_tab_count() == 1);
+	REQUIRE(pane_b->get_tab_count() == 1);
+
+	Ref<ConfigFile> config;
+	config.instantiate();
+	EditorSceneWorkspace::save_to_config(config, h.workspace);
+
+	h.unmount();
+
+	ErrorDetector error_detector;
+	WorkspaceHarness h2;
+	h2.mount();
+	h2.workspace->restore_from_config(config);
+	h2.pump();
+
+	// leaf_b's only tab was unresolvable and dropped with a diagnostic, leaving it a
+	// phantom empty non-default pane; leaf_a restored its scene tab.
+	CHECK(error_detector.has_error);
+	REQUIRE(h2.workspace->get_leaf_count() == 2);
+	REQUIRE(get_leaf_pane(h2.workspace->get_leaf_by_id(leaf_b_id))->get_tab_count() == 0);
+
+	// The restore self-heal collapses the emptied leaf.
+	h2.workspace->reconcile_empty_leaves();
+	h2.pump();
+
+	CHECK(h2.workspace->get_leaf_count() == 1);
+	CHECK(h2.workspace->get_leaf_by_id(leaf_b_id) == nullptr);
+	WorkspaceLeafNode *survivor = h2.workspace->get_leaf_by_id(leaf_a_id);
+	REQUIRE(survivor != nullptr);
+	CHECK(get_leaf_pane(survivor)->get_tab_count() == 1);
+
+	h2.unmount();
+}
+
 } // namespace TestSceneWorkspace

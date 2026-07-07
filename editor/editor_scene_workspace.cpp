@@ -113,6 +113,28 @@ void EditorSceneWorkspace::collapse_if_empty_deferred(int p_leaf_id) {
 	callable_mp(this, &EditorSceneWorkspace::_collapse_if_empty).call_deferred(p_leaf_id);
 }
 
+void EditorSceneWorkspace::reconcile_empty_leaves() {
+	// Iterate a snapshot because collapse() mutates `leaves`; re-check membership and
+	// the leaf count each step since collapsing can free a leaf and must never drop
+	// the workspace below its sole/default pane.
+	const Vector<WorkspaceLeafNode *> snapshot = leaves;
+	for (WorkspaceLeafNode *leaf : snapshot) {
+		if (get_leaf_count() <= 1) {
+			break;
+		}
+		if (!leaves.has(leaf)) {
+			continue;
+		}
+		WorkspacePane *pane = leaf->get_workspace_pane();
+		if (!pane) {
+			continue;
+		}
+		if (pane->get_tab_count() == 0 && !pane->has_bridge_content()) {
+			collapse(leaf);
+		}
+	}
+}
+
 WorkspaceLeafNode *EditorSceneWorkspace::handle_tab_drop(int p_source_pane_id, int p_source_tab_index, WorkspaceLeafNode *p_target_leaf, TileDropRegion p_region) {
 	ERR_FAIL_NULL_V(p_target_leaf, nullptr);
 	ERR_FAIL_COND_V(!leaves.has(p_target_leaf), nullptr);

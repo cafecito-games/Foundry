@@ -220,6 +220,13 @@ public:
 	static void save_to_config(const Ref<ConfigFile> &p_config, const EditorSceneWorkspace *p_workspace);
 	static bool has_workspace_session(const Ref<ConfigFile> &p_config);
 	void restore_from_config(const Ref<ConfigFile> &p_config);
+	// Defensive self-heal for restored layouts: a persisted non-default leaf whose
+	// tabs no longer resolve to any content (a scene tab whose scene is owned by
+	// another leaf, or tabs dropped as unresolvable during load) can survive as a
+	// phantom empty pane. Collapse every such leaf so the "empty non-default panes
+	// collapse" invariant holds after a restore settles. The sole/default leaf is
+	// never collapsed. Run after the tab tree and scene ownership are resolved.
+	void reconcile_empty_leaves();
 
 	EditorSceneWorkspace();
 };
