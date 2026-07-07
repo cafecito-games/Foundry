@@ -97,7 +97,7 @@ Use the stdlib-only helper `scripts/review_gallery.py` (see `scripts/review_gall
   - `design` — before/after pairs (`--pair before|after`) so an aesthetic or layout change can be judged against the prior state.
   - `walkthrough` — an ordered, step-captioned storyboard (open → act → observe) so a behavioral change can be followed and verified step by step.
 - Caption every shot with what the reviewer should confirm ("dock stays docked after closing the last tab"), not just what it is. The gallery is only useful if each shot lets the reviewer decide *correct / not correct* on their own.
-- `python3 scripts/review_gallery.py serve` prints a public ngrok URL when ngrok is available (add `--basic-auth user:pass` since the URL is public-by-obscurity), and falls back to a local URL otherwise.
+- Serving is local-only by default; `python3 scripts/review_gallery.py serve --public` brings up an ngrok tunnel and prints a shareable URL for a remote reviewer (falling back to a local URL if ngrok is unavailable). Add `--basic-auth user:pass` whenever you use `--public`, since the tunnel URL is otherwise reachable by anyone who has it.
 
 The gallery ingests finished PNGs and is capture-source-agnostic, so it works today with any screenshot and improves automatically as on-demand capture evolves. Prefer producing a gallery over a wall of text for any UI-heavy change, and include the gallery URL in your summary or PR.
 
