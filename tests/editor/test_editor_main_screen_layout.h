@@ -170,7 +170,12 @@ TEST_CASE("[EditorMainScreen][Editor] name resolution survives plugin reordering
 	memdelete(plugin_c);
 }
 
-TEST_CASE("[EditorMainScreen][Editor] legacy raw-index key is scrubbed on save") {
+TEST_CASE("[EditorMainScreen][Editor] save no longer scrubs the retired key inline") {
+	// The retired "selected_main_editor_idx" cleanup now lives in the
+	// EditorLayoutStore version 0 -> 1 migration (see test_editor_layout_store.h),
+	// not in save_layout_to_config. Saving must only write the name-based key and
+	// must not touch a stray retired key, so unversioned callers do not silently
+	// mutate keys the migration layer owns.
 	EditorMainScreen *main_screen = memnew(EditorMainScreen);
 	HBoxContainer *button_hb = memnew(HBoxContainer);
 	main_screen->set_button_container(button_hb);
@@ -182,20 +187,15 @@ TEST_CASE("[EditorMainScreen][Editor] legacy raw-index key is scrubbed on save")
 
 	press_button(button_hb, "3D");
 
-	// A layout written before #1064 still carries the retired raw-index key
-	// alongside no name-based key.
 	Ref<ConfigFile> config;
 	config.instantiate();
 	config->set_value("EditorNode", "selected_main_editor_idx", 1);
 
-	// The real save path re-loads the on-disk config (preserving unrecognized
-	// keys) and then writes through save_layout_to_config; a full load/save
-	// cycle must drop the dead key and leave only the name-based one.
-	main_screen->load_layout_from_config(config, "EditorNode");
 	main_screen->save_layout_to_config(config, "EditorNode");
 
-	CHECK_FALSE(config->has_section_key("EditorNode", "selected_main_editor_idx"));
 	CHECK(String(config->get_value("EditorNode", "selected_main_editor", String())) == "3D");
+	// Not the save path's job anymore: the retired key is left for the migration.
+	CHECK(config->has_section_key("EditorNode", "selected_main_editor_idx"));
 
 	memdelete(main_screen);
 	memdelete(button_hb);

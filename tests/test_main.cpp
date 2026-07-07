@@ -67,6 +67,7 @@
 #include "tests/editor/test_editor_data.h"
 #include "tests/editor/test_editor_export_platform_autoload.h"
 #include "tests/editor/test_editor_help_type_links.h"
+#include "tests/editor/test_editor_layout_store.h"
 #include "tests/editor/test_editor_main_screen_layout.h"
 #include "tests/editor/test_editor_plugin_focused_tile_forwarding.h"
 #include "tests/editor/test_editor_scene_context.h"

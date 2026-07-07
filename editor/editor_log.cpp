@@ -35,9 +35,9 @@
 #include "core/version.h"
 #include "editor/docks/editor_dock.h"
 #include "editor/docks/inspector_dock.h"
+#include "editor/editor_layout_store.h"
 #include "editor/editor_node.h"
 #include "editor/editor_string_names.h"
-#include "editor/file_system/editor_paths.h"
 #include "editor/script/script_editor_plugin.h"
 #include "editor/settings/editor_command_palette.h"
 #include "editor/settings/editor_settings.h"
@@ -164,10 +164,14 @@ void EditorLog::_start_state_save_timer() {
 }
 
 void EditorLog::_save_state() {
-	Ref<ConfigFile> config;
-	config.instantiate();
-	// Load and amend existing config if it exists.
-	config->load(EditorPaths::get_singleton()->get_project_settings_dir().path_join("editor_layout.cfg"));
+	EditorLayoutStore *store = EditorLayoutStore::get_singleton();
+	if (!store) {
+		return;
+	}
+	// Amend the shared config the store owns rather than opening the file directly,
+	// so a log-state save on this dock's debounced timer cannot clobber a section
+	// another writer (e.g. the main editor) just wrote.
+	Ref<ConfigFile> config = store->get_config();
 
 	const String section = "editor_log";
 	for (const KeyValue<MessageType, LogFilter *> &E : type_filter_map) {
@@ -177,17 +181,22 @@ void EditorLog::_save_state() {
 	config->set_value(section, "collapse", collapse);
 	config->set_value(section, "show_search", search_box->is_visible());
 
-	config->save(EditorPaths::get_singleton()->get_project_settings_dir().path_join("editor_layout.cfg"));
+	store->save();
 }
 
 void EditorLog::_load_state() {
 	is_loading_state = true;
 
-	Ref<ConfigFile> config;
-	config.instantiate();
-	config->load(EditorPaths::get_singleton()->get_project_settings_dir().path_join("editor_layout.cfg"));
+	EditorLayoutStore *store = EditorLayoutStore::get_singleton();
+	Ref<ConfigFile> config = store ? store->get_config() : Ref<ConfigFile>();
+	if (config.is_null()) {
+		// No store yet (outside a live editor): fall back to an empty config so the
+		// reads below still resolve to their defaults.
+		config.instantiate();
+	}
 
-	// Run the below code even if config->load returns an error, since we want the defaults to be set even if the file does not exist yet.
+	// Run the below code even if the config is empty/missing, since we want the
+	// defaults to be set even if the file does not exist yet.
 	const String section = "editor_log";
 	for (const KeyValue<MessageType, LogFilter *> &E : type_filter_map) {
 		E.value->set_active(config->get_value(section, "log_filter_" + itos(E.key), true));

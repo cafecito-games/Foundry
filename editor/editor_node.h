@@ -82,6 +82,7 @@ class EditorExportPreset;
 class EditorFeatureProfileManager;
 class EditorFileDialog;
 class EditorFolding;
+class EditorLayoutStore;
 class EditorLayoutsDialog;
 class EditorLog;
 class EditorMainScreen;
@@ -304,6 +305,7 @@ private:
 	EditorQuickOpenDialog *quick_open_dialog = nullptr;
 	EditorExport *editor_export = nullptr;
 	EditorLog *log = nullptr;
+	EditorLayoutStore *layout_store = nullptr;
 	EditorNativeShaderSourceVisualizer *native_shader_source_visualizer = nullptr;
 	EditorPluginList *editor_plugins_force_input_forwarding = nullptr;
 	EditorPluginList *editor_plugins_force_over = nullptr;
