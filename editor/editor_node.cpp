@@ -3437,10 +3437,16 @@ void EditorNode::_menu_option_confirm(int p_option, bool p_confirmed) {
 			_proceed_closing_scene_tabs();
 		} break;
 		case SCENE_CLOSE: {
+			// Scene File-menu actions target the focused pane's active scene tab:
+			// editor_data.get_edited_scene() tracks current_edited_scene, which the
+			// focus invariant keeps aligned with get_effective_focused_tile().
 			_scene_tab_closed(editor_data.get_edited_scene());
 		} break;
 		case SCENE_TAB_CLOSE:
 		case SCENE_SAVE_SCENE: {
+			// scene_idx == -1 resolves the focused pane's active scene tab (via
+			// current_edited_scene). A script-only workspace has no such scene, so
+			// the null branch below degrades to script/external-resource saving.
 			int scene_idx = (p_option == SCENE_SAVE_SCENE) ? -1 : tab_closing_idx;
 			Node *scene = editor_data.get_edited_scene_root(scene_idx);
 			if (scene && !scene->get_scene_file_path().is_empty()) {

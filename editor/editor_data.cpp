@@ -844,6 +844,12 @@ EditorSceneContext *EditorData::get_active_scene_context() const {
 
 Node *EditorData::get_edited_scene_root(int p_idx) {
 	if (p_idx < 0) {
+		// A script-only workspace (no open scene) leaves current_edited_scene at
+		// -1. That is a legitimate state, so report "no root" cleanly instead of
+		// raising an out-of-bounds error on the sentinel.
+		if (current_edited_scene < 0) {
+			return nullptr;
+		}
 		ERR_FAIL_INDEX_V(current_edited_scene, edited_scene.size(), nullptr);
 		return edited_scene[current_edited_scene].get_root();
 	} else {
