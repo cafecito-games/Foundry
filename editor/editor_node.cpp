@@ -96,6 +96,7 @@
 #include "editor/docks/signals_dock.h"
 #include "editor/editor_data.h"
 #include "editor/editor_interface.h"
+#include "editor/editor_layout_store.h"
 #include "editor/editor_log.h"
 #include "editor/editor_main_screen.h"
 #include "editor/editor_scene_context.h"
@@ -6855,10 +6856,9 @@ void EditorNode::_save_editor_layout() {
 	if (!load_editor_layout_done) {
 		return;
 	}
-	Ref<ConfigFile> config;
-	config.instantiate();
-	// Load and amend existing config if it exists.
-	config->load(EditorPaths::get_singleton()->get_project_settings_dir().path_join("editor_layout.cfg"));
+	// The store owns the file; every participant amends the one shared config so
+	// independently debounced saves cannot clobber each other's sections.
+	Ref<ConfigFile> config = layout_store->get_config();
 
 	editor_dock_manager->save_docks_to_config(config, "docks");
 	_save_workspace_to_config(config);
@@ -6867,7 +6867,7 @@ void EditorNode::_save_editor_layout() {
 	_save_window_settings_to_config(config, "EditorWindow");
 	editor_data.get_plugin_window_layout(config);
 
-	config->save(EditorPaths::get_singleton()->get_project_settings_dir().path_join("editor_layout.cfg"));
+	layout_store->save();
 }
 
 void EditorNode::_save_open_scenes_to_config(Ref<ConfigFile> p_layout) {
@@ -6892,9 +6892,10 @@ void EditorNode::save_editor_layout_delayed() {
 void EditorNode::_load_editor_layout() {
 	EditorProgress ep("loading_editor_layout", TTR("Loading editor"), 6);
 	ep.step(TTR("Loading editor layout..."), 0, true);
-	Ref<ConfigFile> config;
-	config.instantiate();
-	Error err = config->load(EditorPaths::get_singleton()->get_project_settings_dir().path_join("editor_layout.cfg"));
+	// Load through the store so registered migrations run before any section owner
+	// reads. get_config() returns the same migrated config load() populated.
+	Error err = layout_store->load();
+	Ref<ConfigFile> config = layout_store->get_config();
 	if (err != OK) { // No config.
 		// If config is not found, expand the res:// folder and favorites by default.
 		TreeItem *root = FileSystemDock::get_singleton()->get_tree_control()->get_item_with_metadata("res://", 0);
@@ -7555,10 +7556,8 @@ bool EditorNode::has_scenes_in_session() {
 	if (!bool(EDITOR_GET("interface/scene_tabs/restore_scenes_on_load"))) {
 		return false;
 	}
-	Ref<ConfigFile> config;
-	config.instantiate();
-	Error err = config->load(EditorPaths::get_singleton()->get_project_settings_dir().path_join("editor_layout.cfg"));
-	if (err != OK) {
+	Ref<ConfigFile> config = layout_store->get_config();
+	if (config.is_null()) {
 		return false;
 	}
 	if (!config->has_section(EDITOR_NODE_CONFIG_SECTION) || !config->has_section_key(EDITOR_NODE_CONFIG_SECTION, "open_scenes")) {
@@ -9732,6 +9731,11 @@ EditorNode::EditorNode() {
 	DEV_ASSERT(!singleton);
 	singleton = this;
 
+	// Owns the persisted editor layout config. Created before any participant (e.g.
+	// the log dock, which loads its state on entering the tree) can reach for the
+	// shared config.
+	layout_store = memnew(EditorLayoutStore);
+
 	add_user_signal(MethodInfo("request_help_search"));
 	add_user_signal(MethodInfo("script_add_function_request", PropertyInfo(Variant::OBJECT, "obj"), PropertyInfo(Variant::STRING, "function"), PropertyInfo(Variant::PACKED_STRING_ARRAY, "args")));
 	add_user_signal(MethodInfo("resource_saved", PropertyInfo(Variant::OBJECT, "obj")));
@@ -11023,6 +11027,8 @@ EditorNode::~EditorNode() {
 	FileDialog::unregister_func = nullptr;
 
 	file_dialogs.clear();
+
+	memdelete(layout_store);
 
 	singleton = nullptr;
 }
