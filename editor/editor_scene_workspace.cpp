@@ -811,29 +811,32 @@ WorkspaceLeafNode *EditorSceneWorkspace::open_text_tab(WorkspaceLeafNode *p_sour
 	WorkspaceTabRegistry &registry = WorkspacePane::get_shared_tab_registry();
 
 	// Reveal an existing tab for this file so there is only ever one tab per file.
+	// The canonical location is only a hint: validate that the referenced pane
+	// still holds a text tab for this exact path (restore/teardown can leave the
+	// index stale or recycle a stable id), and drop the stale entry otherwise so
+	// the add path below re-inserts a correct one instead of duplicating.
 	if (!p_force_new_leaf) {
 		WorkspaceTab existing_tab;
 		WorkspaceTabLocation existing_location;
 		if (registry.find_canonical(text_type, path, existing_tab, existing_location)) {
-			if (WorkspaceLeafNode *leaf = get_leaf_by_id(existing_location.pane_id)) {
-				if (WorkspacePane *pane = leaf->get_workspace_pane()) {
-					int index = existing_location.tab_index;
-					if (index < 0 || index >= pane->get_tab_count() || pane->get_tab(index).get_stable_id() != existing_tab.get_stable_id()) {
-						index = -1;
-						for (int i = 0; i < pane->get_tab_count(); i++) {
-							if (pane->get_tab(i).get_stable_id() == existing_tab.get_stable_id()) {
-								index = i;
-								break;
-							}
-						}
-					}
-					if (index >= 0) {
-						pane->set_active_tab(index);
-						request_leaf_focus(leaf->get_leaf_id());
-						return leaf;
+			WorkspaceLeafNode *leaf = get_leaf_by_id(existing_location.pane_id);
+			WorkspacePane *pane = leaf ? leaf->get_workspace_pane() : nullptr;
+			int index = -1;
+			if (pane) {
+				for (int i = 0; i < pane->get_tab_count(); i++) {
+					const WorkspaceTab &candidate = pane->get_tab(i);
+					if (candidate.get_type_id() == text_type && candidate.get_resource_key() == path) {
+						index = i;
+						break;
 					}
 				}
 			}
+			if (index >= 0) {
+				pane->set_active_tab(index);
+				request_leaf_focus(leaf->get_leaf_id());
+				return leaf;
+			}
+			registry.remove_canonical(text_type, path);
 		}
 	}
 

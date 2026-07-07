@@ -53,15 +53,24 @@ Error TextDocument::load() {
 	Ref<TextFile> text_file;
 	text_file.instantiate();
 	const Error err = text_file->load_text(remapped_path);
-	ERR_FAIL_COND_V_MSG(err != OK, err, "Cannot load text file '" + remapped_path + "'.");
+	if (err != OK) {
+		// Leave the previous content untouched and flag the failure so save() will
+		// not overwrite the (unreadable but present) file with a truncated buffer.
+		load_failed = true;
+		ERR_FAIL_V_MSG(err, "Cannot load text file '" + remapped_path + "'.");
+	}
 
 	text = text_file->get_text();
 	dirty = false;
+	load_failed = false;
 	return OK;
 }
 
 Error TextDocument::save() {
 	ERR_FAIL_COND_V(path.is_empty(), ERR_INVALID_PARAMETER);
+	// The backing file exists but could not be read, so this buffer never held its
+	// real contents; refuse rather than truncate the file with an empty save.
+	ERR_FAIL_COND_V_MSG(load_failed, ERR_FILE_CANT_READ, "Refusing to save text file whose contents failed to load: '" + path + "'.");
 
 	Error err = OK;
 	{

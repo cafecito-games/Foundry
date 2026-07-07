@@ -51,6 +51,10 @@ class TextDocument : public RefCounted {
 	String path;
 	String text;
 	bool dirty = false;
+	// True when the last load() of an existing backing file failed. The buffer is
+	// then empty but does NOT reflect the file, so saving would truncate it; save()
+	// refuses until a successful load replaces the content.
+	bool load_failed = false;
 
 public:
 	const String &get_path() const { return path; }
@@ -63,6 +67,7 @@ public:
 
 	bool is_dirty() const { return dirty; }
 	void mark_clean() { dirty = false; }
+	bool is_load_failed() const { return load_failed; }
 
 	// (Re)load the canonical text from `path` on disk; clears the dirty flag.
 	Error load();
