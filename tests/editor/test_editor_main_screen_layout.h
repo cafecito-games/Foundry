@@ -102,6 +102,31 @@ TEST_CASE("[EditorMainScreen][Editor] active screen persists by name, not index"
 	memdelete(plugin_game);
 }
 
+TEST_CASE("[EditorMainScreen][Editor] active global screen persists by name") {
+	// A global screen (Game) hides the scene-mode workspace, so it is the active
+	// surface and must be persisted by its own name rather than a script sentinel.
+	EditorMainScreen *main_screen = memnew(EditorMainScreen);
+	HBoxContainer *button_hb = memnew(HBoxContainer);
+	main_screen->set_button_container(button_hb);
+
+	NamedMainScreenPlugin *plugin_2d = make_plugin("2D");
+	NamedMainScreenPlugin *plugin_game = make_plugin("Game");
+	main_screen->add_main_plugin(plugin_2d);
+	main_screen->add_main_plugin(plugin_game);
+
+	press_button(button_hb, "Game");
+
+	Ref<ConfigFile> config;
+	config.instantiate();
+	main_screen->save_layout_to_config(config, "EditorNode");
+	CHECK(String(config->get_value("EditorNode", "selected_main_editor", String())) == "Game");
+
+	memdelete(main_screen);
+	memdelete(button_hb);
+	memdelete(plugin_2d);
+	memdelete(plugin_game);
+}
+
 TEST_CASE("[EditorMainScreen][Editor] name resolution survives plugin reordering") {
 	EditorMainScreen *main_screen = memnew(EditorMainScreen);
 	HBoxContainer *button_hb = memnew(HBoxContainer);

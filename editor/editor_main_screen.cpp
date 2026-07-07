@@ -88,19 +88,27 @@ EditorMainScreen::ScreenPlacement EditorMainScreen::_get_plugin_placement(const 
 }
 
 String EditorMainScreen::_active_main_screen_name() const {
-	// A focused script leaf is its own surface with no main-screen button; persist
-	// the "Script" sentinel so restore reveals the leaf via select_by_name().
-	if (EditorSceneWorkspace *workspace = EditorNode::get_scene_workspace()) {
-		if (workspace->get_focused_script_leaf()) {
-			return "Script";
-		}
-	}
+	String pressed_name;
 	for (int i = 0; i < buttons.size(); i++) {
 		if (buttons[i]->is_pressed()) {
-			return buttons[i]->get_text();
+			pressed_name = buttons[i]->get_text();
+			break;
 		}
 	}
-	return String();
+
+	// A global screen (e.g. Game) hides the scene-mode workspace, so it is the
+	// active surface even when a script leaf still holds stale workspace focus
+	// underneath. Only in scene mode is a focused script leaf the visible surface;
+	// there, persist the "Script" sentinel so restore reveals the leaf via
+	// select_by_name().
+	if (pressed_name.is_empty() || _get_plugin_placement(pressed_name) == SCREEN_SCENE_MODE) {
+		if (EditorSceneWorkspace *workspace = EditorNode::get_scene_workspace()) {
+			if (workspace->get_focused_script_leaf()) {
+				return "Script";
+			}
+		}
+	}
+	return pressed_name;
 }
 
 void EditorMainScreen::save_layout_to_config(Ref<ConfigFile> p_config_file, const String &p_section) const {
