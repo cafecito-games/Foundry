@@ -186,6 +186,7 @@
 #include "editor/translations/editor_translation_parser.h"
 #include "editor/translations/packed_scene_translation_parser_plugin.h"
 #include "editor/version_control/version_control_editor_plugin.h"
+#include "editor/workspace/text_document.h"
 #include "editor/workspace/workspace_pane.h"
 
 #ifdef VULKAN_ENABLED
@@ -1662,11 +1663,17 @@ bool EditorNode::_route_text_file_to_workspace(const String &p_path) {
 		return false;
 	}
 
-	// Only route files that actually exist; let a missing/unreadable path fall
-	// through to load_resource's normal ERR_CANT_OPEN handling rather than opening
-	// a silent empty buffer that looks like a successful open.
-	if (!FileAccess::exists(p_path)) {
-		return false;
+	// Only route files that actually load as text. Probe-load with the same logic
+	// the tab will use so a missing, unreadable, or invalid-UTF-8 file falls through
+	// to load_resource's normal ERR_CANT_OPEN handling rather than opening a silent
+	// empty buffer that could overwrite the original file on a later save.
+	{
+		Ref<TextDocument> probe;
+		probe.instantiate();
+		probe->set_path(p_path);
+		if (probe->load() != OK) {
+			return false;
+		}
 	}
 
 	WorkspaceLeafNode *source = scene_workspace->get_focused_leaf();
