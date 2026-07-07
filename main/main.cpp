@@ -51,7 +51,7 @@
 #include "core/object/class_db.h"
 #include "core/object/message_queue.h"
 #include "core/object/script_language.h"
-#include "core/object/script_test_runner.h"
+#include "core/object/script_runner.h"
 #include "core/os/os.h"
 #include "core/os/time.h"
 #include "core/profiling/profiling.h"
@@ -150,6 +150,7 @@
 #include "modules/foundry_script/foundry_script.h"
 #include "modules/foundry_script/fs_autoload_index.h"
 #include "modules/foundry_script/fs_build_pipeline_runner.h"
+#include "modules/foundry_script/fs_inline_eval.h"
 #ifdef TOOLS_ENABLED
 #include "modules/foundry_script/editor/fs_migration_wizard.h"
 #include "modules/foundry_script/fs_format.h"
@@ -226,6 +227,10 @@ static String log_file;
 static bool show_help = false;
 static uint64_t quit_after = 0;
 static OS::ProcessID editor_pid = 0;
+// Set when an explicit CLI `--project` path could not be applied (e.g. the directory does
+// not exist). Lets `script eval` refuse to run against a fallback/ambient project instead
+// of silently evaluating outside the project the caller requested.
+static bool foundry_cli_project_path_error = false;
 #ifdef TOOLS_ENABLED
 static bool found_project = false;
 static bool recovery_mode = false;
@@ -700,6 +705,7 @@ static bool foundry_cli_has_run_target_without_main_scene(const FoundryCLIParser
 		case FoundryCLIParser::CLIInvocation::SCRIPT_FORMAT:
 		case FoundryCLIParser::CLIInvocation::SCRIPT_LINT:
 		case FoundryCLIParser::CLIInvocation::SCRIPT_MIGRATE:
+		case FoundryCLIParser::CLIInvocation::SCRIPT_EVAL:
 			return true;
 		default:
 			return false;
@@ -714,6 +720,7 @@ static void apply_foundry_cli_project_path(const String &p_project_path, String 
 #if defined(OVERRIDE_PATH_ENABLED)
 	if (OS::get_singleton()->set_cwd(p_project_path) != OK) {
 		OS::get_singleton()->printerr("Invalid project path specified: \"%s\", aborting.\n", p_project_path.utf8().get_data());
+		foundry_cli_project_path_error = true;
 		return;
 	}
 	r_project_path = p_project_path;
@@ -721,6 +728,7 @@ static void apply_foundry_cli_project_path(const String &p_project_path, String 
 	ERR_PRINT(
 			"`--project` was specified on the command line, but this Foundry binary was compiled without support for path overrides. Aborting.\n"
 			"To be able to use it, use the `disable_path_overrides=no` SCons option when compiling Foundry.\n");
+	foundry_cli_project_path_error = true;
 #endif
 }
 
@@ -782,6 +790,15 @@ static void apply_foundry_cli_invocation(
 			r_audio_driver = NULL_AUDIO_DRIVER;
 			display_driver = NULL_DISPLAY_DRIVER;
 			quit_after = 1;
+			break;
+		case Kind::SCRIPT_EVAL:
+			// Runs a generated ScriptRunner under a live SceneTree, so unlike the other
+			// `script` tools it does not quit_after=1: the runner host quits the tree with
+			// the snippet's exit code. cmdline_tool keeps a projectless eval from falling
+			// back to the project manager; null audio/display keep it headless by default.
+			cmdline_tool = true;
+			r_audio_driver = NULL_AUDIO_DRIVER;
+			display_driver = NULL_DISPLAY_DRIVER;
 			break;
 		case Kind::TEST_RUN:
 		case Kind::TEST_GENERATE_FIXTURES:
@@ -3997,23 +4014,23 @@ static MainTimerSync main_timer_sync;
 // Return value should be EXIT_SUCCESS if we start successfully
 // and should move on to `OS::run`, and EXIT_FAILURE otherwise for
 // an early exit with that error code.
-static Ref<ScriptTestRunner> load_script_test_runner(const String &p_path) {
+static Ref<ScriptRunner> load_script_runner(const String &p_path) {
 	Ref<Script> script_res = ResourceLoader::load(p_path);
-	ERR_FAIL_COND_V_MSG(script_res.is_null(), Ref<ScriptTestRunner>(), vformat("Can't load script test runner: %s", p_path));
-	ERR_FAIL_COND_V_MSG(!script_res->is_valid(), Ref<ScriptTestRunner>(), vformat("Script test runner has parse errors: %s", p_path));
-	ERR_FAIL_COND_V_MSG(!script_res->can_instantiate(), Ref<ScriptTestRunner>(), vformat("Can't instantiate script test runner: %s", p_path));
-	ERR_FAIL_COND_V_MSG(!ClassDB::is_parent_class(script_res->get_instance_base_type(), "ScriptTestRunner"),
-			Ref<ScriptTestRunner>(), vformat("Script test runner must extend ScriptTestRunner: %s", p_path));
+	ERR_FAIL_COND_V_MSG(script_res.is_null(), Ref<ScriptRunner>(), vformat("Can't load script runner: %s", p_path));
+	ERR_FAIL_COND_V_MSG(!script_res->is_valid(), Ref<ScriptRunner>(), vformat("Script runner has parse errors: %s", p_path));
+	ERR_FAIL_COND_V_MSG(!script_res->can_instantiate(), Ref<ScriptRunner>(), vformat("Can't instantiate script runner: %s", p_path));
+	ERR_FAIL_COND_V_MSG(!ClassDB::is_parent_class(script_res->get_instance_base_type(), "ScriptRunner"),
+			Ref<ScriptRunner>(), vformat("Script runner must extend ScriptRunner: %s", p_path));
 
 	Object *obj = ClassDB::instantiate(script_res->get_instance_base_type());
-	ScriptTestRunner *runner_object = Object::cast_to<ScriptTestRunner>(obj);
+	ScriptRunner *runner_object = Object::cast_to<ScriptRunner>(obj);
 	if (!runner_object) {
 		if (obj) {
 			memdelete(obj);
 		}
-		runner_object = memnew(ScriptTestRunner);
+		runner_object = memnew(ScriptRunner);
 	}
-	Ref<ScriptTestRunner> runner(runner_object);
+	Ref<ScriptRunner> runner(runner_object);
 	runner->set_script(script_res);
 	return runner;
 }
@@ -4029,6 +4046,7 @@ int Main::start() {
 	String game_path;
 	String script;
 	String test_runner_path;
+	String eval_source;
 	String main_loop_type;
 	bool check_only = false;
 
@@ -4060,6 +4078,7 @@ int Main::start() {
 
 	const FoundryCLIParser::CLIInvocation &cli_invocation = foundry_cli_parse.invocation;
 	using CLIKind = FoundryCLIParser::CLIInvocation::Kind;
+	const bool eval_requested = cli_invocation.kind == CLIKind::SCRIPT_EVAL;
 	switch (cli_invocation.kind) {
 		case CLIKind::PROJECT_RUN:
 			if (!cli_invocation.scene.is_empty()) {
@@ -4072,6 +4091,9 @@ int Main::start() {
 			break;
 		case CLIKind::PROJECT_TEST:
 			test_runner_path = cli_invocation.runner;
+			break;
+		case CLIKind::SCRIPT_EVAL:
+			eval_source = cli_invocation.eval_source;
 			break;
 #ifdef TOOLS_ENABLED
 		case CLIKind::PROJECT_EXPORT:
@@ -4439,12 +4461,14 @@ int Main::start() {
 	main_loop_type = String();
 #endif // defined(OVERRIDE_PATH_ENABLED)
 
-	bool skip_main_scene_resolution = false;
+	// `script eval` runs a generated inline runner, not a project main scene, so never
+	// resolve (and possibly abort on) the project's configured main scene for it.
+	bool skip_main_scene_resolution = eval_requested;
 #if defined(TOOLS_ENABLED) && defined(MODULE_FOUNDRY_SCRIPT_ENABLED)
 	// These Foundry Script CLI tools are handled before the game branch and never run the main scene,
 	// so do not resolve (and possibly abort on) an unimported uid:// main scene -- that would fail a
 	// fresh CI/source checkout before the tool could even print its report.
-	skip_main_scene_resolution = fs_format_requested || fs_lint_requested || !fs_migrate_path.is_empty();
+	skip_main_scene_resolution = skip_main_scene_resolution || fs_format_requested || fs_lint_requested || !fs_migrate_path.is_empty();
 #endif
 
 #if defined(TOOLS_ENABLED) && defined(MODULE_FOUNDRY_SCRIPT_ENABLED)
@@ -4536,7 +4560,10 @@ int Main::start() {
 
 #ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 	// `--script --check-only` still loads and validates the script, so run pre_compile before script loading.
-	bool foundry_runtime_build_stages_enabled = !project_manager && !editor && (!game_path.is_empty() || !script.is_empty() || !test_runner_path.is_empty());
+	// Inline eval only needs the build pipeline when it runs against a real project (so
+	// project-provided generated types resolve); a projectless probe skips the stages.
+	const bool eval_with_project = eval_requested && ProjectSettings::get_singleton()->is_project_loaded();
+	bool foundry_runtime_build_stages_enabled = !project_manager && !editor && (!game_path.is_empty() || !script.is_empty() || !test_runner_path.is_empty() || eval_with_project);
 #endif // MODULE_FOUNDRY_SCRIPT_ENABLED
 	bool custom_resource_handlers_registered = false;
 
@@ -4554,15 +4581,43 @@ int Main::start() {
 #endif // MODULE_FOUNDRY_SCRIPT_ENABLED
 
 	MainLoop *main_loop = nullptr;
-	Ref<ScriptTestRunner> script_test_runner;
+	Ref<ScriptRunner> script_runner;
 	if (!test_runner_path.is_empty()) {
 		if (!editor && ProjectSettings::get_singleton()->is_project_loaded() && !ProjectSettings::get_singleton()->is_using_datapack()) {
 			ScriptServer::scan_global_classes();
 		}
 
-		script_test_runner = load_script_test_runner(test_runner_path);
-		ERR_FAIL_COND_V_MSG(script_test_runner.is_null(), EXIT_FAILURE, "Failed to load script test runner.");
+		script_runner = load_script_runner(test_runner_path);
+		ERR_FAIL_COND_V_MSG(script_runner.is_null(), EXIT_FAILURE, "Failed to load script runner.");
 	}
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+	else if (eval_requested) {
+		// A projectless eval is valid, but an explicit `--project` that could not be honored must
+		// not silently degrade to projectless (or ambient-project) execution: a CI probe expecting
+		// the requested project's context would otherwise pass while evaluating elsewhere. This
+		// covers both a directory that failed to apply (`foundry_cli_project_path_error`, e.g. it
+		// does not exist, so an ambient project under the original cwd may have loaded instead) and
+		// a valid directory that simply has no project to load.
+		if (!cli_invocation.project_path.is_empty() &&
+				(foundry_cli_project_path_error || !ProjectSettings::get_singleton()->is_project_loaded())) {
+			ERR_PRINT(vformat("script eval could not use the requested project at \"%s\".", cli_invocation.project_path));
+			return EXIT_FAILURE;
+		}
+
+		// Scan project global classes (in memory) so an inline snippet can reference the
+		// project's `class_name` scripts, mirroring `project run --script`.
+		if (!editor && ProjectSettings::get_singleton()->is_project_loaded() && !ProjectSettings::get_singleton()->is_using_datapack()) {
+			ScriptServer::scan_global_classes();
+		}
+
+		String eval_error;
+		script_runner = FSInlineEval::compile_runner(eval_source, eval_error);
+		if (script_runner.is_null()) {
+			ERR_PRINT(eval_error.is_empty() ? String("Failed to evaluate inline Foundry Script.") : eval_error);
+			return EXIT_FAILURE;
+		}
+	}
+#endif // MODULE_FOUNDRY_SCRIPT_ENABLED
 
 	if (editor) {
 		main_loop = memnew(SceneTree);
@@ -4723,7 +4778,7 @@ int Main::start() {
 		}
 
 		if (!project_manager && !editor) { // game
-			if (!game_path.is_empty() || !script.is_empty() || !test_runner_path.is_empty()) {
+			if (!game_path.is_empty() || !script.is_empty() || !test_runner_path.is_empty() || eval_requested) {
 				//autoload
 				OS::get_singleton()->benchmark_begin_measure("Startup", "Load Autoloads");
 				Vector<ProjectSettings::AutoloadInfo> autoloads;
@@ -5061,13 +5116,13 @@ int Main::start() {
 							"Foundry post_compile runtime stage")) {
 				return EXIT_FAILURE;
 			}
-			if (!test_runner_path.is_empty()) {
-				ERR_FAIL_COND_V_MSG(sml == nullptr, EXIT_FAILURE, "Script test runner requires a SceneTree main loop.");
+			if (!test_runner_path.is_empty() || eval_requested) {
+				ERR_FAIL_COND_V_MSG(sml == nullptr, EXIT_FAILURE, "Script runner requires a SceneTree main loop.");
 				PackedStringArray user_args;
 				for (const String &user_arg : OS::get_singleton()->get_cmdline_user_args()) {
 					user_args.push_back(user_arg);
 				}
-				ScriptTestRunner::launch_host(sml, script_test_runner, user_args);
+				ScriptRunner::launch_host(sml, script_runner, user_args);
 			}
 #endif // MODULE_FOUNDRY_SCRIPT_ENABLED
 		}

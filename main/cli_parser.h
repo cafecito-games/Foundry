@@ -47,6 +47,7 @@ public:
 			SCRIPT_FORMAT,
 			SCRIPT_LINT,
 			SCRIPT_MIGRATE,
+			SCRIPT_EVAL,
 			TEST_RUN,
 			TEST_GENERATE_FIXTURES,
 			TEST_GENERATE_FORMAT_FIXTURES,
@@ -68,6 +69,8 @@ public:
 		String scene;
 		String script;
 		bool check_only = false;
+
+		String eval_source;
 
 		String runner;
 

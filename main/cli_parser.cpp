@@ -572,6 +572,45 @@ static void parse_script_migrate(CLIParseState &r_state) {
 	finalize_global_args(r_state);
 }
 
+static void parse_script_eval(CLIParseState &r_state) {
+	set_command_path(r_state.result, "script", "eval");
+	r_state.result.invocation.kind = FoundryCLIParser::CLIInvocation::SCRIPT_EVAL;
+
+	bool has_source = false;
+	while (r_state.index < r_state.args.size()) {
+		const String arg = r_state.args[r_state.index];
+		if (is_help_flag(arg)) {
+			request_help(r_state);
+			return;
+		}
+		if (consume_common_global_option(r_state, arg)) {
+			if (parse_stopped(r_state)) {
+				return;
+			}
+			continue;
+		}
+		if (reject_automation_option(r_state, arg, "script eval")) {
+			return;
+		}
+		if (has_source) {
+			fail(r_state.result, "script eval accepts a single inline source argument. Pass runner arguments after `--`.");
+			return;
+		}
+		r_state.result.invocation.eval_source = arg;
+		has_source = true;
+		r_state.index++;
+	}
+
+	if (!has_source) {
+		fail(r_state.result, "script eval requires an inline source argument.");
+		return;
+	}
+
+	append_headless(r_state.global_prefix);
+	r_state.result.invocation.project_path = r_state.project_path;
+	finalize_global_args(r_state);
+}
+
 static void parse_script(CLIParseState &r_state) {
 	if (r_state.index >= r_state.args.size()) {
 		fail(r_state.result, "script requires a command.");
@@ -588,6 +627,8 @@ static void parse_script(CLIParseState &r_state) {
 		parse_script_lint(r_state);
 	} else if (command == "migrate") {
 		parse_script_migrate(r_state);
+	} else if (command == "eval") {
+		parse_script_eval(r_state);
 	} else {
 		fail(r_state.result, "Unknown script command: " + command + ".");
 	}

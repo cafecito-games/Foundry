@@ -160,6 +160,64 @@ TEST_CASE("[FoundryCLIParser] Script migrate uses explicit trust and strict opti
 	CHECK(has_arg(result.global_args, "--headless"));
 }
 
+TEST_CASE("[FoundryCLIParser] Script eval captures inline source and project") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"script",
+			"eval",
+			"--project",
+			"demo",
+			"print(\"ok\")",
+	}));
+
+	REQUIRE_MESSAGE(result.ok, result.error);
+	CHECK_EQ(result.invocation.kind, Kind::SCRIPT_EVAL);
+	CHECK_EQ(result.command_path, make_args({ "script", "eval" }));
+	CHECK_EQ(result.invocation.project_path, "demo");
+	CHECK_EQ(result.invocation.eval_source, "print(\"ok\")");
+	CHECK(has_arg(result.global_args, "--headless"));
+}
+
+TEST_CASE("[FoundryCLIParser] Script eval forwards user arguments after separator") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"script",
+			"eval",
+			"print(args)",
+			"--",
+			"--some-user-arg",
+	}));
+
+	REQUIRE_MESSAGE(result.ok, result.error);
+	CHECK_EQ(result.invocation.kind, Kind::SCRIPT_EVAL);
+	CHECK_EQ(result.invocation.eval_source, "print(args)");
+	CHECK_EQ(result.user_args, make_args({ "--some-user-arg" }));
+}
+
+TEST_CASE("[FoundryCLIParser] Script eval requires a source argument") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"script",
+			"eval",
+			"--project",
+			"demo",
+	}));
+
+	CHECK_FALSE(result.ok);
+}
+
+TEST_CASE("[FoundryCLIParser] Script eval rejects a second positional source") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"script",
+			"eval",
+			"print(1)",
+			"print(2)",
+	}));
+
+	CHECK_FALSE(result.ok);
+}
+
 TEST_CASE("[FoundryCLIParser] Project export requires structured preset and output") {
 	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
 			"foundry",

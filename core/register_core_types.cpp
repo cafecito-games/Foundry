@@ -77,7 +77,7 @@
 #include "core/object/script_diagnostic_capture_scope.h"
 #include "core/object/script_function_state.h"
 #include "core/object/script_language_extension.h"
-#include "core/object/script_test_runner.h"
+#include "core/object/script_runner.h"
 #include "core/object/undo_redo.h"
 #include "core/object/worker_thread_pool.h"
 #include "core/os/main_loop.h"
@@ -179,7 +179,7 @@ void register_core_types() {
 	FOUNDRY_REGISTER_CLASS(ScriptDiagnosticCaptureScope);
 	FOUNDRY_REGISTER_CLASS(ScriptDiagnosticCaptureResult);
 	FOUNDRY_REGISTER_CLASS(ScriptDiagnosticCapturePendingState);
-	FOUNDRY_REGISTER_CLASS(ScriptTestRunner);
+	FOUNDRY_REGISTER_CLASS(ScriptRunner);
 	FOUNDRY_REGISTER_VIRTUAL_CLASS(ScriptExtension);
 	FOUNDRY_REGISTER_VIRTUAL_CLASS(ScriptLanguageExtension);
 

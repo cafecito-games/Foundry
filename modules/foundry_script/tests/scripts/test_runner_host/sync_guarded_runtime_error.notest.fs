@@ -1,4 +1,4 @@
-extends ScriptTestRunner
+extends ScriptRunner
 
 func runtime_error() -> void:
 	var values: Array[int] = []

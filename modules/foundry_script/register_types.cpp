@@ -40,7 +40,7 @@
 #include "fs_script_test_guard.h"
 #include "fs_utility_functions.h"
 
-#include "core/object/script_test_runner.h"
+#include "core/object/script_runner.h"
 
 #ifdef TOOLS_ENABLED
 #include "fs_format.h"
@@ -160,7 +160,7 @@ void initialize_foundry_script_module(ModuleInitializationLevel p_level) {
 		FOUNDRY_REGISTER_CLASS(ScriptTestExecution);
 		FOUNDRY_REGISTER_CLASS(ScriptTestAbort);
 
-		ScriptTestRunner::set_script_error_guarded_callback(_is_script_test_error_guarded);
+		ScriptRunner::set_script_error_guarded_callback(_is_script_test_error_guarded);
 
 		script_language_gd = memnew(FSLanguage);
 		ScriptServer::register_language(script_language_gd);

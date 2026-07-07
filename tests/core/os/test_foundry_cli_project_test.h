@@ -53,7 +53,7 @@ struct TemporaryNoMainSceneProject {
 				"[application]\n\n"
 				"config/name=\"No Main Scene Project\"\n");
 		write_file("runner.fs",
-				"extends ScriptTestRunner\n\n"
+				"extends ScriptRunner\n\n"
 				"func run(args: PackedStringArray) -> int:\n"
 				"\treturn 0\n");
 	}
@@ -203,7 +203,7 @@ TEST_CASE("[FoundryCLI][ProjectTest] Missing runner reports runner error without
 	const String output = run_foundry_subprocess(arguments, exit_code);
 	INFO("Subprocess output:\n", output);
 	CHECK_FALSE(output.contains("no main scene defined"));
-	CHECK(output.contains("Can't load script test runner"));
+	CHECK(output.contains("Can't load script runner"));
 	CHECK_NE(exit_code, 0);
 }
 
@@ -227,6 +227,105 @@ TEST_CASE("[FoundryCLI][ProjectTest] Script format works without a main scene") 
 	INFO("Subprocess output:\n", output);
 	CHECK_FALSE(output.contains("no main scene defined"));
 	CHECK_EQ(exit_code, 0);
+}
+
+TEST_CASE("[FoundryCLI][ScriptEval] Inline eval prints and exits zero") {
+	List<String> arguments;
+	arguments.push_back("--headless");
+	arguments.push_back("script");
+	arguments.push_back("eval");
+	arguments.push_back("print(\"eval-ok\")");
+
+	int exit_code = -1;
+	const String output = run_foundry_subprocess(arguments, exit_code);
+	INFO("Subprocess output:\n", output);
+	CHECK(output.contains("eval-ok"));
+	CHECK_EQ(exit_code, 0);
+}
+
+TEST_CASE("[FoundryCLI][ScriptEval] Inline eval return sets the exit code") {
+	List<String> arguments;
+	arguments.push_back("--headless");
+	arguments.push_back("script");
+	arguments.push_back("eval");
+	arguments.push_back("return 3");
+
+	int exit_code = -1;
+	const String output = run_foundry_subprocess(arguments, exit_code);
+	INFO("Subprocess output:\n", output);
+	CHECK_EQ(exit_code, 3);
+}
+
+TEST_CASE("[FoundryCLI][ScriptEval] Inline eval ignores a configured main scene") {
+	// Regression: `script eval` must not resolve or load the project's main scene, even
+	// when one is configured with an unresolvable uid:// that would otherwise abort startup.
+	TemporaryNoMainSceneProject project("foundry_cli_script_eval_main_scene");
+	project.write_file("project.foundry",
+			"config_version=5\n\n"
+			"[application]\n\n"
+			"config/name=\"Eval Main Scene Project\"\n"
+			"run/main_scene=\"uid://doesnotexist12345\"\n");
+
+	List<String> arguments;
+	arguments.push_back("--headless");
+	arguments.push_back("script");
+	arguments.push_back("eval");
+	arguments.push_back("--project");
+	arguments.push_back(project.root);
+	arguments.push_back("print(\"eval-ran\")");
+
+	int exit_code = -1;
+	const String output = run_foundry_subprocess(arguments, exit_code);
+	INFO("Subprocess output:\n", output);
+	CHECK(output.contains("eval-ran"));
+	CHECK_FALSE(output.contains("could not be resolved from UID"));
+	CHECK_EQ(exit_code, 0);
+}
+
+TEST_CASE("[FoundryCLI][ScriptEval] Explicit project that fails to load is an error") {
+	// A projectless eval is allowed, but an explicit `--project` pointing at a directory with
+	// no project.foundry must fail rather than silently evaluating outside the requested project.
+	const String empty_dir = OS::get_singleton()->get_temp_path().path_join("foundry_cli_script_eval_bad_project");
+	TemporaryNoMainSceneProject::remove_recursive(empty_dir);
+	Ref<DirAccess> dir = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+	REQUIRE_EQ(dir->make_dir_recursive(empty_dir), OK);
+
+	List<String> arguments;
+	arguments.push_back("--headless");
+	arguments.push_back("script");
+	arguments.push_back("eval");
+	arguments.push_back("--project");
+	arguments.push_back(empty_dir);
+	arguments.push_back("print(\"should-not-run\")");
+
+	int exit_code = -1;
+	const String output = run_foundry_subprocess(arguments, exit_code);
+	INFO("Subprocess output:\n", output);
+	CHECK_FALSE(output.contains("should-not-run"));
+	CHECK_NE(exit_code, 0);
+
+	TemporaryNoMainSceneProject::remove_recursive(empty_dir);
+}
+
+TEST_CASE("[FoundryCLI][ScriptEval] Nonexistent project path is an error") {
+	// The directory does not exist, so applying `--project` fails outright. Eval must not fall
+	// back to an ambient project discovered from the original working directory.
+	const String missing_dir = OS::get_singleton()->get_temp_path().path_join("foundry_cli_script_eval_missing_project_dir");
+	TemporaryNoMainSceneProject::remove_recursive(missing_dir);
+
+	List<String> arguments;
+	arguments.push_back("--headless");
+	arguments.push_back("script");
+	arguments.push_back("eval");
+	arguments.push_back("--project");
+	arguments.push_back(missing_dir);
+	arguments.push_back("print(\"should-not-run\")");
+
+	int exit_code = -1;
+	const String output = run_foundry_subprocess(arguments, exit_code);
+	INFO("Subprocess output:\n", output);
+	CHECK_FALSE(output.contains("should-not-run"));
+	CHECK_NE(exit_code, 0);
 }
 
 #endif // MODULE_FOUNDRY_SCRIPT_ENABLED

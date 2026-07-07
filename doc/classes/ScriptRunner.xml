@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="ScriptRunner" inherits="RefCounted" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+	<brief_description>
+		Base class for script-backed process runners hosted by the engine CLI.
+	</brief_description>
+	<description>
+		Extend [ScriptRunner] to implement a script entrypoint that the engine runs as a process. The engine launches the script under a live [SceneTree] main loop, passes user arguments after [code]--[/code] to [method run], and exits the process with the integer returned by [method run].
+		This host backs several command-first CLI surfaces, including [code]foundry project test --runner[/code] and the generated runner used by [code]foundry script eval[/code].
+		Async [method run] implementations are supported: the host awaits the coroutine handle and uses the completed result as the process exit code.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="run">
+			<return type="int" />
+			<param index="0" name="args" type="PackedStringArray" />
+			<description>
+				Script-dispatched entrypoint for the runner. [param args] contains the user arguments from [method OS.get_cmdline_user_args], in order. Return the desired process exit code. Async overrides are allowed.
+				Example CLI:
+				[codeblock]
+				foundry --headless project test --project . --runner res://addons/foundrylib/testlib/cli/run.fs -- --path res://tests --filter inventory
+				[/codeblock]
+			</description>
+		</method>
+	</methods>
+</class>
