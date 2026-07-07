@@ -307,6 +307,34 @@ void WorkspacePane::_notification(int p_what) {
 				}
 			}
 		} break;
+
+		case NOTIFICATION_ENTER_TREE: {
+			if (has_pending_active_tab) {
+				// A restored layout populated the tab records while this pane was
+				// detached. Now that the pane is in the tree, mount the persisted
+				// active tab (creating any live surface it needs) deferred, after
+				// its children finish entering.
+				callable_mp(this, &WorkspacePane::_apply_pending_active_tab).call_deferred();
+			}
+		} break;
+	}
+}
+
+void WorkspacePane::_apply_pending_active_tab() {
+	if (!has_pending_active_tab) {
+		return;
+	}
+	has_pending_active_tab = false;
+	const int index = pending_active_tab_index;
+	pending_active_tab_index = -1;
+	// Only the restored focused pane runs activation side effects; a non-focused
+	// pane activating a scene tab would claim workspace focus and overwrite the
+	// restored focused_leaf_id.
+	const bool activate = workspace && workspace->get_focused_leaf_id() == leaf_id;
+	if (index >= 0 && index < tabs.size()) {
+		set_active_tab(index, activate);
+	} else {
+		_update_pane_state(activate);
 	}
 }
 
@@ -526,7 +554,7 @@ void WorkspacePane::move_tab(int p_from, int p_to) {
 	_update_pane_state();
 }
 
-void WorkspacePane::set_active_tab(int p_index) {
+void WorkspacePane::set_active_tab(int p_index, bool p_activate) {
 	suppress_tab_strip_callback = true;
 	if (p_index < 0 || p_index >= tabs.size()) {
 		if (active_tab_index >= 0) {
@@ -538,7 +566,7 @@ void WorkspacePane::set_active_tab(int p_index) {
 			tab_strip->set_current_tab(-1);
 			tab_strip->set_block_signals(false);
 		}
-		_update_pane_state();
+		_update_pane_state(p_activate);
 		suppress_tab_strip_callback = false;
 		return;
 	}
@@ -558,7 +586,7 @@ void WorkspacePane::set_active_tab(int p_index) {
 		tab_strip->set_current_tab(active_tab_index);
 		tab_strip->set_block_signals(false);
 	}
-	_update_pane_state();
+	_update_pane_state(p_activate);
 	suppress_tab_strip_callback = false;
 }
 
@@ -709,16 +737,48 @@ void WorkspacePane::on_focus_entered() {
 	}
 }
 
+// Per-pane persistence schema, written under the pane's leaf layout section
+// (EditorSceneWorkspace::leaf_layout_section(leaf_id)):
+//
+//   initial_content_type (String)  -- seed content kind for the empty pane
+//   tab_count (int)                -- number of persisted tabs in this pane
+//   active_tab (int)               -- index of the active tab, or -1
+//   tab_<i>/...                    -- one WorkspaceTab record per tab, holding
+//                                     stable_id, type_id, resource_key,
+//                                     title_cache, icon_key_cache, and a
+//                                     tab_<i>/payload sub-section owned by the
+//                                     tab type (scene: path/unsaved-key only;
+//                                     script: caret/scroll/fold view layout).
+//
+// Scene edit state is NOT duplicated here; it stays in EditorData and the
+// per-scene edit-state files. The focused pane is the workspace-level
+// focused_leaf_id (leaf_id == pane id), so it is not repeated per pane.
 void WorkspacePane::save_layout(const Ref<ConfigFile> &p_config, const String &p_section) const {
 	ERR_FAIL_COND(p_config.is_null());
 	if (!initial_content_type.is_empty()) {
 		p_config->set_value(p_section, "initial_content_type", initial_content_type);
 	}
+	// The scene tile's dock arrangement is pane chrome and persists regardless of
+	// tabs. The legacy script_leaf bridge only owns content in no-tab mode, so it
+	// is persisted only then -- symmetric with load_layout, which restores the
+	// bridge only when tab_count == 0. In tab mode the tab records are the source
+	// of truth and the hidden bridge holds no state worth serializing.
 	if (scene_tile) {
 		scene_tile->save_layout(p_config, p_section);
 	}
-	if (script_leaf) {
+	if (script_leaf && tabs.is_empty()) {
 		script_leaf->save_layout(p_config, p_section);
+	}
+
+	p_config->set_value(p_section, "tab_count", tabs.size());
+	p_config->set_value(p_section, "active_tab", active_tab_index);
+	for (int i = 0; i < tabs.size(); i++) {
+		WorkspaceTabType *type = tab_registry ? tab_registry->find_type(tabs[i].get_type_id()) : nullptr;
+		if (!type) {
+			continue;
+		}
+		const String tab_section = p_section.path_join(vformat("tab_%d", i));
+		tabs[i].save_to_config(p_config, tab_section, type);
 	}
 }
 
@@ -728,13 +788,65 @@ void WorkspacePane::load_layout(const Ref<ConfigFile> &p_config, const String &p
 	if (!stored_type.is_empty()) {
 		initial_content_type = stored_type;
 	}
+	// The scene tile's dock arrangement is pane chrome that persists regardless of
+	// which tabs the pane holds, so restore it unconditionally.
 	if (scene_tile) {
 		scene_tile->load_layout(p_config, p_section);
 	}
-	if (script_leaf) {
-		script_leaf->load_layout(p_config, p_section);
+
+	const int tab_count = int(p_config->get_value(p_section, "tab_count", 0));
+	if (tab_count <= 0) {
+		// Legacy single-content pane: the bridge surface owns the content.
+		if (script_leaf) {
+			script_leaf->load_layout(p_config, p_section);
+		}
+		_update_pane_state();
+		return;
 	}
-	_update_pane_state();
+
+	// Rebuild the per-tab records. Mounting the active tab (which may create a
+	// live script surface) is deferred to NOTIFICATION_ENTER_TREE because restore
+	// runs while the pane is still detached from the scene tree.
+	const int stored_active = int(p_config->get_value(p_section, "active_tab", -1));
+	Vector<WorkspaceTab> restored;
+	int restored_active = -1;
+	for (int i = 0; i < tab_count; i++) {
+		const String tab_section = p_section.path_join(vformat("tab_%d", i));
+		const StringName type_id = p_config->get_value(tab_section, "type_id", StringName());
+		WorkspaceTabType *type = tab_registry ? tab_registry->find_type(type_id) : nullptr;
+		if (!type) {
+			WARN_PRINT(vformat("Workspace pane %d: skipping restored tab %d with unknown type '%s'.", leaf_id, i, String(type_id)));
+			continue;
+		}
+		WorkspaceTab tab;
+		tab.load_from_config(p_config, tab_section, type);
+		// Reserve the restored id even for a dropped tab so a fresh allocation never
+		// collides with a persisted stable id elsewhere in the tree.
+		if (tab_registry) {
+			tab_registry->reserve_stable_id(tab.get_stable_id());
+		}
+		if (!type->is_resource_available(tab)) {
+			WARN_PRINT(vformat("Workspace pane %d: dropping restored tab '%s' (%s); its backing resource is missing.", leaf_id, tab.get_resource_key(), String(type_id)));
+			continue;
+		}
+		if (i == stored_active) {
+			restored_active = restored.size();
+		}
+		restored.push_back(tab);
+	}
+
+	tabs = restored;
+	if (restored_active < 0 && !tabs.is_empty()) {
+		restored_active = 0;
+	}
+	_refresh_canonical_locations();
+	_sync_tab_strip();
+
+	pending_active_tab_index = restored_active;
+	has_pending_active_tab = true;
+	if (is_inside_tree()) {
+		callable_mp(this, &WorkspacePane::_apply_pending_active_tab).call_deferred();
+	}
 }
 
 WorkspacePane::WorkspacePane() {

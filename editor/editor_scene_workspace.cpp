@@ -799,6 +799,11 @@ int EditorSceneWorkspace::get_tile_count() const {
 //   split: node_<i>_vertical (bool), node_<i>_offset (int),
 //          node_<i>_child_a (int), node_<i>_child_b (int)
 //   leaf:  node_<i>_leaf_id (int), node_<i>_content_type (String)
+//
+// focused_leaf_id doubles as the focused pane id (leaf_id == pane id). Each
+// leaf delegates its own content to WorkspaceLeafContent::save_layout under the
+// leaf_layout_section(leaf_id) section; the per-pane per-tab schema (tab_count,
+// active_tab, and the tab_<i> records) is documented at WorkspacePane::save_layout.
 
 struct WorkspaceSaveWalker {
 	Ref<ConfigFile> config;

@@ -79,4 +79,5 @@ public:
 	WorkspaceTabCloseResult request_close(WorkspaceTab &p_tab, const Callable &p_on_deferred_close = Callable()) override;
 	Dictionary save_payload(const WorkspaceTab &p_tab) const override;
 	void restore_payload(WorkspaceTab &p_tab, const Dictionary &p_payload) const override;
+	bool is_resource_available(const WorkspaceTab &p_tab) const override;
 };
