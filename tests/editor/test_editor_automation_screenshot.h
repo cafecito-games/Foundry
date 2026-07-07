@@ -546,12 +546,13 @@ TEST_CASE("[Editor][Automation] capture_screenshot fails when the element lies o
 TEST_CASE("[Editor][Automation] capture_screenshot targets a window element without mis-cropping") {
 	EditorAutomationWait::clear_all_cooperative();
 
-	// A Window element reports screen-space bounds (position + size). When
-	// captured, the tool must not intersect those screen-space bounds against a
-	// window-local 0-based image and then report the window as not capturable.
-	// Rooting the snapshot at the window makes it the single match; capturing is
-	// display-dependent, so assert the contract stays coherent either way and
-	// never spuriously reports element_not_capturable for a valid window.
+	// A Window node is its own viewport, whose texture already spans exactly the
+	// window, while a Window element's bounds are in its parent/embedder space.
+	// The tool must capture the window whole rather than crop by those bounds and
+	// then mis-crop or report the window as not capturable. Rooting the snapshot
+	// at the window makes it the single match; capturing is display-dependent, so
+	// assert the contract stays coherent and never spuriously reports
+	// element_not_capturable for a valid window.
 	Window *win = memnew(Window);
 	win->set_title("TargetWindow");
 	win->set_position(Point2i(30, 40));

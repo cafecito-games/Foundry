@@ -867,16 +867,14 @@ Dictionary EditorAutomationMCPDispatcher::_tool_capture_screenshot(const Diction
 			if (Node *element_node = Object::cast_to<Node>(ObjectDB::get_instance(ObjectID(element.object_id)))) {
 				screenshot_options.snapshot_root = element_node;
 
-				// A native (non-embedded) Window's bounds are screen coordinates,
-				// but its own viewport image is 0-based and spans exactly the
-				// window. Capture it whole instead of cropping screen-space bounds
-				// into a 0-based image. Embedded windows render into their
-				// embedder's viewport, so their bounds are already in that
-				// viewport's space and the default crop path is correct.
-				if (const Window *window_node = Object::cast_to<Window>(element_node)) {
-					if (!window_node->is_embedded()) {
-						crop_to_element = false;
-					}
+				// A Window node is itself a Viewport, so capturing its own texture
+				// yields exactly the window content in 0-based coordinates. A
+				// Window element's bounds, however, come from get_position()/
+				// get_size() in its parent/embedder space, so cropping by those
+				// bounds would offset into the wrong region. Capture the window
+				// whole instead — that already is the element-focused image.
+				if (Object::cast_to<Window>(element_node) != nullptr) {
+					crop_to_element = false;
 				}
 			}
 		}
