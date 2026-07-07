@@ -621,10 +621,12 @@ void EditorAutomationMCPFailureAttachmentOptionsInput::append_to_dictionary(Dict
 	}
 }
 
-Ref<EditorAutomationMCPJsonSchema> EditorAutomationMCPSelector::schema() {
-	Ref<EditorAutomationMCPJsonSchema> schema = EditorAutomationMCPJsonSchema::object(
-			"Semantic selector used by find_elements, act, wait_for, and nested action targets. Prefer role plus name/text "
-			"for resilient automation; use id for immediate follow-up or handle when reusing an element across snapshots.");
+Ref<EditorAutomationMCPJsonSchema> EditorAutomationMCPSelector::schema(const String &p_description) {
+	const String description = p_description.is_empty()
+			? String("Semantic selector used by find_elements, act, wait_for, and nested action targets. Prefer role plus name/text "
+					  "for resilient automation; use id for immediate follow-up or handle when reusing an element across snapshots.")
+			: p_description;
+	Ref<EditorAutomationMCPJsonSchema> schema = EditorAutomationMCPJsonSchema::object(description);
 	schema->add_property("id", EditorAutomationMCPJsonSchema::string("Snapshot-scoped opaque element id returned by observe_ui/find_elements."));
 	schema->add_property("handle", EditorAutomationMCPJsonSchema::string("Durable element handle returned by observe_ui/find_elements."));
 	schema->add_property("role", EditorAutomationMCPJsonSchema::string("Exact semantic role, such as button, text_field, menu_item, or panel."));
@@ -1110,9 +1112,11 @@ Dictionary EditorAutomationMCPFindElementsInput::to_dictionary() const {
 
 Ref<EditorAutomationMCPJsonSchema> EditorAutomationMCPActInput::schema() {
 	Ref<EditorAutomationMCPJsonSchema> schema = EditorAutomationMCPJsonSchema::object(
-			"Input for act. Provide action and selector for a new interaction; optionally include wait to combine action and postcondition. "
+			"Input for act. Provide action and selector (the element to act on) for a new interaction; optionally include wait to combine action and postcondition. "
+			"Action inputs such as text, key, and value live under 'args', not at the top level. "
 			"When polling a pending cooperative act+wait, pass wait_id without repeating selector/action.");
 	schema->add_property("selector", EditorAutomationMCPSelector::schema());
+	schema->add_property("element", EditorAutomationMCPSelector::schema("Alias for 'selector': the element to act on, matching the shape returned by observe_ui/find_elements. Provide either 'selector' or 'element', not both."));
 	schema->add_property("action", EditorAutomationMCPJsonSchema::enum_string(EditorAutomationMCPContracts::action_names(), "Action to perform for a new interaction."));
 	schema->add_property("route", EditorAutomationMCPJsonSchema::enum_string(EditorAutomationMCPContracts::route_enum_values(), "Route preference: auto, semantic, or input."));
 	schema->add_property("args", EditorAutomationMCPActionArgs::schema());
@@ -1141,8 +1145,14 @@ EditorAutomationMCPParseResult<EditorAutomationMCPActInput> EditorAutomationMCPA
 		}
 		input.values["action"] = action;
 	}
-	if (p_dict.has("selector")) {
-		const EditorAutomationMCPParseResult<EditorAutomationMCPSelector> selector = EditorAutomationMCPSelector::parse(p_dict.get("selector", Variant()));
+	// `element` is an alias for `selector` because observe_ui/find_elements
+	// return `element` objects, so acting on "the element" is the intuitive shape.
+	if (p_dict.has("selector") && p_dict.has("element")) {
+		return EditorAutomationMCPParseResult<EditorAutomationMCPActInput>::invalid("element", "Provide either 'selector' or 'element' (its alias), not both.");
+	}
+	const String selector_key = p_dict.has("element") ? "element" : "selector";
+	if (p_dict.has(selector_key)) {
+		const EditorAutomationMCPParseResult<EditorAutomationMCPSelector> selector = EditorAutomationMCPSelector::parse(p_dict.get(selector_key, Variant()), selector_key);
 		if (!selector.ok) {
 			return EditorAutomationMCPParseResult<EditorAutomationMCPActInput>::invalid(selector.error.field, selector.error.message);
 		}

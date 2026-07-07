@@ -174,7 +174,7 @@ struct EditorAutomationMCPFailureAttachmentOptionsInput {
 struct EditorAutomationMCPSelector {
 	Dictionary values;
 
-	static Ref<EditorAutomationMCPJsonSchema> schema();
+	static Ref<EditorAutomationMCPJsonSchema> schema(const String &p_description = String());
 	static EditorAutomationMCPParseResult<EditorAutomationMCPSelector> parse(const Variant &p_value, const String &p_field = "selector");
 	Dictionary to_dictionary() const;
 };

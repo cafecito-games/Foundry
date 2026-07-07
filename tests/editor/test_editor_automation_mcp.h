@@ -376,6 +376,118 @@ TEST_CASE("[Editor][Automation][MCP] act delegates to the action driver") {
 	memdelete(root);
 }
 
+TEST_CASE("[Editor][Automation][MCP] act accepts element as an alias for selector") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	Button *button = memnew(Button);
+	button->set_text("Click Me");
+	button->set_anchors_and_offsets_preset(Control::PRESET_TOP_LEFT);
+	button->set_size(Size2(120, 32));
+	root->add_child(button);
+	mcp_flush_frames();
+
+	EditorAutomationMCPDispatcher dispatcher;
+	EditorAutomationMCPDispatcher::Options options;
+	options.snapshot_root = root;
+	dispatcher.set_options(options);
+
+	Dictionary element;
+	element["role"] = "button";
+	element["name"] = "Click Me";
+	Dictionary arguments;
+	arguments["element"] = element;
+	arguments["action"] = "click";
+	Dictionary params;
+	params["name"] = "act";
+	params["arguments"] = arguments;
+
+	const Dictionary response = dispatcher.handle_message(make_request(9, "tools/call", params));
+	const Dictionary result = response["result"];
+	CHECK_FALSE((bool)result["isError"]);
+	const Dictionary structured = result["structuredContent"];
+	CHECK((bool)structured["ok"]);
+	CHECK(String(structured["route"]) == "semantic_click");
+
+	memdelete(root);
+}
+
+TEST_CASE("[Editor][Automation][MCP] act rejects both selector and element") {
+	EditorAutomationMCPDispatcher dispatcher;
+
+	Dictionary selector;
+	selector["role"] = "button";
+	Dictionary element;
+	element["role"] = "button";
+	Dictionary arguments;
+	arguments["selector"] = selector;
+	arguments["element"] = element;
+	arguments["action"] = "click";
+	Dictionary params;
+	params["name"] = "act";
+	params["arguments"] = arguments;
+
+	const Dictionary response = dispatcher.handle_message(make_request(9, "tools/call", params));
+	CHECK(response.has("error"));
+	const Dictionary error = response["error"];
+	const String message = error["message"];
+	CHECK(message.to_lower().contains("selector"));
+	CHECK(message.to_lower().contains("element"));
+}
+
+TEST_CASE("[Editor][Automation][MCP] act without a selector returns a helpful message") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+	mcp_flush_frames();
+
+	EditorAutomationMCPDispatcher dispatcher;
+	EditorAutomationMCPDispatcher::Options options;
+	options.snapshot_root = root;
+	dispatcher.set_options(options);
+
+	Dictionary inner_args;
+	inner_args["text"] = "res://scene_a.tscn";
+	Dictionary arguments;
+	arguments["action"] = "set_text";
+	arguments["args"] = inner_args;
+	Dictionary params;
+	params["name"] = "act";
+	params["arguments"] = arguments;
+
+	const Dictionary response = dispatcher.handle_message(make_request(9, "tools/call", params));
+	const Dictionary result = response["result"];
+	CHECK((bool)result["isError"]);
+	const Dictionary structured = result["structuredContent"];
+	CHECK_FALSE((bool)structured["ok"]);
+	const String message = String(structured["message"]).to_lower();
+	CHECK(message.contains("selector"));
+	CHECK(message.contains("target"));
+
+	memdelete(root);
+}
+
+TEST_CASE("[Editor][Automation][MCP] act schema documents element alias and args inputs") {
+	EditorAutomationMCPDispatcher dispatcher;
+	const Dictionary response = dispatcher.handle_message(make_request(1, "tools/list"));
+	const Dictionary result = response["result"];
+	const Array tools = result["tools"];
+	const Dictionary act = tool_named(tools, "act");
+	REQUIRE_FALSE(act.is_empty());
+
+	const Dictionary schema = act["inputSchema"];
+	const Dictionary properties = schema["properties"];
+	CHECK(properties.has("element"));
+	CHECK(properties.has("selector"));
+
+	const Dictionary element_schema = properties["element"];
+	CHECK(String(element_schema.get("description", String())).to_lower().contains("selector"));
+
+	const String act_description = schema.get("description", String());
+	CHECK(act_description.to_lower().contains("args"));
+}
+
 TEST_CASE("[Editor][Automation][MCP] act consumes handle returned by observe_ui across snapshots") {
 	PanelContainer *root = memnew(PanelContainer);
 	root->set_size(Size2(400, 300));
