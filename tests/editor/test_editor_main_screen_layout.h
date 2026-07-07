@@ -170,6 +170,39 @@ TEST_CASE("[EditorMainScreen][Editor] name resolution survives plugin reordering
 	memdelete(plugin_c);
 }
 
+TEST_CASE("[EditorMainScreen][Editor] legacy raw-index key is scrubbed on save") {
+	EditorMainScreen *main_screen = memnew(EditorMainScreen);
+	HBoxContainer *button_hb = memnew(HBoxContainer);
+	main_screen->set_button_container(button_hb);
+
+	NamedMainScreenPlugin *plugin_2d = make_plugin("2D");
+	NamedMainScreenPlugin *plugin_3d = make_plugin("3D");
+	main_screen->add_main_plugin(plugin_2d);
+	main_screen->add_main_plugin(plugin_3d);
+
+	press_button(button_hb, "3D");
+
+	// A layout written before #1064 still carries the retired raw-index key
+	// alongside no name-based key.
+	Ref<ConfigFile> config;
+	config.instantiate();
+	config->set_value("EditorNode", "selected_main_editor_idx", 1);
+
+	// The real save path re-loads the on-disk config (preserving unrecognized
+	// keys) and then writes through save_layout_to_config; a full load/save
+	// cycle must drop the dead key and leave only the name-based one.
+	main_screen->load_layout_from_config(config, "EditorNode");
+	main_screen->save_layout_to_config(config, "EditorNode");
+
+	CHECK_FALSE(config->has_section_key("EditorNode", "selected_main_editor_idx"));
+	CHECK(String(config->get_value("EditorNode", "selected_main_editor", String())) == "3D");
+
+	memdelete(main_screen);
+	memdelete(button_hb);
+	memdelete(plugin_2d);
+	memdelete(plugin_3d);
+}
+
 TEST_CASE("[EditorMainScreen][Editor] legacy and unknown layouts fall back gracefully") {
 	EditorMainScreen *main_screen = memnew(EditorMainScreen);
 	HBoxContainer *button_hb = memnew(HBoxContainer);
