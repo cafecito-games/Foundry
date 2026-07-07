@@ -30,6 +30,7 @@
 
 #include "editor_scene_workspace.h"
 
+#include "core/config/project_settings.h"
 #include "core/io/config_file.h"
 #include "core/io/resource_loader.h"
 #include "editor/editor_data.h"
@@ -800,6 +801,12 @@ WorkspaceLeafNode *EditorSceneWorkspace::open_text_tab(WorkspaceLeafNode *p_sour
 	ERR_FAIL_COND_V(!leaves.has(p_source_leaf), nullptr);
 	ERR_FAIL_COND_V(p_path.is_empty(), nullptr);
 
+	// Canonicalize to a project-relative res:// path so the tab identity is stable
+	// regardless of how the caller addressed the file (a res:// FileSystem-dock open
+	// vs. an absolute path from the new-file dialog). Otherwise the same file could
+	// open as two independent tabs with divergent, last-save-wins documents.
+	const String path = ProjectSettings::get_singleton()->localize_path(p_path);
+
 	const StringName text_type = StringName("text");
 	WorkspaceTabRegistry &registry = WorkspacePane::get_shared_tab_registry();
 
@@ -807,7 +814,7 @@ WorkspaceLeafNode *EditorSceneWorkspace::open_text_tab(WorkspaceLeafNode *p_sour
 	if (!p_force_new_leaf) {
 		WorkspaceTab existing_tab;
 		WorkspaceTabLocation existing_location;
-		if (registry.find_canonical(text_type, p_path, existing_tab, existing_location)) {
+		if (registry.find_canonical(text_type, path, existing_tab, existing_location)) {
 			if (WorkspaceLeafNode *leaf = get_leaf_by_id(existing_location.pane_id)) {
 				if (WorkspacePane *pane = leaf->get_workspace_pane()) {
 					int index = existing_location.tab_index;
@@ -862,7 +869,7 @@ WorkspaceLeafNode *EditorSceneWorkspace::open_text_tab(WorkspaceLeafNode *p_sour
 	WorkspaceTabType *type = registry.find_type(text_type);
 	ERR_FAIL_NULL_V(type, nullptr);
 
-	WorkspaceTab tab = type->make_tab(p_path, registry.allocate_stable_id());
+	WorkspaceTab tab = type->make_tab(path, registry.allocate_stable_id());
 	target_pane->add_tab(tab);
 	target_pane->set_active_tab(target_pane->get_tab_count() - 1);
 	request_leaf_focus(target->get_leaf_id());
