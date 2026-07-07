@@ -320,7 +320,7 @@ class EditorAutomationSnapshotBuilder {
 		return String(path_root->get_path_to(p_node));
 	}
 
-	int _add_virtual_element(int p_parent_index, const String &p_kind, const String &p_key, const String &p_role, const String &p_name, const String &p_text, bool p_selected = false, const Dictionary &p_metadata = Dictionary()) {
+	int _add_virtual_element(int p_parent_index, const String &p_kind, const String &p_key, const String &p_role, const String &p_name, const String &p_text, bool p_selected = false, const Dictionary &p_metadata = Dictionary(), const Rect2i &p_bounds = Rect2i()) {
 		EditorAutomationElement element;
 		element.id = EditorAutomationSnapshot::make_virtual_element_id(data.generation, p_kind, p_key);
 		element.handle = EditorAutomationSnapshot::make_durable_handle(p_kind, p_key);
@@ -332,6 +332,7 @@ class EditorAutomationSnapshotBuilder {
 		element.enabled = true;
 		element.selected = p_selected;
 		element.metadata = p_metadata;
+		element.bounds = p_bounds;
 		element.parent_index = p_parent_index;
 		_append_virtual_actions(p_kind, p_metadata, element.actions);
 		if (p_parent_index >= 0) {
@@ -349,6 +350,25 @@ class EditorAutomationSnapshotBuilder {
 		return EditorAutomationWorkflow::tree_item_stable_path(p_item);
 	}
 
+	// Converts a control-local item rect into global snapshot bounds so synthesized
+	// tree/list rows report a real on-screen target instead of the [0,0,0,0]
+	// default. The rect is clipped to the control's viewport, so a row scrolled
+	// out of view reports no bounds (left unset) rather than advertising an
+	// off-screen, non-hit-testable target; partially visible rows report only
+	// their visible region. An empty local rect (item not laid out yet) is also
+	// left unset.
+	static Rect2i _virtual_item_bounds(const Control *p_control, const Rect2 &p_local_rect) {
+		if (p_local_rect.size.x <= 0 && p_local_rect.size.y <= 0) {
+			return Rect2i();
+		}
+		const Rect2 global_rect = Rect2(p_control->get_global_position() + p_local_rect.position, p_local_rect.size);
+		const Rect2 visible_rect = p_control->get_global_rect().intersection(global_rect);
+		if (visible_rect.size.x <= 0 || visible_rect.size.y <= 0) {
+			return Rect2i();
+		}
+		return Rect2i(visible_rect.position.floor(), visible_rect.size.floor());
+	}
+
 	void _add_tree_items(const Tree *p_tree, int p_parent_index) {
 		TreeItem *item = p_tree->get_root();
 		if (item == nullptr) {
@@ -361,7 +381,10 @@ class EditorAutomationSnapshotBuilder {
 				const String key = vformat("%s:%s", String::num_uint64(tree_id), _tree_item_path(item));
 				const String item_text = item->get_text(0);
 				const Dictionary metadata = EditorAutomationWorkflow::metadata_for_tree_item(p_tree, item);
-				_add_virtual_element(p_parent_index, "tree_item", key, "tree_item", item_text, item_text, item->is_selected(0), metadata);
+				// Column -1 yields the full-width row rect, which is the target an
+				// agent clicks to select/activate the item.
+				const Rect2i bounds = _virtual_item_bounds(p_tree, p_tree->get_item_rect(item, -1));
+				_add_virtual_element(p_parent_index, "tree_item", key, "tree_item", item_text, item_text, item->is_selected(0), metadata, bounds);
 			}
 			item = item->get_next_in_tree();
 		}
@@ -369,11 +392,21 @@ class EditorAutomationSnapshotBuilder {
 
 	void _add_item_list_items(const ItemList *p_item_list, int p_parent_index) {
 		const uint64_t list_id = p_item_list->get_instance_id();
+		// ItemList::get_item_rect returns content-space coordinates (rect_cache
+		// plus the panel offset) and, unlike Tree::get_item_rect, does not apply
+		// the scroll offset that drawing subtracts. Subtract the current scroll
+		// values so scrolled rows report their true on-screen position. The
+		// scroll-bar accessors are non-const only; the reads themselves are const.
+		ItemList *mutable_list = const_cast<ItemList *>(p_item_list);
+		const Vector2 scroll_offset = Vector2(mutable_list->get_h_scroll_bar()->get_value(), mutable_list->get_v_scroll_bar()->get_value());
 		for (int i = 0; i < p_item_list->get_item_count(); i++) {
 			const String item_text = p_item_list->get_item_text(i);
 			const String key = vformat("%s:%d", String::num_uint64(list_id), i);
 			const Dictionary metadata = EditorAutomationWorkflow::metadata_for_list_item(p_item_list, i);
-			_add_virtual_element(p_parent_index, "list_item", key, "list_item", item_text, item_text, p_item_list->is_selected(i), metadata);
+			Rect2 local_rect = p_item_list->get_item_rect(i, true);
+			local_rect.position -= scroll_offset;
+			const Rect2i bounds = _virtual_item_bounds(p_item_list, local_rect);
+			_add_virtual_element(p_parent_index, "list_item", key, "list_item", item_text, item_text, p_item_list->is_selected(i), metadata, bounds);
 		}
 	}
 
