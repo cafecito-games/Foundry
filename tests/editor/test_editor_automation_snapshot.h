@@ -775,6 +775,69 @@ TEST_CASE("[Editor][Automation] virtual element durable handle reconciliation") 
 	memdelete(root);
 }
 
+TEST_CASE("[Editor][Automation] tree_item and list_item virtual elements report real bounds") {
+	// FileSystem dock tree items and dialog list items were synthesized without
+	// bounds, so they reported [0,0,0,0] and semantic select/activate had no
+	// on-screen target to resolve. The snapshot must populate real global bounds
+	// for the visible synthesized rows so agents can locate and click them.
+	Window *window = memnew(Window);
+	window->set_title("Automation Root");
+	window->set_size(Size2i(640, 480));
+	SceneTree::get_singleton()->get_root()->add_child(window);
+	MessageQueue::get_singleton()->flush();
+
+	Tree *tree = memnew(Tree);
+	tree->set_name("FileSystemTree");
+	tree->set_position(Point2(40, 60));
+	setup_visible_control(tree, Size2(260, 200));
+	window->add_child(tree);
+
+	TreeItem *tree_root = tree->create_item();
+	TreeItem *alpha = tree->create_item(tree_root);
+	alpha->set_text(0, "alpha.tscn");
+	TreeItem *beta = tree->create_item(tree_root);
+	beta->set_text(0, "beta.tscn");
+
+	ItemList *item_list = memnew(ItemList);
+	item_list->set_name("SceneList");
+	item_list->set_position(Point2(320, 60));
+	setup_visible_control(item_list, Size2(260, 200));
+	window->add_child(item_list);
+	item_list->add_item("first.tscn");
+	item_list->add_item("second.tscn");
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(window);
+
+	const EditorAutomationElement *alpha_item = find_element_by_role_and_name(snapshot, "tree_item", "alpha.tscn");
+	REQUIRE(alpha_item != nullptr);
+	CHECK(alpha_item->bounds.size.x > 0);
+	CHECK(alpha_item->bounds.size.y > 0);
+	// The row sits inside the tree, so its global origin must be at or past the
+	// tree's own global position rather than the [0,0] default.
+	const Rect2i tree_global = Rect2i(tree->get_global_position().floor(), tree->get_size().floor());
+	CHECK(alpha_item->bounds.position.x >= tree_global.position.x);
+	CHECK(alpha_item->bounds.position.y >= tree_global.position.y);
+
+	const EditorAutomationElement *beta_item = find_element_by_role_and_name(snapshot, "tree_item", "beta.tscn");
+	REQUIRE(beta_item != nullptr);
+	// Distinct rows must not collapse onto the same origin.
+	CHECK(beta_item->bounds.position.y > alpha_item->bounds.position.y);
+
+	const EditorAutomationElement *first_item = find_element_by_role_and_name(snapshot, "list_item", "first.tscn");
+	REQUIRE(first_item != nullptr);
+	CHECK(first_item->bounds.size.x > 0);
+	CHECK(first_item->bounds.size.y > 0);
+	CHECK(first_item->bounds.position.x >= item_list->get_global_position().floor().x);
+	CHECK(first_item->bounds.position.y >= item_list->get_global_position().floor().y);
+
+	const EditorAutomationElement *second_item = find_element_by_role_and_name(snapshot, "list_item", "second.tscn");
+	REQUIRE(second_item != nullptr);
+	CHECK(second_item->bounds.position.y > first_item->bounds.position.y);
+
+	memdelete(window);
+}
+
 TEST_CASE("[Editor][Automation] icon-only button falls back to tooltip as automation name") {
 	PanelContainer *root = memnew(PanelContainer);
 	root->set_size(Size2(400, 300));

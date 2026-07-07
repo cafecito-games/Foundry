@@ -320,7 +320,7 @@ class EditorAutomationSnapshotBuilder {
 		return String(path_root->get_path_to(p_node));
 	}
 
-	int _add_virtual_element(int p_parent_index, const String &p_kind, const String &p_key, const String &p_role, const String &p_name, const String &p_text, bool p_selected = false, const Dictionary &p_metadata = Dictionary()) {
+	int _add_virtual_element(int p_parent_index, const String &p_kind, const String &p_key, const String &p_role, const String &p_name, const String &p_text, bool p_selected = false, const Dictionary &p_metadata = Dictionary(), const Rect2i &p_bounds = Rect2i()) {
 		EditorAutomationElement element;
 		element.id = EditorAutomationSnapshot::make_virtual_element_id(data.generation, p_kind, p_key);
 		element.handle = EditorAutomationSnapshot::make_durable_handle(p_kind, p_key);
@@ -332,6 +332,7 @@ class EditorAutomationSnapshotBuilder {
 		element.enabled = true;
 		element.selected = p_selected;
 		element.metadata = p_metadata;
+		element.bounds = p_bounds;
 		element.parent_index = p_parent_index;
 		_append_virtual_actions(p_kind, p_metadata, element.actions);
 		if (p_parent_index >= 0) {
@@ -349,6 +350,17 @@ class EditorAutomationSnapshotBuilder {
 		return EditorAutomationWorkflow::tree_item_stable_path(p_item);
 	}
 
+	// Converts a control-local item rect into global snapshot bounds so synthesized
+	// tree/list rows report a real on-screen target instead of the [0,0,0,0]
+	// default. An empty local rect (item not laid out yet) is left unset.
+	static Rect2i _virtual_item_bounds(const Control *p_control, const Rect2 &p_local_rect) {
+		if (p_local_rect.size.x <= 0 && p_local_rect.size.y <= 0) {
+			return Rect2i();
+		}
+		const Rect2 global_rect = Rect2(p_control->get_global_position() + p_local_rect.position, p_local_rect.size);
+		return Rect2i(global_rect.position.floor(), global_rect.size.floor());
+	}
+
 	void _add_tree_items(const Tree *p_tree, int p_parent_index) {
 		TreeItem *item = p_tree->get_root();
 		if (item == nullptr) {
@@ -361,7 +373,10 @@ class EditorAutomationSnapshotBuilder {
 				const String key = vformat("%s:%s", String::num_uint64(tree_id), _tree_item_path(item));
 				const String item_text = item->get_text(0);
 				const Dictionary metadata = EditorAutomationWorkflow::metadata_for_tree_item(p_tree, item);
-				_add_virtual_element(p_parent_index, "tree_item", key, "tree_item", item_text, item_text, item->is_selected(0), metadata);
+				// Column -1 yields the full-width row rect, which is the target an
+				// agent clicks to select/activate the item.
+				const Rect2i bounds = _virtual_item_bounds(p_tree, p_tree->get_item_rect(item, -1));
+				_add_virtual_element(p_parent_index, "tree_item", key, "tree_item", item_text, item_text, item->is_selected(0), metadata, bounds);
 			}
 			item = item->get_next_in_tree();
 		}
@@ -373,7 +388,8 @@ class EditorAutomationSnapshotBuilder {
 			const String item_text = p_item_list->get_item_text(i);
 			const String key = vformat("%s:%d", String::num_uint64(list_id), i);
 			const Dictionary metadata = EditorAutomationWorkflow::metadata_for_list_item(p_item_list, i);
-			_add_virtual_element(p_parent_index, "list_item", key, "list_item", item_text, item_text, p_item_list->is_selected(i), metadata);
+			const Rect2i bounds = _virtual_item_bounds(p_item_list, p_item_list->get_item_rect(i, true));
+			_add_virtual_element(p_parent_index, "list_item", key, "list_item", item_text, item_text, p_item_list->is_selected(i), metadata, bounds);
 		}
 	}
 
