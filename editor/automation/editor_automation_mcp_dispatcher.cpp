@@ -46,6 +46,9 @@
 
 #include "core/io/json.h"
 #include "core/math/math_funcs.h"
+#include "core/object/object.h"
+
+#include "scene/main/node.h"
 
 const char *EditorAutomationMCPDispatcher::PROTOCOL_VERSION = "2025-11-25";
 
@@ -837,8 +840,19 @@ Dictionary EditorAutomationMCPDispatcher::_tool_capture_screenshot(const Diction
 			return _enrich_selector_failure(result, selector_result, selector, snapshot, p_args);
 		}
 
-		element_bounds = snapshot.get_element(selector_result.match_indices[0]).bounds;
+		const EditorAutomationElement &element = snapshot.get_element(selector_result.match_indices[0]);
+		element_bounds = element.bounds;
 		crop_to_element = true;
+
+		// Capture the matched element's own window/viewport so the crop rect
+		// (element bounds in that viewport's canvas space) aligns with the
+		// captured image, even for elements in secondary windows or subviewports.
+		// Virtual elements (object_id 0) keep the default capture viewport.
+		if (element.object_id != 0) {
+			if (Node *element_node = Object::cast_to<Node>(ObjectDB::get_instance(ObjectID(element.object_id)))) {
+				screenshot_options.snapshot_root = element_node;
+			}
+		}
 	}
 
 	const EditorAutomationScreenshotAttachment attachment = EditorAutomationScreenshot::capture_on_demand(
@@ -849,7 +863,10 @@ Dictionary EditorAutomationMCPDispatcher::_tool_capture_screenshot(const Diction
 	if (attachment.status != "available") {
 		r_is_error = true;
 		result["ok"] = false;
-		result["kind"] = "screenshot_unavailable";
+		// Distinguish a size-limit failure from capture being unsupported so
+		// clients can react (e.g. raise max_screenshot_bytes) instead of
+		// treating a truncated capture as an unavailable one.
+		result["kind"] = attachment.status == "truncated" ? "screenshot_truncated" : "screenshot_unavailable";
 		result["message"] = attachment.reason.is_empty()
 				? String("Screenshot capture is unavailable.")
 				: attachment.reason;

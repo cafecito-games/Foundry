@@ -286,6 +286,51 @@ TEST_CASE("[Editor][Automation] capture_screenshot with no target captures the f
 	memdelete(viewport);
 }
 
+TEST_CASE("[Editor][Automation] capture_screenshot reports a size-limit failure as truncated, not unavailable") {
+	EditorAutomationWait::clear_all_cooperative();
+
+	SubViewport *viewport = memnew(SubViewport);
+	viewport->set_size(Vector2i(120, 80));
+	viewport->set_disable_3d(true);
+	viewport->set_transparent_background(false);
+	SceneTree::get_singleton()->get_root()->add_child(viewport);
+
+	ColorRect *rect = memnew(ColorRect);
+	rect->set_color(Color(0.9, 0.3, 0.1, 1.0));
+	rect->set_size(Size2(120, 80));
+	viewport->add_child(rect);
+	screenshot_flush_frames(4);
+
+	EditorAutomationMCPDispatcher dispatcher;
+	EditorAutomationMCPDispatcher::Options options;
+	options.snapshot_root = viewport;
+	options.max_screenshot_bytes = 1;
+	dispatcher.set_options(options);
+
+	Dictionary params;
+	params["name"] = "capture_screenshot";
+	params["arguments"] = Dictionary();
+
+	const Dictionary response = dispatcher.handle_message(make_request(1, "tools/call", params));
+	const Dictionary response_result = response["result"];
+	const Dictionary structured = response_result["structuredContent"];
+	CHECK((bool)response_result["isError"]);
+	CHECK_FALSE((bool)structured["ok"]);
+	const Dictionary screenshot = structured["screenshot"];
+
+	// A tiny byte budget forces truncation when the viewport can be captured; a
+	// headless build without a usable viewport still reports unavailable. Either
+	// way the top-level kind must match the attachment status, never contradict it.
+	if (String(screenshot["status"]) == "truncated") {
+		CHECK(String(structured["kind"]) == "screenshot_truncated");
+	} else {
+		CHECK(String(screenshot["status"]) == "unavailable");
+		CHECK(String(structured["kind"]) == "screenshot_unavailable");
+	}
+
+	memdelete(viewport);
+}
+
 TEST_CASE("[Editor][Automation] capture_screenshot with a selector crops to the element") {
 	EditorAutomationWait::clear_all_cooperative();
 
