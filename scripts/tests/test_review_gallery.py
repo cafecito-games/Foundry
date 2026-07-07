@@ -216,7 +216,12 @@ class GalleryTestCase(unittest.TestCase):
         import subprocess
 
         proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
-        self.addCleanup(lambda: proc.poll() is None and proc.kill())
+
+        def _cleanup() -> None:
+            if proc.poll() is None:
+                proc.kill()
+
+        self.addCleanup(_cleanup)
         result = rg.resolve_public_url(
             8000,
             ngrok_path="/usr/bin/ngrok",
@@ -229,6 +234,40 @@ class GalleryTestCase(unittest.TestCase):
 
         rg._terminate_process(result.process)
         self.assertIsNotNone(proc.poll())  # child is no longer running
+
+    def test_normalize_basic_auth_rejects_empty_and_malformed(self) -> None:
+        self.assertIsNone(rg._normalize_basic_auth(None))
+        self.assertEqual(rg._normalize_basic_auth("user:pass"), "user:pass")
+        for bad in ("", "useronly", "user:", ":pass", ":"):
+            with self.assertRaises(ValueError):
+                rg._normalize_basic_auth(bad)
+
+    def test_handler_enforces_auth_and_empty_is_not_silently_open(self) -> None:
+        import base64 as b64
+        import threading
+        import time
+        import urllib.error
+        import urllib.request
+        from http.server import ThreadingHTTPServer
+
+        rg.add_shot(self.root, self._png("a.png"), board_title="B", mode="proof", caption="c")
+
+        # A configured credential is enforced.
+        httpd = ThreadingHTTPServer(("127.0.0.1", 0), rg._make_handler(self.root, "rev:secret"))
+        port = httpd.server_address[1]
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        time.sleep(0.15)
+        try:
+            with self.assertRaises(urllib.error.HTTPError) as ctx:
+                urllib.request.urlopen(f"http://127.0.0.1:{port}/index.html")
+            self.assertEqual(ctx.exception.code, 401)
+            token = b64.b64encode(b"rev:secret").decode()
+            request = urllib.request.Request(
+                f"http://127.0.0.1:{port}/index.html", headers={"Authorization": f"Basic {token}"}
+            )
+            self.assertEqual(urllib.request.urlopen(request).status, 200)
+        finally:
+            httpd.shutdown()
 
 
 if __name__ == "__main__":

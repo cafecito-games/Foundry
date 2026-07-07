@@ -59,12 +59,14 @@ import urllib.request
 from dataclasses import dataclass
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Callable, Iterator
+from typing import Any, Callable, Iterator, cast
 
 try:
-    import fcntl
+    import fcntl as _fcntl
+
+    _HAVE_FCNTL = True
 except ImportError:  # pragma: no cover - non-POSIX platforms
-    fcntl = None  # type: ignore[assignment]
+    _HAVE_FCNTL = False
 
 MANIFEST_VERSION = 1
 MODES = ("proof", "design", "walkthrough")
@@ -88,22 +90,22 @@ def gallery_root(explicit: str | os.PathLike[str] | None = None) -> Path:
     return DEFAULT_ROOT
 
 
-def _empty_manifest() -> dict:
+def _empty_manifest() -> dict[str, Any]:
     return {"version": MANIFEST_VERSION, "boards": []}
 
 
-def load_manifest(root: Path) -> dict:
+def load_manifest(root: Path) -> dict[str, Any]:
     """Load manifest.json, returning an empty manifest when absent."""
     path = Path(root) / "manifest.json"
     if not path.is_file():
         return _empty_manifest()
-    manifest = json.loads(path.read_text(encoding="utf-8"))
+    manifest: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
     manifest.setdefault("version", MANIFEST_VERSION)
     manifest.setdefault("boards", [])
     return manifest
 
 
-def save_manifest(root: Path, manifest: dict) -> None:
+def save_manifest(root: Path, manifest: dict[str, Any]) -> None:
     """Persist the manifest atomically so a crash mid-write can't corrupt it.
 
     Writes to a per-call unique temp file before the atomic rename, so two
@@ -133,15 +135,15 @@ def _manifest_lock(root: Path) -> Iterator[None]:
     """
     root = Path(root)
     root.mkdir(parents=True, exist_ok=True)
-    if fcntl is None:
+    if not _HAVE_FCNTL:
         yield
         return
     with open(root / ".manifest.lock", "w") as handle:
-        fcntl.flock(handle, fcntl.LOCK_EX)
+        _fcntl.flock(handle, _fcntl.LOCK_EX)
         try:
             yield
         finally:
-            fcntl.flock(handle, fcntl.LOCK_UN)
+            _fcntl.flock(handle, _fcntl.LOCK_UN)
 
 
 # ---------------------------------------------------------------------------
@@ -149,14 +151,14 @@ def _manifest_lock(root: Path) -> Iterator[None]:
 # ---------------------------------------------------------------------------
 
 
-def find_board(manifest: dict, title: str) -> dict | None:
+def find_board(manifest: dict[str, Any], title: str) -> dict[str, Any] | None:
     for board in manifest["boards"]:
         if board["title"] == title:
-            return board
+            return cast("dict[str, Any]", board)
     return None
 
 
-def ensure_board(manifest: dict, title: str, mode: str) -> dict:
+def ensure_board(manifest: dict[str, Any], title: str, mode: str) -> dict[str, Any]:
     """Return the board with `title`, creating it (append = newest) if needed."""
     if mode not in MODES:
         raise ValueError(f"unknown mode {mode!r}; expected one of {', '.join(MODES)}")
@@ -184,7 +186,7 @@ def add_shot(
     pair: str | None = None,
     order: int | None = None,
     shot_type: str = "image",
-) -> dict:
+) -> dict[str, Any]:
     """Copy `source` into shots/, append a manifest entry, regenerate index.html.
 
     Returns the new shot entry. When the board already exists its stored mode is
@@ -214,7 +216,7 @@ def add_shot(
         if order is None:
             order = len(board["shots"])
 
-        entry: dict = {
+        entry: dict[str, Any] = {
             "file": f"shots/{filename}",
             "caption": caption,
             "type": shot_type,
@@ -229,7 +231,7 @@ def add_shot(
     return entry
 
 
-def regenerate(root: Path, manifest: dict | None = None) -> Path:
+def regenerate(root: Path, manifest: dict[str, Any] | None = None) -> Path:
     """Write index.html deterministically from the manifest. Returns its path."""
     root = Path(root)
     if manifest is None:
@@ -356,7 +358,7 @@ def _esc(value: str) -> str:
     return html.escape(str(value), quote=True)
 
 
-def _render_media(shot: dict) -> str:
+def _render_media(shot: dict[str, Any]) -> str:
     """Render a single shot's media element, branching on its `type`.
 
     The `video` branch is intentionally present so day-two video capture only
@@ -372,14 +374,14 @@ def _render_media(shot: dict) -> str:
     return media
 
 
-def _render_shot(shot: dict, *, step: int | None = None) -> str:
+def _render_shot(shot: dict[str, Any], *, step: int | None = None) -> str:
     caption = _esc(shot.get("caption", ""))
     step_html = f'<span class="step-index">{step}.</span>' if step is not None else ""
     caption_block = f"<figcaption>{step_html}{caption}</figcaption>" if (caption or step_html) else ""
     return f'<div class="shot"><figure>{_render_media(shot)}{caption_block}</figure></div>'
 
 
-def _render_board(board: dict) -> str:
+def _render_board(board: dict[str, Any]) -> str:
     title = _esc(board.get("title", ""))
     mode = board.get("mode", "proof")
     shots = sorted(board.get("shots", []), key=lambda s: s.get("order", 0))
@@ -421,7 +423,7 @@ def _render_board(board: dict) -> str:
     return "".join(parts)
 
 
-def render_html(manifest: dict) -> str:
+def render_html(manifest: dict[str, Any]) -> str:
     """Render the full self-contained gallery page from a manifest.
 
     Pure function of the manifest: no timestamps or randomness, so identical
@@ -462,10 +464,10 @@ class ServeUrl:
     url: str
     public: bool
     message: str
-    process: subprocess.Popen | None = None
+    process: subprocess.Popen[bytes] | None = None
 
 
-def _tunnel_targets_port(tunnel: dict, port: int) -> bool:
+def _tunnel_targets_port(tunnel: dict[str, Any], port: int) -> bool:
     """True if an ngrok tunnel forwards to our local `port`.
 
     ngrok reports the upstream as ``config.addr`` (e.g. ``http://localhost:8000``
@@ -493,15 +495,15 @@ def query_ngrok_url(port: int, *, api: str = NGROK_API, timeout: float = 2.0) ->
     matching = [t for t in payload.get("tunnels", []) if _tunnel_targets_port(t, port)]
     https = [t.get("public_url") for t in matching if str(t.get("public_url", "")).startswith("https://")]
     if https:
-        return https[0]
+        return str(https[0])
     for tunnel in matching:
         url = tunnel.get("public_url")
         if url:
-            return url
+            return str(url)
     return None
 
 
-def _spawn_ngrok(binary: str, port: int) -> subprocess.Popen | None:
+def _spawn_ngrok(binary: str, port: int) -> subprocess.Popen[bytes] | None:
     try:
         return subprocess.Popen(
             [binary, "http", str(port), "--log", "stdout"],
@@ -517,7 +519,7 @@ def resolve_public_url(
     *,
     ngrok_path: str | None = None,
     query_fn: Callable[[int], str | None] | None = None,
-    start_fn: Callable[[int], object] | None = None,
+    start_fn: Callable[[int], subprocess.Popen[bytes] | None] | None = None,
     poll_attempts: int = 15,
     poll_interval: float = 0.4,
     sleep_fn: Callable[[float], None] | None = None,
@@ -543,8 +545,6 @@ def resolve_public_url(
         process = start_fn(port)
     else:
         process = _spawn_ngrok(ngrok_path, port)
-    if not isinstance(process, subprocess.Popen):
-        process = None
 
     if sleep_fn is None:
         import time
@@ -619,6 +619,10 @@ def serve(
     public and no `basic_auth` is set, a prominent warning is printed since the
     tunnel URL is then reachable by anyone who has it.
     """
+    # Treat an empty credential (e.g. an unset env var) as "no auth" so it can
+    # never silently disable protection while also suppressing the warning.
+    basic_auth = basic_auth or None
+
     root = Path(root)
     if not (root / "index.html").is_file():
         regenerate(root)
@@ -664,7 +668,7 @@ def serve(
         _terminate_process(resolved.process)
 
 
-def _terminate_process(process: subprocess.Popen | None) -> None:
+def _terminate_process(process: subprocess.Popen[bytes] | None) -> None:
     """Tear down the ngrok child so the public tunnel does not outlive us."""
     if process is None or process.poll() is not None:
         return
@@ -710,7 +714,7 @@ def _find_free_port(preferred: int) -> int:
             return preferred
         except OSError:
             probe.bind(("127.0.0.1", 0))
-            return probe.getsockname()[1]
+            return int(probe.getsockname()[1])
 
 
 def _cmd_add(args: argparse.Namespace) -> int:
@@ -742,13 +746,32 @@ def _cmd_board(args: argparse.Namespace) -> int:
     return 0
 
 
+def _normalize_basic_auth(value: str | None) -> str | None:
+    """Validate a --basic-auth value, failing closed on a malformed credential.
+
+    An empty or malformed value (e.g. from an unset env var) is rejected rather
+    than silently serving without authentication.
+    """
+    if value is None:
+        return None
+    user, sep, password = value.partition(":")
+    if not sep or not user or not password:
+        raise ValueError("--basic-auth must be USER:PASS with a non-empty username and password")
+    return value
+
+
 def _cmd_serve(args: argparse.Namespace) -> int:
     root = gallery_root(args.root)
+    try:
+        basic_auth = _normalize_basic_auth(args.basic_auth)
+    except ValueError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
     port = _find_free_port(args.port)
     serve(
         root,
         port=port,
-        basic_auth=args.basic_auth,
+        basic_auth=basic_auth,
         public=args.public,
     )
     return 0
@@ -797,7 +820,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    return args.func(args)
+    return int(args.func(args))
 
 
 if __name__ == "__main__":
