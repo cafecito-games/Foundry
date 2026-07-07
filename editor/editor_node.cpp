@@ -7308,6 +7308,12 @@ void EditorNode::_load_workspace_from_config(const Ref<ConfigFile> &p_config_fil
 		_on_leaf_added(leaf->get_leaf_id());
 	}
 
+	// Reopened scenes were all assigned to the startup tile before the workspace tree
+	// existed, and only the focused pane claims ownership via activation. Restore each
+	// restored scene tab's tile ownership now -- decoupled from focus -- so the focused
+	// tile has a current scene and the tab sync below reads the correct scene->tile map.
+	scene_workspace->restore_scene_tile_ownership_from_tabs();
+
 	// The persisted focus can point at a script leaf, but the editor's focused tile
 	// must be a scene tile; fall back to the first scene tile when it is not.
 	WorkspaceLeafNode *restored_focus = scene_workspace->get_focused_leaf();
