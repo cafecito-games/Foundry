@@ -1317,6 +1317,57 @@ static int count_role_with_bounds(const EditorAutomationSnapshot &p_snapshot, co
 	return count;
 }
 
+// #1090 follow-up: activating a hidden MenuButton item opens the menu as a user
+// would, so the MenuButton must not be left stuck pressed / processing after the
+// menu closes -- neither on a successful activation nor on a refusal.
+TEST_CASE("[Editor][Automation] hidden menu activation leaves the button unpressed") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	MenuButton *menu_button = memnew(MenuButton);
+	menu_button->set_text("File");
+	setup_visible_control(menu_button);
+	root->add_child(menu_button);
+
+	PopupMenu *popup = menu_button->get_popup();
+	popup->add_item("Save", 1);
+	popup->add_item("Blocked", 2);
+	popup->set_item_disabled(1, true);
+
+	MenuItemPressTracker tracker;
+	popup->connect("id_pressed", callable_mp(&tracker, &MenuItemPressTracker::on_id_pressed));
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+
+	const EditorAutomationElement *save_item = find_virtual_element(snapshot, "menu_item", "Save");
+	REQUIRE(save_item != nullptr);
+	Dictionary save_target;
+	save_target["id"] = save_item->id;
+	const EditorAutomationActionResult save_result = EditorAutomationDriver::perform(snapshot, "choose_menu_item", save_target, Dictionary());
+	MessageQueue::get_singleton()->flush();
+	CHECK(save_result.ok);
+	CHECK(tracker.last_id == 1);
+	// The menu closed, so the button is not stuck pressed.
+	CHECK_FALSE(menu_button->is_pressed());
+	CHECK_FALSE(popup->is_visible());
+
+	const EditorAutomationElement *blocked_item = find_virtual_element(snapshot, "menu_item", "Blocked");
+	REQUIRE(blocked_item != nullptr);
+	Dictionary blocked_target;
+	blocked_target["id"] = blocked_item->id;
+	const EditorAutomationActionResult blocked_result = EditorAutomationDriver::perform(snapshot, "choose_menu_item", blocked_target, Dictionary());
+	MessageQueue::get_singleton()->flush();
+	CHECK_FALSE(blocked_result.ok);
+	CHECK(blocked_result.kind == "element_disabled");
+	// Even a refused activation must restore the button state.
+	CHECK_FALSE(menu_button->is_pressed());
+	CHECK_FALSE(popup->is_visible());
+
+	memdelete(root);
+}
+
 // #1089: snapshotting a Tree whose row list is enormous (the Search Help dialog
 // holds the whole class database) must stay bounded. Bounds are derived from a
 // single anchor row plus O(1) per-row heights, so every on-screen row is emitted
