@@ -172,6 +172,12 @@ public:
 	// anchor) instead of creating a duplicate. Returns the hosting leaf.
 	WorkspaceLeafNode *open_help_tab(WorkspaceLeafNode *p_source_leaf, const String &p_topic, bool p_force_new_leaf = false);
 
+	// Open-or-reveal a non-script text document (.txt, .md, text .json, README,
+	// ...) as a "text" workspace tab. Reveals an existing tab for the same file
+	// (one tab per file via the canonical index); otherwise reuses a pane that
+	// already hosts text tabs, or splits beside p_source_leaf for a new one.
+	WorkspaceLeafNode *open_text_tab(WorkspaceLeafNode *p_source_leaf, const String &p_path, bool p_force_new_leaf = false);
+
 	// Generic drag-a-tab drop resolution shared by every WorkspaceTabType:
 	// center = move the tab into the target pane; an edge splits the target pane
 	// and places the tab in the new pane. Scene tabs express the move through the

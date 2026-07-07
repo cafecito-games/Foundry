@@ -834,7 +834,13 @@ void ScriptEditorView::_file_dialog_action(const String &p_file) {
 					EditorFileSystem::get_singleton()->update_file(p_file);
 				}
 			}
-			[[fallthrough]];
+
+			// The file is now on disk (file-backed identity from birth). Route it
+			// through the shared open path so a non-script text document opens as a
+			// workspace TextTab; a script extension falls back to the script editor.
+			controller->set_file_dialog_option(-1);
+			EditorNode::get_singleton()->load_resource(p_file);
+			break;
 		}
 		case FILE_MENU_OPEN: {
 			if (!is_visible_in_tree()) {

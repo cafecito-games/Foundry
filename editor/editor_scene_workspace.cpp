@@ -795,6 +795,80 @@ WorkspaceLeafNode *EditorSceneWorkspace::open_help_tab(WorkspaceLeafNode *p_sour
 	return target;
 }
 
+WorkspaceLeafNode *EditorSceneWorkspace::open_text_tab(WorkspaceLeafNode *p_source_leaf, const String &p_path, bool p_force_new_leaf) {
+	ERR_FAIL_NULL_V(p_source_leaf, nullptr);
+	ERR_FAIL_COND_V(!leaves.has(p_source_leaf), nullptr);
+	ERR_FAIL_COND_V(p_path.is_empty(), nullptr);
+
+	const StringName text_type = StringName("text");
+	WorkspaceTabRegistry &registry = WorkspacePane::get_shared_tab_registry();
+
+	// Reveal an existing tab for this file so there is only ever one tab per file.
+	if (!p_force_new_leaf) {
+		WorkspaceTab existing_tab;
+		WorkspaceTabLocation existing_location;
+		if (registry.find_canonical(text_type, p_path, existing_tab, existing_location)) {
+			if (WorkspaceLeafNode *leaf = get_leaf_by_id(existing_location.pane_id)) {
+				if (WorkspacePane *pane = leaf->get_workspace_pane()) {
+					int index = existing_location.tab_index;
+					if (index < 0 || index >= pane->get_tab_count() || pane->get_tab(index).get_stable_id() != existing_tab.get_stable_id()) {
+						index = -1;
+						for (int i = 0; i < pane->get_tab_count(); i++) {
+							if (pane->get_tab(i).get_stable_id() == existing_tab.get_stable_id()) {
+								index = i;
+								break;
+							}
+						}
+					}
+					if (index >= 0) {
+						pane->set_active_tab(index);
+						request_leaf_focus(leaf->get_leaf_id());
+						return leaf;
+					}
+				}
+			}
+		}
+	}
+
+	// Choose a target pane: reuse one that already hosts text tabs (so multiple
+	// files stack in one strip), else split beside the source leaf for a new one.
+	WorkspaceLeafNode *target = nullptr;
+	if (!p_force_new_leaf) {
+		for (WorkspaceLeafNode *leaf : leaves) {
+			WorkspacePane *pane = leaf->get_workspace_pane();
+			if (!pane) {
+				continue;
+			}
+			bool hosts_text = false;
+			for (int i = 0; i < pane->get_tab_count(); i++) {
+				if (pane->get_tab(i).get_type_id() == text_type) {
+					hosts_text = true;
+					break;
+				}
+			}
+			if (hosts_text) {
+				target = leaf;
+				break;
+			}
+		}
+	}
+	if (!target) {
+		target = split_with_content(p_source_leaf, false, SPLIT_SIDE_SECOND, StringName("script"));
+		ERR_FAIL_NULL_V(target, nullptr);
+	}
+
+	WorkspacePane *target_pane = target->get_workspace_pane();
+	ERR_FAIL_NULL_V(target_pane, nullptr);
+	WorkspaceTabType *type = registry.find_type(text_type);
+	ERR_FAIL_NULL_V(type, nullptr);
+
+	WorkspaceTab tab = type->make_tab(p_path, registry.allocate_stable_id());
+	target_pane->add_tab(tab);
+	target_pane->set_active_tab(target_pane->get_tab_count() - 1);
+	request_leaf_focus(target->get_leaf_id());
+	return target;
+}
+
 void EditorSceneWorkspace::collapse(WorkspaceLeafNode *p_leaf) {
 	ERR_FAIL_NULL(p_leaf);
 	ERR_FAIL_COND(!leaves.has(p_leaf));
