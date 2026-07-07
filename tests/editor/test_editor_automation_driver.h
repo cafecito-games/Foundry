@@ -1318,55 +1318,96 @@ static int count_role_with_bounds(const EditorAutomationSnapshot &p_snapshot, co
 }
 
 // #1089: snapshotting a Tree whose row list is enormous (the Search Help dialog
-// holds the whole class database) must stay bounded. get_item_rect is O(row
-// index), so bounds computation is budgeted; but every row is still emitted with
-// a durable id/metadata so it stays selectable and reconcilable. Rows past the
-// budget report no bounds and the container is flagged bounds_truncated.
-TEST_CASE("[Editor][Automation] tree bounds computation is budgeted while every row is emitted") {
+// holds the whole class database) must stay bounded. Bounds are derived from a
+// single anchor row plus O(1) per-row heights, so every on-screen row is emitted
+// with correct, monotonically increasing bounds without the O(n^2) hang.
+TEST_CASE("[Editor][Automation] tree rows all emitted with correct incremental bounds") {
 	// A plain Control root does not resize its children, so the tree keeps the
 	// explicit height below and every row lays out on-screen with real bounds.
 	Control *root = memnew(Control);
-	root->set_size(Size2(400, 2100));
+	root->set_size(Size2(400, 4100));
 	SceneTree::get_singleton()->get_root()->add_child(root);
 
 	Tree *tree = memnew(Tree);
 	tree->set_name("HugeTree");
-	setup_visible_control(tree, Size2(200, 2000));
+	setup_visible_control(tree, Size2(200, 4000));
 	root->add_child(tree);
 
 	TreeItem *tree_root = tree->create_item();
-	const int total_rows = 40;
+	const int total_rows = 120;
 	for (int i = 0; i < total_rows; i++) {
 		TreeItem *item = tree->create_item(tree_root);
 		item->set_text(0, vformat("Row %d", i));
 	}
 	MessageQueue::get_singleton()->flush();
 
-	EditorAutomationSnapshotOptions budgeted;
-	budgeted.max_measured_rows = 10;
-	const EditorAutomationSnapshot budgeted_snapshot = EditorAutomationSnapshot::capture_from_node(root, budgeted);
-	// All rows are present so they stay selectable/reconcilable...
-	CHECK(count_role(budgeted_snapshot, "tree_item") == total_rows);
-	// ...but only the first budgeted rows carry on-screen bounds.
-	CHECK(count_role_with_bounds(budgeted_snapshot, "tree_item") == 10);
-	// The last row is emitted (findable by label) but has no bounds.
-	const EditorAutomationElement *last_row = find_virtual_element(budgeted_snapshot, "tree_item", "Row 39");
-	REQUIRE(last_row != nullptr);
-	CHECK(last_row->bounds.size.y == 0);
-	const EditorAutomationElement *budgeted_tree = find_element_by_role_and_name(budgeted_snapshot, "tree", "HugeTree");
-	REQUIRE(budgeted_tree != nullptr);
-	CHECK((bool)budgeted_tree->metadata.get("bounds_truncated", false));
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	// Every row is present and, because the tall viewport fits them all, every row
+	// carries on-screen bounds derived from the incremental offset walk.
+	CHECK(count_role(snapshot, "tree_item") == total_rows);
+	CHECK(count_role_with_bounds(snapshot, "tree_item") == total_rows);
 
-	// With a generous budget every on-screen row carries bounds and the container
-	// is unflagged.
-	EditorAutomationSnapshotOptions full;
-	full.max_measured_rows = 500;
-	const EditorAutomationSnapshot full_snapshot = EditorAutomationSnapshot::capture_from_node(root, full);
-	const EditorAutomationElement *full_tree = find_element_by_role_and_name(full_snapshot, "tree", "HugeTree");
-	REQUIRE(full_tree != nullptr);
-	CHECK_FALSE((bool)full_tree->metadata.get("bounds_truncated", false));
-	CHECK(count_role(full_snapshot, "tree_item") == total_rows);
-	CHECK(count_role_with_bounds(full_snapshot, "tree_item") == total_rows);
+	// Bounds increase monotonically down the tree, matching the incremental offset
+	// accumulation (the fix must not collapse rows onto one origin).
+	const EditorAutomationElement *first_row = find_virtual_element(snapshot, "tree_item", "Row 0");
+	const EditorAutomationElement *mid_row = find_virtual_element(snapshot, "tree_item", "Row 60");
+	const EditorAutomationElement *last_row = find_virtual_element(snapshot, "tree_item", "Row 119");
+	REQUIRE(first_row != nullptr);
+	REQUIRE(mid_row != nullptr);
+	REQUIRE(last_row != nullptr);
+	CHECK(mid_row->bounds.position.y > first_row->bounds.position.y);
+	CHECK(last_row->bounds.position.y > mid_row->bounds.position.y);
+	// Row spacing tracks the row height rather than collapsing.
+	CHECK(mid_row->bounds.position.y - first_row->bounds.position.y >= first_row->bounds.size.y * 2);
+
+	memdelete(root);
+}
+
+class DisabledMenuTracker : public Object {
+	FOUNDRY_CLASS(DisabledMenuTracker, Object);
+
+public:
+	int fired_count = 0;
+
+	void on_id_pressed(int p_id) {
+		fired_count++;
+	}
+};
+
+// #1090 follow-up: a disabled MenuButton command is exposed for visibility but
+// must not be activatable, since a user could not select it either.
+TEST_CASE("[Editor][Automation] disabled menu button items are not activatable") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	MenuButton *menu_button = memnew(MenuButton);
+	menu_button->set_text("Debug");
+	setup_visible_control(menu_button);
+	root->add_child(menu_button);
+
+	PopupMenu *popup = menu_button->get_popup();
+	popup->add_item("Enabled Command", 1);
+	popup->add_item("Disabled Command", 2);
+	popup->set_item_disabled(1, true);
+
+	DisabledMenuTracker tracker;
+	popup->connect("id_pressed", callable_mp(&tracker, &DisabledMenuTracker::on_id_pressed));
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	const EditorAutomationElement *disabled_item = find_virtual_element(snapshot, "menu_item", "Disabled Command");
+	REQUIRE(disabled_item != nullptr);
+	// The disabled command is visible but reported as not enabled.
+	CHECK_FALSE(disabled_item->enabled);
+
+	Dictionary target;
+	target["id"] = disabled_item->id;
+
+	const EditorAutomationActionResult result = EditorAutomationDriver::perform(snapshot, "choose_menu_item", target, Dictionary());
+	CHECK_FALSE(result.ok);
+	CHECK(result.kind == "element_disabled");
+	CHECK(tracker.fired_count == 0);
 
 	memdelete(root);
 }

@@ -54,20 +54,6 @@ struct EditorAutomationSnapshotOptions {
 	// in-tile scene/inspector docks that remain the active editing surface while
 	// layout parents are still settling visibility during startup.
 	bool relaxed_visibility_roots = false;
-	// Upper bound on the number of Tree rows for which on-screen bounds are
-	// computed per container. This bounds snapshot latency for pathologically
-	// large trees: the Search Help dialog's results Tree holds the entire class
-	// database, and Tree::get_item_rect() is O(row index) because it re-measures
-	// every preceding row, so computing bounds for every row is O(n^2) and hung
-	// past client timeouts. Every row is still emitted with its durable key and
-	// metadata (cheap pointer/text work, so it stays selectable and
-	// reconcilable); only the expensive bounds are limited to the first
-	// max_measured_rows visible rows. Rows past that report no bounds (like any
-	// off-screen row) and the container is flagged `bounds_truncated = true`.
-	// Agents select those by label or scroll to bring them into the measured
-	// window. 0 disables the limit (measure every row). ItemList is unaffected:
-	// its get_item_rect() is O(1).
-	int max_measured_rows = 256;
 };
 
 class EditorAutomationSnapshot {

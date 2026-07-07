@@ -619,6 +619,11 @@ EditorAutomationActionResult _action_select_virtual(
 		PopupMenu *popup_menu = Object::cast_to<PopupMenu>(ObjectDB::get_instance(ObjectID(menu_id)));
 		ERR_FAIL_NULL_V(popup_menu, EditorAutomationActionResult::failure("invalid_element", "Menu item parent is no longer available."));
 		ERR_FAIL_INDEX_V(index, popup_menu->get_item_count(), EditorAutomationActionResult::failure("invalid_element", "Menu item index is out of range."));
+		if (popup_menu->is_item_disabled(index)) {
+			// A disabled command is not selectable by a user, so automation must not
+			// fire its id_pressed via activate_item() either.
+			return EditorAutomationActionResult::failure("element_disabled", "The menu item is disabled and cannot be activated.");
+		}
 		popup_menu->activate_item(index);
 		EditorAutomationActionResult result = EditorAutomationActionResult::success(EditorAutomationActionRouteNames::SEMANTIC_SELECT, p_element.id);
 		result.events.push_back("activated");
@@ -692,6 +697,11 @@ EditorAutomationActionResult _action_activate_virtual(
 		PopupMenu *popup_menu = Object::cast_to<PopupMenu>(ObjectDB::get_instance(ObjectID(menu_id)));
 		ERR_FAIL_NULL_V(popup_menu, EditorAutomationActionResult::failure("invalid_element", "Menu item parent is no longer available."));
 		ERR_FAIL_INDEX_V(index, popup_menu->get_item_count(), EditorAutomationActionResult::failure("invalid_element", "Menu item index is out of range."));
+		if (popup_menu->is_item_disabled(index)) {
+			// A disabled command is not selectable by a user, so automation must not
+			// fire its id_pressed via activate_item() either.
+			return EditorAutomationActionResult::failure("element_disabled", "The menu item is disabled and cannot be activated.");
+		}
 		popup_menu->activate_item(index);
 		EditorAutomationActionResult result = EditorAutomationActionResult::success(EditorAutomationActionRouteNames::SEMANTIC_ACTIVATE, p_element.id);
 		result.events.push_back("activated");

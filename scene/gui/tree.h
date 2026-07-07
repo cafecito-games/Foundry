@@ -885,6 +885,11 @@ public:
 	Rect2 get_custom_popup_rect() const;
 
 	int get_item_offset(TreeItem *p_item) const;
+	// Height of a single item's own row (its cell content plus the row
+	// separation), excluding descendants. Unlike get_item_rect()/get_item_offset(),
+	// this is O(1): it does not walk preceding rows, so callers that need every
+	// row's height can accumulate offsets in O(n) instead of O(n^2).
+	int get_item_row_height(TreeItem *p_item) const;
 	Rect2 get_item_rect(TreeItem *p_item, int p_column = -1, int p_button = -1) const;
 	bool edit_selected(bool p_force_edit = false);
 	bool is_editing();
