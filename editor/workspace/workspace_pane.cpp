@@ -40,6 +40,7 @@
 #include "editor/editor_tile_drop_overlay.h"
 #include "editor/scene/editor_scene_tabs.h"
 #include "editor/workspace/scene_tab.h"
+#include "editor/workspace/workspace_tab_bar.h"
 #include "editor/workspace/workspace_tab_type.h"
 #include "scene/gui/label.h"
 #include "scene/resources/3d/world_3d.h"
@@ -484,6 +485,28 @@ void WorkspacePane::add_tab(const WorkspaceTab &p_tab) {
 	}
 }
 
+void WorkspacePane::insert_tab(int p_index, const WorkspaceTab &p_tab) {
+	ERR_FAIL_COND(!p_tab.is_valid());
+
+	const int at = CLAMP(p_index, 0, tabs.size());
+	tabs.insert(at, p_tab);
+	// Inserting ahead of the active tab shifts it one slot to the right.
+	if (active_tab_index >= at) {
+		active_tab_index++;
+	}
+
+	// The inserted tab plus every tab after it shifts index, so re-register the
+	// whole pane's canonical locations rather than only the new record.
+	_refresh_canonical_locations();
+	_sync_tab_strip();
+
+	if (tabs.size() == 1) {
+		set_active_tab(0);
+	} else {
+		_update_pane_state();
+	}
+}
+
 void WorkspacePane::remove_tab(int p_index) {
 	ERR_FAIL_INDEX(p_index, tabs.size());
 
@@ -856,7 +879,13 @@ WorkspacePane::WorkspacePane() {
 
 	tab_registry = &get_shared_tab_registry();
 
-	tab_strip = memnew(TabBar);
+	WorkspaceTabBar *strip = memnew(WorkspaceTabBar);
+	strip->set_pane(this);
+	// Every workspace pane's strip shares one rearrange group so a tab dragged from
+	// one pane's strip is accepted by another pane's strip; WorkspaceTabBar reroutes
+	// that cross-pane drop through the workspace model instead of TabBar's visual move.
+	strip->set_tabs_rearrange_group(WorkspaceTabBar::WORKSPACE_TABS_REARRANGE_GROUP);
+	tab_strip = strip;
 	tab_strip->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 	tab_strip->set_drag_to_rearrange_enabled(true);
 	tab_strip->set_tab_close_display_policy(TabBar::CLOSE_BUTTON_SHOW_ACTIVE_ONLY);

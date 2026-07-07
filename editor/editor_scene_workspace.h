@@ -170,6 +170,12 @@ public:
 	// and places the tab in the new pane. Scene tabs express the move through the
 	// EditorData scene-tile membership; other tab types move via take/add_tab.
 	WorkspaceLeafNode *handle_tab_drop(int p_source_pane_id, int p_source_tab_index, WorkspaceLeafNode *p_target_leaf, TileDropRegion p_region);
+	// Strip-based cross-pane move: unlike handle_tab_drop's center region (which
+	// appends), this lands the moved tab at p_dest_index in the destination pane's
+	// strip. Scene tabs move through EditorData scene-tile membership; other tab
+	// types move via take/insert_tab. Returns the destination leaf, or nullptr on a
+	// rejected move (e.g. a scene tab dropped onto a script-only pane).
+	WorkspaceLeafNode *handle_tab_strip_drop(int p_source_pane_id, int p_source_tab_index, int p_dest_pane_id, int p_dest_index);
 	// Thin compatibility shim that addresses a move by scene index (editor
 	// scene-tab drops and automation) and delegates to handle_tab_drop.
 	WorkspaceLeafNode *handle_scene_drop(int p_scene_idx, WorkspaceLeafNode *p_target_leaf, TileDropRegion p_region);

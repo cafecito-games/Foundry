@@ -137,6 +137,10 @@ public:
 	void set_tab_registry(WorkspaceTabRegistry *p_registry);
 
 	void add_tab(const WorkspaceTab &p_tab);
+	// Insert a tab at p_index (clamped to [0, tab_count]); a cross-pane strip drop
+	// uses this to land the moved tab at the hovered position. Unlike add_tab, this
+	// never reveals an existing canonical tab: the caller owns the moved record.
+	void insert_tab(int p_index, const WorkspaceTab &p_tab);
 	void remove_tab(int p_index);
 	void move_tab(int p_from, int p_to);
 	// p_activate=false switches the active tab without running the tab type's

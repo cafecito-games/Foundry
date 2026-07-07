@@ -1148,6 +1148,11 @@ public:
 
 	// Multi-tile workspace: scene-tab drag/drop mediation.
 	void handle_tile_tab_drop(int p_target_pane_id, int p_region, int p_source_pane_id, int p_source_tab_index);
+	// Strip-based cross-pane move: like handle_tile_tab_drop but the tab lands at
+	// p_dest_index in the destination pane's strip instead of being appended. Applies
+	// the same focus/dock/scene-tab/layout side effects so the strip and rosette
+	// overlay drop paths converge.
+	void handle_tile_tab_strip_drop(int p_target_pane_id, int p_dest_index, int p_source_pane_id, int p_source_tab_index);
 	void handle_tile_scene_drop(int p_target_tile_id, int p_region, int p_source_tile_id, int p_source_tab);
 	void handle_tile_scene_tab_bar_drop(int p_target_tile_id, const Variant &p_data, const Point2 &p_point);
 

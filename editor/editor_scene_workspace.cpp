@@ -184,6 +184,86 @@ WorkspaceLeafNode *EditorSceneWorkspace::handle_tab_drop(int p_source_pane_id, i
 	return dest_leaf;
 }
 
+WorkspaceLeafNode *EditorSceneWorkspace::handle_tab_strip_drop(int p_source_pane_id, int p_source_tab_index, int p_dest_pane_id, int p_dest_index) {
+	WorkspaceLeafNode *source_leaf = get_leaf_by_id(p_source_pane_id);
+	ERR_FAIL_NULL_V(source_leaf, nullptr);
+	WorkspacePane *source_pane = source_leaf->get_workspace_pane();
+	ERR_FAIL_NULL_V(source_pane, nullptr);
+	WorkspaceLeafNode *dest_leaf = get_leaf_by_id(p_dest_pane_id);
+	ERR_FAIL_NULL_V(dest_leaf, nullptr);
+	WorkspacePane *dest_pane = dest_leaf->get_workspace_pane();
+	ERR_FAIL_NULL_V(dest_pane, nullptr);
+	ERR_FAIL_INDEX_V(p_source_tab_index, source_pane->get_tab_count(), nullptr);
+
+	// A same-pane strip drop is an ordinary intra-pane reorder; the tab strip
+	// already handles this via active_tab_rearranged, but route defensively so a
+	// direct model caller still lands the tab at the requested index.
+	if (source_leaf == dest_leaf) {
+		if (source_pane->get_tab_count() > 0) {
+			source_pane->move_tab(p_source_tab_index, CLAMP(p_dest_index, 0, source_pane->get_tab_count() - 1));
+		}
+		return dest_leaf;
+	}
+
+	const WorkspaceTab source_tab = source_pane->get_tab(p_source_tab_index);
+	const bool is_scene_tab = source_tab.get_type_id() == StringName("scene");
+
+	if (is_scene_tab) {
+		ERR_FAIL_NULL_V(editor_data, nullptr);
+		// A scene tab bridges through the destination pane's scene tile; a
+		// script-only pane has none, so refuse rather than drop it from the model.
+		if (!dest_pane->is_scene_pane()) {
+			return nullptr;
+		}
+		const int scene_idx = SceneTabType::find_scene_index(*editor_data, source_tab);
+		if (scene_idx < 0) {
+			return nullptr;
+		}
+		// Translate the requested strip insertion index into a destination scene-tab
+		// ordinal before the scene is moved in. p_dest_index is a full strip position,
+		// but EditorData only orders scene tabs (a synced pane groups its scene tabs
+		// ahead of script tabs), so the ordinal is the count of scene tabs preceding
+		// the insertion point. Computing it in the pre-drop frame -- and reordering
+		// through EditorData rather than the pane's tab vector -- keeps the order
+		// canonical for mixed scene/script panes, where a raw strip index would not
+		// map to a scene ordinal and would leave EditorData stale.
+		const int pre_slot = CLAMP(p_dest_index, 0, dest_pane->get_tab_count());
+		int scene_ordinal = 0;
+		for (int i = 0; i < pre_slot; i++) {
+			if (dest_pane->get_tab(i).get_type_id() == StringName("scene")) {
+				scene_ordinal++;
+			}
+		}
+
+		// Move scene-tile ownership, then rebuild every pane's scene tabs so the
+		// moved scene materializes in the destination before it is reordered.
+		editor_data->set_scene_tile(scene_idx, p_dest_pane_id);
+		editor_data->set_tile_current_scene(p_dest_pane_id, scene_idx);
+		sync_scene_tabs_from_editor_data();
+
+		// move_tab's scene path reorders through EditorData; the moved scene's current
+		// tab index equals its scene ordinal (scenes are grouped first), and the
+		// target ordinal is bounded to the scene-tab count so it never falls through
+		// to a visual-only reorder.
+		const int landed = dest_pane->find_scene_tab_index(scene_idx);
+		if (landed >= 0 && landed != scene_ordinal) {
+			dest_pane->move_tab(landed, scene_ordinal);
+		}
+	} else {
+		// Generic move: take_tab captures the type payload and removes it from the
+		// source pane; insert_tab lands it at the hovered index and activates it so
+		// the dropped tab is the one shown (matching the scene path making its scene
+		// current).
+		WorkspaceTab taken = source_pane->take_tab(p_source_tab_index);
+		const int clamped = CLAMP(p_dest_index, 0, dest_pane->get_tab_count());
+		dest_pane->insert_tab(clamped, taken);
+		dest_pane->set_active_tab(clamped);
+	}
+
+	collapse_if_empty_deferred(p_source_pane_id);
+	return dest_leaf;
+}
+
 WorkspaceLeafNode *EditorSceneWorkspace::handle_scene_drop(int p_scene_idx, WorkspaceLeafNode *p_target_leaf, TileDropRegion p_region) {
 	ERR_FAIL_NULL_V(p_target_leaf, nullptr);
 	ERR_FAIL_NULL_V(editor_data, nullptr);
