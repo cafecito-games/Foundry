@@ -235,6 +235,10 @@ public:
 	// Adding scripts to DocData directly may make script doc cache inconsistent. Use methods below when adding script docs.
 	// Usage during startup can also cause deadlocks.
 	static DocTools *get_doc_data();
+	// Whether both engine and project script docs have finished (re)generating. The
+	// class list is populated in phases -- native docs first, script docs after --
+	// so callers that treat a missing class as authoritative must wait for this.
+	static bool are_script_docs_loaded() { return _script_docs_loaded.is_set(); }
 	// Method forwarding to underlying DocTools to keep script doc cache consistent.
 	static DocData::ClassDoc *get_doc(const String &p_class_name);
 	static void add_doc(const DocData::ClassDoc &p_class_doc);

@@ -225,12 +225,13 @@ bool HelpTabType::is_resource_available(const WorkspaceTab &p_tab) const {
 	}
 	// A page whose class no longer exists is dropped on restore. The doc database
 	// is the authoritative set of help pages -- it includes script and @GlobalScope
-	// pages beyond ClassDB -- but it generates asynchronously and may be null or
-	// still empty at restore time. Only drop once it is populated; while it is
-	// unavailable the page cannot be verified, so keep it rather than discarding a
-	// valid layout (a @GlobalScope or script page is not a ClassDB class).
+	// pages beyond ClassDB -- but it generates asynchronously and in phases (native
+	// docs first, project script docs after). Only treat a missing class as
+	// authoritative once the whole database is loaded; until then the page cannot
+	// be verified, so keep it rather than discarding a valid layout (a script or
+	// @GlobalScope page that has not finished loading is not yet in class_list).
 	DocTools *doc = EditorHelp::get_doc_data();
-	if (!doc || doc->class_list.is_empty()) {
+	if (!doc || doc->class_list.is_empty() || !EditorHelp::are_script_docs_loaded()) {
 		return true;
 	}
 	return doc->class_list.has(help_class);
