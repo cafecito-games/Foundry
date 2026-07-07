@@ -110,6 +110,9 @@ class ScriptEditorController : public Object {
 	void _on_file_dialog_selected(const String &p_file);
 	void _connect_global_signals();
 	void _on_request_help(const String &p_topic);
+	// Route a help topic to the workspace as its own help tab. Returns false when
+	// no workspace exists so callers fall back to the legacy in-view help path.
+	bool _open_help_in_workspace(const String &p_topic);
 	void _on_request_help_search(const String &p_text);
 	void _on_scene_closed(const String &p_path);
 	void _on_script_add_function_request(Object *p_obj, const String &p_function, const PackedStringArray &p_args);

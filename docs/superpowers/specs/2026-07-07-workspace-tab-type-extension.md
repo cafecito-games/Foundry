@@ -77,18 +77,29 @@ bridge.
 
 ### `HelpTab` — a class-reference help page
 
+Implemented in `editor/workspace/help_tab.{h,cpp}` (issue #1054); registered in
+`WorkspaceTabRegistry::register_builtin_tab_types`. Opened/revealed through
+`EditorSceneWorkspace::open_help_tab(source_leaf, topic)`, to which the
+`ScriptEditorController` help facade (`goto_help` / `_help_class_goto` /
+`_on_request_help`) routes every class-reference open.
+
 - **`type_id`**: `"help"`.
-- **`resource_key` identity**: the fully-qualified help class name, e.g.
-  `class:Node2D`. One tab per class; opening the same class reveals the existing
-  tab via canonical dedup.
-- **`payload`**: `{ scroll_position: int, section_anchor: String }` — where the
-  reader was scrolled and the last section anchor. Purely presentational.
+- **`resource_key` identity**: the bare class name, e.g. `Node2D`. One tab per
+  class; opening the same class reveals the existing tab via canonical dedup. A
+  deep topic (`class_method:Node2D:queue_free`) is parsed down to its class for
+  the key by `HelpTabType::class_key_for_topic`; the full topic scrolls the
+  revealed page to its anchor.
+- **`title`**: `Help: <Class>` (`get_title`); icon key `Help`.
+- **`payload`**: `{ help_class: String, scroll: int }` — the displayed class and
+  scroll offset. Purely presentational.
 - **`request_close`**: always `CLOSE`. Help has no unsaved state, so no prompt.
-- **`mount`**: instantiate/reparent the help viewer control under `chrome_host`,
-  seek to `section_anchor`/`scroll_position`. `unmount` writes the current scroll
-  and anchor back into the payload. `is_resource_available` returns
-  `ClassDB::class_exists(class)` so a tab for a class that no longer exists is
-  dropped on restore.
+- **`mount`**: instantiate/reparent an `EditorHelp` under `chrome_host` and
+  `go_to_class(help_class)` + `set_scroll(scroll)`; it does not grab focus.
+  `activate` calls `EditorHelp::set_focused()`. `unmount` writes the current class
+  and scroll back into the payload. `is_resource_available` returns
+  `EditorHelp::get_doc_data()->class_list.has(help_class)` so a tab for a class
+  that no longer exists is dropped on restore (lenient when the doc database has
+  not finished generating, to avoid discarding a valid layout).
 
 ### `TextTab` — a plain-text buffer (file-backed or scratch)
 

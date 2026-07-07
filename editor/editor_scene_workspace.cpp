@@ -37,9 +37,12 @@
 #include "editor/editor_script_leaf.h"
 #include "editor/editor_workspace_leaf_content.h"
 #include "editor/script/script_editor_view.h"
+#include "editor/doc/editor_help.h"
 #include "editor/themes/editor_scale.h"
+#include "editor/workspace/help_tab.h"
 #include "editor/workspace/scene_tab.h"
 #include "editor/workspace/workspace_pane.h"
+#include "editor/workspace/workspace_tab_registry.h"
 #include "scene/gui/split_container.h"
 
 // Central inset for tab (center) drops: matches the rosette center button (30/100).
@@ -671,6 +674,100 @@ WorkspaceLeafNode *EditorSceneWorkspace::open_script_leaf(WorkspaceLeafNode *p_s
 				associated_scene = source_tile->get_current_scene_root();
 			}
 			script_leaf->set_associated_scene_root(associated_scene);
+		}
+	}
+	return target;
+}
+
+WorkspaceLeafNode *EditorSceneWorkspace::_find_leaf_hosting_type(const StringName &p_type_id) const {
+	for (WorkspaceLeafNode *leaf : leaves) {
+		WorkspacePane *pane = leaf->get_workspace_pane();
+		if (!pane) {
+			continue;
+		}
+		for (int i = 0; i < pane->get_tab_count(); i++) {
+			if (pane->get_tab(i).get_type_id() == p_type_id) {
+				return leaf;
+			}
+		}
+	}
+	return nullptr;
+}
+
+WorkspaceLeafNode *EditorSceneWorkspace::open_help_tab(WorkspaceLeafNode *p_source_leaf, const String &p_topic, bool p_force_new_leaf) {
+	ERR_FAIL_NULL_V(p_source_leaf, nullptr);
+	ERR_FAIL_COND_V(!leaves.has(p_source_leaf), nullptr);
+
+	const String class_key = HelpTabType::class_key_for_topic(p_topic);
+	if (class_key.is_empty()) {
+		return nullptr;
+	}
+
+	WorkspaceTabRegistry &registry = WorkspacePane::get_shared_tab_registry();
+	HelpTabType *help_type = static_cast<HelpTabType *>(registry.find_type(StringName("help")));
+	ERR_FAIL_NULL_V(help_type, nullptr);
+
+	// Only a topic with a member anchor needs scrolling within the page; a bare
+	// class name lands at the top, which mount()/go_to_class already does.
+	const bool is_deep_topic = p_topic.contains(":");
+
+	// Reveal an already-open page for this class instead of duplicating it. The
+	// canonical index is process-global and is not rebuilt on workspace restore, so
+	// an entry can be stale (its pane/tab reused by a different tab). Confirm the
+	// located tab is still this help page before revealing it; otherwise fall
+	// through and create a fresh tab.
+	WorkspaceTab existing_tab;
+	WorkspaceTabLocation existing_location;
+	if (registry.find_canonical(StringName("help"), class_key, existing_tab, existing_location) && existing_location.is_valid()) {
+		WorkspaceLeafNode *leaf = get_leaf_by_id(existing_location.pane_id);
+		WorkspacePane *pane = leaf ? leaf->get_workspace_pane() : nullptr;
+		if (pane && existing_location.tab_index < pane->get_tab_count()) {
+			const WorkspaceTab &located = pane->get_tab(existing_location.tab_index);
+			if (located.get_type_id() == StringName("help") && located.get_resource_key() == class_key) {
+				pane->set_active_tab(existing_location.tab_index);
+				request_leaf_focus(existing_location.pane_id);
+				if (is_deep_topic && EditorHelp::get_doc_data()) {
+					if (EditorHelp *help = help_type->get_mounted_help(existing_tab.get_stable_id())) {
+						help->go_to_help(p_topic);
+					}
+				}
+				return leaf;
+			}
+		}
+		// The entry is stale (its pane/tab no longer holds this page). Drop it so the
+		// create path below re-registers a fresh canonical location instead of
+		// add_tab's insert_canonical treating the stale key as already present.
+		registry.remove_canonical(StringName("help"), class_key);
+	}
+
+	// Otherwise pick a target pane: reuse a pane already hosting help so pages
+	// stack together, else fall back to the focused (or source) leaf's pane.
+	WorkspaceLeafNode *target = nullptr;
+	if (!p_force_new_leaf) {
+		target = _find_leaf_hosting_type(StringName("help"));
+	}
+	if (!target) {
+		target = get_focused_leaf();
+	}
+	if (!target || !leaves.has(target)) {
+		target = p_source_leaf;
+	}
+	WorkspacePane *pane = target->get_workspace_pane();
+	ERR_FAIL_NULL_V(pane, nullptr);
+
+	const int stable_id = registry.allocate_stable_id();
+	pane->add_tab(help_type->make_tab(class_key, stable_id));
+	for (int i = pane->get_tab_count() - 1; i >= 0; i--) {
+		if (pane->get_tab(i).get_stable_id() == stable_id) {
+			pane->set_active_tab(i);
+			break;
+		}
+	}
+	request_leaf_focus(target->get_leaf_id());
+
+	if (is_deep_topic && EditorHelp::get_doc_data()) {
+		if (EditorHelp *help = help_type->get_mounted_help(stable_id)) {
+			help->go_to_help(p_topic);
 		}
 	}
 	return target;
