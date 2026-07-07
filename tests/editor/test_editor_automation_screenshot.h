@@ -483,6 +483,65 @@ TEST_CASE("[Editor][Automation] capture_screenshot fails when the matched elemen
 	memdelete(root);
 }
 
+TEST_CASE("[Editor][Automation] capture_screenshot fails when the element lies outside the viewport") {
+	EditorAutomationWait::clear_all_cooperative();
+
+	SubViewport *viewport = memnew(SubViewport);
+	viewport->set_size(Vector2i(120, 80));
+	viewport->set_disable_3d(true);
+	viewport->set_transparent_background(false);
+	SceneTree::get_singleton()->get_root()->add_child(viewport);
+
+	Control *container = memnew(Control);
+	container->set_size(Size2(120, 80));
+	viewport->add_child(container);
+
+	// A button with real bounds, but positioned entirely outside the 120x80
+	// viewport: the crop rect cannot intersect the captured image.
+	Button *button = memnew(Button);
+	button->set_text("Off Screen");
+	button->set_position(Point2(500, 500));
+	button->set_size(Size2(96, 40));
+	container->add_child(button);
+	screenshot_flush_frames(4);
+
+	EditorAutomationMCPDispatcher dispatcher;
+	EditorAutomationMCPDispatcher::Options options;
+	options.snapshot_root = container;
+	dispatcher.set_options(options);
+
+	Dictionary selector;
+	selector["role"] = "button";
+	selector["name"] = "Off Screen";
+
+	Dictionary arguments;
+	arguments["selector"] = selector;
+
+	Dictionary params;
+	params["name"] = "capture_screenshot";
+	params["arguments"] = arguments;
+
+	const Dictionary response = dispatcher.handle_message(make_request(6, "tools/call", params));
+	const Dictionary response_result = response["result"];
+	CHECK((bool)response_result["isError"]);
+	const Dictionary structured = response_result["structuredContent"];
+	CHECK_FALSE((bool)structured["ok"]);
+
+	// With a usable viewport the capture succeeds but cannot be cropped, so the
+	// tool must report element_not_capturable rather than a full-window image.
+	// A headless build without a usable viewport reports unavailable instead.
+	if (structured.has("screenshot")) {
+		const Dictionary screenshot = structured["screenshot"];
+		CHECK(String(screenshot["status"]) == "unavailable");
+		CHECK(String(structured["kind"]) == "screenshot_unavailable");
+	} else {
+		CHECK(String(structured["kind"]) == "element_not_capturable");
+		CHECK_FALSE(structured.has("capture_mode"));
+	}
+
+	memdelete(viewport);
+}
+
 TEST_CASE("[Editor][Automation] capture_screenshot rejects both selector and element") {
 	EditorAutomationWait::clear_all_cooperative();
 

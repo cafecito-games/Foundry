@@ -872,6 +872,20 @@ Dictionary EditorAutomationMCPDispatcher::_tool_capture_screenshot(const Diction
 	const EditorAutomationScreenshotAttachment attachment = EditorAutomationScreenshot::capture_on_demand(
 			screenshot_options, crop_to_element, element_bounds);
 
+	// An explicit element-focused request that captured successfully but could
+	// not actually be cropped (the element lies outside the captured viewport —
+	// e.g. scrolled off-screen, clipped, or a screen-space Window rect) falls
+	// back to a full-window image inside capture_on_demand. Report that as
+	// element_not_capturable instead of silently returning the wrong image.
+	if (crop_to_element && attachment.status == "available" && attachment.capture_mode != "cropped") {
+		r_is_error = true;
+		Dictionary result;
+		result["ok"] = false;
+		result["kind"] = "element_not_capturable";
+		result["message"] = "The targeted element is not within the captured viewport.";
+		return result;
+	}
+
 	Dictionary result;
 	result["screenshot"] = attachment.to_dictionary();
 	if (attachment.status != "available") {
