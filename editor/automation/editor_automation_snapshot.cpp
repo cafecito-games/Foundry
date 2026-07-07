@@ -39,6 +39,7 @@
 #include "editor/editor_scene_pane_tile.h"
 #include "editor/scene/editor_scene_tabs.h"
 #include "editor/inspector/editor_inspector.h"
+#include "editor/workspace/workspace_pane.h"
 #include "scene/gui/base_button.h"
 #include "scene/gui/button.h"
 #include "scene/gui/check_box.h"
@@ -395,6 +396,13 @@ class EditorAutomationSnapshotBuilder {
 			for (Node *node = p_tab_bar->get_parent(); node != nullptr; node = node->get_parent()) {
 				if (EditorSceneTabs *scene_tabs = Object::cast_to<EditorSceneTabs>(node)) {
 					tile_id = scene_tabs->get_tile_id();
+					break;
+				}
+				// The generic pane tab strip is a plain TabBar owned by a
+				// WorkspacePane (the legacy EditorSceneTabs bar is hidden), so its
+				// tab elements must carry the owning leaf id for the metadata path.
+				if (WorkspacePane *pane = Object::cast_to<WorkspacePane>(node)) {
+					tile_id = pane->get_leaf_id();
 					break;
 				}
 			}

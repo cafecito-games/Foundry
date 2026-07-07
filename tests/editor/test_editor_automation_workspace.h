@@ -240,4 +240,55 @@ TEST_CASE("[Editor][Automation][MCP] mcp-dock-action") {
 	h.unmount();
 }
 
+TEST_CASE("[Editor][Automation][MCP] mcp-pane-strip-tab-has-tile-id") {
+	WorkspaceHarness h;
+	prepare_two_tile_workspace(h);
+
+	const int scene_a = h.editor_data.add_edited_scene(-1);
+	h.editor_data.set_scene_path(scene_a, "res://tile_a.tscn");
+	h.editor_data.set_scene_tile(scene_a, 0);
+	const int scene_b = h.editor_data.add_edited_scene(-1);
+	h.editor_data.set_scene_path(scene_b, "res://tile_b.tscn");
+	h.editor_data.set_scene_tile(scene_b, 1);
+	h.editor_data.set_tile_current_scene(0, scene_a);
+	h.editor_data.set_tile_current_scene(1, scene_b);
+	h.editor_data.set_focused_tile_id(1);
+	h.workspace->set_focused_leaf(1);
+
+	// Populate each pane's generic tab strip from editor data so the visible
+	// TabBar (owned by WorkspacePane, not EditorSceneTabs) carries scene tabs.
+	for (WorkspaceLeafNode *leaf : h.workspace->get_leaves()) {
+		if (WorkspacePane *pane = leaf->get_workspace_pane()) {
+			pane->sync_scene_tabs_from_editor_data(leaf->get_leaf_id() == 1);
+		}
+	}
+	h.pump();
+
+	WorkspaceLeafNode *leaf_b = h.workspace->get_leaf_by_id(1);
+	REQUIRE(leaf_b != nullptr);
+	WorkspacePane *pane_b = leaf_b->get_workspace_pane();
+	REQUIRE(pane_b != nullptr);
+	TabBar *strip_b = pane_b->get_tab_strip();
+	REQUIRE(strip_b != nullptr);
+	REQUIRE(strip_b->get_tab_count() == 1);
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(h.host);
+
+	// The pane strip's tab element must expose tile_id metadata so the semantic
+	// dock/drag routes can resolve the source through the primary metadata path.
+	const String tab_key = vformat("%s:%d", String::num_uint64(strip_b->get_instance_id()), 0);
+	const EditorAutomationElement *tab_element = snapshot.find_by_durable_key("tab", tab_key);
+	REQUIRE(tab_element != nullptr);
+	CHECK(int(tab_element->metadata.get("tile_id", -1)) == 1);
+	CHECK(int(tab_element->metadata.get("tab_index", -1)) == 0);
+
+	int resolved_tile_id = -1;
+	int resolved_tab_index = -1;
+	CHECK(EditorAutomationWorkspace::resolve_scene_tab_source(*tab_element, resolved_tile_id, resolved_tab_index));
+	CHECK(resolved_tile_id == 1);
+	CHECK(resolved_tab_index == 0);
+
+	h.unmount();
+}
+
 } // namespace TestEditorAutomationWorkspace
