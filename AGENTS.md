@@ -112,6 +112,8 @@ subclasses of the extensible base and for unrelated native method overrides cont
 
 Add or update tests with behavior changes. C++ tests use doctest macros from `tests/test_macros.h` and are included through `tests/test_main.cpp`. New C++ test skeletons can be created with `python tests/create_test.py Name path`, where `path` is relative to `tests/`. Foundry Script integration, completion, LSP, and refactor fixtures belong under `modules/foundry_script/tests/scripts/`; pair `.fs` fixtures with expected-output config files where the local test runner expects them.
 
+Tests that generate, mutate, or persist local files must write those files under the shared test scratch space instead of the repository root or tracked fixture directories. Agent-run tests get `FOUNDRY_TEST_SCRATCH=$REPO_ROOT/.test_scratch` from `scripts/agent_build.py`; C++ tests should use the Foundry test scratch helpers so aborted runs do not pollute `git status`. Use fixture directories only for intentional checked-in inputs and expected outputs, and keep fixture regeneration commands (`test generate-fixtures`, `test generate-format-fixtures`) as the explicit path for updating tracked files.
+
 ## Commit & Pull Request Guidelines
 
 Keep commits focused and readable. Recent history uses concise imperative subjects, sometimes with scope prefixes, for example `Polish strict argument diagnostics` and `docs(README): Add note about experimental status of this fork`. Prefer first lines under 72 characters. PRs should target `develop`, describe the behavior change, include relevant tests, link issues when applicable, and add screenshots or reproduction projects for editor-facing changes.

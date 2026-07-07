@@ -23,6 +23,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_LOG = Path("/tmp/foundry-build.log")
 DEFAULT_PROGRESS_LOG = Path("/tmp/foundry-build-progress.jsonl")
 DEFAULT_CACHE_PATH = Path.home() / ".scons_cache"
+DEFAULT_TEST_SCRATCH = REPO_ROOT / ".test_scratch"
 SUPPORTED_SCONS_PLATFORMS = ("linuxbsd", "macos")
 
 
@@ -305,6 +306,7 @@ def test_environment(args: argparse.Namespace, target: BuildTarget | None = None
         env["DISPLAY"] = args.display
     elif target.default_display is not None:
         env["DISPLAY"] = target.default_display
+    env.setdefault("FOUNDRY_TEST_SCRATCH", str(DEFAULT_TEST_SCRATCH))
     return env
 
 
