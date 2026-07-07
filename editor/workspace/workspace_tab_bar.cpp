@@ -30,6 +30,7 @@
 
 #include "editor/workspace/workspace_tab_bar.h"
 
+#include "editor/editor_node.h"
 #include "editor/workspace/workspace_pane.h"
 
 int WorkspaceTabBar::_cross_pane_insert_index(const Point2 &p_point) const {
@@ -67,9 +68,10 @@ void WorkspaceTabBar::drop_data(const Point2 &p_point, const Variant &p_data) {
 	}
 
 	// A cross-strip drop from another workspace pane in the shared group is routed
-	// through the workspace model so the move updates tabs/EditorData/collapse/
-	// persistence instead of TabBar's visual-only cross-bar move. Anything else
-	// (a foreign TabBar sharing the group, a missing source pane) falls back.
+	// through EditorNode so the move updates tabs/EditorData/collapse/persistence and
+	// applies the same focus/dock/scene-tab side effects as the rosette overlay path,
+	// instead of TabBar's visual-only cross-bar move. Anything else (a foreign TabBar
+	// sharing the group, a missing source pane) falls back to the stock behavior.
 	WorkspaceTabBar *from_bar = Object::cast_to<WorkspaceTabBar>(get_node_or_null(from_path));
 	if (!from_bar || !from_bar->get_pane() || from_bar->get_tabs_rearrange_group() != get_tabs_rearrange_group()) {
 		TabBar::drop_data(p_point, p_data);
@@ -81,6 +83,13 @@ void WorkspaceTabBar::drop_data(const Point2 &p_point, const Variant &p_data) {
 		return;
 	}
 
+	// The gesture is mediated by EditorNode (like the overlay drop). Without a live
+	// editor there is nothing to route into, so the drop is a safe no-op.
+	EditorNode *editor_node = EditorNode::get_singleton();
+	if (!editor_node) {
+		return;
+	}
+
 	const int insert_index = _cross_pane_insert_index(p_point);
-	pane->handle_cross_pane_strip_drop(from_bar->get_pane(), source_tab_index, insert_index);
+	editor_node->handle_tile_tab_strip_drop(pane->get_leaf_id(), insert_index, from_bar->get_pane()->get_leaf_id(), source_tab_index);
 }

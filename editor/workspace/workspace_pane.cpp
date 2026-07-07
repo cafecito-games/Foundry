@@ -507,12 +507,6 @@ void WorkspacePane::insert_tab(int p_index, const WorkspaceTab &p_tab) {
 	}
 }
 
-void WorkspacePane::handle_cross_pane_strip_drop(WorkspacePane *p_source_pane, int p_source_tab_index, int p_insert_index) {
-	ERR_FAIL_NULL(p_source_pane);
-	ERR_FAIL_NULL(workspace);
-	workspace->handle_tab_strip_drop(p_source_pane->get_leaf_id(), p_source_tab_index, leaf_id, p_insert_index);
-}
-
 void WorkspacePane::remove_tab(int p_index) {
 	ERR_FAIL_INDEX(p_index, tabs.size());
 

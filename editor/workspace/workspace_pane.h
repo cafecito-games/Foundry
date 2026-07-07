@@ -143,10 +143,6 @@ public:
 	void insert_tab(int p_index, const WorkspaceTab &p_tab);
 	void remove_tab(int p_index);
 	void move_tab(int p_from, int p_to);
-	// Route a cross-pane tab-strip drop (a drag from p_source_pane's strip into
-	// this pane) through the workspace model so the moved tab lands at p_insert_index
-	// and tabs/EditorData/collapse/persistence all update.
-	void handle_cross_pane_strip_drop(WorkspacePane *p_source_pane, int p_source_tab_index, int p_insert_index);
 	// p_activate=false switches the active tab without running the tab type's
 	// activation side effects (a scene tab's activation claims workspace focus and
 	// reparents the shared scene editor). Restore uses this for non-focused panes

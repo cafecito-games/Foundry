@@ -7137,6 +7137,30 @@ void EditorNode::handle_tile_tab_drop(int p_target_pane_id, int p_region, int p_
 	save_editor_layout_delayed();
 }
 
+void EditorNode::handle_tile_tab_strip_drop(int p_target_pane_id, int p_dest_index, int p_source_pane_id, int p_source_tab_index) {
+	ERR_FAIL_NULL(scene_workspace);
+
+	WorkspaceLeafNode *dest_leaf = scene_workspace->handle_tab_strip_drop(p_source_pane_id, p_source_tab_index, p_target_pane_id, p_dest_index);
+	if (!dest_leaf) {
+		return;
+	}
+
+	const int dest_leaf_id = dest_leaf->get_leaf_id();
+	// A scene tab landing in the destination pane makes that pane the focused scene
+	// tile; a script (or other) tab just takes workspace focus. Mirrors the rosette
+	// overlay path (handle_tile_tab_drop) so both drop surfaces update focus, docks,
+	// scene-tab UI and the delayed layout save identically.
+	if (dest_leaf->get_pane_tile()) {
+		_focus_tile(dest_leaf_id);
+	} else {
+		scene_workspace->request_leaf_focus(dest_leaf_id);
+	}
+	_bind_all_leaf_docks();
+	_update_all_scene_tabs();
+	_update_tile_display_attachments();
+	save_editor_layout_delayed();
+}
+
 void EditorNode::handle_tile_scene_drop(int p_target_tile_id, int p_region, int p_source_tile_id, int p_source_tab) {
 	ERR_FAIL_NULL(scene_workspace);
 	WorkspaceLeafNode *target_leaf = scene_workspace->get_leaf_by_id(p_target_tile_id);
