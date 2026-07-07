@@ -172,6 +172,77 @@ TEST_CASE("[text-tab] text-document-refuses-save-after-failed-load") {
 	ERR_PRINT_ON;
 }
 
+TEST_CASE("[text-tab] text-document-detects-external-modification") {
+	const String path = write_text_file("external_detect.txt", "v1");
+	Ref<TextDocument> document;
+	document.instantiate();
+	document->set_path(path);
+	REQUIRE(document->load() == OK);
+
+	// A freshly loaded document matches its recorded on-disk timestamp.
+	CHECK_FALSE(document->has_external_modification());
+
+	// Seconds-resolution mtimes make a same-second rewrite undetectable, so drive
+	// the inequality directly: a baseline older than the file's mtime is a change.
+	document->set_last_modified_time(document->get_last_modified_time() - 1);
+	CHECK(document->has_external_modification());
+
+	// Reloading re-baselines the timestamp and clears the flag.
+	REQUIRE(document->load() == OK);
+	CHECK_FALSE(document->has_external_modification());
+
+	// Saving also re-baselines so our own write is never misdetected as external.
+	document->set_last_modified_time(document->get_last_modified_time() - 1);
+	CHECK(document->has_external_modification());
+	REQUIRE(document->save() == OK);
+	CHECK_FALSE(document->has_external_modification());
+}
+
+TEST_CASE("[text-tab] text-document-external-modification-ignores-unloaded") {
+	// A never-loaded document has no baseline and must not report a phantom change.
+	const String path = write_text_file("external_unloaded.txt", "content");
+	Ref<TextDocument> document;
+	document.instantiate();
+	document->set_path(path);
+	CHECK_FALSE(document->has_external_modification());
+
+	// A missing backing file is handled by tab availability, not the reload flow.
+	Ref<TextDocument> missing;
+	missing.instantiate();
+	missing->set_path("res://text_tab_missing_dir/missing_external.txt");
+	CHECK_FALSE(missing->has_external_modification());
+}
+
+TEST_CASE("[text-tab] text-document-reload-preserves-buffer-on-failure") {
+	const String path = write_text_file("reload_fail.txt", "good content");
+	Ref<TextDocument> document;
+	document.instantiate();
+	document->set_path(path);
+	REQUIRE(document->load() == OK);
+	CHECK(document->get_text() == "good content");
+
+	// Corrupt the backing file with invalid UTF-8 so a reload cannot read it, then
+	// force detection past the seconds-resolution mtime.
+	{
+		Ref<FileAccess> file = FileAccess::open(path, FileAccess::WRITE);
+		REQUIRE(file.is_valid());
+		file->store_8(0xFF);
+	}
+	document->set_last_modified_time(0);
+	CHECK(document->has_external_modification());
+
+	ERR_PRINT_OFF;
+	CHECK(document->reload() != OK);
+	ERR_PRINT_ON;
+
+	// A failed reload must not brick the tab: the previous good buffer survives, the
+	// document stays savable, and the unreadable version is not re-detected forever.
+	CHECK(document->get_text() == "good content");
+	CHECK_FALSE(document->is_load_failed());
+	CHECK_FALSE(document->has_external_modification());
+	CHECK(document->save() == OK);
+}
+
 TEST_CASE("[text-tab] text-tab-title-is-filename") {
 	TextTabType type;
 	WorkspaceTab tab = type.make_tab("res://docs/README.md", 1);
@@ -511,6 +582,169 @@ TEST_CASE("[text-tab][SceneTree][Editor] text-tab-unsaved-documents-reported-and
 	Ref<FileAccess> reader = FileAccess::open(path, FileAccess::READ);
 	REQUIRE(reader.is_valid());
 	CHECK(reader->get_as_text() == "after edit");
+
+	pane->request_close_tab(index);
+	h.pump();
+	h.unmount();
+}
+
+TEST_CASE("[text-tab][SceneTree][Editor] text-tab-external-change-clean-reloads") {
+	using namespace TestSceneWorkspace;
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+
+	const String path = write_text_file("ext_clean.txt", "v1");
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspaceLeafNode *source = h.workspace->get_focused_leaf();
+	h.workspace->open_text_tab(source, path);
+	h.pump();
+
+	WorkspacePane *pane = nullptr;
+	int index = -1;
+	int stable_id = -1;
+	REQUIRE(find_text_tab(h.workspace, &pane, &index, &stable_id));
+
+	TextTabType *text_type = shared_text_type();
+	REQUIRE(text_type != nullptr);
+	CodeTextEditor *editor = Object::cast_to<CodeTextEditor>(text_type->get_active_control_for(stable_id));
+	REQUIRE(editor != nullptr);
+	Ref<TextDocument> document = text_type->get_document_for(stable_id);
+	REQUIRE(document.is_valid());
+	CHECK_FALSE(document->is_dirty());
+
+	// Another program rewrites the backing file. Force detection past the
+	// seconds-resolution mtime by clearing the recorded baseline.
+	(void)write_text_file("ext_clean.txt", "v2 from disk");
+	document->set_last_modified_time(0);
+	CHECK(document->has_external_modification());
+
+	// A clean tab with auto-reload on needs no prompt and reloads silently.
+	PackedStringArray changed;
+	CHECK_FALSE(text_type->collect_external_changes(changed, true));
+	REQUIRE(changed.size() == 1);
+	CHECK(changed[0] == path);
+	// With auto-reload off, even a clean external change must ask first.
+	PackedStringArray changed_noauto;
+	CHECK(text_type->collect_external_changes(changed_noauto, false));
+
+	text_type->reload_externally_changed();
+	CHECK(document->get_text() == "v2 from disk");
+	CHECK_FALSE(document->is_dirty());
+	CHECK_FALSE(document->has_external_modification());
+	// The mounted view reflects the reloaded contents, not the stale buffer.
+	CHECK(editor->get_text_editor()->get_text() == "v2 from disk");
+
+	pane->request_close_tab(index);
+	h.pump();
+	h.unmount();
+}
+
+TEST_CASE("[text-tab][SceneTree][Editor] text-tab-external-change-dirty-prompts") {
+	using namespace TestSceneWorkspace;
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+
+	const String path = write_text_file("ext_dirty.txt", "original");
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspaceLeafNode *source = h.workspace->get_focused_leaf();
+	h.workspace->open_text_tab(source, path);
+	h.pump();
+
+	WorkspacePane *pane = nullptr;
+	int index = -1;
+	int stable_id = -1;
+	REQUIRE(find_text_tab(h.workspace, &pane, &index, &stable_id));
+
+	TextTabType *text_type = shared_text_type();
+	REQUIRE(text_type != nullptr);
+	CodeTextEditor *editor = Object::cast_to<CodeTextEditor>(text_type->get_active_control_for(stable_id));
+	REQUIRE(editor != nullptr);
+	Ref<TextDocument> document = text_type->get_document_for(stable_id);
+	REQUIRE(document.is_valid());
+
+	// Unsaved local edit through the real view -> document path.
+	editor->get_text_editor()->set_text("local edit");
+	editor->get_text_editor()->emit_signal(SNAME("text_changed"));
+	CHECK(document->is_dirty());
+
+	// The file also changes on disk behind the editor.
+	(void)write_text_file("ext_dirty.txt", "external edit");
+	document->set_last_modified_time(0);
+	CHECK(document->has_external_modification());
+
+	// A dirty tab must be asked before acting, and the scan itself must neither
+	// reload (dropping the local edit) nor write the buffer back to disk.
+	PackedStringArray changed;
+	CHECK(text_type->collect_external_changes(changed, true));
+	REQUIRE(changed.size() == 1);
+	CHECK(changed[0] == path);
+	CHECK(document->get_text() == "local edit");
+	CHECK(document->is_dirty());
+	{
+		Ref<FileAccess> reader = FileAccess::open(path, FileAccess::READ);
+		REQUIRE(reader.is_valid());
+		CHECK(reader->get_as_text() == "external edit");
+	}
+
+	// Choosing "keep mine" writes the local buffer out, overwriting the external
+	// change and clearing the pending-change state.
+	text_type->resave_externally_changed();
+	CHECK_FALSE(document->has_external_modification());
+	{
+		Ref<FileAccess> reader = FileAccess::open(path, FileAccess::READ);
+		REQUIRE(reader.is_valid());
+		CHECK(reader->get_as_text() == "local edit");
+	}
+
+	pane->request_close_tab(index);
+	h.pump();
+	h.unmount();
+}
+
+TEST_CASE("[text-tab][SceneTree][Editor] text-tab-external-change-reload-discards-local") {
+	using namespace TestSceneWorkspace;
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+
+	const String path = write_text_file("ext_reload_discard.txt", "original");
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspaceLeafNode *source = h.workspace->get_focused_leaf();
+	h.workspace->open_text_tab(source, path);
+	h.pump();
+
+	WorkspacePane *pane = nullptr;
+	int index = -1;
+	int stable_id = -1;
+	REQUIRE(find_text_tab(h.workspace, &pane, &index, &stable_id));
+
+	TextTabType *text_type = shared_text_type();
+	REQUIRE(text_type != nullptr);
+	CodeTextEditor *editor = Object::cast_to<CodeTextEditor>(text_type->get_active_control_for(stable_id));
+	REQUIRE(editor != nullptr);
+	Ref<TextDocument> document = text_type->get_document_for(stable_id);
+	REQUIRE(document.is_valid());
+
+	editor->get_text_editor()->set_text("local edit");
+	editor->get_text_editor()->emit_signal(SNAME("text_changed"));
+	CHECK(document->is_dirty());
+
+	(void)write_text_file("ext_reload_discard.txt", "external wins");
+	document->set_last_modified_time(0);
+
+	// Choosing "reload from disk" replaces the dirty buffer with the disk contents.
+	text_type->reload_externally_changed();
+	CHECK(document->get_text() == "external wins");
+	CHECK_FALSE(document->is_dirty());
+	CHECK(editor->get_text_editor()->get_text() == "external wins");
 
 	pane->request_close_tab(index);
 	h.pump();

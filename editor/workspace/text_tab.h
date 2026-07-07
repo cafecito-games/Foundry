@@ -100,4 +100,15 @@ public:
 	// text-tab editor plugin so quit/reload/save-all handle dirty text tabs.
 	PackedStringArray get_unsaved_document_paths() const;
 	void save_all_documents();
+
+	// External on-disk change integration, mirroring the script editor's disk-change
+	// flow. Collects the open documents whose backing file changed outside the editor
+	// into r_changed_paths and returns whether the user must be asked before acting
+	// (true when a changed document is dirty or auto-reload is disabled). Reload pulls
+	// the new disk contents into every changed document (and its mounted view); resave
+	// writes the in-editor contents back out, keeping the local version. Both return
+	// the paths that could not be reloaded/saved so the caller can report them.
+	bool collect_external_changes(PackedStringArray &r_changed_paths, bool p_autoreload) const;
+	PackedStringArray reload_externally_changed();
+	PackedStringArray resave_externally_changed();
 };

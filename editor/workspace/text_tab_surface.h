@@ -90,6 +90,10 @@ public:
 	int get_caret_column() const;
 	int get_scroll() const;
 	void flush_to_document();
+	// Re-reads the (externally reloaded) document into the active view, discarding
+	// any in-view edits. Used by the external-change reload flow so a reloaded tab
+	// shows the new disk contents instead of the stale buffer.
+	void sync_active_view_from_document();
 	void focus_view();
 
 	// When the document is dirty, shows a save/discard/cancel prompt and returns

@@ -257,3 +257,58 @@ void TextTabType::save_all_documents() {
 		}
 	}
 }
+
+bool TextTabType::collect_external_changes(PackedStringArray &r_changed_paths, bool p_autoreload) const {
+	bool need_ask = false;
+	for (const KeyValue<int, Ref<TextDocument>> &entry : documents) {
+		const Ref<TextDocument> &document = entry.value;
+		if (document.is_null() || !document->has_external_modification()) {
+			continue;
+		}
+		r_changed_paths.push_back(document->get_path());
+		// Reloading a dirty document would drop unsaved edits, and a user who
+		// disabled auto-reload wants a prompt even for clean ones; either forces
+		// the ask/keep dialog instead of a silent reload.
+		if (!p_autoreload || document->is_dirty()) {
+			need_ask = true;
+		}
+	}
+	return need_ask;
+}
+
+PackedStringArray TextTabType::reload_externally_changed() {
+	PackedStringArray failed_paths;
+	for (const KeyValue<int, Ref<TextDocument>> &entry : documents) {
+		const Ref<TextDocument> &document = entry.value;
+		if (document.is_null() || !document->has_external_modification()) {
+			continue;
+		}
+		if (document->reload() != OK) {
+			// reload() preserved the prior good buffer; report the path so the caller
+			// can tell the user the new on-disk version could not be read.
+			failed_paths.push_back(document->get_path());
+			continue;
+		}
+		// A mounted view still shows the pre-reload buffer; push the new contents in.
+		if (TextTabSurface *surface = _resolve_surface(entry.key)) {
+			surface->sync_active_view_from_document();
+		}
+	}
+	return failed_paths;
+}
+
+PackedStringArray TextTabType::resave_externally_changed() {
+	PackedStringArray failed_paths;
+	for (const KeyValue<int, Ref<TextDocument>> &entry : documents) {
+		const Ref<TextDocument> &document = entry.value;
+		if (document.is_null() || !document->has_external_modification()) {
+			continue;
+		}
+		// Keep the in-editor version: write it back out, overwriting the external
+		// change and re-baselining the timestamp so the tab stops reporting a change.
+		if (document->save() != OK) {
+			failed_paths.push_back(document->get_path());
+		}
+	}
+	return failed_paths;
+}
