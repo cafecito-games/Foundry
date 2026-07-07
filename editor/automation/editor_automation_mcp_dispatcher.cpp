@@ -842,6 +842,20 @@ Dictionary EditorAutomationMCPDispatcher::_tool_capture_screenshot(const Diction
 
 		const EditorAutomationElement &element = snapshot.get_element(selector_result.match_indices[0]);
 		element_bounds = element.bounds;
+
+		// A single match with no on-screen bounds (e.g. an off-screen or zero-size
+		// element, or a virtual item that never reports a rect) cannot be cropped.
+		// Fail loudly instead of silently returning a full-window image for an
+		// explicit element-focused request.
+		if (element_bounds.size.x <= 0 || element_bounds.size.y <= 0) {
+			r_is_error = true;
+			Dictionary result;
+			result["ok"] = false;
+			result["kind"] = "element_not_capturable";
+			result["message"] = "The targeted element has no on-screen bounds to crop to.";
+			result["element"] = EditorAutomationDiagnosticsBuilder::element_summary(element);
+			return result;
+		}
 		crop_to_element = true;
 
 		// Capture the matched element's own window/viewport so the crop rect

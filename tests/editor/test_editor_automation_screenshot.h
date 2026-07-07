@@ -437,6 +437,52 @@ TEST_CASE("[Editor][Automation] capture_screenshot with an unresolved selector f
 	memdelete(root);
 }
 
+TEST_CASE("[Editor][Automation] capture_screenshot fails when the matched element has no bounds") {
+	EditorAutomationWait::clear_all_cooperative();
+
+	Control *root = memnew(Control);
+	root->set_size(Size2(240, 160));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	// A zero-size Control still appears in the snapshot but has no croppable area,
+	// standing in for virtual items (tree/list/menu/tab) that report empty bounds.
+	// A plain Control (unlike a Button) does not enforce a content minimum size.
+	Control *empty = memnew(Control);
+	empty->set_name("ZeroBoundsControl");
+	empty->set_position(Point2(20, 20));
+	empty->set_size(Size2(0, 0));
+	root->add_child(empty);
+	screenshot_flush_frames();
+
+	EditorAutomationMCPDispatcher dispatcher;
+	EditorAutomationMCPDispatcher::Options options;
+	options.snapshot_root = root;
+	dispatcher.set_options(options);
+
+	Dictionary selector;
+	selector["name"] = "ZeroBoundsControl";
+
+	Dictionary arguments;
+	arguments["selector"] = selector;
+
+	Dictionary params;
+	params["name"] = "capture_screenshot";
+	params["arguments"] = arguments;
+
+	const Dictionary response = dispatcher.handle_message(make_request(5, "tools/call", params));
+	const Dictionary response_result = response["result"];
+	CHECK((bool)response_result["isError"]);
+	const Dictionary structured = response_result["structuredContent"];
+	CHECK_FALSE((bool)structured["ok"]);
+	CHECK(String(structured["kind"]) == "element_not_capturable");
+	// It must not silently fall back to a full-window capture for an explicit
+	// element-focused request.
+	CHECK_FALSE(structured.has("capture_mode"));
+	CHECK_FALSE(structured.has("screenshot"));
+
+	memdelete(root);
+}
+
 TEST_CASE("[Editor][Automation] capture_screenshot rejects both selector and element") {
 	EditorAutomationWait::clear_all_cooperative();
 
