@@ -31,6 +31,7 @@
 #include "text_tab_surface.h"
 
 #include "core/object/callable_method_pointer.h"
+#include "editor/editor_node.h"
 #include "editor/workspace/text_view_registry.h"
 #include "scene/gui/button.h"
 #include "scene/gui/dialogs.h"
@@ -200,7 +201,16 @@ bool TextTabSurface::begin_close(const Callable &p_on_close) {
 
 void TextTabSurface::_on_save_confirmed() {
 	if (document.is_valid()) {
-		document->save();
+		const Error err = document->save();
+		if (err != OK) {
+			// The write failed (permissions, disk, missing path). Keep the tab open
+			// with its edits intact rather than closing and losing them.
+			if (EditorNode::get_singleton()) {
+				EditorNode::get_singleton()->show_warning(vformat(TTR("Error saving text file:\n%s"), document->get_path()));
+			}
+			deferred_close = Callable();
+			return;
+		}
 	}
 	_finish_deferred_close();
 }
@@ -216,6 +226,9 @@ void TextTabSurface::_finish_deferred_close() {
 	if (deferred_close.is_valid()) {
 		const Callable callback = deferred_close;
 		deferred_close = Callable();
-		callback.call();
+		// Defer the workspace-side close: it removes the tab, which unmounts and
+		// frees this surface (and its dialog) while this signal handler is still on
+		// the stack. Deferring lets the current call chain unwind first.
+		callback.call_deferred();
 	}
 }

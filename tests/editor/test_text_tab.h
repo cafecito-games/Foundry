@@ -428,6 +428,54 @@ TEST_CASE("[text-tab][SceneTree][Editor] text-tab-owns-nonscript") {
 	h.unmount();
 }
 
+TEST_CASE("[text-tab][SceneTree][Editor] text-tab-unsaved-documents-reported-and-saved") {
+	using namespace TestSceneWorkspace;
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+
+	const String path = write_text_file("unsaved.txt", "before");
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspaceLeafNode *source = h.workspace->get_focused_leaf();
+	h.workspace->open_text_tab(source, path);
+	h.pump();
+
+	WorkspacePane *pane = nullptr;
+	int index = -1;
+	int stable_id = -1;
+	REQUIRE(find_text_tab(h.workspace, &pane, &index, &stable_id));
+
+	TextTabType *text_type = shared_text_type();
+	REQUIRE(text_type != nullptr);
+
+	// No unsaved documents initially.
+	CHECK(text_type->get_unsaved_document_paths().is_empty());
+
+	// Editing marks the document dirty; it is reported for the editor-wide quit /
+	// save-all flow so the edit is not silently lost.
+	Ref<TextDocument> document = text_type->get_document_for(stable_id);
+	REQUIRE(document.is_valid());
+	document->set_text("after edit");
+	PackedStringArray unsaved = text_type->get_unsaved_document_paths();
+	REQUIRE(unsaved.size() == 1);
+	CHECK(unsaved[0] == path);
+
+	// Save-all writes the document to disk and clears the dirty state.
+	text_type->save_all_documents();
+	CHECK_FALSE(document->is_dirty());
+	CHECK(text_type->get_unsaved_document_paths().is_empty());
+
+	Ref<FileAccess> reader = FileAccess::open(path, FileAccess::READ);
+	REQUIRE(reader.is_valid());
+	CHECK(reader->get_as_text() == "after edit");
+
+	pane->request_close_tab(index);
+	h.pump();
+	h.unmount();
+}
+
 TEST_CASE("[text-tab][SceneTree][Editor] text-tab-new-file-is-path-backed") {
 	using namespace TestSceneWorkspace;
 	WorkspacePane::get_shared_tab_registry().clear_canonical_index();

@@ -91,4 +91,10 @@ public:
 	// Test/introspection hook: the live document backing a mounted tab (or a
 	// retained dirty document), or an invalid Ref if none.
 	Ref<TextDocument> get_document_for(int p_stable_id) const;
+
+	// Editor-wide unsaved integration: paths of documents with unsaved edits, and
+	// a save-all that writes every dirty document to disk. Used by the workspace
+	// text-tab editor plugin so quit/reload/save-all handle dirty text tabs.
+	PackedStringArray get_unsaved_document_paths() const;
+	void save_all_documents();
 };

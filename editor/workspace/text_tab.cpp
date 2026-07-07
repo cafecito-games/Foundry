@@ -223,3 +223,21 @@ Ref<TextDocument> TextTabType::get_document_for(int p_stable_id) const {
 	}
 	return Ref<TextDocument>();
 }
+
+PackedStringArray TextTabType::get_unsaved_document_paths() const {
+	PackedStringArray paths;
+	for (const KeyValue<int, Ref<TextDocument>> &entry : documents) {
+		if (entry.value.is_valid() && entry.value->is_dirty()) {
+			paths.push_back(entry.value->get_path());
+		}
+	}
+	return paths;
+}
+
+void TextTabType::save_all_documents() {
+	for (const KeyValue<int, Ref<TextDocument>> &entry : documents) {
+		if (entry.value.is_valid() && entry.value->is_dirty()) {
+			entry.value->save();
+		}
+	}
+}
