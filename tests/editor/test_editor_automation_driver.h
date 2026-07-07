@@ -1521,6 +1521,139 @@ TEST_CASE("[Editor][Automation] menu button activation refreshes via about_to_po
 	memdelete(root);
 }
 
+// #1090 follow-up: some editor menus connect their rebuild/disable handlers to
+// the PopupMenu's own about_to_popup rather than the MenuButton's. Activation
+// must fire both, so a command the popup-signal handler disables is refused.
+TEST_CASE("[Editor][Automation] menu button activation honors popup about_to_popup") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	MenuButton *menu_button = memnew(MenuButton);
+	menu_button->set_text("Search");
+	setup_visible_control(menu_button);
+	root->add_child(menu_button);
+
+	PopupMenu *popup = menu_button->get_popup();
+	popup->add_item("Popup Signal Command", 3);
+
+	AboutToPopupDisabler disabler;
+	disabler.popup = popup;
+	disabler.disable_index = 0;
+	// Connect to the PopupMenu's signal, not the MenuButton's.
+	popup->connect("about_to_popup", callable_mp(&disabler, &AboutToPopupDisabler::on_about_to_popup));
+
+	DisabledMenuTracker tracker;
+	popup->connect("id_pressed", callable_mp(&tracker, &DisabledMenuTracker::on_id_pressed));
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	const EditorAutomationElement *item = find_virtual_element(snapshot, "menu_item", "Popup Signal Command");
+	REQUIRE(item != nullptr);
+
+	Dictionary target;
+	target["id"] = item->id;
+
+	const EditorAutomationActionResult result = EditorAutomationDriver::perform(snapshot, "choose_menu_item", target, Dictionary());
+	CHECK_FALSE(result.ok);
+	CHECK(result.kind == "element_disabled");
+	CHECK(tracker.fired_count == 0);
+
+	memdelete(root);
+}
+
+class AboutToPopupRenamer : public Object {
+	FOUNDRY_CLASS(AboutToPopupRenamer, Object);
+
+public:
+	PopupMenu *popup = nullptr;
+	int index = -1;
+	String new_text;
+
+	void on_about_to_popup() {
+		if (popup != nullptr && index >= 0) {
+			popup->set_item_text(index, new_text);
+		}
+	}
+};
+
+// #1090 follow-up: a menu rebuilt on about_to_popup can reorder/rename entries,
+// so the snapshot's numeric index may no longer map to the requested command.
+// Activation detects the mismatch and refuses rather than firing the wrong one.
+TEST_CASE("[Editor][Automation] menu button activation refuses a stale index after rebuild") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	MenuButton *menu_button = memnew(MenuButton);
+	menu_button->set_text("Go To");
+	setup_visible_control(menu_button);
+	root->add_child(menu_button);
+
+	PopupMenu *popup = menu_button->get_popup();
+	popup->add_item("Original Command", 4);
+
+	AboutToPopupRenamer renamer;
+	renamer.popup = popup;
+	renamer.index = 0;
+	renamer.new_text = "Different Command";
+	menu_button->connect("about_to_popup", callable_mp(&renamer, &AboutToPopupRenamer::on_about_to_popup));
+
+	DisabledMenuTracker tracker;
+	popup->connect("id_pressed", callable_mp(&tracker, &DisabledMenuTracker::on_id_pressed));
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	const EditorAutomationElement *item = find_virtual_element(snapshot, "menu_item", "Original Command");
+	REQUIRE(item != nullptr);
+
+	Dictionary target;
+	target["id"] = item->id;
+
+	const EditorAutomationActionResult result = EditorAutomationDriver::perform(snapshot, "choose_menu_item", target, Dictionary());
+	CHECK_FALSE(result.ok);
+	CHECK(result.kind == "stale_element");
+	CHECK(tracker.fired_count == 0);
+
+	memdelete(root);
+}
+
+// #1090 follow-up: a disabled MenuButton cannot be opened, so its commands are
+// exposed as not enabled and cannot be activated.
+TEST_CASE("[Editor][Automation] disabled menu button exposes inert commands") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	MenuButton *menu_button = memnew(MenuButton);
+	menu_button->set_text("Debug");
+	setup_visible_control(menu_button);
+	root->add_child(menu_button);
+
+	PopupMenu *popup = menu_button->get_popup();
+	popup->add_item("Command In Disabled Menu", 9);
+	menu_button->set_disabled(true);
+
+	DisabledMenuTracker tracker;
+	popup->connect("id_pressed", callable_mp(&tracker, &DisabledMenuTracker::on_id_pressed));
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	const EditorAutomationElement *item = find_virtual_element(snapshot, "menu_item", "Command In Disabled Menu");
+	REQUIRE(item != nullptr);
+	CHECK_FALSE(item->enabled);
+
+	Dictionary target;
+	target["id"] = item->id;
+
+	const EditorAutomationActionResult result = EditorAutomationDriver::perform(snapshot, "choose_menu_item", target, Dictionary());
+	CHECK_FALSE(result.ok);
+	CHECK(result.kind == "element_disabled");
+	CHECK(tracker.fired_count == 0);
+
+	memdelete(root);
+}
+
 class RightClickCaptureControl : public Control {
 	FOUNDRY_CLASS(RightClickCaptureControl, Control);
 

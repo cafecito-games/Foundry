@@ -140,18 +140,24 @@ bool _parse_virtual_key(const EditorAutomationElement &p_element, String &r_kind
 	return EditorAutomationSnapshot::parse_element_id(p_element.id, generation, r_kind, r_key);
 }
 
-// When a menu_item belongs to a MenuButton's attached popup that is exposed while
-// hidden, activating it directly would skip MenuButton::show_popup() and its
-// about_to_popup signal. Many editor menus update or disable entries in that
-// signal, so fire it (as opening the menu would) before reading item state, so
-// automation never activates a command a real popup would have refreshed away.
-void _prepare_menu_button_popup(PopupMenu *p_popup_menu) {
+// A MenuButton keeps its popup as a hidden child until shown; while hidden the
+// popup's parent is the MenuButton. Automation exposes those hidden items, so
+// activating one must replicate what opening the menu would do. A visible popup
+// (an already-open menu) is captured directly and needs no such handling.
+MenuButton *_hidden_menu_button_owner(PopupMenu *p_popup_menu) {
 	if (p_popup_menu == nullptr || p_popup_menu->is_visible()) {
-		return;
+		return nullptr;
 	}
-	if (MenuButton *menu_button = Object::cast_to<MenuButton>(p_popup_menu->get_parent())) {
-		menu_button->emit_signal(SNAME("about_to_popup"));
-	}
+	return Object::cast_to<MenuButton>(p_popup_menu->get_parent());
+}
+
+// MenuButton::show_popup() emits the button's about_to_popup, then popup->popup()
+// emits the PopupMenu window's about_to_popup. Editor menus connect their
+// rebuild / enable-disable handlers to either one, so fire both before reading
+// item state, matching the live menu a user would see.
+void _refresh_menu_button_popup(MenuButton *p_menu_button, PopupMenu *p_popup_menu) {
+	p_menu_button->emit_signal(SNAME("about_to_popup"));
+	p_popup_menu->emit_signal(SNAME("about_to_popup"));
 }
 
 TreeItem *_resolve_tree_item(Tree *p_tree, const String &p_path) {
@@ -633,10 +639,21 @@ EditorAutomationActionResult _action_select_virtual(
 		const int index = p_key.substr(separator + 1).to_int();
 		PopupMenu *popup_menu = Object::cast_to<PopupMenu>(ObjectDB::get_instance(ObjectID(menu_id)));
 		ERR_FAIL_NULL_V(popup_menu, EditorAutomationActionResult::failure("invalid_element", "Menu item parent is no longer available."));
-		// Refresh a hidden MenuButton popup (about_to_popup) before reading item
-		// state, so index bounds and disabled checks reflect the live menu.
-		_prepare_menu_button_popup(popup_menu);
+		MenuButton *menu_owner = _hidden_menu_button_owner(popup_menu);
+		if (menu_owner != nullptr) {
+			if (menu_owner->is_disabled()) {
+				// A user cannot open a disabled MenuButton, so its commands are inert.
+				return EditorAutomationActionResult::failure("element_disabled", "The menu is disabled and cannot be opened.");
+			}
+			// Refresh the menu the way opening it would before reading item state.
+			_refresh_menu_button_popup(menu_owner, popup_menu);
+		}
 		ERR_FAIL_INDEX_V(index, popup_menu->get_item_count(), EditorAutomationActionResult::failure("invalid_element", "Menu item index is out of range."));
+		if (menu_owner != nullptr && popup_menu->get_item_text(index) != p_element.text) {
+			// A rebuild on about_to_popup shifted entries, so the snapshot index no
+			// longer maps to the requested command; force a re-observe.
+			return EditorAutomationActionResult::failure("stale_element", "The menu changed after refresh; re-observe before selecting.");
+		}
 		if (popup_menu->is_item_disabled(index)) {
 			// A disabled command is not selectable by a user, so automation must not
 			// fire its id_pressed via activate_item() either.
@@ -714,10 +731,21 @@ EditorAutomationActionResult _action_activate_virtual(
 		const int index = p_key.substr(separator + 1).to_int();
 		PopupMenu *popup_menu = Object::cast_to<PopupMenu>(ObjectDB::get_instance(ObjectID(menu_id)));
 		ERR_FAIL_NULL_V(popup_menu, EditorAutomationActionResult::failure("invalid_element", "Menu item parent is no longer available."));
-		// Refresh a hidden MenuButton popup (about_to_popup) before reading item
-		// state, so index bounds and disabled checks reflect the live menu.
-		_prepare_menu_button_popup(popup_menu);
+		MenuButton *menu_owner = _hidden_menu_button_owner(popup_menu);
+		if (menu_owner != nullptr) {
+			if (menu_owner->is_disabled()) {
+				// A user cannot open a disabled MenuButton, so its commands are inert.
+				return EditorAutomationActionResult::failure("element_disabled", "The menu is disabled and cannot be opened.");
+			}
+			// Refresh the menu the way opening it would before reading item state.
+			_refresh_menu_button_popup(menu_owner, popup_menu);
+		}
 		ERR_FAIL_INDEX_V(index, popup_menu->get_item_count(), EditorAutomationActionResult::failure("invalid_element", "Menu item index is out of range."));
+		if (menu_owner != nullptr && popup_menu->get_item_text(index) != p_element.text) {
+			// A rebuild on about_to_popup shifted entries, so the snapshot index no
+			// longer maps to the requested command; force a re-observe.
+			return EditorAutomationActionResult::failure("stale_element", "The menu changed after refresh; re-observe before selecting.");
+		}
 		if (popup_menu->is_item_disabled(index)) {
 			// A disabled command is not selectable by a user, so automation must not
 			// fire its id_pressed via activate_item() either.

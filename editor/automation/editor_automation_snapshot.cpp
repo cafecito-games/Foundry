@@ -474,7 +474,7 @@ class EditorAutomationSnapshotBuilder {
 		}
 	}
 
-	void _add_popup_menu_items(const PopupMenu *p_popup_menu, int p_parent_index) {
+	void _add_popup_menu_items(const PopupMenu *p_popup_menu, int p_parent_index, bool p_owner_enabled = true) {
 		const uint64_t menu_id = p_popup_menu->get_instance_id();
 		for (int i = 0; i < p_popup_menu->get_item_count(); i++) {
 			if (p_popup_menu->is_item_separator(i)) {
@@ -483,8 +483,9 @@ class EditorAutomationSnapshotBuilder {
 			const String item_text = p_popup_menu->get_item_text(i);
 			const String key = vformat("%s:%d", String::num_uint64(menu_id), i);
 			// Reflect disabled state so agents can see a command is inert; the driver
-			// additionally refuses to activate disabled items.
-			const bool enabled = !p_popup_menu->is_item_disabled(i);
+			// additionally refuses to activate disabled items. A command hosted by a
+			// disabled MenuButton (p_owner_enabled == false) is likewise inert.
+			const bool enabled = p_owner_enabled && !p_popup_menu->is_item_disabled(i);
 			_add_virtual_element(p_parent_index, "menu_item", key, "menu_item", item_text, item_text, false, Dictionary(), Rect2i(), enabled);
 		}
 	}
@@ -571,7 +572,9 @@ class EditorAutomationSnapshotBuilder {
 			if (PopupMenu *popup = const_cast<MenuButton *>(menu_button)->get_popup()) {
 				const bool walked_as_node = options.include_internal && popup->is_visible();
 				if (!walked_as_node) {
-					_add_popup_menu_items(popup, p_parent_index);
+					// A disabled MenuButton cannot be opened by a user, so its commands
+					// are exposed as not enabled.
+					_add_popup_menu_items(popup, p_parent_index, !menu_button->is_disabled());
 				}
 			}
 		} else if (const TabBar *tab_bar = Object::cast_to<const TabBar>(p_node)) {
