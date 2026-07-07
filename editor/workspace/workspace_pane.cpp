@@ -758,10 +758,15 @@ void WorkspacePane::save_layout(const Ref<ConfigFile> &p_config, const String &p
 	if (!initial_content_type.is_empty()) {
 		p_config->set_value(p_section, "initial_content_type", initial_content_type);
 	}
+	// The scene tile's dock arrangement is pane chrome and persists regardless of
+	// tabs. The legacy script_leaf bridge only owns content in no-tab mode, so it
+	// is persisted only then -- symmetric with load_layout, which restores the
+	// bridge only when tab_count == 0. In tab mode the tab records are the source
+	// of truth and the hidden bridge holds no state worth serializing.
 	if (scene_tile) {
 		scene_tile->save_layout(p_config, p_section);
 	}
-	if (script_leaf) {
+	if (script_leaf && tabs.is_empty()) {
 		script_leaf->save_layout(p_config, p_section);
 	}
 
