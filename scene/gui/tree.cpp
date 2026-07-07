@@ -6008,6 +6008,10 @@ Point2 Tree::get_scroll() const {
 	return ofs;
 }
 
+Point2 Tree::get_drawn_scroll_offset() const {
+	return theme_cache.offset;
+}
+
 void Tree::scroll_to_item(TreeItem *p_item, bool p_center_on_item) {
 	ERR_FAIL_NULL(p_item);
 

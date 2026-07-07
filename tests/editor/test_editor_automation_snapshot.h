@@ -893,6 +893,72 @@ TEST_CASE("[Editor][Automation] scrolled list_item bounds track scroll and clip 
 	memdelete(window);
 }
 
+TEST_CASE("[Editor][Automation] scrolled tree_item bounds track pending scroll before a redraw") {
+	// Tree::get_item_rect anchors rows to theme_cache.offset, the scroll offset
+	// from the last draw, which only refreshes during Tree::update_scrollbars() on
+	// NOTIFICATION_DRAW. An act(scroll) followed by observe_ui before a redraw
+	// leaves that cache stale, so the snapshot must re-anchor tree_item bounds to
+	// the live scroll value (Tree::get_scroll()) to match where the row will draw.
+	Window *window = memnew(Window);
+	window->set_size(Size2i(320, 240));
+	SceneTree::get_singleton()->get_root()->add_child(window);
+	MessageQueue::get_singleton()->flush();
+
+	Tree *tree = memnew(Tree);
+	tree->set_name("SceneTree");
+	tree->set_position(Point2(20, 20));
+	tree->set_hide_root(true);
+	// A short viewport with many rows forces a vertical scrollbar so most rows sit
+	// outside the visible area at any given scroll position.
+	setup_visible_control(tree, Size2(200, 80));
+	window->add_child(tree);
+
+	TreeItem *tree_root = tree->create_item();
+	for (int i = 0; i < 40; i++) {
+		TreeItem *row = tree->create_item(tree_root);
+		row->set_text(0, vformat("scene_%d.tscn", i));
+	}
+	MessageQueue::get_singleton()->flush();
+
+	// Seed a "last drawn" frame at scroll 0 so theme_cache.offset is populated and
+	// the vertical scrollbar is configured (scroll_to_item runs update_scrollbars).
+	tree->scroll_to_item(tree_root);
+	MessageQueue::get_singleton()->flush();
+
+	const Rect2i tree_global = Rect2i(tree->get_global_position().floor(), tree->get_size().floor());
+
+	const EditorAutomationSnapshot unscrolled = EditorAutomationSnapshot::capture_from_node(window);
+	// The first row is visible at scroll 0 and reports bounds inside the viewport.
+	const EditorAutomationElement *first_unscrolled = find_element_by_role_and_name(unscrolled, "tree_item", "scene_0.tscn");
+	REQUIRE(first_unscrolled != nullptr);
+	CHECK(first_unscrolled->bounds.size.y > 0);
+	CHECK(tree_global.encloses(first_unscrolled->bounds));
+	// The last row is far below the viewport, so it must report no bounds.
+	const EditorAutomationElement *last_unscrolled = find_element_by_role_and_name(unscrolled, "tree_item", "scene_39.tscn");
+	REQUIRE(last_unscrolled != nullptr);
+	CHECK(last_unscrolled->bounds.size.y == 0);
+
+	// Push a pending scroll to the bottom WITHOUT a redraw: _scroll_moved only
+	// queues a redraw, so theme_cache.offset stays at the last-drawn value. This
+	// reproduces act(scroll) immediately followed by observe_ui.
+	VScrollBar *v_scroll = tree->get_vscroll_bar();
+	REQUIRE(v_scroll->get_max() > 0);
+	v_scroll->set_value(v_scroll->get_max());
+	REQUIRE(tree->get_scroll().y > 0);
+
+	const EditorAutomationSnapshot scrolled = EditorAutomationSnapshot::capture_from_node(window);
+	// Visibility must invert against the live scroll even though no redraw ran.
+	const EditorAutomationElement *first_scrolled = find_element_by_role_and_name(scrolled, "tree_item", "scene_0.tscn");
+	REQUIRE(first_scrolled != nullptr);
+	CHECK(first_scrolled->bounds.size.y == 0);
+	const EditorAutomationElement *last_scrolled = find_element_by_role_and_name(scrolled, "tree_item", "scene_39.tscn");
+	REQUIRE(last_scrolled != nullptr);
+	CHECK(last_scrolled->bounds.size.y > 0);
+	CHECK(tree_global.encloses(last_scrolled->bounds));
+
+	memdelete(window);
+}
+
 TEST_CASE("[Editor][Automation] icon-only button falls back to tooltip as automation name") {
 	PanelContainer *root = memnew(PanelContainer);
 	root->set_size(Size2(400, 300));
