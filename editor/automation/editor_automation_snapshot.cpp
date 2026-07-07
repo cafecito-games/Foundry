@@ -384,11 +384,20 @@ class EditorAutomationSnapshotBuilder {
 
 	void _add_item_list_items(const ItemList *p_item_list, int p_parent_index) {
 		const uint64_t list_id = p_item_list->get_instance_id();
+		// ItemList::get_item_rect returns content-space coordinates (rect_cache
+		// plus the panel offset) and, unlike Tree::get_item_rect, does not apply
+		// the scroll offset that drawing subtracts. Subtract the current scroll
+		// values so scrolled rows report their true on-screen position. The
+		// scroll-bar accessors are non-const only; the reads themselves are const.
+		ItemList *mutable_list = const_cast<ItemList *>(p_item_list);
+		const Vector2 scroll_offset = Vector2(mutable_list->get_h_scroll_bar()->get_value(), mutable_list->get_v_scroll_bar()->get_value());
 		for (int i = 0; i < p_item_list->get_item_count(); i++) {
 			const String item_text = p_item_list->get_item_text(i);
 			const String key = vformat("%s:%d", String::num_uint64(list_id), i);
 			const Dictionary metadata = EditorAutomationWorkflow::metadata_for_list_item(p_item_list, i);
-			const Rect2i bounds = _virtual_item_bounds(p_item_list, p_item_list->get_item_rect(i, true));
+			Rect2 local_rect = p_item_list->get_item_rect(i, true);
+			local_rect.position -= scroll_offset;
+			const Rect2i bounds = _virtual_item_bounds(p_item_list, local_rect);
 			_add_virtual_element(p_parent_index, "list_item", key, "list_item", item_text, item_text, p_item_list->is_selected(i), metadata, bounds);
 		}
 	}

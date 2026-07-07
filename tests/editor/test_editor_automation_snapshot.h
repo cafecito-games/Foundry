@@ -838,6 +838,49 @@ TEST_CASE("[Editor][Automation] tree_item and list_item virtual elements report 
 	memdelete(window);
 }
 
+TEST_CASE("[Editor][Automation] scrolled list_item bounds follow the scroll offset") {
+	// ItemList::get_item_rect returns content-space coordinates that do not
+	// include the scroll offset the control subtracts when drawing. The snapshot
+	// must account for that so a scrolled row reports where it is actually drawn,
+	// not where it would sit at scroll 0.
+	Window *window = memnew(Window);
+	window->set_size(Size2i(320, 240));
+	SceneTree::get_singleton()->get_root()->add_child(window);
+	MessageQueue::get_singleton()->flush();
+
+	ItemList *item_list = memnew(ItemList);
+	item_list->set_name("SceneList");
+	item_list->set_position(Point2(20, 20));
+	item_list->set_max_columns(1);
+	// A short viewport with many rows forces a vertical scrollbar.
+	setup_visible_control(item_list, Size2(200, 80));
+	window->add_child(item_list);
+	for (int i = 0; i < 40; i++) {
+		item_list->add_item(vformat("scene_%d.tscn", i));
+	}
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot unscrolled = EditorAutomationSnapshot::capture_from_node(window);
+	const EditorAutomationElement *top_unscrolled = find_element_by_role_and_name(unscrolled, "list_item", "scene_0.tscn");
+	REQUIRE(top_unscrolled != nullptr);
+	const int unscrolled_y = top_unscrolled->bounds.position.y;
+
+	// Scroll down; the first row must now be reported higher up (smaller y),
+	// mirroring the on-screen shift, rather than staying at its scroll-0 origin.
+	VScrollBar *v_scroll = item_list->get_v_scroll_bar();
+	REQUIRE(v_scroll->get_max() > 0);
+	v_scroll->set_value(30);
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot scrolled = EditorAutomationSnapshot::capture_from_node(window);
+	const EditorAutomationElement *top_scrolled = find_element_by_role_and_name(scrolled, "list_item", "scene_0.tscn");
+	REQUIRE(top_scrolled != nullptr);
+	CHECK(top_scrolled->bounds.position.y < unscrolled_y);
+	CHECK(top_scrolled->bounds.position.y == unscrolled_y - 30);
+
+	memdelete(window);
+}
+
 TEST_CASE("[Editor][Automation] icon-only button falls back to tooltip as automation name") {
 	PanelContainer *root = memnew(PanelContainer);
 	root->set_size(Size2(400, 300));
