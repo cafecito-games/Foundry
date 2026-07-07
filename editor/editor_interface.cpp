@@ -371,6 +371,12 @@ void EditorInterface::make_scene_preview(const String &p_path, Node *p_scene, in
 }
 
 void EditorInterface::add_root_node(Node *p_node) {
+	if (EditorNode::get_editor_data().get_edited_scene() < 0) {
+		// A script-only workspace has no scene slot to receive a root node, so
+		// this is a diagnostic no-op rather than a half-applied edit.
+		ERR_PRINT("EditorInterface::add_root_node: There is no open scene to add a root node to.");
+		return;
+	}
 	if (EditorNode::get_singleton()->get_edited_scene()) {
 		ERR_PRINT("EditorInterface::add_root_node: The current scene already has a root node.");
 		return;
@@ -599,7 +605,15 @@ void EditorInterface::_node_selected(const NodePath &p_node_path, const Callable
 	if (p_node_path.is_empty()) {
 		_call_dialog_callback(p_callback, NodePath(), "node selection canceled");
 	} else {
-		const NodePath path = get_edited_scene_root()->get_path().rel_path_to(p_node_path);
+		Node *scene_root = get_edited_scene_root();
+		if (!scene_root) {
+			// A script-only workspace has no edited scene to resolve the picked
+			// node against; report the selection as unavailable instead of
+			// dereferencing a null scene root.
+			_call_dialog_callback(p_callback, NodePath(), "node selection unavailable: no edited scene");
+			return;
+		}
+		const NodePath path = scene_root->get_path().rel_path_to(p_node_path);
 		_call_dialog_callback(p_callback, path, "node selected");
 	}
 }
@@ -782,6 +796,8 @@ TypedArray<Node> EditorInterface::get_open_scene_roots() const {
 }
 
 Error EditorInterface::save_scene() {
+	// A script-only workspace (or a scene with no root) has nothing to save;
+	// report ERR_CANT_CREATE instead of crashing on a null scene root.
 	if (!get_edited_scene_root()) {
 		return ERR_CANT_CREATE;
 	}

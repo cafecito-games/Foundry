@@ -24,6 +24,7 @@
 			<param index="0" name="node" type="Node" />
 			<description>
 				Makes [param node] root of the currently opened scene. Only works if the scene is empty. If the [param node] is a scene instance, an inheriting scene will be created.
+				The currently opened scene is the active scene tab of the focused workspace pane. This is a no-op if no scene is open (for example, a workspace showing only script tabs).
 			</description>
 		</method>
 		<method name="close_scene">
@@ -94,6 +95,7 @@
 			<return type="Node" />
 			<description>
 				Returns the edited (current) scene's root [Node].
+				The edited scene is the active scene tab of the focused workspace pane. While a script tab is focused, this resolves to the most-recently-focused scene tab. Returns [code]null[/code] if no scene is open (for example, a workspace showing only script tabs).
 			</description>
 		</method>
 		<method name="get_editor_language" qualifiers="const">
@@ -498,7 +500,7 @@
 		<method name="save_scene">
 			<return type="int" enum="Error" />
 			<description>
-				Saves the currently active scene. Returns either [constant OK] or [constant ERR_CANT_CREATE].
+				Saves the currently active scene, that is, the active scene tab of the focused workspace pane. Returns either [constant OK] or [constant ERR_CANT_CREATE]. Returns [constant ERR_CANT_CREATE] when no scene is open (for example, a workspace showing only script tabs) or when the scene has no root node or file path.
 			</description>
 		</method>
 		<method name="save_scene_as">
