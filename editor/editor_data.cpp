@@ -682,6 +682,22 @@ void EditorData::remove_scene(int p_idx) {
 		current_edited_scene--;
 	} else if (current_edited_scene == p_idx) {
 		current_edited_scene = get_tile_current_scene(focused_tile_id);
+		if (current_edited_scene < 0) {
+			// The focused tile is being emptied by this removal. If another tile
+			// still shows a scene, adopt it (and focus it) before anything runs
+			// during the removal window -- scene_closed handlers and plugin
+			// notifications read the current scene, and a transient -1 while other
+			// scenes remain surfaces as a spurious out-of-bounds error. When no
+			// other tile has a scene (the last scene overall is closing), the -1
+			// sentinel is the correct empty/script-only state and is left as-is.
+			for (const KeyValue<int, int> &E : tile_current_scenes) {
+				if (E.key != focused_tile_id && E.value >= 0) {
+					focused_tile_id = E.key;
+					current_edited_scene = E.value;
+					break;
+				}
+			}
+		}
 	}
 
 	if (!edited_scene[p_idx].path.is_empty()) {
