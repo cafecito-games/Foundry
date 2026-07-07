@@ -177,7 +177,8 @@ void ScriptResourceTabType::mount(WorkspaceTab &p_tab, Control *p_chrome_host) {
 		mounted_surfaces[p_tab.get_stable_id()] = leaf->get_instance_id();
 		_apply_payload(leaf, p_tab.get_payload());
 	}
-	_focus_surface(leaf);
+	// Focus is claimed in activate(), not here: mounting a non-focused pane's tab
+	// during layout restore must not steal controller focus from the focused pane.
 }
 
 void ScriptResourceTabType::unmount(WorkspaceTab &p_tab) {
@@ -233,5 +234,10 @@ bool ScriptResourceTabType::is_resource_available(const WorkspaceTab &p_tab) con
 	if (path.is_empty()) {
 		return true;
 	}
-	return FileAccess::exists(path);
+	// Mirror ScriptEditorView::_script_exists: a built-in/subresource script path
+	// ("<file>::<subpath>") is backed by its base resource file, so check that.
+	if (path.is_resource_file()) {
+		return FileAccess::exists(path);
+	}
+	return FileAccess::exists(path.get_slice("::", 0));
 }
