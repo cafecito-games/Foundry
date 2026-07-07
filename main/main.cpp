@@ -4462,7 +4462,7 @@ int Main::start() {
 	// These Foundry Script CLI tools are handled before the game branch and never run the main scene,
 	// so do not resolve (and possibly abort on) an unimported uid:// main scene -- that would fail a
 	// fresh CI/source checkout before the tool could even print its report.
-	skip_main_scene_resolution = fs_format_requested || fs_lint_requested || !fs_migrate_path.is_empty();
+	skip_main_scene_resolution = skip_main_scene_resolution || fs_format_requested || fs_lint_requested || !fs_migrate_path.is_empty();
 #endif
 
 #if defined(TOOLS_ENABLED) && defined(MODULE_FOUNDRY_SCRIPT_ENABLED)

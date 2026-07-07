@@ -229,6 +229,59 @@ TEST_CASE("[FoundryCLI][ProjectTest] Script format works without a main scene") 
 	CHECK_EQ(exit_code, 0);
 }
 
+TEST_CASE("[FoundryCLI][ScriptEval] Inline eval prints and exits zero") {
+	List<String> arguments;
+	arguments.push_back("--headless");
+	arguments.push_back("script");
+	arguments.push_back("eval");
+	arguments.push_back("print(\"eval-ok\")");
+
+	int exit_code = -1;
+	const String output = run_foundry_subprocess(arguments, exit_code);
+	INFO("Subprocess output:\n", output);
+	CHECK(output.contains("eval-ok"));
+	CHECK_EQ(exit_code, 0);
+}
+
+TEST_CASE("[FoundryCLI][ScriptEval] Inline eval return sets the exit code") {
+	List<String> arguments;
+	arguments.push_back("--headless");
+	arguments.push_back("script");
+	arguments.push_back("eval");
+	arguments.push_back("return 3");
+
+	int exit_code = -1;
+	const String output = run_foundry_subprocess(arguments, exit_code);
+	INFO("Subprocess output:\n", output);
+	CHECK_EQ(exit_code, 3);
+}
+
+TEST_CASE("[FoundryCLI][ScriptEval] Inline eval ignores a configured main scene") {
+	// Regression: `script eval` must not resolve or load the project's main scene, even
+	// when one is configured with an unresolvable uid:// that would otherwise abort startup.
+	TemporaryNoMainSceneProject project("foundry_cli_script_eval_main_scene");
+	project.write_file("project.foundry",
+			"config_version=5\n\n"
+			"[application]\n\n"
+			"config/name=\"Eval Main Scene Project\"\n"
+			"run/main_scene=\"uid://doesnotexist12345\"\n");
+
+	List<String> arguments;
+	arguments.push_back("--headless");
+	arguments.push_back("script");
+	arguments.push_back("eval");
+	arguments.push_back("--project");
+	arguments.push_back(project.root);
+	arguments.push_back("print(\"eval-ran\")");
+
+	int exit_code = -1;
+	const String output = run_foundry_subprocess(arguments, exit_code);
+	INFO("Subprocess output:\n", output);
+	CHECK(output.contains("eval-ran"));
+	CHECK_FALSE(output.contains("could not be resolved from UID"));
+	CHECK_EQ(exit_code, 0);
+}
+
 #endif // MODULE_FOUNDRY_SCRIPT_ENABLED
 
 } // namespace TestFoundryCLIProjectTest
