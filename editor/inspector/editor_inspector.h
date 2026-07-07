@@ -425,6 +425,10 @@ public:
 	virtual Size2 get_minimum_size() const override;
 	virtual Control *make_custom_tooltip(const String &p_text) const override;
 	String get_label() const { return label; }
+	// Whether a right-click actually opens a context menu. Mirrors the early-out in
+	// _popup_context_menu(): a plain category with no documentation class and not a
+	// favorites header has no menu to show.
+	bool has_context_menu() const { return is_favorite || !doc_class_name.is_empty(); }
 
 	EditorInspectorCategory();
 };

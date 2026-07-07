@@ -254,12 +254,16 @@ class EditorAutomationSnapshotBuilder {
 			add_unique("focus");
 		}
 
-		if (Object::cast_to<const EditorInspectorCategory>(p_node)) {
-			// Only the inspector class-category header handles right-click, opening a
-			// context menu with "Open Documentation". Plain EditorInspectorSection
-			// rows (which share the inspector_section role) handle left-click folding
-			// only, so they must not advertise an action that opens no menu.
-			add_unique("open_context_menu");
+		if (const EditorInspectorCategory *category = Object::cast_to<const EditorInspectorCategory>(p_node)) {
+			// Only an inspector class-category header whose right-click actually opens
+			// a menu (a favorites header, or a category with a documentation class,
+			// i.e. "Open Documentation") advertises the action. Plain
+			// EditorInspectorSection rows (which share the inspector_section role) and
+			// custom categories with no documentation open no menu, so they must not
+			// advertise an action that does nothing.
+			if (category->has_context_menu()) {
+				add_unique("open_context_menu");
+			}
 		}
 
 		if (p_role == "button" || p_role == "checkbox" || p_role == "property_row") {
@@ -569,6 +573,12 @@ class EditorAutomationSnapshotBuilder {
 			// instance id, so activation works even while it is hidden. Skip this
 			// when the popup is both visible and walked as a real internal node
 			// (include_internal) to avoid emitting each item twice.
+			//
+			// Limitation: menus populated only in about_to_popup (e.g. SceneTreeDock's
+			// options button) are empty until opened, so nothing is exposed here.
+			// Emitting about_to_popup during a read-only snapshot would rebuild every
+			// menu on every observe_ui, so surfacing those is deferred to a follow-up
+			// (open-the-menu-then-capture) rather than mutating during observation.
 			if (PopupMenu *popup = const_cast<MenuButton *>(menu_button)->get_popup()) {
 				const bool walked_as_node = options.include_internal && popup->is_visible();
 				if (!walked_as_node) {
