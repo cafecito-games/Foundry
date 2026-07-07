@@ -941,6 +941,13 @@ public:
 	// ScriptEditorController so the reveal path and the script leaf both honor it.
 	void set_script_feature_enabled(bool p_enabled);
 	bool is_script_feature_enabled() const;
+
+	// Route a non-script text document (.txt, .md, text .json, README, ...) to a
+	// workspace TextTab instead of the script editor. Returns true when the file
+	// was routed (so the caller must not also open it elsewhere). Scripts and
+	// non-text resources return false and follow their usual path.
+	bool _route_text_file_to_workspace(const String &p_path);
+
 	void edit_previous_item();
 	void edit_item(Object *p_object, Object *p_editing_owner);
 	void push_node_item(Node *p_node);

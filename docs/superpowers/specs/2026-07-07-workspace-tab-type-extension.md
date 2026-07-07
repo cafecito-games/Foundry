@@ -101,28 +101,47 @@ Implemented in `editor/workspace/help_tab.{h,cpp}` (issue #1054); registered in
   that no longer exists is dropped on restore (lenient when the doc database has
   not finished generating, to avoid discarding a valid layout).
 
-### `TextTab` — a plain-text buffer (file-backed or scratch)
+### `TextTab` — a non-script text document (shipped, issue #1055)
 
-- **`type_id`**: `"text"`.
-- **`resource_key` identity**: the text file path (`res://notes.txt`) for
-  file-backed buffers, or a synthetic `scratch:<id>` for unsaved scratch buffers
-  (mirroring the scene type's `unsaved:` keys).
-- **`payload`**: `{ caret_line: int, caret_column: int, scroll_position: int,
-  dirty: bool, buffer_contents: String (scratch only) }`. File-backed tabs
-  persist only view state and reload contents from disk; scratch buffers must
-  serialize `buffer_contents` because they have no backing file.
-- **`request_close`**: `CLOSE` when clean; when `dirty`, return `DEFERRED` and run
-  a save/discard/cancel prompt exactly like the script tab, invoking
-  `on_deferred_close` only on save-or-discard. (Reuse the script tab's deferred
-  close plumbing.)
-- **`mount`**: reparent the text editor control under `chrome_host`, load the
-  buffer (from disk or `buffer_contents`), restore caret/scroll. `unmount`
-  captures caret/scroll/dirty (and scratch contents) into the payload.
-  `is_resource_available` returns `true` for scratch buffers and
-  `FileAccess::exists(path)` for file-backed ones.
+Implemented in `editor/workspace/text_tab.{h,cpp}` (registered in
+`workspace_tab_registry.cpp:register_builtin_tab_types()`), over a document +
+editable-views model so specialized per-format renderings can be added later as
+pluggable view modes without touching the tab type or pane mechanics:
 
-Both types are added by the three steps in §1 with **zero** edits to pane or
-persistence code — the deferred-close flow `TextTab` needs already exists
+- **`TextDocument`** (`editor/workspace/text_document.{h,cpp}`) — the single
+  source of truth: `path`, canonical `text`, `dirty`; `load()`/`save()` reuse the
+  `TextFile` resource so encoding/line-endings match the script editor's text path.
+- **`TextView`** (`editor/workspace/text_view.h`) — an editable view mode bound to
+  a document (`mode_id`/`label`/`get_control`/`sync_from_document`/
+  `flush_to_document`/`is_editable`). v1 ships one: **`SourceTextView`**
+  (`editor/workspace/source_text_view.{h,cpp}`), a `CodeTextEditor` with a
+  per-extension syntax highlighter.
+- **`TextViewRegistry`** (`editor/workspace/text_view_registry.{h,cpp}`) — maps a
+  file extension to the ordered set of available views. Every format offers
+  Source; a format may register extra views. A future `MarkdownWysiwygView` is
+  just another registered `TextView` for `.md` — no change to `TextTabType`.
+
+- **`type_id`**: `"text"`. **`resource_key` identity**: the file path (one tab per
+  file via the canonical index). File-backed only; no path-less scratch buffers.
+- **`payload`**: `{ view_mode: StringName, caret_line: int, caret_column: int,
+  scroll: int }`. Contents are never serialized into the layout — they reload from
+  disk; unsaved edits follow the save-or-prompt-on-close path, not persistence.
+- **`request_close`**: `CLOSE` when clean; when the document is dirty, return
+  `DEFERRED` and run a save/discard/cancel prompt (reusing the deferred-close
+  plumbing), invoking `on_deferred_close` only on save-or-discard.
+- **`mount`/`unmount`**: the tab owns a `TextTabSurface` (mode-toggle chrome + the
+  active view's control) per stable id under `chrome_host`; the `TextDocument` is
+  owned by the tab type and outlives the surface, so a pane move recreates the
+  surface but preserves unsaved edits. `is_resource_available` is
+  `FileAccess::exists(path)` (mirroring the script tab's `::` subresource check).
+- **Routing**: non-script text (`TextFile`/file-`JSON`/README) opens via
+  `EditorSceneWorkspace::open_text_tab`, entered from `EditorNode::load_resource`;
+  `Script` files stay with the script editor. "New Text Document" writes the file
+  to disk first (via the FileSystem dock create dialog) so the tab is file-backed
+  from birth.
+
+The `HelpTab` sketch and this type are added by the three steps in §1 with **zero**
+edits to pane or persistence code — the deferred-close flow already exists
 (`WorkspaceTabCloseResult::DEFERRED` + `on_deferred_close`), proven by the script
 tab and the `RecordingTabType`/`PromptSpyTabType` tests.
 

@@ -137,6 +137,7 @@
 #include "editor/shader/shader_file_editor_plugin.h"
 #include "editor/translations/editor_translation_parser.h"
 #include "editor/version_control/editor_vcs_interface.h"
+#include "editor/workspace/text_tab_editor_plugin.h"
 
 void register_editor_types() {
 	OS::get_singleton()->benchmark_begin_measure("Editor", "Register Types");
@@ -237,6 +238,7 @@ void register_editor_types() {
 	}
 	EditorPlugins::add_by_type<EditorAutomationServer>();
 	EditorPlugins::add_by_type<EditorScriptPlugin>();
+	EditorPlugins::add_by_type<TextTabEditorPlugin>();
 	EditorPlugins::add_by_type<FontEditorPlugin>();
 	EditorPlugins::add_by_type<GPUParticles3DEditorPlugin>();
 	EditorPlugins::add_by_type<GPUParticlesCollisionSDF3DEditorPlugin>();

@@ -186,6 +186,7 @@
 #include "editor/translations/editor_translation_parser.h"
 #include "editor/translations/packed_scene_translation_parser_plugin.h"
 #include "editor/version_control/version_control_editor_plugin.h"
+#include "editor/workspace/text_document.h"
 #include "editor/workspace/workspace_pane.h"
 
 #ifdef VULKAN_ENABLED
@@ -1638,8 +1639,70 @@ void EditorNode::_open_command_palette() {
 	command_palette->open_popup();
 }
 
+bool EditorNode::_route_text_file_to_workspace(const String &p_path) {
+	if (!scene_workspace) {
+		return false;
+	}
+
+	const String extension = p_path.get_extension();
+	// Scripts stay in the script editor; the discriminator is the Script resource
+	// extension set, mirroring ScriptEditorView::open_file's classification.
+	List<String> script_extensions;
+	ResourceLoader::get_recognized_extensions_for_type("Script", &script_extensions);
+	if (!extension.is_empty() && script_extensions.find(extension)) {
+		return false;
+	}
+
+	// Non-script text: the editor's own text-file extension sets, file-JSON, or an
+	// extension-less document (README).
+	const bool is_text = extension.is_empty() ||
+			textfile_extensions.has(extension) ||
+			force_textfile_extensions.has(extension) ||
+			extension.to_lower() == "json";
+	if (!is_text) {
+		return false;
+	}
+
+	// Only route files that actually load as text. Probe-load with the same logic
+	// the tab will use so a missing, unreadable, or invalid-UTF-8 file falls through
+	// to load_resource's normal ERR_CANT_OPEN handling rather than opening a silent
+	// empty buffer that could overwrite the original file on a later save.
+	{
+		Ref<TextDocument> probe;
+		probe.instantiate();
+		probe->set_path(p_path);
+		if (probe->load() != OK) {
+			return false;
+		}
+	}
+
+	WorkspaceLeafNode *source = scene_workspace->get_focused_leaf();
+	if (!source) {
+		const Vector<WorkspaceLeafNode *> workspace_leaves = scene_workspace->get_leaves();
+		if (!workspace_leaves.is_empty()) {
+			source = workspace_leaves[0];
+		}
+	}
+	if (!source) {
+		return false;
+	}
+
+	WorkspaceLeafNode *leaf = scene_workspace->open_text_tab(source, p_path);
+	if (!leaf) {
+		return false;
+	}
+	scene_workspace->request_leaf_focus(leaf->get_leaf_id());
+	return true;
+}
+
 Error EditorNode::load_resource(const String &p_resource, bool p_ignore_broken_deps) {
 	dependency_errors.clear();
+
+	// Non-script text documents own their workspace TextTab; keep them out of the
+	// script editor. Scripts and non-text resources fall through to the usual path.
+	if (_route_text_file_to_workspace(p_resource)) {
+		return OK;
+	}
 
 	Error err;
 
