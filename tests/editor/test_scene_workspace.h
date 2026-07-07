@@ -2004,6 +2004,65 @@ static WorkspaceTab add_script_tab(WorkspacePane *p_pane, const String &p_path) 
 	return tab;
 }
 
+static String write_temp_workspace_text_file(const String &p_name, const String &p_source) {
+	const String dir = OS::get_singleton()->get_cache_path().path_join("scene_workspace_scripts");
+	Ref<DirAccess> da = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+	ERR_FAIL_COND_V(da.is_null(), String());
+	da->make_dir_recursive(dir);
+	const String path = dir.path_join(p_name);
+	Ref<FileAccess> file = FileAccess::open(path, FileAccess::WRITE);
+	ERR_FAIL_COND_V(file.is_null(), String());
+	file->store_string(p_source);
+	return path;
+}
+
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] empty-script-tab-pane-collapses-after-center-drop") {
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	ScriptEditorController *controller = memnew(ScriptEditorController);
+	controller->init_global_services(h.host);
+
+	WorkspaceLeafNode *scene_leaf = h.workspace->get_focused_leaf();
+	REQUIRE(scene_leaf != nullptr);
+	WorkspacePane *scene_pane = get_leaf_pane(scene_leaf);
+	REQUIRE(scene_pane != nullptr);
+
+	WorkspaceLeafNode *script_leaf = h.workspace->split_with_content(scene_leaf, false, EditorSceneWorkspace::SPLIT_SIDE_SECOND, StringName("script"));
+	h.pump();
+	REQUIRE(script_leaf != nullptr);
+	WorkspacePane *script_pane = get_leaf_pane(script_leaf);
+	REQUIRE(script_pane != nullptr);
+	REQUIRE(script_pane->is_script_pane());
+	ScriptLeaf *bridge_leaf = script_pane->get_script_leaf();
+	REQUIRE(bridge_leaf != nullptr);
+	REQUIRE(bridge_leaf->get_script_editor_view() != nullptr);
+
+	const String move_path = write_temp_workspace_text_file("move.txt", "move\n");
+	REQUIRE(!move_path.is_empty());
+	add_script_tab(script_pane, move_path);
+	h.pump();
+	REQUIRE(script_pane->get_tab_count() == 1);
+	REQUIRE(h.workspace->get_leaf_count() == 2);
+
+	WorkspaceLeafNode *dest = h.workspace->handle_tab_drop(script_leaf->get_leaf_id(), 0, scene_leaf, EditorSceneWorkspace::DROP_CENTER);
+	h.pump();
+
+	REQUIRE(dest == scene_leaf);
+	CHECK(h.workspace->get_leaf_count() == 1);
+	CHECK(scene_leaf->get_parent() == h.workspace);
+	CHECK(Object::cast_to<WorkspaceLeafNode>(h.workspace->get_child(0, false)) == scene_leaf);
+	CHECK(scene_pane->get_tab_count() == 1);
+	CHECK(scene_pane->get_tab(0).get_type_id() == StringName("script"));
+	CHECK(scene_pane->get_tab(0).get_resource_key() == move_path);
+
+	h.unmount();
+	memdelete(controller);
+}
+
 TEST_CASE("[SceneWorkspace][SceneTree][Editor] tab-move-center") {
 	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
 

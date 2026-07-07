@@ -47,6 +47,9 @@ public:
 	// Basic scene-editing smoke workflow exercising scene tree, create dialog,
 	// inspector, save, run/stop, and editor-log assertions through EditorWorkflowTestDriver.
 	static Result run_basic_scene_editing(EditorWorkflowTestDriver &p_driver, const String &p_scene_path = "res://scenes/main.tscn");
+	static Result run_mixed_workspace_editing(EditorWorkflowTestDriver &p_driver);
+	static Result run_mixed_workspace_seed(EditorWorkflowTestDriver &p_driver);
+	static Result run_mixed_workspace_restore(EditorWorkflowTestDriver &p_driver);
 
 	// Deprecated alias kept for backward compatibility with older CLI/tests.
 	static Result run_mvp(EditorWorkflowTestDriver &p_driver, const String &p_scene_path = "res://scenes/main.tscn") {
