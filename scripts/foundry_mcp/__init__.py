@@ -3,5 +3,16 @@
 from __future__ import annotations
 
 from scripts.foundry_mcp.client import FoundryMCPClient, FoundryMCPError
+from scripts.foundry_mcp.session import (
+    FoundryAutomationStartupError,
+    FoundryEditorAutomationSession,
+    parse_automation_line,
+)
 
-__all__ = ["FoundryMCPClient", "FoundryMCPError"]
+__all__ = [
+    "FoundryAutomationStartupError",
+    "FoundryEditorAutomationSession",
+    "FoundryMCPClient",
+    "FoundryMCPError",
+    "parse_automation_line",
+]
