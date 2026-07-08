@@ -1554,14 +1554,8 @@
 		<member name="text_editor/help/help_title_font_size" type="int" setter="" getter="">
 			The font size to use for headings in the editor help (built-in class reference).
 		</member>
-		<member name="text_editor/help/show_help_index" type="bool" setter="" getter="">
-			If [code]true[/code], displays a table of contents at the left of the editor help (at the location where the members overview would appear when editing a script).
-		</member>
 		<member name="text_editor/help/sort_functions_alphabetically" type="bool" setter="" getter="">
 			If [code]true[/code], the script's method list in the Script Editor is sorted alphabetically.
-		</member>
-		<member name="text_editor/script_list/group_help_pages" type="bool" setter="" getter="">
-			If [code]true[/code], class reference pages are grouped together at the bottom of the Script Editor's script list.
 		</member>
 		<member name="text_editor/script_list/highlight_scene_scripts" type="bool" setter="" getter="">
 			If [code]true[/code], the scripts that are used by the current scene are highlighted in the Script Editor's script list.
