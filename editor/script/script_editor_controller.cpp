@@ -624,6 +624,8 @@ void ScriptEditorController::save_current_script() {
 
 void ScriptEditorController::save_all_scripts() {
 	HashSet<String> built_in_parents_to_save;
+	EditorNode *editor_node = EditorNode::get_singleton();
+	ERR_FAIL_NULL(editor_node);
 
 	auto prepare_unsaved_tab = [&](ScriptEditorBase *se) {
 		if (convert_indent_on_save) {
@@ -643,28 +645,18 @@ void ScriptEditorController::save_all_scripts() {
 	for (ScriptEditorView *view : views) {
 		for (int i = 0; i < view->get_tab_container()->get_tab_count(); i++) {
 			ScriptEditorBase *se = Object::cast_to<ScriptEditorBase>(view->get_tab_container()->get_tab_control(i));
-			if (!se || !se->is_unsaved()) {
+			if (!se) {
 				continue;
 			}
 			prepare_unsaved_tab(se);
+			if (!se->is_unsaved()) {
+				continue;
+			}
+
 			Ref<Resource> edited_res = se->get_edited_resource();
 			if (edited_res.is_valid()) {
 				se->apply_code();
 			}
-		}
-	}
-
-	EditorNode *editor_node = EditorNode::get_singleton();
-	ERR_FAIL_NULL(editor_node);
-
-	for (ScriptEditorView *view : views) {
-		for (int i = 0; i < view->get_tab_container()->get_tab_count(); i++) {
-			ScriptEditorBase *se = Object::cast_to<ScriptEditorBase>(view->get_tab_container()->get_tab_control(i));
-			if (!se || !se->is_unsaved()) {
-				continue;
-			}
-
-			Ref<Resource> edited_res = se->get_edited_resource();
 			Ref<Script> scr = edited_res;
 			if (scr.is_valid()) {
 				clear_docs_from_script(scr);

@@ -661,6 +661,7 @@ void ScriptEditorView::_mark_built_in_text_resources_as_saved(const String &p_sc
 
 		se->tag_saved_version();
 	}
+	_update_script_names();
 }
 
 void ScriptEditorView::_close_built_in_text_resources_from_scene(const String &p_scene_path) {
