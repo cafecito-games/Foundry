@@ -83,6 +83,33 @@ Foundry rebrand and the `dev_mode` `-Wshadow-field-in-constructor` include-wrap 
 **PR 116225** (Metal glslang memory-decorations / Apple-M1-MSAA fix) cherry-picked cleanly on the
 newer glslang. Strict `dev_mode` build clean, full suite 3016 passed.
 
+**Wave 7 = low-risk deferrals + Control-feature unlock-chains (DONE).** From the 130 low-risk
+`port-later` items, 48 cherry-picked clean; the rest were blocked on absent Control *features*, so
+those were ported as **unlock-chains** (foundation feature PR + its dependent fixes), each built &
+tested green: **BaseButton multitouch** (PR 110893 + 4 fixes), **Control `custom_maximum_size`**
+(PR 116640 + deferred-layout + 7 fixes; reconciled to the fork's TabContainer/Label structure),
+**PopupMenu search bar** (PR 114236 + fuzzy/sizing + 9 fixes), **RTL table/shaping** (PR 116277 +
+follow-ups incl. RTL `custom_maximum_size`), **Tree drag&drop + custom canvas-item** (PR 112993 +
+edge-cases + custom_ci). Full suite **3017 passed** (a ported feature added a test).
+- **Zero-deprecated invariant restored.** Several ports (incl. wave 1) had re-introduced
+  `DISABLE_DEPRECATED` blocks by porting upstream compat shims. Audited `git diff origin/develop..HEAD`
+  and stripped them from ALL fork code: the AccessibilityServer refactor's DisplayServer forwarders
+  (converted 8 diverged-editor callers to `AccessibilityServer::`/`AccessibilityServerEnums::` then
+  deleted the blocks), plus `Image` (`_save_exr*_bind_compat_117800` + `image.compat.inc`),
+  `OptimizedTranslation` (`_generate_bind_compat_119563`), and `TabContainer.all_tabs_in_front`.
+  Verify: `git diff origin/develop HEAD` adds **0** non-`thirdparty/` `DISABLE_DEPRECATED`. (Vendored
+  thirdparty keeps its own guards — exempt.)
+- **a11y = AccessibilityServer refactor (PR 116839, 88-file)** landed + fixes 117244/117283 + a
+  ported two-arg `MAKE_ENUM_TYPE_INFO`/`VARIANT_ENUM_CAST_EXT` infra commit it needed.
+- **HDR = DEFERRED (intractable for a bounded effort).** The Apple/Metal EDR commits (106814 etc.)
+  can't compile without first porting **`b8389cc76b`** — a 65-file `renderer_rd` HDR core
+  (compositor/scene-render/viewport/tonemapper + color-managed `blit`/`tonemap` shaders + a whole
+  `RenderingDevice` ColorSpace/HDR-output/`SUPPORTS_HDR_OUTPUT` API absent in the fork). Treat that
+  rendering-pipeline chain as a separate prerequisite investment before the EDR commits can land.
+- One honest artifact in history: PR 118846 appears as port (`0fea40cc27`, a build-breaker) →
+  revert (`9e4cb2f0b9`) → fresh clean re-port in the PopupMenu cluster (`132f488d0e`). Net-zero, kept
+  as traceable record (non-adjacent rebase-drop wasn't worth risking the validated branch).
+
 ---
 
 ## 3. Tooling & artifacts (all under `docs/superpowers/specs/godot-4.7-port/`)
