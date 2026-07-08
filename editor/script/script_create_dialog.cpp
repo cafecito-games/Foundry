@@ -163,9 +163,7 @@ void ScriptCreateDialog::_path_hbox_sorted() {
 		int filename_start_pos = file_path->get_text().rfind_char('/') + 1;
 		int filename_end_pos = file_path->get_text().get_basename().length();
 
-		if (!is_built_in) {
-			file_path->select(filename_start_pos, filename_end_pos);
-		}
+		file_path->select(filename_start_pos, filename_end_pos);
 
 		// First set cursor to the end of line to scroll LineEdit view
 		// to the right and then set the actual cursor position.
@@ -174,10 +172,6 @@ void ScriptCreateDialog::_path_hbox_sorted() {
 
 		file_path->grab_focus();
 	}
-}
-
-bool ScriptCreateDialog::_can_be_built_in() {
-	return (supports_built_in && built_in_enabled);
 }
 
 String ScriptCreateDialog::_adjust_file_path(const String &p_base_path) const {
@@ -192,23 +186,16 @@ String ScriptCreateDialog::_adjust_file_path(const String &p_base_path) const {
 	return base_dir.path_join(file_name + "." + extension);
 }
 
-void ScriptCreateDialog::config(const String &p_base_name, const String &p_base_path, bool p_built_in_enabled, bool p_load_enabled) {
+void ScriptCreateDialog::config(const String &p_base_name, const String &p_base_path, bool p_load_enabled) {
 	parent_name->set_text(p_base_name);
 	parent_name->deselect();
-	built_in_name->set_text("");
 
 	file_path->set_text(p_base_path);
 	file_path->deselect();
 
-	built_in_enabled = p_built_in_enabled;
 	load_enabled = p_load_enabled;
 
 	_language_changed(language_menu->get_selected());
-
-	if (_can_be_built_in()) {
-		built_in->set_pressed(EditorSettings::get_singleton()->get_project_metadata("script_setup", "create_built_in_script", false));
-		_built_in_pressed();
-	}
 }
 
 void ScriptCreateDialog::set_inheritance_base_type(const String &p_base) {
@@ -349,10 +336,6 @@ void ScriptCreateDialog::_template_changed(int p_template) {
 void ScriptCreateDialog::ok_pressed() {
 	if (is_new_script_created) {
 		_create_new();
-		if (_can_be_built_in()) {
-			// Only save state of built-in checkbox if it's enabled.
-			EditorSettings::get_singleton()->set_project_metadata("script_setup", "create_built_in_script", built_in->is_pressed());
-		}
 	} else {
 		_load_exist();
 	}
@@ -378,19 +361,13 @@ void ScriptCreateDialog::_create_new() {
 	String class_name = file_path->get_text().get_file().get_basename();
 	scr = ScriptServer::get_language(language_menu->get_selected())->make_template(sinfo.content, class_name, parent_class);
 
-	if (is_built_in) {
-		scr->set_name(built_in_name->get_text());
-		// Make sure the script is compiled to make its type recognizable.
-		scr->reload();
-	} else {
-		String lpath = ProjectSettings::get_singleton()->localize_path(file_path->get_text());
-		scr->set_path(lpath);
-		Error err = ResourceSaver::save(scr, lpath, ResourceSaver::FLAG_CHANGE_PATH);
-		if (err != OK) {
-			alert->set_text(TTR("Error - Could not create script in filesystem."));
-			alert->popup_centered();
-			return;
-		}
+	String lpath = ProjectSettings::get_singleton()->localize_path(file_path->get_text());
+	scr->set_path(lpath);
+	Error err = ResourceSaver::save(scr, lpath, ResourceSaver::FLAG_CHANGE_PATH);
+	if (err != OK) {
+		alert->set_text(TTR("Error - Could not create script in filesystem."));
+		alert->popup_centered();
+		return;
 	}
 
 	emit_signal(SNAME("script_created"), scr);
@@ -414,10 +391,6 @@ void ScriptCreateDialog::_language_changed(int l) {
 	language = ScriptServer::get_language(l);
 
 	can_inherit_from_file = language->can_inherit_from_file();
-	supports_built_in = language->supports_builtin_mode();
-	if (!supports_built_in) {
-		is_built_in = false;
-	}
 
 	String path = file_path->get_text();
 	path = _adjust_file_path(path);
@@ -427,17 +400,6 @@ void ScriptCreateDialog::_language_changed(int l) {
 	EditorSettings::get_singleton()->set_project_metadata("script_setup", "last_selected_language", language_menu->get_item_text(language_menu->get_selected()));
 
 	_parent_name_changed(parent_name->get_text());
-	validation_panel->update();
-}
-
-void ScriptCreateDialog::_built_in_pressed() {
-	if (built_in->is_pressed()) {
-		is_built_in = true;
-		is_new_script_created = true;
-	} else {
-		is_built_in = false;
-		_path_changed(file_path->get_text());
-	}
 	validation_panel->update();
 }
 
@@ -504,10 +466,6 @@ void ScriptCreateDialog::_browse_class_in_tree() {
 }
 
 void ScriptCreateDialog::_path_changed(const String &p_path) {
-	if (is_built_in) {
-		return;
-	}
-
 	is_new_script_created = true;
 
 	path_error = _validate_path(p_path, false, &is_path_valid);
@@ -618,7 +576,7 @@ void ScriptCreateDialog::_update_dialog() {
 
 	// Is script path/name valid (order from top to bottom)?
 
-	if (!is_built_in && !is_path_valid) {
+	if (!is_path_valid) {
 		validation_panel->set_message(MSG_ID_SCRIPT, TTR("Invalid path."), EditorValidationPanel::MSG_ERROR);
 	}
 
@@ -630,44 +588,17 @@ void ScriptCreateDialog::_update_dialog() {
 		validation_panel->set_message(MSG_ID_SCRIPT, TTR("File exists, it will be reused."), EditorValidationPanel::MSG_OK);
 	}
 
-	if (!is_built_in && !path_error.is_empty()) {
+	if (!path_error.is_empty()) {
 		validation_panel->set_message(MSG_ID_PATH, path_error, EditorValidationPanel::MSG_ERROR);
 	}
 
-	// Is script Built-in?
-
-	if (is_built_in) {
-		file_path->set_editable(false);
-		path_button->set_disabled(true);
-		re_check_path = true;
-	} else {
-		file_path->set_editable(true);
-		path_button->set_disabled(false);
-		if (re_check_path) {
-			re_check_path = false;
-			_path_changed(file_path->get_text());
-		}
+	if (file_path->get_text().get_file().get_basename() == parent_name->get_text()) {
+		validation_panel->set_message(MSG_ID_NAME, TTR("Warning: Having the script name be the same as a built-in type is usually not desired."), EditorValidationPanel::MSG_WARNING, false);
 	}
-
-	if (!_can_be_built_in()) {
-		built_in->set_pressed(false);
-	}
-	built_in->set_disabled(!_can_be_built_in());
 
 	// Is Script created or loaded from existing file?
 
-	if (is_built_in) {
-		validation_panel->set_message(MSG_ID_BUILT_IN, TTR("Note: Built-in scripts have some limitations and can't be edited using an external editor."), EditorValidationPanel::MSG_INFO, false);
-	} else if (file_path->get_text().get_file().get_basename() == parent_name->get_text()) {
-		validation_panel->set_message(MSG_ID_BUILT_IN, TTR("Warning: Having the script name be the same as a built-in type is usually not desired."), EditorValidationPanel::MSG_WARNING, false);
-	}
-
-	path_controls[0]->set_visible(!is_built_in);
-	path_controls[1]->set_visible(!is_built_in);
-	name_controls[0]->set_visible(is_built_in);
-	name_controls[1]->set_visible(is_built_in);
-
-	bool is_new_file = is_built_in || is_new_script_created;
+	bool is_new_file = is_new_script_created;
 
 	parent_name->set_editable(is_new_file);
 	parent_search_button->set_disabled(!is_new_file);
@@ -676,11 +607,7 @@ void ScriptCreateDialog::_update_dialog() {
 	String button_text = is_new_file ? TTR("Create") : TTR("Load");
 	set_ok_button_text(button_text);
 
-	if (is_new_file) {
-		if (is_built_in) {
-			validation_panel->set_message(MSG_ID_PATH, TTR("Built-in script (into scene file)."), EditorValidationPanel::MSG_OK);
-		}
-	} else {
+	if (!is_new_file) {
 		template_inactive_message = TTRC("Using existing script file.");
 		if (load_enabled) {
 			if (is_path_valid) {
@@ -841,7 +768,7 @@ String ScriptCreateDialog::_get_script_origin_label(const ScriptLanguage::Templa
 }
 
 void ScriptCreateDialog::_bind_methods() {
-	ClassDB::bind_method(D_METHOD("config", "inherits", "path", "built_in_enabled", "load_enabled"), &ScriptCreateDialog::config, DEFVAL(true), DEFVAL(true));
+	ClassDB::bind_method(D_METHOD("config", "inherits", "path", "load_enabled"), &ScriptCreateDialog::config, DEFVAL(true));
 
 	ADD_SIGNAL(MethodInfo("script_created", PropertyInfo(Variant::OBJECT, "script", PROPERTY_HINT_RESOURCE_TYPE, "Script")));
 }
@@ -862,7 +789,7 @@ ScriptCreateDialog::ScriptCreateDialog() {
 	validation_panel = memnew(EditorValidationPanel);
 	validation_panel->add_line(MSG_ID_SCRIPT, TTR("Script path/name is valid."));
 	validation_panel->add_line(MSG_ID_PATH, TTR("Will create a new script file."));
-	validation_panel->add_line(MSG_ID_BUILT_IN);
+	validation_panel->add_line(MSG_ID_NAME);
 	validation_panel->add_line(MSG_ID_TEMPLATE);
 	validation_panel->set_update_callback(callable_mp(this, &ScriptCreateDialog::_update_dialog));
 	validation_panel->set_accept_button(get_ok_button());
@@ -948,15 +875,6 @@ ScriptCreateDialog::ScriptCreateDialog() {
 
 	gc->add_child(template_hb);
 
-	/* Built-in Script */
-
-	built_in = memnew(CheckBox);
-	built_in->set_text(TTR("On"));
-	built_in->set_accessibility_name(TTRC("Built-in Script:"));
-	built_in->connect(SceneStringName(pressed), callable_mp(this, &ScriptCreateDialog::_built_in_pressed));
-	gc->add_child(memnew(Label(TTR("Built-in Script:"))));
-	gc->add_child(built_in);
-
 	/* Path */
 
 	hb = memnew(HBoxContainer);
@@ -974,22 +892,6 @@ ScriptCreateDialog::ScriptCreateDialog() {
 	Label *label = memnew(Label(TTR("Path:")));
 	gc->add_child(label);
 	gc->add_child(hb);
-	path_controls[0] = label;
-	path_controls[1] = hb;
-
-	/* Name */
-
-	built_in_name = memnew(LineEdit);
-	built_in_name->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	built_in_name->set_accessibility_name(TTRC("Name:"));
-	register_text_enter(built_in_name);
-	label = memnew(Label(TTR("Name:")));
-	gc->add_child(label);
-	gc->add_child(built_in_name);
-	name_controls[0] = label;
-	name_controls[1] = built_in_name;
-	label->hide();
-	built_in_name->hide();
 
 	/* Dialog Setup */
 

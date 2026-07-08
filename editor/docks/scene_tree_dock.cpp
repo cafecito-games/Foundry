@@ -2661,10 +2661,6 @@ void SceneTreeDock::_script_created(Ref<Script> p_script) {
 		return;
 	}
 
-	if (p_script->is_built_in()) {
-		p_script->set_path(_get_edited_scene_root()->get_scene_file_path() + "::" + p_script->generate_scene_unique_id());
-	}
-
 	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
 	undo_redo->create_action(TTR("Attach Script"), UndoRedo::MERGE_DISABLE, selected.front()->get());
 	for (Node *E : selected) {
