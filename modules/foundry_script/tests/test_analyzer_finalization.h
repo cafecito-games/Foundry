@@ -69,6 +69,7 @@ public:
 };
 #endif // DEBUG_ENABLED
 
+#ifdef DEBUG_ENABLED
 static int count_warnings_with_code(const FSParser &p_parser, FSWarning::Code p_code) {
 	int count = 0;
 	for (const FSWarning &warning : p_parser.get_warnings()) {
@@ -80,9 +81,7 @@ static int count_warnings_with_code(const FSParser &p_parser, FSWarning::Code p_
 }
 
 TEST_CASE("[Modules][FoundryScript][Analyzer] @warning_ignore suppresses pending warnings after body analysis") {
-#ifdef DEBUG_ENABLED
 	AnalyzerWarningSettingsScope warning_settings;
-#endif // DEBUG_ENABLED
 
 	const char *source = R"(
 extends RefCounted
@@ -107,9 +106,7 @@ func test() -> void:
 }
 
 TEST_CASE("[Modules][FoundryScript][Analyzer] non-ignored pending warnings are applied after body analysis") {
-#ifdef DEBUG_ENABLED
 	AnalyzerWarningSettingsScope warning_settings;
-#endif // DEBUG_ENABLED
 
 	const char *source = R"(
 extends RefCounted
@@ -130,6 +127,7 @@ func test() -> void:
 
 	CHECK_EQ(count_warnings_with_code(parser, FSWarning::UNUSED_PRIVATE_CLASS_VARIABLE), 2);
 }
+#endif // DEBUG_ENABLED
 
 TEST_CASE("[Modules][FoundryScript][Analyzer] resolve_body return status follows parser errors after warning finalization") {
 	const char *source = R"(
