@@ -2499,7 +2499,12 @@ void ScriptTextEditor::drop_data_fw(const Point2 &p_point, const Variant &p_data
 		}
 
 		if (member_drop_modifier_pressed) {
-			text_to_drop = _get_dropped_resource_as_member(resource, is_empty_line, allow_uid);
+			if (resource->is_built_in()) {
+				String warning = TTR("Preloading internal resources is not supported.");
+				EditorToaster::get_singleton()->popup_str(warning, EditorToaster::SEVERITY_ERROR);
+			} else {
+				text_to_drop = _get_dropped_resource_as_member(resource, is_empty_line, allow_uid);
+			}
 		} else if (export_drop_modifier_pressed) {
 			Vector<ObjectID> obj_ids = _get_objects_for_export_assignment();
 			text_to_drop = _get_dropped_resource_as_exported_member(resource, obj_ids);
