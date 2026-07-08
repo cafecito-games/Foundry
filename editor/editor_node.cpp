@@ -9372,6 +9372,10 @@ void EditorNode::_feature_profile_changed() {
 	if (!is_script_feature_enabled()) {
 		_close_script_leaf();
 	}
+
+	if (projectless_shell) {
+		_apply_projectless_shell_restrictions();
+	}
 }
 
 void EditorNode::_bind_methods() {
