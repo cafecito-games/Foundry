@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any, TextIO
@@ -12,10 +13,12 @@ from scripts.foundry_mcp.client import PROTOCOL_VERSION, FoundryMCPError
 from scripts.foundry_mcp.session import FoundryAutomationStartupError, FoundryEditorAutomationSession
 
 JSONRPC_VERSION = "2.0"
+PARSE_ERROR = -32700
 INVALID_REQUEST = -32600
 METHOD_NOT_FOUND = -32601
 INVALID_PARAMS = -32602
 INTERNAL_ERROR = -32603
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _object_schema(description: str, properties: dict[str, Any] | None = None, required: list[str] | None = None) -> dict[str, Any]:
@@ -34,8 +37,14 @@ def _tool(name: str, description: str, input_schema: dict[str, Any]) -> dict[str
 
 
 class FoundryMCPStdioServer:
-    def __init__(self, *, session_factory: Any = FoundryEditorAutomationSession) -> None:
+    def __init__(
+        self,
+        *,
+        session_factory: Any = FoundryEditorAutomationSession,
+        default_binary: str | Path | None = None,
+    ) -> None:
         self.session_factory = session_factory
+        self.default_binary = default_binary
         self.session: Any | None = None
 
     def serve(
@@ -59,6 +68,16 @@ class FoundryMCPStdioServer:
             try:
                 message = json.loads(line)
                 response = self.handle_message(message)
+            except json.JSONDecodeError as exc:
+                response = self._error(
+                    None,
+                    PARSE_ERROR,
+                    (
+                        "Invalid JSON-RPC message. The stdio transport expects one complete "
+                        "JSON-RPC object per line; use compact JSON when testing manually."
+                    ),
+                    {"detail": str(exc)},
+                )
             except Exception as exc:  # noqa: BLE001
                 response = self._error(None, INTERNAL_ERROR, f"Unhandled bridge error: {exc}")
             if response is None:
@@ -118,7 +137,9 @@ class FoundryMCPStdioServer:
                 _object_schema(
                     "Launch arguments.",
                     {
-                        "binary": _string_schema("Path to the foundry editor binary."),
+                        "binary": _string_schema(
+                            "Optional path to the foundry editor binary; defaults to a discovered bin/foundry.*."
+                        ),
                         "project": _string_schema("Path to the Foundry project directory."),
                         "display": _string_schema("DISPLAY value for GUI-capable runs."),
                         "port": {"type": "integer", "description": "Automation port, or 0 for any free port."},
@@ -127,7 +148,7 @@ class FoundryMCPStdioServer:
                         "initialize": {"type": "boolean", "description": "Initialize the editor MCP client after launch."},
                         "extra_args": {"type": "array", "items": {"type": "string"}, "description": "Extra CLI args."},
                     },
-                    ["binary", "project"],
+                    ["project"],
                 ),
             ),
             _tool(
@@ -219,12 +240,12 @@ class FoundryMCPStdioServer:
         return self._tool_result({"ok": False, "kind": "unknown_tool", "message": f"Unknown bridge tool '{name}'."}, True)
 
     def _tool_launch_editor(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        binary = self._required_string(arguments, "binary")
-        project = self._required_string(arguments, "project")
+        binary = self._launch_binary(arguments)
+        project = self._required_path(arguments, "project")
         self._close_existing_session()
         session = self.session_factory.launch(
-            binary=Path(binary),
-            project=Path(project),
+            binary=binary,
+            project=project,
             display=arguments.get("display", ":1"),
             port=arguments.get("port", 0),
             token=arguments.get("token"),
@@ -311,6 +332,53 @@ class FoundryMCPStdioServer:
         if not isinstance(value, str) or not value:
             raise ValueError(f"Missing string argument '{field}'.")
         return value
+
+    def _launch_binary(self, arguments: dict[str, Any]) -> Path:
+        value = arguments.get("binary")
+        if isinstance(value, str) and value:
+            return self._expand_path(value)
+        if value not in (None, ""):
+            raise ValueError("Argument 'binary' must be a string when provided.")
+        if self.default_binary is not None:
+            return self._expand_path(str(self.default_binary))
+        discovered = self._discover_default_binary()
+        if discovered is None:
+            raise ValueError(
+                "Missing string argument 'binary' and no executable bin/foundry.* was found. "
+                "Build Foundry in this checkout or pass the binary path explicitly."
+            )
+        return discovered
+
+    @classmethod
+    def _discover_default_binary(cls) -> Path | None:
+        candidates: list[Path] = []
+        for root in cls._candidate_repo_roots():
+            bin_dir = root / "bin"
+            if not bin_dir.is_dir():
+                continue
+            candidates.extend(path for path in sorted(bin_dir.glob("foundry.*")) if path.is_file())
+        executable = [path for path in candidates if os.access(path, os.X_OK)]
+        preferred = [path for path in executable if ".editor." in path.name]
+        if preferred:
+            return preferred[0]
+        if executable:
+            return executable[0]
+        return None
+
+    @staticmethod
+    def _candidate_repo_roots() -> list[Path]:
+        roots = [REPO_ROOT]
+        if REPO_ROOT.parent.name == ".worktrees":
+            roots.append(REPO_ROOT.parent.parent)
+        return roots
+
+    @staticmethod
+    def _required_path(arguments: dict[str, Any], field: str) -> Path:
+        return FoundryMCPStdioServer._expand_path(FoundryMCPStdioServer._required_string(arguments, field))
+
+    @staticmethod
+    def _expand_path(value: str) -> Path:
+        return Path(os.path.expandvars(os.path.expanduser(value)))
 
     @staticmethod
     def _tool_result(structured: dict[str, Any], is_error: bool) -> dict[str, Any]:

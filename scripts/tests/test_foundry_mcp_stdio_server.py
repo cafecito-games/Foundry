@@ -115,6 +115,22 @@ class FoundryMCPStdioServerTestCase(unittest.TestCase):
         self.assertEqual(factory.connected, [("http://127.0.0.1:1/mcp", "abc")])
         self.assertIs(server.session, factory.last_session)
 
+    def test_launch_expands_paths_and_allows_default_binary(self) -> None:
+        factory = FakeSessionFactory()
+        server = FoundryMCPStdioServer(session_factory=factory, default_binary="~/bin/foundry")
+
+        response = server.handle_message(
+            request(
+                1,
+                "tools/call",
+                {"name": "foundry_launch_editor", "arguments": {"project": "~/test-foundry-project-2"}},
+            )
+        )
+
+        self.assertFalse(response["result"]["isError"])
+        self.assertEqual(factory.launched[0]["binary"], Path.home() / "bin/foundry")
+        self.assertEqual(factory.launched[0]["project"], Path.home() / "test-foundry-project-2")
+
     def test_proxy_tool_calls_use_existing_session_client(self) -> None:
         factory = FakeSessionFactory()
         server = FoundryMCPStdioServer(session_factory=factory)
@@ -216,6 +232,20 @@ class FoundryMCPStdioServerTestCase(unittest.TestCase):
         lines = [json.loads(line) for line in output_stream.getvalue().splitlines()]
         self.assertEqual([line["id"] for line in lines], [1, 2])
         self.assertIn("tools", lines[1]["result"])
+
+    def test_stdio_loop_reports_parse_error_with_jsonl_hint(self) -> None:
+        server = FoundryMCPStdioServer(session_factory=FakeSessionFactory())
+        input_stream = io.StringIO(
+            '{"jsonrpc":"2.0","id":1,"method":"initialize","params":\n'
+            '{"protocolVersion":"2025-11-25"}}\n'
+        )
+        output_stream = io.StringIO()
+
+        server.serve(input_stream=input_stream, output_stream=output_stream)
+
+        lines = [json.loads(line) for line in output_stream.getvalue().splitlines()]
+        self.assertEqual(lines[0]["error"]["code"], -32700)
+        self.assertIn("one complete JSON-RPC object per line", lines[0]["error"]["message"])
 
 
 if __name__ == "__main__":

@@ -79,8 +79,10 @@ claude mcp add foundry-editor -- python3 scripts/foundry_mcp_server.py
 
 Example bridge workflow after registration:
 
-1. Call `foundry_launch_editor` with `binary` and `project`, or call
-   `foundry_connect` with an existing automation `endpoint` and `token`.
+1. Call `foundry_launch_editor` with `project`, or call `foundry_connect` with
+   an existing automation `endpoint` and `token`. Include `binary` only when the
+   built `foundry` executable is not discoverable under `bin/foundry.*` in this
+   checkout or the parent checkout for `.worktrees/<name>` branches.
 2. Use `foundry_observe_ui` / `foundry_find_elements` to inspect the UI.
 3. Use `foundry_act` with a semantic selector.
 4. Use `foundry_wait_for` and `foundry_poll_events` instead of sleeping.

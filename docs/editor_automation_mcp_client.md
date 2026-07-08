@@ -11,7 +11,8 @@ calls.
 ## Register the Bridge
 
 Run MCP clients from the repository root so the server can import
-`scripts.foundry_mcp`.
+`scripts.foundry_mcp` and discover a built `bin/foundry.*` binary. If the
+binary lives somewhere else, pass it explicitly to `foundry_launch_editor`.
 
 Claude Code:
 
@@ -90,11 +91,16 @@ When the agent should own the editor process, call `foundry_launch_editor`:
 
 ```json
 {
-  "binary": "bin/foundry.linuxbsd.editor.dev.x86_64",
   "project": "tests/fixtures/editor_automation_mvp",
   "display": ":1"
 }
 ```
+
+The bridge expands `~` and environment variables in paths. It discovers the
+first executable `bin/foundry.*` in the current checkout, and also checks the
+parent checkout when the bridge is running from `.worktrees/<name>`. Include
+`"binary": "/path/to/foundry"` only when that default is not the binary you
+want.
 
 When another terminal already launched the editor with `--automation`, call
 `foundry_connect`:
@@ -108,6 +114,32 @@ When another terminal already launched the editor with `--automation`, call
 
 Both tools initialize the editor MCP client by default. Pass
 `"initialize": false` only when debugging the MCP handshake itself.
+
+## Manual Smoke Test
+
+The stdio bridge expects newline-delimited JSON-RPC: one complete JSON object
+per line. Do not pretty-print or split a single request across lines when
+piping requests by hand. `jq -cn` is the safest way to generate compact JSONL:
+
+```sh
+PROJECT="$HOME/test-foundry-project-2" jq -cn \
+'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25"}},
+ {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"foundry_launch_editor","arguments":{"project":env.PROJECT}}},
+ {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"foundry_status","arguments":{}}},
+ {"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"foundry_observe_ui","arguments":{}}}' \
+| python3 scripts/foundry_mcp_server.py | jq -c .
+```
+
+If the built editor binary is outside the checkout, pass it explicitly:
+
+```sh
+BINARY="/path/to/bin/foundry.macos.editor.dev.arm64" \
+PROJECT="$HOME/test-foundry-project-2" jq -cn \
+'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25"}},
+ {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"foundry_launch_editor","arguments":{"binary":env.BINARY,"project":env.PROJECT}}},
+ {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"foundry_observe_ui","arguments":{}}}' \
+| python3 scripts/foundry_mcp_server.py | jq -c .
+```
 
 ## Common Automation Loop
 
