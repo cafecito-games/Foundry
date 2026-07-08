@@ -223,6 +223,7 @@ private:
 
 	void _add_callback(Object *p_obj, const String &p_function, const PackedStringArray &p_args);
 	void _res_saved_callback(const Ref<Resource> &p_res);
+	void _mark_built_in_text_resources_as_saved(const String &p_scene_path);
 
 	void _goto_script_line2(int p_line);
 	String _get_debug_tooltip(const String &p_text, Node *p_se);

@@ -281,7 +281,9 @@ void ScriptEditorController::notify_resource_saved(const Ref<Resource> &p_res) {
 }
 
 void ScriptEditorController::_on_scene_saved(const String &p_path) {
-	// Embedded scripts are no longer supported; scene save does not mark script tabs.
+	for (ScriptEditorView *view : views) {
+		view->_mark_built_in_text_resources_as_saved(p_path);
+	}
 }
 
 void ScriptEditorController::notify_scene_saved(const String &p_path) {
