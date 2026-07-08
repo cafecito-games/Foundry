@@ -4619,14 +4619,29 @@ void EditorNode::_remove_edited_scene(bool p_change_tab, bool p_allow_collapse) 
 	if (p_allow_collapse && tile_emptied && !pane_keeps_tabs && scene_workspace && scene_workspace->get_tile_count() > 1) {
 		WorkspaceLeafNode *leaf = closing_leaf;
 		if (leaf) {
-			if (survivor_tile_id >= 0) {
-				// Finalize the pre-selected survivor: reparent the shared scene editor
-				// and rebind its docks now that the emptied tile is going away.
-				_focus_tile(survivor_tile_id);
+			// The focused tile transiently hosts shared singletons (the 2D/3D scene
+			// editors, the debugger remote tree, tab-strip extras). collapse() frees the
+			// emptied leaf's whole subtree, so those surfaces must be relocated onto a
+			// surviving scene tile *first* or they are destroyed with the leaf (dangling
+			// pointers on this same close path) or left orphaned (leaked at exit).
+			// _focus_tile performs the relocation. Prefer a survivor that still holds a
+			// scene; otherwise any other scene tile hosts the surfaces -- the
+			// get_tile_count() > 1 check above guarantees one exists.
+			int relocation_tile_id = survivor_tile_id;
+			if (relocation_tile_id < 0) {
+				for (ScenePaneTile *other : scene_workspace->get_tiles()) {
+					if (other->get_tile_id() != tile_id) {
+						relocation_tile_id = other->get_tile_id();
+						break;
+					}
+				}
+			}
+			if (relocation_tile_id >= 0) {
+				_focus_tile(relocation_tile_id);
 			}
 			scene_workspace->collapse(leaf);
 			if (survivor_tile_id < 0) {
-				// No surviving tile held a scene; fall back to the focused tile.
+				// No surviving tile held a scene; make the now-focused survivor show one.
 				if (editor_data.get_edited_scene_count() == 0) {
 					editor_data.add_edited_scene(-1);
 				}
