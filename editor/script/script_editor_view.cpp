@@ -616,15 +616,21 @@ bool ScriptEditorView::request_close_active_tab(const Callable &p_on_closed) {
 
 
 void ScriptEditorView::_res_saved_callback(const Ref<Resource> &p_res) {
+	const String built_in_parent_prefix = vformat("%s::", p_res->get_path());
 	for (int i = 0; i < tab_container->get_tab_count(); i++) {
 		ScriptEditorBase *se = Object::cast_to<ScriptEditorBase>(tab_container->get_tab_control(i));
 		if (!se) {
 			continue;
 		}
 
-		Ref<Resource> scr = se->get_edited_resource();
+		Ref<Resource> edited_res = se->get_edited_resource();
+		if (edited_res == p_res) {
+			se->tag_saved_version();
+			continue;
+		}
 
-		if (scr == p_res) {
+		if (edited_res.is_valid() && edited_res->is_built_in() && !Object::cast_to<Script>(*edited_res) &&
+				edited_res->get_path().begins_with(built_in_parent_prefix)) {
 			se->tag_saved_version();
 		}
 	}

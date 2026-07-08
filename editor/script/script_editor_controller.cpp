@@ -623,46 +623,82 @@ void ScriptEditorController::save_current_script() {
 }
 
 void ScriptEditorController::save_all_scripts() {
+	HashSet<String> built_in_parents_to_save;
+
+	auto prepare_unsaved_tab = [&](ScriptEditorBase *se) {
+		if (convert_indent_on_save) {
+			se->convert_indent();
+		}
+		if (trim_trailing_whitespace_on_save) {
+			se->trim_trailing_whitespace();
+		}
+		if (trim_final_newlines_on_save) {
+			se->trim_final_newlines();
+		}
+		if (format_on_save) {
+			se->format_document(false);
+		}
+	};
+
 	for (ScriptEditorView *view : views) {
 		for (int i = 0; i < view->get_tab_container()->get_tab_count(); i++) {
 			ScriptEditorBase *se = Object::cast_to<ScriptEditorBase>(view->get_tab_container()->get_tab_control(i));
-			if (!se) {
+			if (!se || !se->is_unsaved()) {
 				continue;
 			}
-			if (convert_indent_on_save) {
-				se->convert_indent();
-			}
-			if (trim_trailing_whitespace_on_save) {
-				se->trim_trailing_whitespace();
-			}
-			if (trim_final_newlines_on_save) {
-				se->trim_final_newlines();
-			}
-			if (format_on_save) {
-				se->format_document(false);
-			}
-			if (!se->is_unsaved()) {
-				continue;
-			}
+			prepare_unsaved_tab(se);
 			Ref<Resource> edited_res = se->get_edited_resource();
 			if (edited_res.is_valid()) {
 				se->apply_code();
 			}
+		}
+	}
+
+	EditorNode *editor_node = EditorNode::get_singleton();
+	ERR_FAIL_NULL(editor_node);
+
+	for (ScriptEditorView *view : views) {
+		for (int i = 0; i < view->get_tab_container()->get_tab_count(); i++) {
+			ScriptEditorBase *se = Object::cast_to<ScriptEditorBase>(view->get_tab_container()->get_tab_control(i));
+			if (!se || !se->is_unsaved()) {
+				continue;
+			}
+
+			Ref<Resource> edited_res = se->get_edited_resource();
 			Ref<Script> scr = edited_res;
 			if (scr.is_valid()) {
 				clear_docs_from_script(scr);
 			}
+
 			Ref<TextFile> text_file = edited_res;
 			if (text_file.is_valid() && !edited_res->is_built_in()) {
 				view->_save_text_file(text_file, text_file->get_path());
+			} else if (text_file.is_valid() && edited_res->is_built_in()) {
+				const String &path = edited_res->get_path();
+				const int sep = path.find("::");
+				if (sep != -1) {
+					built_in_parents_to_save.insert(path.substr(0, sep));
+				}
 			} else {
-				EditorNode::get_singleton()->save_resource(edited_res);
+				editor_node->save_resource(edited_res);
 			}
+
 			if (scr.is_valid()) {
 				update_docs_from_script(scr);
 			}
 		}
 		view->_update_script_names();
+	}
+
+	for (const String &parent_path : built_in_parents_to_save) {
+		if (ResourceLoader::exists(parent_path) && ResourceLoader::get_resource_type(parent_path) == "PackedScene") {
+			editor_node->save_scene_if_open(parent_path);
+		} else {
+			Ref<Resource> parent_resource = ResourceLoader::load(parent_path);
+			if (parent_resource.is_valid()) {
+				editor_node->save_resource(parent_resource);
+			}
+		}
 	}
 }
 

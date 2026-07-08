@@ -2566,6 +2566,14 @@ void EditorNode::_save_scene(String p_file, int idx) {
 
 	err = ResourceSaver::save(sdata, p_file, flg);
 
+	if (err == OK) {
+		if (ScriptEditorController *script_editor = ScriptEditorController::get_singleton()) {
+			script_editor->notify_scene_saved(p_file);
+		}
+		emit_signal(SNAME("scene_saved"), p_file);
+		editor_data.notify_scene_saved(p_file);
+	}
+
 	// This needs to run before saving external resources.
 	_save_external_resources();
 	saving_scene = p_file; // Some editors may save scenes of built-in resources as external data, so avoid saving this scene again.
@@ -2577,12 +2585,6 @@ void EditorNode::_save_scene(String p_file, int idx) {
 	}
 
 	if (err == OK) {
-		if (ScriptEditorController *script_editor = ScriptEditorController::get_singleton()) {
-			script_editor->notify_scene_saved(p_file);
-		}
-		emit_signal(SNAME("scene_saved"), p_file);
-		editor_data.notify_scene_saved(p_file);
-
 		scene->set_scene_file_path(ProjectSettings::get_singleton()->localize_path(p_file));
 		editor_data.set_scene_as_saved(idx);
 		editor_data.set_scene_modified_time(idx, FileAccess::get_modified_time(p_file));
