@@ -2215,6 +2215,10 @@ bool SceneTreeDock::_check_node_path_recursive(Node *p_root_node, Variant &r_var
 				break;
 			}
 
+			if (Object::cast_to<Script>(resource)) {
+				break;
+			}
+
 			if (!resource->is_built_in()) {
 				// For performance reasons, assume that scene paths are no concern for external resources.
 				break;
@@ -4760,7 +4764,7 @@ void SceneTreeDock::_create_remap_for_node(Node *p_node, HashMap<Ref<Resource>, 
 					continue;
 				}
 
-				if (res->is_built_in() && !r_remap.has(res)) {
+				if (res->is_built_in() && !Object::cast_to<Script>(*res) && !r_remap.has(res)) {
 					_create_remap_for_resource(res, r_remap);
 				}
 			}
@@ -4787,7 +4791,7 @@ void SceneTreeDock::_create_remap_for_resource(Ref<Resource> p_resource, HashMap
 		if (v.is_ref_counted()) {
 			Ref<Resource> res = v;
 			if (res.is_valid()) {
-				if (res->is_built_in() && !r_remap.has(res)) {
+				if (res->is_built_in() && !Object::cast_to<Script>(*res) && !r_remap.has(res)) {
 					_create_remap_for_resource(res, r_remap);
 				}
 			}
@@ -4866,6 +4870,9 @@ void SceneTreeDock::_gather_resources(Node *p_node, List<Pair<Ref<Resource>, Nod
 		}
 		Ref<Resource> res = value;
 		if (res.is_null()) {
+			continue;
+		}
+		if (Object::cast_to<Script>(*res)) {
 			continue;
 		}
 

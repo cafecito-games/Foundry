@@ -223,8 +223,6 @@ private:
 
 	void _add_callback(Object *p_obj, const String &p_function, const PackedStringArray &p_args);
 	void _res_saved_callback(const Ref<Resource> &p_res);
-	void _scene_saved_callback(const String &p_path);
-	void _mark_built_in_scripts_as_saved(const String &p_parent_path);
 
 	void _goto_script_line2(int p_line);
 	String _get_debug_tooltip(const String &p_text, Node *p_se);
@@ -293,7 +291,6 @@ private:
 	void _update_code_editor_zoom_factor(CodeTextEditor *p_code_text_editor);
 
 	void _window_changed(bool p_visible);
-	void _close_builtin_scripts_from_scene(const String &p_scene);
 
 protected:
 	void _notification(int p_what);

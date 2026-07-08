@@ -82,10 +82,7 @@ static bool script_path_exists(const String &p_path) {
 	if (p_path.is_empty()) {
 		return false;
 	}
-	if (p_path.is_resource_file()) {
-		return FileAccess::exists(p_path);
-	}
-	return FileAccess::exists(p_path.get_slice("::", 0));
+	return FileAccess::exists(p_path);
 }
 
 ScriptEditorController::ScriptEditorController() {
@@ -255,9 +252,7 @@ void ScriptEditorController::notify_request_help_search(const String &p_text) {
 }
 
 void ScriptEditorController::_on_scene_closed(const String &p_path) {
-	for (ScriptEditorView *view : views) {
-		view->_close_builtin_scripts_from_scene(p_path);
-	}
+	// Embedded scripts are no longer supported; nothing to close per-scene.
 }
 
 void ScriptEditorController::notify_scene_closed(const String &p_path) {
@@ -286,9 +281,7 @@ void ScriptEditorController::notify_resource_saved(const Ref<Resource> &p_res) {
 }
 
 void ScriptEditorController::_on_scene_saved(const String &p_path) {
-	for (ScriptEditorView *view : views) {
-		view->_scene_saved_callback(p_path);
-	}
+	// Embedded scripts are no longer supported; scene save does not mark script tabs.
 }
 
 void ScriptEditorController::notify_scene_saved(const String &p_path) {
@@ -618,7 +611,6 @@ void ScriptEditorController::save_current_script() {
 }
 
 void ScriptEditorController::save_all_scripts() {
-	HashSet<String> scenes_to_save;
 	for (ScriptEditorView *view : views) {
 		for (int i = 0; i < view->get_tab_container()->get_tab_count(); i++) {
 			ScriptEditorBase *se = Object::cast_to<ScriptEditorBase>(view->get_tab_container()->get_tab_control(i));
@@ -648,27 +640,17 @@ void ScriptEditorController::save_all_scripts() {
 			if (scr.is_valid()) {
 				clear_docs_from_script(scr);
 			}
-			if (!edited_res->is_built_in()) {
-				Ref<TextFile> text_file = edited_res;
-				if (text_file.is_valid()) {
-					view->_save_text_file(text_file, text_file->get_path());
-					continue;
-				}
-				EditorNode::get_singleton()->save_resource(edited_res);
+			Ref<TextFile> text_file = edited_res;
+			if (text_file.is_valid()) {
+				view->_save_text_file(text_file, text_file->get_path());
 			} else {
-				const String scene_path = edited_res->get_path().get_slice("::", 0);
-				if (!scene_path.is_empty() && !scenes_to_save.has(scene_path)) {
-					scenes_to_save.insert(scene_path);
-				}
+				EditorNode::get_singleton()->save_resource(edited_res);
 			}
 			if (scr.is_valid()) {
 				update_docs_from_script(scr);
 			}
 		}
 		view->_update_script_names();
-	}
-	if (!scenes_to_save.is_empty()) {
-		EditorNode::get_singleton()->save_scene_list(scenes_to_save);
 	}
 }
 

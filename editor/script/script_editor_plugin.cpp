@@ -573,13 +573,7 @@ bool ScriptEditorPlugin::open_in_external_editor(const String &p_path, int p_lin
 
 void ScriptEditorPlugin::edit(Object *p_object) {
 	if (Object::cast_to<Script>(p_object)) {
-		Script *p_script = Object::cast_to<Script>(p_object);
-		String res_path = p_script->get_path().get_slice("::", 0);
-
-		if (p_script->is_built_in() && !res_path.is_empty()) {
-			EditorNode::get_singleton()->load_scene_or_resource(res_path, false, false);
-		}
-		ScriptEditorController::get_singleton()->edit(p_script);
+		ScriptEditorController::get_singleton()->edit(Object::cast_to<Script>(p_object));
 	} else if (Object::cast_to<JSON>(p_object)) {
 		ScriptEditorController::get_singleton()->edit(Object::cast_to<JSON>(p_object));
 	} else if (Object::cast_to<TextFile>(p_object)) {
@@ -620,37 +614,16 @@ void ScriptEditorPlugin::selected_notify() {
 }
 
 String ScriptEditorPlugin::get_unsaved_status(const String &p_for_scene) const {
+	if (!p_for_scene.is_empty()) {
+		return String();
+	}
+
 	const PackedStringArray unsaved_scripts = ScriptEditorController::get_singleton()->get_unsaved_scripts();
 	if (unsaved_scripts.is_empty()) {
 		return String();
 	}
 
 	PackedStringArray message;
-	if (!p_for_scene.is_empty()) {
-		PackedStringArray unsaved_built_in_scripts;
-
-		const String scene_file = p_for_scene.get_file();
-		for (const String &E : unsaved_scripts) {
-			if (!E.is_resource_file() && E.contains(scene_file)) {
-				unsaved_built_in_scripts.append(E);
-			}
-		}
-
-		if (unsaved_built_in_scripts.is_empty()) {
-			return String();
-		} else {
-			message.resize(unsaved_built_in_scripts.size() + 1);
-			message.write[0] = TTR("There are unsaved changes in the following built-in script(s):");
-
-			int i = 1;
-			for (const String &E : unsaved_built_in_scripts) {
-				message.write[i] = E.trim_suffix("(*)");
-				i++;
-			}
-			return String("\n").join(message);
-		}
-	}
-
 	message.resize(unsaved_scripts.size() + 1);
 	message.write[0] = TTR("Save changes to the following script(s) before quitting?");
 

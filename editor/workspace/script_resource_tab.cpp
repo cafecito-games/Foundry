@@ -234,10 +234,6 @@ bool ScriptResourceTabType::is_resource_available(const WorkspaceTab &p_tab) con
 	if (path.is_empty()) {
 		return true;
 	}
-	// Mirror ScriptEditorView::_script_exists: a built-in/subresource script path
-	// ("<file>::<subpath>") is backed by its base resource file, so check that.
-	if (path.is_resource_file()) {
-		return FileAccess::exists(path);
-	}
-	return FileAccess::exists(path.get_slice("::", 0));
+	// Standalone script paths must exist on disk.
+	return FileAccess::exists(path);
 }
