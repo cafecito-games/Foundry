@@ -382,7 +382,7 @@ void EditorAutoloadSettings::_autoload_add() {
 		if (!fpath.ends_with("/")) {
 			fpath = fpath.get_base_dir();
 		}
-		dialog->config("Node", fpath.path_join(vformat("%s.fs", autoload_add_name->get_text())), false, false);
+		dialog->config("Node", fpath.path_join(vformat("%s.fs", autoload_add_name->get_text())), false);
 		dialog->popup_centered();
 	} else {
 		if (autoload_add(autoload_add_name->get_text(), autoload_add_path->get_text())) {

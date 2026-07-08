@@ -47,7 +47,7 @@ class ScriptCreateDialog : public ConfirmationDialog {
 	enum {
 		MSG_ID_SCRIPT,
 		MSG_ID_PATH,
-		MSG_ID_BUILT_IN,
+		MSG_ID_NAME,
 		MSG_ID_TEMPLATE,
 	};
 
@@ -58,10 +58,8 @@ class ScriptCreateDialog : public ConfirmationDialog {
 	OptionButton *language_menu = nullptr;
 	OptionButton *template_menu = nullptr;
 	LineEdit *file_path = nullptr;
-	LineEdit *built_in_name = nullptr;
 	Button *path_button = nullptr;
 	EditorFileDialog *file_browse = nullptr;
-	CheckBox *built_in = nullptr;
 	CheckBox *use_templates = nullptr;
 	AcceptDialog *alert = nullptr;
 	CreateDialog *select_class = nullptr;
@@ -71,18 +69,11 @@ class ScriptCreateDialog : public ConfirmationDialog {
 	String template_inactive_message;
 	bool is_new_script_created = true;
 	bool is_path_valid = false;
-	bool supports_built_in = false;
 	bool can_inherit_from_file = false;
 	bool is_parent_name_valid = false;
-	bool is_built_in = false;
 	bool is_using_templates = true;
-	bool built_in_enabled = true;
 	bool load_enabled = true;
 	int default_language;
-	bool re_check_path = false;
-
-	Control *path_controls[2];
-	Control *name_controls[2];
 
 	Vector<ScriptLanguage::ScriptTemplate> template_list;
 	ScriptLanguage *language = nullptr;
@@ -90,10 +81,8 @@ class ScriptCreateDialog : public ConfirmationDialog {
 	String base_type;
 
 	void _path_hbox_sorted();
-	bool _can_be_built_in();
 	void _path_changed(const String &p_path = String());
 	void _language_changed(int l = 0);
-	void _built_in_pressed();
 	void _use_template_pressed();
 	bool _validate_parent(const String &p_string);
 	String _validate_path(const String &p_path, bool p_file_must_exist, bool *r_path_valid = nullptr);
@@ -119,7 +108,7 @@ protected:
 	static void _bind_methods();
 
 public:
-	void config(const String &p_base_name, const String &p_base_path, bool p_built_in_enabled = true, bool p_load_enabled = true);
+	void config(const String &p_base_name, const String &p_base_path, bool p_load_enabled = true);
 	void set_inheritance_base_type(const String &p_base);
 	ScriptCreateDialog();
 };

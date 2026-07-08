@@ -905,7 +905,7 @@ void ScriptEditorView::_menu_option(int p_option) {
 	ScriptEditorBase *current = _get_current_editor();
 	switch (p_option) {
 		case FILE_MENU_NEW: {
-			controller->get_script_create_dialog()->config("Node", "new_script", false, false);
+			controller->get_script_create_dialog()->config("Node", "new_script", false);
 			controller->get_script_create_dialog()->popup_centered();
 		} break;
 		case FILE_MENU_NEW_TEXTFILE: {

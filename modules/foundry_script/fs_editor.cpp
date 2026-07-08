@@ -233,7 +233,7 @@ bool FSLanguage::validate(const String &p_script, const String &p_path, List<Str
 }
 
 bool FSLanguage::supports_builtin_mode() const {
-	return true;
+	return false;
 }
 
 bool FSLanguage::supports_documentation() const {
