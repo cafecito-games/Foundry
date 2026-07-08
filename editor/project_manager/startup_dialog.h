@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  editor_automation_acceptance_workflow.h                               */
+/*  startup_dialog.h                                                      */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -30,34 +30,74 @@
 
 #pragma once
 
-#include "core/string/ustring.h"
-#include "core/variant/dictionary.h"
+#include "editor/project_manager/known_project_store.h"
+#include "scene/gui/dialogs.h"
 
-class EditorWorkflowTestDriver;
+class Button;
+class ItemList;
+class Label;
+class ProjectDialog;
+class TabContainer;
+class TextureRect;
 
-class EditorAutomationAcceptanceWorkflow {
+// Centered startup dialog for the projectless editor shell. Owns the tab
+// scaffolding and the Projects tab (create/open/recents). Manage and About tab
+// contents are delivered in follow-up issues; this class provides empty shells.
+class StartupDialog : public AcceptDialog {
+	FOUNDRY_CLASS(StartupDialog, AcceptDialog);
+
+	static constexpr int MAX_RECENT_PROJECTS = 10;
+
+	KnownProjectStore known_projects;
+
+	TextureRect *logo = nullptr;
+	Label *product_name_label = nullptr;
+	Label *tagline_label = nullptr;
+
+	TabContainer *tabs = nullptr;
+	Control *projects_tab = nullptr;
+	Control *manage_tab = nullptr;
+	Control *about_tab = nullptr;
+
+	Button *create_project_button = nullptr;
+	Button *open_existing_button = nullptr;
+	ItemList *recents_list = nullptr;
+	Label *recents_empty_label = nullptr;
+	Button *open_recent_button = nullptr;
+	Button *remove_recent_button = nullptr;
+
+	ProjectDialog *project_dialog = nullptr;
+
+	void _update_theme();
+	void _refresh_recents();
+	void _update_recent_action_buttons();
+
+	String _recent_display_name(const KnownProjectStore::KnownProject &p_project) const;
+	String _recent_item_text(const KnownProjectStore::KnownProject &p_project) const;
+
+	void _create_project();
+	void _open_existing_project();
+	void _open_selected_recent();
+	void _remove_selected_recent();
+
+	void _on_recents_selected(int p_index);
+	void _on_recents_activated(int p_index);
+	void _on_project_created(const String &p_dir, bool p_edit);
+	void _on_projects_updated();
+
+	// Records the open in the global store, launches `editor open --project`, and
+	// quits the projectless shell. Returns the create_instance error when launch fails.
+	Error _open_project_and_restart(const String &p_path);
+
+protected:
+	void _notification(int p_what);
+	static void _bind_methods();
+
 public:
-	struct Result {
-		bool ok = false;
-		String workflow;
-		String message;
-		Dictionary details;
-	};
+	bool is_visible_dialog() const;
 
-	// Basic scene-editing smoke workflow exercising scene tree, create dialog,
-	// inspector, save, run/stop, and editor-log assertions through EditorWorkflowTestDriver.
-	static Result run_basic_scene_editing(EditorWorkflowTestDriver &p_driver, const String &p_scene_path = "res://scenes/main.tscn");
-	static Result run_close_last_scene_empty_pane(EditorWorkflowTestDriver &p_driver);
-	static Result run_mixed_workspace_editing(EditorWorkflowTestDriver &p_driver);
-	static Result run_mixed_workspace_seed(EditorWorkflowTestDriver &p_driver);
-	static Result run_mixed_workspace_restore(EditorWorkflowTestDriver &p_driver);
-	static Result run_projectless_shell_smoke(EditorWorkflowTestDriver &p_driver);
-	static Result run_startup_dialog_projects_tab(EditorWorkflowTestDriver &p_driver);
+	void show_startup_dialog();
+	void hide_startup_dialog();
 
-	// Deprecated alias kept for backward compatibility with older CLI/tests.
-	static Result run_mvp(EditorWorkflowTestDriver &p_driver, const String &p_scene_path = "res://scenes/main.tscn") {
-		return run_basic_scene_editing(p_driver, p_scene_path);
-	}
-
-	static void print_result(const Result &p_result);
+	StartupDialog();
 };

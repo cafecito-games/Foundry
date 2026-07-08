@@ -116,6 +116,7 @@
 #include "editor/file_system/dependency_editor.h"
 #include "editor/file_system/editor_paths.h"
 #include "editor/gui/editor_about.h"
+#include "editor/project_manager/startup_dialog.h"
 #include "editor/gui/editor_bottom_drawer_strip.h"
 #include "editor/gui/editor_bottom_panel.h"
 #include "editor/gui/editor_file_dialog.h"
@@ -6932,6 +6933,10 @@ void EditorNode::_finish_projectless_shell_startup() {
 		EditorResourcePreview::get_singleton()->start();
 	}
 
+	if (startup_dialog != nullptr) {
+		startup_dialog->show_startup_dialog();
+	}
+
 	get_tree()->create_timer(1.0f)->connect("timeout", callable_mp(this, &EditorNode::_remove_lock_file));
 }
 
@@ -9886,6 +9891,16 @@ GameViewPluginBase *get_game_view_plugin() {
 }
 #endif
 
+void EditorNode::show_startup_dialog() {
+	if (startup_dialog != nullptr) {
+		startup_dialog->show_startup_dialog();
+	}
+}
+
+bool EditorNode::is_startup_dialog_visible() const {
+	return startup_dialog != nullptr && startup_dialog->is_visible_dialog();
+}
+
 void EditorNode::open_setting_override(const String &p_property) {
 	editor_settings_dialog->hide();
 	project_settings_editor->popup_for_override(p_property);
@@ -10465,6 +10480,12 @@ EditorNode::EditorNode() {
 
 	about = memnew(EditorAbout);
 	gui_base->add_child(about);
+
+	if (projectless_shell) {
+		startup_dialog = memnew(StartupDialog);
+		gui_base->add_child(startup_dialog);
+	}
+
 	feature_profile_manager->connect("current_feature_profile_changed", callable_mp(this, &EditorNode::_feature_profile_changed));
 
 #if !defined(ANDROID_ENABLED) && !defined(WEB_ENABLED)

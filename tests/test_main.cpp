@@ -75,6 +75,7 @@
 #include "tests/editor/test_known_project_store.h"
 #include "tests/editor/test_node_3d_editor_world_scope.h"
 #include "tests/editor/test_projectless_editor_shell.h"
+#include "tests/editor/test_startup_dialog.h"
 #include "tests/editor/test_refactor_diff_preview.h"
 #include "tests/editor/test_script_create_dialog.h"
 #include "tests/editor/test_script_editor_views.h"
