@@ -1,0 +1,192 @@
+# Godot 4.7 → Foundry Port — Session Handoff
+
+**Read this first, then `2026-07-07-godot-4.7-port-catalog.md` (the spec) for background.**
+This document lets a fresh session continue porting Godot 4.7 into Foundry with no ramp-up.
+
+---
+
+## 1. Mission & locked scope decisions
+
+Port as much of the Godot `4.6.3-stable..4.7-stable` delta into Foundry as is compatible with
+the fork, batching clear wins onto **one staging branch** `feature/godot-4.7-port`.
+
+Locked decisions (do not re-litigate):
+- **One batched staging branch**, not per-item PRs.
+- **Diverged areas are flagged, not auto-ported:** anything touching `modules/gdscript`
+  (→ Foundry Script), `editor/script/`, or `editor/plugins/script_*`. Cataloged as
+  `manual-flag`; port only by hand later if ever.
+- **Asset Store: skip entirely** (already being removed on branch `remove-assetlib`).
+- **`doc/classes` sync: deferred** (heavy rebrand collision, low functional value).
+- **Never force a messy port.** Conflicts that expose real divergence → skip and record.
+- Foundry is a **clean-break, no-backwards-compat** fork: strip deprecated/compat shims that
+  ported PRs add (keep the extension-API removal record though).
+
+`4.6.3-stable` is a **clean ancestor** of develop, so `git cherry-pick -x -m 1 <merge-sha>`
+of upstream PR merges is the porting primitive.
+
+---
+
+## 2. Current state (as of this handoff)
+
+- **Branch `feature/godot-4.7-port`** pushed to origin, rebased on **latest develop**.
+- **162 live upstream PRs ported** + `RefCounted::deinit_ref` hand-port + fork-adaptation
+  fixes. 172 commits, clean history (0 dead reverts), one `cherry-pick -x` commit per PR.
+- **Build green** (macOS arm64). **Full suite: 3016 passed / 0 failed / 3 skipped.**
+- Worktree: `/Users/christian/CafecitoGames/Foundry/.worktrees/godot-4.7-port`.
+- The `godot` remote + tags `4.6.3-stable` / `4.7-stable` are fetched in the shared repo.
+
+**Done:** Wave 1 = the 482 stock-adjacent candidate PRs in core, servers, drivers, scene
+runtime, and self-contained modules (jolt/gltf/gridmap/openxr/visual_shader). Both low-risk
+(275→106 net) and med-risk (32→25 net) port-now sets are landed, plus their conflict
+resolution passes.
+
+---
+
+## 3. Tooling & artifacts (all under `docs/superpowers/specs/godot-4.7-port/`)
+
+| File | Purpose |
+|---|---|
+| `catalog.json` | All 1651 PRs classified: `{sha, pr, title, bucket, subsystem, nfiles}`. Source of truth for what exists. |
+| `classify.py` | Regenerates `catalog.json` by path-bucketing the delta. |
+| `port.py` | Cherry-pick harness. `python3 .../port.py --risk low\|med [--dry-run] [--limit N]`. Reads `triage/out-*.json`, picks `port-now` of that risk in **chronological order**, `cherry-pick -x -m 1`, auto-aborts+records conflicts, writes `ported-log.json`. **Guards on a clean tree** — move untracked files out first. |
+| `triage/in-*.json`, `triage/out-*.json` | Wave-1 per-subsystem triage inputs/verdicts. |
+| `ported-log.json`, `ported-log-med.json` | Per-PR cherry-pick outcomes (low / med). |
+| `conflict-components.json`, `resolve/result-*.json` | Wave-1 conflict resolution. |
+| `med-conflict-components.json`, `resolve-med/result-*.json` | Med conflict resolution. |
+
+---
+
+## 4. The pipeline (repeat this per wave)
+
+### Step A — pick the next wave's subsystems
+Remaining **untriaged candidate** PRs = 926 (see §6). Suggested next waves, value-ordered:
+1. **`scene/gui` (122)** — runtime Control nodes, stock-adjacent, low editor-divergence risk. Best next target.
+2. **`platform/*` (~145: android/linuxbsd/macos/windows)** — self-contained per-OS fixes; test the platform you build.
+3. **`editor/*` (~400: scene, docks, inspector, animation, export, settings, gui, themes…)** — HIGHER risk: the fork heavily rewrote the workspace/multi-scene/script-editor. Triage agents MUST grep to confirm the touched editor files/classes still exist and aren't part of the diverged workspace surfaces. Expect a higher incompatible rate.
+
+Skip during triage: `modules/mono` (C#, 11), `.github/*` (CI-only), web-platform-only.
+
+### Step B — generate triage inputs
+Filter `catalog.json` for `bucket==candidate` and the chosen subsystem(s), write one
+`triage/in-<group>.json` per group (see the wave-1 inline python in git history of this dir,
+or the spec). Balance groups to ~50–120 PRs each.
+
+### Step C — fan out triage agents (parallel, read-only)
+One `general-purpose` agent per group. Each reads its `in-*.json`, inspects each PR
+(`git show --stat <sha>`; full diff only if ambiguous), and writes `triage/out-<group>.json`
+with `{pr, sha, decision, kind, risk, rationale}` where decision ∈
+`port-now`|`port-later`|`skip`. Prefer bugfixes; low risk = self-contained + undiverged.
+**Tell agents the gotchas in §5.**
+
+### Step D — cherry-pick the clear wins
+`python3 docs/superpowers/specs/godot-4.7-port/port.py --risk low` (then `--risk med`).
+Note: `port.py` currently loads ALL `triage/out-*.json`; to port only the new wave, either
+move old `out-*.json` aside or add a filter. It writes `ported-log.json` (back it up between
+runs — see how med was kept as `ported-log-med.json`).
+
+### Step E — build & triage feature-dependency breaks
+Build with **keep-going** to surface every break at once:
+```
+scons platform=macos target=editor dev_build=yes tests=yes -j$(sysctl -n hw.ncpu) --keep-going > /tmp/b.log 2>&1
+grep -n "error:" /tmp/b.log
+```
+For each break: `git log --oneline -1 -S'<symbol>' origin/develop..HEAD -- <file>` finds the
+culprit PR. If it depends on unported 4.7 infra → `git revert --no-edit <local_sha>` and record
+it. **But first check §5's deinit_ref lesson** — if the only blocker is a small extractable
+primitive, hand-port that instead of dropping the fix.
+
+### Step F — resolve conflicts in parallel (disjoint components)
+The conflicted PRs from `ported-log.json` partition into **file-disjoint components** (PRs
+sharing a file must stay together, in chronological order). Union-find them (see
+`conflict-components.json` generator inline in git history). Bin-pack components into N buckets,
+create N worktrees off the current staging HEAD (`git worktree add ../rN -b rN feature/godot-4.7-port`),
+dispatch one agent per worktree to `cherry-pick`+resolve its bucket (with the §5 gotchas +
+feature-incompatibility guard, **do NOT build**). Then reconcile: `git cherry-pick <base>..rN`
+for each — **conflict-free because components are file-disjoint**. Remove the worktrees after.
+
+### Step G — validate & checkpoint
+Full rebuild (`python3 scripts/agent_build.py --dev-build`) then full suite:
+```
+DISPLAY=:1 bin/foundry.macos.editor.dev.arm64 --headless test run --progress-format=jsonl --progress-file /tmp/t.jsonl --force-colors
+```
+Trust the `[doctest] Status: SUCCESS!` line. Then clean history (drop dead port+revert pairs
+via scripted `git rebase -i origin/develop` with a `GIT_SEQUENCE_EDITOR` that marks their SHAs
+`drop`), rebuild+retest, update the catalog spec, commit, push.
+
+---
+
+## 5. Critical gotchas (tell every agent these)
+
+- **`GDCLASS` was renamed to `FOUNDRY_CLASS`** (core/object/object.h:482). Any NEW ported file
+  using `GDCLASS(...)` fails at build with *"a type specifier is required for all declarations"*
+  on the macro line. Rewrite to `FOUNDRY_CLASS`.
+- **`RS::` vs `RSE::`**: the fork uses an `RS::` alias where upstream 4.7 uses `RSE::` for
+  rendering-server enums (`RS::ENV_BG_CANVAS`, etc.). Resolutions that keep upstream `RSE::`
+  fail to compile.
+- **`Godot`→`Foundry` rebrand**: many "conflicts" are pure branding/naming and reduce to empty
+  (already-present). The binary is `foundry.*`, project config is `project.foundry`, class macro
+  is `FOUNDRY_CLASS`, help is `FoundryCLIHelp`.
+- **Feature-incompatibility guard**: MANY 4.7 fixes depend on 4.7 features absent in the 4.6.3
+  base. Verified-absent so far: AreaLight/`ltc`/LTC, HDR-output tonemap members, particle
+  transform packing (`float[12]` vs `mat4`), the AnimationTree/blend-space rework (the fork ALSO
+  refactored this), Jolt env-props refactor (`_update_environmental_properties`), subsampled &
+  drawable textures, GDExtension refcount-init, RD raytracing, DrawableTexture2D, the
+  `scene/debugger` game-view file split. Agents must **grep the base to confirm a symbol exists
+  before integrating**; if absent → skip, don't fabricate.
+- **deinit_ref lesson**: if a fix's ONLY blocker is a small, self-contained primitive (like
+  `RefCounted::deinit_ref`, ~5 lines using existing members), **hand-port that primitive**
+  rather than dropping the whole fix. Don't hand-port large ABI-sensitive dependencies.
+- **Build exit-code false alarms**: a trailing `grep -c "error:"` returns exit 1 when there are
+  0 matches, which makes the whole bash command "fail". Check the actual error count and the
+  `scons: done building targets` line, not the shell exit code.
+- **The fork also refactored some engine areas** (notably animation internals), so a file being
+  "stock" in upstream doesn't guarantee it's stock here. Always grep.
+
+---
+
+## 6. Remaining work inventory
+
+**Untriaged `candidate` PRs = 926** (the main opportunity). Top subsystems:
+scene/gui 122 · editor/scene 119 · editor/docks 67 · editor/inspector 48 · platform/android 43 ·
+platform/linuxbsd 39 · editor/animation 37 · editor/export 30 · platform/macos 27 ·
+editor/settings 26 · platform/windows 26 · editor/gui 24 · editor/debugger 20 ·
+editor/editor_node.cpp 17 · editor/themes 13 · editor/import 11 · modules/text_server_adv 11 ·
+modules/mono 11 (likely skip) · editor/run 10 · editor/project_manager 9 · editor/shader 9 · …
+
+**Also pending:**
+- **188 port-later** from wave 1 (features/refactors deferred as too large/risky — e.g.
+  AreaLight3D, HDR output, GDExtension refcount-init, RD raytracing, glTF multi-UV). Re-evaluate
+  which are worth the larger effort. Some are worth adopting wholesale if the fork wants the
+  feature.
+- **`manual-flag` = 128 PRs** touching `modules/gdscript`/script-editor — hand-port to Foundry
+  Script only if specifically wanted.
+- **`dep-bump` = 21** vendored thirdparty updates (freetype, harfbuzz, thorvg, jolt, etc.).
+  Handle as **whole-directory version bumps** matched to 4.7's vendored versions + SCsub, NOT
+  cherry-picks. Self-contained, high value.
+- **`docs` = 74** pure `doc/classes` — deferred.
+- **`skip-assetstore` = 19** — do not port.
+
+---
+
+## 7. Environment
+
+- **Build (macOS):** `python3 scripts/agent_build.py --dev-build` (fast iteration) → binary
+  `bin/foundry.macos.editor.dev.arm64`. Use plain `scons platform=macos target=editor
+  dev_build=yes tests=yes --keep-going` for a full error sweep. Run **without** `--dev-build`
+  (i.e. `dev_mode=yes`, warnings-as-errors) before declaring a wave truly done.
+- **Test:** `DISPLAY=:1 bin/foundry.macos.editor.dev.arm64 --headless test run
+  --progress-format=jsonl --progress-file /tmp/t.jsonl --force-colors`. Trust `[doctest]
+  Status: SUCCESS!`; ObjectDB-leak lines at exit are expected noise.
+- **Regenerate fixtures** after intentional behavior changes: `test generate-fixtures
+  modules/foundry_script/tests/scripts` and `test generate-format-fixtures …/format`.
+- Everything is **resumable**: `catalog.json` + `ported-log*.json` + `triage/out-*.json` hold
+  all state; re-running a wave picks up untouched PRs.
+
+---
+
+## 8. Suggested next action for a fresh session
+
+Start **wave 2 = `scene/gui` (122 candidates)**: it's runtime UI (Control nodes), stock-adjacent,
+low editor-divergence risk — the safest high-volume next target. Follow §4 A→G. Then tackle
+`platform/*`, then the `dep-bump` thirdparty updates, and only then the higher-risk `editor/*`
+mass (with extra grep-verification against the fork's workspace rewrites).
