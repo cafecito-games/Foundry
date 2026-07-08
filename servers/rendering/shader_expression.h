@@ -33,7 +33,7 @@
 #include "core/math/expression.h"
 
 class ShaderExpression : public Expression {
-	GDCLASS(ShaderExpression, Expression);
+	FOUNDRY_CLASS(ShaderExpression, Expression);
 
 protected:
 	virtual Error _get_token(Token &r_token) override;

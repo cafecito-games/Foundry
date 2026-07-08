@@ -86,12 +86,6 @@ public:
 protected:
 	static void _bind_methods();
 
-#ifndef DISABLE_DEPRECATED
-	void _set_tap_back_pos_bind_compat_114355(float p_seconds);
-	float _get_tap_back_pos_bind_compat_114355();
-	static void _bind_compatibility_methods();
-#endif
-
 public:
 	Ref<AudioEffectInstance> instantiate() override;
 	void set_buffer_length(float p_seconds);

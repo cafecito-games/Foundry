@@ -2294,7 +2294,7 @@ void RasterizerSceneGLES3::render_scene(const Ref<RenderSceneBuffers> &p_render_
 		glow_enabled = environment_get_glow_enabled(p_environment);
 		ssao_enabled = environment_get_ssao_enabled(p_environment);
 		use_bcs = environment_get_adjustments_enabled(p_environment);
-		bool canvas_tonemapping = environment_get_background(p_environment) == RSE::ENV_BG_CANVAS && environment_get_tone_mapper(p_environment) != RSE::ENV_TONE_MAPPER_LINEAR;
+		bool canvas_tonemapping = environment_get_background(p_environment) == RS::ENV_BG_CANVAS && environment_get_tone_mapper(p_environment) != RS::ENV_TONE_MAPPER_LINEAR;
 		if (glow_enabled || ssao_enabled || use_bcs || canvas_tonemapping) {
 			apply_environment_effects_in_post = true;
 		}
