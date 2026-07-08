@@ -1806,4 +1806,249 @@ TEST_CASE("[Editor][Automation] open_context_menu synthesizes a right click on t
 	memdelete(root);
 }
 
+// A MenuButton whose entries are built lazily in about_to_popup: its PopupMenu is
+// empty until the menu is opened. This mirrors editor menus such as SceneTreeDock's
+// options button, which populate themselves only when the popup is about to show.
+class LazyMenuPopulator : public Object {
+	FOUNDRY_CLASS(LazyMenuPopulator, Object);
+
+public:
+	PopupMenu *popup = nullptr;
+	int build_count = 0;
+
+	void on_about_to_popup() {
+		if (popup == nullptr) {
+			return;
+		}
+		popup->clear();
+		popup->add_item("Lazy One", 101);
+		popup->add_item("Lazy Two", 102);
+		build_count++;
+	}
+};
+
+// #1095: a MenuButton whose menu is populated only in about_to_popup is empty
+// while hidden, so the snapshot exposes no menu_item targets. A semantic click
+// must open the menu the way a user would (show_popup fires about_to_popup and
+// populates the entries) and leave it open so a follow-up observe_ui captures the
+// freshly-built items as normal menu_item elements that choose_menu_item can drive.
+TEST_CASE("[Editor][Automation] clicking a MenuButton opens and captures its lazily-built menu") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	MenuButton *menu_button = memnew(MenuButton);
+	menu_button->set_text("Options");
+	setup_visible_control(menu_button);
+	root->add_child(menu_button);
+
+	PopupMenu *popup = menu_button->get_popup();
+	LazyMenuPopulator populator;
+	populator.popup = popup;
+	menu_button->connect("about_to_popup", callable_mp(&populator, &LazyMenuPopulator::on_about_to_popup));
+
+	MenuItemPressTracker tracker;
+	popup->connect("id_pressed", callable_mp(&tracker, &MenuItemPressTracker::on_id_pressed));
+	MessageQueue::get_singleton()->flush();
+
+	// While the menu was never opened, its lazy entries do not exist yet, so the
+	// snapshot cannot expose any menu_item for it.
+	CHECK(popup->get_item_count() == 0);
+	const EditorAutomationSnapshot before = EditorAutomationSnapshot::capture_from_node(root);
+	CHECK(find_virtual_element(before, "menu_item", "Lazy One") == nullptr);
+
+	Dictionary target;
+	target["role"] = "button";
+	target["name"] = "Options";
+	Dictionary options;
+	options["route"] = "semantic";
+
+	const EditorAutomationActionResult click = EditorAutomationDriver::perform(before, "click", target, options);
+	MessageQueue::get_singleton()->flush();
+	CHECK(click.ok);
+	CHECK(click.route == EditorAutomationActionRouteNames::SEMANTIC_CLICK);
+	// The click opened the menu, which populated it via about_to_popup and stays open.
+	CHECK(populator.build_count == 1);
+	CHECK(popup->is_visible());
+	CHECK(popup->get_item_count() == 2);
+
+	// Re-observing now captures the open popup's freshly-built items as menu_item
+	// elements that carry the choose_menu_item action.
+	const EditorAutomationSnapshot after = EditorAutomationSnapshot::capture_from_node(root);
+	const EditorAutomationElement *lazy_one = find_virtual_element(after, "menu_item", "Lazy One");
+	REQUIRE(lazy_one != nullptr);
+	CHECK(lazy_one->actions.has("choose_menu_item"));
+	CHECK(find_virtual_element(after, "menu_item", "Lazy Two") != nullptr);
+
+	// And choose_menu_item on the captured item fires its command.
+	Dictionary choose_target;
+	choose_target["id"] = lazy_one->id;
+	const EditorAutomationActionResult choose = EditorAutomationDriver::perform(after, "choose_menu_item", choose_target, Dictionary());
+	MessageQueue::get_singleton()->flush();
+	CHECK(choose.ok);
+	CHECK(tracker.last_id == 101);
+
+	memdelete(root);
+}
+
+// #1095: activate on a MenuButton follows the same open-the-menu path as click, so
+// menu-only buttons are driveable through either semantic verb.
+TEST_CASE("[Editor][Automation] activating a MenuButton opens its lazily-built menu") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	MenuButton *menu_button = memnew(MenuButton);
+	menu_button->set_text("Options");
+	setup_visible_control(menu_button);
+	root->add_child(menu_button);
+
+	PopupMenu *popup = menu_button->get_popup();
+	LazyMenuPopulator populator;
+	populator.popup = popup;
+	menu_button->connect("about_to_popup", callable_mp(&populator, &LazyMenuPopulator::on_about_to_popup));
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	Dictionary target;
+	target["role"] = "button";
+	target["name"] = "Options";
+
+	const EditorAutomationActionResult result = EditorAutomationDriver::perform(snapshot, "activate", target, Dictionary());
+	MessageQueue::get_singleton()->flush();
+	CHECK(result.ok);
+	CHECK(result.route == EditorAutomationActionRouteNames::SEMANTIC_ACTIVATE);
+	CHECK(populator.build_count == 1);
+	CHECK(popup->is_visible());
+	CHECK(popup->get_item_count() == 2);
+
+	popup->hide();
+	memdelete(root);
+}
+
+// #1095: a disabled MenuButton cannot be opened by a user, so a semantic click is
+// refused and its menu is neither populated nor shown.
+TEST_CASE("[Editor][Automation] clicking a disabled MenuButton is refused") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	MenuButton *menu_button = memnew(MenuButton);
+	menu_button->set_text("Options");
+	menu_button->set_disabled(true);
+	setup_visible_control(menu_button);
+	root->add_child(menu_button);
+
+	PopupMenu *popup = menu_button->get_popup();
+	LazyMenuPopulator populator;
+	populator.popup = popup;
+	menu_button->connect("about_to_popup", callable_mp(&populator, &LazyMenuPopulator::on_about_to_popup));
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	Dictionary target;
+	target["role"] = "button";
+	target["name"] = "Options";
+	Dictionary options;
+	options["route"] = "semantic";
+
+	const EditorAutomationActionResult result = EditorAutomationDriver::perform(snapshot, "click", target, options);
+	MessageQueue::get_singleton()->flush();
+	CHECK_FALSE(result.ok);
+	CHECK(result.kind == "element_disabled");
+	CHECK(populator.build_count == 0);
+	CHECK_FALSE(popup->is_visible());
+
+	memdelete(root);
+}
+
+// #1095: a semantic MenuButton click reproduces a real press -- it toggles the
+// menu (opens when hidden, closes when already open) and still fires the inherited
+// pressed signal, rather than only force-opening the popup.
+TEST_CASE("[Editor][Automation] semantic MenuButton click toggles the menu and fires pressed") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	MenuButton *menu_button = memnew(MenuButton);
+	menu_button->set_text("Options");
+	setup_visible_control(menu_button);
+	root->add_child(menu_button);
+
+	PopupMenu *popup = menu_button->get_popup();
+	popup->add_item("Alpha", 1);
+
+	PressTracker press_tracker;
+	menu_button->connect(SceneStringName(pressed), callable_mp(&press_tracker, &PressTracker::on_pressed));
+	MessageQueue::get_singleton()->flush();
+
+	Dictionary target;
+	target["role"] = "button";
+	target["name"] = "Options";
+	Dictionary options;
+	options["route"] = "semantic";
+
+	// The first click opens the menu and fires the inherited pressed signal.
+	const EditorAutomationActionResult open = EditorAutomationDriver::perform(EditorAutomationSnapshot::capture_from_node(root), "click", target, options);
+	MessageQueue::get_singleton()->flush();
+	CHECK(open.ok);
+	CHECK(popup->is_visible());
+	CHECK(press_tracker.pressed);
+	CHECK(open.events.has("pressed"));
+	CHECK(open.events.has("popup_shown"));
+
+	// A second click closes it again, matching MenuButton::pressed()'s toggle.
+	const EditorAutomationActionResult close = EditorAutomationDriver::perform(EditorAutomationSnapshot::capture_from_node(root), "click", target, options);
+	MessageQueue::get_singleton()->flush();
+	CHECK(close.ok);
+	CHECK_FALSE(popup->is_visible());
+	CHECK(close.events.has("popup_hidden"));
+
+	memdelete(root);
+}
+
+// #1095: once a MenuButton's popup is open (visible), the snapshot walks it as a
+// real menu node so its items surface as menu_item elements exactly once -- under
+// the menu, not duplicated as virtual children of the MenuButton.
+TEST_CASE("[Editor][Automation] visible MenuButton popup is captured as a menu node without duplicates") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	MenuButton *menu_button = memnew(MenuButton);
+	menu_button->set_text("Options");
+	setup_visible_control(menu_button);
+	root->add_child(menu_button);
+
+	PopupMenu *popup = menu_button->get_popup();
+	popup->add_item("Alpha", 1);
+	popup->add_item("Beta", 2);
+	MessageQueue::get_singleton()->flush();
+
+	// Open the menu so its popup becomes visible.
+	menu_button->show_popup();
+	MessageQueue::get_singleton()->flush();
+	REQUIRE(popup->is_visible());
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+
+	// The now-visible popup is present as a menu element in the walk.
+	const EditorAutomationElement *menu_element = find_element_by_role_and_name(snapshot, "menu", popup->get_name());
+	REQUIRE(menu_element != nullptr);
+
+	// Its items appear exactly once each -- captured under the walked popup rather
+	// than also duplicated as MenuButton virtual children.
+	int alpha_count = 0;
+	for (int i = 0; i < snapshot.get_element_count(); i++) {
+		const EditorAutomationElement &element = snapshot.get_element(i);
+		if (element.role == "menu_item" && element.name == "Alpha") {
+			alpha_count++;
+		}
+	}
+	CHECK(alpha_count == 1);
+
+	popup->hide();
+	memdelete(root);
+}
+
 } // namespace TestEditorAutomationDriver
