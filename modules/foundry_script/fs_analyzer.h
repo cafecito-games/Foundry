@@ -246,6 +246,74 @@ private:
 
 	FlowFinalityContext flow_finality;
 
+	// Owns callable argument validation, named-argument canonicalization, generic method call
+	// inference at call sites, and signal connect/emit API validation during body analysis.
+	class CallSiteValidationContext {
+		FSAnalyzer *analyzer = nullptr;
+
+	public:
+		explicit CallSiteValidationContext(FSAnalyzer *p_analyzer);
+
+		bool merge_inferred_type_argument(const FSParser::DataType &p_existing, const FSParser::DataType &p_candidate, FSParser::DataType &r_merged);
+		void collect_type_parameter_bindings(const FSParser::DataType &p_parameter_type, const FSParser::DataType &p_argument_type,
+				HashMap<StringName, FSParser::DataType> &r_bindings, HashSet<StringName> &r_conflicts);
+		void apply_generic_method_call(FSParser::CallNode *p_call, FSParser::FunctionNode *p_function,
+				List<FSParser::DataType> &r_par_types, FSParser::DataType &r_return_type);
+		bool callable_signature_from_type(const FSParser::DataType &p_callable_type, Vector<FSParser::DataType> &r_par_types, int &r_default_arg_count, bool &r_is_vararg) const;
+		FSParser::DataType plain_callable_type() const;
+		FSParser::DataType over_bound_callable_type(const FSParser::DataType &p_source_callable_type) const;
+		FSParser::DataType explicit_callable_type_from_signature(const FSParser::DataType &p_return_type, const Vector<FSParser::DataType> &p_parameter_types, int p_default_arg_count, bool p_is_vararg, bool p_is_async = false) const;
+		FSParser::DataType transformed_callable_type(const FSParser::DataType &p_source_callable_type, const Vector<FSParser::DataType> &p_parameter_types, int p_default_arg_count, bool p_is_vararg) const;
+		FSParser::DataType explicit_callable_type_from_info(const MethodInfo &p_info) const;
+		FSParser::DataType explicit_signal_type_from_info(const MethodInfo &p_info) const;
+		FSParser::DataType explicit_signal_type_from_node(const FSParser::SignalNode *p_signal) const;
+		FSParser::ArrayNode *array_literal_argument(const FSParser::CallNode *p_call, int p_argument_index) const;
+		bool callable_type_from_method(const FSParser::DataType &p_receiver_type, const StringName &p_method_name, FSParser::Node *p_source, FSParser::DataType &r_callable_type);
+		bool callable_type_from_constant_method_args(const FSParser::CallNode *p_call, int p_receiver_arg_index, int p_method_arg_index, FSParser::DataType &r_callable_type);
+		bool call_argument_can_be_string_name(const FSParser::CallNode *p_call, int p_argument_index);
+		void validate_strict_callable_method_fallback(const FSParser::CallNode *p_call, const FSParser::DataType &p_receiver_type, int p_method_arg_index);
+		bool signal_name_from_constant_arg(const FSParser::CallNode *p_call, int p_signal_arg_index, StringName &r_signal_name) const;
+		bool signal_type_from_receiver(const FSParser::DataType &p_receiver_type, const FSParser::CallNode *p_call, int p_signal_arg_index, FSParser::DataType &r_signal_type) const;
+		bool signal_type_from_class_constant_arg(const FSParser::ClassNode *p_class, const FSParser::CallNode *p_call, int p_signal_arg_index, FSParser::DataType &r_signal_type) const;
+		bool signal_type_from_native_constant_arg(const StringName &p_native_type, const FSParser::CallNode *p_call, int p_signal_arg_index, FSParser::DataType &r_signal_type) const;
+		bool local_signal_type_from_constant_arg(const FSParser::CallNode *p_call, int p_signal_arg_index, FSParser::DataType &r_signal_type) const;
+		void validate_strict_signal_name_fallback(const FSParser::CallNode *p_call, const FSParser::DataType &p_receiver_type, int p_signal_arg_index);
+		void validate_call_arg(const List<FSParser::DataType> &p_par_types, int p_default_args_count, bool p_is_vararg, const FSParser::CallNode *p_call, const Vector<int> &p_extra_allowed_argument_counts = Vector<int>(), int p_trailing_unbound_argument_count = 0);
+		void validate_call_arg(const MethodInfo &p_method, const FSParser::CallNode *p_call);
+		static bool call_has_named_arguments(const FSParser::CallNode *p_call);
+		void reject_named_call_arguments(const FSParser::CallNode *p_call);
+		bool canonicalize_named_call_arguments(FSParser::CallNode *p_call, const FSParser::FunctionNode *p_function);
+		void validate_callable_array_literal_args(const Vector<FSParser::DataType> &p_par_types, int p_default_args_count, bool p_is_vararg, FSParser::ArrayNode *p_array, const StringName &p_function, const Vector<int> &p_extra_allowed_argument_counts = Vector<int>(), int p_trailing_unbound_argument_count = 0);
+		String make_invalid_argument_error(
+				const StringName &p_function,
+				int p_argument_number,
+				const FSParser::DataType &p_expected_type,
+				const FSParser::DataType &p_actual_type,
+				bool p_strict_dynamic_mismatch,
+				bool p_strict_nullable_mismatch,
+				const FSParser::Node *p_actual_node = nullptr) const;
+		void validate_signal_connect_arg(const FSParser::DataType &p_signal_type, const FSParser::CallNode *p_call, int p_callable_arg_index = 0, bool p_require_explicit_signal = true);
+		void validate_signal_emit_args(const FSParser::DataType &p_signal_type, const FSParser::CallNode *p_call, int p_first_emit_arg_index);
+		void validate_local_object_signal_callable_arg(const FSParser::CallNode *p_call, bool p_is_self);
+		void validate_local_object_emit_signal_args(const FSParser::CallNode *p_call, bool p_is_self);
+		void validate_typed_object_signal_api_args(const FSParser::DataType &p_base_type, const FSParser::CallNode *p_call, bool p_is_self);
+	};
+
+	CallSiteValidationContext call_site_validation;
+
+	bool call_argument_is_same_receiver(const FSParser::CallNode *p_call, const FSParser::ExpressionNode *p_argument) const;
+	bool datatype_contains_self_type_parameter(const FSParser::DataType &p_type) const;
+	bool is_bare_self_value_parameter(const FSParser::DataType &p_type) const;
+	bool datatype_matches_self_parameter_contract(const FSParser::DataType &p_expected_type, const FSParser::DataType &p_argument_type) const;
+	String make_type_handle_argument_error(
+			const StringName &p_function,
+			int p_argument_number,
+			const FSParser::DataType &p_expected_type,
+			const FSParser::DataType &p_actual_type,
+			const FSParser::Node *p_actual_node) const;
+	void mark_coroutine_handle_capture(FSParser::ExpressionNode *p_expression, const FSParser::DataType &p_target_type);
+	bool signature_type_involves_type_parameter(const FSParser::DataType &p_type) const;
+
 	// Ensures deferred lambda bodies are resolved before leaving body analysis.
 	class PendingLambdaBodiesScope {
 		FSAnalyzer *analyzer = nullptr;
@@ -475,28 +543,10 @@ private:
 			FSParser::FunctionNode **r_found_function = nullptr,
 			FSParser::ClassNode **r_found_in_class = nullptr,
 			const FSParser::DataType *p_self_type_override = nullptr);
-	void collect_type_parameter_bindings(const FSParser::DataType &p_parameter_type, const FSParser::DataType &p_argument_type,
-			HashMap<StringName, FSParser::DataType> &r_bindings, HashSet<StringName> &r_conflicts);
-	bool merge_inferred_type_argument(const FSParser::DataType &p_existing, const FSParser::DataType &p_candidate, FSParser::DataType &r_merged);
 	bool resolve_explicit_type_argument(FSParser::ExpressionNode *p_expression, FSParser::DataType &r_type_argument);
-	void apply_generic_method_call(FSParser::CallNode *p_call, FSParser::FunctionNode *p_function,
-			List<FSParser::DataType> &r_par_types, FSParser::DataType &r_return_type);
 	void reduce_call_create_proxy(FSParser::CallNode *p_call, FSParser::SubscriptNode *p_callee);
 	bool function_signature_from_info(const MethodInfo &p_info, FSParser::DataType &r_return_type, List<FSParser::DataType> &r_par_types, int &r_default_arg_count, BitField<MethodFlags> &r_method_flags);
-	bool callable_signature_from_type(const FSParser::DataType &p_callable_type, Vector<FSParser::DataType> &r_par_types, int &r_default_arg_count, bool &r_is_vararg) const;
-	FSParser::DataType plain_callable_type() const;
-	FSParser::DataType over_bound_callable_type(const FSParser::DataType &p_source_callable_type) const;
-	FSParser::DataType explicit_callable_type_from_signature(const FSParser::DataType &p_return_type, const Vector<FSParser::DataType> &p_parameter_types, int p_default_arg_count, bool p_is_vararg, bool p_is_async = false) const;
-	FSParser::DataType transformed_callable_type(const FSParser::DataType &p_source_callable_type, const Vector<FSParser::DataType> &p_parameter_types, int p_default_arg_count, bool p_is_vararg) const;
-	FSParser::DataType explicit_callable_type_from_info(const MethodInfo &p_info) const;
-	FSParser::DataType explicit_signal_type_from_info(const MethodInfo &p_info) const;
-	FSParser::DataType explicit_signal_type_from_node(const FSParser::SignalNode *p_signal) const;
-	FSParser::ArrayNode *array_literal_argument(const FSParser::CallNode *p_call, int p_argument_index) const;
 	bool string_name_from_constant_arg(const FSParser::CallNode *p_call, int p_argument_index, StringName &r_name) const;
-	bool call_argument_can_be_string_name(const FSParser::CallNode *p_call, int p_argument_index);
-	bool callable_type_from_method(const FSParser::DataType &p_receiver_type, const StringName &p_method_name, FSParser::Node *p_source, FSParser::DataType &r_callable_type);
-	bool callable_type_from_constant_method_args(const FSParser::CallNode *p_call, int p_receiver_arg_index, int p_method_arg_index, FSParser::DataType &r_callable_type);
-	void validate_strict_callable_method_fallback(const FSParser::CallNode *p_call, const FSParser::DataType &p_receiver_type, int p_method_arg_index);
 	bool is_node_compatible_type(const FSParser::DataType &p_type) const;
 	bool property_type_from_class(FSParser::ClassNode *p_class, const StringName &p_property_name, FSParser::Node *p_source, FSParser::DataType &r_property_type);
 	bool property_type_from_script(const Ref<Script> &p_script, const StringName &p_property_name, FSParser::DataType &r_property_type) const;
@@ -505,31 +555,6 @@ private:
 	bool property_path_from_constant_arg(const FSParser::CallNode *p_call, int p_argument_index, Vector<StringName> &r_property_path) const;
 	bool property_type_from_builtin_member(const FSParser::DataType &p_base_type, const StringName &p_member_name, FSParser::DataType &r_member_type) const;
 	bool property_type_from_indexed_receiver(const FSParser::DataType &p_receiver_type, const Vector<StringName> &p_property_path, FSParser::Node *p_source, FSParser::DataType &r_property_type);
-	bool signal_name_from_constant_arg(const FSParser::CallNode *p_call, int p_signal_arg_index, StringName &r_signal_name) const;
-	bool signal_type_from_receiver(const FSParser::DataType &p_receiver_type, const FSParser::CallNode *p_call, int p_signal_arg_index, FSParser::DataType &r_signal_type) const;
-	bool signal_type_from_class_constant_arg(const FSParser::ClassNode *p_class, const FSParser::CallNode *p_call, int p_signal_arg_index, FSParser::DataType &r_signal_type) const;
-	bool signal_type_from_native_constant_arg(const StringName &p_native_type, const FSParser::CallNode *p_call, int p_signal_arg_index, FSParser::DataType &r_signal_type) const;
-	bool local_signal_type_from_constant_arg(const FSParser::CallNode *p_call, int p_signal_arg_index, FSParser::DataType &r_signal_type) const;
-	void validate_strict_signal_name_fallback(const FSParser::CallNode *p_call, const FSParser::DataType &p_receiver_type, int p_signal_arg_index);
-	void validate_call_arg(const List<FSParser::DataType> &p_par_types, int p_default_args_count, bool p_is_vararg, const FSParser::CallNode *p_call, const Vector<int> &p_extra_allowed_argument_counts = Vector<int>(), int p_trailing_unbound_argument_count = 0);
-	void validate_call_arg(const MethodInfo &p_method, const FSParser::CallNode *p_call);
-	static bool call_has_named_arguments(const FSParser::CallNode *p_call);
-	void reject_named_call_arguments(const FSParser::CallNode *p_call);
-	bool canonicalize_named_call_arguments(FSParser::CallNode *p_call, const FSParser::FunctionNode *p_function);
-	void validate_callable_array_literal_args(const Vector<FSParser::DataType> &p_par_types, int p_default_args_count, bool p_is_vararg, FSParser::ArrayNode *p_array, const StringName &p_function, const Vector<int> &p_extra_allowed_argument_counts = Vector<int>(), int p_trailing_unbound_argument_count = 0);
-	String make_invalid_argument_error(
-			const StringName &p_function,
-			int p_argument_number,
-			const FSParser::DataType &p_expected_type,
-			const FSParser::DataType &p_actual_type,
-			bool p_strict_dynamic_mismatch,
-			bool p_strict_nullable_mismatch,
-			const FSParser::Node *p_actual_node = nullptr) const;
-	void validate_signal_connect_arg(const FSParser::DataType &p_signal_type, const FSParser::CallNode *p_call, int p_callable_arg_index = 0, bool p_require_explicit_signal = true);
-	void validate_signal_emit_args(const FSParser::DataType &p_signal_type, const FSParser::CallNode *p_call, int p_first_emit_arg_index);
-	void validate_local_object_signal_callable_arg(const FSParser::CallNode *p_call, bool p_is_self);
-	void validate_local_object_emit_signal_args(const FSParser::CallNode *p_call, bool p_is_self);
-	void validate_typed_object_signal_api_args(const FSParser::DataType &p_base_type, const FSParser::CallNode *p_call, bool p_is_self);
 	FSParser::DataType get_operation_type(Variant::Operator p_operation, const FSParser::DataType &p_a, const FSParser::DataType &p_b, bool &r_valid, const FSParser::Node *p_source);
 	FSParser::DataType get_operation_type(Variant::Operator p_operation, const FSParser::DataType &p_a, bool &r_valid, const FSParser::Node *p_source);
 	void update_const_expression_builtin_type(FSParser::ExpressionNode *p_expression, const FSParser::DataType &p_type, const char *p_usage, bool p_is_cast = false);
