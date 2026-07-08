@@ -2164,11 +2164,14 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 				!test_rd_support && !test_rd_creation && main_pack.is_empty()) {
 			interactive_editor_launch = true;
 
-			// A resolved explicit path leaves project_path != "."; an explicit path that
-			// failed to apply sets foundry_cli_project_path_error. Either way the user
-			// pinned a project, so a remembered one must not be auto-opened.
-			const bool explicit_requested = project_path != "." || foundry_cli_project_path_error;
-			const bool explicit_valid = project_path != ".";
+			// The user pinned a project when `--project` was given (its value is preserved
+			// on the invocation even for `--project .`, which leaves project_path as "."),
+			// when a legacy/positional path set project_path directly, or when an explicit
+			// `--project` failed to apply. In every such case a remembered project must not
+			// be auto-opened. It is valid (setup() will attempt it) unless it failed to apply.
+			const bool explicit_requested = !cli_parse.invocation.project_path.is_empty() ||
+					project_path != "." || foundry_cli_project_path_error;
+			const bool explicit_valid = !foundry_cli_project_path_error;
 
 			KnownProjectStore known_projects(EditorPaths::get_data_dir_path().path_join("known_projects.cfg"));
 			known_projects.load();
