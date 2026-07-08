@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 5: The member "LIMIT" already exists in outer class Outer.

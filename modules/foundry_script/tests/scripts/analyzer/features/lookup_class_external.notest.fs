@@ -2,7 +2,7 @@ class A:
 	const TARGET: = "wrong"
 
 	class B:
-		const TARGET: = "wrong"
+		const B_TARGET: = "wrong"
 		const WAITING: = "godot"
 
 		class D extends C:

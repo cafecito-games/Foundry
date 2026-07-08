@@ -1,0 +1,6 @@
+FS_TEST_OK
+instance variable allowed
+instance function allowed
+signal allowed
+static variable allowed
+static function allowed
