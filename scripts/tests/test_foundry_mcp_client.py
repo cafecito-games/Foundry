@@ -170,6 +170,47 @@ class FoundryMCPClientTestCase(unittest.TestCase):
                 ],
             )
 
+    def test_foundry_tool_wrappers_forward_expected_arguments(self) -> None:
+        with FakeMCPServer() as server:
+            for index in range(10):
+                server.queue(
+                    200,
+                    {
+                        "jsonrpc": "2.0",
+                        "id": index + 1,
+                        "result": {"structuredContent": {"ok": True, "index": index}, "isError": False},
+                    },
+                )
+            client = FoundryMCPClient(server.endpoint, "secret")
+
+            client.observe_ui(max_depth=2, max_children=3)
+            client.find_elements({"role": "button"}, max_results=5)
+            client.act({"role": "button", "name": "Run"}, "click", args={"button": "left"})
+            client.wait_for("editor_idle", timeout_ms=10, cooperative=False)
+            client.read_editor_state()
+            client.read_editor_log(limit=4)
+            client.run_command("editor/save_scene")
+            client.list_commands(query="save", limit=2)
+            client.poll_events()
+            client.capture_screenshot(padding=8)
+
+            params = [request["payload"]["params"] for request in server.requests]
+            self.assertEqual(params[0]["name"], "observe_ui")
+            self.assertEqual(params[0]["arguments"], {"max_depth": 2, "max_children": 3})
+            self.assertEqual(params[1]["name"], "find_elements")
+            self.assertEqual(params[1]["arguments"]["selector"], {"role": "button"})
+            self.assertEqual(params[1]["arguments"]["max_results"], 5)
+            self.assertEqual(params[2]["arguments"]["action"], "click")
+            self.assertEqual(params[2]["arguments"]["args"], {"button": "left"})
+            self.assertEqual(params[3]["arguments"]["condition"], "editor_idle")
+            self.assertEqual(params[3]["arguments"]["cooperative"], False)
+            self.assertEqual(params[4]["name"], "read_editor_state")
+            self.assertEqual(params[5]["arguments"]["limit"], 4)
+            self.assertEqual(params[6]["arguments"]["command"], "editor/save_scene")
+            self.assertEqual(params[7]["arguments"], {"query": "save", "limit": 2})
+            self.assertEqual(params[8]["name"], "poll_events")
+            self.assertEqual(params[9]["arguments"], {"padding": 8})
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -114,6 +114,50 @@ class FoundryMCPClient:
     def structured_tool(self, name: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
         return self.call_tool(name, arguments).get("structuredContent", {})
 
+    def observe_ui(self, **arguments: Any) -> dict[str, Any]:
+        return self.call_tool("observe_ui", arguments)
+
+    def find_elements(self, selector: dict[str, Any], **arguments: Any) -> dict[str, Any]:
+        arguments["selector"] = selector
+        return self.call_tool("find_elements", arguments)
+
+    def act(
+        self,
+        selector: dict[str, Any],
+        action: str,
+        *,
+        args: dict[str, Any] | None = None,
+        **arguments: Any,
+    ) -> dict[str, Any]:
+        arguments["selector"] = selector
+        arguments["action"] = action
+        if args is not None:
+            arguments["args"] = args
+        return self.call_tool("act", arguments)
+
+    def wait_for(self, condition: str, **arguments: Any) -> dict[str, Any]:
+        arguments["condition"] = condition
+        return self.call_tool("wait_for", arguments)
+
+    def read_editor_state(self, **arguments: Any) -> dict[str, Any]:
+        return self.call_tool("read_editor_state", arguments)
+
+    def read_editor_log(self, **arguments: Any) -> dict[str, Any]:
+        return self.call_tool("read_editor_log", arguments)
+
+    def run_command(self, command: str, **arguments: Any) -> dict[str, Any]:
+        arguments["command"] = command
+        return self.call_tool("run_command", arguments)
+
+    def list_commands(self, **arguments: Any) -> dict[str, Any]:
+        return self.call_tool("list_commands", arguments)
+
+    def poll_events(self, **arguments: Any) -> dict[str, Any]:
+        return self.call_tool("poll_events", arguments)
+
+    def capture_screenshot(self, **arguments: Any) -> dict[str, Any]:
+        return self.call_tool("capture_screenshot", arguments)
+
     def list_resources(self) -> list[dict[str, Any]]:
         return self.request("resources/list").get("resources", [])
 
