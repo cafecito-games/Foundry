@@ -7,7 +7,8 @@
   "risk": "low",
   "rationale": "Jolt Physics: Swapping vertices of triangle if it is scaled inside out",
   "outcome": "conflicted",
-  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+  "reason": "Otherwise, please use 'git cherry-pick --skip'",
+  "final_disposition": "covered-by-5.5.0-bump (jolt patch upstreamed into 5.5.0)"
  },
  {
   "pr": "115327",
@@ -17,7 +18,8 @@
   "risk": "low",
   "rationale": "Jolt Physics: Make MoveKinematic more accurate when rotating a body by a very small angle",
   "outcome": "conflicted",
-  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+  "reason": "Otherwise, please use 'git cherry-pick --skip'",
+  "final_disposition": "covered-by-5.5.0-bump (jolt patch upstreamed into 5.5.0)"
  },
  {
   "pr": "115200",
@@ -67,7 +69,8 @@
   "risk": "low",
   "rationale": "Update re-spirv with more derivative operations.",
   "outcome": "conflicted",
-  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+  "reason": "Otherwise, please use 'git cherry-pick --skip'",
+  "final_disposition": "skip-already-at-4.7 (fork develop already at re-spirv)"
  },
  {
   "pr": "116225",
@@ -77,7 +80,8 @@
   "risk": "low",
   "rationale": "[Metal] Remove glslang memory decorations.",
   "outcome": "conflicted",
-  "reason": "hint: run \"git cherry-pick --abort\"."
+  "reason": "hint: run \"git cherry-pick --abort\".",
+  "final_disposition": "defer-port-later (glslang 4.7 state coupled to absent metal-cpp Metal migration)"
  },
  {
   "pr": "115877",
@@ -87,7 +91,8 @@
   "risk": "low",
   "rationale": "Jolt: Update to 5.5.0",
   "outcome": "conflicted",
-  "reason": "hint: run \"git cherry-pick --abort\"."
+  "reason": "hint: run \"git cherry-pick --abort\".",
+  "final_disposition": "ported via whole-dir bump to 5.5.0 + 1-line wrapper adaptation (see commit)"
  },
  {
   "pr": "116419",
@@ -97,7 +102,8 @@
   "risk": "low",
   "rationale": "Metal: Fix linking to older SDK versions",
   "outcome": "conflicted",
-  "reason": "hint: run \"git cherry-pick --abort\"."
+  "reason": "hint: run \"git cherry-pick --abort\".",
+  "final_disposition": "defer-port-later (metal-cpp absent in fork; 4.7 Metal metal-cpp migration not done)"
  },
  {
   "pr": "117564",
@@ -107,7 +113,8 @@
   "risk": "low",
   "rationale": "libpng: Update to 1.6.55",
   "outcome": "conflicted",
-  "reason": "hint: run \"git cherry-pick --abort\"."
+  "reason": "hint: run \"git cherry-pick --abort\".",
+  "final_disposition": "skip-already-at-4.7 (fork develop already at libpng 1.6.x)"
  },
  {
   "pr": "107312",
@@ -127,7 +134,8 @@
   "risk": "low",
   "rationale": "Jolt Physics: Fix contact callbacks for body with motion quality LinearCast vs a soft body",
   "outcome": "conflicted",
-  "reason": "hint: run \"git cherry-pick --abort\"."
+  "reason": "hint: run \"git cherry-pick --abort\".",
+  "final_disposition": "covered-by-5.5.0-bump (jolt patch upstreamed into 5.5.0)"
  },
  {
   "pr": "118776",
@@ -157,7 +165,8 @@
   "risk": "low",
   "rationale": "Update FreeType to 2.14.3",
   "outcome": "conflicted",
-  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+  "reason": "Otherwise, please use 'git cherry-pick --skip'",
+  "final_disposition": "skip-already-at-4.7 (fork develop already bumped FreeType 2.14.3)"
  },
  {
   "pr": "118952",
@@ -167,7 +176,8 @@
   "risk": "low",
   "rationale": "libpng: Update to 1.6.58",
   "outcome": "conflicted",
-  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+  "reason": "Otherwise, please use 'git cherry-pick --skip'",
+  "final_disposition": "skip-already-at-4.7 (fork develop already at libpng 1.6.58)"
  },
  {
   "pr": "118916",
