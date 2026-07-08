@@ -73,7 +73,7 @@
 		ret.Add(["Only with context", "a friendly context"]);
 		[/csharp]
 		[/codeblocks]
-		[b]Note:[/b] If you override parsing logic for standard script types (FoundryScript, C#, etc.), it would be better to load the [code]path[/code] argument using [method ResourceLoader.load]. This is because built-in scripts are loaded as [Resource] type, not [FileAccess] type. For example:
+		[b]Note:[/b] If you override parsing logic for standard script types (FoundryScript, C#, etc.), load the [code]path[/code] argument using [method ResourceLoader.load] so the script is read as a [Resource], not via [FileAccess]. For example:
 		[codeblocks]
 		[foundry_script]
 		func _parse_file(path):
