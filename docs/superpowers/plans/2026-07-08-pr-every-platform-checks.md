@@ -101,7 +101,7 @@ if __name__ == "__main__":
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `PYTHONPATH=.github/scripts python3 -m unittest .github/scripts/test_pr_platform_check_request.py`
+Run: `PYTHONPATH=.github/scripts python3 -m unittest discover -s .github/scripts -p 'test_pr_platform_check_request.py'`
 
 Expected: FAIL with `ModuleNotFoundError: No module named 'pr_platform_check_request'`.
 
@@ -221,7 +221,7 @@ if __name__ == "__main__":
 
 - [ ] **Step 4: Run the parser/planner tests**
 
-Run: `PYTHONPATH=.github/scripts python3 -m unittest .github/scripts/test_pr_platform_check_request.py`
+Run: `PYTHONPATH=.github/scripts python3 -m unittest discover -s .github/scripts -p 'test_pr_platform_check_request.py'`
 
 Expected: PASS.
 
@@ -304,7 +304,7 @@ class PrPlatformChecksWorkflowTest(unittest.TestCase):
 
 - [ ] **Step 2: Run workflow-shape tests to verify they fail**
 
-Run: `PYTHONPATH=.github/scripts python3 -m unittest .github/scripts/test_pr_platform_checks_workflow.py`
+Run: `PYTHONPATH=.github/scripts python3 -m unittest discover -s .github/scripts -p 'test_pr_platform_checks_workflow.py'`
 
 Expected: FAIL with `FileNotFoundError` for `.github/workflows/pr_platform_checks.yml`.
 
@@ -374,7 +374,7 @@ with:
 
 - [ ] **Step 3: Run the workflow-shape test**
 
-Run: `PYTHONPATH=.github/scripts python3 -m unittest .github/scripts/test_pr_platform_checks_workflow.py`
+Run: `PYTHONPATH=.github/scripts python3 -m unittest discover -s .github/scripts -p 'test_pr_platform_checks_workflow.py'`
 
 Expected: still FAIL because `.github/workflows/pr_platform_checks.yml` does not exist yet, but the
 `test_platform_workflows_accept_checkout_inputs` assertion no longer reports platform workflow input failures.
@@ -561,7 +561,7 @@ Add the completion job:
 
 - [ ] **Step 2: Run the helper and workflow tests**
 
-Run: `PYTHONPATH=.github/scripts python3 -m unittest .github/scripts/test_pr_platform_check_request.py .github/scripts/test_pr_platform_checks_workflow.py`
+Run: `PYTHONPATH=.github/scripts python3 -m unittest discover -s .github/scripts -p 'test_pr_platform*.py'`
 
 Expected: PASS.
 
