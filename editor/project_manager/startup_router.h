@@ -32,6 +32,7 @@
 
 #include "core/error/error_list.h"
 #include "core/string/ustring.h"
+#include "core/templates/list.h"
 
 class KnownProjectStore;
 
@@ -71,6 +72,13 @@ public:
 	// A project directory is openable when it exists and contains a readable
 	// `project.foundry`. Version-compatibility gating is a future refinement.
 	static bool is_openable_project(const String &p_path);
+
+	// True when the engine launch arguments request a runtime scene/script execution: a
+	// positional scene resource path, `--scene`, `-s`/`--script`, `--main-loop`, or
+	// `--run-test-runner`. Mirrors the runtime detection in Main::start() so a legacy
+	// game/script run (which shares the command-less CLI shape of a bare editor launch)
+	// is excluded from projectless editor routing and recents recording.
+	static bool args_request_runtime_launch(const List<String> &p_main_args);
 
 	// Resolves the editor launch route.
 	//

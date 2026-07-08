@@ -51,6 +51,25 @@ bool StartupRouter::is_openable_project(const String &p_path) {
 	return config_file->load(config) == OK;
 }
 
+bool StartupRouter::args_request_runtime_launch(const List<String> &p_main_args) {
+	for (const String &arg : p_main_args) {
+		if (arg == "-s" || arg == "--script" || arg == "--main-loop" ||
+				arg == "--scene" || arg == "--run-test-runner") {
+			return true;
+		}
+		// A positional argument that names a scene/resource file directs a runtime launch.
+		// The extension gate matches Main::start(): a non-scene positional (e.g. an option
+		// value or a project's own custom argument) is not treated as a scene.
+		if (arg.length() && arg[0] != '-') {
+			if (arg.ends_with(".scn") || arg.ends_with(".tscn") || arg.ends_with(".escn") ||
+					arg.ends_with(".res") || arg.ends_with(".tres")) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
 StartupRouter::Decision StartupRouter::resolve_launch(
 		bool p_explicit_project_requested,
 		bool p_explicit_project_valid,

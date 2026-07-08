@@ -108,6 +108,43 @@ TEST_CASE("[StartupRouter][Editor] is_openable_project recognizes project.foundr
 	CHECK_FALSE(StartupRouter::is_openable_project(malformed_dir));
 }
 
+TEST_CASE("[StartupRouter][Editor] runtime launch args are detected") {
+	// Bare / editor-only args are not runtime launches.
+	{
+		List<String> args;
+		CHECK_FALSE(StartupRouter::args_request_runtime_launch(args));
+	}
+	{
+		List<String> args;
+		args.push_back("--verbose");
+		args.push_back("--rendering-driver");
+		args.push_back("vulkan"); // An option value, not a scene positional.
+		CHECK_FALSE(StartupRouter::args_request_runtime_launch(args));
+	}
+
+	// Runtime scene/script/main-loop flags are runtime launches.
+	for (const String &flag : { String("-s"), String("--script"), String("--main-loop"),
+				 String("--scene"), String("--run-test-runner") }) {
+		List<String> args;
+		args.push_back(flag);
+		args.push_back("value");
+		CHECK(StartupRouter::args_request_runtime_launch(args));
+	}
+
+	// A positional scene resource path is a runtime launch.
+	{
+		List<String> args;
+		args.push_back("res://main.tscn");
+		CHECK(StartupRouter::args_request_runtime_launch(args));
+	}
+	// A positional argument that is not a scene resource is not a runtime launch.
+	{
+		List<String> args;
+		args.push_back("customarg");
+		CHECK_FALSE(StartupRouter::args_request_runtime_launch(args));
+	}
+}
+
 TEST_CASE("[StartupRouter][Editor] a malformed remembered project falls back and is marked missing") {
 	const String scratch = make_scratch_dir("malformedremembered");
 	const String cwd = make_empty_dir(scratch, "cwd");

@@ -2152,8 +2152,13 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 	{
 		using Kind = FoundryCLIParser::CLIInvocation::Kind;
 		const Kind kind = cli_parse.invocation.kind;
-		const bool editor_intent_launch = kind == FoundryCLIParser::CLIInvocation::NONE ||
-				kind == FoundryCLIParser::CLIInvocation::EDITOR_OPEN;
+		// A command-less launch (NONE) or `editor open` is an editor launch, UNLESS it
+		// carries legacy runtime scene/script args — `foundry --script X` and friends share
+		// the command-less shape of a bare editor launch but must run as a game/script, not
+		// auto-open a remembered project.
+		const bool editor_intent_launch = (kind == FoundryCLIParser::CLIInvocation::NONE ||
+												   kind == FoundryCLIParser::CLIInvocation::EDITOR_OPEN) &&
+				!StartupRouter::args_request_runtime_launch(main_args);
 		if (editor_intent_launch && !project_manager && !cmdline_tool &&
 				!test_rd_support && !test_rd_creation && main_pack.is_empty()) {
 			interactive_editor_launch = true;
@@ -3246,10 +3251,12 @@ Error Main::setup2(bool p_show_boot_logo) {
 
 		// Record a successful interactive editor open into the global known-project store
 		// (#1135) so the next launch can auto-open it and the projectless recents list
-		// reflects it. Restricted to genuine interactive editor launches: command-line
-		// editor tools (export/import) and background editor-mode services (`lsp serve`)
-		// set `editor` but must not reorder the user's GUI recents/auto-open candidate.
-		if (interactive_editor_launch && found_project && EditorPaths::get_singleton()->are_paths_valid()) {
+		// reflects it. Requires both an eligible editor launch and an actual editor session
+		// (`editor`): command-line editor tools (export/import) and background editor-mode
+		// services (`lsp serve`) must not reorder the user's GUI recents, and a bare launch
+		// that runs the working-directory project as a game (editor == false) must not
+		// either.
+		if (interactive_editor_launch && editor && found_project && EditorPaths::get_singleton()->are_paths_valid()) {
 			KnownProjectStore known_projects;
 			known_projects.load();
 			StartupRouter::record_project_opened(known_projects, ProjectSettings::get_singleton()->get_resource_path());
