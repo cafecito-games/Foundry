@@ -19,6 +19,8 @@ endpoint or launch an editor process themselves, parse the
 
 - Provide a small reusable Python client for Foundry's POST-only HTTP MCP
   transport.
+- Provide a stdio MCP bridge that agents can register as a normal tool server,
+  so they do not need to write Python scripts for each interaction.
 - Support both workflows:
   - connect to an already-running editor automation endpoint;
   - launch `foundry editor open --automation`, discover the endpoint/token, and
@@ -58,6 +60,13 @@ when needed, reads stdout until the `FOUNDRY_AUTOMATION` line appears, creates a
 `FoundryMCPClient`, and terminates the process on context-manager exit. It also
 has a connect-only constructor for existing endpoints.
 
+`FoundryMCPStdioServer` is the agent-facing bridge. It is a small stdlib MCP
+server that runs over stdin/stdout, owns zero or one `FoundryEditorAutomationSession`,
+and exposes stable tools such as `foundry_launch_editor`,
+`foundry_connect`, `foundry_observe_ui`, `foundry_act`, and
+`foundry_call_tool`. The bridge delegates editor work to the HTTP client and
+session helper. It does not reimplement editor automation behavior.
+
 The expected file layout is:
 
 ```text
@@ -65,9 +74,12 @@ scripts/foundry_mcp/
   __init__.py
   client.py
   session.py
+  stdio_server.py
+scripts/foundry_mcp_server.py
 scripts/tests/
   test_foundry_mcp_client.py
   test_foundry_mcp_session.py
+  test_foundry_mcp_stdio_server.py
 AGENTS.md
 docs/editor_automation_mcp_client.md
 ```
@@ -140,6 +152,46 @@ foundry editor open --project <project> --automation --automation-transport=mcp
 When a port or token is provided, it should append `--automation-port <port>` and
 `--automation-token <token>`.
 
+## Stdio MCP Bridge API
+
+The bridge should be launched by MCP clients as a local stdio server:
+
+```sh
+python3 scripts/foundry_mcp_server.py
+```
+
+It should expose these tools:
+
+- `foundry_launch_editor`
+- `foundry_connect`
+- `foundry_disconnect`
+- `foundry_status`
+- `foundry_call_tool`
+- `foundry_observe_ui`
+- `foundry_find_elements`
+- `foundry_act`
+- `foundry_wait_for`
+- `foundry_read_editor_state`
+- `foundry_read_editor_log`
+- `foundry_run_command`
+- `foundry_list_commands`
+- `foundry_poll_events`
+- `foundry_capture_screenshot`
+- `foundry_read_resource`
+
+`foundry_launch_editor` and `foundry_connect` should initialize the editor MCP
+client by default, unless `initialize: false` is passed. The bridge should retain
+the session for later tool calls until `foundry_disconnect` or process exit.
+
+Bridge tool failures, such as calling `foundry_observe_ui` before connecting,
+should return MCP tool results with `isError: true` and structured diagnostics.
+Protocol errors, such as malformed JSON-RPC requests or unknown bridge methods,
+should return JSON-RPC errors.
+
+The bridge should support a common fallback path with `foundry_call_tool`, so
+new editor-side MCP tools can be used before the bridge grows a dedicated
+wrapper.
+
 ## Error Handling
 
 The client should raise a dedicated `FoundryMCPError` for JSON-RPC error
@@ -196,7 +248,8 @@ when the editor is already running.
 `docs/editor_automation_mcp_client.md` should be the longer user-facing guide.
 It should include:
 
-- launch/connect examples;
+- stdio bridge registration examples for Claude Code, Codex, and Cursor;
+- launch/connect examples for direct Python use;
 - observe/select/act/wait examples;
 - guidance that `call_tool()` returns full MCP tool results while
   `structured_tool()` extracts `structuredContent`;
