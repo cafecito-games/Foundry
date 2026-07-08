@@ -516,8 +516,9 @@
   "kind": "bugfix",
   "risk": "low",
   "rationale": "Fixes input action matching for projects saved before device-ID change; single-file compat fix.",
-  "outcome": "ported",
-  "local_sha": "d7c2adb0fb0d713c91f328accf8f67f2a29b4a86"
+  "outcome": "reverted-incompatible",
+  "local_sha": "d7c2adb0fb0d713c91f328accf8f67f2a29b4a86",
+  "reason": "references InputEvent::DEVICE_ID_MOUSE/KEYBOARD constants added by unported PR"
  },
  {
   "pr": "116647",
@@ -606,8 +607,9 @@
   "kind": "bugfix",
   "risk": "low",
   "rationale": "Fix Reinhard/AgX tonemapper in Mobile subpass; one-line fix.",
-  "outcome": "ported",
-  "local_sha": "2afe8f3698c1e9f85f37a208395264668eee0143"
+  "outcome": "reverted-incompatible",
+  "local_sha": "2afe8f3698c1e9f85f37a208395264668eee0143",
+  "reason": "tonemap references output_max_value/max_value HDR-output members absent in base"
  },
  {
   "pr": "116756",
@@ -896,8 +898,9 @@
   "kind": "feature",
   "risk": "low",
   "rationale": "Additive new XR_KHR_generic_controller extension (new files + register_types), self-contained.",
-  "outcome": "ported",
-  "local_sha": "f858efa0ffbf5a5234c2087f5a95cec7aeeed8ca"
+  "outcome": "reverted-incompatible",
+  "local_sha": "f858efa0ffbf5a5234c2087f5a95cec7aeeed8ca",
+  "reason": "new openxr generic-controller ext depends on 4.7 OpenXRExtensionWrapper signature absent in 4.6.3 base; needs manual adaptation"
  },
  {
   "pr": "117039",
@@ -986,8 +989,9 @@
   "kind": "bugfix",
   "risk": "low",
   "rationale": "AnimationPlayer updates length when animation resource changes; small self-contained fix.",
-  "outcome": "ported",
-  "local_sha": "458500fde7aabf0bbfd84a2d73cb3c00840efd81"
+  "outcome": "reverted-incompatible",
+  "local_sha": "458500fde7aabf0bbfd84a2d73cb3c00840efd81",
+  "reason": "references PlaybackData.{is_enabled,animation_name,animation_length} added by an unported refactor"
  },
  {
   "pr": "117401",
@@ -1916,8 +1920,9 @@
   "kind": "bugfix",
   "risk": "low",
   "rationale": "Fix priority sort table in RD graph; small self-contained fix.",
-  "outcome": "ported",
-  "local_sha": "6b76e20515dc62d096fbba3abb2ac403caaf0246"
+  "outcome": "reverted-incompatible",
+  "local_sha": "6b76e20515dc62d096fbba3abb2ac403caaf0246",
+  "reason": "PriorityTable static_assert requires RecordedCommand::Type count matching 4.7; base enum differs (unported command-type changes)"
  },
  {
   "pr": "119185",
@@ -1926,8 +1931,9 @@
   "kind": "bugfix",
   "risk": "low",
   "rationale": "Free LTC RIDs; GLES3 resource-leak fix, self-contained.",
-  "outcome": "ported",
-  "local_sha": "b23cb2c692af07a31816d2daff034f00cb019fae"
+  "outcome": "reverted-incompatible",
+  "local_sha": "b23cb2c692af07a31816d2daff034f00cb019fae",
+  "reason": "frees ltc RIDs for AreaLight feature (LinearlyTransformedCosines) absent in 4.6.3 base"
  },
  {
   "pr": "119168",
