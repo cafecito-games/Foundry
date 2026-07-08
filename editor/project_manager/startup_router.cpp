@@ -30,6 +30,7 @@
 
 #include "startup_router.h"
 
+#include "core/config/project_settings.h"
 #include "core/io/config_file.h"
 #include "core/io/file_access.h"
 
@@ -48,7 +49,29 @@ bool StartupRouter::is_openable_project(const String &p_path) {
 	// ProjectSettings::setup(), and retried on every launch instead of falling back.
 	Ref<ConfigFile> config_file;
 	config_file.instantiate();
-	return config_file->load(config) == OK;
+	if (config_file->load(config) != OK) {
+		return false;
+	}
+
+	// Only a project that opens without the Project Manager's conversion/warning prompt is
+	// eligible for silent auto-open (see the compatibility gate in ProjectManager). A config
+	// version of 0 (unversioned) or below the current one needs conversion, and a newer
+	// version is incompatible; in every such case the project must go through the projectless
+	// shell so the user can choose to convert, not be auto-opened (and possibly retried)
+	// every launch.
+	const int config_version = (int)config_file->get_value("", "config_version", 0);
+	if (config_version != ProjectSettings::CONFIG_VERSION) {
+		return false;
+	}
+
+	// Features not supported by this build (including a version stamp from a different engine
+	// version) also require a warning prompt, so they are not eligible for silent auto-open.
+	const PackedStringArray features = config_file->get_value("application", "config/features", PackedStringArray());
+	if (!ProjectSettings::get_unsupported_features(features).is_empty()) {
+		return false;
+	}
+
+	return true;
 }
 
 bool StartupRouter::args_request_runtime_launch(const List<String> &p_main_args) {

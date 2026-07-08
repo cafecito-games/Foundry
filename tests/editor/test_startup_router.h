@@ -35,6 +35,8 @@
 #include "core/io/file_access.h"
 #include "core/os/os.h"
 
+#include "core/config/project_settings.h"
+
 #include "editor/project_manager/known_project_store.h"
 #include "editor/project_manager/startup_router.h"
 
@@ -55,14 +57,17 @@ static String config_path_in(const String &p_dir) {
 	return p_dir.path_join("known_projects.cfg");
 }
 
-// Writes a minimal `project.foundry` into a fresh subdirectory of p_root and returns
-// that project directory path, so the router's on-disk validation resolves it.
-static String make_project(const String &p_root, const String &p_name) {
+// Writes a minimal, current-version `project.foundry` into a fresh subdirectory of
+// p_root and returns that project directory path, so the router's on-disk validation
+// treats it as openable. p_config_version overrides the stamped config version so tests
+// can exercise the compatibility gate.
+static String make_project(const String &p_root, const String &p_name, int p_config_version = ProjectSettings::CONFIG_VERSION) {
 	const String project_dir = p_root.path_join(p_name);
 	DirAccess::make_dir_recursive_absolute(project_dir);
 
 	Ref<ConfigFile> cf;
 	cf.instantiate();
+	cf->set_value("", "config_version", p_config_version);
 	cf->set_value("application", "config/name", p_name);
 	cf->set_value("application", "config/features", PackedStringArray());
 	REQUIRE(cf->save(project_dir.path_join("project.foundry")) == OK);
@@ -106,6 +111,32 @@ TEST_CASE("[StartupRouter][Editor] is_openable_project recognizes project.foundr
 	// A present but unparseable project.foundry is not openable.
 	const String malformed_dir = make_malformed_project(scratch, "malformed");
 	CHECK_FALSE(StartupRouter::is_openable_project(malformed_dir));
+
+	// A project from an older, newer, or unversioned engine needs a conversion/warning
+	// prompt, so it is not eligible for silent auto-open.
+	CHECK_FALSE(StartupRouter::is_openable_project(make_project(scratch, "older", ProjectSettings::CONFIG_VERSION - 1)));
+	CHECK_FALSE(StartupRouter::is_openable_project(make_project(scratch, "newer", ProjectSettings::CONFIG_VERSION + 1)));
+	CHECK_FALSE(StartupRouter::is_openable_project(make_project(scratch, "unversioned", 0)));
+}
+
+TEST_CASE("[StartupRouter][Editor] an incompatible remembered project falls back and is marked missing") {
+	const String scratch = make_scratch_dir("incompatibleremembered");
+	const String cwd = make_empty_dir(scratch, "cwd");
+	// A parseable project from a newer, incompatible engine version.
+	const String incompatible = make_project(scratch, "fromfuture", ProjectSettings::CONFIG_VERSION + 1);
+
+	KnownProjectStore store(config_path_in(scratch));
+	store.mark_project_opened(incompatible, 100);
+
+	const StartupRouter::Decision decision = StartupRouter::resolve_launch(
+			/*explicit_requested=*/false, /*explicit_valid=*/false, cwd, store);
+
+	CHECK(decision.route == StartupRouter::ROUTE_PROJECTLESS_SHELL);
+	CHECK(decision.store_modified);
+	KnownProjectStore::KnownProject project;
+	REQUIRE(store.get_project(incompatible, project));
+	CHECK(project.missing);
+	CHECK(store.get_project_count() == 1);
 }
 
 TEST_CASE("[StartupRouter][Editor] runtime launch args are detected") {
