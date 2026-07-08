@@ -2192,7 +2192,11 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 			if (decision.route == StartupRouter::ROUTE_OPEN_REMEMBERED && !cli_parse.invocation.automation) {
 				project_path = decision.project_path;
 				editor = true;
-			} else if (decision.route == StartupRouter::ROUTE_PROJECTLESS_SHELL) {
+			} else if (decision.route == StartupRouter::ROUTE_PROJECTLESS_SHELL ||
+					(cli_parse.invocation.automation && decision.route == StartupRouter::ROUTE_OPEN_REMEMBERED)) {
+				// Automation launches without an explicit project must boot the projectless
+				// shell even when a remembered project exists; auto-opening would mutate the
+				// user's recents and load an unrelated project from disposable test cwd.
 				editor = true;
 				projectless_editor_shell = true;
 			}
@@ -2204,7 +2208,7 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 			// so an invalid `--project` can never silently auto-open a remembered project;
 			// the recording gate below additionally refuses to record the ambient cwd
 			// project that Godot's upward search may still load in that error case.
-			if (decision.store_modified) {
+			if (decision.store_modified && !cli_parse.invocation.automation) {
 				known_projects.save();
 			}
 		}

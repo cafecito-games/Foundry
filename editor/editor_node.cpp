@@ -992,6 +992,9 @@ void EditorNode::_notification(int p_what) {
 			DisplayServer::get_singleton()->screen_set_keep_on(EDITOR_GET("interface/editor/keep_screen_on"));
 
 			feature_profile_manager->notify_changed();
+			if (projectless_shell) {
+				_apply_projectless_shell_restrictions();
+			}
 
 			// Save the project after opening to mark it as last modified, except in headless mode.
 			// Also use this opportunity to ensure default settings are applied to new projects created from the command line
@@ -1031,7 +1034,7 @@ void EditorNode::_notification(int p_what) {
 			// Restore the original FPS cap after focusing back on the editor.
 			OS::get_singleton()->set_low_processor_usage_mode_sleep_usec(int(EDITOR_GET("interface/editor/low_processor_mode_sleep_usec")));
 
-			if (_is_project_data_missing()) {
+			if (!projectless_shell && _is_project_data_missing()) {
 				project_data_missing->popup_centered();
 			} else if (!projectless_shell) {
 				EditorFileSystem::get_singleton()->scan_changes();
