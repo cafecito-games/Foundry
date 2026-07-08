@@ -114,7 +114,7 @@ static bool workflow_has_display() {
 	return OS::get_singleton()->has_environment("DISPLAY") && !OS::get_singleton()->get_environment("DISPLAY").is_empty();
 }
 
-static String workflow_run_subprocess(const List<String> &p_arguments, int &r_exit_code) {
+static String workflow_run_subprocess(const List<String> &p_arguments, int &r_exit_code, const String &p_working_directory = String()) {
 	Vector<uint8_t> stdout_bytes;
 	Vector<uint8_t> stderr_bytes;
 
@@ -124,7 +124,7 @@ static String workflow_run_subprocess(const List<String> &p_arguments, int &r_ex
 	}
 
 	Dictionary pipe_info = OS::get_singleton()->execute_with_pipe(
-			OS::get_singleton()->get_executable_path(), p_arguments, false, String(), environment, false);
+			OS::get_singleton()->get_executable_path(), p_arguments, false, p_working_directory, environment, false);
 	if (pipe_info.is_empty()) {
 		r_exit_code = -1;
 		return String();

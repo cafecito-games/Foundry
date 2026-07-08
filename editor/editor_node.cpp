@@ -372,6 +372,10 @@ void EditorNode::disambiguate_filenames(const Vector<String> p_full_paths, Vecto
 }
 
 void EditorNode::_version_control_menu_option(int p_idx) {
+	if (projectless_shell) {
+		return;
+	}
+
 	switch (vcs_actions_menu->get_item_id(p_idx)) {
 		case VCS_METADATA: {
 			VersionControlEditorPlugin::get_singleton()->popup_vcs_metadata_dialog();
@@ -1639,6 +1643,11 @@ void EditorNode::_titlebar_resized() {
 }
 
 void EditorNode::_update_undo_redo_allowed() {
+	if (projectless_shell) {
+		_update_projectless_shell_menu_restrictions();
+		return;
+	}
+
 	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
 	file_menu->set_item_disabled(file_menu->get_item_index(SCENE_UNDO), !undo_redo->has_undo());
 	file_menu->set_item_disabled(file_menu->get_item_index(SCENE_REDO), !undo_redo->has_redo());
@@ -3467,6 +3476,10 @@ static String _get_unsaved_scene_dialog_text(String p_scene_filename, uint64_t p
 }
 
 void EditorNode::_menu_option_confirm(int p_option, bool p_confirmed) {
+	if (_is_menu_option_blocked_in_projectless_shell(p_option)) {
+		return;
+	}
+
 	if (!p_confirmed) { // FIXME: this may be a hack.
 		current_menu_option = (MenuOptions)p_option;
 	}
@@ -4139,6 +4152,10 @@ void EditorNode::_check_system_theme_changed() {
 }
 
 void EditorNode::_tool_menu_option(int p_idx) {
+	if (projectless_shell) {
+		return;
+	}
+
 	switch (tool_menu->get_item_id(p_idx)) {
 		case TOOLS_ORPHAN_RESOURCES: {
 			orphan_resources->show();
@@ -4166,6 +4183,10 @@ void EditorNode::_tool_menu_option(int p_idx) {
 }
 
 void EditorNode::_export_as_menu_option(int p_idx) {
+	if (projectless_shell) {
+		return;
+	}
+
 	if (p_idx == 0) { // MeshLibrary
 		current_menu_option = FILE_EXPORT_MESH_LIBRARY;
 
@@ -4296,6 +4317,11 @@ void EditorNode::_discard_changes(const String &p_str) {
 }
 
 void EditorNode::_update_file_menu_opened() {
+	if (projectless_shell) {
+		_update_projectless_shell_menu_restrictions();
+		return;
+	}
+
 	bool has_unsaved = false;
 	for (int i = 0; i < editor_data.get_edited_scene_count(); i++) {
 		if (_is_scene_unsaved(i)) {
@@ -6820,12 +6846,57 @@ void EditorNode::_begin_first_scan() {
 	requested_first_scan = true;
 }
 
-void EditorNode::_set_popup_menu_items_enabled(PopupMenu *p_menu, bool p_enabled) {
-	if (p_menu == nullptr) {
+bool EditorNode::_is_menu_option_blocked_in_projectless_shell(int p_option) const {
+	if (!projectless_shell) {
+		return false;
+	}
+
+	switch (p_option) {
+		case SCENE_QUIT:
+		case PROJECT_QUIT_TO_PROJECT_MANAGER:
+		case EDITOR_OPEN_SETTINGS:
+		case EDITOR_COMMAND_PALETTE:
+		case EDITOR_TAKE_SCREENSHOT:
+		case EDITOR_TOGGLE_FULLSCREEN:
+		case EDITOR_OPEN_DATA_FOLDER:
+		case EDITOR_OPEN_CONFIG_FOLDER:
+		case EDITOR_MANAGE_FEATURE_PROFILES:
+		case EDITOR_MANAGE_EXPORT_TEMPLATES:
+		case EDITOR_CONFIGURE_FBX_IMPORTER:
+		case LAYOUT_SAVE:
+		case LAYOUT_DELETE:
+		case LAYOUT_DEFAULT:
+		case HELP_SEARCH:
+		case HELP_DOCS:
+		case HELP_FORUM:
+		case HELP_COMMUNITY:
+		case HELP_COPY_SYSTEM_INFO:
+		case HELP_REPORT_A_BUG:
+		case HELP_SUGGEST_A_FEATURE:
+		case HELP_SEND_DOCS_FEEDBACK:
+		case HELP_ABOUT:
+		case SPINNER_UPDATE_CONTINUOUSLY:
+		case SPINNER_UPDATE_WHEN_CHANGED:
+		case SPINNER_UPDATE_SPINNER_HIDE:
+			return false;
+		default:
+			return true;
+	}
+}
+
+void EditorNode::_update_projectless_shell_menu_restrictions() {
+	if (!projectless_shell || file_menu == nullptr || project_menu == nullptr) {
 		return;
 	}
-	for (int i = 0; i < p_menu->get_item_count(); i++) {
-		p_menu->set_item_disabled(i, !p_enabled);
+
+	for (int i = 0; i < file_menu->get_item_count(); i++) {
+		const int id = file_menu->get_item_id(i);
+		file_menu->set_item_disabled(i, id != SCENE_QUIT);
+	}
+
+	for (int i = 0; i < project_menu->get_item_count(); i++) {
+		const int id = project_menu->get_item_id(i);
+		project_menu->set_item_disabled(i, id != PROJECT_QUIT_TO_PROJECT_MANAGER);
 	}
 }
 
@@ -6839,8 +6910,7 @@ void EditorNode::_apply_projectless_shell_restrictions() {
 		editor_dock_manager->set_dock_enabled(FileSystemDock::get_singleton(), false);
 	}
 
-	_set_popup_menu_items_enabled(file_menu, false);
-	_set_popup_menu_items_enabled(project_menu, false);
+	_update_projectless_shell_menu_restrictions();
 
 	if (renderer != nullptr) {
 		renderer->set_disabled(true);

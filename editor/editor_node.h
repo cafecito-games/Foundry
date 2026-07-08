@@ -800,7 +800,8 @@ private:
 
 	void _finish_projectless_shell_startup();
 	void _apply_projectless_shell_restrictions();
-	void _set_popup_menu_items_enabled(PopupMenu *p_menu, bool p_enabled);
+	bool _is_menu_option_blocked_in_projectless_shell(int p_option) const;
+	void _update_projectless_shell_menu_restrictions();
 
 	enum MenuType {
 		MENU_TYPE_NONE,

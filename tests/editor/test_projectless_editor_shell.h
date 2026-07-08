@@ -57,61 +57,7 @@ static String run_projectless_shell_workflow(const String &p_cwd, int &r_exit_co
 	arguments.push_back("open");
 	arguments.push_back("--automation");
 	arguments.push_back("--automation-run-workflow=projectless_shell_smoke");
-
-	Dictionary environment;
-	if (EditorWorkflowTestFixtures::workflow_has_display()) {
-		environment["DISPLAY"] = OS::get_singleton()->get_environment("DISPLAY");
-	}
-
-	Vector<uint8_t> stdout_bytes;
-	Vector<uint8_t> stderr_bytes;
-	Dictionary pipe_info = OS::get_singleton()->execute_with_pipe(
-			OS::get_singleton()->get_executable_path(), arguments, false, p_cwd, environment, false);
-	if (pipe_info.is_empty()) {
-		r_exit_code = -1;
-		return String();
-	}
-
-	Ref<FileAccess> stdout_pipe = pipe_info["stdio"];
-	Ref<FileAccess> stderr_pipe = pipe_info["stderr"];
-	const OS::ProcessID pid = pipe_info["pid"];
-
-	auto pump_pipe = [](const Ref<FileAccess> &p_pipe, Vector<uint8_t> &r_bytes) {
-		if (p_pipe.is_null() || !p_pipe->is_open()) {
-			return;
-		}
-		const uint64_t available = p_pipe->get_length();
-		if (available == 0) {
-			return;
-		}
-		Vector<uint8_t> chunk;
-		chunk.resize(available);
-		const uint64_t read = p_pipe->get_buffer(chunk.ptrw(), available);
-		if (read > 0) {
-			const int offset = r_bytes.size();
-			r_bytes.resize(offset + read);
-			memcpy(r_bytes.ptrw() + offset, chunk.ptr(), read);
-		}
-	};
-
-	const uint64_t deadline = OS::get_singleton()->get_ticks_msec() + 120000;
-	while (OS::get_singleton()->is_process_running(pid)) {
-		pump_pipe(stdout_pipe, stdout_bytes);
-		pump_pipe(stderr_pipe, stderr_bytes);
-		if (OS::get_singleton()->get_ticks_msec() > deadline) {
-			OS::get_singleton()->kill(pid);
-			r_exit_code = -1;
-			return String();
-		}
-		OS::get_singleton()->delay_usec(10000);
-	}
-	pump_pipe(stdout_pipe, stdout_bytes);
-	pump_pipe(stderr_pipe, stderr_bytes);
-
-	r_exit_code = OS::get_singleton()->get_process_exit_code(pid);
-	String output = String::utf8((const char *)stdout_bytes.ptr(), stdout_bytes.size());
-	output += String::utf8((const char *)stderr_bytes.ptr(), stderr_bytes.size());
-	return output;
+	return EditorWorkflowTestFixtures::workflow_run_subprocess(arguments, r_exit_code, p_cwd);
 }
 
 TEST_CASE("[Editor][ProjectlessShell] startup router selects projectless shell for empty cwd") {
