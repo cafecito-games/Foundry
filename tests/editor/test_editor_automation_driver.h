@@ -1962,6 +1962,51 @@ TEST_CASE("[Editor][Automation] clicking a disabled MenuButton is refused") {
 	memdelete(root);
 }
 
+// #1095: a semantic MenuButton click reproduces a real press -- it toggles the
+// menu (opens when hidden, closes when already open) and still fires the inherited
+// pressed signal, rather than only force-opening the popup.
+TEST_CASE("[Editor][Automation] semantic MenuButton click toggles the menu and fires pressed") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	MenuButton *menu_button = memnew(MenuButton);
+	menu_button->set_text("Options");
+	setup_visible_control(menu_button);
+	root->add_child(menu_button);
+
+	PopupMenu *popup = menu_button->get_popup();
+	popup->add_item("Alpha", 1);
+
+	PressTracker press_tracker;
+	menu_button->connect(SceneStringName(pressed), callable_mp(&press_tracker, &PressTracker::on_pressed));
+	MessageQueue::get_singleton()->flush();
+
+	Dictionary target;
+	target["role"] = "button";
+	target["name"] = "Options";
+	Dictionary options;
+	options["route"] = "semantic";
+
+	// The first click opens the menu and fires the inherited pressed signal.
+	const EditorAutomationActionResult open = EditorAutomationDriver::perform(EditorAutomationSnapshot::capture_from_node(root), "click", target, options);
+	MessageQueue::get_singleton()->flush();
+	CHECK(open.ok);
+	CHECK(popup->is_visible());
+	CHECK(press_tracker.pressed);
+	CHECK(open.events.has("pressed"));
+	CHECK(open.events.has("popup_shown"));
+
+	// A second click closes it again, matching MenuButton::pressed()'s toggle.
+	const EditorAutomationActionResult close = EditorAutomationDriver::perform(EditorAutomationSnapshot::capture_from_node(root), "click", target, options);
+	MessageQueue::get_singleton()->flush();
+	CHECK(close.ok);
+	CHECK_FALSE(popup->is_visible());
+	CHECK(close.events.has("popup_hidden"));
+
+	memdelete(root);
+}
+
 // #1095: once a MenuButton's popup is open (visible), the snapshot walks it as a
 // real menu node so its items surface as menu_item elements exactly once -- under
 // the menu, not duplicated as virtual children of the MenuButton.

@@ -347,24 +347,36 @@ EditorAutomationActionResult _action_focus(
 	return EditorAutomationActionResult::failure("unsupported_action", "Focus is only supported on focusable controls and windows.");
 }
 
-// Opening a MenuButton the way a user does. A MenuButton's popup is not shown by
-// the plain "pressed" signal, so a semantic click/activate could never open menus
+// Driving a MenuButton the way a real click does. Emitting the plain "pressed"
+// signal never opens the popup, so a semantic click/activate could not reach menus
 // whose entries are built lazily in about_to_popup (e.g. SceneTreeDock's options
-// button). show_popup() fires both the MenuButton and PopupMenu about_to_popup
-// signals -- populating those entries -- and leaves the menu open so a follow-up
-// observe_ui captures the freshly-built items as normal menu_item elements.
-EditorAutomationActionResult _open_menu_button_popup(
+// button). A real press runs MenuButton::pressed(), which toggles the menu -- it
+// opens the popup when hidden (firing about_to_popup so lazy entries populate, and
+// leaving it open so a follow-up observe_ui captures them as menu_item elements)
+// and closes it when already open -- and still fires the inherited pressed signal.
+// pressed() is protected, so reproduce its toggle here through the public API.
+EditorAutomationActionResult _press_menu_button(
 		const EditorAutomationSnapshot &p_snapshot,
 		const EditorAutomationElement &p_element,
 		MenuButton *p_menu_button,
 		const char *p_route) {
 	if (p_menu_button->is_disabled()) {
-		// A user cannot open a disabled MenuButton, so its menu stays closed.
+		// A user cannot press a disabled MenuButton, so its menu state is unchanged.
 		return EditorAutomationActionResult::failure("element_disabled", "The menu is disabled and cannot be opened.");
 	}
-	p_menu_button->show_popup();
+	PopupMenu *popup = p_menu_button->get_popup();
+	const bool was_open = popup != nullptr && popup->is_visible();
+	if (was_open) {
+		popup->hide();
+	} else {
+		p_menu_button->show_popup();
+	}
+	// The inherited pressed signal fires on a real click regardless of the toggle
+	// direction, so faithful listeners still run.
+	p_menu_button->emit_signal(SceneStringName(pressed));
 	EditorAutomationActionResult result = EditorAutomationActionResult::success(p_route, p_element.id);
-	result.events.push_back("popup_shown");
+	result.events.push_back("pressed");
+	result.events.push_back(was_open ? "popup_hidden" : "popup_shown");
 	result.focus = _focused_element_id(p_snapshot);
 	return result;
 }
@@ -392,7 +404,7 @@ EditorAutomationActionResult _action_click(
 		if (MenuButton *menu_button = Object::cast_to<MenuButton>(node)) {
 			// A MenuButton's job is to open its menu, not to fire a "pressed" command,
 			// so a semantic click opens the popup instead of emitting pressed.
-			return _open_menu_button_popup(p_snapshot, p_element, menu_button, EditorAutomationActionRouteNames::SEMANTIC_CLICK);
+			return _press_menu_button(p_snapshot, p_element, menu_button, EditorAutomationActionRouteNames::SEMANTIC_CLICK);
 		}
 		if (BaseButton *button = Object::cast_to<BaseButton>(node)) {
 			if (_perform_semantic_click(button, events)) {
@@ -850,7 +862,7 @@ EditorAutomationActionResult _action_activate(
 	if (MenuButton *menu_button = Object::cast_to<MenuButton>(node)) {
 		// A MenuButton opens its menu rather than firing a command, so activate opens
 		// the popup just as click does.
-		return _open_menu_button_popup(p_snapshot, p_element, menu_button, EditorAutomationActionRouteNames::SEMANTIC_ACTIVATE);
+		return _press_menu_button(p_snapshot, p_element, menu_button, EditorAutomationActionRouteNames::SEMANTIC_ACTIVATE);
 	}
 
 	if (BaseButton *button = Object::cast_to<BaseButton>(node)) {
