@@ -26,9 +26,12 @@ This dialog is not a replacement Project Manager. It is a project decision surfa
   auto-open, or a project-switch/open command from the editor.
 - The dialog is centered over the normal editor shell in an empty workspace.
 - The dialog header shows the Foundry Engine logo and name.
-- The dialog has two tabs: `Projects` and `About`.
+- The dialog has three tabs: `Projects`, `Manage`, and `About`.
 - `Projects` contains two primary actions: `Create Project` and `Open Existing Project`.
 - `Projects` also contains a compact recent-project list.
+- `Manage` contains lower-frequency project maintenance: scan for projects, filter projects by
+  name/path/tag, edit project tags, duplicate a selected project, remove stale missing entries, and
+  open/reveal selected projects.
 - `About` shows the current Foundry version, copyright text, license information, and links or
   buttons for full credits and third-party notices.
 - Asset Library is explicitly out of scope. It is expected to be removed and should not be carried
@@ -37,25 +40,24 @@ This dialog is not a replacement Project Manager. It is a project decision surfa
 ## Current Project Manager Feature Disposition
 
 The existing Project Manager includes more than startup choice. Those features need explicit
-disposition so they are not accidentally lost or accidentally rebuilt into the startup dialog.
+disposition so they are not accidentally lost or accidentally rebuilt into the primary startup path.
 
 - `Scan`: recursively searches a selected folder for `project.foundry` files and adds discovered
-  projects to the project list. This is useful only for bulk discovery. It should not appear in the
-  startup dialog. If retained, it belongs in a future Project Browser or an editor command such as
-  `Project > Find Projects...`.
+  projects to the known project list. This lives in the `Manage` toolbar as `Scan Folder`.
 - `Tags`: labels projects and filters the full project list. This is useful for users with many
-  projects, but it depends on a full project browser. It should not appear in the startup dialog.
+  projects. Tags are visible on managed project rows, editable in the selected-project detail pane,
+  and included in the `Manage` filter.
 - `Remove Missing`: prunes entries whose project path no longer exists. The new recent list should
-  handle this mostly automatically by marking missing entries inline and offering `Remove from
-  Recents`. A bulk remove command can be deferred.
+  mark missing entries inline and allow single-entry removal. The `Manage` toolbar also exposes a
+  secondary bulk `Remove Missing` action.
 - `Duplicate`: copies an existing project into a new location. This remains useful, but it is a
-  project creation workflow rather than startup choice. If retained, it should be exposed from the
-  editor project menu or from a future Project Browser, not from the startup dialog.
+  selected-project maintenance workflow. It appears in the `Manage` selected-project detail pane and
+  row actions, not on the `Projects` startup landing tab.
 - Existing project rename, run, recovery/verbose open, and similar maintenance actions should also
-  stay out of the startup dialog unless they are required to recover from a failed open.
+  stay out of the startup landing view unless they are required to recover from a failed open.
 
-The first implementation should keep the startup dialog lean and preserve room for a later Project
-Browser if these maintenance workflows remain important.
+The first implementation should keep the `Projects` tab lean and put maintenance behind the
+secondary `Manage` tab so launch remains fast and clear.
 
 ## Startup Flow
 
@@ -100,7 +102,7 @@ The dialog uses a compact centered modal shape:
 Foundry Engine logo + name
 Create or open a project workspace
 
-[ Projects ] [ About ]
+[ Projects ] [ Manage ] [ About ]
 
 Projects tab:
   Start a project
@@ -122,6 +124,41 @@ The recent list is intentionally compact:
 - offer a lightweight way to remove a single stale entry from recents.
 
 The dialog should use the real Foundry logo asset where available, with accessible text fallback.
+
+## Manage Tab
+
+The `Manage` tab incorporates project-list maintenance without making it the default startup view.
+It is available when the dialog is opened from projectless startup or from an explicit project
+switch/open command.
+
+The tab uses a denser management layout:
+
+```text
+[ Filter by name, path, or tag... ] [ Scan Folder ] [ Remove Missing ]
+
+Known projects
+> Moonlight Courier          ~/Games/moonlight       client 2d
+  Foundry RPG Prototype      ~/Work/foundry-rpg      rpg prototype
+  Old Jam Build              ~/Archive/jam-build     missing archive
+
+Selected project
+  Open Project
+  Duplicate...
+  Reveal Folder
+
+  Tags: [client] [2d] [+ Add Tag]
+```
+
+Rules:
+
+- `Projects` remains the startup tab. `Manage` is never selected by default during ordinary startup.
+- `Scan Folder` opens a folder picker and runs the existing async project-discovery behavior.
+- The filter searches project name, path, and tag text.
+- Tags are shown as compact chips and can be added/removed for the selected project.
+- `Duplicate...` copies the selected project through the existing duplicate-project flow.
+- Missing projects show an inline status badge and expose row-level removal.
+- `Remove Missing` is visually secondary and prompts before bulk cleanup.
+- Asset Library does not appear in `Manage`.
 
 ## About Tab
 
@@ -153,12 +190,13 @@ RecentProject {
   display_name_cache
   last_opened_unix_time
   last_known_version
-  favorite_or_pinned flag, only if needed later
+  cached_tags
 }
 ```
 
-The first implementation does not need tags. It should avoid migrating the old tag model into the
-new recents store unless a later Project Browser needs it.
+Tags remain project metadata when they are present in `project.foundry`; the global store may cache
+them for fast projectless display. Tag edits from `Manage` update the project configuration for that
+project and refresh the cache.
 
 When a project opens successfully:
 
@@ -195,6 +233,8 @@ Introduce a small editor-side controller for the startup surface:
 - reads and writes the global recent-project store;
 - validates recent project paths;
 - launches create/open flows;
+- manages the `Manage` tab project list, scan flow, tag edits, duplicate flow, and missing-project
+  cleanup;
 - dispatches to the About tab;
 - exposes automation-friendly semantic names for tests.
 
@@ -234,6 +274,12 @@ Add native and automation coverage for:
 - selecting a recent project opens it and updates global recents;
 - `Create Project` reaches the existing create-project flow;
 - `Open Existing Project` reaches the existing open-folder/project validation flow;
+- `Manage > Scan Folder` discovers projects and adds them to known projects;
+- `Manage` filters projects by name, path, and tag;
+- `Manage` can add and remove tags for a selected project;
+- `Manage > Duplicate...` reaches the existing duplicate-project flow for the selected project;
+- missing projects show inline status, support single-entry removal, and support prompted bulk
+  removal through `Remove Missing`;
 - `About` tab displays version and copyright data;
 - legacy `editor project-manager` behavior routes to the new startup dialog or documented alias;
 - explicit invalid `--project` path does not silently auto-open another project.
@@ -246,10 +292,12 @@ coordinate-driven tests.
 - A normal launch with a valid last project opens that project immediately with no startup dialog.
 - A launch without a valid last project opens the IDE shell in an empty workspace and shows the
   centered startup dialog.
-- The startup dialog contains the Foundry Engine logo, `Projects` and `About` tabs, create/open
-  actions, and a compact recent-project list.
+- The startup dialog contains the Foundry Engine logo, `Projects`, `Manage`, and `About` tabs,
+  create/open actions, and a compact recent-project list.
+- The `Projects` tab is selected by default whenever the dialog appears for startup.
+- The `Manage` tab provides scan, tag filtering/editing, selected-project duplicate, row-level
+  missing-project removal, and prompted bulk missing-project cleanup.
 - The About tab shows version, copyright, license, and credits/third-party notice access.
 - Asset Library is absent.
-- Scan, tags, duplicate, and bulk missing-project maintenance are not present in the startup dialog.
 - Missing recent projects are visible and removable from recents.
 - Existing command-line behavior for explicit project paths remains predictable and test-covered.
