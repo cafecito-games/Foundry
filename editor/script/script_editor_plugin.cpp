@@ -614,11 +614,25 @@ void ScriptEditorPlugin::selected_notify() {
 }
 
 String ScriptEditorPlugin::get_unsaved_status(const String &p_for_scene) const {
+	const PackedStringArray unsaved_scripts = ScriptEditorController::get_singleton()->get_unsaved_scripts();
 	if (!p_for_scene.is_empty()) {
-		return String();
+		const PackedStringArray unsaved_built_in_text =
+				ScriptEditorController::get_singleton()->get_unsaved_built_in_text_resources_for_scene(p_for_scene);
+		if (unsaved_built_in_text.is_empty()) {
+			return String();
+		}
+
+		PackedStringArray message;
+		message.resize(unsaved_built_in_text.size() + 1);
+		message.write[0] = TTR("There are unsaved changes in the following built-in text resource(s):");
+		int i = 1;
+		for (const String &E : unsaved_built_in_text) {
+			message.write[i] = E.trim_suffix("(*)");
+			i++;
+		}
+		return String("\n").join(message);
 	}
 
-	const PackedStringArray unsaved_scripts = ScriptEditorController::get_singleton()->get_unsaved_scripts();
 	if (unsaved_scripts.is_empty()) {
 		return String();
 	}

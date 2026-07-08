@@ -657,6 +657,27 @@ void ScriptEditorView::_mark_built_in_text_resources_as_saved(const String &p_sc
 	}
 }
 
+void ScriptEditorView::_close_built_in_text_resources_from_scene(const String &p_scene_path) {
+	const String scene_prefix = vformat("%s::", p_scene_path);
+	for (int i = tab_container->get_tab_count() - 1; i >= 0; i--) {
+		ScriptEditorBase *se = Object::cast_to<ScriptEditorBase>(tab_container->get_tab_control(i));
+		if (!se) {
+			continue;
+		}
+
+		Ref<Resource> edited_res = se->get_edited_resource();
+		if (!edited_res.is_valid() || !edited_res->is_built_in() || Object::cast_to<Script>(*edited_res)) {
+			continue;
+		}
+
+		if (!edited_res->get_path().begins_with(scene_prefix)) {
+			continue;
+		}
+
+		_close_tab(i, false);
+	}
+}
+
 void ScriptEditorView::_collect_scripts_modified_on_disk(TreeItem *p_root, bool &r_need_ask, bool &r_need_reload, Ref<Resource> p_for_script) {
 	ERR_FAIL_NULL(p_root);
 	bool use_autoreload = EDITOR_GET("text_editor/behavior/files/auto_reload_scripts_on_external_change");
@@ -3271,6 +3292,29 @@ PackedStringArray ScriptEditorView::collect_unsaved_scripts() const {
 		if (se && se->is_unsaved()) {
 			unsaved_list.append(se->get_name());
 		}
+	}
+	return unsaved_list;
+}
+
+PackedStringArray ScriptEditorView::collect_unsaved_built_in_text_resources_for_scene(const String &p_scene_path) const {
+	PackedStringArray unsaved_list;
+	const String scene_prefix = vformat("%s::", p_scene_path);
+	for (int i = 0; i < tab_container->get_tab_count(); i++) {
+		ScriptEditorBase *se = Object::cast_to<ScriptEditorBase>(tab_container->get_tab_control(i));
+		if (!se || !se->is_unsaved()) {
+			continue;
+		}
+
+		Ref<Resource> edited_res = se->get_edited_resource();
+		if (!edited_res.is_valid() || !edited_res->is_built_in() || Object::cast_to<Script>(*edited_res)) {
+			continue;
+		}
+
+		if (!edited_res->get_path().begins_with(scene_prefix)) {
+			continue;
+		}
+
+		unsaved_list.append(se->get_name());
 	}
 	return unsaved_list;
 }

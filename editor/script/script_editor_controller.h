@@ -248,6 +248,7 @@ public:
 	void get_breakpoints(List<String> *p_breakpoints);
 
 	PackedStringArray get_unsaved_scripts() const;
+	PackedStringArray get_unsaved_built_in_text_resources_for_scene(const String &p_scene_path) const;
 	void save_current_script();
 	void save_all_scripts();
 	void update_script_times();

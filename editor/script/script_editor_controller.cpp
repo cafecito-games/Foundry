@@ -252,7 +252,9 @@ void ScriptEditorController::notify_request_help_search(const String &p_text) {
 }
 
 void ScriptEditorController::_on_scene_closed(const String &p_path) {
-	// Embedded scripts are no longer supported; nothing to close per-scene.
+	for (ScriptEditorView *view : views) {
+		view->_close_built_in_text_resources_from_scene(p_path);
+	}
 }
 
 void ScriptEditorController::notify_scene_closed(const String &p_path) {
@@ -602,6 +604,14 @@ PackedStringArray ScriptEditorController::get_unsaved_scripts() const {
 	PackedStringArray unsaved;
 	for (ScriptEditorView *view : views) {
 		unsaved.append_array(view->collect_unsaved_scripts());
+	}
+	return unsaved;
+}
+
+PackedStringArray ScriptEditorController::get_unsaved_built_in_text_resources_for_scene(const String &p_scene_path) const {
+	PackedStringArray unsaved;
+	for (ScriptEditorView *view : views) {
+		unsaved.append_array(view->collect_unsaved_built_in_text_resources_for_scene(p_scene_path));
 	}
 	return unsaved;
 }
