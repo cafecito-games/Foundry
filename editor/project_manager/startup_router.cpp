@@ -30,6 +30,7 @@
 
 #include "startup_router.h"
 
+#include "core/io/config_file.h"
 #include "core/io/file_access.h"
 
 #include "editor/project_manager/known_project_store.h"
@@ -38,7 +39,16 @@ bool StartupRouter::is_openable_project(const String &p_path) {
 	if (p_path.is_empty()) {
 		return false;
 	}
-	return FileAccess::exists(p_path.path_join("project.foundry"));
+	const String config = p_path.path_join("project.foundry");
+	if (!FileAccess::exists(config)) {
+		return false;
+	}
+	// Confirm the project config actually parses. A present but malformed project.foundry
+	// must not be treated as openable, otherwise it would be auto-opened, rejected by
+	// ProjectSettings::setup(), and retried on every launch instead of falling back.
+	Ref<ConfigFile> config_file;
+	config_file.instantiate();
+	return config_file->load(config) == OK;
 }
 
 StartupRouter::Decision StartupRouter::resolve_launch(

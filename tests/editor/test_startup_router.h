@@ -32,6 +32,7 @@
 
 #include "core/io/config_file.h"
 #include "core/io/dir_access.h"
+#include "core/io/file_access.h"
 #include "core/os/os.h"
 
 #include "editor/project_manager/known_project_store.h"
@@ -77,6 +78,21 @@ static String make_empty_dir(const String &p_root, const String &p_name) {
 	return dir;
 }
 
+// A directory whose project.foundry exists but cannot be parsed, standing in for a
+// corrupt/invalid remembered project.
+static String make_malformed_project(const String &p_root, const String &p_name) {
+	const String project_dir = p_root.path_join(p_name);
+	DirAccess::make_dir_recursive_absolute(project_dir);
+
+	Ref<FileAccess> f = FileAccess::open(project_dir.path_join("project.foundry"), FileAccess::WRITE);
+	REQUIRE(f.is_valid());
+	// Unterminated section header: valid file existence, invalid ConfigFile content.
+	f->store_string("[application\nconfig/name=\"broken");
+	f->close();
+
+	return project_dir;
+}
+
 TEST_CASE("[StartupRouter][Editor] is_openable_project recognizes project.foundry") {
 	const String scratch = make_scratch_dir("openable");
 	const String project_dir = make_project(scratch, "game");
@@ -86,6 +102,31 @@ TEST_CASE("[StartupRouter][Editor] is_openable_project recognizes project.foundr
 	CHECK_FALSE(StartupRouter::is_openable_project(empty_dir));
 	CHECK_FALSE(StartupRouter::is_openable_project("/definitely/not/here"));
 	CHECK_FALSE(StartupRouter::is_openable_project(String()));
+
+	// A present but unparseable project.foundry is not openable.
+	const String malformed_dir = make_malformed_project(scratch, "malformed");
+	CHECK_FALSE(StartupRouter::is_openable_project(malformed_dir));
+}
+
+TEST_CASE("[StartupRouter][Editor] a malformed remembered project falls back and is marked missing") {
+	const String scratch = make_scratch_dir("malformedremembered");
+	const String cwd = make_empty_dir(scratch, "cwd");
+	const String malformed = make_malformed_project(scratch, "broken");
+
+	KnownProjectStore store(config_path_in(scratch));
+	store.mark_project_opened(malformed, 100);
+
+	const StartupRouter::Decision decision = StartupRouter::resolve_launch(
+			/*explicit_requested=*/false, /*explicit_valid=*/false, cwd, store);
+
+	// A corrupt remembered project must not auto-open (and retry) every launch: it routes
+	// to the projectless shell and is marked missing.
+	CHECK(decision.route == StartupRouter::ROUTE_PROJECTLESS_SHELL);
+	CHECK(decision.store_modified);
+	KnownProjectStore::KnownProject project;
+	REQUIRE(store.get_project(malformed, project));
+	CHECK(project.missing);
+	CHECK(store.get_project_count() == 1);
 }
 
 TEST_CASE("[StartupRouter][Editor] a valid remembered project auto-opens") {

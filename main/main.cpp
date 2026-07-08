@@ -235,6 +235,11 @@ static OS::ProcessID editor_pid = 0;
 static bool foundry_cli_project_path_error = false;
 #ifdef TOOLS_ENABLED
 static bool found_project = false;
+// Set for a genuine interactive editor launch (bare launch or `editor open`) that is
+// eligible for projectless startup routing (#1135). Gates recording a successful open
+// into the global known-project store so background editor-mode services like
+// `lsp serve` do not rewrite the GUI auto-open candidate/recents.
+static bool interactive_editor_launch = false;
 static bool recovery_mode = false;
 static bool auto_build_solutions = false;
 static String debug_server_uri;
@@ -2151,6 +2156,8 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 				kind == FoundryCLIParser::CLIInvocation::EDITOR_OPEN;
 		if (editor_intent_launch && !project_manager && !cmdline_tool &&
 				!test_rd_support && !test_rd_creation && main_pack.is_empty()) {
+			interactive_editor_launch = true;
+
 			// A resolved explicit path leaves project_path != "."; an explicit path that
 			// failed to apply sets foundry_cli_project_path_error. Either way the user
 			// pinned a project, so a remembered one must not be auto-opened.
@@ -2165,6 +2172,13 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 				project_path = decision.project_path;
 				editor = true;
 			}
+			// The remaining routes (explicit path, cwd project, explicit-invalid, and the
+			// projectless shell) intentionally leave project_path/editor untouched: the
+			// explicit or cwd path is loaded by the setup() call below, and an unresolved
+			// launch fails that setup() and drops to the existing project-manager surface,
+			// which stands in as the projectless-shell placeholder until it lands (#1132).
+			// The router never returns ROUTE_OPEN_REMEMBERED for an explicit-invalid launch,
+			// so an invalid `--project` can never silently auto-open a remembered project.
 			if (decision.store_modified) {
 				known_projects.save();
 			}
@@ -3232,9 +3246,10 @@ Error Main::setup2(bool p_show_boot_logo) {
 
 		// Record a successful interactive editor open into the global known-project store
 		// (#1135) so the next launch can auto-open it and the projectless recents list
-		// reflects it. Excludes command-line editor tools (export/import) which set
-		// `editor` but should not reorder the user's recents.
-		if (editor && found_project && !cmdline_tool && EditorPaths::get_singleton()->are_paths_valid()) {
+		// reflects it. Restricted to genuine interactive editor launches: command-line
+		// editor tools (export/import) and background editor-mode services (`lsp serve`)
+		// set `editor` but must not reorder the user's GUI recents/auto-open candidate.
+		if (interactive_editor_launch && found_project && EditorPaths::get_singleton()->are_paths_valid()) {
 			KnownProjectStore known_projects;
 			known_projects.load();
 			StartupRouter::record_project_opened(known_projects, ProjectSettings::get_singleton()->get_resource_path());
