@@ -206,7 +206,7 @@ static ContainerType _container_type_from_type_info(const Variant &p_type_info, 
 	return type;
 }
 
-static String _get_type_handle_type_name(const FSDataType &p_expected_type, Script *p_base_type) {
+[[maybe_unused]] static String _get_type_handle_type_name(const FSDataType &p_expected_type, Script *p_base_type) {
 	if (!p_expected_type.type_arguments.is_empty()) {
 		return p_expected_type.to_container_type().get_type_name();
 	}
@@ -1424,7 +1424,7 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 					bool was_freed = false;
 					{
 						FSDataType expected_handle_type;
-						Script *script_type = _script_type_from_type_info(*type, &expected_handle_type);
+						[[maybe_unused]] Script *script_type = _script_type_from_type_info(*type, &expected_handle_type);
 						GD_ERR_BREAK(!script_type);
 						result = _type_handle_test_matches(expected_handle_type, *value, was_freed);
 					}
@@ -2148,8 +2148,8 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 
 				GD_ERR_BREAK(!base_type);
 				FoundryScript *fs_base_type = Object::cast_to<FoundryScript>(base_type);
-				const bool is_trait_type = fs_base_type != nullptr && fs_base_type->is_trait_type();
-				const bool is_type_handle = _code_ptr[ip + 4];
+				[[maybe_unused]] const bool is_trait_type = fs_base_type != nullptr && fs_base_type->is_trait_type();
+				[[maybe_unused]] const bool is_type_handle = _code_ptr[ip + 4];
 
 #ifdef DEBUG_ENABLED
 				if (is_type_handle) {

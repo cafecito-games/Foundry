@@ -88,12 +88,12 @@ String GetFormatName(const int32_t &format) {
 //////////////////////////////////////////////////////////////////////////
 // CameraFeedAndroid - Subclass for our camera feed on Android
 
-CameraFeedAndroid::CameraFeedAndroid(ACameraManager *manager, ACameraMetadata *metadata, const char *id,
-		CameraFeed::FeedPosition position, int32_t orientation) :
+CameraFeedAndroid::CameraFeedAndroid(ACameraManager *p_manager, ACameraMetadata *p_metadata, const char *id,
+		CameraFeed::FeedPosition position, int32_t p_orientation) :
 		CameraFeed() {
-	this->manager = manager;
-	this->metadata = metadata;
-	this->orientation = orientation;
+	this->manager = p_manager;
+	this->metadata = p_metadata;
+	this->orientation = p_orientation;
 	_add_formats();
 	camera_id = id;
 	set_position(position);

@@ -91,7 +91,7 @@ TEST_CASE("[Editor][RunTargetReadiness] All prerequisites satisfied reports ever
 
 	REQUIRE_EQ(steps.size(), 6);
 	for (const ReadinessStep &step : steps) {
-		CHECK_EQ(step.status, ReadinessStep::OK);
+		CHECK_EQ(step.status, ReadinessStep::Status::OK);
 		CHECK(step.fix_hint.is_empty());
 	}
 }
@@ -103,20 +103,20 @@ TEST_CASE("[Editor][RunTargetReadiness] First unsatisfied rung blocks, earlier O
 	REQUIRE_EQ(steps.size(), 6);
 
 	// Steps before the blocker are satisfied.
-	CHECK_EQ(steps[0].status, ReadinessStep::OK); // xcode
-	CHECK_EQ(steps[1].status, ReadinessStep::OK); // device
-	CHECK_EQ(steps[2].status, ReadinessStep::OK); // trust
+	CHECK_EQ(steps[0].status, ReadinessStep::Status::OK); // xcode
+	CHECK_EQ(steps[1].status, ReadinessStep::Status::OK); // device
+	CHECK_EQ(steps[2].status, ReadinessStep::Status::OK); // trust
 
 	// The blocking rung is the actionable one, and it carries a fix hint.
 	CHECK_EQ(steps[3].id, StringName(RunTargetReadiness::STEP_DEVELOPER_MODE));
-	CHECK_EQ(steps[3].status, ReadinessStep::ACTION_NEEDED);
+	CHECK_EQ(steps[3].status, ReadinessStep::Status::ACTION_NEEDED);
 	CHECK_FALSE(steps[3].fix_hint.is_empty());
 
 	// Later rungs are upcoming (blocked) regardless of their own probe state,
 	// and never present a fix hint of their own.
-	CHECK_EQ(steps[4].status, ReadinessStep::BLOCKED); // team
+	CHECK_EQ(steps[4].status, ReadinessStep::Status::BLOCKED); // team
 	CHECK(steps[4].fix_hint.is_empty());
-	CHECK_EQ(steps[5].status, ReadinessStep::BLOCKED); // provisioning
+	CHECK_EQ(steps[5].status, ReadinessStep::Status::BLOCKED); // provisioning
 	CHECK(steps[5].fix_hint.is_empty());
 }
 
@@ -125,11 +125,11 @@ TEST_CASE("[Editor][RunTargetReadiness] No-team fixture blocks on the team rung"
 	const Vector<ReadinessStep> steps = RunTargetReadiness::evaluate(result);
 	REQUIRE_EQ(steps.size(), 6);
 
-	CHECK_EQ(steps[3].status, ReadinessStep::OK); // developer_mode satisfied
+	CHECK_EQ(steps[3].status, ReadinessStep::Status::OK); // developer_mode satisfied
 	CHECK_EQ(steps[4].id, StringName(RunTargetReadiness::STEP_TEAM));
-	CHECK_EQ(steps[4].status, ReadinessStep::ACTION_NEEDED);
+	CHECK_EQ(steps[4].status, ReadinessStep::Status::ACTION_NEEDED);
 	CHECK_FALSE(steps[4].fix_hint.is_empty());
-	CHECK_EQ(steps[5].status, ReadinessStep::BLOCKED); // provisioning upcoming
+	CHECK_EQ(steps[5].status, ReadinessStep::Status::BLOCKED); // provisioning upcoming
 }
 
 TEST_CASE("[Editor][RunTargetReadiness] Disconnected device blocks on the device rung") {
@@ -140,10 +140,10 @@ TEST_CASE("[Editor][RunTargetReadiness] Disconnected device blocks on the device
 	const Vector<ReadinessStep> steps = RunTargetReadiness::evaluate(result);
 	REQUIRE_EQ(steps.size(), 6);
 
-	CHECK_EQ(steps[0].status, ReadinessStep::OK); // xcode
+	CHECK_EQ(steps[0].status, ReadinessStep::Status::OK); // xcode
 	CHECK_EQ(steps[1].id, StringName(RunTargetReadiness::STEP_DEVICE));
-	CHECK_EQ(steps[1].status, ReadinessStep::ACTION_NEEDED);
-	CHECK_EQ(steps[2].status, ReadinessStep::BLOCKED); // trust upcoming
+	CHECK_EQ(steps[1].status, ReadinessStep::Status::ACTION_NEEDED);
+	CHECK_EQ(steps[2].status, ReadinessStep::Status::BLOCKED); // trust upcoming
 }
 
 TEST_CASE("[Editor][RunTargetReadiness] Missing Xcode blocks on the first rung") {
@@ -158,9 +158,9 @@ TEST_CASE("[Editor][RunTargetReadiness] Missing Xcode blocks on the first rung")
 	const Vector<ReadinessStep> steps = RunTargetReadiness::evaluate(result);
 	REQUIRE_EQ(steps.size(), 6);
 	CHECK_EQ(steps[0].id, StringName(RunTargetReadiness::STEP_XCODE));
-	CHECK_EQ(steps[0].status, ReadinessStep::ACTION_NEEDED);
+	CHECK_EQ(steps[0].status, ReadinessStep::Status::ACTION_NEEDED);
 	for (int i = 1; i < steps.size(); i++) {
-		CHECK_EQ(steps[i].status, ReadinessStep::BLOCKED);
+		CHECK_EQ(steps[i].status, ReadinessStep::Status::BLOCKED);
 	}
 }
 
@@ -178,7 +178,7 @@ TEST_CASE("[Editor][RunTargetReadiness] Provisioning error maps to the same step
 	const RunTargetReadiness::ProbeResult result = RunTargetReadiness::parse_ios_probe(snapshot);
 	const Vector<ReadinessStep> steps = RunTargetReadiness::evaluate(result);
 	const ReadinessStep cold_step = step_by_id(steps, RunTargetReadiness::STEP_PROVISIONING);
-	CHECK_EQ(cold_step.status, ReadinessStep::ACTION_NEEDED);
+	CHECK_EQ(cold_step.status, ReadinessStep::Status::ACTION_NEEDED);
 
 	// Error-mapping direction: the run path maps the same stderr.
 	const ReadinessStep mapped_step = RunTargetReadiness::map_provisioning_error(stderr_text);
@@ -195,7 +195,7 @@ TEST_CASE("[Editor][RunTargetReadiness] Provisioning error maps to the same step
 TEST_CASE("[Editor][RunTargetReadiness] Provisioning error classification is stable") {
 	const ReadinessStep generic = RunTargetReadiness::map_provisioning_error("error: unknown signing failure");
 	CHECK_EQ(generic.id, StringName(RunTargetReadiness::STEP_PROVISIONING));
-	CHECK_EQ(generic.status, ReadinessStep::ACTION_NEEDED);
+	CHECK_EQ(generic.status, ReadinessStep::Status::ACTION_NEEDED);
 	CHECK_FALSE(generic.detail.is_empty());
 	CHECK_FALSE(generic.fix_hint.is_empty());
 
@@ -270,9 +270,9 @@ TEST_CASE("[Editor][RunTargetReadiness] A missing requested device is reported a
 
 	const Vector<ReadinessStep> steps = RunTargetReadiness::evaluate(result);
 	REQUIRE_EQ(steps.size(), 6);
-	CHECK_EQ(steps[0].status, ReadinessStep::OK); // xcode
+	CHECK_EQ(steps[0].status, ReadinessStep::Status::OK); // xcode
 	CHECK_EQ(steps[1].id, StringName(RunTargetReadiness::STEP_DEVICE));
-	CHECK_EQ(steps[1].status, ReadinessStep::ACTION_NEEDED); // blocks on the missing device
+	CHECK_EQ(steps[1].status, ReadinessStep::Status::ACTION_NEEDED); // blocks on the missing device
 }
 
 } // namespace TestRunTargetReadiness

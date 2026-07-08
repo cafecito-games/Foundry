@@ -60,7 +60,7 @@ struct RunTargetMenuEntry {
 	String label; // Display text (target name, or device name for setup rows).
 	String target_name; // For TARGET: the configured target's name.
 	String device_id; // Resolved/selected device id; "auto" or empty when unbound.
-	ReadinessStep::Status badge = ReadinessStep::OK;
+	ReadinessStep::Status badge = ReadinessStep::Status::OK;
 	// For TARGET rows: whether the target currently has a connected device to
 	// deploy to. A configured target whose device is unplugged is shown but not
 	// runnable (its badge reflects the blocked state).

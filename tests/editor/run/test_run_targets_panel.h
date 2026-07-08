@@ -142,15 +142,15 @@ TEST_CASE("[RunTargetsPanel] First actionable step selection") {
 	Vector<ReadinessStep> steps;
 
 	// All OK -> nothing to act on.
-	steps.push_back(make_step("xcode", ReadinessStep::OK));
-	steps.push_back(make_step("device", ReadinessStep::OK));
+	steps.push_back(make_step("xcode", ReadinessStep::Status::OK));
+	steps.push_back(make_step("device", ReadinessStep::Status::OK));
 	CHECK(RunTargetsPanel::first_actionable_step_index(steps) == -1);
 
 	// The first non-OK rung is the actionable one, regardless of later statuses.
 	steps.clear();
-	steps.push_back(make_step("xcode", ReadinessStep::OK));
-	steps.push_back(make_step("device", ReadinessStep::ACTION_NEEDED));
-	steps.push_back(make_step("trust", ReadinessStep::BLOCKED));
+	steps.push_back(make_step("xcode", ReadinessStep::Status::OK));
+	steps.push_back(make_step("device", ReadinessStep::Status::ACTION_NEEDED));
+	steps.push_back(make_step("trust", ReadinessStep::Status::BLOCKED));
 	CHECK(RunTargetsPanel::first_actionable_step_index(steps) == 1);
 
 	// An empty ladder has no actionable step.

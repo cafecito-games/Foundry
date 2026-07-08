@@ -67,14 +67,14 @@ public:
 		xcode.id = "xcode";
 		xcode.title = "Xcode toolchain";
 		xcode.detail = "Xcode command-line tools are installed.";
-		xcode.status = ReadinessStep::OK;
+		xcode.status = ReadinessStep::Status::OK;
 		steps.push_back(xcode);
 
 		ReadinessStep developer_mode;
 		developer_mode.id = "developer_mode";
 		developer_mode.title = "Developer Mode";
 		developer_mode.detail = "Developer Mode is disabled on the device.";
-		developer_mode.status = ReadinessStep::ACTION_NEEDED;
+		developer_mode.status = ReadinessStep::Status::ACTION_NEEDED;
 		developer_mode.fix_hint = "Settings > Privacy & Security > Developer Mode > On, then reboot.";
 		steps.push_back(developer_mode);
 
@@ -87,13 +87,13 @@ public:
 		RunTargetDevice phone;
 		phone.id = "00008110-000000000000000E";
 		phone.name = "My iPhone";
-		phone.badge = ReadinessStep::OK;
+		phone.badge = ReadinessStep::Status::OK;
 		devices.push_back(phone);
 
 		RunTargetDevice pad;
 		pad.id = "00008120-000000000000000F";
 		pad.name = "My iPad";
-		pad.badge = ReadinessStep::ACTION_NEEDED;
+		pad.badge = ReadinessStep::Status::ACTION_NEEDED;
 		devices.push_back(pad);
 
 		return devices;
@@ -225,10 +225,10 @@ TEST_CASE("[Editor][RunTarget] Fake adapter enumerates canned devices") {
 
 	CHECK_EQ(devices[0].id, "00008110-000000000000000E");
 	CHECK_EQ(devices[0].name, "My iPhone");
-	CHECK_EQ(devices[0].badge, ReadinessStep::OK);
+	CHECK_EQ(devices[0].badge, ReadinessStep::Status::OK);
 
 	CHECK_EQ(devices[1].name, "My iPad");
-	CHECK_EQ(devices[1].badge, ReadinessStep::ACTION_NEEDED);
+	CHECK_EQ(devices[1].badge, ReadinessStep::Status::ACTION_NEEDED);
 }
 
 TEST_CASE("[Editor][RunTarget] Fake adapter probes an ordered readiness ladder") {
@@ -240,11 +240,11 @@ TEST_CASE("[Editor][RunTarget] Fake adapter probes an ordered readiness ladder")
 
 	// Earlier satisfied step is OK; the first non-OK step carries the fix hint.
 	CHECK_EQ(steps[0].id, StringName("xcode"));
-	CHECK_EQ(steps[0].status, ReadinessStep::OK);
+	CHECK_EQ(steps[0].status, ReadinessStep::Status::OK);
 	CHECK(steps[0].fix_hint.is_empty());
 
 	CHECK_EQ(steps[1].id, StringName("developer_mode"));
-	CHECK_EQ(steps[1].status, ReadinessStep::ACTION_NEEDED);
+	CHECK_EQ(steps[1].status, ReadinessStep::Status::ACTION_NEEDED);
 	CHECK_FALSE(steps[1].fix_hint.is_empty());
 }
 
@@ -266,14 +266,14 @@ TEST_CASE("[Editor][RunTarget] ReadinessStep equality compares every field") {
 	base.id = "team";
 	base.title = "Apple ID / team";
 	base.detail = "No signing team selected.";
-	base.status = ReadinessStep::ACTION_NEEDED;
+	base.status = ReadinessStep::Status::ACTION_NEEDED;
 	base.fix_hint = "Sign in with your Apple ID in Xcode, then pick your team here.";
 
 	ReadinessStep same = base;
 	CHECK_EQ(base, same);
 
 	ReadinessStep different_status = base;
-	different_status.status = ReadinessStep::BLOCKED;
+	different_status.status = ReadinessStep::Status::BLOCKED;
 	CHECK_NE(base, different_status);
 
 	ReadinessStep different_hint = base;
