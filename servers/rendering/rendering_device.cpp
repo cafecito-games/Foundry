@@ -7852,10 +7852,16 @@ void RenderingDevice::_free_pending_resources(int p_frame) {
 	while (frames[p_frame].acceleration_structures_to_dispose_of.front()) {
 		AccelerationStructure &acceleration_structure = frames[p_frame].acceleration_structures_to_dispose_of.front()->get();
 
-		if (acceleration_structure.scratch_buffer != RID()) {
-			free_rid(acceleration_structure.scratch_buffer);
-		}
 		driver->acceleration_structure_free(acceleration_structure.driver_id);
+
+		if (acceleration_structure.scratch_buffer) {
+			size_t scratch_size = driver->buffer_get_allocation_size(acceleration_structure.scratch_buffer);
+			_THREAD_SAFE_LOCK_
+			buffer_memory -= scratch_size;
+			_THREAD_SAFE_UNLOCK_
+
+			driver->buffer_free(acceleration_structure.scratch_buffer);
+		}
 
 		if (!acceleration_structure.instance_buffers.is_empty()) {
 			uint32_t instance_buffer_size = driver->api_trait_get(RDD::API_TRAIT_ACCELERATION_STRUCTURE_INSTANCE_SIZE) * acceleration_structure.max_instance_count;

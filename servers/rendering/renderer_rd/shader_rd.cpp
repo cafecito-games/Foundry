@@ -201,9 +201,9 @@ void ShaderRD::setup_raytracing(const char *p_raygen_code, const char *p_any_hit
 
 	StringBuilder tohash;
 	tohash.append("[GodotVersionNumber]");
-	tohash.append(GODOT_VERSION_NUMBER);
+	tohash.append(FOUNDRY_VERSION_NUMBER);
 	tohash.append("[GodotVersionHash]");
-	tohash.append(GODOT_VERSION_HASH);
+	tohash.append(FOUNDRY_VERSION_HASH);
 	tohash.append("[Raygen]");
 	tohash.append(p_raygen_code ? p_raygen_code : "");
 	tohash.append("[AnyHit]");
