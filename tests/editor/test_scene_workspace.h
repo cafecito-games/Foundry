@@ -54,6 +54,7 @@
 #include "editor/script/script_editor_controller.h"
 #include "editor/themes/editor_scale.h"
 #include "editor/workspace/scene_tab.h"
+#include "editor/workspace/script_resource_tab.h"
 #include "editor/workspace/workspace_pane.h"
 #include "editor/workspace/workspace_tab_bar.h"
 #include "editor/workspace/workspace_tab_registry.h"
@@ -80,6 +81,37 @@ static WorkspacePane *get_leaf_pane(WorkspaceLeafNode *p_leaf) {
 static ScriptLeaf *get_leaf_script(WorkspaceLeafNode *p_leaf) {
 	WorkspacePane *pane = get_leaf_pane(p_leaf);
 	return pane ? pane->get_script_leaf() : nullptr;
+}
+
+static int count_workspace_tabs_of_type(EditorSceneWorkspace *p_workspace, const StringName &p_type) {
+	if (!p_workspace) {
+		return 0;
+	}
+	int count = 0;
+	for (WorkspaceLeafNode *leaf : p_workspace->get_leaves()) {
+		WorkspacePane *pane = get_leaf_pane(leaf);
+		if (!pane) {
+			continue;
+		}
+		for (int i = 0; i < pane->get_tab_count(); i++) {
+			if (pane->get_tab(i).get_type_id() == p_type) {
+				count++;
+			}
+		}
+	}
+	return count;
+}
+
+static String write_temp_workspace_text_file(const String &p_name, const String &p_source) {
+	const String dir = OS::get_singleton()->get_cache_path().path_join("scene_workspace_scripts");
+	Ref<DirAccess> da = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+	ERR_FAIL_COND_V(da.is_null(), String());
+	da->make_dir_recursive(dir);
+	const String path = dir.path_join(p_name);
+	Ref<FileAccess> file = FileAccess::open(path, FileAccess::WRITE);
+	ERR_FAIL_COND_V(file.is_null(), String());
+	file->store_string(p_source);
+	return path;
 }
 
 class RecordingTabType : public WorkspaceTabType {
@@ -1656,6 +1688,8 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] tile-dock-region") {
 }
 
 TEST_CASE("[SceneWorkspace][SceneTree][Editor] script-leaf-open") {
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+
 	WorkspaceHarness h;
 	h.mount();
 	h.pump();
@@ -1666,10 +1700,15 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] script-leaf-open") {
 	WorkspaceLeafNode *scene_leaf = h.workspace->get_focused_leaf();
 	REQUIRE(scene_leaf != nullptr);
 	CHECK(h.workspace->get_leaf_count() == 1);
-	CHECK(h.workspace->get_script_leaves().is_empty());
+	CHECK(count_workspace_tabs_of_type(h.workspace, StringName("script")) == 0);
 
-	// Opening a script from the scene tile creates a script leaf beside it.
-	WorkspaceLeafNode *script_leaf_node = h.workspace->open_script_leaf(scene_leaf, "res://player.fs");
+	const String player_path = write_temp_workspace_text_file("script_leaf_player.txt", "func run(): pass\n");
+	const String enemy_path = write_temp_workspace_text_file("script_leaf_enemy.txt", "func chase(): pass\n");
+	REQUIRE_FALSE(player_path.is_empty());
+	REQUIRE_FALSE(enemy_path.is_empty());
+
+	// Opening a script from the scene tile creates a script workspace tab beside it.
+	WorkspaceLeafNode *script_leaf_node = h.workspace->open_script_leaf(scene_leaf, player_path);
 	h.pump();
 	REQUIRE(script_leaf_node != nullptr);
 	CHECK(script_leaf_node != scene_leaf);
@@ -1677,24 +1716,24 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] script-leaf-open") {
 	REQUIRE(script_leaf_node->get_leaf_content() != nullptr);
 	CHECK(script_leaf_node->get_leaf_content()->get_content_type() == StringName("pane"));
 	CHECK(get_leaf_pane(script_leaf_node)->is_script_pane());
+	REQUIRE(get_leaf_pane(script_leaf_node)->get_tab_count() == 1);
+	CHECK(get_leaf_pane(script_leaf_node)->get_tab(0).get_type_id() == StringName("script"));
+	CHECK(get_leaf_pane(script_leaf_node)->get_tab(0).get_resource_key() == player_path);
 	CHECK(script_leaf_node->get_leaf_content()->get_scene_context() == nullptr);
 	CHECK(h.workspace->get_script_leaf() == script_leaf_node);
+	CHECK(count_workspace_tabs_of_type(h.workspace, StringName("script")) == 1);
 
-	ScriptLeaf *script_leaf = get_leaf_script(script_leaf_node);
-	REQUIRE(script_leaf != nullptr);
-	CHECK(script_leaf->get_script_path() == "res://player.fs");
-	CHECK(script_leaf->get_tab_title() == "player.fs");
-	REQUIRE(script_leaf->get_script_editor_view() != nullptr);
-
-	// U15c: opening a different script in a new leaf creates a second script leaf.
-	WorkspaceLeafNode *second = h.workspace->open_script_leaf(scene_leaf, "res://enemy.fs", true);
+	// Opening a different script in a forced new leaf creates a second script tab host.
+	WorkspaceLeafNode *second = h.workspace->open_script_leaf(scene_leaf, enemy_path, true);
 	h.pump();
 	CHECK(second != script_leaf_node);
 	CHECK(h.workspace->get_leaf_count() == 3);
 	CHECK(h.workspace->get_script_leaves().size() == 2);
-	ScriptLeaf *enemy_leaf = get_leaf_script(second);
-	REQUIRE(enemy_leaf != nullptr);
-	CHECK(enemy_leaf->get_script_path() == "res://enemy.fs");
+	REQUIRE(get_leaf_pane(second) != nullptr);
+	REQUIRE(get_leaf_pane(second)->get_tab_count() == 1);
+	CHECK(get_leaf_pane(second)->get_tab(0).get_type_id() == StringName("script"));
+	CHECK(get_leaf_pane(second)->get_tab(0).get_resource_key() == enemy_path);
+	CHECK(count_workspace_tabs_of_type(h.workspace, StringName("script")) == 2);
 
 	// Each script leaf round-trips through persistence with its own tabs.
 	Ref<ConfigFile> config;
@@ -1719,9 +1758,135 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] script-leaf-open") {
 	CHECK(h2.workspace->get_script_leaves().size() == 2);
 	WorkspaceLeafNode *restored_enemy = h2.workspace->get_leaf_by_id(enemy_leaf_id);
 	REQUIRE(restored_enemy != nullptr);
-	ScriptLeaf *restored_enemy_leaf = get_leaf_script(restored_enemy);
-	REQUIRE(restored_enemy_leaf != nullptr);
-	CHECK(restored_enemy_leaf->get_script_path() == "res://enemy.fs");
+	WorkspacePane *restored_enemy_pane = get_leaf_pane(restored_enemy);
+	REQUIRE(restored_enemy_pane != nullptr);
+	REQUIRE(restored_enemy_pane->get_tab_count() == 1);
+	CHECK(restored_enemy_pane->get_tab(0).get_type_id() == StringName("script"));
+	CHECK(restored_enemy_pane->get_tab(0).get_resource_key() == enemy_path);
+
+	h2.unmount();
+	memdelete(controller2);
+}
+
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] open-script-creates-workspace-tab") {
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	ScriptEditorController *controller = memnew(ScriptEditorController);
+	controller->init_global_services(h.host);
+
+	WorkspaceLeafNode *scene_leaf = h.workspace->get_focused_leaf();
+	REQUIRE(scene_leaf != nullptr);
+	CHECK(count_workspace_tabs_of_type(h.workspace, StringName("script")) == 0);
+
+	const String script_path = write_temp_workspace_text_file("workspace_open_script.txt", "func run(): pass\n");
+	REQUIRE_FALSE(script_path.is_empty());
+
+	WorkspaceLeafNode *script_host = h.workspace->open_script_leaf(scene_leaf, script_path);
+	h.pump();
+	REQUIRE(script_host != nullptr);
+
+	WorkspacePane *pane = get_leaf_pane(script_host);
+	REQUIRE(pane != nullptr);
+	CHECK(pane->get_tab_count() == 1);
+	if (pane->get_tab_count() == 1) {
+		CHECK(pane->get_active_tab_index() == 0);
+		CHECK(pane->get_tab(0).get_type_id() == StringName("script"));
+		CHECK(pane->get_tab(0).get_resource_key() == script_path);
+	}
+	CHECK(count_workspace_tabs_of_type(h.workspace, StringName("script")) == 1);
+
+	h.unmount();
+	memdelete(controller);
+}
+
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] reopening-script-tab-refreshes-associated-scene") {
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	ScriptEditorController *controller = memnew(ScriptEditorController);
+	controller->init_global_services(h.host);
+
+	WorkspaceLeafNode *scene_a = h.workspace->get_focused_leaf();
+	REQUIRE(scene_a != nullptr);
+	WorkspaceLeafNode *scene_b = h.workspace->split(scene_a, false, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
+	h.pump();
+	REQUIRE(scene_b != nullptr);
+
+	Node2D *root_a = memnew(Node2D);
+	root_a->set_scene_file_path("res://scene_a.tscn");
+	const int scene_idx_a = add_test_scene(h.editor_data, scene_a->get_leaf_id(), root_a);
+	h.editor_data.set_scene_path(scene_idx_a, "res://scene_a.tscn");
+	Node2D *root_b = memnew(Node2D);
+	root_b->set_scene_file_path("res://scene_b.tscn");
+	const int scene_idx_b = add_test_scene(h.editor_data, scene_b->get_leaf_id(), root_b);
+	h.editor_data.set_scene_path(scene_idx_b, "res://scene_b.tscn");
+
+	const String script_path = write_temp_workspace_text_file("workspace_association.txt", "script association\n");
+	REQUIRE_FALSE(script_path.is_empty());
+
+	WorkspaceLeafNode *script_host = h.workspace->open_script_leaf(scene_a, script_path);
+	h.pump();
+	REQUIRE(script_host != nullptr);
+	WorkspacePane *script_pane = get_leaf_pane(script_host);
+	REQUIRE(script_pane != nullptr);
+	REQUIRE(script_pane->get_tab_count() == 1);
+	REQUIRE(script_pane->get_tab(0).get_type_id() == StringName("script"));
+	ScriptResourceTabType *script_type = static_cast<ScriptResourceTabType *>(WorkspacePane::get_shared_tab_registry().find_type(StringName("script")));
+	REQUIRE(script_type != nullptr);
+	ScriptLeaf *script_leaf = script_type->get_mounted_script_leaf(script_pane->get_tab(0).get_stable_id());
+	REQUIRE(script_leaf != nullptr);
+	CHECK(script_leaf->get_associated_scene_root() == root_a);
+
+	WorkspaceLeafNode *reused_host = h.workspace->open_script_leaf(scene_b, script_path);
+	h.pump();
+	CHECK(reused_host == script_host);
+	CHECK(count_workspace_tabs_of_type(h.workspace, StringName("script")) == 1);
+	CHECK(script_type->get_mounted_script_leaf(script_pane->get_tab(0).get_stable_id()) == script_leaf);
+	CHECK(script_leaf->get_associated_scene_root() == root_b);
+
+	Ref<ConfigFile> config;
+	config.instantiate();
+	EditorSceneWorkspace::save_to_config(config, h.workspace);
+	const int scene_b_id = scene_b->get_leaf_id();
+	const int script_host_id = script_host->get_leaf_id();
+
+	h.unmount();
+	memdelete(controller);
+
+	WorkspaceHarness h2;
+	h2.mount();
+	h2.pump();
+
+	ScriptEditorController *controller2 = memnew(ScriptEditorController);
+	controller2->init_global_services(h2.host);
+	h2.workspace->restore_from_config(config);
+	h2.pump();
+
+	WorkspaceLeafNode *restored_scene_b = h2.workspace->get_leaf_by_id(scene_b_id);
+	REQUIRE(restored_scene_b != nullptr);
+	Node2D *restored_root_b = memnew(Node2D);
+	restored_root_b->set_scene_file_path("res://scene_b.tscn");
+	const int restored_scene_idx_b = add_test_scene(h2.editor_data, scene_b_id, restored_root_b);
+	h2.editor_data.set_scene_path(restored_scene_idx_b, "res://scene_b.tscn");
+	h2.workspace->resolve_script_leaf_associated_scenes(h2.editor_data);
+
+	WorkspaceLeafNode *restored_script_host = h2.workspace->get_leaf_by_id(script_host_id);
+	REQUIRE(restored_script_host != nullptr);
+	WorkspacePane *restored_script_pane = get_leaf_pane(restored_script_host);
+	REQUIRE(restored_script_pane != nullptr);
+	REQUIRE(restored_script_pane->get_tab_count() == 1);
+	REQUIRE(restored_script_pane->get_tab(0).get_type_id() == StringName("script"));
+	ScriptLeaf *restored_script_leaf = script_type->get_mounted_script_leaf(restored_script_pane->get_tab(0).get_stable_id());
+	REQUIRE(restored_script_leaf != nullptr);
+	CHECK(restored_script_leaf->get_associated_scene_path() == "res://scene_b.tscn");
+	CHECK(restored_script_leaf->get_associated_scene_root() == restored_root_b);
 
 	h2.unmount();
 	memdelete(controller2);
@@ -2043,18 +2208,6 @@ static WorkspaceTab add_script_tab(WorkspacePane *p_pane, const String &p_path) 
 	WorkspaceTab tab = script_type->make_tab(p_path, registry.allocate_stable_id());
 	p_pane->add_tab(tab);
 	return tab;
-}
-
-static String write_temp_workspace_text_file(const String &p_name, const String &p_source) {
-	const String dir = OS::get_singleton()->get_cache_path().path_join("scene_workspace_scripts");
-	Ref<DirAccess> da = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
-	ERR_FAIL_COND_V(da.is_null(), String());
-	da->make_dir_recursive(dir);
-	const String path = dir.path_join(p_name);
-	Ref<FileAccess> file = FileAccess::open(path, FileAccess::WRITE);
-	ERR_FAIL_COND_V(file.is_null(), String());
-	file->store_string(p_source);
-	return path;
 }
 
 TEST_CASE("[SceneWorkspace][SceneTree][Editor] empty-script-tab-pane-collapses-after-center-drop") {
@@ -2497,8 +2650,10 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] script-tab-mount-hides-legacy-bri
 	add_script_tab(pane, "res://enemy.fs");
 	h.pump();
 
-	REQUIRE(pane->get_tab_count() == 1);
+	REQUIRE(pane->get_tab_count() == 2);
 	REQUIRE(pane->get_active_tab_index() == 0);
+	CHECK(pane->get_tab(0).get_resource_key() == "res://player.fs");
+	CHECK(pane->get_tab(1).get_resource_key() == "res://enemy.fs");
 	CHECK(legacy_bridge->is_visible() == false);
 
 	h.unmount();

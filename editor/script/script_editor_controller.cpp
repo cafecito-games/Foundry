@@ -448,11 +448,41 @@ ScriptEditorBase *ScriptEditorController::find_open_editor_for_path(const String
 }
 
 bool ScriptEditorController::edit(const Ref<Resource> &p_resource, int p_line, int p_col, bool p_grab_focus) {
-	if (p_resource.is_valid() && !p_resource->get_path().is_empty()) {
+	const String resource_path = p_resource.is_valid() ? p_resource->get_path() : String();
+	const String workspace_resource_key = resource_path.is_empty() ? String() : ProjectSettings::get_singleton()->localize_path(resource_path);
+	const Ref<Script> script = p_resource;
+	const bool use_external_editor = script.is_valid() &&
+			(is_external_editor_active() || script->get_language()->overrides_external_editor()) &&
+			!script->is_built_in();
+
+	if (!resource_path.is_empty()) {
 		for (ScriptEditorView *view : views) {
-			if (view->get_open_editor_for_path(p_resource->get_path())) {
+			if (view->get_open_editor_for_path(resource_path) || (!workspace_resource_key.is_empty() && view->get_open_editor_for_path(workspace_resource_key))) {
 				set_focused_view(view);
 				return view->edit(p_resource, p_line, p_col, p_grab_focus);
+			}
+		}
+	}
+
+	if (script.is_valid() && !script->is_built_in() && !use_external_editor && p_grab_focus && !workspace_resource_key.is_empty() && EditorNode::get_singleton()) {
+		if (EditorSceneWorkspace *workspace = EditorNode::get_scene_workspace()) {
+			WorkspaceLeafNode *source = workspace->get_focused_leaf();
+			if (!source) {
+				for (WorkspaceLeafNode *leaf : workspace->get_leaves()) {
+					source = leaf;
+					break;
+				}
+			}
+			if (source) {
+				if (WorkspaceLeafNode *leaf = workspace->open_script_leaf(source, workspace_resource_key)) {
+					if (p_grab_focus) {
+						workspace->request_leaf_focus(leaf->get_leaf_id());
+					}
+					if (ScriptEditorView *view = find_view_for_script_path(workspace_resource_key)) {
+						set_focused_view(view);
+						return view->edit(p_resource, p_line, p_col, p_grab_focus);
+					}
+				}
 			}
 		}
 	}

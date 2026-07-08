@@ -42,6 +42,7 @@
 #include "editor/themes/editor_scale.h"
 #include "editor/workspace/help_tab.h"
 #include "editor/workspace/scene_tab.h"
+#include "editor/workspace/script_resource_tab.h"
 #include "editor/workspace/workspace_pane.h"
 #include "editor/workspace/workspace_tab_registry.h"
 #include "scene/gui/split_container.h"
@@ -640,18 +641,29 @@ WorkspaceLeafNode *EditorSceneWorkspace::find_script_leaf_for_path(const String 
 }
 
 void EditorSceneWorkspace::resolve_script_leaf_associated_scenes(EditorData &p_editor_data) {
-	for (WorkspaceLeafNode *script_leaf_node : get_script_leaves()) {
-		WorkspacePane *pane = script_leaf_node->get_workspace_pane();
-		ScriptLeaf *script_leaf = pane ? pane->get_script_leaf() : nullptr;
-		if (!script_leaf || script_leaf->get_associated_scene_root() || script_leaf->get_associated_scene_path().is_empty()) {
+	auto resolve_script_leaf = [&](ScriptLeaf *p_script_leaf) {
+		if (!p_script_leaf) {
+			return;
+		}
+		p_script_leaf->resolve_associated_scene(p_editor_data);
+	};
+
+	ScriptResourceTabType *script_type = static_cast<ScriptResourceTabType *>(WorkspacePane::get_shared_tab_registry().find_type(StringName("script")));
+
+	for (WorkspaceLeafNode *leaf : leaves) {
+		WorkspacePane *pane = leaf->get_workspace_pane();
+		if (!pane) {
 			continue;
 		}
 
-		const String scene_path = script_leaf->get_associated_scene_path();
-		for (int i = 0; i < p_editor_data.get_edited_scene_count(); i++) {
-			if (p_editor_data.get_scene_path(i) == scene_path) {
-				script_leaf->set_associated_scene_root(p_editor_data.get_edited_scene_root(i));
-				break;
+		resolve_script_leaf(pane->get_script_leaf());
+		if (!script_type) {
+			continue;
+		}
+		for (int i = 0; i < pane->get_tab_count(); i++) {
+			const WorkspaceTab &tab = pane->get_tab(i);
+			if (tab.get_type_id() == StringName("script")) {
+				resolve_script_leaf(script_type->get_mounted_script_leaf(tab.get_stable_id()));
 			}
 		}
 	}
@@ -661,42 +673,112 @@ WorkspaceLeafNode *EditorSceneWorkspace::open_script_leaf(WorkspaceLeafNode *p_s
 	ERR_FAIL_NULL_V(p_source_leaf, nullptr);
 	ERR_FAIL_COND_V(!leaves.has(p_source_leaf), nullptr);
 
-	WorkspaceLeafNode *target = nullptr;
-	if (!p_force_new_leaf && !p_script_path.is_empty()) {
-		target = find_script_leaf_for_path(p_script_path);
+	const String path = p_script_path.is_empty() ? String() : ProjectSettings::get_singleton()->localize_path(p_script_path);
+	const bool can_create_workspace_tab = !path.is_empty() && !path.contains("::");
+	const StringName script_type_id = StringName("script");
+	WorkspaceTabRegistry &registry = WorkspacePane::get_shared_tab_registry();
+	ScriptResourceTabType *script_type = static_cast<ScriptResourceTabType *>(registry.find_type(script_type_id));
+	ERR_FAIL_NULL_V(script_type, nullptr);
+
+	auto set_associated_scene = [&](ScriptLeaf *p_script_leaf) {
+		if (!p_script_leaf) {
+			return;
+		}
+		Node *associated_scene = nullptr;
+		if (ScenePaneTile *source_tile = p_source_leaf->get_pane_tile()) {
+			associated_scene = source_tile->get_current_scene_root();
+		}
+		p_script_leaf->set_associated_scene_root(associated_scene);
+	};
+
+	if (!p_force_new_leaf && can_create_workspace_tab) {
+		WorkspaceTab existing_tab;
+		WorkspaceTabLocation existing_location;
+		if (registry.find_canonical(script_type_id, path, existing_tab, existing_location)) {
+			WorkspaceLeafNode *leaf = get_leaf_by_id(existing_location.pane_id);
+			WorkspacePane *pane = leaf ? leaf->get_workspace_pane() : nullptr;
+			int index = -1;
+			if (pane) {
+				for (int i = 0; i < pane->get_tab_count(); i++) {
+					const WorkspaceTab &candidate = pane->get_tab(i);
+					if (candidate.get_type_id() == script_type_id && candidate.get_resource_key() == path) {
+						index = i;
+						break;
+					}
+				}
+			}
+			if (index >= 0) {
+				pane->set_active_tab(index);
+				request_leaf_focus(leaf->get_leaf_id());
+				set_associated_scene(script_type->get_mounted_script_leaf(pane->get_tab(index).get_stable_id()));
+				return leaf;
+			}
+			registry.remove_canonical(script_type_id, path);
+		}
+
+		if (WorkspaceLeafNode *legacy_leaf = find_script_leaf_for_path(path)) {
+			if (WorkspacePane *legacy_pane = legacy_leaf->get_workspace_pane()) {
+				set_associated_scene(legacy_pane->get_script_leaf());
+			}
+			request_leaf_focus(legacy_leaf->get_leaf_id());
+			return legacy_leaf;
+		}
 	}
-	if (!target && !p_force_new_leaf) {
-		target = get_focused_script_leaf();
+
+	WorkspaceLeafNode *target = nullptr;
+	if (!p_force_new_leaf) {
+		target = can_create_workspace_tab ? _find_leaf_hosting_type(script_type_id) : get_focused_script_leaf();
 	}
 	if (!target) {
 		target = split_with_content(p_source_leaf, false, SPLIT_SIDE_SECOND, StringName("script"));
 		ERR_FAIL_NULL_V(target, nullptr);
 	}
 
-	if (!p_script_path.is_empty()) {
-		WorkspacePane *target_pane = target->get_workspace_pane();
-		ScriptLeaf *script_leaf = target_pane ? target_pane->get_script_leaf() : nullptr;
-		if (script_leaf) {
-			script_leaf->set_script_path(p_script_path);
-			script_leaf->on_focus_entered();
-			if (ScriptEditorView *view = script_leaf->get_script_editor_view()) {
-				if (ResourceLoader::exists(p_script_path)) {
-					Ref<Resource> resource = ResourceLoader::load(p_script_path);
-					if (resource.is_valid()) {
-						view->edit(resource, true);
+	WorkspacePane *target_pane = target->get_workspace_pane();
+	ERR_FAIL_NULL_V(target_pane, nullptr);
+
+	if (!can_create_workspace_tab) {
+		request_leaf_focus(target->get_leaf_id());
+		if (ScriptLeaf *script_leaf = target_pane->get_script_leaf()) {
+			set_associated_scene(script_leaf);
+			if (!path.is_empty()) {
+				script_leaf->set_script_path(path);
+				script_leaf->on_focus_entered();
+				if (ScriptEditorView *view = script_leaf->get_script_editor_view()) {
+					if (ResourceLoader::exists(path)) {
+						Ref<Resource> resource = ResourceLoader::load(path);
+						if (resource.is_valid()) {
+							view->edit(resource, true);
+						}
 					}
 				}
 			}
 		}
+		return target;
 	}
 
-	if (WorkspacePane *target_pane = target->get_workspace_pane()) {
-		if (ScriptLeaf *script_leaf = target_pane->get_script_leaf()) {
-			Node *associated_scene = nullptr;
-			if (ScenePaneTile *source_tile = p_source_leaf->get_pane_tile()) {
-				associated_scene = source_tile->get_current_scene_root();
+	const int stable_id = registry.allocate_stable_id();
+	target_pane->add_tab(script_type->make_tab(path, stable_id));
+	for (int i = target_pane->get_tab_count() - 1; i >= 0; i--) {
+		if (target_pane->get_tab(i).get_stable_id() == stable_id) {
+			target_pane->set_active_tab(i);
+			break;
+		}
+	}
+	request_leaf_focus(target->get_leaf_id());
+
+	if (ScriptLeaf *script_leaf = script_type->get_mounted_script_leaf(stable_id)) {
+		set_associated_scene(script_leaf);
+	}
+
+	if (ScriptLeaf *script_leaf = script_type->get_mounted_script_leaf(stable_id)) {
+		if (ScriptEditorView *view = script_leaf->get_script_editor_view()) {
+			if (ResourceLoader::exists(path)) {
+				Ref<Resource> resource = ResourceLoader::load(path);
+				if (resource.is_valid()) {
+					view->edit(resource, true);
+				}
 			}
-			script_leaf->set_associated_scene_root(associated_scene);
 		}
 	}
 	return target;

@@ -2352,6 +2352,9 @@ static ScriptLeaf *_find_parent_script_leaf(const Control *p_control) {
 
 static Node *_resolve_script_associated_scene(const ScriptTextEditor *p_editor) {
 	if (ScriptLeaf *leaf = _find_parent_script_leaf(p_editor)) {
+		if (!leaf->get_associated_scene_root() && leaf->has_associated_scene() && EditorNode::get_singleton()) {
+			leaf->resolve_associated_scene(EditorNode::get_editor_data());
+		}
 		return leaf->get_associated_scene_root();
 	}
 	return p_editor->get_tree()->get_edited_scene_root();

@@ -35,6 +35,7 @@
 
 #include "scene/gui/control.h"
 
+class EditorData;
 class EditorSceneWorkspace;
 class Label;
 
@@ -88,6 +89,8 @@ public:
 	// Scene the open script is attached to (resolved when the leaf opens). Empty
 	// when the script has no associated scene.
 	void set_associated_scene_root(Node *p_scene_root);
+	void set_associated_scene_path(const String &p_scene_path);
+	bool resolve_associated_scene(EditorData &p_editor_data);
 	Node *get_associated_scene_root() const;
 	String get_associated_scene_path() const { return associated_scene_path; }
 	bool has_associated_scene() const { return !associated_scene_path.is_empty(); }
