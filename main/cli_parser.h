@@ -133,5 +133,6 @@ public:
 
 	static ParseResult parse(const PackedStringArray &p_args);
 	static ParseResult parse(int p_argc, char *p_argv[]);
+	static bool can_run_without_main_scene(const CLIInvocation &p_invocation);
 	static bool is_new_cli_command(const String &p_arg);
 };

@@ -1414,3 +1414,24 @@ FoundryCLIParser::ParseResult FoundryCLIParser::parse(int p_argc, char *p_argv[]
 	}
 	return parse(args);
 }
+
+bool FoundryCLIParser::can_run_without_main_scene(const CLIInvocation &p_invocation) {
+	if (!p_invocation.script.is_empty() || !p_invocation.runner.is_empty()) {
+		return true;
+	}
+
+	switch (p_invocation.kind) {
+		case CLIInvocation::SCRIPT_FORMAT:
+		case CLIInvocation::SCRIPT_LINT:
+		case CLIInvocation::SCRIPT_MIGRATE:
+		case CLIInvocation::SCRIPT_EVAL:
+		case CLIInvocation::DOCS_GENERATE_API:
+		case CLIInvocation::DOCS_GENERATE_ENGINE:
+		case CLIInvocation::DOCS_GENERATE_SCRIPT:
+		case CLIInvocation::EXTENSION_DUMP_INTERFACE:
+		case CLIInvocation::EXTENSION_VALIDATE_API:
+			return true;
+		default:
+			return false;
+	}
+}
