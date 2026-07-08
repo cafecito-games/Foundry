@@ -6853,6 +6853,9 @@ void EditorNode::_finish_projectless_shell_startup() {
 	}
 
 	waiting_for_first_scan = false;
+	if (EditorFileSystem::get_singleton() != nullptr) {
+		EditorFileSystem::get_singleton()->skip_first_scan_for_projectless_shell();
+	}
 	_load_editor_layout();
 
 	if (!cmdline_mode) {

@@ -920,6 +920,11 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 		return _failure_from_driver(p_driver, result.workflow, "Editor did not become ready in projectless mode.");
 	}
 
+	p_driver.set_step("wait_for_import_idle");
+	if (!p_driver.wait_import_idle(30000)) {
+		return _failure_from_driver(p_driver, result.workflow, "Filesystem/import pipeline did not become idle in projectless mode.");
+	}
+
 	p_driver.set_step("verify_projectless_state");
 	const Dictionary state = p_driver.read_editor_state();
 	if (!(bool)state.get("supported", false)) {
