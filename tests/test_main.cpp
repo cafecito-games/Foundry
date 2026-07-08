@@ -80,6 +80,7 @@
 #include "tests/editor/test_script_leaf_node_drop.h"
 #include "tests/editor/test_script_refactor_apply.h"
 #include "tests/editor/test_script_refactor_vcs_guard.h"
+#include "tests/editor/test_startup_router.h"
 #include "tests/editor/test_text_tab.h"
 #include "tests/editor/test_workspace_command_routing.h"
 #include "tests/editor/test_workspace_tab_model.h"

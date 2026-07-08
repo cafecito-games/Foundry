@@ -125,7 +125,9 @@
 #include "editor/file_system/editor_file_system.h"
 #include "editor/file_system/editor_paths.h"
 #include "editor/gui/progress_dialog.h"
+#include "editor/project_manager/known_project_store.h"
 #include "editor/project_manager/project_manager.h"
+#include "editor/project_manager/startup_router.h"
 #include "editor/register_editor_types.h"
 #include "editor/settings/editor_settings.h"
 #include "editor/translations/editor_translation.h"
@@ -233,6 +235,11 @@ static OS::ProcessID editor_pid = 0;
 static bool foundry_cli_project_path_error = false;
 #ifdef TOOLS_ENABLED
 static bool found_project = false;
+// Set for a genuine interactive editor launch (bare launch or `editor open`) that is
+// eligible for projectless startup routing (#1135). Gates recording a successful open
+// into the global known-project store so background editor-mode services like
+// `lsp serve` do not rewrite the GUI auto-open candidate/recents.
+static bool interactive_editor_launch = false;
 static bool recovery_mode = false;
 static bool auto_build_solutions = false;
 static String debug_server_uri;
@@ -2135,6 +2142,64 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 	}
 #endif // defined(DEBUG_ENABLED) || defined (TOOLS_ENABLED)
 
+#ifdef TOOLS_ENABLED
+	// Projectless startup routing (#1135): an editor launch without an explicit,
+	// loadable project auto-opens the last valid remembered project instead of dropping
+	// straight to the projectless shell. Only bare launches and `editor open` are
+	// eligible; command-line tools, runtime/game launches, exports, the render-device
+	// probes, and the explicit project-manager command are excluded so their semantics
+	// are untouched.
+	{
+		using Kind = FoundryCLIParser::CLIInvocation::Kind;
+		const Kind kind = cli_parse.invocation.kind;
+		// `editor open` is an explicit editor command (a positional scene there just names a
+		// scene to reopen). A command-less launch (NONE) is an editor launch only when it
+		// carries no legacy runtime scene/script args — `foundry --script X` and friends
+		// share the command-less shape of a bare editor launch but must run as a
+		// game/script, not auto-open a remembered project.
+		const bool editor_intent_launch = kind == FoundryCLIParser::CLIInvocation::EDITOR_OPEN ||
+				(kind == FoundryCLIParser::CLIInvocation::NONE &&
+						!StartupRouter::args_request_runtime_launch(main_args));
+		// Automation launches (`editor open --project ... --automation`) drive disposable
+		// scratch projects from tests and agent workflows; they must never auto-open a
+		// remembered project or overwrite the user's GUI recents/auto-open candidate.
+		if (editor_intent_launch && !cli_parse.invocation.automation && !project_manager && !cmdline_tool &&
+				!test_rd_support && !test_rd_creation && main_pack.is_empty()) {
+			interactive_editor_launch = true;
+
+			// The user pinned a project when `--project` was given (its value is preserved
+			// on the invocation even for `--project .`, which leaves project_path as "."),
+			// when a legacy/positional path set project_path directly, or when an explicit
+			// `--project` failed to apply. In every such case a remembered project must not
+			// be auto-opened. It is valid (setup() will attempt it) unless it failed to apply.
+			const bool explicit_requested = !cli_parse.invocation.project_path.is_empty() ||
+					project_path != "." || foundry_cli_project_path_error;
+			const bool explicit_valid = !foundry_cli_project_path_error;
+
+			KnownProjectStore known_projects(EditorPaths::get_data_dir_path().path_join("known_projects.cfg"));
+			known_projects.load();
+			const StartupRouter::Decision decision = StartupRouter::resolve_launch(
+					explicit_requested, explicit_valid, OS::get_singleton()->get_cwd(), known_projects);
+			if (decision.route == StartupRouter::ROUTE_OPEN_REMEMBERED) {
+				project_path = decision.project_path;
+				editor = true;
+			}
+			// The remaining routes (explicit path, cwd project, explicit-invalid, and the
+			// projectless shell) intentionally leave project_path/editor untouched: the
+			// explicit or cwd path is loaded by the setup() call below, and an unresolved
+			// launch fails that setup() and drops to the existing project-manager surface,
+			// which stands in as the projectless-shell placeholder until it lands (#1132).
+			// The router never returns ROUTE_OPEN_REMEMBERED for an explicit-invalid launch,
+			// so an invalid `--project` can never silently auto-open a remembered project;
+			// the recording gate below additionally refuses to record the ambient cwd
+			// project that Godot's upward search may still load in that error case.
+			if (decision.store_modified) {
+				known_projects.save();
+			}
+		}
+	}
+#endif
+
 	OS::get_singleton()->_in_editor = editor;
 	if (globals->setup(project_path, main_pack, false, editor) == OK) {
 #ifdef TOOLS_ENABLED
@@ -3191,6 +3256,21 @@ Error Main::setup2(bool p_show_boot_logo) {
 				OS::get_singleton()->set_exit_code(EXIT_FAILURE);
 				return FAILED;
 			}
+		}
+
+		// Record a successful interactive editor open into the global known-project store
+		// (#1135) so the next launch can auto-open it and the projectless recents list
+		// reflects it. Requires an eligible editor launch, an actual editor session
+		// (`editor`), and no explicit-path error: command-line editor tools (export/import)
+		// and background editor-mode services (`lsp serve`) must not reorder the user's GUI
+		// recents; a bare launch that runs the working-directory project as a game
+		// (editor == false) must not either; and an invalid `--project` that still resolved
+		// an ambient cwd project via upward search must not record that unintended project.
+		if (interactive_editor_launch && editor && found_project && !foundry_cli_project_path_error &&
+				EditorPaths::get_singleton()->are_paths_valid()) {
+			KnownProjectStore known_projects;
+			known_projects.load();
+			StartupRouter::record_project_opened(known_projects, ProjectSettings::get_singleton()->get_resource_path());
 		}
 
 		bool has_command_line_window_override = init_use_custom_pos || init_use_custom_screen || init_windowed;
