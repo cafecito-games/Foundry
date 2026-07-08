@@ -63,41 +63,33 @@ The Foundry editor embeds a local MCP (Model Context Protocol) server that lets 
 - On startup the editor prints a machine-readable line to stdout: `FOUNDRY_AUTOMATION {"transport":"mcp","endpoint":"http://127.0.0.1:<port>/mcp","token":"...","local_only":true}`. Parse it for the endpoint and bearer token.
 - The transport is POST-only JSON-RPC 2.0 over HTTP. Every request needs `Authorization: Bearer <token>` and `Content-Type: application/json`. Start with an `initialize` request, then send `notifications/initialized`, then use `tools/call` and `resources/read`. There are no server-push notifications; poll `poll_events` for editor errors/warnings.
 
-### Python MCP client for agents
+### Agent tool bridge
 
-Prefer the reusable Python client in `scripts/foundry_mcp/` instead of writing
-ad hoc `urllib` MCP scripts. Use `FoundryEditorAutomationSession.launch()` when
-the agent should start and own the editor process, and
-`FoundryEditorAutomationSession.connect()` when the editor is already running and
-the endpoint/token are known.
+Prefer the stdio MCP bridge in `scripts/foundry_mcp_server.py` when an agent
+should use editor automation as normal tool calls. Register it once in Claude,
+Codex, Cursor, or another MCP-capable client, then use bridge tools such as
+`foundry_launch_editor`, `foundry_connect`, `foundry_observe_ui`,
+`foundry_find_elements`, `foundry_act`, and `foundry_wait_for`.
 
-```python
-from pathlib import Path
+Example Claude Code registration from the repo root:
 
-from scripts.foundry_mcp import FoundryEditorAutomationSession
-
-with FoundryEditorAutomationSession.launch(
-    binary=Path("bin/foundry.linuxbsd.editor.dev.x86_64"),
-    project=Path("tests/fixtures/editor_automation_mvp"),
-) as session:
-    session.client.initialize()
-    ui = session.client.structured_tool("observe_ui", {"max_depth": 3})
+```sh
+claude mcp add foundry-editor -- python3 scripts/foundry_mcp_server.py
 ```
 
-For existing editor processes:
+Example bridge workflow after registration:
 
-```python
-from scripts.foundry_mcp import FoundryEditorAutomationSession
+1. Call `foundry_launch_editor` with `binary` and `project`, or call
+   `foundry_connect` with an existing automation `endpoint` and `token`.
+2. Use `foundry_observe_ui` / `foundry_find_elements` to inspect the UI.
+3. Use `foundry_act` with a semantic selector.
+4. Use `foundry_wait_for` and `foundry_poll_events` instead of sleeping.
+5. Use `foundry_disconnect` when the workflow is complete.
 
-session = FoundryEditorAutomationSession.connect(endpoint, token)
-session.client.initialize()
-state = session.client.structured_tool("read_editor_state")
-```
-
-`call_tool()` returns the complete MCP tool result, including `isError`; use
-`structured_tool()` only when the script explicitly wants `structuredContent`.
-For longer examples and guidance on exposing this as a Claude, Codex, or Cursor
-tool, see `docs/editor_automation_mcp_client.md`.
+Use the lower-level Python client in `scripts/foundry_mcp/` only for checked-in
+scripts and tests that need direct process control. Do not write ad hoc `urllib`
+MCP clients in agent scratch files. For Claude, Codex, and Cursor configuration
+examples, see `docs/editor_automation_mcp_client.md`.
 
 ### Tools and typical loop
 
