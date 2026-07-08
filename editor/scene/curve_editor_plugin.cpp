@@ -46,6 +46,7 @@
 #include "scene/gui/popup_menu.h"
 #include "scene/gui/separator.h"
 #include "scene/resources/image_texture.h"
+#include "servers/display/accessibility_server.h"
 
 CurveEdit::CurveEdit() {
 	set_focus_mode(FOCUS_ALL);
@@ -133,8 +134,8 @@ void CurveEdit::_notification(int p_what) {
 			ERR_FAIL_COND(ae.is_null());
 
 			//TODO
-			DisplayServer::get_singleton()->accessibility_update_set_role(ae, DisplayServer::AccessibilityRole::ROLE_STATIC_TEXT);
-			DisplayServer::get_singleton()->accessibility_update_set_value(ae, TTR(vformat("The %s is not accessible at this time.", "Curve editor")));
+			AccessibilityServer::get_singleton()->update_set_role(ae, AccessibilityServerEnums::AccessibilityRole::ROLE_STATIC_TEXT);
+			AccessibilityServer::get_singleton()->update_set_value(ae, TTR(vformat("The %s is not accessible at this time.", "Curve editor")));
 		} break;
 		case NOTIFICATION_DRAW: {
 			_redraw();

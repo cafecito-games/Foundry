@@ -60,6 +60,7 @@
 #include "scene/resources/font.h"
 #include "scene/resources/mesh.h"
 #include "scene/resources/visual_shader_nodes.h"
+#include "servers/display/accessibility_server.h"
 
 ///////////////////// NIL /////////////////////////
 
@@ -1236,8 +1237,8 @@ void EditorPropertyLayersGrid::_notification(int p_what) {
 			ERR_FAIL_COND(ae.is_null());
 
 			//TODO
-			DisplayServer::get_singleton()->accessibility_update_set_role(ae, DisplayServer::AccessibilityRole::ROLE_STATIC_TEXT);
-			DisplayServer::get_singleton()->accessibility_update_set_value(ae, TTR(vformat("The %s is not accessible at this time.", "Layers grid property editor")));
+			AccessibilityServer::get_singleton()->update_set_role(ae, AccessibilityServerEnums::AccessibilityRole::ROLE_STATIC_TEXT);
+			AccessibilityServer::get_singleton()->update_set_value(ae, TTR(vformat("The %s is not accessible at this time.", "Layers grid property editor")));
 		} break;
 
 		case NOTIFICATION_DRAW: {
