@@ -3298,7 +3298,10 @@ Error Main::setup2(bool p_show_boot_logo) {
 			Ref<ConfigFile> config;
 			config.instantiate();
 			// Load and amend existing config if it exists.
-			Error err = config->load(EditorPaths::get_singleton()->get_project_settings_dir().path_join("editor_layout.cfg"));
+			const String layout_path = projectless_editor_shell
+					? EditorPaths::get_singleton()->get_data_dir().path_join("projectless_editor_layout.cfg")
+					: EditorPaths::get_singleton()->get_project_settings_dir().path_join("editor_layout.cfg");
+			Error err = config->load(layout_path);
 			if (err == OK) {
 				init_screen = config->get_value("EditorWindow", "screen", init_screen);
 				String mode = config->get_value("EditorWindow", "mode", "maximized");

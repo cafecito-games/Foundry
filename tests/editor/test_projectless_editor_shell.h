@@ -51,15 +51,12 @@ static String make_empty_launch_dir() {
 }
 
 static String run_projectless_shell_workflow(const String &p_cwd, int &r_exit_code) {
-	const String executable = OS::get_singleton()->get_executable_path();
-	const String command = vformat(
-			"cd %s && %s --headless editor open --automation --automation-run-workflow=projectless_shell_smoke",
-			String(p_cwd).c_escape(),
-			String(executable).c_escape());
-
-	List<String> args;
-	args.push_back("-c");
-	args.push_back(command);
+	List<String> arguments;
+	arguments.push_back("--headless");
+	arguments.push_back("editor");
+	arguments.push_back("open");
+	arguments.push_back("--automation");
+	arguments.push_back("--automation-run-workflow=projectless_shell_smoke");
 
 	Dictionary environment;
 	if (EditorWorkflowTestFixtures::workflow_has_display()) {
@@ -68,7 +65,8 @@ static String run_projectless_shell_workflow(const String &p_cwd, int &r_exit_co
 
 	Vector<uint8_t> stdout_bytes;
 	Vector<uint8_t> stderr_bytes;
-	Dictionary pipe_info = OS::get_singleton()->execute_with_pipe("sh", args, false, String(), environment, false);
+	Dictionary pipe_info = OS::get_singleton()->execute_with_pipe(
+			OS::get_singleton()->get_executable_path(), arguments, false, p_cwd, environment, false);
 	if (pipe_info.is_empty()) {
 		r_exit_code = -1;
 		return String();
