@@ -1,0 +1,314 @@
+[
+ {
+  "pr": "119141",
+  "sha": "3572bad2920ce0cf57ab4296642d7c057dd8e39e",
+  "decision": "port-later",
+  "kind": "refactor",
+  "risk": "med",
+  "rationale": "Large 575-line wayland_thread rework of hovered-window handling; broad and subtle, not build-verified on linuxbsd here."
+ },
+ {
+  "pr": "119331",
+  "sha": "819cae99f81e37b514ae414e33eb12bbbeb4b68a",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "3-line fix moving release_pressed_events to true focus loss; self-contained, absent in base."
+ },
+ {
+  "pr": "119448",
+  "sha": "7af66e02ef4ed5cecabcf5b0909dac208fe773d7",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "One-line copy-paste fix (height fallback should use size.height not width); base still has the bug at wayland_thread.cpp."
+ },
+ {
+  "pr": "119303",
+  "sha": "ee4e7e51bc121ff85e95ac5681200bb9b8b92c01",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Adds XSync/error-handler restore around X11 embed_process to swallow BadWindow errors; self-contained, absent in base."
+ },
+ {
+  "pr": "118642",
+  "sha": "38aef34e1ae50cb53c6a887b84ea1e88882de7de",
+  "decision": "port-later",
+  "kind": "refactor",
+  "risk": "low",
+  "rationale": "Extracts addr2line lookup into find_addr2line_executable(); depends on the addr2line chain (115566/117067/117060) landing first."
+ },
+ {
+  "pr": "119252",
+  "sha": "b786c890b6956013a0e47a877a7bda0ae62a713e",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Additive: track/forward keyboard modifier state in Wayland embedder; embedder exists in base, no absent 4.7 infra."
+ },
+ {
+  "pr": "119274",
+  "sha": "aaa63588f6c0bd58ae958003c109b45d6451da10",
+  "decision": "skip",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Already present in fork base (linuxbsd/windows get_platform_features overrides and PC change all match HEAD)."
+ },
+ {
+  "pr": "113886",
+  "sha": "21dbe711c5f6c4e56d5917b42ac6f159eb93c559",
+  "decision": "port-later",
+  "kind": "feature",
+  "risk": "med",
+  "rationale": "452-line new Wayland touch-input feature across embedder/thread/display server; sizable, not build-verified on linuxbsd."
+ },
+ {
+  "pr": "117060",
+  "sha": "96c2ddf39a864290c07398993eaee85b973b0f66",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Improves crash symbols (-f -p -C) and drops -rdynamic in detect.py; depends on addr2line chain (115566/117067) and changes linker flags, unverified on linuxbsd."
+ },
+ {
+  "pr": "118554",
+  "sha": "8e0030b4ee3b4612e6c5e30ea331a6ff8d2228a2",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Reworks Wayland pointer-frame event accumulation; delicate event handling, not build-verified on linuxbsd."
+ },
+ {
+  "pr": "118404",
+  "sha": "50cc2823d51540661bc3d3a0e4d5a83a99450d68",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "One-line: reset ime_active=false in _xim_destroy_callback; self-contained, absent in base."
+ },
+ {
+  "pr": "118385",
+  "sha": "2ee7ef719657f640f706dbfde0953c66f5ca1730",
+  "decision": "port-later",
+  "kind": "refactor",
+  "risk": "med",
+  "rationale": "Substantial restructure of X11 _create_xic/XIM callbacks to warn once; delicate IME area, overlaps _xim_destroy_callback with 118404, unverified on linuxbsd."
+ },
+ {
+  "pr": "118205",
+  "sha": "07b6f875221ef3e66ab2c898e4077e005c667962",
+  "decision": "port-later",
+  "kind": "refactor",
+  "risk": "med",
+  "rationale": "Reorders libdecor initialization; init-ordering change with subtle effects, not build-verified on linuxbsd."
+ },
+ {
+  "pr": "118148",
+  "sha": "a987bcc2f598e8b56398fe202b97835b9918e596",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Wraps libdecor-only code in #ifdef LIBDECOR_ENABLED to fix libdecor=no build; self-contained guard, absent in base."
+ },
+ {
+  "pr": "113543",
+  "sha": "0f51ed609964e169e03de21a1f10a2369ddaebd2",
+  "decision": "port-later",
+  "kind": "feature",
+  "risk": "med",
+  "rationale": "Cross-platform per-window icon feature adding new DisplayServer virtuals (linuxbsd/windows/servers); broad API surface, affects base class implemented on macOS."
+ },
+ {
+  "pr": "117873",
+  "sha": "5ee90d8e82712bc09e016cde28c611b9314435b8",
+  "decision": "port-later",
+  "kind": "refactor",
+  "risk": "low",
+  "rationale": "Deduplicates Wayland clipboard send code; pure refactor, low value, not build-verified on linuxbsd."
+ },
+ {
+  "pr": "116692",
+  "sha": "c19a2705af05adf6ba39804906179dc18f656547",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Fixes buffer-scale race by threading buffer_scale through WindowRectMessage; moderate wayland_thread change, unverified on linuxbsd."
+ },
+ {
+  "pr": "116648",
+  "sha": "915f8dcba73fb92f1428def7774e2790ea5444fc",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Destroy/recreate Wayland data source each copy so clipboard history updates; self-contained, absent in base."
+ },
+ {
+  "pr": "117702",
+  "sha": "65e73b3a5eec19e3269809b0f00e73a646723067",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "high",
+  "rationale": "Blocked: fixes UAF of Ref<ColorManagementProfile> in HDR color-management code that does not exist in base (depends on HDR PR 102987)."
+ },
+ {
+  "pr": "116513",
+  "sha": "fa4d24cbb537877319d72beebd31569695ead8e5",
+  "decision": "port-later",
+  "kind": "refactor",
+  "risk": "low",
+  "rationale": "Deduplicates Wayland cleanup logic (-212 lines); pure refactor, low value, not build-verified on linuxbsd."
+ },
+ {
+  "pr": "117530",
+  "sha": "179ee951b601f445aa5fb4ed187e5c3d7e28b8a0",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Blocked: guards HDR-request warning in window_request_hdr_output, which is absent in base (depends on HDR PR 102987)."
+ },
+ {
+  "pr": "117505",
+  "sha": "5d2548f524e28c36fafb19977007e35d444086fe",
+  "decision": "skip",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Already present in fork base (X11_ENABLED && GLES3_ENABLED comment matches HEAD)."
+ },
+ {
+  "pr": "102987",
+  "sha": "5d0a32157593c9dd374b3796589f14b21b8212d8",
+  "decision": "port-later",
+  "kind": "feature",
+  "risk": "high",
+  "rationale": "Large Wayland HDR output feature (14 files, new color-management protocol, Vulkan driver changes); foundational for 117702/117530 but big and unverified on linuxbsd."
+ },
+ {
+  "pr": "117328",
+  "sha": "8993c549330176a30a801fe348c35810c03d1108",
+  "decision": "skip",
+  "kind": "cleanup",
+  "risk": "med",
+  "rationale": "clangd-tidy unused-include removal across 150 platform/driver files; high merge-conflict/churn risk against fork-diverged files for negligible value."
+ },
+ {
+  "pr": "117385",
+  "sha": "bd8b832893797a8d078e681d1dd890dcd968239c",
+  "decision": "port-later",
+  "kind": "refactor",
+  "risk": "med",
+  "rationale": "227-line Wayland mapping robustness/synchronization rework; broad and subtle, not build-verified on linuxbsd."
+ },
+ {
+  "pr": "117319",
+  "sha": "9095a76ff54ff96778c75260ac629cd4d1f1535f",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Adds <cstdio> include so linux template_release compiles; the include change is guard-independent, absent in base."
+ },
+ {
+  "pr": "117067",
+  "sha": "47612473f94de914c68d6f3c69dc67e39a04edf4",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes String output variable scoping in addr2line detection; small and self-contained but depends on 115566 landing first."
+ },
+ {
+  "pr": "115566",
+  "sha": "0f0c3f3a18607798b27c5c57f3d68d467b72df15",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Prefer gimli/llvm-addr2line over binutils in crash handler; self-contained, absent in base (base still calls plain addr2line)."
+ },
+ {
+  "pr": "108111",
+  "sha": "15558cb886447cf9b651c7ae83455f27eb3767ca",
+  "decision": "port-later",
+  "kind": "refactor",
+  "risk": "med",
+  "rationale": "Restructures sanitizer defines (SANITIZERS_ENABLED -> per-sanitizer) across core/typedefs.h and all platform detect.py incl. macOS; cross-platform build/core change, verify macOS impact before porting."
+ },
+ {
+  "pr": "116376",
+  "sha": "a82e210b5a7dc2dc5eb4b485c3414c44cda8fa7d",
+  "decision": "skip",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Already present in fork base (window_set_size early-return on equal size matches HEAD)."
+ },
+ {
+  "pr": "116236",
+  "sha": "41f4ca32479933bcdb454fc48a98a258dc92392a",
+  "decision": "skip",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Already present in fork base (WL_OUTPUT_MODE_CURRENT guard matches HEAD)."
+ },
+ {
+  "pr": "116309",
+  "sha": "b769ae2d5f134eb556495d87d1f9c87f31092848",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Swaps Wayland BTN_SIDE/BTN_EXTRA to correct XBUTTON1/2 mapping; base still has the swapped mapping, self-contained."
+ },
+ {
+  "pr": "116256",
+  "sha": "4106b5cdccce15a7a179b0b87a5b4cd81e8b4779",
+  "decision": "port-later",
+  "kind": "feature",
+  "risk": "med",
+  "rationale": "OpenXR OpenGL/Monado X11 init fix adding new DisplayServer virtual and gl_manager hooks; touches modules/openxr and servers/display, cross-cutting and unverified on linuxbsd."
+ },
+ {
+  "pr": "112287",
+  "sha": "2762c56829cfad2cc9fb17bf338f5258a8099c70",
+  "decision": "port-later",
+  "kind": "feature",
+  "risk": "med",
+  "rationale": "Adds Wayland pointer warping via new pointer-warp protocol (new thirdparty files, SCsub); feature not build-verified on linuxbsd."
+ },
+ {
+  "pr": "115916",
+  "sha": "ff1f870e2e2630df32af42638937cb5d9474da09",
+  "decision": "skip",
+  "kind": "cleanup",
+  "risk": "low",
+  "rationale": "CI/tooling: Ruff preview options and SCsub/pre-commit tweaks; fork has diverged tooling, low value and not engine behavior."
+ },
+ {
+  "pr": "114521",
+  "sha": "0aa77895ac0153bfd9f6a498dd8c4353a903bf20",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "shell_open uses create_process instead of blocking execute to avoid UI freeze; self-contained os_linuxbsd fix, absent in base."
+ },
+ {
+  "pr": "115823",
+  "sha": "65e79f33cb20f1c5c7d270684bb0dcb3958e8024",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Fixes FD leak in Wayland embedder by returning sent-FDs vector; self-contained, embedder exists in base, but reworks a helper signature."
+ },
+ {
+  "pr": "93478",
+  "sha": "92884a7140b419a2aa8c6b061a313ef3f1434815",
+  "decision": "skip",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Already present in fork base (glslang-default-resource-limits lib in detect.py matches HEAD)."
+ },
+ {
+  "pr": "114947",
+  "sha": "47b1b9ef696b4d2d3b3893e496da786997116c46",
+  "decision": "skip",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Already present in fork base (.debugsymbols exec-path handling matches HEAD crash_handler_linuxbsd.cpp)."
+ }
+]

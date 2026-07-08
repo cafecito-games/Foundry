@@ -1,0 +1,346 @@
+[
+ {
+  "pr": "120001",
+  "sha": "72cc0fc9a75bf041e84b9d37e7e31e17cb114a9e",
+  "decision": "skip",
+  "kind": "cleanup",
+  "risk": "low",
+  "rationale": "Points the editor's GABE download button at godotengine.org/download/android#gabe. Upstream Godot branding/URL that is irrelevant to a clean-break Foundry fork."
+ },
+ {
+  "pr": "119634",
+  "sha": "330e012b5375e9eebbf10b28ae0e759ad140b313",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Fixes infinite recursion in the Java interface-proxy equals()/hashCode() handler. Depends on the interface-proxy feature added by #115498 (a490), which is not in base 4.6.3; also lands in the fully rebranded games.cafecito.foundry Kotlin tree and is not build-verified on macOS."
+ },
+ {
+  "pr": "119601",
+  "sha": "79811ccc983d090f2bc764617fc7f2f52ccb25bf",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Guards a null args array (args ?: emptyArray()) in the interface-proxy invocation. Depends on the #115498 proxy feature absent from base; rebranded Kotlin, no android build coverage here."
+ },
+ {
+  "pr": "119297",
+  "sha": "9a33066a27d70c6d4f74cae44c1ce023d8082a59",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Adds a taskAffinity manifest entry and a hasExtra guard in command-line arg parsing. Lands in the rebranded Godot.kt/manifest; low value and android-only, not build-verified."
+ },
+ {
+  "pr": "119428",
+  "sha": "582e6f1d2b7432ed79324efd5f30c6b14fa68116",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Adds JNISingleton::_get so plugin signals resolve as Signal properties. Part of the 4.7 android plugin-signal rework; base 4.6.3 may not carry the underlying regression, so verify the bug exists before porting. Pairs with #119233/#117682."
+ },
+ {
+  "pr": "119172",
+  "sha": "cb490e6e232adfb00a103f6c7e3a89d6105826b2",
+  "decision": "skip",
+  "kind": "cleanup",
+  "risk": "low",
+  "rationale": "Removes the 'Use Gradle Build is experimental' warning label. A product/UX decision for upstream; touches rebranded GodotNativeBridge.kt/strings and carries no functional value for the fork."
+ },
+ {
+  "pr": "119233",
+  "sha": "3646d973220d44485f90e6727e5bd5d953323816",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Switches JNISingleton signals to add_user_signal and restores early plugin registration. Entangled with the 4.7 android signal-registration cluster (#117682/#119428) and the rebranded Godot.kt; port the cluster together after confirming the base regression."
+ },
+ {
+  "pr": "118860",
+  "sha": "d8227b7a78a8fda7b81517824f6a50047a93a8f0",
+  "decision": "port-later",
+  "kind": "cleanup",
+  "risk": "low",
+  "rationale": "Reverts the android editor minSdk bump back to 24 (gradle/manifest/editor Kotlin). Config-only, pairs with #118942, android build not exercised here."
+ },
+ {
+  "pr": "118942",
+  "sha": "a02cead472438a0178467ebf15815c89856f5214",
+  "decision": "port-later",
+  "kind": "feature",
+  "risk": "med",
+  "rationale": "Uses DEFAULT_MIN_SDK_VERSION (24) for the compatibility renderer instead of the Vulkan minimum. Missing from base, but the fork's export_plugin.cpp is heavily diverged (~162 lines trimmed) and android export is not build-verified."
+ },
+ {
+  "pr": "118689",
+  "sha": "1df8f1d38685d8122806378dd2657600c2ed6e5b",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Clamps embedded-window min size and avoids divide-by-zero on aspect lock. Depends on the resize feature from #118417 (references MIN_WINDOW_SIZE/resizingEnabled/isFreeResize) which is not in base; rebranded editor-embed Kotlin."
+ },
+ {
+  "pr": "118417",
+  "sha": "f4c839f7b32e8da5b06d364993bfc7e6fd43dfd8",
+  "decision": "port-later",
+  "kind": "feature",
+  "risk": "med",
+  "rationale": "Adds move/resize of the embedded game window (large android-editor UI: layouts, drawables, EmbeddedGodotGame rework). Feature, android-editor-only value, rebranded tree, not build-verified."
+ },
+ {
+  "pr": "118283",
+  "sha": "972d21ebf443ce4d4b771117182c5a55752f7d09",
+  "decision": "port-later",
+  "kind": "cleanup",
+  "risk": "med",
+  "rationale": "Removes deprecated Google Play OBB/expansion/licensing support (54 files, ~9k deletions). Base 4.6.3 still ships OBB, so it is a genuine large removal; reasonable dead-code cleanup for the fork but spans the rebranded android tree and is not build-verified."
+ },
+ {
+  "pr": "118401",
+  "sha": "317a491b35a28bf948c1c2b0aa86713c0f1d260e",
+  "decision": "skip",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Enables perfetto by default for android debug builds (SCsub, detect.py, install script, CMake). Android-debug profiling build tooling with little value for the fork."
+ },
+ {
+  "pr": "114671",
+  "sha": "f727813dfd6a677a927fcd2dc82c11ccd1399a91",
+  "decision": "port-later",
+  "kind": "feature",
+  "risk": "med",
+  "rationale": "Adds export options to customize the android splash screen. Feature touching the diverged export_plugin.cpp plus new assets; android export not build-verified."
+ },
+ {
+  "pr": "117687",
+  "sha": "78995d3f4a5b0e153aee4e89f4d87dabfc77f80c",
+  "decision": "port-later",
+  "kind": "refactor",
+  "risk": "med",
+  "rationale": "Splits Godot.kt into a GodotNativeBridge (moves ~400 lines, touches java_godot_lib_jni/java_godot_wrapper). Large refactor over the tree the fork already rebranded to java_foundry_*; high mechanical rework, not build-verified."
+ },
+ {
+  "pr": "117341",
+  "sha": "9dd0719d30626015414fa1f86f82498f96e1b4e6",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Adds a cmdline-mode error explaining ETC2/ASTC compression is required for android export. Genuinely missing from base and small, but lands inside the fork's heavily trimmed export_plugin.cpp and cannot be build-verified; low-risk nice-to-have once placement is confirmed."
+ },
+ {
+  "pr": "117653",
+  "sha": "5c2b6814eab6ef07e27be431cd7e88d887436037",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Fixes back-navigation handling when targeting API level 36. Android runtime behavior plus instrumented tests in the rebranded Kotlin tree; not build-verified."
+ },
+ {
+  "pr": "115498",
+  "sha": "a490c267a2c4dfc059d7b8e07d6d777fb103f659",
+  "decision": "port-later",
+  "kind": "feature",
+  "risk": "med",
+  "rationale": "Lets scripts implement Java interfaces via JavaClassWrapper (C++ java_class_wrapper + AndroidRuntimePlugin). Feature (unblocks #119601/#119634); gd test assets are N/A to Foundry Script, and android side is not build-verified."
+ },
+ {
+  "pr": "117643",
+  "sha": "40b218a679c460bd107320b0990a1e52571926d6",
+  "decision": "port-later",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Follow-up fixes to script-editor orientation change (title-bar toggle JNI). Android-editor-only, depends on #117109, touches editor JNI + rebranded Kotlin."
+ },
+ {
+  "pr": "117682",
+  "sha": "0f53286459a1140b8acfd388de75a1e1c67f8349",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "One-line plugin signal registration fix in Godot.kt, later reworked by #119233. Part of the android plugin-signal cluster; rebranded Kotlin, port the cluster together."
+ },
+ {
+  "pr": "117355",
+  "sha": "e3173f4ec4327e57a4a9b4d5eb3745f7252c1355",
+  "decision": "port-later",
+  "kind": "cleanup",
+  "risk": "low",
+  "rationale": "Bumps minimum API/hardware for Vulkan support (export_plugin + gradle/manifest + Godot.kt). Config/policy change; android not build-verified."
+ },
+ {
+  "pr": "114941",
+  "sha": "be33d1ceb042ab7d787fa7574c2297d2f26f25b5",
+  "decision": "skip",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "java.util.HashMap entrySet-iterator handling in jni_utils.cpp. Already present in base 4.6.3 (backported) and in the fork; nothing to port."
+ },
+ {
+  "pr": "117198",
+  "sha": "889af50e563aa59cd581633cb5ed8fe2fc89d766",
+  "decision": "port-later",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Adds haptic feedback on long-press right-click in the android editor, plus a new EditorSettings entry. Adds a shared editor setting for an android-only behavior; low value, not build-verified."
+ },
+ {
+  "pr": "114505",
+  "sha": "2288a8a898ec7854e1c91098bcc9ce620636db0e",
+  "decision": "port-later",
+  "kind": "feature",
+  "risk": "med",
+  "rationale": "Adds picture-in-picture: new public DisplayServer virtuals/enum and MainLoop/Node PIP notifications, implemented only on android. Broad new public API surface for android-only value; port-later."
+ },
+ {
+  "pr": "117131",
+  "sha": "19726167ce043cea56242d87b218bf587557f3bc",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes a FileAccess crash with treeUri in Gradle-built apps via gradle dependency/config changes only. Build-config change, not verifiable in this macOS build."
+ },
+ {
+  "pr": "117109",
+  "sha": "a772f1638735f8f50dbc52f3633fc9b6c1a49b5e",
+  "decision": "port-later",
+  "kind": "feature",
+  "risk": "med",
+  "rationale": "Enables orientation change in the android Script Editor; adds a distraction_free_mode_changed signal to editor_node.cpp. editor_node.cpp is heavily fork-diverged (multi-scene workspace), conflict risk, android-only value."
+ },
+ {
+  "pr": "115888",
+  "sha": "b62cbfdaa8f3f841ad3c776ffff4b1117cc8617b",
+  "decision": "port-later",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Adds support for android plugin gradle platform dependencies (app/build.gradle). Build-config feature, not build-verified."
+ },
+ {
+  "pr": "116548",
+  "sha": "2db05b08de983358f9ad12f28280939d997a0be5",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Only polls for devices when a runnable export preset is configured. Base already carries a related has_runnable_preset implementation but not this _start/_stop refactor, so it is a divergent partial; reconcile before porting."
+ },
+ {
+  "pr": "116584",
+  "sha": "974993eb7a61eb4d0dee14e8c6b4ec332ef42234",
+  "decision": "skip",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Removes the sdk>=29 version gate on FEATURE_NATIVE_DIALOG_FILE. Already applied in base 4.6.3 (backported); nothing to port."
+ },
+ {
+  "pr": "116515",
+  "sha": "0d9d77ebc3a9629372f0e765380a7dbf2b71fffd",
+  "decision": "skip",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Guards _check_for_changes against a null EditorSettings singleton. Already present in base 4.6.3 (backported)."
+ },
+ {
+  "pr": "116161",
+  "sha": "4cccd55af843dd27b2e1d9d47e0db0e2ee383ce5",
+  "decision": "skip",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Copies the keystore to a temp file during export (_copy_keystore_to_temp). Already present in base 4.6.3 (backported)."
+ },
+ {
+  "pr": "116153",
+  "sha": "3f57dc07ccad167564e84a8c91a467990b1f1755",
+  "decision": "skip",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Implements project.godot file associations for the android editor. Foundry uses project.foundry, not project.godot, so the feature as written is inapplicable to the fork."
+ },
+ {
+  "pr": "116226",
+  "sha": "fd49f2ac10e62ee2fb141cf6d47446ce96910a16",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Fixes OpenXR with Vulkan on android (display_server_android + java_godot_lib_jni). XR-specific, rebranded JNI tree, not build-verified."
+ },
+ {
+  "pr": "115800",
+  "sha": "f438a4a12e642af480428bf47240cb35237f43aa",
+  "decision": "skip",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "JavaClassWrapper PushLocalFrame ExceptionCheck fix for API<=26 crashes. Already present in base 4.6.3 (backported)."
+ },
+ {
+  "pr": "113469",
+  "sha": "2487a297b236e28e8ddf96fa8d6b44a164c7cb2c",
+  "decision": "skip",
+  "kind": "cleanup",
+  "risk": "low",
+  "rationale": "Deprecates the Android Studio 'dev' buildtype (gradle). Upstream build tooling with no engine impact for the fork."
+ },
+ {
+  "pr": "115751",
+  "sha": "e6d4e7d37f1e12be4245253cb93be2f8a2b8e5f3",
+  "decision": "skip",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes 'Bad file descriptor' by closing ParcelFileDescriptor in SAF/MediaStore data. Already present in base 4.6.3 (backported)."
+ },
+ {
+  "pr": "115718",
+  "sha": "e273d83ff5961a7492bb74a06660ac80bc312067",
+  "decision": "skip",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Adjusts an android instrumented file-access .gd test for older devices. Instrumented-test-only fixture, not part of Foundry's test infra."
+ },
+ {
+  "pr": "115713",
+  "sha": "e04d564215db2edea62ae06e61094164b459d7d9",
+  "decision": "skip",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Makes android instrumented tests fail when a test function does not complete (.gd assets). Instrumented-test harness only, N/A to the fork."
+ },
+ {
+  "pr": "115685",
+  "sha": "c2089db630ccbd3217b0297f62874f2df34e618d",
+  "decision": "skip",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes an || -> && logic bug in CharSequence-array type checking. Already present in base 4.6.3 (backported)."
+ },
+ {
+  "pr": "113761",
+  "sha": "6539f7fade83809ab898ed3be71d27241b6672e3",
+  "decision": "skip",
+  "kind": "cleanup",
+  "risk": "low",
+  "rationale": "Annual android version bump for 2026 (NDK, config.gradle). Upstream version churn. Note: the bundled text_server_adv.h change narrowing a clang-21 -Wunnecessary-virtual-specifier guard to MINGW32 is separable and subtly affects macOS clang 21+ builds; evaluate independently if needed."
+ },
+ {
+  "pr": "115515",
+  "sha": "bddebe9d7e18f91a20534c4bb3eaeee9a9470d99",
+  "decision": "skip",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Null-safe context.obbDir?.canonicalPath in StorageScope.kt. Already present in base 4.6.3 (backported)."
+ },
+ {
+  "pr": "115434",
+  "sha": "ea1e6640f0fa9a40dc362fe034f201fdecb45c20",
+  "decision": "port-later",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Adds an orientation_changed signal to DisplayServer, wired on android and apple_embedded. Small and mostly build-verifiable, but a new public-API feature (not a bugfix) with low value for the fork."
+ },
+ {
+  "pr": "114922",
+  "sha": "ed0ae97d98aade16734c309a15bc6586063005be",
+  "decision": "port-later",
+  "kind": "refactor",
+  "risk": "high",
+  "rationale": "Adds Vulkan->OpenGL3 fallback on android by threading a RenderingSource through OS::set_current_rendering_driver_name/method, changing signatures at every platform display-server call site and reworking main.cpp. Broad cross-platform signature change; high ripple for android-only value."
+ }
+]
