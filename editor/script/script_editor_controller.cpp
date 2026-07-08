@@ -641,7 +641,7 @@ void ScriptEditorController::save_all_scripts() {
 				clear_docs_from_script(scr);
 			}
 			Ref<TextFile> text_file = edited_res;
-			if (text_file.is_valid()) {
+			if (text_file.is_valid() && !edited_res->is_built_in()) {
 				view->_save_text_file(text_file, text_file->get_path());
 			} else {
 				EditorNode::get_singleton()->save_resource(edited_res);
