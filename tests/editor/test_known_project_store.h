@@ -249,6 +249,35 @@ TEST_CASE("[KnownProjectStore][Editor] tag cache refreshes from project.foundry"
 	CHECK_FALSE(store.refresh_project("/games/unknown"));
 }
 
+TEST_CASE("[KnownProjectStore][Editor] refresh replaces stale cache and clears missing") {
+	const String scratch = make_scratch_dir("staleclear");
+	PackedStringArray tags;
+	tags.push_back("client");
+	const String project_dir = make_project(scratch, "shifting", "Original Name", "4.6", tags);
+
+	KnownProjectStore store(config_path_in(scratch));
+	store.add_project(project_dir);
+	store.mark_project_missing(project_dir);
+
+	// Rewrite project.foundry clearing the name, version, and tags.
+	Ref<ConfigFile> cf;
+	cf.instantiate();
+	cf->set_value("application", "config/name", "");
+	cf->set_value("application", "config/features", PackedStringArray());
+	REQUIRE(cf->save(project_dir.path_join("project.foundry")) == OK);
+
+	CHECK(store.refresh_project(project_dir));
+
+	KnownProjectStore::KnownProject project;
+	REQUIRE(store.get_project(project_dir, project));
+	// Cleared values must overwrite the previous cache, not linger.
+	CHECK(project.display_name.is_empty());
+	CHECK(project.last_known_version.is_empty());
+	CHECK(project.tags.is_empty());
+	// A resolvable project.foundry clears the missing flag.
+	CHECK_FALSE(project.missing);
+}
+
 TEST_CASE("[KnownProjectStore][Editor] untagged projects round-trip with empty tags") {
 	const String scratch = make_scratch_dir("untagged");
 	const String project_dir = make_project(scratch, "untagged", "No Tags", "4.6", PackedStringArray());

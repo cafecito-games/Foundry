@@ -123,13 +123,13 @@ bool KnownProjectStore::_read_project_config(const String &p_canonical_path, Kno
 		return false;
 	}
 
+	// Refresh the whole cache from the current file so values cleared or removed in
+	// `project.foundry` overwrite the previous cache instead of leaving it stale.
 	const String config_name = cf->get_value("application", "config/name", "");
-	if (!config_name.is_empty()) {
-		r_project.display_name = config_name.xml_unescape();
-	}
-
+	r_project.display_name = config_name.xml_unescape();
 	r_project.tags = cf->get_value("application", "config/tags", PackedStringArray());
 
+	r_project.last_known_version = String();
 	const PackedStringArray features = cf->get_value("application", "config/features", PackedStringArray());
 	for (const String &feature : features) {
 		if (feature_looks_like_version(feature)) {
@@ -137,6 +137,9 @@ bool KnownProjectStore::_read_project_config(const String &p_canonical_path, Kno
 			break;
 		}
 	}
+
+	// The project resolves on disk, so it is no longer missing.
+	r_project.missing = false;
 
 	return true;
 }

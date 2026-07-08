@@ -89,9 +89,10 @@ private:
 	int _ensure_project(const String &p_canonical_path);
 	String _resolve_path() const;
 
-	// Reads `<canonical_path>/project.foundry` and writes its display name, version,
-	// and tags into `r_project`. Returns false (leaving the cache untouched) when the
-	// file does not exist or cannot be parsed.
+	// Reads `<canonical_path>/project.foundry` and refreshes `r_project`'s cached
+	// display name, version, and tags wholesale, clearing its missing flag since the
+	// file resolves. Returns false (leaving the record untouched) when the file does
+	// not exist or cannot be parsed.
 	static bool _read_project_config(const String &p_canonical_path, KnownProject &r_project);
 
 public:
@@ -105,7 +106,8 @@ public:
 	// its `project.foundry` exists, refreshes the cached name/version/tags.
 	void add_project(const String &p_path);
 	// Refreshes the cached name/version/tags of an existing entry from its
-	// `project.foundry`. Returns true when the file existed and the cache was updated.
+	// `project.foundry`, clearing its missing flag when the file resolves. Returns
+	// true when the file existed and the cache was updated.
 	bool refresh_project(const String &p_path);
 
 	// Records that a project was opened: stamps `last_opened_unix_time`, sets it as
