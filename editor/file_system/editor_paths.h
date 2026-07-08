@@ -52,6 +52,12 @@ class EditorPaths : public Object {
 
 	static EditorPaths *singleton;
 
+	// Detects self-contained mode from the executable directory without touching the
+	// singleton, so both the constructor and get_data_dir_path() agree. Returns the
+	// (macOS-bundle-adjusted) executable base directory, sets r_self_contained, and
+	// resolves r_marker_file to the `_sc_`/`._sc_` marker path when present.
+	static String _detect_self_contained(bool &r_self_contained, String &r_marker_file);
+
 protected:
 	static void _bind_methods();
 
@@ -77,6 +83,12 @@ public:
 	static EditorPaths *get_singleton() {
 		return singleton;
 	}
+
+	// Resolves the editor data directory (where global editor files such as the
+	// known-project store live) without requiring the singleton to exist yet. Used by
+	// early startup routing before EditorPaths::create() runs; matches get_data_dir()
+	// once the singleton is created.
+	static String get_data_dir_path();
 
 	static void create();
 	static void free();

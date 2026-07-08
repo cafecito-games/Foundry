@@ -125,7 +125,9 @@
 #include "editor/file_system/editor_file_system.h"
 #include "editor/file_system/editor_paths.h"
 #include "editor/gui/progress_dialog.h"
+#include "editor/project_manager/known_project_store.h"
 #include "editor/project_manager/project_manager.h"
+#include "editor/project_manager/startup_router.h"
 #include "editor/register_editor_types.h"
 #include "editor/settings/editor_settings.h"
 #include "editor/translations/editor_translation.h"
@@ -2135,6 +2137,41 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 	}
 #endif // defined(DEBUG_ENABLED) || defined (TOOLS_ENABLED)
 
+#ifdef TOOLS_ENABLED
+	// Projectless startup routing (#1135): an editor launch without an explicit,
+	// loadable project auto-opens the last valid remembered project instead of dropping
+	// straight to the projectless shell. Only bare launches and `editor open` are
+	// eligible; command-line tools, runtime/game launches, exports, the render-device
+	// probes, and the explicit project-manager command are excluded so their semantics
+	// are untouched.
+	{
+		using Kind = FoundryCLIParser::CLIInvocation::Kind;
+		const Kind kind = cli_parse.invocation.kind;
+		const bool editor_intent_launch = kind == FoundryCLIParser::CLIInvocation::NONE ||
+				kind == FoundryCLIParser::CLIInvocation::EDITOR_OPEN;
+		if (editor_intent_launch && !project_manager && !cmdline_tool &&
+				!test_rd_support && !test_rd_creation && main_pack.is_empty()) {
+			// A resolved explicit path leaves project_path != "."; an explicit path that
+			// failed to apply sets foundry_cli_project_path_error. Either way the user
+			// pinned a project, so a remembered one must not be auto-opened.
+			const bool explicit_requested = project_path != "." || foundry_cli_project_path_error;
+			const bool explicit_valid = project_path != ".";
+
+			KnownProjectStore known_projects(EditorPaths::get_data_dir_path().path_join("known_projects.cfg"));
+			known_projects.load();
+			const StartupRouter::Decision decision = StartupRouter::resolve_launch(
+					explicit_requested, explicit_valid, OS::get_singleton()->get_cwd(), known_projects);
+			if (decision.route == StartupRouter::ROUTE_OPEN_REMEMBERED) {
+				project_path = decision.project_path;
+				editor = true;
+			}
+			if (decision.store_modified) {
+				known_projects.save();
+			}
+		}
+	}
+#endif
+
 	OS::get_singleton()->_in_editor = editor;
 	if (globals->setup(project_path, main_pack, false, editor) == OK) {
 #ifdef TOOLS_ENABLED
@@ -3191,6 +3228,16 @@ Error Main::setup2(bool p_show_boot_logo) {
 				OS::get_singleton()->set_exit_code(EXIT_FAILURE);
 				return FAILED;
 			}
+		}
+
+		// Record a successful interactive editor open into the global known-project store
+		// (#1135) so the next launch can auto-open it and the projectless recents list
+		// reflects it. Excludes command-line editor tools (export/import) which set
+		// `editor` but should not reorder the user's recents.
+		if (editor && found_project && !cmdline_tool && EditorPaths::get_singleton()->are_paths_valid()) {
+			KnownProjectStore known_projects;
+			known_projects.load();
+			StartupRouter::record_project_opened(known_projects, ProjectSettings::get_singleton()->get_resource_path());
 		}
 
 		bool has_command_line_window_override = init_use_custom_pos || init_use_custom_screen || init_windowed;
