@@ -4641,10 +4641,6 @@ void EditorNode::_remove_edited_scene(bool p_change_tab, bool p_allow_collapse) 
 			}
 			scene_workspace->collapse(leaf);
 			if (survivor_tile_id < 0) {
-				// No surviving tile held a scene; make the now-focused survivor show one.
-				if (editor_data.get_edited_scene_count() == 0) {
-					editor_data.add_edited_scene(-1);
-				}
 				_set_current_scene_nocheck(editor_data.get_tile_current_scene(editor_data.get_focused_tile_id()));
 			}
 		}
@@ -4653,9 +4649,6 @@ void EditorNode::_remove_edited_scene(bool p_change_tab, bool p_allow_collapse) 
 		// moved to a surviving scene tile before the removal; finalize that focus.
 		_focus_tile(survivor_tile_id);
 	} else {
-		if (editor_data.get_edited_scene_count() == 0) {
-			editor_data.add_edited_scene(-1);
-		}
 		if (p_change_tab) {
 			_set_current_scene_nocheck(editor_data.get_tile_current_scene(editor_data.get_focused_tile_id()));
 		}
@@ -4727,6 +4720,15 @@ void EditorNode::request_workspace_scene_tab_close(int p_scene_idx) {
 void EditorNode::set_edited_scene_root(Node *p_scene, bool p_auto_add) {
 	Node *old_edited_scene_root = get_editor_data().get_edited_scene_root();
 	ERR_FAIL_COND_MSG(p_scene && p_scene != old_edited_scene_root && p_scene->get_parent(), "Non-null nodes that are set as edited scene should not have a parent node.");
+
+	if (editor_data.get_edited_scene() < 0) {
+		if (p_scene == nullptr) {
+			return;
+		}
+		const int scene_idx = editor_data.add_edited_scene(-1);
+		_set_current_scene_nocheck(scene_idx);
+		_update_all_scene_tabs();
+	}
 
 	EditorSceneContext *context = editor_data.get_active_scene_context();
 	if (p_auto_add && context && old_edited_scene_root && old_edited_scene_root->get_parent() == context->get_viewport()) {
@@ -4845,8 +4847,10 @@ void EditorNode::_set_current_scene(int p_idx) {
 }
 
 void EditorNode::_set_current_scene_nocheck(int p_idx) {
+	const bool has_scene = p_idx >= 0;
+
 	// Save the folding in case the scene gets reloaded.
-	if (editor_data.get_scene_path(p_idx) != "" && editor_data.get_edited_scene_root(p_idx)) {
+	if (has_scene && editor_data.get_scene_path(p_idx) != "" && editor_data.get_edited_scene_root(p_idx)) {
 		editor_folding.save_scene_folding(editor_data.get_edited_scene_root(p_idx), editor_data.get_scene_path(p_idx));
 	}
 
@@ -4860,7 +4864,7 @@ void EditorNode::_set_current_scene_nocheck(int p_idx) {
 	// This happens while the outgoing scene is still the current one, since
 	// stashing its editor plugin states runs plugin get_state()
 	// implementations that resolve node paths through the current scene.
-	_activate_scene_context(editor_data.get_scene_context(p_idx));
+	_activate_scene_context(has_scene ? editor_data.get_scene_context(p_idx) : nullptr);
 
 	editor_data.set_edited_scene(p_idx);
 
@@ -4886,7 +4890,7 @@ void EditorNode::_set_current_scene_nocheck(int p_idx) {
 		_attach_active_scene_context();
 	}
 
-	if (editor_data.check_and_update_scene(p_idx)) {
+	if (has_scene && editor_data.check_and_update_scene(p_idx)) {
 		if (!editor_data.get_scene_path(p_idx).is_empty()) {
 			editor_folding.load_scene_folding(editor_data.get_edited_scene_root(p_idx), editor_data.get_scene_path(p_idx));
 		}
@@ -4909,7 +4913,7 @@ void EditorNode::_set_current_scene_nocheck(int p_idx) {
 		callable_mp(this, &EditorNode::_set_main_scene_state).call_deferred(state, get_edited_scene()); // Do after everything else is done setting up.
 	}
 
-	if (!select_current_scene_file_requested && EDITOR_GET("interface/scene_tabs/auto_select_current_scene_file")) {
+	if (has_scene && !select_current_scene_file_requested && EDITOR_GET("interface/scene_tabs/auto_select_current_scene_file")) {
 		select_current_scene_file_requested = true;
 		callable_mp(this, &EditorNode::_nav_to_selected_scene).call_deferred();
 	}
@@ -6217,6 +6221,9 @@ bool EditorNode::_find_scene_in_use(Node *p_node, const String &p_path) const {
 
 bool EditorNode::close_scene() {
 	int tab_index = editor_data.get_edited_scene();
+	if (tab_index < 0) {
+		return false;
+	}
 	if (tab_index == 0 && get_edited_scene() == nullptr && editor_data.get_scene_path(tab_index).is_empty()) {
 		return false;
 	}
@@ -6896,7 +6903,12 @@ void EditorNode::_save_open_scenes_to_config(Ref<ConfigFile> p_layout) {
 	}
 	p_layout->set_value(EDITOR_NODE_CONFIG_SECTION, "open_scenes", scenes);
 
-	String currently_edited_scene_path = editor_data.get_scene_path(editor_data.get_edited_scene());
+	const bool current_scene_active = editor_data.get_edited_scene() >= 0;
+	p_layout->set_value(EDITOR_NODE_CONFIG_SECTION, "current_scene_active", current_scene_active);
+	String currently_edited_scene_path;
+	if (current_scene_active) {
+		currently_edited_scene_path = editor_data.get_scene_path(editor_data.get_edited_scene());
+	}
 	p_layout->set_value(EDITOR_NODE_CONFIG_SECTION, "current_scene", currently_edited_scene_path);
 }
 
@@ -7550,6 +7562,19 @@ void EditorNode::_load_open_scenes_from_config(Ref<ConfigFile> p_layout) {
 		if (FileAccess::exists(scenes[i])) {
 			load_scene(scenes[i]);
 		}
+	}
+
+	if (p_layout->has_section_key(EDITOR_NODE_CONFIG_SECTION, "current_scene_active") &&
+			!bool(p_layout->get_value(EDITOR_NODE_CONFIG_SECTION, "current_scene_active", true))) {
+		if (editor_data.get_edited_scene_count() == 1 &&
+				editor_data.get_scene_path(0).is_empty() &&
+				editor_data.get_edited_scene_root(0) == nullptr) {
+			editor_data.remove_scene(0);
+		}
+		_set_current_scene_nocheck(-1);
+		save_editor_layout_delayed();
+		restoring_scenes = false;
+		return;
 	}
 
 	if (p_layout->has_section_key(EDITOR_NODE_CONFIG_SECTION, "current_scene")) {

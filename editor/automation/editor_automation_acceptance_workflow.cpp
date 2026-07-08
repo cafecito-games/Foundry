@@ -36,6 +36,7 @@
 #include "editor/editor_node.h"
 #include "editor/editor_scene_workspace.h"
 #include "editor/editor_script_leaf.h"
+#include "editor/file_system/editor_paths.h"
 #include "editor/gui/code_editor.h"
 #include "editor/script/script_editor_controller.h"
 #include "editor/script/script_editor_plugin.h"
@@ -43,8 +44,10 @@
 #include "editor/workspace/workspace_pane.h"
 #include "editor/workspace/workspace_tab_type.h"
 
+#include "core/io/config_file.h"
 #include "core/io/json.h"
 #include "core/os/os.h"
+#include "scene/2d/node_2d.h"
 #include "scene/gui/dialogs.h"
 
 namespace {
@@ -630,6 +633,111 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 
 	result.ok = true;
 	result.message = "Basic scene-editing automation workflow completed.";
+	return result;
+}
+
+EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::run_close_last_scene_empty_pane(EditorWorkflowTestDriver &p_driver) {
+	Result result;
+	result.workflow = "close_last_scene_empty_pane";
+
+	p_driver.begin_workflow();
+
+	p_driver.set_step("verify_initial_scene");
+	Dictionary state = p_driver.read_editor_state();
+	Array open_scenes = state.get("open_scenes", Array());
+	if (open_scenes.size() != 1 || String(state.get("active_scene_path", String())) != MIXED_WORKSPACE_SCENE) {
+		return _failure_with_message(p_driver, result.workflow, "Expected the workflow to start with one active scene.");
+	}
+
+	p_driver.set_step("close_last_scene");
+	if (!p_driver.require_ok(p_driver.run_command("editor/close_scene"), "close_last_scene")) {
+		return _failure_from_driver(p_driver, result.workflow);
+	}
+	p_driver.flush_frames(5);
+	if (!p_driver.wait_workspace_settled(5000)) {
+		return _failure_from_driver(p_driver, result.workflow);
+	}
+
+	p_driver.set_step("verify_empty_pane");
+	state = p_driver.read_editor_state();
+	open_scenes = state.get("open_scenes", Array());
+	if (!open_scenes.is_empty()) {
+		return _failure_with_message(p_driver, result.workflow, "Closing the last scene left an open scene entry.");
+	}
+	if ((int)state.get("active_scene_index", 0) != -1 || !String(state.get("active_scene_path", String())).is_empty()) {
+		return _failure_with_message(p_driver, result.workflow, "Closing the last scene did not leave the editor in the no-scene state.");
+	}
+
+	const Dictionary workspace = state.get("workspace", Dictionary());
+	if (!(bool)workspace.get("supported", false) || (int)workspace.get("tile_count", 0) != 1) {
+		return _failure_with_message(p_driver, result.workflow, "Closing the last scene did not preserve one workspace pane.");
+	}
+	const Array tiles = workspace.get("tiles", Array());
+	if (tiles.size() != 1) {
+		return _failure_with_message(p_driver, result.workflow, "Workspace state did not report exactly one tile after closing the last scene.");
+	}
+	const Dictionary tile = tiles[0];
+	if ((int)tile.get("current_scene", 0) != -1) {
+		return _failure_with_message(p_driver, result.workflow, "The remaining workspace tile still points at a scene.");
+	}
+	const Array tile_scenes = tile.get("scenes", Array());
+	if (!tile_scenes.is_empty()) {
+		return _failure_with_message(p_driver, result.workflow, "The remaining workspace tile still lists scene tabs.");
+	}
+
+	EditorNode *editor_node = EditorNode::get_singleton();
+	if (editor_node == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "EditorNode singleton was unavailable after closing the last scene.");
+	}
+
+	p_driver.set_step("close_scene_api_after_empty");
+	if (editor_node->close_scene()) {
+		return _failure_with_message(p_driver, result.workflow, "Closing a no-scene editor state reported success.");
+	}
+	p_driver.flush_frames(5);
+
+	p_driver.set_step("save_empty_layout");
+	editor_node->save_editor_layout_delayed();
+	p_driver.flush_frames(120);
+	if (!p_driver.wait_editor_idle(10000)) {
+		return _failure_from_driver(p_driver, result.workflow, "Editor did not become idle after saving the empty layout.");
+	}
+	Ref<ConfigFile> saved_layout;
+	saved_layout.instantiate();
+	const String layout_path = EditorPaths::get_singleton()->get_project_settings_dir().path_join("editor_layout.cfg");
+	if (saved_layout->load(layout_path) != OK) {
+		return _failure_with_message(p_driver, result.workflow, "The empty layout save did not write editor_layout.cfg.");
+	}
+	if ((bool)saved_layout->get_value("EditorNode", "current_scene_active", true)) {
+		return _failure_with_message(p_driver, result.workflow, "The empty layout save did not persist the no-current-scene state.");
+	}
+
+	p_driver.set_step("create_root_after_empty");
+	Node2D *new_root = memnew(Node2D);
+	new_root->set_name("RootAfterEmpty");
+	editor_node->get_focused_scene_tree_dock()->add_root_node(new_root);
+	p_driver.flush_frames(20);
+	if (editor_node->get_edited_scene() != new_root) {
+		return _failure_with_message(p_driver, result.workflow, "Creating a root from the empty pane did not install it as the edited scene.");
+	}
+	state = p_driver.read_editor_state();
+	open_scenes = state.get("open_scenes", Array());
+	if (open_scenes.size() != 1 || (int)state.get("active_scene_index", -1) != 0) {
+		return _failure_with_message(p_driver, result.workflow, "Creating a root from the empty pane did not create a new unsaved scene tab.");
+	}
+
+	p_driver.set_step("assert_no_new_errors");
+	if (!p_driver.assert_no_new_errors()) {
+		return _failure_from_driver(p_driver, result.workflow);
+	}
+
+	result.ok = true;
+	result.message = "Closing the last scene left one empty workspace pane.";
+	Dictionary details;
+	details["workspace"] = workspace;
+	details["active_scene_index"] = state.get("active_scene_index", -1);
+	details["open_scenes"] = open_scenes;
+	result.details = details;
 	return result;
 }
 

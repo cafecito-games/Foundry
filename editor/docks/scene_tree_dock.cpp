@@ -1639,6 +1639,11 @@ void SceneTreeDock::_perform_property_drop(Node *p_node, const String &p_propert
 }
 
 void SceneTreeDock::add_root_node(Node *p_node) {
+	if (editor_data->get_edited_scene() < 0) {
+		const int scene_idx = editor_data->add_edited_scene(-1);
+		EditorNode::get_singleton()->activate_workspace_scene_tab(scene_idx, editor_data->get_focused_tile_id());
+	}
+
 	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
 	undo_redo->create_action_for_history(TTR("New Scene Root"), editor_data->get_current_edited_scene_history_id());
 	undo_redo->add_do_method(EditorNode::get_singleton(), "set_edited_scene", p_node);
