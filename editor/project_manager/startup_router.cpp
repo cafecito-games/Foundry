@@ -36,14 +36,15 @@
 
 #include "editor/project_manager/known_project_store.h"
 
+bool StartupRouter::has_project_config(const String &p_path) {
+	return !p_path.is_empty() && FileAccess::exists(p_path.path_join("project.foundry"));
+}
+
 bool StartupRouter::is_openable_project(const String &p_path) {
-	if (p_path.is_empty()) {
+	if (!has_project_config(p_path)) {
 		return false;
 	}
 	const String config = p_path.path_join("project.foundry");
-	if (!FileAccess::exists(config)) {
-		return false;
-	}
 	// Confirm the project config actually parses. A present but malformed project.foundry
 	// must not be treated as openable, otherwise it would be auto-opened, rejected by
 	// ProjectSettings::setup(), and retried on every launch instead of falling back.
@@ -107,10 +108,13 @@ StartupRouter::Decision StartupRouter::resolve_launch(
 		return decision;
 	}
 
-	// A project in the working directory is opened directly, mirroring the historical
-	// "run Foundry inside a project folder" behavior, and taking precedence over the
-	// remembered project.
-	if (is_openable_project(p_cwd)) {
+	// A project in the working directory takes precedence over a remembered project,
+	// mirroring the historical "run Foundry inside a project folder" behavior. Precedence
+	// keys on the mere presence of a project.foundry, not on silent openability: when the
+	// cwd project needs conversion, the launch is still about that project, so the normal
+	// cwd path (open, convert prompt, or run) must handle it rather than silently opening
+	// an unrelated remembered project.
+	if (has_project_config(p_cwd)) {
 		decision.route = ROUTE_OPEN_CWD;
 		return decision;
 	}

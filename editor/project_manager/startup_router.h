@@ -69,8 +69,14 @@ public:
 		bool store_modified = false;
 	};
 
-	// A project directory is openable when it exists and contains a readable
-	// `project.foundry`. Version-compatibility gating is a future refinement.
+	// True when the directory contains a `project.foundry` file, regardless of whether it
+	// is silently openable. Used to give the working directory precedence over a remembered
+	// project even when the cwd project needs conversion.
+	static bool has_project_config(const String &p_path);
+
+	// A project directory is openable for silent auto-open when it contains a `project.foundry`
+	// that parses, is at the current config version, and uses no build-unsupported features —
+	// i.e. it opens without the Project Manager's conversion/warning prompt.
 	static bool is_openable_project(const String &p_path);
 
 	// True when the engine launch arguments request a runtime scene/script execution: a

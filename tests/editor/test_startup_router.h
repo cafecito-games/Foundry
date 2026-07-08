@@ -264,6 +264,24 @@ TEST_CASE("[StartupRouter][Editor] a project in the working directory opens dire
 	CHECK_FALSE(decision.store_modified);
 }
 
+TEST_CASE("[StartupRouter][Editor] a working-directory project wins even when it needs conversion") {
+	const String scratch = make_scratch_dir("cwdneedsconvert");
+	// The cwd project is present but from an older engine version (needs conversion).
+	const String cwd = make_project(scratch, "cwd_old", ProjectSettings::CONFIG_VERSION - 1);
+	const String remembered = make_project(scratch, "remembered");
+
+	KnownProjectStore store(config_path_in(scratch));
+	store.mark_project_opened(remembered, 100);
+
+	const StartupRouter::Decision decision = StartupRouter::resolve_launch(
+			/*explicit_requested=*/false, /*explicit_valid=*/false, cwd, store);
+
+	// The launch is about the cwd project (its conversion prompt/run path handles it), so a
+	// remembered project must not be silently opened instead.
+	CHECK(decision.route == StartupRouter::ROUTE_OPEN_CWD);
+	CHECK_FALSE(decision.store_modified);
+}
+
 TEST_CASE("[StartupRouter][Editor] an explicit valid project opens directly") {
 	const String scratch = make_scratch_dir("explicitvalid");
 	const String cwd = make_empty_dir(scratch, "cwd");
