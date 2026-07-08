@@ -98,10 +98,6 @@ String get_script_refactor_action_name() {
 	return TTR(SCRIPT_REFACTOR_ACTION_NAME);
 }
 
-bool is_embedded_script_path(const String &p_path) {
-	return p_path.begins_with("local://") || p_path.contains("::");
-}
-
 void warn_if_saving_declared_build_output(const String &p_path) {
 	if (!p_path.begins_with("res://") || !FileAccess::exists("res://project.foundry")) {
 		return;
@@ -394,16 +390,6 @@ void ScriptEditorView::_open_recent_script(int p_idx) {
 			return;
 		}
 		// if it's a path then it's most likely a deleted file not help
-	} else if (path.contains("::")) {
-		// built-in script
-		String res_path = path.get_slice("::", 0);
-		EditorNode::get_singleton()->load_scene_or_resource(res_path, false, false);
-
-		Ref<Script> scr = ResourceLoader::load(path);
-		if (scr.is_valid()) {
-			edit(scr, true);
-			return;
-		}
 	} else if (!path.is_resource_file()) {
 		// A legacy recent entry that is a bare class name: class reference now lives
 		// in the workspace as its own help tab, so route it there.
@@ -429,11 +415,7 @@ void ScriptEditorView::_close_tab(int p_idx, bool p_save, bool p_history_back) {
 	if (current) {
 		Ref<Resource> file = current->get_edited_resource();
 		if (p_save && file.is_valid()) {
-			// Do not try to save internal scripts, but prompt to save in-memory
-			// scripts which are not saved to disk yet (have empty path).
-			if (!file->is_built_in()) {
-				save_current_script();
-			}
+			save_current_script();
 		}
 		if (file.is_valid()) {
 			if (!file->get_path().is_empty()) {
@@ -634,22 +616,23 @@ bool ScriptEditorView::request_close_active_tab(const Callable &p_on_closed) {
 
 
 void ScriptEditorView::_res_saved_callback(const Ref<Resource> &p_res) {
+	const String built_in_parent_prefix = vformat("%s::", p_res->get_path());
 	for (int i = 0; i < tab_container->get_tab_count(); i++) {
 		ScriptEditorBase *se = Object::cast_to<ScriptEditorBase>(tab_container->get_tab_control(i));
 		if (!se) {
 			continue;
 		}
 
-		Ref<Resource> scr = se->get_edited_resource();
+		Ref<Resource> edited_res = se->get_edited_resource();
+		if (edited_res == p_res) {
+			se->tag_saved_version();
+			continue;
+		}
 
-		if (scr == p_res) {
+		if (edited_res.is_valid() && edited_res->is_built_in() && !Object::cast_to<Script>(*edited_res) &&
+				edited_res->get_path().begins_with(built_in_parent_prefix)) {
 			se->tag_saved_version();
 		}
-	}
-
-	if (p_res.is_valid()) {
-		// In case the Resource has built-in scripts.
-		_mark_built_in_scripts_as_saved(p_res->get_path());
 	}
 
 	_update_script_names();
@@ -659,12 +642,8 @@ void ScriptEditorView::_res_saved_callback(const Ref<Resource> &p_res) {
 	}
 }
 
-void ScriptEditorView::_scene_saved_callback(const String &p_path) {
-	// If scene was saved, mark all built-in scripts from that scene as saved.
-	_mark_built_in_scripts_as_saved(p_path);
-}
-
-void ScriptEditorView::_mark_built_in_scripts_as_saved(const String &p_parent_path) {
+void ScriptEditorView::_mark_built_in_text_resources_as_saved(const String &p_scene_path) {
+	const String scene_prefix = vformat("%s::", p_scene_path);
 	for (int i = 0; i < tab_container->get_tab_count(); i++) {
 		ScriptEditorBase *se = Object::cast_to<ScriptEditorBase>(tab_container->get_tab_control(i));
 		if (!se) {
@@ -672,25 +651,39 @@ void ScriptEditorView::_mark_built_in_scripts_as_saved(const String &p_parent_pa
 		}
 
 		Ref<Resource> edited_res = se->get_edited_resource();
-		if (!edited_res->is_built_in()) {
-			continue; // External script, who cares.
+		if (!edited_res.is_valid() || !edited_res->is_built_in() || Object::cast_to<Script>(*edited_res)) {
+			continue;
 		}
 
-		if (edited_res->get_path().get_slice("::", 0) != p_parent_path) {
-			continue; // Wrong scene.
+		if (!edited_res->get_path().begins_with(scene_prefix)) {
+			continue;
 		}
+
 		se->tag_saved_version();
-
-		Ref<Script> scr = edited_res;
-		if (scr.is_valid()) {
-			controller->trigger_live_script_reload(scr->get_path());
-			clear_docs_from_script(scr);
-			scr->reload(true);
-			update_docs_from_script(scr);
-		}
 	}
+	_update_script_names();
 }
 
+void ScriptEditorView::_close_built_in_text_resources_from_scene(const String &p_scene_path) {
+	const String scene_prefix = vformat("%s::", p_scene_path);
+	for (int i = tab_container->get_tab_count() - 1; i >= 0; i--) {
+		ScriptEditorBase *se = Object::cast_to<ScriptEditorBase>(tab_container->get_tab_control(i));
+		if (!se) {
+			continue;
+		}
+
+		Ref<Resource> edited_res = se->get_edited_resource();
+		if (!edited_res.is_valid() || !edited_res->is_built_in() || Object::cast_to<Script>(*edited_res)) {
+			continue;
+		}
+
+		if (!edited_res->get_path().begins_with(scene_prefix)) {
+			continue;
+		}
+
+		_close_tab(i, false);
+	}
+}
 
 void ScriptEditorView::_collect_scripts_modified_on_disk(TreeItem *p_root, bool &r_need_ask, bool &r_need_reload, Ref<Resource> p_for_script) {
 	ERR_FAIL_NULL(p_root);
@@ -702,10 +695,6 @@ void ScriptEditorView::_collect_scripts_modified_on_disk(TreeItem *p_root, bool 
 			Ref<Resource> edited_res = se->get_edited_resource();
 			if (p_for_script.is_valid() && edited_res.is_valid() && p_for_script != edited_res) {
 				continue;
-			}
-
-			if (edited_res->is_built_in()) {
-				continue; // Internal script, who cares.
 			}
 
 			uint64_t last_date = se->edited_file_data.last_modified_time;
@@ -862,11 +851,8 @@ void ScriptEditorView::_file_dialog_action(const String &p_file) {
 bool ScriptEditorView::_script_exists(const String &p_path) const {
 	if (p_path.is_empty()) {
 		return false;
-	} else if (p_path.is_resource_file()) {
-		return FileAccess::exists(p_path);
-	} else {
-		return FileAccess::exists(p_path.get_slice("::", 0));
 	}
+	return FileAccess::exists(p_path);
 }
 
 
@@ -951,14 +937,8 @@ void ScriptEditorView::_menu_option(int p_option) {
 			List<String> extensions;
 			ResourceLoader::get_recognized_extensions_for_type("Script", &extensions);
 			ResourceLoader::get_recognized_extensions_for_type("JSON", &extensions);
-			bool built_in = !path.is_resource_file();
 
-			if (extensions.find(path.get_extension()) || built_in) {
-				if (built_in) {
-					String res_path = path.get_slice("::", 0);
-					EditorNode::get_singleton()->load_scene_or_resource(res_path, false, false);
-				}
-
+			if (extensions.find(path.get_extension())) {
 				Ref<Resource> scr = ResourceLoader::load(path);
 				if (scr.is_null()) {
 					EditorNode::get_singleton()->show_warning(TTR("Could not load file at:") + "\n\n" + path, TTR("Error!"));
@@ -1123,10 +1103,6 @@ void ScriptEditorView::_menu_option(int p_option) {
 				const Ref<Resource> scr = current->get_edited_resource();
 				String path = scr->get_path();
 				if (!path.is_empty()) {
-					if (scr->is_built_in()) {
-						path = path.get_slice("::", 0); // Show the scene instead.
-					}
-
 					FileSystemDock::get_singleton()->navigate_to_path(path);
 				}
 			} break;
@@ -1394,24 +1370,6 @@ void ScriptEditorView::_notification(int p_what) {
 				}
 			}
 		} break;
-	}
-}
-
-void ScriptEditorView::_close_builtin_scripts_from_scene(const String &p_scene) {
-	for (int i = 0; i < tab_container->get_tab_count(); i++) {
-		ScriptEditorBase *se = Object::cast_to<ScriptEditorBase>(tab_container->get_tab_control(i));
-
-		if (se) {
-			Ref<Script> scr = se->get_edited_resource();
-			if (scr.is_null()) {
-				continue;
-			}
-
-			if (scr->is_built_in() && scr->get_path().begins_with(p_scene)) { // Is an internal script and belongs to scene being closed.
-				_close_tab(i, false);
-				i--;
-			}
-		}
 	}
 }
 
@@ -1868,7 +1826,6 @@ bool ScriptEditorView::edit(const Ref<Resource> &p_resource, int p_line, int p_c
 	bool use_external_editor =
 			controller->is_external_editor_active() ||
 			(scr.is_valid() && scr->get_language()->overrides_external_editor());
-	use_external_editor = use_external_editor && !(scr.is_valid() && scr->is_built_in()); // Ignore external editor for built-in scripts.
 	const bool open_dominant = EDITOR_GET("text_editor/behavior/files/open_dominant_script_on_scene_change");
 
 	EditorNode *editor_node = EditorNode::get_singleton();
@@ -2066,8 +2023,10 @@ void ScriptEditorView::save_current_script() {
 
 	if (text_file.is_valid()) {
 		current->apply_code();
-		_save_text_file(text_file, text_file->get_path());
-		return;
+		if (!resource->is_built_in()) {
+			_save_text_file(text_file, text_file->get_path());
+			return;
+		}
 	}
 
 	if (scr.is_valid()) {
@@ -2115,10 +2074,6 @@ bool ScriptEditorView::apply_script_refactor_plan(const ScriptRefactorApplyPlan 
 	ERR_FAIL_NULL_V(undo_redo, false);
 
 	for (const ScriptRefactorFilePlan &file : p_plan.files) {
-		if (is_embedded_script_path(file.path)) {
-			r_error_message = vformat(TTR("Cannot apply refactor to embedded script path '%s'."), file.path);
-			return false;
-		}
 		if (get_open_editor_for_path(file.path) != nullptr) {
 			continue;
 		}
@@ -2202,10 +2157,6 @@ void ScriptEditorView::_reload_scripts(bool p_refresh_only) {
 		}
 
 		Ref<Resource> edited_res = se->get_edited_resource();
-
-		if (edited_res->is_built_in()) {
-			continue; // Internal script, who cares.
-		}
 
 		if (p_refresh_only) {
 			// Make sure the modified time is correct.
@@ -2317,9 +2268,7 @@ void ScriptEditorView::_add_callback(Object *p_obj, const String &p_function, co
 		script_list->select(script_list->find_metadata(i));
 
 		// Save the current script so the changes can be picked up by an external editor.
-		if (!scr.ptr()->is_built_in()) { // But only if it's not built-in script.
-			save_current_script();
-		}
+		save_current_script();
 
 		break;
 	}
@@ -2785,23 +2734,8 @@ void ScriptEditorView::set_window_layout(Ref<ConfigFile> p_layout) {
 				controller->get_script_editor_cache()->erase_section(path);
 			}
 			continue;
-		} else if (!path.is_resource_file()) {
-			if (EditorNode *editor_node = EditorNode::get_singleton()) {
-				if (!editor_node->is_scene_open(path.get_slice("::", 0))) {
-					continue;
-				}
-			}
 		}
-		bool is_script = false;
-		if (path.is_resource_file()) {
-			is_script = extensions.find(path.get_extension());
-		} else {
-			Ref<Script> scr = ResourceCache::get_ref(path);
-			if (scr.is_valid()) {
-				is_script = true;
-			}
-		}
-
+		const bool is_script = path.is_resource_file() && extensions.find(path.get_extension());
 		if (is_script) {
 			Ref<Resource> scr = ResourceLoader::load(path);
 			if (scr.is_null()) {
@@ -3002,7 +2936,6 @@ void ScriptEditorView::set_scene_root_script(Ref<Script> p_script) {
 	bool use_external_editor =
 			controller->is_external_editor_active() ||
 			(p_script.is_valid() && p_script->get_language()->overrides_external_editor());
-	use_external_editor = use_external_editor && !(p_script.is_valid() && p_script->is_built_in()); // Ignore external editor for built-in scripts.
 	const bool open_dominant = EDITOR_GET("text_editor/behavior/files/open_dominant_script_on_scene_change");
 
 	if (open_dominant && !use_external_editor && p_script.is_valid()) {
@@ -3370,6 +3303,29 @@ PackedStringArray ScriptEditorView::collect_unsaved_scripts() const {
 	return unsaved_list;
 }
 
+PackedStringArray ScriptEditorView::collect_unsaved_built_in_text_resources_for_scene(const String &p_scene_path) const {
+	PackedStringArray unsaved_list;
+	const String scene_prefix = vformat("%s::", p_scene_path);
+	for (int i = 0; i < tab_container->get_tab_count(); i++) {
+		ScriptEditorBase *se = Object::cast_to<ScriptEditorBase>(tab_container->get_tab_control(i));
+		if (!se || !se->is_unsaved()) {
+			continue;
+		}
+
+		Ref<Resource> edited_res = se->get_edited_resource();
+		if (!edited_res.is_valid() || !edited_res->is_built_in() || Object::cast_to<Script>(*edited_res)) {
+			continue;
+		}
+
+		if (!edited_res->get_path().begins_with(scene_prefix)) {
+			continue;
+		}
+
+		unsaved_list.append(se->get_name());
+	}
+	return unsaved_list;
+}
+
 Vector<Ref<Script>> ScriptEditorView::collect_open_scripts() const {
 	Vector<Ref<Script>> ret;
 	for (int i = 0; i < tab_container->get_tab_count(); i++) {
@@ -3456,23 +3412,8 @@ void ScriptEditorView::set_view_layout(const Ref<ConfigFile> &p_layout, const St
 				controller->get_script_editor_cache()->erase_section(path);
 			}
 			continue;
-		} else if (!path.is_resource_file()) {
-			if (EditorNode *editor_node = EditorNode::get_singleton()) {
-				if (!editor_node->is_scene_open(path.get_slice("::", 0))) {
-					continue;
-				}
-			}
 		}
-		bool is_script = false;
-		if (path.is_resource_file()) {
-			is_script = extensions.find(path.get_extension());
-		} else {
-			Ref<Script> scr = ResourceCache::get_ref(path);
-			if (scr.is_valid()) {
-				is_script = true;
-			}
-		}
-
+		const bool is_script = path.is_resource_file() && extensions.find(path.get_extension());
 		if (is_script) {
 			Ref<Resource> scr = ResourceLoader::load(path);
 			if (scr.is_null()) {

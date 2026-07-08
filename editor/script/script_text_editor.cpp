@@ -875,19 +875,9 @@ void ScriptTextEditor::ensure_focus() {
 }
 
 String ScriptTextEditor::get_name() {
-	String name;
-
-	name = script->get_path().get_file();
+	String name = script->get_path().get_file();
 	if (name.is_empty()) {
-		// This appears for newly created built-in scripts before saving the scene.
 		name = TTR("[unsaved]");
-	} else if (script->is_built_in()) {
-		const String &script_name = script->get_name();
-		if (!script_name.is_empty()) {
-			// If the built-in script has a custom resource name defined,
-			// display the built-in script name as follows: `ResourceName (scene_file.tscn)`
-			name = vformat("%s (%s)", script_name, name.get_slice("::", 0));
-		}
 	}
 
 	if (is_unsaved()) {
@@ -899,10 +889,7 @@ String ScriptTextEditor::get_name() {
 
 Ref<Texture2D> ScriptTextEditor::get_theme_icon() {
 	if (get_parent_control()) {
-		String icon_name = script->get_class();
-		if (script->is_built_in()) {
-			icon_name += "Internal";
-		}
+		const String icon_name = script->get_class();
 
 		if (get_parent_control()->has_theme_icon(icon_name, EditorStringName(EditorIcons))) {
 			return get_parent_control()->get_editor_theme_icon(icon_name);
@@ -912,14 +899,7 @@ Ref<Texture2D> ScriptTextEditor::get_theme_icon() {
 	}
 
 	Ref<Texture2D> extension_language_icon = EditorNode::get_editor_data().extension_class_get_icon(script->get_class());
-	Ref<Texture2D> extension_language_alt_icon;
-	if (script->is_built_in()) {
-		extension_language_alt_icon = EditorNode::get_editor_data().extension_class_get_icon(script->get_class() + "Internal");
-	}
-
-	if (extension_language_alt_icon.is_valid()) {
-		return extension_language_alt_icon;
-	} else if (extension_language_icon.is_valid()) {
+	if (extension_language_icon.is_valid()) {
 		return extension_language_icon;
 	}
 
@@ -1243,10 +1223,6 @@ void ScriptEditorView::_update_modified_scripts_for_external_editor(Ref<Script> 
 
 		if (p_for_script.is_valid() && p_for_script != scr) {
 			continue;
-		}
-
-		if (scr->is_built_in()) {
-			continue; //internal script, who cares, though weird
 		}
 
 		uint64_t last_date = scr->get_last_modified_time();

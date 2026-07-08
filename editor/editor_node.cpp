@@ -1810,8 +1810,8 @@ void EditorNode::save_resource_in_path(const Ref<Resource> &p_resource, const St
 }
 
 void EditorNode::save_resource(const Ref<Resource> &p_resource) {
-	// If built-in resource, save the scene instead.
-	if (p_resource->is_built_in()) {
+	// If built-in resource, save the scene instead (scripts are always standalone files).
+	if (p_resource->is_built_in() && !Object::cast_to<Script>(*p_resource)) {
 		const String scene_path = p_resource->get_path().get_slice("::", 0);
 		if (!scene_path.is_empty()) {
 			if (ResourceLoader::exists(scene_path) && ResourceLoader::get_resource_type(scene_path) == "PackedScene") {
@@ -2566,13 +2566,15 @@ void EditorNode::_save_scene(String p_file, int idx) {
 
 	err = ResourceSaver::save(sdata, p_file, flg);
 
-	// This needs to run before saving external resources.
-	if (ScriptEditorController *script_editor = ScriptEditorController::get_singleton()) {
-		script_editor->notify_scene_saved(p_file);
+	if (err == OK) {
+		if (ScriptEditorController *script_editor = ScriptEditorController::get_singleton()) {
+			script_editor->notify_scene_saved(p_file);
+		}
+		emit_signal(SNAME("scene_saved"), p_file);
+		editor_data.notify_scene_saved(p_file);
 	}
-	emit_signal(SNAME("scene_saved"), p_file);
-	editor_data.notify_scene_saved(p_file);
 
+	// This needs to run before saving external resources.
 	_save_external_resources();
 	saving_scene = p_file; // Some editors may save scenes of built-in resources as external data, so avoid saving this scene again.
 	editor_data.save_editor_external_data();
@@ -3170,7 +3172,7 @@ void EditorNode::_edit_current(bool p_skip_foreign, bool p_skip_inspector_update
 	Object *current_obj = current_id.is_valid() ? ObjectDB::get_instance(current_id) : nullptr;
 
 	Ref<Resource> res = Object::cast_to<Resource>(current_obj);
-	if (p_skip_foreign && res.is_valid()) {
+	if (p_skip_foreign && res.is_valid() && !Object::cast_to<Script>(*res)) {
 		const int current_tab = scene_tabs->get_current_tab();
 		if (res->get_path().contains("::") && res->get_path().get_slice("::", 0) != editor_data.get_scene_path(current_tab)) {
 			// Trying to edit resource that belongs to another scene; abort.
@@ -3366,7 +3368,7 @@ void EditorNode::_edit_current(bool p_skip_foreign, bool p_skip_inspector_update
 
 					// Only reveal the script leaf when using the in-engine editor.
 					Script *current_script = Object::cast_to<Script>(current_obj);
-					const bool reveal_in_engine = !current_script || current_script->is_built_in() ||
+					const bool reveal_in_engine = !current_script ||
 							(!bool(EDITOR_GET("text_editor/external/use_external_editor")) && !current_script->get_language()->overrides_external_editor());
 					if (reveal_in_engine) {
 						reveal_script_leaf();
