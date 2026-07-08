@@ -29,16 +29,37 @@ of upstream PR merges is the porting primitive.
 ## 2. Current state (as of this handoff)
 
 - **Branch `feature/godot-4.7-port`** pushed to origin, rebased on **latest develop**.
-- **162 live upstream PRs ported** + `RefCounted::deinit_ref` hand-port + fork-adaptation
-  fixes. 172 commits, clean history (0 dead reverts), one `cherry-pick -x` commit per PR.
-- **Build green** (macOS arm64). **Full suite: 3016 passed / 0 failed / 3 skipped.**
+- **Waves 1–4 done.** Build green under strict `dev_mode=yes` (warnings-as-errors, macOS
+  arm64). **Full suite: 3016 passed / 0 failed / 3 skipped** after every wave.
 - Worktree: `/Users/christian/CafecitoGames/Foundry/.worktrees/godot-4.7-port`.
 - The `godot` remote + tags `4.6.3-stable` / `4.7-stable` are fetched in the shared repo.
 
-**Done:** Wave 1 = the 482 stock-adjacent candidate PRs in core, servers, drivers, scene
-runtime, and self-contained modules (jolt/gltf/gridmap/openxr/visual_shader). Both low-risk
-(275→106 net) and med-risk (32→25 net) port-now sets are landed, plus their conflict
-resolution passes.
+**Wave 1** = the 482 stock-adjacent candidate PRs in core, servers, drivers, scene runtime,
+and self-contained modules (jolt/gltf/gridmap/openxr/visual_shader). Low-risk (275→106 net)
+and med-risk (32→25 net) port-now sets landed + conflict resolution. 162 PRs + `deinit_ref`.
+
+**Wave 2 = `scene/gui` (122 candidates).** Triaged (49 port-now / 47 port-later / 26 skip).
+**45 PRs landed** (40 clean cherry-picks + 5 hand-resolved conflicts; 4 conflicts were
+already-present no-ops). Blockers behind the port-later set: the Control max-size feature
+(PR 116640), PopupMenu search-bar, BaseButton multitouch, the AccessibilityServer refactor
+(PR 116839), and diverged Tree/RTL reworks. See `triage/wave2/`.
+
+**Wave 3 = `platform/*` (142 candidates).** Triaged by OS (android/linuxbsd/windows/macos).
+**23 PRs landed** (13 clean + 10 hand-resolved; 14 already-present/absent no-ops).
+**android contributed 0** — its tree is fully rebranded (`org.godotengine`→`games.cafecito`,
+`java_godot_*`→`java_foundry_*`) and the good self-contained fixes were already backported.
+Caveat: only macOS + shared code is compiled here, so android/windows/linux/iOS ports are
+**not build-verified** (notably a hand-adapted `crash_handler_linuxbsd.cpp` hunk). See
+`triage/wave3/`.
+
+**Wave 4 = `dep-bump` (21).** 11 leaf-lib bumps cherry-picked clean (harfbuzz, ufbx×2, glad,
+tinyexr, dr_mp3, libjpeg-turbo, re-spirv×2, 2 SDL controller fixes). Of the 10 "conflicts":
+4 were already-satisfied (fork develop already at 4.7 for freetype/libpng×2/re-spirv);
+**Jolt bumped 5.4.0→5.5.0** via whole-dir checkout from `4.7-stable` + a 1-line wrapper
+adaptation (`InternalEdgeRemovingCollector` 2-arg ctor) — physics tests pass. **Deferred
+(port-later): glslang bump + PR 116419 (metal-cpp)** — 4.7's glslang/Metal state is coupled
+to the `metal-cpp` migration the fork has not done (metal-cpp is absent). See
+`ported-log-depbump.json` for per-PR dispositions.
 
 ---
 
@@ -186,7 +207,19 @@ modules/mono 11 (likely skip) · editor/run 10 · editor/project_manager 9 · ed
 
 ## 8. Suggested next action for a fresh session
 
-Start **wave 2 = `scene/gui` (122 candidates)**: it's runtime UI (Control nodes), stock-adjacent,
-low editor-divergence risk — the safest high-volume next target. Follow §4 A→G. Then tackle
-`platform/*`, then the `dep-bump` thirdparty updates, and only then the higher-risk `editor/*`
-mass (with extra grep-verification against the fork's workspace rewrites).
+Waves 2–4 (scene/gui, platform, dep-bump) are **done**. The remaining candidate mass is the
+**higher-risk `editor/*` set** (~editor/scene 119, editor/docks 67, editor/inspector 48,
+editor/animation 37, editor/export 30, editor/settings 26, editor/gui 24, editor/debugger 20,
+editor/editor_node.cpp 17, editor/themes 13, editor/import 11, editor/run 10, …). These are the
+counts in `catalog.json`, but that file's `bucket`/`subsystem` fields are **static gross counts
+that still include already-ported PRs** — the authoritative "what is ported" is
+`ported-log*.json` + `triage/**/out-*.json`. Triage agents here MUST grep-verify each touched
+editor file/class still exists and is not part of the fork's diverged workspace/multi-scene/
+script-editor surfaces (expect a much higher incompatible/port-later rate than scene/gui).
+Follow §4 A→G. `servers/rendering`, `scene/animation`, `scene/main`, `core/*`, and
+`modules/openxr|gridmap|gltf` also have residual untriaged candidates worth a lighter pass.
+
+Deferred clusters worth a dedicated effort later: the **AccessibilityServer refactor (PR
+116839)** unlocks a chain of a11y fixes; the **metal-cpp Metal migration** unlocks glslang +
+Metal PRs; **Control max-size (116640)**, **PopupMenu search-bar**, and **BaseButton
+multitouch** each unlock several scene/gui port-later items.
