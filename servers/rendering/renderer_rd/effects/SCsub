@@ -7,9 +7,10 @@ Import("env")
 
 env_effects = env.Clone()
 
-# metal-cpp headers for Metal FX
+# metal-cpp headers for Metal FX. Added as a system include so warnings in
+# Apple's vendored headers do not trip dev_mode's -Werror in the MetalFX effect.
 if env["metal"]:
-    env_effects.Prepend(CPPPATH=["#thirdparty/metal-cpp"])
+    env_effects.Append(CCFLAGS=["-isystem", Dir("#thirdparty/metal-cpp").abspath])
 
 # Thirdparty source files
 
