@@ -1011,13 +1011,13 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	if (!find_named("Open Existing Project")) {
 		return _failure_with_message(p_driver, result.workflow, "Open Existing Project action was not found.");
 	}
-	if (!find_named("Projects", "tab_list")) {
+	if (!find_named("Projects", "tab")) {
 		return _failure_with_message(p_driver, result.workflow, "Projects tab was not found.");
 	}
-	if (!find_named("Manage", "tab_list")) {
+	if (!find_named("Manage", "tab")) {
 		return _failure_with_message(p_driver, result.workflow, "Manage tab was not found.");
 	}
-	if (!find_named("About", "tab_list")) {
+	if (!find_named("About", "tab")) {
 		return _failure_with_message(p_driver, result.workflow, "About tab was not found.");
 	}
 

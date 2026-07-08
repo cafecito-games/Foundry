@@ -34,8 +34,6 @@
 #include "core/os/keyboard.h"
 #include "core/os/os.h"
 #include "core/version.h"
-#include "editor/editor_interface.h"
-#include "editor/editor_node.h"
 #include "editor/editor_string_names.h"
 #include "editor/project_manager/project_dialog.h"
 #include "editor/project_manager/startup_router.h"
@@ -263,12 +261,7 @@ void StartupDialog::show_startup_dialog() {
 	known_projects.load();
 	_refresh_recents();
 	tabs->set_current_tab(0);
-
-	if (EditorNode::get_singleton() != nullptr) {
-		EditorInterface::get_singleton()->popup_dialog_centered_clamped(this, Size2i(560, 0) * EDSCALE, 0.85);
-	} else {
-		popup_centered_clamped(Size2i(560, 0) * EDSCALE, 0.85);
-	}
+	popup_centered_clamped(Size2i(560, 0) * EDSCALE, 0.85);
 }
 
 void StartupDialog::hide_startup_dialog() {

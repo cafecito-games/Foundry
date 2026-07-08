@@ -10483,7 +10483,6 @@ EditorNode::EditorNode() {
 
 	if (projectless_shell) {
 		startup_dialog = memnew(StartupDialog);
-		gui_base->add_child(startup_dialog);
 	}
 
 	feature_profile_manager->connect("current_feature_profile_changed", callable_mp(this, &EditorNode::_feature_profile_changed));
