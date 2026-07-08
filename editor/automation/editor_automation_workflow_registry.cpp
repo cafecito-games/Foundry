@@ -56,6 +56,10 @@ EditorAutomationAcceptanceWorkflow::Result _run_mixed_workspace_restore(EditorWo
 	return EditorAutomationAcceptanceWorkflow::run_mixed_workspace_restore(p_driver);
 }
 
+EditorAutomationAcceptanceWorkflow::Result _run_projectless_shell_smoke(EditorWorkflowTestDriver &p_driver) {
+	return EditorAutomationAcceptanceWorkflow::run_projectless_shell_smoke(p_driver);
+}
+
 } // namespace
 
 HashMap<String, EditorAutomationWorkflowRegistry::WorkflowEntry> EditorAutomationWorkflowRegistry::workflows;
@@ -93,6 +97,7 @@ void EditorAutomationWorkflowRegistry::register_builtin_workflows() {
 	_register_workflow("mixed_workspace_editing", &_run_mixed_workspace_editing);
 	_register_workflow("mixed_workspace_seed", &_run_mixed_workspace_seed);
 	_register_workflow("mixed_workspace_restore", &_run_mixed_workspace_restore);
+	_register_workflow("projectless_shell_smoke", &_run_projectless_shell_smoke);
 }
 
 String EditorAutomationWorkflowRegistry::resolve_canonical_name(const String &p_name) {

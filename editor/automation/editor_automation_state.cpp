@@ -30,6 +30,8 @@
 
 #include "editor_automation_state.h"
 
+#include "core/config/project_settings.h"
+
 #include "editor/automation/editor_automation_workspace.h"
 #include "editor/editor_data.h"
 #include "editor/editor_interface.h"
@@ -451,6 +453,9 @@ Dictionary EditorAutomationState::read_editor_state() {
 		view_3d_state["supported"] = false;
 	}
 	state["view_3d"] = view_3d_state;
+
+	state["projectless_shell"] = editor_node->is_projectless_shell();
+	state["project_loaded"] = ProjectSettings::get_singleton()->is_project_loaded();
 
 	return state;
 }

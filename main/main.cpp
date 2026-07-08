@@ -223,6 +223,7 @@ static bool accessibility_mode_set = false;
 static bool single_window = false;
 static bool editor = false;
 static bool project_manager = false;
+static bool projectless_editor_shell = false;
 static bool cmdline_tool = false;
 static String locale;
 static String log_file;
@@ -319,6 +320,12 @@ static const String NULL_AUDIO_DRIVER("Dummy");
 bool Main::is_cmdline_tool() {
 	return cmdline_tool;
 }
+
+#ifdef TOOLS_ENABLED
+bool Main::is_projectless_editor_shell() {
+	return projectless_editor_shell;
+}
+#endif
 
 #ifdef TOOLS_ENABLED
 const Vector<String> &Main::get_forwardable_cli_arguments(Main::CLIScope p_scope) {
@@ -2163,9 +2170,11 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 		// Automation launches (`editor open --project ... --automation`) drive disposable
 		// scratch projects from tests and agent workflows; they must never auto-open a
 		// remembered project or overwrite the user's GUI recents/auto-open candidate.
-		if (editor_intent_launch && !cli_parse.invocation.automation && !project_manager && !cmdline_tool &&
+		if (editor_intent_launch && !project_manager && !cmdline_tool &&
 				!test_rd_support && !test_rd_creation && main_pack.is_empty()) {
-			interactive_editor_launch = true;
+			if (!cli_parse.invocation.automation) {
+				interactive_editor_launch = true;
+			}
 
 			// The user pinned a project when `--project` was given (its value is preserved
 			// on the invocation even for `--project .`, which leaves project_path as "."),
@@ -2180,15 +2189,17 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 			known_projects.load();
 			const StartupRouter::Decision decision = StartupRouter::resolve_launch(
 					explicit_requested, explicit_valid, OS::get_singleton()->get_cwd(), known_projects);
-			if (decision.route == StartupRouter::ROUTE_OPEN_REMEMBERED) {
+			if (decision.route == StartupRouter::ROUTE_OPEN_REMEMBERED && !cli_parse.invocation.automation) {
 				project_path = decision.project_path;
 				editor = true;
+			} else if (decision.route == StartupRouter::ROUTE_PROJECTLESS_SHELL) {
+				editor = true;
+				projectless_editor_shell = true;
 			}
-			// The remaining routes (explicit path, cwd project, explicit-invalid, and the
-			// projectless shell) intentionally leave project_path/editor untouched: the
-			// explicit or cwd path is loaded by the setup() call below, and an unresolved
-			// launch fails that setup() and drops to the existing project-manager surface,
-			// which stands in as the projectless-shell placeholder until it lands (#1132).
+			// The remaining routes (explicit path, cwd project, explicit-invalid) intentionally
+			// leave project_path/editor untouched: the explicit or cwd path is loaded by the
+			// setup() call below, and an unresolved launch fails that setup() and drops to the
+			// existing project-manager surface unless projectless_editor_shell was selected above.
 			// The router never returns ROUTE_OPEN_REMEMBERED for an explicit-invalid launch,
 			// so an invalid `--project` can never silently auto-open a remembered project;
 			// the recording gate below additionally refuses to record the ambient cwd
@@ -2207,7 +2218,9 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 #endif
 	} else {
 #ifdef TOOLS_ENABLED
-		editor = false;
+		if (!projectless_editor_shell) {
+			editor = false;
+		}
 #else
 		String error_msg = "Error: Couldn't load project data at path \"" + (project_path == "." ? OS::get_singleton()->get_cwd() : project_path) + "\". Is the .pck file missing?\n\n";
 #if !defined(OVERRIDE_PATH_ENABLED) && !defined(TOOLS_ENABLED)
@@ -2319,6 +2332,9 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 	if (editor) {
 		Engine::get_singleton()->set_editor_hint(true);
 		Engine::get_singleton()->set_extension_reloading_enabled(true);
+		if (projectless_editor_shell) {
+			Engine::get_singleton()->set_projectless_editor_shell_hint(true);
+		}
 
 		// Create initialization lock file to detect crashes during startup.
 		OS::get_singleton()->create_lock_file();

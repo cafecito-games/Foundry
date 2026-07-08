@@ -909,6 +909,65 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	return result;
 }
 
+EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::run_projectless_shell_smoke(EditorWorkflowTestDriver &p_driver) {
+	Result result;
+	result.workflow = "projectless_shell_smoke";
+
+	p_driver.begin_workflow();
+
+	p_driver.set_step("wait_for_editor_ready");
+	if (!p_driver.wait_editor_idle(30000)) {
+		return _failure_from_driver(p_driver, result.workflow, "Editor did not become ready in projectless mode.");
+	}
+
+	p_driver.set_step("verify_projectless_state");
+	const Dictionary state = p_driver.read_editor_state();
+	if (!(bool)state.get("supported", false)) {
+		return _failure_with_message(p_driver, result.workflow, "Editor automation state was not available.");
+	}
+	if (!(bool)state.get("projectless_shell", false)) {
+		return _failure_with_message(p_driver, result.workflow, "Editor did not boot in projectless shell mode.");
+	}
+	if ((bool)state.get("project_loaded", true)) {
+		return _failure_with_message(p_driver, result.workflow, "Projectless shell boot loaded a project resource path.");
+	}
+
+	const Array open_scenes = state.get("open_scenes", Array());
+	if (!open_scenes.is_empty()) {
+		if (open_scenes.size() != 1) {
+			return _failure_with_message(p_driver, result.workflow, "Projectless shell should start with at most one empty workspace scene slot.");
+		}
+		const Dictionary scene_entry = open_scenes[0];
+		if (!String(scene_entry.get("path", String())).is_empty()) {
+			return _failure_with_message(p_driver, result.workflow, "Projectless shell should not open a scene file at startup.");
+		}
+	}
+
+	const Dictionary workspace = state.get("workspace", Dictionary());
+	if (!(bool)workspace.get("supported", false) || (int)workspace.get("tile_count", 0) != 1) {
+		return _failure_with_message(p_driver, result.workflow, "Projectless shell did not present a single empty workspace pane.");
+	}
+
+	p_driver.set_step("verify_run_controls_hidden");
+	Dictionary run_selector;
+	run_selector["role"] = "button";
+	run_selector["name"] = "Run Project";
+	const Dictionary run_find = p_driver.find(run_selector);
+	if ((bool)run_find.get("ok", false)) {
+		return _failure_with_message(p_driver, result.workflow, "Run Project controls should be unavailable in projectless shell mode.");
+	}
+
+	p_driver.set_step("assert_no_new_errors");
+	if (!p_driver.assert_no_new_errors()) {
+		return _failure_from_driver(p_driver, result.workflow);
+	}
+
+	result.ok = true;
+	result.message = "Projectless editor shell smoke workflow completed.";
+	result.details = state;
+	return result;
+}
+
 void EditorAutomationAcceptanceWorkflow::print_result(const Result &p_result) {
 	Dictionary payload;
 	payload["workflow"] = p_result.workflow;
