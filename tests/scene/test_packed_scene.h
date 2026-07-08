@@ -91,9 +91,11 @@ public:
 	String get_source_code() const override { return String(); }
 	void set_source_code(const String &p_code) override {}
 	Error reload(bool p_keep_state = false) override { return OK; }
+#ifdef TOOLS_ENABLED
 	StringName get_doc_class_name() const override { return StringName(); }
 	Vector<DocData::ClassDoc> get_documentation() const override { return Vector<DocData::ClassDoc>(); }
 	String get_class_icon_path() const override { return String(); }
+#endif // TOOLS_ENABLED
 	bool has_method(const StringName &p_method) const override { return false; }
 	MethodInfo get_method_info(const StringName &p_method) const override { return MethodInfo(); }
 	bool is_tool() const override { return false; }
