@@ -65,13 +65,13 @@ void StartupDialog::_update_theme() {
 		return;
 	}
 
-	Ref<Theme> theme = get_theme();
-	if (theme.is_null()) {
+	Ref<Theme> editor_theme = get_theme();
+	if (editor_theme.is_null()) {
 		return;
 	}
 
 	if (logo != nullptr) {
-		logo->set_texture(theme->get_icon(SNAME("Logo"), EditorStringName(EditorIcons)));
+		logo->set_texture(editor_theme->get_icon(SNAME("Logo"), EditorStringName(EditorIcons)));
 	}
 }
 
@@ -83,11 +83,11 @@ String StartupDialog::_recent_display_name(const KnownProjectStore::KnownProject
 }
 
 String StartupDialog::_recent_item_text(const KnownProjectStore::KnownProject &p_project) const {
-	String title = _recent_display_name(p_project);
+	String display_title = _recent_display_name(p_project);
 	if (p_project.missing) {
-		title = vformat(TTR("%s (missing)"), title);
+		display_title = vformat(TTR("%s (missing)"), display_title);
 	}
-	return vformat("%s\n%s", title, p_project.path);
+	return vformat("%s\n%s", display_title, p_project.path);
 }
 
 void StartupDialog::_refresh_recents() {
