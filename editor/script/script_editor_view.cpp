@@ -1974,8 +1974,10 @@ void ScriptEditorView::save_current_script() {
 
 	if (text_file.is_valid()) {
 		current->apply_code();
-		_save_text_file(text_file, text_file->get_path());
-		return;
+		if (!resource->is_built_in()) {
+			_save_text_file(text_file, text_file->get_path());
+			return;
+		}
 	}
 
 	if (scr.is_valid()) {
