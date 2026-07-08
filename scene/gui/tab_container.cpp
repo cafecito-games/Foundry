@@ -406,8 +406,8 @@ void TabContainer::_update_margins() {
 	}
 
 	if (get_tab_count() == 0) {
-		internal_container->set_offset(SIDE_LEFT, left_margin);
-		internal_container->set_offset(SIDE_RIGHT, -right_margin);
+		tab_bar->set_offset(SIDE_LEFT, left_margin);
+		tab_bar->set_offset(SIDE_RIGHT, -right_margin);
 		_maximum_size_changed();
 		return;
 	}
@@ -427,7 +427,7 @@ void TabContainer::_update_margins() {
 			tab_bar->set_offset(SIDE_LEFT, left_margin);
 
 			if (has_popup) {
-				internal_container->set_offset(SIDE_RIGHT, -right_margin);
+				tab_bar->set_offset(SIDE_RIGHT, -right_margin);
 				_maximum_size_changed();
 				return;
 			}
@@ -1040,7 +1040,7 @@ Size2 TabContainer::_get_minimum_size(bool p_use_desired_sizes) const {
 		ms.height += theme_cache.tabbar_style->get_margin(SIDE_TOP) + theme_cache.tabbar_style->get_margin(SIDE_BOTTOM);
 
 		if (get_popup()) {
-			ms.width += p_use_desired_sizes ? popup_button->get_bound_desired_size().x : popup_button->get_minimum_size().x;
+			ms.width += theme_cache.menu_icon->get_width();
 		}
 
 		if (theme_cache.side_margin > 0 && get_tab_alignment() != TabBar::ALIGNMENT_CENTER &&
@@ -1107,8 +1107,8 @@ void TabContainer::_maximum_size_changed() {
 	if (theme_cache.tabbar_style.is_valid()) {
 		if (ms.width >= 0) {
 			ms.width -= theme_cache.tabbar_style->get_margin(SIDE_LEFT) + theme_cache.tabbar_style->get_margin(SIDE_RIGHT);
-			if (get_popup() && popup_button) {
-				ms.width -= popup_button->get_minimum_size().x;
+			if (get_popup()) {
+				ms.width -= theme_cache.menu_icon->get_width();
 			}
 			if (theme_cache.side_margin > 0 && get_tab_alignment() != TabBar::ALIGNMENT_CENTER &&
 					(get_tab_alignment() != TabBar::ALIGNMENT_RIGHT || !get_popup())) {
@@ -1121,7 +1121,7 @@ void TabContainer::_maximum_size_changed() {
 			ms.height = MAX(ms.height, 0);
 		}
 	}
-	internal_container->set_parent_maximum_size_cache(Size2(-1, -1));
+	tab_bar->set_parent_maximum_size_cache(Size2(-1, -1));
 	tab_bar->set_custom_maximum_size(ms);
 }
 
@@ -1345,12 +1345,6 @@ void TabContainer::_bind_methods() {
 
 TabContainer::TabContainer() {
 	connect(SceneStringName(maximum_size_changed), callable_mp(this, &TabContainer::_maximum_size_changed));
-
-	internal_container = memnew(HBoxContainer);
-	internal_container->add_theme_constant_override(SNAME("separation"), 0);
-	internal_container->set_anchors_and_offsets_preset(Control::PRESET_TOP_WIDE);
-	internal_container->set_use_parent_material(true);
-	add_child(internal_container, false, INTERNAL_MODE_FRONT);
 
 	tab_bar = memnew(TabBar);
 	SET_DRAG_FORWARDING_GCDU(tab_bar, TabContainer);
