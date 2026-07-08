@@ -2160,7 +2160,10 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 		const bool editor_intent_launch = kind == FoundryCLIParser::CLIInvocation::EDITOR_OPEN ||
 				(kind == FoundryCLIParser::CLIInvocation::NONE &&
 						!StartupRouter::args_request_runtime_launch(main_args));
-		if (editor_intent_launch && !project_manager && !cmdline_tool &&
+		// Automation launches (`editor open --project ... --automation`) drive disposable
+		// scratch projects from tests and agent workflows; they must never auto-open a
+		// remembered project or overwrite the user's GUI recents/auto-open candidate.
+		if (editor_intent_launch && !cli_parse.invocation.automation && !project_manager && !cmdline_tool &&
 				!test_rd_support && !test_rd_creation && main_pack.is_empty()) {
 			interactive_editor_launch = true;
 
