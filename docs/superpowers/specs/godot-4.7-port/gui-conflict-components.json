@@ -1,0 +1,91 @@
+[
+ [
+  {
+   "pr": "115392",
+   "sha": "0b6cdb835b02365d3549fca840576ac3eeca9bf1",
+   "risk": "med",
+   "files": [
+    "scene/gui/control.cpp",
+    "scene/gui/file_dialog.cpp"
+   ]
+  },
+  {
+   "pr": "111819",
+   "sha": "1a69be88e2a64cefc5c2bfbb9e60f5a080a9ced7",
+   "risk": "low",
+   "files": [
+    "doc/classes/Control.xml",
+    "scene/gui/control.cpp",
+    "scene/gui/control.h"
+   ]
+  },
+  {
+   "pr": "119538",
+   "sha": "014ff66970483d505d9c63a6621ccf960187b17b",
+   "risk": "low",
+   "files": [
+    "scene/gui/control.h",
+    "scene/gui/slider.cpp"
+   ]
+  }
+ ],
+ [
+  {
+   "pr": "117011",
+   "sha": "c646b57c278e8bd1aa6c42193bde3ca69dee6ecf",
+   "risk": "low",
+   "files": [
+    "scene/gui/rich_text_label.cpp",
+    "scene/gui/rich_text_label.h"
+   ]
+  },
+  {
+   "pr": "117201",
+   "sha": "8423b86dd45de9a09031809a95777bcaa7be3677",
+   "risk": "low",
+   "files": [
+    "scene/gui/rich_text_label.cpp"
+   ]
+  }
+ ],
+ [
+  {
+   "pr": "117232",
+   "sha": "73f979b03a40d11a0feff721dc8721e1b0368913",
+   "risk": "low",
+   "files": [
+    "scene/gui/tab_container.cpp"
+   ]
+  }
+ ],
+ [
+  {
+   "pr": "118137",
+   "sha": "59d29ed05fd897efa2779b8f4e982964db4e0324",
+   "risk": "low",
+   "files": [
+    "scene/gui/popup_menu.cpp"
+   ]
+  }
+ ],
+ [
+  {
+   "pr": "115601",
+   "sha": "9120c0c3aeb0d69d5bc5705d2c791c8e89da9718",
+   "risk": "low",
+   "files": [
+    "scene/gui/item_list.cpp"
+   ]
+  }
+ ],
+ [
+  {
+   "pr": "118488",
+   "sha": "da7924dfa3e329ebd5dde9dbc750aa2ac9de013a",
+   "risk": "low",
+   "files": [
+    "scene/gui/box_container.cpp"
+   ]
+  }
+ ]
+]
