@@ -63,6 +63,42 @@ The Foundry editor embeds a local MCP (Model Context Protocol) server that lets 
 - On startup the editor prints a machine-readable line to stdout: `FOUNDRY_AUTOMATION {"transport":"mcp","endpoint":"http://127.0.0.1:<port>/mcp","token":"...","local_only":true}`. Parse it for the endpoint and bearer token.
 - The transport is POST-only JSON-RPC 2.0 over HTTP. Every request needs `Authorization: Bearer <token>` and `Content-Type: application/json`. Start with an `initialize` request, then send `notifications/initialized`, then use `tools/call` and `resources/read`. There are no server-push notifications; poll `poll_events` for editor errors/warnings.
 
+### Python MCP client for agents
+
+Prefer the reusable Python client in `scripts/foundry_mcp/` instead of writing
+ad hoc `urllib` MCP scripts. Use `FoundryEditorAutomationSession.launch()` when
+the agent should start and own the editor process, and
+`FoundryEditorAutomationSession.connect()` when the editor is already running and
+the endpoint/token are known.
+
+```python
+from pathlib import Path
+
+from scripts.foundry_mcp import FoundryEditorAutomationSession
+
+with FoundryEditorAutomationSession.launch(
+    binary=Path("bin/foundry.linuxbsd.editor.dev.x86_64"),
+    project=Path("tests/fixtures/editor_automation_mvp"),
+) as session:
+    session.client.initialize()
+    ui = session.client.structured_tool("observe_ui", {"max_depth": 3})
+```
+
+For existing editor processes:
+
+```python
+from scripts.foundry_mcp import FoundryEditorAutomationSession
+
+session = FoundryEditorAutomationSession.connect(endpoint, token)
+session.client.initialize()
+state = session.client.structured_tool("read_editor_state")
+```
+
+`call_tool()` returns the complete MCP tool result, including `isError`; use
+`structured_tool()` only when the script explicitly wants `structuredContent`.
+For longer examples and guidance on exposing this as a Claude, Codex, or Cursor
+tool, see `docs/editor_automation_mcp_client.md`.
+
 ### Tools and typical loop
 
 `tools/list` returns full input/output schemas. The core loop is observe → select → act → wait:
