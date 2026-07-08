@@ -141,8 +141,13 @@ jobs:
         with:
           name: ${{ matrix.cache-name }}
 
-      - name: Unit tests
+      - name: Smoke test
         run: |
           ${{ matrix.bin }} --version
           ${{ matrix.bin }} --help
-          ${{ matrix.bin }} test run --force-colors
+
+      - name: Unit tests
+        # Export templates are built without unit-test support (tests=no), so
+        # the test runner is only available on the editor build.
+        if: matrix.target == 'editor'
+        run: ${{ matrix.bin }} test run --force-colors
