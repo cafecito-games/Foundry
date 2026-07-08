@@ -8,11 +8,13 @@ from scripts.foundry_mcp.session import (
     FoundryEditorAutomationSession,
     parse_automation_line,
 )
+from scripts.foundry_mcp.stdio_server import FoundryMCPStdioServer
 
 __all__ = [
     "FoundryAutomationStartupError",
     "FoundryEditorAutomationSession",
     "FoundryMCPClient",
     "FoundryMCPError",
+    "FoundryMCPStdioServer",
     "parse_automation_line",
 ]
