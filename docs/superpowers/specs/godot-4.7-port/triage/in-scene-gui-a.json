@@ -1,0 +1,429 @@
+[
+ {
+  "sha": "0baf46a3c7c193c4a7f38a36c3369c9405bf6856",
+  "pr": "120280",
+  "title": "Fix `BoxContainer` size when theme scale is not an integer",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "f7890e3f996f0b29c990929978fc82a8d364610d",
+  "pr": "120346",
+  "title": "Partly revert updated warning in `Label`",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "c25fac660fc495cdb14e8faccefeafd13183ff0b",
+  "pr": "120116",
+  "title": "[RTL] Do not add zero-width space to last line without content.",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "8879fa9c4a3cde7c438f1b9572d94b282a62348b",
+  "pr": "120104",
+  "title": "[RTL] Fix indent / list level not taken into account.",
+  "subsystem": "scene/gui",
+  "nfiles": 3
+ },
+ {
+  "sha": "72eac09f5caf1bc5323e886b0ce612cdd5400d02",
+  "pr": "119336",
+  "title": "Fix incorrect `get_drop_section_at_position` results in Tree",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "70ee45d0439f23e2bc62a1ef1ad827ffa52730ef",
+  "pr": "119987",
+  "title": "[RTL] Fix last line height with some fallback fonts.",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "417cd33bf636a0ede02e5e940e963306ea6fc21c",
+  "pr": "119968",
+  "title": "Properly update shader text syntax highlighting (for disabled regions)",
+  "subsystem": "scene/gui",
+  "nfiles": 3
+ },
+ {
+  "sha": "da7924dfa3e329ebd5dde9dbc750aa2ac9de013a",
+  "pr": "118488",
+  "title": "Fix issue in `BoxContainer` that clipped children with non-integer minimum sizes",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "c96e11965f1568343c65d783833250a6a9411cb2",
+  "pr": "119329",
+  "title": "Fix `Input.parse_input_event` `Button` regression",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "66658e7f4ce4def925257ee217704b9719101092",
+  "pr": "119737",
+  "title": "Fix PopupMenu counting separators for search bar",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "3cbd4358fc2673f5b68239c103cd29db27e5ac89",
+  "pr": "119761",
+  "title": "Fix RichTextLabel tab_size 0 causing 1px indent on lists and indents",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "5653d1a42f90d8aa297820287177412558713c4d",
+  "pr": "116725",
+  "title": "Fix drawing tree row rect bug",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "673c2869eb29fece06f6ca80002d0513c45daf7f",
+  "pr": "119507",
+  "title": "Fix mouse dragging in `Tree` node on touchscreen devices",
+  "subsystem": "scene/gui",
+  "nfiles": 2
+ },
+ {
+  "sha": "d9f03f2f929fba314c2deada55d1dc0fc9566dc5",
+  "pr": "119596",
+  "title": "[Tree] Fix editor popup opening outside the window.",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "014ff66970483d505d9c63a6621ccf960187b17b",
+  "pr": "119538",
+  "title": "[Slider] Account for accessibility state when grabbing focus.",
+  "subsystem": "scene/gui",
+  "nfiles": 2
+ },
+ {
+  "sha": "f04809882bf1437532256a51473c765677f466aa",
+  "pr": "119367",
+  "title": "Fix and improve selection behavior in the Filesystem dock",
+  "subsystem": "scene/gui",
+  "nfiles": 10
+ },
+ {
+  "sha": "6b8828da121e8709051227429c26f18c63bfc2a3",
+  "pr": "119439",
+  "title": "Fix `PopupMenu` submenu positioning not accounting for margins",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "f2ca4b0f629543e0ff65fdc4ac638abdb1df23bc",
+  "pr": "118886",
+  "title": "Fix `PopupMenu` input handling when scaled/padded",
+  "subsystem": "scene/gui",
+  "nfiles": 3
+ },
+ {
+  "sha": "d58cd48e468a67c864d443b7c194cd2a1c7bdf42",
+  "pr": "118653",
+  "title": "Fix: support multi-input for `BaseButton` with Alt + Click",
+  "subsystem": "scene/gui",
+  "nfiles": 2
+ },
+ {
+  "sha": "3d601008d07390ff2d955cf734bacc017ff9e23e",
+  "pr": "119420",
+  "title": "Always disable `all_tabs_in_front` in `TabContainer`",
+  "subsystem": "scene/gui",
+  "nfiles": 3
+ },
+ {
+  "sha": "9ca8dfe7a697bc0775f5fed3b7f19372590172e2",
+  "pr": "119312",
+  "title": "Fix various accessibility issues in `PopupMenu`",
+  "subsystem": "scene/gui",
+  "nfiles": 2
+ },
+ {
+  "sha": "93528c1ad7de9db593fe6c2167a7ab32c5a3459c",
+  "pr": "119411",
+  "title": "[RTL] Update line start items after delete.",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "54360ea67bd6c790982301d4da6e04c85843a288",
+  "pr": "119412",
+  "title": "Fix incorrect tooltips in `PopupMenu` when the search bar is enabled",
+  "subsystem": "scene/gui",
+  "nfiles": 2
+ },
+ {
+  "sha": "a2c17bd7128446b85d0a7b0e60376818b7c9d5ea",
+  "pr": "115013",
+  "title": "Fix float value `NAN` still shown as 0 in the debugger and inspector.",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "cc8edf78ad3f089c18244d5107364910964fb227",
+  "pr": "119338",
+  "title": "Split `PopupMenu.search_bar_enabled_on_item_count` into two properties",
+  "subsystem": "scene/gui",
+  "nfiles": 10
+ },
+ {
+  "sha": "7775792057009cb27068f1a3252902fb9c991836",
+  "pr": "119199",
+  "title": "GUI: Fix non-editable LineEdit selection reset on focus loss",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "42e4ec1c3874ee43e28c7b1cab46078da5083519",
+  "pr": "118651",
+  "title": "Fix `TabBar` and `Label` being unable to shrink when given a maximum size",
+  "subsystem": "scene/gui",
+  "nfiles": 33
+ },
+ {
+  "sha": "08df0c78a78a8f9cde0c3488e32ac19315ae7908",
+  "pr": "119117",
+  "title": "Fix various issues with `PopupMenu` fuzzy search",
+  "subsystem": "scene/gui",
+  "nfiles": 6
+ },
+ {
+  "sha": "05168e359c06ba83e631bad82d0941cc72fd6155",
+  "pr": "119231",
+  "title": "Fix error spam when changing VirtualJoystick's Joystick Size or Tip Size",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "d0d34287f83f14086e818d3197f87b288673be91",
+  "pr": "119251",
+  "title": "Fix color picker permission box being visible on non-MacOS platforms",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "9120c0c3aeb0d69d5bc5705d2c791c8e89da9718",
+  "pr": "115601",
+  "title": "Fire `ItemList.item_clicked` signal when deselecting multi items with CTRL",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "83e84e81568eaad8062322e8c229ea5a47a52800",
+  "pr": "119008",
+  "title": "Assign pending tabs when they are added",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "f5560ccbe2a1584f54713caeacc1f7b582a19a70",
+  "pr": "115637",
+  "title": "Make internal children of built-in nodes use their parent's material",
+  "subsystem": "scene/gui",
+  "nfiles": 8
+ },
+ {
+  "sha": "908983880baf80be399fb82e48965c3666c9d410",
+  "pr": "118645",
+  "title": "GUI: replace single case switch with if in texture_button",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "583596cd50bbdd29c5ee033d944410035eeb87fb",
+  "pr": "118842",
+  "title": "Fix positioning of `PopupMenu` submenus",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "dbb2050439a9438a395c05bf11a4fb824b545692",
+  "pr": "118846",
+  "title": "Fix `PopupMenu` gamepad navigation when filtered",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "a70600a061738bf4854c890cae8046d1e891eb6e",
+  "pr": "118849",
+  "title": "Fix `PopupMenu` using the wrong separation when searching/filtering",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "3352f2221b0e5cb70c924bd8acc6a96079d90161",
+  "pr": "118799",
+  "title": "Fix color picker MacOS permission request box always being visible",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "783c614766afe5eb07a117dee58624788612ebe6",
+  "pr": "118704",
+  "title": "RTL: Remove unused `width_with_padding`.",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "3bccdd2e4b1e00317b46ed1e4423f709fdb55938",
+  "pr": "118733",
+  "title": "Fix custom canvas item covers text",
+  "subsystem": "scene/gui",
+  "nfiles": 2
+ },
+ {
+  "sha": "3bf2d1e3d5f5eab338c3fabd77e51b52eb37ab45",
+  "pr": "118246",
+  "title": "Make shortcuts that use letters or alt work in the scene tree",
+  "subsystem": "scene/gui",
+  "nfiles": 2
+ },
+ {
+  "sha": "f8ee5eca47fd6f2377245f62a6fe0d25d9eb25d7",
+  "pr": "118722",
+  "title": "Fix leaked `custom_ci` RIDs in `Tree`",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "a6ed51df17a2afce9459cf9f46ded0baac79b9cb",
+  "pr": "118623",
+  "title": "Deprecate `TabContainer.all_tabs_in_front` due to now being useless",
+  "subsystem": "scene/gui",
+  "nfiles": 3
+ },
+ {
+  "sha": "771325eb5925b328938ebf5b0f84b741f652cef6",
+  "pr": "118620",
+  "title": "TextEdit: Remove unused `next_item_id` variable.",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "070d9a408be452beeb3644a323dda58bd172871e",
+  "pr": "118608",
+  "title": "Fix BaseButton multitouch signals firing for only 1 button",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "4836ba26f078bca741b2659dcfddfa88af14e1d1",
+  "pr": "115340",
+  "title": "Add translation context to Controls",
+  "subsystem": "scene/gui",
+  "nfiles": 5
+ },
+ {
+  "sha": "2bd673bc30e1594be70c282eb35c96941d99cca0",
+  "pr": "118591",
+  "title": "Fix `MeshLibrary` crash",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "60c2e1e59d17ffeb71bebee7ff0ab1d767ac1232",
+  "pr": "118542",
+  "title": "Fix BaseButton popup unresponsive on touchscreen after first tap",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "0880a908d7ad1de26325d4f45b08b31f2461fcf7",
+  "pr": "118536",
+  "title": "Defer minimum size updates in maximum size handling",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "57af0d2cf2f4a748633723430a1d29118a0269e2",
+  "pr": "118351",
+  "title": "Reorganize `Control` inspector layout",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "8a91ee8fcb4dc9b010c3c5a278578b43161d4d8a",
+  "pr": "117939",
+  "title": "Handle Tree's root and foreign item drops better",
+  "subsystem": "scene/gui",
+  "nfiles": 2
+ },
+ {
+  "sha": "b62ccc3a724edacd3d76bb0e971821c96512bfbb",
+  "pr": "115609",
+  "title": "Fix `SpinBox` buttons not updating when using `set_value_no_signal()`",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "6b92cae1a90329161ace21083050e9e63493bb2a",
+  "pr": "115808",
+  "title": "Fix script list hot color/main scene name color",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "4286c20dac11a658fb162b372445d3a853a04874",
+  "pr": "118323",
+  "title": "Fix tab bar max width behavior",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "cba344c16d682ac4830b77ec1ccb6754a9988b03",
+  "pr": "112617",
+  "title": "Add option to scale images in RichTextLabel relative to font size",
+  "subsystem": "scene/gui",
+  "nfiles": 6
+ },
+ {
+  "sha": "4bd85ce4b0bec7fb189fd37d4d23ee577e3ed42c",
+  "pr": "110893",
+  "title": "`BaseButton`: multitouch support",
+  "subsystem": "scene/gui",
+  "nfiles": 3
+ },
+ {
+  "sha": "e82248483f7359947401014398ca60adafdd6d01",
+  "pr": "116201",
+  "title": "TextEdit: Ensure caret is visible after paste",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "9273a6a9a04d12299f05aa34606a1c386a00deda",
+  "pr": "118305",
+  "title": "[RTL] Fix `remove_paragraph` crash.",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "59d29ed05fd897efa2779b8f4e982964db4e0324",
+  "pr": "118137",
+  "title": "Fix PopupMenu internal ScrollContainer inheriting global theme styles",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "4c8cdd2ec0ded601362bce8ac5d14be563f1f4f6",
+  "pr": "118277",
+  "title": "Increase max RID count for some owners, decrease RID usage by `RichTextLabel`.",
+  "subsystem": "scene/gui",
+  "nfiles": 5
+ },
+ {
+  "sha": "266e8f715adc69ba12f8f5d292bef178f7bdda1a",
+  "pr": "116640",
+  "title": "Add `custom_maximum_size` property to `Control`",
+  "subsystem": "scene/gui",
+  "nfiles": 47
+ }
+]

@@ -1,0 +1,490 @@
+[
+ {
+  "pr": "120280",
+  "sha": "0baf46a3c7c193c4a7f38a36c3369c9405bf6856",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Adds .ceil() to get_bound_desired_size()/get_bound_minimum_size() in BoxContainer::_get_minimum_size(p_use_desired_sizes); those symbols and that signature are part of the 4.7 custom_maximum_size feature absent from the fork. Blocker: max-size infra (PR 116640)."
+ },
+ {
+  "pr": "120346",
+  "sha": "f7890e3f996f0b29c990929978fc82a8d364610d",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Refines Label autowrap warning to also check get_custom_minimum_size, but the condition uses get_combined_maximum_size() which does not exist in the fork (part of the max-size feature). Blocker: PR 116640."
+ },
+ {
+  "pr": "120116",
+  "sha": "c25fac660fc495cdb14e8faccefeafd13183ff0b",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Changes 'it_prev = l.from ? l.from : current' to 'it_prev = l.from' in _shape_line; depends on the it_prev/zero-width-space rework from PR 119987 (70ee45d), and the fork's _shape_line has diverged (no it_prev variable). Port 119987-era RTL shaping first."
+ },
+ {
+  "pr": "120104",
+  "sha": "8879fa9c4a3cde7c438f1b9572d94b282a62348b",
+  "decision": "port-later",
+  "kind": "refactor",
+  "risk": "high",
+  "rationale": "Reworks RTL indent/list nesting to use ItemIndent::level/ItemList::level and removes ItemFrame::indent_level, changing push_list/push_indent semantics across append_text. This is a design change to a diverged RTL area, not a self-contained fix."
+ },
+ {
+  "pr": "119336",
+  "sha": "72eac09f5caf1bc5323e886b0ce612cdd5400d02",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "First hunk edits the 4.7-reworked _find_item_at_pos (parent_allows_drop/current_item_depth/hide_root) which does not exist in the fork's older Tree drag-section code; only the get_drop_section '!drop_mode_flags' guard is cleanly portable. Defer with the Tree drag-section rework."
+ },
+ {
+  "pr": "119987",
+  "sha": "70ee45d0439f23e2bc62a1ef1ad827ffa52730ef",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Introduces it_prev tracking plus a trailing zero-width space after the shaping loop in _shape_line; the fork's _shape_line has diverged (no it_prev, its own 0x200B handling using it->rid). Needs deliberate reconciliation of the RTL last-line-height logic."
+ },
+ {
+  "pr": "119968",
+  "sha": "417cd33bf636a0ede02e5e940e963306ea6fc21c",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Connects SyntaxHighlighter changed signal to a new TextEdit::_syntax_highlighter_changed so highlighting refreshes when regions change; self-contained, fork has the syntax highlighting cache and set_syntax_highlighter. Shader editor call site is not a diverged area."
+ },
+ {
+  "pr": "118488",
+  "sha": "da7924dfa3e329ebd5dde9dbc750aa2ac9de013a",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Core fix is .ceil() on get_combined_minimum_size() before truncating into Size2i, preventing children with non-integer min sizes from being clipped; applies to fork's _resort. Note: the diff's surrounding max-size (propagating_max_size) lines are absent in the fork, so apply just the .ceil()."
+ },
+ {
+  "pr": "119329",
+  "sha": "c96e11965f1568343c65d783833250a6a9411cb2",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Reworks BaseButton::gui_input touch/device_id handling introduced by the multitouch feature (PR 110893), which is absent from the fork (no touch_index/device_id in base_button). Blocker: multitouch base feature."
+ },
+ {
+  "pr": "119737",
+  "sha": "66658e7f4ce4def925257ee217704b9719101092",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Adjusts separator counting for the PopupMenu search bar; the fork has no PopupMenu search bar (search_bar absent). Blocker: PopupMenu search-bar feature."
+ },
+ {
+  "pr": "119761",
+  "sha": "3cbd4358fc2673f5b68239c103cd29db27e5ac89",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Guards RTL list/indent margin math with 'if (tab_size > 0)' to avoid a 1px indent when tab_size is 0; fork's _find_margin lines match the parent exactly. Self-contained."
+ },
+ {
+  "pr": "116725",
+  "sha": "5653d1a42f90d8aa297820287177412558713c4d",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Draws the SELECT_ROW row rect only once per row via a should_draw_row_rect flag; fork's draw_item still has 'if (i == 0 && select_mode == SELECT_ROW)' matching the parent. Self-contained."
+ },
+ {
+  "pr": "119507",
+  "sha": "673c2869eb29fece06f6ca80002d0513c45daf7f",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Adds using_native_touch to disable data drag-and-drop only for real touch input (not emulated), replacing the drag_touching check in can_drop_data/get_drag_data; fork has drag_touching and these methods. Self-contained, adds one member."
+ },
+ {
+  "pr": "119596",
+  "sha": "d9f03f2f929fba314c2deada55d1dc0fc9566dc5",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Uses get_screen_position() instead of get_global_position() when placing the Tree edit popup so it isn't clipped by the window edge; fork has the matching call site (tree.cpp ~5212). One-line fix."
+ },
+ {
+  "pr": "119538",
+  "sha": "014ff66970483d505d9c63a6621ccf960187b17b",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Slider uses _is_focusable() (accounting for accessibility) instead of raw focus-mode check before grab_focus on wheel scroll; moves _is_focusable() to protected. Fork has _is_focusable and get_focus_mode_with_override. Self-contained."
+ },
+ {
+  "pr": "119367",
+  "sha": "f04809882bf1437532256a51473c765677f466aa",
+  "decision": "port-later",
+  "kind": "refactor",
+  "risk": "high",
+  "rationale": "Large filesystem-dock selection rework (320-line dock refactor) that also edits Tree drag-section code and adds a tree.compat.inc shim; touches the diverged Tree drop-section area and introduces a compat shim the clean-break fork avoids. Defer as a dedicated effort."
+ },
+ {
+  "pr": "119439",
+  "sha": "6b8828da121e8709051227429c26f18c63bfc2a3",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Reworks _activate_submenu vertical positioning and references submenu_popup->search_bar and theme_cache.search_bar_separation, which are part of the absent PopupMenu search-bar feature. Blocker: search-bar feature + diverged submenu positioning chain."
+ },
+ {
+  "pr": "118886",
+  "sha": "f2ca4b0f629543e0ff65fdc4ac638abdb1df23bc",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Moves get_tooltip onto a PopupMenuItems control and scales mouse coordinates by content_scale_factor, relying on the search-bar-era popup structure (PopupMenuItems, search_bar, vbox_container) that the fork lacks. Blocker: diverged/search-era PopupMenu."
+ },
+ {
+  "pr": "118653",
+  "sha": "d58cd48e468a67c864d443b7c194cd2a1c7bdf42",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Removes the device_id gate in BaseButton::gui_input to allow Alt+Click multi-input; only meaningful on top of the multitouch feature (touch_index/device_id) which is absent from the fork. Blocker: multitouch base feature (PR 110893)."
+ },
+ {
+  "pr": "119420",
+  "sha": "3d601008d07390ff2d955cf734bacc017ff9e23e",
+  "decision": "port-later",
+  "kind": "cleanup",
+  "risk": "low",
+  "rationale": "Finalizes deprecation of TabContainer.all_tabs_in_front (getter returns false, property becomes USAGE_NONE) behind DISABLE_DEPRECATED. Depends on the 'tabs always in front' internal change and adds a compat shim; the clean-break fork should decide deliberately. Pairs with PR 118623."
+ },
+ {
+  "pr": "119312",
+  "sha": "9ca8dfe7a697bc0775f5fed3b7f19372590172e2",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Fixes PopupMenu accessibility around the search bar (_search_bar_focus_entered, _filter_items, vbox_container); all reference the absent search-bar feature. Blocker: PopupMenu search-bar feature."
+ },
+ {
+  "pr": "119411",
+  "sha": "93528c1ad7de9db593fe6c2167a7ab32c5a3459c",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Changes the meaning of line.from (root line no longer points to main; constructor sets from=nullptr) and updates remove_paragraph accordingly; this is part of the diverged RTL line-from redesign and would interact with the fork's heavy l.from usage. Defer with the RTL shaping rework."
+ },
+ {
+  "pr": "119412",
+  "sha": "54360ea67bd6c790982301d4da6e04c85843a288",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes incorrect PopupMenu tooltips when the search bar is enabled; depends on the absent search-bar feature. Blocker: search-bar feature."
+ },
+ {
+  "pr": "115013",
+  "sha": "a2c17bd7128446b85d0a7b0e60376818b7c9d5ea",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Preserves NAN in Range: _calc_value returns NAN early and set_value skips emitting when both old/new are NAN, so NAN no longer displays as 0. Fork has _calc_value/_snapped_r128. Self-contained."
+ },
+ {
+  "pr": "119338",
+  "sha": "cc8edf78ad3f089c18244d5107364910964fb227",
+  "decision": "port-later",
+  "kind": "feature",
+  "risk": "med",
+  "rationale": "Splits PopupMenu.search_bar_enabled_on_item_count into two properties; the entire search-bar feature is absent from the fork. Blocker: search-bar feature."
+ },
+ {
+  "pr": "119199",
+  "sha": "7775792057009cb27068f1a3252902fb9c991836",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "On focus-exit, deselect a non-editing LineEdit when deselect_on_focus_loss_enabled and not a drag attempt, fixing selection lingering on read-only fields; adds one else-if branch. Self-contained (standard LineEdit members present)."
+ },
+ {
+  "pr": "118651",
+  "sha": "42e4ec1c3874ee43e28c7b1cab46078da5083519",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "high",
+  "rationale": "Makes TabBar/Label (and many containers) able to shrink under a maximum size; built entirely on the custom_maximum_size/get_combined_maximum_size feature absent from the fork (33 files). Blocker: PR 116640."
+ },
+ {
+  "pr": "119117",
+  "sha": "08df0c78a78a8f9cde0c3488e32ac19315ae7908",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Fixes PopupMenu/OptionButton fuzzy search behavior; depends on the absent search-bar/fuzzy-filter feature. Blocker: search-bar feature."
+ },
+ {
+  "pr": "119231",
+  "sha": "05168e359c06ba83e631bad82d0941cc72fd6155",
+  "decision": "skip",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Guards VirtualJoystick action releases behind !is_editor_hint(), but scene/gui/virtual_joystick.* does not exist in the fork. Nothing to port."
+ },
+ {
+  "pr": "119251",
+  "sha": "d0d34287f83f14086e818d3197f87b288673be91",
+  "decision": "skip",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Adds perm_hb->set_visible(false) in the ColorPicker constructor so the permission box is hidden on non-macOS; the fork's ColorPicker constructor already has this line. Already present."
+ },
+ {
+  "pr": "115601",
+  "sha": "9120c0c3aeb0d69d5bc5705d2c791c8e89da9718",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Also emits ItemList.item_clicked when CTRL-deselecting a multi-selected item, matching normal click behavior; one added emit_signal in gui_input. Self-contained."
+ },
+ {
+  "pr": "119008",
+  "sha": "83e84e81568eaad8062322e8c229ea5a47a52800",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Assigns cached tab metadata as each child is added rather than only on NOTIFICATION_READY; fork has pending_tabs/CachedTab and the NOTIFICATION_READY loop matches the parent. Self-contained."
+ },
+ {
+  "pr": "115637",
+  "sha": "f5560ccbe2a1584f54713caeacc1f7b582a19a70",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Sets use_parent_material(true) on internal scrollbars of Tree/ItemList/RichTextLabel/GraphEdit/etc. so a parent material applies to built-in children; trivial one-liners in constructors, all nodes present. Self-contained."
+ },
+ {
+  "pr": "118645",
+  "sha": "908983880baf80be399fb82e48965c3666c9d410",
+  "decision": "port-now",
+  "kind": "cleanup",
+  "risk": "low",
+  "rationale": "Replaces a single-case switch with an if in TextureButton::has_point; fork's has_point still has the FIXME switch matching the parent. Trivial cleanup."
+ },
+ {
+  "pr": "118842",
+  "sha": "583596cd50bbdd29c5ee033d944410035eeb87fb",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Reworks _activate_submenu positioning to add scroll_container_offset; the fork's _activate_submenu has diverged variable naming and this is the first of a submenu-positioning chain that culminates in the search-bar-dependent PR 119439. Defer with that chain."
+ },
+ {
+  "pr": "118846",
+  "sha": "dbb2050439a9438a395c05bf11a4fb824b545692",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Adds items[i].visible checks to PopupMenu gamepad navigation; item visibility (filtering) is part of the absent search/filter feature. Blocker: item-visibility/filter infra."
+ },
+ {
+  "pr": "118849",
+  "sha": "a70600a061738bf4854c890cae8046d1e891eb6e",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes separation for the first *visible* item when items are hidden by filtering; relies on item visibility from the absent search/filter feature. Blocker: filter infra."
+ },
+ {
+  "pr": "118799",
+  "sha": "3352f2221b0e5cb70c924bd8acc6a96079d90161",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Ties the macOS screen-record permission box visibility to sampler_visible so it isn't always shown; fork's ColorPicker matches the parent (has constructor set_visible(false) and the unguarded macOS notification). Self-contained."
+ },
+ {
+  "pr": "118704",
+  "sha": "783c614766afe5eb07a117dee58624788612ebe6",
+  "decision": "skip",
+  "kind": "cleanup",
+  "risk": "low",
+  "rationale": "Removes RichTextLabel table Column::width_with_padding as unused, but the fork still uses width_with_padding in ~5 table-layout sites. Not applicable."
+ },
+ {
+  "pr": "118733",
+  "sha": "3bccdd2e4b1e00317b46ed1e4423f709fdb55938",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Adds a separate custom_ci canvas item so custom-drawn content doesn't cover text; custom_ci does not exist in the fork's Tree (4.7 canvas-item rework). Blocker: Tree custom_ci rework."
+ },
+ {
+  "pr": "118246",
+  "sha": "3bf2d1e3d5f5eab338c3fabd77e51b52eb37ab45",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Defers Tree incremental search so letter/Alt keys can act as shortcuts first (only searches if input wasn't handled); fork has _do_incr_search/incr_search and the matching gui_input path. Self-contained, adds one helper."
+ },
+ {
+  "pr": "118722",
+  "sha": "f8ee5eca47fd6f2377245f62a6fe0d25d9eb25d7",
+  "decision": "skip",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Frees a leaked custom_ci RID in the Tree destructor, but the fork's Tree has no custom_ci (nor drop_indicator_ci); its destructor only frees content_ci/header_ci. No leak to fix here."
+ },
+ {
+  "pr": "118623",
+  "sha": "a6ed51df17a2afce9459cf9f46ded0baac79b9cb",
+  "decision": "port-later",
+  "kind": "cleanup",
+  "risk": "low",
+  "rationale": "Deprecates TabContainer.all_tabs_in_front (turns the setter into a warning) behind DISABLE_DEPRECATED, on the premise tabs are 'always in front' due to unrelated internal changes. Adds a compat shim and removes working behavior; the clean-break fork should decide deliberately. Pairs with PR 119420."
+ },
+ {
+  "pr": "118620",
+  "sha": "771325eb5925b328938ebf5b0f84b741f652cef6",
+  "decision": "port-now",
+  "kind": "cleanup",
+  "risk": "low",
+  "rationale": "Removes the unused TextEdit next_item_id member; fork has it only in the header with no cpp usages. Trivial cleanup."
+ },
+ {
+  "pr": "118608",
+  "sha": "070d9a408be452beeb3644a323dda58bd172871e",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Adds an is_touch_press_inside branch in BaseButton::on_action_event so multitouch presses inside the button fire; only meaningful with the multitouch feature (screen_touch handling) absent from the fork. Blocker: multitouch base feature."
+ },
+ {
+  "pr": "115340",
+  "sha": "4836ba26f078bca741b2659dcfddfa88af14e1d1",
+  "decision": "port-later",
+  "kind": "feature",
+  "risk": "med",
+  "rationale": "Adds a per-Control translation_context property plus a Node _get_translation_context_with_override virtual wired into the translation pipeline and scene translation parser; new localization infra not present in the fork. Defer as a feature port."
+ },
+ {
+  "pr": "118591",
+  "sha": "2bd673bc30e1594be70c282eb35c96941d99cca0",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Despite the title, the diff edits Control::update_maximum_size to sync deferred minimum-size propagation via updating_last_minimum_size; update_maximum_size and the max-size machinery do not exist in the fork. Blocker: PR 116640."
+ },
+ {
+  "pr": "118542",
+  "sha": "60c2e1e59d17ffeb71bebee7ff0ab1d767ac1232",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Resets touch_index after a button-press action so later taps aren't dropped, and refines the device_id gate; depends on the multitouch feature (touch_index/device_id) absent from the fork. Blocker: multitouch base feature."
+ },
+ {
+  "pr": "118536",
+  "sha": "0880a908d7ad1de26325d4f45b08b31f2461fcf7",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Defers the minimum-size update inside update_maximum_size (call_deferred instead of direct); update_maximum_size does not exist in the fork. Blocker: PR 116640."
+ },
+ {
+  "pr": "118351",
+  "sha": "57af0d2cf2f4a748633723430a1d29118a0269e2",
+  "decision": "port-later",
+  "kind": "cleanup",
+  "risk": "low",
+  "rationale": "Reorders Control inspector Layout-group properties including custom_maximum_size and propagate_maximum_size, which the fork does not bind (max-size feature absent). Blocker: PR 116640."
+ },
+ {
+  "pr": "117939",
+  "sha": "8a91ee8fcb4dc9b010c3c5a278578b43161d4d8a",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Improves Tree root and foreign-item drop handling via _determine_hovered_item and the reworked drag-section/_find_item_at_pos code, which the fork's older Tree does not have. Defer with the Tree drag-section rework."
+ },
+ {
+  "pr": "115609",
+  "sha": "b62ccc3a724edacd3d76bb0e971821c96512bfbb",
+  "decision": "skip",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Calls r->_value_changed(val) in Range::Shared::redraw_owners so SpinBox buttons refresh after set_value_no_signal; the fork's redraw_owners already contains this call. Already present."
+ },
+ {
+  "pr": "115808",
+  "sha": "6b92cae1a90329161ace21083050e9e63493bb2a",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Gives ItemList custom foreground color priority over selected/hovered theme colors so custom colors (e.g. script list hot color) show; reorders the txt_modulate if-chain. Fork has items[i].custom_fg. Self-contained."
+ },
+ {
+  "pr": "118323",
+  "sha": "4286c20dac11a658fb162b372445d3a853a04874",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes TabBar minimum-width behavior using combined_max/stop_adding/computed_max_width, which are part of the absent max-size feature. Blocker: PR 116640."
+ },
+ {
+  "pr": "112617",
+  "sha": "cba344c16d682ac4830b77ec1ccb6754a9988b03",
+  "decision": "port-later",
+  "kind": "feature",
+  "risk": "med",
+  "rationale": "Adds a RichTextLabel option to scale images relative to font size, with a new API, doc changes, and a compat.inc shim. New feature; defer as a dedicated feature port."
+ },
+ {
+  "pr": "110893",
+  "sha": "4bd85ce4b0bec7fb189fd37d4d23ee577e3ed42c",
+  "decision": "port-later",
+  "kind": "feature",
+  "risk": "med",
+  "rationale": "Base BaseButton multitouch feature (touch_index/device_id, screen touch/drag handling); absent from the fork and the prerequisite for the multitouch fix chain (PRs 119329/118653/118608/118542). Defer as the feature port that unblocks the rest."
+ },
+ {
+  "pr": "116201",
+  "sha": "e82248483f7359947401014398ca60adafdd6d01",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "After a full-line paste, updates scrollbars and adjusts the viewport so the caret stays visible; fork's _paste_internal full-line branch matches the parent. Self-contained."
+ },
+ {
+  "pr": "118305",
+  "sha": "9273a6a9a04d12299f05aa34606a1c386a00deda",
+  "decision": "skip",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Adds it->subitems.clear() before memdelete in RichTextLabel::remove_paragraph to avoid a crash; the fork's remove_paragraph already has this clear(). Already present."
+ },
+ {
+  "pr": "118137",
+  "sha": "59d29ed05fd897efa2779b8f4e982964db4e0324",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Overrides the PopupMenu internal ScrollContainer 'panel' style with StyleBoxEmpty so it doesn't inherit a global ScrollContainer theme style; fork has scroll_container. Note: place the override after the fork's scroll_container creation (no vbox_container in the fork)."
+ },
+ {
+  "pr": "118277",
+  "sha": "4c8cdd2ec0ded601362bce8ac5d14be563f1f4f6",
+  "decision": "port-later",
+  "kind": "refactor",
+  "risk": "high",
+  "rationale": "Restructures RichTextLabel Item RID ownership (Item frees its own rid; drops the owner ObjectID) and raises RID owner capacity in the text servers and accesskit driver. Broad, cross-file, ABI-adjacent; the fork matches the parent Item model but this warrants a deliberate port. Defer."
+ },
+ {
+  "pr": "116640",
+  "sha": "266e8f715adc69ba12f8f5d292bef178f7bdda1a",
+  "decision": "port-later",
+  "kind": "feature",
+  "risk": "high",
+  "rationale": "Adds the Control custom_maximum_size / propagate_maximum_size feature across ~47 files; entirely absent from the fork and the root dependency for the whole max-size fix cluster (118651/118536/118591/118351/118323/120280/120346). Defer as the feature port."
+ }
+]
