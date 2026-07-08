@@ -2152,13 +2152,14 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 	{
 		using Kind = FoundryCLIParser::CLIInvocation::Kind;
 		const Kind kind = cli_parse.invocation.kind;
-		// A command-less launch (NONE) or `editor open` is an editor launch, UNLESS it
-		// carries legacy runtime scene/script args — `foundry --script X` and friends share
-		// the command-less shape of a bare editor launch but must run as a game/script, not
-		// auto-open a remembered project.
-		const bool editor_intent_launch = (kind == FoundryCLIParser::CLIInvocation::NONE ||
-												   kind == FoundryCLIParser::CLIInvocation::EDITOR_OPEN) &&
-				!StartupRouter::args_request_runtime_launch(main_args);
+		// `editor open` is an explicit editor command (a positional scene there just names a
+		// scene to reopen). A command-less launch (NONE) is an editor launch only when it
+		// carries no legacy runtime scene/script args — `foundry --script X` and friends
+		// share the command-less shape of a bare editor launch but must run as a
+		// game/script, not auto-open a remembered project.
+		const bool editor_intent_launch = kind == FoundryCLIParser::CLIInvocation::EDITOR_OPEN ||
+				(kind == FoundryCLIParser::CLIInvocation::NONE &&
+						!StartupRouter::args_request_runtime_launch(main_args));
 		if (editor_intent_launch && !project_manager && !cmdline_tool &&
 				!test_rd_support && !test_rd_creation && main_pack.is_empty()) {
 			interactive_editor_launch = true;
@@ -2183,7 +2184,9 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 			// launch fails that setup() and drops to the existing project-manager surface,
 			// which stands in as the projectless-shell placeholder until it lands (#1132).
 			// The router never returns ROUTE_OPEN_REMEMBERED for an explicit-invalid launch,
-			// so an invalid `--project` can never silently auto-open a remembered project.
+			// so an invalid `--project` can never silently auto-open a remembered project;
+			// the recording gate below additionally refuses to record the ambient cwd
+			// project that Godot's upward search may still load in that error case.
 			if (decision.store_modified) {
 				known_projects.save();
 			}
@@ -3251,12 +3254,14 @@ Error Main::setup2(bool p_show_boot_logo) {
 
 		// Record a successful interactive editor open into the global known-project store
 		// (#1135) so the next launch can auto-open it and the projectless recents list
-		// reflects it. Requires both an eligible editor launch and an actual editor session
-		// (`editor`): command-line editor tools (export/import) and background editor-mode
-		// services (`lsp serve`) must not reorder the user's GUI recents, and a bare launch
-		// that runs the working-directory project as a game (editor == false) must not
-		// either.
-		if (interactive_editor_launch && editor && found_project && EditorPaths::get_singleton()->are_paths_valid()) {
+		// reflects it. Requires an eligible editor launch, an actual editor session
+		// (`editor`), and no explicit-path error: command-line editor tools (export/import)
+		// and background editor-mode services (`lsp serve`) must not reorder the user's GUI
+		// recents; a bare launch that runs the working-directory project as a game
+		// (editor == false) must not either; and an invalid `--project` that still resolved
+		// an ambient cwd project via upward search must not record that unintended project.
+		if (interactive_editor_launch && editor && found_project && !foundry_cli_project_path_error &&
+				EditorPaths::get_singleton()->are_paths_valid()) {
 			KnownProjectStore known_projects;
 			known_projects.load();
 			StartupRouter::record_project_opened(known_projects, ProjectSettings::get_singleton()->get_resource_path());
