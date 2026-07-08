@@ -27,6 +27,10 @@ endpoint or launch an editor process themselves, parse the
   without dependency setup.
 - Reuse the client from `scripts/exercise_editor_mcp.py` so the smoke exercise no
   longer carries copy-pasted protocol code.
+- Document the recommended agent usage pattern in `AGENTS.md` so future agents
+  use the reusable client instead of rewriting MCP boilerplate.
+- Document how to expose this client as an external tool/workflow for Claude,
+  Codex, and Cursor.
 - Cover JSON-RPC, tool/resource helpers, startup-line parsing, auth headers,
   structured MCP errors, and process lifecycle with Python unit tests.
 
@@ -64,6 +68,8 @@ scripts/foundry_mcp/
 scripts/tests/
   test_foundry_mcp_client.py
   test_foundry_mcp_session.py
+AGENTS.md
+docs/editor_automation_mcp_client.md
 ```
 
 ## Client API
@@ -179,3 +185,22 @@ Session tests should avoid a real editor process and verify:
 `scripts/exercise_editor_mcp.py` remains the integration exercise against a real
 editor binary, but it should import `FoundryMCPClient` and update its expected
 tool list to include `capture_screenshot`.
+
+## Documentation
+
+`AGENTS.md` should tell agents to import `scripts.foundry_mcp` before writing
+custom MCP HTTP code. It should show the two common paths: `FoundryEditorAutomationSession.launch()`
+when the agent owns the editor process and `FoundryEditorAutomationSession.connect()`
+when the editor is already running.
+
+`docs/editor_automation_mcp_client.md` should be the longer user-facing guide.
+It should include:
+
+- launch/connect examples;
+- observe/select/act/wait examples;
+- guidance that `call_tool()` returns full MCP tool results while
+  `structured_tool()` extracts `structuredContent`;
+- notes about `isError: true` tool results versus JSON-RPC exceptions;
+- how to add this as an external helper/tooling layer in Claude, Codex, and
+  Cursor, using repository-local Python commands and environment variables for
+  endpoint/token handoff.
