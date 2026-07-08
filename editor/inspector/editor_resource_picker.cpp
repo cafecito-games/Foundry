@@ -555,7 +555,10 @@ void EditorResourcePicker::_edit_menu_cbk(int p_which) {
 			bool make_unique = true;
 
 			// Automatically make resource unique if it belongs to another scene or resource.
-			if (!EditorNode::get_singleton()->get_edited_scene() || !edited_resource->is_built_in() || edited_resource->get_path().get_slice("::", 0) == EditorNode::get_singleton()->get_edited_scene()->get_scene_file_path()) {
+			Ref<Script> pasted_script = edited_resource;
+			if (pasted_script.is_valid()) {
+				make_unique = false;
+			} else if (!EditorNode::get_singleton()->get_edited_scene() || !edited_resource->is_built_in() || edited_resource->get_path().get_slice("::", 0) == EditorNode::get_singleton()->get_edited_scene()->get_scene_file_path()) {
 				make_unique = false;
 			} else if (resource_owner) {
 				Resource *res = Object::cast_to<Resource>(resource_owner);

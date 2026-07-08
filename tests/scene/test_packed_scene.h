@@ -30,11 +30,85 @@
 
 #pragma once
 
+#include "core/object/script_language.h"
 #include "scene/resources/packed_scene.h"
 
 #include "tests/test_macros.h"
 
 namespace TestPackedScene {
+
+class TestPackedSceneScript;
+
+class TestPackedSceneScriptInstance : public ScriptInstance {
+	Object *owner = nullptr;
+	Ref<TestPackedSceneScript> script;
+
+public:
+	TestPackedSceneScriptInstance(Object *p_owner, const Ref<TestPackedSceneScript> &p_script) :
+			owner(p_owner), script(p_script) {}
+
+	bool set(const StringName &p_name, const Variant &p_value) override { return false; }
+	bool get(const StringName &p_name, Variant &r_ret) const override { return false; }
+	void get_property_list(List<PropertyInfo> *p_properties) const override {}
+	Variant::Type get_property_type(const StringName &p_name, bool *r_is_valid = nullptr) const override {
+		if (r_is_valid) {
+			*r_is_valid = false;
+		}
+		return Variant::NIL;
+	}
+	void validate_property(PropertyInfo &p_property) const override {}
+	bool property_can_revert(const StringName &p_name) const override { return false; }
+	bool property_get_revert(const StringName &p_name, Variant &r_ret) const override { return false; }
+	Object *get_owner() override { return owner; }
+	void get_method_list(List<MethodInfo> *p_list) const override {}
+	bool has_method(const StringName &p_method) const override { return false; }
+	Variant callp(const StringName &p_method, const Variant **p_args, int p_argcount, Callable::CallError &r_error) override {
+		return Variant();
+	}
+	void notification(int p_notification, bool p_reversed = false) override {}
+	Ref<Script> get_script() const override { return script; }
+	const Variant get_rpc_config() const override { return Variant(); }
+	ScriptLanguage *get_language() override { return nullptr; }
+};
+
+class TestPackedSceneScript : public Script {
+	FOUNDRY_CLASS(TestPackedSceneScript, Script);
+
+protected:
+	static void _bind_methods() {}
+
+public:
+	bool can_instantiate() const override { return true; }
+	Ref<Script> get_base_script() const override { return Ref<Script>(); }
+	StringName get_global_name() const override { return StringName(); }
+	bool inherits_script(const Ref<Script> &p_script) const override { return false; }
+	StringName get_instance_base_type() const override { return StringName("Node"); }
+	ScriptInstance *instance_create(Object *p_this) override {
+		return memnew(TestPackedSceneScriptInstance(p_this, Ref<TestPackedSceneScript>(this)));
+	}
+	bool instance_has(const Object *p_this) const override { return false; }
+	bool has_source_code() const override { return false; }
+	String get_source_code() const override { return String(); }
+	void set_source_code(const String &p_code) override {}
+	Error reload(bool p_keep_state = false) override { return OK; }
+#ifdef TOOLS_ENABLED
+	StringName get_doc_class_name() const override { return StringName(); }
+	Vector<DocData::ClassDoc> get_documentation() const override { return Vector<DocData::ClassDoc>(); }
+	String get_class_icon_path() const override { return String(); }
+#endif // TOOLS_ENABLED
+	bool has_method(const StringName &p_method) const override { return false; }
+	MethodInfo get_method_info(const StringName &p_method) const override { return MethodInfo(); }
+	bool is_tool() const override { return false; }
+	bool is_valid() const override { return true; }
+	bool is_abstract() const override { return false; }
+	ScriptLanguage *get_language() const override { return nullptr; }
+	bool has_script_signal(const StringName &p_signal) const override { return false; }
+	void get_script_signal_list(List<MethodInfo> *r_signals) const override {}
+	bool get_property_default_value(const StringName &p_property, Variant &r_value) const override { return false; }
+	void get_script_method_list(List<MethodInfo> *p_list) const override {}
+	void get_script_property_list(List<PropertyInfo> *p_list) const override {}
+	const Variant get_rpc_config() const override { return Variant(); }
+};
 
 TEST_CASE("[PackedScene] Pack Scene and Retrieve State") {
 	// Create a scene to pack.
@@ -258,6 +332,72 @@ TEST_CASE("[PackedScene] Replace State") {
 	CHECK(state == new_state);
 
 	memdelete(scene);
+}
+
+TEST_CASE("[PackedScene] Built-in node script is not applied on instantiate") {
+	Node *scene = memnew(Node);
+	scene->set_name("TestScene");
+
+	Ref<TestPackedSceneScript> built_in_script;
+	built_in_script.instantiate();
+	built_in_script->set_path_cache("res://test.tscn::Script1");
+	REQUIRE(built_in_script->is_built_in());
+
+	scene->set_script(built_in_script);
+
+	PackedScene packed_scene;
+	CHECK(packed_scene.pack(scene) == OK);
+
+	Ref<SceneState> state = packed_scene.get_state();
+	REQUIRE(state.is_valid());
+	bool found = false;
+	bool deferred = false;
+	const Variant packed_script = state->get_property_value(0, CoreStringName(script), found, deferred);
+	REQUIRE(found);
+	const Ref<Script> packed_script_ref = packed_script;
+	REQUIRE(packed_script_ref.is_valid());
+	REQUIRE(packed_script_ref->is_built_in());
+
+	Node *instance = packed_scene.instantiate();
+	REQUIRE(instance != nullptr);
+	CHECK(instance->get_script().is_null());
+
+	memdelete(scene);
+	memdelete(instance);
+}
+
+TEST_CASE("[PackedScene] Standalone file script is applied on instantiate") {
+	Node *scene = memnew(Node);
+	scene->set_name("TestScene");
+
+	Ref<TestPackedSceneScript> file_script;
+	file_script.instantiate();
+	file_script->set_path_cache("res://test/foo.fs");
+	REQUIRE_FALSE(file_script->is_built_in());
+
+	scene->set_script(file_script);
+
+	PackedScene packed_scene;
+	CHECK(packed_scene.pack(scene) == OK);
+
+	Ref<SceneState> state = packed_scene.get_state();
+	REQUIRE(state.is_valid());
+	bool found = false;
+	bool deferred = false;
+	const Variant packed_script = state->get_property_value(0, CoreStringName(script), found, deferred);
+	REQUIRE(found);
+	const Ref<Script> packed_script_ref = packed_script;
+	REQUIRE(packed_script_ref.is_valid());
+	REQUIRE_FALSE(packed_script_ref->is_built_in());
+
+	Node *instance = packed_scene.instantiate();
+	REQUIRE(instance != nullptr);
+	const Ref<Script> instance_script = instance->get_script();
+	CHECK(instance_script.is_valid());
+	CHECK(instance_script->get_path() == "res://test/foo.fs");
+
+	memdelete(scene);
+	memdelete(instance);
 }
 
 TEST_CASE("[PackedScene] Recreate State") {

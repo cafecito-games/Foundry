@@ -728,6 +728,14 @@ void SceneTreeEditor::_update_node_tooltip(Node *p_node, TreeItem *p_item) {
 }
 
 void SceneTreeEditor::_node_visibility_changed(Node *p_node) {
+	if (!is_inside_tree()) {
+		// The per-node visibility_changed connection is deliberately kept across
+		// tab switches, so it can fire while this editor is relocated out of the
+		// tree (e.g. a workspace leaf collapse reparents the scene surfaces).
+		// get_scene_node() requires being inside the tree, so bail out early.
+		return;
+	}
+
 	HashMap<Node *, CachedNode>::Iterator I = node_cache.get(p_node, false);
 	if (!I) {
 		// We leave these signals connected when switching tabs.

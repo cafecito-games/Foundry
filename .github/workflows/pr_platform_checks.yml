@@ -1,0 +1,230 @@
+name: PR Every Platform Checks
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+  pull-requests: read
+
+jobs:
+  preflight:
+    name: Parse request
+    runs-on: ubuntu-24.04
+    outputs:
+      requested: ${{ steps.plan.outputs.requested }}
+      authorized: ${{ steps.plan.outputs.authorized }}
+      pr_number: ${{ steps.plan.outputs.pr_number }}
+      pr_head_sha: ${{ steps.plan.outputs.pr_head_sha }}
+      pr_short_sha: ${{ steps.plan.outputs.pr_short_sha }}
+      platforms_label: ${{ steps.plan.outputs.platforms_label }}
+      run_linux: ${{ steps.plan.outputs.run_linux }}
+      run_macos: ${{ steps.plan.outputs.run_macos }}
+      run_windows: ${{ steps.plan.outputs.run_windows }}
+      run_android: ${{ steps.plan.outputs.run_android }}
+      run_ios: ${{ steps.plan.outputs.run_ios }}
+      run_web: ${{ steps.plan.outputs.run_web }}
+
+    steps:
+      - name: Checkout workflow helpers
+        uses: actions/checkout@v6
+
+      - name: Resolve commenter permission
+        id: permission
+        if: ${{ github.event.issue.pull_request != null }}
+        env:
+          COMMENT_AUTHOR: ${{ github.event.comment.user.login }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          permission="$(
+            gh api "repos/${GITHUB_REPOSITORY}/collaborators/${COMMENT_AUTHOR}/permission" \
+              --jq ".permission" 2>/dev/null || true
+          )"
+          if [ -z "$permission" ]; then
+            permission="none"
+          fi
+          echo "permission=$permission" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve pull request head
+        id: pr
+        if: ${{ github.event.issue.pull_request != null }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          echo "head_sha=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq ".head.sha")" >> "$GITHUB_OUTPUT"
+
+      - name: Plan requested platform checks
+        id: plan
+        env:
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          IS_PR: ${{ github.event.issue.pull_request != null }}
+          PERMISSION: ${{ steps.permission.outputs.permission || 'none' }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+          HEAD_SHA: ${{ steps.pr.outputs.head_sha || github.sha }}
+        run: |
+          is_pr_arg="--no-is-pr"
+          if [ "$IS_PR" = "true" ]; then
+            is_pr_arg="--is-pr"
+          fi
+
+          python3 .github/scripts/pr_platform_check_request.py plan \
+            --body "$COMMENT_BODY" \
+            --permission "$PERMISSION" \
+            "$is_pr_arg" \
+            --pr-number "$PR_NUMBER" \
+            --head-sha "$HEAD_SHA"
+
+      - name: Comment on unauthorized request
+        if: ${{ steps.plan.outputs.requested == 'true' && steps.plan.outputs.authorized != 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          gh issue comment "$PR_NUMBER" \
+            --body "I can only run every-platform checks for comments from users with write access or higher."
+
+      - name: Comment on accepted request
+        if: ${{ steps.plan.outputs.requested == 'true' && steps.plan.outputs.authorized == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+          PLATFORMS_LABEL: ${{ steps.plan.outputs.platforms_label }}
+          SHORT_SHA: ${{ steps.plan.outputs.pr_short_sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          cat > /tmp/pr-platform-check-comment.md <<EOF
+          Accepted request to check ${PLATFORMS_LABEL} for PR #${PR_NUMBER} at \`${SHORT_SHA}\`.
+
+          Workflow run: ${RUN_URL}
+          EOF
+          gh issue comment "$PR_NUMBER" --body-file /tmp/pr-platform-check-comment.md
+
+  linux:
+    name: Linux
+    needs: preflight
+    if: ${{ needs.preflight.outputs.run_linux == 'true' }}
+    concurrency:
+      group: pr-every-platform-linux-${{ needs.preflight.outputs.pr_head_sha }}
+      cancel-in-progress: false
+    uses: ./.github/workflows/linux_builds.yml
+    with:
+      checkout-ref: ${{ needs.preflight.outputs.pr_head_sha }}
+
+  macos:
+    name: macOS
+    needs: preflight
+    if: ${{ needs.preflight.outputs.run_macos == 'true' }}
+    concurrency:
+      group: pr-every-platform-macos-${{ needs.preflight.outputs.pr_head_sha }}
+      cancel-in-progress: false
+    uses: ./.github/workflows/macos_builds.yml
+    with:
+      checkout-ref: ${{ needs.preflight.outputs.pr_head_sha }}
+
+  windows:
+    name: Windows
+    needs: preflight
+    if: ${{ needs.preflight.outputs.run_windows == 'true' }}
+    concurrency:
+      group: pr-every-platform-windows-${{ needs.preflight.outputs.pr_head_sha }}
+      cancel-in-progress: false
+    uses: ./.github/workflows/windows_builds.yml
+    with:
+      checkout-ref: ${{ needs.preflight.outputs.pr_head_sha }}
+
+  android:
+    name: Android
+    needs: preflight
+    if: ${{ needs.preflight.outputs.run_android == 'true' }}
+    concurrency:
+      group: pr-every-platform-android-${{ needs.preflight.outputs.pr_head_sha }}
+      cancel-in-progress: false
+    uses: ./.github/workflows/android_builds.yml
+    with:
+      checkout-ref: ${{ needs.preflight.outputs.pr_head_sha }}
+
+  ios:
+    name: iOS
+    needs: preflight
+    if: ${{ needs.preflight.outputs.run_ios == 'true' }}
+    concurrency:
+      group: pr-every-platform-ios-${{ needs.preflight.outputs.pr_head_sha }}
+      cancel-in-progress: false
+    uses: ./.github/workflows/ios_builds.yml
+    with:
+      checkout-ref: ${{ needs.preflight.outputs.pr_head_sha }}
+
+  web:
+    name: Web
+    needs: preflight
+    if: ${{ needs.preflight.outputs.run_web == 'true' }}
+    concurrency:
+      group: pr-every-platform-web-${{ needs.preflight.outputs.pr_head_sha }}
+      cancel-in-progress: false
+    uses: ./.github/workflows/web_builds.yml
+    with:
+      checkout-ref: ${{ needs.preflight.outputs.pr_head_sha }}
+
+  finish:
+    name: Report platform check result
+    needs: [preflight, linux, macos, windows, android, ios, web]
+    if: ${{ always() && needs.preflight.outputs.requested == 'true' && needs.preflight.outputs.authorized == 'true' }}
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR_NUMBER: ${{ needs.preflight.outputs.pr_number }}
+      PLATFORMS_LABEL: ${{ needs.preflight.outputs.platforms_label }}
+      SHORT_SHA: ${{ needs.preflight.outputs.pr_short_sha }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      linux: ${{ needs.linux.result }}
+      run_linux: ${{ needs.preflight.outputs.run_linux }}
+      macos: ${{ needs.macos.result }}
+      run_macos: ${{ needs.preflight.outputs.run_macos }}
+      windows: ${{ needs.windows.result }}
+      run_windows: ${{ needs.preflight.outputs.run_windows }}
+      android: ${{ needs.android.result }}
+      run_android: ${{ needs.preflight.outputs.run_android }}
+      ios: ${{ needs.ios.result }}
+      run_ios: ${{ needs.preflight.outputs.run_ios }}
+      web: ${{ needs.web.result }}
+      run_web: ${{ needs.preflight.outputs.run_web }}
+    steps:
+      - name: Comment on platform check result
+        run: |
+          failed=()
+          for platform in linux macos windows android ios web; do
+            if [ "$(printenv "run_${platform}")" != "true" ]; then
+              continue
+            fi
+
+            result="$(printenv "$platform")"
+            if [ "$result" != "success" ]; then
+              failed+=("${platform}: ${result}")
+            fi
+          done
+
+          if [ "${#failed[@]}" -eq 0 ]; then
+            summary="${PLATFORMS_LABEL} platform check passed for \`${SHORT_SHA}\`."
+          else
+            summary="${PLATFORMS_LABEL} platform check failed for \`${SHORT_SHA}\`."
+          fi
+
+          {
+            echo "${summary}"
+            echo
+            echo "Results:"
+            for platform in linux macos windows android ios web; do
+              if [ "$(printenv "run_${platform}")" != "true" ]; then
+                continue
+              fi
+              echo "- ${platform}: $(printenv "$platform")"
+            done
+            echo
+            echo "Workflow run: ${RUN_URL}"
+          } > /tmp/pr-platform-check-comment.md
+
+          gh issue comment "$PR_NUMBER" --body-file /tmp/pr-platform-check-comment.md

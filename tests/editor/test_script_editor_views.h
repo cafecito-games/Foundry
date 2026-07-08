@@ -650,6 +650,35 @@ TEST_CASE("[Editor][script-tab-focus-routes-controller] Focusing a script tab ro
 	memdelete(controller);
 }
 
+TEST_CASE("[Editor][script-tab-plain-title] Script tab titles use plain file names") {
+	ScriptControllerHarness h;
+	h.mount();
+	h.pump();
+
+	ScriptLeaf *leaf = memnew(ScriptLeaf);
+	h.host->add_child(leaf);
+	h.pump();
+
+	ScriptEditorView *view = h.controller->create_view_for_leaf(leaf);
+	REQUIRE(view != nullptr);
+
+	const String path = write_temp_text_file("player.fs", "func run(): pass");
+	REQUIRE_FALSE(path.is_empty());
+	Ref<TextFile> script = make_text_file(path, "func run(): pass");
+	CHECK(view->edit(script, true));
+	h.pump();
+
+	ScriptEditorBase *se = Object::cast_to<ScriptEditorBase>(view->get_tab_container()->get_tab_control(0));
+	REQUIRE(se != nullptr);
+	CHECK(se->get_name() == "player.fs");
+	CHECK_FALSE(se->get_name().contains("("));
+	CHECK_FALSE(se->get_name().contains("::"));
+
+	h.host->remove_child(leaf);
+	memdelete(leaf);
+	h.unmount();
+}
+
 TEST_CASE("[Editor][script-view-help-single-home] Script view no longer hosts class reference") {
 	ScriptControllerHarness h;
 	h.mount();

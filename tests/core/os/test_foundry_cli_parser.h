@@ -372,6 +372,28 @@ TEST_CASE("[FoundryCLIParser] Docs and extension commands record generator optio
 	CHECK_EQ(extension.invocation.extension_interface_format, "json");
 }
 
+TEST_CASE("[FoundryCLIParser] Projectless CLI tools do not require a main scene") {
+	const std::initializer_list<std::initializer_list<String>> commands = {
+		{ "foundry", "script", "format", "--check", "scripts" },
+		{ "foundry", "script", "lint", "scripts" },
+		{ "foundry", "script", "migrate", "--trusted", "--project", "demo" },
+		{ "foundry", "script", "eval", "print('ok')" },
+		{ "foundry", "docs", "generate-api" },
+		{ "foundry", "docs", "generate-api", "--include-docs" },
+		{ "foundry", "docs", "generate-engine" },
+		{ "foundry", "docs", "generate-script", "--source", "addons/library" },
+		{ "foundry", "extension", "dump-interface" },
+		{ "foundry", "extension", "dump-interface", "--format", "json" },
+		{ "foundry", "extension", "validate-api", "--input", "extension_api.json" },
+	};
+
+	for (const std::initializer_list<String> &command : commands) {
+		FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args(command));
+		REQUIRE_MESSAGE(result.ok, result.error);
+		CHECK(FoundryCLIParser::can_run_without_main_scene(result.invocation));
+	}
+}
+
 TEST_CASE("[FoundryCLIParser] Diagnostics commands map to render device probes") {
 	require_kind({ "foundry", "diagnostics", "render-device-support" }, Kind::DIAGNOSTICS_RENDER_DEVICE_SUPPORT);
 	require_kind({ "foundry", "diagnostics", "render-device-create" }, Kind::DIAGNOSTICS_RENDER_DEVICE_CREATE);

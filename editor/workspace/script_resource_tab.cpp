@@ -78,7 +78,7 @@ ScriptLeaf *ScriptResourceTabType::_create_surface(const WorkspaceTab &p_tab, Co
 		// open_file resolves the correct editor for the resource kind (script or
 		// plain text) the way the file-open path does; it is a no-op if the script
 		// is already open in this view.
-		if (view && !path.is_empty() && !view->get_open_editor_for_path(path)) {
+		if (view && !path.is_empty() && is_resource_available(p_tab) && !view->get_open_editor_for_path(path)) {
 			view->open_file(path);
 		}
 	}
@@ -88,6 +88,9 @@ ScriptLeaf *ScriptResourceTabType::_create_surface(const WorkspaceTab &p_tab, Co
 void ScriptResourceTabType::_apply_payload(ScriptLeaf *p_leaf, const Dictionary &p_payload) const {
 	if (!p_leaf) {
 		return;
+	}
+	if (p_payload.has("associated_scene_path")) {
+		p_leaf->set_associated_scene_path(p_payload["associated_scene_path"]);
 	}
 	ScriptEditorView *view = p_leaf->get_script_editor_view();
 	if (!view || !p_payload.has("view_layout")) {
@@ -110,6 +113,7 @@ Dictionary ScriptResourceTabType::_capture_payload(ScriptLeaf *p_leaf) const {
 		return payload;
 	}
 	payload["script_path"] = p_leaf->get_script_path();
+	payload["associated_scene_path"] = p_leaf->get_associated_scene_path();
 	ScriptEditorView *view = p_leaf->get_script_editor_view();
 	if (view) {
 		Ref<ConfigFile> config;
@@ -132,6 +136,10 @@ void ScriptResourceTabType::_focus_surface(ScriptLeaf *p_leaf) const {
 
 StringName ScriptResourceTabType::type_id() const {
 	return type_id_value;
+}
+
+ScriptLeaf *ScriptResourceTabType::get_mounted_script_leaf(int p_stable_id) const {
+	return _resolve_surface(p_stable_id);
 }
 
 bool ScriptResourceTabType::can_open(const String &p_resource) const {
@@ -234,10 +242,6 @@ bool ScriptResourceTabType::is_resource_available(const WorkspaceTab &p_tab) con
 	if (path.is_empty()) {
 		return true;
 	}
-	// Mirror ScriptEditorView::_script_exists: a built-in/subresource script path
-	// ("<file>::<subpath>") is backed by its base resource file, so check that.
-	if (path.is_resource_file()) {
-		return FileAccess::exists(path);
-	}
-	return FileAccess::exists(path.get_slice("::", 0));
+	// Standalone script paths must exist on disk.
+	return FileAccess::exists(path);
 }

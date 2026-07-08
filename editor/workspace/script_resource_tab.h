@@ -68,6 +68,7 @@ public:
 
 	static String derive_title(const String &p_resource_key);
 
+	ScriptLeaf *get_mounted_script_leaf(int p_stable_id) const;
 	StringName type_id() const override;
 	bool can_open(const String &p_resource) const override;
 	WorkspaceTab make_tab(const String &p_resource, int p_stable_id) const override;

@@ -74,6 +74,7 @@
 #include "tests/editor/test_editor_plugin_focused_tile_forwarding.h"
 #include "tests/editor/test_editor_scene_context.h"
 #include "tests/editor/test_extract_method_name_prompt.h"
+#include "tests/editor/test_known_project_store.h"
 #include "tests/editor/test_node_3d_editor_world_scope.h"
 #include "tests/editor/test_refactor_diff_preview.h"
 #include "tests/editor/test_script_create_dialog.h"

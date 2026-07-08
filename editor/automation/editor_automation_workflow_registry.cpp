@@ -44,6 +44,10 @@ EditorAutomationAcceptanceWorkflow::Result _run_mixed_workspace_editing(EditorWo
 	return EditorAutomationAcceptanceWorkflow::run_mixed_workspace_editing(p_driver);
 }
 
+EditorAutomationAcceptanceWorkflow::Result _run_close_last_scene_empty_pane(EditorWorkflowTestDriver &p_driver) {
+	return EditorAutomationAcceptanceWorkflow::run_close_last_scene_empty_pane(p_driver);
+}
+
 EditorAutomationAcceptanceWorkflow::Result _run_mixed_workspace_seed(EditorWorkflowTestDriver &p_driver) {
 	return EditorAutomationAcceptanceWorkflow::run_mixed_workspace_seed(p_driver);
 }
@@ -85,6 +89,7 @@ void EditorAutomationWorkflowRegistry::register_builtin_workflows() {
 	PackedStringArray basic_scene_aliases;
 	basic_scene_aliases.push_back("mvp");
 	_register_workflow("basic_scene_editing", &_run_basic_scene_editing, basic_scene_aliases);
+	_register_workflow("close_last_scene_empty_pane", &_run_close_last_scene_empty_pane);
 	_register_workflow("mixed_workspace_editing", &_run_mixed_workspace_editing);
 	_register_workflow("mixed_workspace_seed", &_run_mixed_workspace_seed);
 	_register_workflow("mixed_workspace_restore", &_run_mixed_workspace_restore);

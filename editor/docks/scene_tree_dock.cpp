@@ -1639,6 +1639,11 @@ void SceneTreeDock::_perform_property_drop(Node *p_node, const String &p_propert
 }
 
 void SceneTreeDock::add_root_node(Node *p_node) {
+	if (editor_data->get_edited_scene() < 0) {
+		const int scene_idx = editor_data->add_edited_scene(-1);
+		EditorNode::get_singleton()->activate_workspace_scene_tab(scene_idx, editor_data->get_focused_tile_id());
+	}
+
 	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
 	undo_redo->create_action_for_history(TTR("New Scene Root"), editor_data->get_current_edited_scene_history_id());
 	undo_redo->add_do_method(EditorNode::get_singleton(), "set_edited_scene", p_node);
@@ -2212,6 +2217,10 @@ bool SceneTreeDock::_check_node_path_recursive(Node *p_root_node, Variant &r_var
 			if (Object::cast_to<Material>(resource)) {
 				// For performance reasons, assume that Materials don't have NodePaths in them.
 				// TODO This check could be removed when String performance has improved.
+				break;
+			}
+
+			if (Object::cast_to<Script>(resource)) {
 				break;
 			}
 
@@ -4742,7 +4751,7 @@ void SceneTreeDock::_create_remap_for_node(Node *p_node, HashMap<Ref<Resource>, 
 					continue;
 				}
 
-				if (res->is_built_in() && !r_remap.has(res)) {
+				if (res->is_built_in() && !Object::cast_to<Script>(*res) && !r_remap.has(res)) {
 					_create_remap_for_resource(res, r_remap);
 				}
 			}
@@ -4769,7 +4778,7 @@ void SceneTreeDock::_create_remap_for_resource(Ref<Resource> p_resource, HashMap
 		if (v.is_ref_counted()) {
 			Ref<Resource> res = v;
 			if (res.is_valid()) {
-				if (res->is_built_in() && !r_remap.has(res)) {
+				if (res->is_built_in() && !Object::cast_to<Script>(*res) && !r_remap.has(res)) {
 					_create_remap_for_resource(res, r_remap);
 				}
 			}
@@ -4848,6 +4857,9 @@ void SceneTreeDock::_gather_resources(Node *p_node, List<Pair<Ref<Resource>, Nod
 		}
 		Ref<Resource> res = value;
 		if (res.is_null()) {
+			continue;
+		}
+		if (Object::cast_to<Script>(*res)) {
 			continue;
 		}
 

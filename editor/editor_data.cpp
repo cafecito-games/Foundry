@@ -422,8 +422,12 @@ void EditorData::set_scene_as_saved(int p_idx) {
 }
 
 bool EditorData::is_scene_changed(int p_idx) {
+	const bool use_current_scene = p_idx == -1;
 	if (p_idx == -1) {
 		p_idx = current_edited_scene;
+	}
+	if (use_current_scene && p_idx < 0) {
+		return false;
 	}
 	ERR_FAIL_INDEX_V(p_idx, edited_scene.size(), false);
 
@@ -829,6 +833,16 @@ int EditorData::get_edited_scene_from_path(const String &p_path) const {
 }
 
 void EditorData::set_edited_scene(int p_idx) {
+	if (p_idx == -1) {
+		current_edited_scene = -1;
+		_ensure_tile_registered(focused_tile_id);
+		tile_current_scenes[focused_tile_id] = -1;
+#ifdef DEV_ENABLED
+		_check_focus_invariant();
+#endif
+		return;
+	}
+
 	ERR_FAIL_INDEX(p_idx, edited_scene.size());
 	current_edited_scene = p_idx;
 	const int tile_id = edited_scene[p_idx].tile_id;
@@ -1140,6 +1154,12 @@ void EditorData::migrate_tile_scenes(int p_from_tile_id, int p_to_tile_id) {
 }
 
 Ref<Script> EditorData::get_scene_root_script(int p_idx) const {
+	if (p_idx == -1) {
+		p_idx = current_edited_scene;
+		if (p_idx < 0) {
+			return Ref<Script>();
+		}
+	}
 	ERR_FAIL_INDEX_V(p_idx, edited_scene.size(), Ref<Script>());
 	if (!edited_scene[p_idx].get_root()) {
 		return Ref<Script>();
@@ -1199,6 +1219,12 @@ void EditorData::set_scene_path(int p_idx, const String &p_path) {
 }
 
 String EditorData::get_scene_path(int p_idx) const {
+	if (p_idx == -1) {
+		p_idx = current_edited_scene;
+		if (p_idx < 0) {
+			return String();
+		}
+	}
 	ERR_FAIL_INDEX_V(p_idx, edited_scene.size(), String());
 
 	if (edited_scene[p_idx].get_root()) {
@@ -1219,6 +1245,9 @@ void EditorData::set_edited_scene_live_edit_root(const NodePath &p_root) {
 }
 
 NodePath EditorData::get_edited_scene_live_edit_root() {
+	if (current_edited_scene < 0) {
+		return NodePath();
+	}
 	ERR_FAIL_INDEX_V(current_edited_scene, edited_scene.size(), String());
 
 	return edited_scene[current_edited_scene].live_edit_root;

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "foundry-editor": {
+      "command": "python3",
+      "args": ["scripts/foundry_mcp_server.py"]
+    }
+  }
+}

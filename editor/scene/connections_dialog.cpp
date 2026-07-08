@@ -396,9 +396,6 @@ void ConnectDialog::_update_method_tree() {
 	// If a script is attached, get methods from it.
 	ScriptInstance *si = target->get_script_instance();
 	if (si) {
-		if (si->get_script()->is_built_in()) {
-			si->get_script()->reload();
-		}
 		List<MethodInfo> methods;
 		si->get_method_list(&methods);
 		methods = _filter_method_list(methods, signal_info, search_string);
