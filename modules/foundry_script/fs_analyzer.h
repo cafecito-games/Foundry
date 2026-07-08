@@ -112,28 +112,6 @@ private:
 		~AnalysisScopeGuard();
 	};
 
-	// Clears and restores flow-narrowing maps for one function-body resolution pass.
-	class FlowNarrowingScope {
-		FSAnalyzer *analyzer = nullptr;
-		HashMap<const FSParser::Node *, FSParser::DataType> previous_flow_narrowed_types;
-		HashMap<const FSParser::Node *, bool> previous_flow_narrowing_captured_sources;
-		bool restore_captured_sources = false;
-
-	public:
-		explicit FlowNarrowingScope(FSAnalyzer *p_analyzer, bool p_track_captured_sources);
-		~FlowNarrowingScope();
-	};
-
-	// Owns `flattened_trait_final_nodes` for one final-assignment pass.
-	class FlattenedTraitFinalNodesScope {
-		FSAnalyzer *analyzer = nullptr;
-
-	public:
-		explicit FlattenedTraitFinalNodesScope(FSAnalyzer *p_analyzer);
-		void insert(const FSParser::VariableNode *p_variable);
-		~FlattenedTraitFinalNodesScope();
-	};
-
 	// Phase 1 helper: dependency/parser-cache access for external scripts and classes.
 	// Requested status guide:
 	// - PARSED: cache-walk lookup and external class delegation before local phase work.
@@ -175,6 +153,98 @@ private:
 	};
 
 	DependencyParserAccess dependency_parser_access;
+
+	// Owns flow-sensitive narrowing state and definite-assignment analysis for `final` variables.
+	// Lifetime: `flow_narrowed_types` and `flow_narrowing_captured_sources` are active during body
+	// resolution (one function body at a time via `FlowNarrowingScope`); `flattened_trait_final_nodes`
+	// is populated only for the duration of a final-member/static pass.
+	class FlowFinalityContext {
+		FSAnalyzer *analyzer = nullptr;
+
+		HashMap<const FSParser::Node *, FSParser::DataType> flow_narrowed_types;
+		HashMap<const FSParser::Node *, bool> flow_narrowing_captured_sources;
+		HashSet<const FSParser::VariableNode *> flattened_trait_final_nodes;
+
+	public:
+		class FlowNarrowingScope {
+			FlowFinalityContext *context = nullptr;
+			HashMap<const FSParser::Node *, FSParser::DataType> previous_flow_narrowed_types;
+			HashMap<const FSParser::Node *, bool> previous_flow_narrowing_captured_sources;
+			bool restore_captured_sources = false;
+
+		public:
+			FlowNarrowingScope(FlowFinalityContext &p_context, bool p_track_captured_sources);
+			~FlowNarrowingScope();
+		};
+
+		class FlattenedTraitFinalNodesScope {
+			FlowFinalityContext *context = nullptr;
+
+		public:
+			explicit FlattenedTraitFinalNodesScope(FlowFinalityContext &p_context);
+			void insert(const FSParser::VariableNode *p_variable);
+			~FlattenedTraitFinalNodesScope();
+		};
+
+		struct FinalAssignmentState {
+			HashSet<const FSParser::VariableNode *> assigned;
+			HashSet<const FSParser::VariableNode *> maybe_assigned;
+			bool reachable = true;
+		};
+		enum class FinalAssignmentScope {
+			INSTANCE_MEMBER,
+			STATIC_MEMBER,
+			LOCAL,
+		};
+
+		explicit FlowFinalityContext(FSAnalyzer *p_analyzer);
+
+		const FSParser::Node *flow_narrowing_key_from_identifier(const FSParser::IdentifierNode *p_identifier) const;
+		void apply_flow_narrowing(const FSParser::IdentifierNode *p_identifier);
+		void apply_flow_narrowing(const FSParser::IdentifierNode *p_identifier, const FSParser::DataType &p_type);
+		void apply_match_branch_flow_narrowing(FSParser::ExpressionNode *p_match_test, FSParser::MatchBranchNode *p_match_branch);
+		void clear_flow_narrowing(const FSParser::ExpressionNode *p_expression);
+		void mark_flow_narrowing_capture(const FSParser::IdentifierNode *p_identifier);
+		void clear_captured_flow_narrowing();
+		bool null_check_narrowing_identifier(FSParser::ExpressionNode *p_condition, bool p_condition_value, FSParser::IdentifierNode *&r_identifier) const;
+		bool type_test_narrowing_identifier(FSParser::ExpressionNode *p_condition, bool p_condition_value, FSParser::IdentifierNode *&r_identifier, FSParser::DataType &r_type) const;
+		void reduce_condition_expression(FSParser::ExpressionNode *p_condition);
+		void apply_flow_narrowing_from_condition(FSParser::ExpressionNode *p_condition, bool p_condition_value);
+		const FSParser::DataType *lookup_flow_narrowed_type(const FSParser::Node *p_key) const;
+		HashMap<const FSParser::Node *, FSParser::DataType> &get_flow_narrowed_types() { return flow_narrowed_types; }
+		const HashMap<const FSParser::Node *, FSParser::DataType> &get_flow_narrowed_types() const { return flow_narrowed_types; }
+
+		void check_final_member_assignments(FSParser::ClassNode *p_class);
+		void check_final_static_assignments(FSParser::ClassNode *p_class);
+		void check_final_local_assignments(FSParser::ClassNode *p_class);
+		void analyze_function_local_finals(const FSParser::FunctionNode *p_function);
+		void collect_local_finals(const FSParser::Node *p_node,
+				HashSet<const FSParser::VariableNode *> &r_finals,
+				HashMap<StringName, const FSParser::VariableNode *> &r_finals_by_name);
+		static void merge_final_assignment_branches(const FinalAssignmentState &p_first, const FinalAssignmentState &p_second, FinalAssignmentState &r_out);
+		const FSParser::VariableNode *final_member_assignment_target(const FSParser::ExpressionNode *p_expression,
+				const HashSet<const FSParser::VariableNode *> &p_finals,
+				const HashMap<StringName, const FSParser::VariableNode *> &p_finals_by_name, FinalAssignmentScope p_scope, bool *r_is_self_receiver = nullptr, bool p_flattened_trait_body = false) const;
+		void scan_illegal_final_writes(const FSParser::Node *p_node,
+				const HashSet<const FSParser::VariableNode *> &p_finals,
+				const HashMap<StringName, const FSParser::VariableNode *> &p_finals_by_name, FinalAssignmentScope p_scope, bool p_in_init, bool p_flattened_trait_body = false);
+		void analyze_final_definite_assignment_suite(const FSParser::SuiteNode *p_suite,
+				const HashSet<const FSParser::VariableNode *> &p_finals,
+				const HashMap<StringName, const FSParser::VariableNode *> &p_finals_by_name, FinalAssignmentScope p_scope, FinalAssignmentState &r_state,
+				HashSet<const FSParser::VariableNode *> &r_assigned_anywhere, bool p_flattened_trait_body = false);
+		void analyze_final_definite_assignment_statement(const FSParser::Node *p_statement,
+				const HashSet<const FSParser::VariableNode *> &p_finals,
+				const HashMap<StringName, const FSParser::VariableNode *> &p_finals_by_name, FinalAssignmentScope p_scope, FinalAssignmentState &r_state,
+				HashSet<const FSParser::VariableNode *> &r_assigned_anywhere, bool p_flattened_trait_body = false);
+		void check_final_reads_in_expression(const FSParser::ExpressionNode *p_expression,
+				const HashSet<const FSParser::VariableNode *> &p_finals,
+				const HashMap<StringName, const FSParser::VariableNode *> &p_finals_by_name, FinalAssignmentScope p_scope, const FinalAssignmentState &p_state, bool p_flattened_trait_body = false);
+		void check_final_reads_in_pattern(const FSParser::PatternNode *p_pattern,
+				const HashSet<const FSParser::VariableNode *> &p_finals,
+				const HashMap<StringName, const FSParser::VariableNode *> &p_finals_by_name, FinalAssignmentScope p_scope, const FinalAssignmentState &p_state, bool p_flattened_trait_body = false);
+	};
+
+	FlowFinalityContext flow_finality;
 
 	// Ensures deferred lambda bodies are resolved before leaving body analysis.
 	class PendingLambdaBodiesScope {
@@ -226,8 +296,6 @@ private:
 	const FSParser::EnumNode *current_enum = nullptr;
 	FSParser::LambdaNode *current_lambda = nullptr;
 	List<FSParser::LambdaNode *> pending_body_resolution_lambdas;
-	HashMap<const FSParser::Node *, FSParser::DataType> flow_narrowed_types;
-	HashMap<const FSParser::Node *, bool> flow_narrowing_captured_sources;
 	bool static_context = false;
 	bool strict_null_checks = false;
 	bool strict_dynamic_checks = false;
@@ -285,68 +353,6 @@ private:
 	void resolve_class_body(FSParser::ClassNode *p_class, const FSParser::Node *p_source = nullptr);
 	void resolve_class_body(FSParser::ClassNode *p_class, bool p_recursive);
 
-	// Write-once enforcement for `final` member variables (definite-assignment engine).
-	// `assigned` is the set of `final` members *definitely* assigned along every path to this
-	// point (intersection at joins); a read requires definite assignment. `maybe_assigned` is the
-	// set assigned along *some* path (union at joins); a second write to a maybe-assigned final is
-	// a double-write. `reachable` is false once a terminator (return/break/continue) has made the
-	// path unreachable; an unreachable path's `assigned` set is the universal set (the neutral
-	// element for the intersection join), per the JLS definite-assignment model.
-	struct FinalAssignmentState {
-		HashSet<const FSParser::VariableNode *> assigned;
-		HashSet<const FSParser::VariableNode *> maybe_assigned;
-		bool reachable = true;
-	};
-	// Selects which kind of `final` variable a definite-assignment pass tracks. The same engine
-	// serves all three; only the assignment slot, the way a target identifier is recognized, and the
-	// diagnostic wording differ:
-	//   - INSTANCE_MEMBER: `self`'s own final members; slot is the declaration initializer or `_init`.
-	//   - STATIC_MEMBER:   this class's `final static var`s; slot is the initializer or `_static_init`.
-	//   - LOCAL:           `final var` locals; slot is the declaration or a single definite assignment
-	//                      before use within the enclosing function body.
-	enum class FinalAssignmentScope {
-		INSTANCE_MEMBER,
-		STATIC_MEMBER,
-		LOCAL,
-	};
-	// The `final` variable nodes declared by the traits applied to the class whose flattened trait
-	// bodies are currently being scanned (instance finals during the member pass, static finals during
-	// the static pass), including ones the implementer shadows. A flattened trait body resolves a bare
-	// or `self` member reference against the trait's own AST, so a reference that resolves to one of
-	// these nodes carries a stale finality (the implementer may have shadowed that slot with a mutable
-	// member); it must be resolved by name instead. A bare/`self` reference to any *other* final (an
-	// inherited final the trait reaches through a base constraint) is reliable and is handled by the
-	// normal resolution. Populated for the duration of `check_final_member_assignments` /
-	// `check_final_static_assignments` and otherwise empty.
-	HashSet<const FSParser::VariableNode *> flattened_trait_final_nodes;
-	void check_final_member_assignments(FSParser::ClassNode *p_class);
-	void check_final_static_assignments(FSParser::ClassNode *p_class);
-	void check_final_local_assignments(FSParser::ClassNode *p_class);
-	void analyze_function_local_finals(const FSParser::FunctionNode *p_function);
-	void collect_local_finals(const FSParser::Node *p_node,
-			HashSet<const FSParser::VariableNode *> &r_finals,
-			HashMap<StringName, const FSParser::VariableNode *> &r_finals_by_name);
-	static void merge_final_assignment_branches(const FinalAssignmentState &p_first, const FinalAssignmentState &p_second, FinalAssignmentState &r_out);
-	const FSParser::VariableNode *final_member_assignment_target(const FSParser::ExpressionNode *p_expression,
-			const HashSet<const FSParser::VariableNode *> &p_finals,
-			const HashMap<StringName, const FSParser::VariableNode *> &p_finals_by_name, FinalAssignmentScope p_scope, bool *r_is_self_receiver = nullptr, bool p_flattened_trait_body = false) const;
-	void scan_illegal_final_writes(const FSParser::Node *p_node,
-			const HashSet<const FSParser::VariableNode *> &p_finals,
-			const HashMap<StringName, const FSParser::VariableNode *> &p_finals_by_name, FinalAssignmentScope p_scope, bool p_in_init, bool p_flattened_trait_body = false);
-	void analyze_final_definite_assignment_suite(const FSParser::SuiteNode *p_suite,
-			const HashSet<const FSParser::VariableNode *> &p_finals,
-			const HashMap<StringName, const FSParser::VariableNode *> &p_finals_by_name, FinalAssignmentScope p_scope, FinalAssignmentState &r_state,
-			HashSet<const FSParser::VariableNode *> &r_assigned_anywhere, bool p_flattened_trait_body = false);
-	void analyze_final_definite_assignment_statement(const FSParser::Node *p_statement,
-			const HashSet<const FSParser::VariableNode *> &p_finals,
-			const HashMap<StringName, const FSParser::VariableNode *> &p_finals_by_name, FinalAssignmentScope p_scope, FinalAssignmentState &r_state,
-			HashSet<const FSParser::VariableNode *> &r_assigned_anywhere, bool p_flattened_trait_body = false);
-	void check_final_reads_in_expression(const FSParser::ExpressionNode *p_expression,
-			const HashSet<const FSParser::VariableNode *> &p_finals,
-			const HashMap<StringName, const FSParser::VariableNode *> &p_finals_by_name, FinalAssignmentScope p_scope, const FinalAssignmentState &p_state, bool p_flattened_trait_body = false);
-	void check_final_reads_in_pattern(const FSParser::PatternNode *p_pattern,
-			const HashSet<const FSParser::VariableNode *> &p_finals,
-			const HashMap<StringName, const FSParser::VariableNode *> &p_finals_by_name, FinalAssignmentScope p_scope, const FinalAssignmentState &p_state, bool p_flattened_trait_body = false);
 	void resolve_function_signature(FSParser::FunctionNode *p_function, const FSParser::Node *p_source = nullptr, bool p_is_lambda = false);
 	void resolve_function_body(FSParser::FunctionNode *p_function, bool p_is_lambda = false);
 	void resolve_node(FSParser::Node *p_node, bool p_is_root = true);
@@ -505,17 +511,6 @@ private:
 	bool signal_type_from_native_constant_arg(const StringName &p_native_type, const FSParser::CallNode *p_call, int p_signal_arg_index, FSParser::DataType &r_signal_type) const;
 	bool local_signal_type_from_constant_arg(const FSParser::CallNode *p_call, int p_signal_arg_index, FSParser::DataType &r_signal_type) const;
 	void validate_strict_signal_name_fallback(const FSParser::CallNode *p_call, const FSParser::DataType &p_receiver_type, int p_signal_arg_index);
-	const FSParser::Node *flow_narrowing_key_from_identifier(const FSParser::IdentifierNode *p_identifier) const;
-	void apply_flow_narrowing(const FSParser::IdentifierNode *p_identifier);
-	void apply_flow_narrowing(const FSParser::IdentifierNode *p_identifier, const FSParser::DataType &p_type);
-	void apply_match_branch_flow_narrowing(FSParser::ExpressionNode *p_match_test, FSParser::MatchBranchNode *p_match_branch);
-	void clear_flow_narrowing(const FSParser::ExpressionNode *p_expression);
-	void mark_flow_narrowing_capture(const FSParser::IdentifierNode *p_identifier);
-	void clear_captured_flow_narrowing();
-	bool null_check_narrowing_identifier(FSParser::ExpressionNode *p_condition, bool p_condition_value, FSParser::IdentifierNode *&r_identifier) const;
-	bool type_test_narrowing_identifier(FSParser::ExpressionNode *p_condition, bool p_condition_value, FSParser::IdentifierNode *&r_identifier, FSParser::DataType &r_type) const;
-	void reduce_condition_expression(FSParser::ExpressionNode *p_condition);
-	void apply_flow_narrowing_from_condition(FSParser::ExpressionNode *p_condition, bool p_condition_value);
 	void validate_call_arg(const List<FSParser::DataType> &p_par_types, int p_default_args_count, bool p_is_vararg, const FSParser::CallNode *p_call, const Vector<int> &p_extra_allowed_argument_counts = Vector<int>(), int p_trailing_unbound_argument_count = 0);
 	void validate_call_arg(const MethodInfo &p_method, const FSParser::CallNode *p_call);
 	static bool call_has_named_arguments(const FSParser::CallNode *p_call);
