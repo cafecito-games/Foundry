@@ -1,0 +1,178 @@
+[
+ {
+  "pr": "119872",
+  "sha": "f3ec4cee64bc26b8a99d13f045f243de5df1f4e5",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "2-line Polygon2D stale-AABB fix in scene/2d, self-contained (pairs with fast-path PR 117334)."
+ },
+ {
+  "pr": "118265",
+  "sha": "b8c2d43bdf8744eae6ce5ce0e54c3a995ff8395a",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "3-line guard fixing BoneAttachment3D !is_inside_tree() error; isolated runtime node fix."
+ },
+ {
+  "pr": "89325",
+  "sha": "f1ea87c4bd4879d70e06af7d22e717983801920b",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Small CPUParticles3D fix for zero-scale basis inversion error; single-file runtime fix."
+ },
+ {
+  "pr": "118906",
+  "sha": "28eecef6f18587bd130e0c40bce52a42d06991ec",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Adds missing bound-method argument for SpringBoneSimulator3D curve signal; trivial bind fix."
+ },
+ {
+  "pr": "118588",
+  "sha": "9b4b3831d2d37dfa5f7a6ceffbf4e2e7430d6610",
+  "decision": "port-later",
+  "kind": "refactor",
+  "risk": "med",
+  "rationale": "RequiredParam hardening across core_bind + node_2d/scene_tree; infra exists in Foundry but core_bind may diverge, low value."
+ },
+ {
+  "pr": "113605",
+  "sha": "a7060f5c86b6df128b6dd6c5277278b8bfb7817c",
+  "decision": "port-later",
+  "kind": "perf",
+  "risk": "med",
+  "rationale": "Optimizes SkeletonModifier3D influence interpolation; self-contained but alters animation math, not a bugfix."
+ },
+ {
+  "pr": "117959",
+  "sha": "abfb91d1e2893bc18decf7716284cef8fa3e03b5",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Single-file SplineIK3D crash-case fixes; isolated runtime node fix."
+ },
+ {
+  "pr": "118080",
+  "sha": "376b3b041eb6c73d52aaa70118342338f7a5b439",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Skips redundant physics-server transform propagation on rigid/physical bodies; targeted but changes physics notification timing."
+ },
+ {
+  "pr": "114080",
+  "sha": "91ad65d93234057e48142dabc965aef8b76c9ef5",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "high",
+  "rationale": "215-line rewrite of AudioStreamPlayer3D volume calc for multiple viewports; large blast radius, defer and verify."
+ },
+ {
+  "pr": "117879",
+  "sha": "d76390fa365f89bdefa9dff26daaf5980fa8d87a",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "2-line build fix for 3D navigation-disabled configs; harmless include/guard fix."
+ },
+ {
+  "pr": "117655",
+  "sha": "8d0b2387274660be3b5f8b88ad7ddd08b8a43df0",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Calls stop() after setting new SpriteFrames on AnimatedSprite2D/Sprite3D; 2-line fix."
+ },
+ {
+  "pr": "117334",
+  "sha": "a74ec70626e5645973dacd22e1a5b5e8dc9cf910",
+  "decision": "port-later",
+  "kind": "perf",
+  "risk": "med",
+  "rationale": "Adds Polygon2D fast path; perf, and introduced the AABB bug fixed by 119872 so port together if taken."
+ },
+ {
+  "pr": "115358",
+  "sha": "2078318f25a5b0f6c69ae628e4c7be9b3daf7e8f",
+  "decision": "port-later",
+  "kind": "feature",
+  "risk": "med",
+  "rationale": "Adds node-path validation, new project setting, and warnings across 15 SkeletonModifier3D files; feature, broad."
+ },
+ {
+  "pr": "117286",
+  "sha": "ca77be8d0ada2f5cd9befebe8dd7800b274de133",
+  "decision": "skip",
+  "kind": "refactor",
+  "risk": "med",
+  "rationale": "56-file unused-include cleanup touching diverged editor/ surfaces; high churn, no behavior change."
+ },
+ {
+  "pr": "117189",
+  "sha": "5cfccbee34013b14216d753f918ffe1271161d3c",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Single-file DirectionalLight3D property-list validation fix."
+ },
+ {
+  "pr": "116956",
+  "sha": "98e6b3c46064ba601afff02e0b6a9b98fd47f200",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Adds configuration warning for missing Mesh on MeshInstance2D/3D; small, low-risk UX aid."
+ },
+ {
+  "pr": "116662",
+  "sha": "b5ff3b5e3b78ed0630febb11afcc81b9accc20a7",
+  "decision": "skip",
+  "kind": "refactor",
+  "risk": "med",
+  "rationale": "37-file _validate_property() style cleanup spanning modules; high conflict churn, no behavior change."
+ },
+ {
+  "pr": "116430",
+  "sha": "46729d4b5e421d7e6ddbbc596df1dcd5355f6f8a",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "One-line Line2D get_scaled_rid() for viewport oversampling; get_scaled_rid already exists in Foundry texture.h."
+ },
+ {
+  "pr": "116140",
+  "sha": "b205e5fd2057ec96d27e4b7bada2c2c43e65be23",
+  "decision": "skip",
+  "kind": "other",
+  "risk": "low",
+  "rationale": "Reverts a curve-range change Foundry never applied; current cpu_particles already matches reverted state, no-op."
+ },
+ {
+  "pr": "116012",
+  "sha": "b79e1f36ef2bd29419afeab5f754664721a195b1",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "One-line fix for erroneous atomic use in Node3D dirty flags; isolated header change."
+ },
+ {
+  "pr": "116000",
+  "sha": "ca0be3863297062222f19847912fe58dd0799d17",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Fixes process-thread-group transform notifications; touches scene/main/node.cpp threading, verify carefully."
+ },
+ {
+  "pr": "115689",
+  "sha": "21932ace7fceaa2ee04365f893dd6f981f1aa7b2",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes LookAtModifier3D/AimModifier3D forward vector; contained runtime node fix."
+ }
+]

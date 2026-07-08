@@ -1,0 +1,194 @@
+[
+ {
+  "pr": "120300",
+  "sha": "1f92b45db3167896f3a1eac54eae9380c15e2ac0",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Two-line crash fix in existing spatial marker tracking extension; self-contained."
+ },
+ {
+  "pr": "119659",
+  "sha": "92b674706c28e9be640cf0df8add1d4bd55786e8",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "First-frame XR_ERROR_VALIDATION_FAILURE fix; frame_synthesis extension exists in tree, single-file."
+ },
+ {
+  "pr": "119226",
+  "sha": "0067214c1eae1af4e40147148bf5ab7c04a036bc",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Vulkan subsampled composition-layer fix; small change across 3 openxr files."
+ },
+ {
+  "pr": "116622",
+  "sha": "05f52c245d16556d3f06a72de5ef2e19e550cf75",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Refresh binding names on action-map rename; openxr editor only (not diverged script editor), additive."
+ },
+ {
+  "pr": "118975",
+  "sha": "08b4d30baceeef355a423de596c1a6b0c78c57c4",
+  "decision": "port-later",
+  "kind": "refactor",
+  "risk": "med",
+  "rationale": "Switches default profile to khr/generic_controller (needs PR 110778) and drops built-in profiles; sequence after generic controller."
+ },
+ {
+  "pr": "118901",
+  "sha": "ff85b793b5b4ef8153a3e758a7bb541c9eb3553a",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Fixes regression introduced after 4.7-dev5; verify frame_synthesis code state matches before applying."
+ },
+ {
+  "pr": "118128",
+  "sha": "2dc3039d5615e2f58675e906daa090ca4d5c4a60",
+  "decision": "port-later",
+  "kind": "refactor",
+  "risk": "high",
+  "rationale": "20-file reshape of spatial-entities extensibility API; large blast radius on 4.7-era feature."
+ },
+ {
+  "pr": "117399",
+  "sha": "c83925eaf0ae587d7d10badc2380e4a190d94f31",
+  "decision": "port-later",
+  "kind": "feature",
+  "risk": "med",
+  "rationale": "Exposes InteractionProfileMetadata singleton across 32 files touching extension-wrapper surface; broad API change."
+ },
+ {
+  "pr": "111518",
+  "sha": "102c6f5eee6bc2f48dc02627102a6568fdc69979",
+  "decision": "port-later",
+  "kind": "feature",
+  "risk": "med",
+  "rationale": "Mislabeled openxr; actually create_dialog type filters touching core class_db and editor gui; verify against fork editor changes."
+ },
+ {
+  "pr": "110778",
+  "sha": "563654353dcd12a4177ad6844e35b97676e65a52",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Additive new XR_KHR_generic_controller extension (new files + register_types), self-contained."
+ },
+ {
+  "pr": "114324",
+  "sha": "7438a39a132f5f4b309e01d8827fa309c4a2b62e",
+  "decision": "port-later",
+  "kind": "feature",
+  "risk": "med",
+  "rationale": "Composition layers anywhere in tree; touches servers/xr/xr_server and XRServer doc; wider than openxr module."
+ },
+ {
+  "pr": "116857",
+  "sha": "9dc85c90ee3f531e307ebd9da48e581406633c22",
+  "decision": "port-now",
+  "kind": "refactor",
+  "risk": "low",
+  "rationale": "Narrow Windows COM include forward-declare cleanup in one platform header."
+ },
+ {
+  "pr": "116529",
+  "sha": "44675a7002dd88a9c771760b4a1ff2029677ded6",
+  "decision": "port-now",
+  "kind": "platform",
+  "risk": "low",
+  "rationale": "Android-independent OpenGL ES compile-time checks; two-file self-contained platform fix."
+ },
+ {
+  "pr": "116527",
+  "sha": "8120fb1242065202775831c04f099d9156c37ba2",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fix OpenGL ES driver checks; tiny two-file correction."
+ },
+ {
+  "pr": "116207",
+  "sha": "2ae60b41081361693a1815735a26b8b5fd48ef0f",
+  "decision": "port-later",
+  "kind": "feature",
+  "risk": "med",
+  "rationale": "Adds projection-layer extension hooks to openxr_api and extension-wrapper API surface; feature, defer."
+ },
+ {
+  "pr": "116244",
+  "sha": "d7392aff0211a2f9b387be8e190b31743832eac6",
+  "decision": "port-later",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Additive but expands OpenXRAPIExtension gdextension virtuals; non-urgent API growth, defer."
+ },
+ {
+  "pr": "115605",
+  "sha": "1877e84ca0ab42e55f00e1402ab0b560f16167ae",
+  "decision": "port-now",
+  "kind": "refactor",
+  "risk": "low",
+  "rationale": "Better hand-interaction action-map defaults; single-file data tweak."
+ },
+ {
+  "pr": "113096",
+  "sha": "c9eb8499cabdf258f6973bf938f47fcd96512b94",
+  "decision": "port-later",
+  "kind": "feature",
+  "risk": "med",
+  "rationale": "Eye-visibility controls and XrSpace-by-parent for composition layers; 6-file behavioral feature."
+ },
+ {
+  "pr": "115603",
+  "sha": "970565aafc486ce239ed065e2f8e23c142ff18eb",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Don't register frame-synthesis projection views unless enabled; single-file fix, extension present."
+ },
+ {
+  "pr": "115602",
+  "sha": "82580cf965caf5ce75fc86d4d26e68071bfe4685",
+  "decision": "port-later",
+  "kind": "refactor",
+  "risk": "low",
+  "rationale": "Hides user-presence singleton; depends on PR 115190 which adds the not-yet-present extension."
+ },
+ {
+  "pr": "115190",
+  "sha": "5ad8b27d8db0776700c2b08bf68fbea5e0a4680d",
+  "decision": "port-later",
+  "kind": "feature",
+  "risk": "med",
+  "rationale": "New XR_EXT_user_presence extension; touches main.cpp, ProjectSettings, interface; feature not in fork."
+ },
+ {
+  "pr": "115254",
+  "sha": "623bbb3414f6c2f32e12582cbfe79b05e8abcf16",
+  "decision": "port-now",
+  "kind": "refactor",
+  "risk": "low",
+  "rationale": "Downgrade depth-format failure from error to warning; single-file, low risk."
+ },
+ {
+  "pr": "118415",
+  "sha": "3aa4ebc418869fcd5cb6d767ad935bc168a4e067",
+  "decision": "skip",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes texture_blit visual-shader mode absent in Foundry and lives under nonexistent modules/visual_shader path."
+ },
+ {
+  "pr": "64596",
+  "sha": "c42e294ffa217d30012685b721fa201017b4b3f0",
+  "decision": "port-later",
+  "kind": "refactor",
+  "risk": "high",
+  "rationale": "135-file structural move of visual shaders scene->module; only adopt if pursuing the vshader module migration."
+ }
+]

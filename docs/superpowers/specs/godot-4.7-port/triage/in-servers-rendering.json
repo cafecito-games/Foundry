@@ -1,0 +1,618 @@
+[
+ {
+  "sha": "feeea39cb2f791c0df112dbc08b59ae0e001265b",
+  "pr": "120363",
+  "title": "Add workaround for Vulkan pipeline compilation errors on Adreno 660.",
+  "subsystem": "servers/rendering",
+  "nfiles": 5
+ },
+ {
+  "sha": "20fbec29fdd1996e732b6fa41ce9afc934722a8e",
+  "pr": "120254",
+  "title": "Fix for voxelGI global illumination center on AreaLight3Ds being calculated incorrectly",
+  "subsystem": "servers/rendering",
+  "nfiles": 1
+ },
+ {
+  "sha": "279e7ca3cbd340553f8b7ce19e46570560564ccb",
+  "pr": "120071",
+  "title": "Fix a deadlock in CanvasRenderRD",
+  "subsystem": "servers/rendering",
+  "nfiles": 2
+ },
+ {
+  "sha": "5b45283c2aa22ddd7e249b385342c60c61646f7d",
+  "pr": "119997",
+  "title": "Fix area light atlas also destroying VoxelGI uniform sets.",
+  "subsystem": "servers/rendering",
+  "nfiles": 2
+ },
+ {
+  "sha": "cbc3aa33f64b1e376faa1c91a37a8dd593472b93",
+  "pr": "119970",
+  "title": "Put area light cluster iterations behind a spec constant.",
+  "subsystem": "servers/rendering",
+  "nfiles": 5
+ },
+ {
+  "sha": "973060e0f7a0284fd5b234af2faf7224f0049f3b",
+  "pr": "119930",
+  "title": "Fix drawable texture access before null check.",
+  "subsystem": "servers/rendering",
+  "nfiles": 1
+ },
+ {
+  "sha": "243f3537edbc914b3b4dadb39b305d71b80b7b43",
+  "pr": "119639",
+  "title": "Disable ubershaders on problematic Adreno compiler versions.",
+  "subsystem": "servers/rendering",
+  "nfiles": 15
+ },
+ {
+  "sha": "4354aa98069cf13c3882276477ea27f8ee3afed5",
+  "pr": "116203",
+  "title": "Fix `MaterialStorage::material_set_shader` race condition.",
+  "subsystem": "servers/rendering",
+  "nfiles": 2
+ },
+ {
+  "sha": "6c6d7c5ff66b504ee49bc83e358cb69904faf71f",
+  "pr": "119587",
+  "title": "Fix 3D rendering jittering when TAA is enabled in the Mobile renderer",
+  "subsystem": "servers/rendering",
+  "nfiles": 1
+ },
+ {
+  "sha": "12a102e93cac2c61c71c73a2723714113ae0db43",
+  "pr": "119401",
+  "title": "Fix a few race conditions in RD.",
+  "subsystem": "servers/rendering",
+  "nfiles": 1
+ },
+ {
+  "sha": "fa6cad230f638d65a5a897008c5fc512edc237ad",
+  "pr": "119665",
+  "title": "Forbid using hint_screen_texture in unsupported shader types",
+  "subsystem": "servers/rendering",
+  "nfiles": 1
+ },
+ {
+  "sha": "450e28e62f05302dd53c740e2da0f960aa819d00",
+  "pr": "119567",
+  "title": "Fix y-sort modulation div by zero",
+  "subsystem": "servers/rendering",
+  "nfiles": 1
+ },
+ {
+  "sha": "1378c909f09cb04d084fbd2d4a0b112f2138bd6f",
+  "pr": "117773",
+  "title": "Fix LightmapGI probe interpolation at lightmap AABB edges",
+  "subsystem": "servers/rendering",
+  "nfiles": 1
+ },
+ {
+  "sha": "ef7d768e65e6e8c56bfeccf2ec34bbf87f18e741",
+  "pr": "119375",
+  "title": "Fix shader crash when using parameter name identical to uniform name",
+  "subsystem": "servers/rendering",
+  "nfiles": 1
+ },
+ {
+  "sha": "1078619908a1314f46c0439920b82fc187de92e4",
+  "pr": "119414",
+  "title": "Add project setting to disable new Volumetric fog blending behavior",
+  "subsystem": "servers/rendering",
+  "nfiles": 11
+ },
+ {
+  "sha": "872f2f073c2b9b357ae16510f7e41f14122f49ee",
+  "pr": "119337",
+  "title": "Fix undefined barrier usage in SDFGI preprocess shader.",
+  "subsystem": "servers/rendering",
+  "nfiles": 1
+ },
+ {
+  "sha": "8d3d0ea6caa6306f4df59025b1021c02a4b1396f",
+  "pr": "119340",
+  "title": "Fix null uniform set error when enabling SDFGI.",
+  "subsystem": "servers/rendering",
+  "nfiles": 2
+ },
+ {
+  "sha": "aaaf76403e88a3316073f8506672d7e88f167df8",
+  "pr": "119223",
+  "title": "Add Setup Shadows render timestamp for the visual profiler",
+  "subsystem": "servers/rendering",
+  "nfiles": 2
+ },
+ {
+  "sha": "ce26629ff51b8f5d259103ed8a5dba3734d06282",
+  "pr": "119230",
+  "title": "Rendering: Remove `compute_list_add_barrier` before `compute_list_end`",
+  "subsystem": "servers/rendering",
+  "nfiles": 1
+ },
+ {
+  "sha": "96c9b3e8aaa228217265f4566795a0457b832215",
+  "pr": "119304",
+  "title": "Rendering: Zero uninitialized InstanceData fields",
+  "subsystem": "servers/rendering",
+  "nfiles": 2
+ },
+ {
+  "sha": "fddd45ea1c1f7c45d0ae8150e009828f98ed5d68",
+  "pr": "119091",
+  "title": "HDR: Implement checking if surface supports HDR output.",
+  "subsystem": "servers/rendering",
+  "nfiles": 13
+ },
+ {
+  "sha": "0183f295f99892d3fd4c19f1ccfc392bb0096c98",
+  "pr": "119204",
+  "title": "Rendering: Fix priority sort table",
+  "subsystem": "servers/rendering",
+  "nfiles": 1
+ },
+ {
+  "sha": "f059d64e3d0388583e877d3e13c8cd25bd884421",
+  "pr": "118968",
+  "title": "Fix GPU validation errors due to area light LUT format",
+  "subsystem": "servers/rendering",
+  "nfiles": 7
+ },
+ {
+  "sha": "179899680b588fcd64c7a8c5dce14ef663c6ff42",
+  "pr": "118198",
+  "title": "Filter and sanitize volumetric fog to stop invalid values flooding the screen with black pixels through temporal reprojection.",
+  "subsystem": "servers/rendering",
+  "nfiles": 1
+ },
+ {
+  "sha": "2375f07fb63bf588bda076f9b7c9279f8aaebd23",
+  "pr": "119053",
+  "title": "Fix area light texture color conversion",
+  "subsystem": "servers/rendering",
+  "nfiles": 1
+ },
+ {
+  "sha": "393d854f7a904286e6749e6e0f837e41b4ebd2cf",
+  "pr": "118962",
+  "title": "Prevent `textureQueryLod` function from usage in vertex shader",
+  "subsystem": "servers/rendering",
+  "nfiles": 1
+ },
+ {
+  "sha": "75444feae7304924316f09ce5abb48685294d8f2",
+  "pr": "118857",
+  "title": "Fix and clean up clearcoat reflection probe process",
+  "subsystem": "servers/rendering",
+  "nfiles": 3
+ },
+ {
+  "sha": "4d794c4ffbcda9a71738d16d6902f9f8c7efb26b",
+  "pr": "118629",
+  "title": "Fall back to bilinear scaling when setting FSR or MetalFX Temporal on Mobile",
+  "subsystem": "servers/rendering",
+  "nfiles": 1
+ },
+ {
+  "sha": "835e2dcbba974d72d23e348e1ba48f9231fdcd3c",
+  "pr": "118809",
+  "title": "Fix SPIR-V validation error in Mobile clearcoat code.",
+  "subsystem": "servers/rendering",
+  "nfiles": 1
+ },
+ {
+  "sha": "dc12c5f48eda610453642ae6b5201a18c6797337",
+  "pr": "118752",
+  "title": "Fix `Parameter \"rt\" is null` when toggling `ReflectionProbe` visibility",
+  "subsystem": "servers/rendering",
+  "nfiles": 1
+ },
+ {
+  "sha": "06fc4f81654d46a5fb25c91b27c877597de45ab8",
+  "pr": "113413",
+  "title": "Fix screen-space AA when scaling using bilinear filtering",
+  "subsystem": "servers/rendering",
+  "nfiles": 5
+ },
+ {
+  "sha": "f94bbfc07c8ee6f61165848b7abf45a148d51747",
+  "pr": "118353",
+  "title": "Allow to define more than one subgroup level in shader material",
+  "subsystem": "servers/rendering",
+  "nfiles": 6
+ },
+ {
+  "sha": "7ce1853014faeab5357146ccb1f6d16260698fc6",
+  "pr": "108219",
+  "title": "Add Rectangular Area Light Source",
+  "subsystem": "servers/rendering",
+  "nfiles": 82
+ },
+ {
+  "sha": "b042e9688e3aef6c4ff2647f18e965611c61c0bb",
+  "pr": "118519",
+  "title": "Fix max instance computation when creating vertex arrays.",
+  "subsystem": "servers/rendering",
+  "nfiles": 1
+ },
+ {
+  "sha": "6e6d480fd383f8a5eb7c946e6b2d4517ae73e4f4",
+  "pr": "118396",
+  "title": "Remove is_discardable property from several textures",
+  "subsystem": "servers/rendering",
+  "nfiles": 2
+ },
+ {
+  "sha": "9268bc73a060c9615053e6375c7a9d332f73ba91",
+  "pr": "117619",
+  "title": "Fix assymmetrical rendering of reflections in SDFGI",
+  "subsystem": "servers/rendering",
+  "nfiles": 2
+ },
+ {
+  "sha": "014e3b70ec68244cf95b920ce7c64fe91f822b94",
+  "pr": "118044",
+  "title": "Refactor raytracing pipelines.",
+  "subsystem": "servers/rendering",
+  "nfiles": 20
+ },
+ {
+  "sha": "daa913af6384e3788c75d287a66bc4f346396282",
+  "pr": "117672",
+  "title": "Fix a few operators in shader preprocessor expression",
+  "subsystem": "servers/rendering",
+  "nfiles": 1
+ },
+ {
+  "sha": "fdc9f351196fd0cf54f701b08818292db584c969",
+  "pr": "117148",
+  "title": "Raytracing API adjustments.",
+  "subsystem": "servers/rendering",
+  "nfiles": 16
+ },
+ {
+  "sha": "7351e6909bc61f922f22fffe588cff0c980250a6",
+  "pr": "116962",
+  "title": "Refactor `blas_create` to accept multiple geometries.",
+  "subsystem": "servers/rendering",
+  "nfiles": 14
+ },
+ {
+  "sha": "c05358c1d6693ee0f07f993c19bd448f2dc62c00",
+  "pr": "108073",
+  "title": "Fix decal atlas clipped when using texture resolution < 32",
+  "subsystem": "servers/rendering",
+  "nfiles": 1
+ },
+ {
+  "sha": "872cfabf3d0bfde16de02abb1788d06724f7b527",
+  "pr": "79731",
+  "title": "Add a nearest-neighbor scaling option to Viewport's Scaling 3D Mode property",
+  "subsystem": "servers/rendering",
+  "nfiles": 16
+ },
+ {
+  "sha": "8c3a9f9afce2d3d24cf5dfa20f93fb6dacf13075",
+  "pr": "105122",
+  "title": "Fix CanvasItem lines appearing thicker when antialiasing is enabled",
+  "subsystem": "servers/rendering",
+  "nfiles": 2
+ },
+ {
+  "sha": "7e3bf93f8a7e803633e1afc44e021efce926705a",
+  "pr": "117909",
+  "title": "Fix incorrectly stored emission transform for GPUParticles2D",
+  "subsystem": "servers/rendering",
+  "nfiles": 2
+ },
+ {
+  "sha": "eda3dc13b99a7617a86e7b1cdc335d3cfe3dacb5",
+  "pr": "109142",
+  "title": "Extra particle tools for seeking",
+  "subsystem": "servers/rendering",
+  "nfiles": 28
+ },
+ {
+  "sha": "29c5e98e5e110728b9e1dd13027f97958b04382d",
+  "pr": "118064",
+  "title": "Fix color correction not working in the tonemap subpass.",
+  "subsystem": "servers/rendering",
+  "nfiles": 1
+ },
+ {
+  "sha": "cd8ee7d229bfd48a94b307b5edd2e9a4b96f4e38",
+  "pr": "116620",
+  "title": "Improve options for orienting particles in space",
+  "subsystem": "servers/rendering",
+  "nfiles": 19
+ },
+ {
+  "sha": "7958080d65673266bf33e6a58cf3faa8b11a4319",
+  "pr": "116220",
+  "title": "OpenXR: Allow using Vulkan subsampled images with foveated rendering",
+  "subsystem": "servers/rendering",
+  "nfiles": 25
+ },
+ {
+  "sha": "d7680230ae1a9d46e8f0e8304220ff28c972532b",
+  "pr": "115108",
+  "title": "Renderer: Simplify shader and cluster builder",
+  "subsystem": "servers/rendering",
+  "nfiles": 3
+ },
+ {
+  "sha": "29d2c7ece514127cc449ce37994ef4b369a3a9c6",
+  "pr": "117173",
+  "title": "Restrict condition parsing in shader preprocessor",
+  "subsystem": "servers/rendering",
+  "nfiles": 4
+ },
+ {
+  "sha": "a596178702219099c502db363d86d66c0f8edabe",
+  "pr": "117401",
+  "title": "Fix Tangent decoding detection when computing vertex skinning",
+  "subsystem": "servers/rendering",
+  "nfiles": 1
+ },
+ {
+  "sha": "22a140486b913c3e5d2d97210ed7811d7136c735",
+  "pr": "117157",
+  "title": "Restrict `textureGather` shader function in Compatibility mode",
+  "subsystem": "servers/rendering",
+  "nfiles": 1
+ },
+ {
+  "sha": "847d68431451a8988ab9385bf617a52ae0f43d11",
+  "pr": "117295",
+  "title": "Remove unused includes in `servers` with clangd-tidy",
+  "subsystem": "servers/rendering",
+  "nfiles": 25
+ },
+ {
+  "sha": "cc970e91e5bfebdf077e026e48b2a22a479591b5",
+  "pr": "116888",
+  "title": "Allow using a struct name as a variable name in shaders",
+  "subsystem": "servers/rendering",
+  "nfiles": 1
+ },
+ {
+  "sha": "312bdb2ae9e49de22a48218b5ec1c27b601da036",
+  "pr": "114557",
+  "title": "Fix SDFGI ignoring visual layers of geometry instances",
+  "subsystem": "servers/rendering",
+  "nfiles": 1
+ },
+ {
+  "sha": "4296a0c1587f398eb7bd983537eb5fb20f9c9f17",
+  "pr": "116752",
+  "title": "Clean up `is_frustum` projection code",
+  "subsystem": "servers/rendering",
+  "nfiles": 10
+ },
+ {
+  "sha": "dd150a38239de059edf12b7e5636ba3dbde28192",
+  "pr": "116413",
+  "title": "Fixes for completion of shader preprocessor defines",
+  "subsystem": "servers/rendering",
+  "nfiles": 4
+ },
+ {
+  "sha": "861d74c09d395f098aaa5557f09d0e55ff0d7be1",
+  "pr": "115799",
+  "title": "Add view count support to Viewport",
+  "subsystem": "servers/rendering",
+  "nfiles": 13
+ },
+ {
+  "sha": "2adf91e71f879b8f5a634fd0563a3f86afc64f74",
+  "pr": "114890",
+  "title": "Fix viewport debanding not working with spatial scalers.",
+  "subsystem": "servers/rendering",
+  "nfiles": 1
+ },
+ {
+  "sha": "e8c69d41084cedbe2c3176d79ee39a23dcc02b5e",
+  "pr": "116720",
+  "title": "Fix Reinhard and AgX tonemapper in Mobile renderer when using subpass.",
+  "subsystem": "servers/rendering",
+  "nfiles": 1
+ },
+ {
+  "sha": "c521ed8f7136eba624505ddd38c20f94403e1fc4",
+  "pr": "116519",
+  "title": "Clamp uv coordinates of omni light projector",
+  "subsystem": "servers/rendering",
+  "nfiles": 1
+ },
+ {
+  "sha": "69a412afcd53dfa360d91e7993205bdc40951645",
+  "pr": "116647",
+  "title": "Fix LCD batching flag for StyleBoxTexture",
+  "subsystem": "servers/rendering",
+  "nfiles": 1
+ },
+ {
+  "sha": "fa56f71ddd161baccadbc975176e7b7e7d7a29b6",
+  "pr": "107452",
+  "title": "Move binary math functions to `Math` namespace in `math_funcs_binary.h`",
+  "subsystem": "servers/rendering",
+  "nfiles": 50
+ },
+ {
+  "sha": "11541c8533f2101b0934f835034d5f7020f12306",
+  "pr": "116217",
+  "title": "RenderingDevice: Free acceleration structure scratch buffer",
+  "subsystem": "servers/rendering",
+  "nfiles": 2
+ },
+ {
+  "sha": "2d5b30c476622768cd325f08a2e99a6610be1000",
+  "pr": "115963",
+  "title": "Reduce includes to rendering device.",
+  "subsystem": "servers/rendering",
+  "nfiles": 48
+ },
+ {
+  "sha": "fde9658a3e91bd718bdd9ce92a2ecfa777fbe0fa",
+  "pr": "94496",
+  "title": "[Windows] Support output to HDR monitors",
+  "subsystem": "servers/rendering",
+  "nfiles": 65
+ },
+ {
+  "sha": "40448082abe972daa179c64d7889cd88a8e7ea9c",
+  "pr": "115728",
+  "title": "Fix GDShader min/max functions return value type mismatch",
+  "subsystem": "servers/rendering",
+  "nfiles": 1
+ },
+ {
+  "sha": "487896096c731b936545f61480ad040de5b54132",
+  "pr": "116155",
+  "title": "Add compatibility fallback to textureLod when reading from RADIANCE",
+  "subsystem": "servers/rendering",
+  "nfiles": 1
+ },
+ {
+  "sha": "0808e47effd6fb0dae7d84824d1937d2447de188",
+  "pr": "115904",
+  "title": "Fix inconsistent SSR blurriness on rough surfaces.",
+  "subsystem": "servers/rendering",
+  "nfiles": 1
+ },
+ {
+  "sha": "0dc5c0ad36d2a7b4226310f098bd413c456c0fee",
+  "pr": "116107",
+  "title": "Use transmittance instead of opacity in the early-out branch when calculating volumetric fog",
+  "subsystem": "servers/rendering",
+  "nfiles": 1
+ },
+ {
+  "sha": "2b44ed5299cff04abfc165008e11e3c7b0b71bbd",
+  "pr": "115865",
+  "title": "Fix transfer worker race condition.",
+  "subsystem": "servers/rendering",
+  "nfiles": 2
+ },
+ {
+  "sha": "7e91c61fec8d40f796ea45ac428f07eda428787a",
+  "pr": "115874",
+  "title": "Avoid reading from sky pointer when rendering background without sky",
+  "subsystem": "servers/rendering",
+  "nfiles": 1
+ },
+ {
+  "sha": "4cce65bea6fcc4541184c214fd178e73ec8b5f8f",
+  "pr": "114678",
+  "title": "Make directional lights' tighter shadow caster culling truly tight (implement per-cascade culling)",
+  "subsystem": "servers/rendering",
+  "nfiles": 3
+ },
+ {
+  "sha": "0a843c13f8bf59626ec2e227276ce7c1df077e25",
+  "pr": "111464",
+  "title": "Clearcoat improvements and fixes",
+  "subsystem": "servers/rendering",
+  "nfiles": 4
+ },
+ {
+  "sha": "c4e9378020af2164ba37cc387af5967eb081cbe4",
+  "pr": "107234",
+  "title": "Select relevant 3D lights per mesh on GLES3 and Mobile renderers",
+  "subsystem": "servers/rendering",
+  "nfiles": 9
+ },
+ {
+  "sha": "b719f94bfebfb783f874959fa3256c0d75b3cc2a",
+  "pr": "115757",
+  "title": "Fix accidental write-combined memory reads in canvas renderer.",
+  "subsystem": "servers/rendering",
+  "nfiles": 2
+ },
+ {
+  "sha": "2db61bc3971fa9bf1a80697136c26f5645f65871",
+  "pr": "114732",
+  "title": "Update the notification for Auto-exposure",
+  "subsystem": "servers/rendering",
+  "nfiles": 1
+ },
+ {
+  "sha": "6d67a99925fe93b5e5b0c91c51d9740793afed0a",
+  "pr": "115606",
+  "title": "Ensure that uv border size is passed in to sky rendering functions",
+  "subsystem": "servers/rendering",
+  "nfiles": 1
+ },
+ {
+  "sha": "fd6e80d4e97ccd4ab4146db018df91c20e07ab4e",
+  "pr": "105701",
+  "title": "Implement DrawableTextures",
+  "subsystem": "servers/rendering",
+  "nfiles": 46
+ },
+ {
+  "sha": "135cd6eea09b55f420d3d57064dd6d0d94ebcb6b",
+  "pr": "115530",
+  "title": "Remove `is_discardable` flag on render target",
+  "subsystem": "servers/rendering",
+  "nfiles": 1
+ },
+ {
+  "sha": "ef313ecc4674627174511e9a3ae8ec1dbb5552bf",
+  "pr": "115177",
+  "title": "Give every pass its own unique environment uniform buffer.",
+  "subsystem": "servers/rendering",
+  "nfiles": 2
+ },
+ {
+  "sha": "75cd151cb0177ae3a07d79b297cc31000026dae2",
+  "pr": "113781",
+  "title": "Mark more textures as discardable",
+  "subsystem": "servers/rendering",
+  "nfiles": 3
+ },
+ {
+  "sha": "04a2ae7ed43dce48fc70d0e9993d05cc9cd0a595",
+  "pr": "99119",
+  "title": "Vulkan raytracing plumbing",
+  "subsystem": "servers/rendering",
+  "nfiles": 28
+ },
+ {
+  "sha": "b3af0f641a00786d374fa76e7407b53e058c3c5c",
+  "pr": "114821",
+  "title": "AppleEmbedded: `renderer_compositor_rd.h` override improvements",
+  "subsystem": "servers/rendering",
+  "nfiles": 1
+ },
+ {
+  "sha": "b268b1013de7e7f17fed4186c0884bb00ad480d6",
+  "pr": "115292",
+  "title": "Use sky's corrected camera projection for `combined_reprojection`",
+  "subsystem": "servers/rendering",
+  "nfiles": 1
+ },
+ {
+  "sha": "4738ce72e3af500ee3bd23506c04879f983ec98f",
+  "pr": "115026",
+  "title": "Fix shader compilation error when writing to `FOG` when `render_mode fog_disabled`",
+  "subsystem": "servers/rendering",
+  "nfiles": 3
+ },
+ {
+  "sha": "0f8a1c9db2b1ece9a3b450b3659be3a413c6ee70",
+  "pr": "115147",
+  "title": "Apply fixed size properly for mono/stereo rendering.",
+  "subsystem": "servers/rendering",
+  "nfiles": 9
+ },
+ {
+  "sha": "3dc64a564b89a6a5180ee12d4503e4aec0e06446",
+  "pr": "115124",
+  "title": "Pick the sample closer to the camera when resolving 2x MSAA.",
+  "subsystem": "servers/rendering",
+  "nfiles": 1
+ }
+]

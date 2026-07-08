@@ -1,0 +1,170 @@
+[
+ {
+  "sha": "1f92b45db3167896f3a1eac54eae9380c15e2ac0",
+  "pr": "120300",
+  "title": "[XR] Fix a crash when spatial entity marker trackers are detected",
+  "subsystem": "modules/openxr",
+  "nfiles": 2
+ },
+ {
+  "sha": "92b674706c28e9be640cf0df8add1d4bd55786e8",
+  "pr": "119659",
+  "title": "OpenXR: Fix `XR_ERROR_VALIDATION_FAILURE` on first frame with frame synthesis on Meta Quest",
+  "subsystem": "modules/openxr",
+  "nfiles": 1
+ },
+ {
+  "sha": "0067214c1eae1af4e40147148bf5ab7c04a036bc",
+  "pr": "119226",
+  "title": "OpenXR: Fix composition layers with Vulkan subsampled images",
+  "subsystem": "modules/openxr",
+  "nfiles": 3
+ },
+ {
+  "sha": "05f52c245d16556d3f06a72de5ef2e19e550cf75",
+  "pr": "116622",
+  "title": "Fix missing name refresh on bindings when changing the OpenXR action map.",
+  "subsystem": "modules/openxr",
+  "nfiles": 8
+ },
+ {
+  "sha": "08b4d30baceeef355a423de596c1a6b0c78c57c4",
+  "pr": "118975",
+  "title": "Update default OpenXR action map",
+  "subsystem": "modules/openxr",
+  "nfiles": 1
+ },
+ {
+  "sha": "ff85b793b5b4ef8153a3e758a7bb541c9eb3553a",
+  "pr": "118901",
+  "title": "OpenXR: Fix crash when using `XR_EXT_frame_synthesis` after Godot 4.7-dev5",
+  "subsystem": "modules/openxr",
+  "nfiles": 2
+ },
+ {
+  "sha": "2dc3039d5615e2f58675e906daa090ca4d5c4a60",
+  "pr": "118128",
+  "title": "Make OpenXR Spatial Entities easier to extend",
+  "subsystem": "modules/openxr",
+  "nfiles": 20
+ },
+ {
+  "sha": "3aa4ebc418869fcd5cb6d767ad935bc168a4e067",
+  "pr": "118415",
+  "title": "Fix few typos in visual shader editor",
+  "subsystem": "modules/visual_shader",
+  "nfiles": 1
+ },
+ {
+  "sha": "c83925eaf0ae587d7d10badc2380e4a190d94f31",
+  "pr": "117399",
+  "title": "Expose `OpenXRInteractionProfileMetadata` singleton",
+  "subsystem": "modules/openxr",
+  "nfiles": 32
+ },
+ {
+  "sha": "c42e294ffa217d30012685b721fa201017b4b3f0",
+  "pr": "64596",
+  "title": "Move visual shaders to a module",
+  "subsystem": "modules/visual_shader",
+  "nfiles": 135
+ },
+ {
+  "sha": "102c6f5eee6bc2f48dc02627102a6568fdc69979",
+  "pr": "111518",
+  "title": "Add type filters to create dialog",
+  "subsystem": "modules/openxr",
+  "nfiles": 10
+ },
+ {
+  "sha": "563654353dcd12a4177ad6844e35b97676e65a52",
+  "pr": "110778",
+  "title": "OpenXR: Add support for `XR_KHR_generic_controller`",
+  "subsystem": "modules/openxr",
+  "nfiles": 3
+ },
+ {
+  "sha": "7438a39a132f5f4b309e01d8827fa309c4a2b62e",
+  "pr": "114324",
+  "title": "Support composition layers anywhere in the tree",
+  "subsystem": "modules/openxr",
+  "nfiles": 4
+ },
+ {
+  "sha": "9dc85c90ee3f531e307ebd9da48e581406633c22",
+  "pr": "116857",
+  "title": "OpenXR: Limit Windows includes to COM interface",
+  "subsystem": "modules/openxr",
+  "nfiles": 1
+ },
+ {
+  "sha": "44675a7002dd88a9c771760b4a1ff2029677ded6",
+  "pr": "116529",
+  "title": "OpenXR: Use Android-independent OpenGL ES compile time checks",
+  "subsystem": "modules/openxr",
+  "nfiles": 2
+ },
+ {
+  "sha": "8120fb1242065202775831c04f099d9156c37ba2",
+  "pr": "116527",
+  "title": "OpenXR: Fix OpenGL ES driver checks",
+  "subsystem": "modules/openxr",
+  "nfiles": 2
+ },
+ {
+  "sha": "2ae60b41081361693a1815735a26b8b5fd48ef0f",
+  "pr": "116207",
+  "title": "OpenXR: Add support for projection layer extensions",
+  "subsystem": "modules/openxr",
+  "nfiles": 8
+ },
+ {
+  "sha": "d7392aff0211a2f9b387be8e190b31743832eac6",
+  "pr": "116244",
+  "title": "OpenXR: Expose view information to GDExtension API",
+  "subsystem": "modules/openxr",
+  "nfiles": 5
+ },
+ {
+  "sha": "1877e84ca0ab42e55f00e1402ab0b560f16167ae",
+  "pr": "115605",
+  "title": "OpenXR: Better action map defaults for hand interaction profile",
+  "subsystem": "modules/openxr",
+  "nfiles": 1
+ },
+ {
+  "sha": "c9eb8499cabdf258f6973bf938f47fcd96512b94",
+  "pr": "113096",
+  "title": "Expose eye visibility controls for composition layers and set XrSpace based on parent type",
+  "subsystem": "modules/openxr",
+  "nfiles": 6
+ },
+ {
+  "sha": "970565aafc486ce239ed065e2f8e23c142ff18eb",
+  "pr": "115603",
+  "title": "OpenXR: Don't add frame synthesis as projection views extension unless enabled",
+  "subsystem": "modules/openxr",
+  "nfiles": 1
+ },
+ {
+  "sha": "82580cf965caf5ce75fc86d4d26e68071bfe4685",
+  "pr": "115602",
+  "title": "Don't expose the `OpenXRUserPresenceExtension` singleton",
+  "subsystem": "modules/openxr",
+  "nfiles": 2
+ },
+ {
+  "sha": "5ad8b27d8db0776700c2b08bf68fbea5e0a4680d",
+  "pr": "115190",
+  "title": "Implement support for `XR_EXT_user_presence` extension",
+  "subsystem": "modules/openxr",
+  "nfiles": 10
+ },
+ {
+  "sha": "623bbb3414f6c2f32e12582cbfe79b05e8abcf16",
+  "pr": "115254",
+  "title": "OpenXR: Inability to find depth format now gives a warning",
+  "subsystem": "modules/openxr",
+  "nfiles": 1
+ }
+]
