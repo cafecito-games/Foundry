@@ -73,11 +73,15 @@ scratch buffer freed via the driver path, not `free_rid`) and `GODOT_VERSION_*`�
 `dev_mode` -Werror needed metal-cpp added as a **system include** (`-isystem`) in both
 `drivers/metal/SCsub` and `servers/rendering/renderer_rd/effects/SCsub` (Apple's vendored headers
 trip `-Wshadow-field-in-constructor`/`-Wc99-designator`). Strict build clean, full suite 3016
-passed. Metal IS compiled on macOS, so this is fully build-verified. **Follow-up: the glslang
-version bump** (73-file vendored update to 4.7) + PR 116225 (Metal glslang memory-decorations
-fix, which depends on the newer glslang, not on metal-cpp). It needs a 3-way `modules/glslang`
-wrapper merge (4.7 changes + fork rebrand + fork `dev_mode` `-Wshadow` wraps + the raytracing
-shader stages already ported) — a bounded but dedicated dep-bump, deferred to keep this landing clean.
+passed. Metal IS compiled on macOS, so this is fully build-verified.
+
+**Wave 6 = glslang + spirv-headers bump (DONE).** Bumped **glslang → vulkan-sdk-1.4.335.0**
+(73-file whole-dir from `4.7-stable`) which is chained to **spirv-headers → vulkan-sdk-1.4.335.0**
+(4.7's glslang references `spirv.hpp11`, only in the newer spirv-headers). The `modules/glslang`
+wrapper was brought to 4.7 (drop `SPVRemapper.cpp`, D3D12-gate `shader_compile.h`) with the
+Foundry rebrand and the `dev_mode` `-Wshadow-field-in-constructor` include-wrap re-applied. Then
+**PR 116225** (Metal glslang memory-decorations / Apple-M1-MSAA fix) cherry-picked cleanly on the
+newer glslang. Strict `dev_mode` build clean, full suite 3016 passed.
 
 ---
 
