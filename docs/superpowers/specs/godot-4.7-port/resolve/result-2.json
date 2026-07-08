@@ -1,0 +1,152 @@
+[
+  {
+    "pr": "115919",
+    "sha": "a4ea276cf49c90713facace2ce39d010f11f473d",
+    "outcome": "skipped-empty",
+    "note": "Cherry-pick became empty after 3-way merge; change already present in our tree (animation_blend_tree.cpp)."
+  },
+  {
+    "pr": "115125",
+    "sha": "2327a823578a30f09068f97272598521896d5633",
+    "outcome": "skipped-empty",
+    "note": "Cherry-pick became empty after 3-way merge; no residual change against our animation_blend_tree.cpp."
+  },
+  {
+    "pr": "117457",
+    "sha": "8ec2a3de1918cb798ca8d9a1099b8fc2769a07d9",
+    "outcome": "picked",
+    "note": "Applied seek_pos_request -> seek_request rename onto our older get_parameter/set_parameter API in blend_tree; kept our animation_tree.h (no upstream AnimationNodeInstance/ANIM_SLOT_LIST struct)."
+  },
+  {
+    "pr": "117538",
+    "sha": "331c8297658e366db23fae7784db986120cc7ef8",
+    "outcome": "skipped-empty",
+    "note": "Typo fix (fade_in->fade_out) targets upstream p_instance.set_parameter_* API; our code already correct, resolution to ours yields empty commit."
+  },
+  {
+    "pr": "118114",
+    "sha": "83aef4c70d94d3eaecba84c5a368a3a11ef09950",
+    "outcome": "picked",
+    "note": "Ported stretch_time_scale playback_end logic onto our _process (defined playback_end after cur_len via get_node_time_info); pi.end=playback_end hunks applied cleanly."
+  },
+  {
+    "pr": "119980",
+    "sha": "4d3bfd2b621a24ddafcc20893541a09eda5f1915",
+    "outcome": "picked",
+    "note": "Applied stretch guard change (stretch_time_scale -> use_custom_timeline && stretch_time_scale); kept our start_offset and cur_len (== timeline_length in that branch)."
+  },
+  {
+    "pr": "120241",
+    "sha": "ff92d4c9bb461f2693dbf6c53bec828b133c695d",
+    "outcome": "skipped-uncertain",
+    "note": "Builds on upstream _process infra our fork lacks (playback_start, forward/backward section trimming, pi.start=playback_start, pi.time=cur_playback_time). Faithful port would require adopting multiple missing upstream commits; too high-risk to resolve correctly."
+  },
+  {
+    "pr": "118163",
+    "sha": "03723198e0a249922216f42a56ac7345a3a106de",
+    "outcome": "skipped-incompatible",
+    "note": "Math constant fix (_MKSTR(Math_PI) -> String::num(Math::PI)) targets only the TextureBlit compiler blocks (shaders.compiler_tex_blit / tex_blit_shader / SHADER_TYPE_TEXTURE_BLIT) which are absent in our base."
+  },
+  {
+    "pr": "118242",
+    "sha": "cee489f46eb3e2bb36daf65179b38773ed8bf0c4",
+    "outcome": "skipped-incompatible",
+    "note": "texture.drawable_type = p_format lives inside texture_drawable_initialize; drawable_type / texture_drawable_initialize / RSE::TextureDrawableFormat absent in our base (0 refs in HEAD)."
+  },
+  {
+    "pr": "117805",
+    "sha": "3bfa50fd329cb9a7b01b0ab1cd7ac8f27f7391ac",
+    "outcome": "skipped-incompatible",
+    "note": "GL-compat drawable-texture change targets texture_drawable_blit_rect / drawable_type / RSE::TEXTURE_DRAWABLE_FORMAT_RGBA8_SRGB, all absent in our base."
+  },
+  {
+    "pr": "111294",
+    "sha": "0520b51d0ce95b592c06f474418357c046d310c2",
+    "outcome": "picked",
+    "note": "Ported export-filter rework: adopted FilteredCache/_get_filtered_cache flow and separate UID cache save; kept our error-checked collect_forced_export_files and renamed GDExtension:: -> FoundryExtension::; removed resource_cache_file forced push and _filter_extension_list_config_file."
+  },
+  {
+    "pr": "118527",
+    "sha": "f1edeb4acc4ca7aae658c78357841820fa460620",
+    "outcome": "skipped-empty",
+    "note": "ResourceUID changes auto-merged/already present; cherry-pick empty."
+  },
+  {
+    "pr": "115124",
+    "sha": "3dc64a564b89a6a5180ee12d4503e4aec0e06446",
+    "outcome": "skipped-empty",
+    "note": "Cherry-pick empty after 3-way merge; change already present."
+  },
+  {
+    "pr": "115410",
+    "sha": "9ef64c88fb44b66e177280f28d7ce0f619d090b2",
+    "outcome": "picked",
+    "note": "Merged hardcoded_classes lists: union of our fork's additions (Font/ShaderInclude/Window) with upstream's (MainLoop/Mutex/ShaderIncludeDB/Time); all classes verified present."
+  },
+  {
+    "pr": "116105",
+    "sha": "44d2f87432ae423d3f51d5d5f5ad780ac249681a",
+    "outcome": "skipped-empty",
+    "note": "marshalls.cpp change auto-merged/already present; cherry-pick empty."
+  },
+  {
+    "pr": "116331",
+    "sha": "6e5b661f3298ae968d40ad43706ff8ed45f44990",
+    "outcome": "skipped-incompatible",
+    "note": "Curve per-point property fix targets upstream PropertyListHelper/base_property_helper.register_property and Curve::_set_point_position; our fork has none of that (0 refs) and already sets offset=x/value=y correctly."
+  },
+  {
+    "pr": "116823",
+    "sha": "f9f441270aa21070e90fa413df7ee63d3f8a2370",
+    "outcome": "skipped-empty",
+    "note": "Cherry-pick empty after 3-way merge; change already present."
+  },
+  {
+    "pr": "117219",
+    "sha": "74de2ec0477690f9b1817c15741117ef929d3249",
+    "outcome": "skipped-empty",
+    "note": "Cherry-pick empty after 3-way merge; change already present."
+  },
+  {
+    "pr": "116589",
+    "sha": "8415bd710529da70bccde9c5ba8d05e2eee7f7ec",
+    "outcome": "skipped-empty",
+    "note": "editor_import_blend_runner.cpp change auto-merged/already present; cherry-pick empty."
+  },
+  {
+    "pr": "117820",
+    "sha": "60fff00a660a2aeb03f88c07fb7baed353bcb72f",
+    "outcome": "picked",
+    "note": "Kept both includes in display_server_apple_embedded.h: our fork's core/input/input.h plus the added core/os/thread_safe.h."
+  },
+  {
+    "pr": "118054",
+    "sha": "137fa73ed4d71d2e7b3a53e2ab6b2690e1f46149",
+    "outcome": "skipped-incompatible",
+    "note": "Drive-label PR builds on Vector<DriveInfo> drives / _update_drives() / get_drive_label(); our fork uses char drives[MAX_DRIVES]+drive_count populated in the constructor, with no labels/DriveInfo infra."
+  },
+  {
+    "pr": "113905",
+    "sha": "ee00d63bb2ac271c51d781985be780add6e3e2f8",
+    "outcome": "skipped-empty",
+    "note": "remote_debugger_peer changes auto-merged/already present; cherry-pick empty."
+  },
+  {
+    "pr": "118678",
+    "sha": "01603e77df711142fe2769ff8ab1d0191c3a49d1",
+    "outcome": "skipped-empty",
+    "note": "ref_counted changes auto-merged/already present; cherry-pick empty."
+  },
+  {
+    "pr": "119340",
+    "sha": "8d3d0ea6caa6306f4df59025b1021c02a4b1396f",
+    "outcome": "skipped-incompatible",
+    "note": "SDFGI uniform-set fix depends on area-light-atlas infra (area_light_atlas_get_texture / sdf_direct_light_*_render_uniform_set set-1 bindings) absent in our base (AreaLight/ltc feature)."
+  },
+  {
+    "pr": "119872",
+    "sha": "f3ec4cee64bc26b8a99d13f045f243de5df1f4e5",
+    "outcome": "skipped-incompatible",
+    "note": "Polygon2D fast-path AABB fix targets upstream needs_clear/mesh_surface_update_*_region/mesh_set_custom_aabb reuse path; our fork recreates surface via mesh_add_surface each frame (no fast path, AABB auto-computed)."
+  }
+]

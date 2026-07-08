@@ -1,0 +1,752 @@
+[
+ {
+  "pr": "116555",
+  "sha": "fc572669ded72a4e1844ccae6e7a2a58cdebaa14",
+  "outcome": "resolved-conflict",
+  "note": "Gridmap editor touchups; fork already had button_group/translation/TTRC changes. Only net-new line was search_box->set_h_size_flags(SIZE_EXPAND_FILL)."
+ },
+ {
+  "pr": "116778",
+  "sha": "95535167b33975afa4e82228eb71800d36cf51dd",
+  "outcome": "skipped-empty",
+  "note": "valid_mb_press navigation refactor already present in fork; resolution (keeping our _clear_selection_with_undo and no-op-selection guard) produced empty diff."
+ },
+ {
+  "pr": "116546",
+  "sha": "524d2309277eb8c03c6a1d101fe75686946a0d23",
+  "outcome": "skipped-empty",
+  "note": "Gridmap change already present in fork after prior gridmap picks."
+ },
+ {
+  "pr": "116683",
+  "sha": "d89e19f556acc495f652cadbee9ebb28e2fc3972",
+  "outcome": "skipped-empty",
+  "note": "Gridmap change already present in fork."
+ },
+ {
+  "pr": "116814",
+  "sha": "363de271057ef8fc96a86335e0f48c08ecb2f395",
+  "outcome": "skipped-empty",
+  "note": "Gridmap change (cpp+h) already present in fork."
+ },
+ {
+  "pr": "117378",
+  "sha": "31a8c0904c6fcf2cf86270c389398a3d976bf1e8",
+  "outcome": "skipped-empty",
+  "note": "Gridmap change already present in fork."
+ },
+ {
+  "pr": "117521",
+  "sha": "86b84d861b4e2c73450d88d231d3c1f139389e7e",
+  "outcome": "skipped-empty",
+  "note": "Gridmap change already present in fork."
+ },
+ {
+  "pr": "119007",
+  "sha": "9e0e94b944db98f81402e78d645ef9bb1692adb9",
+  "outcome": "skipped-incompatible",
+  "note": "Moves grid creation to NOTIFICATION_READY and drops NOTIFICATION_EXIT_TREE cleanup. Fork deliberately uses ENTER_TREE/EXIT_TREE lifecycle tied to multi-scene de-globalization (get_edited_world_3d(), _rebind_editor_scenarios, active_scene_context_changed signal); adopting upstream would break per-scene scenario rebind and dock re-entry recreation. Fork already avoids the bug via different infrastructure."
+ },
+ {
+  "pr": "115923",
+  "sha": "c729962899d90cb7ef91c2b5e0d3fe95629dc8d6",
+  "outcome": "skipped-empty",
+  "note": "class_db/script_language change already present in fork."
+ },
+ {
+  "pr": "118570",
+  "sha": "734d7ec33339a9880d4045bdb035794457259571",
+  "outcome": "resolved-conflict",
+  "note": "Added ERR_FAIL_NO_CLASS macro; adopted the guard at bind_integer_constant, get_integer_constant_list, and get_enum_constants (fork uses while(type) loops without prior null check; PR intent is clearer unknown-class errors)."
+ },
+ {
+  "pr": "110083",
+  "sha": "1ae69764715f8d482a290b2aee6c32e3c929e3a7",
+  "outcome": "skipped-empty",
+  "note": "gles3 texture-repeat-in-command-loop refactor already present in fork; conflicts were only RSE:: (upstream) vs RS:: (fork) naming, resolved to RS:: which matched fork exactly -> empty."
+ },
+ {
+  "pr": "117725",
+  "sha": "3f020a02ade79dbbd3d26b0d151f93c64da6688b",
+  "outcome": "skipped-empty",
+  "note": "gles3 rasterizer_canvas change already present in fork."
+ },
+ {
+  "pr": "119289",
+  "sha": "d51d1ec68204bfa91b0fd5499bf5eb7d79c88256",
+  "outcome": "resolved-conflict",
+  "note": "gpu-index compatibility warning. main.cpp print_help conflict resolved to HEAD (fork uses FoundryCLIHelp, so upstream help-text edit N/A). Substantive rasterizer_gles3.cpp + rendering_device.cpp warnings auto-merged and applied."
+ },
+ {
+  "pr": "119495",
+  "sha": "8ae90e9442add0fe3108ddbdc7dbf0f9c5ca7104",
+  "outcome": "skipped-empty",
+  "note": "Android main-pack validation already present in fork; main.cpp conflicts were print_help (FoundryCLIHelp) and Godot->Foundry branding, both taking HEAD -> empty net diff."
+ },
+ {
+  "pr": "115689",
+  "sha": "21932ace7fceaa2ee04365f893dd6f981f1aa7b2",
+  "outcome": "skipped-empty",
+  "note": "LookAtModifier3D change already present in fork."
+ },
+ {
+  "pr": "115752",
+  "sha": "13bc06556f14b94ad76f5f32f7d2cc4fdbced529",
+  "outcome": "skipped-empty",
+  "note": "Input doc change already present in fork."
+ },
+ {
+  "pr": "116756",
+  "sha": "3930111b5f580eb00b437d2985f787dad3945e5b",
+  "outcome": "skipped-empty",
+  "note": "gles3 shader change already present in fork."
+ },
+ {
+  "pr": "114557",
+  "sha": "312bdb2ae9e49de22a48218b5ec1c27b601da036",
+  "outcome": "resolved-conflict",
+  "note": "SDFGI ignore visual layers. Applied PR's added check (idata.flags & FLAG_USES_BAKED_LIGHT) && (cull_data.visible_layers & idata.layer_mask) with fork's RS:: naming (upstream used RSE::). Both symbols verified present."
+ },
+ {
+  "pr": "117039",
+  "sha": "f7cf8d3e6bf963c874c0f1ad51507b5716aaabfa",
+  "outcome": "resolved-conflict",
+  "note": "PCK UID handling. Applied _get_simplified_path helper in try_open_path while keeping fork's signature try_open_path(const String&) (upstream had an extra p_decryption_key param from a separate unported feature). resource_uid.h include and helper auto-merged."
+ },
+ {
+  "pr": "117041",
+  "sha": "f13b291f2808bc8b61d2067df56ccaa7cb98b009",
+  "outcome": "skipped-empty",
+  "note": "node.cpp change already present in fork."
+ },
+ {
+  "pr": "118064",
+  "sha": "29c5e98e5e110728b9e1dd13027f97958b04382d",
+  "outcome": "skipped-empty",
+  "note": "tone_mapper change already present in fork."
+ },
+ {
+  "pr": "117959",
+  "sha": "abfb91d1e2893bc18decf7716284cef8fa3e03b5",
+  "outcome": "skipped-empty",
+  "note": "spline_ik_3d change already present in fork."
+ },
+ {
+  "pr": "118355",
+  "sha": "dd6a398e9052c7a470fcbcaf89d01374b2bb4848",
+  "outcome": "skipped-incompatible",
+  "note": "Promotes display/window/hdr/request_hdr_output to GLOBAL_DEF_BASIC. That setting does not exist anywhere in the fork (unported HDR output feature); adding it would register a setting with no supporting infrastructure."
+ },
+ {
+  "pr": "114568",
+  "sha": "976ab7fa5c4839aaf91016cff51993408fc3c8f8",
+  "outcome": "resolved-conflict",
+  "note": "Better z-index error messages. Applied ERR_FAIL_COND_MSG with fork's RS::CANVAS_ITEM_Z_MIN/MAX naming (upstream used RSE::)."
+ },
+ {
+  "pr": "119344",
+  "sha": "cd702593c97e5b5b84aa7baac88a7b616ffd6163",
+  "outcome": "skipped-incompatible",
+  "note": "Fixes VkSurfaceFormat retrieval loop inside HDR/colorspace functions (_determine_swap_chain_format, swap_chain_get_color_space, swap_chain_get_hdr_output_supported). None of those functions exist in the fork; they depend on unported HDR output infra (FormatCandidate, COLOR_SPACE_REC709_LINEAR, is_colorspace_externally_managed, rdd_color_space)."
+ },
+ {
+  "pr": "115026",
+  "sha": "4738ce72e3af500ee3bd23506c04879f983ec98f",
+  "outcome": "skipped-empty",
+  "note": "Shader int-literal changes already present in our base; cherry-pick empty."
+ },
+ {
+  "pr": "116107",
+  "sha": "0dc5c0ad36d2a7b4226310f098bd413c456c0fee",
+  "outcome": "skipped-empty",
+  "note": "Forward-clustered shader change already present; empty."
+ },
+ {
+  "pr": "118533",
+  "sha": "4a54b894619a49bfb6b8d43d2d3d4746fac84cf3",
+  "outcome": "skipped-empty",
+  "note": "GLES3 scene.glsl change already present; empty."
+ },
+ {
+  "pr": "118617",
+  "sha": "59c7d31bdac4b9b8a2f91d74e3548f6966b1fe91",
+  "outcome": "skipped-empty",
+  "note": "GLES3 scene.glsl change already present; empty."
+ },
+ {
+  "pr": "118695",
+  "sha": "caf16709af9f08bb430ddb8cffc10cbf66c62437",
+  "outcome": "skipped-incompatible",
+  "note": "Modifies AreaLight LTC infra: drivers/gles3/shaders/area_lights_inc.glsl is deleted in our base and scene.glsl light_process_area/area_lights are unported. Aborted."
+ },
+ {
+  "pr": "118809",
+  "sha": "835e2dcbba974d72d23e348e1ba48f9231fdcd3c",
+  "outcome": "skipped-empty",
+  "note": "Clearcoat dFdx/dFdy vec3() wrap already present in our forward_mobile shader (variable ref_vec vs upstream cc_radiance_ref_vec); resolution kept ours, net empty."
+ },
+ {
+  "pr": "118863",
+  "sha": "d57f844e7975bee9309c188f462721406bfdcc47",
+  "outcome": "skipped-incompatible",
+  "note": "Fixes clearcoat area-light LTC math; light_process_area / ltc_evaluate_specular / area_lights LTC infra absent from our base (both GLES3 and forward RD). Aborted."
+ },
+ {
+  "pr": "117819",
+  "sha": "2af785641ae249573f45eb61852d22e0b1a8a03c",
+  "outcome": "skipped-empty",
+  "note": "Xcode 26.4 Metal build fix (drop GNU designated array initializers). Our fork's .mm files (metal_objects.mm, pixel_formats.mm, rendering_device_driver_metal.mm, rendering_shader_container_metal.mm) already use positional/designated-member initializers; net empty after keeping ours."
+ },
+ {
+  "pr": "118510",
+  "sha": "9fc8f0e0cffd8e27f25ead4a483ee2aa7e70ac6a",
+  "outcome": "resolved-conflict",
+  "note": "Applied the portable metal_device_properties.mm hunk (disable residency sets on Virtual/VM CPUs) using our ObjC @available style. Dropped the incoming _copy_queue_initialize/_copy_queue_flush residency-set block (metal-cpp copy-queue infra absent from our fork)."
+ },
+ {
+  "pr": "119451",
+  "sha": "b7eb57977a0ec5b8b69f59c9d567f9307c689cf4",
+  "outcome": "resolved-conflict",
+  "note": "Supersedes 118510's Virtual check with supportsFamily(Apple6); applied to metal_device_properties.mm as [p_device supportsFamily:MTLGPUFamilyApple6]. Dropped incoming copy-queue residency block (infra absent)."
+ },
+ {
+  "pr": "117151",
+  "sha": "a8e37fc01048823f639c4011af645d2e8e2b79d3",
+  "outcome": "skipped-empty",
+  "note": "ring_buffer.h change already present; empty."
+ },
+ {
+  "pr": "117388",
+  "sha": "405f9dfc8fd50d214565fe7769d3e60dab03254d",
+  "outcome": "skipped-empty",
+  "note": "Change already present; empty."
+ },
+ {
+  "pr": "115364",
+  "sha": "5173422b1e3583a9626975c1de88d811884b949e",
+  "outcome": "skipped-empty",
+  "note": "Change already present; empty."
+ },
+ {
+  "pr": "115218",
+  "sha": "b40f4ae52f1c7c174a00f35554fa26157a98996f",
+  "outcome": "skipped-empty",
+  "note": "joypad_sdl.cpp change already present; empty."
+ },
+ {
+  "pr": "115951",
+  "sha": "80d3019de854f11110ee02780a1072c870f80f72",
+  "outcome": "skipped-empty",
+  "note": "Adds const to deprecated compat method _get_tap_back_pos_bind_compat_114355. Our clean-break fork removed the #ifndef DISABLE_DEPRECATED compat block and audio_effect_spectrum_analyzer.compat.inc entirely; kept ours (spurious rename onto EditorWindowInfo.kt), net empty."
+ },
+ {
+  "pr": "116299",
+  "sha": "8db94f7b5eb0e97829d1f4fceac2784b55c112c6",
+  "outcome": "skipped-empty",
+  "note": "audio_server.h change already present; empty."
+ },
+ {
+  "pr": "114890",
+  "sha": "2adf91e71f879b8f5a634fd0563a3f86afc64f74",
+  "outcome": "skipped-empty",
+  "note": "renderer_scene_render_rd.cpp change already present; empty."
+ },
+ {
+  "pr": "117156",
+  "sha": "533f832d523c846f60ef65c82f66b1a379d2fa15",
+  "outcome": "resolved-conflict",
+  "note": "Added the 'class ArrayMesh;' forward declaration (the PR's actual intent) to tile_set.h; dropped the incoming TileMap forward decl and DISABLE_DEPRECATED shader.h include not present in our fork."
+ },
+ {
+  "pr": "117353",
+  "sha": "750b0c766e50ab6850546a5d537ed2473e301855",
+  "outcome": "skipped-empty",
+  "note": "ustring.cpp change already present; empty."
+ },
+ {
+  "pr": "117464",
+  "sha": "01448cc202cddc671ac4ee244cb884abcf038325",
+  "outcome": "skipped-empty",
+  "note": "input_map.cpp change already present; empty."
+ },
+ {
+  "pr": "117909",
+  "sha": "7e3bf93f8a7e803633e1afc44e021efce926705a",
+  "outcome": "skipped-incompatible",
+  "note": "Refactors inv_emission_transform from a full mat4 (our fork's representation via store_transform; shader param declared 'mat4 inv_emission_transform') to a tightly-packed float[12] the shader reconstructs. Our base uses the mat4 representation throughout particles_copy.glsl; adopting the packed layout would require rewriting the shader param struct and all access sites. Aborted."
+ },
+ {
+  "pr": "117672",
+  "sha": "daa913af6384e3788c75d287a66bc4f346396282",
+  "outcome": "skipped-incompatible",
+  "note": "Fixes ^/~ operators in servers/rendering/shader_expression.cpp. The dedicated ShaderExpression preprocessor evaluator does not exist in our base (our shader_preprocessor.cpp uses core Expression). Aborted."
+ },
+ {
+  "pr": "118752",
+  "sha": "dc12c5f48eda610453642ae6b5201a18c6797337",
+  "outcome": "skipped-incompatible",
+  "note": "Guards render_target_set_subsampled_allowed with render_target.is_valid(). The subsampled-images feature (render_target_set_subsampled_allowed) does not exist anywhere in our base. Aborted."
+ },
+ {
+  "pr": "119226",
+  "sha": "0067214c1eae1af4e40147148bf5ab7c04a036bc",
+  "outcome": "resolved-conflict",
+  "note": "Applied the portable parts: openxr_api create() p_use_next_extensions param (auto-merged; secondary swapchains correctly default to false per upstream intent) and foveation hunk 'foveation_level > 0' in set_swapchain_create_info. Dropped the incoming set/is/set_active foveation_with_subsampled_images methods (subsampled-images foveation members/decls absent from our fork; no callers, no .h decls)."
+ },
+ {
+  "pr": "117217",
+  "sha": "44a215ec06f893b91601597ee729a1474633aafe",
+  "outcome": "skipped-empty",
+  "note": "Adds loc_scene->is_inside_tree() guard in Viewport::_update_viewport_path. Our fork already has that plus a stronger ancestor check (loc_scene == this || is_ancestor_of(this)) which subsumes the fix; kept ours, net empty."
+ },
+ {
+  "pr": "115919",
+  "sha": "a4ea276cf49c90713facace2ce39d010f11f473d",
+  "outcome": "skipped-empty",
+  "note": "Cherry-pick became empty after 3-way merge; change already present in our tree (animation_blend_tree.cpp)."
+ },
+ {
+  "pr": "115125",
+  "sha": "2327a823578a30f09068f97272598521896d5633",
+  "outcome": "skipped-empty",
+  "note": "Cherry-pick became empty after 3-way merge; no residual change against our animation_blend_tree.cpp."
+ },
+ {
+  "pr": "117457",
+  "sha": "8ec2a3de1918cb798ca8d9a1099b8fc2769a07d9",
+  "outcome": "picked",
+  "note": "Applied seek_pos_request -> seek_request rename onto our older get_parameter/set_parameter API in blend_tree; kept our animation_tree.h (no upstream AnimationNodeInstance/ANIM_SLOT_LIST struct)."
+ },
+ {
+  "pr": "117538",
+  "sha": "331c8297658e366db23fae7784db986120cc7ef8",
+  "outcome": "skipped-empty",
+  "note": "Typo fix (fade_in->fade_out) targets upstream p_instance.set_parameter_* API; our code already correct, resolution to ours yields empty commit."
+ },
+ {
+  "pr": "118114",
+  "sha": "83aef4c70d94d3eaecba84c5a368a3a11ef09950",
+  "outcome": "picked",
+  "note": "Ported stretch_time_scale playback_end logic onto our _process (defined playback_end after cur_len via get_node_time_info); pi.end=playback_end hunks applied cleanly."
+ },
+ {
+  "pr": "119980",
+  "sha": "4d3bfd2b621a24ddafcc20893541a09eda5f1915",
+  "outcome": "picked",
+  "note": "Applied stretch guard change (stretch_time_scale -> use_custom_timeline && stretch_time_scale); kept our start_offset and cur_len (== timeline_length in that branch)."
+ },
+ {
+  "pr": "120241",
+  "sha": "ff92d4c9bb461f2693dbf6c53bec828b133c695d",
+  "outcome": "skipped-uncertain",
+  "note": "Builds on upstream _process infra our fork lacks (playback_start, forward/backward section trimming, pi.start=playback_start, pi.time=cur_playback_time). Faithful port would require adopting multiple missing upstream commits; too high-risk to resolve correctly."
+ },
+ {
+  "pr": "118163",
+  "sha": "03723198e0a249922216f42a56ac7345a3a106de",
+  "outcome": "skipped-incompatible",
+  "note": "Math constant fix (_MKSTR(Math_PI) -> String::num(Math::PI)) targets only the TextureBlit compiler blocks (shaders.compiler_tex_blit / tex_blit_shader / SHADER_TYPE_TEXTURE_BLIT) which are absent in our base."
+ },
+ {
+  "pr": "118242",
+  "sha": "cee489f46eb3e2bb36daf65179b38773ed8bf0c4",
+  "outcome": "skipped-incompatible",
+  "note": "texture.drawable_type = p_format lives inside texture_drawable_initialize; drawable_type / texture_drawable_initialize / RSE::TextureDrawableFormat absent in our base (0 refs in HEAD)."
+ },
+ {
+  "pr": "117805",
+  "sha": "3bfa50fd329cb9a7b01b0ab1cd7ac8f27f7391ac",
+  "outcome": "skipped-incompatible",
+  "note": "GL-compat drawable-texture change targets texture_drawable_blit_rect / drawable_type / RSE::TEXTURE_DRAWABLE_FORMAT_RGBA8_SRGB, all absent in our base."
+ },
+ {
+  "pr": "111294",
+  "sha": "0520b51d0ce95b592c06f474418357c046d310c2",
+  "outcome": "picked",
+  "note": "Ported export-filter rework: adopted FilteredCache/_get_filtered_cache flow and separate UID cache save; kept our error-checked collect_forced_export_files and renamed GDExtension:: -> FoundryExtension::; removed resource_cache_file forced push and _filter_extension_list_config_file."
+ },
+ {
+  "pr": "118527",
+  "sha": "f1edeb4acc4ca7aae658c78357841820fa460620",
+  "outcome": "skipped-empty",
+  "note": "ResourceUID changes auto-merged/already present; cherry-pick empty."
+ },
+ {
+  "pr": "115124",
+  "sha": "3dc64a564b89a6a5180ee12d4503e4aec0e06446",
+  "outcome": "skipped-empty",
+  "note": "Cherry-pick empty after 3-way merge; change already present."
+ },
+ {
+  "pr": "115410",
+  "sha": "9ef64c88fb44b66e177280f28d7ce0f619d090b2",
+  "outcome": "picked",
+  "note": "Merged hardcoded_classes lists: union of our fork's additions (Font/ShaderInclude/Window) with upstream's (MainLoop/Mutex/ShaderIncludeDB/Time); all classes verified present."
+ },
+ {
+  "pr": "116105",
+  "sha": "44d2f87432ae423d3f51d5d5f5ad780ac249681a",
+  "outcome": "skipped-empty",
+  "note": "marshalls.cpp change auto-merged/already present; cherry-pick empty."
+ },
+ {
+  "pr": "116331",
+  "sha": "6e5b661f3298ae968d40ad43706ff8ed45f44990",
+  "outcome": "skipped-incompatible",
+  "note": "Curve per-point property fix targets upstream PropertyListHelper/base_property_helper.register_property and Curve::_set_point_position; our fork has none of that (0 refs) and already sets offset=x/value=y correctly."
+ },
+ {
+  "pr": "116823",
+  "sha": "f9f441270aa21070e90fa413df7ee63d3f8a2370",
+  "outcome": "skipped-empty",
+  "note": "Cherry-pick empty after 3-way merge; change already present."
+ },
+ {
+  "pr": "117219",
+  "sha": "74de2ec0477690f9b1817c15741117ef929d3249",
+  "outcome": "skipped-empty",
+  "note": "Cherry-pick empty after 3-way merge; change already present."
+ },
+ {
+  "pr": "116589",
+  "sha": "8415bd710529da70bccde9c5ba8d05e2eee7f7ec",
+  "outcome": "skipped-empty",
+  "note": "editor_import_blend_runner.cpp change auto-merged/already present; cherry-pick empty."
+ },
+ {
+  "pr": "117820",
+  "sha": "60fff00a660a2aeb03f88c07fb7baed353bcb72f",
+  "outcome": "picked",
+  "note": "Kept both includes in display_server_apple_embedded.h: our fork's core/input/input.h plus the added core/os/thread_safe.h."
+ },
+ {
+  "pr": "118054",
+  "sha": "137fa73ed4d71d2e7b3a53e2ab6b2690e1f46149",
+  "outcome": "skipped-incompatible",
+  "note": "Drive-label PR builds on Vector<DriveInfo> drives / _update_drives() / get_drive_label(); our fork uses char drives[MAX_DRIVES]+drive_count populated in the constructor, with no labels/DriveInfo infra."
+ },
+ {
+  "pr": "113905",
+  "sha": "ee00d63bb2ac271c51d781985be780add6e3e2f8",
+  "outcome": "skipped-empty",
+  "note": "remote_debugger_peer changes auto-merged/already present; cherry-pick empty."
+ },
+ {
+  "pr": "118678",
+  "sha": "01603e77df711142fe2769ff8ab1d0191c3a49d1",
+  "outcome": "skipped-empty",
+  "note": "ref_counted changes auto-merged/already present; cherry-pick empty."
+ },
+ {
+  "pr": "119340",
+  "sha": "8d3d0ea6caa6306f4df59025b1021c02a4b1396f",
+  "outcome": "skipped-incompatible",
+  "note": "SDFGI uniform-set fix depends on area-light-atlas infra (area_light_atlas_get_texture / sdf_direct_light_*_render_uniform_set set-1 bindings) absent in our base (AreaLight/ltc feature)."
+ },
+ {
+  "pr": "119872",
+  "sha": "f3ec4cee64bc26b8a99d13f045f243de5df1f4e5",
+  "outcome": "skipped-incompatible",
+  "note": "Polygon2D fast-path AABB fix targets upstream needs_clear/mesh_surface_update_*_region/mesh_set_custom_aabb reuse path; our fork recreates surface via mesh_add_surface each frame (no fast path, AABB auto-computed)."
+ },
+ {
+  "pr": "117508",
+  "sha": "bf6ec9141714981cb941e0a71cdb2677bcf39d6e",
+  "outcome": "skipped-incompatible",
+  "note": "Foundry refactored AnimationNodeBlendSpace1D/2D to bind blend-point props via ADD_PROPERTYI + _add_blend_point setter instead of _set/_get/_get_property_list overrides, and its add_blend_point has no name parameter (blend-point names are not serialized). The PR's name-restoration fix depends on symbols absent in Foundry."
+ },
+ {
+  "pr": "118949",
+  "sha": "82ab65b02e07aa1befbe599834f43784c2f2bc5e",
+  "outcome": "skipped-incompatible",
+  "note": "Depends on the AnimationNodeInstance/ProcessState animation architecture (get_child_instance_by_path_or_null, SYNC_MODE_CYCLIC_MUTABLE, p_instance) absent in Foundry's simpler PlaybackInfo-based _process."
+ },
+ {
+  "pr": "119089",
+  "sha": "b4d772626026b7a7289a63903acbd8b604b326ae",
+  "outcome": "skipped-incompatible",
+  "note": "Same ProcessState/AnimationNodeInstance divergence as 118949; the modified _process function does not exist in Foundry's PlaybackInfo model."
+ },
+ {
+  "pr": "119070",
+  "sha": "d3a741d3f7fcd95919361f3067e953c14922f339",
+  "outcome": "skipped-incompatible",
+  "note": "Depends on ProcessState/AnimationNodeInstance _process, BlendPoint::reset(), and name-based animation_node_removed signals absent in Foundry."
+ },
+ {
+  "pr": "115292",
+  "sha": "b268b1013de7e7f17fed4186c0884bb00ad480d6",
+  "outcome": "skipped-empty",
+  "note": "Cherry-pick produced an empty commit; change already present in Foundry (sky.cpp)."
+ },
+ {
+  "pr": "115606",
+  "sha": "6d67a99925fe93b5e5b0c91c51d9740793afed0a",
+  "outcome": "skipped-empty",
+  "note": "Foundry already passes the per-sky border size to _render_sky via a null-safe border_size local (guards sky==nullptr, unlike the PR's raw sky->uv_border_size). Resolution kept HEAD, yielding an empty commit."
+ },
+ {
+  "pr": "115874",
+  "sha": "7e91c61fec8d40f796ea45ac428f07eda428787a",
+  "outcome": "skipped-empty",
+  "note": "Empty commit; change already present in Foundry (sky.cpp)."
+ },
+ {
+  "pr": "115504",
+  "sha": "5385a7ba3822424e289de396feb99b1ced141e59",
+  "outcome": "skipped-empty",
+  "note": "Empty commit; change already present in Foundry (d3d12 rendering device driver)."
+ },
+ {
+  "pr": "118850",
+  "sha": "c3f8f7f04026c5d1603ab8fabf50b0ee700f41eb",
+  "outcome": "skipped-empty",
+  "note": "Empty commit; change already present in Foundry (d3d12 rendering device driver)."
+ },
+ {
+  "pr": "116264",
+  "sha": "383af3f070bfec342055b00d5c602be239d367ec",
+  "outcome": "skipped-empty",
+  "note": "AnimationPlayer deferred-stop/is_stopping fix already ported into Foundry HEAD; only conflict was Foundry's c.current.from vs upstream c.current.is_enabled (kept HEAD). Net empty."
+ },
+ {
+  "pr": "116676",
+  "sha": "6e96b028e10dbe7381bdeecde80fe7492f4b810c",
+  "outcome": "skipped-empty",
+  "note": "safe-finished playback_queue guard already present in Foundry HEAD; Foundry deliberately keeps the deferred-stop approach and removed is_stopping/is_enabled. Only conflict was the from->animation accessor (kept HEAD). Net empty."
+ },
+ {
+  "pr": "118546",
+  "sha": "31aaec1f2bf5cfa87542c2aa1b61ea47c202d96d",
+  "outcome": "skipped-empty",
+  "note": "PR fixes a stale variable in the upstream #else (DISABLE_DEPRECATED) branch of the glTF importer. Foundry has no deprecated split and its single line already uses correct gltf/state names. Kept HEAD; net empty."
+ },
+ {
+  "pr": "119083",
+  "sha": "05e93d70c1575df52cbfc5e966a63745315bf227",
+  "outcome": "skipped-incompatible",
+  "note": "Fixes a typo in handle_compatibility_options for the gltf/texture_map_mode feature. Foundry has no TEXTURE_MAP_MODE enum, no gltf/texture_map_mode option, and no handle_compatibility_options in these importers."
+ },
+ {
+  "pr": "115473",
+  "sha": "101c04cbc9f2dde04e40b5f87946540431e4d5be",
+  "outcome": "skipped-empty",
+  "note": "Cherry-pick produced an empty commit; change already present in Foundry."
+ },
+ {
+  "pr": "116155",
+  "sha": "487896096c731b936545f61480ad040de5b54132",
+  "outcome": "skipped-empty",
+  "note": "Empty commit; change already present in Foundry (shader_compiler.cpp)."
+ },
+ {
+  "pr": "116196",
+  "sha": "a142c2218aa76b46ce99823ccf76926da033a741",
+  "outcome": "skipped-empty",
+  "note": "Empty commit; change already present in Foundry (text_server.cpp)."
+ },
+ {
+  "pr": "116413",
+  "sha": "dd150a38239de059edf12b7e5636ba3dbde28192",
+  "outcome": "skipped-empty",
+  "note": "Empty commit; change already present in Foundry (shader editor / shader_language.h)."
+ },
+ {
+  "pr": "117189",
+  "sha": "5cfccbee34013b14216d753f918ffe1271161d3c",
+  "outcome": "skipped-empty",
+  "note": "Empty commit; change already present in Foundry (light_3d.cpp)."
+ },
+ {
+  "pr": "117401",
+  "sha": "a596178702219099c502db363d86d66c0f8edabe",
+  "outcome": "skipped-empty",
+  "note": "Cherry-pick produced an empty commit; change already present in Foundry."
+ },
+ {
+  "pr": "117879",
+  "sha": "d76390fa365f89bdefa9dff26daaf5980fa8d87a",
+  "outcome": "skipped-empty",
+  "note": "PR moves rendering_server.h / physics_material.h out of NAVIGATION_3D_DISABLED blocks. Foundry already restructured these includes (the moved headers are not in Foundry's nav-disabled blocks; served unconditionally/transitively). Kept HEAD; net empty."
+ },
+ {
+  "pr": "118159",
+  "sha": "d91e97967dab0df8d5547d45bf2b0e6faf40c9ce",
+  "outcome": "skipped-empty",
+  "note": "The length->end / p_start->start fix in track_get_key_indices_in_range is already present in Foundry; only conflict was Foundry's p_indices vs upstream r_indices param name (kept HEAD). Net empty."
+ },
+ {
+  "pr": "118483",
+  "sha": "e7eb8127509e41d0d8a318e05ca311742280e9e1",
+  "outcome": "skipped-empty",
+  "note": "Empty commit; change already present in Foundry (os_unix.cpp)."
+ },
+ {
+  "pr": "119092",
+  "sha": "98bfffa66f8ed3a6ef58e550a1667c2e7771a0a0",
+  "outcome": "resolved",
+  "note": "Applied the FileAccessPack error-reporting intent (Error& out param + error_names in messages) onto Foundry's code. Dropped the incoming sparse-pack pf.salt/path_to_load feature (PackedFile has no salt member in Foundry); kept Foundry's simplified_path open. else/encrypted branches merged cleanly."
+ },
+ {
+  "pr": "119373",
+  "sha": "8075f4250f301b8cf7cf60a3d7fcfbdb33d77dbd",
+  "outcome": "skipped-empty",
+  "note": "PR moves a #endif // DISABLE_DEPRECATED so MOUSE_MODE constants bind unconditionally. Foundry (clean-break, no deprecated blocks) already binds MOUSE_MODE unconditionally and uses a divergent enum set with no DisplayServerEnums namespace. Kept HEAD; net empty."
+ },
+ {
+  "pr": "120300",
+  "sha": "1f92b45db3167896f3a1eac54eae9380c15e2ac0",
+  "outcome": "skipped-incompatible",
+  "note": "Foundry's OpenXR spatial marker tracking is a divergent/older implementation: _process_snapshot takes 2 params (no Callable), marker_trackers is a flat map, discovery/update flow differs. The PR's fix defaults a p_user_callback on a 6-param signature absent in Foundry."
+ },
+ {
+  "pr": "118285",
+  "sha": "06ce2079002223080376482b4fac0b3d92bf0ebb",
+  "outcome": "skipped-empty",
+  "note": "Cherry-pick produced no changes (jolt_area_3d already matches)."
+ },
+ {
+  "pr": "118291",
+  "sha": "653fed37e07cd37c5dc741b3959fb07538d1147f",
+  "outcome": "skipped-incompatible",
+  "note": "Requires JoltBody3D::_update_environmental_properties(), absent in base (fork still has separate _update_gravity/_update_damp)."
+ },
+ {
+  "pr": "120258",
+  "sha": "b4156a8833d366eb3c8efadabcb54db409851c96",
+  "outcome": "skipped-incompatible",
+  "note": "Adds call to _update_environmental_properties() in set_gravity_scale; method absent in base."
+ },
+ {
+  "pr": "120298",
+  "sha": "86637357b31405db2a4c709f77bf4378eb4ead51",
+  "outcome": "skipped-incompatible",
+  "note": "Depends on _update_environmental_properties, has_point_gravity, get_default_area_changed_count; none exist in base Jolt module."
+ },
+ {
+  "pr": "115931",
+  "sha": "24ae6c89be3b580f4c21b15916f4f97ea03a84ae",
+  "outcome": "skipped-empty",
+  "note": "Cherry-pick produced no changes against animation_tree.cpp."
+ },
+ {
+  "pr": "119063",
+  "sha": "a0375dde960ee9dba46d461e0145123609691950",
+  "outcome": "resolved",
+  "note": "Applied intent (append '/' to base_path) onto fork's property_reference_map variant instead of upstream instance_paths."
+ },
+ {
+  "pr": "120106",
+  "sha": "dc59c8b250bec794d6f454e952e47d4a854eeab2",
+  "outcome": "resolved",
+  "note": "Added process_state init before early null-root return; dropped upstream validation_dirty block absent in fork."
+ },
+ {
+  "pr": "115757",
+  "sha": "b719f94bfebfb783f874959fa3256c0d75b3cc2a",
+  "outcome": "skipped-empty",
+  "note": "Cherry-pick produced no changes against renderer_canvas_render_rd.cpp."
+ },
+ {
+  "pr": "116647",
+  "sha": "69a412afcd53dfa360d91e7993205bdc40951645",
+  "outcome": "skipped-empty",
+  "note": "Cherry-pick produced no changes against renderer_canvas_render_rd.cpp."
+ },
+ {
+  "pr": "116064",
+  "sha": "69c274d3bc83a18e90a2c801fffed54a83e3b05e",
+  "outcome": "resolved",
+  "note": "Deleted PREPARE/RESTORE_WTP_WAIT macros (whitespace-only conflict); parent_task-based progress refactor auto-merged and verified consistent."
+ },
+ {
+  "pr": "119394",
+  "sha": "afdab2d6b36c3b410ac8d82b5435a0f588c6f80b",
+  "outcome": "skipped-empty",
+  "note": "token->reference() line already absent in fork's load_threaded_request."
+ },
+ {
+  "pr": "118629",
+  "sha": "4d794c4ffbcda9a71738d16d6902f9f8c7efb26b",
+  "outcome": "resolved",
+  "note": "Added mobile-renderer FSR/MetalFX bilinear fallback block; used fork's RS:: prefix instead of upstream RSE::."
+ },
+ {
+  "pr": "119587",
+  "sha": "6c6d7c5ff66b504ee49bc83e358cb69904faf71f",
+  "outcome": "resolved",
+  "note": "Removed DEBUG_ENABLED guards and added early returns for unsupported AA/scaling modes; used fork's RS:: prefix."
+ },
+ {
+  "pr": "114732",
+  "sha": "2db61bc3971fa9bf1a80697136c26f5645f65871",
+  "outcome": "skipped-empty",
+  "note": "Cherry-pick produced no changes."
+ },
+ {
+  "pr": "115532",
+  "sha": "3209188cc79a6c6407ebf54cbfe7cc3f245bafd8",
+  "outcome": "skipped-empty",
+  "note": "Cherry-pick produced no changes against remote_debugger.cpp."
+ },
+ {
+  "pr": "116719",
+  "sha": "badba19c105e504fd9d92b3bfee0f166d6196e4b",
+  "outcome": "skipped-empty",
+  "note": "Cherry-pick produced no changes."
+ },
+ {
+  "pr": "117117",
+  "sha": "dc5b7d5547e88b05fedb1d4426f483f9bf150a32",
+  "outcome": "resolved",
+  "note": "Added core/object/class_db.h include to test_gltf.h, preserving fork's os.h include."
+ },
+ {
+  "pr": "117192",
+  "sha": "e4d0368c24902ebef22b0fe6b9a207aa2a190eb5",
+  "outcome": "skipped-incompatible",
+  "note": "Fork's Metal driver is Objective-C (.mm); PR targets upstream metal-cpp migration plus HDR output (hdr_output/pixel_format members, resize r_format/r_color_space out-params) all absent in base."
+ },
+ {
+  "pr": "117469",
+  "sha": "874f500acb28bf1d7aebc22049493b8ebce8c097",
+  "outcome": "skipped-empty",
+  "note": "Cherry-pick produced no changes against os_apple_embedded.mm."
+ },
+ {
+  "pr": "118027",
+  "sha": "4a919adccf8e398aceca75399c539078c54fe97f",
+  "outcome": "skipped-incompatible",
+  "note": "Modifies core/math/math_funcs_binary.h which the fork deleted entirely; honored deletion, resulting no-op."
+ },
+ {
+  "pr": "117771",
+  "sha": "201a68f700f3d3bd0316b8c7fbf56c58e665ec9d",
+  "outcome": "skipped-empty",
+  "note": "Cherry-pick produced no changes against gles3 light_storage.cpp."
+ },
+ {
+  "pr": "118770",
+  "sha": "5cb4bee8ff98ac0a19852103773ddf57f8f5acb3",
+  "outcome": "resolved",
+  "note": "Made <cstdlib> unconditional in file_access_unix.cpp; kept fork's <climits> inside TOOLS_ENABLED guard; movie_writer_ogv.cpp auto-merged."
+ },
+ {
+  "pr": "89325",
+  "sha": "f1ea87c4bd4879d70e06af7d22e717983801920b",
+  "outcome": "skipped-empty",
+  "note": "Cherry-pick produced no changes against cpu_particles_3d.cpp."
+ },
+ {
+  "pr": "118895",
+  "sha": "db0467cc6aa1175eb2026e25bb11ce8d0c0fc2e3",
+  "outcome": "skipped-incompatible",
+  "note": "Depends on input-focus infra (application_focused, embedder_focused, _should_ignore_joypad_events, _msg_report_window_focused) absent in fork (reverted legacy-input-events feature)."
+ },
+ {
+  "pr": "120369",
+  "sha": "2a74ac212b406ec78b5f2794d9e23c9ff2e5fae1",
+  "outcome": "reverted-incompatible",
+  "note": "resolution kept deinit_ref() call (weak-ownership infra) absent in fork PacketPeerUDP"
+ }
+]
