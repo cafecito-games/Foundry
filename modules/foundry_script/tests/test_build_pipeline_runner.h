@@ -44,6 +44,7 @@
 #include "tests/core/config/test_project_settings.h"
 #include "tests/test_macros.h"
 #include "tests/test_utils.h"
+#include "modules/foundry_script/tests/fs_test_python.h"
 
 namespace FSTests {
 
@@ -179,7 +180,7 @@ static Ref<ConfigFile> make_pipeline_config(ProjectBuildPipelineConfig::Stage p_
 
 	const String section = "build/tasks/" + p_task_name;
 	config->set_value(section, "provider", "command");
-	config->set_value(section, "command", "python3");
+	config->set_value(section, "command", fs_test_python_command());
 	config->set_value(section, "args", pipeline_args("-c", p_python_script, p_output));
 	config->set_value(section, "outputs", pipeline_args(p_output));
 	config->set_value(section, "timeout_seconds", 5);
@@ -421,7 +422,7 @@ TEST_CASE("[Modules][FoundryScript][BuildPipelineRunner] Previous task failure r
 	config->set_value("build", "enabled", true);
 	config->set_value("build", "pre_compile", pipeline_args("pre_generate"));
 	config->set_value("build/tasks/pre_generate", "provider", "command");
-	config->set_value("build/tasks/pre_generate", "command", "python3");
+	config->set_value("build/tasks/pre_generate", "command", fs_test_python_command());
 	config->set_value("build/tasks/pre_generate", "args", pipeline_args("-c", script, output_path, flag_path));
 	config->set_value("build/tasks/pre_generate", "outputs", pipeline_args(output_path));
 	config->set_value("build/tasks/pre_generate", "timeout_seconds", 5);
@@ -521,7 +522,7 @@ TEST_CASE("[Modules][FoundryScript][BuildPipelineRunner] End-to-end command fixt
 	config->set_value("build", "post_compile", pipeline_args("verify_generated_manifest"));
 
 	config->set_value("build/tasks/generate_player_proto", "provider", "command");
-	config->set_value("build/tasks/generate_player_proto", "command", "python3");
+	config->set_value("build/tasks/generate_player_proto", "command", fs_test_python_command());
 	config->set_value("build/tasks/generate_player_proto", "args", generate_args);
 	config->set_value("build/tasks/generate_player_proto", "inputs",
 			pipeline_args("res://proto/player.proto", "res://tools/foundryproto_fixture.py"));
@@ -529,11 +530,11 @@ TEST_CASE("[Modules][FoundryScript][BuildPipelineRunner] End-to-end command fixt
 			pipeline_args("res://generated/protobuf/player_proto.fs", "res://generated/protobuf/manifest.txt"));
 	config->set_value("build/tasks/generate_player_proto", "working_directory", "res://");
 	config->set_value("build/tasks/generate_player_proto", "tool_version_command",
-			pipeline_args("python3", "res://tools/foundryproto_fixture.py", "--version"));
+			pipeline_args(fs_test_python_command(), "res://tools/foundryproto_fixture.py", "--version"));
 	config->set_value("build/tasks/generate_player_proto", "timeout_seconds", 5);
 
 	config->set_value("build/tasks/verify_generated_manifest", "provider", "command");
-	config->set_value("build/tasks/verify_generated_manifest", "command", "python3");
+	config->set_value("build/tasks/verify_generated_manifest", "command", fs_test_python_command());
 	config->set_value("build/tasks/verify_generated_manifest", "args",
 			pipeline_args("-c", post_compile_script, "res://generated/protobuf/player_proto.fs",
 					"res://generated/protobuf/manifest.txt"));

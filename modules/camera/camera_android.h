@@ -116,8 +116,8 @@ public:
 	void handle_resume();
 	void handle_rotation_change();
 
-	CameraFeedAndroid(ACameraManager *manager, ACameraMetadata *metadata, const char *id,
-			CameraFeed::FeedPosition position, int32_t orientation);
+	CameraFeedAndroid(ACameraManager *p_manager, ACameraMetadata *p_metadata, const char *id,
+			CameraFeed::FeedPosition position, int32_t p_orientation);
 	~CameraFeedAndroid() override;
 };
 

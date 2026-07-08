@@ -109,11 +109,11 @@ ReadinessStep RunTargetReadiness::make_provisioning_step(const String &p_error, 
 	step.title = "Automatic signing";
 	step.status = p_status;
 
-	if (p_status == ReadinessStep::OK) {
+	if (p_status == ReadinessStep::Status::OK) {
 		step.detail = "Automatic signing resolved a provisioning profile.";
 		return step;
 	}
-	if (p_status == ReadinessStep::BLOCKED) {
+	if (p_status == ReadinessStep::Status::BLOCKED) {
 		step.detail = UPCOMING_DETAIL;
 		return step;
 	}
@@ -134,7 +134,7 @@ ReadinessStep RunTargetReadiness::make_provisioning_step(const String &p_error, 
 }
 
 ReadinessStep RunTargetReadiness::map_provisioning_error(const String &p_stderr_text) {
-	return make_provisioning_step(p_stderr_text, ReadinessStep::ACTION_NEEDED);
+	return make_provisioning_step(p_stderr_text, ReadinessStep::Status::ACTION_NEEDED);
 }
 
 Vector<ReadinessStep> RunTargetReadiness::evaluate(const ProbeResult &p_result) {
@@ -162,11 +162,11 @@ Vector<ReadinessStep> RunTargetReadiness::evaluate(const ProbeResult &p_result) 
 
 		ReadinessStep::Status status;
 		if (first_failure == -1 || i < first_failure) {
-			status = ReadinessStep::OK;
+			status = ReadinessStep::Status::OK;
 		} else if (i == first_failure) {
-			status = ReadinessStep::ACTION_NEEDED;
+			status = ReadinessStep::Status::ACTION_NEEDED;
 		} else {
-			status = ReadinessStep::BLOCKED;
+			status = ReadinessStep::Status::BLOCKED;
 		}
 
 		if (is_provisioning) {
@@ -181,14 +181,14 @@ Vector<ReadinessStep> RunTargetReadiness::evaluate(const ProbeResult &p_result) 
 		step.title = rung.title;
 		step.status = status;
 		switch (status) {
-			case ReadinessStep::OK:
+			case ReadinessStep::Status::OK:
 				step.detail = rung.ok_detail;
 				break;
-			case ReadinessStep::ACTION_NEEDED:
+			case ReadinessStep::Status::ACTION_NEEDED:
 				step.detail = rung.fail_detail;
 				step.fix_hint = rung.fix_hint;
 				break;
-			case ReadinessStep::BLOCKED:
+			case ReadinessStep::Status::BLOCKED:
 				step.detail = UPCOMING_DETAIL;
 				break;
 		}

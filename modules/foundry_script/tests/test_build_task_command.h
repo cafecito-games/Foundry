@@ -40,6 +40,7 @@
 #include "tests/core/config/test_project_settings.h"
 #include "tests/test_macros.h"
 #include "tests/test_utils.h"
+#include "modules/foundry_script/tests/fs_test_python.h"
 
 #ifdef TOOLS_ENABLED
 #include "editor/file_system/editor_file_system.h"
@@ -197,7 +198,7 @@ TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Refuses external commands 
 	context->set_task_name("untrusted_command");
 
 	Dictionary options;
-	options["command"] = "python3";
+	options["command"] = fs_test_python_command();
 	options["args"] = make_args("-c", "print('should-not-run')\n");
 	options["outputs"] = make_args("res://generated/untrusted.txt");
 	context->set_options(options);
@@ -243,7 +244,7 @@ TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Runs PATH command with arg
 	environment["FOUNDRY_COMMAND_TASK_ENV"] = "env-ok";
 
 	Dictionary options;
-	options["command"] = "python3";
+	options["command"] = fs_test_python_command();
 	options["args"] = make_args("-c", script, "res://work", "relative.txt", "res://input.txt", "res://out.txt");
 	options["working_directory"] = "res://work";
 	options["environment"] = environment;
@@ -479,7 +480,7 @@ TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Preserves Windows argv edg
 	args.push_back("C:\\path with space\\");
 
 	Dictionary options;
-	options["command"] = "python3";
+	options["command"] = fs_test_python_command();
 	options["args"] = args;
 	options["outputs"] = make_args("res://generated/windows_argv.txt");
 	options["timeout_seconds"] = 5;
@@ -512,7 +513,7 @@ TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Windows kill terminates tr
 	arguments.push_back(sentinel);
 
 	OS::ProcessID pid = 0;
-	const Error err = OS::get_singleton()->create_process("python3", arguments, &pid);
+	const Error err = OS::get_singleton()->create_process(fs_test_python_command(), arguments, &pid);
 	CHECK_EQ(err, OK);
 	if (err != OK) {
 		return;
@@ -531,7 +532,7 @@ TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Passes args as argv entrie
 	const String malicious = String("$(touch \"") + sentinel + "\")";
 
 	Dictionary options;
-	options["command"] = "python3";
+	options["command"] = fs_test_python_command();
 	options["args"] = make_args("-c",
 			"import sys\n"
 			"assert sys.argv[2] == ' relative arg '\n"
@@ -553,7 +554,7 @@ TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Passes args as argv entrie
 
 TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Closes stdin for commands that read until EOF") {
 	Dictionary options;
-	options["command"] = "python3";
+	options["command"] = fs_test_python_command();
 	options["args"] = make_args("-c",
 			"import sys\n"
 			"assert sys.stdin.read() == ''\n"
@@ -573,7 +574,7 @@ TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Closes stdin for commands 
 
 TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Captures stdout stderr and non-zero exit diagnostics") {
 	Dictionary options;
-	options["command"] = "python3";
+	options["command"] = fs_test_python_command();
 	options["args"] = make_args("-c",
 			"import sys\n"
 			"print('stdout-line')\n"
@@ -598,7 +599,7 @@ TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Captures stdout stderr and
 	Dictionary diagnostic = result->get_diagnostics()[0];
 	CHECK_EQ(String(diagnostic["task_name"]), "test_command");
 	CHECK_EQ(String(diagnostic["provider_id"]), "command");
-	CHECK_EQ(String(diagnostic["command"]), "python3");
+	CHECK_EQ(String(diagnostic["command"]), fs_test_python_command());
 	CHECK_EQ(int(diagnostic["exit_code"]), 7);
 	CHECK(String(diagnostic["stdout_tail"]).contains("stdout-line"));
 	CHECK(String(diagnostic["stderr_tail"]).contains("stderr-line"));
@@ -606,7 +607,7 @@ TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Captures stdout stderr and
 
 TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Reports timeout diagnostics") {
 	Dictionary options;
-	options["command"] = "python3";
+	options["command"] = fs_test_python_command();
 	options["args"] = make_args("-c", "import time\nprint('before-timeout', flush=True)\ntime.sleep(5)\n");
 	options["outputs"] = make_args("res://generated/timeout.txt");
 	options["timeout_seconds"] = 1;
@@ -629,7 +630,7 @@ TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Reports timeout diagnostic
 
 TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Enforces timeout while draining continuous output") {
 	Dictionary options;
-	options["command"] = "python3";
+	options["command"] = fs_test_python_command();
 	options["args"] = make_args("-c",
 			"import os, sys, time\n"
 			"deadline = time.monotonic() + 4\n"
@@ -667,7 +668,7 @@ TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Timeout terminates the Uni
 			"time.sleep(10)\n";
 
 	Dictionary options;
-	options["command"] = "python3";
+	options["command"] = fs_test_python_command();
 	options["args"] = make_args("-c", parent_script, child_script, sentinel);
 	options["outputs"] = make_args("res://generated/grandchild.txt");
 	options["timeout_seconds"] = 1;
@@ -707,10 +708,10 @@ TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Reports missing executable
 
 TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Tool version output participates in fingerprint") {
 	Dictionary options;
-	options["command"] = "python3";
+	options["command"] = fs_test_python_command();
 	options["args"] = make_args("-c", "print('build')\n");
 	options["outputs"] = make_args("res://generated/versioned.txt");
-	options["tool_version_command"] = make_args("python3", "-c", "print('tool-v1')\n");
+	options["tool_version_command"] = make_args(fs_test_python_command(), "-c", "print('tool-v1')\n");
 
 	Ref<FoundryBuildResult> first = run_command_task(options);
 	CHECK(first.is_valid());
@@ -723,7 +724,7 @@ TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Tool version output partic
 	}
 	CHECK_FALSE(first->get_fingerprint().is_empty());
 
-	options["tool_version_command"] = make_args("python3", "-c", "print('tool-v2')\n");
+	options["tool_version_command"] = make_args(fs_test_python_command(), "-c", "print('tool-v2')\n");
 	Ref<FoundryBuildResult> second = run_command_task(options);
 	CHECK(second.is_valid());
 	if (second.is_null()) {
@@ -745,10 +746,10 @@ TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Tool version fingerprint c
 			"pathlib.Path(sys.argv[1]).write_text('generated\\n')\n";
 
 	Dictionary options;
-	options["command"] = "python3";
+	options["command"] = fs_test_python_command();
 	options["args"] = make_args("-c", script, "res://generated/tool_version_state.txt");
 	options["outputs"] = make_args("res://generated/tool_version_state.txt");
-	options["tool_version_command"] = make_args("python3", "-c", "print('tool-v1')\n");
+	options["tool_version_command"] = make_args(fs_test_python_command(), "-c", "print('tool-v1')\n");
 
 	Ref<FoundryBuildResult> first = run_command_task(options);
 	CHECK(first.is_valid());
@@ -760,7 +761,7 @@ TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Tool version fingerprint c
 	state.record_task_result("generate_tool_versioned", first->get_fingerprint(), make_args("res://generated/tool_version_state.txt"), true);
 	CHECK_FALSE(state.get_task_dirty_status("generate_tool_versioned", first->get_fingerprint(), make_args("res://generated/tool_version_state.txt")).dirty);
 
-	options["tool_version_command"] = make_args("python3", "-c", "print('tool-v2')\n");
+	options["tool_version_command"] = make_args(fs_test_python_command(), "-c", "print('tool-v2')\n");
 	Ref<FoundryBuildResult> second = run_command_task(options);
 	CHECK(second.is_valid());
 	if (second.is_null() || !second->is_success()) {
@@ -775,7 +776,7 @@ TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Tool version fingerprint c
 
 TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Timeout participates in fingerprint") {
 	Dictionary options;
-	options["command"] = "python3";
+	options["command"] = fs_test_python_command();
 	options["args"] = make_args("-c", "print('build')\n");
 	options["outputs"] = make_args("res://generated/timeout_fingerprint.txt");
 	options["timeout_seconds"] = 1;
@@ -798,10 +799,10 @@ TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Timeout participates in fi
 
 TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Reports non-zero tool version diagnostics") {
 	Dictionary options;
-	options["command"] = "python3";
+	options["command"] = fs_test_python_command();
 	options["args"] = make_args("-c", "print('build')\n");
 	options["outputs"] = make_args("res://generated/version_probe_diagnostic.txt");
-	options["tool_version_command"] = make_args("python3", "-c",
+	options["tool_version_command"] = make_args(fs_test_python_command(), "-c",
 			"import sys\n"
 			"print('bad-version')\n"
 			"sys.exit(9)\n");
@@ -834,7 +835,7 @@ TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Successful res outputs req
 			"path.write_text('generated\\n')\n";
 
 	Dictionary options;
-	options["command"] = "python3";
+	options["command"] = fs_test_python_command();
 	options["args"] = make_args("-c", script, "res://generated/scan_changes.txt");
 	options["outputs"] = make_args("res://generated/scan_changes.txt");
 
@@ -857,7 +858,7 @@ TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Globalizes inputs and outp
 	project.write_file("res://input.txt", "input-ok");
 
 	Dictionary resource_options;
-	resource_options["command"] = "python3";
+	resource_options["command"] = fs_test_python_command();
 	resource_options["args"] = make_args("-c", "print('build')\n");
 	resource_options["inputs"] = make_args("res://input.txt");
 	resource_options["outputs"] = make_args("res://generated/out.txt");
@@ -894,7 +895,7 @@ TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Input file contents partic
 	project.write_file("res://input.txt", "input-v1");
 
 	Dictionary options;
-	options["command"] = "python3";
+	options["command"] = fs_test_python_command();
 	options["args"] = make_args("-c", "print('build')\n");
 	options["inputs"] = make_args("res://input.txt");
 	options["outputs"] = make_args("res://generated/out.txt");
@@ -924,7 +925,7 @@ TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Input content fingerprint 
 			"pathlib.Path(sys.argv[1]).write_text('generated\\n')\n";
 
 	Dictionary options;
-	options["command"] = "python3";
+	options["command"] = fs_test_python_command();
 	options["args"] = make_args("-c", script, "res://generated/input_state.txt");
 	options["inputs"] = make_args("res://input.txt");
 	options["outputs"] = make_args("res://generated/input_state.txt");
@@ -957,7 +958,7 @@ TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Input glob matches partici
 	project.write_file("res://proto/a.proto", "message A {}\n");
 
 	Dictionary options;
-	options["command"] = "python3";
+	options["command"] = fs_test_python_command();
 	options["args"] = make_args("-c", "print('build')\n");
 	options["inputs"] = make_args("res://proto/**/*.proto");
 	options["outputs"] = make_args("res://generated/out.txt");
@@ -984,7 +985,7 @@ TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Non-recursive input globs 
 	project.write_file("res://proto/nested/b.proto", "message NestedV1 {}\n");
 
 	Dictionary options;
-	options["command"] = "python3";
+	options["command"] = fs_test_python_command();
 	options["args"] = make_args("-c", "print('build')\n");
 	options["inputs"] = make_args("res://proto/*.proto");
 	options["outputs"] = make_args("res://generated/out.txt");
@@ -1010,7 +1011,7 @@ TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Root input glob matches pa
 	project.write_file("res://root.proto", "message RootV1 {}\n");
 
 	Dictionary options;
-	options["command"] = "python3";
+	options["command"] = fs_test_python_command();
 	options["args"] = make_args("-c", "print('build')\n");
 	options["inputs"] = make_args("res://*.proto");
 	options["outputs"] = make_args("res://generated/out.txt");
@@ -1036,7 +1037,7 @@ TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Hidden input glob matches 
 	project.write_file("res://.env", "SECRET=v1\n");
 
 	Dictionary options;
-	options["command"] = "python3";
+	options["command"] = fs_test_python_command();
 	options["args"] = make_args("-c", "print('build')\n");
 	options["inputs"] = make_args("res://**/.env");
 	options["outputs"] = make_args("res://generated/out.txt");
@@ -1059,7 +1060,7 @@ TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Hidden input glob matches 
 
 TEST_CASE("[Modules][FoundryScript][BuildTaskCommand] Fingerprint fields are not newline-ambiguous") {
 	Dictionary one_arg_options;
-	one_arg_options["command"] = "python3";
+	one_arg_options["command"] = fs_test_python_command();
 	one_arg_options["args"] = make_args("-c", "print('build')\n", "a\narg\nb");
 	one_arg_options["outputs"] = make_args("res://generated/out.txt");
 

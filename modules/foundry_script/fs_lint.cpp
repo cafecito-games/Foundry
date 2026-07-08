@@ -232,7 +232,11 @@ void FSLintCLI::collect_files_recursive(const String &p_dir, Vector<String> &r_f
 	}
 
 	for (String entry = dir->get_next(); !entry.is_empty(); entry = dir->get_next()) {
-		if (entry == "." || entry == ".." || dir->current_is_hidden()) {
+		// Skip dot-prefixed entries (`.`, `..`, `.git`, `.godot`, ...) explicitly:
+		// `current_is_hidden()` keys off the OS hidden attribute, which dot
+		// directories carry on Unix but not on Windows, so the dot-prefix check is
+		// what makes `.godot` cache scripts skipped on every platform.
+		if (entry.begins_with(".") || dir->current_is_hidden()) {
 			continue;
 		}
 		const String full_path = p_dir.path_join(entry);

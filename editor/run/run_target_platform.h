@@ -46,7 +46,7 @@
 //   - ACTION_NEEDED: the user can resolve this themselves; `fix_hint` says how.
 //   - BLOCKED: a hard stop that cannot proceed until an earlier step is fixed.
 struct ReadinessStep {
-	enum Status {
+	enum class Status {
 		OK,
 		ACTION_NEEDED,
 		BLOCKED,
@@ -55,7 +55,7 @@ struct ReadinessStep {
 	StringName id; // Stable identifier, e.g. "xcode", "device", "developer_mode".
 	String title; // Short label shown in the ladder.
 	String detail; // Longer human-readable explanation of the current state.
-	Status status = OK;
+	Status status = Status::OK;
 	String fix_hint; // Plain-language next action when status is not OK.
 
 	bool operator==(const ReadinessStep &p_other) const {
@@ -76,7 +76,7 @@ struct ReadinessStep {
 struct RunTargetDevice {
 	String id; // Stable device identifier (e.g. the iOS UDID), or "auto".
 	String name; // Human-readable device name, e.g. "My iPhone".
-	ReadinessStep::Status badge = ReadinessStep::OK;
+	ReadinessStep::Status badge = ReadinessStep::Status::OK;
 
 	bool operator==(const RunTargetDevice &p_other) const {
 		return id == p_other.id &&
