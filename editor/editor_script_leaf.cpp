@@ -32,6 +32,7 @@
 
 #include "core/io/config_file.h"
 #include "core/io/resource_loader.h"
+#include "editor/editor_data.h"
 #include "editor/editor_scene_workspace.h"
 #include "editor/editor_string_names.h"
 #include "editor/script/script_editor_controller.h"
@@ -151,6 +152,27 @@ void ScriptLeaf::set_associated_scene_root(Node *p_scene_root) {
 	} else {
 		associated_scene_path.clear();
 	}
+}
+
+void ScriptLeaf::set_associated_scene_path(const String &p_scene_path) {
+	associated_scene_path = p_scene_path;
+	associated_scene_root_id = ObjectID();
+}
+
+bool ScriptLeaf::resolve_associated_scene(EditorData &p_editor_data) {
+	if (get_associated_scene_root()) {
+		return true;
+	}
+	if (associated_scene_path.is_empty()) {
+		return false;
+	}
+	for (int i = 0; i < p_editor_data.get_edited_scene_count(); i++) {
+		if (p_editor_data.get_scene_path(i) == associated_scene_path) {
+			set_associated_scene_root(p_editor_data.get_edited_scene_root(i));
+			return get_associated_scene_root() != nullptr;
+		}
+	}
+	return false;
 }
 
 Node *ScriptLeaf::get_associated_scene_root() const {
