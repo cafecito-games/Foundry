@@ -31,9 +31,10 @@ class PrPlatformChecksWorkflowTest(unittest.TestCase):
 
         for job in ("linux", "macos", "windows", "android", "ios", "web"):
             with self.subTest(job=job):
+                concurrency_group = f"group: pr-every-platform-{job}-${{{{ needs.preflight.outputs.pr_head_sha }}}}"
                 self.assertIn(f"{job}:", workflow)
                 self.assertIn(AUTHORIZED_IF, workflow)
-                self.assertIn(f"group: pr-every-platform-{job}-${{{{ needs.preflight.outputs.pr_head_sha }}}}", workflow)
+                self.assertIn(concurrency_group, workflow)
 
     def test_workflow_calls_every_platform_with_pr_head_checkout(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")

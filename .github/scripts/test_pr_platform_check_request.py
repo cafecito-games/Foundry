@@ -12,6 +12,7 @@ class PrPlatformCheckRequestTest(unittest.TestCase):
     def test_request_detection_ignores_unrelated_comments(self):
         self.assertFalse(request.is_every_platform_request("check the linux platform"))
         self.assertFalse(request.is_every_platform_request("the platform build failed"))
+        self.assertFalse(request.is_every_platform_request("build every platforms"))
 
     def test_has_write_access_accepts_write_level_permissions(self):
         for permission in ("write", "maintain", "admin"):

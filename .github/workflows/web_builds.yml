@@ -1,6 +1,17 @@
 name: 🌐 Web Builds
 on:
   workflow_call:
+    inputs:
+      checkout-repository:
+        description: Repository to check out. Defaults to this repository.
+        required: false
+        type: string
+        default: ""
+      checkout-ref:
+        description: Git ref or SHA to check out. Defaults to the workflow ref.
+        required: false
+        type: string
+        default: ""
   workflow_dispatch:
 
 # Global Settings
@@ -37,6 +48,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
+          repository: ${{ inputs.checkout-repository || github.repository }}
+          ref: ${{ inputs.checkout-ref || github.ref }}
           submodules: recursive
 
       - name: Set up Emscripten latest
