@@ -2219,6 +2219,9 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 	if (globals->setup(project_path, main_pack, false, editor) == OK) {
 #ifdef TOOLS_ENABLED
 		found_project = true;
+		if (projectless_editor_shell && ProjectSettings::get_singleton()->is_project_loaded()) {
+			projectless_editor_shell = false;
+		}
 #endif
 	} else {
 #ifdef TOOLS_ENABLED
