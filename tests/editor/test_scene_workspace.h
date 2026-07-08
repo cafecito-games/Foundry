@@ -703,6 +703,47 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] collapse-focused-leaf-with-split-
 	h.unmount();
 }
 
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] collapse-preserves-surface-relocated-to-survivor") {
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	// A shared singleton (the 2D/3D scene editors) is parked in the focused tile's
+	// content host. When that tile collapses, EditorNode relocates the surface onto a
+	// surviving scene tile first (via _focus_tile) so it is neither destroyed with the
+	// freed leaf nor left orphaned. This models that relocation and checks the surface
+	// survives, stays parented in the survivor, and is not freed by the collapse.
+	WorkspaceLeafNode *leaf_a = h.workspace->get_focused_leaf();
+	WorkspaceLeafNode *leaf_b = h.workspace->split(leaf_a, false, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
+	h.pump();
+	REQUIRE(leaf_b != nullptr);
+
+	ScenePaneTile *tile_a = leaf_a->get_pane_tile();
+	ScenePaneTile *tile_b = leaf_b->get_pane_tile();
+	REQUIRE(tile_a != nullptr);
+	REQUIRE(tile_b != nullptr);
+
+	Control *scene_mode = memnew(Control);
+	tile_a->get_content_host()->add_child(scene_mode);
+	const ObjectID scene_mode_id = scene_mode->get_instance_id();
+	REQUIRE(leaf_a->is_ancestor_of(scene_mode));
+
+	// Relocate the surface onto the surviving tile before collapsing the emptied one.
+	scene_mode->get_parent()->remove_child(scene_mode);
+	tile_b->get_content_host()->add_child(scene_mode);
+	h.workspace->set_focused_leaf(leaf_b->get_leaf_id());
+
+	h.workspace->collapse(leaf_a);
+	h.pump();
+
+	// The surface outlives the collapse and remains parented under the survivor, so it
+	// is later freed with the workspace tree rather than leaked.
+	REQUIRE(ObjectDB::get_instance(scene_mode_id) != nullptr);
+	CHECK(tile_b->is_ancestor_of(scene_mode));
+
+	h.unmount();
+}
+
 TEST_CASE("[SceneWorkspace][SceneTree][Editor] tile-id-model") {
 	WorkspaceHarness h;
 	h.mount();
