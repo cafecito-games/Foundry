@@ -358,6 +358,8 @@ private:
 	Error run_phase_body_expression_callable_signal();
 	void run_phase_flow_finality_invariants(FSParser::ClassNode *p_class);
 	Error run_phase_conformance_witness_body();
+	Error analyzer_result_from_parser_errors() const;
+	Error run_phase_finalize_analyzer_warnings();
 	Error run_phase_final_diagnostics_and_dependencies();
 	void run_phase_apply_pending_warnings();
 

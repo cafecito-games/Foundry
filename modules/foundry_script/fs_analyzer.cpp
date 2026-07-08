@@ -368,29 +368,6 @@ Error FSAnalyzer::run_phase_conformance_witness_body() {
 	return parser->errors.is_empty() ? OK : ERR_PARSE_ERROR;
 }
 
-// Phase 8 — Final diagnostics and dependency finalization
-// Requires: witness bodies analyzed for full `analyze()` runs.
-// Produces: applied pending warnings and dependency parsers raised to `INHERITANCE_SOLVED`.
-// May report: delayed `@warning_ignore` warnings and dependency resolution failures.
-// Must not: mutate parser status beyond the existing dependency-finalization step.
-void FSAnalyzer::run_phase_apply_pending_warnings() {
-#ifdef DEBUG_ENABLED
-	parser->apply_pending_warnings();
-#endif // DEBUG_ENABLED
-}
-
-Error FSAnalyzer::run_phase_final_diagnostics_and_dependencies() {
-	AnalyzerPhaseScope phase_scope(this, AnalyzerPhase::FINAL_DIAGNOSTICS_AND_DEPENDENCIES);
-	for (KeyValue<String, Ref<FSParserRef>> &K : parser->depended_parsers) {
-		if (K.value.is_null()) {
-			return ERR_PARSE_ERROR;
-		}
-		dependency_parser_access.raise_parser_to_status(K.value, FSParserRef::INHERITANCE_SOLVED);
-	}
-
-	return parser->errors.is_empty() ? OK : ERR_PARSE_ERROR;
-}
-
 #ifdef TESTS_ENABLED
 bool FSAnalyzer::test_would_violate_phase_order(AnalyzerPhase p_requested_phase, AnalyzerPhase p_required_predecessor) const {
 	if (p_required_predecessor == AnalyzerPhase::NONE) {
@@ -11813,8 +11790,7 @@ Error FSAnalyzer::resolve_body() {
 		return err;
 	}
 
-	run_phase_apply_pending_warnings();
-	return parser->errors.is_empty() ? OK : ERR_PARSE_ERROR;
+	return run_phase_finalize_analyzer_warnings();
 }
 
 Error FSAnalyzer::resolve_dependencies() {
@@ -11851,7 +11827,7 @@ Error FSAnalyzer::analyze() {
 		return err;
 	}
 
-	run_phase_apply_pending_warnings();
+	run_phase_finalize_analyzer_warnings();
 	return run_phase_final_diagnostics_and_dependencies();
 }
 
