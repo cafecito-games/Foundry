@@ -271,7 +271,7 @@ EditorPaths::EditorPaths() {
 
 	// Validate or create project-specific editor data dir,
 	// including shader cache subdir.
-	if (Engine::get_singleton()->is_project_manager_hint() || (Main::is_cmdline_tool() && !ProjectSettings::get_singleton()->is_project_loaded())) {
+	if (Engine::get_singleton()->is_project_manager_hint() || Engine::get_singleton()->is_projectless_editor_shell_hint() || (Main::is_cmdline_tool() && !ProjectSettings::get_singleton()->is_project_loaded())) {
 		// Nothing to create, use shared editor data dir for shader cache.
 		Engine::get_singleton()->set_shader_cache_path(data_dir);
 	} else {

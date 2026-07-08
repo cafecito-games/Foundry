@@ -248,6 +248,39 @@ TEST_CASE("[StartupRouter][Editor] a missing remembered project falls back and i
 	CHECK(store.get_project_count() == 1);
 }
 
+TEST_CASE("[StartupRouter][Editor] has_project_config recognizes project.binary") {
+	const String scratch = make_scratch_dir("binaryconfig");
+	const String dir = make_empty_dir(scratch, "binary_only");
+
+	Ref<FileAccess> f = FileAccess::open(dir.path_join("project.binary"), FileAccess::WRITE);
+	REQUIRE(f.is_valid());
+	f->store_32(0);
+	f->close();
+
+	CHECK(StartupRouter::has_project_config(dir));
+	CHECK_FALSE(StartupRouter::is_openable_project(dir));
+}
+
+TEST_CASE("[StartupRouter][Editor] a binary-only cwd project opens directly") {
+	const String scratch = make_scratch_dir("cwdbinary");
+	const String cwd = make_empty_dir(scratch, "cwd_binary");
+	const String remembered = make_project(scratch, "remembered");
+
+	Ref<FileAccess> f = FileAccess::open(cwd.path_join("project.binary"), FileAccess::WRITE);
+	REQUIRE(f.is_valid());
+	f->store_32(0);
+	f->close();
+
+	KnownProjectStore store(config_path_in(scratch));
+	store.mark_project_opened(remembered, 100);
+
+	const StartupRouter::Decision decision = StartupRouter::resolve_launch(
+			/*explicit_requested=*/false, /*explicit_valid=*/false, cwd, store);
+
+	CHECK(decision.route == StartupRouter::ROUTE_OPEN_CWD);
+	CHECK_FALSE(decision.store_modified);
+}
+
 TEST_CASE("[StartupRouter][Editor] a project in the working directory opens directly") {
 	const String scratch = make_scratch_dir("cwdproject");
 	const String cwd = make_project(scratch, "cwd_game");

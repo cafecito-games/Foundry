@@ -442,6 +442,7 @@ public:
 	float get_scanning_progress() const;
 	void scan();
 	void scan_changes();
+	void skip_first_scan_for_projectless_shell();
 #ifdef TESTS_ENABLED
 	int get_scan_changes_call_count_for_tests() const { return scan_changes_call_count; }
 #endif

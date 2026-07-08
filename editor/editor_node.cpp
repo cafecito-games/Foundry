@@ -372,6 +372,10 @@ void EditorNode::disambiguate_filenames(const Vector<String> p_full_paths, Vecto
 }
 
 void EditorNode::_version_control_menu_option(int p_idx) {
+	if (projectless_shell) {
+		return;
+	}
+
 	switch (vcs_actions_menu->get_item_id(p_idx)) {
 		case VCS_METADATA: {
 			VersionControlEditorPlugin::get_singleton()->popup_vcs_metadata_dialog();
@@ -383,12 +387,17 @@ void EditorNode::_version_control_menu_option(int p_idx) {
 }
 
 void EditorNode::_update_title() {
-	const String appname = GLOBAL_GET("application/config/name");
-	String title = (appname.is_empty() ? TTR("Unnamed Project") : appname);
-	const String edited = editor_data.get_edited_scene_root() ? editor_data.get_edited_scene_root()->get_scene_file_path() : String();
-	if (!edited.is_empty()) {
-		// Display the edited scene name before the program name so that it can be seen in the OS task bar.
-		title = vformat("%s - %s", edited.get_file(), title);
+	String title;
+	if (projectless_shell) {
+		title = TTR("No Project");
+	} else {
+		const String appname = GLOBAL_GET("application/config/name");
+		title = (appname.is_empty() ? TTR("Unnamed Project") : appname);
+		const String edited = editor_data.get_edited_scene_root() ? editor_data.get_edited_scene_root()->get_scene_file_path() : String();
+		if (!edited.is_empty()) {
+			// Display the edited scene name before the program name so that it can be seen in the OS task bar.
+			title = vformat("%s - %s", edited.get_file(), title);
+		}
 	}
 	if (unsaved_cache) {
 		// Display the "modified" mark before anything else so that it can always be seen in the OS task bar.
@@ -921,7 +930,11 @@ void EditorNode::_notification(int p_what) {
 
 			command_palette->register_shortcuts_as_command();
 
-			_begin_first_scan();
+			if (projectless_shell) {
+				callable_mp(this, &EditorNode::_finish_projectless_shell_startup).call_deferred();
+			} else {
+				_begin_first_scan();
+			}
 
 			last_dark_mode_state = DisplayServer::get_singleton()->is_dark_mode();
 			last_system_accent_color = DisplayServer::get_singleton()->get_accent_color();
@@ -956,7 +969,9 @@ void EditorNode::_notification(int p_what) {
 			}
 			EditorHelp::save_script_doc_cache();
 			editor_data.save_editor_external_data();
-			EditorSettings::get_singleton()->save_project_metadata();
+			if (!projectless_shell) {
+				EditorSettings::get_singleton()->save_project_metadata();
+			}
 			FileAccess::set_file_close_fail_notify_callback(nullptr);
 			log->deinit(); // Do not get messages anymore.
 			_activate_scene_context(nullptr);
@@ -981,11 +996,14 @@ void EditorNode::_notification(int p_what) {
 			DisplayServer::get_singleton()->screen_set_keep_on(EDITOR_GET("interface/editor/keep_screen_on"));
 
 			feature_profile_manager->notify_changed();
+			if (projectless_shell) {
+				_apply_projectless_shell_restrictions();
+			}
 
 			// Save the project after opening to mark it as last modified, except in headless mode.
 			// Also use this opportunity to ensure default settings are applied to new projects created from the command line
 			// using `touch project.foundry`.
-			if (DisplayServer::get_singleton()->window_can_draw()) {
+			if (!projectless_shell && DisplayServer::get_singleton()->window_can_draw()) {
 				const String project_settings_path = ProjectSettings::get_singleton()->get_resource_path().path_join("project.foundry");
 				// Check the file's size in bytes as an optimization. If it's under 10 bytes, the file is assumed to be empty.
 				if (FileAccess::get_size(project_settings_path) < 10) {
@@ -1020,9 +1038,9 @@ void EditorNode::_notification(int p_what) {
 			// Restore the original FPS cap after focusing back on the editor.
 			OS::get_singleton()->set_low_processor_usage_mode_sleep_usec(int(EDITOR_GET("interface/editor/low_processor_mode_sleep_usec")));
 
-			if (_is_project_data_missing()) {
+			if (!projectless_shell && _is_project_data_missing()) {
 				project_data_missing->popup_centered();
-			} else {
+			} else if (!projectless_shell) {
 				EditorFileSystem::get_singleton()->scan_changes();
 			}
 			_scan_external_changes();
@@ -1625,6 +1643,11 @@ void EditorNode::_titlebar_resized() {
 }
 
 void EditorNode::_update_undo_redo_allowed() {
+	if (projectless_shell) {
+		_update_projectless_shell_menu_restrictions();
+		return;
+	}
+
 	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
 	file_menu->set_item_disabled(file_menu->get_item_index(SCENE_UNDO), !undo_redo->has_undo());
 	file_menu->set_item_disabled(file_menu->get_item_index(SCENE_REDO), !undo_redo->has_redo());
@@ -3453,6 +3476,10 @@ static String _get_unsaved_scene_dialog_text(String p_scene_filename, uint64_t p
 }
 
 void EditorNode::_menu_option_confirm(int p_option, bool p_confirmed) {
+	if (_is_menu_option_blocked_in_projectless_shell(p_option)) {
+		return;
+	}
+
 	if (!p_confirmed) { // FIXME: this may be a hack.
 		current_menu_option = (MenuOptions)p_option;
 	}
@@ -4125,6 +4152,10 @@ void EditorNode::_check_system_theme_changed() {
 }
 
 void EditorNode::_tool_menu_option(int p_idx) {
+	if (projectless_shell) {
+		return;
+	}
+
 	switch (tool_menu->get_item_id(p_idx)) {
 		case TOOLS_ORPHAN_RESOURCES: {
 			orphan_resources->show();
@@ -4152,6 +4183,10 @@ void EditorNode::_tool_menu_option(int p_idx) {
 }
 
 void EditorNode::_export_as_menu_option(int p_idx) {
+	if (projectless_shell) {
+		return;
+	}
+
 	if (p_idx == 0) { // MeshLibrary
 		current_menu_option = FILE_EXPORT_MESH_LIBRARY;
 
@@ -4282,6 +4317,11 @@ void EditorNode::_discard_changes(const String &p_str) {
 }
 
 void EditorNode::_update_file_menu_opened() {
+	if (projectless_shell) {
+		_update_projectless_shell_menu_restrictions();
+		return;
+	}
+
 	bool has_unsaved = false;
 	for (int i = 0; i < editor_data.get_edited_scene_count(); i++) {
 		if (_is_scene_unsaved(i)) {
@@ -6806,6 +6846,95 @@ void EditorNode::_begin_first_scan() {
 	requested_first_scan = true;
 }
 
+bool EditorNode::_is_menu_option_blocked_in_projectless_shell(int p_option) const {
+	if (!projectless_shell) {
+		return false;
+	}
+
+	switch (p_option) {
+		case SCENE_QUIT:
+		case PROJECT_QUIT_TO_PROJECT_MANAGER:
+		case EDITOR_OPEN_SETTINGS:
+		case EDITOR_COMMAND_PALETTE:
+		case EDITOR_TAKE_SCREENSHOT:
+		case EDITOR_TOGGLE_FULLSCREEN:
+		case EDITOR_OPEN_DATA_FOLDER:
+		case EDITOR_OPEN_CONFIG_FOLDER:
+		case EDITOR_MANAGE_FEATURE_PROFILES:
+		case EDITOR_MANAGE_EXPORT_TEMPLATES:
+		case EDITOR_CONFIGURE_FBX_IMPORTER:
+		case LAYOUT_SAVE:
+		case LAYOUT_DELETE:
+		case LAYOUT_DEFAULT:
+		case HELP_SEARCH:
+		case HELP_DOCS:
+		case HELP_FORUM:
+		case HELP_COMMUNITY:
+		case HELP_COPY_SYSTEM_INFO:
+		case HELP_REPORT_A_BUG:
+		case HELP_SUGGEST_A_FEATURE:
+		case HELP_SEND_DOCS_FEEDBACK:
+		case HELP_ABOUT:
+		case SPINNER_UPDATE_CONTINUOUSLY:
+		case SPINNER_UPDATE_WHEN_CHANGED:
+		case SPINNER_UPDATE_SPINNER_HIDE:
+			return false;
+		default:
+			return true;
+	}
+}
+
+void EditorNode::_update_projectless_shell_menu_restrictions() {
+	if (!projectless_shell || file_menu == nullptr || project_menu == nullptr) {
+		return;
+	}
+
+	for (int i = 0; i < file_menu->get_item_count(); i++) {
+		const int id = file_menu->get_item_id(i);
+		file_menu->set_item_disabled(i, id != SCENE_QUIT);
+	}
+
+	for (int i = 0; i < project_menu->get_item_count(); i++) {
+		const int id = project_menu->get_item_id(i);
+		project_menu->set_item_disabled(i, id != PROJECT_QUIT_TO_PROJECT_MANAGER);
+	}
+}
+
+void EditorNode::_apply_projectless_shell_restrictions() {
+	project_run_bar->hide();
+
+	if (ImportDock::get_singleton() != nullptr) {
+		editor_dock_manager->set_dock_enabled(ImportDock::get_singleton(), false);
+	}
+	if (FileSystemDock::get_singleton() != nullptr) {
+		editor_dock_manager->set_dock_enabled(FileSystemDock::get_singleton(), false);
+	}
+
+	_update_projectless_shell_menu_restrictions();
+
+	if (renderer != nullptr) {
+		renderer->set_disabled(true);
+	}
+}
+
+void EditorNode::_finish_projectless_shell_startup() {
+	if (!projectless_shell || !waiting_for_first_scan) {
+		return;
+	}
+
+	waiting_for_first_scan = false;
+	if (EditorFileSystem::get_singleton() != nullptr) {
+		EditorFileSystem::get_singleton()->skip_first_scan_for_projectless_shell();
+	}
+	_load_editor_layout();
+
+	if (!cmdline_mode) {
+		EditorResourcePreview::get_singleton()->start();
+	}
+
+	get_tree()->create_timer(1.0f)->connect("timeout", callable_mp(this, &EditorNode::_remove_lock_file));
+}
+
 void EditorNode::_show_run_targets_configuration_on_first_open() {
 	// Command-line/headless runs (export, import, tests) must not consume the
 	// one-shot marker: there is no modal to reveal, and burning it here would
@@ -6927,14 +7056,16 @@ void EditorNode::_load_editor_layout() {
 	Ref<ConfigFile> config = layout_store->get_config();
 	if (err != OK) { // No config.
 		// If config is not found, expand the res:// folder and favorites by default.
-		TreeItem *root = FileSystemDock::get_singleton()->get_tree_control()->get_item_with_metadata("res://", 0);
-		if (root) {
-			root->set_collapsed(false);
-		}
+		if (!projectless_shell) {
+			TreeItem *root = FileSystemDock::get_singleton()->get_tree_control()->get_item_with_metadata("res://", 0);
+			if (root) {
+				root->set_collapsed(false);
+			}
 
-		TreeItem *favorites = FileSystemDock::get_singleton()->get_tree_control()->get_item_with_metadata("Favorites", 0);
-		if (favorites) {
-			favorites->set_collapsed(false);
+			TreeItem *favorites = FileSystemDock::get_singleton()->get_tree_control()->get_item_with_metadata("Favorites", 0);
+			if (favorites) {
+				favorites->set_collapsed(false);
+			}
 		}
 
 		if (overridden_default_layout) {
@@ -9311,6 +9442,10 @@ void EditorNode::_feature_profile_changed() {
 	if (!is_script_feature_enabled()) {
 		_close_script_leaf();
 	}
+
+	if (projectless_shell) {
+		_apply_projectless_shell_restrictions();
+	}
 }
 
 void EditorNode::_bind_methods() {
@@ -9776,10 +9911,16 @@ EditorNode::EditorNode() {
 	DEV_ASSERT(!singleton);
 	singleton = this;
 
+	projectless_shell = Engine::get_singleton()->is_projectless_editor_shell_hint();
+
 	// Owns the persisted editor layout config. Created before any participant (e.g.
 	// the log dock, which loads its state on entering the tree) can reach for the
 	// shared config.
-	layout_store = memnew(EditorLayoutStore);
+	if (projectless_shell) {
+		layout_store = memnew(EditorLayoutStore(EditorPaths::get_singleton()->get_data_dir().path_join("projectless_editor_layout.cfg")));
+	} else {
+		layout_store = memnew(EditorLayoutStore);
+	}
 
 	add_user_signal(MethodInfo("request_help_search"));
 	add_user_signal(MethodInfo("script_add_function_request", PropertyInfo(Variant::OBJECT, "obj"), PropertyInfo(Variant::STRING, "function"), PropertyInfo(Variant::PACKED_STRING_ARRAY, "args")));
@@ -11038,6 +11179,10 @@ EditorNode::EditorNode() {
 
 	follow_system_theme = EDITOR_GET("interface/theme/follow_system_theme");
 	use_system_accent_color = EDITOR_GET("interface/theme/use_system_accent_color");
+
+	if (projectless_shell) {
+		_apply_projectless_shell_restrictions();
+	}
 }
 
 EditorNode::~EditorNode() {
