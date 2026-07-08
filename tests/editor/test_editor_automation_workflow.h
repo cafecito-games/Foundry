@@ -248,12 +248,14 @@ TEST_CASE("[Editor][Automation] workflow registry resolves canonical names and a
 	EditorAutomationWorkflowRegistry::register_builtin_workflows();
 	CHECK(EditorAutomationWorkflowRegistry::has_workflow("basic_scene_editing"));
 	CHECK(EditorAutomationWorkflowRegistry::has_workflow("mvp"));
+	CHECK(EditorAutomationWorkflowRegistry::has_workflow("close_last_scene_empty_pane"));
 	CHECK(EditorAutomationWorkflowRegistry::resolve_canonical_name("mvp") == "basic_scene_editing");
 	CHECK(EditorAutomationWorkflowRegistry::resolve_canonical_name("basic_scene_editing") == "basic_scene_editing");
 	CHECK_FALSE(EditorAutomationWorkflowRegistry::has_workflow("does_not_exist"));
 
 	const PackedStringArray names = EditorAutomationWorkflowRegistry::list_workflow_names();
 	CHECK(names.has("basic_scene_editing"));
+	CHECK(names.has("close_last_scene_empty_pane"));
 	CHECK(EditorAutomationWorkflowRegistry::format_unknown_workflow_message("missing").contains("basic_scene_editing"));
 }
 
@@ -440,6 +442,39 @@ TEST_CASE("[Editor][EditorAutomation] mvp workflow alias subprocess") {
 		CHECK((bool)payload.get("ok", false));
 	}
 
+	CHECK(exit_code == 0);
+}
+
+TEST_CASE("[Editor][EditorAutomation] close-last-scene-empty-pane workflow subprocess") {
+	if (!workflow_has_display()) {
+		MESSAGE("Requires a GUI display. Run with DISPLAY=:1 ./bin/foundry.linuxbsd.editor.dev.x86_64 editor open --project <project> res://scenes/main.tscn --automation --automation-run-workflow=close_last_scene_empty_pane");
+		return;
+	}
+
+	const String project_path = workflow_prepare_temp_project();
+	REQUIRE_MESSAGE(!project_path.is_empty(), "Failed to prepare a temporary workflow project copy.");
+
+	List<String> arguments;
+	arguments.push_back("editor");
+	arguments.push_back("open");
+	arguments.push_back("--headless");
+	arguments.push_back("--project");
+	arguments.push_back(project_path);
+	arguments.push_back("res://scenes/main.tscn");
+	arguments.push_back("--automation");
+	arguments.push_back("--automation-run-workflow=close_last_scene_empty_pane");
+
+	int exit_code = -1;
+	const String output = workflow_run_subprocess(arguments, exit_code);
+	INFO("Subprocess output:\n", output);
+	CHECK_MESSAGE(output.contains("FOUNDRY_AUTOMATION_WORKFLOW"), "Workflow result line was not printed.");
+	CHECK(output.contains("FOUNDRY_AUTOMATION"));
+	CHECK(output.contains("\"transport\":\"none\""));
+
+	Dictionary payload;
+	REQUIRE(workflow_parse_result_payload(output, payload));
+	CHECK(String(payload.get("workflow", String())) == "close_last_scene_empty_pane");
+	CHECK((bool)payload.get("ok", false));
 	CHECK(exit_code == 0);
 }
 

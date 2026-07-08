@@ -88,6 +88,10 @@ TEST_CASE("[EditorData][Editor] remove-last-scene-leaves-no-current-scene") {
 
 	CHECK(editor_data.get_edited_scene_count() == 0);
 	CHECK(editor_data.get_edited_scene() == -1);
+	CHECK(editor_data.get_scene_path(-1).is_empty());
+	CHECK_FALSE(editor_data.is_scene_changed(-1));
+	CHECK(editor_data.get_scene_root_script(editor_data.get_edited_scene()).is_null());
+	CHECK(editor_data.get_edited_scene_live_edit_root().is_empty());
 	CHECK_FALSE(error_detector.has_error);
 }
 
