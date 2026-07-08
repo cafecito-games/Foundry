@@ -467,14 +467,6 @@ static bool _bootstrap_path_is_within_root(const String &p_path, const String &p
 	return path == root.trim_suffix("/") || path.begins_with(root);
 }
 
-static FSParser::DataType make_void_type() {
-	FSParser::DataType type;
-	type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
-	type.kind = FSParser::DataType::BUILTIN;
-	type.builtin_type = Variant::NIL;
-	return type;
-}
-
 static FSParser::DataType _class_type_parameter_handle(
 		const FSParser::TypeParameterNode *p_parameter,
 		int p_index) {
@@ -769,21 +761,6 @@ static bool call_argument_is_same_receiver(
 		return false;
 	}
 	return expression_is_same_reference(subscript->base, p_argument);
-}
-
-static String callable_type_string_with_signature(
-		const FSParser::DataType &p_callable_type,
-		const Vector<FSParser::DataType> &p_callable_parameter_types) {
-	if (p_callable_type.has_explicit_method_signature || p_callable_parameter_types.is_empty()) {
-		return p_callable_type.to_string();
-	}
-
-	FSParser::DataType callable_type = p_callable_type;
-	callable_type.has_method_signature = true;
-	callable_type.has_explicit_method_signature = true;
-	callable_type.method_parameter_types = p_callable_parameter_types;
-	callable_type.method_return_type.push_back(make_void_type());
-	return callable_type.to_string();
 }
 
 static String _class_or_trait_name(const FSParser::ClassNode *p_class) {
@@ -5390,7 +5367,7 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 		// Builtin constructors and engine utility functions are not FoundryScript functions, so they
 		// cannot accept named arguments. Reject them before these paths return.
 		if (builtin_type < Variant::VARIANT_MAX || FSUtilityFunctions::function_exists(function_name) || Variant::has_utility_function(function_name)) {
-			reject_named_call_arguments(p_call);
+			call_site_validation.reject_named_call_arguments(p_call);
 		}
 		if (builtin_type < Variant::VARIANT_MAX) {
 			// Is a builtin constructor.
@@ -5571,18 +5548,18 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 
 			if (builtin_type == Variant::CALLABLE && p_call->arguments.size() == 2) {
 				FSParser::DataType callable_type;
-				if (callable_type_from_constant_method_args(p_call, 0, 1, callable_type)) {
+				if (call_site_validation.callable_type_from_constant_method_args(p_call, 0, 1, callable_type)) {
 					call_type = callable_type;
 				} else {
-					validate_strict_callable_method_fallback(p_call, p_call->arguments[0]->get_datatype(), 1);
+					call_site_validation.validate_strict_callable_method_fallback(p_call, p_call->arguments[0]->get_datatype(), 1);
 				}
 			}
 			if (builtin_type == Variant::SIGNAL && p_call->arguments.size() == 2) {
 				FSParser::DataType signal_type;
-				if (signal_type_from_receiver(p_call->arguments[0]->get_datatype(), p_call, 1, signal_type)) {
+				if (call_site_validation.signal_type_from_receiver(p_call->arguments[0]->get_datatype(), p_call, 1, signal_type)) {
 					call_type = signal_type;
 				} else {
-					validate_strict_signal_name_fallback(p_call, p_call->arguments[0]->get_datatype(), 1);
+					call_site_validation.validate_strict_signal_name_fallback(p_call, p_call->arguments[0]->get_datatype(), 1);
 				}
 			}
 
@@ -5657,7 +5634,7 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 						break;
 				}
 			} else {
-				validate_call_arg(function_info, p_call);
+				call_site_validation.validate_call_arg(function_info, p_call);
 			}
 			p_call->set_datatype(type_from_property(function_info.return_val));
 #ifdef DEBUG_ENABLED
@@ -5711,7 +5688,7 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 						break;
 				}
 			} else {
-				validate_call_arg(function_info, p_call);
+				call_site_validation.validate_call_arg(function_info, p_call);
 			}
 			p_call->is_noreturn = function_name == SNAME("push_fatal");
 			p_call->set_datatype(type_from_property(function_info.return_val));
@@ -5888,7 +5865,7 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 		// so the existing positional validation and codegen run unchanged; otherwise reject them.
 		bool named_arguments_valid = true;
 		if (found_function != nullptr) {
-			named_arguments_valid = canonicalize_named_call_arguments(p_call, found_function);
+			named_arguments_valid = call_site_validation.canonicalize_named_call_arguments(p_call, found_function);
 			// Reordering may have changed argument positions, so rebuild the literal-typing maps.
 			arrays.clear();
 			dictionaries.clear();
@@ -5900,13 +5877,13 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 				}
 			}
 		} else {
-			reject_named_call_arguments(p_call);
+			call_site_validation.reject_named_call_arguments(p_call);
 		}
 
 		// Generic methods solve their type parameters here, substituting the call's parameter
 		// and return types before the arguments are validated against them.
 		if (!is_constructor && found_function != nullptr && !found_function->type_parameters.is_empty()) {
-			apply_generic_method_call(p_call, found_function, par_types, return_type);
+			call_site_validation.apply_generic_method_call(p_call, found_function, par_types, return_type);
 		}
 		// If the method is implemented in the class hierarchy, the virtual/abstract flag will not be set for that `MethodInfo` and the search stops there.
 		// Virtual/abstract check only possible for super calls because class hierarchy is known. Objects may have scripts attached we don't know of at compile-time.
@@ -5944,12 +5921,12 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 		}
 
 		if (named_arguments_valid) {
-			validate_call_arg(par_types, default_arg_count, method_flags.has_flag(METHOD_FLAG_VARARG), p_call, base_type.method_extra_allowed_argument_counts, base_type.method_unbound_argument_count);
+			call_site_validation.validate_call_arg(par_types, default_arg_count, method_flags.has_flag(METHOD_FLAG_VARARG), p_call, base_type.method_extra_allowed_argument_counts, base_type.method_unbound_argument_count);
 		}
-		validate_signal_connect_arg(base_type, p_call);
-		validate_local_object_signal_callable_arg(p_call, is_self);
-		validate_local_object_emit_signal_args(p_call, is_self);
-		validate_typed_object_signal_api_args(base_type, p_call, is_self);
+		call_site_validation.validate_signal_connect_arg(base_type, p_call);
+		call_site_validation.validate_local_object_signal_callable_arg(p_call, is_self);
+		call_site_validation.validate_local_object_emit_signal_args(p_call, is_self);
+		call_site_validation.validate_typed_object_signal_api_args(base_type, p_call, is_self);
 
 		if (base_type.kind == FSParser::DataType::ENUM && base_type.is_meta_type) {
 			// Enum type is treated as a dictionary value for function calls.
@@ -6033,7 +6010,7 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 		// canonicalized entirely at compile time against such a signature, so without one their
 		// names cannot be mapped to positions. Reject them here instead of letting codegen drop
 		// the names and silently pass the values positionally in source order.
-		reject_named_call_arguments(p_call);
+		call_site_validation.reject_named_call_arguments(p_call);
 
 		bool found = false;
 
@@ -8228,7 +8205,7 @@ void FSAnalyzer::reduce_identifier_from_base(FSParser::IdentifierNode *p_identif
 						}
 					}
 					if (Variant::has_builtin_method(base.builtin_type, name)) {
-						p_identifier->set_datatype(explicit_callable_type_from_info(Variant::get_builtin_method_info(base.builtin_type, name)));
+						p_identifier->set_datatype(call_site_validation.explicit_callable_type_from_info(Variant::get_builtin_method_info(base.builtin_type, name)));
 						return;
 					}
 					if (base.is_hard_type()) {
@@ -8350,7 +8327,7 @@ void FSAnalyzer::reduce_identifier_from_base(FSParser::IdentifierNode *p_identif
 
 				case FSParser::ClassNode::Member::SIGNAL: {
 					if (can_access_instance_member && !base.is_meta_type) {
-						p_identifier->set_datatype(p_base == nullptr ? member.get_datatype() : explicit_signal_type_from_node(member.signal));
+						p_identifier->set_datatype(p_base == nullptr ? member.get_datatype() : call_site_validation.explicit_signal_type_from_node(member.signal));
 						p_identifier->source = FSParser::IdentifierNode::MEMBER_SIGNAL;
 						p_identifier->signal_source = member.signal;
 						member.signal->usages += 1;
@@ -8429,7 +8406,7 @@ void FSAnalyzer::reduce_identifier_from_base(FSParser::IdentifierNode *p_identif
 		MethodInfo method_info = script_type->get_method_info(p_identifier->name);
 
 		if (method_info.name == p_identifier->name) {
-			p_identifier->set_datatype(explicit_callable_type_from_info(method_info));
+			p_identifier->set_datatype(call_site_validation.explicit_callable_type_from_info(method_info));
 			p_identifier->source = FSParser::IdentifierNode::MEMBER_FUNCTION;
 			p_identifier->function_source_is_static = method_info.flags & METHOD_FLAG_STATIC;
 			return;
@@ -8447,7 +8424,7 @@ void FSAnalyzer::reduce_identifier_from_base(FSParser::IdentifierNode *p_identif
 			// directly-accessed external signal member keeps its parameter types — and any nested
 			// callable/signal hint — for emit()/connect() compatibility checks. Plain make_signal_type
 			// would leave the signature empty and erase it back to untyped at the script-API boundary.
-			FSParser::DataType signal_type = explicit_signal_type_from_info(signal_info);
+			FSParser::DataType signal_type = call_site_validation.explicit_signal_type_from_info(signal_info);
 			if (!_signature_is_comparison_safe(signal_type.method_parameter_types)) {
 				// A user-class/enum slot rebuilt from PropertyInfo cannot be compared reliably as a rich
 				// explicit signature (it surfaces as SCRIPT while a local annotation may be a CLASS handle).
@@ -8493,13 +8470,13 @@ void FSAnalyzer::reduce_identifier_from_base(FSParser::IdentifierNode *p_identif
 		}
 		if (ClassDB::get_method_info(native, name, &method_info)) {
 			// Method is callable.
-			p_identifier->set_datatype(explicit_callable_type_from_info(method_info));
+			p_identifier->set_datatype(call_site_validation.explicit_callable_type_from_info(method_info));
 			p_identifier->source = FSParser::IdentifierNode::INHERITED_VARIABLE;
 			return;
 		}
 		if (ClassDB::get_signal(native, name, &method_info)) {
 			// Signal is a type too.
-			p_identifier->set_datatype(explicit_signal_type_from_info(method_info));
+			p_identifier->set_datatype(call_site_validation.explicit_signal_type_from_info(method_info));
 			p_identifier->source = FSParser::IdentifierNode::INHERITED_VARIABLE;
 			return;
 		}
@@ -10250,7 +10227,7 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 		const FSParser::CallNode *call = p_source != nullptr && p_source->type == FSParser::Node::CALL ? static_cast<const FSParser::CallNode *>(p_source) : nullptr;
 		if (p_base_type.builtin_type == Variant::CALLABLE && p_base_type.is_meta_type && p_function == SNAME("create")) {
 			FSParser::DataType callable_type;
-			if (call != nullptr && callable_type_from_constant_method_args(call, 0, 1, callable_type)) {
+			if (call != nullptr && call_site_validation.callable_type_from_constant_method_args(call, 0, 1, callable_type)) {
 				r_default_arg_count = 0;
 				r_method_flags = METHOD_FLAGS_DEFAULT;
 				r_method_flags.set_flag(METHOD_FLAG_STATIC);
@@ -10260,7 +10237,7 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 				return true;
 			}
 			if (call != nullptr && call->arguments.size() >= 2) {
-				validate_strict_callable_method_fallback(call, call->arguments[0]->get_datatype(), 1);
+				call_site_validation.validate_strict_callable_method_fallback(call, call->arguments[0]->get_datatype(), 1);
 			}
 		}
 
@@ -10280,7 +10257,7 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 					Variant::has_builtin_method(Variant::CALLABLE, p_function)) {
 				const MethodInfo method_info = Variant::get_builtin_method_info(Variant::CALLABLE, p_function);
 				function_signature_from_info(method_info, r_return_type, r_par_types, r_default_arg_count, r_method_flags);
-				r_return_type = over_bound_callable_type(p_base_type);
+				r_return_type = call_site_validation.over_bound_callable_type(p_base_type);
 				return true;
 			}
 		}
@@ -10342,7 +10319,7 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 				const int fixed_argument_count = p_base_type.method_parameter_types.size();
 				const int default_arg_count = fixed_vararg_default_arg_count(p_bound_arguments);
 				const int continuous_min_argument_count = fixed_argument_count - default_arg_count;
-				r_return_type = transformed_callable_type(p_base_type, p_base_type.method_parameter_types, default_arg_count, true);
+				r_return_type = call_site_validation.transformed_callable_type(p_base_type, p_base_type.method_parameter_types, default_arg_count, true);
 				for (int argument_count = 0; argument_count < continuous_min_argument_count; argument_count++) {
 					if (fixed_vararg_accepts_argument_count(p_bound_arguments, argument_count)) {
 						r_return_type.method_extra_allowed_argument_counts.push_back(argument_count);
@@ -10387,7 +10364,7 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 				if (p_base_type.signature_is_async) {
 					r_return_type = make_coroutine_type(r_return_type);
 				}
-				validate_callable_array_literal_args(p_base_type.method_parameter_types, p_base_type.method_info.default_arguments.size(), is_callable_vararg, array_literal_argument(call, 0), p_function, p_base_type.method_extra_allowed_argument_counts, p_base_type.method_unbound_argument_count);
+				call_site_validation.validate_callable_array_literal_args(p_base_type.method_parameter_types, p_base_type.method_info.default_arguments.size(), is_callable_vararg, call_site_validation.array_literal_argument(call, 0), p_function, p_base_type.method_extra_allowed_argument_counts, p_base_type.method_unbound_argument_count);
 				return true;
 			}
 
@@ -10399,7 +10376,7 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 				// parameters while permitting extra bound arguments without an arity error.
 				r_method_flags = METHOD_FLAGS_DEFAULT;
 				r_method_flags.set_flag(METHOD_FLAG_VARARG);
-				r_return_type = plain_callable_type();
+				r_return_type = call_site_validation.plain_callable_type();
 				if (!is_callable_vararg && call != nullptr) {
 					const int bind_argument_count = call->arguments.size();
 					const int callable_argument_count = p_base_type.method_parameter_types.size();
@@ -10415,7 +10392,7 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 						// succeed; rather than assert a misleading precise signature, fall back to a
 						// signatureless callable (keeping the async marker) so downstream call sites
 						// are not type-checked against a bogus shape.
-						r_return_type = over_bound_callable_type(p_base_type);
+						r_return_type = call_site_validation.over_bound_callable_type(p_base_type);
 					} else {
 						Vector<FSParser::DataType> remaining_parameter_types;
 						const int remaining_argument_count = callable_argument_count - bind_argument_count;
@@ -10424,7 +10401,7 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 						}
 
 						const int remaining_default_arg_count = MAX(p_base_type.method_info.default_arguments.size() - bind_argument_count, 0);
-						r_return_type = transformed_callable_type(p_base_type, remaining_parameter_types, remaining_default_arg_count, false);
+						r_return_type = call_site_validation.transformed_callable_type(p_base_type, remaining_parameter_types, remaining_default_arg_count, false);
 					}
 				} else {
 					r_method_flags.set_flag(METHOD_FLAG_VARARG);
@@ -10443,9 +10420,9 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 				r_default_arg_count = 0;
 				r_method_flags = METHOD_FLAGS_DEFAULT;
 				r_par_types.push_back(type_from_property(PropertyInfo(Variant::ARRAY, "arguments"), true));
-				r_return_type = plain_callable_type();
+				r_return_type = call_site_validation.plain_callable_type();
 
-				FSParser::ArrayNode *bind_array = array_literal_argument(call, 0);
+				FSParser::ArrayNode *bind_array = call_site_validation.array_literal_argument(call, 0);
 				if (!is_callable_vararg && bind_array != nullptr) {
 					const int bind_argument_count = bind_array->elements.size();
 					const int callable_argument_count = p_base_type.method_parameter_types.size();
@@ -10459,12 +10436,12 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 					// Callable.bindv() is variadic over the bound array's contents, so extra
 					// elements beyond the target's arity must not raise an arity error; the
 					// leading elements are still type-checked against the known parameters.
-					validate_callable_array_literal_args(bound_parameter_types, 0, true, bind_array, p_function);
+					call_site_validation.validate_callable_array_literal_args(bound_parameter_types, 0, true, bind_array, p_function);
 
 					if (bind_argument_count > callable_argument_count) {
 						// As with bind(), over-binding produces an uninvocable callable; avoid
 						// asserting a precise signature for it.
-						r_return_type = over_bound_callable_type(p_base_type);
+						r_return_type = call_site_validation.over_bound_callable_type(p_base_type);
 					} else {
 						Vector<FSParser::DataType> remaining_parameter_types;
 						const int remaining_argument_count = callable_argument_count - bind_argument_count;
@@ -10473,7 +10450,7 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 						}
 
 						const int remaining_default_arg_count = MAX(p_base_type.method_info.default_arguments.size() - bind_argument_count, 0);
-						r_return_type = transformed_callable_type(p_base_type, remaining_parameter_types, remaining_default_arg_count, false);
+						r_return_type = call_site_validation.transformed_callable_type(p_base_type, remaining_parameter_types, remaining_default_arg_count, false);
 					}
 				} else if (is_callable_vararg && bind_array != nullptr) {
 					Vector<const FSParser::ExpressionNode *> bound_arguments;
@@ -10489,7 +10466,7 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 				r_default_arg_count = 0;
 				r_method_flags = METHOD_FLAGS_DEFAULT;
 				r_par_types.push_back(type_from_property(PropertyInfo(Variant::INT, "argcount"), true));
-				r_return_type = plain_callable_type();
+				r_return_type = call_site_validation.plain_callable_type();
 
 				if (call != nullptr && call->arguments.size() == 1) {
 					const FSParser::ExpressionNode *unbind_count_arg = call->arguments[0];
@@ -10504,7 +10481,7 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 							for (int i = 0; i < unbind_count; i++) {
 								expanded_parameter_types.push_back(variant_type);
 							}
-							r_return_type = transformed_callable_type(p_base_type, expanded_parameter_types, p_base_type.method_info.default_arguments.size(), is_callable_vararg);
+							r_return_type = call_site_validation.transformed_callable_type(p_base_type, expanded_parameter_types, p_base_type.method_info.default_arguments.size(), is_callable_vararg);
 							r_return_type.method_unbound_argument_count = p_base_type.method_unbound_argument_count + unbind_count;
 							for (int extra_allowed_argument_count : p_base_type.method_extra_allowed_argument_counts) {
 								r_return_type.method_extra_allowed_argument_counts.push_back(extra_allowed_argument_count + unbind_count);
@@ -10895,14 +10872,14 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 		const bool has_constant_method_name = call != nullptr && string_name_from_constant_arg(call, 0, method_name);
 		if (has_constant_method_name && method_name != SNAME("call") && method_name != SNAME("call_deferred") && method_name != SNAME("callv")) {
 			FSParser::DataType callable_type;
-			if (callable_type_from_method(p_base_type, method_name, p_source, callable_type)) {
+			if (call_site_validation.callable_type_from_method(p_base_type, method_name, p_source, callable_type)) {
 				r_method_flags = METHOD_FLAGS_DEFAULT;
 				r_par_types.push_back(type_from_property(PropertyInfo(Variant::STRING_NAME, "method"), true));
 				if (p_function == SNAME("callv")) {
 					r_default_arg_count = 0;
 					r_return_type = callable_type.method_return_type.is_empty() ? type_from_property(PropertyInfo(Variant::NIL, "")) : callable_type.method_return_type[0];
 					r_par_types.push_back(type_from_property(PropertyInfo(Variant::ARRAY, "arg_array"), true));
-					validate_callable_array_literal_args(callable_type.method_parameter_types, callable_type.method_info.default_arguments.size(), callable_type.method_info.flags & METHOD_FLAG_VARARG, array_literal_argument(call, 1), p_function);
+					call_site_validation.validate_callable_array_literal_args(callable_type.method_parameter_types, callable_type.method_info.default_arguments.size(), callable_type.method_info.flags & METHOD_FLAG_VARARG, call_site_validation.array_literal_argument(call, 1), p_function);
 				} else {
 					r_default_arg_count = callable_type.method_info.default_arguments.size();
 					if (callable_type.method_info.flags & METHOD_FLAG_VARARG) {
@@ -10928,7 +10905,7 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 		const bool has_constant_method_name = call != nullptr && string_name_from_constant_arg(call, method_arg_index, method_name);
 		if (has_constant_method_name && method_name != SNAME("rpc") && method_name != SNAME("rpc_id")) {
 			FSParser::DataType callable_type;
-			if (callable_type_from_method(p_base_type, method_name, p_source, callable_type)) {
+			if (call_site_validation.callable_type_from_method(p_base_type, method_name, p_source, callable_type)) {
 				r_default_arg_count = callable_type.method_info.default_arguments.size();
 				r_method_flags = METHOD_FLAGS_DEFAULT;
 				if (callable_type.method_info.flags & METHOD_FLAG_VARARG) {
@@ -11044,109 +11021,6 @@ bool FSAnalyzer::function_signature_from_info(const MethodInfo &p_info, FSParser
 	return true;
 }
 
-bool FSAnalyzer::callable_signature_from_type(const FSParser::DataType &p_callable_type, Vector<FSParser::DataType> &r_par_types, int &r_default_arg_count, bool &r_is_vararg) const {
-	if (p_callable_type.kind != FSParser::DataType::BUILTIN || p_callable_type.builtin_type != Variant::CALLABLE || !p_callable_type.has_method_signature) {
-		return false;
-	}
-
-	r_par_types.clear();
-	r_default_arg_count = 0;
-	r_is_vararg = false;
-
-	if (p_callable_type.has_explicit_method_signature) {
-		r_par_types = p_callable_type.method_parameter_types;
-		r_default_arg_count = p_callable_type.method_info.default_arguments.size();
-		r_is_vararg = (p_callable_type.method_info.flags & METHOD_FLAG_VARARG) != 0;
-		return true;
-	}
-
-	if (p_callable_type.method_parameter_types.size() == p_callable_type.method_info.arguments.size()) {
-		r_par_types = p_callable_type.method_parameter_types;
-		r_default_arg_count = p_callable_type.method_info.default_arguments.size();
-		r_is_vararg = (p_callable_type.method_info.flags & METHOD_FLAG_VARARG) != 0;
-		return true;
-	}
-
-	for (const PropertyInfo &E : p_callable_type.method_info.arguments) {
-		r_par_types.push_back(type_from_property(E, true));
-	}
-	r_default_arg_count = p_callable_type.method_info.default_arguments.size();
-	r_is_vararg = (p_callable_type.method_info.flags & METHOD_FLAG_VARARG) != 0;
-	return true;
-}
-
-FSParser::DataType FSAnalyzer::plain_callable_type() const {
-	return type_from_property(PropertyInfo(Variant::CALLABLE, ""));
-}
-
-FSParser::DataType FSAnalyzer::over_bound_callable_type(const FSParser::DataType &p_source_callable_type) const {
-	// Binding more arguments than a fixed-arity target accepts produces a callable that cannot be
-	// invoked successfully. There is no precise signature to describe it, so return a signatureless
-	// callable that still carries the source's async marker (bind()/unbind() preserve async-ness).
-	FSParser::DataType callable_type = plain_callable_type();
-	callable_type.signature_is_async = p_source_callable_type.signature_is_async;
-	callable_type.callable_is_over_bound = true;
-	return callable_type;
-}
-
-FSParser::DataType FSAnalyzer::explicit_callable_type_from_signature(const FSParser::DataType &p_return_type, const Vector<FSParser::DataType> &p_parameter_types, int p_default_arg_count, bool p_is_vararg, bool p_is_async) const {
-	FSParser::DataType callable_type = plain_callable_type();
-	callable_type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
-	callable_type.has_method_signature = true;
-	callable_type.has_explicit_method_signature = true;
-	callable_type.signature_is_async = p_is_async;
-	callable_type.method_parameter_types = p_parameter_types;
-	callable_type.method_return_type.push_back(p_return_type);
-	callable_type.method_info.return_val = p_return_type.to_property_info("");
-	for (int i = 0; i < p_parameter_types.size(); i++) {
-		callable_type.method_info.arguments.push_back(p_parameter_types[i].to_property_info("arg" + itos(i + 1)));
-	}
-	callable_type.method_info.default_arguments.resize(p_default_arg_count);
-	if (p_is_vararg) {
-		callable_type.method_info.flags |= METHOD_FLAG_VARARG;
-	}
-	return callable_type;
-}
-
-FSParser::DataType FSAnalyzer::transformed_callable_type(const FSParser::DataType &p_source_callable_type, const Vector<FSParser::DataType> &p_parameter_types, int p_default_arg_count, bool p_is_vararg) const {
-	FSParser::DataType callable_type = p_source_callable_type;
-	callable_type.kind = FSParser::DataType::BUILTIN;
-	callable_type.builtin_type = Variant::CALLABLE;
-	callable_type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
-	callable_type.has_method_signature = true;
-	callable_type.has_explicit_method_signature = true;
-	callable_type.method_parameter_types = p_parameter_types;
-	callable_type.method_extra_allowed_argument_counts.clear();
-	callable_type.method_unbound_argument_count = 0;
-	callable_type.method_info.arguments.clear();
-	for (int i = 0; i < p_parameter_types.size(); i++) {
-		callable_type.method_info.arguments.push_back(p_parameter_types[i].to_property_info("arg" + itos(i + 1)));
-	}
-	callable_type.method_info.default_arguments.clear();
-	callable_type.method_info.default_arguments.resize(p_default_arg_count);
-	if (p_is_vararg) {
-		callable_type.method_info.flags |= METHOD_FLAG_VARARG;
-	} else {
-		callable_type.method_info.flags &= ~uint32_t(METHOD_FLAG_VARARG);
-	}
-	if (!callable_type.method_return_type.is_empty()) {
-		callable_type.method_info.return_val = callable_type.method_return_type[0].to_property_info("");
-	}
-	return callable_type;
-}
-
-FSParser::DataType FSAnalyzer::explicit_callable_type_from_info(const MethodInfo &p_info) const {
-	FSParser::DataType callable_type = make_callable_type(p_info);
-	callable_type.method_parameter_types.clear();
-	for (const PropertyInfo &argument : p_info.arguments) {
-		callable_type.method_parameter_types.push_back(type_from_property(argument, true));
-	}
-	callable_type.method_return_type.clear();
-	callable_type.method_return_type.push_back(type_from_property(p_info.return_val));
-	callable_type.has_explicit_method_signature = true;
-	return callable_type;
-}
-
 bool FSAnalyzer::string_name_from_constant_arg(const FSParser::CallNode *p_call, int p_argument_index, StringName &r_name) const {
 	if (p_argument_index < 0 || p_argument_index >= p_call->arguments.size()) {
 		return false;
@@ -11164,116 +11038,6 @@ bool FSAnalyzer::string_name_from_constant_arg(const FSParser::CallNode *p_call,
 
 	r_name = value;
 	return true;
-}
-
-bool FSAnalyzer::call_argument_can_be_string_name(const FSParser::CallNode *p_call, int p_argument_index) {
-	if (p_call == nullptr || p_argument_index < 0 || p_argument_index >= p_call->arguments.size()) {
-		return false;
-	}
-
-	const FSParser::ExpressionNode *argument = p_call->arguments[p_argument_index];
-	if (argument == nullptr) {
-		return false;
-	}
-
-	if (argument->is_constant) {
-		const Variant::Type value_type = argument->reduced_value.get_type();
-		return value_type == Variant::STRING || value_type == Variant::STRING_NAME;
-	}
-
-	const FSParser::DataType argument_type = argument->get_datatype();
-	if (argument_type.is_variant() || !argument_type.is_hard_type()) {
-		return true;
-	}
-
-	const FSParser::DataType string_name_type = type_from_property(PropertyInfo(Variant::STRING_NAME, ""), true);
-	const FSParser::DataType string_type = type_from_property(PropertyInfo(Variant::STRING, ""), true);
-	return is_type_compatible(string_name_type, argument_type, true) || is_type_compatible(string_type, argument_type, true);
-}
-
-bool FSAnalyzer::merge_inferred_type_argument(const FSParser::DataType &p_existing, const FSParser::DataType &p_candidate, FSParser::DataType &r_merged) {
-	// Type parameters are invariant (epic #125 design): a parameter solved from several arguments
-	// must resolve to the same type each time. Differing types conflict and require explicit
-	// application.
-	const bool existing_is_parameter = p_existing.kind == FSParser::DataType::TYPE_PARAMETER;
-	const bool candidate_is_parameter = p_candidate.kind == FSParser::DataType::TYPE_PARAMETER;
-	if (existing_is_parameter || candidate_is_parameter) {
-		// A type-parameter argument (e.g. an outer `U` forwarded into this call) unifies only with
-		// the identical parameter. `is_type_compatible()` treats an erased parameter as Variant-like
-		// and would otherwise merge `U` with an unrelated concrete type without flagging a conflict.
-		if (existing_is_parameter && candidate_is_parameter &&
-				p_existing.type_parameter_name == p_candidate.type_parameter_name &&
-				p_existing.type_parameter_scope == p_candidate.type_parameter_scope) {
-			r_merged = p_existing;
-			return true;
-		}
-		return false;
-	}
-
-	// Concrete types: mutual assignability without implicit conversion is the invariant equality
-	// test, tolerating incidental DataType field differences between two arguments of the same type.
-	if (p_existing.kind == p_candidate.kind &&
-			is_type_compatible(p_existing, p_candidate) && is_type_compatible(p_candidate, p_existing)) {
-		r_merged = p_existing;
-		return true;
-	}
-	return false;
-}
-
-void FSAnalyzer::collect_type_parameter_bindings(const FSParser::DataType &p_parameter_type, const FSParser::DataType &p_argument_type,
-		HashMap<StringName, FSParser::DataType> &r_bindings, HashSet<StringName> &r_conflicts) {
-	if (p_parameter_type.kind == FSParser::DataType::TYPE_PARAMETER &&
-			p_parameter_type.type_parameter_scope == FSParser::DataType::TYPE_PARAMETER_METHOD) {
-		// Only a usable, concrete argument type constrains a parameter; a Variant or untyped
-		// argument leaves it open for another argument (or explicit application) to solve.
-		if (!p_argument_type.is_set() || p_argument_type.is_variant() || !p_argument_type.is_hard_type()) {
-			return;
-		}
-
-		FSParser::DataType candidate = p_argument_type;
-		if (p_parameter_type.is_type_handle_annotation) {
-			if (!candidate.is_meta_type && !candidate.is_type_handle_annotation) {
-				return;
-			}
-			candidate = type_handle_represented_type(candidate);
-		} else {
-			candidate.is_meta_type = false;
-		}
-		candidate.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
-
-		const StringName &name = p_parameter_type.type_parameter_name;
-		if (r_conflicts.has(name)) {
-			return;
-		}
-		FSParser::DataType *existing = r_bindings.getptr(name);
-		if (existing == nullptr) {
-			r_bindings.insert(name, candidate);
-			return;
-		}
-		FSParser::DataType merged;
-		if (merge_inferred_type_argument(*existing, candidate, merged)) {
-			*existing = merged;
-		} else {
-			r_conflicts.insert(name);
-		}
-		return;
-	}
-
-	// Unify structurally through matching containers (`Array[T]`, `Dictionary[K, V]`) and
-	// specialized handles (`Box[T]`), so a parameter nested inside a type argument is solved too.
-	const int parameter_element_count = p_parameter_type.container_element_types.size();
-	if (parameter_element_count > 0 && parameter_element_count == p_argument_type.container_element_types.size()) {
-		for (int i = 0; i < parameter_element_count; i++) {
-			collect_type_parameter_bindings(p_parameter_type.container_element_types[i], p_argument_type.container_element_types[i], r_bindings, r_conflicts);
-		}
-	}
-
-	const int parameter_argument_count = p_parameter_type.type_arguments.size();
-	if (parameter_argument_count > 0 && parameter_argument_count == p_argument_type.type_arguments.size()) {
-		for (int i = 0; i < parameter_argument_count; i++) {
-			collect_type_parameter_bindings(p_parameter_type.type_arguments[i], p_argument_type.type_arguments[i], r_bindings, r_conflicts);
-		}
-	}
 }
 
 bool FSAnalyzer::resolve_explicit_type_argument(FSParser::ExpressionNode *p_expression, FSParser::DataType &r_type_argument) {
@@ -11367,206 +11131,6 @@ bool FSAnalyzer::resolve_explicit_type_argument(FSParser::ExpressionNode *p_expr
 	}
 
 	return false;
-}
-
-static void collect_method_type_parameter_bounds(const FSParser::DataType &p_type, HashMap<StringName, FSParser::DataType> &r_bounds) {
-	if (p_type.kind == FSParser::DataType::TYPE_PARAMETER &&
-			p_type.type_parameter_scope == FSParser::DataType::TYPE_PARAMETER_METHOD &&
-			!p_type.type_parameter_bound.is_empty() && !r_bounds.has(p_type.type_parameter_name)) {
-		r_bounds.insert(p_type.type_parameter_name, p_type.type_parameter_bound[0]);
-	}
-	for (const FSParser::DataType &element : p_type.container_element_types) {
-		collect_method_type_parameter_bounds(element, r_bounds);
-	}
-	for (const FSParser::DataType &argument : p_type.type_arguments) {
-		collect_method_type_parameter_bounds(argument, r_bounds);
-	}
-}
-
-void FSAnalyzer::apply_generic_method_call(FSParser::CallNode *p_call, FSParser::FunctionNode *p_function,
-		List<FSParser::DataType> &r_par_types, FSParser::DataType &r_return_type) {
-	const Vector<FSParser::TypeParameterNode *> &type_parameters = p_function->type_parameters;
-	if (type_parameters.is_empty()) {
-		return;
-	}
-
-	// A parameter that cannot be solved falls back to Variant so the rest of the call stays
-	// type-checkable after the inference error is reported, without cascading "cannot infer" noise.
-	FSParser::DataType unresolved_fallback;
-	unresolved_fallback.kind = FSParser::DataType::VARIANT;
-	unresolved_fallback.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
-
-	HashMap<StringName, FSParser::DataType> bindings;
-	// Parameters that could not be solved (conflicting or unconstrained); their fallback Variant
-	// binding must not be re-reported as a bound violation.
-	HashSet<StringName> failed_parameters;
-
-	// Explicit type arguments (`swap[int](...)`) short-circuit inference.
-	bool explicit_application = false;
-	if (p_call->callee != nullptr && p_call->callee->type == FSParser::Node::SUBSCRIPT) {
-		FSParser::SubscriptNode *subscript = static_cast<FSParser::SubscriptNode *>(p_call->callee);
-		if (!subscript->is_attribute && subscript->index != nullptr) {
-			explicit_application = true;
-
-			Vector<FSParser::ExpressionNode *> argument_expressions;
-			if (subscript->type_arguments.is_empty()) {
-				argument_expressions.push_back(subscript->index);
-			} else {
-				argument_expressions = subscript->type_arguments;
-			}
-
-			// Resolve positionally: a failed argument keeps its slot (filled with the Variant
-			// fallback and flagged) so a later argument is never shifted into an earlier type
-			// parameter, and the arity check sees the count the user actually wrote.
-			Vector<FSParser::DataType> explicit_arguments;
-			Vector<bool> explicit_argument_failed;
-			for (FSParser::ExpressionNode *argument_expression : argument_expressions) {
-				FSParser::DataType type_argument;
-				if (resolve_explicit_type_argument(argument_expression, type_argument)) {
-					explicit_arguments.push_back(type_argument);
-					explicit_argument_failed.push_back(false);
-				} else {
-					push_error(vformat(R"*(Could not resolve the explicit type argument for generic method "%s()".)*", p_function->identifier->name), argument_expression);
-					explicit_arguments.push_back(unresolved_fallback);
-					explicit_argument_failed.push_back(true);
-				}
-			}
-
-			if (explicit_arguments.size() != type_parameters.size()) {
-				push_error(vformat(R"*(Generic method "%s()" expects %d type argument(s), but %d %s given.)*", p_function->identifier->name, type_parameters.size(), explicit_arguments.size(), explicit_arguments.size() == 1 ? "was" : "were"), subscript);
-				explicit_arguments.clear();
-				explicit_argument_failed.clear();
-			}
-
-			const int binding_count = MIN(explicit_arguments.size(), type_parameters.size());
-			for (int i = 0; i < binding_count; i++) {
-				const FSParser::TypeParameterNode *parameter = type_parameters[i];
-				if (parameter == nullptr || parameter->identifier == nullptr) {
-					continue;
-				}
-				bindings.insert(parameter->identifier->name, explicit_arguments[i]);
-				if (explicit_argument_failed[i]) {
-					// Resolution already failed and was reported; keep the slot bound to Variant and
-					// skip its bound check rather than re-diagnosing.
-					failed_parameters.insert(parameter->identifier->name);
-				}
-			}
-		}
-	}
-
-	// Solve any still-open parameters by unifying each argument against its declared type.
-	if (!explicit_application) {
-		HashSet<StringName> conflicts;
-		int parameter_index = 0;
-		for (const FSParser::DataType &declared_parameter_type : r_par_types) {
-			if (parameter_index >= p_call->arguments.size()) {
-				break;
-			}
-			// A default the analyzer synthesized for a skipped middle parameter must not constrain a
-			// type parameter, mirroring a trailing omitted default that never participates here.
-			if (p_call->synthesized_argument_indices.has(parameter_index)) {
-				parameter_index++;
-				continue;
-			}
-			const FSParser::ExpressionNode *argument = p_call->arguments[parameter_index];
-			if (argument != nullptr) {
-				collect_type_parameter_bindings(declared_parameter_type, argument->get_datatype(), bindings, conflicts);
-			}
-			parameter_index++;
-		}
-
-		for (const StringName &conflicted : conflicts) {
-			push_error(vformat(R"*(Could not infer type parameter "%s" of generic method "%s()" because its arguments have conflicting types. Apply the type arguments explicitly, e.g. "%s[...](...)".)*", conflicted, p_function->identifier->name, p_function->identifier->name), p_call);
-			// Keep the call type-checkable: an unresolved parameter falls back to Variant.
-			bindings.insert(conflicted, unresolved_fallback);
-			failed_parameters.insert(conflicted);
-		}
-	}
-
-	// Every parameter must end up bound. Under inference, a still-open parameter is one no
-	// argument constrained, which is an error directing the user to explicit application. Under
-	// explicit application a gap means resolution already failed and was reported above, so it
-	// just falls back without a second diagnostic.
-	for (const FSParser::TypeParameterNode *parameter : type_parameters) {
-		if (parameter == nullptr || parameter->identifier == nullptr) {
-			continue;
-		}
-		if (!bindings.has(parameter->identifier->name)) {
-			if (!explicit_application) {
-				push_error(vformat(R"*(Could not infer type parameter "%s" of generic method "%s()" from its arguments. Apply the type arguments explicitly, e.g. "%s[...](...)".)*", parameter->identifier->name, p_function->identifier->name, p_function->identifier->name), p_call);
-			}
-			bindings.insert(parameter->identifier->name, unresolved_fallback);
-			failed_parameters.insert(parameter->identifier->name);
-		}
-	}
-
-	if (bindings.is_empty()) {
-		return;
-	}
-
-	// A solved type argument (inferred or explicit) must satisfy its parameter's upper bound. A
-	// bound's resolved datatype is cached on its declaration once the parameter is used anywhere
-	// (signature or body); the signature traversal is a fallback for bounds reached only there.
-	HashMap<StringName, FSParser::DataType> parameter_bounds;
-	for (const FSParser::DataType &parameter_type : r_par_types) {
-		collect_method_type_parameter_bounds(parameter_type, parameter_bounds);
-	}
-	collect_method_type_parameter_bounds(r_return_type, parameter_bounds);
-	for (const FSParser::TypeParameterNode *parameter : type_parameters) {
-		if (parameter == nullptr || parameter->identifier == nullptr || parameter->bound == nullptr) {
-			continue;
-		}
-		// The bound collected from the (already receiver-specialized) signature wins; the raw
-		// declaration is only a fallback for a parameter whose bound is reached nowhere in the
-		// signature, so it must not overwrite the specialized one (e.g. `[U: T]` with `T := PackedScene`).
-		if (parameter_bounds.has(parameter->identifier->name)) {
-			continue;
-		}
-		const FSParser::DataType bound_type = parameter->bound->get_datatype();
-		if (bound_type.is_set() && bound_type.kind != FSParser::DataType::UNRESOLVED && bound_type.kind != FSParser::DataType::RESOLVING) {
-			parameter_bounds[parameter->identifier->name] = type_from_metatype(bound_type);
-		}
-	}
-
-	for (const FSParser::TypeParameterNode *parameter : type_parameters) {
-		if (parameter == nullptr || parameter->identifier == nullptr) {
-			continue;
-		}
-		const StringName &name = parameter->identifier->name;
-		if (failed_parameters.has(name)) {
-			continue;
-		}
-		const FSParser::DataType *binding = bindings.getptr(name);
-		const FSParser::DataType *bound = parameter_bounds.getptr(name);
-		if (binding == nullptr || bound == nullptr || bound->kind == FSParser::DataType::UNRESOLVED) {
-			continue;
-		}
-		// A dependent bound (`[U: Resource, T: U]`) is resolved against the sibling's solved type,
-		// so substitute the collected bindings into the bound before checking.
-		const FSParser::DataType effective_bound = FSParser::DataType::substitute(*bound, bindings);
-		if (!type_argument_satisfies_bound(*binding, effective_bound)) {
-			push_error(vformat(R"*(Type argument "%s" does not satisfy the bound "%s" of type parameter "%s" of generic method "%s()".)*", binding->to_string(), effective_bound.to_string(), name, p_function->identifier->name), p_call);
-		}
-	}
-
-	for (FSParser::DataType &parameter_type : r_par_types) {
-		parameter_type = FSParser::DataType::substitute(parameter_type, bindings);
-	}
-
-	// A typed-container return whose element involves a method type parameter (`-> Array[T]`) is erased
-	// at runtime: the method, compiled once, returns an untyped container. We still substitute the
-	// static type to the concrete container below, so flag the call here (before erasing the marker) so
-	// an assignment to a concrete typed container retypes the untyped runtime value.
-	if (p_call != nullptr) {
-		for (int i = 0; i < r_return_type.container_element_types.size(); i++) {
-			if (_signature_type_involves_type_parameter(r_return_type.container_element_types[i])) {
-				p_call->returns_erased_container = true;
-				break;
-			}
-		}
-	}
-
-	r_return_type = FSParser::DataType::substitute(r_return_type, bindings);
 }
 
 void FSAnalyzer::reduce_call_create_proxy(FSParser::CallNode *p_call, FSParser::SubscriptNode *p_callee) {
@@ -11735,49 +11299,6 @@ void FSAnalyzer::reduce_call_create_proxy(FSParser::CallNode *p_call, FSParser::
 	p_call->set_datatype(type_argument);
 }
 
-bool FSAnalyzer::callable_type_from_method(const FSParser::DataType &p_receiver_type, const StringName &p_method_name, FSParser::Node *p_source, FSParser::DataType &r_callable_type) {
-	FSParser::DataType return_type;
-	List<FSParser::DataType> parameter_types;
-	int default_arg_count = 0;
-	BitField<MethodFlags> method_flags = {};
-	if (!get_function_signature(p_source, false, p_receiver_type, p_method_name, return_type, parameter_types, default_arg_count, method_flags)) {
-		return false;
-	}
-
-	Vector<FSParser::DataType> parameter_type_vector;
-	for (const FSParser::DataType &parameter_type : parameter_types) {
-		parameter_type_vector.push_back(parameter_type);
-	}
-	r_callable_type = explicit_callable_type_from_signature(return_type, parameter_type_vector, default_arg_count, method_flags.has_flag(METHOD_FLAG_VARARG), method_flags.has_flag(METHOD_FLAG_ASYNC));
-	return true;
-}
-
-bool FSAnalyzer::callable_type_from_constant_method_args(const FSParser::CallNode *p_call, int p_receiver_arg_index, int p_method_arg_index, FSParser::DataType &r_callable_type) {
-	if (p_receiver_arg_index < 0 || p_receiver_arg_index >= p_call->arguments.size()) {
-		return false;
-	}
-
-	StringName method_name;
-	if (!string_name_from_constant_arg(p_call, p_method_arg_index, method_name)) {
-		return false;
-	}
-
-	return callable_type_from_method(p_call->arguments[p_receiver_arg_index]->get_datatype(), method_name, const_cast<FSParser::CallNode *>(p_call), r_callable_type);
-}
-
-void FSAnalyzer::validate_strict_callable_method_fallback(const FSParser::CallNode *p_call, const FSParser::DataType &p_receiver_type, int p_method_arg_index) {
-	if (!strict_dynamic_checks || p_call == nullptr || p_method_arg_index < 0 || p_method_arg_index >= p_call->arguments.size()) {
-		return;
-	}
-
-	StringName method_name;
-	if (string_name_from_constant_arg(p_call, p_method_arg_index, method_name)) {
-		push_error(vformat(R"*(Cannot resolve method "%s" on type "%s" for Callable construction in strict dynamic mode.)*", method_name, p_receiver_type.to_string()), p_call->arguments[p_method_arg_index]);
-	} else if (call_argument_can_be_string_name(p_call, p_method_arg_index)) {
-		push_error("Cannot use dynamic method name for Callable construction in strict dynamic mode.", p_call->arguments[p_method_arg_index]);
-	}
-}
-
 bool FSAnalyzer::is_node_compatible_type(const FSParser::DataType &p_type) const {
 	StringName native_type = p_type.native_type;
 
@@ -11939,835 +11460,6 @@ bool FSAnalyzer::property_type_from_indexed_receiver(const FSParser::DataType &p
 	}
 
 	return true;
-}
-
-FSParser::ArrayNode *FSAnalyzer::array_literal_argument(const FSParser::CallNode *p_call, int p_argument_index) const {
-	if (p_call == nullptr || p_argument_index < 0 || p_argument_index >= p_call->arguments.size()) {
-		return nullptr;
-	}
-
-	FSParser::ExpressionNode *argument = p_call->arguments[p_argument_index];
-	if (argument == nullptr || argument->type != FSParser::Node::ARRAY) {
-		return nullptr;
-	}
-
-	return static_cast<FSParser::ArrayNode *>(argument);
-}
-
-bool FSAnalyzer::call_has_named_arguments(const FSParser::CallNode *p_call) {
-	for (int i = 0; i < p_call->argument_names.size(); i++) {
-		if (p_call->argument_names[i] != StringName()) {
-			return true;
-		}
-	}
-	return false;
-}
-
-void FSAnalyzer::reject_named_call_arguments(const FSParser::CallNode *p_call) {
-	// Named arguments are resolved entirely at compile time against a statically known
-	// FoundryScript signature. For any other callee (builtin constructors, engine utility
-	// functions, native methods, or dynamic/`Callable` targets) the parameter names are
-	// unavailable, so reject them instead of silently dropping the names.
-	for (int i = 0; i < p_call->argument_names.size(); i++) {
-		if (p_call->argument_names[i] != StringName()) {
-			push_error("Named arguments require a statically known FoundryScript function.", p_call->arguments[i]);
-			return;
-		}
-	}
-}
-
-bool FSAnalyzer::canonicalize_named_call_arguments(FSParser::CallNode *p_call, const FSParser::FunctionNode *p_function) {
-	// The parser keeps `argument_names` parallel to `arguments`, with an empty name for each
-	// positional argument. Map every `name = value` argument to its parameter position, rewrite
-	// the call into canonical positional order, and clear the names so the rest of the analyzer,
-	// codegen, and the VM see an ordinary positional call.
-	if (p_call->argument_names.size() != p_call->arguments.size() || !call_has_named_arguments(p_call)) {
-		// Nothing to canonicalize; drop any (all-empty) name metadata for a clean positional call.
-		p_call->argument_names.clear();
-		return true;
-	}
-
-	const int parameter_count = p_function->parameters.size();
-	const StringName function_name = p_function->identifier != nullptr ? p_function->identifier->name : StringName();
-
-	// Rule: once a named argument appears, every following argument must be named.
-	int positional_count = 0;
-	bool seen_named = false;
-	for (int i = 0; i < p_call->arguments.size(); i++) {
-		const bool is_named = p_call->argument_names[i] != StringName();
-		if (is_named) {
-			seen_named = true;
-		} else if (seen_named) {
-			push_error("Positional argument cannot follow a named argument.", p_call->arguments[i]);
-			p_call->argument_names.clear();
-			return false;
-		} else {
-			positional_count++;
-		}
-	}
-
-	Vector<FSParser::ExpressionNode *> slots;
-	slots.resize(parameter_count);
-	for (int i = 0; i < parameter_count; i++) {
-		slots.write[i] = nullptr;
-	}
-
-	// Track the source (written) position of the argument occupying each slot so the canonical call
-	// can carry a source-order evaluation list for codegen. A slot left at -1 holds either nothing or
-	// a synthesized constant gap-fill, neither of which has an observable evaluation position.
-	Vector<int> slot_source_index;
-	slot_source_index.resize(parameter_count);
-	for (int i = 0; i < parameter_count; i++) {
-		slot_source_index.write[i] = -1;
-	}
-
-	// Positional arguments fill the leading parameter slots in order. Arguments beyond the fixed
-	// parameter count belong to a rest parameter and keep their order after the fixed slots.
-	Vector<FSParser::ExpressionNode *> rest_arguments;
-	Vector<int> rest_source_index;
-	for (int i = 0; i < positional_count; i++) {
-		if (i < parameter_count) {
-			slots.write[i] = p_call->arguments[i];
-			slot_source_index.write[i] = i;
-		} else {
-			rest_arguments.push_back(p_call->arguments[i]);
-			rest_source_index.push_back(i);
-		}
-	}
-
-	for (int i = positional_count; i < p_call->arguments.size(); i++) {
-		const StringName &argument_name = p_call->argument_names[i];
-		if (p_function->rest_parameter != nullptr && p_function->rest_parameter->identifier != nullptr && p_function->rest_parameter->identifier->name == argument_name) {
-			push_error(vformat(R"(The rest parameter "%s" cannot be passed by name.)", argument_name), p_call->arguments[i]);
-			p_call->argument_names.clear();
-			return false;
-		}
-		const int *parameter_index = p_function->parameters_indices.getptr(argument_name);
-		if (parameter_index == nullptr) {
-			push_error(vformat(R"*(Function "%s()" has no parameter named "%s".)*", function_name, argument_name), p_call->arguments[i]);
-			p_call->argument_names.clear();
-			return false;
-		}
-		if (slots[*parameter_index] != nullptr) {
-			push_error(vformat(R"(Parameter "%s" was specified more than once.)", argument_name), p_call->arguments[i]);
-			p_call->argument_names.clear();
-			return false;
-		}
-		slots.write[*parameter_index] = p_call->arguments[i];
-		slot_source_index.write[*parameter_index] = i;
-	}
-
-	int max_filled_index = -1;
-	for (int i = 0; i < parameter_count; i++) {
-		if (slots[i] != nullptr) {
-			max_filled_index = i;
-		}
-	}
-
-	// Every parameter slot a named call leaves empty must be resolved here. A required parameter with
-	// no value is a compile error named after the parameter. An omitted parameter before the last
-	// filled slot has no positional argument, so its constant default must be inlined at the call site
-	// to keep the canonical order correct; FoundryScript defaults run in the callee's scope and may
-	// reference `self`, members, or earlier parameters, so only a compile-time-constant default is
-	// safe to materialize here, and anything else is a compile error. A trailing omitted parameter is
-	// left out so the callee applies its own default at runtime, exactly as a positional call that
-	// omits trailing arguments would.
-	//
-	// The inlined value is the statically resolved callee's default, matching the rest of the
-	// feature's compile-time model (the call is also type-checked against that static signature), as
-	// C# resolves optional-argument defaults from the compile-time receiver type. If a subclass
-	// overrides the method with a different default, a base-typed receiver dispatched to that override
-	// still receives the static default rather than the override's. This is intended: a non-trailing
-	// gap can only be filled without an ABI change by inlining at the call site, while a trailing
-	// omission defers to the callee's runtime default mechanism, so the two paths necessarily diverge
-	// when an override changes a constant default. Honoring the runtime override here would require the
-	// presence-bitmask calling convention the feature explicitly rules out as a non-goal.
-	for (int i = 0; i < parameter_count; i++) {
-		if (slots[i] != nullptr) {
-			continue;
-		}
-
-		const FSParser::ParameterNode *parameter = p_function->parameters[i];
-		const StringName parameter_name = parameter->identifier != nullptr ? parameter->identifier->name : StringName();
-
-		if (parameter->initializer == nullptr) {
-			// A required parameter received no argument. Mirror the positional too-few-arguments error
-			// but name the specific parameter the named call left unfilled.
-			push_error(vformat(R"(Missing value for required parameter "%s".)", parameter_name), p_call);
-			p_call->argument_names.clear();
-			return false;
-		}
-
-		if (i >= max_filled_index) {
-			// Trailing optional parameter: leave it out so the callee supplies its own default.
-			continue;
-		}
-
-		// Interior gap with a default. The default must be materialized as a constant at the call
-		// site. A parameter whose type depends on a type parameter is still inlined here, but the
-		// synthesized argument is recorded so generic inference and post-substitution validation skip
-		// it: its type is substituted from the receiver's (or method's) type arguments, and a baked
-		// default must behave like a trailing omitted default, which never participates in either.
-		if (!parameter->initializer->is_constant) {
-			push_error(vformat(R"(Cannot skip parameter "%s": its default value is not a constant expression. Pass it explicitly.)", parameter_name), p_call);
-			p_call->argument_names.clear();
-			return false;
-		}
-
-		// Synthesize a constant argument from the parameter's default. Marking it constant routes it
-		// through the normal constant-argument path in `validate_call_arg`, which applies the same
-		// builtin-type conversion a written literal would receive. A class-metatype default (e.g.
-		// `cls = SomeClass`) carries the analyzer's reduced class object, which may be a shallow
-		// same-unit class; the compiler re-points it to the live compiled subclass when it lowers the
-		// synthesized literal, exactly as it does for class-constant identifiers and `const` aliases.
-		FSParser::LiteralNode *constant_argument = parser->alloc_node<FSParser::LiteralNode>();
-		constant_argument->value = parameter->initializer->reduced_value;
-		constant_argument->reduced = true;
-		constant_argument->is_constant = true;
-		constant_argument->reduced_value = parameter->initializer->reduced_value;
-		constant_argument->set_datatype(parameter->initializer->get_datatype());
-		slots.write[i] = constant_argument;
-		// Canonical order has no gaps below `max_filled_index`, so the canonical position of this
-		// synthesized argument equals its parameter index.
-		p_call->synthesized_argument_indices.insert(i);
-	}
-
-	Vector<FSParser::ExpressionNode *> canonical_arguments;
-	// Pair each canonical argument with the source position that determines its evaluation order.
-	// Real arguments use their written position; synthesized constant gap-fills carry no source
-	// position and are evaluated last (they have no side effects, so their order is irrelevant).
-	Vector<int> canonical_source_index;
-	for (int i = 0; i <= max_filled_index; i++) {
-		canonical_arguments.push_back(slots[i]);
-		canonical_source_index.push_back(slot_source_index[i]);
-	}
-	for (int i = 0; i < rest_arguments.size(); i++) {
-		canonical_arguments.push_back(rest_arguments[i]);
-		canonical_source_index.push_back(rest_source_index[i]);
-	}
-
-	// Build the source-order evaluation list: canonical indices sorted by written position, with the
-	// side-effect-free synthesized constants appended in canonical order. The compiler evaluates the
-	// argument expressions in this order while still binding them to parameters positionally, so a
-	// named call's side effects run left to right as written. Only record it when it differs from the
-	// canonical order; an identity permutation lets the compiler keep its default front-to-back walk.
-	Vector<int> evaluation_order;
-	bool reordered = false;
-	for (int source = 0; source < p_call->arguments.size(); source++) {
-		for (int canonical = 0; canonical < canonical_source_index.size(); canonical++) {
-			if (canonical_source_index[canonical] == source) {
-				if (canonical != evaluation_order.size()) {
-					reordered = true;
-				}
-				evaluation_order.push_back(canonical);
-				break;
-			}
-		}
-	}
-	for (int canonical = 0; canonical < canonical_source_index.size(); canonical++) {
-		if (canonical_source_index[canonical] == -1) {
-			if (canonical != evaluation_order.size()) {
-				reordered = true;
-			}
-			evaluation_order.push_back(canonical);
-		}
-	}
-
-	p_call->arguments = canonical_arguments;
-	p_call->argument_names.clear();
-	if (reordered) {
-		p_call->argument_evaluation_order = evaluation_order;
-	}
-	return true;
-}
-
-void FSAnalyzer::validate_call_arg(const MethodInfo &p_method, const FSParser::CallNode *p_call) {
-	List<FSParser::DataType> arg_types;
-
-	for (const PropertyInfo &E : p_method.arguments) {
-		arg_types.push_back(type_from_property(E, true));
-	}
-
-	// Cache the resolved parameter types for editor refactors (e.g. insert-explicit-cast),
-	// matching the user-function call path. The analyzer owns the parsed tree, so writing
-	// through the const handle is sound.
-	FSParser::CallNode *mutable_call = const_cast<FSParser::CallNode *>(p_call);
-	mutable_call->resolved_parameter_types.clear();
-	for (const FSParser::DataType &arg_type : arg_types) {
-		mutable_call->resolved_parameter_types.push_back(arg_type);
-	}
-
-	validate_call_arg(arg_types, p_method.default_arguments.size(), (p_method.flags & METHOD_FLAG_VARARG) != 0, p_call);
-}
-
-static bool _method_signature_accepts_argument_count(int p_argument_count, int p_parameter_count, int p_default_args_count, bool p_is_vararg, const Vector<int> &p_extra_allowed_argument_counts) {
-	const int min_argument_count = p_parameter_count - p_default_args_count;
-	if (p_argument_count >= min_argument_count && (p_is_vararg || p_argument_count <= p_parameter_count)) {
-		return true;
-	}
-
-	for (int extra_argument_count : p_extra_allowed_argument_counts) {
-		if (extra_argument_count == p_argument_count) {
-			return true;
-		}
-	}
-
-	return false;
-}
-
-String FSAnalyzer::make_invalid_argument_error(
-		const StringName &p_function,
-		int p_argument_number,
-		const FSParser::DataType &p_expected_type,
-		const FSParser::DataType &p_actual_type,
-		bool p_strict_dynamic_mismatch,
-		bool p_strict_nullable_mismatch,
-		const FSParser::Node *p_actual_node) const {
-	if (p_strict_dynamic_mismatch) {
-		return vformat(R"*(Cannot pass Variant value as argument %d of "%s()" in strict dynamic mode; expected "%s".)*",
-				p_argument_number,
-				p_function,
-				p_expected_type.to_string());
-	}
-	if (p_strict_nullable_mismatch) {
-		return vformat(R"*(Cannot pass nullable value of type "%s" as argument %d of "%s()"; expected non-nullable "%s".)*",
-				p_actual_type.to_string(),
-				p_argument_number,
-				p_function,
-				p_expected_type.to_string());
-	}
-	const String type_handle_error = _make_type_handle_argument_error(
-			p_function,
-			p_argument_number,
-			p_expected_type,
-			p_actual_type,
-			p_actual_node);
-	if (!type_handle_error.is_empty()) {
-		return type_handle_error;
-	}
-	return vformat(R"*(Invalid argument for "%s()" function: argument %d should be "%s" but is "%s".)*",
-			p_function,
-			p_argument_number,
-			p_expected_type.to_string(),
-			p_actual_type.to_string());
-}
-
-void FSAnalyzer::validate_call_arg(const List<FSParser::DataType> &p_par_types, int p_default_args_count, bool p_is_vararg, const FSParser::CallNode *p_call, const Vector<int> &p_extra_allowed_argument_counts, int p_trailing_unbound_argument_count) {
-	if (p_call->arguments.size() < p_par_types.size() - p_default_args_count && !_method_signature_accepts_argument_count(p_call->arguments.size(), p_par_types.size(), p_default_args_count, p_is_vararg, p_extra_allowed_argument_counts)) {
-		push_error(vformat(R"*(Too few arguments for "%s()" call. Expected at least %d but received %d.)*", p_call->function_name, p_par_types.size() - p_default_args_count, p_call->arguments.size()), p_call);
-	}
-	if (!p_is_vararg && p_call->arguments.size() > p_par_types.size() && !_method_signature_accepts_argument_count(p_call->arguments.size(), p_par_types.size(), p_default_args_count, p_is_vararg, p_extra_allowed_argument_counts)) {
-		push_error(vformat(R"*(Too many arguments for "%s()" call. Expected at most %d but received %d.)*", p_call->function_name, p_par_types.size(), p_call->arguments.size()), p_call->arguments[p_par_types.size()]);
-	}
-
-	List<FSParser::DataType>::ConstIterator par_itr = p_par_types.begin();
-	const int checked_argument_count = MAX(p_call->arguments.size() - p_trailing_unbound_argument_count, 0);
-	for (int i = 0; i < checked_argument_count; ++par_itr, ++i) {
-		if (i >= p_par_types.size()) {
-			// Already on vararg place.
-			break;
-		}
-		// A default the analyzer synthesized for a skipped middle parameter is not validated against
-		// the (possibly type-parameter-substituted) parameter type, mirroring a trailing omitted
-		// default the callee fills in itself. Its value was already coerced to the declared type when
-		// the parameter was resolved, so the baked constant matches the callee's runtime default.
-		if (p_call->synthesized_argument_indices.has(i)) {
-			continue;
-		}
-		FSParser::DataType par_type = *par_itr;
-
-		mark_coroutine_handle_capture(p_call->arguments[i], par_type);
-
-		if (par_type.is_hard_type() && p_call->arguments[i]->is_constant) {
-			update_const_expression_builtin_type(p_call->arguments[i], par_type, "pass");
-		}
-		FSParser::DataType arg_type = p_call->arguments[i]->get_datatype();
-
-		if (_datatype_contains_self_type_parameter(par_type)) {
-			if (!_datatype_matches_self_parameter_contract(par_type, arg_type) &&
-					!(_is_bare_self_value_parameter(par_type) && call_argument_is_same_receiver(p_call, p_call->arguments[i]))) {
-				push_error(make_invalid_argument_error(
-								   p_call->function_name,
-								   i + 1,
-								   par_type,
-								   arg_type,
-								   false,
-								   false,
-								   p_call->arguments[i]),
-						p_call->arguments[i]);
-			}
-			continue;
-		}
-
-		if (arg_type.is_variant() || !arg_type.is_hard_type()) {
-			if (arg_type.is_variant() && strict_dynamic_checks && !(par_type.is_hard_type() && par_type.is_variant())) {
-				push_error(make_invalid_argument_error(
-								   p_call->function_name,
-								   i + 1,
-								   par_type,
-								   arg_type,
-								   true,
-								   false,
-								   p_call->arguments[i]),
-						p_call->arguments[i]);
-			} else {
-#ifdef DEBUG_ENABLED
-				// Argument can be anything, so this is unsafe (unless the parameter is a hard variant).
-				if (!(par_type.is_hard_type() && par_type.is_variant())) {
-					mark_node_unsafe(p_call->arguments[i]);
-					parser->push_warning(p_call->arguments[i], FSWarning::UNSAFE_CALL_ARGUMENT, itos(i + 1), "function", p_call->function_name, par_type.to_string(), arg_type.to_string_strict());
-				}
-#endif // DEBUG_ENABLED
-			}
-		} else if (par_type.is_hard_type() && !is_type_compatible(par_type, arg_type, true)) {
-			const bool nullable_mismatch = strict_null_checks && arg_type.is_nullable && !par_type.is_nullable && !par_type.is_variant();
-			String type_handle_error;
-			if (!nullable_mismatch) {
-				type_handle_error = _make_type_handle_argument_error(
-						p_call->function_name,
-						i + 1,
-						par_type,
-						arg_type,
-						p_call->arguments[i]);
-			}
-			if (!type_handle_error.is_empty()) {
-				push_error(type_handle_error, p_call->arguments[i]);
-			} else if (nullable_mismatch || !is_type_compatible(arg_type, par_type)) {
-				push_error(make_invalid_argument_error(
-								   p_call->function_name,
-								   i + 1,
-								   par_type,
-								   arg_type,
-								   false,
-								   nullable_mismatch,
-								   p_call->arguments[i]),
-						p_call->arguments[i]);
-#ifdef DEBUG_ENABLED
-			} else {
-				// Supertypes are acceptable for dynamic compliance, but it's unsafe.
-				mark_node_unsafe(p_call);
-				parser->push_warning(p_call->arguments[i], FSWarning::UNSAFE_CALL_ARGUMENT, itos(i + 1), "function", p_call->function_name, par_type.to_string(), arg_type.to_string_strict());
-#endif // DEBUG_ENABLED
-			}
-#ifdef DEBUG_ENABLED
-		} else if (par_type.kind == FSParser::DataType::BUILTIN && par_type.builtin_type == Variant::INT && arg_type.kind == FSParser::DataType::BUILTIN && arg_type.builtin_type == Variant::FLOAT) {
-			parser->push_warning(p_call->arguments[i], FSWarning::NARROWING_CONVERSION, p_call->function_name);
-#endif // DEBUG_ENABLED
-		}
-	}
-}
-
-void FSAnalyzer::validate_callable_array_literal_args(const Vector<FSParser::DataType> &p_par_types, int p_default_args_count, bool p_is_vararg, FSParser::ArrayNode *p_array, const StringName &p_function, const Vector<int> &p_extra_allowed_argument_counts, int p_trailing_unbound_argument_count) {
-	if (p_array == nullptr) {
-		return;
-	}
-
-	if (p_array->elements.size() < p_par_types.size() - p_default_args_count && !_method_signature_accepts_argument_count(p_array->elements.size(), p_par_types.size(), p_default_args_count, p_is_vararg, p_extra_allowed_argument_counts)) {
-		push_error(vformat(R"*(Too few arguments for "%s()" call. Expected at least %d but received %d.)*", p_function, p_par_types.size() - p_default_args_count, p_array->elements.size()), p_array);
-	}
-	if (!p_is_vararg && p_array->elements.size() > p_par_types.size() && !_method_signature_accepts_argument_count(p_array->elements.size(), p_par_types.size(), p_default_args_count, p_is_vararg, p_extra_allowed_argument_counts)) {
-		push_error(vformat(R"*(Too many arguments for "%s()" call. Expected at most %d but received %d.)*", p_function, p_par_types.size(), p_array->elements.size()), p_array->elements[p_par_types.size()]);
-	}
-
-	const int checked_argument_count = MAX(p_array->elements.size() - p_trailing_unbound_argument_count, 0);
-	for (int i = 0; i < checked_argument_count; i++) {
-		if (i >= p_par_types.size()) {
-			break;
-		}
-
-		FSParser::ExpressionNode *argument = p_array->elements[i];
-		FSParser::DataType par_type = p_par_types[i];
-
-		mark_coroutine_handle_capture(argument, par_type);
-
-		if (par_type.is_hard_type() && argument->is_constant) {
-			update_const_expression_builtin_type(argument, par_type, "pass");
-		}
-		FSParser::DataType arg_type = argument->get_datatype();
-
-		if (_datatype_contains_self_type_parameter(par_type)) {
-			if (!_datatype_matches_self_parameter_contract(par_type, arg_type)) {
-				push_error(make_invalid_argument_error(p_function, i + 1, par_type, arg_type, false, false, argument), argument);
-			}
-			continue;
-		}
-
-		if (arg_type.is_variant() || !arg_type.is_hard_type()) {
-			if (arg_type.is_variant() && strict_dynamic_checks && !(par_type.is_hard_type() && par_type.is_variant())) {
-				push_error(make_invalid_argument_error(p_function, i + 1, par_type, arg_type, true, false, argument), argument);
-			} else {
-#ifdef DEBUG_ENABLED
-				if (!(par_type.is_hard_type() && par_type.is_variant())) {
-					mark_node_unsafe(argument);
-					parser->push_warning(argument, FSWarning::UNSAFE_CALL_ARGUMENT, itos(i + 1), "function", p_function, par_type.to_string(), arg_type.to_string_strict());
-				}
-#endif // DEBUG_ENABLED
-			}
-		} else if (par_type.is_hard_type() && !is_type_compatible(par_type, arg_type, true)) {
-			const bool nullable_mismatch = strict_null_checks && arg_type.is_nullable && !par_type.is_nullable && !par_type.is_variant();
-			String type_handle_error;
-			if (!nullable_mismatch) {
-				type_handle_error = _make_type_handle_argument_error(
-						p_function,
-						i + 1,
-						par_type,
-						arg_type,
-						argument);
-			}
-			if (!type_handle_error.is_empty()) {
-				push_error(type_handle_error, argument);
-			} else if (nullable_mismatch || !is_type_compatible(arg_type, par_type)) {
-				push_error(make_invalid_argument_error(
-								   p_function,
-								   i + 1,
-								   par_type,
-								   arg_type,
-								   false,
-								   nullable_mismatch,
-								   argument),
-						argument);
-#ifdef DEBUG_ENABLED
-			} else {
-				mark_node_unsafe(argument);
-				parser->push_warning(argument, FSWarning::UNSAFE_CALL_ARGUMENT, itos(i + 1), "function", p_function, par_type.to_string(), arg_type.to_string_strict());
-#endif // DEBUG_ENABLED
-			}
-#ifdef DEBUG_ENABLED
-		} else if (par_type.kind == FSParser::DataType::BUILTIN && par_type.builtin_type == Variant::INT && arg_type.kind == FSParser::DataType::BUILTIN && arg_type.builtin_type == Variant::FLOAT) {
-			parser->push_warning(argument, FSWarning::NARROWING_CONVERSION, p_function);
-#endif // DEBUG_ENABLED
-		}
-	}
-}
-
-FSParser::DataType FSAnalyzer::explicit_signal_type_from_info(const MethodInfo &p_info) const {
-	FSParser::DataType signal_type = make_signal_type(p_info);
-	signal_type.method_parameter_types.clear();
-	for (const PropertyInfo &argument : p_info.arguments) {
-		signal_type.method_parameter_types.push_back(type_from_property(argument, true));
-	}
-	signal_type.has_explicit_method_signature = true;
-	return signal_type;
-}
-
-FSParser::DataType FSAnalyzer::explicit_signal_type_from_node(const FSParser::SignalNode *p_signal) const {
-	FSParser::DataType signal_type = p_signal->get_datatype();
-	signal_type.method_parameter_types.clear();
-	for (FSParser::ParameterNode *parameter : p_signal->parameters) {
-		signal_type.method_parameter_types.push_back(parameter->get_datatype());
-	}
-	signal_type.has_method_signature = true;
-	signal_type.has_explicit_method_signature = true;
-	return signal_type;
-}
-
-bool FSAnalyzer::signal_name_from_constant_arg(const FSParser::CallNode *p_call, int p_signal_arg_index, StringName &r_signal_name) const {
-	if (p_signal_arg_index < 0 || p_signal_arg_index >= p_call->arguments.size()) {
-		return false;
-	}
-
-	const FSParser::ExpressionNode *signal_arg = p_call->arguments[p_signal_arg_index];
-	if (signal_arg == nullptr || !signal_arg->is_constant) {
-		return false;
-	}
-
-	const Variant signal_name_value = signal_arg->reduced_value;
-	if (signal_name_value.get_type() != Variant::STRING && signal_name_value.get_type() != Variant::STRING_NAME) {
-		return false;
-	}
-
-	r_signal_name = signal_name_value;
-	return true;
-}
-
-bool FSAnalyzer::signal_type_from_receiver(const FSParser::DataType &p_receiver_type, const FSParser::CallNode *p_call, int p_signal_arg_index, FSParser::DataType &r_signal_type) const {
-	if (p_receiver_type.kind == FSParser::DataType::CLASS) {
-		return signal_type_from_class_constant_arg(p_receiver_type.class_type, p_call, p_signal_arg_index, r_signal_type);
-	}
-	if (p_receiver_type.kind == FSParser::DataType::NATIVE) {
-		return signal_type_from_native_constant_arg(p_receiver_type.native_type, p_call, p_signal_arg_index, r_signal_type);
-	}
-	return false;
-}
-
-bool FSAnalyzer::signal_type_from_class_constant_arg(const FSParser::ClassNode *p_class, const FSParser::CallNode *p_call, int p_signal_arg_index, FSParser::DataType &r_signal_type) const {
-	if (p_class == nullptr) {
-		return false;
-	}
-
-	StringName signal_name;
-	if (!signal_name_from_constant_arg(p_call, p_signal_arg_index, signal_name)) {
-		return false;
-	}
-
-	for (const FSParser::ClassNode *class_node = p_class; class_node != nullptr;) {
-		if (class_node->has_member(signal_name)) {
-			const FSParser::ClassNode::Member &member = class_node->get_member(signal_name);
-			if (member.type != FSParser::ClassNode::Member::SIGNAL) {
-				return false;
-			}
-
-			r_signal_type = explicit_signal_type_from_node(member.signal);
-			return true;
-		}
-
-		if (class_node->base_type.kind == FSParser::DataType::CLASS) {
-			class_node = class_node->base_type.class_type;
-		} else if (class_node->base_type.kind == FSParser::DataType::NATIVE) {
-			return signal_type_from_native_constant_arg(class_node->base_type.native_type, p_call, p_signal_arg_index, r_signal_type);
-		} else {
-			class_node = nullptr;
-		}
-	}
-
-	return false;
-}
-
-bool FSAnalyzer::signal_type_from_native_constant_arg(const StringName &p_native_type, const FSParser::CallNode *p_call, int p_signal_arg_index, FSParser::DataType &r_signal_type) const {
-	if (p_native_type == StringName()) {
-		return false;
-	}
-
-	StringName signal_name;
-	if (!signal_name_from_constant_arg(p_call, p_signal_arg_index, signal_name)) {
-		return false;
-	}
-
-	MethodInfo signal_info;
-	if (!ClassDB::get_signal(p_native_type, signal_name, &signal_info)) {
-		return false;
-	}
-
-	r_signal_type = explicit_signal_type_from_info(signal_info);
-	return true;
-}
-
-bool FSAnalyzer::local_signal_type_from_constant_arg(const FSParser::CallNode *p_call, int p_signal_arg_index, FSParser::DataType &r_signal_type) const {
-	return signal_type_from_class_constant_arg(parser->current_class, p_call, p_signal_arg_index, r_signal_type);
-}
-
-void FSAnalyzer::validate_strict_signal_name_fallback(const FSParser::CallNode *p_call, const FSParser::DataType &p_receiver_type, int p_signal_arg_index) {
-	if (!strict_dynamic_checks || p_call == nullptr || p_signal_arg_index < 0 || p_signal_arg_index >= p_call->arguments.size()) {
-		return;
-	}
-
-	StringName signal_name;
-	if (signal_name_from_constant_arg(p_call, p_signal_arg_index, signal_name)) {
-		push_error(vformat(R"*(Cannot resolve signal "%s" on type "%s" for "%s()" in strict dynamic mode.)*",
-						   signal_name,
-						   p_receiver_type.to_string(),
-						   p_call->function_name),
-				p_call->arguments[p_signal_arg_index]);
-	} else if (call_argument_can_be_string_name(p_call, p_signal_arg_index)) {
-		push_error(vformat(R"*(Cannot use dynamic signal name for "%s()" on type "%s" in strict dynamic mode.)*",
-						   p_call->function_name,
-						   p_receiver_type.to_string()),
-				p_call->arguments[p_signal_arg_index]);
-	}
-}
-
-void FSAnalyzer::validate_signal_connect_arg(const FSParser::DataType &p_signal_type, const FSParser::CallNode *p_call, int p_callable_arg_index, bool p_require_explicit_signal) {
-	if ((p_call->function_name != SNAME("connect") && p_call->function_name != SNAME("disconnect") && p_call->function_name != SNAME("is_connected")) || p_callable_arg_index < 0 || p_callable_arg_index >= p_call->arguments.size()) {
-		return;
-	}
-	if (p_signal_type.kind != FSParser::DataType::BUILTIN || p_signal_type.builtin_type != Variant::SIGNAL || !p_signal_type.has_method_signature) {
-		return;
-	}
-	if (p_require_explicit_signal && !p_signal_type.has_explicit_method_signature) {
-		return;
-	}
-
-	const FSParser::DataType callable_type = p_call->arguments[p_callable_arg_index]->get_datatype();
-	Vector<FSParser::DataType> callable_parameter_types;
-	int callable_default_arg_count = 0;
-	bool callable_is_vararg = false;
-	if (!callable_signature_from_type(callable_type, callable_parameter_types, callable_default_arg_count, callable_is_vararg)) {
-		return;
-	}
-
-	const int signal_argument_count = p_signal_type.method_parameter_types.size();
-	const int callable_argument_count = callable_parameter_types.size();
-	const int callable_min_argument_count = callable_argument_count - callable_default_arg_count;
-	const StringName action_name = p_call->function_name == SNAME("disconnect") ? SNAME("disconnect") : (p_call->function_name == SNAME("is_connected") ? StringName("check connection for") : SNAME("connect"));
-	const String callable_type_string = callable_type_string_with_signature(callable_type, callable_parameter_types);
-	if (!_method_signature_accepts_argument_count(signal_argument_count, callable_argument_count, callable_default_arg_count, callable_is_vararg, callable_type.method_extra_allowed_argument_counts)) {
-		push_error(vformat(R"*(Cannot %s signal "%s" to callable "%s": signal emits %d arguments but callable expects %s%d.)*",
-						   action_name,
-						   p_signal_type.to_string(),
-						   callable_type_string,
-						   signal_argument_count,
-						   callable_default_arg_count > 0 ? "at least " : "",
-						   callable_default_arg_count > 0 ? callable_min_argument_count : callable_argument_count),
-				p_call->arguments[p_callable_arg_index]);
-		return;
-	}
-
-	FSTypeCompatibility::Options options;
-	options.allow_implicit_conversion = true;
-	options.strict_dynamic = true;
-	options.strict_null = strict_null_checks;
-
-	const int checked_signal_argument_count = MAX(signal_argument_count - callable_type.method_unbound_argument_count, 0);
-	for (int i = 0; i < checked_signal_argument_count && i < callable_argument_count; i++) {
-		const FSParser::DataType &callable_parameter_type = callable_parameter_types[i];
-		const FSParser::DataType &signal_parameter_type = p_signal_type.method_parameter_types[i];
-		const bool nullable_mismatch = strict_null_checks && signal_parameter_type.is_nullable && !callable_parameter_type.is_nullable && !callable_parameter_type.is_variant();
-		if (nullable_mismatch || !FSTypeCompatibility::check(callable_parameter_type, signal_parameter_type, options).compatible) {
-			if (nullable_mismatch) {
-				push_error(vformat("Cannot %s signal \"%s\" to callable \"%s\": signal argument %d is nullable "
-								   "type \"%s\", but callable parameter expects non-nullable \"%s\".",
-								   action_name,
-								   p_signal_type.to_string(),
-								   callable_type_string,
-								   i + 1,
-								   signal_parameter_type.to_string(),
-								   callable_parameter_type.to_string()),
-						p_call->arguments[p_callable_arg_index]);
-			} else {
-				push_error(vformat(R"*(Cannot %s signal "%s" to callable "%s": signal argument %d of type "%s" cannot be passed to callable parameter of type "%s".)*",
-								   action_name,
-								   p_signal_type.to_string(),
-								   callable_type_string,
-								   i + 1,
-								   signal_parameter_type.to_string(),
-								   callable_parameter_type.to_string()),
-						p_call->arguments[p_callable_arg_index]);
-			}
-			return;
-		}
-	}
-}
-
-void FSAnalyzer::validate_signal_emit_args(const FSParser::DataType &p_signal_type, const FSParser::CallNode *p_call, int p_first_emit_arg_index) {
-	if (p_signal_type.kind != FSParser::DataType::BUILTIN || p_signal_type.builtin_type != Variant::SIGNAL || !p_signal_type.has_method_signature) {
-		return;
-	}
-
-	const int signal_argument_count = p_signal_type.method_parameter_types.size();
-	const int emit_argument_count = p_call->arguments.size() - p_first_emit_arg_index;
-	if (emit_argument_count < signal_argument_count) {
-		push_error(vformat(R"*(Too few arguments for "%s()" call. Expected at least %d but received %d.)*", p_call->function_name, signal_argument_count + p_first_emit_arg_index, p_call->arguments.size()), p_call);
-		return;
-	}
-	if (emit_argument_count > signal_argument_count) {
-		push_error(vformat(R"*(Too many arguments for "%s()" call. Expected at most %d but received %d.)*", p_call->function_name, signal_argument_count + p_first_emit_arg_index, p_call->arguments.size()), p_call->arguments[signal_argument_count + p_first_emit_arg_index]);
-		return;
-	}
-
-	// Refine the per-payload parameter types cached for downstream call handling.
-	// The generic `Object.emit_signal` vararg signature recorded Variant payload slots; overwrite
-	// them with the resolved signal parameter types, aligned to the call's actual argument indices
-	// (the leading name argument occupies the slots before `p_first_emit_arg_index`). The analyzer
-	// owns the parsed tree, so writing through the const handle is sound.
-	FSParser::CallNode *mutable_call = const_cast<FSParser::CallNode *>(p_call);
-	if (mutable_call->resolved_parameter_types.size() < p_first_emit_arg_index + signal_argument_count) {
-		mutable_call->resolved_parameter_types.resize(p_first_emit_arg_index + signal_argument_count);
-	}
-	for (int i = 0; i < signal_argument_count; i++) {
-		mutable_call->resolved_parameter_types.write[p_first_emit_arg_index + i] = p_signal_type.method_parameter_types[i];
-	}
-
-	FSTypeCompatibility::Options options;
-	options.allow_implicit_conversion = true;
-	options.strict_dynamic = strict_dynamic_checks;
-	options.strict_null = strict_null_checks;
-
-	for (int i = 0; i < signal_argument_count; i++) {
-		const int emit_argument_index = p_first_emit_arg_index + i;
-		const FSParser::DataType &signal_parameter_type = p_signal_type.method_parameter_types[i];
-		const FSParser::DataType emit_argument_type = p_call->arguments[emit_argument_index]->get_datatype();
-
-		mark_coroutine_handle_capture(p_call->arguments[emit_argument_index], signal_parameter_type);
-
-		if (emit_argument_type.has_no_type()) {
-			mark_node_unsafe(p_call->arguments[emit_argument_index]);
-			continue;
-		}
-		if (emit_argument_type.is_variant() || !emit_argument_type.is_hard_type()) {
-			if (emit_argument_type.is_variant() && strict_dynamic_checks && !(signal_parameter_type.is_hard_type() && signal_parameter_type.is_variant())) {
-				push_error(make_invalid_argument_error(
-								   p_call->function_name,
-								   emit_argument_index + 1,
-								   signal_parameter_type,
-								   emit_argument_type,
-								   true,
-								   false,
-								   p_call->arguments[emit_argument_index]),
-						p_call->arguments[emit_argument_index]);
-			} else {
-				mark_node_unsafe(p_call->arguments[emit_argument_index]);
-			}
-			continue;
-		}
-
-		const bool nullable_mismatch = strict_null_checks && emit_argument_type.is_nullable && !signal_parameter_type.is_nullable && !signal_parameter_type.is_variant();
-		if (nullable_mismatch || !FSTypeCompatibility::check(signal_parameter_type, emit_argument_type, options).compatible) {
-			push_error(make_invalid_argument_error(
-							   p_call->function_name,
-							   emit_argument_index + 1,
-							   signal_parameter_type,
-							   emit_argument_type,
-							   false,
-							   nullable_mismatch,
-							   p_call->arguments[emit_argument_index]),
-					p_call->arguments[emit_argument_index]);
-			return;
-		}
-	}
-}
-
-void FSAnalyzer::validate_local_object_signal_callable_arg(const FSParser::CallNode *p_call, bool p_is_self) {
-	if (!p_is_self || (p_call->function_name != SNAME("connect") && p_call->function_name != SNAME("disconnect") && p_call->function_name != SNAME("is_connected")) || p_call->arguments.size() < 2) {
-		return;
-	}
-
-	FSParser::DataType signal_type;
-	if (!local_signal_type_from_constant_arg(p_call, 0, signal_type)) {
-		validate_strict_signal_name_fallback(p_call, parser->current_class->get_datatype(), 0);
-		return;
-	}
-
-	validate_signal_connect_arg(signal_type, p_call, 1, false);
-}
-
-void FSAnalyzer::validate_local_object_emit_signal_args(const FSParser::CallNode *p_call, bool p_is_self) {
-	if (!p_is_self || p_call->function_name != SNAME("emit_signal") || p_call->arguments.is_empty()) {
-		return;
-	}
-
-	FSParser::DataType signal_type;
-	if (!local_signal_type_from_constant_arg(p_call, 0, signal_type)) {
-		validate_strict_signal_name_fallback(p_call, parser->current_class->get_datatype(), 0);
-		return;
-	}
-
-	validate_signal_emit_args(signal_type, p_call, 1);
-}
-
-void FSAnalyzer::validate_typed_object_signal_api_args(const FSParser::DataType &p_base_type, const FSParser::CallNode *p_call, bool p_is_self) {
-	if (p_is_self) {
-		return;
-	}
-
-	if (p_call->function_name != SNAME("connect") && p_call->function_name != SNAME("disconnect") && p_call->function_name != SNAME("is_connected") && p_call->function_name != SNAME("emit_signal")) {
-		return;
-	}
-
-	if (p_base_type.kind != FSParser::DataType::CLASS && p_base_type.kind != FSParser::DataType::NATIVE) {
-		return;
-	}
-
-	FSParser::DataType signal_type;
-	if (!signal_type_from_receiver(p_base_type, p_call, 0, signal_type)) {
-		validate_strict_signal_name_fallback(p_call, p_base_type, 0);
-		return;
-	}
-
-	if (p_call->function_name == SNAME("emit_signal")) {
-		validate_signal_emit_args(signal_type, p_call, 1);
-	} else {
-		validate_signal_connect_arg(signal_type, p_call, 1, false);
-	}
 }
 
 #ifdef DEBUG_ENABLED
@@ -13163,10 +11855,44 @@ Error FSAnalyzer::analyze() {
 	return run_phase_final_diagnostics_and_dependencies();
 }
 
+bool FSAnalyzer::call_argument_is_same_receiver(const FSParser::CallNode *p_call, const FSParser::ExpressionNode *p_argument) const {
+	return ::call_argument_is_same_receiver(p_call, p_argument);
+}
+
+bool FSAnalyzer::datatype_contains_self_type_parameter(const FSParser::DataType &p_type) const {
+	return _datatype_contains_self_type_parameter(p_type);
+}
+
+bool FSAnalyzer::is_bare_self_value_parameter(const FSParser::DataType &p_type) const {
+	return _is_bare_self_value_parameter(p_type);
+}
+
+bool FSAnalyzer::datatype_matches_self_parameter_contract(const FSParser::DataType &p_expected_type, const FSParser::DataType &p_argument_type) const {
+	return _datatype_matches_self_parameter_contract(p_expected_type, p_argument_type);
+}
+
+String FSAnalyzer::make_type_handle_argument_error(
+		const StringName &p_function,
+		int p_argument_number,
+		const FSParser::DataType &p_expected_type,
+		const FSParser::DataType &p_actual_type,
+		const FSParser::Node *p_actual_node) const {
+	return _make_type_handle_argument_error(p_function, p_argument_number, p_expected_type, p_actual_type, p_actual_node);
+}
+
+void FSAnalyzer::mark_coroutine_handle_capture(FSParser::ExpressionNode *p_expression, const FSParser::DataType &p_target_type) {
+	::mark_coroutine_handle_capture(p_expression, p_target_type);
+}
+
+bool FSAnalyzer::signature_type_involves_type_parameter(const FSParser::DataType &p_type) const {
+	return _signature_type_involves_type_parameter(p_type);
+}
+
 FSAnalyzer::FSAnalyzer(FSParser *p_parser) :
 		parser(p_parser),
 		dependency_parser_access(this),
-		flow_finality(this) {
+		flow_finality(this),
+		call_site_validation(this) {
 	strict_null_checks = GLOBAL_GET_CACHED(bool, "debug/foundry_script/analysis/strict_null_checks");
 	strict_dynamic_checks = GLOBAL_GET_CACHED(bool, "debug/foundry_script/analysis/strict_dynamic_checks");
 }

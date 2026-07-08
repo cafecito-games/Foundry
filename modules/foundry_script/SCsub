@@ -17,6 +17,7 @@ frontend_sources = {
     "fs_analyzer_surface.cpp",
     "fs_analyzer_conformance.cpp",
     "fs_analyzer_flow_finality.cpp",
+    "fs_analyzer_call_validation.cpp",
     "fs_compiler.cpp",
     "fs_byte_codegen.cpp",
     "fs_warning.cpp",

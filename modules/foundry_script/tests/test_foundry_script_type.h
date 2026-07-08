@@ -191,6 +191,27 @@ static void check_source_error(
 	CHECK_EQ(errors[0], p_expected_error);
 }
 
+static void check_source_has_error(
+		const String &p_source,
+		const String &p_expected_error,
+		bool p_strict_null_checks = false,
+		bool p_strict_dynamic_checks = false) {
+	INFO(p_source);
+	PackedStringArray errors = analyze_source_errors(p_source, p_strict_null_checks, p_strict_dynamic_checks);
+	bool found = false;
+	String actual_errors;
+	for (int i = 0; i < errors.size(); i++) {
+		if (errors[i] == p_expected_error) {
+			found = true;
+		}
+		if (!actual_errors.is_empty()) {
+			actual_errors += "\n";
+		}
+		actual_errors += errors[i];
+	}
+	CHECK_MESSAGE(found, vformat("Expected error not found:\n%s\nActual errors:\n%s", p_expected_error, actual_errors));
+}
+
 static Error analyze_source_with_project_settings(const String &p_source) {
 	FSParser parser;
 	Error err = parser.parse(p_source, "user://test.fs", false);
@@ -1187,6 +1208,23 @@ TEST_CASE("[Modules][FoundryScript] Analyzer checks callable and signal signatur
 	CHECK(analyze_source("signal event(value: int)\nvar typed_event: Signal[[String]] = event\n") != OK);
 }
 
+TEST_CASE("[Modules][FoundryScript] Analyzer preserves named call argument validation diagnostics") {
+	const String source_prefix = "func combine(a: int, b: int = 10, c: int = 20) -> int:\n\treturn a + b + c\n"
+								 "func take_pair(first: int, second: String) -> void:\n\tpass\n"
+								 "func test() -> void:\n";
+
+	CHECK(analyze_source(source_prefix + "\tvar value: int = combine(c = 3, a = 1)\n") == OK);
+	CHECK(analyze_source(source_prefix + "\ttake_pair(second = \"ok\", first = 1)\n") == OK);
+	check_source_error(source_prefix + "\ttake_pair(first = 1, 2)\n",
+			"Positional argument cannot follow a named argument.");
+	check_source_error(source_prefix + "\ttake_pair(1, first = 2)\n",
+			R"(Parameter "first" was specified more than once.)");
+	check_source_error(source_prefix + "\ttake_pair(first = 1, first = 2)\n",
+			R"(Parameter "first" was specified more than once.)");
+	check_source_has_error(source_prefix + "\ttake_pair(second = 2, first = 1)\n",
+			R"*(Invalid argument for "take_pair()" function: argument 2 should be "String" but is "int".)*");
+}
+
 TEST_CASE("[Modules][FoundryScript] Analyzer preserves lambda callable signatures") {
 	CHECK(analyze_source("func test() -> void:\n\tvar callback: Callable[[int], bool] = func(value: int) -> bool:\n\t\treturn true\n") == OK);
 	CHECK(analyze_source("func test() -> void:\n\tvar callback: Callable[[int], bool] = func(value: String) -> bool:\n\t\treturn true\n") != OK);
@@ -1196,6 +1234,21 @@ TEST_CASE("[Modules][FoundryScript] Analyzer preserves lambda callable signature
 	CHECK(analyze_source("func make_callback() -> Callable[[int], bool]:\n\treturn func(value: int) -> bool:\n\t\treturn true\n") == OK);
 	CHECK(analyze_source("func make_callback() -> Callable[[int], bool]:\n\treturn func(value: String) -> bool:\n\t\treturn true\n") != OK);
 	CHECK(analyze_source("func make_callback() -> Callable[[int], bool]:\n\treturn func(value: int) -> String:\n\t\treturn \"ok\"\n") != OK);
+}
+
+TEST_CASE("[Modules][FoundryScript] Analyzer preserves callable argument validation diagnostics") {
+	const String source_prefix = "func accepts(value: int, text: String) -> bool:\n\treturn true\n"
+								 "func test() -> void:\n\tvar callback: Callable[[int, String], bool] = accepts\n";
+
+	CHECK(analyze_source(source_prefix + "\tvar result: bool = callback.call(1, \"ok\")\n") == OK);
+	check_source_has_error(source_prefix + "\tcallback.call(1, 2)\n",
+			R"*(Invalid argument for "call()" function: argument 2 should be "String" but is "int".)*");
+	check_source_error(source_prefix + "\tcallback.call(1)\n",
+			R"*(Too few arguments for "call()" call. Expected at least 2 but received 1.)*");
+	check_source_error(source_prefix + "\tcallback.call(1, \"ok\", false)\n",
+			R"*(Too many arguments for "call()" call. Expected at most 2 but received 3.)*");
+	check_source_has_error(source_prefix + "\tcallback.callv([1, 2])\n",
+			R"*(Invalid argument for "callv()" function: argument 2 should be "String" but is "int".)*");
 }
 
 TEST_CASE("[Modules][FoundryScript] Analyzer checks typed Callable.call invocations") {
@@ -1672,6 +1725,26 @@ TEST_CASE("[Modules][FoundryScript] Analyzer checks typed Signal.emit invocation
 	CHECK(analyze_source(inferred_source_prefix + "\ttyped_event.emit(\"legacy dynamic\")\n") == OK);
 }
 
+TEST_CASE("[Modules][FoundryScript] Analyzer preserves signal connect and emit validation diagnostics") {
+	const String source_prefix = "signal event(value: int)\n"
+								 "func accept_int(value: int) -> void:\n\tpass\n"
+								 "func accept_string(value: String) -> void:\n\tpass\n"
+								 "func accept_none() -> void:\n\tpass\n"
+								 "func test() -> void:\n\tvar typed_event: Signal[[int]] = event\n";
+
+	CHECK(analyze_source(source_prefix + "\ttyped_event.connect(accept_int)\n\ttyped_event.emit(1)\n") == OK);
+	check_source_error(source_prefix + "\ttyped_event.connect(accept_string)\n",
+			R"*(Cannot connect signal "Signal[[int]]" to callable "Callable[[String], void]": signal argument 1 of type "int" cannot be passed to callable parameter of type "String".)*");
+	check_source_error(source_prefix + "\ttyped_event.connect(accept_none)\n",
+			R"*(Cannot connect signal "Signal[[int]]" to callable "Callable": signal emits 1 arguments but callable expects 0.)*");
+	check_source_has_error(source_prefix + "\ttyped_event.emit(\"bad\")\n",
+			R"*(Invalid argument for "emit()" function: argument 1 should be "int" but is "String".)*");
+	check_source_error(source_prefix + "\ttyped_event.emit()\n",
+			R"*(Too few arguments for "emit()" call. Expected at least 1 but received 0.)*");
+	check_source_error(source_prefix + "\ttyped_event.emit(1, 2)\n",
+			R"*(Too many arguments for "emit()" call. Expected at most 1 but received 2.)*");
+}
+
 TEST_CASE("[Modules][FoundryScript] Analyzer checks typed Signal constructors from constant signal names") {
 	const String source_prefix = "class Emitter:\n\tsignal event(value: String)\nfunc accept_string(value: String) -> void:\n\tpass\nfunc accept_int(value: int) -> void:\n\tpass\nfunc test(emitter: Emitter, button: Button, signal_name: StringName) -> void:\n";
 
@@ -1713,6 +1786,26 @@ TEST_CASE("[Modules][FoundryScript] Analyzer rejects dynamic signal fallbacks in
 	CHECK(analyze_source(typed_source + "\tbutton.disconnect(\"unknown\", accept_string)\n", false, true) != OK);
 	CHECK(analyze_source(typed_source + "\tbutton.emit_signal(signal_name)\n", false, true) != OK);
 	CHECK(analyze_source(typed_source + "\tbutton.emit_signal(\"unknown\")\n", false, true) != OK);
+}
+
+TEST_CASE("[Modules][FoundryScript] Analyzer preserves strict callable and signal fallback diagnostics") {
+	const String callable_source_prefix = "class Worker:\n\tfunc run(value: int) -> void:\n\t\tpass\n"
+										  "func test(worker: Worker, method_name: StringName) -> void:\n";
+	const String signal_source_prefix = "class Emitter:\n\tsignal fired(value: int)\n"
+										"func test(emitter: Emitter, signal_name: StringName) -> void:\n";
+
+	check_source_error(callable_source_prefix + "\tCallable(worker, method_name)\n",
+			"Cannot use dynamic method name for Callable construction in strict dynamic mode.",
+			false, true);
+	check_source_error(callable_source_prefix + "\tCallable(worker, \"missing\")\n",
+			R"*(Cannot resolve method "missing" on type "Worker" for Callable construction in strict dynamic mode.)*",
+			false, true);
+	check_source_error(signal_source_prefix + "\tSignal(emitter, signal_name)\n",
+			R"*(Cannot use dynamic signal name for "Signal()" on type "Emitter" in strict dynamic mode.)*",
+			false, true);
+	check_source_error(signal_source_prefix + "\tSignal(emitter, \"missing\")\n",
+			R"*(Cannot resolve signal "missing" on type "Emitter" for "Signal()" in strict dynamic mode.)*",
+			false, true);
 }
 
 TEST_CASE("[Modules][FoundryScript] Analyzer preserves legacy callable and signal dynamics until strict dynamic is enabled") {
