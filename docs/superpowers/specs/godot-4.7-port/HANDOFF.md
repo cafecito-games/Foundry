@@ -56,10 +56,28 @@ Caveat: only macOS + shared code is compiled here, so android/windows/linux/iOS 
 tinyexr, dr_mp3, libjpeg-turbo, re-spirv×2, 2 SDL controller fixes). Of the 10 "conflicts":
 4 were already-satisfied (fork develop already at 4.7 for freetype/libpng×2/re-spirv);
 **Jolt bumped 5.4.0→5.5.0** via whole-dir checkout from `4.7-stable` + a 1-line wrapper
-adaptation (`InternalEdgeRemovingCollector` 2-arg ctor) — physics tests pass. **Deferred
-(port-later): glslang bump + PR 116419 (metal-cpp)** — 4.7's glslang/Metal state is coupled
-to the `metal-cpp` migration the fork has not done (metal-cpp is absent). See
+adaptation (`InternalEdgeRemovingCollector` 2-arg ctor) — physics tests pass. See
 `ported-log-depbump.json` for per-PR dispositions.
+
+**Wave 5 = metal-cpp + raytracing (RD) migration.** Ported the 4.7 Metal C++ migration
+(`metal-cpp` add → the Metal-4-ready C++ refactor → Metal fixes → SDK-linking / PR 116419) as a
+**10-commit chain** that also required the **RenderingDevice raytracing feature** it depends on
+(the 4.7 Metal driver overrides the base RD's pure-virtual raytracing API): `27e4f24800`
+raytracing initial → blas_create refactor → API adjustments → pipeline refactor → SBT
+alignment. The raytracing base auto-merged with only 2 conflicts (both the fork's clean-break
+removal of deprecated methods). Resolution recipe: drivers/metal + metal_fx are stock 4.6.3 +
+rebrand → take-theirs + `GODOT_MTL_/GODOT_CLANG_WARNING`→`FOUNDRY_*`; `register_server_types.cpp`
+keep `FOUNDRY_REGISTER_*` + add new class registrations; rendering_device.cpp/.h take-theirs per
+raytracing hunk; drop fork-removed deprecated docs. Fixed a mis-resolved dispose hunk (BufferID
+scratch buffer freed via the driver path, not `free_rid`) and `GODOT_VERSION_*`→`FOUNDRY_VERSION_*`.
+`dev_mode` -Werror needed metal-cpp added as a **system include** (`-isystem`) in both
+`drivers/metal/SCsub` and `servers/rendering/renderer_rd/effects/SCsub` (Apple's vendored headers
+trip `-Wshadow-field-in-constructor`/`-Wc99-designator`). Strict build clean, full suite 3016
+passed. Metal IS compiled on macOS, so this is fully build-verified. **Follow-up: the glslang
+version bump** (73-file vendored update to 4.7) + PR 116225 (Metal glslang memory-decorations
+fix, which depends on the newer glslang, not on metal-cpp). It needs a 3-way `modules/glslang`
+wrapper merge (4.7 changes + fork rebrand + fork `dev_mode` `-Wshadow` wraps + the raytracing
+shader stages already ported) — a bounded but dedicated dep-bump, deferred to keep this landing clean.
 
 ---
 
