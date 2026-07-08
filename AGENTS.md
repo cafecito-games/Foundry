@@ -63,6 +63,36 @@ The Foundry editor embeds a local MCP (Model Context Protocol) server that lets 
 - On startup the editor prints a machine-readable line to stdout: `FOUNDRY_AUTOMATION {"transport":"mcp","endpoint":"http://127.0.0.1:<port>/mcp","token":"...","local_only":true}`. Parse it for the endpoint and bearer token.
 - The transport is POST-only JSON-RPC 2.0 over HTTP. Every request needs `Authorization: Bearer <token>` and `Content-Type: application/json`. Start with an `initialize` request, then send `notifications/initialized`, then use `tools/call` and `resources/read`. There are no server-push notifications; poll `poll_events` for editor errors/warnings.
 
+### Agent tool bridge
+
+Prefer the stdio MCP bridge in `scripts/foundry_mcp_server.py` when an agent
+should use editor automation as normal tool calls. Register it once in Claude,
+Codex, Cursor, or another MCP-capable client, then use bridge tools such as
+`foundry_launch_editor`, `foundry_connect`, `foundry_observe_ui`,
+`foundry_find_elements`, `foundry_act`, and `foundry_wait_for`.
+
+Example Claude Code registration from the repo root:
+
+```sh
+claude mcp add foundry-editor -- python3 scripts/foundry_mcp_server.py
+```
+
+Example bridge workflow after registration:
+
+1. Call `foundry_launch_editor` with `project`, or call `foundry_connect` with
+   an existing automation `endpoint` and `token`. Include `binary` only when the
+   built `foundry` executable is not discoverable under `bin/foundry.*` in this
+   checkout or the parent checkout for `.worktrees/<name>` branches.
+2. Use `foundry_observe_ui` / `foundry_find_elements` to inspect the UI.
+3. Use `foundry_act` with a semantic selector.
+4. Use `foundry_wait_for` and `foundry_poll_events` instead of sleeping.
+5. Use `foundry_disconnect` when the workflow is complete.
+
+Use the lower-level Python client in `scripts/foundry_mcp/` only for checked-in
+scripts and tests that need direct process control. Do not write ad hoc `urllib`
+MCP clients in agent scratch files. For Claude, Codex, and Cursor configuration
+examples, see `docs/editor_automation_mcp_client.md`.
+
 ### Tools and typical loop
 
 `tools/list` returns full input/output schemas. The core loop is observe → select → act → wait:
