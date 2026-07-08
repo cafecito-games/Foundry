@@ -575,21 +575,21 @@ class EditorAutomationSnapshotBuilder {
 			_add_popup_menu_items(popup_menu, p_parent_index);
 		} else if (const MenuButton *menu_button = Object::cast_to<const MenuButton>(p_node)) {
 			// A MenuButton hosts its items in an attached (internal) PopupMenu.
-			// Expose those items as selectable virtual menu_item elements regardless
-			// of popup visibility so choose_menu_item/select can reach them without
-			// first synthesizing a popup open (which never happened on a plain
-			// semantic button click). Items resolve back through the popup's
-			// instance id, so activation works even while it is hidden. Skip this
-			// when the popup is both visible and walked as a real internal node
-			// (include_internal) to avoid emitting each item twice.
+			// Expose those items as selectable virtual menu_item elements while the
+			// popup is hidden so choose_menu_item/select can reach them without first
+			// synthesizing a popup open (which never happened on a plain semantic
+			// button click). Items resolve back through the popup's instance id, so
+			// activation works even while it is hidden. Once the popup is visible it is
+			// walked as a real menu node instead (see _add_node), so skip the virtual
+			// items then to avoid emitting each one twice.
 			//
-			// Limitation: menus populated only in about_to_popup (e.g. SceneTreeDock's
-			// options button) are empty until opened, so nothing is exposed here.
+			// Menus populated only in about_to_popup (e.g. SceneTreeDock's options
+			// button) are empty until opened, so nothing is exposed here while hidden.
 			// Emitting about_to_popup during a read-only snapshot would rebuild every
-			// menu on every observe_ui, so surfacing those is deferred to a follow-up
-			// (open-the-menu-then-capture) rather than mutating during observation.
+			// menu on every observe_ui; instead a semantic click opens the menu (which
+			// populates it) and the now-visible popup is captured as a real node.
 			if (PopupMenu *popup = const_cast<MenuButton *>(menu_button)->get_popup()) {
-				const bool walked_as_node = options.include_internal && popup->is_visible();
+				const bool walked_as_node = popup->is_visible();
 				if (!walked_as_node) {
 					// A disabled MenuButton cannot be opened by a user, so its commands
 					// are exposed as not enabled.
@@ -720,6 +720,21 @@ class EditorAutomationSnapshotBuilder {
 				_add_node(child_control, element_index, false, child_internal, child_relax, active_tile_id);
 			} else if (Window *child_window = Object::cast_to<Window>(child)) {
 				_add_node(child_window, element_index, false, child_internal, child_relax, active_tile_id);
+			}
+		}
+
+		// A MenuButton hosts its PopupMenu as an internal child, hidden by the default
+		// no-internal policy above. Once the menu is opened (e.g. a semantic click on
+		// the MenuButton), its popup is visible and its entries are freshly built, so
+		// walk it as a real menu node -- even without include_internal -- to surface
+		// those items. The include_internal path already walked it, so only add it
+		// here when it was skipped.
+		if (!include_internal) {
+			if (MenuButton *menu_button = Object::cast_to<MenuButton>(p_node)) {
+				PopupMenu *popup = menu_button->get_popup();
+				if (popup != nullptr && popup->is_visible() && !_should_skip_child(p_node, popup)) {
+					_add_node(popup, element_index, false, false, p_relax_visibility, active_tile_id);
+				}
 			}
 		}
 

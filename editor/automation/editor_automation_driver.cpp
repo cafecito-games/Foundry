@@ -347,6 +347,28 @@ EditorAutomationActionResult _action_focus(
 	return EditorAutomationActionResult::failure("unsupported_action", "Focus is only supported on focusable controls and windows.");
 }
 
+// Opening a MenuButton the way a user does. A MenuButton's popup is not shown by
+// the plain "pressed" signal, so a semantic click/activate could never open menus
+// whose entries are built lazily in about_to_popup (e.g. SceneTreeDock's options
+// button). show_popup() fires both the MenuButton and PopupMenu about_to_popup
+// signals -- populating those entries -- and leaves the menu open so a follow-up
+// observe_ui captures the freshly-built items as normal menu_item elements.
+EditorAutomationActionResult _open_menu_button_popup(
+		const EditorAutomationSnapshot &p_snapshot,
+		const EditorAutomationElement &p_element,
+		MenuButton *p_menu_button,
+		const char *p_route) {
+	if (p_menu_button->is_disabled()) {
+		// A user cannot open a disabled MenuButton, so its menu stays closed.
+		return EditorAutomationActionResult::failure("element_disabled", "The menu is disabled and cannot be opened.");
+	}
+	p_menu_button->show_popup();
+	EditorAutomationActionResult result = EditorAutomationActionResult::success(p_route, p_element.id);
+	result.events.push_back("popup_shown");
+	result.focus = _focused_element_id(p_snapshot);
+	return result;
+}
+
 EditorAutomationActionResult _action_click(
 		const EditorAutomationSnapshot &p_snapshot,
 		const EditorAutomationElement &p_element,
@@ -367,6 +389,11 @@ EditorAutomationActionResult _action_click(
 
 	if (try_semantic) {
 		PackedStringArray events;
+		if (MenuButton *menu_button = Object::cast_to<MenuButton>(node)) {
+			// A MenuButton's job is to open its menu, not to fire a "pressed" command,
+			// so a semantic click opens the popup instead of emitting pressed.
+			return _open_menu_button_popup(p_snapshot, p_element, menu_button, EditorAutomationActionRouteNames::SEMANTIC_CLICK);
+		}
 		if (BaseButton *button = Object::cast_to<BaseButton>(node)) {
 			if (_perform_semantic_click(button, events)) {
 				EditorAutomationActionResult result = EditorAutomationActionResult::success(EditorAutomationActionRouteNames::SEMANTIC_CLICK, p_element.id);
@@ -818,6 +845,12 @@ EditorAutomationActionResult _action_activate(
 	const EditorAutomationActionResult prepare_result = _prepare_element_for_input(p_snapshot, p_element, node);
 	if (!prepare_result.ok && prepare_result.kind == "window_focus_failed") {
 		return prepare_result;
+	}
+
+	if (MenuButton *menu_button = Object::cast_to<MenuButton>(node)) {
+		// A MenuButton opens its menu rather than firing a command, so activate opens
+		// the popup just as click does.
+		return _open_menu_button_popup(p_snapshot, p_element, menu_button, EditorAutomationActionRouteNames::SEMANTIC_ACTIVATE);
 	}
 
 	if (BaseButton *button = Object::cast_to<BaseButton>(node)) {
