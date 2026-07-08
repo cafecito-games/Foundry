@@ -34,7 +34,10 @@ jobs:
           - name: Template (target=template_release)
             cache-name: macos-template
             target: template_release
-            scons-flags: debug_symbols=no
+            # Export templates strip the Foundry Script front-end, which is
+            # incompatible with tests=yes (implied by dev_mode). Match the
+            # iOS/Web/Android template jobs and disable unit tests here.
+            scons-flags: debug_symbols=no tests=no
             bin: ./bin/foundry.macos.template_release.universal
 
     steps:
