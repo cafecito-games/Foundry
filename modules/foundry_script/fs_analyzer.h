@@ -196,6 +196,17 @@ private:
 		void complete();
 	};
 
+	// Restores `parser->current_class` on scope exit during conformance target/type-argument
+	// resolution and witness body analysis.
+	class ScopedCurrentClass {
+		FSAnalyzer *analyzer = nullptr;
+		FSParser::ClassNode *previous_class = nullptr;
+
+	public:
+		ScopedCurrentClass(FSAnalyzer *p_analyzer, FSParser::ClassNode *p_current_class);
+		~ScopedCurrentClass();
+	};
+
 	static const char *analyzer_phase_name(AnalyzerPhase p_phase);
 	static AnalyzerPhase analyzer_phase_predecessor(AnalyzerPhase p_phase);
 	void require_completed_analyzer_phase(AnalyzerPhase p_required_predecessor, AnalyzerPhase p_requested_phase) const;

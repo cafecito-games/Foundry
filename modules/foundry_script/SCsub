@@ -15,6 +15,7 @@ frontend_sources = {
     "fs_parser.cpp",
     "fs_analyzer.cpp",
     "fs_analyzer_surface.cpp",
+    "fs_analyzer_conformance.cpp",
     "fs_compiler.cpp",
     "fs_byte_codegen.cpp",
     "fs_warning.cpp",
