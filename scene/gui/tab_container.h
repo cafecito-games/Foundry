@@ -185,11 +185,6 @@ public:
 	void set_tabs_visible(bool p_visible);
 	bool are_tabs_visible() const;
 
-#ifndef DISABLE_DEPRECATED
-	void set_all_tabs_in_front(bool p_is_front);
-	bool is_all_tabs_in_front() const;
-#endif
-
 	void set_tab_title(int p_tab, const String &p_title);
 	String get_tab_title(int p_tab) const;
 

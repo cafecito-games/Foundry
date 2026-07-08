@@ -257,12 +257,6 @@ protected:
 
 	static void _bind_methods();
 
-#ifndef DISABLE_DEPRECATED
-	Vector<uint8_t> _save_exr_to_buffer_bind_compat_117800(bool p_grayscale = false) const;
-	Error _save_exr_bind_compat_117800(const String &p_path, bool p_grayscale = false) const;
-	static void _bind_compatibility_methods();
-#endif
-
 private:
 	Format format = FORMAT_L8;
 	Vector<uint8_t> data;

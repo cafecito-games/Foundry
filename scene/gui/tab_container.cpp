@@ -874,18 +874,6 @@ bool TabContainer::are_tabs_visible() const {
 	return tabs_visible;
 }
 
-#ifndef DISABLE_DEPRECATED
-void TabContainer::set_all_tabs_in_front(bool p_in_front) {
-	if (p_in_front) {
-		WARN_PRINT_ONCE("Due to internal changes, `all_tabs_in_front` doesn't do anything anymore, as they're always in front.");
-	}
-}
-
-bool TabContainer::is_all_tabs_in_front() const {
-	return false;
-}
-#endif
-
 void TabContainer::set_tab_title(int p_tab, const String &p_title) {
 	Control *child = get_tab_control(p_tab);
 	if (!child && !is_ready()) {
@@ -1224,10 +1212,6 @@ void TabContainer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_clip_tabs"), &TabContainer::get_clip_tabs);
 	ClassDB::bind_method(D_METHOD("set_tabs_visible", "visible"), &TabContainer::set_tabs_visible);
 	ClassDB::bind_method(D_METHOD("are_tabs_visible"), &TabContainer::are_tabs_visible);
-#ifndef DISABLE_DEPRECATED
-	ClassDB::bind_method(D_METHOD("set_all_tabs_in_front", "is_front"), &TabContainer::set_all_tabs_in_front);
-	ClassDB::bind_method(D_METHOD("is_all_tabs_in_front"), &TabContainer::is_all_tabs_in_front);
-#endif
 
 	ClassDB::bind_method(D_METHOD("set_tab_title", "tab_idx", "title"), &TabContainer::set_tab_title);
 	ClassDB::bind_method(D_METHOD("get_tab_title", "tab_idx"), &TabContainer::get_tab_title);
@@ -1276,9 +1260,6 @@ void TabContainer::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "tabs_position", PROPERTY_HINT_ENUM, "Top,Bottom"), "set_tabs_position", "get_tabs_position");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "clip_tabs"), "set_clip_tabs", "get_clip_tabs");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "tabs_visible"), "set_tabs_visible", "are_tabs_visible");
-#ifndef DISABLE_DEPRECATED
-	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "all_tabs_in_front", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NONE), "set_all_tabs_in_front", "is_all_tabs_in_front");
-#endif
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "switch_on_drag_hover"), "set_switch_on_drag_hover", "get_switch_on_drag_hover");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "drag_to_rearrange_enabled"), "set_drag_to_rearrange_enabled", "get_drag_to_rearrange_enabled");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "tabs_rearrange_group"), "set_tabs_rearrange_group", "get_tabs_rearrange_group");
