@@ -1540,7 +1540,7 @@
 			The path to the text editor executable used to edit text files if [member text_editor/external/use_external_editor] is [code]true[/code].
 		</member>
 		<member name="text_editor/external/use_external_editor" type="bool" setter="" getter="">
-			If [code]true[/code], uses an external editor instead of the built-in Script Editor. See also [member text_editor/external/exec_path] and [member text_editor/external/exec_flags].
+			If [code]true[/code], uses an external editor instead of the internal Script Editor. See also [member text_editor/external/exec_path] and [member text_editor/external/exec_flags].
 		</member>
 		<member name="text_editor/help/class_reference_examples" type="int" setter="" getter="">
 			Controls which multi-line code blocks should be displayed in the editor help. This setting does not affect single-line code literals in the editor help.

@@ -454,8 +454,8 @@ TEST_CASE("[workspace-tab] help-tab-topic-class-key") {
 	CHECK(HelpTabType::class_key_for_topic("class_method:Node2D:queue_free") == "Node2D");
 	CHECK(HelpTabType::class_key_for_topic("class_signal:Node2D:renamed") == "Node2D");
 	CHECK(HelpTabType::class_key_for_topic("").is_empty());
-	// A built-in script class name keeps its '::' so nested pages do not collide
-	// under the wrong key.
+	// A nested class name keeps its '::' so help pages do not collide under the
+	// wrong key.
 	CHECK(HelpTabType::class_key_for_topic("Outer::Inner") == "Outer::Inner");
 	CHECK(HelpTabType::class_key_for_topic("class_method:Outer::Inner:foo") == "Outer::Inner");
 }
