@@ -243,6 +243,7 @@ private:
 	static _FORCE_INLINE_ bool has_member_name_conflict_in_script_class(const StringName &p_name, const FSParser::ClassNode *p_current_class_node, const FSParser::Node *p_member);
 	static _FORCE_INLINE_ bool has_member_name_conflict_in_native_type(const StringName &p_name, const StringName &p_native_type_string);
 	Error check_native_member_name_conflict(const StringName &p_member_name, const FSParser::Node *p_member_node, const StringName &p_native_type_string);
+	Error check_outer_class_member_name_conflict(const FSParser::ClassNode *p_class_node, const StringName &p_member_name, const FSParser::Node *p_member_node);
 	Error check_class_member_name_conflict(const FSParser::ClassNode *p_class_node, const StringName &p_member_name, const FSParser::Node *p_member_node);
 
 	void get_class_node_current_scope_classes(FSParser::ClassNode *p_node, List<FSParser::ClassNode *> *p_list, FSParser::Node *p_source);

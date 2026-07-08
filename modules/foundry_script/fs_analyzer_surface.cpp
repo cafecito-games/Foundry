@@ -175,6 +175,24 @@ bool FSAnalyzer::has_member_name_conflict_in_script_class(const StringName &p_me
 	return false;
 }
 
+static bool _member_is_visible_outer_class_surface(const FSParser::ClassNode::Member &p_member) {
+	switch (p_member.type) {
+		case FSParser::ClassNode::Member::CONSTANT:
+		case FSParser::ClassNode::Member::ENUM:
+		case FSParser::ClassNode::Member::ENUM_VALUE:
+		case FSParser::ClassNode::Member::CLASS:
+			return true;
+		case FSParser::ClassNode::Member::VARIABLE:
+		case FSParser::ClassNode::Member::FUNCTION:
+		case FSParser::ClassNode::Member::SIGNAL:
+		case FSParser::ClassNode::Member::GROUP:
+		case FSParser::ClassNode::Member::UNDEFINED:
+			return false;
+	}
+
+	return false;
+}
+
 bool FSAnalyzer::has_member_name_conflict_in_native_type(const StringName &p_member_name, const StringName &p_native_type_string) {
 	if (ClassDB::has_signal(p_native_type_string, p_member_name)) {
 		return true;
@@ -211,8 +229,47 @@ Error FSAnalyzer::check_native_member_name_conflict(const StringName &p_member_n
 	return OK;
 }
 
+Error FSAnalyzer::check_outer_class_member_name_conflict(const FSParser::ClassNode *p_class_node, const StringName &p_member_name, const FSParser::Node *p_member_node) {
+	if (p_class_node->outer == nullptr) {
+		return OK;
+	}
+
+	// Match class-scope lookup order for the lexical outer portion only: an outer class, its script
+	// bases, then the next lexical outer class. Outer static variables/functions are intentionally
+	// excluded because bare lookup does not expose them from inner classes today.
+	List<FSParser::ClassNode *> outer_scope_classes;
+	get_class_node_current_scope_classes(p_class_node->outer, &outer_scope_classes, const_cast<FSParser::Node *>(p_member_node));
+
+	for (FSParser::ClassNode *outer_class_node : outer_scope_classes) {
+		if (outer_class_node == nullptr) {
+			continue;
+		}
+
+		if (outer_class_node->identifier != nullptr && outer_class_node->identifier->name == p_member_name) {
+			push_error(vformat(R"(The member "%s" already exists in outer class %s.)", p_member_name, _class_or_trait_name(outer_class_node)), p_member_node);
+			return ERR_PARSE_ERROR;
+		}
+
+		if (!outer_class_node->members_indices.has(p_member_name)) {
+			continue;
+		}
+
+		const int member_index = outer_class_node->members_indices[p_member_name];
+		const FSParser::ClassNode::Member &outer_member = outer_class_node->members[member_index];
+		if (!_member_is_visible_outer_class_surface(outer_member)) {
+			continue;
+		}
+
+		if (has_member_name_conflict_in_script_class(p_member_name, outer_class_node, p_member_node)) {
+			push_error(vformat(R"(The member "%s" already exists in outer class %s.)", p_member_name, _class_or_trait_name(outer_class_node)), p_member_node);
+			return ERR_PARSE_ERROR;
+		}
+	}
+
+	return OK;
+}
+
 Error FSAnalyzer::check_class_member_name_conflict(const FSParser::ClassNode *p_class_node, const StringName &p_member_name, const FSParser::Node *p_member_node) {
-	// TODO check outer classes for static members only
 	const FSParser::DataType *current_data_type = &p_class_node->base_type;
 	while (current_data_type && current_data_type->kind == FSParser::DataType::Kind::CLASS) {
 		FSParser::ClassNode *current_class_node = current_data_type->class_type;
@@ -230,14 +287,17 @@ Error FSAnalyzer::check_class_member_name_conflict(const FSParser::ClassNode *p_
 	// No need for native class recursion because Node exposes all Object's properties.
 	if (current_data_type && current_data_type->kind == FSParser::DataType::Kind::NATIVE) {
 		if (current_data_type->native_type != StringName()) {
-			return check_native_member_name_conflict(
+			const Error err = check_native_member_name_conflict(
 					p_member_name,
 					p_member_node,
 					current_data_type->native_type);
+			if (err != OK) {
+				return err;
+			}
 		}
 	}
 
-	return OK;
+	return check_outer_class_member_name_conflict(p_class_node, p_member_name, p_member_node);
 }
 
 void FSAnalyzer::get_class_node_current_scope_classes(FSParser::ClassNode *p_node, List<FSParser::ClassNode *> *p_list, FSParser::Node *p_source) {
@@ -1124,6 +1184,7 @@ void FSAnalyzer::resolve_class_member(FSParser::ClassNode *p_class, int p_index,
 				}
 			} break;
 			case FSParser::ClassNode::Member::FUNCTION:
+				check_outer_class_member_name_conflict(p_class, member.function->identifier->name, member.function);
 				for (FSParser::AnnotationNode *&E : member.function->annotations) {
 					resolve_annotation(E, FSParser::AnnotationDeclarationNode::TARGET_METHOD);
 					E->apply(parser, member.function, p_class);
