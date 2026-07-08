@@ -6,6 +6,14 @@ Import("env_modules")
 
 env_jolt = env_modules.Clone()
 
+# Jolt's vendored headers (e.g. the non-SIMD fallback in Jolt/Math/BVec16.inl on
+# arm32) are included into the module translation units and use constructs that
+# trip the fork's -Wshadow family under -Werror on some architectures. Upstream
+# Jolt is not written to the fork's shadow standard, so suppress those warnings
+# for the Jolt module compilation (clang/gcc only; MSVC lacks these flags).
+if not env.msvc:
+    env_jolt.Append(CCFLAGS=["-Wno-shadow", "-Wno-shadow-uncaptured-local", "-Wno-shadow-field-in-constructor"])
+
 # Platform specific flags.
 if env["platform"] == "web" and env["wasm_simd"]:
     # Enable SSE 4.2 so that WebAssembly SIMD can benefit from it.
