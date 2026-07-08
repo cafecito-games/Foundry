@@ -8,7 +8,7 @@ permissions:
   actions: read
   contents: read
   issues: write
-  pull-requests: read
+  pull-requests: write
 
 jobs:
   preflight:
@@ -78,22 +78,33 @@ jobs:
             --pr-number "$PR_NUMBER" \
             --head-sha "$HEAD_SHA"
 
+  notify:
+    name: Acknowledge request
+    needs: preflight
+    if: ${{ needs.preflight.outputs.requested == 'true' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout workflow helpers
+        uses: actions/checkout@v6
+
       - name: Comment on unauthorized request
-        if: ${{ steps.plan.outputs.requested == 'true' && steps.plan.outputs.authorized != 'true' }}
+        if: ${{ needs.preflight.outputs.authorized != 'true' }}
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.issue.number }}
+          PR_NUMBER: ${{ needs.preflight.outputs.pr_number }}
         run: |
           gh issue comment "$PR_NUMBER" \
             --body "I can only run every-platform checks for comments from users with write access or higher."
 
       - name: Comment on accepted request
-        if: ${{ steps.plan.outputs.requested == 'true' && steps.plan.outputs.authorized == 'true' }}
+        if: ${{ needs.preflight.outputs.authorized == 'true' }}
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.issue.number }}
-          PLATFORMS_LABEL: ${{ steps.plan.outputs.platforms_label }}
-          SHORT_SHA: ${{ steps.plan.outputs.pr_short_sha }}
+          PR_NUMBER: ${{ needs.preflight.outputs.pr_number }}
+          PLATFORMS_LABEL: ${{ needs.preflight.outputs.platforms_label }}
+          SHORT_SHA: ${{ needs.preflight.outputs.pr_short_sha }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           cat > /tmp/pr-platform-check-comment.md <<EOF
@@ -106,7 +117,7 @@ jobs:
   linux:
     name: Linux
     needs: preflight
-    if: ${{ needs.preflight.outputs.run_linux == 'true' }}
+    if: ${{ needs.preflight.outputs.authorized == 'true' && needs.preflight.outputs.run_linux == 'true' }}
     concurrency:
       group: pr-every-platform-linux-${{ needs.preflight.outputs.pr_head_sha }}
       cancel-in-progress: false
@@ -117,7 +128,7 @@ jobs:
   macos:
     name: macOS
     needs: preflight
-    if: ${{ needs.preflight.outputs.run_macos == 'true' }}
+    if: ${{ needs.preflight.outputs.authorized == 'true' && needs.preflight.outputs.run_macos == 'true' }}
     concurrency:
       group: pr-every-platform-macos-${{ needs.preflight.outputs.pr_head_sha }}
       cancel-in-progress: false
@@ -128,7 +139,7 @@ jobs:
   windows:
     name: Windows
     needs: preflight
-    if: ${{ needs.preflight.outputs.run_windows == 'true' }}
+    if: ${{ needs.preflight.outputs.authorized == 'true' && needs.preflight.outputs.run_windows == 'true' }}
     concurrency:
       group: pr-every-platform-windows-${{ needs.preflight.outputs.pr_head_sha }}
       cancel-in-progress: false
@@ -139,7 +150,7 @@ jobs:
   android:
     name: Android
     needs: preflight
-    if: ${{ needs.preflight.outputs.run_android == 'true' }}
+    if: ${{ needs.preflight.outputs.authorized == 'true' && needs.preflight.outputs.run_android == 'true' }}
     concurrency:
       group: pr-every-platform-android-${{ needs.preflight.outputs.pr_head_sha }}
       cancel-in-progress: false
@@ -150,7 +161,7 @@ jobs:
   ios:
     name: iOS
     needs: preflight
-    if: ${{ needs.preflight.outputs.run_ios == 'true' }}
+    if: ${{ needs.preflight.outputs.authorized == 'true' && needs.preflight.outputs.run_ios == 'true' }}
     concurrency:
       group: pr-every-platform-ios-${{ needs.preflight.outputs.pr_head_sha }}
       cancel-in-progress: false
@@ -161,7 +172,7 @@ jobs:
   web:
     name: Web
     needs: preflight
-    if: ${{ needs.preflight.outputs.run_web == 'true' }}
+    if: ${{ needs.preflight.outputs.authorized == 'true' && needs.preflight.outputs.run_web == 'true' }}
     concurrency:
       group: pr-every-platform-web-${{ needs.preflight.outputs.pr_head_sha }}
       cancel-in-progress: false
@@ -193,7 +204,11 @@ jobs:
       web: ${{ needs.web.result }}
       run_web: ${{ needs.preflight.outputs.run_web }}
     steps:
+      - name: Checkout workflow helpers
+        uses: actions/checkout@v6
+
       - name: Comment on platform check result
+        continue-on-error: true
         run: |
           failed=()
           for platform in linux macos windows android ios web; do
