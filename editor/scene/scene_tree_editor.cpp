@@ -375,7 +375,7 @@ void SceneTreeEditor::_update_node_subtree(Node *p_node, TreeItem *p_parent, boo
 
 	_update_node(p_node, item, part_of_subscene);
 	I->value.dirty = false;
-	I->value.can_process = p_node->can_process();
+	I->value.can_process = is_scene_tree_dock && p_node->can_process();
 
 	// Force update all our children if we are new or if we were forced to update.
 	bool force_update_children = p_force || is_new;
@@ -499,7 +499,7 @@ void SceneTreeEditor::_update_node(Node *p_node, TreeItem *p_item, bool p_part_o
 		p_item->set_text(0, node_name);
 		p_item->set_selectable(0, marked_selectable);
 		_set_item_custom_color(p_item, get_theme_color(SNAME("accent_color"), EditorStringName(Editor)));
-	} else if (!p_node->can_process()) {
+	} else if (is_scene_tree_dock && !p_node->can_process()) {
 		_set_item_custom_color(p_item, get_theme_color(SNAME("font_disabled_color"), EditorStringName(Editor)));
 	} else if (!marked_selectable && !marked_children_selectable) {
 		Node *node = p_node;
@@ -1123,11 +1123,13 @@ bool SceneTreeEditor::_update_filter(TreeItem *p_parent, bool p_scroll_to_select
 		p_parent->set_visible(!hide_filtered_out_parents || is_root);
 
 		if (!p_parent->is_visible()) {
+			TreeItem *candidate_sibling = p_parent;
 			TreeItem *filtered_parent = p_parent->get_parent();
 			while (filtered_parent) {
 				if (filtered_parent == tree->get_root() || (filtered_parent->is_selectable(0) && filtered_parent->is_visible())) {
 					break;
 				}
+				candidate_sibling = filtered_parent;
 				filtered_parent = filtered_parent->get_parent();
 			}
 
@@ -1138,10 +1140,8 @@ bool SceneTreeEditor::_update_filter(TreeItem *p_parent, bool p_scroll_to_select
 
 					p_parent->remove_child(ti);
 					filtered_parent->add_child(ti);
-					TreeItem *prev = p_parent->get_prev();
-					if (prev) {
-						ti->move_after(prev);
-					}
+					ti->move_after(candidate_sibling);
+					candidate_sibling = ti;
 
 					if (is_selected) {
 						ti->select(0);
@@ -1969,6 +1969,11 @@ bool SceneTreeEditor::_is_script_type(const StringName &p_type) const {
 	return (script_types->has(p_type));
 }
 
+bool SceneTreeEditor::_has_drop_selection(TreeItem *p_item, const Point2 &p_point) const {
+	int section = (p_point == Vector2(Math::INF, Math::INF)) ? tree->get_drop_section_at_position(tree->get_item_rect(p_item).position) : tree->get_drop_section_at_position(p_point);
+	return !(section < -1 || (section == -1 && !p_item->get_parent()));
+}
+
 bool SceneTreeEditor::can_drop_data_fw(const Point2 &p_point, const Variant &p_data, Control *p_from) const {
 	if (!can_rename) {
 		return false; // Not editable tree.
@@ -1989,11 +1994,6 @@ bool SceneTreeEditor::can_drop_data_fw(const Point2 &p_point, const Variant &p_d
 		return false;
 	}
 
-	int section = (p_point == Vector2(Math::INF, Math::INF)) ? tree->get_drop_section_at_position(tree->get_item_rect(item).position) : tree->get_drop_section_at_position(p_point);
-	if (section < -1 || (section == -1 && !item->get_parent())) {
-		return false;
-	}
-
 	if (String(d["type"]) == "files") {
 		Vector<String> files = d["files"];
 
@@ -2003,7 +2003,7 @@ bool SceneTreeEditor::can_drop_data_fw(const Point2 &p_point, const Variant &p_d
 
 		if (_is_script_type(EditorFileSystem::get_singleton()->get_file_type(files[0]))) {
 			tree->set_drop_mode_flags(Tree::DROP_MODE_ON_ITEM);
-			return true;
+			return _has_drop_selection(item, p_point);
 		}
 
 		bool scene_drop = true;
@@ -2020,7 +2020,7 @@ bool SceneTreeEditor::can_drop_data_fw(const Point2 &p_point, const Variant &p_d
 
 		if (scene_drop) {
 			tree->set_drop_mode_flags(Tree::DROP_MODE_INBETWEEN | Tree::DROP_MODE_ON_ITEM);
-			return true;
+			return _has_drop_selection(item, p_point);
 		}
 
 		if (audio_drop) {
@@ -2029,15 +2029,14 @@ bool SceneTreeEditor::can_drop_data_fw(const Point2 &p_point, const Variant &p_d
 			} else {
 				tree->set_drop_mode_flags(Tree::DROP_MODE_INBETWEEN | Tree::DROP_MODE_ON_ITEM);
 			}
-			return true;
+			return _has_drop_selection(item, p_point);
 		}
 
 		if (files.size() > 1) {
 			return false;
 		}
 		tree->set_drop_mode_flags(Tree::DROP_MODE_ON_ITEM);
-
-		return true;
+		return _has_drop_selection(item, p_point);
 	}
 
 	if (String(d["type"]) == "script_list_element") {
@@ -2046,7 +2045,7 @@ bool SceneTreeEditor::can_drop_data_fw(const Point2 &p_point, const Variant &p_d
 			String sp = se->get_edited_resource()->get_path();
 			if (_is_script_type(EditorFileSystem::get_singleton()->get_file_type(sp))) {
 				tree->set_drop_mode_flags(Tree::DROP_MODE_ON_ITEM);
-				return true;
+				return _has_drop_selection(item, p_point);
 			}
 		}
 	}
@@ -2066,7 +2065,7 @@ bool SceneTreeEditor::can_drop_data_fw(const Point2 &p_point, const Variant &p_d
 			}
 		}
 
-		return true;
+		return _has_drop_selection(item, p_point);
 	}
 
 	return false;

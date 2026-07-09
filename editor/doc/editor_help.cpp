@@ -2904,6 +2904,7 @@ static void _add_text_to_rt(const String &p_bbcode, RichTextLabel *p_rt, const C
 			p_rt->push_font(doc_code_font);
 			p_rt->push_font_size(doc_code_font_size);
 			p_rt->push_table(2);
+			p_rt->set_table_column_expand(0, true, 1, false);
 
 			p_rt->push_cell();
 			p_rt->set_cell_row_background_color(code_bg_color, Color(code_bg_color, 0.99));
@@ -2940,7 +2941,7 @@ static void _add_text_to_rt(const String &p_bbcode, RichTextLabel *p_rt, const C
 			p_rt->set_cell_padding(Rect2(0, 10 * EDSCALE, 0, 10 * EDSCALE));
 			p_rt->set_cell_size_override(Vector2(1, 1), Vector2(10, 10) * EDSCALE);
 			p_rt->push_meta("^" + codeblock_copy_text, RichTextLabel::META_UNDERLINE_ON_HOVER);
-			p_rt->add_image(p_owner_node->get_editor_theme_icon(SNAME("ActionCopy")), 24 * EDSCALE, 24 * EDSCALE, Color(link_property_color, 0.3), INLINE_ALIGNMENT_BOTTOM_TO, Rect2(), Variant(), false, TTR("Click to copy."));
+			p_rt->add_image(p_owner_node->get_editor_theme_icon(SNAME("ActionCopy")), 24 * EDSCALE, 24 * EDSCALE, Color(link_property_color, 0.5), INLINE_ALIGNMENT_BOTTOM_TO, Rect2(), Variant(), false, TTR("Click to copy."));
 			p_rt->pop(); // meta
 			p_rt->pop(); // cell
 
@@ -4500,6 +4501,7 @@ void EditorHelpBit::_meta_clicked(const String &p_select) {
 		OS::get_singleton()->shell_open(p_select);
 	} else if (p_select.begins_with("^")) { // Copy button.
 		DisplayServer::get_singleton()->clipboard_set(p_select.substr(1));
+		EditorToaster::get_singleton()->popup_str(TTR("Code snippet copied to clipboard."), EditorToaster::SEVERITY_INFO);
 	}
 }
 

@@ -1,0 +1,527 @@
+[
+ {
+  "pr": "120261",
+  "sha": "d2102acab6bfc6e6e0840f9f79eca73cd10e7c80",
+  "title": "EditorPropertyArray clipping fix",
+  "subsystem": "editor/inspector",
+  "nfiles": 1
+ },
+ {
+  "pr": "120006",
+  "sha": "070dc9897ea1b84ab2a7ec04b9bc1b94f38a0eaf",
+  "title": "Disable navigation gizmo by default for Desktop platforms",
+  "subsystem": "editor/settings",
+  "nfiles": 1
+ },
+ {
+  "pr": "119890",
+  "sha": "1abed4c810dd2e170f2e75abc5189eeaf91fdab7",
+  "title": "Enable `touch_dragger` in `ExportTemplateManager` on touchscreen devices",
+  "subsystem": "editor/export",
+  "nfiles": 2
+ },
+ {
+  "pr": "119497",
+  "sha": "d569fcf207aea355ea9d0822255ad490945f5572",
+  "title": "Editor UI: Hide AudioStream filename in the inspector if it's width is negative or zero",
+  "subsystem": "editor/inspector",
+  "nfiles": 1
+ },
+ {
+  "pr": "119823",
+  "sha": "076428bdb80f72fc3f62f7c955c91f49f7017a08",
+  "title": "Disable version list while downloading template",
+  "subsystem": "editor/export",
+  "nfiles": 1
+ },
+ {
+  "pr": "119854",
+  "sha": "468534bf0a4263d3a635301037bd952f9f35b572",
+  "title": "Text fixes in template manager",
+  "subsystem": "editor/export",
+  "nfiles": 1
+ },
+ {
+  "pr": "119558",
+  "sha": "1f020a6c4f9bf2719e5f2c85056c0fd819b5a100",
+  "title": "Use `TTRC()` instead of `TTR()` in the project export dialog",
+  "subsystem": "editor/export",
+  "nfiles": 2
+ },
+ {
+  "pr": "119583",
+  "sha": "c79f191ee92120054516a98a64d34d6d3032a404",
+  "title": "Do not use cache for icon/splash during export.",
+  "subsystem": "editor/export",
+  "nfiles": 1
+ },
+ {
+  "pr": "119555",
+  "sha": "3dc4e1ef7a1cb00d2d4caf6b3f2cde3450661207",
+  "title": "Remove \"*.json\" as a example of non-resource in the export dialog",
+  "subsystem": "editor/export",
+  "nfiles": 1
+ },
+ {
+  "pr": "119396",
+  "sha": "321b8c944fa32ee94eef44a56925105d7091be03",
+  "title": "[Accessibility] Do not set duplicate values for editor inspector elements.",
+  "subsystem": "editor/inspector",
+  "nfiles": 1
+ },
+ {
+  "pr": "119175",
+  "sha": "1c517ea6de113a264421f0d32686ff3a820e9e01",
+  "title": "Don't allow empty strings when splitting `base_directory_path` string",
+  "subsystem": "editor/gui",
+  "nfiles": 1
+ },
+ {
+  "pr": "119314",
+  "sha": "b2c99dab4753d4b56032070ffc7b97f9c1bf0caf",
+  "title": "Add copy/paste icons to `EditorResourcePicker`",
+  "subsystem": "editor/inspector",
+  "nfiles": 1
+ },
+ {
+  "pr": "119385",
+  "sha": "2a03590eaf57b7af7fcf614b35e664c522a9675b",
+  "title": "Improve explanation for offline mode in export template manager",
+  "subsystem": "editor/export",
+  "nfiles": 2
+ },
+ {
+  "pr": "119154",
+  "sha": "1f012286cf9321b2209259539d1e638dac4eed73",
+  "title": "Only focus the shader editor when directly opened",
+  "subsystem": "editor/inspector",
+  "nfiles": 7
+ },
+ {
+  "pr": "118868",
+  "sha": "bc6610d735fe0925676fdae5ae36be17820f0fcb",
+  "title": "In editor properties, capitalize \"androidxr\" as \"AndroidXR\" (with uppercase \"XR\")",
+  "subsystem": "editor/inspector",
+  "nfiles": 1
+ },
+ {
+  "pr": "118649",
+  "sha": "11203a733995c8cb28c07bccece077a7f21ab6e6",
+  "title": "Re-add support for installing templates from TPZ",
+  "subsystem": "editor/export",
+  "nfiles": 2
+ },
+ {
+  "pr": "118800",
+  "sha": "acad86698f5beb59bea9025941a9832dcf29ceaa",
+  "title": "Do not use empty string as editor locale.",
+  "subsystem": "editor/settings",
+  "nfiles": 1
+ },
+ {
+  "pr": "118413",
+  "sha": "2aa39f0d742609b21cff96e5eb07de1f09620b36",
+  "title": "Add search bar for the resource and variant popups in the inspector",
+  "subsystem": "editor/gui",
+  "nfiles": 2
+ },
+ {
+  "pr": "118751",
+  "sha": "abd4a0613e6a83143f8bbd361f09a7f2b1e0c6cc",
+  "title": "Remove the separate \"Android Source\" group in  ExportTemplateManager",
+  "subsystem": "editor/export",
+  "nfiles": 2
+ },
+ {
+  "pr": "118725",
+  "sha": "a5fa0c920a6bb1107d2095eb823906b91604d337",
+  "title": "Remove StyleBox hack from template manager",
+  "subsystem": "editor/export",
+  "nfiles": 2
+ },
+ {
+  "pr": "118710",
+  "sha": "450fb9b8e3e9b500f425fc4e3ca686e5aa4db7ac",
+  "title": "Add a button to delete all installed templates",
+  "subsystem": "editor/export",
+  "nfiles": 2
+ },
+ {
+  "pr": "118614",
+  "sha": "12a980d13d0af70fcf5c10257d606b2cd6dab5a4",
+  "title": "Restore inspector context menu for dictionary elements.",
+  "subsystem": "editor/inspector",
+  "nfiles": 2
+ },
+ {
+  "pr": "117072",
+  "sha": "e5d0a8d814d6f5e3ab66fcb0c918617886e5f88b",
+  "title": "Rework export template dialog to allow individual templates",
+  "subsystem": "editor/export",
+  "nfiles": 3
+ },
+ {
+  "pr": "111011",
+  "sha": "03cef2a0ca553ea9fac0a1fd83153fe8f32195f8",
+  "title": "Improve Move/Duplicate dialog",
+  "subsystem": "editor/gui",
+  "nfiles": 3
+ },
+ {
+  "pr": "118564",
+  "sha": "a33f4855f8c418ece4631dc2ac4977b25e1ad75f",
+  "title": "[iOS] Do not escape name in `pbxproj`.",
+  "subsystem": "editor/export",
+  "nfiles": 1
+ },
+ {
+  "pr": "118487",
+  "sha": "c36827986d91b151b6b835b2129eb3acca3f37e4",
+  "title": "Export: Always include global script cache file",
+  "subsystem": "editor/export",
+  "nfiles": 1
+ },
+ {
+  "pr": "118301",
+  "sha": "8462ad479d84628cf32a9b2497ad2f28a3d6e507",
+  "title": "Expose new `create_default_inspector` method for `EditorInspector`",
+  "subsystem": "editor/inspector",
+  "nfiles": 4
+ },
+ {
+  "pr": "118187",
+  "sha": "7c5ca4442bb370ce87548b2b9c54d3295748fb30",
+  "title": "Add `ContextMenuSlot::CONTEXT_SLOT_INSPECTOR_PROPERTY` to EditorContextMenuPlugin",
+  "subsystem": "editor/inspector",
+  "nfiles": 4
+ },
+ {
+  "pr": "118169",
+  "sha": "2efa9d3bceb0234e1a70ef8b1cb6b548c14aade7",
+  "title": "Add \"Build C# project\" to command palette",
+  "subsystem": "editor/settings",
+  "nfiles": 2
+ },
+ {
+  "pr": "118008",
+  "sha": "46c55c83ba59702f3c115bc9b5ab06ac7e4e91d3",
+  "title": "Increase available space for array properties",
+  "subsystem": "editor/inspector",
+  "nfiles": 3
+ },
+ {
+  "pr": "118096",
+  "sha": "33536fbe1187664c0cea9c3066b6d3978e2b0fc8",
+  "title": "Android: Add missing set_restart_if_changed for haptic_on_long_press",
+  "subsystem": "editor/settings",
+  "nfiles": 1
+ },
+ {
+  "pr": "118117",
+  "sha": "40a377e4343ed69167257d78edaabcbf995159ae",
+  "title": "Removed dead code",
+  "subsystem": "editor/inspector",
+  "nfiles": 2
+ },
+ {
+  "pr": "117633",
+  "sha": "0df88c38e13b3281e50facb08decdd456c16c213",
+  "title": "Allow searching editor shortcuts by path",
+  "subsystem": "editor/settings",
+  "nfiles": 2
+ },
+ {
+  "pr": "117463",
+  "sha": "a53c795c78674758ae7301de6a6fc3da9f9e63a2",
+  "title": "Expand inspector sections while searching",
+  "subsystem": "editor/inspector",
+  "nfiles": 1
+ },
+ {
+  "pr": "118063",
+  "sha": "ab23d15e17c3453684a9aea98ebac7872d902451",
+  "title": "Allow viewing GDExtensions from inside project settings",
+  "subsystem": "editor/settings",
+  "nfiles": 6
+ },
+ {
+  "pr": "117998",
+  "sha": "bbf8e2653cac044f85b3bb41508073be13f78732",
+  "title": "Rework copy-pasting section/category values",
+  "subsystem": "editor/inspector",
+  "nfiles": 2
+ },
+ {
+  "pr": "117893",
+  "sha": "c3049ea727a80ab3737d9b097260ab740225e5ab",
+  "title": "Remove \"ID\" from Object ID display",
+  "subsystem": "editor/inspector",
+  "nfiles": 1
+ },
+ {
+  "pr": "117808",
+  "sha": "d46ba38387decd37cd0f1a19b3e3d35da8b3adc4",
+  "title": "Default multi-node property revert to node revert",
+  "subsystem": "editor/inspector",
+  "nfiles": 1
+ },
+ {
+  "pr": "112736",
+  "sha": "623b85922166e2aa0460eabb70364fd5b6c1dc66",
+  "title": "Switch Quick Open dialog quickly via shortcuts",
+  "subsystem": "editor/gui",
+  "nfiles": 3
+ },
+ {
+  "pr": "117707",
+  "sha": "bfc504a0cc14dea48665a97daf7f93bc0a03257a",
+  "title": "Add progress indicator for background template download",
+  "subsystem": "editor/gui",
+  "nfiles": 4
+ },
+ {
+  "pr": "117692",
+  "sha": "3fe52f554de24b1f7f29cf473816cb9be994a0d9",
+  "title": "Add a revert button to `EditorInspectorSection`",
+  "subsystem": "editor/inspector",
+  "nfiles": 2
+ },
+ {
+  "pr": "117688",
+  "sha": "6bc2cf8d6ae8c644b8a1d23b3f264eb67f949840",
+  "title": "Ask before quitting when templates are downloading",
+  "subsystem": "editor/export",
+  "nfiles": 4
+ },
+ {
+  "pr": "117600",
+  "sha": "41c856ab42428a9d56d95e6fef9841de0b172eb7",
+  "title": "Improve inspector clipboard",
+  "subsystem": "editor/inspector",
+  "nfiles": 2
+ },
+ {
+  "pr": "117659",
+  "sha": "a1c0ffaf706bbc4749114c91a439e3bc957b165f",
+  "title": "Disable the \"Edit\"/\"Clear\"/\"Save\" menu item when the `EditorResourcePicker` is `force_allow_unique`",
+  "subsystem": "editor/inspector",
+  "nfiles": 1
+ },
+ {
+  "pr": "117477",
+  "sha": "6782fe44c23209b6f302037bfdd3f16dc4520735",
+  "title": "Build profile: only allow classes derived from `Resource` and `Node` to be disabled",
+  "subsystem": "editor/settings",
+  "nfiles": 1
+ },
+ {
+  "pr": "115462",
+  "sha": "256da15c7deae2ac0dfa45b9ee8d7a87fcabf19b",
+  "title": "Add a way to clear the cache for the build profile generator",
+  "subsystem": "editor/settings",
+  "nfiles": 2
+ },
+ {
+  "pr": "116179",
+  "sha": "fb48c47320f7866a9d9f89c8493acc1c58ae8d1d",
+  "title": "Add background panels to the trees in the export dialog",
+  "subsystem": "editor/export",
+  "nfiles": 1
+ },
+ {
+  "pr": "117392",
+  "sha": "4cdc711201fcb0b1419f1ca95854fc8b53745e94",
+  "title": "Move the definition of `open_search` shortcut earlier",
+  "subsystem": "editor/settings",
+  "nfiles": 3
+ },
+ {
+  "pr": "116625",
+  "sha": "b8c9400c63957911a782cd3f15fef13a7b09ec0b",
+  "title": "Add enter and escape shortcuts in input map editor",
+  "subsystem": "editor/settings",
+  "nfiles": 2
+ },
+ {
+  "pr": "117228",
+  "sha": "642056ad824e6246fad22ba83327ab8ab1d37a02",
+  "title": "Remove restart requirement for `interface/touchscreen/enable_touch_optimizations` setting",
+  "subsystem": "editor/settings",
+  "nfiles": 8
+ },
+ {
+  "pr": "114406",
+  "sha": "27ff328ef79ed45c06f742b035d1b2e7b2a57e85",
+  "title": "Improve generic quick open title",
+  "subsystem": "editor/gui",
+  "nfiles": 1
+ },
+ {
+  "pr": "91124",
+  "sha": "b12b7bc622308c272fec74af2602229f4da0f743",
+  "title": "Revamp autoload creation",
+  "subsystem": "editor/settings",
+  "nfiles": 5
+ },
+ {
+  "pr": "116714",
+  "sha": "bba2e018bd038ce21af2566751a486e69f57d64a",
+  "title": "Add `end_generate_apple_embedded_project` export plugin method for iOS projects.",
+  "subsystem": "editor/export",
+  "nfiles": 4
+ },
+ {
+  "pr": "115822",
+  "sha": "afdd7afb6d14bb9fbac9edfa74130992784c81ab",
+  "title": "Don't allow duplicate events in input actions editor",
+  "subsystem": "editor/settings",
+  "nfiles": 3
+ },
+ {
+  "pr": "115978",
+  "sha": "3862d8704fb55d92c6ff99330765e7680a570b0c",
+  "title": "Allow the bottom panel to be pinned when closed",
+  "subsystem": "editor/gui",
+  "nfiles": 1
+ },
+ {
+  "pr": "111469",
+  "sha": "0848acfe4be64c27599974b23e628861133fe34d",
+  "title": "Add support for copy/paste of section/category properties",
+  "subsystem": "editor/inspector",
+  "nfiles": 3
+ },
+ {
+  "pr": "116624",
+  "sha": "c948ff1be6c37e225b642e859cb94656138c1150",
+  "title": "Add smooth to the changing of properties values in visual shader",
+  "subsystem": "editor/inspector",
+  "nfiles": 10
+ },
+ {
+  "pr": "116475",
+  "sha": "4dca1eae4246412a41970026c0c2596448cd1505",
+  "title": "Evaluate empty EditorSpinSliders to 0",
+  "subsystem": "editor/gui",
+  "nfiles": 1
+ },
+ {
+  "pr": "116400",
+  "sha": "726de897d080a00adb4d7571ce90c6f06a93df10",
+  "title": "Restore `interface/editor/code_font_custom_variations` functionality.",
+  "subsystem": "editor/gui",
+  "nfiles": 2
+ },
+ {
+  "pr": "101769",
+  "sha": "16b7047677a51c6af906a8fe648b8d0c7085471c",
+  "title": "Don't update inspector when invisible",
+  "subsystem": "editor/inspector",
+  "nfiles": 1
+ },
+ {
+  "pr": "89748",
+  "sha": "7b089a98d9fc204e0ef2ffdf7e0d66c72ca7e7ad",
+  "title": "Remove redundant grabbing code from vector editor",
+  "subsystem": "editor/inspector",
+  "nfiles": 2
+ },
+ {
+  "pr": "116219",
+  "sha": "c069f5526ba36e18dc0cea839ecc76f8dcc51d9d",
+  "title": "Show shortcut path in tooltip",
+  "subsystem": "editor/settings",
+  "nfiles": 1
+ },
+ {
+  "pr": "114283",
+  "sha": "cf406533c8600f17be95b1952857539c3d5bb914",
+  "title": "Change TabContainer's popup button into real Button",
+  "subsystem": "editor/gui",
+  "nfiles": 6
+ },
+ {
+  "pr": "106352",
+  "sha": "22d03aed44abf4dcde0e40f25bacc46dafaab9a4",
+  "title": "Increase float precision in the editor inspector for Quaternions",
+  "subsystem": "editor/gui",
+  "nfiles": 3
+ },
+ {
+  "pr": "115298",
+  "sha": "a141edf19e562f3a5b69f701e3a8efb12a7bff27",
+  "title": "Change orbit snap shortcut with navigation scheme",
+  "subsystem": "editor/settings",
+  "nfiles": 1
+ },
+ {
+  "pr": "115827",
+  "sha": "eaa21e1423b47c02c99903862423f90448580413",
+  "title": "[Export] Load translation files to check locale for ICU data export.",
+  "subsystem": "editor/export",
+  "nfiles": 1
+ },
+ {
+  "pr": "115289",
+  "sha": "031442d427cd515352031ed9ab32d2b812781463",
+  "title": "Update editor shortcuts when changing 3D navigation scheme",
+  "subsystem": "editor/settings",
+  "nfiles": 1
+ },
+ {
+  "pr": "114930",
+  "sha": "5853d999844bb191516ad831ed785249e2a91c21",
+  "title": "Move runnable out of export preset",
+  "subsystem": "editor/export",
+  "nfiles": 12
+ },
+ {
+  "pr": "115229",
+  "sha": "3bcaf9d66c59849a156c0539361e2c849a35a441",
+  "title": "Add more toggleable options in Engine Compilation Configuration Editor",
+  "subsystem": "editor/settings",
+  "nfiles": 2
+ },
+ {
+  "pr": "100219",
+  "sha": "9207487bd6746684273b4d9309085e74444d7f68",
+  "title": "Export: Propagate `save_zip` error to callers.",
+  "subsystem": "editor/export",
+  "nfiles": 1
+ },
+ {
+  "pr": "114205",
+  "sha": "1bcf18396569b54b270221742ec7c763ffa9cab2",
+  "title": "Allow to remove custom names for layers",
+  "subsystem": "editor/inspector",
+  "nfiles": 1
+ },
+ {
+  "pr": "114454",
+  "sha": "db8b8096e081e2464253b0c080350250ed931415",
+  "title": "Remove unused variable in `editor_properties.cpp`",
+  "subsystem": "editor/inspector",
+  "nfiles": 1
+ },
+ {
+  "pr": "114698",
+  "sha": "69d55be937212961b08c215195c84ac5e7357187",
+  "title": "Don't filter EditorFileDialog files with global access",
+  "subsystem": "editor/gui",
+  "nfiles": 1
+ },
+ {
+  "pr": "113748",
+  "sha": "98b40fa189ae9f3a9e262c59444d2a33fcfe48cf",
+  "title": "Allow dragging from shader editor to material",
+  "subsystem": "editor/inspector",
+  "nfiles": 3
+ },
+ {
+  "pr": "115351",
+  "sha": "1387e0c07742a040797854ace3cae6b106851d56",
+  "title": "Skip zero values in `EditorPropertyFlags`",
+  "subsystem": "editor/inspector",
+  "nfiles": 1
+ }
+]

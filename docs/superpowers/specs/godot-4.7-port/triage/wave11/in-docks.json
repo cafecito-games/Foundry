@@ -1,0 +1,471 @@
+[
+ {
+  "pr": "119910",
+  "sha": "dc9049fbba5efff2b6156c11de3018e98368164c",
+  "title": "Fix \"Move Up/Down\" editing foreign nodes",
+  "subsystem": "editor/docks",
+  "nfiles": 1
+ },
+ {
+  "pr": "119909",
+  "sha": "dba2dd36d0659ae0f97a70924d2a5ee678b620e0",
+  "title": "Fix \"Change Type\" ignoring non-top-level nodes and editing foreign nodes",
+  "subsystem": "editor/docks",
+  "nfiles": 2
+ },
+ {
+  "pr": "119908",
+  "sha": "1bfbab316a993e5a253535777839a5fd6c3987a1",
+  "title": "Fix \"Open Documentation\" ignoring non-top-level nodes",
+  "subsystem": "editor/docks",
+  "nfiles": 1
+ },
+ {
+  "pr": "119642",
+  "sha": "38aa1881d93fd1143891b070854dd49fe3ba8c78",
+  "title": "Fix collapse state regression in the FileSystem dock",
+  "subsystem": "editor/docks",
+  "nfiles": 1
+ },
+ {
+  "pr": "119717",
+  "sha": "ff37378bedd6be9bf4c4bed766abb1ecd25de5f5",
+  "title": "Change disabled \"Paste\" options to hidden",
+  "subsystem": "editor/docks",
+  "nfiles": 1
+ },
+ {
+  "pr": "119450",
+  "sha": "4b72c6c1ab64b8f002c908d4bc4596f78a514004",
+  "title": "Fix FileSystem dock styles across split modes",
+  "subsystem": "editor/docks",
+  "nfiles": 1
+ },
+ {
+  "pr": "119627",
+  "sha": "41f4d7068239af3420549bd1e6541c835b09d72e",
+  "title": "Remove colon from Favorites in FileSystem",
+  "subsystem": "editor/docks",
+  "nfiles": 1
+ },
+ {
+  "pr": "119506",
+  "sha": "344b64e5086174dd071db06e877b1cf619dd6b42",
+  "title": "Editor: Fix 'Reparent to New Node' when selecting from bottom to top",
+  "subsystem": "editor/docks",
+  "nfiles": 1
+ },
+ {
+  "pr": "113059",
+  "sha": "42a8b47ef7a1169bca954d619b5f16867dc2e81b",
+  "title": "Fix typo \"END_SECTIOn\" macro undef to END_SECTION for scene_tree_dock.cpp",
+  "subsystem": "editor/docks",
+  "nfiles": 1
+ },
+ {
+  "pr": "119502",
+  "sha": "3cd3136e8a01ed5795795bfee94b240114a4649a",
+  "title": "Fix some issues with the editor dock tabs",
+  "subsystem": "editor/docks",
+  "nfiles": 3
+ },
+ {
+  "pr": "118580",
+  "sha": "9a60cdd74ececda3b9cfcafc6a69a6c2c74157ab",
+  "title": "Fix missing shortcut for \"Open In Editor\" in inherited scene root",
+  "subsystem": "editor/docks",
+  "nfiles": 1
+ },
+ {
+  "pr": "118853",
+  "sha": "fe34aa9aed8ce2c7eb747622245a9f9ab33cda75",
+  "title": "Assign final path when creating built-in Resources",
+  "subsystem": "editor/docks",
+  "nfiles": 5
+ },
+ {
+  "pr": "117626",
+  "sha": "96ef330f3bfd7c80c89f9dc6c70d1374168193a2",
+  "title": "Editor: Default to base folder if saved editor layout folder does not exist",
+  "subsystem": "editor/docks",
+  "nfiles": 1
+ },
+ {
+  "pr": "119362",
+  "sha": "07ced0474a98dfe8d7745e86cab5f9e346bd42b1",
+  "title": "Fix dragging unselected items from FileSystem dock file list",
+  "subsystem": "editor/docks",
+  "nfiles": 1
+ },
+ {
+  "pr": "119309",
+  "sha": "654e5f55fde49f767511cc304cd740ada0758c31",
+  "title": "Re-apply entire transform after 'Paste as Replacement', not just position",
+  "subsystem": "editor/docks",
+  "nfiles": 1
+ },
+ {
+  "pr": "118879",
+  "sha": "d39dc7eb085c4bb14dc9de68318bf19a0bc90263",
+  "title": "Fix Paste as Replacement replacing root",
+  "subsystem": "editor/docks",
+  "nfiles": 1
+ },
+ {
+  "pr": "111051",
+  "sha": "1b2e97619d81ac064fc398559489ee69a761f0e2",
+  "title": "Add proper undo to Make Sub-Resources Unique",
+  "subsystem": "editor/docks",
+  "nfiles": 2
+ },
+ {
+  "pr": "117690",
+  "sha": "2101e25a1034f153554c4e3d05fc67901e840255",
+  "title": "Remove duplication popup when trying to duplicate res://",
+  "subsystem": "editor/docks",
+  "nfiles": 1
+ },
+ {
+  "pr": "118888",
+  "sha": "e35649944e99e6a9569945ca2775a8f8ff4e4751",
+  "title": "Fix EditorDock accessibility properties",
+  "subsystem": "editor/docks",
+  "nfiles": 3
+ },
+ {
+  "pr": "115282",
+  "sha": "8df803f2a216574903843c1f272d4bcdcb150038",
+  "title": "Fix properties being set before nodes are readded when undoing removals",
+  "subsystem": "editor/docks",
+  "nfiles": 1
+ },
+ {
+  "pr": "118577",
+  "sha": "eb2bafbc859c5e28e34063b1dbe9dded36c2195c",
+  "title": "Improve button order in scene tree context menu",
+  "subsystem": "editor/docks",
+  "nfiles": 1
+ },
+ {
+  "pr": "115274",
+  "sha": "0f02fb598f5fc98d0b57e30195d4daeb89e71905",
+  "title": "Fix error when `NodePath` properties have their assigned nodes deleted",
+  "subsystem": "editor/docks",
+  "nfiles": 1
+ },
+ {
+  "pr": "118273",
+  "sha": "e2bfe1af8edfeafb6dab8242fb935e0dafd18950",
+  "title": "Fix floating dock rects from invisible docks",
+  "subsystem": "editor/docks",
+  "nfiles": 5
+ },
+ {
+  "pr": "118192",
+  "sha": "98f9c79d4fb3602fcb0ad5ee70369d35760a800b",
+  "title": "Improve Remote/Local SceneTreeDock buttons' appearance",
+  "subsystem": "editor/docks",
+  "nfiles": 2
+ },
+ {
+  "pr": "118140",
+  "sha": "02312e693e2ab74b0c371f71774002f386490117",
+  "title": "Fix detection for main scene in FileSystemDock after move",
+  "subsystem": "editor/docks",
+  "nfiles": 1
+ },
+ {
+  "pr": "117926",
+  "sha": "b3f17335a0e89fa43cd25184ce7490816351d902",
+  "title": "Fix `overwrite_dialog` size on Android",
+  "subsystem": "editor/docks",
+  "nfiles": 1
+ },
+ {
+  "pr": "117924",
+  "sha": "b91e6caf5e55bdea27809b46af486504e8b734f2",
+  "title": "Fix scene drag-drop selection override for non-scene-tree drags",
+  "subsystem": "editor/docks",
+  "nfiles": 2
+ },
+ {
+  "pr": "117827",
+  "sha": "89672d1341c04c4800d111a068927b0c9bd1f852",
+  "title": "Fix bottom dock always opening a tab on startup",
+  "subsystem": "editor/docks",
+  "nfiles": 2
+ },
+ {
+  "pr": "115954",
+  "sha": "7c2a32498c5c4938403c2965bd38ba0a9e3f4bbc",
+  "title": "Fix missing tooltip for panel with shortcuts without configurated keys",
+  "subsystem": "editor/docks",
+  "nfiles": 1
+ },
+ {
+  "pr": "117616",
+  "sha": "d767971087f5e8bfc4a47a0b2c6aaf63d7f727ff",
+  "title": "Fix docking popup with editor scale != 1.0",
+  "subsystem": "editor/docks",
+  "nfiles": 2
+ },
+ {
+  "pr": "115750",
+  "sha": "a189151e0ae0bd801e25a6a3806fc722354ab8d3",
+  "title": "Add editor setting to make move confirm dialog optional",
+  "subsystem": "editor/docks",
+  "nfiles": 4
+ },
+ {
+  "pr": "97321",
+  "sha": "a38db1581270378ebd11307b3d4cdede5aa2b731",
+  "title": "Make \"OK\" button text contextual in GroupsEditor and SceneTreeDock",
+  "subsystem": "editor/docks",
+  "nfiles": 2
+ },
+ {
+  "pr": "117208",
+  "sha": "784af6c94dad23c0a716a8a82d49acfad94007dc",
+  "title": "Open the Shader Editor when creating a new Shader in the Inspector",
+  "subsystem": "editor/docks",
+  "nfiles": 1
+ },
+ {
+  "pr": "117242",
+  "sha": "e77db812ff9cb6b888618d58bedc1625c893eb9b",
+  "title": "Change the resource path before `update_files()`",
+  "subsystem": "editor/docks",
+  "nfiles": 2
+ },
+ {
+  "pr": "112084",
+  "sha": "7c9bbc408b5e9af622904136cf6ef118ca1b9f01",
+  "title": "Allow echo events for some Scene dock shortcuts",
+  "subsystem": "editor/docks",
+  "nfiles": 1
+ },
+ {
+  "pr": "116940",
+  "sha": "6c1652235c77a61fc3edfb521e9d6b3b34151012",
+  "title": "Remove `show_scene_tree_root_selection` from `EditorSettings`",
+  "subsystem": "editor/docks",
+  "nfiles": 4
+ },
+ {
+  "pr": "114261",
+  "sha": "da784e3ac2ef795db6677b0b92055bf84db96524",
+  "title": "Update dock popup tab color for disabled slots",
+  "subsystem": "editor/docks",
+  "nfiles": 1
+ },
+ {
+  "pr": "116834",
+  "sha": "d1eaa0f88dfa962e02b7b43613f1a8bb4904f204",
+  "title": "Fix Errors and tab swapping when changing docks",
+  "subsystem": "editor/docks",
+  "nfiles": 1
+ },
+ {
+  "pr": "116863",
+  "sha": "db89e9b3cf95363d6d5dfbe8009892f28e20ec9b",
+  "title": "Fix crash when deleting a sibling node of AnimationPlayer",
+  "subsystem": "editor/docks",
+  "nfiles": 1
+ },
+ {
+  "pr": "116470",
+  "sha": "3f3120586eb4db27df77434a162297fed72cb0ae",
+  "title": "Clarify `Paste` to `Paste (as Child)` in `SceneTree` context menu",
+  "subsystem": "editor/docks",
+  "nfiles": 1
+ },
+ {
+  "pr": "112269",
+  "sha": "45d84af08b5031197fe919ef7d0d09009763fb21",
+  "title": "Fix select the edited node when dropping",
+  "subsystem": "editor/docks",
+  "nfiles": 2
+ },
+ {
+  "pr": "115045",
+  "sha": "82479ce84f5e5483c6d29d81d6b6786d80d220b5",
+  "title": "Fix extend script button styling in scene tree dock",
+  "subsystem": "editor/docks",
+  "nfiles": 1
+ },
+ {
+  "pr": "116270",
+  "sha": "409584e0e69c177a14f29ff039507ac3d55e0fc5",
+  "title": "Add shortcut to open instanced scene in editor",
+  "subsystem": "editor/docks",
+  "nfiles": 1
+ },
+ {
+  "pr": "116557",
+  "sha": "20f1e1000fed1902faaa90e0e1ed19450be2850b",
+  "title": "Improve DockContextPopup spacing",
+  "subsystem": "editor/docks",
+  "nfiles": 4
+ },
+ {
+  "pr": "115932",
+  "sha": "551b4ebc274e5dec3c431162e83c245e9f54daa9",
+  "title": "Open previously active dock when closing active dock",
+  "subsystem": "editor/docks",
+  "nfiles": 2
+ },
+ {
+  "pr": "115129",
+  "sha": "5ce11b3c5fa4dcae09c4231d6d6bca35044cfb46",
+  "title": "Fix folder colors in Favorites list",
+  "subsystem": "editor/docks",
+  "nfiles": 1
+ },
+ {
+  "pr": "116312",
+  "sha": "30faebb20828bc56313fe6728550c9f864a1b8f0",
+  "title": "Add extra bottom dock slots",
+  "subsystem": "editor/docks",
+  "nfiles": 7
+ },
+ {
+  "pr": "116380",
+  "sha": "aa6893931ddae7387737f46728d6c10ccc64ae16",
+  "title": "Fix BottomPanel tab dropping",
+  "subsystem": "editor/docks",
+  "nfiles": 2
+ },
+ {
+  "pr": "112985",
+  "sha": "551978e514bbcb072e40caf7b287ac599fb891c6",
+  "title": "Add `Replace` to `SceneTree` context menu",
+  "subsystem": "editor/docks",
+  "nfiles": 2
+ },
+ {
+  "pr": "114360",
+  "sha": "55da9f0782b6509667e95a729df9cfbf6ed6716f",
+  "title": "Refactor dock slot selector",
+  "subsystem": "editor/docks",
+  "nfiles": 7
+ },
+ {
+  "pr": "114045",
+  "sha": "b21b4106b4fc731356caa5b1c6f64ba536b88781",
+  "title": "Add note to error message about how to add recognized extensions to editor",
+  "subsystem": "editor/docks",
+  "nfiles": 4
+ },
+ {
+  "pr": "115575",
+  "sha": "0f8119a3db9f6e45990b3bb55ebbdf0b5073465d",
+  "title": "Fix Rename option for instance roots",
+  "subsystem": "editor/docks",
+  "nfiles": 1
+ },
+ {
+  "pr": "115172",
+  "sha": "a8c88243c2fb08da084440e72d8458bd6451480c",
+  "title": "Fix hidden `Import` tab height",
+  "subsystem": "editor/docks",
+  "nfiles": 1
+ },
+ {
+  "pr": "115839",
+  "sha": "7dac0bc3be27ee70b1bf6da561e9f14cd92224ef",
+  "title": "Fix: Skip setting current dock when tab cannot switch [ Make EditorDocks respect panel lock ]",
+  "subsystem": "editor/docks",
+  "nfiles": 1
+ },
+ {
+  "pr": "115482",
+  "sha": "555a558dcf7f6650c3ff8160815fc269eaff2fca",
+  "title": "Convert the bottom VCS dock to a `EditorDock` and tie it with the Commit dock",
+  "subsystem": "editor/docks",
+  "nfiles": 6
+ },
+ {
+  "pr": "115840",
+  "sha": "3d113f40521b0a6377497a6c41f512ecd8cc91ef",
+  "title": "Properly handle closing floating docks",
+  "subsystem": "editor/docks",
+  "nfiles": 1
+ },
+ {
+  "pr": "115347",
+  "sha": "affa84862a706940cbf60446fc8b2c4bed0e5fa3",
+  "title": "Scene tree dock: Don't log error if there is no selection upon handling item_icon_double_clicked signal",
+  "subsystem": "editor/docks",
+  "nfiles": 1
+ },
+ {
+  "pr": "113199",
+  "sha": "869d83b040d95a02f06ebd3a9baf3ef5d0799523",
+  "title": "Replace DockSlot with DockTabContainer",
+  "subsystem": "editor/docks",
+  "nfiles": 10
+ },
+ {
+  "pr": "112746",
+  "sha": "d4ab136b24b57e3a306d5d9354db71b8fc6f3ec5",
+  "title": "Show NodePath subnames in editor inspector",
+  "subsystem": "editor/docks",
+  "nfiles": 2
+ },
+ {
+  "pr": "112426",
+  "sha": "ccb0b4979935d108d3c6e5b85f96c48556caf377",
+  "title": "[Editor] Make FileSystemDock use nearest-neighbor filtering for textures",
+  "subsystem": "editor/docks",
+  "nfiles": 2
+ },
+ {
+  "pr": "114733",
+  "sha": "4b4b16b5772fabb0a983d08d3744f6df70d67ff6",
+  "title": "Remove DockConstants",
+  "subsystem": "editor/docks",
+  "nfiles": 8
+ },
+ {
+  "pr": "114448",
+  "sha": "c330276a108b8344b30838ae78b3087ac99b9e04",
+  "title": "SceneTreeDock: Remove unused parameter",
+  "subsystem": "editor/docks",
+  "nfiles": 2
+ },
+ {
+  "pr": "114700",
+  "sha": "34ed1c8fb12d69cca416761bad46b313a4c54cb8",
+  "title": "Paste as Sibling right below the node",
+  "subsystem": "editor/docks",
+  "nfiles": 1
+ },
+ {
+  "pr": "115267",
+  "sha": "8e086a66414dd617337ed77a156e394803763efb",
+  "title": "Fix FileSystem dock visual separation when docked at bottom",
+  "subsystem": "editor/docks",
+  "nfiles": 1
+ },
+ {
+  "pr": "114968",
+  "sha": "3adb6259aa64ad08d41154e66d3c5bf78114791e",
+  "title": "Fix right clicking an item in filesystem `ItemList` draws focus",
+  "subsystem": "editor/docks",
+  "nfiles": 1
+ },
+ {
+  "pr": "115066",
+  "sha": "b8878c8b56515f0cd19dba657e6cf4b11836c14e",
+  "title": "Fix dock names in menu tooltips not translated",
+  "subsystem": "editor/docks",
+  "nfiles": 1
+ },
+ {
+  "pr": "115202",
+  "sha": "50b30b9514dd06a004f07b4a6a97f323a09c4751",
+  "title": "Fix context plugins not called for empty clicks in Scene",
+  "subsystem": "editor/docks",
+  "nfiles": 1
+ }
+]

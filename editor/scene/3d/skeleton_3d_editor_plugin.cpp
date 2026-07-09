@@ -970,6 +970,9 @@ void Skeleton3DEditor::_update_properties() {
 	if (pose_editor) {
 		pose_editor->_update_properties();
 	}
+	if (!skeleton || !skeleton->is_inside_tree()) {
+		return;
+	}
 	Node3DEditor::get_singleton()->update_transform_gizmo();
 }
 
@@ -1189,7 +1192,6 @@ void Skeleton3DEditor::create_editors() {
 	joint_tree = memnew(Tree);
 	joint_tree->set_auto_translate_mode(AUTO_TRANSLATE_MODE_DISABLED);
 	joint_tree->set_columns(1);
-	joint_tree->set_focus_mode(Control::FOCUS_NONE);
 	joint_tree->set_select_mode(Tree::SELECT_SINGLE);
 	joint_tree->set_hide_root(true);
 	joint_tree->set_v_size_flags(SIZE_EXPAND_FILL);
@@ -1261,6 +1263,7 @@ void Skeleton3DEditor::_notification(int p_what) {
 			update_joint_tree();
 		} break;
 		case NOTIFICATION_PREDELETE: {
+			_disconnect_from_tree();
 			if (skeleton) {
 				select_bone(-1); // Requires that the joint_tree has not been deleted.
 				_disconnect_from_skeleton();
@@ -1276,16 +1279,19 @@ void Skeleton3DEditor::_notification(int p_what) {
 }
 
 void Skeleton3DEditor::_node_removed(Node *p_node) {
-	if (skeleton && p_node == skeleton) {
-		_disconnect_from_skeleton();
-		if (pose_editor) {
-			pose_editor->set_skeleton(nullptr);
-			pose_editor->set_visible(false);
-		}
-		edit_mode = false;
-		skeleton = nullptr;
-		skeleton_options->hide();
+	if (!skeleton || p_node != skeleton) {
+		return;
 	}
+
+	_disconnect_from_tree();
+	_disconnect_from_skeleton();
+	if (pose_editor) {
+		pose_editor->set_skeleton(nullptr);
+		pose_editor->set_visible(false);
+	}
+	edit_mode = false;
+	skeleton = nullptr;
+	skeleton_options->hide();
 
 	_update_properties();
 }
@@ -1306,6 +1312,21 @@ void Skeleton3DEditor::_disconnect_from_skeleton() {
 	}
 	if (skeleton->is_connected(SceneStringName(pose_updated), callable_mp(this, &Skeleton3DEditor::_update_properties))) {
 		skeleton->disconnect(SceneStringName(pose_updated), callable_mp(this, &Skeleton3DEditor::_update_properties));
+	}
+}
+
+void Skeleton3DEditor::_disconnect_from_tree() {
+	if (!is_inside_tree()) {
+		return;
+	}
+
+	SceneTree *tree = get_tree();
+	if (!tree) {
+		return;
+	}
+
+	if (tree->is_connected("node_removed", callable_mp(this, &Skeleton3DEditor::_node_removed))) {
+		tree->disconnect("node_removed", callable_mp(this, &Skeleton3DEditor::_node_removed));
 	}
 }
 

@@ -269,9 +269,9 @@ EditorPlugin *EditorData::get_handling_main_editor(Object *p_object) {
 
 Vector<EditorPlugin *> EditorData::get_handling_sub_editors(Object *p_object) {
 	Vector<EditorPlugin *> sub_plugins;
-	for (int i = editor_plugins.size() - 1; i > -1; i--) {
-		if (!editor_plugins[i]->has_main_screen() && editor_plugins[i]->handles(p_object)) {
-			sub_plugins.push_back(editor_plugins[i]);
+	for (EditorPlugin *plugin : editor_plugins) {
+		if (!plugin->has_main_screen() && plugin->handles(p_object)) {
+			sub_plugins.push_back(plugin);
 		}
 	}
 	return sub_plugins;
@@ -1228,7 +1228,7 @@ String EditorData::get_scene_path(int p_idx) const {
 	ERR_FAIL_INDEX_V(p_idx, edited_scene.size(), String());
 
 	if (edited_scene[p_idx].get_root()) {
-		if (edited_scene[p_idx].get_root()->get_scene_file_path().is_empty()) {
+		if (edited_scene[p_idx].get_root()->get_scene_file_path().is_empty() && !edited_scene[p_idx].path.is_empty()) {
 			edited_scene[p_idx].get_root()->set_scene_file_path(edited_scene[p_idx].path);
 		} else {
 			return edited_scene[p_idx].get_root()->get_scene_file_path();

@@ -300,9 +300,9 @@ private:
 	void _find_file_owners(EditorFileSystemDirectory *p_efsd, const HashSet<String> &p_renames, HashSet<String> &r_file_owners) const;
 	void _try_move_item(const FileOrFolder &p_item, const String &p_new_path, HashMap<String, String> &p_file_renames, HashMap<String, String> &p_folder_renames);
 	void _try_duplicate_item(const FileOrFolder &p_item, const String &p_new_path) const;
-	void _before_move(HashMap<String, ResourceUID::ID> &r_uids, HashSet<String> &r_file_owners) const;
+	void _before_move(HashSet<String> &r_file_owners) const;
 	void _update_dependencies_after_move(const HashMap<String, String> &p_renames, const HashSet<String> &p_file_owners) const;
-	void _update_resource_paths_after_move(const HashMap<String, String> &p_renames, const HashMap<String, ResourceUID::ID> &p_uids) const;
+	void _update_resource_paths_after_move(const HashMap<String, String> &p_renames) const;
 	void _update_favorites_after_move(const HashMap<String, String> &p_files_renames, const HashMap<String, String> &p_folders_renames) const;
 	void _update_project_settings_after_move(const HashMap<String, String> &p_renames, const HashMap<String, String> &p_folders_renames);
 	String _get_unique_name(const FileOrFolder &p_entry, const String &p_at_path);
@@ -367,6 +367,7 @@ private:
 	void _preview_invalidated(const String &p_path);
 	void _file_list_thumbnail_done(const String &p_path, const Ref<Texture2D> &p_preview, const Ref<Texture2D> &p_small_preview, int p_index, const String &p_filename);
 	void _tree_thumbnail_done(const String &p_path, const Ref<Texture2D> &p_preview, const Ref<Texture2D> &p_small_preview, int p_update_id, ObjectID p_item);
+	Ref<Texture2D> _apply_thumbnail_filter(const Ref<Texture2D> &p_thumbnail, const String &p_file_path) const;
 
 	void _update_display_mode(bool p_force = false);
 
@@ -384,6 +385,7 @@ private:
 
 public:
 	static FileSystemDock *get_singleton() { return singleton; }
+	static DependencyEditorOwners *get_owners_dialog() { return singleton->owners_editor; }
 
 protected:
 	void _notification(int p_what);

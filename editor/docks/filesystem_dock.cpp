@@ -393,7 +393,7 @@ void FileSystemDock::_update_tree(const Vector<String> &p_uncollapsed_paths, boo
 	// Handles the favorites.
 	favorites_item = tree->create_item(root);
 	favorites_item->set_icon(0, get_editor_theme_icon(SNAME("Favorites")));
-	favorites_item->set_text(0, TTRC("Favorites:"));
+	favorites_item->set_text(0, TTRC("Favorites"));
 	favorites_item->set_auto_translate_mode(0, AUTO_TRANSLATE_MODE_ALWAYS);
 	favorites_item->set_metadata(0, "Favorites");
 	favorites_item->set_collapsed(!p_uncollapsed_paths.has("Favorites"));
@@ -523,23 +523,13 @@ void FileSystemDock::_update_display_mode(bool p_force) {
 
 				tree->show();
 				tree->set_v_size_flags(SIZE_EXPAND_FILL);
-				if (is_vertical) {
-					tree->set_theme_type_variation("");
-					tree->set_scroll_hint_mode(Tree::SCROLL_HINT_MODE_BOTH);
-					tree_mc->set_theme_type_variation(horizontal ? "NoBorderBottomPanel" : "NoBorderHorizontal");
+				tree->set_theme_type_variation("TreeSecondary");
+				tree->set_scroll_hint_mode(Tree::SCROLL_HINT_MODE_DISABLED);
+				tree_mc->set_theme_type_variation("");
 
-					files->set_theme_type_variation(horizontal ? "ItemListSecondary" : "");
-					files->set_scroll_hint_mode(horizontal ? ItemList::SCROLL_HINT_MODE_DISABLED : ItemList::SCROLL_HINT_MODE_TOP);
-					files_mc->set_theme_type_variation(horizontal ? "" : "NoBorderHorizontalBottom");
-				} else {
-					tree->set_theme_type_variation("TreeSecondary");
-					tree->set_scroll_hint_mode(Tree::SCROLL_HINT_MODE_DISABLED);
-					tree_mc->set_theme_type_variation("");
-
-					files->set_theme_type_variation("ItemListSecondary");
-					files->set_scroll_hint_mode(ItemList::SCROLL_HINT_MODE_DISABLED);
-					files_mc->set_theme_type_variation("");
-				}
+				files->set_theme_type_variation("ItemListSecondary");
+				files->set_scroll_hint_mode(ItemList::SCROLL_HINT_MODE_DISABLED);
+				files_mc->set_theme_type_variation("");
 				tree->ensure_cursor_is_visible();
 
 				toolbar2_hbc->hide();
@@ -865,12 +855,16 @@ void FileSystemDock::navigate_to_path(const String &p_path) {
 void FileSystemDock::_file_list_thumbnail_done(const String &p_path, const Ref<Texture2D> &p_preview, const Ref<Texture2D> &p_small_preview, int p_index, const String &p_filename) {
 	if (p_preview.is_valid()) {
 		if (p_index < files->get_item_count() && files->get_item_text(p_index) == p_filename && files->get_item_metadata(p_index) == p_path) {
+			Ref<Texture2D> thumbnail;
+
 			if (file_list_display_mode == FILE_LIST_DISPLAY_LIST) {
-				if (p_small_preview.is_valid()) {
-					files->set_item_icon(p_index, p_small_preview);
-				}
+				thumbnail = p_small_preview;
 			} else {
-				files->set_item_icon(p_index, p_preview);
+				thumbnail = p_preview;
+			}
+
+			if (thumbnail.is_valid()) {
+				files->set_item_icon(p_index, _apply_thumbnail_filter(thumbnail, p_path));
 			}
 		}
 	}
@@ -879,8 +873,35 @@ void FileSystemDock::_file_list_thumbnail_done(const String &p_path, const Ref<T
 void FileSystemDock::_tree_thumbnail_done(const String &p_path, const Ref<Texture2D> &p_preview, const Ref<Texture2D> &p_small_preview, int p_update_id, ObjectID p_item) {
 	TreeItem *item = ObjectDB::get_instance<TreeItem>(p_item);
 	if (item && tree_update_id == p_update_id && p_small_preview.is_valid()) {
-		item->set_icon(0, p_small_preview);
+		item->set_icon(0, _apply_thumbnail_filter(p_small_preview, p_path));
 	}
+}
+
+Ref<Texture2D> FileSystemDock::_apply_thumbnail_filter(const Ref<Texture2D> &p_thumbnail, const String &p_file_path) const {
+	if (!p_file_path.is_empty()) {
+		int index;
+		EditorFileSystemDirectory *dir = EditorFileSystem::get_singleton()->find_file(p_file_path, &index);
+
+		if (dir) {
+			if (dir->get_file_import_is_valid(index)) {
+				const StringName &file_type = dir->get_file_type(index);
+
+				if (file_type == SNAME("CompressedTexture2D") || file_type == SNAME("Image")) {
+					const String extension = p_file_path.get_extension();
+
+					if (extension != "svg" && extension != "svgz") {
+						Ref<CanvasTexture> thumbnail_wrapped;
+						thumbnail_wrapped.instantiate();
+						thumbnail_wrapped->set_diffuse_texture(p_thumbnail);
+						thumbnail_wrapped->set_texture_filter(CanvasItem::TextureFilter::TEXTURE_FILTER_NEAREST_WITH_MIPMAPS);
+						return thumbnail_wrapped;
+					}
+				}
+			}
+		}
+	}
+
+	return p_thumbnail;
 }
 
 void FileSystemDock::_toggle_file_display() {
@@ -1036,6 +1057,13 @@ void FileSystemDock::_update_file_list(bool p_keep_selection) {
 				if (searched_tokens.is_empty() || _matches_all_search_tokens(text)) {
 					files->add_item(text, icon, true);
 					files->set_item_metadata(-1, favorite);
+
+					const Color folder_color = FileSystemDock::get_dir_icon_color(favorite, default_folder_color);
+					if (!editor_is_dark_icon_and_font && folder_color != default_folder_color) {
+						files->set_item_icon_modulate(-1, folder_color * ITEM_COLOR_SCALE);
+					} else {
+						files->set_item_icon_modulate(-1, folder_color);
+					}
 				}
 			} else {
 				int index;
@@ -1085,19 +1113,7 @@ void FileSystemDock::_update_file_list(bool p_keep_selection) {
 		} else {
 			if (display_mode == DISPLAY_MODE_TREE_ONLY || always_show_folders) {
 				// Check for a folder color to inherit (if one is assigned).
-				Color inherited_folder_color = default_folder_color;
-				String color_scan_dir = directory;
-				while (color_scan_dir != "res://" && inherited_folder_color == default_folder_color) {
-					if (!color_scan_dir.ends_with("/")) {
-						color_scan_dir += "/";
-					}
-
-					if (assigned_folder_colors.has(color_scan_dir)) {
-						inherited_folder_color = folder_colors[assigned_folder_colors[color_scan_dir]];
-					}
-
-					color_scan_dir = color_scan_dir.rstrip("/").get_base_dir();
-				}
+				const Color inherited_folder_color = FileSystemDock::get_dir_icon_color(directory, default_folder_color);
 
 				// Display folders in the list.
 				if (directory != "res://") {
@@ -1591,19 +1607,7 @@ void FileSystemDock::_try_duplicate_item(const FileOrFolder &p_item, const Strin
 	}
 }
 
-void FileSystemDock::_update_resource_paths_after_move(const HashMap<String, String> &p_renames, const HashMap<String, ResourceUID::ID> &p_uids) const {
-	for (const KeyValue<String, String> &pair : p_renames) {
-		// Update UID path.
-		const String &old_path = pair.key;
-		const String &new_path = pair.value;
-
-		const HashMap<String, ResourceUID::ID>::ConstIterator I = p_uids.find(old_path);
-		if (I) {
-			ResourceUID::get_singleton()->set_id(I->value, new_path);
-		}
-		EditorFileSystem::get_singleton()->register_global_class_script(old_path, new_path);
-	}
-
+void FileSystemDock::_update_resource_paths_after_move(const HashMap<String, String> &p_renames) const {
 	// Rename all resources loaded, be it subresources or actual resources.
 	List<Ref<Resource>> cached;
 	ResourceCache::get_cached_resources(&cached);
@@ -1623,8 +1627,17 @@ void FileSystemDock::_update_resource_paths_after_move(const HashMap<String, Str
 		}
 	}
 
-	EditorNode::get_editor_data().script_class_save_global_classes();
-	EditorFileSystem::get_singleton()->emit_signal(SNAME("script_classes_updated"));
+	Vector<String> files_to_update;
+	for (const KeyValue<String, String> &E : p_renames) {
+		if (!files_to_update.has(E.key)) {
+			files_to_update.push_back(E.key);
+		}
+		if (!files_to_update.has(E.value)) {
+			files_to_update.push_back(E.value);
+		}
+	}
+	print_verbose("FileSystem: updating file infos.");
+	EditorFileSystem::get_singleton()->update_files(files_to_update);
 }
 
 void FileSystemDock::_update_dependencies_after_move(const HashMap<String, String> &p_renames, const HashSet<String> &p_file_owners) const {
@@ -1686,6 +1699,10 @@ void FileSystemDock::_update_project_settings_after_move(const HashMap<String, S
 				ProjectSettings::get_singleton()->set_setting(E.name, "*" + p_renames[autoload_singleton]);
 			}
 		}
+	}
+
+	if (p_renames.has(main_scene_path)) {
+		main_scene_path = p_renames[main_scene_path];
 	}
 
 	// Update folder colors.
@@ -1869,16 +1886,15 @@ void FileSystemDock::_rename_operation_confirm() {
 		return;
 	}
 
-	HashMap<String, ResourceUID::ID> uids;
 	HashSet<String> file_owners; // The files that use these moved/renamed resource files.
-	_before_move(uids, file_owners);
+	_before_move(file_owners);
 
 	HashMap<String, String> file_renames;
 	HashMap<String, String> folder_renames;
 	_try_move_item(to_rename, new_path, file_renames, folder_renames);
 
 	int current_tab = EditorSceneTabs::get_singleton()->get_current_tab();
-	_update_resource_paths_after_move(file_renames, uids);
+	_update_resource_paths_after_move(file_renames);
 	_update_dependencies_after_move(file_renames, file_owners);
 	_update_project_settings_after_move(file_renames, folder_renames);
 	_update_favorites_after_move(file_renames, folder_renames);
@@ -1993,7 +2009,7 @@ void FileSystemDock::_move_operation_confirm(const String &p_to_path, bool p_cop
 			overwrite_dialog_footer->set_text(
 					p_copy ? TTRC("Do you wish to overwrite them or rename the copied files?")
 						   : TTRC("Do you wish to overwrite them or rename the moved files?"));
-			overwrite_dialog->popup_centered();
+			overwrite_dialog->popup_centered_ratio(0.6);
 			return;
 		}
 	}
@@ -2023,9 +2039,8 @@ void FileSystemDock::_move_operation_confirm(const String &p_to_path, bool p_cop
 			}
 		}
 
-		HashMap<String, ResourceUID::ID> uids;
 		HashSet<String> file_owners; // The files that use these moved/renamed resource files.
-		_before_move(uids, file_owners);
+		_before_move(file_owners);
 
 		bool is_moved = false;
 		HashMap<String, String> file_renames;
@@ -2039,20 +2054,8 @@ void FileSystemDock::_move_operation_confirm(const String &p_to_path, bool p_cop
 		}
 
 		if (is_moved) {
-			Vector<String> files_to_update;
-			for (KeyValue<String, String> &E : file_renames) {
-				if (!files_to_update.has(E.key)) {
-					files_to_update.push_back(E.key);
-				}
-				if (!files_to_update.has(E.value)) {
-					files_to_update.push_back(E.value);
-				}
-			}
-			print_verbose("FileSystem: updating file infos.");
-			EditorFileSystem::get_singleton()->update_files(files_to_update);
-
 			int current_tab = EditorSceneTabs::get_singleton()->get_current_tab();
-			_update_resource_paths_after_move(file_renames, uids);
+			_update_resource_paths_after_move(file_renames);
 			_update_dependencies_after_move(file_renames, file_owners);
 			_update_project_settings_after_move(file_renames, folder_renames);
 			_update_favorites_after_move(file_renames, folder_renames);
@@ -2068,15 +2071,11 @@ void FileSystemDock::_move_operation_confirm(const String &p_to_path, bool p_cop
 	}
 }
 
-void FileSystemDock::_before_move(HashMap<String, ResourceUID::ID> &r_uids, HashSet<String> &r_file_owners) const {
+void FileSystemDock::_before_move(HashSet<String> &r_file_owners) const {
 	HashSet<String> renamed_files;
 	for (int i = 0; i < to_move.size(); i++) {
 		if (to_move[i].is_file) {
 			renamed_files.insert(to_move[i].path);
-			ResourceUID::ID uid = ResourceLoader::get_resource_uid(to_move[i].path);
-			if (uid != ResourceUID::INVALID_ID) {
-				r_uids[to_move[i].path] = uid;
-			}
 		} else {
 			EditorFileSystemDirectory *current_folder = EditorFileSystem::get_singleton()->get_filesystem_path(to_move[i].path);
 			ERR_CONTINUE(current_folder == nullptr);
@@ -2087,10 +2086,6 @@ void FileSystemDock::_before_move(HashMap<String, ResourceUID::ID> &r_uids, Hash
 				for (int j = 0; j < current_folder->get_file_count(); j++) {
 					const String file_path = current_folder->get_file_path(j);
 					renamed_files.insert(file_path);
-					ResourceUID::ID uid = ResourceLoader::get_resource_uid(file_path);
-					if (uid != ResourceUID::INVALID_ID) {
-						r_uids[file_path] = uid;
-					}
 				}
 				for (int j = 0; j < current_folder->get_subdir_count(); j++) {
 					folders.push_back(current_folder->get_subdir(j));
@@ -2529,7 +2524,7 @@ void FileSystemDock::_file_option(int p_option, const Vector<String> &p_selected
 			}
 			if (to_move.size() > 0) {
 				move_dialog->config(p_selected);
-				move_dialog->popup_centered_ratio(0.4);
+				move_dialog->popup_centered_ratio(0.5);
 			}
 		} break;
 
@@ -2587,7 +2582,7 @@ void FileSystemDock::_file_option(int p_option, const Vector<String> &p_selected
 		} break;
 
 		case FILE_MENU_DUPLICATE: {
-			if (p_selected.size() != 1) {
+			if (p_selected.size() != 1 || p_selected[0] == "res://") {
 				return;
 			}
 
@@ -3008,6 +3003,11 @@ Variant FileSystemDock::get_drag_data_fw(const Point2 &p_point, Control *p_from)
 			paths = _tree_get_selected();
 		}
 	} else if (p_from == files) {
+		// Don't allow dragging from empty space in the file list.
+		int item = files->get_item_at_position(p_point, true);
+		if (item == -1 || !files->is_selected(item)) {
+			return Variant();
+		}
 		for (int i = 0; i < files->get_item_count(); i++) {
 			if (files->is_selected(i)) {
 				paths.push_back(files->get_item_metadata(i));
@@ -4227,9 +4227,64 @@ void FileSystemDock::load_layout_from_config(const Ref<ConfigFile> &p_layout, co
 
 	if (p_layout->has_section_key(p_section, "selected_paths")) {
 		PackedStringArray dock_filesystem_selected_paths = p_layout->get_value(p_section, "selected_paths");
-		for (int i = 0; i < dock_filesystem_selected_paths.size(); i++) {
-			select_file(dock_filesystem_selected_paths[i]);
+
+		if (dock_filesystem_selected_paths.size() > 1) {
+			get_tree_control()->deselect_all();
+
+			Ref<DirAccess> da = DirAccess::create(DirAccess::ACCESS_RESOURCES);
+			HashSet<String> paths_to_select;
+			for (const String &path : dock_filesystem_selected_paths) {
+				if (da->file_exists(path) || da->dir_exists(path)) {
+					paths_to_select.insert(path);
+				}
+			}
+
+			if (paths_to_select.is_empty()) {
+				select_file("res://"); // No valid file to select, default to base folder.
+			} else {
+				// Simple BFS from "res://" node to prevent default selection in "Favorite".
+				TreeItem *res_ti = get_tree_control()->get_item_with_metadata("res://", 0);
+				LocalVector<TreeItem *> ti_visit;
+				ti_visit.push_back(res_ti);
+				while (!ti_visit.is_empty()) {
+					TreeItem *curr_ti = ti_visit[0];
+
+					const String &path = curr_ti->get_metadata(0);
+					if (paths_to_select.has(path)) {
+						curr_ti->select(0);
+						current_path = path;
+
+						paths_to_select.erase(path);
+
+						if (paths_to_select.is_empty()) {
+							break;
+						}
+					}
+
+					TreeItem *child_ti = curr_ti->get_first_child();
+					while (child_ti) {
+						ti_visit.push_back(child_ti);
+						child_ti = child_ti->get_next();
+					}
+
+					ti_visit.remove_at(0);
+				}
+			}
+		} else if (dock_filesystem_selected_paths.size() == 1) {
+			Ref<DirAccess> da = DirAccess::create(DirAccess::ACCESS_RESOURCES);
+			const String &path = dock_filesystem_selected_paths[0];
+
+			if (da->file_exists(path) || da->dir_exists(path)) {
+				select_file(path);
+			} else {
+				select_file("res://"); // For single-selection, default to base folder.
+			}
+		} else {
+			get_tree_control()->deselect_all();
+			current_path = "";
 		}
+
+		current_path_line_edit->set_text(current_path);
 	}
 
 	// Restore collapsed state.
@@ -4505,7 +4560,8 @@ FileSystemDock::FileSystemDock() {
 
 	overwrite_dialog_scroll = memnew(ScrollContainer);
 	overwrite_dialog_vb->add_child(overwrite_dialog_scroll);
-	overwrite_dialog_scroll->set_custom_minimum_size(Vector2(400, 600) * EDSCALE);
+	overwrite_dialog_scroll->set_custom_minimum_size(Vector2(50, 50) * EDSCALE);
+	overwrite_dialog_scroll->set_v_size_flags(SIZE_EXPAND_FILL);
 
 	overwrite_dialog_file_list = memnew(Label);
 	overwrite_dialog_scroll->add_child(overwrite_dialog_file_list);

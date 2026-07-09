@@ -292,7 +292,6 @@ void EditorProperty::_notification(int p_what) {
 			AccessibilityServer::get_singleton()->update_set_role(ae, AccessibilityServerEnums::AccessibilityRole::ROLE_BUTTON);
 
 			AccessibilityServer::get_singleton()->update_set_name(ae, vformat(TTR("Property: %s"), label));
-			AccessibilityServer::get_singleton()->update_set_value(ae, vformat(TTR("Property: %s"), label));
 
 			AccessibilityServer::get_singleton()->update_set_popup_type(ae, AccessibilityServerEnums::AccessibilityPopupType::POPUP_MENU);
 			AccessibilityServer::get_singleton()->update_add_action(ae, AccessibilityServerEnums::AccessibilityAction::ACTION_SHOW_CONTEXT_MENU, callable_mp(this, &EditorProperty::_accessibility_action_menu));
@@ -1594,7 +1593,7 @@ void EditorProperty::_update_popup() {
 	menu->add_icon_shortcut(theme_cache.paste_icon, ED_GET_SHORTCUT("property_editor/paste_value"), MENU_PASTE_VALUE);
 	menu->add_icon_shortcut(theme_cache.copy_node_path_icon, ED_GET_SHORTCUT("property_editor/copy_property_path"), MENU_COPY_PROPERTY_PATH);
 	menu->set_item_disabled(MENU_PASTE_VALUE, is_read_only());
-	menu->set_item_disabled(MENU_COPY_PROPERTY_PATH, internal);
+	menu->set_item_disabled(MENU_COPY_PROPERTY_PATH, internal || property_path.is_empty());
 
 	if (can_favorite || !pin_hidden) {
 		menu->add_separator();
@@ -1733,7 +1732,6 @@ void EditorInspectorCategory::_notification(int p_what) {
 			AccessibilityServer::get_singleton()->update_set_role(ae, AccessibilityServerEnums::AccessibilityRole::ROLE_BUTTON);
 
 			AccessibilityServer::get_singleton()->update_set_name(ae, vformat(TTR("Category: %s"), label));
-			AccessibilityServer::get_singleton()->update_set_value(ae, vformat(TTR("Category: %s"), label));
 
 			AccessibilityServer::get_singleton()->update_set_popup_type(ae, AccessibilityServerEnums::AccessibilityPopupType::POPUP_MENU);
 			AccessibilityServer::get_singleton()->update_add_action(ae, AccessibilityServerEnums::AccessibilityAction::ACTION_SHOW_CONTEXT_MENU, callable_mp(this, &EditorInspectorCategory::_accessibility_action_menu));
@@ -2000,7 +1998,6 @@ void EditorInspectorSection::_notification(int p_what) {
 			AccessibilityServer::get_singleton()->update_set_role(ae, AccessibilityServerEnums::AccessibilityRole::ROLE_BUTTON);
 
 			AccessibilityServer::get_singleton()->update_set_name(ae, vformat(TTR("Section: %s"), label));
-			AccessibilityServer::get_singleton()->update_set_value(ae, vformat(TTR("Section: %s"), label));
 			AccessibilityServer::get_singleton()->update_add_action(ae, AccessibilityServerEnums::AccessibilityAction::ACTION_COLLAPSE, callable_mp(this, &EditorInspectorSection::_accessibility_action_collapse));
 			AccessibilityServer::get_singleton()->update_add_action(ae, AccessibilityServerEnums::AccessibilityAction::ACTION_EXPAND, callable_mp(this, &EditorInspectorSection::_accessibility_action_expand));
 		} break;
@@ -3284,7 +3281,6 @@ void ArrayPanelContainer::_notification(int p_what) {
 			AccessibilityServer::get_singleton()->update_set_role(ae, AccessibilityServerEnums::AccessibilityRole::ROLE_BUTTON);
 
 			AccessibilityServer::get_singleton()->update_set_name(ae, get_meta("text"));
-			AccessibilityServer::get_singleton()->update_set_value(ae, get_meta("text"));
 
 			AccessibilityServer::get_singleton()->update_set_popup_type(ae, AccessibilityServerEnums::AccessibilityPopupType::POPUP_MENU);
 			AccessibilityServer::get_singleton()->update_add_action(ae, AccessibilityServerEnums::AccessibilityAction::ACTION_SHOW_CONTEXT_MENU, callable_mp(this, &ArrayPanelContainer::_accessibility_action_menu));
@@ -3303,7 +3299,6 @@ void EditorInspectorArray::_notification(int p_what) {
 			ERR_FAIL_COND(ae.is_null());
 
 			AccessibilityServer::get_singleton()->update_set_name(ae, vformat(TTR("Array: %s"), get_label()));
-			AccessibilityServer::get_singleton()->update_set_value(ae, vformat(TTR("Array: %s"), get_label()));
 		} break;
 
 		case NOTIFICATION_THEME_CHANGED: {
@@ -3934,6 +3929,11 @@ void EditorInspector::update_tree() {
 	}
 
 	String filter = search_box ? search_box->get_text() : "";
+	// If the inspector filter is active, make everything unfold.
+	bool old_use_folding_state = use_folding;
+	if (!filter.is_empty()) {
+		use_folding = false;
+	}
 	String group;
 	String group_base;
 	EditorInspectorSection *group_togglable_property = nullptr;
@@ -4885,6 +4885,7 @@ void EditorInspector::update_tree() {
 	if (root_inspector_was_following_focus) {
 		get_root_inspector()->set_follow_focus(true);
 	}
+	use_folding = old_use_folding_state;
 }
 
 void EditorInspector::update_property(const String &p_prop) {

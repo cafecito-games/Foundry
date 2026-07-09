@@ -1,0 +1,422 @@
+[
+ {
+  "pr": "117397",
+  "sha": "fb177243ac34b786e476a4bbeffefed8fc81ad90",
+  "title": "Fix Modo/Maya navigation conflicts with Path3D editor shortcuts",
+  "subsystem": "editor/scene",
+  "nfiles": 1
+ },
+ {
+  "pr": "117235",
+  "sha": "bc344d584571566415ec8e88b1be7ccd6ac09594",
+  "title": "Add vertex snapping to the 3D editor",
+  "subsystem": "editor/scene",
+  "nfiles": 4
+ },
+ {
+  "pr": "116972",
+  "sha": "77264a708792884cf515721c63fe9e5ec9fa6d6b",
+  "title": "Fix 3D focus selection for subgizmos",
+  "subsystem": "editor/scene",
+  "nfiles": 1
+ },
+ {
+  "pr": "117393",
+  "sha": "f8a479fde966de26c974359e1c67bac02c5bc08d",
+  "title": "Remove redundant `_has_main_screen()` overrides",
+  "subsystem": "editor/scene",
+  "nfiles": 37
+ },
+ {
+  "pr": "116630",
+  "sha": "f6f892ed3c5f8e456feea76f8e2602d89969bc90",
+  "title": "Fix 2D editor redrawing on modifier echo events",
+  "subsystem": "editor/scene",
+  "nfiles": 1
+ },
+ {
+  "pr": "116910",
+  "sha": "c410547bfa1ecebeffb0d34f9d0a84842a2f9b15",
+  "title": "Fix 3D editor overlay not redrawing on camera navigation",
+  "subsystem": "editor/scene",
+  "nfiles": 1
+ },
+ {
+  "pr": "109680",
+  "sha": "fcb7c06646a1c5e34c98549c566b909bef07deac",
+  "title": "Add ability to transform parent nodes without affecting global transform of its children",
+  "subsystem": "editor/scene",
+  "nfiles": 3
+ },
+ {
+  "pr": "117289",
+  "sha": "96488ce266746cab8acebcbaed9df3d909dcf16a",
+  "title": "Reset follow mode focus count after committing a transform",
+  "subsystem": "editor/scene",
+  "nfiles": 1
+ },
+ {
+  "pr": "117214",
+  "sha": "a1eaac8171a53e5a74cd511bc144bd28afc4c7ff",
+  "title": "Reset follow mode focus count on selection change",
+  "subsystem": "editor/scene",
+  "nfiles": 2
+ },
+ {
+  "pr": "116970",
+  "sha": "8130dde5097f49edaa85c12f779051bdc0eb6c7c",
+  "title": "Fix duplicate signal error for `Path3D` when switching tabs",
+  "subsystem": "editor/scene",
+  "nfiles": 1
+ },
+ {
+  "pr": "116995",
+  "sha": "8e58bc2cf6dea0fb83b5b5b8025a5726818e4e70",
+  "title": "Fix Marker3D editor gizmo being darker than intended for negative axis lines",
+  "subsystem": "editor/scene",
+  "nfiles": 1
+ },
+ {
+  "pr": "104860",
+  "sha": "ef8a050a76ed4d818f1525d93fa09687dd0cc944",
+  "title": "Allow changing the color of canvas selection",
+  "subsystem": "editor/scene",
+  "nfiles": 7
+ },
+ {
+  "pr": "92080",
+  "sha": "48897bb5df535cd650242f0aaf7d6446204bc0cc",
+  "title": "Make resource drop tooltip consistent between 2D and 3D",
+  "subsystem": "editor/scene",
+  "nfiles": 4
+ },
+ {
+  "pr": "87081",
+  "sha": "2759cbdc6cecedb07f3847091a1dfc8cab263228",
+  "title": "Add transform offset to Control nodes",
+  "subsystem": "editor/scene",
+  "nfiles": 5
+ },
+ {
+  "pr": "117036",
+  "sha": "fe6f78a4c788e6a9fddb333d1cb467ee572262e8",
+  "title": "Stop drag actions in the `TileMapLayer` and `GridMap` editors when focus is lost",
+  "subsystem": "editor/scene",
+  "nfiles": 2
+ },
+ {
+  "pr": "99499",
+  "sha": "778cf54dabd8a9e25b698a87036ab8604183f303",
+  "title": "Add \"Follow Selection\" in the 3D editor by using Center Selection twice",
+  "subsystem": "editor/scene",
+  "nfiles": 2
+ },
+ {
+  "pr": "116248",
+  "sha": "77c66698e6a0ade52759c3af9a81da3324634482",
+  "title": "Rework updating editor viewport HDR",
+  "subsystem": "editor/scene",
+  "nfiles": 10
+ },
+ {
+  "pr": "91970",
+  "sha": "9426643d5f680bc301050bac3440e2a746d36b2a",
+  "title": "Rename `\"Add Node Here` to `Add 2D Node Here` to avoid confusion when right click on 2d scene to add nodes",
+  "subsystem": "editor/scene",
+  "nfiles": 1
+ },
+ {
+  "pr": "116023",
+  "sha": "42ac04d9a9de1794e1d076b1a0377f211af671e9",
+  "title": "Fix using editor viewport splitters failing sometimes",
+  "subsystem": "editor/scene",
+  "nfiles": 1
+ },
+ {
+  "pr": "113552",
+  "sha": "929dddcee39b80e21233542ccecea876be9d1f4d",
+  "title": "Rework `Camera3D` preview",
+  "subsystem": "editor/scene",
+  "nfiles": 2
+ },
+ {
+  "pr": "109184",
+  "sha": "1b5011d08bc03a2fc7550a14b014a30e8c2051db",
+  "title": "Update toolbar on curve change in Path3D editor",
+  "subsystem": "editor/scene",
+  "nfiles": 1
+ },
+ {
+  "pr": "109360",
+  "sha": "953e6e8116ac2deb1fc97d92fa08d94bb5c074e4",
+  "title": "Add a scene painter tool",
+  "subsystem": "editor/scene",
+  "nfiles": 7
+ },
+ {
+  "pr": "102992",
+  "sha": "4af7648288835c8e6cf2c6039ef6bb649b7f87df",
+  "title": "Add highlight to used anchor preset in ControlEditorToolbar popup",
+  "subsystem": "editor/scene",
+  "nfiles": 2
+ },
+ {
+  "pr": "108875",
+  "sha": "9196d6b372c0847f735ce704cdbe6d2100a6c324",
+  "title": "Properly update region editor window when undoing changes to `region_rect`",
+  "subsystem": "editor/scene",
+  "nfiles": 1
+ },
+ {
+  "pr": "99949",
+  "sha": "4d6dc336d52790077945c45172e731688a0c373f",
+  "title": "Make tooltips from all editor modes inform about the selection menu shortcut",
+  "subsystem": "editor/scene",
+  "nfiles": 2
+ },
+ {
+  "pr": "116564",
+  "sha": "e3af0a0de407cf658a6e47ed804b060c7ff59a1f",
+  "title": "Fix error in TileSetEditor",
+  "subsystem": "editor/scene",
+  "nfiles": 1
+ },
+ {
+  "pr": "115008",
+  "sha": "02451893cca2b436135fa5354479a847bf1c503e",
+  "title": "Improve auto-translation of tile editors",
+  "subsystem": "editor/scene",
+  "nfiles": 8
+ },
+ {
+  "pr": "116525",
+  "sha": "51ab98414f69c70881384692ebd84e1c9e025a97",
+  "title": "Don't tint the preview camera icon",
+  "subsystem": "editor/scene",
+  "nfiles": 1
+ },
+ {
+  "pr": "106219",
+  "sha": "e0b9d1f3ffb35bf82d2db936f13b120477c47e05",
+  "title": "Fix 3D editor camera not updating correctly",
+  "subsystem": "editor/scene",
+  "nfiles": 1
+ },
+ {
+  "pr": "116328",
+  "sha": "325dc44c085f837031be7982a6cf82dc3a982590",
+  "title": "Fix \"disabled\" nodes depending on process mode",
+  "subsystem": "editor/scene",
+  "nfiles": 1
+ },
+ {
+  "pr": "114849",
+  "sha": "c4a893e988935aa8401a9ab4d3dd29b96db4fa1a",
+  "title": "Highlight selected points in Path3DEditor",
+  "subsystem": "editor/scene",
+  "nfiles": 2
+ },
+ {
+  "pr": "111016",
+  "sha": "4ce9ef043addf5e04c3eedf693b975cff8b43851",
+  "title": "Remove dead code in `node_3d_editor_gizmos.cpp`",
+  "subsystem": "editor/scene",
+  "nfiles": 1
+ },
+ {
+  "pr": "105045",
+  "sha": "7eedf1846f06f2de8842170f6b7eccf845e716d0",
+  "title": "Fix issues with `InputMap::load_from_project_settings()` when called in tool script",
+  "subsystem": "editor/scene",
+  "nfiles": 4
+ },
+ {
+  "pr": "116292",
+  "sha": "b7b205c4101fe3bc4b065ece5510ba89095354df",
+  "title": "Fix silent failure when creating collision shape as sibling of scene root",
+  "subsystem": "editor/scene",
+  "nfiles": 1
+ },
+ {
+  "pr": "111687",
+  "sha": "85ba5ffaadc2e2a0d0979e80c8e70260fa229674",
+  "title": "Fix selection highlight not updating when selecting a hidden canvasitems",
+  "subsystem": "editor/scene",
+  "nfiles": 2
+ },
+ {
+  "pr": "116075",
+  "sha": "3294d50d8246bf93bbb4a2015793171255e2d280",
+  "title": "Fix gizmo rotation arc and applied transform not being in sync",
+  "subsystem": "editor/scene",
+  "nfiles": 2
+ },
+ {
+  "pr": "115871",
+  "sha": "e4d449f4b41c71d8a5781de9f5c48522f5dcb182",
+  "title": "Fix transform gizmo rotation arc line not snapping with snap rotation",
+  "subsystem": "editor/scene",
+  "nfiles": 1
+ },
+ {
+  "pr": "115992",
+  "sha": "152f14278817ba67a08400c314b9eb024ba97926",
+  "title": "Fix trackball not highlighting immediately when toggling `Use Trackball`",
+  "subsystem": "editor/scene",
+  "nfiles": 2
+ },
+ {
+  "pr": "114717",
+  "sha": "ec297f8bb3377e47f78d4e835ea3e8be4f4ca648",
+  "title": "Add `view_plane_rotation_gizmo_scale` to EditorSettings & make color darken",
+  "subsystem": "editor/scene",
+  "nfiles": 6
+ },
+ {
+  "pr": "115856",
+  "sha": "486c73409a6ee29fd0cc698489e5ead9461b2077",
+  "title": "Make consecutive presses of `Begin Rotate Transformation` shortcut enable trackball rotation",
+  "subsystem": "editor/scene",
+  "nfiles": 1
+ },
+ {
+  "pr": "115855",
+  "sha": "2a5a740bde2ae200290d61ed27e0ae2efc0ac338",
+  "title": "Show viewport messages and rotation line instantly on instant transforms",
+  "subsystem": "editor/scene",
+  "nfiles": 1
+ },
+ {
+  "pr": "116078",
+  "sha": "0e56b6f8e149ede0f28fcd394caacec56c289b3a",
+  "title": "Fix viewport text not clearing after commit/cancel of custom editor gizmo handles",
+  "subsystem": "editor/scene",
+  "nfiles": 1
+ },
+ {
+  "pr": "115543",
+  "sha": "3a44846a86251d8bb8224daa8f4f7e0476c196ee",
+  "title": "Don't highlight gizmos while in freelook",
+  "subsystem": "editor/scene",
+  "nfiles": 1
+ },
+ {
+  "pr": "115719",
+  "sha": "c3687b9b8961ac819249d7ce7def9876ab4b42f7",
+  "title": "Theme Editor: Remember split offset between editor sessions",
+  "subsystem": "editor/scene",
+  "nfiles": 2
+ },
+ {
+  "pr": "115002",
+  "sha": "fb9711a19ae1ef6f1653dd9b26e4cc5d20441270",
+  "title": "Fix viewport orbit snap defaulting to always snapping when shortcut(s) are set to none",
+  "subsystem": "editor/scene",
+  "nfiles": 1
+ },
+ {
+  "pr": "115794",
+  "sha": "9e2ab92fee6a79b01b445075a22a6b77277a74f1",
+  "title": "Make trackball rotation optional as toggle option of Node3DEditorTool",
+  "subsystem": "editor/scene",
+  "nfiles": 3
+ },
+ {
+  "pr": "102085",
+  "sha": "bbfc894451b6cd4733322fc006a42e3453dfaf1a",
+  "title": "Add option for `Path3D` to snap to colliders",
+  "subsystem": "editor/scene",
+  "nfiles": 2
+ },
+ {
+  "pr": "115796",
+  "sha": "15c9d96209b652c96108ba14279e9c4f10fc0e55",
+  "title": "Add anti-aliasing to transform gizmo rotation arc",
+  "subsystem": "editor/scene",
+  "nfiles": 1
+ },
+ {
+  "pr": "115608",
+  "sha": "4c5f4e61ad17a80e332aba2decba3acb052acb0c",
+  "title": "Fix `Skeleton3D` Edit Mode bone buttons have priority over transform gizmo",
+  "subsystem": "editor/scene",
+  "nfiles": 1
+ },
+ {
+  "pr": "115784",
+  "sha": "ace9a93ff34b53b07a2eb408bc265c7b27c59972",
+  "title": "Remove unneeded checks for undo-redo history from Skeleton3DEditor",
+  "subsystem": "editor/scene",
+  "nfiles": 1
+ },
+ {
+  "pr": "115290",
+  "sha": "a6692abdb8cc17ef26225627226d10f7a6738101",
+  "title": "Register zoom shortcuts to match preset `Godot` navigation scheme",
+  "subsystem": "editor/scene",
+  "nfiles": 1
+ },
+ {
+  "pr": "110933",
+  "sha": "7ba375be00eaaa1d5f1a40ca9e6bc2763d57a1a6",
+  "title": "Add VirtualJoystick",
+  "subsystem": "editor/scene",
+  "nfiles": 8
+ },
+ {
+  "pr": "115137",
+  "sha": "74b14da73709fe144163f9dd77f912e74bcdf8ef",
+  "title": "a11y: Remove \"not accessible at this time\" placeholders.",
+  "subsystem": "editor/scene",
+  "nfiles": 8
+ },
+ {
+  "pr": "110759",
+  "sha": "0620af8db35d5f675c2ccfd94bac309a4d4900da",
+  "title": "Optimize tree size computation and the scene tree dock filter",
+  "subsystem": "editor/scene",
+  "nfiles": 4
+ },
+ {
+  "pr": "109976",
+  "sha": "027d32f3221d0cbd52b07bc0497a3613e396f48b",
+  "title": "Add trackball-style rotation for 3D transform gizmo",
+  "subsystem": "editor/scene",
+  "nfiles": 2
+ },
+ {
+  "pr": "115447",
+  "sha": "faf9adfcc6b88d63f24af25062689f8349e4eb16",
+  "title": "Fix icon size for items in show list of selectable nodes menu",
+  "subsystem": "editor/scene",
+  "nfiles": 1
+ },
+ {
+  "pr": "99569",
+  "sha": "9f0e14ab2ff2557d067a9b510b17b2638d3ee53d",
+  "title": "Add option to toggle always showing collision shapes",
+  "subsystem": "editor/scene",
+  "nfiles": 5
+ },
+ {
+  "pr": "105523",
+  "sha": "b2198da15498ce8676498c79940d4bf8abb3cee8",
+  "title": "Editor: Add some gizmo handles for `MeshInstance3D`",
+  "subsystem": "editor/scene",
+  "nfiles": 4
+ },
+ {
+  "pr": "115452",
+  "sha": "c161d13b1bade44ac6bad48e41c95995e7381811",
+  "title": "Reduce compile time by removing `geometry_3d.h` include from `rendering_server.h`",
+  "subsystem": "editor/scene",
+  "nfiles": 23
+ },
+ {
+  "pr": "115353",
+  "sha": "9878cb9e724b08ca40091b6823c3ee44253003b7",
+  "title": "Fix collision repositioning for child nodes",
+  "subsystem": "editor/scene",
+  "nfiles": 1
+ }
+]

@@ -946,7 +946,11 @@ void EditorSettings::_load_defaults(Ref<ConfigFile> p_extra_config) {
 	EDITOR_SETTING(Variant::FLOAT, PROPERTY_HINT_RANGE, "editors/3d/navigation_feel/zoom_inertia", 0.05, "0,1,0.001")
 	EDITOR_SETTING(Variant::FLOAT, PROPERTY_HINT_RANGE, "editors/3d/navigation_feel/angle_snap_threshold", 10.0, "1,20,0.1,degrees")
 	_initial_set("editors/3d/navigation/show_viewport_rotation_gizmo", true);
-	_initial_set("editors/3d/navigation/show_viewport_navigation_gizmo", DisplayServer::get_singleton()->is_touchscreen_available());
+	bool should_show_viewport_navigation_gizmo = false;
+#ifdef ANDROID_ENABLED
+	should_show_viewport_navigation_gizmo = true;
+#endif
+	_initial_set("editors/3d/navigation/show_viewport_navigation_gizmo", should_show_viewport_navigation_gizmo);
 
 	// 3D: Freelook
 	EDITOR_SETTING_BASIC(Variant::INT, PROPERTY_HINT_ENUM, "editors/3d/freelook/freelook_navigation_scheme", 0, "Default,Partially Axis-Locked (id Tech),Fully Axis-Locked (Minecraft)")
@@ -1290,6 +1294,7 @@ void EditorSettings::create() {
 
 		print_verbose("EditorSettings: Load OK!");
 
+		singleton->init_shortcuts();
 		singleton->setup_language(true);
 		singleton->setup_network();
 		singleton->load_favorites_and_recent_dirs();
@@ -1314,9 +1319,14 @@ fail:
 	singleton->set_path(config_file_path, true);
 	singleton->save_changed_setting = true;
 	singleton->_load_defaults(extra_config);
+	singleton->init_shortcuts();
 	singleton->setup_language(true);
 	singleton->setup_network();
 	singleton->update_text_editor_themes_list();
+}
+
+void EditorSettings::init_shortcuts() {
+	ED_SHORTCUT("editor/open_search", TTRC("Focus Search/Filter Bar"), KeyModifierMask::CMD_OR_CTRL | Key::F);
 }
 
 void EditorSettings::setup_language(bool p_initial_setup) {

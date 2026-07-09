@@ -808,7 +808,9 @@ void EditorBuildProfileManager::_find_files(EditorFileSystemDirectory *p_dir, co
 		HashSet<StringName> classes;
 		ResourceLoader::get_classes_used(p, &classes);
 		for (const StringName &E : classes) {
-			cache.classes.push_back(E);
+			if (E == "Resource" || E == "Node" || ClassDB::is_parent_class(E, "Resource") || ClassDB::is_parent_class(E, "Node")) {
+				cache.classes.push_back(E);
+			}
 		}
 
 		HashSet<String> build_deps;
@@ -906,12 +908,8 @@ void EditorBuildProfileManager::_detect_from_project() {
 	const LocalVector<String> hardcoded_classes = {
 		"Font",
 		"InputEvent",
-		"MainLoop",
-		"Mutex",
 		"ShaderInclude",
-		"ShaderIncludeDB",
 		"StyleBox",
-		"Time",
 		"Window",
 	};
 

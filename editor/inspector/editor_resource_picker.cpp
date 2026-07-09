@@ -317,11 +317,13 @@ void EditorResourcePicker::_update_menu_items() {
 			edit_menu->add_icon_item(get_editor_theme_icon(SNAME("Search")), TTR("Inspect"), OBJ_MENU_INSPECT);
 		} else {
 			edit_menu->add_icon_item(get_editor_theme_icon(SNAME("Edit")), TTR("Edit"), OBJ_MENU_INSPECT);
+			edit_menu->set_item_disabled(-1, force_allow_unique);
 		}
 
 		if (is_editable()) {
 			if (!_is_custom_type_script()) {
 				edit_menu->add_icon_item(get_editor_theme_icon(SNAME("Clear")), TTR("Clear"), OBJ_MENU_CLEAR);
+				edit_menu->set_item_disabled(-1, force_allow_unique);
 			}
 			bool unique_enabled = _is_uniqueness_enabled();
 			edit_menu->add_icon_item(get_editor_theme_icon(SNAME("Duplicate")), TTR("Make Unique"), OBJ_MENU_MAKE_UNIQUE);
@@ -356,7 +358,9 @@ void EditorResourcePicker::_update_menu_items() {
 			}
 
 			edit_menu->add_icon_item(get_editor_theme_icon(SNAME("Save")), TTR("Save"), OBJ_MENU_SAVE);
+			edit_menu->set_item_disabled(-1, force_allow_unique);
 			edit_menu->add_icon_item(get_editor_theme_icon(SNAME("Save")), TTR("Save As..."), OBJ_MENU_SAVE_AS);
+			edit_menu->set_item_disabled(-1, force_allow_unique);
 		}
 
 		if (edited_resource->get_path().is_resource_file()) {
@@ -390,12 +394,12 @@ void EditorResourcePicker::_update_menu_items() {
 		edit_menu->add_separator();
 
 		if (edited_resource.is_valid()) {
-			edit_menu->add_item(TTRC("Copy"), OBJ_MENU_COPY);
+			edit_menu->add_icon_item(get_editor_theme_icon(SNAME("ActionCopy")), TTRC("Copy"), OBJ_MENU_COPY);
 		}
 
 		if (paste_valid) {
-			edit_menu->add_item(TTRC("Paste"), OBJ_MENU_PASTE);
-			edit_menu->add_item(TTRC("Paste as Unique"), OBJ_MENU_PASTE_AS_UNIQUE);
+			edit_menu->add_icon_item(get_editor_theme_icon(SNAME("ActionPaste")), TTRC("Paste"), OBJ_MENU_PASTE);
+			edit_menu->add_icon_item(get_editor_theme_icon(SNAME("ActionPaste")), TTRC("Paste as Unique"), OBJ_MENU_PASTE_AS_UNIQUE);
 		}
 	}
 
@@ -623,15 +627,15 @@ void EditorResourcePicker::_edit_menu_cbk(int p_which) {
 				obj = EditorNode::get_editor_data().instantiate_custom_type(intype, "Resource");
 			}
 
-			Resource *resp = Object::cast_to<Resource>(obj);
-			ERR_BREAK(!resp);
-			resp->set_path(_get_owner_path() + "::" + resp->generate_scene_unique_id()); // Assign a base path for built-in Resources.
+			Ref<Resource> resp(obj);
+			ERR_BREAK(resp.is_null());
+			EditorNode::setup_built_in_resource(resp, _get_owner_path()); // Assign a base path for built-in Resources.
 
 			EditorNode::get_editor_data().instantiate_object_properties(obj);
 
 			// Prevent freeing of the object until the end of the update of the resource (GH-88286).
 			Ref<Resource> old_edited_resource = edited_resource;
-			edited_resource = Ref<Resource>(resp);
+			edited_resource = resp;
 			_resource_changed();
 		} break;
 	}
@@ -1764,7 +1768,11 @@ void EditorAudioStreamPicker::_preview_draw() {
 	}
 
 	stream_preview_rect->draw_texture(icon, Point2i(EDSCALE * 4, rect.position.y + (rect.size.height - icon->get_height()) / 2), icon_modulate);
-	stream_preview_rect->draw_string(font, Point2i(EDSCALE * 4 + icon->get_width(), rect.position.y + font->get_ascent(font_size) + (rect.size.height - font->get_height(font_size)) / 2), text, HORIZONTAL_ALIGNMENT_CENTER, size.width - 4 * EDSCALE - icon->get_width(), font_size, get_theme_color(SceneStringName(font_color), EditorStringName(Editor)));
+
+	float text_width = size.width - 4 * EDSCALE - icon->get_width();
+	if (text_width > 0) {
+		stream_preview_rect->draw_string(font, Point2i(EDSCALE * 4 + icon->get_width(), rect.position.y + font->get_ascent(font_size) + (rect.size.height - font->get_height(font_size)) / 2), text, HORIZONTAL_ALIGNMENT_CENTER, text_width, font_size, get_theme_color(SceneStringName(font_color), EditorStringName(Editor)));
+	}
 }
 
 EditorAudioStreamPicker::EditorAudioStreamPicker() :

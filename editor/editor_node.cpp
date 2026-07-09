@@ -37,6 +37,7 @@
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
 #include "core/io/image.h"
+#include "core/io/missing_resource.h"
 #include "core/io/resource_loader.h"
 #include "core/io/resource_saver.h"
 #include "core/object/class_db.h"
@@ -74,9 +75,11 @@
 #include "scene/resources/packed_scene.h"
 #include "scene/resources/portable_compressed_texture.h"
 #include "scene/theme/theme_db.h"
+#include "servers/audio/audio_server.h"
 #include "servers/display/display_server.h"
 #include "servers/navigation_2d/navigation_server_2d.h"
 #include "servers/navigation_3d/navigation_server_3d.h"
+#include "servers/rendering/rendering_device.h"
 #include "servers/rendering/rendering_server.h"
 
 #include "editor/animation/animation_player_editor_plugin.h"
@@ -857,21 +860,19 @@ void EditorNode::_notification(int p_what) {
 				_update_all_scene_tabs();
 			}
 
-			// Update the animation frame of the update spinner.
-			uint64_t frame = Engine::get_singleton()->get_frames_drawn();
-			uint64_t tick = OS::get_singleton()->get_ticks_msec();
+			if (update_spinner->is_visible()) {
+				// Update the animation frame of the update spinner.
+				uint64_t frame = Engine::get_singleton()->get_frames_drawn();
+				uint64_t tick = OS::get_singleton()->get_ticks_msec();
 
-			if (frame != update_spinner_step_frame && (tick - update_spinner_step_msec) > (1000 / 8)) {
-				update_spinner_step++;
-				if (update_spinner_step >= 8) {
-					update_spinner_step = 0;
-				}
+				if (frame != update_spinner_step_frame && (tick - update_spinner_step_msec) > (1000 / 8)) {
+					update_spinner_step++;
+					if (update_spinner_step >= 8) {
+						update_spinner_step = 0;
+					}
 
-				update_spinner_step_msec = tick;
-				update_spinner_step_frame = frame + 1;
-
-				// Update the icon itself only when the spinner is visible.
-				if (_should_display_update_spinner()) {
+					update_spinner_step_msec = tick;
+					update_spinner_step_frame = frame + 1;
 					update_spinner->set_button_icon(theme->get_icon("Progress" + itos(update_spinner_step + 1), EditorStringName(EditorIcons)));
 				}
 			}
@@ -1167,9 +1168,25 @@ void EditorNode::_notification(int p_what) {
 }
 
 void EditorNode::_update_update_spinner() {
-	update_spinner->set_visible(!RenderingServer::get_singleton()->canvas_item_get_debug_redraw() && _should_display_update_spinner());
+	bool should_display_spinner = false;
+	if (!RenderingServer::get_singleton()->canvas_item_get_debug_redraw()) {
+#ifdef DEV_ENABLED
+		const bool in_dev = true;
+#else
+		const bool in_dev = false;
+#endif
+		const int show_update_spinner_setting = EDITOR_GET("interface/editor/show_update_spinner");
+		should_display_spinner = (show_update_spinner_setting == 0 && in_dev) || show_update_spinner_setting == 1;
+	}
+	update_spinner->set_visible(should_display_spinner);
 
 	const bool update_continuously = EDITOR_GET("interface/editor/update_continuously");
+	OS::get_singleton()->set_low_processor_usage_mode(!update_continuously);
+
+	if (!update_spinner->is_visible()) {
+		return;
+	}
+
 	PopupMenu *update_popup = update_spinner->get_popup();
 	update_popup->set_item_checked(update_popup->get_item_index(SPINNER_UPDATE_CONTINUOUSLY), update_continuously);
 	update_popup->set_item_checked(update_popup->get_item_index(SPINNER_UPDATE_WHEN_CHANGED), !update_continuously);
@@ -1187,8 +1204,6 @@ void EditorNode::_update_update_spinner() {
 		update_spinner->set_tooltip_text(TTRC("Spins when the editor window redraws."));
 		update_spinner->set_self_modulate(Color(1, 1, 1));
 	}
-
-	OS::get_singleton()->set_low_processor_usage_mode(!update_continuously);
 }
 
 void EditorNode::_execute_upgrades() {
@@ -1734,9 +1749,15 @@ Error EditorNode::load_resource(const String &p_resource, bool p_ignore_broken_d
 
 	Ref<Resource> res;
 	if (force_textfile_extensions.has(p_resource.get_extension())) {
-		res = ResourceCache::get_ref(p_resource);
-		if (res.is_null() || !res->is_class("TextFile")) {
-			res = ScriptEditor::get_singleton()->open_file(p_resource);
+		const String resource_type = ResourceLoader::get_resource_type(p_resource);
+		if (resource_type != "Translation" && ResourceLoader::exists(p_resource, "")) {
+			res = ResourceLoader::load(p_resource, "", ResourceFormatLoader::CACHE_MODE_REUSE, &err);
+		}
+		if (res.is_null()) {
+			res = ResourceCache::get_ref(p_resource);
+			if (res.is_null() || !res->is_class("TextFile")) {
+				res = ScriptEditor::get_singleton()->open_file(p_resource);
+			}
 		}
 	} else if (ResourceLoader::exists(p_resource, "")) {
 		res = ResourceLoader::load(p_resource, "", ResourceFormatLoader::CACHE_MODE_REUSE, &err);
@@ -1795,9 +1816,9 @@ void EditorNode::save_resource_in_path(const Ref<Resource> &p_resource, const St
 
 	if (err != OK) {
 		if (ResourceLoader::is_imported(p_resource->get_path())) {
-			show_accept(TTR("Imported resources can't be saved."), TTR("OK"));
+			show_accept(vformat(TTR("Cannot save resource at path \"%s\", as it is imported.\nImported resources can't be saved. Instead, modify the source file or change options in the Import dock."), path), TTR("OK"));
 		} else {
-			show_accept(TTR("Error saving resource!"), TTR("OK"));
+			show_accept(vformat(TTR("Error saving resource at path \"%s\": %s."), path, TTR(error_names[err])), TTR("OK"));
 		}
 
 		saving_resources_in_path.erase(p_resource);
@@ -4097,6 +4118,12 @@ void EditorNode::_save_screenshot_with_embedded_process(int64_t p_w, int64_t p_h
 	Ref<Image> img = texture->get_image();
 	ERR_FAIL_COND_MSG(img.is_null(), "Cannot get an image from a viewport texture of the editor main screen.");
 	img->convert(Image::FORMAT_RGBA8);
+#ifdef RD_ENABLED
+	RenderingDevice *rendering_device = RD::get_singleton();
+	if (rendering_device && RenderingServer::get_singleton()->viewport_is_using_hdr_2d(viewport->get_viewport_rid())) {
+		img->linear_to_srgb();
+	}
+#endif
 	ERR_FAIL_COND(p_emb_path.is_empty());
 	Ref<Image> overlay = Image::load_from_file(p_emb_path);
 	DirAccess::remove_absolute(p_emb_path);
@@ -4121,6 +4148,13 @@ void EditorNode::_save_screenshot(const String &p_path) {
 	ERR_FAIL_COND_MSG(texture.is_null(), "Cannot get a viewport texture from the editor main screen.");
 	Ref<Image> img = texture->get_image();
 	ERR_FAIL_COND_MSG(img.is_null(), "Cannot get an image from a viewport texture of the editor main screen.");
+	img->convert(Image::FORMAT_RGBA8);
+#ifdef RD_ENABLED
+	RenderingDevice *rendering_device = RD::get_singleton();
+	if (rendering_device && RenderingServer::get_singleton()->viewport_is_using_hdr_2d(viewport->get_viewport_rid())) {
+		img->linear_to_srgb();
+	}
+#endif
 	Error error = img->save_png(p_path);
 	ERR_FAIL_COND_MSG(error != OK, "Cannot save screenshot to file '" + p_path + "'.");
 
@@ -4154,7 +4188,10 @@ void EditorNode::_check_system_theme_changed() {
 	}
 
 	if (system_theme_changed) {
+		class_icon_cache.clear();
 		_update_theme();
+		_build_icon_type_cache();
+		recent_scenes->reset_size();
 	} else if (menu_type == MENU_TYPE_GLOBAL && display_server->is_dark_mode_supported() && display_server->is_dark_mode() != last_dark_mode_state) {
 		last_dark_mode_state = display_server->is_dark_mode();
 
@@ -5432,6 +5469,29 @@ void EditorNode::_nav_to_selected_scene() {
 	}
 }
 
+void EditorNode::setup_built_in_resource(const Ref<Resource> &p_resource, const String &p_owner_path) {
+	String resource_class;
+	const Ref<MissingResource> &missing_resource = p_resource;
+	if (missing_resource.is_valid()) {
+		resource_class = missing_resource->get_original_class();
+	} else {
+		resource_class = p_resource->get_class();
+	}
+
+	String unique_id;
+	String final_path;
+	while (true) {
+		unique_id = resource_class + "_" + Resource::generate_scene_unique_id();
+		final_path = p_owner_path + "::" + unique_id;
+
+		if (!ResourceCache::has(final_path)) {
+			break;
+		}
+	}
+	p_resource->set_scene_unique_id(unique_id);
+	p_resource->set_path(final_path);
+}
+
 void EditorNode::setup_color_picker(ColorPicker *p_picker) {
 	p_picker->set_editor_settings(EditorSettings::get_singleton());
 	int default_color_mode = EditorSettings::get_singleton()->get_project_metadata("color_picker", "color_mode", EDITOR_GET("interface/inspector/default_color_picker_mode"));
@@ -6700,6 +6760,26 @@ String EditorNode::_get_system_info() const {
 	const String processor_name = OS::get_singleton()->get_processor_name();
 	const int processor_count = OS::get_singleton()->get_processor_count();
 
+	const String audio_driver_name = AudioServer::get_singleton()->get_driver_name();
+	const float mix_rate = AudioServer::get_singleton()->get_mix_rate();
+
+	AudioServer::SpeakerMode speaker_mode = AudioServer::get_singleton()->get_speaker_mode();
+	String speaker_mode_string;
+	switch (speaker_mode) {
+		case AudioServer::SpeakerMode::SPEAKER_MODE_STEREO:
+			speaker_mode_string = "Stereo/mono";
+			break;
+		case AudioServer::SpeakerMode::SPEAKER_SURROUND_31:
+			speaker_mode_string = "Surround 3.1";
+			break;
+		case AudioServer::SpeakerMode::SPEAKER_SURROUND_51:
+			speaker_mode_string = "Surround 5.1";
+			break;
+		case AudioServer::SpeakerMode::SPEAKER_SURROUND_71:
+			speaker_mode_string = "Surround 7.1";
+			break;
+	}
+
 	// Prettify
 	if (rendering_method == "forward_plus") {
 		rendering_method = "Forward+";
@@ -6782,17 +6862,9 @@ String EditorNode::_get_system_info() const {
 		info.push_back(vformat("%s memory", String::humanize_size(system_ram)));
 	}
 
-	return String(" - ").join(info);
-}
+	info.push_back(vformat("%s (%d Hz, %s)", audio_driver_name, int(mix_rate), speaker_mode_string));
 
-bool EditorNode::_should_display_update_spinner() const {
-#ifdef DEV_ENABLED
-	const bool in_dev = true;
-#else
-	const bool in_dev = false;
-#endif
-	const int show_update_spinner_setting = EDITOR_GET("interface/editor/show_update_spinner");
-	return (show_update_spinner_setting == 0 && in_dev) || show_update_spinner_setting == 1;
+	return String(" - ").join(info);
 }
 
 Ref<Texture2D> EditorNode::_file_dialog_get_icon(const String &p_path) {
@@ -7689,11 +7761,21 @@ void EditorNode::_save_window_settings_to_config(Ref<ConfigFile> p_layout, const
 	if (w) {
 		p_layout->set_value(p_section, "screen", w->get_current_screen());
 
+		Size2i win_size = w->get_size();
+
+		if (DisplayServer::get_singleton()->has_feature(DisplayServer::FEATURE_SELF_FITTING_WINDOWS)) {
+			// Work around logical size issues with HiDPI on Wayland. See GH-110643.
+			float win_scale = DisplayServer::get_singleton()->window_get_scale(w->get_window_id());
+
+			win_size.width /= win_scale;
+			win_size.height /= win_scale;
+		}
+
 		Window::Mode mode = w->get_mode();
 		switch (mode) {
 			case Window::MODE_WINDOWED:
 				p_layout->set_value(p_section, "mode", "windowed");
-				p_layout->set_value(p_section, "size", w->get_size());
+				p_layout->set_value(p_section, "size", win_size);
 				break;
 			case Window::MODE_FULLSCREEN:
 			case Window::MODE_EXCLUSIVE_FULLSCREEN:
@@ -9488,6 +9570,8 @@ void EditorNode::_feature_profile_changed() {
 	if (projectless_shell) {
 		_apply_projectless_shell_restrictions();
 	}
+
+	editor_dock_manager->update_docks_menu();
 }
 
 void EditorNode::_bind_methods() {
@@ -10582,7 +10666,7 @@ EditorNode::EditorNode() {
 	ED_SHORTCUT_AND_COMMAND("editor/engine_compilation_configuration_editor", TTRC("Engine Compilation Configuration Editor..."));
 	ED_SHORTCUT_AND_COMMAND("editor/upgrade_project", TTRC("Upgrade Project Files..."));
 
-	ED_SHORTCUT("editor/reload_current_project", TTRC("Reload Current Project"));
+	ED_SHORTCUT_AND_COMMAND("editor/reload_current_project", TTRC("Reload Current Project"));
 	ED_SHORTCUT_AND_COMMAND("editor/open_project", TTRC("Open Project..."), KeyModifierMask::CTRL + KeyModifierMask::SHIFT + Key::O);
 
 	ED_SHORTCUT("editor/command_palette", TTRC("Command Palette..."), KeyModifierMask::CMD_OR_CTRL | KeyModifierMask::SHIFT | Key::P);

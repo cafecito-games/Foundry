@@ -49,7 +49,6 @@
 #include "editor/settings/editor_settings.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/gui/button.h"
-#include "scene/gui/flow_container.h"
 #include "scene/gui/label.h"
 #include "scene/gui/menu_button.h"
 #include "scene/gui/panel.h"
@@ -81,7 +80,6 @@ void GameViewDebugger::_session_started(Ref<EditorDebuggerSession> p_session) {
 	settings["editors/3d/navigation_feel/orbit_sensitivity"] = EDITOR_GET("editors/3d/navigation_feel/orbit_sensitivity");
 	settings["editors/3d/navigation_feel/translation_sensitivity"] = EDITOR_GET("editors/3d/navigation_feel/translation_sensitivity");
 	settings["editors/3d/selection_box_color"] = EDITOR_GET("editors/3d/selection_box_color");
-	settings["editors/3d/freelook/freelook_base_speed"] = EDITOR_GET("editors/3d/freelook/freelook_base_speed");
 
 	Array setup_data;
 	setup_data.append(settings);
@@ -1224,7 +1222,8 @@ GameView::GameView(Ref<GameViewDebugger> p_debugger, EmbeddedProcessBase *p_embe
 	toolbar_margin->set_theme_type_variation("MainToolBarMargin");
 	add_child(toolbar_margin);
 
-	FlowContainer *main_menu_fc = memnew(FlowContainer);
+	// FIXME: Turn this back into a FlowContainer once GH-115523 is fixed.
+	HBoxContainer *main_menu_fc = memnew(HBoxContainer);
 	toolbar_margin->add_child(main_menu_fc);
 
 	HBoxContainer *process_hb = memnew(HBoxContainer);
@@ -1388,8 +1387,6 @@ GameView::GameView(Ref<GameViewDebugger> p_debugger, EmbeddedProcessBase *p_embe
 	menu->add_radio_check_item(TTRC("Manipulate In-Game"), CAMERA_MODE_INGAME);
 	menu->set_item_checked(menu->get_item_index(CAMERA_MODE_INGAME), true);
 	menu->add_radio_check_item(TTRC("Manipulate From Editors"), CAMERA_MODE_EDITORS);
-	_camera_override_menu_id_pressed(EditorSettings::get_singleton()->get_project_metadata("game_view", "camera_override_mode", 0));
-
 	camera_hb->add_child(memnew(VSeparator));
 
 	embedding_hb = memnew(HBoxContainer);
@@ -1455,6 +1452,7 @@ GameView::GameView(Ref<GameViewDebugger> p_debugger, EmbeddedProcessBase *p_embe
 	state_label->set_autowrap_mode(TextServer::AUTOWRAP_WORD);
 	state_label->set_anchors_and_offsets_preset(PRESET_FULL_RECT);
 
+	_camera_override_menu_id_pressed(EditorSettings::get_singleton()->get_project_metadata("game_view", "camera_override_mode", 0));
 	_update_debugger_buttons();
 
 	p_debugger->connect("session_started", callable_mp(this, &GameView::_sessions_changed));

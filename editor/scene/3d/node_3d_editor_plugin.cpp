@@ -1750,6 +1750,7 @@ void Node3DEditorViewport::_list_select(Ref<InputEventMouseButton> b) {
 	} else if (!selection_results.is_empty()) {
 		NodePath root_path = get_tree()->get_edited_scene_root()->get_path();
 		StringName root_name = root_path.get_name(root_path.get_name_count() - 1);
+		int icon_max_width = EditorNode::get_singleton()->get_editor_theme()->get_constant(SNAME("class_icon_size"), EditorStringName(Editor));
 
 		for (int i = 0; i < selection_results.size(); i++) {
 			Node3D *spat = selection_results[i];
@@ -1782,6 +1783,7 @@ void Node3DEditorViewport::_list_select(Ref<InputEventMouseButton> b) {
 			}
 			selection_menu->add_item((String)spat->get_name() + suffix);
 			selection_menu->set_item_icon(i, icon);
+			selection_menu->set_item_icon_max_width(i, icon_max_width);
 			selection_menu->set_item_metadata(i, node_path);
 			selection_menu->set_item_tooltip(i, String(spat->get_name()) + "\nType: " + spat->get_class() + "\nPath: " + node_path);
 		}
@@ -1915,6 +1917,7 @@ void Node3DEditorViewport::_sinput(const Ref<InputEvent> &p_event) {
 						// Restore.
 						_edit.gizmo->commit_handle(_edit.gizmo_handle, _edit.gizmo_handle_secondary, _edit.gizmo_initial_value, true);
 						_edit.gizmo = Ref<EditorNode3DGizmo>();
+						set_message("");
 					}
 
 					if (_edit.mode == TRANSFORM_NONE) {
@@ -2232,6 +2235,7 @@ void Node3DEditorViewport::_sinput(const Ref<InputEvent> &p_event) {
 							selected_node->update_gizmos();
 						}
 						_edit.gizmo = Ref<EditorNode3DGizmo>();
+						set_message("");
 						break;
 					}
 
@@ -2263,6 +2267,7 @@ void Node3DEditorViewport::_sinput(const Ref<InputEvent> &p_event) {
 							}
 
 							se->gizmo->commit_subgizmos(ids, restore, false);
+							finish_transform();
 						} else {
 							if (_edit.original_mouse_pos != _edit.mouse_pos) {
 								commit_transform();
@@ -2307,7 +2312,7 @@ void Node3DEditorViewport::_sinput(const Ref<InputEvent> &p_event) {
 	if (m.is_valid() && !_edit.instant) {
 		_edit.mouse_pos = m->get_position();
 
-		if (spatial_editor->get_single_selected_node()) {
+		if (!freelook_active && spatial_editor->get_single_selected_node()) {
 			Vector<Ref<Node3DGizmo>> gizmos = spatial_editor->get_single_selected_node()->get_gizmos();
 
 			Ref<EditorNode3DGizmo> found_gizmo;
@@ -2341,7 +2346,7 @@ void Node3DEditorViewport::_sinput(const Ref<InputEvent> &p_event) {
 			}
 		}
 
-		if (transform_gizmo_visible && spatial_editor->get_current_hover_gizmo().is_null() && !m->get_button_mask().has_flag(MouseButtonMask::LEFT) && _edit.gizmo.is_null()) {
+		if (!freelook_active && transform_gizmo_visible && spatial_editor->get_current_hover_gizmo().is_null() && !m->get_button_mask().has_flag(MouseButtonMask::LEFT) && _edit.gizmo.is_null()) {
 			_transform_gizmo_select(_edit.mouse_pos, true);
 		}
 
@@ -2570,6 +2575,7 @@ void Node3DEditorViewport::_sinput(const Ref<InputEvent> &p_event) {
 				// Restore.
 				_edit.gizmo->commit_handle(_edit.gizmo_handle, _edit.gizmo_handle_secondary, _edit.gizmo_initial_value, true);
 				_edit.gizmo = Ref<EditorNode3DGizmo>();
+				set_message("");
 			}
 			if (k->get_keycode() == Key::ESCAPE && !cursor.region_select && !k->is_echo()) {
 				_clear_selected();
@@ -3644,8 +3650,7 @@ void Node3DEditorViewport::_notification(int p_what) {
 					if (!ruler->is_inside_tree()) {
 						double snap = EDITOR_GET("interface/inspector/default_float_step");
 						int snap_step_decimals = Math::range_step_decimals(snap);
-						set_message(TTR("Translating:") + " (" + String::num(selected_node->get_global_position().x, snap_step_decimals) + ", " +
-								String::num(selected_node->get_global_position().y, snap_step_decimals) + ", " + String::num(selected_node->get_global_position().z, snap_step_decimals) + ")");
+						set_message(vformat(TTR("Translating: %s"), vformat("%.*v", snap_step_decimals, selected_node->get_global_position())));
 					}
 
 					selected_node->set_global_position(spatial_editor->snap_point(_get_instance_position(_edit.mouse_pos, selected_node)));
@@ -3666,8 +3671,7 @@ void Node3DEditorViewport::_notification(int p_what) {
 				preview_node_pos = spatial_editor->snap_point(_get_instance_position(preview_node_viewport_pos, preview_node));
 				double snap = EDITOR_GET("interface/inspector/default_float_step");
 				int snap_step_decimals = Math::range_step_decimals(snap);
-				set_message(TTR("Instantiating:") + " (" + String::num(preview_node_pos.x, snap_step_decimals) + ", " +
-						String::num(preview_node_pos.y, snap_step_decimals) + ", " + String::num(preview_node_pos.z, snap_step_decimals) + ")");
+				set_message(vformat(TTR("Instantiating: %s"), vformat("%.*v", snap_step_decimals, preview_node_pos)));
 				Transform3D preview_gl_transform = Transform3D(Basis(), preview_node_pos);
 				preview_node->set_global_transform(preview_gl_transform);
 				if (!preview_node->is_visible()) {
@@ -3697,6 +3701,7 @@ void Node3DEditorViewport::_notification(int p_what) {
 
 				spatial_editor->get_single_selected_node()->update_gizmos();
 				_edit.gizmo = Ref<EditorNode3DGizmo>();
+				set_message("");
 			}
 		} break;
 
@@ -3898,14 +3903,10 @@ void Node3DEditorViewport::_draw() {
 			}
 
 			Color circle_color = (_edit.plane == TRANSFORM_VIEW) ? Color(1.0, 1.0, 1.0, 0.8) : handle_color.from_hsv(handle_color.get_h(), 0.6, 1.0, 0.8);
-			for (int i = 0; i < circle_points.size() - 1; i++) {
-				RenderingServer::get_singleton()->canvas_item_add_line(
-						ci,
-						circle_points[i],
-						circle_points[i + 1],
-						circle_color,
-						Math::round(2 * EDSCALE));
-			}
+			Vector<Color> circle_colors;
+			circle_colors.resize(circle_points.size());
+			circle_colors.fill(circle_color);
+			RenderingServer::get_singleton()->canvas_item_add_polyline(ci, circle_points, circle_colors, Math::round(2 * EDSCALE), true);
 
 			const int segments = 64;
 			float display_angle = _edit.display_rotation_angle;
@@ -3962,7 +3963,8 @@ void Node3DEditorViewport::_draw() {
 					center,
 					start_point_2d,
 					edge_color,
-					Math::round(2 * EDSCALE));
+					Math::round(2 * EDSCALE),
+					true);
 
 			Vector3 end_point_3d = _edit.center + gizmo_scale * rotation_radius * (right * Math::cos(_edit.accumulated_rotation_angle) + forward * Math::sin(_edit.accumulated_rotation_angle));
 			Point2 end_point_2d = point_to_screen(end_point_3d);
@@ -3971,7 +3973,8 @@ void Node3DEditorViewport::_draw() {
 					center,
 					end_point_2d,
 					edge_color,
-					Math::round(2 * EDSCALE));
+					Math::round(2 * EDSCALE),
+					true);
 		}
 
 		if (_edit.show_rotation_line) {
@@ -5800,8 +5803,23 @@ void Node3DEditorViewport::begin_transform(TransformMode p_mode, bool instant) {
 		_edit.accumulated_rotation_angle = 0.0;
 		_edit.display_rotation_angle = 0.0;
 		_edit.gizmo_initiated = false;
+		switch (p_mode) {
+			case TRANSFORM_ROTATE:
+				_edit.show_rotation_line = true;
+				set_message(vformat(TTR("Rotating %s degrees."), String::num(0, 0)));
+				break;
+			case TRANSFORM_TRANSLATE:
+				set_message(vformat(TTR("Translating: %s"), vformat("%.0v", Vector3())));
+				break;
+			case TRANSFORM_SCALE:
+				set_message(vformat(TTR("Scaling: %s"), vformat("%.0v", Vector3())));
+				break;
+			default:
+				break;
+		}
 		update_transform_gizmo_view();
 		set_process_input(instant);
+		surface->queue_redraw();
 	}
 }
 
@@ -5977,8 +5995,7 @@ void Node3DEditorViewport::update_transform(bool p_shift) {
 			motion_snapped.snapf(snap);
 			// This might not be necessary anymore after issue #288 is solved (in 4.0?).
 			// TRANSLATORS: Refers to changing the scale of a node in the 3D editor.
-			set_message(TTR("Scaling:") + " (" + String::num(motion_snapped.x, snap_step_decimals) + ", " +
-					String::num(motion_snapped.y, snap_step_decimals) + ", " + String::num(motion_snapped.z, snap_step_decimals) + ")");
+			set_message(vformat(TTR("Scaling: %s"), vformat("%.*v", snap_step_decimals, motion_snapped)));
 			if (local_coords) {
 				// TODO: needed?
 				motion = _edit.original.basis.inverse().xform(motion);
@@ -6045,8 +6062,7 @@ void Node3DEditorViewport::update_transform(bool p_shift) {
 			Vector3 motion_snapped = motion;
 			motion_snapped.snapf(snap);
 			// TRANSLATORS: Refers to changing the position of a node in the 3D editor.
-			set_message(TTR("Translating:") + " (" + String::num(motion_snapped.x, snap_step_decimals) + ", " +
-					String::num(motion_snapped.y, snap_step_decimals) + ", " + String::num(motion_snapped.z, snap_step_decimals) + ")");
+			set_message(vformat(TTR("Translating: %s"), vformat("%.*v", snap_step_decimals, motion_snapped)));
 			if (local_coords) {
 				motion = spatial_editor->get_gizmo_transform().basis.inverse().xform(motion);
 			}
@@ -6765,8 +6781,8 @@ void Node3DEditorViewportContainer::gui_input(const Ref<InputEvent> &p_event) {
 			int mid_w = size.width * ratio_h;
 			int mid_h = size.height * ratio_v;
 
-			dragging_h = mb->get_position().x > (mid_w - h_sep / 2) && mb->get_position().x < (mid_w + h_sep / 2);
-			dragging_v = mb->get_position().y > (mid_h - v_sep / 2) && mb->get_position().y < (mid_h + v_sep / 2);
+			dragging_h = mb->get_position().x >= (mid_w - h_sep / 2) && mb->get_position().x < (mid_w + h_sep / 2);
+			dragging_v = mb->get_position().y >= (mid_h - v_sep / 2) && mb->get_position().y < (mid_h + v_sep / 2);
 
 			drag_begin_pos = mb->get_position();
 			drag_begin_ratio.x = ratio_h;
@@ -6813,8 +6829,8 @@ void Node3DEditorViewportContainer::gui_input(const Ref<InputEvent> &p_event) {
 
 			bool was_hovering_h = hovering_h;
 			bool was_hovering_v = hovering_v;
-			hovering_h = mm->get_position().x > (mid_w - h_sep / 2) && mm->get_position().x < (mid_w + h_sep / 2);
-			hovering_v = mm->get_position().y > (mid_h - v_sep / 2) && mm->get_position().y < (mid_h + v_sep / 2);
+			hovering_h = mm->get_position().x >= (mid_w - h_sep / 2) && mm->get_position().x < (mid_w + h_sep / 2);
+			hovering_v = mm->get_position().y >= (mid_h - v_sep / 2) && mm->get_position().y < (mid_h + v_sep / 2);
 
 			if (was_hovering_h != hovering_h || was_hovering_v != hovering_v) {
 				queue_redraw();
@@ -9495,11 +9511,14 @@ void Node3DEditor::_update_theme() {
 void Node3DEditor::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_TRANSLATION_CHANGED: {
-			tool_button[TOOL_MODE_TRANSFORM]->set_tooltip_text(vformat(TTR("%s+Drag: Rotate selected node around pivot."), keycode_get_string((Key)KeyModifierMask::CMD_OR_CTRL)) + "\n" + TTR("Alt+RMB: Show list of all nodes at position clicked, including locked.") + "\n" + TTR("(Available in all modes.)"));
-			tool_button[TOOL_MODE_MOVE]->set_tooltip_text(vformat(TTR("%s+Drag: Use snap."), keycode_get_string((Key)KeyModifierMask::CMD_OR_CTRL)) + "\n" + TTR("Alt+RMB: Show list of all nodes at position clicked, including locked."));
-			tool_button[TOOL_MODE_ROTATE]->set_tooltip_text(vformat(TTR("%s+Drag: Use snap."), keycode_get_string((Key)KeyModifierMask::CMD_OR_CTRL)) + "\n" + TTR("Alt+RMB: Show list of all nodes at position clicked, including locked."));
-			tool_button[TOOL_MODE_SCALE]->set_tooltip_text(vformat(TTR("%s+Drag: Use snap."), keycode_get_string((Key)KeyModifierMask::CMD_OR_CTRL)) + "\n" + TTR("Alt+RMB: Show list of all nodes at position clicked, including locked."));
-			tool_button[TOOL_MODE_SELECT]->set_tooltip_text(TTR("Alt+RMB: Show list of all nodes at position clicked, including locked.") + "\n" + TTR("(Available in all modes.)"));
+			const String show_list_tooltip = TTR("Alt+RMB: Show list of all nodes at position clicked, including locked.");
+			tool_button[TOOL_MODE_TRANSFORM]->set_tooltip_text(vformat(TTR("%s+Drag: Rotate selected node around pivot."), keycode_get_string((Key)KeyModifierMask::CMD_OR_CTRL)) + "\n" + show_list_tooltip);
+			tool_button[TOOL_MODE_MOVE]->set_tooltip_text(vformat(TTR("%s+Drag: Use snap."), keycode_get_string((Key)KeyModifierMask::CMD_OR_CTRL)) + "\n" + show_list_tooltip);
+			tool_button[TOOL_MODE_ROTATE]->set_tooltip_text(vformat(TTR("%s+Drag: Use snap."), keycode_get_string((Key)KeyModifierMask::CMD_OR_CTRL)) + "\n" + show_list_tooltip);
+			tool_button[TOOL_MODE_SCALE]->set_tooltip_text(vformat(TTR("%s+Drag: Use snap."), keycode_get_string((Key)KeyModifierMask::CMD_OR_CTRL)) + "\n" + show_list_tooltip);
+			tool_button[TOOL_MODE_SELECT]->set_tooltip_text(show_list_tooltip);
+			tool_button[TOOL_MODE_LIST_SELECT]->set_tooltip_text(TTR("Show list of selectable nodes at position clicked.") + "\n" + show_list_tooltip);
+			tool_button[TOOL_RULER]->set_tooltip_text(TTR("LMB+Drag: Measure the distance between two points in 3D space.") + "\n" + show_list_tooltip);
 			_update_gizmos_menu();
 		} break;
 
@@ -10424,7 +10443,8 @@ Node3DEditor::Node3DEditor() {
 	tool_button[TOOL_MODE_LIST_SELECT]->set_toggle_mode(true);
 	tool_button[TOOL_MODE_LIST_SELECT]->set_theme_type_variation(SceneStringName(FlatButton));
 	tool_button[TOOL_MODE_LIST_SELECT]->connect(SceneStringName(pressed), callable_mp(this, &Node3DEditor::_menu_item_pressed).bind(MENU_TOOL_LIST_SELECT));
-	tool_button[TOOL_MODE_LIST_SELECT]->set_tooltip_text(TTRC("Show list of selectable nodes at position clicked."));
+	tool_button[TOOL_MODE_LIST_SELECT]->set_tooltip_text(TTR("Show list of selectable nodes at position clicked.") + "\n" + TTR("Alt+RMB: Show list of all nodes at position clicked, including locked."));
+	tool_button[TOOL_MODE_LIST_SELECT]->set_accessibility_name(TTRC("Show List of Selectable Nodes"));
 
 	tool_button[TOOL_LOCK_SELECTED] = memnew(Button);
 	main_menu_hbox->add_child(tool_button[TOOL_LOCK_SELECTED]);

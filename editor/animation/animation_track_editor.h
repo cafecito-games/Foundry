@@ -480,6 +480,7 @@ class AnimationTrackEdit : public Control {
 	String path_cache;
 
 	void _menu_selected(int p_index);
+	void _popup_key_context_menu(int p_hovering_key_idx, Vector2 p_popup_pos);
 
 	void _path_submitted(const String &p_text);
 	void _play_position_draw();
@@ -614,6 +615,7 @@ class AnimationTrackEditor : public VBoxContainer {
 	HScrollBar *hscroll = nullptr;
 	ScrollContainer *scroll = nullptr;
 	VBoxContainer *track_vbox = nullptr;
+	MarginContainer *bezier_mc = nullptr;
 	AnimationBezierTrackEdit *bezier_edit = nullptr;
 	VBoxContainer *timeline_vbox = nullptr;
 

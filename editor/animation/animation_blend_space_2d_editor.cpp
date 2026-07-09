@@ -260,6 +260,7 @@ void AnimationNodeBlendSpace2DEditor::_blend_space_gui_input(const Ref<InputEven
 			if (snap->is_pressed()) {
 				point = point.snapped(blend_space->get_snap());
 			}
+			point = point.clamp(blend_space->get_min_space(), blend_space->get_max_space());
 
 			if (!read_only) {
 				updating = true;
@@ -531,6 +532,7 @@ void AnimationNodeBlendSpace2DEditor::_blend_space_draw() {
 				if (snap->is_pressed()) {
 					point = point.snapped(blend_space->get_snap());
 				}
+				point = point.clamp(blend_space->get_min_space(), blend_space->get_max_space());
 			}
 			point = (point - blend_space->get_min_space()) / (blend_space->get_max_space() - blend_space->get_min_space());
 			point *= s;
@@ -569,6 +571,7 @@ void AnimationNodeBlendSpace2DEditor::_blend_space_draw() {
 					point = point.snapped(blend_space->get_snap());
 				}
 			}
+			point = point.clamp(blend_space->get_min_space(), blend_space->get_max_space());
 		}
 		point = (point - blend_space->get_min_space()) / (blend_space->get_max_space() - blend_space->get_min_space());
 		point *= s;
@@ -782,6 +785,7 @@ void AnimationNodeBlendSpace2DEditor::_update_edited_point_pos() {
 			if (snap->is_pressed()) {
 				pos = pos.snapped(blend_space->get_snap());
 			}
+			pos = pos.clamp(blend_space->get_min_space(), blend_space->get_max_space());
 		}
 		updating = true;
 		edit_x->set_value(pos.x);

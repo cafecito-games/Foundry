@@ -107,7 +107,7 @@ void EditorDebuggerSession::set_breakpoint(const String &p_path, int p_line, boo
 }
 
 void EditorDebuggerSession::detach_debugger() {
-	if (!debugger) {
+	if (!debugger || !ObjectDB::get_instance(debugger_id)) {
 		return;
 	}
 	debugger->disconnect("started", callable_mp(this, &EditorDebuggerSession::_started));
@@ -129,6 +129,7 @@ void EditorDebuggerSession::_debugger_gone_away() {
 EditorDebuggerSession::EditorDebuggerSession(ScriptEditorDebugger *p_debugger) {
 	ERR_FAIL_NULL(p_debugger);
 	debugger = p_debugger;
+	debugger_id = p_debugger->get_instance_id();
 	debugger->connect("started", callable_mp(this, &EditorDebuggerSession::_started));
 	debugger->connect("stopped", callable_mp(this, &EditorDebuggerSession::_stopped));
 	debugger->connect("breaked", callable_mp(this, &EditorDebuggerSession::_breaked));

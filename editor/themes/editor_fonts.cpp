@@ -263,6 +263,8 @@ void editor_register_fonts(const Ref<Theme> &p_theme) {
 	default_font_bold_msdf->set_fallbacks(fallbacks_bold);
 
 	Ref<FontFile> default_font_mono = load_internal_font(_font_JetBrainsMono_Regular, _font_JetBrainsMono_Regular_size, font_mono_hinting, font_antialiasing, true, font_subpixel_positioning, font_disable_embedded_bitmaps);
+	default_font_mono->set_subpixel_positioning(TextServer::SUBPIXEL_POSITIONING_DISABLED);
+	default_font_mono->set_keep_rounding_remainders(false);
 	default_font_mono->set_fallbacks(fallbacks);
 
 	// Init base font configs and load custom fonts.
@@ -389,6 +391,8 @@ void editor_register_fonts(const Ref<Theme> &p_theme) {
 	mono_fc.instantiate();
 	if (custom_font_path_source.length() > 0 && dir->file_exists(custom_font_path_source)) {
 		Ref<FontFile> custom_font = load_external_font(custom_font_path_source, font_mono_hinting, font_antialiasing, true, font_subpixel_positioning, font_disable_embedded_bitmaps);
+		custom_font->set_subpixel_positioning(TextServer::SUBPIXEL_POSITIONING_DISABLED);
+		custom_font->set_keep_rounding_remainders(false);
 		{
 			TypedArray<Font> fallback_custom = { default_font_mono };
 			custom_font->set_fallbacks(fallback_custom);
@@ -429,6 +433,20 @@ void editor_register_fonts(const Ref<Theme> &p_theme) {
 			ftrs[TS->name_to_tag("calt")] = 1;
 			mono_fc->set_opentype_features(ftrs);
 		} break;
+	}
+
+	Vector<String> variation_tags = String(EDITOR_GET("interface/editor/code_font_custom_variations")).split(",");
+	Dictionary variations_mono;
+	for (int i = 0; i < variation_tags.size(); i++) {
+		Vector<String> subtag_a = variation_tags[i].split("=");
+		if (subtag_a.size() == 2) {
+			variations_mono[TS->name_to_tag(subtag_a[0])] = subtag_a[1].to_float();
+		} else if (subtag_a.size() == 1) {
+			variations_mono[TS->name_to_tag(subtag_a[0])] = 1;
+		}
+	}
+	if (!variations_mono.is_empty()) {
+		mono_fc->set_variation_opentype(variations_mono);
 	}
 
 	{
