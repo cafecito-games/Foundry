@@ -33,6 +33,7 @@
 #include "core/io/dir_access.h"
 #include "core/os/os.h"
 
+#include "editor/gui/editor_about.h"
 #include "editor/project_manager/known_project_store.h"
 #include "editor/project_manager/startup_dialog.h"
 #include "editor/project_manager/startup_router.h"
@@ -148,6 +149,32 @@ TEST_CASE("[StartupDialog][Editor] startup dialog manage tab workflow subprocess
 	INFO(output);
 	CHECK(exit_code == 0);
 	CHECK(output.contains("\"workflow\":\"startup_dialog_manage_tab\""));
+	CHECK(output.contains("\"ok\":true"));
+}
+
+TEST_CASE("[StartupDialog][Editor] about copyright text names Foundry and Godot") {
+	// The About tab reuses this shared source instead of re-embedding legal text,
+	// so both the Foundry and upstream Godot copyright must be present.
+	const String copyright = EditorAbout::get_copyright_text();
+	CHECK(copyright.contains("Godot Engine contributors"));
+	CHECK(copyright.contains("Cafecito Games"));
+	CHECK(copyright.contains("Foundry"));
+	CHECK(copyright.contains("Juan Linietsky"));
+}
+
+TEST_CASE("[StartupDialog][Editor] startup dialog about tab workflow subprocess") {
+	if (!EditorWorkflowTestFixtures::workflow_has_display()) {
+		MESSAGE("Requires a GUI display. Run with DISPLAY=:1 ./bin/foundry.* --headless test run --case \"*StartupDialog*\" --force-colors");
+		return;
+	}
+
+	const String launch_dir = make_empty_launch_dir();
+	int exit_code = -1;
+	const String output = run_startup_dialog_workflow(launch_dir, exit_code, "startup_dialog_about_tab");
+
+	INFO(output);
+	CHECK(exit_code == 0);
+	CHECK(output.contains("\"workflow\":\"startup_dialog_about_tab\""));
 	CHECK(output.contains("\"ok\":true"));
 }
 

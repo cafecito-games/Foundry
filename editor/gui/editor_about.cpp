@@ -52,10 +52,7 @@
 void EditorAbout::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_TRANSLATION_CHANGED: {
-			_about_text_label->set_text(
-					String(U"© 2014-present ") + TTR("Godot Engine contributors") + ".\n" +
-					String(U"© 2026–present Cafecito Games (Foundry).\n") +
-					String(U"© 2007-2014 Juan Linietsky, Ariel Manzur.\n"));
+			_about_text_label->set_text(get_copyright_text());
 
 			_project_manager_label->set_text(TTR("Project Manager", "Job Title"));
 
@@ -97,6 +94,19 @@ void EditorAbout::_notification(int p_what) {
 			}
 		} break;
 	}
+}
+
+String EditorAbout::get_copyright_text() {
+	return String(U"© 2014-present ") + TTR("Godot Engine contributors") + ".\n" +
+			String(U"© 2026–present Cafecito Games (Foundry).\n") +
+			String(U"© 2007-2014 Juan Linietsky, Ariel Manzur.\n");
+}
+
+void EditorAbout::show_section(AboutSection p_section) {
+	if (_tab_container != nullptr && _tab_container->get_tab_count() > 0) {
+		_tab_container->set_current_tab(CLAMP((int)p_section, 0, _tab_container->get_tab_count() - 1));
+	}
+	popup_centered(Size2(780, 500) * EDSCALE);
 }
 
 void EditorAbout::_license_tree_selected() {
@@ -245,6 +255,7 @@ EditorAbout::EditorAbout() {
 	tc->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	tc->set_theme_type_variation("TabContainerOdd");
 	vbc->add_child(tc);
+	_tab_container = tc;
 
 	{
 		ScrollContainer *sc = memnew(ScrollContainer);

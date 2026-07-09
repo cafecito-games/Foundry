@@ -68,6 +68,10 @@ EditorAutomationAcceptanceWorkflow::Result _run_startup_dialog_manage_tab(Editor
 	return EditorAutomationAcceptanceWorkflow::run_startup_dialog_manage_tab(p_driver);
 }
 
+EditorAutomationAcceptanceWorkflow::Result _run_startup_dialog_about_tab(EditorWorkflowTestDriver &p_driver) {
+	return EditorAutomationAcceptanceWorkflow::run_startup_dialog_about_tab(p_driver);
+}
+
 } // namespace
 
 HashMap<String, EditorAutomationWorkflowRegistry::WorkflowEntry> EditorAutomationWorkflowRegistry::workflows;
@@ -108,6 +112,7 @@ void EditorAutomationWorkflowRegistry::register_builtin_workflows() {
 	_register_workflow("projectless_shell_smoke", &_run_projectless_shell_smoke);
 	_register_workflow("startup_dialog_projects_tab", &_run_startup_dialog_projects_tab);
 	_register_workflow("startup_dialog_manage_tab", &_run_startup_dialog_manage_tab);
+	_register_workflow("startup_dialog_about_tab", &_run_startup_dialog_about_tab);
 }
 
 String EditorAutomationWorkflowRegistry::resolve_canonical_name(const String &p_name) {
