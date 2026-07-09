@@ -2,7 +2,7 @@
 /*  editor_automation_acceptance_workflow.cpp                             */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -936,6 +936,9 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	if ((bool)state.get("project_loaded", true)) {
 		return _failure_with_message(p_driver, result.workflow, "Projectless shell boot loaded a project resource path.");
 	}
+	if (!(bool)state.get("startup_dialog_visible", false)) {
+		return _failure_with_message(p_driver, result.workflow, "Startup dialog should be visible in projectless shell mode.");
+	}
 
 	const Array open_scenes = state.get("open_scenes", Array());
 	if (!open_scenes.is_empty()) {
@@ -969,6 +972,138 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 
 	result.ok = true;
 	result.message = "Projectless editor shell smoke workflow completed.";
+	result.details = state;
+	return result;
+}
+
+EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::run_startup_dialog_projects_tab(EditorWorkflowTestDriver &p_driver) {
+	Result result;
+	result.workflow = "startup_dialog_projects_tab";
+
+	p_driver.begin_workflow();
+
+	p_driver.set_step("wait_for_editor_ready");
+	if (!p_driver.wait_editor_idle(30000)) {
+		return _failure_from_driver(p_driver, result.workflow, "Editor did not become ready in projectless mode.");
+	}
+
+	p_driver.set_step("verify_startup_dialog_visible");
+	const Dictionary state = p_driver.read_editor_state();
+	if (!(bool)state.get("startup_dialog_visible", false)) {
+		return _failure_with_message(p_driver, result.workflow, "Startup dialog was not visible.");
+	}
+
+	auto find_named = [&](const String &p_name, const String &p_role = "button") -> bool {
+		Dictionary selector;
+		selector["role"] = p_role;
+		selector["name"] = p_name;
+		const Dictionary find_result = p_driver.find(selector);
+		return (bool)find_result.get("ok", false) && ((Array)find_result.get("elements", Array())).size() > 0;
+	};
+
+	p_driver.set_step("verify_header_and_tabs");
+	if (!find_named("Foundry Engine", "label") && !find_named("Startup Dialog", "dialog")) {
+		return _failure_with_message(p_driver, result.workflow, "Startup dialog header was not found.");
+	}
+	if (!find_named("Create Project")) {
+		return _failure_with_message(p_driver, result.workflow, "Create Project action was not found.");
+	}
+	if (!find_named("Open Existing Project")) {
+		return _failure_with_message(p_driver, result.workflow, "Open Existing Project action was not found.");
+	}
+	if (!find_named("Projects", "tab")) {
+		return _failure_with_message(p_driver, result.workflow, "Projects tab was not found.");
+	}
+	if (!find_named("Manage", "tab")) {
+		return _failure_with_message(p_driver, result.workflow, "Manage tab was not found.");
+	}
+	if (!find_named("About", "tab")) {
+		return _failure_with_message(p_driver, result.workflow, "About tab was not found.");
+	}
+
+	p_driver.set_step("assert_no_new_errors");
+	if (!p_driver.assert_no_new_errors()) {
+		return _failure_from_driver(p_driver, result.workflow);
+	}
+
+	result.ok = true;
+	result.message = "Startup dialog Projects tab workflow completed.";
+	result.details = state;
+	return result;
+}
+
+EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::run_startup_dialog_manage_tab(EditorWorkflowTestDriver &p_driver) {
+	Result result;
+	result.workflow = "startup_dialog_manage_tab";
+
+	p_driver.begin_workflow();
+
+	p_driver.set_step("wait_for_editor_ready");
+	if (!p_driver.wait_editor_idle(30000)) {
+		return _failure_from_driver(p_driver, result.workflow, "Editor did not become ready in projectless mode.");
+	}
+
+	p_driver.set_step("verify_startup_dialog_visible");
+	const Dictionary state = p_driver.read_editor_state();
+	if (!(bool)state.get("startup_dialog_visible", false)) {
+		return _failure_with_message(p_driver, result.workflow, "Startup dialog was not visible.");
+	}
+
+	auto find_named = [&](const String &p_name, const String &p_role) -> Dictionary {
+		Dictionary selector;
+		selector["role"] = p_role;
+		selector["name"] = p_name;
+		return p_driver.find(selector);
+	};
+	auto has_named = [&](const String &p_name, const String &p_role) -> bool {
+		const Dictionary found = find_named(p_name, p_role);
+		return (bool)found.get("ok", false) && ((Array)found.get("elements", Array())).size() > 0;
+	};
+
+	p_driver.set_step("select_manage_tab");
+	Dictionary manage_tab_selector;
+	manage_tab_selector["role"] = "tab";
+	manage_tab_selector["name"] = "Manage";
+	if (!p_driver.require_ok(p_driver.act(manage_tab_selector, "select"), "select_manage_tab")) {
+		return _failure_from_driver(p_driver, result.workflow, "Could not switch to the Manage tab.");
+	}
+	// Let the newly-shown tab page lay out and become visible before snapshotting.
+	p_driver.flush_frames(2);
+	p_driver.wait_editor_idle(5000);
+
+	p_driver.set_step("verify_manage_controls");
+	if (!has_named("Filter Projects", "text_field")) {
+		return _failure_with_message(p_driver, result.workflow, "Manage filter field was not found.");
+	}
+	if (!has_named("Scan Folder", "button")) {
+		return _failure_with_message(p_driver, result.workflow, "Scan Folder action was not found.");
+	}
+	if (!has_named("Remove Missing Projects", "button")) {
+		return _failure_with_message(p_driver, result.workflow, "Remove Missing action was not found.");
+	}
+
+	// Asset Library must not be carried into the Manage surface.
+	if (has_named("Asset Library", "button") || has_named("Asset Library", "tab")) {
+		return _failure_with_message(p_driver, result.workflow, "Asset Library must not appear in Manage.");
+	}
+
+	p_driver.set_step("filter_smoke");
+	Dictionary filter_selector;
+	filter_selector["role"] = "text_field";
+	filter_selector["name"] = "Filter Projects";
+	Dictionary filter_args;
+	filter_args["text"] = "zzzz-no-such-project";
+	if (!p_driver.require_ok(p_driver.act(filter_selector, "set_text", filter_args), "filter_smoke")) {
+		return _failure_from_driver(p_driver, result.workflow, "Could not type into the Manage filter field.");
+	}
+
+	p_driver.set_step("assert_no_new_errors");
+	if (!p_driver.assert_no_new_errors()) {
+		return _failure_from_driver(p_driver, result.workflow);
+	}
+
+	result.ok = true;
+	result.message = "Startup dialog Manage tab workflow completed.";
 	result.details = state;
 	return result;
 }

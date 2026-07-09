@@ -47,6 +47,7 @@
 #include "scene/gui/code_edit.h"
 #include "scene/gui/dialogs.h"
 #include "scene/gui/item_list.h"
+#include "scene/gui/label.h"
 #include "scene/gui/line_edit.h"
 #include "scene/gui/menu_button.h"
 #include "scene/gui/option_button.h"
@@ -115,6 +116,12 @@ class EditorAutomationSnapshotBuilder {
 		// intended for both assistive tech and automation selectors.
 		if (const Control *control = Object::cast_to<const Control>(p_node)) {
 			const String accessibility_name = control->get_accessibility_name().strip_edges();
+			if (!accessibility_name.is_empty()) {
+				return accessibility_name;
+			}
+		}
+		if (const Window *window = Object::cast_to<const Window>(p_node)) {
+			const String accessibility_name = window->get_accessibility_name().strip_edges();
 			if (!accessibility_name.is_empty()) {
 				return accessibility_name;
 			}
@@ -220,6 +227,9 @@ class EditorAutomationSnapshotBuilder {
 		}
 		if (Object::cast_to<const OptionButton>(p_node)) {
 			return "select";
+		}
+		if (Object::cast_to<const Label>(p_node)) {
+			return "label";
 		}
 		if (Object::cast_to<const SpinBox>(p_node)) {
 			return "spinbox";

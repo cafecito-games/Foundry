@@ -72,6 +72,7 @@ class DockSplitContainer;
 class DynamicFontImportSettingsDialog;
 class FoundryBuildTaskBootstrapLoader;
 class EditorAbout;
+class StartupDialog;
 class EditorBuildProfileManager;
 class EditorBottomDrawerStrip;
 class EditorBottomPanel;
@@ -498,6 +499,7 @@ private:
 	bool requested_first_scan = false;
 	bool waiting_for_first_scan = true;
 	bool projectless_shell = false;
+	StartupDialog *startup_dialog = nullptr;
 	FoundryBuildTaskBootstrapLoader *build_task_bootstrap_loader = nullptr;
 	bool load_editor_layout_done = false;
 
@@ -838,6 +840,8 @@ public:
 	// This is a very naive estimation, but we need something now. Will be reworked later.
 	bool is_editor_ready() const { return is_inside_tree() && !waiting_for_first_scan; }
 	bool is_projectless_shell() const { return projectless_shell; }
+	void show_startup_dialog();
+	bool is_startup_dialog_visible() const;
 
 	static EditorNode *get_singleton() { return singleton; }
 

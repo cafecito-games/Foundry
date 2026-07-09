@@ -52,7 +52,6 @@ static String make_empty_launch_dir() {
 
 static String run_projectless_shell_workflow(const String &p_cwd, int &r_exit_code) {
 	List<String> arguments;
-	arguments.push_back("--headless");
 	arguments.push_back("editor");
 	arguments.push_back("open");
 	arguments.push_back("--automation");
@@ -90,6 +89,8 @@ TEST_CASE("[Editor][ProjectlessShell] projectless shell smoke workflow subproces
 	CHECK(output.contains("FOUNDRY_AUTOMATION_WORKFLOW"));
 	CHECK(output.contains("\"workflow\":\"projectless_shell_smoke\""));
 	CHECK(output.contains("\"ok\":true"));
+	CHECK_FALSE(output.contains("Do not use progress dialog (task) while flushing the message queue or using call_deferred()"));
+	CHECK_FALSE(output.contains("Condition \"!tasks.has(p_task)\" is true"));
 	CHECK_FALSE(FileAccess::exists(launch_dir.path_join("project.foundry")));
 }
 

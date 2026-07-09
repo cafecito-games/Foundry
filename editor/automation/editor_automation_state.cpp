@@ -456,6 +456,7 @@ Dictionary EditorAutomationState::read_editor_state() {
 
 	state["projectless_shell"] = editor_node->is_projectless_shell();
 	state["project_loaded"] = ProjectSettings::get_singleton()->is_project_loaded();
+	state["startup_dialog_visible"] = editor_node->is_startup_dialog_visible();
 
 	return state;
 }

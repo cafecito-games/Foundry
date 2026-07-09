@@ -2,7 +2,7 @@
 /*  project_list.cpp                                                      */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -37,6 +37,7 @@
 #include "editor/editor_string_names.h"
 #include "editor/file_system/editor_paths.h"
 #include "editor/project_manager/project_manager.h"
+#include "editor/project_manager/project_scanner.h"
 #include "editor/project_manager/project_tag.h"
 #include "editor/settings/editor_settings.h"
 #include "editor/themes/editor_scale.h"
@@ -550,7 +551,7 @@ void ProjectList::_scan_thread(void *p_scan_data) {
 
 	for (const String &base_path : scan_data->paths_to_scan) {
 		print_verbose(vformat("Scanning for projects in \"%s\".", base_path));
-		_scan_folder_recursive(base_path, &scan_data->found_projects, scan_data->scan_in_progress);
+		ProjectScanner::scan_folder_recursive(base_path, &scan_data->found_projects, scan_data->scan_in_progress);
 
 		if (!scan_data->scan_in_progress.is_set()) {
 			print_verbose("Scan aborted.");
@@ -919,32 +920,6 @@ void ProjectList::load_project_list() {
 		bool favorite = _config.get_value(path, "favorite", false);
 		_projects.push_back(load_project_data(path, favorite));
 	}
-}
-
-void ProjectList::_scan_folder_recursive(const String &p_path, List<String> *r_projects, const SafeFlag &p_scan_active) {
-	if (!p_scan_active.is_set()) {
-		return;
-	}
-
-	Ref<DirAccess> da = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
-	Error error = da->change_dir(p_path);
-	ERR_FAIL_COND_MSG(error != OK, vformat("Failed to open the path \"%s\" for scanning (code %d).", p_path, error));
-
-	da->list_dir_begin();
-	String n = da->get_next();
-	while (!n.is_empty()) {
-		if (!p_scan_active.is_set()) {
-			return;
-		}
-
-		if (da->current_is_dir() && n[0] != '.') {
-			_scan_folder_recursive(da->get_current_dir().path_join(n), r_projects, p_scan_active);
-		} else if (n == "project.foundry") {
-			r_projects->push_back(da->get_current_dir());
-		}
-		n = da->get_next();
-	}
-	da->list_dir_end();
 }
 
 // Project list items.
