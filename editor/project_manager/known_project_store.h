@@ -2,7 +2,7 @@
 /*  known_project_store.h                                                 */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -142,6 +142,11 @@ public:
 	void add_tag(const String &p_path, const String &p_tag);
 	// Removes a tag from a project's cache. No-op if unknown or the tag is absent.
 	void remove_tag(const String &p_path, const String &p_tag);
+	// Persists the given tags (sorted) into the project's `project.foundry`
+	// (`application/config/tags`) and refreshes this entry's cache from the file
+	// that was just written. Returns ERR_DOES_NOT_EXIST when the path is unknown to
+	// the store, or the underlying config load/save error on failure.
+	Error set_project_tags(const String &p_path, const PackedStringArray &p_tags);
 
 	// p_config_path overrides the EditorPaths-derived location; leave empty in the
 	// editor and pass a scratch path in tests.

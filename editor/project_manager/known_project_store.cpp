@@ -2,7 +2,7 @@
 /*  known_project_store.cpp                                               */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -315,6 +315,42 @@ void KnownProjectStore::remove_tag(const String &p_path, const String &p_tag) {
 	if (tag_index != -1) {
 		projects[index].tags.remove_at(tag_index);
 	}
+}
+
+Error KnownProjectStore::set_project_tags(const String &p_path, const PackedStringArray &p_tags) {
+	const String canonical = canonicalize_path(p_path);
+	const int index = find_project(canonical);
+	if (index == -1) {
+		return ERR_DOES_NOT_EXIST;
+	}
+
+	const String conf = canonical.path_join("project.foundry");
+	Ref<ConfigFile> config;
+	config.instantiate();
+	const Error load_err = config->load(conf);
+	if (load_err != OK) {
+		return load_err;
+	}
+
+	// Persist a sorted, deduplicated tag set so the on-disk order is stable and
+	// matches how the project manager writes tags.
+	PackedStringArray tags;
+	for (const String &tag : p_tags) {
+		if (!tags.has(tag)) {
+			tags.push_back(tag);
+		}
+	}
+	tags.sort();
+	config->set_value("application", "config/tags", tags);
+
+	const Error save_err = config->save(conf);
+	if (save_err != OK) {
+		return save_err;
+	}
+
+	// Refresh the cache from the file we just wrote so callers see the persisted set.
+	_read_project_config(canonical, projects[index]);
+	return OK;
 }
 
 KnownProjectStore::KnownProjectStore(const String &p_config_path) {

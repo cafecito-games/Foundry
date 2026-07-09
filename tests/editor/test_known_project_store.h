@@ -2,7 +2,7 @@
 /*  test_known_project_store.h                                            */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -247,6 +247,52 @@ TEST_CASE("[KnownProjectStore][Editor] tag cache refreshes from project.foundry"
 
 	// Refreshing an unknown project reports no update.
 	CHECK_FALSE(store.refresh_project("/games/unknown"));
+}
+
+TEST_CASE("[KnownProjectStore][Editor] set_project_tags persists to project.foundry and refreshes cache") {
+	const String scratch = make_scratch_dir("settags");
+	const String project_dir = make_project(scratch, "tagme", "Tag Me", "4.6", PackedStringArray());
+
+	KnownProjectStore store(config_path_in(scratch));
+	store.add_project(project_dir);
+
+	PackedStringArray tags;
+	tags.push_back("client");
+	tags.push_back("2d");
+	tags.push_back("client"); // Duplicate must be dropped.
+	CHECK(store.set_project_tags(project_dir, tags) == OK);
+
+	// The cache reflects the persisted, sorted, deduplicated set.
+	KnownProjectStore::KnownProject project;
+	REQUIRE(store.get_project(project_dir, project));
+	REQUIRE(project.tags.size() == 2);
+	CHECK(project.tags[0] == "2d");
+	CHECK(project.tags[1] == "client");
+
+	// The tags are written into project.foundry itself, not just the store cache.
+	Ref<ConfigFile> cf;
+	cf.instantiate();
+	REQUIRE(cf->load(project_dir.path_join("project.foundry")) == OK);
+	const PackedStringArray on_disk = cf->get_value("application", "config/tags", PackedStringArray());
+	REQUIRE(on_disk.size() == 2);
+	CHECK(on_disk.has("client"));
+	CHECK(on_disk.has("2d"));
+
+	// A separate store reading the same project sees the persisted tags.
+	KnownProjectStore reloaded(config_path_in(scratch));
+	reloaded.add_project(project_dir);
+	KnownProjectStore::KnownProject reloaded_project;
+	REQUIRE(reloaded.get_project(project_dir, reloaded_project));
+	CHECK(reloaded_project.tags.has("client"));
+	CHECK(reloaded_project.tags.has("2d"));
+
+	// Clearing tags persists an empty set.
+	CHECK(store.set_project_tags(project_dir, PackedStringArray()) == OK);
+	REQUIRE(store.get_project(project_dir, project));
+	CHECK(project.tags.is_empty());
+
+	// Setting tags on an unknown project reports an error and writes nothing.
+	CHECK(store.set_project_tags("/games/unknown", tags) == ERR_DOES_NOT_EXIST);
 }
 
 TEST_CASE("[KnownProjectStore][Editor] refresh replaces stale cache and clears missing") {

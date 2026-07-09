@@ -2,7 +2,7 @@
 /*  startup_dialog.cpp                                                    */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -38,7 +38,10 @@
 #include "editor/editor_interface.h"
 #include "editor/editor_node.h"
 #include "editor/editor_string_names.h"
+#include "editor/gui/editor_file_dialog.h"
 #include "editor/project_manager/project_dialog.h"
+#include "editor/project_manager/project_scanner.h"
+#include "editor/project_manager/project_tag.h"
 #include "editor/project_manager/startup_router.h"
 #include "editor/settings/editor_settings.h"
 #include "editor/themes/editor_scale.h"
@@ -46,6 +49,7 @@
 #include "scene/gui/box_container.h"
 #include "scene/gui/button.h"
 #include "scene/gui/label.h"
+#include "scene/gui/line_edit.h"
 #include "scene/gui/margin_container.h"
 #include "scene/gui/scroll_container.h"
 #include "scene/gui/separator.h"
@@ -96,9 +100,40 @@ void StartupDialog::_update_theme() {
 	if (open_existing_button != nullptr) {
 		open_existing_button->set_button_icon(editor_theme->get_icon(SNAME("FolderBrowse"), EditorStringName(EditorIcons)));
 	}
+	if (scan_button != nullptr) {
+		scan_button->set_button_icon(editor_theme->get_icon(SNAME("Search"), EditorStringName(EditorIcons)));
+	}
+	if (remove_missing_button != nullptr) {
+		remove_missing_button->set_button_icon(editor_theme->get_icon(SNAME("Remove"), EditorStringName(EditorIcons)));
+	}
+	if (manage_add_tag_button != nullptr) {
+		manage_add_tag_button->set_button_icon(editor_theme->get_icon(SNAME("Add"), EditorStringName(EditorIcons)));
+	}
 
-	// Recent cards are rebuilt with the current theme so their icons/colors stay in sync.
+	// Cards are rebuilt with the current theme so their icons/colors stay in sync.
 	_refresh_recents();
+	_refresh_manage_list();
+}
+
+bool StartupDialog::manage_filter_matches(const KnownProjectStore::KnownProject &p_project, const String &p_query) {
+	const String query = p_query.strip_edges().to_lower();
+	if (query.is_empty()) {
+		return true;
+	}
+
+	const String display_name = p_project.display_name.is_empty() ? p_project.path.get_file() : p_project.display_name;
+	if (display_name.to_lower().contains(query)) {
+		return true;
+	}
+	if (p_project.path.to_lower().contains(query)) {
+		return true;
+	}
+	for (const String &tag : p_project.tags) {
+		if (tag.to_lower().contains(query)) {
+			return true;
+		}
+	}
+	return false;
 }
 
 String StartupDialog::_recent_display_name(const KnownProjectStore::KnownProject &p_project) const {
@@ -320,12 +355,14 @@ void StartupDialog::_remove_recent_path(const String &p_path) {
 		known_projects.save();
 	}
 	_refresh_recents();
+	_refresh_manage_list();
 }
 
 void StartupDialog::_on_project_created(const String &p_dir, bool p_edit) {
 	known_projects.add_project(p_dir);
 	known_projects.save();
 	_refresh_recents();
+	_refresh_manage_list();
 
 	if (p_edit) {
 		if (_open_project_and_restart(p_dir) != OK) {
@@ -334,8 +371,544 @@ void StartupDialog::_on_project_created(const String &p_dir, bool p_edit) {
 	}
 }
 
+void StartupDialog::_on_project_duplicated(const String &p_original_path, const String &p_duplicate_path, bool p_edit) {
+	known_projects.add_project(p_duplicate_path);
+	known_projects.save();
+	_refresh_recents();
+	_refresh_manage_list();
+
+	if (p_edit) {
+		if (_open_project_and_restart(p_duplicate_path) != OK) {
+			ERR_PRINT(vformat("Failed to open duplicated project at '%s'.", p_duplicate_path));
+		}
+	}
+}
+
 void StartupDialog::_on_projects_updated() {
 	_refresh_recents();
+	_refresh_manage_list();
+}
+
+// -- Manage tab -----------------------------------------------------------
+
+void StartupDialog::_build_manage_tab(Control *p_parent) {
+	VBoxContainer *body = memnew(VBoxContainer);
+	body->add_theme_constant_override("separation", 10 * EDSCALE);
+	p_parent->add_child(body);
+
+	HBoxContainer *toolbar = memnew(HBoxContainer);
+	toolbar->add_theme_constant_override("separation", 8 * EDSCALE);
+	body->add_child(toolbar);
+
+	manage_filter = memnew(LineEdit);
+	manage_filter->set_placeholder(TTRC("Filter by name, path, or tag..."));
+	manage_filter->set_accessibility_name(TTRC("Filter Projects"));
+	manage_filter->set_clear_button_enabled(true);
+	manage_filter->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	manage_filter->connect(SceneStringName(text_changed), callable_mp(this, &StartupDialog::_on_manage_filter_changed));
+	toolbar->add_child(manage_filter);
+
+	scan_button = memnew(Button);
+	scan_button->set_text(TTRC("Scan Folder"));
+	scan_button->set_accessibility_name(TTRC("Scan Folder"));
+	scan_button->connect(SceneStringName(pressed), callable_mp(this, &StartupDialog::_scan_folder));
+	toolbar->add_child(scan_button);
+
+	remove_missing_button = memnew(Button);
+	remove_missing_button->set_text(TTRC("Remove Missing"));
+	remove_missing_button->set_accessibility_name(TTRC("Remove Missing Projects"));
+	// Visually secondary: a flat button so bulk cleanup does not compete with Scan.
+	remove_missing_button->set_theme_type_variation(SNAME("FlatButton"));
+	remove_missing_button->connect(SceneStringName(pressed), callable_mp(this, &StartupDialog::_prompt_remove_missing));
+	toolbar->add_child(remove_missing_button);
+
+	HBoxContainer *split = memnew(HBoxContainer);
+	split->add_theme_constant_override("separation", 12 * EDSCALE);
+	split->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	body->add_child(split);
+
+	// Left: known-project list.
+	VBoxContainer *list_column = memnew(VBoxContainer);
+	list_column->add_theme_constant_override("separation", 6 * EDSCALE);
+	list_column->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	list_column->set_stretch_ratio(1.4);
+	split->add_child(list_column);
+
+	Label *known_label = memnew(Label);
+	known_label->set_text(TTRC("Known projects"));
+	list_column->add_child(known_label);
+
+	manage_list_scroll = memnew(ScrollContainer);
+	manage_list_scroll->set_accessibility_name(TTRC("Known Projects"));
+	manage_list_scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
+	manage_list_scroll->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	list_column->add_child(manage_list_scroll);
+
+	manage_list_container = memnew(VBoxContainer);
+	manage_list_container->add_theme_constant_override("separation", 4 * EDSCALE);
+	manage_list_container->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	manage_list_scroll->add_child(manage_list_container);
+
+	manage_empty_state = memnew(VBoxContainer);
+	manage_empty_state->set_alignment(BoxContainer::ALIGNMENT_CENTER);
+	manage_empty_state->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	manage_empty_state->hide();
+	list_column->add_child(manage_empty_state);
+
+	manage_empty_hint = memnew(Label);
+	manage_empty_hint->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_CENTER);
+	manage_empty_hint->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+	manage_empty_hint->set_modulate(Color(1, 1, 1, 0.5));
+	manage_empty_state->add_child(manage_empty_hint);
+
+	// Right: selected-project detail pane.
+	VBoxContainer *detail_column = memnew(VBoxContainer);
+	detail_column->add_theme_constant_override("separation", 6 * EDSCALE);
+	detail_column->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	split->add_child(detail_column);
+
+	Label *detail_label = memnew(Label);
+	detail_label->set_text(TTRC("Selected project"));
+	detail_column->add_child(detail_label);
+
+	manage_detail_empty = memnew(VBoxContainer);
+	manage_detail_empty->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	detail_column->add_child(manage_detail_empty);
+
+	Label *detail_empty_hint = memnew(Label);
+	detail_empty_hint->set_text(TTRC("Select a project to manage it."));
+	detail_empty_hint->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+	detail_empty_hint->set_modulate(Color(1, 1, 1, 0.5));
+	manage_detail_empty->add_child(detail_empty_hint);
+
+	manage_detail_pane = memnew(VBoxContainer);
+	manage_detail_pane->add_theme_constant_override("separation", 6 * EDSCALE);
+	manage_detail_pane->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	manage_detail_pane->hide();
+	detail_column->add_child(manage_detail_pane);
+
+	manage_detail_name = memnew(Label);
+	manage_detail_name->set_clip_text(true);
+	manage_detail_pane->add_child(manage_detail_name);
+
+	manage_detail_path = memnew(Label);
+	manage_detail_path->set_clip_text(true);
+	manage_detail_path->set_structured_text_bidi_override(TextServer::STRUCTURED_TEXT_FILE);
+	manage_detail_path->set_modulate(Color(1, 1, 1, 0.5));
+	manage_detail_pane->add_child(manage_detail_path);
+
+	manage_missing_label = memnew(Label);
+	manage_missing_label->set_text(TTRC("This project's folder is missing."));
+	manage_missing_label->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+	manage_missing_label->set_modulate(Color(1, 0.5, 0.5));
+	manage_missing_label->hide();
+	manage_detail_pane->add_child(manage_missing_label);
+
+	manage_open_button = memnew(Button);
+	manage_open_button->set_text(TTRC("Open Project"));
+	manage_open_button->set_accessibility_name(TTRC("Open Project"));
+	manage_open_button->connect(SceneStringName(pressed), callable_mp(this, &StartupDialog::_manage_open_selected));
+	manage_detail_pane->add_child(manage_open_button);
+
+	manage_duplicate_button = memnew(Button);
+	manage_duplicate_button->set_text(TTRC("Duplicate..."));
+	manage_duplicate_button->set_accessibility_name(TTRC("Duplicate Project"));
+	manage_duplicate_button->connect(SceneStringName(pressed), callable_mp(this, &StartupDialog::_manage_duplicate_selected));
+	manage_detail_pane->add_child(manage_duplicate_button);
+
+	manage_reveal_button = memnew(Button);
+	manage_reveal_button->set_text(TTRC("Reveal Folder"));
+	manage_reveal_button->set_accessibility_name(TTRC("Reveal Folder"));
+	manage_reveal_button->connect(SceneStringName(pressed), callable_mp(this, &StartupDialog::_manage_reveal_selected));
+	manage_detail_pane->add_child(manage_reveal_button);
+
+	manage_detail_pane->add_child(memnew(HSeparator));
+
+	Label *tags_label = memnew(Label);
+	tags_label->set_text(TTRC("Tags"));
+	manage_detail_pane->add_child(tags_label);
+
+	manage_tags_row = memnew(HBoxContainer);
+	manage_tags_row->add_theme_constant_override("separation", 4 * EDSCALE);
+	manage_detail_pane->add_child(manage_tags_row);
+
+	manage_add_tag_button = memnew(Button);
+	manage_add_tag_button->set_text(TTRC("Add Tag"));
+	manage_add_tag_button->set_accessibility_name(TTRC("Add Tag"));
+	manage_add_tag_button->connect(SceneStringName(pressed), callable_mp(this, &StartupDialog::_prompt_add_tag));
+	manage_detail_pane->add_child(manage_add_tag_button);
+}
+
+void StartupDialog::_clear_manage_rows() {
+	if (manage_list_container == nullptr) {
+		return;
+	}
+	for (int i = manage_list_container->get_child_count() - 1; i >= 0; i--) {
+		Node *child = manage_list_container->get_child(i);
+		manage_list_container->remove_child(child);
+		child->queue_free();
+	}
+}
+
+void StartupDialog::_refresh_manage_list() {
+	if (manage_list_container == nullptr) {
+		return;
+	}
+
+	_clear_manage_rows();
+
+	Vector<KnownProjectStore::KnownProject> known = known_projects.get_known_projects();
+	int shown = 0;
+	bool selection_visible = false;
+	for (const KnownProjectStore::KnownProject &project : known) {
+		if (!manage_filter_matches(project, manage_filter_query)) {
+			continue;
+		}
+		_build_manage_row(project);
+		shown++;
+		if (project.path == manage_selected_path) {
+			selection_visible = true;
+		}
+	}
+
+	// Drop a selection that filtering hid so the detail pane never references a
+	// project the user can no longer see.
+	if (!selection_visible) {
+		manage_selected_path = String();
+	}
+
+	const bool has_rows = shown > 0;
+	manage_list_scroll->set_visible(has_rows);
+	manage_empty_state->set_visible(!has_rows);
+	if (!has_rows && manage_empty_hint != nullptr) {
+		manage_empty_hint->set_text(known.is_empty()
+						? TTRC("No known projects yet. Use Scan Folder to discover projects.")
+						: TTRC("No projects match the filter."));
+	}
+
+	// Disable bulk cleanup unless at least one known project is actually missing.
+	bool any_missing = false;
+	for (const KnownProjectStore::KnownProject &project : known) {
+		if (project.missing) {
+			any_missing = true;
+			break;
+		}
+	}
+	if (remove_missing_button != nullptr) {
+		remove_missing_button->set_disabled(!any_missing);
+	}
+
+	_refresh_manage_detail();
+}
+
+void StartupDialog::_build_manage_row(const KnownProjectStore::KnownProject &p_project) {
+	Ref<Theme> editor_theme = get_theme();
+
+	Button *row = memnew(Button);
+	row->set_theme_type_variation(SNAME("FlatButton"));
+	row->set_toggle_mode(true);
+	row->set_pressed_no_signal(p_project.path == manage_selected_path);
+	row->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	row->set_custom_minimum_size(Size2(0, 48) * EDSCALE);
+	row->set_clip_text(true);
+	row->set_tooltip_text(p_project.path);
+	row->set_accessibility_name(vformat(TTRC("Select project %s"), _recent_display_name(p_project)));
+	row->connect(SceneStringName(pressed), callable_mp(this, &StartupDialog::_select_manage_project).bind(p_project.path));
+	manage_list_container->add_child(row);
+
+	MarginContainer *row_margin = memnew(MarginContainer);
+	row_margin->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+	row_margin->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	row_margin->add_theme_constant_override(SNAME("margin_left"), 10 * EDSCALE);
+	row_margin->add_theme_constant_override(SNAME("margin_right"), 6 * EDSCALE);
+	row->add_child(row_margin);
+
+	HBoxContainer *row_hbox = memnew(HBoxContainer);
+	row_hbox->add_theme_constant_override(SNAME("separation"), 10 * EDSCALE);
+	row_margin->add_child(row_hbox);
+
+	VBoxContainer *text_column = memnew(VBoxContainer);
+	text_column->add_theme_constant_override(SNAME("separation"), 0);
+	text_column->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	text_column->set_v_size_flags(Control::SIZE_SHRINK_CENTER);
+	row_hbox->add_child(text_column);
+
+	String title_text = _recent_display_name(p_project);
+	if (p_project.missing) {
+		title_text = vformat(TTR("%s (missing)"), title_text);
+	}
+	Label *title_label = memnew(Label);
+	title_label->set_text(title_text);
+	title_label->set_clip_text(true);
+	text_column->add_child(title_label);
+
+	Label *path_label = memnew(Label);
+	path_label->set_text(p_project.path);
+	path_label->set_clip_text(true);
+	path_label->set_structured_text_bidi_override(TextServer::STRUCTURED_TEXT_FILE);
+	path_label->set_modulate(Color(1, 1, 1, 0.5));
+	if (editor_theme.is_valid()) {
+		path_label->add_theme_font_size_override(SceneStringName(font_size), editor_theme->get_font_size(SNAME("font_size"), SNAME("Label")) - 1);
+	}
+	text_column->add_child(path_label);
+
+	if (!p_project.tags.is_empty()) {
+		Label *tags_label = memnew(Label);
+		tags_label->set_text(String(" ").join(p_project.tags));
+		tags_label->set_v_size_flags(Control::SIZE_SHRINK_CENTER);
+		tags_label->set_modulate(Color(1, 1, 1, 0.5));
+		row_hbox->add_child(tags_label);
+	}
+
+	// Missing entries expose an inline removal action; valid entries are managed
+	// from the detail pane and the recents tab.
+	if (p_project.missing) {
+		Button *remove_button = memnew(Button);
+		remove_button->set_theme_type_variation(SNAME("FlatButton"));
+		remove_button->set_v_size_flags(Control::SIZE_SHRINK_CENTER);
+		remove_button->set_mouse_filter(Control::MOUSE_FILTER_STOP);
+		remove_button->set_tooltip_text(TTRC("Remove from list"));
+		remove_button->set_accessibility_name(vformat(TTRC("Remove %s from list"), _recent_display_name(p_project)));
+		if (editor_theme.is_valid()) {
+			remove_button->set_button_icon(editor_theme->get_icon(SNAME("Remove"), EditorStringName(EditorIcons)));
+		}
+		remove_button->connect(SceneStringName(pressed), callable_mp(this, &StartupDialog::_remove_recent_path).bind(p_project.path));
+		row_hbox->add_child(remove_button);
+	}
+}
+
+void StartupDialog::_select_manage_project(const String &p_path) {
+	manage_selected_path = p_path;
+	// Re-render rows so the pressed state tracks the new selection, then update
+	// the detail pane.
+	_refresh_manage_list();
+}
+
+void StartupDialog::_clear_manage_tags() {
+	if (manage_tags_row == nullptr) {
+		return;
+	}
+	for (int i = manage_tags_row->get_child_count() - 1; i >= 0; i--) {
+		Node *child = manage_tags_row->get_child(i);
+		manage_tags_row->remove_child(child);
+		child->queue_free();
+	}
+}
+
+void StartupDialog::_refresh_manage_detail() {
+	if (manage_detail_pane == nullptr) {
+		return;
+	}
+
+	KnownProjectStore::KnownProject project;
+	const bool has_selection = !manage_selected_path.is_empty() && known_projects.get_project(manage_selected_path, project);
+
+	manage_detail_pane->set_visible(has_selection);
+	manage_detail_empty->set_visible(!has_selection);
+	if (!has_selection) {
+		return;
+	}
+
+	manage_detail_name->set_text(_recent_display_name(project));
+	manage_detail_path->set_text(project.path);
+	manage_missing_label->set_visible(project.missing);
+
+	// Actions that require a valid project folder are disabled for missing entries.
+	manage_open_button->set_disabled(project.missing);
+	manage_duplicate_button->set_disabled(project.missing);
+	manage_reveal_button->set_disabled(project.missing);
+	manage_add_tag_button->set_disabled(project.missing);
+
+	_clear_manage_tags();
+	for (const String &tag : project.tags) {
+		ProjectTag *tag_control = memnew(ProjectTag(tag, !project.missing));
+		manage_tags_row->add_child(tag_control);
+		if (!project.missing) {
+			tag_control->connect_button_to(callable_mp(this, &StartupDialog::_remove_selected_tag).bind(tag));
+		}
+	}
+}
+
+void StartupDialog::_on_manage_filter_changed(const String &p_text) {
+	manage_filter_query = p_text;
+	_refresh_manage_list();
+}
+
+void StartupDialog::_scan_folder() {
+	if (scan_dir_dialog != nullptr) {
+		scan_dir_dialog->popup_file_dialog();
+	}
+}
+
+void StartupDialog::_on_scan_dir_selected(const String &p_dir) {
+	if (project_scanner != nullptr) {
+		project_scanner->scan_folder(p_dir);
+	}
+}
+
+void StartupDialog::_on_scan_finished(const PackedStringArray &p_found) {
+	// add_project dedups by canonical path, so re-discovering known projects is a
+	// no-op rather than a duplicate entry.
+	for (const String &path : p_found) {
+		known_projects.add_project(path);
+	}
+	if (!p_found.is_empty()) {
+		known_projects.save();
+	}
+	_refresh_recents();
+	_refresh_manage_list();
+}
+
+void StartupDialog::_prompt_remove_missing() {
+	if (remove_missing_dialog != nullptr) {
+		remove_missing_dialog->popup_centered();
+	}
+}
+
+void StartupDialog::_confirm_remove_missing() {
+	const int removed = known_projects.remove_missing_projects();
+	if (removed > 0) {
+		known_projects.save();
+	}
+	_refresh_recents();
+	_refresh_manage_list();
+}
+
+void StartupDialog::_manage_open_selected() {
+	if (manage_selected_path.is_empty()) {
+		return;
+	}
+	_open_recent_path(manage_selected_path);
+}
+
+void StartupDialog::_manage_duplicate_selected() {
+	if (manage_selected_path.is_empty()) {
+		return;
+	}
+	KnownProjectStore::KnownProject project;
+	if (!known_projects.get_project(manage_selected_path, project) || project.missing) {
+		return;
+	}
+
+	project_dialog->set_mode(ProjectDialog::MODE_DUPLICATE);
+	project_dialog->set_project_name(vformat("%s (%s)", _recent_display_name(project), TTR("Copy")));
+	project_dialog->set_original_project_path(project.path);
+	project_dialog->set_duplicate_can_edit(true);
+	project_dialog->show_dialog(false);
+}
+
+void StartupDialog::_manage_reveal_selected() {
+	if (manage_selected_path.is_empty()) {
+		return;
+	}
+	KnownProjectStore::KnownProject project;
+	if (!known_projects.get_project(manage_selected_path, project) || project.missing) {
+		return;
+	}
+	OS::get_singleton()->shell_show_in_file_manager(project.path, true);
+}
+
+void StartupDialog::_prompt_add_tag() {
+	if (manage_selected_path.is_empty() || add_tag_dialog == nullptr) {
+		return;
+	}
+	add_tag_error->set_text(String());
+	add_tag_dialog->get_ok_button()->set_disabled(true);
+	add_tag_dialog->popup_centered(Size2(360, 0) * EDSCALE);
+}
+
+void StartupDialog::_validate_new_tag(const String &p_name) {
+	add_tag_dialog->get_ok_button()->set_disabled(true);
+
+	const String stripped = p_name.strip_edges();
+	if (stripped.is_empty()) {
+		add_tag_error->set_text(TTRC("Tag name can't be empty."));
+		return;
+	}
+	if (stripped[0] == '_' || stripped[stripped.length() - 1] == '_') {
+		add_tag_error->set_text(TTRC("Tag name can't begin or end with underscore."));
+		return;
+	}
+	// Spaces are normalized to underscores on save, so reject runs of spaces or
+	// underscores that would collapse into consecutive underscores. This matches
+	// the project manager's tag rules so Manage cannot write tags it rejects.
+	bool was_underscore = false;
+	for (const char32_t &c : stripped.span()) {
+		if (c == '_' || c == ' ') {
+			if (was_underscore) {
+				add_tag_error->set_text(TTRC("Tag name can't contain consecutive underscores or spaces."));
+				return;
+			}
+			was_underscore = true;
+		} else {
+			was_underscore = false;
+		}
+	}
+	const String forbidden = "/\\-";
+	for (const char32_t &c : stripped.span()) {
+		if (forbidden.contains_char(c)) {
+			add_tag_error->set_text(TTRC("Tag name can't contain '/', '\\', or '-'."));
+			return;
+		}
+	}
+
+	add_tag_error->set_text(String());
+	add_tag_dialog->get_ok_button()->set_disabled(false);
+}
+
+void StartupDialog::_confirm_add_tag() {
+	if (!add_tag_error->get_text().is_empty()) {
+		return;
+	}
+	const String new_tag = add_tag_name->get_text().strip_edges().to_lower().replace_char(' ', '_');
+	if (new_tag.is_empty() || manage_selected_path.is_empty()) {
+		return;
+	}
+	add_tag_dialog->hide();
+
+	KnownProjectStore::KnownProject project;
+	if (!known_projects.get_project(manage_selected_path, project) || project.missing) {
+		return;
+	}
+	if (project.tags.has(new_tag)) {
+		return;
+	}
+	PackedStringArray tags = project.tags;
+	tags.push_back(new_tag);
+	_apply_selected_tags(tags);
+}
+
+void StartupDialog::_remove_selected_tag(const String &p_tag) {
+	if (manage_selected_path.is_empty()) {
+		return;
+	}
+	KnownProjectStore::KnownProject project;
+	if (!known_projects.get_project(manage_selected_path, project) || project.missing) {
+		return;
+	}
+	PackedStringArray tags;
+	for (const String &tag : project.tags) {
+		if (tag != p_tag) {
+			tags.push_back(tag);
+		}
+	}
+	_apply_selected_tags(tags);
+}
+
+void StartupDialog::_apply_selected_tags(const PackedStringArray &p_tags) {
+	const Error err = known_projects.set_project_tags(manage_selected_path, p_tags);
+	if (err != OK) {
+		ERR_PRINT(vformat("Failed to persist tags for project at '%s' (error %d).", manage_selected_path, err));
+		if (manage_error_dialog != nullptr) {
+			manage_error_dialog->set_text(vformat(TTR("Couldn't save tags for the project at '%s' (error %d).\nThe project's project.foundry may be read-only or missing."), manage_selected_path, err));
+			manage_error_dialog->popup_centered();
+		}
+		return;
+	}
+	// set_project_tags refreshes this entry's cache; persist the store so the
+	// cached tags survive a relaunch, then re-render the list and detail pane.
+	known_projects.save();
+	_refresh_manage_list();
 }
 
 bool StartupDialog::is_visible_dialog() const {
@@ -345,6 +918,7 @@ bool StartupDialog::is_visible_dialog() const {
 void StartupDialog::show_startup_dialog() {
 	known_projects.load();
 	_refresh_recents();
+	_refresh_manage_list();
 	tabs->set_current_tab(0);
 	EditorInterface::get_singleton()->popup_dialog_centered_clamped(this, Size2i(560, 0) * EDSCALE, 0.85);
 }
@@ -499,16 +1073,16 @@ StartupDialog::StartupDialog() {
 	}
 
 	{
-		manage_tab = memnew(VBoxContainer);
-		manage_tab->set_name(TTRC("Manage"));
-		tabs->add_child(manage_tab);
+		MarginContainer *manage_margin = memnew(MarginContainer);
+		manage_margin->set_name(TTRC("Manage"));
+		manage_margin->add_theme_constant_override("margin_left", 4 * EDSCALE);
+		manage_margin->add_theme_constant_override("margin_right", 4 * EDSCALE);
+		manage_margin->add_theme_constant_override("margin_top", 12 * EDSCALE);
+		manage_margin->add_theme_constant_override("margin_bottom", 4 * EDSCALE);
+		tabs->add_child(manage_margin);
+		manage_tab = manage_margin;
 
-		Label *placeholder = memnew(Label);
-		placeholder->set_text(TTRC("Project maintenance tools will appear here."));
-		placeholder->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_CENTER);
-		placeholder->set_vertical_alignment(VERTICAL_ALIGNMENT_CENTER);
-		placeholder->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-		manage_tab->add_child(placeholder);
+		_build_manage_tab(manage_margin);
 	}
 
 	{
@@ -527,7 +1101,54 @@ StartupDialog::StartupDialog() {
 	project_dialog = memnew(ProjectDialog);
 	project_dialog->connect("projects_updated", callable_mp(this, &StartupDialog::_on_projects_updated));
 	project_dialog->connect("project_created", callable_mp(this, &StartupDialog::_on_project_created));
+	project_dialog->connect("project_duplicated", callable_mp(this, &StartupDialog::_on_project_duplicated));
 	add_child(project_dialog);
+
+	project_scanner = memnew(ProjectScanner);
+	project_scanner->connect("scan_finished", callable_mp(this, &StartupDialog::_on_scan_finished));
+	add_child(project_scanner);
+
+	scan_dir_dialog = memnew(EditorFileDialog);
+	scan_dir_dialog->set_access(EditorFileDialog::ACCESS_FILESYSTEM);
+	scan_dir_dialog->set_file_mode(EditorFileDialog::FILE_MODE_OPEN_DIR);
+	scan_dir_dialog->set_title(TTRC("Select a Folder to Scan"));
+	scan_dir_dialog->set_current_dir(EDITOR_GET("filesystem/directories/default_project_path"));
+	scan_dir_dialog->connect("dir_selected", callable_mp(this, &StartupDialog::_on_scan_dir_selected));
+	add_child(scan_dir_dialog);
+
+	remove_missing_dialog = memnew(ConfirmationDialog);
+	remove_missing_dialog->set_title(TTRC("Remove Missing Projects"));
+	remove_missing_dialog->set_text(TTRC("Remove all projects whose folders no longer exist from the list?\nThe project folders' contents won't be modified."));
+	remove_missing_dialog->set_ok_button_text(TTRC("Remove"));
+	remove_missing_dialog->connect(SceneStringName(confirmed), callable_mp(this, &StartupDialog::_confirm_remove_missing));
+	add_child(remove_missing_dialog);
+
+	manage_error_dialog = memnew(AcceptDialog);
+	manage_error_dialog->set_title(TTRC("Error"));
+	add_child(manage_error_dialog);
+
+	{
+		add_tag_dialog = memnew(ConfirmationDialog);
+		add_tag_dialog->set_title(TTRC("Add Tag"));
+		add_tag_dialog->get_ok_button()->connect(SceneStringName(pressed), callable_mp(this, &StartupDialog::_confirm_add_tag));
+		add_child(add_tag_dialog);
+
+		VBoxContainer *tag_body = memnew(VBoxContainer);
+		add_tag_dialog->add_child(tag_body);
+
+		add_tag_name = memnew(LineEdit);
+		add_tag_name->set_accessibility_name(TTRC("New Tag Name"));
+		add_tag_name->set_placeholder(TTRC("example_tag (will display as Example Tag)"));
+		add_tag_name->connect(SceneStringName(text_changed), callable_mp(this, &StartupDialog::_validate_new_tag));
+		add_tag_name->connect(SceneStringName(text_submitted), callable_mp(this, &StartupDialog::_confirm_add_tag).unbind(1));
+		tag_body->add_child(add_tag_name);
+		add_tag_dialog->connect("about_to_popup", callable_mp(add_tag_name, &LineEdit::clear));
+		add_tag_dialog->connect("about_to_popup", callable_mp((Control *)add_tag_name, &Control::grab_focus).bind(false), CONNECT_DEFERRED);
+
+		add_tag_error = memnew(Label);
+		add_tag_error->set_modulate(Color(1, 0.4, 0.4));
+		tag_body->add_child(add_tag_error);
+	}
 
 	tabs->set_current_tab(0);
 }

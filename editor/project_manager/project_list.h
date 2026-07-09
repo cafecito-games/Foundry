@@ -2,7 +2,7 @@
 /*  project_list.h                                                        */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -240,10 +240,6 @@ private:
 	static Item load_project_data(const String &p_property_key, bool p_favorite);
 	void _update_icons_async();
 	void _load_project_icon(int p_index);
-
-	// Project list updates.
-
-	static void _scan_folder_recursive(const String &p_path, List<String> *r_projects, const SafeFlag &p_scan_active);
 
 	// Project list items.
 

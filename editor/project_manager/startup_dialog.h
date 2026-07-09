@@ -2,7 +2,7 @@
 /*  startup_dialog.h                                                      */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -34,10 +34,15 @@
 #include "scene/gui/dialogs.h"
 
 class Button;
+class ConfirmationDialog;
 class Control;
+class EditorFileDialog;
+class HBoxContainer;
 class Label;
+class LineEdit;
 class MarginContainer;
 class ProjectDialog;
+class ProjectScanner;
 class ScrollContainer;
 class TabContainer;
 class TextureRect;
@@ -69,6 +74,39 @@ class StartupDialog : public AcceptDialog {
 	VBoxContainer *recents_container = nullptr;
 	VBoxContainer *recents_empty_state = nullptr;
 
+	// Manage tab: known-project maintenance (filter, scan, tags, duplicate, reveal,
+	// missing cleanup). `Manage` is never the default startup tab.
+	LineEdit *manage_filter = nullptr;
+	Button *scan_button = nullptr;
+	Button *remove_missing_button = nullptr;
+	ScrollContainer *manage_list_scroll = nullptr;
+	VBoxContainer *manage_list_container = nullptr;
+	VBoxContainer *manage_empty_state = nullptr;
+	Label *manage_empty_hint = nullptr;
+
+	VBoxContainer *manage_detail_pane = nullptr;
+	VBoxContainer *manage_detail_empty = nullptr;
+	Label *manage_detail_name = nullptr;
+	Label *manage_detail_path = nullptr;
+	Label *manage_missing_label = nullptr;
+	Button *manage_open_button = nullptr;
+	Button *manage_duplicate_button = nullptr;
+	Button *manage_reveal_button = nullptr;
+	HBoxContainer *manage_tags_row = nullptr;
+	Button *manage_add_tag_button = nullptr;
+
+	ProjectScanner *project_scanner = nullptr;
+	EditorFileDialog *scan_dir_dialog = nullptr;
+	ConfirmationDialog *remove_missing_dialog = nullptr;
+	AcceptDialog *manage_error_dialog = nullptr;
+	ConfirmationDialog *add_tag_dialog = nullptr;
+	LineEdit *add_tag_name = nullptr;
+	Label *add_tag_error = nullptr;
+
+	// Canonical path of the project selected in the Manage list, or empty if none.
+	String manage_selected_path;
+	String manage_filter_query;
+
 	ProjectDialog *project_dialog = nullptr;
 
 	void _update_theme();
@@ -85,7 +123,35 @@ class StartupDialog : public AcceptDialog {
 	void _remove_recent_path(const String &p_path);
 
 	void _on_project_created(const String &p_dir, bool p_edit);
+	void _on_project_duplicated(const String &p_original_path, const String &p_duplicate_path, bool p_edit);
 	void _on_projects_updated();
+
+	// Manage tab helpers.
+	void _build_manage_tab(Control *p_parent);
+	void _refresh_manage_list();
+	void _clear_manage_rows();
+	void _build_manage_row(const KnownProjectStore::KnownProject &p_project);
+	void _select_manage_project(const String &p_path);
+	void _refresh_manage_detail();
+	void _clear_manage_tags();
+
+	void _on_manage_filter_changed(const String &p_text);
+	void _scan_folder();
+	void _on_scan_dir_selected(const String &p_dir);
+	void _on_scan_finished(const PackedStringArray &p_found);
+
+	void _prompt_remove_missing();
+	void _confirm_remove_missing();
+
+	void _manage_open_selected();
+	void _manage_duplicate_selected();
+	void _manage_reveal_selected();
+
+	void _prompt_add_tag();
+	void _validate_new_tag(const String &p_name);
+	void _confirm_add_tag();
+	void _remove_selected_tag(const String &p_tag);
+	void _apply_selected_tags(const PackedStringArray &p_tags);
 
 	// Records the open in the global store, launches `editor open --project`, and
 	// quits the projectless shell. Returns the create_instance error when launch fails.
@@ -96,6 +162,12 @@ protected:
 	static void _bind_methods();
 
 public:
+	// True when p_project matches the Manage-tab filter query. An empty (or
+	// whitespace-only) query matches everything; otherwise the query is matched
+	// case-insensitively against the project's display name, its path, and each of
+	// its tags. Static and UI-free so the filtering rule is unit-testable.
+	static bool manage_filter_matches(const KnownProjectStore::KnownProject &p_project, const String &p_query);
+
 	bool is_visible_dialog() const;
 
 	void show_startup_dialog();
