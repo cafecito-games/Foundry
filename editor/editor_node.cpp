@@ -7069,6 +7069,13 @@ bool EditorNode::load_project_in_process(const String &p_project_path) {
 		EditorPaths::get_singleton()->initialize_project_data_dir();
 	}
 
+	// The projectless shell may have cached project metadata against its own paths;
+	// drop it so recent scenes, debug options, and other per-project metadata reload
+	// from (and save to) the opened project's metadata file.
+	if (EditorSettings::get_singleton() != nullptr) {
+		EditorSettings::get_singleton()->reload_project_metadata();
+	}
+
 	// Swap the projectless layout store for the project's layout store (resolved from
 	// the now project-pointed EditorPaths). The first scan's completion handler
 	// (_sources_changed) restores the project layout through it.
