@@ -74,7 +74,7 @@
 #include "scene/resources/packed_scene.h"
 #include "scene/resources/portable_compressed_texture.h"
 #include "scene/theme/theme_db.h"
-#include "servers/audio_server.h"
+#include "servers/audio/audio_server.h"
 #include "servers/display/display_server.h"
 #include "servers/navigation_2d/navigation_server_2d.h"
 #include "servers/navigation_3d/navigation_server_3d.h"
@@ -159,6 +159,7 @@
 #include "editor/project_upgrade/project_upgrade_tool.h"
 #include "editor/run/editor_run.h"
 #include "editor/run/editor_run_bar.h"
+#include "editor/run/editor_run_native.h"
 #include "editor/run/game_view_plugin.h"
 #include "editor/run/run_target_manager.h"
 #include "editor/scene/3d/material_3d_conversion_plugins.h"
@@ -7125,6 +7126,12 @@ bool EditorNode::load_project_in_process(const String &p_project_path) {
 	// preset resolution reflect it (EditorExport was constructed before any project).
 	if (EditorExport::get_singleton() != nullptr) {
 		EditorExport::get_singleton()->reload_presets_for_project();
+	}
+
+	// Reload native run targets (and rebuild the deploy popup) from the opened project
+	// for the same reason: EditorRunNative loaded run_targets.cfg against the shell.
+	if (EditorRunNative::get_singleton() != nullptr) {
+		EditorRunNative::get_singleton()->reload_for_project();
 	}
 
 	// Re-latch the project upgrade tool from the opened project's metadata (the editor

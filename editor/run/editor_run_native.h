@@ -115,6 +115,10 @@ public:
 
 	static EditorRunNative *get_singleton() { return singleton; }
 	RunTargetManager *get_run_target_manager() { return &run_target_manager; }
+	// Reloads run targets from the active project's run_targets.cfg and rebuilds the
+	// deploy popup. Used when a project is loaded in-process from the projectless
+	// startup shell, whose run targets were loaded before a project existed.
+	void reload_for_project();
 
 	// Pure builder for the run-target portion of the deploy dropdown. Produces one
 	// `TARGET` row per configured target (badge sourced from the matching live
