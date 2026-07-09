@@ -3460,7 +3460,7 @@ Error Main::setup2(bool p_show_boot_logo) {
 		if (err != OK || accessibility_server == nullptr) {
 			String last_name = AccessibilityServer::get_create_function_name(accessibility_driver_idx);
 
-			for (int i = 0; i < AccessibilityServer::get_create_function_count() - 1; i++) {
+			for (int i = 0; i < AccessibilityServer::get_create_function_count(); i++) {
 				if (i == accessibility_driver_idx) {
 					continue; // Don't try the same twice.
 				}
