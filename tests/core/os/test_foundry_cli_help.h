@@ -57,12 +57,16 @@ TEST_CASE("[FoundryCLIHelp] Top help lists nouns and omits legacy options") {
 	CHECK_FALSE(text.contains("--export-release"));
 }
 
+#ifdef TOOLS_ENABLED
 TEST_CASE("[FoundryCLIHelp] Editor help omits the removed project-manager command") {
+	// The `editor` noun and its `open` command are editor-only, so this help text is
+	// empty in release template builds; only assert on it when editor help exists.
 	const String text = FoundryCLIHelp::get_noun_help_text("editor");
 	CHECK(text.contains("open"));
 	CHECK_FALSE(text.contains("project-manager"));
 	CHECK_FALSE(text.contains("Project Manager"));
 }
+#endif
 
 TEST_CASE("[FoundryCLIHelp] Noun help lists its subcommands") {
 	const String text = FoundryCLIHelp::get_noun_help_text("script");
