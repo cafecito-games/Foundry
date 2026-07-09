@@ -48,7 +48,6 @@ complete -c foundry -s q -l quiet -d "Quiet mode, silences stdout messages (erro
 
 # Run options:
 complete -c foundry -s e -l editor -d "Start the editor instead of running the scene"
-complete -c foundry -s p -l project-manager -d "Start the project manager, even if a project is auto-detected"
 complete -c foundry -l debug-server -d "Start the editor debug server (<protocol>://<host/IP>[:<port>] address)" -x
 complete -c foundry -l quit -d "Quit after the first iteration"
 complete -c foundry -s l -l language -d "Use a specific locale (<locale> being a two-letter code)" -x
