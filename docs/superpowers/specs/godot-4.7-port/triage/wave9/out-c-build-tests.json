@@ -1,0 +1,186 @@
+[
+  {
+    "pr": "118082",
+    "sha": "53a957907ea970dd8622dd0a88c49b9a5158a975",
+    "decision": "port-now",
+    "kind": "bugfix",
+    "risk": "low",
+    "rationale": "Fork's glsl_builders.py still has the pre-fix raygen-only block; the change correctly emits nullptr for absent raytracing stages and applies cleanly to the undiverged region."
+  },
+  {
+    "pr": "116798",
+    "sha": "2e56f4ee538f0093c37568ef9e02938d08d2fe42",
+    "decision": "port-later",
+    "kind": "refactor",
+    "risk": "med",
+    "rationale": "Fork's test_main.cpp listener is undiverged so it would apply, but moving MessageQueue/RenderingServer to a single global test_setup lifetime should be validated against the fork's Foundry Script test runner first."
+  },
+  {
+    "pr": "116960",
+    "sha": "fbb918b699a679d4ded7e1996abb344a56f57a72",
+    "decision": "port-now",
+    "kind": "bugfix",
+    "risk": "low",
+    "rationale": "Fork main.cpp (lines 3504-3518) still has the off-by-one fallback loop and WARN_PRINT; the fix that tries the last accessibility driver and quiets the warning applies to the undiverged region."
+  },
+  {
+    "pr": "116366",
+    "sha": "5866e4f58f8c47e7d740e8626cc704dc5e198f97",
+    "decision": "skip",
+    "kind": "bugfix",
+    "risk": "low",
+    "rationale": "Already on HEAD: fork main.cpp already gates prefer_wayland on a non-empty WAYLAND_DISPLAY (lines 3264-3268)."
+  },
+  {
+    "pr": "110469",
+    "sha": "8a337510390eb6b9e8868a6d3a4e2a7e494ad83f",
+    "decision": "port-now",
+    "kind": "bugfix",
+    "risk": "low",
+    "rationale": "Fork methods.py still passes '-requires Microsoft.Component.MSBuild' to vswhere (line 727); removing it broadens MSVC detection and applies cleanly."
+  },
+  {
+    "pr": "115359",
+    "sha": "b328f597a303b60bb39b340a95f9a09bb65cdb8c",
+    "decision": "port-now",
+    "kind": "cleanup",
+    "risk": "low",
+    "rationale": "Fork methods.py header-extension list (line 1153) lacks '.inl'; adding it to the MSVC solution is a trivial, independent one-line change."
+  },
+  {
+    "pr": "115389",
+    "sha": "f8444475ac0653376689b2ee4657727bea20e784",
+    "decision": "skip",
+    "kind": "docs",
+    "risk": "low",
+    "rationale": "Fork intentionally uses its own version scheme (version.py major=0 minor=1 status=dev); bumping to Godot 4.7-dev plus mono .csproj bumps does not apply."
+  },
+  {
+    "pr": "117555",
+    "sha": "7544660ca4cdf3997422e6459e1c943a55ccb211",
+    "decision": "port-now",
+    "kind": "bugfix",
+    "risk": "low",
+    "rationale": "Fork platform_methods.py generate_bundle_apple_embedded (lines 231/240) is undiverged; the libgodot_ prefix match and per-slice MoltenVK copy fix applies cleanly and iOS work is active."
+  },
+  {
+    "pr": "116588",
+    "sha": "a0d955d586f3ff7a592579604c9cf5b388788765",
+    "decision": "skip",
+    "kind": "bugfix",
+    "risk": "low",
+    "rationale": "Fork removed the tests SCU 'one large unit' process_folder block entirely, so there is no test_macros/test_main SCU exclusion to fix."
+  },
+  {
+    "pr": "116455",
+    "sha": "d73f6aab4ec179fc7b8b72cb66f5d3be3883717e",
+    "decision": "port-later",
+    "kind": "cleanup",
+    "risk": "low",
+    "rationale": "Target run_compatibility_test.py does not exist in the fork; this lint pass can only follow adoption of the #113743 compatibility-test infra."
+  },
+  {
+    "pr": "113743",
+    "sha": "ff7d5cb3d0365ec8e0b3b33bacd4983bca377178",
+    "decision": "port-later",
+    "kind": "feature",
+    "risk": "med",
+    "rationale": "Net-new GDExtension ABI compat-test project plus a linux_builds.yml/CI action using upstream godot naming; useful but requires adaptation to the fork's foundry-* CI."
+  },
+  {
+    "pr": "116486",
+    "sha": "897172fa25699455f0a537f054654068b3dda5d5",
+    "decision": "skip",
+    "kind": "cleanup",
+    "risk": "low",
+    "rationale": "Already on HEAD: fork's header-only test_http_client.h and test_stream_peer_gzip.h already carry the mbedtls/web guard and TestStreamPeerGZIP namespace equivalents."
+  },
+  {
+    "pr": "112041",
+    "sha": "f0b164472f18f71a10708f1a198c6f792f7c48f5",
+    "decision": "port-later",
+    "kind": "refactor",
+    "risk": "high",
+    "rationale": "Foundational 162-file header-to-cpp test conversion that rewrites test_main.cpp/SCsub/test_macros.h; conflicts with the fork's intact header-only harness and is a project-level decision to defer."
+  },
+  {
+    "pr": "115933",
+    "sha": "e067a686b386a050f12bc40fd18436ffd4cfc34b",
+    "decision": "port-now",
+    "kind": "bugfix",
+    "risk": "low",
+    "rationale": "Fork test_color.h (line 64) still calls the static from_hsv via an instance; changing to Color::from_hsv is a clean one-line fix and from_hsv is static in core/math/color.h."
+  },
+  {
+    "pr": "118220",
+    "sha": "f7692aa47dbbbf9049ea4225ad8047c6d8d3040f",
+    "decision": "skip",
+    "kind": "cleanup",
+    "risk": "low",
+    "rationale": "Modernized create_test.py emits .cpp/TEST_FORCE_LINK templates and drops the invasive test_main.cpp include insertion the fork's header-only workflow depends on."
+  },
+  {
+    "pr": "119261",
+    "sha": "f46fad29743491272ef8c35b1b78b30a4faa0765",
+    "decision": "port-later",
+    "kind": "test",
+    "risk": "low",
+    "rationale": "Valuable additive TextureButton coverage but authored as a .cpp/TEST_FORCE_LINK file; needs conversion to the fork's header-only layout and test_main.cpp registration."
+  },
+  {
+    "pr": "119264",
+    "sha": "864bad270557b3413d6e1f6d7a4cb5b08992b915",
+    "decision": "port-later",
+    "kind": "test",
+    "risk": "low",
+    "rationale": "Valuable additive SpinBox coverage but authored as a .cpp/TEST_FORCE_LINK file; needs conversion to the fork's header-only layout and test_main.cpp registration."
+  },
+  {
+    "pr": "119244",
+    "sha": "ee959388f90beaac7098056fa9109244bc6e9fa1",
+    "decision": "port-later",
+    "kind": "test",
+    "risk": "low",
+    "rationale": "Valuable additive ReferenceRect coverage but authored as a .cpp/TEST_FORCE_LINK file; needs conversion to the fork's header-only layout and test_main.cpp registration."
+  },
+  {
+    "pr": "119132",
+    "sha": "771d727bea90b69f075d36c0ee966fadd67c0d7c",
+    "decision": "port-later",
+    "kind": "test",
+    "risk": "low",
+    "rationale": "Valuable additive TextureRect coverage but authored as a .cpp/TEST_FORCE_LINK file; needs conversion to the fork's header-only layout and test_main.cpp registration."
+  },
+  {
+    "pr": "119124",
+    "sha": "9e9e81e8465bfcdd775648f6e252c5be4d4607e3",
+    "decision": "port-later",
+    "kind": "test",
+    "risk": "low",
+    "rationale": "Valuable additive NinePatchRect coverage but authored as a .cpp/TEST_FORCE_LINK file; needs conversion to the fork's header-only layout and test_main.cpp registration."
+  },
+  {
+    "pr": "118232",
+    "sha": "b903c1070a6c1f53918ce6a46075d3ee28fd9bcd",
+    "decision": "port-later",
+    "kind": "test",
+    "risk": "low",
+    "rationale": "Nine new container-node test files (nodes incl. FoldableContainer exist in the fork) but authored as .cpp/TEST_FORCE_LINK; need conversion to header-only layout and test_main.cpp registration."
+  },
+  {
+    "pr": "105296",
+    "sha": "70c965168265e979ebaaa347e8ad08dfad0e2e42",
+    "decision": "port-later",
+    "kind": "test",
+    "risk": "low",
+    "rationale": "Valuable additive StyleBoxEmpty/StyleBoxLine coverage but authored as .cpp/TEST_FORCE_LINK files; need conversion to the fork's header-only layout and test_main.cpp registration."
+  },
+  {
+    "pr": "117097",
+    "sha": "c4969dfa4e7e5581a75a1076a578b5dd97217155",
+    "decision": "port-later",
+    "kind": "cleanup",
+    "risk": "low",
+    "rationale": "70-file sweep adding scene_tree.h includes to .cpp test units that only exist after the #112041 compiled-test conversion; not applicable standalone to the header-only fork."
+  }
+]

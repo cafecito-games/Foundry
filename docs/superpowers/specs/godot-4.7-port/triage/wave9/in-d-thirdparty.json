@@ -1,0 +1,121 @@
+[
+  {
+    "pr": "114100",
+    "sha": "f0f5c1599fe996c37b79b96c38bf42a44f1f23b2",
+    "subsystem": "thirdparty/d3d12ma",
+    "nfiles": 8,
+    "title": "Upgrade D3D12MA to 3.1.0."
+  },
+  {
+    "pr": "114834",
+    "sha": "013fffa10d453c7936dd683bc11aa05254ab6eab",
+    "subsystem": "thirdparty/enet",
+    "nfiles": 3,
+    "title": "ENet: Fix DTLS server leaking peers"
+  },
+  {
+    "pr": "115228",
+    "sha": "29afd19ed69b188f325c95b5e79a8c1a7257bf03",
+    "subsystem": "thirdparty/fonts",
+    "nfiles": 25,
+    "title": "Update fallback fonts to latest releases"
+  },
+  {
+    "pr": "111679",
+    "sha": "77579f93e6ee7cf2515da4a7a5000d8a0244be98",
+    "subsystem": "thirdparty/gamepadmotionhelpers",
+    "nfiles": 10,
+    "title": "Add support for joypad motion sensors"
+  },
+  {
+    "pr": "114075",
+    "sha": "cb04441dad82f23497fe91a5fb2fa2b6bc54c94d",
+    "subsystem": "thirdparty/glslang",
+    "nfiles": 174,
+    "title": "Vulkan: Update all components to Vulkan SDK 1.4.335.0"
+  },
+  {
+    "pr": "118785",
+    "sha": "e2115157f18477c7ef47fe5c30758db7a2e49b82",
+    "subsystem": "thirdparty/harfbuzz",
+    "nfiles": 161,
+    "title": "Update HarfBuzz to 14.2.0 and ICU4C to 78.3"
+  },
+  {
+    "pr": "117149",
+    "sha": "87b0010244450c6f9c6c0e583c07b7362b3a99fa",
+    "subsystem": "thirdparty/harfbuzz",
+    "nfiles": 134,
+    "title": "Update HarfBuzz to 13.1.1 and optionally use new `hb-raster` API to render glyphs."
+  },
+  {
+    "pr": "117194",
+    "sha": "3837993f055710cac20ee99fe65dd5802b89b589",
+    "subsystem": "thirdparty/jolt_physics",
+    "nfiles": 10,
+    "title": "Increase maximum value of `HeightFieldShape::mBitsPerSample` to 16 to allow for better precision"
+  },
+  {
+    "pr": "115305",
+    "sha": "657d06a8f385766bec781de2793d486a46ec27e7",
+    "subsystem": "thirdparty/jolt_physics",
+    "nfiles": 3,
+    "title": "Jolt Physics: Rework how gravity is applied to dynamic bodies to prevent energy increase on elastic collisions"
+  },
+  {
+    "pr": "115714",
+    "sha": "379b5fa8145509d2527c1261b4411f11057d9800",
+    "subsystem": "thirdparty/libpng",
+    "nfiles": 21,
+    "title": "libpng: Update to 1.6.54"
+  },
+  {
+    "pr": "118778",
+    "sha": "f03b9c9eb1c4572bc03a6fa3ff91aa7316c6ea06",
+    "subsystem": "thirdparty/meshoptimizer",
+    "nfiles": 15,
+    "title": "meshoptimizer: Update to 1.1"
+  },
+  {
+    "pr": "116371",
+    "sha": "a8a582e28b91407e683d112724051266ff2df936",
+    "subsystem": "thirdparty/metal-cpp",
+    "nfiles": 16,
+    "title": "Metal: Various fixes"
+  },
+  {
+    "pr": "114484",
+    "sha": "34204bd1b85546c62acd20078e179ff1ae498ac4",
+    "subsystem": "thirdparty/metal-cpp",
+    "nfiles": 173,
+    "title": "Metal: Refactor; fix dynamic uniforms; acyclic render graph support"
+  },
+  {
+    "pr": "118774",
+    "sha": "cd752cf79319150f8d2fbf5692b9b8f6b571a745",
+    "subsystem": "thirdparty/minizip",
+    "nfiles": 11,
+    "title": "minizip: Update to 1.3.2"
+  },
+  {
+    "pr": "113873",
+    "sha": "3a2865861d6833eab8919e10e897e1fed4e73606",
+    "subsystem": "thirdparty/sdl",
+    "nfiles": 6,
+    "title": "Input: Add serial number to `joy_info`"
+  },
+  {
+    "pr": "116024",
+    "sha": "c068a92e1957cf50d81125e402f6721c0bd3dec1",
+    "subsystem": "thirdparty/thorvg",
+    "nfiles": 100,
+    "title": "thorvg: Update to 1.0.3"
+  },
+  {
+    "pr": "118749",
+    "sha": "f6b442f7a877d8f9d79108cb539afaddea52f845",
+    "subsystem": "thirdparty/zlib",
+    "nfiles": 19,
+    "title": "zlib: Update to 1.3.2"
+  }
+]

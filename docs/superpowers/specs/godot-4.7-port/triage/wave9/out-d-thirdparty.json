@@ -1,0 +1,172 @@
+[
+  {
+    "pr": "114100",
+    "sha": "f0f5c1599fe996c37b79b96c38bf42a44f1f23b2",
+    "decision": "port-later",
+    "kind": "dep-bump",
+    "risk": "med",
+    "rationale": "Fork d3d12ma is still 2.1.0-development; the 3.1.0 bump is not applied and must be a whole-dir checkout of thirdparty/d3d12ma from 4.7-stable plus SCsub/mingw-patch reconcile (Windows-only D3D12 driver, low blast radius).",
+    "current_version": "2.1.0-development",
+    "target_version": "3.1.0"
+  },
+  {
+    "pr": "114834",
+    "sha": "013fffa10d453c7936dd683bc11aa05254ab6eab",
+    "decision": "port-now",
+    "kind": "bugfix",
+    "risk": "med",
+    "rationale": "DTLS peer-leak fix (enet_godot.cpp/enet_godot_ext.h glue + module) is absent from HEAD and is a self-contained networking-correctness cherry-pick, not a version bump.",
+    "current_version": "",
+    "target_version": ""
+  },
+  {
+    "pr": "115228",
+    "sha": "29afd19ed69b188f325c95b5e79a8c1a7257bf03",
+    "decision": "port-later",
+    "kind": "dep-bump",
+    "risk": "low",
+    "rationale": "HEAD still ships the old NotoSans*UI Bengali/Devanagari/Sinhala variants; this refresh renames/updates the fallback fonts and touches editor_fonts.cpp plus test_fontfile.h, a low-risk asset swap.",
+    "current_version": "",
+    "target_version": ""
+  },
+  {
+    "pr": "111679",
+    "sha": "77579f93e6ee7cf2515da4a7a5000d8a0244be98",
+    "decision": "port-later",
+    "kind": "dep-bump",
+    "risk": "med",
+    "rationale": "New feature: thirdparty/gamepadmotionhelpers does not exist in HEAD; adds a whole new vendored lib plus Input motion-sensor API and SDL glue (needs rebrand + fix-warnings patch), not a pure version bump.",
+    "current_version": "",
+    "target_version": ""
+  },
+  {
+    "pr": "114075",
+    "sha": "cb04441dad82f23497fe91a5fb2fa2b6bc54c94d",
+    "decision": "skip",
+    "kind": "dep-bump",
+    "risk": "low",
+    "rationale": "Already at glslang vulkan-sdk-1.4.335.0 (== target) from an earlier wave.",
+    "current_version": "vulkan-sdk-1.4.335.0",
+    "target_version": "vulkan-sdk-1.4.335.0"
+  },
+  {
+    "pr": "118785",
+    "sha": "e2115157f18477c7ef47fe5c30758db7a2e49b82",
+    "decision": "port-later",
+    "kind": "dep-bump",
+    "risk": "high",
+    "rationale": "Fork is HarfBuzz 12.3.2 / ICU4C 78.1; bumping to 14.2.0 / 78.3 is a large whole-dir checkout that must be reconciled with the text-server module and Foundry ICU data-filter setup.",
+    "current_version": "12.3.2 / ICU 78.1",
+    "target_version": "14.2.0 / ICU 78.3"
+  },
+  {
+    "pr": "117149",
+    "sha": "87b0010244450c6f9c6c0e583c07b7362b3a99fa",
+    "decision": "skip",
+    "kind": "dep-bump",
+    "risk": "med",
+    "rationale": "Superseded by #118785 (HarfBuzz 14.2.0) since fork is 12.3.2; only the optional hb-raster glyph-render opt-in is distinct and can be revisited after the 14.2.0 bump.",
+    "current_version": "12.3.2 / ICU 78.1",
+    "target_version": "13.1.1"
+  },
+  {
+    "pr": "117194",
+    "sha": "3837993f055710cac20ee99fe65dd5802b89b589",
+    "decision": "skip",
+    "kind": "dep-bump",
+    "risk": "low",
+    "rationale": "Already applied: patch 0005-backport-upstream-commit-449b645 is present and cMaxBitsPerSample is already 16 in HeightFieldShape.h.",
+    "current_version": "5.5.0",
+    "target_version": "5.5.0"
+  },
+  {
+    "pr": "115305",
+    "sha": "657d06a8f385766bec781de2793d486a46ec27e7",
+    "decision": "skip",
+    "kind": "dep-bump",
+    "risk": "low",
+    "rationale": "Already applied: thirdparty/README.md references GH-115305 patches 0005/0006 and the gravity/AddForce rework is present in jolt_body_3d.cpp.",
+    "current_version": "5.5.0",
+    "target_version": "5.5.0"
+  },
+  {
+    "pr": "115714",
+    "sha": "379b5fa8145509d2527c1261b4411f11057d9800",
+    "decision": "skip",
+    "kind": "dep-bump",
+    "risk": "low",
+    "rationale": "Fork libpng is already 1.6.58 (newer than the PR's 1.6.54 target).",
+    "current_version": "1.6.58",
+    "target_version": "1.6.54"
+  },
+  {
+    "pr": "118778",
+    "sha": "f03b9c9eb1c4572bc03a6fa3ff91aa7316c6ea06",
+    "decision": "port-later",
+    "kind": "dep-bump",
+    "risk": "med",
+    "rationale": "Fork meshoptimizer is still 1.0 (MESHOPTIMIZER_VERSION 1000); the 1.1 bump is a whole-dir checkout plus SCsub reconcile, not yet applied.",
+    "current_version": "1.0",
+    "target_version": "1.1"
+  },
+  {
+    "pr": "116371",
+    "sha": "a8a582e28b91407e683d112724051266ff2df936",
+    "decision": "skip",
+    "kind": "bugfix",
+    "risk": "low",
+    "rationale": "Already applied in the wave-5 Metal work: supports_border_color and sendMessageSafe allocatedSize fixes are present in drivers/metal.",
+    "current_version": "26.0",
+    "target_version": "26.0"
+  },
+  {
+    "pr": "114484",
+    "sha": "34204bd1b85546c62acd20078e179ff1ae498ac4",
+    "decision": "skip",
+    "kind": "bugfix",
+    "risk": "low",
+    "rationale": "Already applied in wave 5: the refactor's metal3_objects.cpp / metal_objects_shared.cpp / rendering_device_driver_metal3.cpp exist and metal_objects.mm was removed.",
+    "current_version": "26.0",
+    "target_version": "26.0"
+  },
+  {
+    "pr": "118774",
+    "sha": "cd752cf79319150f8d2fbf5692b9b8f6b571a745",
+    "decision": "skip",
+    "kind": "dep-bump",
+    "risk": "low",
+    "rationale": "Fork minizip is already 1.3.2 (== target).",
+    "current_version": "1.3.2",
+    "target_version": "1.3.2"
+  },
+  {
+    "pr": "113873",
+    "sha": "3a2865861d6833eab8919e10e897e1fed4e73606",
+    "decision": "port-later",
+    "kind": "bugfix",
+    "risk": "low",
+    "rationale": "serial_number in joy_info is absent from HEAD; a small self-contained cherry-pick across core/input, joypad_sdl, and SDL udev glue, not a version bump.",
+    "current_version": "",
+    "target_version": ""
+  },
+  {
+    "pr": "116024",
+    "sha": "c068a92e1957cf50d81125e402f6721c0bd3dec1",
+    "decision": "port-later",
+    "kind": "dep-bump",
+    "risk": "high",
+    "rationale": "Fork thorvg is still 0.15.16; the 1.0.3 jump is a major-version whole-dir checkout with SVG/Lottie API changes and SCsub reconcile, higher-risk and not yet applied.",
+    "current_version": "0.15.16",
+    "target_version": "1.0.3"
+  },
+  {
+    "pr": "118749",
+    "sha": "f6b442f7a877d8f9d79108cb539afaddea52f845",
+    "decision": "skip",
+    "kind": "dep-bump",
+    "risk": "low",
+    "rationale": "Fork zlib is already 1.3.2 (== target); zlib.h defines ZLIB_VERSION \"1.3.2\".",
+    "current_version": "1.3.2",
+    "target_version": "1.3.2"
+  }
+]

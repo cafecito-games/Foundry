@@ -1,0 +1,170 @@
+[
+  {
+    "pr": "119682",
+    "sha": "b0d2251aebc2b65beb3227d268c7708087ff0792",
+    "subsystem": "modules/csg",
+    "nfiles": 1,
+    "title": "Fix autosmooth behavior change caused by performance fix"
+  },
+  {
+    "pr": "119551",
+    "sha": "ed1e9ae6c262074e7629924995cbd3490289a949",
+    "subsystem": "modules/csg",
+    "nfiles": 2,
+    "title": "Fix CSG performance regression from auto smoothing"
+  },
+  {
+    "pr": "116749",
+    "sha": "66a96d92c65ffaf73b62a7371f694ccd2b6e611b",
+    "subsystem": "modules/csg",
+    "nfiles": 3,
+    "title": "Add automatic smoothing for CSG nodes"
+  },
+  {
+    "pr": "114535",
+    "sha": "5b666357e39cfde99416f7feb683f1ec642aa5c8",
+    "subsystem": "modules/csg",
+    "nfiles": 1,
+    "title": "Editor: Fix CSG gizmo selection inside CSGCombiners"
+  },
+  {
+    "pr": "118494",
+    "sha": "2788762844e30d2422c6456055572ec3d089b237",
+    "subsystem": "modules/dds",
+    "nfiles": 1,
+    "title": "DDS: Use `put_u32` for unsigned writes."
+  },
+  {
+    "pr": "116307",
+    "sha": "c67a8a16f49da42a1af0b00f0557774ca5953f67",
+    "subsystem": "modules/dds",
+    "nfiles": 2,
+    "title": "Add support for importing R8 and R8G8 DDS textures"
+  },
+  {
+    "pr": "118420",
+    "sha": "c481829ef4b4177e109aef7d94f3c58f60fa8f97",
+    "subsystem": "modules/godot_physics_2d",
+    "nfiles": 2,
+    "title": "Fix Godot Physics missing area overlaps after `area_set_space`"
+  },
+  {
+    "pr": "114129",
+    "sha": "f6fd6e62559f1e856935442a7749279bc06d096c",
+    "subsystem": "modules/interactive_music",
+    "nfiles": 2,
+    "title": "Bind AudioStreamInteractive `TRANSITION_TO_TIME_PREVIOUS_POSITION`"
+  },
+  {
+    "pr": "116520",
+    "sha": "342109e01fef9e27ec5a2d15877b415951ef0959",
+    "subsystem": "modules/interactive_music",
+    "nfiles": 1,
+    "title": "Add missing background panel to audio stream interactive transition editor tree"
+  },
+  {
+    "pr": "119570",
+    "sha": "f294c68bb580298432d18bfc7e606daec7d536d6",
+    "subsystem": "modules/jpg",
+    "nfiles": 1,
+    "title": "Fail JPEG import on fatal errors only."
+  },
+  {
+    "pr": "115674",
+    "sha": "872b5a52df76959c410297b0f60212f4349c3454",
+    "subsystem": "modules/jpg",
+    "nfiles": 1,
+    "title": "jpg: Explicitly reject unsupported CMYK and YCCK colorspaces"
+  },
+  {
+    "pr": "120344",
+    "sha": "2301f3612231317bc919d20c6e0a6deaecf04531",
+    "subsystem": "modules/lightmapper_rd",
+    "nfiles": 2,
+    "title": "Inline `integrate_edge_hill` to work around Adreno shader compiler bug."
+  },
+  {
+    "pr": "116597",
+    "sha": "22e44501fa1f475f0cc97695ce4a23db4aca36db",
+    "subsystem": "modules/mp3",
+    "nfiles": 2,
+    "title": "Improve docs for ResourceImporterMP3 and ResourceImporterOggVorbis"
+  },
+  {
+    "pr": "113396",
+    "sha": "d364a63b88c1db52eb7d4fb5ad01a6f2b165cce5",
+    "subsystem": "modules/multiplayer",
+    "nfiles": 8,
+    "title": "Change GridMap and Replication to EditorDock"
+  },
+  {
+    "pr": "119022",
+    "sha": "78105f19480669e014e0e0c22132dedea758d8a1",
+    "subsystem": "modules/navigation_3d",
+    "nfiles": 1,
+    "title": "Fix NavigationServer3D map_get_closest_point_normal returning unnorma\u2026"
+  },
+  {
+    "pr": "115309",
+    "sha": "fbbb8a921b5cd8d9d354cc08e0d41946074bede1",
+    "subsystem": "modules/navigation_3d",
+    "nfiles": 16,
+    "title": "Change copy constructor of `LocalVector` from implicit to explicit"
+  },
+  {
+    "pr": "118372",
+    "sha": "c1c88f88c1055046c44e518dd42e3c5ebaaa6a39",
+    "subsystem": "modules/noise",
+    "nfiles": 4,
+    "title": "Switch NoiseTexture2D/3D from using Threads to WorkerThreadPool"
+  },
+  {
+    "pr": "115194",
+    "sha": "b1e863f3634311f347d72d4022ab24a996e641ec",
+    "subsystem": "modules/objectdb_profiler",
+    "nfiles": 1,
+    "title": "Check if a resource from a snapshot exists before loading it"
+  },
+  {
+    "pr": "115549",
+    "sha": "0a1fd97da0d30a419c46cff03abcfe2143fc0405",
+    "subsystem": "modules/upnp",
+    "nfiles": 1,
+    "title": "Fix UPNP code sample using `OK` constant incorrectly"
+  },
+  {
+    "pr": "104433",
+    "sha": "3c341ffcab13a34a82a7882236a968d298d354d8",
+    "subsystem": "modules/websocket",
+    "nfiles": 1,
+    "title": "[Web] Optimize WebSocket send by replacing per-byte heap reads with heapSlice"
+  },
+  {
+    "pr": "118805",
+    "sha": "864f0b12cc72e050b7a6760e9b13da5e1e0180c6",
+    "subsystem": "modules/webxr",
+    "nfiles": 1,
+    "title": "Fix `disable_xr=yes` disabling the WebXR module"
+  },
+  {
+    "pr": "118780",
+    "sha": "bee85a1057ec6c1a8a9114ee15f4d0a2ed8634cc",
+    "subsystem": "modules/webxr",
+    "nfiles": 1,
+    "title": "Disable the WebXR module if `proxy_to_pthread` is enabled"
+  },
+  {
+    "pr": "120069",
+    "sha": "5a49c75875e1b5bb19097ef0ca95fa57cd3df255",
+    "subsystem": "modules/zip",
+    "nfiles": 1,
+    "title": "Fix ZIPPacker creating empty directory entries"
+  },
+  {
+    "pr": "115946",
+    "sha": "a1604ab74ce553376df5836feabdca5c0cf7c32d",
+    "subsystem": "modules/zip",
+    "nfiles": 5,
+    "title": "[ZIPPacker] Add support for Unix permissions and modification time."
+  }
+]
