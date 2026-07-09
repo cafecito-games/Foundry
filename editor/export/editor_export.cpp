@@ -245,6 +245,13 @@ void EditorExport::_notification(int p_what) {
 	}
 }
 
+void EditorExport::reload_presets_for_project() {
+	// Replace any presets loaded against a previous resource path (e.g. the projectless
+	// startup shell's launch directory) with the opened project's export_presets.cfg.
+	export_presets.clear();
+	load_config();
+}
+
 void EditorExport::load_config() {
 	Ref<ConfigFile> config;
 	config.instantiate();

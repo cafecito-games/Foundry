@@ -7100,9 +7100,11 @@ bool EditorNode::load_project_in_process(const String &p_project_path) {
 	Engine::get_singleton()->set_max_physics_steps_per_frame(GLOBAL_GET("physics/common/max_physics_steps_per_frame"));
 	Engine::get_singleton()->set_physics_jitter_fix(GLOBAL_GET("physics/common/physics_jitter_fix"));
 	Engine::get_singleton()->set_max_fps(GLOBAL_GET("application/run/max_fps"));
-	OS::get_singleton()->set_low_processor_usage_mode(GLOBAL_GET("application/run/low_processor_mode"));
 	OS::get_singleton()->set_delta_smoothing(GLOBAL_GET("application/run/delta_smoothing"));
 	OS::get_singleton()->ensure_user_data_dir();
+	// application/run/low_processor_mode is intentionally not applied here: in the
+	// editor the low-processor policy is owned by the update spinner
+	// (interface/editor/update_continuously), which was already set at boot.
 
 	// Load the opened project's audio bus layout and (re)load its theme/font, as a
 	// normal editor launch does after ProjectSettings::setup(); otherwise custom audio
@@ -7117,6 +7119,12 @@ bool EditorNode::load_project_in_process(const String &p_project_path) {
 	if (EditorSettings::get_singleton() != nullptr) {
 		EditorSettings::get_singleton()->reload_project_metadata();
 		EditorSettings::get_singleton()->load_favorites_and_recent_dirs();
+	}
+
+	// Reload export presets from the opened project so Project > Export and run-target
+	// preset resolution reflect it (EditorExport was constructed before any project).
+	if (EditorExport::get_singleton() != nullptr) {
+		EditorExport::get_singleton()->reload_presets_for_project();
 	}
 
 	// Re-latch the project upgrade tool from the opened project's metadata (the editor
