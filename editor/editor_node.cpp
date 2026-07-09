@@ -7084,6 +7084,10 @@ bool EditorNode::load_project_in_process(const String &p_project_path) {
 	// Load the opened project's ResourceUID cache and resolve autoloads stored as
 	// uid:// entries, as main.cpp does right after ProjectSettings::setup(). Without
 	// this, uid://-backed autoload paths resolve to empty and would not instantiate.
+	// clear() first because load_from_cache() returns without resetting when the opened
+	// project has no uid_cache.bin, which would otherwise leak the projectless shell's
+	// launch-directory UID mappings into the project (a cold launch starts empty).
+	ResourceUID::get_singleton()->clear();
 	ResourceUID::get_singleton()->load_from_cache(true);
 	ProjectSettings::get_singleton()->fix_autoload_paths();
 
