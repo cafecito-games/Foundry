@@ -448,8 +448,9 @@
   "risk": "low",
   "files_exist": true,
   "rationale": "EditorInspector::update_tree early-returns and sets update_tree_pending when !is_visible_in_tree(); update_tree_pending member present in fork.",
-  "outcome": "ported",
-  "local_sha": "b7a6765c5c21f733a33f35c4259c4d555fda4b48"
+  "outcome": "reverted-diverged",
+  "local_sha": "b7a6765c5c21f733a33f35c4259c4d555fda4b48",
+  "reason": "perf opt (skip inspector update when !visible_in_tree) makes property-row build timing-dependent; breaks fork editor-automation acceptance workflow (edit_inspector_visible)"
  },
  {
   "pr": "115129",
