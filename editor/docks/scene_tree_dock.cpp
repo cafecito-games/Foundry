@@ -4893,7 +4893,7 @@ void SceneTreeDock::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("instantiate", "file"), &SceneTreeDock::instantiate);
 	ClassDB::bind_method(D_METHOD("get_tree_editor"), &SceneTreeDock::get_tree_editor);
-	ClassDB::bind_method(D_METHOD("replace_node", "node", "by_node", "keep_properties", "remove_old"), &SceneTreeDock::_replace_node);
+	ClassDB::bind_method(D_METHOD("replace_node", "node", "by_node", "keep_properties"), &SceneTreeDock::_replace_node);
 
 	ADD_SIGNAL(MethodInfo("remote_tree_selected"));
 	ADD_SIGNAL(MethodInfo("add_node_used"));
