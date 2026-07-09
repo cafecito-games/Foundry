@@ -454,9 +454,15 @@ Dictionary EditorAutomationState::read_editor_state() {
 	}
 	state["view_3d"] = view_3d_state;
 
-	state["projectless_shell"] = editor_node->is_projectless_shell();
+	const bool projectless_shell = editor_node->is_projectless_shell();
+	state["projectless_shell"] = projectless_shell;
 	state["project_loaded"] = ProjectSettings::get_singleton()->is_project_loaded();
 	state["startup_dialog_visible"] = editor_node->is_startup_dialog_visible();
+	// High-level launch mode and whether the project workspace is exposed to the
+	// user. In the projectless startup shell the workspace is suppressed behind the
+	// startup dialog; once a project loads it is shown.
+	state["mode"] = projectless_shell ? "projectless_shell" : "project";
+	state["workspace_exposed"] = editor_node->is_workspace_exposed();
 
 	return state;
 }

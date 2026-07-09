@@ -6920,6 +6920,17 @@ void EditorNode::_update_projectless_shell_menu_restrictions() {
 void EditorNode::_apply_projectless_shell_restrictions() {
 	project_run_bar->hide();
 
+	// The projectless startup shell is a launcher: the startup dialog is the only
+	// interactive surface, so no project workspace may render behind it. The scene
+	// workspace (including its scene tabs) and the bottom drawer stay constructed
+	// (D1) but hidden; `editor_main_screen` is left alone as a neutral backdrop.
+	if (scene_workspace != nullptr) {
+		scene_workspace->hide();
+	}
+	if (bottom_panel != nullptr) {
+		bottom_panel->hide();
+	}
+
 	if (ImportDock::get_singleton() != nullptr) {
 		editor_dock_manager->set_dock_enabled(ImportDock::get_singleton(), false);
 	}
@@ -8145,7 +8156,9 @@ void EditorNode::update_global_screen_visibility() {
 	}
 	const bool show_global = editor_main_screen->is_global_screen_selected();
 	global_screen_host->set_visible(show_global);
-	scene_workspace->set_visible(!show_global);
+	// The projectless launcher keeps the scene workspace suppressed behind the
+	// startup dialog, so never reveal it here while no project is loaded.
+	scene_workspace->set_visible(!show_global && !projectless_shell);
 	// The script surface (app_screen) is hosted inside a workspace ScriptLeaf, so it
 	// follows the workspace visibility above; it is not toggled separately here.
 }
@@ -9916,6 +9929,10 @@ void EditorNode::show_startup_dialog() {
 
 bool EditorNode::is_startup_dialog_visible() const {
 	return startup_dialog != nullptr && startup_dialog->is_visible_dialog();
+}
+
+bool EditorNode::is_workspace_exposed() const {
+	return scene_workspace != nullptr && scene_workspace->is_visible();
 }
 
 void EditorNode::open_setting_override(const String &p_property) {

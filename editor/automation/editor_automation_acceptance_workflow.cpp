@@ -38,6 +38,7 @@
 #include "editor/editor_script_leaf.h"
 #include "editor/file_system/editor_paths.h"
 #include "editor/gui/code_editor.h"
+#include "editor/project_manager/startup_dialog.h"
 #include "editor/script/script_editor_controller.h"
 #include "editor/script/script_editor_plugin.h"
 #include "editor/script/script_editor_view.h"
@@ -49,6 +50,7 @@
 #include "core/os/os.h"
 #include "scene/2d/node_2d.h"
 #include "scene/gui/dialogs.h"
+#include "scene/main/scene_tree.h"
 
 namespace {
 
@@ -445,6 +447,25 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	}
 #endif
 	p_driver.flush_frames(30);
+
+	// A loaded project must report project mode with the workspace exposed, the
+	// inverse of the projectless launcher contract.
+	p_driver.set_step("verify_project_mode");
+	{
+		const Dictionary mode_state = p_driver.read_editor_state();
+		if (!(bool)mode_state.get("project_loaded", false)) {
+			return _failure_with_message(p_driver, result.workflow, "Loaded project should report project_loaded == true.");
+		}
+		if (String(mode_state.get("mode", String())) != "project") {
+			return _failure_with_message(p_driver, result.workflow, "Loaded project should report mode == project.");
+		}
+		if ((bool)mode_state.get("projectless_shell", true)) {
+			return _failure_with_message(p_driver, result.workflow, "Loaded project must not report projectless_shell.");
+		}
+		if (!(bool)mode_state.get("workspace_exposed", false)) {
+			return _failure_with_message(p_driver, result.workflow, "Loaded project should expose the workspace.");
+		}
+	}
 
 	// 1. Open the Create/Add Node dialog from the focused tile's scene tree dock.
 	p_driver.set_step("focus_scene_tree_dock");
@@ -939,6 +960,15 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	if (!(bool)state.get("startup_dialog_visible", false)) {
 		return _failure_with_message(p_driver, result.workflow, "Startup dialog should be visible in projectless shell mode.");
 	}
+	// mode/workspace_exposed encode the launcher contract: the project workspace
+	// (scene workspace + scene tabs, tracked by workspace_exposed) is suppressed
+	// behind the startup dialog until a project loads.
+	if (String(state.get("mode", String())) != "projectless_shell") {
+		return _failure_with_message(p_driver, result.workflow, "Projectless shell should report mode == projectless_shell.");
+	}
+	if ((bool)state.get("workspace_exposed", true)) {
+		return _failure_with_message(p_driver, result.workflow, "Projectless shell must not expose the project workspace behind the dialog.");
+	}
 
 	const Array open_scenes = state.get("open_scenes", Array());
 	if (!open_scenes.is_empty()) {
@@ -972,6 +1002,67 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 
 	result.ok = true;
 	result.message = "Projectless editor shell smoke workflow completed.";
+	result.details = state;
+	return result;
+}
+
+EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::run_projectless_shell_dismiss_quits(EditorWorkflowTestDriver &p_driver) {
+	Result result;
+	result.workflow = "projectless_shell_dismiss_quits";
+
+	p_driver.begin_workflow();
+
+	p_driver.set_step("wait_for_editor_ready");
+	if (!p_driver.wait_editor_idle(30000)) {
+		return _failure_from_driver(p_driver, result.workflow, "Editor did not become ready in projectless mode.");
+	}
+
+	p_driver.set_step("verify_projectless_state");
+	Dictionary state = p_driver.read_editor_state();
+	if (!(bool)state.get("projectless_shell", false)) {
+		return _failure_with_message(p_driver, result.workflow, "Editor did not boot in projectless shell mode.");
+	}
+	if (!(bool)state.get("startup_dialog_visible", false)) {
+		return _failure_with_message(p_driver, result.workflow, "Startup dialog should be visible before dismissal.");
+	}
+	if ((bool)state.get("workspace_exposed", true)) {
+		return _failure_with_message(p_driver, result.workflow, "Projectless shell must not expose the workspace before dismissal.");
+	}
+
+#ifdef TOOLS_ENABLED
+	EditorNode *editor_node = EditorNode::get_singleton();
+	StartupDialog *dialog = editor_node != nullptr ? editor_node->get_startup_dialog() : nullptr;
+	if (dialog == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Startup dialog instance was unavailable.");
+	}
+
+	p_driver.set_step("dismiss_startup_dialog");
+	// AcceptDialog funnels every dismissal path -- Escape (ui_close_dialog), the
+	// window close affordance (NOTIFICATION_WM_CLOSE_REQUEST), and the cancel
+	// button -- through the `canceled` signal, which is where the projectless
+	// launcher hooks its quit. Emitting that signal exercises the exact wiring a
+	// user dismissal reaches. The handler quits synchronously, so we avoid pumping
+	// the main loop afterwards (an iteration would honor the quit and tear down
+	// mid-assertion).
+	dialog->emit_signal(SNAME("canceled"));
+
+	p_driver.set_step("verify_quit_requested");
+	SceneTree *tree = dialog->get_tree();
+	if (tree == nullptr || !tree->is_quitting()) {
+		return _failure_with_message(p_driver, result.workflow, "Dismissing the startup dialog must quit Foundry.");
+	}
+
+	// Dismissal must never reveal the project workspace on its way out.
+	state = p_driver.read_editor_state();
+	if ((bool)state.get("workspace_exposed", true)) {
+		return _failure_with_message(p_driver, result.workflow, "Dismissing the startup dialog must not expose the workspace.");
+	}
+#else
+	return _failure_with_message(p_driver, result.workflow, "Projectless shell dismissal requires an editor (TOOLS_ENABLED) build.");
+#endif
+
+	result.ok = true;
+	result.message = "Projectless editor shell dismissal quit the application.";
 	result.details = state;
 	return result;
 }
