@@ -630,13 +630,12 @@ function startEditor(zip) {
 		setLoaderEnabled(true);
 	};
 	function Execute(args) {
+		// A bare launch (no scene/script) opens the editor: either the command-first
+		// `editor` command or a projectless launch that routes to the startup dialog.
 		const is_editor = args.filter(function (v) {
-			return v === '--editor' || v === '-e';
+			return v === '--editor' || v === '-e' || v === 'editor' || v === '--single-window';
 		}).length !== 0;
-		const is_project_manager = args.filter(function (v) {
-			return v === '--project-manager';
-		}).length !== 0;
-		const is_game = !is_editor && !is_project_manager;
+		const is_game = !is_editor;
 		if (video_driver) {
 			args.push('--rendering-driver', video_driver);
 		}
@@ -666,7 +665,7 @@ function startEditor(zip) {
 							showTab('loader');
 							setLoaderEnabled(true);
 						};
-						editor.start({ 'args': args, 'persistentDrops': is_project_manager, 'canvas': editorCanvas });
+						editor.start({ 'args': args, 'persistentDrops': is_editor, 'canvas': editorCanvas });
 					});
 				}, 0);
 				OnEditorExit = null;
@@ -739,7 +738,7 @@ function startEditor(zip) {
 			selectVideoMode();
 			showTab('editor');
 			setLoaderEnabled(false);
-			const args = ['--project-manager', '--single-window'];
+			const args = ['--single-window'];
 			if (video_driver) {
 				args.push('--rendering-driver', video_driver);
 			}
