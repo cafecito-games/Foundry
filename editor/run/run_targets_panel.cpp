@@ -112,7 +112,7 @@ String RunTargetsPanel::default_bundle_id_for_project(const String &p_project_na
 
 int RunTargetsPanel::first_actionable_step_index(const Vector<ReadinessStep> &p_steps) {
 	for (int i = 0; i < p_steps.size(); i++) {
-		if (p_steps[i].status != ReadinessStep::OK) {
+		if (p_steps[i].status != ReadinessStep::Status::OK) {
 			return i;
 		}
 	}
@@ -877,12 +877,12 @@ void RunTargetsPanel::_render_readiness(const Vector<ReadinessStep> &p_steps) {
 		Label *marker = memnew(Label);
 		Color marker_color;
 		String marker_text;
-		if (step.status == ReadinessStep::OK) {
+		if (step.status == ReadinessStep::Status::OK) {
 			marker_text = String::utf8("✓"); // Check mark.
 			marker_color = ok_color;
 		} else if (i == actionable) {
 			marker_text = String::utf8("▶"); // Current step.
-			marker_color = (step.status == ReadinessStep::BLOCKED) ? error_color : warning_color;
+			marker_color = (step.status == ReadinessStep::Status::BLOCKED) ? error_color : warning_color;
 		} else {
 			marker_text = String::utf8("○"); // Upcoming.
 			marker_color = disabled_color;
@@ -894,7 +894,7 @@ void RunTargetsPanel::_render_readiness(const Vector<ReadinessStep> &p_steps) {
 		Label *title_label = memnew(Label);
 		title_label->set_text(step.title);
 		title_label->set_h_size_flags(SIZE_EXPAND_FILL);
-		if (step.status != ReadinessStep::OK && i != actionable) {
+		if (step.status != ReadinessStep::Status::OK && i != actionable) {
 			title_label->add_theme_color_override(SceneStringName(font_color), disabled_color);
 		}
 		header->add_child(title_label);

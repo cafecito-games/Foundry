@@ -156,7 +156,7 @@ DisplayServerAppleEmbedded::DisplayServerAppleEmbedded(const String &p_rendering
 
 #if defined(GLES3_ENABLED)
 	if (rendering_driver == "opengl3") {
-		CALayer *layer = [GDTAppDelegateService.viewController.godotView initializeRenderingForDriver:@"opengl3"];
+		layer = [GDTAppDelegateService.viewController.godotView initializeRenderingForDriver:@"opengl3"];
 
 		if (!layer) {
 			ERR_FAIL_MSG("Failed to create iOS OpenGLES rendering layer.");

@@ -1099,6 +1099,25 @@ bool EditorFileSystem::_update_scan_actions() {
 	return fs_changed;
 }
 
+void EditorFileSystem::skip_first_scan_for_projectless_shell() {
+	ERR_FAIL_COND(!first_scan);
+	ERR_FAIL_COND(scanning || scanning_changes);
+	ERR_FAIL_COND(thread.is_started());
+
+	first_scan = false;
+	scanning = false;
+	scanning_changes = false;
+	scan_changes_pending = false;
+	ResourceImporter::load_on_startup = nullptr;
+
+	if (first_scan_root_dir) {
+		memdelete(first_scan_root_dir);
+		first_scan_root_dir = nullptr;
+	}
+
+	set_process(false);
+}
+
 void EditorFileSystem::scan() {
 	if (false /*&& bool(Globals::get_singleton()->get("debug/disable_scan"))*/) {
 		return;

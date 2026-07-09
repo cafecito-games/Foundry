@@ -91,6 +91,7 @@ private:
 
 	bool editor_hint = false;
 	bool project_manager_hint = false;
+	bool projectless_editor_shell_hint = false;
 	bool extension_reloading = false;
 	bool embedded_in_editor = false;
 	bool recovery_mode_hint = false;
@@ -174,6 +175,9 @@ public:
 	_FORCE_INLINE_ void set_project_manager_hint(bool p_enabled) { project_manager_hint = p_enabled; }
 	_FORCE_INLINE_ bool is_project_manager_hint() const { return project_manager_hint; }
 
+	_FORCE_INLINE_ void set_projectless_editor_shell_hint(bool p_enabled) { projectless_editor_shell_hint = p_enabled; }
+	_FORCE_INLINE_ bool is_projectless_editor_shell_hint() const { return projectless_editor_shell_hint; }
+
 	_FORCE_INLINE_ void set_extension_reloading_enabled(bool p_enabled) { extension_reloading = p_enabled; }
 	_FORCE_INLINE_ bool is_extension_reloading_enabled() const { return extension_reloading; }
 
@@ -185,6 +189,9 @@ public:
 
 	_FORCE_INLINE_ void set_project_manager_hint(bool p_enabled) {}
 	_FORCE_INLINE_ bool is_project_manager_hint() const { return false; }
+
+	_FORCE_INLINE_ void set_projectless_editor_shell_hint(bool p_enabled) {}
+	_FORCE_INLINE_ bool is_projectless_editor_shell_hint() const { return false; }
 
 	_FORCE_INLINE_ void set_extension_reloading_enabled(bool p_enabled) {}
 	_FORCE_INLINE_ bool is_extension_reloading_enabled() const { return false; }

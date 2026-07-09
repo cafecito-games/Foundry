@@ -73,7 +73,7 @@ TEST_CASE("[Editor][RunTarget] Menu model pairs a configured target with its con
 
 	HashMap<String, Vector<RunTargetDevice>> devices;
 	Vector<RunTargetDevice> ios_devices;
-	ios_devices.push_back(make_device("00008110-000000000000000E", "My iPhone", ReadinessStep::OK));
+	ios_devices.push_back(make_device("00008110-000000000000000E", "My iPhone", ReadinessStep::Status::OK));
 	devices["ios"] = ios_devices;
 
 	const Vector<RunTargetMenuEntry> entries = EditorRunNative::build_menu_model(targets, devices);
@@ -83,14 +83,14 @@ TEST_CASE("[Editor][RunTarget] Menu model pairs a configured target with its con
 	CHECK_EQ(entries[0].kind, RunTargetMenuEntry::TARGET);
 	CHECK_EQ(entries[0].target_name, "My iPhone");
 	CHECK_EQ(entries[0].device_id, "00008110-000000000000000E");
-	CHECK_EQ(entries[0].badge, ReadinessStep::OK);
+	CHECK_EQ(entries[0].badge, ReadinessStep::Status::OK);
 	CHECK(entries[0].runnable);
 }
 
 TEST_CASE("[Editor][RunTarget] Menu model offers an unconfigured connected device for setup") {
 	HashMap<String, Vector<RunTargetDevice>> devices;
 	Vector<RunTargetDevice> ios_devices;
-	ios_devices.push_back(make_device("00008110-000000000000000E", "My iPhone", ReadinessStep::ACTION_NEEDED));
+	ios_devices.push_back(make_device("00008110-000000000000000E", "My iPhone", ReadinessStep::Status::ACTION_NEEDED));
 	devices["ios"] = ios_devices;
 
 	const Vector<RunTargetMenuEntry> entries = EditorRunNative::build_menu_model(Vector<RunTarget>(), devices);
@@ -99,7 +99,7 @@ TEST_CASE("[Editor][RunTarget] Menu model offers an unconfigured connected devic
 	CHECK_EQ(entries[0].kind, RunTargetMenuEntry::SETUP_DEVICE);
 	CHECK_EQ(entries[0].device_id, "00008110-000000000000000E");
 	CHECK_EQ(entries[0].label, "My iPhone");
-	CHECK_EQ(entries[0].badge, ReadinessStep::ACTION_NEEDED);
+	CHECK_EQ(entries[0].badge, ReadinessStep::Status::ACTION_NEEDED);
 }
 
 TEST_CASE("[Editor][RunTarget] A configured target whose device is gone is shown but not runnable") {
@@ -112,7 +112,7 @@ TEST_CASE("[Editor][RunTarget] A configured target whose device is gone is shown
 	REQUIRE_EQ(entries.size(), 1);
 	CHECK_EQ(entries[0].kind, RunTargetMenuEntry::TARGET);
 	CHECK_FALSE(entries[0].runnable);
-	CHECK_EQ(entries[0].badge, ReadinessStep::BLOCKED);
+	CHECK_EQ(entries[0].badge, ReadinessStep::Status::BLOCKED);
 }
 
 TEST_CASE("[Editor][RunTarget] An auto target binds to the first connected device") {
@@ -121,8 +121,8 @@ TEST_CASE("[Editor][RunTarget] An auto target binds to the first connected devic
 
 	HashMap<String, Vector<RunTargetDevice>> devices;
 	Vector<RunTargetDevice> ios_devices;
-	ios_devices.push_back(make_device("00008110-000000000000000E", "First iPhone", ReadinessStep::OK));
-	ios_devices.push_back(make_device("00008120-000000000000000F", "Second iPad", ReadinessStep::OK));
+	ios_devices.push_back(make_device("00008110-000000000000000E", "First iPhone", ReadinessStep::Status::OK));
+	ios_devices.push_back(make_device("00008120-000000000000000F", "Second iPad", ReadinessStep::Status::OK));
 	devices["ios"] = ios_devices;
 
 	const Vector<RunTargetMenuEntry> entries = EditorRunNative::build_menu_model(targets, devices);

@@ -50,6 +50,7 @@ class Main {
 public:
 	static bool is_cmdline_tool();
 #ifdef TOOLS_ENABLED
+	static bool is_projectless_editor_shell();
 	enum CLIScope {
 		CLI_SCOPE_TOOL, // Editor and project manager.
 		CLI_SCOPE_PROJECT,

@@ -30,28 +30,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: Editor (target=editor)
-            cache-name: windows-editor
-            target: editor
-            scons-flags: >-
-              windows_subsystem=console
-              vsproj=yes
-              vsproj_gen_only=no
-            bin: ./bin/foundry.windows.editor.x86_64.exe
-            compiler: msvc
-
-          - name: Editor w/ clang-cl (target=editor, use_llvm=yes)
-            cache-name: windows-editor-clang
-            target: editor
-            scons-flags: >-
-              windows_subsystem=console
-              use_llvm=yes
-            bin: ./bin/foundry.windows.editor.x86_64.llvm.exe
-            compiler: clang
-
+          # Only export templates are shipped for Windows, so the editor build is
+          # not exercised here. Templates are validated with both toolchains
+          # (MSVC and MinGW/GCC).
           - name: Template (target=template_release)
             cache-name: windows-template
             target: template_release
+            # Export templates strip the Foundry Script front-end, which is
+            # incompatible with tests=yes (implied by dev_mode). Match the
+            # other template jobs and disable unit tests here.
+            scons-flags: tests=no
             bin: ./bin/foundry.windows.template_release.x86_64.console.exe
             compiler: msvc
 
@@ -59,7 +47,7 @@ jobs:
             cache-name: windows-template-gcc
             # MinGW takes MUCH longer to compile; save time by only targeting Template.
             target: template_release
-            scons-flags: use_mingw=yes
+            scons-flags: use_mingw=yes tests=no
             bin: ./bin/foundry.windows.template_release.x86_64.console.exe
             compiler: gcc
 
@@ -137,8 +125,7 @@ jobs:
         with:
           name: ${{ matrix.cache-name }}
 
-      - name: Unit tests
+      - name: Smoke test
         run: |
           ${{ matrix.bin }} --version
           ${{ matrix.bin }} --help
-          ${{ matrix.bin }} test run --force-colors

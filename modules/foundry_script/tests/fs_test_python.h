@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  editor_automation_acceptance_workflow.h                               */
+/*  fs_test_python.h                                                      */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -31,32 +31,19 @@
 #pragma once
 
 #include "core/string/ustring.h"
-#include "core/variant/dictionary.h"
 
-class EditorWorkflowTestDriver;
+namespace FSTests {
 
-class EditorAutomationAcceptanceWorkflow {
-public:
-	struct Result {
-		bool ok = false;
-		String workflow;
-		String message;
-		Dictionary details;
-	};
+// Build-task tests spawn a Python interpreter by name to stand in for a real
+// build command. GitHub's Windows runners expose the interpreter as `python`,
+// while macOS and Linux expose `python3`, so tests must select the name that
+// resolves on the current platform.
+inline String fs_test_python_command() {
+#ifdef WINDOWS_ENABLED
+	return "python";
+#else
+	return "python3";
+#endif
+}
 
-	// Basic scene-editing smoke workflow exercising scene tree, create dialog,
-	// inspector, save, run/stop, and editor-log assertions through EditorWorkflowTestDriver.
-	static Result run_basic_scene_editing(EditorWorkflowTestDriver &p_driver, const String &p_scene_path = "res://scenes/main.tscn");
-	static Result run_close_last_scene_empty_pane(EditorWorkflowTestDriver &p_driver);
-	static Result run_mixed_workspace_editing(EditorWorkflowTestDriver &p_driver);
-	static Result run_mixed_workspace_seed(EditorWorkflowTestDriver &p_driver);
-	static Result run_mixed_workspace_restore(EditorWorkflowTestDriver &p_driver);
-	static Result run_projectless_shell_smoke(EditorWorkflowTestDriver &p_driver);
-
-	// Deprecated alias kept for backward compatibility with older CLI/tests.
-	static Result run_mvp(EditorWorkflowTestDriver &p_driver, const String &p_scene_path = "res://scenes/main.tscn") {
-		return run_basic_scene_editing(p_driver, p_scene_path);
-	}
-
-	static void print_result(const Result &p_result);
-};
+} // namespace FSTests

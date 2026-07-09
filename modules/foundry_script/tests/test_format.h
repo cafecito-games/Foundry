@@ -971,11 +971,21 @@ TEST_SUITE("[Modules][FoundryScript][Format]") {
 		const String path = da->get_current_dir().path_join("gdfmt_read_only_output.tmp");
 		const CharString path_utf8 = path.utf8();
 
+		// This test drives the FILE*-based raw-write path, so it opens files
+		// with fopen directly. MSVC/clang-cl flag fopen as deprecated (C4996);
+		// the usage is intentional here.
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable : 4996)
+#endif
 		FILE *writable = fopen(path_utf8.get_data(), "wb");
 		REQUIRE(writable != nullptr);
 		fclose(writable);
 
 		FILE *read_only = fopen(path_utf8.get_data(), "rb");
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 		REQUIRE(read_only != nullptr);
 		CHECK_FALSE(FSFormatterCLI::test_write_raw(read_only, "formatted\n"));
 		fclose(read_only);
@@ -985,33 +995,33 @@ TEST_SUITE("[Modules][FoundryScript][Format]") {
 	TEST_CASE("[Format] Directory collection skips symlinked subdirectories") {
 		Ref<DirAccess> da = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
 		REQUIRE(da.is_valid());
-		const String root = da->get_current_dir().path_join("gdfmt_fs_symtest");
+		const String fixture_root = da->get_current_dir().path_join("gdfmt_fs_symtest");
 		const String relative_tree = "gdfmt_fs_symtest/tree";
 
 		const auto cleanup = [&]() {
-			da->remove(root.path_join("tree/link"));
-			da->remove(root.path_join("tree/keep.fs"));
-			da->remove(root.path_join("outside/outside.fs"));
-			da->remove(root.path_join("tree"));
-			da->remove(root.path_join("outside"));
-			da->remove(root);
+			da->remove(fixture_root.path_join("tree/link"));
+			da->remove(fixture_root.path_join("tree/keep.fs"));
+			da->remove(fixture_root.path_join("outside/outside.fs"));
+			da->remove(fixture_root.path_join("tree"));
+			da->remove(fixture_root.path_join("outside"));
+			da->remove(fixture_root);
 		};
 		cleanup(); // Clear any tree leaked by a previous crashed run.
 
-		REQUIRE(da->make_dir_recursive(root.path_join("tree")) == OK);
-		REQUIRE(da->make_dir_recursive(root.path_join("outside")) == OK);
+		REQUIRE(da->make_dir_recursive(fixture_root.path_join("tree")) == OK);
+		REQUIRE(da->make_dir_recursive(fixture_root.path_join("outside")) == OK);
 		{
-			Ref<FileAccess> file = FileAccess::open(root.path_join("tree/keep.fs"), FileAccess::WRITE);
+			Ref<FileAccess> file = FileAccess::open(fixture_root.path_join("tree/keep.fs"), FileAccess::WRITE);
 			REQUIRE(file.is_valid());
 			file->store_string("var a = 1\n");
 		}
 		{
-			Ref<FileAccess> file = FileAccess::open(root.path_join("outside/outside.fs"), FileAccess::WRITE);
+			Ref<FileAccess> file = FileAccess::open(fixture_root.path_join("outside/outside.fs"), FileAccess::WRITE);
 			REQUIRE(file.is_valid());
 			file->store_string("var b = 2\n");
 		}
 		// A directory symlink inside the scanned tree pointing at a sibling outside it.
-		REQUIRE(da->create_link(root.path_join("outside"), root.path_join("tree/link")) == OK);
+		REQUIRE(da->create_link(fixture_root.path_join("outside"), fixture_root.path_join("tree/link")) == OK);
 
 		const auto sees_outside = [](const Vector<String> &p_files) {
 			for (const String &collected : p_files) {
@@ -1038,17 +1048,17 @@ TEST_SUITE("[Modules][FoundryScript][Format]") {
 			bool had_error = false;
 			const Vector<String> files = FSFormatterCLI::collect_files(paths, had_error);
 			CHECK(sees_keep(files));
-			CHECK_FALSE_MESSAGE(sees_outside(files), "Symlinked dir must not be followed (relative root).");
+			CHECK_FALSE_MESSAGE(sees_outside(files), "Symlinked dir must not be followed (relative fixture_root).");
 			CHECK_FALSE(had_error);
 		}
 		// Absolute root.
 		{
 			Vector<String> paths;
-			paths.push_back(root.path_join("tree"));
+			paths.push_back(fixture_root.path_join("tree"));
 			bool had_error = false;
 			const Vector<String> files = FSFormatterCLI::collect_files(paths, had_error);
 			CHECK(sees_keep(files));
-			CHECK_FALSE_MESSAGE(sees_outside(files), "Symlinked dir must not be followed (absolute root).");
+			CHECK_FALSE_MESSAGE(sees_outside(files), "Symlinked dir must not be followed (absolute fixture_root).");
 			CHECK_FALSE(had_error);
 		}
 
@@ -1144,14 +1154,14 @@ TEST_SUITE("[Modules][FoundryScript][Format]") {
 	}
 
 	TEST_CASE("[Format] Golden fixtures match byte-for-byte") {
-		const String root = "modules/foundry_script/tests/scripts/format";
+		const String fixture_root = "modules/foundry_script/tests/scripts/format";
 		Vector<String> inputs;
-		for (const String &script : collect_gd_scripts(root)) {
+		for (const String &script : collect_gd_scripts(fixture_root)) {
 			if (script.get_file() == "input.fs") {
 				inputs.push_back(script);
 			}
 		}
-		CHECK_MESSAGE(!inputs.is_empty(), vformat("Expected at least one fixture under %s", root));
+		CHECK_MESSAGE(!inputs.is_empty(), vformat("Expected at least one fixture under %s", fixture_root));
 
 		for (const String &input_path : inputs) {
 			const String expected_path = input_path.get_base_dir().path_join("expected.fs");
@@ -1170,9 +1180,9 @@ TEST_SUITE("[Modules][FoundryScript][Format]") {
 	}
 
 	TEST_CASE("[Format] Idempotent over the script corpus") {
-		const String root = "modules/foundry_script/tests/scripts";
+		const String fixture_root = "modules/foundry_script/tests/scripts";
 		int checked = 0;
-		for (const String &script : collect_gd_scripts(root)) {
+		for (const String &script : collect_gd_scripts(fixture_root)) {
 			if (is_narrow_skipped_fixture(script)) {
 				continue;
 			}
@@ -1230,9 +1240,9 @@ TEST_SUITE("[Modules][FoundryScript][Format]") {
 	}
 
 	TEST_CASE("[Format] Preserves the parsed tree across the corpus") {
-		const String root = "modules/foundry_script/tests/scripts";
+		const String fixture_root = "modules/foundry_script/tests/scripts";
 		int checked = 0;
-		for (const String &script : collect_gd_scripts(root)) {
+		for (const String &script : collect_gd_scripts(fixture_root)) {
 			if (is_narrow_skipped_fixture(script)) {
 				continue;
 			}
@@ -1258,9 +1268,9 @@ TEST_SUITE("[Modules][FoundryScript][Format]") {
 		// A global invariant: formatting must never drop or duplicate a comment. The
 		// parse-tree sweep cannot see comments (they are trivia, not AST), so this
 		// count-equality check is what guarantees every comment survives everywhere.
-		const String root = "modules/foundry_script/tests/scripts";
+		const String fixture_root = "modules/foundry_script/tests/scripts";
 		int checked = 0;
-		for (const String &script : collect_gd_scripts(root)) {
+		for (const String &script : collect_gd_scripts(fixture_root)) {
 			if (is_narrow_skipped_fixture(script)) {
 				continue;
 			}
@@ -1288,9 +1298,9 @@ TEST_SUITE("[Modules][FoundryScript][Format]") {
 		// the parser without an AST node, so they are invisible to the tree, comment-
 		// count, and (since consistently dropped) idempotency sweeps. This count guard
 		// catches dropping or duplicating any of them.
-		const String root = "modules/foundry_script/tests/scripts";
+		const String fixture_root = "modules/foundry_script/tests/scripts";
 		int checked = 0;
-		for (const String &script : collect_gd_scripts(root)) {
+		for (const String &script : collect_gd_scripts(fixture_root)) {
 			if (is_narrow_skipped_fixture(script)) {
 				continue;
 			}

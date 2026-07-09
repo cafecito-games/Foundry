@@ -200,7 +200,7 @@ TEST_CASE("[Editor][IOSRunTarget] list_devices surfaces only runnable devices") 
 	REQUIRE_EQ(devices.size(), 1);
 	CHECK_EQ(devices[0].id, "phone-A");
 	CHECK_EQ(devices[0].name, "Ready iPhone");
-	CHECK_EQ(devices[0].badge, ReadinessStep::OK);
+	CHECK_EQ(devices[0].badge, ReadinessStep::Status::OK);
 }
 
 TEST_CASE("[Editor][IOSRunTarget] list_devices returns empty when devicectl fails") {
@@ -223,7 +223,7 @@ TEST_CASE("[Editor][IOSRunTarget] probe_readiness reports all steps OK for a rea
 	const Vector<ReadinessStep> steps = adapter.probe_readiness(target);
 	REQUIRE_EQ(steps.size(), 6);
 	for (const ReadinessStep &step : steps) {
-		CHECK_EQ(step.status, ReadinessStep::OK);
+		CHECK_EQ(step.status, ReadinessStep::Status::OK);
 	}
 	// The probe actually consulted both shell seams.
 	CHECK(runner.xcode_select_calls > 0);
@@ -240,7 +240,7 @@ TEST_CASE("[Editor][IOSRunTarget] probe_readiness blocks on Developer Mode when 
 
 	const Vector<ReadinessStep> steps = adapter.probe_readiness(target);
 	const ReadinessStep developer_mode = step_by_id(steps, RunTargetReadiness::STEP_DEVELOPER_MODE);
-	CHECK_EQ(developer_mode.status, ReadinessStep::ACTION_NEEDED);
+	CHECK_EQ(developer_mode.status, ReadinessStep::Status::ACTION_NEEDED);
 	CHECK_FALSE(developer_mode.fix_hint.is_empty());
 }
 
@@ -257,9 +257,9 @@ TEST_CASE("[Editor][IOSRunTarget] probe_readiness blocks on Xcode when the toolc
 	const Vector<ReadinessStep> steps = adapter.probe_readiness(target);
 	REQUIRE_EQ(steps.size(), 6);
 	CHECK_EQ(steps[0].id, StringName(RunTargetReadiness::STEP_XCODE));
-	CHECK_EQ(steps[0].status, ReadinessStep::ACTION_NEEDED);
+	CHECK_EQ(steps[0].status, ReadinessStep::Status::ACTION_NEEDED);
 	for (int i = 1; i < steps.size(); i++) {
-		CHECK_EQ(steps[i].status, ReadinessStep::BLOCKED);
+		CHECK_EQ(steps[i].status, ReadinessStep::Status::BLOCKED);
 	}
 }
 
@@ -274,9 +274,9 @@ TEST_CASE("[Editor][IOSRunTarget] probe_readiness blocks on team when none is se
 
 	const Vector<ReadinessStep> steps = adapter.probe_readiness(target);
 	const ReadinessStep team = step_by_id(steps, RunTargetReadiness::STEP_TEAM);
-	CHECK_EQ(team.status, ReadinessStep::ACTION_NEEDED);
+	CHECK_EQ(team.status, ReadinessStep::Status::ACTION_NEEDED);
 	const ReadinessStep provisioning = step_by_id(steps, RunTargetReadiness::STEP_PROVISIONING);
-	CHECK_EQ(provisioning.status, ReadinessStep::BLOCKED);
+	CHECK_EQ(provisioning.status, ReadinessStep::Status::BLOCKED);
 }
 
 TEST_CASE("[Editor][IOSRunTarget] auto target diagnoses the first runnable device") {
@@ -296,7 +296,7 @@ TEST_CASE("[Editor][IOSRunTarget] auto target diagnoses the first runnable devic
 	const Vector<ReadinessStep> steps = adapter.probe_readiness(target);
 	REQUIRE_EQ(steps.size(), 6);
 	for (const ReadinessStep &step : steps) {
-		CHECK_EQ(step.status, ReadinessStep::OK);
+		CHECK_EQ(step.status, ReadinessStep::Status::OK);
 	}
 }
 
@@ -312,9 +312,9 @@ TEST_CASE("[Editor][IOSRunTarget] auto target with no runnable device diagnoses 
 
 	const Vector<ReadinessStep> steps = adapter.probe_readiness(target);
 	const ReadinessStep device = step_by_id(steps, RunTargetReadiness::STEP_DEVICE);
-	CHECK_EQ(device.status, ReadinessStep::OK); // The device is connected and trusted.
+	CHECK_EQ(device.status, ReadinessStep::Status::OK); // The device is connected and trusted.
 	const ReadinessStep developer_mode = step_by_id(steps, RunTargetReadiness::STEP_DEVELOPER_MODE);
-	CHECK_EQ(developer_mode.status, ReadinessStep::ACTION_NEEDED); // ...but Developer Mode is off.
+	CHECK_EQ(developer_mode.status, ReadinessStep::Status::ACTION_NEEDED); // ...but Developer Mode is off.
 }
 
 TEST_CASE("[Editor][IOSRunTarget] build_probe_devices passes through devicectl devices unchanged") {
@@ -363,7 +363,7 @@ TEST_CASE("[Editor][IOSRunTarget] build_probe_devices folds in ios_deploy device
 
 	const Vector<ReadinessStep> steps = RunTargetReadiness::evaluate(ready);
 	for (const ReadinessStep &step : steps) {
-		CHECK_EQ(step.status, ReadinessStep::OK);
+		CHECK_EQ(step.status, ReadinessStep::Status::OK);
 	}
 }
 

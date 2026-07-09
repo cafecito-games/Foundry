@@ -93,7 +93,7 @@ Vector<RunTargetMenuEntry> EditorRunNative::build_menu_model(const Vector<RunTar
 			claimed_by_platform[target.platform][match->id] = true;
 		} else {
 			// The target is configured but its device is not currently connected.
-			entry.badge = ReadinessStep::BLOCKED;
+			entry.badge = ReadinessStep::Status::BLOCKED;
 			entry.runnable = false;
 		}
 
@@ -125,11 +125,11 @@ Vector<RunTargetMenuEntry> EditorRunNative::build_menu_model(const Vector<RunTar
 
 Ref<Texture2D> EditorRunNative::_badge_icon(ReadinessStep::Status p_status) const {
 	switch (p_status) {
-		case ReadinessStep::OK:
+		case ReadinessStep::Status::OK:
 			return get_editor_theme_icon(SNAME("StatusSuccess"));
-		case ReadinessStep::ACTION_NEEDED:
+		case ReadinessStep::Status::ACTION_NEEDED:
 			return get_editor_theme_icon(SNAME("StatusWarning"));
-		case ReadinessStep::BLOCKED:
+		case ReadinessStep::Status::BLOCKED:
 		default:
 			return get_editor_theme_icon(SNAME("StatusError"));
 	}
@@ -377,7 +377,7 @@ Error EditorRunNative::_deploy_run_target(const RunTarget &p_target) {
 		// is never silent and always points at the thing to fix.
 		bool added_step = false;
 		for (const ReadinessStep &step : resolved.platform_adapter->probe_readiness(effective_target)) {
-			if (step.status != ReadinessStep::OK) {
+			if (step.status != ReadinessStep::Status::OK) {
 				if (has_messages) {
 					result_dialog_log->add_newline();
 					result_dialog_log->add_newline();

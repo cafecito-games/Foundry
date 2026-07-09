@@ -1043,7 +1043,10 @@ uint64_t OS_Windows::get_ticks_usec() const {
 String OS_Windows::_quote_command_line_argument(const String &p_text) const {
 	String quoted = "\"";
 	int backslash_count = 0;
-	for (int i = 0; i < p_text.size(); i++) {
+	// Iterate to length(), not size(): String::size() counts the trailing null
+	// terminator, and appending it here injects a NUL into every quoted argument,
+	// corrupting the command line passed to CreateProcessW.
+	for (int i = 0; i < p_text.length(); i++) {
 		const char32_t c = p_text[i];
 		if (c == '\\') {
 			backslash_count++;

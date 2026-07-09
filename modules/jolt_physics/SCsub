@@ -6,6 +6,12 @@ Import("env_modules")
 
 env_jolt = env_modules.Clone()
 
+# Jolt's vendored headers are not written to the fork's shadow standard, so
+# suppress the shadow warnings for this module's compilation only. MSVC lacks
+# these flags; GCC silently ignores unknown `-Wno-*` options.
+if not env.msvc:
+    env_jolt.Append(CCFLAGS=["-Wno-shadow", "-Wno-shadow-uncaptured-local", "-Wno-shadow-field-in-constructor"])
+
 # Platform specific flags.
 if env["platform"] == "web" and env["wasm_simd"]:
     # Enable SSE 4.2 so that WebAssembly SIMD can benefit from it.

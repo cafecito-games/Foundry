@@ -497,6 +497,7 @@ private:
 
 	bool requested_first_scan = false;
 	bool waiting_for_first_scan = true;
+	bool projectless_shell = false;
 	FoundryBuildTaskBootstrapLoader *build_task_bootstrap_loader = nullptr;
 	bool load_editor_layout_done = false;
 
@@ -798,6 +799,11 @@ private:
 
 	bool _is_project_data_missing();
 
+	void _finish_projectless_shell_startup();
+	void _apply_projectless_shell_restrictions();
+	bool _is_menu_option_blocked_in_projectless_shell(int p_option) const;
+	void _update_projectless_shell_menu_restrictions();
+
 	enum MenuType {
 		MENU_TYPE_NONE,
 		MENU_TYPE_GLOBAL,
@@ -831,6 +837,7 @@ public:
 
 	// This is a very naive estimation, but we need something now. Will be reworked later.
 	bool is_editor_ready() const { return is_inside_tree() && !waiting_for_first_scan; }
+	bool is_projectless_shell() const { return projectless_shell; }
 
 	static EditorNode *get_singleton() { return singleton; }
 

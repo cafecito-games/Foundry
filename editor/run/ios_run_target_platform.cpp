@@ -341,7 +341,7 @@ Vector<RunTargetDevice> IOSRunTargetPlatform::list_devices() {
 			RunTargetDevice device;
 			device.id = info.id;
 			device.name = info.name;
-			device.badge = ReadinessStep::OK;
+			device.badge = ReadinessStep::Status::OK;
 			result.push_back(device);
 		}
 		return result;
@@ -356,7 +356,7 @@ Vector<RunTargetDevice> IOSRunTargetPlatform::list_devices() {
 		RunTargetDevice device;
 		device.id = info.id;
 		device.name = info.name;
-		device.badge = ReadinessStep::OK;
+		device.badge = ReadinessStep::Status::OK;
 		result.push_back(device);
 	}
 
