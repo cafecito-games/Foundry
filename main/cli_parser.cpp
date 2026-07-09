@@ -816,14 +816,12 @@ static void parse_editor(CLIParseState &r_state) {
 		request_help(r_state);
 		return;
 	}
-	if (command != "open" && command != "project-manager") {
+	if (command != "open") {
 		fail(r_state.result, "Unknown editor command: " + command + ".");
 		return;
 	}
 	set_command_path(r_state.result, "editor", command);
-	r_state.result.invocation.kind = command == "open"
-			? FoundryCLIParser::CLIInvocation::EDITOR_OPEN
-			: FoundryCLIParser::CLIInvocation::EDITOR_PROJECT_MANAGER;
+	r_state.result.invocation.kind = FoundryCLIParser::CLIInvocation::EDITOR_OPEN;
 
 	bool automation = false;
 	String automation_transport;
@@ -845,59 +843,55 @@ static void parse_editor(CLIParseState &r_state) {
 			}
 			continue;
 		}
-		if (command == "open") {
-			if (arg == "--automation") {
-				automation = true;
-				r_state.index++;
-				continue;
+		if (arg == "--automation") {
+			automation = true;
+			r_state.index++;
+			continue;
+		}
+		if (consume_automation_transport_option(r_state, arg, automation_transport)) {
+			if (parse_stopped(r_state)) {
+				return;
 			}
-			if (consume_automation_transport_option(r_state, arg, automation_transport)) {
-				if (parse_stopped(r_state)) {
-					return;
-				}
-				continue;
+			continue;
+		}
+		if (arg == "--automation-port") {
+			String port_value;
+			if (!require_value(r_state, arg, port_value)) {
+				return;
 			}
-			if (arg == "--automation-port") {
-				String port_value;
-				if (!require_value(r_state, arg, port_value)) {
-					return;
-				}
-				if (!port_value.is_valid_int()) {
-					fail(r_state.result, "Invalid value for --automation-port: " + port_value + ".");
-					return;
-				}
-				const int port = port_value.to_int();
-				if (port < 0 || port > 65535) {
-					fail(r_state.result, "--automation-port must be between 0 and 65535.");
-					return;
-				}
-				automation_port = port;
-				continue;
+			if (!port_value.is_valid_int()) {
+				fail(r_state.result, "Invalid value for --automation-port: " + port_value + ".");
+				return;
 			}
-			if (arg == "--automation-token") {
-				if (!require_value(r_state, arg, automation_token)) {
-					return;
-				}
-				continue;
+			const int port = port_value.to_int();
+			if (port < 0 || port > 65535) {
+				fail(r_state.result, "--automation-port must be between 0 and 65535.");
+				return;
 			}
-			if (consume_automation_run_workflow_option(r_state, arg, automation_run_workflow)) {
-				if (parse_stopped(r_state)) {
-					return;
-				}
-				continue;
+			automation_port = port;
+			continue;
+		}
+		if (arg == "--automation-token") {
+			if (!require_value(r_state, arg, automation_token)) {
+				return;
 			}
-			if (arg == "--automation-failure-screenshots") {
-				automation_failure_screenshots = true;
-				r_state.index++;
-				continue;
+			continue;
+		}
+		if (consume_automation_run_workflow_option(r_state, arg, automation_run_workflow)) {
+			if (parse_stopped(r_state)) {
+				return;
 			}
-			if (!arg.begins_with("-")) {
-				append(passthrough, arg);
-				r_state.index++;
-				continue;
-			}
-		} else if (reject_automation_option(r_state, arg, "editor project-manager")) {
-			return;
+			continue;
+		}
+		if (arg == "--automation-failure-screenshots") {
+			automation_failure_screenshots = true;
+			r_state.index++;
+			continue;
+		}
+		if (!arg.begins_with("-")) {
+			append(passthrough, arg);
+			r_state.index++;
+			continue;
 		}
 		fail(r_state.result, "Unknown option for editor " + command + ": " + arg + ".");
 		return;
@@ -1207,10 +1201,6 @@ static bool is_legacy_workflow_flag(const String &p_arg, String &r_replacement) 
 		r_replacement = "`foundry editor open --project <dir>`";
 		return true;
 	}
-	if (p_arg == "--project-manager" || p_arg == "-p") {
-		r_replacement = "`foundry editor project-manager`";
-		return true;
-	}
 	if (p_arg == "--path") {
 		r_replacement = "`--project <dir>` with a Foundry command";
 		return true;
@@ -1297,6 +1287,21 @@ static bool reject_legacy_workflow_flags(CLIParseState &r_state, int p_start_ind
 	return false;
 }
 
+// The Project Manager was removed as a startup mode with a clean break, so the
+// legacy `-p` / `--project-manager` flags are no longer recognized. They report as
+// unknown options with no deprecation or redirect message (unlike the removed
+// workflow flags above, there is no replacement surface to point at).
+static bool reject_removed_startup_flags(CLIParseState &r_state, int p_start_index) {
+	for (int i = p_start_index; i < r_state.args.size(); i++) {
+		const String &arg = r_state.args[i];
+		if (arg == "--project-manager" || arg == "-p") {
+			fail(r_state.result, "Unknown option: " + arg + ".");
+			return true;
+		}
+	}
+	return false;
+}
+
 static void pass_through_global_args(CLIParseState &r_state, int p_start_index) {
 	PackedStringArray global_args;
 	for (int i = 0; i < r_state.args.size(); i++) {
@@ -1337,6 +1342,10 @@ FoundryCLIParser::ParseResult FoundryCLIParser::parse(const PackedStringArray &p
 	const int start_index = state.has_executable_arg ? 1 : 0;
 
 	if (reject_legacy_workflow_flags(state, start_index)) {
+		return state.result;
+	}
+
+	if (reject_removed_startup_flags(state, start_index)) {
 		return state.result;
 	}
 

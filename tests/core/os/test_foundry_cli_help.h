@@ -57,6 +57,13 @@ TEST_CASE("[FoundryCLIHelp] Top help lists nouns and omits legacy options") {
 	CHECK_FALSE(text.contains("--export-release"));
 }
 
+TEST_CASE("[FoundryCLIHelp] Editor help omits the removed project-manager command") {
+	const String text = FoundryCLIHelp::get_noun_help_text("editor");
+	CHECK(text.contains("open"));
+	CHECK_FALSE(text.contains("project-manager"));
+	CHECK_FALSE(text.contains("Project Manager"));
+}
+
 TEST_CASE("[FoundryCLIHelp] Noun help lists its subcommands") {
 	const String text = FoundryCLIHelp::get_noun_help_text("script");
 	CHECK(text.contains("format"));

@@ -474,12 +474,6 @@ void EditorSettings::_load_defaults(Ref<ConfigFile> p_extra_config) {
 	EDITOR_SETTING(Variant::INT, PROPERTY_HINT_ENUM, "interface/editor/tablet_driver", -1, "Default:-1");
 #endif
 
-	String project_manager_screen_hints = "Screen With Mouse Pointer:-4,Screen With Keyboard Focus:-3,Primary Screen:-2";
-	for (int i = 0; i < DisplayServer::get_singleton()->get_screen_count(); i++) {
-		project_manager_screen_hints += ",Screen " + itos(i + 1) + ":" + itos(i);
-	}
-	EDITOR_SETTING(Variant::INT, PROPERTY_HINT_ENUM, "interface/editor/project_manager_screen", EditorSettings::InitialScreen::INITIAL_SCREEN_PRIMARY, project_manager_screen_hints)
-
 	{
 		EngineUpdateLabel::UpdateMode default_update_mode = EngineUpdateLabel::UpdateMode::NEWEST_UNSTABLE;
 		if (String(FOUNDRY_VERSION_STATUS) == String("stable")) {

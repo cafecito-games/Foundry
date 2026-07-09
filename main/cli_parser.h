@@ -39,7 +39,6 @@ public:
 		enum Kind {
 			NONE,
 			EDITOR_OPEN,
-			EDITOR_PROJECT_MANAGER,
 			PROJECT_RUN,
 			PROJECT_TEST,
 			PROJECT_EXPORT,

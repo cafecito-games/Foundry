@@ -637,18 +637,18 @@ TEST_CASE("[FoundryCLIParser] Editor open accepts a scene path to reopen") {
 	CHECK_EQ(result.invocation.passthrough_args, make_args({ "res://main.tscn" }));
 }
 
-TEST_CASE("[FoundryCLIParser] Editor project-manager records project path") {
+TEST_CASE("[FoundryCLIParser] Editor project-manager is an unknown command") {
 	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
 			"foundry",
 			"editor",
 			"project-manager",
-			"--project",
-			"/opt/foundry",
 	}));
 
-	REQUIRE_MESSAGE(result.ok, result.error);
-	CHECK_EQ(result.invocation.kind, Kind::EDITOR_PROJECT_MANAGER);
-	CHECK_EQ(result.invocation.project_path, "/opt/foundry");
+	CHECK_FALSE(result.ok);
+	CHECK(result.error.contains("Unknown editor command"));
+	CHECK(result.error.contains("project-manager"));
+	// The removed command must not softly redirect to any project-manager surface.
+	CHECK_FALSE(result.error.contains("has been removed"));
 }
 
 TEST_CASE("[FoundryCLIParser] Editor open accepts automation options") {
@@ -704,15 +704,15 @@ TEST_CASE("[FoundryCLIParser] Automation options are rejected outside editor ope
 	CHECK(test_run.error.contains("Unknown option"));
 	CHECK(test_run.error.contains("--automation"));
 
-	FoundryCLIParser::ParseResult project_manager = FoundryCLIParser::parse(make_args({
+	FoundryCLIParser::ParseResult project_import = FoundryCLIParser::parse(make_args({
 			"foundry",
-			"editor",
-			"project-manager",
+			"project",
+			"import",
 			"--automation",
 	}));
-	CHECK_FALSE(project_manager.ok);
-	CHECK(project_manager.error.contains("Unknown option"));
-	CHECK(project_manager.error.contains("--automation"));
+	CHECK_FALSE(project_import.ok);
+	CHECK(project_import.error.contains("Unknown option"));
+	CHECK(project_import.error.contains("--automation"));
 }
 
 TEST_CASE("[FoundryCLIParser] Removed legacy workflow flags are rejected") {
@@ -725,8 +725,6 @@ TEST_CASE("[FoundryCLIParser] Removed legacy workflow flags are rejected") {
 
 	expect_removed({ "foundry", "--editor" }, "--editor");
 	expect_removed({ "foundry", "-e" }, "-e");
-	expect_removed({ "foundry", "--project-manager" }, "--project-manager");
-	expect_removed({ "foundry", "-p" }, "-p");
 	expect_removed({ "foundry", "--path", "." }, "--path");
 	expect_removed({ "foundry", "--import" }, "--import");
 	expect_removed({ "foundry", "--test" }, "--test");
@@ -736,6 +734,23 @@ TEST_CASE("[FoundryCLIParser] Removed legacy workflow flags are rejected") {
 	expect_removed({ "foundry", "--foundry_script-generate-tests" }, "--foundry_script-generate-tests");
 	expect_removed({ "foundry", "--doctool" }, "--doctool");
 	expect_removed({ "foundry", "--lsp-port", "6005" }, "--lsp-port");
+}
+
+TEST_CASE("[FoundryCLIParser] Removed project-manager flags are unknown options") {
+	// The Project Manager startup mode was removed with a clean break: the legacy
+	// `-p` / `--project-manager` flags parse as unknown options with no deprecation
+	// or redirect message (there is no project-manager surface to redirect to).
+	auto expect_unknown_option = [](const std::initializer_list<String> &p_input, const String &p_flag) {
+		FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args(p_input));
+		CHECK_FALSE(result.ok);
+		CHECK(result.error.contains("Unknown option"));
+		CHECK(result.error.contains(p_flag));
+		CHECK_FALSE(result.error.contains("has been removed"));
+		CHECK_FALSE(result.error.contains("Use "));
+	};
+
+	expect_unknown_option({ "foundry", "--project-manager" }, "--project-manager");
+	expect_unknown_option({ "foundry", "-p" }, "-p");
 }
 
 } // namespace TestFoundryCLIParser

@@ -2682,8 +2682,8 @@ void EditorNode::try_autosave() {
 	editor_data.save_editor_external_data();
 }
 
-void EditorNode::restart_editor(bool p_goto_project_manager) {
-	_menu_option_confirm(p_goto_project_manager ? PROJECT_QUIT_TO_PROJECT_MANAGER : PROJECT_RELOAD_CURRENT_PROJECT, false);
+void EditorNode::restart_editor() {
+	_menu_option_confirm(PROJECT_RELOAD_CURRENT_PROJECT, false);
 }
 
 void EditorNode::_save_all_scenes() {
@@ -3812,7 +3812,6 @@ void EditorNode::_menu_option_confirm(int p_option, bool p_confirmed) {
 			OS::get_singleton()->shell_show_in_file_manager(OS::get_singleton()->get_user_data_dir(), true);
 		} break;
 		case SCENE_QUIT:
-		case PROJECT_QUIT_TO_PROJECT_MANAGER:
 		case PROJECT_RELOAD_CURRENT_PROJECT: {
 			if (p_confirmed && plugin_to_save) {
 				plugin_to_save->save_external_data();
@@ -3900,7 +3899,7 @@ void EditorNode::_menu_option_confirm(int p_option, bool p_confirmed) {
 						save_confirmation->set_text(TTR("Save changes to the following scene(s) before reloading?") + unsaved_scenes);
 					} else {
 						save_confirmation->set_ok_button_text(TTR("Save & Quit"));
-						save_confirmation->set_text((p_option == SCENE_QUIT ? TTR("Save changes to the following scene(s) before quitting?") : TTR("Save changes to the following scene(s) before opening Project Manager?")) + unsaved_scenes);
+						save_confirmation->set_text(TTR("Save changes to the following scene(s) before quitting?") + unsaved_scenes);
 					}
 					save_confirmation->reset_size();
 					save_confirmation->popup_centered();
@@ -4309,8 +4308,8 @@ void EditorNode::_discard_changes(const String &p_str) {
 			_exit_editor(EXIT_SUCCESS);
 
 		} break;
-		case PROJECT_QUIT_TO_PROJECT_MANAGER: {
-			_restart_editor(true);
+		case PROJECT_OPEN_PROJECT: {
+			show_startup_dialog();
 		} break;
 		case PROJECT_RELOAD_CURRENT_PROJECT: {
 			_restart_editor();
@@ -6855,7 +6854,7 @@ bool EditorNode::_is_menu_option_blocked_in_projectless_shell(int p_option) cons
 
 	switch (p_option) {
 		case SCENE_QUIT:
-		case PROJECT_QUIT_TO_PROJECT_MANAGER:
+		case PROJECT_OPEN_PROJECT:
 		case EDITOR_OPEN_SETTINGS:
 		case EDITOR_COMMAND_PALETTE:
 		case EDITOR_TAKE_SCREENSHOT:
@@ -6898,7 +6897,7 @@ void EditorNode::_update_projectless_shell_menu_restrictions() {
 
 	for (int i = 0; i < project_menu->get_item_count(); i++) {
 		const int id = project_menu->get_item_id(i);
-		project_menu->set_item_disabled(i, id != PROJECT_QUIT_TO_PROJECT_MANAGER);
+		project_menu->set_item_disabled(i, id != PROJECT_OPEN_PROJECT);
 	}
 }
 
@@ -6934,9 +6933,7 @@ void EditorNode::_finish_projectless_shell_startup() {
 		EditorResourcePreview::get_singleton()->start();
 	}
 
-	if (startup_dialog != nullptr) {
-		startup_dialog->show_startup_dialog();
-	}
+	show_startup_dialog();
 
 	get_tree()->create_timer(1.0f)->connect("timeout", callable_mp(this, &EditorNode::_remove_lock_file));
 }
@@ -7998,10 +7995,10 @@ void EditorNode::_proceed_save_asing_scene_tabs() {
 }
 
 bool EditorNode::_is_closing_editor() const {
-	return tab_closing_menu_option == SCENE_QUIT || tab_closing_menu_option == PROJECT_QUIT_TO_PROJECT_MANAGER || tab_closing_menu_option == PROJECT_RELOAD_CURRENT_PROJECT;
+	return tab_closing_menu_option == SCENE_QUIT || tab_closing_menu_option == PROJECT_RELOAD_CURRENT_PROJECT;
 }
 
-void EditorNode::_restart_editor(bool p_goto_project_manager) {
+void EditorNode::_restart_editor() {
 	exiting = true;
 
 	if (project_run_bar->is_playing()) {
@@ -8009,7 +8006,7 @@ void EditorNode::_restart_editor(bool p_goto_project_manager) {
 	}
 
 	String to_reopen;
-	if (!p_goto_project_manager && get_tree()->get_edited_scene_root()) {
+	if (get_tree()->get_edited_scene_root()) {
 		to_reopen = get_tree()->get_edited_scene_root()->get_scene_file_path();
 	}
 
@@ -8020,25 +8017,13 @@ void EditorNode::_restart_editor(bool p_goto_project_manager) {
 		args.push_back(a);
 	}
 
-	if (p_goto_project_manager) {
-		args.push_back("editor");
-		args.push_back("project-manager");
+	args.push_back("editor");
+	args.push_back("open");
+	args.push_back("--project");
+	args.push_back(ProjectSettings::get_singleton()->get_resource_path());
 
-		// Setup working directory.
-		const String exec_dir = OS::get_singleton()->get_executable_path().get_base_dir();
-		if (!exec_dir.is_empty()) {
-			args.push_back("--project");
-			args.push_back(exec_dir);
-		}
-	} else {
-		args.push_back("editor");
-		args.push_back("open");
-		args.push_back("--project");
-		args.push_back(ProjectSettings::get_singleton()->get_resource_path());
-
-		if (!to_reopen.is_empty()) {
-			args.push_back(to_reopen);
-		}
+	if (!to_reopen.is_empty()) {
+		args.push_back(to_reopen);
 	}
 
 	OS::get_singleton()->set_restart_on_exit(true, args);
@@ -9660,8 +9645,8 @@ void EditorNode::_build_project_menu() {
 	project_menu->add_submenu_node_item(TTRC("Tools"), tool_menu);
 
 	project_menu->add_separator();
+	project_menu->add_shortcut(ED_GET_SHORTCUT("editor/open_project"), PROJECT_OPEN_PROJECT, true);
 	project_menu->add_shortcut(ED_GET_SHORTCUT("editor/reload_current_project"), PROJECT_RELOAD_CURRENT_PROJECT);
-	project_menu->add_shortcut(ED_GET_SHORTCUT("editor/quit_to_project_list"), PROJECT_QUIT_TO_PROJECT_MANAGER, true);
 }
 
 void EditorNode::_build_settings_menu() {
@@ -9894,9 +9879,13 @@ GameViewPluginBase *get_game_view_plugin() {
 #endif
 
 void EditorNode::show_startup_dialog() {
-	if (startup_dialog != nullptr) {
-		startup_dialog->show_startup_dialog();
+	// The startup dialog is the project decision surface. It is shown automatically
+	// in the projectless editor shell and on demand via `Project > Open Project...`
+	// while a project is loaded, so it is constructed lazily on first use.
+	if (startup_dialog == nullptr) {
+		startup_dialog = memnew(StartupDialog);
 	}
+	startup_dialog->show_startup_dialog();
 }
 
 bool EditorNode::is_startup_dialog_visible() const {
@@ -10457,7 +10446,7 @@ EditorNode::EditorNode() {
 
 	editor_settings_dialog = memnew(EditorSettingsDialog);
 	gui_base->add_child(editor_settings_dialog);
-	editor_settings_dialog->connect("restart_requested", callable_mp(this, &EditorNode::restart_editor).bind(false));
+	editor_settings_dialog->connect("restart_requested", callable_mp(this, &EditorNode::restart_editor));
 
 	project_settings_editor = memnew(ProjectSettingsEditor(&editor_data));
 	gui_base->add_child(project_settings_editor);
@@ -10482,10 +10471,6 @@ EditorNode::EditorNode() {
 
 	about = memnew(EditorAbout);
 	gui_base->add_child(about);
-
-	if (projectless_shell) {
-		startup_dialog = memnew(StartupDialog);
-	}
 
 	feature_profile_manager->connect("current_feature_profile_changed", callable_mp(this, &EditorNode::_feature_profile_changed));
 
@@ -10544,8 +10529,7 @@ EditorNode::EditorNode() {
 	ED_SHORTCUT_AND_COMMAND("editor/upgrade_project", TTRC("Upgrade Project Files..."));
 
 	ED_SHORTCUT("editor/reload_current_project", TTRC("Reload Current Project"));
-	ED_SHORTCUT_AND_COMMAND("editor/quit_to_project_list", TTRC("Quit to Project List"), KeyModifierMask::CTRL + KeyModifierMask::SHIFT + Key::Q);
-	ED_SHORTCUT_OVERRIDE("editor/quit_to_project_list", "macos", KeyModifierMask::META + KeyModifierMask::CTRL + KeyModifierMask::ALT + Key::Q);
+	ED_SHORTCUT_AND_COMMAND("editor/open_project", TTRC("Open Project..."), KeyModifierMask::CTRL + KeyModifierMask::SHIFT + Key::O);
 
 	ED_SHORTCUT("editor/command_palette", TTRC("Command Palette..."), KeyModifierMask::CMD_OR_CTRL | KeyModifierMask::SHIFT | Key::P);
 
@@ -10960,7 +10944,7 @@ EditorNode::EditorNode() {
 
 	project_data_missing = memnew(ConfirmationDialog);
 	project_data_missing->set_text(TTRC("Project data folder (.godot) is missing. Please restart editor."));
-	project_data_missing->connect(SceneStringName(confirmed), callable_mp(this, &EditorNode::restart_editor).bind(false));
+	project_data_missing->connect(SceneStringName(confirmed), callable_mp(this, &EditorNode::restart_editor));
 	project_data_missing->set_ok_button_text(TTRC("Restart"));
 
 	gui_base->add_child(project_data_missing);

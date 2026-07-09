@@ -1477,9 +1477,9 @@ void ProjectList::update_dock_menu() {
 }
 
 void ProjectList::_global_menu_new_window(const Variant &p_tag) {
+	// Launch a fresh editor instance with no project; normal startup routing opens
+	// the last project or the projectless startup dialog.
 	List<String> args;
-	args.push_back("editor");
-	args.push_back("project-manager");
 	OS::get_singleton()->create_instance(args);
 }
 
