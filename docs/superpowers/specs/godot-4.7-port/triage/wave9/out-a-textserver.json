@@ -1,0 +1,114 @@
+[
+  {
+    "pr": "118165",
+    "sha": "df7e539878a8b0f8a2db2bf26e16d6d5df4f99b1",
+    "decision": "port-later",
+    "kind": "feature",
+    "risk": "med",
+    "rationale": "Ports pause/resume/rotation hooks into camera_apple.mm, but that module is absent on HEAD (only camera_macos exists), so it needs the 4.7 camera_apple backport first."
+  },
+  {
+    "pr": "119648",
+    "sha": "df3168ad6ec86638744c33ab39af022a05405867",
+    "decision": "port-later",
+    "kind": "bugfix",
+    "risk": "low",
+    "rationale": "Fixes an hb_raster_draw_glyph call, but the hb_raster color-glyph path does not exist on HEAD (HarfBuzz 12.3.2, no hb_raster_* anywhere), so it needs the hb-raster rendering rework first."
+  },
+  {
+    "pr": "119419",
+    "sha": "482c1b1373839064688acdee5e0b1778ca848c1d",
+    "decision": "port-now",
+    "kind": "cleanup",
+    "risk": "low",
+    "rationale": "Both .gitignore files still exist on HEAD and reference the already-removed gdextension_build/godot-cpp dir, so deleting these dead files is trivial and safe."
+  },
+  {
+    "pr": "119291",
+    "sha": "b22e24eaef2fe3596ceb88c60c087300de1cc6e2",
+    "decision": "port-later",
+    "kind": "bugfix",
+    "risk": "low",
+    "rationale": "Guards a from_bitmap variable used only by the HB_VERSION_ATLEAST(13) hb_raster path, which is absent on HEAD, so the fix has no target until the hb-raster rework lands."
+  },
+  {
+    "pr": "118993",
+    "sha": "7de9cdf7dc30b5b9c3f9999d3419f7b8e2b91dd6",
+    "decision": "port-later",
+    "kind": "bugfix",
+    "risk": "low",
+    "rationale": "Adds a HINTING_NONE condition to the hb_raster is_rasterized path, which does not exist on HEAD (no hb_raster_draw_* code), so it depends on the hb-raster rework."
+  },
+  {
+    "pr": "118259",
+    "sha": "1b4944974989cf5dbad36987db18e5b77c28140f",
+    "decision": "port-later",
+    "kind": "bugfix",
+    "risk": "low",
+    "rationale": "Rewrites variable-font transform handling inside the hb_raster paint/draw blocks, which are entirely absent on HEAD, so it needs the hb-raster rendering path first."
+  },
+  {
+    "pr": "117580",
+    "sha": "2addc30fb3175dbc4365c7ab45657f334c7171cf",
+    "decision": "port-later",
+    "kind": "bugfix",
+    "risk": "med",
+    "rationale": "Moves the hb_rdr/hb_mono raster contexts to per-font and adds an FT_Render_Glyph fallback, but the whole hb_raster infrastructure is absent on HEAD, so it depends on the hb-raster rework."
+  },
+  {
+    "pr": "117056",
+    "sha": "7a25ab859fe8a920c4afd512764ea2c66915795b",
+    "decision": "port-later",
+    "kind": "cleanup",
+    "risk": "med",
+    "rationale": "The gdextension_build dirs are already gone from HEAD but the #ifdef GDEXTENSION guards and GDE_EXPORT init code remain (rebranded to Foundry); removing them is desirable dead-code cleanup but non-urgent and spans 19 rebrand-diverged files."
+  },
+  {
+    "pr": "116197",
+    "sha": "e6f5f5a1ca3f6848f69d68766181ddefe60adeb8",
+    "decision": "skip",
+    "kind": "bugfix",
+    "risk": "low",
+    "rationale": "The start_with_obj embedded-object language-merge logic is already present verbatim at text_server_adv.cpp:6282, so it is already on HEAD."
+  },
+  {
+    "pr": "115949",
+    "sha": "3f3dc88c7e454c65d1c797fe4541fbdc17048d26",
+    "decision": "port-now",
+    "kind": "bugfix",
+    "risk": "low",
+    "rationale": "HEAD still has req.width = sz * 64.0 in both text_server_adv and text_server_fb _ensure_cache_for_size; clamping to MIN(2048.0, sz) is a self-contained two-line fix that applies cleanly."
+  },
+  {
+    "pr": "115749",
+    "sha": "ed42d3dbe08553800fcb110db2a5b55e5809d007",
+    "decision": "port-later",
+    "kind": "perf",
+    "risk": "high",
+    "rationale": "Large restructure moving FT_Face/FT_Size from per-size to per-font across 4 files (~250 lines) overlapping the fork-diverged _ensure_cache_for_size region, so it needs careful reconciliation, not a clean cherry-pick."
+  },
+  {
+    "pr": "115687",
+    "sha": "98782b6c8c9cabe0fb7c80bc62640735ecb076d3",
+    "decision": "skip",
+    "kind": "bugfix",
+    "risk": "low",
+    "rationale": "COMBINING_ENCLOSING_KEYCAP is already defined and used in the emoji-run check in script_iterator.cpp at lines 38 and 111, so it is already on HEAD."
+  },
+  {
+    "pr": "119625",
+    "sha": "2d7b307004bbc5b90fd3d4f35d3b799ec7d4b8fc",
+    "decision": "port-now",
+    "kind": "bugfix",
+    "risk": "low",
+    "rationale": "HEAD still uses the narrow 0x200B-0x200D zero-width check in TextServerFallback::_shaped_text_shape; the preserve_control field exists, so the wider ZWSP/word-joiner/BOM handling applies cleanly."
+  },
+  {
+    "pr": "119775",
+    "sha": "0f551ab0cd82ef9f747570d5f557ccd63a0a1587",
+    "decision": "port-now",
+    "kind": "bugfix",
+    "risk": "low",
+    "rationale": "The no-video-stream branch in set_file at video_stream_theora.cpp:422 still silently returns without clearing vorbis state; the vc/vi/vo cleanup and error match the surrounding HEAD code exactly."
+  }
+]

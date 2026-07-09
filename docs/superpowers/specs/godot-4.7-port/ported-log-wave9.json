@@ -1,0 +1,236 @@
+[
+ {
+  "pr": "114834",
+  "sha": "013fffa10d453c7936dd683bc11aa05254ab6eab",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "DTLS peer-leak fix (enet_godot.cpp/enet_godot_ext.h glue + module) is absent from HEAD and is a self-contained networking-correctness cherry-pick, not a version bump.",
+  "current_version": "",
+  "target_version": "",
+  "outcome": "ported-resolved",
+  "local_sha": "1e7ec9ff3afa2a64fb8fe3a3b0ed5caee5ff3fdf",
+  "resolution": "ENetGodotSocket->ENetFoundrySocket rebrand + new peer bind/disconnect virtuals"
+ },
+ {
+  "pr": "115359",
+  "sha": "b328f597a303b60bb39b340a95f9a09bb65cdb8c",
+  "decision": "port-now",
+  "kind": "cleanup",
+  "risk": "low",
+  "rationale": "Fork methods.py header-extension list (line 1153) lacks '.inl'; adding it to the MSVC solution is a trivial, independent one-line change.",
+  "outcome": "ported",
+  "local_sha": "c8cf82fa09374c9be6f205b591ec2a9017e48851"
+ },
+ {
+  "pr": "104433",
+  "sha": "3c341ffcab13a34a82a7882236a968d298d354d8",
+  "decision": "port-now",
+  "kind": "perf",
+  "risk": "low",
+  "rationale": "Replaces per-byte heap read loop with heapSlice in websocket send; maps via rebrand (GodotRuntime->FoundryRuntime, renamed library_foundry_websocket.js) and FoundryRuntime.heapSlice is already used elsewhere.",
+  "outcome": "ported-resolved",
+  "local_sha": "4eca7aa4280beb9ccf403ef0bdaf0d07f41996eb",
+  "resolution": "foundry_js_* rebrand + FoundryRuntime.heapSlice"
+ },
+ {
+  "pr": "115949",
+  "sha": "3f3dc88c7e454c65d1c797fe4541fbdc17048d26",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "HEAD still has req.width = sz * 64.0 in both text_server_adv and text_server_fb _ensure_cache_for_size; clamping to MIN(2048.0, sz) is a self-contained two-line fix that applies cleanly.",
+  "outcome": "ported",
+  "local_sha": "fb0e6e0b34330d77db0d8a424277ea1f8e625917"
+ },
+ {
+  "pr": "115933",
+  "sha": "e067a686b386a050f12bc40fd18436ffd4cfc34b",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fork test_color.h (line 64) still calls the static from_hsv via an instance; changing to Color::from_hsv is a clean one-line fix and from_hsv is static in core/math/color.h.",
+  "outcome": "ported",
+  "local_sha": "39458c75431fcc9b2bbba2c3aee09495d360e245"
+ },
+ {
+  "pr": "116307",
+  "sha": "c67a8a16f49da42a1af0b00f0557774ca5953f67",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Self-contained addition of R8/R8G8 DDS import support; dds_enums.h/texture_loader_dds.cpp patches apply cleanly on HEAD.",
+  "outcome": "ported",
+  "local_sha": "dfaad442145e47a71e3c612d5a658797aaaf9133"
+ },
+ {
+  "pr": "116520",
+  "sha": "342109e01fef9e27ec5a2d15877b415951ef0959",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Adds missing background panel to the audio stream interactive transition editor tree; single-file patch applies cleanly.",
+  "outcome": "ported",
+  "local_sha": "1800338e17465081974402e5a2c153e2e3a8ac34"
+ },
+ {
+  "pr": "116960",
+  "sha": "fbb918b699a679d4ded7e1996abb344a56f57a72",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fork main.cpp (lines 3504-3518) still has the off-by-one fallback loop and WARN_PRINT; the fix that tries the last accessibility driver and quiets the warning applies to the undiverged region.",
+  "outcome": "ported",
+  "local_sha": "b9e6cd5977f6df5c1a4f97bd3c239ebd7f34d77d"
+ },
+ {
+  "pr": "114535",
+  "sha": "5b666357e39cfde99416f7feb683f1ec642aa5c8",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes CSG gizmo collision selection inside CSGCombiners; patch applies cleanly to modules/csg/editor/csg_gizmos.cpp on HEAD.",
+  "outcome": "ported",
+  "local_sha": "85f502868003045ebd8a9016577fb5930224928c"
+ },
+ {
+  "pr": "115674",
+  "sha": "872b5a52df76959c410297b0f60212f4349c3454",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Explicitly rejects unsupported CMYK/YCCK JPEG colorspaces to avoid corrupt imports; applies cleanly to image_loader_libjpeg_turbo.cpp.",
+  "outcome": "ported",
+  "local_sha": "ffc2d86f0885aa5246e3c52794d22d9e4041ce58"
+ },
+ {
+  "pr": "117555",
+  "sha": "7544660ca4cdf3997422e6459e1c943a55ccb211",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fork platform_methods.py generate_bundle_apple_embedded (lines 231/240) is undiverged; the libgodot_ prefix match and per-slice MoltenVK copy fix applies cleanly and iOS work is active.",
+  "outcome": "ported",
+  "local_sha": "c54e3d9088ca5b9ae59babbb9a094076fc89e54c"
+ },
+ {
+  "pr": "118082",
+  "sha": "53a957907ea970dd8622dd0a88c49b9a5158a975",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fork's glsl_builders.py still has the pre-fix raygen-only block; the change correctly emits nullptr for absent raytracing stages and applies cleanly to the undiverged region.",
+  "outcome": "ported",
+  "local_sha": "562ed4743d4fda6828d0530344f69baba4775b15"
+ },
+ {
+  "pr": "118494",
+  "sha": "2788762844e30d2422c6456055572ec3d089b237",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "UBSan correctness fix using put_u32 for unsigned DDS header writes; applies cleanly to modules/dds/image_saver_dds.cpp.",
+  "outcome": "ported",
+  "local_sha": "c3ef48e4f3776199ad99576a69b9cd435e06dad5"
+ },
+ {
+  "pr": "118420",
+  "sha": "c481829ef4b4177e109aef7d94f3c58f60fa8f97",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Re-adds area to moved list after area_set_space; maps via fork rebrand (Godot->Foundry paths/classes) and moved_list/area_add_to_moved_list exist in foundry_physics_2d/3d.",
+  "outcome": "ported",
+  "local_sha": "d0950a3c3286c17852931ac374a564ae2c7a15b2"
+ },
+ {
+  "pr": "118780",
+  "sha": "bee85a1057ec6c1a8a9114ee15f4d0a2ed8634cc",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Disables WebXR when proxy_to_pthread is enabled to avoid a broken web build; config.py patch applies cleanly and is the base for 118805.",
+  "outcome": "ported",
+  "local_sha": "99123a4cad32eefd0e85932749a49d8f122d9710"
+ },
+ {
+  "pr": "118805",
+  "sha": "864f0b12cc72e050b7a6760e9b13da5e1e0180c6",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes disable_xr being ignored on web; trivial config.py change but must be applied after 118780 which introduces the proxy_to_pthread guard it edits.",
+  "outcome": "ported",
+  "local_sha": "dc5cf094e91b4d3bfc4976851ada8fdd27988ff0"
+ },
+ {
+  "pr": "114129",
+  "sha": "f6fd6e62559f1e856935442a7749279bc06d096c",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "TRANSITION_TO_TIME_PREVIOUS_POSITION is used in code but never BIND_ENUM_CONSTANT'd; patch adds the missing binding and applies cleanly.",
+  "outcome": "ported",
+  "local_sha": "b634bb705097049c57dc8efbf2df400ae98b1f98"
+ },
+ {
+  "pr": "119419",
+  "sha": "482c1b1373839064688acdee5e0b1778ca848c1d",
+  "decision": "port-now",
+  "kind": "cleanup",
+  "risk": "low",
+  "rationale": "Both .gitignore files still exist on HEAD and reference the already-removed gdextension_build/godot-cpp dir, so deleting these dead files is trivial and safe.",
+  "outcome": "ported",
+  "local_sha": "4db620534ff27bf86edf405decb708667de8f2fd"
+ },
+ {
+  "pr": "119022",
+  "sha": "78105f19480669e014e0e0c22132dedea758d8a1",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Normalizes the returned closest-point normal in NavigationServer3D queries; two-line fix applies cleanly to nav_mesh_queries_3d.cpp.",
+  "outcome": "ported",
+  "local_sha": "34885b65123a31d278875056f4833d9fce7f1d78"
+ },
+ {
+  "pr": "119570",
+  "sha": "f294c68bb580298432d18bfc7e606daec7d536d6",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Only fails JPEG import on fatal libjpeg errors instead of warnings; applies cleanly to image_loader_libjpeg_turbo.cpp.",
+  "outcome": "ported",
+  "local_sha": "b2f19e966aa858f9e85ce3325e76caf284be39dd"
+ },
+ {
+  "pr": "110469",
+  "sha": "8a337510390eb6b9e8868a6d3a4e2a7e494ad83f",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fork methods.py still passes '-requires Microsoft.Component.MSBuild' to vswhere (line 727); removing it broadens MSVC detection and applies cleanly.",
+  "outcome": "ported",
+  "local_sha": "c543f43290de97ea86d556f46f16d0b81a774dfc"
+ },
+ {
+  "pr": "119625",
+  "sha": "2d7b307004bbc5b90fd3d4f35d3b799ec7d4b8fc",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "HEAD still uses the narrow 0x200B-0x200D zero-width check in TextServerFallback::_shaped_text_shape; the preserve_control field exists, so the wider ZWSP/word-joiner/BOM handling applies cleanly.",
+  "outcome": "ported",
+  "local_sha": "01eba252afcceffd1548203c78381e77e2e09de2"
+ },
+ {
+  "pr": "119775",
+  "sha": "0f551ab0cd82ef9f747570d5f557ccd63a0a1587",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "The no-video-stream branch in set_file at video_stream_theora.cpp:422 still silently returns without clearing vorbis state; the vc/vi/vo cleanup and error match the surrounding HEAD code exactly.",
+  "outcome": "ported",
+  "local_sha": "7556ef5628129c0099d9dfc987f41680bc454ec8"
+ }
+]

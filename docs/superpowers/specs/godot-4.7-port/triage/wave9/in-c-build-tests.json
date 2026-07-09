@@ -1,0 +1,163 @@
+[
+  {
+    "pr": "118082",
+    "sha": "53a957907ea970dd8622dd0a88c49b9a5158a975",
+    "subsystem": "glsl_builders.py",
+    "nfiles": 1,
+    "title": "Fix RD header generation for raytracing shaders."
+  },
+  {
+    "pr": "116798",
+    "sha": "2e56f4ee538f0093c37568ef9e02938d08d2fe42",
+    "subsystem": "main/main.cpp",
+    "nfiles": 2,
+    "title": "[Tests] Always init message queue and rendering server."
+  },
+  {
+    "pr": "116960",
+    "sha": "fbb918b699a679d4ded7e1996abb344a56f57a72",
+    "subsystem": "main/main.cpp",
+    "nfiles": 1,
+    "title": "Fix accessibility server init fallback."
+  },
+  {
+    "pr": "116366",
+    "sha": "5866e4f58f8c47e7d740e8626cc704dc5e198f97",
+    "subsystem": "main/main.cpp",
+    "nfiles": 1,
+    "title": "Fix startup errors/warnings on X11 when the Prefer Wayland editor setting is enabled"
+  },
+  {
+    "pr": "110469",
+    "sha": "8a337510390eb6b9e8868a6d3a4e2a7e494ad83f",
+    "subsystem": "methods.py",
+    "nfiles": 1,
+    "title": "fix: relax vswhere command conditions for broader compatibility"
+  },
+  {
+    "pr": "115359",
+    "sha": "b328f597a303b60bb39b340a95f9a09bb65cdb8c",
+    "subsystem": "methods.py",
+    "nfiles": 1,
+    "title": "Add .inl files to the MSVC solution"
+  },
+  {
+    "pr": "115389",
+    "sha": "f8444475ac0653376689b2ee4657727bea20e784",
+    "subsystem": "misc/extension_api_validation",
+    "nfiles": 27,
+    "title": "Bump version to 4.7-dev"
+  },
+  {
+    "pr": "117555",
+    "sha": "7544660ca4cdf3997422e6459e1c943a55ccb211",
+    "subsystem": "platform_methods.py",
+    "nfiles": 1,
+    "title": "[iOS/visionOS] Do not include wrong platform libs when using `generate_bundle`."
+  },
+  {
+    "pr": "116588",
+    "sha": "a0d955d586f3ff7a592579604c9cf5b388788765",
+    "subsystem": "scu_builders.py",
+    "nfiles": 1,
+    "title": "SCons: Fix compiled tests on scu builds"
+  },
+  {
+    "pr": "116455",
+    "sha": "d73f6aab4ec179fc7b8b72cb66f5d3be3883717e",
+    "subsystem": "tests/compatibility_test",
+    "nfiles": 1,
+    "title": "Run linter on `run_compatibility_test.py`."
+  },
+  {
+    "pr": "113743",
+    "sha": "ff7d5cb3d0365ec8e0b3b33bacd4983bca377178",
+    "subsystem": "tests/compatibility_test",
+    "nfiles": 10,
+    "title": "Improve automated checks for GDExtension compatibility"
+  },
+  {
+    "pr": "116486",
+    "sha": "897172fa25699455f0a537f054654068b3dda5d5",
+    "subsystem": "tests/core",
+    "nfiles": 2,
+    "title": "Tests: Compiled test conversion follow-up"
+  },
+  {
+    "pr": "112041",
+    "sha": "f0b164472f18f71a10708f1a198c6f792f7c48f5",
+    "subsystem": "tests/core",
+    "nfiles": 162,
+    "title": "Tests: Convert test headers to compilation files"
+  },
+  {
+    "pr": "115933",
+    "sha": "e067a686b386a050f12bc40fd18436ffd4cfc34b",
+    "subsystem": "tests/core",
+    "nfiles": 1,
+    "title": "Fix `TestColor` build failure on Windows"
+  },
+  {
+    "pr": "118220",
+    "sha": "f7692aa47dbbbf9049ea4225ad8047c6d8d3040f",
+    "subsystem": "tests/create_test.py",
+    "nfiles": 1,
+    "title": "Modernize `create_test.py`"
+  },
+  {
+    "pr": "119261",
+    "sha": "f46fad29743491272ef8c35b1b78b30a4faa0765",
+    "subsystem": "tests/scene",
+    "nfiles": 1,
+    "title": "Add unit tests for `TextureButton`"
+  },
+  {
+    "pr": "119264",
+    "sha": "864bad270557b3413d6e1f6d7a4cb5b08992b915",
+    "subsystem": "tests/scene",
+    "nfiles": 1,
+    "title": "Add unit tests for `SpinBox`"
+  },
+  {
+    "pr": "119244",
+    "sha": "ee959388f90beaac7098056fa9109244bc6e9fa1",
+    "subsystem": "tests/scene",
+    "nfiles": 1,
+    "title": "Add unit tests for `ReferenceRect`"
+  },
+  {
+    "pr": "119132",
+    "sha": "771d727bea90b69f075d36c0ee966fadd67c0d7c",
+    "subsystem": "tests/scene",
+    "nfiles": 1,
+    "title": "Add unit tests for `TextureRect`"
+  },
+  {
+    "pr": "119124",
+    "sha": "9e9e81e8465bfcdd775648f6e252c5be4d4607e3",
+    "subsystem": "tests/scene",
+    "nfiles": 1,
+    "title": "Add unit tests for `NinePatchRect`"
+  },
+  {
+    "pr": "118232",
+    "sha": "b903c1070a6c1f53918ce6a46075d3ee28fd9bcd",
+    "subsystem": "tests/scene",
+    "nfiles": 9,
+    "title": "Add tests for Container nodes"
+  },
+  {
+    "pr": "105296",
+    "sha": "70c965168265e979ebaaa347e8ad08dfad0e2e42",
+    "subsystem": "tests/scene",
+    "nfiles": 2,
+    "title": "Add unit tests for `StyleBoxEmpty` and `StyleBoxLine`"
+  },
+  {
+    "pr": "117097",
+    "sha": "c4969dfa4e7e5581a75a1076a578b5dd97217155",
+    "subsystem": "tests/scene",
+    "nfiles": 70,
+    "title": "Explicitly include `scene_tree.h` where used"
+  }
+]

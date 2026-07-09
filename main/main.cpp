@@ -3465,7 +3465,7 @@ Error Main::setup2(bool p_show_boot_logo) {
 					continue; // Don't try the same twice.
 				}
 				String name = AccessibilityServer::get_create_function_name(i);
-				WARN_PRINT(vformat("Accessibility driver %s failed, falling back to %s.", last_name, name));
+				WARN_VERBOSE(vformat("Accessibility driver %s failed, falling back to %s.", last_name, name));
 
 				accessibility_server = AccessibilityServer::create(i, err);
 				if (err == OK && accessibility_server != nullptr) {
@@ -3473,9 +3473,7 @@ Error Main::setup2(bool p_show_boot_logo) {
 				}
 			}
 		}
-		if (accessibility_server) {
-			accessibility_server->set_mode(accessibility_mode);
-		}
+		accessibility_server->set_mode(accessibility_mode);
 
 		// rendering_driver now held in static global String in main and initialized in setup()
 		display_server = DisplayServer::create(display_driver_idx, rendering_driver, window_mode, window_vsync_mode, window_flags, window_position, window_size, init_screen, context, init_embed_parent_window_id, err);

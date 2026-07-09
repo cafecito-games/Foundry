@@ -1,0 +1,100 @@
+[
+  {
+    "pr": "118165",
+    "sha": "df7e539878a8b0f8a2db2bf26e16d6d5df4f99b1",
+    "subsystem": "modules/camera",
+    "nfiles": 4,
+    "title": "Fix camera docs and port missing features to camera_apple"
+  },
+  {
+    "pr": "119648",
+    "sha": "df3168ad6ec86638744c33ab39af022a05405867",
+    "subsystem": "modules/text_server_adv",
+    "nfiles": 1,
+    "title": "[HarfBuzz] Fix typo in 13.0.0-14.1.0 branch."
+  },
+  {
+    "pr": "119419",
+    "sha": "482c1b1373839064688acdee5e0b1778ca848c1d",
+    "subsystem": "modules/text_server_adv",
+    "nfiles": 2,
+    "title": "Delete unused .gitignore from TextServer GDExtension implementations"
+  },
+  {
+    "pr": "119291",
+    "sha": "b22e24eaef2fe3596ceb88c60c087300de1cc6e2",
+    "subsystem": "modules/text_server_adv",
+    "nfiles": 1,
+    "title": "Fix unused variable error with old system HarfBuzz."
+  },
+  {
+    "pr": "118993",
+    "sha": "7de9cdf7dc30b5b9c3f9999d3419f7b8e2b91dd6",
+    "subsystem": "modules/text_server_adv",
+    "nfiles": 1,
+    "title": "[TextServer] Use FT rasterizer if hinting is enabled."
+  },
+  {
+    "pr": "118259",
+    "sha": "1b4944974989cf5dbad36987db18e5b77c28140f",
+    "subsystem": "modules/text_server_adv",
+    "nfiles": 1,
+    "title": "[TextServer] Fix variable font transform."
+  },
+  {
+    "pr": "117580",
+    "sha": "2addc30fb3175dbc4365c7ab45657f334c7171cf",
+    "subsystem": "modules/text_server_adv",
+    "nfiles": 2,
+    "title": "[HarfBuzz] Use separate rendering context for each font."
+  },
+  {
+    "pr": "117056",
+    "sha": "7a25ab859fe8a920c4afd512764ea2c66915795b",
+    "subsystem": "modules/text_server_adv",
+    "nfiles": 19,
+    "title": "[TextServer] Remove GDExtension build support."
+  },
+  {
+    "pr": "116197",
+    "sha": "e6f5f5a1ca3f6848f69d68766181ddefe60adeb8",
+    "subsystem": "modules/text_server_adv",
+    "nfiles": 1,
+    "title": "[TextServer] Ignore language of embedded object replacement spans when updating line breaks."
+  },
+  {
+    "pr": "115949",
+    "sha": "3f3dc88c7e454c65d1c797fe4541fbdc17048d26",
+    "subsystem": "modules/text_server_adv",
+    "nfiles": 2,
+    "title": "[TextServer] Clamp internal font rendering size to 2048."
+  },
+  {
+    "pr": "115749",
+    "sha": "ed42d3dbe08553800fcb110db2a5b55e5809d007",
+    "subsystem": "modules/text_server_adv",
+    "nfiles": 4,
+    "title": "[TextServer] Reuse `FT_Face` and data for all font sizes."
+  },
+  {
+    "pr": "115687",
+    "sha": "98782b6c8c9cabe0fb7c80bc62640735ecb076d3",
+    "subsystem": "modules/text_server_adv",
+    "nfiles": 1,
+    "title": "[TextServer] Fix numeric keycap emoji sequence rendering"
+  },
+  {
+    "pr": "119625",
+    "sha": "2d7b307004bbc5b90fd3d4f35d3b799ec7d4b8fc",
+    "subsystem": "modules/text_server_fb",
+    "nfiles": 1,
+    "title": "TextServerFB: Fix zero-width space detection and rendering"
+  },
+  {
+    "pr": "119775",
+    "sha": "0f551ab0cd82ef9f747570d5f557ccd63a0a1587",
+    "subsystem": "modules/theora",
+    "nfiles": 1,
+    "title": "[VideoStreamPlaybackTheora] Uninitialize and print error if file has no video stream."
+  }
+]
