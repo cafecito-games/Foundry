@@ -5,6 +5,63 @@ This document lets a fresh session continue porting Godot 4.7 into Foundry with 
 
 ---
 
+## 0. ACTIVE TASK — finish PR #1144 (read this first)
+
+The port is landed on branch **`feature/godot-4.7-port`** and opened as **draft PR #1144 → develop**
+(https://github.com/cafecito-games/Foundry/pull/1144). Waves 1–7 are done (see §2). The remaining
+work is **getting the cross-platform CI green and marking the PR ready for review**. State as of
+2026-07-08:
+
+- **macOS/Linux/Android CI: green.** Strict `dev_mode` macOS build clean, full suite ~3016–3038
+  pass. Linux editor+tests and Android library green on the regular push CI.
+- **"Check every platform" CI** (comment `Check every platform` on the PR; workflow
+  `.github/workflows/pr_platform_checks.yml`, runs Linux/macOS/Windows/Android/iOS/Web with the
+  fork's strict `-Werror -Wshadow[-*] -Wunused-variable`) surfaced build breaks. Categorized:
+  - **1 genuine 4.7-port regression (mine, in this PR):** `platform/windows/display_server_windows.cpp`
+    used upstream's `DisplayServerEnums::WINDOW_FLAG/WINDOW_MODE` prefix (a leftover from the PR 117748
+    port); the fork uses bare enums. **Fixed on the branch** (commit `5e72805ccf`). This is NOT in
+    develop's #1147 — keep it.
+  - **The rest were PRE-EXISTING develop latent bugs** (0-diff vs `origin/develop`): the
+    `run_target_platform.h` `enum Status{OK}`-shadows-global refactor, `fs_vm.cpp` release-only unused
+    vars, Jolt `BVec16.inl` arm32 shadow, `camera_android`/`java_class_wrapper` `-Wshadow`,
+    `test_format.h`, etc. — code never built with the strict flags on those platform/config combos.
+
+**A separate agent fixed all the pre-existing ones on develop in PR #1147**
+(`a8d120c4ef "Fix cross-platform build breaks under strict flags"`, merged; the every-platform check
+passed on it). `origin/develop` is now ~7 commits ahead of this branch (also incl. the workflow
+decouple fix #1145 and CI tweaks #1148/#1150/#1153).
+
+### Finish steps (do these next)
+1. **Reconcile the overlap.** While iterating CI I also fixed several of the *pre-existing* issues in
+   this PR before #1147 existed, so my commits overlap #1147 in these files:
+   `modules/foundry_script/fs_vm.cpp`, `modules/jolt_physics/SCsub`, `modules/camera/camera_android.cpp`,
+   `platform/android/java_class_wrapper.cpp` (branch commits `0df797a00e`, `108023341b`, and the
+   fs_vm/jolt parts of `5e72805ccf`). Cleanest path: **revert my duplicate fixes for those 4 files**
+   (keep ONLY the `display_server_windows.cpp` Windows-regression fix, which is uniquely mine), THEN
+   `git merge origin/develop` so #1147's authoritative versions apply conflict-free. If you merge
+   without reverting, resolve each overlap by **taking develop's (#1147) version**.
+2. **Rebuild + retest** after the merge: strict `dev_mode` macOS build (`scons platform=macos
+   target=editor dev_mode=yes tests=yes --keep-going`) + full suite (kill leftover `foundry.macos.*`
+   procs and `rm -rf /var/folders/*/*/T/foundry-tests` first to avoid the FS-harness temp-dir flake —
+   see §5-ops). Confirm `[doctest] Status: SUCCESS!`.
+3. **Re-run the matrix:** push, then comment **`Check every platform`** on #1144 (a push alone does
+   NOT re-trigger the comment workflow). With my Windows fix + develop's #1147 fixes now merged, all
+   six platforms should pass. Watch `gh run list --workflow pr_platform_checks.yml --limit 1`; for any
+   new failure, `gh api repos/cafecito-games/Foundry/actions/jobs/<id>/logs | sed 's/\x1b\[[0-9;]*m//g'
+   | grep '##\[error\]'`, verify `git diff origin/develop HEAD -- <file>` to tell regression vs
+   pre-existing, fix regressions here / new pre-existing goes to a develop follow-up.
+4. **Mark ready:** once green, `gh pr ready 1144` (undraft). HDR remains deferred (§0-deferred).
+5. Android builds LOCALLY on macOS for fast iteration: `export ANDROID_HOME=~/Library/Android/sdk;
+   scons platform=android target=template_debug dev_mode=yes swappy=no arch=arm64 --keep-going`
+   (also `arch=arm32`, `target=editor`). Windows/iOS/Web can't build locally — use the matrix.
+
+### Deferred (not blocking the PR)
+- **HDR/EDR output** — intractable without first porting `b8389cc76b`, a 65-file `renderer_rd` HDR
+  core (compositor/scene-render/viewport/tonemapper + color shaders + an absent `RenderingDevice`
+  ColorSpace/HDR-output API). A separate rendering-pipeline effort; see §2 wave-5 tail.
+
+---
+
 ## 1. Mission & locked scope decisions
 
 Port as much of the Godot `4.6.3-stable..4.7-stable` delta into Foundry as is compatible with
