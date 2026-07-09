@@ -7134,6 +7134,13 @@ bool EditorNode::load_project_in_process(const String &p_project_path) {
 		EditorRunNative::get_singleton()->reload_for_project();
 	}
 
+	// Reload the script editor cache from the opened project before the project layout
+	// restores open scripts and breakpoints, so it does not carry (or later persist)
+	// the projectless shell's cache into the project.
+	if (ScriptEditorController::get_singleton() != nullptr) {
+		ScriptEditorController::get_singleton()->reload_script_editor_cache();
+	}
+
 	// Re-latch the project upgrade tool from the opened project's metadata (the editor
 	// constructor read it against the projectless shell). _execute_upgrades() runs it
 	// after the first scan, so a project with a pending upgrade is not skipped.
