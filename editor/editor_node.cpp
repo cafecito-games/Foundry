@@ -7074,8 +7074,11 @@ bool EditorNode::load_project_in_process(const String &p_project_path) {
 	// with the launcher's defaults until a restart. The editor keeps managing its own
 	// low-processor sleep interval, so only the project-scoped values are re-applied.
 	Engine::get_singleton()->set_physics_ticks_per_second(GLOBAL_GET("physics/common/physics_ticks_per_second"));
+	Engine::get_singleton()->set_max_physics_steps_per_frame(GLOBAL_GET("physics/common/max_physics_steps_per_frame"));
+	Engine::get_singleton()->set_physics_jitter_fix(GLOBAL_GET("physics/common/physics_jitter_fix"));
 	Engine::get_singleton()->set_max_fps(GLOBAL_GET("application/run/max_fps"));
 	OS::get_singleton()->set_low_processor_usage_mode(GLOBAL_GET("application/run/low_processor_mode"));
+	OS::get_singleton()->set_delta_smoothing(GLOBAL_GET("application/run/delta_smoothing"));
 	OS::get_singleton()->ensure_user_data_dir();
 
 	// Reload project-scoped editor settings that were cached against the shell's paths:
@@ -7111,6 +7114,12 @@ bool EditorNode::load_project_in_process(const String &p_project_path) {
 	layout_store = memnew(EditorLayoutStore);
 
 	_reveal_workspace_from_projectless_shell();
+
+	// Apply the full project-settings-derived editor state (window title, scene
+	// viewport/rendering settings, fallback locale, project translations, texture
+	// import refresh) so nothing lingers on the projectless-shell defaults. This is
+	// the same consolidated path a live project-settings change runs.
+	_update_from_settings();
 
 	if (startup_dialog != nullptr) {
 		startup_dialog->hide_startup_dialog();
