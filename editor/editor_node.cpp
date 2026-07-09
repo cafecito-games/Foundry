@@ -40,6 +40,7 @@
 #include "core/io/resource_loader.h"
 #include "core/io/resource_saver.h"
 #include "core/object/class_db.h"
+#include "core/object/message_queue.h"
 #include "core/os/keyboard.h"
 #include "core/os/os.h"
 #include "core/os/time.h"
@@ -7053,7 +7054,8 @@ void EditorNode::save_editor_layout_delayed() {
 }
 
 void EditorNode::_load_editor_layout() {
-	EditorProgress ep("loading_editor_layout", TTR("Loading editor"), 6);
+	const bool force_background_progress = MessageQueue::get_singleton()->is_flushing();
+	EditorProgress ep("loading_editor_layout", TTR("Loading editor"), 6, false, force_background_progress);
 	ep.step(TTR("Loading editor layout..."), 0, true);
 	// Load through the store so registered migrations run before any section owner
 	// reads. get_config() returns the same migrated config load() populated.
