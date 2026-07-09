@@ -1672,6 +1672,13 @@ Vector<String> EditorSettings::get_recent_dirs() const {
 }
 
 void EditorSettings::load_favorites_and_recent_dirs() {
+	// Clear first so this can be re-run (e.g. when a project is loaded in-process from
+	// the projectless startup shell) to replace launcher-scoped lists with the opened
+	// project's, rather than appending to them.
+	favorites.clear();
+	favorite_properties.clear();
+	recent_dirs.clear();
+
 	String favorites_file;
 	String favorite_properties_file;
 	String recent_dirs_file;

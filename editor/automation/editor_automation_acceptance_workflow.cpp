@@ -1114,23 +1114,21 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 
 	const int pid_before = OS::get_singleton()->get_process_id();
 
-	// Materialize a throwaway but valid project on disk to load in-process.
+	// Materialize a throwaway project on disk with an empty (touched) project.foundry,
+	// which also exercises first-open versioning: the in-process load must persist a
+	// config_version and initial settings just like a normal editor open.
 	p_driver.set_step("create_temp_project");
 	const String project_dir = EditorPaths::get_singleton()->get_temp_dir().path_join("inproc_open_" + String::num_uint64(OS::get_singleton()->get_ticks_usec()));
+	const String project_config_path = project_dir.path_join("project.foundry");
 	{
 		Ref<DirAccess> dir = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
 		if (dir.is_null() || dir->make_dir_recursive(project_dir) != OK) {
 			return _failure_with_message(p_driver, result.workflow, "Could not create temp project directory.");
 		}
-		Ref<FileAccess> config = FileAccess::open(project_dir.path_join("project.foundry"), FileAccess::WRITE);
+		Ref<FileAccess> config = FileAccess::open(project_config_path, FileAccess::WRITE);
 		if (config.is_null()) {
 			return _failure_with_message(p_driver, result.workflow, "Could not write temp project.foundry.");
 		}
-		config->store_line("config_version=5");
-		config->store_line("");
-		config->store_line("[application]");
-		config->store_line("");
-		config->store_line("config/name=\"In-Process Load Test\"");
 		config->close();
 	}
 
@@ -1189,6 +1187,13 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 		if (!(bool)run_find.get("ok", false) || ((Array)run_find.get("elements", Array())).is_empty()) {
 			return _failure_with_message(p_driver, result.workflow, "Run Project controls must be available after in-process load.");
 		}
+	}
+
+	// First-open versioning: the empty project.foundry must now be persisted with a
+	// config_version (finding parity with a normal editor open).
+	p_driver.set_step("verify_project_config_persisted");
+	if (FileAccess::get_size(project_config_path) < 10) {
+		return _failure_with_message(p_driver, result.workflow, "Empty project.foundry was not versioned/persisted after in-process load.");
 	}
 
 	// Recents recorded exactly once: the on-disk known-project store lists the project.

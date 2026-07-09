@@ -7069,11 +7069,37 @@ bool EditorNode::load_project_in_process(const String &p_project_path) {
 		EditorPaths::get_singleton()->initialize_project_data_dir();
 	}
 
-	// The projectless shell may have cached project metadata against its own paths;
-	// drop it so recent scenes, debug options, and other per-project metadata reload
-	// from (and save to) the opened project's metadata file.
+	// Replay the project-derived engine configuration a fresh project boot applies in
+	// main.cpp right after ProjectSettings::setup(); otherwise the opened project runs
+	// with the launcher's defaults until a restart. The editor keeps managing its own
+	// low-processor sleep interval, so only the project-scoped values are re-applied.
+	Engine::get_singleton()->set_physics_ticks_per_second(GLOBAL_GET("physics/common/physics_ticks_per_second"));
+	Engine::get_singleton()->set_max_fps(GLOBAL_GET("application/run/max_fps"));
+	OS::get_singleton()->set_low_processor_usage_mode(GLOBAL_GET("application/run/low_processor_mode"));
+	OS::get_singleton()->ensure_user_data_dir();
+
+	// Reload project-scoped editor settings that were cached against the shell's paths:
+	// project metadata (recent scenes, debug options, preview locale, ...) and the
+	// favorites / recent-directory lists. Both are re-read from the opened project now
+	// that the shell hint is cleared and EditorPaths points at the project.
 	if (EditorSettings::get_singleton() != nullptr) {
 		EditorSettings::get_singleton()->reload_project_metadata();
+		EditorSettings::get_singleton()->load_favorites_and_recent_dirs();
+	}
+
+	// Persist default settings into a freshly created (touched) project exactly as a
+	// normal editor open does, so an empty project.foundry gets a config_version and
+	// the initial settings instead of remaining unversioned. Mirrors the non-projectless
+	// NOTIFICATION_READY block.
+	if (DisplayServer::get_singleton()->window_can_draw()) {
+		const String project_settings_path = ProjectSettings::get_singleton()->get_resource_path().path_join("project.foundry");
+		if (FileAccess::get_size(project_settings_path) < 10) {
+			const HashMap<String, Variant> initial_settings = get_initial_settings();
+			for (const KeyValue<String, Variant> &initial_setting : initial_settings) {
+				ProjectSettings::get_singleton()->set_setting(initial_setting.key, initial_setting.value);
+			}
+		}
+		ProjectSettings::get_singleton()->save();
 	}
 
 	// Swap the projectless layout store for the project's layout store (resolved from
