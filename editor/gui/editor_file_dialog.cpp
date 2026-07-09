@@ -73,7 +73,9 @@ bool EditorFileDialog::_should_use_native_popup() const {
 }
 
 bool EditorFileDialog::_should_hide_file(const String &p_file) const {
-	if (Engine::get_singleton()->is_project_manager_hint()) {
+	// Never hide project directories when no project is loaded (project manager or the
+	// projectless editor shell), so the Open Project picker can show existing projects.
+	if (Engine::get_singleton()->is_project_manager_hint() || Engine::get_singleton()->is_projectless_editor_shell_hint()) {
 		return false;
 	}
 	const String full_path = dir_access->get_current_dir().path_join(p_file);

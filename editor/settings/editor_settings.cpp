@@ -1590,7 +1590,7 @@ void EditorSettings::set_favorites(const Vector<String> &p_favorites, bool p_upd
 void EditorSettings::set_favorites_bind(const Vector<String> &p_favorites) {
 	favorites = p_favorites;
 	String favorites_file;
-	if (Engine::get_singleton()->is_project_manager_hint()) {
+	if (Engine::get_singleton()->is_project_manager_hint() || Engine::get_singleton()->is_projectless_editor_shell_hint()) {
 		favorites_file = EditorPaths::get_singleton()->get_config_dir().path_join("favorite_dirs");
 	} else {
 		favorites_file = EditorPaths::get_singleton()->get_project_settings_dir().path_join("favorites");
@@ -1649,7 +1649,7 @@ void EditorSettings::set_recent_dirs(const Vector<String> &p_recent_dirs, bool p
 void EditorSettings::set_recent_dirs_bind(const Vector<String> &p_recent_dirs) {
 	recent_dirs = p_recent_dirs;
 	String recent_dirs_file;
-	if (Engine::get_singleton()->is_project_manager_hint()) {
+	if (Engine::get_singleton()->is_project_manager_hint() || Engine::get_singleton()->is_projectless_editor_shell_hint()) {
 		recent_dirs_file = EditorPaths::get_singleton()->get_config_dir().path_join("recent_dirs");
 	} else {
 		recent_dirs_file = EditorPaths::get_singleton()->get_project_settings_dir().path_join("recent_dirs");
@@ -1670,7 +1670,7 @@ void EditorSettings::load_favorites_and_recent_dirs() {
 	String favorites_file;
 	String favorite_properties_file;
 	String recent_dirs_file;
-	if (Engine::get_singleton()->is_project_manager_hint()) {
+	if (Engine::get_singleton()->is_project_manager_hint() || Engine::get_singleton()->is_projectless_editor_shell_hint()) {
 		favorites_file = EditorPaths::get_singleton()->get_config_dir().path_join("favorite_dirs");
 		favorite_properties_file = EditorPaths::get_singleton()->get_config_dir().path_join("favorite_properties");
 		recent_dirs_file = EditorPaths::get_singleton()->get_config_dir().path_join("recent_dirs");
