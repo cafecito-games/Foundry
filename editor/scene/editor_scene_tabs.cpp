@@ -405,9 +405,11 @@ void EditorSceneTabs::_global_menu_scene(const Variant &p_tag) {
 
 void EditorSceneTabs::_global_menu_new_window(const Variant &p_tag) {
 	if (OS::get_singleton()->get_main_loop()) {
-		// Launch a fresh editor instance with no project; normal startup routing opens
-		// the last project or the projectless startup dialog.
+		// Launch a fresh editor instance. `editor open` forces the editor path so the
+		// new window never falls through to a runtime/game launch.
 		List<String> args;
+		args.push_back("editor");
+		args.push_back("open");
 		OS::get_singleton()->create_instance(args);
 	}
 }

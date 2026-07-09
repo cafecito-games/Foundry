@@ -3924,6 +3924,9 @@ void EditorNode::_menu_option_confirm(int p_option, bool p_confirmed) {
 			EditorSettings::get_singleton()->set("interface/editor/show_update_spinner", 2); // Disabled
 			_update_update_spinner();
 		} break;
+		case PROJECT_OPEN_PROJECT: {
+			show_startup_dialog();
+		} break;
 		case EDITOR_OPEN_SETTINGS: {
 			editor_settings_dialog->popup_edit_settings();
 		} break;
@@ -4307,9 +4310,6 @@ void EditorNode::_discard_changes(const String &p_str) {
 			project_run_bar->stop_playing();
 			_exit_editor(EXIT_SUCCESS);
 
-		} break;
-		case PROJECT_OPEN_PROJECT: {
-			show_startup_dialog();
 		} break;
 		case PROJECT_RELOAD_CURRENT_PROJECT: {
 			_restart_editor();
