@@ -7112,6 +7112,16 @@ bool EditorNode::load_project_in_process(const String &p_project_path) {
 		EditorSettings::get_singleton()->load_favorites_and_recent_dirs();
 	}
 
+	// Re-latch the project upgrade tool from the opened project's metadata (the editor
+	// constructor read it against the projectless shell). _execute_upgrades() runs it
+	// after the first scan, so a project with a pending upgrade is not skipped.
+	if (project_upgrade_tool != nullptr && EditorSettings::get_singleton() != nullptr) {
+		run_project_upgrade_tool = EditorSettings::get_singleton()->get_project_metadata(project_upgrade_tool->META_PROJECT_UPGRADE_TOOL, project_upgrade_tool->META_RUN_ON_RESTART, false);
+		if (run_project_upgrade_tool) {
+			project_upgrade_tool->begin_upgrade();
+		}
+	}
+
 	// Persist default settings into a freshly created (touched) project exactly as a
 	// normal editor open does, so an empty project.foundry gets a config_version and
 	// the initial settings instead of remaining unversioned. Mirrors the non-projectless
@@ -7137,11 +7147,27 @@ bool EditorNode::load_project_in_process(const String &p_project_path) {
 
 	_reveal_workspace_from_projectless_shell();
 
+	// Re-apply the active feature profile now that the workspace is exposed: the reveal
+	// unconditionally re-enabled the Import/FileSystem docks, so a profile that disables
+	// them must get the final say (matches the NOTIFICATION_READY ordering).
+	if (feature_profile_manager != nullptr) {
+		feature_profile_manager->notify_changed();
+	}
+
 	// Apply the full project-settings-derived editor state (window title, scene
 	// viewport/rendering settings, fallback locale, project translations, texture
 	// import refresh) so nothing lingers on the projectless-shell defaults. This is
 	// the same consolidated path a live project-settings change runs.
 	_update_from_settings();
+
+	// Replay the preview theme and locale a normal open applies in NOTIFICATION_READY
+	// from the (now reloaded) project metadata.
+	const CanvasItemEditor::ThemePreviewMode theme_preview_mode = (CanvasItemEditor::ThemePreviewMode)(int)EditorSettings::get_singleton()->get_project_metadata("2d_editor", "theme_preview", CanvasItemEditor::THEME_PREVIEW_PROJECT);
+	update_preview_themes(theme_preview_mode);
+	const String preview_locale = EditorSettings::get_singleton()->get_project_metadata("editor_metadata", "preview_locale", String());
+	if (!preview_locale.is_empty() && TranslationServer::get_singleton()->has_translation_for_locale(preview_locale, true)) {
+		set_preview_locale(preview_locale);
+	}
 
 	if (startup_dialog != nullptr) {
 		startup_dialog->hide_startup_dialog();
