@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  test_projectless_editor_shell.h                                       */
+/*  test_startup_dialog.h                                                 */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -31,7 +31,6 @@
 #pragma once
 
 #include "core/io/dir_access.h"
-#include "core/io/file_access.h"
 #include "core/os/os.h"
 
 #include "editor/project_manager/known_project_store.h"
@@ -41,57 +40,65 @@
 #include "tests/test_macros.h"
 #include "tests/test_utils.h"
 
-namespace TestProjectlessEditorShell {
+namespace TestStartupDialog {
 
 static String make_empty_launch_dir() {
 	const String dir = TestUtils::get_temp_path(
-			"projectless_editor_shell_" + String::num_uint64(OS::get_singleton()->get_ticks_usec()));
+			"startup_dialog_launch_" + String::num_uint64(OS::get_singleton()->get_ticks_usec()));
 	DirAccess::make_dir_recursive_absolute(dir);
 	return dir;
 }
 
-static String run_projectless_shell_workflow(const String &p_cwd, int &r_exit_code) {
+static String run_startup_dialog_workflow(const String &p_cwd, int &r_exit_code) {
 	List<String> arguments;
+	arguments.push_back("--headless");
 	arguments.push_back("editor");
 	arguments.push_back("open");
 	arguments.push_back("--automation");
-	arguments.push_back("--automation-run-workflow=projectless_shell_smoke");
+	arguments.push_back("--automation-run-workflow=startup_dialog_projects_tab");
 	return EditorWorkflowTestFixtures::workflow_run_subprocess(arguments, r_exit_code, p_cwd);
 }
 
-TEST_CASE("[Editor][ProjectlessShell] startup router selects projectless shell for empty cwd") {
-	const String root = make_empty_launch_dir();
-	const String cwd = TestUtils::get_temp_path("projectless_router_cwd_" + String::num_uint64(OS::get_singleton()->get_ticks_usec()));
-	DirAccess::make_dir_recursive_absolute(cwd);
+TEST_CASE("[StartupDialog][Editor] opening a recent updates store recents and auto-open") {
+	const String scratch = TestUtils::get_temp_path(
+			"startup_dialog_store_" + String::num_uint64(OS::get_singleton()->get_ticks_usec()));
+	DirAccess::make_dir_recursive_absolute(scratch);
 
-	KnownProjectStore store(root.path_join("known_projects.cfg"));
+	const String project_dir = scratch.path_join("demo");
+	DirAccess::make_dir_recursive_absolute(project_dir);
+	Ref<FileAccess> project_file = FileAccess::open(project_dir.path_join("project.foundry"), FileAccess::WRITE);
+	REQUIRE(project_file.is_valid());
+	project_file->store_string("[application]\nconfig/name=\"Demo\"\n");
+	project_file->close();
+
+	KnownProjectStore store(scratch.path_join("known_projects.cfg"));
 	store.load();
+	const Error save_err = StartupRouter::record_project_opened(store, project_dir);
+	CHECK(save_err == OK);
+	CHECK(store.get_auto_open_path() == project_dir);
 
-	const StartupRouter::Decision decision = StartupRouter::resolve_launch(false, false, cwd, store);
-	CHECK(decision.route == StartupRouter::ROUTE_PROJECTLESS_SHELL);
+	KnownProjectStore reloaded(scratch.path_join("known_projects.cfg"));
+	reloaded.load();
+	CHECK(reloaded.get_auto_open_path() == project_dir);
+	Vector<KnownProjectStore::KnownProject> recents = reloaded.get_recent_projects();
+	REQUIRE(recents.size() == 1);
+	CHECK(recents[0].path == project_dir);
 }
 
-TEST_CASE("[Editor][ProjectlessShell] projectless shell smoke workflow subprocess") {
+TEST_CASE("[StartupDialog][Editor] startup dialog projects tab workflow subprocess") {
 	if (!EditorWorkflowTestFixtures::workflow_has_display()) {
-		MESSAGE("Requires a GUI display. Run with DISPLAY=:1 ./bin/foundry.* --headless test run --case \"*ProjectlessShell*\" --force-colors");
+		MESSAGE("Requires a GUI display. Run with DISPLAY=:1 ./bin/foundry.* --headless test run --case \"*StartupDialog*\" --force-colors");
 		return;
 	}
 
 	const String launch_dir = make_empty_launch_dir();
-	REQUIRE_FALSE(launch_dir.is_empty());
-	REQUIRE_FALSE(FileAccess::exists(launch_dir.path_join("project.foundry")));
-
 	int exit_code = -1;
-	const String output = run_projectless_shell_workflow(launch_dir, exit_code);
-	INFO("Subprocess output:\n", output);
+	const String output = run_startup_dialog_workflow(launch_dir, exit_code);
 
+	INFO(output);
 	CHECK(exit_code == 0);
-	CHECK(output.contains("FOUNDRY_AUTOMATION_WORKFLOW"));
-	CHECK(output.contains("\"workflow\":\"projectless_shell_smoke\""));
+	CHECK(output.contains("\"workflow\":\"startup_dialog_projects_tab\""));
 	CHECK(output.contains("\"ok\":true"));
-	CHECK_FALSE(output.contains("Do not use progress dialog (task) while flushing the message queue or using call_deferred()"));
-	CHECK_FALSE(output.contains("Condition \"!tasks.has(p_task)\" is true"));
-	CHECK_FALSE(FileAccess::exists(launch_dir.path_join("project.foundry")));
 }
 
-} // namespace TestProjectlessEditorShell
+} // namespace TestStartupDialog

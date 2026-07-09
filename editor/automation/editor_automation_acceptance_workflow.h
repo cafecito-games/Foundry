@@ -52,6 +52,7 @@ public:
 	static Result run_mixed_workspace_seed(EditorWorkflowTestDriver &p_driver);
 	static Result run_mixed_workspace_restore(EditorWorkflowTestDriver &p_driver);
 	static Result run_projectless_shell_smoke(EditorWorkflowTestDriver &p_driver);
+	static Result run_startup_dialog_projects_tab(EditorWorkflowTestDriver &p_driver);
 
 	// Deprecated alias kept for backward compatibility with older CLI/tests.
 	static Result run_mvp(EditorWorkflowTestDriver &p_driver, const String &p_scene_path = "res://scenes/main.tscn") {

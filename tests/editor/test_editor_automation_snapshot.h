@@ -40,6 +40,7 @@
 #include "scene/gui/button.h"
 #include "scene/gui/check_box.h"
 #include "scene/gui/dialogs.h"
+#include "scene/gui/label.h"
 #include "scene/gui/line_edit.h"
 #include "scene/gui/panel_container.h"
 #include "scene/gui/item_list.h"
@@ -284,6 +285,39 @@ TEST_CASE("[Editor][Automation] synthetic control tree snapshot") {
 	CHECK(found_scene_tab);
 
 	memdelete(window);
+}
+
+TEST_CASE("[Editor][Automation] dialog and label accessibility names are semantic selectors") {
+	AcceptDialog *dialog = memnew(AcceptDialog);
+	dialog->set_title("Startup");
+	dialog->set_accessibility_name("Startup Dialog");
+	dialog->set_size(Size2i(320, 240));
+	SceneTree::get_singleton()->get_root()->add_child(dialog);
+
+	Label *product_label = memnew(Label);
+	product_label->set_text("Foundry Engine");
+	product_label->set_accessibility_name("Foundry Engine");
+	setup_visible_control(product_label);
+	dialog->add_child(product_label);
+
+	dialog->set_visible(true);
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(dialog);
+
+	const EditorAutomationElement *dialog_element = find_element_by_role_and_name(snapshot, "dialog", "Startup Dialog");
+	CHECK(dialog_element != nullptr);
+	if (dialog_element != nullptr) {
+		CHECK(dialog_element->text == "Startup");
+	}
+
+	const EditorAutomationElement *label_element = find_element_by_role_and_name(snapshot, "label", "Foundry Engine");
+	CHECK(label_element != nullptr);
+	if (label_element != nullptr) {
+		CHECK(label_element->class_name == "Label");
+	}
+
+	memdelete(dialog);
 }
 
 TEST_CASE("[Editor][Automation] selector role and name returns one match") {

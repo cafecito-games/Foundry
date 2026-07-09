@@ -40,6 +40,7 @@
 #include "core/io/resource_loader.h"
 #include "core/io/resource_saver.h"
 #include "core/object/class_db.h"
+#include "core/object/message_queue.h"
 #include "core/os/keyboard.h"
 #include "core/os/os.h"
 #include "core/os/time.h"
@@ -116,6 +117,7 @@
 #include "editor/file_system/dependency_editor.h"
 #include "editor/file_system/editor_paths.h"
 #include "editor/gui/editor_about.h"
+#include "editor/project_manager/startup_dialog.h"
 #include "editor/gui/editor_bottom_drawer_strip.h"
 #include "editor/gui/editor_bottom_panel.h"
 #include "editor/gui/editor_file_dialog.h"
@@ -6932,6 +6934,10 @@ void EditorNode::_finish_projectless_shell_startup() {
 		EditorResourcePreview::get_singleton()->start();
 	}
 
+	if (startup_dialog != nullptr) {
+		startup_dialog->show_startup_dialog();
+	}
+
 	get_tree()->create_timer(1.0f)->connect("timeout", callable_mp(this, &EditorNode::_remove_lock_file));
 }
 
@@ -7048,7 +7054,8 @@ void EditorNode::save_editor_layout_delayed() {
 }
 
 void EditorNode::_load_editor_layout() {
-	EditorProgress ep("loading_editor_layout", TTR("Loading editor"), 6);
+	const bool force_background_progress = MessageQueue::get_singleton()->is_flushing();
+	EditorProgress ep("loading_editor_layout", TTR("Loading editor"), 6, false, force_background_progress);
 	ep.step(TTR("Loading editor layout..."), 0, true);
 	// Load through the store so registered migrations run before any section owner
 	// reads. get_config() returns the same migrated config load() populated.
@@ -9886,6 +9893,16 @@ GameViewPluginBase *get_game_view_plugin() {
 }
 #endif
 
+void EditorNode::show_startup_dialog() {
+	if (startup_dialog != nullptr) {
+		startup_dialog->show_startup_dialog();
+	}
+}
+
+bool EditorNode::is_startup_dialog_visible() const {
+	return startup_dialog != nullptr && startup_dialog->is_visible_dialog();
+}
+
 void EditorNode::open_setting_override(const String &p_property) {
 	editor_settings_dialog->hide();
 	project_settings_editor->popup_for_override(p_property);
@@ -10465,6 +10482,11 @@ EditorNode::EditorNode() {
 
 	about = memnew(EditorAbout);
 	gui_base->add_child(about);
+
+	if (projectless_shell) {
+		startup_dialog = memnew(StartupDialog);
+	}
+
 	feature_profile_manager->connect("current_feature_profile_changed", callable_mp(this, &EditorNode::_feature_profile_changed));
 
 #if !defined(ANDROID_ENABLED) && !defined(WEB_ENABLED)
