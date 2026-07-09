@@ -50,12 +50,12 @@ static String make_empty_launch_dir() {
 	return dir;
 }
 
-static String run_projectless_shell_workflow(const String &p_cwd, int &r_exit_code) {
+static String run_projectless_shell_workflow(const String &p_cwd, int &r_exit_code, const String &p_workflow = "projectless_shell_smoke") {
 	List<String> arguments;
 	arguments.push_back("editor");
 	arguments.push_back("open");
 	arguments.push_back("--automation");
-	arguments.push_back("--automation-run-workflow=projectless_shell_smoke");
+	arguments.push_back("--automation-run-workflow=" + p_workflow);
 	return EditorWorkflowTestFixtures::workflow_run_subprocess(arguments, r_exit_code, p_cwd);
 }
 
@@ -91,6 +91,29 @@ TEST_CASE("[Editor][ProjectlessShell] projectless shell smoke workflow subproces
 	CHECK(output.contains("\"ok\":true"));
 	CHECK_FALSE(output.contains("Do not use progress dialog (task) while flushing the message queue or using call_deferred()"));
 	CHECK_FALSE(output.contains("Condition \"!tasks.has(p_task)\" is true"));
+	CHECK_FALSE(FileAccess::exists(launch_dir.path_join("project.foundry")));
+	// The launcher contract: projectless mode with the workspace suppressed.
+	CHECK(output.contains("\"mode\":\"projectless_shell\""));
+	CHECK(output.contains("\"workspace_exposed\":false"));
+}
+
+TEST_CASE("[Editor][ProjectlessShell] dismissing the startup dialog quits the process") {
+	if (!EditorWorkflowTestFixtures::workflow_has_display()) {
+		MESSAGE("Requires a GUI display. Run with DISPLAY=:1 ./bin/foundry.* --headless test run --case \"*ProjectlessShell*\" --force-colors");
+		return;
+	}
+
+	const String launch_dir = make_empty_launch_dir();
+	REQUIRE_FALSE(launch_dir.is_empty());
+
+	int exit_code = -1;
+	const String output = run_projectless_shell_workflow(launch_dir, exit_code, "projectless_shell_dismiss_quits");
+	INFO("Subprocess output:\n", output);
+
+	CHECK(exit_code == 0);
+	CHECK(output.contains("\"workflow\":\"projectless_shell_dismiss_quits\""));
+	CHECK(output.contains("\"ok\":true"));
+	// Dismissal must not have created or opened a project on the way out.
 	CHECK_FALSE(FileAccess::exists(launch_dir.path_join("project.foundry")));
 }
 

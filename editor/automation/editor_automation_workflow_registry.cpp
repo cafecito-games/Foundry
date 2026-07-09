@@ -60,6 +60,10 @@ EditorAutomationAcceptanceWorkflow::Result _run_projectless_shell_smoke(EditorWo
 	return EditorAutomationAcceptanceWorkflow::run_projectless_shell_smoke(p_driver);
 }
 
+EditorAutomationAcceptanceWorkflow::Result _run_projectless_shell_dismiss_quits(EditorWorkflowTestDriver &p_driver) {
+	return EditorAutomationAcceptanceWorkflow::run_projectless_shell_dismiss_quits(p_driver);
+}
+
 EditorAutomationAcceptanceWorkflow::Result _run_startup_dialog_projects_tab(EditorWorkflowTestDriver &p_driver) {
 	return EditorAutomationAcceptanceWorkflow::run_startup_dialog_projects_tab(p_driver);
 }
@@ -110,6 +114,7 @@ void EditorAutomationWorkflowRegistry::register_builtin_workflows() {
 	_register_workflow("mixed_workspace_seed", &_run_mixed_workspace_seed);
 	_register_workflow("mixed_workspace_restore", &_run_mixed_workspace_restore);
 	_register_workflow("projectless_shell_smoke", &_run_projectless_shell_smoke);
+	_register_workflow("projectless_shell_dismiss_quits", &_run_projectless_shell_dismiss_quits);
 	_register_workflow("startup_dialog_projects_tab", &_run_startup_dialog_projects_tab);
 	_register_workflow("startup_dialog_manage_tab", &_run_startup_dialog_manage_tab);
 	_register_workflow("startup_dialog_about_tab", &_run_startup_dialog_about_tab);

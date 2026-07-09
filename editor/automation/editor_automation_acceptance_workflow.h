@@ -52,6 +52,7 @@ public:
 	static Result run_mixed_workspace_seed(EditorWorkflowTestDriver &p_driver);
 	static Result run_mixed_workspace_restore(EditorWorkflowTestDriver &p_driver);
 	static Result run_projectless_shell_smoke(EditorWorkflowTestDriver &p_driver);
+	static Result run_projectless_shell_dismiss_quits(EditorWorkflowTestDriver &p_driver);
 	static Result run_startup_dialog_projects_tab(EditorWorkflowTestDriver &p_driver);
 	static Result run_startup_dialog_manage_tab(EditorWorkflowTestDriver &p_driver);
 	static Result run_startup_dialog_about_tab(EditorWorkflowTestDriver &p_driver);

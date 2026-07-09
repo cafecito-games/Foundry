@@ -30,6 +30,7 @@
 
 #include "startup_dialog.h"
 
+#include "core/config/project_settings.h"
 #include "core/io/file_access.h"
 #include "core/os/keyboard.h"
 #include "core/os/os.h"
@@ -59,6 +60,17 @@
 
 void StartupDialog::_notification(int p_what) {
 	switch (p_what) {
+		case NOTIFICATION_READY: {
+			// Cancel/close/Escape all route through AcceptDialog's `canceled` signal.
+			// In the projectless launcher this quits Foundry instead of dismissing to
+			// an empty no-project editor (see _on_dialog_dismissed). The signal is
+			// inherited, so it must be connected once the node is in the tree rather
+			// than in the constructor.
+			if (!is_connected(SNAME("canceled"), callable_mp(this, &StartupDialog::_on_dialog_dismissed))) {
+				connect(SNAME("canceled"), callable_mp(this, &StartupDialog::_on_dialog_dismissed));
+			}
+		} break;
+
 		case NOTIFICATION_THEME_CHANGED: {
 			_update_theme();
 		} break;
@@ -1038,6 +1050,24 @@ void StartupDialog::show_startup_dialog() {
 
 void StartupDialog::hide_startup_dialog() {
 	hide();
+}
+
+void StartupDialog::_on_dialog_dismissed() {
+	// When a project is loaded the startup dialog was opened on demand via
+	// Project > Open Project; dismissing simply closes it and returns to the
+	// project. In the projectless launcher there is nothing to return to, so
+	// dismissing (cancel / window close / Escape) quits Foundry rather than
+	// revealing a half-initialized no-project editor.
+	if (ProjectSettings::get_singleton()->is_project_loaded()) {
+		return;
+	}
+	// Route through EditorNode's normal quit path (identical to the main window's
+	// close button) so shutdown cleanup runs -- stopping the resource preview
+	// service that the projectless shell starts, saving the projectless layout,
+	// and unloading addons -- rather than calling SceneTree::quit() raw.
+	if (EditorNode *editor_node = EditorNode::get_singleton()) {
+		editor_node->request_quit();
+	}
 }
 
 StartupDialog::StartupDialog() {

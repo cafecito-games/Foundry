@@ -170,6 +170,11 @@ class StartupDialog : public AcceptDialog {
 	// quits the projectless shell. Returns the create_instance error when launch fails.
 	Error _open_project_and_restart(const String &p_path);
 
+	// Handles the dialog's cancel/close/Escape path. In the projectless launcher
+	// there is no project workspace to return to, so dismissing quits Foundry
+	// rather than revealing an empty no-project editor.
+	void _on_dialog_dismissed();
+
 protected:
 	void _notification(int p_what);
 	static void _bind_methods();

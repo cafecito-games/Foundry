@@ -846,8 +846,13 @@ public:
 	// This is a very naive estimation, but we need something now. Will be reworked later.
 	bool is_editor_ready() const { return is_inside_tree() && !waiting_for_first_scan; }
 	bool is_projectless_shell() const { return projectless_shell; }
+	// True once a project workspace is visible to the user. In the projectless
+	// startup shell the scene workspace is hidden behind the startup dialog, so
+	// this returns false until a project is loaded and the workspace is shown.
+	bool is_workspace_exposed() const;
 	void show_startup_dialog();
 	bool is_startup_dialog_visible() const;
+	StartupDialog *get_startup_dialog() const { return startup_dialog; }
 	// Switches the loaded editor to the given project, prompting to save unsaved
 	// changes and shutting down gracefully before relaunching. Called by the
 	// startup dialog when a project is chosen while a project is already open.
@@ -951,6 +956,9 @@ public:
 	List<Node *> get_resource_node_list(Ref<Resource> p_res);
 
 	void show_about() { _menu_option_confirm(HELP_ABOUT, false); }
+	// Requests a graceful editor quit through the same path as the main window's
+	// close button (stops the resource preview, saves layout, unloads addons).
+	void request_quit() { _menu_option_confirm(SCENE_QUIT, false); }
 
 	void push_item(Object *p_object, const String &p_property = "", bool p_inspector_only = false);
 	void push_item_no_inspector(Object *p_object);
