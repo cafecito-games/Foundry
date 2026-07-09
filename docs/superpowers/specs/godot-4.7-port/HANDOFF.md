@@ -34,6 +34,62 @@ PRs from `catalog.json` (see the wave-11 generator approach).
 
 ---
 
+## NEXT SESSION — challenge the "absent 4.7 infra" claims (priority task)
+
+**Premise (why this is worth doing):** Foundry branched off **`4.6.3-stable`** and, in most subsystems,
+the ONLY divergence from stock is (a) deprecated-code removal and (b) the `Godot`→`Foundry` symbol
+rename. So when a port was deferred as *"blocked — depends on absent 4.7 infra"*, that verdict was
+often reached by grepping for a missing symbol and stopping there. But a missing symbol in a
+4.6.3-derived tree usually means **a small foundation commit was simply never ported**, NOT that the
+feature is a large intractable rework. The existing **`deinit_ref` lesson (§5)** is exactly this:
+port the tiny extractable primitive first, then the dependent fixes apply. We under-applied that
+lesson. Re-examine every "absent infra" deferral and port the small foundations so the dependents
+unblock.
+
+**Do NOT take the old rationales at face value.** For each blocked item, re-derive the *actual*
+dependency footprint from upstream and classify it:
+- **Small foundation** (one member/method/enum/struct-field, a few self-contained lines using
+  existing members) → **hand-port the foundation first** (its own commit), then re-cherry-pick the
+  dependents. This is the target of this task.
+- **Genuinely large 4.7-only rework** (multi-file subsystem the fork never had) → keep deferred, but
+  record the concrete evidence (file count + the specific absent API) so it's an honest "large effort",
+  not a guess.
+
+**Method per claim:** `git show --stat <foundation-pr>` and read the diff of the missing symbol's
+*introduction* upstream (`git log -S'<symbol>' 4.6.3-stable..4.7-stable`). Count files/lines and check
+whether it only touches code the fork still has. If small and self-contained → port it, build, re-run
+the dependents. Validate with the strict `dev_mode` build **and** the full suite (incl. `DISPLAY=:1`
+automation) — wave 11 proved several "clean" picks fail only at build/runtime on diverged surfaces.
+
+**Start here — the wave-11 absent-infra reverts (smallest, highest-confidence candidates):**
+- `#117923` **Follow-Selection**: needs `Node3DEditorViewport::_reset_follow_mode_count()` +
+  `times_focused_consecutively` (0 occurrences on develop). Check the upstream Follow-Selection
+  foundation PR — likely a handful of lines in `node_3d_editor_plugin.{cpp,h}`. If small, port it, then
+  re-apply #117923 (and the port-later Follow-Selection chain `#99499/#117214/#117289` from
+  `triage/wave11/out-scene-b.json`).
+- `#120063` **local-space trackball**: needs `is_trackball` in `Node3DEditorViewport::EditData`.
+  Trackball is entirely absent (`triage/wave11/out-scene-b.json` blocks `#109976/#115856/#115794/#115992`).
+  Find the trackball foundation PR; if it's a bounded EditData field + input handling, port it to unlock
+  the whole chain.
+- `#116159` **gizmo handle highlight**: needs `Node3DEditorViewport::update_transform_gizmo_highlight()`.
+  Likely a single small method — port it, re-apply #116159.
+
+**Then widen to the recorded "blocked" buckets:**
+- `retriage/CONSOLIDATED.json` → the **132 `blocked` (C)** items (each has `dependency` /
+  `dependency_on_head`) and the **74 `feature_decision` (B)** items.
+- `triage/wave11/out-*.json` → every `port-later` whose rationale is an absent-symbol/absent-feature
+  (scene-a/scene-b are dense with these: trackball, Follow-Selection, `custom_maximum_size` follow-ups,
+  mesh_library intermediate changes, `loop_mode` ping-pong API, `view_3d_controller` split).
+- §5's **"verified-absent so far"** list — re-audit each; some (AreaLight3D/LTC, HDR core, RD
+  raytracing base, DrawableTexture2D, the `renderer_rd` HDR chain) ARE genuinely large and stay
+  deferred, but confirm rather than assume, and separate the small ones out.
+
+**Deliverable:** a wave-12 that ports the small foundations + their newly-unblocked dependents, with
+`ported-log-wave12.json` recording, for each previously-"blocked" item, either `ported` (foundation +
+dependents) or `blocked-large` (with file/line evidence). Update this list as claims are resolved.
+
+---
+
 ## 0. ACTIVE TASK — PR #1144 status + how to continue (read this first)
 
 The port lives on branch **`feature/godot-4.7-port`**, draft **PR #1144 → develop**
