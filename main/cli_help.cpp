@@ -42,7 +42,7 @@ using Positional = FoundryCLIHelp::Positional;
 const int HELP_OPTION_COLUMN_LENGTH = 36;
 
 const NounSpec NOUNS[] = {
-	{ "editor", "Open the editor or the Project Manager." },
+	{ "editor", "Open a project in the editor." },
 	{ "project", "Run, export, import, or test a project." },
 	{ "script", "Format, lint, migrate, and evaluate Foundry Script code." },
 	{ "test", "Run the engine test suites." },
