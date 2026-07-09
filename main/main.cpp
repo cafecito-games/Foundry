@@ -5056,7 +5056,9 @@ int Main::start() {
 			local_game_path = ProjectSettings::get_singleton()->localize_path(local_game_path);
 
 #ifdef TOOLS_ENABLED
-			if (editor) {
+			// The projectless editor shell has no loaded project, so a requested scene
+			// cannot be opened; skip scene loading (the startup dialog is shown instead).
+			if (editor && !projectless_editor_shell) {
 				if (!recovery_mode && (game_path != ResourceUID::ensure_path(String(GLOBAL_GET("application/run/main_scene"))) || !editor_node->has_scenes_in_session())) {
 					Error serr = editor_node->load_scene(local_game_path);
 					if (serr != OK) {
