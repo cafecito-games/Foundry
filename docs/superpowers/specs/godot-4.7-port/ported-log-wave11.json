@@ -113,8 +113,7 @@
   "risk": "low",
   "files_exist": true,
   "rationale": "Fork _replace_node still carries the dead p_remove_old param plus the to_erase/clear_history/memdelete block (scene_tree_dock.cpp:3329,3404,3427); region matches upstream pre-image so removal applies cleanly.",
-  "outcome": "conflicted",
-  "reason": "hint: run \"git cherry-pick --abort\"."
+  "outcome": "ported-resolved"
  },
  {
   "pr": "114454",
@@ -178,8 +177,7 @@
   "risk": "low",
   "files_exist": true,
   "rationale": "Both regions are stock: SceneTreeDock::_update_node_path (rel_path_to lines) and EditorPropertyNodePath::update_property (contains_char('@') guard, editor_properties.cpp:3224); self-contained display fix.",
-  "outcome": "conflicted",
-  "reason": "hint: run \"git cherry-pick --abort\"."
+  "outcome": "ported-resolved"
  },
  {
   "pr": "115576",
@@ -191,8 +189,8 @@
   "risk": "low",
   "files_exist": true,
   "rationale": "animation_track_editor.cpp one-line icon-size fix; 3-way applies cleanly.",
-  "outcome": "conflicted",
-  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+  "outcome": "skipped-already-present",
+  "reason": "fix already in fork (empty 3-way)"
  },
  {
   "pr": "115699",
@@ -230,8 +228,8 @@
   "risk": "med",
   "files_exist": true,
   "rationale": "Increases inspector float precision for Quaternions: editor_spin_slider drag_step clamp, editor_properties QUATERNION_STEP, skeleton_3d_editor_plugin; all sites present.",
-  "outcome": "conflicted",
-  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+  "outcome": "skipped-already-present",
+  "reason": "fix already in fork (empty 3-way)"
  },
  {
   "pr": "113351",
@@ -282,8 +280,8 @@
   "risk": "low",
   "files_exist": true,
   "rationale": "_dup_paste_nodes at visual_shader_editor_plugin.cpp:5485 matches pre-fix; remap new_frame_id through connection_remap before attach_node_to_frame.",
-  "outcome": "conflicted",
-  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+  "outcome": "skipped-already-present",
+  "reason": "fix already in fork (empty 3-way)"
  },
  {
   "pr": "115968",
@@ -295,8 +293,8 @@
   "risk": "low",
   "files_exist": true,
   "rationale": "animation_player_editor_plugin.cpp removes redundant memdelete (dummy_player owned by tree); 3-way applies cleanly.",
-  "outcome": "conflicted",
-  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+  "outcome": "skipped-already-present",
+  "reason": "fix already in fork (empty 3-way)"
  },
  {
   "pr": "116078",
@@ -399,8 +397,7 @@
   "risk": "low",
   "files_exist": true,
   "rationale": "editor_node.cpp:10585 uses ED_SHORTCUT('editor/reload_current_project'); change to ED_SHORTCUT_AND_COMMAND.",
-  "outcome": "conflicted",
-  "reason": "hint: run \"git cherry-pick --abort\"."
+  "outcome": "ported-resolved"
  },
  {
   "pr": "111016",
@@ -516,8 +513,8 @@
   "risk": "low",
   "files_exist": true,
   "rationale": "script_editor_debugger.cpp resets mute state on stop; 3-way applies cleanly.",
-  "outcome": "conflicted",
-  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+  "outcome": "skipped-already-present",
+  "reason": "fix already in fork (empty 3-way)"
  },
  {
   "pr": "99949",
@@ -620,8 +617,8 @@
   "risk": "med",
   "files_exist": true,
   "rationale": "editor_debugger_inspector.cpp skips group headers; 3-way applies cleanly around the fork's CHECKABLE-property divergence.",
-  "outcome": "conflicted",
-  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+  "outcome": "skipped-already-present",
+  "reason": "fix already in fork (empty 3-way)"
  },
  {
   "pr": "116470",
@@ -698,8 +695,8 @@
   "risk": "low",
   "files_exist": true,
   "rationale": "AnimationPlayerEditorPlugin::_update_dummy_player clears existing libraries before re-adding; 3-way applies cleanly.",
-  "outcome": "conflicted",
-  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+  "outcome": "skipped-already-present",
+  "reason": "fix already in fork (empty 3-way)"
  },
  {
   "pr": "114406",
@@ -802,8 +799,8 @@
   "risk": "low",
   "files_exist": true,
   "rationale": "animation_bezier_editor.cpp set_animation_and_track clears selection on animation change; 3-way applies cleanly.",
-  "outcome": "conflicted",
-  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+  "outcome": "skipped-already-present",
+  "reason": "fix already in fork (empty 3-way)"
  },
  {
   "pr": "117290",
@@ -815,8 +812,8 @@
   "risk": "low",
   "files_exist": true,
   "rationale": "animation_track_editor.cpp one-line draw-offset fix; 3-way applies cleanly.",
-  "outcome": "conflicted",
-  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+  "outcome": "skipped-already-present",
+  "reason": "fix already in fork (empty 3-way)"
  },
  {
   "pr": "117377",
@@ -906,8 +903,7 @@
   "risk": "med",
   "files_exist": true,
   "rationale": "EditorBuildProfileManager::_find_files/_detect_from_project only allow Resource/Node-derived classes; functions present (cache.classes.push_back) in editor_build_profile.cpp.",
-  "outcome": "conflicted",
-  "reason": "hint: run \"git cherry-pick --abort\"."
+  "outcome": "ported-resolved"
  },
  {
   "pr": "117582",
@@ -919,8 +915,7 @@
   "risk": "low",
   "files_exist": true,
   "rationale": "plugin_config_dialog.cpp:322 and plugin_config_dialog.h:49 still declare/use MSG_ID_ACTIVE.",
-  "outcome": "conflicted",
-  "reason": "hint: run \"git cherry-pick --abort\"."
+  "outcome": "ported-resolved"
  },
  {
   "pr": "102394",
@@ -971,8 +966,8 @@
   "risk": "low",
   "files_exist": true,
   "rationale": "animation_track_editor.cpp one-line marker-selection guard; 3-way applies cleanly.",
-  "outcome": "conflicted",
-  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+  "outcome": "skipped-already-present",
+  "reason": "fix already in fork (empty 3-way)"
  },
  {
   "pr": "117730",
@@ -984,8 +979,7 @@
   "risk": "low",
   "files_exist": true,
   "rationale": "Readonly-resource guards in collision_shape_2d/3d editor plugins; applies cleanly.",
-  "outcome": "conflicted",
-  "reason": "hint: run \"git cherry-pick --abort\"."
+  "outcome": "ported-resolved"
  },
  {
   "pr": "117808",
@@ -1166,8 +1160,8 @@
   "risk": "low",
   "files_exist": true,
   "rationale": "script_editor_debugger.cpp stack-trace label sizing; 3-way applies cleanly.",
-  "outcome": "conflicted",
-  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+  "outcome": "skipped-already-present",
+  "reason": "fix already in fork (empty 3-way)"
  },
  {
   "pr": "117534",
@@ -1283,8 +1277,7 @@
   "risk": "med",
   "files_exist": true,
   "rationale": "_save_window_settings_to_config at 7687 exists; FEATURE_SELF_FITTING_WINDOWS and window_get_scale are present in display_server.h.",
-  "outcome": "conflicted",
-  "reason": "hint: run \"git cherry-pick --abort\"."
+  "outcome": "ported-resolved"
  },
  {
   "pr": "118567",
@@ -1296,8 +1289,7 @@
   "risk": "low",
   "files_exist": true,
   "rationale": "resource_importer_svg.cpp:71 has color_map with no hint; add PROPERTY_HINT_DICTIONARY_TYPE 'Color;Color' (hint enum exists in object.h).",
-  "outcome": "conflicted",
-  "reason": "hint: run \"git cherry-pick --abort\"."
+  "outcome": "ported-resolved"
  },
  {
   "pr": "118614",
@@ -1309,8 +1301,7 @@
   "risk": "med",
   "files_exist": true,
   "rationale": "Fixes dict inspector context menu: editor_properties_array_dict.cpp set_mouse_filter/set_mouse_behavior_recursive applies clean; the editor_inspector.cpp copy-path guard needs minor adaptation (fork uses set_item_disabled(MENU_COPY_PROPERTY_PATH, internal)).",
-  "outcome": "conflicted",
-  "reason": "hint: run \"git cherry-pick --abort\"."
+  "outcome": "ported-resolved"
  },
  {
   "pr": "117434",
@@ -1348,8 +1339,7 @@
   "risk": "low",
   "files_exist": true,
   "rationale": "_get_system_info at editor_node.cpp:6651 exists; append AudioServer driver/mix-rate/speaker-mode line (standard AudioServer API).",
-  "outcome": "conflicted",
-  "reason": "hint: run \"git cherry-pick --abort\"."
+  "outcome": "ported-resolved"
  },
  {
   "pr": "118748",
@@ -1426,8 +1416,7 @@
   "risk": "med",
   "files_exist": true,
   "rationale": "Fork OBJECT_UNIQUE_RESOURCES block (inspector_dock.cpp:123-203) and the removed bottom_label match stock; new properties_to_unique member + EditorUndoRedoManager are standard.",
-  "outcome": "conflicted",
-  "reason": "hint: run \"git cherry-pick --abort\"."
+  "outcome": "ported-resolved"
  },
  {
   "pr": "119013",
@@ -1439,8 +1428,7 @@
   "risk": "med",
   "files_exist": true,
   "rationale": "_save_screenshot/_save_screenshot_with_embedded_process and RS viewport_is_using_hdr_2d exist; add linear_to_srgb guard (also scene_debugger::_msg_rq_screenshot).",
-  "outcome": "conflicted",
-  "reason": "hint: run \"git cherry-pick --abort\"."
+  "outcome": "ported-resolved"
  },
  {
   "pr": "119076",
@@ -1530,8 +1518,8 @@
   "risk": "low",
   "files_exist": true,
   "rationale": "editor_dir_dialog.cpp base_directory_path.split('/') -> split('/', false) to drop empty parts; line present unchanged.",
-  "outcome": "conflicted",
-  "reason": "hint: run \"git cherry-pick --abort\"."
+  "outcome": "skipped-absent-feature",
+  "reason": "depends on absent 4.7 feature"
  },
  {
   "pr": "119362",
@@ -1569,8 +1557,7 @@
   "risk": "med",
   "files_exist": true,
   "rationale": "Core fix (new EditorNode::setup_built_in_resource + call sites in editor_resource_picker.cpp and shader_create_dialog.cpp) lands in stock pre-fix code; only the scene_tree_dock _script_created hunk is inapplicable and must be dropped.",
-  "outcome": "conflicted",
-  "reason": "hint: run \"git cherry-pick --abort\"."
+  "outcome": "ported-resolved"
  },
  {
   "pr": "118247",
@@ -1634,8 +1621,7 @@
   "risk": "low",
   "files_exist": true,
   "rationale": "EditorData::get_scene_path exists; add the !path.is_empty() guard, adapting root-> to fork's get_root() accessor.",
-  "outcome": "conflicted",
-  "reason": "hint: run \"git cherry-pick --abort\"."
+  "outcome": "ported-resolved"
  },
  {
   "pr": "119555",
@@ -1712,8 +1698,7 @@
   "risk": "med",
   "files_exist": true,
   "rationale": "Fork _update_display_mode HSPLIT/VSPLIT case (filesystem_dock.cpp:526-543) has the exact stock is_vertical/else block upstream simplifies; files/tree/files_mc and theme variations all exist.",
-  "outcome": "conflicted",
-  "reason": "hint: run \"git cherry-pick --abort\"."
+  "outcome": "ported-resolved"
  },
  {
   "pr": "119721",
@@ -1868,8 +1853,7 @@
   "risk": "low",
   "files_exist": true,
   "rationale": "animation_track_editor.cpp FPS drag-range fix (2 lines); applies clean.",
-  "outcome": "conflicted",
-  "reason": "fatal: bad revision 'ff6034d0aec2b2c4034829fee500d5c37c881ce'"
+  "outcome": "ported-resolved"
  },
  {
   "pr": "116568",
@@ -1881,7 +1865,7 @@
   "risk": "low",
   "files_exist": true,
   "rationale": "game_view_plugin.cpp resets speed UI on restart; 3-way applies cleanly on the minimally-diverged game view.",
-  "outcome": "conflicted",
-  "reason": "fatal: bad revision '15e285e6b639a5f2c73e8c259913ed7604b83958e'"
+  "outcome": "skipped-already-present",
+  "reason": "fix already in fork (empty 3-way)"
  }
 ]
