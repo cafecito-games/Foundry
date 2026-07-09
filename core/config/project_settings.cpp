@@ -873,8 +873,8 @@ Error ProjectSettings::setup(const String &p_path, const String &p_main_pack, bo
 	return err;
 }
 
-void ProjectSettings::reset_resource_path_for_reload() {
-	resource_path = String();
+void ProjectSettings::set_reload_resource_path(const String &p_resource_path) {
+	resource_path = p_resource_path;
 	project_loaded = false;
 }
 
