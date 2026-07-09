@@ -1,0 +1,156 @@
+[
+ {
+  "pr": "119741",
+  "sha": "88ad186627e9dc071d44523a2db081fd7e5ddef1",
+  "title": "Fix EditorPropertyArray using theme cache too early",
+  "subsystem": "editor/inspector",
+  "nfiles": 2
+ },
+ {
+  "pr": "118000",
+  "sha": "af75f8173858833afdbcb2f988872d4985531dd1",
+  "title": "Fix custom categories not having context menu",
+  "subsystem": "editor/inspector",
+  "nfiles": 1
+ },
+ {
+  "pr": "119200",
+  "sha": "b6a10ee02b86a2748e675a13e92115a204a508c1",
+  "title": "Fix Resource picker tooltip text",
+  "subsystem": "editor/inspector",
+  "nfiles": 1
+ },
+ {
+  "pr": "116843",
+  "sha": "a712b7acc3e09ec667428f2245081ddb455d94a7",
+  "title": "Fix Dictionary editor losing selection when changing types in Remote inspector",
+  "subsystem": "editor/inspector",
+  "nfiles": 1
+ },
+ {
+  "pr": "118269",
+  "sha": "63a5e781e590f658a7fea7b388840c1d54ab44a9",
+  "title": "Editor: Fix default behavior of `@export_dir` rejects folders in drag and drop",
+  "subsystem": "editor/inspector",
+  "nfiles": 1
+ },
+ {
+  "pr": "117838",
+  "sha": "c63e6000b174afc4a42ac489bd9cb677ff291ab6",
+  "title": "Fix animation and key buttons of inspector sections being off-center in the RTL layout",
+  "subsystem": "editor/inspector",
+  "nfiles": 1
+ },
+ {
+  "pr": "118633",
+  "sha": "e0815c0bc9d77f4a99e9f03acbddc429ef0cbbe1",
+  "title": "Fix max icon width in remote scene view/debugger",
+  "subsystem": "editor/inspector",
+  "nfiles": 2
+ },
+ {
+  "pr": "115151",
+  "sha": "8fd7cdac7e71bbad58d6647103201a933f486c7f",
+  "title": "Fix theme properties not being handled correctly by `MultiNodeEdit`",
+  "subsystem": "editor/inspector",
+  "nfiles": 3
+ },
+ {
+  "pr": "115245",
+  "sha": "c66455f5e75bb3799df9f1a6488b147cef0c4d29",
+  "title": "Fix theme item inspector tooltips for Window subclasses.",
+  "subsystem": "editor/inspector",
+  "nfiles": 1
+ },
+ {
+  "pr": "117768",
+  "sha": "1fe96dd51749525c6f7788737ac6274e1afa28a8",
+  "title": "Fix error when opening the right-click menu for the \"Favorites\" category",
+  "subsystem": "editor/inspector",
+  "nfiles": 1
+ },
+ {
+  "pr": "117683",
+  "sha": "040bc686d04a5eb8d3eb97311d5502061ba4af48",
+  "title": "Fix text alignment in check box inside `EditorInspectorSection`s",
+  "subsystem": "editor/inspector",
+  "nfiles": 1
+ },
+ {
+  "pr": "117673",
+  "sha": "5d2bac78e8110648c2d7284d0c7730e00f39bd59",
+  "title": "Fix keying state not being updated for sub-inspectors",
+  "subsystem": "editor/inspector",
+  "nfiles": 3
+ },
+ {
+  "pr": "117529",
+  "sha": "0026f7ea69e20d19ce79d7a4a87d3be9047c2c99",
+  "title": "Fix hint string parsing for nested dictionaries",
+  "subsystem": "editor/inspector",
+  "nfiles": 1
+ },
+ {
+  "pr": "114962",
+  "sha": "decc376c126a2cbecb47d2c84af1d181e6324de1",
+  "title": "Fix theme properties not showing their default values when undoing changes",
+  "subsystem": "editor/inspector",
+  "nfiles": 1
+ },
+ {
+  "pr": "117051",
+  "sha": "d72af002d0e71a394e3e66d03c6be54b5d7b2446",
+  "title": "Fix Favorite Properties not working with multi-node selection in Inspector",
+  "subsystem": "editor/inspector",
+  "nfiles": 1
+ },
+ {
+  "pr": "116847",
+  "sha": "89f9ab049471e0f0e835531228d2083ac47cb437",
+  "title": "Editor: Fix display of objects in the Remote Inspector",
+  "subsystem": "editor/inspector",
+  "nfiles": 3
+ },
+ {
+  "pr": "116882",
+  "sha": "a14035c910bab26d1920fcc45e9a17ac99238184",
+  "title": "Fix able to delete metadata on read-only object",
+  "subsystem": "editor/inspector",
+  "nfiles": 1
+ },
+ {
+  "pr": "116100",
+  "sha": "7b9e7a9f8b2f6584cc26ed65208e593537fc41f5",
+  "title": "Fix theming for `EditorPropertyArray` icons",
+  "subsystem": "editor/inspector",
+  "nfiles": 1
+ },
+ {
+  "pr": "115862",
+  "sha": "e57e50ef87487c18bdb36a1fb572d6d01a402525",
+  "title": "Fix Unique Resources from Inherited Scenes",
+  "subsystem": "editor/inspector",
+  "nfiles": 1
+ },
+ {
+  "pr": "115422",
+  "sha": "60638c93fb481f1b2e744771d98c2623ea856398",
+  "title": "Fix `NodePath` `EditorProperty` using the wrong scene root",
+  "subsystem": "editor/inspector",
+  "nfiles": 2
+ },
+ {
+  "pr": "115596",
+  "sha": "8858cf3cc4e508b44c52450a6521b7491c3ec312",
+  "title": "Fix wrong size on `Container` nodes due to late cache update",
+  "subsystem": "editor/inspector",
+  "nfiles": 2
+ },
+ {
+  "pr": "115587",
+  "sha": "e6ddb1035d9aac1cc34b7912ae40cfb958216211",
+  "title": "Fix wrong tooltip translations in resource picker",
+  "subsystem": "editor/inspector",
+  "nfiles": 1
+ }
+]

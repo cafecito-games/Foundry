@@ -1,0 +1,177 @@
+[
+ {
+  "pr": "119938",
+  "sha": "2587d5181dbcf83f9440cba8eb1c252b158e43b0",
+  "title": "Fix spelling of \"GDExtension\" in the Export Template Manager",
+  "subsystem": "editor/export",
+  "nfiles": 1
+ },
+ {
+  "pr": "119494",
+  "sha": "0389590b8f996c3b1a2e92dc158317523b1685ee",
+  "title": "Fix a couple of issues when deleting presets in the export dialog",
+  "subsystem": "editor/export",
+  "nfiles": 1
+ },
+ {
+  "pr": "119554",
+  "sha": "e558b07d8a8be2683929ff835d1b1ea09472179a",
+  "title": "Fix export errors with non-resources",
+  "subsystem": "editor/export",
+  "nfiles": 1
+ },
+ {
+  "pr": "119545",
+  "sha": "ef02314f2bd0305035ecbe907883401a393da7a7",
+  "title": "Fix export notifier.",
+  "subsystem": "editor/export",
+  "nfiles": 9
+ },
+ {
+  "pr": "118787",
+  "sha": "cd5a07648d2e43e2fa131882a5219ccfb10ee6e0",
+  "title": "Fix wrong path in `EditorExportPlugin._export_begin()` when zipping",
+  "subsystem": "editor/export",
+  "nfiles": 21
+ },
+ {
+  "pr": "119182",
+  "sha": "bdaedccc17f4344d2d05518f25dfde0599227931",
+  "title": "Fix wrong `beat_count` set in stream import when it's greater than previous `beat_max`",
+  "subsystem": "editor/import",
+  "nfiles": 1
+ },
+ {
+  "pr": "117846",
+  "sha": "8699d855f71848794f99be3e63e4a37178640095",
+  "title": "Fix and improve the editor layout dialog",
+  "subsystem": "editor/settings",
+  "nfiles": 4
+ },
+ {
+  "pr": "119218",
+  "sha": "a9de7afd056d49aebdf090fe5afbde8c85753d18",
+  "title": "Fix bugs with editing enter key shortcuts",
+  "subsystem": "editor/settings",
+  "nfiles": 1
+ },
+ {
+  "pr": "119030",
+  "sha": "fe5200b65879dd38d529a785627b25a26b4e0a4a",
+  "title": "Import: Fix generated collision preview",
+  "subsystem": "editor/import",
+  "nfiles": 1
+ },
+ {
+  "pr": "118896",
+  "sha": "651bc9d79c0edb51b6756f50582032caa52f0119",
+  "title": "Fix audio import dialog improperly reseting the \"Master\" bus",
+  "subsystem": "editor/import",
+  "nfiles": 1
+ },
+ {
+  "pr": "118928",
+  "sha": "e9b93fffaef6ee68257cda4dc43446d244e5750a",
+  "title": "Fix per-project overrides not working for language",
+  "subsystem": "editor/settings",
+  "nfiles": 1
+ },
+ {
+  "pr": "118963",
+  "sha": "6c9c5a383c99f461504064dc0e12b9e1b68ca49a",
+  "title": "Fix `get_version()` fallback for Android",
+  "subsystem": "editor/export",
+  "nfiles": 1
+ },
+ {
+  "pr": "118793",
+  "sha": "0dc7152366eae85bcb98a73540dfa4acbddb2691",
+  "title": "Fix wrong disabled states for buttons in the export dialog",
+  "subsystem": "editor/export",
+  "nfiles": 1
+ },
+ {
+  "pr": "118656",
+  "sha": "f6a80478ac1329a5be0a227fcd1a0d568b47f196",
+  "title": "Fix `EditorScenePostImportPlugin::_get_internal_option_visibility()` having no effect",
+  "subsystem": "editor/import",
+  "nfiles": 1
+ },
+ {
+  "pr": "118679",
+  "sha": "6f2f6824b784a9df829985e393932803e10b5713",
+  "title": "Fix `export_template_manager.cpp` compilation with `deprecated=no`",
+  "subsystem": "editor/export",
+  "nfiles": 1
+ },
+ {
+  "pr": "118559",
+  "sha": "d3bbd95ccf6331313e8126bb979cca9219279a2f",
+  "title": "[iOS] Fix one-click deploy with Xcode 26.",
+  "subsystem": "editor/export",
+  "nfiles": 1
+ },
+ {
+  "pr": "117906",
+  "sha": "06c3946e3501a7f52a10eed96d200b93df17d373",
+  "title": "Fix some regressions with the build profile editor",
+  "subsystem": "editor/settings",
+  "nfiles": 1
+ },
+ {
+  "pr": "117956",
+  "sha": "1d6e1416cbf52e02d0e5d73b59e026cceeae8e0f",
+  "title": "Fix crash caused by input configuration dialog",
+  "subsystem": "editor/settings",
+  "nfiles": 1
+ },
+ {
+  "pr": "115903",
+  "sha": "aa56bcb233b5fb776af8912cc2e157752af15331",
+  "title": "Fix \"Pack Project as Zip\" not saving permissions and time.",
+  "subsystem": "editor/export",
+  "nfiles": 2
+ },
+ {
+  "pr": "117878",
+  "sha": "adeed3a45b1cc561cbe1e880b07a60aa29fd617e",
+  "title": "Fix compilation configuration editor not working",
+  "subsystem": "editor/settings",
+  "nfiles": 1
+ },
+ {
+  "pr": "115528",
+  "sha": "2c9ba448150b5a7cca330c0e4d1fe77ec7d6f1f3",
+  "title": "Fix extracting materials from `.gltf` and `.blend` files throws error",
+  "subsystem": "editor/import",
+  "nfiles": 1
+ },
+ {
+  "pr": "116530",
+  "sha": "26c982fe98579db7b9a4931c6fe4b8159f198dae",
+  "title": "Fix incorrect index usage in path string construction in `PostImportPluginSkeletonRestFixer`",
+  "subsystem": "editor/import",
+  "nfiles": 1
+ },
+ {
+  "pr": "115412",
+  "sha": "8751d9deb59dc9e99e3f0860af30168431a9e725",
+  "title": "Fix build profile generator always enabling 2D navigation",
+  "subsystem": "editor/settings",
+  "nfiles": 1
+ },
+ {
+  "pr": "115230",
+  "sha": "763056615917b95e4d9c767629ac05127669b0ad",
+  "title": "Fix detection of some features in Engine Compilation Configuration Editor",
+  "subsystem": "editor/settings",
+  "nfiles": 1
+ },
+ {
+  "pr": "115197",
+  "sha": "530fb8551d48e257b829ce74a5dd32c0d198c435",
+  "title": "Fix editor colors reseting while the color chooser is still open",
+  "subsystem": "editor/settings",
+  "nfiles": 2
+ }
+]

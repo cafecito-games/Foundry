@@ -1,0 +1,163 @@
+[
+ {
+  "pr": "119950",
+  "sha": "dc0422466ccbafba16632fef242da917e547c8d1",
+  "title": "Fix EditorSpinSlider not showing tooltips",
+  "subsystem": "editor/gui",
+  "nfiles": 1
+ },
+ {
+  "pr": "115533",
+  "sha": "cc6d153fb6452c9cc757540c7bee1bcab1713793",
+  "title": "Fix buttons in `EditorProperty` overlapping with values",
+  "subsystem": "editor/gui",
+  "nfiles": 2
+ },
+ {
+  "pr": "119541",
+  "sha": "a3854569a2e2cf0127fef24dfdfe9c3ab49e2d6c",
+  "title": "Fix credit roll in the project manager.",
+  "subsystem": "editor/gui",
+  "nfiles": 3
+ },
+ {
+  "pr": "119285",
+  "sha": "b72112f05b9076c3b447bd106f9ed0bb6541ad4f",
+  "title": "Fix wrong error fixed check",
+  "subsystem": "editor/file_system",
+  "nfiles": 1
+ },
+ {
+  "pr": "119112",
+  "sha": "d96ba6edbe4bf0378d6b5399c2fb545eeec79a09",
+  "title": "Fix audio bus name update",
+  "subsystem": "editor/audio",
+  "nfiles": 1
+ },
+ {
+  "pr": "118705",
+  "sha": "3a8d1def48b561191e5db642645e346f8c14e41b",
+  "title": "Fix the credits not being centered",
+  "subsystem": "editor/gui",
+  "nfiles": 1
+ },
+ {
+  "pr": "118783",
+  "sha": "3e4f5480689653e21433c9766e0643bf91c00e46",
+  "title": "Fix shader loop detection for shader previewer",
+  "subsystem": "editor/shader",
+  "nfiles": 1
+ },
+ {
+  "pr": "118658",
+  "sha": "b97089bf6aab858e4d5b7d37f9ae9d6e0cdf12b6",
+  "title": "Fix VU meter scale",
+  "subsystem": "editor/audio",
+  "nfiles": 2
+ },
+ {
+  "pr": "118446",
+  "sha": "b5feab25cbd0d37b9d01d47e0dbe4cb99ec5d6be",
+  "title": "Revert \"Fix EditorSpinSlider drag exceeding min/max boundaries\"",
+  "subsystem": "editor/gui",
+  "nfiles": 1
+ },
+ {
+  "pr": "114622",
+  "sha": "935df7feec0b9d601ed5b9087f8bb47f614f27be",
+  "title": "Fix ShaderInclude selected in ShaderCreateDialog due to previous selection even if invalid",
+  "subsystem": "editor/shader",
+  "nfiles": 1
+ },
+ {
+  "pr": "118204",
+  "sha": "64f4eb51a9625f7a1fa788a98a3d31398d97977e",
+  "title": "Fix editor spin slider clamp",
+  "subsystem": "editor/gui",
+  "nfiles": 1
+ },
+ {
+  "pr": "118037",
+  "sha": "54d2cacf67bb7734412ad4e91a4c9a8cd6e08df4",
+  "title": "Fix newly imported files not having existing UID assigned",
+  "subsystem": "editor/file_system",
+  "nfiles": 1
+ },
+ {
+  "pr": "118074",
+  "sha": "237eae66ed7603e620d1d99a4fd3ad46c846e802",
+  "title": "Fix minimum height of Output buttons",
+  "subsystem": "editor/editor_log.cpp",
+  "nfiles": 1
+ },
+ {
+  "pr": "117033",
+  "sha": "a042e07db690178e14c368a854e236107407dcc0",
+  "title": "Fix unknown identifier `source_texture` in `texture_blit` visual shader",
+  "subsystem": "editor/shader",
+  "nfiles": 2
+ },
+ {
+  "pr": "109743",
+  "sha": "25b625678c35728bb7076b8eed2cc961f6fdad92",
+  "title": "Fix audio bus send OptionButton height",
+  "subsystem": "editor/audio",
+  "nfiles": 1
+ },
+ {
+  "pr": "116412",
+  "sha": "b5613b27e45178dd9743e404b02067b740de85ae",
+  "title": "Fix `ShaderEditor`'s UI overflowing when shrunk",
+  "subsystem": "editor/shader",
+  "nfiles": 4
+ },
+ {
+  "pr": "116992",
+  "sha": "b8fc607ef4fa5a1013246305ec41146d30d0c9dd",
+  "title": "Fix Script Editor loses focus on esc in Find/Replace bar",
+  "subsystem": "editor/gui",
+  "nfiles": 1
+ },
+ {
+  "pr": "116981",
+  "sha": "b83356283d1fa79257f68d5db452f21e3cd01ecc",
+  "title": "Fix replace button doesn't highlight next occurrence",
+  "subsystem": "editor/gui",
+  "nfiles": 2
+ },
+ {
+  "pr": "116977",
+  "sha": "85b9dfb500312ee8b4c325c3f03c8eb0f51454a6",
+  "title": "Fix replace bar requiring pressing enter twice",
+  "subsystem": "editor/gui",
+  "nfiles": 1
+ },
+ {
+  "pr": "116080",
+  "sha": "ca281b0b2d6c9e65515091932748220128f5a299",
+  "title": "Fix custom importers do not work with singletons",
+  "subsystem": "editor/file_system",
+  "nfiles": 1
+ },
+ {
+  "pr": "115314",
+  "sha": "8fd7c1ed5050189425dfa99b59748ffe2fca2c2a",
+  "title": "Fix create dialog recents",
+  "subsystem": "editor/gui",
+  "nfiles": 2
+ },
+ {
+  "pr": "115222",
+  "sha": "7dff26c7844355bdef3c8c97e5c3a6541a57925d",
+  "title": "Fix blurry icons in the inspector dock's object selector",
+  "subsystem": "editor/gui",
+  "nfiles": 1
+ },
+ {
+  "pr": "115248",
+  "sha": "ca08319e7d637732ba589fe53eefca0a9963e8a3",
+  "title": "Fix EditorObjectSelector PopupMenu width",
+  "subsystem": "editor/gui",
+  "nfiles": 1
+ }
+]

@@ -1,0 +1,252 @@
+[
+ {
+  "pr": "119938",
+  "sha": "2587d5181dbcf83f9440cba8eb1c252b158e43b0",
+  "subsystem": "editor/export",
+  "title": "Fix spelling of \"GDExtension\" in the Export Template Manager",
+  "decision": "skip",
+  "risk": "low",
+  "verified_files_exist": true,
+  "rationale": "Fork's export_template_manager.cpp has no _initialize_template_data/TemplateInfo/GDExtensions template text (that 4.7 template-data rework is absent), so the misspelled string does not exist to fix."
+ },
+ {
+  "pr": "119494",
+  "sha": "0389590b8f996c3b1a2e92dc158317523b1685ee",
+  "subsystem": "editor/export",
+  "title": "Fix a couple of issues when deleting presets in the export dialog",
+  "decision": "port-now",
+  "risk": "med",
+  "verified_files_exist": true,
+  "rationale": "project_export.cpp _edit_preset early-return block (line 261-267) lacks export_warning->hide() and _delete_preset_confirm (line 794) is pre-fix; applies but must be sequenced with 118793 which also edits _delete_preset_confirm."
+ },
+ {
+  "pr": "119554",
+  "sha": "e558b07d8a8be2683929ff835d1b1ea09472179a",
+  "subsystem": "editor/export",
+  "title": "Fix export errors with non-resources",
+  "decision": "port-now",
+  "risk": "med",
+  "verified_files_exist": true,
+  "rationale": "editor_export_platform.cpp export_project_files has the matching pre-fix _export_customize call (line 1646) and the `type` var (line 1458) the guard needs is in scope."
+ },
+ {
+  "pr": "119545",
+  "sha": "ef02314f2bd0305035ecbe907883401a393da7a7",
+  "subsystem": "editor/export",
+  "title": "Fix export notifier.",
+  "decision": "port-later",
+  "risk": "high",
+  "verified_files_exist": true,
+  "rationale": "Depends on the p_notify parameter added by 118787: fork's export_project virtual (editor_export_platform.h:347) and platform impls have no p_notify guard, so the ExportNotifier p_enabled rework has nothing to attach to."
+ },
+ {
+  "pr": "118787",
+  "sha": "cd5a07648d2e43e2fa131882a5219ccfb10ee6e0",
+  "subsystem": "editor/export",
+  "title": "Fix wrong path in `EditorExportPlugin._export_begin()` when zipping",
+  "decision": "port-later",
+  "risk": "high",
+  "verified_files_exist": true,
+  "rationale": "Fork export code is at an earlier baseline: export_project virtual has no p_notify (editor_export_platform.h:347), there is no editor_export_platform.compat.inc, and platform zip paths differ; needs hand-adaptation of the whole notifier flow."
+ },
+ {
+  "pr": "119182",
+  "sha": "bdaedccc17f4344d2d05518f25dfde0599227931",
+  "subsystem": "editor/import",
+  "title": "Fix wrong `beat_count` set in stream import when it's greater than previous `beat_max`",
+  "decision": "port-now",
+  "risk": "low",
+  "verified_files_exist": true,
+  "rationale": "audio_stream_import_settings.cpp edit() has the matching pre-fix beats_edit->set_value(beats) at line 472 with no preceding set_max(99999)."
+ },
+ {
+  "pr": "117846",
+  "sha": "8699d855f71848794f99be3e63e4a37178640095",
+  "subsystem": "editor/settings",
+  "title": "Fix and improve the editor layout dialog",
+  "decision": "skip",
+  "risk": "med",
+  "verified_files_exist": true,
+  "rationale": "Already present: editor_node.cpp uses bool overridden_default_layout (line 7892/7903/7906) and set_save_mode_enabled (7925), and editor_layouts_dialog.cpp has _validate_name/EditorValidationPanel."
+ },
+ {
+  "pr": "119218",
+  "sha": "a9de7afd056d49aebdf090fe5afbde8c85753d18",
+  "subsystem": "editor/settings",
+  "title": "Fix bugs with editing enter key shortcuts",
+  "decision": "port-later",
+  "risk": "med",
+  "verified_files_exist": true,
+  "rationale": "The enter/escape-to-confirm block it patches (Key::ENTER/_ok_pressed/current_key) is entirely absent from fork's input_event_configuration_dialog.cpp _set_event, so the fix depends on an absent feature."
+ },
+ {
+  "pr": "119030",
+  "sha": "fe5200b65879dd38d529a785627b25a26b4e0a4a",
+  "subsystem": "editor/import",
+  "title": "Import: Fix generated collision preview",
+  "decision": "port-now",
+  "risk": "low",
+  "verified_files_exist": true,
+  "rationale": "scene_import_settings.cpp _update_view_gizmos has the exact pre-fix find_children(\"collider_view\", \"MeshInstance3D\") call at line 590."
+ },
+ {
+  "pr": "118896",
+  "sha": "651bc9d79c0edb51b6756f50582032caa52f0119",
+  "subsystem": "editor/import",
+  "title": "Fix audio import dialog improperly reseting the \"Master\" bus",
+  "decision": "port-now",
+  "risk": "low",
+  "verified_files_exist": true,
+  "rationale": "audio_stream_import_settings.cpp _stop() (line 278) calls _load_master_state() unconditionally and _on_finished() (line 288) does not call it, matching the pre-fix state."
+ },
+ {
+  "pr": "118928",
+  "sha": "e9b93fffaef6ee68257cda4dc43446d244e5750a",
+  "subsystem": "editor/settings",
+  "title": "Fix per-project overrides not working for language",
+  "decision": "port-now",
+  "risk": "med",
+  "verified_files_exist": true,
+  "rationale": "editor_settings.cpp _set still fires setup_language directly (line 84) and notify_changes (2214)/check_changed_settings_in_group (1411) exist; applies but must use the fork's setting key interface/editor/editor_language (not the 4.7 .../localization/... path)."
+ },
+ {
+  "pr": "118963",
+  "sha": "6c9c5a383c99f461504064dc0e12b9e1b68ca49a",
+  "subsystem": "editor/export",
+  "title": "Fix `get_version()` fallback for Android",
+  "decision": "port-now",
+  "risk": "low",
+  "verified_files_exist": true,
+  "rationale": "editor_export_preset.cpp get_version (line 603) has the _check_digits loop (line 612) unguarded by the EditorExportPlatformAndroid class check the PR adds."
+ },
+ {
+  "pr": "118793",
+  "sha": "0dc7152366eae85bcb98a73540dfa4acbddb2691",
+  "subsystem": "editor/export",
+  "title": "Fix wrong disabled states for buttons in the export dialog",
+  "decision": "port-now",
+  "risk": "med",
+  "verified_files_exist": true,
+  "rationale": "project_export.cpp _delete_preset_confirm (line 794) is pre-fix (unconditional button-disable before remove); applies, and must be sequenced before 119494 which further edits this function."
+ },
+ {
+  "pr": "118656",
+  "sha": "f6a80478ac1329a5be0a227fcd1a0d568b47f196",
+  "subsystem": "editor/import",
+  "title": "Fix `EditorScenePostImportPlugin::_get_internal_option_visibility()` having no effect",
+  "decision": "port-now",
+  "risk": "low",
+  "verified_files_exist": true,
+  "rationale": "post_import_plugin_skeleton_rest_fixer.cpp get_internal_option_visibility still returns bool true at line 83 instead of Variant(); fork signature has the extra p_scene_import_type arg but the one-line return fix applies unchanged."
+ },
+ {
+  "pr": "118679",
+  "sha": "6f2f6824b784a9df829985e393932803e10b5713",
+  "subsystem": "editor/export",
+  "title": "Fix `export_template_manager.cpp` compilation with `deprecated=no`",
+  "decision": "skip",
+  "risk": "low",
+  "verified_files_exist": true,
+  "rationale": "Targets _initialize_template_data and the VERSION_FULL_CONFIG->GODOT_VERSION_FULL_CONFIG rename; neither the function nor that version macro exists in fork's export_template_manager.cpp."
+ },
+ {
+  "pr": "118559",
+  "sha": "d3bbd95ccf6331313e8126bb979cca9219279a2f",
+  "subsystem": "editor/export",
+  "title": "[iOS] Fix one-click deploy with Xcode 26.",
+  "decision": "skip",
+  "risk": "low",
+  "verified_files_exist": true,
+  "rationale": "Already present: editor_export_platform_apple_embedded.cpp _check_for_changes_poll_thread already passes false as the read_stderr arg to execute(\"xcrun\", ...) at line 2433."
+ },
+ {
+  "pr": "117906",
+  "sha": "06c3946e3501a7f52a10eed96d200b93df17d373",
+  "subsystem": "editor/settings",
+  "title": "Fix some regressions with the build profile editor",
+  "decision": "skip",
+  "risk": "low",
+  "verified_files_exist": true,
+  "rationale": "Already present: editor_build_profile.cpp has the classes comment (line 239), unconditional cache.classes.push_back(E) (811), and the all_used_classes.has(class_name) guard in _detect_from_project (1022)."
+ },
+ {
+  "pr": "117956",
+  "sha": "1d6e1416cbf52e02d0e5d73b59e026cceeae8e0f",
+  "subsystem": "editor/settings",
+  "title": "Fix crash caused by input configuration dialog",
+  "decision": "port-later",
+  "risk": "med",
+  "verified_files_exist": true,
+  "rationale": "The crashing block (current_key->get_physical_keycode() inside the already-bound is_visible() branch) is absent from fork's input_event_configuration_dialog.cpp _set_event, so the guard fix has no target until that feature is ported."
+ },
+ {
+  "pr": "115903",
+  "sha": "aa56bcb233b5fb776af8912cc2e157752af15331",
+  "subsystem": "editor/export",
+  "title": "Fix \"Pack Project as Zip\" not saving permissions and time.",
+  "decision": "skip",
+  "risk": "low",
+  "verified_files_exist": true,
+  "rationale": "Already present: editor_export_platform.cpp uses the fixed external_fa expression (lines 1941/1985) and project_zip_packer.cpp _zip_file already sets tmz_date/permissions via get_modified_time (line 75)."
+ },
+ {
+  "pr": "117878",
+  "sha": "adeed3a45b1cc561cbe1e880b07a60aa29fd617e",
+  "subsystem": "editor/settings",
+  "title": "Fix compilation configuration editor not working",
+  "decision": "skip",
+  "risk": "low",
+  "verified_files_exist": true,
+  "rationale": "Already present: editor_build_profile.cpp _detect_from_project already has the corrected condition with !ClassDB::is_parent_class(...) at line 979."
+ },
+ {
+  "pr": "115528",
+  "sha": "2c9ba448150b5a7cca330c0e4d1fe77ec7d6f1f3",
+  "subsystem": "editor/import",
+  "title": "Fix extracting materials from `.gltf` and `.blend` files throws error",
+  "decision": "port-now",
+  "risk": "low",
+  "verified_files_exist": true,
+  "rationale": "resource_importer_scene.cpp _post_fix_node still has the pre-fix `if (!mat_id.is_empty() && extract_mat != 0)` at line 1601 lacking the p_material_data.has(mat_id) guard."
+ },
+ {
+  "pr": "116530",
+  "sha": "26c982fe98579db7b9a4931c6fe4b8159f198dae",
+  "subsystem": "editor/import",
+  "title": "Fix incorrect index usage in path string construction in `PostImportPluginSkeletonRestFixer`",
+  "decision": "port-now",
+  "risk": "low",
+  "verified_files_exist": true,
+  "rationale": "post_import_plugin_skeleton_rest_fixer.cpp internal_process still has the buggy names[i] (should be names[j]) at line 607."
+ },
+ {
+  "pr": "115412",
+  "sha": "8751d9deb59dc9e99e3f0860af30168431a9e725",
+  "subsystem": "editor/settings",
+  "title": "Fix build profile generator always enabling 2D navigation",
+  "decision": "skip",
+  "risk": "low",
+  "verified_files_exist": true,
+  "rationale": "Already present: editor_build_profile.cpp build_option_classes already has the trailing comma after \"NavigationObstacle2D\" at line 248."
+ },
+ {
+  "pr": "115230",
+  "sha": "763056615917b95e4d9c767629ac05127669b0ad",
+  "subsystem": "editor/settings",
+  "title": "Fix detection of some features in Engine Compilation Configuration Editor",
+  "decision": "skip",
+  "risk": "low",
+  "verified_files_exist": true,
+  "rationale": "Already present: editor_build_profile.cpp constructor uses the correct BUILD_OPTION_WAYLAND/X11/D3D12 keys (lines 636/641/670) rather than the duplicated OPENXR/VULKAN inserts."
+ },
+ {
+  "pr": "115197",
+  "sha": "530fb8551d48e257b829ce74a5dd32c0d198c435",
+  "subsystem": "editor/settings",
+  "title": "Fix editor colors reseting while the color chooser is still open",
+  "decision": "skip",
+  "risk": "low",
+  "verified_files_exist": true,
+  "rationale": "Already present: editor_settings_dialog.cpp has the no-arg _settings_property_edited() using get_changed_settings() (lines 67-68) connected to the settings_changed signal (line 1017)."
+ }
+]
