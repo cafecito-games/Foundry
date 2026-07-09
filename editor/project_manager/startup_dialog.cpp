@@ -57,7 +57,6 @@
 #include "scene/gui/separator.h"
 #include "scene/gui/tab_container.h"
 #include "scene/gui/texture_rect.h"
-#include "scene/main/scene_tree.h"
 
 void StartupDialog::_notification(int p_what) {
 	switch (p_what) {
@@ -1062,8 +1061,12 @@ void StartupDialog::_on_dialog_dismissed() {
 	if (ProjectSettings::get_singleton()->is_project_loaded()) {
 		return;
 	}
-	if (SceneTree *tree = get_tree()) {
-		tree->quit();
+	// Route through EditorNode's normal quit path (identical to the main window's
+	// close button) so shutdown cleanup runs -- stopping the resource preview
+	// service that the projectless shell starts, saving the projectless layout,
+	// and unloading addons -- rather than calling SceneTree::quit() raw.
+	if (EditorNode *editor_node = EditorNode::get_singleton()) {
+		editor_node->request_quit();
 	}
 }
 

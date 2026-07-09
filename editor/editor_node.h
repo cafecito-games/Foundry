@@ -956,6 +956,9 @@ public:
 	List<Node *> get_resource_node_list(Ref<Resource> p_res);
 
 	void show_about() { _menu_option_confirm(HELP_ABOUT, false); }
+	// Requests a graceful editor quit through the same path as the main window's
+	// close button (stops the resource preview, saves layout, unloads addons).
+	void request_quit() { _menu_option_confirm(SCENE_QUIT, false); }
 
 	void push_item(Object *p_object, const String &p_property = "", bool p_inspector_only = false);
 	void push_item_no_inspector(Object *p_object);
