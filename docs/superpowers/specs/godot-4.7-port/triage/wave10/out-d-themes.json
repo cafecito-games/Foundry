@@ -1,0 +1,82 @@
+[
+ {
+  "pr": "95949",
+  "sha": "0985e32fb5ac29c73f6dc121feea6c7fc2c438a7",
+  "subsystem": "editor/themes",
+  "title": "Fix PopupMenu horizontal margin in editor theme",
+  "decision": "port-now",
+  "risk": "low",
+  "verified_files_exist": true,
+  "rationale": "theme_classic.cpp lines 1120-1121 still use p_config.separation_margin for item_start/end_padding and lack the PopupMenu h_separation constant; pre-image matches so the popup_margin/h_separation change applies cleanly (theme_modern already uses popup_margin)."
+ },
+ {
+  "pr": "118890",
+  "sha": "dabca93d11e07e22918facf3a98da578af53106c",
+  "subsystem": "editor/themes",
+  "title": "Fix script editor guideline colors",
+  "decision": "port-now",
+  "risk": "low",
+  "verified_files_exist": true,
+  "rationale": "editor_theme_manager.cpp:534 matches the old base_color/dark_color_2 form and p_config.contrast exists (editor_theme_manager.h:62); code_edit.cpp:452 still has the 0.5 alpha, so both edits apply."
+ },
+ {
+  "pr": "118797",
+  "sha": "df910723dbee422f12e1115d193b2554dce3981e",
+  "subsystem": "editor/themes",
+  "title": "Fix shrunken vertical borders for editor Labels",
+  "decision": "skip",
+  "risk": "low",
+  "verified_files_exist": true,
+  "rationale": "The LabelVMarginless type variation / v_marginless_style block the fix targets does not exist anywhere in editor/themes (grep found no LabelVMarginless in theme_classic.cpp or theme_modern.cpp), so the typo it corrects cannot manifest in the fork."
+ },
+ {
+  "pr": "116641",
+  "sha": "471371dbccab969d1424b141983d2e64ed478d4e",
+  "subsystem": "editor/themes",
+  "title": "Fix icons colors for files and directories at light color preset",
+  "decision": "skip",
+  "risk": "low",
+  "verified_files_exist": true,
+  "rationale": "Already present: theme_classic.cpp:1037-1039 and theme_modern.cpp:1034-1036 already set FileDialog file/folder_thumbnail/file_thumbnail icons."
+ },
+ {
+  "pr": "118363",
+  "sha": "825e762c99f3e533741ed65a3629054773d79d0f",
+  "subsystem": "editor/themes",
+  "title": "Prevent branding in Project Manager from being affected by icon saturation",
+  "decision": "skip",
+  "risk": "low",
+  "verified_files_exist": true,
+  "rationale": "TitleBarLogo is consumed only by editor/project_manager/project_manager.cpp:242 and the Project Manager is being removed from the fork (PR #1161), so exempting TitleBarLogo from icon saturation is dead branding."
+ },
+ {
+  "pr": "117462",
+  "sha": "9ddccdec1298d72ba14794ac917715a7d417d137",
+  "subsystem": "editor/themes",
+  "title": "Fix Audio bus effects section margin",
+  "decision": "port-now",
+  "risk": "low",
+  "verified_files_exist": true,
+  "rationale": "EditorAudioBusEffectsTree h_separation=0 constant is absent in both themes; theme_classic.cpp lacks the type-variation block (insertion point at lines 2066-2070 matches) and theme_modern.cpp:2222 sets the stylebox but not the constant."
+ },
+ {
+  "pr": "117441",
+  "sha": "d49ce0c98976e95d67f90300d9304cfe202ca807",
+  "subsystem": "editor/themes",
+  "title": "Fix PopupMenu sizing with search bar",
+  "decision": "skip",
+  "risk": "low",
+  "verified_files_exist": true,
+  "rationale": "Already fully present: popup_menu.cpp/.h search_bar_separation + body_max_w sizing, default_theme.cpp:772, PopupMenu.xml:763, and both editor themes already set search_bar_separation."
+ },
+ {
+  "pr": "115399",
+  "sha": "89f36b740a581f58f620fae119e9807129f37be9",
+  "subsystem": "editor/themes",
+  "title": "Fix cursor selection box color",
+  "decision": "port-now",
+  "risk": "low",
+  "verified_files_exist": true,
+  "rationale": "theme_modern.cpp:218-219 still use the old mono_color*alpha box_selection fill/stroke colors that pre-image matches; change to the hardcoded gray Colors applies cleanly (fix only touches theme_modern)."
+ }
+]

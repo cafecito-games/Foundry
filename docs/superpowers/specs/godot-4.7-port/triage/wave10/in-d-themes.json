@@ -1,0 +1,58 @@
+[
+ {
+  "pr": "95949",
+  "sha": "0985e32fb5ac29c73f6dc121feea6c7fc2c438a7",
+  "title": "Fix PopupMenu horizontal margin in editor theme",
+  "subsystem": "editor/themes",
+  "nfiles": 1
+ },
+ {
+  "pr": "118890",
+  "sha": "dabca93d11e07e22918facf3a98da578af53106c",
+  "title": "Fix script editor guideline colors",
+  "subsystem": "editor/themes",
+  "nfiles": 2
+ },
+ {
+  "pr": "118797",
+  "sha": "df910723dbee422f12e1115d193b2554dce3981e",
+  "title": "Fix shrunken vertical borders for editor `Label`s",
+  "subsystem": "editor/themes",
+  "nfiles": 2
+ },
+ {
+  "pr": "116641",
+  "sha": "471371dbccab969d1424b141983d2e64ed478d4e",
+  "title": "Fix icons colors for files and directories at light color preset",
+  "subsystem": "editor/themes",
+  "nfiles": 2
+ },
+ {
+  "pr": "118363",
+  "sha": "825e762c99f3e533741ed65a3629054773d79d0f",
+  "title": "Prevent branding in Project Manager from being affected by icon saturation",
+  "subsystem": "editor/themes",
+  "nfiles": 1
+ },
+ {
+  "pr": "117462",
+  "sha": "9ddccdec1298d72ba14794ac917715a7d417d137",
+  "title": "Fix Audio bus effects section margin",
+  "subsystem": "editor/themes",
+  "nfiles": 2
+ },
+ {
+  "pr": "117441",
+  "sha": "d49ce0c98976e95d67f90300d9304cfe202ca807",
+  "title": "Fix PopupMenu sizing with search bar",
+  "subsystem": "editor/themes",
+  "nfiles": 6
+ },
+ {
+  "pr": "115399",
+  "sha": "89f36b740a581f58f620fae119e9807129f37be9",
+  "title": "Fix cursor selection box color",
+  "subsystem": "editor/themes",
+  "nfiles": 1
+ }
+]

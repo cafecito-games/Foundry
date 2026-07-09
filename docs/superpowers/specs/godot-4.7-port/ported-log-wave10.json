@@ -1,0 +1,296 @@
+[
+ {
+  "pr": "115248",
+  "sha": "ca08319e7d637732ba589fe53eefca0a9963e8a3",
+  "subsystem": "editor/gui",
+  "title": "Fix EditorObjectSelector PopupMenu width",
+  "status": "ported-clean"
+ },
+ {
+  "pr": "115596",
+  "sha": "8858cf3cc4e508b44c52450a6521b7491c3ec312",
+  "subsystem": "editor/inspector",
+  "title": "Fix wrong size on `Container` nodes due to late cache update",
+  "status": "ported-clean"
+ },
+ {
+  "pr": "115862",
+  "sha": "e57e50ef87487c18bdb36a1fb572d6d01a402525",
+  "subsystem": "editor/inspector",
+  "title": "Fix Unique Resources from Inherited Scenes",
+  "status": "empty-already-present"
+ },
+ {
+  "pr": "116080",
+  "sha": "ca281b0b2d6c9e65515091932748220128f5a299",
+  "subsystem": "editor/file_system",
+  "title": "Fix custom importers do not work with singletons",
+  "status": "ported-clean"
+ },
+ {
+  "pr": "116100",
+  "sha": "7b9e7a9f8b2f6584cc26ed65208e593537fc41f5",
+  "subsystem": "editor/inspector",
+  "title": "Fix theming for `EditorPropertyArray` icons",
+  "status": "ported-clean"
+ },
+ {
+  "pr": "116530",
+  "sha": "26c982fe98579db7b9a4931c6fe4b8159f198dae",
+  "subsystem": "editor/import",
+  "title": "Fix incorrect index usage in path string construction in `PostImportPluginSkeletonRestFixer`",
+  "status": "ported-clean"
+ },
+ {
+  "pr": "115528",
+  "sha": "2c9ba448150b5a7cca330c0e4d1fe77ec7d6f1f3",
+  "subsystem": "editor/import",
+  "title": "Fix extracting materials from `.gltf` and `.blend` files throws error",
+  "status": "ported-clean"
+ },
+ {
+  "pr": "116882",
+  "sha": "a14035c910bab26d1920fcc45e9a17ac99238184",
+  "subsystem": "editor/inspector",
+  "title": "Fix able to delete metadata on read-only object",
+  "status": "ported-clean"
+ },
+ {
+  "pr": "115399",
+  "sha": "89f36b740a581f58f620fae119e9807129f37be9",
+  "subsystem": "editor/themes",
+  "title": "Fix cursor selection box color",
+  "status": "ported-clean"
+ },
+ {
+  "pr": "116847",
+  "sha": "89f9ab049471e0f0e835531228d2083ac47cb437",
+  "subsystem": "editor/inspector",
+  "title": "Editor: Fix display of objects in the Remote Inspector",
+  "status": "ported-resolved"
+ },
+ {
+  "pr": "116977",
+  "sha": "85b9dfb500312ee8b4c325c3f03c8eb0f51454a6",
+  "subsystem": "editor/gui",
+  "title": "Fix replace bar requiring pressing enter twice",
+  "status": "ported-clean"
+ },
+ {
+  "pr": "116981",
+  "sha": "b83356283d1fa79257f68d5db452f21e3cd01ecc",
+  "subsystem": "editor/gui",
+  "title": "Fix replace button doesn't highlight next occurrence",
+  "status": "ported-clean"
+ },
+ {
+  "pr": "116992",
+  "sha": "b8fc607ef4fa5a1013246305ec41146d30d0c9dd",
+  "subsystem": "editor/gui",
+  "title": "Fix Script Editor loses focus on esc in Find/Replace bar",
+  "status": "ported-clean"
+ },
+ {
+  "pr": "117051",
+  "sha": "d72af002d0e71a394e3e66d03c6be54b5d7b2446",
+  "subsystem": "editor/inspector",
+  "title": "Fix Favorite Properties not working with multi-node selection in Inspector",
+  "status": "ported-clean"
+ },
+ {
+  "pr": "114962",
+  "sha": "decc376c126a2cbecb47d2c84af1d181e6324de1",
+  "subsystem": "editor/inspector",
+  "title": "Fix theme properties not showing their default values when undoing changes",
+  "status": "ported-clean"
+ },
+ {
+  "pr": "116412",
+  "sha": "b5613b27e45178dd9743e404b02067b740de85ae",
+  "subsystem": "editor/shader",
+  "title": "Fix `ShaderEditor`'s UI overflowing when shrunk",
+  "status": "ported-resolved"
+ },
+ {
+  "pr": "109743",
+  "sha": "25b625678c35728bb7076b8eed2cc961f6fdad92",
+  "subsystem": "editor/audio",
+  "title": "Fix audio bus send OptionButton height",
+  "status": "ported-clean"
+ },
+ {
+  "pr": "117462",
+  "sha": "9ddccdec1298d72ba14794ac917715a7d417d137",
+  "subsystem": "editor/themes",
+  "title": "Fix Audio bus effects section margin",
+  "status": "ported-clean"
+ },
+ {
+  "pr": "114622",
+  "sha": "935df7feec0b9d601ed5b9087f8bb47f614f27be",
+  "subsystem": "editor/shader",
+  "title": "Fix ShaderInclude selected in ShaderCreateDialog due to previous selection even if invalid",
+  "status": "ported-clean"
+ },
+ {
+  "pr": "115151",
+  "sha": "8fd7cdac7e71bbad58d6647103201a933f486c7f",
+  "subsystem": "editor/inspector",
+  "title": "Fix theme properties not being handled correctly by `MultiNodeEdit`",
+  "status": "ported-clean"
+ },
+ {
+  "pr": "118633",
+  "sha": "e0815c0bc9d77f4a99e9f03acbddc429ef0cbbe1",
+  "subsystem": "editor/inspector",
+  "title": "Fix max icon width in remote scene view/debugger",
+  "status": "ported-clean"
+ },
+ {
+  "pr": "118656",
+  "sha": "f6a80478ac1329a5be0a227fcd1a0d568b47f196",
+  "subsystem": "editor/import",
+  "title": "Fix `EditorScenePostImportPlugin::_get_internal_option_visibility()` having no effect",
+  "status": "ported-clean"
+ },
+ {
+  "pr": "117838",
+  "sha": "c63e6000b174afc4a42ac489bd9cb677ff291ab6",
+  "subsystem": "editor/inspector",
+  "title": "Fix animation and key buttons of inspector sections being off-center in the RTL layout",
+  "status": "port-later-diverged"
+ },
+ {
+  "pr": "118705",
+  "sha": "3a8d1def48b561191e5db642645e346f8c14e41b",
+  "subsystem": "editor/gui",
+  "title": "Fix the credits not being centered",
+  "status": "ported-clean"
+ },
+ {
+  "pr": "118269",
+  "sha": "63a5e781e590f658a7fea7b388840c1d54ab44a9",
+  "subsystem": "editor/inspector",
+  "title": "Editor: Fix default behavior of `@export_dir` rejects folders in drag and drop",
+  "status": "ported-clean"
+ },
+ {
+  "pr": "118793",
+  "sha": "0dc7152366eae85bcb98a73540dfa4acbddb2691",
+  "subsystem": "editor/export",
+  "title": "Fix wrong disabled states for buttons in the export dialog",
+  "status": "ported-clean"
+ },
+ {
+  "pr": "116843",
+  "sha": "a712b7acc3e09ec667428f2245081ddb455d94a7",
+  "subsystem": "editor/inspector",
+  "title": "Fix Dictionary editor losing selection when changing types in Remote inspector",
+  "status": "ported-clean"
+ },
+ {
+  "pr": "118963",
+  "sha": "6c9c5a383c99f461504064dc0e12b9e1b68ca49a",
+  "subsystem": "editor/export",
+  "title": "Fix `get_version()` fallback for Android",
+  "status": "ported-clean"
+ },
+ {
+  "pr": "118928",
+  "sha": "e9b93fffaef6ee68257cda4dc43446d244e5750a",
+  "subsystem": "editor/settings",
+  "title": "Fix per-project overrides not working for language",
+  "status": "ported-resolved"
+ },
+ {
+  "pr": "118896",
+  "sha": "651bc9d79c0edb51b6756f50582032caa52f0119",
+  "subsystem": "editor/import",
+  "title": "Fix audio import dialog improperly reseting the \"Master\" bus",
+  "status": "ported-clean"
+ },
+ {
+  "pr": "118890",
+  "sha": "dabca93d11e07e22918facf3a98da578af53106c",
+  "subsystem": "editor/themes",
+  "title": "Fix script editor guideline colors",
+  "status": "ported-clean"
+ },
+ {
+  "pr": "119030",
+  "sha": "fe5200b65879dd38d529a785627b25a26b4e0a4a",
+  "subsystem": "editor/import",
+  "title": "Import: Fix generated collision preview",
+  "status": "ported-clean"
+ },
+ {
+  "pr": "119112",
+  "sha": "d96ba6edbe4bf0378d6b5399c2fb545eeec79a09",
+  "subsystem": "editor/audio",
+  "title": "Fix audio bus name update",
+  "status": "ported-clean"
+ },
+ {
+  "pr": "119200",
+  "sha": "b6a10ee02b86a2748e675a13e92115a204a508c1",
+  "subsystem": "editor/inspector",
+  "title": "Fix Resource picker tooltip text",
+  "status": "ported-clean"
+ },
+ {
+  "pr": "119285",
+  "sha": "b72112f05b9076c3b447bd106f9ed0bb6541ad4f",
+  "subsystem": "editor/file_system",
+  "title": "Fix wrong error fixed check",
+  "status": "ported-clean"
+ },
+ {
+  "pr": "119182",
+  "sha": "bdaedccc17f4344d2d05518f25dfde0599227931",
+  "subsystem": "editor/import",
+  "title": "Fix wrong `beat_count` set in stream import when it's greater than previous `beat_max`",
+  "status": "ported-clean"
+ },
+ {
+  "pr": "95949",
+  "sha": "0985e32fb5ac29c73f6dc121feea6c7fc2c438a7",
+  "subsystem": "editor/themes",
+  "title": "Fix PopupMenu horizontal margin in editor theme",
+  "status": "ported-clean"
+ },
+ {
+  "pr": "119554",
+  "sha": "e558b07d8a8be2683929ff835d1b1ea09472179a",
+  "subsystem": "editor/export",
+  "title": "Fix export errors with non-resources",
+  "status": "ported-clean"
+ },
+ {
+  "pr": "119494",
+  "sha": "0389590b8f996c3b1a2e92dc158317523b1685ee",
+  "subsystem": "editor/export",
+  "title": "Fix a couple of issues when deleting presets in the export dialog",
+  "status": "ported-clean"
+ },
+ {
+  "pr": "115533",
+  "sha": "cc6d153fb6452c9cc757540c7bee1bcab1713793",
+  "subsystem": "editor/gui",
+  "title": "Fix buttons in `EditorProperty` overlapping with values",
+  "status": "port-later-diverged"
+ },
+ {
+  "pr": "119741",
+  "sha": "88ad186627e9dc071d44523a2db081fd7e5ddef1",
+  "subsystem": "editor/inspector",
+  "title": "Fix EditorPropertyArray using theme cache too early",
+  "status": "port-later-build-break"
+ },
+ {
+  "pr": "119950",
+  "sha": "dc0422466ccbafba16632fef242da917e547c8d1",
+  "subsystem": "editor/gui",
+  "title": "Fix EditorSpinSlider not showing tooltips",
+  "status": "ported-clean"
+ }
+]

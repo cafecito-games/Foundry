@@ -571,10 +571,7 @@ bool FindReplaceBar::search_next() {
 }
 
 void FindReplaceBar::_hide_bar() {
-	if (replace_text->has_focus() || search_text->has_focus()) {
-		text_editor->grab_focus();
-	}
-
+	text_editor->grab_focus();
 	text_editor->set_search_text("");
 	result_line = -1;
 	result_col = -1;
@@ -694,6 +691,11 @@ void FindReplaceBar::_replace_text_submitted(const String &p_text) {
 		_replace();
 		search_next();
 	}
+}
+
+void FindReplaceBar::_replace_button_pressed() {
+	_replace();
+	search_next();
 }
 
 void FindReplaceBar::_toggle_replace_pressed() {
@@ -829,6 +831,7 @@ FindReplaceBar::FindReplaceBar() {
 
 	// Replace toolbar.
 	replace_text = memnew(LineEdit);
+	replace_text->set_keep_editing_on_text_submit(true);
 	vbc_lineedit->add_child(replace_text);
 	replace_text->set_placeholder(TTRC("Replace"));
 	replace_text->set_tooltip_text(TTRC("Replace"));
@@ -839,7 +842,7 @@ FindReplaceBar::FindReplaceBar() {
 	replace = memnew(Button);
 	hbc_button_replace->add_child(replace);
 	replace->set_text(TTRC("Replace"));
-	replace->connect(SceneStringName(pressed), callable_mp(this, &FindReplaceBar::_replace));
+	replace->connect(SceneStringName(pressed), callable_mp(this, &FindReplaceBar::_replace_button_pressed));
 
 	replace_all = memnew(Button);
 	hbc_button_replace->add_child(replace_all);

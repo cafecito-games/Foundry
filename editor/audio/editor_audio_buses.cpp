@@ -227,7 +227,7 @@ void EditorAudioBus::update_send() {
 	send->clear();
 	if (is_master) {
 		send->set_disabled(true);
-		send->set_text(TTR("Speakers"));
+		send->add_item(TTRC("Speakers"));
 	} else {
 		send->set_disabled(false);
 		StringName current_send = AudioServer::get_singleton()->get_bus_send(get_index());
@@ -1460,6 +1460,7 @@ EditorAudioBuses::EditorAudioBuses() {
 	file_dialog->connect("file_selected", callable_mp(this, &EditorAudioBuses::_file_dialog_callback));
 
 	AudioServer::get_singleton()->connect("bus_layout_changed", callable_mp(this, &EditorAudioBuses::_rebuild_buses));
+	AudioServer::get_singleton()->connect("bus_renamed", callable_mp(this, &EditorAudioBuses::_rebuild_buses).unbind(3));
 	FileSystemDock::get_singleton()->connect("files_moved", callable_mp(this, &EditorAudioBuses::_file_moved));
 
 	set_process(true);
