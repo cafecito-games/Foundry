@@ -630,9 +630,14 @@ function startEditor(zip) {
 		setLoaderEnabled(true);
 	};
 	function Execute(args) {
+		// Recognize both the legacy --editor/-e flags and the command-first
+		// `editor open` invocation used for editor relaunches (New Window, project
+		// switch) so those are not misrouted to the game canvas.
 		const is_editor = args.filter(function (v) {
 			return v === '--editor' || v === '-e';
-		}).length !== 0;
+		}).length !== 0 || args.some(function (v, i) {
+			return v === 'editor' && args[i + 1] === 'open';
+		});
 		const is_game = !is_editor;
 		if (video_driver) {
 			args.push('--rendering-driver', video_driver);
