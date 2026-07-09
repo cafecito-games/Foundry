@@ -140,6 +140,9 @@ AnimationNode::NodeTimeInfo AnimationNodeAnimation::_process(const AnimationMixe
 
 	NodeTimeInfo cur_nti = get_node_time_info();
 	double cur_len = cur_nti.length;
+	// When time scale is stretched, the entire animation is played anyway using a time scale based on the timeline length.
+	// Therefore, the end of the animation section is the animation length.
+	double playback_end = (use_custom_timeline && stretch_time_scale) ? anim_size : cur_len;
 	double cur_time = p_playback_info.time;
 	double cur_delta = p_playback_info.delta;
 	bool cur_backward = get_parameter(backward);
@@ -212,7 +215,7 @@ AnimationNode::NodeTimeInfo AnimationNodeAnimation::_process(const AnimationMixe
 	// 3. Progress for Animation.
 	double prev_playback_time = prev_time + start_offset;
 	double cur_playback_time = cur_time + start_offset;
-	if (stretch_time_scale) {
+	if (use_custom_timeline && stretch_time_scale) {
 		double mlt = anim_size / cur_len;
 		prev_playback_time *= mlt;
 		cur_playback_time *= mlt;
@@ -270,7 +273,7 @@ AnimationNode::NodeTimeInfo AnimationNodeAnimation::_process(const AnimationMixe
 		if (immediately_after_start) {
 			AnimationMixer::PlaybackInfo pi = p_playback_info;
 			pi.start = 0.0;
-			pi.end = cur_len;
+			pi.end = playback_end;
 			if (play_mode == PLAY_MODE_FORWARD) {
 				pi.time = 0;
 			} else {
@@ -283,7 +286,7 @@ AnimationNode::NodeTimeInfo AnimationNodeAnimation::_process(const AnimationMixe
 
 		AnimationMixer::PlaybackInfo pi = p_playback_info;
 		pi.start = 0.0;
-		pi.end = cur_len;
+		pi.end = playback_end;
 		if (play_mode == PLAY_MODE_FORWARD) {
 			pi.time = cur_playback_time;
 		} else {
@@ -1040,7 +1043,7 @@ AnimationNodeTimeScale::AnimationNodeTimeScale() {
 
 void AnimationNodeTimeSeek::get_parameter_list(List<PropertyInfo> *r_list) const {
 	AnimationNode::get_parameter_list(r_list);
-	r_list->push_back(PropertyInfo(Variant::FLOAT, seek_pos_request, PROPERTY_HINT_RANGE, "-1,3600,0.01,or_greater")); // It will be reset to -1 after seeking the position immediately.
+	r_list->push_back(PropertyInfo(Variant::FLOAT, seek_request, PROPERTY_HINT_RANGE, "-1,3600,0.01,or_greater")); // It will be reset to -1 after seeking the position immediately.
 }
 
 Variant AnimationNodeTimeSeek::get_parameter_default_value(const StringName &p_parameter) const {
@@ -1065,7 +1068,7 @@ bool AnimationNodeTimeSeek::is_explicit_elapse() const {
 }
 
 AnimationNode::NodeTimeInfo AnimationNodeTimeSeek::_process(const AnimationMixer::PlaybackInfo p_playback_info, bool p_test_only) {
-	double cur_seek_pos = get_parameter(seek_pos_request);
+	double cur_seek_pos = get_parameter(seek_request);
 
 	AnimationMixer::PlaybackInfo pi = p_playback_info;
 	pi.weight = 1.0;
@@ -1073,7 +1076,7 @@ AnimationNode::NodeTimeInfo AnimationNodeTimeSeek::_process(const AnimationMixer
 		pi.time = cur_seek_pos;
 		pi.seeked = true;
 		pi.is_external_seeking = explicit_elapse;
-		set_parameter(seek_pos_request, -1.0); // Reset.
+		set_parameter(seek_request, -1.0); // Reset.
 	}
 
 	return blend_input(0, pi, FILTER_IGNORE, true, p_test_only);
@@ -1897,7 +1900,7 @@ void AnimationNodeBlendTree::_bind_methods() {
 	BIND_CONSTANT(CONNECTION_ERROR_SAME_NODE);
 	BIND_CONSTANT(CONNECTION_ERROR_CONNECTION_EXISTS);
 
-	ADD_SIGNAL(MethodInfo(SNAME("node_changed"), PropertyInfo(Variant::STRING_NAME, "node_name")));
+	ADD_SIGNAL(MethodInfo("node_changed", PropertyInfo(Variant::STRING_NAME, "node_name")));
 }
 
 void AnimationNodeBlendTree::_initialize_node_tree() {

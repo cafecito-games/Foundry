@@ -72,6 +72,7 @@
 #include "scene/main/window.h"
 #include "scene/resources/packed_scene.h"
 #include "scene/resources/style_box_texture.h"
+#include "servers/display/accessibility_server.h"
 
 CanvasItemEditorViewport *CanvasItemEditor::_get_viewport() const {
 	const CanvasItemEditorView *view = get_focused_view();
@@ -1364,8 +1365,8 @@ void CanvasItemEditor::_notification(int p_what) {
 			ERR_FAIL_COND(ae.is_null());
 
 			//TODO
-			DisplayServer::get_singleton()->accessibility_update_set_role(ae, DisplayServer::AccessibilityRole::ROLE_STATIC_TEXT);
-			DisplayServer::get_singleton()->accessibility_update_set_value(ae, TTR(vformat("The %s is not accessible at this time.", "Canvas item editor")));
+			AccessibilityServer::get_singleton()->update_set_role(ae, AccessibilityServerEnums::AccessibilityRole::ROLE_STATIC_TEXT);
+			AccessibilityServer::get_singleton()->update_set_value(ae, TTR(vformat("The %s is not accessible at this time.", "Canvas item editor")));
 		} break;
 
 		case NOTIFICATION_PROCESS: {

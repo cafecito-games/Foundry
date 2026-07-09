@@ -1,0 +1,156 @@
+[
+ {
+  "sha": "f3ec4cee64bc26b8a99d13f045f243de5df1f4e5",
+  "pr": "119872",
+  "title": "Fix Polygon2D being culled against a stale AABB after editing vertices",
+  "subsystem": "scene/2d",
+  "nfiles": 1
+ },
+ {
+  "sha": "b8c2d43bdf8744eae6ce5ce0e54c3a995ff8395a",
+  "pr": "118265",
+  "title": "Fix `BoneAttachment3D` throws `!is_inside_tree()`",
+  "subsystem": "scene/3d",
+  "nfiles": 1
+ },
+ {
+  "sha": "f1ea87c4bd4879d70e06af7d22e717983801920b",
+  "pr": "89325",
+  "title": "Fix error when CPUParticles3D has `scale` set to `(0, 0, 0)`",
+  "subsystem": "scene/3d",
+  "nfiles": 1
+ },
+ {
+  "sha": "28eecef6f18587bd130e0c40bce52a42d06991ec",
+  "pr": "118906",
+  "title": "Add lacked argument to bound method for curve in SpringBoneSimulator",
+  "subsystem": "scene/3d",
+  "nfiles": 1
+ },
+ {
+  "sha": "9b4b3831d2d37dfa5f7a6ceffbf4e2e7430d6610",
+  "pr": "118588",
+  "title": "Use `RequiredParam`/`RequiredResult` in several more APIs",
+  "subsystem": "scene/2d",
+  "nfiles": 6
+ },
+ {
+  "sha": "a7060f5c86b6df128b6dd6c5277278b8bfb7817c",
+  "pr": "113605",
+  "title": "Optimize SkeletonModifier3D Influence interpolation",
+  "subsystem": "scene/3d",
+  "nfiles": 2
+ },
+ {
+  "sha": "abfb91d1e2893bc18decf7716284cef8fa3e03b5",
+  "pr": "117959",
+  "title": "Fix SplineIK crash cases",
+  "subsystem": "scene/3d",
+  "nfiles": 1
+ },
+ {
+  "sha": "376b3b041eb6c73d52aaa70118342338f7a5b439",
+  "pr": "118080",
+  "title": "Only propagate physics server transforms when different",
+  "subsystem": "scene/3d",
+  "nfiles": 3
+ },
+ {
+  "sha": "91ad65d93234057e48142dabc965aef8b76c9ef5",
+  "pr": "114080",
+  "title": "Fix volume calculation with multiple viewports in 3D",
+  "subsystem": "scene/3d",
+  "nfiles": 2
+ },
+ {
+  "sha": "d76390fa365f89bdefa9dff26daaf5980fa8d87a",
+  "pr": "117879",
+  "title": "Fix build with 3D navigation disabled",
+  "subsystem": "scene/3d",
+  "nfiles": 2
+ },
+ {
+  "sha": "8d0b2387274660be3b5f8b88ad7ddd08b8a43df0",
+  "pr": "117655",
+  "title": "Call stop after setting new sprite frames",
+  "subsystem": "scene/2d",
+  "nfiles": 2
+ },
+ {
+  "sha": "a74ec70626e5645973dacd22e1a5b5e8dc9cf910",
+  "pr": "117334",
+  "title": "Add fast path to Polygon2D",
+  "subsystem": "scene/2d",
+  "nfiles": 2
+ },
+ {
+  "sha": "2078318f25a5b0f6c69ae628e4c7be9b3daf7e8f",
+  "pr": "115358",
+  "title": "Add node path validation & tweak warning in SkeletonModifier3D",
+  "subsystem": "scene/3d",
+  "nfiles": 15
+ },
+ {
+  "sha": "ca77be8d0ada2f5cd9befebe8dd7800b274de133",
+  "pr": "117286",
+  "title": "Remove unused includes in `scene` with clangd-tidy",
+  "subsystem": "scene/3d",
+  "nfiles": 56
+ },
+ {
+  "sha": "5cfccbee34013b14216d753f918ffe1271161d3c",
+  "pr": "117189",
+  "title": "Fix DirectionalLight3D property list",
+  "subsystem": "scene/3d",
+  "nfiles": 1
+ },
+ {
+  "sha": "98e6b3c46064ba601afff02e0b6a9b98fd47f200",
+  "pr": "116956",
+  "title": "Add configuration warning for missing Mesh",
+  "subsystem": "scene/2d",
+  "nfiles": 4
+ },
+ {
+  "sha": "b5ff3b5e3b78ed0630febb11afcc81b9accc20a7",
+  "pr": "116662",
+  "title": "Clean up `_validate_property()` implementations",
+  "subsystem": "scene/3d",
+  "nfiles": 37
+ },
+ {
+  "sha": "46729d4b5e421d7e6ddbbc596df1dcd5355f6f8a",
+  "pr": "116430",
+  "title": "Apply viewport oversampling to Line2D",
+  "subsystem": "scene/2d",
+  "nfiles": 1
+ },
+ {
+  "sha": "b205e5fd2057ec96d27e4b7bada2c2c43e65be23",
+  "pr": "116140",
+  "title": "Revert \"Change curve range for particle multipliers\"",
+  "subsystem": "scene/2d",
+  "nfiles": 3
+ },
+ {
+  "sha": "b79e1f36ef2bd29419afeab5f754664721a195b1",
+  "pr": "116012",
+  "title": "Fix erroneous use of atomic in the dirty flags of Node3D",
+  "subsystem": "scene/3d",
+  "nfiles": 1
+ },
+ {
+  "sha": "ca0be3863297062222f19847912fe58dd0799d17",
+  "pr": "116000",
+  "title": "Fix `set_process_thread_group()` and transform notification of threaded-processing Node3Ds.",
+  "subsystem": "scene/3d",
+  "nfiles": 2
+ },
+ {
+  "sha": "21932ace7fceaa2ee04365f893dd6f981f1aa7b2",
+  "pr": "115689",
+  "title": "Fix LookAtModifier3D / AimModifier3D forward vector",
+  "subsystem": "scene/3d",
+  "nfiles": 4
+ }
+]

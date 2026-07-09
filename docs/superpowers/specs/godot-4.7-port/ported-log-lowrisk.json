@@ -1,0 +1,1302 @@
+[
+ {
+  "pr": "114821",
+  "sha": "b3af0f641a00786d374fa76e7407b53e058c3c5c",
+  "decision": "port-now",
+  "kind": "platform",
+  "risk": "low",
+  "rationale": "AppleEmbedded compositor override tweaks; iOS-only, low priority for fork.",
+  "outcome": "ported",
+  "local_sha": "12948abfffb8d29029f27815ac099b82ff94df3c"
+ },
+ {
+  "pr": "114076",
+  "sha": "0c7bb27bcd60639ce3978950d9c118067968d700",
+  "decision": "port-now",
+  "kind": "perf",
+  "risk": "low",
+  "rationale": "Reduce unnecessary D3D12 driver calls; ~100 line rework, perf-only, defer.",
+  "outcome": "ported",
+  "local_sha": "d8a48b5e6c026f12eb44e2b545869a4fbb34de44"
+ },
+ {
+  "pr": "108830",
+  "sha": "105ec00722827275c881599ff21601821bb2ddc6",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "PCKPacker add-files-from-buffer; API feature across 4 files, non-urgent.",
+  "outcome": "ported",
+  "local_sha": "b7803550a0d5ee6e8b25a038da5f4382b274128f"
+ },
+ {
+  "pr": "115383",
+  "sha": "c6465994b7907c7828ec699110bb12736509c1f0",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Guards iOS OpenGLES code behind GLES3_ENABLED so iOS can build with opengl3=no; iOS is not compiled by the macOS build, so not verifiable here. Defer.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "114814",
+  "sha": "131c54270b23609ef9b0e2fd786e1d8c7528d9e3",
+  "decision": "port-now",
+  "kind": "refactor",
+  "risk": "low",
+  "rationale": "Registers ClassDB singleton at Core init level; init-order change, validate carefully.",
+  "outcome": "ported",
+  "local_sha": "950b7209f479f693e21b3437fa1c8a62d3348f86"
+ },
+ {
+  "pr": "115114",
+  "sha": "2da55b2f298696d6d96222ae779935a04ca709a3",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Add Home LED support on NS controllers; touches thirdparty SDL, feature add, defer.",
+  "outcome": "ported",
+  "local_sha": "2909e782467c55193429125353898eebc2bebe20"
+ },
+ {
+  "pr": "115434",
+  "sha": "ea1e6640f0fa9a40dc362fe034f201fdecb45c20",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Adds an orientation_changed signal to DisplayServer, wired on android and apple_embedded. Small and mostly build-verifiable, but a new public-API feature (not a bugfix) with low value for the fork.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "114488",
+  "sha": "94f3b73cec229ce922a48d490a983a15faa0ce49",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Exposes span_index in TextServer glyph dictionaries; small additive API surface, defer.",
+  "outcome": "ported",
+  "local_sha": "e4b48bc30443d7b39d7a9a8e8cdb45eef59395ee"
+ },
+ {
+  "pr": "100923",
+  "sha": "dd210a10714371a7d34d3b3d5d7cae8a82dd5efe",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Adds _set_format/_get_formats GDVIRTUAL binds to CameraFeed; additive feature, defer.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "115530",
+  "sha": "135cd6eea09b55f420d3d57064dd6d0d94ebcb6b",
+  "decision": "port-now",
+  "kind": "refactor",
+  "risk": "low",
+  "rationale": "Remove is_discardable flag on render target; part of discardable-tuning series.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "115569",
+  "sha": "2725c636caa9983687101917a822ad5ee7cbc470",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes script_language_extension.cpp build with deprecated=no; build-config fix.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "115570",
+  "sha": "b621b9ea5a7d81f94a5e9155013626f28922ce09",
+  "decision": "port-now",
+  "kind": "refactor",
+  "risk": "low",
+  "rationale": "Drops input_enums/keyboard includes from variant.h/binder_common.h; include hygiene, 4 files.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "115577",
+  "sha": "563c22673b962c0d6daa114ada1607de68d04949",
+  "decision": "port-now",
+  "kind": "refactor",
+  "risk": "low",
+  "rationale": "Removes several includes across 15 files; header churn, deprioritize.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "115602",
+  "sha": "82580cf965caf5ce75fc86d4d26e68071bfe4685",
+  "decision": "port-now",
+  "kind": "refactor",
+  "risk": "low",
+  "rationale": "Hides user-presence singleton; depends on PR 115190 which adds the not-yet-present extension.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "115450",
+  "sha": "d48f9d45e274f2532364d28bb321946d8d91424c",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "TLS handshake fix with builtin_certs=no; underlying cert fix useful though tied to removed AssetLib.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "115644",
+  "sha": "d7e6f5e05f9dfc0d2e82e6a89b1311835dfd3fee",
+  "decision": "port-now",
+  "kind": "platform",
+  "risk": "low",
+  "rationale": "Non-3D build fix in runtime_node_select.h which does not exist in fork; blocked.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "115639",
+  "sha": "5b75d2539b69191a46ddf88d9eaf8340a97174a1",
+  "decision": "port-now",
+  "kind": "refactor",
+  "risk": "low",
+  "rationale": "Minimizes gdvirtual/script_instance includes; compile-time refactor, 5 files.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "115765",
+  "sha": "3c5e561024b2aeee7494e675fbed4724dd216fe2",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Disables FP contraction for iOS/visionOS detect.py to match macOS; iOS/visionOS are not compiled by the macOS build, so not verifiable here. Low-risk parity fix, defer.",
+  "outcome": "ported",
+  "local_sha": "ed67d05c17beeb4236315c68cf70d3ff56e71198"
+ },
+ {
+  "pr": "110254",
+  "sha": "d9089dba06c1c207370eab030caee2089e58dcb4",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Image resize for all uncompressed formats; feature/behavior extension, non-urgent.",
+  "outcome": "ported",
+  "local_sha": "94b130fa914973f997fd0add3b18a51e14122e2b"
+ },
+ {
+  "pr": "114131",
+  "sha": "3d2a2d39680a7c0271b0129cce95b09b4be72a78",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Ensures ScriptLanguage init after init_languages; may touch Foundry Script init path.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "94062",
+  "sha": "071b605cdd61bc5cafd69a3ced0669c7c20a5462",
+  "decision": "port-now",
+  "kind": "refactor",
+  "risk": "low",
+  "rationale": "Marks 'script' property internal; may interact with fork inspector/script surfaces.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "115952",
+  "sha": "b597f93960df40c86f51d2ba9d188dbb25bd3441",
+  "decision": "port-now",
+  "kind": "refactor",
+  "risk": "low",
+  "rationale": "Remove unused JoypadSDL::singleton; cleanup, no behavior change, defer.",
+  "outcome": "ported",
+  "local_sha": "7f7d5071cb9ccb1d89bba45c870d9a1188977962"
+ },
+ {
+  "pr": "115394",
+  "sha": "c2b5ff33695f304db4fdfcf573ca16782923ae6f",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Adds conic gradient to GradientTexture2D; additive feature, deprioritize.",
+  "outcome": "ported",
+  "local_sha": "5fc4782aa5afc1c04fe86b7da1000519d24cca3d"
+ },
+ {
+  "pr": "116284",
+  "sha": "96a2994b216031699e30e1be7b797ee32ce67559",
+  "decision": "port-now",
+  "kind": "perf",
+  "risk": "low",
+  "rationale": "Adds move semantics to HashSet; single-file perf refactor, non-urgent.",
+  "outcome": "ported",
+  "local_sha": "773d35540da00a248d0d9802e012360bc6bd58ac"
+ },
+ {
+  "pr": "116326",
+  "sha": "4e84cd8a6be3ecd3c688269e1e4d05afa92eee5a",
+  "decision": "port-now",
+  "kind": "refactor",
+  "risk": "low",
+  "rationale": "Removes some unused Node methods; API removal, verify no fork usage first.",
+  "outcome": "ported",
+  "local_sha": "16422d13c929f88fea35a923432d979cb79daa54"
+ },
+ {
+  "pr": "116244",
+  "sha": "d7392aff0211a2f9b387be8e190b31743832eac6",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Additive but expands OpenXRAPIExtension gdextension virtuals; non-urgent API growth, defer.",
+  "outcome": "ported",
+  "local_sha": "c538b4be0f0ae9857806b1d68da2f144f7357f78"
+ },
+ {
+  "pr": "116418",
+  "sha": "bcbdd73ab9efbdfb7426fb7db1ab519eba37734f",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Adds SDL misc2-misc6 gamepad button constants; enum additions, non-urgent.",
+  "outcome": "ported",
+  "local_sha": "cf68f6071fc5221994a8d5c2dba0613e0d457e77"
+ },
+ {
+  "pr": "114895",
+  "sha": "5e1052839779b2686060bf013798774d994e31f2",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Joypad vibration capability checking; input feature across 5 files.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "115732",
+  "sha": "4326946f005ca357243b5eaa1ef7083073d87e73",
+  "decision": "port-now",
+  "kind": "refactor",
+  "risk": "low",
+  "rationale": "Tidies includes across 32 files in scene/main and scene/debugger; churn, deprioritize.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "115623",
+  "sha": "be587f3a2d92f42d52fd3801f94a8dda47e18e64",
+  "decision": "port-now",
+  "kind": "refactor",
+  "risk": "low",
+  "rationale": "Tidy GLES3 includes across 31 files; large non-behavioral churn, defer to reduce conflicts.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "116261",
+  "sha": "9fc90a0441fea4baa62784f241d4449b9258e919",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Adds Java-style positional args to sprintf; string feature, non-urgent.",
+  "outcome": "ported",
+  "local_sha": "dfba6d758fa6eb43129ce35c81a8d0c71aeea9d7"
+ },
+ {
+  "pr": "116092",
+  "sha": "8ab854a7cab894d957a71e9d9103542fc699cd20",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Appends build name to bundle ID and switches to get_version_info, but platform_macos_builders.py is heavily fork-diverged (Foundry rebrand, get_build_version helper, no org.godotengine.godot string); needs manual adaptation, low value.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "116539",
+  "sha": "0df713417b6b7f4ba077923fde624691c3f19014",
+  "decision": "port-now",
+  "kind": "refactor",
+  "risk": "low",
+  "rationale": "Adds explicit includes to gauge compile costs; measurement refactor, low value.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "116542",
+  "sha": "a3e84cc2af14aa4cffbefd8e13492e59567a64e3",
+  "decision": "port-now",
+  "kind": "refactor",
+  "risk": "low",
+  "rationale": "Moves char ranges to non-constexpr cpp; compile-time refactor, low value.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "116548",
+  "sha": "2db05b08de983358f9ad12f28280939d997a0be5",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Only polls for devices when a runnable export preset is configured. Base already carries a related has_runnable_preset implementation but not this _start/_stop refactor, so it is a divergent partial; reconcile before porting.",
+  "outcome": "ported",
+  "local_sha": "8d95ef46236fa5ec12d1d55e668cd5f14a7f4be0"
+ },
+ {
+  "pr": "115520",
+  "sha": "582a4f0d5a58efb9696c5e09d926309981d98b30",
+  "decision": "port-now",
+  "kind": "refactor",
+  "risk": "low",
+  "rationale": "Rename Compatibility glow structs for code style; cosmetic across 6 files, defer.",
+  "outcome": "ported",
+  "local_sha": "d4994192a82debe9f4afd86b574c6ced2754fe63"
+ },
+ {
+  "pr": "116269",
+  "sha": "b7eb50db44ef788d70f10501fd096a2614ad6e26",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Adds ImporterMesh merge function (~280 lines); additive feature, deprioritize.",
+  "outcome": "ported",
+  "local_sha": "17f20590eabd78eaa6594a92de9d66dabdaf3edc"
+ },
+ {
+  "pr": "115888",
+  "sha": "b62cbfdaa8f3f841ad3c776ffff4b1117cc8617b",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Adds support for android plugin gradle platform dependencies (app/build.gradle). Build-config feature, not build-verified.",
+  "outcome": "ported",
+  "local_sha": "7db1417a2257db5b158cb1633f37931679446c37"
+ },
+ {
+  "pr": "116701",
+  "sha": "6bcbf8913dff0b402eee7b5e589e23700ead2408",
+  "decision": "port-now",
+  "kind": "cleanup",
+  "risk": "low",
+  "rationale": "Removes the RTL column_max_width_dirty lazy path on the premise columns are precomputed in _shape_line() - that precompute comes from the 116277 table refactor, which the fork lacks. Blocked on 116277.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "103005",
+  "sha": "36dac9c6c97270b0d00560acde6a9793158deb71",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Adds displaying GridMap collider in editor; new visualization feature, defer.",
+  "outcome": "ported",
+  "local_sha": "29e5bf60cb418665f7d3a3846e4dd59b09be961e"
+ },
+ {
+  "pr": "116693",
+  "sha": "a048ea0ffec5492e690ecebcbb35f19196addb0f",
+  "decision": "port-now",
+  "kind": "platform",
+  "risk": "low",
+  "rationale": "Windows windows.h wrapper header; platform housekeeping, non-urgent.",
+  "outcome": "ported",
+  "local_sha": "1e4d38895225e5c732b57b88c3876a7135203203"
+ },
+ {
+  "pr": "116766",
+  "sha": "a79323e3ec73d1c84f7b24f2cef688eb3dd7f23d",
+  "decision": "port-now",
+  "kind": "perf",
+  "risk": "low",
+  "rationale": "Shares one JoltTempAllocator across spaces; memory optimization, defer.",
+  "outcome": "ported",
+  "local_sha": "e5eafd662ddf91e1b3ce26bb534e35e37f4ece43"
+ },
+ {
+  "pr": "114336",
+  "sha": "637ae4c5144064771ef877248debac8e181c2867",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Add bent normal map support to Compatibility renderer; feature add, defer.",
+  "outcome": "ported",
+  "local_sha": "e5d2de86a2ed7641de5ad0f0638e2e6361802610"
+ },
+ {
+  "pr": "116768",
+  "sha": "5a5a806eaf22d57a677d63cca96690409a3f8a0f",
+  "decision": "port-now",
+  "kind": "refactor",
+  "risk": "low",
+  "rationale": "Tidying in modules/jolt_physics; no behavior change, low priority.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "113956",
+  "sha": "e42575d23fe62eaaf2a7ede233b1d5e9a0c12545",
+  "decision": "port-now",
+  "kind": "other",
+  "risk": "low",
+  "rationale": "Remove clamping from LinearToSRGB visual shader node; behavior change to visual shaders, defer.",
+  "outcome": "ported",
+  "local_sha": "53ddb2a63152d6f3730720c15fc973d5e59293b7"
+ },
+ {
+  "pr": "116776",
+  "sha": "14fcc7132ef1eb6fcefb20a6e858e5dfb3b1457e",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Autocomplete no longer hides some setters/getters; may interact with fork completion logic.",
+  "outcome": "ported",
+  "local_sha": "797b9bbba4a98a7917df9d8274968d87adba56eb"
+ },
+ {
+  "pr": "92984",
+  "sha": "371282b28e6947ae0bbc53c94a1a02ba7c191ccd",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Per-platform file-manager label; feature across 11 files, cosmetic.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "115119",
+  "sha": "bb1e018314bdb5bccb3d16405c584dd69fe108e9",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Project setting to ignore joypad when unfocused; feature across 9 files.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "116786",
+  "sha": "e72018ee3496cb1399c9367e42ded921646ed665",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "READONLY constants in remote scene view; targets scene_debugger_object.cpp missing in fork.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "116752",
+  "sha": "4296a0c1587f398eb7bd983537eb5fb20f9c9f17",
+  "decision": "port-now",
+  "kind": "refactor",
+  "risk": "low",
+  "rationale": "is_frustum projection cleanup across 10 files; low-value cleanup, defer.",
+  "outcome": "ported",
+  "local_sha": "48ef02c9a958d34d434ae5b41a9a307514f413c7"
+ },
+ {
+  "pr": "117131",
+  "sha": "19726167ce043cea56242d87b218bf587557f3bc",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes a FileAccess crash with treeUri in Gradle-built apps via gradle dependency/config changes only. Build-config change, not verifiable in this macOS build.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "116685",
+  "sha": "cac8aad3599692dd5949afedb55204f2959e085c",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Adds clear-rotation button to GridMap editor; small UX feature, defer.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "116973",
+  "sha": "83f396d0dd3152a11aaffab58d886c7c7b16b420",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Adds cursor coordinate readout to GridMap editor; UX feature, defer.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "117178",
+  "sha": "8f0468f28102ea0bcf4628b91142c6a5e06b957b",
+  "decision": "port-now",
+  "kind": "refactor",
+  "risk": "low",
+  "rationale": "Pure XRServer Vector->LocalVector cleanup with no behavior change; low value, defer.",
+  "outcome": "ported",
+  "local_sha": "ceb3257a13d13ff0a9b29b1969fdb2b721e178c7"
+ },
+ {
+  "pr": "117179",
+  "sha": "1a86cf1eaaa0b08f812d28df40b3a708de648c8f",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Freelook inertia fix in view_3d_controller.cpp which does not exist in fork; blocked.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "117255",
+  "sha": "01af00957c26c822dc8d090545fca63ee49a29dd",
+  "decision": "port-now",
+  "kind": "platform",
+  "risk": "low",
+  "rationale": "3D-disabled build fix in runtime_node_select.h which does not exist in fork; blocked.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "117253",
+  "sha": "7c2a2b06a97fd6b0139a80d14e1087173253b88e",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Calls set_current_rendering_driver_name(driver, OS::RENDERING_SOURCE_FALLBACK); base OS only has the single-arg setter and no RENDERING_SOURCE enum. Blocked on 4.7 rendering-source-tracking API.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "117322",
+  "sha": "7851fa442ec78726cbcf8804cf6c38abbc9a7e2d",
+  "decision": "port-now",
+  "kind": "other",
+  "risk": "low",
+  "rationale": "Accessibility change for embedded window activation callbacks; niche subsystem.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "92429",
+  "sha": "020df5d45265ed8462db1c3e8fee1adaf48c1181",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Adds Tween::has_tweeners() API; small feature, deprioritize over bugfixes.",
+  "outcome": "ported",
+  "local_sha": "35db67be3ec8ceddc572646cc11c9e8b0a56a63e"
+ },
+ {
+  "pr": "115192",
+  "sha": "22decccd3f50fc0e7a14a44efa797882f59ce1fd",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Adds Script.has_script_method; may interact with Foundry Script, low urgency.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "117198",
+  "sha": "889af50e563aa59cd581633cb5ed8fe2fc89d766",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Adds haptic feedback on long-press right-click in the android editor, plus a new EditorSettings entry. Adds a shared editor setting for an android-only behavior; low value, not build-verified.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "117359",
+  "sha": "967c23c6ce10eac544cb62b2943c114e4f0979e3",
+  "decision": "port-now",
+  "kind": "refactor",
+  "risk": "low",
+  "rationale": "Clean up D3D12 includes across 11 files; churn-heavy, non-behavioral, defer.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "117480",
+  "sha": "c40d3b9b0d6025a281bb6a9f2a7dc04e2b2b5856",
+  "decision": "port-now",
+  "kind": "cleanup",
+  "risk": "low",
+  "rationale": "Broad 48-file clangd-tidy modernization spanning platform/scene/servers/tests; no functional change but high merge friction against fork divergence. Defer and apply opportunistically.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "117502",
+  "sha": "8dfdf5998ec372376fcb866c5b5842033a29c2a4",
+  "decision": "port-now",
+  "kind": "refactor",
+  "risk": "low",
+  "rationale": "SCU build acceleration tuning (scu_builders.py); build-only, defer.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "116513",
+  "sha": "fa4d24cbb537877319d72beebd31569695ead8e5",
+  "decision": "port-now",
+  "kind": "refactor",
+  "risk": "low",
+  "rationale": "Deduplicates Wayland cleanup logic (-212 lines); pure refactor, low value, not build-verified on linuxbsd.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "117597",
+  "sha": "d385b9e608253bb40400103eddc8b311b7167ea5",
+  "decision": "port-now",
+  "kind": "refactor",
+  "risk": "low",
+  "rationale": "Splits method_bind_common.h; include reorganization, low value.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "117355",
+  "sha": "e3173f4ec4327e57a4a9b4d5eb3745f7252c1355",
+  "decision": "port-now",
+  "kind": "cleanup",
+  "risk": "low",
+  "rationale": "Bumps minimum API/hardware for Vulkan support (export_plugin + gradle/manifest + Godot.kt). Config/policy change; android not build-verified.",
+  "outcome": "ported",
+  "local_sha": "d6ebc48c30ccc87940bea9bf0926906eda4b18a5"
+ },
+ {
+  "pr": "114102",
+  "sha": "013fc6f92aea48edbb650a314b5239bf97158819",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Adds ~ expansion to FileDialog; feature across 7 files, non-urgent.",
+  "outcome": "ported",
+  "local_sha": "edaf070019b9eee0c38583f2968c20a021608855"
+ },
+ {
+  "pr": "117583",
+  "sha": "09437400e060ded26937152ec071aa6d9d0493c0",
+  "decision": "port-now",
+  "kind": "other",
+  "risk": "low",
+  "rationale": "Tracy on-demand default; profiling config, low priority.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "117682",
+  "sha": "0f53286459a1140b8acfd388de75a1e1c67f8349",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "One-line plugin signal registration fix in Godot.kt, later reworked by #119233. Part of the android plugin-signal cluster; rebranded Kotlin, port the cluster together.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "117643",
+  "sha": "40b218a679c460bd107320b0990a1e52571926d6",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Follow-up fixes to script-editor orientation change (title-bar toggle JNI). Android-editor-only, depends on #117109, touches editor JNI + rebranded Kotlin.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "117792",
+  "sha": "14d626ec1df7a43b7e9bbac4d2b82fb1c2615287",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "GridMap editor shows mesh previews as fallback; UX enhancement, defer.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "117812",
+  "sha": "91030b8d8e3181f0887fe0d9cf352f13b44c0e34",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Adds inspector checkbox groups to BaseMaterial3D; cosmetic editor grouping, not a bugfix.",
+  "outcome": "ported",
+  "local_sha": "3699ce5ca20045a76082d5337ff47bacc251ca07"
+ },
+ {
+  "pr": "117873",
+  "sha": "5ee90d8e82712bc09e016cde28c611b9314435b8",
+  "decision": "port-now",
+  "kind": "refactor",
+  "risk": "low",
+  "rationale": "Deduplicates Wayland clipboard send code; pure refactor, low value, not build-verified on linuxbsd.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "117282",
+  "sha": "e03a2c4c76c4b9141ec29fb3d46afdd18c0fa4ac",
+  "decision": "port-now",
+  "kind": "other",
+  "risk": "low",
+  "rationale": "Accessibility popup-embedding tweak in window.cpp; niche subsystem, deprioritize.",
+  "outcome": "ported",
+  "local_sha": "1e7aac72cf77182f2276f3c983c13c3a2c897840"
+ },
+ {
+  "pr": "117010",
+  "sha": "656a268688cbb03723bb82116da7eb5b83989720",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Windows file-dialog drive names; platform feature, non-urgent.",
+  "outcome": "ported",
+  "local_sha": "b550e689389d414855abe4363b754ae750c2af1e"
+ },
+ {
+  "pr": "117892",
+  "sha": "c3fdf826026d18403f905bf38b88e846902a26b8",
+  "decision": "port-now",
+  "kind": "refactor",
+  "risk": "low",
+  "rationale": "Debugger uses class name over Object ID; minor readability change, 6 files.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "117800",
+  "sha": "803c6df71af4bb4caba3153c275374e85a4fbb03",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "HDR EXR screenshot saving; feature spanning 7 files, non-urgent.",
+  "outcome": "ported",
+  "local_sha": "ee9512feb280c743880c1474fc6064622f074421"
+ },
+ {
+  "pr": "112184",
+  "sha": "e4a239b72b982e83fa204d896a8057b800857264",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Adds Inherit Emitter Scale flag to ParticleProcessMaterial; feature, deprioritize.",
+  "outcome": "ported",
+  "local_sha": "5ad6c1e269531f9bd686d6b35052325a9097cd45"
+ },
+ {
+  "pr": "118287",
+  "sha": "6b5a8733f700c2b5e6898e83b7f0b855f34f3eb3",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "ANGLE angle_path fallback depends on the 'env[angle]' + arch-suffixed angle_libs path structure introduced by #117445, which is absent in the fork's older ANGLE detect.py; blocked on #117445.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "117341",
+  "sha": "9dd0719d30626015414fa1f86f82498f96e1b4e6",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Adds a cmdline-mode error explaining ETC2/ASTC compression is required for android export. Genuinely missing from base and small, but lands inside the fork's heavily trimmed export_plugin.cpp and cannot be build-verified; low-risk nice-to-have once placement is confirmed.",
+  "outcome": "ported",
+  "local_sha": "be5cc2b19029511f1926238c6f4906fa1d180d5d"
+ },
+ {
+  "pr": "117160",
+  "sha": "e8b9abba7cf61fab50de25bf45d3ac65eee4d7cf",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Adds Variant::get_type_by_name to GDExtension interface; API addition.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "117537",
+  "sha": "4a9684b0fffe30dd72e6088b8b5e09a5ac46807a",
+  "decision": "port-now",
+  "kind": "refactor",
+  "risk": "low",
+  "rationale": "Remove 10-bit Vulkan swapchain formats; behavior-adjacent cleanup tied to HDR work, defer.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "118323",
+  "sha": "4286c20dac11a658fb162b372445d3a853a04874",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes TabBar minimum-width behavior using combined_max/stop_adding/computed_max_width, which are part of the absent max-size feature. Blocker: PR 116640.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "113129",
+  "sha": "85650dea09e4fd76117282c8499c1c7ff0ad642e",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Blender importer handles more vertex-color options; additive import option, defer.",
+  "outcome": "ported",
+  "local_sha": "5af52c2763320667af2d15354712a56dc825bb0b"
+ },
+ {
+  "pr": "118396",
+  "sha": "6e6d480fd383f8a5eb7c946e6b2d4517ae73e4f4",
+  "decision": "port-now",
+  "kind": "refactor",
+  "risk": "low",
+  "rationale": "Removes is_discardable from textures; part of discardable-tuning series, low value alone.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "113247",
+  "sha": "a4dfadd269739f30ff7087e7cf3946f812198ee4",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Adds export_get_property_list to GLTFDocumentExtension; new extension API, not urgent.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "118351",
+  "sha": "57af0d2cf2f4a748633723430a1d29118a0269e2",
+  "decision": "port-now",
+  "kind": "cleanup",
+  "risk": "low",
+  "rationale": "Reorders Control inspector Layout-group properties including custom_maximum_size and propagate_maximum_size, which the fork does not bind (max-size feature absent). Blocker: PR 116640.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "118536",
+  "sha": "0880a908d7ad1de26325d4f45b08b31f2461fcf7",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Defers the minimum-size update inside update_maximum_size (call_deferred instead of direct); update_maximum_size does not exist in the fork. Blocker: PR 116640.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "118542",
+  "sha": "60c2e1e59d17ffeb71bebee7ff0ab1d767ac1232",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Resets touch_index after a button-press action so later taps aren't dropped, and refines the device_id gate; depends on the multitouch feature (touch_index/device_id) absent from the fork. Blocker: multitouch base feature.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "118597",
+  "sha": "4fe68a9ed4a27047e8b5eab15765430c9cef4610",
+  "decision": "port-now",
+  "kind": "refactor",
+  "risk": "low",
+  "rationale": "SCons env-clone cleanup; build-only, low value.",
+  "outcome": "ported",
+  "local_sha": "ccde2a9e4a67c97ada774a951c9d7cfc35da9752"
+ },
+ {
+  "pr": "118503",
+  "sha": "3f63a400fa8f454b09f12201152025c1805b3df5",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Perfetto profiling hookup; tooling-only, low priority.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "118590",
+  "sha": "790c68368f509f79179b2cf20001520cb438384c",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Adds RequiredParam->RequiredResult conversion in core object.h; API feature, deprioritize.",
+  "outcome": "ported",
+  "local_sha": "e27f60846aebd2e9f12cd865d3559f83fb9051fb"
+ },
+ {
+  "pr": "118608",
+  "sha": "070d9a408be452beeb3644a323dda58bd172871e",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Adds an is_touch_press_inside branch in BaseButton::on_action_event so multitouch presses inside the button fire; only meaningful with the multitouch feature (screen_touch handling) absent from the fork. Blocker: multitouch base feature.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "118623",
+  "sha": "a6ed51df17a2afce9459cf9f46ded0baac79b9cb",
+  "decision": "port-now",
+  "kind": "cleanup",
+  "risk": "low",
+  "rationale": "Deprecates TabContainer.all_tabs_in_front (turns the setter into a warning) behind DISABLE_DEPRECATED, on the premise tabs are 'always in front' due to unrelated internal changes. Adds a compat shim and removes working behavior; the clean-break fork should decide deliberately. Pairs with PR 119420.",
+  "outcome": "ported",
+  "local_sha": "5f47b277d7e5dd4ec17f101cffce8741948851d1"
+ },
+ {
+  "pr": "118675",
+  "sha": "7244af0beb205d300ac546170a8ea71ae85b271f",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Edits winrt_utils.cpp (absent in base); part of the WinRT chain, blocked until winrt_utils lands.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "118680",
+  "sha": "1d218e652e5a3a9fd9620590d9866d4cef2be492",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Adds window-existence checks to HDR output methods, but HDR/EDR output infra (window_is_hdr_output_*) does not exist in the fork base; blocked on #106814 (f1ce0e6).",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "118742",
+  "sha": "2a8b3d6618b1ca3ff74fd5fbb19f6b086d729980",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Adds `if env[\"angle\"]:` guard, but base detect.py lacks the 4.7 `angle` BoolVariable and the ANGLE build restructure; heavily diverged Windows build tooling, no macOS impact.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "118760",
+  "sha": "22969efdbe6e4be62fae916ce4b8a118e4d5245b",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Touches tts_driver_onecore.cpp which is absent in base; blocked on OneCore TTS feature PR 116349 (0dabee).",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "118689",
+  "sha": "1df8f1d38685d8122806378dd2657600c2ed6e5b",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Clamps embedded-window min size and avoids divide-by-zero on aspect lock. Depends on the resize feature from #118417 (references MIN_WINDOW_SIZE/resizingEnabled/isFreeResize) which is not in base; rebranded editor-embed Kotlin.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "118563",
+  "sha": "81cecf018b0ab5ce648e9834a76fd88b20de2602",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "GDExtension deprecated-type mapping completion; interface housekeeping.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "117018",
+  "sha": "72853b13eb4a76ec1769b610da084efd3fa0fb5e",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Makes web Emscripten assertions configurable; web build-script only, not compiled/verifiable in macOS build.",
+  "outcome": "ported",
+  "local_sha": "25e606391d54100a10fb6b414f4f4fcd0a600931"
+ },
+ {
+  "pr": "118796",
+  "sha": "0e2564465542b3201e507f1fda6f749772fcf36b",
+  "decision": "port-now",
+  "kind": "refactor",
+  "risk": "low",
+  "rationale": "Build-system format_buffer cleanup; low value, not urgent.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "118812",
+  "sha": "45aea977dd8ed5c49ef753f64dcbd1b6694c1074",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Add gl_NumWorkGroups support in D3D12; small compute capability add, defer.",
+  "outcome": "ported",
+  "local_sha": "f6393766b446cdcae02ca28cb61c2ece1c9b3d27"
+ },
+ {
+  "pr": "118836",
+  "sha": "c2ad2d1fb17b6b79252e5e28fce324126faf7ae9",
+  "decision": "port-now",
+  "kind": "refactor",
+  "risk": "low",
+  "rationale": "Removes SNAME from MethodInfo macro across animation files + graph_frame; cleanup, not urgent.",
+  "outcome": "ported",
+  "local_sha": "5b00e48df329e6d54b08bfb2b6818a2650247ae8"
+ },
+ {
+  "pr": "118849",
+  "sha": "a70600a061738bf4854c890cae8046d1e891eb6e",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes separation for the first *visible* item when items are hidden by filtering; relies on item visibility from the absent search/filter feature. Blocker: filter infra.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "118846",
+  "sha": "dbb2050439a9438a395c05bf11a4fb824b545692",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Adds items[i].visible checks to PopupMenu gamepad navigation; item visibility (filtering) is part of the absent search/filter feature. Blocker: item-visibility/filter infra.",
+  "outcome": "ported",
+  "local_sha": "0fea40cc27692bad89f10b0327a0b533c3c78a49"
+ },
+ {
+  "pr": "118777",
+  "sha": "7ffe0a57ccb6a33bb4390e97e2c9d75b8ad708eb",
+  "decision": "port-now",
+  "kind": "cleanup",
+  "risk": "low",
+  "rationale": "Removes web link flags blocking proxy_to_pthread; platform/web build-only, not compiled/verifiable here.",
+  "outcome": "ported",
+  "local_sha": "99073389e15e0459d89e53b8fec5cf911ff70e36"
+ },
+ {
+  "pr": "118867",
+  "sha": "a3b1272962af8f45da509221e88d63011857cb4f",
+  "decision": "port-now",
+  "kind": "perf",
+  "risk": "low",
+  "rationale": "GridMap navmesh bake-bounds perf improvement with new helper API; nice-to-have, defer.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "118921",
+  "sha": "dfa352d18159f55c52c24b1eabc22e7bb9564cbc",
+  "decision": "port-now",
+  "kind": "refactor",
+  "risk": "low",
+  "rationale": "Removes unused FileAccess::create calls; harmless cleanup, no behavior change, low priority.",
+  "outcome": "ported",
+  "local_sha": "8e9f8661330ae91d2d4033a54e122a4775576e88"
+ },
+ {
+  "pr": "118860",
+  "sha": "d8227b7a78a8fda7b81517824f6a50047a93a8f0",
+  "decision": "port-now",
+  "kind": "cleanup",
+  "risk": "low",
+  "rationale": "Reverts the android editor minSdk bump back to 24 (gradle/manifest/editor Kotlin). Config-only, pairs with #118942, android build not exercised here.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "118090",
+  "sha": "320e81846979bd716341e0669231954543c4afbd",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Single-char typo fix in view_3d_controller.cpp which does not exist in fork (blocked on #115957).",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "119053",
+  "sha": "2375f07fb63bf588bda076f9b7c9279f8aaebd23",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Area-light texture color conversion; depends on absent AreaLight feature.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "119237",
+  "sha": "314bbd21a9364ffc0efd3ec942bb17cb30e7f204",
+  "decision": "port-now",
+  "kind": "other",
+  "risk": "low",
+  "rationale": "Vulkan error-message wording overhaul (~180 lines); cosmetic, not urgent.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "118642",
+  "sha": "38aef34e1ae50cb53c6a887b84ea1e88882de7de",
+  "decision": "port-now",
+  "kind": "refactor",
+  "risk": "low",
+  "rationale": "Extracts addr2line lookup into find_addr2line_executable(); depends on the addr2line chain (115566/117067/117060) landing first.",
+  "outcome": "ported",
+  "local_sha": "e609650ad6cdd679c06263733c9df3a1d6429a92"
+ },
+ {
+  "pr": "119412",
+  "sha": "54360ea67bd6c790982301d4da6e04c85843a288",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes incorrect PopupMenu tooltips when the search bar is enabled; depends on the absent search-bar feature. Blocker: search-bar feature.",
+  "outcome": "ported",
+  "local_sha": "0aa14753bb38df9e32de58c671c8612ed66afeea"
+ },
+ {
+  "pr": "119433",
+  "sha": "e333258f94619d1862a85b08b662c36b044199d6",
+  "decision": "port-now",
+  "kind": "cleanup",
+  "risk": "low",
+  "rationale": "Edits the SCsub `if env[\"winrt\"]:` block which does not exist in base (no WinRT build support); blocked until the WinRT build chain (0dabee/f3dfd4) is ported.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "119420",
+  "sha": "3d601008d07390ff2d955cf734bacc017ff9e23e",
+  "decision": "port-now",
+  "kind": "cleanup",
+  "risk": "low",
+  "rationale": "Finalizes deprecation of TabContainer.all_tabs_in_front (getter returns false, property becomes USAGE_NONE) behind DISABLE_DEPRECATED. Depends on the 'tabs always in front' internal change and adds a compat shim; the clean-break fork should decide deliberately. Pairs with PR 118623.",
+  "outcome": "ported",
+  "local_sha": "c1dab2c8028be23e5409afc84edd699298a3ac80"
+ },
+ {
+  "pr": "119297",
+  "sha": "9a33066a27d70c6d4f74cae44c1ce023d8082a59",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Adds a taskAffinity manifest entry and a hasExtra guard in command-line arg parsing. Lands in the rebranded Godot.kt/manifest; low value and android-only, not build-verified.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "118653",
+  "sha": "d58cd48e468a67c864d443b7c194cd2a1c7bdf42",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Removes the device_id gate in BaseButton::gui_input to allow Alt+Click multi-input; only meaningful on top of the multitouch feature (touch_index/device_id) which is absent from the fork. Blocker: multitouch base feature (PR 110893).",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "119455",
+  "sha": "0e57853371b58d9438184810e490de910a51a3ad",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "SCons-version guard depends on 4.7 detect.py MSVC infra (msvc_ver/scons_version/check_mssdk_version) absent in base; Windows-build-only tooling, no macOS impact. Revisit if the Windows toolchain path is ported.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "119601",
+  "sha": "79811ccc983d090f2bc764617fc7f2f52ccb25bf",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Guards a null args array (args ?: emptyArray()) in the interface-proxy invocation. Depends on the #115498 proxy feature absent from base; rebranded Kotlin, no android build coverage here.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "119756",
+  "sha": "b404bc6a744a3754337e906c0249d2bf838c9348",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Trivial Vector2i integer-scaling fix for embedded warp_mouse, but targets display_server_macos_embedded (renamed from base's display_server_embedded by #106814); blocked on that embedded rename/refactor.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "119737",
+  "sha": "66658e7f4ce4def925257ee217704b9719101092",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Adjusts separator counting for the PopupMenu search bar; the fork has no PopupMenu search bar (search_bar absent). Blocker: PopupMenu search-bar feature.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "119692",
+  "sha": "2014874dbdbfa3a1e22917fd7549ede87d73f6e0",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "New CanvasItem property to auto-adjust oversampling with scale; feature, deprioritize over bugfixes.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "119930",
+  "sha": "973060e0f7a0284fd5b234af2faf7224f0049f3b",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Drawable-texture null-check depends on absent DrawableTexture feature #105701.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "119966",
+  "sha": "a8b64029658ca5bcf315ecf5947880a7ecc0fabf",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Adds Metal framework in ANGLE link branch, but fork base macos detect.py uses a different (older) ANGLE structure and already links Metal for the Metal driver; needs adaptation and is low value.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "120346",
+  "sha": "f7890e3f996f0b29c990929978fc82a8d364610d",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Refines Label autowrap warning to also check get_custom_minimum_size, but the condition uses get_combined_maximum_size() which does not exist in the fork (part of the max-size feature). Blocker: PR 116640.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "120254",
+  "sha": "20fbec29fdd1996e732b6fa41ce9afc934722a8e",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "One-line voxelGI fix but targets AreaLight3D shader which is absent in fork; needs feature #108219 first.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "118771",
+  "sha": "f7fcb79c4399070be07caadfbe2304a9c94711fa",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Web-only exit UB/main-loop cleanup fix; self-contained but platform/web is not compiled or verifiable in the macOS editor build, so defer.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ }
+]

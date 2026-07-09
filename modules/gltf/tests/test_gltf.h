@@ -34,6 +34,7 @@
 
 #ifdef TOOLS_ENABLED
 
+#include "core/object/class_db.h"
 #include "core/os/os.h"
 #include "drivers/png/image_loader_png.h"
 #include "editor/import/3d/resource_importer_scene.h"

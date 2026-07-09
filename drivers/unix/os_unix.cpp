@@ -882,8 +882,8 @@ bool OS_Unix::_check_pid_is_running(const pid_t p_pid, int *r_status) const {
 		// Thread is still running.
 		return true;
 	}
-
-	ERR_FAIL_COND_V_MSG(result != 0, false, vformat("Thread %d exited with errno: %d", (int)p_pid, errno));
+	ERR_FAIL_COND_V_MSG(result != 0 && errno == ECHILD, false, vformat("The process %d does not exist or is not a child of the calling process.", (int)p_pid));
+	ERR_FAIL_COND_V_MSG(result != 0, false, vformat("waitpid for process %d failed with errno: %d", (int)p_pid, errno));
 
 	// Thread exited normally.
 	status = WIFEXITED(status) ? WEXITSTATUS(status) : status;
@@ -1082,7 +1082,7 @@ Error OS_Unix::open_dynamic_library(const String &p_path, void *&p_library_handl
 		path = get_executable_path().get_base_dir().path_join("../lib").path_join(p_path.get_file());
 	}
 
-	ERR_FAIL_COND_V(!FileAccess::exists(path), ERR_FILE_NOT_FOUND);
+	ERR_FAIL_COND_V_MSG(!FileAccess::exists(path), ERR_FILE_NOT_FOUND, vformat("Can't open dynamic library, file not found: '%s'.", p_path));
 
 	p_library_handle = dlopen(path.utf8().get_data(), FOUNDRY_DLOPEN_MODE);
 	ERR_FAIL_NULL_V_MSG(p_library_handle, ERR_CANT_OPEN, vformat("Can't open dynamic library: %s. Error: %s.", p_path, dlerror()));
@@ -1230,6 +1230,19 @@ String OS_Unix::get_executable_path() const {
 	ERR_PRINT("Warning, don't know how to obtain executable path on this OS! Please override this function properly.");
 	return OS::get_executable_path();
 #endif
+}
+
+String OS_Unix::expand_path(const String &p_path) const {
+	String path = p_path;
+
+	if (path.begins_with("~/") || path == "~") {
+		String home = get_environment("HOME");
+		if (!home.is_empty()) {
+			path = home + path.substr(1);
+		}
+	}
+
+	return path;
 }
 
 void UnixTerminalLogger::log_error(const char *p_function, const char *p_file, int p_line, const char *p_code, const char *p_rationale, bool p_editor_notify, ErrorType p_type, const Vector<Ref<ScriptBacktrace>> &p_script_backtraces) {

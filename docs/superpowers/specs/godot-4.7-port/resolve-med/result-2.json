@@ -1,0 +1,32 @@
+[
+  {
+    "pr": "116227",
+    "sha": "2dd28a53b0c974c22c4903e067d40e8a300f6f7a",
+    "outcome": "skipped-incompatible",
+    "note": "Fix acceleration structure barriers in Vulkan. Base RenderingDeviceDriverVulkan has no acceleration-structure barrier feature at all: p_acceleration_structure_barriers, ray_query_support, AccelerationStructureInfo, and the BARRIER_ACCESS_ACCELERATION_STRUCTURE_* static_asserts are absent (0 references in base). Depends on unported raytracing/accel-structure infrastructure. Aborted."
+  },
+  {
+    "pr": "120363",
+    "sha": "feeea39cb2f791c0df112dbc08b59ae0e001265b",
+    "outcome": "skipped-incompatible",
+    "note": "Adreno 660 ubershader workaround. Depends on unported infrastructure: DriverWorkarounds struct, disable_ubershaders, get_driver_workarounds() (none exist in base), plus glsl change references integrate_edge_hill() which does not exist in base area_lights_inc.glsl / lm_area_lights_inc.glsl (still inlined). Also RS:: vs RSE:: namespace divergence. Aborted."
+  },
+  {
+    "pr": "115993",
+    "sha": "86508ea17b8f53637c92f042750e6db8fc514d6e",
+    "outcome": "resolved",
+    "note": "Fix AHashMap realloc AnimationPlayer crash: replace dangling AnimationData *from pointer with is_enabled/animation_name/animation_length. Header merged cleanly. Two cpp conflicts were pure context mismatch; applied the from->animation_name change while keeping our fork context (!playback_queue.is_empty(), no stray // c.blend.clear() comment). No leftover pointer-member references."
+  },
+  {
+    "pr": "117173",
+    "sha": "29d2c7ece514127cc449ce37994ef4b369a3a9c6",
+    "outcome": "resolved",
+    "note": "Restrict condition parsing in shader preprocessor: new ShaderExpression subclass (shader_expression.{h,cpp}) added cleanly; expression.h private->protected + virtual _get_token merged cleanly. Only conflict was the include block; resolved to match upstream (add core/os/os.h, add shader_expression.h, drop core/math/expression.h) since OS:: is used and previously came in transitively. Verified all Expression members used by ShaderExpression are in the protected region."
+  },
+  {
+    "pr": "118857",
+    "sha": "75444feae7304924316f09ce5abb48685294d8f2",
+    "outcome": "skipped-incompatible",
+    "note": "Fix/cleanup clearcoat reflection probe process. Base has zero occurrences of cc_reflection_accum, cc_specular_light, or light_process_area; base reflection_process() has no LIGHT_CLEARCOAT_USED parameters and no clearcoat accumulation path. The entire clearcoat-reflection-probe (and LTC area-lights) feature this PR fixes is unported. Aborted."
+  }
+]

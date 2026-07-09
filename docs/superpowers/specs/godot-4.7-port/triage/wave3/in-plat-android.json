@@ -1,0 +1,303 @@
+[
+ {
+  "sha": "72cc0fc9a75bf041e84b9d37e7e31e17cb114a9e",
+  "pr": "120001",
+  "title": "[Android] Update download URL for GABE",
+  "subsystem": "platform/android",
+  "nfiles": 1
+ },
+ {
+  "sha": "330e012b5375e9eebbf10b28ae0e759ad140b313",
+  "pr": "119634",
+  "title": "Android: Fix infinite recursion in proxy equals handler",
+  "subsystem": "platform/android",
+  "nfiles": 2
+ },
+ {
+  "sha": "79811ccc983d090f2bc764617fc7f2f52ccb25bf",
+  "pr": "119601",
+  "title": "Android: Fix NPE in JavaClassWrapper proxy when interface method has no arguments",
+  "subsystem": "platform/android",
+  "nfiles": 1
+ },
+ {
+  "sha": "9a33066a27d70c6d4f74cae44c1ce023d8082a59",
+  "pr": "119297",
+  "title": "[Android] Miscellaneous bug fixes",
+  "subsystem": "platform/android",
+  "nfiles": 2
+ },
+ {
+  "sha": "582e6f1d2b7432ed79324efd5f30c6b14fa68116",
+  "pr": "119428",
+  "title": "Fix Android plugin signal regression",
+  "subsystem": "platform/android",
+  "nfiles": 3
+ },
+ {
+  "sha": "cb490e6e232adfb00a103f6c7e3a89d6105826b2",
+  "pr": "119172",
+  "title": "Remove experimental warning from `Use Gradle Build` option on Android",
+  "subsystem": "platform/android",
+  "nfiles": 3
+ },
+ {
+  "sha": "3646d973220d44485f90e6727e5bd5d953323816",
+  "pr": "119233",
+  "title": "Fix Android plugin issues",
+  "subsystem": "platform/android",
+  "nfiles": 13
+ },
+ {
+  "sha": "d8227b7a78a8fda7b81517824f6a50047a93a8f0",
+  "pr": "118860",
+  "title": "Revert Android Editor minSdk bump to 24",
+  "subsystem": "platform/android",
+  "nfiles": 4
+ },
+ {
+  "sha": "a02cead472438a0178467ebf15815c89856f5214",
+  "pr": "118942",
+  "title": "Android: Set the default minSdk for compatibility renderer to 24",
+  "subsystem": "platform/android",
+  "nfiles": 1
+ },
+ {
+  "sha": "1df8f1d38685d8122806378dd2657600c2ed6e5b",
+  "pr": "118689",
+  "title": "Fix embedded window minimum size bug on Android",
+  "subsystem": "platform/android",
+  "nfiles": 1
+ },
+ {
+  "sha": "f4c839f7b32e8da5b06d364993bfc7e6fd43dfd8",
+  "pr": "118417",
+  "title": "Allow moving and resizing the embedded game window on Android",
+  "subsystem": "platform/android",
+  "nfiles": 8
+ },
+ {
+  "sha": "972d21ebf443ce4d4b771117182c5a55752f7d09",
+  "pr": "118283",
+  "title": "Android: Remove deprecated Google Play OBB support",
+  "subsystem": "platform/android",
+  "nfiles": 54
+ },
+ {
+  "sha": "317a491b35a28bf948c1c2b0aa86713c0f1d260e",
+  "pr": "118401",
+  "title": "Enable `perfetto` by default for Android debug builds",
+  "subsystem": "platform/android",
+  "nfiles": 5
+ },
+ {
+  "sha": "f727813dfd6a677a927fcd2dc82c11ccd1399a91",
+  "pr": "114671",
+  "title": "Android: Add export options to customize splash screen",
+  "subsystem": "platform/android",
+  "nfiles": 8
+ },
+ {
+  "sha": "78995d3f4a5b0e153aee4e89f4d87dabfc77f80c",
+  "pr": "117687",
+  "title": "[Android] Clean up `Godot.kt`",
+  "subsystem": "platform/android",
+  "nfiles": 7
+ },
+ {
+  "sha": "9dd0719d30626015414fa1f86f82498f96e1b4e6",
+  "pr": "117341",
+  "title": "Android export: Add error message when ETC2/ASTC compression is not enabled",
+  "subsystem": "platform/android",
+  "nfiles": 1
+ },
+ {
+  "sha": "5c2b6814eab6ef07e27be431cd7e88d887436037",
+  "pr": "117653",
+  "title": "[Android] Fix handling of back navigation when targeting API level 36",
+  "subsystem": "platform/android",
+  "nfiles": 7
+ },
+ {
+  "sha": "a490c267a2c4dfc059d7b8e07d6d777fb103f659",
+  "pr": "115498",
+  "title": "Android: Allow implementing java interfaces from GDScript",
+  "subsystem": "platform/android",
+  "nfiles": 9
+ },
+ {
+  "sha": "40b218a679c460bd107320b0990a1e52571926d6",
+  "pr": "117643",
+  "title": "[Android] Follow up fixes to enabling orientation change in the script editor",
+  "subsystem": "platform/android",
+  "nfiles": 3
+ },
+ {
+  "sha": "0f53286459a1140b8acfd388de75a1e1c67f8349",
+  "pr": "117682",
+  "title": "Fix plugin signal registration error on Android",
+  "subsystem": "platform/android",
+  "nfiles": 1
+ },
+ {
+  "sha": "e3173f4ec4327e57a4a9b4d5eb3745f7252c1355",
+  "pr": "117355",
+  "title": "Android: Bump the minimum api version and hardware version for Vulkan support",
+  "subsystem": "platform/android",
+  "nfiles": 4
+ },
+ {
+  "sha": "be33d1ceb042ab7d787fa7574c2297d2f26f25b5",
+  "pr": "114941",
+  "title": "Android: Fix java.util.HashMap handling",
+  "subsystem": "platform/android",
+  "nfiles": 3
+ },
+ {
+  "sha": "889af50e563aa59cd581633cb5ed8fe2fc89d766",
+  "pr": "117198",
+  "title": "Android: Add haptic feedback on long-press right-click in the editor",
+  "subsystem": "platform/android",
+  "nfiles": 5
+ },
+ {
+  "sha": "2288a8a898ec7854e1c91098bcc9ce620636db0e",
+  "pr": "114505",
+  "title": "Add support for picture-in-picture",
+  "subsystem": "platform/android",
+  "nfiles": 27
+ },
+ {
+  "sha": "19726167ce043cea56242d87b218bf587557f3bc",
+  "pr": "117131",
+  "title": "Android: Fix FileAccess crash when using treeUri in Gradle-built apps",
+  "subsystem": "platform/android",
+  "nfiles": 3
+ },
+ {
+  "sha": "a772f1638735f8f50dbc52f3633fc9b6c1a49b5e",
+  "pr": "117109",
+  "title": "Android editor: Enable orientation change in Script Editor",
+  "subsystem": "platform/android",
+  "nfiles": 12
+ },
+ {
+  "sha": "b62cbfdaa8f3f841ad3c776ffff4b1117cc8617b",
+  "pr": "115888",
+  "title": "Android: Add support for plugins gradle platform dependencies",
+  "subsystem": "platform/android",
+  "nfiles": 1
+ },
+ {
+  "sha": "2db05b08de983358f9ad12f28280939d997a0be5",
+  "pr": "116548",
+  "title": "Android: Only poll for devices when a runnable export preset is configured",
+  "subsystem": "platform/android",
+  "nfiles": 2
+ },
+ {
+  "sha": "974993eb7a61eb4d0dee14e8c6b4ec332ef42234",
+  "pr": "116584",
+  "title": "Android: Remove version check for `FEATURE_NATIVE_DIALOG_FILE` support",
+  "subsystem": "platform/android",
+  "nfiles": 1
+ },
+ {
+  "sha": "0d9d77ebc3a9629372f0e765380a7dbf2b71fffd",
+  "pr": "116515",
+  "title": "Fix EditorSettings error due to `android_sdk_path` when exporting a project",
+  "subsystem": "platform/android",
+  "nfiles": 1
+ },
+ {
+  "sha": "4cccd55af843dd27b2e1d9d47e0db0e2ee383ce5",
+  "pr": "116161",
+  "title": "Android Editor: Copy keystore to temp file during export",
+  "subsystem": "platform/android",
+  "nfiles": 1
+ },
+ {
+  "sha": "3f57dc07ccad167564e84a8c91a467990b1f1755",
+  "pr": "116153",
+  "title": "Implement `project.godot` file associations for the Android editor",
+  "subsystem": "platform/android",
+  "nfiles": 3
+ },
+ {
+  "sha": "fd49f2ac10e62ee2fb141cf6d47446ce96910a16",
+  "pr": "116226",
+  "title": "Fix OpenXR with Vulkan on Android",
+  "subsystem": "platform/android",
+  "nfiles": 2
+ },
+ {
+  "sha": "f438a4a12e642af480428bf47240cb35237f43aa",
+  "pr": "115800",
+  "title": "Android: Fix JavaClassWrapper test crashes on API 26 and lower",
+  "subsystem": "platform/android",
+  "nfiles": 2
+ },
+ {
+  "sha": "2487a297b236e28e8ddf96fa8d6b44a164c7cb2c",
+  "pr": "113469",
+  "title": "Deprecate the Android studio `dev` buildtype",
+  "subsystem": "platform/android",
+  "nfiles": 7
+ },
+ {
+  "sha": "e6d4e7d37f1e12be4245253cb93be2f8a2b8e5f3",
+  "pr": "115751",
+  "title": "Android: Fix `Bad file descriptor` in SAF/MediaStore in long term access",
+  "subsystem": "platform/android",
+  "nfiles": 2
+ },
+ {
+  "sha": "e273d83ff5961a7492bb74a06660ac80bc312067",
+  "pr": "115718",
+  "title": "Fix file access tests failing on older Android devices",
+  "subsystem": "platform/android",
+  "nfiles": 1
+ },
+ {
+  "sha": "e04d564215db2edea62ae06e61094164b459d7d9",
+  "pr": "115713",
+  "title": "Android: Fail instrumented tests when test function doesn't complete",
+  "subsystem": "platform/android",
+  "nfiles": 3
+ },
+ {
+  "sha": "c2089db630ccbd3217b0297f62874f2df34e618d",
+  "pr": "115685",
+  "title": "Android: Fix plugin type mismatch regression",
+  "subsystem": "platform/android",
+  "nfiles": 1
+ },
+ {
+  "sha": "6539f7fade83809ab898ed3be71d27241b6672e3",
+  "pr": "113761",
+  "title": "Annual Android versions bump for 2026",
+  "subsystem": "platform/android",
+  "nfiles": 4
+ },
+ {
+  "sha": "bddebe9d7e18f91a20534c4bb3eaeee9a9470d99",
+  "pr": "115515",
+  "title": "Fix crash in StorageScope.kt on Android",
+  "subsystem": "platform/android",
+  "nfiles": 1
+ },
+ {
+  "sha": "ea1e6640f0fa9a40dc362fe034f201fdecb45c20",
+  "pr": "115434",
+  "title": "Add device orientation change signal to DisplayServer",
+  "subsystem": "platform/android",
+  "nfiles": 7
+ },
+ {
+  "sha": "ed0ae97d98aade16734c309a15bc6586063005be",
+  "pr": "114922",
+  "title": "Fix fallback to OpenGL3 from Vulkan initialization on Android.",
+  "subsystem": "platform/android",
+  "nfiles": 17
+ }
+]

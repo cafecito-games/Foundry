@@ -1,0 +1,402 @@
+[
+ {
+  "pr": "105791",
+  "sha": "88cd7ab37813ce89d49c199bc05edb660e7dacb6",
+  "title": "Add the ability to cancel pan/zoom/orbit navigation",
+  "subsystem": "scene/debugger",
+  "nfiles": 5,
+  "orig_risk": "med",
+  "orig_kind": "feature",
+  "orig_rationale": "Cancel pan/zoom/orbit via view_3d_controller which does not exist in fork; blocked."
+ },
+ {
+  "pr": "110369",
+  "sha": "e11d9eb8da1069fb7c4748207dc8f73f8ab00191",
+  "title": "Display and allow setting name/index of BlendSpace points",
+  "subsystem": "scene/animation",
+  "nfiles": 13,
+  "orig_risk": "med",
+  "orig_kind": "feature",
+  "orig_rationale": "Display/set name/index of BlendSpace points; 13 files with .compat.inc, feature."
+ },
+ {
+  "pr": "112184",
+  "sha": "e4a239b72b982e83fa204d896a8057b800857264",
+  "title": "Add \u201cInherit Emitter Scale\u201d flag to ParticleProcessMaterial",
+  "subsystem": "scene/resources",
+  "nfiles": 3,
+  "orig_risk": "low",
+  "orig_kind": "feature",
+  "orig_rationale": "Adds Inherit Emitter Scale flag to ParticleProcessMaterial; feature, deprioritize."
+ },
+ {
+  "pr": "112447",
+  "sha": "1b498aefc2d7562de207a644b26f97f5679c4269",
+  "title": "Add scale3d and orientation3d in particle process",
+  "subsystem": "scene/resources",
+  "nfiles": 3,
+  "orig_risk": "med",
+  "orig_kind": "feature",
+  "orig_rationale": "Adds scale3d/orientation3d to particle process (~200 lines); feature, deprioritize."
+ },
+ {
+  "pr": "113509",
+  "sha": "220b0b2f74d8e089481b140c42a42992a76dd6fc",
+  "title": "Store velocity in userdata, use VELOCITY to pass to copy shader",
+  "subsystem": "scene/resources",
+  "nfiles": 1,
+  "orig_risk": "med",
+  "orig_kind": "refactor",
+  "orig_rationale": "Reworks how particle velocity is passed via userdata/copy shader; behavior change, verify carefully."
+ },
+ {
+  "pr": "113605",
+  "sha": "a7060f5c86b6df128b6dd6c5277278b8bfb7817c",
+  "title": "Optimize SkeletonModifier3D Influence interpolation",
+  "subsystem": "scene/3d",
+  "nfiles": 2,
+  "orig_risk": "med",
+  "orig_kind": "perf",
+  "orig_rationale": "Optimizes SkeletonModifier3D influence interpolation; self-contained but alters animation math, not a bugfix."
+ },
+ {
+  "pr": "114080",
+  "sha": "91ad65d93234057e48142dabc965aef8b76c9ef5",
+  "title": "Fix volume calculation with multiple viewports in 3D",
+  "subsystem": "scene/3d",
+  "nfiles": 2,
+  "orig_risk": "high",
+  "orig_kind": "bugfix",
+  "orig_rationale": "215-line rewrite of AudioStreamPlayer3D volume calc for multiple viewports; large blast radius, defer and verify."
+ },
+ {
+  "pr": "115358",
+  "sha": "2078318f25a5b0f6c69ae628e4c7be9b3daf7e8f",
+  "title": "Add node path validation & tweak warning in SkeletonModifier3D",
+  "subsystem": "scene/3d",
+  "nfiles": 15,
+  "orig_risk": "med",
+  "orig_kind": "feature",
+  "orig_rationale": "Adds node-path validation, new project setting, and warnings across 15 SkeletonModifier3D files; feature, broad."
+ },
+ {
+  "pr": "115394",
+  "sha": "c2b5ff33695f304db4fdfcf573ca16782923ae6f",
+  "title": "Add conic gradient to GradientTexture2D",
+  "subsystem": "scene/resources",
+  "nfiles": 3,
+  "orig_risk": "low",
+  "orig_kind": "feature",
+  "orig_rationale": "Adds conic gradient to GradientTexture2D; additive feature, deprioritize."
+ },
+ {
+  "pr": "115551",
+  "sha": "80a4af1cc7c97b41f819ac2ac519a12804a53b1c",
+  "title": "Move `RuntimeNodeSelect` to its own files",
+  "subsystem": "scene/debugger",
+  "nfiles": 15,
+  "orig_risk": "high",
+  "orig_kind": "refactor",
+  "orig_rationale": "Moves RuntimeNodeSelect into own files (15 files, 1600+ lines); large refactor, prerequisite for debugger fixes."
+ },
+ {
+  "pr": "115577",
+  "sha": "563c22673b962c0d6daa114ada1607de68d04949",
+  "title": "Remove a few includes of `curve.h`, `texture.h` and `resource_loader.h` + `resource_saver.h`",
+  "subsystem": "scene/resources",
+  "nfiles": 15,
+  "orig_risk": "low",
+  "orig_kind": "refactor",
+  "orig_rationale": "Removes several includes across 15 files; header churn, deprioritize."
+ },
+ {
+  "pr": "115644",
+  "sha": "d7e6f5e05f9dfc0d2e82e6a89b1311835dfd3fee",
+  "title": "[Buildsystem] Fix non-3D builds",
+  "subsystem": "scene/debugger",
+  "nfiles": 1,
+  "orig_risk": "low",
+  "orig_kind": "platform",
+  "orig_rationale": "Non-3D build fix in runtime_node_select.h which does not exist in fork; blocked."
+ },
+ {
+  "pr": "115732",
+  "sha": "4326946f005ca357243b5eaa1ef7083073d87e73",
+  "title": "Tidy up includes in `scene/main` and `scene/debugger`",
+  "subsystem": "scene/main",
+  "nfiles": 32,
+  "orig_risk": "low",
+  "orig_kind": "refactor",
+  "orig_rationale": "Tidies includes across 32 files in scene/main and scene/debugger; churn, deprioritize."
+ },
+ {
+  "pr": "115738",
+  "sha": "284121025f324f93ac0a6ceaf50357d7f6ed2108",
+  "title": "Use class name instead of Object ID in remote scene view",
+  "subsystem": "scene/debugger",
+  "nfiles": 2,
+  "orig_risk": "med",
+  "orig_kind": "feature",
+  "orig_rationale": "Targets scene_debugger_object.cpp which is not split out in fork; blocked on 4.7 refactor."
+ },
+ {
+  "pr": "115957",
+  "sha": "42c771d160f553ae93a03d50eb7d62f97735100b",
+  "title": "Add `View3DController` for editor 3D view manipulation",
+  "subsystem": "scene/debugger",
+  "nfiles": 9,
+  "orig_risk": "high",
+  "orig_kind": "refactor",
+  "orig_rationale": "Introduces View3DController, rewriting ~1200 lines of node_3d_editor_plugin; large editor refactor."
+ },
+ {
+  "pr": "116000",
+  "sha": "ca0be3863297062222f19847912fe58dd0799d17",
+  "title": "Fix `set_process_thread_group()` and transform notification of threaded-processing Node3Ds.",
+  "subsystem": "scene/3d",
+  "nfiles": 2,
+  "orig_risk": "med",
+  "orig_kind": "bugfix",
+  "orig_rationale": "Fixes process-thread-group transform notifications; touches scene/main/node.cpp threading, verify carefully."
+ },
+ {
+  "pr": "116269",
+  "sha": "b7eb50db44ef788d70f10501fd096a2614ad6e26",
+  "title": "Add a function to merge multiple ImporterMeshes together",
+  "subsystem": "scene/resources",
+  "nfiles": 3,
+  "orig_risk": "low",
+  "orig_kind": "feature",
+  "orig_rationale": "Adds ImporterMesh merge function (~280 lines); additive feature, deprioritize."
+ },
+ {
+  "pr": "116326",
+  "sha": "4e84cd8a6be3ecd3c688269e1e4d05afa92eee5a",
+  "title": "Remove some unused Node methods",
+  "subsystem": "scene/main",
+  "nfiles": 2,
+  "orig_risk": "low",
+  "orig_kind": "refactor",
+  "orig_rationale": "Removes some unused Node methods; API removal, verify no fork usage first."
+ },
+ {
+  "pr": "116786",
+  "sha": "e72018ee3496cb1399c9367e42ded921646ed665",
+  "title": "Make constants READONLY in remote scene view",
+  "subsystem": "scene/debugger",
+  "nfiles": 1,
+  "orig_risk": "low",
+  "orig_kind": "bugfix",
+  "orig_rationale": "READONLY constants in remote scene view; targets scene_debugger_object.cpp missing in fork."
+ },
+ {
+  "pr": "116795",
+  "sha": "4b70dacebab32563a68b2f540154c03769ca37bd",
+  "title": "Remove direct `RenderingServer` dependency from `TextServer`.",
+  "subsystem": "scene/resources",
+  "nfiles": 4,
+  "orig_risk": "med",
+  "orig_kind": "refactor",
+  "orig_rationale": "Removes RenderingServer dependency from TextServer across ~600 lines in text_server modules."
+ },
+ {
+  "pr": "117030",
+  "sha": "269ccadae07a7cffdb18dcace644c97b3d67fef9",
+  "title": "Use IDs instead of hashes for TrackCache keys",
+  "subsystem": "scene/animation",
+  "nfiles": 4,
+  "orig_risk": "med",
+  "orig_kind": "refactor",
+  "orig_rationale": "Switches TrackCache keys from hashes to IDs across mixer + animation.cpp/.h; structural."
+ },
+ {
+  "pr": "117179",
+  "sha": "1a86cf1eaaa0b08f812d28df40b3a708de648c8f",
+  "title": "Fix broken viewport camera inertia in freelook mode",
+  "subsystem": "scene/debugger",
+  "nfiles": 1,
+  "orig_risk": "low",
+  "orig_kind": "bugfix",
+  "orig_rationale": "Freelook inertia fix in view_3d_controller.cpp which does not exist in fork; blocked."
+ },
+ {
+  "pr": "117255",
+  "sha": "01af00957c26c822dc8d090545fca63ee49a29dd",
+  "title": "[Debugger] Fix 3D disabled builds",
+  "subsystem": "scene/debugger",
+  "nfiles": 1,
+  "orig_risk": "low",
+  "orig_kind": "platform",
+  "orig_rationale": "3D-disabled build fix in runtime_node_select.h which does not exist in fork; blocked."
+ },
+ {
+  "pr": "117277",
+  "sha": "96436e33f9120ce2f3728bdefcfee01c8e10533a",
+  "title": "Optimize AnimationTree, Improve internals & Editor & `Node::process_thread_group` safety",
+  "subsystem": "scene/animation",
+  "nfiles": 29,
+  "orig_risk": "high",
+  "orig_kind": "perf",
+  "orig_rationale": "Large AnimationTree optimization across 29 editor+scene files; high collision risk."
+ },
+ {
+  "pr": "117282",
+  "sha": "e03a2c4c76c4b9141ec29fb3d46afdd18c0fa4ac",
+  "title": "[Accessibility] Only embed popup tree for non-focusable popups and tooltips.",
+  "subsystem": "scene/main",
+  "nfiles": 1,
+  "orig_risk": "low",
+  "orig_kind": "other",
+  "orig_rationale": "Accessibility popup-embedding tweak in window.cpp; niche subsystem, deprioritize."
+ },
+ {
+  "pr": "117322",
+  "sha": "7851fa442ec78726cbcf8804cf6c38abbc9a7e2d",
+  "title": "[Accessibility] Do not use activation/deactivation callbacks for embedded windows.",
+  "subsystem": "scene/main",
+  "nfiles": 1,
+  "orig_risk": "low",
+  "orig_kind": "other",
+  "orig_rationale": "Accessibility change for embedded window activation callbacks; niche subsystem."
+ },
+ {
+  "pr": "117334",
+  "sha": "a74ec70626e5645973dacd22e1a5b5e8dc9cf910",
+  "title": "Add fast path to Polygon2D",
+  "subsystem": "scene/2d",
+  "nfiles": 2,
+  "orig_risk": "med",
+  "orig_kind": "perf",
+  "orig_rationale": "Adds Polygon2D fast path; perf, and introduced the AABB bug fixed by 119872 so port together if taken."
+ },
+ {
+  "pr": "117812",
+  "sha": "91030b8d8e3181f0887fe0d9cf352f13b44c0e34",
+  "title": "Add inspector checkbox groups to Grow and Proximity Fade in BaseMaterial3D",
+  "subsystem": "scene/resources",
+  "nfiles": 1,
+  "orig_risk": "low",
+  "orig_kind": "feature",
+  "orig_rationale": "Adds inspector checkbox groups to BaseMaterial3D; cosmetic editor grouping, not a bugfix."
+ },
+ {
+  "pr": "118090",
+  "sha": "320e81846979bd716341e0669231954543c4afbd",
+  "title": "Fix panning with 3 button emulation not working",
+  "subsystem": "scene/debugger",
+  "nfiles": 1,
+  "orig_risk": "low",
+  "orig_kind": "bugfix",
+  "orig_rationale": "Single-char typo fix in view_3d_controller.cpp which does not exist in fork (blocked on #115957)."
+ },
+ {
+  "pr": "118588",
+  "sha": "9b4b3831d2d37dfa5f7a6ceffbf4e2e7430d6610",
+  "title": "Use `RequiredParam`/`RequiredResult` in several more APIs",
+  "subsystem": "scene/2d",
+  "nfiles": 6,
+  "orig_risk": "med",
+  "orig_kind": "refactor",
+  "orig_rationale": "RequiredParam hardening across core_bind + node_2d/scene_tree; infra exists in Foundry but core_bind may diverge, low value."
+ },
+ {
+  "pr": "118590",
+  "sha": "790c68368f509f79179b2cf20001520cb438384c",
+  "title": "Add `RequiredParam` -> `RequiredResult` conversion",
+  "subsystem": "scene/main",
+  "nfiles": 3,
+  "orig_risk": "low",
+  "orig_kind": "feature",
+  "orig_rationale": "Adds RequiredParam->RequiredResult conversion in core object.h; API feature, deprioritize."
+ },
+ {
+  "pr": "118613",
+  "sha": "f75646311636a1d54c9139d6b6f802cb9c2e21c7",
+  "title": "Fix a pair of regressions in the Game view node selection",
+  "subsystem": "scene/debugger",
+  "nfiles": 1,
+  "orig_risk": "med",
+  "orig_kind": "bugfix",
+  "orig_rationale": "Touches scene/debugger/runtime_node_select.cpp which does not exist in fork (blocked on 4.7 split #115551)."
+ },
+ {
+  "pr": "118659",
+  "sha": "ea8f8ec983436cf62e595fe35e80a9478c1237aa",
+  "title": "Fix some issues with 3D view manipulation",
+  "subsystem": "scene/debugger",
+  "nfiles": 6,
+  "orig_risk": "med",
+  "orig_kind": "bugfix",
+  "orig_rationale": "Depends on view_3d_controller.cpp/runtime_node_select.cpp not present in fork (blocked on 4.7 refactors)."
+ },
+ {
+  "pr": "118791",
+  "sha": "9eda898eb81064f7f0c4480a25b4f9c93204c612",
+  "title": "Move dirty filter state from `AnimationNode` to `AnimationNodeInstance`",
+  "subsystem": "scene/animation",
+  "nfiles": 2,
+  "orig_risk": "med",
+  "orig_kind": "refactor",
+  "orig_rationale": "Moves dirty filter state from AnimationNode to AnimationNodeInstance; structural change, not a pure fix."
+ },
+ {
+  "pr": "118836",
+  "sha": "c2ad2d1fb17b6b79252e5e28fce324126faf7ae9",
+  "title": "Remove `SNAME` from MethodInfo macro",
+  "subsystem": "scene/animation",
+  "nfiles": 5,
+  "orig_risk": "low",
+  "orig_kind": "refactor",
+  "orig_rationale": "Removes SNAME from MethodInfo macro across animation files + graph_frame; cleanup, not urgent."
+ },
+ {
+  "pr": "119328",
+  "sha": "eb7cfe13625ce49d57834b3fbbc96df8f0cbf447",
+  "title": "[Accessibility] Fix positions of nested popups sent to the screen reader.",
+  "subsystem": "scene/main",
+  "nfiles": 5,
+  "orig_risk": "med",
+  "orig_kind": "other",
+  "orig_rationale": "Accessibility nested-popup positioning across 5 window/node/control files; niche subsystem, deprioritize."
+ },
+ {
+  "pr": "119692",
+  "sha": "2014874dbdbfa3a1e22917fd7549ede87d73f6e0",
+  "title": "Add property to auto adjust oversampling with canvas item scale.",
+  "subsystem": "scene/main",
+  "nfiles": 4,
+  "orig_risk": "low",
+  "orig_kind": "feature",
+  "orig_rationale": "New CanvasItem property to auto-adjust oversampling with scale; feature, deprioritize over bugfixes."
+ },
+ {
+  "pr": "120059",
+  "sha": "6c325574cd8818ce6da0b27300ce0b6632d5f82a",
+  "title": "Check blend weight for AnimationNode error & remove `_validate_animation_graph()`",
+  "subsystem": "scene/animation",
+  "nfiles": 14,
+  "orig_risk": "med",
+  "orig_kind": "refactor",
+  "orig_rationale": "Removes _validate_animation_graph across 14 editor+scene files; cross-cutting API removal, not self-contained."
+ },
+ {
+  "pr": "92282",
+  "sha": "553315ced85f89602f8b882da43ef92f170655bf",
+  "title": "Add PropertyListHelper to Curves",
+  "subsystem": "scene/resources",
+  "nfiles": 4,
+  "orig_risk": "med",
+  "orig_kind": "refactor",
+  "orig_rationale": "Rewrites Curve property handling via PropertyListHelper (~280 lines); structural refactor."
+ },
+ {
+  "pr": "92429",
+  "sha": "020df5d45265ed8462db1c3e8fee1adaf48c1181",
+  "title": "Add `Tween::has_tweeners()`",
+  "subsystem": "scene/animation",
+  "nfiles": 3,
+  "orig_risk": "low",
+  "orig_kind": "feature",
+  "orig_rationale": "Adds Tween::has_tweeners() API; small feature, deprioritize over bugfixes."
+ }
+]

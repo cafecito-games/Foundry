@@ -662,7 +662,7 @@ void SpringBoneSimulator3D::set_radius_damping_curve(int p_index, const Ref<Curv
 	}
 	settings[p_index]->radius_damping_curve = p_damping_curve;
 	if (settings[p_index]->radius_damping_curve.is_valid()) {
-		settings[p_index]->radius_damping_curve->connect_changed(callable_mp(this, &SpringBoneSimulator3D::_make_joints_dirty).bind(p_index));
+		settings[p_index]->radius_damping_curve->connect_changed(callable_mp(this, &SpringBoneSimulator3D::_make_joints_dirty).bind(p_index, false));
 	}
 	_make_joints_dirty(p_index);
 }
@@ -696,7 +696,7 @@ void SpringBoneSimulator3D::set_stiffness_damping_curve(int p_index, const Ref<C
 	}
 	settings[p_index]->stiffness_damping_curve = p_damping_curve;
 	if (settings[p_index]->stiffness_damping_curve.is_valid()) {
-		settings[p_index]->stiffness_damping_curve->connect_changed(callable_mp(this, &SpringBoneSimulator3D::_make_joints_dirty).bind(p_index));
+		settings[p_index]->stiffness_damping_curve->connect_changed(callable_mp(this, &SpringBoneSimulator3D::_make_joints_dirty).bind(p_index, false));
 	}
 	_make_joints_dirty(p_index);
 }
@@ -730,7 +730,7 @@ void SpringBoneSimulator3D::set_drag_damping_curve(int p_index, const Ref<Curve>
 	}
 	settings[p_index]->drag_damping_curve = p_damping_curve;
 	if (settings[p_index]->drag_damping_curve.is_valid()) {
-		settings[p_index]->drag_damping_curve->connect_changed(callable_mp(this, &SpringBoneSimulator3D::_make_joints_dirty).bind(p_index));
+		settings[p_index]->drag_damping_curve->connect_changed(callable_mp(this, &SpringBoneSimulator3D::_make_joints_dirty).bind(p_index, false));
 	}
 	_make_joints_dirty(p_index);
 }
@@ -764,7 +764,7 @@ void SpringBoneSimulator3D::set_gravity_damping_curve(int p_index, const Ref<Cur
 	}
 	settings[p_index]->gravity_damping_curve = p_damping_curve;
 	if (settings[p_index]->gravity_damping_curve.is_valid()) {
-		settings[p_index]->gravity_damping_curve->connect_changed(callable_mp(this, &SpringBoneSimulator3D::_make_joints_dirty).bind(p_index));
+		settings[p_index]->gravity_damping_curve->connect_changed(callable_mp(this, &SpringBoneSimulator3D::_make_joints_dirty).bind(p_index, false));
 	}
 	_make_joints_dirty(p_index);
 }

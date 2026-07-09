@@ -1,0 +1,184 @@
+[
+ {
+  "sha": "105eb8d61d90eba73d21a59f92203d856dfe5e5d",
+  "pr": "119842",
+  "title": "Remove the godot::String and godot::StringName from godot.natvis",
+  "subsystem": "platform/windows",
+  "nfiles": 1
+ },
+ {
+  "sha": "0e57853371b58d9438184810e490de910a51a3ad",
+  "pr": "119455",
+  "title": "[Windows] Check if used SCons version supports requested MSVC.",
+  "subsystem": "platform/windows",
+  "nfiles": 1
+ },
+ {
+  "sha": "e333258f94619d1862a85b08b662c36b044199d6",
+  "pr": "119433",
+  "title": "[Windows] Remove `await` MSVC flags.",
+  "subsystem": "platform/windows",
+  "nfiles": 1
+ },
+ {
+  "sha": "952d4860b261d15b3c8036ad4f47f6b851c3e822",
+  "pr": "119278",
+  "title": "[Windows] Force supported SDK with MSVC 2019, add Scons option to set SDK version.",
+  "subsystem": "platform/windows",
+  "nfiles": 1
+ },
+ {
+  "sha": "ad6ead96a265dd3673e291f4f304ba002a46af72",
+  "pr": "118893",
+  "title": "[Windows] Fix IME candidate window misalignment by setting composition font",
+  "subsystem": "platform/windows",
+  "nfiles": 1
+ },
+ {
+  "sha": "714d71f24703c5658835492efdd3103e376e1b73",
+  "pr": "118798",
+  "title": "[Windows] Dynamically load `coremessaging`.",
+  "subsystem": "platform/windows",
+  "nfiles": 2
+ },
+ {
+  "sha": "28200b1bcef26dd54e7e20f568bc7a886864bd09",
+  "pr": "118848",
+  "title": "[Windows] Fix inconsistent update logic between IME composition and the candidate window",
+  "subsystem": "platform/windows",
+  "nfiles": 1
+ },
+ {
+  "sha": "22969efdbe6e4be62fae916ce4b8a118e4d5245b",
+  "pr": "118760",
+  "title": "[Windows] Fix OneCore TTS language code formatting.",
+  "subsystem": "platform/windows",
+  "nfiles": 1
+ },
+ {
+  "sha": "2a8b3d6618b1ca3ff74fd5fbb19f6b086d729980",
+  "pr": "118742",
+  "title": "Add missing `angle` check to MSVC branch.",
+  "subsystem": "platform/windows",
+  "nfiles": 1
+ },
+ {
+  "sha": "54f1178d3c8fbbaaf5e50a5caa32124430808b84",
+  "pr": "118676",
+  "title": "[macOS/Linux] Add module information to the crash handler.",
+  "subsystem": "platform/windows",
+  "nfiles": 4
+ },
+ {
+  "sha": "7244af0beb205d300ac546170a8ea71ae85b271f",
+  "pr": "118675",
+  "title": "[WinRT] Wait for DispatcherQueueController shutdown.",
+  "subsystem": "platform/windows",
+  "nfiles": 1
+ },
+ {
+  "sha": "a6dccbf731f62c09c59dfbcc495befaecf1fb105",
+  "pr": "118339",
+  "title": "[Windows] Add support for `AdvancedColorInfo` info and change callback.",
+  "subsystem": "platform/windows",
+  "nfiles": 6
+ },
+ {
+  "sha": "01fa8cc2d2abb419164c342e577dfda0443ada48",
+  "pr": "116351",
+  "title": "[Windows] Use OneCore/WinRT emoji picker when available.",
+  "subsystem": "platform/windows",
+  "nfiles": 4
+ },
+ {
+  "sha": "82e3e44bb2f16c0ce38ac017f1ef2555bdf5c7bb",
+  "pr": "117837",
+  "title": "[Windows] Remove polling of SDR white level when HDR output is enabled.",
+  "subsystem": "platform/windows",
+  "nfiles": 2
+ },
+ {
+  "sha": "f3dfd4bf332a0d72f56212465361a13dcf04a261",
+  "pr": "118244",
+  "title": "[Windows] WinRT build improvements.",
+  "subsystem": "platform/windows",
+  "nfiles": 3
+ },
+ {
+  "sha": "0dabee78c74165b982ab1b327f64cf45f1544e45",
+  "pr": "116349",
+  "title": "[Windows] Implement OneCore TTS support using C++/WinRT (no deps).",
+  "subsystem": "platform/windows",
+  "nfiles": 12
+ },
+ {
+  "sha": "521e442754cb263e9789924da1ff62febb733080",
+  "pr": "115896",
+  "title": "[CrashHandler] Always print frame PCs and main module load address for retrace.",
+  "subsystem": "platform/windows",
+  "nfiles": 4
+ },
+ {
+  "sha": "a3c62ca6d39102ef10ca8ae50dc330e1ebdd9944",
+  "pr": "117919",
+  "title": "[Windows] Fix Windows version detection.",
+  "subsystem": "platform/windows",
+  "nfiles": 1
+ },
+ {
+  "sha": "b0c1084a10f146c31b38a4682572e7483dc514ce",
+  "pr": "117748",
+  "title": "[Windows] Fix invalid transient window getting stuck in infinite loop.",
+  "subsystem": "platform/windows",
+  "nfiles": 1
+ },
+ {
+  "sha": "c40d3b9b0d6025a281bb6a9f2a7dc04e2b2b5856",
+  "pr": "117480",
+  "title": "Misc includes or modernize fixes found via clangd-tidy",
+  "subsystem": "platform/windows",
+  "nfiles": 48
+ },
+ {
+  "sha": "aa25369052970af95db0a148d59ccec927d10257",
+  "pr": "116955",
+  "title": "Update `godot.natvis` to fix presenting `godot::StringName` correctly and remove non-working options of 'StringName'",
+  "subsystem": "platform/windows",
+  "nfiles": 1
+ },
+ {
+  "sha": "e295eba0eb4767fd45ea8534765307d8e9b1c328",
+  "pr": "117250",
+  "title": "Only attempt to load ANGLE DLLs from executable folder.",
+  "subsystem": "platform/windows",
+  "nfiles": 1
+ },
+ {
+  "sha": "7c2a2b06a97fd6b0139a80d14e1087173253b88e",
+  "pr": "117253",
+  "title": "[Windows] Set current driver when ANGLE init fails.",
+  "subsystem": "platform/windows",
+  "nfiles": 1
+ },
+ {
+  "sha": "a1746ee2043538e4cbcd1d846828e4f701759994",
+  "pr": "115430",
+  "title": "[Windows] Disable MSVC control flow check on IAT hooks.",
+  "subsystem": "platform/windows",
+  "nfiles": 1
+ },
+ {
+  "sha": "d40dd57a9e195133eda8637871be74150e14efe1",
+  "pr": "115373",
+  "title": "Fix crash on removing Windows PopupMenu submenu",
+  "subsystem": "platform/windows",
+  "nfiles": 1
+ },
+ {
+  "sha": "d950e2343ec3ab82a4d9b903edbf92068e19e02b",
+  "pr": "115294",
+  "title": "[Windows] Use executable icon as default for the window.",
+  "subsystem": "platform/windows",
+  "nfiles": 1
+ }
+]

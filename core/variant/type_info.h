@@ -234,14 +234,14 @@ inline String enum_qualified_name_to_class_info_name(const String &p_qualified_n
 } // namespace Internal
 } // namespace FoundryTypeInfo
 
-#define MAKE_ENUM_TYPE_INFO(m_enum)                                                                                                          \
+#define MAKE_ENUM_TYPE_INFO(m_enum, m_bound_name)                                                                                            \
 	template <>                                                                                                                              \
 	struct GetTypeInfo<m_enum> {                                                                                                             \
 		static const Variant::Type VARIANT_TYPE = Variant::INT;                                                                              \
 		static const FoundryTypeInfo::Metadata METADATA = FoundryTypeInfo::METADATA_NONE;                                                    \
 		static inline PropertyInfo get_class_info() {                                                                                        \
 			return PropertyInfo(Variant::INT, String(), PROPERTY_HINT_NONE, String(), PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_CLASS_IS_ENUM, \
-					FoundryTypeInfo::Internal::enum_qualified_name_to_class_info_name(String(#m_enum)));                                     \
+					FoundryTypeInfo::Internal::enum_qualified_name_to_class_info_name(String(#m_bound_name)));                               \
 		}                                                                                                                                    \
 	};
 
@@ -250,14 +250,18 @@ inline StringName __constant_get_enum_name(T param) {
 	return GetTypeInfo<T>::get_class_info().class_name;
 }
 
-#define MAKE_BITFIELD_TYPE_INFO(m_enum)                                                                                                          \
+inline StringName __constant_get_enum_value_name(const char *p_name) {
+	return String(p_name).get_slice("::", 1);
+}
+
+#define MAKE_BITFIELD_TYPE_INFO(m_enum, m_bound_name)                                                                                            \
 	template <>                                                                                                                                  \
 	struct GetTypeInfo<m_enum> {                                                                                                                 \
 		static const Variant::Type VARIANT_TYPE = Variant::INT;                                                                                  \
 		static const FoundryTypeInfo::Metadata METADATA = FoundryTypeInfo::METADATA_NONE;                                                        \
 		static inline PropertyInfo get_class_info() {                                                                                            \
 			return PropertyInfo(Variant::INT, String(), PROPERTY_HINT_NONE, String(), PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_CLASS_IS_BITFIELD, \
-					FoundryTypeInfo::Internal::enum_qualified_name_to_class_info_name(String(#m_enum)));                                         \
+					FoundryTypeInfo::Internal::enum_qualified_name_to_class_info_name(String(#m_bound_name)));                                   \
 		}                                                                                                                                        \
 	};                                                                                                                                           \
 	template <>                                                                                                                                  \
@@ -266,7 +270,7 @@ inline StringName __constant_get_enum_name(T param) {
 		static const FoundryTypeInfo::Metadata METADATA = FoundryTypeInfo::METADATA_NONE;                                                        \
 		static inline PropertyInfo get_class_info() {                                                                                            \
 			return PropertyInfo(Variant::INT, String(), PROPERTY_HINT_NONE, String(), PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_CLASS_IS_BITFIELD, \
-					FoundryTypeInfo::Internal::enum_qualified_name_to_class_info_name(String(#m_enum)));                                         \
+					FoundryTypeInfo::Internal::enum_qualified_name_to_class_info_name(String(#m_bound_name)));                                   \
 		}                                                                                                                                        \
 	};
 

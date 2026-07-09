@@ -41,6 +41,7 @@
 	</methods>
 	<members>
 		<member name="mouse_filter" type="int" setter="set_mouse_filter" getter="get_mouse_filter" overrides="Control" enum="Control.MouseFilter" default="MOUSE_FILTER_PASS" />
+		<member name="propagate_maximum_size" type="bool" setter="set_propagate_maximum_size" getter="is_propagating_maximum_size" overrides="Control" default="true" />
 	</members>
 	<signals>
 		<signal name="pre_sort_children">

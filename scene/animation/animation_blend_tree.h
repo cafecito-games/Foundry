@@ -304,7 +304,7 @@ public:
 class AnimationNodeTimeSeek : public AnimationNode {
 	FOUNDRY_CLASS(AnimationNodeTimeSeek, AnimationNode);
 
-	StringName seek_pos_request = PNAME("seek_request");
+	StringName seek_request = PNAME("seek_request");
 	bool explicit_elapse = true;
 
 protected:

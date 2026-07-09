@@ -1,0 +1,32 @@
+[
+  {
+    "pr": "118197",
+    "sha": "d261582d25663583f23882e46609fd68a287a04f",
+    "outcome": "skipped-incompatible",
+    "note": "Known-absent Jolt env-props refactor. Depends on unported JoltArea3D::apply_override and the merged _update_environmental_properties (base still uses integrate() with separate _update_gravity/_update_damp). Cannot resolve without the unported refactor."
+  },
+  {
+    "pr": "120243",
+    "sha": "9fae09dbb6da3270d1634400003472fb3971fc1d",
+    "outcome": "resolved",
+    "note": "Remove forced area event queuing during body exit. Conflict in jolt_body_3d.cpp only over a pre-existing upstream _areas_changed() call (from unported #118197) inside _clear_areas; base never called it there and _space_changed() calls _areas_changed() anyway, so kept our behavior. Rename _exit_all_areas->_clear_areas and removal of now-unused JoltArea3D::body_exited/area_exited applied cleanly; verified no remaining callers."
+  },
+  {
+    "pr": "119757",
+    "sha": "93d16cc84c479c0f6b22187882a48336f040a78a",
+    "outcome": "resolved",
+    "note": "ResourceLoader load_threaded_get deadlock fix. Self-contained: new members thread_waiting_on/yielders/resource_dependencies added by the PR's own header change; notify_yield_over, yield, get_caller_task_id, resource_changed_connections all exist in base. Sole cpp conflict was Foundry's qualified enum names (ResourceFormatLoader::CACHE_MODE_*) plus removal of unlock_pending (replaced by thread_load_mutex_held); kept our qualified names and dropped unlock_pending."
+  },
+  {
+    "pr": "120077",
+    "sha": "526528bd8d829c50b28d350df353ec22266660f2",
+    "outcome": "resolved",
+    "note": "Follow-up ResourceLoader deadlock fix (cycle detection + finished_load). Applied cleanly with no conflicts; new bitfield finished_load added by the PR's own header change, resting on base's existing bitfield struct."
+  },
+  {
+    "pr": "113413",
+    "sha": "06fc4f81654d46a5fb25c91b27c877597de45ab8",
+    "outcome": "skipped-incompatible",
+    "note": "Fix screen-space AA when scaling with bilinear filtering. Depends on the unported tonemap bilinear-scaling feature: upstream TonemapSettings has 'bool bilinear_filtering = true' but our fork's tone_mapper.h TonemapSettings lacks it entirely (no bilinear_filtering anywhere in the RD renderer). The PR sets tonemap.bilinear_filtering and its using_scaling_pass logic assumes tonemap-side scaling exists. Porting would require fabricating the unported tonemap shader/struct infrastructure (HDR/tonemap member class of known-absent refactors)."
+  }
+]

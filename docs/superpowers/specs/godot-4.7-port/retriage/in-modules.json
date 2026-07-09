@@ -1,0 +1,292 @@
+[
+ {
+  "pr": "100923",
+  "sha": "dd210a10714371a7d34d3b3d5d7cae8a82dd5efe",
+  "title": "CameraFeed: Add `set_format` and `get_formats` virtual binds",
+  "subsystem": "servers/camera",
+  "nfiles": 3,
+  "orig_risk": "low",
+  "orig_kind": "feature",
+  "orig_rationale": "Adds _set_format/_get_formats GDVIRTUAL binds to CameraFeed; additive feature, defer."
+ },
+ {
+  "pr": "103005",
+  "sha": "36dac9c6c97270b0d00560acde6a9793158deb71",
+  "title": "Add support for displaying `GridMap` collider in editor",
+  "subsystem": "modules/gridmap",
+  "nfiles": 3,
+  "orig_risk": "low",
+  "orig_kind": "feature",
+  "orig_rationale": "Adds displaying GridMap collider in editor; new visualization feature, defer."
+ },
+ {
+  "pr": "104736",
+  "sha": "c44b01cd1f34e296a72349a3a2530e3d5bc79e4f",
+  "title": "Add one-way collision direction for CollisionShape2Ds",
+  "subsystem": "servers/physics_2d",
+  "nfiles": 25,
+  "orig_risk": "high",
+  "orig_kind": "feature",
+  "orig_rationale": "New one-way collision direction API spanning 25 files across physics server + scene nodes + compat; large, defer."
+ },
+ {
+  "pr": "111518",
+  "sha": "102c6f5eee6bc2f48dc02627102a6568fdc69979",
+  "title": "Add type filters to create dialog",
+  "subsystem": "modules/openxr",
+  "nfiles": 10,
+  "orig_risk": "med",
+  "orig_kind": "feature",
+  "orig_rationale": "Mislabeled openxr; actually create_dialog type filters touching core class_db and editor gui; verify against fork editor changes."
+ },
+ {
+  "pr": "113096",
+  "sha": "c9eb8499cabdf258f6973bf938f47fcd96512b94",
+  "title": "Expose eye visibility controls for composition layers and set XrSpace based on parent type",
+  "subsystem": "modules/openxr",
+  "nfiles": 6,
+  "orig_risk": "med",
+  "orig_kind": "feature",
+  "orig_rationale": "Eye-visibility controls and XrSpace-by-parent for composition layers; 6-file behavioral feature."
+ },
+ {
+  "pr": "113129",
+  "sha": "85650dea09e4fd76117282c8499c1c7ff0ad642e",
+  "title": "Update Blender importer to handle more Vertex Color options",
+  "subsystem": "modules/gltf",
+  "nfiles": 2,
+  "orig_risk": "low",
+  "orig_kind": "feature",
+  "orig_rationale": "Blender importer handles more vertex-color options; additive import option, defer."
+ },
+ {
+  "pr": "113247",
+  "sha": "a4dfadd269739f30ff7087e7cf3946f812198ee4",
+  "title": "GLTF: Add `export_get_property_list` to GLTFDocumentExtension",
+  "subsystem": "modules/gltf",
+  "nfiles": 4,
+  "orig_risk": "low",
+  "orig_kind": "feature",
+  "orig_rationale": "Adds export_get_property_list to GLTFDocumentExtension; new extension API, not urgent."
+ },
+ {
+  "pr": "114198",
+  "sha": "4163d3af5a136fe6f13dd7e99f234f00bd414545",
+  "title": "Add ability for Area3D to detect/influence SoftBody3D with Jolt Physics",
+  "subsystem": "modules/jolt_physics",
+  "nfiles": 12,
+  "orig_risk": "med",
+  "orig_kind": "feature",
+  "orig_rationale": "Area3D detect/influence SoftBody3D with Jolt; 12-file new capability touching Area3D docs, defer."
+ },
+ {
+  "pr": "114324",
+  "sha": "7438a39a132f5f4b309e01d8827fa309c4a2b62e",
+  "title": "Support composition layers anywhere in the tree",
+  "subsystem": "modules/openxr",
+  "nfiles": 4,
+  "orig_risk": "med",
+  "orig_kind": "feature",
+  "orig_rationale": "Composition layers anywhere in tree; touches servers/xr/xr_server and XRServer doc; wider than openxr module."
+ },
+ {
+  "pr": "114488",
+  "sha": "94f3b73cec229ce922a48d490a983a15faa0ce49",
+  "title": "Add `span_index` to `TextServer.shaped_text_get_glyphs` and related methods when accessed from GDScript.",
+  "subsystem": "servers/text",
+  "nfiles": 1,
+  "orig_risk": "low",
+  "orig_kind": "feature",
+  "orig_rationale": "Exposes span_index in TextServer glyph dictionaries; small additive API surface, defer."
+ },
+ {
+  "pr": "115190",
+  "sha": "5ad8b27d8db0776700c2b08bf68fbea5e0a4680d",
+  "title": "Implement support for `XR_EXT_user_presence` extension",
+  "subsystem": "modules/openxr",
+  "nfiles": 10,
+  "orig_risk": "med",
+  "orig_kind": "feature",
+  "orig_rationale": "New XR_EXT_user_presence extension; touches main.cpp, ProjectSettings, interface; feature not in fork."
+ },
+ {
+  "pr": "115602",
+  "sha": "82580cf965caf5ce75fc86d4d26e68071bfe4685",
+  "title": "Don't expose the `OpenXRUserPresenceExtension` singleton",
+  "subsystem": "modules/openxr",
+  "nfiles": 2,
+  "orig_risk": "low",
+  "orig_kind": "refactor",
+  "orig_rationale": "Hides user-presence singleton; depends on PR 115190 which adds the not-yet-present extension."
+ },
+ {
+  "pr": "116207",
+  "sha": "2ae60b41081361693a1815735a26b8b5fd48ef0f",
+  "title": "OpenXR: Add support for projection layer extensions",
+  "subsystem": "modules/openxr",
+  "nfiles": 8,
+  "orig_risk": "med",
+  "orig_kind": "feature",
+  "orig_rationale": "Adds projection-layer extension hooks to openxr_api and extension-wrapper API surface; feature, defer."
+ },
+ {
+  "pr": "116244",
+  "sha": "d7392aff0211a2f9b387be8e190b31743832eac6",
+  "title": "OpenXR: Expose view information to GDExtension API",
+  "subsystem": "modules/openxr",
+  "nfiles": 5,
+  "orig_risk": "low",
+  "orig_kind": "feature",
+  "orig_rationale": "Additive but expands OpenXRAPIExtension gdextension virtuals; non-urgent API growth, defer."
+ },
+ {
+  "pr": "116685",
+  "sha": "cac8aad3599692dd5949afedb55204f2959e085c",
+  "title": "Add button to clear rotation in the `GridMap` editor",
+  "subsystem": "modules/gridmap",
+  "nfiles": 2,
+  "orig_risk": "low",
+  "orig_kind": "feature",
+  "orig_rationale": "Adds clear-rotation button to GridMap editor; small UX feature, defer."
+ },
+ {
+  "pr": "116766",
+  "sha": "a79323e3ec73d1c84f7b24f2cef688eb3dd7f23d",
+  "title": "Share one `JoltTempAllocator` instance across all `JoltSpace3D`",
+  "subsystem": "modules/jolt_physics",
+  "nfiles": 4,
+  "orig_risk": "low",
+  "orig_kind": "perf",
+  "orig_rationale": "Shares one JoltTempAllocator across spaces; memory optimization, defer."
+ },
+ {
+  "pr": "116768",
+  "sha": "5a5a806eaf22d57a677d63cca96690409a3f8a0f",
+  "title": "Tidy some things up in `modules/jolt_physics`",
+  "subsystem": "modules/jolt_physics",
+  "nfiles": 6,
+  "orig_risk": "low",
+  "orig_kind": "refactor",
+  "orig_rationale": "Tidying in modules/jolt_physics; no behavior change, low priority."
+ },
+ {
+  "pr": "116973",
+  "sha": "83f396d0dd3152a11aaffab58d886c7c7b16b420",
+  "title": "Add cursor coordinates to the `GridMap` editor",
+  "subsystem": "modules/gridmap",
+  "nfiles": 2,
+  "orig_risk": "low",
+  "orig_kind": "feature",
+  "orig_rationale": "Adds cursor coordinate readout to GridMap editor; UX feature, defer."
+ },
+ {
+  "pr": "117178",
+  "sha": "8f0468f28102ea0bcf4628b91142c6a5e06b957b",
+  "title": "Switch `XRServer` to use `LocalVector` for interfaces and do a little clean up",
+  "subsystem": "servers/xr",
+  "nfiles": 2,
+  "orig_risk": "low",
+  "orig_kind": "refactor",
+  "orig_rationale": "Pure XRServer Vector->LocalVector cleanup with no behavior change; low value, defer."
+ },
+ {
+  "pr": "117399",
+  "sha": "c83925eaf0ae587d7d10badc2380e4a190d94f31",
+  "title": "Expose `OpenXRInteractionProfileMetadata` singleton",
+  "subsystem": "modules/openxr",
+  "nfiles": 32,
+  "orig_risk": "med",
+  "orig_kind": "feature",
+  "orig_rationale": "Exposes InteractionProfileMetadata singleton across 32 files touching extension-wrapper surface; broad API change."
+ },
+ {
+  "pr": "117792",
+  "sha": "14d626ec1df7a43b7e9bbac4d2b82fb1c2615287",
+  "title": "Make `GridMap` editor show mesh previews as a fallback",
+  "subsystem": "modules/gridmap",
+  "nfiles": 2,
+  "orig_risk": "low",
+  "orig_kind": "feature",
+  "orig_rationale": "GridMap editor shows mesh previews as fallback; UX enhancement, defer."
+ },
+ {
+  "pr": "118128",
+  "sha": "2dc3039d5615e2f58675e906daa090ca4d5c4a60",
+  "title": "Make OpenXR Spatial Entities easier to extend",
+  "subsystem": "modules/openxr",
+  "nfiles": 20,
+  "orig_risk": "high",
+  "orig_kind": "refactor",
+  "orig_rationale": "20-file reshape of spatial-entities extensibility API; large blast radius on 4.7-era feature."
+ },
+ {
+  "pr": "118280",
+  "sha": "78a31b2aec2eb33e2763515ce69cf0d4b278ab0e",
+  "title": "Add octant querying to `GridMap`",
+  "subsystem": "modules/gridmap",
+  "nfiles": 4,
+  "orig_risk": "med",
+  "orig_kind": "feature",
+  "orig_rationale": "Adds octant querying API to GridMap with tests; new public API surface, defer."
+ },
+ {
+  "pr": "118867",
+  "sha": "a3b1272962af8f45da509221e88d63011857cb4f",
+  "title": "Improve `GridMap` collider navmesh baking performance when using bake bounds",
+  "subsystem": "modules/gridmap",
+  "nfiles": 2,
+  "orig_risk": "low",
+  "orig_kind": "perf",
+  "orig_rationale": "GridMap navmesh bake-bounds perf improvement with new helper API; nice-to-have, defer."
+ },
+ {
+  "pr": "118901",
+  "sha": "ff85b793b5b4ef8153a3e758a7bb541c9eb3553a",
+  "title": "OpenXR: Fix crash when using `XR_EXT_frame_synthesis` after Godot 4.7-dev5",
+  "subsystem": "modules/openxr",
+  "nfiles": 2,
+  "orig_risk": "med",
+  "orig_kind": "bugfix",
+  "orig_rationale": "Fixes regression introduced after 4.7-dev5; verify frame_synthesis code state matches before applying."
+ },
+ {
+  "pr": "118921",
+  "sha": "dfa352d18159f55c52c24b1eabc22e7bb9564cbc",
+  "title": "Remove unused FileAccess::create calls in GLTFDocument",
+  "subsystem": "modules/gltf",
+  "nfiles": 1,
+  "orig_risk": "low",
+  "orig_kind": "refactor",
+  "orig_rationale": "Removes unused FileAccess::create calls; harmless cleanup, no behavior change, low priority."
+ },
+ {
+  "pr": "118975",
+  "sha": "08b4d30baceeef355a423de596c1a6b0c78c57c4",
+  "title": "Update default OpenXR action map",
+  "subsystem": "modules/openxr",
+  "nfiles": 1,
+  "orig_risk": "med",
+  "orig_kind": "refactor",
+  "orig_rationale": "Switches default profile to khr/generic_controller (needs PR 110778) and drops built-in profiles; sequence after generic controller."
+ },
+ {
+  "pr": "64596",
+  "sha": "c42e294ffa217d30012685b721fa201017b4b3f0",
+  "title": "Move visual shaders to a module",
+  "subsystem": "modules/visual_shader",
+  "nfiles": 135,
+  "orig_risk": "high",
+  "orig_kind": "refactor",
+  "orig_rationale": "135-file structural move of visual shaders scene->module; only adopt if pursuing the vshader module migration."
+ },
+ {
+  "pr": "96748",
+  "sha": "87898da27f58a359f3f68135b3cd600baa67ff8f",
+  "title": "GLTF: Read material texture \"texCoord\" property on import",
+  "subsystem": "modules/gltf",
+  "nfiles": 6,
+  "orig_risk": "med",
+  "orig_kind": "feature",
+  "orig_rationale": "Reads material texCoord on import (multi-UV support); high value but ~400-line gltf_document rework, defer for careful port."
+ }
+]

@@ -1,0 +1,762 @@
+[
+ {
+  "pr": "102987",
+  "sha": "5d0a32157593c9dd374b3796589f14b21b8212d8",
+  "title": "[LinuxBSD] Add support for HDR output (Wayland)",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 14,
+  "orig_risk": "high",
+  "orig_kind": "feature",
+  "orig_rationale": "Large Wayland HDR output feature (14 files, new color-management protocol, Vulkan driver changes); foundational for 117702/117530 but big and unverified on linuxbsd."
+ },
+ {
+  "pr": "106560",
+  "sha": "2f06af10e6c057a3c6f4b352b9979e15dd7c8d8e",
+  "title": "Add taskbar progress and state support for Windows & macOS",
+  "subsystem": "platform/macos",
+  "nfiles": 16,
+  "orig_risk": "med",
+  "orig_kind": "feature",
+  "orig_rationale": "Adds taskbar progress/state API to DisplayServer + Window for macOS/Windows; additive and macOS-compilable, but it is a new cross-platform API (servers/display, scene/main/window, docs) rather than a fix. Defer as a feature; mechanical FOUNDRY_CLASS/rebrand adaptation needed."
+ },
+ {
+  "pr": "106814",
+  "sha": "f1ce0e6510025c45f914ef040bb5788faa3c02e0",
+  "title": "Apple: Support output to EDR (HDR) displays",
+  "subsystem": "platform/macos",
+  "nfiles": 24,
+  "orig_risk": "high",
+  "orig_kind": "feature",
+  "orig_rationale": "Large EDR/HDR output feature (24 files) touching Metal/Vulkan drivers, iOS/visionOS, and renaming display_server_embedded->display_server_macos_embedded with big display_server_macos refactors. Foundational for several later HDR/embedded PRs but a heavy, risky feature port; sequence deliberately."
+ },
+ {
+  "pr": "108111",
+  "sha": "15558cb886447cf9b651c7ae83455f27eb3767ca",
+  "title": "Core: Restructure sanitizers",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 11,
+  "orig_risk": "med",
+  "orig_kind": "refactor",
+  "orig_rationale": "Restructures sanitizer defines (SANITIZERS_ENABLED -> per-sanitizer) across core/typedefs.h and all platform detect.py incl. macOS; cross-platform build/core change, verify macOS impact before porting."
+ },
+ {
+  "pr": "112287",
+  "sha": "2762c56829cfad2cc9fb17bf338f5258a8099c70",
+  "title": "Add pointer warping on wayland",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 8,
+  "orig_risk": "med",
+  "orig_kind": "feature",
+  "orig_rationale": "Adds Wayland pointer warping via new pointer-warp protocol (new thirdparty files, SCsub); feature not build-verified on linuxbsd."
+ },
+ {
+  "pr": "113543",
+  "sha": "0f51ed609964e169e03de21a1f10a2369ddaebd2",
+  "title": "[DisplayServer] Add per window icon support.",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 11,
+  "orig_risk": "med",
+  "orig_kind": "feature",
+  "orig_rationale": "Cross-platform per-window icon feature adding new DisplayServer virtuals (linuxbsd/windows/servers); broad API surface, affects base class implemented on macOS."
+ },
+ {
+  "pr": "113886",
+  "sha": "21dbe711c5f6c4e56d5917b42ac6f159eb93c559",
+  "title": "Wayland: Implement touch support",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 7,
+  "orig_risk": "med",
+  "orig_kind": "feature",
+  "orig_rationale": "452-line new Wayland touch-input feature across embedder/thread/display server; sizable, not build-verified on linuxbsd."
+ },
+ {
+  "pr": "114505",
+  "sha": "2288a8a898ec7854e1c91098bcc9ce620636db0e",
+  "title": "Add support for picture-in-picture",
+  "subsystem": "platform/android",
+  "nfiles": 27,
+  "orig_risk": "med",
+  "orig_kind": "feature",
+  "orig_rationale": "Adds picture-in-picture: new public DisplayServer virtuals/enum and MainLoop/Node PIP notifications, implemented only on android. Broad new public API surface for android-only value; port-later."
+ },
+ {
+  "pr": "114671",
+  "sha": "f727813dfd6a677a927fcd2dc82c11ccd1399a91",
+  "title": "Android: Add export options to customize splash screen",
+  "subsystem": "platform/android",
+  "nfiles": 8,
+  "orig_risk": "med",
+  "orig_kind": "feature",
+  "orig_rationale": "Adds export options to customize the android splash screen. Feature touching the diverged export_plugin.cpp plus new assets; android export not build-verified."
+ },
+ {
+  "pr": "114922",
+  "sha": "ed0ae97d98aade16734c309a15bc6586063005be",
+  "title": "Fix fallback to OpenGL3 from Vulkan initialization on Android.",
+  "subsystem": "platform/android",
+  "nfiles": 17,
+  "orig_risk": "high",
+  "orig_kind": "refactor",
+  "orig_rationale": "Adds Vulkan->OpenGL3 fallback on android by threading a RenderingSource through OS::set_current_rendering_driver_name/method, changing signatures at every platform display-server call site and reworking main.cpp. Broad cross-platform signature change; high ripple for android-only value."
+ },
+ {
+  "pr": "115383",
+  "sha": "c6465994b7907c7828ec699110bb12736509c1f0",
+  "title": "iOS: Allow building with `opengl3=no`",
+  "subsystem": "platform/ios",
+  "nfiles": 4,
+  "orig_risk": "low",
+  "orig_kind": "feature",
+  "orig_rationale": "Guards iOS OpenGLES code behind GLES3_ENABLED so iOS can build with opengl3=no; iOS is not compiled by the macOS build, so not verifiable here. Defer."
+ },
+ {
+  "pr": "115434",
+  "sha": "ea1e6640f0fa9a40dc362fe034f201fdecb45c20",
+  "title": "Add device orientation change signal to DisplayServer",
+  "subsystem": "platform/android",
+  "nfiles": 7,
+  "orig_risk": "low",
+  "orig_kind": "feature",
+  "orig_rationale": "Adds an orientation_changed signal to DisplayServer, wired on android and apple_embedded. Small and mostly build-verifiable, but a new public-API feature (not a bugfix) with low value for the fork."
+ },
+ {
+  "pr": "115498",
+  "sha": "a490c267a2c4dfc059d7b8e07d6d777fb103f659",
+  "title": "Android: Allow implementing java interfaces from GDScript",
+  "subsystem": "platform/android",
+  "nfiles": 9,
+  "orig_risk": "med",
+  "orig_kind": "feature",
+  "orig_rationale": "Lets scripts implement Java interfaces via JavaClassWrapper (C++ java_class_wrapper + AndroidRuntimePlugin). Feature (unblocks #119601/#119634); gd test assets are N/A to Foundry Script, and android side is not build-verified."
+ },
+ {
+  "pr": "115632",
+  "sha": "223c9417bd3f5cb5df89858a778db9967e7a279a",
+  "title": "GLES3: Split EGL includes in `platform_egl.h`",
+  "subsystem": "platform/macos",
+  "nfiles": 17,
+  "orig_risk": "med",
+  "orig_kind": "refactor",
+  "orig_rationale": "Splits EGL includes into per-platform platform_egl.h (new file absent in base) across GLES3/EGL plumbing; GLES3 is not the fork's primary macOS path, refactor is not build-verifiable and touches diverged driver code."
+ },
+ {
+  "pr": "115765",
+  "sha": "3c5e561024b2aeee7494e675fbed4724dd216fe2",
+  "title": "Disable FP contraction (iOS/visionOS)",
+  "subsystem": "platform/ios",
+  "nfiles": 2,
+  "orig_risk": "low",
+  "orig_kind": "bugfix",
+  "orig_rationale": "Disables FP contraction for iOS/visionOS detect.py to match macOS; iOS/visionOS are not compiled by the macOS build, so not verifiable here. Low-risk parity fix, defer."
+ },
+ {
+  "pr": "115888",
+  "sha": "b62cbfdaa8f3f841ad3c776ffff4b1117cc8617b",
+  "title": "Android: Add support for plugins gradle platform dependencies",
+  "subsystem": "platform/android",
+  "nfiles": 1,
+  "orig_risk": "low",
+  "orig_kind": "feature",
+  "orig_rationale": "Adds support for android plugin gradle platform dependencies (app/build.gradle). Build-config feature, not build-verified."
+ },
+ {
+  "pr": "116092",
+  "sha": "8ab854a7cab894d957a71e9d9103542fc699cd20",
+  "title": "[macOS] Add build name to bundle ID.",
+  "subsystem": "platform/macos",
+  "nfiles": 1,
+  "orig_risk": "low",
+  "orig_kind": "feature",
+  "orig_rationale": "Appends build name to bundle ID and switches to get_version_info, but platform_macos_builders.py is heavily fork-diverged (Foundry rebrand, get_build_version helper, no org.godotengine.godot string); needs manual adaptation, low value."
+ },
+ {
+  "pr": "116226",
+  "sha": "fd49f2ac10e62ee2fb141cf6d47446ce96910a16",
+  "title": "Fix OpenXR with Vulkan on Android",
+  "subsystem": "platform/android",
+  "nfiles": 2,
+  "orig_risk": "med",
+  "orig_kind": "bugfix",
+  "orig_rationale": "Fixes OpenXR with Vulkan on android (display_server_android + java_godot_lib_jni). XR-specific, rebranded JNI tree, not build-verified."
+ },
+ {
+  "pr": "116256",
+  "sha": "4106b5cdccce15a7a179b0b87a5b4cd81e8b4779",
+  "title": "OpenXR: Fix OpenGL initialization with Monado on X11",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 7,
+  "orig_risk": "med",
+  "orig_kind": "feature",
+  "orig_rationale": "OpenXR OpenGL/Monado X11 init fix adding new DisplayServer virtual and gl_manager hooks; touches modules/openxr and servers/display, cross-cutting and unverified on linuxbsd."
+ },
+ {
+  "pr": "116349",
+  "sha": "0dabee78c74165b982ab1b327f64cf45f1544e45",
+  "title": "[Windows] Implement OneCore TTS support using C++/WinRT (no deps).",
+  "subsystem": "platform/windows",
+  "nfiles": 12,
+  "orig_risk": "high",
+  "orig_kind": "feature",
+  "orig_rationale": "Large OneCore TTS feature: adds WinRT build, refactors tts_windows into SAPI/OneCore drivers, and touches core/os/spin_lock.h. Windows-only new feature, defer as a deliberate feature port."
+ },
+ {
+  "pr": "116351",
+  "sha": "01fa8cc2d2abb419164c342e577dfda0443ada48",
+  "title": "[Windows] Use OneCore/WinRT emoji picker when available.",
+  "subsystem": "platform/windows",
+  "nfiles": 4,
+  "orig_risk": "med",
+  "orig_kind": "feature",
+  "orig_rationale": "WinRT emoji picker; introduces winrt_utils and depends on the WinRT build support absent in base. New feature, defer with the WinRT chain."
+ },
+ {
+  "pr": "116513",
+  "sha": "fa4d24cbb537877319d72beebd31569695ead8e5",
+  "title": "Wayland: Deduplicate cleanup logic",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 2,
+  "orig_risk": "low",
+  "orig_kind": "refactor",
+  "orig_rationale": "Deduplicates Wayland cleanup logic (-212 lines); pure refactor, low value, not build-verified on linuxbsd."
+ },
+ {
+  "pr": "116548",
+  "sha": "2db05b08de983358f9ad12f28280939d997a0be5",
+  "title": "Android: Only poll for devices when a runnable export preset is configured",
+  "subsystem": "platform/android",
+  "nfiles": 2,
+  "orig_risk": "low",
+  "orig_kind": "bugfix",
+  "orig_rationale": "Only polls for devices when a runnable export preset is configured. Base already carries a related has_runnable_preset implementation but not this _start/_stop refactor, so it is a divergent partial; reconcile before porting."
+ },
+ {
+  "pr": "116692",
+  "sha": "c19a2705af05adf6ba39804906179dc18f656547",
+  "title": "Wayland: Fix race with buffer scaling",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 3,
+  "orig_risk": "med",
+  "orig_kind": "bugfix",
+  "orig_rationale": "Fixes buffer-scale race by threading buffer_scale through WindowRectMessage; moderate wayland_thread change, unverified on linuxbsd."
+ },
+ {
+  "pr": "117018",
+  "sha": "72853b13eb4a76ec1769b610da084efd3fa0fb5e",
+  "title": "[Web] Fix assertions wrongly affecting release template, make it configurable",
+  "subsystem": "platform/web",
+  "nfiles": 1,
+  "orig_risk": "low",
+  "orig_kind": "feature",
+  "orig_rationale": "Makes web Emscripten assertions configurable; web build-script only, not compiled/verifiable in macOS build."
+ },
+ {
+  "pr": "117060",
+  "sha": "96c2ddf39a864290c07398993eaee85b973b0f66",
+  "title": "[Linux] Improve crash trace symbols",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 2,
+  "orig_risk": "med",
+  "orig_kind": "bugfix",
+  "orig_rationale": "Improves crash symbols (-f -p -C) and drops -rdynamic in detect.py; depends on addr2line chain (115566/117067) and changes linker flags, unverified on linuxbsd."
+ },
+ {
+  "pr": "117109",
+  "sha": "a772f1638735f8f50dbc52f3633fc9b6c1a49b5e",
+  "title": "Android editor: Enable orientation change in Script Editor",
+  "subsystem": "platform/android",
+  "nfiles": 12,
+  "orig_risk": "med",
+  "orig_kind": "feature",
+  "orig_rationale": "Enables orientation change in the android Script Editor; adds a distraction_free_mode_changed signal to editor_node.cpp. editor_node.cpp is heavily fork-diverged (multi-scene workspace), conflict risk, android-only value."
+ },
+ {
+  "pr": "117131",
+  "sha": "19726167ce043cea56242d87b218bf587557f3bc",
+  "title": "Android: Fix FileAccess crash when using treeUri in Gradle-built apps",
+  "subsystem": "platform/android",
+  "nfiles": 3,
+  "orig_risk": "low",
+  "orig_kind": "bugfix",
+  "orig_rationale": "Fixes a FileAccess crash with treeUri in Gradle-built apps via gradle dependency/config changes only. Build-config change, not verifiable in this macOS build."
+ },
+ {
+  "pr": "117198",
+  "sha": "889af50e563aa59cd581633cb5ed8fe2fc89d766",
+  "title": "Android: Add haptic feedback on long-press right-click in the editor",
+  "subsystem": "platform/android",
+  "nfiles": 5,
+  "orig_risk": "low",
+  "orig_kind": "feature",
+  "orig_rationale": "Adds haptic feedback on long-press right-click in the android editor, plus a new EditorSettings entry. Adds a shared editor setting for an android-only behavior; low value, not build-verified."
+ },
+ {
+  "pr": "117250",
+  "sha": "e295eba0eb4767fd45ea8534765307d8e9b1c328",
+  "title": "Only attempt to load ANGLE DLLs from executable folder.",
+  "subsystem": "platform/windows",
+  "nfiles": 1,
+  "orig_risk": "med",
+  "orig_kind": "bugfix",
+  "orig_rationale": "Restructures ANGLE init with EGL_STATIC macro branches and its surrounding context assumes the 4.7 two-arg set_current_rendering_driver_name (RENDERING_SOURCE_FALLBACK) absent in base; subtle, Windows-only, not compiled here."
+ },
+ {
+  "pr": "117253",
+  "sha": "7c2a2b06a97fd6b0139a80d14e1087173253b88e",
+  "title": "[Windows] Set current driver when ANGLE init fails.",
+  "subsystem": "platform/windows",
+  "nfiles": 1,
+  "orig_risk": "low",
+  "orig_kind": "bugfix",
+  "orig_rationale": "Calls set_current_rendering_driver_name(driver, OS::RENDERING_SOURCE_FALLBACK); base OS only has the single-arg setter and no RENDERING_SOURCE enum. Blocked on 4.7 rendering-source-tracking API."
+ },
+ {
+  "pr": "117341",
+  "sha": "9dd0719d30626015414fa1f86f82498f96e1b4e6",
+  "title": "Android export: Add error message when ETC2/ASTC compression is not enabled",
+  "subsystem": "platform/android",
+  "nfiles": 1,
+  "orig_risk": "low",
+  "orig_kind": "bugfix",
+  "orig_rationale": "Adds a cmdline-mode error explaining ETC2/ASTC compression is required for android export. Genuinely missing from base and small, but lands inside the fork's heavily trimmed export_plugin.cpp and cannot be build-verified; low-risk nice-to-have once placement is confirmed."
+ },
+ {
+  "pr": "117355",
+  "sha": "e3173f4ec4327e57a4a9b4d5eb3745f7252c1355",
+  "title": "Android: Bump the minimum api version and hardware version for Vulkan support",
+  "subsystem": "platform/android",
+  "nfiles": 4,
+  "orig_risk": "low",
+  "orig_kind": "cleanup",
+  "orig_rationale": "Bumps minimum API/hardware for Vulkan support (export_plugin + gradle/manifest + Godot.kt). Config/policy change; android not build-verified."
+ },
+ {
+  "pr": "117385",
+  "sha": "bd8b832893797a8d078e681d1dd890dcd968239c",
+  "title": "Wayland: Improve mapping robustness and synchronization",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 4,
+  "orig_risk": "med",
+  "orig_kind": "refactor",
+  "orig_rationale": "227-line Wayland mapping robustness/synchronization rework; broad and subtle, not build-verified on linuxbsd."
+ },
+ {
+  "pr": "117445",
+  "sha": "e030230a99889e666fa320cdf7b24fdbef36f02b",
+  "title": "[macOS/Windows] Remove dynamically linked ANGLE support, add flag to enable/disable ANGLE.",
+  "subsystem": "platform/macos",
+  "nfiles": 22,
+  "orig_risk": "high",
+  "orig_kind": "refactor",
+  "orig_rationale": "Large ANGLE build reorg (remove dynamic linking, add enable flag, install_angle.py, glad patch) plus CI workflow edits; fork's ANGLE detect.py and CI are diverged and ANGLE is not built/verified here. High conflict, low value."
+ },
+ {
+  "pr": "117480",
+  "sha": "c40d3b9b0d6025a281bb6a9f2a7dc04e2b2b5856",
+  "title": "Misc includes or modernize fixes found via clangd-tidy",
+  "subsystem": "platform/windows",
+  "nfiles": 48,
+  "orig_risk": "low",
+  "orig_kind": "cleanup",
+  "orig_rationale": "Broad 48-file clangd-tidy modernization spanning platform/scene/servers/tests; no functional change but high merge friction against fork divergence. Defer and apply opportunistically."
+ },
+ {
+  "pr": "117530",
+  "sha": "179ee951b601f445aa5fb4ed187e5c3d7e28b8a0",
+  "title": "Wayland: Only report HDR request failed warning if HDR was actually requested",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 1,
+  "orig_risk": "med",
+  "orig_kind": "bugfix",
+  "orig_rationale": "Blocked: guards HDR-request warning in window_request_hdr_output, which is absent in base (depends on HDR PR 102987)."
+ },
+ {
+  "pr": "117643",
+  "sha": "40b218a679c460bd107320b0990a1e52571926d6",
+  "title": "[Android] Follow up fixes to enabling orientation change in the script editor",
+  "subsystem": "platform/android",
+  "nfiles": 3,
+  "orig_risk": "low",
+  "orig_kind": "feature",
+  "orig_rationale": "Follow-up fixes to script-editor orientation change (title-bar toggle JNI). Android-editor-only, depends on #117109, touches editor JNI + rebranded Kotlin."
+ },
+ {
+  "pr": "117653",
+  "sha": "5c2b6814eab6ef07e27be431cd7e88d887436037",
+  "title": "[Android] Fix handling of back navigation when targeting API level 36",
+  "subsystem": "platform/android",
+  "nfiles": 7,
+  "orig_risk": "med",
+  "orig_kind": "bugfix",
+  "orig_rationale": "Fixes back-navigation handling when targeting API level 36. Android runtime behavior plus instrumented tests in the rebranded Kotlin tree; not build-verified."
+ },
+ {
+  "pr": "117682",
+  "sha": "0f53286459a1140b8acfd388de75a1e1c67f8349",
+  "title": "Fix plugin signal registration error on Android",
+  "subsystem": "platform/android",
+  "nfiles": 1,
+  "orig_risk": "low",
+  "orig_kind": "bugfix",
+  "orig_rationale": "One-line plugin signal registration fix in Godot.kt, later reworked by #119233. Part of the android plugin-signal cluster; rebranded Kotlin, port the cluster together."
+ },
+ {
+  "pr": "117687",
+  "sha": "78995d3f4a5b0e153aee4e89f4d87dabfc77f80c",
+  "title": "[Android] Clean up `Godot.kt`",
+  "subsystem": "platform/android",
+  "nfiles": 7,
+  "orig_risk": "med",
+  "orig_kind": "refactor",
+  "orig_rationale": "Splits Godot.kt into a GodotNativeBridge (moves ~400 lines, touches java_godot_lib_jni/java_godot_wrapper). Large refactor over the tree the fork already rebranded to java_foundry_*; high mechanical rework, not build-verified."
+ },
+ {
+  "pr": "117702",
+  "sha": "65e73b3a5eec19e3269809b0f00e73a646723067",
+  "title": "Wayland: Fix use-after-free of `Ref<ColorManagementProfile>`",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 1,
+  "orig_risk": "high",
+  "orig_kind": "bugfix",
+  "orig_rationale": "Blocked: fixes UAF of Ref<ColorManagementProfile> in HDR color-management code that does not exist in base (depends on HDR PR 102987)."
+ },
+ {
+  "pr": "117837",
+  "sha": "82e3e44bb2f16c0ce38ac017f1ef2555bdf5c7bb",
+  "title": "[Windows] Remove polling of SDR white level when HDR output is enabled.",
+  "subsystem": "platform/windows",
+  "nfiles": 2,
+  "orig_risk": "med",
+  "orig_kind": "bugfix",
+  "orig_rationale": "Optimizes SDR-white-level polling in the 4.7 HDR-output path (_get_screen_hdr_data/_update_hdr_output_for_tracked_windows) which does not exist in base; blocked on HDR-output feature."
+ },
+ {
+  "pr": "117873",
+  "sha": "5ee90d8e82712bc09e016cde28c611b9314435b8",
+  "title": "Wayland: Unify clipboard sending code",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 2,
+  "orig_risk": "low",
+  "orig_kind": "refactor",
+  "orig_rationale": "Deduplicates Wayland clipboard send code; pure refactor, low value, not build-verified on linuxbsd."
+ },
+ {
+  "pr": "117891",
+  "sha": "77caa1c178aa115e148b736189dfdbff863c752c",
+  "title": "macOS: Fix embedded window scaling issues when hiDPI is disabled",
+  "subsystem": "platform/macos",
+  "nfiles": 5,
+  "orig_risk": "med",
+  "orig_kind": "bugfix",
+  "orig_rationale": "Embedded game window hiDPI scaling fix, but built on display_server_macos_embedded (renamed/refactored from base's display_server_embedded by #106814); blocked on that embedded rework."
+ },
+ {
+  "pr": "118076",
+  "sha": "e37b5c4035a53ed14d16acca9411578bf2b6bdba",
+  "title": "[Apple, Wayland] HDR Output: Emit window events when HDR state changes",
+  "subsystem": "platform/macos",
+  "nfiles": 11,
+  "orig_risk": "med",
+  "orig_kind": "feature",
+  "orig_rationale": "Emits window events on HDR state changes; depends on the HDR/EDR output infrastructure that is absent in the fork base. Blocked on #106814 (f1ce0e6)."
+ },
+ {
+  "pr": "118205",
+  "sha": "07b6f875221ef3e66ab2c898e4077e005c667962",
+  "title": "Wayland: Initialize libdecor earlier",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 1,
+  "orig_risk": "med",
+  "orig_kind": "refactor",
+  "orig_rationale": "Reorders libdecor initialization; init-ordering change with subtle effects, not build-verified on linuxbsd."
+ },
+ {
+  "pr": "118244",
+  "sha": "f3dfd4bf332a0d72f56212465361a13dcf04a261",
+  "title": "[Windows] WinRT build improvements.",
+  "subsystem": "platform/windows",
+  "nfiles": 3,
+  "orig_risk": "med",
+  "orig_kind": "feature",
+  "orig_rationale": "WinRT build improvements (SCsub/detect.py/install_winrt.py); base has no WinRT build support, so this depends on the not-yet-ported WinRT infra."
+ },
+ {
+  "pr": "118283",
+  "sha": "972d21ebf443ce4d4b771117182c5a55752f7d09",
+  "title": "Android: Remove deprecated Google Play OBB support",
+  "subsystem": "platform/android",
+  "nfiles": 54,
+  "orig_risk": "med",
+  "orig_kind": "cleanup",
+  "orig_rationale": "Removes deprecated Google Play OBB/expansion/licensing support (54 files, ~9k deletions). Base 4.6.3 still ships OBB, so it is a genuine large removal; reasonable dead-code cleanup for the fork but spans the rebranded android tree and is not build-verified."
+ },
+ {
+  "pr": "118287",
+  "sha": "6b5a8733f700c2b5e6898e83b7f0b855f34f3eb3",
+  "title": "[ANGLE] Fix build with manually set path.",
+  "subsystem": "platform/macos",
+  "nfiles": 2,
+  "orig_risk": "low",
+  "orig_kind": "bugfix",
+  "orig_rationale": "ANGLE angle_path fallback depends on the 'env[angle]' + arch-suffixed angle_libs path structure introduced by #117445, which is absent in the fork's older ANGLE detect.py; blocked on #117445."
+ },
+ {
+  "pr": "118339",
+  "sha": "a6dccbf731f62c09c59dfbcc495befaecf1fb105",
+  "title": "[Windows] Add support for `AdvancedColorInfo` info and change callback.",
+  "subsystem": "platform/windows",
+  "nfiles": 6,
+  "orig_risk": "high",
+  "orig_kind": "feature",
+  "orig_rationale": "Adds AdvancedColorInfo support requiring both winrt_utils (absent) and the 4.7 HDR-output infra (_get_screen_hdr_data/hdr_output_cache, also absent). Feature-dependent, not portable to base."
+ },
+ {
+  "pr": "118385",
+  "sha": "2ee7ef719657f640f706dbfde0953c66f5ca1730",
+  "title": "Warn only once when the input method stops",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 2,
+  "orig_risk": "med",
+  "orig_kind": "refactor",
+  "orig_rationale": "Substantial restructure of X11 _create_xic/XIM callbacks to warn once; delicate IME area, overlaps _xim_destroy_callback with 118404, unverified on linuxbsd."
+ },
+ {
+  "pr": "118417",
+  "sha": "f4c839f7b32e8da5b06d364993bfc7e6fd43dfd8",
+  "title": "Allow moving and resizing the embedded game window on Android",
+  "subsystem": "platform/android",
+  "nfiles": 8,
+  "orig_risk": "med",
+  "orig_kind": "feature",
+  "orig_rationale": "Adds move/resize of the embedded game window (large android-editor UI: layouts, drawables, EmbeddedGodotGame rework). Feature, android-editor-only value, rebranded tree, not build-verified."
+ },
+ {
+  "pr": "118554",
+  "sha": "8e0030b4ee3b4612e6c5e30ea331a6ff8d2228a2",
+  "title": "Wayland: Handle complex pointer event frames",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 2,
+  "orig_risk": "med",
+  "orig_kind": "bugfix",
+  "orig_rationale": "Reworks Wayland pointer-frame event accumulation; delicate event handling, not build-verified on linuxbsd."
+ },
+ {
+  "pr": "118642",
+  "sha": "38aef34e1ae50cb53c6a887b84ea1e88882de7de",
+  "title": "LinuxBSD crash handler: Move addr2line finding to its own function",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 1,
+  "orig_risk": "low",
+  "orig_kind": "refactor",
+  "orig_rationale": "Extracts addr2line lookup into find_addr2line_executable(); depends on the addr2line chain (115566/117067/117060) landing first."
+ },
+ {
+  "pr": "118675",
+  "sha": "7244af0beb205d300ac546170a8ea71ae85b271f",
+  "title": "[WinRT] Wait for DispatcherQueueController shutdown.",
+  "subsystem": "platform/windows",
+  "nfiles": 1,
+  "orig_risk": "low",
+  "orig_kind": "bugfix",
+  "orig_rationale": "Edits winrt_utils.cpp (absent in base); part of the WinRT chain, blocked until winrt_utils lands."
+ },
+ {
+  "pr": "118680",
+  "sha": "1d218e652e5a3a9fd9620590d9866d4cef2be492",
+  "title": "Add a bunch of missing window existence checks to HDR methods",
+  "subsystem": "platform/macos",
+  "nfiles": 5,
+  "orig_risk": "low",
+  "orig_kind": "bugfix",
+  "orig_rationale": "Adds window-existence checks to HDR output methods, but HDR/EDR output infra (window_is_hdr_output_*) does not exist in the fork base; blocked on #106814 (f1ce0e6)."
+ },
+ {
+  "pr": "118689",
+  "sha": "1df8f1d38685d8122806378dd2657600c2ed6e5b",
+  "title": "Fix embedded window minimum size bug on Android",
+  "subsystem": "platform/android",
+  "nfiles": 1,
+  "orig_risk": "low",
+  "orig_kind": "bugfix",
+  "orig_rationale": "Clamps embedded-window min size and avoids divide-by-zero on aspect lock. Depends on the resize feature from #118417 (references MIN_WINDOW_SIZE/resizingEnabled/isFreeResize) which is not in base; rebranded editor-embed Kotlin."
+ },
+ {
+  "pr": "118742",
+  "sha": "2a8b3d6618b1ca3ff74fd5fbb19f6b086d729980",
+  "title": "Add missing `angle` check to MSVC branch.",
+  "subsystem": "platform/windows",
+  "nfiles": 1,
+  "orig_risk": "low",
+  "orig_kind": "bugfix",
+  "orig_rationale": "Adds `if env[\"angle\"]:` guard, but base detect.py lacks the 4.7 `angle` BoolVariable and the ANGLE build restructure; heavily diverged Windows build tooling, no macOS impact."
+ },
+ {
+  "pr": "118760",
+  "sha": "22969efdbe6e4be62fae916ce4b8a118e4d5245b",
+  "title": "[Windows] Fix OneCore TTS language code formatting.",
+  "subsystem": "platform/windows",
+  "nfiles": 1,
+  "orig_risk": "low",
+  "orig_kind": "bugfix",
+  "orig_rationale": "Touches tts_driver_onecore.cpp which is absent in base; blocked on OneCore TTS feature PR 116349 (0dabee)."
+ },
+ {
+  "pr": "118771",
+  "sha": "f7fcb79c4399070be07caadfbe2304a9c94711fa",
+  "title": "[Web] Remove undefined behavior around exit",
+  "subsystem": "platform/web",
+  "nfiles": 1,
+  "orig_risk": "low",
+  "orig_kind": "bugfix",
+  "orig_rationale": "Web-only exit UB/main-loop cleanup fix; self-contained but platform/web is not compiled or verifiable in the macOS editor build, so defer."
+ },
+ {
+  "pr": "118777",
+  "sha": "7ffe0a57ccb6a33bb4390e97e2c9d75b8ad708eb",
+  "title": "[Web] Remove flags that prevent `proxy_to_pthread` from building",
+  "subsystem": "platform/web",
+  "nfiles": 1,
+  "orig_risk": "low",
+  "orig_kind": "cleanup",
+  "orig_rationale": "Removes web link flags blocking proxy_to_pthread; platform/web build-only, not compiled/verifiable here."
+ },
+ {
+  "pr": "118798",
+  "sha": "714d71f24703c5658835492efdd3103e376e1b73",
+  "title": "[Windows] Dynamically load `coremessaging`.",
+  "subsystem": "platform/windows",
+  "nfiles": 2,
+  "orig_risk": "med",
+  "orig_kind": "feature",
+  "orig_rationale": "Modifies winrt_utils.cpp which does not exist in base; part of the WinRT feature chain, blocked until winrt_utils is introduced."
+ },
+ {
+  "pr": "118860",
+  "sha": "d8227b7a78a8fda7b81517824f6a50047a93a8f0",
+  "title": "Revert Android Editor minSdk bump to 24",
+  "subsystem": "platform/android",
+  "nfiles": 4,
+  "orig_risk": "low",
+  "orig_kind": "cleanup",
+  "orig_rationale": "Reverts the android editor minSdk bump back to 24 (gradle/manifest/editor Kotlin). Config-only, pairs with #118942, android build not exercised here."
+ },
+ {
+  "pr": "118942",
+  "sha": "a02cead472438a0178467ebf15815c89856f5214",
+  "title": "Android: Set the default minSdk for compatibility renderer to 24",
+  "subsystem": "platform/android",
+  "nfiles": 1,
+  "orig_risk": "med",
+  "orig_kind": "feature",
+  "orig_rationale": "Uses DEFAULT_MIN_SDK_VERSION (24) for the compatibility renderer instead of the Vulkan minimum. Missing from base, but the fork's export_plugin.cpp is heavily diverged (~162 lines trimmed) and android export is not build-verified."
+ },
+ {
+  "pr": "119141",
+  "sha": "3572bad2920ce0cf57ab4296642d7c057dd8e39e",
+  "title": "Wayland: Improve hovered window handling",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 4,
+  "orig_risk": "med",
+  "orig_kind": "refactor",
+  "orig_rationale": "Large 575-line wayland_thread rework of hovered-window handling; broad and subtle, not build-verified on linuxbsd here."
+ },
+ {
+  "pr": "119233",
+  "sha": "3646d973220d44485f90e6727e5bd5d953323816",
+  "title": "Fix Android plugin issues",
+  "subsystem": "platform/android",
+  "nfiles": 13,
+  "orig_risk": "med",
+  "orig_kind": "bugfix",
+  "orig_rationale": "Switches JNISingleton signals to add_user_signal and restores early plugin registration. Entangled with the 4.7 android signal-registration cluster (#117682/#119428) and the rebranded Godot.kt; port the cluster together after confirming the base regression."
+ },
+ {
+  "pr": "119278",
+  "sha": "952d4860b261d15b3c8036ad4f47f6b851c3e822",
+  "title": "[Windows] Force supported SDK with MSVC 2019, add Scons option to set SDK version.",
+  "subsystem": "platform/windows",
+  "nfiles": 1,
+  "orig_risk": "med",
+  "orig_kind": "bugfix",
+  "orig_rationale": "Introduces check_mssdk_version/mssdk option atop the 4.7 configure_msvc structure; base detect.py has diverged and lacks this infra. Windows-build-only, not compiled here."
+ },
+ {
+  "pr": "119297",
+  "sha": "9a33066a27d70c6d4f74cae44c1ce023d8082a59",
+  "title": "[Android] Miscellaneous bug fixes",
+  "subsystem": "platform/android",
+  "nfiles": 2,
+  "orig_risk": "low",
+  "orig_kind": "bugfix",
+  "orig_rationale": "Adds a taskAffinity manifest entry and a hasExtra guard in command-line arg parsing. Lands in the rebranded Godot.kt/manifest; low value and android-only, not build-verified."
+ },
+ {
+  "pr": "119428",
+  "sha": "582e6f1d2b7432ed79324efd5f30c6b14fa68116",
+  "title": "Fix Android plugin signal regression",
+  "subsystem": "platform/android",
+  "nfiles": 3,
+  "orig_risk": "med",
+  "orig_kind": "bugfix",
+  "orig_rationale": "Adds JNISingleton::_get so plugin signals resolve as Signal properties. Part of the 4.7 android plugin-signal rework; base 4.6.3 may not carry the underlying regression, so verify the bug exists before porting. Pairs with #119233/#117682."
+ },
+ {
+  "pr": "119433",
+  "sha": "e333258f94619d1862a85b08b662c36b044199d6",
+  "title": "[Windows] Remove `await` MSVC flags.",
+  "subsystem": "platform/windows",
+  "nfiles": 1,
+  "orig_risk": "low",
+  "orig_kind": "cleanup",
+  "orig_rationale": "Edits the SCsub `if env[\"winrt\"]:` block which does not exist in base (no WinRT build support); blocked until the WinRT build chain (0dabee/f3dfd4) is ported."
+ },
+ {
+  "pr": "119455",
+  "sha": "0e57853371b58d9438184810e490de910a51a3ad",
+  "title": "[Windows] Check if used SCons version supports requested MSVC.",
+  "subsystem": "platform/windows",
+  "nfiles": 1,
+  "orig_risk": "low",
+  "orig_kind": "bugfix",
+  "orig_rationale": "SCons-version guard depends on 4.7 detect.py MSVC infra (msvc_ver/scons_version/check_mssdk_version) absent in base; Windows-build-only tooling, no macOS impact. Revisit if the Windows toolchain path is ported."
+ },
+ {
+  "pr": "119601",
+  "sha": "79811ccc983d090f2bc764617fc7f2f52ccb25bf",
+  "title": "Android: Fix NPE in JavaClassWrapper proxy when interface method has no arguments",
+  "subsystem": "platform/android",
+  "nfiles": 1,
+  "orig_risk": "low",
+  "orig_kind": "bugfix",
+  "orig_rationale": "Guards a null args array (args ?: emptyArray()) in the interface-proxy invocation. Depends on the #115498 proxy feature absent from base; rebranded Kotlin, no android build coverage here."
+ },
+ {
+  "pr": "119634",
+  "sha": "330e012b5375e9eebbf10b28ae0e759ad140b313",
+  "title": "Android: Fix infinite recursion in proxy equals handler",
+  "subsystem": "platform/android",
+  "nfiles": 2,
+  "orig_risk": "med",
+  "orig_kind": "bugfix",
+  "orig_rationale": "Fixes infinite recursion in the Java interface-proxy equals()/hashCode() handler. Depends on the interface-proxy feature added by #115498 (a490), which is not in base 4.6.3; also lands in the fully rebranded games.cafecito.foundry Kotlin tree and is not build-verified on macOS."
+ },
+ {
+  "pr": "119756",
+  "sha": "b404bc6a744a3754337e906c0249d2bf838c9348",
+  "title": "macOS: Fix mouse warp for embedded game window",
+  "subsystem": "platform/macos",
+  "nfiles": 2,
+  "orig_risk": "low",
+  "orig_kind": "bugfix",
+  "orig_rationale": "Trivial Vector2i integer-scaling fix for embedded warp_mouse, but targets display_server_macos_embedded (renamed from base's display_server_embedded by #106814); blocked on that embedded rename/refactor."
+ },
+ {
+  "pr": "119966",
+  "sha": "a8b64029658ca5bcf315ecf5947880a7ecc0fabf",
+  "title": "[macOS] Fix build with enabled ANGLE and disabled Vulkan/Metal.",
+  "subsystem": "platform/macos",
+  "nfiles": 1,
+  "orig_risk": "low",
+  "orig_kind": "bugfix",
+  "orig_rationale": "Adds Metal framework in ANGLE link branch, but fork base macos detect.py uses a different (older) ANGLE structure and already links Metal for the Metal driver; needs adaptation and is low value."
+ }
+]

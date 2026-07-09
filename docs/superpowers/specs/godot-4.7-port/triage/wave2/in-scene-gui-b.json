@@ -1,0 +1,429 @@
+[
+ {
+  "sha": "bd463cfe5067aa704306a82e01542323e56ecb87",
+  "pr": "118014",
+  "title": "Fix submenu positioning when `PopupMenu` is spawned near window border",
+  "subsystem": "scene/gui",
+  "nfiles": 2
+ },
+ {
+  "sha": "a7733e5e0a95a7e6c2309952cf8fb352153641c7",
+  "pr": "117958",
+  "title": "Implement fuzzy search for `PopupMenu` search bar",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "3eb96c83132f619e8f807ba1fcf45beb6ad2af21",
+  "pr": "117244",
+  "title": "Do not show accessibility configuration warnings for non-focusable controls, account for name fallback.",
+  "subsystem": "scene/gui",
+  "nfiles": 21
+ },
+ {
+  "sha": "a1aa0fa2fa13a3c28de232a08bb8074086abf1f4",
+  "pr": "117869",
+  "title": "Revert \"Expose `Control.call_gui_input`\"",
+  "subsystem": "scene/gui",
+  "nfiles": 4
+ },
+ {
+  "sha": "c7de9524af8ea24b3ca31541be1b4f727c11019e",
+  "pr": "116405",
+  "title": "Expose `Control.call_gui_input()`",
+  "subsystem": "scene/gui",
+  "nfiles": 4
+ },
+ {
+  "sha": "f313c3b3f57d660f6f89c39f2d115e26af264010",
+  "pr": "115545",
+  "title": "Add scroll switch to ScrollContainer",
+  "subsystem": "scene/gui",
+  "nfiles": 3
+ },
+ {
+  "sha": "970f8236b5b532af4d5862d413bb53869eb0148e",
+  "pr": "117733",
+  "title": "Add `_get_tooltip_auto_translate_mode_at()` to Control",
+  "subsystem": "scene/gui",
+  "nfiles": 9
+ },
+ {
+  "sha": "151eeb8a6443502c77c50d4a25edc3d681fe7eef",
+  "pr": "117612",
+  "title": "Fix adding carets above and then below",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "8a72ab019d87fa322585a257d1721d6356a5d372",
+  "pr": "117154",
+  "title": "Fix `TextEdit` bugs with large `line_spacing`",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "c71c2bfc5e61e937cbbf2bd8eefa499ba6864ef5",
+  "pr": "117648",
+  "title": "[TextEdit] Ignore IME updates and Alt sequences when control is read-only.",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "8423b86dd45de9a09031809a95777bcaa7be3677",
+  "pr": "117201",
+  "title": "Fix RichTextLabel drag selection not working after double-click",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "1eb0374e5f3efa05d8a9914f482b894b5b1f6b9c",
+  "pr": "117488",
+  "title": "Fix \"Custom\" anchor preset being ignored if the parent isn't a `Control`",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "1a69be88e2a64cefc5c2bfbb9e60f5a080a9ced7",
+  "pr": "111819",
+  "title": "Add virtual `_get_cursor_shape()` method in Control",
+  "subsystem": "scene/gui",
+  "nfiles": 3
+ },
+ {
+  "sha": "326a2f4af6b199bd54a1e7e5494a41c56c065d4d",
+  "pr": "116850",
+  "title": "[TextEdit] Fix clipping of last character due to right margin rounding",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "10c829e6239f0f4d98c4120249a49392b6ca94d2",
+  "pr": "117135",
+  "title": "Set accessibility name on Tree inline cell editor when editing",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "46dd8eb6e95e6b7ae9d257ab0be93074d92033c0",
+  "pr": "117333",
+  "title": "Make the caret at end of word work for lookup",
+  "subsystem": "scene/gui",
+  "nfiles": 2
+ },
+ {
+  "sha": "73f979b03a40d11a0feff721dc8721e1b0368913",
+  "pr": "117232",
+  "title": "Fix TabContainer set current tab not immediately updating visibility",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "84889d6fe761d7fc22526c2143cdceb070fafcd6",
+  "pr": "117101",
+  "title": "[RTL] Use shared item RIDOwner for all instances.",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "e65f65f94b929a63c73f44468fa672ab1a87ee20",
+  "pr": "117283",
+  "title": "[Accessibility] Add CodeEdit code completion support.",
+  "subsystem": "scene/gui",
+  "nfiles": 2
+ },
+ {
+  "sha": "1a43145761ad3750ce85ba1bbfc995691af7afce",
+  "pr": "117224",
+  "title": "ScrollBar: Fix compilation with `precision=double`",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "3bfde00aac5371b832799e0d1e04b656ed8a5f9d",
+  "pr": "116868",
+  "title": "Add triple-click paragraph selection to RichTextLabel",
+  "subsystem": "scene/gui",
+  "nfiles": 2
+ },
+ {
+  "sha": "737ae54ef6c2401210e63f41b9f8f80ada19d070",
+  "pr": "117074",
+  "title": "Fix RichTextLabel [ol type=a] not generating the right prefix",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "890567325ecffc8e7912b1caa76882883e4283cc",
+  "pr": "113954",
+  "title": "Scroll to selected file on sorting change",
+  "subsystem": "scene/gui",
+  "nfiles": 2
+ },
+ {
+  "sha": "93bc47df3864512494f205da0892b6b1f7e495aa",
+  "pr": "116428",
+  "title": "Add Styleboxes for Virtual Joystick",
+  "subsystem": "scene/gui",
+  "nfiles": 4
+ },
+ {
+  "sha": "c646b57c278e8bd1aa6c42193bde3ca69dee6ecf",
+  "pr": "117011",
+  "title": "[RTL] Fix character click offsets after the table.",
+  "subsystem": "scene/gui",
+  "nfiles": 2
+ },
+ {
+  "sha": "891069d1cd3f9fd38eb7c6a8042fa7d5ba95f885",
+  "pr": "114236",
+  "title": "Implement search bar for `PopupMenu`",
+  "subsystem": "scene/gui",
+  "nfiles": 11
+ },
+ {
+  "sha": "54c6cfee0d4ae12d49fb79c18a37f1139dce09b2",
+  "pr": "116839",
+  "title": "Move accessibility methods/enums from `DisplayServer` to the `AccessibilityServer` dedicated singleton.",
+  "subsystem": "scene/gui",
+  "nfiles": 88
+ },
+ {
+  "sha": "4683f3806f27d006f3ee77eeded72740283e8130",
+  "pr": "116928",
+  "title": "[RTL] Fix `%` handling in `[img=WxH]` tags.",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "4108ed03a0fa6c05ebc86563ee38c6d41a61726f",
+  "pr": "116824",
+  "title": "Print error when trying to change to directory out of scope",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "edb345db45649322820e256c2c8a41fa32577011",
+  "pr": "116678",
+  "title": "Fix TextEdit showing focus on some mouse events",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "6bcbf8913dff0b402eee7b5e589e23700ead2408",
+  "pr": "116701",
+  "title": "Remove redundant calculation code in `RichTextLabel::_get_line_max_width()`",
+  "subsystem": "scene/gui",
+  "nfiles": 2
+ },
+ {
+  "sha": "9a39e0c6e729fff10627ac55c2bf02614f1018e0",
+  "pr": "116681",
+  "title": "Improve `get_tab_control()` in TabContainer",
+  "subsystem": "scene/gui",
+  "nfiles": 2
+ },
+ {
+  "sha": "d301ecab3b205f4ea4e1cc0547fdc5baaa680098",
+  "pr": "116628",
+  "title": "Fix `SplitContainerDragger` dragging with enabled screen reader, allow resizing with keyboard shortcuts.",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "93a59728fbbe1e9ed27c61dd40b7da23c765bca8",
+  "pr": "116601",
+  "title": "Fix SplitContainer accessibility errors",
+  "subsystem": "scene/gui",
+  "nfiles": 2
+ },
+ {
+  "sha": "9a1a0e927be5b5200af77d1a253e3a5a063ddc15",
+  "pr": "116277",
+  "title": "Improve the table in `RichTextLabel`",
+  "subsystem": "scene/gui",
+  "nfiles": 2
+ },
+ {
+  "sha": "8953cea927e06257196450a6c105b9e558f34b4a",
+  "pr": "116617",
+  "title": "Fix `TabContainer` accessibility sub-element cleanup.",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "781ae8deb22a19c9590a01ae6ba3e746d86f0b22",
+  "pr": "115876",
+  "title": "Fix TextEdit backwards search skipping matches",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "25045e365f8be5e852736a92430b4bcfce64fd24",
+  "pr": "113808",
+  "title": "Support tiling `AtlasTexture` in `TextureRect`",
+  "subsystem": "scene/gui",
+  "nfiles": 3
+ },
+ {
+  "sha": "aa094e93e36d9c310d0f40c466f0e063b7a7c9d4",
+  "pr": "116390",
+  "title": "Fix RichTextLabel scrollbar when too small to show it",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "d1397d884a708577a4024ce0d6aa2b0695697148",
+  "pr": "116157",
+  "title": "Fix copying text across tables in `RichTextLabel`",
+  "subsystem": "scene/gui",
+  "nfiles": 2
+ },
+ {
+  "sha": "dc6222782f09a7be5bbf17a0942fd28ea8854926",
+  "pr": "102858",
+  "title": "Fix LineEdit only being editable via keyboard and mouse",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "3110686b3aff1df0e07a01e019c9bae4bf258b46",
+  "pr": "116343",
+  "title": "Fix Control minimum size check too aggressive",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "20d58a38c67b956d007e594c551dab39bd68efc1",
+  "pr": "116168",
+  "title": "Fix the table is too wide when using indentation in `RichTextLabel`",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "d61fc4529f9479b2b64e1633a54d89471f9365aa",
+  "pr": "116032",
+  "title": "Fix inaccurate tree relationship lines",
+  "subsystem": "scene/gui",
+  "nfiles": 2
+ },
+ {
+  "sha": "64b2841d916fd42658ce069b87c32e3265fb5c32",
+  "pr": "116057",
+  "title": "Fix drag-resizing `Control` with non-zero `pivot_offset_ratio`",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "ff8fd0273d99aa3a4633cb57238fb8d58ec2b29b",
+  "pr": "115917",
+  "title": "Fix wrong normal icon color in FileDialog",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "4a0673c91a3cde296c896adf4f04a123cd5eeb7d",
+  "pr": "115802",
+  "title": "Give tree's `hovered_pos` a negative default value.",
+  "subsystem": "scene/gui",
+  "nfiles": 2
+ },
+ {
+  "sha": "77f596abc5e4ec69c3995ac8203fab2e9bd67764",
+  "pr": "115729",
+  "title": "Fix current line highlight not extending into gutter",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "0dec4ab393f6388c0e275462db640277c5ac4234",
+  "pr": "114519",
+  "title": "Fix camera focus triggered by double-clicking Tree buttons",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "a6efb02ebd95b2f0556f4edcbfdf8e6ef9c52f0e",
+  "pr": "112998",
+  "title": "Hide TreeItem edit popup on scroll.",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "2d9b67e7bfc8b64584a1b773841fd064a4c4ac76",
+  "pr": "115620",
+  "title": "[PopupMenu] Use parent `GraphEdit` scale for popups inside `GraphElement` instead of completely disabling it.",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "a0bf14921a2a58115fd9a78b03ef98a2b5f5aee5",
+  "pr": "112797",
+  "title": "ItemList add `center_on_current()`",
+  "subsystem": "scene/gui",
+  "nfiles": 3
+ },
+ {
+  "sha": "c5ab7727fa532dfff57395ab22aeab2de4b7eac7",
+  "pr": "114323",
+  "title": "Tree: Add per-cell `autowrap_trim_flags` to TreeItem",
+  "subsystem": "scene/gui",
+  "nfiles": 4
+ },
+ {
+  "sha": "2450bb0c75c2dbac1e7698ed9049f4b59008ba50",
+  "pr": "114449",
+  "title": "GUI: Add accessibility region role for landmark navigation",
+  "subsystem": "scene/gui",
+  "nfiles": 13
+ },
+ {
+  "sha": "ae7d2defe244dfa070b27f7a2641163ad79b4142",
+  "pr": "115006",
+  "title": "Fix TextEdit not drawing caret on setting editable",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "43fbc539dd2780023d38a789c4aafbec266585e1",
+  "pr": "115295",
+  "title": "Reset drag unfold timer when mouse exits Tree",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "7b4e2204652eafd5d4449cf9234aa80fde2fab11",
+  "pr": "115378",
+  "title": "Fix error after setting native PopupMenu item ID",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "41446273586526a3e5ba4009e22456c29b31047b",
+  "pr": "114467",
+  "title": "Fix `RichTextLabel` not updating after change `scroll_active` field",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "86b40d44395cf1a47ea588641841f3c3d4e95a09",
+  "pr": "111859",
+  "title": "Fix TextEdit IME error on mouse over",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "bf28684b2afe8e00ba76af6fe3ae98629f29362e",
+  "pr": "112745",
+  "title": "Fix Tree focus item LineEdit is offset",
+  "subsystem": "scene/gui",
+  "nfiles": 1
+ },
+ {
+  "sha": "0b6cdb835b02365d3549fca840576ac3eeca9bf1",
+  "pr": "115392",
+  "title": "Stop exposing external theme item properties",
+  "subsystem": "scene/gui",
+  "nfiles": 2
+ }
+]

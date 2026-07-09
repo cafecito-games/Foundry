@@ -44,6 +44,8 @@
 #include "drivers/png/png_driver_common.h"
 #include "main/main.h"
 #include "scene/resources/texture.h"
+#include "servers/display/accessibility_server.h"
+#include "servers/rendering/dummy/rasterizer_dummy.h"
 
 #ifdef SDL_ENABLED
 #include "drivers/sdl/joypad_sdl.h"
@@ -59,10 +61,6 @@
 #endif
 #if defined(GLES3_ENABLED)
 #include "drivers/gles3/rasterizer_gles3.h"
-#endif
-
-#if defined(ACCESSKIT_ENABLED)
-#include "drivers/accesskit/accessibility_driver_accesskit.h"
 #endif
 
 #include <avrt.h>
@@ -118,6 +116,40 @@ static void track_mouse_leave_event(HWND hWnd) {
 	TrackMouseEvent(&tme);
 }
 
+static void update_ime_form_positions(HIMC p_himc, const Point2i &p_pos) {
+	if (p_himc == (HIMC) nullptr) {
+		return;
+	}
+
+	COMPOSITIONFORM cps = {};
+	cps.dwStyle = CFS_POINT;
+	cps.ptCurrentPos.x = p_pos.x;
+	cps.ptCurrentPos.y = p_pos.y;
+	ImmSetCompositionWindow(p_himc, &cps);
+
+	LOGFONT logFont = {};
+
+	logFont.lfHeight = 1; // em height
+	logFont.lfQuality = CLEARTYPE_QUALITY;
+
+	ImmSetCompositionFontA(p_himc, &logFont);
+
+	CANDIDATEFORM cf = {};
+	cf.dwIndex = 0;
+
+	cf.dwStyle = CFS_CANDIDATEPOS;
+	cf.ptCurrentPos.x = p_pos.x;
+	cf.ptCurrentPos.y = p_pos.y;
+	ImmSetCandidateWindow(p_himc, &cf);
+
+	cf.dwStyle = CFS_EXCLUDE;
+	cf.rcArea.left = p_pos.x;
+	cf.rcArea.right = p_pos.x;
+	cf.rcArea.top = p_pos.y;
+	cf.rcArea.bottom = p_pos.y;
+	ImmSetCandidateWindow(p_himc, &cf);
+}
+
 bool DisplayServerWindows::has_feature(Feature p_feature) const {
 	switch (p_feature) {
 		case FEATURE_SUBWINDOWS:
@@ -149,11 +181,9 @@ bool DisplayServerWindows::has_feature(Feature p_feature) const {
 			return (os_ver.dwBuildNumber >= 19041); // Fully supported on Windows 10 Vibranium R1 (2004)+ only, captured as black rect on older versions.
 		case FEATURE_EMOJI_AND_SYMBOL_PICKER:
 			return (os_ver.dwBuildNumber >= 17134); // Windows 10 Redstone 4 (1803)+ only.
-#ifdef ACCESSKIT_ENABLED
 		case FEATURE_ACCESSIBILITY_SCREEN_READER: {
-			return (accessibility_driver != nullptr);
+			return AccessibilityServer::get_singleton()->is_supported();
 		} break;
-#endif
 		default:
 			return false;
 	}
@@ -1798,7 +1828,15 @@ void DisplayServerWindows::delete_sub_window(WindowID p_window) {
 	WindowData &wd = windows[p_window];
 
 	while (wd.transient_children.size()) {
-		window_set_transient(*wd.transient_children.begin(), INVALID_WINDOW_ID);
+		WindowID wid = *wd.transient_children.begin();
+		if (windows.has(wid)) {
+			WindowData &wd_window = windows[wid];
+			wd_window.transient_parent = INVALID_WINDOW_ID;
+			if (wd_window.exclusive) {
+				SetWindowLongPtr(wd_window.hWnd, GWLP_HWNDPARENT, (LONG_PTR) nullptr);
+			}
+		}
+		wd.transient_children.erase(wid);
 	}
 
 	if (wd.transient_parent != INVALID_WINDOW_ID) {
@@ -2981,11 +3019,7 @@ void DisplayServerWindows::window_set_ime_position(const Point2i &p_pos, WindowI
 		return;
 	}
 
-	COMPOSITIONFORM cps;
-	cps.dwStyle = CFS_POINT;
-	cps.ptCurrentPos.x = wd.im_position.x;
-	cps.ptCurrentPos.y = wd.im_position.y;
-	ImmSetCompositionWindow(himc, &cps);
+	update_ime_form_positions(himc, wd.im_position);
 	ImmReleaseContext(wd.hWnd, himc);
 }
 
@@ -4728,15 +4762,11 @@ LRESULT DisplayServerWindows::_handle_early_window_message(HWND hWnd, UINT uMsg,
 			// Fix this up so we can recognize the remaining messages.
 			pWindowData->hWnd = hWnd;
 
-#ifdef ACCESSKIT_ENABLED
-			if (accessibility_driver && !accessibility_driver->window_create(pWindowData->id, (void *)hWnd)) {
+			if (!AccessibilityServer::get_singleton()->window_create(pWindowData->id, (void *)hWnd)) {
 				if (OS::get_singleton()->is_stdout_verbose()) {
 					ERR_PRINT("Can't create an accessibility adapter for window, accessibility support disabled!");
 				}
-				memdelete(accessibility_driver);
-				accessibility_driver = nullptr;
 			}
-#endif
 		} break;
 		default: {
 			// Additional messages during window creation should happen after we fixed
@@ -6022,20 +6052,7 @@ LRESULT DisplayServerWindows::WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARA
 
 		} break;
 		case WM_IME_COMPOSITION: {
-			CANDIDATEFORM cf;
-			cf.dwIndex = 0;
-
-			cf.dwStyle = CFS_CANDIDATEPOS;
-			cf.ptCurrentPos.x = windows[window_id].im_position.x;
-			cf.ptCurrentPos.y = windows[window_id].im_position.y;
-			ImmSetCandidateWindow(windows[window_id].im_himc, &cf);
-
-			cf.dwStyle = CFS_EXCLUDE;
-			cf.rcArea.left = windows[window_id].im_position.x;
-			cf.rcArea.right = windows[window_id].im_position.x;
-			cf.rcArea.top = windows[window_id].im_position.y;
-			cf.rcArea.bottom = windows[window_id].im_position.y;
-			ImmSetCandidateWindow(windows[window_id].im_himc, &cf);
+			update_ime_form_positions(windows[window_id].im_himc, windows[window_id].im_position);
 
 			if (windows[window_id].ime_active) {
 				SetCaretPos(windows[window_id].im_position.x, windows[window_id].im_position.y);
@@ -6099,11 +6116,8 @@ LRESULT DisplayServerWindows::WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARA
 
 		} break;
 		case WM_DESTROY: {
-#ifdef ACCESSKIT_ENABLED
-			if (accessibility_driver) {
-				accessibility_driver->window_destroy(window_id);
-			}
-#endif
+			AccessibilityServer::get_singleton()->window_destroy(window_id);
+
 			Input::get_singleton()->flush_buffered_events();
 			if (window_mouseover_id == window_id) {
 				window_mouseover_id = INVALID_WINDOW_ID;
@@ -6157,11 +6171,8 @@ void DisplayServerWindows::_process_activate_event(WindowID p_window_id) {
 			SetFocus(wd.hWnd);
 		}
 		wd.window_focused = true;
-#ifdef ACCESSKIT_ENABLED
-		if (accessibility_driver) {
-			accessibility_driver->accessibility_set_window_focused(p_window_id, true);
-		}
-#endif
+		AccessibilityServer::get_singleton()->set_window_focused(p_window_id, true);
+
 		_send_window_event(wd, WINDOW_EVENT_FOCUS_IN);
 	} else { // WM_INACTIVE.
 		Input::get_singleton()->release_pressed_events();
@@ -6175,11 +6186,8 @@ void DisplayServerWindows::_process_activate_event(WindowID p_window_id) {
 			ReleaseCapture();
 		}
 		wd.window_focused = false;
-#ifdef ACCESSKIT_ENABLED
-		if (accessibility_driver) {
-			accessibility_driver->accessibility_set_window_focused(p_window_id, false);
-		}
-#endif
+		AccessibilityServer::get_singleton()->set_window_focused(p_window_id, false);
+
 		_send_window_event(wd, WINDOW_EVENT_FOCUS_OUT);
 	}
 
@@ -6523,9 +6531,14 @@ Error DisplayServerWindows::_create_window(WindowID p_window_id, WindowMode p_mo
 		}
 
 		wd.exclusive = p_exclusive;
+		bool on_top = (p_flags & WINDOW_FLAG_ALWAYS_ON_TOP_BIT && p_mode != WINDOW_MODE_FULLSCREEN && p_mode != WINDOW_MODE_EXCLUSIVE_FULLSCREEN);
 		if (wd_transient_parent) {
-			wd.transient_parent = p_transient_parent;
-			wd_transient_parent->transient_children.insert(id);
+			if (on_top) {
+				ERR_PRINT("Windows with the 'on top' can't become transient.");
+			} else {
+				wd.transient_parent = p_transient_parent;
+				wd_transient_parent->transient_children.insert(id);
+			}
 		}
 
 		wd.sharp_corners = p_flags & WINDOW_FLAG_SHARP_CORNERS_BIT;
@@ -7002,19 +7015,6 @@ DisplayServerWindows::DisplayServerWindows(const String &p_rendering_driver, Win
 		initialize_tts();
 	}
 	native_menu = memnew(NativeMenuWindows);
-
-#ifdef ACCESSKIT_ENABLED
-	if (accessibility_get_mode() != DisplayServer::AccessibilityMode::ACCESSIBILITY_DISABLED) {
-		accessibility_driver = memnew(AccessibilityDriverAccessKit);
-		if (accessibility_driver->init() != OK) {
-			if (OS::get_singleton()->is_stdout_verbose()) {
-				ERR_PRINT("Can't create an accessibility driver, accessibility support disabled!");
-			}
-			memdelete(accessibility_driver);
-			accessibility_driver = nullptr;
-		}
-	}
-#endif
 
 	// Enforce default keep screen on value.
 	screen_set_keep_on(GLOBAL_GET("display/window/energy_saving/keep_screen_on"));
@@ -7759,11 +7759,6 @@ DisplayServerWindows::~DisplayServerWindows() {
 	if (gl_manager_native) {
 		memdelete(gl_manager_native);
 		gl_manager_native = nullptr;
-	}
-#endif
-#ifdef ACCESSKIT_ENABLED
-	if (accessibility_driver) {
-		memdelete(accessibility_driver);
 	}
 #endif
 	if (tts) {

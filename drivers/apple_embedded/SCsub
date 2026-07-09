@@ -27,6 +27,13 @@ setup_swift_builder(
 vulkan_dir = "#thirdparty/vulkan"
 env_apple_embedded.Prepend(CPPPATH=[vulkan_dir, vulkan_dir + "/include"])
 
+# Use bundled metal-cpp headers. Add as a system include (not a normal -I) so
+# warnings in Apple's vendored headers do not trip dev_mode's -Werror. A normal
+# CPPPATH entry would sort ahead of the -isystem added in drivers/metal/SCsub and
+# resolve the headers as non-system, re-enabling the strict warnings. Matches the
+# macOS Metal driver treatment.
+env_apple_embedded.Append(CCFLAGS=["-isystem", Dir("#thirdparty/metal-cpp").abspath])
+
 # Driver source files
 env_apple_embedded.add_source_files(env_apple_embedded.drivers_sources, "*.mm")
 env_apple_embedded.add_source_files(env_apple_embedded.drivers_sources, "*.swift")

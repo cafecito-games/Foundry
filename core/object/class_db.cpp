@@ -36,6 +36,8 @@
 #include "core/templates/sort_array.h"
 #include "core/version.h"
 
+#define ERR_FAIL_NO_CLASS(m_type, m_class) ERR_FAIL_NULL_MSG(m_type, vformat("Cannot get class \"%s\".", m_class))
+
 #ifdef DEBUG_ENABLED
 
 MethodDefinition D_METHODP(const char *p_name, const char *const **p_args, uint32_t p_argcount) {
@@ -717,7 +719,7 @@ ObjectFoundryExtension *ClassDB::get_placeholder_extension(const StringName &p_c
 	placeholder_extension->call_virtual_with_data = nullptr;
 	placeholder_extension->recreate_instance = &PlaceholderExtensionInstance::placeholder_class_recreate_instance;
 
-	placeholder_extension->create_gdtype();
+	placeholder_extension->gdtype = ti->gdtype;
 
 	return placeholder_extension;
 }
@@ -1114,7 +1116,7 @@ void ClassDB::bind_integer_constant(const StringName &p_class, const StringName 
 
 	ClassInfo *type = classes.getptr(p_class);
 
-	ERR_FAIL_NULL(type);
+	ERR_FAIL_NO_CLASS(type, p_class);
 
 	if (type->constant_map.has(p_name)) {
 		ERR_FAIL();
@@ -1150,6 +1152,8 @@ void ClassDB::get_integer_constant_list(const StringName &p_class, List<String> 
 	Locker::Lock lock(Locker::STATE_READ);
 
 	ClassInfo *type = classes.getptr(p_class);
+
+	ERR_FAIL_NO_CLASS(type, p_class);
 
 	while (type) {
 #ifdef DEBUG_ENABLED
@@ -1261,6 +1265,8 @@ void ClassDB::get_enum_constants(const StringName &p_class, const StringName &p_
 
 	ClassInfo *type = classes.getptr(p_class);
 
+	ERR_FAIL_NO_CLASS(type, p_class);
+
 	while (type) {
 		const ClassInfo::EnumInfo *constants = type->enum_map.getptr(p_enum);
 
@@ -1283,7 +1289,7 @@ void ClassDB::set_method_error_return_values(const StringName &p_class, const St
 	Locker::Lock lock(Locker::STATE_WRITE);
 	ClassInfo *type = classes.getptr(p_class);
 
-	ERR_FAIL_NULL(type);
+	ERR_FAIL_NO_CLASS(type, p_class);
 
 	type->method_error_values[p_method] = p_values;
 #endif // DEBUG_ENABLED
@@ -1347,7 +1353,7 @@ void ClassDB::add_signal(const StringName &p_class, const MethodInfo &p_signal) 
 	Locker::Lock lock(Locker::STATE_WRITE);
 
 	ClassInfo *type = classes.getptr(p_class);
-	ERR_FAIL_NULL(type);
+	ERR_FAIL_NO_CLASS(type, p_class);
 
 	StringName sname = p_signal.name;
 
@@ -1366,7 +1372,7 @@ void ClassDB::get_signal_list(const StringName &p_class, List<MethodInfo> *p_sig
 	Locker::Lock lock(Locker::STATE_READ);
 
 	ClassInfo *type = classes.getptr(p_class);
-	ERR_FAIL_NULL(type);
+	ERR_FAIL_NO_CLASS(type, p_class);
 
 	ClassInfo *check = type;
 
@@ -1420,7 +1426,7 @@ bool ClassDB::get_signal(const StringName &p_class, const StringName &p_signal, 
 void ClassDB::add_property_group(const StringName &p_class, const String &p_name, const String &p_prefix, int p_indent_depth) {
 	Locker::Lock lock(Locker::STATE_WRITE);
 	ClassInfo *type = classes.getptr(p_class);
-	ERR_FAIL_NULL(type);
+	ERR_FAIL_NO_CLASS(type, p_class);
 
 	String prefix = p_prefix;
 	if (p_indent_depth > 0) {
@@ -1433,7 +1439,7 @@ void ClassDB::add_property_group(const StringName &p_class, const String &p_name
 void ClassDB::add_property_subgroup(const StringName &p_class, const String &p_name, const String &p_prefix, int p_indent_depth) {
 	Locker::Lock lock(Locker::STATE_WRITE);
 	ClassInfo *type = classes.getptr(p_class);
-	ERR_FAIL_NULL(type);
+	ERR_FAIL_NO_CLASS(type, p_class);
 
 	String prefix = p_prefix;
 	if (p_indent_depth > 0) {
@@ -1450,7 +1456,7 @@ void ClassDB::add_property_array_count(const StringName &p_class, const String &
 void ClassDB::add_property_array(const StringName &p_class, const StringName &p_path, const String &p_array_element_prefix) {
 	Locker::Lock lock(Locker::STATE_WRITE);
 	ClassInfo *type = classes.getptr(p_class);
-	ERR_FAIL_NULL(type);
+	ERR_FAIL_NO_CLASS(type, p_class);
 
 	type->property_list.push_back(PropertyInfo(Variant::NIL, p_path, PROPERTY_HINT_NONE, "", PROPERTY_USAGE_EDITOR | PROPERTY_USAGE_ARRAY, p_array_element_prefix));
 }
@@ -1461,7 +1467,7 @@ void ClassDB::add_property(const StringName &p_class, const PropertyInfo &p_pinf
 
 	ClassInfo *type = classes.getptr(p_class);
 
-	ERR_FAIL_NULL(type);
+	ERR_FAIL_NO_CLASS(type, p_class);
 
 	MethodBind *mb_set = nullptr;
 	if (p_setter) {
@@ -1494,11 +1500,14 @@ void ClassDB::add_property(const StringName &p_class, const PropertyInfo &p_pinf
 	type->property_list.push_back(p_pinfo);
 	type->property_map[p_pinfo.name] = p_pinfo;
 #ifdef DEBUG_ENABLED
-	if (mb_get) {
-		type->methods_in_properties.insert(p_getter);
-	}
-	if (mb_set) {
-		type->methods_in_properties.insert(p_setter);
+	// Used to filter out setters and getters in the editor (e.g. autocomplete) to not clutter menus. We only want to filter methods from properties that are easily available to users.
+	if (p_index == -1 && !(p_pinfo.usage & PropertyUsageFlags::PROPERTY_USAGE_INTERNAL)) {
+		if (mb_get) {
+			type->methods_in_properties.insert(p_getter);
+		}
+		if (mb_set) {
+			type->methods_in_properties.insert(p_setter);
+		}
 	}
 #endif // DEBUG_ENABLED
 	PropertySetGet psg;
@@ -1523,7 +1532,7 @@ void ClassDB::add_linked_property(const StringName &p_class, const String &p_pro
 #ifdef TOOLS_ENABLED
 	Locker::Lock lock(Locker::STATE_WRITE);
 	ClassInfo *type = classes.getptr(p_class);
-	ERR_FAIL_NULL(type);
+	ERR_FAIL_NO_CLASS(type, p_class);
 
 	ERR_FAIL_COND(!type->property_map.has(p_property));
 	ERR_FAIL_COND(!type->property_map.has(p_linked_property));
@@ -2444,3 +2453,5 @@ ClassDB::Locker::Lock::~Lock() {
 		Locker::thread_state = STATE_UNLOCKED;
 	}
 }
+
+#undef ERR_FAIL_NO_CLASS

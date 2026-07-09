@@ -107,11 +107,14 @@ protected:
 	Rect2 get_line_rect(int p_line) const;
 	int get_layout_data(Vector2 &r_offset, int &r_last_line, int &r_line_spacing) const;
 
+	void _maximum_size_changed();
+
 	void _notification(int p_what);
 	static void _bind_methods();
 
 public:
 	virtual Size2 get_minimum_size() const override;
+	virtual Size2 get_desired_size() const override;
 	virtual PackedStringArray get_configuration_warnings() const override;
 
 	void set_horizontal_alignment(HorizontalAlignment p_alignment);

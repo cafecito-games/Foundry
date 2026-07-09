@@ -52,6 +52,7 @@
 #include "scene/resources/style_box_flat.h"
 #include "scene/resources/style_box_texture.h"
 #include "scene/theme/theme_db.h"
+#include "servers/display/accessibility_server.h"
 
 static inline bool is_color_overbright(const Color &color) {
 	return (color.r > 1.0) || (color.g > 1.0) || (color.b > 1.0);
@@ -80,8 +81,8 @@ void ColorPicker::_notification(int p_what) {
 			RID ae = get_accessibility_element();
 			ERR_FAIL_COND(ae.is_null());
 
-			DisplayServer::get_singleton()->accessibility_update_set_role(ae, DisplayServer::AccessibilityRole::ROLE_COLOR_PICKER);
-			DisplayServer::get_singleton()->accessibility_update_set_color_value(ae, color);
+			AccessibilityServer::get_singleton()->update_set_role(ae, AccessibilityServerEnums::AccessibilityRole::ROLE_COLOR_PICKER);
+			AccessibilityServer::get_singleton()->update_set_color_value(ae, color);
 		} break;
 
 		case NOTIFICATION_ENTER_TREE: {
@@ -91,7 +92,7 @@ void ColorPicker::_notification(int p_what) {
 #ifdef MACOS_ENABLED
 		case NOTIFICATION_VISIBILITY_CHANGED: {
 			if (is_visible_in_tree()) {
-				perm_hb->set_visible(!OS::get_singleton()->get_granted_permissions().has("macos.permission.RECORD_SCREEN"));
+				perm_hb->set_visible(sampler_visible && !OS::get_singleton()->get_granted_permissions().has("macos.permission.RECORD_SCREEN"));
 			}
 		} break;
 #endif
@@ -1928,6 +1929,9 @@ void ColorPicker::set_sampler_visible(bool p_visible) {
 	}
 	sampler_visible = p_visible;
 	sample_hbc->set_visible(p_visible);
+#ifdef MACOS_ENABLED
+	perm_hb->set_visible(p_visible && !OS::get_singleton()->get_granted_permissions().has("macos.permission.RECORD_SCREEN"));
+#endif
 }
 
 bool ColorPicker::is_sampler_visible() const {
@@ -2300,7 +2304,6 @@ ColorPicker::ColorPicker() {
 	perm_link->connect(SceneStringName(pressed), callable_mp(this, &ColorPicker::_req_permission));
 	perm_hb->add_child(perm_link);
 	real_vbox->add_child(perm_hb);
-	perm_hb->set_visible(false);
 }
 
 void ColorPicker::_req_permission() {
@@ -2415,9 +2418,9 @@ void ColorPickerButton::_notification(int p_what) {
 			RID ae = get_accessibility_element();
 			ERR_FAIL_COND(ae.is_null());
 
-			DisplayServer::get_singleton()->accessibility_update_set_role(ae, DisplayServer::AccessibilityRole::ROLE_BUTTON);
-			DisplayServer::get_singleton()->accessibility_update_set_popup_type(ae, DisplayServer::AccessibilityPopupType::POPUP_DIALOG);
-			DisplayServer::get_singleton()->accessibility_update_set_color_value(ae, color);
+			AccessibilityServer::get_singleton()->update_set_role(ae, AccessibilityServerEnums::AccessibilityRole::ROLE_BUTTON);
+			AccessibilityServer::get_singleton()->update_set_popup_type(ae, AccessibilityServerEnums::AccessibilityPopupType::POPUP_DIALOG);
+			AccessibilityServer::get_singleton()->update_set_color_value(ae, color);
 		} break;
 
 		case NOTIFICATION_DRAW: {
@@ -2556,8 +2559,8 @@ void ColorPresetButton::_notification(int p_what) {
 			RID ae = get_accessibility_element();
 			ERR_FAIL_COND(ae.is_null());
 
-			DisplayServer::get_singleton()->accessibility_update_set_role(ae, DisplayServer::AccessibilityRole::ROLE_BUTTON);
-			DisplayServer::get_singleton()->accessibility_update_set_color_value(ae, preset_color);
+			AccessibilityServer::get_singleton()->update_set_role(ae, AccessibilityServerEnums::AccessibilityRole::ROLE_BUTTON);
+			AccessibilityServer::get_singleton()->update_set_color_value(ae, preset_color);
 		} break;
 
 		case NOTIFICATION_DRAW: {

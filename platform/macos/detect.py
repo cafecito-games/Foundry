@@ -92,7 +92,7 @@ def configure(env: "SConsEnvironment"):
         env.Append(LINKFLAGS=["-arch", "x86_64", "-mmacosx-version-min=10.13"])
 
     env.Append(CCFLAGS=["-ffp-contract=off"])
-    env.Append(CCFLAGS=["-fobjc-arc"])
+    env.Append(CCFLAGS=["-fobjc-arc", "-fvisibility=hidden"])
 
     cc_version = get_compiler_version(env)
     cc_version_major = cc_version["apple_major"]
@@ -309,5 +309,5 @@ def configure(env: "SConsEnvironment"):
                 sys.exit(255)
 
     if len(extra_frameworks) > 0:
-        frameworks = [item for key in extra_frameworks for item in ["-framework", key]]
+        frameworks = [item for key in sorted(extra_frameworks) for item in ["-framework", key]]
         env.Append(LINKFLAGS=frameworks)

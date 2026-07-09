@@ -32,6 +32,7 @@
 
 #include "scene/gui/control.h"
 #include "scene/resources/text_paragraph.h"
+#include "servers/display/accessibility_server.h"
 
 class VBoxContainer;
 class HScrollBar;
@@ -78,6 +79,7 @@ private:
 		Array st_args;
 		Control::TextDirection text_direction = Control::TEXT_DIRECTION_INHERITED;
 		TextServer::AutowrapMode autowrap_mode = TextServer::AUTOWRAP_OFF;
+		BitField<TextServer::LineBreakFlag> autowrap_trim_flags = TextServer::BREAK_TRIM_START_EDGE_SPACES | TextServer::BREAK_TRIM_END_EDGE_SPACES;
 		bool dirty = true;
 		double min = 0.0;
 		double max = 100.0;
@@ -145,6 +147,7 @@ private:
 	bool visible = true;
 	bool parent_visible_in_tree = true;
 	bool disable_folding = false;
+	bool accepts_children = true;
 	int custom_min_height = 0;
 
 	TreeItem *parent = nullptr; // Parent item.
@@ -180,17 +183,17 @@ private:
 
 	_FORCE_INLINE_ void _unlink_from_tree() {
 		if (accessibility_row_element.is_valid()) {
-			DisplayServer::get_singleton()->accessibility_free_element(accessibility_row_element);
+			AccessibilityServer::get_singleton()->free_element(accessibility_row_element);
 			accessibility_row_element = RID();
 		}
 		for (Cell &cell : cells) {
 			if (cell.accessibility_cell_element.is_valid()) {
-				DisplayServer::get_singleton()->accessibility_free_element(cell.accessibility_cell_element);
+				AccessibilityServer::get_singleton()->free_element(cell.accessibility_cell_element);
 				cell.accessibility_cell_element = RID();
 			}
 			for (Cell::Button &btn : cell.buttons) {
 				if (btn.accessibility_button_element.is_valid()) {
-					DisplayServer::get_singleton()->accessibility_free_element(btn.accessibility_button_element);
+					AccessibilityServer::get_singleton()->free_element(btn.accessibility_button_element);
 					btn.accessibility_button_element = RID();
 				}
 			}
@@ -278,6 +281,9 @@ public:
 
 	void set_autowrap_mode(int p_column, TextServer::AutowrapMode p_mode);
 	TextServer::AutowrapMode get_autowrap_mode(int p_column) const;
+
+	void set_autowrap_trim_flags(int p_column, BitField<TextServer::LineBreakFlag> p_flags);
+	BitField<TextServer::LineBreakFlag> get_autowrap_trim_flags(int p_column) const;
 
 	void set_text_overrun_behavior(int p_column, TextServer::OverrunBehavior p_behavior);
 	TextServer::OverrunBehavior get_text_overrun_behavior(int p_column) const;
@@ -398,6 +404,9 @@ public:
 	void set_disable_folding(bool p_disable);
 	bool is_folding_disabled() const;
 
+	void set_accept_children(bool p_allowed);
+	bool is_accepting_children() const;
+
 	Size2 get_minimum_size(int p_column);
 
 	// Item manipulation.
@@ -411,6 +420,7 @@ public:
 	TreeItem *get_next() const;
 	TreeItem *get_parent() const;
 	TreeItem *get_first_child() const;
+	TreeItem *get_last_child() const;
 
 	TreeItem *get_prev_in_tree(bool p_wrap = false);
 	TreeItem *get_next_in_tree(bool p_wrap = false);
@@ -479,6 +489,8 @@ private:
 
 	TreeItem *drop_mode_over = nullptr;
 	int drop_mode_section = 0;
+	bool drop_mode_unchanged = false;
+	bool dragging_within_self = false;
 
 	TreeItem *single_select_defer = nullptr;
 	int single_select_defer_column = 0;
@@ -487,7 +499,7 @@ private:
 	bool pressing_for_editor = false;
 	Vector2 pressing_pos;
 
-	Vector2 hovered_pos;
+	Vector2 hovered_pos = Vector2(-1.0, -1.0);
 	bool is_mouse_hovering = false;
 
 	float range_drag_base = 0.0;
@@ -508,6 +520,7 @@ private:
 	int blocked = 0;
 
 	int drop_mode_flags = 0;
+	static constexpr int COLUMN_NOT_FOUND = -100;
 
 	struct ColumnInfo {
 		mutable RID accessibility_col_element;
@@ -535,8 +548,11 @@ private:
 
 	bool popup_edit_committed = true;
 	RID accessibility_scroll_element;
-	RID header_ci; // Separate canvas item for drawing column headers
-	RID content_ci; // Separate canvas item for drawing tree rows
+	RID stylebox_ci; // Separate canvas item for drawing native styleboxes.
+	RID custom_ci; // Separate canvas item for drawing custom content.
+	RID header_ci; // Separate canvas item for drawing column headers.
+	RID content_ci; // Separate canvas item for drawing tree rows.
+	RID drop_indicator_ci;
 
 	VBoxContainer *popup_editor_vb = nullptr;
 	Popup *popup_editor = nullptr;
@@ -556,8 +572,9 @@ private:
 
 	int compute_item_height(TreeItem *p_item) const;
 	int get_item_height(TreeItem *p_item) const;
-	Point2i convert_rtl_position(const Point2i &pos, int width = 0) const;
-	Rect2i convert_rtl_rect(const Rect2i &Rect2) const;
+	Point2i convert_rtl_position(const Point2i &p_pos, int p_width = 0) const;
+	Point2 convert_rtl_position(const Point2 &p_pos, int p_width = 0) const;
+	Rect2i convert_rtl_rect(const Rect2i &p_rect) const;
 	void _update_all();
 	void update_column(int p_col);
 	void update_item_cell(TreeItem *p_item, int p_col) const;
@@ -632,6 +649,7 @@ private:
 		Color font_selected_color;
 		Color font_disabled_color;
 		Color guide_color;
+		Color drop_on_item_color;
 		Color drop_position_color;
 		Color relationship_line_color;
 		Color parent_hl_line_color;
@@ -717,6 +735,7 @@ private:
 	String incr_search;
 	bool cursor_can_exit_tree = true;
 	void _do_incr_search(const String &p_add);
+	void _incr_search_as_needed(const Ref<InputEventKey> &p_event_key);
 
 	TreeItem *_search_item_text(TreeItem *p_at, const String &p_find, int *r_col, bool p_selectable, bool p_backwards = false);
 
@@ -742,6 +761,7 @@ private:
 	bool click_handled = false;
 	bool allow_rmb_select = false;
 	bool scrolling = false;
+	bool using_native_touch = true;
 
 	ScrollHintMode scroll_hint_mode = SCROLL_HINT_MODE_DISABLED;
 	bool tile_scroll_hint = false;

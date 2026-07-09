@@ -1,0 +1,210 @@
+[
+ {
+  "pr": "119842",
+  "sha": "105eb8d61d90eba73d21a59f92203d856dfe5e5d",
+  "decision": "skip",
+  "kind": "cleanup",
+  "risk": "low",
+  "rationale": "Windows-only Visual Studio .natvis debug visualizer for GDExtension opaque godot::String/StringName types; not compiled or used in the macOS build/test workflow, no runtime value."
+ },
+ {
+  "pr": "119455",
+  "sha": "0e57853371b58d9438184810e490de910a51a3ad",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "SCons-version guard depends on 4.7 detect.py MSVC infra (msvc_ver/scons_version/check_mssdk_version) absent in base; Windows-build-only tooling, no macOS impact. Revisit if the Windows toolchain path is ported."
+ },
+ {
+  "pr": "119433",
+  "sha": "e333258f94619d1862a85b08b662c36b044199d6",
+  "decision": "port-later",
+  "kind": "cleanup",
+  "risk": "low",
+  "rationale": "Edits the SCsub `if env[\"winrt\"]:` block which does not exist in base (no WinRT build support); blocked until the WinRT build chain (0dabee/f3dfd4) is ported."
+ },
+ {
+  "pr": "119278",
+  "sha": "952d4860b261d15b3c8036ad4f47f6b851c3e822",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Introduces check_mssdk_version/mssdk option atop the 4.7 configure_msvc structure; base detect.py has diverged and lacks this infra. Windows-build-only, not compiled here."
+ },
+ {
+  "pr": "118893",
+  "sha": "ad6ead96a265dd3673e291f4f304ba002a46af72",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Self-contained IME composition-font fix inside update_ime_form_positions; must be ordered after 28200b which introduces that helper. Windows-only, not compiled here so verify visually."
+ },
+ {
+  "pr": "118798",
+  "sha": "714d71f24703c5658835492efdd3103e376e1b73",
+  "decision": "port-later",
+  "kind": "feature",
+  "risk": "med",
+  "rationale": "Modifies winrt_utils.cpp which does not exist in base; part of the WinRT feature chain, blocked until winrt_utils is introduced."
+ },
+ {
+  "pr": "118848",
+  "sha": "28200b1bcef26dd54e7e20f568bc7a886864bd09",
+  "decision": "port-now",
+  "kind": "refactor",
+  "risk": "low",
+  "rationale": "Consolidates IME composition/candidate positioning into a new update_ime_form_positions helper; base WM_IME_COMPOSITION and window_set_ime_position match upstream pre-image. Prereq for 118893."
+ },
+ {
+  "pr": "118760",
+  "sha": "22969efdbe6e4be62fae916ce4b8a118e4d5245b",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Touches tts_driver_onecore.cpp which is absent in base; blocked on OneCore TTS feature PR 116349 (0dabee)."
+ },
+ {
+  "pr": "118742",
+  "sha": "2a8b3d6618b1ca3ff74fd5fbb19f6b086d729980",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Adds `if env[\"angle\"]:` guard, but base detect.py lacks the 4.7 `angle` BoolVariable and the ANGLE build restructure; heavily diverged Windows build tooling, no macOS impact."
+ },
+ {
+  "pr": "118676",
+  "sha": "54f1178d3c8fbbaaf5e50a5caa32124430808b84",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "med",
+  "rationale": "Adds module name/offset to crash backtraces; macOS(.mm)/linux are compiled here so it gets real coverage. Must be ordered after 521e44 (it builds on that print format); Windows portion is diagnostic-only."
+ },
+ {
+  "pr": "118675",
+  "sha": "7244af0beb205d300ac546170a8ea71ae85b271f",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Edits winrt_utils.cpp (absent in base); part of the WinRT chain, blocked until winrt_utils lands."
+ },
+ {
+  "pr": "118339",
+  "sha": "a6dccbf731f62c09c59dfbcc495befaecf1fb105",
+  "decision": "port-later",
+  "kind": "feature",
+  "risk": "high",
+  "rationale": "Adds AdvancedColorInfo support requiring both winrt_utils (absent) and the 4.7 HDR-output infra (_get_screen_hdr_data/hdr_output_cache, also absent). Feature-dependent, not portable to base."
+ },
+ {
+  "pr": "116351",
+  "sha": "01fa8cc2d2abb419164c342e577dfda0443ada48",
+  "decision": "port-later",
+  "kind": "feature",
+  "risk": "med",
+  "rationale": "WinRT emoji picker; introduces winrt_utils and depends on the WinRT build support absent in base. New feature, defer with the WinRT chain."
+ },
+ {
+  "pr": "117837",
+  "sha": "82e3e44bb2f16c0ce38ac017f1ef2555bdf5c7bb",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Optimizes SDR-white-level polling in the 4.7 HDR-output path (_get_screen_hdr_data/_update_hdr_output_for_tracked_windows) which does not exist in base; blocked on HDR-output feature."
+ },
+ {
+  "pr": "118244",
+  "sha": "f3dfd4bf332a0d72f56212465361a13dcf04a261",
+  "decision": "port-later",
+  "kind": "feature",
+  "risk": "med",
+  "rationale": "WinRT build improvements (SCsub/detect.py/install_winrt.py); base has no WinRT build support, so this depends on the not-yet-ported WinRT infra."
+ },
+ {
+  "pr": "116349",
+  "sha": "0dabee78c74165b982ab1b327f64cf45f1544e45",
+  "decision": "port-later",
+  "kind": "feature",
+  "risk": "high",
+  "rationale": "Large OneCore TTS feature: adds WinRT build, refactors tts_windows into SAPI/OneCore drivers, and touches core/os/spin_lock.h. Windows-only new feature, defer as a deliberate feature port."
+ },
+ {
+  "pr": "115896",
+  "sha": "521e442754cb263e9789924da1ff62febb733080",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "med",
+  "rationale": "Crash-handler improvement printing frame PCs and module load address; macOS/linux compiled here (base has load_addr). Foundation for 118676; Windows signal handler gains module-info machinery (diagnostic-only)."
+ },
+ {
+  "pr": "117919",
+  "sha": "a3c62ca6d39102ef10ca8ae50dc330e1ebdd9944",
+  "decision": "skip",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Already present in base: the fork's DisplayServerWindows already loads ntdll and computes is_wine outside any ANGLE_ENABLED guard, matching this fix's post-state."
+ },
+ {
+  "pr": "117748",
+  "sha": "b0c1084a10f146c31b38a4682572e7483dc514ce",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Self-contained fix for invalid transient window infinite loop in delete_sub_window plus on-top/transient guard; base matches upstream pre-image. Needs mechanical WindowID/INVALID_WINDOW_ID enum-namespace adaptation."
+ },
+ {
+  "pr": "117480",
+  "sha": "c40d3b9b0d6025a281bb6a9f2a7dc04e2b2b5856",
+  "decision": "port-later",
+  "kind": "cleanup",
+  "risk": "low",
+  "rationale": "Broad 48-file clangd-tidy modernization spanning platform/scene/servers/tests; no functional change but high merge friction against fork divergence. Defer and apply opportunistically."
+ },
+ {
+  "pr": "116955",
+  "sha": "aa25369052970af95db0a148d59ccec927d10257",
+  "decision": "skip",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Windows-only VS .natvis StringName visualizer tied to the StringName internal layout (cname removal) that may not match the fork; not compiled/used in the macOS workflow."
+ },
+ {
+  "pr": "117250",
+  "sha": "e295eba0eb4767fd45ea8534765307d8e9b1c328",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Restructures ANGLE init with EGL_STATIC macro branches and its surrounding context assumes the 4.7 two-arg set_current_rendering_driver_name (RENDERING_SOURCE_FALLBACK) absent in base; subtle, Windows-only, not compiled here."
+ },
+ {
+  "pr": "117253",
+  "sha": "7c2a2b06a97fd6b0139a80d14e1087173253b88e",
+  "decision": "port-later",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Calls set_current_rendering_driver_name(driver, OS::RENDERING_SOURCE_FALLBACK); base OS only has the single-arg setter and no RENDERING_SOURCE enum. Blocked on 4.7 rendering-source-tracking API."
+ },
+ {
+  "pr": "115430",
+  "sha": "a1746ee2043538e4cbcd1d846828e4f701759994",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Self-contained MSVC-only __declspec(guard(nocf)) hardening on the two IAT hook functions; no-op on non-MSVC via macro. Low risk even though not compiled on macOS."
+ },
+ {
+  "pr": "115373",
+  "sha": "d40dd57a9e195133eda8637871be74150e14efe1",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes crash when removing a Windows PopupMenu submenu by deferring the md_sub lookup and adding a null check; base native_menu_windows.cpp set_item_submenu matches upstream pre-image."
+ },
+ {
+  "pr": "115294",
+  "sha": "d950e2343ec3ab82a4d9b903edbf92068e19e02b",
+  "decision": "skip",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Already present in base with the FOUNDRY_ICON rebrand: DisplayServerWindows already loads the executable icon as the default window icon with an IDI_WINLOGO fallback."
+ }
+]

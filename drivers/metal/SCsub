@@ -3,7 +3,20 @@ from misc.utility.scons_hints import *
 
 Import("env")
 
+# If we're using Metal, we need metal-cpp. Add it as a system include so the
+# warnings in Apple's vendored headers (which are included pervasively across the
+# Metal driver, the MetalFX effect, and the macOS platform layer) do not trip
+# dev_mode's -Werror. This keeps full warning coverage for the fork's own code.
+env.Append(CCFLAGS=["-isystem", Dir("#thirdparty/metal-cpp").abspath])
+
 env_metal = env.Clone()
+
+# Apple's vendored metal-cpp headers and the Metal driver sources intentionally
+# use constructor parameters that shadow members and C99 designated initializers.
+# The metal-cpp headers are included into the driver translation units, so these
+# patterns would otherwise trip dev_mode's -Werror warnings. Suppress them for
+# the Metal driver env (Apple/clang only).
+env_metal.Append(CCFLAGS=["-Wno-shadow-field-in-constructor", "-Wno-shadow-uncaptured-local", "-Wno-c99-designator"])
 
 # Thirdparty source files
 
@@ -21,6 +34,11 @@ thirdparty_sources = [
     "spirv_cross_parsed_ir.cpp",
 ]
 thirdparty_sources = [thirdparty_dir + file for file in thirdparty_sources]
+
+# Include metal-cpp
+thirdparty_sources += [
+    "#thirdparty/metal-cpp/metal_cpp.cpp",
+]
 
 env_metal.Prepend(CPPPATH=[thirdparty_dir, thirdparty_dir + "/include"])
 env_metal.Prepend(CPPPATH=[thirdparty_spirv_headers_dir + "include/spirv/unified1"])
@@ -47,7 +65,6 @@ env_metal.Append(CCFLAGS=["-fmodules", "-fcxx-modules"])
 
 driver_obj = []
 
-env_metal.add_source_files(driver_obj, "*.mm")
 env_metal.add_source_files(driver_obj, "*.cpp")
 env.drivers_sources += driver_obj
 

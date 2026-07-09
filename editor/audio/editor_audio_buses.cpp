@@ -50,6 +50,7 @@
 #include "scene/resources/font.h"
 #include "scene/resources/style_box_flat.h"
 #include "servers/audio/audio_server.h"
+#include "servers/display/accessibility_server.h"
 
 void EditorAudioBus::_update_visible_channels() {
 	int i = 0;
@@ -137,8 +138,8 @@ void EditorAudioBus::_notification(int p_what) {
 			RID ae = get_accessibility_element();
 			ERR_FAIL_COND(ae.is_null());
 
-			DisplayServer::get_singleton()->accessibility_update_set_role(ae, DisplayServer::AccessibilityRole::ROLE_STATIC_TEXT);
-			DisplayServer::get_singleton()->accessibility_update_set_value(ae, TTR(vformat("The %s is not accessible at this time.", "Audio bus editor")));
+			AccessibilityServer::get_singleton()->update_set_role(ae, AccessibilityServerEnums::AccessibilityRole::ROLE_STATIC_TEXT);
+			AccessibilityServer::get_singleton()->update_set_value(ae, TTR(vformat("The %s is not accessible at this time.", "Audio bus editor")));
 		} break;
 
 		case NOTIFICATION_DRAW: {

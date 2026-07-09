@@ -42,6 +42,9 @@ protected:
 	};
 
 	struct Peer {
+		// Weakly owned in peers, strongly owned in pending.
+		// Peers are weakly owned such that it can self-destruct (and thus unregister itself)
+		// when the user no longer needs it.
 		PacketPeerUDP *peer = nullptr;
 		IPAddress ip;
 		uint16_t port = 0;
