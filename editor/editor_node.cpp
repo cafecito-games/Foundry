@@ -7139,8 +7139,10 @@ bool EditorNode::load_project_in_process(const String &p_project_path) {
 
 	// Persist default settings into a freshly created (touched) project exactly as a
 	// normal editor open does, so an empty project.foundry gets a config_version and
-	// the initial settings instead of remaining unversioned. Mirrors the non-projectless
-	// NOTIFICATION_READY block.
+	// the initial settings instead of remaining unversioned. Only a genuinely empty
+	// project is written: unlike a fresh process, this reuses the ProjectSettings
+	// singleton, so saving an already-populated project could merge settings left over
+	// from an earlier (possibly failed) setup into it.
 	if (DisplayServer::get_singleton()->window_can_draw()) {
 		const String project_settings_path = ProjectSettings::get_singleton()->get_resource_path().path_join("project.foundry");
 		if (FileAccess::get_size(project_settings_path) < 10) {
@@ -7148,8 +7150,8 @@ bool EditorNode::load_project_in_process(const String &p_project_path) {
 			for (const KeyValue<String, Variant> &initial_setting : initial_settings) {
 				ProjectSettings::get_singleton()->set_setting(initial_setting.key, initial_setting.value);
 			}
+			ProjectSettings::get_singleton()->save();
 		}
-		ProjectSettings::get_singleton()->save();
 	}
 
 	// Swap the projectless layout store for the project's layout store (resolved from
