@@ -1286,6 +1286,99 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 #endif
 }
 
+EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::run_projectless_shell_open_in_process_autoload(EditorWorkflowTestDriver &p_driver) {
+	Result result;
+	result.workflow = "projectless_shell_open_in_process_autoload";
+
+	p_driver.begin_workflow();
+
+	p_driver.set_step("wait_for_editor_ready");
+	if (!p_driver.wait_editor_idle(30000)) {
+		return _failure_from_driver(p_driver, result.workflow, "Editor did not become ready in projectless mode.");
+	}
+
+#ifdef TOOLS_ENABLED
+	EditorNode *editor_node = EditorNode::get_singleton();
+	StartupDialog *dialog = editor_node != nullptr ? editor_node->get_startup_dialog() : nullptr;
+	if (editor_node == nullptr || dialog == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Editor node or startup dialog was unavailable.");
+	}
+
+	// A project whose autoloads are only known after the project loads exercises the
+	// autoload-cache rebuild: EditorAutoloadSettings caches autoloads at construction
+	// (empty in the shell), so the in-process load must refresh it before the first
+	// scan instantiates them. The autoload is a tool script so it is added to the
+	// editor scene tree and observable as /root/InProcAutoload.
+	p_driver.set_step("create_temp_project");
+	const String project_dir = EditorPaths::get_singleton()->get_temp_dir().path_join("inproc_autoload_" + String::num_uint64(OS::get_singleton()->get_ticks_usec()));
+	{
+		Ref<DirAccess> dir = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+		if (dir.is_null() || dir->make_dir_recursive(project_dir) != OK) {
+			return _failure_with_message(p_driver, result.workflow, "Could not create temp project directory.");
+		}
+		Ref<FileAccess> script = FileAccess::open(project_dir.path_join("in_proc_autoload.fs"), FileAccess::WRITE);
+		if (script.is_null()) {
+			return _failure_with_message(p_driver, result.workflow, "Could not write autoload script.");
+		}
+		script->store_line("@tool");
+		script->store_line("extends Node");
+		script->store_line("");
+		script->store_line("func _ready() -> void:");
+		script->store_line("\tpass");
+		script->close();
+
+		Ref<FileAccess> config = FileAccess::open(project_dir.path_join("project.foundry"), FileAccess::WRITE);
+		if (config.is_null()) {
+			return _failure_with_message(p_driver, result.workflow, "Could not write temp project.foundry.");
+		}
+		config->store_line("config_version=5");
+		config->store_line("");
+		config->store_line("[autoload]");
+		config->store_line("");
+		config->store_line("InProcAutoload=\"*res://in_proc_autoload.fs\"");
+		config->close();
+	}
+
+	p_driver.set_step("open_project_in_process");
+	const Error open_err = dialog->open_project_path(project_dir);
+	if (open_err != OK) {
+		return _failure_with_message(p_driver, result.workflow, vformat("open_project_path returned error %d.", open_err));
+	}
+
+	p_driver.set_step("wait_for_project_scan");
+	if (!p_driver.wait_editor_idle(30000)) {
+		return _failure_from_driver(p_driver, result.workflow, "Editor did not become ready after in-process project load.");
+	}
+	if (!p_driver.wait_import_idle(30000)) {
+		return _failure_from_driver(p_driver, result.workflow, "Filesystem/import pipeline did not settle after in-process load.");
+	}
+	p_driver.wait_script_analysis_idle(30000);
+
+	p_driver.set_step("verify_autoload_instantiated");
+	Dictionary state = p_driver.read_editor_state();
+	if (String(state.get("mode", String())) != "project") {
+		return _failure_with_message(p_driver, result.workflow, "Editor must report mode == project after in-process load.");
+	}
+	SceneTree *tree = editor_node->get_tree();
+	Node *autoload_node = (tree != nullptr && tree->get_root() != nullptr) ? tree->get_root()->get_node_or_null(NodePath("InProcAutoload")) : nullptr;
+	if (autoload_node == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Project autoload was not instantiated after in-process load.");
+	}
+
+	p_driver.set_step("assert_no_new_errors");
+	if (!p_driver.assert_no_new_errors()) {
+		return _failure_from_driver(p_driver, result.workflow);
+	}
+
+	result.ok = true;
+	result.message = "Project autoloads were instantiated after in-process load.";
+	result.details = state;
+	return result;
+#else
+	return _failure_with_message(p_driver, result.workflow, "In-process project load requires an editor (TOOLS_ENABLED) build.");
+#endif
+}
+
 EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::run_startup_dialog_projects_tab(EditorWorkflowTestDriver &p_driver) {
 	Result result;
 	result.workflow = "startup_dialog_projects_tab";

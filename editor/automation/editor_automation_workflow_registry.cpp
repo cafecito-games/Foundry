@@ -72,6 +72,10 @@ EditorAutomationAcceptanceWorkflow::Result _run_projectless_shell_open_in_proces
 	return EditorAutomationAcceptanceWorkflow::run_projectless_shell_open_in_process_fallback(p_driver);
 }
 
+EditorAutomationAcceptanceWorkflow::Result _run_projectless_shell_open_in_process_autoload(EditorWorkflowTestDriver &p_driver) {
+	return EditorAutomationAcceptanceWorkflow::run_projectless_shell_open_in_process_autoload(p_driver);
+}
+
 EditorAutomationAcceptanceWorkflow::Result _run_startup_dialog_projects_tab(EditorWorkflowTestDriver &p_driver) {
 	return EditorAutomationAcceptanceWorkflow::run_startup_dialog_projects_tab(p_driver);
 }
@@ -125,6 +129,7 @@ void EditorAutomationWorkflowRegistry::register_builtin_workflows() {
 	_register_workflow("projectless_shell_dismiss_quits", &_run_projectless_shell_dismiss_quits);
 	_register_workflow("projectless_shell_open_in_process", &_run_projectless_shell_open_in_process);
 	_register_workflow("projectless_shell_open_in_process_fallback", &_run_projectless_shell_open_in_process_fallback);
+	_register_workflow("projectless_shell_open_in_process_autoload", &_run_projectless_shell_open_in_process_autoload);
 	_register_workflow("startup_dialog_projects_tab", &_run_startup_dialog_projects_tab);
 	_register_workflow("startup_dialog_manage_tab", &_run_startup_dialog_manage_tab);
 	_register_workflow("startup_dialog_about_tab", &_run_startup_dialog_about_tab);

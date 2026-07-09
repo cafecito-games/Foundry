@@ -123,6 +123,25 @@ TEST_CASE("[Editor][ProjectlessShell] opening a project loads it in-process with
 	CHECK_FALSE(FileAccess::exists(launch_dir.path_join("project.foundry")));
 }
 
+TEST_CASE("[Editor][ProjectlessShell] in-process load instantiates project autoloads") {
+	if (!EditorWorkflowTestFixtures::workflow_has_display()) {
+		MESSAGE("Requires a GUI display. Run with DISPLAY=:1 ./bin/foundry.* --headless test run --case \"*ProjectlessShell*\" --force-colors");
+		return;
+	}
+
+	const String launch_dir = make_empty_launch_dir();
+	REQUIRE_FALSE(launch_dir.is_empty());
+
+	int exit_code = -1;
+	const String output = run_projectless_shell_workflow(launch_dir, exit_code, "projectless_shell_open_in_process_autoload");
+	INFO("Subprocess output:\n", output);
+
+	CHECK(exit_code == 0);
+	CHECK(output.contains("\"workflow\":\"projectless_shell_open_in_process_autoload\""));
+	CHECK(output.contains("\"ok\":true"));
+	CHECK(output.contains("\"mode\":\"project\""));
+}
+
 TEST_CASE("[Editor][ProjectlessShell] a rejected in-process load leaves the shell intact") {
 	if (!EditorWorkflowTestFixtures::workflow_has_display()) {
 		MESSAGE("Requires a GUI display. Run with DISPLAY=:1 ./bin/foundry.* --headless test run --case \"*ProjectlessShell*\" --force-colors");
