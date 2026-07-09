@@ -89,7 +89,7 @@ void ProjectUpgradeTool::prepare_upgrade() {
 	EditorSettings::get_singleton()->set_project_metadata(META_PROJECT_UPGRADE_TOOL, META_RESAVE_RESOURCES, resave_resources);
 
 	// Delay to avoid deadlocks, since this dialog can be triggered by loading a scene.
-	callable_mp(EditorNode::get_singleton(), &EditorNode::restart_editor).call_deferred(false);
+	callable_mp(EditorNode::get_singleton(), &EditorNode::restart_editor).call_deferred();
 }
 
 void ProjectUpgradeTool::begin_upgrade() {

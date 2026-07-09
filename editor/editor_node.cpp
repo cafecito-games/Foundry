@@ -3812,7 +3812,7 @@ void EditorNode::_menu_option_confirm(int p_option, bool p_confirmed) {
 			OS::get_singleton()->shell_show_in_file_manager(OS::get_singleton()->get_user_data_dir(), true);
 		} break;
 		case SCENE_QUIT:
-		case PROJECT_OPEN_PROJECT:
+		case PROJECT_SWITCH_TO_SELECTED:
 		case PROJECT_RELOAD_CURRENT_PROJECT: {
 			if (p_confirmed && plugin_to_save) {
 				plugin_to_save->save_external_data();
@@ -3830,7 +3830,7 @@ void EditorNode::_menu_option_confirm(int p_option, bool p_confirmed) {
 					if (p_option == PROJECT_RELOAD_CURRENT_PROJECT) {
 						confirmation->set_text(TTR("Stop running project before reloading the current project?"));
 						confirmation->set_ok_button_text(TTR("Stop & Reload"));
-					} else if (p_option == PROJECT_OPEN_PROJECT) {
+					} else if (p_option == PROJECT_SWITCH_TO_SELECTED) {
 						confirmation->set_text(TTR("Stop running project before opening another project?"));
 						confirmation->set_ok_button_text(TTR("Stop & Open"));
 					} else {
@@ -3850,7 +3850,7 @@ void EditorNode::_menu_option_confirm(int p_option, bool p_confirmed) {
 						if (p_option == PROJECT_RELOAD_CURRENT_PROJECT) {
 							save_confirmation->set_ok_button_text(TTR("Save & Reload"));
 							save_confirmation->set_text(TTR("Save modified resources before reloading?"));
-						} else if (p_option == PROJECT_OPEN_PROJECT) {
+						} else if (p_option == PROJECT_SWITCH_TO_SELECTED) {
 							save_confirmation->set_ok_button_text(TTR("Save & Open"));
 							save_confirmation->set_text(TTR("Save modified resources before opening another project?"));
 						} else {
@@ -3869,7 +3869,7 @@ void EditorNode::_menu_option_confirm(int p_option, bool p_confirmed) {
 							if (p_option == PROJECT_RELOAD_CURRENT_PROJECT) {
 								save_confirmation->set_ok_button_text(TTR("Save & Reload"));
 								save_confirmation->set_text(unsaved_status);
-							} else if (p_option == PROJECT_OPEN_PROJECT) {
+							} else if (p_option == PROJECT_SWITCH_TO_SELECTED) {
 								save_confirmation->set_ok_button_text(TTR("Save & Open"));
 								save_confirmation->set_text(unsaved_status);
 							} else {
@@ -3907,7 +3907,7 @@ void EditorNode::_menu_option_confirm(int p_option, bool p_confirmed) {
 					if (p_option == PROJECT_RELOAD_CURRENT_PROJECT) {
 						save_confirmation->set_ok_button_text(TTR("Save & Reload"));
 						save_confirmation->set_text(TTR("Save changes to the following scene(s) before reloading?") + unsaved_scenes);
-					} else if (p_option == PROJECT_OPEN_PROJECT) {
+					} else if (p_option == PROJECT_SWITCH_TO_SELECTED) {
 						save_confirmation->set_ok_button_text(TTR("Save & Open"));
 						save_confirmation->set_text(TTR("Save changes to the following scene(s) before opening another project?") + unsaved_scenes);
 					} else {
@@ -3936,6 +3936,9 @@ void EditorNode::_menu_option_confirm(int p_option, bool p_confirmed) {
 		case SPINNER_UPDATE_SPINNER_HIDE: {
 			EditorSettings::get_singleton()->set("interface/editor/show_update_spinner", 2); // Disabled
 			_update_update_spinner();
+		} break;
+		case PROJECT_OPEN_PROJECT: {
+			show_startup_dialog();
 		} break;
 		case EDITOR_OPEN_SETTINGS: {
 			editor_settings_dialog->popup_edit_settings();
@@ -4321,8 +4324,8 @@ void EditorNode::_discard_changes(const String &p_str) {
 			_exit_editor(EXIT_SUCCESS);
 
 		} break;
-		case PROJECT_OPEN_PROJECT: {
-			show_startup_dialog();
+		case PROJECT_SWITCH_TO_SELECTED: {
+			_restart_editor(requested_project_switch_path);
 		} break;
 		case PROJECT_RELOAD_CURRENT_PROJECT: {
 			_restart_editor();
@@ -8008,18 +8011,23 @@ void EditorNode::_proceed_save_asing_scene_tabs() {
 }
 
 bool EditorNode::_is_closing_editor() const {
-	return tab_closing_menu_option == SCENE_QUIT || tab_closing_menu_option == PROJECT_OPEN_PROJECT || tab_closing_menu_option == PROJECT_RELOAD_CURRENT_PROJECT;
+	return tab_closing_menu_option == SCENE_QUIT || tab_closing_menu_option == PROJECT_SWITCH_TO_SELECTED || tab_closing_menu_option == PROJECT_RELOAD_CURRENT_PROJECT;
 }
 
-void EditorNode::_restart_editor() {
+void EditorNode::_restart_editor(const String &p_to_project) {
 	exiting = true;
 
 	if (project_run_bar->is_playing()) {
 		project_run_bar->stop_playing();
 	}
 
+	const bool switching_project = !p_to_project.is_empty();
+	const String project_path = switching_project ? p_to_project : ProjectSettings::get_singleton()->get_resource_path();
+
 	String to_reopen;
-	if (get_tree()->get_edited_scene_root()) {
+	// Only reopen the current scene when reopening the same project; a project
+	// switch starts the target project fresh.
+	if (!switching_project && get_tree()->get_edited_scene_root()) {
 		to_reopen = get_tree()->get_edited_scene_root()->get_scene_file_path();
 	}
 
@@ -8033,13 +8041,18 @@ void EditorNode::_restart_editor() {
 	args.push_back("editor");
 	args.push_back("open");
 	args.push_back("--project");
-	args.push_back(ProjectSettings::get_singleton()->get_resource_path());
+	args.push_back(project_path);
 
 	if (!to_reopen.is_empty()) {
 		args.push_back(to_reopen);
 	}
 
 	OS::get_singleton()->set_restart_on_exit(true, args);
+}
+
+void EditorNode::request_project_switch(const String &p_project_path) {
+	requested_project_switch_path = p_project_path;
+	_menu_option_confirm(PROJECT_SWITCH_TO_SELECTED, false);
 }
 
 void EditorNode::_scene_tab_closed(int p_tab) {

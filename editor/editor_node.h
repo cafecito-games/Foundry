@@ -190,6 +190,7 @@ public:
 		PROJECT_OPEN_USER_DATA_FOLDER,
 		PROJECT_RELOAD_CURRENT_PROJECT,
 		PROJECT_OPEN_PROJECT,
+		PROJECT_SWITCH_TO_SELECTED,
 
 		TOOLS_ORPHAN_RESOURCES,
 		TOOLS_BUILD_PROFILE_MANAGER,
@@ -714,7 +715,12 @@ private:
 	void _proceed_closing_scene_tabs();
 	void _proceed_save_asing_scene_tabs();
 	bool _is_closing_editor() const;
-	void _restart_editor();
+	// Restarts the editor. With an empty target the current project is reopened
+	// (reload); with a target project path the editor switches to that project.
+	void _restart_editor(const String &p_to_project = String());
+	// Canonical path of a project the user chose from the startup dialog while a
+	// project was loaded, applied by the PROJECT_SWITCH_TO_SELECTED confirmation.
+	String requested_project_switch_path;
 
 	Dictionary _get_main_scene_state();
 	void _set_main_scene_state(Dictionary p_state, Node *p_for_scene);
@@ -841,6 +847,10 @@ public:
 	bool is_projectless_shell() const { return projectless_shell; }
 	void show_startup_dialog();
 	bool is_startup_dialog_visible() const;
+	// Switches the loaded editor to the given project, prompting to save unsaved
+	// changes and shutting down gracefully before relaunching. Called by the
+	// startup dialog when a project is chosen while a project is already open.
+	void request_project_switch(const String &p_project_path);
 
 	static EditorNode *get_singleton() { return singleton; }
 
