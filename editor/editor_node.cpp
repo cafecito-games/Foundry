@@ -7137,6 +7137,15 @@ bool EditorNode::load_project_in_process(const String &p_project_path) {
 		startup_dialog->hide_startup_dialog();
 	}
 
+	// Rebuild the autoload cache and register singleton placeholder globals from the
+	// loaded project before the scan runs. The first scan analyzes project scripts
+	// (which may reference autoload singletons) before it instantiates autoloads, so
+	// the placeholders must exist now -- the autoload settings were constructed against
+	// the projectless shell's empty autoload list.
+	if (ProjectSettingsEditor::get_singleton() != nullptr) {
+		ProjectSettingsEditor::get_singleton()->reload_project_autoloads();
+	}
+
 	// Re-arm and run the first scan exactly as a normal project boot would, so global
 	// classes, editor plugins, autoloads, and imports are materialized. Its completion
 	// runs _sources_changed(), which reloads shader parameters, restores the project

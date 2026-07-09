@@ -1345,14 +1345,17 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 		return _failure_with_message(p_driver, result.workflow, vformat("open_project_path returned error %d.", open_err));
 	}
 
+	// This project carries a Foundry Script autoload, so the first scan also compiles
+	// and analyzes a script; give the scan/import pipeline extra headroom over the
+	// scene-only workflows.
 	p_driver.set_step("wait_for_project_scan");
-	if (!p_driver.wait_editor_idle(30000)) {
+	if (!p_driver.wait_editor_idle(60000)) {
 		return _failure_from_driver(p_driver, result.workflow, "Editor did not become ready after in-process project load.");
 	}
-	if (!p_driver.wait_import_idle(30000)) {
+	if (!p_driver.wait_import_idle(60000)) {
 		return _failure_from_driver(p_driver, result.workflow, "Filesystem/import pipeline did not settle after in-process load.");
 	}
-	p_driver.wait_script_analysis_idle(30000);
+	p_driver.wait_script_analysis_idle(60000);
 
 	p_driver.set_step("verify_autoload_instantiated");
 	Dictionary state = p_driver.read_editor_state();

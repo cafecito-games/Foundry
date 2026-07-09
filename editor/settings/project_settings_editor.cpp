@@ -114,12 +114,11 @@ void ProjectSettingsEditor::update_plugins() {
 }
 
 void ProjectSettingsEditor::init_autoloads() {
-	// Rebuild the autoload cache from the currently loaded project settings before
-	// instantiating. The cache is otherwise populated once at editor construction,
-	// which is stale when the project is loaded afterwards (in-process load from the
-	// projectless startup shell); refreshing here keeps autoloads correct either way.
-	autoload_settings->update_autoload();
 	autoload_settings->init_autoloads();
+}
+
+void ProjectSettingsEditor::reload_project_autoloads() {
+	autoload_settings->reload_from_project_settings();
 }
 
 void ProjectSettingsEditor::_setting_edited(const String &p_name) {

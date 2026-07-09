@@ -143,6 +143,11 @@ public:
 	void set_general_page(const String &p_category);
 	void update_plugins();
 	void init_autoloads();
+	// Rebuilds the autoload cache and re-registers singleton placeholder globals from
+	// the currently loaded project. Used before the in-process first scan so scripts
+	// that reference project autoloads analyze correctly (the constructor only saw the
+	// projectless shell's empty autoload list).
+	void reload_project_autoloads();
 
 	void set_filter(const String &p_filter);
 

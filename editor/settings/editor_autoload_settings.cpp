@@ -1232,10 +1232,10 @@ void EditorAutoloadSettings::_bind_methods() {
 	ADD_SIGNAL(MethodInfo("autoload_changed"));
 }
 
-EditorAutoloadSettings::EditorAutoloadSettings() {
-	ProjectSettings::get_singleton()->add_hidden_prefix("autoload/");
-
+void EditorAutoloadSettings::reload_from_project_settings() {
 	// Make first cache
+	autoload_cache.clear();
+
 	List<PropertyInfo> props;
 	ProjectSettings::get_singleton()->get_property_list(&props);
 	for (const PropertyInfo &pi : props) {
@@ -1282,6 +1282,14 @@ EditorAutoloadSettings::EditorAutoloadSettings() {
 
 		autoload_cache.push_back(info);
 	}
+}
+
+EditorAutoloadSettings::EditorAutoloadSettings() {
+	ProjectSettings::get_singleton()->add_hidden_prefix("autoload/");
+
+	// Build the initial cache (and register singleton placeholder globals so name
+	// references resolve before scripts are parsed) from the loaded project settings.
+	reload_from_project_settings();
 
 	HBoxContainer *hbc = memnew(HBoxContainer);
 	add_child(hbc);

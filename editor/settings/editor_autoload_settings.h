@@ -144,6 +144,11 @@ public:
 
 	void init_autoloads();
 	void update_autoload();
+	// Rebuilds the autoload cache from the current project settings and re-registers
+	// singleton placeholder globals so name references resolve before scripts are
+	// parsed. Runs once from the constructor and again when a project is loaded
+	// in-process after the projectless shell started with no project autoloads.
+	void reload_from_project_settings();
 	bool autoload_add(const String &p_name, const String &p_path);
 	void autoload_remove(const String &p_name);
 
