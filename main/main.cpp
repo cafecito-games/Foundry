@@ -226,7 +226,6 @@ static bool accessibility_mode_set = false;
 static bool single_window = false;
 static bool editor = false;
 static bool project_manager = false;
-static bool projectless_editor_shell = false;
 static bool cmdline_tool = false;
 static String locale;
 static String log_file;
@@ -238,6 +237,7 @@ static OS::ProcessID editor_pid = 0;
 // of silently evaluating outside the project the caller requested.
 static bool foundry_cli_project_path_error = false;
 #ifdef TOOLS_ENABLED
+static bool projectless_editor_shell = false;
 static bool found_project = false;
 // Set for a genuine interactive editor launch (bare launch or `editor open`) that is
 // eligible for projectless startup routing (#1135). Gates recording a successful open
