@@ -1712,8 +1712,9 @@
   "risk": "low",
   "files_exist": true,
   "rationale": "One-line _update_tab_titles() call in EditorSceneTabs::_notification theme block; applies cleanly.",
-  "outcome": "ported",
-  "local_sha": "e531f2cc62383841999216b7ba7427d968aa90d0"
+  "outcome": "reverted-diverged",
+  "local_sha": "e531f2cc62383841999216b7ba7427d968aa90d0",
+  "reason": "added _update_tab_titles() on theme-change; fork routes it through EditorNode tile model \u2192 SIGSEGV in TestCanvasItemEditorSecondaryView"
  },
  {
   "pr": "119711",
