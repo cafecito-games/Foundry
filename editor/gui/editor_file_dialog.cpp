@@ -73,7 +73,12 @@ bool EditorFileDialog::_should_use_native_popup() const {
 }
 
 bool EditorFileDialog::_should_hide_file(const String &p_file) const {
-	if (Engine::get_singleton()->is_project_manager_hint()) {
+	// _should_skip_directory encodes the loaded project's res:// layout (project data
+	// dir, nested projects, .fsignore). It only applies when browsing project
+	// resources; when browsing the real filesystem (the project picker / Open Project
+	// dialog, whether or not a project is loaded), those directories must stay visible
+	// so existing projects are selectable.
+	if (get_access() != ACCESS_RESOURCES) {
 		return false;
 	}
 	const String full_path = dir_access->get_current_dir().path_join(p_file);

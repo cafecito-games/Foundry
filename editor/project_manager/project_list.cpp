@@ -1478,9 +1478,11 @@ void ProjectList::update_dock_menu() {
 }
 
 void ProjectList::_global_menu_new_window(const Variant &p_tag) {
+	// Launch a fresh editor instance. `editor open` forces the editor path so the
+	// new window never falls through to a runtime/game launch.
 	List<String> args;
 	args.push_back("editor");
-	args.push_back("project-manager");
+	args.push_back("open");
 	OS::get_singleton()->create_instance(args);
 }
 

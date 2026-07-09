@@ -307,6 +307,19 @@ Error StartupDialog::_open_project_and_restart(const String &p_path) {
 		return ERR_FILE_NOT_FOUND;
 	}
 
+	// When a project is already loaded (the dialog was opened via `Project > Open
+	// Project...`), hand off to the editor so unsaved changes are handled and the
+	// editor shuts down gracefully before relaunching into the chosen project. The
+	// switch may still be canceled at the save/stop confirmation, so recents and the
+	// auto-open candidate are left untouched here; the relaunched instance records the
+	// open only once it actually succeeds.
+	EditorNode *editor_node = EditorNode::get_singleton();
+	if (editor_node != nullptr && !editor_node->is_projectless_shell()) {
+		hide_startup_dialog();
+		editor_node->request_project_switch(canonical);
+		return OK;
+	}
+
 	const Error store_err = StartupRouter::record_project_opened(known_projects, canonical);
 	if (store_err != OK) {
 		ERR_PRINT(vformat("Failed to save known projects after opening '%s' (error %d).", canonical, store_err));

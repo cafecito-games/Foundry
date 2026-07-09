@@ -42,7 +42,6 @@ command-first invocations documented above.
 
 ```sh
 foundry editor open --project .
-foundry editor project-manager
 
 foundry project run --project . --scene res://main.tscn -- --game-arg value
 foundry project test --project . --runner res://addons/foundrylib/testlib/cli/run.fs -- --path res://tests

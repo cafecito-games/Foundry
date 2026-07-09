@@ -630,13 +630,15 @@ function startEditor(zip) {
 		setLoaderEnabled(true);
 	};
 	function Execute(args) {
+		// Recognize both the legacy --editor/-e flags and the command-first
+		// `editor open` invocation used for editor relaunches (New Window, project
+		// switch) so those are not misrouted to the game canvas.
 		const is_editor = args.filter(function (v) {
 			return v === '--editor' || v === '-e';
-		}).length !== 0;
-		const is_project_manager = args.filter(function (v) {
-			return v === '--project-manager';
-		}).length !== 0;
-		const is_game = !is_editor && !is_project_manager;
+		}).length !== 0 || args.some(function (v, i) {
+			return v === 'editor' && args[i + 1] === 'open';
+		});
+		const is_game = !is_editor;
 		if (video_driver) {
 			args.push('--rendering-driver', video_driver);
 		}
@@ -666,7 +668,7 @@ function startEditor(zip) {
 							showTab('loader');
 							setLoaderEnabled(true);
 						};
-						editor.start({ 'args': args, 'persistentDrops': is_project_manager, 'canvas': editorCanvas });
+						editor.start({ 'args': args, 'persistentDrops': false, 'canvas': editorCanvas });
 					});
 				}, 0);
 				OnEditorExit = null;
@@ -739,7 +741,7 @@ function startEditor(zip) {
 			selectVideoMode();
 			showTab('editor');
 			setLoaderEnabled(false);
-			const args = ['--project-manager', '--single-window'];
+			const args = ['--single-window'];
 			if (video_driver) {
 				args.push('--rendering-driver', video_driver);
 			}

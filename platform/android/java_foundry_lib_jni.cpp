@@ -664,7 +664,9 @@ JNIEXPORT jboolean JNICALL Java_games_cafecito_foundry_FoundryLib_isEditorHint(J
 JNIEXPORT jboolean JNICALL Java_games_cafecito_foundry_FoundryLib_isProjectManagerHint(JNIEnv *env, jclass clazz) {
 	Engine *engine = Engine::get_singleton();
 	if (engine) {
-		return engine->is_project_manager_hint();
+		// The Project Manager startup mode was removed; the projectless editor shell
+		// is now the project-selection surface this hint reports.
+		return engine->is_projectless_editor_shell_hint();
 	}
 	return false;
 }

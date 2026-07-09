@@ -33,7 +33,6 @@ _complete_foundry_options() {
 --verbose
 --quiet
 --editor
---project-manager
 --debug-server
 --quit
 --language
