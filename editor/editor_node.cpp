@@ -6928,7 +6928,13 @@ void EditorNode::_apply_projectless_shell_restrictions() {
 		scene_workspace->hide();
 	}
 	if (bottom_panel != nullptr) {
+		// Collapse any open drawer tab (a persisted projectless layout may restore
+		// one) before hiding the floating drawer island itself.
+		bottom_panel->hide_bottom_panel();
 		bottom_panel->hide();
+	}
+	if (bottom_drawer_strip != nullptr) {
+		bottom_drawer_strip->hide();
 	}
 
 	if (ImportDock::get_singleton() != nullptr) {
@@ -6955,6 +6961,11 @@ void EditorNode::_finish_projectless_shell_startup() {
 		EditorFileSystem::get_singleton()->skip_first_scan_for_projectless_shell();
 	}
 	_load_editor_layout();
+
+	// Restoring the projectless layout can re-open surfaces the launcher must keep
+	// suppressed (e.g. a persisted bottom drawer tab), so re-assert the restrictions
+	// after the layout load rather than only during READY/construction.
+	_apply_projectless_shell_restrictions();
 
 	if (!cmdline_mode) {
 		EditorResourcePreview::get_singleton()->start();

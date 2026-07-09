@@ -970,6 +970,20 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 		return _failure_with_message(p_driver, result.workflow, "Projectless shell must not expose the project workspace behind the dialog.");
 	}
 
+	// The bottom drawer's status strip (Output/Debugger/Audio/... tabs) must stay
+	// hidden behind the dialog too; find_elements returns only visible elements, so
+	// the strip's Output tab must not resolve.
+	p_driver.set_step("verify_bottom_drawer_hidden");
+	{
+		Dictionary output_selector;
+		output_selector["role"] = "button";
+		output_selector["name"] = "Output";
+		const Dictionary output_find = p_driver.find(output_selector);
+		if ((bool)output_find.get("ok", false) && ((Array)output_find.get("elements", Array())).size() > 0) {
+			return _failure_with_message(p_driver, result.workflow, "Bottom drawer strip must stay hidden in projectless shell mode.");
+		}
+	}
+
 	const Array open_scenes = state.get("open_scenes", Array());
 	if (!open_scenes.is_empty()) {
 		if (open_scenes.size() != 1) {
