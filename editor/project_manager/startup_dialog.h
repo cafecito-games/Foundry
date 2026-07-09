@@ -34,11 +34,14 @@
 #include "scene/gui/dialogs.h"
 
 class Button;
-class ItemList;
+class Control;
 class Label;
+class MarginContainer;
 class ProjectDialog;
+class ScrollContainer;
 class TabContainer;
 class TextureRect;
+class VBoxContainer;
 
 // Centered startup dialog for the projectless editor shell. Owns the tab
 // scaffolding and the Projects tab (create/open/recents). Manage and About tab
@@ -52,6 +55,7 @@ class StartupDialog : public AcceptDialog {
 
 	TextureRect *logo = nullptr;
 	Label *product_name_label = nullptr;
+	Label *version_label = nullptr;
 	Label *tagline_label = nullptr;
 
 	TabContainer *tabs = nullptr;
@@ -61,27 +65,25 @@ class StartupDialog : public AcceptDialog {
 
 	Button *create_project_button = nullptr;
 	Button *open_existing_button = nullptr;
-	ItemList *recents_list = nullptr;
-	Label *recents_empty_label = nullptr;
-	Button *open_recent_button = nullptr;
-	Button *remove_recent_button = nullptr;
+	ScrollContainer *recents_scroll = nullptr;
+	VBoxContainer *recents_container = nullptr;
+	VBoxContainer *recents_empty_state = nullptr;
 
 	ProjectDialog *project_dialog = nullptr;
 
 	void _update_theme();
 	void _refresh_recents();
-	void _update_recent_action_buttons();
+	void _clear_recent_cards();
+	void _build_recent_card(const KnownProjectStore::KnownProject &p_project);
 
 	String _recent_display_name(const KnownProjectStore::KnownProject &p_project) const;
-	String _recent_item_text(const KnownProjectStore::KnownProject &p_project) const;
+	String _format_last_opened(uint64_t p_unix_time) const;
 
 	void _create_project();
 	void _open_existing_project();
-	void _open_selected_recent();
-	void _remove_selected_recent();
+	void _open_recent_path(const String &p_path);
+	void _remove_recent_path(const String &p_path);
 
-	void _on_recents_selected(int p_index);
-	void _on_recents_activated(int p_index);
 	void _on_project_created(const String &p_dir, bool p_edit);
 	void _on_projects_updated();
 
