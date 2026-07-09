@@ -7081,6 +7081,12 @@ bool EditorNode::load_project_in_process(const String &p_project_path) {
 		EditorPaths::get_singleton()->initialize_project_data_dir();
 	}
 
+	// Load the opened project's ResourceUID cache and resolve autoloads stored as
+	// uid:// entries, as main.cpp does right after ProjectSettings::setup(). Without
+	// this, uid://-backed autoload paths resolve to empty and would not instantiate.
+	ResourceUID::get_singleton()->load_from_cache(true);
+	ProjectSettings::get_singleton()->fix_autoload_paths();
+
 	// Replay the project-derived engine configuration a fresh project boot applies in
 	// main.cpp right after ProjectSettings::setup(); otherwise the opened project runs
 	// with the launcher's defaults until a restart. The editor keeps managing its own
