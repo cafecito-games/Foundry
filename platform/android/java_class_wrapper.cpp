@@ -1434,23 +1434,23 @@ bool JavaClass::_convert_object_to_variant(JNIEnv *env, jobject obj, Variant &va
 			int count = env->GetArrayLength(jarr);
 			ret.resize(count);
 			for (int i = 0; i < count; i++) {
-				jobject element_obj = env->GetObjectArrayElement(jarr, i);
-				if (element_obj) {
-					jclass java_class = env->GetObjectClass(element_obj);
+				jobject obj = env->GetObjectArrayElement(jarr, i);
+				if (obj) {
+					jclass java_class = env->GetObjectClass(obj);
 					Ref<JavaClass> java_class_wrapped = JavaClassWrapper::singleton->wrap_jclass(java_class);
 					env->DeleteLocalRef(java_class);
 
 					if (java_class_wrapped.is_valid()) {
 						String cn = java_class_wrapped->get_java_class_name();
 						if (cn == "games.cafecito.foundry.Dictionary") {
-							ret[i] = _jobject_to_variant(env, element_obj);
+							ret[i] = _jobject_to_variant(env, obj);
 						} else {
-							Ref<JavaObject> java_obj_wrapped = Ref<JavaObject>(memnew(JavaObject(java_class_wrapped, element_obj)));
+							Ref<JavaObject> java_obj_wrapped = Ref<JavaObject>(memnew(JavaObject(java_class_wrapped, obj)));
 							ret[i] = java_obj_wrapped;
 						}
 					}
 				}
-				env->DeleteLocalRef(element_obj);
+				env->DeleteLocalRef(obj);
 			}
 
 			var = ret;
