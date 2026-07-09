@@ -1,0 +1,106 @@
+[
+ {
+  "pr": "119373",
+  "sha": "8075f4250f301b8cf7cf60a3d7fcfbdb33d77dbd",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Moves #endif DISABLE_DEPRECATED so MOUSE_MODE enum constants bind in non-deprecated builds; 1-line self-contained fix."
+ },
+ {
+  "pr": "117268",
+  "sha": "630a58a12d2cde110c370626c8a461f415273b59",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Bypasses physics command queue on the main thread during sync; small self-contained macro change but alters threading behavior."
+ },
+ {
+  "pr": "107052",
+  "sha": "b7ab3a6da0914abc50af799e0cf4b663155494fd",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Clamps AudioEffectFilter cutoff to >=1 and makes the slider exponential; self-contained one-file fix."
+ },
+ {
+  "pr": "117178",
+  "sha": "8f0468f28102ea0bcf4628b91142c6a5e06b957b",
+  "decision": "port-later",
+  "kind": "refactor",
+  "risk": "low",
+  "rationale": "Pure XRServer Vector->LocalVector cleanup with no behavior change; low value, defer."
+ },
+ {
+  "pr": "116830",
+  "sha": "a19e5c4b53c4af811f6d76f3547f5eb695ee7928",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes FFT loop bound and Hann window step in spectrum analyzer; self-contained audio math fix."
+ },
+ {
+  "pr": "116196",
+  "sha": "a142c2218aa76b46ce99823ccf76926da033a741",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes soft-hyphen break with small/zero wrap width in TextServer; self-contained two-line fix."
+ },
+ {
+  "pr": "116299",
+  "sha": "8db94f7b5eb0e97829d1f4fceac2784b55c112c6",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Cleans up audio callback lists in AudioServer dtor to fix microphone shutdown crash; self-contained."
+ },
+ {
+  "pr": "104736",
+  "sha": "c44b01cd1f34e296a72349a3a2530e3d5bc79e4f",
+  "decision": "port-later",
+  "kind": "feature",
+  "risk": "high",
+  "rationale": "New one-way collision direction API spanning 25 files across physics server + scene nodes + compat; large, defer."
+ },
+ {
+  "pr": "115951",
+  "sha": "80d3019de854f11110ee02780a1072c870f80f72",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Trivial const-qualifier fix on the 114355 spectrum-analyzer compat shim; port together with 114355."
+ },
+ {
+  "pr": "114355",
+  "sha": "b9b626406ab040fe4ac406d2c1f916e6533ed8a9",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Fixes jittered spectrum-analyzer values; self-contained audio but removes tap_back_pos API and adds deprecated compat shims."
+ },
+ {
+  "pr": "100923",
+  "sha": "dd210a10714371a7d34d3b3d5d7cae8a82dd5efe",
+  "decision": "port-later",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Adds _set_format/_get_formats GDVIRTUAL binds to CameraFeed; additive feature, defer."
+ },
+ {
+  "pr": "114488",
+  "sha": "94f3b73cec229ce922a48d490a983a15faa0ce49",
+  "decision": "port-later",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Exposes span_index in TextServer glyph dictionaries; small additive API surface, defer."
+ },
+ {
+  "pr": "114731",
+  "sha": "dcf5b4deac9128d78a7cbb0c3396ce6f416b18c1",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes CameraFeed writing YCbCr texture to the wrong (RGBA) slot and recreates texture on datatype change; self-contained."
+ }
+]

@@ -724,7 +724,6 @@ Error GLTFDocument::_encode_buffer_glb(Ref<GLTFState> p_state, const String &p_p
 		if (buffer_data.is_empty()) {
 			return OK;
 		}
-		file->create(FileAccess::ACCESS_RESOURCES);
 		file->store_buffer(buffer_data.ptr(), buffer_data.size());
 		gltf_buffer["uri"] = filename;
 		gltf_buffer["byteLength"] = buffer_data.size();
@@ -756,7 +755,6 @@ Error GLTFDocument::_encode_buffer_bins(Ref<GLTFState> p_state, const String &p_
 		if (buffer_data.is_empty()) {
 			return OK;
 		}
-		file->create(FileAccess::ACCESS_RESOURCES);
 		file->store_buffer(buffer_data.ptr(), buffer_data.size());
 		gltf_buffer["uri"] = filename;
 		gltf_buffer["byteLength"] = buffer_data.size();
@@ -5949,6 +5947,16 @@ GLTFNodeIndex GLTFDocument::_node_and_or_bone_to_gltf_node_index(Ref<GLTFState> 
 	ERR_FAIL_V_MSG(-1, vformat("glTF: A node was animated, but it wasn't found in the GLTFState. Ensure that all nodes referenced by the AnimationPlayer are in the scene you are exporting."));
 }
 
+template <typename T>
+static inline Error _try_interpolate_value_track(const Ref<Animation> &p_godot_animation, int32_t p_godot_anim_track_index, double p_time, T &r_value) {
+	Variant val = p_godot_animation->value_track_interpolate(p_godot_anim_track_index, p_time, false);
+	if (val.get_type() != GetTypeInfo<T>::VARIANT_TYPE) {
+		return ERR_INVALID_PARAMETER;
+	}
+	r_value = val;
+	return OK;
+}
+
 bool GLTFDocument::_convert_animation_node_track(Ref<GLTFState> p_state, GLTFAnimation::NodeTrack &p_gltf_node_track, const Ref<Animation> &p_godot_animation, int32_t p_godot_anim_track_index, Vector<double> &p_times) {
 	GLTFAnimation::Interpolation gltf_interpolation = GLTFAnimation::godot_to_gltf_interpolation(p_godot_animation, p_godot_anim_track_index);
 	const Animation::TrackType track_type = p_godot_animation->track_get_type(p_godot_anim_track_index);
@@ -6088,7 +6096,7 @@ bool GLTFDocument::_convert_animation_node_track(Ref<GLTFState> p_state, GLTFAni
 					bool last = false;
 					while (true) {
 						Vector3 position;
-						Error err = p_godot_animation->try_position_track_interpolate(p_godot_anim_track_index, time, &position);
+						Error err = _try_interpolate_value_track(p_godot_animation, p_godot_anim_track_index, time, position);
 						if (err == OK) {
 							p_gltf_node_track.position_track.values.push_back(position);
 							p_gltf_node_track.position_track.times.push_back(time);
@@ -6124,7 +6132,17 @@ bool GLTFDocument::_convert_animation_node_track(Ref<GLTFState> p_state, GLTFAni
 					bool last = false;
 					while (true) {
 						Quaternion rotation;
-						Error err = p_godot_animation->try_rotation_track_interpolate(p_godot_anim_track_index, time, &rotation);
+						Error err;
+						if (node_prop == "quaternion") {
+							err = _try_interpolate_value_track(p_godot_animation, p_godot_anim_track_index, time, rotation);
+						} else {
+							Vector3 rotation_euler;
+							err = _try_interpolate_value_track(p_godot_animation, p_godot_anim_track_index, time, rotation_euler);
+							if (node_prop == "rotation_degrees") {
+								rotation_euler *= Math::TAU / 360.0;
+							}
+							rotation = Quaternion::from_euler(rotation_euler);
+						}
 						if (err == OK) {
 							p_gltf_node_track.rotation_track.values.push_back(rotation);
 							p_gltf_node_track.rotation_track.times.push_back(time);
@@ -6170,7 +6188,7 @@ bool GLTFDocument::_convert_animation_node_track(Ref<GLTFState> p_state, GLTFAni
 					bool last = false;
 					while (true) {
 						Vector3 scale;
-						Error err = p_godot_animation->try_scale_track_interpolate(p_godot_anim_track_index, time, &scale);
+						Error err = _try_interpolate_value_track(p_godot_animation, p_godot_anim_track_index, time, scale);
 						if (err == OK) {
 							p_gltf_node_track.scale_track.values.push_back(scale);
 							p_gltf_node_track.scale_track.times.push_back(time);
@@ -6215,17 +6233,12 @@ bool GLTFDocument::_convert_animation_node_track(Ref<GLTFState> p_state, GLTFAni
 					double time = 0.0;
 					bool last = false;
 					while (true) {
-						Vector3 position;
-						Quaternion rotation;
-						Vector3 scale;
-						Error err = p_godot_animation->try_position_track_interpolate(p_godot_anim_track_index, time, &position);
+						Transform3D transform;
+						Error err = _try_interpolate_value_track(p_godot_animation, p_godot_anim_track_index, time, transform);
 						if (err == OK) {
-							err = p_godot_animation->try_rotation_track_interpolate(p_godot_anim_track_index, time, &rotation);
-							if (err == OK) {
-								err = p_godot_animation->try_scale_track_interpolate(p_godot_anim_track_index, time, &scale);
-							}
-						}
-						if (err == OK) {
+							Vector3 position = transform.get_origin();
+							Quaternion rotation = transform.basis.get_rotation_quaternion();
+							Vector3 scale = transform.basis.get_scale();
 							p_gltf_node_track.position_track.values.push_back(position);
 							p_gltf_node_track.position_track.times.push_back(time);
 							p_gltf_node_track.rotation_track.values.push_back(rotation);
@@ -6535,9 +6548,13 @@ Error GLTFDocument::_parse(Ref<GLTFState> p_state, const String &p_path, Ref<Fil
 	document_extensions.clear();
 	for (Ref<GLTFDocumentExtension> ext : all_document_extensions) {
 		ERR_CONTINUE(ext.is_null());
-		err = ext->import_preflight(p_state, p_state->json["extensionsUsed"]);
+		Ref<GLTFDocumentExtension> ext_dup = ext;
+		if (ClassDB::is_class_exposed(ext->get_class_name())) {
+			ext_dup = ext->duplicate();
+		}
+		err = ext_dup->import_preflight(p_state, p_state->json["extensionsUsed"]);
 		if (err == OK) {
-			document_extensions.push_back(ext);
+			document_extensions.push_back(ext_dup);
 		}
 	}
 
@@ -6649,7 +6666,6 @@ Error GLTFDocument::_serialize_file(Ref<GLTFState> p_state, const String p_path)
 		ERR_FAIL_COND_V_MSG(total_file_length > (uint64_t)UINT32_MAX, ERR_CANT_CREATE,
 				"glTF: File size exceeds glTF Binary's maximum of 4 GiB. Cannot serialize as a GLB file.");
 
-		file->create(FileAccess::ACCESS_RESOURCES);
 		file->store_32(magic);
 		file->store_32(p_state->major_version); // version
 		file->store_32(total_file_length);
@@ -6677,7 +6693,6 @@ Error GLTFDocument::_serialize_file(Ref<GLTFState> p_state, const String p_path)
 		Ref<FileAccess> file = FileAccess::open(p_path, FileAccess::WRITE, &err);
 		ERR_FAIL_COND_V(file.is_null(), FAILED);
 
-		file->create(FileAccess::ACCESS_RESOURCES);
 		String json = JSON::stringify(p_state->json, "", true, true);
 		file->store_string(json);
 	}
@@ -7101,9 +7116,13 @@ Error GLTFDocument::append_from_scene(Node *p_node, Ref<GLTFState> p_state, uint
 	document_extensions.clear();
 	for (Ref<GLTFDocumentExtension> ext : all_document_extensions) {
 		ERR_CONTINUE(ext.is_null());
-		Error err = ext->export_preflight(state, p_node);
+		Ref<GLTFDocumentExtension> ext_dup = ext;
+		if (ClassDB::is_class_exposed(ext->get_class_name())) {
+			ext_dup = ext->duplicate();
+		}
+		Error err = ext_dup->export_preflight(state, p_node);
 		if (err == OK) {
-			document_extensions.push_back(ext);
+			document_extensions.push_back(ext_dup);
 		}
 	}
 	// Add the root node(s) and their descendants to the state.

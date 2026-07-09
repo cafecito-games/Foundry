@@ -70,7 +70,7 @@ public:
 		_FORCE_INLINE_ XrSwapchain get_swapchain() const { return swapchain; }
 		_FORCE_INLINE_ bool is_image_acquired() const { return image_acquired; }
 
-		bool create(XrSwapchainCreateFlags p_create_flags, XrSwapchainUsageFlags p_usage_flags, int64_t p_swapchain_format, uint32_t p_width, uint32_t p_height, uint32_t p_sample_count, uint32_t p_array_size);
+		bool create(XrSwapchainCreateFlags p_create_flags, XrSwapchainUsageFlags p_usage_flags, int64_t p_swapchain_format, uint32_t p_width, uint32_t p_height, uint32_t p_sample_count, uint32_t p_array_size, bool p_next_extensions = false);
 		void queue_free();
 		static void free_queued();
 		void free();
@@ -502,7 +502,7 @@ public:
 	void set_form_factor(XrFormFactor p_form_factor);
 	XrFormFactor get_form_factor() const { return form_factor; }
 
-	uint32_t get_view_count();
+	uint32_t get_view_count() const;
 	void set_view_configuration(XrViewConfigurationType p_view_configuration);
 	XrViewConfigurationType get_view_configuration() const { return view_configuration; }
 

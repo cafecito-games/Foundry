@@ -144,8 +144,6 @@ private:
 			Color color = Color(1, 1, 1);
 		};
 
-		mutable int64_t next_item_id = 0;
-
 		struct Line {
 			Vector<Gutter> gutters;
 
@@ -604,6 +602,7 @@ private:
 
 	Vector<Pair<int64_t, Color>> _get_line_syntax_highlighting(int p_line);
 	void _clear_syntax_highlighting_cache();
+	void _syntax_highlighter_changed();
 
 	/* Visual. */
 	struct ThemeCache {
@@ -697,6 +696,8 @@ protected:
 
 	virtual void _draw_guidelines() {}
 	virtual void _update_theme_item_cache() override;
+
+	virtual String _get_accessibility_name() const override;
 
 	/* Internal API for CodeEdit, pending public API. */
 	// Brace matching.

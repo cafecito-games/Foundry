@@ -50,6 +50,8 @@ STATIC_ASSERT_INCOMPLETE_TYPE(class, Engine);
 #include "scene/resources/packed_scene.h"
 #include "viewport.h"
 
+#include "servers/display/accessibility_server.h"
+
 #ifdef DEBUG_ENABLED
 SafeNumeric<uint64_t> Node::total_node_count{ 0 };
 #endif
@@ -60,7 +62,7 @@ void Node::_notification(int p_notification) {
 	switch (p_notification) {
 		case NOTIFICATION_ACCESSIBILITY_INVALIDATE: {
 			if (data.accessibility_element.is_valid()) {
-				DisplayServer::get_singleton()->accessibility_free_element(data.accessibility_element);
+				AccessibilityServer::get_singleton()->free_element(data.accessibility_element);
 				data.accessibility_element = RID();
 			}
 		} break;
@@ -69,7 +71,7 @@ void Node::_notification(int p_notification) {
 			RID ae = get_accessibility_element();
 			ERR_FAIL_COND(ae.is_null());
 
-			DisplayServer::get_singleton()->accessibility_update_set_name(ae, get_name());
+			AccessibilityServer::get_singleton()->update_set_name(ae, get_name());
 
 			// Node children.
 			if (!accessibility_override_tree_hierarchy()) {
@@ -82,7 +84,7 @@ void Node::_notification(int p_notification) {
 					if (child_node->is_part_of_edited_scene()) {
 						continue;
 					}
-					DisplayServer::get_singleton()->accessibility_update_add_child(ae, child_node->get_accessibility_element());
+					AccessibilityServer::get_singleton()->update_add_child(ae, child_node->get_accessibility_element());
 				}
 			}
 		} break;
@@ -177,9 +179,7 @@ void Node::_notification(int p_notification) {
 		} break;
 
 		case NOTIFICATION_POST_ENTER_TREE: {
-			if (data.auto_translate_mode != AUTO_TRANSLATE_MODE_DISABLED) {
-				notification(NOTIFICATION_TRANSLATION_CHANGED);
-			}
+			notification(NOTIFICATION_TRANSLATION_CHANGED);
 		} break;
 
 		case NOTIFICATION_EXIT_TREE: {
@@ -188,7 +188,7 @@ void Node::_notification(int p_notification) {
 
 			if (data.tree->is_accessibility_supported() && !is_part_of_edited_scene()) {
 				if (data.accessibility_element.is_valid()) {
-					DisplayServer::get_singleton()->accessibility_free_element(data.accessibility_element);
+					AccessibilityServer::get_singleton()->free_element(data.accessibility_element);
 					data.accessibility_element = RID();
 				}
 				data.tree->_accessibility_notify_change(this, true);
@@ -898,8 +898,7 @@ bool Node::can_process_notification(int p_what) const {
 }
 
 bool Node::can_process() const {
-	ERR_FAIL_COND_V(!is_inside_tree(), false);
-	return !data.tree->is_suspended() && _can_process(data.tree->is_paused());
+	return is_inside_tree() && !data.tree->is_suspended() && _can_process(data.tree->is_paused());
 }
 
 bool Node::_can_process(bool p_paused) const {
@@ -1095,10 +1094,6 @@ void Node::_remove_tree_from_process_thread_group() {
 }
 
 void Node::_add_tree_to_process_thread_group(Node *p_owner) {
-	if (_is_any_processing()) {
-		_add_to_process_thread_group();
-	}
-
 	data.process_thread_group_owner = p_owner;
 	if (p_owner != nullptr) {
 		data.process_group = p_owner->data.process_group;
@@ -1106,12 +1101,16 @@ void Node::_add_tree_to_process_thread_group(Node *p_owner) {
 		data.process_group = &data.tree->default_process_group;
 	}
 
+	if (_is_any_processing()) {
+		_add_to_process_thread_group();
+	}
+
 	for (KeyValue<StringName, Node *> &K : data.children) {
 		if (K.value->data.process_thread_group != PROCESS_THREAD_GROUP_INHERIT) {
 			continue;
 		}
 
-		K.value->_add_to_process_thread_group();
+		K.value->_add_tree_to_process_thread_group(p_owner);
 	}
 }
 bool Node::is_processing_internal() const {
@@ -1465,7 +1464,7 @@ void Node::set_name(const StringName &p_name) {
 }
 
 // Returns a clear description of this node depending on what is available. Useful for error messages.
-String Node::get_description() const {
+String Node::get_description(bool p_show_not_in_tree) const {
 	String description;
 	if (is_inside_tree()) {
 		description = String(get_path());
@@ -1473,6 +1472,9 @@ String Node::get_description() const {
 		description = get_name();
 		if (description.is_empty()) {
 			description = get_class();
+		}
+		if (p_show_not_in_tree) {
+			description += " (not inside tree)";
 		}
 	}
 	return description;
@@ -2350,7 +2352,7 @@ NodePath Node::get_path_to(RequiredParam<const Node> rp_node, bool p_use_unique_
 		common_parent = common_parent->data.parent;
 	}
 
-	ERR_FAIL_NULL_V(common_parent, NodePath()); //nodes not in the same tree
+	ERR_FAIL_NULL_V_MSG(common_parent, NodePath(), vformat("No path can be resolved between the nodes %s and %s as they share no common ancestor.", get_description(true), p_node->get_description(true)));
 
 	visited.clear();
 
@@ -2559,37 +2561,6 @@ String Node::_get_tree_string(const Node *p_node) {
 
 String Node::get_tree_string() {
 	return _get_tree_string(this);
-}
-
-void Node::_propagate_reverse_notification(int p_notification) {
-	data.blocked++;
-
-	for (HashMap<StringName, Node *>::Iterator I = data.children.last(); I; --I) {
-		I->value->_propagate_reverse_notification(p_notification);
-	}
-
-	notification(p_notification, true);
-	data.blocked--;
-}
-
-void Node::_propagate_deferred_notification(int p_notification, bool p_reverse) {
-	ERR_FAIL_COND(!is_inside_tree());
-
-	data.blocked++;
-
-	if (!p_reverse) {
-		MessageQueue::get_singleton()->push_notification(this, p_notification);
-	}
-
-	for (KeyValue<StringName, Node *> &K : data.children) {
-		K.value->_propagate_deferred_notification(p_notification, p_reverse);
-	}
-
-	if (p_reverse) {
-		MessageQueue::get_singleton()->push_notification(this, p_notification);
-	}
-
-	data.blocked--;
 }
 
 void Node::propagate_notification(int p_notification) {
@@ -3257,16 +3228,14 @@ void Node::replace_by(RequiredParam<Node> rp_node, bool p_keep_groups) {
 
 	emit_signal(SNAME("replacing_by"), p_node);
 
-	while (get_child_count()) {
-		Node *child = get_child(0);
+	// Move non-internal children to `p_node`.
+	while (get_child_count(false)) {
+		Node *child = get_child(0, false);
 		remove_child(child);
-		if (!child->is_internal()) {
-			// Add the custom children to the p_node.
-			Node *child_owner = child->get_owner() == this ? p_node : child->get_owner();
-			child->set_owner(nullptr);
-			p_node->add_child(child);
-			child->set_owner(child_owner);
-		}
+		Node *child_owner = child->get_owner() == this ? p_node : child->get_owner();
+		child->set_owner(nullptr);
+		p_node->add_child(child);
+		child->set_owner(child_owner);
 	}
 
 	p_node->set_owner(owner);
@@ -3745,6 +3714,14 @@ RID Node::get_focused_accessibility_element() const {
 	}
 }
 
+Transform2D Node::get_accessibility_transform() const {
+	if (is_inside_tree() && data.parent) {
+		return data.parent->get_accessibility_transform();
+	} else {
+		return Transform2D();
+	}
+}
+
 void Node::queue_accessibility_update() {
 	if (is_inside_tree() && !is_part_of_edited_scene()) {
 		data.tree->_accessibility_notify_change(this);
@@ -3758,7 +3735,7 @@ RID Node::get_accessibility_element() const {
 	if (unlikely(data.accessibility_element.is_null())) {
 		Window *w = get_non_popup_window();
 		if (w && w->get_window_id() != DisplayServer::INVALID_WINDOW_ID && get_window()->is_visible()) {
-			data.accessibility_element = DisplayServer::get_singleton()->accessibility_create_element(w->get_window_id(), DisplayServer::ROLE_CONTAINER);
+			data.accessibility_element = AccessibilityServer::get_singleton()->create_element(w->get_window_id(), AccessibilityServerEnums::ROLE_CONTAINER);
 		}
 	}
 	return data.accessibility_element;

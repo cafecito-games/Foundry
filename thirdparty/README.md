@@ -203,7 +203,7 @@ Patches:
 ## dr_libs
 
 - Upstream: https://github.com/mackron/dr_libs
-- Version: mp3-0.7.2 (547c211a87a06a42bf62c1366616aa14b57dd429, 2025)
+- Version: mp3-0.7.3 (5690d4671d7ad07ae6021756d7222eb159745f06, 2026)
 - License: Public Domain or Unlicense or MIT-0
 
 Files extracted from upstream source:
@@ -371,7 +371,7 @@ Files extracted from upstream source:
 ## glad
 
 - Upstream: https://github.com/Dav1dde/glad
-- Version: 2.0.4 (d08b1aa01f8fe57498f04d47b5fa8c48725be877, 2023)
+- Version: 2.0.8 (73db193f853e2ee079bf3ca8a64aa2eaf6459043, 2024)
 - License: CC0 1.0 and Apache 2.0
 
 Files extracted from upstream source:
@@ -387,18 +387,19 @@ Files generated from [upstream web instance](https://gen.glad.sh/):
 - `glx.c`
 - `glad/glx.h`
 
-See the permalinks in `glad/gl.h` and `glad/glx.h` to regenerate the files with
-a new version of the web instance.
+See the permalinks in `glad/egl.h`, `glad/gl.h` and `glad/glx.h`
+to regenerate the files with a new version of the web instance.
 
 Patches:
 
 - `0001-enable-both-gl-and-gles.patch` ([GH-72831](https://github.com/godotengine/godot/pull/72831))
+- `0002-revert-egl_static-removal.patch` ([GH-107312](https://github.com/godotengine/godot/pull/107312))
 
 
 ## glslang
 
 - Upstream: https://github.com/KhronosGroup/glslang
-- Version: vulkan-sdk-1.3.283.0 (e8dd0b6903b34f1879520b444634c75ea2deedf5, 2024)
+- Version: vulkan-sdk-1.4.335.0 (b5782e52ee2f7b3e40bb9c80d15b47016e008bc9, 2025)
 - License: glslang
 
 Version should be kept in sync with the one of the used Vulkan SDK (see `vulkan`
@@ -418,6 +419,7 @@ Patches:
 
 - `0001-apple-disable-absolute-paths.patch` ([GH-92010](https://github.com/godotengine/godot/pull/92010))
 - `0002-gcc15-include-fix.patch` ([GH-102022](https://github.com/godotengine/godot/pull/102022))
+- `0002-apple-m1-msaa-fix.patch` ([GH-115893](https://github.com/godotengine/godot/issues/115893))
 
 
 ## graphite
@@ -451,7 +453,7 @@ Patches:
 ## harfbuzz
 
 - Upstream: https://github.com/harfbuzz/harfbuzz
-- Version: 12.2.0 (0426759f2b03e479495e987608f10e0866e70180, 2025)
+- Version: 12.3.2 (b42511e071162fe76102f613a6ccc009726c99af, 2026)
 - License: MIT
 
 Files extracted from upstream source:
@@ -493,7 +495,7 @@ Files generated from upstream source:
 ## jolt_physics
 
 - Upstream: https://github.com/jrouwe/JoltPhysics
-- Version: 5.4.0 (036ea7b1d717b3e713ac9d8cbd47118fb9cd5d60, 2025)
+- Version: 5.5.0 (23dadd0e603f1b321142d4c74df07fce85064989, 2025)
 - License: MIT
 
 Files extracted from upstream source:
@@ -546,6 +548,7 @@ Files extracted from upstream source:
 Patches:
 
 - `0001-cmake-generated-headers.patch` ([GH-104347](https://github.com/godotengine/godot/pull/104347))
+  * Compare with CMake-generated headers to bump version and added potential new config values.
 - `0002-disable-16bitlossless.patch` ([GH-104347](https://github.com/godotengine/godot/pull/104347))
 - `0003-remove-bmp-ppm-support.patch` ([GH-104347](https://github.com/godotengine/godot/pull/104347))
 
@@ -685,6 +688,18 @@ File extracted from upstream release tarball:
 Patches:
 
 - `0001-msvc-2019-psa-redeclaration.patch` ([GH-90535](https://github.com/godotengine/godot/pull/90535))
+
+
+## metal-cpp
+
+- Upstream: https://developer.apple.com/metal/cpp/
+- Version: 26.0 (2025)
+- License: Apache 2.0
+
+Update instructions:
+
+- Download latest metal-cpp ZIP from https://developer.apple.com/metal/cpp/:
+- Run `update-metal-cpp.sh <path to the downloaded zip>` to extract the relevant files and apply patches.
 
 
 ## meshoptimizer
@@ -922,7 +937,7 @@ Files extracted from upstream source:
 ## re-spirv
 
 - Upstream: https://github.com/renderbag/re-spirv
-- Version: git (c1853b0221cd43866b792406f55c4ab10a0b4503, 2026)
+- Version: git (29a77fca357567d00aa37b8ffde19c19cfe477c4, 2026)
 - License: MIT
 
 Files extracted from upstream source:
@@ -987,6 +1002,9 @@ Patches:
 - `0004-errno-include.patch` ([GH-108354](https://github.com/godotengine/godot/pull/108354))
 - `0005-fix-libudev-dbus.patch` ([GH-108373](https://github.com/godotengine/godot/pull/108373))
 - `0006-fix-cs-environ.patch` ([GH-109283](https://github.com/godotengine/godot/pull/109283))
+- `0007-shield-duplicate-macos.patch` ([GH-115510](https://github.com/godotengine/godot/pull/115510))
+- `0008-fix-linux-joycon-serial-num.patch` ([GH-113873](https://github.com/godotengine/godot/pull/113873))
+- `0009-update-device-blocklist.patch` ([GH-119403](https://github.com/godotengine/godot/pull/119403))
 
 
 ## spirv-cross
@@ -1008,7 +1026,7 @@ to generate Metal source from Vulkan SPIR-V.
 ## spirv-headers
 
 - Upstream: https://github.com/KhronosGroup/SPIRV-Headers
-- Version: vulkan-sdk-1.4.328.1 (01e0577914a75a2569c846778c2f93aa8e6feddd, 2025)
+- Version: vulkan-sdk-1.4.335.0 (b824a462d4256d720bebb40e78b9eb8f78bbb305, 2025)
 
 Files extracted from upstream source:
 - `include/spirv/unified1` folder with only `spirv.h` and `spirv.hpp`
@@ -1071,12 +1089,15 @@ Patches:
 ## tinyexr
 
 - Upstream: https://github.com/syoyo/tinyexr
-- Version: 1.0.12 (735ff73ce5959cf005eb99ce517c9bcecab89dfb, 2025)
+- Version: 1.0.13 (4946b5d92e13bcc8102ac2c8efd129596a90bf75, 2026)
 - License: BSD-3-Clause
 
 Files extracted from upstream source:
 
+- `exr_reader.hh`
+- `streamreader.hh`
 - `tinyexr.{cc,h}`
+- `LICENSE`
 
 Patches:
 
@@ -1086,7 +1107,7 @@ Patches:
 ## ufbx
 
 - Upstream: https://github.com/ufbx/ufbx
-- Version: 0.20.0 (a63ff0a47485328880b3300e7bcdf01413343a45, 2025)
+- Version: 0.21.3 (83bc7cf44f76bc8622de63b809a42b5d557cd733, 2026)
 - License: MIT
 
 Files extracted from upstream source:

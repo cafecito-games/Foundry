@@ -2060,6 +2060,10 @@ void RendererSceneCull::_update_instance_lightmap_captures(Instance *p_instance)
 	float accum_blend = 0.0;
 
 	InstanceGeometryData *geom = static_cast<InstanceGeometryData *>(p_instance->base_data);
+	// Don't blend if only one lightmap affects the dynamic object.
+	// This prevents ambient light from being pure black until the object has fully entered the LightmapGI's AABB.
+	const bool use_blending = geom->lightmap_captures.size() >= 2;
+
 	for (Instance *E : geom->lightmap_captures) {
 		Instance *lightmap = E;
 
@@ -2075,9 +2079,6 @@ void RendererSceneCull::_update_instance_lightmap_captures(Instance *p_instance)
 		Vector3 lm_pos = to_bounds.xform(center);
 
 		AABB bounds = RSG::light_storage->lightmap_get_aabb(lightmap->base);
-		if (!bounds.has_point(lm_pos)) {
-			continue; //not in this lightmap
-		}
 
 		Color sh[9];
 		RSG::light_storage->lightmap_tap_sh_light(lightmap->base, lm_pos, sh);
@@ -2097,11 +2098,14 @@ void RendererSceneCull::_update_instance_lightmap_captures(Instance *p_instance)
 
 		Vector3 inner_pos = ((lm_pos - bounds.position) / bounds.size) * 2.0 - Vector3(1.0, 1.0, 1.0);
 
-		real_t blend = MAX(Math::abs(inner_pos.x), MAX(Math::abs(inner_pos.y), Math::abs(inner_pos.z)));
-		//make blend more rounded
-		blend = Math::lerp(inner_pos.length(), blend, blend);
-		blend *= blend;
-		blend = MAX(0.0, 1.0 - blend);
+		real_t blend = 1.0;
+		if (use_blending) {
+			blend = MAX(Math::abs(inner_pos.x), MAX(Math::abs(inner_pos.y), Math::abs(inner_pos.z)));
+			// Make blend more rounded.
+			blend = Math::lerp(inner_pos.length(), blend, blend);
+			blend *= blend;
+			blend = MAX(0.0, 1.0 - blend);
+		}
 
 		if (interior && !inside) {
 			//do not blend, just replace
@@ -2622,7 +2626,6 @@ void RendererSceneCull::render_camera(const Ref<RenderSceneBuffers> &p_render_bu
 		Projection projection;
 		bool vaspect = camera->vaspect;
 		bool is_orthogonal = false;
-		bool is_frustum = false;
 
 		switch (camera->type) {
 			case Camera::ORTHOGONAL: {
@@ -2651,11 +2654,10 @@ void RendererSceneCull::render_camera(const Ref<RenderSceneBuffers> &p_render_bu
 						camera->znear,
 						camera->zfar,
 						camera->vaspect);
-				is_frustum = true;
 			} break;
 		}
 
-		camera_data.set_camera(transform, projection, is_orthogonal, is_frustum, vaspect, jitter, taa_frame_count, camera->visible_layers);
+		camera_data.set_camera(transform, projection, is_orthogonal, vaspect, jitter, taa_frame_count, camera->visible_layers);
 #ifndef XR_DISABLED
 	} else {
 		XRServer *xr_server = XRServer::get_singleton();
@@ -2688,9 +2690,9 @@ void RendererSceneCull::render_camera(const Ref<RenderSceneBuffers> &p_render_bu
 		}
 
 		if (view_count == 1) {
-			camera_data.set_camera(transforms[0], projections[0], false, false, camera->vaspect, jitter, p_jitter_phase_count, camera->visible_layers);
+			camera_data.set_camera(transforms[0], projections[0], false, camera->vaspect, jitter, p_jitter_phase_count, camera->visible_layers);
 		} else if (view_count == 2) {
-			camera_data.set_multiview_camera(view_count, transforms, projections, false, false, camera->vaspect, camera->visible_layers);
+			camera_data.set_multiview_camera(view_count, transforms, projections, false, camera->vaspect, camera->visible_layers);
 		} else {
 			// this won't be called (see fail check above) but keeping this comment to indicate we may support more then 2 views in the future...
 		}
@@ -3133,10 +3135,10 @@ void RendererSceneCull::_scene_cull(CullData &cull_data, InstanceCullResult &cul
 			}
 
 			for (uint32_t j = 0; j < cull_data.cull->shadow_count; j++) {
-				if (!light_culler->cull_directional_light(cull_data.scenario->instance_aabbs[i], j)) {
-					continue;
-				}
 				for (uint32_t k = 0; k < cull_data.cull->shadows[j].cascade_count; k++) {
+					if (!light_culler->cull_directional_light(cull_data.scenario->instance_aabbs[i], j, k)) { // pass the cascade index
+						continue;
+					}
 					if (IN_FRUSTUM(cull_data.cull->shadows[j].cascades[k].frustum) && VIS_CHECK) {
 						uint32_t base_type = idata.flags & InstanceData::FLAG_BASE_TYPE_MASK;
 
@@ -3171,7 +3173,7 @@ void RendererSceneCull::_scene_cull(CullData &cull_data, InstanceCullResult &cul
 						}
 					}
 				} else if ((1 << base_type) & RS::INSTANCE_GEOMETRY_MASK) {
-					if (idata.flags & InstanceData::FLAG_USES_BAKED_LIGHT) {
+					if ((idata.flags & InstanceData::FLAG_USES_BAKED_LIGHT) && (cull_data.visible_layers & idata.layer_mask)) {
 						cull_result.sdfgi_region_geometry_instances[j].push_back(idata.instance_geometry);
 						mesh_visible = true;
 					}
@@ -3640,7 +3642,7 @@ void RendererSceneCull::render_empty_scene(const Ref<RenderSceneBuffers> &p_rend
 	RENDER_TIMESTAMP("Render Empty 3D Scene");
 
 	RendererSceneRender::CameraData camera_data;
-	camera_data.set_camera(Transform3D(), Projection(), true, false, false);
+	camera_data.set_camera(Transform3D(), Projection(), true, false);
 
 	scene_render->render_scene(p_render_buffers, &camera_data, &camera_data, PagedArray<RenderGeometryInstance *>(), PagedArray<RID>(), PagedArray<RID>(), PagedArray<RID>(), PagedArray<RID>(), PagedArray<RID>(), PagedArray<RID>(), environment, RID(), compositor, p_shadow_atlas, RID(), scenario->reflection_atlas, RID(), 0, 0, nullptr, 0, nullptr, 0, nullptr);
 #endif
@@ -3706,7 +3708,7 @@ bool RendererSceneCull::_render_reflection_probe_step(Instance *p_instance, int 
 
 			RendererSceneRender::CameraData camera_data;
 			Transform3D xform = p_instance->transform * local_view;
-			camera_data.set_camera(xform, cm, false, false, false);
+			camera_data.set_camera(xform, cm, false, false);
 
 			RENDER_TIMESTAMP("Render ReflectionProbe, Face " + itos(face));
 			_render_scene(&camera_data, render_buffers, environment, RID(), RID(), RSG::light_storage->reflection_probe_get_cull_mask(p_instance->base), p_instance->scenario->self, RID(), shadow_atlas, reflection_probe->instance, face, mesh_lod_threshold, use_shadows);

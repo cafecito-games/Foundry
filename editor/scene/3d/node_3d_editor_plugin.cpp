@@ -106,6 +106,7 @@
 #include "scene/resources/3d/world_3d.h"
 #include "scene/resources/packed_scene.h"
 #include "scene/resources/surface_tool.h"
+#include "servers/display/accessibility_server.h"
 
 constexpr real_t DISTANCE_DEFAULT = 4;
 
@@ -9529,8 +9530,8 @@ void Node3DEditor::_notification(int p_what) {
 			ERR_FAIL_COND(ae.is_null());
 
 			//TODO
-			DisplayServer::get_singleton()->accessibility_update_set_role(ae, DisplayServer::AccessibilityRole::ROLE_STATIC_TEXT);
-			DisplayServer::get_singleton()->accessibility_update_set_value(ae, TTR(vformat("The %s is not accessible at this time.", "3D editor")));
+			AccessibilityServer::get_singleton()->update_set_role(ae, AccessibilityServerEnums::AccessibilityRole::ROLE_STATIC_TEXT);
+			AccessibilityServer::get_singleton()->update_set_value(ae, TTR(vformat("The %s is not accessible at this time.", "3D editor")));
 		} break;
 
 		case NOTIFICATION_ENTER_TREE: {

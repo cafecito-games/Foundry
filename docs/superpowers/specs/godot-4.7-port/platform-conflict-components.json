@@ -1,0 +1,236 @@
+[
+ [
+  {
+   "pr": "116354",
+   "sha": "43c9a32b3d46f1333ee80b1e48ae77f8bf04b345",
+   "risk": "low",
+   "files": [
+    "platform/macos/os_macos.mm"
+   ]
+  },
+  {
+   "pr": "116524",
+   "sha": "8f63f6e9561044f16dca9394f8f82ffccc0bc603",
+   "risk": "low",
+   "files": [
+    "platform/macos/os_macos.mm"
+   ]
+  },
+  {
+   "pr": "117335",
+   "sha": "f9a8302c8395db323fdeebcb1d8024b9fc661999",
+   "risk": "low",
+   "files": [
+    "platform/macos/os_macos.mm"
+   ]
+  }
+ ],
+ [
+  {
+   "pr": "117748",
+   "sha": "b0c1084a10f146c31b38a4682572e7483dc514ce",
+   "risk": "low",
+   "files": [
+    "platform/windows/display_server_windows.cpp"
+   ]
+  },
+  {
+   "pr": "118848",
+   "sha": "28200b1bcef26dd54e7e20f568bc7a886864bd09",
+   "risk": "low",
+   "files": [
+    "platform/windows/display_server_windows.cpp"
+   ]
+  },
+  {
+   "pr": "118893",
+   "sha": "ad6ead96a265dd3673e291f4f304ba002a46af72",
+   "risk": "low",
+   "files": [
+    "platform/windows/display_server_windows.cpp"
+   ]
+  }
+ ],
+ [
+  {
+   "pr": "116242",
+   "sha": "e3837c24fd525a24f0c470d39f5c6ba1e69d88a6",
+   "risk": "med",
+   "files": [
+    "platform/macos/display_server_macos.mm"
+   ]
+  },
+  {
+   "pr": "117371",
+   "sha": "b15bc2894f1fa6a88fffe793a2d6989f09234701",
+   "risk": "med",
+   "files": [
+    "platform/macos/display_server_macos.mm"
+   ]
+  }
+ ],
+ [
+  {
+   "pr": "116648",
+   "sha": "915f8dcba73fb92f1428def7774e2790ea5444fc",
+   "risk": "low",
+   "files": [
+    "platform/linuxbsd/wayland/wayland_thread.cpp"
+   ]
+  },
+  {
+   "pr": "118148",
+   "sha": "a987bcc2f598e8b56398fe202b97835b9918e596",
+   "risk": "low",
+   "files": [
+    "platform/linuxbsd/wayland/wayland_thread.cpp"
+   ]
+  }
+ ],
+ [
+  {
+   "pr": "115896",
+   "sha": "521e442754cb263e9789924da1ff62febb733080",
+   "risk": "med",
+   "files": [
+    "platform/linuxbsd/crash_handler_linuxbsd.cpp",
+    "platform/macos/crash_handler_macos.mm",
+    "platform/windows/crash_handler_windows_seh.cpp",
+    "platform/windows/crash_handler_windows_signal.cpp"
+   ]
+  },
+  {
+   "pr": "118676",
+   "sha": "54f1178d3c8fbbaaf5e50a5caa32124430808b84",
+   "risk": "med",
+   "files": [
+    "platform/linuxbsd/crash_handler_linuxbsd.cpp",
+    "platform/macos/crash_handler_macos.mm",
+    "platform/windows/crash_handler_windows_seh.cpp",
+    "platform/windows/crash_handler_windows_signal.cpp"
+   ]
+  }
+ ],
+ [
+  {
+   "pr": "115373",
+   "sha": "d40dd57a9e195133eda8637871be74150e14efe1",
+   "risk": "low",
+   "files": [
+    "platform/windows/native_menu_windows.cpp"
+   ]
+  }
+ ],
+ [
+  {
+   "pr": "115430",
+   "sha": "a1746ee2043538e4cbcd1d846828e4f701759994",
+   "risk": "low",
+   "files": [
+    "platform/windows/os_windows.cpp"
+   ]
+  }
+ ],
+ [
+  {
+   "pr": "115619",
+   "sha": "9005783e770b7ef95b22ba36b19bd587984e7993",
+   "risk": "low",
+   "files": [
+    "platform/macos/godot_content_view.mm"
+   ]
+  }
+ ],
+ [
+  {
+   "pr": "115868",
+   "sha": "a6623908171440f5d485430464b7ed04d85690cb",
+   "risk": "low",
+   "files": [
+    "platform/macos/godot_main_macos.mm"
+   ]
+  }
+ ],
+ [
+  {
+   "pr": "115823",
+   "sha": "65e79f33cb20f1c5c7d270684bb0dcb3958e8024",
+   "risk": "med",
+   "files": [
+    "platform/linuxbsd/wayland/wayland_embedder.cpp",
+    "platform/linuxbsd/wayland/wayland_embedder.h"
+   ]
+  }
+ ],
+ [
+  {
+   "pr": "114521",
+   "sha": "0aa77895ac0153bfd9f6a498dd8c4353a903bf20",
+   "risk": "low",
+   "files": [
+    "platform/linuxbsd/os_linuxbsd.cpp"
+   ]
+  }
+ ],
+ [
+  {
+   "pr": "116724",
+   "sha": "d3e5ba0d6bede3deca88d2b795247da5f5113177",
+   "risk": "low",
+   "files": [
+    "platform/macos/editor/embedded_process_macos.mm"
+   ]
+  }
+ ],
+ [
+  {
+   "pr": "117058",
+   "sha": "1cbe90a1e95b50c82a491aeb333bf3fe3b54dd26",
+   "risk": "low",
+   "files": [
+    "platform/macos/display_server_macos_base.mm"
+   ]
+  }
+ ],
+ [
+  {
+   "pr": "117454",
+   "sha": "ad21e3fbb5e829f3f854bba2792f519018512f03",
+   "risk": "low",
+   "files": [
+    "platform/platform_builders.py"
+   ]
+  }
+ ],
+ [
+  {
+   "pr": "117461",
+   "sha": "9f2688c20454aabef704e7dc4e6fa54d4a7ad6b8",
+   "risk": "low",
+   "files": [
+    "platform/macos/display_server_macos_base.h"
+   ]
+  }
+ ],
+ [
+  {
+   "pr": "117830",
+   "sha": "ab9175302ed30d57f888c35cc20c9641447ccfc6",
+   "risk": "low",
+   "files": [
+    "platform/macos/detect.py",
+    "scene/gui/scroll_container.cpp"
+   ]
+  }
+ ],
+ [
+  {
+   "pr": "119331",
+   "sha": "819cae99f81e37b514ae414e33eb12bbbeb4b68a",
+   "risk": "low",
+   "files": [
+    "platform/linuxbsd/x11/display_server_x11.cpp"
+   ]
+  }
+ ]
+]

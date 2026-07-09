@@ -1,0 +1,310 @@
+[
+ {
+  "sha": "86637357b31405db2a4c709f77bf4378eb4ead51",
+  "pr": "120298",
+  "title": "Jolt Physics: Fix default area parameter updates not propagating to bodies",
+  "subsystem": "modules/jolt_physics",
+  "nfiles": 4
+ },
+ {
+  "sha": "b4156a8833d366eb3c8efadabcb54db409851c96",
+  "pr": "120258",
+  "title": "Jolt: Fix gravity scale not updating when set from code",
+  "subsystem": "modules/jolt_physics",
+  "nfiles": 1
+ },
+ {
+  "sha": "9fae09dbb6da3270d1634400003472fb3971fc1d",
+  "pr": "120243",
+  "title": "Jolt: Remove forced area event queuing during body exit",
+  "subsystem": "modules/jolt_physics",
+  "nfiles": 4
+ },
+ {
+  "sha": "3badc0ee23caf1e5269fe90f8ee17e09d4d2b682",
+  "pr": "119982",
+  "title": "JoltPhysics: Change ConeTwistJoint3D to use cone shaped limits",
+  "subsystem": "modules/jolt_physics",
+  "nfiles": 1
+ },
+ {
+  "sha": "78ff43f99541d404834b363005c81fcecc0919fb",
+  "pr": "119241",
+  "title": "Fix incorrect grid floor position before input in the `GridMap` editor",
+  "subsystem": "modules/gridmap",
+  "nfiles": 2
+ },
+ {
+  "sha": "70dcb2aa848a30853fd8cccd98eb51bca7fd9095",
+  "pr": "118155",
+  "title": "Move the Jolt `body_test_motion` contact filtering to collector",
+  "subsystem": "modules/jolt_physics",
+  "nfiles": 3
+ },
+ {
+  "sha": "05e93d70c1575df52cbfc5e966a63745315bf227",
+  "pr": "119083",
+  "title": "Fix gltf import naming_version mixup",
+  "subsystem": "modules/gltf",
+  "nfiles": 2
+ },
+ {
+  "sha": "9e0e94b944db98f81402e78d645ef9bb1692adb9",
+  "pr": "119007",
+  "title": "Fix `GridMap` editor's grid not showing unless the scene is reopened",
+  "subsystem": "modules/gridmap",
+  "nfiles": 1
+ },
+ {
+  "sha": "c784aa082269a15184b425a558465571cd5ccf3e",
+  "pr": "118948",
+  "title": "Fix Jolt integration not converting planes correctly",
+  "subsystem": "modules/jolt_physics",
+  "nfiles": 1
+ },
+ {
+  "sha": "dfa352d18159f55c52c24b1eabc22e7bb9564cbc",
+  "pr": "118921",
+  "title": "Remove unused FileAccess::create calls in GLTFDocument",
+  "subsystem": "modules/gltf",
+  "nfiles": 1
+ },
+ {
+  "sha": "a3b1272962af8f45da509221e88d63011857cb4f",
+  "pr": "118867",
+  "title": "Improve `GridMap` collider navmesh baking performance when using bake bounds",
+  "subsystem": "modules/gridmap",
+  "nfiles": 2
+ },
+ {
+  "sha": "31aaec1f2bf5cfa87542c2aa1b61ea47c202d96d",
+  "pr": "118546",
+  "title": "EditorSceneFormatImporterGLTF: Fix build with `deprecated=no`",
+  "subsystem": "modules/gltf",
+  "nfiles": 1
+ },
+ {
+  "sha": "87898da27f58a359f3f68135b3cd600baa67ff8f",
+  "pr": "96748",
+  "title": "GLTF: Read material texture \"texCoord\" property on import",
+  "subsystem": "modules/gltf",
+  "nfiles": 6
+ },
+ {
+  "sha": "a4dfadd269739f30ff7087e7cf3946f812198ee4",
+  "pr": "113247",
+  "title": "GLTF: Add `export_get_property_list` to GLTFDocumentExtension",
+  "subsystem": "modules/gltf",
+  "nfiles": 4
+ },
+ {
+  "sha": "85650dea09e4fd76117282c8499c1c7ff0ad642e",
+  "pr": "113129",
+  "title": "Update Blender importer to handle more Vertex Color options",
+  "subsystem": "modules/gltf",
+  "nfiles": 2
+ },
+ {
+  "sha": "78a31b2aec2eb33e2763515ce69cf0d4b278ab0e",
+  "pr": "118280",
+  "title": "Add octant querying to `GridMap`",
+  "subsystem": "modules/gridmap",
+  "nfiles": 4
+ },
+ {
+  "sha": "653fed37e07cd37c5dc741b3959fb07538d1147f",
+  "pr": "118291",
+  "title": "Fix gravity not being initialized properly when using Jolt",
+  "subsystem": "modules/jolt_physics",
+  "nfiles": 1
+ },
+ {
+  "sha": "06ce2079002223080376482b4fac0b3d92bf0ebb",
+  "pr": "118285",
+  "title": "Fix over-removal of area overlaps when using Jolt",
+  "subsystem": "modules/jolt_physics",
+  "nfiles": 1
+ },
+ {
+  "sha": "d261582d25663583f23882e46609fd68a287a04f",
+  "pr": "118197",
+  "title": "Jolt: Update `RigidBody3D` environmental properties more appropriately",
+  "subsystem": "modules/jolt_physics",
+  "nfiles": 9
+ },
+ {
+  "sha": "01006b8c91519a1931e572fb131913f6b4e24a60",
+  "pr": "117947",
+  "title": "glTF: Use safe methods to get data from dictionaries with `get_additional_data`",
+  "subsystem": "modules/gltf",
+  "nfiles": 5
+ },
+ {
+  "sha": "bf055e3bf6fe2ccd9590c9414bd024de4305160b",
+  "pr": "117945",
+  "title": "Add missing properties from `ImporterMeshInstance3D` to `MeshInstance3D` in glTF import extension",
+  "subsystem": "modules/gltf",
+  "nfiles": 1
+ },
+ {
+  "sha": "14d626ec1df7a43b7e9bbac4d2b82fb1c2615287",
+  "pr": "117792",
+  "title": "Make `GridMap` editor show mesh previews as a fallback",
+  "subsystem": "modules/gridmap",
+  "nfiles": 2
+ },
+ {
+  "sha": "8416dbe3d9f52e1349fbad560d58d271f5c1fb19",
+  "pr": "117525",
+  "title": "Make the `GridMap` editor ignore empty and repeated selections",
+  "subsystem": "modules/gridmap",
+  "nfiles": 1
+ },
+ {
+  "sha": "86b84d861b4e2c73450d88d231d3c1f139389e7e",
+  "pr": "117521",
+  "title": "Fix 3D viewport selection getting stuck when editing a `GridMap`",
+  "subsystem": "modules/gridmap",
+  "nfiles": 1
+ },
+ {
+  "sha": "31a8c0904c6fcf2cf86270c389398a3d976bf1e8",
+  "pr": "117378",
+  "title": "Fix mouse wheel zoom scrolling contents in the `GridMap` editor",
+  "subsystem": "modules/gridmap",
+  "nfiles": 1
+ },
+ {
+  "sha": "8415bd710529da70bccde9c5ba8d05e2eee7f7ec",
+  "pr": "116589",
+  "title": "Blender attempts should be incremented to avoid endless loop",
+  "subsystem": "modules/gltf",
+  "nfiles": 1
+ },
+ {
+  "sha": "4bee1639b23d33e648a02abd4c5820f5690f2f08",
+  "pr": "116789",
+  "title": "GLTF: Duplicate extensions at the start of the import and export process",
+  "subsystem": "modules/gltf",
+  "nfiles": 2
+ },
+ {
+  "sha": "83f396d0dd3152a11aaffab58d886c7c7b16b420",
+  "pr": "116973",
+  "title": "Add cursor coordinates to the `GridMap` editor",
+  "subsystem": "modules/gridmap",
+  "nfiles": 2
+ },
+ {
+  "sha": "363de271057ef8fc96a86335e0f48c08ecb2f395",
+  "pr": "116814",
+  "title": "Fix problems with undoing selection and pasting in `GridMap` editor",
+  "subsystem": "modules/gridmap",
+  "nfiles": 2
+ },
+ {
+  "sha": "cac8aad3599692dd5949afedb55204f2959e085c",
+  "pr": "116685",
+  "title": "Add button to clear rotation in the `GridMap` editor",
+  "subsystem": "modules/gridmap",
+  "nfiles": 2
+ },
+ {
+  "sha": "dc5b7d5547e88b05fedb1d4426f483f9bf150a32",
+  "pr": "117117",
+  "title": "Fix no GDScript build fails due to no `class_db.h`",
+  "subsystem": "modules/gltf",
+  "nfiles": 1
+ },
+ {
+  "sha": "c53c5a1f49fa1edf97e6b570297c90a57d30a558",
+  "pr": "116565",
+  "title": "Make possible to undo rotation of selected `GridMap` cells.",
+  "subsystem": "modules/gridmap",
+  "nfiles": 1
+ },
+ {
+  "sha": "d89e19f556acc495f652cadbee9ebb28e2fc3972",
+  "pr": "116683",
+  "title": "Fix wrong rotation of cells while being pasted in the `GridMap` editor",
+  "subsystem": "modules/gridmap",
+  "nfiles": 1
+ },
+ {
+  "sha": "524d2309277eb8c03c6a1d101fe75686946a0d23",
+  "pr": "116546",
+  "title": "Fix undoing `GridMap` move operations resulting in deleted cells",
+  "subsystem": "modules/gridmap",
+  "nfiles": 1
+ },
+ {
+  "sha": "95535167b33975afa4e82228eb71800d36cf51dd",
+  "pr": "116778",
+  "title": "Fix `GridMap` editor pasting when orbiting using the \"Alt\" key",
+  "subsystem": "modules/gridmap",
+  "nfiles": 2
+ },
+ {
+  "sha": "fc572669ded72a4e1844ccae6e7a2a58cdebaa14",
+  "pr": "116555",
+  "title": "Fix some UI issues with the `GridMap` editor",
+  "subsystem": "modules/gridmap",
+  "nfiles": 1
+ },
+ {
+  "sha": "5a5a806eaf22d57a677d63cca96690409a3f8a0f",
+  "pr": "116768",
+  "title": "Tidy some things up in `modules/jolt_physics`",
+  "subsystem": "modules/jolt_physics",
+  "nfiles": 6
+ },
+ {
+  "sha": "a79323e3ec73d1c84f7b24f2cef688eb3dd7f23d",
+  "pr": "116766",
+  "title": "Share one `JoltTempAllocator` instance across all `JoltSpace3D`",
+  "subsystem": "modules/jolt_physics",
+  "nfiles": 4
+ },
+ {
+  "sha": "36dac9c6c97270b0d00560acde6a9793158deb71",
+  "pr": "103005",
+  "title": "Add support for displaying `GridMap` collider in editor",
+  "subsystem": "modules/gridmap",
+  "nfiles": 3
+ },
+ {
+  "sha": "31817ef2ff400778e2b4783ba4c24894ebeac6aa",
+  "pr": "115690",
+  "title": "GLTF: fix value track interpolation",
+  "subsystem": "modules/gltf",
+  "nfiles": 1
+ },
+ {
+  "sha": "4163d3af5a136fe6f13dd7e99f234f00bd414545",
+  "pr": "114198",
+  "title": "Add ability for Area3D to detect/influence SoftBody3D with Jolt Physics",
+  "subsystem": "modules/jolt_physics",
+  "nfiles": 12
+ },
+ {
+  "sha": "6330464fd94a28d61d31106ee8581185113d8ce4",
+  "pr": "116041",
+  "title": "Jolt SoftBody3D: Make default mass 1 kg and fix stiffness conversion",
+  "subsystem": "modules/jolt_physics",
+  "nfiles": 2
+ },
+ {
+  "sha": "15107fda30fcf6c1cafdf7cb579002d7a9e830dd",
+  "pr": "114464",
+  "title": "GLTF: Zero out padding bytes when encoding buffer views",
+  "subsystem": "modules/gltf",
+  "nfiles": 1
+ },
+ {
+  "sha": "5173422b1e3583a9626975c1de88d811884b949e",
+  "pr": "115364",
+  "title": "Fix transform updates sometimes being discarded when using Jolt",
+  "subsystem": "modules/jolt_physics",
+  "nfiles": 1
+ }
+]

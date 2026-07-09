@@ -51,14 +51,6 @@
 #include "scene/gui/separator.h"
 #include "scene/main/window.h"
 
-void GridMapEditor::_configure() {
-	if (!node) {
-		return;
-	}
-
-	update_grid();
-}
-
 void GridMapEditor::_menu_option(int p_option) {
 	switch (p_option) {
 		case MENU_OPTION_PREV_LEVEL: {
@@ -121,13 +113,20 @@ void GridMapEditor::_menu_option(int p_option) {
 				paste_indicator.orientation = node->get_orthogonal_index_from_basis(r);
 				_update_paste_indicator();
 			} else if (_has_selection()) {
+				EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
+				undo_redo->create_action(TTR("GridMap Rotate"));
+
 				Array cells = _get_selected_cells();
 				for (int i = 0; i < cells.size(); i++) {
 					Vector3i cell = cells[i];
 					r = node->get_basis_with_orthogonal_index(node->get_cell_item_orientation(cell));
 					r.rotate(rotation_axis, rotation_angle);
-					node->set_cell_item(cell, node->get_cell_item(cell), node->get_orthogonal_index_from_basis(r));
+					undo_redo->add_do_method(node, "set_cell_item", cell, node->get_cell_item(cell), node->get_orthogonal_index_from_basis(r));
+					undo_redo->add_undo_method(node, "set_cell_item", cell, node->get_cell_item(cell), node->get_cell_item_orientation(cell));
 				}
+
+				undo_redo->commit_action();
+
 			} else {
 				r = node->get_basis_with_orthogonal_index(cursor_rot);
 				r.rotate(rotation_axis, rotation_angle);
@@ -929,7 +928,7 @@ EditorPlugin::AfterGUIInput GridMapEditor::forward_spatial_input_event(Camera3D 
 			if (valid_mb_press && mb->get_button_index() == MouseButton::LEFT) {
 				valid_mb_press = false;
 
-				if (input_action == INPUT_SELECT) {
+				if (input_action == INPUT_SELECT && selection.active && (selection.begin != last_selection.begin || selection.end != last_selection.end)) {
 					EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
 					undo_redo->create_action(TTR("GridMap Selection"));
 					undo_redo->add_do_method(this, "_set_selection", selection.active, selection.begin, selection.end);
@@ -1194,8 +1193,7 @@ void GridMapEditor::update_grid() {
 
 	grid_ofs[edit_axis] = edit_floor[edit_axis] * node->get_cell_size()[edit_axis];
 
-	// If there's a valid tile cursor, offset the grid, otherwise move it back to the node.
-	edit_grid_xform.origin = cursor_instance.is_valid() ? grid_ofs : Vector3();
+	edit_grid_xform.origin = grid_ofs;
 	edit_grid_xform.basis = Basis();
 
 	for (int i = 0; i < 3; i++) {
@@ -1475,7 +1473,6 @@ void GridMapEditor::_floor_mouse_exited() {
 }
 
 void GridMapEditor::_bind_methods() {
-	ClassDB::bind_method("_configure", &GridMapEditor::_configure);
 	ClassDB::bind_method("_set_selection", &GridMapEditor::_set_selection);
 }
 
@@ -1681,6 +1678,7 @@ GridMapEditor::GridMapEditor() {
 
 	search_box = memnew(LineEdit);
 	search_box->add_theme_constant_override("minimum_character_width", 10);
+	search_box->set_h_size_flags(SIZE_EXPAND_FILL);
 	search_box->set_placeholder(TTRC("Filter Meshes"));
 	search_box->set_accessibility_name(TTRC("Filter Meshes"));
 	search_box->set_clear_button_enabled(true);

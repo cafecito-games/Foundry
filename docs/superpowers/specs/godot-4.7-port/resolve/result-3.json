@@ -1,0 +1,152 @@
+[
+  {
+    "pr": "117508",
+    "sha": "bf6ec9141714981cb941e0a71cdb2677bcf39d6e",
+    "outcome": "skipped-incompatible",
+    "note": "Foundry refactored AnimationNodeBlendSpace1D/2D to bind blend-point props via ADD_PROPERTYI + _add_blend_point setter instead of _set/_get/_get_property_list overrides, and its add_blend_point has no name parameter (blend-point names are not serialized). The PR's name-restoration fix depends on symbols absent in Foundry."
+  },
+  {
+    "pr": "118949",
+    "sha": "82ab65b02e07aa1befbe599834f43784c2f2bc5e",
+    "outcome": "skipped-incompatible",
+    "note": "Depends on the AnimationNodeInstance/ProcessState animation architecture (get_child_instance_by_path_or_null, SYNC_MODE_CYCLIC_MUTABLE, p_instance) absent in Foundry's simpler PlaybackInfo-based _process."
+  },
+  {
+    "pr": "119089",
+    "sha": "b4d772626026b7a7289a63903acbd8b604b326ae",
+    "outcome": "skipped-incompatible",
+    "note": "Same ProcessState/AnimationNodeInstance divergence as 118949; the modified _process function does not exist in Foundry's PlaybackInfo model."
+  },
+  {
+    "pr": "119070",
+    "sha": "d3a741d3f7fcd95919361f3067e953c14922f339",
+    "outcome": "skipped-incompatible",
+    "note": "Depends on ProcessState/AnimationNodeInstance _process, BlendPoint::reset(), and name-based animation_node_removed signals absent in Foundry."
+  },
+  {
+    "pr": "115292",
+    "sha": "b268b1013de7e7f17fed4186c0884bb00ad480d6",
+    "outcome": "skipped-empty",
+    "note": "Cherry-pick produced an empty commit; change already present in Foundry (sky.cpp)."
+  },
+  {
+    "pr": "115606",
+    "sha": "6d67a99925fe93b5e5b0c91c51d9740793afed0a",
+    "outcome": "skipped-empty",
+    "note": "Foundry already passes the per-sky border size to _render_sky via a null-safe border_size local (guards sky==nullptr, unlike the PR's raw sky->uv_border_size). Resolution kept HEAD, yielding an empty commit."
+  },
+  {
+    "pr": "115874",
+    "sha": "7e91c61fec8d40f796ea45ac428f07eda428787a",
+    "outcome": "skipped-empty",
+    "note": "Empty commit; change already present in Foundry (sky.cpp)."
+  },
+  {
+    "pr": "115504",
+    "sha": "5385a7ba3822424e289de396feb99b1ced141e59",
+    "outcome": "skipped-empty",
+    "note": "Empty commit; change already present in Foundry (d3d12 rendering device driver)."
+  },
+  {
+    "pr": "118850",
+    "sha": "c3f8f7f04026c5d1603ab8fabf50b0ee700f41eb",
+    "outcome": "skipped-empty",
+    "note": "Empty commit; change already present in Foundry (d3d12 rendering device driver)."
+  },
+  {
+    "pr": "116264",
+    "sha": "383af3f070bfec342055b00d5c602be239d367ec",
+    "outcome": "skipped-empty",
+    "note": "AnimationPlayer deferred-stop/is_stopping fix already ported into Foundry HEAD; only conflict was Foundry's c.current.from vs upstream c.current.is_enabled (kept HEAD). Net empty."
+  },
+  {
+    "pr": "116676",
+    "sha": "6e96b028e10dbe7381bdeecde80fe7492f4b810c",
+    "outcome": "skipped-empty",
+    "note": "safe-finished playback_queue guard already present in Foundry HEAD; Foundry deliberately keeps the deferred-stop approach and removed is_stopping/is_enabled. Only conflict was the from->animation accessor (kept HEAD). Net empty."
+  },
+  {
+    "pr": "118546",
+    "sha": "31aaec1f2bf5cfa87542c2aa1b61ea47c202d96d",
+    "outcome": "skipped-empty",
+    "note": "PR fixes a stale variable in the upstream #else (DISABLE_DEPRECATED) branch of the glTF importer. Foundry has no deprecated split and its single line already uses correct gltf/state names. Kept HEAD; net empty."
+  },
+  {
+    "pr": "119083",
+    "sha": "05e93d70c1575df52cbfc5e966a63745315bf227",
+    "outcome": "skipped-incompatible",
+    "note": "Fixes a typo in handle_compatibility_options for the gltf/texture_map_mode feature. Foundry has no TEXTURE_MAP_MODE enum, no gltf/texture_map_mode option, and no handle_compatibility_options in these importers."
+  },
+  {
+    "pr": "115473",
+    "sha": "101c04cbc9f2dde04e40b5f87946540431e4d5be",
+    "outcome": "skipped-empty",
+    "note": "Cherry-pick produced an empty commit; change already present in Foundry."
+  },
+  {
+    "pr": "116155",
+    "sha": "487896096c731b936545f61480ad040de5b54132",
+    "outcome": "skipped-empty",
+    "note": "Empty commit; change already present in Foundry (shader_compiler.cpp)."
+  },
+  {
+    "pr": "116196",
+    "sha": "a142c2218aa76b46ce99823ccf76926da033a741",
+    "outcome": "skipped-empty",
+    "note": "Empty commit; change already present in Foundry (text_server.cpp)."
+  },
+  {
+    "pr": "116413",
+    "sha": "dd150a38239de059edf12b7e5636ba3dbde28192",
+    "outcome": "skipped-empty",
+    "note": "Empty commit; change already present in Foundry (shader editor / shader_language.h)."
+  },
+  {
+    "pr": "117189",
+    "sha": "5cfccbee34013b14216d753f918ffe1271161d3c",
+    "outcome": "skipped-empty",
+    "note": "Empty commit; change already present in Foundry (light_3d.cpp)."
+  },
+  {
+    "pr": "117401",
+    "sha": "a596178702219099c502db363d86d66c0f8edabe",
+    "outcome": "skipped-empty",
+    "note": "Cherry-pick produced an empty commit; change already present in Foundry."
+  },
+  {
+    "pr": "117879",
+    "sha": "d76390fa365f89bdefa9dff26daaf5980fa8d87a",
+    "outcome": "skipped-empty",
+    "note": "PR moves rendering_server.h / physics_material.h out of NAVIGATION_3D_DISABLED blocks. Foundry already restructured these includes (the moved headers are not in Foundry's nav-disabled blocks; served unconditionally/transitively). Kept HEAD; net empty."
+  },
+  {
+    "pr": "118159",
+    "sha": "d91e97967dab0df8d5547d45bf2b0e6faf40c9ce",
+    "outcome": "skipped-empty",
+    "note": "The length->end / p_start->start fix in track_get_key_indices_in_range is already present in Foundry; only conflict was Foundry's p_indices vs upstream r_indices param name (kept HEAD). Net empty."
+  },
+  {
+    "pr": "118483",
+    "sha": "e7eb8127509e41d0d8a318e05ca311742280e9e1",
+    "outcome": "skipped-empty",
+    "note": "Empty commit; change already present in Foundry (os_unix.cpp)."
+  },
+  {
+    "pr": "119092",
+    "sha": "98bfffa66f8ed3a6ef58e550a1667c2e7771a0a0",
+    "outcome": "resolved",
+    "note": "Applied the FileAccessPack error-reporting intent (Error& out param + error_names in messages) onto Foundry's code. Dropped the incoming sparse-pack pf.salt/path_to_load feature (PackedFile has no salt member in Foundry); kept Foundry's simplified_path open. else/encrypted branches merged cleanly."
+  },
+  {
+    "pr": "119373",
+    "sha": "8075f4250f301b8cf7cf60a3d7fcfbdb33d77dbd",
+    "outcome": "skipped-empty",
+    "note": "PR moves a #endif // DISABLE_DEPRECATED so MOUSE_MODE constants bind unconditionally. Foundry (clean-break, no deprecated blocks) already binds MOUSE_MODE unconditionally and uses a divergent enum set with no DisplayServerEnums namespace. Kept HEAD; net empty."
+  },
+  {
+    "pr": "120300",
+    "sha": "1f92b45db3167896f3a1eac54eae9380c15e2ac0",
+    "outcome": "skipped-incompatible",
+    "note": "Foundry's OpenXR spatial marker tracking is a divergent/older implementation: _process_snapshot takes 2 params (no Callable), marker_trackers is a flat map, discovery/update flow differs. The PR's fix defaults a p_user_callback on a 6-param signature absent in Foundry."
+  }
+]

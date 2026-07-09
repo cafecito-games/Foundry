@@ -1,0 +1,622 @@
+[
+ {
+  "pr": "108830",
+  "sha": "105ec00722827275c881599ff21601821bb2ddc6",
+  "title": "[PCKPacker] Add method to add files from buffer.",
+  "subsystem": "core/io",
+  "nfiles": 4,
+  "orig_risk": "low",
+  "orig_kind": "feature",
+  "orig_rationale": "PCKPacker add-files-from-buffer; API feature across 4 files, non-urgent."
+ },
+ {
+  "pr": "109892",
+  "sha": "1951485a0719e97b36571ae1967b989f242c4a4d",
+  "title": "Bind `Object::ConnectFlags` as a bitfield, instead of enum.",
+  "subsystem": "core/object",
+  "nfiles": 4,
+  "orig_risk": "med",
+  "orig_kind": "refactor",
+  "orig_rationale": "Rebinds ConnectFlags as bitfield; binding/API change affecting docs and callers."
+ },
+ {
+  "pr": "110254",
+  "sha": "d9089dba06c1c207370eab030caee2089e58dcb4",
+  "title": "Image: Support resizing all uncompressed formats",
+  "subsystem": "core/io",
+  "nfiles": 2,
+  "orig_risk": "low",
+  "orig_kind": "feature",
+  "orig_rationale": "Image resize for all uncompressed formats; feature/behavior extension, non-urgent."
+ },
+ {
+  "pr": "111262",
+  "sha": "fc0960188b11946a63e07b5204c83c2e537b86df",
+  "title": "Separate Property and Method Info from Object files",
+  "subsystem": "core/object",
+  "nfiles": 6,
+  "orig_risk": "med",
+  "orig_kind": "refactor",
+  "orig_rationale": "Separates Property/Method info out of object files; compile-structure refactor, 6 files."
+ },
+ {
+  "pr": "111637",
+  "sha": "eb9aa55628c61efac655da4cf6c1ae5dcbdc3527",
+  "title": "Remove `message_queue.h` include from `object.h`.",
+  "subsystem": "core/object",
+  "nfiles": 10,
+  "orig_risk": "med",
+  "orig_kind": "refactor",
+  "orig_rationale": "Removes message_queue.h include from object.h; 10-file include churn."
+ },
+ {
+  "pr": "112035",
+  "sha": "92846d7c3e245c38cf3786ee8cee41df2a7db01d",
+  "title": "Change `new` overloads to use a tag instead of a pointer",
+  "subsystem": "core/os",
+  "nfiles": 3,
+  "orig_risk": "med",
+  "orig_kind": "refactor",
+  "orig_rationale": "Changes new-overload signatures (tag vs pointer); touches memory macros, broad impact."
+ },
+ {
+  "pr": "112459",
+  "sha": "ff9085448e43acd52eea162681aa622d8e65ce5f",
+  "title": "Core: Clean up `Variant` comparison operators",
+  "subsystem": "core/variant",
+  "nfiles": 2,
+  "orig_risk": "med",
+  "orig_kind": "refactor",
+  "orig_rationale": "Cleans up Variant comparison operators; core comparison semantics, validate carefully."
+ },
+ {
+  "pr": "113586",
+  "sha": "422be7031a07cd0dc3d2f61bc4f6596c790e844d",
+  "title": "Move enum registration from `ClassDB` / `ClassInfo` to `GDType`.",
+  "subsystem": "core/object",
+  "nfiles": 10,
+  "orig_risk": "high",
+  "orig_kind": "refactor",
+  "orig_rationale": "Moves enum registration ClassDB/ClassInfo to GDType; large 10-file foundational refactor."
+ },
+ {
+  "pr": "113920",
+  "sha": "58207b516f22a576c4d87e83e6a7555a752d4264",
+  "title": "[SparsePCK] Add support for index encryption.",
+  "subsystem": "core/io",
+  "nfiles": 6,
+  "orig_risk": "med",
+  "orig_kind": "feature",
+  "orig_rationale": "SparsePCK index encryption; export/pack feature across 6 files."
+ },
+ {
+  "pr": "114102",
+  "sha": "013fc6f92aea48edbb650a314b5239bf97158819",
+  "title": "Add tilde symbol (~) to the FileDialog",
+  "subsystem": "core/os",
+  "nfiles": 7,
+  "orig_risk": "low",
+  "orig_kind": "feature",
+  "orig_rationale": "Adds ~ expansion to FileDialog; feature across 7 files, non-urgent."
+ },
+ {
+  "pr": "114131",
+  "sha": "3d2a2d39680a7c0271b0129cce95b09b4be72a78",
+  "title": "Make sure `ScriptLanguage` is initialized even after `init_languages` call",
+  "subsystem": "core/object",
+  "nfiles": 1,
+  "orig_risk": "low",
+  "orig_kind": "bugfix",
+  "orig_rationale": "Ensures ScriptLanguage init after init_languages; may touch Foundry Script init path."
+ },
+ {
+  "pr": "114814",
+  "sha": "131c54270b23609ef9b0e2fd786e1d8c7528d9e3",
+  "title": "Register `ClassDB` singleton already in `Core` initialization level",
+  "subsystem": "core/register_core_types.cpp",
+  "nfiles": 1,
+  "orig_risk": "low",
+  "orig_kind": "refactor",
+  "orig_rationale": "Registers ClassDB singleton at Core init level; init-order change, validate carefully."
+ },
+ {
+  "pr": "114895",
+  "sha": "5e1052839779b2686060bf013798774d994e31f2",
+  "title": "Add support for joypad vibration checking",
+  "subsystem": "core/input",
+  "nfiles": 5,
+  "orig_risk": "low",
+  "orig_kind": "feature",
+  "orig_rationale": "Joypad vibration capability checking; input feature across 5 files."
+ },
+ {
+  "pr": "115119",
+  "sha": "bb1e018314bdb5bccb3d16405c584dd69fe108e9",
+  "title": "Add project setting to ignore joypad events if the app is unfocused",
+  "subsystem": "core/input",
+  "nfiles": 9,
+  "orig_risk": "low",
+  "orig_kind": "feature",
+  "orig_rationale": "Project setting to ignore joypad when unfocused; feature across 9 files."
+ },
+ {
+  "pr": "115157",
+  "sha": "1bb4e60952806546560dafd7620ba3221558117c",
+  "title": "Delegate `Script::reload_from_file` to `ScriptLanguage`",
+  "subsystem": "core/object",
+  "nfiles": 2,
+  "orig_risk": "med",
+  "orig_kind": "refactor",
+  "orig_rationale": "Delegates Script::reload_from_file to ScriptLanguage; may interact with Foundry Script language."
+ },
+ {
+  "pr": "115192",
+  "sha": "22decccd3f50fc0e7a14a44efa797882f59ce1fd",
+  "title": "Add `has_script_method` to `Script` for scripting access",
+  "subsystem": "core/object",
+  "nfiles": 2,
+  "orig_risk": "low",
+  "orig_kind": "feature",
+  "orig_rationale": "Adds Script.has_script_method; may interact with Foundry Script, low urgency."
+ },
+ {
+  "pr": "115450",
+  "sha": "d48f9d45e274f2532364d28bb321946d8d91424c",
+  "title": "Fix TLS handshake fail preventing AssetLib use with `builtin_certs=no`",
+  "subsystem": "core/core_builders.py",
+  "nfiles": 1,
+  "orig_risk": "low",
+  "orig_kind": "bugfix",
+  "orig_rationale": "TLS handshake fix with builtin_certs=no; underlying cert fix useful though tied to removed AssetLib."
+ },
+ {
+  "pr": "115569",
+  "sha": "2725c636caa9983687101917a822ad5ee7cbc470",
+  "title": "Fix `script_language_extension.cpp` compilation with `deprecated=no`",
+  "subsystem": "core/object",
+  "nfiles": 1,
+  "orig_risk": "low",
+  "orig_kind": "bugfix",
+  "orig_rationale": "Fixes script_language_extension.cpp build with deprecated=no; build-config fix."
+ },
+ {
+  "pr": "115570",
+  "sha": "b621b9ea5a7d81f94a5e9155013626f28922ce09",
+  "title": "Do not include `input_enums.h` and `keyboard.h` from `variant.h` and `binder_common.h`",
+  "subsystem": "core/variant",
+  "nfiles": 4,
+  "orig_risk": "low",
+  "orig_kind": "refactor",
+  "orig_rationale": "Drops input_enums/keyboard includes from variant.h/binder_common.h; include hygiene, 4 files."
+ },
+ {
+  "pr": "115639",
+  "sha": "5b75d2539b69191a46ddf88d9eaf8340a97174a1",
+  "title": "Minimize includes from `gdvirtual.gen.inc` / `script_instance.h`, to improve compile time",
+  "subsystem": "core/object",
+  "nfiles": 5,
+  "orig_risk": "low",
+  "orig_kind": "refactor",
+  "orig_rationale": "Minimizes gdvirtual/script_instance includes; compile-time refactor, 5 files."
+ },
+ {
+  "pr": "116261",
+  "sha": "9fc90a0441fea4baa62784f241d4449b9258e919",
+  "title": "[String] Allow using Java style `%[arg$]` prefix in `sprintf`.",
+  "subsystem": "core/string",
+  "nfiles": 2,
+  "orig_risk": "low",
+  "orig_kind": "feature",
+  "orig_rationale": "Adds Java-style positional args to sprintf; string feature, non-urgent."
+ },
+ {
+  "pr": "116284",
+  "sha": "96a2994b216031699e30e1be7b797ee32ce67559",
+  "title": "Add move semantics to `HashSet`.",
+  "subsystem": "core/templates",
+  "nfiles": 1,
+  "orig_risk": "low",
+  "orig_kind": "perf",
+  "orig_rationale": "Adds move semantics to HashSet; single-file perf refactor, non-urgent."
+ },
+ {
+  "pr": "116418",
+  "sha": "bcbdd73ab9efbdfb7426fb7db1ab519eba37734f",
+  "title": "Input: Add SDL `misc2`-`misc6` gamepad button constants",
+  "subsystem": "core/input",
+  "nfiles": 4,
+  "orig_risk": "low",
+  "orig_kind": "feature",
+  "orig_rationale": "Adds SDL misc2-misc6 gamepad button constants; enum additions, non-urgent."
+ },
+ {
+  "pr": "116539",
+  "sha": "0df713417b6b7f4ba077923fde624691c3f19014",
+  "title": "Include some headers explicitly in some important spots, to estimate include costs better.",
+  "subsystem": "core/object",
+  "nfiles": 4,
+  "orig_risk": "low",
+  "orig_kind": "refactor",
+  "orig_rationale": "Adds explicit includes to gauge compile costs; measurement refactor, low value."
+ },
+ {
+  "pr": "116541",
+  "sha": "9a19d32fdbd7c4d1f76afc2fec15055f00dfbc31",
+  "title": "Move variant pools to their own compile unit.",
+  "subsystem": "core/variant",
+  "nfiles": 11,
+  "orig_risk": "med",
+  "orig_kind": "refactor",
+  "orig_rationale": "Moves variant pools to own compile unit; 11-file structural refactor."
+ },
+ {
+  "pr": "116542",
+  "sha": "a3e84cc2af14aa4cffbefd8e13492e59567a64e3",
+  "title": "Move char ranges from `char_range.inc` to `char_range.cpp` (non-constexpr)",
+  "subsystem": "core/string",
+  "nfiles": 4,
+  "orig_risk": "low",
+  "orig_kind": "refactor",
+  "orig_rationale": "Moves char ranges to non-constexpr cpp; compile-time refactor, low value."
+ },
+ {
+  "pr": "116552",
+  "sha": "2829092a2a121bac86bf7c4c6360e39978ede1ea",
+  "title": "Add move semantics to `RBMap` and `RBSet`. Make their copy constructors explicit.",
+  "subsystem": "core/templates",
+  "nfiles": 6,
+  "orig_risk": "med",
+  "orig_kind": "refactor",
+  "orig_rationale": "Move semantics + explicit copy ctors for RBMap/RBSet; explicit ctor could break fork callers."
+ },
+ {
+  "pr": "116553",
+  "sha": "da0c029cfecbbd588c1b3f0c130ae359ba2c970e",
+  "title": "Allow providing Android APK/AAB as base packs for patch PCKs",
+  "subsystem": "core/io",
+  "nfiles": 8,
+  "orig_risk": "med",
+  "orig_kind": "feature",
+  "orig_rationale": "Android APK/AAB as base packs for patch PCKs; export feature across 8 files."
+ },
+ {
+  "pr": "116693",
+  "sha": "a048ea0ffec5492e690ecebcbb35f19196addb0f",
+  "title": "Windows: Add `windows.h` drop-in wrapper header",
+  "subsystem": "core/typedefs.h",
+  "nfiles": 2,
+  "orig_risk": "low",
+  "orig_kind": "platform",
+  "orig_rationale": "Windows windows.h wrapper header; platform housekeeping, non-urgent."
+ },
+ {
+  "pr": "116731",
+  "sha": "2e7fbae506ec164d4dec13756b855e2bbd58e2d6",
+  "title": "Core: Add missing integral conversions to `Variant`",
+  "subsystem": "core/variant",
+  "nfiles": 5,
+  "orig_risk": "med",
+  "orig_kind": "feature",
+  "orig_rationale": "Adds integral conversions to Variant; touches conversion tables, coordinate carefully."
+ },
+ {
+  "pr": "116737",
+  "sha": "6cccb37f2ef2676f47052cff028a7cbbd59c9a98",
+  "title": "Core: Remove `class_db.h` include from `ref_counted.h`",
+  "subsystem": "core/io",
+  "nfiles": 48,
+  "orig_risk": "high",
+  "orig_kind": "refactor",
+  "orig_rationale": "Removes class_db.h include from ref_counted.h across 48 files; broad include churn."
+ },
+ {
+  "pr": "116776",
+  "sha": "14fcc7132ef1eb6fcefb20a6e858e5dfb3b1457e",
+  "title": "Autocompletion: Don't hide certain setters and getters",
+  "subsystem": "core/object",
+  "nfiles": 1,
+  "orig_risk": "low",
+  "orig_kind": "bugfix",
+  "orig_rationale": "Autocomplete no longer hides some setters/getters; may interact with fork completion logic."
+ },
+ {
+  "pr": "117010",
+  "sha": "656a268688cbb03723bb82116da7eb5b83989720",
+  "title": "[Windows] Show drive names in file dialog.",
+  "subsystem": "core/io",
+  "nfiles": 7,
+  "orig_risk": "low",
+  "orig_kind": "feature",
+  "orig_rationale": "Windows file-dialog drive names; platform feature, non-urgent."
+ },
+ {
+  "pr": "117087",
+  "sha": "c7dd32929369947876dbf0fdf798b0743b01c7ba",
+  "title": "Split `VariantCaster` from `binder_common.h`",
+  "subsystem": "core/io",
+  "nfiles": 39,
+  "orig_risk": "high",
+  "orig_kind": "refactor",
+  "orig_rationale": "Splits VariantCaster across 39 files; broad include refactor, high conflict."
+ },
+ {
+  "pr": "117160",
+  "sha": "e8b9abba7cf61fab50de25bf45d3ac65eee4d7cf",
+  "title": "Add `Variant::get_type_by_name` to GDExtension Interface",
+  "subsystem": "core/extension",
+  "nfiles": 2,
+  "orig_risk": "low",
+  "orig_kind": "feature",
+  "orig_rationale": "Adds Variant::get_type_by_name to GDExtension interface; API addition."
+ },
+ {
+  "pr": "117474",
+  "sha": "4e7fefbf6217f6440534e47f4b6e1742bd619fb5",
+  "title": "Move signal ownership from `ClassDB` to `GDType`",
+  "subsystem": "core/object",
+  "nfiles": 8,
+  "orig_risk": "high",
+  "orig_kind": "refactor",
+  "orig_rationale": "Large signal-ownership migration ClassDB to GDType; 8 files, foundational refactor series."
+ },
+ {
+  "pr": "117511",
+  "sha": "c9e87de0422c5791d558c231c32e350238c1bd90",
+  "title": "Improve thread-safety of `Object` signals",
+  "subsystem": "core/object",
+  "nfiles": 2,
+  "orig_risk": "med",
+  "orig_kind": "bugfix",
+  "orig_rationale": "Improves Object signal thread-safety; valuable but concurrency-sensitive, may tie to GDType series."
+ },
+ {
+  "pr": "117575",
+  "sha": "aa73f2c43fa10f3b122167bf0dcb7f2f75358eff",
+  "title": "Integrate `GDType` signal ownership into `Object`, exchanging use of `ClassDB`",
+  "subsystem": "core/object",
+  "nfiles": 1,
+  "orig_risk": "med",
+  "orig_kind": "refactor",
+  "orig_rationale": "Moves signal ownership into Object via GDType; part of large GDType migration."
+ },
+ {
+  "pr": "117583",
+  "sha": "09437400e060ded26937152ec071aa6d9d0493c0",
+  "title": "Use `TRACY_ON_DEMAND` by default for Tracy integration",
+  "subsystem": "core/profiling",
+  "nfiles": 3,
+  "orig_risk": "low",
+  "orig_kind": "other",
+  "orig_rationale": "Tracy on-demand default; profiling config, low priority."
+ },
+ {
+  "pr": "117597",
+  "sha": "d385b9e608253bb40400103eddc8b311b7167ea5",
+  "title": "Core: Split `method_bind_common.h` from `method_bind.h`",
+  "subsystem": "core/object",
+  "nfiles": 5,
+  "orig_risk": "low",
+  "orig_kind": "refactor",
+  "orig_rationale": "Splits method_bind_common.h; include reorganization, low value."
+ },
+ {
+  "pr": "117790",
+  "sha": "a803a436a01c20934bcd3158c3dc5b9c8153148d",
+  "title": "Only print to stdio before setup and during/after cleanup",
+  "subsystem": "core/core_globals.h",
+  "nfiles": 4,
+  "orig_risk": "med",
+  "orig_kind": "other",
+  "orig_rationale": "Changes stdio print gating around setup/cleanup; behavior change across 4 files."
+ },
+ {
+  "pr": "117800",
+  "sha": "803c6df71af4bb4caba3153c275374e85a4fbb03",
+  "title": "Add support for saving HDR screenshots to `Image.save_exr` functions.",
+  "subsystem": "core/io",
+  "nfiles": 7,
+  "orig_risk": "low",
+  "orig_kind": "feature",
+  "orig_rationale": "HDR EXR screenshot saving; feature spanning 7 files, non-urgent."
+ },
+ {
+  "pr": "117801",
+  "sha": "ed86445bcb36b2e11ba572294f815448864dbade",
+  "title": "`RWLock`: use C++17's `shared_mutex` instead of timed variant",
+  "subsystem": "core/os",
+  "nfiles": 1,
+  "orig_risk": "med",
+  "orig_kind": "refactor",
+  "orig_rationale": "RWLock switched to std shared_mutex; concurrency primitive change, validate carefully."
+ },
+ {
+  "pr": "117892",
+  "sha": "c3fdf826026d18403f905bf38b88e846902a26b8",
+  "title": "Use class name instead of Object ID in `Debugger`",
+  "subsystem": "core/debugger",
+  "nfiles": 6,
+  "orig_risk": "low",
+  "orig_kind": "refactor",
+  "orig_rationale": "Debugger uses class name over Object ID; minor readability change, 6 files."
+ },
+ {
+  "pr": "118214",
+  "sha": "8f7bdc1722740286b3f01cda25523cd0961d6f69",
+  "title": "Add `classdb_construct_object3` and `classdb_register_extension_class6` (refcount-aware inits)",
+  "subsystem": "core/object",
+  "nfiles": 9,
+  "orig_risk": "med",
+  "orig_kind": "feature",
+  "orig_rationale": "New refcount-aware GDExtension construct/register APIs; large 9-file interface addition."
+ },
+ {
+  "pr": "118503",
+  "sha": "3f63a400fa8f454b09f12201152025c1805b3df5",
+  "title": "Hook up `perfetto` script and frame profiling logic",
+  "subsystem": "core/profiling",
+  "nfiles": 1,
+  "orig_risk": "low",
+  "orig_kind": "feature",
+  "orig_rationale": "Perfetto profiling hookup; tooling-only, low priority."
+ },
+ {
+  "pr": "118514",
+  "sha": "8d80b74623f59b4b1a5794581df3cb51f6f3e455",
+  "title": "Remove unused and broken big endian support code.",
+  "subsystem": "core/io",
+  "nfiles": 10,
+  "orig_risk": "med",
+  "orig_kind": "refactor",
+  "orig_rationale": "Removes big-endian support across 10 files; broad cleanup, no urgency."
+ },
+ {
+  "pr": "118548",
+  "sha": "5651d1c40750eff03e12f609098c335eefdaef81",
+  "title": "GDExtension: Use real GDType in placeholder",
+  "subsystem": "core/object",
+  "nfiles": 1,
+  "orig_risk": "med",
+  "orig_kind": "refactor",
+  "orig_rationale": "GDExtension placeholder GDType change; part of GDType placeholder series."
+ },
+ {
+  "pr": "118563",
+  "sha": "81cecf018b0ab5ce648e9834a76fd88b20de2602",
+  "title": "Finish mapping missing deprecated types for GDExtension",
+  "subsystem": "core/extension",
+  "nfiles": 1,
+  "orig_risk": "low",
+  "orig_kind": "feature",
+  "orig_rationale": "GDExtension deprecated-type mapping completion; interface housekeeping."
+ },
+ {
+  "pr": "118582",
+  "sha": "66dd6fe737dd6b1b275ea4d23869aa16a379e500",
+  "title": "Change `Object::is_class` to take `StringName` instead of `String`, for better performance",
+  "subsystem": "core/object",
+  "nfiles": 5,
+  "orig_risk": "med",
+  "orig_kind": "perf",
+  "orig_rationale": "is_class takes StringName; signature change touches many callers, coordinate with cast series."
+ },
+ {
+  "pr": "118597",
+  "sha": "4fe68a9ed4a27047e8b5eab15765430c9cef4610",
+  "title": "Build: Remove redundant SCons environment clones",
+  "subsystem": "core/config",
+  "nfiles": 8,
+  "orig_risk": "low",
+  "orig_kind": "refactor",
+  "orig_rationale": "SCons env-clone cleanup; build-only, low value."
+ },
+ {
+  "pr": "118750",
+  "sha": "b2b661d3bcff045e95d25005e96473b77b23a9bc",
+  "title": "GDExtension: Clean up types for new `classdb_register_extension_class6`",
+  "subsystem": "core/extension",
+  "nfiles": 3,
+  "orig_risk": "med",
+  "orig_kind": "refactor",
+  "orig_rationale": "Cleanup for new classdb_register_extension_class6; depends on 118214 GDExtension series."
+ },
+ {
+  "pr": "118757",
+  "sha": "f83a2e37426ee6741413e2002948623bc001b54b",
+  "title": "GDExtension: Don't `memdelete(gdtype)` on placeholders",
+  "subsystem": "core/object",
+  "nfiles": 1,
+  "orig_risk": "med",
+  "orig_kind": "bugfix",
+  "orig_rationale": "GDExtension placeholder memory fix; tied to GDType placeholder series."
+ },
+ {
+  "pr": "118773",
+  "sha": "e91640c755044a4c6bd4ff6605b4db02d61095d3",
+  "title": "GDExtension: Use `create_instance3` for placeholder classes",
+  "subsystem": "core/object",
+  "nfiles": 1,
+  "orig_risk": "med",
+  "orig_kind": "refactor",
+  "orig_rationale": "GDExtension placeholder uses create_instance3; part of GDType/GDExtension series."
+ },
+ {
+  "pr": "118796",
+  "sha": "0e2564465542b3201e507f1fda6f749772fcf36b",
+  "title": "Buildsystem: Simplify `format_buffer` utility method",
+  "subsystem": "core/core_builders.py",
+  "nfiles": 8,
+  "orig_risk": "low",
+  "orig_kind": "refactor",
+  "orig_rationale": "Build-system format_buffer cleanup; low value, not urgent."
+ },
+ {
+  "pr": "119254",
+  "sha": "303364492042fbd7a3562ff8f4ddbad85c168bfd",
+  "title": "Deprecate GDExtension's `object_cast_to` and `classdb_get_class_tag`, in favour of `is_class` casts.",
+  "subsystem": "core/extension",
+  "nfiles": 2,
+  "orig_risk": "med",
+  "orig_kind": "feature",
+  "orig_rationale": "GDExtension API deprecation; interface-level change, low urgency."
+ },
+ {
+  "pr": "119429",
+  "sha": "0c08cfb5d7a6ac57ba60282dcafd9cffabf94bb4",
+  "title": "Phase out `RefCounted` singletons as UB pitfalls",
+  "subsystem": "core/config",
+  "nfiles": 1,
+  "orig_risk": "med",
+  "orig_kind": "refactor",
+  "orig_rationale": "Phasing out RefCounted singletons is a design change touching config init patterns."
+ },
+ {
+  "pr": "120072",
+  "sha": "3df26a02c446710c979daa541b74f87edeca81b0",
+  "title": "Fix a deadlock in WorkerThreadPool",
+  "subsystem": "core/object",
+  "nfiles": 1,
+  "orig_risk": "med",
+  "orig_kind": "bugfix",
+  "orig_rationale": "WorkerThreadPool deadlock fix partly reverted upstream; concurrency-sensitive, port the whole cluster together."
+ },
+ {
+  "pr": "120111",
+  "sha": "9d876745b311044790cf6025095544ae7107d913",
+  "title": "Don't flush the message queue before a MainLoop is iterating",
+  "subsystem": "core/object",
+  "nfiles": 2,
+  "orig_risk": "med",
+  "orig_kind": "bugfix",
+  "orig_rationale": "Message-queue flush timing fix tied to the WTP deadlock/revert series; sequence carefully."
+ },
+ {
+  "pr": "120250",
+  "sha": "df6235838b63dd49f448547406e339848455c140",
+  "title": "Revert \"Fix a deadlock in WorkerThreadPool\"",
+  "subsystem": "core/object",
+  "nfiles": 3,
+  "orig_risk": "med",
+  "orig_kind": "other",
+  "orig_rationale": "Revert in churny WorkerThreadPool/message-queue deadlock series; must be evaluated with 120072/120111 together."
+ },
+ {
+  "pr": "92984",
+  "sha": "371282b28e6947ae0bbc53c94a1a02ba7c191ccd",
+  "title": "Customize the file manager label for each platform",
+  "subsystem": "core/os",
+  "nfiles": 11,
+  "orig_risk": "low",
+  "orig_kind": "feature",
+  "orig_rationale": "Per-platform file-manager label; feature across 11 files, cosmetic."
+ },
+ {
+  "pr": "94062",
+  "sha": "071b605cdd61bc5cafd69a3ced0669c7c20a5462",
+  "title": "Core: Mark property `script` as internal",
+  "subsystem": "core/object",
+  "nfiles": 2,
+  "orig_risk": "low",
+  "orig_kind": "refactor",
+  "orig_rationale": "Marks 'script' property internal; may interact with fork inspector/script surfaces."
+ }
+]

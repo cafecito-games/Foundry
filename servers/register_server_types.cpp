@@ -56,6 +56,7 @@
 #include "camera/camera_feed.h"
 #include "camera/camera_server.h"
 #include "debugger/servers_debugger.h"
+#include "display/accessibility_server.h"
 #include "display/display_server.h"
 #include "display/native_menu.h"
 #include "movie_writer/movie_writer.h"
@@ -150,6 +151,7 @@ void register_server_types() {
 
 	OS::get_singleton()->set_has_server_feature_callback(has_server_feature_callback);
 
+	FOUNDRY_REGISTER_ABSTRACT_CLASS(AccessibilityServer);
 	FOUNDRY_REGISTER_ABSTRACT_CLASS(DisplayServer);
 	FOUNDRY_REGISTER_ABSTRACT_CLASS(RenderingServer);
 	FOUNDRY_REGISTER_CLASS(AudioServer);
@@ -230,6 +232,10 @@ void register_server_types() {
 	FOUNDRY_REGISTER_CLASS(RDShaderSPIRV);
 	FOUNDRY_REGISTER_CLASS(RDShaderFile);
 	FOUNDRY_REGISTER_CLASS(RDPipelineSpecializationConstant);
+	FOUNDRY_REGISTER_CLASS(RDAccelerationStructureGeometry);
+	FOUNDRY_REGISTER_CLASS(RDAccelerationStructureInstance);
+	FOUNDRY_REGISTER_CLASS(RDPipelineShader);
+	FOUNDRY_REGISTER_CLASS(RDHitGroup);
 
 	FOUNDRY_REGISTER_ABSTRACT_CLASS(RenderData);
 	FOUNDRY_REGISTER_CLASS(RenderDataExtension);
@@ -374,6 +380,7 @@ void unregister_server_types() {
 void register_server_singletons() {
 	OS::get_singleton()->benchmark_begin_measure("Servers", "Register Singletons");
 
+	Engine::get_singleton()->add_singleton(Engine::Singleton("AccessibilityServer", AccessibilityServer::get_singleton(), "AccessibilityServer"));
 	Engine::get_singleton()->add_singleton(Engine::Singleton("AudioServer", AudioServer::get_singleton(), "AudioServer"));
 	Engine::get_singleton()->add_singleton(Engine::Singleton("CameraServer", CameraServer::get_singleton(), "CameraServer"));
 	Engine::get_singleton()->add_singleton(Engine::Singleton("DisplayServer", DisplayServer::get_singleton(), "DisplayServer"));

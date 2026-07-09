@@ -44,7 +44,8 @@
 #include "core/version.h"
 #include "drivers/png/png_driver_common.h"
 #include "main/main.h"
-
+#include "servers/display/accessibility_server.h"
+#include "servers/display/native_menu.h"
 #include "servers/rendering/dummy/rasterizer_dummy.h"
 
 #if defined(VULKAN_ENABLED)
@@ -53,10 +54,6 @@
 
 #if defined(GLES3_ENABLED)
 #include "drivers/gles3/rasterizer_gles3.h"
-#endif
-
-#ifdef ACCESSKIT_ENABLED
-#include "drivers/accesskit/accessibility_driver_accesskit.h"
 #endif
 
 #ifdef DBUS_ENABLED
@@ -199,11 +196,9 @@ bool DisplayServerX11::has_feature(Feature p_feature) const {
 		} break;
 #endif
 
-#ifdef ACCESSKIT_ENABLED
 		case FEATURE_ACCESSIBILITY_SCREEN_READER: {
-			return (accessibility_driver != nullptr);
+			return AccessibilityServer::get_singleton()->is_supported();
 		} break;
-#endif
 
 		default: {
 			return false;
@@ -2073,11 +2068,7 @@ void DisplayServerX11::delete_sub_window(WindowID p_id) {
 	}
 #endif
 
-#ifdef ACCESSKIT_ENABLED
-	if (accessibility_driver) {
-		accessibility_driver->window_destroy(p_id);
-	}
-#endif
+	AccessibilityServer::get_singleton()->window_destroy(p_id);
 
 	if (wd.xic) {
 		XDestroyIC(wd.xic);
@@ -4376,6 +4367,7 @@ void DisplayServerX11::_xim_destroy_callback(::XIM im, ::XPointer client_data,
 
 	for (KeyValue<WindowID, WindowData> &E : ds->windows) {
 		E.value.xic = nullptr;
+		E.value.ime_active = false;
 	}
 }
 
@@ -4770,6 +4762,9 @@ void DisplayServerX11::process_events() {
 					OS::get_singleton()->get_main_loop()->notification(MainLoop::NOTIFICATION_APPLICATION_FOCUS_OUT);
 				}
 				app_focused = false;
+
+				// Release pressed events here instead of FocusOut because it's a no-op until NOTIFICATION_APPLICATION_FOCUS_OUT is processed.
+				Input::get_singleton()->release_pressed_events();
 			}
 		} else {
 			time_since_no_focus = OS::get_singleton()->get_ticks_msec();
@@ -5079,11 +5074,7 @@ void DisplayServerX11::process_events() {
 				static unsigned int focus_order = 0;
 				wd.focus_order = ++focus_order;
 
-#ifdef ACCESSKIT_ENABLED
-				if (accessibility_driver) {
-					accessibility_driver->accessibility_set_window_focused(window_id, true);
-				}
-#endif
+				AccessibilityServer::get_singleton()->set_window_focused(window_id, true);
 				_send_window_event(wd, WINDOW_EVENT_FOCUS_IN);
 
 				if (mouse_mode_grab) {
@@ -5134,12 +5125,7 @@ void DisplayServerX11::process_events() {
 				}
 				wd.focused = false;
 
-				Input::get_singleton()->release_pressed_events();
-#ifdef ACCESSKIT_ENABLED
-				if (accessibility_driver) {
-					accessibility_driver->accessibility_set_window_focused(window_id, false);
-				}
-#endif
+				AccessibilityServer::get_singleton()->set_window_focused(window_id, false);
 				_send_window_event(wd, WINDOW_EVENT_FOCUS_OUT);
 
 				if (mouse_mode_grab) {
@@ -6000,6 +5986,9 @@ Window find_window_from_process_id(Display *p_display, pid_t p_process_id) {
 		}
 	}
 
+	// Suppress any pending bad window errors.
+	XSync(p_display, False);
+
 	// Restore default error handler.
 	XSetErrorHandler(oldHandler);
 
@@ -6049,6 +6038,9 @@ Error DisplayServerX11::embed_process(WindowID p_window, OS::ProcessID p_pid, co
 
 	DEBUG_LOG_X11("Starting embedding %ld to window %lu \n", p_pid, wd.x11_window);
 
+	// Handle bad window errors silently because the embedded window may be closed at any time.
+	int (*oldHandler)(Display *, XErrorEvent *) = XSetErrorHandler(&bad_window_error_handler);
+
 	EmbeddedProcessData *ep = nullptr;
 	if (embedded_processes.has(p_pid)) {
 		ep = embedded_processes.get(p_pid);
@@ -6056,6 +6048,8 @@ Error DisplayServerX11::embed_process(WindowID p_window, OS::ProcessID p_pid, co
 		// New process, trying to find the window.
 		Window process_window = find_window_from_process_id(x11_display, p_pid);
 		if (!process_window) {
+			XSync(x11_display, False);
+			XSetErrorHandler(oldHandler);
 			return ERR_DOES_NOT_EXIST;
 		}
 		DEBUG_LOG_X11("Process %ld window found: %lu \n", p_pid, process_window);
@@ -6066,9 +6060,6 @@ Error DisplayServerX11::embed_process(WindowID p_window, OS::ProcessID p_pid, co
 		_set_window_taskbar_pager_enabled(process_window, false);
 		embedded_processes.insert(p_pid, ep);
 	}
-
-	// Handle bad window errors silently because just in case the embedded window was closed.
-	int (*oldHandler)(Display *, XErrorEvent *) = XSetErrorHandler(&bad_window_error_handler);
 
 	if (p_visible) {
 		// Resize and move the window to match the desired rectangle.
@@ -6171,6 +6162,9 @@ Error DisplayServerX11::embed_process(WindowID p_window, OS::ProcessID p_pid, co
 		}
 	}
 
+	// Suppress any pending bad window errors.
+	XSync(x11_display, False);
+
 	// Restore default error handler.
 	XSetErrorHandler(oldHandler);
 	return OK;
@@ -6202,6 +6196,9 @@ Error DisplayServerX11::request_close_embedded_process(OS::ProcessID p_pid) {
 		ev.xclient.data.l[1] = CurrentTime;
 		XSendEvent(x11_display, ep->process_window, False, NoEventMask, &ev);
 	}
+
+	// Suppress any pending bad window errors.
+	XSync(x11_display, False);
 
 	// Restore default error handler.
 	XSetErrorHandler(oldHandler);
@@ -6464,15 +6461,11 @@ DisplayServerX11::WindowID DisplayServerX11::_create_window(WindowMode p_mode, V
 			wd.xkb_state = xkb_compose_state_new(dead_tbl, XKB_COMPOSE_STATE_NO_FLAGS);
 		}
 #endif
-#ifdef ACCESSKIT_ENABLED
-		if (accessibility_driver && !accessibility_driver->window_create(id, nullptr)) {
+		if (!AccessibilityServer::get_singleton()->window_create(id, nullptr)) {
 			if (OS::get_singleton()->is_stdout_verbose()) {
 				ERR_PRINT("Can't create an accessibility adapter for window, accessibility support disabled!");
 			}
-			memdelete(accessibility_driver);
-			accessibility_driver = nullptr;
 		}
-#endif
 		// Enable receiving notification when the window is initialized (MapNotify)
 		// so the focus can be set at the right time.
 		if (!wd.no_focus && !wd.is_popup) {
@@ -7000,16 +6993,6 @@ DisplayServerX11::DisplayServerX11(const String &p_rendering_driver, WindowMode 
 	}
 #endif
 
-#ifdef ACCESSKIT_ENABLED
-	if (accessibility_get_mode() != DisplayServer::AccessibilityMode::ACCESSIBILITY_DISABLED) {
-		accessibility_driver = memnew(AccessibilityDriverAccessKit);
-		if (accessibility_driver->init() != OK) {
-			memdelete(accessibility_driver);
-			accessibility_driver = nullptr;
-		}
-	}
-#endif
-
 	//!!!!!!!!!!!!!!!!!!!!!!!!!!
 	//TODO - do Vulkan and OpenGL support checks, driver selection and fallback
 	rendering_driver = p_rendering_driver;
@@ -7418,11 +7401,7 @@ DisplayServerX11::~DisplayServerX11() {
 		}
 #endif
 
-#ifdef ACCESSKIT_ENABLED
-		if (accessibility_driver) {
-			accessibility_driver->window_destroy(E.key);
-		}
-#endif
+		AccessibilityServer::get_singleton()->window_destroy(E.key);
 
 		WindowData &wd = E.value;
 		if (wd.xic) {
@@ -7498,11 +7477,7 @@ DisplayServerX11::~DisplayServerX11() {
 	if (xmbstring) {
 		memfree(xmbstring);
 	}
-#ifdef ACCESSKIT_ENABLED
-	if (accessibility_driver) {
-		memdelete(accessibility_driver);
-	}
-#endif
+
 #ifdef SPEECHD_ENABLED
 	if (tts) {
 		memdelete(tts);

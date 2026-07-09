@@ -640,7 +640,8 @@ bool AnimationTree::_blend_pre_process(double p_delta, int p_track_count, const 
 	_update_properties(); // If properties need updating, update them.
 
 	if (root_animation_node.is_null()) {
-		return false;
+		process_state = AnimationNode::ProcessState();
+		return false; // Abort after _update_properties() and init process_state.
 	}
 
 	{ // Setup.
@@ -751,7 +752,7 @@ void AnimationTree::_animation_node_renamed(const ObjectID &p_oid, const String 
 
 void AnimationTree::_animation_node_removed(const ObjectID &p_oid, const StringName &p_node) {
 	ERR_FAIL_COND(!property_reference_map.has(p_oid));
-	String base_path = String(property_reference_map[p_oid]) + String(p_node);
+	String base_path = String(property_reference_map[p_oid]) + String(p_node) + "/";
 	for (const PropertyInfo &E : properties) {
 		if (E.name.begins_with(base_path)) {
 			property_map.erase(E.name);
@@ -1005,7 +1006,7 @@ void AnimationTree::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::NODE_PATH, "advance_expression_base_node", PROPERTY_HINT_NODE_PATH_VALID_TYPES, "Node"), "set_advance_expression_base_node", "get_advance_expression_base_node");
 	ADD_PROPERTY(PropertyInfo(Variant::NODE_PATH, "anim_player", PROPERTY_HINT_NODE_PATH_VALID_TYPES, "AnimationPlayer"), "set_animation_player", "get_animation_player");
 
-	ADD_SIGNAL(MethodInfo(SNAME("animation_player_changed")));
+	ADD_SIGNAL(MethodInfo("animation_player_changed"));
 }
 
 AnimationTree::AnimationTree() {

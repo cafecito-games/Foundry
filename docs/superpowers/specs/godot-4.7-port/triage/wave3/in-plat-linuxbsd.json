@@ -1,0 +1,275 @@
+[
+ {
+  "sha": "3572bad2920ce0cf57ab4296642d7c057dd8e39e",
+  "pr": "119141",
+  "title": "Wayland: Improve hovered window handling",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 4
+ },
+ {
+  "sha": "819cae99f81e37b514ae414e33eb12bbbeb4b68a",
+  "pr": "119331",
+  "title": "Release X11 pressed events on true focus loss",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 1
+ },
+ {
+  "sha": "7af66e02ef4ed5cecabcf5b0909dac208fe773d7",
+  "pr": "119448",
+  "title": "Wayland: Fix incorrect fallback value for height in _xdg_popup_on_configure",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 1
+ },
+ {
+  "sha": "ee4e7e51bc121ff85e95ac5681200bb9b8b92c01",
+  "pr": "119303",
+  "title": "Fix some X11 BadWindow errors not being ignored",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 1
+ },
+ {
+  "sha": "38aef34e1ae50cb53c6a887b84ea1e88882de7de",
+  "pr": "118642",
+  "title": "LinuxBSD crash handler: Move addr2line finding to its own function",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 1
+ },
+ {
+  "sha": "b786c890b6956013a0e47a877a7bda0ae62a713e",
+  "pr": "119252",
+  "title": "Wayland Embedder: Track keyboard modifier keys",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 2
+ },
+ {
+  "sha": "aaa63588f6c0bd58ae958003c109b45d6451da10",
+  "pr": "119274",
+  "title": "Fix incorrect feature overrides when exporting for Linux.",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 5
+ },
+ {
+  "sha": "21dbe711c5f6c4e56d5917b42ac6f159eb93c559",
+  "pr": "113886",
+  "title": "Wayland: Implement touch support",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 7
+ },
+ {
+  "sha": "96c2ddf39a864290c07398993eaee85b973b0f66",
+  "pr": "117060",
+  "title": "[Linux] Improve crash trace symbols",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 2
+ },
+ {
+  "sha": "8e0030b4ee3b4612e6c5e30ea331a6ff8d2228a2",
+  "pr": "118554",
+  "title": "Wayland: Handle complex pointer event frames",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 2
+ },
+ {
+  "sha": "50cc2823d51540661bc3d3a0e4d5a83a99450d68",
+  "pr": "118404",
+  "title": "Set `ime_active` to `false` when the IME stops on X11",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 1
+ },
+ {
+  "sha": "2ee7ef719657f640f706dbfde0953c66f5ca1730",
+  "pr": "118385",
+  "title": "Warn only once when the input method stops",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 2
+ },
+ {
+  "sha": "07b6f875221ef3e66ab2c898e4077e005c667962",
+  "pr": "118205",
+  "title": "Wayland: Initialize libdecor earlier",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 1
+ },
+ {
+  "sha": "a987bcc2f598e8b56398fe202b97835b9918e596",
+  "pr": "118148",
+  "title": "Wayland: Fix building with `libdecor=no`",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 1
+ },
+ {
+  "sha": "0f51ed609964e169e03de21a1f10a2369ddaebd2",
+  "pr": "113543",
+  "title": "[DisplayServer] Add per window icon support.",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 11
+ },
+ {
+  "sha": "5ee90d8e82712bc09e016cde28c611b9314435b8",
+  "pr": "117873",
+  "title": "Wayland: Unify clipboard sending code",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 2
+ },
+ {
+  "sha": "c19a2705af05adf6ba39804906179dc18f656547",
+  "pr": "116692",
+  "title": "Wayland: Fix race with buffer scaling",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 3
+ },
+ {
+  "sha": "915f8dcba73fb92f1428def7774e2790ea5444fc",
+  "pr": "116648",
+  "title": "Fix clipboard history not updating on subsequent copies in Wayland",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 1
+ },
+ {
+  "sha": "65e73b3a5eec19e3269809b0f00e73a646723067",
+  "pr": "117702",
+  "title": "Wayland: Fix use-after-free of `Ref<ColorManagementProfile>`",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 1
+ },
+ {
+  "sha": "fa4d24cbb537877319d72beebd31569695ead8e5",
+  "pr": "116513",
+  "title": "Wayland: Deduplicate cleanup logic",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 2
+ },
+ {
+  "sha": "179ee951b601f445aa5fb4ed187e5c3d7e28b8a0",
+  "pr": "117530",
+  "title": "Wayland: Only report HDR request failed warning if HDR was actually requested",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 1
+ },
+ {
+  "sha": "5d2548f524e28c36fafb19977007e35d444086fe",
+  "pr": "117505",
+  "title": "Fix preprocessor directives for X11 and GLES3",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 1
+ },
+ {
+  "sha": "5d0a32157593c9dd374b3796589f14b21b8212d8",
+  "pr": "102987",
+  "title": "[LinuxBSD] Add support for HDR output (Wayland)",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 14
+ },
+ {
+  "sha": "8993c549330176a30a801fe348c35810c03d1108",
+  "pr": "117328",
+  "title": "Remove unused includes in `platform` and `drivers` with clangd-tidy",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 150
+ },
+ {
+  "sha": "bd8b832893797a8d078e681d1dd890dcd968239c",
+  "pr": "117385",
+  "title": "Wayland: Improve mapping robustness and synchronization",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 4
+ },
+ {
+  "sha": "9095a76ff54ff96778c75260ac629cd4d1f1535f",
+  "pr": "117319",
+  "title": "Fix unable to compile linux `template_release`",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 1
+ },
+ {
+  "sha": "47612473f94de914c68d6f3c69dc67e39a04edf4",
+  "pr": "117067",
+  "title": "[Linux] Fix `addr2line` call",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 1
+ },
+ {
+  "sha": "0f0c3f3a18607798b27c5c57f3d68d467b72df15",
+  "pr": "115566",
+  "title": "[Linux/BSD] Prefer `gimli-rs/addr2line` or `llvm-addr2line` over binutils.",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 1
+ },
+ {
+  "sha": "15558cb886447cf9b651c7ae83455f27eb3767ca",
+  "pr": "108111",
+  "title": "Core: Restructure sanitizers",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 11
+ },
+ {
+  "sha": "a82e210b5a7dc2dc5eb4b485c3414c44cda8fa7d",
+  "pr": "116376",
+  "title": "Wayland: Skip resize request when the size is the same",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 1
+ },
+ {
+  "sha": "41f4ca32479933bcdb454fc48a98a258dc92392a",
+  "pr": "116236",
+  "title": "Wayland: Only handle the current output mode",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 1
+ },
+ {
+  "sha": "b769ae2d5f134eb556495d87d1f9c87f31092848",
+  "pr": "116309",
+  "title": "Wayland: Swap backward and forward mouse buttons",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 1
+ },
+ {
+  "sha": "4106b5cdccce15a7a179b0b87a5b4cd81e8b4779",
+  "pr": "116256",
+  "title": "OpenXR: Fix OpenGL initialization with Monado on X11",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 7
+ },
+ {
+  "sha": "2762c56829cfad2cc9fb17bf338f5258a8099c70",
+  "pr": "112287",
+  "title": "Add pointer warping on wayland",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 8
+ },
+ {
+  "sha": "ff1f870e2e2630df32af42638937cb5d9474da09",
+  "pr": "115916",
+  "title": "CI: Enable Ruff preview options; bump version",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 9
+ },
+ {
+  "sha": "0aa77895ac0153bfd9f6a498dd8c4353a903bf20",
+  "pr": "114521",
+  "title": "LinuxBSD: Fix UI freeze when opening file manager",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 1
+ },
+ {
+  "sha": "65e79f33cb20f1c5c7d270684bb0dcb3958e8024",
+  "pr": "115823",
+  "title": "Wayland Embedder: Fix FD leak with inert objects",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 2
+ },
+ {
+  "sha": "92884a7140b419a2aa8c6b061a313ef3f1434815",
+  "pr": "93478",
+  "title": "Fix missing lib with `builtin_glslang=false`",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 1
+ },
+ {
+  "sha": "47b1b9ef696b4d2d3b3893e496da786997116c46",
+  "pr": "114947",
+  "title": "[Linux] Handle debug symbols with renamed executable",
+  "subsystem": "platform/linuxbsd",
+  "nfiles": 1
+ }
+]

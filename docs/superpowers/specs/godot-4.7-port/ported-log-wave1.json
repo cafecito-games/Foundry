@@ -1,0 +1,2438 @@
+[
+ {
+  "pr": "115215",
+  "sha": "4f1d84b1555c8eabed470c12878943077562c18c",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fix non-Xinput joypads reporting xinput_index in get_joy_info; small SDL fix.",
+  "outcome": "ported",
+  "local_sha": "3da1f482c30cde5bfccd55e82754778886d89d46"
+ },
+ {
+  "pr": "115364",
+  "sha": "5173422b1e3583a9626975c1de88d811884b949e",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes transform updates sometimes discarded with Jolt; small contained space fix.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "115124",
+  "sha": "3dc64a564b89a6a5180ee12d4503e4aec0e06446",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Pick sample closer to camera when resolving 2x MSAA; one-line shader fix.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "115021",
+  "sha": "861d7f5263e17f3824ed7d07313965c4aa4468f1",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Resets vertex_2d flag when starting a new ImmediateMesh surface; two-line correctness fix.",
+  "outcome": "ported",
+  "local_sha": "2af52cb28249d8a65b807f66397607be81eb361d"
+ },
+ {
+  "pr": "114767",
+  "sha": "cfc5ec93d4a91c8329921744b7504f2368886a92",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fix sky radiance texunit in Compatibility renderer; one-line shader fix.",
+  "outcome": "ported",
+  "local_sha": "20f673663142d8ff1e9ce25bbc75ef59a39e532d"
+ },
+ {
+  "pr": "115026",
+  "sha": "4738ce72e3af500ee3bd23506c04879f983ec98f",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fix shader compile error writing FOG with fog_disabled; small removal across shaders.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "115292",
+  "sha": "b268b1013de7e7f17fed4186c0884bb00ad480d6",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Use sky's corrected projection for reprojection; one-line fix.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "114731",
+  "sha": "dcf5b4deac9128d78a7cbb0c3396ce6f416b18c1",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes CameraFeed writing YCbCr texture to the wrong (RGBA) slot and recreates texture on datatype change; self-contained.",
+  "outcome": "ported",
+  "local_sha": "ffb47f266f0df63124e039b4317c3e17cbbf9e54"
+ },
+ {
+  "pr": "115218",
+  "sha": "b40f4ae52f1c7c174a00f35554fa26157a98996f",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fix incorrect UTF-8 read of joypad raw_name in get_joy_info; one-line fix.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "115410",
+  "sha": "9ef64c88fb44b66e177280f28d7ce0f619d090b2",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes build-profile generator producing bogus profiles; contained core/io fix.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "115473",
+  "sha": "101c04cbc9f2dde04e40b5f87946540431e4d5be",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes NodePath hash collisions for similar paths; single-file correctness fix.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "114464",
+  "sha": "15107fda30fcf6c1cafdf7cb579002d7a9e830dd",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Zeroes padding bytes when encoding glTF buffer views; export determinism/correctness, single file.",
+  "outcome": "ported",
+  "local_sha": "015cab45fa9797d34f35ebd5f7cfed907adc366c"
+ },
+ {
+  "pr": "115254",
+  "sha": "623bbb3414f6c2f32e12582cbfe79b05e8abcf16",
+  "decision": "port-now",
+  "kind": "refactor",
+  "risk": "low",
+  "rationale": "Downgrade depth-format failure from error to warning; single-file, low risk.",
+  "outcome": "ported",
+  "local_sha": "6318a6498c3b5498bed34d6529f2e4873c0c240e"
+ },
+ {
+  "pr": "115504",
+  "sha": "5385a7ba3822424e289de396feb99b1ced141e59",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Handle nearest filtering when anisotropy enabled in D3D12; self-contained correctness fix.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "115603",
+  "sha": "970565aafc486ce239ed065e2f8e23c142ff18eb",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Don't register frame-synthesis projection views unless enabled; single-file fix, extension present.",
+  "outcome": "ported",
+  "local_sha": "f886bea496667323f5075d55651f2f7de72c2ed8"
+ },
+ {
+  "pr": "115606",
+  "sha": "6d67a99925fe93b5e5b0c91c51d9740793afed0a",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Pass uv border size to sky rendering; small sky.cpp fix.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "114732",
+  "sha": "2db61bc3971fa9bf1a80697136c26f5645f65871",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fix auto-exposure notification; two-line camera attributes fix.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "115266",
+  "sha": "f3d72eb13aabd670e8b465a98f1a26898d29fc31",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes editor tooltips vanishing on joypad presses; contained input fix.",
+  "outcome": "ported",
+  "local_sha": "d50eea99ffa506c142789d4b0d49aaf9bdfb6d3c"
+ },
+ {
+  "pr": "115757",
+  "sha": "b719f94bfebfb783f874959fa3256c0d75b3cc2a",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fix write-combined memory reads in canvas renderer; small perf-correctness fix.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "115633",
+  "sha": "72aeb54f9fb6d16fdbe6f6e5591540a087cb40a7",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Handles invalid input/ settings correctly; contained input parsing fix.",
+  "outcome": "ported",
+  "local_sha": "76d016b446b2a31246d7d90d850431218028275d"
+ },
+ {
+  "pr": "115874",
+  "sha": "7e91c61fec8d40f796ea45ac428f07eda428787a",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Avoid reading sky pointer when no sky; small null-guard fix.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "115689",
+  "sha": "21932ace7fceaa2ee04365f893dd6f981f1aa7b2",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes LookAtModifier3D/AimModifier3D forward vector; contained runtime node fix.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "115605",
+  "sha": "1877e84ca0ab42e55f00e1402ab0b560f16167ae",
+  "decision": "port-now",
+  "kind": "refactor",
+  "risk": "low",
+  "rationale": "Better hand-interaction action-map defaults; single-file data tweak.",
+  "outcome": "ported",
+  "local_sha": "de2ce010ae4f567538309d09a61a7759f490531f"
+ },
+ {
+  "pr": "115919",
+  "sha": "a4ea276cf49c90713facace2ce39d010f11f473d",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes use-after-free in Animation Blend Tree; two-line high-value crash fix.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "115923",
+  "sha": "c729962899d90cb7ef91c2b5e0d3fe95629dc8d6",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes ClassDB class-list sorting regression; contained core/object fix.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "115927",
+  "sha": "f6b89548a464b4e2ac3032d409e4da71d8703013",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fix case-mismatch file path warning on Windows; one-line fix.",
+  "outcome": "ported",
+  "local_sha": "1395902ed7fe48349a40db71e1402087c26c02f7"
+ },
+ {
+  "pr": "115931",
+  "sha": "24ae6c89be3b580f4c21b15916f4f97ea03a84ae",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes use-after-free from AHashMap realloc in AnimationTree; two-line high-value crash fix.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "115951",
+  "sha": "80d3019de854f11110ee02780a1072c870f80f72",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Trivial const-qualifier fix on the 114355 spectrum-analyzer compat shim; port together with 114355.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "116105",
+  "sha": "44d2f87432ae423d3f51d5d5f5ad780ac249681a",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Zeroes padding in NodePath serialization; determinism fix, single file.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "116012",
+  "sha": "b79e1f36ef2bd29419afeab5f754664721a195b1",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "One-line fix for erroneous atomic use in Node3D dirty flags; isolated header change.",
+  "outcome": "ported",
+  "local_sha": "799b0527e97e27403cd5f6df713c1bc882b8ae64"
+ },
+ {
+  "pr": "116107",
+  "sha": "0dc5c0ad36d2a7b4226310f098bd413c456c0fee",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Use transmittance in volumetric fog early-out; one-line correctness fix.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "115904",
+  "sha": "0808e47effd6fb0dae7d84824d1937d2447de188",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fix inconsistent SSR blurriness; small shader fix.",
+  "outcome": "ported",
+  "local_sha": "12b8cf2afcc3ce5d2354916c29d5137ede3e75da"
+ },
+ {
+  "pr": "116125",
+  "sha": "07f6c64c1852ee7478c3979fdbc61e5a438628d0",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Print file path on dynamic-library load failure; one-line diagnostic improvement.",
+  "outcome": "ported",
+  "local_sha": "c84c44673f245d7f224e0b8b771afbbbdeb4da0a"
+ },
+ {
+  "pr": "114558",
+  "sha": "92a90a8e6f23a42281b41bfbf01257156f1c1407",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes parameter precision in ease/step_decimals; contained math fix.",
+  "outcome": "ported",
+  "local_sha": "cf66a83faee6b5bc63c64103f80dae472cc9a51f"
+ },
+ {
+  "pr": "116155",
+  "sha": "487896096c731b936545f61480ad040de5b54132",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Compat fallback to textureLod when reading RADIANCE; additive shader_compiler fix.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "115728",
+  "sha": "40448082abe972daa179c64d7889cd88a8e7ea9c",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fix GDShader min/max return type mismatch; single-file validation fix.",
+  "outcome": "ported",
+  "local_sha": "147cca144d20304ef6f5f59400c43c31bc4fa8eb"
+ },
+ {
+  "pr": "115883",
+  "sha": "bf95b62586e31b8a3503f5903d7764d7c52bf2ab",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "JSON.stringify compact form for empty Dictionary; single-file consistency fix.",
+  "outcome": "ported",
+  "local_sha": "963e8c546a01609dc1824999e32eddb55e64c28a"
+ },
+ {
+  "pr": "115532",
+  "sha": "3209188cc79a6c6407ebf54cbfe7cc3f245bafd8",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Stops RemoteDebugger flushing messages during break; contained debugger fix.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "116192",
+  "sha": "5f1819538a74ce2dcde9aaa55dd5e6373f1903f0",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes thread safety of physics interpolation in scene_tree_fti; self-contained threading fix.",
+  "outcome": "ported",
+  "local_sha": "a71b6877ffbed7bee15ae666e3ee72b2a85b0141"
+ },
+ {
+  "pr": "102787",
+  "sha": "14ef1c49f0405c0e6ce0ee3d20b08689fd993ea2",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Adds Toki Pona locale; harmless single-file data addition.",
+  "outcome": "ported",
+  "local_sha": "4ecd21196373928b75e2a339ec16a55e42291bbc"
+ },
+ {
+  "pr": "115752",
+  "sha": "13bc06556f14b94ad76f5f32f7d2cc4fdbced529",
+  "decision": "port-now",
+  "kind": "other",
+  "risk": "low",
+  "rationale": "Syncs SDL controller mappings DB; data refresh, improves controller support.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "115396",
+  "sha": "b151a2d9665f5c9a24cb3ec54375fd887eac87cc",
+  "decision": "port-now",
+  "kind": "perf",
+  "risk": "low",
+  "rationale": "Avoids unnecessary allocations reading UID cache; single-file perf fix.",
+  "outcome": "ported",
+  "local_sha": "7f8599a9243b92cbb072141dc100cd9732eb745f"
+ },
+ {
+  "pr": "116280",
+  "sha": "33eb9ff990f9ee6243ac2449dbf794ca39764c45",
+  "decision": "port-now",
+  "kind": "refactor",
+  "risk": "low",
+  "rationale": "Marks MutexLock [[nodiscard]] to prevent misuse; single-file safety improvement.",
+  "outcome": "ported",
+  "local_sha": "1cbbb3eb6b6733f7bc3f4326876d706372c3dcf8"
+ },
+ {
+  "pr": "116299",
+  "sha": "8db94f7b5eb0e97829d1f4fceac2784b55c112c6",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Cleans up audio callback lists in AudioServer dtor to fix microphone shutdown crash; self-contained.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "116430",
+  "sha": "46729d4b5e421d7e6ddbbc596df1dcd5355f6f8a",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "One-line Line2D get_scaled_rid() for viewport oversampling; get_scaled_rid already exists in Foundry texture.h.",
+  "outcome": "ported",
+  "local_sha": "0caedcdedd405291fdd819deaa0d19feda12dbf7"
+ },
+ {
+  "pr": "116355",
+  "sha": "4d4f7291edef168a8c2f3b82d7aec2ea5dfad75f",
+  "decision": "port-now",
+  "kind": "perf",
+  "risk": "low",
+  "rationale": "Optimize get_total_memory_used in D3D12/Vulkan; small self-contained perf fix.",
+  "outcome": "ported",
+  "local_sha": "4931f993259aad456820baf728189d1aaf716b28"
+ },
+ {
+  "pr": "116331",
+  "sha": "6e5b661f3298ae968d40ad43706ff8ed45f44990",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes Curve point property usage flags; self-contained curve.cpp fix.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "115649",
+  "sha": "65951c721feb4eae8026eccdcf6807bb0c90a3b8",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Adds integer limit constants to @GlobalScope; small useful additions.",
+  "outcome": "ported",
+  "local_sha": "f3f7d5eedc71ed60ccd41f3c157626ad645de1f4"
+ },
+ {
+  "pr": "116196",
+  "sha": "a142c2218aa76b46ce99823ccf76926da033a741",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes soft-hyphen break with small/zero wrap width in TextServer; self-contained two-line fix.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "116527",
+  "sha": "8120fb1242065202775831c04f099d9156c37ba2",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fix OpenGL ES driver checks; tiny two-file correction.",
+  "outcome": "ported",
+  "local_sha": "8c26c797a59b6508719c963c04f950fb9f72545d"
+ },
+ {
+  "pr": "116264",
+  "sha": "383af3f070bfec342055b00d5c602be239d367ec",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes AnimationPlayer crash when setting current animation to stop; scene+editor, small.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "116526",
+  "sha": "811cf1728e52434f3f5957450fa072365e528cc5",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes input action matching for projects saved before device-ID change; single-file compat fix.",
+  "outcome": "reverted-incompatible",
+  "local_sha": "d7c2adb0fb0d713c91f328accf8f67f2a29b4a86",
+  "reason": "references InputEvent::DEVICE_ID_MOUSE/KEYBOARD constants added by unported PR"
+ },
+ {
+  "pr": "116647",
+  "sha": "69a412afcd53dfa360d91e7993205bdc40951645",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fix LCD batching for StyleBoxTexture; small canvas render fix.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "115125",
+  "sha": "2327a823578a30f09068f97272598521896d5633",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Clears fade-out on request firing in AnimationNodeOneShot; three-line fix.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "116064",
+  "sha": "69c274d3bc83a18e90a2c801fffed54a83e3b05e",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes multithreaded load status progress reporting; contained core/io fix.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "115690",
+  "sha": "31817ef2ff400778e2b4783ba4c24894ebeac6aa",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes glTF value-track interpolation on import; high-value animation import correctness, single file.",
+  "outcome": "ported",
+  "local_sha": "f74db95b557c9a3283b9cbb94dc24c7650a2647b"
+ },
+ {
+  "pr": "116676",
+  "sha": "6e96b028e10dbe7381bdeecde80fe7492f4b810c",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Checks playback_queue existence after animation_finished signal; small crash-avoidance fix.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "116529",
+  "sha": "44675a7002dd88a9c771760b4a1ff2029677ded6",
+  "decision": "port-now",
+  "kind": "platform",
+  "risk": "low",
+  "rationale": "Android-independent OpenGL ES compile-time checks; two-file self-contained platform fix.",
+  "outcome": "ported",
+  "local_sha": "d0222a905b52ed1094f2cd6ed4d0e02c3b0102b7"
+ },
+ {
+  "pr": "116519",
+  "sha": "c521ed8f7136eba624505ddd38c20f94403e1fc4",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Clamp omni light projector UVs; small shader fix.",
+  "outcome": "ported",
+  "local_sha": "4bc54bee9db5c94d5d4110b989f69c371d7d8dfa"
+ },
+ {
+  "pr": "116719",
+  "sha": "badba19c105e504fd9d92b3bfee0f166d6196e4b",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "AudioStreamWAV checks eof_reached when reading LIST INFO tags; one-line guard.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "116720",
+  "sha": "e8c69d41084cedbe2c3176d79ee39a23dcc02b5e",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fix Reinhard/AgX tonemapper in Mobile subpass; one-line fix.",
+  "outcome": "reverted-incompatible",
+  "local_sha": "2afe8f3698c1e9f85f37a208395264668eee0143",
+  "reason": "tonemap references output_max_value/max_value HDR-output members absent in base"
+ },
+ {
+  "pr": "116756",
+  "sha": "3930111b5f580eb00b437d2985f787dad3945e5b",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fix UTF-8 handling in GLES3 shaders; single-file encoding fix.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "116631",
+  "sha": "a338853bf56855a1fbc9c3bc93ade3a2ce5ad632",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "VisualShader removes RESTART/ATTRACTOR_FORCE builtins from Start function; small fix.",
+  "outcome": "ported",
+  "local_sha": "cb485f163289488ce408326db53d8ea7540adc36"
+ },
+ {
+  "pr": "114890",
+  "sha": "2adf91e71f879b8f5a634fd0563a3f86afc64f74",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fix debanding with spatial scalers; single-file render fix.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "91261",
+  "sha": "923c751af4e35fe8ef5f24d72333a561030f7382",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "HTTPRequest handles missing redirect status codes; self-contained correctness fix.",
+  "outcome": "ported",
+  "local_sha": "866209dbc77346491cf6309b0c2b99bd6257b41a"
+ },
+ {
+  "pr": "116555",
+  "sha": "fc572669ded72a4e1844ccae6e7a2a58cdebaa14",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes assorted GridMap editor UI issues; contained editor touchups.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "116823",
+  "sha": "f9f441270aa21070e90fa413df7ee63d3f8a2370",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Adds --ignore-error-breaks to LocalDebugger; single-file, useful for headless runs.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "116778",
+  "sha": "95535167b33975afa4e82228eb71800d36cf51dd",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes GridMap paste when orbiting with Alt key; contained editor fix.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "116857",
+  "sha": "9dc85c90ee3f531e307ebd9da48e581406633c22",
+  "decision": "port-now",
+  "kind": "refactor",
+  "risk": "low",
+  "rationale": "Narrow Windows COM include forward-declare cleanup in one platform header.",
+  "outcome": "ported",
+  "local_sha": "f4d8f375001d744ad05a0e64de2621b3c542fcc3"
+ },
+ {
+  "pr": "116413",
+  "sha": "dd150a38239de059edf12b7e5636ba3dbde28192",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fix shader preprocessor define completion; text_shader_editor (not the FS script editor) undiverged.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "116684",
+  "sha": "c830bf70ced17e5090b57a5436831c4f85145524",
+  "decision": "port-now",
+  "kind": "other",
+  "risk": "low",
+  "rationale": "Adds object count to ObjectDB leak warning; minor diagnostic improvement.",
+  "outcome": "ported",
+  "local_sha": "989a82eb62a8626bce5d462807da948e8fec0606"
+ },
+ {
+  "pr": "116830",
+  "sha": "a19e5c4b53c4af811f6d76f3547f5eb695ee7928",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes FFT loop bound and Hann window step in spectrum analyzer; self-contained audio math fix.",
+  "outcome": "ported",
+  "local_sha": "3bf57adb0eb7750e0d1c8a45c2cbf8bb9deaab07"
+ },
+ {
+  "pr": "116546",
+  "sha": "524d2309277eb8c03c6a1d101fe75686946a0d23",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes undoing GridMap move operations deleting cells; contained editor fix.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "116683",
+  "sha": "d89e19f556acc495f652cadbee9ebb28e2fc3972",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes wrong rotation of cells while pasting in GridMap editor; two-line fix.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "110083",
+  "sha": "1ae69764715f8d482a290b2aee6c32e3c929e3a7",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fix texture repeat mode for GLES3 renderer; single-file rendering fix.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "117023",
+  "sha": "74b5be24f405492e50403948045830d13472e01e",
+  "decision": "port-now",
+  "kind": "platform",
+  "risk": "low",
+  "rationale": "Fix Apple OsLogLogger build on visionOS; one-line build fix, harmless.",
+  "outcome": "ported",
+  "local_sha": "ed57f55ee765e7cd335d5820aa4615cc507984bc"
+ },
+ {
+  "pr": "116287",
+  "sha": "5824614bed4e7b24714aec022978615874ef9228",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Emits settings_changed on ProjectSettings.clear(); single-file signal fix.",
+  "outcome": "ported",
+  "local_sha": "62c60ee6126c198da0888a6385bb8f523f682e78"
+ },
+ {
+  "pr": "116956",
+  "sha": "98e6b3c46064ba601afff02e0b6a9b98fd47f200",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Adds configuration warning for missing Mesh on MeshInstance2D/3D; small, low-risk UX aid.",
+  "outcome": "ported",
+  "local_sha": "68dc1003837f845fc73b7843399178bb6c60e32e"
+ },
+ {
+  "pr": "116565",
+  "sha": "c53c5a1f49fa1edf97e6b570297c90a57d30a558",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Makes rotation of selected GridMap cells undoable; small editor fix.",
+  "outcome": "ported",
+  "local_sha": "342a80f8b378878865eb04c48d6f4ad59abd7b8b"
+ },
+ {
+  "pr": "117117",
+  "sha": "dc5b7d5547e88b05fedb1d4426f483f9bf150a32",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Adds class_db.h include so glTF test builds without GDScript; relevant since fork disables gdscript, one-line.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "114557",
+  "sha": "312bdb2ae9e49de22a48218b5ec1c27b601da036",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fix SDFGI ignoring visual layers; one-line scene cull fix.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "116814",
+  "sha": "363de271057ef8fc96a86335e0f48c08ecb2f395",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes undo-selection and paste problems in GridMap editor; part of editor bugfix cluster, port in series order.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "116789",
+  "sha": "4bee1639b23d33e648a02abd4c5820f5690f2f08",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Duplicates glTF extensions at start of import/export to avoid shared-state bugs; small contained fix.",
+  "outcome": "ported",
+  "local_sha": "fb867ed52f9b9b024863c7d2471097fdd2328700"
+ },
+ {
+  "pr": "117156",
+  "sha": "533f832d523c846f60ef65c82f66b1a379d2fa15",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Adds missing ArrayMesh include to tile_set.h; trivial build correctness fix.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "117206",
+  "sha": "f3cacbdb4e708e73f4c5c554d93b684695369d48",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Exposes Basis.is_orthonormal(); small API exposure.",
+  "outcome": "ported",
+  "local_sha": "1aca2ca9434330632a416b0ceb50b4c2ee593a22"
+ },
+ {
+  "pr": "117219",
+  "sha": "74de2ec0477690f9b1817c15741117ef929d3249",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes are_spans_equal for size 0 with invalid pointers; single-file template fix.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "116888",
+  "sha": "cc970e91e5bfebdf077e026e48b2a22a479591b5",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Allow struct name as variable name in shaders; one-line fix.",
+  "outcome": "ported",
+  "local_sha": "b916e634a01a9d4d953b99053903cc1d75254bdd"
+ },
+ {
+  "pr": "117189",
+  "sha": "5cfccbee34013b14216d753f918ffe1271161d3c",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Single-file DirectionalLight3D property-list validation fix.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "117192",
+  "sha": "e4d0368c24902ebef22b0fe6b9a207aa2a190eb5",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Metal: fix offscreen rendering in context driver; single-file fix.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "110778",
+  "sha": "563654353dcd12a4177ad6844e35b97676e65a52",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Additive new XR_KHR_generic_controller extension (new files + register_types), self-contained.",
+  "outcome": "reverted-incompatible",
+  "local_sha": "f858efa0ffbf5a5234c2087f5a95cec7aeeed8ca",
+  "reason": "new openxr generic-controller ext depends on 4.7 OpenXRExtensionWrapper signature absent in 4.6.3 base; needs manual adaptation"
+ },
+ {
+  "pr": "117039",
+  "sha": "f7cf8d3e6bf963c874c0f1ad51507b5716aaabfa",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Handles UID paths inside packs; single-file core/io fix.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "117353",
+  "sha": "750b0c766e50ab6850546a5d537ed2473e301855",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes String::split_ crash on empty string; single-file crash fix.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "117363",
+  "sha": "ce66ff689ec93327563972f8324b19a29f73b28a",
+  "decision": "port-now",
+  "kind": "other",
+  "risk": "low",
+  "rationale": "Improve OS.is_process_running error messages; trivial two-line fix.",
+  "outcome": "ported",
+  "local_sha": "db409bea19fdb522ea92574d3261e094bcc885ed"
+ },
+ {
+  "pr": "117294",
+  "sha": "0e3249941c297d64cf57f4334ddc04cff9be73a5",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fix RenderingDevice::texture_clear on D3D12; small simplification/correctness fix.",
+  "outcome": "ported",
+  "local_sha": "14b83384551932b723e922bd0097588dcd123ff3"
+ },
+ {
+  "pr": "117157",
+  "sha": "22a140486b913c3e5d2d97210ed7811d7136c735",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Restrict textureGather in Compatibility mode; single-file validation fix.",
+  "outcome": "ported",
+  "local_sha": "47e29e87968b159b40b9190fb9e9ac25042b7e61"
+ },
+ {
+  "pr": "117151",
+  "sha": "a8e37fc01048823f639c4011af645d2e8e2b79d3",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes RingBuffer overread on offset methods; single-file template fix.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "117388",
+  "sha": "405f9dfc8fd50d214565fe7769d3e60dab03254d",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes RingBuffer T read() on empty buffer; single-file template fix.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "116589",
+  "sha": "8415bd710529da70bccde9c5ba8d05e2eee7f7ec",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Increments Blender import attempts to avoid endless loop; one-line hang fix.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "117180",
+  "sha": "f06fe5254bd7e0efa04c50c8b477c91e87fd5330",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "AnimationPlayer updates length when animation resource changes; small self-contained fix.",
+  "outcome": "reverted-incompatible",
+  "local_sha": "458500fde7aabf0bbfd84a2d73cb3c00840efd81",
+  "reason": "references PlaybackData.{is_enabled,animation_name,animation_length} added by an unported refactor"
+ },
+ {
+  "pr": "117401",
+  "sha": "a596178702219099c502db363d86d66c0f8edabe",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fix tangent decoding in skeleton skinning shader; small additive fix.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "115377",
+  "sha": "af6b040c67041d0f753d5d760132365c469ecce5",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes debugger error changing scene on touchscreen button click; one-line node.cpp fix.",
+  "outcome": "ported",
+  "local_sha": "cf41c0d843a204324b55e3510fbdeb485811e848"
+ },
+ {
+  "pr": "117469",
+  "sha": "874f500acb28bf1d7aebc22049493b8ebce8c097",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "iOS: fix static .a/.xcframework loading in open_dynamic_library; self-contained.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "117041",
+  "sha": "f13b291f2808bc8b61d2067df56ccaa7cb98b009",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes editable-children state when duplicating instantiated nodes; self-contained node.cpp fix.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "117457",
+  "sha": "8ec2a3de1918cb798ca8d9a1099b8fc2769a07d9",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes parameter name mismatch in AnimationTree/BlendTree; small rename across 3 files.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "106867",
+  "sha": "40184ac402b274ef8761cd5a86817e6193400dc9",
+  "decision": "port-now",
+  "kind": "other",
+  "risk": "low",
+  "rationale": "Poisons CowData pointer in sanitizer builds; debug-only safety aid.",
+  "outcome": "ported",
+  "local_sha": "a50a26cbc69f8bae86d11ea39c783ea2c61eb4fa"
+ },
+ {
+  "pr": "117378",
+  "sha": "31a8c0904c6fcf2cf86270c389398a3d976bf1e8",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes mouse-wheel zoom scrolling contents in GridMap editor; tiny fix.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "111294",
+  "sha": "0520b51d0ce95b592c06f474418357c046d310c2",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Filters metadata of excluded files on export; contained export fix.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "117508",
+  "sha": "bf6ec9141714981cb941e0a71cdb2677bcf39d6e",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Blend point setter can restore name (deprecated=no); self-contained BlendSpace fix.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "117538",
+  "sha": "331c8297658e366db23fae7784db986120cc7ef8",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes incorrect parameter set in AnimationNodeOneShot; one-line fix.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "117655",
+  "sha": "8d0b2387274660be3b5f8b88ad7ddd08b8a43df0",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Calls stop() after setting new SpriteFrames on AnimatedSprite2D/Sprite3D; 2-line fix.",
+  "outcome": "ported",
+  "local_sha": "a2d1213e5f5e6ce25cf516e0c5e5a1708f48d66a"
+ },
+ {
+  "pr": "117725",
+  "sha": "3f020a02ade79dbbd3d26b0d151f93c64da6688b",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fix GLES3 batching skipping all items; one-line rendering correctness fix.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "117744",
+  "sha": "c3169e09e1e159c1a70c1e6fca75b8030a122209",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Metal: fix crash accessing NULL PixelFormats; one-line null guard.",
+  "outcome": "ported",
+  "local_sha": "55d3cc8f9a8ecb90d51d3d5d45a298eebf224ccf"
+ },
+ {
+  "pr": "117373",
+  "sha": "6cd467eab379fc6589dddd1b4be2ede9075d4737",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes undo of terrain-set move duplicating terrain; tile_set + editor, files present.",
+  "outcome": "ported",
+  "local_sha": "8129bf8c19098902b7220a0e7cf5d578e19fcb01"
+ },
+ {
+  "pr": "117448",
+  "sha": "938f3e376e923d591017a1cea17b63ea794e1904",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Automatically removes incomplete file downloads in http_request; self-contained fix.",
+  "outcome": "ported",
+  "local_sha": "f5e804b31dc6c77e4c8bbe2d3f4670500db27c72"
+ },
+ {
+  "pr": "117464",
+  "sha": "01448cc202cddc671ac4ee244cb884abcf038325",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Stops autocomplete from eating words by default; single-file input behavior fix.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "117521",
+  "sha": "86b84d861b4e2c73450d88d231d3c1f139389e7e",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes 3D viewport selection getting stuck while editing GridMap; small contained fix.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "117525",
+  "sha": "8416dbe3d9f52e1349fbad560d58d271f5c1fb19",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "GridMap editor ignores empty/repeated selections; one-line fix.",
+  "outcome": "ported",
+  "local_sha": "82ddd84567c043f4aa72a174bd913e3b3b4d0d3d"
+ },
+ {
+  "pr": "117820",
+  "sha": "60fff00a660a2aeb03f88c07fb7baed353bcb72f",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "iOS: add missing thread_safe.h include after refactors; one-line build fix.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "117740",
+  "sha": "89379c4fcfb59f103c3450949f0474ef958ddfb0",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Accessibility: stop setting a space as node label when name empty; small fix.",
+  "outcome": "ported",
+  "local_sha": "deab9396e0d89516e91b41e65f71c450a6277590"
+ },
+ {
+  "pr": "117819",
+  "sha": "2af785641ae249573f45eb61852d22e0b1a8a03c",
+  "decision": "port-now",
+  "kind": "platform",
+  "risk": "low",
+  "rationale": "Fix Metal driver build with Xcode 26.4; mechanical build fix across 4 files.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "117879",
+  "sha": "d76390fa365f89bdefa9dff26daaf5980fa8d87a",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "2-line build fix for 3D navigation-disabled configs; harmless include/guard fix.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "116198",
+  "sha": "213e805487cdc3435bc9a9b601502ef58332cb3c",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Windows: disallow file/folder names ending in period/space; small correctness fix.",
+  "outcome": "ported",
+  "local_sha": "ec6c6bc169c790af3e797e508a73accda631f41c"
+ },
+ {
+  "pr": "115437",
+  "sha": "cec809c09e9db056925446a612afcdc5e65e22eb",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Define sighandler_t only when _GNU_SOURCE absent; one-line build-compat fix.",
+  "outcome": "ported",
+  "local_sha": "fc1939fde3e270997973eafc65c7a55f2db26e8e"
+ },
+ {
+  "pr": "113879",
+  "sha": "2d327c811c667880929f47672629957168710615",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "TextParagraph aligns to max line width when width=-1; self-contained text_paragraph fix.",
+  "outcome": "ported",
+  "local_sha": "77b4d5d5987d5162c2af0b5095b5422c5af3876e"
+ },
+ {
+  "pr": "118027",
+  "sha": "4a919adccf8e398aceca75399c539078c54fe97f",
+  "decision": "port-now",
+  "kind": "perf",
+  "risk": "low",
+  "rationale": "Marks a math_funcs_binary template constexpr; single-file, safe.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "118064",
+  "sha": "29c5e98e5e110728b9e1dd13027f97958b04382d",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fix color correction in tonemap subpass; one-line fix.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "117909",
+  "sha": "7e3bf93f8a7e803633e1afc44e021efce926705a",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fix emission transform for GPUParticles2D; small particles storage fix.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "117945",
+  "sha": "bf055e3bf6fe2ccd9590c9414bd024de4305160b",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Copies missing ImporterMeshInstance3D props to MeshInstance3D in glTF import; small additive fix.",
+  "outcome": "ported",
+  "local_sha": "c40a83e00bf61438e763aee01a7486658a352ae8"
+ },
+ {
+  "pr": "117947",
+  "sha": "01006b8c91519a1931e572fb131913f6b4e24a60",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Uses safe dictionary access in glTF get_additional_data; robustness fix, trivial diffs.",
+  "outcome": "ported",
+  "local_sha": "491641f5081d353c842805e07350ee3f6e7ba09e"
+ },
+ {
+  "pr": "118054",
+  "sha": "137fa73ed4d71d2e7b3a53e2ab6b2690e1f46149",
+  "decision": "port-now",
+  "kind": "perf",
+  "risk": "low",
+  "rationale": "Windows: retrieve drive info only when needed; small self-contained perf/startup fix.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "108073",
+  "sha": "c05358c1d6693ee0f07f993c19bd448f2dc62c00",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fix decal atlas clipping at <32 texture resolution; one-line texture storage fix.",
+  "outcome": "ported",
+  "local_sha": "5e2249c43fb20805e8f17cc61f70f53dff6885b6"
+ },
+ {
+  "pr": "118015",
+  "sha": "3b2dabf339a033e7f7461bb8e3cfa6f56f76b1d5",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "User-friendly Node::get_path_to error when no common parent; small node.cpp/.h change.",
+  "outcome": "ported",
+  "local_sha": "288d1c4ef96318c29ea2d5eac16ecde5ba860e1b"
+ },
+ {
+  "pr": "118062",
+  "sha": "a0e5996d8264658539860a842ea4ccc6492a49e0",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Subemitted particles now take parent velocity into account; two-line fix.",
+  "outcome": "ported",
+  "local_sha": "7faf2eb373e6c70436f3226455a371831dbc4c98"
+ },
+ {
+  "pr": "118159",
+  "sha": "d91e97967dab0df8d5547d45bf2b0e6faf40c9ce",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes compressed Pos3D track interpolation in animation.cpp; two-line correctness fix.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "117771",
+  "sha": "201a68f700f3d3bd0316b8c7fbf56c58e665ec9d",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fix LightmapGI probe update speed not applying in Compatibility; one-line fix.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "117959",
+  "sha": "abfb91d1e2893bc18decf7716284cef8fa3e03b5",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Single-file SplineIK3D crash-case fixes; isolated runtime node fix.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "118163",
+  "sha": "03723198e0a249922216f42a56ac7345a3a106de",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Add math constants to texture-blit shader; small fix in gles3 + rd storage.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "118114",
+  "sha": "83aef4c70d94d3eaecba84c5a368a3a11ef09950",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes wrong animation section on custom timeline with stretched time scale; self-contained.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "118285",
+  "sha": "06ce2079002223080376482b4fac0b3d92bf0ebb",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes over-removal of area overlaps with Jolt; small contained fix in jolt_area_3d.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "118291",
+  "sha": "653fed37e07cd37c5dc741b3959fb07538d1147f",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes gravity not initialized properly with Jolt; one-line correctness fix.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "117611",
+  "sha": "1b577dc2c0c4db942d49ae4e1b896bd331c973dc",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes SkeletonModification2DJiggle look_at under mirrored transforms; includes doc + test.",
+  "outcome": "ported",
+  "local_sha": "07f0ea992028db61bb467db58252dfb6d2636810"
+ },
+ {
+  "pr": "109911",
+  "sha": "b6f86739b66d9154b850bf50f3ccb9be541eadd5",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fix particles moving when timescale 0; small fixes across cpu_particles + storage.",
+  "outcome": "ported",
+  "local_sha": "421bfbad1538ffc0d9029f0460883febcc677573"
+ },
+ {
+  "pr": "117861",
+  "sha": "bbc7150c95382024f299424a7e2ce205b3a7676c",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes particle angular velocity in particle_process_material; small self-contained fix.",
+  "outcome": "ported",
+  "local_sha": "893187baa69da1e75de567a5c17b9d1c45acf6ff"
+ },
+ {
+  "pr": "118240",
+  "sha": "ed0d6fa48ee0b173980655d550f6008b1cd31f2b",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes files deleted after chunked transfer completes in http_request; one-line fix.",
+  "outcome": "ported",
+  "local_sha": "dc413303372f4a52cd30dbdbcaffbbba98cb361e"
+ },
+ {
+  "pr": "118318",
+  "sha": "755fa449c4aa94fdf2c58e2b726fd62efde07e09",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fix Compatibility sky shader compile errors; single-file shader fix.",
+  "outcome": "ported",
+  "local_sha": "f9d8ae16aadd1b42ce8db670cee25929e4f772d9"
+ },
+ {
+  "pr": "117672",
+  "sha": "daa913af6384e3788c75d287a66bc4f346396282",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fix operators in shader preprocessor expression; two-line self-contained fix.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "116286",
+  "sha": "46a2cf6d2528663ff09e6f28e6fc1f2b5bf4c341",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Node::replace_by no longer removes internal nodes; small correctness fix in node.cpp.",
+  "outcome": "ported",
+  "local_sha": "d9099e2464d14aa163eed10d3833a63c279f10fd"
+ },
+ {
+  "pr": "117619",
+  "sha": "9268bc73a060c9615053e6375c7a9d332f73ba91",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fix asymmetrical SDFGI reflections; small gi.cpp/gi.glsl fix independent of area lights.",
+  "outcome": "ported",
+  "local_sha": "692f98fda7375f4d0ef2096be1b3acb0498842b4"
+ },
+ {
+  "pr": "113905",
+  "sha": "ee00d63bb2ac271c51d781985be780add6e3e2f8",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Debugger drops connection on read errors instead of infinite loop; contained fix.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "118483",
+  "sha": "e7eb8127509e41d0d8a318e05ca311742280e9e1",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Avoid ERR_PRINT in forked child causing crash; small async-signal-safety fix.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "118533",
+  "sha": "4a54b894619a49bfb6b8d43d2d3d4746fac84cf3",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Restore z-clip in Compatibility renderer; one-line shader fix.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "118242",
+  "sha": "cee489f46eb3e2bb36daf65179b38773ed8bf0c4",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Set drawable_type on DrawableTexture; two-line fix in gles3 + rd storage.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "118519",
+  "sha": "b042e9688e3aef6c4ff2647f18e965611c61c0bb",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fix max instance computation for vertex arrays; single-file safe fix.",
+  "outcome": "ported",
+  "local_sha": "360330ad4170efcb6b266fba180d7cac2954348e"
+ },
+ {
+  "pr": "118546",
+  "sha": "31aaec1f2bf5cfa87542c2aa1b61ea47c202d96d",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes glTF editor importer build with deprecated=no; one-line build fix.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "117828",
+  "sha": "15438d2d64c0d3b99fb8a3d38c66cfd6b7f2edbd",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "FTI property-release fix (interpolated_property + camera_3d); contained bugfix.",
+  "outcome": "ported",
+  "local_sha": "c5c838f2067d0af0ed47d1e81574071caa54dab0"
+ },
+ {
+  "pr": "118570",
+  "sha": "734d7ec33339a9880d4045bdb035794457259571",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Improves missing-type error message in ClassDB; single-file diagnostic.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "107052",
+  "sha": "b7ab3a6da0914abc50af799e0cf4b663155494fd",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Clamps AudioEffectFilter cutoff to >=1 and makes the slider exponential; self-contained one-file fix.",
+  "outcome": "ported",
+  "local_sha": "f2882613266692b6febef2cd00c3c2d3ad0835ab"
+ },
+ {
+  "pr": "117776",
+  "sha": "37b6d4d8be51aa6480150deda075adef6d68d02f",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes potential crash in Viewport 3D physics picking; high-value self-contained crash fix.",
+  "outcome": "ported",
+  "local_sha": "41800696f1222292610522f6f96b4d7380286066"
+ },
+ {
+  "pr": "117788",
+  "sha": "cc212fb90a98825795d98c9bd844448ed25795a6",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Generate SDF texture on texture_sdf_normal usage; two-line fix in gles3 + rd.",
+  "outcome": "ported",
+  "local_sha": "ebd871dced21039727dff58e34136671e1193e4c"
+ },
+ {
+  "pr": "118510",
+  "sha": "9fc8f0e0cffd8e27f25ead4a483ee2aa7e70ac6a",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fix Metal crash in VM (macOS); small self-contained guard.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "118617",
+  "sha": "59c7d31bdac4b9b8a2f91d74e3548f6966b1fe91",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fix AreaLight3D Compatibility vertex shader compile error; removes 7 bad lines.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "118527",
+  "sha": "f1edeb4acc4ca7aae658c78357841820fa460620",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Suppresses spurious UID errors when cache uninitialized; contained core/io fix.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "118695",
+  "sha": "caf16709af9f08bb430ddb8cffc10cbf66c62437",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fix GLES3 scene shader int-literal type errors for WebGL/ANGLE; small shader fix.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "118770",
+  "sha": "5cb4bee8ff98ac0a19852103773ddf57f8f5acb3",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Add missing includes for single-threaded (web) build; harmless include correctness.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "118355",
+  "sha": "dd6a398e9052c7a470fcbcaf89d01374b2bb4848",
+  "decision": "port-now",
+  "kind": "other",
+  "risk": "low",
+  "rationale": "Reclassifies an HDR project setting as basic; single-file config tweak.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "118752",
+  "sha": "dc12c5f48eda610453642ae6b5201a18c6797337",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fix null rt error toggling ReflectionProbe visibility; small mobile render fix.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "118055",
+  "sha": "ba11d2842627fc9771d7c3ed850d9cd4f254449d",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes shortened-IPv6 parse regression; contained core/io networking fix.",
+  "outcome": "ported",
+  "local_sha": "91f0cb5db28ac5eb2497a81507ae7686d778824f"
+ },
+ {
+  "pr": "118152",
+  "sha": "5884e31ab7ceee6f3c811f020486b7c363ca2b3c",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Initialize ReflectionAtlas in reflection_atlas_create; one-line init fix.",
+  "outcome": "ported",
+  "local_sha": "7394005a2c81995a06d2b2eedede3331cab4e92e"
+ },
+ {
+  "pr": "118809",
+  "sha": "835e2dcbba974d72d23e348e1ba48f9231fdcd3c",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "SPIR-V validation fix in mobile clearcoat; one-line shader fix.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "118678",
+  "sha": "01603e77df711142fe2769ff8ab1d0191c3a49d1",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes a race in RefCounted::unreference; important, contained core/object fix.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "118850",
+  "sha": "c3f8f7f04026c5d1603ab8fabf50b0ee700f41eb",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fix OOB writes in D3D12 vertex array setup; one-line header fix, memory safety.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "118863",
+  "sha": "d57f844e7975bee9309c188f462721406bfdcc47",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fix clearcoat intensity for area lights; two one-line shader fixes (gles3 + rd).",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "118629",
+  "sha": "4d794c4ffbcda9a71738d16d6902f9f8c7efb26b",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Bilinear fallback for FSR/MetalFX on Mobile; small viewport fix.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "118906",
+  "sha": "28eecef6f18587bd130e0c40bce52a42d06991ec",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Adds missing bound-method argument for SpringBoneSimulator3D curve signal; trivial bind fix.",
+  "outcome": "ported",
+  "local_sha": "c2649634e4f5c4a24cfe3fed6ef158ce884e206c"
+ },
+ {
+  "pr": "119019",
+  "sha": "38fc4ffd476892138786dd3b6e55d4d73f089ee1",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fix multiview UBO ubo:X numbers in Compatibility shaders; small shader fix.",
+  "outcome": "ported",
+  "local_sha": "db8d7b68e953e304b0c0532299078c97e1b6d9f9"
+ },
+ {
+  "pr": "118909",
+  "sha": "e8a58d1343dfee9f5c0ec26c965d582eb92bb504",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "SceneTree constructor now uses VRS texture correctly; small self-contained fix.",
+  "outcome": "ported",
+  "local_sha": "0b39139687cbcde9580ca4a38316f4ffd8f10f0a"
+ },
+ {
+  "pr": "118948",
+  "sha": "c784aa082269a15184b425a558465571cd5ccf3e",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes Jolt plane conversion; one-line type-conversion correctness fix.",
+  "outcome": "ported",
+  "local_sha": "31c7e878260d5860f8657474b8ec6c129793fe1b"
+ },
+ {
+  "pr": "118949",
+  "sha": "82ab65b02e07aa1befbe599834f43784c2f2bc5e",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Prevents spurious error getting blend point name first time; one-line guard.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "118962",
+  "sha": "393d854f7a904286e6749e6e0f837e41b4ebd2cf",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Prevent textureQueryLod in vertex shader; one-line validation fix.",
+  "outcome": "ported",
+  "local_sha": "2a046fad3337eb6341aa817207e380169bb2a731"
+ },
+ {
+  "pr": "119002",
+  "sha": "bafddf210cdce255d2809c9621744f7c31db0b43",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Always emit post-enter translation notification in node.cpp; small correctness fix.",
+  "outcome": "ported",
+  "local_sha": "73db2d7ebb722c0463e1280c0c3bf10351288b61"
+ },
+ {
+  "pr": "119001",
+  "sha": "7a8ebaed077f1ba473f4bc1c5bfabd03ec994d2d",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Downgrades keyless-track error to verbose warning in animation_mixer; harmless.",
+  "outcome": "ported",
+  "local_sha": "a90617fd43ea74f312a0e9f8672a74d45adfff1f"
+ },
+ {
+  "pr": "119007",
+  "sha": "9e0e94b944db98f81402e78d645ef9bb1692adb9",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "GridMap editor grid now shows without reopening scene; small self-contained fix.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "119054",
+  "sha": "e8504f8f307f9548e704290c7be32c50c112d40c",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fix XR ubo:X numbers in Compatibility scene shader; two-line shader fix.",
+  "outcome": "ported",
+  "local_sha": "8d34e72737d91ee1f7a786588acf9f832c9583ec"
+ },
+ {
+  "pr": "119083",
+  "sha": "05e93d70c1575df52cbfc5e966a63745315bf227",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes glTF/blend importer naming_version mixup; two-line import correctness fix.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "119089",
+  "sha": "b4d772626026b7a7289a63903acbd8b604b326ae",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes negative time-scale regression in BlendSpace1D/2D; small self-contained edits.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "119092",
+  "sha": "98bfffa66f8ed3a6ef58e550a1667c2e7771a0a0",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Adds error detail to FileAccessPack messages; single-file diagnostic improvement.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "119090",
+  "sha": "0b41f26b9b8b3bebce5417c3809d12c78502f05d",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Adds Shift+Enter newline default shortcut; tiny input default addition.",
+  "outcome": "ported",
+  "local_sha": "e3fcfafdf7722bd6eaa19bcef3500215f4fb36af"
+ },
+ {
+  "pr": "118198",
+  "sha": "179899680b588fcd64c7a8c5dce14ef663c6ff42",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Sanitize volumetric fog NaNs to stop black-pixel flooding; single shader file.",
+  "outcome": "ported",
+  "local_sha": "3c1c76ebd124fa027cab879638a9a88cd865969f"
+ },
+ {
+  "pr": "89325",
+  "sha": "f1ea87c4bd4879d70e06af7d22e717983801920b",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Small CPUParticles3D fix for zero-scale basis inversion error; single-file runtime fix.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "119063",
+  "sha": "a0375dde960ee9dba46d461e0145123609691950",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "AnimationTree erases properties only for the specific node; one-line correctness fix.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "114568",
+  "sha": "976ab7fa5c4839aaf91016cff51993408fc3c8f8",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Trivially improves invalid Z-index error message in canvas_item.cpp.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "119204",
+  "sha": "0183f295f99892d3fd4c19f1ccfc392bb0096c98",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fix priority sort table in RD graph; small self-contained fix.",
+  "outcome": "reverted-incompatible",
+  "local_sha": "6b76e20515dc62d096fbba3abb2ac403caaf0246",
+  "reason": "PriorityTable static_assert requires RecordedCommand::Type count matching 4.7; base enum differs (unported command-type changes)"
+ },
+ {
+  "pr": "119185",
+  "sha": "c3284cd6968d44730272495219bf822c1645387b",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Free LTC RIDs; GLES3 resource-leak fix, self-contained.",
+  "outcome": "reverted-incompatible",
+  "local_sha": "b23cb2c692af07a31816d2daff034f00cb019fae",
+  "reason": "frees ltc RIDs for AreaLight feature (LinearlyTransformedCosines) absent in 4.6.3 base"
+ },
+ {
+  "pr": "119168",
+  "sha": "4a5321b5a7bb0ed6829dd65e1c2a4e6e9de6afc4",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Better error message for ZSTD decompress_dynamic; single-file, harmless.",
+  "outcome": "ported",
+  "local_sha": "b9db844ae0d20e3cc49541a7514bd7d8f262dfa1"
+ },
+ {
+  "pr": "119259",
+  "sha": "efd747838522dec7b7a6f9c113b625053e2a977c",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fix crash baking D3D12 shaders from Vulkan; small self-contained guard.",
+  "outcome": "ported",
+  "local_sha": "22b6038015dda092abef73287c0ef96776af5a5d"
+ },
+ {
+  "pr": "119226",
+  "sha": "0067214c1eae1af4e40147148bf5ab7c04a036bc",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Vulkan subsampled composition-layer fix; small change across 3 openxr files.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "119289",
+  "sha": "d51d1ec68204bfa91b0fd5499bf5eb7d79c88256",
+  "decision": "port-now",
+  "kind": "other",
+  "risk": "low",
+  "rationale": "Warn that --gpu-index is unsupported in Compatibility; small UX fix across gles3/main/rd.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "119304",
+  "sha": "96c9b3e8aaa228217265f4566795a0457b832215",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Zero uninitialized InstanceData fields; small defensive fix.",
+  "outcome": "ported",
+  "local_sha": "d989acd15025dcc815582d191b8a2677ded3bf4f"
+ },
+ {
+  "pr": "119230",
+  "sha": "ce26629ff51b8f5d259103ed8a5dba3734d06282",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Removes redundant compute_list_add_barrier; small correctness fix.",
+  "outcome": "ported",
+  "local_sha": "2409c1c0c7072b2d74376adb0e5a6ccd3c5507a8"
+ },
+ {
+  "pr": "119223",
+  "sha": "aaaf76403e88a3316073f8506672d7e88f167df8",
+  "decision": "port-now",
+  "kind": "other",
+  "risk": "low",
+  "rationale": "Adds Setup Shadows profiler timestamp; minor, self-contained, low risk.",
+  "outcome": "ported",
+  "local_sha": "dcc9146e8a20b52819c57a06c9d9a60646d5bf0f"
+ },
+ {
+  "pr": "119340",
+  "sha": "8d3d0ea6caa6306f4df59025b1021c02a4b1396f",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Null uniform set error when enabling SDFGI; self-contained gi.cpp fix.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "119394",
+  "sha": "afdab2d6b36c3b410ac8d82b5435a0f588c6f80b",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes leak of resources loaded via load_threaded_get; single-file core/io fix.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "119070",
+  "sha": "d3a741d3f7fcd95919361f3067e953c14922f339",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Blend space uses correct name in events and clears states; small scene+editor fix.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "119069",
+  "sha": "2828be93cf81e565d45911f4b338c0d5d1dea14c",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes BlendSpace point insertion shift at a specific index; two one-line edits.",
+  "outcome": "ported",
+  "local_sha": "19499a533361909abf41b1cd55e6aa555a92a1d5"
+ },
+ {
+  "pr": "119310",
+  "sha": "9dc22aa76cb8c4b0352722bb2d2d26ac6fbda314",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Makes 2D instance parameters revertible via CanvasItem; self-contained additive fix.",
+  "outcome": "ported",
+  "local_sha": "efb43b8133ae5371e9185e390bc30eb0b4cefb65"
+ },
+ {
+  "pr": "119373",
+  "sha": "8075f4250f301b8cf7cf60a3d7fcfbdb33d77dbd",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Moves #endif DISABLE_DEPRECATED so MOUSE_MODE enum constants bind in non-deprecated builds; 1-line self-contained fix.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "118895",
+  "sha": "db0467cc6aa1175eb2026e25bb11ce8d0c0fc2e3",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Inspector tooltip fix in scene_debugger.cpp + scene_tree.cpp; both files present, tiny change.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "119375",
+  "sha": "ef7d768e65e6e8c56bfeccf2ec34bbf87f18e741",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Shader crash fix for param name matching uniform; shader_compiler.cpp undiverged.",
+  "outcome": "ported",
+  "local_sha": "a3ffb6245bfb92e25ebf6969380e72af88f67309"
+ },
+ {
+  "pr": "117773",
+  "sha": "1378c909f09cb04d084fbd2d4a0b112f2138bd6f",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "LightmapGI probe interpolation at AABB edges, self-contained scene cull fix.",
+  "outcome": "ported",
+  "local_sha": "295079aae14e2c60d289d6fc9df40efb804c7626"
+ },
+ {
+  "pr": "118265",
+  "sha": "b8c2d43bdf8744eae6ce5ce0e54c3a995ff8395a",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "3-line guard fixing BoneAttachment3D !is_inside_tree() error; isolated runtime node fix.",
+  "outcome": "ported",
+  "local_sha": "056861f82305a7b21c63b9a4731e5c079f41a5e7"
+ },
+ {
+  "pr": "119495",
+  "sha": "8ae90e9442add0fe3108ddbdc7dbf0f9c5ca7104",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Android --main-pack template-build fix; contained core/io export logic.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "119510",
+  "sha": "2c5bdd1f9c476bd0fa3c324b8f89960353ab7eb7",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Guards apple-only dynamic-library call path; small platform fix.",
+  "outcome": "ported",
+  "local_sha": "eb8660f82bb913f0da376db73917c7fd937d8437"
+ },
+ {
+  "pr": "119344",
+  "sha": "cd702593c97e5b5b84aa7baac88a7b616ffd6163",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Vulkan: fix false-positive error in _determine_swap_chain_format; single-file.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "119567",
+  "sha": "450e28e62f05302dd53c740e2da0f960aa819d00",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "y-sort modulation div-by-zero, one-line canvas cull fix.",
+  "outcome": "ported",
+  "local_sha": "bcfe396048511819b38aa43fe8fb36f93430c005"
+ },
+ {
+  "pr": "119565",
+  "sha": "7a1dda1478ad8318ff84a65c3746e7cc0d39fc99",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Skip UTF-8 BOM when loading TRES; high-value resource-loading fix, self-contained.",
+  "outcome": "ported",
+  "local_sha": "4369eff78c7c52e0a4d982426a2ab1185b95d4a4"
+ },
+ {
+  "pr": "117805",
+  "sha": "3bfa50fd329cb9a7b01b0ab1cd7ac8f27f7391ac",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "GLES3 convert_to_srgb uniform data-type fix; one-line correctness.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "119241",
+  "sha": "78ff43f99541d404834b363005c81fcecc0919fb",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes incorrect grid floor position before input in GridMap editor; net code removal.",
+  "outcome": "ported",
+  "local_sha": "e3a2a7d6023fb2989f08925d826e4ef381155a53"
+ },
+ {
+  "pr": "119651",
+  "sha": "6137953493eba13a4e594787d2198c6a03ad2242",
+  "decision": "port-now",
+  "kind": "refactor",
+  "risk": "low",
+  "rationale": "Single-file clarification of Variant hash_compare semantics; harmless.",
+  "outcome": "ported",
+  "local_sha": "6e8b68da94690bff5348c70b17d09587abecda41"
+ },
+ {
+  "pr": "119620",
+  "sha": "f08e003ff23a667c24c76c0193ba31a02b5dae99",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "iOS resource directory path fix with godot_path; single-file.",
+  "outcome": "ported",
+  "local_sha": "d788c840f3ff281bb556dd1552fc6776acd8f58f"
+ },
+ {
+  "pr": "117217",
+  "sha": "44a215ec06f893b91601597ee729a1474633aafe",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "One-line Viewport texture-path update guard for null common parent during reparent.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "119665",
+  "sha": "fa6cad230f638d65a5a897008c5fc512edc237ad",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Shader validation: forbid hint_screen_texture in unsupported types; shader_language.cpp undiverged.",
+  "outcome": "ported",
+  "local_sha": "b1fab354910dfdb74d773b71b6e100fd7e090425"
+ },
+ {
+  "pr": "119401",
+  "sha": "12a102e93cac2c61c71c73a2723714113ae0db43",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "RD race-condition fixes in one file, safe correctness improvement.",
+  "outcome": "ported",
+  "local_sha": "9bf4330c8591376795f60e0fd5a661657adcb2e5"
+ },
+ {
+  "pr": "119587",
+  "sha": "6c6d7c5ff66b504ee49bc83e358cb69904faf71f",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Mobile TAA jitter fix, single file, self-contained.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "119659",
+  "sha": "92b674706c28e9be640cf0df8add1d4bd55786e8",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "First-frame XR_ERROR_VALIDATION_FAILURE fix; frame_synthesis extension exists in tree, single-file.",
+  "outcome": "ported",
+  "local_sha": "76b498fab6500e7f9de9e9ccc2798268e4262526"
+ },
+ {
+  "pr": "116634",
+  "sha": "fa09dd17a68a5741cb2361f1d07af271c7a40c4f",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "GLES3: null-check render target before dereferencing reflection probe; crash fix.",
+  "outcome": "ported",
+  "local_sha": "6523e52648ed88256ae77077affd2e3551de4f02"
+ },
+ {
+  "pr": "119773",
+  "sha": "5ed6ae232567f1ade07dd0f396797b3d8f7d3101",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "iOS orientation changes ignored in embedded mode; self-contained apple_embedded fix.",
+  "outcome": "ported",
+  "local_sha": "8bd1ab6d4686714449719dd348503b6745c42e8c"
+ },
+ {
+  "pr": "119819",
+  "sha": "e82870e250a326c94e03d658306db94e1b116c2d",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Curve set_point_count now preserves existing points; small self-contained fix.",
+  "outcome": "ported",
+  "local_sha": "6cc691d8ccb185eeb01af5d9a9ec1bf714380cb7"
+ },
+ {
+  "pr": "119872",
+  "sha": "f3ec4cee64bc26b8a99d13f045f243de5df1f4e5",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "2-line Polygon2D stale-AABB fix in scene/2d, self-contained (pairs with fast-path PR 117334).",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "119980",
+  "sha": "4d3bfd2b621a24ddafcc20893541a09eda5f1915",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "One-line fix to AnimationNode branching by custom timeline usage.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "119971",
+  "sha": "fc3585607d2de008fd7d4b1a3b136392b789f9ba",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "D3D12: avoid CreateCommandList1 for driver compat; single-file simplification.",
+  "outcome": "ported",
+  "local_sha": "69dba0bb99da427b8a0085def0ff5d89fa979cad"
+ },
+ {
+  "pr": "119975",
+  "sha": "95efa7f46a00113a895ca7429cd8157009291083",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Pulseaudio: prevent crash querying latency when disconnected; small null guard.",
+  "outcome": "ported",
+  "local_sha": "3785c5015442d04ac2db9341d328de2c06fd6b06"
+ },
+ {
+  "pr": "119977",
+  "sha": "9d2e20a046f9a008c15a24f1c6c83b04331763e4",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Pulseaudio: avoid duplicate log spam; single-file trivial fix.",
+  "outcome": "ported",
+  "local_sha": "9526af3fb082d2d722d931b8fb7823d43ea62879"
+ },
+ {
+  "pr": "119982",
+  "sha": "3badc0ee23caf1e5269fe90f8ee17e09d4d2b682",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "ConeTwistJoint3D uses cone-shaped limits; one-line Jolt joint correctness fix.",
+  "outcome": "ported",
+  "local_sha": "4b341063e38283dd1ca54931b7c61281ae0edaba"
+ },
+ {
+  "pr": "119998",
+  "sha": "eea0ff082db51e09d99860da9688cadc7170360c",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "One-line GLES3 scene shader fix for EYE_OFFSET vertex compilation error.",
+  "outcome": "ported",
+  "local_sha": "582d9b87f24b5724510135bcc1714f27cb8e7b7e"
+ },
+ {
+  "pr": "119451",
+  "sha": "b7eb57977a0ec5b8b69f59c9d567f9307c689cf4",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Restricts Metal residency sets to Apple6+ GPUs; small compat fix, self-contained.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "120071",
+  "sha": "279e7ca3cbd340553f8b7ce19e46570560564ccb",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Small CanvasRenderRD deadlock fix, self-contained and high-value.",
+  "outcome": "ported",
+  "local_sha": "cb09ce6a2f1b157b46ed0657fff48e92f54142d0"
+ },
+ {
+  "pr": "120106",
+  "sha": "dc59c8b250bec794d6f454e952e47d4a854eeab2",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Adds null check for root_animation_node in AnimationTree; trivial 5-line guard.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "119631",
+  "sha": "eb03ae8fc5465793f8f617d7a320e3b208f16919",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes leftover particle data on buffer update; 2-line self-contained clear in gles3 + renderer_rd storage.",
+  "outcome": "ported",
+  "local_sha": "4a393dd3228a6bad37a9e6cf0f471a38ddf58532"
+ },
+ {
+  "pr": "120300",
+  "sha": "1f92b45db3167896f3a1eac54eae9380c15e2ac0",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Two-line crash fix in existing spatial marker tracking extension; self-contained.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "120241",
+  "sha": "ff92d4c9bb461f2693dbf6c53bec828b133c695d",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Self-contained fix for custom_timeline stretch mode in AnimationNodeAnimation; scene/animation not diverged.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "120258",
+  "sha": "b4156a8833d366eb3c8efadabcb54db409851c96",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "One-line fix so gravity scale updates when set from code; trivial and safe.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "120298",
+  "sha": "86637357b31405db2a4c709f77bf4378eb4ead51",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Jolt default area param updates now propagate to bodies; small self-contained fix in jolt objects/space.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "120369",
+  "sha": "2a74ac212b406ec78b5f2794d9e23c9ff2e5fae1",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Self-contained UDP server peer-connection fix in core/io, no fork overlap.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ }
+]

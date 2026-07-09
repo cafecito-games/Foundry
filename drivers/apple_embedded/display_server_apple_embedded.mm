@@ -96,7 +96,7 @@ DisplayServerAppleEmbedded::DisplayServerAppleEmbedded(const String &p_rendering
 	if (rendering_driver == "metal") {
 		if (@available(iOS 14.0, *)) {
 			layer = [GDTAppDelegateService.viewController.godotView initializeRenderingForDriver:@"metal"];
-			wpd.metal.layer = (CAMetalLayer *)layer;
+			wpd.metal.layer = (__bridge CA::MetalLayer *)layer;
 			rendering_context = memnew(RenderingContextDriverMetal);
 		} else {
 			OS::get_singleton()->alert("Metal is only supported on iOS 14.0 and later.");
@@ -657,11 +657,25 @@ void DisplayServerAppleEmbedded::screen_set_orientation(DisplayServer::ScreenOri
 	ERR_FAIL_INDEX(p_screen, screen_count);
 
 	screen_orientation = p_orientation;
-	if (@available(iOS 16.0, *)) {
-		[GDTAppDelegateService.viewController setNeedsUpdateOfSupportedInterfaceOrientations];
+#ifdef IOS_ENABLED
+	// Under the SwiftUI app lifecycle, GDTViewController is wrapped by a UIHostingController
+	// that is the window's root VC. iOS queries the root VC for orientation preferences, so we
+	// must install the selectors on the hosting class before requesting an orientation update.
+	GDTViewController *vc = GDTAppDelegateService.viewController;
+	if (!vc) {
+		return;
 	}
-#if !defined(VISIONOS_ENABLED)
-	else {
+	[vc propagateUIPreferencesToRootViewController];
+
+	UIViewController *rootViewController = vc.view.window.rootViewController ?: vc;
+	if (@available(iOS 16.0, *)) {
+		[rootViewController setNeedsUpdateOfSupportedInterfaceOrientations];
+		UIWindowScene *windowScene = rootViewController.view.window.windowScene;
+		if (windowScene) {
+			UIWindowSceneGeometryPreferencesIOS *preferences = [[UIWindowSceneGeometryPreferencesIOS alloc] initWithInterfaceOrientations:[rootViewController supportedInterfaceOrientations]];
+			[windowScene requestGeometryUpdateWithPreferences:preferences errorHandler:nil];
+		}
+	} else {
 		[UIViewController attemptRotationToDeviceOrientation];
 	}
 #endif

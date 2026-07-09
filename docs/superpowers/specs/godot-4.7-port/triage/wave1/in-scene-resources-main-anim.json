@@ -1,0 +1,618 @@
+[
+ {
+  "sha": "ff92d4c9bb461f2693dbf6c53bec828b133c695d",
+  "pr": "120241",
+  "title": "Fix stretch mode in `custom_timeline` on `AnimationNodeAnimation`",
+  "subsystem": "scene/animation",
+  "nfiles": 1
+ },
+ {
+  "sha": "dc59c8b250bec794d6f454e952e47d4a854eeab2",
+  "pr": "120106",
+  "title": "Add null check for `root_animation_node` in AnimationTree",
+  "subsystem": "scene/animation",
+  "nfiles": 1
+ },
+ {
+  "sha": "6c325574cd8818ce6da0b27300ce0b6632d5f82a",
+  "pr": "120059",
+  "title": "Check blend weight for AnimationNode error & remove `_validate_animation_graph()`",
+  "subsystem": "scene/animation",
+  "nfiles": 14
+ },
+ {
+  "sha": "4d3bfd2b621a24ddafcc20893541a09eda5f1915",
+  "pr": "119980",
+  "title": "Fix AnimationNode's branching by custom timeline usage",
+  "subsystem": "scene/animation",
+  "nfiles": 1
+ },
+ {
+  "sha": "e82870e250a326c94e03d658306db94e1b116c2d",
+  "pr": "119819",
+  "title": "Fix Curve point count expansion preserving points",
+  "subsystem": "scene/resources",
+  "nfiles": 1
+ },
+ {
+  "sha": "2014874dbdbfa3a1e22917fd7549ede87d73f6e0",
+  "pr": "119692",
+  "title": "Add property to auto adjust oversampling with canvas item scale.",
+  "subsystem": "scene/main",
+  "nfiles": 4
+ },
+ {
+  "sha": "44a215ec06f893b91601597ee729a1474633aafe",
+  "pr": "117217",
+  "title": "Fix Viewport path update error when dock is reparented during tree",
+  "subsystem": "scene/main",
+  "nfiles": 1
+ },
+ {
+  "sha": "f75646311636a1d54c9139d6b6f802cb9c2e21c7",
+  "pr": "118613",
+  "title": "Fix a pair of regressions in the Game view node selection",
+  "subsystem": "scene/debugger",
+  "nfiles": 1
+ },
+ {
+  "sha": "7a1dda1478ad8318ff84a65c3746e7cc0d39fc99",
+  "pr": "119565",
+  "title": "Skip UTF-8 BOM when loading TRES.",
+  "subsystem": "scene/resources",
+  "nfiles": 1
+ },
+ {
+  "sha": "db0467cc6aa1175eb2026e25bb11ce8d0c0fc2e3",
+  "pr": "118895",
+  "title": "Fix inspector tooltips after focus changes",
+  "subsystem": "scene/debugger",
+  "nfiles": 2
+ },
+ {
+  "sha": "eb7cfe13625ce49d57834b3fbbc96df8f0cbf447",
+  "pr": "119328",
+  "title": "[Accessibility] Fix positions of nested popups sent to the screen reader.",
+  "subsystem": "scene/main",
+  "nfiles": 5
+ },
+ {
+  "sha": "9dc22aa76cb8c4b0352722bb2d2d26ac6fbda314",
+  "pr": "119310",
+  "title": "Fix 2D instance parameters not being revertible",
+  "subsystem": "scene/main",
+  "nfiles": 2
+ },
+ {
+  "sha": "2828be93cf81e565d45911f4b338c0d5d1dea14c",
+  "pr": "119069",
+  "title": "Fix BlendSpace point insertion shift at a specific index",
+  "subsystem": "scene/animation",
+  "nfiles": 2
+ },
+ {
+  "sha": "d3a741d3f7fcd95919361f3067e953c14922f339",
+  "pr": "119070",
+  "title": "Blend space editor: Use correct name in events, and clean all states",
+  "subsystem": "scene/animation",
+  "nfiles": 4
+ },
+ {
+  "sha": "ea8f8ec983436cf62e595fe35e80a9478c1237aa",
+  "pr": "118659",
+  "title": "Fix some issues with 3D view manipulation",
+  "subsystem": "scene/debugger",
+  "nfiles": 6
+ },
+ {
+  "sha": "976ab7fa5c4839aaf91016cff51993408fc3c8f8",
+  "pr": "114568",
+  "title": "Better error message for setting invalid Z index",
+  "subsystem": "scene/main",
+  "nfiles": 1
+ },
+ {
+  "sha": "a0375dde960ee9dba46d461e0145123609691950",
+  "pr": "119063",
+  "title": "Animation: Only erase properties for a specific node",
+  "subsystem": "scene/animation",
+  "nfiles": 1
+ },
+ {
+  "sha": "b4d772626026b7a7289a63903acbd8b604b326ae",
+  "pr": "119089",
+  "title": "Fix negative time scale regression in BlendSpace1D and BlendSpace2D",
+  "subsystem": "scene/animation",
+  "nfiles": 2
+ },
+ {
+  "sha": "7a8ebaed077f1ba473f4bc1c5bfabd03ec994d2d",
+  "pr": "119001",
+  "title": "Make error about keyless animation tracks a verbose warning instead",
+  "subsystem": "scene/animation",
+  "nfiles": 1
+ },
+ {
+  "sha": "bafddf210cdce255d2809c9621744f7c31db0b43",
+  "pr": "119002",
+  "title": "Always emit post-enter translation notification",
+  "subsystem": "scene/main",
+  "nfiles": 1
+ },
+ {
+  "sha": "320e81846979bd716341e0669231954543c4afbd",
+  "pr": "118090",
+  "title": "Fix panning with 3 button emulation not working",
+  "subsystem": "scene/debugger",
+  "nfiles": 1
+ },
+ {
+  "sha": "9eda898eb81064f7f0c4480a25b4f9c93204c612",
+  "pr": "118791",
+  "title": "Move dirty filter state from `AnimationNode` to `AnimationNodeInstance`",
+  "subsystem": "scene/animation",
+  "nfiles": 2
+ },
+ {
+  "sha": "82ab65b02e07aa1befbe599834f43784c2f2bc5e",
+  "pr": "118949",
+  "title": "Prevent error message when try to get blend point name at first time",
+  "subsystem": "scene/animation",
+  "nfiles": 1
+ },
+ {
+  "sha": "e8a58d1343dfee9f5c0ec26c965d582eb92bb504",
+  "pr": "118909",
+  "title": "Fix SceneTree constructor not using VRS texture",
+  "subsystem": "scene/main",
+  "nfiles": 1
+ },
+ {
+  "sha": "c2ad2d1fb17b6b79252e5e28fce324126faf7ae9",
+  "pr": "118836",
+  "title": "Remove `SNAME` from MethodInfo macro",
+  "subsystem": "scene/animation",
+  "nfiles": 5
+ },
+ {
+  "sha": "790c68368f509f79179b2cf20001520cb438384c",
+  "pr": "118590",
+  "title": "Add `RequiredParam` -> `RequiredResult` conversion",
+  "subsystem": "scene/main",
+  "nfiles": 3
+ },
+ {
+  "sha": "37b6d4d8be51aa6480150deda075adef6d68d02f",
+  "pr": "117776",
+  "title": "Fix a potential crash in `Viewport` 3D physics picking",
+  "subsystem": "scene/main",
+  "nfiles": 1
+ },
+ {
+  "sha": "8e303ff6d930f8e82feb209e54606620d031cf4b",
+  "pr": "118535",
+  "title": "Remove `set_width` and `set_height` from DrawableTexture since they are not functional",
+  "subsystem": "scene/resources",
+  "nfiles": 3
+ },
+ {
+  "sha": "46a2cf6d2528663ff09e6f28e6fc1f2b5bf4c341",
+  "pr": "116286",
+  "title": "Don't remove internal nodes in `Node::replace_by`",
+  "subsystem": "scene/main",
+  "nfiles": 1
+ },
+ {
+  "sha": "9495deaf7532313ff7154d8a06aa6fc100807532",
+  "pr": "118373",
+  "title": "Revert \"Fix uniforms break particle shaders after conversion from a `ParticleProcessMaterial`\"",
+  "subsystem": "scene/resources",
+  "nfiles": 1
+ },
+ {
+  "sha": "ed0d6fa48ee0b173980655d550f6008b1cd31f2b",
+  "pr": "118240",
+  "title": "Fix files deleted after chunked transfer completes",
+  "subsystem": "scene/main",
+  "nfiles": 1
+ },
+ {
+  "sha": "bbc7150c95382024f299424a7e2ce205b3a7676c",
+  "pr": "117861",
+  "title": "Particles: Fix angular velocity",
+  "subsystem": "scene/resources",
+  "nfiles": 1
+ },
+ {
+  "sha": "1b577dc2c0c4db942d49ae4e1b896bd331c973dc",
+  "pr": "117611",
+  "title": "Fix SkeletonModification2DJiggle `look_at` under mirrored transforms",
+  "subsystem": "scene/resources",
+  "nfiles": 3
+ },
+ {
+  "sha": "83aef4c70d94d3eaecba84c5a368a3a11ef09950",
+  "pr": "118114",
+  "title": "Fix incorrect animation section when playing a custom timeline with stretched time scale.",
+  "subsystem": "scene/animation",
+  "nfiles": 1
+ },
+ {
+  "sha": "d91e97967dab0df8d5547d45bf2b0e6faf40c9ce",
+  "pr": "118159",
+  "title": "Fix compressed Pos3D track interpolation",
+  "subsystem": "scene/resources",
+  "nfiles": 1
+ },
+ {
+  "sha": "a0e5996d8264658539860a842ea4ccc6492a49e0",
+  "pr": "118062",
+  "title": "Fix subemitted particles not taking parent velocity into account",
+  "subsystem": "scene/resources",
+  "nfiles": 1
+ },
+ {
+  "sha": "3b2dabf339a033e7f7461bb8e3cfa6f56f76b1d5",
+  "pr": "118015",
+  "title": "Make `Node.get_path_to()` error user-friendly when there is no common parent",
+  "subsystem": "scene/main",
+  "nfiles": 2
+ },
+ {
+  "sha": "b67c81308b2edc51f06e69c27862977e7f46e9bd",
+  "pr": "110287",
+  "title": "Fix uniforms break particle shaders after conversion from a `ParticleProcessMaterial`",
+  "subsystem": "scene/resources",
+  "nfiles": 1
+ },
+ {
+  "sha": "e4a239b72b982e83fa204d896a8057b800857264",
+  "pr": "112184",
+  "title": "Add \u201cInherit Emitter Scale\u201d flag to ParticleProcessMaterial",
+  "subsystem": "scene/resources",
+  "nfiles": 3
+ },
+ {
+  "sha": "2d327c811c667880929f47672629957168710615",
+  "pr": "113879",
+  "title": "Align `TextParagraph` to max. line width when width is set to `-1`.",
+  "subsystem": "scene/resources",
+  "nfiles": 1
+ },
+ {
+  "sha": "e03a2c4c76c4b9141ec29fb3d46afdd18c0fa4ac",
+  "pr": "117282",
+  "title": "[Accessibility] Only embed popup tree for non-focusable popups and tooltips.",
+  "subsystem": "scene/main",
+  "nfiles": 1
+ },
+ {
+  "sha": "91030b8d8e3181f0887fe0d9cf352f13b44c0e34",
+  "pr": "117812",
+  "title": "Add inspector checkbox groups to Grow and Proximity Fade in BaseMaterial3D",
+  "subsystem": "scene/resources",
+  "nfiles": 1
+ },
+ {
+  "sha": "938f3e376e923d591017a1cea17b63ea794e1904",
+  "pr": "117448",
+  "title": "Automatically remove incomplete file downloads",
+  "subsystem": "scene/main",
+  "nfiles": 2
+ },
+ {
+  "sha": "6cd467eab379fc6589dddd1b4be2ede9075d4737",
+  "pr": "117373",
+  "title": "Fix undoing terrain set move duplicates terrain in second set",
+  "subsystem": "scene/resources",
+  "nfiles": 4
+ },
+ {
+  "sha": "881d08622ef6a55c3073e4ee6e05be5b8d1381cb",
+  "pr": "115980",
+  "title": "Fix WindowWrapper leaking all key inputs to parent",
+  "subsystem": "scene/main",
+  "nfiles": 4
+ },
+ {
+  "sha": "331c8297658e366db23fae7784db986120cc7ef8",
+  "pr": "117538",
+  "title": "Fix incorrect parameter being set in AnimationNodeOneShot",
+  "subsystem": "scene/animation",
+  "nfiles": 1
+ },
+ {
+  "sha": "bf6ec9141714981cb941e0a71cdb2677bcf39d6e",
+  "pr": "117508",
+  "title": "Fix blend point setter can't restore the name in deprecated=no",
+  "subsystem": "scene/animation",
+  "nfiles": 2
+ },
+ {
+  "sha": "1b498aefc2d7562de207a644b26f97f5679c4269",
+  "pr": "112447",
+  "title": "Add scale3d and orientation3d in particle process",
+  "subsystem": "scene/resources",
+  "nfiles": 3
+ },
+ {
+  "sha": "8ec2a3de1918cb798ca8d9a1099b8fc2769a07d9",
+  "pr": "117457",
+  "title": "Fix parameter name mismatch in Animation Tree / Animation Blend Tree",
+  "subsystem": "scene/animation",
+  "nfiles": 3
+ },
+ {
+  "sha": "f13b291f2808bc8b61d2067df56ccaa7cb98b009",
+  "pr": "117041",
+  "title": "Fix editable children state when duplicating instantiated nodes",
+  "subsystem": "scene/main",
+  "nfiles": 1
+ },
+ {
+  "sha": "af6b040c67041d0f753d5d760132365c469ecce5",
+  "pr": "115377",
+  "title": "Fix error in debugger while changing scene on button clicked with touchscreen",
+  "subsystem": "scene/main",
+  "nfiles": 1
+ },
+ {
+  "sha": "96436e33f9120ce2f3728bdefcfee01c8e10533a",
+  "pr": "117277",
+  "title": "Optimize AnimationTree, Improve internals & Editor & `Node::process_thread_group` safety",
+  "subsystem": "scene/animation",
+  "nfiles": 29
+ },
+ {
+  "sha": "f06fe5254bd7e0efa04c50c8b477c91e87fd5330",
+  "pr": "117180",
+  "title": "Fix `AnimationPlayer` not updating animation length when animation resource changes",
+  "subsystem": "scene/animation",
+  "nfiles": 2
+ },
+ {
+  "sha": "269ccadae07a7cffdb18dcace644c97b3d67fef9",
+  "pr": "117030",
+  "title": "Use IDs instead of hashes for TrackCache keys",
+  "subsystem": "scene/animation",
+  "nfiles": 4
+ },
+ {
+  "sha": "e11d9eb8da1069fb7c4748207dc8f73f8ab00191",
+  "pr": "110369",
+  "title": "Display and allow setting name/index of BlendSpace points",
+  "subsystem": "scene/animation",
+  "nfiles": 13
+ },
+ {
+  "sha": "020df5d45265ed8462db1c3e8fee1adaf48c1181",
+  "pr": "92429",
+  "title": "Add `Tween::has_tweeners()`",
+  "subsystem": "scene/animation",
+  "nfiles": 3
+ },
+ {
+  "sha": "7851fa442ec78726cbcf8804cf6c38abbc9a7e2d",
+  "pr": "117322",
+  "title": "[Accessibility] Do not use activation/deactivation callbacks for embedded windows.",
+  "subsystem": "scene/main",
+  "nfiles": 1
+ },
+ {
+  "sha": "284121025f324f93ac0a6ceaf50357d7f6ed2108",
+  "pr": "115738",
+  "title": "Use class name instead of Object ID in remote scene view",
+  "subsystem": "scene/debugger",
+  "nfiles": 2
+ },
+ {
+  "sha": "88cd7ab37813ce89d49c199bc05edb660e7dacb6",
+  "pr": "105791",
+  "title": "Add the ability to cancel pan/zoom/orbit navigation",
+  "subsystem": "scene/debugger",
+  "nfiles": 5
+ },
+ {
+  "sha": "01af00957c26c822dc8d090545fca63ee49a29dd",
+  "pr": "117255",
+  "title": "[Debugger] Fix 3D disabled builds",
+  "subsystem": "scene/debugger",
+  "nfiles": 1
+ },
+ {
+  "sha": "1a86cf1eaaa0b08f812d28df40b3a708de648c8f",
+  "pr": "117179",
+  "title": "Fix broken viewport camera inertia in freelook mode",
+  "subsystem": "scene/debugger",
+  "nfiles": 1
+ },
+ {
+  "sha": "533f832d523c846f60ef65c82f66b1a379d2fa15",
+  "pr": "117156",
+  "title": "Fix `tile_set.h` not including `ArrayMesh`",
+  "subsystem": "scene/resources",
+  "nfiles": 1
+ },
+ {
+  "sha": "220b0b2f74d8e089481b140c42a42992a76dd6fc",
+  "pr": "113509",
+  "title": "Store velocity in userdata, use VELOCITY to pass to copy shader",
+  "subsystem": "scene/resources",
+  "nfiles": 1
+ },
+ {
+  "sha": "42c771d160f553ae93a03d50eb7d62f97735100b",
+  "pr": "115957",
+  "title": "Add `View3DController` for editor 3D view manipulation",
+  "subsystem": "scene/debugger",
+  "nfiles": 9
+ },
+ {
+  "sha": "e72018ee3496cb1399c9367e42ded921646ed665",
+  "pr": "116786",
+  "title": "Make constants READONLY in remote scene view",
+  "subsystem": "scene/debugger",
+  "nfiles": 1
+ },
+ {
+  "sha": "60b00753d66076a14d124e0e24b60da0b3b4e8df",
+  "pr": "109004",
+  "title": "Editor additions for MipMaps and rd_textures",
+  "subsystem": "scene/resources",
+  "nfiles": 19
+ },
+ {
+  "sha": "4b70dacebab32563a68b2f540154c03769ca37bd",
+  "pr": "116795",
+  "title": "Remove direct `RenderingServer` dependency from `TextServer`.",
+  "subsystem": "scene/resources",
+  "nfiles": 4
+ },
+ {
+  "sha": "923c751af4e35fe8ef5f24d72333a561030f7382",
+  "pr": "91261",
+  "title": "[HTTPRequest] Add Missing Redirect Status Codes",
+  "subsystem": "scene/main",
+  "nfiles": 2
+ },
+ {
+  "sha": "a338853bf56855a1fbc9c3bc93ade3a2ce5ad632",
+  "pr": "116631",
+  "title": "[VisualShader] Fix `RESTART` and `ATTRACTOR_FORCE` builtins being available in Start function",
+  "subsystem": "scene/resources",
+  "nfiles": 1
+ },
+ {
+  "sha": "badba19c105e504fd9d92b3bfee0f166d6196e4b",
+  "pr": "116719",
+  "title": "`AudioStreamWAV`: Check for `eof_reached` when reading LIST INFO tags",
+  "subsystem": "scene/resources",
+  "nfiles": 1
+ },
+ {
+  "sha": "6e96b028e10dbe7381bdeecde80fe7492f4b810c",
+  "pr": "116676",
+  "title": "Check `playback_queue` existance after emit `animation_finished` signal",
+  "subsystem": "scene/animation",
+  "nfiles": 1
+ },
+ {
+  "sha": "b7eb50db44ef788d70f10501fd096a2614ad6e26",
+  "pr": "116269",
+  "title": "Add a function to merge multiple ImporterMeshes together",
+  "subsystem": "scene/resources",
+  "nfiles": 3
+ },
+ {
+  "sha": "2327a823578a30f09068f97272598521896d5633",
+  "pr": "115125",
+  "title": "Clear fade-out on request firing in AnimationNodeOneShot",
+  "subsystem": "scene/animation",
+  "nfiles": 1
+ },
+ {
+  "sha": "383af3f070bfec342055b00d5c602be239d367ec",
+  "pr": "116264",
+  "title": "Fix animation player crash when setting current animation to stop",
+  "subsystem": "scene/animation",
+  "nfiles": 3
+ },
+ {
+  "sha": "4326946f005ca357243b5eaa1ef7083073d87e73",
+  "pr": "115732",
+  "title": "Tidy up includes in `scene/main` and `scene/debugger`",
+  "subsystem": "scene/main",
+  "nfiles": 32
+ },
+ {
+  "sha": "6e5b661f3298ae968d40ad43706ff8ed45f44990",
+  "pr": "116331",
+  "title": "Fix `Curve` point properties usage flags",
+  "subsystem": "scene/resources",
+  "nfiles": 1
+ },
+ {
+  "sha": "4e84cd8a6be3ecd3c688269e1e4d05afa92eee5a",
+  "pr": "116326",
+  "title": "Remove some unused Node methods",
+  "subsystem": "scene/main",
+  "nfiles": 2
+ },
+ {
+  "sha": "5f1819538a74ce2dcde9aaa55dd5e6373f1903f0",
+  "pr": "116192",
+  "title": "Fix thread safety of physics interpolation",
+  "subsystem": "scene/main",
+  "nfiles": 2
+ },
+ {
+  "sha": "553315ced85f89602f8b882da43ef92f170655bf",
+  "pr": "92282",
+  "title": "Add PropertyListHelper to Curves",
+  "subsystem": "scene/resources",
+  "nfiles": 4
+ },
+ {
+  "sha": "c53965f13eb7bc7add011cb6ae4afdfc03d60351",
+  "pr": "116046",
+  "title": "Account for the current section when processing AnimationTracks",
+  "subsystem": "scene/resources",
+  "nfiles": 3
+ },
+ {
+  "sha": "c2b5ff33695f304db4fdfcf573ca16782923ae6f",
+  "pr": "115394",
+  "title": "Add conic gradient to GradientTexture2D",
+  "subsystem": "scene/resources",
+  "nfiles": 3
+ },
+ {
+  "sha": "86508ea17b8f53637c92f042750e6db8fc514d6e",
+  "pr": "115993",
+  "title": "Fix AHashMap realloc cause AnimationPlayer crash, second try",
+  "subsystem": "scene/animation",
+  "nfiles": 2
+ },
+ {
+  "sha": "24ae6c89be3b580f4c21b15916f4f97ea03a84ae",
+  "pr": "115931",
+  "title": "Fix use-after-free in AnimationTree (AHashMap realloc)",
+  "subsystem": "scene/animation",
+  "nfiles": 1
+ },
+ {
+  "sha": "a4ea276cf49c90713facace2ce39d010f11f473d",
+  "pr": "115919",
+  "title": "Fix use-after-free in Animation Blend Tree",
+  "subsystem": "scene/animation",
+  "nfiles": 1
+ },
+ {
+  "sha": "d7e6f5e05f9dfc0d2e82e6a89b1311835dfd3fee",
+  "pr": "115644",
+  "title": "[Buildsystem] Fix non-3D builds",
+  "subsystem": "scene/debugger",
+  "nfiles": 1
+ },
+ {
+  "sha": "80a4af1cc7c97b41f819ac2ac519a12804a53b1c",
+  "pr": "115551",
+  "title": "Move `RuntimeNodeSelect` to its own files",
+  "subsystem": "scene/debugger",
+  "nfiles": 15
+ },
+ {
+  "sha": "563c22673b962c0d6daa114ada1607de68d04949",
+  "pr": "115577",
+  "title": "Remove a few includes of `curve.h`, `texture.h` and `resource_loader.h` + `resource_saver.h`",
+  "subsystem": "scene/resources",
+  "nfiles": 15
+ },
+ {
+  "sha": "861d7f5263e17f3824ed7d07313965c4aa4468f1",
+  "pr": "115021",
+  "title": "Reset `vertex_2d` flag when starting a new surface in ImmediateMesh",
+  "subsystem": "scene/resources",
+  "nfiles": 1
+ }
+]

@@ -1,0 +1,222 @@
+[
+ {
+  "pr": "115089",
+  "sha": "0eee4323580927411e1284e301506c20c2cf37d2",
+  "decision": "port-now",
+  "kind": "dep-bump",
+  "risk": "low",
+  "rationale": "Jolt Physics: Swapping vertices of triangle if it is scaled inside out",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'",
+  "final_disposition": "covered-by-5.5.0-bump (jolt patch upstreamed into 5.5.0)"
+ },
+ {
+  "pr": "115327",
+  "sha": "a4bbad2ba8a8ecd4e756e49de5c83666f12a9bd5",
+  "decision": "port-now",
+  "kind": "dep-bump",
+  "risk": "low",
+  "rationale": "Jolt Physics: Make MoveKinematic more accurate when rotating a body by a very small angle",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'",
+  "final_disposition": "covered-by-5.5.0-bump (jolt patch upstreamed into 5.5.0)"
+ },
+ {
+  "pr": "115200",
+  "sha": "c148384c400e3e98f549d473b6e21ada7732778a",
+  "decision": "port-now",
+  "kind": "dep-bump",
+  "risk": "low",
+  "rationale": "Update HarfBuzz to 12.3.2",
+  "outcome": "ported",
+  "local_sha": "a422e6645d35b44b96c8bfc7ef374d9dcf1b0d7d"
+ },
+ {
+  "pr": "115574",
+  "sha": "2ba7af854deef88a3668282ea9e80255607463f9",
+  "decision": "port-now",
+  "kind": "dep-bump",
+  "risk": "low",
+  "rationale": "ufbx: Update to 0.21.2",
+  "outcome": "ported",
+  "local_sha": "6f780d03020b3147ed1718bdc42c190f740f90a4"
+ },
+ {
+  "pr": "115510",
+  "sha": "9dff33d942226d85d3bdfde25a0c22c54e35f738",
+  "decision": "port-now",
+  "kind": "dep-bump",
+  "risk": "low",
+  "rationale": "Fix Nvidia Shield controller showing up twice on macOS",
+  "outcome": "ported",
+  "local_sha": "d80d08c03e553948cfe59c0ce3f14ffca12b9971"
+ },
+ {
+  "pr": "115879",
+  "sha": "ade192ca1555b3fdaa02b68d4bb234fbf104d20f",
+  "decision": "port-now",
+  "kind": "dep-bump",
+  "risk": "low",
+  "rationale": "libjpeg-turbo: Improve config files and fix patches",
+  "outcome": "ported",
+  "local_sha": "8addac1d51308e16fe0f06918ef3f66ed64548a6"
+ },
+ {
+  "pr": "115921",
+  "sha": "6136b7a599cce62189d044db2898e92d51cd7bb9",
+  "decision": "port-now",
+  "kind": "dep-bump",
+  "risk": "low",
+  "rationale": "Update re-spirv with more derivative operations.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'",
+  "final_disposition": "skip-already-at-4.7 (fork develop already at re-spirv)"
+ },
+ {
+  "pr": "116225",
+  "sha": "d41677587ce95b67cdbfa7778cdf9d4051643462",
+  "decision": "port-now",
+  "kind": "dep-bump",
+  "risk": "low",
+  "rationale": "[Metal] Remove glslang memory decorations.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\".",
+  "final_disposition": "defer-port-later (glslang 4.7 state coupled to absent metal-cpp Metal migration)"
+ },
+ {
+  "pr": "115877",
+  "sha": "2964e8ed82723285536bb376dd290e0d3e907c91",
+  "decision": "port-now",
+  "kind": "dep-bump",
+  "risk": "low",
+  "rationale": "Jolt: Update to 5.5.0",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\".",
+  "final_disposition": "ported via whole-dir bump to 5.5.0 + 1-line wrapper adaptation (see commit)"
+ },
+ {
+  "pr": "116419",
+  "sha": "9fe699e4a0ae360de02b3886447707ca2b1a910c",
+  "decision": "port-now",
+  "kind": "dep-bump",
+  "risk": "low",
+  "rationale": "Metal: Fix linking to older SDK versions",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\".",
+  "final_disposition": "defer-port-later (metal-cpp absent in fork; 4.7 Metal metal-cpp migration not done)"
+ },
+ {
+  "pr": "117564",
+  "sha": "33b487690e59d5e0902ff6a527e3c96c7811dd33",
+  "decision": "port-now",
+  "kind": "dep-bump",
+  "risk": "low",
+  "rationale": "libpng: Update to 1.6.55",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\".",
+  "final_disposition": "skip-already-at-4.7 (fork develop already at libpng 1.6.x)"
+ },
+ {
+  "pr": "107312",
+  "sha": "aef4950b92463d4686ac33a67310111f80a4b1bb",
+  "decision": "port-now",
+  "kind": "dep-bump",
+  "risk": "low",
+  "rationale": "glad: Update to 2.0.8",
+  "outcome": "ported",
+  "local_sha": "e0328f56bd07f85a05ca615c392b8bfc8293f518"
+ },
+ {
+  "pr": "118393",
+  "sha": "35e62dad5ca24d4534560fc00fc1aa33ea2e677b",
+  "decision": "port-now",
+  "kind": "dep-bump",
+  "risk": "low",
+  "rationale": "Jolt Physics: Fix contact callbacks for body with motion quality LinearCast vs a soft body",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\".",
+  "final_disposition": "covered-by-5.5.0-bump (jolt patch upstreamed into 5.5.0)"
+ },
+ {
+  "pr": "118776",
+  "sha": "f40e79536a14178cf93835c0041ac6dcc3b112cf",
+  "decision": "port-now",
+  "kind": "dep-bump",
+  "risk": "low",
+  "rationale": "ufbx: Update to 0.21.3",
+  "outcome": "ported",
+  "local_sha": "6751eba814fee7f9c1bff3d9d501679e48095cec"
+ },
+ {
+  "pr": "118779",
+  "sha": "b9bc5af3c2da8f8a2a1d1bfa0722c85846ed4840",
+  "decision": "port-now",
+  "kind": "dep-bump",
+  "risk": "low",
+  "rationale": "tinyexr: Update to 1.0.13",
+  "outcome": "ported",
+  "local_sha": "a519ce5cd79347809b77c4d3554daeff1bc72162"
+ },
+ {
+  "pr": "118786",
+  "sha": "889c8602fc72f2d9913d01f0363ec83c33765acc",
+  "decision": "port-now",
+  "kind": "dep-bump",
+  "risk": "low",
+  "rationale": "Update FreeType to 2.14.3",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'",
+  "final_disposition": "skip-already-at-4.7 (fork develop already bumped FreeType 2.14.3)"
+ },
+ {
+  "pr": "118952",
+  "sha": "08f01333d375b86758096f77d97af7c6db8b2285",
+  "decision": "port-now",
+  "kind": "dep-bump",
+  "risk": "low",
+  "rationale": "libpng: Update to 1.6.58",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'",
+  "final_disposition": "skip-already-at-4.7 (fork develop already at libpng 1.6.58)"
+ },
+ {
+  "pr": "118916",
+  "sha": "16bb065ac31b79c0ed24b3b944d3b5275123e854",
+  "decision": "port-now",
+  "kind": "dep-bump",
+  "risk": "low",
+  "rationale": "dr_mp3: Update to 0.7.3",
+  "outcome": "ported",
+  "local_sha": "128560e85c55dd004b21c2049e93223af0784795"
+ },
+ {
+  "pr": "119403",
+  "sha": "7c0f2ef2a3bc2e5293c176be8bfc00a6c516a556",
+  "decision": "port-now",
+  "kind": "dep-bump",
+  "risk": "low",
+  "rationale": "Update SDL joystick device blocklist",
+  "outcome": "ported",
+  "local_sha": "9ad23b24e44ff67b570d2a4a45f924a100174b96"
+ },
+ {
+  "pr": "119630",
+  "sha": "6b735de563141fc74108831de1723568914585bb",
+  "decision": "port-now",
+  "kind": "dep-bump",
+  "risk": "low",
+  "rationale": "Thirdparty: Update re-spirv to `ff2b1a506`",
+  "outcome": "ported",
+  "local_sha": "cc33e6d965d825e68ccba2db042501b2041cbff4"
+ },
+ {
+  "pr": "119745",
+  "sha": "fb324ed2cf6d82b4eb80b6c6acbefb54bd9dc9ca",
+  "decision": "port-now",
+  "kind": "dep-bump",
+  "risk": "low",
+  "rationale": "Thirdparty: Update re-spirv to 29a77fc",
+  "outcome": "ported",
+  "local_sha": "22b9668e1869972de8c7cb66e6499f12ab016001"
+ }
+]

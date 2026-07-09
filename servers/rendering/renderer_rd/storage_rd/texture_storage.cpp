@@ -3095,7 +3095,8 @@ void TextureStorage::update_decal_atlas() {
 			int *v_offsets = v_offsetsv.ptrw();
 			memset(v_offsets, 0, sizeof(int) * base_size);
 
-			int max_height = 0;
+			// Take border into account for minimum height.
+			int max_height = 2;
 
 			for (int i = 0; i < item_count; i++) {
 				//best fit
@@ -3614,6 +3615,7 @@ void TextureStorage::_update_render_target(RenderTarget *rt) {
 		rd_color_multisample_format.usage_bits = render_target_get_color_usage_bits(true);
 		RD::TextureView rd_view_multisample;
 		rd_color_multisample_format.is_resolve_buffer = false;
+		rd_color_multisample_format.is_discardable = true;
 		rt->color_multisample = RD::get_singleton()->texture_create(rd_color_multisample_format, rd_view_multisample);
 		ERR_FAIL_COND(rt->color_multisample.is_null());
 	}

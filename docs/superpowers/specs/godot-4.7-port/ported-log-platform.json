@@ -1,0 +1,372 @@
+[
+ {
+  "pr": "115373",
+  "sha": "d40dd57a9e195133eda8637871be74150e14efe1",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes crash when removing a Windows PopupMenu submenu by deferring the md_sub lookup and adding a null check; base native_menu_windows.cpp set_item_submenu matches upstream pre-image.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "115430",
+  "sha": "a1746ee2043538e4cbcd1d846828e4f701759994",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Self-contained MSVC-only __declspec(guard(nocf)) hardening on the two IAT hook functions; no-op on non-MSVC via macro. Low risk even though not compiled on macOS.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "109958",
+  "sha": "114cb3aafc2e45c0fb10c24507a42cf6506a7203",
+  "decision": "port-now",
+  "kind": "cleanup",
+  "risk": "med",
+  "rationale": "Sets default symbol visibility to hidden (-fvisibility=hidden) in macos detect.py; must be ported together with #115868 (a6623908) which re-exports main(), and check GDExtension/plugin symbol exports still resolve. Verifiable via macOS build.",
+  "outcome": "ported",
+  "local_sha": "194a3f9a81bfaf595ee4a484af28bd62db4a9a5b"
+ },
+ {
+  "pr": "109182",
+  "sha": "0cd4a62f3b6349e5060f9fe95e473c670d7d2e22",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "One line: setTreatsFilePackagesAsDirectories:YES lets the native macOS dialog browse into bundles; self-contained in display_server_macos.mm.",
+  "outcome": "ported",
+  "local_sha": "3f43aefc1003595e4266535838d0ab319e4784d2"
+ },
+ {
+  "pr": "115619",
+  "sha": "9005783e770b7ef95b22ba36b19bd587984e7993",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Returns an empty IME rect when no text control is active to hide input-accessory popups; target is foundry_content_view.mm in the fork (rename from godot_content_view.mm).",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "115704",
+  "sha": "bbd8bfcd301a3a522cc24f29d52d3743d0221884",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes 'Show In File Manager' launching bundle apps by checking DirAccess::is_bundle (present in base) before treating a path as a folder; self-contained in os_macos.mm.",
+  "outcome": "ported",
+  "local_sha": "8dee0e2a6a8389764d77342a22009891fcaaf1a0"
+ },
+ {
+  "pr": "115868",
+  "sha": "a6623908171440f5d485430464b7ed04d85690cb",
+  "decision": "port-now",
+  "kind": "cleanup",
+  "risk": "low",
+  "rationale": "Marks main() with __attribute__((visibility(default))); trivial. Target file is foundry_main_macos.mm in the fork (rename from godot_main_macos.mm). Pairs with #109958 (114cb3a) hidden default visibility.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "115823",
+  "sha": "65e79f33cb20f1c5c7d270684bb0dcb3958e8024",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Fixes FD leak in Wayland embedder by returning sent-FDs vector; self-contained, embedder exists in base, but reworks a helper signature.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "114521",
+  "sha": "0aa77895ac0153bfd9f6a498dd8c4353a903bf20",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "shell_open uses create_process instead of blocking execute to avoid UI freeze; self-contained os_linuxbsd fix, absent in base.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "116309",
+  "sha": "b769ae2d5f134eb556495d87d1f9c87f31092848",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Swaps Wayland BTN_SIDE/BTN_EXTRA to correct XBUTTON1/2 mapping; base still has the swapped mapping, self-contained.",
+  "outcome": "ported",
+  "local_sha": "41d1930d07ceef5efbdd1a9d37dfb54340e6e837"
+ },
+ {
+  "pr": "116354",
+  "sha": "43c9a32b3d46f1333ee80b1e48ae77f8bf04b345",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Adds a null check on the NSURL before building an NSBundle in get_framework_executable; self-contained defensive fix in os_macos.mm.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "116242",
+  "sha": "e3837c24fd525a24f0c470d39f5c6ba1e69d88a6",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Rewrites confined-mouse warp math to use screen coordinates so confined movement stays in sync; self-contained in display_server_macos.mm and verifiable on macOS. Behavioral, test mouse-confine after port.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "116724",
+  "sha": "d3e5ba0d6bede3deca88d2b795247da5f5113177",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Adds nullptr checks for script_debugger in LayerHost::gui_input; embedded_process_macos.mm exists in the fork base, clean defensive fix.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "117058",
+  "sha": "1cbe90a1e95b50c82a491aeb333bf3fe3b54dd26",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Guards a macOS 26 API (CGDirectDisplayID) behind __MAC_OS_X_VERSION_MAX_ALLOWED so builds work with Xcode older than 26; valuable for local macOS builds.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "115566",
+  "sha": "0f0c3f3a18607798b27c5c57f3d68d467b72df15",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Prefer gimli/llvm-addr2line over binutils in crash handler; self-contained, absent in base (base still calls plain addr2line).",
+  "outcome": "ported",
+  "local_sha": "b26142a7a073703e29bbcc73103efc802381c0bb"
+ },
+ {
+  "pr": "117067",
+  "sha": "47612473f94de914c68d6f3c69dc67e39a04edf4",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes String output variable scoping in addr2line detection; small and self-contained but depends on 115566 landing first.",
+  "outcome": "ported",
+  "local_sha": "ed4890fc80c4bc34934c1ceb2900fe36429c031a"
+ },
+ {
+  "pr": "116524",
+  "sha": "8f63f6e9561044f16dca9394f8f82ffccc0bc603",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Wake for events when Magnet window manager is running to avoid stalled redraws; self-contained in os_macos.mm add_frame_delay.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "117319",
+  "sha": "9095a76ff54ff96778c75260ac629cd4d1f1535f",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Adds <cstdio> include so linux template_release compiles; the include change is guard-independent, absent in base.",
+  "outcome": "ported",
+  "local_sha": "85724bb7d93b6e71af4835cc0402f0dd4ce0d626"
+ },
+ {
+  "pr": "117335",
+  "sha": "f9a8302c8395db323fdeebcb1d8024b9fc661999",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Passes the current process environment to child processes in create_process (fixes Steam time tracking on project relaunch); self-contained in os_macos.mm.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "117371",
+  "sha": "b15bc2894f1fa6a88fffe793a2d6989f09234701",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Forces ANGLE (GL-over-Metal) when running in a VM (Virtual processor name) and fails cleanly if ANGLE init fails; GLES3 gl_manager_angle block exists in base. Behavioral, valuable for VM/software-render CI; verify against fork's rendering_driver handling.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "117454",
+  "sha": "ad21e3fbb5e829f3f854bba2792f519018512f03",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Adds encoding='utf-8' to the SVG open in platform_builders.py icon generator; runs during the macOS build, trivial and safe.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "117461",
+  "sha": "9f2688c20454aabef704e7dc4e6fa54d4a7ad6b8",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Includes core/typedefs.h in display_server_macos_base.h to prevent AppKit MAX/MIN macro clashes; base file exists, clean one-liner.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "114327",
+  "sha": "2995751152cbd34bf965b9d810b6616d230765c5",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "One-line determinism fix: sort extra_frameworks before emitting -framework flags to stabilize macOS incremental link order.",
+  "outcome": "ported",
+  "local_sha": "5d7aadc8e90bb63c4bae5be77d444d3a56927459"
+ },
+ {
+  "pr": "117748",
+  "sha": "b0c1084a10f146c31b38a4682572e7483dc514ce",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Self-contained fix for invalid transient window infinite loop in delete_sub_window plus on-top/transient guard; base matches upstream pre-image. Needs mechanical WindowID/INVALID_WINDOW_ID enum-namespace adaptation.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "116648",
+  "sha": "915f8dcba73fb92f1428def7774e2790ea5444fc",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Destroy/recreate Wayland data source each copy so clipboard history updates; self-contained, absent in base.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "117830",
+  "sha": "ab9175302ed30d57f888c35cc20c9641447ccfc6",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Accessibility fix: set FOCUS_NONE on ScrollContainer scroll bars in scene/gui/scroll_container.cpp (compiled, verifiable). The detect.py hunk only removes a duplicated accesskit include that does not exist in the fork base; drop it and port only the scroll_container change.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "115896",
+  "sha": "521e442754cb263e9789924da1ff62febb733080",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "med",
+  "rationale": "Crash-handler improvement printing frame PCs and module load address; macOS/linux compiled here (base has load_addr). Foundation for 118676; Windows signal handler gains module-info machinery (diagnostic-only).",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "118148",
+  "sha": "a987bcc2f598e8b56398fe202b97835b9918e596",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Wraps libdecor-only code in #ifdef LIBDECOR_ENABLED to fix libdecor=no build; self-contained guard, absent in base.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "118404",
+  "sha": "50cc2823d51540661bc3d3a0e4d5a83a99450d68",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "One-line: reset ime_active=false in _xim_destroy_callback; self-contained, absent in base.",
+  "outcome": "ported",
+  "local_sha": "063e41f8b193e50b74a0bf9b5df565f00db976ab"
+ },
+ {
+  "pr": "118676",
+  "sha": "54f1178d3c8fbbaaf5e50a5caa32124430808b84",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "med",
+  "rationale": "Adds module name/offset to crash backtraces; macOS(.mm)/linux are compiled here so it gets real coverage. Must be ordered after 521e44 (it builds on that print format); Windows portion is diagnostic-only.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "118848",
+  "sha": "28200b1bcef26dd54e7e20f568bc7a886864bd09",
+  "decision": "port-now",
+  "kind": "refactor",
+  "risk": "low",
+  "rationale": "Consolidates IME composition/candidate positioning into a new update_ime_form_positions helper; base WM_IME_COMPOSITION and window_set_ime_position match upstream pre-image. Prereq for 118893.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "118893",
+  "sha": "ad6ead96a265dd3673e291f4f304ba002a46af72",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Self-contained IME composition-font fix inside update_ime_form_positions; must be ordered after 28200b which introduces that helper. Windows-only, not compiled here so verify visually.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "119252",
+  "sha": "b786c890b6956013a0e47a877a7bda0ae62a713e",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Additive: track/forward keyboard modifier state in Wayland embedder; embedder exists in base, no absent 4.7 infra.",
+  "outcome": "ported",
+  "local_sha": "65cd8a899ae13e41be6ecc54788502fc0ecd9333"
+ },
+ {
+  "pr": "119303",
+  "sha": "ee4e7e51bc121ff85e95ac5681200bb9b8b92c01",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Adds XSync/error-handler restore around X11 embed_process to swallow BadWindow errors; self-contained, absent in base.",
+  "outcome": "ported",
+  "local_sha": "0614eff3c55da06c4975bdd43d3f575046f4a3e9"
+ },
+ {
+  "pr": "119448",
+  "sha": "7af66e02ef4ed5cecabcf5b0909dac208fe773d7",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "One-line copy-paste fix (height fallback should use size.height not width); base still has the bug at wayland_thread.cpp.",
+  "outcome": "ported",
+  "local_sha": "9e90a753c131f3a80dcd72bf3bcd606b4cdf4f75"
+ },
+ {
+  "pr": "119331",
+  "sha": "819cae99f81e37b514ae414e33eb12bbbeb4b68a",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "3-line fix moving release_pressed_events to true focus loss; self-contained, absent in base.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "118190",
+  "sha": "f7d37c74c15007dbfae3e9a40ce4fd28ba005d63",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fixes poll_export mutating the current export_preset; replacement helpers has_valid_export_configuration/has_valid_project_configuration exist in base and web export_plugin.cpp compiles into the macOS editor.",
+  "outcome": "ported",
+  "local_sha": "2ee3a6b2dc4d237acd88163c1599369f556f2025"
+ }
+]

@@ -31,6 +31,7 @@
 #pragma once
 
 #include "core/input/input.h"
+#include "core/typedefs.h" // IWYU pragma: keep. Prevent macOS `MAX`/`MIN` from being defined.
 #include "servers/display/display_server.h"
 
 #define FontVariation __FontVariation

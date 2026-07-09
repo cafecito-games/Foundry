@@ -287,6 +287,7 @@ static const char *APK_ASSETS_DIRECTORY = "src/main/assets";
 static const char *AAB_ASSETS_DIRECTORY = "assetPackInstallTime/src/main/assets";
 
 static const int DEFAULT_MIN_SDK_VERSION = 24; // Should match the value in 'platform/android/java/app/config.gradle#minSdk'
+static const int VULKAN_MIN_SDK_VERSION = 29; // Minimum recommended sdk version for Vulkan 1.1 support. See https://developer.android.com/games/develop/vulkan/native-engine-support#recommendations
 static const int DEFAULT_TARGET_SDK_VERSION = 36; // Should match the value in 'platform/android/java/app/config.gradle#targetSdk'
 
 #ifndef ANDROID_ENABLED
@@ -451,10 +452,26 @@ void EditorExportPlatformAndroid::_update_preset_status() {
 
 	if (has_runnable) {
 		has_runnable_preset.set();
+		_start_check_for_changes_poll_thread();
 	} else {
 		has_runnable_preset.clear();
+		_stop_check_for_changes_poll_thread();
 	}
 	devices_changed.set();
+}
+
+void EditorExportPlatformAndroid::_start_check_for_changes_poll_thread() {
+	quit_request.clear();
+	if (!check_for_changes_thread.is_started()) {
+		check_for_changes_thread.start(_check_for_changes_poll_thread, this);
+	}
+}
+
+void EditorExportPlatformAndroid::_stop_check_for_changes_poll_thread() {
+	quit_request.set();
+	if (check_for_changes_thread.is_started()) {
+		check_for_changes_thread.wait_to_finish();
+	}
 }
 #endif
 
@@ -884,7 +901,7 @@ void EditorExportPlatformAndroid::_get_manifest_info(const Ref<EditorExportPrese
 	}
 
 	if (_uses_vulkan(p_preset)) {
-		// Require vulkan hardware level 1 support
+		// Optionally request vulkan hardware level 1 support.
 		FeatureInfo vulkan_level = {
 			"android.hardware.vulkan.level", // name
 			false, // required
@@ -892,11 +909,12 @@ void EditorExportPlatformAndroid::_get_manifest_info(const Ref<EditorExportPrese
 		};
 		r_features.append(vulkan_level);
 
-		// Require vulkan version 1.0
+		// Require vulkan version 1.1 if fallback_to_opengl3 is disabled.
+		bool vulkan_1_1_required = !GLOBAL_GET("rendering/rendering_device/fallback_to_opengl3");
 		FeatureInfo vulkan_version = {
 			"android.hardware.vulkan.version", // name
-			true, // required
-			"0x400003" // version - Encoded value for api version 1.0
+			vulkan_1_1_required, // required
+			"0x401000" // version - Encoded value for api version 1.1
 		};
 		r_features.append(vulkan_version);
 	}
@@ -1966,7 +1984,7 @@ String EditorExportPlatformAndroid::get_export_option_warning(const EditorExport
 			int target_sdk_int = DEFAULT_TARGET_SDK_VERSION;
 
 			String min_sdk_str = p_preset->get("gradle_build/min_sdk");
-			int min_sdk_int = DEFAULT_MIN_SDK_VERSION;
+			int min_sdk_int = VULKAN_MIN_SDK_VERSION;
 			if (min_sdk_str.is_valid_int()) {
 				min_sdk_int = min_sdk_str.to_int();
 			}
@@ -2027,7 +2045,7 @@ void EditorExportPlatformAndroid::get_export_options(List<ExportOption> *r_optio
 	r_options->push_back(ExportOption(PropertyInfo(Variant::INT, "gradle_build/export_format", PROPERTY_HINT_ENUM, "Export APK,Export AAB"), EXPORT_FORMAT_APK, false, true));
 	// Using String instead of int to default to an empty string (no override) with placeholder for instructions (see GH-62465).
 	// This implies doing validation that the string is a proper int.
-	r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "gradle_build/min_sdk", PROPERTY_HINT_PLACEHOLDER_TEXT, vformat("%d (default)", DEFAULT_MIN_SDK_VERSION)), "", false, true));
+	r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "gradle_build/min_sdk", PROPERTY_HINT_PLACEHOLDER_TEXT, vformat("%d (default)", VULKAN_MIN_SDK_VERSION)), "", false, true));
 	r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "gradle_build/target_sdk", PROPERTY_HINT_PLACEHOLDER_TEXT, vformat("%d (default)", DEFAULT_TARGET_SDK_VERSION)), "", false, true));
 
 	r_options->push_back(ExportOption(PropertyInfo(Variant::DICTIONARY, "gradle_build/custom_theme_attributes", PROPERTY_HINT_DICTIONARY_TYPE, "String;String"), Dictionary()));
@@ -2957,6 +2975,9 @@ bool EditorExportPlatformAndroid::has_valid_project_configuration(const Ref<Edit
 
 	if (!ResourceImporterTextureSettings::should_import_etc2_astc()) {
 		valid = false;
+		if (EditorNode::is_cmdline_mode()) {
+			err += TTR("ETC2/ASTC texture compression is required for Android export. In Project Settings, search for 'ETC2' in the search field, or enable 'Advanced Settings' and go to Rendering > Textures > VRAM Compression to enable 'Import ETC2 ASTC'.") + "\n";
+		}
 	}
 
 	bool gradle_build_enabled = p_preset->get("gradle_build/use_gradle_build");
@@ -2996,6 +3017,20 @@ bool EditorExportPlatformAndroid::has_valid_project_configuration(const Ref<Edit
 	if (current_renderer == "forward_plus") {
 		// Warning only, so don't override `valid`.
 		err += vformat(TTR("The \"%s\" renderer is designed for Desktop devices, and is not suitable for Android devices."), current_renderer);
+		err += "\n";
+	}
+
+	String min_sdk_str = p_preset->get("gradle_build/min_sdk");
+	int min_sdk_int = VULKAN_MIN_SDK_VERSION;
+	if (!min_sdk_str.is_empty()) { // Empty means no override, nothing to do.
+		if (min_sdk_str.is_valid_int()) {
+			min_sdk_int = min_sdk_str.to_int();
+		}
+	}
+	bool fallback_to_opengl3 = GLOBAL_GET("rendering/rendering_device/fallback_to_opengl3");
+	if (_uses_vulkan(p_preset) && min_sdk_int < VULKAN_MIN_SDK_VERSION && !fallback_to_opengl3) {
+		// Warning only, so don't override `valid`.
+		err += vformat(TTR("\"Min SDK\" should be greater or equal to %d for the \"%s\" renderer."), VULKAN_MIN_SDK_VERSION, current_renderer);
 		err += "\n";
 	}
 
@@ -3677,7 +3712,7 @@ Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportP
 		String version_name = p_preset->get_version("version/name");
 		String min_sdk_version = p_preset->get("gradle_build/min_sdk");
 		if (!min_sdk_version.is_valid_int()) {
-			min_sdk_version = itos(DEFAULT_MIN_SDK_VERSION);
+			min_sdk_version = itos(VULKAN_MIN_SDK_VERSION);
 		}
 		String target_sdk_version = p_preset->get("gradle_build/target_sdk");
 		if (!target_sdk_version.is_valid_int()) {
@@ -4277,7 +4312,6 @@ void EditorExportPlatformAndroid::initialize() {
 		devices_changed.set();
 		_create_editor_debug_keystore_if_needed();
 		_update_preset_status();
-		check_for_changes_thread.start(_check_for_changes_poll_thread, this);
 		use_scrcpy = EditorSettings::get_singleton()->get_project_metadata("android", "use_scrcpy", false);
 #else // ANDROID_ENABLED
 		android_editor_gradle_runner = memnew(AndroidEditorGradleRunner);
@@ -4287,10 +4321,7 @@ void EditorExportPlatformAndroid::initialize() {
 
 EditorExportPlatformAndroid::~EditorExportPlatformAndroid() {
 #ifndef ANDROID_ENABLED
-	quit_request.set();
-	if (check_for_changes_thread.is_started()) {
-		check_for_changes_thread.wait_to_finish();
-	}
+	_stop_check_for_changes_poll_thread();
 #else
 	if (android_editor_gradle_runner) {
 		memdelete(android_editor_gradle_runner);

@@ -1,0 +1,93 @@
+[
+ {
+  "sha": "8075f4250f301b8cf7cf60a3d7fcfbdb33d77dbd",
+  "pr": "119373",
+  "title": "Fix `DisplayServerEnums::MouseMode` enum binding being lost with `deprecated=no`",
+  "subsystem": "servers/display",
+  "nfiles": 1
+ },
+ {
+  "sha": "630a58a12d2cde110c370626c8a461f415273b59",
+  "pr": "117268",
+  "title": "Bypass physics command queue during physics processing",
+  "subsystem": "servers/physics_2d",
+  "nfiles": 2
+ },
+ {
+  "sha": "b7ab3a6da0914abc50af799e0cf4b663155494fd",
+  "pr": "107052",
+  "title": "Make `AudioEffectFilter`'s cutoff slider exponential",
+  "subsystem": "servers/audio",
+  "nfiles": 1
+ },
+ {
+  "sha": "8f0468f28102ea0bcf4628b91142c6a5e06b957b",
+  "pr": "117178",
+  "title": "Switch `XRServer` to use `LocalVector` for interfaces and do a little clean up",
+  "subsystem": "servers/xr",
+  "nfiles": 2
+ },
+ {
+  "sha": "a19e5c4b53c4af811f6d76f3547f5eb695ee7928",
+  "pr": "116830",
+  "title": "Fix AudioSpectrumAnalyzer's Hann Window",
+  "subsystem": "servers/audio",
+  "nfiles": 1
+ },
+ {
+  "sha": "a142c2218aa76b46ce99823ccf76926da033a741",
+  "pr": "116196",
+  "title": "Fix soft hyphen not working with small (or zero) line breaking width.",
+  "subsystem": "servers/text",
+  "nfiles": 1
+ },
+ {
+  "sha": "8db94f7b5eb0e97829d1f4fceac2784b55c112c6",
+  "pr": "116299",
+  "title": "Fix `AudioStreamPlaybackMicrophone` shutdown crash",
+  "subsystem": "servers/audio",
+  "nfiles": 2
+ },
+ {
+  "sha": "c44b01cd1f34e296a72349a3a2530e3d5bc79e4f",
+  "pr": "104736",
+  "title": "Add one-way collision direction for CollisionShape2Ds",
+  "subsystem": "servers/physics_2d",
+  "nfiles": 25
+ },
+ {
+  "sha": "80d3019de854f11110ee02780a1072c870f80f72",
+  "pr": "115951",
+  "title": "Fix GDExtension breakage in removed `AudioEffectSpectrumAnalyzer::get_tap_back_pos`",
+  "subsystem": "servers/audio",
+  "nfiles": 2
+ },
+ {
+  "sha": "b9b626406ab040fe4ac406d2c1f916e6533ed8a9",
+  "pr": "114355",
+  "title": "Fix Spectrum Analyzer effect returning jittered values",
+  "subsystem": "servers/audio",
+  "nfiles": 5
+ },
+ {
+  "sha": "dd210a10714371a7d34d3b3d5d7cae8a82dd5efe",
+  "pr": "100923",
+  "title": "CameraFeed: Add `set_format` and `get_formats` virtual binds",
+  "subsystem": "servers/camera",
+  "nfiles": 3
+ },
+ {
+  "sha": "94f3b73cec229ce922a48d490a983a15faa0ce49",
+  "pr": "114488",
+  "title": "Add `span_index` to `TextServer.shaped_text_get_glyphs` and related methods when accessed from GDScript.",
+  "subsystem": "servers/text",
+  "nfiles": 1
+ },
+ {
+  "sha": "dcf5b4deac9128d78a7cbb0c3396ce6f416b18c1",
+  "pr": "114731",
+  "title": "CameraFeed: Create new texture on datatype change",
+  "subsystem": "servers/camera",
+  "nfiles": 1
+ }
+]

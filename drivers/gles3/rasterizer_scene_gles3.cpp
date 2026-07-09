@@ -814,7 +814,7 @@ void RasterizerSceneGLES3::_setup_sky(const RenderDataGLES3 *p_render_data, cons
 	}
 }
 
-void RasterizerSceneGLES3::_draw_sky(RID p_env, const Projection &p_projection, const Transform3D &p_transform, float p_sky_energy_multiplier, float p_luminance_multiplier, bool p_use_multiview, bool p_flip_y, bool p_apply_color_adjustments_in_post) {
+void RasterizerSceneGLES3::_draw_sky(RID p_env, const Projection &p_projection, const Transform3D &p_transform, float p_sky_energy_multiplier, float p_luminance_multiplier, bool p_use_multiview, bool p_flip_y, bool p_apply_environment_effects_in_post) {
 	GLES3::MaterialStorage *material_storage = GLES3::MaterialStorage::get_singleton();
 	ERR_FAIL_COND(p_env.is_null());
 
@@ -827,7 +827,7 @@ void RasterizerSceneGLES3::_draw_sky(RID p_env, const Projection &p_projection, 
 	if (p_flip_y) {
 		spec_constants |= SkyShaderGLES3::USE_INVERTED_Y;
 	}
-	if (!p_apply_color_adjustments_in_post) {
+	if (!p_apply_environment_effects_in_post) {
 		spec_constants |= SkyShaderGLES3::APPLY_TONEMAPPING;
 	}
 
@@ -873,7 +873,7 @@ void RasterizerSceneGLES3::_draw_sky(RID p_env, const Projection &p_projection, 
 	}
 
 	Projection correction;
-	correction.set_depth_correction(false, true, false);
+	correction.set_depth_correction(p_flip_y, true, false);
 	camera = correction * camera;
 
 	Basis sky_transform = environment_get_sky_orientation(p_env);
@@ -983,7 +983,7 @@ void RasterizerSceneGLES3::_update_sky_radiance(RID p_env, const Projection &p_p
 		Projection cm;
 		cm.set_perspective(90, 1, 0.01, 10.0);
 		Projection correction;
-		correction.set_depth_correction(true, true, false);
+		correction.set_depth_correction(false, true, false);
 		cm = correction * cm;
 
 		bool success = material_storage->shaders.sky_shader.version_bind_shader(shader_data->version, SkyShaderGLES3::MODE_CUBEMAP);
@@ -2268,7 +2268,7 @@ void RasterizerSceneGLES3::render_scene(const Ref<RenderSceneBuffers> &p_render_
 	GLES3::Config *config = GLES3::Config::get_singleton();
 	RENDER_TIMESTAMP("Setup 3D Scene");
 
-	bool apply_color_adjustments_in_post = false;
+	bool apply_environment_effects_in_post = false;
 	bool is_reflection_probe = p_reflection_probe.is_valid();
 
 	Ref<RenderSceneBuffersGLES3> rb = p_render_buffers;
@@ -2276,7 +2276,7 @@ void RasterizerSceneGLES3::render_scene(const Ref<RenderSceneBuffers> &p_render_
 
 	if (rb->get_scaling_3d_mode() != RS::VIEWPORT_SCALING_3D_MODE_OFF) {
 		// If we're scaling, we apply tonemapping etc. in post, so disable it during rendering
-		apply_color_adjustments_in_post = true;
+		apply_environment_effects_in_post = true;
 	}
 
 	GLES3::RenderTarget *rt = nullptr; // No render target for reflection probe
@@ -2286,20 +2286,17 @@ void RasterizerSceneGLES3::render_scene(const Ref<RenderSceneBuffers> &p_render_
 	}
 
 	bool glow_enabled = false;
-	if (p_environment.is_valid()) {
-		glow_enabled = environment_get_glow_enabled(p_environment);
-		if (glow_enabled) {
-			// If glow is enabled, we apply tonemapping etc. in post, so disable it during rendering
-			apply_color_adjustments_in_post = true;
-		}
-	}
-
 	bool ssao_enabled = false;
+	bool use_bcs = false;
 	if (p_environment.is_valid()) {
+		// We apply tonemapping, etc. in post when any of these are true. In this
+		// case, set apply_environment_effects_in_post to true to skip tonemapping during rendering.
+		glow_enabled = environment_get_glow_enabled(p_environment);
 		ssao_enabled = environment_get_ssao_enabled(p_environment);
-		if (ssao_enabled) {
-			// If SSAO is enabled, we apply tonemapping etc. in post, so disable it during rendering
-			apply_color_adjustments_in_post = true;
+		use_bcs = environment_get_adjustments_enabled(p_environment);
+		bool canvas_tonemapping = environment_get_background(p_environment) == RS::ENV_BG_CANVAS && environment_get_tone_mapper(p_environment) != RS::ENV_TONE_MAPPER_LINEAR;
+		if (glow_enabled || ssao_enabled || use_bcs || canvas_tonemapping) {
+			apply_environment_effects_in_post = true;
 		}
 	}
 
@@ -2319,7 +2316,6 @@ void RasterizerSceneGLES3::render_scene(const Ref<RenderSceneBuffers> &p_render_
 		render_data.inv_cam_transform = render_data.cam_transform.affine_inverse();
 		render_data.cam_projection = p_camera_data->main_projection;
 		render_data.cam_orthogonal = p_camera_data->is_orthogonal;
-		render_data.cam_frustum = p_camera_data->is_frustum;
 		render_data.camera_visible_layers = p_camera_data->visible_layers;
 		render_data.main_cam_transform = p_camera_data->main_transform;
 
@@ -2392,11 +2388,6 @@ void RasterizerSceneGLES3::render_scene(const Ref<RenderSceneBuffers> &p_render_
 
 	SceneState::TonemapUBO tonemap_ubo;
 	if (render_data.environment.is_valid()) {
-		bool use_bcs = environment_get_adjustments_enabled(render_data.environment);
-		if (use_bcs) {
-			apply_color_adjustments_in_post = true;
-		}
-
 		tonemap_ubo.exposure = environment_get_exposure(render_data.environment);
 		tonemap_ubo.tonemapper = int32_t(environment_get_tone_mapper(render_data.environment));
 		RendererEnvironmentStorage::TonemapParameters params = environment_get_tonemap_parameters(render_data.environment, false);
@@ -2461,6 +2452,7 @@ void RasterizerSceneGLES3::render_scene(const Ref<RenderSceneBuffers> &p_render_
 	bool draw_feed = false;
 	float sky_energy_multiplier = 1.0;
 	int camera_feed_id = -1;
+	bool apply_canvas_bg_exposure = false;
 
 	if (unlikely(get_debug_draw_mode() == RS::VIEWPORT_DEBUG_DRAW_OVERDRAW)) {
 		clear_color = Color(0, 0, 0, 1); //in overdraw mode, BG should always be black
@@ -2500,6 +2492,7 @@ void RasterizerSceneGLES3::render_scene(const Ref<RenderSceneBuffers> &p_render_
 			} break;
 			case RS::ENV_BG_CANVAS: {
 				draw_canvas = true;
+				apply_canvas_bg_exposure = !Math::is_equal_approx(tonemap_ubo.exposure, 1.0f);
 			} break;
 			case RS::ENV_BG_KEEP: {
 				keep_color = true;
@@ -2522,11 +2515,6 @@ void RasterizerSceneGLES3::render_scene(const Ref<RenderSceneBuffers> &p_render_
 		if (draw_sky || draw_sky_fog_only || sky_reflections || sky_ambient) {
 			RENDER_TIMESTAMP("Setup Sky");
 			Projection projection = render_data.cam_projection;
-			if (is_reflection_probe) {
-				Projection correction;
-				correction.set_depth_correction(true, true, false);
-				projection = correction * render_data.cam_projection;
-			}
 
 			sky_energy_multiplier *= bg_energy_multiplier;
 
@@ -2583,7 +2571,8 @@ void RasterizerSceneGLES3::render_scene(const Ref<RenderSceneBuffers> &p_render_
 	if (is_reflection_probe && GLES3::LightStorage::get_singleton()->reflection_probe_has_atlas_index(render_data.reflection_probe)) {
 		fbo = GLES3::LightStorage::get_singleton()->reflection_probe_instance_get_framebuffer(render_data.reflection_probe, render_data.reflection_probe_pass);
 	} else {
-		rb->set_apply_color_adjustments_in_post(apply_color_adjustments_in_post);
+		rb->set_apply_environment_effects_in_post(apply_environment_effects_in_post);
+		rb->set_apply_canvas_bg_exposure(apply_canvas_bg_exposure);
 		fbo = rb->get_render_fbo();
 	}
 
@@ -2673,11 +2662,11 @@ void RasterizerSceneGLES3::render_scene(const Ref<RenderSceneBuffers> &p_render_
 	// Need to clear framebuffer unless:
 	// a) We explicitly request not to (i.e. ENV_BG_KEEP).
 	// b) We are rendering to a non-intermediate framebuffer with ENV_BG_CANVAS (shared between 2D and 3D).
-	if (!keep_color && (!draw_canvas || fbo != rt->fbo)) {
+	if (!keep_color && (!draw_canvas || (rt && fbo != rt->fbo))) {
 		clear_color.a = render_data.transparent_bg ? 0.0f : 1.0f;
 		glClearBufferfv(GL_COLOR, 0, clear_color.components);
 	}
-	if ((keep_color || draw_canvas) && fbo != rt->fbo) {
+	if ((keep_color || draw_canvas) && rt && fbo != rt->fbo) {
 		// Need to copy our current contents to our intermediate/MSAA buffer
 		GLES3::CopyEffects *copy_effects = GLES3::CopyEffects::get_singleton();
 
@@ -2687,7 +2676,11 @@ void RasterizerSceneGLES3::render_scene(const Ref<RenderSceneBuffers> &p_render_
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(rt->view_count > 1 ? GL_TEXTURE_2D_ARRAY : GL_TEXTURE_2D, rt->color);
 
-		copy_effects->copy_screen(render_data.luminance_multiplier);
+		if (apply_canvas_bg_exposure) {
+			copy_effects->copy_with_exposure(tonemap_ubo.exposure, render_data.luminance_multiplier);
+		} else {
+			copy_effects->copy_screen(render_data.luminance_multiplier);
+		}
 
 		scene_state.enable_gl_depth_test(true);
 		scene_state.enable_gl_depth_draw(true);
@@ -2714,7 +2707,7 @@ void RasterizerSceneGLES3::render_scene(const Ref<RenderSceneBuffers> &p_render_
 			spec_constant_base_flags |= SceneShaderGLES3::USE_DEPTH_FOG;
 		}
 
-		if (!apply_color_adjustments_in_post) {
+		if (!apply_environment_effects_in_post) {
 			spec_constant_base_flags |= SceneShaderGLES3::APPLY_TONEMAPPING;
 		}
 	}
@@ -2759,16 +2752,8 @@ void RasterizerSceneGLES3::render_scene(const Ref<RenderSceneBuffers> &p_render_
 
 		Transform3D transform = render_data.cam_transform;
 		Projection projection = render_data.cam_projection;
-		if (is_reflection_probe) {
-			Projection correction;
-			correction.columns[1][1] = -1.0;
-			projection = correction * render_data.cam_projection;
-		} else if (render_data.cam_frustum) {
-			// Sky is drawn upside down, the frustum offset doesn't know the image is upside down so needs a flip.
-			projection[2].y = -projection[2].y;
-		}
 
-		_draw_sky(render_data.environment, projection, transform, sky_energy_multiplier, render_data.luminance_multiplier, p_camera_data->view_count > 1, flip_y, apply_color_adjustments_in_post);
+		_draw_sky(render_data.environment, projection, transform, sky_energy_multiplier, render_data.luminance_multiplier, p_camera_data->view_count > 1, flip_y, apply_environment_effects_in_post);
 	}
 
 	if (scene_state.used_screen_texture || scene_state.used_depth_texture) {
@@ -2941,7 +2926,7 @@ void RasterizerSceneGLES3::_render_post_processing(const RenderDataGLES3 *p_rend
 			// We need to pass this in for SSAO.
 			GLuint depth_buffer = fbo_int != 0 ? rb->get_internal_depth() : texture_storage->render_target_get_depth(render_target);
 
-			const GLES3::Glow::GLOWLEVEL *glow_buffers = nullptr;
+			const GLES3::Glow::Level *glow_buffers = nullptr;
 			if (glow_enabled) {
 				glow_buffers = rb->get_glow_buffers();
 
@@ -3004,7 +2989,7 @@ void RasterizerSceneGLES3::_render_post_processing(const RenderDataGLES3 *p_rend
 		// Rendered to intermediate buffer, must copy to our render target
 		if (fbo_int != 0) {
 			// Apply glow/bloom if requested? then populate our glow buffers
-			const GLES3::Glow::GLOWLEVEL *glow_buffers = nullptr;
+			const GLES3::Glow::Level *glow_buffers = nullptr;
 			GLuint source_color = fbo_int != 0 ? rb->get_internal_color() : texture_storage->render_target_get_color(render_target);
 
 			// Moved this up so SSAO could use it too.

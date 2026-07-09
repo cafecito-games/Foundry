@@ -242,11 +242,41 @@ Error RenderingShaderContainer::reflect_spirv(const String &p_shader_name, Span<
 	LocalVector<ReflectShaderStage> &r_refl = r_shader.shader_stages;
 	r_refl.resize(spirv_size);
 
+	bool pipeline_type_detected = false;
 	for (uint32_t i = 0; i < spirv_size; i++) {
 		RDC::ShaderStage stage = p_spirv[i].shader_stage;
 		RDC::ShaderStage stage_flag = (RDC::ShaderStage)(1 << stage);
 		r_refl[i].shader_stage = stage;
 		r_refl[i]._spirv_data = p_spirv[i].spirv;
+
+		RDC::PipelineType pipeline_type = {};
+		switch (stage) {
+			case RDC::SHADER_STAGE_VERTEX:
+			case RDC::SHADER_STAGE_FRAGMENT:
+			case RDC::SHADER_STAGE_TESSELATION_CONTROL:
+			case RDC::SHADER_STAGE_TESSELATION_EVALUATION:
+				pipeline_type = RDC::PIPELINE_TYPE_RASTERIZATION;
+				break;
+			case RDC::SHADER_STAGE_COMPUTE:
+				pipeline_type = RDC::PIPELINE_TYPE_COMPUTE;
+				break;
+			case RDC::SHADER_STAGE_RAYGEN:
+			case RDC::SHADER_STAGE_ANY_HIT:
+			case RDC::SHADER_STAGE_CLOSEST_HIT:
+			case RDC::SHADER_STAGE_MISS:
+			case RDC::SHADER_STAGE_INTERSECTION:
+				pipeline_type = RDC::PIPELINE_TYPE_RAYTRACING;
+				break;
+			default:
+				DEV_ASSERT(false && "Unknown shader stage.");
+		}
+
+		if (pipeline_type_detected) {
+			ERR_FAIL_COND_V_MSG(r_shader.pipeline_type != pipeline_type, FAILED, "Shader stages of different pipeline types cannot be mixed in the same shader container.");
+		} else {
+			r_shader.pipeline_type = pipeline_type;
+			pipeline_type_detected = true;
+		}
 
 		const Vector<uint64_t> &dynamic_buffers = p_spirv[i].dynamic_buffers;
 
@@ -255,8 +285,21 @@ Error RenderingShaderContainer::reflect_spirv(const String &p_shader_name, Span<
 					"Compute shaders can only receive one stage, dedicated to compute.");
 		}
 		ERR_FAIL_COND_V_MSG(reflection.stages_bits.has_flag(stage_flag), FAILED,
-				"Stage " + String(RDC::SHADER_STAGE_NAMES[p_spirv[i].shader_stage]) + " submitted more than once.");
+				"Stage " + String(RDC::SHADER_STAGE_NAMES[stage]) + " submitted more than once.");
 		reflection.stages_bits.set_flag(stage_flag);
+
+		// We make all raytracing stages visible to make our lives easier when creating raytracing pipelines.
+		// This makes no practical difference in current graphics drivers, since Vulkan is the outlier.
+		BitField<RDC::ShaderStage> uniform_stage_flags;
+		if (pipeline_type == RDC::PIPELINE_TYPE_RAYTRACING) {
+			uniform_stage_flags = RDC::SHADER_STAGE_RAYGEN |
+					RDC::SHADER_STAGE_ANY_HIT |
+					RDC::SHADER_STAGE_CLOSEST_HIT |
+					RDC::SHADER_STAGE_MISS |
+					RDC::SHADER_STAGE_INTERSECTION;
+		} else {
+			uniform_stage_flags = stage_flag;
+		}
 
 		{
 			SpvReflectShaderModule &module = *r_refl.ptr()[i]._module;
@@ -370,8 +413,7 @@ Error RenderingShaderContainer::reflect_spirv(const String &p_shader_name, Span<
 							is_image = true;
 						} break;
 						case SPV_REFLECT_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR: {
-							ERR_PRINT("Acceleration structure not supported.");
-							continue;
+							uniform.type = RDC::UNIFORM_TYPE_ACCELERATION_STRUCTURE;
 						} break;
 					}
 
@@ -424,7 +466,7 @@ Error RenderingShaderContainer::reflect_spirv(const String &p_shader_name, Span<
 										"On shader stage '" + String(RDC::SHADER_STAGE_NAMES[stage]) + "', uniform '" + binding.name + "' trying to reuse location for set=" + itos(set) + ", binding=" + itos(uniform.binding) + " with different writability.");
 
 								// Just append stage mask and return.
-								reflection.uniform_sets[set][k].stages.set_flag(stage_flag);
+								reflection.uniform_sets[set][k].stages.set_flag(uniform_stage_flags);
 								exists = true;
 								break;
 							}
@@ -435,7 +477,7 @@ Error RenderingShaderContainer::reflect_spirv(const String &p_shader_name, Span<
 						}
 					}
 
-					uniform.stages.set_flag(stage_flag);
+					uniform.stages.set_flag(uniform_stage_flags);
 
 					if (set >= (uint32_t)reflection.uniform_sets.size()) {
 						reflection.uniform_sets.resize(set + 1);
@@ -585,7 +627,7 @@ Error RenderingShaderContainer::reflect_spirv(const String &p_shader_name, Span<
 						"Reflection of SPIR-V shader stage '" + String(RDC::SHADER_STAGE_NAMES[p_spirv[i].shader_stage]) + "': Push constant block must be the same across shader stages.");
 
 				reflection.push_constant_size = pconstants[0]->size;
-				reflection.push_constant_stages.set_flag(stage_flag);
+				reflection.push_constant_stages.set_flag(uniform_stage_flags);
 
 				//print_line("Stage: " + String(RDC::SHADER_STAGE_NAMES[stage]) + " push constant of size=" + itos(push_constant.push_constant_size));
 			}
@@ -611,7 +653,7 @@ void RenderingShaderContainer::set_from_shader_reflection(const ReflectShader &p
 	reflection_data.vertex_input_mask = p_reflection.vertex_input_mask;
 	reflection_data.fragment_output_mask = p_reflection.fragment_output_mask;
 	reflection_data.specialization_constants_count = p_reflection.specialization_constants.size();
-	reflection_data.is_compute = p_reflection.is_compute();
+	reflection_data.pipeline_type = p_reflection.pipeline_type;
 	reflection_data.has_multiview = p_reflection.has_multiview;
 	reflection_data.has_dynamic_buffers = p_reflection.has_dynamic_buffers;
 	reflection_data.compute_local_size[0] = p_reflection.compute_local_size[0];
@@ -668,7 +710,7 @@ RenderingDeviceCommons::ShaderReflection RenderingShaderContainer::get_shader_re
 	shader_refl.push_constant_stages = reflection_data.push_constant_stages_mask;
 	shader_refl.vertex_input_mask = reflection_data.vertex_input_mask;
 	shader_refl.fragment_output_mask = reflection_data.fragment_output_mask;
-	shader_refl.is_compute = reflection_data.is_compute;
+	shader_refl.pipeline_type = reflection_data.pipeline_type;
 	shader_refl.has_multiview = reflection_data.has_multiview;
 	shader_refl.has_dynamic_buffers = reflection_data.has_dynamic_buffers;
 	shader_refl.compute_local_size[0] = reflection_data.compute_local_size[0];

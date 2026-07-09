@@ -1,0 +1,6 @@
+8e0030b4ee3b #118554 conflict-skipped (Wayland, unbuildable-here, DisplayServerEnums rebrand overlay)
+96c2ddf39a86 #117060 conflict-skipped (crash_handler_linuxbsd, unbuildable-here, fork already hand-adapted wave-3)
+0c7bb27bcd60 #114076 conflict-skipped (d3d12 driver, unbuildable-here, fork NIR path divergence)
+5a5a806eaf22 #116768 conflict-skipped (jolt divergence vs fork 5.5 whole-dir bump; soft-body/area-overlap partial overlap)
+8dfdf5998ec3 #117502 conflict-skipped (scu_builders.py fork-customized + gles3 RS::/RSE:: + free-fn divergence; build-only)
+314bbd21a936 #119237 conflict-skipped (HDR-output swapchain feature, absent HDR core + diverged fork swapchain; re-triage mislabeled)

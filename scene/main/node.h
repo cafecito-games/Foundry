@@ -32,6 +32,8 @@
 
 #include "core/input/input_event.h"
 #include "core/io/resource.h"
+#include "core/object/object.h"
+#include "core/object/ref_counted.h"
 #include "core/string/node_path.h"
 #include "core/templates/iterable.h"
 #include "core/variant/typed_array.h"
@@ -304,8 +306,6 @@ private:
 	void _validate_child_name(Node *p_child, bool p_force_human_readable = false);
 	void _generate_serial_child_name(const Node *p_child, StringName &name) const;
 
-	void _propagate_reverse_notification(int p_notification);
-	void _propagate_deferred_notification(int p_notification, bool p_reverse);
 	void _propagate_enter_tree();
 	void _propagate_ready();
 	void _propagate_exit_tree();
@@ -501,7 +501,7 @@ public:
 	/* NODE/TREE */
 
 	StringName get_name() const;
-	String get_description() const;
+	String get_description(bool p_show_not_in_tree = false) const;
 	void set_name(const StringName &p_name);
 
 	InternalMode get_internal_mode() const;
@@ -709,6 +709,7 @@ public:
 	virtual RID get_accessibility_element() const;
 	virtual RID get_focused_accessibility_element() const;
 	virtual bool accessibility_override_tree_hierarchy() const { return false; }
+	virtual Transform2D get_accessibility_transform() const;
 
 	virtual PackedStringArray get_accessibility_configuration_warnings() const;
 

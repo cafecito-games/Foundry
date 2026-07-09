@@ -31,6 +31,7 @@
 #pragma once
 
 #include "core/object/class_db.h"
+#include "core/object/object.h"
 #include "core/templates/safe_refcount.h"
 
 class RefCounted : public Object {
@@ -47,6 +48,7 @@ public:
 
 	_FORCE_INLINE_ bool is_referenced() const { return refcount_init.get() != 1; }
 	bool init_ref();
+	void deinit_ref(); // Effectively decrements refcount by increasing refcount_init by one.
 	bool reference(); // returns false if refcount is at zero and didn't get increased
 	bool unreference();
 	int get_reference_count() const;

@@ -51,6 +51,8 @@
 #include "scene/resources/mesh.h"
 #include "scene/resources/packed_scene.h"
 #include "scene/resources/world_2d.h"
+#include "servers/display/accessibility_server.h"
+#include "servers/rendering/rendering_server.h"
 
 #ifndef _3D_DISABLED
 #include "scene/3d/node_3d.h"
@@ -208,9 +210,9 @@ bool SceneTree::is_accessibility_enabled() const {
 		return false;
 	}
 
-	DisplayServer::AccessibilityMode accessibility_mode = DisplayServer::accessibility_get_mode();
+	AccessibilityServerEnums::AccessibilityMode accessibility_mode = AccessibilityServer::get_singleton()->get_mode();
 	int screen_reader_active = DisplayServer::get_singleton()->accessibility_screen_reader_active();
-	if ((accessibility_mode == DisplayServer::AccessibilityMode::ACCESSIBILITY_DISABLED) || ((accessibility_mode == DisplayServer::AccessibilityMode::ACCESSIBILITY_AUTO) && (screen_reader_active != 1))) {
+	if ((accessibility_mode == AccessibilityServerEnums::AccessibilityMode::ACCESSIBILITY_DISABLED) || ((accessibility_mode == AccessibilityServerEnums::AccessibilityMode::ACCESSIBILITY_AUTO) && (screen_reader_active != 1))) {
 		return false;
 	}
 	return true;
@@ -221,8 +223,8 @@ bool SceneTree::is_accessibility_supported() const {
 		return false;
 	}
 
-	DisplayServer::AccessibilityMode accessibility_mode = DisplayServer::accessibility_get_mode();
-	if (accessibility_mode == DisplayServer::AccessibilityMode::ACCESSIBILITY_DISABLED) {
+	AccessibilityServerEnums::AccessibilityMode accessibility_mode = AccessibilityServer::get_singleton()->get_mode();
+	if (accessibility_mode == AccessibilityServerEnums::AccessibilityMode::ACCESSIBILITY_DISABLED) {
 		return false;
 	}
 	return true;
@@ -285,7 +287,7 @@ void SceneTree::_process_accessibility_changes(DisplayServer::WindowID p_window_
 			new_focus_element = w_this->get_focused_accessibility_element();
 		}
 
-		DisplayServer::get_singleton()->accessibility_update_set_focus(new_focus_element);
+		AccessibilityServer::get_singleton()->update_set_focus(new_focus_element);
 	}
 
 	// Cleanup.
@@ -306,7 +308,7 @@ void SceneTree::_flush_accessibility_changes() {
 		accessibility_last_update = time;
 
 		// Push update to the accessibility driver.
-		DisplayServer::get_singleton()->accessibility_update_if_active(callable_mp(this, &SceneTree::_process_accessibility_changes));
+		AccessibilityServer::get_singleton()->update_if_active(callable_mp(this, &SceneTree::_process_accessibility_changes));
 	}
 }
 
@@ -345,6 +347,10 @@ void SceneTree::_update_group_order(Group &g) {
 	node_sort.sort(gr_nodes, gr_node_count);
 
 	g.changed = false;
+}
+
+RequiredResult<Window> SceneTree::get_root() const {
+	return root;
 }
 
 void SceneTree::call_group_flagsp(uint32_t p_call_flags, const StringName &p_group, const StringName &p_function, const Variant **p_args, int p_argcount) {
@@ -2120,10 +2126,7 @@ SceneTree::SceneTree() {
 		if (load_err) {
 			ERR_PRINT("Non-existing or invalid VRS texture at '" + vrs_texture_path + "'.");
 		} else {
-			Ref<ImageTexture> vrs_texture;
-			vrs_texture.instantiate();
-			vrs_texture->create_from_image(vrs_image);
-			root->set_vrs_texture(vrs_texture);
+			root->set_vrs_texture(ImageTexture::create_from_image(vrs_image));
 		}
 	}
 

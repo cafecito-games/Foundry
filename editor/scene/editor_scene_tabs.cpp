@@ -519,6 +519,8 @@ EditorSceneTabs::EditorSceneTabs(int p_tile_id) {
 	scene_list->set_accessibility_name(TTRC("Show Opened Scenes List"));
 	scene_list->set_shortcut(ED_SHORTCUT("editor/show_opened_scenes_list", TTRC("Show Opened Scenes List"), KeyModifierMask::ALT | Key::T));
 	scene_list->get_popup()->set_auto_translate_mode(AUTO_TRANSLATE_MODE_DISABLED);
+	scene_list->get_popup()->set_search_bar_enabled(true);
+	scene_list->get_popup()->set_search_bar_min_item_count(10);
 	scene_list->get_popup()->connect("about_to_popup", callable_mp(this, &EditorSceneTabs::_update_scene_list));
 	scene_list->get_popup()->connect(SceneStringName(id_pressed), callable_mp(this, &EditorSceneTabs::_scene_tab_changed));
 	tabbar_container->add_child(scene_list);

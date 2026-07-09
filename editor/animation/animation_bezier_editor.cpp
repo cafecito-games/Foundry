@@ -41,6 +41,7 @@
 #include "scene/gui/option_button.h"
 #include "scene/gui/view_panner.h"
 #include "scene/resources/text_line.h"
+#include "servers/display/accessibility_server.h"
 
 #include <climits>
 
@@ -281,8 +282,8 @@ void AnimationBezierTrackEdit::_notification(int p_what) {
 			ERR_FAIL_COND(ae.is_null());
 
 			//TODO
-			DisplayServer::get_singleton()->accessibility_update_set_role(ae, DisplayServer::AccessibilityRole::ROLE_STATIC_TEXT);
-			DisplayServer::get_singleton()->accessibility_update_set_value(ae, TTR(vformat("The %s is not accessible at this time.", "Animation bezier track editor")));
+			AccessibilityServer::get_singleton()->update_set_role(ae, AccessibilityServerEnums::AccessibilityRole::ROLE_STATIC_TEXT);
+			AccessibilityServer::get_singleton()->update_set_value(ae, TTR(vformat("The %s is not accessible at this time.", "Animation bezier track editor")));
 		} break;
 
 		case NOTIFICATION_DRAW: {

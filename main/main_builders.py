@@ -11,7 +11,7 @@ def make_splash(target, source, env):
         file.write(f"""\
 static const Color boot_splash_bg_color = Color(0.14, 0.14, 0.14);
 inline constexpr const unsigned char boot_splash_png[] = {{
-	{methods.format_buffer(buffer, 1)}
+{methods.format_buffer(buffer, 1)}
 }};
 """)
 
@@ -25,7 +25,7 @@ def make_splash_editor(target, source, env):
         file.write(f"""\
 static const Color boot_splash_editor_bg_color = Color(0.125, 0.145, 0.192);
 inline constexpr const unsigned char boot_splash_editor_png[] = {{
-	{methods.format_buffer(buffer, 1)}
+{methods.format_buffer(buffer, 1)}
 }};
 """)
 
@@ -37,6 +37,6 @@ def make_app_icon(target, source, env):
         # Use a neutral gray color to better fit various kinds of projects.
         file.write(f"""\
 inline constexpr const unsigned char app_icon_png[] = {{
-	{methods.format_buffer(buffer, 1)}
+{methods.format_buffer(buffer, 1)}
 }};
 """)

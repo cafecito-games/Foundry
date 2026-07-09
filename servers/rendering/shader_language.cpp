@@ -3290,20 +3290,20 @@ const ShaderLanguage::BuiltinFuncDef ShaderLanguage::builtin_func_defs[] = {
 
 	// textureGather
 
-	{ "textureGather", TYPE_VEC4, { TYPE_SAMPLER2D, TYPE_VEC2, TYPE_VOID }, { "sampler", "coords" }, TAG_GLOBAL, false },
-	{ "textureGather", TYPE_IVEC4, { TYPE_ISAMPLER2D, TYPE_VEC2, TYPE_VOID }, { "sampler", "coords" }, TAG_GLOBAL, false },
-	{ "textureGather", TYPE_UVEC4, { TYPE_USAMPLER2D, TYPE_VEC2, TYPE_VOID }, { "sampler", "coords" }, TAG_GLOBAL, false },
-	{ "textureGather", TYPE_VEC4, { TYPE_SAMPLER2D, TYPE_VEC2, TYPE_INT, TYPE_VOID }, { "sampler", "coords", "comp" }, TAG_GLOBAL, false },
-	{ "textureGather", TYPE_IVEC4, { TYPE_ISAMPLER2D, TYPE_VEC2, TYPE_INT, TYPE_VOID }, { "sampler", "coords", "comp" }, TAG_GLOBAL, false },
-	{ "textureGather", TYPE_UVEC4, { TYPE_USAMPLER2D, TYPE_VEC2, TYPE_INT, TYPE_VOID }, { "sampler", "coords", "comp" }, TAG_GLOBAL, false },
-	{ "textureGather", TYPE_VEC4, { TYPE_SAMPLER2DARRAY, TYPE_VEC3, TYPE_VOID }, { "sampler", "coords" }, TAG_GLOBAL, false },
-	{ "textureGather", TYPE_IVEC4, { TYPE_ISAMPLER2DARRAY, TYPE_VEC3, TYPE_VOID }, { "sampler", "coords" }, TAG_GLOBAL, false },
-	{ "textureGather", TYPE_UVEC4, { TYPE_USAMPLER2DARRAY, TYPE_VEC3, TYPE_VOID }, { "sampler", "coords" }, TAG_GLOBAL, false },
-	{ "textureGather", TYPE_VEC4, { TYPE_SAMPLER2DARRAY, TYPE_VEC3, TYPE_INT, TYPE_VOID }, { "sampler", "coords", "comp" }, TAG_GLOBAL, false },
-	{ "textureGather", TYPE_IVEC4, { TYPE_ISAMPLER2DARRAY, TYPE_VEC3, TYPE_INT, TYPE_VOID }, { "sampler", "coords", "comp" }, TAG_GLOBAL, false },
-	{ "textureGather", TYPE_UVEC4, { TYPE_USAMPLER2DARRAY, TYPE_VEC3, TYPE_INT, TYPE_VOID }, { "sampler", "coords", "comp" }, TAG_GLOBAL, false },
-	{ "textureGather", TYPE_VEC4, { TYPE_SAMPLERCUBE, TYPE_VEC3, TYPE_VOID }, { "sampler", "coords" }, TAG_GLOBAL, false },
-	{ "textureGather", TYPE_VEC4, { TYPE_SAMPLERCUBE, TYPE_VEC3, TYPE_INT, TYPE_VOID }, { "sampler", "coords", "comp" }, TAG_GLOBAL, false },
+	{ "textureGather", TYPE_VEC4, { TYPE_SAMPLER2D, TYPE_VEC2, TYPE_VOID }, { "sampler", "coords" }, TAG_GLOBAL, true },
+	{ "textureGather", TYPE_IVEC4, { TYPE_ISAMPLER2D, TYPE_VEC2, TYPE_VOID }, { "sampler", "coords" }, TAG_GLOBAL, true },
+	{ "textureGather", TYPE_UVEC4, { TYPE_USAMPLER2D, TYPE_VEC2, TYPE_VOID }, { "sampler", "coords" }, TAG_GLOBAL, true },
+	{ "textureGather", TYPE_VEC4, { TYPE_SAMPLER2D, TYPE_VEC2, TYPE_INT, TYPE_VOID }, { "sampler", "coords", "comp" }, TAG_GLOBAL, true },
+	{ "textureGather", TYPE_IVEC4, { TYPE_ISAMPLER2D, TYPE_VEC2, TYPE_INT, TYPE_VOID }, { "sampler", "coords", "comp" }, TAG_GLOBAL, true },
+	{ "textureGather", TYPE_UVEC4, { TYPE_USAMPLER2D, TYPE_VEC2, TYPE_INT, TYPE_VOID }, { "sampler", "coords", "comp" }, TAG_GLOBAL, true },
+	{ "textureGather", TYPE_VEC4, { TYPE_SAMPLER2DARRAY, TYPE_VEC3, TYPE_VOID }, { "sampler", "coords" }, TAG_GLOBAL, true },
+	{ "textureGather", TYPE_IVEC4, { TYPE_ISAMPLER2DARRAY, TYPE_VEC3, TYPE_VOID }, { "sampler", "coords" }, TAG_GLOBAL, true },
+	{ "textureGather", TYPE_UVEC4, { TYPE_USAMPLER2DARRAY, TYPE_VEC3, TYPE_VOID }, { "sampler", "coords" }, TAG_GLOBAL, true },
+	{ "textureGather", TYPE_VEC4, { TYPE_SAMPLER2DARRAY, TYPE_VEC3, TYPE_INT, TYPE_VOID }, { "sampler", "coords", "comp" }, TAG_GLOBAL, true },
+	{ "textureGather", TYPE_IVEC4, { TYPE_ISAMPLER2DARRAY, TYPE_VEC3, TYPE_INT, TYPE_VOID }, { "sampler", "coords", "comp" }, TAG_GLOBAL, true },
+	{ "textureGather", TYPE_UVEC4, { TYPE_USAMPLER2DARRAY, TYPE_VEC3, TYPE_INT, TYPE_VOID }, { "sampler", "coords", "comp" }, TAG_GLOBAL, true },
+	{ "textureGather", TYPE_VEC4, { TYPE_SAMPLERCUBE, TYPE_VEC3, TYPE_VOID }, { "sampler", "coords" }, TAG_GLOBAL, true },
+	{ "textureGather", TYPE_VEC4, { TYPE_SAMPLERCUBE, TYPE_VEC3, TYPE_INT, TYPE_VOID }, { "sampler", "coords", "comp" }, TAG_GLOBAL, true },
 
 	// textureQueryLod
 
@@ -3566,6 +3566,7 @@ const ShaderLanguage::BuiltinEntry ShaderLanguage::frag_only_func_defs[] = {
 	{ "fwidth" },
 	{ "fwidthCoarse" },
 	{ "fwidthFine" },
+	{ "textureQueryLod" },
 	{ nullptr }
 };
 
@@ -3625,8 +3626,36 @@ bool ShaderLanguage::_validate_function_call(BlockNode *p_block, const FunctionI
 	int builtin_idx = 0;
 
 	if (argcount <= 4) {
-		// test builtins
+		// Test builtins.
 		int idx = 0;
+		int full_match_index = 0;
+
+		while (builtin_func_defs[idx].name) {
+			if (completion_class != builtin_func_defs[idx].tag) {
+				idx++;
+				continue;
+			}
+
+			if (name == builtin_func_defs[idx].name) {
+				bool fail = false;
+
+				for (int i = 0; i < argcount; i++) {
+					if (args[i] != builtin_func_defs[idx].args[i]) {
+						fail = true;
+						break;
+					}
+				}
+
+				if (!fail) {
+					// Full match.
+					full_match_index = idx;
+					break;
+				}
+			}
+
+			idx++;
+		}
+		idx = full_match_index;
 
 		while (builtin_func_defs[idx].name) {
 			if (completion_class != builtin_func_defs[idx].tag) {
@@ -3646,7 +3675,7 @@ bool ShaderLanguage::_validate_function_call(BlockNode *p_block, const FunctionI
 						}
 					}
 					if (get_scalar_type(args[i]) == args[i] && p_func->arguments[i + 1]->type == Node::NODE_TYPE_CONSTANT && convert_constant(static_cast<ConstantNode *>(p_func->arguments[i + 1]), builtin_func_defs[idx].args[i])) {
-						//all good, but needs implicit conversion later
+						// All good, but needs implicit conversion later.
 					} else if (args[i] != builtin_func_defs[idx].args[i]) {
 						fail = true;
 						break;
@@ -3664,7 +3693,7 @@ bool ShaderLanguage::_validate_function_call(BlockNode *p_block, const FunctionI
 				}
 
 				if (!fail && argcount < 4 && builtin_func_defs[idx].args[argcount] != TYPE_VOID) {
-					fail = true; //make sure the number of arguments matches
+					fail = true; // Make sure the number of arguments matches.
 				}
 
 				if (!fail) {
@@ -3699,7 +3728,7 @@ bool ShaderLanguage::_validate_function_call(BlockNode *p_block, const FunctionI
 						}
 					}
 
-					//make sure its not an out argument used in the wrong way
+					// Make sure it's not an out argument used in the wrong way.
 					int outarg_idx = 0;
 					while (builtin_func_out_args[outarg_idx].name) {
 						if (String(name) == builtin_func_out_args[outarg_idx].name) {
@@ -3798,14 +3827,14 @@ bool ShaderLanguage::_validate_function_call(BlockNode *p_block, const FunctionI
 						}
 						outarg_idx++;
 					}
-					//implicitly convert values if possible
+					// Implicitly convert values if possible.
 					for (int i = 0; i < argcount; i++) {
 						if (get_scalar_type(args[i]) != args[i] || args[i] == builtin_func_defs[idx].args[i] || p_func->arguments[i + 1]->type != Node::NODE_TYPE_CONSTANT) {
-							//can't do implicit conversion here
+							// Can't do implicit conversion here.
 							continue;
 						}
 
-						//this is an implicit conversion
+						// This is an implicit conversion.
 						ConstantNode *constant = static_cast<ConstantNode *>(p_func->arguments[i + 1]);
 						ConstantNode *conversion = alloc_node<ConstantNode>();
 
@@ -7972,7 +8001,7 @@ Error ShaderLanguage::_parse_block(BlockNode *p_block, const FunctionInfo &p_fun
 			}
 		}
 
-		bool is_struct = shader->structs.has(tk.text);
+		bool is_struct = shader->structs.has(tk.text) && !(p_block && _find_identifier(p_block, false, p_function_info, tk.text));
 		bool is_var_init = false;
 		bool is_condition = false;
 
@@ -10006,6 +10035,10 @@ Error ShaderLanguage::_parse_shader(const HashMap<StringName, FunctionInfo> &p_f
 									new_hint = ShaderNode::Uniform::HINT_SCREEN_TEXTURE;
 									--texture_uniforms;
 									--texture_binding;
+									if (shader_type_identifier != StringName() && !(String(shader_type_identifier) == "spatial" || String(shader_type_identifier) == "canvas_item")) {
+										_set_error(vformat(RTR("'hint_screen_texture' is not supported in '%s' shaders."), shader_type_identifier));
+										return ERR_PARSE_ERROR;
+									}
 								} break;
 								case TK_HINT_NORMAL_ROUGHNESS_TEXTURE: {
 									new_hint = ShaderNode::Uniform::HINT_NORMAL_ROUGHNESS_TEXTURE;

@@ -48,7 +48,6 @@ public:
 private:
 	TabBar *tab_bar = nullptr;
 	bool tabs_visible = true;
-	bool all_tabs_in_front = false;
 	TabPosition tabs_position = POSITION_TOP;
 	bool menu_hovered = false;
 	mutable ObjectID popup_obj_id;
@@ -141,6 +140,11 @@ private:
 	void _drag_move_tab(int p_from_index, int p_to_index);
 	void _drag_move_tab_from(TabBar *p_from_tabbar, int p_from_index, int p_to_index);
 
+	void _popup_button_hovered(bool p_hover);
+	void _popup_button_pressed();
+
+	Size2 _get_minimum_size(bool p_use_desired_sizes) const;
+
 protected:
 	virtual void gui_input(const Ref<InputEvent> &p_event) override;
 
@@ -149,6 +153,8 @@ protected:
 	void _get_property_list(List<PropertyInfo> *p_list) const;
 	bool _property_can_revert(const StringName &p_name) const { return property_helper.property_can_revert(p_name); }
 	bool _property_get_revert(const StringName &p_name, Variant &r_property) const;
+
+	void _maximum_size_changed();
 
 	void _notification(int p_what);
 	virtual void add_child_notify(Node *p_child) override;
@@ -178,9 +184,6 @@ public:
 
 	void set_tabs_visible(bool p_visible);
 	bool are_tabs_visible() const;
-
-	void set_all_tabs_in_front(bool p_is_front);
-	bool is_all_tabs_in_front() const;
 
 	void set_tab_title(int p_tab, const String &p_title);
 	String get_tab_title(int p_tab) const;
@@ -221,6 +224,8 @@ public:
 	Control *get_current_tab_control() const;
 
 	virtual Size2 get_minimum_size() const override;
+	virtual Size2 get_inner_combined_maximum_size() const override;
+	virtual Size2 get_desired_size() const override;
 
 	void set_popup(Node *p_popup);
 	Popup *get_popup() const;

@@ -1,0 +1,322 @@
+[
+ {
+  "pr": "114355",
+  "sha": "b9b626406ab040fe4ac406d2c1f916e6533ed8a9",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Fixes jittered spectrum-analyzer values; self-contained audio but removes tap_back_pos API and adds deprecated compat shims.",
+  "outcome": "ported",
+  "local_sha": "d37cf5ca7964391729de1efcbcd4712b02a3f111"
+ },
+ {
+  "pr": "115865",
+  "sha": "2b44ed5299cff04abfc165008e11e3c7b0b71bbd",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Fix transfer worker race condition in RD; valuable correctness fix, contained.",
+  "outcome": "ported",
+  "local_sha": "652b056855bb5fbd47b4506261e677c471bf9670"
+ },
+ {
+  "pr": "115993",
+  "sha": "86508ea17b8f53637c92f042750e6db8fc514d6e",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Fixes AHashMap-realloc AnimationPlayer crash; reworks player map storage but high-value crash fix.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "116041",
+  "sha": "6330464fd94a28d61d31106ee8581185113d8ce4",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Jolt SoftBody3D default mass 1kg and stiffness conversion fix; correctness with a default-value change.",
+  "outcome": "ported",
+  "local_sha": "5719953a5e8eaddc1e0b18253959b0de6a55f78d"
+ },
+ {
+  "pr": "116046",
+  "sha": "c53965f13eb7bc7add011cb6ae4afdfc03d60351",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Accounts for current section processing AnimationTracks; larger animation.cpp fix but self-contained.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "113861",
+  "sha": "13881f251fbd06d6b566b406eb8364976188ed9b",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Apply tonemapping in post for Compatibility canvas BG; 3 gles3 files, contained.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "116852",
+  "sha": "d7ed107cd8167a2e747d7798e95e9fe3d4f7158a",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Fix repeating last valid texture in samplers array; ~200 line rework in gles3 + rd material_storage.",
+  "outcome": "ported",
+  "local_sha": "619d40ee2a7e969b1d3e5c0b8500b5eb32f18527"
+ },
+ {
+  "pr": "116427",
+  "sha": "106cff756714c5e57a654878e66c04edaa3a6549",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Adds finite checks to vector normalize(); additive safety across math files, low conflict.",
+  "outcome": "ported",
+  "local_sha": "6c59832dfe7a799636f5f9426a5b0e857dea868a"
+ },
+ {
+  "pr": "117173",
+  "sha": "29d2c7ece514127cc449ce37994ef4b369a3a9c6",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Restrict shader preprocessor condition parsing (security hardening); new expression parser but confined to shader system.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "115980",
+  "sha": "881d08622ef6a55c3073e4ee6e05be5b8d1381cb",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Fixes WindowWrapper leaking key inputs to parent; touches viewport core but well-scoped.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "117142",
+  "sha": "231b5dc0d42729fd66a3b5961469e4c5532af513",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Fix exposure with canvas background on Compatibility; 6 gles3 files but contained.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "105122",
+  "sha": "8c3a9f9afce2d3d24cf5dfa20f93fb6dacf13075",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Fix CanvasItem lines thicker with AA; contained to canvas cull, adds member but self-contained.",
+  "outcome": "ported",
+  "local_sha": "328aef28cfdde0f032027d0a17223721c960e305"
+ },
+ {
+  "pr": "118080",
+  "sha": "376b3b041eb6c73d52aaa70118342338f7a5b439",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Skips redundant physics-server transform propagation on rigid/physical bodies; targeted but changes physics notification timing.",
+  "outcome": "ported",
+  "local_sha": "e4da0ef1cb662e231e09670e4807dae8a4d4d772"
+ },
+ {
+  "pr": "118197",
+  "sha": "d261582d25663583f23882e46609fd68a287a04f",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Restructures how RigidBody3D reads environmental (gravity/damping) props from areas; foundational Jolt correctness, 9 files but self-contained.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "118317",
+  "sha": "967b56efec27129fd31a1446e765d0ca87902036",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Sky shader automatic mode consistently uses fallback; touches gles3 + renderer_rd sky.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "117025",
+  "sha": "5adbdac72bd45baaaf05e655fc6a0ac54ecc128c",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Fixes quick-load for editor-import-plugin resources; useful, core/io + import.",
+  "outcome": "ported",
+  "local_sha": "ef19db5831bf186e7991c07a1ca1e7b7c531fa9d"
+ },
+ {
+  "pr": "116227",
+  "sha": "2dd28a53b0c974c22c4903e067d40e8a300f6f7a",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Fix acceleration-structure barriers in Vulkan pipelines; single-file raytracing correctness.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "113413",
+  "sha": "06fc4f81654d46a5fb25c91b27c877597de45ab8",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Screen-space AA with bilinear scaling; spans 5 files but self-contained correctness fix.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "117268",
+  "sha": "630a58a12d2cde110c370626c8a461f415273b59",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Bypasses physics command queue on the main thread during sync; small self-contained macro change but alters threading behavior.",
+  "outcome": "ported",
+  "local_sha": "aaf2b9cc05db900cfb3d0ac30ee84ce3f46758b1"
+ },
+ {
+  "pr": "114957",
+  "sha": "04e3d906f9f9a81f4078ac6bce4e73b9a7470581",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Remove Compatibility backbuffer size limit; single-file but full-function rewrite.",
+  "outcome": "ported",
+  "local_sha": "141a19e623257f5cf4946a8c8969b6d2996ccb3f"
+ },
+ {
+  "pr": "118857",
+  "sha": "75444feae7304924316f09ce5abb48685294d8f2",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Clearcoat reflection-probe process cleanup/fix in shaders; contained to 3 glsl files.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "116622",
+  "sha": "05f52c245d16556d3f06a72de5ef2e19e550cf75",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Refresh binding names on action-map rename; openxr editor only (not diverged script editor), additive.",
+  "outcome": "ported",
+  "local_sha": "78dd6f0723fc82b2569dedd125abe795c9370a25"
+ },
+ {
+  "pr": "119212",
+  "sha": "9d2246cb11638addebad893b1cd330d09901d6af",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "D3D12 subpass MSAA resolves with multiple layers; single-file but nontrivial correctness fix.",
+  "outcome": "ported",
+  "local_sha": "e7e985885709e7b32b1d174c0295a107aa32978a"
+ },
+ {
+  "pr": "118824",
+  "sha": "599f2bd5b92aeb58edbb5c85e0470163d7e1ba95",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Race fix in load_threaded_request; valuable concurrency bugfix in core/io.",
+  "outcome": "ported",
+  "local_sha": "4c6555aec961f2f2c0f1284881d2986ec0e56c31"
+ },
+ {
+  "pr": "119337",
+  "sha": "872f2f073c2b9b357ae16510f7e41f14122f49ee",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "SDFGI preprocess barrier fix; large glsl diff but confined to one shader, correctness fix.",
+  "outcome": "ported",
+  "local_sha": "87df066855eb603c82233eb78caed32dbfe32176"
+ },
+ {
+  "pr": "118155",
+  "sha": "70dcb2aa848a30853fd8cccd98eb51bca7fd9095",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Moves body_test_motion contact filtering into collector for correct filtering; contained to jolt spaces/collectors.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "119563",
+  "sha": "d9fd641396067b7d4fa97f10a5efcf579f198557",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Fixes translation import treating empty columns as English; useful, contained to import path.",
+  "outcome": "ported",
+  "local_sha": "d5677af8fd905b7d905d686411520f4cb24b16fe"
+ },
+ {
+  "pr": "116203",
+  "sha": "4354aa98069cf13c3882276477ea27f8ee3afed5",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "material_set_shader race fix; self-contained to material_storage, valuable correctness fix.",
+  "outcome": "ported",
+  "local_sha": "ad25a4a25656e7be3946e9d74921c8f40625e529"
+ },
+ {
+  "pr": "119757",
+  "sha": "93d16cc84c479c0f6b22187882a48336f040a78a",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "load_threaded_get deadlock fix; high value, core/io not rewritten.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "120077",
+  "sha": "526528bd8d829c50b28d350df353ec22266660f2",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Valuable ResourceLoader deadlock fix; concurrency care but core/io unchanged in fork.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "120243",
+  "sha": "9fae09dbb6da3270d1634400003472fb3971fc1d",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Removes forced area event queuing on body exit; behavioral change to Jolt area callbacks but self-contained.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "120363",
+  "sha": "feeea39cb2f791c0df112dbc08b59ae0e001265b",
+  "decision": "port-now",
+  "kind": "platform",
+  "risk": "med",
+  "rationale": "Self-contained Adreno 660 Vulkan pipeline workaround; adds a spec-constant field, low blast radius.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ }
+]

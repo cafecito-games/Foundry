@@ -660,6 +660,20 @@
 			If [code]true[/code], [MenuBar] will use native menu when supported.
 			[b]Note:[/b] If [PopupMenu] is linked to [StatusIndicator], [MenuBar], or another [PopupMenu] item it can use native menu regardless of this property, use [method is_native_menu] to check it.
 		</member>
+		<member name="search_bar_enabled" type="bool" setter="set_search_bar_enabled" getter="is_search_bar_enabled" default="false">
+			If [code]true[/code], shows a search bar at the top of the [PopupMenu] for filtering items. See [member search_bar_min_item_count] for dynamically controlling its visibility based on the number of items.
+			[b]Note:[/b] When enabled, [member allow_search] is ignored.
+		</member>
+		<member name="search_bar_fuzzy_search_enabled" type="bool" setter="set_search_bar_fuzzy_search_enabled" getter="is_search_bar_fuzzy_search_enabled" default="true">
+			If [code]true[/code], enables fuzzy searching in the [PopupMenu] search bar. This allows the search results to include items that almost match the search query, as well items that match the individual characters of the search query, but not in sequence.
+			Use [member search_bar_fuzzy_search_max_misses] to set the maximum number of mismatches allowed in the search results.
+		</member>
+		<member name="search_bar_fuzzy_search_max_misses" type="int" setter="set_search_bar_fuzzy_search_max_misses" getter="get_search_bar_fuzzy_search_max_misses" default="2">
+			Sets the maximum number of mismatches allowed in each search result when fuzzy searching is enabled for the [PopupMenu] search bar. Any item with more mismatches will be hidden from the search results.
+		</member>
+		<member name="search_bar_min_item_count" type="int" setter="set_search_bar_min_item_count" getter="get_search_bar_min_item_count" default="0">
+			Sets the minimum number of items required for the search bar to be visible. [member search_bar_enabled] must be [code]true[/code] for this to have any effect.
+		</member>
 		<member name="shrink_height" type="bool" setter="set_shrink_height" getter="get_shrink_height" default="true">
 			If [code]true[/code], shrinks [PopupMenu] to minimum height when it's shown.
 		</member>
@@ -746,6 +760,9 @@
 			The size of the item text outline.
 			[b]Note:[/b] If using a font with [member FontFile.multichannel_signed_distance_field] enabled, its [member FontFile.msdf_pixel_range] must be set to at least [i]twice[/i] the value of [theme_item outline_size] for outline rendering to look correct. Otherwise, the outline may appear to be cut off earlier than intended.
 		</theme_item>
+		<theme_item name="search_bar_separation" data_type="constant" type="int" default="4">
+			The vertical space between search bar and menu items.
+		</theme_item>
 		<theme_item name="separator_outline_size" data_type="constant" type="int" default="0">
 			The size of the labeled separator text outline.
 		</theme_item>
@@ -781,6 +798,9 @@
 		</theme_item>
 		<theme_item name="radio_unchecked_disabled" data_type="icon" type="Texture2D">
 			[Texture2D] icon for the unchecked radio button items when they are disabled.
+		</theme_item>
+		<theme_item name="search" data_type="icon" type="Texture2D">
+			[Texture2D] icon for the search bar's search icon.
 		</theme_item>
 		<theme_item name="submenu" data_type="icon" type="Texture2D">
 			[Texture2D] icon for the submenu arrow (for left-to-right layouts).

@@ -1,0 +1,492 @@
+[
+ {
+  "pr": "115392",
+  "sha": "0b6cdb835b02365d3549fca840576ac3eeca9bf1",
+  "decision": "port-now",
+  "kind": "cleanup",
+  "risk": "med",
+  "rationale": "Stop exposing external theme item properties (Control skips E.external items - ThemeDB has the external field in the fork). The paired FileDialog EXT hunk retargets Button's icon_color/icon_hover_color theme items which the fork base names icon_normal_color etc.; port the Control.cpp hunk and adapt/drop the FileDialog rename.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "112745",
+  "sha": "bf28684b2afe8e00ba76af6fe3ae98629f29362e",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fix Tree focus-item inline LineEdit offset (~19 lines in tree.cpp); self-contained, applies cleanly.",
+  "outcome": "ported",
+  "local_sha": "69a00b2d9e8c9d64474187345d13b96d284c8ea5"
+ },
+ {
+  "pr": "115295",
+  "sha": "43fbc539dd2780023d38a789c4aafbec266585e1",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Reset Tree drag-unfold timer when the mouse exits; small fix, applies cleanly.",
+  "outcome": "ported",
+  "local_sha": "d2c53fe1ff9efb232a77f821c6f9b3bdb7c33c96"
+ },
+ {
+  "pr": "115006",
+  "sha": "ae7d2defe244dfa070b27f7a2641163ad79b4142",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fix TextEdit not drawing caret after setting editable; three-line fix, applies cleanly.",
+  "outcome": "ported",
+  "local_sha": "814be67f54b23d27cc6398257b8f414f26191523"
+ },
+ {
+  "pr": "114323",
+  "sha": "c5ab7727fa532dfff57395ab22aeab2de4b7eac7",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "med",
+  "rationale": "Add per-cell autowrap_trim_flags to TreeItem (Tree + one editor/debugger call site); self-contained, both scene and editor hunks apply cleanly.",
+  "outcome": "ported",
+  "local_sha": "661d2fb16e9e74a44da58444d13c1e53b834c993"
+ },
+ {
+  "pr": "112797",
+  "sha": "a0bf14921a2a58115fd9a78b03ef98a2b5f5aee5",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Add ItemList.center_on_current(); small self-contained API addition, applies cleanly.",
+  "outcome": "ported",
+  "local_sha": "24acb64f63716687dc7ac32b6c8f3816c5bc92c3"
+ },
+ {
+  "pr": "112998",
+  "sha": "a6efb02ebd95b2f0556f4edcbfdf8e6ef9c52f0e",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Hide TreeItem edit popup on scroll; one-line fix, applies cleanly.",
+  "outcome": "ported",
+  "local_sha": "0726ae4d35e3517f29dbd34aa8c94e2c67cdcbbc"
+ },
+ {
+  "pr": "115802",
+  "sha": "4a0673c91a3cde296c896adf4f04a123cd5eeb7d",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Give Tree hovered_pos a negative default and reset on mouse exit; small self-contained fix, portable (nearby-context differs).",
+  "outcome": "ported",
+  "local_sha": "5af9c25291f787ae7f5c02f9eed7312e1dfee260"
+ },
+ {
+  "pr": "116032",
+  "sha": "d61fc4529f9479b2b64e1633a54d89471f9365aa",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Fix inaccurate Tree relationship lines (~67 lines in tree.cpp/.h); self-contained rendering fix, applies cleanly.",
+  "outcome": "ported",
+  "local_sha": "c9a073cc7f63c51e8f470e8c1e007f92070555ce"
+ },
+ {
+  "pr": "116168",
+  "sha": "20d58a38c67b956d007e594c551dab39bd68efc1",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fix RichTextLabel table too wide with indentation; two-line fix, applies cleanly.",
+  "outcome": "ported",
+  "local_sha": "64b73a5a964456f656d262b0927a3068f713ee0d"
+ },
+ {
+  "pr": "116343",
+  "sha": "3110686b3aff1df0e07a01e019c9bae4bf258b46",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Loosen Control minimum-size check (invalidate last_minimum_size when hidden); small fix, portable (only nearby-context differs).",
+  "outcome": "ported",
+  "local_sha": "0dfba94abd259aba6d12be13d827694065640e09"
+ },
+ {
+  "pr": "102858",
+  "sha": "dc6222782f09a7be5bbf17a0942fd28ea8854926",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fix LineEdit editability so it isn't limited to keyboard/mouse paths; self-contained, applies cleanly.",
+  "outcome": "ported",
+  "local_sha": "c34f6c754c7dd53b0b6b0404d373fa3b32054ab2"
+ },
+ {
+  "pr": "116157",
+  "sha": "d1397d884a708577a4024ce0d6aa2b0695697148",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "med",
+  "rationale": "Fix copying text across tables in RichTextLabel; self-contained selection/copy fix, applies cleanly.",
+  "outcome": "ported",
+  "local_sha": "cc75922192226e50de0f2b3c538ff2153628c85f"
+ },
+ {
+  "pr": "116390",
+  "sha": "aa094e93e36d9c310d0f40c466f0e063b7a7c9d4",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fix RichTextLabel scrollbar when too small to show; one-line fix, applies cleanly.",
+  "outcome": "ported",
+  "local_sha": "4e6b20ff3ca784fd58b65db7b86466206950722c"
+ },
+ {
+  "pr": "113808",
+  "sha": "25045e365f8be5e852736a92430b4bcfce64fd24",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "med",
+  "rationale": "Support tiling AtlasTexture in TextureRect (~42 lines); self-contained TextureRect enhancement, applies cleanly.",
+  "outcome": "ported",
+  "local_sha": "87ace6a5786050795b5f3de81ef54fba624d33f6"
+ },
+ {
+  "pr": "115876",
+  "sha": "781ae8deb22a19c9590a01ae6ba3e746d86f0b22",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fix TextEdit backwards search skipping matches; small self-contained fix, applies cleanly.",
+  "outcome": "ported",
+  "local_sha": "257df500c1e8619876aee5b3e7955c2238ea87c3"
+ },
+ {
+  "pr": "116678",
+  "sha": "edb345db45649322820e256c2c8a41fa32577011",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "TextEdit no longer shows focus on some mouse events; tiny fix, applies cleanly.",
+  "outcome": "ported",
+  "local_sha": "e128913bdb8813cbc08bcb5666158ae8dea8578f"
+ },
+ {
+  "pr": "116824",
+  "sha": "4108ed03a0fa6c05ebc86563ee38c6d41a61726f",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "FileDialog prints an error when changing to a directory out of scope; small self-contained guard, applies cleanly.",
+  "outcome": "ported",
+  "local_sha": "6dbabb82be2a295e3b7ed4cdd5971798e972c126"
+ },
+ {
+  "pr": "117011",
+  "sha": "c646b57c278e8bd1aa6c42193bde3ca69dee6ecf",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fix RichTextLabel character click offsets after a table by tracking ItemTable::char_count; small self-contained fix (adds one member), portable.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "113954",
+  "sha": "890567325ecffc8e7912b1caa76882883e4283cc",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "FileDialog scrolls to selected file after a sorting change (adds ensure_visible_after_invalidating flag); small UX fix, applies cleanly.",
+  "outcome": "ported",
+  "local_sha": "d655dde34a492f7e33cab10e740c794d10f24054"
+ },
+ {
+  "pr": "117074",
+  "sha": "737ae54ef6c2401210e63f41b9f8f80ada19d070",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fix RichTextLabel [ol type=a] prefix generation; small self-contained fix, applies cleanly.",
+  "outcome": "ported",
+  "local_sha": "69a2162b3fba7a35ef7b534a0f11821599cec8b1"
+ },
+ {
+  "pr": "117101",
+  "sha": "84889d6fe761d7fc22526c2143cdceb070fafcd6",
+  "decision": "port-now",
+  "kind": "refactor",
+  "risk": "low",
+  "rationale": "Make RichTextLabel item RID_PtrOwner a shared static (thread-safe) so RIDs are globally unique; one-line change, applies cleanly.",
+  "outcome": "ported",
+  "local_sha": "d634058c35aa4f7262db97c0765ef1fcdc58605f"
+ },
+ {
+  "pr": "117232",
+  "sha": "73f979b03a40d11a0feff721dc8721e1b0368913",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "TabContainer set_current_tab should repaint immediately for visibility; port by making _on_tab_changed call _repaint() directly instead of the fork's callable_mp(_repaint).call_deferred().",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "117333",
+  "sha": "46dd8eb6e95e6b7ae9d257ab0be93074d92033c0",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Caret at end of word now works for lookup (> to >=) plus test update; tiny, applies cleanly.",
+  "outcome": "ported",
+  "local_sha": "73ef8d103dfccaf56eacbc748b840f3383092f49"
+ },
+ {
+  "pr": "111819",
+  "sha": "1a69be88e2a64cefc5c2bfbb9e60f5a080a9ced7",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Adds virtual Control._get_cursor_shape() override point; small, self-contained, relies only on GDVIRTUAL infra already in the fork (minor param-default context differs).",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "117201",
+  "sha": "8423b86dd45de9a09031809a95777bcaa7be3677",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Fix RTL drag selection after double-click by setting is_selecting_text/click_select_held (both exist in base). Surrounding context uses the selection_mode enum from 116868; adapt the two added lines to the base double_click bool when porting.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "117648",
+  "sha": "c71c2bfc5e61e937cbbf2bd8eefa499ba6864ef5",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Ignore IME updates and Alt sequences on read-only TextEdit; three small editable-guard hunks, portable (only nearby-context differences, no missing deps).",
+  "outcome": "ported",
+  "local_sha": "62624c15c5f0d0112c9084ec7fb517d8b4f27790"
+ },
+ {
+  "pr": "117154",
+  "sha": "8a72ab019d87fa322585a257d1721d6356a5d372",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "TextEdit rendering fixes with large line_spacing; small self-contained TextEdit change, applies cleanly.",
+  "outcome": "ported",
+  "local_sha": "3b2810d58f8be5a2920082fd3f6901b43a7d2299"
+ },
+ {
+  "pr": "117612",
+  "sha": "151eeb8a6443502c77c50d4a25edc3d681fe7eef",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "One-line TextEdit fix for adding carets above then below; self-contained, applies cleanly.",
+  "outcome": "ported",
+  "local_sha": "c74b50b3918bdebc2352cedb879ac53b531bb2b9"
+ },
+ {
+  "pr": "115545",
+  "sha": "f313c3b3f57d660f6f89c39f2d115e26af264010",
+  "decision": "port-now",
+  "kind": "feature",
+  "risk": "low",
+  "rationale": "Adds scroll_horizontal_by_default switch to ScrollContainer; small self-contained property, applies cleanly to fork (which has extra scroll-hint members nearby).",
+  "outcome": "ported",
+  "local_sha": "87290a808c071dc50978a5143039702672da5f33"
+ },
+ {
+  "pr": "118137",
+  "sha": "59d29ed05fd897efa2779b8f4e982964db4e0324",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Overrides the PopupMenu internal ScrollContainer 'panel' style with StyleBoxEmpty so it doesn't inherit a global ScrollContainer theme style; fork has scroll_container. Note: place the override after the fork's scroll_container creation (no vbox_container in the fork).",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "116201",
+  "sha": "e82248483f7359947401014398ca60adafdd6d01",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "After a full-line paste, updates scrollbars and adjusts the viewport so the caret stays visible; fork's _paste_internal full-line branch matches the parent. Self-contained.",
+  "outcome": "ported",
+  "local_sha": "34c470017f9c336cf0c6c880acfb11cb53357277"
+ },
+ {
+  "pr": "115808",
+  "sha": "6b92cae1a90329161ace21083050e9e63493bb2a",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Gives ItemList custom foreground color priority over selected/hovered theme colors so custom colors (e.g. script list hot color) show; reorders the txt_modulate if-chain. Fork has items[i].custom_fg. Self-contained.",
+  "outcome": "ported",
+  "local_sha": "b7c50ae59519e0ce3dd3632cd0554eea14742599"
+ },
+ {
+  "pr": "118620",
+  "sha": "771325eb5925b328938ebf5b0f84b741f652cef6",
+  "decision": "port-now",
+  "kind": "cleanup",
+  "risk": "low",
+  "rationale": "Removes the unused TextEdit next_item_id member; fork has it only in the header with no cpp usages. Trivial cleanup.",
+  "outcome": "ported",
+  "local_sha": "8abd11f85cda80c7ef7706ba3b597783b5b770de"
+ },
+ {
+  "pr": "118246",
+  "sha": "3bf2d1e3d5f5eab338c3fabd77e51b52eb37ab45",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Defers Tree incremental search so letter/Alt keys can act as shortcuts first (only searches if input wasn't handled); fork has _do_incr_search/incr_search and the matching gui_input path. Self-contained, adds one helper.",
+  "outcome": "ported",
+  "local_sha": "96e6ab2bf3f6931a7872b345449211cd2d55120d"
+ },
+ {
+  "pr": "118799",
+  "sha": "3352f2221b0e5cb70c924bd8acc6a96079d90161",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Ties the macOS screen-record permission box visibility to sampler_visible so it isn't always shown; fork's ColorPicker matches the parent (has constructor set_visible(false) and the unguarded macOS notification). Self-contained.",
+  "outcome": "ported",
+  "local_sha": "75187a24d505ee77cf8636e802ff04d9ec744afa"
+ },
+ {
+  "pr": "118645",
+  "sha": "908983880baf80be399fb82e48965c3666c9d410",
+  "decision": "port-now",
+  "kind": "cleanup",
+  "risk": "low",
+  "rationale": "Replaces a single-case switch with an if in TextureButton::has_point; fork's has_point still has the FIXME switch matching the parent. Trivial cleanup.",
+  "outcome": "ported",
+  "local_sha": "0944bc27a32a9cd91eb404a9be234dfe4bec9486"
+ },
+ {
+  "pr": "115637",
+  "sha": "f5560ccbe2a1584f54713caeacc1f7b582a19a70",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Sets use_parent_material(true) on internal scrollbars of Tree/ItemList/RichTextLabel/GraphEdit/etc. so a parent material applies to built-in children; trivial one-liners in constructors, all nodes present. Self-contained.",
+  "outcome": "ported",
+  "local_sha": "740dfaec789a6588c83ef007af777199659e48ec"
+ },
+ {
+  "pr": "119008",
+  "sha": "83e84e81568eaad8062322e8c229ea5a47a52800",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Assigns cached tab metadata as each child is added rather than only on NOTIFICATION_READY; fork has pending_tabs/CachedTab and the NOTIFICATION_READY loop matches the parent. Self-contained.",
+  "outcome": "ported",
+  "local_sha": "f73d388853430748c0327314a8dc3edd6e491680"
+ },
+ {
+  "pr": "115601",
+  "sha": "9120c0c3aeb0d69d5bc5705d2c791c8e89da9718",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Also emits ItemList.item_clicked when CTRL-deselecting a multi-selected item, matching normal click behavior; one added emit_signal in gui_input. Self-contained.",
+  "outcome": "conflicted",
+  "reason": "Otherwise, please use 'git cherry-pick --skip'"
+ },
+ {
+  "pr": "119199",
+  "sha": "7775792057009cb27068f1a3252902fb9c991836",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "On focus-exit, deselect a non-editing LineEdit when deselect_on_focus_loss_enabled and not a drag attempt, fixing selection lingering on read-only fields; adds one else-if branch. Self-contained (standard LineEdit members present).",
+  "outcome": "ported",
+  "local_sha": "dfb8471e847e0c2631969b59e647104eebc1ff14"
+ },
+ {
+  "pr": "115013",
+  "sha": "a2c17bd7128446b85d0a7b0e60376818b7c9d5ea",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Preserves NAN in Range: _calc_value returns NAN early and set_value skips emitting when both old/new are NAN, so NAN no longer displays as 0. Fork has _calc_value/_snapped_r128. Self-contained.",
+  "outcome": "ported",
+  "local_sha": "59586333b572350528112c55ba6c9e25303250d9"
+ },
+ {
+  "pr": "119538",
+  "sha": "014ff66970483d505d9c63a6621ccf960187b17b",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Slider uses _is_focusable() (accounting for accessibility) instead of raw focus-mode check before grab_focus on wheel scroll; moves _is_focusable() to protected. Fork has _is_focusable and get_focus_mode_with_override. Self-contained.",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "119596",
+  "sha": "d9f03f2f929fba314c2deada55d1dc0fc9566dc5",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Uses get_screen_position() instead of get_global_position() when placing the Tree edit popup so it isn't clipped by the window edge; fork has the matching call site (tree.cpp ~5212). One-line fix.",
+  "outcome": "ported",
+  "local_sha": "8554566295e97a724e08c00f01e7ab7344027bfe"
+ },
+ {
+  "pr": "119507",
+  "sha": "673c2869eb29fece06f6ca80002d0513c45daf7f",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Adds using_native_touch to disable data drag-and-drop only for real touch input (not emulated), replacing the drag_touching check in can_drop_data/get_drag_data; fork has drag_touching and these methods. Self-contained, adds one member.",
+  "outcome": "ported",
+  "local_sha": "25be9b3a536b8d62fdc214f4e361511943f0446f"
+ },
+ {
+  "pr": "116725",
+  "sha": "5653d1a42f90d8aa297820287177412558713c4d",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Draws the SELECT_ROW row rect only once per row via a should_draw_row_rect flag; fork's draw_item still has 'if (i == 0 && select_mode == SELECT_ROW)' matching the parent. Self-contained.",
+  "outcome": "ported",
+  "local_sha": "bc01c856b35cc84d7bf556bb6993bbadaca3cd14"
+ },
+ {
+  "pr": "119761",
+  "sha": "3cbd4358fc2673f5b68239c103cd29db27e5ac89",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Guards RTL list/indent margin math with 'if (tab_size > 0)' to avoid a 1px indent when tab_size is 0; fork's _find_margin lines match the parent exactly. Self-contained.",
+  "outcome": "ported",
+  "local_sha": "494cd6a5499cafd2683e20c5b80bb502d2f13ed5"
+ },
+ {
+  "pr": "118488",
+  "sha": "da7924dfa3e329ebd5dde9dbc750aa2ac9de013a",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Core fix is .ceil() on get_combined_minimum_size() before truncating into Size2i, preventing children with non-integer min sizes from being clipped; applies to fork's _resort. Note: the diff's surrounding max-size (propagating_max_size) lines are absent in the fork, so apply just the .ceil().",
+  "outcome": "conflicted",
+  "reason": "hint: run \"git cherry-pick --abort\"."
+ },
+ {
+  "pr": "119968",
+  "sha": "417cd33bf636a0ede02e5e940e963306ea6fc21c",
+  "decision": "port-now",
+  "kind": "bugfix",
+  "risk": "low",
+  "rationale": "Connects SyntaxHighlighter changed signal to a new TextEdit::_syntax_highlighter_changed so highlighting refreshes when regions change; self-contained, fork has the syntax highlighting cache and set_syntax_highlighter. Shader editor call site is not a diverged area.",
+  "outcome": "ported",
+  "local_sha": "ff7e00a2c0beb7b4e00cd1616ff3808272af1b7b"
+ }
+]

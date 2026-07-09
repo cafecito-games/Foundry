@@ -144,7 +144,7 @@ static int get_channel_count(Image::Format p_format) {
 	}
 }
 
-Vector<uint8_t> save_exr_buffer(const Ref<Image> &p_img, bool p_grayscale) {
+Vector<uint8_t> save_exr_buffer(const Ref<Image> &p_img, bool p_grayscale, bool p_color_image, float p_max_value) {
 	Image::Format format = p_img->get_format();
 
 	if (!is_supported_format(format)) {
@@ -212,7 +212,14 @@ Vector<uint8_t> save_exr_buffer(const Ref<Image> &p_img, bool p_grayscale) {
 				float *dst_wp = (float *)dst_w;
 
 				for (int i = 0; i < pixel_count; ++i) {
-					dst_wp[i] = src_rp[channel_index + i * channel_count];
+					float src_float = src_rp[channel_index + i * channel_count];
+					if (p_max_value >= 0.f) {
+						src_float = fmin(p_max_value, src_float);
+					}
+					if (p_color_image) {
+						src_float = fmax(0.f, src_float);
+					}
+					dst_wp[i] = src_float;
 				}
 
 			} else if (src_pixel_type == SRC_HALF && target_pixel_type == TINYEXR_PIXELTYPE_HALF) {
@@ -222,7 +229,19 @@ Vector<uint8_t> save_exr_buffer(const Ref<Image> &p_img, bool p_grayscale) {
 				uint16_t *dst_wp = (uint16_t *)dst_w;
 
 				for (int i = 0; i < pixel_count; ++i) {
-					dst_wp[i] = src_rp[channel_index + i * channel_count];
+					int src_rp_index = channel_index + i * channel_count;
+					if (p_max_value >= 0.f || p_color_image) {
+						float src_float = Math::halfptr_to_float(src_rp + src_rp_index);
+						if (p_max_value >= 0.f) {
+							src_float = fmin(p_max_value, src_float);
+						}
+						if (p_color_image) {
+							src_float = fmax(0.f, src_float);
+						}
+						dst_wp[i] = Math::make_half_float(src_float);
+					} else {
+						dst_wp[i] = src_rp[src_rp_index];
+					}
 				}
 
 			} else if (src_pixel_type == SRC_BYTE && target_pixel_type == TINYEXR_PIXELTYPE_HALF) {
@@ -232,7 +251,11 @@ Vector<uint8_t> save_exr_buffer(const Ref<Image> &p_img, bool p_grayscale) {
 				uint16_t *dst_wp = (uint16_t *)dst_w;
 
 				for (int i = 0; i < pixel_count; ++i) {
-					dst_wp[i] = Math::make_half_float(src_rp[channel_index + i * channel_count] / 255.f);
+					float src_float = src_rp[channel_index + i * channel_count] / 255.f;
+					if (p_max_value >= 0.f) {
+						src_float = fmin(p_max_value, src_float);
+					}
+					dst_wp[i] = Math::make_half_float(src_float);
 				}
 
 			} else {
@@ -284,8 +307,8 @@ Vector<uint8_t> save_exr_buffer(const Ref<Image> &p_img, bool p_grayscale) {
 	return buffer;
 }
 
-Error save_exr(const String &p_path, const Ref<Image> &p_img, bool p_grayscale) {
-	const Vector<uint8_t> buffer = save_exr_buffer(p_img, p_grayscale);
+Error save_exr(const String &p_path, const Ref<Image> &p_img, bool p_grayscale, bool p_color_image, float p_max_value) {
+	const Vector<uint8_t> buffer = save_exr_buffer(p_img, p_grayscale, p_color_image, p_max_value);
 	if (buffer.is_empty()) {
 		print_error(String("Saving EXR failed."));
 		return ERR_FILE_CANT_WRITE;
