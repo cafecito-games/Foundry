@@ -38,6 +38,7 @@
 #include "editor/editor_interface.h"
 #include "editor/editor_node.h"
 #include "editor/editor_string_names.h"
+#include "editor/gui/editor_about.h"
 #include "editor/gui/editor_file_dialog.h"
 #include "editor/project_manager/project_dialog.h"
 #include "editor/project_manager/project_scanner.h"
@@ -911,6 +912,105 @@ void StartupDialog::_apply_selected_tags(const PackedStringArray &p_tags) {
 	_refresh_manage_list();
 }
 
+// -- About tab ------------------------------------------------------------
+
+void StartupDialog::_build_about_tab(Control *p_parent) {
+	ScrollContainer *scroll = memnew(ScrollContainer);
+	scroll->set_horizontal_scroll_mode(ScrollContainer::SCROLL_MODE_DISABLED);
+	scroll->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	scroll->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	p_parent->add_child(scroll);
+
+	VBoxContainer *body = memnew(VBoxContainer);
+	body->add_theme_constant_override("separation", 10 * EDSCALE);
+	body->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	scroll->add_child(body);
+
+	Label *product_label = memnew(Label);
+	product_label->set_text(FOUNDRY_VERSION_NAME);
+	product_label->set_accessibility_name(TTRC("Foundry Engine"));
+	product_label->add_theme_font_size_override(SceneStringName(font_size), 20 * EDSCALE);
+	body->add_child(product_label);
+
+	// Exact version string, sourced from the same core/version.h macros the editor
+	// About dialog and version button use. Development builds that carry a git hash
+	// also surface the commit hash and, when recorded, the commit date.
+	String version_text = String("v") + FOUNDRY_VERSION_FULL_BUILD;
+	const String version_hash = String(FOUNDRY_VERSION_HASH);
+	if (!version_hash.is_empty()) {
+		version_text += vformat(" [%s]", version_hash.left(9));
+		if (FOUNDRY_VERSION_TIMESTAMP > 0) {
+			const String commit_date = Time::get_singleton()->get_datetime_string_from_unix_time(FOUNDRY_VERSION_TIMESTAMP, true) + " UTC";
+			version_text += "\n" + vformat(TTR("Commit date: %s"), commit_date);
+		}
+	}
+	about_version_label = memnew(Label);
+	about_version_label->set_text(version_text);
+	about_version_label->set_accessibility_name(TTRC("Foundry Engine Version"));
+	about_version_label->set_auto_translate_mode(AUTO_TRANSLATE_MODE_DISABLED);
+	about_version_label->set_modulate(Color(1, 1, 1, 0.7));
+	body->add_child(about_version_label);
+
+	body->add_child(memnew(HSeparator));
+
+	Label *copyright_label = memnew(Label);
+	copyright_label->set_text(EditorAbout::get_copyright_text());
+	copyright_label->set_accessibility_name(TTRC("Copyright"));
+	copyright_label->set_auto_translate_mode(AUTO_TRANSLATE_MODE_DISABLED);
+	copyright_label->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+	copyright_label->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	body->add_child(copyright_label);
+
+	Label *license_summary = memnew(Label);
+	license_summary->set_text(TTRC("Foundry Engine and Godot Engine are free and open source software released under the permissive MIT license."));
+	license_summary->set_autowrap_mode(TextServer::AUTOWRAP_WORD_SMART);
+	license_summary->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	license_summary->set_modulate(Color(1, 1, 1, 0.7));
+	body->add_child(license_summary);
+
+	body->add_child(memnew(HSeparator));
+
+	HBoxContainer *actions = memnew(HBoxContainer);
+	actions->add_theme_constant_override("separation", 8 * EDSCALE);
+	body->add_child(actions);
+
+	Button *credits_button = memnew(Button);
+	credits_button->set_text(TTRC("Full Credits"));
+	credits_button->set_accessibility_name(TTRC("Full Credits"));
+	credits_button->connect(SceneStringName(pressed), callable_mp(this, &StartupDialog::_show_full_credits));
+	actions->add_child(credits_button);
+
+	Button *license_button = memnew(Button);
+	license_button->set_text(TTRC("License"));
+	license_button->set_accessibility_name(TTRC("License"));
+	license_button->connect(SceneStringName(pressed), callable_mp(this, &StartupDialog::_show_license));
+	actions->add_child(license_button);
+
+	Button *third_party_button = memnew(Button);
+	third_party_button->set_text(TTRC("Third-party Notices"));
+	third_party_button->set_accessibility_name(TTRC("Third-party Notices"));
+	third_party_button->connect(SceneStringName(pressed), callable_mp(this, &StartupDialog::_show_third_party_notices));
+	actions->add_child(third_party_button);
+}
+
+void StartupDialog::_show_full_credits() {
+	if (about_dialog != nullptr) {
+		about_dialog->show_section(EditorAbout::SECTION_AUTHORS);
+	}
+}
+
+void StartupDialog::_show_license() {
+	if (about_dialog != nullptr) {
+		about_dialog->show_section(EditorAbout::SECTION_LICENSE);
+	}
+}
+
+void StartupDialog::_show_third_party_notices() {
+	if (about_dialog != nullptr) {
+		about_dialog->show_section(EditorAbout::SECTION_THIRDPARTY);
+	}
+}
+
 bool StartupDialog::is_visible_dialog() const {
 	return is_visible();
 }
@@ -1086,16 +1186,16 @@ StartupDialog::StartupDialog() {
 	}
 
 	{
-		about_tab = memnew(VBoxContainer);
-		about_tab->set_name(TTRC("About"));
-		tabs->add_child(about_tab);
+		MarginContainer *about_margin = memnew(MarginContainer);
+		about_margin->set_name(TTRC("About"));
+		about_margin->add_theme_constant_override("margin_left", 4 * EDSCALE);
+		about_margin->add_theme_constant_override("margin_right", 4 * EDSCALE);
+		about_margin->add_theme_constant_override("margin_top", 12 * EDSCALE);
+		about_margin->add_theme_constant_override("margin_bottom", 4 * EDSCALE);
+		tabs->add_child(about_margin);
+		about_tab = about_margin;
 
-		Label *placeholder = memnew(Label);
-		placeholder->set_text(TTRC("About information will appear here."));
-		placeholder->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_CENTER);
-		placeholder->set_vertical_alignment(VERTICAL_ALIGNMENT_CENTER);
-		placeholder->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-		about_tab->add_child(placeholder);
+		_build_about_tab(about_margin);
 	}
 
 	project_dialog = memnew(ProjectDialog);
@@ -1126,6 +1226,11 @@ StartupDialog::StartupDialog() {
 	manage_error_dialog = memnew(AcceptDialog);
 	manage_error_dialog->set_title(TTRC("Error"));
 	add_child(manage_error_dialog);
+
+	// Shared About/Credits dialog reused for full credits, license, and
+	// third-party notices so the startup dialog never re-embeds that content.
+	about_dialog = memnew(EditorAbout);
+	add_child(about_dialog);
 
 	{
 		add_tag_dialog = memnew(ConfirmationDialog);

@@ -36,6 +36,7 @@
 class Button;
 class ConfirmationDialog;
 class Control;
+class EditorAbout;
 class EditorFileDialog;
 class HBoxContainer;
 class Label;
@@ -67,6 +68,12 @@ class StartupDialog : public AcceptDialog {
 	Control *projects_tab = nullptr;
 	Control *manage_tab = nullptr;
 	Control *about_tab = nullptr;
+
+	// About tab: reuses the editor About/Credits data sources for product, version,
+	// copyright, and license, and defers full credits/third-party notices to the
+	// shared EditorAbout dialog.
+	Label *about_version_label = nullptr;
+	EditorAbout *about_dialog = nullptr;
 
 	Button *create_project_button = nullptr;
 	Button *open_existing_button = nullptr;
@@ -152,6 +159,12 @@ class StartupDialog : public AcceptDialog {
 	void _confirm_add_tag();
 	void _remove_selected_tag(const String &p_tag);
 	void _apply_selected_tags(const PackedStringArray &p_tags);
+
+	// About tab helpers.
+	void _build_about_tab(Control *p_parent);
+	void _show_full_credits();
+	void _show_license();
+	void _show_third_party_notices();
 
 	// Records the open in the global store, launches `editor open --project`, and
 	// quits the projectless shell. Returns the create_instance error when launch fails.

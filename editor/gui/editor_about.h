@@ -36,6 +36,7 @@ class CreditsRoll;
 class ItemList;
 class Label;
 class RichTextLabel;
+class TabContainer;
 class TextureRect;
 class Tree;
 
@@ -61,6 +62,7 @@ private:
 
 	Label *_about_text_label = nullptr;
 	Label *_project_manager_label = nullptr;
+	TabContainer *_tab_container = nullptr;
 	Tree *_tpl_tree = nullptr;
 	RichTextLabel *license_text_label = nullptr;
 	RichTextLabel *_tpl_text = nullptr;
@@ -72,5 +74,21 @@ protected:
 	void _notification(int p_what);
 
 public:
+	// Tabs of the About dialog, in construction order, so callers can open the
+	// dialog focused on a specific section instead of relying on tab indices.
+	enum AboutSection {
+		SECTION_AUTHORS,
+		SECTION_LICENSE,
+		SECTION_THIRDPARTY,
+	};
+
+	// Copyright notice shown in the About header. Exposed so other surfaces (such
+	// as the projectless startup dialog) reuse the same legal text instead of
+	// re-embedding their own copies.
+	static String get_copyright_text();
+
+	// Pops the dialog centered, focused on the requested section.
+	void show_section(AboutSection p_section = SECTION_AUTHORS);
+
 	EditorAbout();
 };
