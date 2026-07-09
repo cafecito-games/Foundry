@@ -1121,8 +1121,9 @@
   "risk": "low",
   "files_exist": true,
   "rationale": "Three-line highlight-update fix in node_3d_editor_plugin.cpp; applies cleanly.",
-  "outcome": "ported",
-  "local_sha": "a27a274ef1716e171bc5b14b58af15cff7a8c73f"
+  "outcome": "reverted-absent-feature",
+  "local_sha": "a27a274ef1716e171bc5b14b58af15cff7a8c73f",
+  "reason": "applied textually but references Node3DEditor member absent in fork (Follow-Selection/trackball/gizmo-highlight); reverted to fix build"
  },
  {
   "pr": "118041",
@@ -1225,8 +1226,9 @@
   "risk": "low",
   "files_exist": true,
   "rationale": "Single _reset_follow_mode_count() call in _sinput subgizmo path; applies cleanly to node_3d_editor_plugin.cpp.",
-  "outcome": "ported",
-  "local_sha": "06f8bb548a04cc51e4f56bbf155cf5b6ce95abf2"
+  "outcome": "reverted-absent-feature",
+  "local_sha": "06f8bb548a04cc51e4f56bbf155cf5b6ce95abf2",
+  "reason": "applied textually but references Node3DEditor member absent in fork (Follow-Selection/trackball/gizmo-highlight); reverted to fix build"
  },
  {
   "pr": "118352",
@@ -1827,8 +1829,9 @@
   "risk": "low",
   "files_exist": true,
   "rationale": "Two-line trackball local-space fix in node_3d_editor_plugin.cpp _sinput hunk; applies cleanly despite overall file divergence.",
-  "outcome": "ported",
-  "local_sha": "2cd33c17b4d6b113f774a693ea66535828d5f89c"
+  "outcome": "reverted-absent-feature",
+  "local_sha": "2cd33c17b4d6b113f774a693ea66535828d5f89c",
+  "reason": "applied textually but references Node3DEditor member absent in fork (Follow-Selection/trackball/gizmo-highlight); reverted to fix build"
  },
  {
   "pr": "120102",
