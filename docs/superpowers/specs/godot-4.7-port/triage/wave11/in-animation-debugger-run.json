@@ -1,0 +1,471 @@
+[
+ {
+  "pr": "119992",
+  "sha": "bbd3f43b57db5008539e87bd86ef9e3cc7a44a23",
+  "title": "Prevent crash when detaching freed debugger",
+  "subsystem": "editor/debugger",
+  "nfiles": 2
+ },
+ {
+  "pr": "119964",
+  "sha": "039d4d614feccacbb254a29745170e91da90d509",
+  "title": "Fix empty animation menu in blend space editor",
+  "subsystem": "editor/animation",
+  "nfiles": 2
+ },
+ {
+  "pr": "119871",
+  "sha": "9da915af9f023843a7a2c844e0eb3832006d743b",
+  "title": "Make `AnimationNodeAnimation`'s custom timeline processing logic compatible with `AnimationMixer`",
+  "subsystem": "editor/animation",
+  "nfiles": 2
+ },
+ {
+  "pr": "119919",
+  "sha": "5d5e27b2bd47f0d1ab261708da77bf543e396a71",
+  "title": "Fix remote scene tree expanding selected nodes on reveal",
+  "subsystem": "editor/debugger",
+  "nfiles": 1
+ },
+ {
+  "pr": "119508",
+  "sha": "988497948bba6b8fc1d5b04dff470e1cb28bfa01",
+  "title": "Editor: Ensure `project.godot` exists before running the project",
+  "subsystem": "editor/run",
+  "nfiles": 1
+ },
+ {
+  "pr": "118247",
+  "sha": "c14b043d25ff62074a91fc46ed3ab61fb8338e94",
+  "title": "Fix misaligned timeline indicator on the Bezier editor",
+  "subsystem": "editor/animation",
+  "nfiles": 3
+ },
+ {
+  "pr": "119061",
+  "sha": "903644eebfba1c6ecd1a7e622bb293c519bfd02e",
+  "title": "Fix undo crash when animation editor is not active",
+  "subsystem": "editor/animation",
+  "nfiles": 2
+ },
+ {
+  "pr": "119076",
+  "sha": "e06dd8106e4c9113f2a3b20e4ceef16f3e85735e",
+  "title": "Replace `VSeparator` with `HSeparator` in Misc tab",
+  "subsystem": "editor/debugger",
+  "nfiles": 1
+ },
+ {
+  "pr": "118270",
+  "sha": "bbc17e3757c138c2daac9b8c13e1bd65d0d2b762",
+  "title": "Fix non-positive frame numbers misaligned in FPS mode",
+  "subsystem": "editor/animation",
+  "nfiles": 1
+ },
+ {
+  "pr": "119009",
+  "sha": "fd8c4ef3e982b9e6973c858f6c3354abc1331b6a",
+  "title": "Revert \"[HDR] Save editor screenshot as EXR when HDR is enabled.\"",
+  "subsystem": "editor/run",
+  "nfiles": 7
+ },
+ {
+  "pr": "118911",
+  "sha": "ba193121fe7196daf87621e39336f59a1c475701",
+  "title": "[HDR] Save editor screenshot as EXR when HDR is enabled.",
+  "subsystem": "editor/run",
+  "nfiles": 7
+ },
+ {
+  "pr": "118748",
+  "sha": "a4ca6aad9e491b590891203199c4959571b48317",
+  "title": "Fix Visual Profiler reference frame line being drawn outside its container",
+  "subsystem": "editor/debugger",
+  "nfiles": 1
+ },
+ {
+  "pr": "117434",
+  "sha": "1b74131694e0cd245dee7173e122420610a50b77",
+  "title": "Silently stop all script debuggers if no debugging server is active",
+  "subsystem": "editor/debugger",
+  "nfiles": 1
+ },
+ {
+  "pr": "117532",
+  "sha": "343655bfa312c6c14c29908c9debc3d872d805d2",
+  "title": "Hide `Remote Deploy` button when not configured",
+  "subsystem": "editor/run",
+  "nfiles": 1
+ },
+ {
+  "pr": "117432",
+  "sha": "316bdc1d1a10fed63991f39d517ab011d2f26ad0",
+  "title": "Allow toggling AnimationTree error panel",
+  "subsystem": "editor/animation",
+  "nfiles": 11
+ },
+ {
+  "pr": "118561",
+  "sha": "86075f7af1c6ce978c4561c3ef63d6990ddaa8ad",
+  "title": "Fix GameView crash on init.",
+  "subsystem": "editor/run",
+  "nfiles": 1
+ },
+ {
+  "pr": "118079",
+  "sha": "13db19e3a7a5a5ba558226c2722e26a032aa83ec",
+  "title": "Change embedded window options to use three stacked dots and add HDR info",
+  "subsystem": "editor/run",
+  "nfiles": 5
+ },
+ {
+  "pr": "117275",
+  "sha": "eac17ddc5582d24392f5bcd511495731fac4b6fd",
+  "title": "Add `SyncMode::CYCLIC` to BlendSpace1D and BlendSpace2D",
+  "subsystem": "editor/animation",
+  "nfiles": 10
+ },
+ {
+  "pr": "117498",
+  "sha": "df824815bc3128843ecea1ddd3a5fbf8646fe4b1",
+  "title": "Improve visual consistency of BlendSpace editors within AnimationTree",
+  "subsystem": "editor/animation",
+  "nfiles": 11
+ },
+ {
+  "pr": "118312",
+  "sha": "d48f9d3afef748d49ba5a92b4109e52621309f21",
+  "title": "Temporarily remove flow capabilities of the Game view toolbar",
+  "subsystem": "editor/run",
+  "nfiles": 1
+ },
+ {
+  "pr": "118208",
+  "sha": "623f64d3104318bae3e2fa4acb46a828076054a5",
+  "title": "copy full remote path in runtime",
+  "subsystem": "editor/debugger",
+  "nfiles": 1
+ },
+ {
+  "pr": "118116",
+  "sha": "d5e974d098f2433685db1277d0e0077c30bef4b9",
+  "title": "Fix stack trace label having the wrong height on first appearance",
+  "subsystem": "editor/debugger",
+  "nfiles": 1
+ },
+ {
+  "pr": "118120",
+  "sha": "ccdb6fdb291ed3053a126cb6e7fe6ca6c3482635",
+  "title": "Add folding to the Visual Profiler tree",
+  "subsystem": "editor/debugger",
+  "nfiles": 4
+ },
+ {
+  "pr": "116345",
+  "sha": "29a391430950759c3744e245c42f8aa085f09aad",
+  "title": "Expand timeline length spinner in AnimationTimelineEdit",
+  "subsystem": "editor/animation",
+  "nfiles": 1
+ },
+ {
+  "pr": "117867",
+  "sha": "9ced6369bd08fb65546ae596b04646bf80e7b06e",
+  "title": "Add `node name` to `EditorDebuggerInspector`",
+  "subsystem": "editor/debugger",
+  "nfiles": 3
+ },
+ {
+  "pr": "115390",
+  "sha": "480350c09e008f4db55cfacd8dae9900c00f3306",
+  "title": "Allow debugger dock to float",
+  "subsystem": "editor/debugger",
+  "nfiles": 3
+ },
+ {
+  "pr": "117951",
+  "sha": "589cf660432a935a5471119082595727833f799e",
+  "title": "Fix AnimationTree AnimationPlayerEditor broken",
+  "subsystem": "editor/animation",
+  "nfiles": 2
+ },
+ {
+  "pr": "117944",
+  "sha": "21af15773497f2ffd4fd646467387be966277598",
+  "title": "Initialize `AnimationNodeBlendTreeEditor::graph_update_queued` to false",
+  "subsystem": "editor/animation",
+  "nfiles": 1
+ },
+ {
+  "pr": "117755",
+  "sha": "fa50d196c001bc2fb0a0249a22d08e12f27e45d0",
+  "title": "Fix few incorrect `TTR(vformat` sentences",
+  "subsystem": "editor/animation",
+  "nfiles": 2
+ },
+ {
+  "pr": "117649",
+  "sha": "ff6034dc0aec2b2c4034829fee500d5c37c881ce",
+  "title": "Fix time property drag range in FPS mode for AnimationKey and Marker",
+  "subsystem": "editor/animation",
+  "nfiles": 1
+ },
+ {
+  "pr": "117634",
+  "sha": "70752fab60ad94372f5e6250c841afbcdc774ad5",
+  "title": "Fix timeline cursor following mouse during marker selection",
+  "subsystem": "editor/animation",
+  "nfiles": 1
+ },
+ {
+  "pr": "117562",
+  "sha": "f90d71ffe842360774bc2d0eb5afdb970926d9de",
+  "title": "Fix BlendTree appearing empty",
+  "subsystem": "editor/animation",
+  "nfiles": 1
+ },
+ {
+  "pr": "117382",
+  "sha": "ce4dec913767c7f238296a09176dd77216970dea",
+  "title": "Profiler: Fix for graph using excessive CPU",
+  "subsystem": "editor/debugger",
+  "nfiles": 2
+ },
+ {
+  "pr": "116818",
+  "sha": "3e051d8fe16fc40aa0028cc132dd5fecde1a250d",
+  "title": "Make selecting node in remote expand tree",
+  "subsystem": "editor/debugger",
+  "nfiles": 2
+ },
+ {
+  "pr": "117495",
+  "sha": "e37ed101268cee246e17e8ec7ed42e4b8b739c63",
+  "title": "Fix invalid character when adding library anim in BlendSpace",
+  "subsystem": "editor/animation",
+  "nfiles": 2
+ },
+ {
+  "pr": "117273",
+  "sha": "ed256ec38176c5f4215a1d1dc9818fb8442b70e0",
+  "title": "Fix \"Send Key(s) to RESET\" not appearing on first right-click in Animation Editor",
+  "subsystem": "editor/animation",
+  "nfiles": 2
+ },
+ {
+  "pr": "117377",
+  "sha": "aa470f01b6740822401b8e36267872fdf0408bd7",
+  "title": "Limit dragging BlendSpace points to bounds",
+  "subsystem": "editor/animation",
+  "nfiles": 2
+ },
+ {
+  "pr": "117321",
+  "sha": "11970cb0ce5e40efd34a58b497dd903ef3a82ca2",
+  "title": "Draw aggregate animation keys on top of folded node groups",
+  "subsystem": "editor/animation",
+  "nfiles": 2
+ },
+ {
+  "pr": "117290",
+  "sha": "e37ef60e8c45bdbb8304ceae26d13f2577bcf1ed",
+  "title": "Fix visual shift of animation editor keys during selection",
+  "subsystem": "editor/animation",
+  "nfiles": 1
+ },
+ {
+  "pr": "116953",
+  "sha": "45d9d6e2f173c91ca06ff546081997bfe141636c",
+  "title": "Deselect bezier keyframes when switching animations",
+  "subsystem": "editor/animation",
+  "nfiles": 1
+ },
+ {
+  "pr": "110129",
+  "sha": "bd93dd23f6d90b49528781f57e92416800a159aa",
+  "title": "Remove arbitrary limits on BlendSpace editors' visible region",
+  "subsystem": "editor/animation",
+  "nfiles": 2
+ },
+ {
+  "pr": "117357",
+  "sha": "1195cada54e0e60afd299aa8ff6f8aa8d5ae427a",
+  "title": "Support folding, groups, and subgroups in `Remote Scene Inspector`",
+  "subsystem": "editor/debugger",
+  "nfiles": 4
+ },
+ {
+  "pr": "116394",
+  "sha": "f1f62d78689a6bb97c8f748d0769c4628a5e7348",
+  "title": "Optimize Animation Resource, Library, Mixer, and Player",
+  "subsystem": "editor/animation",
+  "nfiles": 30
+ },
+ {
+  "pr": "117147",
+  "sha": "27b004f4b1823377e0975255ce256dbc2857e36a",
+  "title": "Remove previous animation libraries before adding them to dummy player",
+  "subsystem": "editor/animation",
+  "nfiles": 1
+ },
+ {
+  "pr": "115038",
+  "sha": "7345c20a1b5238be32c079426c51f0625ca1c4b4",
+  "title": "Add scroll hint to the animation library dialog",
+  "subsystem": "editor/animation",
+  "nfiles": 1
+ },
+ {
+  "pr": "116457",
+  "sha": "2b856f3800d92b73a4fd77a0e886abe604924a04",
+  "title": "Add scroll hints to the cross-animation blend dialog",
+  "subsystem": "editor/animation",
+  "nfiles": 1
+ },
+ {
+  "pr": "113664",
+  "sha": "b357ac94995738d46b903074f8ee71aca6d68c25",
+  "title": "Remove legacy animation key insertion offset loop",
+  "subsystem": "editor/animation",
+  "nfiles": 1
+ },
+ {
+  "pr": "116813",
+  "sha": "78beaadf60a038286fb7bd989d7cf1599039abfb",
+  "title": "Change picking dialog title based on track type",
+  "subsystem": "editor/animation",
+  "nfiles": 1
+ },
+ {
+  "pr": "116946",
+  "sha": "dcbdac00f6935ffeb087235c0fadb2912f9806a4",
+  "title": "Add undo/redo to adding/removing StateMachine nodes",
+  "subsystem": "editor/animation",
+  "nfiles": 1
+ },
+ {
+  "pr": "116790",
+  "sha": "99864862425c8dccc5a1555d405e6b842df509ff",
+  "title": "Hide property groups from the \"Members\" section in Debugger",
+  "subsystem": "editor/debugger",
+  "nfiles": 1
+ },
+ {
+  "pr": "114648",
+  "sha": "985c952a86ba1c8de3c064566f49ecf919aaf0f0",
+  "title": "Select RESET animation by default when opening a scene in the editor",
+  "subsystem": "editor/animation",
+  "nfiles": 1
+ },
+ {
+  "pr": "113479",
+  "sha": "15a4311583fbaad2eee5d2ecda5437eb9fd68c63",
+  "title": "Collapse groups in animation track editor",
+  "subsystem": "editor/animation",
+  "nfiles": 6
+ },
+ {
+  "pr": "114155",
+  "sha": "deace09d37d537bd108259eee518f968a663a35a",
+  "title": "Improve the visibility of the selection of Color value keys",
+  "subsystem": "editor/animation",
+  "nfiles": 1
+ },
+ {
+  "pr": "116568",
+  "sha": "15e285eb639a5f2c73e8c259913ed7604b83958e",
+  "title": "Fix game speed UI not resetting when game is restarted (from editor)",
+  "subsystem": "editor/run",
+  "nfiles": 1
+ },
+ {
+  "pr": "116537",
+  "sha": "a19892054e871b3db3645eacb5eae0b5e69c7957",
+  "title": "Fix mute button after pausing and stopping",
+  "subsystem": "editor/debugger",
+  "nfiles": 1
+ },
+ {
+  "pr": "111614",
+  "sha": "d59205aa61accb595108f12f86beee2e9309a346",
+  "title": "Remove `typed_dictionary.h` include where it's unused or can be forward-declared",
+  "subsystem": "editor/debugger",
+  "nfiles": 4
+ },
+ {
+  "pr": "116451",
+  "sha": "70771e3290c1262929a4711eca57ac47c2fdb3fd",
+  "title": "Improve auto-translation in the Animation editor",
+  "subsystem": "editor/animation",
+  "nfiles": 3
+ },
+ {
+  "pr": "116295",
+  "sha": "8ab040cc4472d0426f439f9a6c57042f2b5627df",
+  "title": "Provide default values for fold state in \"Edit Animation Libraries\" window to prevent errors",
+  "subsystem": "editor/animation",
+  "nfiles": 1
+ },
+ {
+  "pr": "108208",
+  "sha": "e1c8e6cfb690b868fa330cfa6463d727150b649e",
+  "title": "Show custom class name in the remote inspector",
+  "subsystem": "editor/debugger",
+  "nfiles": 1
+ },
+ {
+  "pr": "115761",
+  "sha": "481b6fcf666e697300c71b0a8bc23bd05a02fe53",
+  "title": "Fix debugger error log time gets trimmed.",
+  "subsystem": "editor/debugger",
+  "nfiles": 1
+ },
+ {
+  "pr": "115968",
+  "sha": "cb8c64b96babb8e7c47ffe1faa04012842c64489",
+  "title": "Fix double memdelete of `dummy_player`",
+  "subsystem": "editor/animation",
+  "nfiles": 1
+ },
+ {
+  "pr": "115928",
+  "sha": "9ecd611b510addb21c62655a71a2cbb6df9d4899",
+  "title": "Debugger: Fix typed dictionary hint string",
+  "subsystem": "editor/debugger",
+  "nfiles": 1
+ },
+ {
+  "pr": "113351",
+  "sha": "7cdd322fb9a8363c07200846b2123e70109a6f70",
+  "title": "Add context menu to the Video RAM tab of the Debugger bottom panel",
+  "subsystem": "editor/debugger",
+  "nfiles": 3
+ },
+ {
+  "pr": "115576",
+  "sha": "fd0499020b34f2c31c69dc91cc0869e09344b63b",
+  "title": "Fix icon size in AnimationPlayer tracks",
+  "subsystem": "editor/animation",
+  "nfiles": 1
+ },
+ {
+  "pr": "115275",
+  "sha": "9bca0d1221128013c4cfa093690e6e4b8233fdd5",
+  "title": "Refactor remove duplicate code",
+  "subsystem": "editor/run",
+  "nfiles": 1
+ },
+ {
+  "pr": "109108",
+  "sha": "173d02243491244ed387dd4848f777b7fdf69e5f",
+  "title": "Fix error after renaming animation in Animation Library Editor",
+  "subsystem": "editor/animation",
+  "nfiles": 4
+ },
+ {
+  "pr": "115116",
+  "sha": "769284ffeffe41346b60e95b11afc234c09bd146",
+  "title": "Ensure debug features get cleared after use",
+  "subsystem": "editor/run",
+  "nfiles": 1
+ }
+]

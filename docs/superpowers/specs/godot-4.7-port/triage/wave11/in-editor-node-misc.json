@@ -1,0 +1,513 @@
+[
+ {
+  "pr": "119999",
+  "sha": "f1ab81c99031e1e897217f6e6b80a7a01512534d",
+  "title": "Wrap project titles",
+  "subsystem": "editor/project_manager",
+  "nfiles": 2
+ },
+ {
+  "pr": "117337",
+  "sha": "24028e82fde1c24dfce7117532fad2cc09e1843f",
+  "title": "Fix `EditorPlugin::remove_control_from_docks` freeing passed control",
+  "subsystem": "editor/plugins",
+  "nfiles": 1
+ },
+ {
+  "pr": "119598",
+  "sha": "bc209b4f1d28ef6f47c372ab1e729098582c01b4",
+  "title": "Ensure that BPTC LayeredTexture images get compressed with same signedness",
+  "subsystem": "editor/import",
+  "nfiles": 10
+ },
+ {
+  "pr": "116063",
+  "sha": "94a62a3a6c3e7d7c0752828404b8e6075cc83d42",
+  "title": "Speed up `_find_file` for case-insensitive file systems",
+  "subsystem": "editor/file_system",
+  "nfiles": 2
+ },
+ {
+  "pr": "119710",
+  "sha": "08558acb36d69bdd76b522cd235eba2c0eaffca9",
+  "title": "Don't use system color as godot base color when Follow System Theme is active",
+  "subsystem": "editor/themes",
+  "nfiles": 1
+ },
+ {
+  "pr": "118225",
+  "sha": "9a0bc6431bb66d1ec5ce841a6004f875b2f7ecdb",
+  "title": "Fix editor unsaved scenes getting file path updates",
+  "subsystem": "editor/editor_data.cpp",
+  "nfiles": 1
+ },
+ {
+  "pr": "119573",
+  "sha": "425d1caa5e4da4bc8554c980a75553e08c512553",
+  "title": "[Project Manager] Fix incorrect size comparison",
+  "subsystem": "editor/project_manager",
+  "nfiles": 1
+ },
+ {
+  "pr": "119475",
+  "sha": "61ac9d4c341dd425a3217cfe828b7e6b1db38717",
+  "title": "Fix various editor state related regressions",
+  "subsystem": "editor/editor_data.cpp",
+  "nfiles": 3
+ },
+ {
+  "pr": "119258",
+  "sha": "28bbccc483b4b5e3174f3c7f05bcfe8c0dcf8f5e",
+  "title": "Fix error names not being localized in editor resource saving error dialog",
+  "subsystem": "editor/editor_node.cpp",
+  "nfiles": 1
+ },
+ {
+  "pr": "119239",
+  "sha": "9345fd7ab26a7610aade2a1acf55210312ac7f06",
+  "title": "Improve error messages when trying to save invalid resources in the editor",
+  "subsystem": "editor/editor_node.cpp",
+  "nfiles": 1
+ },
+ {
+  "pr": "119108",
+  "sha": "c5a8169e0bb59afebe95ec06babcdacbd3a846e6",
+  "title": "Add cleanup of `EditorInspector` clipboard contents",
+  "subsystem": "editor/register_editor_types.cpp",
+  "nfiles": 1
+ },
+ {
+  "pr": "118814",
+  "sha": "972244b4431ff5152cda9791f245fc31cd670948",
+  "title": "Dependency editor: fix label, it's the owners, not the dependencies of files to delete",
+  "subsystem": "editor/file_system",
+  "nfiles": 1
+ },
+ {
+  "pr": "119088",
+  "sha": "60ead927f5aab3d6515f95836137a3be3f6d54cb",
+  "title": "Editor: Fix Tag Overrun Behavior",
+  "subsystem": "editor/project_manager",
+  "nfiles": 1
+ },
+ {
+  "pr": "118954",
+  "sha": "edf4fb97c706b3678eff2163cf4092ea1c7f095a",
+  "title": "Improve 'Clear Output' button position",
+  "subsystem": "editor/editor_log.cpp",
+  "nfiles": 1
+ },
+ {
+  "pr": "119013",
+  "sha": "665d46bdef50bd57a9b51ffe18b90cb06872510d",
+  "title": "Fix editor screenshots with HDR enabled.",
+  "subsystem": "editor/editor_node.cpp",
+  "nfiles": 2
+ },
+ {
+  "pr": "116626",
+  "sha": "d4a6f1597b2a42c42aab29182b860b229f855e5d",
+  "title": "Fix Verbose mode from being enabled after quitting to the Project Manager",
+  "subsystem": "editor/editor_node.cpp",
+  "nfiles": 1
+ },
+ {
+  "pr": "118926",
+  "sha": "01ff9da2377a7e1fd714152d523401c7ea218022",
+  "title": "Avoid repeats in resource gather",
+  "subsystem": "editor/editor_node.cpp",
+  "nfiles": 3
+ },
+ {
+  "pr": "112759",
+  "sha": "dc7e9407efdeca828b1004f8fb5d5717dd60c578",
+  "title": "Open missing source file errors on GitHub",
+  "subsystem": "editor/editor_log.cpp",
+  "nfiles": 1
+ },
+ {
+  "pr": "118876",
+  "sha": "b233e85c1115c6c7c5a27d6b15624d5fdec9ec95",
+  "title": "Editor: Fix Tag Container Clipping Project Title and Breaking Project Manager UI",
+  "subsystem": "editor/project_manager",
+  "nfiles": 3
+ },
+ {
+  "pr": "118174",
+  "sha": "ad40295e5320e8025fd75494ad1182df88cb87bb",
+  "title": "Add audio info to \"Copy System Info\"",
+  "subsystem": "editor/editor_node.cpp",
+  "nfiles": 1
+ },
+ {
+  "pr": "118756",
+  "sha": "a95a10e55d0b89700b73e3a73599c2eef7349094",
+  "title": "Disable rounding remainders and subpixel positioning for editor code fonts.",
+  "subsystem": "editor/themes",
+  "nfiles": 1
+ },
+ {
+  "pr": "118712",
+  "sha": "2863a2a205b6381d35d2cfb82d6d0d1b387060cf",
+  "title": "Disable shader previews for loops",
+  "subsystem": "editor/shader",
+  "nfiles": 2
+ },
+ {
+  "pr": "118522",
+  "sha": "19981327d1f56a74772401ac0361743a5634e986",
+  "title": "Copy scene unique ID when replacing imported instance",
+  "subsystem": "editor/editor_node.cpp",
+  "nfiles": 1
+ },
+ {
+  "pr": "118661",
+  "sha": "a8643700ce8affae9fed0d2688b9f7867f5b7d4e",
+  "title": "Fix leftover AssetLib icon reference",
+  "subsystem": "editor/project_manager",
+  "nfiles": 1
+ },
+ {
+  "pr": "118567",
+  "sha": "705c96e3c871b9311a86a9b747d5cf19decd041f",
+  "title": "Add missing dictionary type hints in SVG DPITexture import options",
+  "subsystem": "editor/import",
+  "nfiles": 1
+ },
+ {
+  "pr": "116308",
+  "sha": "0fd8c2cf2f7174086e92fd2187b13736e395a7a7",
+  "title": "Wayland: Re-enable window restore logic",
+  "subsystem": "editor/editor_node.cpp",
+  "nfiles": 2
+ },
+ {
+  "pr": "107856",
+  "sha": "29d756e073938168051ab0effa6cdeeb2243b459",
+  "title": "3D scene import: Allow importing files as Mesh or MeshLibrary via ResourceImporterScene",
+  "subsystem": "editor/import",
+  "nfiles": 5
+ },
+ {
+  "pr": "118266",
+  "sha": "53156fc13550ae3fef0ebb940254009f6e809456",
+  "title": "Revamp audio bus UI",
+  "subsystem": "editor/audio",
+  "nfiles": 6
+ },
+ {
+  "pr": "117726",
+  "sha": "a782d0e8cfd7a573daf278008518e3899e4edbcd",
+  "title": "Implement inline text shader previews",
+  "subsystem": "editor/shader",
+  "nfiles": 5
+ },
+ {
+  "pr": "116480",
+  "sha": "0adfb22e41f9786677af94c5764e5402f8826ed4",
+  "title": "Fix closed docks still being present in the dock menu after being disabled",
+  "subsystem": "editor/editor_node.cpp",
+  "nfiles": 1
+ },
+ {
+  "pr": "116849",
+  "sha": "9af407f416001080bf586d75a56b379221ffd457",
+  "title": "Use early continues in ResourceImporterScene post fix importer mesh code",
+  "subsystem": "editor/import",
+  "nfiles": 1
+ },
+ {
+  "pr": "118041",
+  "sha": "92a41bc222767731b0ddbaebf54c6782bc2b1771",
+  "title": "Fix icons and code completion colors when following system theme",
+  "subsystem": "editor/editor_node.cpp",
+  "nfiles": 2
+ },
+ {
+  "pr": "117882",
+  "sha": "1bae2fc5242749907655eac6a0a48bb9b21c0e97",
+  "title": "Make click to copy more visible",
+  "subsystem": "editor/doc",
+  "nfiles": 1
+ },
+ {
+  "pr": "117968",
+  "sha": "0eee380851871f43c313342319617aa083b5d790",
+  "title": "Support Commit Amends",
+  "subsystem": "editor/version_control",
+  "nfiles": 6
+ },
+ {
+  "pr": "117996",
+  "sha": "ac97d0850676b26e9627d85d85be37cdb304e657",
+  "title": "Disable auto-translation of plugin names",
+  "subsystem": "editor/plugins",
+  "nfiles": 1
+ },
+ {
+  "pr": "117358",
+  "sha": "879a3012c887adb682a910611fab962c9620c278",
+  "title": "[Accessibility] Add property/category/section descriptions to the inspector.",
+  "subsystem": "editor/doc",
+  "nfiles": 5
+ },
+ {
+  "pr": "117582",
+  "sha": "44b302b153334151e5ce12ee37b893ee270e9b42",
+  "title": "Remove unused `MSG_ID_ACTIVE`",
+  "subsystem": "editor/plugins",
+  "nfiles": 2
+ },
+ {
+  "pr": "62419",
+  "sha": "07447e93c3a858eb95edf632cb9590e5aa54660a",
+  "title": "Tweak visibility editor icons to be more compact",
+  "subsystem": "editor/icons",
+  "nfiles": 3
+ },
+ {
+  "pr": "108351",
+  "sha": "df3d955fd4b9a331f3c63b7cc308410a64f74c1f",
+  "title": "Store editor log button state globally",
+  "subsystem": "editor/editor_log.cpp",
+  "nfiles": 1
+ },
+ {
+  "pr": "112690",
+  "sha": "bd97608d556e5e949c22caa17e96e3aac168eaee",
+  "title": "Reorganize Output dock",
+  "subsystem": "editor/editor_log.cpp",
+  "nfiles": 4
+ },
+ {
+  "pr": "117203",
+  "sha": "fbc00f1f84c41ab5fdc20e450819f3f2e44c1c3b",
+  "title": "Use SplitContainer for Node3D Editor viewports",
+  "subsystem": "editor/icons",
+  "nfiles": 6
+ },
+ {
+  "pr": "117187",
+  "sha": "8dc8e91fe976ab4f585bcadcfcbcb979078211c9",
+  "title": "Fix some icon colors for light themes.",
+  "subsystem": "editor/icons",
+  "nfiles": 5
+ },
+ {
+  "pr": "117089",
+  "sha": "308ebc9bfe607c60a3399d64f5580e65e827798c",
+  "title": "Add missing code snippet copy notification to `EditorHelpBit`",
+  "subsystem": "editor/doc",
+  "nfiles": 1
+ },
+ {
+  "pr": "111528",
+  "sha": "a209e26690643b2cdacc3198b60eaeaaef1137a8",
+  "title": "Depict version discrepancies in Project Manager",
+  "subsystem": "editor/icons",
+  "nfiles": 6
+ },
+ {
+  "pr": "117013",
+  "sha": "f67eca1afb78d1a08ca4bf03d856c10fd97fbb18",
+  "title": "Fix compilation error with `module_gdscript_enabled=no` by adding explicit `EditorSyntaxHighlighter` include",
+  "subsystem": "editor/doc",
+  "nfiles": 1
+ },
+ {
+  "pr": "116848",
+  "sha": "bed242666a80a6250bb4665dc2cc45abcb0ebbfa",
+  "title": "Fix `reload_scene_from_path` may crash",
+  "subsystem": "editor/editor_data.cpp",
+  "nfiles": 4
+ },
+ {
+  "pr": "117008",
+  "sha": "eb516e3d126b7c79f0cbdf8184d90200f0375cdf",
+  "title": "Editor Help: Start new paragraphs after codeblocks",
+  "subsystem": "editor/doc",
+  "nfiles": 1
+ },
+ {
+  "pr": "116545",
+  "sha": "343f1329ed97aeeed7ec3bf90f58d1bb4ba91080",
+  "title": "Tweaks to EditorHelp separator colors",
+  "subsystem": "editor/themes",
+  "nfiles": 3
+ },
+ {
+  "pr": "116014",
+  "sha": "f5a4757763e5d8cb49cb5d79a238f772ef8736b1",
+  "title": "Create EditorHelpHighlighter in Project Manager",
+  "subsystem": "editor/project_manager",
+  "nfiles": 1
+ },
+ {
+  "pr": "105308",
+  "sha": "dfd842b8cd8116725e7248818d7a22f588bc53d7",
+  "title": "Don't process invisible update spinner",
+  "subsystem": "editor/editor_node.cpp",
+  "nfiles": 2
+ },
+ {
+  "pr": "116532",
+  "sha": "c73b13cd8bef07cff15db7b8789d46104294f8fc",
+  "title": "Editor Help: Make codeblocks full-width",
+  "subsystem": "editor/doc",
+  "nfiles": 1
+ },
+ {
+  "pr": "115111",
+  "sha": "74ecf68e150994315f8422e98cb152e618916229",
+  "title": "Restore context menu icons in EditorFileDialog",
+  "subsystem": "editor/themes",
+  "nfiles": 5
+ },
+ {
+  "pr": "116434",
+  "sha": "8bae78e21b341604cbb22618bc09fab72eb2e21b",
+  "title": "Don't hard-code dock names in default layout",
+  "subsystem": "editor/editor_node.cpp",
+  "nfiles": 1
+ },
+ {
+  "pr": "116463",
+  "sha": "4c6246052b11f8ad1e5aad2b73d70df53ab9da87",
+  "title": "Editor: only force CSV text for translation",
+  "subsystem": "editor/editor_node.cpp",
+  "nfiles": 1
+ },
+ {
+  "pr": "104628",
+  "sha": "9a3a7f9abf4633f38d7aeaf48d59e94e04625123",
+  "title": "Add `H` keyboard shortcut to toggle node visibility in the 2D and 3D editors",
+  "subsystem": "editor/editor_node.cpp",
+  "nfiles": 2
+ },
+ {
+  "pr": "116218",
+  "sha": "62c6ae120ff0057f02f8655f0bf2ae3a2298efe6",
+  "title": "Fix editor not handling unsaved changes on restart from settings",
+  "subsystem": "editor/editor_node.cpp",
+  "nfiles": 1
+ },
+ {
+  "pr": "106004",
+  "sha": "41d060630af86d0897bbb1517f1c13d607f2b779",
+  "title": "Add Reload Current Project to the command palette",
+  "subsystem": "editor/editor_node.cpp",
+  "nfiles": 1
+ },
+ {
+  "pr": "116265",
+  "sha": "349a07c4c99f1809e96ef95181c5c098881c39f4",
+  "title": "Make unsaved scene dialog more accurate",
+  "subsystem": "editor/editor_data.cpp",
+  "nfiles": 4
+ },
+ {
+  "pr": "116171",
+  "sha": "4868c407edf4725c23cd40c819776c2fcade098f",
+  "title": "Revert \"Rearrange project loading init\"",
+  "subsystem": "editor/file_system",
+  "nfiles": 1
+ },
+ {
+  "pr": "115193",
+  "sha": "f801f496a87209632f965f38ad794c543fb6ac1d",
+  "title": "VisualShader: Fix nodes not attaching to new Frame on duplication",
+  "subsystem": "editor/shader",
+  "nfiles": 1
+ },
+ {
+  "pr": "115509",
+  "sha": "1ec80d710a561e3aa57b785eabc7c454d0496b74",
+  "title": "Fix buttons for opening project in file manager",
+  "subsystem": "editor/project_manager",
+  "nfiles": 1
+ },
+ {
+  "pr": "115699",
+  "sha": "cbfc64fd6e442bed673cfe546ecef1df756dd8d9",
+  "title": "Fix `mark_scene_as_unsaved()` not working with `Reload Saved Screen`",
+  "subsystem": "editor/editor_undo_redo_manager.cpp",
+  "nfiles": 1
+ },
+ {
+  "pr": "115726",
+  "sha": "f4f0679a2d4a2b8e6da8700412b387fc1ccad951",
+  "title": "[macOS] Set apple menu node name to non empty value.",
+  "subsystem": "editor/editor_node.cpp",
+  "nfiles": 1
+ },
+ {
+  "pr": "114097",
+  "sha": "a4678d2761c0dcc4e4a8f0687c0ebdf126a608e4",
+  "title": "Improve the dependency editor UX",
+  "subsystem": "editor/file_system",
+  "nfiles": 2
+ },
+ {
+  "pr": "111226",
+  "sha": "10aa2e301340eec51efc94fe1da15d2e9bb1357f",
+  "title": "Add a copy button to the color picker dialog.",
+  "subsystem": "editor/themes",
+  "nfiles": 7
+ },
+ {
+  "pr": "111168",
+  "sha": "1a17d70f0032a043fb82aa631ea8ae952ed61083",
+  "title": "Add Auto update check mode",
+  "subsystem": "editor/project_manager",
+  "nfiles": 4
+ },
+ {
+  "pr": "115326",
+  "sha": "07a2c75ec4b909f2ca56fb74cd728404773cec1c",
+  "title": "[VisualShader] Add `in_shadow_pass` spatial input",
+  "subsystem": "editor/shader",
+  "nfiles": 2
+ },
+ {
+  "pr": "115325",
+  "sha": "7f31ae1564b5b3e8447fad31c9ee63b7cab2e69a",
+  "title": "[VisualShader] Add `specular_amount` spatial light input",
+  "subsystem": "editor/shader",
+  "nfiles": 2
+ },
+ {
+  "pr": "114876",
+  "sha": "cf8d258444f52fb0f27d3d6338c61c743c59b847",
+  "title": "Resize Output/Debugger icons to be consistent with other docks",
+  "subsystem": "editor/icons",
+  "nfiles": 5
+ },
+ {
+  "pr": "115372",
+  "sha": "1b17f8f69652df59ad327ac295f456c5dace7689",
+  "title": "[Import] Automatically disable hinting for pixel fonts.",
+  "subsystem": "editor/import",
+  "nfiles": 3
+ },
+ {
+  "pr": "114970",
+  "sha": "688d19c5f97d18d7298185f618b4e20e90a250c6",
+  "title": "Fix project manager drawing focus on right click",
+  "subsystem": "editor/project_manager",
+  "nfiles": 1
+ },
+ {
+  "pr": "114943",
+  "sha": "780b6891e6f2a99e860a8c30eaf4c3dd6fdd13f7",
+  "title": "[Editor] Handle spaces in paths when generating translations",
+  "subsystem": "editor/editor_builders.py",
+  "nfiles": 1
+ },
+ {
+  "pr": "114921",
+  "sha": "2d41087c8fffddfffea2bc8ec179869241f3ffdb",
+  "title": "EditorQuickOpenDialog: Rewrite internal paths usage and clean history",
+  "subsystem": "editor/file_system",
+  "nfiles": 4
+ }
+]
