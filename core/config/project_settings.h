@@ -196,6 +196,12 @@ public:
 	bool is_builtin_setting(const String &p_name) const;
 
 	Error setup(const String &p_path, const String &p_main_pack, bool p_upwards = false, bool p_ignore_override = false);
+	// Clears the loaded-project state so a subsequent setup() re-resolves the project
+	// from its path argument instead of short-circuiting on the previously loaded
+	// resource path (OS::get_resource_dir() mirrors resource_path). Used for the
+	// projectless startup shell's in-process project load, which re-runs setup() after
+	// boot; it does not touch the already-registered setting defaults.
+	void reset_resource_path_for_reload();
 
 	Error load_custom(const String &p_path);
 	Error save_custom(const String &p_path = "", const CustomMap &p_custom = CustomMap(), const Vector<String> &p_custom_features = Vector<String>(), bool p_merge_with_current = true);

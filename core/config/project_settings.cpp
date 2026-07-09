@@ -873,6 +873,11 @@ Error ProjectSettings::setup(const String &p_path, const String &p_main_pack, bo
 	return err;
 }
 
+void ProjectSettings::reset_resource_path_for_reload() {
+	resource_path = String();
+	project_loaded = false;
+}
+
 bool ProjectSettings::has_setting(const String &p_var) const {
 	_THREAD_SAFE_METHOD_
 

@@ -97,6 +97,53 @@ TEST_CASE("[Editor][ProjectlessShell] projectless shell smoke workflow subproces
 	CHECK(output.contains("\"workspace_exposed\":false"));
 }
 
+TEST_CASE("[Editor][ProjectlessShell] opening a project loads it in-process without a relaunch") {
+	if (!EditorWorkflowTestFixtures::workflow_has_display()) {
+		MESSAGE("Requires a GUI display. Run with DISPLAY=:1 ./bin/foundry.* --headless test run --case \"*ProjectlessShell*\" --force-colors");
+		return;
+	}
+
+	const String launch_dir = make_empty_launch_dir();
+	REQUIRE_FALSE(launch_dir.is_empty());
+	REQUIRE_FALSE(FileAccess::exists(launch_dir.path_join("project.foundry")));
+
+	int exit_code = -1;
+	const String output = run_projectless_shell_workflow(launch_dir, exit_code, "projectless_shell_open_in_process");
+	INFO("Subprocess output:\n", output);
+
+	CHECK(exit_code == 0);
+	CHECK(output.contains("\"workflow\":\"projectless_shell_open_in_process\""));
+	CHECK(output.contains("\"ok\":true"));
+	// The transition target: the same process is now in project mode with the
+	// workspace exposed.
+	CHECK(output.contains("\"mode\":\"project\""));
+	CHECK(output.contains("\"workspace_exposed\":true"));
+	// The launch dir itself was never turned into a project; the in-process load
+	// targets a throwaway project created by the workflow.
+	CHECK_FALSE(FileAccess::exists(launch_dir.path_join("project.foundry")));
+}
+
+TEST_CASE("[Editor][ProjectlessShell] a rejected in-process load leaves the shell intact") {
+	if (!EditorWorkflowTestFixtures::workflow_has_display()) {
+		MESSAGE("Requires a GUI display. Run with DISPLAY=:1 ./bin/foundry.* --headless test run --case \"*ProjectlessShell*\" --force-colors");
+		return;
+	}
+
+	const String launch_dir = make_empty_launch_dir();
+	REQUIRE_FALSE(launch_dir.is_empty());
+
+	int exit_code = -1;
+	const String output = run_projectless_shell_workflow(launch_dir, exit_code, "projectless_shell_open_in_process_fallback");
+	INFO("Subprocess output:\n", output);
+
+	CHECK(exit_code == 0);
+	CHECK(output.contains("\"workflow\":\"projectless_shell_open_in_process_fallback\""));
+	CHECK(output.contains("\"ok\":true"));
+	// A load that cannot proceed must keep the projectless launcher contract intact.
+	CHECK(output.contains("\"mode\":\"projectless_shell\""));
+	CHECK(output.contains("\"workspace_exposed\":false"));
+}
+
 TEST_CASE("[Editor][ProjectlessShell] dismissing the startup dialog quits the process") {
 	if (!EditorWorkflowTestFixtures::workflow_has_display()) {
 		MESSAGE("Requires a GUI display. Run with DISPLAY=:1 ./bin/foundry.* --headless test run --case \"*ProjectlessShell*\" --force-colors");

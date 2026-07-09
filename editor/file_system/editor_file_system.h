@@ -443,6 +443,11 @@ public:
 	void scan();
 	void scan_changes();
 	void skip_first_scan_for_projectless_shell();
+	// Re-arms the first-scan machinery previously torn down by
+	// skip_first_scan_for_projectless_shell(), so a project loaded in-process by the
+	// projectless startup shell gets a real first scan (global classes, plugins,
+	// autoloads, imports) without a process relaunch.
+	void rearm_first_scan_for_project();
 #ifdef TESTS_ENABLED
 	int get_scan_changes_call_count_for_tests() const { return scan_changes_call_count; }
 #endif

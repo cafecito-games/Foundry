@@ -500,6 +500,11 @@ private:
 	bool requested_first_scan = false;
 	bool waiting_for_first_scan = true;
 	bool projectless_shell = false;
+	// The resource preview service is a single-start background thread. It is started
+	// either by the projectless shell (before a project is loaded) or by the first
+	// scan's completion; this guards against starting it twice when a project is
+	// loaded in-process from the projectless shell.
+	bool resource_preview_started = false;
 	StartupDialog *startup_dialog = nullptr;
 	FoundryBuildTaskBootstrapLoader *build_task_bootstrap_loader = nullptr;
 	bool load_editor_layout_done = false;
@@ -809,6 +814,8 @@ private:
 
 	void _finish_projectless_shell_startup();
 	void _apply_projectless_shell_restrictions();
+	void _reveal_workspace_from_projectless_shell();
+	static void _enable_all_menu_items(PopupMenu *p_menu);
 	bool _is_menu_option_blocked_in_projectless_shell(int p_option) const;
 	void _update_projectless_shell_menu_restrictions();
 
@@ -857,6 +864,13 @@ public:
 	// changes and shutting down gracefully before relaunching. Called by the
 	// startup dialog when a project is chosen while a project is already open.
 	void request_project_switch(const String &p_project_path);
+	// Loads the given project into the already-running projectless startup shell,
+	// without a process relaunch: (re)points ProjectSettings/EditorPaths at the
+	// project, reveals the suppressed workspace, restores the project layout, and
+	// runs a real first filesystem scan. Returns false without leaving a corrupt
+	// half-loaded editor when the load cannot proceed, so the caller can fall back
+	// to the process-relaunch open path. Only valid while is_projectless_shell().
+	bool load_project_in_process(const String &p_project_path);
 
 	static EditorNode *get_singleton() { return singleton; }
 

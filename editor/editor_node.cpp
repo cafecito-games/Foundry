@@ -1507,9 +1507,12 @@ void EditorNode::_sources_changed(bool p_exist) {
 			OS::get_singleton()->benchmark_dump();
 		}
 
-		// Start preview thread now that it's safe.
-		if (!singleton->cmdline_mode) {
+		// Start preview thread now that it's safe. The projectless shell may have
+		// already started it before loading a project in-process, so guard the
+		// single-start service against a double start.
+		if (!singleton->cmdline_mode && !singleton->resource_preview_started) {
 			EditorResourcePreview::get_singleton()->start();
+			singleton->resource_preview_started = true;
 		}
 
 		// Set initial focus for screen reader users.
@@ -6967,13 +6970,128 @@ void EditorNode::_finish_projectless_shell_startup() {
 	// after the layout load rather than only during READY/construction.
 	_apply_projectless_shell_restrictions();
 
-	if (!cmdline_mode) {
+	if (!cmdline_mode && !resource_preview_started) {
 		EditorResourcePreview::get_singleton()->start();
+		resource_preview_started = true;
 	}
 
 	show_startup_dialog();
 
 	get_tree()->create_timer(1.0f)->connect("timeout", callable_mp(this, &EditorNode::_remove_lock_file));
+}
+
+void EditorNode::_reveal_workspace_from_projectless_shell() {
+	// Inverse of _apply_projectless_shell_restrictions(): a project is now loaded, so
+	// expose the project workspace, bottom drawer, docks, run bar, and full menus that
+	// the launcher had suppressed behind the startup dialog.
+	if (renderer != nullptr) {
+		renderer->set_disabled(false);
+	}
+
+	// scene_workspace visibility is derived from projectless_shell (and the global
+	// screen selection), so refresh it now that projectless_shell has been cleared.
+	update_global_screen_visibility();
+
+	if (bottom_drawer_strip != nullptr) {
+		bottom_drawer_strip->show();
+	}
+	if (bottom_panel != nullptr) {
+		bottom_panel->show();
+	}
+	project_run_bar->show();
+
+	if (ImportDock::get_singleton() != nullptr) {
+		editor_dock_manager->set_dock_enabled(ImportDock::get_singleton(), true);
+	}
+	if (FileSystemDock::get_singleton() != nullptr) {
+		editor_dock_manager->set_dock_enabled(FileSystemDock::get_singleton(), true);
+	}
+
+	// Re-enable the File/Project menu entries that the shell locked down to Quit /
+	// Open Project. Separators are skipped: they carry no meaningful enabled state and
+	// toggling one has no represented item to update on the macOS native menu bar.
+	// Conditional per-item states (undo/redo, Save All, recent scenes) are recomputed
+	// by each menu's about_to_popup handler, so a blanket re-enable here is corrected
+	// the moment the user opens the menu.
+	_enable_all_menu_items(file_menu);
+	_enable_all_menu_items(project_menu);
+}
+
+void EditorNode::_enable_all_menu_items(PopupMenu *p_menu) {
+	if (p_menu == nullptr) {
+		return;
+	}
+	for (int i = 0; i < p_menu->get_item_count(); i++) {
+		if (p_menu->is_item_separator(i)) {
+			continue;
+		}
+		p_menu->set_item_disabled(i, false);
+	}
+}
+
+bool EditorNode::load_project_in_process(const String &p_project_path) {
+	ERR_FAIL_COND_V_MSG(!projectless_shell, false, "load_project_in_process is only valid in the projectless startup shell.");
+
+	// The first scan must still be pending-then-skipped (projectless boot) and no scan
+	// may be in flight, otherwise re-arming the first scan below is unsafe.
+	EditorFileSystem *editor_file_system = EditorFileSystem::get_singleton();
+	if (editor_file_system == nullptr || waiting_for_first_scan || editor_file_system->doing_first_scan() || editor_file_system->is_scanning()) {
+		return false;
+	}
+
+	const String config_path = p_project_path.path_join("project.foundry");
+	if (!FileAccess::exists(config_path)) {
+		return false;
+	}
+
+	// Clear the shell's resource path first: OS::get_resource_dir() mirrors it, and a
+	// stale value makes setup() re-resolve the already-loaded (launch-dir) project
+	// instead of honoring p_project_path. This reproduces the empty-resource-path
+	// condition a fresh boot's setup() relies on.
+	ProjectSettings::get_singleton()->reset_resource_path_for_reload();
+
+	// Load the project's settings on top of the shell's defaults. Until this succeeds
+	// nothing downstream has been mutated (beyond the reset above, which a relaunch
+	// discards), so returning false here leaves a clean projectless shell for the
+	// caller to relaunch from.
+	const Error setup_err = ProjectSettings::get_singleton()->setup(p_project_path, String(), false, false);
+	if (setup_err != OK || !ProjectSettings::get_singleton()->is_project_loaded()) {
+		return false;
+	}
+
+	// From here the running process is committed to the project. Clearing the shell
+	// hint before re-deriving EditorPaths is required, or the project data dir
+	// (`.godot/`) would not be created.
+	Engine::get_singleton()->set_projectless_editor_shell_hint(false);
+	projectless_shell = false;
+
+	if (EditorPaths::get_singleton() != nullptr) {
+		EditorPaths::get_singleton()->initialize_project_data_dir();
+	}
+
+	// Swap the projectless layout store for the project's layout store (resolved from
+	// the now project-pointed EditorPaths). The first scan's completion handler
+	// (_sources_changed) restores the project layout through it.
+	if (layout_store != nullptr) {
+		memdelete(layout_store);
+	}
+	layout_store = memnew(EditorLayoutStore);
+
+	_reveal_workspace_from_projectless_shell();
+
+	if (startup_dialog != nullptr) {
+		startup_dialog->hide_startup_dialog();
+	}
+
+	// Re-arm and run the first scan exactly as a normal project boot would, so global
+	// classes, editor plugins, autoloads, and imports are materialized. Its completion
+	// runs _sources_changed(), which reloads shader parameters, restores the project
+	// layout, loads any deferred scene, and starts the resource preview service.
+	waiting_for_first_scan = true;
+	editor_file_system->rearm_first_scan_for_project();
+	_begin_first_scan();
+
+	return true;
 }
 
 void EditorNode::_show_run_targets_configuration_on_first_open() {

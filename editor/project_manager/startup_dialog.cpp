@@ -312,6 +312,10 @@ void StartupDialog::_open_existing_project() {
 	project_dialog->ask_for_path_and_show();
 }
 
+Error StartupDialog::open_project_path(const String &p_path) {
+	return _open_project_and_restart(p_path);
+}
+
 Error StartupDialog::_open_project_and_restart(const String &p_path) {
 	const String canonical = KnownProjectStore::canonicalize_path(p_path);
 	const String config_path = canonical.path_join("project.foundry");
@@ -332,6 +336,19 @@ Error StartupDialog::_open_project_and_restart(const String &p_path) {
 		return OK;
 	}
 
+	// Projectless startup shell: adopt the project in-process so the user never sees a
+	// process relaunch. record_project_opened runs once per open on whichever path
+	// succeeds, so the known-project store records the open exactly once.
+	if (editor_node != nullptr && editor_node->load_project_in_process(canonical)) {
+		const Error store_err = StartupRouter::record_project_opened(known_projects, canonical);
+		if (store_err != OK) {
+			ERR_PRINT(vformat("Failed to save known projects after opening '%s' (error %d).", canonical, store_err));
+		}
+		return OK;
+	}
+
+	// Fall back to a full process relaunch when the in-process load is unavailable or
+	// fails partway; a fresh process guarantees a clean, fully-initialized project.
 	const Error store_err = StartupRouter::record_project_opened(known_projects, canonical);
 	if (store_err != OK) {
 		ERR_PRINT(vformat("Failed to save known projects after opening '%s' (error %d).", canonical, store_err));
@@ -367,7 +384,7 @@ void StartupDialog::_open_recent_path(const String &p_path) {
 		return;
 	}
 
-	if (_open_project_and_restart(p_path) != OK) {
+	if (open_project_path(p_path) != OK) {
 		ERR_PRINT(vformat("Failed to start an editor instance for the project at '%s'.", p_path));
 	}
 }

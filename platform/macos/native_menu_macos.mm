@@ -1204,8 +1204,12 @@ void NativeMenuMacOS::set_item_disabled(const RID &p_rid, int p_idx, bool p_disa
 	ERR_FAIL_COND(p_idx >= item_start + item_count);
 	NSMenuItem *menu_item = [md->menu itemAtIndex:p_idx];
 	if (menu_item) {
+		// Items without a represented object (e.g. separators) have no enabled state
+		// to mirror; guarding avoids a nil dereference when such an index is toggled.
 		FoundryMenuItem *obj = [menu_item representedObject];
-		obj->enabled = !p_disabled;
+		if (obj) {
+			obj->enabled = !p_disabled;
+		}
 		[menu_item setEnabled:(!p_disabled)];
 	}
 }
