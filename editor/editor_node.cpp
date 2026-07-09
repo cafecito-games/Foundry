@@ -74,6 +74,7 @@
 #include "scene/resources/packed_scene.h"
 #include "scene/resources/portable_compressed_texture.h"
 #include "scene/theme/theme_db.h"
+#include "servers/audio_server.h"
 #include "servers/display/display_server.h"
 #include "servers/navigation_2d/navigation_server_2d.h"
 #include "servers/navigation_3d/navigation_server_3d.h"
@@ -7102,6 +7103,12 @@ bool EditorNode::load_project_in_process(const String &p_project_path) {
 	OS::get_singleton()->set_low_processor_usage_mode(GLOBAL_GET("application/run/low_processor_mode"));
 	OS::get_singleton()->set_delta_smoothing(GLOBAL_GET("application/run/delta_smoothing"));
 	OS::get_singleton()->ensure_user_data_dir();
+
+	// Load the opened project's audio bus layout and (re)load its theme/font, as a
+	// normal editor launch does after ProjectSettings::setup(); otherwise custom audio
+	// buses and a project's gui/theme/custom keep the launcher defaults until restart.
+	AudioServer::get_singleton()->load_default_bus_layout();
+	ThemeDB::get_singleton()->initialize_theme();
 
 	// Reload project-scoped editor settings that were cached against the shell's paths:
 	// project metadata (recent scenes, debug options, preview locale, ...) and the
