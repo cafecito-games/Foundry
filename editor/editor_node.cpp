@@ -7050,12 +7050,24 @@ bool EditorNode::load_project_in_process(const String &p_project_path) {
 	// condition a fresh boot's setup() relies on.
 	ProjectSettings::get_singleton()->reset_resource_path_for_reload();
 
-	// Load the project's settings on top of the shell's defaults. Until this succeeds
+	// Load the project's settings on top of the shell's defaults. p_ignore_override is
+	// true to match an editor launch (main.cpp passes `editor`), so runtime-only
+	// override.cfg / project_settings_override values are not applied and cannot be
+	// persisted back into project.foundry by the save() below. Until this succeeds
 	// nothing downstream has been mutated (beyond the reset above, which a relaunch
 	// discards), so returning false here leaves a clean projectless shell for the
 	// caller to relaunch from.
-	const Error setup_err = ProjectSettings::get_singleton()->setup(p_project_path, String(), false, false);
+	const Error setup_err = ProjectSettings::get_singleton()->setup(p_project_path, String(), false, true);
 	if (setup_err != OK || !ProjectSettings::get_singleton()->is_project_loaded()) {
+		return false;
+	}
+
+	// Refuse to adopt a project that sits in a self-contained editor's own directory,
+	// exactly as a fresh editor launch does (main.cpp), so editor data never mixes with
+	// project files. Falling back to a relaunch here reaches the same guard and exits
+	// cleanly rather than half-loading.
+	if (EditorPaths::get_singleton() != nullptr && EditorPaths::get_singleton()->is_self_contained() &&
+			ProjectSettings::get_singleton()->get_resource_path() == OS::get_singleton()->get_executable_path().get_base_dir()) {
 		return false;
 	}
 
