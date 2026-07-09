@@ -1753,8 +1753,9 @@
   "risk": "low",
   "files_exist": true,
   "rationale": "EditorRunBar::_run_scene existence check applies clean; must adapt the hardcoded \"project.godot\" literal and message to the fork's project.foundry.",
-  "outcome": "ported",
-  "local_sha": "83d0f1b37e96b44937a60dce727dbc244b52db33"
+  "outcome": "ported-resolved",
+  "local_sha": "83d0f1b37e96b44937a60dce727dbc244b52db33",
+  "reason": "adapted hardcoded project.godot -> project.foundry in run guard"
  },
  {
   "pr": "119497",
