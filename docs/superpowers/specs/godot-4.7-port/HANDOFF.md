@@ -5,60 +5,58 @@ This document lets a fresh session continue porting Godot 4.7 into Foundry with 
 
 ---
 
-## 0. ACTIVE TASK — finish PR #1144 (read this first)
+## 0. ACTIVE TASK — PR #1144 status + how to continue (read this first)
 
-The port is landed on branch **`feature/godot-4.7-port`** and opened as **draft PR #1144 → develop**
-(https://github.com/cafecito-games/Foundry/pull/1144). Waves 1–7 are done (see §2). The remaining
-work is **getting the cross-platform CI green and marking the PR ready for review**. State as of
-2026-07-08:
+The port lives on branch **`feature/godot-4.7-port`**, draft **PR #1144 → develop**
+(https://github.com/cafecito-games/Foundry/pull/1144). Waves 1–8 are done (§2). **Strategy: this PR
+can be merged as-is once green, and the remaining 4.7 work continues in a NEW session/PR** — all
+state needed to resume is on disk (see §3 + §6). State as of **2026-07-09**:
 
-- **macOS/Linux/Android CI: green.** Strict `dev_mode` macOS build clean, full suite ~3016–3038
-  pass. Linux editor+tests and Android library green on the regular push CI.
-- **"Check every platform" CI** (comment `Check every platform` on the PR; workflow
-  `.github/workflows/pr_platform_checks.yml`, runs Linux/macOS/Windows/Android/iOS/Web with the
-  fork's strict `-Werror -Wshadow[-*] -Wunused-variable`) surfaced build breaks. Categorized:
-  - **1 genuine 4.7-port regression (mine, in this PR):** `platform/windows/display_server_windows.cpp`
-    used upstream's `DisplayServerEnums::WINDOW_FLAG/WINDOW_MODE` prefix (a leftover from the PR 117748
-    port); the fork uses bare enums. **Fixed on the branch** (commit `5e72805ccf`). This is NOT in
-    develop's #1147 — keep it.
-  - **The rest were PRE-EXISTING develop latent bugs** (0-diff vs `origin/develop`): the
-    `run_target_platform.h` `enum Status{OK}`-shadows-global refactor, `fs_vm.cpp` release-only unused
-    vars, Jolt `BVec16.inl` arm32 shadow, `camera_android`/`java_class_wrapper` `-Wshadow`,
-    `test_format.h`, etc. — code never built with the strict flags on those platform/config combos.
+- **Reconcile with develop #1147 DONE.** develop's authoritative cross-platform fixes were merged
+  (merge commit `63461bfe9c`); my 4 overlapping duplicate fixes were reverted first so #1147 applied
+  clean. The unique **Windows-regression fix** in `platform/windows/display_server_windows.cpp`
+  (`DisplayServerEnums::`→bare enums, PR 117748 leftover) is kept.
+- **Wave 8 DONE** (port-later re-triage + cherry-picks — §2 wave-8). Strict `dev_mode` editor build
+  clean, full suite **3038 passed / 0 failed / 3 skipped**, `template_release` build clean.
+- **Every-platform matrix blocker FIXED.** The `Check every platform` run (workflow
+  `.github/workflows/pr_platform_checks.yml`) was red on **all template builds** (Web/iOS/macOS/
+  Windows-mingw/Android) due to a **develop-owned** template-only `-Werror` break:
+  `main/main.cpp:229 projectless_editor_shell` was file-scope but only read under `TOOLS_ENABLED`, so
+  templates tripped `-Wunused-variable`. **Fixed** by scoping it into the `TOOLS_ENABLED` block
+  (commit `218b496ed3`); verified with a local `scons platform=macos target=template_release
+  dev_mode=yes tests=no` build. Editor builds never hit it; Windows/MSVC template passed (MSVC
+  doesn't flag it) — a clang/gcc-only gap, same class as the earlier shadow fixes. **A develop
+  backport PR was filed** so develop is fixed at the source (this branch's copy then no-ops on the
+  next develop merge).
 
-**A separate agent fixed all the pre-existing ones on develop in PR #1147**
-(`a8d120c4ef "Fix cross-platform build breaks under strict flags"`, merged; the every-platform check
-passed on it). `origin/develop` is now ~7 commits ahead of this branch (also incl. the workflow
-decouple fix #1145 and CI tweaks #1148/#1150/#1153).
-
-### Finish steps (do these next)
-1. **Reconcile the overlap.** While iterating CI I also fixed several of the *pre-existing* issues in
-   this PR before #1147 existed, so my commits overlap #1147 in these files:
-   `modules/foundry_script/fs_vm.cpp`, `modules/jolt_physics/SCsub`, `modules/camera/camera_android.cpp`,
-   `platform/android/java_class_wrapper.cpp` (branch commits `0df797a00e`, `108023341b`, and the
-   fs_vm/jolt parts of `5e72805ccf`). Cleanest path: **revert my duplicate fixes for those 4 files**
-   (keep ONLY the `display_server_windows.cpp` Windows-regression fix, which is uniquely mine), THEN
-   `git merge origin/develop` so #1147's authoritative versions apply conflict-free. If you merge
-   without reverting, resolve each overlap by **taking develop's (#1147) version**.
-2. **Rebuild + retest** after the merge: strict `dev_mode` macOS build (`scons platform=macos
-   target=editor dev_mode=yes tests=yes --keep-going`) + full suite (kill leftover `foundry.macos.*`
-   procs and `rm -rf /var/folders/*/*/T/foundry-tests` first to avoid the FS-harness temp-dir flake —
-   see §5-ops). Confirm `[doctest] Status: SUCCESS!`.
-3. **Re-run the matrix:** push, then comment **`Check every platform`** on #1144 (a push alone does
-   NOT re-trigger the comment workflow). With my Windows fix + develop's #1147 fixes now merged, all
-   six platforms should pass. Watch `gh run list --workflow pr_platform_checks.yml --limit 1`; for any
-   new failure, `gh api repos/cafecito-games/Foundry/actions/jobs/<id>/logs | sed 's/\x1b\[[0-9;]*m//g'
-   | grep '##\[error\]'`, verify `git diff origin/develop HEAD -- <file>` to tell regression vs
-   pre-existing, fix regressions here / new pre-existing goes to a develop follow-up.
-4. **Mark ready:** once green, `gh pr ready 1144` (undraft). HDR remains deferred (§0-deferred).
-5. Android builds LOCALLY on macOS for fast iteration: `export ANDROID_HOME=~/Library/Android/sdk;
+### Finish steps for PR #1144 (do these next)
+1. **Push** the branch (wave-8 commits + the `main.cpp` fix are committed locally, tree clean).
+2. **Re-run the matrix:** comment **`Check every platform`** on #1144 (a push alone does NOT
+   re-trigger the comment workflow). macOS-template builds clean locally now; Web/iOS/Android/
+   Windows-mingw templates may reveal their OWN breaks that were masked behind the shared
+   `main.cpp:229` error — the matrix is the only way to see those. Triage each: `gh api
+   repos/cafecito-games/Foundry/actions/jobs/<id>/logs | sed 's/\x1b\[[0-9;]*m//g' | grep '##\[error\]'`;
+   `git diff origin/develop HEAD -- <file>` tells regression (fix here) vs pre-existing develop bug
+   (fix here to unblock + backport to develop).
+3. **Mark ready:** once green, `gh pr ready 1144` (undraft).
+4. Android builds LOCALLY on macOS for fast iteration: `export ANDROID_HOME=~/Library/Android/sdk;
    scons platform=android target=template_debug dev_mode=yes swappy=no arch=arm64 --keep-going`
    (also `arch=arm32`, `target=editor`). Windows/iOS/Web can't build locally — use the matrix.
+   **template_release/template_debug builds need `tests=no`** (dev_mode implies tests=yes, which is
+   incompatible with the stripped FS front-end).
+
+### Continuing 4.7 after this PR merges (new session / new PR)
+The biggest untriaged mass is **`editor/*` (~662 candidate PRs)** — see §6/§8. Also pending: the
+**74 wave-8 "feature-decision" (B) items** (`retriage/CONSOLIDATED.json`, need a product yes/no),
+the **6 wave-8 conflict-deferred items** (§2 wave-8, `retriage/wave8-deferred.txt`), and the
+**wave-1 port-later** remainder. Start a new branch off the merged develop and follow §4 A→G.
 
 ### Deferred (not blocking the PR)
 - **HDR/EDR output** — intractable without first porting `b8389cc76b`, a 65-file `renderer_rd` HDR
   core (compositor/scene-render/viewport/tonemapper + color shaders + an absent `RenderingDevice`
-  ColorSpace/HDR-output API). A separate rendering-pipeline effort; see §2 wave-5 tail.
+  ColorSpace/HDR-output API). A separate rendering-pipeline effort; see §2 wave-5 tail. Note: wave-8
+  re-triage found PR #119237 ("vulkan-improve-errors") actually pulls in this HDR swapchain API, so
+  it is HDR-blocked too, not a quick fix.
 
 ---
 
@@ -167,6 +165,35 @@ edge-cases + custom_ci). Full suite **3017 passed** (a ported feature added a te
   revert (`9e4cb2f0b9`) → fresh clean re-port in the PopupMenu cluster (`132f488d0e`). Net-zero, kept
   as traceable record (non-adjacent rebase-drop wasn't worth risking the validated branch).
 
+**Wave 8 = port-later re-triage + actionable cherry-picks (DONE).** The 311 wave-1..7 `port-later`
+items had STALE deferral rationales (they were judged before later waves landed the features they
+depended on). Re-triaged all 311 against current HEAD via 6 parallel read-only agents
+(`retriage/in-*.json` → `retriage/out-*.json`, consolidated in **`retriage/CONSOLIDATED.json`**),
+bucketed **A=port-now / B=feature-decision / C=still-blocked**: **65 already-on-HEAD** (wave-7
+dependent chains had already pulled them in — porting = no-op), **40 A**, **74 B**, **132 C**.
+Cherry-picked the 40 A (bugfixes first): **26 applied** (16 bugfixes + 10 perf/cleanup), **8 empty**
+(already present), **6 conflict-deferred** — recorded in **`retriage/wave8-deferred.txt`**:
+  - `#118554` Wayland pointer-frames — unbuildable-here (linuxbsd), `DisplayServerEnums::`→
+    `DisplayServer::` rebrand overlay on rewritten logic.
+  - `#117060` `crash_handler_linuxbsd` — unbuildable-here; fork already hand-adapted this file in
+    wave 3 (richer dladdr/demangle path) — competing solutions.
+  - `#114076` d3d12 driver — unbuildable-here; fork's NIR shader path adds fields upstream lacks.
+  - `#116768` jolt "tidy" — real divergence vs the fork's Jolt 5.5 whole-dir bump (soft-body/
+    area-overlap partial overlap; risks breaking physics).
+  - `#117502` `scu_builders.py` — fork-customized SCU module list (foundry_* vs godot_*/mono) +
+    gles3 `RS::`/`RSE::` + free-fn divergence; build-time-only tuning, low value.
+  - `#119237` "vulkan-improve-errors" — **mislabeled by re-triage**; actually the HDR-output
+    swapchain feature (absent HDR core + diverged fork swapchain) → HDR-blocked (see §0-deferred).
+  Notable hand-resolutions: `object.cpp` signal-lock boundary (the safe-signals PR #117511 was
+  already in develop → empty); `scene_debugger.cpp` (fork consolidated the pre-4.7-split file — the
+  fix relocated there); `binder_common.h` (fork moved the `Object::ConnectFlags` VARIANT cast off the
+  deleted `variant_caster.h`); `window.cpp` (took upstream's `get_accessibility_transform()` helper
+  **and fixed a `DisplayServerEnums::INVALID_WINDOW_ID` bug the PR's own helper introduced** — that
+  namespace is invalid in the fork). Strict `dev_mode` editor build clean + full suite **3038 passed**;
+  `template_release` build clean.
+- **`main/main.cpp:229` template fix (commit `218b496ed3`, develop-owned).** Not a 4.7-port change —
+  arrived via the develop merge (#1149 projectless shell). See §0 for the full write-up + backport.
+
 ---
 
 ## 3. Tooling & artifacts (all under `docs/superpowers/specs/godot-4.7-port/`)
@@ -180,13 +207,17 @@ edge-cases + custom_ci). Full suite **3017 passed** (a ported feature added a te
 | `ported-log.json`, `ported-log-med.json` | Per-PR cherry-pick outcomes (low / med). |
 | `conflict-components.json`, `resolve/result-*.json` | Wave-1 conflict resolution. |
 | `med-conflict-components.json`, `resolve-med/result-*.json` | Med conflict resolution. |
+| `retriage/CONSOLIDATED.json` | **Wave-8 port-later re-triage buckets.** `{summary, port_now[], feature_decision[], already_on_head[], blocked[]}` — each item `{pr, sha, verdict, reason, dependency, dependency_on_head, est_conflict, kind}`. The **74 `feature_decision`** entries are the pending product yes/no list. |
+| `retriage/in-*.json`, `retriage/out-*.json` | Wave-8 re-triage per-group inputs/verdicts (A/B/C). |
+| `retriage/wave8-deferred.txt` | The 6 wave-8 conflict-deferred PRs + one-line reason each. |
 
 ---
 
 ## 4. The pipeline (repeat this per wave)
 
 ### Step A — pick the next wave's subsystems
-Remaining **untriaged candidate** PRs = 926 (see §6). Suggested next waves, value-ordered:
+Remaining **untriaged candidate** PRs ≈ 662 (see §6; waves 1–8 consumed the rest). Suggested next
+waves, value-ordered:
 1. **`scene/gui` (122)** — runtime Control nodes, stock-adjacent, low editor-divergence risk. Best next target.
 2. **`platform/*` (~145: android/linuxbsd/macos/windows)** — self-contained per-OS fixes; test the platform you build.
 3. **`editor/*` (~400: scene, docks, inspector, animation, export, settings, gui, themes…)** — HIGHER risk: the fork heavily rewrote the workspace/multi-scene/script-editor. Triage agents MUST grep to confirm the touched editor files/classes still exist and aren't part of the diverged workspace surfaces. Expect a higher incompatible rate.
@@ -273,18 +304,24 @@ via scripted `git rebase -i origin/develop` with a `GIT_SEQUENCE_EDITOR` that ma
 
 ## 6. Remaining work inventory
 
-**Untriaged `candidate` PRs = 926** (the main opportunity). Top subsystems:
-scene/gui 122 · editor/scene 119 · editor/docks 67 · editor/inspector 48 · platform/android 43 ·
-platform/linuxbsd 39 · editor/animation 37 · editor/export 30 · platform/macos 27 ·
-editor/settings 26 · platform/windows 26 · editor/gui 24 · editor/debugger 20 ·
-editor/editor_node.cpp 17 · editor/themes 13 · editor/import 11 · modules/text_server_adv 11 ·
-modules/mono 11 (likely skip) · editor/run 10 · editor/project_manager 9 · editor/shader 9 · …
+**Untriaged `candidate` PRs ≈ 662** (THE main opportunity; catalog `candidate` counts include
+already-ported PRs — authoritative "what's ported" is `ported-log*.json` + `triage/**/out-*.json`).
+Now overwhelmingly **`editor/*`** (the fork's diverged workspace/multi-scene/script-editor surfaces —
+expect a high incompatible rate; triage MUST grep-verify each touched file/class still exists):
+editor/scene 119 · editor/docks 67 · editor/inspector 48 · editor/animation 37 · doc/classes 36
+(deferred) · editor/export 30 · editor/settings 26 · editor/gui 24 · editor/debugger 20 ·
+`.github/*` 25 (CI-only, skip) · editor/editor_node.cpp 17 · editor/themes 13 · editor/import 11 ·
+modules/text_server_adv 11 · modules/mono 11 (skip, C#) · editor/run 10 · … Non-editor residuals
+also remain in servers/rendering, scene/*, core/*, modules/openxr|gridmap|gltf.
 
 **Also pending:**
-- **188 port-later** from wave 1 (features/refactors deferred as too large/risky — e.g.
-  AreaLight3D, HDR output, GDExtension refcount-init, RD raytracing, glTF multi-UV). Re-evaluate
-  which are worth the larger effort. Some are worth adopting wholesale if the fork wants the
-  feature.
+- **Wave-8 re-triage OUTPUT** (supersedes the old "188 wave-1 port-later"; see §2 wave-8,
+  `retriage/CONSOLIDATED.json`): **74 `feature-decision` (B)** items = net-new features that apply
+  cleanly but need a product yes/no (particle flags, GridMap/XR features, FileDialog niceties,
+  translation_context, etc.); **132 `blocked` (C)** = need absent 4.7 infra (AreaLight3D, RD
+  raytracing base, HDR core, DrawableTexture2D, GDType migration) or hit fork divergence — leave
+  until the prerequisite feature is a deliberate effort; **6 conflict-deferred** (`wave8-deferred.txt`).
+  The **40 port-now (A)** are DONE (wave 8).
 - **`manual-flag` = 128 PRs** touching `modules/gdscript`/script-editor — hand-port to Foundry
   Script only if specifically wanted.
 - **`dep-bump` = 21** vendored thirdparty updates (freetype, harfbuzz, thorvg, jolt, etc.).
