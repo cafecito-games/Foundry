@@ -5,6 +5,35 @@ This document lets a fresh session continue porting Godot 4.7 into Foundry with 
 
 ---
 
+## UPDATE 2026-07-09 — PR #1144 MERGED; waves 9/10/11 done (read this first)
+
+The original batched PR **#1144 merged to develop** (merge `3228291573`). Follow-up waves also landed:
+- **Wave 9** (non-editor closeout) — merged as **#1164** (`ported-log-wave9.json`).
+- **Wave 10** (editor bugfixes: inspector/settings/export/gui/themes) — merged as **#1166**
+  (`triage/wave10/`, `ported-log-wave10.json`).
+- **Wave 11** (editor bugfixes: scene/docks/animation/debugger/run/editor_node/…) — THIS branch
+  `feature/godot-4.7-port-w11`, off merged develop. Triaged 401 untriaged editor candidates → 145
+  port-now (6 parallel agents, `triage/wave11/`), **127 net bugfix ports** (110 clean + 17
+  conflict-resolved), 13 skipped (12 already-present, 1 absent-feature), **5 reverted** during
+  build/test validation (`ported-log-wave11.json`): #117923/#120063/#116159 referenced absent
+  Node3DEditor members (Follow-Selection / trackball / gizmo-highlight); #119721 (`_update_tab_titles`
+  on theme change) SIGSEGV'd the fork's diverged tile scene-tabs; #101769 (skip-inspector-update-when-
+  hidden) broke the editor-automation acceptance workflow. Two adaptations kept: #114448 `replace_node`
+  bind arg-count, #119508 run-guard `project.godot`→`project.foundry`. Strict `dev_mode` build clean,
+  full suite **3069 passed / 0 failed / 3 skipped**.
+
+**Lesson reinforced:** several picks *applied textually but failed at build/runtime* on fork-diverged
+surfaces (Node3DEditor, tile scene-tabs, inspector visibility, `project.foundry`). Triage grep-verify
+is necessary but not sufficient — always run the strict build AND the full suite (incl. the
+`DISPLAY=:1` editor-automation subprocess tests) before declaring a wave done.
+
+The sections below (§0–§8) predate the #1144 merge and describe that PR's finish; they remain accurate
+for pipeline/tooling/gotchas. Remaining candidate mass is still the `editor/*` set minus what waves
+9–11 consumed — regenerate the untriaged list by excluding all `ported-log*.json` + `triage/**/out-*.json`
+PRs from `catalog.json` (see the wave-11 generator approach).
+
+---
+
 ## 0. ACTIVE TASK — PR #1144 status + how to continue (read this first)
 
 The port lives on branch **`feature/godot-4.7-port`**, draft **PR #1144 → develop**
