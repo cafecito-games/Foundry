@@ -5,6 +5,38 @@ This document lets a fresh session continue porting Godot 4.7 into Foundry with 
 
 ---
 
+## UPDATE 2026-07-09 — WAVE 12 done (absent-infra challenge, cluster 1) — read this first
+
+Branch **`feature/godot-4.7-port-continue`** off develop `96f87df168` (pushed). Executed the
+"NEXT SESSION" absent-infra challenge task below, cluster 1 (node_3d_editor). **The premise held
+exactly**: the three wave-11 "absent infra" reverts were DEPENDENTS whose small foundation commits
+were simply never ported — all in one file `editor/scene/3d/node_3d_editor_plugin.{cpp,h}`.
+
+Ported the full chronological chain (`ported-log-wave12.json`, `wave12-progress.md`):
+- **Trackball** foundation `12782eac8e` (#109976) + toggle `afb5839696` (#115794) + highlight-fix
+  `415ddc83e1` (defines `update_transform_gizmo_highlight`, #115992) + consecutive-press `c899f017e2`.
+- **Follow-Selection** foundation `040e19e75d` + reset-count chain `005a661bd0`/`28ebd60ce2`.
+- **Re-applied all 3 wave-11 reverts**: `3201f3bb5d` (#116159 gizmo highlight), `59e6ff8cc5`
+  (#117923 subgizmo follow-reset), `d92a1acc36` (#120063 local-space trackball).
+- **Cluster-1 extension**: arc bugfixes `e4d449f4b41c` (#115871) + `3294d50d8246` (#116075), unblocked
+  by the foundation. `#116972`/`#117289`/`#99499`/`#115856` were already covered by the chain.
+
+3 conflicts, all fork-divergence not real incompatibility (guarded `_finish_gizmo_instances` +
+multi-scene `_rebind_gizmo_scenarios`; `apply_preview_camera_state` adjacency; multi-scene
+`EditorNode::get_focused_scene_tree_dock()` vs `SceneTreeDock::get_singleton()`). **Net: 12 ported,
+3 already-on-head.** Strict `dev_mode` build clean, full suite **3069 passed / 0 failed / 3 skipped**.
+
+**Deferred as feature-decision (bucket B), NOT ported** — net-new user features that now apply cleanly:
+`#99569` (always-show collision shapes), `#114717` (`view_plane_rotation_gizmo_scale` setting),
+`#114849` (Path3D point highlight). Need a product yes/no.
+
+**Next-session continuation:** the absent-infra method still has legs. Re-audit the remaining
+`retriage/CONSOLIDATED.json` 132 `blocked` items the same way — most are HDR/AreaLight3D/RD-raytracing
+(genuinely large, stay deferred) but the "(other)" ~100 that didn't match a big-infra keyword are
+worth a per-item foundation-size check. The three deferred features above also await a decision.
+
+---
+
 ## UPDATE 2026-07-09 — PR #1144 MERGED; waves 9/10/11 done (read this first)
 
 The original batched PR **#1144 merged to develop** (merge `3228291573`). Follow-up waves also landed:
