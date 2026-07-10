@@ -899,7 +899,9 @@ void ProjectSettings::clear_project_state_for_reload() {
 	for (const StringName &name : project_only_keys) {
 		props.erase(name);
 	}
-	// Feature-tag overrides are rebuilt from the loaded project's settings by setup().
+	// Feature tags and their overrides are rebuilt from the loaded project's settings
+	// (application/config/custom_features) by setup().
+	custom_features.clear();
 	feature_overrides.clear();
 	autoloads.clear();
 	global_groups.clear();
