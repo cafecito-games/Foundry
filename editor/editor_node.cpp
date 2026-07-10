@@ -7061,6 +7061,9 @@ bool EditorNode::load_project_in_process(const String &p_project_path) {
 	// persisted back into project.foundry by the save() below.
 	const Error setup_err = ProjectSettings::get_singleton()->setup(p_project_path, String(), false, true);
 	if (setup_err != OK || !ProjectSettings::get_singleton()->is_project_loaded()) {
+		// A failed setup may itself have parsed part of the bad project; clear that back
+		// out and restore the shell's resource path so the shell is left clean.
+		ProjectSettings::get_singleton()->clear_project_state_for_reload();
 		ProjectSettings::get_singleton()->set_reload_resource_path(shell_resource_path);
 		return false;
 	}
@@ -7070,6 +7073,7 @@ bool EditorNode::load_project_in_process(const String &p_project_path) {
 	// project files.
 	if (EditorPaths::get_singleton() != nullptr && EditorPaths::get_singleton()->is_self_contained() &&
 			ProjectSettings::get_singleton()->get_resource_path() == OS::get_singleton()->get_executable_path().get_base_dir()) {
+		ProjectSettings::get_singleton()->clear_project_state_for_reload();
 		ProjectSettings::get_singleton()->set_reload_resource_path(shell_resource_path);
 		return false;
 	}

@@ -903,6 +903,7 @@ void ProjectSettings::clear_project_state_for_reload() {
 	feature_overrides.clear();
 	autoloads.clear();
 	global_groups.clear();
+	scene_groups_cache.clear();
 	resource_path = String();
 	project_loaded = false;
 }
