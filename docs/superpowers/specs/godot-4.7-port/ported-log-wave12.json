@@ -20,7 +20,16 @@
     {"pr": "117214", "upstream_sha": "005a661bd0", "local_sha": "e22681826c", "title": "Reset follow mode focus count on selection change", "outcome": "ported", "conflict": false},
     {"pr": null, "upstream_sha": "28ebd60ce2", "local_sha": "db5db33d5a", "title": "Reset follow mode focus count after committing a transform", "outcome": "ported", "conflict": false},
     {"pr": "117923", "upstream_sha": "59e6ff8cc5", "local_sha": "60f9314722", "title": "Reset follow mode count on subgizmo point switch", "role": "WAVE-11 REVERT re-applied (was blocked on times_focused_consecutively/_reset_follow_mode_count)", "outcome": "ported", "conflict": false},
-    {"pr": "120063", "upstream_sha": "d92a1acc36", "local_sha": "310ed18435", "title": "Fix trackball when use local space is enabled", "role": "WAVE-11 REVERT re-applied (was blocked on is_trackball in EditData)", "outcome": "ported", "conflict": false}
+    {"pr": "120063", "upstream_sha": "d92a1acc36", "local_sha": "310ed18435", "title": "Fix trackball when use local space is enabled", "role": "WAVE-11 REVERT re-applied (was blocked on is_trackball in EditData)", "outcome": "ported", "conflict": false},
+
+    {"pr": "115871", "merge_sha": "e4d449f4b41c", "local_sha": "f943843df1", "title": "Fix transform gizmo rotation arc line not snapping", "role": "cluster-1 extension (was port-later, conflicted on diverged node_3d_editor arc code; foundation now present)", "outcome": "ported", "conflict": false},
+    {"pr": "116075", "merge_sha": "3294d50d8246", "local_sha": "622762372d", "title": "Fix gizmo rotation arc and applied transform not being synced", "role": "cluster-1 extension (was port-later, arc bugfix)", "outcome": "ported", "conflict": false},
+    {"pr": "116972", "merge_sha": "77264a708792", "local_sha": null, "title": "Fix 3D focus selection for subgizmos", "outcome": "already-on-head", "note": "Empty cherry-pick after the chain landed; no-op."}
   ],
-  "summary": {"ported": 10, "already_on_head": 2, "reverts_reapplied": ["116159", "117923", "120063"]}
+  "feature_decision_unblocked": [
+    {"pr": "99569", "merge_sha": "9f0e14ab2ff2", "title": "Add option to toggle always showing collision shapes", "note": "Applies now that node_3d_editor conflicts are gone, but is a net-new user-facing feature -> product yes/no (bucket B). NOT ported."},
+    {"pr": "114717", "merge_sha": "ec297f8bb337", "title": "Add view_plane_rotation_gizmo_scale to EditorSettings", "note": "Net-new EditorSettings option; feature-decision. NOT ported."},
+    {"pr": "114849", "merge_sha": "c4a893e98893", "title": "Highlight selected points in Path3DEditor", "note": "Net-new Path3D editor feature; feature-decision. NOT ported."}
+  ],
+  "summary": {"ported": 12, "already_on_head": 3, "reverts_reapplied": ["116159", "117923", "120063"], "feature_decision_deferred": ["99569", "114717", "114849"]}
 }
