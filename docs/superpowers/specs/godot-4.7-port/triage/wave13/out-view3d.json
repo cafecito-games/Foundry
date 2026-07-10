@@ -1,0 +1,101 @@
+[
+ {
+  "pr": 105791,
+  "sha": "88cd7ab37813ce89d49c199bc05edb660e7dacb6",
+  "decision": "blocked-large",
+  "foundation_prs": ["27c86165f7"],
+  "foundation_size": "large",
+  "build_verifiable_on_macos": false,
+  "evidence": "Feature 'Add ability to cancel pan/zoom/orbit navigation'. node_3d_editor_plugin.cpp hunks call viewport->view_3d_controller->cursor and view_3d_controller->is_navigating() (added was_navigating guard around view_3d_controller->gui_input in _sinput), plus +33 lines in scene/debugger/view_3d_controller.cpp and edits to runtime_node_select.cpp. All three targets are the extracted View3DController object, which does not exist in the fork (fork keeps 3D navigation inline in node_3d_editor_plugin.cpp and RuntimeNodeSelect in scene_debugger.cpp).",
+  "adaptation": null,
+  "notes": "New cancel-navigation feature built on the extracted View3DController; would require reimplementing the feature against the fork's inline nav functions, not a mechanical port."
+ },
+ {
+  "pr": 115551,
+  "sha": "80a4af1cc7c97b41f819ac2ac519a12804a53b1c",
+  "decision": "blocked-large",
+  "foundation_prs": ["27c86165f7"],
+  "foundation_size": "large",
+  "build_verifiable_on_macos": false,
+  "evidence": "This IS the RuntimeNodeSelect file-split prerequisite: 2308 insertions / 2153 deletions across 15 files, creating scene/debugger/runtime_node_select.{cpp,h} (1634+248) and scene_debugger_object.{cpp,h} (319+92) by carving 1881 lines out of scene_debugger.cpp and 271 out of scene_debugger.h. Fork still has RuntimeNodeSelect monolithic inside scene/debugger/scene_debugger.{h,cpp} (grep 'class RuntimeNodeSelect' -> scene_debugger.h; 78 RuntimeNodeSelect:: defs in scene_debugger.cpp). The fork has diverged this file (multi-scene selection_drag machinery), so adopting the split is heavy churn that fights the fork.",
+  "adaptation": null,
+  "notes": "Mechanical file reorganization with no functional value that collides with the fork's diverged monolithic scene_debugger; the enabling prerequisite for the whole cluster, not a fix to port."
+ },
+ {
+  "pr": 115644,
+  "sha": "d7e6f5e05f9dfc0d2e82e6a89b1311835dfd3fee",
+  "decision": "skip",
+  "foundation_prs": ["27c86165f7"],
+  "foundation_size": "large",
+  "build_verifiable_on_macos": false,
+  "evidence": "+1 line in scene/debugger/runtime_node_select.h, a non-3D build guard. That header does not exist in the fork (RuntimeNodeSelect lives in scene_debugger.h). The build breakage it fixes only exists after the 115551 split lands.",
+  "adaptation": null,
+  "notes": "Build guard for a file the fork does not have; moot unless the 115551 split is ever adopted."
+ },
+ {
+  "pr": 115732,
+  "sha": "4326946f005ca357243b5eaa1ef7083073d87e73",
+  "decision": "blocked-large",
+  "foundation_prs": ["27c86165f7"],
+  "foundation_size": "large",
+  "build_verifiable_on_macos": false,
+  "evidence": "Include tidy across 32 files. Debugger portion edits scene/debugger/runtime_node_select.h and scene_debugger_object.{cpp,h} (absent in fork, only exist post-115551 split) and scene/main/canvas_item.compat.inc (compat shim removed by the fork's clean-break). The scene_debugger.h/.cpp include changes are entangled with the split.",
+  "adaptation": null,
+  "notes": "Broad include-hygiene sweep entangled with absent split files and a clean-break-removed compat.inc; belongs to a separate include-tidy triage, not portable as-is here."
+ },
+ {
+  "pr": 117179,
+  "sha": "1a86cf1eaaa0b08f812d28df40b3a708de648c8f",
+  "decision": "skip",
+  "foundation_prs": ["27c86165f7"],
+  "foundation_size": "large",
+  "build_verifiable_on_macos": false,
+  "evidence": "Fixes freelook inertia by moving 'cursor = cursor_interp' out of the 'if (freelook)' block in View3DController::set_freelook_enabled so it runs on both enable and disable. This is a regression introduced BY the rework's restructuring. The fork's pre-rework Node3DEditorViewport::set_freelook_active (editor/scene/3d/node_3d_editor_plugin.cpp:3037) already syncs 'cursor = camera_cursor' in BOTH the enable branch (line 3040) and the disable branch (line 3062). The bug does not exist in the fork.",
+  "adaptation": null,
+  "notes": "Fixes a bug the View3DController rework introduced; the fork's inline freelook code is already correct."
+ },
+ {
+  "pr": 117255,
+  "sha": "01af00957c26c822dc8d090545fca63ee49a29dd",
+  "decision": "skip",
+  "foundation_prs": ["27c86165f7"],
+  "foundation_size": "large",
+  "build_verifiable_on_macos": false,
+  "evidence": "+2 lines in scene/debugger/runtime_node_select.h, a 3D-disabled build fix. That header does not exist in the fork (RuntimeNodeSelect is in scene_debugger.h); the build breakage only exists after the 115551 split.",
+  "adaptation": null,
+  "notes": "Build guard for a file the fork does not have; moot unless the split is adopted."
+ },
+ {
+  "pr": 118090,
+  "sha": "320e81846979bd716341e0669231954543c4afbd",
+  "decision": "skip",
+  "foundation_prs": ["27c86165f7"],
+  "foundation_size": "large",
+  "build_verifiable_on_macos": false,
+  "evidence": "Single-char typo fix in view_3d_controller.cpp: pan_not_empty used SHORTCUT_PAN_MOD_2 twice, corrected to _1 || _2. This typo was introduced by the rework. The fork's equivalent line (editor/scene/3d/node_3d_editor_plugin.cpp:2330) already reads '!_is_shortcut_empty(\"spatial_editor/viewport_pan_modifier_1\") || !_is_shortcut_empty(\"spatial_editor/viewport_pan_modifier_2\")' -- correct.",
+  "adaptation": null,
+  "notes": "Fixes a copy-paste typo the rework introduced; the fork's inline shortcut logic is already correct."
+ },
+ {
+  "pr": 118613,
+  "sha": "f75646311636a1d54c9139d6b6f802cb9c2e21c7",
+  "decision": "blocked-large",
+  "foundation_prs": ["27c86165f7"],
+  "foundation_size": "large",
+  "build_verifiable_on_macos": false,
+  "evidence": "Game-view selection regression fix (11/8 lines in the reworked runtime_node_select.cpp). Core fix hoists list_shortcut_pressed and gates camera drag with 'camera_override && !list_shortcut_pressed'. The fork has the selection_drag_state/list_shortcut_pressed/multi_shortcut_pressed machinery in scene_debugger.{h,cpp} (scene_debugger.h:270-286), but its RuntimeNodeSelect::_root_window_input (scene_debugger.cpp:1689) uses a structurally different 3D path: 'else if (node_select_type==NODE_TYPE_3D && selection_drag_state==SELECTION_DRAG_NONE) { _handle_3d_input(...) }' rather than the rework's unified panner/View3DController path the fix's guard targets. The regression was introduced by the rework's unification and the guard does not map cleanly to the fork's 3D flow.",
+  "adaptation": null,
+  "notes": "Fork has the surrounding selection-drag machinery but a divergent pre-rework 3D input path; the core guard targets the reworked unified flow and the regression likely does not manifest identically. Only the is_inf->is_finite robustness bits are trivially adoptable; not safely portable without a build to verify behavior."
+ },
+ {
+  "pr": 118659,
+  "sha": "ea8f8ec983436cf62e595fe35e80a9478c1237aa",
+  "decision": "blocked-large",
+  "foundation_prs": ["27c86165f7"],
+  "foundation_size": "large",
+  "build_verifiable_on_macos": false,
+  "evidence": "3D view-manipulation fixes spanning editor/scene/3d/node_3d_editor_plugin.cpp (20 lines), scene/debugger/runtime_node_select.cpp (65), and view_3d_controller.cpp (49). The node_3d_editor_plugin hunks replace inline emulate_numpad logic with calls to view_3d_controller->emulate_numpad_key(...), which does not exist in the fork; the rest edits the absent runtime_node_select.cpp and view_3d_controller.cpp.",
+  "adaptation": null,
+  "notes": "Fixes distributed across all three rework-restructured files and depend on the extracted View3DController API; unportable without the rework."
+ }
+]

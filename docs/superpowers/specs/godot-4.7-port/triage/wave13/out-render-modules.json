@@ -1,0 +1,152 @@
+[
+ {
+  "pr": 115108,
+  "sha": "d7680230ae1a9d46e8f0e8304220ff28c972532b",
+  "decision": "skip",
+  "foundation_prs": [],
+  "foundation_size": "none",
+  "build_verifiable_on_macos": true,
+  "evidence": "Applies clean (cherry-pick auto-merges 3 files). But it removes the macOS/iOS-specific SHADER_NORMAL_MOLTENVK / SHADER_USE_ATTACHMENT_MOLTENVK cluster variants and the `use_msaa=false` MoltenVK MSAA-artifact workaround (still present on develop, grep hit in cluster_builder_rd.h).",
+  "notes": "Pure behavior-sensitive simplification with no functional gain that alters macOS MSAA/subgroup rendering paths; low value and non-trivial risk on the primary dev platform."
+ },
+ {
+  "pr": 115147,
+  "sha": "0f8a1c9db2b1ece9a3b450b3659be3a413c6ee70",
+  "decision": "skip",
+  "foundation_prs": [],
+  "foundation_size": "none",
+  "build_verifiable_on_macos": true,
+  "evidence": "Already fully ported on develop: shader_types.cpp:87 has IS_MULTIVIEW built_in, material.cpp:1338 has the IS_MULTIVIEW length() branch, visual_shader.cpp has the 3 is_multiview ports, and both forward_clustered/gles3 glsl already define OUTPUT_IS_MULTIVIEW.",
+  "notes": "Stale 'absent' reason; the multiview fixed-size fix landed in an earlier wave. No work needed."
+ },
+ {
+  "pr": 115177,
+  "sha": "ef313ecc4674627174511e9a3ae8ec1dbb5552bf",
+  "decision": "port-now",
+  "foundation_prs": [],
+  "foundation_size": "none",
+  "build_verifiable_on_macos": true,
+  "evidence": "Single feature commit 1d9910cac4; cherry-pick auto-merges the 2 render_forward_clustered files clean. Not present on develop (old signatures still take `int p_index`). Adds a used_uniform_buffer_count and per-pass uniform buffer index.",
+  "notes": "Small self-contained correctness change (prevents env uniform-buffer aliasing across passes); applies clean now and compiles in the RD renderer on macOS/MoltenVK."
+ },
+ {
+  "pr": 115623,
+  "sha": "be587f3a2d92f42d52fd3801f94a8dda47e18e64",
+  "decision": "skip",
+  "foundation_prs": [],
+  "foundation_size": "none",
+  "build_verifiable_on_macos": true,
+  "evidence": "Non-behavioral include reordering / redundant-include removal across 31 GLES3 driver files (278 insertions / 210 deletions, no logic change).",
+  "notes": "Pure code-style churn with no functional gain and broad conflict surface; no value to the fork."
+ },
+ {
+  "pr": 117313,
+  "sha": "075d6f27f1a07d15b392aadde6064bab8ab60eff",
+  "decision": "skip",
+  "foundation_prs": [],
+  "foundation_size": "large",
+  "build_verifiable_on_macos": false,
+  "evidence": "Removes ~20k lines of AccessKit dynwrappers and rewires linkage via SConstruct + platform detect.py (macos/linux/windows/android) + a new install_accesskit.py download script + all three CI workflow YAMLs.",
+  "notes": "High-blast build/linkage/CI model change that collides with the fork's diverged Foundry CI workflows and binary naming; maintenance-only, no functional gain, not a foundation for other PRs."
+ },
+ {
+  "pr": 117359,
+  "sha": "967c23c6ce10eac544cb62b2943c114e4f0979e3",
+  "decision": "skip",
+  "foundation_prs": [],
+  "foundation_size": "none",
+  "build_verifiable_on_macos": false,
+  "evidence": "Non-behavioral include cleanup across 11 Windows-only drivers/d3d12 files (plus a 2-line audio_server.h include tweak).",
+  "notes": "Pure churn in the D3D12 backend, which does not build on macOS; no functional gain."
+ },
+ {
+  "pr": 119414,
+  "sha": "1078619908a1314f46c0439920b82fc187de92e4",
+  "decision": "skip",
+  "foundation_prs": [],
+  "foundation_size": "none",
+  "build_verifiable_on_macos": true,
+  "evidence": "Already fully ported on develop: sky.glsl:81 declares `fog_use_legacy_blending` and lines 289-293 have the legacy/new blending branch; single commit c76223a35e cherry-picks as a no-op auto-merge.",
+  "notes": "Stale 'absent' reason; the new volumetric-fog blending behavior and its legacy compat toggle both landed in an earlier wave."
+ },
+ {
+  "pr": 119639,
+  "sha": "243f3537edbc914b3b4dadb39b305d71b80b7b43",
+  "decision": "skip",
+  "foundation_prs": [],
+  "foundation_size": "medium",
+  "build_verifiable_on_macos": true,
+  "evidence": "14 of 15 files auto-merge; only render_forward_mobile.cpp conflicts. But it is an Android/Adreno driver-version workaround that adds new shared RenderingDevice / rendering_device_graph API surface to guard ubershader disabling.",
+  "notes": "Low-value platform-specific (Adreno mobile) workaround that broadens core RD API for a desktop-focused fork; behavior-sensitive with no macOS benefit. Portable later if mobile becomes a priority."
+ },
+ {
+  "pr": 104736,
+  "sha": "c44b01cd1f34e296a72349a3a2530e3d5bc79e4f",
+  "decision": "blocked-large",
+  "foundation_prs": [],
+  "foundation_size": "medium",
+  "build_verifiable_on_macos": true,
+  "evidence": "25-file one-way-collision-direction feature; 6 hunks target modules/godot_physics_2d/* which the fork renamed to modules/foundry_physics_2d (no godot_physics_2d dir on develop), and it adds servers/physics_2d/physics_server_2d.compat.inc which the clean-break fork deliberately removed.",
+  "notes": "Real feature but it must be hand-retargeted onto the renamed foundry_physics_2d module and the .compat.inc binder-compat shim dropped/rewritten for the fork's no-compat physics server; not a mechanical cherry-pick."
+ },
+ {
+  "pr": 115602,
+  "sha": "82580cf965caf5ce75fc86d4d26e68071bfe4685",
+  "decision": "port-now",
+  "foundation_prs": ["a182e182115f5dc3b4d37dcdc0b76a1a4b88b116"],
+  "foundation_size": "small",
+  "build_verifiable_on_macos": true,
+  "evidence": "Foundation PR 115190 (a182e18211, 'Implement support for XR_EXT_user_presence') is a self-contained 10-file/+245 addition — mostly the new openxr_user_presence_extension.{cpp,h}; it cherry-picks with only a trivial register_types.cpp context conflict. The 115602 follow-up (9c11e25198, 2 files, 'Don't expose the singleton') then applies.",
+  "notes": "Was blocked solely on the absent XR_EXT_user_presence foundation; port PR 115190 first (resolve the one-hunk register_types conflict), then 115602. OpenXR module compiles on macOS."
+ },
+ {
+  "pr": 118128,
+  "sha": "2dc3039d5615e2f58675e906daa090ca4d5c4a60",
+  "decision": "skip",
+  "foundation_prs": [],
+  "foundation_size": "medium",
+  "build_verifiable_on_macos": true,
+  "evidence": "Contrary to the input 'absent' reason, the spatial_entities infra IS present on develop (openxr_spatial_entities.{cpp,h}, openxr_spatial_anchor, marker/plane tracking all exist). Single commit d72e8691f2 conflicts (3 markers) against the already-ported-but-diverged openxr_spatial_entities.{cpp,h}.",
+  "notes": "API-reshape refactor of an experimental XR extension with no user-facing gain, conflicting against the fork's already-diverged spatial-entities copy; low value, defer."
+ },
+ {
+  "pr": 118867,
+  "sha": "a3b1272962af8f45da509221e88d63011857cb4f",
+  "decision": "port-now",
+  "foundation_prs": ["ba709f1226e0aaacad0580536ff9bbd86b6cc70f"],
+  "foundation_size": "medium",
+  "build_verifiable_on_macos": true,
+  "evidence": "Foundation PR 118280 (ba709f1226, 'Add octant querying to GridMap') is self-contained: 4 files/+384 (grid_map.cpp +198, +15 header, +49 doc, +122 test) and cherry-picks clean. The 118867 perf commit (d243f7c6d4, 2 files) then applies clean on top and calls get_used_octants_in_bounds.",
+  "notes": "Was blocked only on the missing GridMap octant-query API; port PR 118280 first then 118867. GridMap ships C++ tests (test_grid_map.h) so it is build+test verifiable on macOS."
+ },
+ {
+  "pr": 118975,
+  "sha": "08b4d30baceeef355a423de596c1a6b0c78c57c4",
+  "decision": "port-now",
+  "foundation_prs": ["87eafe20ae632df5ea0e42c2031ead5ef7f3bf3a"],
+  "foundation_size": "small",
+  "build_verifiable_on_macos": true,
+  "evidence": "Foundation PR 110778 (87eafe20ae, 'OpenXR: Add support for XR_KHR_generic_controller') is a self-contained 3-file/+128 addition (new openxr_khr_generic_controller_extension.{cpp,h} + register_types) and cherry-picks clean; the 1-file 118975 default-action-map switch then applies clean on top.",
+  "notes": "Was blocked only on the missing khr/generic_controller extension; port PR 110778 first then 118975. OpenXR module compiles on macOS."
+ },
+ {
+  "pr": 64596,
+  "sha": "c42e294ffa217d30012685b721fa201017b4b3f0",
+  "decision": "skip",
+  "foundation_prs": [],
+  "foundation_size": "large",
+  "build_verifiable_on_macos": true,
+  "evidence": "135-file structural relocation of visual shaders out of scene/ into a new module; scene/resources/visual_shader.h still exists on develop (migration not started).",
+  "notes": "Pure code-organization move with no functional value; only worth doing if the fork deliberately adopts the visual_shader module migration."
+ },
+ {
+  "pr": 96748,
+  "sha": "87898da27f58a359f3f68135b3cd600baa67ff8f",
+  "decision": "port-now",
+  "foundation_prs": [],
+  "foundation_size": "none",
+  "build_verifiable_on_macos": true,
+  "evidence": "Single feature commit eb8ec10951 (6 files, gltf_document.cpp +416/-136 to read per-texture texCoord/multi-UV on import). No absent infra; cherry-pick lands with only 3 minor single-hunk context conflicts (GLTFDocument.xml, editor_scene_importer_gltf.cpp, gltf_document.cpp).",
+  "notes": "Sizeable but self-contained gltf import feature; 'blocked' was wrong — it needs three small conflict resolutions plus import-behavior validation, no missing API. gltf module builds and imports are testable on macOS."
+ }
+]
