@@ -23,10 +23,23 @@ Cherry-picks (chronological), all into `editor/scene/3d/node_3d_editor_plugin.{c
 
 Net: 10 ported, 2 already-present. All 3 wave-11 absent-infra reverts re-applied.
 
-## Validation
+## Cluster-1 extension — newly-unblocked node_3d_editor dependents
+The foundation unblocked follow-on items that were port-later due to node_3d_editor conflicts:
+- #117289 / #99499 / #115856 — already covered (their commits were in the chain above).
+- #115871 (arc-line-snap) — **ported** (f943843df1).
+- #116075 (arc-sync)      — **ported** (622762372d).
+- #116972 (focus-subgizmo) — already-on-head (empty after chain).
+- #99569 / #114717 / #114849 — net-new features -> feature-decision (bucket B), NOT ported.
+
+## Validation (final, includes arc bugfixes)
 - [x] dev_build build: clean, 0 errors
 - [x] full suite (DISPLAY=:1): **3069 passed / 0 failed / 3 skipped**
-- [ ] strict dev_mode build (warnings-as-errors) — final gate before wave done
+- [x] strict dev_mode build (warnings-as-errors): clean, 0 errors
 
-## Next
-- [ ] widen to retriage blocked buckets (retriage/CONSOLIDATED.json 132 blocked + 74 feature_decision)
+## Wave-12 result
+12 commits ported (10 chain + 2 arc bugfixes), 3 already-on-head, 3 features deferred to
+feature-decision. All 3 wave-11 absent-infra reverts (#116159/#117923/#120063) re-applied.
+
+## Next (future waves)
+- [ ] widen to retriage blocked buckets (retriage/CONSOLIDATED.json: 132 blocked + 74 feature_decision).
+- [ ] the 3 deferred features (#99569/#114717/#114849) need a product yes/no.
