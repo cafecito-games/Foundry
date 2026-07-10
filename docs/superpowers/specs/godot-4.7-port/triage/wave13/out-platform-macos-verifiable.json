@@ -1,0 +1,79 @@
+[
+ {
+  "pr": 114922,
+  "sha": "ed0ae97d98aade16734c309a15bc6586063005be",
+  "decision": "blocked-large",
+  "foundation_prs": ["542f8ddf22ab696b70d6f8acfeac95b037fd998b"],
+  "foundation_size": "large",
+  "extractable_primitive": "OS::RenderingSource enum + two-arg set_current_rendering_driver_name/set_current_rendering_method + two source getters/fields in core/os/os.h (~30 lines, self-contained). Give the source param a default of RENDERING_SOURCE_DEFAULT to avoid touching the ~25 existing single-arg call sites.",
+  "build_verifiable_on_macos": true,
+  "evidence": "542f8ddf22 is a 17-file refactor: the shared os.h portion (59 lines, diff read) is clean and self-contained, but the PR's actual payload is the Android OpenGL3-from-Vulkan fallback rewrite in platform/android/display_server_android.cpp (138 lines) plus rebranded org.godotengine/godot/Godot.kt (57 lines) and GodotLib.java (13 lines). Android tree on develop is rebranded games.cafecito, so the Android body cannot apply clean. develop core/os/os.h:139-140 has only the single-arg setters and no RenderingSource enum.",
+  "notes": "The PR's purpose is Android fallback behavior which is entangled with the rebranded Android display server and is blocked-large. Only its os.h enum primitive is worth hand-porting (its own commit) to unblock the Windows dependents #117250/#117253."
+ },
+ {
+  "pr": 117250,
+  "sha": "e295eba0eb4767fd45ea8534765307d8e9b1c328",
+  "decision": "port-now",
+  "foundation_prs": ["542f8ddf22ab696b70d6f8acfeac95b037fd998b"],
+  "foundation_size": "small",
+  "extractable_primitive": "OS::RenderingSource enum + two-arg setter in core/os/os.h, hand-ported as its own commit (do NOT port the full 542f8ddf22 Android body).",
+  "build_verifiable_on_macos": false,
+  "evidence": "Head b092ce32f3 touches only platform/windows/display_server_windows.cpp (24+/7-). Its sole novel dependency is OS::RENDERING_SOURCE_FALLBACK / two-arg set_current_rendering_driver_name (line 37 of diff); every other symbol (DirAccess, GLOBAL_GET rendering/gl_compatibility/fallback_to_native, gl_manager_angle) exists on develop. Windows display_server is not compiled on macOS, so only the shared os.h primitive is macOS-build-verifiable, not the dependent file itself.",
+  "notes": "Input reason called this a macOS/shared 1-file bugfix, but it is Windows-only (ANGLE DLL loading). Applies cleanly once the os.h enum primitive lands; port the primitive first, then this."
+ },
+ {
+  "pr": 117253,
+  "sha": "7c2a2b06a97fd6b0139a80d14e1087173253b88e",
+  "decision": "port-now",
+  "foundation_prs": ["542f8ddf22ab696b70d6f8acfeac95b037fd998b"],
+  "foundation_size": "small",
+  "extractable_primitive": "OS::RenderingSource enum + two-arg setter in core/os/os.h, hand-ported as its own commit.",
+  "build_verifiable_on_macos": false,
+  "evidence": "Head b9554859f6 is a 1-line addition to platform/windows/display_server_windows.cpp: OS::get_singleton()->set_current_rendering_driver_name(rendering_driver, OS::RENDERING_SOURCE_FALLBACK). Its only blocker is the enum/two-arg setter absent on develop (os.h:139). Windows-only file, not compiled on macOS.",
+  "notes": "Trivial once the os.h enum primitive is hand-ported. Bundle with #117250 on top of the shared primitive commit."
+ },
+ {
+  "pr": 117891,
+  "sha": "77caa1c178aa115e148b736189dfdbff863c752c",
+  "decision": "blocked-large",
+  "foundation_prs": ["d5504ffc696dd9d97694741355e9b9d8b5821742"],
+  "foundation_size": "large",
+  "extractable_primitive": null,
+  "build_verifiable_on_macos": true,
+  "evidence": "Fix targets platform/macos/display_server_macos_embedded.{h,mm}, platform/macos/editor/embedded_process_macos.mm, embedded_debugger.mm, editor/embedded_game_view_plugin.mm. On develop those files exist only under the OLD names/paths (platform/macos/display_server_embedded.mm, platform/macos/embedded_game_view_plugin.mm, no editor/ subdir, no display_server_macos_base). The rename display_server_embedded->display_server_macos_embedded and the hiDPI scaling machinery were introduced by #106814 (d5504ffc69 'Add EDR support to Metal and all Apple platforms'), a 24-file / 911-insertion refactor entangled with Metal HDR/EDR drivers and a new display_server_macos_base.mm (285 new lines).",
+  "notes": "Blocked behind the large EDR foundation #106814. macOS-build-verifiable in principle but only after that foundation is ported, which is a large Metal/Apple-platform rework, not a small primitive."
+ },
+ {
+  "pr": 119756,
+  "sha": "b404bc6a744a3754337e906c0249d2bf838c9348",
+  "decision": "skip",
+  "foundation_prs": ["d5504ffc696dd9d97694741355e9b9d8b5821742"],
+  "foundation_size": "large",
+  "extractable_primitive": null,
+  "build_verifiable_on_macos": true,
+  "evidence": "Head fdd53b7b1d changes 'inv_scale * p_position' to 'Vector2(p_position) * inv_scale' in DisplayServerMacOSEmbedded::warp_mouse. On develop DisplayServerEmbedded::warp_mouse (display_server_embedded.mm:324-327) sends the raw p_position with NO inv_scale multiply at all — the buggy scaling line does not exist because the scaling was introduced by the #106814 EDR foundation. The fix is not applicable to develop's code form.",
+  "notes": "Fixes a regression that #106814 itself introduces; moot on develop until that large foundation lands. Nothing to port now."
+ },
+ {
+  "pr": 119601,
+  "sha": "79811ccc983d090f2bc764617fc7f2f52ccb25bf",
+  "decision": "blocked-large",
+  "foundation_prs": ["a490c267a2"],
+  "foundation_size": "large",
+  "extractable_primitive": null,
+  "build_verifiable_on_macos": false,
+  "evidence": "Patches the proxy invocation handler in AndroidRuntimePlugin.kt (rebranded to games/cafecito/foundry/plugin on develop). The JavaClassWrapper proxy feature is entirely absent on develop: grep for proxy/Proxy/InvocationHandler returns 0 hits in both AndroidRuntimePlugin.kt and java_class_wrapper.cpp. Foundation #115498 (a490c267a2) is a 9-file/408-insertion change dominated by java_class_wrapper.cpp (+303) plus 74 lines of rebranded Kotlin and instrumented test assets.",
+  "notes": "Android/Kotlin-only, not macOS-build-verifiable. Blocked on the medium-large, rebrand-entangled #115498 proxy foundation."
+ },
+ {
+  "pr": 119634,
+  "sha": "330e012b5375e9eebbf10b28ae0e759ad140b313",
+  "decision": "blocked-large",
+  "foundation_prs": ["a490c267a2"],
+  "foundation_size": "large",
+  "extractable_primitive": null,
+  "build_verifiable_on_macos": false,
+  "evidence": "Fixes equals()/hashCode() infinite recursion in the proxy handler (AndroidRuntimePlugin.kt) and adds AndroidRuntimePluginTest.kt (+131). Same absent foundation as #119601: proxy machinery does not exist on develop (0 proxy hits in AndroidRuntimePlugin.kt / java_class_wrapper.cpp). Requires #115498 first.",
+  "notes": "Android/Kotlin-only, not macOS-build-verifiable. Blocked on the #115498 interface-proxy foundation."
+ }
+]

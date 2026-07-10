@@ -1,0 +1,172 @@
+[
+ {
+  "pr": 111262,
+  "sha": "fc0960188b11946a63e07b5204c83c2e537b86df",
+  "decision": "skip",
+  "foundation_prs": [],
+  "foundation_size": "none",
+  "build_verifiable_on_macos": false,
+  "evidence": "Splits PropertyInfo/MethodInfo out of core/object/object.h into new method_info.{h,cpp}/property_info.{h,cpp} (521+/384-, 6 files). object.h is a fork-diverged, ubiquitously-included header.",
+  "notes": "Pure code-organization churn on a heavily-diverged header with no user-facing behavior. No absent infra; high conflict, low value."
+ },
+ {
+  "pr": 111637,
+  "sha": "eb9aa55628c61efac655da4cf6c1ae5dcbdc3527",
+  "decision": "skip",
+  "foundation_prs": [],
+  "foundation_size": "none",
+  "build_verifiable_on_macos": false,
+  "evidence": "Removes message_queue.h include from object.h and pushes fixup includes into 10 files (resource_loader, scene_tree.h, callable.cpp, etc.).",
+  "notes": "Include-hygiene refactor on core/object/object.h; compile-time only, no absent infra, no behavior change."
+ },
+ {
+  "pr": 112035,
+  "sha": "92846d7c3e245c38cf3786ee8cee41df2a7db01d",
+  "decision": "blocked-large",
+  "foundation_prs": ["05c33acbb1e7189719d1edd6105cbb23065bdd9d"],
+  "foundation_size": "large",
+  "build_verifiable_on_macos": false,
+  "evidence": "Patch context shows `memnew_result_t<T> _post_initialize`; HEAD core/os/memory.h:132 still has `T *_post_initialize(T*)` and `memnew(m) ::new (\"\") m`. The memnew_result_t chain comes from foundation 05c33acbb1 'Make memnew(RefCounted) return Ref' which rewrites ~50 files engine-wide (net_socket, debugger, editor plugins, mbedtls, lightmapper).",
+  "notes": "The DefaultAllocator-tag new-overload change is small, but the PR sits on the large memnew->Ref ownership rework absent on HEAD. Genuinely large foundation, low intrinsic value."
+ },
+ {
+  "pr": 115569,
+  "sha": "2725c636caa9983687101917a822ad5ee7cbc470",
+  "decision": "skip",
+  "foundation_prs": [],
+  "foundation_size": "none",
+  "build_verifiable_on_macos": false,
+  "evidence": "Upstream moves `GDVIRTUAL_BIND(_create_script)` into the `#ifndef DISABLE_DEPRECATED` block (4.7 deprecates _create_script). HEAD binds it unconditionally (script_language_extension.cpp:108) and declares it `FOUNDRY_VIRTUAL0RC_REQUIRED` (.h:376); the fork has no DISABLE_DEPRECATED block at all.",
+  "notes": "Clean-break fork deliberately keeps _create_script as a required, non-deprecated hook. Porting would mean deprecating it, a semantic reversal, not a mechanical port."
+ },
+ {
+  "pr": 115570,
+  "sha": "b621b9ea5a7d81f94a5e9155013626f28922ce09",
+  "decision": "skip",
+  "foundation_prs": [],
+  "foundation_size": "none",
+  "build_verifiable_on_macos": false,
+  "evidence": "Drops input_enums.h/keyboard.h from variant.h and binder_common.h, replacing with forward decls (enum class Key/JoyAxis/...). variant.h/binder_common.h are included nearly everywhere; the upstream fixup target editor/project_upgrade/project_converter_3_to_4.cpp does not exist on HEAD.",
+  "notes": "High-blast-radius include-minimization; any TU relying on transitive input/keyboard includes would break. Compile-time only, no behavior value."
+ },
+ {
+  "pr": 115639,
+  "sha": "5b75d2539b69191a46ddf88d9eaf8340a97174a1",
+  "decision": "skip",
+  "foundation_prs": [],
+  "foundation_size": "none",
+  "build_verifiable_on_macos": false,
+  "evidence": "Switches script_instance.h include from ref_counted.h to variant.h and injects binder_common.h into the generated make_virtuals.py output; touches main_loop.cpp, scene_tree.h, openxr wrapper.",
+  "notes": "Foundational-header include minimization affecting all gdvirtual users; compile-time refactor, no absent infra, no behavior value."
+ },
+ {
+  "pr": 116541,
+  "sha": "9a19d32fdbd7c4d1f76afc2fec15055f00dfbc31",
+  "decision": "skip",
+  "foundation_prs": [],
+  "foundation_size": "none",
+  "build_verifiable_on_macos": false,
+  "evidence": "Extracts variant pool definitions from variant.h into new variant_pools.{cpp,h} and forces fixup includes into 5 scattered consumers (string_name.cpp, detect_prime_*, rendering_device_driver.h, tests).",
+  "notes": "Compile-unit split on core/variant/variant.h with real blast radius; no absent infra, no behavior change."
+ },
+ {
+  "pr": 116542,
+  "sha": "a3e84cc2af14aa4cffbefd8e13492e59567a64e3",
+  "decision": "skip",
+  "foundation_prs": [],
+  "foundation_size": "none",
+  "build_verifiable_on_macos": false,
+  "evidence": "Renames char_range.inc -> char_range.cpp and converts is_unicode_* helpers from constexpr to inline + extern arrays. Fork FS tokenizer uses is_unicode_identifier_start/continue at runtime (fs_tokenizer.cpp:488+), so no functional break, but it narrows constexpr semantics.",
+  "notes": "Low-value compile-time reorganization of char classification helpers; no absent infra, some risk to constexpr usage sites."
+ },
+ {
+  "pr": 116552,
+  "sha": "2829092a2a121bac86bf7c4c6360e39978ede1ea",
+  "decision": "skip",
+  "foundation_prs": [],
+  "foundation_size": "none",
+  "build_verifiable_on_macos": false,
+  "evidence": "Makes RBMap/RBSet copy constructors `explicit` (plus adds move ctors/assignment). The `explicit` turns every implicit copy into a compile error; upstream only patched 4 sites (editor_node.cpp, tile_set_atlas_source_editor.h, tile_map_layer.cpp, tile_set.cpp), and the fork has additional/diverged RBMap/RBSet copy sites (Foundry Script, tile editor).",
+  "notes": "No absent infra, but a breaking API change with fork-wide blast radius for a micro-optimization (move semantics). Not build-verifiable without a full compile to find all implicit-copy sites."
+ },
+ {
+  "pr": 116737,
+  "sha": "6cccb37f2ef2676f47052cff028a7cbbd59c9a98",
+  "decision": "skip",
+  "foundation_prs": [],
+  "foundation_size": "none",
+  "build_verifiable_on_macos": false,
+  "evidence": "Removes class_db.h include from ref_counted.h and pushes fixup includes into 48 files across core/modules/servers/platform/tests.",
+  "notes": "Textbook broad include-churn on a foundational header; no absent infra, no behavior value, maximal conflict surface."
+ },
+ {
+  "pr": 117087,
+  "sha": "c7dd32929369947876dbf0fdf798b0743b01c7ba",
+  "decision": "skip",
+  "foundation_prs": [],
+  "foundation_size": "none",
+  "build_verifiable_on_macos": false,
+  "evidence": "Splits VariantCaster into new variant_caster.h (206 lines) out of binder_common.h and rewires includes across 39 files. binder_common.h is included pervasively and is fork-diverged.",
+  "notes": "Header-split compile-time refactor with no functional benefit; the new variant_caster.h is a code-organization artifact, not absent infra a feature depends on."
+ },
+ {
+  "pr": 117597,
+  "sha": "d385b9e608253bb40400103eddc8b311b7167ea5",
+  "decision": "skip",
+  "foundation_prs": [],
+  "foundation_size": "none",
+  "build_verifiable_on_macos": false,
+  "evidence": "Splits new method_bind_common.h (529 lines) from method_bind.h (-498), touching core_constants.cpp, class_db.h, method_bind.cpp.",
+  "notes": "Foundational-header split for compile time; method_bind_common.h is a reorganization artifact, not a feature dependency. No behavior value."
+ },
+ {
+  "pr": 118214,
+  "sha": "8f7bdc1722740286b3f01cda25523cd0961d6f69",
+  "decision": "blocked-large",
+  "foundation_prs": ["8f7bdc1722740286b3f01cda25523cd0961d6f69"],
+  "foundation_size": "large",
+  "build_verifiable_on_macos": false,
+  "evidence": "Adds a whole new GDExtension ABI level: classdb_construct_object3 + classdb_register_extension_class6 + create_instance3 (refcount-aware inits) across gdextension.{cpp,h}, gdextension_interface.{cpp,json}, class_db.{cpp,h}, object.h, ref_counted.{cpp,h} (218+/26-). HEAD caps at create_instance2 / register_extension_class5 / construct_object2 and the surface is fork-renamed+generated (foundry_extension.cpp:240/324, foundry_extension_interface.gen.h ~2900 lines, .json ~8600 lines).",
+  "notes": "Root foundation of the 4.7 GDExtension refcount ABI series. New ABI version must be threaded into the renamed, code-generated foundry_extension interface. Genuinely large and low value for a fork controlling its own extensions."
+ },
+ {
+  "pr": 118563,
+  "sha": "81cecf018b0ab5ce648e9834a76fd88b20de2602",
+  "decision": "blocked-large",
+  "foundation_prs": ["8f7bdc1722740286b3f01cda25523cd0961d6f69"],
+  "foundation_size": "large",
+  "build_verifiable_on_macos": false,
+  "evidence": "Maps deprecated GDExtension types in gdextension_interface.json in favor of GDExtensionClassCreateInstance3 / register_extension_class6, which do not exist on HEAD (max create_instance2/class5) and live in the renamed foundry_extension_interface.json.",
+  "notes": "Pure follow-up on the absent 118214 ABI; nothing to map without first porting the create_instance3/class6 ABI."
+ },
+ {
+  "pr": 118750,
+  "sha": "b2b661d3bcff045e95d25005e96473b77b23a9bc",
+  "decision": "blocked-large",
+  "foundation_prs": ["8f7bdc1722740286b3f01cda25523cd0961d6f69"],
+  "foundation_size": "large",
+  "build_verifiable_on_macos": false,
+  "evidence": "Cleans up types for classdb_register_extension_class6 across gdextension.{cpp,h} and gdextension_interface.json (238+/58-); class6 does not exist on HEAD (max class5) and the surface is the renamed foundry_extension.cpp/.json.",
+  "notes": "Depends on the absent 118214 ABI. Cannot apply until class6 exists on the fork's renamed generated interface."
+ },
+ {
+  "pr": 118773,
+  "sha": "e91640c755044a4c6bd4ff6605b4db02d61095d3",
+  "decision": "blocked-large",
+  "foundation_prs": ["8f7bdc1722740286b3f01cda25523cd0961d6f69"],
+  "foundation_size": "large",
+  "build_verifiable_on_macos": false,
+  "evidence": "Rewires placeholder classes onto create_instance3 in class_db.cpp (8+/2-). ObjectFoundryExtension has no create_instance3 field on HEAD (create_instance2 is the max; see foundry_extension.cpp:324).",
+  "notes": "Small diff but strictly depends on the absent create_instance3 field from 118214. Blocked on that ABI."
+ },
+ {
+  "pr": 119254,
+  "sha": "303364492042fbd7a3562ff8f4ddbad85c168bfd",
+  "decision": "blocked-large",
+  "foundation_prs": ["8f7bdc1722740286b3f01cda25523cd0961d6f69"],
+  "foundation_size": "large",
+  "build_verifiable_on_macos": false,
+  "evidence": "Deprecates GDExtension object_cast_to and classdb_get_class_tag in favor of is_class casts, editing gdextension_interface.cpp/.json (18+/2-) on the renamed foundry_extension_interface diverged surface, and belongs to the 4.7 cast/refcount deprecation wave built atop 118214.",
+  "notes": "Deprecation shim on the renamed generated GDExtension interface, tied to the 4.7 ABI series; no independently useful non-compat part."
+ }
+]

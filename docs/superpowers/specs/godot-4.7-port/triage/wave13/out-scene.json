@@ -1,0 +1,152 @@
+[
+ {
+  "pr": 113509,
+  "sha": "220b0b2f74d8e089481b140c42a42992a76dd6fc",
+  "decision": "port-now",
+  "foundation_prs": [],
+  "foundation_size": "none",
+  "build_verifiable_on_macos": true,
+  "evidence": "Single self-contained edit to ParticleProcessMaterial::_update_shader() generated-shader string: accumulates working velocity in USERDATA1.xyz and assigns VELOCITY = final_velocity once at the end. No absent C++ symbol; USERDATA1/VELOCITY are shader builtins already present in the particle process shader. particle_process_material.cpp diverges from 4.6.3 by only 1 line (Foundry rename). No separate rendering-side companion exists in the 4.6.3..4.7 velocity-PR set (b2b4c04ac0 is this same squashed commit).",
+  "notes": "Blocker premise ('rendering-side copy-shader VELOCITY interp absent') is speculative: particle frame interpolation already existed in 4.6.3. Change is behavior-neutral-to-improved and applies cleanly; verify particle motion visually in editor."
+ },
+ {
+  "pr": 113605,
+  "sha": "a7060f5c86b6df128b6dd6c5277278b8bfb7817c",
+  "decision": "port-now",
+  "foundation_prs": [],
+  "foundation_size": "none",
+  "build_verifiable_on_macos": true,
+  "evidence": "Skeleton3D::_process_modifiers() pre-image on develop (scene/3d/skeleton_3d.cpp:1076-1112) matches the PR's pre-image byte-for-byte (the influence<1.0 old_poses/new_poses interpolation block). PR only adds NEW private members (Bone::modifier_applied, modifier_pose_cache, make_bone_modified(), Skeleton3D::modifier_updating) and rewrites that block to per-bone tracking. No absent dependency; the fork's 196-line skeleton_3d divergence is deprecated-modification removal that does not touch this path.",
+  "notes": "Self-contained perf optimization (removes per-frame O(n) pose-vector allocations when a SkeletonModifier3D influence < 1). Applies with only line-offset."
+ },
+ {
+  "pr": 115577,
+  "sha": "563c22673b962c0d6daa114ada1607de68d04949",
+  "decision": "skip",
+  "foundation_prs": [],
+  "foundation_size": "none",
+  "build_verifiable_on_macos": false,
+  "evidence": "Include-graph churn across 15 resource/3d headers: removes transitive includes (e.g. scene/resources/texture.h, curve.h) and substitutes forward declarations. No behavior change. Removing transitive includes risks breaking unrelated TUs in the fork that relied on them, and the payoff is only compile-time.",
+  "notes": "Applies cleanly in isolation but zero user value with real fork-wide breakage risk; not worth the blast radius."
+ },
+ {
+  "pr": 115957,
+  "sha": "42c771d160f553ae93a03d50eb7d62f97735100b",
+  "decision": "blocked-large",
+  "foundation_prs": ["42c771d160f553ae93a03d50eb7d62f97735100b"],
+  "foundation_size": "large",
+  "build_verifiable_on_macos": false,
+  "evidence": "Introduces new subsystem scene/debugger/view_3d_controller.{cpp,h} (763 + 326 lines, absent on develop: no View3DController symbol anywhere) and rewrites ~1223 lines of editor/scene/3d/node_3d_editor_plugin.cpp plus runtime_node_select. This is the 4.7 editor/runtime cursor-manipulator refactor; it IS its own foundation, not a small enabling commit.",
+  "notes": "Genuine large 4.7-only rework with a new controller class; not a mechanical port."
+ },
+ {
+  "pr": 116795,
+  "sha": "4b70dacebab32563a68b2f540154c03769ca37bd",
+  "decision": "skip",
+  "foundation_prs": [],
+  "foundation_size": "none",
+  "build_verifiable_on_macos": false,
+  "evidence": "~590-line mechanical decoupling refactor across text_server_adv/fb: moves RenderingServer::canvas_item_add_{msdf,lcd}_texture_rect_region calls out of TextServer into new ImageTexture::draw_{msdf,lcd}_rect_region wrappers and drops the RS-null guards. All RS APIs already exist on develop, so no absent infra; the image_texture.cpp addition is trivial, but the bulk is high-conflict mechanical rewrite with no user-facing behavior change.",
+  "notes": "Not blocked by any absent symbol; deprioritized as low-value large refactor with heavy conflict surface in vendored-adjacent text-server modules."
+ },
+ {
+  "pr": 117030,
+  "sha": "269ccadae07a7cffdb18dcace644c97b3d67fef9",
+  "decision": "port-now",
+  "foundation_prs": [],
+  "foundation_size": "none",
+  "build_verifiable_on_macos": true,
+  "evidence": "Develop has all pre-image symbols (Animation::TypeHash, Track::thash, _track_update_hash, track_get_type_hash at scene/resources/animation.h; AHashMap<TypeHash,...> track_cache at animation_mixer.h). PR is a self-contained 4-file keying swap (TypeHash uint32 hash -> TrackCacheID uint64 pointer-based get_unique_id). It PRE-DATES the big 117277 rework (117030 < 117277), so it targets pre-rework code = develop's state; it does NOT depend on AnimationNodeInstance.",
+  "notes": "Applies to current animation_mixer; moderate regression surface (changes track-cache keying semantics) but fixes hash-collision keying. Independent of the 4.7 AnimationTree rework."
+ },
+ {
+  "pr": 117277,
+  "sha": "96436e33f9120ce2f3728bdefcfee01c8e10533a",
+  "decision": "blocked-large",
+  "foundation_prs": ["96436e33f9120ce2f3728bdefcfee01c8e10533a"],
+  "foundation_size": "large",
+  "build_verifiable_on_macos": false,
+  "evidence": "This IS the 4.7 'Optimize AnimationTree & Improve internals' rework (squashed commit 1a5d818ea9): 29 files, +1441/-886, introduces AnimationNodeInstance (absent on develop) and rewrites animation_tree.{cpp,h} (+611/-... ), blend_tree, node_state_machine, blend_space. It is the foundation the other blocked animation PRs depend on, not a dependent.",
+  "notes": "Verified-absent 4.7 feature (AnimationTree/blend-space rework). Large diverged surface; blocks 118791 and 120059."
+ },
+ {
+  "pr": 117334,
+  "sha": "a74ec70626e5645973dacd22e1a5b5e8dc9cf910",
+  "decision": "port-now",
+  "foundation_prs": ["f3ec4cee64bc26b8a99d13f045f243de5df1f4e5"],
+  "foundation_size": "small",
+  "build_verifiable_on_macos": true,
+  "evidence": "Polygon2D fast-path uses RS::mesh_surface_update_{vertex,attribute,index}_region and mesh_set_custom_aabb, all present on develop (servers/rendering/rendering_server.h:420,432). polygon_2d.{cpp,h} diverge from 4.6.3 by only 1 line (rename). The AABB regression it introduces is fixed by companion #119872 (f3ec4cee64, a 2-line polygon_2d.cpp addition adding mesh_set_custom_aabb calls) which is in the 4.7 range.",
+  "notes": "Port this PR together with the small companion #119872. 'Dependency' is a same-file follow-up bugfix, not absent infra."
+ },
+ {
+  "pr": 118791,
+  "sha": "9eda898eb81064f7f0c4480a25b4f9c93204c612",
+  "decision": "blocked-large",
+  "foundation_prs": ["96436e33f9120ce2f3728bdefcfee01c8e10533a"],
+  "foundation_size": "large",
+  "build_verifiable_on_macos": false,
+  "evidence": "Moves dirty-filter state onto AnimationNodeInstance, which does not exist on develop (grep -rl AnimationNodeInstance scene/animation/ returns nothing). AnimationNodeInstance is introduced only by the 117277 rework (foundation 96436e33). Cannot be ported without that large rework first.",
+  "notes": "Genuinely gated on the absent 4.7 AnimationTree rework, not a small foundation."
+ },
+ {
+  "pr": 118836,
+  "sha": "c2ad2d1fb17b6b79252e5e28fce324126faf7ae9",
+  "decision": "skip",
+  "foundation_prs": [],
+  "foundation_size": "none",
+  "build_verifiable_on_macos": false,
+  "evidence": "Diff is purely removing the SNAME() wrapper from ADD_SIGNAL(MethodInfo(SNAME(\"...\"))) call sites in 5 files (animation_blend_tree/mixer/player/tree + graph_frame). No MethodInfo-macro dependency is actually required (MethodInfo already takes a const char*); it compiles as-is. Pure micro-cleanup with zero behavior value.",
+  "notes": "Applies cleanly but is zero-value churn touching animation files; skip rather than spend a port slot."
+ },
+ {
+  "pr": 120059,
+  "sha": "6c325574cd8818ce6da0b27300ce0b6632d5f82a",
+  "decision": "blocked-large",
+  "foundation_prs": ["96436e33f9120ce2f3728bdefcfee01c8e10533a"],
+  "foundation_size": "large",
+  "build_verifiable_on_macos": false,
+  "evidence": "Removes _validate_animation_graph and reworks blend-weight checks across 14 animation files; _validate_animation_graph does not exist on develop (grep returns nothing) because develop predates the 117277 rework that added it. The 14-file blend-tree/state-machine surface is the post-rework shape.",
+  "notes": "Gated on the absent 4.7 AnimationTree rework (foundation 96436e33)."
+ },
+ {
+  "pr": 92282,
+  "sha": "553315ced85f89602f8b882da43ef92f170655bf",
+  "decision": "skip",
+  "foundation_prs": [],
+  "foundation_size": "small",
+  "build_verifiable_on_macos": false,
+  "evidence": "PropertyListHelper is present on develop; the PR adds a small self-contained property_filter feature (~25 lines in property_list_helper.{cpp,h}) and then rewrites ~280 lines of Curve property handling to use it. curve.cpp is NOT diverged (only curve.h, 3 lines rename), so it would apply cleanly, but it is a large structural rewrite of Curve resource property handling with no user-facing behavior change.",
+  "notes": "Not blocked (dependency present, low conflict) but deprioritized: pure refactor, no behavior value, and a real behavioral-regression surface not worth the risk."
+ },
+ {
+  "pr": 116681,
+  "sha": "9a39e0c6e729fff10627ac55c2bf02614f1018e0",
+  "decision": "port-now",
+  "foundation_prs": [],
+  "foundation_size": "none",
+  "build_verifiable_on_macos": true,
+  "evidence": "Adds TabContainer::_as_tab_control() helper and rewrites get_tab_control/get_tab_idx_from_control/_get_tab_controls to iterate via Node::iterate_children() with ERR_THREAD_GUARD. iterate_children() already exists on develop (scene/main/node.h:518) and as_sortable_control/children_removing are standard. tab_container.{cpp,h} diverge from 4.6.3 by only 1 line (rename), so the blocker premise ('multi-scene-workspace-diverged TabContainer') is false.",
+  "notes": "Applies cleanly; minor perf improvement (avoids building a full Vector for single-index tab lookups) plus thread guards. Stale deferral."
+ },
+ {
+  "pr": 118277,
+  "sha": "4c8cdd2ec0ded601362bce8ac5d14be563f1f4f6",
+  "decision": "port-now",
+  "foundation_prs": [],
+  "foundation_size": "none",
+  "build_verifiable_on_macos": true,
+  "evidence": "develop's RichTextLabel Item struct still has ObjectID owner (rich_text_label.h:183), the same _clear_children() (:189), virtual ~Item() (:201), and static inline RID_PtrOwner<Item,true> items (:584) - the PR's pre-image matches exactly. The fork's rich_text_label divergence is only the Foundry rename + DISABLE_DEPRECATED compat-method removal, none of which touch the Item RID model. Blocker premise ('diverged Item model still holds ObjectID owner') is the unchanged base, not a conflict.",
+  "notes": "RID-ownership restructure (self-freeing ~Item, pre-sized owner {65536,1048576}, owner moved into ItemDropcap/ItemImage/ItemFont). Moderate care needed on the .cpp owner-assignment call sites, but no absent API."
+ },
+ {
+  "pr": 119367,
+  "sha": "f04809882bf1437532256a51473c765677f466aa",
+  "decision": "port-now",
+  "foundation_prs": [],
+  "foundation_size": "none",
+  "build_verifiable_on_macos": true,
+  "evidence": "Core change is TreeItem::select(int, bool p_set_as_cursor = true) signature + filesystem_dock selection-preservation rework; select_single_item/get_next_selected/deselect_all all present on develop (scene/gui/tree.h). filesystem_dock.cpp diverges from 4.6.3 by only 9 lines and tree.cpp/h by ~26 (rename/dedup). The only clean-break friction is the added #ifndef DISABLE_DEPRECATED _select_bind_compat_119367 method + tree.compat.inc, which the fork strips - drop them; no absent infra.",
+  "notes": "Medium port (10 files, real editor UX value: filesystem dock keeps selection after operations). Adapt by omitting the DISABLE_DEPRECATED compat shim per the fork's clean-break policy."
+ }
+]
