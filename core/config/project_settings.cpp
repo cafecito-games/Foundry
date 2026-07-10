@@ -906,6 +906,10 @@ void ProjectSettings::clear_project_state_for_reload() {
 	autoloads.clear();
 	global_groups.clear();
 	scene_groups_cache.clear();
+	// Drop the memoized global class list so get_global_class_list() re-reads the opened
+	// project's global_script_class_cache.cfg instead of the shell's cached (empty) one.
+	global_class_list.clear();
+	is_global_class_list_loaded = false;
 	resource_path = String();
 	project_loaded = false;
 
