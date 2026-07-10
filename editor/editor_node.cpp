@@ -7198,6 +7198,15 @@ bool EditorNode::load_project_in_process(const String &p_project_path) {
 		EditorSettings::get_singleton()->load_favorites_and_recent_dirs();
 	}
 
+	// Re-apply the opened project's saved debug options. DebuggerEditorPlugin applied
+	// them once in NOTIFICATION_READY against the projectless shell's defaults; without
+	// this the Debug menu (and its backends: live debug, script reload, file server,
+	// keep-server-open) keep the shell defaults until the user toggles them. The apply
+	// is idempotent and reads the metadata reloaded just above.
+	if (DebuggerEditorPlugin::get_singleton() != nullptr) {
+		DebuggerEditorPlugin::get_singleton()->apply_project_debug_options();
+	}
+
 	// Reload export presets from the opened project so Project > Export and run-target
 	// preset resolution reflect it (EditorExport was constructed before any project).
 	if (EditorExport::get_singleton() != nullptr) {

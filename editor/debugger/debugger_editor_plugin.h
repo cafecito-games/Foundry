@@ -41,6 +41,8 @@ class DebuggerEditorPlugin : public EditorPlugin {
 	FOUNDRY_CLASS(DebuggerEditorPlugin, EditorPlugin);
 
 private:
+	static DebuggerEditorPlugin *singleton;
+
 	PopupMenu *debug_menu = nullptr;
 	EditorFileServer *file_server = nullptr;
 	RunInstancesDialog *run_instances_dialog = nullptr;
@@ -59,15 +61,37 @@ private:
 		RUN_MULTIPLE_INSTANCES,
 	};
 
+	// Single source of truth pairing each persisted debug option with its menu item
+	// and default state, so applying project metadata and querying menu state stay in
+	// sync. The order matches the order options are applied on load.
+	struct DebugOption {
+		MenuOptions option;
+		const char *metadata_key;
+		bool default_value;
+	};
+	static const DebugOption debug_option_table[];
+
 	bool initializing = true;
 
+	int _find_debug_option(const String &p_metadata_key) const;
+	void _apply_debug_option(MenuOptions p_option, bool p_enabled);
 	void _update_debug_options();
 	void _notification(int p_what);
 	void _menu_option(int p_option);
 
 public:
+	static DebuggerEditorPlugin *get_singleton() { return singleton; }
+
 	virtual String get_plugin_name() const override { return "Debugger"; }
 	bool has_main_screen() const override { return false; }
+
+	// Reset the debug menu and its backends to match the current project's saved
+	// `debug_options` metadata. Idempotent: it toggles each option only when its state
+	// differs, so it can run after NOTIFICATION_READY when a project is loaded in-process.
+	void apply_project_debug_options() { _update_debug_options(); }
+	// Whether the debug menu item backing the given `debug_options` metadata key is
+	// currently checked. Intended for tests/automation.
+	bool is_debug_option_checked(const String &p_metadata_key) const;
 
 	DebuggerEditorPlugin(PopupMenu *p_menu);
 	~DebuggerEditorPlugin();
