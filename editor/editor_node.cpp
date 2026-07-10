@@ -7181,6 +7181,12 @@ bool EditorNode::load_project_in_process(const String &p_project_path) {
 	}
 	layout_store = memnew(EditorLayoutStore);
 
+	// The project's layout has not been loaded yet (that happens in _sources_changed
+	// once the first scan completes). Suppress layout saves until then, or the delayed
+	// save that _reveal_workspace_from_projectless_shell() schedules by re-enabling docks
+	// would overwrite the project's editor_layout.cfg with the blank shell workspace.
+	load_editor_layout_done = false;
+
 	_reveal_workspace_from_projectless_shell();
 
 	// Re-apply the active feature profile now that the workspace is exposed: the reveal
