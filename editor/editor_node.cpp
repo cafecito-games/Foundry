@@ -161,6 +161,7 @@
 #include "editor/project_upgrade/project_upgrade_tool.h"
 #include "editor/run/editor_run.h"
 #include "editor/run/editor_run_bar.h"
+#include "editor/run/editor_run_native.h"
 #include "editor/run/game_view_plugin.h"
 #include "editor/run/run_target_manager.h"
 #include "editor/scene/3d/material_3d_conversion_plugins.h"
@@ -1522,9 +1523,12 @@ void EditorNode::_sources_changed(bool p_exist) {
 			OS::get_singleton()->benchmark_dump();
 		}
 
-		// Start preview thread now that it's safe.
-		if (!singleton->cmdline_mode) {
+		// Start preview thread now that it's safe. The projectless shell may have
+		// already started it before loading a project in-process, so guard the
+		// single-start service against a double start.
+		if (!singleton->cmdline_mode && !singleton->resource_preview_started) {
 			EditorResourcePreview::get_singleton()->start();
+			singleton->resource_preview_started = true;
 		}
 
 		// Set initial focus for screen reader users.
@@ -7039,13 +7043,273 @@ void EditorNode::_finish_projectless_shell_startup() {
 	// after the layout load rather than only during READY/construction.
 	_apply_projectless_shell_restrictions();
 
-	if (!cmdline_mode) {
+	if (!cmdline_mode && !resource_preview_started) {
 		EditorResourcePreview::get_singleton()->start();
+		resource_preview_started = true;
 	}
 
 	show_startup_dialog();
 
 	get_tree()->create_timer(1.0f)->connect("timeout", callable_mp(this, &EditorNode::_remove_lock_file));
+}
+
+void EditorNode::_reveal_workspace_from_projectless_shell() {
+	// Inverse of _apply_projectless_shell_restrictions(): a project is now loaded, so
+	// expose the project workspace, bottom drawer, docks, run bar, and full menus that
+	// the launcher had suppressed behind the startup dialog.
+	if (renderer != nullptr) {
+		renderer->set_disabled(false);
+	}
+
+	// scene_workspace visibility is derived from projectless_shell (and the global
+	// screen selection), so refresh it now that projectless_shell has been cleared.
+	update_global_screen_visibility();
+
+	if (bottom_drawer_strip != nullptr) {
+		bottom_drawer_strip->show();
+	}
+	if (bottom_panel != nullptr) {
+		bottom_panel->show();
+	}
+	project_run_bar->show();
+
+	if (ImportDock::get_singleton() != nullptr) {
+		editor_dock_manager->set_dock_enabled(ImportDock::get_singleton(), true);
+	}
+	if (FileSystemDock::get_singleton() != nullptr) {
+		editor_dock_manager->set_dock_enabled(FileSystemDock::get_singleton(), true);
+	}
+
+	// Re-enable the File/Project menu entries that the shell locked down to Quit /
+	// Open Project. Separators are skipped: they carry no meaningful enabled state and
+	// toggling one has no represented item to update on the macOS native menu bar.
+	// Conditional per-item states (undo/redo, Save All, recent scenes) are recomputed
+	// by each menu's about_to_popup handler, so a blanket re-enable here is corrected
+	// the moment the user opens the menu.
+	_enable_all_menu_items(file_menu);
+	_enable_all_menu_items(project_menu);
+}
+
+void EditorNode::_enable_all_menu_items(PopupMenu *p_menu) {
+	if (p_menu == nullptr) {
+		return;
+	}
+	for (int i = 0; i < p_menu->get_item_count(); i++) {
+		if (p_menu->is_item_separator(i)) {
+			continue;
+		}
+		p_menu->set_item_disabled(i, false);
+	}
+}
+
+bool EditorNode::load_project_in_process(const String &p_project_path) {
+	ERR_FAIL_COND_V_MSG(!projectless_shell, false, "load_project_in_process is only valid in the projectless startup shell.");
+
+	// The first scan must still be pending-then-skipped (projectless boot) and no scan
+	// may be in flight, otherwise re-arming the first scan below is unsafe.
+	EditorFileSystem *editor_file_system = EditorFileSystem::get_singleton();
+	if (editor_file_system == nullptr || waiting_for_first_scan || editor_file_system->doing_first_scan() || editor_file_system->is_scanning()) {
+		return false;
+	}
+
+	const String config_path = p_project_path.path_join("project.foundry");
+	if (!FileAccess::exists(config_path)) {
+		return false;
+	}
+
+	// Reset to a clean, no-project ProjectSettings state before setup(). This also clears
+	// the shell's resource path so setup() honors p_project_path (OS::get_resource_dir()
+	// mirrors resource_path, and a stale value makes setup() re-resolve the already-loaded
+	// launch-dir project), and drops any settings/autoloads a prior partial project load
+	// left behind so they cannot leak into the opened project. Remember the shell's path
+	// so any failure below can restore it, independent of whether the caller relaunches.
+	const String shell_resource_path = ProjectSettings::get_singleton()->get_resource_path();
+	ProjectSettings::get_singleton()->clear_project_state_for_reload();
+
+	// Load the project's settings on top of the shell's defaults. p_ignore_override is
+	// true to match an editor launch (main.cpp passes `editor`), so runtime-only
+	// override.cfg / project_settings_override values are not applied and cannot be
+	// persisted back into project.foundry by the save() below.
+	const Error setup_err = ProjectSettings::get_singleton()->setup(p_project_path, String(), false, true);
+	if (setup_err != OK || !ProjectSettings::get_singleton()->is_project_loaded()) {
+		// A failed setup may itself have parsed part of the bad project; clear that back
+		// out and restore the shell's resource path so the shell is left clean.
+		ProjectSettings::get_singleton()->clear_project_state_for_reload();
+		ProjectSettings::get_singleton()->set_reload_resource_path(shell_resource_path);
+		return false;
+	}
+
+	// Refuse to adopt a project that sits in a self-contained editor's own directory,
+	// exactly as a fresh editor launch does (main.cpp), so editor data never mixes with
+	// project files.
+	if (EditorPaths::get_singleton() != nullptr && EditorPaths::get_singleton()->is_self_contained() &&
+			ProjectSettings::get_singleton()->get_resource_path() == OS::get_singleton()->get_executable_path().get_base_dir()) {
+		ProjectSettings::get_singleton()->clear_project_state_for_reload();
+		ProjectSettings::get_singleton()->set_reload_resource_path(shell_resource_path);
+		return false;
+	}
+
+	// From here the running process is committed to the project. Clearing the shell
+	// hint before re-deriving EditorPaths is required, or the project data dir
+	// (`.godot/`) would not be created.
+	Engine::get_singleton()->set_projectless_editor_shell_hint(false);
+	projectless_shell = false;
+
+	if (EditorPaths::get_singleton() != nullptr) {
+		EditorPaths::get_singleton()->initialize_project_data_dir();
+	}
+
+	// Load the opened project's ResourceUID cache and resolve autoloads stored as
+	// uid:// entries, as main.cpp does right after ProjectSettings::setup(). Without
+	// this, uid://-backed autoload paths resolve to empty and would not instantiate.
+	// clear() first because load_from_cache() returns without resetting when the opened
+	// project has no uid_cache.bin, which would otherwise leak the projectless shell's
+	// launch-directory UID mappings into the project (a cold launch starts empty).
+	ResourceUID::get_singleton()->clear();
+	ResourceUID::get_singleton()->load_from_cache(true);
+	ProjectSettings::get_singleton()->fix_autoload_paths();
+
+	// Replay the project-derived engine configuration a fresh project boot applies in
+	// main.cpp right after ProjectSettings::setup(); otherwise the opened project runs
+	// with the launcher's defaults until a restart. The editor keeps managing its own
+	// low-processor sleep interval, so only the project-scoped values are re-applied.
+	Engine::get_singleton()->set_physics_ticks_per_second(GLOBAL_GET("physics/common/physics_ticks_per_second"));
+	Engine::get_singleton()->set_max_physics_steps_per_frame(GLOBAL_GET("physics/common/max_physics_steps_per_frame"));
+	Engine::get_singleton()->set_physics_jitter_fix(GLOBAL_GET("physics/common/physics_jitter_fix"));
+	Engine::get_singleton()->set_max_fps(GLOBAL_GET("application/run/max_fps"));
+	OS::get_singleton()->set_delta_smoothing(GLOBAL_GET("application/run/delta_smoothing"));
+	OS::get_singleton()->ensure_user_data_dir();
+	// application/run/low_processor_mode is intentionally not applied here: in the
+	// editor the low-processor policy is owned by the update spinner
+	// (interface/editor/update_continuously), which was already set at boot.
+
+	// Load the opened project's audio bus layout and (re)load its theme/font, as a
+	// normal editor launch does after ProjectSettings::setup(); otherwise custom audio
+	// buses and a project's gui/theme/custom keep the launcher defaults until restart.
+	AudioServer::get_singleton()->load_default_bus_layout();
+	ThemeDB::get_singleton()->initialize_theme();
+
+	// Reload project-scoped editor settings that were cached against the shell's paths:
+	// project metadata (recent scenes, debug options, preview locale, ...) and the
+	// favorites / recent-directory lists. Both are re-read from the opened project now
+	// that the shell hint is cleared and EditorPaths points at the project.
+	if (EditorSettings::get_singleton() != nullptr) {
+		EditorSettings::get_singleton()->reload_project_metadata();
+		EditorSettings::get_singleton()->load_favorites_and_recent_dirs();
+	}
+
+	// Reload export presets from the opened project so Project > Export and run-target
+	// preset resolution reflect it (EditorExport was constructed before any project).
+	if (EditorExport::get_singleton() != nullptr) {
+		EditorExport::get_singleton()->reload_presets_for_project();
+	}
+
+	// Reload native run targets (and rebuild the deploy popup) from the opened project
+	// for the same reason: EditorRunNative loaded run_targets.cfg against the shell.
+	if (EditorRunNative::get_singleton() != nullptr) {
+		EditorRunNative::get_singleton()->reload_for_project();
+	}
+
+	// Reload the script editor cache from the opened project before the project layout
+	// restores open scripts and breakpoints, so it does not carry (or later persist)
+	// the projectless shell's cache into the project.
+	if (ScriptEditorController::get_singleton() != nullptr) {
+		ScriptEditorController::get_singleton()->reload_script_editor_cache();
+	}
+
+	// Re-latch the project upgrade tool from the opened project's metadata (the editor
+	// constructor read it against the projectless shell). _execute_upgrades() runs it
+	// after the first scan, so a project with a pending upgrade is not skipped.
+	if (project_upgrade_tool != nullptr && EditorSettings::get_singleton() != nullptr) {
+		run_project_upgrade_tool = EditorSettings::get_singleton()->get_project_metadata(project_upgrade_tool->META_PROJECT_UPGRADE_TOOL, project_upgrade_tool->META_RUN_ON_RESTART, false);
+		if (run_project_upgrade_tool) {
+			project_upgrade_tool->begin_upgrade();
+		}
+	}
+
+	// Persist default settings into a freshly created (touched) project exactly as a
+	// normal editor open does, so an empty project.foundry gets a config_version and
+	// the initial settings instead of remaining unversioned. Only a genuinely empty
+	// project is written: unlike a fresh process, this reuses the ProjectSettings
+	// singleton, so saving an already-populated project could merge settings left over
+	// from an earlier (possibly failed) setup into it.
+	if (DisplayServer::get_singleton()->window_can_draw()) {
+		const String project_settings_path = ProjectSettings::get_singleton()->get_resource_path().path_join("project.foundry");
+		if (FileAccess::get_size(project_settings_path) < 10) {
+			const HashMap<String, Variant> initial_settings = get_initial_settings();
+			for (const KeyValue<String, Variant> &initial_setting : initial_settings) {
+				ProjectSettings::get_singleton()->set_setting(initial_setting.key, initial_setting.value);
+			}
+			ProjectSettings::get_singleton()->save();
+		}
+	}
+
+	// Swap the projectless layout store for the project's layout store (resolved from
+	// the now project-pointed EditorPaths). The first scan's completion handler
+	// (_sources_changed) restores the project layout through it.
+	if (layout_store != nullptr) {
+		memdelete(layout_store);
+	}
+	layout_store = memnew(EditorLayoutStore);
+
+	// The project's layout has not been loaded yet (that happens in _sources_changed
+	// once the first scan completes). Suppress layout saves until then, or the delayed
+	// save that _reveal_workspace_from_projectless_shell() schedules by re-enabling docks
+	// would overwrite the project's editor_layout.cfg with the blank shell workspace.
+	load_editor_layout_done = false;
+
+	_reveal_workspace_from_projectless_shell();
+
+	// Re-apply the active feature profile now that the workspace is exposed: the reveal
+	// unconditionally re-enabled the Import/FileSystem docks, so a profile that disables
+	// them must get the final say (matches the NOTIFICATION_READY ordering).
+	if (feature_profile_manager != nullptr) {
+		feature_profile_manager->notify_changed();
+	}
+
+	// Apply the full project-settings-derived editor state (window title, scene
+	// viewport/rendering settings, fallback locale, project translations, texture
+	// import refresh) so nothing lingers on the projectless-shell defaults. This is
+	// the same consolidated path a live project-settings change runs.
+	_update_from_settings();
+
+	// Replay the preview theme and locale a normal open applies in NOTIFICATION_READY
+	// from the (now reloaded) project metadata.
+	const CanvasItemEditor::ThemePreviewMode theme_preview_mode = (CanvasItemEditor::ThemePreviewMode)(int)EditorSettings::get_singleton()->get_project_metadata("2d_editor", "theme_preview", CanvasItemEditor::THEME_PREVIEW_PROJECT);
+	update_preview_themes(theme_preview_mode);
+	const String preview_locale = EditorSettings::get_singleton()->get_project_metadata("editor_metadata", "preview_locale", String());
+	if (!preview_locale.is_empty() && TranslationServer::get_singleton()->has_translation_for_locale(preview_locale, true)) {
+		set_preview_locale(preview_locale);
+	}
+
+	if (startup_dialog != nullptr) {
+		startup_dialog->hide_startup_dialog();
+	}
+
+	// Reload the opened project's global class cache into ScriptServer before the scan.
+	// The build-task bootstrap providers run on the next tick (before the scan), so they
+	// must see the project's global classes now, not the projectless/previous ones that
+	// ScriptServer::init_languages() loaded at boot.
+	ScriptServer::reload_global_classes_from_project();
+
+	// Rebuild the autoload cache and register singleton placeholder globals from the
+	// loaded project before the scan runs. The first scan analyzes project scripts
+	// (which may reference autoload singletons) before it instantiates autoloads, so
+	// the placeholders must exist now -- the autoload settings were constructed against
+	// the projectless shell's empty autoload list.
+	if (ProjectSettingsEditor::get_singleton() != nullptr) {
+		ProjectSettingsEditor::get_singleton()->reload_project_autoloads();
+	}
+
+	// Re-arm and run the first scan exactly as a normal project boot would, so global
+	// classes, editor plugins, autoloads, and imports are materialized. Its completion
+	// runs _sources_changed(), which reloads shader parameters, restores the project
+	// layout, loads any deferred scene, and starts the resource preview service.
+	waiting_for_first_scan = true;
+	editor_file_system->rearm_first_scan_for_project();
+	_begin_first_scan();
+
+	return true;
 }
 
 void EditorNode::_show_run_targets_configuration_on_first_open() {

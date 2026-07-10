@@ -873,6 +873,51 @@ Error ProjectSettings::setup(const String &p_path, const String &p_main_pack, bo
 	return err;
 }
 
+void ProjectSettings::set_reload_resource_path(const String &p_resource_path) {
+	resource_path = p_resource_path;
+	project_loaded = false;
+}
+
+void ProjectSettings::clear_project_state_for_reload() {
+	// Return to a clean, no-project state matching a fresh singleton before loading a
+	// different project in-process. Each setting is reverted to its registered default
+	// (the value a plain GLOBAL_DEF would yield), and the project-scoped autoload and
+	// global-group tables are dropped. This prevents settings applied by a previously
+	// (possibly partially) loaded project -- e.g. after a malformed project.foundry
+	// dropped the launch into the projectless shell -- from leaking into the next one.
+	List<StringName> project_only_keys;
+	for (RBMap<StringName, VariantContainer>::Element *E = props.front(); E; E = E->next()) {
+		if (E->get().order < NO_BUILTIN_ORDER_BASE) {
+			// Engine-registered (builtin) setting: revert any project override to its default.
+			E->get().variant = E->get().initial;
+		} else {
+			// Setting that exists only because a project defined it: remove it entirely so
+			// get_setting_with_override()/has_setting() no longer see it.
+			project_only_keys.push_back(E->key());
+		}
+	}
+	for (const StringName &name : project_only_keys) {
+		props.erase(name);
+	}
+	// Feature tags and their overrides are rebuilt from the loaded project's settings
+	// (application/config/custom_features) by setup().
+	custom_features.clear();
+	feature_overrides.clear();
+	autoloads.clear();
+	global_groups.clear();
+	scene_groups_cache.clear();
+	// Drop the memoized global class list so get_global_class_list() re-reads the opened
+	// project's global_script_class_cache.cfg instead of the shell's cached (empty) one.
+	global_class_list.clear();
+	is_global_class_list_loaded = false;
+	resource_path = String();
+	project_loaded = false;
+
+	// Bump the version so GLOBAL_GET_CACHED consumers re-read settings that were reset
+	// back to their defaults here rather than serving stale cached values.
+	_version++;
+}
+
 bool ProjectSettings::has_setting(const String &p_var) const {
 	_THREAD_SAFE_METHOD_
 

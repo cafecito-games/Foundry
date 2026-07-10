@@ -1232,10 +1232,27 @@ void EditorAutoloadSettings::_bind_methods() {
 	ADD_SIGNAL(MethodInfo("autoload_changed"));
 }
 
-EditorAutoloadSettings::EditorAutoloadSettings() {
-	ProjectSettings::get_singleton()->add_hidden_prefix("autoload/");
+void EditorAutoloadSettings::reload_from_project_settings() {
+	// Unregister the singleton globals from a previous cache before rebuilding, so an
+	// in-process reload (projectless shell -> project) does not leave autoload names
+	// from an earlier project visible to scripts. Empty at construction, so a no-op then.
+	// Skip languages that reserve the name (mirroring the add path), so a reserved-name
+	// autoload never erases the language's own global (e.g. Foundry Script's `foundry`).
+	for (const AutoloadInfo &info : autoload_cache) {
+		if (info.is_singleton) {
+			for (int i = 0; i < ScriptServer::get_language_count(); i++) {
+				ScriptLanguage *language = ScriptServer::get_language(i);
+				if (language->get_reserved_global_names().has(info.name)) {
+					continue;
+				}
+				language->remove_named_global_constant(info.name);
+			}
+		}
+	}
 
 	// Make first cache
+	autoload_cache.clear();
+
 	List<PropertyInfo> props;
 	ProjectSettings::get_singleton()->get_property_list(&props);
 	for (const PropertyInfo &pi : props) {
@@ -1282,6 +1299,14 @@ EditorAutoloadSettings::EditorAutoloadSettings() {
 
 		autoload_cache.push_back(info);
 	}
+}
+
+EditorAutoloadSettings::EditorAutoloadSettings() {
+	ProjectSettings::get_singleton()->add_hidden_prefix("autoload/");
+
+	// Build the initial cache (and register singleton placeholder globals so name
+	// references resolve before scripts are parsed) from the loaded project settings.
+	reload_from_project_settings();
 
 	HBoxContainer *hbc = memnew(HBoxContainer);
 	add_child(hbc);

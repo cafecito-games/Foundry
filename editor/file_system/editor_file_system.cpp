@@ -1118,6 +1118,28 @@ void EditorFileSystem::skip_first_scan_for_projectless_shell() {
 	set_process(false);
 }
 
+void EditorFileSystem::rearm_first_scan_for_project() {
+	// Only meaningful after skip_first_scan_for_projectless_shell() tore the scan
+	// machinery down: a project has now been loaded in-process, so restore the
+	// first-scan state a normal project boot would have had before its first scan().
+	ERR_FAIL_COND(first_scan);
+	ERR_FAIL_COND(scanning || scanning_changes);
+	ERR_FAIL_COND(thread.is_started());
+
+	first_scan = true;
+	ResourceImporter::load_on_startup = _load_resource_on_startup;
+
+	// Re-derive the project-dependent state the constructor captured before any project
+	// existed: the filesystem type is that of the opened project's res:// (a FAT/exFAT
+	// project must force-scan for changes), and re-read the import setting for good
+	// measure.
+	reimport_on_missing_imported_files = GLOBAL_GET("editor/import/reimport_missing_imported_files");
+	Ref<DirAccess> da = DirAccess::create(DirAccess::ACCESS_RESOURCES);
+	using_fat32_or_exfat = (da->get_filesystem_type() == "FAT32" || da->get_filesystem_type() == "EXFAT");
+
+	set_process(true);
+}
+
 void EditorFileSystem::scan() {
 	if (false /*&& bool(Globals::get_singleton()->get("debug/disable_scan"))*/) {
 		return;

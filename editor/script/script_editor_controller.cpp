@@ -94,8 +94,7 @@ ScriptEditorController::ScriptEditorController() {
 	ED_SHORTCUT("script_editor/clear_recent", TTRC("Clear Recent Scripts"));
 	ED_SHORTCUT("script_editor/replace_in_files", TTRC("Replace in Files..."), KeyModifierMask::CMD_OR_CTRL | KeyModifierMask::SHIFT | Key::R);
 
-	script_editor_cache.instantiate();
-	script_editor_cache->load(EditorPaths::get_singleton()->get_project_settings_dir().path_join("script_editor_cache.cfg"));
+	reload_script_editor_cache();
 
 	trim_trailing_whitespace_on_save = EDITOR_GET("text_editor/behavior/files/trim_trailing_whitespace_on_save");
 	trim_final_newlines_on_save = EDITOR_GET("text_editor/behavior/files/trim_final_newlines_on_save");
@@ -398,6 +397,15 @@ void ScriptEditorController::restore_cached_breakpoints() {
 
 void ScriptEditorController::save_script_editor_cache() const {
 	script_editor_cache->save(EditorPaths::get_singleton()->get_project_settings_dir().path_join("script_editor_cache.cfg"));
+}
+
+void ScriptEditorController::reload_script_editor_cache() {
+	// Re-instantiate so any launcher-scoped cache is discarded, then load from the
+	// active project's settings dir. Used at construction and again when a project is
+	// loaded in-process from the projectless startup shell, before the project layout
+	// restores open scripts and breakpoints.
+	script_editor_cache.instantiate();
+	script_editor_cache->load(EditorPaths::get_singleton()->get_project_settings_dir().path_join("script_editor_cache.cfg"));
 }
 
 void ScriptEditorController::add_recent_script(const String &p_path) {

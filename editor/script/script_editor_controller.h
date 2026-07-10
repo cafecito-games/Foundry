@@ -164,6 +164,9 @@ public:
 	const Vector<ScriptEditorView *> &get_views() const { return views; }
 
 	Ref<ConfigFile> get_script_editor_cache() const { return script_editor_cache; }
+	// (Re)loads the script editor cache from the active project's settings dir,
+	// discarding any cache loaded against a previous (projectless shell) path.
+	void reload_script_editor_cache();
 	Array get_cached_breakpoints_for_script(const String &p_path) const;
 	void restore_cached_breakpoints();
 	void save_script_editor_cache() const;

@@ -145,6 +145,11 @@ void EditorRunNative::_refresh_run_target_manager() {
 	run_target_manager.load(RUN_TARGETS_CONFIG_PATH);
 }
 
+void EditorRunNative::reload_for_project() {
+	_refresh_run_target_manager();
+	_rebuild_popup();
+}
+
 void EditorRunNative::_rebuild_popup() {
 	PopupMenu *popup = remote_debug->get_popup();
 	popup->clear();

@@ -117,6 +117,10 @@ void ProjectSettingsEditor::init_autoloads() {
 	autoload_settings->init_autoloads();
 }
 
+void ProjectSettingsEditor::reload_project_autoloads() {
+	autoload_settings->reload_from_project_settings();
+}
+
 void ProjectSettingsEditor::_setting_edited(const String &p_name) {
 	const String full_name = general_settings_inspector->get_full_item_path(p_name);
 	if (full_name.begins_with(ProjectSettings::EDITOR_SETTING_OVERRIDE_PREFIX)) {

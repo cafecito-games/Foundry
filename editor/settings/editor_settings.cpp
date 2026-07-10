@@ -1585,6 +1585,15 @@ void EditorSettings::save_project_metadata() {
 	project_metadata_dirty = false;
 }
 
+void EditorSettings::reload_project_metadata() {
+	// Drop the cached project metadata (which may have been loaded against the
+	// projectless shell's path) so the next access reloads it from the currently
+	// active project's `_get_project_metadata_path()`. Any launcher-side dirty state
+	// is discarded on purpose: it belongs to the shell, not the opened project.
+	project_metadata = Ref<ConfigFile>();
+	project_metadata_dirty = false;
+}
+
 void EditorSettings::set_favorites(const Vector<String> &p_favorites, bool p_update_file_dialog) {
 	set_favorites_bind(p_favorites);
 	if (p_update_file_dialog) {
@@ -1673,6 +1682,13 @@ Vector<String> EditorSettings::get_recent_dirs() const {
 }
 
 void EditorSettings::load_favorites_and_recent_dirs() {
+	// Clear first so this can be re-run (e.g. when a project is loaded in-process from
+	// the projectless startup shell) to replace launcher-scoped lists with the opened
+	// project's, rather than appending to them.
+	favorites.clear();
+	favorite_properties.clear();
+	recent_dirs.clear();
+
 	String favorites_file;
 	String favorite_properties_file;
 	String recent_dirs_file;

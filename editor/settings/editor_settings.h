@@ -174,6 +174,10 @@ public:
 	void set_project_metadata(const String &p_section, const String &p_key, const Variant &p_data);
 	Variant get_project_metadata(const String &p_section, const String &p_key, const Variant &p_default) const;
 	void save_project_metadata();
+	// Discards the cached project metadata so the next access reloads it from the
+	// active project. Used when a project is loaded in-process from the projectless
+	// startup shell, whose EditorPaths pointed the metadata file elsewhere.
+	void reload_project_metadata();
 
 	void set_favorites(const Vector<String> &p_favorites, bool p_update_file_dialog = true);
 	void set_favorites_bind(const Vector<String> &p_favorites);

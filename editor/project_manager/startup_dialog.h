@@ -188,6 +188,12 @@ public:
 
 	bool is_visible_dialog() const;
 
+	// Opens the given project from the startup dialog: an in-process load when running
+	// as the projectless shell, a graceful project switch when a project is already
+	// open, or a process relaunch as a fallback. This is the shared entry the recent
+	// cards and the Manage tab's Open action route through.
+	Error open_project_path(const String &p_path);
+
 	void show_startup_dialog();
 	void hide_startup_dialog();
 

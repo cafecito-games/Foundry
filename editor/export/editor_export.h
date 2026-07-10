@@ -86,6 +86,10 @@ public:
 	Vector<Ref<EditorExportPlugin>> get_export_plugins();
 
 	void load_config();
+	// Clears the current export presets and reloads them from the active project's
+	// export_presets.cfg. Used when a project is loaded in-process from the projectless
+	// startup shell, whose EditorExport was constructed before any project existed.
+	void reload_presets_for_project();
 	void update_export_presets();
 	bool poll_export_platforms();
 	bool has_preset_with_name(const String &p_name, int p_exclude_index = -1) const;

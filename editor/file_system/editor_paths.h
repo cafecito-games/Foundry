@@ -90,6 +90,13 @@ public:
 	// once the singleton is created.
 	static String get_data_dir_path();
 
+	// (Re-)derives the project-specific data directory from the currently loaded
+	// project and creates it on disk (`.godot/`, `.fsignore`, `editor/`, imported
+	// assets). Safe to call again after boot: the projectless startup shell defers
+	// this until a project is loaded in-process, at which point the project data dir
+	// must be materialized without a process relaunch.
+	void initialize_project_data_dir();
+
 	static void create();
 	static void free();
 
