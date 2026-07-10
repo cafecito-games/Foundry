@@ -91,6 +91,11 @@ public:
 	static void thread_exit();
 
 	static void global_classes_clear();
+	// Rebuilds the global class table from the loaded project's
+	// global_script_class_cache.cfg. Run at language init and again when a project is
+	// loaded in-process, so consumers that run before the first filesystem scan see the
+	// opened project's global classes rather than the projectless/previous ones.
+	static void reload_global_classes_from_project();
 	static void add_global_class(const StringName &p_class, const StringName &p_base, const StringName &p_language, const String &p_path, bool p_is_abstract, bool p_is_tool, bool p_is_trait, bool p_is_enum = false);
 	static void remove_global_class(const StringName &p_class);
 	static void remove_global_class_by_path(const String &p_path);

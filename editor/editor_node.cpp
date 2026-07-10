@@ -7209,6 +7209,12 @@ bool EditorNode::load_project_in_process(const String &p_project_path) {
 		startup_dialog->hide_startup_dialog();
 	}
 
+	// Reload the opened project's global class cache into ScriptServer before the scan.
+	// The build-task bootstrap providers run on the next tick (before the scan), so they
+	// must see the project's global classes now, not the projectless/previous ones that
+	// ScriptServer::init_languages() loaded at boot.
+	ScriptServer::reload_global_classes_from_project();
+
 	// Rebuild the autoload cache and register singleton placeholder globals from the
 	// loaded project before the scan runs. The first scan analyzes project scripts
 	// (which may reference autoload singletons) before it instantiates autoloads, so

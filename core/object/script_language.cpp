@@ -288,22 +288,24 @@ Error ScriptServer::unregister_language(const ScriptLanguage *p_language) {
 	return ERR_DOES_NOT_EXIST;
 }
 
-void ScriptServer::init_languages() {
-	{ // Load global classes.
-		global_classes_clear();
+void ScriptServer::reload_global_classes_from_project() {
+	global_classes_clear();
 
-		Array script_classes = ProjectSettings::get_singleton()->get_global_class_list();
-		for (const Variant &script_class : script_classes) {
-			Dictionary c = script_class;
-			if (!c.has("class") || !c.has("language") || !c.has("path") || !c.has("base") || !c.has("is_abstract") || !c.has("is_tool")) {
-				continue;
-			}
-			// `is_trait` and `is_enum` were added later, so they may be absent in older caches.
-			const bool is_trait = c.has("is_trait") && c["is_trait"];
-			const bool is_enum = c.has("is_enum") && c["is_enum"];
-			add_global_class(c["class"], c["base"], c["language"], c["path"], c["is_abstract"], c["is_tool"], is_trait, is_enum);
+	Array script_classes = ProjectSettings::get_singleton()->get_global_class_list();
+	for (const Variant &script_class : script_classes) {
+		Dictionary c = script_class;
+		if (!c.has("class") || !c.has("language") || !c.has("path") || !c.has("base") || !c.has("is_abstract") || !c.has("is_tool")) {
+			continue;
 		}
+		// `is_trait` and `is_enum` were added later, so they may be absent in older caches.
+		const bool is_trait = c.has("is_trait") && c["is_trait"];
+		const bool is_enum = c.has("is_enum") && c["is_enum"];
+		add_global_class(c["class"], c["base"], c["language"], c["path"], c["is_abstract"], c["is_tool"], is_trait, is_enum);
 	}
+}
+
+void ScriptServer::init_languages() {
+	reload_global_classes_from_project();
 
 	HashSet<ScriptLanguage *> langs_to_init;
 	{
