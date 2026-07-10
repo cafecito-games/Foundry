@@ -1236,10 +1236,16 @@ void EditorAutoloadSettings::reload_from_project_settings() {
 	// Unregister the singleton globals from a previous cache before rebuilding, so an
 	// in-process reload (projectless shell -> project) does not leave autoload names
 	// from an earlier project visible to scripts. Empty at construction, so a no-op then.
+	// Skip languages that reserve the name (mirroring the add path), so a reserved-name
+	// autoload never erases the language's own global (e.g. Foundry Script's `foundry`).
 	for (const AutoloadInfo &info : autoload_cache) {
 		if (info.is_singleton) {
 			for (int i = 0; i < ScriptServer::get_language_count(); i++) {
-				ScriptServer::get_language(i)->remove_named_global_constant(info.name);
+				ScriptLanguage *language = ScriptServer::get_language(i);
+				if (language->get_reserved_global_names().has(info.name)) {
+					continue;
+				}
+				language->remove_named_global_constant(info.name);
 			}
 		}
 	}

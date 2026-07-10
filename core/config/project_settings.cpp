@@ -908,6 +908,10 @@ void ProjectSettings::clear_project_state_for_reload() {
 	scene_groups_cache.clear();
 	resource_path = String();
 	project_loaded = false;
+
+	// Bump the version so GLOBAL_GET_CACHED consumers re-read settings that were reset
+	// back to their defaults here rather than serving stale cached values.
+	_version++;
 }
 
 bool ProjectSettings::has_setting(const String &p_var) const {
