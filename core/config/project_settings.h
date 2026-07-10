@@ -203,6 +203,11 @@ public:
 	// mirrors resource_path), and restores the shell's path if the load fails. It does
 	// not touch the already-registered setting defaults.
 	void set_reload_resource_path(const String &p_resource_path);
+	// Reverts to a clean, no-project ProjectSettings state (settings back to their
+	// registered defaults, autoloads/global groups dropped, resource path cleared)
+	// before an in-process setup() of a different project, so state left by a prior
+	// (possibly partially loaded) project cannot leak into the newly opened one.
+	void clear_project_state_for_reload();
 
 	Error load_custom(const String &p_path);
 	Error save_custom(const String &p_path = "", const CustomMap &p_custom = CustomMap(), const Vector<String> &p_custom_features = Vector<String>(), bool p_merge_with_current = true);

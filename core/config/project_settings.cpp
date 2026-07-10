@@ -878,6 +878,22 @@ void ProjectSettings::set_reload_resource_path(const String &p_resource_path) {
 	project_loaded = false;
 }
 
+void ProjectSettings::clear_project_state_for_reload() {
+	// Return to a clean, no-project state matching a fresh singleton before loading a
+	// different project in-process. Each setting is reverted to its registered default
+	// (the value a plain GLOBAL_DEF would yield), and the project-scoped autoload and
+	// global-group tables are dropped. This prevents settings applied by a previously
+	// (possibly partially) loaded project -- e.g. after a malformed project.foundry
+	// dropped the launch into the projectless shell -- from leaking into the next one.
+	for (RBMap<StringName, VariantContainer>::Element *E = props.front(); E; E = E->next()) {
+		E->get().variant = E->get().initial;
+	}
+	autoloads.clear();
+	global_groups.clear();
+	resource_path = String();
+	project_loaded = false;
+}
+
 bool ProjectSettings::has_setting(const String &p_var) const {
 	_THREAD_SAFE_METHOD_
 

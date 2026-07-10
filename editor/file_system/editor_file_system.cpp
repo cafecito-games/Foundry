@@ -1129,6 +1129,15 @@ void EditorFileSystem::rearm_first_scan_for_project() {
 
 	first_scan = true;
 	ResourceImporter::load_on_startup = _load_resource_on_startup;
+
+	// Re-derive the project-dependent state the constructor captured before any project
+	// existed: the filesystem type is that of the opened project's res:// (a FAT/exFAT
+	// project must force-scan for changes), and re-read the import setting for good
+	// measure.
+	reimport_on_missing_imported_files = GLOBAL_GET("editor/import/reimport_missing_imported_files");
+	Ref<DirAccess> da = DirAccess::create(DirAccess::ACCESS_RESOURCES);
+	using_fat32_or_exfat = (da->get_filesystem_type() == "FAT32" || da->get_filesystem_type() == "EXFAT");
+
 	set_process(true);
 }
 

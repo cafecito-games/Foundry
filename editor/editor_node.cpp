@@ -7046,13 +7046,14 @@ bool EditorNode::load_project_in_process(const String &p_project_path) {
 		return false;
 	}
 
-	// Clear the shell's resource path so setup() honors p_project_path: OS::get_resource_dir()
+	// Reset to a clean, no-project ProjectSettings state before setup(). This also clears
+	// the shell's resource path so setup() honors p_project_path (OS::get_resource_dir()
 	// mirrors resource_path, and a stale value makes setup() re-resolve the already-loaded
-	// (launch-dir) project instead. Remember the shell's path so any failure below can
-	// restore it and leave the projectless shell exactly as it was, independent of whether
-	// the caller relaunches.
+	// launch-dir project), and drops any settings/autoloads a prior partial project load
+	// left behind so they cannot leak into the opened project. Remember the shell's path
+	// so any failure below can restore it, independent of whether the caller relaunches.
 	const String shell_resource_path = ProjectSettings::get_singleton()->get_resource_path();
-	ProjectSettings::get_singleton()->set_reload_resource_path(String());
+	ProjectSettings::get_singleton()->clear_project_state_for_reload();
 
 	// Load the project's settings on top of the shell's defaults. p_ignore_override is
 	// true to match an editor launch (main.cpp passes `editor`), so runtime-only
