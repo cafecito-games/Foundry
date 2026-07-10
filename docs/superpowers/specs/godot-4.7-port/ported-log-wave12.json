@@ -1,0 +1,26 @@
+{
+  "wave": 12,
+  "goal": "Challenge wave-11 'absent 4.7 infra' reverts: port the small foundation commits that were never ported, then re-apply the dependents. Premise per HANDOFF NEXT-SESSION.",
+  "base": "origin/develop 96f87df168 (waves 1-11 merged)",
+  "cluster": "node_3d_editor_plugin trackball + Follow-Selection + gizmo-handle-highlight chain",
+  "file": "editor/scene/3d/node_3d_editor_plugin.{cpp,h}",
+  "validation": {
+    "build_dev_build": "clean, 0 errors",
+    "test_suite": "3069 passed / 0 failed / 3 skipped (DISPLAY=:1 full run)"
+  },
+  "entries": [
+    {"pr": "109976", "upstream_sha": "12782eac8e", "local_sha": "a9a5ec3406", "title": "Add trackball-style rotation for 3D transform gizmo", "role": "trackball foundation", "outcome": "ported", "conflict": true, "note": "Resolved against fork's guarded _finish_gizmo_instances + multi-scene _rebind_gizmo_scenarios; added trackball_sphere_instance free and scenario rebind in fork style."},
+    {"pr": "115543", "upstream_sha": "6006596fd8", "local_sha": null, "title": "Don't highlight gizmos while in freelook", "outcome": "already-on-head", "note": "Empty cherry-pick; already present."},
+    {"pr": "115794", "upstream_sha": "afb5839696", "local_sha": "de08a0d376", "title": "Make trackball rotation optional as toggle option of Node3DEditorTool", "outcome": "ported", "conflict": false},
+    {"pr": "115992", "upstream_sha": "415ddc83e1", "local_sha": "e05b63736a", "title": "Fix trackball not highlighting immediately when toggling Use Trackball", "role": "defines update_transform_gizmo_highlight()", "outcome": "ported", "conflict": true, "note": "New fn inserted where fork has apply_preview_camera_state; kept both."},
+    {"pr": null, "upstream_sha": "996353e457", "local_sha": null, "title": "Fix viewport text not clearing after commit/cancel of custom editor gizmo handles", "outcome": "already-on-head", "note": "Empty cherry-pick; already present."},
+    {"pr": null, "upstream_sha": "c899f017e2", "local_sha": "966727df87", "title": "Make it so consecutive presses of Begin Rotate Transformation shortcut enables trackball rotation", "outcome": "ported", "conflict": false},
+    {"pr": "116159", "upstream_sha": "3201f3bb5d", "local_sha": "9993056584", "title": "Immediately update transform gizmo handle highlight when changing tool modes", "role": "WAVE-11 REVERT re-applied (was blocked on update_transform_gizmo_highlight)", "outcome": "ported", "conflict": false},
+    {"pr": null, "upstream_sha": "040e19e75d", "local_sha": "8051ed9029", "title": "Add Follow Selection in the 3D editor by using Center Selection twice", "role": "follow-selection foundation", "outcome": "ported", "conflict": true, "note": "fork multi-scene EditorNode::get_focused_scene_tree_dock() vs upstream SceneTreeDock::get_singleton(); kept fork accessor + follow-mode block."},
+    {"pr": "117214", "upstream_sha": "005a661bd0", "local_sha": "e22681826c", "title": "Reset follow mode focus count on selection change", "outcome": "ported", "conflict": false},
+    {"pr": null, "upstream_sha": "28ebd60ce2", "local_sha": "db5db33d5a", "title": "Reset follow mode focus count after committing a transform", "outcome": "ported", "conflict": false},
+    {"pr": "117923", "upstream_sha": "59e6ff8cc5", "local_sha": "60f9314722", "title": "Reset follow mode count on subgizmo point switch", "role": "WAVE-11 REVERT re-applied (was blocked on times_focused_consecutively/_reset_follow_mode_count)", "outcome": "ported", "conflict": false},
+    {"pr": "120063", "upstream_sha": "d92a1acc36", "local_sha": "310ed18435", "title": "Fix trackball when use local space is enabled", "role": "WAVE-11 REVERT re-applied (was blocked on is_trackball in EditData)", "outcome": "ported", "conflict": false}
+  ],
+  "summary": {"ported": 10, "already_on_head": 2, "reverts_reapplied": ["116159", "117923", "120063"]}
+}
