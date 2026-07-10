@@ -32,6 +32,7 @@
 
 #include "editor/automation/editor_automation_snapshot.h"
 #include "editor/automation/editor_workflow_test_driver.h"
+#include "editor/debugger/debugger_editor_plugin.h"
 #include "editor/docks/scene_tree_dock.h"
 #include "editor/editor_node.h"
 #include "editor/editor_scene_workspace.h"
@@ -1375,6 +1376,134 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 
 	result.ok = true;
 	result.message = "Project autoloads were instantiated after in-process load.";
+	result.details = state;
+	return result;
+#else
+	return _failure_with_message(p_driver, result.workflow, "In-process project load requires an editor (TOOLS_ENABLED) build.");
+#endif
+}
+
+EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::run_projectless_shell_open_in_process_debug_options(EditorWorkflowTestDriver &p_driver) {
+	Result result;
+	result.workflow = "projectless_shell_open_in_process_debug_options";
+
+	p_driver.begin_workflow();
+
+	p_driver.set_step("wait_for_editor_ready");
+	if (!p_driver.wait_editor_idle(30000)) {
+		return _failure_from_driver(p_driver, result.workflow, "Editor did not become ready in projectless mode.");
+	}
+
+#ifdef TOOLS_ENABLED
+	EditorNode *editor_node = EditorNode::get_singleton();
+	StartupDialog *dialog = editor_node != nullptr ? editor_node->get_startup_dialog() : nullptr;
+	if (editor_node == nullptr || dialog == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Editor node or startup dialog was unavailable.");
+	}
+
+	DebuggerEditorPlugin *debugger_plugin = DebuggerEditorPlugin::get_singleton();
+	if (debugger_plugin == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "DebuggerEditorPlugin singleton was unavailable.");
+	}
+
+	// The projectless shell applied debug options once (NOTIFICATION_READY) against the
+	// shell defaults: deploy-remote/live-debug/reload-scripts on, everything else off.
+	// Verifying the pre-open state makes the post-open assertions meaningful.
+	p_driver.set_step("verify_shell_debug_defaults");
+	if (!debugger_plugin->is_debug_option_checked("run_deploy_remote_debug") ||
+			!debugger_plugin->is_debug_option_checked("run_live_debug") ||
+			!debugger_plugin->is_debug_option_checked("run_reload_scripts") ||
+			debugger_plugin->is_debug_option_checked("run_debug_collisions") ||
+			debugger_plugin->is_debug_option_checked("run_debug_navigation")) {
+		return _failure_with_message(p_driver, result.workflow, "Debug menu did not start at the projectless shell defaults.");
+	}
+
+	// Materialize a throwaway project whose saved debug options differ from the shell
+	// defaults in both directions: enable two options that default off and disable two
+	// that default on. The metadata lives in the project's editor data dir, exactly
+	// where EditorSettings::get_project_metadata() reads it after the in-process load
+	// re-points EditorPaths at the project.
+	p_driver.set_step("create_temp_project");
+	const String project_dir = EditorPaths::get_singleton()->get_temp_dir().path_join("inproc_debug_opts_" + String::num_uint64(OS::get_singleton()->get_ticks_usec()));
+	{
+		Ref<DirAccess> dir = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+		if (dir.is_null() || dir->make_dir_recursive(project_dir) != OK) {
+			return _failure_with_message(p_driver, result.workflow, "Could not create temp project directory.");
+		}
+		Ref<FileAccess> config = FileAccess::open(project_dir.path_join("project.foundry"), FileAccess::WRITE);
+		if (config.is_null()) {
+			return _failure_with_message(p_driver, result.workflow, "Could not write temp project.foundry.");
+		}
+		config->store_line("config_version=5");
+		config->close();
+
+		Ref<ConfigFile> metadata;
+		metadata.instantiate();
+		metadata->set_value("debug_options", "run_debug_collisions", true);
+		metadata->set_value("debug_options", "run_debug_navigation", true);
+		metadata->set_value("debug_options", "run_deploy_remote_debug", false);
+		metadata->set_value("debug_options", "run_live_debug", false);
+		// ConfigFile::save() does not create parent directories, so materialize the
+		// project's editor data dir first.
+		const String metadata_dir = project_dir.path_join(ProjectSettings::get_singleton()->get_project_data_dir_name()).path_join("editor");
+		if (dir->make_dir_recursive(metadata_dir) != OK) {
+			return _failure_with_message(p_driver, result.workflow, "Could not create project editor data directory.");
+		}
+		const String metadata_path = metadata_dir.path_join("project_metadata.cfg");
+		if (metadata->save(metadata_path) != OK) {
+			return _failure_with_message(p_driver, result.workflow, "Could not write project debug-option metadata.");
+		}
+	}
+
+	p_driver.set_step("open_project_in_process");
+	const Error open_err = dialog->open_project_path(project_dir);
+	if (open_err != OK) {
+		return _failure_with_message(p_driver, result.workflow, vformat("open_project_path returned error %d.", open_err));
+	}
+
+	p_driver.set_step("wait_for_project_scan");
+	if (!p_driver.wait_editor_idle(30000)) {
+		return _failure_from_driver(p_driver, result.workflow, "Editor did not become ready after in-process project load.");
+	}
+	if (!p_driver.wait_import_idle(30000)) {
+		return _failure_from_driver(p_driver, result.workflow, "Filesystem/import pipeline did not settle after in-process load.");
+	}
+
+	p_driver.set_step("verify_project_state");
+	Dictionary state = p_driver.read_editor_state();
+	if (String(state.get("mode", String())) != "project") {
+		return _failure_with_message(p_driver, result.workflow, "Editor must report mode == project after in-process load.");
+	}
+
+	// The opened project's debug options must now be reflected: the options it enables
+	// are checked, and -- the crux of this fix -- the shell defaults it disables are
+	// turned back off rather than left checked.
+	p_driver.set_step("verify_debug_options_applied");
+	if (!debugger_plugin->is_debug_option_checked("run_debug_collisions")) {
+		return _failure_with_message(p_driver, result.workflow, "run_debug_collisions should be enabled after in-process load.");
+	}
+	if (!debugger_plugin->is_debug_option_checked("run_debug_navigation")) {
+		return _failure_with_message(p_driver, result.workflow, "run_debug_navigation should be enabled after in-process load.");
+	}
+	if (debugger_plugin->is_debug_option_checked("run_deploy_remote_debug")) {
+		return _failure_with_message(p_driver, result.workflow, "run_deploy_remote_debug should be disabled after in-process load.");
+	}
+	if (debugger_plugin->is_debug_option_checked("run_live_debug")) {
+		return _failure_with_message(p_driver, result.workflow, "run_live_debug should be disabled after in-process load.");
+	}
+	// run_reload_scripts defaulted on in the shell and the project does not override it,
+	// so it must remain on (a re-apply must not clobber untouched options).
+	if (!debugger_plugin->is_debug_option_checked("run_reload_scripts")) {
+		return _failure_with_message(p_driver, result.workflow, "run_reload_scripts should remain enabled after in-process load.");
+	}
+
+	p_driver.set_step("assert_no_new_errors");
+	if (!p_driver.assert_no_new_errors()) {
+		return _failure_from_driver(p_driver, result.workflow);
+	}
+
+	result.ok = true;
+	result.message = "Project debug options were re-applied after in-process load.";
 	result.details = state;
 	return result;
 #else

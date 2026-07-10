@@ -42,7 +42,24 @@
 #include "editor/settings/editor_settings.h"
 #include "scene/gui/popup_menu.h"
 
+DebuggerEditorPlugin *DebuggerEditorPlugin::singleton = nullptr;
+
+const DebuggerEditorPlugin::DebugOption DebuggerEditorPlugin::debug_option_table[] = {
+	{ RUN_DEPLOY_REMOTE_DEBUG, "run_deploy_remote_debug", true },
+	{ RUN_FILE_SERVER, "run_file_server", false },
+	{ RUN_DEBUG_COLLISIONS, "run_debug_collisions", false },
+	{ RUN_DEBUG_PATHS, "run_debug_paths", false },
+	{ RUN_DEBUG_NAVIGATION, "run_debug_navigation", false },
+	{ RUN_DEBUG_AVOIDANCE, "run_debug_avoidance", false },
+	{ RUN_DEBUG_CANVAS_REDRAW, "run_debug_canvas_redraw", false },
+	{ RUN_LIVE_DEBUG, "run_live_debug", true },
+	{ RUN_RELOAD_SCRIPTS, "run_reload_scripts", true },
+	{ SERVER_KEEP_OPEN, "server_keep_open", false },
+};
+
 DebuggerEditorPlugin::DebuggerEditorPlugin(PopupMenu *p_debug_menu) {
+	singleton = this;
+
 	EditorDebuggerServer::initialize();
 
 	ED_SHORTCUT("debugger/step_into", TTRC("Step Into"), Key::F11);
@@ -105,6 +122,9 @@ DebuggerEditorPlugin::DebuggerEditorPlugin(PopupMenu *p_debug_menu) {
 }
 
 DebuggerEditorPlugin::~DebuggerEditorPlugin() {
+	if (singleton == this) {
+		singleton = nullptr;
+	}
 	EditorDebuggerServer::deinitialize();
 	memdelete(file_server);
 }
@@ -226,46 +246,44 @@ void DebuggerEditorPlugin::_notification(int p_what) {
 	}
 }
 
-void DebuggerEditorPlugin::_update_debug_options() {
-	bool check_deploy_remote = EditorSettings::get_singleton()->get_project_metadata("debug_options", "run_deploy_remote_debug", true);
-	bool check_file_server = EditorSettings::get_singleton()->get_project_metadata("debug_options", "run_file_server", false);
-	bool check_debug_collisions = EditorSettings::get_singleton()->get_project_metadata("debug_options", "run_debug_collisions", false);
-	bool check_debug_paths = EditorSettings::get_singleton()->get_project_metadata("debug_options", "run_debug_paths", false);
-	bool check_debug_navigation = EditorSettings::get_singleton()->get_project_metadata("debug_options", "run_debug_navigation", false);
-	bool check_debug_avoidance = EditorSettings::get_singleton()->get_project_metadata("debug_options", "run_debug_avoidance", false);
-	bool check_debug_canvas_redraw = EditorSettings::get_singleton()->get_project_metadata("debug_options", "run_debug_canvas_redraw", false);
-	bool check_live_debug = EditorSettings::get_singleton()->get_project_metadata("debug_options", "run_live_debug", true);
-	bool check_reload_scripts = EditorSettings::get_singleton()->get_project_metadata("debug_options", "run_reload_scripts", true);
-	bool check_server_keep_open = EditorSettings::get_singleton()->get_project_metadata("debug_options", "server_keep_open", false);
+int DebuggerEditorPlugin::_find_debug_option(const String &p_metadata_key) const {
+	for (const DebugOption &debug_option : debug_option_table) {
+		if (p_metadata_key == debug_option.metadata_key) {
+			return &debug_option - debug_option_table;
+		}
+	}
+	return -1;
+}
 
-	if (check_deploy_remote) {
-		_menu_option(RUN_DEPLOY_REMOTE_DEBUG);
+void DebuggerEditorPlugin::_apply_debug_option(MenuOptions p_option, bool p_enabled) {
+	// _menu_option() flips the current state and drives the matching backend side
+	// effect, so only invoke it when the menu item does not already reflect the
+	// desired value. This keeps applying options idempotent (safe to re-run on an
+	// in-process project load) and, unlike toggling only "on", also turns options
+	// back off when a project disables one the previous state had enabled.
+	if (debug_menu->is_item_checked(debug_menu->get_item_index(p_option)) != p_enabled) {
+		_menu_option(p_option);
 	}
-	if (check_file_server) {
-		_menu_option(RUN_FILE_SERVER);
+}
+
+bool DebuggerEditorPlugin::is_debug_option_checked(const String &p_metadata_key) const {
+	const int index = _find_debug_option(p_metadata_key);
+	ERR_FAIL_COND_V_MSG(index < 0, false, vformat("Unknown debug option '%s'.", p_metadata_key));
+	return debug_menu->is_item_checked(debug_menu->get_item_index(debug_option_table[index].option));
+}
+
+void DebuggerEditorPlugin::_update_debug_options() {
+	// Applying saved options must not persist them back into project metadata: only an
+	// explicit user toggle records a change. _menu_option() guards its writes behind
+	// `initializing`, so raise it for the duration of the apply regardless of whether
+	// this runs during the initial NOTIFICATION_READY or a later in-process load.
+	const bool was_initializing = initializing;
+	initializing = true;
+
+	for (const DebugOption &debug_option : debug_option_table) {
+		const bool enabled = EditorSettings::get_singleton()->get_project_metadata("debug_options", debug_option.metadata_key, debug_option.default_value);
+		_apply_debug_option(debug_option.option, enabled);
 	}
-	if (check_debug_collisions) {
-		_menu_option(RUN_DEBUG_COLLISIONS);
-	}
-	if (check_debug_paths) {
-		_menu_option(RUN_DEBUG_PATHS);
-	}
-	if (check_debug_navigation) {
-		_menu_option(RUN_DEBUG_NAVIGATION);
-	}
-	if (check_debug_avoidance) {
-		_menu_option(RUN_DEBUG_AVOIDANCE);
-	}
-	if (check_debug_canvas_redraw) {
-		_menu_option(RUN_DEBUG_CANVAS_REDRAW);
-	}
-	if (check_live_debug) {
-		_menu_option(RUN_LIVE_DEBUG);
-	}
-	if (check_reload_scripts) {
-		_menu_option(RUN_RELOAD_SCRIPTS);
-	}
-	if (check_server_keep_open) {
-		_menu_option(SERVER_KEEP_OPEN);
-	}
+
+	initializing = was_initializing;
 }
