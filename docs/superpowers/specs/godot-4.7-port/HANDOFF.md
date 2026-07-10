@@ -5,6 +5,54 @@ This document lets a fresh session continue porting Godot 4.7 into Foundry with 
 
 ---
 
+## UPDATE 2026-07-09 — WAVE 13 done (absent-infra re-audit of remaining blocked mass) — read this first
+
+Branch **`feature/godot-4.7-port-wave13`** off develop `5a284a3c95` (wave-12 merged). Executed the
+wave-12 "next-session continuation": re-audited the **112 non-big-infra `blocked` items** in
+`retriage/CONSOLIDATED.json` via the absent-infra method (6 parallel read-only triage agents,
+`triage/wave13/out-*.json`; full write-up in **`WAVE13.md`**, dispositions in `ported-log-wave13.json`).
+
+**Net: 14 ported** (3 small module foundations + 11 dependents/companions), strict `dev_mode` build
+clean, full suite **3070 passed / 0 failed / 3 skipped**. Ported: #115177 (render env buffers),
+#115602 (OpenXR user-presence, foundation #115190), #116681 (TabContainer lookup), #113509 (particle
+velocity), #117334 + #119872 (Polygon2D fast-path + AABB), #113605 (Skeleton3D modifiers perf),
+#118277 (RichTextLabel RID), #96748 (glTF multi-UV), #118867 (GridMap navmesh octant, foundation
+#118280), #118975 (OpenXR generic-controller action map, foundation #110778).
+
+**The absent-infra tail is thinning.** Unlike wave-12 (trackball/follow had genuinely small
+extractable foundations), wave-13's blocked mass is dominated by (a) **large 4.7-only reworks** —
+View3DController (`27c86165f7`, 1599/1368 lines gutting node_3d_editor_plugin + runtime_node_select;
+confirmed blocked-large, and 4 of its 9 dependents are MOOT because they fix bugs the rework itself
+introduced), AnimationTree internals (`AnimationNodeInstance`/`_validate_animation_graph`), the
+GDExtension refcount-ABI series (`create_instance3`/`register_extension_class6`), HDR core — and (b)
+**platform code that can't be build-verified on macOS** (WinRT/ANGLE/MSVC/iOS/Android). The real wins
+were **stale-premise re-triage** (fixes that now apply because the fork only rename-diverged:
+tab_container, rich_text_label, polygon_2d, skeleton_3d, particle_process_material each differ by 1–3
+rename lines) + three self-contained module foundations.
+
+**Deferred after conflict (never force a messy port):** #117030 (TrackCache `TypeHash`→`TrackCacheID`
+migration through 10 diverged animation regions) and #119367 (320-line FileSystemDock selection
+rework colliding with the multi-scene-diverged dock). **Confirmed skip:** the WTP-deadlock pair
+#120072/#120111 was reverted upstream by #120250.
+
+**Gotcha reconfirmed (§5):** two newly-added OpenXR extension files used `GDCLASS`; the user-presence
+one was caught during conflict resolution but the `openxr_khr_generic_controller_extension.h`
+`GDCLASS`→`FOUNDRY_CLASS` was only caught by the strict `dev_mode` build (the `agent_build.py` wrapper
+reported exit 0 while scons had exited 2 — **trust `scons: done building targets` + the error count,
+not the wrapper exit code**). Folded into its foundation commit via autosquash.
+
+**Next-session continuation:** the remaining blocked/feature-decision mass is now mostly honest
+large-effort items. Options, value-ordered: (1) the **74 `feature_decision` (B)** items in
+`retriage/CONSOLIDATED.json` still need a product yes/no (net-new features that apply cleanly). (2) The
+`OS::RENDERING_SOURCE` os.h enum primitive is extractable and macOS-compilable, but its only dependents
+(#117250/#117253) are Windows-only ANGLE fixes — port them together only when a Windows build is
+available. (3) A dedicated **View3DController** or **AnimationTree-internals** adoption effort would
+unlock their whole dependent clusters, but each is a large 4.7-only rework colliding with fork
+divergence — treat as a deliberate subsystem investment, not a port wave. (4) `editor/*` untriaged
+candidates remain the largest raw mass (high incompatible rate; grep-verify each).
+
+---
+
 ## UPDATE 2026-07-09 — WAVE 12 done (absent-infra challenge, cluster 1) — read this first
 
 Branch **`feature/godot-4.7-port-continue`** off develop `96f87df168` (pushed). Executed the

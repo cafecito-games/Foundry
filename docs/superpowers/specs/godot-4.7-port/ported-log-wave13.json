@@ -1,0 +1,88 @@
+{
+ "wave": 13,
+ "method": "absent-infra re-audit of the 112 non-big-infra CONSOLIDATED.json blocked items",
+ "ported_count": 14,
+ "deferred_after_conflict": {
+  "117030": "fork animation-internals divergence: TrackCache TypeHash->TrackCacheID migration threaded through 10 diverged regions + unrelated folded_groups drift; minor robustness value, not ported",
+  "119367": "fork FileSystemDock divergence: 320-line selection/display-mode rework collides head-on with the multi-scene workspace SCROLL_HINT/theme-variation reworked dock; editor UX nicety, not ported"
+ },
+ "ported": [
+  {
+   "pr": 115177,
+   "role": "dependent",
+   "triage": "port-now"
+  },
+  {
+   "pr": 115602,
+   "role": "dependent",
+   "triage": "port-now"
+  },
+  {
+   "pr": 116681,
+   "role": "dependent",
+   "triage": "port-now"
+  },
+  {
+   "pr": 113509,
+   "role": "dependent",
+   "triage": "port-now"
+  },
+  {
+   "pr": 117334,
+   "role": "dependent",
+   "triage": "port-now"
+  },
+  {
+   "pr": 113605,
+   "role": "dependent",
+   "triage": "port-now"
+  },
+  {
+   "pr": 118277,
+   "role": "dependent",
+   "triage": "port-now"
+  },
+  {
+   "pr": 96748,
+   "role": "dependent",
+   "triage": "port-now"
+  },
+  {
+   "pr": 118867,
+   "role": "dependent",
+   "triage": "port-now"
+  },
+  {
+   "pr": 118975,
+   "role": "dependent",
+   "triage": "port-now"
+  },
+  {
+   "pr": 119872,
+   "role": "companion(#117334)",
+   "triage": null
+  },
+  {
+   "pr": 115190,
+   "role": "foundation(#115602)",
+   "triage": null
+  },
+  {
+   "pr": 110778,
+   "role": "foundation(#118975)",
+   "triage": null
+  },
+  {
+   "pr": 118280,
+   "role": "foundation(#118867)",
+   "triage": null
+  }
+ ],
+ "triage_decisions": {
+  "skip": 33,
+  "blocked-large": 46,
+  "port-now": 14,
+  "blocked-unverifiable": 19
+ },
+ "triage_total": 112
+}
