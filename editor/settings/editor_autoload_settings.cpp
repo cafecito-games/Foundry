@@ -1233,6 +1233,17 @@ void EditorAutoloadSettings::_bind_methods() {
 }
 
 void EditorAutoloadSettings::reload_from_project_settings() {
+	// Unregister the singleton globals from a previous cache before rebuilding, so an
+	// in-process reload (projectless shell -> project) does not leave autoload names
+	// from an earlier project visible to scripts. Empty at construction, so a no-op then.
+	for (const AutoloadInfo &info : autoload_cache) {
+		if (info.is_singleton) {
+			for (int i = 0; i < ScriptServer::get_language_count(); i++) {
+				ScriptServer::get_language(i)->remove_named_global_constant(info.name);
+			}
+		}
+	}
+
 	// Make first cache
 	autoload_cache.clear();
 

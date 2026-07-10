@@ -885,9 +885,22 @@ void ProjectSettings::clear_project_state_for_reload() {
 	// global-group tables are dropped. This prevents settings applied by a previously
 	// (possibly partially) loaded project -- e.g. after a malformed project.foundry
 	// dropped the launch into the projectless shell -- from leaking into the next one.
+	List<StringName> project_only_keys;
 	for (RBMap<StringName, VariantContainer>::Element *E = props.front(); E; E = E->next()) {
-		E->get().variant = E->get().initial;
+		if (E->get().order < NO_BUILTIN_ORDER_BASE) {
+			// Engine-registered (builtin) setting: revert any project override to its default.
+			E->get().variant = E->get().initial;
+		} else {
+			// Setting that exists only because a project defined it: remove it entirely so
+			// get_setting_with_override()/has_setting() no longer see it.
+			project_only_keys.push_back(E->key());
+		}
 	}
+	for (const StringName &name : project_only_keys) {
+		props.erase(name);
+	}
+	// Feature-tag overrides are rebuilt from the loaded project's settings by setup().
+	feature_overrides.clear();
 	autoloads.clear();
 	global_groups.clear();
 	resource_path = String();
