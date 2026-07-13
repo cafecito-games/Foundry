@@ -355,6 +355,8 @@ private:
 	DockSplitContainer *right_r_vsplit = nullptr;
 	Control *center_overlay = nullptr;
 	EditorSceneWorkspace *scene_workspace = nullptr;
+	int pending_focus_tile_id = -1;
+	uint64_t pending_focus_tile_generation = 0;
 	Control *global_screen_host = nullptr;
 
 	// Main tabs.
@@ -753,6 +755,10 @@ private:
 	void _on_leaf_about_to_remove(int p_leaf_id);
 	void _on_leaf_removed(int p_leaf_id, int p_successor_leaf_id);
 	void _on_leaf_focus_requested(int p_leaf_id);
+	void _cancel_queued_focus_tile_activation();
+	void _queue_focus_tile_activation(int p_tile_id);
+	void _activate_queued_focus_tile(int p_tile_id, uint64_t p_generation);
+	void _focus_tile_internal(int p_tile_id, bool p_activate_content_if_already_focused = false);
 	void _focus_tile(int p_tile_id);
 	void _focus_script_leaf(int p_leaf_id);
 	void _complete_script_leaf_focus(int p_leaf_id);

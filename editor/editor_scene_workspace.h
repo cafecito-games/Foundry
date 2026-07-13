@@ -219,7 +219,7 @@ public:
 	WorkspaceLeafNode *get_leaf_by_id(int p_id) const;
 	WorkspaceLeafNode *get_focused_leaf() const { return get_leaf_by_id(focused_leaf_id); }
 	int get_focused_leaf_id() const { return focused_leaf_id; }
-	void set_focused_leaf(int p_id);
+	void set_focused_leaf(int p_id, bool p_activate_content = true);
 	void request_leaf_focus(int p_leaf_id);
 	int get_leaf_count() const { return leaves.size(); }
 	Vector<WorkspaceLeafNode *> get_leaves() const { return leaves; }

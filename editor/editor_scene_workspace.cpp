@@ -1080,7 +1080,7 @@ WorkspaceLeafNode *EditorSceneWorkspace::get_leaf_by_id(int p_id) const {
 	return nullptr;
 }
 
-void EditorSceneWorkspace::set_focused_leaf(int p_id) {
+void EditorSceneWorkspace::set_focused_leaf(int p_id, bool p_activate_content) {
 	ERR_FAIL_NULL(get_leaf_by_id(p_id));
 	if (focused_leaf_id == p_id) {
 		return;
@@ -1091,7 +1091,7 @@ void EditorSceneWorkspace::set_focused_leaf(int p_id) {
 	if (leaf && leaf->get_pane_tile()) {
 		last_focused_tile_id = p_id;
 	}
-	if (leaf && leaf->get_leaf_content()) {
+	if (p_activate_content && leaf && leaf->get_leaf_content()) {
 		leaf->get_leaf_content()->on_focus_entered();
 	}
 }
