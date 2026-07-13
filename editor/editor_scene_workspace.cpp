@@ -465,6 +465,7 @@ void EditorSceneWorkspace::_notification(int p_what) {
 void EditorSceneWorkspace::_bind_methods() {
 	ADD_SIGNAL(MethodInfo("leaf_focus_requested", PropertyInfo(Variant::INT, "leaf_id")));
 	ADD_SIGNAL(MethodInfo("leaf_added", PropertyInfo(Variant::INT, "leaf_id")));
+	ADD_SIGNAL(MethodInfo("leaf_about_to_remove", PropertyInfo(Variant::INT, "leaf_id")));
 	ADD_SIGNAL(MethodInfo("leaf_removed", PropertyInfo(Variant::INT, "leaf_id"), PropertyInfo(Variant::INT, "successor_leaf_id")));
 }
 
@@ -1019,6 +1020,10 @@ void EditorSceneWorkspace::collapse(WorkspaceLeafNode *p_leaf) {
 	Node *grand = split_node->get_parent();
 	ERR_FAIL_NULL(grand);
 	const int split_index = split_node->get_index(false);
+	const int collapsed_leaf_id = p_leaf->get_leaf_id();
+	const int successor_leaf_id = successor_leaf->get_leaf_id();
+
+	emit_signal(SNAME("leaf_about_to_remove"), collapsed_leaf_id);
 
 	sc->remove_child(sibling);
 	sc->remove_child(p_leaf);
@@ -1028,8 +1033,6 @@ void EditorSceneWorkspace::collapse(WorkspaceLeafNode *p_leaf) {
 	grand->add_child(sibling);
 	grand->move_child(sibling, split_index);
 
-	const int collapsed_leaf_id = p_leaf->get_leaf_id();
-	const int successor_leaf_id = successor_leaf->get_leaf_id();
 	leaves.erase(p_leaf);
 	emit_signal(SNAME("leaf_removed"), collapsed_leaf_id, successor_leaf_id);
 	memdelete(p_leaf);

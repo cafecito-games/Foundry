@@ -35,6 +35,8 @@
 #include "editor/debugger/debugger_editor_plugin.h"
 #include "editor/docks/scene_tree_dock.h"
 #include "editor/editor_node.h"
+#include "editor/editor_scene_context.h"
+#include "editor/editor_scene_pane_tile.h"
 #include "editor/editor_scene_workspace.h"
 #include "editor/editor_script_leaf.h"
 #include "editor/file_system/editor_paths.h"
@@ -55,6 +57,7 @@
 #include "core/os/os.h"
 #include "scene/2d/node_2d.h"
 #include "scene/gui/dialogs.h"
+#include "scene/gui/tree.h"
 #include "scene/main/scene_tree.h"
 
 namespace {
@@ -130,6 +133,13 @@ bool _assert_visible_workspace_tab(EditorWorkflowTestDriver &p_driver, const Str
 		return false;
 	}
 	return int(found.get("match_count", 0)) >= 1;
+}
+
+String _rendered_scene_tree_root_name(SceneTreeDock *p_dock) {
+	SceneTreeEditor *tree_editor = p_dock ? p_dock->get_tree_editor() : nullptr;
+	Tree *tree = tree_editor ? tree_editor->get_scene_tree() : nullptr;
+	TreeItem *root_item = tree ? tree->get_root() : nullptr;
+	return root_item ? root_item->get_text(0) : String("<none>");
 }
 
 struct MixedWorkspaceContext {
@@ -765,6 +775,255 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	details["open_scenes"] = open_scenes;
 	result.details = details;
 	return result;
+}
+
+EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::run_split_scene_root_button_context(
+		EditorWorkflowTestDriver &p_driver) {
+	Result result;
+	result.workflow = "split_scene_root_button_context";
+
+	p_driver.begin_workflow();
+
+#ifdef TOOLS_ENABLED
+	EditorNode *editor_node = EditorNode::get_singleton();
+	if (editor_node == nullptr || !editor_node->is_editor_ready()) {
+		return _failure_with_message(p_driver, result.workflow, "EditorNode is not ready.");
+	}
+
+	p_driver.set_step("create_first_scene");
+	SceneTreeDock *scene_dock = editor_node->get_focused_scene_tree_dock();
+	if (scene_dock == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Focused scene tree dock is unavailable.");
+	}
+	Node2D *first_root = memnew(Node2D);
+	first_root->set_name("First");
+	scene_dock->add_root_node(first_root);
+	p_driver.flush_frames(20);
+
+	p_driver.set_step("create_second_scene");
+	const int second_scene = editor_node->new_scene();
+	if (second_scene != 1) {
+		return _failure_with_message(p_driver, result.workflow, vformat("Expected second scene index 1, got %d.", second_scene));
+	}
+	scene_dock = editor_node->get_focused_scene_tree_dock();
+	if (scene_dock == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Focused scene tree dock is unavailable after creating the second scene.");
+	}
+	Node2D *second_root = memnew(Node2D);
+	second_root->set_name("Second");
+	scene_dock->add_root_node(second_root);
+	p_driver.flush_frames(20);
+
+	p_driver.set_step("dock_second_scene_right");
+	EditorSceneWorkspace *workspace = EditorNode::get_scene_workspace();
+	if (workspace == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Scene workspace is unavailable.");
+	}
+	editor_node->handle_tile_scene_drop(0, (int)EditorSceneWorkspace::DROP_RIGHT, 0, 1);
+	p_driver.flush_frames(30);
+	if (!p_driver.wait_workspace_settled(5000)) {
+		return _failure_from_driver(p_driver, result.workflow, "Workspace did not settle after docking the second scene.");
+	}
+
+	p_driver.set_step("verify_split_baseline");
+	Dictionary state = p_driver.read_editor_state();
+	const Dictionary workspace_state = state.get("workspace", Dictionary());
+	const Array baseline_tiles = workspace_state.get("tiles", Array());
+	if ((int)workspace_state.get("tile_count", 0) != 2 || baseline_tiles.size() != 2 ||
+			(int)state.get("active_scene_index", -1) != 1 ||
+			(int)workspace_state.get("focused_tile_id", -1) != 1) {
+		return _failure_with_message(p_driver, result.workflow, "Docking the second scene did not create the expected focused two-pane workspace.");
+	}
+
+	ScenePaneTile *left_tile = workspace->get_tile_by_id(0);
+	ScenePaneTile *right_tile = workspace->get_tile_by_id(1);
+	if (left_tile == nullptr || right_tile == nullptr ||
+			left_tile->get_scene_tree_dock() == nullptr || right_tile->get_scene_tree_dock() == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Could not resolve both scene tree docks after docking the second scene.");
+	}
+	auto get_dock_context_root_name = [](SceneTreeDock *p_dock) {
+		EditorSceneContext *context = p_dock ? p_dock->get_scene_context() : nullptr;
+		Node *root = context ? context->get_scene_root_node() : nullptr;
+		return root ? String(root->get_name()) : String("<none>");
+	};
+	const String left_tile_root = left_tile->get_current_scene_root() ? String(left_tile->get_current_scene_root()->get_name()) : String("<none>");
+	const String right_tile_root = right_tile->get_current_scene_root() ? String(right_tile->get_current_scene_root()->get_name()) : String("<none>");
+	const String left_dock_root = get_dock_context_root_name(left_tile->get_scene_tree_dock());
+	const String right_dock_root = get_dock_context_root_name(right_tile->get_scene_tree_dock());
+	if (left_tile_root != "First" || right_tile_root != "Second" || left_dock_root != "First" || right_dock_root != "Second") {
+		Result fail;
+		fail.ok = false;
+		fail.workflow = result.workflow;
+		fail.message = "Docking the second scene did not keep the two scene panes bound to distinct scene roots.";
+		Dictionary details = p_driver.make_failure_details("verify_split_baseline");
+		details["editor_state"] = state;
+		details["left_tile_root"] = left_tile_root;
+		details["right_tile_root"] = right_tile_root;
+		details["left_dock_root"] = left_dock_root;
+		details["right_dock_root"] = right_dock_root;
+		fail.details = details;
+		return fail;
+	}
+
+	const String left_rendered_root = _rendered_scene_tree_root_name(left_tile->get_scene_tree_dock());
+	const String right_rendered_root = _rendered_scene_tree_root_name(right_tile->get_scene_tree_dock());
+	if (left_rendered_root != "First" || right_rendered_root != "Second") {
+		Result fail;
+		fail.ok = false;
+		fail.workflow = result.workflow;
+		fail.message = "Docking the second scene rendered the focused scene in both scene tree panes.";
+		Dictionary details = p_driver.make_failure_details("verify_split_baseline");
+		details["editor_state"] = state;
+		details["left_rendered_root"] = left_rendered_root;
+		details["right_rendered_root"] = right_rendered_root;
+		details["left_dock_root"] = left_dock_root;
+		details["right_dock_root"] = right_dock_root;
+		fail.details = details;
+		return fail;
+	}
+
+	p_driver.set_step("create_third_scene");
+	if (!p_driver.require_ok(p_driver.run_command("editor/new_scene"), "create_third_scene")) {
+		return _failure_from_driver(p_driver, result.workflow);
+	}
+	p_driver.flush_frames(30);
+
+	state = p_driver.read_editor_state();
+	const Dictionary post_workspace = state.get("workspace", Dictionary());
+	if ((int)state.get("active_scene_index", -1) != 2 || (int)post_workspace.get("focused_tile_id", -1) != 1) {
+		return _failure_with_message(p_driver, result.workflow, "Creating the third scene did not keep the right scene tile focused.");
+	}
+
+	p_driver.set_step("verify_root_dialog_decisions");
+	const bool left_shows_root_dialog = left_tile->get_scene_tree_dock()->should_show_create_root_dialog();
+	const bool right_shows_root_dialog = right_tile->get_scene_tree_dock()->should_show_create_root_dialog();
+	if (left_shows_root_dialog || !right_shows_root_dialog) {
+		EditorSceneContext *left_context = left_tile->get_scene_tree_dock()->get_scene_context();
+		EditorSceneContext *right_context = right_tile->get_scene_tree_dock()->get_scene_context();
+		Node *left_context_root = left_context ? left_context->get_scene_root_node() : nullptr;
+		Node *right_context_root = right_context ? right_context->get_scene_root_node() : nullptr;
+
+		Result fail;
+		fail.ok = false;
+			fail.workflow = result.workflow;
+			fail.message = vformat("Root dialog decisions were not context-aware: left=%s right=%s.",
+					left_shows_root_dialog ? "true" : "false",
+					right_shows_root_dialog ? "true" : "false");
+		Dictionary details = p_driver.make_failure_details("verify_root_dialog_decisions");
+		details["editor_state"] = state;
+		details["left_context_root"] = left_context_root ? String(left_context_root->get_name()) : String("<none>");
+		details["right_context_root"] = right_context_root ? String(right_context_root->get_name()) : String("<none>");
+		fail.details = details;
+		return fail;
+	}
+
+	p_driver.set_step("verify_contextual_root_buttons");
+	Dictionary root_button_selector;
+	root_button_selector["role"] = "button";
+	root_button_selector["name"] = "2D Scene";
+	root_button_selector["visible_only"] = true;
+	Dictionary root_buttons = p_driver.find(root_button_selector, 10);
+	const int root_button_count = (int)root_buttons.get("match_count", 0);
+	if (root_button_count != 1) {
+		Result fail;
+		fail.ok = false;
+		fail.workflow = result.workflow;
+		fail.message = vformat(
+				"Expected only the focused empty scene tile to show root buttons, found %d visible 2D Scene buttons.",
+				root_button_count);
+		Dictionary details = p_driver.make_failure_details("verify_contextual_root_buttons");
+		details["root_buttons"] = root_buttons;
+		details["editor_state"] = state;
+		fail.details = details;
+		return fail;
+	}
+
+	const Array root_button_elements = root_buttons.get("elements", Array());
+	if (!root_button_elements.is_empty()) {
+		const Dictionary element = root_button_elements[0];
+		const Dictionary metadata = element.get("metadata", Dictionary());
+		if ((int)metadata.get("tile_id", -1) != 1) {
+			Result fail;
+			fail.ok = false;
+			fail.workflow = result.workflow;
+			fail.message = "The remaining visible root button belongs to the wrong workspace tile.";
+			Dictionary details = p_driver.make_failure_details("verify_contextual_root_buttons");
+			details["root_buttons"] = root_buttons;
+			details["editor_state"] = state;
+			fail.details = details;
+			return fail;
+		}
+	}
+
+	p_driver.set_step("create_third_scene_root");
+	workspace->request_leaf_focus(0);
+	p_driver.flush_frames(30);
+	Dictionary right_root_button_selector = root_button_selector;
+	Dictionary right_root_button_metadata;
+	right_root_button_metadata["tile_id"] = 1;
+	right_root_button_selector["metadata"] = right_root_button_metadata;
+	if (!p_driver.require_ok(p_driver.act(right_root_button_selector, "click", Dictionary(), "semantic"), "click_right_root_button_from_left_focus")) {
+		return _failure_from_driver(p_driver, result.workflow);
+	}
+	p_driver.flush_frames(30);
+	const String created_root_name = "Node2D";
+	if (left_tile->get_current_scene_root() == nullptr || right_tile->get_current_scene_root() == nullptr ||
+			String(left_tile->get_current_scene_root()->get_name()) != "First" ||
+			String(right_tile->get_current_scene_root()->get_name()) != created_root_name ||
+			get_dock_context_root_name(left_tile->get_scene_tree_dock()) != "First" ||
+			get_dock_context_root_name(right_tile->get_scene_tree_dock()) != created_root_name ||
+			_rendered_scene_tree_root_name(left_tile->get_scene_tree_dock()) != "First" ||
+			_rendered_scene_tree_root_name(right_tile->get_scene_tree_dock()) != created_root_name) {
+		Result fail;
+		fail.ok = false;
+		fail.workflow = result.workflow;
+		fail.message = "Clicking the right root button while the left tile was focused did not keep the split panes bound to distinct scene roots.";
+		Dictionary details = p_driver.make_failure_details("create_third_scene_root");
+		details["editor_state"] = p_driver.read_editor_state();
+		details["left_tile_root"] = left_tile->get_current_scene_root() ? String(left_tile->get_current_scene_root()->get_name()) : String("<none>");
+		details["right_tile_root"] = right_tile->get_current_scene_root() ? String(right_tile->get_current_scene_root()->get_name()) : String("<none>");
+		details["left_dock_root"] = get_dock_context_root_name(left_tile->get_scene_tree_dock());
+		details["right_dock_root"] = get_dock_context_root_name(right_tile->get_scene_tree_dock());
+		details["left_rendered_root"] = _rendered_scene_tree_root_name(left_tile->get_scene_tree_dock());
+		details["right_rendered_root"] = _rendered_scene_tree_root_name(right_tile->get_scene_tree_dock());
+		fail.details = details;
+		return fail;
+	}
+
+	p_driver.set_step("focus_left_scene_tile");
+	workspace->request_leaf_focus(0);
+	p_driver.flush_frames(30);
+	state = p_driver.read_editor_state();
+	if ((int)state.get("active_scene_index", -1) != 0 ||
+			_rendered_scene_tree_root_name(left_tile->get_scene_tree_dock()) != "First" ||
+			_rendered_scene_tree_root_name(right_tile->get_scene_tree_dock()) != created_root_name) {
+		Result fail;
+		fail.ok = false;
+		fail.workflow = result.workflow;
+		fail.message = "Focusing the left scene tile changed the right scene tree pane's rendered root.";
+		Dictionary details = p_driver.make_failure_details("focus_left_scene_tile");
+		details["editor_state"] = state;
+		details["left_rendered_root"] = _rendered_scene_tree_root_name(left_tile->get_scene_tree_dock());
+		details["right_rendered_root"] = _rendered_scene_tree_root_name(right_tile->get_scene_tree_dock());
+		fail.details = details;
+		return fail;
+	}
+
+	p_driver.set_step("assert_no_new_errors");
+	if (!p_driver.assert_no_new_errors()) {
+		return _failure_from_driver(p_driver, result.workflow);
+	}
+
+	result.ok = true;
+	result.message = "Split scene root buttons follow each tile's scene context.";
+	Dictionary details;
+	details["workspace"] = p_driver.read_editor_state().get("workspace", Dictionary());
+	details["root_buttons"] = root_buttons;
+	result.details = details;
+	return result;
+#else
+	return _failure_with_message(p_driver, result.workflow, "Split scene root button workflow requires an editor (TOOLS_ENABLED) build.");
+#endif
 }
 
 EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::run_mixed_workspace_editing(EditorWorkflowTestDriver &p_driver) {

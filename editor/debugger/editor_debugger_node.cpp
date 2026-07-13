@@ -777,6 +777,10 @@ void EditorDebuggerNode::detach_remote_scene_tree() {
 	_set_remote_scene_tree_dock(nullptr);
 }
 
+bool EditorDebuggerNode::is_remote_scene_tree_bound_to(const SceneTreeDock *p_dock) const {
+	return remote_scene_tree_dock == p_dock;
+}
+
 void EditorDebuggerNode::rebind_remote_scene_tree() {
 	EditorNode *editor_node = EditorNode::get_singleton();
 	if (!editor_node) {

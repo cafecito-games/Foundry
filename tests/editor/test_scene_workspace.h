@@ -208,6 +208,27 @@ public:
 	}
 };
 
+class LeafAboutToRemoveTracker : public Object {
+	FOUNDRY_CLASS(LeafAboutToRemoveTracker, Object);
+
+public:
+	EditorSceneWorkspace *workspace = nullptr;
+	Control *external_control = nullptr;
+	int removing_leaf_id = -1;
+	bool leaf_available_during_signal = false;
+	bool external_control_was_in_removed_leaf = false;
+
+	void on_leaf_about_to_remove(int p_leaf_id) {
+		removing_leaf_id = p_leaf_id;
+		WorkspaceLeafNode *leaf = workspace ? workspace->get_leaf_by_id(p_leaf_id) : nullptr;
+		leaf_available_during_signal = leaf != nullptr;
+		external_control_was_in_removed_leaf = leaf && external_control && leaf->is_ancestor_of(external_control);
+		if (external_control && external_control->get_parent()) {
+			external_control->get_parent()->remove_child(external_control);
+		}
+	}
+};
+
 struct WorkspaceHarness {
 	Control *host = nullptr;
 	EditorData editor_data;
@@ -773,6 +794,40 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] collapse-preserves-surface-reloca
 	REQUIRE(ObjectDB::get_instance(scene_mode_id) != nullptr);
 	CHECK(tile_b->is_ancestor_of(scene_mode));
 
+	h.unmount();
+}
+
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] collapse-signals-before-removing-leaf-subtree") {
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspaceLeafNode *leaf_a = h.workspace->get_focused_leaf();
+	WorkspaceLeafNode *leaf_b = h.workspace->split(leaf_a, false, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
+	h.pump();
+	REQUIRE(leaf_b != nullptr);
+	const int leaf_a_id = leaf_a->get_leaf_id();
+
+	Control *external_control = memnew(Control);
+	external_control->set_name("ExternalSceneSurface");
+	REQUIRE(leaf_a->get_content_host() != nullptr);
+	leaf_a->get_content_host()->add_child(external_control);
+	CHECK(leaf_a->is_ancestor_of(external_control));
+
+	LeafAboutToRemoveTracker tracker;
+	tracker.workspace = h.workspace;
+	tracker.external_control = external_control;
+	h.workspace->connect("leaf_about_to_remove", callable_mp(&tracker, &LeafAboutToRemoveTracker::on_leaf_about_to_remove));
+
+	h.workspace->collapse(leaf_a);
+	h.pump();
+
+	CHECK(tracker.removing_leaf_id == leaf_a_id);
+	CHECK(tracker.leaf_available_during_signal);
+	CHECK(tracker.external_control_was_in_removed_leaf);
+	CHECK(external_control->get_parent() == nullptr);
+
+	memdelete(external_control);
 	h.unmount();
 }
 

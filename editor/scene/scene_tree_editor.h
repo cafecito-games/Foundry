@@ -42,6 +42,8 @@ class Timer;
 class SceneTreeEditor : public Control {
 	FOUNDRY_CLASS(SceneTreeEditor, Control);
 
+	friend class SceneTreeEditorTestAccess;
+
 	EditorSelection *editor_selection = nullptr;
 
 	enum SceneTreeEditorButton {
@@ -111,6 +113,8 @@ class SceneTreeEditor : public Control {
 
 	Tree *tree = nullptr;
 	Node *selected = nullptr;
+	ObjectID scene_root_override_id;
+	bool scene_root_override_enabled = false;
 
 	String filter;
 	String filter_term_warning;
@@ -247,6 +251,7 @@ public:
 	Node *get_selected();
 	void set_can_rename(bool p_can_rename) { can_rename = p_can_rename; }
 	void set_editor_selection(EditorSelection *p_selection);
+	void set_scene_root_override(Node *p_scene_root);
 
 	void set_show_enabled_subscene(bool p_show) { show_enabled_subscene = p_show; }
 	void set_valid_types(const Vector<StringName> &p_valid);

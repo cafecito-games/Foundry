@@ -736,7 +736,8 @@ private:
 	void _load_central_editor_layout_from_config(Ref<ConfigFile> p_config_file);
 
 	void _save_workspace_to_config(Ref<ConfigFile> p_config_file);
-	void _load_workspace_from_config(const Ref<ConfigFile> &p_config_file);
+	bool _load_workspace_from_config(const Ref<ConfigFile> &p_config_file);
+	void _reconcile_workspace_empty_leaves_after_restore();
 	void _resolve_restored_script_leaf_associated_scenes();
 	void _reparent_scene_mode_into(ScenePaneTile *p_tile);
 	void _close_script_leaf();
@@ -749,6 +750,7 @@ private:
 	void _bind_all_leaf_docks();
 	void _wire_leaf_tile(WorkspaceLeafNode *p_leaf);
 	void _on_leaf_added(int p_leaf_id);
+	void _on_leaf_about_to_remove(int p_leaf_id);
 	void _on_leaf_removed(int p_leaf_id, int p_successor_leaf_id);
 	void _on_leaf_focus_requested(int p_leaf_id);
 	void _focus_tile(int p_tile_id);

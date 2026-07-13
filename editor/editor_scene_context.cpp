@@ -127,6 +127,21 @@ void EditorSceneContext::_recompute_3d_content() {
 	}
 }
 
+void EditorSceneContext::_refresh_bound_scene_tree_docks() {
+	Vector<ObjectID> stale_dock_ids;
+	for (const ObjectID &dock_id : bound_scene_tree_docks) {
+		SceneTreeDock *dock = ObjectDB::get_instance<SceneTreeDock>(dock_id);
+		if (dock && dock->get_scene_context() == this) {
+			dock->update_tree();
+		} else {
+			stale_dock_ids.push_back(dock_id);
+		}
+	}
+	for (const ObjectID &dock_id : stale_dock_ids) {
+		bound_scene_tree_docks.erase(dock_id);
+	}
+}
+
 void EditorSceneContext::set_scene_root_node(Node *p_scene_root, bool p_attach_to_viewport) {
 	if (scene_root_node == p_scene_root) {
 		return;
@@ -137,6 +152,7 @@ void EditorSceneContext::set_scene_root_node(Node *p_scene_root, bool p_attach_t
 		// old root must keep its parent until then.
 		scene_root_node = p_scene_root;
 		_recompute_3d_content();
+		_refresh_bound_scene_tree_docks();
 		return;
 	}
 	if (scene_root_node && scene_root_node->get_parent() == viewport) {
@@ -147,6 +163,7 @@ void EditorSceneContext::set_scene_root_node(Node *p_scene_root, bool p_attach_t
 		viewport->add_child(scene_root_node, true);
 	}
 	_recompute_3d_content();
+	_refresh_bound_scene_tree_docks();
 }
 
 void EditorSceneContext::attach_scene_root_node() {

@@ -7436,6 +7436,7 @@ void EditorNode::save_editor_layout_delayed() {
 void EditorNode::_load_editor_layout() {
 	const bool force_background_progress = MessageQueue::get_singleton()->is_flushing();
 	EditorProgress ep("loading_editor_layout", TTR("Loading editor"), 6, false, force_background_progress);
+	bool reconcile_empty_workspace_leaves = false;
 	ep.step(TTR("Loading editor layout..."), 0, true);
 	// Load through the store so registered migrations run before any section owner
 	// reads. get_config() returns the same migrated config load() populated.
@@ -7470,7 +7471,7 @@ void EditorNode::_load_editor_layout() {
 		_load_open_scenes_from_config(config);
 
 		ep.step(TTR("Loading workspace..."), 3, true);
-		_load_workspace_from_config(config);
+		reconcile_empty_workspace_leaves = _load_workspace_from_config(config);
 
 		ep.step(TTR("Loading central editor layout..."), 4, true);
 		_load_central_editor_layout_from_config(config);
@@ -7481,6 +7482,9 @@ void EditorNode::_load_editor_layout() {
 		ep.step(TTR("Editor layout ready."), 6, true);
 	}
 	load_editor_layout_done = true;
+	if (reconcile_empty_workspace_leaves && scene_workspace) {
+		callable_mp(this, &EditorNode::_reconcile_workspace_empty_leaves_after_restore).call_deferred();
+	}
 }
 
 void EditorNode::_save_central_editor_layout_to_config(Ref<ConfigFile> p_config_file) {
@@ -7647,6 +7651,33 @@ void EditorNode::_on_leaf_added(int p_leaf_id) {
 	}
 }
 
+void EditorNode::_on_leaf_about_to_remove(int p_leaf_id) {
+	if (!scene_workspace || !editor_main_screen) {
+		return;
+	}
+
+	WorkspaceLeafNode *leaf = scene_workspace->get_leaf_by_id(p_leaf_id);
+	VBoxContainer *scene_mode = editor_main_screen->get_scene_mode_control();
+	if (!leaf) {
+		return;
+	}
+
+	if (EditorDebuggerNode *debugger = EditorDebuggerNode::get_singleton()) {
+		ScenePaneTile *tile = leaf->get_pane_tile();
+		if (tile && debugger->is_remote_scene_tree_bound_to(tile->get_scene_tree_dock())) {
+			debugger->detach_remote_scene_tree();
+		}
+	}
+
+	if (!scene_mode || !leaf->is_ancestor_of(scene_mode)) {
+		return;
+	}
+
+	if (Node *parent = scene_mode->get_parent()) {
+		parent->remove_child(scene_mode);
+	}
+}
+
 void EditorNode::_on_leaf_removed(int p_leaf_id, int p_successor_leaf_id) {
 	if (p_leaf_id != p_successor_leaf_id) {
 		editor_data.migrate_tile_scenes(p_leaf_id, p_successor_leaf_id);
@@ -7655,6 +7686,10 @@ void EditorNode::_on_leaf_removed(int p_leaf_id, int p_successor_leaf_id) {
 	_update_all_scene_tabs();
 	_bind_all_leaf_docks();
 	_update_tile_display_attachments();
+	_reparent_scene_mode_into(get_focused_tile());
+	if (EditorDebuggerNode *debugger = EditorDebuggerNode::get_singleton()) {
+		debugger->rebind_remote_scene_tree();
+	}
 }
 
 void EditorNode::_focus_tile(int p_tile_id) {
@@ -7952,9 +7987,9 @@ void EditorNode::_resolve_restored_script_leaf_associated_scenes() {
 	scene_workspace->resolve_script_leaf_associated_scenes(editor_data);
 }
 
-void EditorNode::_load_workspace_from_config(const Ref<ConfigFile> &p_config_file) {
+bool EditorNode::_load_workspace_from_config(const Ref<ConfigFile> &p_config_file) {
 	if (!scene_workspace || !EditorSceneWorkspace::has_workspace_session(p_config_file)) {
-		return;
+		return false;
 	}
 
 	// restore_from_config() frees the outgoing workspace tree. Detach the shared
@@ -8024,9 +8059,27 @@ void EditorNode::_load_workspace_from_config(const Ref<ConfigFile> &p_config_fil
 	// _set_current_scene_nocheck defers _update_all_scene_tabs, which rebuilds every
 	// pane's scene tabs from EditorData ownership. A restored non-default leaf whose
 	// persisted scene tab resolves to a scene owned by another leaf ends up empty once
-	// that sync runs. Defer reconciliation after it (FIFO) so any such phantom empty
-	// pane self-heals to a valid workspace instead of persisting across restarts.
-	callable_mp(scene_workspace, &EditorSceneWorkspace::reconcile_empty_leaves).call_deferred();
+	// that sync runs. Defer reconciliation after the full editor layout has loaded,
+	// since progress updates flush the message queue between layout sections.
+	return true;
+}
+
+void EditorNode::_reconcile_workspace_empty_leaves_after_restore() {
+	if (!scene_workspace) {
+		return;
+	}
+
+	scene_workspace->reconcile_empty_leaves();
+
+	ScenePaneTile *focused_tile = get_focused_tile();
+	if (focused_tile) {
+		_sync_focused_tile_chrome(focused_tile);
+	}
+	_reparent_scene_mode_into(focused_tile);
+	_bind_all_leaf_docks();
+	if (EditorDebuggerNode *debugger = EditorDebuggerNode::get_singleton()) {
+		debugger->rebind_remote_scene_tree();
+	}
 }
 
 void EditorNode::_save_window_settings_to_config(Ref<ConfigFile> p_layout, const String &p_section) {
@@ -10790,6 +10843,7 @@ EditorNode::EditorNode() {
 	scene_workspace->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	scene_workspace->connect("leaf_focus_requested", callable_mp(this, &EditorNode::_on_leaf_focus_requested));
 	scene_workspace->connect("leaf_added", callable_mp(this, &EditorNode::_on_leaf_added));
+	scene_workspace->connect("leaf_about_to_remove", callable_mp(this, &EditorNode::_on_leaf_about_to_remove));
 	scene_workspace->connect("leaf_removed", callable_mp(this, &EditorNode::_on_leaf_removed));
 
 	editor_main_screen = memnew(EditorMainScreen);
