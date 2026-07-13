@@ -187,6 +187,8 @@ class SceneTreeDock : public EditorDock {
 	// Root of the scene edited by the bound context (null when none is bound
 	// or the context has no scene root yet).
 	Node *_get_edited_scene_root() const;
+	int _get_scene_index_for_context() const;
+	int _get_owning_tile_id() const;
 	Node *pending_click_select = nullptr;
 	bool tree_clicked = false;
 
@@ -328,6 +330,7 @@ public:
 	void add_root_node(Node *p_node);
 	void set_scene_context(EditorSceneContext *p_context);
 	EditorSceneContext *get_scene_context() const { return scene_context; }
+	bool should_show_create_root_dialog() const;
 	void update_tree();
 	void instantiate(const String &p_file);
 	void instantiate_scenes(const Vector<String> &p_files, Node *p_parent = nullptr);

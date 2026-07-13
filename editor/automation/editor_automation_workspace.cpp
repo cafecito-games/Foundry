@@ -32,14 +32,18 @@
 
 #include "core/object/object.h"
 #include "editor/automation/editor_automation_workspace.h"
+#include "editor/docks/scene_tree_dock.h"
 #include "editor/editor_data.h"
 #include "editor/editor_node.h"
+#include "editor/editor_scene_context.h"
 #include "editor/editor_scene_pane_tile.h"
 #include "editor/editor_scene_workspace.h"
 #include "editor/scene/editor_scene_tabs.h"
 #include "editor/workspace/workspace_pane.h"
 #include "scene/gui/split_container.h"
 #include "scene/gui/tab_bar.h"
+#include "scene/gui/tree.h"
+#include "scene/main/node.h"
 
 namespace {
 
@@ -78,19 +82,54 @@ Dictionary _serialize_workspace_tree(Control *p_node) {
 	return dict;
 }
 
-Dictionary _tile_state_entry(EditorData *p_editor_data, int p_tile_id, int p_focused_tile_id) {
+String _node_name_or_none(Node *p_node) {
+	return p_node ? String(p_node->get_name()) : String("<none>");
+}
+
+String _node_path_or_none(Node *p_node) {
+	if (!p_node) {
+		return "<none>";
+	}
+	if (!p_node->is_inside_tree()) {
+		return "<detached>";
+	}
+	return String(p_node->get_path());
+}
+
+Dictionary _tile_state_entry(EditorData *p_editor_data, ScenePaneTile *p_tile, int p_focused_tile_id) {
 	Dictionary tile;
-	tile["tile_id"] = p_tile_id;
-	tile["focused"] = p_tile_id == p_focused_tile_id;
-	const int current_scene_index = p_editor_data->get_tile_current_scene(p_tile_id);
+	const int tile_id = p_tile ? p_tile->get_tile_id() : -1;
+	tile["tile_id"] = tile_id;
+	tile["focused"] = tile_id == p_focused_tile_id;
+	const int current_scene_index = p_editor_data->get_tile_current_scene(tile_id);
 	tile["current_scene"] = current_scene_index;
 	tile["current_scene_path"] = current_scene_index >= 0 ? p_editor_data->get_scene_path(current_scene_index) : String();
 
+	EditorSceneContext *current_context = current_scene_index >= 0 ? p_editor_data->get_scene_context(current_scene_index) : nullptr;
+	Node *current_root = current_context ? current_context->get_scene_root_node() : nullptr;
+	tile["current_scene_root_name"] = _node_name_or_none(current_root);
+	tile["current_scene_viewport_parent"] = current_context && current_context->get_viewport() ? _node_path_or_none(current_context->get_viewport()->get_parent()) : String("<none>");
+	tile["current_scene_context_active"] = current_context ? current_context->is_active() : false;
+
+	SceneTreeDock *scene_tree_dock = p_tile ? p_tile->get_scene_tree_dock() : nullptr;
+	EditorSceneContext *dock_context = scene_tree_dock ? scene_tree_dock->get_scene_context() : nullptr;
+	Node *dock_root = dock_context ? dock_context->get_scene_root_node() : nullptr;
+	SceneTreeEditor *tree_editor = scene_tree_dock ? scene_tree_dock->get_tree_editor() : nullptr;
+	Tree *tree = tree_editor ? tree_editor->get_scene_tree() : nullptr;
+	TreeItem *tree_root = tree ? tree->get_root() : nullptr;
+	tile["scene_tree_dock_root_name"] = _node_name_or_none(dock_root);
+	tile["scene_tree_dock_context_matches_current"] = dock_context == current_context;
+	tile["scene_tree_dock_shows_create_root"] = scene_tree_dock ? scene_tree_dock->should_show_create_root_dialog() : false;
+	tile["scene_tree_rendered_root_name"] = tree_root ? tree_root->get_text(0) : String("<none>");
+
 	Array scenes;
-	for (int scene_index : p_editor_data->get_tile_scene_indices(p_tile_id)) {
+	for (int scene_index : p_editor_data->get_tile_scene_indices(tile_id)) {
 		Dictionary scene_entry;
 		scene_entry["index"] = scene_index;
 		scene_entry["path"] = p_editor_data->get_scene_path(scene_index);
+		EditorSceneContext *scene_context = p_editor_data->get_scene_context(scene_index);
+		Node *scene_root = scene_context ? scene_context->get_scene_root_node() : nullptr;
+		scene_entry["root_name"] = _node_name_or_none(scene_root);
 		scenes.push_back(scene_entry);
 	}
 	tile["scenes"] = scenes;
@@ -171,7 +210,7 @@ Dictionary EditorAutomationWorkspace::capture_workspace_state(EditorData *p_edit
 
 	Array tiles;
 	for (ScenePaneTile *tile : p_workspace->get_tiles()) {
-		tiles.push_back(_tile_state_entry(p_editor_data, tile->get_tile_id(), focused_tile_id));
+		tiles.push_back(_tile_state_entry(p_editor_data, tile, focused_tile_id));
 	}
 	workspace["tiles"] = tiles;
 	return workspace;

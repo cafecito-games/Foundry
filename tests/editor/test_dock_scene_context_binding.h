@@ -93,6 +93,11 @@ public:
 	}
 };
 
+class SceneTreeEditorTestAccess {
+public:
+	static Node *get_scene_node(SceneTreeEditor *p_editor) { return p_editor ? p_editor->get_scene_node() : nullptr; }
+};
+
 namespace TestDockSceneContextBinding {
 
 TEST_CASE("[SceneTree][Editor] SceneTreeDock constructs without an EditorNode") {
@@ -163,6 +168,37 @@ TEST_CASE("[SceneTree][Editor] SceneTreeDock binding follows the bound context's
 	memdelete(selection);
 	memdelete(context_a); // Frees root_a.
 	memdelete(context_b); // Frees root_b.
+}
+
+TEST_CASE("[SceneTree][Editor] SceneTreeDock updates scene-root override when bound context root changes") {
+	Window *tree_root = SceneTree::get_singleton()->get_root();
+	EditorData editor_data;
+
+	EditorSceneContext *context = memnew(EditorSceneContext);
+	Node2D *root_a = memnew(Node2D);
+	root_a->set_name("RootA");
+	context->set_scene_root_node(root_a);
+
+	EditorSelection *selection = memnew(EditorSelection);
+	SceneTreeDock *dock = memnew(SceneTreeDock(selection, editor_data));
+	tree_root->add_child(dock);
+
+	dock->set_scene_context(context);
+	MessageQueue::get_singleton()->flush();
+	CHECK(SceneTreeEditorTestAccess::get_scene_node(dock->get_tree_editor()) == root_a);
+
+	Node2D *root_b = memnew(Node2D);
+	root_b->set_name("RootB");
+	context->set_scene_root_node(root_b);
+	MessageQueue::get_singleton()->flush();
+
+	CHECK(SceneTreeEditorTestAccess::get_scene_node(dock->get_tree_editor()) == root_b);
+
+	tree_root->remove_child(dock);
+	memdelete(dock);
+	memdelete(selection);
+	memdelete(root_a);
+	memdelete(context); // Frees root_b.
 }
 
 TEST_CASE("[SceneTree][Editor] SceneTreeDock rebinding switches which selection it edits") {

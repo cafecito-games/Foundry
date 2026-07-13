@@ -149,6 +149,34 @@ TEST_CASE("[Editor][Automation][MCP] mcp-workspace-state") {
 	h.unmount();
 }
 
+TEST_CASE("[Editor][Automation][MCP] mcp-workspace-state-reports-detached-viewport-parent-without-errors") {
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	const int scene_a = h.editor_data.add_edited_scene(-1);
+	h.editor_data.set_scene_tile(scene_a, 0);
+	h.editor_data.set_tile_current_scene(0, scene_a);
+	Node2D *root_a = memnew(Node2D);
+	h.editor_data.get_scene_context(scene_a)->set_scene_root_node(root_a);
+
+	Node *detached_parent = memnew(Node);
+	detached_parent->add_child(h.editor_data.get_scene_context(scene_a)->get_viewport());
+
+	ErrorDetector error_detector;
+	const Dictionary workspace_state = EditorAutomationWorkspace::capture_workspace_state(&h.editor_data, h.workspace);
+	CHECK_FALSE(error_detector.has_error);
+
+	const Array tiles = workspace_state.get("tiles", Array());
+	REQUIRE(tiles.size() == 1);
+	const Dictionary tile = tiles[0];
+	CHECK(String(tile.get("current_scene_viewport_parent", String())) == "<detached>");
+
+	detached_parent->remove_child(h.editor_data.get_scene_context(scene_a)->get_viewport());
+	memdelete(detached_parent);
+	h.unmount();
+}
+
 TEST_CASE("[Editor][Automation][MCP] mcp-tile-scoped-selector") {
 	WorkspaceHarness h;
 	prepare_two_tile_workspace(h);

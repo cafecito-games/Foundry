@@ -73,6 +73,7 @@ class EditorSceneContext {
 	bool has_3d_content = false;
 
 	void _recompute_3d_content();
+	void _refresh_bound_scene_tree_docks();
 
 	void _detach_bound_docks();
 

@@ -204,6 +204,7 @@ public:
 	void request_remote_tree();
 	void set_remote_selection(const TypedArray<int64_t> &p_ids);
 	void clear_remote_tree_selection();
+	bool is_remote_scene_tree_bound_to(const SceneTreeDock *p_dock) const;
 	void detach_remote_scene_tree();
 	void rebind_remote_scene_tree();
 	void stop_waiting_inspection();
