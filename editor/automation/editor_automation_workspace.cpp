@@ -96,11 +96,11 @@ String _node_path_or_none(Node *p_node) {
 	return String(p_node->get_path());
 }
 
-Dictionary _tile_state_entry(EditorData *p_editor_data, ScenePaneTile *p_tile, int p_focused_tile_id) {
+Dictionary _tile_state_entry(EditorData *p_editor_data, ScenePaneTile *p_tile, int p_focused_leaf_id) {
 	Dictionary tile;
 	const int tile_id = p_tile ? p_tile->get_tile_id() : -1;
 	tile["tile_id"] = tile_id;
-	tile["focused"] = tile_id == p_focused_tile_id;
+	tile["focused"] = tile_id == p_focused_leaf_id;
 	const int current_scene_index = p_editor_data->get_tile_current_scene(tile_id);
 	tile["current_scene"] = current_scene_index;
 	tile["current_scene_path"] = current_scene_index >= 0 ? p_editor_data->get_scene_path(current_scene_index) : String();
@@ -191,6 +191,7 @@ Dictionary EditorAutomationWorkspace::capture_workspace_state(EditorData *p_edit
 	Dictionary workspace;
 	workspace["supported"] = false;
 	if (p_editor_data == nullptr || p_workspace == nullptr) {
+		workspace["focused_leaf_id"] = 0;
 		workspace["focused_tile_id"] = 0;
 		workspace["tile_count"] = 0;
 		workspace["tree"] = Dictionary();
@@ -199,7 +200,9 @@ Dictionary EditorAutomationWorkspace::capture_workspace_state(EditorData *p_edit
 	}
 
 	workspace["supported"] = true;
+	const int focused_leaf_id = p_workspace->get_focused_leaf_id();
 	const int focused_tile_id = p_editor_data->get_focused_tile_id();
+	workspace["focused_leaf_id"] = focused_leaf_id;
 	workspace["focused_tile_id"] = focused_tile_id;
 	workspace["tile_count"] = p_workspace->get_tile_count();
 
@@ -210,7 +213,7 @@ Dictionary EditorAutomationWorkspace::capture_workspace_state(EditorData *p_edit
 
 	Array tiles;
 	for (ScenePaneTile *tile : p_workspace->get_tiles()) {
-		tiles.push_back(_tile_state_entry(p_editor_data, tile, focused_tile_id));
+		tiles.push_back(_tile_state_entry(p_editor_data, tile, focused_leaf_id));
 	}
 	workspace["tiles"] = tiles;
 	return workspace;

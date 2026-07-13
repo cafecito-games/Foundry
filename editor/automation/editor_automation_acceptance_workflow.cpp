@@ -990,8 +990,47 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 		return fail;
 	}
 
+	p_driver.set_step("focus_right_scene_tile_before_left_focus");
+	workspace->request_leaf_focus(0);
+	p_driver.flush_frames(30);
+	workspace->request_leaf_focus(1);
+	p_driver.flush_frames(30);
+	state = p_driver.read_editor_state();
+	const Dictionary right_focus_workspace = state.get("workspace", Dictionary());
+	if (workspace->get_focused_leaf_id() != 1 ||
+			(int)right_focus_workspace.get("focused_leaf_id", -1) != 1 ||
+			(int)right_focus_workspace.get("focused_tile_id", -1) != 1 ||
+			(int)state.get("active_scene_index", -1) != 2) {
+		Result fail;
+		fail.ok = false;
+		fail.workflow = result.workflow;
+		fail.message = "Expected the right scene tile to be active before probing left tile focus.";
+		Dictionary details = p_driver.make_failure_details("focus_right_scene_tile_before_left_focus");
+		details["editor_state"] = state;
+		details["workspace_focused_leaf_id"] = workspace->get_focused_leaf_id();
+		fail.details = details;
+		return fail;
+	}
+
 	p_driver.set_step("focus_left_scene_tile");
 	workspace->request_leaf_focus(0);
+	state = p_driver.read_editor_state();
+	const Dictionary immediate_focus_workspace = state.get("workspace", Dictionary());
+	if (workspace->get_focused_leaf_id() != 0 ||
+			(int)immediate_focus_workspace.get("focused_leaf_id", -1) != 0 ||
+			(int)immediate_focus_workspace.get("focused_tile_id", -1) != 1 ||
+			(int)state.get("focused_tile_id", -1) != 1 ||
+			(int)state.get("active_scene_index", -1) != 2) {
+		Result fail;
+		fail.ok = false;
+		fail.workflow = result.workflow;
+		fail.message = "Requesting scene tile focus should update pane focus before activating the scene.";
+		Dictionary details = p_driver.make_failure_details("focus_left_scene_tile_immediate");
+		details["editor_state"] = state;
+		details["workspace_focused_leaf_id"] = workspace->get_focused_leaf_id();
+		fail.details = details;
+		return fail;
+	}
 	p_driver.flush_frames(30);
 	state = p_driver.read_editor_state();
 	if ((int)state.get("active_scene_index", -1) != 0 ||

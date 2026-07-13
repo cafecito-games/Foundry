@@ -49,6 +49,7 @@
 #include "core/string/translation_server.h"
 #include "core/version.h"
 #include "editor/editor_string_names.h"
+#include "editor/editor_workspace_leaf_content.h"
 #include "editor/inspector/editor_context_menu_plugin.h"
 #include "editor/plugins/editor_plugin_list.h"
 #include "main/main.h"
@@ -66,6 +67,7 @@
 #include "scene/gui/split_container.h"
 #include "scene/gui/subviewport_container.h"
 #include "scene/gui/tab_container.h"
+#include "scene/main/scene_tree.h"
 #include "scene/main/timer.h"
 #include "scene/main/window.h"
 #include "scene/property_utils.h"
@@ -7692,20 +7694,59 @@ void EditorNode::_on_leaf_removed(int p_leaf_id, int p_successor_leaf_id) {
 	}
 }
 
-void EditorNode::_focus_tile(int p_tile_id) {
+void EditorNode::_cancel_queued_focus_tile_activation() {
+	if (pending_focus_tile_id >= 0) {
+		pending_focus_tile_id = -1;
+		pending_focus_tile_generation++;
+	}
+}
+
+void EditorNode::_queue_focus_tile_activation(int p_tile_id) {
 	ERR_FAIL_NULL(scene_workspace);
 	ERR_FAIL_NULL(scene_workspace->get_leaf_by_id(p_tile_id));
+
+	pending_focus_tile_id = p_tile_id;
+	const uint64_t generation = ++pending_focus_tile_generation;
+	SceneTree *tree = get_tree();
+	if (tree) {
+		tree->connect(SNAME("process_frame"),
+				callable_mp(this, &EditorNode::_activate_queued_focus_tile).bind(p_tile_id, generation),
+				CONNECT_ONE_SHOT);
+	} else {
+		callable_mp(this, &EditorNode::_activate_queued_focus_tile).call_deferred(p_tile_id, generation);
+	}
+}
+
+void EditorNode::_activate_queued_focus_tile(int p_tile_id, uint64_t p_generation) {
+	if (p_generation != pending_focus_tile_generation || pending_focus_tile_id != p_tile_id) {
+		return;
+	}
+	pending_focus_tile_id = -1;
+	if (!scene_workspace || !scene_workspace->get_leaf_by_id(p_tile_id)) {
+		return;
+	}
+	_focus_tile_internal(p_tile_id, true);
+}
+
+void EditorNode::_focus_tile_internal(int p_tile_id, bool p_activate_content_if_already_focused) {
+	ERR_FAIL_NULL(scene_workspace);
+	WorkspaceLeafNode *leaf = scene_workspace->get_leaf_by_id(p_tile_id);
+	ERR_FAIL_NULL(leaf);
 
 	const int scene_idx = editor_data.get_tile_current_scene(p_tile_id);
 	EditorSceneContext *expected_context = scene_idx >= 0 ? editor_data.get_scene_context(scene_idx) : no_scene_context;
 	const bool already_focused = editor_data.get_focused_tile_id() == p_tile_id && scene_workspace->get_focused_leaf_id() == p_tile_id;
 	const bool already_current = editor_data.get_edited_scene() == scene_idx && active_scene_context == expected_context;
+	const bool leaf_already_focused = scene_workspace->get_focused_leaf_id() == p_tile_id;
 
 	scene_workspace->set_focused_leaf(p_tile_id);
+	if (p_activate_content_if_already_focused && leaf_already_focused) {
+		if (WorkspaceLeafContent *content = leaf->get_leaf_content()) {
+			content->on_focus_entered();
+		}
+	}
 	editor_data.set_focused_tile_id(p_tile_id);
 
-	WorkspaceLeafNode *leaf = scene_workspace->get_leaf_by_id(p_tile_id);
-	ERR_FAIL_NULL(leaf);
 	ScenePaneTile *tile = leaf->get_pane_tile();
 	ERR_FAIL_NULL(tile);
 
@@ -7727,16 +7768,26 @@ void EditorNode::_focus_tile(int p_tile_id) {
 	_set_current_scene_nocheck(scene_idx);
 }
 
+void EditorNode::_focus_tile(int p_tile_id) {
+	const bool should_activate_content = scene_workspace &&
+			pending_focus_tile_id == p_tile_id &&
+			scene_workspace->get_focused_leaf_id() == p_tile_id;
+	_cancel_queued_focus_tile_activation();
+	_focus_tile_internal(p_tile_id, should_activate_content);
+}
+
 void EditorNode::_on_leaf_focus_requested(int p_leaf_id) {
 	ERR_FAIL_NULL(scene_workspace);
 	WorkspaceLeafNode *leaf = scene_workspace->get_leaf_by_id(p_leaf_id);
 	ERR_FAIL_NULL(leaf);
 	if (leaf->get_pane_tile()) {
-		_focus_tile(p_leaf_id);
+		scene_workspace->set_focused_leaf(p_leaf_id, false);
+		_queue_focus_tile_activation(p_leaf_id);
 		return;
 	}
 	if (WorkspacePane *pane = leaf->get_workspace_pane()) {
 		if (pane->is_script_pane()) {
+			_cancel_queued_focus_tile_activation();
 			scene_workspace->set_focused_leaf(p_leaf_id);
 			Viewport *editor_viewport = get_viewport();
 			if (editor_viewport && editor_viewport->gui_is_dragging()) {
@@ -7752,6 +7803,7 @@ void EditorNode::_on_leaf_focus_requested(int p_leaf_id) {
 
 void EditorNode::_focus_script_leaf(int p_leaf_id) {
 	ERR_FAIL_NULL(scene_workspace);
+	_cancel_queued_focus_tile_activation();
 	scene_workspace->set_focused_leaf(p_leaf_id);
 	_complete_script_leaf_focus(p_leaf_id);
 }
