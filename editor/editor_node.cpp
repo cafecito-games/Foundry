@@ -7781,7 +7781,7 @@ void EditorNode::_on_leaf_focus_requested(int p_leaf_id) {
 	WorkspaceLeafNode *leaf = scene_workspace->get_leaf_by_id(p_leaf_id);
 	ERR_FAIL_NULL(leaf);
 	if (leaf->get_pane_tile()) {
-		scene_workspace->set_focused_leaf(p_leaf_id, false);
+		scene_workspace->set_focused_leaf_without_content_activation(p_leaf_id);
 		_queue_focus_tile_activation(p_leaf_id);
 		return;
 	}
