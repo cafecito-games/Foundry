@@ -138,6 +138,7 @@ private:
 	WorkspaceLeafNode *_find_first_leaf(Control *p_node) const;
 	WorkspaceLeafNode *_find_leaf_hosting_type(const StringName &p_type_id) const;
 	void _clear_tree();
+	void _set_focused_leaf(int p_id, bool p_activate_content);
 	bool _is_leaf_node(Control *p_node) const;
 	bool _is_split_node(Control *p_node) const;
 	void _update_focus_visuals();
@@ -219,7 +220,8 @@ public:
 	WorkspaceLeafNode *get_leaf_by_id(int p_id) const;
 	WorkspaceLeafNode *get_focused_leaf() const { return get_leaf_by_id(focused_leaf_id); }
 	int get_focused_leaf_id() const { return focused_leaf_id; }
-	void set_focused_leaf(int p_id, bool p_activate_content = true);
+	void set_focused_leaf(int p_id);
+	void set_focused_leaf_without_content_activation(int p_id);
 	void request_leaf_focus(int p_leaf_id);
 	int get_leaf_count() const { return leaves.size(); }
 	Vector<WorkspaceLeafNode *> get_leaves() const { return leaves; }

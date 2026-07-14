@@ -1080,7 +1080,7 @@ WorkspaceLeafNode *EditorSceneWorkspace::get_leaf_by_id(int p_id) const {
 	return nullptr;
 }
 
-void EditorSceneWorkspace::set_focused_leaf(int p_id, bool p_activate_content) {
+void EditorSceneWorkspace::_set_focused_leaf(int p_id, bool p_activate_content) {
 	ERR_FAIL_NULL(get_leaf_by_id(p_id));
 	if (focused_leaf_id == p_id) {
 		return;
@@ -1094,6 +1094,14 @@ void EditorSceneWorkspace::set_focused_leaf(int p_id, bool p_activate_content) {
 	if (p_activate_content && leaf && leaf->get_leaf_content()) {
 		leaf->get_leaf_content()->on_focus_entered();
 	}
+}
+
+void EditorSceneWorkspace::set_focused_leaf(int p_id) {
+	_set_focused_leaf(p_id, true);
+}
+
+void EditorSceneWorkspace::set_focused_leaf_without_content_activation(int p_id) {
+	_set_focused_leaf(p_id, false);
 }
 
 void EditorSceneWorkspace::request_leaf_focus(int p_leaf_id) {
