@@ -2624,12 +2624,7 @@ void FileSystemDock::_file_option(int p_option, const Vector<String> &p_selected
 		} break;
 
 		case FILE_MENU_NEW_SCRIPT: {
-			String fpath = current_path;
-			if (!fpath.ends_with("/")) {
-				fpath = fpath.get_base_dir();
-			}
-			make_script_dialog->config("Node", fpath.path_join("new_script.fs"), false);
-			make_script_dialog->popup_centered();
+			open_script_create_dialog();
 		} break;
 
 		case FILE_MENU_COPY_PATH: {
@@ -2922,6 +2917,15 @@ void FileSystemDock::create_directory(const String &p_path, const String &p_base
 	if (err != OK) {
 		EditorNode::get_singleton()->show_warning(vformat(TTR("Could not create folder: %s"), TTR(error_names[err])));
 	}
+}
+
+void FileSystemDock::open_script_create_dialog() {
+	String fpath = current_path;
+	if (!fpath.ends_with("/")) {
+		fpath = fpath.get_base_dir();
+	}
+	make_script_dialog->config("Node", fpath.path_join("new_script.fs"), false);
+	make_script_dialog->popup_centered();
 }
 
 ScriptCreateDialog *FileSystemDock::get_script_create_dialog() const {
