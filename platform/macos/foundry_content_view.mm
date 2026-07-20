@@ -661,7 +661,10 @@
 		[self removeTrackingArea:tracking_area];
 	}
 
-	NSTrackingAreaOptions options = NSTrackingMouseEnteredAndExited | NSTrackingActiveWhenFirstResponder | NSTrackingCursorUpdate | NSTrackingInVisibleRect;
+	// ActiveAlways: rename popups and other focused transients steal first responder;
+	// WhenFirstResponder then stops delivering mouseExited for the editor window and
+	// desyncs DisplayServer hover from Window::windowmanager_window_over (#1142).
+	NSTrackingAreaOptions options = NSTrackingMouseEnteredAndExited | NSTrackingActiveAlways | NSTrackingCursorUpdate | NSTrackingInVisibleRect;
 	tracking_area = [[NSTrackingArea alloc] initWithRect:[self bounds] options:options owner:self userInfo:nil];
 
 	[self addTrackingArea:tracking_area];
