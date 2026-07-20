@@ -1535,13 +1535,15 @@ void EditorNode::_sources_changed(bool p_exist) {
 
 		// Set initial focus for screen reader users.
 		if (get_tree()->is_accessibility_enabled()) {
-			if (get_focused_scene_tree_dock()->is_visible_in_tree()) {
-				get_focused_scene_tree_dock()->get_tree_editor()->get_scene_tree()->grab_focus();
-			} else {
-				TabContainer *tab_container = EditorDockManager::get_singleton()->get_dock_tab_container(get_focused_scene_tree_dock());
-				if (tab_container) {
-					// Another tab is active (e.g., Import) - focus the tab bar so user can switch.
-					tab_container->get_tab_bar()->grab_focus();
+			if (SceneTreeDock *scene_tree_dock = get_focused_scene_tree_dock()) {
+				if (scene_tree_dock->is_visible_in_tree()) {
+					scene_tree_dock->get_tree_editor()->get_scene_tree()->grab_focus();
+				} else {
+					TabContainer *tab_container = EditorDockManager::get_singleton()->get_dock_tab_container(scene_tree_dock);
+					if (tab_container) {
+						// Another tab is active (e.g., Import) - focus the tab bar so user can switch.
+						tab_container->get_tab_bar()->grab_focus();
+					}
 				}
 			}
 		}
@@ -3116,15 +3118,21 @@ void EditorNode::push_node_item(Node *p_node) {
 
 void EditorNode::push_item(Object *p_object, const String &p_property, bool p_inspector_only) {
 	if (!p_object) {
-		get_focused_inspector()->edit(nullptr);
+		if (EditorInspector *inspector = get_focused_inspector()) {
+			inspector->edit(nullptr);
+		}
 		if (SignalsDock *signals_dock = get_focused_signals_dock()) {
 			signals_dock->set_object(nullptr);
 		}
 		if (GroupsDock *groups_dock = get_focused_groups_dock()) {
 			groups_dock->set_selection(Vector<Node *>());
 		}
-		get_focused_scene_tree_dock()->set_selected(nullptr);
-		get_focused_inspector_dock()->update(nullptr);
+		if (SceneTreeDock *scene_tree_dock = get_focused_scene_tree_dock()) {
+			scene_tree_dock->set_selected(nullptr);
+		}
+		if (InspectorDock *inspector_dock = get_focused_inspector_dock()) {
+			inspector_dock->update(nullptr);
+		}
 		hide_unused_editors();
 		return;
 	}
@@ -3234,25 +3242,39 @@ void EditorNode::_edit_current(bool p_skip_foreign, bool p_skip_inspector_update
 
 	bool inspector_only = editor_history->is_current_inspector_only();
 
+	SceneTreeDock *scene_tree_dock = get_focused_scene_tree_dock();
+	InspectorDock *inspector_dock = get_focused_inspector_dock();
+	EditorInspector *inspector = get_focused_inspector();
+
 	if (!current_obj) {
-		get_focused_scene_tree_dock()->set_selected(nullptr);
-		get_focused_inspector()->edit(nullptr);
+		// Layout restore / projectless shell can run this before any scene tile
+		// (and its docks) exists. Clear only docks that are present.
+		if (scene_tree_dock) {
+			scene_tree_dock->set_selected(nullptr);
+		}
+		if (inspector) {
+			inspector->edit(nullptr);
+		}
 		if (SignalsDock *signals_dock = get_focused_signals_dock()) {
 			signals_dock->set_object(nullptr);
 		}
 		if (GroupsDock *groups_dock = get_focused_groups_dock()) {
 			groups_dock->set_selection(Vector<Node *>());
 		}
-		get_focused_inspector_dock()->update(nullptr);
-		EditorDebuggerNode::get_singleton()->clear_remote_tree_selection();
+		if (inspector_dock) {
+			inspector_dock->update(nullptr);
+		}
+		if (EditorDebuggerNode *debugger = EditorDebuggerNode::get_singleton()) {
+			debugger->clear_remote_tree_selection();
+		}
 		hide_unused_editors();
 		return;
 	}
 
 	// Update the use folding setting and state.
 	bool disable_folding = bool(EDITOR_GET("interface/inspector/disable_folding")) || current_obj->is_class("EditorDebuggerRemoteObjects");
-	if (get_focused_inspector()->is_using_folding() == disable_folding) {
-		get_focused_inspector()->set_use_folding(!disable_folding, false);
+	if (inspector && inspector->is_using_folding() == disable_folding) {
+		inspector->set_use_folding(!disable_folding, false);
 	}
 
 	bool is_resource = current_obj->is_class("Resource");
@@ -3273,8 +3295,12 @@ void EditorNode::_edit_current(bool p_skip_foreign, bool p_skip_inspector_update
 		ERR_FAIL_NULL(current_res);
 
 		if (!p_skip_inspector_update) {
-			get_focused_inspector()->edit(current_res);
-			get_focused_scene_tree_dock()->set_selected(nullptr);
+			if (inspector) {
+				inspector->edit(current_res);
+			}
+			if (scene_tree_dock) {
+				scene_tree_dock->set_selected(nullptr);
+			}
 			SignalsDock *signals_dock = get_focused_signals_dock();
 			GroupsDock *groups_dock = get_focused_groups_dock();
 			if (signals_dock) {
@@ -3283,9 +3309,15 @@ void EditorNode::_edit_current(bool p_skip_foreign, bool p_skip_inspector_update
 			if (groups_dock) {
 				groups_dock->set_selection(Vector<Node *>());
 			}
-			get_focused_inspector_dock()->update(nullptr);
-			EditorDebuggerNode::get_singleton()->clear_remote_tree_selection();
-			ImportDock::get_singleton()->set_edit_path(current_res->get_path());
+			if (inspector_dock) {
+				inspector_dock->update(nullptr);
+			}
+			if (EditorDebuggerNode *debugger = EditorDebuggerNode::get_singleton()) {
+				debugger->clear_remote_tree_selection();
+			}
+			if (ImportDock::get_singleton()) {
+				ImportDock::get_singleton()->set_edit_path(current_res->get_path());
+			}
 		}
 
 		int subr_idx = current_res->get_path().find("::");
@@ -3310,7 +3342,9 @@ void EditorNode::_edit_current(bool p_skip_foreign, bool p_skip_inspector_update
 		Node *current_node = Object::cast_to<Node>(current_obj);
 		ERR_FAIL_NULL(current_node);
 
-		get_focused_inspector()->edit(current_node);
+		if (inspector) {
+			inspector->edit(current_node);
+		}
 		if (current_node->is_inside_tree()) {
 			SignalsDock *signals_dock = get_focused_signals_dock();
 			GroupsDock *groups_dock = get_focused_groups_dock();
@@ -3320,9 +3354,13 @@ void EditorNode::_edit_current(bool p_skip_foreign, bool p_skip_inspector_update
 			if (groups_dock) {
 				groups_dock->set_selection(Vector<Node *>{ current_node });
 			}
-			get_focused_scene_tree_dock()->set_selected(current_node);
-			get_focused_scene_tree_dock()->set_selection({ current_node });
-			get_focused_inspector_dock()->update(current_node);
+			if (scene_tree_dock) {
+				scene_tree_dock->set_selected(current_node);
+				scene_tree_dock->set_selection({ current_node });
+			}
+			if (inspector_dock) {
+				inspector_dock->update(current_node);
+			}
 			if (!inspector_only && !skip_main_plugin) {
 				// The script editor is now an always-visible workspace leaf rather than
 				// a main screen, so its visibility no longer means the user is "in" the
@@ -3337,10 +3375,16 @@ void EditorNode::_edit_current(bool p_skip_foreign, bool p_skip_inspector_update
 			if (GroupsDock *groups_dock = get_focused_groups_dock()) {
 				groups_dock->set_selection(Vector<Node *>());
 			}
-			get_focused_scene_tree_dock()->set_selected(nullptr);
-			get_focused_inspector_dock()->update(nullptr);
+			if (scene_tree_dock) {
+				scene_tree_dock->set_selected(nullptr);
+			}
+			if (inspector_dock) {
+				inspector_dock->update(nullptr);
+			}
 		}
-		EditorDebuggerNode::get_singleton()->clear_remote_tree_selection();
+		if (EditorDebuggerNode *debugger = EditorDebuggerNode::get_singleton()) {
+			debugger->clear_remote_tree_selection();
+		}
 
 		if (get_edited_scene() && !get_edited_scene()->get_scene_file_path().is_empty()) {
 			String source_scene = get_edited_scene()->get_scene_file_path();
@@ -3380,28 +3424,43 @@ void EditorNode::_edit_current(bool p_skip_foreign, bool p_skip_inspector_update
 		}
 
 		if (!current_obj->is_class("EditorDebuggerRemoteObjects")) {
-			EditorDebuggerNode::get_singleton()->clear_remote_tree_selection();
+			if (EditorDebuggerNode *debugger = EditorDebuggerNode::get_singleton()) {
+				debugger->clear_remote_tree_selection();
+			}
 		}
 
-		get_focused_inspector()->edit(current_obj);
+		if (inspector) {
+			inspector->edit(current_obj);
+		}
 		if (SignalsDock *signals_dock = get_focused_signals_dock()) {
 			signals_dock->set_object(nullptr);
 		}
 		if (GroupsDock *groups_dock = get_focused_groups_dock()) {
 			groups_dock->set_selection(multi_nodes);
 		}
-		get_focused_scene_tree_dock()->set_selected(selected_node);
-		get_focused_scene_tree_dock()->set_selection(multi_nodes);
-		get_focused_inspector_dock()->update(nullptr);
+		if (scene_tree_dock) {
+			scene_tree_dock->set_selected(selected_node);
+			scene_tree_dock->set_selection(multi_nodes);
+		}
+		if (inspector_dock) {
+			inspector_dock->update(nullptr);
+		}
 	}
 
-	get_focused_inspector_dock()->set_info(
-			info_is_warning ? TTR("Changes may be lost!") : TTR("This object is read-only."),
-			editable_info,
-			info_is_warning);
+	if (inspector_dock) {
+		inspector_dock->set_info(
+				info_is_warning ? TTR("Changes may be lost!") : TTR("This object is read-only."),
+				editable_info,
+				info_is_warning);
+	}
 
-	Object *editor_owner = (is_node || current_obj->is_class("MultiNodeEdit")) ? (Object *)get_focused_scene_tree_dock() : is_resource ? (Object *)get_focused_inspector()
-																																	   : (Object *)this;
+	Object *editor_owner = (is_node || current_obj->is_class("MultiNodeEdit")) ? (Object *)scene_tree_dock : is_resource ? (Object *)inspector
+																														: (Object *)this;
+	// Prefer the dock/inspector that owns the edit when present; fall back to the
+	// editor node itself when restoring before per-tile docks exist.
+	if (!editor_owner) {
+		editor_owner = this;
+	}
 
 	// Take care of the main editor plugin.
 
@@ -3459,7 +3518,9 @@ void EditorNode::_edit_current(bool p_skip_foreign, bool p_skip_inspector_update
 		edit_item(current_obj, editor_owner);
 	}
 
-	get_focused_inspector_dock()->update(current_obj);
+	if (inspector_dock) {
+		inspector_dock->update(current_obj);
+	}
 }
 
 void EditorNode::_android_build_source_selected(const String &p_file) {
@@ -4682,8 +4743,11 @@ bool EditorNode::is_addon_plugin_enabled(const String &p_addon) const {
 
 void EditorNode::_remove_edited_scene(bool p_change_tab, bool p_allow_collapse) {
 	// When scene gets closed no node is edited anymore, so make sure the editors are notified before nodes are freed.
-	hide_unused_editors(get_focused_scene_tree_dock());
-	get_focused_scene_tree_dock()->clear_previous_node_selection();
+	SceneTreeDock *scene_tree_dock = get_focused_scene_tree_dock();
+	hide_unused_editors(scene_tree_dock);
+	if (scene_tree_dock) {
+		scene_tree_dock->clear_previous_node_selection();
+	}
 
 	const int old_index = editor_data.get_edited_scene();
 	const int tile_id = old_index >= 0 ? editor_data.get_scene_tile(old_index) : editor_data.get_focused_tile_id();
@@ -4866,8 +4930,10 @@ void EditorNode::set_edited_scene_root(Node *p_scene, bool p_auto_add) {
 		Object::cast_to<Popup>(p_scene)->show();
 	}
 	// The bound scene context already holds the new root; refresh the dock's
-	// tree so it reflects it.
-	get_focused_scene_tree_dock()->update_tree();
+	// tree so it reflects it (no-op when restoring before any scene tile exists).
+	if (SceneTreeDock *scene_tree_dock = get_focused_scene_tree_dock()) {
+		scene_tree_dock->update_tree();
+	}
 	if (get_tree()) {
 		get_tree()->set_edited_scene_root(p_scene);
 	}
@@ -4911,9 +4977,13 @@ void EditorNode::set_preview_locale(const String &p_locale) {
 
 Dictionary EditorNode::_get_main_scene_state() {
 	Dictionary state;
-	state["scene_tree_offset"] = get_focused_scene_tree_dock()->get_tree_editor()->get_scene_tree()->get_vscroll_bar()->get_value();
-	state["property_edit_offset"] = get_focused_inspector()->get_scroll_offset();
-	state["node_filter"] = get_focused_scene_tree_dock()->get_filter();
+	if (SceneTreeDock *scene_tree_dock = get_focused_scene_tree_dock()) {
+		state["scene_tree_offset"] = scene_tree_dock->get_tree_editor()->get_scene_tree()->get_vscroll_bar()->get_value();
+		state["node_filter"] = scene_tree_dock->get_filter();
+	}
+	if (EditorInspector *inspector = get_focused_inspector()) {
+		state["property_edit_offset"] = inspector->get_scroll_offset();
+	}
 	return state;
 }
 
@@ -4924,10 +4994,13 @@ void EditorNode::_set_main_scene_state(Dictionary p_state, Node *p_for_scene) {
 
 	changing_scene = false;
 
+	SceneTreeDock *scene_tree_dock = get_focused_scene_tree_dock();
+	EditorInspector *inspector = get_focused_inspector();
+
 	if (get_edited_scene()) {
 		if (editor_main_screen->can_auto_switch_screens()) {
 			// Switch between 2D and 3D if currently in 2D or 3D.
-			Node *selected_node = get_focused_scene_tree_dock()->get_tree_editor()->get_selected();
+			Node *selected_node = scene_tree_dock ? scene_tree_dock->get_tree_editor()->get_selected() : nullptr;
 			if (!selected_node) {
 				selected_node = get_edited_scene();
 			}
@@ -4938,15 +5011,15 @@ void EditorNode::_set_main_scene_state(Dictionary p_state, Node *p_for_scene) {
 		}
 	}
 
-	if (p_state.has("scene_tree_offset")) {
-		get_focused_scene_tree_dock()->get_tree_editor()->get_scene_tree()->get_vscroll_bar()->set_value(p_state["scene_tree_offset"]);
+	if (scene_tree_dock && p_state.has("scene_tree_offset")) {
+		scene_tree_dock->get_tree_editor()->get_scene_tree()->get_vscroll_bar()->set_value(p_state["scene_tree_offset"]);
 	}
-	if (p_state.has("property_edit_offset")) {
-		get_focused_inspector()->set_scroll_offset(p_state["property_edit_offset"]);
+	if (inspector && p_state.has("property_edit_offset")) {
+		inspector->set_scroll_offset(p_state["property_edit_offset"]);
 	}
 
-	if (p_state.has("node_filter")) {
-		get_focused_scene_tree_dock()->set_filter(p_state["node_filter"]);
+	if (scene_tree_dock && p_state.has("node_filter")) {
+		scene_tree_dock->set_filter(p_state["node_filter"]);
 	}
 
 	// This should only happen at the very end.
@@ -4983,7 +5056,12 @@ void EditorNode::_set_current_scene_nocheck(int p_idx) {
 	changing_scene = true;
 
 	resource_count.clear();
-	get_focused_scene_tree_dock()->clear_previous_node_selection();
+	// Layout restore can call this before any scene tile/dock exists (or while
+	// focus resolves to a tile-less leaf with no effective scene tile yet).
+	SceneTreeDock *scene_tree_dock = get_focused_scene_tree_dock();
+	if (scene_tree_dock) {
+		scene_tree_dock->clear_previous_node_selection();
+	}
 
 	// Deactivates the outgoing context (detaching its viewport, with the
 	// scene still parented to it) and points the editor at the new context.
@@ -5001,8 +5079,12 @@ void EditorNode::_set_current_scene_nocheck(int p_idx) {
 	}
 
 	// The bound scene context already holds the new root; refresh the dock's
-	// tree so it reflects it.
-	get_focused_scene_tree_dock()->update_tree();
+	// tree so it reflects it. Re-resolve after context activation in case focus
+	// / dock binding changed during the switch.
+	scene_tree_dock = get_focused_scene_tree_dock();
+	if (scene_tree_dock) {
+		scene_tree_dock->update_tree();
+	}
 	if (get_tree()) {
 		get_tree()->set_edited_scene_root(new_scene);
 	}
@@ -6141,11 +6223,15 @@ bool EditorNode::is_resource_read_only(Ref<Resource> p_resource, bool p_foreign_
 }
 
 void EditorNode::request_instantiate_scene(const String &p_path) {
-	get_focused_scene_tree_dock()->instantiate(p_path);
+	SceneTreeDock *scene_tree_dock = get_focused_scene_tree_dock();
+	ERR_FAIL_NULL(scene_tree_dock);
+	scene_tree_dock->instantiate(p_path);
 }
 
 void EditorNode::request_instantiate_scenes(const Vector<String> &p_files) {
-	get_focused_scene_tree_dock()->instantiate_scenes(p_files);
+	SceneTreeDock *scene_tree_dock = get_focused_scene_tree_dock();
+	ERR_FAIL_NULL(scene_tree_dock);
+	scene_tree_dock->instantiate_scenes(p_files);
 }
 
 String EditorNode::get_multiwindow_support_tooltip_text() const {
@@ -9321,7 +9407,9 @@ void EditorNode::reload_instances_with_path_in_edited_scenes() {
 					// How that the editor executes a redraw while destroying or progressing the EditorProgress,
 					// it crashes when the root scene has been replaced because the edited scene
 					// was freed and no longer in the scene tree.
-					get_focused_scene_tree_dock()->update_tree();
+					if (SceneTreeDock *scene_tree_dock = get_focused_scene_tree_dock()) {
+						scene_tree_dock->update_tree();
+					}
 					if (get_tree()) {
 						get_tree()->set_edited_scene_root(current_edited_scene);
 					}
