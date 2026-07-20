@@ -40,7 +40,6 @@
 #include "scene/gui/line_edit.h"
 #include "scene/gui/margin_container.h"
 #include "scene/gui/tree.h"
-#include "scene/main/scene_tree.h"
 
 EditorCommandPalette *EditorCommandPalette::singleton = nullptr;
 
@@ -312,12 +311,7 @@ void EditorCommandPalette::register_shortcuts_as_command() {
 		Ref<InputEventShortcut> ev;
 		ev.instantiate();
 		ev->set_shortcut(shortcut);
-		Viewport *viewport = EditorNode::get_singleton() ? EditorNode::get_singleton()->get_viewport() : nullptr;
-		if (viewport == nullptr && SceneTree::get_singleton()) {
-			viewport = SceneTree::get_singleton()->get_root();
-		}
-		ERR_CONTINUE(viewport == nullptr);
-		add_command(command_name, E.key, callable_mp(viewport, &Viewport::push_input), varray(ev, false), shortcut);
+		add_command(command_name, E.key, callable_mp(EditorNode::get_singleton()->get_viewport(), &Viewport::push_input), varray(ev, false), shortcut);
 	}
 	unregistered_shortcuts.clear();
 
