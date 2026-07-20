@@ -3545,6 +3545,11 @@ void EditorNode::_menu_option_confirm(int p_option, bool p_confirmed) {
 		case SCENE_QUICK_OPEN_SCRIPT: {
 			quick_open_dialog->popup_dialog({ "Script" }, callable_mp(this, &EditorNode::_quick_opened));
 		} break;
+		case SCENE_NEW_SCRIPT: {
+			if (FileSystemDock *fs_dock = FileSystemDock::get_singleton()) {
+				fs_dock->open_script_create_dialog();
+			}
+		} break;
 		case SCENE_OPEN_PREV: {
 			if (!prev_closed_scenes.is_empty()) {
 				load_scene(prev_closed_scenes.back()->get());
@@ -10134,6 +10139,7 @@ void EditorNode::_build_file_menu() {
 	file_menu->add_shortcut(ED_GET_SHORTCUT("editor/quick_open"), SCENE_QUICK_OPEN);
 	file_menu->add_shortcut(ED_GET_SHORTCUT("editor/quick_open_scene"), SCENE_QUICK_OPEN_SCENE);
 	file_menu->add_shortcut(ED_GET_SHORTCUT("editor/quick_open_script"), SCENE_QUICK_OPEN_SCRIPT);
+	file_menu->add_shortcut(ED_GET_SHORTCUT("editor/new_script"), SCENE_NEW_SCRIPT);
 	file_menu->add_separator();
 
 	if (!export_as_menu) {
@@ -11067,6 +11073,7 @@ EditorNode::EditorNode() {
 	ED_SHORTCUT_OVERRIDE_ARRAY("editor/quick_open", "macos", { int32_t(KeyModifierMask::META + KeyModifierMask::CTRL + Key::O), int32_t(KeyModifierMask::CMD_OR_CTRL + Key::P) });
 	ED_SHORTCUT_AND_COMMAND("editor/quick_open_scene", TTRC("Quick Open Scene..."), KeyModifierMask::CMD_OR_CTRL + KeyModifierMask::SHIFT + Key::O);
 	ED_SHORTCUT_AND_COMMAND("editor/quick_open_script", TTRC("Quick Open Script..."), KeyModifierMask::CMD_OR_CTRL + KeyModifierMask::ALT + Key::O);
+	ED_SHORTCUT_AND_COMMAND("editor/new_script", TTRC("New Script..."), KeyModifierMask::CMD_OR_CTRL + KeyModifierMask::ALT + Key::N);
 
 	ED_SHORTCUT("editor/export_as_mesh_library", TTRC("MeshLibrary..."));
 
