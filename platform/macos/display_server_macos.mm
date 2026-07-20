@@ -422,9 +422,16 @@ void DisplayServerMacOS::mouse_enter_window(WindowID p_window) {
 }
 
 void DisplayServerMacOS::mouse_exit_window(WindowID p_window) {
-	if (window_mouseover_id == p_window && p_window != INVALID_WINDOW_ID) {
-		send_window_event(windows[p_window], WINDOW_EVENT_MOUSE_EXIT);
+	// Only clear hover when this window is the one DisplayServer currently tracks
+	// as hovered. Spurious mouseExited events (common when a Tree rename Popup or
+	// other transient window appears under the cursor and first-responder tracking
+	// reshuffles) must not drop window_mouseover_id without delivering MOUSE_EXIT
+	// to the real hovered Window — that leaves windowmanager_window_over stale and
+	// trips "Entering a window while a window is hovered" on the next ENTER.
+	if (window_mouseover_id != p_window || p_window == INVALID_WINDOW_ID) {
+		return;
 	}
+	send_window_event(windows[p_window], WINDOW_EVENT_MOUSE_EXIT);
 	window_mouseover_id = INVALID_WINDOW_ID;
 }
 

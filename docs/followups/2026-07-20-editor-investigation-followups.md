@@ -71,3 +71,12 @@ Still expensive on a real focus switch (expected until deglobalization — see C
 2. **B1** (script leaves — multi-leaf fan-out amplifies switch cost)  
 3. **C** deglobalization / LIVE preview update modes  
 4. **D** LSP/completion (independent of workspace tiling)
+
+---
+
+## Also on this branch: #1142 DisplayServer hover warning
+
+Fixed on `fix/scene-switch-hitch` (same session):
+
+- Root cause: `DisplayServerMacOS::mouse_exit_window` cleared `window_mouseover_id` even when the exiting window was not the hovered one, so a later `MOUSE_ENTER` (e.g. Tree rename `Popup`) hit stale `windowmanager_window_over`.
+- Fix: only clear hover when `p_window == window_mouseover_id`; use `NSTrackingActiveAlways` on `FoundryContentView` so enter/exit are not tied to first-responder.
