@@ -391,15 +391,96 @@ void WorkspacePane::sync_scene_tabs_from_editor_data(bool p_activate) {
 
 	const Vector<int> tile_scenes = editor_data->get_tile_scene_indices(leaf_id);
 	bool had_scene_tabs = false;
+	int scene_tab_count = 0;
 	for (const WorkspaceTab &tab : tabs) {
 		if (tab.get_type_id() == StringName("scene")) {
 			had_scene_tabs = true;
-			break;
+			scene_tab_count++;
 		}
 	}
 	if (tile_scenes.is_empty() && !had_scene_tabs) {
 		_update_pane_state(p_activate);
 		return;
+	}
+
+	// Focus switches and other editor-data refreshes call this for every pane even
+	// when the tile's scene membership is unchanged. The full rebuild path always
+	// unmounts/remounts and may re-activate the focused scene tab, which reparents
+	// the shared scene editor a second time after EditorNode already did that work.
+	// Keep the cheap path when order, history ids, and resource keys still match.
+	if (scene_tab_count == tile_scenes.size()) {
+		bool membership_unchanged = true;
+		int scene_tab_cursor = 0;
+		for (int scene_idx : tile_scenes) {
+			while (scene_tab_cursor < tabs.size() && tabs[scene_tab_cursor].get_type_id() != StringName("scene")) {
+				scene_tab_cursor++;
+			}
+			if (scene_tab_cursor >= tabs.size()) {
+				membership_unchanged = false;
+				break;
+			}
+			const WorkspaceTab &tab = tabs[scene_tab_cursor];
+			const int history_id = editor_data->get_scene_history_id(scene_idx);
+			const String key = SceneTabType::resource_key_for_scene(*editor_data, scene_idx);
+			if (!tab.get_payload().has("scene_history_id") || int(tab.get_payload()["scene_history_id"]) != history_id || tab.get_resource_key() != key) {
+				membership_unchanged = false;
+				break;
+			}
+			scene_tab_cursor++;
+		}
+		if (membership_unchanged) {
+			while (scene_tab_cursor < tabs.size()) {
+				if (tabs[scene_tab_cursor].get_type_id() == StringName("scene")) {
+					membership_unchanged = false;
+					break;
+				}
+				scene_tab_cursor++;
+			}
+		}
+
+		if (membership_unchanged) {
+			const int previous_active = active_tab_index;
+			int desired_active = -1;
+			const int current_scene = editor_data->get_tile_current_scene(leaf_id);
+			if (current_scene >= 0) {
+				desired_active = find_scene_tab_index(current_scene);
+			}
+			if (desired_active < 0 && previous_active >= 0 && previous_active < tabs.size()) {
+				desired_active = previous_active;
+			}
+			if (desired_active < 0 && !tabs.is_empty()) {
+				desired_active = 0;
+			}
+
+			// Refresh titles (unsaved markers, renames) without tearing down mounts.
+			for (int i = 0; i < tabs.size(); i++) {
+				if (tabs[i].get_type_id() != StringName("scene")) {
+					continue;
+				}
+				const int scene_idx = SceneTabType::find_scene_index(*editor_data, tabs[i]);
+				if (scene_idx >= 0) {
+					tabs.write[i].set_title_cache(editor_data->get_scene_title(scene_idx));
+				}
+			}
+
+			_refresh_canonical_locations();
+			if (desired_active != previous_active) {
+				active_tab_index = desired_active;
+				_sync_tab_strip();
+				_update_pane_state(p_activate);
+			} else {
+				_sync_tab_strip();
+				// Active tab is already correct. Skip remount/activate: callers such
+				// as deferred focus sync have usually already switched the scene and
+				// reparented the shared editor; SceneTabType::activate would do that
+				// work again. activate_workspace_scene_tab also early-outs when the
+				// editor is already on this tile/scene.
+				if (p_activate && active_tab_index >= 0 && mounted_tab_stable_id != tabs[active_tab_index].get_stable_id()) {
+					_mount_active_tab(true);
+				}
+			}
+			return;
+		}
 	}
 
 	const int previous_active_history = (active_tab_index >= 0 && active_tab_index < tabs.size() && tabs[active_tab_index].get_type_id() == StringName("scene") && tabs[active_tab_index].get_payload().has("scene_history_id")) ? int(tabs[active_tab_index].get_payload()["scene_history_id"]) : -1;

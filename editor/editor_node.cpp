@@ -4796,11 +4796,30 @@ void EditorNode::activate_workspace_scene_tab(int p_scene_idx, int p_tile_id) {
 	ERR_FAIL_INDEX(p_scene_idx, editor_data.get_edited_scene_count());
 	ERR_FAIL_COND(p_tile_id < 0);
 
-	if (editor_data.get_scene_tile(p_scene_idx) != p_tile_id) {
+	const bool already_owned = editor_data.get_scene_tile(p_scene_idx) == p_tile_id;
+	const bool already_tile_current = editor_data.get_tile_current_scene(p_tile_id) == p_scene_idx;
+	const bool already_focused = editor_data.get_focused_tile_id() == p_tile_id;
+	const bool already_edited = editor_data.get_edited_scene() == p_scene_idx && active_scene_context == editor_data.get_scene_context(p_scene_idx);
+	bool scene_mode_in_tile = !scene_workspace || !editor_main_screen;
+	if (scene_workspace && editor_main_screen) {
+		ScenePaneTile *tile = scene_workspace->get_tile_by_id(p_tile_id);
+		VBoxContainer *scene_mode = editor_main_screen->get_scene_mode_control();
+		Control *host = tile ? tile->get_content_host() : nullptr;
+		scene_mode_in_tile = scene_mode && host && scene_mode->get_parent() == host;
+	}
+	if (already_owned && already_tile_current && already_focused && already_edited && scene_mode_in_tile) {
+		return;
+	}
+
+	if (!already_owned) {
 		editor_data.set_scene_tile(p_scene_idx, p_tile_id);
 	}
-	editor_data.set_tile_current_scene(p_tile_id, p_scene_idx);
-	editor_data.set_focused_tile_id(p_tile_id);
+	if (!already_tile_current) {
+		editor_data.set_tile_current_scene(p_tile_id, p_scene_idx);
+	}
+	if (!already_focused) {
+		editor_data.set_focused_tile_id(p_tile_id);
+	}
 
 	if (scene_workspace) {
 		if (ScenePaneTile *tile = scene_workspace->get_tile_by_id(p_tile_id)) {
@@ -4810,7 +4829,7 @@ void EditorNode::activate_workspace_scene_tab(int p_scene_idx, int p_tile_id) {
 		}
 	}
 
-	if (editor_data.get_edited_scene() != p_scene_idx || active_scene_context != editor_data.get_scene_context(p_scene_idx)) {
+	if (!already_edited) {
 		_set_current_scene_nocheck(p_scene_idx);
 	}
 }
@@ -7733,6 +7752,12 @@ void EditorNode::_focus_tile_internal(int p_tile_id, bool p_activate_content_if_
 	WorkspaceLeafNode *leaf = scene_workspace->get_leaf_by_id(p_tile_id);
 	ERR_FAIL_NULL(leaf);
 
+	const bool profile_switch = OS::get_singleton()->has_environment("FOUNDRY_PROFILE_SCENE_SWITCH");
+	const uint64_t profile_start_usec = profile_switch ? OS::get_singleton()->get_ticks_usec() : 0;
+	uint64_t profile_reparent_usec = 0;
+	uint64_t profile_bind_usec = 0;
+	uint64_t profile_scene_usec = 0;
+
 	const int scene_idx = editor_data.get_tile_current_scene(p_tile_id);
 	EditorSceneContext *expected_context = scene_idx >= 0 ? editor_data.get_scene_context(scene_idx) : no_scene_context;
 	const bool already_focused = editor_data.get_focused_tile_id() == p_tile_id && scene_workspace->get_focused_leaf_id() == p_tile_id;
@@ -7751,21 +7776,40 @@ void EditorNode::_focus_tile_internal(int p_tile_id, bool p_activate_content_if_
 	ERR_FAIL_NULL(tile);
 
 	_sync_focused_tile_chrome(tile);
+	const uint64_t reparent_start_usec = profile_switch ? OS::get_singleton()->get_ticks_usec() : 0;
 	_reparent_scene_mode_into(tile);
+	if (profile_switch) {
+		profile_reparent_usec = OS::get_singleton()->get_ticks_usec() - reparent_start_usec;
+	}
+	const uint64_t bind_start_usec = profile_switch ? OS::get_singleton()->get_ticks_usec() : 0;
 	_bind_all_leaf_docks();
+	if (profile_switch) {
+		profile_bind_usec = OS::get_singleton()->get_ticks_usec() - bind_start_usec;
+	}
 	if (EditorDebuggerNode *debugger = EditorDebuggerNode::get_singleton()) {
 		debugger->rebind_remote_scene_tree();
 	}
 
 	if (already_focused && already_current) {
+		if (profile_switch) {
+			print_line(vformat("[scene-switch] focus tile=%d early-out total=%dus reparent=%dus bind=%dus", p_tile_id, OS::get_singleton()->get_ticks_usec() - profile_start_usec, profile_reparent_usec, profile_bind_usec));
+		}
 		return;
 	}
 
 	if (scene_idx < 0) {
+		if (profile_switch) {
+			print_line(vformat("[scene-switch] focus tile=%d no-scene total=%dus reparent=%dus bind=%dus", p_tile_id, OS::get_singleton()->get_ticks_usec() - profile_start_usec, profile_reparent_usec, profile_bind_usec));
+		}
 		return;
 	}
 
+	const uint64_t scene_start_usec = profile_switch ? OS::get_singleton()->get_ticks_usec() : 0;
 	_set_current_scene_nocheck(scene_idx);
+	if (profile_switch) {
+		profile_scene_usec = OS::get_singleton()->get_ticks_usec() - scene_start_usec;
+		print_line(vformat("[scene-switch] focus tile=%d scene=%d total=%dus reparent=%dus bind=%dus set_current=%dus", p_tile_id, scene_idx, OS::get_singleton()->get_ticks_usec() - profile_start_usec, profile_reparent_usec, profile_bind_usec, profile_scene_usec));
+	}
 }
 
 void EditorNode::_focus_tile(int p_tile_id) {
