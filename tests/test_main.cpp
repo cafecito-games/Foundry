@@ -71,6 +71,7 @@
 #include "tests/editor/test_editor_help_type_links.h"
 #include "tests/editor/test_editor_layout_store.h"
 #include "tests/editor/test_editor_main_screen_layout.h"
+#include "tests/editor/test_editor_new_script_command.h"
 #include "tests/editor/test_editor_plugin_focused_tile_forwarding.h"
 #include "tests/editor/test_editor_scene_context.h"
 #include "tests/editor/test_extract_method_name_prompt.h"
