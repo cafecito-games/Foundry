@@ -985,4 +985,15 @@ SceneShaderForwardMobile::~SceneShaderForwardMobile() {
 	material_storage->material_free(overdraw_material);
 	material_storage->material_free(default_material);
 	material_storage->material_free(debug_shadow_splits_material);
+
+	// Same shutdown ordering issue as SceneShaderForwardClustered: MaterialStorage
+	// outlives this object, so leaked ShaderData must be unlinked before ~List.
+	uint32_t remaining = 0;
+	while (SelfList<ShaderData> *E = shader_list.first()) {
+		E->remove_from_list();
+		remaining++;
+	}
+	if (remaining) {
+		ERR_PRINT(vformat("%d SceneForwardMobile ShaderData entries were still registered at shutdown (likely leaked materials/shaders).", remaining));
+	}
 }

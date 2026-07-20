@@ -630,6 +630,20 @@ SceneShaderForwardClustered::~SceneShaderForwardClustered() {
 	material_storage->material_free(overdraw_material);
 	material_storage->material_free(default_material);
 	material_storage->material_free(debug_shadow_splits_material);
+
+	// ShaderData is owned by MaterialStorage and is destroyed later in
+	// RendererCompositorRD::finalize(). If materials/shaders leaked, those
+	// ShaderData entries are still linked here when this object is destroyed.
+	// Unlink them so SelfList::~List does not DEV_ASSERT-abort during quit;
+	// ShaderRD will still report any never-freed versions.
+	uint32_t remaining = 0;
+	while (SelfList<ShaderData> *E = shader_list.first()) {
+		E->remove_from_list();
+		remaining++;
+	}
+	if (remaining) {
+		ERR_PRINT(vformat("%d SceneForwardClustered ShaderData entries were still registered at shutdown (likely leaked materials/shaders).", remaining));
+	}
 }
 
 void SceneShaderForwardClustered::init(const String p_defines) {
