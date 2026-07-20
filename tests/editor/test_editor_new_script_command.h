@@ -72,22 +72,12 @@ TEST_CASE("[Editor][NewScript] default shortcut binding is Cmd/Ctrl+Alt+N") {
 	EditorCommandPalette *palette = EditorCommandPalette::get_singleton();
 	REQUIRE(palette != nullptr);
 
-	// Palette registration is deferred until EditorNode startup; finish wiring here.
+	// ED_SHORTCUT_AND_COMMAND queues palette entries while the palette is outside
+	// the tree; EditorNode flushes them via register_shortcuts_as_command().
 	if (!palette->is_inside_tree()) {
 		SceneTree::get_singleton()->get_root()->add_child(palette);
 	}
-	if (!action_list_contains(palette, "editor/new_script")) {
-		Ref<InputEventShortcut> ev;
-		ev.instantiate();
-		ev->set_shortcut(shortcut);
-		Viewport *viewport = SceneTree::get_singleton()->get_root()->get_viewport();
-		palette->add_command(
-				TTRC("New Script..."),
-				"editor/new_script",
-				callable_mp(viewport, &Viewport::push_input),
-				varray(ev, false),
-				shortcut);
-	}
+	palette->register_shortcuts_as_command();
 
 	CHECK(action_list_contains(palette, "editor/new_script"));
 }
