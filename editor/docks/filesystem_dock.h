@@ -418,6 +418,7 @@ public:
 	void focus_on_filter();
 	void create_directory(const String &p_path, const String &p_base_dir);
 
+	void open_script_create_dialog();
 	ScriptCreateDialog *get_script_create_dialog() const;
 
 	void fix_dependencies(const String &p_for_file);
