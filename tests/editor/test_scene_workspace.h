@@ -1541,6 +1541,83 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] scene-tab-order-matches-editordat
 	h.unmount();
 }
 
+class CountingSceneTabType : public SceneTabType {
+public:
+	int mount_count = 0;
+	int unmount_count = 0;
+	int activate_count = 0;
+
+	void mount(WorkspaceTab &p_tab, Control *p_chrome_host) override {
+		mount_count++;
+		SceneTabType::mount(p_tab, p_chrome_host);
+	}
+	void unmount(WorkspaceTab &p_tab) override {
+		unmount_count++;
+		SceneTabType::unmount(p_tab);
+	}
+	void activate(WorkspaceTab &p_tab) override {
+		activate_count++;
+		SceneTabType::activate(p_tab);
+	}
+};
+
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] scene-tab-sync-skips-rebuild-when-membership-unchanged") {
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspacePane *pane = get_leaf_pane(h.workspace->get_focused_leaf());
+	REQUIRE(pane != nullptr);
+
+	WorkspaceTabRegistry registry;
+	registry.reset_stable_id_counter();
+	registry.clear_canonical_index();
+	CountingSceneTabType counting_scene;
+	registry.register_type(&counting_scene);
+	pane->set_tab_registry(&registry);
+
+	const int tile_id = h.workspace->get_focused_leaf_id();
+	Node2D *root_a = memnew(Node2D);
+	const int scene_a = add_test_scene(h.editor_data, tile_id, root_a);
+	h.editor_data.set_scene_path(scene_a, "res://sync_a.tscn");
+	Node2D *root_b = memnew(Node2D);
+	const int scene_b = add_test_scene(h.editor_data, tile_id, root_b);
+	h.editor_data.set_scene_path(scene_b, "res://sync_b.tscn");
+	h.editor_data.set_tile_current_scene(tile_id, scene_a);
+
+	pane->sync_scene_tabs_from_editor_data(false);
+	REQUIRE(pane->get_tab_count() == 2);
+	const int mounts_after_first = counting_scene.mount_count;
+	const int unmounts_after_first = counting_scene.unmount_count;
+	const int activate_after_first = counting_scene.activate_count;
+	const int stable_a = pane->get_tab(0).get_stable_id();
+	const int stable_b = pane->get_tab(1).get_stable_id();
+	CHECK(mounts_after_first >= 1);
+
+	// Focus-style refresh: membership unchanged, active tab unchanged.
+	pane->sync_scene_tabs_from_editor_data(true);
+	CHECK(pane->get_tab_count() == 2);
+	CHECK(pane->get_tab(0).get_stable_id() == stable_a);
+	CHECK(pane->get_tab(1).get_stable_id() == stable_b);
+	CHECK(counting_scene.mount_count == mounts_after_first);
+	CHECK(counting_scene.unmount_count == unmounts_after_first);
+	CHECK(counting_scene.activate_count == activate_after_first);
+
+	// Switching the tile's current scene without changing membership should
+	// remount/activate the newly active tab, not rebuild the whole set.
+	h.editor_data.set_tile_current_scene(tile_id, scene_b);
+	pane->sync_scene_tabs_from_editor_data(true);
+	CHECK(pane->get_active_tab_index() == 1);
+	CHECK(pane->get_tab(0).get_stable_id() == stable_a);
+	CHECK(pane->get_tab(1).get_stable_id() == stable_b);
+	CHECK(counting_scene.unmount_count == unmounts_after_first + 1);
+	CHECK(counting_scene.mount_count == mounts_after_first + 1);
+
+	h.unmount();
+}
+
 class TileHistoryDockTestAccess {
 public:
 	static void refresh(HistoryDock *p_dock) { p_dock->refresh_history(); }
