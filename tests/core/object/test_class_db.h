@@ -44,7 +44,7 @@
 class _TestClassDBDefaultCacheObject : public Object {
 	FOUNDRY_CLASS(_TestClassDBDefaultCacheObject, Object);
 
-	static inline SafeNumeric<uint32_t> getter_calls;
+	static inline SafeNumeric<uint32_t> getter_calls{0};
 	static inline Semaphore first_getter_entered;
 	static inline Semaphore release_first_getter;
 
