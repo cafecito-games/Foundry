@@ -32,6 +32,7 @@
 
 #include "core/config/project_settings.h"
 #include "core/io/dir_access.h"
+#include "core/io/resource_uid.h"
 #include "core/variant/variant.h"
 #include "tests/test_macros.h"
 
@@ -259,6 +260,46 @@ TEST_CASE("[ProjectSettings] No tracking when setting same value") {
 	int count_after = ProjectSettings::get_singleton()->get_changed_settings().size();
 
 	CHECK_EQ(count_before, count_after);
+}
+
+TEST_CASE("[ProjectSettings][Autoload] UID-only values resolve after a cold cache is populated") {
+	ProjectSettings *settings = ProjectSettings::get_singleton();
+	const StringName setting = "autoload/ProjectSettingsColdAutoload";
+	const ResourceUID::ID uid = ResourceUID::get_singleton()->create_id();
+	CHECK_NE(uid, ResourceUID::INVALID_ID);
+	if (uid == ResourceUID::INVALID_ID) {
+		return;
+	}
+	const String uid_text = ResourceUID::get_singleton()->id_to_text(uid);
+
+	settings->set_setting(setting, "*" + uid_text);
+	CHECK_EQ(settings->get_autoload(StringName("ProjectSettingsColdAutoload")).name, StringName("ProjectSettingsColdAutoload"));
+
+	ResourceUID::get_singleton()->add_id(uid, "res://cold_autoload.fs");
+	CHECK_EQ(settings->get_autoload(StringName("ProjectSettingsColdAutoload")).path, "res://cold_autoload.fs");
+
+	settings->set_setting(setting, Variant());
+	ResourceUID::get_singleton()->remove_id(uid);
+}
+
+TEST_CASE("[ProjectSettings][Autoload] path-plus-UID values use a path fallback until the UID resolves") {
+	ProjectSettings *settings = ProjectSettings::get_singleton();
+	const StringName setting = "autoload/ProjectSettingsFallbackAutoload";
+	const ResourceUID::ID uid = ResourceUID::get_singleton()->create_id();
+	CHECK_NE(uid, ResourceUID::INVALID_ID);
+	if (uid == ResourceUID::INVALID_ID) {
+		return;
+	}
+	const String uid_text = ResourceUID::get_singleton()->id_to_text(uid);
+
+	settings->set_setting(setting, "*res://fallback_autoload.fs::" + uid_text);
+	CHECK_EQ(settings->get_autoload(StringName("ProjectSettingsFallbackAutoload")).path, "res://fallback_autoload.fs");
+
+	ResourceUID::get_singleton()->add_id(uid, "res://resolved_autoload.fs");
+	CHECK_EQ(settings->get_autoload(StringName("ProjectSettingsFallbackAutoload")).path, "res://resolved_autoload.fs");
+
+	settings->set_setting(setting, Variant());
+	ResourceUID::get_singleton()->remove_id(uid);
 }
 
 } // namespace TestProjectSettings

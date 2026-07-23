@@ -2867,6 +2867,12 @@ void RichTextLabel::gui_input(const Ref<InputEvent> &p_event) {
 
 	if (b.is_valid()) {
 		if (b->get_button_index() == MouseButton::LEFT) {
+			if (b->is_pressed() && b->get_device() == InputEvent::DEVICE_ID_EMULATION && context_menu_enabled && !b->is_double_click()) {
+				_start_mobile_context_menu_timer(b->get_position());
+			} else if (!b->is_pressed()) {
+				_cancel_mobile_context_menu_timer();
+			}
+
 			if (b->is_pressed() && !b->is_double_click()) {
 				scroll_updated = false;
 				ItemFrame *c_frame = nullptr;
@@ -3182,6 +3188,13 @@ void RichTextLabel::gui_input(const Ref<InputEvent> &p_event) {
 
 	Ref<InputEventMouseMotion> m = p_event;
 	if (m.is_valid()) {
+		if (m->get_device() == InputEvent::DEVICE_ID_EMULATION && m->get_button_mask().has_flag(MouseButtonMask::LEFT) && mobile_context_menu_timer && !mobile_context_menu_timer->is_stopped()) {
+			constexpr real_t mobile_context_menu_drag_tolerance = 12.0;
+			if (m->get_position().distance_to(mobile_context_menu_press_pos) > mobile_context_menu_drag_tolerance) {
+				_cancel_mobile_context_menu_timer();
+			}
+		}
+
 		local_mouse_pos = get_local_mouse_position();
 		last_clamped_mouse_pos = local_mouse_pos.clamp(Vector2(), get_size());
 
@@ -8217,6 +8230,33 @@ void RichTextLabel::_update_context_menu() {
 #undef MENU_ITEM_ACTION_DISABLED
 }
 
+void RichTextLabel::_start_mobile_context_menu_timer(const Point2 &p_pos) {
+	if (!mobile_context_menu_timer) {
+		return;
+	}
+
+	mobile_context_menu_press_pos = p_pos;
+	mobile_context_menu_timer->start();
+}
+
+void RichTextLabel::_cancel_mobile_context_menu_timer() {
+	if (mobile_context_menu_timer) {
+		mobile_context_menu_timer->stop();
+	}
+}
+
+void RichTextLabel::_show_mobile_context_menu() {
+	if (!context_menu_enabled || !is_inside_tree()) {
+		return;
+	}
+
+	_update_context_menu();
+	menu->set_position(get_screen_transform().xform(mobile_context_menu_press_pos));
+	menu->reset_size();
+	menu->popup();
+	menu->grab_focus();
+}
+
 Key RichTextLabel::_get_menu_action_accelerator(const String &p_action) {
 	const List<Ref<InputEvent>> *events = InputMap::get_singleton()->action_get_events(p_action);
 	if (!events) {
@@ -8370,6 +8410,12 @@ RichTextLabel::RichTextLabel(const String &p_text) {
 	add_child(click_select_held, false, INTERNAL_MODE_FRONT);
 	click_select_held->set_wait_time(0.05);
 	click_select_held->connect("timeout", callable_mp(this, &RichTextLabel::_update_selection));
+
+	mobile_context_menu_timer = memnew(Timer);
+	add_child(mobile_context_menu_timer, false, INTERNAL_MODE_FRONT);
+	mobile_context_menu_timer->set_one_shot(true);
+	mobile_context_menu_timer->set_wait_time(0.5);
+	mobile_context_menu_timer->connect("timeout", callable_mp(this, &RichTextLabel::_show_mobile_context_menu));
 }
 
 RichTextLabel::~RichTextLabel() {

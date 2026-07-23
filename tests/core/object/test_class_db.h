@@ -33,8 +33,53 @@
 #include "core/core_bind.h"
 #include "core/core_constants.h"
 #include "core/object/class_db.h"
+#include "core/os/os.h"
+#include "core/os/semaphore.h"
+#include "core/os/thread.h"
+#include "core/templates/safe_refcount.h"
 
 #include "tests/test_macros.h"
+
+#ifdef THREADS_ENABLED
+class _TestClassDBDefaultCacheObject : public Object {
+	FOUNDRY_CLASS(_TestClassDBDefaultCacheObject, Object);
+
+	static inline SafeNumeric<uint32_t> getter_calls;
+	static inline Semaphore first_getter_entered;
+	static inline Semaphore release_first_getter;
+
+protected:
+	static void _bind_methods() {
+		ClassDB::bind_method(D_METHOD("get_threaded_default"), &_TestClassDBDefaultCacheObject::get_threaded_default);
+		ADD_PROPERTY(PropertyInfo(Variant::INT, "threaded_default"), "", "get_threaded_default");
+	}
+
+public:
+	int get_threaded_default() const {
+		if (getter_calls.postincrement() == 0) {
+			first_getter_entered.post();
+			release_first_getter.wait();
+		}
+		return 42;
+	}
+
+	static void reset_getter_calls() {
+		getter_calls.set(0);
+	}
+
+	static uint32_t get_getter_calls() {
+		return getter_calls.get();
+	}
+
+	static void wait_for_first_getter() {
+		first_getter_entered.wait();
+	}
+
+	static void release_first_getter_call() {
+		release_first_getter.post();
+	}
+};
+#endif // THREADS_ENABLED
 
 namespace TestClassDB {
 
@@ -875,6 +920,57 @@ void add_global_enums(Context &r_context) {
 }
 
 TEST_SUITE("[ClassDB]") {
+#ifdef THREADS_ENABLED
+	TEST_CASE("[ClassDB] Default property cache is populated once across threads") {
+		struct Lookup {
+			SafeFlag started;
+			Variant value;
+			bool valid = false;
+
+			static void run(void *p_userdata) {
+				Lookup *lookup = static_cast<Lookup *>(p_userdata);
+				lookup->started.set();
+				lookup->value = ClassDB::class_get_default_property_value(
+						_TestClassDBDefaultCacheObject::get_class_static(),
+						"threaded_default",
+						&lookup->valid);
+			}
+		};
+
+		FOUNDRY_REGISTER_CLASS(_TestClassDBDefaultCacheObject);
+		ClassDB::set_property_default_value(
+				_TestClassDBDefaultCacheObject::get_class_static(),
+				"_cache_seed",
+				0);
+		_TestClassDBDefaultCacheObject::reset_getter_calls();
+
+		Lookup lookups[2];
+		Thread threads[2];
+
+		threads[0].start(&Lookup::run, &lookups[0]);
+		_TestClassDBDefaultCacheObject::wait_for_first_getter();
+
+		threads[1].start(&Lookup::run, &lookups[1]);
+		while (!lookups[1].started.is_set()) {
+			Thread::yield();
+		}
+
+		for (uint32_t i = 0; i < 100 && _TestClassDBDefaultCacheObject::get_getter_calls() == 1; i++) {
+			OS::get_singleton()->delay_usec(1000);
+		}
+
+		_TestClassDBDefaultCacheObject::release_first_getter_call();
+		threads[0].wait_to_finish();
+		threads[1].wait_to_finish();
+
+		CHECK(lookups[0].valid);
+		CHECK(lookups[1].valid);
+		CHECK(lookups[0].value == Variant(42));
+		CHECK(lookups[1].value == Variant(42));
+		CHECK(_TestClassDBDefaultCacheObject::get_getter_calls() == 1);
+	}
+#endif // THREADS_ENABLED
+
 	TEST_CASE("[ClassDB] Add exposed classes, builtin types, and global enums") {
 		Context context;
 

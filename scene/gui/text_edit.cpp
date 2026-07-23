@@ -2328,6 +2328,10 @@ void TextEdit::gui_input(const Ref<InputEvent> &p_gui_input) {
 				const int triple_click_tolerance = 5;
 				bool is_triple_click = (!mb->is_double_click() && (OS::get_singleton()->get_ticks_msec() - last_dblclk) < triple_click_timeout && mb->get_position().distance_to(last_dblclk_pos) < triple_click_tolerance);
 
+				if (mb->get_device() == InputEvent::DEVICE_ID_EMULATION && context_menu_enabled && !mb->is_double_click() && !is_triple_click) {
+					_start_mobile_context_menu_timer(mpos);
+				}
+
 				if (!mb->is_double_click() && !is_triple_click) {
 					if (mb->is_alt_pressed()) {
 						prev_line = line;
@@ -2468,6 +2472,10 @@ void TextEdit::gui_input(const Ref<InputEvent> &p_gui_input) {
 				}
 			}
 		} else {
+			if (mb->get_button_index() == MouseButton::LEFT) {
+				_cancel_mobile_context_menu_timer();
+			}
+
 			if (has_ime_text()) {
 				// Ignore mouse up in IME input mode.
 				return;
@@ -2523,6 +2531,13 @@ void TextEdit::gui_input(const Ref<InputEvent> &p_gui_input) {
 		Vector2i mpos = mm->get_position();
 		if (is_layout_rtl()) {
 			mpos.x = get_size().x - mpos.x;
+		}
+
+		if (mm->get_device() == InputEvent::DEVICE_ID_EMULATION && mm->get_button_mask().has_flag(MouseButtonMask::LEFT) && mobile_context_menu_timer && !mobile_context_menu_timer->is_stopped()) {
+			constexpr real_t mobile_context_menu_drag_tolerance = 12.0;
+			if (Point2(mpos).distance_to(mobile_context_menu_press_pos) > mobile_context_menu_drag_tolerance) {
+				_cancel_mobile_context_menu_timer();
+			}
 		}
 
 		if (mm->get_button_mask().has_flag(MouseButtonMask::LEFT) && get_viewport()->gui_get_drag_data() == Variant()) {
@@ -8125,6 +8140,39 @@ void TextEdit::_update_context_menu() {
 #undef MENU_ITEM_CHECKED
 }
 
+void TextEdit::_start_mobile_context_menu_timer(const Point2 &p_pos) {
+	if (!mobile_context_menu_timer) {
+		return;
+	}
+
+	mobile_context_menu_press_pos = p_pos;
+	mobile_context_menu_timer->start();
+}
+
+void TextEdit::_cancel_mobile_context_menu_timer() {
+	if (mobile_context_menu_timer) {
+		mobile_context_menu_timer->stop();
+	}
+}
+
+void TextEdit::_show_mobile_context_menu() {
+	if (!context_menu_enabled || !is_inside_tree()) {
+		return;
+	}
+
+	_push_current_op();
+	_reset_caret_blink_timer();
+	apply_ime();
+	_cancel_drag_and_drop_text();
+	set_selection_mode(SELECTION_MODE_NONE);
+
+	_update_context_menu();
+	menu->set_position(get_screen_transform().xform(mobile_context_menu_press_pos));
+	menu->reset_size();
+	menu->popup();
+	grab_focus();
+}
+
 /* Versioning */
 void TextEdit::_push_current_op() {
 	if (pending_action_end) {
@@ -9324,6 +9372,12 @@ TextEdit::TextEdit(const String &p_placeholder) {
 	idle_detect->set_one_shot(true);
 	idle_detect->set_wait_time(GLOBAL_GET_CACHED(double, "gui/timers/text_edit_idle_detect_sec"));
 	idle_detect->connect("timeout", callable_mp(this, &TextEdit::_push_current_op));
+
+	mobile_context_menu_timer = memnew(Timer);
+	add_child(mobile_context_menu_timer, false, INTERNAL_MODE_FRONT);
+	mobile_context_menu_timer->set_one_shot(true);
+	mobile_context_menu_timer->set_wait_time(0.5);
+	mobile_context_menu_timer->connect("timeout", callable_mp(this, &TextEdit::_show_mobile_context_menu));
 
 	undo_stack_max_size = GLOBAL_GET_CACHED(int, "gui/common/text_edit_undo_stack_max_size");
 

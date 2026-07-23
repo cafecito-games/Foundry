@@ -37,6 +37,7 @@
 #include "core/io/file_access.h"
 #include "core/io/file_access_pack.h"
 #include "core/io/marshalls.h"
+#include "core/io/resource_loader.h"
 #include "core/io/resource_uid.h"
 #include "core/object/script_language.h"
 #include "core/templates/rb_set.h"
@@ -293,11 +294,12 @@ bool ProjectSettings::_set(const StringName &p_name, const Variant &p_value) {
 
 	if (p_value.get_type() == Variant::NIL) {
 		props.erase(p_name);
-		if (p_name.operator String().begins_with("autoload/")) {
-			String node_name = p_name.operator String().get_slicec('/', 1);
-			if (autoloads.has(node_name)) {
-				remove_autoload(node_name);
-			}
+		const String setting_name = p_name;
+		if (setting_name.begins_with("autoload/") || setting_name.begins_with("autoload_prepend/")) {
+			const StringName node_name = setting_name.get_slicec('/', 1);
+			raw_autoloads.erase(node_name);
+			autoload_overrides.erase(node_name);
+			autoloads.erase(node_name);
 		} else if (p_name.operator String().begins_with("global_group/")) {
 			String group_name = p_name.operator String().get_slicec('/', 1);
 			if (global_groups.has(group_name)) {
@@ -339,30 +341,25 @@ bool ProjectSettings::_set(const StringName &p_name, const Variant &p_value) {
 		} else {
 			props[p_name] = VariantContainer(p_value, last_order++);
 		}
-		if (p_name.operator String().begins_with("autoload_prepend/")) {
-			String node_name = p_name.operator String().get_slicec('/', 1);
+		const String setting_name = p_name;
+		if (setting_name.begins_with("autoload_prepend/") || setting_name.begins_with("autoload/")) {
+			const StringName node_name = setting_name.get_slicec('/', 1);
+			raw_autoloads.erase(node_name);
+			if (setting_name.begins_with("autoload_prepend/")) {
+				raw_autoloads.insert(node_name, String(p_value), true);
+			} else {
+				raw_autoloads[node_name] = String(p_value);
+			}
+
 			AutoloadInfo autoload;
 			autoload.name = node_name;
-			String path = p_value;
-			if (path.begins_with("*")) {
-				autoload.is_singleton = true;
-				autoload.path = path.substr(1).simplify_path();
+			autoload_overrides.erase(node_name);
+			if (setting_name.begins_with("autoload_prepend/")) {
+				autoloads.erase(node_name);
+				autoloads.insert(node_name, autoload, true);
 			} else {
-				autoload.path = path.simplify_path();
+				autoloads[node_name] = autoload;
 			}
-			add_autoload(autoload, true);
-		} else if (p_name.operator String().begins_with("autoload/")) {
-			String node_name = p_name.operator String().get_slicec('/', 1);
-			AutoloadInfo autoload;
-			autoload.name = node_name;
-			String path = p_value;
-			if (path.begins_with("*")) {
-				autoload.is_singleton = true;
-				autoload.path = path.substr(1).simplify_path();
-			} else {
-				autoload.path = path.simplify_path();
-			}
-			add_autoload(autoload);
 		} else if (p_name.operator String().begins_with("global_group/")) {
 			String group_name = p_name.operator String().get_slicec('/', 1);
 			add_global_group(group_name, p_value);
@@ -903,7 +900,9 @@ void ProjectSettings::clear_project_state_for_reload() {
 	// (application/config/custom_features) by setup().
 	custom_features.clear();
 	feature_overrides.clear();
+	raw_autoloads.clear();
 	autoloads.clear();
+	autoload_overrides.clear();
 	global_groups.clear();
 	scene_groups_cache.clear();
 	// Drop the memoized global class list so get_global_class_list() re-reads the opened
@@ -1490,11 +1489,23 @@ bool ProjectSettings::has_custom_feature(const String &p_feature) const {
 }
 
 const HashMap<StringName, ProjectSettings::AutoloadInfo> &ProjectSettings::get_autoload_list() const {
+	_THREAD_SAFE_METHOD_
+
+	for (KeyValue<StringName, AutoloadInfo> &E : autoloads) {
+		if (autoload_overrides.has(E.key) || !raw_autoloads.has(E.key)) {
+			continue;
+		}
+
+		parse_autoload_value(raw_autoloads[E.key], E.value.path, E.value.is_singleton);
+		E.value.name = E.key;
+	}
+
 	return autoloads;
 }
 
 void ProjectSettings::add_autoload(const AutoloadInfo &p_autoload, bool p_front_insert) {
 	ERR_FAIL_COND_MSG(p_autoload.name == StringName(), "Trying to add autoload with no name.");
+	autoload_overrides.insert(p_autoload.name);
 	if (p_front_insert) {
 		if (autoloads.has(p_autoload.name)) {
 			autoloads.erase(p_autoload.name);
@@ -1507,6 +1518,8 @@ void ProjectSettings::add_autoload(const AutoloadInfo &p_autoload, bool p_front_
 
 void ProjectSettings::remove_autoload(const StringName &p_autoload) {
 	ERR_FAIL_COND_MSG(!autoloads.has(p_autoload), "Trying to remove non-existent autoload.");
+	raw_autoloads.erase(p_autoload);
+	autoload_overrides.erase(p_autoload);
 	autoloads.erase(p_autoload);
 }
 
@@ -1516,13 +1529,67 @@ bool ProjectSettings::has_autoload(const StringName &p_autoload) const {
 
 ProjectSettings::AutoloadInfo ProjectSettings::get_autoload(const StringName &p_name) const {
 	ERR_FAIL_COND_V_MSG(!autoloads.has(p_name), AutoloadInfo(), "Trying to get non-existent autoload.");
-	return autoloads[p_name];
+	AutoloadInfo info = autoloads[p_name];
+	if (!autoload_overrides.has(p_name) && raw_autoloads.has(p_name)) {
+		parse_autoload_value(raw_autoloads[p_name], info.path, info.is_singleton);
+	}
+	info.name = p_name;
+	return info;
 }
 
 void ProjectSettings::fix_autoload_paths() {
-	for (KeyValue<StringName, AutoloadInfo> &kv : autoloads) {
-		kv.value.path = ResourceUID::ensure_path(kv.value.path);
+	for (KeyValue<StringName, AutoloadInfo> &E : autoloads) {
+		if (autoload_overrides.has(E.key) || !raw_autoloads.has(E.key)) {
+			continue;
+		}
+		parse_autoload_value(raw_autoloads[E.key], E.value.path, E.value.is_singleton);
+		E.value.name = E.key;
 	}
+}
+
+void ProjectSettings::parse_autoload_value(const String &p_value, String &r_path, bool &r_is_singleton) {
+	String raw = p_value;
+
+	if (raw.begins_with("*")) {
+		r_is_singleton = true;
+		raw = raw.substr(1);
+	} else {
+		r_is_singleton = false;
+	}
+
+	const int separator = raw.find("::");
+	if (separator == -1) {
+		r_path = ResourceUID::ensure_path(raw).simplify_path();
+		return;
+	}
+
+	String path;
+	ResourceUID *resource_uid = ResourceUID::get_singleton();
+	if (resource_uid != nullptr) {
+		const ResourceUID::ID uid = resource_uid->text_to_id(raw.substr(separator + 2));
+		if (uid != ResourceUID::INVALID_ID && resource_uid->has_id(uid)) {
+			path = resource_uid->get_id_path(uid);
+		}
+	}
+
+	if (path.is_empty()) {
+		path = raw.substr(0, separator);
+	}
+	r_path = path.simplify_path();
+}
+
+String ProjectSettings::stringify_autoload_value(const String &p_path, bool p_is_singleton) {
+	String result = p_path;
+	if (p_is_singleton) {
+		result = "*" + result;
+	}
+
+	const ResourceUID::ID uid = ResourceLoader::get_resource_uid(p_path);
+	ResourceUID *resource_uid = ResourceUID::get_singleton();
+	if (uid != ResourceUID::INVALID_ID && resource_uid != nullptr && resource_uid->has_id(uid)) {
+		result += "::" + resource_uid->id_to_text(uid);
+	}
+	return result;
 }
 
 const HashMap<StringName, String> &ProjectSettings::get_global_groups_list() const {

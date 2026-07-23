@@ -1161,11 +1161,10 @@ Error EditorExportPlatform::_collect_autoload_export_paths(const Ref<EditorExpor
 			continue;
 		}
 
-		String autoload_path = get_project_setting(p_preset, setting_name);
-
-		if (autoload_path.begins_with("*")) {
-			autoload_path = autoload_path.substr(1);
-		}
+		const String autoload_value = get_project_setting(p_preset, setting_name);
+		String autoload_path;
+		bool is_singleton = false;
+		ProjectSettings::parse_autoload_value(autoload_value, autoload_path, is_singleton);
 
 		r_paths.push_back(autoload_path);
 	}

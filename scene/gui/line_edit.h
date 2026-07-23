@@ -33,6 +33,8 @@
 #include "scene/gui/control.h"
 #include "scene/gui/popup_menu.h"
 
+class Timer;
+
 class LineEdit : public Control {
 	FOUNDRY_CLASS(LineEdit, Control);
 
@@ -133,6 +135,8 @@ private:
 	PopupMenu *menu = nullptr;
 	PopupMenu *menu_dir = nullptr;
 	PopupMenu *menu_ctl = nullptr;
+	Timer *mobile_context_menu_timer = nullptr;
+	Point2 mobile_context_menu_press_pos;
 
 	bool caret_mid_grapheme_enabled = false;
 
@@ -238,6 +242,9 @@ private:
 	Key _get_menu_action_accelerator(const String &p_action);
 	void _generate_context_menu();
 	void _update_context_menu();
+	void _start_mobile_context_menu_timer(const Point2 &p_pos);
+	void _cancel_mobile_context_menu_timer();
+	void _show_mobile_context_menu();
 
 	void _shape();
 	void _fit_to_width();

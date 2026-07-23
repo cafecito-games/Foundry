@@ -1522,6 +1522,8 @@ void ClassDB::add_property(const StringName &p_class, const PropertyInfo &p_pinf
 }
 
 void ClassDB::set_property_default_value(const StringName &p_class, const StringName &p_name, const Variant &p_default) {
+	Locker::Lock lock(Locker::STATE_WRITE);
+
 	if (!default_values.has(p_class)) {
 		default_values[p_class] = HashMap<StringName, Variant>();
 	}
@@ -2212,6 +2214,8 @@ HashMap<StringName, HashMap<StringName, Variant>> ClassDB::default_values;
 HashSet<StringName> ClassDB::default_values_cached;
 
 Variant ClassDB::class_get_default_property_value(const StringName &p_class, const StringName &p_property, bool *r_valid) {
+	Locker::Lock lock(Locker::STATE_WRITE);
+
 	if (!default_values_cached.has(p_class)) {
 		if (!default_values.has(p_class)) {
 			default_values[p_class] = HashMap<StringName, Variant>();
@@ -2336,6 +2340,8 @@ void ClassDB::register_extension_class(ObjectFoundryExtension *p_extension) {
 }
 
 void ClassDB::unregister_extension_class(const StringName &p_class, bool p_free_method_binds) {
+	Locker::Lock lock(Locker::STATE_WRITE);
+
 	ClassInfo *c = classes.getptr(p_class);
 	ERR_FAIL_NULL_MSG(c, vformat("Class '%s' does not exist.", String(p_class)));
 	if (p_free_method_binds) {
@@ -2380,6 +2386,8 @@ Object *ClassDB::_instantiate_allow_unexposed(const StringName &p_class) {
 }
 
 void ClassDB::cleanup_defaults() {
+	Locker::Lock lock(Locker::STATE_WRITE);
+
 	default_values.clear();
 	default_values_cached.clear();
 }
