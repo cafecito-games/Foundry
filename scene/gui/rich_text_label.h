@@ -43,6 +43,7 @@
 
 class CharFXTransform;
 class RichTextEffect;
+class Timer;
 
 class RichTextLabel : public Control {
 	FOUNDRY_CLASS(RichTextLabel, Control);
@@ -632,8 +633,13 @@ private:
 
 	// Context menu.
 	PopupMenu *menu = nullptr;
+	Timer *mobile_context_menu_timer = nullptr;
+	Point2 mobile_context_menu_press_pos;
 	void _generate_context_menu();
 	void _update_context_menu();
+	void _start_mobile_context_menu_timer(const Point2 &p_pos);
+	void _cancel_mobile_context_menu_timer();
+	void _show_mobile_context_menu();
 	Key _get_menu_action_accelerator(const String &p_action);
 
 	int visible_characters = -1;

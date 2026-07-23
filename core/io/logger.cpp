@@ -34,6 +34,7 @@
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
 #include "core/object/script_backtrace.h"
+#include "core/os/os.h"
 #include "core/os/time.h"
 #include "core/templates/rb_set.h"
 
@@ -145,6 +146,7 @@ void RotatedFileLogger::rotate_file() {
 	if (FileAccess::exists(base_path)) {
 		if (max_files > 1) {
 			String timestamp = Time::get_singleton()->get_datetime_string_from_system().replace_char(':', '.');
+			timestamp += "-" + itos(OS::get_singleton()->get_process_id()) + "-" + itos(OS::get_singleton()->get_ticks_usec());
 			String backup_name = base_path.get_basename() + timestamp;
 			if (!base_path.get_extension().is_empty()) {
 				backup_name += "." + base_path.get_extension();
@@ -163,7 +165,14 @@ void RotatedFileLogger::rotate_file() {
 		}
 	}
 
-	file = FileAccess::open(base_path, FileAccess::WRITE);
+	Error file_error = OK;
+	file = FileAccess::open(base_path, FileAccess::WRITE, &file_error);
+	if (file.is_null()) {
+		const CharString path_utf8 = base_path.utf8();
+		fprintf(stderr, "ERROR: Failed to initialize file logger at '%s' (error %d). Continuing with console logging only.\n", path_utf8.get_data(), (int)file_error);
+		return;
+	}
+
 	file->detach_from_objectdb(); // Note: This FileAccess instance will exist longer than ObjectDB, therefore can't be registered in ObjectDB.
 }
 

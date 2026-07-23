@@ -37,6 +37,7 @@
 #include "core/string/alt_codes.h"
 #include "core/string/translation_server.h"
 #include "scene/gui/label.h"
+#include "scene/main/timer.h"
 #include "scene/main/window.h"
 #include "scene/theme/theme_db.h"
 #include "servers/display/display_server.h"
@@ -506,6 +507,10 @@ void LineEdit::gui_input(const Ref<InputEvent> &p_event) {
 				return;
 			}
 
+			if (b->get_device() == InputEvent::DEVICE_ID_EMULATION && context_menu_enabled) {
+				_start_mobile_context_menu_timer(b->get_position());
+			}
+
 			if (b->is_shift_pressed()) {
 				shift_selection_check_pre(true);
 			}
@@ -578,6 +583,8 @@ void LineEdit::gui_input(const Ref<InputEvent> &p_event) {
 			}
 
 		} else {
+			_cancel_mobile_context_menu_timer();
+
 			if (selection.enabled && !pass && b->get_button_index() == MouseButton::LEFT && DisplayServer::get_singleton()->has_feature(DisplayServer::FEATURE_CLIPBOARD_PRIMARY)) {
 				DisplayServer::get_singleton()->clipboard_set_primary(get_selected_text());
 			}
@@ -616,6 +623,13 @@ void LineEdit::gui_input(const Ref<InputEvent> &p_event) {
 	Ref<InputEventMouseMotion> m = p_event;
 
 	if (m.is_valid()) {
+		if (m->get_device() == InputEvent::DEVICE_ID_EMULATION && m->get_button_mask().has_flag(MouseButtonMask::LEFT) && mobile_context_menu_timer && !mobile_context_menu_timer->is_stopped()) {
+			constexpr real_t mobile_context_menu_drag_tolerance = 12.0;
+			if (m->get_position().distance_to(mobile_context_menu_press_pos) > mobile_context_menu_drag_tolerance) {
+				_cancel_mobile_context_menu_timer();
+			}
+		}
+
 		if (editable && !text.is_empty() && clear_button_enabled) {
 			bool last_press_inside = clear_button_status.pressing_inside;
 			clear_button_status.pressing_inside = clear_button_status.press_attempt && _is_over_clear_button(m->get_position());
@@ -3320,6 +3334,43 @@ void LineEdit::_update_context_menu() {
 #undef MENU_ITEM_CHECKED
 }
 
+void LineEdit::_start_mobile_context_menu_timer(const Point2 &p_pos) {
+	if (!mobile_context_menu_timer) {
+		return;
+	}
+
+	mobile_context_menu_press_pos = p_pos;
+	mobile_context_menu_timer->start();
+}
+
+void LineEdit::_cancel_mobile_context_menu_timer() {
+	if (mobile_context_menu_timer) {
+		mobile_context_menu_timer->stop();
+	}
+}
+
+void LineEdit::_show_mobile_context_menu() {
+	if (!context_menu_enabled || !is_inside_tree()) {
+		return;
+	}
+
+	apply_ime();
+
+	if (editable && !selection.enabled) {
+		set_caret_at_pixel_pos(mobile_context_menu_press_pos.x);
+	}
+
+	_update_context_menu();
+	menu->set_position(get_screen_transform().xform(mobile_context_menu_press_pos));
+	menu->reset_size();
+	menu->popup();
+
+	if (editable && !editing) {
+		edit(true);
+		emit_signal(SNAME("editing_toggled"), true);
+	}
+}
+
 void LineEdit::_validate_property(PropertyInfo &p_property) const {
 	if (!Engine::get_singleton()->is_editor_hint()) {
 		return;
@@ -3572,6 +3623,12 @@ LineEdit::LineEdit(const String &p_placeholder) {
 	set_process_unhandled_key_input(true);
 
 	set_caret_blink_enabled(false);
+
+	mobile_context_menu_timer = memnew(Timer);
+	add_child(mobile_context_menu_timer, false, INTERNAL_MODE_FRONT);
+	mobile_context_menu_timer->set_one_shot(true);
+	mobile_context_menu_timer->set_wait_time(0.5);
+	mobile_context_menu_timer->connect("timeout", callable_mp(this, &LineEdit::_show_mobile_context_menu));
 
 	set_placeholder(p_placeholder);
 

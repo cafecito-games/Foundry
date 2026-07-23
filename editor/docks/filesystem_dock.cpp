@@ -1689,14 +1689,22 @@ void FileSystemDock::_update_project_settings_after_move(const HashMap<String, S
 	ProjectSettings::get_singleton()->get_property_list(&property_list);
 	for (const PropertyInfo &E : property_list) {
 		if (E.name.begins_with("autoload/")) {
-			// If the autoload resource paths has a leading "*", it indicates that it is a Singleton,
-			// so we have to handle both cases when updating.
-			String autoload = GLOBAL_GET(E.name);
-			String autoload_singleton = autoload.substr(1);
-			if (p_renames.has(autoload)) {
-				ProjectSettings::get_singleton()->set_setting(E.name, p_renames[autoload]);
-			} else if (autoload.begins_with("*") && p_renames.has(autoload_singleton)) {
-				ProjectSettings::get_singleton()->set_setting(E.name, "*" + p_renames[autoload_singleton]);
+			String autoload_value = GLOBAL_GET(E.name);
+			const bool is_singleton = autoload_value.begins_with("*");
+			if (is_singleton) {
+				autoload_value = autoload_value.substr(1);
+			}
+
+			String stored_path;
+			const int separator = autoload_value.find("::");
+			if (separator != -1) {
+				stored_path = autoload_value.substr(0, separator);
+			} else if (!autoload_value.begins_with("uid://")) {
+				stored_path = autoload_value;
+			}
+
+			if (!stored_path.is_empty() && p_renames.has(stored_path)) {
+				ProjectSettings::get_singleton()->set_setting(E.name, ProjectSettings::stringify_autoload_value(p_renames[stored_path], is_singleton));
 			}
 		}
 	}

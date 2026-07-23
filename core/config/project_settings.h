@@ -108,7 +108,11 @@ protected:
 	HashMap<StringName, LocalVector<Pair<StringName, StringName>>> feature_overrides;
 
 	LocalVector<String> hidden_prefixes;
-	HashMap<StringName, AutoloadInfo> autoloads;
+	// Keep the serialized value untouched so UID-backed entries can be resolved after
+	// the UID cache is loaded, while retaining the existing ordered autoload view.
+	HashMap<StringName, String> raw_autoloads;
+	mutable HashMap<StringName, AutoloadInfo> autoloads;
+	HashSet<StringName> autoload_overrides;
 	HashMap<StringName, String> global_groups;
 	HashMap<StringName, HashSet<StringName>> scene_groups_cache;
 
@@ -236,6 +240,8 @@ public:
 	bool has_autoload(const StringName &p_autoload) const;
 	AutoloadInfo get_autoload(const StringName &p_name) const;
 	void fix_autoload_paths();
+	static void parse_autoload_value(const String &p_value, String &r_path, bool &r_is_singleton);
+	static String stringify_autoload_value(const String &p_path, bool p_is_singleton);
 
 	const HashMap<StringName, String> &get_global_groups_list() const;
 	void add_global_group(const StringName &p_name, const String &p_description);

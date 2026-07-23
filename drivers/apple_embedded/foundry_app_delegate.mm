@@ -53,6 +53,34 @@ static NSMutableArray<GDTAppDelegateServiceProtocol *> *services = nil;
 	[services addObject:service];
 }
 
+FOUNDRY_CLANG_WARNING_PUSH_AND_IGNORE("-Wdeprecated-declarations")
+
+static void _forward_open_url_to_services(UIApplication *application, NSSet<UIOpenURLContext *> *url_contexts) {
+	for (UIOpenURLContext *url_context in url_contexts) {
+		for (GDTAppDelegateServiceProtocol *service in services) {
+			if (![service respondsToSelector:@selector(application:openURL:options:)]) {
+				continue;
+			}
+
+			[service application:application openURL:url_context.URL options:@{}];
+		}
+	}
+}
+
+static void _forward_user_activities_to_services(UIApplication *application, NSSet<NSUserActivity *> *user_activities) {
+	for (NSUserActivity *user_activity in user_activities) {
+		for (GDTAppDelegateServiceProtocol *service in services) {
+			if (![service respondsToSelector:@selector(application:continueUserActivity:restorationHandler:)]) {
+				continue;
+			}
+
+			[service application:application continueUserActivity:user_activity restorationHandler:^(__unused NSArray<id<UIUserActivityRestoring>> *restorable_objects) {}];
+		}
+	}
+}
+
+FOUNDRY_CLANG_WARNING_POP
+
 // UIApplicationDelegate documentation can be found here: https://developer.apple.com/documentation/uikit/uiapplicationdelegate
 
 // MARK: Window
@@ -118,6 +146,24 @@ static NSMutableArray<GDTAppDelegateServiceProtocol *> *services = nil;
 }
 
 - (void)application:(UIApplication *)application didDiscardSceneSessions:(NSSet<UISceneSession *> *)sceneSessions API_AVAILABLE(ios(13.0), tvos(13.0), visionos(1.0)) {
+}
+
+- (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)connectionOptions API_AVAILABLE(ios(13.0), tvos(13.0), visionos(1.0)) {
+	if (connectionOptions.URLContexts.count > 0) {
+		_forward_open_url_to_services(UIApplication.sharedApplication, connectionOptions.URLContexts);
+	}
+
+	if (connectionOptions.userActivities.count > 0) {
+		_forward_user_activities_to_services(UIApplication.sharedApplication, connectionOptions.userActivities);
+	}
+}
+
+- (void)scene:(UIScene *)scene openURLContexts:(NSSet<UIOpenURLContext *> *)URLContexts API_AVAILABLE(ios(13.0), tvos(13.0), visionos(1.0)) {
+	_forward_open_url_to_services(UIApplication.sharedApplication, URLContexts);
+}
+
+- (void)scene:(UIScene *)scene continueUserActivity:(NSUserActivity *)userActivity API_AVAILABLE(ios(13.0), tvos(13.0), visionos(1.0)) {
+	_forward_user_activities_to_services(UIApplication.sharedApplication, [NSSet setWithObject:userActivity]);
 }
 
 // MARK: Life-Cycle
