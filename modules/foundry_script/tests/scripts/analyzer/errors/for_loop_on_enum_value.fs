@@ -1,4 +1,5 @@
-enum { enum_value = 1 }
+enum:
+	enum_value = 1
 
 func test():
 	for x in enum_value:

@@ -1,2 +1,2 @@
 FS_TEST_ANALYZER_ERROR
->> ERROR at line 5: Could not resolve member "EV1": Cyclic reference.
+>> ERROR at line 7: Could not resolve member "EV1": Cyclic reference.

@@ -31,21 +31,19 @@ func f() -> bool:
 
 const c1 := E1.V1
 
-enum E1 {
-	V1 = E2.V + 2,
+enum E1:
+	V1 = E2.V + 2
 	V2 = V1 - 1
-}
 
-enum E2 {V = 2}
+enum E2:
+	V = 2
 
 const c2 := EV2
 
-enum {
-	EV1 = 42,
-	UNUSED = EV3,
-	EV2
-}
+enum:
+	EV1 = 42
+	UNUSED = EV3
+	EV2 = UNUSED + 1
 
-enum {
+enum:
 	EV3 = EV1 + 1
-}

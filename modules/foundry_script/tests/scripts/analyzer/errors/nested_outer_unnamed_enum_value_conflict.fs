@@ -1,5 +1,6 @@
 class Outer:
-	enum { READY }
+	enum:
+		READY = 0
 
 	class Inner:
 		signal READY()

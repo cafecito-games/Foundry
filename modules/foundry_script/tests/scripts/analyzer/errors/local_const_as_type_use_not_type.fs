@@ -1,4 +1,5 @@
-enum MyEnum {A}
+enum MyEnum:
+	A = 0
 
 func test():
 	const E = MyEnum.A

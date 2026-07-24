@@ -1,2 +1,2 @@
 FS_TEST_ANALYZER_ERROR
->> ERROR at line 10: Could not infer type parameter "T" of generic method "pick()" because its arguments have conflicting types. Apply the type arguments explicitly, e.g. "pick[...](...)".
+>> ERROR at line 9: Could not infer type parameter "T" of generic method "pick()" because its arguments have conflicting types. Apply the type arguments explicitly, e.g. "pick[...](...)".

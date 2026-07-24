@@ -1,8 +1,10 @@
 class InnerClass:
-	enum InnerEnum {A = 2}
+	enum InnerEnum:
+		A = 2
 	const INNER_CONST = "INNER_CONST"
 
-enum Enum {A = 1}
+enum Enum:
+	A = 1
 
 const Other = preload("./local_const_as_type.notest.fs")
 

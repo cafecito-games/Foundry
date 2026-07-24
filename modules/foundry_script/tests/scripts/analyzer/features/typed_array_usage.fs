@@ -1,7 +1,8 @@
 class A: pass
 class B extends A: pass
 
-enum E { E0 = 391 }
+enum E:
+	E0 = 391
 
 func floats_identity(floats: Array[float]): return floats
 

@@ -1,12 +1,10 @@
-enum Flags {
-	FIRE = 1 << 1,
-	ICE = 1 << 2,
-	SLIPPERY = 1 << 3,
-	STICKY = 1 << 4,
-	NONSOLID = 1 << 5,
-
-	ALL = FIRE | ICE | SLIPPERY | STICKY | NONSOLID,
-}
+enum Flags:
+	FIRE = 1 << 1
+	ICE = 1 << 2
+	SLIPPERY = 1 << 3
+	STICKY = 1 << 4
+	NONSOLID = 1 << 5
+	ALL = FIRE | ICE | SLIPPERY | STICKY | NONSOLID
 
 
 func test():

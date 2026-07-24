@@ -1,2 +1,2 @@
 FS_TEST_ANALYZER_ERROR
->> ERROR at line 5: Local variable "E" cannot be used as a type.
+>> ERROR at line 6: Local variable "E" cannot be used as a type.

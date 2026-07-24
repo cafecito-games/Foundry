@@ -1,7 +1,5 @@
-enum_name FirstEnum {
-	A,
-}
+enum_name FirstEnum:
+	A = 0
 
-enum_name SecondEnum {
-	B,
-}
+enum_name SecondEnum:
+	B = 0

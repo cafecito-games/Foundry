@@ -1,7 +1,10 @@
 @warning_ignore("mixed_namespace_directory")
 class_name TestExportEnumAsDictionary
 
-enum MyEnum {A, B, C}
+enum MyEnum:
+	A = 0
+	B = A + 1
+	C = B + 1
 
 @export var test_1 = MyEnum
 @export var test_2 = MyEnum.A

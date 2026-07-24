@@ -1384,10 +1384,9 @@ TEST_CASE("[Modules][FoundryScript] Analyzer rejects type arguments on a non-gen
 TEST_CASE("[Modules][FoundryScript] Analyzer rejects enum/int generic inference merge") {
 	FSParser parser;
 	const String source = R"(
-enum Axis {
-	NORTH = 0,
-	SOUTH = 1,
-}
+enum Axis:
+	NORTH = 0
+	SOUTH = 1
 
 func pick[T](a: T, b: T) -> T:
 	return a

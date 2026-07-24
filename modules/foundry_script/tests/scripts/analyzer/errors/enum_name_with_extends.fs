@@ -1,5 +1,4 @@
 extends RefCounted
 
-enum_name ExtendsEnum {
-	A,
-}
+enum_name ExtendsEnum:
+	A = 0

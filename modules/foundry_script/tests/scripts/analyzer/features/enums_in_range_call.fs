@@ -1,4 +1,6 @@
-enum E { E0 = 0, E3 = 3 }
+enum E:
+	E0 = 0
+	E3 = 3
 
 func test():
 	var total := 0

@@ -323,7 +323,7 @@ class_name_decl = "class_name", identifier, [ type_parameters ],
                   [ extends_decl [ uses_decl ] | uses_decl ], NEWLINE ;
 trait_name_decl = "trait_name", identifier, [ type_parameters ],
                   [ extends_decl [ uses_decl ] | uses_decl ], NEWLINE ;
-enum_name_decl  = "enum_name", enum_body_named ;   (* whole-file enum; see §4.3 *)
+enum_name_decl = "enum_name", identifier, ":", enum_body ;   (* whole-file enum *)
 ```
 
 `extends`/`uses` may appear on the same line as `class_name`/`trait_name`. An `enum_name`
@@ -427,18 +427,23 @@ signal_decl     = "signal", identifier,
                   [ "(", [ parameter, { ",", parameter }, [ "," ] ], ")" ],
                   NEWLINE ;
 
-enum_decl       = "enum", [ identifier ], enum_body ;
-enum_body       = "{", [ enum_value, { ",", enum_value }, [ "," ] ], "}", NEWLINE ;
-enum_value      = identifier, [ "=", expression ] ;
+enum_decl       = "enum", [ identifier ], ":", enum_body ;
+enum_body       = NEWLINE, INDENT, ( "pass", NEWLINE | enum_value_line, { enum_value_line } ), DEDENT ;
+enum_value_line = identifier, "=", expression, NEWLINE ;
 ```
 
 - A `var`'s type may be written explicitly (`var x: int = ...`), **inferred** from the
   initializer when a `:` is immediately followed by `=` (`var x := value`), or omitted
   entirely (`var x = value`). The same applies to `const` and parameters.
 - Signal parameters may have a type annotation but **not** a default value.
-- An **unnamed** enum (`enum { ... }`) injects its values as constants into the enclosing
-  class; a **named** enum (`enum Dir { ... }`) defines an enum type.
-- `enum_name` (§3.2) declares a file-level named enum.
+- An **unnamed** enum (`enum:`) injects its values as constants into the enclosing
+  class; a **named** enum (`enum Dir:`) defines an enum type.
+- Every enum value must provide an explicit integer expression (`NAME = expression`).
+  Values do not receive implicit numbers, and enum members are separated by newlines
+  rather than commas. Commas remain valid inside an enum value expression.
+- An empty enum uses `pass` as its only body statement (`enum Empty:` followed by
+  an indented `pass`).
+- `enum_name` (§3.2) declares a file-level named enum using the same indented body.
 
 #### Property accessors
 

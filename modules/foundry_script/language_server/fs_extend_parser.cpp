@@ -446,14 +446,10 @@ void ExtendFSParser::parse_class_symbol(const FSParser::ClassNode *p_class, LSP:
 				symbol.uri = uri;
 				symbol.script_path = path;
 
-				symbol.detail = "enum " + String(m.m_enum->identifier->name) + "{";
+				symbol.detail = "enum " + String(m.m_enum->identifier->name) + ":";
 				for (int j = 0; j < m.m_enum->values.size(); j++) {
-					if (j > 0) {
-						symbol.detail += ", ";
-					}
-					symbol.detail += String(m.m_enum->values[j].identifier->name) + " = " + itos(m.m_enum->values[j].value);
+					symbol.detail += "\n\t" + String(m.m_enum->values[j].identifier->name) + " = " + itos(m.m_enum->values[j].value);
 				}
-				symbol.detail += "}";
 
 				for (FSParser::EnumNode::Value value : m.m_enum->values) {
 					LSP::DocumentSymbol child;

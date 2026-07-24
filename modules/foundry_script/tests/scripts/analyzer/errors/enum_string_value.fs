@@ -1,7 +1,6 @@
-enum Size {
+enum Size:
 	# Error here. Enum values must be integers.
-	S = "hello",
-}
+	S = "hello"
 
 func test():
 	pass

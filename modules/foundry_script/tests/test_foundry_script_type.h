@@ -1146,7 +1146,7 @@ TEST_CASE("[Modules][FoundryScript] Docgen renders AsyncCallable parameter and r
 
 TEST_CASE("[Modules][FoundryScript] Docgen renders Coroutine result types") {
 	FSParser parser;
-	Error err = parser.parse("enum Direction { NORTH, SOUTH }\nvar pending: Coroutine[String]\nvar jobs: Array[Coroutine[String]] = []\nvar step: Coroutine[Direction]\n", "user://coroutine_docgen.fs", false);
+	Error err = parser.parse("enum Direction:\n\tNORTH = 0\n\tSOUTH = 1\nvar pending: Coroutine[String]\nvar jobs: Array[Coroutine[String]] = []\nvar step: Coroutine[Direction]\n", "user://coroutine_docgen.fs", false);
 	REQUIRE(err == OK);
 
 	FSAnalyzer analyzer(&parser);

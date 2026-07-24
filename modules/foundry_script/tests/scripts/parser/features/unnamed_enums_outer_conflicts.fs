@@ -1,14 +1,17 @@
 class A:
-	enum { X = 1 }
+	enum:
+		X = 1
 
 	class B:
-		enum { Y = 2 }
+		enum:
+			Y = 2
 
 class C:
 	const X = 3
 
 	class D:
-		enum { Y = 4 }
+		enum:
+			Y = 4
 
 func test():
 	print(A.X)

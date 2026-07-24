@@ -1,6 +1,7 @@
 const constant_float = 1.0
 const constant_int = 1
-enum { enum_value = 1 }
+enum:
+	enum_value = 1
 
 class Iterator:
 	func _iter_init(_count):

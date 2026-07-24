@@ -1,0 +1,2 @@
+FS_TEST_PARSER_ERROR
+Enum values must be separated by newlines; commas are not allowed between enum members.

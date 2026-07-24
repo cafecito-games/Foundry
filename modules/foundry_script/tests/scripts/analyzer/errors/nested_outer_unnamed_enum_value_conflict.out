@@ -1,2 +1,2 @@
 FS_TEST_ANALYZER_ERROR
->> ERROR at line 5: The member "READY" already exists in outer class Outer.
+>> ERROR at line 6: The member "READY" already exists in outer class Outer.

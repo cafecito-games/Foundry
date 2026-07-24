@@ -1,4 +1,5 @@
-enum MyEnum {}
+enum MyEnum:
+	pass
 
 func test():
 	var e: E

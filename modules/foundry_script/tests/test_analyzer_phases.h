@@ -97,10 +97,9 @@ class NestedBase:
 class NestedChild extends NestedBase:
 	pass
 
-enum Mode {
-	IDLE = 2,
-	RUNNING,
-}
+enum Mode:
+	IDLE = 2
+	RUNNING = 3
 
 signal changed(value: int)
 

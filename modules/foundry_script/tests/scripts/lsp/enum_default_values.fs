@@ -1,6 +1,9 @@
 extends Node
 
-enum Mode { IDLE, RUNNING, PAUSED }
+enum Mode:
+	IDLE = 0
+	RUNNING = IDLE + 1
+	PAUSED = RUNNING + 1
 
 var mode: Mode = Mode.RUNNING
 var count: int = 3

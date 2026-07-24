@@ -6331,12 +6331,7 @@ FSParser::DataType FSAnalyzer::make_global_enum_type_from_current_parser(const S
 				element.resolved = true;
 			}
 		} else {
-			if (element.index > 0) {
-				element.value = element.parent_enum->values[element.index - 1].value + 1;
-			} else {
-				element.value = 0;
-			}
-			element.resolved = true;
+			push_error(R"(Enum values must have an explicit integer value.)", element.identifier);
 		}
 
 		enum_type.enum_values[element.identifier->name] = element.value;

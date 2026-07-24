@@ -1,7 +1,10 @@
 class MyClass:
 	const TEST = 10
 
-enum MyEnum {A, B, C}
+enum MyEnum:
+	A = 0
+	B = A + 1
+	C = B + 1
 
 const Other = preload("./metatypes.notest.fs")
 

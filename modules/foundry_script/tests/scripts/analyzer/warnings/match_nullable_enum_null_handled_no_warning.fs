@@ -1,4 +1,6 @@
-enum Direction { NORTH, SOUTH }
+enum Direction:
+	NORTH = 0
+	SOUTH = NORTH + 1
 
 func test():
 	var direction: Direction? = Direction.NORTH
