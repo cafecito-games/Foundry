@@ -1,0 +1,30 @@
+#skip-compiled-bytecode
+# #1120 removes this sentinel after enum host function tables persist in compiled bytecode.
+
+class Left:
+	enum Status:
+		READY = 11
+
+		func describe() -> String:
+			return "left:" + str(self)
+
+		static func initial() -> Self:
+			return READY
+
+
+class Right:
+	enum Status:
+		READY = 22
+
+		func describe() -> String:
+			return "right:" + str(self)
+
+		static func initial() -> Self:
+			return READY
+
+
+func test() -> void:
+	var left: Left.Status = Left.Status.initial()
+	var right: Right.Status = Right.Status.initial()
+	print(left.describe())
+	print(right.describe())

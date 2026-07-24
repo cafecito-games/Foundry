@@ -2382,6 +2382,99 @@ class Outer:
 	CHECK_EQ(call->enum_call_function, SNAME("parse"));
 }
 
+TEST_CASE("[Modules][FoundryScript] Compiler stores enum host functions outside member methods at runtime") {
+	ScopedFSNativeGlobals native_globals;
+	FSParser parser;
+	const String path = "user://enum_host_function_runtime_storage.fs";
+	Error err = parser.parse(R"(
+enum Status:
+	READY = 1
+
+	func describe() -> String:
+		return str(self)
+
+	static func initial() -> Self:
+		return READY
+
+class Left:
+	enum Status:
+		READY = 11
+
+		func describe() -> String:
+			return "left"
+
+class Right:
+	enum Status:
+		READY = 22
+
+		func describe() -> String:
+			return "right"
+
+func ordinary() -> void:
+	pass
+)",
+			path, false);
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	FSAnalyzer analyzer(&parser);
+	err = analyzer.analyze();
+	INFO(first_parser_error_message(parser));
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	Ref<FoundryScript> script;
+	script.instantiate();
+	script->set_path(path);
+	FSCompiler compiler;
+	err = compiler.compile(&parser, script.ptr(), false);
+	INFO(compiler.get_error());
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	CHECK(script->get_member_functions().has(SNAME("ordinary")));
+	CHECK_FALSE(script->get_member_functions().has(SNAME("describe")));
+	CHECK_FALSE(script->get_member_functions().has(SNAME("initial")));
+
+	FSFunction *root_instance = script->get_enum_function(SNAME("Status"), SNAME("describe"), false);
+	FSFunction *root_static = script->get_enum_function(SNAME("Status"), SNAME("initial"), true);
+	REQUIRE(root_instance != nullptr);
+	REQUIRE(root_static != nullptr);
+	CHECK_NE(root_instance, root_static);
+	CHECK_EQ(root_instance->get_script(), script.ptr());
+	CHECK_EQ(root_static->get_script(), script.ptr());
+	CHECK(script->get_enum_function(SNAME("Status"), SNAME("initial"), false) == nullptr);
+	CHECK(script->get_enum_function(SNAME("Status"), SNAME("describe"), true) == nullptr);
+
+	const FSParser::ClassNode *left_node = find_parser_class(parser.get_tree(), SNAME("Left"));
+	const FSParser::ClassNode *right_node = find_parser_class(parser.get_tree(), SNAME("Right"));
+	REQUIRE(left_node != nullptr);
+	REQUIRE(right_node != nullptr);
+	FoundryScript *left_script = script->find_class(left_node->fqcn);
+	FoundryScript *right_script = script->find_class(right_node->fqcn);
+	REQUIRE(left_script != nullptr);
+	REQUIRE(right_script != nullptr);
+
+	FSFunction *left_describe = left_script->get_enum_function(SNAME("Status"), SNAME("describe"), false);
+	FSFunction *right_describe = right_script->get_enum_function(SNAME("Status"), SNAME("describe"), false);
+	REQUIRE(left_describe != nullptr);
+	REQUIRE(right_describe != nullptr);
+	CHECK_NE(left_describe, right_describe);
+	CHECK_EQ(left_describe->get_script(), left_script);
+	CHECK_EQ(right_describe->get_script(), right_script);
+	CHECK(script->get_enum_function(SNAME("Missing"), SNAME("describe"), false) == nullptr);
+
+	script->clear();
+	CHECK(script->get_enum_function(SNAME("Status"), SNAME("describe"), false) == nullptr);
+	CHECK(script->get_enum_function(SNAME("Status"), SNAME("initial"), true) == nullptr);
+}
+
 TEST_CASE("[Modules][FoundryScript] Analyzer records cross-file enum_name host function metadata") {
 	GlobalScriptClassCacheBackup backup;
 	ScriptServer::global_classes_clear();
