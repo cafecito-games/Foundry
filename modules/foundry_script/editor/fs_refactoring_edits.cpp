@@ -2,7 +2,7 @@
 /*  fs_refactoring_edits.cpp                                              */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -83,6 +83,20 @@ int compare_line_column(int p_a_line, int p_a_column, int p_b_line, int p_b_colu
 	return p_a_column < p_b_column ? -1 : 1;
 }
 
+int compare_edit_start(const RefactorTextEdit &p_a, const RefactorTextEdit &p_b) {
+	const int start_order = compare_line_column(p_a.start_line, p_a.start_column, p_b.start_line, p_b.start_column);
+	if (start_order != 0) {
+		return start_order;
+	}
+	return compare_line_column(p_a.end_line, p_a.end_column, p_b.end_line, p_b.end_column);
+}
+
+struct EditStartComparator {
+	bool operator()(const RefactorTextEdit &p_a, const RefactorTextEdit &p_b) const {
+		return compare_edit_start(p_a, p_b) < 0;
+	}
+};
+
 bool edit_contains_position(const RefactorTextEdit &p_edit, int p_line, int p_column) {
 	return compare_line_column(p_line, p_column, p_edit.start_line, p_edit.start_column) >= 0 &&
 			compare_line_column(p_line, p_column, p_edit.end_line, p_edit.end_column) < 0;
@@ -134,6 +148,72 @@ bool FSRefactorEdits::apply(const String &p_source, const Vector<RefactorTextEdi
 		out = out.substr(0, r.start_offset) + r.new_text + out.substr(r.end_offset, out.length() - r.end_offset);
 	}
 	r_result = out;
+	return true;
+}
+
+void FSRefactorEdits::sort_edits(Vector<RefactorTextEdit> &r_edits) {
+	bool sorted = true;
+	for (int i = 1; i < r_edits.size(); i++) {
+		if (compare_edit_start(r_edits[i], r_edits[i - 1]) < 0) {
+			sorted = false;
+			break;
+		}
+	}
+	if (sorted) {
+		// Vector::sort_custom is not stable; skipping the sort keeps the relative
+		// order of edits that share a start position (e.g. two insertions at the
+		// same point).
+		return;
+	}
+	r_edits.sort_custom<EditStartComparator>();
+}
+
+bool FSRefactorEdits::validate_structure(const Vector<RefactorTextEdit> &p_edits, String &r_error) {
+	for (int i = 0; i < p_edits.size(); i++) {
+		const RefactorTextEdit &edit = p_edits[i];
+		if (edit.start_line < 0 || edit.start_column < 0 || edit.end_line < 0 || edit.end_column < 0) {
+			r_error = vformat("Edit %d has a negative position (%d:%d)-(%d:%d).", i, edit.start_line, edit.start_column, edit.end_line, edit.end_column);
+			return false;
+		}
+		if (compare_line_column(edit.start_line, edit.start_column, edit.end_line, edit.end_column) > 0) {
+			r_error = vformat("Edit %d has a reversed range (%d:%d)-(%d:%d).", i, edit.start_line, edit.start_column, edit.end_line, edit.end_column);
+			return false;
+		}
+		if (i == 0) {
+			continue;
+		}
+		const RefactorTextEdit &previous = p_edits[i - 1];
+		if (compare_edit_start(edit, previous) < 0) {
+			r_error = vformat("Edit %d at (%d:%d) starts before edit %d at (%d:%d); edits must be sorted.", i, edit.start_line, edit.start_column, i - 1, previous.start_line, previous.start_column);
+			return false;
+		}
+		if (compare_line_column(edit.start_line, edit.start_column, previous.end_line, previous.end_column) < 0) {
+			r_error = vformat("Edit %d at (%d:%d) overlaps edit %d ending at (%d:%d).", i, edit.start_line, edit.start_column, i - 1, previous.end_line, previous.end_column);
+			return false;
+		}
+	}
+	r_error = String();
+	return true;
+}
+
+bool FSRefactorEdits::validate(const String &p_source, const Vector<RefactorTextEdit> &p_edits, String &r_error) {
+	if (!validate_structure(p_edits, r_error)) {
+		return false;
+	}
+	for (int i = 0; i < p_edits.size(); i++) {
+		const RefactorTextEdit &edit = p_edits[i];
+		const int start_offset = to_offset(p_source, edit.start_line, edit.start_column);
+		const int end_offset = to_offset(p_source, edit.end_line, edit.end_column);
+		if (start_offset < 0 || end_offset < 0) {
+			r_error = vformat("Edit %d range (%d:%d)-(%d:%d) is outside the source.", i, edit.start_line, edit.start_column, edit.end_line, edit.end_column);
+			return false;
+		}
+		if (edit.has_expected_text && p_source.substr(start_offset, end_offset - start_offset) != edit.expected_text) {
+			r_error = vformat("Edit %d expected text '%s' but the source range holds '%s'.", i, edit.expected_text, p_source.substr(start_offset, end_offset - start_offset));
+			return false;
+		}
+	}
+	r_error = String();
 	return true;
 }
 

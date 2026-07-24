@@ -2,7 +2,7 @@
 /*  test_refactor.h                                                       */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -37,6 +37,7 @@
 #include "../editor/fs_refactoring.h"
 #include "../editor/fs_refactoring_edits.h"
 #include "../editor/fs_refactoring_names.h"
+#include "../editor/fs_refactoring_shared.h"
 #include "../editor/fs_refactoring_types.h"
 #include "../fs_analyzer.h"
 #include "../fs_cache.h"
@@ -98,12 +99,69 @@ inline RefactorLocation selection(int p_start_line, int p_start_column, int p_en
 	return loc;
 }
 
+inline void require_parse_after_apply(const String &p_before, const String &p_after) {
+	RefactorIgnoreWarningsScope ignore_warnings;
+	FSParser before_parser;
+	if (before_parser.parse(p_before, "user://refactor_invariants_before.fs", false) != OK) {
+		// The input does not parse, so the refactored output cannot be held to that bar.
+		return;
+	}
+	FSParser after_parser;
+	CHECK_MESSAGE(after_parser.parse(p_after, "user://refactor_invariants_after.fs", false) == OK,
+			vformat("Refactored source no longer parses:\n%s", p_after));
+}
+
+// Asserts the edit-level invariants every refactor result must satisfy: valid
+// ordered ranges, sorted non-overlapping edits, matching expected-text guards,
+// and (when the input parses) a parseable result after applying the active-file
+// edits.
+inline void require_edit_invariants(const RefactorContext &p_context, const RefactorResult &p_result) {
+	if (!p_result.ok) {
+		return;
+	}
+	String error;
+	CHECK_MESSAGE(FSRefactorEdits::validate(p_context.source, p_result.edits, error),
+			vformat("Active-file edits violate invariants: %s", error));
+	CHECK_MESSAGE(FSRefactorEdits::validate(p_context.source, p_result.rename_occurrences, error),
+			vformat("Rename occurrences violate invariants: %s", error));
+	for (const RefactorFileEdit &file_edit : p_result.file_edits) {
+		if (file_edit.path == p_context.path) {
+			CHECK_MESSAGE(FSRefactorEdits::validate(p_context.source, file_edit.edits, error),
+					vformat("File edits for '%s' violate invariants: %s", file_edit.path, error));
+		} else {
+			CHECK_MESSAGE(FSRefactorEdits::validate_structure(file_edit.edits, error),
+					vformat("File edits for '%s' violate invariants: %s", file_edit.path, error));
+		}
+	}
+	if (!p_result.edits.is_empty()) {
+		String applied;
+		REQUIRE_MESSAGE(FSRefactorEdits::apply(p_context.source, p_result.edits, applied),
+				"Active-file edits could not be applied to the source they were prepared for.");
+		require_parse_after_apply(p_context.source, applied);
+	}
+}
+
+inline void require_candidate_edit_invariants(const RefactorContext &p_context, const RefactorCandidatesResult &p_result) {
+	if (!p_result.ok) {
+		return;
+	}
+	String error;
+	for (const RefactorCandidate &candidate : p_result.candidates) {
+		if (!candidate.enabled) {
+			continue;
+		}
+		CHECK_MESSAGE(FSRefactorEdits::validate(p_context.source, candidate.edits, error),
+				vformat("Candidate edits at line %d violate invariants: %s", candidate.line, error));
+	}
+}
+
 inline RefactorResult run_type_annotation(const String &p_source, int p_line, int p_column, String &r_out) {
 	RefactorContext ctx;
 	ctx.path = "user://type_annotation_refactor.fs";
 	ctx.source = p_source;
 	RefactorParams params;
 	RefactorResult r = FSRefactoring::prepare(ctx, caret(p_line, p_column), RefactorKind::ADD_TYPE_ANNOTATION, params);
+	require_edit_invariants(ctx, r);
 	if (r.ok) {
 		FSRefactorEdits::apply(ctx.source, r.edits, r_out);
 	}
@@ -116,6 +174,7 @@ inline RefactorResult run_extract_variable(const String &p_source, const Refacto
 	ctx.source = p_source;
 	RefactorParams params;
 	RefactorResult r = FSRefactoring::prepare(ctx, p_location, RefactorKind::EXTRACT_VARIABLE, params);
+	require_edit_invariants(ctx, r);
 	if (r.ok) {
 		FSRefactorEdits::apply(ctx.source, r.edits, r_out);
 	}
@@ -133,6 +192,7 @@ inline RefactorResult run_extract_method_named(
 	RefactorParams params;
 	params.new_name = p_new_name;
 	RefactorResult r = FSRefactoring::prepare(ctx, p_location, RefactorKind::EXTRACT_METHOD, params);
+	require_edit_invariants(ctx, r);
 	if (r.ok) {
 		FSRefactorEdits::apply(ctx.source, r.edits, r_out);
 	}
@@ -149,6 +209,7 @@ inline RefactorResult run_inline_variable(const String &p_source, int p_line, in
 	ctx.source = p_source;
 	RefactorParams params;
 	RefactorResult r = FSRefactoring::prepare(ctx, caret(p_line, p_column), RefactorKind::INLINE_VARIABLE, params);
+	require_edit_invariants(ctx, r);
 	if (r.ok) {
 		FSRefactorEdits::apply(ctx.source, r.edits, r_out);
 	}
@@ -161,6 +222,7 @@ inline RefactorResult run_sort_members_by_style_guide(const String &p_source, St
 	ctx.source = p_source;
 	RefactorParams params;
 	RefactorResult r = FSRefactoring::prepare(ctx, caret(0, 0), RefactorKind::SORT_MEMBERS_BY_STYLE_GUIDE, params);
+	require_edit_invariants(ctx, r);
 	if (r.ok) {
 		FSRefactorEdits::apply(ctx.source, r.edits, r_out);
 	}
@@ -209,6 +271,7 @@ inline RefactorResult run_implement_abstract(const String &p_source, int p_line,
 	ctx.source = p_source;
 	RefactorParams params;
 	RefactorResult r = FSRefactoring::prepare(ctx, caret(p_line, p_column), RefactorKind::IMPLEMENT_ABSTRACT_METHODS, params);
+	require_edit_invariants(ctx, r);
 	if (r.ok) {
 		FSRefactorEdits::apply(ctx.source, r.edits, r_out);
 	}
@@ -257,6 +320,7 @@ inline RefactorResult run_override_method(
 	RefactorParams params;
 	params.override_method_id = p_candidate_id;
 	RefactorResult r = FSRefactoring::prepare(ctx, caret(p_line, p_column), RefactorKind::OVERRIDE_METHOD, params);
+	require_edit_invariants(ctx, r);
 	if (r.ok) {
 		FSRefactorEdits::apply(ctx.source, r.edits, r_out);
 	}
@@ -269,6 +333,7 @@ inline RefactorResult run_insert_cast(const String &p_source, int p_line, int p_
 	ctx.source = p_source;
 	RefactorParams params;
 	RefactorResult r = FSRefactoring::prepare(ctx, caret(p_line, p_column), RefactorKind::INSERT_EXPLICIT_CAST, params);
+	require_edit_invariants(ctx, r);
 	if (r.ok) {
 		FSRefactorEdits::apply(ctx.source, r.edits, r_out);
 	}
@@ -299,6 +364,7 @@ inline RefactorResult run_widen_nullable(const String &p_source, int p_line, int
 	ctx.source = p_source;
 	RefactorParams params;
 	RefactorResult r = FSRefactoring::prepare(ctx, caret(p_line, p_column), RefactorKind::WIDEN_TO_NULLABLE, params);
+	require_edit_invariants(ctx, r);
 	if (r.ok) {
 		FSRefactorEdits::apply(ctx.source, r.edits, r_out);
 	}
@@ -341,6 +407,135 @@ struct TemporaryScriptFile {
 #endif // FOUNDRY_SCRIPT_NO_LSP
 
 TEST_SUITE("[Modules][FoundryScript][Refactor]") {
+	TEST_CASE("Edit validation enforces the shared edit invariants") {
+		const String source = "var alpha = 1\nvar beta = 2\n";
+		String error;
+
+		SUBCASE("Sorted non-overlapping edits with matching guards pass") {
+			Vector<RefactorTextEdit> edits;
+			RefactorTextEdit first;
+			first.start_line = 0;
+			first.start_column = 4;
+			first.end_line = 0;
+			first.end_column = 9;
+			first.has_expected_text = true;
+			first.expected_text = "alpha";
+			first.new_text = "gamma";
+			edits.push_back(first);
+			RefactorTextEdit second;
+			second.start_line = 1;
+			second.start_column = 4;
+			second.end_line = 1;
+			second.end_column = 8;
+			second.new_text = "delta";
+			edits.push_back(second);
+			CHECK(FSRefactorEdits::validate_structure(edits, error));
+			CHECK_MESSAGE(FSRefactorEdits::validate(source, edits, error), error);
+		}
+
+		SUBCASE("A reversed range is rejected") {
+			Vector<RefactorTextEdit> edits;
+			RefactorTextEdit edit;
+			edit.start_line = 0;
+			edit.start_column = 9;
+			edit.end_line = 0;
+			edit.end_column = 4;
+			edits.push_back(edit);
+			CHECK_FALSE(FSRefactorEdits::validate_structure(edits, error));
+			CHECK_FALSE(error.is_empty());
+			CHECK_FALSE(FSRefactorEdits::validate(source, edits, error));
+		}
+
+		SUBCASE("A range outside the source is rejected") {
+			Vector<RefactorTextEdit> edits;
+			RefactorTextEdit edit;
+			edit.start_line = 5;
+			edit.start_column = 0;
+			edit.end_line = 5;
+			edit.end_column = 1;
+			edits.push_back(edit);
+			CHECK(FSRefactorEdits::validate_structure(edits, error));
+			CHECK_FALSE(FSRefactorEdits::validate(source, edits, error));
+			CHECK_FALSE(error.is_empty());
+		}
+
+		SUBCASE("Unsorted edits are rejected") {
+			Vector<RefactorTextEdit> edits;
+			RefactorTextEdit second;
+			second.start_line = 1;
+			second.start_column = 0;
+			second.end_line = 1;
+			second.end_column = 3;
+			edits.push_back(second);
+			RefactorTextEdit first;
+			first.start_line = 0;
+			first.start_column = 0;
+			first.end_line = 0;
+			first.end_column = 3;
+			edits.push_back(first);
+			CHECK_FALSE(FSRefactorEdits::validate_structure(edits, error));
+			CHECK_FALSE(error.is_empty());
+			FSRefactorEdits::sort_edits(edits);
+			CHECK(FSRefactorEdits::validate_structure(edits, error));
+			CHECK(edits[0].start_line == 0);
+		}
+
+		SUBCASE("Overlapping edits are rejected") {
+			Vector<RefactorTextEdit> edits;
+			RefactorTextEdit first;
+			first.start_line = 0;
+			first.start_column = 0;
+			first.end_line = 0;
+			first.end_column = 6;
+			edits.push_back(first);
+			RefactorTextEdit second;
+			second.start_line = 0;
+			second.start_column = 4;
+			second.end_line = 0;
+			second.end_column = 9;
+			edits.push_back(second);
+			CHECK_FALSE(FSRefactorEdits::validate_structure(edits, error));
+			CHECK_FALSE(error.is_empty());
+		}
+
+		SUBCASE("A stale expected-text guard is rejected") {
+			Vector<RefactorTextEdit> edits;
+			RefactorTextEdit edit;
+			edit.start_line = 0;
+			edit.start_column = 4;
+			edit.end_line = 0;
+			edit.end_column = 9;
+			edit.has_expected_text = true;
+			edit.expected_text = "omega";
+			edits.push_back(edit);
+			CHECK(FSRefactorEdits::validate_structure(edits, error));
+			CHECK_FALSE(FSRefactorEdits::validate(source, edits, error));
+			CHECK_FALSE(error.is_empty());
+		}
+	}
+
+	TEST_CASE("Shared node text recovery keeps multi-line source text") {
+		const String source = "var numbers = [\n\t1,\n\t2,\n]\n";
+		FSParser parser;
+		REQUIRE(parser.parse(source, "user://shared_node_text.fs", false) == OK);
+		const FSParser::ClassNode *tree = parser.get_tree();
+		REQUIRE(tree != nullptr);
+		const FSParser::VariableNode *variable = nullptr;
+		for (const FSParser::ClassNode::Member &member : tree->members) {
+			if (member.type == FSParser::ClassNode::Member::VARIABLE) {
+				variable = member.variable;
+				break;
+			}
+		}
+		REQUIRE(variable != nullptr);
+		REQUIRE(variable->initializer != nullptr);
+		const Vector<String> lines = source.split("\n");
+
+		String text;
+		REQUIRE(FSRefactorShared::get_multi_line_node_text(lines, variable->initializer, text));
+		CHECK(text == "[\n\t1,\n\t2,\n]");
+	}
+
 	TEST_CASE("Rename is reported but disabled at a trivial location") {
 		RefactorContext ctx = make_context("modules/foundry_script/tests/scripts/refactor/empty.fs");
 		Vector<RefactorAvailability> available = FSRefactoring::get_available_refactors(ctx, caret(0, 0));
