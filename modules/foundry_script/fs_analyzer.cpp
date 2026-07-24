@@ -174,6 +174,19 @@ FSAnalyzer::AnalysisScopeGuard::~AnalysisScopeGuard() {
 	analyzer->static_context = previous_static_context;
 }
 
+FSParser::DataType FSAnalyzer::enum_self_type(const FSParser::FunctionNode *p_function) const {
+	const FSParser::FunctionNode *function = p_function;
+	while (function != nullptr) {
+		if (function->owner_enum != nullptr) {
+			return type_from_metatype(function->owner_enum->get_datatype());
+		}
+		if (function->source_lambda == nullptr) {
+			break;
+		}
+		function = function->source_lambda->parent_function;
+	}
+	return FSParser::DataType();
+}
 
 FSAnalyzer::DependencyParserAccess::DependencyParserAccess(FSAnalyzer *p_analyzer) {
 	analyzer = p_analyzer;
@@ -1638,6 +1651,11 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 			return bad_type;
 		}
 
+		FSParser::DataType enum_type = enum_self_type(parser->current_function);
+		if (enum_type.is_set()) {
+			return finalize_datatype(enum_type);
+		}
+
 		const bool receiver_relative_self = resolving_function_signature_type || parser->current_function != nullptr || parser->current_class->is_trait;
 		FSParser::DataType self_type;
 		if (receiver_relative_self) {
@@ -2149,6 +2167,10 @@ void FSAnalyzer::resolve_class_body(FSParser::ClassNode *p_class, const FSParser
 		resolve_class_body(base_class, p_class);
 	}
 
+	if (p_class == parser->head && p_class->is_enum_file && p_class->enum_file_decl != nullptr) {
+		resolve_enum_bodies(p_class->enum_file_decl, p_class);
+	}
+
 	// Do functions, properties, and groups now.
 	for (int i = 0; i < p_class->members.size(); i++) {
 		FSParser::ClassNode::Member member = p_class->members[i];
@@ -2159,6 +2181,8 @@ void FSAnalyzer::resolve_class_body(FSParser::ClassNode *p_class, const FSParser
 				E->apply(parser, member.function, p_class);
 			}
 			resolve_function_body(member.function);
+		} else if (member.type == FSParser::ClassNode::Member::ENUM) {
+			resolve_enum_bodies(member.m_enum, p_class);
 		} else if (member.type == FSParser::ClassNode::Member::VARIABLE && member.variable->property != FSParser::VariableNode::PROP_NONE) {
 			if (member.variable->property == FSParser::VariableNode::PROP_INLINE) {
 				if (member.variable->getter != nullptr) {
@@ -2316,6 +2340,19 @@ void FSAnalyzer::resolve_class_body(FSParser::ClassNode *p_class, const FSParser
 	run_phase_flow_finality_invariants(p_class);
 
 	parser->current_class = previous_class;
+}
+
+void FSAnalyzer::resolve_enum_bodies(FSParser::EnumNode *p_enum, FSParser::ClassNode *p_owner) {
+	ERR_FAIL_NULL(p_enum);
+	ERR_FAIL_NULL(p_owner);
+
+	AnalysisScopeGuard scope(this, p_owner);
+	current_enum = p_enum;
+	for (FSParser::FunctionNode *function : p_enum->functions) {
+		if (function != nullptr) {
+			resolve_function_body(function);
+		}
+	}
 }
 
 void FSAnalyzer::resolve_class_body(FSParser::ClassNode *p_class, bool p_recursive) {
@@ -3076,6 +3113,7 @@ void FSAnalyzer::resolve_function_signature(FSParser::FunctionNode *p_function, 
 	}
 
 	StringName function_name = p_function->identifier != nullptr ? p_function->identifier->name : StringName();
+	const bool is_enum_function = p_function->owner_enum != nullptr;
 
 	if (p_function->get_datatype().is_resolving()) {
 		push_error(vformat(R"(Could not resolve function "%s": Cyclic reference.)", function_name), p_source);
@@ -3185,7 +3223,7 @@ void FSAnalyzer::resolve_function_signature(FSParser::FunctionNode *p_function, 
 #endif // DEBUG_ENABLED
 	}
 
-	if (!p_is_lambda && function_name == FSLanguage::get_singleton()->strings._init) {
+	if (!p_is_lambda && !is_enum_function && function_name == FSLanguage::get_singleton()->strings._init) {
 		// Constructor.
 		FSParser::DataType return_type = parser->current_class->get_datatype();
 		return_type.is_meta_type = false;
@@ -3196,7 +3234,7 @@ void FSAnalyzer::resolve_function_signature(FSParser::FunctionNode *p_function, 
 				push_error("Constructor cannot have an explicit return type.", p_function->return_type);
 			}
 		}
-	} else if (!p_is_lambda && function_name == FSLanguage::get_singleton()->strings._static_init) {
+	} else if (!p_is_lambda && !is_enum_function && function_name == FSLanguage::get_singleton()->strings._static_init) {
 		// Static constructor.
 		FSParser::DataType return_type;
 		return_type.kind = FSParser::DataType::BUILTIN;
@@ -3234,7 +3272,7 @@ void FSAnalyzer::resolve_function_signature(FSParser::FunctionNode *p_function, 
 		FSParser::FunctionNode *parent_function = nullptr;
 		FSParser::ClassNode *parent_function_class = nullptr;
 		const FSParser::DataType override_self_type = _self_type_for_class(parser->current_class);
-		const bool has_parent_signature = !p_is_lambda && get_function_signature(p_function, false, base_type, function_name, parent_return_type, parameters_types, default_par_count, method_flags, &native_base, nullptr, &parent_function, &parent_function_class, &override_self_type);
+		const bool has_parent_signature = !p_is_lambda && !is_enum_function && get_function_signature(p_function, false, base_type, function_name, parent_return_type, parameters_types, default_par_count, method_flags, &native_base, nullptr, &parent_function, &parent_function_class, &override_self_type);
 
 		// get_function_signature reports an async parent's return as Coroutine[T], but a function's own
 		// declared return type is the raw T. Async-ness is checked separately via METHOD_FLAG_ASYNC, so
@@ -3890,7 +3928,6 @@ void FSAnalyzer::resolve_parameter(FSParser::ParameterNode *p_parameter) {
 	}
 	resolve_assignable(p_parameter, kind);
 }
-
 
 void FSAnalyzer::resolve_if(FSParser::IfNode *p_if) {
 	flow_finality.reduce_condition_expression(p_if->condition);
@@ -5837,6 +5874,20 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 		p_call->is_static = method_flags.has_flag(METHOD_FLAG_STATIC);
 		p_call->is_noreturn = is_noreturn;
 
+		const FSParser::FunctionNode *enum_function = parser->current_function;
+		while (enum_function != nullptr && enum_function->owner_enum == nullptr && enum_function->source_lambda != nullptr) {
+			enum_function = enum_function->source_lambda->parent_function;
+		}
+		const bool enum_outer_instance_call = is_self && found_function != nullptr &&
+				found_function->owner_enum == nullptr && !found_function->is_static &&
+				enum_function != nullptr && enum_function->owner_enum != nullptr;
+		if (enum_outer_instance_call) {
+			push_error(vformat(
+							   R"*(Enum function "%s()" cannot access containing class instance member "%s".)*",
+							   enum_function->identifier->name, p_call->function_name),
+					p_call->callee);
+		}
+
 		// Named arguments are only valid against a statically resolved FoundryScript function. When the
 		// callee resolves to one, rewrite `name = value` arguments into canonical positional order
 		// so the existing positional validation and codegen run unchanged; otherwise reject them.
@@ -5910,7 +5961,7 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 			base_type.is_meta_type = false;
 		}
 
-		if (is_self && static_context && !p_call->is_static) {
+		if (is_self && static_context && !p_call->is_static && !enum_outer_instance_call) {
 			// Get the parent function above any lambda.
 			FSParser::FunctionNode *parent_function = parser->current_function;
 			while (parent_function && parent_function->source_lambda) {
@@ -6308,45 +6359,7 @@ FSParser::DataType FSAnalyzer::make_global_enum_type_from_current_parser(const S
 	FSParser::DataType enum_type = make_standalone_global_enum_type(p_global_name, true);
 	enum_type.class_type = head;
 	enum_type.script_path = parser->script_path;
-
-	const FSParser::EnumNode *previous_enum = current_enum;
-	FSParser::ClassNode *previous_class = parser->current_class;
-	FSParser::FunctionNode *previous_function = parser->current_function;
-	current_enum = enum_node;
-	parser->current_class = head;
-	parser->current_function = nullptr;
-
-	Dictionary dictionary;
-	for (int i = 0; i < enum_node->values.size(); i++) {
-		FSParser::EnumNode::Value &element = enum_node->values.write[i];
-
-		if (element.custom_value) {
-			reduce_expression(element.custom_value);
-			if (!element.custom_value->is_constant) {
-				push_error(R"(Enum values must be constant.)", element.custom_value);
-			} else if (element.custom_value->reduced_value.get_type() != Variant::INT) {
-				push_error(R"(Enum values must be integers.)", element.custom_value);
-			} else {
-				element.value = element.custom_value->reduced_value;
-				element.resolved = true;
-			}
-		} else {
-			push_error(R"(Enum values must have an explicit integer value.)", element.identifier);
-		}
-
-		enum_type.enum_values[element.identifier->name] = element.value;
-		dictionary[String(element.identifier->name)] = element.value;
-	}
-
-	parser->current_function = previous_function;
-	parser->current_class = previous_class;
-	current_enum = previous_enum;
-
-	dictionary.make_read_only();
-	enum_node->set_datatype(enum_type);
-	enum_node->dictionary = dictionary;
-
-	return enum_type;
+	return resolve_enum_values(enum_node, enum_type, head);
 }
 
 FSParser::DataType FSAnalyzer::make_global_enum_type_from_path(const StringName &p_global_name, const String &p_path, const FSParser::Node *p_source) {
@@ -8484,10 +8497,15 @@ void FSAnalyzer::reduce_identifier(FSParser::IdentifierNode *p_identifier, bool 
 		for (int i = 0; i < current_enum->values.size(); i++) {
 			const FSParser::EnumNode::Value &element = current_enum->values[i];
 			if (element.identifier->name == p_identifier->name) {
-				StringName enum_name = current_enum->identifier ? current_enum->identifier->name : UNNAMED_ENUM;
-				FSParser::DataType type = make_class_enum_type(enum_name, parser->current_class, parser->script_path, false);
-				if (element.parent_enum->identifier) {
-					type.enum_type = element.parent_enum->identifier->name;
+				FSParser::DataType type;
+				if (current_enum->get_datatype().is_set()) {
+					type = type_from_metatype(current_enum->get_datatype());
+				} else {
+					StringName enum_name = current_enum->identifier ? current_enum->identifier->name : UNNAMED_ENUM;
+					type = make_class_enum_type(enum_name, parser->current_class, parser->script_path, false);
+					if (element.parent_enum->identifier) {
+						type.enum_type = element.parent_enum->identifier->name;
+					}
 				}
 				p_identifier->set_datatype(type);
 
@@ -8584,6 +8602,19 @@ void FSAnalyzer::reduce_identifier(FSParser::IdentifierNode *p_identifier, bool 
 		const bool source_is_instance_variable = p_identifier->source == FSParser::IdentifierNode::MEMBER_VARIABLE || p_identifier->source == FSParser::IdentifierNode::INHERITED_VARIABLE;
 		const bool source_is_instance_function = p_identifier->source == FSParser::IdentifierNode::MEMBER_FUNCTION && !p_identifier->function_source_is_static;
 		const bool source_is_signal = p_identifier->source == FSParser::IdentifierNode::MEMBER_SIGNAL;
+
+		const FSParser::FunctionNode *enum_function = parser->current_function;
+		while (enum_function != nullptr && enum_function->owner_enum == nullptr && enum_function->source_lambda != nullptr) {
+			enum_function = enum_function->source_lambda->parent_function;
+		}
+		if (enum_function != nullptr && enum_function->owner_enum != nullptr &&
+				(source_is_instance_variable || source_is_instance_function || source_is_signal)) {
+			push_error(vformat(
+							   R"*(Enum function "%s()" cannot access containing class instance member "%s".)*",
+							   enum_function->identifier->name, p_identifier->name),
+					p_identifier);
+			return;
+		}
 
 		if (static_context && (source_is_instance_variable || source_is_instance_function || source_is_signal)) {
 			// Get the parent function above any lambda.
@@ -8919,7 +8950,10 @@ void FSAnalyzer::reduce_preload(FSParser::PreloadNode *p_preload) {
 
 void FSAnalyzer::reduce_self(FSParser::SelfNode *p_self) {
 	p_self->is_constant = false;
-	if (parser->current_function != nullptr &&
+	FSParser::DataType enum_type = enum_self_type(parser->current_function);
+	if (enum_type.is_set()) {
+		p_self->set_datatype(enum_type);
+	} else if (parser->current_function != nullptr &&
 			(parser->current_function->uses_receiver_relative_self ||
 					_datatype_contains_self_type_parameter(parser->current_function->get_datatype()))) {
 		p_self->set_datatype(_self_type_parameter_for_class(parser->current_class));
@@ -11032,6 +11066,12 @@ bool FSAnalyzer::resolve_explicit_type_argument(FSParser::ExpressionNode *p_expr
 		}
 
 		if (identifier->name == SNAME("Self") && parser->current_class != nullptr) {
+			FSParser::DataType enum_type = enum_self_type(parser->current_function);
+			if (enum_type.is_set()) {
+				r_type_argument = enum_type;
+				return true;
+			}
+
 			const bool receiver_relative_self = resolving_function_signature_type || parser->current_function != nullptr || parser->current_class->is_trait;
 			if (receiver_relative_self) {
 				if (parser->current_function != nullptr) {

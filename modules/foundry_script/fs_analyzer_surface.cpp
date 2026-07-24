@@ -693,6 +693,95 @@ void FSAnalyzer::resolve_function_signature_in_class(FSParser::FunctionNode *p_f
 	parser->current_class = previous_class;
 }
 
+FSParser::DataType FSAnalyzer::resolve_enum_values(FSParser::EnumNode *p_enum,
+		const FSParser::DataType &p_enum_type, FSParser::ClassNode *p_owner) {
+	ERR_FAIL_NULL_V(p_enum, p_enum_type);
+	ERR_FAIL_NULL_V(p_owner, p_enum_type);
+
+	if (p_enum->get_datatype().is_set()) {
+		return p_enum->get_datatype();
+	}
+
+	AnalysisScopeGuard scope(this, p_owner);
+	current_enum = p_enum;
+
+	FSParser::DataType enum_type = p_enum_type;
+	Dictionary dictionary;
+	for (int i = 0; i < p_enum->values.size(); i++) {
+		FSParser::EnumNode::Value &element = p_enum->values.write[i];
+
+		if (element.custom_value) {
+			reduce_expression(element.custom_value);
+			if (!element.custom_value->is_constant) {
+				push_error(R"(Enum values must be constant.)", element.custom_value);
+			} else if (element.custom_value->reduced_value.get_type() != Variant::INT) {
+				push_error(R"(Enum values must be integers.)", element.custom_value);
+			} else {
+				element.value = element.custom_value->reduced_value;
+				element.resolved = true;
+			}
+		} else {
+			push_error(R"(Enum values must have an explicit integer value.)", element.identifier);
+		}
+
+		enum_type.enum_values[element.identifier->name] = element.value;
+		dictionary[String(element.identifier->name)] = element.value;
+
+#ifdef DEBUG_ENABLED
+		// Named enum identifiers do not shadow anything since they are qualified at ordinary use sites.
+		if (p_enum->identifier == nullptr || p_enum->identifier->name == StringName()) {
+			is_shadowing(element.identifier, "enum member", false);
+		}
+#endif // DEBUG_ENABLED
+	}
+
+	dictionary.make_read_only();
+	p_enum->set_datatype(enum_type);
+	p_enum->dictionary = dictionary;
+	return enum_type;
+}
+
+void FSAnalyzer::resolve_enum_interface(FSParser::EnumNode *p_enum,
+		const FSParser::DataType &p_enum_type, FSParser::ClassNode *p_owner) {
+	ERR_FAIL_NULL(p_enum);
+	ERR_FAIL_NULL(p_owner);
+
+	const FSParser::DataType enum_type = resolve_enum_values(p_enum, p_enum_type, p_owner);
+	AnalysisScopeGuard scope(this, p_owner);
+	current_enum = p_enum;
+
+	HashSet<StringName> function_names;
+	for (FSParser::FunctionNode *function : p_enum->functions) {
+		if (function == nullptr || function->identifier == nullptr) {
+			continue;
+		}
+
+		const StringName function_name = function->identifier->name;
+		if (enum_type.enum_values.has(function_name)) {
+			push_error(vformat(R"*(Enum function "%s()" conflicts with enum value "%s".)*",
+							   function_name, function_name),
+					function->identifier);
+		}
+		if (function_names.has(function_name)) {
+			push_error(vformat(R"*(Enum function "%s()" is declared more than once.)*", function_name),
+					function->identifier);
+		} else {
+			function_names.insert(function_name);
+		}
+		if (function->is_static && Variant::has_builtin_method(Variant::DICTIONARY, function_name)) {
+			push_error(vformat(R"*(Static enum function "%s" conflicts with Dictionary method "%s()".)*",
+							   function_name, function_name),
+					function->identifier);
+		}
+
+		for (FSParser::AnnotationNode *&annotation : function->annotations) {
+			resolve_annotation(annotation, FSParser::AnnotationDeclarationNode::TARGET_METHOD);
+			annotation->apply(parser, function, p_owner);
+		}
+		resolve_function_signature(function);
+	}
+}
+
 bool FSAnalyzer::resolve_type_parameter(const StringName &p_name, FSParser::DataType &r_type) {
 	const FSParser::TypeParameterNode *parameter = nullptr;
 	FSParser::DataType::TypeParameterScope scope = FSParser::DataType::TYPE_PARAMETER_NONE;
@@ -1133,44 +1222,7 @@ void FSAnalyzer::resolve_class_member(FSParser::ClassNode *p_class, int p_index,
 
 				member.m_enum->set_datatype(resolving_datatype);
 				FSParser::DataType enum_type = make_class_enum_type(member.m_enum->identifier->name, p_class, parser->script_path, true);
-
-				const FSParser::EnumNode *prev_enum = current_enum;
-				current_enum = member.m_enum;
-
-				Dictionary dictionary;
-				for (int j = 0; j < member.m_enum->values.size(); j++) {
-					FSParser::EnumNode::Value &element = member.m_enum->values.write[j];
-
-					if (element.custom_value) {
-						reduce_expression(element.custom_value);
-						if (!element.custom_value->is_constant) {
-							push_error(R"(Enum values must be constant.)", element.custom_value);
-						} else if (element.custom_value->reduced_value.get_type() != Variant::INT) {
-							push_error(R"(Enum values must be integers.)", element.custom_value);
-						} else {
-							element.value = element.custom_value->reduced_value;
-							element.resolved = true;
-						}
-					} else {
-						push_error(R"(Enum values must have an explicit integer value.)", element.identifier);
-					}
-
-					enum_type.enum_values[element.identifier->name] = element.value;
-					dictionary[String(element.identifier->name)] = element.value;
-
-#ifdef DEBUG_ENABLED
-					// Named enum identifiers do not shadow anything since you can only access them with `NamedEnum.ENUM_VALUE`.
-					if (member.m_enum->identifier->name == StringName()) {
-						is_shadowing(element.identifier, "enum member", false);
-					}
-#endif // DEBUG_ENABLED
-				}
-
-				current_enum = prev_enum;
-
-				dictionary.make_read_only();
-				member.m_enum->set_datatype(enum_type);
-				member.m_enum->dictionary = dictionary;
+				resolve_enum_interface(member.m_enum, enum_type, p_class);
 
 				// Apply annotations.
 				for (FSParser::AnnotationNode *&E : member.m_enum->annotations) {
@@ -1284,7 +1336,8 @@ void FSAnalyzer::resolve_class_interface(FSParser::ClassNode *p_class, const FSP
 		// compiling the enum-file itself still needs resolved values and dictionary.
 		if (p_class == parser->head && p_class->is_enum_file && p_class->enum_file_decl != nullptr && p_class->enum_file_decl->identifier != nullptr) {
 			const StringName global_enum_name = p_class->qualified_global_name.is_empty() ? p_class->enum_file_decl->identifier->name : StringName(p_class->qualified_global_name);
-			make_global_enum_type_from_current_parser(global_enum_name, p_class);
+			const FSParser::DataType enum_type = make_global_enum_type_from_current_parser(global_enum_name, p_class);
+			resolve_enum_interface(p_class->enum_file_decl, enum_type, p_class);
 		}
 
 		// Resolve declared type-parameter bounds eagerly so runtime reflection can report them even

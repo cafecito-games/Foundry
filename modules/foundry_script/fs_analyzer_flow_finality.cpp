@@ -32,7 +32,6 @@
 
 #include "foundry_script.h"
 
-
 FSAnalyzer::FlowFinalityContext::FlowFinalityContext(FSAnalyzer *p_analyzer) :
 		analyzer(p_analyzer) {
 }
@@ -271,6 +270,12 @@ void FSAnalyzer::FlowFinalityContext::check_final_member_assignments(FSParser::C
 		if (member.type == FSParser::ClassNode::Member::FUNCTION) {
 			FSParser::FunctionNode *function = member.function;
 			scan_illegal_final_writes(function->body, finals, finals_by_name, FinalAssignmentScope::INSTANCE_MEMBER, function == init_function);
+		} else if (member.type == FSParser::ClassNode::Member::ENUM && member.m_enum != nullptr) {
+			for (FSParser::FunctionNode *function : member.m_enum->functions) {
+				if (function != nullptr) {
+					scan_illegal_final_writes(function->body, finals, finals_by_name, FinalAssignmentScope::INSTANCE_MEMBER, false);
+				}
+			}
 		} else if (member.type == FSParser::ClassNode::Member::VARIABLE) {
 			// A member initializer runs in the constructor prologue, not in the `_init` body, so a
 			// final written from a lambda nested in it is outside the legal slot.
@@ -488,6 +493,12 @@ void FSAnalyzer::FlowFinalityContext::check_final_static_assignments(FSParser::C
 		if (member.type == FSParser::ClassNode::Member::FUNCTION) {
 			FSParser::FunctionNode *function = member.function;
 			scan_illegal_final_writes(function->body, finals, finals_by_name, FinalAssignmentScope::STATIC_MEMBER, function == static_init_function);
+		} else if (member.type == FSParser::ClassNode::Member::ENUM && member.m_enum != nullptr) {
+			for (FSParser::FunctionNode *function : member.m_enum->functions) {
+				if (function != nullptr) {
+					scan_illegal_final_writes(function->body, finals, finals_by_name, FinalAssignmentScope::STATIC_MEMBER, false);
+				}
+			}
 		} else if (member.type == FSParser::ClassNode::Member::VARIABLE) {
 			scan_illegal_final_writes(member.variable->initializer, finals, finals_by_name, FinalAssignmentScope::STATIC_MEMBER, false);
 			if (member.variable->property == FSParser::VariableNode::PROP_INLINE) {
@@ -615,6 +626,10 @@ void FSAnalyzer::FlowFinalityContext::check_final_local_assignments(FSParser::Cl
 		const FSParser::ClassNode::Member &member = p_class->members[i];
 		if (member.type == FSParser::ClassNode::Member::FUNCTION) {
 			analyze_function_local_finals(member.function);
+		} else if (member.type == FSParser::ClassNode::Member::ENUM && member.m_enum != nullptr) {
+			for (FSParser::FunctionNode *function : member.m_enum->functions) {
+				analyze_function_local_finals(function);
+			}
 		} else if (member.type == FSParser::ClassNode::Member::VARIABLE) {
 			// A member or static var initializer can embed a lambda whose body declares `final var`
 			// locals. The initializer itself is an expression (no top-level local declaration), so the
@@ -631,6 +646,12 @@ void FSAnalyzer::FlowFinalityContext::check_final_local_assignments(FSParser::Cl
 				analyze_function_local_finals(member.variable->getter);
 				analyze_function_local_finals(member.variable->setter);
 			}
+		}
+	}
+
+	if (p_class->is_enum_file && p_class->enum_file_decl != nullptr) {
+		for (FSParser::FunctionNode *function : p_class->enum_file_decl->functions) {
+			analyze_function_local_finals(function);
 		}
 	}
 }
