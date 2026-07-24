@@ -33,10 +33,11 @@ owner class interface, then maps the datatype to:
 Native, builtin, and global engine enums do not carry a Foundry Script `class_type`, so they never
 enter enum-host-function lookup and keep their current behavior.
 
-`get_function_signature()` performs this lookup before the existing enum-to-Dictionary fallback. If
-the enum declares the requested name, the helper returns the resolved Foundry Script function
-signature. If it does not, an enum metatype continues through the Dictionary builtin path, while an
-enum value reports a missing enum function.
+`get_function_signature()` performs this lookup before the existing enum-to-Dictionary fallback. A
+receiver-compatible enum function returns its resolved Foundry Script signature. On a metatype, an
+instance function with the same name as a Dictionary method does not shadow that method; it continues
+through the Dictionary builtin path. Other wrong-kind matches are returned so the call site can emit
+a targeted receiver error. An unmatched enum value reports a missing enum function.
 
 ## Static and Instance Rules
 
@@ -47,6 +48,10 @@ a wrong receiver from a missing function:
 - an instance enum function called on an enum value succeeds;
 - a static function called on an enum value emits a static-on-value error;
 - an instance function called on the enum metatype emits an instance-on-type error.
+
+The one precedence exception is an instance function whose name is also a Dictionary method.
+`Enum.keys()` remains the Dictionary call, while `value.keys()` resolves the instance function. This
+preserves the metatype surface promised by #1115 and the instance-name allowance from #1117.
 
 The resolved enum function participates in the existing named-argument, parameter, return,
 coroutine, and first-class `Callable` typing paths. Enum functions do not use class inheritance or
@@ -110,6 +115,7 @@ C++ analyzer tests inspect the AST and prove:
 - nested enum calls record the nested owner FQCN;
 - a cross-file `enum_name` call records the dependency path and owner identity.
 
-Analyzer fixtures cover successful calls, receiver-kind errors, cross-enum isolation, preserved
-`keys()` support, and preserved invalid Dictionary-call diagnostics. Success fixtures use `.norun.fs`
-because runtime lowering belongs to #1119.
+Analyzer fixtures cover successful call analysis, receiver-kind errors, cross-enum isolation,
+preserved `keys()` support, and preserved invalid Dictionary-call diagnostics. The successful-call
+fixture ends with one deliberate unresolved sentinel type so the fixture runner stops after analyzer
+validation; compiling and bytecode-linking those calls belongs to #1119 and #1120.

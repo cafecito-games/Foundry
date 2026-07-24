@@ -17,8 +17,8 @@ kinds produce targeted errors and never store dispatch metadata.
 ### Task 1: Add failing analyzer fixtures
 
 **Files:**
-- Create: `modules/foundry_script/tests/scripts/analyzer/features/enum_host_function_calls.norun.fs`
-- Create: `modules/foundry_script/tests/scripts/analyzer/features/enum_host_function_calls.norun.out`
+- Create: `modules/foundry_script/tests/scripts/analyzer/errors/enum_host_function_calls.fs`
+- Create: `modules/foundry_script/tests/scripts/analyzer/errors/enum_host_function_calls.out`
 - Create: `modules/foundry_script/tests/scripts/analyzer/errors/enum_host_function_static_on_value.fs`
 - Create: `modules/foundry_script/tests/scripts/analyzer/errors/enum_host_function_static_on_value.out`
 - Create: `modules/foundry_script/tests/scripts/analyzer/errors/enum_host_function_instance_on_type.fs`
@@ -30,8 +30,9 @@ kinds produce targeted errors and never store dispatch metadata.
 
 Declare instance `label()` and static `parse()` functions on `Status`. Call `label()` on a literal and
 a typed variable, call `parse()` on `Status`, capture both as typed first-class callables, and call
-the existing `Status.keys()` Dictionary method. End with `FS_TEST_OK` and keep the fixture `.norun.fs`
-because #1119 owns code generation.
+the existing `Status.keys()` Dictionary method. End with one deliberate unresolved sentinel type and
+expect only that analyzer error. This proves every preceding call analyzes cleanly while stopping
+before code generation and bytecode linking, which belong to #1119 and #1120.
 
 - [ ] **Step 2: Add receiver and isolation diagnostics**
 
@@ -47,8 +48,8 @@ Run:
 	--case "*FoundryScript*" --force-colors
 ```
 
-Expected: the new success fixture reports that enum values cannot be called and the diagnostic
-fixtures differ from their targeted expected output.
+Expected: the successful-call fixture reports enum call errors in addition to the deliberate
+sentinel error, and the diagnostic fixtures differ from their targeted expected output.
 
 ### Task 2: Add failing C++ metadata tests
 

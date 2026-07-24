@@ -648,6 +648,12 @@ public:
 	};
 
 	struct CallNode : public ExpressionNode {
+		enum EnumCallKind {
+			ENUM_CALL_NONE,
+			ENUM_CALL_STATIC,
+			ENUM_CALL_INSTANCE,
+		};
+
 		ExpressionNode *callee = nullptr;
 		Vector<ExpressionNode *> arguments;
 		// Parallel to `arguments`: the explicit parameter name for each argument written as
@@ -659,6 +665,14 @@ public:
 		bool is_super = false;
 		bool is_static = false;
 		bool is_noreturn = false;
+		// Explicit analyzer-to-compiler contract for calls to Foundry Script enum functions.
+		// The scalar identity is stable across dependency parsers and avoids making codegen infer
+		// enum dispatch from syntax or the enum's runtime Variant representation.
+		EnumCallKind enum_call_kind = ENUM_CALL_NONE;
+		String enum_call_owner_script_path;
+		StringName enum_call_owner_class;
+		StringName enum_call_enum_type;
+		StringName enum_call_function;
 		// Set by the analyzer when this is the built-in generic proxy constructor
 		// `create_proxy[T](handler)`. The compiler lowers it to a
 		// `create_proxy_dynamic(T, handler)` utility call, materializing T's script

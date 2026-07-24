@@ -422,6 +422,8 @@ private:
 			const FSParser::DataType &p_enum_type, FSParser::ClassNode *p_owner);
 	void resolve_enum_bodies(FSParser::EnumNode *p_enum, FSParser::ClassNode *p_owner);
 	FSParser::DataType enum_self_type(const FSParser::FunctionNode *p_function) const;
+	FSParser::EnumNode *resolve_enum_declaration(const FSParser::DataType &p_enum_type,
+			const FSParser::Node *p_source);
 	Error resolve_trait_uses(FSParser::ClassNode *p_class, const FSParser::Node *p_source = nullptr);
 	Error resolve_trait_uses(FSParser::ClassNode *p_class, bool p_recursive);
 	void resolve_class_interface(FSParser::ClassNode *p_class, const FSParser::Node *p_source = nullptr);

@@ -188,6 +188,26 @@ FSParser::DataType FSAnalyzer::enum_self_type(const FSParser::FunctionNode *p_fu
 	return FSParser::DataType();
 }
 
+FSParser::EnumNode *FSAnalyzer::resolve_enum_declaration(const FSParser::DataType &p_enum_type,
+		const FSParser::Node *p_source) {
+	if (p_enum_type.kind != FSParser::DataType::ENUM || p_enum_type.class_type == nullptr) {
+		return nullptr;
+	}
+
+	FSParser::ClassNode *owner = p_enum_type.class_type;
+	resolve_class_interface(owner, p_source);
+
+	if (owner->is_enum_file && owner->enum_file_decl != nullptr) {
+		return owner->enum_file_decl;
+	}
+	if (!owner->has_member(p_enum_type.enum_type)) {
+		return nullptr;
+	}
+
+	const FSParser::ClassNode::Member &member = owner->get_member(p_enum_type.enum_type);
+	return member.type == FSParser::ClassNode::Member::ENUM ? member.m_enum : nullptr;
+}
+
 FSAnalyzer::DependencyParserAccess::DependencyParserAccess(FSAnalyzer *p_analyzer) {
 	analyzer = p_analyzer;
 }
@@ -5874,6 +5894,25 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 		p_call->is_static = method_flags.has_flag(METHOD_FLAG_STATIC);
 		p_call->is_noreturn = is_noreturn;
 
+		const bool is_enum_function_call = found_function != nullptr && found_function->owner_enum != nullptr;
+		if (is_enum_function_call) {
+			const bool receiver_matches = found_function->is_static == base_type.is_meta_type;
+			if (!receiver_matches) {
+				const char *function_kind = found_function->is_static ? "static" : "instance";
+				const char *receiver_kind = base_type.is_meta_type ? "type" : "value";
+				push_error(vformat(R"*(Cannot call %s enum function "%s()" on enum %s "%s".)*",
+								   function_kind, p_call->function_name, receiver_kind, base_type.enum_type),
+						p_call->callee);
+			} else {
+				const FSParser::DataType &enum_type = found_function->owner_enum->get_datatype();
+				p_call->enum_call_kind = found_function->is_static ? FSParser::CallNode::ENUM_CALL_STATIC : FSParser::CallNode::ENUM_CALL_INSTANCE;
+				p_call->enum_call_owner_script_path = enum_type.script_path;
+				p_call->enum_call_owner_class = enum_type.class_type != nullptr ? StringName(enum_type.class_type->fqcn) : StringName();
+				p_call->enum_call_enum_type = enum_type.enum_type;
+				p_call->enum_call_function = p_call->function_name;
+			}
+		}
+
 		const FSParser::FunctionNode *enum_function = parser->current_function;
 		while (enum_function != nullptr && enum_function->owner_enum == nullptr && enum_function->source_lambda != nullptr) {
 			enum_function = enum_function->source_lambda->parent_function;
@@ -6000,7 +6039,7 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 			parser->push_warning(p_call, FSWarning::RETURN_VALUE_DISCARDED, p_call->function_name);
 		}
 
-		if (method_flags.has_flag(METHOD_FLAG_STATIC) && !is_constructor && !base_type.is_meta_type && !is_self) {
+		if (method_flags.has_flag(METHOD_FLAG_STATIC) && !is_constructor && !base_type.is_meta_type && !is_self && !is_enum_function_call) {
 			String caller_type = base_type.to_string();
 
 			parser->push_warning(p_call, FSWarning::STATIC_CALLED_ON_INSTANCE, p_call->function_name, caller_type);
@@ -6042,13 +6081,19 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 
 		bool found = false;
 
-		// Enums do not have functions other than the built-in dictionary ones.
-		if (base_type.kind == FSParser::DataType::ENUM && base_type.is_meta_type) {
-			if (base_type.builtin_type == Variant::DICTIONARY) {
-				push_error(vformat(R"*(Enums only have Dictionary built-in methods. Function "%s()" does not exist for enum "%s".)*", p_call->function_name, base_type.enum_type), p_call->callee);
+		if (base_type.kind == FSParser::DataType::ENUM) {
+			if (!base_type.is_meta_type) {
+				push_error(vformat(R"*(Function "%s()" does not exist for enum value "%s".)*",
+								   p_call->function_name, base_type.enum_type),
+						p_call->callee);
+			} else if (base_type.builtin_type == Variant::DICTIONARY) {
+				push_error(vformat(R"*(Function "%s()" does not exist for enum "%s" or its Dictionary methods.)*",
+								   p_call->function_name, base_type.enum_type),
+						p_call->callee);
 			} else {
 				push_error(vformat(R"*(The native enum "%s" does not behave like Dictionary and does not have methods of its own.)*", base_type.enum_type), p_call->callee);
 			}
+			found = true;
 		} else if (!p_call->is_super && callee_type != FSParser::Node::NONE) { // Check if the name exists as something else.
 			FSParser::IdentifierNode *callee_id;
 			if (callee_type == FSParser::Node::IDENTIFIER) {
@@ -8120,13 +8165,30 @@ void FSAnalyzer::reduce_identifier_from_base(FSParser::IdentifierNode *p_identif
 				p_identifier->reduced_value = base.enum_values[name];
 				return;
 			}
+		}
 
-			// Enum does not have this value, return.
-			return;
-		} else {
-			push_error(R"(Cannot get property from enum value.)", p_identifier);
+		FSParser::EnumNode *enum_declaration = resolve_enum_declaration(base, p_identifier);
+		const int *function_index = enum_declaration != nullptr ? enum_declaration->functions_indices.getptr(name) : nullptr;
+		if (function_index != nullptr && *function_index >= 0 && *function_index < enum_declaration->functions.size()) {
+			FSParser::FunctionNode *function = enum_declaration->functions[*function_index];
+			if (function != nullptr && function->is_static == base.is_meta_type) {
+				FSParser::DataType callable_type = make_callable_type(function->info, function);
+				callable_type.has_explicit_method_signature = true;
+				p_identifier->set_datatype(callable_type);
+				p_identifier->source = FSParser::IdentifierNode::MEMBER_FUNCTION;
+				p_identifier->function_source = function;
+				p_identifier->function_source_is_static = function->is_static;
+				return;
+			}
+		}
+
+		if (base.is_meta_type) {
+			// Enum does not have this value or static function.
 			return;
 		}
+
+		push_error(R"(Cannot get property from enum value.)", p_identifier);
+		return;
 	}
 
 	if (base.kind == FSParser::DataType::BUILTIN) {
@@ -10216,6 +10278,54 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 		p_base_type.is_meta_type = was_meta_type;
 	}
 
+	if (!p_is_constructor && p_base_type.kind == FSParser::DataType::ENUM) {
+		FSParser::EnumNode *enum_declaration = resolve_enum_declaration(p_base_type, p_source);
+		const int *function_index = enum_declaration != nullptr ? enum_declaration->functions_indices.getptr(function_name) : nullptr;
+		if (function_index != nullptr && *function_index >= 0 && *function_index < enum_declaration->functions.size()) {
+			FSParser::FunctionNode *found_function = enum_declaration->functions[*function_index];
+			const bool dictionary_shadows_instance =
+					found_function != nullptr && p_base_type.is_meta_type && !found_function->is_static &&
+					p_base_type.builtin_type == Variant::DICTIONARY &&
+					Variant::has_builtin_method(Variant::DICTIONARY, function_name);
+			if (found_function != nullptr && !dictionary_shadows_instance) {
+				if (r_found_function) {
+					*r_found_function = found_function;
+				}
+				if (r_found_in_class) {
+					*r_found_in_class = p_base_type.class_type;
+				}
+				if (r_is_noreturn) {
+					*r_is_noreturn = found_function->is_noreturn;
+				}
+				if (found_function->is_static) {
+					r_method_flags.set_flag(METHOD_FLAG_STATIC);
+				}
+				if (found_function->is_coroutine) {
+					r_method_flags.set_flag(METHOD_FLAG_ASYNC);
+				}
+				if (found_function->is_vararg()) {
+					r_method_flags.set_flag(METHOD_FLAG_VARARG);
+				}
+
+				const FSParser::DataType enum_value_type = type_handle_represented_type(p_base_type);
+				for (FSParser::ParameterNode *parameter : found_function->parameters) {
+					r_par_types.push_back(substitute_member_type(
+							parameter->get_datatype(), enum_value_type, found_function, &enum_value_type));
+					if (parameter->initializer != nullptr) {
+						r_default_arg_count++;
+					}
+				}
+				r_return_type = substitute_member_type(
+						found_function->get_datatype(), enum_value_type, found_function, &enum_value_type);
+				r_return_type.is_meta_type = false;
+				if (found_function->is_coroutine) {
+					r_return_type = make_coroutine_type(r_return_type);
+				}
+				return true;
+			}
+		}
+	}
+
 	bool was_enum = false;
 	if (p_base_type.kind == FSParser::DataType::ENUM) {
 		was_enum = true;
@@ -10224,7 +10334,6 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 			p_base_type.kind = FSParser::DataType::BUILTIN;
 			p_base_type.is_meta_type = false;
 		} else {
-			push_error("Cannot call function on enum value.", p_source);
 			return false;
 		}
 	}
