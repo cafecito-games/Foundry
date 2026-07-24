@@ -2,7 +2,7 @@
 /*  fs_refactoring_edits.h                                                */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -41,6 +41,20 @@ namespace FSRefactorEdits {
 // order; they are sorted and applied last-to-first internally.
 bool apply(const String &p_source, const Vector<RefactorTextEdit> &p_edits, String &r_result);
 int find_edit_at_location(const Vector<RefactorTextEdit> &p_edits, const RefactorLocation &p_location);
+
+// Sorts edits by start position (ties broken by end position). Already-sorted
+// vectors are left untouched, so equal-position edits keep their order.
+void sort_edits(Vector<RefactorTextEdit> &r_edits);
+
+// Checks the source-independent edit invariants shared by all refactors: every
+// edit spans a non-negative ordered range, edits are sorted by start position,
+// and no two edits overlap. Returns true when they hold; otherwise fills
+// r_error with a description of the first violation.
+bool validate_structure(const Vector<RefactorTextEdit> &p_edits, String &r_error);
+
+// validate_structure plus source-dependent invariants: every range resolves to
+// a valid offset in p_source and every expected-text guard matches the source.
+bool validate(const String &p_source, const Vector<RefactorTextEdit> &p_edits, String &r_error);
 
 } // namespace FSRefactorEdits
 
