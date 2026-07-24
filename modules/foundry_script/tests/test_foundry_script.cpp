@@ -350,6 +350,31 @@ static const FSParser::FunctionNode *find_enum_function(const FSParser::EnumNode
 	return nullptr;
 }
 
+static const FSParser::VariableNode *find_function_local_variable(const FSParser::FunctionNode *p_function, const StringName &p_name) {
+	ERR_FAIL_NULL_V(p_function, nullptr);
+	ERR_FAIL_NULL_V(p_function->body, nullptr);
+
+	for (const FSParser::Node *statement : p_function->body->statements) {
+		if (statement == nullptr || statement->type != FSParser::Node::VARIABLE) {
+			continue;
+		}
+		const FSParser::VariableNode *variable = static_cast<const FSParser::VariableNode *>(statement);
+		if (variable->identifier != nullptr && variable->identifier->name == p_name) {
+			return variable;
+		}
+	}
+
+	return nullptr;
+}
+
+static const FSParser::CallNode *find_local_variable_call(const FSParser::FunctionNode *p_function, const StringName &p_name) {
+	const FSParser::VariableNode *variable = find_function_local_variable(p_function, p_name);
+	if (variable == nullptr || variable->initializer == nullptr || variable->initializer->type != FSParser::Node::CALL) {
+		return nullptr;
+	}
+	return static_cast<const FSParser::CallNode *>(variable->initializer);
+}
+
 static MethodInfo find_method_info(const List<MethodInfo> &p_methods, const StringName &p_name) {
 	for (const MethodInfo &method : p_methods) {
 		if (method.name == p_name) {
@@ -2110,6 +2135,331 @@ enum_name GlobalStatus:
 			CHECK_EQ(value_function->get_datatype().enum_type, SNAME("tests.enums.GlobalStatus"));
 		}
 	}
+}
+
+TEST_CASE("[Modules][FoundryScript] Analyzer resolves enum host function calls and records same-file metadata") {
+	FSParser parser;
+	const String path = "user://enum_host_function_call_metadata.fs";
+	Error err = analyze_source(parser, R"(
+enum Status:
+	READY = 1
+	DONE = 2
+
+	func label() -> String:
+		return "ready"
+
+	func keys() -> String:
+		return "instance keys"
+
+	static func parse(text: String) -> Self:
+		return READY if text == "ready" else DONE
+
+
+func probe() -> void:
+	var value: Status = Status.DONE
+	var literal_call: String = Status.READY.label()
+	var typed_call: String = value.label()
+	var instance_keys_call: String = value.keys()
+	var static_call: Status = Status.parse("ready")
+	var dictionary_call: Array = Status.keys()
+	var instance_callable: Callable[[], String] = value.label
+	var static_callable: Callable[[String], Status] = Status.parse
+)",
+			path);
+
+	INFO(first_parser_error_message(parser));
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	const FSParser::ClassNode *root = parser.get_tree();
+	const FSParser::EnumNode *status = find_parser_enum(root, SNAME("Status"));
+	const FSParser::FunctionNode *probe = find_parser_function(root, SNAME("probe"));
+	CHECK(status != nullptr);
+	CHECK(probe != nullptr);
+	if (status == nullptr || probe == nullptr) {
+		return;
+	}
+
+	const FSParser::FunctionNode *label = find_enum_function(status, SNAME("label"));
+	const FSParser::FunctionNode *parse = find_enum_function(status, SNAME("parse"));
+	CHECK(label != nullptr);
+	CHECK(parse != nullptr);
+	if (label == nullptr || parse == nullptr) {
+		return;
+	}
+
+	const FSParser::CallNode *literal_call = find_local_variable_call(probe, SNAME("literal_call"));
+	const FSParser::CallNode *typed_call = find_local_variable_call(probe, SNAME("typed_call"));
+	const FSParser::CallNode *instance_keys_call = find_local_variable_call(probe, SNAME("instance_keys_call"));
+	const FSParser::CallNode *static_call = find_local_variable_call(probe, SNAME("static_call"));
+	const FSParser::CallNode *dictionary_call = find_local_variable_call(probe, SNAME("dictionary_call"));
+	CHECK(literal_call != nullptr);
+	CHECK(typed_call != nullptr);
+	CHECK(instance_keys_call != nullptr);
+	CHECK(static_call != nullptr);
+	CHECK(dictionary_call != nullptr);
+	if (literal_call == nullptr || typed_call == nullptr || instance_keys_call == nullptr || static_call == nullptr || dictionary_call == nullptr) {
+		return;
+	}
+
+	for (const FSParser::CallNode *call : { literal_call, typed_call }) {
+		CHECK_EQ(call->enum_call_kind, FSParser::CallNode::ENUM_CALL_INSTANCE);
+		CHECK_EQ(call->enum_call_owner_script_path, path);
+		CHECK_EQ(call->enum_call_owner_class, root->fqcn);
+		CHECK_EQ(call->enum_call_enum_type, SNAME("Status"));
+		CHECK_EQ(call->enum_call_function, SNAME("label"));
+		CHECK_FALSE(call->is_static);
+		CHECK_EQ(call->get_datatype().builtin_type, Variant::STRING);
+	}
+
+	CHECK_EQ(instance_keys_call->enum_call_kind, FSParser::CallNode::ENUM_CALL_INSTANCE);
+	CHECK_EQ(instance_keys_call->enum_call_owner_script_path, path);
+	CHECK_EQ(instance_keys_call->enum_call_owner_class, root->fqcn);
+	CHECK_EQ(instance_keys_call->enum_call_enum_type, SNAME("Status"));
+	CHECK_EQ(instance_keys_call->enum_call_function, SNAME("keys"));
+	CHECK_FALSE(instance_keys_call->is_static);
+	CHECK_EQ(instance_keys_call->get_datatype().builtin_type, Variant::STRING);
+
+	CHECK_EQ(static_call->enum_call_kind, FSParser::CallNode::ENUM_CALL_STATIC);
+	CHECK_EQ(static_call->enum_call_owner_script_path, path);
+	CHECK_EQ(static_call->enum_call_owner_class, root->fqcn);
+	CHECK_EQ(static_call->enum_call_enum_type, SNAME("Status"));
+	CHECK_EQ(static_call->enum_call_function, SNAME("parse"));
+	CHECK(static_call->is_static);
+	CHECK_EQ(static_call->get_datatype().kind, FSParser::DataType::ENUM);
+	CHECK_EQ(static_call->get_datatype().enum_type, SNAME("Status"));
+
+	CHECK_EQ(dictionary_call->enum_call_kind, FSParser::CallNode::ENUM_CALL_NONE);
+	CHECK(dictionary_call->enum_call_owner_script_path.is_empty());
+	CHECK_EQ(dictionary_call->enum_call_owner_class, StringName());
+	CHECK_EQ(dictionary_call->enum_call_enum_type, StringName());
+	CHECK_EQ(dictionary_call->enum_call_function, StringName());
+
+	const FSParser::VariableNode *instance_callable = find_function_local_variable(probe, SNAME("instance_callable"));
+	const FSParser::VariableNode *static_callable = find_function_local_variable(probe, SNAME("static_callable"));
+	CHECK(instance_callable != nullptr);
+	CHECK(static_callable != nullptr);
+	if (instance_callable == nullptr || static_callable == nullptr) {
+		return;
+	}
+	CHECK(instance_callable->initializer != nullptr);
+	CHECK(static_callable->initializer != nullptr);
+	if (instance_callable->initializer == nullptr || static_callable->initializer == nullptr ||
+			instance_callable->initializer->type != FSParser::Node::SUBSCRIPT ||
+			static_callable->initializer->type != FSParser::Node::SUBSCRIPT) {
+		return;
+	}
+
+	const FSParser::SubscriptNode *instance_attribute =
+			static_cast<const FSParser::SubscriptNode *>(instance_callable->initializer);
+	const FSParser::SubscriptNode *static_attribute =
+			static_cast<const FSParser::SubscriptNode *>(static_callable->initializer);
+	CHECK(instance_attribute->attribute != nullptr);
+	CHECK(static_attribute->attribute != nullptr);
+	if (instance_attribute->attribute == nullptr || static_attribute->attribute == nullptr) {
+		return;
+	}
+	CHECK_EQ(instance_attribute->attribute->source, FSParser::IdentifierNode::MEMBER_FUNCTION);
+	CHECK_EQ(instance_attribute->attribute->function_source, label);
+	CHECK_FALSE(instance_attribute->attribute->function_source_is_static);
+	CHECK_EQ(static_attribute->attribute->source, FSParser::IdentifierNode::MEMBER_FUNCTION);
+	CHECK_EQ(static_attribute->attribute->function_source, parse);
+	CHECK(static_attribute->attribute->function_source_is_static);
+
+	const FSParser::DataType &instance_callable_type = instance_attribute->get_datatype();
+	CHECK_EQ(instance_callable_type.kind, FSParser::DataType::BUILTIN);
+	CHECK_EQ(instance_callable_type.builtin_type, Variant::CALLABLE);
+	CHECK(instance_callable_type.has_explicit_method_signature);
+	CHECK_EQ(instance_callable_type.method_parameter_types.size(), 0);
+	CHECK_EQ(instance_callable_type.method_return_type.size(), 1);
+	if (instance_callable_type.method_return_type.size() == 1) {
+		CHECK_EQ(instance_callable_type.method_return_type[0].builtin_type, Variant::STRING);
+	}
+
+	const FSParser::DataType &static_callable_type = static_attribute->get_datatype();
+	CHECK_EQ(static_callable_type.kind, FSParser::DataType::BUILTIN);
+	CHECK_EQ(static_callable_type.builtin_type, Variant::CALLABLE);
+	CHECK(static_callable_type.has_explicit_method_signature);
+	CHECK_EQ(static_callable_type.method_parameter_types.size(), 1);
+	CHECK_EQ(static_callable_type.method_return_type.size(), 1);
+	if (static_callable_type.method_parameter_types.size() == 1) {
+		CHECK_EQ(static_callable_type.method_parameter_types[0].builtin_type, Variant::STRING);
+	}
+	if (static_callable_type.method_return_type.size() == 1) {
+		CHECK_EQ(static_callable_type.method_return_type[0].kind, FSParser::DataType::ENUM);
+		CHECK_EQ(static_callable_type.method_return_type[0].enum_type, SNAME("Status"));
+	}
+}
+
+TEST_CASE("[Modules][FoundryScript] Analyzer leaves invalid enum host calls without dispatch metadata") {
+	FSParser parser;
+	Error err = analyze_source(parser, R"(
+enum Status:
+	READY = 1
+
+	func label() -> String:
+		return "ready"
+
+	static func parse() -> Self:
+		return READY
+
+
+func probe() -> void:
+	Status.READY.parse()
+	Status.label()
+)",
+			"user://invalid_enum_host_function_call_metadata.fs");
+
+	CHECK_NE(err, OK);
+	CHECK(has_parser_error(parser, R"ERR(Cannot call static enum function "parse()" on enum value "Status".)ERR"));
+	CHECK(has_parser_error(parser, R"ERR(Cannot call instance enum function "label()" on enum type "Status".)ERR"));
+
+	const FSParser::FunctionNode *probe = find_parser_function(parser.get_tree(), SNAME("probe"));
+	CHECK(probe != nullptr);
+	if (probe == nullptr) {
+		return;
+	}
+	CHECK_EQ(probe->body->statements.size(), 2);
+	if (probe->body->statements.size() != 2) {
+		return;
+	}
+
+	for (const FSParser::Node *statement : probe->body->statements) {
+		CHECK(statement != nullptr);
+		CHECK_EQ(statement->type, FSParser::Node::CALL);
+		if (statement == nullptr || statement->type != FSParser::Node::CALL) {
+			continue;
+		}
+		const FSParser::CallNode *call = static_cast<const FSParser::CallNode *>(statement);
+		CHECK_EQ(call->enum_call_kind, FSParser::CallNode::ENUM_CALL_NONE);
+		CHECK(call->enum_call_owner_script_path.is_empty());
+		CHECK_EQ(call->enum_call_owner_class, StringName());
+		CHECK_EQ(call->enum_call_enum_type, StringName());
+		CHECK_EQ(call->enum_call_function, StringName());
+	}
+}
+
+TEST_CASE("[Modules][FoundryScript] Analyzer records nested enum host function owner metadata") {
+	FSParser parser;
+	const String path = "user://nested_enum_host_function_call.fs";
+	Error err = analyze_source(parser, R"(
+class Outer:
+	class Inner:
+		enum Status:
+			READY = 1
+
+			static func parse() -> Self:
+				return READY
+
+		func probe() -> void:
+			var call: Status = Status.parse()
+)",
+			path);
+
+	INFO(first_parser_error_message(parser));
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	const FSParser::ClassNode *root = parser.get_tree();
+	const FSParser::ClassNode *outer = find_parser_class(root, SNAME("Outer"));
+	const FSParser::ClassNode *inner = find_parser_class(outer, SNAME("Inner"));
+	const FSParser::FunctionNode *probe = find_parser_function(inner, SNAME("probe"));
+	const FSParser::CallNode *call = find_local_variable_call(probe, SNAME("call"));
+	CHECK(inner != nullptr);
+	CHECK(call != nullptr);
+	if (inner == nullptr || call == nullptr) {
+		return;
+	}
+
+	CHECK_EQ(call->enum_call_kind, FSParser::CallNode::ENUM_CALL_STATIC);
+	CHECK_EQ(call->enum_call_owner_script_path, path);
+	CHECK_EQ(call->enum_call_owner_class, inner->fqcn);
+	CHECK_EQ(call->enum_call_enum_type, SNAME("Status"));
+	CHECK_EQ(call->enum_call_function, SNAME("parse"));
+}
+
+TEST_CASE("[Modules][FoundryScript] Analyzer records cross-file enum_name host function metadata") {
+	GlobalScriptClassCacheBackup backup;
+	ScriptServer::global_classes_clear();
+
+	TempScriptFile enum_script("remote_status.fs", R"(
+namespace tests.enumcalls
+enum_name RemoteStatus:
+	READY = 1
+	DONE = 2
+
+	func label() -> String:
+		return "ready"
+
+	static func parse(text: String) -> Self:
+		return READY if text == "ready" else DONE
+)");
+
+	String base_type;
+	bool is_abstract = false;
+	bool is_tool = false;
+	bool is_trait = false;
+	bool is_enum = false;
+	const String global_name = FSLanguage::get_singleton()->get_global_class_name(enum_script.path, &base_type, nullptr,
+			&is_abstract, &is_tool, &is_trait, &is_enum);
+	CHECK_EQ(global_name, "tests.enumcalls.RemoteStatus");
+	CHECK(is_enum);
+	if (global_name.is_empty() || !is_enum) {
+		return;
+	}
+	ScriptServer::add_global_class(global_name, base_type, FSLanguage::get_singleton()->get_name(), enum_script.path,
+			is_abstract, is_tool, is_trait, is_enum);
+
+	FSParser parser;
+	Error err = analyze_source(parser, R"(
+namespace tests.consumer
+import tests.enumcalls
+
+func probe() -> void:
+	var value: RemoteStatus = RemoteStatus.DONE
+	var instance_call: String = value.label()
+	var static_call: RemoteStatus = RemoteStatus.parse("ready")
+	var dictionary_call: Array = RemoteStatus.keys()
+)",
+			"user://enum_host_function_cross_file_consumer.fs");
+
+	INFO(first_parser_error_message(parser));
+	CHECK_EQ(err, OK);
+	if (err == OK) {
+		const FSParser::FunctionNode *probe = find_parser_function(parser.get_tree(), SNAME("probe"));
+		const FSParser::CallNode *instance_call = find_local_variable_call(probe, SNAME("instance_call"));
+		const FSParser::CallNode *static_call = find_local_variable_call(probe, SNAME("static_call"));
+		const FSParser::CallNode *dictionary_call = find_local_variable_call(probe, SNAME("dictionary_call"));
+		CHECK(instance_call != nullptr);
+		CHECK(static_call != nullptr);
+		CHECK(dictionary_call != nullptr);
+		if (instance_call != nullptr && static_call != nullptr && dictionary_call != nullptr) {
+			CHECK_EQ(instance_call->enum_call_kind, FSParser::CallNode::ENUM_CALL_INSTANCE);
+			CHECK_EQ(instance_call->enum_call_owner_script_path, enum_script.path);
+			CHECK_EQ(instance_call->enum_call_owner_class, SNAME("tests.enumcalls.RemoteStatus"));
+			CHECK_EQ(instance_call->enum_call_enum_type, SNAME("tests.enumcalls.RemoteStatus"));
+			CHECK_EQ(instance_call->enum_call_function, SNAME("label"));
+
+			CHECK_EQ(static_call->enum_call_kind, FSParser::CallNode::ENUM_CALL_STATIC);
+			CHECK_EQ(static_call->enum_call_owner_script_path, enum_script.path);
+			CHECK_EQ(static_call->enum_call_owner_class, SNAME("tests.enumcalls.RemoteStatus"));
+			CHECK_EQ(static_call->enum_call_enum_type, SNAME("tests.enumcalls.RemoteStatus"));
+			CHECK_EQ(static_call->enum_call_function, SNAME("parse"));
+
+			CHECK_EQ(dictionary_call->enum_call_kind, FSParser::CallNode::ENUM_CALL_NONE);
+			CHECK(dictionary_call->enum_call_owner_script_path.is_empty());
+			CHECK_EQ(dictionary_call->enum_call_owner_class, StringName());
+			CHECK_EQ(dictionary_call->enum_call_enum_type, StringName());
+			CHECK_EQ(dictionary_call->enum_call_function, StringName());
+		}
+	}
+
+	FSCache::remove_parser(enum_script.path);
+	FSCache::remove_script(enum_script.path);
 }
 
 TEST_CASE("[Modules][FoundryScript] Parser rejects invalid enum host function declarations") {

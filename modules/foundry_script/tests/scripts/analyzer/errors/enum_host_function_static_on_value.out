@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 9: Cannot call static enum function "parse()" on enum value "Status".
