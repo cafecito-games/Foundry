@@ -63,12 +63,13 @@ DisplayServerAppleEmbedded::DisplayServerAppleEmbedded(const String &p_rendering
 	native_menu = memnew(NativeMenu);
 
 	bool has_made_render_compositor_current = false;
+#if defined(RD_ENABLED) || defined(GLES3_ENABLED)
+	CALayer *layer = nullptr;
+#endif
 
 #if defined(RD_ENABLED)
 	rendering_context = nullptr;
 	rendering_device = nullptr;
-
-	CALayer *layer = nullptr;
 
 	union {
 #ifdef VULKAN_ENABLED
