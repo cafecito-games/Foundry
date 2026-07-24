@@ -23,7 +23,7 @@
 **Files:**
 - Create: `misc/scripts/test_package_ios_templates.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create a temporary Apple embedded template containing the four framework destinations and two non-iOS framework directories. Create the six raw input files expected from the four build jobs. Put a fake executable named `lipo` first on `PATH`; it parses `-output` and copies the first input to the output while recording the invocation. Run the not-yet-created helper with `--bin-dir`, `--template-dir`, and `--output`, then assert:
 
@@ -39,7 +39,7 @@ with zipfile.ZipFile(output) as archive:
 
 Also run the helper with one required raw library removed and assert it exits non-zero with the missing filename in stderr. Keep the test executable with `python3 misc/scripts/test_package_ios_templates.py` and use only the Python standard library.
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run:
 
@@ -54,7 +54,7 @@ Expected: FAIL because `misc/scripts/package_ios_templates.py` does not exist ye
 **Files:**
 - Create: `misc/scripts/package_ios_templates.py`
 
-- [ ] **Step 1: Implement the input model and validation**
+- [x] **Step 1: Implement the input model and validation**
 
 Add an `argparse` CLI with required `--bin-dir`, `--template-dir`, and `--output` paths. Define the four raw library names from the existing SCons output convention:
 
@@ -71,7 +71,7 @@ LIBRARY_NAMES = {
 
 Require every listed input to be a regular file before creating the archive. Raise `FileNotFoundError` naming the exact missing path. Require the template directory to exist and the output parent to be created before packaging.
 
-- [ ] **Step 2: Implement simulator lipo assembly**
+- [x] **Step 2: Implement simulator lipo assembly**
 
 For each release/debug simulator pair, run:
 
@@ -84,7 +84,7 @@ subprocess.run(
 
 Write fat outputs as `libfoundry.ios.template_{release,debug}.fat.simulator.a` in `--bin-dir`. Return the existing arm64 device path directly. Do not invoke `lipo` for device libraries.
 
-- [ ] **Step 3: Implement framework assembly and archive creation**
+- [x] **Step 3: Implement framework assembly and archive creation**
 
 Copy `--template-dir` to a temporary `ios_xcode` staging directory beside the requested output. Copy the four device/simulator libraries to:
 
@@ -97,7 +97,7 @@ ios_xcode/libfoundry.ios.debug.xcframework/ios-arm64_x86_64-simulator/libfoundry
 
 Remove every top-level `libfoundry.*.xcframework` whose name is not an iOS release/debug framework. Create the requested zip with archive paths rooted at `ios_xcode/`, then remove the staging directory and generated fat libraries in a `finally` block. Return the output path on stdout and let subprocess/archive errors fail the command.
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run:
 
@@ -112,7 +112,7 @@ Expected: PASS, including the archive layout and missing-input failure case.
 **Files:**
 - Modify: `.github/workflows/release.yml:790-860`
 
-- [ ] **Step 1: Write the workflow-shape regression test**
+- [x] **Step 1: Write the workflow-shape regression test**
 
 Create `.github/scripts/test_release_ios_workflow.py` that reads `.github/workflows/release.yml` and asserts:
 
@@ -132,7 +132,7 @@ assert "- assemble-ios" in workflow
 
 The test must also assert that the old serial-only marker `Compilation (debug simulator x86_64) + bundle` is absent and that the assembly job uploads `release-ios`.
 
-- [ ] **Step 2: Run the workflow-shape test to verify it fails**
+- [x] **Step 2: Run the workflow-shape test to verify it fails**
 
 Run:
 
@@ -142,7 +142,7 @@ python3 .github/scripts/test_release_ios_workflow.py
 
 Expected: FAIL because the current workflow has one serial job, no assembly job, and no matrix cache names.
 
-- [ ] **Step 3: Convert `build-ios` to a four-entry matrix**
+- [x] **Step 3: Convert `build-ios` to a four-entry matrix**
 
 Keep the existing release environment and checkout/Xcode setup. Add:
 
@@ -175,7 +175,7 @@ strategy:
 
 Use `name: iOS ${{ matrix.name }}` at the job level and `cache-name: ${{ matrix.cache-name }}` for both cache actions. Run the normal `foundry-build` action once with `matrix.scons-flags`, then run it a second time only when `matrix.extra-scons-flags != ''`. Remove every `generate_bundle` flag from matrix compilation. Upload each raw `bin/*` artifact with `name: ${{ matrix.cache-name }}`.
 
-- [ ] **Step 4: Add the `assemble-ios` job**
+- [x] **Step 4: Add the `assemble-ios` job**
 
 Create a macOS job after `build-ios` with `needs: build-ios`, checkout, Xcode selection, `actions/download-artifact@v8` using `pattern: '*-ios-*'` and `path: artifacts`, and a shell step that copies the downloaded artifact files into `bin/`:
 
@@ -197,11 +197,11 @@ python3 misc/scripts/package_ios_templates.py \
 
 Upload `bin/ios_xcode.zip` through the local upload action as `release-ios`. Do not restore a shared cache in the assembly job; it only packages downloaded static libraries.
 
-- [ ] **Step 5: Update release package dependencies**
+- [x] **Step 5: Update release package dependencies**
 
 In `package.needs`, replace `build-ios` with `assemble-ios`, and assert that `build-ios` no longer appears in that dependency list. Leave the existing `cp artifacts/release-ios/*.zip templates/ios.zip` command unchanged.
 
-- [ ] **Step 6: Run both regression tests**
+- [x] **Step 6: Run both regression tests**
 
 Run:
 
@@ -217,7 +217,7 @@ Expected: both commands pass.
 **Files:**
 - Modify: none
 
-- [ ] **Step 1: Validate the workflow syntax**
+- [x] **Step 1: Validate the workflow syntax**
 
 Run:
 
@@ -227,7 +227,7 @@ actionlint .github/workflows/release.yml
 
 Expected: no diagnostics and exit status 0.
 
-- [ ] **Step 2: Run applicable Python checks**
+- [x] **Step 2: Run applicable Python checks**
 
 Run:
 
@@ -239,7 +239,7 @@ python3 .github/scripts/test_release_ios_workflow.py
 
 Expected: all commands exit 0.
 
-- [ ] **Step 3: Inspect repository state and diff**
+- [x] **Step 3: Inspect repository state and diff**
 
 Run:
 
@@ -251,7 +251,7 @@ git diff HEAD -- .github/workflows/release.yml misc/scripts/package_ios_template
 
 Confirm only the intended implementation files are changed after the already-committed design document, with no generated archives or temporary files tracked.
 
-- [ ] **Step 4: Commit the implementation**
+- [x] **Step 4: Commit the implementation**
 
 ```bash
 git add .github/workflows/release.yml .github/scripts/test_release_ios_workflow.py misc/scripts/package_ios_templates.py misc/scripts/test_package_ios_templates.py
