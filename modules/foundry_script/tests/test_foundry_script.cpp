@@ -338,6 +338,18 @@ static const FSParser::EnumNode *find_parser_enum(const FSParser::ClassNode *p_c
 	return nullptr;
 }
 
+static const FSParser::FunctionNode *find_enum_function(const FSParser::EnumNode *p_enum, const StringName &p_name) {
+	ERR_FAIL_NULL_V(p_enum, nullptr);
+
+	for (const FSParser::FunctionNode *function : p_enum->functions) {
+		if (function != nullptr && function->identifier != nullptr && function->identifier->name == p_name) {
+			return function;
+		}
+	}
+
+	return nullptr;
+}
+
 static MethodInfo find_method_info(const List<MethodInfo> &p_methods, const StringName &p_name) {
 	for (const MethodInfo &method : p_methods) {
 		if (method.name == p_name) {
@@ -1897,6 +1909,207 @@ enum_name GlobalLogLevel:
 	}
 	CHECK_EQ(root->enum_file_decl->functions[0]->identifier->name, SNAME("name"));
 	CHECK_EQ(root->enum_file_decl->functions[0]->owner_enum, root->enum_file_decl);
+}
+
+TEST_CASE("[Modules][FoundryScript] Analyzer resolves enum host function signatures and bodies in named enums") {
+	FSParser parser;
+	Error err = analyze_source(parser, R"(
+enum Status:
+	READY = 1
+	DONE = 2
+
+	func identity() -> Self:
+		return self
+
+	static func normalize(value: Status) -> Status:
+		return value
+)",
+			"user://enum_host_function_analyzer.fs");
+
+	INFO(first_parser_error_message(parser));
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	const FSParser::ClassNode *root = parser.get_tree();
+	CHECK(root != nullptr);
+	if (root == nullptr) {
+		return;
+	}
+
+	const FSParser::EnumNode *status = find_parser_enum(root, SNAME("Status"));
+	CHECK(status != nullptr);
+	if (status == nullptr) {
+		return;
+	}
+
+	const FSParser::FunctionNode *identity = find_enum_function(status, SNAME("identity"));
+	CHECK(identity != nullptr);
+	if (identity == nullptr) {
+		return;
+	}
+	CHECK(identity->resolved_signature);
+	CHECK(identity->resolved_body);
+
+	const FSParser::DataType &identity_type = identity->get_datatype();
+	CHECK_EQ(identity_type.kind, FSParser::DataType::ENUM);
+	CHECK_EQ(identity_type.builtin_type, Variant::INT);
+	CHECK_FALSE(identity_type.is_meta_type);
+	CHECK_EQ(identity_type.enum_type, SNAME("Status"));
+	CHECK_EQ(identity_type.class_type, root);
+	CHECK_EQ(identity_type.script_path, "user://enum_host_function_analyzer.fs");
+	CHECK_EQ(identity_type.enum_values.size(), 2);
+
+	CHECK_EQ(identity->body->statements.size(), 1);
+	if (identity->body->statements.size() == 1) {
+		const FSParser::Node *statement = identity->body->statements[0];
+		CHECK_EQ(statement->type, FSParser::Node::RETURN);
+		if (statement->type == FSParser::Node::RETURN) {
+			const FSParser::ReturnNode *return_statement = static_cast<const FSParser::ReturnNode *>(statement);
+			CHECK(return_statement->return_value != nullptr);
+			if (return_statement->return_value != nullptr) {
+				CHECK_EQ(return_statement->return_value->type, FSParser::Node::SELF);
+				const FSParser::DataType &self_type = return_statement->return_value->get_datatype();
+				CHECK_EQ(self_type.kind, FSParser::DataType::ENUM);
+				CHECK_EQ(self_type.builtin_type, Variant::INT);
+				CHECK_FALSE(self_type.is_meta_type);
+				CHECK_EQ(self_type.enum_type, SNAME("Status"));
+				CHECK_EQ(self_type.class_type, root);
+				CHECK_EQ(self_type.script_path, "user://enum_host_function_analyzer.fs");
+				CHECK_EQ(self_type.enum_values.size(), 2);
+			}
+		}
+	}
+
+	const FSParser::FunctionNode *normalize = find_enum_function(status, SNAME("normalize"));
+	CHECK(normalize != nullptr);
+	if (normalize != nullptr) {
+		CHECK(normalize->resolved_signature);
+		CHECK(normalize->resolved_body);
+		CHECK(normalize->is_static);
+		CHECK_EQ(normalize->get_datatype().kind, FSParser::DataType::ENUM);
+		CHECK_EQ(normalize->get_datatype().enum_type, SNAME("Status"));
+		CHECK_EQ(normalize->parameters.size(), 1);
+		if (normalize->parameters.size() == 1) {
+			CHECK_EQ(normalize->parameters[0]->get_datatype().kind, FSParser::DataType::ENUM);
+			CHECK_EQ(normalize->parameters[0]->get_datatype().enum_type, SNAME("Status"));
+		}
+	}
+}
+
+TEST_CASE("[Modules][FoundryScript] Analyzer resolves enum host function signatures and bodies in enum_name files") {
+	GlobalScriptClassCacheBackup backup;
+	ScriptServer::global_classes_clear();
+
+	const String source = R"(
+namespace tests.enums
+enum_name GlobalStatus:
+	READY = 1
+	DONE = 2
+
+	func identity() -> Self:
+		return self
+
+	static func normalize(value: Self) -> Self:
+		return value
+
+	static func unqualified_value() -> Self:
+		return READY
+
+	static func qualified_value() -> Self:
+		return GlobalStatus.DONE
+)";
+	TempScriptFile script("global_status.fs", source);
+
+	String base_type;
+	bool is_abstract = false;
+	bool is_tool = false;
+	bool is_trait = false;
+	bool is_enum = false;
+	const String global_name = FSLanguage::get_singleton()->get_global_class_name(script.path, &base_type, nullptr,
+			&is_abstract, &is_tool, &is_trait, &is_enum);
+	CHECK_EQ(global_name, "tests.enums.GlobalStatus");
+	CHECK(is_enum);
+	if (global_name.is_empty() || !is_enum) {
+		return;
+	}
+	ScriptServer::add_global_class(global_name, base_type, FSLanguage::get_singleton()->get_name(), script.path,
+			is_abstract, is_tool, is_trait, is_enum);
+
+	FSParser parser;
+	Error err = analyze_source(parser, source, script.path);
+	INFO(first_parser_error_message(parser));
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	const FSParser::ClassNode *root = parser.get_tree();
+	CHECK(root != nullptr);
+	if (root == nullptr || root->enum_file_decl == nullptr) {
+		return;
+	}
+	const FSParser::EnumNode *status = root->enum_file_decl;
+
+	const FSParser::FunctionNode *identity = find_enum_function(status, SNAME("identity"));
+	CHECK(identity != nullptr);
+	if (identity == nullptr) {
+		return;
+	}
+	CHECK(identity->resolved_signature);
+	CHECK(identity->resolved_body);
+	CHECK_EQ(identity->get_datatype().kind, FSParser::DataType::ENUM);
+	CHECK_EQ(identity->get_datatype().builtin_type, Variant::INT);
+	CHECK_FALSE(identity->get_datatype().is_meta_type);
+	CHECK_EQ(identity->get_datatype().enum_type, SNAME("tests.enums.GlobalStatus"));
+	CHECK_EQ(identity->get_datatype().native_type, SNAME("tests.enums.GlobalStatus"));
+	CHECK_EQ(identity->get_datatype().class_type, root);
+	CHECK_EQ(identity->get_datatype().script_path, script.path);
+	CHECK_EQ(identity->get_datatype().enum_values.size(), 2);
+
+	CHECK_EQ(identity->body->statements.size(), 1);
+	if (identity->body->statements.size() == 1) {
+		const FSParser::ReturnNode *return_statement =
+				static_cast<const FSParser::ReturnNode *>(identity->body->statements[0]);
+		CHECK(return_statement->return_value != nullptr);
+		if (return_statement->return_value != nullptr) {
+			const FSParser::DataType &self_type = return_statement->return_value->get_datatype();
+			CHECK_EQ(self_type.kind, FSParser::DataType::ENUM);
+			CHECK_FALSE(self_type.is_meta_type);
+			CHECK_EQ(self_type.enum_type, SNAME("tests.enums.GlobalStatus"));
+			CHECK_EQ(self_type.native_type, SNAME("tests.enums.GlobalStatus"));
+			CHECK_EQ(self_type.class_type, root);
+			CHECK_EQ(self_type.script_path, script.path);
+			CHECK_EQ(self_type.enum_values.size(), 2);
+		}
+	}
+
+	const FSParser::FunctionNode *normalize = find_enum_function(status, SNAME("normalize"));
+	CHECK(normalize != nullptr);
+	if (normalize != nullptr) {
+		CHECK(normalize->resolved_signature);
+		CHECK(normalize->resolved_body);
+		CHECK(normalize->is_static);
+		CHECK_EQ(normalize->get_datatype().kind, FSParser::DataType::ENUM);
+		CHECK_EQ(normalize->get_datatype().enum_type, SNAME("tests.enums.GlobalStatus"));
+		CHECK_EQ(normalize->parameters.size(), 1);
+		if (normalize->parameters.size() == 1) {
+			CHECK_EQ(normalize->parameters[0]->get_datatype().kind, FSParser::DataType::ENUM);
+			CHECK_EQ(normalize->parameters[0]->get_datatype().enum_type, SNAME("tests.enums.GlobalStatus"));
+		}
+	}
+
+	for (const StringName &function_name : { SNAME("unqualified_value"), SNAME("qualified_value") }) {
+		const FSParser::FunctionNode *value_function = find_enum_function(status, function_name);
+		CHECK(value_function != nullptr);
+		if (value_function != nullptr) {
+			CHECK(value_function->resolved_signature);
+			CHECK(value_function->resolved_body);
+			CHECK_EQ(value_function->get_datatype().kind, FSParser::DataType::ENUM);
+			CHECK_EQ(value_function->get_datatype().enum_type, SNAME("tests.enums.GlobalStatus"));
+		}
+	}
 }
 
 TEST_CASE("[Modules][FoundryScript] Parser rejects invalid enum host function declarations") {

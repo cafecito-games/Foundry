@@ -42,7 +42,7 @@
 namespace FSTests {
 class TestFSAnalyzerAccessor;
 class TestFSAnalyzerDependencyAccessAccessor;
-}
+} //namespace FSTests
 #endif // TESTS_ENABLED
 
 class FSAnalyzer {
@@ -416,6 +416,12 @@ private:
 	void resolve_class_member(FSParser::ClassNode *p_class, int p_index, const FSParser::Node *p_source = nullptr);
 	void resolve_function_signature_in_class(FSParser::FunctionNode *p_function,
 			FSParser::ClassNode *p_class, const FSParser::Node *p_source);
+	FSParser::DataType resolve_enum_values(FSParser::EnumNode *p_enum,
+			const FSParser::DataType &p_enum_type, FSParser::ClassNode *p_owner);
+	void resolve_enum_interface(FSParser::EnumNode *p_enum,
+			const FSParser::DataType &p_enum_type, FSParser::ClassNode *p_owner);
+	void resolve_enum_bodies(FSParser::EnumNode *p_enum, FSParser::ClassNode *p_owner);
+	FSParser::DataType enum_self_type(const FSParser::FunctionNode *p_function) const;
 	Error resolve_trait_uses(FSParser::ClassNode *p_class, const FSParser::Node *p_source = nullptr);
 	Error resolve_trait_uses(FSParser::ClassNode *p_class, bool p_recursive);
 	void resolve_class_interface(FSParser::ClassNode *p_class, const FSParser::Node *p_source = nullptr);
