@@ -308,6 +308,7 @@ public:
 	void draw_viewports(bool p_swap_buffers);
 
 	bool free(RID p_rid);
+	void finalize();
 
 	int get_total_objects_drawn() const;
 	int get_total_primitives_drawn() const;

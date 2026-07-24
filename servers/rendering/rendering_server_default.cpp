@@ -257,6 +257,8 @@ void RenderingServerDefault::_finish() {
 		free_rid(test_cube);
 	}
 
+	RSG::viewport->finalize();
+	static_cast<RendererSceneCull *>(RSG::scene)->finalize();
 	RSG::canvas->finalize();
 	memdelete(RSG::canvas);
 	RSG::rasterizer->finalize();

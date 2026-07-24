@@ -219,6 +219,7 @@
 #include "tests/scene/test_viewport.h"
 #include "tests/scene/test_visual_shader.h"
 #include "tests/scene/test_window.h"
+#include "tests/servers/rendering/test_renderer_shutdown.h"
 #include "tests/servers/rendering/test_shader_preprocessor.h"
 #include "tests/servers/test_accessibility_server.h"
 #include "tests/servers/test_nav_heap.h"

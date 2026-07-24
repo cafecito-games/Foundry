@@ -1666,6 +1666,16 @@ bool RendererViewport::free(RID p_rid) {
 	return false;
 }
 
+void RendererViewport::finalize() {
+	LocalVector<RID> viewports = viewport_owner.get_owned_list();
+	if (!viewports.is_empty()) {
+		WARN_PRINT(vformat("%d RIDs of type \"Viewport\" were leaked.", viewports.size()));
+		for (const RID &rid : viewports) {
+			free(rid);
+		}
+	}
+}
+
 void RendererViewport::handle_timestamp(String p_timestamp, uint64_t p_cpu_time, uint64_t p_gpu_time) {
 	RID *vp = timestamp_vp_map.getptr(p_timestamp);
 	if (!vp) {
