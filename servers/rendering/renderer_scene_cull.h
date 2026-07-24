@@ -1397,6 +1397,7 @@ public:
 	virtual void update();
 
 	bool free(RID p_rid);
+	void finalize();
 
 	void set_scene_render(RendererSceneRender *p_scene_render);
 

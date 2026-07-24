@@ -4302,6 +4302,32 @@ bool RendererSceneCull::free(RID p_rid) {
 	return true;
 }
 
+void RendererSceneCull::finalize() {
+	LocalVector<RID> scenarios = scenario_owner.get_owned_list();
+	if (!scenarios.is_empty()) {
+		WARN_PRINT(vformat("%d RIDs of type \"Scenario\" were leaked.", scenarios.size()));
+		for (const RID &rid : scenarios) {
+			free(rid);
+		}
+	}
+
+	LocalVector<RID> instances = instance_owner.get_owned_list();
+	if (!instances.is_empty()) {
+		WARN_PRINT(vformat("%d RIDs of type \"Instance\" were leaked.", instances.size()));
+		for (const RID &rid : instances) {
+			free(rid);
+		}
+	}
+
+	LocalVector<RID> cameras = camera_owner.get_owned_list();
+	if (!cameras.is_empty()) {
+		WARN_PRINT(vformat("%d RIDs of type \"Camera\" were leaked.", cameras.size()));
+		for (const RID &rid : cameras) {
+			free(rid);
+		}
+	}
+}
+
 TypedArray<Image> RendererSceneCull::bake_render_uv2(RID p_base, const TypedArray<RID> &p_material_overrides, const Size2i &p_image_size) {
 	return scene_render->bake_render_uv2(p_base, p_material_overrides, p_image_size);
 }

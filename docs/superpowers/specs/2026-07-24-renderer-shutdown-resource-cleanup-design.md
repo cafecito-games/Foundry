@@ -75,6 +75,11 @@ Cleanup follows existing `free()` error conventions. Invalid or already-freed RI
 are ignored by the owner snapshot path, and cleanup continues for the remaining
 owners. No new hard assertions are added to shutdown.
 
+Occlusion-culling RIDs remain out of scope for this change. They are owned by
+backend-specific `RendererSceneOcclusionCull` implementations rather than the
+`RendererSceneCull` owners drained here; adding a backend lifecycle hook for
+those RIDs should be tracked separately.
+
 ## Testing
 
 Add a focused renderer shutdown regression test that:
@@ -89,4 +94,3 @@ Add a focused renderer shutdown regression test that:
 
 Retain the existing editor automation workflow as an end-to-end smoke check, and
 run the focused rendering tests plus the full test suite before completion.
-
