@@ -4959,7 +4959,7 @@ int Main::start() {
 			DocTools docs;
 			Error err;
 
-			Vector<String> paths = get_files_with_extension(fs_docs_path, "gd");
+			Vector<String> paths = get_files_with_extension(fs_docs_path, "fs");
 			ERR_FAIL_COND_V_MSG(paths.is_empty(), EXIT_FAILURE, "Couldn't find any FoundryScript files under the given directory: " + fs_docs_path);
 
 			for (const String &path : paths) {
