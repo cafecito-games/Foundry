@@ -1,0 +1,2 @@
+FS_TEST_PARSER_ERROR
+Enum values must be declared before enum functions.

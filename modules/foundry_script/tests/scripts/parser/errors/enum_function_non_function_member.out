@@ -1,0 +1,2 @@
+FS_TEST_PARSER_ERROR
+Only function declarations are allowed in enum bodies.

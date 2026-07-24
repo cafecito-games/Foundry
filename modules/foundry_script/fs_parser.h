@@ -2,7 +2,7 @@
 /*  fs_parser.h                                                           */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -747,6 +747,8 @@ public:
 
 		IdentifierNode *identifier = nullptr;
 		Vector<Value> values;
+		Vector<FunctionNode *> functions;
+		HashMap<StringName, int> functions_indices;
 		Variant dictionary;
 #ifdef TOOLS_ENABLED
 		MemberDocData doc_data;
@@ -1148,6 +1150,7 @@ public:
 		Variant rpc_config;
 		MethodInfo info;
 		LambdaNode *source_lambda = nullptr;
+		EnumNode *owner_enum = nullptr;
 		Vector<Variant> default_arg_values;
 #ifdef TOOLS_ENABLED
 		MemberDocData doc_data;
@@ -1936,6 +1939,8 @@ private:
 	void parse_annotation_declaration_targets(AnnotationDeclarationNode *p_annotation_declaration);
 	SignalNode *parse_signal(const DeclarationModifiers &p_modifiers);
 	EnumNode *parse_enum(const DeclarationModifiers &p_modifiers);
+	void finalize_enum_function(EnumNode *p_enum, FunctionNode *p_function,
+			List<AnnotationNode *> &p_annotations, int &r_min_doc_line, bool p_store);
 	ParameterNode *parse_parameter(bool p_allow_annotations = true);
 	FunctionNode *parse_function_declaration(const DeclarationModifiers &p_modifiers);
 	bool parse_function_signature(FunctionNode *p_function, SuiteNode *p_body, const String &p_type, int p_signature_start);

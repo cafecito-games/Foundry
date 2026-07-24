@@ -2,7 +2,7 @@
 /*  fs_parser.cpp                                                         */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -2579,6 +2579,45 @@ FSParser::SignalNode *FSParser::parse_signal(const DeclarationModifiers &p_modif
 	return signal;
 }
 
+void FSParser::finalize_enum_function(EnumNode *p_enum, FunctionNode *p_function,
+		List<AnnotationNode *> &p_annotations, int &r_min_doc_line, bool p_store) {
+	if (p_function == nullptr) {
+		return;
+	}
+
+#ifdef TOOLS_ENABLED
+	int doc_comment_line = p_function->start_line - 1;
+#endif // TOOLS_ENABLED
+
+	for (AnnotationNode *&annotation : p_annotations) {
+		p_function->annotations.push_back(annotation);
+#ifdef TOOLS_ENABLED
+		if (annotation->start_line <= doc_comment_line) {
+			doc_comment_line = annotation->start_line - 1;
+		}
+#endif // TOOLS_ENABLED
+	}
+
+#ifdef TOOLS_ENABLED
+	if (has_comment(p_function->start_line, true)) {
+		p_function->doc_data = parse_doc_comment(p_function->start_line, true);
+	} else if (doc_comment_line >= r_min_doc_line && has_comment(doc_comment_line, true) && tokenizer->get_comments()[doc_comment_line].new_line) {
+		p_function->doc_data = parse_doc_comment(doc_comment_line);
+	}
+	r_min_doc_line = p_function->end_line + 1;
+#endif // TOOLS_ENABLED
+
+	p_function->owner_enum = p_enum;
+	if (!p_store || p_function->identifier == nullptr) {
+		return;
+	}
+
+	if (!p_enum->functions_indices.has(p_function->identifier->name)) {
+		p_enum->functions_indices[p_function->identifier->name] = p_enum->functions.size();
+	}
+	p_enum->functions.push_back(p_function);
+}
+
 FSParser::EnumNode *FSParser::parse_enum(const DeclarationModifiers &p_modifiers) {
 	EnumNode *enum_node = alloc_node<EnumNode>();
 	bool named = false;
@@ -2613,13 +2652,43 @@ FSParser::EnumNode *FSParser::parse_enum(const DeclarationModifiers &p_modifiers
 #endif
 
 	bool saw_value = false;
+	bool saw_function = false;
 	bool saw_pass = false;
+	int min_enum_function_doc_line = enum_node->start_line + 1;
+	auto skip_invalid_enum_declaration = [&]() {
+		while (!is_at_end() && !check(FSTokenizer::Token::NEWLINE) && !check(FSTokenizer::Token::DEDENT)) {
+			advance();
+		}
+		if (match(FSTokenizer::Token::NEWLINE) && match(FSTokenizer::Token::INDENT)) {
+			int indent_depth = 1;
+			while (!is_at_end() && indent_depth > 0) {
+				if (match(FSTokenizer::Token::INDENT)) {
+					indent_depth++;
+				} else if (match(FSTokenizer::Token::DEDENT)) {
+					indent_depth--;
+				} else {
+					advance();
+				}
+			}
+		}
+	};
+
 	while (!is_at_end() && !check(FSTokenizer::Token::DEDENT)) {
 		if (match(FSTokenizer::Token::NEWLINE)) {
 			continue;
 		}
+		if (match(FSTokenizer::Token::ANNOTATION)) {
+			AnnotationNode *annotation = parse_annotation(AnnotationInfo::FUNCTION);
+			if (annotation != nullptr) {
+				annotation_stack.push_back(annotation);
+			}
+			continue;
+		}
 		if (match(FSTokenizer::Token::PASS)) {
-			if (saw_value || saw_pass) {
+			if (!annotation_stack.is_empty()) {
+				parse_class_member_annotations(AnnotationInfo::NONE, R"("pass")");
+			}
+			if (saw_value || saw_function || saw_pass) {
 				push_error(R"("pass" is only valid for an empty enum.)");
 			}
 			saw_pass = true;
@@ -2627,13 +2696,65 @@ FSParser::EnumNode *FSParser::parse_enum(const DeclarationModifiers &p_modifiers
 			continue;
 		}
 		if (saw_pass) {
-			push_error(R"(An enum containing "pass" cannot contain enum values.)");
+			push_error(R"(An enum containing "pass" cannot contain values or functions.)");
+			skip_invalid_enum_declaration();
+			continue;
+		}
+
+		const bool contextual_async_modifier = current.type == FSTokenizer::Token::IDENTIFIER &&
+				current.get_identifier() == StringName("async") && peek().type != FSTokenizer::Token::EQUAL;
+		const bool starts_function_declaration = check(FSTokenizer::Token::FUNC) ||
+				check(FSTokenizer::Token::STATIC) ||
+				check(FSTokenizer::Token::ABSTRACT) ||
+				check(FSTokenizer::Token::FINAL) ||
+				contextual_async_modifier;
+		if (starts_function_declaration) {
+			DeclarationModifiers modifiers = collect_declaration_modifiers();
+			if (!check(FSTokenizer::Token::FUNC)) {
+				push_error(R"(Only function declarations are allowed in enum bodies.)");
+				skip_invalid_enum_declaration();
+				continue;
+			}
+
+			validate_declaration_modifiers(modifiers, "enum functions", false, true, true, false, false);
 			advance();
-			end_statement("enum body");
+			List<AnnotationNode *> annotations = parse_class_member_annotations(AnnotationInfo::FUNCTION, "enum function");
+			FunctionNode *function = parse_function_declaration(modifiers);
+			if (!named) {
+				push_error("Only named enums can declare functions.", function);
+			}
+			finalize_enum_function(enum_node, function, annotations, min_enum_function_doc_line, named);
+			saw_function = true;
+			continue;
+		}
+
+		const bool starts_non_function_declaration = check(FSTokenizer::Token::VAR) ||
+				check(FSTokenizer::Token::TK_CONST) ||
+				check(FSTokenizer::Token::SIGNAL) ||
+				check(FSTokenizer::Token::CLASS) ||
+				check(FSTokenizer::Token::TRAIT) ||
+				check(FSTokenizer::Token::ENUM) ||
+				check(FSTokenizer::Token::NAMESPACE) ||
+				check(FSTokenizer::Token::IMPORT) ||
+				(current.type == FSTokenizer::Token::IDENTIFIER &&
+						(current.get_identifier() == StringName("annotation") ||
+								current.get_identifier() == StringName("extend")));
+		if (starts_non_function_declaration) {
+			if (!annotation_stack.is_empty()) {
+				parse_class_member_annotations(AnnotationInfo::NONE, "enum body declaration");
+			}
+			push_error(R"(Only function declarations are allowed in enum bodies.)");
+			skip_invalid_enum_declaration();
 			continue;
 		}
 
 		if (consume(FSTokenizer::Token::IDENTIFIER, R"(Expected identifier for enum key.)")) {
+			if (!annotation_stack.is_empty()) {
+				parse_class_member_annotations(AnnotationInfo::NONE, "enum value");
+			}
+			if (saw_function) {
+				push_error("Enum values must be declared before enum functions.");
+			}
 			FSParser::IdentifierNode *identifier = parse_identifier();
 
 			EnumNode::Value item;
@@ -2674,7 +2795,7 @@ FSParser::EnumNode *FSParser::parse_enum(const DeclarationModifiers &p_modifiers
 		} else {
 			// Avoid getting stuck after a malformed member and keep the diagnostic
 			// anchored to the enum body rather than cascading into the outer class.
-			push_error(R"(Expected enum key or "pass" in enum body.)");
+			push_error(R"(Expected enum key, function declaration, or "pass" in enum body.)");
 			advance();
 		}
 
@@ -2683,6 +2804,9 @@ FSParser::EnumNode *FSParser::parse_enum(const DeclarationModifiers &p_modifiers
 			advance();
 		}
 		end_statement("enum value");
+	}
+	if (!annotation_stack.is_empty()) {
+		parse_class_member_annotations(AnnotationInfo::NONE, "enum body");
 	}
 
 #ifdef TOOLS_ENABLED
@@ -7152,6 +7276,9 @@ void FSParser::TreePrinter::print_enum(EnumNode *p_enum) {
 		push_text(" = ");
 		push_text(itos(item.value));
 		push_line(" ,");
+	}
+	for (FunctionNode *function : p_enum->functions) {
+		print_function(function);
 	}
 	decrease_indent();
 	push_line("}");

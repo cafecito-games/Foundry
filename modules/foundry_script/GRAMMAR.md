@@ -428,8 +428,15 @@ signal_decl     = "signal", identifier,
                   NEWLINE ;
 
 enum_decl       = "enum", [ identifier ], ":", enum_body ;
-enum_body       = NEWLINE, INDENT, ( "pass", NEWLINE | enum_value_line, { enum_value_line } ), DEDENT ;
+enum_body       = NEWLINE, INDENT,
+                  ( "pass", NEWLINE
+                  | enum_value_line, { enum_value_line }, { enum_function_decl }
+                  | enum_function_decl, { enum_function_decl } ),
+                  DEDENT ;
 enum_value_line = identifier, "=", expression, NEWLINE ;
+enum_function_decl = { function_annotation }, { enum_function_modifier }, function_decl ;
+enum_function_modifier = "static" | "async" ;
+function_annotation = ANNOTATION, [ "(", [ annotation_args ], ")" ], [ NEWLINE ] ;
 ```
 
 - A `var`'s type may be written explicitly (`var x: int = ...`), **inferred** from the
@@ -437,10 +444,15 @@ enum_value_line = identifier, "=", expression, NEWLINE ;
   entirely (`var x = value`). The same applies to `const` and parameters.
 - Signal parameters may have a type annotation but **not** a default value.
 - An **unnamed** enum (`enum:`) injects its values as constants into the enclosing
-  class; a **named** enum (`enum Dir:`) defines an enum type.
+  class; a **named** enum (`enum Dir:`) defines an enum type. Only named enums may
+  contain functions.
 - Every enum value must provide an explicit integer expression (`NAME = expression`).
   Values do not receive implicit numbers, and enum members are separated by newlines
   rather than commas. Commas remain valid inside an enum value expression.
+- Enum values must appear before enum functions. A functions-only named enum is valid.
+  Enum functions reuse ordinary function signatures and bodies, allow `static` and
+  `async`, and reject `abstract` and `final`. Variables, constants, signals, nested
+  classes/enums/traits, and conformances are not valid enum-body declarations.
 - An empty enum uses `pass` as its only body statement (`enum Empty:` followed by
   an indented `pass`).
 - `enum_name` (§3.2) declares a file-level named enum using the same indented body.
