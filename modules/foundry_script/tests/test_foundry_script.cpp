@@ -322,6 +322,22 @@ static const FSParser::FunctionNode *find_parser_function(const FSParser::ClassN
 	return nullptr;
 }
 
+static const FSParser::EnumNode *find_parser_enum(const FSParser::ClassNode *p_class, const StringName &p_name) {
+	ERR_FAIL_NULL_V(p_class, nullptr);
+
+	for (const FSParser::ClassNode::Member &member : p_class->members) {
+		if (member.type != FSParser::ClassNode::Member::ENUM || member.m_enum == nullptr ||
+				member.m_enum->identifier == nullptr) {
+			continue;
+		}
+		if (member.m_enum->identifier->name == p_name) {
+			return member.m_enum;
+		}
+	}
+
+	return nullptr;
+}
+
 static MethodInfo find_method_info(const List<MethodInfo> &p_methods, const StringName &p_name) {
 	for (const MethodInfo &method : p_methods) {
 		if (method.name == p_name) {
@@ -1751,6 +1767,174 @@ class InlineStatic: static func make() -> int: return 3
 	CHECK(!inline_make->is_declared_async);
 	CHECK(!inline_make->is_coroutine);
 	CHECK(inline_make->is_static);
+}
+
+TEST_CASE("[Modules][FoundryScript] Parser stores enum host functions and ownership") {
+	FSParser parser;
+	Error err = parser.parse(R"(
+## Log level documentation.
+enum LogLevel:
+	INFO = 1
+	WARNING = 2
+
+	## Name function documentation.
+	@rpc func name() -> String:
+		return "name"
+
+	static async func parse(p_name: String) -> int:
+		return p_name.length()
+
+enum FunctionsOnly:
+	func value() -> int:
+		return 1
+
+class EnumHost:
+	enum Nested:
+		ACTIVE = 1
+
+		static func load() -> int:
+			return ACTIVE
+)",
+			"user://enum_host_function_parser.fs", false);
+
+	INFO(first_parser_error_message(parser));
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	const FSParser::ClassNode *root = parser.get_tree();
+	CHECK(root != nullptr);
+	if (root == nullptr) {
+		return;
+	}
+
+	const FSParser::EnumNode *log_level = find_parser_enum(root, SNAME("LogLevel"));
+	CHECK(log_level != nullptr);
+	if (log_level == nullptr) {
+		return;
+	}
+	CHECK_EQ(log_level->functions.size(), 2);
+	if (log_level->functions.size() != 2) {
+		return;
+	}
+	CHECK_EQ(log_level->functions[0]->identifier->name, SNAME("name"));
+	CHECK_EQ(log_level->functions[0]->owner_enum, log_level);
+	CHECK_FALSE(log_level->functions[0]->is_static);
+	CHECK_FALSE(log_level->functions[0]->is_declared_async);
+	CHECK_EQ(log_level->functions[0]->annotations.size(), 1);
+#ifdef TOOLS_ENABLED
+	CHECK_EQ(log_level->doc_data.description.strip_edges(), "Log level documentation.");
+	CHECK_EQ(log_level->functions[0]->doc_data.description.strip_edges(), "Name function documentation.");
+#endif // TOOLS_ENABLED
+	CHECK_EQ(log_level->functions[1]->identifier->name, SNAME("parse"));
+	CHECK_EQ(log_level->functions[1]->owner_enum, log_level);
+	CHECK(log_level->functions[1]->is_static);
+	CHECK(log_level->functions[1]->is_declared_async);
+	CHECK(log_level->functions[1]->is_coroutine);
+	CHECK_EQ(log_level->functions_indices[SNAME("name")], 0);
+	CHECK_EQ(log_level->functions_indices[SNAME("parse")], 1);
+
+	const FSParser::EnumNode *functions_only = find_parser_enum(root, SNAME("FunctionsOnly"));
+	CHECK(functions_only != nullptr);
+	if (functions_only == nullptr) {
+		return;
+	}
+	CHECK(functions_only->values.is_empty());
+	CHECK_EQ(functions_only->functions.size(), 1);
+	if (functions_only->functions.size() != 1) {
+		return;
+	}
+	CHECK_EQ(functions_only->functions[0]->owner_enum, functions_only);
+
+	const FSParser::ClassNode *enum_host = find_parser_class(root, SNAME("EnumHost"));
+	CHECK(enum_host != nullptr);
+	if (enum_host == nullptr) {
+		return;
+	}
+	const FSParser::EnumNode *nested = find_parser_enum(enum_host, SNAME("Nested"));
+	CHECK(nested != nullptr);
+	if (nested == nullptr) {
+		return;
+	}
+	CHECK_EQ(nested->functions.size(), 1);
+	if (nested->functions.size() != 1) {
+		return;
+	}
+	CHECK_EQ(nested->functions[0]->owner_enum, nested);
+	CHECK(nested->functions[0]->is_static);
+}
+
+TEST_CASE("[Modules][FoundryScript] Parser stores enum_name host functions") {
+	FSParser parser;
+	Error err = parser.parse(R"(
+enum_name GlobalLogLevel:
+	INFO = 1
+
+	func name() -> String:
+		return "info"
+)",
+			"user://global_log_level.fs", false);
+
+	INFO(first_parser_error_message(parser));
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	const FSParser::ClassNode *root = parser.get_tree();
+	CHECK(root != nullptr);
+	if (root == nullptr) {
+		return;
+	}
+	CHECK(root->enum_file_decl != nullptr);
+	if (root->enum_file_decl == nullptr) {
+		return;
+	}
+	CHECK_EQ(root->enum_file_decl->functions.size(), 1);
+	if (root->enum_file_decl->functions.size() != 1) {
+		return;
+	}
+	CHECK_EQ(root->enum_file_decl->functions[0]->identifier->name, SNAME("name"));
+	CHECK_EQ(root->enum_file_decl->functions[0]->owner_enum, root->enum_file_decl);
+}
+
+TEST_CASE("[Modules][FoundryScript] Parser rejects invalid enum host function declarations") {
+	check_parse_source_error(R"(
+enum Ordered:
+	func name() -> String:
+		return "name"
+	A = 0
+)",
+			"Enum values must be declared before enum functions.");
+
+	check_parse_source_error(R"(
+enum:
+	A = 0
+	func name() -> String:
+		return "name"
+)",
+			"Only named enums can declare functions.");
+
+	check_parse_source_error(R"(
+enum InvalidMember:
+	A = 0
+	var value = 1
+)",
+			"Only function declarations are allowed in enum bodies.");
+
+	check_parse_source_error(R"(
+enum AbstractFunction:
+	abstract func name() -> String
+)",
+			R"(The "abstract" modifier cannot be applied to enum functions.)");
+
+	check_parse_source_error(R"(
+enum FinalFunction:
+	final func name() -> String:
+		return "name"
+)",
+			R"(The "final" modifier cannot be applied to enum functions.)");
 }
 
 TEST_CASE("[Modules][FoundryScript] Parser rejects invalid async function modifier positions") {
