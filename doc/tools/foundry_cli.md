@@ -15,6 +15,30 @@ execution is explicit, and project/user arguments are passed only after `--`.
 - `--headless`, `--quiet`, `--verbose`, `--no-header`, driver, rendering, and
   logging options keep their engine meanings.
 
+## Version metadata
+
+`foundry --version` keeps the human-readable version output. Add `--json` (in
+either option order) for one machine-readable object:
+
+```sh
+foundry --version --json
+foundry --json --version
+```
+
+The JSON schema includes `product`, semantic `version`, `release_tag`, release
+`channel`, full `git_commit`, boolean `git_dirty`, `build_id`, the compiled
+`target`, and `extension_api.interface_format` / `extension_api.abi_revision`.
+Version queries are standalone and reject command arguments; arguments after
+`--` remain project/user arguments for command invocations.
+
+Release builds inject metadata at compile time with these environment
+overrides: `FOUNDRY_RELEASE_TAG`, `FOUNDRY_CHANNEL`, `FOUNDRY_GIT_COMMIT`,
+`FOUNDRY_GIT_DIRTY`, `FOUNDRY_BUILD_ID`, `FOUNDRY_TARGET`,
+`FOUNDRY_EXTENSION_INTERFACE_FORMAT`, and `FOUNDRY_EXTENSION_ABI_REVISION`.
+Local builds fall back to the exact Git tag when available, the repository
+commit and dirty state, the local build name, the configured platform and
+architecture, and extension API defaults `1` and `7`.
+
 ## Getting help
 
 - `foundry --help` lists the command groups and global options.

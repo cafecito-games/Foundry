@@ -165,6 +165,90 @@ def get_version_info(module_version_string="", silent=False):
     return version_info
 
 
+def _get_non_empty_environment_value(name):
+    value = os.getenv(name)
+    if value is None:
+        return None
+    value = value.strip()
+    return value if value else None
+
+
+def _get_environment_bool(name, default):
+    value = _get_non_empty_environment_value(name)
+    if value is None:
+        return default
+    normalized = value.lower()
+    if normalized in ("1", "true", "yes", "on"):
+        return 1
+    if normalized in ("0", "false", "no", "off"):
+        return 0
+    raise ValueError(f"Invalid boolean value for {name}: {value}")
+
+
+def _get_environment_int(name, default):
+    value = _get_non_empty_environment_value(name)
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except ValueError as exc:
+        raise ValueError(f"Invalid integer value for {name}: {value}") from exc
+
+
+def _run_git_command(args):
+    try:
+        return subprocess.check_output(
+            ["git", *args], cwd=base_folder, encoding="utf-8", stderr=subprocess.DEVNULL
+        ).strip()
+    except (subprocess.CalledProcessError, OSError):
+        return ""
+
+
+def _get_exact_git_tag():
+    return _run_git_command(["describe", "--tags", "--exact-match", "HEAD"])
+
+
+def _get_git_dirty():
+    return bool(_run_git_command(["status", "--porcelain", "--untracked-files=normal"]))
+
+
+def _channel_from_release_tag(release_tag):
+    if re.fullmatch(r"v\d+\.\d+\.\d+", release_tag):
+        return "stable"
+    match = re.search(r"-(alpha|beta|rc)(?:\.\d+)?$", release_tag)
+    return match.group(1) if match else "dev"
+
+
+def get_build_metadata(env, version_info):
+    git_info = get_git_info()
+    version = f"{version_info['major']}.{version_info['minor']}.{version_info['patch']}"
+
+    release_tag = _get_non_empty_environment_value("FOUNDRY_RELEASE_TAG")
+    if release_tag is None:
+        release_tag = _get_exact_git_tag() or f"v{version}-dev"
+
+    channel = _get_non_empty_environment_value("FOUNDRY_CHANNEL") or _channel_from_release_tag(release_tag)
+    git_commit = _get_non_empty_environment_value("FOUNDRY_GIT_COMMIT") or git_info["git_hash"] or "unknown"
+    git_dirty = _get_environment_bool("FOUNDRY_GIT_DIRTY", _get_git_dirty() if git_info["git_hash"] else False)
+    build_id = (
+        _get_non_empty_environment_value("FOUNDRY_BUILD_ID")
+        or _get_non_empty_environment_value("BUILD_NAME")
+        or "local"
+    )
+    target = _get_non_empty_environment_value("FOUNDRY_TARGET") or f"{env['platform']}-{env['arch']}"
+
+    return {
+        "release_tag": release_tag,
+        "channel": channel,
+        "git_commit": git_commit,
+        "git_dirty": git_dirty,
+        "build_id": build_id,
+        "target": target,
+        "extension_interface_format": _get_environment_int("FOUNDRY_EXTENSION_INTERFACE_FORMAT", 1),
+        "extension_abi_revision": _get_environment_int("FOUNDRY_EXTENSION_ABI_REVISION", 7),
+    }
+
+
 def get_git_info():
     os.chdir(base_folder)
 

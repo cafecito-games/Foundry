@@ -174,9 +174,11 @@ env.CommandNoCache(
 )
 
 # Generate version info
+version_info = methods.get_version_info(env.module_version_string)
+version_info.update(methods.get_build_metadata(env, version_info))
 env.CommandNoCache(
     "version_generated.gen.h",
-    env.Value(methods.get_version_info(env.module_version_string)),
+    env.Value(version_info),
     env.Run(core_builders.version_info_builder),
 )
 

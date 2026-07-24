@@ -34,6 +34,7 @@ class Release:
     version: str
     tag: str
     status: str
+    channel: str
     prerelease_number: str
     release_version: str
     release_name: str
@@ -47,6 +48,7 @@ class Release:
             "version": self.version,
             "tag": self.tag,
             "status": self.status,
+            "channel": self.channel,
             "prerelease_number": self.prerelease_number,
             "release_version": self.release_version,
             "release_name": self.release_name,
@@ -92,6 +94,7 @@ def build_release(
     engine_version: EngineVersion,
     tag: str,
     status: str,
+    channel: str,
     prerelease_number: str,
     release_version: str,
     draft: bool,
@@ -101,6 +104,7 @@ def build_release(
         version=engine_version.base,
         tag=tag,
         status=status,
+        channel=channel,
         prerelease_number=prerelease_number,
         release_version=release_version,
         release_name=f"Foundry {release_version}",
@@ -118,10 +122,12 @@ def resolve_push_release(ref_name: str, engine_version: EngineVersion) -> Releas
     if stable_match is not None:
         release_version = stable_match.group("version")
         status = "stable"
+        channel = "stable"
         prerelease_number = ""
     elif prerelease_match is not None:
         release_version = ref_name[1:]
-        status = f"{prerelease_match.group('channel')}{prerelease_match.group('number')}"
+        channel = prerelease_match.group("channel")
+        status = f"{channel}{prerelease_match.group('number')}"
         prerelease_number = prerelease_match.group("number")
     else:
         raise ValueError(
@@ -136,6 +142,7 @@ def resolve_push_release(ref_name: str, engine_version: EngineVersion) -> Releas
         engine_version=engine_version,
         tag=ref_name,
         status=status,
+        channel=channel,
         prerelease_number=prerelease_number,
         release_version=release_version,
         draft=False,
@@ -159,13 +166,15 @@ def resolve_manual_release(
         release_version = engine_version.base
         tag = f"v{release_version}"
         status = "stable"
+        channel = "stable"
         prerelease_number = ""
     else:
         number = next_prerelease_number(engine_version.base, manual_channel, existing_names)
         prerelease_number = str(number)
         release_version = f"{engine_version.base}-{manual_channel}.{number}"
         tag = f"v{release_version}"
-        status = f"{manual_channel}{number}"
+        channel = manual_channel
+        status = f"{channel}{number}"
 
     if manual_mode == "publish" and tag_exists(tag, existing_names):
         raise ValueError(f"Release tag '{tag}' already exists.")
@@ -174,6 +183,7 @@ def resolve_manual_release(
         engine_version=engine_version,
         tag=tag,
         status=status,
+        channel=channel,
         prerelease_number=prerelease_number,
         release_version=release_version,
         draft=manual_mode == "draft",
@@ -274,7 +284,8 @@ def main() -> int:
             write_github_outputs(args.github_output, outputs)
 
         print(
-            f"Releasing {release.release_version} (tag {release.tag}, engine status {release.status}, "
+            f"Releasing {release.release_version} (tag {release.tag}, channel {release.channel}, "
+            f"engine status {release.status}, "
             f"template dir {release.template_version}, draft={release.draft}, "
             f"prerelease={release.prerelease}, create_tag={release.create_tag})"
         )
