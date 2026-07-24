@@ -1606,12 +1606,12 @@ void FSPrinter::print_enum(const FSParser::EnumNode *p_enum) {
 	}
 	emit_trailing_comment(p_enum->start_line);
 	indent_level++;
-	if (p_enum->values.is_empty()) {
+	if (p_enum->values.is_empty() && p_enum->functions.is_empty()) {
 		flush_trivia_until(p_enum->end_line + 1);
 		write_indent();
 		write("pass");
 		newline();
-	} else {
+	} else if (!p_enum->values.is_empty()) {
 		for (int i = 0; i < p_enum->values.size(); i++) {
 			const FSParser::EnumNode::Value &value = p_enum->values[i];
 			flush_trivia_until(value.line);
@@ -1625,7 +1625,24 @@ void FSPrinter::print_enum(const FSParser::EnumNode *p_enum) {
 			emit_trailing_comment(value.custom_value != nullptr ? value.custom_value->end_line : value.line);
 			last_emitted_line = MAX(last_emitted_line, value.custom_value != nullptr ? value.custom_value->end_line : value.line);
 		}
-		flush_trivia_until(p_enum->values[p_enum->values.size() - 1].line + 2);
+		if (p_enum->functions.is_empty()) {
+			flush_trivia_until(p_enum->values[p_enum->values.size() - 1].line + 2);
+		}
+	}
+	if (!p_enum->values.is_empty() && !p_enum->functions.is_empty()) {
+		newline();
+	}
+	for (int i = 0; i < p_enum->functions.size(); i++) {
+		const FSParser::FunctionNode *function = p_enum->functions[i];
+		if (i > 0) {
+			newline();
+		}
+		print_annotations(function->annotations, function->start_line);
+		print_function(function);
+		last_emitted_line = MAX(last_emitted_line, function->end_line);
+	}
+	if (!p_enum->functions.is_empty()) {
+		flush_trivia_until(p_enum->functions[p_enum->functions.size() - 1]->end_line + 2);
 	}
 	indent_level--;
 	if (p_enum->end_line > last_emitted_line) {

@@ -523,7 +523,8 @@ static bool node_eq(const FSParser::Node *p_a, const FSParser::Node *p_b) {
 			const FSParser::EnumNode *a = static_cast<const FSParser::EnumNode *>(p_a);
 			const FSParser::EnumNode *b = static_cast<const FSParser::EnumNode *>(p_b);
 			if (identifier_name(a->identifier) != identifier_name(b->identifier) ||
-					a->values.size() != b->values.size()) {
+					a->values.size() != b->values.size() ||
+					a->functions.size() != b->functions.size()) {
 				return false;
 			}
 			for (int i = 0; i < a->values.size(); i++) {
@@ -532,7 +533,7 @@ static bool node_eq(const FSParser::Node *p_a, const FSParser::Node *p_b) {
 					return false;
 				}
 			}
-			return true;
+			return node_vector_eq(a->functions, b->functions);
 		}
 		case Node::FOR: {
 			const FSParser::ForNode *a = static_cast<const FSParser::ForNode *>(p_a);
@@ -547,6 +548,7 @@ static bool node_eq(const FSParser::Node *p_a, const FSParser::Node *p_b) {
 			return identifier_name(a->identifier) == identifier_name(b->identifier) &&
 					a->is_abstract == b->is_abstract && a->is_final == b->is_final &&
 					a->is_static == b->is_static && a->is_declared_async == b->is_declared_async &&
+					annotations_eq(a->annotations, b->annotations) &&
 					node_vector_eq(a->type_parameters, b->type_parameters) &&
 					node_vector_eq(a->parameters, b->parameters) &&
 					node_eq(a->rest_parameter, b->rest_parameter) &&
