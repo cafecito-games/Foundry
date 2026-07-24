@@ -787,8 +787,35 @@ jobs:
   build-ios:
     needs: resolve
     runs-on: macos-latest
-    name: iOS templates
+    name: iOS ${{ matrix.name }}
     timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: release-ios-device
+            cache-name: release-ios-device
+            target: template_release
+            scons-flags: arch=arm64
+            extra-scons-flags: ""
+
+          - name: release-ios-simulator
+            cache-name: release-ios-simulator
+            target: template_release
+            scons-flags: arch=arm64 ios_simulator=yes
+            extra-scons-flags: arch=x86_64 ios_simulator=yes
+
+          - name: debug-ios-device
+            cache-name: debug-ios-device
+            target: template_debug
+            scons-flags: arch=arm64
+            extra-scons-flags: ""
+
+          - name: debug-ios-simulator
+            cache-name: debug-ios-simulator
+            target: template_debug
+            scons-flags: arch=arm64 ios_simulator=yes
+            extra-scons-flags: arch=x86_64 ios_simulator=yes
     env:
       FOUNDRY_VERSION: ${{ needs.resolve.outputs.version }}
       FOUNDRY_VERSION_STATUS: ${{ needs.resolve.outputs.status }}
@@ -812,68 +839,75 @@ jobs:
       - name: Restore Foundry build cache
         uses: ./.github/actions/foundry-cache-restore
         with:
-          cache-name: release-ios
+          cache-name: ${{ matrix.cache-name }}
         continue-on-error: true
 
       - name: Setup Python and SCons
         uses: ./.github/actions/foundry-deps
 
-      # The ios.zip template bundles a device xcframework slice (arm64) and a
-      # simulator slice advertising arm64 + x86_64, for both debug and release.
-      # Build every slice before generate_bundle lipo-assembles the zip on the
-      # final build.
-      - name: Compilation (release device arm64)
+      - name: Compilation (primary architecture)
         uses: ./.github/actions/foundry-build
         with:
-          scons-flags: ${{ env.SCONS_FLAGS }} arch=arm64
+          scons-flags: ${{ env.SCONS_FLAGS }} ${{ matrix.scons-flags }}
           platform: ios
-          target: template_release
+          target: ${{ matrix.target }}
 
-      - name: Compilation (release simulator arm64)
+      - name: Compilation (simulator x86_64)
+        if: matrix.extra-scons-flags != ''
         uses: ./.github/actions/foundry-build
         with:
-          scons-flags: ${{ env.SCONS_FLAGS }} arch=arm64 ios_simulator=yes
+          scons-flags: ${{ env.SCONS_FLAGS }} ${{ matrix.extra-scons-flags }}
           platform: ios
-          target: template_release
-
-      - name: Compilation (release simulator x86_64)
-        uses: ./.github/actions/foundry-build
-        with:
-          scons-flags: ${{ env.SCONS_FLAGS }} arch=x86_64 ios_simulator=yes
-          platform: ios
-          target: template_release
-
-      - name: Compilation (debug device arm64)
-        uses: ./.github/actions/foundry-build
-        with:
-          scons-flags: ${{ env.SCONS_FLAGS }} arch=arm64
-          platform: ios
-          target: template_debug
-
-      - name: Compilation (debug simulator arm64)
-        uses: ./.github/actions/foundry-build
-        with:
-          scons-flags: ${{ env.SCONS_FLAGS }} arch=arm64 ios_simulator=yes
-          platform: ios
-          target: template_debug
-
-      - name: Compilation (debug simulator x86_64) + bundle
-        uses: ./.github/actions/foundry-build
-        with:
-          scons-flags: ${{ env.SCONS_FLAGS }} arch=x86_64 ios_simulator=yes generate_bundle=yes
-          platform: ios
-          target: template_debug
+          target: ${{ matrix.target }}
 
       - name: Save Foundry build cache
         uses: ./.github/actions/foundry-cache-save
         with:
-          cache-name: release-ios
+          cache-name: ${{ matrix.cache-name }}
         continue-on-error: true
 
       - name: Upload artifact
         uses: ./.github/actions/upload-artifact
         with:
+          name: ${{ matrix.cache-name }}
+
+  assemble-ios:
+    needs: build-ios
+    runs-on: macos-latest
+    name: Assemble iOS templates
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Select Xcode 26
+        run: sudo xcode-select -s /Applications/Xcode_26.0.1.app
+
+      - name: Download iOS template libraries
+        uses: actions/download-artifact@v8
+        with:
+          pattern: '*-ios-*'
+          path: artifacts
+
+      - name: Assemble iOS template
+        run: |
+          set -euo pipefail
+          mkdir -p bin
+          for artifact in artifacts/*; do
+            cp "$artifact"/* bin/
+          done
+          python3 misc/scripts/package_ios_templates.py \
+            --bin-dir bin \
+            --template-dir misc/dist/apple_embedded_xcode \
+            --output bin/ios_xcode.zip
+
+      - name: Upload artifact
+        uses: ./.github/actions/upload-artifact
+        with:
           name: release-ios
+          path: bin/ios_xcode.zip
 
   # Download every build artifact, rename binaries to their canonical export
   # template filenames, assemble the .tpz export-templates package, and zip the
@@ -887,7 +921,7 @@ jobs:
       - build-macos-templates
       - build-web
       - build-android
-      - build-ios
+      - assemble-ios
     runs-on: ubuntu-24.04
     steps:
       - name: Download all artifacts
