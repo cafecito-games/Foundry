@@ -4,7 +4,9 @@ uses Bag
 trait Bag:
 	signal changed
 	const CAPACITY := 8
-	enum Kind { A, B }
+	enum Kind:
+		A = 0
+		B = A + 1
 	var kind: Kind = Kind.B
 
 func test() -> void:

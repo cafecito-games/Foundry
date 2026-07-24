@@ -1,10 +1,16 @@
 @warning_ignore("mixed_namespace_directory")
 class_name EnumTypecheckOuterClass
 
-enum MyEnum { V0, V1, V2 }
+enum MyEnum:
+	V0 = 0
+	V1 = V0 + 1
+	V2 = V1 + 1
 
 class InnerClass:
-	enum InnerEnum { V0, V2, V1 }
+	enum InnerEnum:
+		V0 = 0
+		V2 = V0 + 1
+		V1 = V2 + 1
 
 	static func test_inner_from_inner():
 		print("Inner - Inner")

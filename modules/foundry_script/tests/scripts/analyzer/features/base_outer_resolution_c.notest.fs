@@ -1,3 +1,2 @@
-enum TestEnum {
-	HELLO_WORLD
-}
+enum TestEnum:
+	HELLO_WORLD = 0

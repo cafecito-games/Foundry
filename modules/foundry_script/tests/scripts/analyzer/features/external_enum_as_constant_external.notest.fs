@@ -1,4 +1,3 @@
-enum MyEnum {
-	WAITING,
-	GODOT
-}
+enum MyEnum:
+	WAITING = 0
+	GODOT = WAITING + 1

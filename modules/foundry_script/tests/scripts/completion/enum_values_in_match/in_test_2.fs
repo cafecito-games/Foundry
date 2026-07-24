@@ -1,8 +1,7 @@
 extends Node
 
-enum TestEnum {
-    VALUE,
-}
+enum TestEnum:
+	VALUE = 0
 
 func test():
 	match TestEnum.➡:

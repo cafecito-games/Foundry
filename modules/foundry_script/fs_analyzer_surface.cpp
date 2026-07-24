@@ -1152,12 +1152,7 @@ void FSAnalyzer::resolve_class_member(FSParser::ClassNode *p_class, int p_index,
 							element.resolved = true;
 						}
 					} else {
-						if (element.index > 0) {
-							element.value = element.parent_enum->values[element.index - 1].value + 1;
-						} else {
-							element.value = 0;
-						}
-						element.resolved = true;
+						push_error(R"(Enum values must have an explicit integer value.)", element.identifier);
 					}
 
 					enum_type.enum_values[element.identifier->name] = element.value;
@@ -1212,15 +1207,7 @@ void FSAnalyzer::resolve_class_member(FSParser::ClassNode *p_class, int p_index,
 					}
 				} else {
 					check_class_member_name_conflict(p_class, member.enum_value.identifier->name, member.enum_value.parent_enum);
-
-					if (member.enum_value.index > 0) {
-						const FSParser::EnumNode::Value &prev_value = member.enum_value.parent_enum->values[member.enum_value.index - 1];
-						resolve_class_member(p_class, prev_value.identifier->name, member.enum_value.identifier);
-						member.enum_value.value = prev_value.value + 1;
-					} else {
-						member.enum_value.value = 0;
-					}
-					member.enum_value.resolved = true;
+					push_error(R"(Enum values must have an explicit integer value.)", member.enum_value.identifier);
 				}
 
 				// Also update the original references.

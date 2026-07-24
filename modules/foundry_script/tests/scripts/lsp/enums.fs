@@ -1,14 +1,20 @@
 extends Node
 
-enum {UNIT_NEUTRAL, UNIT_ENEMY, UNIT_ALLY}
-#     |          |  |        |  ^^^^^^^^^ enum:unnamed:ally -> enum:unnamed:ally
-#     |          |  ^^^^^^^^^^ enum:unnamed:enemy -> enum:unnamed:enemy
-#     ^^^^^^^^^^^^ enum:unnamed:neutral -> enum:unnamed:neutral
-enum Named {THING_1, THING_2, ANOTHER_THING = -1}
-#    |   |  |     |  |     |  ^^^^^^^^^^^^^ enum:named:thing3 -> enum:named:thing3
-#    |   |  |     |  ^^^^^^^ enum:named:thing2 -> enum:named:thing2
-#    |   |  ^^^^^^^ enum:named:thing1 -> enum:named:thing1
+enum:
+	UNIT_NEUTRAL = 0
+	#<^^^^^^^^^^ enum:unnamed:neutral -> enum:unnamed:neutral
+	UNIT_ENEMY = UNIT_NEUTRAL + 1
+	#<^^^^^^^^ enum:unnamed:enemy -> enum:unnamed:enemy
+	UNIT_ALLY = UNIT_ENEMY + 1
+	#<^^^^^^^ enum:unnamed:ally -> enum:unnamed:ally
+enum Named:
 #    ^^^^^ enum:named -> enum:named
+	THING_1 = 0
+	#<^^^^^ enum:named:thing1 -> enum:named:thing1
+	THING_2 = THING_1 + 1
+	#<^^^^^ enum:named:thing2 -> enum:named:thing2
+	ANOTHER_THING = -1
+	#<^^^^^^^^^^^ enum:named:thing3 -> enum:named:thing3
 
 func f(arg):
 	match arg:

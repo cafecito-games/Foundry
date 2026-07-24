@@ -161,7 +161,7 @@ TEST_CASE("[Modules][FoundryScript] Doc-comment annotation names remain parse er
 
 TEST_CASE("[Modules][FoundryScript] Custom annotations are rejected on unsupported targets") {
 	FSParser enum_parser;
-	CHECK(enum_parser.parse("@marker\nenum Direction { UP, DOWN }\n", "user://test.fs", false) != OK);
+	CHECK(enum_parser.parse("@marker\nenum Direction:\n\tUP = 0\n\tDOWN = 1\n", "user://test.fs", false) != OK);
 
 	FSParser declaration_parser;
 	CHECK(declaration_parser.parse("@marker\nannotation test targets METHOD\n", "user://test.fs", false) != OK);

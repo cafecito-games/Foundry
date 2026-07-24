@@ -1,4 +1,6 @@
-enum Direction { NORTH, SOUTH }
+enum Direction:
+	NORTH = 0
+	SOUTH = NORTH + 1
 
 var member_bool: bool? = null
 var member_int: int? = null

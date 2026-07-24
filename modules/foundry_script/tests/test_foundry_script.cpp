@@ -92,11 +92,11 @@ TEST_CASE("[Modules][FoundryScript] Parser does not publish invalid enum_name id
 	};
 
 	const Case cases[] = {
-		{ "class_name Existing\nenum_name Invalid { A }\n", SNAME("Existing") },
-		{ "trait_name Existing\nenum_name Invalid { A }\n", SNAME("Existing") },
-		{ "extends RefCounted\nenum_name Invalid { A }\n", StringName() },
-		{ "uses Existing\nenum_name Invalid { A }\n", StringName() },
-		{ "@tool\nenum_name Invalid { A }\n", StringName() },
+		{ "class_name Existing\nenum_name Invalid:\n\tA = 0\n", SNAME("Existing") },
+		{ "trait_name Existing\nenum_name Invalid:\n\tA = 0\n", SNAME("Existing") },
+		{ "extends RefCounted\nenum_name Invalid:\n\tA = 0\n", StringName() },
+		{ "uses Existing\nenum_name Invalid:\n\tA = 0\n", StringName() },
+		{ "@tool\nenum_name Invalid:\n\tA = 0\n", StringName() },
 	};
 
 	for (const Case &test_case : cases) {
@@ -2659,10 +2659,9 @@ extends Node2D
 TEST_CASE("[Modules][FoundryScript] Global enum files report enum metadata") {
 	TempScriptFile script("qualified_global_enum.fs", R"(
 namespace items
-enum_name WeaponType {
-	SWORD,
-	BOW,
-}
+enum_name WeaponType:
+	SWORD = 0
+	BOW = 1
 )");
 
 	String base_type = "sentinel";
@@ -2687,10 +2686,9 @@ TEST_CASE("[Modules][FoundryScript] Global enum files register with the enum fla
 
 	TempScriptFile script("register_global_enum.fs", R"(
 namespace items
-enum_name ElementKind {
-	FIRE,
-	ICE,
-}
+enum_name ElementKind:
+	FIRE = 0
+	ICE = 1
 )");
 
 	String base_type;
@@ -3118,12 +3116,11 @@ TEST_CASE("[Modules][FoundryScript] Docgen emits enum_name files as enum class d
 namespace items
 
 ## Weapon type summary.
-enum_name WeaponType {
+enum_name WeaponType:
 	## Uses a blade.
-	SWORD = 3,
+	SWORD = 3
 	## Uses a bow.
-	BOW,
-}
+	BOW = 4
 )",
 			"user://weapon_type_docgen.fs", false);
 	CHECK_EQ(err, OK);
@@ -3687,7 +3684,7 @@ TEST_CASE("[Modules][FoundryScript] Filesystem scan registers global classes wit
 	tree.write_file("player.fs", "class_name ScanPlayer\nextends Node\n");
 	tree.write_file("npc/guard.fs", "namespace scan.npcs\nclass_name ScanGuard\nextends Node\n");
 	tree.write_file("combat/sharable.fs", "trait_name ScanSharable\n\nabstract func share() -> void\n");
-	tree.write_file("items/weapon_type.fs", "enum_name ScanWeaponType {\n\tAXE,\n\tSWORD,\n}\n");
+	tree.write_file("items/weapon_type.fs", "enum_name ScanWeaponType:\n\tAXE = 0\n\tSWORD = 1\n");
 	tree.write_file("base/creature.fs", "abstract class_name ScanCreature\nextends Node\n");
 	tree.write_file("tools/painter.fs", "@tool\nclass_name ScanPainter\nextends Node\n");
 	tree.write_file("notes.txt", "not a script\n");
@@ -4074,14 +4071,16 @@ namespace characters
 class_name BaseCharacter
 extends Node
 
-enum Role { HERO = 11 }
+enum Role:
+	HERO = 11
 )");
 	TempScriptFile controller("my_character_controller.fs", R"(
 namespace characters.controllers
 class_name MyCharacterController
 extends Node
 
-enum State { IDLE = 17 }
+enum State:
+	IDLE = 17
 )");
 	TempScriptFile stat_block("stat_block.fs", R"(
 namespace shared

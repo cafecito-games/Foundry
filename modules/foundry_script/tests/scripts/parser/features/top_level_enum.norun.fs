@@ -1,6 +1,5 @@
-enum_name TopLevelParserEnum {
+enum_name TopLevelParserEnum:
 	## Stored on the first enum value.
-	A = 10,
+	A = 10
 	## Stored on the second enum value.
-	B,
-}
+	B = A + 1

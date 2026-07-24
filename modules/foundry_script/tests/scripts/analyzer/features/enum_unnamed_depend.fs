@@ -1,7 +1,6 @@
-enum {
-	V1,
-	V2 = V1,
-}
+enum:
+	V1 = 0
+	V2 = V1
 
 func test():
 	pass

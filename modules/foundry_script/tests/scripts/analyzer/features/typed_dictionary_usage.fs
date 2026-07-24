@@ -1,7 +1,9 @@
 class A: pass
 class B extends A: pass
 
-enum E { E0 = 391, E1 = 193 }
+enum E:
+	E0 = 391
+	E1 = 193
 
 func floats_identity(floats: Dictionary[float, float]): return floats
 

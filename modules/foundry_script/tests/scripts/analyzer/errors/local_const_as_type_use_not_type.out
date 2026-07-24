@@ -1,2 +1,2 @@
 FS_TEST_ANALYZER_ERROR
->> ERROR at line 5: Local constant "E" is not a valid type.
+>> ERROR at line 6: Local constant "E" is not a valid type.

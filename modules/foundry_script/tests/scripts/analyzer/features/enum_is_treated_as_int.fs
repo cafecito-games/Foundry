@@ -1,15 +1,13 @@
 # Enum is equivalent to int for comparisons and operations.
-enum MyEnum {
-	ZERO,
-	ONE,
-	TWO,
-}
+enum MyEnum:
+	ZERO = 0
+	ONE = ZERO + 1
+	TWO = ONE + 1
 
-enum OtherEnum {
-	ZERO,
-	ONE,
-	TWO,
-}
+enum OtherEnum:
+	ZERO = 0
+	ONE = ZERO + 1
+	TWO = ONE + 1
 
 func test():
 	print(MyEnum.ZERO == OtherEnum.ZERO)

@@ -1,4 +1,7 @@
-enum State { IDLE = 0, READY = 0, RUNNING = 1 }
+enum State:
+	IDLE = 0
+	READY = 0
+	RUNNING = 1
 
 func test():
 	var state := State.IDLE

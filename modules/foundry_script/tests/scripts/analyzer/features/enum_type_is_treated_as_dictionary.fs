@@ -1,8 +1,7 @@
-enum MyEnum {
-	ZERO,
-	ONE,
-	TWO,
-}
+enum MyEnum:
+	ZERO = 0
+	ONE = ZERO + 1
+	TWO = ONE + 1
 
 func test():
 	for key in MyEnum.keys():

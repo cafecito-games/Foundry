@@ -3,7 +3,8 @@ class_name TestMemberInfo
 class MyClass:
 	pass
 
-enum MyEnum {}
+enum MyEnum:
+	pass
 
 static var test_static_var_untyped
 static var test_static_var_weak_null = null

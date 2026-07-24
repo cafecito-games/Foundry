@@ -1,2 +1,4 @@
 @my_annotation
-enum Direction { UP, DOWN }
+enum Direction:
+	UP = 0
+	DOWN = UP + 1

@@ -2588,10 +2588,21 @@ FSParser::EnumNode *FSParser::parse_enum(const DeclarationModifiers &p_modifiers
 		named = true;
 	}
 
-	push_multiline(true);
-	consume(FSTokenizer::Token::BRACE_OPEN, vformat(R"(Expected "{" after %s.)", named ? "enum name" : R"("enum")"));
+	consume(FSTokenizer::Token::COLON, vformat(R"(Expected ":" after %s.)", named ? "enum name" : R"("enum")"));
+	if (!match(FSTokenizer::Token::NEWLINE)) {
+		push_error(vformat(R"(Expected an indented block after %s declaration.)", named ? "enum" : R"("enum")"));
+		complete_extents(enum_node);
+		return enum_node;
+	}
+	if (!consume(FSTokenizer::Token::INDENT, R"(Expected indented block after enum declaration.)")) {
+		complete_extents(enum_node);
+		return enum_node;
+	}
 #ifdef TOOLS_ENABLED
-	int min_enum_value_doc_line = previous.end_line + 1;
+	// The INDENT token is anchored to the first body line. Start the doc-comment
+	// search after the enum header so a comment immediately above the first value
+	// is not mistaken for being inside the indentation marker.
+	int min_enum_value_doc_line = enum_node->start_line + 1;
 #endif
 
 	HashMap<StringName, int> elements;
@@ -2601,10 +2612,27 @@ FSParser::EnumNode *FSParser::parse_enum(const DeclarationModifiers &p_modifiers
 	FSLanguage::get_singleton()->get_public_functions(&fs_funcs);
 #endif
 
-	do {
-		if (check(FSTokenizer::Token::BRACE_CLOSE)) {
-			break; // Allow trailing comma.
+	bool saw_value = false;
+	bool saw_pass = false;
+	while (!is_at_end() && !check(FSTokenizer::Token::DEDENT)) {
+		if (match(FSTokenizer::Token::NEWLINE)) {
+			continue;
 		}
+		if (match(FSTokenizer::Token::PASS)) {
+			if (saw_value || saw_pass) {
+				push_error(R"("pass" is only valid for an empty enum.)");
+			}
+			saw_pass = true;
+			end_statement(R"("pass" in enum body)");
+			continue;
+		}
+		if (saw_pass) {
+			push_error(R"(An enum containing "pass" cannot contain enum values.)");
+			advance();
+			end_statement("enum body");
+			continue;
+		}
+
 		if (consume(FSTokenizer::Token::IDENTIFIER, R"(Expected identifier for enum key.)")) {
 			FSParser::IdentifierNode *identifier = parse_identifier();
 
@@ -2625,7 +2653,10 @@ FSParser::EnumNode *FSParser::parse_enum(const DeclarationModifiers &p_modifiers
 
 			elements[item.identifier->name] = item.line;
 
-			if (match(FSTokenizer::Token::EQUAL)) {
+			if (!consume(FSTokenizer::Token::EQUAL, R"(Expected "=" and an integer value after enum key.)")) {
+				// Keep the partially parsed value so tools can still inspect the enum after
+				// reporting the syntax error, but never synthesize an implicit value.
+			} else {
 				ExpressionNode *value = parse_expression(false);
 				if (value == nullptr) {
 					push_error(R"(Expected expression value after "=".)");
@@ -2639,8 +2670,20 @@ FSParser::EnumNode *FSParser::parse_enum(const DeclarationModifiers &p_modifiers
 				// Add as member of current class.
 				current_class->add_member(item);
 			}
+			saw_value = true;
+		} else {
+			// Avoid getting stuck after a malformed member and keep the diagnostic
+			// anchored to the enum body rather than cascading into the outer class.
+			push_error(R"(Expected enum key or "pass" in enum body.)");
+			advance();
 		}
-	} while (match(FSTokenizer::Token::COMMA));
+
+		if (check(FSTokenizer::Token::COMMA)) {
+			push_error(R"(Enum values must be separated by newlines; commas are not allowed between enum members.)");
+			advance();
+		}
+		end_statement("enum value");
+	}
 
 #ifdef TOOLS_ENABLED
 	// Enum values documentation.
@@ -2669,10 +2712,8 @@ FSParser::EnumNode *FSParser::parse_enum(const DeclarationModifiers &p_modifiers
 	}
 #endif // TOOLS_ENABLED
 
-	pop_multiline();
-	consume(FSTokenizer::Token::BRACE_CLOSE, R"(Expected closing "}" for enum.)");
+	consume(FSTokenizer::Token::DEDENT, R"(Missing unindent at the end of the enum body.)");
 	complete_extents(enum_node);
-	end_statement("enum");
 
 	return enum_node;
 }

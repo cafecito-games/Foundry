@@ -1,2 +1,2 @@
 FS_TEST_ANALYZER_ERROR
->> ERROR at line 4: Local constant "E" is not resolved at this point.
+>> ERROR at line 5: Local constant "E" is not resolved at this point.

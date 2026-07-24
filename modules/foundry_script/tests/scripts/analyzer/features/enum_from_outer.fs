@@ -1,4 +1,7 @@
-enum Named { VALUE_A, VALUE_B, VALUE_C = 42 }
+enum Named:
+	VALUE_A = 0
+	VALUE_B = VALUE_A + 1
+	VALUE_C = 42
 
 class Test:
 	var a = Named.VALUE_A

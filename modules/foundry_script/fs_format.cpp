@@ -1198,7 +1198,7 @@ void FSPrinter::print_class_body(const FSParser::ClassNode *p_class, bool p_is_r
 	for (int i = 0; i < p_class->members.size(); i++) {
 		const FSParser::ClassNode::Member &member = p_class->members[i];
 		// Unnamed enum values are flattened into the class; only the first one
-		// renders (it reconstructs the whole `enum { ... }`), so skip the rest.
+		// renders (it reconstructs the whole enum: body), so skip the rest.
 		if (member.type == FSParser::ClassNode::Member::ENUM_VALUE && member.enum_value.index != 0) {
 			continue;
 		}
@@ -1283,7 +1283,7 @@ void FSPrinter::print_member(const FSParser::ClassNode::Member &p_member) {
 			break;
 		case FSParser::ClassNode::Member::ENUM_VALUE:
 			// Unnamed enum values are flattened into the class as individual members.
-			// Reconstruct the whole `enum { ... }` once, from the first value.
+			// Reconstruct the whole enum: body once, from the first value.
 			if (p_member.enum_value.index == 0 && p_member.enum_value.parent_enum != nullptr) {
 				print_enum(p_member.enum_value.parent_enum);
 			}
@@ -1590,32 +1590,49 @@ void FSPrinter::print_signal(const FSParser::SignalNode *p_signal) {
 
 void FSPrinter::print_enum(const FSParser::EnumNode *p_enum) {
 	write_indent();
-	write("enum ");
+	write("enum");
 	if (p_enum->identifier != nullptr) {
-		write(p_enum->identifier->name);
 		write(" ");
+		write(p_enum->identifier->name);
 	}
 	// Keep an enum the author wrote across several lines multi-line, so comments
 	// and value doc comments between its values keep a place to live. (When it has
 	// no values and no interior comment, `print_delimited_items` collapses it to a
 	// single-line `{}`.)
-	const bool multiline = node_was_authored_multiline(p_enum);
-	print_delimited_items(
-			"{", "}", p_enum->values.size(), multiline, p_enum->start_line, p_enum->end_line,
-			[&](int p_index) {
-				const FSParser::EnumNode::Value &value = p_enum->values[p_index];
-				write(value.identifier->name);
-				if (value.custom_value != nullptr) {
-					write(" = ");
-					print_expression(value.custom_value);
-				}
-			},
-			[&](int p_index) { return p_enum->values[p_index].line; },
-			[&](int p_index) {
-				const FSParser::EnumNode::Value &value = p_enum->values[p_index];
-				return value.custom_value != nullptr ? value.custom_value->end_line : value.line;
-			});
+	write(":");
 	newline();
+	if (p_enum->start_line > last_emitted_line) {
+		last_emitted_line = p_enum->start_line;
+	}
+	emit_trailing_comment(p_enum->start_line);
+	indent_level++;
+	if (p_enum->values.is_empty()) {
+		flush_trivia_until(p_enum->end_line + 1);
+		write_indent();
+		write("pass");
+		newline();
+	} else {
+		for (int i = 0; i < p_enum->values.size(); i++) {
+			const FSParser::EnumNode::Value &value = p_enum->values[i];
+			flush_trivia_until(value.line);
+			write_indent();
+			write(value.identifier->name);
+			write(" = ");
+			if (value.custom_value != nullptr) {
+				print_expression(value.custom_value);
+			}
+			newline();
+			emit_trailing_comment(value.custom_value != nullptr ? value.custom_value->end_line : value.line);
+			last_emitted_line = MAX(last_emitted_line, value.custom_value != nullptr ? value.custom_value->end_line : value.line);
+		}
+		flush_trivia_until(p_enum->values[p_enum->values.size() - 1].line + 2);
+	}
+	indent_level--;
+	if (p_enum->end_line > last_emitted_line) {
+		last_emitted_line = p_enum->end_line;
+	}
+	newline();
+	last_emitted_line++;
 }
 
 void FSPrinter::print_parameter(const FSParser::ParameterNode *p_parameter) {

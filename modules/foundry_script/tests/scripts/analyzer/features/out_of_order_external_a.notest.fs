@@ -7,6 +7,8 @@ class Inner:
 func f(p := A.c1) -> bool:
 	return p is int
 
-enum E2 {V = 2}
+enum E2:
+	V = 2
 
-enum {EV3 = A.EV1 + 1}
+enum:
+	EV3 = A.EV1 + 1

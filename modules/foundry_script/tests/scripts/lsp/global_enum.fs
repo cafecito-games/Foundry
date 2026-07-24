@@ -1,9 +1,8 @@
 ## Global enum documentation.
 ##
 ## Additional enum details.
-enum_name LspGlobalEnum {
+enum_name LspGlobalEnum:
 	## Alpha documentation.
-	ALPHA,
-	BETA,
-	GAMMA = 7,
-}
+	ALPHA = 0
+	BETA = ALPHA + 1
+	GAMMA = 7

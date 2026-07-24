@@ -1,7 +1,5 @@
-enum_name InnerEnumFile {
-	A,
-}
+enum_name InnerEnumFile:
+	A = 0
 
-enum Invalid {
-	B,
-}
+enum Invalid:
+	B = 0

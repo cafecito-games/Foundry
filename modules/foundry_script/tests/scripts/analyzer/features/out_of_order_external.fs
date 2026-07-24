@@ -26,14 +26,12 @@ var v2 := B.new().f()
 
 const c1 := E1.V1
 
-enum E1 {
-	V1 = B.E2.V + 2,
+enum E1:
+	V1 = B.E2.V + 2
 	V2 = V1 - 1
-}
 
 const c2 := EV2
 
-enum {
-	EV1 = 42,
+enum:
+	EV1 = 42
 	EV2 = B.EV3 + 1
-}

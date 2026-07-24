@@ -1,7 +1,6 @@
-enum Axis {
-	NORTH = 0,
-	SOUTH = 1,
-}
+enum Axis:
+	NORTH = 0
+	SOUTH = 1
 
 func pick[T](a: T, b: T) -> T:
 	return a

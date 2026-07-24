@@ -4,9 +4,11 @@ var a = [
 var d = {
 	# empty dict keeps this
 }
-enum E {
+enum E:
 	# empty enum keeps this
-}
+	pass
+
 var plain_a = []
 var plain_d = {}
-enum PlainE {}
+enum PlainE:
+	pass
