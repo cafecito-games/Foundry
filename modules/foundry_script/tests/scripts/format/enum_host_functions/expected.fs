@@ -15,6 +15,7 @@ enum Utility:
 	@rpc
 	static func reset() -> void:
 		pass
+	# keep this enum-body comment
 
 enum Empty:
 	pass

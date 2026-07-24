@@ -1641,6 +1641,9 @@ void FSPrinter::print_enum(const FSParser::EnumNode *p_enum) {
 		print_function(function);
 		last_emitted_line = MAX(last_emitted_line, function->end_line);
 	}
+	if (!p_enum->functions.is_empty()) {
+		flush_trivia_until(p_enum->functions[p_enum->functions.size() - 1]->end_line + 2);
+	}
 	indent_level--;
 	if (p_enum->end_line > last_emitted_line) {
 		last_emitted_line = p_enum->end_line;

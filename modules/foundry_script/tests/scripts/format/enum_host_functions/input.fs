@@ -11,7 +11,9 @@ enum LogLevel:
 enum Utility:
  ## Resets all state.
  @rpc
- static func reset()->void:pass
+ static func reset()->void:
+  pass
+ # keep this enum-body comment
 
 enum Empty:
  pass
