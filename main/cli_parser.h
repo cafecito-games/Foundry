@@ -2,7 +2,7 @@
 /*  cli_parser.h                                                          */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -122,6 +122,7 @@ public:
 		bool json = false;
 		bool trusted = false;
 		bool help_requested = false;
+		bool version_requested = false;
 		bool no_header = false;
 		String error;
 		PackedStringArray command_path;

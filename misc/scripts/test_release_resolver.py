@@ -58,6 +58,7 @@ def test_manual_draft_keeps_existing_rehearsal_behavior(resolver) -> None:
     assert_equal(release.version, "0.1.0", "draft version")
     assert_equal(release.tag, "v0.1.0-alpha.3", "draft tag")
     assert_equal(release.status, "alpha3", "draft engine status")
+    assert_equal(release.channel, "alpha", "draft release channel")
     assert_equal(release.release_version, "0.1.0-alpha.3", "draft release version")
     assert_equal(release.template_version, "0.1.alpha3", "draft template version")
     assert_equal(release.draft, "true", "draft mode")
@@ -129,6 +130,7 @@ def test_tag_push_still_parses_existing_release_tags(resolver) -> None:
 
     assert_equal(release.tag, "v0.1.0-rc.2", "push tag")
     assert_equal(release.status, "rc2", "push engine status")
+    assert_equal(release.channel, "rc", "push release channel")
     assert_equal(release.draft, "false", "tag push draft")
     assert_equal(release.create_tag, "false", "tag push should not create a tag")
 
@@ -156,8 +158,17 @@ def test_release_workflow_wires_manual_publish_mode() -> None:
         "CHANNEL_INPUT: ${{ inputs.channel }}",
         "python3 .github/scripts/resolve_release.py",
         "create_tag: ${{ steps.resolve.outputs.create_tag }}",
+        "channel: ${{ steps.resolve.outputs.channel }}",
+        "FOUNDRY_RELEASE_TAG: ${{ needs.resolve.outputs.tag }}",
+        "FOUNDRY_CHANNEL: ${{ needs.resolve.outputs.channel }}",
+        "FOUNDRY_GIT_COMMIT: ${{ github.sha }}",
+        'FOUNDRY_GIT_DIRTY: "false"',
+        "FOUNDRY_BUILD_ID: gh",
+        "FOUNDRY_EXTENSION_INTERFACE_FORMAT: 1",
+        "FOUNDRY_EXTENSION_ABI_REVISION: 7",
+        "verify_foundry_version.py",
         "if: needs.resolve.outputs.create_tag == 'true'",
-        'git push origin "refs/tags/$TAG_NAME"',
+        '-f ref="refs/tags/$TAG_NAME"',
     ]
     missing = [snippet for snippet in required_snippets if snippet not in workflow]
     if missing:

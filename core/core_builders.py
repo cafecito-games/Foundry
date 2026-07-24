@@ -17,6 +17,10 @@ def disabled_class_builder(target, source, env):
 # Generate version info
 def version_info_builder(target, source, env):
     with methods.generated_wrapper(str(target[0])) as file:
+        version_info = source[0].read()
+        for key in ("release_tag", "channel", "git_commit", "build_id", "target"):
+            version_info[key] = methods.to_escaped_cstring(str(version_info[key]))
+        version_info["git_dirty"] = int(bool(version_info["git_dirty"]))
         file.write(
             """\
 #define FOUNDRY_VERSION_SHORT_NAME "{short_name}"
@@ -30,7 +34,15 @@ def version_info_builder(target, source, env):
 #define FOUNDRY_VERSION_WEBSITE "{website}"
 #define FOUNDRY_VERSION_DOCS_BRANCH "{docs_branch}"
 #define FOUNDRY_VERSION_DOCS_URL "https://docs.cafecito.games/foundry/en/" FOUNDRY_VERSION_DOCS_BRANCH
-""".format(**source[0].read())
+#define FOUNDRY_VERSION_RELEASE_TAG "{release_tag}"
+#define FOUNDRY_VERSION_CHANNEL "{channel}"
+#define FOUNDRY_VERSION_GIT_COMMIT "{git_commit}"
+#define FOUNDRY_VERSION_GIT_DIRTY {git_dirty}
+#define FOUNDRY_VERSION_BUILD_ID "{build_id}"
+#define FOUNDRY_VERSION_TARGET "{target}"
+#define FOUNDRY_EXTENSION_INTERFACE_FORMAT {extension_interface_format}
+#define FOUNDRY_EXTENSION_ABI_REVISION {extension_abi_revision}
+""".format(**version_info)
         )
 
 

@@ -2,7 +2,7 @@
 /*  cli_parser.cpp                                                        */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -1352,9 +1352,24 @@ FoundryCLIParser::ParseResult FoundryCLIParser::parse(const PackedStringArray &p
 	state.index = start_index;
 	while (state.index < state.args.size()) {
 		const String arg = state.args[state.index];
+		if (state.result.version_requested) {
+			if (arg == "--json") {
+				state.result.json = true;
+				state.index++;
+				continue;
+			}
+			fail(state.result, "Version query does not accept argument: " + arg + ".");
+			return state.result;
+		}
 		if (is_help_flag(arg)) {
 			request_help(state);
 			return state.result;
+		}
+		if (arg == "--version") {
+			state.result.version_requested = true;
+			state.result.used_new_cli = true;
+			state.index++;
+			continue;
 		}
 		if (arg == "help") {
 			request_help(state);
@@ -1406,7 +1421,9 @@ FoundryCLIParser::ParseResult FoundryCLIParser::parse(const PackedStringArray &p
 		return state.result;
 	}
 
-	if (state.result.used_new_cli) {
+	if (state.result.version_requested) {
+		return state.result;
+	} else if (state.result.used_new_cli) {
 		fail(state.result, "Expected a Foundry command after global options.");
 	} else if (!state.global_prefix.is_empty()) {
 		finalize_global_args(state);

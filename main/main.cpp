@@ -2,7 +2,7 @@
 /*  main.cpp                                                              */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -65,6 +65,7 @@
 #include "main/main_timer_sync.h"
 #include "main/performance.h"
 #include "main/splash.gen.h"
+#include "main/version_info.h"
 #include "modules/register_module_types.h"
 #include "platform/register_platform_apis.h"
 #include "scene/main/scene_tree.h"
@@ -1123,6 +1124,15 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 		}
 		goto error;
 	}
+	if (cli_parse.version_requested) {
+		if (cli_parse.json) {
+			OS::get_singleton()->print("%s\n", FoundryVersionInfo::get_json().utf8().get_data());
+		} else {
+			print_line(get_full_version_string());
+		}
+		exit_err = ERR_HELP;
+		goto error;
+	}
 	if (cli_parse.help_requested) {
 		if (cli_parse.json) {
 			OS::get_singleton()->print("%s\n", FoundryCLIHelp::get_help_json(cli_parse.command_path).utf8().get_data());
@@ -1264,11 +1274,6 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 		} else if (arg == "-h" || arg == "--help" || arg == "/?") { // display help
 
 			show_help = true;
-			exit_err = ERR_HELP; // Hack to force an early exit in `main()` with a success code.
-			goto error;
-
-		} else if (arg == "--version") {
-			print_line(get_full_version_string());
 			exit_err = ERR_HELP; // Hack to force an early exit in `main()` with a success code.
 			goto error;
 

@@ -2,7 +2,7 @@
 /*  test_foundry_cli_parser.h                                             */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -61,6 +61,53 @@ static void require_kind(
 	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args(p_input));
 	REQUIRE_MESSAGE(result.ok, result.error);
 	CHECK_EQ(result.invocation.kind, p_expected_kind);
+}
+
+TEST_CASE("[FoundryCLIParser] Version query accepts JSON in either option order") {
+	FoundryCLIParser::ParseResult before = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"--version",
+			"--json",
+	}));
+	REQUIRE_MESSAGE(before.ok, before.error);
+	CHECK(before.version_requested);
+	CHECK(before.json);
+	CHECK(before.command_path.is_empty());
+
+	FoundryCLIParser::ParseResult after = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"--json",
+			"--version",
+	}));
+	REQUIRE_MESSAGE(after.ok, after.error);
+	CHECK(after.version_requested);
+	CHECK(after.json);
+}
+
+TEST_CASE("[FoundryCLIParser] Version query rejects command arguments") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"--version",
+			"script",
+			"format",
+	}));
+	CHECK_FALSE(result.ok);
+	CHECK(result.error.contains("Version"));
+}
+
+TEST_CASE("[FoundryCLIParser] Version-like user arguments stay behind separator") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"project",
+			"run",
+			"--project",
+			"demo",
+			"--",
+			"--version",
+	}));
+	REQUIRE_MESSAGE(result.ok, result.error);
+	CHECK_FALSE(result.version_requested);
+	CHECK_EQ(result.user_args, make_args({ "--version" }));
 }
 
 TEST_CASE("[FoundryCLIParser] Project run keeps user arguments behind separator") {

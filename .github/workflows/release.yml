@@ -44,6 +44,7 @@ jobs:
       version: ${{ steps.resolve.outputs.version }}
       tag: ${{ steps.resolve.outputs.tag }}
       status: ${{ steps.resolve.outputs.status }}
+      channel: ${{ steps.resolve.outputs.channel }}
       release_version: ${{ steps.resolve.outputs.release_version }}
       release_name: ${{ steps.resolve.outputs.release_name }}
       template_version: ${{ steps.resolve.outputs.template_version }}
@@ -83,7 +84,15 @@ jobs:
           - target: template_release
             template_scons_flags: foundry_script_frontend=no
     env:
+      FOUNDRY_VERSION: ${{ needs.resolve.outputs.version }}
       FOUNDRY_VERSION_STATUS: ${{ needs.resolve.outputs.status }}
+      FOUNDRY_RELEASE_TAG: ${{ needs.resolve.outputs.tag }}
+      FOUNDRY_CHANNEL: ${{ needs.resolve.outputs.channel }}
+      FOUNDRY_GIT_COMMIT: ${{ github.sha }}
+      FOUNDRY_GIT_DIRTY: "false"
+      FOUNDRY_BUILD_ID: gh
+      FOUNDRY_EXTENSION_INTERFACE_FORMAT: 1
+      FOUNDRY_EXTENSION_ABI_REVISION: 7
       SCONS_FLAGS: production=yes module_text_server_fb_enabled=yes
     steps:
       - name: Checkout
@@ -123,6 +132,10 @@ jobs:
           strip bin/foundry.*
           chmod +x bin/foundry.*
 
+      - name: Verify version metadata
+        if: matrix.target == 'editor'
+        run: python3 misc/scripts/verify_foundry_version.py bin/foundry.linuxbsd.editor.x86_64
+
       - name: Generate API artifact bundle
         if: matrix.target == 'editor'
         env:
@@ -154,7 +167,15 @@ jobs:
     name: Windows ${{ matrix.target }}
     timeout-minutes: 120
     env:
+      FOUNDRY_VERSION: ${{ needs.resolve.outputs.version }}
       FOUNDRY_VERSION_STATUS: ${{ needs.resolve.outputs.status }}
+      FOUNDRY_RELEASE_TAG: ${{ needs.resolve.outputs.tag }}
+      FOUNDRY_CHANNEL: ${{ needs.resolve.outputs.channel }}
+      FOUNDRY_GIT_COMMIT: ${{ github.sha }}
+      FOUNDRY_GIT_DIRTY: "false"
+      FOUNDRY_BUILD_ID: gh
+      FOUNDRY_EXTENSION_INTERFACE_FORMAT: 1
+      FOUNDRY_EXTENSION_ABI_REVISION: 7
       SCONS_FLAGS: >-
         production=yes
         module_text_server_fb_enabled=yes
@@ -249,7 +270,15 @@ jobs:
     name: macOS editor
     timeout-minutes: 120
     env:
+      FOUNDRY_VERSION: ${{ needs.resolve.outputs.version }}
       FOUNDRY_VERSION_STATUS: ${{ needs.resolve.outputs.status }}
+      FOUNDRY_RELEASE_TAG: ${{ needs.resolve.outputs.tag }}
+      FOUNDRY_CHANNEL: ${{ needs.resolve.outputs.channel }}
+      FOUNDRY_GIT_COMMIT: ${{ github.sha }}
+      FOUNDRY_GIT_DIRTY: "false"
+      FOUNDRY_BUILD_ID: gh
+      FOUNDRY_EXTENSION_INTERFACE_FORMAT: 1
+      FOUNDRY_EXTENSION_ABI_REVISION: 7
       SCONS_FLAGS: >-
         production=yes
         module_text_server_fb_enabled=yes
@@ -410,6 +439,12 @@ jobs:
           xcrun stapler staple "$APP_DIR"
           rm -f "$API_KEY_PATH" "$NOTARIZE_ZIP" "$SUBMIT_JSON"
 
+      - name: Verify version metadata
+        run: |
+          APP_DIR="$(find bin -maxdepth 1 -name '*.app' -print -quit)"
+          BINARY="$(find "$APP_DIR/Contents/MacOS" -type f -print -quit)"
+          python3 misc/scripts/verify_foundry_version.py "$BINARY"
+
       - name: Remove signing keychain
         if: always()
         run: security delete-keychain "$KEYCHAIN_PATH" || true
@@ -434,7 +469,15 @@ jobs:
     name: macOS templates
     timeout-minutes: 150
     env:
+      FOUNDRY_VERSION: ${{ needs.resolve.outputs.version }}
       FOUNDRY_VERSION_STATUS: ${{ needs.resolve.outputs.status }}
+      FOUNDRY_RELEASE_TAG: ${{ needs.resolve.outputs.tag }}
+      FOUNDRY_CHANNEL: ${{ needs.resolve.outputs.channel }}
+      FOUNDRY_GIT_COMMIT: ${{ github.sha }}
+      FOUNDRY_GIT_DIRTY: "false"
+      FOUNDRY_BUILD_ID: gh
+      FOUNDRY_EXTENSION_INTERFACE_FORMAT: 1
+      FOUNDRY_EXTENSION_ABI_REVISION: 7
       SCONS_FLAGS: >-
         production=yes
         module_text_server_fb_enabled=yes
@@ -531,7 +574,15 @@ jobs:
     name: Web ${{ matrix.name }}
     timeout-minutes: 90
     env:
+      FOUNDRY_VERSION: ${{ needs.resolve.outputs.version }}
       FOUNDRY_VERSION_STATUS: ${{ needs.resolve.outputs.status }}
+      FOUNDRY_RELEASE_TAG: ${{ needs.resolve.outputs.tag }}
+      FOUNDRY_CHANNEL: ${{ needs.resolve.outputs.channel }}
+      FOUNDRY_GIT_COMMIT: ${{ github.sha }}
+      FOUNDRY_GIT_DIRTY: "false"
+      FOUNDRY_BUILD_ID: gh
+      FOUNDRY_EXTENSION_INTERFACE_FORMAT: 1
+      FOUNDRY_EXTENSION_ABI_REVISION: 7
       SCONS_FLAGS: production=yes debug_symbols=no use_closure_compiler=yes foundry_script_frontend=no
       EM_VERSION: 4.0.11
     strategy:
@@ -615,7 +666,15 @@ jobs:
     name: Android ${{ matrix.name }}
     timeout-minutes: 120
     env:
+      FOUNDRY_VERSION: ${{ needs.resolve.outputs.version }}
       FOUNDRY_VERSION_STATUS: ${{ needs.resolve.outputs.status }}
+      FOUNDRY_RELEASE_TAG: ${{ needs.resolve.outputs.tag }}
+      FOUNDRY_CHANNEL: ${{ needs.resolve.outputs.channel }}
+      FOUNDRY_GIT_COMMIT: ${{ github.sha }}
+      FOUNDRY_GIT_DIRTY: "false"
+      FOUNDRY_BUILD_ID: gh
+      FOUNDRY_EXTENSION_INTERFACE_FORMAT: 1
+      FOUNDRY_EXTENSION_ABI_REVISION: 7
       SCONS_FLAGS: production=yes module_text_server_fb_enabled=yes tests=no swappy=yes
     strategy:
       fail-fast: false
@@ -731,7 +790,15 @@ jobs:
     name: iOS templates
     timeout-minutes: 150
     env:
+      FOUNDRY_VERSION: ${{ needs.resolve.outputs.version }}
       FOUNDRY_VERSION_STATUS: ${{ needs.resolve.outputs.status }}
+      FOUNDRY_RELEASE_TAG: ${{ needs.resolve.outputs.tag }}
+      FOUNDRY_CHANNEL: ${{ needs.resolve.outputs.channel }}
+      FOUNDRY_GIT_COMMIT: ${{ github.sha }}
+      FOUNDRY_GIT_DIRTY: "false"
+      FOUNDRY_BUILD_ID: gh
+      FOUNDRY_EXTENSION_INTERFACE_FORMAT: 1
+      FOUNDRY_EXTENSION_ABI_REVISION: 7
       SCONS_FLAGS: production=yes module_text_server_fb_enabled=yes tests=no debug_symbols=no foundry_script_frontend=no
     steps:
       - name: Checkout
