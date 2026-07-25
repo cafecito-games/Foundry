@@ -30,6 +30,9 @@
 
 #include "fs_name_mangler_application.h"
 
+#include "fs_utility_functions.h"
+
+#include "core/object/class_db.h"
 #include "core/string/char_utils.h"
 
 #ifdef TOOLS_ENABLED
@@ -106,12 +109,14 @@ struct FSNameManglerApplication::Transaction::Data {
 		FSFunction *function = nullptr;
 		StringName owner_name;
 		bool lambda = false;
+		bool safe_arguments = false;
 
 		StringName name;
 		Vector<FSDataType> argument_types;
 		FSDataType return_type;
 		MethodInfo method_info;
 		Vector<StringName> global_names;
+		HashMap<StringName, StringName> parameter_names;
 	};
 
 	RBMap<StringName, StringName> rename_map;
@@ -315,11 +320,37 @@ struct FSNameManglerApplication::Transaction::Data {
 		}
 	}
 
-	void rewrite_method_info(MethodInfo &r_info, const StringName &p_owner_name) const {
+	HashMap<StringName, StringName> allocate_parameter_names(const MethodInfo &p_info) const {
+		HashSet<StringName> reserved;
+		for (const PropertyInfo &argument : p_info.arguments) {
+			reserved.insert(argument.name);
+		}
+
+		HashMap<StringName, StringName> result;
+		uint64_t ordinal = 0;
+		for (const PropertyInfo &argument : p_info.arguments) {
+			StringName candidate;
+			do {
+				candidate = StringName("_fsb_arg_" + String::num_int64(ordinal++, 36));
+			} while (reserved.has(candidate));
+			reserved.insert(candidate);
+			result.insert(argument.name, candidate);
+		}
+		return result;
+	}
+
+	void rewrite_method_info(MethodInfo &r_info, const StringName &p_owner_name,
+			const HashMap<StringName, StringName> *p_parameter_names = nullptr) const {
 		r_info.name = String(rename_atomic(p_owner_name));
 		rewrite_property_info(r_info.return_val);
 		for (PropertyInfo &argument : r_info.arguments) {
 			rewrite_property_info(argument);
+			if (p_parameter_names != nullptr) {
+				const StringName *renamed = p_parameter_names->getptr(argument.name);
+				if (renamed != nullptr) {
+					argument.name = *renamed;
+				}
+			}
 		}
 	}
 
@@ -402,16 +433,269 @@ struct FSNameManglerApplication::Transaction::Data {
 		snapshot.function = p_function;
 		snapshot.owner_name = p_owner_name;
 		snapshot.lambda = p_lambda;
+		snapshot.safe_arguments = p_lambda ||
+				(p_owner_name != StringName() && rename_map.has(p_owner_name));
 		snapshot.name = p_function->name;
 		snapshot.argument_types = p_function->argument_types;
 		snapshot.return_type = p_function->return_type;
 		snapshot.method_info = p_function->method_info;
 		snapshot.global_names = p_function->global_names;
+		if (snapshot.safe_arguments) {
+			snapshot.parameter_names =
+					allocate_parameter_names(snapshot.method_info);
+		}
 		function_snapshots.push_back(snapshot);
 
 		for (FSFunction *lambda : p_function->lambdas) {
 			snapshot_function(lambda, StringName(), true);
 		}
+	}
+
+	static bool variant_contains_name(const Variant &p_value, const StringName &p_name,
+			int p_depth = 0) {
+		if (p_depth > Variant::MAX_RECURSION_DEPTH) {
+			return false;
+		}
+		switch (p_value.get_type()) {
+			case Variant::STRING:
+				return String(p_value) == String(p_name);
+			case Variant::STRING_NAME:
+				return StringName(p_value) == p_name;
+			case Variant::NODE_PATH: {
+				const NodePath path = p_value;
+				for (int i = 0; i < path.get_subname_count(); i++) {
+					if (path.get_subname(i) == p_name) {
+						return true;
+					}
+				}
+			} break;
+			case Variant::CALLABLE:
+				return Callable(p_value).get_method() == p_name;
+			case Variant::SIGNAL:
+				return Signal(p_value).get_name() == p_name;
+			case Variant::ARRAY: {
+				const Array array = p_value;
+				const Variant typed_script = array.get_typed_script();
+				if (typed_script.get_type() == Variant::OBJECT) {
+					Resource *resource =
+							Object::cast_to<Resource>(Object::cast_to<Object>(typed_script));
+					if (resource != nullptr &&
+							resource->get_path().contains(String(p_name))) {
+						return true;
+					}
+				}
+				for (const Variant &value : array) {
+					if (variant_contains_name(value, p_name, p_depth + 1)) {
+						return true;
+					}
+				}
+			} break;
+			case Variant::DICTIONARY: {
+				const Dictionary dictionary = p_value;
+				const Array keys = dictionary.keys();
+				for (const Variant &key : keys) {
+					if (variant_contains_name(key, p_name, p_depth + 1) ||
+							variant_contains_name(dictionary[key], p_name, p_depth + 1)) {
+						return true;
+					}
+				}
+			} break;
+			case Variant::OBJECT: {
+				Object *object = p_value;
+				Resource *resource = Object::cast_to<Resource>(object);
+				if (resource != nullptr &&
+						resource->get_path().contains(String(p_name))) {
+					return true;
+				}
+			} break;
+			default:
+				break;
+		}
+		return false;
+	}
+
+	static bool annotation_usages_contain_name(
+			const Vector<FoundryScript::AnnotationUsage> &p_usages,
+			const StringName &p_name) {
+		for (const FoundryScript::AnnotationUsage &usage : p_usages) {
+			if (variant_contains_name(usage.args, p_name) ||
+					variant_contains_name(usage.kwargs, p_name)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	bool find_protected_surface(const StringName &p_name, String &r_surface) const {
+		if (Variant::has_utility_function(p_name) ||
+				FSUtilityFunctions::function_exists(p_name)) {
+			r_surface = "utility function";
+			return true;
+		}
+
+		for (int type = 0; type < Variant::VARIANT_MAX; type++) {
+			if (Variant::has_builtin_method((Variant::Type)type, p_name)) {
+				r_surface = "Variant builtin method";
+				return true;
+			}
+			if (Variant::has_member((Variant::Type)type, p_name)) {
+				r_surface = "Variant member";
+				return true;
+			}
+		}
+
+		for (const ClassSnapshot &snapshot : class_snapshots) {
+			const FoundryScript *script = snapshot.script.ptr();
+			const String script_path = script->get_script_path();
+			if (script_path.contains(String(p_name)) ||
+					script->simplified_icon_path.contains(String(p_name))) {
+				r_surface = "resource path";
+				return true;
+			}
+			if (!script->registered_conformance_source.is_empty() &&
+					script->registered_conformance_source.contains(String(p_name))) {
+				r_surface = "conformance source path";
+				return true;
+			}
+			if (script->native.is_valid()) {
+				const StringName native_name = script->native->get_name();
+				if (native_name == p_name ||
+						ClassDB::has_method(native_name, p_name) ||
+						ClassDB::has_property(native_name, p_name) ||
+						ClassDB::has_signal(native_name, p_name)) {
+					r_surface = vformat("native API `%s`", native_name);
+					return true;
+				}
+			}
+			if (variant_contains_name(script->rpc_config, p_name)) {
+				r_surface = "RPC configuration";
+				return true;
+			}
+			for (const Variant &value : script->static_variables) {
+				if (variant_contains_name(value, p_name)) {
+					r_surface = "static value";
+					return true;
+				}
+			}
+			for (const KeyValue<StringName, Variant> &entry : snapshot.constants) {
+				if (variant_contains_name(entry.value, p_name)) {
+					r_surface = "constant value";
+					return true;
+				}
+			}
+			for (const KeyValue<StringName, Variant> &entry :
+					snapshot.member_default_values) {
+				if (variant_contains_name(entry.value, p_name)) {
+					r_surface = "member default value";
+					return true;
+				}
+			}
+			if (annotation_usages_contain_name(script->class_annotations, p_name)) {
+				r_surface = "annotation argument";
+				return true;
+			}
+		}
+
+		for (const FunctionSnapshot &snapshot : function_snapshots) {
+			const FSFunction *function = snapshot.function;
+			if (String(function->source).contains(String(p_name))) {
+				r_surface = "script path";
+				return true;
+			}
+			if (variant_contains_name(function->rpc_config, p_name)) {
+				r_surface = "RPC configuration";
+				return true;
+			}
+			for (const Variant &value : function->constants) {
+				if (variant_contains_name(value, p_name)) {
+					r_surface = "function constant";
+					return true;
+				}
+			}
+			for (const Variant &value : function->method_info.default_arguments) {
+				if (variant_contains_name(value, p_name)) {
+					r_surface = "default argument";
+					return true;
+				}
+			}
+			for (const StringName &name : function->builtin_method_names) {
+				if (name == p_name) {
+					r_surface = "builtin method table";
+					return true;
+				}
+			}
+			for (const FSFunction::ExportFixups::TypedNameKey &key :
+					function->export_fixups.setters) {
+				if (key.name == p_name) {
+					r_surface = "Variant setter fixup";
+					return true;
+				}
+			}
+			for (const FSFunction::ExportFixups::TypedNameKey &key :
+					function->export_fixups.getters) {
+				if (key.name == p_name) {
+					r_surface = "Variant getter fixup";
+					return true;
+				}
+			}
+			for (const FSFunction::ExportFixups::TypedNameKey &key :
+					function->export_fixups.builtin_methods) {
+				if (key.name == p_name) {
+					r_surface = "Variant builtin-method fixup";
+					return true;
+				}
+			}
+			for (const FSFunction::ExportFixups::MethodBindKey &key :
+					function->export_fixups.method_binds) {
+				if (key.class_name == p_name || key.method_name == p_name) {
+					r_surface = "ClassDB MethodBind fixup";
+					return true;
+				}
+			}
+			for (const StringName &name : function->export_fixups.utilities) {
+				if (name == p_name) {
+					r_surface = "Variant utility fixup";
+					return true;
+				}
+			}
+			for (const StringName &name : function->export_fixups.gds_utilities) {
+				if (name == p_name) {
+					r_surface = "Foundry utility fixup";
+					return true;
+				}
+			}
+			for (const FSFunction::ExportFixups::GlobalStore &global_store :
+					function->export_fixups.global_stores) {
+				if (global_store.global_name == p_name) {
+					r_surface = "global-store/autoload fixup";
+					return true;
+				}
+			}
+			for (const StringName &name : function->export_fixups.named_globals) {
+				if (name == p_name) {
+					r_surface = "named global";
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	bool validate_protected_names(Vector<Diagnostic> &r_diagnostics) const {
+		for (const KeyValue<StringName, StringName> &entry : rename_map) {
+			String surface;
+			if (!find_protected_surface(entry.key, surface)) {
+				continue;
+			}
+			Diagnostic diagnostic;
+			diagnostic.surface = surface;
+			diagnostic.source_name = entry.key;
+			diagnostic.message =
+					"Mapped source occurs on a protected native or dynamic surface.";
+			r_diagnostics.push_back(diagnostic);
+			return false;
+		}
+		return true;
 	}
 
 	void snapshot_functions() {
@@ -488,6 +772,9 @@ struct FSNameManglerApplication::Transaction::Data {
 		}
 		build_identity_plan();
 		snapshot_functions();
+		if (!validate_protected_names(r_diagnostics)) {
+			return false;
+		}
 		return true;
 	}
 
@@ -554,7 +841,10 @@ struct FSNameManglerApplication::Transaction::Data {
 		for (const KeyValue<StringName, MethodInfo> &signal : snapshot.signals) {
 			const StringName key = rename_atomic(signal.key);
 			MethodInfo info = signal.value;
-			rewrite_method_info(info, signal.key);
+			const HashMap<StringName, StringName> parameter_names =
+					rename_map.has(signal.key) ? allocate_parameter_names(signal.value) : HashMap<StringName, StringName>();
+			rewrite_method_info(info, signal.key,
+					parameter_names.is_empty() ? nullptr : &parameter_names);
 			script->_signals.insert(key, info);
 		}
 
@@ -568,7 +858,10 @@ struct FSNameManglerApplication::Transaction::Data {
 				snapshot.abstract_trait_requirements) {
 			FoundryScript::AbstractTraitRequirement transformed = requirement.value;
 			rewrite_data_type(transformed.return_type);
-			rewrite_method_info(transformed.method_info, requirement.key);
+			const HashMap<StringName, StringName> parameter_names =
+					rename_map.has(requirement.key) ? allocate_parameter_names(requirement.value.method_info) : HashMap<StringName, StringName>();
+			rewrite_method_info(transformed.method_info, requirement.key,
+					parameter_names.is_empty() ? nullptr : &parameter_names);
 			script->abstract_trait_requirements.insert(
 					rename_atomic(requirement.key), transformed);
 		}
@@ -582,10 +875,53 @@ struct FSNameManglerApplication::Transaction::Data {
 		script->variable_annotations = rewrite_atomic_key_map(snapshot.variable_annotations);
 		script->signal_annotations = rewrite_atomic_key_map(snapshot.signal_annotations);
 		script->constant_annotations = rewrite_atomic_key_map(snapshot.constant_annotations);
-		script->method_parameter_annotations =
-				rewrite_atomic_key_map(snapshot.method_parameter_annotations);
-		script->signal_parameter_annotations =
-				rewrite_atomic_key_map(snapshot.signal_parameter_annotations);
+		script->method_parameter_annotations.clear();
+		for (const KeyValue<StringName,
+					 HashMap<StringName, Vector<FoundryScript::AnnotationUsage>>> &owner :
+				snapshot.method_parameter_annotations) {
+			HashMap<StringName, StringName> parameter_names;
+			for (const FunctionSnapshot &function_snapshot : function_snapshots) {
+				if (function_snapshot.function->_script == script &&
+						function_snapshot.owner_name == owner.key &&
+						function_snapshot.safe_arguments) {
+					parameter_names = function_snapshot.parameter_names;
+					break;
+				}
+			}
+			HashMap<StringName, Vector<FoundryScript::AnnotationUsage>> transformed;
+			for (const KeyValue<StringName,
+						 Vector<FoundryScript::AnnotationUsage>> &parameter :
+					owner.value) {
+				const StringName *renamed =
+						parameter_names.getptr(parameter.key);
+				transformed.insert(
+						renamed != nullptr ? *renamed : parameter.key,
+						parameter.value);
+			}
+			script->method_parameter_annotations.insert(
+					rename_atomic(owner.key), transformed);
+		}
+
+		script->signal_parameter_annotations.clear();
+		for (const KeyValue<StringName,
+					 HashMap<StringName, Vector<FoundryScript::AnnotationUsage>>> &owner :
+				snapshot.signal_parameter_annotations) {
+			const MethodInfo *signal_info = snapshot.signals.getptr(owner.key);
+			const HashMap<StringName, StringName> parameter_names =
+					signal_info != nullptr && rename_map.has(owner.key) ? allocate_parameter_names(*signal_info) : HashMap<StringName, StringName>();
+			HashMap<StringName, Vector<FoundryScript::AnnotationUsage>> transformed;
+			for (const KeyValue<StringName,
+						 Vector<FoundryScript::AnnotationUsage>> &parameter :
+					owner.value) {
+				const StringName *renamed =
+						parameter_names.getptr(parameter.key);
+				transformed.insert(
+						renamed != nullptr ? *renamed : parameter.key,
+						parameter.value);
+			}
+			script->signal_parameter_annotations.insert(
+					rename_atomic(owner.key), transformed);
+		}
 
 		script->old_static_variables_indices.clear();
 		for (const KeyValue<StringName, FoundryScript::MemberInfo> &entry :
@@ -621,7 +957,8 @@ struct FSNameManglerApplication::Transaction::Data {
 		function->method_info = snapshot.method_info;
 		const StringName owner_name =
 				snapshot.owner_name != StringName() ? snapshot.owner_name : snapshot.name;
-		rewrite_method_info(function->method_info, owner_name);
+		rewrite_method_info(function->method_info, owner_name,
+				snapshot.safe_arguments ? &snapshot.parameter_names : nullptr);
 		if (snapshot.lambda) {
 			function->method_info.name = snapshot.method_info.name;
 		}

@@ -132,6 +132,170 @@ TEST_CASE("[FoundryScript][NameManglerApplication] Rewrites serialized surfaces 
 	CHECK_EQ(name_mangler_application_serialize(script), baseline);
 }
 
+TEST_CASE("[FoundryScript][NameManglerApplication] Renames only safe argument names") {
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"annotation private_marker_parameter targets PARAMETER\n"
+			"\n"
+			"signal private_marker_signal(@private_marker_parameter private_marker_signal_arg: int)\n"
+			"\n"
+			"enum PrivateMarkerMode:\n"
+			"\tREADY = 1\n"
+			"\tfunc private_marker_enum_method(private_marker_enum_arg: int) -> int:\n"
+			"\t\treturn self + private_marker_enum_arg\n"
+			"\n"
+			"func private_marker_method("
+			"@private_marker_parameter private_marker_arg: int, _fsb_arg_0: int) -> int:\n"
+			"\treturn private_marker_arg + _fsb_arg_0\n"
+			"\n"
+			"@keep_name\n"
+			"func kept_method(kept_parameter_marker: int) -> Callable:\n"
+			"\treturn func(private_marker_lambda_arg: int) -> int:\n"
+			"\t\treturn private_marker_lambda_arg + kept_parameter_marker\n"
+			"\n"
+			"@rpc func rpc_method(rpc_parameter_marker: int) -> void:\n"
+			"\tpass\n");
+	FSNameManglerAnalysis::Input input;
+	input.scripts.push_back(script);
+	const FSNameManglerAnalysis::Result analysis = FSNameManglerAnalysis::analyze(input);
+	REQUIRE_EQ(analysis.error, OK);
+	REQUIRE(analysis.rename_map.has(SNAME("private_marker_method")));
+	REQUIRE(analysis.rename_map.has(SNAME("private_marker_signal")));
+	REQUIRE(analysis.rename_map.has(SNAME("private_marker_enum_method")));
+	REQUIRE_FALSE(analysis.rename_map.has(SNAME("kept_method")));
+	REQUIRE_FALSE(analysis.rename_map.has(SNAME("rpc_method")));
+
+	FSNameManglerApplication::Transaction transaction;
+	Vector<FSNameManglerApplication::Diagnostic> diagnostics;
+	REQUIRE_EQ(transaction.begin(input.scripts, analysis.rename_map, diagnostics), OK);
+
+	const StringName renamed_method = analysis.rename_map[SNAME("private_marker_method")];
+	const StringName renamed_signal = analysis.rename_map[SNAME("private_marker_signal")];
+	const StringName renamed_enum = analysis.rename_map[SNAME("PrivateMarkerMode")];
+	const StringName renamed_enum_method =
+			analysis.rename_map[SNAME("private_marker_enum_method")];
+
+	const HashMap<StringName, FSFunction *>::ConstIterator method_entry =
+			script->get_member_functions().find(renamed_method);
+	REQUIRE(method_entry);
+	if (method_entry) {
+		const MethodInfo private_info = method_entry->value->get_method_info();
+		REQUIRE_EQ(private_info.arguments.size(), 2);
+		CHECK(String(private_info.arguments[0].name).begins_with("_fsb_arg_"));
+		CHECK(String(private_info.arguments[1].name).begins_with("_fsb_arg_"));
+		CHECK_NE(private_info.arguments[0].name, private_info.arguments[1].name);
+		CHECK_NE(private_info.arguments[0].name, SNAME("_fsb_arg_0"));
+		CHECK_NE(private_info.arguments[1].name, SNAME("_fsb_arg_0"));
+	}
+
+	const HashMap<StringName, MethodInfo>::ConstIterator signal_entry =
+			script->get_signals().find(renamed_signal);
+	REQUIRE(signal_entry);
+	if (signal_entry) {
+		REQUIRE_EQ(signal_entry->value.arguments.size(), 1);
+		CHECK(String(signal_entry->value.arguments[0].name).begins_with("_fsb_arg_"));
+	}
+
+	const FSFunction *enum_method =
+			script->get_enum_function(renamed_enum, renamed_enum_method, false);
+	REQUIRE(enum_method != nullptr);
+	if (enum_method != nullptr) {
+		const MethodInfo enum_info = enum_method->get_method_info();
+		REQUIRE_EQ(enum_info.arguments.size(), 1);
+		CHECK(String(enum_info.arguments[0].name).begins_with("_fsb_arg_"));
+	}
+
+	const HashMap<StringName, FSFunction *>::ConstIterator kept_entry =
+			script->get_member_functions().find(SNAME("kept_method"));
+	REQUIRE(kept_entry);
+	if (kept_entry) {
+		const MethodInfo kept_info = kept_entry->value->get_method_info();
+		REQUIRE_EQ(kept_info.arguments.size(), 1);
+		CHECK_EQ(kept_info.arguments[0].name, SNAME("kept_parameter_marker"));
+		REQUIRE_EQ(kept_entry->value->get_lambdas().size(), 1);
+		const MethodInfo lambda_info =
+				kept_entry->value->get_lambdas()[0]->get_method_info();
+		REQUIRE_FALSE(lambda_info.arguments.is_empty());
+		for (const PropertyInfo &argument : lambda_info.arguments) {
+			CHECK(String(argument.name).begins_with("_fsb_arg_"));
+		}
+	}
+
+	const HashMap<StringName, FSFunction *>::ConstIterator rpc_entry =
+			script->get_member_functions().find(SNAME("rpc_method"));
+	REQUIRE(rpc_entry);
+	if (rpc_entry) {
+		const MethodInfo rpc_info = rpc_entry->value->get_method_info();
+		REQUIRE_EQ(rpc_info.arguments.size(), 1);
+		CHECK_EQ(rpc_info.arguments[0].name, SNAME("rpc_parameter_marker"));
+	}
+
+	const auto &method_parameter_annotations =
+			script->get_method_parameter_annotations();
+	REQUIRE(method_parameter_annotations.has(renamed_method));
+	if (method_parameter_annotations.has(renamed_method) && method_entry) {
+		const MethodInfo private_info = method_entry->value->get_method_info();
+		CHECK(method_parameter_annotations[renamed_method].has(
+				private_info.arguments[0].name));
+		CHECK_FALSE(method_parameter_annotations[renamed_method].has(
+				SNAME("private_marker_arg")));
+	}
+
+	const auto &signal_parameter_annotations =
+			script->get_signal_parameter_annotations();
+	REQUIRE(signal_parameter_annotations.has(renamed_signal));
+	if (signal_parameter_annotations.has(renamed_signal) && signal_entry) {
+		CHECK(signal_parameter_annotations[renamed_signal].has(
+				signal_entry->value.arguments[0].name));
+		CHECK_FALSE(signal_parameter_annotations[renamed_signal].has(
+				SNAME("private_marker_signal_arg")));
+	}
+}
+
+TEST_CASE("[FoundryScript][NameManglerApplication] Rejects protected mapped names atomically") {
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"extends Node\n"
+			"\n"
+			"var private_marker_member: int\n"
+			"\n"
+			"@rpc func rpc_method(rpc_parameter_marker: int) -> void:\n"
+			"\tpass\n"
+			"\n"
+			"func private_marker_method(text: String) -> int:\n"
+			"\tqueue_free()\n"
+			"\tprint(text)\n"
+			"\treturn text.length()\n");
+	FSNameManglerAnalysis::Input input;
+	input.scripts.push_back(script);
+	const FSNameManglerAnalysis::Result analysis = FSNameManglerAnalysis::analyze(input);
+	REQUIRE_EQ(analysis.error, OK);
+	const Vector<uint8_t> baseline = name_mangler_application_serialize(script);
+
+	const StringName protected_names[] = {
+		SNAME("rpc_method"),
+		SNAME("queue_free"),
+		SNAME("length"),
+		SNAME("print"),
+	};
+	for (int i = 0; i < 4; i++) {
+		CAPTURE(protected_names[i]);
+		RBMap<StringName, StringName> invalid_map = analysis.rename_map;
+		invalid_map.insert(protected_names[i],
+				StringName(vformat("_fsb_manual_%d", i)));
+
+		FSNameManglerApplication::Transaction transaction;
+		Vector<FSNameManglerApplication::Diagnostic> diagnostics;
+		CHECK_NE(transaction.begin(input.scripts, invalid_map, diagnostics), OK);
+		CHECK_FALSE(transaction.is_active());
+		CHECK_EQ(transaction.get_state(),
+				FSNameManglerApplication::Transaction::STATE_FINISHED);
+		CHECK_FALSE(diagnostics.is_empty());
+		if (!diagnostics.is_empty()) {
+			CHECK(diagnostics[0].format().contains("protected"));
+		}
+		CHECK_EQ(name_mangler_application_serialize(script), baseline);
+	}
+}
+
 } // namespace FSTests
 
 #endif // TOOLS_ENABLED
