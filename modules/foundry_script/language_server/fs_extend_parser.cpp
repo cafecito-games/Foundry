@@ -201,6 +201,33 @@ LSP::Range ExtendFSParser::range_of_node(const FSParser::Node *p_node) const {
 	return FoundryRange(start, end).to_lsp(lines);
 }
 
+void ExtendFSParser::append_enum_symbol_children(const FSParser::EnumNode *p_enum, LSP::DocumentSymbol &r_symbol) {
+	const String uri = get_uri();
+
+	for (const FSParser::EnumNode::Value &value : p_enum->values) {
+		LSP::DocumentSymbol child;
+
+		child.name = value.identifier->name;
+		child.kind = LSP::SymbolKind::EnumMember;
+		child.deprecated = false;
+		child.range.start = FoundryPosition(value.line, value.start_column).to_lsp(lines);
+		child.range.end = FoundryPosition(value.line, value.end_column).to_lsp(lines);
+		child.selectionRange = range_of_node(value.identifier);
+		child.documentation = value.doc_data.description;
+		child.uri = uri;
+		child.script_path = path;
+		child.detail = child.name + " = " + itos(value.value);
+
+		r_symbol.children.push_back(child);
+	}
+
+	for (const FSParser::FunctionNode *function : p_enum->functions) {
+		LSP::DocumentSymbol child;
+		parse_function_symbol(function, child);
+		r_symbol.children.push_back(child);
+	}
+}
+
 void ExtendFSParser::parse_class_symbol(const FSParser::ClassNode *p_class, LSP::DocumentSymbol &r_symbol) {
 	const String uri = get_uri();
 
@@ -255,22 +282,7 @@ void ExtendFSParser::parse_class_symbol(const FSParser::ClassNode *p_class, LSP:
 		}
 		r_symbol.detail = "enum " + r_symbol.name;
 
-		for (const FSParser::EnumNode::Value &value : enum_node->values) {
-			LSP::DocumentSymbol child;
-
-			child.name = value.identifier->name;
-			child.kind = LSP::SymbolKind::EnumMember;
-			child.deprecated = false;
-			child.range.start = FoundryPosition(value.line, value.start_column).to_lsp(lines);
-			child.range.end = FoundryPosition(value.line, value.end_column).to_lsp(lines);
-			child.selectionRange = range_of_node(value.identifier);
-			child.documentation = value.doc_data.description;
-			child.uri = uri;
-			child.script_path = path;
-			child.detail = child.name + " = " + itos(value.value);
-
-			r_symbol.children.push_back(child);
-		}
+		append_enum_symbol_children(enum_node, r_symbol);
 		return;
 	}
 
@@ -451,23 +463,7 @@ void ExtendFSParser::parse_class_symbol(const FSParser::ClassNode *p_class, LSP:
 					symbol.detail += "\n\t" + String(m.m_enum->values[j].identifier->name) + " = " + itos(m.m_enum->values[j].value);
 				}
 
-				for (FSParser::EnumNode::Value value : m.m_enum->values) {
-					LSP::DocumentSymbol child;
-
-					child.name = value.identifier->name;
-					child.kind = LSP::SymbolKind::EnumMember;
-					child.deprecated = false;
-					child.range.start = FoundryPosition(value.line, value.start_column).to_lsp(lines);
-					child.range.end = FoundryPosition(value.line, value.end_column).to_lsp(lines);
-					child.selectionRange = range_of_node(value.identifier);
-					child.documentation = value.doc_data.description;
-					child.uri = uri;
-					child.script_path = path;
-
-					child.detail = child.name + " = " + itos(value.value);
-
-					symbol.children.push_back(child);
-				}
+				append_enum_symbol_children(m.m_enum, symbol);
 
 				r_symbol.children.push_back(symbol);
 			} break;
@@ -519,7 +515,7 @@ void ExtendFSParser::parse_function_symbol(const FSParser::FunctionNode *p_func,
 	if (p_func->is_declared_async) {
 		r_symbol.detail = p_func->is_static ? "static async func" : "async func";
 	} else {
-		r_symbol.detail = "func";
+		r_symbol.detail = p_func->is_static ? "static func" : "func";
 	}
 	if (is_named) {
 		r_symbol.detail += " " + String(p_func->identifier->name);

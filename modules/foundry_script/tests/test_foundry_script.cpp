@@ -3868,6 +3868,14 @@ enum_name WeaponType:
 	SWORD = 3
 	## Uses a bow.
 	BOW = 4
+
+	## Formats a weapon type.
+	func label(prefix: String = "") -> String:
+		return prefix
+
+	## Loads a weapon type asynchronously.
+	static async func load(text: String, prefix: String = ">") -> String:
+		return prefix + text
 )",
 			"user://weapon_type_docgen.fs", false);
 	CHECK_EQ(err, OK);
@@ -3938,6 +3946,84 @@ enum_name WeaponType:
 	CHECK_EQ(bow->type, "int");
 	CHECK_EQ(bow->enumeration, "WeaponType");
 	CHECK_EQ(bow->description, "Uses a bow.");
+
+	const DocData::MethodDoc *label = nullptr;
+	const DocData::MethodDoc *load = nullptr;
+	for (const DocData::MethodDoc &method : docs[0].methods) {
+		if (method.name == "label") {
+			label = &method;
+		} else if (method.name == "load") {
+			load = &method;
+		}
+	}
+
+	CHECK_EQ(docs[0].methods.size(), 2);
+	CHECK(label != nullptr);
+	CHECK(load != nullptr);
+	if (label == nullptr || load == nullptr) {
+		return;
+	}
+
+	CHECK(label->qualifiers.is_empty());
+	CHECK_EQ(label->return_type, "String");
+	CHECK_EQ(label->description, "Formats a weapon type.");
+	CHECK_EQ(label->arguments.size(), 1);
+	if (label->arguments.size() != 1) {
+		return;
+	}
+	CHECK_EQ(label->arguments[0].name, "prefix");
+	CHECK_EQ(label->arguments[0].type, "String");
+	CHECK_EQ(label->arguments[0].default_value, R"("")");
+
+	CHECK_EQ(load->qualifiers, "static async");
+	CHECK_EQ(load->return_type, "String");
+	CHECK_EQ(load->description, "Loads a weapon type asynchronously.");
+	CHECK_EQ(load->arguments.size(), 2);
+	if (load->arguments.size() != 2) {
+		return;
+	}
+	CHECK_EQ(load->arguments[0].name, "text");
+	CHECK_EQ(load->arguments[0].type, "String");
+	CHECK_EQ(load->arguments[1].name, "prefix");
+	CHECK_EQ(load->arguments[1].type, "String");
+	CHECK_EQ(load->arguments[1].default_value, R"(">")");
+}
+
+TEST_CASE("[Modules][FoundryScript] Docgen does not flatten nested enum functions into class methods") {
+	FSParser parser;
+	Error err = parser.parse(R"(
+enum Status:
+	READY = 1
+
+	## Formats a status.
+	func label() -> String:
+		return "ready"
+)",
+			"user://nested_enum_method_docgen.fs", false);
+	CHECK_EQ(err, OK);
+
+	FSAnalyzer analyzer(&parser);
+	err = analyzer.analyze();
+	CHECK_EQ(err, OK);
+
+	const FSParser::ClassNode *root = parser.get_tree();
+	CHECK(root != nullptr);
+	if (err != OK || root == nullptr) {
+		return;
+	}
+
+	Ref<FoundryScript> script;
+	script.instantiate();
+	FSCompiler::make_scripts(script.ptr(), root, false);
+	FSDocGen::generate_docs(script.ptr(), root);
+
+	const Vector<DocData::ClassDoc> docs = script->get_documentation();
+	CHECK_EQ(docs.size(), 1);
+	if (docs.size() != 1) {
+		return;
+	}
+	CHECK(docs[0].enums.has("Status"));
+	CHECK(docs[0].methods.is_empty());
 }
 
 TEST_CASE("[Modules][FoundryScript] Docgen names UID-backed autoload scripts from the autoload index") {
