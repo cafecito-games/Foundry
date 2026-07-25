@@ -465,6 +465,17 @@ void FSNameManglerAnalysis::_collect_class(const FoundryScript *p_class, BuildSt
 	for (const KeyValue<StringName, Vector<FoundryScript::AnnotationUsage>> &entry : p_class->constant_annotations) {
 		collect_annotations(entry.value);
 	}
+	const auto collect_parameter_annotations =
+			[&](const HashMap<StringName, HashMap<StringName, Vector<FoundryScript::AnnotationUsage>>> &p_annotations) {
+				for (const KeyValue<StringName, HashMap<StringName, Vector<FoundryScript::AnnotationUsage>>> &owner :
+						p_annotations) {
+					for (const KeyValue<StringName, Vector<FoundryScript::AnnotationUsage>> &parameter : owner.value) {
+						collect_annotations(parameter.value);
+					}
+				}
+			};
+	collect_parameter_annotations(p_class->method_parameter_annotations);
+	collect_parameter_annotations(p_class->signal_parameter_annotations);
 
 	if (p_class->native.is_valid() && ClassDB::class_exists(p_class->native->get_name())) {
 		const StringName native_name = p_class->native->get_name();

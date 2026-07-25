@@ -185,6 +185,57 @@ TEST_CASE("[FoundryScript][NameManglerAnalysis] Callable and Signal constants pr
 	CHECK(name_analysis_has_reason(result, SNAME("signal_kept"), FSNameManglerAnalysis::KEEP_STRING_LITERAL));
 }
 
+TEST_CASE("[FoundryScript][NameManglerAnalysis] Parameter annotation values provide name evidence") {
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"var method_parameter_arg_kept: int\n"
+			"var method_parameter_kwarg_kept: int\n"
+			"var signal_parameter_arg_kept: int\n"
+			"var signal_parameter_kwarg_kept: int\n"
+			"signal annotated_signal(value: int)\n"
+			"func annotated_method(value: int) -> void:\n"
+			"\tpass\n");
+
+	FoundryScript::AnnotationUsage method_usage;
+	method_usage.args.push_back("method_parameter_arg_kept");
+	Array method_kwarg_values;
+	method_kwarg_values.push_back("method_parameter_kwarg_kept");
+	method_usage.kwargs["nested"] = method_kwarg_values;
+	HashMap<StringName, Vector<FoundryScript::AnnotationUsage>> method_parameters;
+	method_parameters[SNAME("value")].push_back(method_usage);
+	auto &method_parameter_annotations = const_cast<
+			HashMap<StringName, HashMap<StringName, Vector<FoundryScript::AnnotationUsage>>> &>(
+			script->get_method_parameter_annotations());
+	method_parameter_annotations.insert(SNAME("annotated_method"), method_parameters);
+
+	FoundryScript::AnnotationUsage signal_usage;
+	signal_usage.args.push_back("signal_parameter_arg_kept");
+	Array signal_kwarg_values;
+	signal_kwarg_values.push_back("signal_parameter_kwarg_kept");
+	signal_usage.kwargs["nested"] = signal_kwarg_values;
+	HashMap<StringName, Vector<FoundryScript::AnnotationUsage>> signal_parameters;
+	signal_parameters[SNAME("value")].push_back(signal_usage);
+	auto &signal_parameter_annotations = const_cast<
+			HashMap<StringName, HashMap<StringName, Vector<FoundryScript::AnnotationUsage>>> &>(
+			script->get_signal_parameter_annotations());
+	signal_parameter_annotations.insert(SNAME("annotated_signal"), signal_parameters);
+
+	FSNameManglerAnalysis::Input input;
+	input.scripts.push_back(script);
+	const FSNameManglerAnalysis::Result result = FSNameManglerAnalysis::analyze(input);
+
+	REQUIRE(result.error == OK);
+	const StringName kept_names[] = {
+		SNAME("method_parameter_arg_kept"),
+		SNAME("method_parameter_kwarg_kept"),
+		SNAME("signal_parameter_arg_kept"),
+		SNAME("signal_parameter_kwarg_kept"),
+	};
+	for (const StringName &name : kept_names) {
+		CHECK_FALSE(result.rename_map.has(name));
+		CHECK(name_analysis_has_reason(result, name, FSNameManglerAnalysis::KEEP_STRING_LITERAL));
+	}
+}
+
 TEST_CASE("[FoundryScript][NameManglerAnalysis] Reflection enumeration keeps the relevant declaration set") {
 	struct ReflectionCase {
 		const char *enumerator;
