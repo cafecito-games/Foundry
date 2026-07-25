@@ -3,11 +3,13 @@ from __future__ import annotations
 
 import ast
 import re
+import runpy
 from collections.abc import Callable
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = REPO_ROOT / ".github/workflows/release.yml"
+ALIAS_POLICY = REPO_ROOT / ".github/scripts/resolve_container_alias.py"
 
 EXPECTED_VERSION_ASSERTION = """\
 import json
@@ -56,6 +58,34 @@ EXPECTED_BUILD_ARGS = frozenset(
         "FOUNDRY_REVISION=${{ github.sha }}",
     )
 )
+
+EXPECTED_FRESHNESS_SCRIPT = """\
+set -euo pipefail
+
+releases_json="$RUNNER_TEMP/published-releases.json"
+publish_channel_tag=false
+if gh api \\
+  --paginate \\
+  --slurp \\
+  -H "Accept: application/vnd.github+json" \\
+  -H "X-GitHub-Api-Version: 2022-11-28" \\
+  "repos/$GITHUB_REPOSITORY/releases?per_page=100" \\
+  > "$releases_json"; then
+  if resolved="$(python3 .github/scripts/resolve_container_alias.py \\
+    --releases-json "$releases_json" \\
+    --release-tag "$RELEASE_TAG" \\
+    --channel "$RELEASE_CHANNEL")"; then
+    if [ "$resolved" = "true" ]; then
+      publish_channel_tag=true
+    fi
+  else
+    echo "::warning::Could not evaluate moving container alias freshness; publishing the exact tag only."
+  fi
+else
+  echo "::warning::Could not list published GitHub releases; publishing the exact tag only."
+fi
+echo "publish_channel_tag=$publish_channel_tag" >> "$GITHUB_OUTPUT"
+"""
 
 
 class ContractError(AssertionError):
@@ -302,6 +332,20 @@ def validate_job_contract(workflow: str) -> tuple[str, list[str]]:
     )
     require(scalar(job, "runs-on", 4, "publish-container") == "ubuntu-24.04", "container runner must be ubuntu-24.04")
 
+    concurrency = mapping(
+        named_block(job, "concurrency", 4, "publish-container"),
+        6,
+        "publish-container.concurrency",
+    )
+    require(
+        concurrency
+        == {
+            "group": "release-container-${{ needs.resolve.outputs.channel }}",
+            "cancel-in-progress": "false",
+            "queue": "max",
+        },
+        "publish-container concurrency must serialize and retain every channel publication",
+    )
     permissions = mapping(
         named_block(job, "permissions", 4, "publish-container"),
         6,
@@ -316,7 +360,9 @@ def validate_job_contract(workflow: str) -> tuple[str, list[str]]:
         environment == {"IMAGE_NAME": "ghcr.io/cafecito-games/foundry"},
         "publish-container image name must be exact",
     )
-    return job, parse_steps(job)
+    steps = parse_steps(job)
+    require(len(steps) == 11, "publish-container must contain only the eleven allowed release steps")
+    return job, steps
 
 
 def validate_artifact(steps: list[str]) -> tuple[int, int, int, int]:
@@ -364,7 +410,7 @@ def validate_artifact(steps: list[str]) -> tuple[int, int, int, int]:
     return checkout_index, artifact_index, restore_index, setup_buildx_index
 
 
-def validate_tags(steps: list[str]) -> tuple[int, int]:
+def validate_tags(steps: list[str]) -> tuple[int, int, int]:
     channel_index, channel_body = find_step(
         steps,
         lambda body: step_id(body) == "channel-tag",
@@ -392,6 +438,31 @@ else
         "moving tag logic must separate stable latest from prerelease channels",
     )
 
+    freshness_index, freshness_body = find_step(
+        steps,
+        lambda body: step_id(body) == "release-freshness",
+        "moving alias freshness",
+    )
+    require_step_fields(freshness_body, {"id", "env", "run"}, "moving alias freshness")
+    freshness_env = mapping(
+        named_block(freshness_body, "env", 8, "moving alias freshness"),
+        10,
+        "moving alias freshness.env",
+    )
+    require(
+        freshness_env
+        == {
+            "GH_TOKEN": "${{ github.token }}",
+            "RELEASE_CHANNEL": "${{ needs.resolve.outputs.channel }}",
+            "RELEASE_TAG": "${{ needs.resolve.outputs.tag }}",
+        },
+        "moving alias freshness must use the current release and job token",
+    )
+    require(
+        semantic_lines(step_run(freshness_body, "moving alias freshness")) == semantic_lines(EXPECTED_FRESHNESS_SCRIPT),
+        "moving alias freshness must query published releases and fail closed to exact-tag-only publication",
+    )
+
     metadata_index, metadata_body = find_step(
         steps,
         lambda body: step_id(body) == "metadata",
@@ -413,10 +484,11 @@ else
         set(tags)
         == {
             "type=raw,value=${{ needs.resolve.outputs.tag }}",
-            "type=raw,value=${{ steps.channel-tag.outputs.tag }}",
+            "type=raw,value=${{ steps.channel-tag.outputs.tag }},"
+            "enable=${{ steps.release-freshness.outputs.publish_channel_tag == 'true' }}",
         }
         and len(tags) == 2,
-        "image metadata must define exactly the raw release tag and one moving channel tag",
+        "image metadata must always define the exact tag and conditionally enable the moving channel tag",
     )
     labels = semantic_lines(literal(metadata_with, "labels", 10, "Resolve image metadata.with"))
     require(
@@ -428,7 +500,69 @@ else
         and len(labels) == 2,
         "image metadata labels must use the resolved release version and source revision",
     )
-    return channel_index, metadata_index
+    return channel_index, freshness_index, metadata_index
+
+
+def validate_alias_policy() -> None:
+    require(ALIAS_POLICY.is_file(), "moving alias freshness policy script must exist")
+    namespace = runpy.run_path(str(ALIAS_POLICY))
+    should_publish = namespace.get("should_publish_moving_alias")
+    if not callable(should_publish):
+        raise ContractError("moving alias freshness policy must expose should_publish_moving_alias")
+
+    def release(
+        tag_name: str,
+        *,
+        draft: bool = False,
+        prerelease: bool = True,
+        published_at: str | None = "2026-07-25T12:00:00Z",
+    ) -> dict[str, object]:
+        return {
+            "tag_name": tag_name,
+            "draft": draft,
+            "prerelease": prerelease,
+            "published_at": published_at,
+        }
+
+    alpha_releases = [
+        [
+            release("v2.0.0-alpha.2"),
+            release("v2.0.0-alpha.1"),
+            release("v9.0.0-beta.1"),
+            release("v9.0.0", prerelease=False),
+        ]
+    ]
+    require(
+        should_publish(alpha_releases, "v2.0.0-alpha.2", "alpha") is True,
+        "newest published release in a channel must publish its moving alias",
+    )
+    require(
+        should_publish(alpha_releases, "v2.0.0-alpha.1", "alpha") is False,
+        "stale published releases must not publish a moving alias",
+    )
+    require(
+        should_publish(alpha_releases, "v2.0.0-alpha.3", "alpha") is False,
+        "a release absent from published GitHub metadata must not publish a moving alias",
+    )
+
+    stable_releases = [
+        [
+            release("v3.0.0", prerelease=False, draft=True),
+            release("v2.0.0", prerelease=False),
+            release("v4.0.0", prerelease=False, published_at=None),
+        ]
+    ]
+    require(
+        should_publish(stable_releases, "v2.0.0", "stable") is True,
+        "draft and unpublished releases must not suppress the newest published alias",
+    )
+
+    try:
+        should_publish(alpha_releases, "2.0.0-alpha.2", "alpha")
+    except ValueError:
+        pass
+    else:
+        raise ContractError("moving alias freshness must require leading-v release tags")
 
 
 def validate_builds_and_order(job: str, steps: list[str]) -> tuple[int, int, int, int]:
@@ -640,7 +774,7 @@ def validate(workflow: str) -> None:
     validate_events(workflow)
     job, steps = validate_job_contract(workflow)
     checkout_index, artifact_index, restore_index, setup_buildx_index = validate_artifact(steps)
-    channel_index, metadata_index = validate_tags(steps)
+    channel_index, freshness_index, metadata_index = validate_tags(steps)
     build_index, _, _, _ = validate_builds_and_order(job, steps)
     require(
         checkout_index < artifact_index < restore_index < build_index,
@@ -648,13 +782,14 @@ def validate(workflow: str) -> None:
     )
     require(setup_buildx_index < build_index, "Docker Buildx setup must precede the local image build")
     require(
-        channel_index < metadata_index < build_index,
-        "channel tag resolution, image metadata, and local image build must be ordered",
+        channel_index < freshness_index < metadata_index < build_index,
+        "channel tag resolution, freshness, image metadata, and local image build must be ordered",
     )
     validate_smoke(steps)
 
 
 def main() -> None:
+    validate_alias_policy()
     validate(WORKFLOW.read_text(encoding="utf-8"))
     print("Foundry release container workflow tests passed")
 
