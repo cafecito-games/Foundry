@@ -1,0 +1,7 @@
+# GitHub added concurrency.queue on 2026-05-07:
+# https://github.blog/changelog/2026-05-07-github-actions-concurrency-groups-now-allow-larger-queues/
+# Remove this compatibility ignore after https://github.com/rhysd/actionlint/pull/654 lands in a release.
+paths:
+  .github/workflows/release.yml:
+    ignore:
+      - '^unexpected key "queue" for "concurrency" section\. expected one of "cancel-in-progress", "group"$'

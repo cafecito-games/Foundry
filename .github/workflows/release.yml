@@ -1027,6 +1027,8 @@ jobs:
       - resolve
       - package
     runs-on: ubuntu-24.04
+    outputs:
+      github_release_published: ${{ steps.github-release.outcome == 'success' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -1064,6 +1066,7 @@ jobs:
           path: dist
 
       - name: Publish GitHub Release
+        id: github-release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.resolve.outputs.tag }}
@@ -1135,3 +1138,188 @@ jobs:
           git add "$cask_path"
           git commit -m "Brew cask update for ${cask_token} version v${RELEASE_VERSION}"
           git push origin HEAD:main
+
+  publish-container:
+    needs:
+      - resolve
+      - build-linux
+      - publish
+    if: >-
+      ${{
+        !cancelled()
+        && needs.resolve.result == 'success'
+        && needs.build-linux.result == 'success'
+        && needs.resolve.outputs.draft == 'false'
+        && needs.publish.outputs.github_release_published == 'true'
+      }}
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: release-container-${{ needs.resolve.outputs.channel }}
+      cancel-in-progress: false
+      queue: max
+    # Registry-attached BuildKit attestations use package auth, not OIDC permissions for the separate actions/attest.
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE_NAME: ghcr.io/cafecito-games/foundry
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Download Linux editor artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: release-linux-editor
+          path: docker
+
+      - name: Restore Linux executable mode
+        run: chmod 0755 docker/foundry.linuxbsd.editor.x86_64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Resolve moving channel tag
+        id: channel-tag
+        env:
+          CHANNEL: ${{ needs.resolve.outputs.channel }}
+        run: |
+          if [ "$CHANNEL" = "stable" ]; then
+            echo "tag=latest" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=latest-$CHANNEL" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check moving alias freshness
+        id: release-freshness
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_CHANNEL: ${{ needs.resolve.outputs.channel }}
+          RELEASE_TAG: ${{ needs.resolve.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          releases_json="$RUNNER_TEMP/published-releases.json"
+          publish_channel_tag=false
+          if gh api \
+            --paginate \
+            --slurp \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            > "$releases_json"; then
+            if resolved="$(python3 .github/scripts/resolve_container_alias.py \
+              --releases-json "$releases_json" \
+              --release-tag "$RELEASE_TAG" \
+              --channel "$RELEASE_CHANNEL")"; then
+              if [ "$resolved" = "true" ]; then
+                publish_channel_tag=true
+              fi
+            else
+              echo "::warning::Could not evaluate moving container alias freshness; publishing the exact tag only."
+            fi
+          else
+            echo "::warning::Could not list published GitHub releases; publishing the exact tag only."
+          fi
+          echo "publish_channel_tag=$publish_channel_tag" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve image metadata
+        id: metadata
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=${{ needs.resolve.outputs.tag }}
+            type=raw,value=${{ steps.channel-tag.outputs.tag }},enable=${{ steps.release-freshness.outputs.publish_channel_tag == 'true' }}
+          labels: |
+            org.opencontainers.image.version=${{ needs.resolve.outputs.release_version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+
+      - name: Build local smoke image
+        uses: docker/build-push-action@v6
+        # The local and registry exports share this builder and identical context/Dockerfile/platform/args/labels.
+        # load: true makes the image runnable for pre-auth smoke; the local exporter cannot retain SBOM/provenance.
+        with:
+          context: docker
+          file: docker/foundry-headless.Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: foundry-headless-smoke:${{ github.sha }}
+          labels: ${{ steps.metadata.outputs.labels }}
+          build-args: |
+            FOUNDRY_VERSION=${{ needs.resolve.outputs.release_version }}
+            FOUNDRY_REVISION=${{ github.sha }}
+
+      - name: Verify headless image
+        env:
+          IMAGE_REF: foundry-headless-smoke:${{ github.sha }}
+          ENGINE_VERSION: ${{ needs.resolve.outputs.version }}
+          RELEASE_VERSION: ${{ needs.resolve.outputs.release_version }}
+          RELEASE_TAG: ${{ needs.resolve.outputs.tag }}
+          RELEASE_CHANNEL: ${{ needs.resolve.outputs.channel }}
+          SOURCE_REPOSITORY: https://github.com/cafecito-games/Foundry
+          SOURCE_REVISION: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          test "$(docker image inspect "$IMAGE_REF" --format '{{.Architecture}}')" = "amd64"
+          test "$(docker image inspect "$IMAGE_REF" --format '{{.Config.User}}')" = "10001:10001"
+
+          version_json="$(docker run --rm "$IMAGE_REF" --version --json)"
+          VERSION_JSON="$version_json" python3 - <<'PY'
+          import json
+          import os
+
+          metadata = json.loads(os.environ["VERSION_JSON"])
+          expected = {
+              "product": "Foundry",
+              "version": os.environ["ENGINE_VERSION"],
+              "release_tag": os.environ["RELEASE_TAG"],
+              "channel": os.environ["RELEASE_CHANNEL"],
+              "git_commit": os.environ["SOURCE_REVISION"],
+          }
+          for key, value in expected.items():
+              if metadata.get(key) != value:
+                  raise SystemExit(f"{key}: expected {value!r}, got {metadata.get(key)!r}")
+          PY
+
+          docker run --rm "$IMAGE_REF" script eval 'print("ok")' | grep -Fx "ok"
+          fixture_dir="$RUNNER_TEMP/headless-container-fixture"
+          mkdir "$fixture_dir"
+          cp -R tests/fixtures/headless_container/. "$fixture_dir"
+          mkdir "$fixture_dir/.foundry"
+          docker run --rm \
+            -v "$fixture_dir:/workspace:ro" \
+            --tmpfs /workspace/.foundry:rw,uid=10001,gid=10001,mode=0700 \
+            "$IMAGE_REF" script lint --project . scripts
+
+          test "$(docker image inspect "$IMAGE_REF" \
+            --format '{{ index .Config.Labels "org.opencontainers.image.version" }}')" = "$RELEASE_VERSION"
+          test "$(docker image inspect "$IMAGE_REF" \
+            --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')" = "$SOURCE_REVISION"
+          test "$(docker image inspect "$IMAGE_REF" \
+            --format '{{ index .Config.Labels "org.opencontainers.image.source" }}')" = "$SOURCE_REPOSITORY"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish release image
+        uses: docker/build-push-action@v6
+        # Reuse BuildKit's content-addressed cached graph for the registry export and add SBOM/provenance.
+        # This is a second image export, not a second Foundry compilation.
+        with:
+          context: docker
+          file: docker/foundry-headless.Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.metadata.outputs.tags }}
+          labels: ${{ steps.metadata.outputs.labels }}
+          build-args: |
+            FOUNDRY_VERSION=${{ needs.resolve.outputs.release_version }}
+            FOUNDRY_REVISION=${{ github.sha }}
+          sbom: true
+          provenance: mode=max
