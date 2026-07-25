@@ -34,8 +34,10 @@
 
 #include "fs_conformance_registry.h"
 #include "fs_function.h"
+#include "fs_utility_functions.h"
 
 #include "core/config/engine.h"
+#include "core/io/resource_loader.h"
 #include "core/object/class_db.h"
 #include "core/variant/callable.h"
 
@@ -48,13 +50,18 @@ struct FSNameManglerAnalysis::BuildState {
 	HashMap<StringName, Aggregate> candidates;
 	HashSet<StringName> observed_names;
 	HashMap<String, Vector<String>> string_sources;
+	HashMap<StringName, Vector<String>> protected_sources;
+	HashMap<String, Vector<String>> protected_path_sources;
 	HashMap<StringName, Vector<String>> external_sources;
 	Vector<String> method_reflection_sources;
 	Vector<String> property_reflection_sources;
 	Vector<String> signal_reflection_sources;
+	bool unscannable_protected_surface = false;
 	HashSet<const FoundryScript *> included_classes;
+	HashSet<String> included_identities;
 	HashSet<const FoundryScript *> visited_classes;
 	HashSet<const FoundryScript *> visited_external_classes;
+	HashSet<const Script *> visited_external_scripts;
 	HashSet<const FSFunction *> visited_functions;
 };
 
@@ -79,16 +86,6 @@ struct EvidenceComparator {
 bool evidence_matches(const FSNameManglerAnalysis::KeepEvidence &p_left,
 		const FSNameManglerAnalysis::KeepEvidence &p_right) {
 	return p_left.reason == p_right.reason && p_left.detail == p_right.detail;
-}
-
-bool kinds_have(const Vector<FSNameManglerAnalysis::IdentifierKind> &p_kinds,
-		FSNameManglerAnalysis::IdentifierKind p_kind) {
-	for (const FSNameManglerAnalysis::IdentifierKind kind : p_kinds) {
-		if (kind == p_kind) {
-			return true;
-		}
-	}
-	return false;
 }
 
 } // namespace
@@ -177,6 +174,48 @@ void FSNameManglerAnalysis::_add_string_evidence(
 	}
 }
 
+void FSNameManglerAnalysis::_add_protected_name(
+		const StringName &p_name, const String &p_source, BuildState &r_state) {
+	if (p_name == StringName()) {
+		return;
+	}
+	r_state.observed_names.insert(p_name);
+	Vector<String> &sources = r_state.protected_sources[p_name];
+	if (!sources.has(p_source)) {
+		sources.push_back(p_source);
+	}
+}
+
+void FSNameManglerAnalysis::_add_protected_identity(
+		const String &p_identity, const String &p_source, BuildState &r_state) {
+	if (p_identity.is_empty()) {
+		return;
+	}
+	r_state.observed_names.insert(StringName(p_identity));
+	if (p_identity.is_valid_unicode_identifier()) {
+		_add_protected_name(StringName(p_identity), p_source, r_state);
+		return;
+	}
+	const PackedStringArray components =
+			p_identity.replace("::", ".").split(".", false);
+	for (const String &component : components) {
+		if (component.is_valid_unicode_identifier()) {
+			_add_protected_name(StringName(component), p_source, r_state);
+		}
+	}
+}
+
+void FSNameManglerAnalysis::_add_protected_path(
+		const String &p_path, const String &p_source, BuildState &r_state) {
+	if (p_path.is_empty()) {
+		return;
+	}
+	Vector<String> &sources = r_state.protected_path_sources[p_path];
+	if (!sources.has(p_source)) {
+		sources.push_back(p_source);
+	}
+}
+
 void FSNameManglerAnalysis::_add_external_surface_name(
 		const StringName &p_name, const String &p_source, BuildState &r_state) {
 	if (!_is_candidate_name(p_name)) {
@@ -189,19 +228,9 @@ void FSNameManglerAnalysis::_add_external_surface_name(
 	}
 }
 
-bool FSNameManglerAnalysis::_is_included_class_identity(const String &p_identity, const BuildState &p_state) {
-	if (p_identity.is_empty()) {
-		return false;
-	}
-	for (const FoundryScript *included_class : p_state.included_classes) {
-		if (p_identity == String(included_class->local_name) ||
-				p_identity == String(included_class->global_name) ||
-				p_identity == included_class->fully_qualified_name ||
-				p_identity == included_class->get_script_path()) {
-			return true;
-		}
-	}
-	return false;
+bool FSNameManglerAnalysis::_is_included_identity(const String &p_identity, const BuildState &p_state) {
+	return !p_identity.is_empty() &&
+			p_state.included_identities.has(p_identity);
 }
 
 void FSNameManglerAnalysis::_collect_class_identity_reference(
@@ -211,7 +240,7 @@ void FSNameManglerAnalysis::_collect_class_identity_reference(
 	}
 	const StringName identity = StringName(p_identity);
 	r_state.observed_names.insert(identity);
-	if (!_is_included_class_identity(p_identity, r_state)) {
+	if (!_is_included_identity(p_identity, r_state)) {
 		_add_external_surface_name(identity, p_source, r_state);
 	}
 }
@@ -249,6 +278,43 @@ void FSNameManglerAnalysis::_index_class(const FoundryScript *p_class, BuildStat
 		return;
 	}
 	r_state.included_classes.insert(p_class);
+	r_state.included_identities.insert(String(p_class->local_name));
+	r_state.included_identities.insert(String(p_class->global_name));
+	r_state.included_identities.insert(
+			p_class->fully_qualified_name);
+	r_state.included_identities.insert(String(p_class->trait_type_name));
+	r_state.included_identities.insert(p_class->get_script_path());
+	const String script_prefix = p_class->get_script_path() + "::";
+	String relative_identity;
+	if (!p_class->get_script_path().is_empty() &&
+			p_class->fully_qualified_name.begins_with(script_prefix)) {
+		relative_identity = p_class->fully_qualified_name.substr(
+				script_prefix.length());
+		r_state.included_identities.insert(relative_identity);
+	}
+	for (const KeyValue<StringName, Variant> &constant :
+			p_class->constants) {
+		if (constant.value.get_type() != Variant::DICTIONARY) {
+			continue;
+		}
+		const String enum_name = constant.key;
+		r_state.included_identities.insert(enum_name);
+		const auto add_owned_enum = [&](const String &p_owner) {
+			if (p_owner.is_empty()) {
+				return;
+			}
+			r_state.included_identities.insert(
+					p_owner + "." + enum_name);
+			r_state.included_identities.insert(
+					p_owner + "::" + enum_name);
+		};
+		add_owned_enum(String(p_class->local_name));
+		add_owned_enum(String(p_class->global_name));
+		add_owned_enum(p_class->fully_qualified_name);
+		add_owned_enum(p_class->fully_qualified_name.replace("::", "."));
+		add_owned_enum(relative_identity);
+		add_owned_enum(relative_identity.replace("::", "."));
+	}
 	for (const KeyValue<StringName, Ref<FoundryScript>> &subclass : p_class->subclasses) {
 		_index_class(subclass.value.ptr(), r_state);
 	}
@@ -308,9 +374,267 @@ void FSNameManglerAnalysis::_collect_external_class_surface(
 	}
 }
 
+void FSNameManglerAnalysis::_collect_external_script_surface(
+		const Script *p_script, const String &p_source, BuildState &r_state,
+		int p_depth) {
+	if (p_script == nullptr) {
+		return;
+	}
+	if (p_depth > Variant::MAX_RECURSION_DEPTH) {
+		r_state.unscannable_protected_surface = true;
+		return;
+	}
+	if (const FoundryScript *foundry_script =
+					Object::cast_to<FoundryScript>(p_script)) {
+		_collect_external_class_surface(foundry_script, p_source, r_state);
+		return;
+	}
+	if (r_state.visited_external_scripts.has(p_script)) {
+		return;
+	}
+	r_state.visited_external_scripts.insert(p_script);
+
+	const String script_path = p_script->get_path();
+	const String source = script_path.is_empty()
+			? p_source
+			: "external script " + script_path;
+	_add_protected_path(script_path, source, r_state);
+	_add_protected_name(p_script->get_global_name(), source, r_state);
+
+	List<MethodInfo> methods;
+	p_script->get_script_method_list(&methods);
+	for (const MethodInfo &method : methods) {
+		_add_protected_name(method.name, source + " method", r_state);
+		_add_protected_identity(
+				String(method.return_val.class_name), source + " return type",
+				r_state);
+		for (const PropertyInfo &argument : method.arguments) {
+			_add_protected_identity(
+					String(argument.class_name), source + " argument type",
+					r_state);
+		}
+	}
+	List<PropertyInfo> properties;
+	p_script->get_script_property_list(&properties);
+	for (const PropertyInfo &property : properties) {
+		_add_protected_name(
+				StringName(property.name), source + " property", r_state);
+		_add_protected_identity(
+				String(property.class_name), source + " property type",
+				r_state);
+	}
+	List<MethodInfo> signals;
+	p_script->get_script_signal_list(&signals);
+	for (const MethodInfo &signal : signals) {
+		_add_protected_name(signal.name, source + " signal", r_state);
+		for (const PropertyInfo &argument : signal.arguments) {
+			_add_protected_identity(
+					String(argument.class_name), source + " signal type",
+					r_state);
+		}
+	}
+	HashMap<StringName, Variant> constants;
+	const_cast<Script *>(p_script)->get_constants(&constants);
+	for (const KeyValue<StringName, Variant> &constant : constants) {
+		_add_protected_name(
+				constant.key, source + " constant", r_state);
+	}
+	HashSet<StringName> members;
+	const_cast<Script *>(p_script)->get_members(&members);
+	for (const StringName &member : members) {
+		_add_protected_name(member, source + " member", r_state);
+	}
+	const Ref<Script> base = p_script->get_base_script();
+	_collect_external_script_surface(
+			base.ptr(), source + " base", r_state, p_depth + 1);
+}
+
+void FSNameManglerAnalysis::_collect_container_type(
+		const ContainerType &p_type, const String &p_source,
+		BuildState &r_state, int p_depth) {
+	if (p_depth > Variant::MAX_RECURSION_DEPTH) {
+		r_state.unscannable_protected_surface = true;
+		return;
+	}
+	_add_protected_identity(
+			String(p_type.class_name), p_source + " class identity", r_state);
+	_collect_external_script_surface(
+			p_type.script.ptr(), p_source + " script", r_state, p_depth + 1);
+	for (const ContainerType &element_type : p_type.element_types) {
+		_collect_container_type(
+				element_type, p_source + " element type", r_state,
+				p_depth + 1);
+	}
+	for (const ContainerType &type_argument : p_type.type_arguments) {
+		_collect_container_type(
+				type_argument, p_source + " type argument", r_state,
+				p_depth + 1);
+	}
+}
+
+void FSNameManglerAnalysis::_collect_data_type(
+		const FSDataType &p_type, const String &p_source,
+		BuildState &r_state, int p_depth) {
+	if (p_depth > Variant::MAX_RECURSION_DEPTH) {
+		r_state.unscannable_protected_surface = true;
+		return;
+	}
+	if (p_type.script_type != nullptr) {
+		_collect_external_script_surface(
+				p_type.script_type, p_source + " script type", r_state,
+				p_depth + 1);
+	}
+	if (p_type.script_type_ref.is_valid()) {
+		_collect_external_script_surface(
+				p_type.script_type_ref.ptr(),
+				p_source + " script type reference", r_state, p_depth + 1);
+	}
+	if (p_type.native_type != StringName()) {
+		_add_protected_identity(
+				String(p_type.native_type), p_source + " native type",
+				r_state);
+	}
+	if (p_type.is_script_trait &&
+			!_is_included_identity(String(p_type.script_trait), r_state)) {
+		_add_protected_identity(
+				String(p_type.script_trait), p_source + " trait type",
+				r_state);
+	}
+	for (const FSDataType &element_type :
+			p_type.container_element_types) {
+		_collect_data_type(
+				element_type, p_source + " element type", r_state,
+				p_depth + 1);
+	}
+	for (const FSDataType &type_argument : p_type.type_arguments) {
+		_collect_data_type(
+				type_argument, p_source + " type argument", r_state,
+				p_depth + 1);
+	}
+}
+
+void FSNameManglerAnalysis::_collect_property_info(
+		const PropertyInfo &p_info, const String &p_source,
+		BuildState &r_state) {
+	const String identity = p_info.class_name;
+	if (!identity.is_empty() &&
+			!_is_included_identity(identity, r_state)) {
+		_add_protected_identity(
+				identity, p_source + " class identity", r_state);
+	}
+}
+
+void FSNameManglerAnalysis::_index_global_protected_names(
+		BuildState &r_state) {
+	LocalVector<StringName> classes;
+	ClassDB::get_class_list(classes); // Returned in deterministic lexical order.
+	for (const StringName &class_name : classes) {
+		const String source = "ClassDB " + String(class_name);
+		_add_protected_name(class_name, source + " class", r_state);
+		List<MethodInfo> methods;
+		ClassDB::get_method_list(class_name, &methods, true);
+		for (const MethodInfo &method : methods) {
+			_add_protected_name(method.name, source + " method", r_state);
+		}
+		List<MethodInfo> virtual_methods;
+		ClassDB::get_virtual_methods(class_name, &virtual_methods, true);
+		for (const MethodInfo &method : virtual_methods) {
+			_add_protected_name(
+					method.name, source + " virtual method", r_state);
+		}
+		List<PropertyInfo> properties;
+		ClassDB::get_property_list(class_name, &properties, true);
+		for (const PropertyInfo &property : properties) {
+			const StringName property_name = StringName(property.name);
+			_add_protected_name(
+					property_name, source + " property", r_state);
+			_add_protected_name(
+					ClassDB::get_property_setter(class_name, property_name),
+					source + " property setter", r_state);
+			_add_protected_name(
+					ClassDB::get_property_getter(class_name, property_name),
+					source + " property getter", r_state);
+		}
+		List<MethodInfo> signals;
+		ClassDB::get_signal_list(class_name, &signals, true);
+		for (const MethodInfo &signal : signals) {
+			_add_protected_name(signal.name, source + " signal", r_state);
+		}
+		List<String> constants;
+		ClassDB::get_integer_constant_list(class_name, &constants, true);
+		for (const String &constant : constants) {
+			_add_protected_name(
+					StringName(constant), source + " constant", r_state);
+		}
+	}
+
+	for (int type = 0; type < Variant::VARIANT_MAX; type++) {
+		const Variant::Type variant_type = (Variant::Type)type;
+		_add_protected_name(
+				StringName(Variant::get_type_name(variant_type)),
+				"Variant type", r_state);
+		List<StringName> methods;
+		Variant::get_builtin_method_list(variant_type, &methods);
+		for (const StringName &method : methods) {
+			_add_protected_name(method, "Variant builtin method", r_state);
+		}
+		List<StringName> members;
+		Variant::get_member_list(variant_type, &members);
+		for (const StringName &member : members) {
+			_add_protected_name(member, "Variant member", r_state);
+		}
+	}
+	List<StringName> utilities;
+	Variant::get_utility_function_list(&utilities);
+	for (const StringName &utility : utilities) {
+		_add_protected_name(utility, "Variant utility", r_state);
+	}
+	List<StringName> foundry_utilities;
+	FSUtilityFunctions::get_function_list(&foundry_utilities);
+	for (const StringName &utility : foundry_utilities) {
+		_add_protected_name(utility, "Foundry utility", r_state);
+	}
+	if (Engine::get_singleton() != nullptr) {
+		List<Engine::Singleton> singletons;
+		Engine::get_singleton()->get_singletons(&singletons);
+		for (const Engine::Singleton &singleton : singletons) {
+			_add_protected_name(singleton.name, "engine singleton", r_state);
+		}
+	}
+	if (FSLanguage::get_singleton() != nullptr) {
+		for (const String &name :
+				FSLanguage::get_singleton()->get_reserved_global_names()) {
+			_add_protected_name(
+					StringName(name), "language global", r_state);
+		}
+	}
+
+	LocalVector<StringName> global_classes;
+	ScriptServer::get_global_class_list(global_classes);
+	for (const StringName &global_class : global_classes) {
+		if (FSLanguage::get_singleton() != nullptr &&
+				ScriptServer::get_global_class_language(global_class) ==
+						FSLanguage::get_singleton()->get_name()) {
+			continue;
+		}
+		const String path =
+				ScriptServer::get_global_class_path(global_class);
+		_add_protected_name(
+				global_class, "external global script class", r_state);
+		Ref<Resource> resource = ResourceCache::get_ref(path);
+		if (resource.is_null() && ResourceLoader::exists(path)) {
+			resource = ResourceLoader::load(path);
+		}
+		_collect_external_script_surface(
+				Object::cast_to<Script>(resource.ptr()),
+				"external global script " + path, r_state);
+	}
+}
+
 void FSNameManglerAnalysis::_collect_variant(
 		const Variant &p_value, const String &p_source, BuildState &r_state, int p_depth) {
 	if (p_depth > Variant::MAX_RECURSION_DEPTH) {
+		r_state.unscannable_protected_surface = true;
 		return;
 	}
 
@@ -341,12 +665,23 @@ void FSNameManglerAnalysis::_collect_variant(
 		} break;
 		case Variant::ARRAY: {
 			const Array array = p_value;
+			_collect_container_type(
+					array.get_element_type(), p_source + " typed Array",
+					r_state, p_depth + 1);
 			for (int i = 0; i < array.size(); i++) {
 				_collect_variant(array[i], p_source, r_state, p_depth + 1);
 			}
 		} break;
 		case Variant::DICTIONARY: {
 			const Dictionary dictionary = p_value;
+			_collect_container_type(
+					dictionary.get_key_type(),
+					p_source + " typed Dictionary key", r_state,
+					p_depth + 1);
+			_collect_container_type(
+					dictionary.get_value_type(),
+					p_source + " typed Dictionary value", r_state,
+					p_depth + 1);
 			for (int i = 0; i < dictionary.size(); i++) {
 				_collect_variant(dictionary.get_key_at_index(i), p_source, r_state, p_depth + 1);
 				_collect_variant(dictionary.get_value_at_index(i), p_source, r_state, p_depth + 1);
@@ -360,9 +695,39 @@ void FSNameManglerAnalysis::_collect_variant(
 		} break;
 		case Variant::OBJECT: {
 			Object *object = p_value;
-			const FoundryScript *script = Object::cast_to<FoundryScript>(object);
-			_collect_external_class_surface(script, p_source, r_state);
+			if (Resource *resource = Object::cast_to<Resource>(object)) {
+				_add_protected_path(
+						resource->get_path(), p_source + " resource", r_state);
+			}
+			_collect_external_script_surface(
+					Object::cast_to<Script>(object), p_source, r_state,
+					p_depth + 1);
+			if (FSSpecializedClassHandle *specialized =
+							Object::cast_to<FSSpecializedClassHandle>(object)) {
+				_collect_external_script_surface(
+						specialized->get_specialized_script().ptr(),
+						p_source + " specialized script", r_state,
+						p_depth + 1);
+				for (const ContainerType &type_argument :
+						specialized->get_type_arguments()) {
+					_collect_container_type(
+							type_argument,
+							p_source + " specialized type argument",
+							r_state, p_depth + 1);
+				}
+			}
 		} break;
+		case Variant::PACKED_BYTE_ARRAY:
+		case Variant::PACKED_INT32_ARRAY:
+		case Variant::PACKED_INT64_ARRAY:
+		case Variant::PACKED_FLOAT32_ARRAY:
+		case Variant::PACKED_FLOAT64_ARRAY:
+		case Variant::PACKED_VECTOR2_ARRAY:
+		case Variant::PACKED_VECTOR3_ARRAY:
+		case Variant::PACKED_COLOR_ARRAY:
+		case Variant::PACKED_VECTOR4_ARRAY:
+			// These packed forms carry only numeric/vector/color payloads.
+			break;
 		default:
 			break;
 	}
@@ -378,7 +743,19 @@ void FSNameManglerAnalysis::_collect_function(const FSFunction *p_function, Buil
 	r_state.observed_names.insert(p_function->name);
 	for (const PropertyInfo &argument : p_function->method_info.arguments) {
 		r_state.observed_names.insert(argument.name);
+		_collect_property_info(
+				argument, source + " function argument", r_state);
 	}
+	_collect_property_info(
+			p_function->method_info.return_val,
+			source + " function return", r_state);
+	for (const FSDataType &argument_type : p_function->argument_types) {
+		_collect_data_type(
+				argument_type, source + " function argument type", r_state);
+	}
+	_collect_data_type(
+			p_function->return_type, source + " function return type",
+			r_state);
 	for (const Variant &default_argument : p_function->method_info.default_arguments) {
 		_collect_variant(default_argument, source, r_state);
 	}
@@ -391,21 +768,48 @@ void FSNameManglerAnalysis::_collect_function(const FSFunction *p_function, Buil
 		_record_reflection_use(global_name, StringName(), source, r_state);
 	}
 	for (const FSFunction::ExportFixups::TypedNameKey &key : p_function->export_fixups.setters) {
-		r_state.observed_names.insert(key.name);
+		_add_protected_name(
+				key.name, source + " Variant setter fixup", r_state);
 	}
 	for (const FSFunction::ExportFixups::TypedNameKey &key : p_function->export_fixups.getters) {
-		r_state.observed_names.insert(key.name);
+		_add_protected_name(
+				key.name, source + " Variant getter fixup", r_state);
 	}
 	for (const FSFunction::ExportFixups::TypedNameKey &key : p_function->export_fixups.builtin_methods) {
-		r_state.observed_names.insert(key.name);
+		_add_protected_name(
+				key.name, source + " Variant builtin-method fixup",
+				r_state);
 	}
 	for (const FSFunction::ExportFixups::MethodBindKey &key : p_function->export_fixups.method_binds) {
-		r_state.observed_names.insert(key.class_name);
-		r_state.observed_names.insert(key.method_name);
+		_add_protected_identity(
+				String(key.class_name), source + " MethodBind class",
+				r_state);
+		_add_protected_name(
+				key.method_name, source + " MethodBind method", r_state);
 		_record_reflection_use(key.method_name, key.class_name, source, r_state);
 	}
+	for (const StringName &utility :
+			p_function->export_fixups.utilities) {
+		_add_protected_name(
+				utility, source + " Variant utility fixup", r_state);
+	}
+	for (const StringName &utility :
+			p_function->export_fixups.gds_utilities) {
+		_add_protected_name(
+				utility, source + " Foundry utility fixup", r_state);
+	}
 	for (const FSFunction::ExportFixups::GlobalStore &global_store : p_function->export_fixups.global_stores) {
-		r_state.observed_names.insert(global_store.global_name);
+		_add_protected_name(
+				global_store.global_name, source + " global-store fixup",
+				r_state);
+	}
+	for (const StringName &name : p_function->export_fixups.named_globals) {
+		_add_protected_name(
+				name, source + " named-global fixup", r_state);
+	}
+	for (const StringName &name : p_function->builtin_method_names) {
+		_add_protected_name(
+				name, source + " builtin method table", r_state);
 	}
 	for (const FSFunction *lambda : p_function->lambdas) {
 		_collect_function(lambda, r_state);
@@ -437,8 +841,22 @@ void FSNameManglerAnalysis::_collect_class(const FoundryScript *p_class, BuildSt
 			}
 		}
 	}
+	for (const KeyValue<StringName, FoundryScript::MemberInfo> &member :
+			p_class->member_indices) {
+		_collect_data_type(
+				member.value.data_type, source + " member type", r_state);
+		_collect_property_info(
+				member.value.property_info, source + " member property",
+				r_state);
+	}
 	for (const KeyValue<StringName, FoundryScript::MemberInfo> &static_variable : p_class->static_variables_indices) {
 		_add_candidate(static_variable.key, IDENTIFIER_MEMBER, r_state);
+		_collect_data_type(
+				static_variable.value.data_type,
+				source + " static member type", r_state);
+		_collect_property_info(
+				static_variable.value.property_info,
+				source + " static member property", r_state);
 	}
 	for (const KeyValue<StringName, Variant> &constant : p_class->constants) {
 		_add_candidate(constant.key, IDENTIFIER_ENUM_OR_CONSTANT, r_state);
@@ -448,6 +866,8 @@ void FSNameManglerAnalysis::_collect_class(const FoundryScript *p_class, BuildSt
 		_add_candidate(signal.key, IDENTIFIER_SIGNAL, r_state);
 		for (const PropertyInfo &argument : signal.value.arguments) {
 			r_state.observed_names.insert(argument.name);
+			_collect_property_info(
+					argument, source + " signal argument", r_state);
 		}
 	}
 	for (const KeyValue<StringName, FSFunction *> &method : p_class->member_functions) {
@@ -473,13 +893,25 @@ void FSNameManglerAnalysis::_collect_class(const FoundryScript *p_class, BuildSt
 		_add_candidate(requirement.key, IDENTIFIER_METHOD, r_state);
 		for (const PropertyInfo &argument : requirement.value.method_info.arguments) {
 			r_state.observed_names.insert(argument.name);
+			_collect_property_info(
+					argument, source + " trait requirement argument",
+					r_state);
 		}
+		_collect_data_type(
+				requirement.value.return_type,
+				source + " trait requirement return", r_state);
+		_collect_property_info(
+				requirement.value.method_info.return_val,
+				source + " trait requirement return property", r_state);
 		for (const Variant &default_argument : requirement.value.method_info.default_arguments) {
 			_collect_variant(default_argument, source, r_state);
 		}
 	}
 	for (const FoundryScript::TypeParameter &type_parameter : p_class->type_parameters) {
 		r_state.observed_names.insert(type_parameter.name);
+		_collect_property_info(
+				type_parameter.bound, source + " type parameter bound",
+				r_state);
 	}
 	if (!p_class->registered_conformance_source.is_empty()) {
 		const Vector<FSConformanceRegistry::RuntimeConformance> conformances =
@@ -514,6 +946,11 @@ void FSNameManglerAnalysis::_collect_class(const FoundryScript *p_class, BuildSt
 	const auto collect_annotations = [&](const Vector<FoundryScript::AnnotationUsage> &p_usages,
 											 const StringName &p_declaration_name = StringName()) {
 		for (const FoundryScript::AnnotationUsage &usage : p_usages) {
+			_add_protected_name(
+					usage.name, source + " annotation name", r_state);
+			_add_protected_identity(
+					String(usage.qualified_name),
+					source + " annotation identity", r_state);
 			_collect_variant(usage.args, source, r_state);
 			_collect_variant(usage.kwargs, source, r_state);
 			if (p_declaration_name != StringName() && usage.is_builtin && usage.name == SNAME("keep_name")) {
@@ -595,29 +1032,6 @@ void FSNameManglerAnalysis::_collect_class(const FoundryScript *p_class, BuildSt
 	}
 }
 
-bool FSNameManglerAnalysis::_collides_with_builtin_api(
-		const StringName &p_name, const Vector<IdentifierKind> &p_kinds) {
-	if (ClassDB::class_exists(p_name) ||
-			Variant::get_type_by_name(String(p_name)) < Variant::VARIANT_MAX ||
-			(Engine::get_singleton() != nullptr &&
-					Engine::get_singleton()->has_singleton(p_name)) ||
-			(FSLanguage::get_singleton() != nullptr &&
-					FSLanguage::get_singleton()->is_reserved_global_name(p_name))) {
-		return true;
-	}
-	for (int type = 0; type < Variant::VARIANT_MAX; type++) {
-		if (kinds_have(p_kinds, IDENTIFIER_METHOD) &&
-				Variant::has_builtin_method((Variant::Type)type, p_name)) {
-			return true;
-		}
-		if (kinds_have(p_kinds, IDENTIFIER_MEMBER) &&
-				Variant::has_member((Variant::Type)type, p_name)) {
-			return true;
-		}
-	}
-	return false;
-}
-
 FSNameManglerAnalysis::Result FSNameManglerAnalysis::analyze(const Input &p_input) {
 	Result result;
 	BuildState state;
@@ -628,6 +1042,9 @@ FSNameManglerAnalysis::Result FSNameManglerAnalysis::analyze(const Input &p_inpu
 			return result;
 		}
 		_index_class(script.ptr(), state);
+	}
+	if (!p_input.scripts.is_empty()) {
+		_index_global_protected_names(state);
 	}
 	for (const Ref<FoundryScript> &script : p_input.scripts) {
 		_collect_class(script.ptr(), state);
@@ -646,6 +1063,35 @@ FSNameManglerAnalysis::Result FSNameManglerAnalysis::analyze(const Input &p_inpu
 	for (const KeyValue<StringName, Vector<String>> &external_entry : state.external_sources) {
 		for (const String &source : external_entry.value) {
 			_add_evidence(external_entry.key, KEEP_EXTERNAL_OR_UNPROVABLE, source, state);
+		}
+	}
+	for (const KeyValue<StringName, Vector<String>> &protected_entry :
+			state.protected_sources) {
+		for (const String &source : protected_entry.value) {
+			_add_evidence(
+					protected_entry.key, KEEP_EXTERNAL_OR_UNPROVABLE,
+					source, state);
+		}
+	}
+	for (const KeyValue<StringName, BuildState::Aggregate> &candidate :
+			state.candidates) {
+		const String candidate_name = candidate.key;
+		for (const KeyValue<String, Vector<String>> &path_entry :
+				state.protected_path_sources) {
+			if (!path_entry.key.contains(candidate_name)) {
+				continue;
+			}
+			for (const String &source : path_entry.value) {
+				_add_evidence(
+						candidate.key, KEEP_EXTERNAL_OR_UNPROVABLE,
+						source + " path " + path_entry.key, state);
+			}
+		}
+		if (state.unscannable_protected_surface) {
+			_add_evidence(
+					candidate.key, KEEP_EXTERNAL_OR_UNPROVABLE,
+					"protected serialized surface exceeded recursion limits",
+					state);
 		}
 	}
 	for (const KeyValue<StringName, BuildState::Aggregate> &candidate : state.candidates) {
@@ -688,13 +1134,6 @@ FSNameManglerAnalysis::Result FSNameManglerAnalysis::analyze(const Input &p_inpu
 		classification.kinds.sort();
 
 		classification.keep_evidence = aggregate.evidence;
-		if (_collides_with_builtin_api(name, classification.kinds)) {
-			KeepEvidence evidence;
-			evidence.name = name;
-			evidence.reason = KEEP_EXTERNAL_OR_UNPROVABLE;
-			evidence.detail = "builtin Variant API";
-			classification.keep_evidence.push_back(evidence);
-		}
 		classification.keep_evidence.sort_custom<EvidenceComparator>();
 		for (int i = classification.keep_evidence.size() - 1; i > 0; i--) {
 			if (evidence_matches(classification.keep_evidence[i - 1], classification.keep_evidence[i])) {

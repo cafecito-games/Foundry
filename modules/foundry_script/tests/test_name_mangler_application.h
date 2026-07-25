@@ -71,6 +71,53 @@ public:
 		p_script->members_cache.push_back(p_property);
 	}
 
+	static void seed_member_property_identity(
+			const Ref<FoundryScript> &p_script,
+			const StringName &p_member,
+			const StringName &p_class_name) {
+		REQUIRE(p_script->member_indices.has(p_member));
+		p_script->member_indices[p_member].property_info.type =
+				Variant::OBJECT;
+		p_script->member_indices[p_member].property_info.class_name =
+				p_class_name;
+	}
+
+	static StringName get_member_property_identity(
+			const Ref<FoundryScript> &p_script,
+			const StringName &p_member) {
+		REQUIRE(p_script->member_indices.has(p_member));
+		return p_script->member_indices[p_member].property_info.class_name;
+	}
+
+	static PropertyInfo get_member_property_info(
+			const Ref<FoundryScript> &p_script,
+			const StringName &p_member) {
+		REQUIRE(p_script->member_indices.has(p_member));
+		return p_script->member_indices[p_member].property_info;
+	}
+
+	static void seed_script_trait_identity(
+			const Ref<FoundryScript> &p_script,
+			const StringName &p_trait_name) {
+		p_script->script_trait_list.clear();
+		p_script->script_trait_list.push_back(p_trait_name);
+	}
+
+	static Vector<StringName> get_script_trait_identities(
+			const Ref<FoundryScript> &p_script) {
+		return p_script->script_trait_list;
+	}
+
+	static void seed_class_annotation_identity(
+			const Ref<FoundryScript> &p_script,
+			const StringName &p_name,
+			const StringName &p_qualified_name) {
+		FoundryScript::AnnotationUsage usage;
+		usage.name = p_name;
+		usage.qualified_name = p_qualified_name;
+		p_script->class_annotations.push_back(usage);
+	}
+
 	static void seed_old_static_dependency(
 			const Ref<FoundryScript> &p_script,
 			const Ref<FoundryScript> &p_dependency,
@@ -191,6 +238,125 @@ public:
 	}
 };
 
+class NameManglerExternalScript : public Script {
+	FOUNDRY_CLASS(NameManglerExternalScript, Script);
+
+	List<MethodInfo> methods;
+	List<PropertyInfo> properties;
+	List<MethodInfo> signals;
+
+protected:
+	static void _bind_methods() {}
+
+public:
+	void add_method(const StringName &p_name) {
+		methods.push_back(MethodInfo(p_name));
+	}
+	void add_property(const StringName &p_name) {
+		properties.push_back(PropertyInfo(Variant::INT, String(p_name)));
+	}
+	void add_signal(const StringName &p_name) {
+		signals.push_back(MethodInfo(p_name));
+	}
+	bool can_instantiate() const override { return false; }
+	Ref<Script> get_base_script() const override { return Ref<Script>(); }
+	StringName get_global_name() const override { return StringName(); }
+	bool inherits_script(const Ref<Script> &p_script) const override { return false; }
+	StringName get_instance_base_type() const override { return SNAME("RefCounted"); }
+	ScriptInstance *instance_create(Object *p_this) override { return nullptr; }
+	bool instance_has(const Object *p_this) const override { return false; }
+	bool has_source_code() const override { return false; }
+	String get_source_code() const override { return String(); }
+	void set_source_code(const String &p_code) override {}
+	Error reload(bool p_keep_state = false) override { return OK; }
+	StringName get_doc_class_name() const override { return StringName(); }
+	Vector<DocData::ClassDoc> get_documentation() const override { return Vector<DocData::ClassDoc>(); }
+	String get_class_icon_path() const override { return String(); }
+	bool has_method(const StringName &p_method) const override {
+		for (const MethodInfo &method : methods) {
+			if (method.name == p_method) {
+				return true;
+			}
+		}
+		return false;
+	}
+	MethodInfo get_method_info(const StringName &p_method) const override {
+		for (const MethodInfo &method : methods) {
+			if (method.name == p_method) {
+				return method;
+			}
+		}
+		return MethodInfo();
+	}
+	bool is_tool() const override { return false; }
+	bool is_valid() const override { return true; }
+	bool is_abstract() const override { return false; }
+	ScriptLanguage *get_language() const override { return nullptr; }
+	bool has_script_signal(const StringName &p_signal) const override {
+		for (const MethodInfo &signal : signals) {
+			if (signal.name == p_signal) {
+				return true;
+			}
+		}
+		return false;
+	}
+	void get_script_signal_list(List<MethodInfo> *r_signals) const override {
+		for (const MethodInfo &signal : signals) {
+			r_signals->push_back(signal);
+		}
+	}
+	bool get_property_default_value(const StringName &p_property, Variant &r_value) const override { return false; }
+	void get_script_method_list(List<MethodInfo> *p_list) const override {
+		for (const MethodInfo &method : methods) {
+			p_list->push_back(method);
+		}
+	}
+	void get_script_property_list(List<PropertyInfo> *p_list) const override {
+		for (const PropertyInfo &property : properties) {
+			p_list->push_back(property);
+		}
+	}
+	const Variant get_rpc_config() const override { return Variant(); }
+};
+
+static Ref<Script> name_mangler_external_script(
+		const String &p_path,
+		const StringName &p_method = StringName(),
+		const StringName &p_property = StringName(),
+		const StringName &p_signal = StringName()) {
+	Ref<NameManglerExternalScript> script;
+	script.instantiate();
+	script->set_path_cache(p_path);
+	if (p_method != StringName()) {
+		script->add_method(p_method);
+	}
+	if (p_property != StringName()) {
+		script->add_property(p_property);
+	}
+	if (p_signal != StringName()) {
+		script->add_signal(p_signal);
+	}
+	return script;
+}
+
+static bool name_mangler_application_has_reason(
+		const FSNameManglerAnalysis::Result &p_result,
+		const StringName &p_name,
+		FSNameManglerAnalysis::KeepReason p_reason) {
+	const FSNameManglerAnalysis::Classification *classification =
+			p_result.find(p_name);
+	if (classification == nullptr) {
+		return false;
+	}
+	for (const FSNameManglerAnalysis::KeepEvidence &evidence :
+			classification->keep_evidence) {
+		if (evidence.reason == p_reason) {
+			return true;
+		}
+	}
+	return false;
+}
+
 class NameManglerRegistryRestore {
 	String source;
 	Vector<FSConformanceRegistry::RuntimeConformance> entries;
@@ -205,6 +371,29 @@ public:
 	~NameManglerRegistryRestore() {
 		FSConformanceRegistry::get_singleton()->register_runtime_witnesses(
 				source, entries);
+	}
+};
+
+class NameManglerConformanceRestore {
+	String source;
+	Vector<FSConformanceRegistry::Conformance> parse_entries;
+	Vector<FSConformanceRegistry::RuntimeConformance> runtime_entries;
+
+public:
+	NameManglerConformanceRestore(
+			const String &p_source,
+			const Vector<FSConformanceRegistry::Conformance> &p_parse_entries,
+			const Vector<FSConformanceRegistry::RuntimeConformance>
+					&p_runtime_entries) :
+			source(p_source),
+			parse_entries(p_parse_entries),
+			runtime_entries(p_runtime_entries) {}
+
+	~NameManglerConformanceRestore() {
+		FSConformanceRegistry::get_singleton()->register_file_conformances(
+				source, parse_entries);
+		FSConformanceRegistry::get_singleton()->register_runtime_witnesses(
+				source, runtime_entries);
 	}
 };
 
@@ -819,6 +1008,448 @@ TEST_CASE("[FoundryScript][NameManglerApplication] Rejects protected mapped name
 	}
 }
 
+TEST_CASE("[FoundryScript][NameManglerApplication] Protects annotation names and identities atomically") {
+	const StringName short_name =
+			SNAME("private_marker_annotation_short");
+	const StringName qualified_name =
+			SNAME("private_marker_annotation_qualified");
+	const StringName control_name =
+			SNAME("private_marker_annotation_control");
+	const StringName reserved_replacement = SNAME("_fsb_0");
+	const String qualified_identity =
+			"res://external_annotations.fs::"
+			"private_marker_annotation_qualified";
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"var private_marker_annotation_short: int\n"
+			"var private_marker_annotation_qualified: int\n"
+			"var private_marker_annotation_control: int\n");
+	TestFSNameManglerApplicationAccessor::seed_class_annotation_identity(
+			script, short_name, StringName());
+	TestFSNameManglerApplicationAccessor::seed_class_annotation_identity(
+			script, SNAME("ExternalAnnotation"),
+			StringName(qualified_identity));
+	TestFSNameManglerApplicationAccessor::seed_class_annotation_identity(
+			script, reserved_replacement, StringName());
+
+	FSNameManglerAnalysis::Input input;
+	input.scripts.push_back(script);
+	const FSNameManglerAnalysis::Result analysis =
+			FSNameManglerAnalysis::analyze(input);
+	REQUIRE_EQ(analysis.error, OK);
+	const StringName protected_names[] = {
+		short_name,
+		qualified_name,
+	};
+	for (const StringName &protected_name : protected_names) {
+		CAPTURE(protected_name);
+		CHECK_FALSE(analysis.rename_map.has(protected_name));
+		CHECK(name_mangler_application_has_reason(
+				analysis, protected_name,
+				FSNameManglerAnalysis::KEEP_EXTERNAL_OR_UNPROVABLE));
+	}
+	REQUIRE(analysis.rename_map.has(control_name));
+	for (const KeyValue<StringName, StringName> &rename :
+			analysis.rename_map) {
+		CAPTURE(rename.key);
+		CHECK_NE(rename.value, reserved_replacement);
+	}
+
+	const Vector<uint8_t> baseline =
+			name_mangler_application_serialize(script);
+	for (int i = 0; i < 2; i++) {
+		CAPTURE(protected_names[i]);
+		RBMap<StringName, StringName> invalid_map;
+		invalid_map.insert(
+				protected_names[i],
+				StringName(vformat("_fsb_manual_annotation_%d", i)));
+		FSNameManglerApplication::Transaction transaction;
+		Vector<FSNameManglerApplication::Diagnostic> diagnostics;
+		CHECK_EQ(transaction.begin(input.scripts, invalid_map, diagnostics),
+				ERR_INVALID_PARAMETER);
+		CHECK_FALSE(transaction.is_active());
+		CHECK_FALSE(diagnostics.is_empty());
+		CHECK_EQ(name_mangler_application_serialize(script), baseline);
+	}
+
+	{
+		RBMap<StringName, StringName> invalid_map;
+		invalid_map.insert(control_name, reserved_replacement);
+		FSNameManglerApplication::Transaction transaction;
+		Vector<FSNameManglerApplication::Diagnostic> diagnostics;
+		CHECK_EQ(transaction.begin(input.scripts, invalid_map, diagnostics),
+				ERR_INVALID_PARAMETER);
+		CHECK_FALSE(transaction.is_active());
+		CHECK_FALSE(diagnostics.is_empty());
+		CHECK_EQ(name_mangler_application_serialize(script), baseline);
+	}
+
+	RBMap<StringName, StringName> valid_map;
+	valid_map.insert(
+			control_name, SNAME("_fsb_annotation_control"));
+	FSNameManglerApplication::Transaction transaction;
+	Vector<FSNameManglerApplication::Diagnostic> diagnostics;
+	REQUIRE_EQ(transaction.begin(
+					   input.scripts, valid_map, diagnostics),
+			OK);
+	CHECK(diagnostics.is_empty());
+	const Vector<FoundryScript::AnnotationUsage> &staged_annotations =
+			script->get_class_annotations();
+	REQUIRE_EQ(staged_annotations.size(), 3);
+	CHECK_EQ(staged_annotations[0].name, short_name);
+	CHECK_EQ(staged_annotations[1].qualified_name,
+			StringName(qualified_identity));
+	CHECK_EQ(staged_annotations[2].name, reserved_replacement);
+	transaction.rollback();
+	CHECK_EQ(name_mangler_application_serialize(script), baseline);
+}
+
+TEST_CASE("[FoundryScript][NameManglerApplication] Rejects packed and typed-container names atomically") {
+	const StringName packed_name = SNAME("private_marker_packed_name");
+	const StringName array_path = SNAME("private_marker_array_path");
+	const StringName dictionary_key_path =
+			SNAME("private_marker_dictionary_key_path");
+	const StringName dictionary_value_path =
+			SNAME("private_marker_dictionary_value_path");
+	const StringName nested_argument_path =
+			SNAME("private_marker_nested_type_argument_path");
+	const StringName resource_path =
+			SNAME("private_marker_external_resource_path");
+	const StringName nested_class_name =
+			SNAME("private_marker_nested_class_name");
+	const StringName numeric_packed_control =
+			SNAME("private_marker_numeric_packed_control");
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"var private_marker_packed_name: int\n"
+			"var private_marker_array_path: int\n"
+			"var private_marker_dictionary_key_path: int\n"
+			"var private_marker_dictionary_value_path: int\n"
+			"var private_marker_nested_type_argument_path: int\n"
+			"var private_marker_external_resource_path: int\n"
+			"var private_marker_nested_class_name: int\n"
+			"var private_marker_numeric_packed_control: int\n");
+
+	PackedStringArray packed_strings;
+	packed_strings.push_back(String(packed_name));
+	TestFSNameManglerApplicationAccessor::seed_constant(
+			script, SNAME("PackedStrings"), packed_strings);
+	PackedInt32Array packed_integers;
+	packed_integers.push_back(17);
+	TestFSNameManglerApplicationAccessor::seed_constant(
+			script, SNAME("PackedIntegers"), packed_integers);
+	Ref<Resource> external_resource;
+	external_resource.instantiate();
+	external_resource->set_path_cache(
+			"res://external/" + String(resource_path) + ".tres");
+	TestFSNameManglerApplicationAccessor::seed_constant(
+			script, SNAME("ExternalResource"), external_resource);
+
+	const auto make_external_type = [](const StringName &p_marker) {
+		ContainerType type;
+		type.builtin_type = Variant::OBJECT;
+		type.class_name = SNAME("RefCounted");
+		type.script = name_mangler_external_script(
+				"res://external/" + String(p_marker) + ".mock");
+		return type;
+	};
+
+	Array typed_array;
+	typed_array.set_typed(make_external_type(array_path));
+	TestFSNameManglerApplicationAccessor::seed_constant(
+			script, SNAME("TypedArray"), typed_array);
+
+	ContainerType variant_type;
+	Dictionary key_typed_dictionary;
+	key_typed_dictionary.set_typed(
+			make_external_type(dictionary_key_path), variant_type);
+	TestFSNameManglerApplicationAccessor::seed_constant(
+			script, SNAME("KeyTypedDictionary"), key_typed_dictionary);
+
+	Dictionary value_typed_dictionary;
+	value_typed_dictionary.set_typed(
+			variant_type, make_external_type(dictionary_value_path));
+	TestFSNameManglerApplicationAccessor::seed_constant(
+			script, SNAME("ValueTypedDictionary"), value_typed_dictionary);
+
+	ContainerType specialized_type;
+	specialized_type.builtin_type = Variant::OBJECT;
+	specialized_type.class_name = SNAME("RefCounted");
+	specialized_type.type_arguments.push_back(
+			make_external_type(nested_argument_path));
+	ContainerType named_nested_argument;
+	named_nested_argument.builtin_type = Variant::OBJECT;
+	named_nested_argument.class_name = nested_class_name;
+	specialized_type.type_arguments.push_back(named_nested_argument);
+	Array nested_argument_array;
+	nested_argument_array.set_typed(specialized_type);
+	TestFSNameManglerApplicationAccessor::seed_constant(
+			script, SNAME("NestedArgumentArray"), nested_argument_array);
+
+	FSNameManglerAnalysis::Input input;
+	input.scripts.push_back(script);
+	const FSNameManglerAnalysis::Result analysis =
+			FSNameManglerAnalysis::analyze(input);
+	REQUIRE_EQ(analysis.error, OK);
+	const StringName protected_names[] = {
+		packed_name,
+		array_path,
+		dictionary_key_path,
+		dictionary_value_path,
+		nested_argument_path,
+		resource_path,
+		nested_class_name,
+	};
+	for (const StringName &protected_name : protected_names) {
+		CAPTURE(protected_name);
+		CHECK_FALSE(analysis.rename_map.has(protected_name));
+		const bool has_reason =
+				name_mangler_application_has_reason(
+						analysis, protected_name,
+						FSNameManglerAnalysis::KEEP_EXTERNAL_OR_UNPROVABLE) ||
+				name_mangler_application_has_reason(
+						analysis, protected_name,
+						FSNameManglerAnalysis::KEEP_STRING_LITERAL);
+		CHECK(has_reason);
+	}
+	CHECK(analysis.rename_map.has(numeric_packed_control));
+
+	const Vector<uint8_t> baseline =
+			name_mangler_application_serialize(script);
+	const TestFSNameManglerApplicationAccessor::CacheState cache_baseline =
+			TestFSNameManglerApplicationAccessor::capture_cache_state(script);
+	for (int i = 0; i < 7; i++) {
+		CAPTURE(protected_names[i]);
+		RBMap<StringName, StringName> invalid_map;
+		invalid_map.insert(protected_names[i],
+				StringName(vformat("_fsb_manual_container_%d", i)));
+		FSNameManglerApplication::Transaction transaction;
+		Vector<FSNameManglerApplication::Diagnostic> diagnostics;
+		CHECK_EQ(transaction.begin(input.scripts, invalid_map, diagnostics),
+				ERR_INVALID_PARAMETER);
+		CHECK_FALSE(transaction.is_active());
+		CHECK_FALSE(diagnostics.is_empty());
+		if (transaction.is_active()) {
+			transaction.rollback();
+		}
+		CHECK_EQ(name_mangler_application_serialize(script), baseline);
+		CHECK(TestFSNameManglerApplicationAccessor::cache_state_equals(
+				script, cache_baseline));
+	}
+}
+
+TEST_CASE("[FoundryScript][NameManglerApplication] Fails closed on recursive protected surfaces") {
+	const Ref<FoundryScript> script =
+			compile_bytecode_test_source("var recursion_probe: int\n");
+	Array recursive;
+	recursive.push_back(recursive);
+	TestFSNameManglerApplicationAccessor::seed_constant(
+			script, SNAME("RecursiveSurface"), recursive);
+	Vector<Ref<FoundryScript>> roots;
+	roots.push_back(script);
+
+	FSNameManglerApplication::Transaction transaction;
+	Vector<FSNameManglerApplication::Diagnostic> diagnostics;
+	CHECK_EQ(transaction.begin(roots, {}, diagnostics),
+			ERR_INVALID_PARAMETER);
+	CHECK_FALSE(transaction.is_active());
+	CHECK_FALSE(diagnostics.is_empty());
+	if (transaction.is_active()) {
+		transaction.rollback();
+	}
+}
+
+TEST_CASE("[FoundryScript][NameManglerApplication] Protects unrelated ClassDB dynamic APIs globally") {
+	const StringName protected_names[] = {
+		SNAME("play"),
+		SNAME("volume_db"),
+		SNAME("set_volume_db"),
+		SNAME("get_volume_db"),
+		SNAME("finished"),
+		SNAME("absf"),
+		SNAME("len"),
+	};
+	REQUIRE(ClassDB::class_exists(SNAME("AudioStreamPlayer")));
+	REQUIRE(ClassDB::has_method(
+			SNAME("AudioStreamPlayer"), protected_names[0]));
+	REQUIRE(ClassDB::has_property(
+			SNAME("AudioStreamPlayer"), protected_names[1]));
+	REQUIRE_EQ(ClassDB::get_property_setter(
+					   SNAME("AudioStreamPlayer"), protected_names[1]),
+			protected_names[2]);
+	REQUIRE_EQ(ClassDB::get_property_getter(
+					   SNAME("AudioStreamPlayer"), protected_names[1]),
+			protected_names[3]);
+	REQUIRE(ClassDB::has_signal(
+			SNAME("AudioStreamPlayer"), protected_names[4]));
+
+	const StringName control = SNAME("private_marker_global_api_control");
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"extends RefCounted\n"
+			"signal finished\n"
+			"var volume_db: float\n"
+			"var private_marker_global_api_control: int\n"
+			"func play() -> void:\n"
+			"\tpass\n"
+			"func set_volume_db(value: float) -> void:\n"
+			"\tvolume_db = value\n"
+			"func get_volume_db() -> float:\n"
+			"\treturn volume_db\n"
+			"func absf(value: float) -> float:\n"
+			"\treturn value\n"
+			"func len(value: Variant) -> int:\n"
+			"\treturn 0\n"
+			"func invoke_dynamic(value: Variant) -> void:\n"
+			"\tvalue.play()\n");
+	const FSFunction *invoke_dynamic =
+			script->get_member_functions()[SNAME("invoke_dynamic")];
+	REQUIRE(invoke_dynamic != nullptr);
+	CHECK(invoke_dynamic->export_fixups.method_binds.is_empty());
+
+	FSNameManglerAnalysis::Input input;
+	input.scripts.push_back(script);
+	const FSNameManglerAnalysis::Result analysis =
+			FSNameManglerAnalysis::analyze(input);
+	REQUIRE_EQ(analysis.error, OK);
+	for (const StringName &protected_name : protected_names) {
+		CAPTURE(protected_name);
+		CHECK_FALSE(analysis.rename_map.has(protected_name));
+		CHECK(name_mangler_application_has_reason(
+				analysis, protected_name,
+				FSNameManglerAnalysis::KEEP_EXTERNAL_OR_UNPROVABLE));
+	}
+	REQUIRE(analysis.rename_map.has(control));
+
+	const Vector<uint8_t> baseline =
+			name_mangler_application_serialize(script);
+	for (int i = 0; i < 7; i++) {
+		CAPTURE(protected_names[i]);
+		RBMap<StringName, StringName> invalid_map;
+		invalid_map.insert(protected_names[i],
+				StringName(vformat("_fsb_manual_classdb_%d", i)));
+		FSNameManglerApplication::Transaction transaction;
+		Vector<FSNameManglerApplication::Diagnostic> diagnostics;
+		CHECK_EQ(transaction.begin(input.scripts, invalid_map, diagnostics),
+				ERR_INVALID_PARAMETER);
+		CHECK_FALSE(transaction.is_active());
+		CHECK_FALSE(diagnostics.is_empty());
+		if (transaction.is_active()) {
+			transaction.rollback();
+		}
+		CHECK_EQ(name_mangler_application_serialize(script), baseline);
+	}
+
+	RBMap<StringName, StringName> valid_map;
+	valid_map.insert(control, SNAME("_fsb_manual_global_control"));
+	FSNameManglerApplication::Transaction transaction;
+	Vector<FSNameManglerApplication::Diagnostic> diagnostics;
+	REQUIRE_EQ(
+			transaction.begin(input.scripts, valid_map, diagnostics), OK);
+	CHECK(diagnostics.is_empty());
+	transaction.rollback();
+	CHECK_EQ(name_mangler_application_serialize(script), baseline);
+}
+
+TEST_CASE("[FoundryScript][NameManglerApplication] Protects non-Foundry global type identities") {
+	const StringName external_name = SNAME("ExternalName");
+	const StringName external_method = SNAME("external_ping");
+	const StringName external_property = SNAME("external_value");
+	const StringName external_signal = SNAME("external_changed");
+	const StringName control = SNAME("private_marker_external_control");
+	const String external_path = "res://external_name.cs";
+	ScriptServer::remove_global_class(external_name);
+	const Ref<Script> external_script =
+			name_mangler_external_script(
+					external_path, external_method, external_property,
+					external_signal);
+
+	const Ref<FoundryScript> declaration = compile_bytecode_test_source(
+			"class ExternalName:\n"
+			"\tpass\n"
+			"signal external_changed\n"
+			"var external_value: int\n"
+			"var private_marker_external_control: int\n");
+	const Ref<FoundryScript> consumer = compile_bytecode_test_source(
+			"var external_slot: RefCounted\n"
+			"func consume_external(value: RefCounted) -> void:\n"
+			"\tpass\n"
+			"func external_ping() -> void:\n"
+			"\tpass\n"
+			"func invoke_external(value: Variant) -> void:\n"
+			"\tvalue.external_ping()\n"
+			"\tvalue.external_value = 1\n");
+	FSFunction *const consume_external =
+			consumer->get_member_functions()[SNAME("consume_external")];
+	REQUIRE(consume_external != nullptr);
+	TestFSNameManglerApplicationAccessor::seed_member_property_identity(
+			consumer, SNAME("external_slot"), external_name);
+	ContainerType external_type;
+	external_type.builtin_type = Variant::OBJECT;
+	external_type.class_name = external_name;
+	external_type.script = external_script;
+	Array external_values;
+	external_values.set_typed(external_type);
+	TestFSNameManglerApplicationAccessor::seed_constant(
+			consumer, SNAME("ExternalValues"), external_values);
+
+	ScriptServer::add_global_class(
+			external_name, SNAME("RefCounted"), SNAME("CSharp"),
+			external_path, false, false, false);
+	NameManglerGlobalClassRestore global_class_restore(external_name);
+
+	FSNameManglerAnalysis::Input input;
+	input.scripts.push_back(declaration);
+	input.scripts.push_back(consumer);
+	const FSNameManglerAnalysis::Result analysis =
+			FSNameManglerAnalysis::analyze(input);
+	REQUIRE_EQ(analysis.error, OK);
+	const StringName protected_names[] = {
+		external_name,
+		external_method,
+		external_property,
+		external_signal,
+	};
+	for (const StringName &protected_name : protected_names) {
+		CAPTURE(protected_name);
+		CHECK_FALSE(analysis.rename_map.has(protected_name));
+		CHECK(name_mangler_application_has_reason(
+				analysis, protected_name,
+				FSNameManglerAnalysis::KEEP_EXTERNAL_OR_UNPROVABLE));
+	}
+	CHECK(analysis.rename_map.has(control));
+	const Vector<uint8_t> declaration_baseline =
+			name_mangler_application_serialize(declaration);
+	const Vector<uint8_t> consumer_baseline =
+			name_mangler_application_serialize(consumer);
+
+	for (int i = 0; i < 4; i++) {
+		CAPTURE(protected_names[i]);
+		RBMap<StringName, StringName> invalid_map;
+		invalid_map.insert(protected_names[i],
+				StringName(vformat("_fsb_manual_external_%d", i)));
+		FSNameManglerApplication::Transaction transaction;
+		Vector<FSNameManglerApplication::Diagnostic> diagnostics;
+		CHECK_EQ(transaction.begin(input.scripts, invalid_map, diagnostics),
+				ERR_INVALID_PARAMETER);
+		CHECK_FALSE(transaction.is_active());
+		CHECK_FALSE(diagnostics.is_empty());
+		if (transaction.is_active()) {
+			transaction.rollback();
+		}
+		CHECK_EQ(
+				TestFSNameManglerApplicationAccessor::
+						get_member_property_identity(
+								consumer, SNAME("external_slot")),
+				external_name);
+		const Array restored_values =
+				consumer->get_constants()[SNAME("ExternalValues")];
+		CHECK_EQ(restored_values.get_element_type().script, external_script);
+		CHECK_EQ(restored_values.get_element_type().class_name, external_name);
+		CHECK_EQ(name_mangler_application_serialize(declaration),
+				declaration_baseline);
+		CHECK_EQ(name_mangler_application_serialize(consumer),
+				consumer_baseline);
+	}
+}
+
 TEST_CASE("[FoundryScript][NameManglerApplication] Protects every pointer-fixup name table") {
 	if (!FSLanguage::get_singleton()->has_any_global_constant(
 				SNAME("RefCounted"))) {
@@ -826,8 +1457,7 @@ TEST_CASE("[FoundryScript][NameManglerApplication] Protects every pointer-fixup 
 	}
 	const StringName autoload_name =
 			SNAME("PrivateMarkerFixupAutoload");
-	const StringName named_global_name =
-			SNAME("PrivateMarkerFixupNamedGlobal");
+	const StringName named_global_name = SNAME("_fsb_0");
 	const String scene_path =
 			TestUtils::get_temp_path("name_mangler_fixup_autoload.tscn");
 	NameManglerFixupGlobalRestore global_restore(
@@ -880,13 +1510,34 @@ TEST_CASE("[FoundryScript][NameManglerApplication] Protects every pointer-fixup 
 			"\tvar reference := RefCounted.new()\n"
 			"\tvar identifier := reference.get_instance_id()\n"
 			"\tvar autoload_value = PrivateMarkerFixupAutoload\n"
-			"\tvar named_value = PrivateMarkerFixupNamedGlobal\n"
+			"\tvar named_value = _fsb_0\n"
 			"\treturn [stored, absolute, count, text_length, identifier, "
 			"autoload_value, named_value, dynamic_sum]\n"
 			"\n"
 			"@keep_name\n"
 			"func run() -> int:\n"
 			"\treturn int(private_marker_fixup_probe()[7])\n");
+	const StringName control = SNAME("private_marker_fixup_control");
+	const Ref<FoundryScript> collisions = compile_bytecode_test_source(
+			"extends RefCounted\n"
+			"func x() -> void:\n"
+			"\tpass\n"
+			"func y() -> void:\n"
+			"\tpass\n"
+			"func length() -> void:\n"
+			"\tpass\n"
+			"func absf() -> void:\n"
+			"\tpass\n"
+			"func len() -> void:\n"
+			"\tpass\n"
+			"func get_instance_id() -> int:\n"
+			"\treturn 0\n"
+			"func PrivateMarkerFixupAutoload() -> void:\n"
+			"\tpass\n"
+			"func _fsb_0() -> void:\n"
+			"\tpass\n"
+			"func private_marker_fixup_control() -> void:\n"
+			"\tpass\n");
 	const HashMap<StringName, FSFunction *>::ConstIterator function_entry =
 			script->get_member_functions().find(
 					SNAME("private_marker_fixup_probe"));
@@ -996,11 +1647,35 @@ TEST_CASE("[FoundryScript][NameManglerApplication] Protects every pointer-fixup 
 
 	FSNameManglerAnalysis::Input input;
 	input.scripts.push_back(script);
+	input.scripts.push_back(collisions);
 	const FSNameManglerAnalysis::Result analysis =
 			FSNameManglerAnalysis::analyze(input);
 	REQUIRE_EQ(analysis.error, OK);
 	REQUIRE(analysis.rename_map.has(
 			SNAME("private_marker_fixup_probe")));
+	const StringName protected_names[] = {
+		SNAME("x"),
+		SNAME("y"),
+		SNAME("length"),
+		SNAME("absf"),
+		SNAME("len"),
+		SNAME("get_instance_id"),
+		autoload_name,
+		named_global_name,
+	};
+	for (const StringName &protected_name : protected_names) {
+		CAPTURE(protected_name);
+		CHECK_FALSE(analysis.rename_map.has(protected_name));
+		CHECK(name_mangler_application_has_reason(
+				analysis, protected_name,
+				FSNameManglerAnalysis::KEEP_EXTERNAL_OR_UNPROVABLE));
+	}
+	REQUIRE(analysis.rename_map.has(control));
+	for (const KeyValue<StringName, StringName> &rename :
+			analysis.rename_map) {
+		CAPTURE(rename.key);
+		CHECK_NE(rename.value, named_global_name);
+	}
 	Vector<uint8_t> staged_buffer;
 	{
 		FSNameManglerApplication::Transaction transaction;
@@ -1019,16 +1694,6 @@ TEST_CASE("[FoundryScript][NameManglerApplication] Protects every pointer-fixup 
 			staged_buffer, script->get_script_path(), &resolver);
 	CHECK_EQ(name_mangler_application_run(loaded, SNAME("run")), 3);
 
-	const StringName protected_names[] = {
-		SNAME("x"),
-		SNAME("y"),
-		SNAME("length"),
-		SNAME("absf"),
-		SNAME("len"),
-		SNAME("get_instance_id"),
-		autoload_name,
-		named_global_name,
-	};
 	for (int i = 0; i < 8; i++) {
 		CAPTURE(protected_names[i]);
 		RBMap<StringName, StringName> invalid = analysis.rename_map;
@@ -1043,6 +1708,16 @@ TEST_CASE("[FoundryScript][NameManglerApplication] Protects every pointer-fixup 
 		CHECK_FALSE(diagnostics.is_empty());
 		check_fixups(function->export_fixups);
 	}
+
+	RBMap<StringName, StringName> valid;
+	valid.insert(control, SNAME("_fsb_manual_fixup_control"));
+	FSNameManglerApplication::Transaction valid_transaction;
+	Vector<FSNameManglerApplication::Diagnostic> valid_diagnostics;
+	REQUIRE_EQ(valid_transaction.begin(
+					   input.scripts, valid, valid_diagnostics),
+			OK);
+	CHECK(valid_diagnostics.is_empty());
+	valid_transaction.rollback();
 }
 
 TEST_CASE("[FoundryScript][NameManglerApplication] Protects native type identities globally") {
@@ -1528,6 +2203,373 @@ TEST_CASE("[FoundryScript][NameManglerApplication] Rejects omitted editor-cache 
 		CHECK_FALSE(transaction.is_active());
 		CHECK_FALSE(diagnostics.is_empty());
 	}
+}
+
+TEST_CASE("[FoundryScript][NameManglerApplication] Rewrites deep path-backed identities atomically") {
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"class DeepOuter:\n"
+			"\tclass DeepInner:\n"
+			"\t\ttrait DeepTrait:\n"
+			"\t\t\tabstract func deep_witness(value: int) -> int\n"
+			"\t\tclass DeepTarget:\n"
+			"\t\t\tvar deep_value: int = 40\n"
+			"\n"
+			"extend DeepOuter.DeepInner.DeepTarget uses "
+			"DeepOuter.DeepInner.DeepTrait:\n"
+			"\tfunc deep_witness(value: int) -> int:\n"
+			"\t\treturn deep_value + value\n"
+			"\n"
+			"var deep_full_slot: int\n"
+			"var deep_relative_slot: int\n");
+	const String source = script->get_script_path();
+	REQUIRE(script->get_subclasses().has(SNAME("DeepOuter")));
+	const Ref<FoundryScript> outer =
+			script->get_subclasses()[SNAME("DeepOuter")];
+	REQUIRE(outer->get_subclasses().has(SNAME("DeepInner")));
+	const Ref<FoundryScript> inner =
+			outer->get_subclasses()[SNAME("DeepInner")];
+	REQUIRE(inner->get_subclasses().has(SNAME("DeepTrait")));
+	REQUIRE(inner->get_subclasses().has(SNAME("DeepTarget")));
+	const Ref<FoundryScript> trait =
+			inner->get_subclasses()[SNAME("DeepTrait")];
+	const Ref<FoundryScript> target =
+			inner->get_subclasses()[SNAME("DeepTarget")];
+
+	const String original_outer = outer->get_fully_qualified_name();
+	const String original_inner = inner->get_fully_qualified_name();
+	const StringName original_trait = trait->get_trait_type_name();
+	const String original_target = target->get_fully_qualified_name();
+	const String relative_trait = "DeepOuter::DeepInner::DeepTrait";
+	const String relative_target = "DeepOuter::DeepInner::DeepTarget";
+	REQUIRE_EQ(original_outer, source + "::DeepOuter");
+	REQUIRE_EQ(original_inner, source + "::DeepOuter::DeepInner");
+	REQUIRE_EQ(String(original_trait), source + "::" + relative_trait);
+	REQUIRE_EQ(original_target, source + "::" + relative_target);
+
+	TestFSNameManglerApplicationAccessor::seed_member_property_identity(
+			script, SNAME("deep_full_slot"),
+			StringName(original_target));
+	TestFSNameManglerApplicationAccessor::seed_member_property_identity(
+			script, SNAME("deep_relative_slot"),
+			StringName(relative_target));
+	TestFSNameManglerApplicationAccessor::seed_script_trait_identity(
+			target, original_trait);
+
+	FSConformanceRegistry *const registry =
+			FSConformanceRegistry::get_singleton();
+	const Vector<FSConformanceRegistry::Conformance> original_parse =
+			registry->get_file_conformances(source);
+	const Vector<FSConformanceRegistry::RuntimeConformance> original_runtime =
+			registry->get_runtime_witnesses(source);
+	NameManglerConformanceRestore registry_restore(
+			source, original_parse, original_runtime);
+	REQUIRE_EQ(original_parse.size(), 1);
+	REQUIRE_EQ(original_runtime.size(), 1);
+	REQUIRE(original_parse[0].target_keys.has(original_target));
+	REQUIRE_EQ(original_parse[0].trait_name, original_trait);
+	REQUIRE(original_parse[0].witnesses.has(SNAME("deep_witness")));
+	REQUIRE(original_runtime[0].target_keys.has(original_target));
+	REQUIRE_EQ(original_runtime[0].trait_name, original_trait);
+	REQUIRE(original_runtime[0].functions.has(SNAME("deep_witness")));
+	FSFunction *const original_witness =
+			original_runtime[0].functions[SNAME("deep_witness")];
+	REQUIRE(original_witness != nullptr);
+
+	FSNameManglerAnalysis::Input input;
+	input.scripts.push_back(script);
+	const FSNameManglerAnalysis::Result analysis =
+			FSNameManglerAnalysis::analyze(input);
+	REQUIRE_EQ(analysis.error, OK);
+	const StringName renamed_atoms[] = {
+		SNAME("DeepOuter"),
+		SNAME("DeepInner"),
+		SNAME("DeepTrait"),
+		SNAME("DeepTarget"),
+		SNAME("deep_witness"),
+		SNAME("deep_full_slot"),
+		SNAME("deep_relative_slot"),
+	};
+	bool has_all_renames = true;
+	for (const StringName &name : renamed_atoms) {
+		CAPTURE(name);
+		const bool has_rename = analysis.rename_map.has(name);
+		CHECK(has_rename);
+		has_all_renames = has_all_renames && has_rename;
+	}
+	if (!has_all_renames) {
+		return;
+	}
+
+	const String transformed_relative_trait =
+			String(analysis.rename_map[SNAME("DeepOuter")]) + "::" +
+			String(analysis.rename_map[SNAME("DeepInner")]) + "::" +
+			String(analysis.rename_map[SNAME("DeepTrait")]);
+	const String transformed_relative_target =
+			String(analysis.rename_map[SNAME("DeepOuter")]) + "::" +
+			String(analysis.rename_map[SNAME("DeepInner")]) + "::" +
+			String(analysis.rename_map[SNAME("DeepTarget")]);
+	const String transformed_trait =
+			source + "::" + transformed_relative_trait;
+	const String transformed_target =
+			source + "::" + transformed_relative_target;
+	const StringName transformed_witness =
+			analysis.rename_map[SNAME("deep_witness")];
+	const StringName transformed_full_slot =
+			analysis.rename_map[SNAME("deep_full_slot")];
+	const StringName transformed_relative_slot =
+			analysis.rename_map[SNAME("deep_relative_slot")];
+	const Vector<uint8_t> baseline =
+			name_mangler_application_serialize(script);
+	Vector<uint8_t> staged_buffer;
+
+	{
+		FSNameManglerApplication::Transaction transaction;
+		Vector<FSNameManglerApplication::Diagnostic> diagnostics;
+		const Error begin_error = transaction.begin(
+				input.scripts, analysis.rename_map, diagnostics);
+		String formatted_diagnostics;
+		for (const FSNameManglerApplication::Diagnostic &diagnostic :
+				diagnostics) {
+			if (!formatted_diagnostics.is_empty()) {
+				formatted_diagnostics += "\n";
+			}
+			formatted_diagnostics += diagnostic.format();
+		}
+		INFO(formatted_diagnostics);
+		REQUIRE_EQ(begin_error, OK);
+		if (begin_error != OK) {
+			return;
+		}
+		REQUIRE(diagnostics.is_empty());
+
+		CHECK_EQ(String(trait->get_trait_type_name()),
+				transformed_trait);
+		CHECK_EQ(target->get_fully_qualified_name(),
+				transformed_target);
+		CHECK_EQ(
+				TestFSNameManglerApplicationAccessor::
+						get_member_property_identity(
+								script, transformed_full_slot),
+				StringName(transformed_target));
+		CHECK_EQ(
+				TestFSNameManglerApplicationAccessor::
+						get_member_property_identity(
+								script, transformed_relative_slot),
+				StringName(transformed_relative_target));
+		const Vector<StringName> staged_traits =
+				TestFSNameManglerApplicationAccessor::
+						get_script_trait_identities(target);
+		REQUIRE_EQ(staged_traits.size(), 1);
+		CHECK_EQ(staged_traits[0], StringName(transformed_trait));
+
+		const Vector<FSConformanceRegistry::Conformance> staged_parse =
+				registry->get_file_conformances(source);
+		const Vector<FSConformanceRegistry::RuntimeConformance>
+				staged_runtime =
+						registry->get_runtime_witnesses(source);
+		REQUIRE_EQ(staged_parse.size(), 1);
+		REQUIRE_EQ(staged_runtime.size(), 1);
+		CHECK(staged_parse[0].target_keys.has(transformed_target));
+		CHECK_FALSE(staged_parse[0].target_keys.has(original_target));
+		CHECK_EQ(staged_parse[0].trait_name,
+				StringName(transformed_trait));
+		CHECK(staged_parse[0].witnesses.has(transformed_witness));
+		CHECK_FALSE(
+				staged_parse[0].witnesses.has(SNAME("deep_witness")));
+		CHECK(staged_runtime[0].target_keys.has(transformed_target));
+		CHECK_FALSE(staged_runtime[0].target_keys.has(original_target));
+		CHECK_EQ(staged_runtime[0].trait_name,
+				StringName(transformed_trait));
+		REQUIRE(staged_runtime[0].functions.has(transformed_witness));
+		CHECK_FALSE(
+				staged_runtime[0].functions.has(SNAME("deep_witness")));
+		CHECK_EQ(staged_runtime[0].functions[transformed_witness],
+				original_witness);
+		CHECK_EQ(original_witness->get_name(), transformed_witness);
+
+		staged_buffer = name_mangler_application_serialize(script);
+		CHECK(bytecode_buffer_contains(
+				staged_buffer, transformed_target));
+		CHECK(bytecode_buffer_contains(
+				staged_buffer, transformed_relative_target));
+		CHECK_FALSE(
+				bytecode_buffer_contains(staged_buffer, original_target));
+		CHECK_FALSE(bytecode_buffer_contains(
+				staged_buffer, relative_target));
+	}
+
+	CHECK_EQ(outer->get_fully_qualified_name(), original_outer);
+	CHECK_EQ(inner->get_fully_qualified_name(), original_inner);
+	CHECK_EQ(trait->get_trait_type_name(), original_trait);
+	CHECK_EQ(target->get_fully_qualified_name(), original_target);
+	CHECK_EQ(
+			TestFSNameManglerApplicationAccessor::
+					get_member_property_identity(
+							script, SNAME("deep_full_slot")),
+			StringName(original_target));
+	CHECK_EQ(
+			TestFSNameManglerApplicationAccessor::
+					get_member_property_identity(
+							script, SNAME("deep_relative_slot")),
+			StringName(relative_target));
+	const Vector<StringName> restored_traits =
+			TestFSNameManglerApplicationAccessor::
+					get_script_trait_identities(target);
+	REQUIRE_EQ(restored_traits.size(), 1);
+	CHECK_EQ(restored_traits[0], original_trait);
+	const Vector<FSConformanceRegistry::Conformance> restored_parse =
+			registry->get_file_conformances(source);
+	const Vector<FSConformanceRegistry::RuntimeConformance>
+			restored_runtime = registry->get_runtime_witnesses(source);
+	REQUIRE_EQ(restored_parse.size(), 1);
+	REQUIRE_EQ(restored_runtime.size(), 1);
+	CHECK(restored_parse[0].target_keys.has(original_target));
+	CHECK_EQ(restored_parse[0].trait_name, original_trait);
+	CHECK(restored_parse[0].witnesses.has(SNAME("deep_witness")));
+	CHECK(restored_runtime[0].target_keys.has(original_target));
+	CHECK_EQ(restored_runtime[0].trait_name, original_trait);
+	REQUIRE(restored_runtime[0].functions.has(
+			SNAME("deep_witness")));
+	CHECK_EQ(restored_runtime[0].functions[SNAME("deep_witness")],
+			original_witness);
+	CHECK_EQ(original_witness->get_name(), SNAME("deep_witness"));
+	CHECK_EQ(name_mangler_application_serialize(script), baseline);
+
+	BytecodeTestResolver resolver;
+	const Ref<FoundryScript> loaded =
+			name_mangler_application_load(staged_buffer, source, &resolver);
+	const StringName transformed_outer =
+			analysis.rename_map[SNAME("DeepOuter")];
+	const StringName transformed_inner =
+			analysis.rename_map[SNAME("DeepInner")];
+	const StringName transformed_trait_name =
+			analysis.rename_map[SNAME("DeepTrait")];
+	const StringName transformed_target_name =
+			analysis.rename_map[SNAME("DeepTarget")];
+	REQUIRE(loaded->get_subclasses().has(transformed_outer));
+	const Ref<FoundryScript> loaded_outer =
+			loaded->get_subclasses()[transformed_outer];
+	REQUIRE(loaded_outer->get_subclasses().has(transformed_inner));
+	const Ref<FoundryScript> loaded_inner =
+			loaded_outer->get_subclasses()[transformed_inner];
+	REQUIRE(loaded_inner->get_subclasses().has(
+			transformed_trait_name));
+	REQUIRE(loaded_inner->get_subclasses().has(
+			transformed_target_name));
+	const Ref<FoundryScript> loaded_trait =
+			loaded_inner->get_subclasses()[transformed_trait_name];
+	const Ref<FoundryScript> loaded_target =
+			loaded_inner->get_subclasses()[transformed_target_name];
+	CHECK_EQ(String(loaded_trait->get_trait_type_name()),
+			transformed_trait);
+	CHECK_EQ(loaded_target->get_fully_qualified_name(),
+			transformed_target);
+	CHECK_EQ(
+			TestFSNameManglerApplicationAccessor::
+					get_member_property_identity(
+							loaded, transformed_full_slot),
+			StringName(transformed_target));
+	CHECK_EQ(
+			TestFSNameManglerApplicationAccessor::
+					get_member_property_identity(
+							loaded, transformed_relative_slot),
+			StringName(transformed_relative_target));
+	const Vector<StringName> loaded_traits =
+			TestFSNameManglerApplicationAccessor::
+					get_script_trait_identities(loaded_target);
+	REQUIRE_EQ(loaded_traits.size(), 1);
+	CHECK_EQ(loaded_traits[0], StringName(transformed_trait));
+
+	const Vector<FSConformanceRegistry::RuntimeConformance> loaded_runtime =
+			registry->get_runtime_witnesses(source);
+	REQUIRE_EQ(loaded_runtime.size(), 1);
+	CHECK(loaded_runtime[0].target_keys.has(transformed_target));
+	CHECK_EQ(loaded_runtime[0].trait_name,
+			StringName(transformed_trait));
+	REQUIRE(loaded_runtime[0].functions.has(transformed_witness));
+	FSFunction *const loaded_witness =
+			loaded_runtime[0].functions[transformed_witness];
+	REQUIRE(loaded_witness != nullptr);
+	CHECK_EQ(loaded_witness->get_name(), transformed_witness);
+}
+
+TEST_CASE("[FoundryScript][NameManglerApplication] Keeps foreign path identities with matching relative suffixes") {
+	const StringName outer_name = SNAME("ExternalSuffixOuter");
+	const StringName inner_name = SNAME("ExternalSuffixInner");
+	const StringName leaf_name = SNAME("ExternalSuffixLeaf");
+	const StringName slot_name = SNAME("external_suffix_slot");
+	const StringName control_name =
+			SNAME("private_marker_external_suffix_control");
+	const StringName replacement_name =
+			SNAME("_fsb_external_suffix_control");
+	const String foreign_identity =
+			"res://unrelated_external_suffix.fs::ExternalSuffixOuter::"
+			"ExternalSuffixInner::ExternalSuffixLeaf";
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"class ExternalSuffixOuter:\n"
+			"\tclass ExternalSuffixInner:\n"
+			"\t\tclass ExternalSuffixLeaf:\n"
+			"\t\t\tpass\n"
+			"\n"
+			"var external_suffix_slot: int\n"
+			"var private_marker_external_suffix_control: int\n");
+	TestFSNameManglerApplicationAccessor::seed_member_property_identity(
+			script, slot_name, StringName(foreign_identity));
+
+	FSNameManglerAnalysis::Input input;
+	input.scripts.push_back(script);
+	const FSNameManglerAnalysis::Result analysis =
+			FSNameManglerAnalysis::analyze(input);
+	REQUIRE_EQ(analysis.error, OK);
+	const StringName protected_names[] = {
+		outer_name,
+		inner_name,
+		leaf_name,
+	};
+	for (const StringName &protected_name : protected_names) {
+		CAPTURE(protected_name);
+		CHECK_FALSE(analysis.rename_map.has(protected_name));
+		CHECK(name_mangler_application_has_reason(
+				analysis, protected_name,
+				FSNameManglerAnalysis::KEEP_EXTERNAL_OR_UNPROVABLE));
+	}
+	REQUIRE(analysis.rename_map.has(control_name));
+
+	const Vector<uint8_t> baseline =
+			name_mangler_application_serialize(script);
+	for (int i = 0; i < 3; i++) {
+		CAPTURE(protected_names[i]);
+		RBMap<StringName, StringName> invalid_map;
+		invalid_map.insert(
+				protected_names[i],
+				StringName(vformat("_fsb_external_suffix_%d", i)));
+		FSNameManglerApplication::Transaction transaction;
+		Vector<FSNameManglerApplication::Diagnostic> diagnostics;
+		CHECK_EQ(transaction.begin(input.scripts, invalid_map, diagnostics),
+				ERR_INVALID_PARAMETER);
+		CHECK_FALSE(transaction.is_active());
+		CHECK_FALSE(diagnostics.is_empty());
+		CHECK_EQ(
+				TestFSNameManglerApplicationAccessor::
+						get_member_property_identity(script, slot_name),
+				StringName(foreign_identity));
+		CHECK_EQ(name_mangler_application_serialize(script), baseline);
+	}
+
+	RBMap<StringName, StringName> valid_map;
+	valid_map.insert(control_name, replacement_name);
+	FSNameManglerApplication::Transaction transaction;
+	Vector<FSNameManglerApplication::Diagnostic> diagnostics;
+	REQUIRE_EQ(transaction.begin(
+					   input.scripts, valid_map, diagnostics),
+			OK);
+	CHECK(diagnostics.is_empty());
+	CHECK_EQ(
+			TestFSNameManglerApplicationAccessor::
+					get_member_property_identity(script, slot_name),
+			StringName(foreign_identity));
+	transaction.rollback();
+	CHECK_EQ(name_mangler_application_serialize(script), baseline);
 }
 
 TEST_CASE("[FoundryScript][NameManglerApplication] Stages and restores the conformance registry") {
@@ -2301,8 +3343,33 @@ TEST_CASE("[FoundryScript][NameManglerApplication] Real generic trait graph keep
 		SNAME("PrivateMarkerDerived"),
 		SNAME("PrivateMarkerConformance"),
 	};
+	bool has_all_private_renames = true;
 	for (const StringName &name : private_names) {
-		REQUIRE(analysis.rename_map.has(name));
+		CAPTURE(name);
+		String keep_details;
+		const FSNameManglerAnalysis::Classification *classification =
+				analysis.find(name);
+		if (classification != nullptr) {
+			for (const FSNameManglerAnalysis::KeepEvidence &evidence :
+					classification->keep_evidence) {
+				if (!keep_details.is_empty()) {
+					keep_details += "\n";
+				}
+				keep_details += vformat(
+						"%s: %s",
+						FSNameManglerAnalysis::get_keep_reason_label(
+								evidence.reason),
+						evidence.detail);
+			}
+		}
+		INFO(keep_details);
+		const bool has_rename = analysis.rename_map.has(name);
+		CHECK(has_rename);
+		has_all_private_renames =
+				has_all_private_renames && has_rename;
+	}
+	if (!has_all_private_renames) {
+		return;
 	}
 	REQUIRE_FALSE(analysis.rename_map.has(SNAME("run")));
 	REQUIRE_FALSE(analysis.rename_map.has(SNAME("enum_probe")));
@@ -2428,6 +3495,7 @@ TEST_CASE("[FoundryScript][NameManglerApplication] Multi-file runtime and serial
 			"extends RefCounted\n"
 			"\n"
 			"signal private_marker_changed(value: int)\n"
+			"@export var public_export_marker: int = 7\n"
 			"var private_marker_value: int = 40\n"
 			"\n"
 			"func private_marker_bump(delta: int) -> int:\n"
@@ -2439,7 +3507,7 @@ TEST_CASE("[FoundryScript][NameManglerApplication] Multi-file runtime and serial
 			"extends \"%s\"\n"
 			"\n"
 			"func private_marker_run() -> int:\n"
-			"\treturn private_marker_bump(2)\n",
+			"\treturn private_marker_bump(public_export_marker - 5)\n",
 			base->get_script_path()));
 	const Ref<FoundryScript> caller = compile_bytecode_test_source(vformat(
 			"class_name PrivateMarkerApplicationRuntimeCaller\n"
@@ -2459,6 +3527,7 @@ TEST_CASE("[FoundryScript][NameManglerApplication] Multi-file runtime and serial
 	input.scripts.push_back(caller);
 	const FSNameManglerAnalysis::Result analysis = FSNameManglerAnalysis::analyze(input);
 	REQUIRE_EQ(analysis.error, OK);
+	const StringName export_name = SNAME("public_export_marker");
 	const StringName private_names[] = {
 		SNAME("PrivateMarkerApplicationRuntimeBase"),
 		SNAME("PrivateMarkerApplicationRuntimeDerived"),
@@ -2473,6 +3542,18 @@ TEST_CASE("[FoundryScript][NameManglerApplication] Multi-file runtime and serial
 		REQUIRE(analysis.rename_map.has(name));
 	}
 	REQUIRE_FALSE(analysis.rename_map.has(SNAME("run")));
+	REQUIRE_FALSE(analysis.rename_map.has(export_name));
+	CHECK(name_mangler_application_has_reason(
+			analysis, export_name,
+			FSNameManglerAnalysis::KEEP_SCENE_OR_RESOURCE));
+	const PropertyInfo original_export =
+			TestFSNameManglerApplicationAccessor::
+					get_member_property_info(base, export_name);
+	CHECK_EQ(String(original_export.name), String(export_name));
+	CHECK_NE(original_export.usage & PROPERTY_USAGE_STORAGE, 0);
+	CHECK_NE(original_export.usage & PROPERTY_USAGE_EDITOR, 0);
+	const Vector<uint8_t> base_baseline =
+			name_mangler_application_serialize(base);
 
 	CHECK_EQ(name_mangler_application_run(caller, SNAME("run")), 42);
 
@@ -2486,6 +3567,10 @@ TEST_CASE("[FoundryScript][NameManglerApplication] Multi-file runtime and serial
 				OK);
 		REQUIRE(diagnostics.is_empty());
 		CHECK_EQ(name_mangler_application_run(caller, SNAME("run")), 42);
+		const PropertyInfo staged_export =
+				TestFSNameManglerApplicationAccessor::
+						get_member_property_info(base, export_name);
+		CHECK_EQ(staged_export, original_export);
 		transformed_identities.push_back(base->get_fully_qualified_name());
 		transformed_identities.push_back(derived->get_fully_qualified_name());
 		transformed_identities.push_back(caller->get_fully_qualified_name());
@@ -2503,8 +3588,11 @@ TEST_CASE("[FoundryScript][NameManglerApplication] Multi-file runtime and serial
 				first_buffers[2], derived->get_script_path()));
 		CHECK(bytecode_buffer_contains(first_buffers[2], "run"));
 		CHECK(bytecode_buffer_contains(first_buffers[0], "RefCounted"));
+		CHECK(bytecode_buffer_contains(
+				first_buffers[0], String(export_name)));
 	}
 	CHECK_EQ(name_mangler_application_run(caller, SNAME("run")), 42);
+	CHECK_EQ(name_mangler_application_serialize(base), base_baseline);
 
 	Vector<Ref<FoundryScript>> reversed_roots;
 	reversed_roots.push_back(caller);
@@ -2529,6 +3617,10 @@ TEST_CASE("[FoundryScript][NameManglerApplication] Multi-file runtime and serial
 	BytecodeTestResolver resolver;
 	const Ref<FoundryScript> loaded_base = name_mangler_application_load(
 			first_buffers[0], base->get_script_path(), &resolver);
+	const PropertyInfo loaded_export =
+			TestFSNameManglerApplicationAccessor::
+					get_member_property_info(loaded_base, export_name);
+	CHECK_EQ(loaded_export, original_export);
 	resolver.scripts.insert(
 			base->get_script_path() + "::" + transformed_identities[0],
 			loaded_base);

@@ -143,6 +143,14 @@ preload, trait, conformance target, or other cross-file dependency returns
 `ERR_INVALID_PARAMETER`. This forces #799 to pass the same closed graph that #795 analyzed and
 prevents one file from serializing a renamed reference to an unrenamed target.
 
+Analysis and application use the same conservative boundary for identities that are not proven to
+belong to that graph. They recursively inspect `ContainerType`, `FSDataType`, `PropertyInfo`, and
+`Variant` surfaces, including typed Array/Dictionary metadata, nested generic arguments,
+`PackedStringArray` values, external Script metadata, Resource paths, and specialized class
+handles. Numeric and geometric packed arrays are explicitly non-textual. A container cycle is
+visited once; exceeding the engine recursion limit makes the surface unscannable and protects every
+candidate rather than silently omitting evidence.
+
 Resource paths identify files, not declarations. `res://`, `uid://`, and other serialized resource
 paths remain byte-for-byte unchanged even when a path segment happens to equal a mapped name.
 
@@ -190,6 +198,19 @@ Known input-class aliases drive identity rewriting. External native/builtin iden
 project identities are either protected or rejected by closed-graph validation; they are never
 opportunistically token-replaced.
 
+For every included nested class, the alias plan contains its local/global/fully-qualified spellings
+and, when the fully-qualified identity begins with that script's exact path plus `::`, the
+path-stripped relative spelling. Exact whole-identity aliases are tried before path handling.
+Remaining aliases are ordered longest-first and applied in one left-to-right pass, so a replacement
+is never interpreted as new input. A foreign path-qualified identity is not stripped against an
+included script path even when its terminal `Outer::Inner::Leaf` spelling is identical; its
+components remain protected as external evidence.
+
+Compiled enum value dictionaries authoritatively add their exact `Owner.Enum` and `Owner::Enum`
+aliases for local, global, fully-qualified, and path-stripped relative owners. Analysis recognizes
+only those exact owned aliases as internal. An enum identity owned by an omitted or foreign class
+therefore remains external evidence even when its terminal enum name matches an included enum.
+
 Class/script references stored as pointers remain pointers. Once every root is staged, the existing
 writer naturally emits each external Foundry Script reference as its unchanged path plus transformed
 FQCN. Local classes continue to use the existing preorder index representation.
@@ -214,6 +235,10 @@ For every included `FoundryScript`, the transaction rewrites:
 - project-keyed RPC configuration entries, subject to the protected RPC rule below;
 - method, variable, signal, and constant annotation-map keys; and
 - method/signal parameter-annotation owner keys and safely renamed parameter keys.
+
+Annotation usage `name` and `qualified_name` fields are serialized identity evidence, not annotation
+map keys. Both fields protect matching declaration atoms and reserve their spellings against use as
+replacements. They remain byte-for-byte unchanged while an unrelated safe declaration is staged.
 
 Static values, defaults, and constants are not textually rewritten. Script objects nested inside
 them observe their staged identities through their referenced `FoundryScript`; arbitrary String,
@@ -293,6 +318,17 @@ The application never rewrites:
 - compiler-only names beginning with `@`; or
 - arbitrary string-like Variant payloads and annotation values.
 
+The global protected namespace also includes ClassDB classes, methods, virtuals, properties,
+accessors, signals, and constants; Variant types, members, methods, and utilities; Foundry utility
+functions; engine singletons and language globals; and every discoverable non-Foundry ScriptServer
+global plus its external script surface. Analysis keeps any matching source, application rejects a
+hand-authored conflicting map, and both reserve these names against replacement allocation.
+
+Application repeats the same protected checks over the compiled graph's export fixups, annotation
+identities, recursive type/container metadata, external scripts/resources, and registry entries.
+This parity is intentional: a conservative analysis result must stage successfully, while an
+unsafe manually supplied map must fail before mutation.
+
 RPC method names are protected because they are named network dispatch. A valid #795 map never
 contains them. If a supplied map contains a source found in class or function RPC configuration,
 preflight fails atomically instead of renaming the RPC key.
@@ -342,8 +378,14 @@ Subsequent focused RED/GREEN slices prove:
    unmangled behavior;
 7. original private marker strings are absent from staged `.fsb` buffers while exported, kept,
    RPC, string-dispatch, and native API names remain; and
-8. repeated transactions and reversed input-root order produce the same buffers and restore the
-   same live editor graph.
+8. deep path-qualified and relative class/trait/conformance identities stage, serialize, load, and
+   roll back together while a foreign identity with the same terminal segments stays protected;
+9. every fixup table and annotation `name`/`qualified_name` field protects both map sources and
+   replacement spellings, with a non-colliding control proving the boundary is not over-broad;
+10. exported property names, metadata, and defaults remain stable across a staged multi-file graph
+    and loaded buffers; and
+11. repeated transactions and reversed input-root order produce the same buffers and restore the
+    same live editor graph.
 
 Final verification runs the focused name-mangler application/analysis/keep-rules tests, bytecode and
 runtime suites, the broader Foundry Script family, and a macOS `dev_mode=yes` warnings-as-errors
