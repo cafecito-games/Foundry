@@ -35,6 +35,31 @@ static Vector<uint8_t> name_mangler_application_serialize(const Ref<FoundryScrip
 	return buffer;
 }
 
+static int64_t name_mangler_application_run(
+		const Ref<FoundryScript> &p_script, const StringName &p_method) {
+	Callable::CallError call_error;
+	const Variant instance_variant = p_script->_new(nullptr, 0, call_error);
+	REQUIRE_EQ(call_error.error, Callable::CallError::CALL_OK);
+	Object *instance = instance_variant;
+	REQUIRE(instance != nullptr);
+	const Variant result = instance->callp(p_method, nullptr, 0, call_error);
+	CHECK_EQ(call_error.error, Callable::CallError::CALL_OK);
+	return result;
+}
+
+static Ref<FoundryScript> name_mangler_application_load(
+		const Vector<uint8_t> &p_buffer,
+		const String &p_path,
+		FSBytecodeExternalResolver *p_resolver) {
+	Ref<FoundryScript> script;
+	script.instantiate();
+	script->set_path_cache(p_path);
+	FSBytecodeLoader loader;
+	loader.set_resolver(p_resolver);
+	REQUIRE_EQ(loader.load_full(p_buffer, script), OK);
+	return script;
+}
+
 TEST_CASE("[FoundryScript][NameManglerApplication] Scoped transaction exposes lifecycle") {
 	const Ref<FoundryScript> script = compile_bytecode_test_source(
 			"var private_marker_member: int\n"
@@ -468,6 +493,285 @@ TEST_CASE("[FoundryScript][NameManglerApplication] Stages and restores the confo
 					 original_target, original_method),
 			original_function);
 	CHECK_EQ(name_mangler_application_serialize(script), baseline);
+}
+
+TEST_CASE("[FoundryScript][NameManglerApplication] Rejects collisions and lifecycle misuse atomically") {
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"class_name PrivateMarkerCollisionRoot\n"
+			"\n"
+			"@export var public_marker_existing: int = 8\n"
+			"var private_marker_first: int = 1\n"
+			"var private_marker_second: int = 2\n"
+			"\n"
+			"class PrivateMarkerCollisionOne:\n"
+			"\tpass\n"
+			"class PrivateMarkerCollisionTwo:\n"
+			"\tpass\n"
+			"\n"
+			"func private_marker_first_method() -> int:\n"
+			"\treturn private_marker_first\n"
+			"func private_marker_second_method() -> int:\n"
+			"\treturn private_marker_second\n");
+	FSNameManglerAnalysis::Input input;
+	input.scripts.push_back(script);
+	const FSNameManglerAnalysis::Result analysis = FSNameManglerAnalysis::analyze(input);
+	REQUIRE_EQ(analysis.error, OK);
+	const StringName first = SNAME("private_marker_first");
+	const StringName second = SNAME("private_marker_second");
+	REQUIRE(analysis.rename_map.has(first));
+	REQUIRE(analysis.rename_map.has(second));
+	REQUIRE(analysis.rename_map.has(SNAME("PrivateMarkerCollisionOne")));
+	const Vector<uint8_t> baseline = name_mangler_application_serialize(script);
+
+	const auto check_invalid_map =
+			[&](const String &p_label,
+					const RBMap<StringName, StringName> &p_invalid_map) {
+				CAPTURE(p_label);
+				FSNameManglerApplication::Transaction transaction;
+				Vector<FSNameManglerApplication::Diagnostic> diagnostics;
+				const Error error =
+						transaction.begin(input.scripts, p_invalid_map, diagnostics);
+				CHECK_EQ(error, ERR_INVALID_PARAMETER);
+				CHECK_FALSE(transaction.is_active());
+				CHECK_EQ(transaction.get_state(),
+						FSNameManglerApplication::Transaction::STATE_FINISHED);
+				CHECK_FALSE(diagnostics.is_empty());
+				if (transaction.is_active()) {
+					transaction.rollback();
+				}
+				CHECK_EQ(name_mangler_application_serialize(script), baseline);
+			};
+
+	{
+		RBMap<StringName, StringName> invalid = analysis.rename_map;
+		invalid.insert(StringName(), SNAME("_fsb_manual_empty"));
+		check_invalid_map("empty source", invalid);
+	}
+	{
+		RBMap<StringName, StringName> invalid = analysis.rename_map;
+		invalid.insert(SNAME("missing.source"), SNAME("_fsb_manual_composite"));
+		check_invalid_map("composite source", invalid);
+	}
+	{
+		RBMap<StringName, StringName> invalid = analysis.rename_map;
+		invalid.insert(first, SNAME("invalid.replacement"));
+		check_invalid_map("composite replacement", invalid);
+	}
+	{
+		RBMap<StringName, StringName> invalid = analysis.rename_map;
+		invalid.insert(first, first);
+		check_invalid_map("identity mapping", invalid);
+	}
+	{
+		RBMap<StringName, StringName> invalid = analysis.rename_map;
+		invalid.insert(SNAME("missing_marker_source"),
+				SNAME("_fsb_manual_missing"));
+		check_invalid_map("missing source", invalid);
+	}
+	{
+		RBMap<StringName, StringName> invalid = analysis.rename_map;
+		invalid.insert(first, SNAME("_fsb_manual_duplicate"));
+		invalid.insert(second, SNAME("_fsb_manual_duplicate"));
+		check_invalid_map("duplicate target", invalid);
+	}
+	{
+		RBMap<StringName, StringName> invalid = analysis.rename_map;
+		invalid.insert(first, SNAME("public_marker_existing"));
+		check_invalid_map("observed target", invalid);
+	}
+	{
+		RBMap<StringName, StringName> invalid = analysis.rename_map;
+		invalid.insert(SNAME("PrivateMarkerCollisionOne"),
+				SNAME("PrivateMarkerCollisionTwo"));
+		check_invalid_map("sibling class collision", invalid);
+	}
+
+	const auto check_invalid_roots =
+			[&](const String &p_label,
+					const Vector<Ref<FoundryScript>> &p_invalid_roots) {
+				CAPTURE(p_label);
+				FSNameManglerApplication::Transaction transaction;
+				Vector<FSNameManglerApplication::Diagnostic> diagnostics;
+				CHECK_EQ(transaction.begin(
+								 p_invalid_roots, analysis.rename_map, diagnostics),
+						ERR_INVALID_PARAMETER);
+				CHECK_FALSE(transaction.is_active());
+				CHECK_EQ(transaction.get_state(),
+						FSNameManglerApplication::Transaction::STATE_FINISHED);
+				CHECK_FALSE(diagnostics.is_empty());
+				CHECK_EQ(name_mangler_application_serialize(script), baseline);
+			};
+	check_invalid_roots("empty roots", {});
+	{
+		Vector<Ref<FoundryScript>> roots;
+		roots.push_back(Ref<FoundryScript>());
+		check_invalid_roots("null root", roots);
+	}
+	{
+		Vector<Ref<FoundryScript>> roots;
+		roots.push_back(script);
+		roots.push_back(script);
+		check_invalid_roots("duplicate root", roots);
+	}
+	{
+		Vector<Ref<FoundryScript>> roots;
+		roots.push_back(
+				script->get_subclasses()[SNAME("PrivateMarkerCollisionOne")]);
+		check_invalid_roots("nested root", roots);
+	}
+
+	{
+		FSNameManglerApplication::Transaction transaction;
+		Vector<FSNameManglerApplication::Diagnostic> diagnostics;
+		REQUIRE_EQ(transaction.begin(
+						   input.scripts, analysis.rename_map, diagnostics),
+				OK);
+		CHECK_EQ(transaction.begin(input.scripts, analysis.rename_map, diagnostics),
+				ERR_ALREADY_IN_USE);
+		CHECK(transaction.is_active());
+
+		FSNameManglerApplication::Transaction nested_transaction;
+		CHECK_EQ(nested_transaction.begin(
+						 input.scripts, analysis.rename_map, diagnostics),
+				ERR_ALREADY_IN_USE);
+		CHECK_FALSE(nested_transaction.is_active());
+
+		transaction.rollback();
+		transaction.rollback();
+		CHECK_FALSE(transaction.is_active());
+		CHECK_EQ(transaction.get_state(),
+				FSNameManglerApplication::Transaction::STATE_FINISHED);
+	}
+	CHECK_EQ(name_mangler_application_serialize(script), baseline);
+
+	{
+		FSNameManglerApplication::Transaction transaction;
+		Vector<FSNameManglerApplication::Diagnostic> diagnostics;
+		REQUIRE_EQ(transaction.begin(
+						   input.scripts, analysis.rename_map, diagnostics),
+				OK);
+	}
+	CHECK_EQ(name_mangler_application_serialize(script), baseline);
+}
+
+TEST_CASE("[FoundryScript][NameManglerApplication] Multi-file runtime and serialization are deterministic") {
+	const Ref<FoundryScript> base = compile_bytecode_test_source(
+			"class_name PrivateMarkerApplicationRuntimeBase\n"
+			"extends RefCounted\n"
+			"\n"
+			"signal private_marker_changed(value: int)\n"
+			"var private_marker_value: int = 40\n"
+			"\n"
+			"func private_marker_bump(delta: int) -> int:\n"
+			"\tprivate_marker_value += delta\n"
+			"\tprivate_marker_changed.emit(private_marker_value)\n"
+			"\treturn private_marker_value\n");
+	const Ref<FoundryScript> derived = compile_bytecode_test_source(vformat(
+			"class_name PrivateMarkerApplicationRuntimeDerived\n"
+			"extends \"%s\"\n"
+			"\n"
+			"func private_marker_run() -> int:\n"
+			"\treturn private_marker_bump(2)\n",
+			base->get_script_path()));
+	const Ref<FoundryScript> caller = compile_bytecode_test_source(vformat(
+			"class_name PrivateMarkerApplicationRuntimeCaller\n"
+			"extends RefCounted\n"
+			"\n"
+			"const PrivateMarkerDerivedResource = preload(\"%s\")\n"
+			"\n"
+			"@keep_name\n"
+			"func run() -> int:\n"
+			"\tvar instance := PrivateMarkerDerivedResource.new()\n"
+			"\treturn instance.private_marker_run()\n",
+			derived->get_script_path()));
+
+	FSNameManglerAnalysis::Input input;
+	input.scripts.push_back(base);
+	input.scripts.push_back(derived);
+	input.scripts.push_back(caller);
+	const FSNameManglerAnalysis::Result analysis = FSNameManglerAnalysis::analyze(input);
+	REQUIRE_EQ(analysis.error, OK);
+	const StringName private_names[] = {
+		SNAME("PrivateMarkerApplicationRuntimeBase"),
+		SNAME("PrivateMarkerApplicationRuntimeDerived"),
+		SNAME("PrivateMarkerApplicationRuntimeCaller"),
+		SNAME("private_marker_changed"),
+		SNAME("private_marker_value"),
+		SNAME("private_marker_bump"),
+		SNAME("private_marker_run"),
+		SNAME("PrivateMarkerDerivedResource"),
+	};
+	for (const StringName &name : private_names) {
+		REQUIRE(analysis.rename_map.has(name));
+	}
+	REQUIRE_FALSE(analysis.rename_map.has(SNAME("run")));
+
+	CHECK_EQ(name_mangler_application_run(caller, SNAME("run")), 42);
+
+	Vector<Vector<uint8_t>> first_buffers;
+	Vector<String> transformed_identities;
+	{
+		FSNameManglerApplication::Transaction transaction;
+		Vector<FSNameManglerApplication::Diagnostic> diagnostics;
+		REQUIRE_EQ(transaction.begin(
+						   input.scripts, analysis.rename_map, diagnostics),
+				OK);
+		REQUIRE(diagnostics.is_empty());
+		CHECK_EQ(name_mangler_application_run(caller, SNAME("run")), 42);
+		transformed_identities.push_back(base->get_fully_qualified_name());
+		transformed_identities.push_back(derived->get_fully_qualified_name());
+		transformed_identities.push_back(caller->get_fully_qualified_name());
+		first_buffers.push_back(name_mangler_application_serialize(base));
+		first_buffers.push_back(name_mangler_application_serialize(derived));
+		first_buffers.push_back(name_mangler_application_serialize(caller));
+
+		for (const Vector<uint8_t> &buffer : first_buffers) {
+			for (const StringName &name : private_names) {
+				CHECK_FALSE(bytecode_buffer_contains(buffer, String(name)));
+			}
+		}
+		CHECK(bytecode_buffer_contains(first_buffers[1], base->get_script_path()));
+		CHECK(bytecode_buffer_contains(
+				first_buffers[2], derived->get_script_path()));
+		CHECK(bytecode_buffer_contains(first_buffers[2], "run"));
+		CHECK(bytecode_buffer_contains(first_buffers[0], "RefCounted"));
+	}
+	CHECK_EQ(name_mangler_application_run(caller, SNAME("run")), 42);
+
+	Vector<Ref<FoundryScript>> reversed_roots;
+	reversed_roots.push_back(caller);
+	reversed_roots.push_back(derived);
+	reversed_roots.push_back(base);
+	Vector<Vector<uint8_t>> reversed_buffers;
+	{
+		FSNameManglerApplication::Transaction transaction;
+		Vector<FSNameManglerApplication::Diagnostic> diagnostics;
+		REQUIRE_EQ(transaction.begin(
+						   reversed_roots, analysis.rename_map, diagnostics),
+				OK);
+		reversed_buffers.push_back(name_mangler_application_serialize(base));
+		reversed_buffers.push_back(name_mangler_application_serialize(derived));
+		reversed_buffers.push_back(name_mangler_application_serialize(caller));
+	}
+	REQUIRE_EQ(reversed_buffers.size(), first_buffers.size());
+	for (int i = 0; i < first_buffers.size(); i++) {
+		CHECK_EQ(reversed_buffers[i], first_buffers[i]);
+	}
+
+	BytecodeTestResolver resolver;
+	const Ref<FoundryScript> loaded_base = name_mangler_application_load(
+			first_buffers[0], base->get_script_path(), &resolver);
+	resolver.scripts.insert(
+			base->get_script_path() + "::" + transformed_identities[0],
+			loaded_base);
+	const Ref<FoundryScript> loaded_derived = name_mangler_application_load(
+			first_buffers[1], derived->get_script_path(), &resolver);
+	resolver.scripts.insert(
+			derived->get_script_path() + "::" + transformed_identities[1],
+			loaded_derived);
+	const Ref<FoundryScript> loaded_caller = name_mangler_application_load(
+			first_buffers[2], caller->get_script_path(), &resolver);
+	CHECK_EQ(name_mangler_application_run(loaded_caller, SNAME("run")), 42);
 }
 
 } // namespace FSTests

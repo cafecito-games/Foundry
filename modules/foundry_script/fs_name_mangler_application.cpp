@@ -133,6 +133,8 @@ struct FSNameManglerApplication::Transaction::Data {
 	HashMap<const FoundryScript *, int> class_snapshot_indices;
 	HashSet<const FoundryScript *> indexed_classes;
 	HashSet<FSFunction *> indexed_functions;
+	HashSet<StringName> project_sources;
+	HashSet<StringName> observed_names;
 	Vector<IdentityReplacement> identity_replacements;
 	Vector<String> script_paths;
 
@@ -144,6 +146,8 @@ struct FSNameManglerApplication::Transaction::Data {
 		class_snapshot_indices.clear();
 		indexed_classes.clear();
 		indexed_functions.clear();
+		project_sources.clear();
+		observed_names.clear();
 		identity_replacements.clear();
 		script_paths.clear();
 	}
@@ -176,7 +180,7 @@ struct FSNameManglerApplication::Transaction::Data {
 		return p_identity.substr(0, start) + String(p_transformed);
 	}
 
-	void build_identity_plan() {
+	bool build_identity_plan(Vector<Diagnostic> &r_diagnostics) {
 		identity_replacements.clear();
 		HashMap<String, String> unique_replacements;
 
@@ -218,14 +222,21 @@ struct FSNameManglerApplication::Transaction::Data {
 				const String *existing = unique_replacements.getptr(p_source);
 				if (existing == nullptr) {
 					unique_replacements.insert(p_source, p_replacement);
-				} else {
-					CRASH_COND(*existing != p_replacement);
+				} else if (*existing != p_replacement) {
+					add_map_diagnostic(r_diagnostics,
+							"class identity collision", snapshot.local_name,
+							vformat(
+									"Identity `%s` would have conflicting replacements `%s` and `%s`.",
+									p_source, *existing, p_replacement));
 				}
 			};
 			add_replacement(String(snapshot.local_name), String(snapshot.transformed_local_name));
 			add_replacement(String(snapshot.global_name), String(snapshot.transformed_global_name));
 			add_replacement(snapshot.fully_qualified_name, snapshot.transformed_fully_qualified_name);
 			add_replacement(String(snapshot.trait_type_name), String(snapshot.transformed_trait_type_name));
+			if (!r_diagnostics.is_empty()) {
+				return false;
+			}
 		}
 
 		for (const KeyValue<String, String> &entry : unique_replacements) {
@@ -235,6 +246,7 @@ struct FSNameManglerApplication::Transaction::Data {
 			identity_replacements.push_back(replacement);
 		}
 		identity_replacements.sort_custom<IdentityReplacementComparator>();
+		return true;
 	}
 
 	static bool has_identity_boundaries(const String &p_text, int p_start, int p_length) {
@@ -394,9 +406,22 @@ struct FSNameManglerApplication::Transaction::Data {
 		return result;
 	}
 
-	void snapshot_class(const Ref<FoundryScript> &p_script, FoundryScript *p_parent) {
-		CRASH_COND(p_script.is_null());
-		CRASH_COND(indexed_classes.has(p_script.ptr()));
+	bool snapshot_class(const Ref<FoundryScript> &p_script,
+			FoundryScript *p_parent,
+			Vector<Diagnostic> &r_diagnostics) {
+		if (p_script.is_null()) {
+			add_map_diagnostic(r_diagnostics, "root graph", StringName(),
+					"Found a null nested Foundry Script.");
+			return false;
+		}
+		if (indexed_classes.has(p_script.ptr())) {
+			add_map_diagnostic(r_diagnostics, "root graph",
+					p_script->local_name,
+					vformat(
+							"Found class `%s` more than once in the supplied graph.",
+							p_script->fully_qualified_name));
+			return false;
+		}
 		indexed_classes.insert(p_script.ptr());
 
 		ClassSnapshot snapshot;
@@ -441,8 +466,12 @@ struct FSNameManglerApplication::Transaction::Data {
 		}
 		subclasses.sort_custom<ScriptRefComparator>();
 		for (const Ref<FoundryScript> &subclass : subclasses) {
-			snapshot_class(subclass, p_script.ptr());
+			if (!snapshot_class(
+						subclass, p_script.ptr(), r_diagnostics)) {
+				return false;
+			}
 		}
+		return true;
 	}
 
 	void snapshot_function(FSFunction *p_function, const StringName &p_owner_name, bool p_lambda = false) {
@@ -716,6 +745,356 @@ struct FSNameManglerApplication::Transaction::Data {
 					"Mapped source occurs on a protected native or dynamic surface.";
 			r_diagnostics.push_back(diagnostic);
 			return false;
+		}
+		return true;
+	}
+
+	void add_project_source(const StringName &p_name) {
+		if (p_name == StringName() || String(p_name).begins_with("@")) {
+			return;
+		}
+		project_sources.insert(p_name);
+		observed_names.insert(p_name);
+	}
+
+	void collect_observed_variant(const Variant &p_value, int p_depth = 0) {
+		if (p_depth > Variant::MAX_RECURSION_DEPTH) {
+			return;
+		}
+		switch (p_value.get_type()) {
+			case Variant::STRING:
+				if (!String(p_value).is_empty()) {
+					observed_names.insert(StringName(String(p_value)));
+				}
+				break;
+			case Variant::STRING_NAME:
+				observed_names.insert(StringName(p_value));
+				break;
+			case Variant::NODE_PATH: {
+				const NodePath path = p_value;
+				for (int i = 0; i < path.get_subname_count(); i++) {
+					observed_names.insert(path.get_subname(i));
+				}
+			} break;
+			case Variant::CALLABLE: {
+				const Callable callable = p_value;
+				observed_names.insert(callable.get_method());
+				for (const Variant &bound : callable.get_bound_arguments()) {
+					collect_observed_variant(bound, p_depth + 1);
+				}
+			} break;
+			case Variant::SIGNAL:
+				observed_names.insert(Signal(p_value).get_name());
+				break;
+			case Variant::ARRAY:
+				for (const Variant &value : Array(p_value)) {
+					collect_observed_variant(value, p_depth + 1);
+				}
+				break;
+			case Variant::DICTIONARY: {
+				const Dictionary dictionary = p_value;
+				const Array keys = dictionary.keys();
+				for (const Variant &key : keys) {
+					collect_observed_variant(key, p_depth + 1);
+					collect_observed_variant(dictionary[key], p_depth + 1);
+				}
+			} break;
+			case Variant::PACKED_STRING_ARRAY:
+				for (const String &value : PackedStringArray(p_value)) {
+					if (!value.is_empty()) {
+						observed_names.insert(StringName(value));
+					}
+				}
+				break;
+			case Variant::OBJECT: {
+				Object *object = p_value;
+				FoundryScript *script = Object::cast_to<FoundryScript>(object);
+				if (script != nullptr) {
+					observed_names.insert(script->local_name);
+					observed_names.insert(script->global_name);
+					observed_names.insert(
+							StringName(script->fully_qualified_name));
+				}
+			} break;
+			default:
+				break;
+		}
+	}
+
+	void collect_observed_method_info(const MethodInfo &p_info) {
+		if (!p_info.name.is_empty()) {
+			observed_names.insert(StringName(p_info.name));
+		}
+		for (const PropertyInfo &argument : p_info.arguments) {
+			observed_names.insert(StringName(argument.name));
+		}
+		for (const Variant &default_argument : p_info.default_arguments) {
+			collect_observed_variant(default_argument);
+		}
+	}
+
+	void collect_observed_annotations(
+			const Vector<FoundryScript::AnnotationUsage> &p_usages) {
+		for (const FoundryScript::AnnotationUsage &usage : p_usages) {
+			observed_names.insert(usage.name);
+			collect_observed_variant(usage.args);
+			collect_observed_variant(usage.kwargs);
+		}
+	}
+
+	void collect_map_surfaces() {
+		project_sources.clear();
+		observed_names.clear();
+
+		for (const ClassSnapshot &snapshot : class_snapshots) {
+			add_project_source(snapshot.local_name);
+			observed_names.insert(snapshot.global_name);
+			observed_names.insert(StringName(snapshot.fully_qualified_name));
+			observed_names.insert(snapshot.trait_type_name);
+			for (const StringName &member : snapshot.members) {
+				add_project_source(member);
+			}
+			for (const KeyValue<StringName, FoundryScript::MemberInfo> &member :
+					snapshot.member_indices) {
+				add_project_source(member.key);
+				observed_names.insert(member.value.setter);
+				observed_names.insert(member.value.getter);
+				observed_names.insert(
+						StringName(member.value.property_info.name));
+			}
+			for (const KeyValue<StringName, FoundryScript::MemberInfo> &member :
+					snapshot.static_variables_indices) {
+				add_project_source(member.key);
+				observed_names.insert(
+						StringName(member.value.property_info.name));
+			}
+			for (const KeyValue<StringName, Variant> &constant :
+					snapshot.constants) {
+				add_project_source(constant.key);
+				collect_observed_variant(constant.value);
+			}
+			for (const KeyValue<StringName, FSFunction *> &function :
+					snapshot.member_functions) {
+				add_project_source(function.key);
+			}
+			for (const KeyValue<StringName, FoundryScript::EnumFunctionSet>
+							&enum_entry :
+					snapshot.enum_functions) {
+				add_project_source(enum_entry.key);
+				for (const KeyValue<StringName, FSFunction *> &function :
+						enum_entry.value.instance_functions) {
+					add_project_source(function.key);
+				}
+				for (const KeyValue<StringName, FSFunction *> &function :
+						enum_entry.value.static_functions) {
+					add_project_source(function.key);
+				}
+			}
+			for (const KeyValue<StringName, Ref<FoundryScript>> &subclass :
+					snapshot.subclasses) {
+				add_project_source(subclass.key);
+			}
+			for (const KeyValue<StringName, MethodInfo> &signal :
+					snapshot.signals) {
+				add_project_source(signal.key);
+				collect_observed_method_info(signal.value);
+			}
+			for (const StringName &trait_name : snapshot.script_trait_list) {
+				observed_names.insert(trait_name);
+			}
+			for (const KeyValue<StringName,
+						 FoundryScript::AbstractTraitRequirement> &requirement :
+					snapshot.abstract_trait_requirements) {
+				add_project_source(requirement.key);
+				collect_observed_method_info(requirement.value.method_info);
+			}
+			for (const FoundryScript::TypeParameter &type_parameter :
+					snapshot.type_parameters) {
+				observed_names.insert(type_parameter.name);
+			}
+			for (const KeyValue<StringName,
+						 Vector<FoundryScript::AnnotationUsage>> &annotations :
+					snapshot.method_annotations) {
+				collect_observed_annotations(annotations.value);
+			}
+			for (const KeyValue<StringName,
+						 Vector<FoundryScript::AnnotationUsage>> &annotations :
+					snapshot.variable_annotations) {
+				collect_observed_annotations(annotations.value);
+			}
+			for (const KeyValue<StringName,
+						 Vector<FoundryScript::AnnotationUsage>> &annotations :
+					snapshot.signal_annotations) {
+				collect_observed_annotations(annotations.value);
+			}
+			for (const KeyValue<StringName,
+						 Vector<FoundryScript::AnnotationUsage>> &annotations :
+					snapshot.constant_annotations) {
+				collect_observed_annotations(annotations.value);
+			}
+			collect_observed_annotations(snapshot.script->class_annotations);
+			for (const Variant &value : snapshot.script->static_variables) {
+				collect_observed_variant(value);
+			}
+			for (const KeyValue<StringName, Variant> &value :
+					snapshot.member_default_values) {
+				collect_observed_variant(value.value);
+			}
+		}
+
+		for (const FunctionSnapshot &snapshot : function_snapshots) {
+			observed_names.insert(snapshot.name);
+			collect_observed_method_info(snapshot.method_info);
+			for (const StringName &global_name : snapshot.global_names) {
+				observed_names.insert(global_name);
+			}
+			for (const Variant &constant : snapshot.function->constants) {
+				collect_observed_variant(constant);
+			}
+			for (const FSFunction::ExportFixups::TypedNameKey &key :
+					snapshot.function->export_fixups.setters) {
+				observed_names.insert(key.name);
+			}
+			for (const FSFunction::ExportFixups::TypedNameKey &key :
+					snapshot.function->export_fixups.getters) {
+				observed_names.insert(key.name);
+			}
+			for (const FSFunction::ExportFixups::TypedNameKey &key :
+					snapshot.function->export_fixups.builtin_methods) {
+				observed_names.insert(key.name);
+			}
+			for (const FSFunction::ExportFixups::MethodBindKey &key :
+					snapshot.function->export_fixups.method_binds) {
+				observed_names.insert(key.class_name);
+				observed_names.insert(key.method_name);
+			}
+			for (const FSFunction::ExportFixups::GlobalStore &store :
+					snapshot.function->export_fixups.global_stores) {
+				observed_names.insert(store.global_name);
+			}
+			for (const StringName &name :
+					snapshot.function->export_fixups.named_globals) {
+				observed_names.insert(name);
+			}
+		}
+
+		for (const RegistrySnapshot &snapshot : registry_snapshots) {
+			for (const FSConformanceRegistry::RuntimeConformance &conformance :
+					snapshot.entries) {
+				observed_names.insert(conformance.trait_name);
+				for (const String &target_key : conformance.target_keys) {
+					observed_names.insert(StringName(target_key));
+				}
+				for (const KeyValue<StringName, FSFunction *> &witness :
+						conformance.functions) {
+					add_project_source(witness.key);
+				}
+			}
+		}
+	}
+
+	static void add_map_diagnostic(
+			Vector<Diagnostic> &r_diagnostics,
+			const String &p_surface,
+			const StringName &p_source_name,
+			const String &p_message) {
+		Diagnostic diagnostic;
+		diagnostic.surface = p_surface;
+		diagnostic.source_name = p_source_name;
+		diagnostic.message = p_message;
+		r_diagnostics.push_back(diagnostic);
+	}
+
+	bool validate_map_shape(Vector<Diagnostic> &r_diagnostics) const {
+		HashMap<StringName, StringName> target_sources;
+		for (const KeyValue<StringName, StringName> &entry : rename_map) {
+			const String source = entry.key;
+			const String replacement = entry.value;
+			if (source.is_empty() || !source.is_valid_unicode_identifier()) {
+				add_map_diagnostic(r_diagnostics, "rename map", entry.key,
+						"Source must be a non-empty Unicode identifier, not a composite identity.");
+				return false;
+			}
+			if (replacement.is_empty() ||
+					!replacement.is_valid_unicode_identifier()) {
+				add_map_diagnostic(r_diagnostics, "rename map replacement",
+						entry.key,
+						vformat(
+								"`%s` must be a non-empty Unicode identifier, not a composite identity.",
+								replacement));
+				return false;
+			}
+			if (entry.key == entry.value) {
+				add_map_diagnostic(r_diagnostics, "rename map", entry.key,
+						"Identity mappings are not allowed.");
+				return false;
+			}
+			const StringName *existing_source =
+					target_sources.getptr(entry.value);
+			if (existing_source != nullptr) {
+				add_map_diagnostic(r_diagnostics, "rename map collision",
+						entry.key,
+						vformat(
+								"Replacement `%s` is already assigned to source `%s`.",
+								entry.value, *existing_source));
+				return false;
+			}
+			target_sources.insert(entry.value, entry.key);
+		}
+		return true;
+	}
+
+	bool validate_map_surfaces(Vector<Diagnostic> &r_diagnostics) {
+		collect_map_surfaces();
+		for (const KeyValue<StringName, StringName> &entry : rename_map) {
+			if (!project_sources.has(entry.key)) {
+				add_map_diagnostic(r_diagnostics, "rename map", entry.key,
+						"Source does not occur on a project declaration or dispatch surface in the closed graph.");
+				return false;
+			}
+			if (observed_names.has(entry.value)) {
+				add_map_diagnostic(r_diagnostics, "rename collision", entry.key,
+						vformat(
+								"Replacement `%s` collides with an observed serialized identifier.",
+								entry.value));
+				return false;
+			}
+			String protected_surface;
+			if (find_protected_surface(entry.value, protected_surface)) {
+				add_map_diagnostic(r_diagnostics, "rename collision", entry.key,
+						vformat(
+								"Replacement `%s` collides with protected %s.",
+								entry.value, protected_surface));
+				return false;
+			}
+		}
+
+		HashSet<String> transformed_fully_qualified_names;
+		HashSet<StringName> transformed_global_names;
+		for (const ClassSnapshot &snapshot : class_snapshots) {
+			if (transformed_fully_qualified_names.has(
+						snapshot.transformed_fully_qualified_name)) {
+				add_map_diagnostic(r_diagnostics, "class identity collision",
+						snapshot.local_name,
+						vformat(
+								"More than one class would use fully-qualified identity `%s`.",
+								snapshot.transformed_fully_qualified_name));
+				return false;
+			}
+			transformed_fully_qualified_names.insert(
+					snapshot.transformed_fully_qualified_name);
+			if (snapshot.transformed_global_name != StringName()) {
+				if (transformed_global_names.has(
+							snapshot.transformed_global_name)) {
+					add_map_diagnostic(r_diagnostics, "class identity collision",
+							snapshot.local_name,
+							vformat(
+									"More than one class would use global identity `%s`.",
+									snapshot.transformed_global_name));
+					return false;
+				}
+				transformed_global_names.insert(snapshot.transformed_global_name);
+			}
 		}
 		return true;
 	}
@@ -1222,10 +1601,15 @@ struct FSNameManglerApplication::Transaction::Data {
 			}
 			root_set.insert(script.ptr());
 		}
+		if (!validate_map_shape(r_diagnostics)) {
+			return false;
+		}
 
 		roots.sort_custom<ScriptRefComparator>();
 		for (const Ref<FoundryScript> &root : roots) {
-			snapshot_class(root, nullptr);
+			if (!snapshot_class(root, nullptr, r_diagnostics)) {
+				return false;
+			}
 		}
 		for (const ClassSnapshot &snapshot : class_snapshots) {
 			const String path = snapshot.script->get_script_path();
@@ -1234,7 +1618,9 @@ struct FSNameManglerApplication::Transaction::Data {
 			}
 		}
 		script_paths.sort();
-		build_identity_plan();
+		if (!build_identity_plan(r_diagnostics)) {
+			return false;
+		}
 		if (!snapshot_registries(r_diagnostics)) {
 			return false;
 		}
@@ -1243,6 +1629,9 @@ struct FSNameManglerApplication::Transaction::Data {
 			return false;
 		}
 		if (!validate_protected_names(r_diagnostics)) {
+			return false;
+		}
+		if (!validate_map_surfaces(r_diagnostics)) {
 			return false;
 		}
 		build_registry_plan();
