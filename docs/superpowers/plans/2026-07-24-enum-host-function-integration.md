@@ -4,7 +4,7 @@
 
 **Goal:** Add a namespaced cross-file enum-host regression that runs from source and from a compiled-bytecode caller, then complete the final #1115 validation.
 
-**Architecture:** A `.notest.fs` provider declares a namespaced global enum with instance and static functions. A normal runtime fixture imports and preloads that provider, exercises qualified enum dispatch and Dictionary fallback, and is automatically run by both existing Foundry Script fixture passes.
+**Architecture:** A `.notest.fs` provider in a dedicated fixture directory declares a namespaced global enum with instance and static functions. A normal runtime fixture imports that namespace, exercises the enum's qualified analyzer/runtime ownership plus Dictionary fallback, and is automatically run by both existing Foundry Script fixture passes.
 
 **Tech Stack:** Foundry Script, C++ doctest fixture runner, SCons, command-first Foundry CLI.
 
@@ -13,9 +13,9 @@
 ### Task 1: Add the namespaced cross-file integration fixture
 
 **Files:**
-- Create: `modules/foundry_script/tests/scripts/runtime/features/enum_host_functions_namespaced_external.notest.fs`
-- Create: `modules/foundry_script/tests/scripts/runtime/features/enum_host_functions_namespaced_external.fs`
-- Create: `modules/foundry_script/tests/scripts/runtime/features/enum_host_functions_namespaced_external.out`
+- Create: `modules/foundry_script/tests/scripts/runtime/features/enum_host_functions_namespaced_external/enum_host_functions_namespaced_external.notest.fs`
+- Create: `modules/foundry_script/tests/scripts/runtime/features/enum_host_functions_namespaced_external/enum_host_functions_namespaced_external.fs`
+- Create: `modules/foundry_script/tests/scripts/runtime/features/enum_host_functions_namespaced_external/enum_host_functions_namespaced_external.out`
 
 - [ ] **Step 1: Add the namespaced enum provider**
 
@@ -45,10 +45,6 @@ Create `enum_host_functions_namespaced_external.fs`:
 
 ```fs
 import issue_1123.enum_integration
-
-const _NAMESPACED_ENUM_PROVIDER = preload(
-	"enum_host_functions_namespaced_external.notest.fs"
-)
 
 func test() -> void:
 	var ready: IntegratedStatus = IntegratedStatus.parse("ready")
@@ -90,9 +86,9 @@ Expected: both existing-behavior coverage runs pass. If either fails, stop, use 
 - [ ] **Step 5: Commit the integration fixture**
 
 ```sh
-git add modules/foundry_script/tests/scripts/runtime/features/enum_host_functions_namespaced_external.fs \
-	modules/foundry_script/tests/scripts/runtime/features/enum_host_functions_namespaced_external.notest.fs \
-	modules/foundry_script/tests/scripts/runtime/features/enum_host_functions_namespaced_external.out
+git add modules/foundry_script/tests/scripts/runtime/features/enum_host_functions_namespaced_external \
+	docs/superpowers/specs/2026-07-24-enum-host-function-integration-design.md \
+	docs/superpowers/plans/2026-07-24-enum-host-function-integration.md
 git commit -m "Test namespaced enum host function integration"
 ```
 

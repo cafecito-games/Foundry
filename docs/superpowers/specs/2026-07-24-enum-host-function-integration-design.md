@@ -54,9 +54,11 @@ value at little maintenance cost.
 
 ## Fixture Design
 
-Add a provider under
-`modules/foundry_script/tests/scripts/runtime/features/` that declares a
-namespace and a global enum:
+Add a dedicated fixture directory under
+`modules/foundry_script/tests/scripts/runtime/features/` with a provider that
+declares a namespace and a global enum. The isolated directory is required
+because the global-class index intentionally diagnoses directories that mix
+namespaced and unnamespaced global declarations:
 
 ```fs
 namespace issue_1123.enum_integration
@@ -76,8 +78,7 @@ enum_name IntegratedStatus:
 		return READY if text == "ready" else DONE
 ```
 
-The executable consumer imports the provider namespace, preloads the provider
-so the dependency is explicit, and calls:
+The executable consumer imports the provider namespace and calls:
 
 - the static parser on the imported enum metatype;
 - instance methods on returned and literal enum values;
@@ -85,11 +86,29 @@ so the dependency is explicit, and calls:
 - a method using its default parameter;
 - the enum metatype's existing read-only Dictionary `keys()` fallback.
 
-The expected output locks the dispatch results and dictionary values. The
-fixture runner's existing compiled-bytecode pass serializes and restores the
-consumer while its external provider resolves through the normal source cache.
-That proves the qualified owner path/class/enum tuple remains usable after
-caller bytecode round-trip.
+The consumer uses the enum through its imported namespace identity. The
+expected output locks the dispatch results and dictionary values. The fixture
+runner's existing compiled-bytecode pass serializes and restores the consumer
+while its external provider resolves through the namespace index and normal
+source cache. That proves the qualified owner path/class/enum tuple recorded by
+the analyzer remains usable after caller bytecode round-trip.
+
+## Follow-up Discovered During Validation
+
+The original test sketch also preloaded the provider path. That exposed a
+separate analyzer defect: `preload()` resolves an unnamespaced global enum
+script but fails for the equivalent namespaced `enum_name` script when
+`FSAnalyzer::type_from_variant()` performs a class-only fully qualified lookup.
+The integration test does not need that preload because namespace import is the
+normal dependency path. The defect is tracked independently as native epic
+sub-issue #1197 so #1123 remains focused on enum-host dispatch.
+
+A second strengthening attempt used the fully qualified enum spelling directly.
+The analyzer accepted that form, but the compiler treated the root namespace as
+an ordinary identifier and failed to emit the chain. Native epic sub-issue
+#1198 tracks that distinct compiler defect. The #1123 fixture uses the
+established import plus short-name spelling while still exercising the
+namespaced enum's qualified analyzer/runtime ownership.
 
 ## Validation
 
