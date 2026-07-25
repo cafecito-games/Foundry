@@ -9061,29 +9061,29 @@ void FSAnalyzer::reduce_subscript(FSParser::SubscriptNode *p_subscript, bool p_c
 						return;
 					}
 
+					// Mark the sub-expression that spans exactly the resolved global class
+					// (`ns.Foo`, or just `Foo` for a same-namespace/imported prefix) so
+					// compiler lowering does not fall through to a namespace-root identifier.
+					// The class is the leading `namespace_type_chain_size` identifiers; any
+					// remaining identifiers are member access on that class.
+					FSParser::ExpressionNode *class_prefix = p_subscript;
+					for (int i = 0; i < type_chain.size() - namespace_type_chain_size; i++) {
+						if (class_prefix->type != FSParser::Node::SUBSCRIPT) {
+							class_prefix = nullptr;
+							break;
+						}
+						class_prefix = static_cast<FSParser::SubscriptNode *>(class_prefix)->base;
+					}
+
 					FSParser::DataType namespace_class_type;
-					if (ScriptServer::is_global_class_enum(namespace_global_class)) {
+					const bool namespace_class_is_enum = ScriptServer::is_global_class_enum(namespace_global_class);
+					if (namespace_class_is_enum) {
 						const String path = ScriptServer::get_global_class_path(namespace_global_class);
 						namespace_class_type = make_global_enum_type_from_path(namespace_global_class, path, p_subscript);
 					} else {
 						namespace_class_type = make_global_class_meta_type(namespace_global_class, p_subscript);
-						// Mark the sub-expression that spans exactly the resolved class
-						// (`ns.Foo`, or just `Foo` for a same-namespace prefix) so the
-						// compiler can emit the class object when it is used as a value.
-						// The class is the leading `namespace_type_chain_size` identifiers;
-						// any remaining identifiers are member access on that class.
-						FSParser::ExpressionNode *class_prefix = p_subscript;
-						for (int i = 0; i < type_chain.size() - namespace_type_chain_size; i++) {
-							if (class_prefix->type != FSParser::Node::SUBSCRIPT) {
-								class_prefix = nullptr;
-								break;
-							}
-							class_prefix = static_cast<FSParser::SubscriptNode *>(class_prefix)->base;
-						}
-						if (class_prefix != nullptr) {
-							class_prefix->resolved_global_class = namespace_global_class;
-						}
 					}
+					const FSParser::DataType resolved_namespace_class_type = namespace_class_type;
 					for (int i = namespace_type_chain_size; i < type_chain.size(); i++) {
 						FSParser::DataType base = namespace_class_type;
 						reduce_identifier_from_base(type_chain[i], &base);
@@ -9100,6 +9100,18 @@ void FSAnalyzer::reduce_subscript(FSParser::SubscriptNode *p_subscript, bool p_c
 					p_subscript->set_datatype(namespace_class_type);
 					p_subscript->is_constant = last_identifier->is_constant;
 					p_subscript->reduced_value = last_identifier->reduced_value;
+					if (class_prefix != nullptr) {
+						if (namespace_class_is_enum) {
+							// Apply this after propagating the final chain member above. For an
+							// exact enum prefix (`ns.Status`), that propagation otherwise copies
+							// the unresolved `Status` leaf back over the materialized constant.
+							class_prefix->set_datatype(resolved_namespace_class_type);
+							class_prefix->is_constant = true;
+							class_prefix->reduced_value = make_enum_dictionary_from_type(resolved_namespace_class_type);
+						} else {
+							class_prefix->resolved_global_class = namespace_global_class;
+						}
+					}
 					return;
 				}
 			}
