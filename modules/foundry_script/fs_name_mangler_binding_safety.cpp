@@ -32,6 +32,9 @@
 
 #ifdef TOOLS_ENABLED
 
+#include "core/object/class_db.h"
+#include "scene/resources/packed_scene.h"
+
 namespace {
 
 String get_binding_kind_label(FSNameManglerBindingSafety::BindingKind p_kind) {
@@ -74,6 +77,515 @@ bool evidence_matches(const FSNameManglerBindingSafety::Evidence &p_left,
 		const FSNameManglerBindingSafety::Evidence &p_right) {
 	return p_left.name == p_right.name && p_left.kind == p_right.kind &&
 			p_left.source == p_right.source && p_left.owner == p_right.owner;
+}
+
+struct DiagnosticComparator {
+	bool operator()(const FSNameManglerBindingSafety::Diagnostic &p_left,
+			const FSNameManglerBindingSafety::Diagnostic &p_right) const {
+		if (p_left.source != p_right.source) {
+			return p_left.source < p_right.source;
+		}
+		if (p_left.context != p_right.context) {
+			return p_left.context < p_right.context;
+		}
+		return p_left.message < p_right.message;
+	}
+};
+
+bool diagnostic_matches(const FSNameManglerBindingSafety::Diagnostic &p_left,
+		const FSNameManglerBindingSafety::Diagnostic &p_right) {
+	return p_left.source == p_right.source && p_left.context == p_right.context &&
+			p_left.message == p_right.message;
+}
+
+struct ResourceRootComparator {
+	bool operator()(const FSNameManglerBindingSafety::ResourceRoot &p_left,
+			const FSNameManglerBindingSafety::ResourceRoot &p_right) const {
+		return p_left.source < p_right.source;
+	}
+};
+
+enum DeclarationKind {
+	DECLARATION_PROPERTY,
+	DECLARATION_METHOD,
+	DECLARATION_SIGNAL,
+};
+
+struct ScriptDomain {
+	HashSet<const FoundryScript *> pointers;
+	HashMap<String, const FoundryScript *> identities;
+};
+
+String get_script_identity(const FoundryScript *p_script) {
+	if (p_script == nullptr) {
+		return String();
+	}
+	return FoundryScript::canonicalize_path(p_script->get_script_path()) + "::" +
+			p_script->get_fully_qualified_name();
+}
+
+String get_script_owner(const FoundryScript *p_script) {
+	if (p_script == nullptr) {
+		return String();
+	}
+	const String path = FoundryScript::canonicalize_path(p_script->get_script_path());
+	const String qualified_name = p_script->get_fully_qualified_name();
+	return qualified_name.is_empty() ? path : path + "::" + qualified_name;
+}
+
+void index_script(
+		const FoundryScript *p_script,
+		ScriptDomain &r_domain,
+		HashSet<const FoundryScript *> &r_visited,
+		FSNameManglerBindingSafety::Result &r_result) {
+	if (p_script == nullptr || r_visited.has(p_script)) {
+		return;
+	}
+	r_visited.insert(p_script);
+	r_domain.pointers.insert(p_script);
+	const String identity = get_script_identity(p_script);
+	if (!identity.is_empty()) {
+		const HashMap<String, const FoundryScript *>::ConstIterator existing =
+				r_domain.identities.find(identity);
+		if (existing && existing->value != p_script) {
+			FSNameManglerBindingSafety::Diagnostic diagnostic;
+			diagnostic.source = p_script->get_script_path();
+			diagnostic.context = p_script->get_fully_qualified_name();
+			diagnostic.message = "duplicate compiled script identity";
+			r_result.diagnostics.push_back(diagnostic);
+			r_result.error = ERR_INVALID_DATA;
+			r_result.complete = false;
+		} else {
+			r_domain.identities.insert(identity, p_script);
+		}
+	}
+	for (const KeyValue<StringName, Ref<FoundryScript>> &subclass :
+			p_script->get_subclasses()) {
+		index_script(subclass.value.ptr(), r_domain, r_visited, r_result);
+	}
+}
+
+const FoundryScript *resolve_domain_script(
+		const FoundryScript *p_script, const ScriptDomain &p_domain) {
+	if (p_script == nullptr) {
+		return nullptr;
+	}
+	if (p_domain.pointers.has(p_script)) {
+		return p_script;
+	}
+	const HashMap<String, const FoundryScript *>::ConstIterator found =
+			p_domain.identities.find(get_script_identity(p_script));
+	return found ? found->value : nullptr;
+}
+
+bool script_declares(
+		const FoundryScript *p_script,
+		const StringName &p_name,
+		DeclarationKind p_kind) {
+	switch (p_kind) {
+		case DECLARATION_PROPERTY:
+			return p_script->get_members().has(p_name);
+		case DECLARATION_METHOD:
+			return p_script->get_member_functions().has(p_name);
+		case DECLARATION_SIGNAL:
+			return p_script->get_signals().has(p_name);
+	}
+	return false;
+}
+
+const FoundryScript *find_foundry_declaration(
+		const Ref<Script> &p_script,
+		const StringName &p_name,
+		DeclarationKind p_kind) {
+	HashSet<const FoundryScript *> visited;
+	for (const FoundryScript *current =
+					Object::cast_to<FoundryScript>(p_script.ptr());
+			current != nullptr && !visited.has(current);
+			current = Object::cast_to<FoundryScript>(
+					current->get_base_script().ptr())) {
+		visited.insert(current);
+		if (script_declares(current, p_name, p_kind)) {
+			return current;
+		}
+	}
+	return nullptr;
+}
+
+bool script_has_declaration(
+		const Ref<Script> &p_script,
+		const StringName &p_name,
+		DeclarationKind p_kind) {
+	switch (p_kind) {
+		case DECLARATION_PROPERTY: {
+			List<PropertyInfo> properties;
+			p_script->get_script_property_list(&properties);
+			for (const PropertyInfo &property : properties) {
+				if (property.name == p_name) {
+					return true;
+				}
+			}
+			return false;
+		}
+		case DECLARATION_METHOD: {
+			List<MethodInfo> methods;
+			p_script->get_script_method_list(&methods);
+			for (const MethodInfo &method : methods) {
+				if (method.name == p_name) {
+					return true;
+				}
+			}
+			return false;
+		}
+		case DECLARATION_SIGNAL:
+			return p_script->has_script_signal(p_name);
+	}
+	return false;
+}
+
+struct VirtualProperty {
+	Variant value;
+	bool deferred_node_path = false;
+};
+
+struct VirtualNode {
+	String path;
+	StringName native_type;
+	Ref<Script> script;
+	RBMap<StringName, VirtualProperty> properties;
+};
+
+struct VirtualConnection {
+	String source_path;
+	StringName signal;
+	String target_path;
+	StringName method;
+	String source;
+};
+
+struct VirtualScene {
+	RBMap<String, VirtualNode> nodes;
+	Vector<VirtualConnection> connections;
+	HashSet<const SceneState *> active_states;
+};
+
+void fail_collection(
+		FSNameManglerBindingSafety::Result &r_result,
+		const String &p_source,
+		const String &p_context,
+		const String &p_message) {
+	FSNameManglerBindingSafety::Diagnostic diagnostic;
+	diagnostic.source = p_source;
+	diagnostic.context = p_context;
+	diagnostic.message = p_message;
+	r_result.diagnostics.push_back(diagnostic);
+	r_result.error = ERR_INVALID_DATA;
+	r_result.complete = false;
+}
+
+bool append_scene_path(
+		const String &p_mount,
+		const NodePath &p_relative,
+		const String &p_source,
+		const String &p_context,
+		FSNameManglerBindingSafety::Result &r_result,
+		String &r_path) {
+	if (p_relative.is_absolute() || p_relative.get_subname_count() != 0) {
+		fail_collection(r_result, p_source, p_context,
+				"scene path must be relative and cannot contain subnames");
+		return false;
+	}
+
+	Vector<StringName> components;
+	if (!p_mount.is_empty()) {
+		const PackedStringArray mount_components = p_mount.split("/");
+		for (const String &component : mount_components) {
+			if (!component.is_empty()) {
+				components.push_back(component);
+			}
+		}
+	}
+	for (int i = 0; i < p_relative.get_name_count(); i++) {
+		const StringName component = p_relative.get_name(i);
+		if (component == SNAME(".")) {
+			continue;
+		}
+		if (component == SNAME("..") || String(component).is_empty()) {
+			fail_collection(r_result, p_source, p_context,
+					"scene path cannot escape its mounted scene");
+			return false;
+		}
+		components.push_back(component);
+	}
+
+	r_path.clear();
+	for (const StringName &component : components) {
+		if (!r_path.is_empty()) {
+			r_path += "/";
+		}
+		r_path += String(component);
+	}
+	return true;
+}
+
+void expand_scene_state(
+		const Ref<SceneState> &p_state,
+		const String &p_mount,
+		const String &p_source,
+		VirtualScene &r_scene,
+		FSNameManglerBindingSafety::Result &r_result) {
+	if (p_state.is_null()) {
+		fail_collection(r_result, p_source, p_mount, "PackedScene has no SceneState");
+		return;
+	}
+	if (r_scene.active_states.has(p_state.ptr())) {
+		fail_collection(r_result, p_source, p_mount,
+				"scene inheritance or instance cycle");
+		return;
+	}
+	r_scene.active_states.insert(p_state.ptr());
+
+	const Ref<SceneState> base_state = p_state->get_base_scene_state();
+	if (base_state.is_valid()) {
+		expand_scene_state(base_state, p_mount, p_source, r_scene, r_result);
+	}
+
+	for (int node_index = 0; node_index < p_state->get_node_count(); node_index++) {
+		String node_path;
+		const String context = vformat("node row %d", node_index);
+		if (!append_scene_path(p_mount, p_state->get_node_path(node_index),
+					p_source, context, r_result, node_path)) {
+			continue;
+		}
+
+		const Ref<PackedScene> instance = p_state->get_node_instance(node_index);
+		if (node_index > 0 && instance.is_valid()) {
+			expand_scene_state(
+					instance->get_state(), node_path, p_source, r_scene, r_result);
+		} else if (p_state->is_node_instance_placeholder(node_index)) {
+			fail_collection(r_result, p_source, node_path,
+					"instance placeholder cannot be expanded");
+		}
+
+		const StringName node_type = p_state->get_node_type(node_index);
+		RBMap<String, VirtualNode>::Element *node_entry =
+				r_scene.nodes.find(node_path);
+		if (node_entry == nullptr) {
+			if (node_type.is_empty()) {
+				fail_collection(r_result, p_source, node_path,
+						"instantiated node row has no base or instance node");
+				continue;
+			}
+			VirtualNode new_node;
+			new_node.path = node_path;
+			new_node.native_type = node_type;
+			r_scene.nodes.insert(node_path, new_node);
+			node_entry = r_scene.nodes.find(node_path);
+		} else if (!node_type.is_empty() &&
+				node_entry->value().native_type != node_type) {
+			fail_collection(r_result, p_source, node_path,
+					"concrete node row collides with a different node type");
+			continue;
+		}
+		VirtualNode &node = node_entry->value();
+
+		if (node_index > 0) {
+			String parent_path;
+			if (append_scene_path(p_mount,
+						p_state->get_node_path(node_index, true),
+						p_source, context + " parent", r_result,
+						parent_path) &&
+					!r_scene.nodes.has(parent_path)) {
+				fail_collection(r_result, p_source, node_path,
+						"node parent is missing from the composed scene");
+			}
+		}
+
+		for (int property_index = 0;
+				property_index < p_state->get_node_property_count(node_index);
+				property_index++) {
+			const StringName property_name =
+					p_state->get_node_property_name(node_index, property_index);
+			const Variant property_value =
+					p_state->get_node_property_value(node_index, property_index);
+			VirtualProperty property;
+			property.value = property_value;
+			const Vector<String> deferred_properties =
+					p_state->get_node_deferred_nodepath_properties(node_index);
+			property.deferred_node_path =
+					deferred_properties.has(String(property_name));
+			node.properties.insert(property_name, property);
+			if (property_name == CoreStringName(script)) {
+				node.script = property_value.get_type() == Variant::NIL
+						? Ref<Script>()
+						: Ref<Script>(property_value);
+			}
+		}
+	}
+
+	for (int connection_index = 0;
+			connection_index < p_state->get_connection_count();
+			connection_index++) {
+		VirtualConnection connection;
+		connection.source = p_source;
+		const String context = vformat("connection %d", connection_index);
+		if (!append_scene_path(p_mount,
+					p_state->get_connection_source(connection_index),
+					p_source, context + " source", r_result,
+					connection.source_path) ||
+				!append_scene_path(p_mount,
+						p_state->get_connection_target(connection_index),
+						p_source, context + " target", r_result,
+						connection.target_path)) {
+			continue;
+		}
+		connection.signal = p_state->get_connection_signal(connection_index);
+		connection.method = p_state->get_connection_method(connection_index);
+		r_scene.connections.push_back(connection);
+	}
+
+	r_scene.active_states.erase(p_state.ptr());
+}
+
+void collect_scene_properties(
+		const VirtualScene &p_scene,
+		const String &p_source,
+		const ScriptDomain &p_domain,
+		FSNameManglerBindingSafety::Result &r_result) {
+	for (const KeyValue<String, VirtualNode> &node_entry : p_scene.nodes) {
+		const VirtualNode &node = node_entry.value;
+		for (const KeyValue<StringName, VirtualProperty> &property_entry :
+				node.properties) {
+			if (property_entry.key == CoreStringName(script)) {
+				continue;
+			}
+			const FoundryScript *declaration = find_foundry_declaration(
+					node.script, property_entry.key, DECLARATION_PROPERTY);
+			if (declaration != nullptr) {
+				const FoundryScript *owner =
+						resolve_domain_script(declaration, p_domain);
+				if (owner != nullptr) {
+					FSNameManglerBindingSafety::Evidence evidence;
+					evidence.name = property_entry.key;
+					evidence.kind =
+							FSNameManglerBindingSafety::BINDING_SERIALIZED_PROPERTY;
+					evidence.source = p_source;
+					evidence.owner = get_script_owner(owner);
+					r_result.evidence.push_back(evidence);
+				}
+				continue;
+			}
+			if ((node.script.is_valid() &&
+						script_has_declaration(node.script, property_entry.key,
+								DECLARATION_PROPERTY)) ||
+					ClassDB::has_property(node.native_type, property_entry.key)) {
+				continue;
+			}
+			fail_collection(r_result, p_source,
+					node.path.is_empty() ? "." : node.path,
+					vformat("serialized property \"%s\" has no script or native owner",
+							property_entry.key));
+		}
+	}
+}
+
+bool native_has_declaration(
+		const StringName &p_native_type,
+		const StringName &p_name,
+		DeclarationKind p_kind) {
+	switch (p_kind) {
+		case DECLARATION_PROPERTY:
+			return ClassDB::has_property(p_native_type, p_name);
+		case DECLARATION_METHOD:
+			return ClassDB::has_method(p_native_type, p_name);
+		case DECLARATION_SIGNAL:
+			return ClassDB::has_signal(p_native_type, p_name);
+	}
+	return false;
+}
+
+void collect_scene_declaration(
+		const VirtualNode &p_node,
+		const StringName &p_name,
+		DeclarationKind p_declaration_kind,
+		FSNameManglerBindingSafety::BindingKind p_binding_kind,
+		const String &p_source,
+		const String &p_context,
+		const ScriptDomain &p_domain,
+		FSNameManglerBindingSafety::Result &r_result) {
+	const FoundryScript *declaration = find_foundry_declaration(
+			p_node.script, p_name, p_declaration_kind);
+	if (declaration != nullptr) {
+		const FoundryScript *owner = resolve_domain_script(declaration, p_domain);
+		if (owner != nullptr) {
+			FSNameManglerBindingSafety::Evidence evidence;
+			evidence.name = p_name;
+			evidence.kind = p_binding_kind;
+			evidence.source = p_source;
+			evidence.owner = get_script_owner(owner);
+			r_result.evidence.push_back(evidence);
+		}
+		return;
+	}
+	if ((p_node.script.is_valid() &&
+				script_has_declaration(
+						p_node.script, p_name, p_declaration_kind)) ||
+			native_has_declaration(
+					p_node.native_type, p_name, p_declaration_kind)) {
+		return;
+	}
+	fail_collection(r_result, p_source, p_context,
+			vformat("\"%s\" has no script or native owner", p_name));
+}
+
+void collect_scene_connections(
+		const VirtualScene &p_scene,
+		const ScriptDomain &p_domain,
+		FSNameManglerBindingSafety::Result &r_result) {
+	for (const VirtualConnection &connection : p_scene.connections) {
+		const RBMap<String, VirtualNode>::Element *source_node =
+				p_scene.nodes.find(connection.source_path);
+		const RBMap<String, VirtualNode>::Element *target_node =
+				p_scene.nodes.find(connection.target_path);
+		const String context = vformat(
+				"connection %s.%s -> %s.%s",
+				connection.source_path.is_empty() ? String(".")
+												  : connection.source_path,
+				connection.signal,
+				connection.target_path.is_empty() ? String(".")
+												  : connection.target_path,
+				connection.method);
+		if (source_node == nullptr || target_node == nullptr) {
+			fail_collection(r_result, connection.source, context,
+					"connection endpoint is missing from the composed scene");
+			continue;
+		}
+		collect_scene_declaration(
+				source_node->value(), connection.signal, DECLARATION_SIGNAL,
+				FSNameManglerBindingSafety::BINDING_CONNECTION_SIGNAL,
+				connection.source, context + " signal", p_domain, r_result);
+		collect_scene_declaration(
+				target_node->value(), connection.method, DECLARATION_METHOD,
+				FSNameManglerBindingSafety::BINDING_CONNECTION_METHOD,
+				connection.source, context + " method", p_domain, r_result);
+	}
+}
+
+void sort_and_deduplicate(
+		FSNameManglerBindingSafety::Result &r_result) {
+	r_result.evidence.sort_custom<EvidenceComparator>();
+	for (int i = r_result.evidence.size() - 1; i > 0; i--) {
+		if (evidence_matches(r_result.evidence[i - 1],
+					r_result.evidence[i])) {
+			r_result.evidence.remove_at(i);
+		}
+	}
+	r_result.diagnostics.sort_custom<DiagnosticComparator>();
+	for (int i = r_result.diagnostics.size() - 1; i > 0; i--) {
+		if (diagnostic_matches(r_result.diagnostics[i - 1],
+					r_result.diagnostics[i])) {
+			r_result.diagnostics.remove_at(i);
+		}
+	}
 }
 
 } // namespace
@@ -135,9 +647,56 @@ Error FSNameManglerBindingSafety::Result::apply_to_input(
 
 FSNameManglerBindingSafety::Result FSNameManglerBindingSafety::collect(
 		const Input &p_input, const FSNameManglerAnalysis::Input &p_analysis_input) {
-	(void)p_input;
-	(void)p_analysis_input;
-	return Result();
+	Result result;
+	ScriptDomain domain;
+	HashSet<const FoundryScript *> visited_scripts;
+	for (const Ref<FoundryScript> &script : p_analysis_input.scripts) {
+		if (script.is_null()) {
+			fail_collection(result, String(), "analysis input",
+					"compiled script root is null");
+			continue;
+		}
+		index_script(script.ptr(), domain, visited_scripts, result);
+	}
+
+	Vector<ResourceRoot> roots = p_input.resources;
+	for (ResourceRoot &root : roots) {
+		if (root.source.is_empty() && root.resource.is_valid()) {
+			root.source = root.resource->get_path();
+		}
+	}
+	roots.sort_custom<ResourceRootComparator>();
+	String previous_source;
+	for (const ResourceRoot &root : roots) {
+		if (root.resource.is_null()) {
+			fail_collection(result, root.source, "resource root",
+					"resource is null");
+			continue;
+		}
+		if (root.source.is_empty()) {
+			fail_collection(result, String(), "resource root",
+					"in-memory resource requires a stable source");
+			continue;
+		}
+		if (root.source == previous_source) {
+			fail_collection(result, root.source, "resource root",
+					"duplicate resource source");
+			continue;
+		}
+		previous_source = root.source;
+
+		const Ref<PackedScene> scene = root.resource;
+		if (scene.is_valid()) {
+			VirtualScene virtual_scene;
+			expand_scene_state(
+					scene->get_state(), String(), root.source, virtual_scene, result);
+			collect_scene_properties(
+					virtual_scene, root.source, domain, result);
+			collect_scene_connections(virtual_scene, domain, result);
+		}
+	}
+	sort_and_deduplicate(result);
+	return result;
 }
 
 #endif // TOOLS_ENABLED
