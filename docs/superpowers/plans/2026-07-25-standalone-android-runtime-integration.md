@@ -238,14 +238,15 @@ python3 platform/android/android_runtime_build.py prepare
   --engine-source <clean-foundry-checkout>
   --scratch <ignored-or-shared-scratch>
   --output-aars <ignored-output>
-  (--standalone-source <git-repository> | --fetch)
+  (--source-repository <git-repository> | --allow-fetch)
   (--native-root <complete-cell-root> | --native-bundle <bundle.zip>)
 ```
 
 The implementation must:
 
 1. Refuse a scratch/output path that is the repository root or a tracked path.
-2. Resolve the pin from an explicit Git repository, or initialize/fetch the exact SHA only when `--fetch` is present.
+2. Resolve the pin from an explicit Git repository, or initialize/fetch the exact SHA only when `--allow-fetch` is
+   present.
 3. Verify commit and tree, export with `git archive`, and validate checked-in compatibility/tool paths.
 4. Validate the clean Foundry HEAD/tree and the complete native provenance before deriving metadata.
 5. Invoke exported `tools/sync_engine_pin.py derive` with the exact expected revision, pinned bindings version, and JNI
