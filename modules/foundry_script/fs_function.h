@@ -44,6 +44,9 @@
 
 class FSInstance;
 class FoundryScript;
+#ifdef TOOLS_ENABLED
+class FSNameManglerAnalysis;
+#endif
 
 class FSDataType {
 public:
@@ -545,6 +548,9 @@ private:
 	friend class FSBytecodeExporter;
 	friend class FSBytecodeLoader;
 	friend class FSBytecodeVerifier;
+#ifdef TOOLS_ENABLED
+	friend class FSNameManglerAnalysis;
+#endif
 
 	StringName name;
 	StringName source;
