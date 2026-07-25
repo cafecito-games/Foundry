@@ -1,0 +1,10 @@
+config_version=5
+
+[application]
+
+config/name="Headless Container Smoke"
+config/features=PackedStringArray("0.1")
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"

@@ -407,3 +407,6 @@ $RECYCLE.BIN/
 
 # Worktrees
 .worktrees/
+
+# Staged release artifact for the headless container image.
+/docker/foundry.linuxbsd.editor.x86_64
