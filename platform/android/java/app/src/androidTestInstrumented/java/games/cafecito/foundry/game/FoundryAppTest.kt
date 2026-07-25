@@ -28,7 +28,7 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-package com.godot.game
+package games.cafecito.foundry.game
 
 import android.content.ComponentName
 import android.content.Intent
@@ -37,9 +37,9 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.espresso.Espresso
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import com.godot.game.test.FoundryAppInstrumentedTestPlugin
 import games.cafecito.foundry.Foundry
 import games.cafecito.foundry.FoundryActivity.Companion.EXTRA_COMMAND_LINE_PARAMS
+import games.cafecito.foundry.game.test.FoundryAppInstrumentedTestPlugin
 import games.cafecito.foundry.plugin.FoundryPluginRegistry
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -57,8 +57,8 @@ class FoundryAppTest {
 	companion object {
 		private val TAG = FoundryAppTest::class.java.simpleName
 
-		private const val FOUNDRY_APP_LAUNCHER_CLASS_NAME = "com.godot.game.FoundryAppLauncher"
-		private const val FOUNDRY_APP_CLASS_NAME = "com.godot.game.FoundryApp"
+		private const val FOUNDRY_APP_LAUNCHER_CLASS_NAME = "games.cafecito.foundry.game.FoundryAppLauncher"
+		private const val FOUNDRY_APP_CLASS_NAME = "games.cafecito.foundry.game.FoundryApp"
 
 		private val TEST_COMMAND_LINE_PARAMS = arrayOf("This is a test")
 	}

@@ -30,7 +30,7 @@
             tools:targetApi="29" />
 
         <activity
-            android:name=".FoundryApp"
+            android:name="games.cafecito.foundry.game.FoundryApp"
             android:theme="@style/FoundryAppSplashTheme"
             android:launchMode="singleInstancePerTask"
             android:excludeFromRecents="false"
@@ -41,8 +41,8 @@
             android:resizeableActivity="false"
             tools:ignore="UnusedAttribute" />
         <activity-alias
-            android:name=".FoundryAppLauncher"
-            android:targetActivity=".FoundryApp"
+            android:name="games.cafecito.foundry.game.FoundryAppLauncher"
+            android:targetActivity="games.cafecito.foundry.game.FoundryApp"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

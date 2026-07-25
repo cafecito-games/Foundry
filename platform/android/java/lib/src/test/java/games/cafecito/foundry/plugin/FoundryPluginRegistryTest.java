@@ -1,8 +1,8 @@
 /**************************************************************************/
-/*  FoundryApp.java                                                       */
+/*  FoundryPluginRegistryTest.java                                        */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -28,68 +28,23 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-package com.godot.game;
+package games.cafecito.foundry.plugin;
 
-import android.os.Bundle;
-import android.util.Log;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
 
-import androidx.activity.EdgeToEdge;
-import androidx.core.splashscreen.SplashScreen;
+import org.junit.Test;
 
-import games.cafecito.foundry.Foundry;
-import games.cafecito.foundry.FoundryActivity;
-
-/**
- * Template activity for Foundry Android builds.
- * Feel free to extend and modify this class for your custom logic.
- */
-public class FoundryApp extends FoundryActivity {
-	static {
-		// .NET libraries.
-		if (BuildConfig.FLAVOR.equals("mono")) {
-			try {
-				Log.v("FOUNDRY", "Loading System.Security.Cryptography.Native.Android library");
-				System.loadLibrary("System.Security.Cryptography.Native.Android");
-			} catch (UnsatisfiedLinkError e) {
-				Log.e("FOUNDRY", "Unable to load System.Security.Cryptography.Native.Android library");
-			}
-		}
-	}
-
-	private final Runnable updateWindowAppearance = () -> {
-		Foundry foundry = getFoundry();
-		if (foundry != null) {
-			foundry.enableImmersiveMode(foundry.isInImmersiveMode(), true);
-			foundry.enableEdgeToEdge(foundry.isInEdgeToEdgeMode(), true);
-			foundry.setSystemBarsAppearance();
-		}
-	};
-
-	@Override
-	public void onCreate(Bundle savedInstanceState) {
-		SplashScreen.installSplashScreen(this);
-		EdgeToEdge.enable(this);
-		super.onCreate(savedInstanceState);
-	}
-
-	@Override
-	public void onResume() {
-		super.onResume();
-		updateWindowAppearance.run();
-	}
-
-	@Override
-	public void onFoundryMainLoopStarted() {
-		super.onFoundryMainLoopStarted();
-		runOnUiThread(updateWindowAppearance);
-	}
-
-	@Override
-	public void onFoundryForceQuit(Foundry instance) {
-		if (!BuildConfig.FLAVOR.equals("instrumented")) {
-			// For instrumented builds, we disable force-quitting to allow the instrumented tests to complete
-			// successfully, otherwise they fail when the process crashes.
-			super.onFoundryForceQuit(instance);
-		}
+public class FoundryPluginRegistryTest {
+	@Test
+	public void recognizesOnlyFoundryPluginProtocolV1Metadata() {
+		assertEquals(
+				"Example",
+				FoundryPluginRegistry.getPluginNameFromMetadata("games.cafecito.foundry.plugin.v1.Example"));
+		assertNull(FoundryPluginRegistry.getPluginNameFromMetadata("games.cafecito.foundry.plugin.v1."));
+		assertNull(FoundryPluginRegistry.getPluginNameFromMetadata("games.cafecito.foundry.plugin.v1.  "));
+		assertNull(FoundryPluginRegistry.getPluginNameFromMetadata("org.godotengine.plugin.v1.Example"));
+		assertNull(FoundryPluginRegistry.getPluginNameFromMetadata("org.godotengine.plugin.v2.Example"));
+		assertNull(FoundryPluginRegistry.getPluginNameFromMetadata("unrelated.metadata"));
 	}
 }

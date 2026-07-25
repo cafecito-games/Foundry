@@ -28,7 +28,7 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-package com.godot.game.test.javaclasswrapper
+package games.cafecito.foundry.game.test.javaclasswrapper
 
 class TestClass3(private val value: String) {
     fun getValue(): String {

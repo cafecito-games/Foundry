@@ -2,7 +2,7 @@
 /*  export_plugin.cpp                                                     */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -2485,7 +2485,7 @@ Error EditorExportPlatformAndroid::run(const Ref<EditorExportPreset> &p_preset, 
 		print_verbose(output);
 		if (err || rv != 0 || output.contains("Error: Activity not started")) {
 			// The implicit launch failed, let's try an explicit launch by specifying the component name before giving up.
-			const String component_name = get_package_name(p_preset, package_name) + "/com.godot.game.FoundryAppLauncher";
+			const String component_name = get_package_name(p_preset, package_name) + "/games.cafecito.foundry.game.FoundryAppLauncher";
 			print_line("Implicit launch failed... Trying explicit launch using", component_name);
 			args.erase(get_package_name(p_preset, package_name));
 			args.push_back("-n");
