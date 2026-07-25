@@ -43,10 +43,10 @@
 //
 // `Result::rename_map` contains atomic declaration identifiers only. Structured identities such as
 // script paths, `fully_qualified_name`, conformance target aliases, and generic type-parameter names
-// are reserved for collision avoidance but are not flat map keys. A later mutation pass must rewrite
-// their declaration-name components structurally while preserving path/namespace syntax; it must not
-// serialize an original terminal class segment merely because the whole structured spelling is absent
-// from the map.
+// are reserved for collision avoidance but are not flat map keys. `FSNameManglerApplication`
+// rebuilds those identities from mapped atomic declaration-name components while preserving
+// path/namespace syntax; it never treats a complete registered-global or FQCN spelling as one map
+// source.
 class FSNameManglerAnalysis {
 public:
 	enum IdentifierKind {

@@ -35,6 +35,7 @@
 #include "fs_conformance_registry.h"
 #include "fs_function.h"
 
+#include "core/config/engine.h"
 #include "core/object/class_db.h"
 #include "core/variant/callable.h"
 
@@ -596,6 +597,14 @@ void FSNameManglerAnalysis::_collect_class(const FoundryScript *p_class, BuildSt
 
 bool FSNameManglerAnalysis::_collides_with_builtin_api(
 		const StringName &p_name, const Vector<IdentifierKind> &p_kinds) {
+	if (ClassDB::class_exists(p_name) ||
+			Variant::get_type_by_name(String(p_name)) < Variant::VARIANT_MAX ||
+			(Engine::get_singleton() != nullptr &&
+					Engine::get_singleton()->has_singleton(p_name)) ||
+			(FSLanguage::get_singleton() != nullptr &&
+					FSLanguage::get_singleton()->is_reserved_global_name(p_name))) {
+		return true;
+	}
 	for (int type = 0; type < Variant::VARIANT_MAX; type++) {
 		if (kinds_have(p_kinds, IDENTIFIER_METHOD) &&
 				Variant::has_builtin_method((Variant::Type)type, p_name)) {

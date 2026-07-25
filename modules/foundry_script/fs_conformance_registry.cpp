@@ -79,11 +79,16 @@ void FSConformanceRegistry::clear_file(const String &p_source_file) {
 
 void FSConformanceRegistry::_rebuild_runtime_index() {
 	runtime_index.clear();
+	runtime_trait_index.clear();
 	for (const KeyValue<String, Vector<RuntimeConformance>> &file_entry : runtime_by_file) {
 		for (const RuntimeConformance &conformance : file_entry.value) {
 			for (const String &target_key : conformance.target_keys) {
 				if (target_key.is_empty()) {
 					continue;
+				}
+				if (conformance.trait_name != StringName()) {
+					runtime_trait_index[target_key][conformance.trait_name] =
+							file_entry.key;
 				}
 				WitnessFunctionMap &functions = runtime_index[target_key];
 				for (const KeyValue<StringName, FSFunction *> &witness : conformance.functions) {
@@ -158,22 +163,31 @@ void FSConformanceRegistry::clear() {
 	index.clear();
 	runtime_by_file.clear();
 	runtime_index.clear();
+	runtime_trait_index.clear();
 }
 
-bool FSConformanceRegistry::has_conformance(const String &p_target_key, const StringName &p_trait_name) const {
+bool FSConformanceRegistry::has_conformance(const String &p_target_key, const StringName &p_trait_name, bool p_include_runtime) const {
 	if (p_target_key.is_empty() || p_trait_name == StringName()) {
 		return false;
 	}
 	MutexLock lock(mutex);
 	const HashMap<StringName, String> *traits = index.getptr(p_target_key);
-	return traits != nullptr && traits->has(p_trait_name);
+	if (traits != nullptr && traits->has(p_trait_name)) {
+		return true;
+	}
+	if (!p_include_runtime) {
+		return false;
+	}
+	const HashMap<StringName, String> *runtime_traits =
+			runtime_trait_index.getptr(p_target_key);
+	return runtime_traits != nullptr && runtime_traits->has(p_trait_name);
 }
 
-bool FSConformanceRegistry::builtin_type_conforms(Variant::Type p_type, const StringName &p_trait_name) const {
+bool FSConformanceRegistry::builtin_type_conforms(Variant::Type p_type, const StringName &p_trait_name, bool p_include_runtime) const {
 	if (p_type == Variant::NIL || p_type == Variant::OBJECT || p_trait_name == StringName()) {
 		return false;
 	}
-	return has_conformance(Variant::get_type_name(p_type), p_trait_name);
+	return has_conformance(Variant::get_type_name(p_type), p_trait_name, p_include_runtime);
 }
 
 FSFunction *FSConformanceRegistry::find_builtin_witness_function(Variant::Type p_type, const StringName &p_method) const {
@@ -183,7 +197,7 @@ FSFunction *FSConformanceRegistry::find_builtin_witness_function(Variant::Type p
 	return find_witness_function(Variant::get_type_name(p_type), p_method);
 }
 
-bool FSConformanceRegistry::native_class_conforms(const StringName &p_native_class, const StringName &p_trait_name) const {
+bool FSConformanceRegistry::native_class_conforms(const StringName &p_native_class, const StringName &p_trait_name, bool p_include_runtime) const {
 	if (p_native_class == StringName() || p_trait_name == StringName()) {
 		return false;
 	}
@@ -194,6 +208,14 @@ bool FSConformanceRegistry::native_class_conforms(const StringName &p_native_cla
 		const HashMap<StringName, String> *traits = index.getptr(String(cursor));
 		if (traits != nullptr && traits->has(p_trait_name)) {
 			return true;
+		}
+		if (p_include_runtime) {
+			const HashMap<StringName, String> *runtime_traits =
+					runtime_trait_index.getptr(String(cursor));
+			if (runtime_traits != nullptr &&
+					runtime_traits->has(p_trait_name)) {
+				return true;
+			}
 		}
 	}
 	return false;
@@ -225,6 +247,12 @@ FSConformanceRegistry::WitnessMap FSConformanceRegistry::get_witnesses(const Str
 		}
 	}
 	return WitnessMap();
+}
+
+Vector<FSConformanceRegistry::Conformance> FSConformanceRegistry::get_file_conformances(const String &p_source_file) const {
+	MutexLock lock(mutex);
+	const Vector<Conformance> *entries = conformances_by_file.getptr(p_source_file);
+	return entries != nullptr ? *entries : Vector<Conformance>();
 }
 
 String FSConformanceRegistry::get_witness_source(const String &p_target_key, const StringName &p_method, StringName &r_trait_name) const {

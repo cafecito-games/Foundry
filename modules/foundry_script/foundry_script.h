@@ -120,6 +120,7 @@ class TestFSTraitReflectionAccessor;
 class TestFSGenericReflectionAccessor;
 class TestFSLanguageGlobalsAccessor;
 class TestFSBytecodeScriptAccessor;
+class TestFSNameManglerApplicationAccessor;
 } //namespace FSTests
 #endif // TESTS_ENABLED
 
@@ -239,6 +240,7 @@ private:
 	friend class FSTests::TestFSTraitReflectionAccessor;
 	friend class FSTests::TestFSGenericReflectionAccessor;
 	friend class FSTests::TestFSBytecodeScriptAccessor;
+	friend class FSTests::TestFSNameManglerApplicationAccessor;
 #endif // TESTS_ENABLED
 
 	Ref<FSNativeClass> native;
@@ -434,6 +436,7 @@ private:
 	void _get_script_method_list(List<MethodInfo> *r_list, bool p_include_base) const;
 	void _get_script_signal_list(List<MethodInfo> *r_list, bool p_include_base) const;
 	void _get_script_trait_list(List<StringName> *r_list, HashSet<StringName> &r_seen, bool p_include_base) const;
+	bool _has_script_trait(const StringName &p_trait, bool p_include_runtime) const;
 
 protected:
 	bool _get(const StringName &p_name, Variant &r_ret) const;
@@ -507,6 +510,9 @@ public:
 	virtual bool has_script_signal(const StringName &p_signal) const override;
 	virtual void get_script_signal_list(List<MethodInfo> *r_signals) const override;
 	virtual bool has_script_trait(const StringName &p_trait) const override;
+	// Frontend checks must ignore serialized runtime membership left alive while a source file is
+	// being reanalyzed; runtime Script API checks use `has_script_trait()` above.
+	bool has_script_trait_parse(const StringName &p_trait) const;
 	virtual void get_script_trait_list(List<StringName> *r_traits) const override;
 
 	// Generic reflection: declared type parameters of this class and their optional bounds.

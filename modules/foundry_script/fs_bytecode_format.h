@@ -46,9 +46,11 @@
 // - String/NodePath/signal-name constants.
 // - Engine API names inside pointer-fixup keys.
 //
-// `FSNameManglerAnalysis` now provides the export-time whole-program classification and rename-map
-// contract for these names. Applying that map to compiled graphs and integrating it into resource
-// export remain follow-ups; this format's current serialization behavior is therefore unchanged.
+// `FSNameManglerAnalysis` provides the export-time whole-program classification and atomic
+// rename-map contract. `FSNameManglerApplication::Transaction` validates a closed compiled graph,
+// stages that map across every serialized project-name surface, and restores the live graph after
+// serialization. Export orchestration remains a follow-up. The application stage changes only the
+// values supplied to the existing writer: the version-3 wire layout and loader remain unchanged.
 class FSBytecodeFormat {
 public:
 	static constexpr uint8_t MAGIC[4] = { 'F', 'S', 'B', 'C' };

@@ -33,6 +33,7 @@
 #include "fs_conformance_registry.h"
 #include "fs_utility_functions.h"
 
+#include "core/config/engine.h"
 #include "core/object/class_db.h"
 #include "core/string/char_utils.h"
 
@@ -122,6 +123,8 @@ struct FSNameManglerApplication::Transaction::Data {
 
 	struct RegistrySnapshot {
 		String source;
+		Vector<FSConformanceRegistry::Conformance> conformances;
+		Vector<FSConformanceRegistry::Conformance> transformed_conformances;
 		Vector<FSConformanceRegistry::RuntimeConformance> entries;
 		Vector<FSConformanceRegistry::RuntimeConformance> transformed_entries;
 	};
@@ -216,7 +219,7 @@ struct FSNameManglerApplication::Transaction::Data {
 			}
 
 			const auto add_replacement = [&](const String &p_source, const String &p_replacement) {
-				if (p_source.is_empty() || p_source == p_replacement) {
+				if (p_source.is_empty()) {
 					return;
 				}
 				const String *existing = unique_replacements.getptr(p_source);
@@ -234,6 +237,49 @@ struct FSNameManglerApplication::Transaction::Data {
 			add_replacement(String(snapshot.global_name), String(snapshot.transformed_global_name));
 			add_replacement(snapshot.fully_qualified_name, snapshot.transformed_fully_qualified_name);
 			add_replacement(String(snapshot.trait_type_name), String(snapshot.transformed_trait_type_name));
+
+			// Enum value dictionaries are stored as constants, while enum type metadata uses a
+			// structural `Owner.Enum` identity. Atomic replacements deliberately do not fire next
+			// to `.`/`::`, because doing so would confuse namespace components with declarations.
+			// Register the exact owner/enum aliases the compiled class graph proves instead.
+			for (const KeyValue<StringName, Variant> &constant :
+					snapshot.constants) {
+				if (constant.value.get_type() != Variant::DICTIONARY) {
+					continue;
+				}
+				const String enum_name = constant.key;
+				const String transformed_enum_name =
+						rename_atomic(constant.key);
+				add_replacement(enum_name, transformed_enum_name);
+				const auto add_owned_enum =
+						[&](const String &p_owner,
+								const String &p_transformed_owner) {
+							if (p_owner.is_empty()) {
+								return;
+							}
+							add_replacement(
+									p_owner + "." + enum_name,
+									p_transformed_owner + "." +
+											transformed_enum_name);
+							add_replacement(
+									p_owner + "::" + enum_name,
+									p_transformed_owner + "::" +
+											transformed_enum_name);
+						};
+				add_owned_enum(
+						String(snapshot.local_name),
+						String(snapshot.transformed_local_name));
+				add_owned_enum(
+						String(snapshot.global_name),
+						String(snapshot.transformed_global_name));
+				add_owned_enum(
+						snapshot.fully_qualified_name,
+						snapshot.transformed_fully_qualified_name);
+				add_owned_enum(
+						snapshot.fully_qualified_name.replace("::", "."),
+						snapshot.transformed_fully_qualified_name.replace(
+								"::", "."));
+			}
 			if (!r_diagnostics.is_empty()) {
 				return false;
 			}
@@ -285,23 +331,41 @@ struct FSNameManglerApplication::Transaction::Data {
 			body = body.substr(nested_separator + 2);
 		}
 
-		for (const IdentityReplacement &replacement : identity_replacements) {
-			int offset = 0;
-			while (offset <= body.length() - replacement.source.length()) {
-				const int found = body.find(replacement.source, offset);
-				if (found < 0) {
-					break;
-				}
-				if (!has_identity_boundaries(body, found, replacement.source.length())) {
-					offset = found + replacement.source.length();
+		String rewritten;
+		int offset = 0;
+		while (offset < body.length()) {
+			bool matched = false;
+			for (const IdentityReplacement &replacement : identity_replacements) {
+				const int source_length = replacement.source.length();
+				if (source_length == 0 || offset + source_length > body.length() ||
+						body.substr(offset, source_length) != replacement.source ||
+						!has_identity_boundaries(body, offset, source_length)) {
 					continue;
 				}
-				body = body.substr(0, found) + replacement.replacement +
-						body.substr(found + replacement.source.length());
-				offset = found + replacement.replacement.length();
+				if (replacement.source.is_valid_unicode_identifier()) {
+					const bool follows_identity_separator =
+							offset > 0 &&
+							(body[offset - 1] == '.' || body[offset - 1] == ':');
+					const int end = offset + source_length;
+					const bool precedes_identity_separator =
+							end < body.length() &&
+							(body[end] == '.' || body[end] == ':');
+					if (follows_identity_separator ||
+							precedes_identity_separator) {
+						continue;
+					}
+				}
+				rewritten += replacement.replacement;
+				offset += source_length;
+				matched = true;
+				break;
+			}
+			if (!matched) {
+				rewritten += body.substr(offset, 1);
+				offset++;
 			}
 		}
-		return prefix + body;
+		return prefix + rewritten;
 	}
 
 	StringName rewrite_dispatch_name(const StringName &p_name) const {
@@ -354,21 +418,42 @@ struct FSNameManglerApplication::Transaction::Data {
 		}
 	}
 
-	HashMap<StringName, StringName> allocate_parameter_names(const MethodInfo &p_info) const {
+	HashMap<StringName, StringName> allocate_parameter_names(
+			const MethodInfo &p_info,
+			const HashMap<StringName, Vector<FoundryScript::AnnotationUsage>>
+					*p_annotation_parameters = nullptr) const {
 		HashSet<StringName> reserved;
 		for (const PropertyInfo &argument : p_info.arguments) {
 			reserved.insert(argument.name);
 		}
+		Vector<StringName> annotation_only_parameters;
+		if (p_annotation_parameters != nullptr) {
+			for (const KeyValue<StringName,
+						 Vector<FoundryScript::AnnotationUsage>> &parameter :
+					*p_annotation_parameters) {
+				if (!reserved.has(parameter.key)) {
+					annotation_only_parameters.push_back(parameter.key);
+				}
+				reserved.insert(parameter.key);
+			}
+			annotation_only_parameters.sort();
+		}
 
 		HashMap<StringName, StringName> result;
 		uint64_t ordinal = 0;
-		for (const PropertyInfo &argument : p_info.arguments) {
+		const auto allocate = [&](const StringName &p_original_name) {
 			StringName candidate;
 			do {
 				candidate = StringName("_fsb_arg_" + String::num_int64(ordinal++, 36));
 			} while (reserved.has(candidate));
 			reserved.insert(candidate);
-			result.insert(argument.name, candidate);
+			result.insert(p_original_name, candidate);
+		};
+		for (const PropertyInfo &argument : p_info.arguments) {
+			allocate(argument.name);
+		}
+		for (const StringName &parameter : annotation_only_parameters) {
+			allocate(parameter);
 		}
 		return result;
 	}
@@ -492,8 +577,17 @@ struct FSNameManglerApplication::Transaction::Data {
 		snapshot.method_info = p_function->method_info;
 		snapshot.global_names = p_function->global_names;
 		if (snapshot.safe_arguments) {
-			snapshot.parameter_names =
-					allocate_parameter_names(snapshot.method_info);
+			const HashMap<StringName,
+					Vector<FoundryScript::AnnotationUsage>>
+					*annotation_parameters = nullptr;
+			if (p_function->_script != nullptr &&
+					p_owner_name != StringName()) {
+				annotation_parameters =
+						p_function->_script->method_parameter_annotations.getptr(
+								p_owner_name);
+			}
+			snapshot.parameter_names = allocate_parameter_names(
+					snapshot.method_info, annotation_parameters);
 		}
 		function_snapshots.push_back(snapshot);
 
@@ -578,6 +672,24 @@ struct FSNameManglerApplication::Transaction::Data {
 	}
 
 	bool find_protected_surface(const StringName &p_name, String &r_surface) const {
+		if (ClassDB::class_exists(p_name)) {
+			r_surface = "native class identity";
+			return true;
+		}
+		if (Variant::get_type_by_name(String(p_name)) < Variant::VARIANT_MAX) {
+			r_surface = "Variant type identity";
+			return true;
+		}
+		if (Engine::get_singleton() != nullptr &&
+				Engine::get_singleton()->has_singleton(p_name)) {
+			r_surface = "engine singleton";
+			return true;
+		}
+		if (FSLanguage::get_singleton() != nullptr &&
+				FSLanguage::get_singleton()->is_reserved_global_name(p_name)) {
+			r_surface = "language global";
+			return true;
+		}
 		if (Variant::has_utility_function(p_name) ||
 				FSUtilityFunctions::function_exists(p_name)) {
 			r_surface = "utility function";
@@ -641,9 +753,80 @@ struct FSNameManglerApplication::Transaction::Data {
 					return true;
 				}
 			}
+			for (const KeyValue<StringName, Variant> &entry :
+					snapshot.member_default_values_cache) {
+				if (variant_contains_name(entry.value, p_name)) {
+					r_surface = "cached member default value";
+					return true;
+				}
+			}
 			if (annotation_usages_contain_name(script->class_annotations, p_name)) {
 				r_surface = "annotation argument";
 				return true;
+			}
+			const auto annotation_map_contains =
+					[&](const HashMap<StringName,
+							Vector<FoundryScript::AnnotationUsage>>
+									&p_annotations) {
+						for (const KeyValue<StringName,
+									 Vector<FoundryScript::AnnotationUsage>>
+										&annotations : p_annotations) {
+							if (annotation_usages_contain_name(
+										annotations.value, p_name)) {
+								return true;
+							}
+						}
+						return false;
+					};
+			if (annotation_map_contains(snapshot.method_annotations) ||
+					annotation_map_contains(snapshot.variable_annotations) ||
+					annotation_map_contains(snapshot.signal_annotations) ||
+					annotation_map_contains(snapshot.constant_annotations)) {
+				r_surface = "annotation argument";
+				return true;
+			}
+			const auto parameter_annotation_map_contains =
+					[&](const HashMap<StringName,
+							HashMap<StringName,
+									Vector<FoundryScript::AnnotationUsage>>>
+									&p_annotations) {
+						for (const KeyValue<StringName,
+									 HashMap<StringName,
+											 Vector<FoundryScript::AnnotationUsage>>>
+										&owner : p_annotations) {
+							if (annotation_map_contains(owner.value)) {
+								return true;
+							}
+						}
+						return false;
+					};
+			if (parameter_annotation_map_contains(
+						snapshot.method_parameter_annotations) ||
+					parameter_annotation_map_contains(
+							snapshot.signal_parameter_annotations)) {
+				r_surface = "annotation argument";
+				return true;
+			}
+			for (const KeyValue<StringName, MethodInfo> &signal :
+					snapshot.signals) {
+				for (const Variant &default_argument :
+						signal.value.default_arguments) {
+					if (variant_contains_name(default_argument, p_name)) {
+						r_surface = "signal default argument";
+						return true;
+					}
+				}
+			}
+			for (const KeyValue<StringName,
+						 FoundryScript::AbstractTraitRequirement> &requirement :
+					snapshot.abstract_trait_requirements) {
+				for (const Variant &default_argument :
+						requirement.value.method_info.default_arguments) {
+					if (variant_contains_name(default_argument, p_name)) {
+						r_surface = "abstract requirement default argument";
+						return true;
+					}
+				}
 			}
 		}
 
@@ -833,6 +1016,19 @@ struct FSNameManglerApplication::Transaction::Data {
 		}
 	}
 
+	void collect_observed_property_info(const PropertyInfo &p_info) {
+		if (!p_info.name.is_empty()) {
+			observed_names.insert(StringName(p_info.name));
+		}
+		if (p_info.class_name != StringName()) {
+			observed_names.insert(p_info.class_name);
+		}
+		if (is_type_bearing_hint(p_info.hint) &&
+				!p_info.hint_string.is_empty()) {
+			observed_names.insert(StringName(p_info.hint_string));
+		}
+	}
+
 	void collect_observed_annotations(
 			const Vector<FoundryScript::AnnotationUsage> &p_usages) {
 		for (const FoundryScript::AnnotationUsage &usage : p_usages) {
@@ -859,14 +1055,12 @@ struct FSNameManglerApplication::Transaction::Data {
 				add_project_source(member.key);
 				observed_names.insert(member.value.setter);
 				observed_names.insert(member.value.getter);
-				observed_names.insert(
-						StringName(member.value.property_info.name));
+				collect_observed_property_info(member.value.property_info);
 			}
 			for (const KeyValue<StringName, FoundryScript::MemberInfo> &member :
 					snapshot.static_variables_indices) {
 				add_project_source(member.key);
-				observed_names.insert(
-						StringName(member.value.property_info.name));
+				collect_observed_property_info(member.value.property_info);
 			}
 			for (const KeyValue<StringName, Variant> &constant :
 					snapshot.constants) {
@@ -915,29 +1109,73 @@ struct FSNameManglerApplication::Transaction::Data {
 			for (const KeyValue<StringName,
 						 Vector<FoundryScript::AnnotationUsage>> &annotations :
 					snapshot.method_annotations) {
+				observed_names.insert(annotations.key);
 				collect_observed_annotations(annotations.value);
 			}
 			for (const KeyValue<StringName,
 						 Vector<FoundryScript::AnnotationUsage>> &annotations :
 					snapshot.variable_annotations) {
+				observed_names.insert(annotations.key);
 				collect_observed_annotations(annotations.value);
 			}
 			for (const KeyValue<StringName,
 						 Vector<FoundryScript::AnnotationUsage>> &annotations :
 					snapshot.signal_annotations) {
+				observed_names.insert(annotations.key);
 				collect_observed_annotations(annotations.value);
 			}
 			for (const KeyValue<StringName,
 						 Vector<FoundryScript::AnnotationUsage>> &annotations :
 					snapshot.constant_annotations) {
+				observed_names.insert(annotations.key);
 				collect_observed_annotations(annotations.value);
 			}
+			const auto collect_parameter_annotations =
+					[&](const HashMap<StringName,
+							HashMap<StringName,
+									Vector<FoundryScript::AnnotationUsage>>>
+									&p_annotations) {
+						for (const KeyValue<StringName,
+									 HashMap<StringName,
+											 Vector<FoundryScript::AnnotationUsage>>>
+										&owner : p_annotations) {
+							observed_names.insert(owner.key);
+							for (const KeyValue<StringName,
+										 Vector<FoundryScript::AnnotationUsage>>
+											&parameter : owner.value) {
+								observed_names.insert(parameter.key);
+								collect_observed_annotations(parameter.value);
+							}
+						}
+					};
+			collect_parameter_annotations(
+					snapshot.method_parameter_annotations);
+			collect_parameter_annotations(
+					snapshot.signal_parameter_annotations);
 			collect_observed_annotations(snapshot.script->class_annotations);
 			for (const Variant &value : snapshot.script->static_variables) {
 				collect_observed_variant(value);
 			}
 			for (const KeyValue<StringName, Variant> &value :
 					snapshot.member_default_values) {
+				observed_names.insert(value.key);
+				collect_observed_variant(value.value);
+			}
+			for (const KeyValue<StringName, FoundryScript::MemberInfo> &member :
+					snapshot.old_static_variables_indices) {
+				observed_names.insert(member.key);
+				collect_observed_property_info(member.value.property_info);
+			}
+			for (const KeyValue<StringName, int> &member :
+					snapshot.member_lines) {
+				observed_names.insert(member.key);
+			}
+			for (const PropertyInfo &property : snapshot.members_cache) {
+				collect_observed_property_info(property);
+			}
+			for (const KeyValue<StringName, Variant> &value :
+					snapshot.member_default_values_cache) {
+				observed_names.insert(value.key);
 				collect_observed_variant(value.value);
 			}
 		}
@@ -979,6 +1217,17 @@ struct FSNameManglerApplication::Transaction::Data {
 		}
 
 		for (const RegistrySnapshot &snapshot : registry_snapshots) {
+			for (const FSConformanceRegistry::Conformance &conformance :
+					snapshot.conformances) {
+				observed_names.insert(conformance.trait_name);
+				for (const String &target_key : conformance.target_keys) {
+					observed_names.insert(StringName(target_key));
+				}
+				for (const KeyValue<StringName, FSParser::FunctionNode *> &witness :
+						conformance.witnesses) {
+					add_project_source(witness.key);
+				}
+			}
 			for (const FSConformanceRegistry::RuntimeConformance &conformance :
 					snapshot.entries) {
 				observed_names.insert(conformance.trait_name);
@@ -1136,6 +1385,8 @@ struct FSNameManglerApplication::Transaction::Data {
 		for (const KeyValue<String, bool> &source : sources) {
 			RegistrySnapshot snapshot;
 			snapshot.source = source.key;
+			snapshot.conformances =
+					registry->get_file_conformances(snapshot.source);
 			snapshot.entries = registry->get_runtime_witnesses(snapshot.source);
 			for (const FSConformanceRegistry::RuntimeConformance &conformance :
 					snapshot.entries) {
@@ -1159,25 +1410,181 @@ struct FSNameManglerApplication::Transaction::Data {
 		return true;
 	}
 
-	void build_registry_plan() {
+	bool build_registry_plan(Vector<Diagnostic> &r_diagnostics) {
+		const auto same_target_keys =
+				[](const Vector<String> &p_left,
+						const Vector<String> &p_right) {
+					if (p_left.size() != p_right.size()) {
+						return false;
+					}
+					Vector<String> left = p_left;
+					Vector<String> right = p_right;
+					left.sort();
+					right.sort();
+					return left == right;
+				};
+		const auto same_witness_names =
+				[](const FSConformanceRegistry::WitnessFunctionMap
+								&p_runtime,
+						const FSConformanceRegistry::WitnessMap &p_parse) {
+					if (p_runtime.size() != p_parse.size()) {
+						return false;
+					}
+					for (const KeyValue<StringName, FSFunction *> &witness :
+							p_runtime) {
+						if (!p_parse.has(witness.key)) {
+							return false;
+						}
+					}
+					return true;
+				};
+		const auto add_correlation_diagnostic =
+				[&](const RegistrySnapshot &p_snapshot,
+						const StringName &p_trait,
+						const String &p_message) {
+					Diagnostic diagnostic;
+					diagnostic.surface = "conformance registry";
+					diagnostic.source_name = p_trait;
+					diagnostic.message = vformat(
+							"Runtime/parse conformance correlation for source "
+							"`%s` failed: %s",
+							p_snapshot.source, p_message);
+					r_diagnostics.push_back(diagnostic);
+				};
+
 		for (RegistrySnapshot &snapshot : registry_snapshots) {
-			snapshot.transformed_entries = snapshot.entries;
-			for (FSConformanceRegistry::RuntimeConformance &conformance :
-					snapshot.transformed_entries) {
+			snapshot.transformed_conformances = snapshot.conformances;
+			for (FSConformanceRegistry::Conformance &conformance :
+					snapshot.transformed_conformances) {
 				for (String &target_key : conformance.target_keys) {
 					target_key = rewrite_identity(target_key);
 				}
 				conformance.trait_name =
 						StringName(rewrite_identity(String(conformance.trait_name)));
-				HashMap<StringName, FSFunction *> transformed_functions;
-				for (const KeyValue<StringName, FSFunction *> &witness :
-						conformance.functions) {
-					transformed_functions.insert(
+				FSConformanceRegistry::WitnessMap transformed_witnesses;
+				for (const KeyValue<StringName, FSParser::FunctionNode *> &witness :
+						conformance.witnesses) {
+					transformed_witnesses.insert(
 							rename_atomic(witness.key), witness.value);
 				}
-				conformance.functions = transformed_functions;
+				conformance.witnesses = transformed_witnesses;
+			}
+
+			snapshot.transformed_entries.clear();
+			HashSet<int> matched_parse_entries;
+			for (const FSConformanceRegistry::RuntimeConformance
+							&runtime_conformance :
+					snapshot.entries) {
+				Vector<int> candidates;
+				HashSet<StringName> candidate_traits;
+				for (int parse_index = 0;
+						parse_index < snapshot.conformances.size();
+						parse_index++) {
+					const FSConformanceRegistry::Conformance
+							&parse_conformance =
+									snapshot.conformances[parse_index];
+					if (runtime_conformance.trait_name != StringName() &&
+							runtime_conformance.trait_name !=
+									parse_conformance.trait_name) {
+						continue;
+					}
+					if (!same_target_keys(
+								runtime_conformance.target_keys,
+								parse_conformance.target_keys) ||
+							!same_witness_names(
+									runtime_conformance.functions,
+									parse_conformance.witnesses)) {
+						continue;
+					}
+					if (candidate_traits.has(
+								parse_conformance.trait_name)) {
+						add_correlation_diagnostic(
+								snapshot,
+								parse_conformance.trait_name,
+								"more than one parse entry has the same "
+								"matching trait identity.");
+						return false;
+					}
+					candidate_traits.insert(
+							parse_conformance.trait_name);
+					candidates.push_back(parse_index);
+				}
+
+				if (candidates.is_empty()) {
+					add_correlation_diagnostic(
+							snapshot,
+							runtime_conformance.trait_name,
+							"no parse entry has the same target aliases and "
+							"witness names.");
+					return false;
+				}
+				if (runtime_conformance.trait_name != StringName() &&
+						candidates.size() != 1) {
+					add_correlation_diagnostic(
+							snapshot,
+							runtime_conformance.trait_name,
+							"an explicit runtime trait identity did not "
+							"select exactly one parse entry.");
+					return false;
+				}
+
+				for (const int parse_index : candidates) {
+					const FSConformanceRegistry::Conformance
+							&parse_conformance =
+									snapshot.conformances[parse_index];
+					if (matched_parse_entries.has(parse_index)) {
+						add_correlation_diagnostic(
+								snapshot,
+								parse_conformance.trait_name,
+								"more than one runtime entry matches the same "
+								"parse entry.");
+						return false;
+					}
+					matched_parse_entries.insert(parse_index);
+
+					FSConformanceRegistry::RuntimeConformance transformed =
+							runtime_conformance;
+					for (String &target_key : transformed.target_keys) {
+						target_key = rewrite_identity(target_key);
+					}
+					transformed.trait_name =
+							snapshot.transformed_conformances[parse_index]
+									.trait_name;
+					HashMap<StringName, FSFunction *>
+							transformed_functions;
+					for (const KeyValue<StringName, FSFunction *> &witness :
+							runtime_conformance.functions) {
+						transformed_functions.insert(
+								rename_atomic(witness.key),
+								witness.value);
+					}
+					transformed.functions = transformed_functions;
+					snapshot.transformed_entries.push_back(transformed);
+				}
+			}
+
+			for (int parse_index = 0;
+					parse_index < snapshot.conformances.size();
+					parse_index++) {
+				const FSConformanceRegistry::Conformance &conformance =
+						snapshot.conformances[parse_index];
+				// The v3 witness section contains compiled functions and rejects
+				// empty runtime entries. A witnessless parse conformance therefore
+				// has nothing to correlate or serialize here; it is still staged in
+				// the parse registry above. Any parse entry that does own witnesses
+				// must correlate exactly so compiled bytecode cannot silently emit
+				// the wrong trait membership.
+				if (!conformance.witnesses.is_empty() &&
+						!matched_parse_entries.has(parse_index)) {
+					add_correlation_diagnostic(
+							snapshot, conformance.trait_name,
+							"a parse entry with witnesses has no matching "
+							"runtime entry.");
+					return false;
+				}
 			}
 		}
+		return true;
 	}
 
 	FoundryScript *get_root_script(FoundryScript *p_script) const {
@@ -1359,6 +1766,23 @@ struct FSNameManglerApplication::Transaction::Data {
 		return true;
 	}
 
+	bool validate_annotation_usages_closure(
+			const Vector<FoundryScript::AnnotationUsage> &p_usages,
+			const FoundryScript *p_referring,
+			const String &p_surface,
+			const HashSet<const FoundryScript *> &p_roots,
+			Vector<Diagnostic> &r_diagnostics) const {
+		for (const FoundryScript::AnnotationUsage &usage : p_usages) {
+			if (!validate_variant_closure(usage.args, p_referring, p_surface,
+						p_roots, r_diagnostics) ||
+					!validate_variant_closure(usage.kwargs, p_referring,
+							p_surface, p_roots, r_diagnostics)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
 	bool identity_is_included(const String &p_identity) const {
 		if (p_identity.is_empty()) {
 			return false;
@@ -1369,6 +1793,21 @@ struct FSNameManglerApplication::Transaction::Data {
 					p_identity == String(snapshot.global_name) ||
 					p_identity == snapshot.fully_qualified_name ||
 					p_identity == String(snapshot.trait_type_name)) {
+				return true;
+			}
+		}
+		const StringName identity_name = p_identity;
+		if (!ScriptServer::is_global_class(identity_name)) {
+			return false;
+		}
+		const String global_path =
+				ScriptServer::get_global_class_path(identity_name);
+		if (global_path.is_empty()) {
+			return false;
+		}
+		for (const ClassSnapshot &snapshot : class_snapshots) {
+			if (FoundryScript::is_canonically_equal_paths(
+						global_path, snapshot.script->get_script_path())) {
 				return true;
 			}
 		}
@@ -1404,11 +1843,114 @@ struct FSNameManglerApplication::Transaction::Data {
 		return false;
 	}
 
+	bool validate_textual_type_identity(
+			const String &p_identity,
+			const FoundryScript *p_referring,
+			const String &p_surface,
+			Vector<Diagnostic> &r_diagnostics) const {
+		String identity = p_identity;
+		if (identity.ends_with("?")) {
+			identity = identity.left(identity.length() - 1);
+		}
+		if (identity.is_empty() || identity_is_included(identity) ||
+				identity_is_native_or_builtin(identity) ||
+				!ScriptServer::is_global_class(StringName(identity))) {
+			return true;
+		}
+		if (FSLanguage::get_singleton() == nullptr ||
+				ScriptServer::get_global_class_language(StringName(identity)) !=
+						FSLanguage::get_singleton()->get_name()) {
+			return true;
+		}
+		return validate_identity_dependency(identity, p_referring, p_surface,
+				r_diagnostics);
+	}
+
+	bool validate_property_info_closure(
+			const PropertyInfo &p_info,
+			const FoundryScript *p_referring,
+			const String &p_surface,
+			Vector<Diagnostic> &r_diagnostics) const {
+		if (!validate_textual_type_identity(String(p_info.class_name),
+					p_referring, p_surface, r_diagnostics)) {
+			return false;
+		}
+		if ((p_info.usage &
+					(PROPERTY_USAGE_CLASS_IS_ENUM |
+							PROPERTY_USAGE_CLASS_IS_BITFIELD)) &&
+				p_info.class_name != StringName()) {
+			const String enum_identity = p_info.class_name;
+			LocalVector<StringName> global_classes;
+			ScriptServer::get_global_class_list(global_classes);
+			String longest_owner;
+			for (const StringName &global_class : global_classes) {
+				const String candidate = global_class;
+				if ((enum_identity == candidate ||
+							enum_identity.begins_with(candidate + ".")) &&
+						candidate.length() > longest_owner.length()) {
+					longest_owner = candidate;
+				}
+			}
+			if (!longest_owner.is_empty() &&
+					!validate_textual_type_identity(longest_owner,
+							p_referring, p_surface, r_diagnostics)) {
+				return false;
+			}
+		}
+		if (!is_type_bearing_hint(p_info.hint) || p_info.hint_string.is_empty()) {
+			return true;
+		}
+
+		LocalVector<StringName> global_classes;
+		ScriptServer::get_global_class_list(global_classes);
+		for (const StringName &global_class : global_classes) {
+			const String identity = global_class;
+			int offset = 0;
+			while (offset <=
+					p_info.hint_string.length() - identity.length()) {
+				const int found = p_info.hint_string.find(identity, offset);
+				if (found < 0) {
+					break;
+				}
+				if (has_identity_boundaries(p_info.hint_string, found,
+							identity.length()) &&
+						!validate_textual_type_identity(identity, p_referring,
+								p_surface, r_diagnostics)) {
+					return false;
+				}
+				offset = found + identity.length();
+			}
+		}
+		return true;
+	}
+
+	bool validate_method_info_closure(
+			const MethodInfo &p_info,
+			const FoundryScript *p_referring,
+			const String &p_surface,
+			Vector<Diagnostic> &r_diagnostics) const {
+		if (!validate_property_info_closure(p_info.return_val, p_referring,
+					p_surface, r_diagnostics)) {
+			return false;
+		}
+		for (const PropertyInfo &argument : p_info.arguments) {
+			if (!validate_property_info_closure(argument, p_referring, p_surface,
+						r_diagnostics)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
 	bool validate_closed_graph(
 			const HashSet<const FoundryScript *> &p_roots,
 			Vector<Diagnostic> &r_diagnostics) const {
 		for (const ClassSnapshot &snapshot : class_snapshots) {
 			const FoundryScript *script = snapshot.script.ptr();
+			if (!validate_variant_closure(script->rpc_config, script,
+						"RPC configuration", p_roots, r_diagnostics)) {
+				return false;
+			}
 			if (script->base.is_valid() &&
 					!validate_script_dependency(script->base.ptr(), script, "base",
 							p_roots, r_diagnostics)) {
@@ -1444,7 +1986,10 @@ struct FSNameManglerApplication::Transaction::Data {
 						!validate_data_type_closure(
 								member.value.type_argument_binding.fixed, script,
 								"member type binding", p_roots,
-								r_diagnostics)) {
+								r_diagnostics) ||
+						!validate_property_info_closure(
+								member.value.property_info, script,
+								"member property type", r_diagnostics)) {
 					return false;
 				}
 			}
@@ -1455,8 +2000,46 @@ struct FSNameManglerApplication::Transaction::Data {
 						!validate_data_type_closure(
 								member.value.type_argument_binding.fixed, script,
 								"static member type binding", p_roots,
-								r_diagnostics)) {
+								r_diagnostics) ||
+						!validate_property_info_closure(
+								member.value.property_info, script,
+								"static member property type", r_diagnostics)) {
 					return false;
+				}
+			}
+			for (const KeyValue<StringName, FoundryScript::MemberInfo> &member :
+					snapshot.old_static_variables_indices) {
+				if (!validate_data_type_closure(member.value.data_type, script,
+							"old static member type", p_roots, r_diagnostics) ||
+						!validate_data_type_closure(
+								member.value.type_argument_binding.fixed, script,
+								"old static member type binding", p_roots,
+								r_diagnostics) ||
+						!validate_property_info_closure(
+								member.value.property_info, script,
+								"old static member property type", r_diagnostics)) {
+					return false;
+				}
+			}
+			for (const PropertyInfo &property : snapshot.members_cache) {
+				if (!validate_property_info_closure(property, script,
+							"cached member property type", r_diagnostics)) {
+					return false;
+				}
+			}
+			for (const KeyValue<StringName, MethodInfo> &signal :
+					snapshot.signals) {
+				if (!validate_method_info_closure(signal.value, script,
+							"signal type", r_diagnostics)) {
+					return false;
+				}
+				for (const Variant &default_argument :
+						signal.value.default_arguments) {
+					if (!validate_variant_closure(default_argument, script,
+								"signal default argument", p_roots,
+								r_diagnostics)) {
+						return false;
+					}
 				}
 			}
 			for (const StringName &trait_name : snapshot.script_trait_list) {
@@ -1470,7 +2053,25 @@ struct FSNameManglerApplication::Transaction::Data {
 					snapshot.abstract_trait_requirements) {
 				if (!validate_data_type_closure(requirement.value.return_type,
 							script, "abstract requirement type", p_roots,
-							r_diagnostics)) {
+							r_diagnostics) ||
+						!validate_method_info_closure(
+								requirement.value.method_info, script,
+								"abstract requirement type", r_diagnostics)) {
+					return false;
+				}
+				for (const Variant &default_argument :
+						requirement.value.method_info.default_arguments) {
+					if (!validate_variant_closure(default_argument, script,
+								"abstract requirement default argument", p_roots,
+								r_diagnostics)) {
+						return false;
+					}
+				}
+			}
+			for (const FoundryScript::TypeParameter &type_parameter :
+					snapshot.type_parameters) {
+				if (!validate_property_info_closure(type_parameter.bound, script,
+							"type-parameter bound", r_diagnostics)) {
 					return false;
 				}
 			}
@@ -1508,10 +2109,69 @@ struct FSNameManglerApplication::Transaction::Data {
 					return false;
 				}
 			}
+
+			if (!validate_annotation_usages_closure(script->class_annotations,
+						script, "class annotation", p_roots, r_diagnostics)) {
+				return false;
+			}
+			const auto validate_annotation_map =
+					[&](const HashMap<StringName,
+								Vector<FoundryScript::AnnotationUsage>>
+									&p_annotations,
+							const String &p_surface) {
+						for (const KeyValue<StringName,
+									 Vector<FoundryScript::AnnotationUsage>>
+										&annotations : p_annotations) {
+							if (!validate_annotation_usages_closure(
+										annotations.value, script, p_surface,
+										p_roots, r_diagnostics)) {
+								return false;
+							}
+						}
+						return true;
+					};
+			if (!validate_annotation_map(snapshot.method_annotations,
+						"method annotation") ||
+					!validate_annotation_map(snapshot.variable_annotations,
+							"variable annotation") ||
+					!validate_annotation_map(snapshot.signal_annotations,
+							"signal annotation") ||
+					!validate_annotation_map(snapshot.constant_annotations,
+							"constant annotation")) {
+				return false;
+			}
+			const auto validate_parameter_annotation_map =
+					[&](const HashMap<StringName,
+								HashMap<StringName,
+										Vector<FoundryScript::AnnotationUsage>>>
+									&p_annotations,
+							const String &p_surface) {
+						for (const KeyValue<StringName,
+									 HashMap<StringName,
+											 Vector<FoundryScript::AnnotationUsage>>>
+										&owner : p_annotations) {
+							if (!validate_annotation_map(owner.value, p_surface)) {
+								return false;
+							}
+						}
+						return true;
+					};
+			if (!validate_parameter_annotation_map(
+						snapshot.method_parameter_annotations,
+						"method parameter annotation") ||
+					!validate_parameter_annotation_map(
+							snapshot.signal_parameter_annotations,
+							"signal parameter annotation")) {
+				return false;
+			}
 		}
 
 		for (const FunctionSnapshot &snapshot : function_snapshots) {
 			const FoundryScript *referring = snapshot.function->_script;
+			if (!validate_variant_closure(snapshot.function->rpc_config, referring,
+						"function RPC configuration", p_roots, r_diagnostics)) {
+				return false;
+			}
 			if (!validate_script_dependency(snapshot.function->_script, referring,
 						"function owner", p_roots, r_diagnostics)) {
 				return false;
@@ -1524,6 +2184,10 @@ struct FSNameManglerApplication::Transaction::Data {
 			}
 			if (!validate_data_type_closure(snapshot.return_type, referring,
 						"function return type", p_roots, r_diagnostics)) {
+				return false;
+			}
+			if (!validate_method_info_closure(snapshot.method_info, referring,
+						"function metadata type", r_diagnostics)) {
 				return false;
 			}
 			for (const Variant &constant : snapshot.function->constants) {
@@ -1542,6 +2206,19 @@ struct FSNameManglerApplication::Transaction::Data {
 		}
 
 		for (const RegistrySnapshot &snapshot : registry_snapshots) {
+			for (const FSConformanceRegistry::Conformance &conformance :
+					snapshot.conformances) {
+				if (!validate_identity_dependency(String(conformance.trait_name),
+							nullptr, "conformance trait", r_diagnostics)) {
+					return false;
+				}
+				for (const String &target_key : conformance.target_keys) {
+					if (!validate_identity_dependency(target_key, nullptr,
+								"conformance target", r_diagnostics, true)) {
+						return false;
+					}
+				}
+			}
 			for (const FSConformanceRegistry::RuntimeConformance &conformance :
 					snapshot.entries) {
 				if (!validate_identity_dependency(String(conformance.trait_name),
@@ -1634,8 +2311,7 @@ struct FSNameManglerApplication::Transaction::Data {
 		if (!validate_map_surfaces(r_diagnostics)) {
 			return false;
 		}
-		build_registry_plan();
-		return true;
+		return build_registry_plan(r_diagnostics);
 	}
 
 	void stage_class(ClassSnapshot &snapshot) {
@@ -1701,8 +2377,15 @@ struct FSNameManglerApplication::Transaction::Data {
 		for (const KeyValue<StringName, MethodInfo> &signal : snapshot.signals) {
 			const StringName key = rename_atomic(signal.key);
 			MethodInfo info = signal.value;
+			const HashMap<StringName,
+					Vector<FoundryScript::AnnotationUsage>>
+					*annotation_parameters =
+							snapshot.signal_parameter_annotations.getptr(signal.key);
 			const HashMap<StringName, StringName> parameter_names =
-					rename_map.has(signal.key) ? allocate_parameter_names(signal.value) : HashMap<StringName, StringName>();
+					rename_map.has(signal.key) ? allocate_parameter_names(
+														 signal.value,
+														 annotation_parameters)
+											   : HashMap<StringName, StringName>();
 			rewrite_method_info(info, signal.key,
 					parameter_names.is_empty() ? nullptr : &parameter_names);
 			script->_signals.insert(key, info);
@@ -1718,8 +2401,16 @@ struct FSNameManglerApplication::Transaction::Data {
 				snapshot.abstract_trait_requirements) {
 			FoundryScript::AbstractTraitRequirement transformed = requirement.value;
 			rewrite_data_type(transformed.return_type);
+			const HashMap<StringName,
+					Vector<FoundryScript::AnnotationUsage>>
+					*annotation_parameters =
+							snapshot.method_parameter_annotations.getptr(
+									requirement.key);
 			const HashMap<StringName, StringName> parameter_names =
-					rename_map.has(requirement.key) ? allocate_parameter_names(requirement.value.method_info) : HashMap<StringName, StringName>();
+					rename_map.has(requirement.key)
+					? allocate_parameter_names(requirement.value.method_info,
+							  annotation_parameters)
+					: HashMap<StringName, StringName>();
 			rewrite_method_info(transformed.method_info, requirement.key,
 					parameter_names.is_empty() ? nullptr : &parameter_names);
 			script->abstract_trait_requirements.insert(
@@ -1748,6 +2439,14 @@ struct FSNameManglerApplication::Transaction::Data {
 					break;
 				}
 			}
+			if (parameter_names.is_empty() && rename_map.has(owner.key)) {
+				const FoundryScript::AbstractTraitRequirement *requirement =
+						snapshot.abstract_trait_requirements.getptr(owner.key);
+				if (requirement != nullptr) {
+					parameter_names = allocate_parameter_names(
+							requirement->method_info, &owner.value);
+				}
+			}
 			HashMap<StringName, Vector<FoundryScript::AnnotationUsage>> transformed;
 			for (const KeyValue<StringName,
 						 Vector<FoundryScript::AnnotationUsage>> &parameter :
@@ -1768,7 +2467,9 @@ struct FSNameManglerApplication::Transaction::Data {
 				snapshot.signal_parameter_annotations) {
 			const MethodInfo *signal_info = snapshot.signals.getptr(owner.key);
 			const HashMap<StringName, StringName> parameter_names =
-					signal_info != nullptr && rename_map.has(owner.key) ? allocate_parameter_names(*signal_info) : HashMap<StringName, StringName>();
+					signal_info != nullptr && rename_map.has(owner.key)
+					? allocate_parameter_names(*signal_info, &owner.value)
+					: HashMap<StringName, StringName>();
 			HashMap<StringName, Vector<FoundryScript::AnnotationUsage>> transformed;
 			for (const KeyValue<StringName,
 						 Vector<FoundryScript::AnnotationUsage>> &parameter :
@@ -1838,6 +2539,8 @@ struct FSNameManglerApplication::Transaction::Data {
 		}
 		FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
 		for (const RegistrySnapshot &snapshot : registry_snapshots) {
+			registry->register_file_conformances(
+					snapshot.source, snapshot.transformed_conformances);
 			registry->register_runtime_witnesses(
 					snapshot.source, snapshot.transformed_entries);
 		}
@@ -1894,6 +2597,8 @@ struct FSNameManglerApplication::Transaction::Data {
 
 		FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
 		for (const RegistrySnapshot &snapshot : registry_snapshots) {
+			registry->register_file_conformances(
+					snapshot.source, snapshot.conformances);
 			registry->register_runtime_witnesses(snapshot.source, snapshot.entries);
 		}
 	}

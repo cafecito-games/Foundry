@@ -1466,10 +1466,10 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 							if (!result) {
 								// A native object (no Foundry Script instance), or a scripted object whose engine
 								// base class was retroactively conformed, satisfies the trait via the registry.
-								result = FSConformanceRegistry::get_singleton()->native_class_conforms(object->get_class_name(), trait_name);
+								result = FSConformanceRegistry::get_singleton()->native_class_conforms(object->get_class_name(), trait_name, true);
 							}
 						} else if (value->get_type() != Variant::NIL && value->get_type() != Variant::OBJECT) {
-							result = FSConformanceRegistry::get_singleton()->builtin_type_conforms(value->get_type(), trait_name);
+							result = FSConformanceRegistry::get_singleton()->builtin_type_conforms(value->get_type(), trait_name, true);
 						}
 					} else if (object && object->get_script_instance()) {
 						Ref<Script> script_ref = object->get_script_instance()->get_script();
@@ -2167,7 +2167,7 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 					}
 				} else if (is_trait_type && src->get_type() != Variant::OBJECT && src->get_type() != Variant::NIL) {
 					const StringName trait_name = fs_base_type->get_trait_type_name();
-					if (!FSConformanceRegistry::get_singleton()->builtin_type_conforms(src->get_type(), trait_name)) {
+					if (!FSConformanceRegistry::get_singleton()->builtin_type_conforms(src->get_type(), trait_name, true)) {
 						err_text = "Trying to assign value of type '" + Variant::get_type_name(src->get_type()) +
 								"' to a variable of type '" + base_type->get_path().get_file() + "'.";
 						OPCODE_BREAK;
@@ -2196,7 +2196,7 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 								valid = src_script.is_valid() && src_script->has_script_trait(trait_name);
 							}
 							if (!valid) {
-								valid = FSConformanceRegistry::get_singleton()->native_class_conforms(val_obj->get_class_name(), trait_name);
+								valid = FSConformanceRegistry::get_singleton()->native_class_conforms(val_obj->get_class_name(), trait_name, true);
 							}
 						} else if (scr_inst != nullptr) {
 							Script *src_type = scr_inst->get_script().ptr();
@@ -2456,7 +2456,7 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 					OPCODE_BREAK;
 				}
 				if (src->get_type() != Variant::OBJECT && src->get_type() != Variant::NIL) {
-					if (!is_trait_type || !FSConformanceRegistry::get_singleton()->builtin_type_conforms(src->get_type(), fs_base_type->get_trait_type_name())) {
+					if (!is_trait_type || !FSConformanceRegistry::get_singleton()->builtin_type_conforms(src->get_type(), fs_base_type->get_trait_type_name(), true)) {
 						err_text = "Trying to assign a non-object value to a variable of type '" + base_type->get_path().get_file() + "'.";
 						OPCODE_BREAK;
 					}
@@ -2479,10 +2479,10 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 						if (!valid) {
 							// A native object (no Foundry Script instance), or a scripted object whose engine
 							// base class was retroactively conformed, casts successfully via the registry.
-							valid = FSConformanceRegistry::get_singleton()->native_class_conforms(src_obj->get_class_name(), trait_name);
+							valid = FSConformanceRegistry::get_singleton()->native_class_conforms(src_obj->get_class_name(), trait_name, true);
 						}
 					} else if (src->get_type() != Variant::NIL) {
-						valid = FSConformanceRegistry::get_singleton()->builtin_type_conforms(src->get_type(), trait_name);
+						valid = FSConformanceRegistry::get_singleton()->builtin_type_conforms(src->get_type(), trait_name, true);
 					}
 				} else if (src->get_type() != Variant::NIL && src->operator Object *() != nullptr) {
 					Object *src_obj = src->operator Object *();
