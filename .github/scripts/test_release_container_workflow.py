@@ -146,6 +146,12 @@ def child_keys(text: str, indent: int) -> tuple[str, ...]:
     return tuple(re.findall(rf"^{prefix}([A-Za-z0-9_-]+):(?: .*)?$", text, re.MULTILINE))
 
 
+def require_step_fields(body: str, expected: set[str], context: str) -> None:
+    actual = set(child_keys(body, 8))
+    actual.discard("name")
+    require(actual == expected, f"{context} fields must be exactly {sorted(expected)!r}, plus an optional display name")
+
+
 def named_block(text: str, name: str, indent: int, context: str) -> str:
     value, body = field(text, name, indent, context)
     require(not value, f"{context}.{name} must be a mapping")
@@ -314,13 +320,15 @@ def validate_job_contract(workflow: str) -> tuple[str, list[str]]:
 
 
 def validate_artifact(steps: list[str]) -> None:
-    find_step(steps, lambda body: step_uses(body) == "actions/checkout@v6", "container checkout")
+    _, checkout = find_step(steps, lambda body: step_uses(body) == "actions/checkout@v6", "container checkout")
+    require_step_fields(checkout, {"uses"}, "container checkout")
 
     _, body = find_step(
         steps,
         lambda candidate: nested_scalar(candidate, "with", "name") == "release-linux-editor",
         "Linux editor artifact download",
     )
+    require_step_fields(body, {"uses", "with"}, "Linux editor artifact download")
     require(
         step_uses(body) == "actions/download-artifact@v8",
         "Linux editor artifact must use actions/download-artifact@v8",
@@ -337,20 +345,23 @@ def validate_artifact(steps: list[str]) -> None:
         and step_run(candidate, "executable restoration") == restore_command,
         "Linux executable restoration",
     )
+    require_step_fields(restore, {"run"}, "Linux executable restoration")
     require(
         step_run(restore, "Linux executable restoration") == restore_command,
         "Linux executable restoration command must be exact",
     )
 
-    find_step(
+    _, setup_buildx = find_step(
         steps,
         lambda candidate: step_uses(candidate) == "docker/setup-buildx-action@v3",
         "Docker Buildx setup",
     )
+    require_step_fields(setup_buildx, {"uses"}, "Docker Buildx setup")
 
 
 def validate_tags(steps: list[str]) -> None:
     _, channel_body = find_step(steps, lambda body: step_id(body) == "channel-tag", "channel tag resolution")
+    require_step_fields(channel_body, {"id", "env", "run"}, "channel tag resolution")
     channel_env = mapping(
         named_block(channel_body, "env", 8, "channel tag resolution"),
         10,
@@ -373,6 +384,7 @@ else
     )
 
     _, metadata_body = find_step(steps, lambda body: step_id(body) == "metadata", "image metadata")
+    require_step_fields(metadata_body, {"id", "uses", "with"}, "image metadata")
     require(step_uses(metadata_body) == "docker/metadata-action@v5", "image metadata action must be exact")
     metadata_with = named_block(metadata_body, "with", 8, "image metadata")
     require(
@@ -411,7 +423,7 @@ def validate_builds_and_order(job: str, steps: list[str]) -> None:
         lambda body: nested_scalar(body, "with", "load") == "true",
         "loaded local image build",
     )
-    verify_index, _ = find_step(
+    verify_index, verify_body = find_step(
         steps,
         lambda body: nested_scalar(body, "env", "IMAGE_REF") == "foundry-headless-smoke:${{ github.sha }}",
         "headless image smoke",
@@ -426,6 +438,10 @@ def validate_builds_and_order(job: str, steps: list[str]) -> None:
         lambda body: nested_scalar(body, "with", "push") == "true",
         "release image publication",
     )
+    require_step_fields(local_body, {"uses", "with"}, "loaded local image build")
+    require_step_fields(verify_body, {"env", "run"}, "headless image smoke")
+    require_step_fields(login_body, {"uses", "with"}, "GHCR login")
+    require_step_fields(publish_body, {"uses", "with"}, "release image publication")
 
     action_uses = [(index, step_uses(body)) for index, body in enumerate(steps) if step_uses(body)]
     build_actions = [index for index, uses in action_uses if uses == "docker/build-push-action@v6"]
@@ -577,6 +593,26 @@ def validate_smoke(steps: list[str]) -> None:
     require(
         frozenset(commands) == EXPECTED_SMOKE_COMMANDS and len(commands) == len(EXPECTED_SMOKE_COMMANDS),
         "headless image smoke commands and comparisons must match the release contract",
+    )
+    require(commands[0] == "set -euo pipefail", "headless image smoke must enable strict mode before any command")
+    require(
+        commands.index('version_json="$(docker run --rm "$IMAGE_REF" --version --json)"')
+        < commands.index("""VERSION_JSON="$version_json" python3 - <<'PY'"""),
+        "version JSON capture must precede its Python assertion",
+    )
+    fixture_commands = (
+        'fixture_dir="$RUNNER_TEMP/headless-container-fixture"',
+        'mkdir "$fixture_dir"',
+        'cp -R tests/fixtures/headless_container/. "$fixture_dir"',
+        'mkdir "$fixture_dir/.foundry"',
+        'docker run --rm -v "$fixture_dir:/workspace:ro" '
+        "--tmpfs /workspace/.foundry:rw,uid=10001,gid=10001,mode=0700 "
+        '"$IMAGE_REF" script lint --project . scripts',
+    )
+    require(
+        tuple(commands.index(command) for command in fixture_commands)
+        == tuple(sorted(commands.index(command) for command in fixture_commands)),
+        "read-only lint fixture staging must precede lint execution",
     )
     require_exact_python(
         extract_version_assertion(script),
