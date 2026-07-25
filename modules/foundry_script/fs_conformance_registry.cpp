@@ -30,9 +30,119 @@
 
 #include "fs_conformance_registry.h"
 
+#include "foundry_script.h"
+#include "fs_function.h"
+
 #include "core/object/class_db.h"
 
 FSConformanceRegistry *FSConformanceRegistry::singleton = nullptr;
+
+bool FSConformanceRegistry::validate_runtime_conformance_target(
+		const RuntimeConformance &p_conformance,
+		const FoundryScript *p_declaring_script,
+		const Vector<String> &p_authoritative_target_keys,
+		String &r_error) {
+	r_error.clear();
+	if (p_conformance.target_script == nullptr) {
+		r_error = "the runtime entry has no target script";
+		return false;
+	}
+	if (p_authoritative_target_keys.is_empty()) {
+		r_error = "the correlated target has no aliases";
+		return false;
+	}
+
+	const auto same_aliases =
+			[](const Vector<String> &p_left,
+					const Vector<String> &p_right) {
+				if (p_left.size() != p_right.size()) {
+					return false;
+				}
+				Vector<String> left = p_left;
+				Vector<String> right = p_right;
+				left.sort();
+				right.sort();
+				return left == right;
+			};
+	for (const String &target_key : p_authoritative_target_keys) {
+		if (target_key.is_empty()) {
+			r_error = "the correlated target contains an empty alias";
+			return false;
+		}
+	}
+	if (!same_aliases(
+				p_conformance.target_keys,
+				p_authoritative_target_keys)) {
+		r_error =
+				"the runtime aliases differ from the correlated target aliases";
+		return false;
+	}
+
+	const bool native_or_builtin_stand_in =
+			p_authoritative_target_keys.size() == 1 &&
+			(ClassDB::class_exists(
+					 StringName(p_authoritative_target_keys[0])) ||
+					Variant::get_type_by_name(
+							p_authoritative_target_keys[0]) <
+							Variant::VARIANT_MAX);
+	if (native_or_builtin_stand_in) {
+		if (p_declaring_script == nullptr ||
+				p_conformance.target_script != p_declaring_script) {
+			r_error = vformat(
+					"native/builtin target `%s` is not represented by its "
+					"declaring-script stand-in",
+					p_authoritative_target_keys[0]);
+			return false;
+		}
+	} else {
+		Vector<String> script_aliases;
+		const String fully_qualified_name =
+				p_conformance.target_script->get_fully_qualified_name();
+		const String global_name =
+				p_conformance.target_script->get_global_name();
+		const String script_path =
+				p_conformance.target_script->get_script_path();
+		if (!fully_qualified_name.is_empty()) {
+			script_aliases.push_back(fully_qualified_name);
+		}
+		if (!global_name.is_empty()) {
+			// The analyzer/compiler intentionally preserve this alias even when a root global
+			// class uses the same text as its fully-qualified identity.
+			script_aliases.push_back(global_name);
+		}
+		if (!script_path.is_empty() &&
+				!script_aliases.has(script_path)) {
+			script_aliases.push_back(script_path);
+		}
+		if (!same_aliases(
+					script_aliases,
+					p_authoritative_target_keys)) {
+			r_error = vformat(
+					"target script `%s` does not own the correlated aliases",
+					p_conformance.target_script
+							->get_fully_qualified_name());
+			return false;
+		}
+	}
+
+	for (const KeyValue<StringName, FSFunction *> &witness :
+			p_conformance.functions) {
+		if (witness.value == nullptr) {
+			r_error = vformat(
+					"witness `%s` is null", witness.key);
+			return false;
+		}
+		if (witness.value->get_script() !=
+				p_conformance.target_script) {
+			r_error = vformat(
+					"witness `%s` is owned by a different target "
+					"representation",
+					witness.key);
+			return false;
+		}
+	}
+	return true;
+}
 
 FSConformanceRegistry *FSConformanceRegistry::get_singleton() {
 	// The registry is process-global and lazily created so it is reachable from the analyzer,

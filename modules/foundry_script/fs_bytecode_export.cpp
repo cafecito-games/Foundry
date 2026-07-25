@@ -1142,9 +1142,19 @@ Error FSBytecodeExporter::_write_witness_section(StreamPeerBuffer *r_stream, con
 	r_stream->put_u32((uint32_t)conformances.size());
 	for (const FSConformanceRegistry::RuntimeConformance &conformance : conformances) {
 		FoundryScript *target_script = conformance.target_script;
-		ERR_FAIL_NULL_V_MSG(target_script, ERR_INVALID_PARAMETER,
-				vformat("Cannot serialize script '%s' to compiled bytecode: a conformance has no target script.",
-						p_script->get_script_path()));
+		String target_integrity_error;
+		ERR_FAIL_COND_V_MSG(
+				!FSConformanceRegistry::
+						validate_runtime_conformance_target(
+								conformance, p_script,
+								conformance.target_keys,
+								target_integrity_error),
+				ERR_INVALID_PARAMETER,
+				vformat(
+						"Cannot serialize script '%s' to compiled bytecode: "
+						"conformance target integrity failed because %s.",
+						p_script->get_script_path(),
+						target_integrity_error));
 		Error error = _encode_script_reference(r_stream, target_script);
 		if (error != OK) {
 			return error;

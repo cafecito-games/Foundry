@@ -124,6 +124,7 @@ struct FSNameManglerApplication::Transaction::Data {
 
 	struct RegistrySnapshot {
 		String source;
+		FoundryScript *declaring_script = nullptr;
 		Vector<FSConformanceRegistry::Conformance> conformances;
 		Vector<FSConformanceRegistry::Conformance> transformed_conformances;
 		Vector<FSConformanceRegistry::RuntimeConformance> entries;
@@ -2482,17 +2483,33 @@ struct FSNameManglerApplication::Transaction::Data {
 	}
 
 	bool snapshot_registries(Vector<Diagnostic> &r_diagnostics) {
-		RBMap<String, bool> sources;
+		RBMap<String, FoundryScript *> sources;
 		for (const ClassSnapshot &snapshot : class_snapshots) {
 			if (!snapshot.script->registered_conformance_source.is_empty()) {
-				sources.insert(snapshot.script->registered_conformance_source, true);
+				const String &source =
+						snapshot.script->registered_conformance_source;
+				const RBMap<String, FoundryScript *>::Element *existing =
+						sources.find(source);
+				if (existing != nullptr &&
+						existing->value() != snapshot.script.ptr()) {
+					add_map_diagnostic(
+							r_diagnostics, "conformance registry",
+							snapshot.script->local_name,
+							vformat(
+									"Runtime conformance source `%s` has more "
+									"than one declaring script.",
+									source));
+					return false;
+				}
+				sources.insert(source, snapshot.script.ptr());
 			}
 		}
 
 		FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
-		for (const KeyValue<String, bool> &source : sources) {
+		for (const KeyValue<String, FoundryScript *> &source : sources) {
 			RegistrySnapshot snapshot;
 			snapshot.source = source.key;
+			snapshot.declaring_script = source.value;
 			snapshot.conformances =
 					registry->get_file_conformances(snapshot.source);
 			snapshot.entries = registry->get_runtime_witnesses(snapshot.source);
@@ -2650,6 +2667,20 @@ struct FSNameManglerApplication::Transaction::Data {
 					const FSConformanceRegistry::Conformance
 							&parse_conformance =
 									snapshot.conformances[parse_index];
+					String target_integrity_error;
+					if (!FSConformanceRegistry::
+									validate_runtime_conformance_target(
+											runtime_conformance,
+											snapshot.declaring_script,
+											parse_conformance.target_keys,
+											target_integrity_error)) {
+						add_correlation_diagnostic(
+								snapshot,
+								parse_conformance.trait_name,
+								"runtime target integrity failed because " +
+										target_integrity_error + ".");
+						return false;
+					}
 					if (matched_parse_entries.has(parse_index)) {
 						add_correlation_diagnostic(
 								snapshot,
@@ -3832,7 +3863,16 @@ Error FSNameManglerApplication::Transaction::begin(
 	}
 	state = STATE_PREPARING;
 	active_name_mangler_transaction = this;
-	if (!data->prepare(p_scripts, p_rename_map, r_diagnostics)) {
+	Data *const preparing_data = data;
+	const bool prepared =
+			data->prepare(p_scripts, p_rename_map, r_diagnostics);
+	if (state != STATE_PREPARING || data != preparing_data ||
+			active_name_mangler_transaction != this) {
+		return _fail("transaction", StringName(),
+				"Compiled-graph name application was canceled while preflight callbacks were running.",
+				ERR_BUSY, r_diagnostics);
+	}
+	if (!prepared) {
 		if (active_name_mangler_transaction == this) {
 			active_name_mangler_transaction = nullptr;
 		}
@@ -3848,6 +3888,14 @@ Error FSNameManglerApplication::Transaction::begin(
 
 void FSNameManglerApplication::Transaction::rollback() {
 	if (state != STATE_ACTIVE && state != STATE_PREPARING) {
+		return;
+	}
+	if (state == STATE_PREPARING) {
+		// A callback invoked by prepare() may cancel its outer transaction. Mark cancellation now,
+		// but leave the reservation and scratch data intact until begin() regains control: clearing
+		// either here would invalidate the active prepare stack and let another transaction nest
+		// before that stack has unwound.
+		state = STATE_FINISHED;
 		return;
 	}
 	if (state == STATE_ACTIVE) {

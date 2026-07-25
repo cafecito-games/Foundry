@@ -83,6 +83,16 @@ public:
 		WitnessFunctionMap functions;
 	};
 
+	// Validates that a runtime entry cannot serialize witnesses against a different member layout
+	// than the target its authoritative aliases denote. Native and builtin targets deliberately use
+	// the declaring FoundryScript as a codegen stand-in; that is the only pointer/alias mismatch
+	// accepted. Every non-null witness must be owned by the selected target representation.
+	static bool validate_runtime_conformance_target(
+			const RuntimeConformance &p_conformance,
+			const FoundryScript *p_declaring_script,
+			const Vector<String> &p_authoritative_target_keys,
+			String &r_error);
+
 private:
 	static FSConformanceRegistry *singleton;
 

@@ -64,6 +64,89 @@ public:
 		p_script->member_default_values_cache.insert(p_member, 41);
 	}
 
+	static void seed_cache_only_observed_names(
+			const Ref<FoundryScript> &p_script,
+			const Vector<StringName> &p_names) {
+		REQUIRE_EQ(p_names.size(), 14);
+
+		FoundryScript::MemberInfo old_static_info;
+		old_static_info.property_info =
+				PropertyInfo(Variant::INT, String(p_names[1]));
+		p_script->old_static_variables_indices.clear();
+		p_script->old_static_variables_indices.insert(
+				p_names[0], old_static_info);
+
+		p_script->member_default_values.clear();
+		p_script->member_default_values.insert(p_names[2], 2);
+		p_script->member_default_values_cache.clear();
+		p_script->member_default_values_cache.insert(p_names[3], 3);
+		p_script->member_lines.clear();
+		p_script->member_lines.insert(p_names[4], 4);
+		p_script->members_cache.clear();
+		p_script->members_cache.push_back(
+				PropertyInfo(Variant::INT, String(p_names[5])));
+
+		p_script->method_annotations.clear();
+		p_script->method_annotations.insert(
+				p_names[6], Vector<FoundryScript::AnnotationUsage>());
+		p_script->variable_annotations.clear();
+		p_script->variable_annotations.insert(
+				p_names[7], Vector<FoundryScript::AnnotationUsage>());
+		p_script->signal_annotations.clear();
+		p_script->signal_annotations.insert(
+				p_names[8], Vector<FoundryScript::AnnotationUsage>());
+		p_script->constant_annotations.clear();
+		p_script->constant_annotations.insert(
+				p_names[9], Vector<FoundryScript::AnnotationUsage>());
+
+		HashMap<StringName, Vector<FoundryScript::AnnotationUsage>>
+				method_parameters;
+		method_parameters.insert(
+				p_names[11],
+				Vector<FoundryScript::AnnotationUsage>());
+		p_script->method_parameter_annotations.clear();
+		p_script->method_parameter_annotations.insert(
+				p_names[10], method_parameters);
+		HashMap<StringName, Vector<FoundryScript::AnnotationUsage>>
+				signal_parameters;
+		signal_parameters.insert(
+				p_names[13],
+				Vector<FoundryScript::AnnotationUsage>());
+		p_script->signal_parameter_annotations.clear();
+		p_script->signal_parameter_annotations.insert(
+				p_names[12], signal_parameters);
+	}
+
+	static bool has_cache_only_observed_names(
+			const Ref<FoundryScript> &p_script,
+			const Vector<StringName> &p_names,
+			bool p_staged) {
+		if (p_names.size() != 14 ||
+				!p_script->old_static_variables_indices.has(p_names[0]) ||
+				p_script->old_static_variables_indices[p_names[0]]
+								.property_info.name !=
+						String(p_staged ? p_names[0] : p_names[1]) ||
+				!p_script->member_default_values.has(p_names[2]) ||
+				!p_script->member_default_values_cache.has(p_names[3]) ||
+				!p_script->member_lines.has(p_names[4]) ||
+				p_script->members_cache.size() != 1 ||
+				p_script->members_cache.front()->get().name !=
+						String(p_names[5]) ||
+				!p_script->method_annotations.has(p_names[6]) ||
+				!p_script->variable_annotations.has(p_names[7]) ||
+				!p_script->signal_annotations.has(p_names[8]) ||
+				!p_script->constant_annotations.has(p_names[9]) ||
+				!p_script->method_parameter_annotations.has(p_names[10]) ||
+				!p_script->method_parameter_annotations[p_names[10]].has(
+						p_names[11]) ||
+				!p_script->signal_parameter_annotations.has(p_names[12]) ||
+				!p_script->signal_parameter_annotations[p_names[12]].has(
+						p_names[13])) {
+			return false;
+		}
+		return true;
+	}
+
 	static void seed_cached_property_dependency(
 			const Ref<FoundryScript> &p_script,
 			const StringName &p_dependency_name) {
@@ -458,6 +541,60 @@ public:
 		}
 		return actual_property == nullptr && expected_property == nullptr;
 	}
+
+	static bool parse_conformances_equal(
+			const Vector<FSConformanceRegistry::Conformance> &p_left,
+			const Vector<FSConformanceRegistry::Conformance> &p_right) {
+		if (p_left.size() != p_right.size()) {
+			return false;
+		}
+		for (int i = 0; i < p_left.size(); i++) {
+			if (p_left[i].target_keys != p_right[i].target_keys ||
+					p_left[i].trait_name != p_right[i].trait_name ||
+					p_left[i].source_file != p_right[i].source_file ||
+					p_left[i].witnesses.size() !=
+							p_right[i].witnesses.size()) {
+				return false;
+			}
+			for (const KeyValue<StringName, FSParser::FunctionNode *> &witness :
+					p_left[i].witnesses) {
+				const FSParser::FunctionNode *const *right_witness =
+						p_right[i].witnesses.getptr(witness.key);
+				if (right_witness == nullptr ||
+						*right_witness != witness.value) {
+					return false;
+				}
+			}
+		}
+		return true;
+	}
+
+	static bool runtime_conformances_equal(
+			const Vector<FSConformanceRegistry::RuntimeConformance> &p_left,
+			const Vector<FSConformanceRegistry::RuntimeConformance> &p_right) {
+		if (p_left.size() != p_right.size()) {
+			return false;
+		}
+		for (int i = 0; i < p_left.size(); i++) {
+			if (p_left[i].target_script != p_right[i].target_script ||
+					p_left[i].target_keys != p_right[i].target_keys ||
+					p_left[i].trait_name != p_right[i].trait_name ||
+					p_left[i].functions.size() !=
+							p_right[i].functions.size()) {
+				return false;
+			}
+			for (const KeyValue<StringName, FSFunction *> &witness :
+					p_left[i].functions) {
+				FSFunction *const *right_witness =
+						p_right[i].functions.getptr(witness.key);
+				if (right_witness == nullptr ||
+						*right_witness != witness.value) {
+					return false;
+				}
+			}
+		}
+		return true;
+	}
 };
 
 class NameManglerExternalScript : public Script {
@@ -579,10 +716,12 @@ class NameManglerReentrantResourceLoader : public ResourceFormatLoader {
 
 public:
 	Vector<Ref<FoundryScript>> roots;
+	FSNameManglerApplication::Transaction *transaction_to_rollback = nullptr;
 	FSNameManglerApplication::Transaction nested_transaction;
 	Vector<FSNameManglerApplication::Diagnostic> nested_diagnostics;
 	Error nested_error = ERR_UNCONFIGURED;
 	int callback_count = 0;
+	int rollback_callback_count = 0;
 
 	NameManglerReentrantResourceLoader() {
 		external_script = name_mangler_external_script(String());
@@ -598,6 +737,10 @@ public:
 		callback_count++;
 		if (!inside_callback) {
 			inside_callback = true;
+			if (transaction_to_rollback != nullptr) {
+				transaction_to_rollback->rollback();
+				rollback_callback_count++;
+			}
 			nested_error = nested_transaction.begin(
 					roots, {}, nested_diagnostics);
 			inside_callback = false;
@@ -1475,6 +1618,75 @@ TEST_CASE("[FoundryScript][NameManglerApplication] Reserves replacements across 
 	}
 }
 
+TEST_CASE("[FoundryScript][NameManglerApplication] Reserves cache-only replacement names during analysis") {
+	const StringName control = SNAME("cache_allocator_control");
+	const StringName reserved_name_array[] = {
+		SNAME("_fsb_0"),
+		SNAME("_fsb_1"),
+		SNAME("_fsb_2"),
+		SNAME("_fsb_3"),
+		SNAME("_fsb_4"),
+		SNAME("_fsb_5"),
+		SNAME("_fsb_6"),
+		SNAME("_fsb_7"),
+		SNAME("_fsb_8"),
+		SNAME("_fsb_9"),
+		SNAME("_fsb_a"),
+		SNAME("_fsb_b"),
+		SNAME("_fsb_c"),
+		SNAME("_fsb_d"),
+	};
+	Vector<StringName> reserved_names;
+	for (const StringName &name : reserved_name_array) {
+		reserved_names.push_back(name);
+	}
+	const Ref<FoundryScript> script =
+			compile_bytecode_test_source(
+					"var cache_allocator_control: int\n");
+	TestFSNameManglerApplicationAccessor::seed_cache_only_observed_names(
+			script, reserved_names);
+	REQUIRE(
+			TestFSNameManglerApplicationAccessor::
+					has_cache_only_observed_names(
+							script, reserved_names, false));
+	const Vector<uint8_t> baseline =
+			name_mangler_application_serialize(script);
+
+	FSNameManglerAnalysis::Input input;
+	input.scripts.push_back(script);
+	const FSNameManglerAnalysis::Result analysis =
+			FSNameManglerAnalysis::analyze(input);
+	REQUIRE_EQ(analysis.error, OK);
+	REQUIRE(analysis.rename_map.has(control));
+	CHECK_EQ(analysis.rename_map[control], SNAME("_fsb_e"));
+	for (const StringName &reserved_name : reserved_names) {
+		CAPTURE(reserved_name);
+		CHECK_FALSE(analysis.rename_map.has(reserved_name));
+	}
+
+	FSNameManglerApplication::Transaction transaction;
+	Vector<FSNameManglerApplication::Diagnostic> diagnostics;
+	REQUIRE_EQ(
+			transaction.begin(
+					input.scripts, analysis.rename_map, diagnostics),
+			OK);
+	CHECK(diagnostics.is_empty());
+	CHECK(script->debug_get_member_indices().has(SNAME("_fsb_e")));
+	CHECK_FALSE(script->debug_get_member_indices().has(control));
+	// Old-static PropertyInfo names are normalized to their owning key during staging; every other
+	// stale/cache-only name is merely observed and therefore remains byte-for-byte unchanged.
+	CHECK(
+			TestFSNameManglerApplicationAccessor::
+					has_cache_only_observed_names(
+							script, reserved_names, true));
+	transaction.rollback();
+	CHECK(
+			TestFSNameManglerApplicationAccessor::
+					has_cache_only_observed_names(
+							script, reserved_names, false));
+	CHECK_EQ(name_mangler_application_serialize(script), baseline);
+}
+
 TEST_CASE("[FoundryScript][NameManglerApplication] Keeps protected text sources and rejects source or replacement maps") {
 	const StringName protected_names[] = {
 		SNAME("script_path_marker"),
@@ -2075,6 +2287,88 @@ TEST_CASE("[FoundryScript][NameManglerApplication] Reserves transaction ownershi
 			after.begin(loader->roots, {}, after_diagnostics), OK);
 	CHECK(after.is_active());
 	after.rollback();
+}
+
+TEST_CASE("[FoundryScript][NameManglerApplication] Preparing rollback cancels callback preflight") {
+	const StringName global_class =
+			SNAME("RollbackExternalCarrier");
+	const String external_path =
+			"res://rollback_external.fsmreentrant";
+	ScriptServer::remove_global_class(global_class);
+	ScriptServer::add_global_class(
+			global_class, SNAME("RefCounted"), SNAME("CSharp"),
+			external_path, false, false, false);
+	NameManglerGlobalClassRestore global_class_restore(global_class);
+	NameManglerReentrantLoaderRestore loader_restore;
+	const Ref<NameManglerReentrantResourceLoader> loader =
+			loader_restore.get_loader();
+	const StringName member = SNAME("rollback_control");
+	const StringName replacement = SNAME("_fsb_rollback_control");
+	const Ref<FoundryScript> script =
+			compile_bytecode_test_source(
+					"var rollback_control: int\n");
+	loader->roots.push_back(script);
+
+	const Vector<uint8_t> serialized_baseline =
+			name_mangler_application_serialize(script);
+	const TestFSNameManglerApplicationAccessor::CacheState cache_baseline =
+			TestFSNameManglerApplicationAccessor::capture_cache_state(script);
+	const String conformance_source =
+			script->get_script_path();
+	FSConformanceRegistry *const registry =
+			FSConformanceRegistry::get_singleton();
+	const Vector<FSConformanceRegistry::Conformance>
+			parse_conformance_baseline =
+					registry->get_file_conformances(conformance_source);
+	const Vector<FSConformanceRegistry::RuntimeConformance>
+			runtime_conformance_baseline =
+					registry->get_runtime_witnesses(conformance_source);
+	RBMap<StringName, StringName> rename_map;
+	rename_map.insert(member, replacement);
+
+	FSNameManglerApplication::Transaction outer;
+	loader->transaction_to_rollback = &outer;
+	Vector<FSNameManglerApplication::Diagnostic> outer_diagnostics;
+	CHECK_EQ(
+			outer.begin(loader->roots, rename_map, outer_diagnostics),
+			ERR_BUSY);
+	CHECK_FALSE(outer.is_active());
+	CHECK_EQ(
+			outer.get_state(),
+			FSNameManglerApplication::Transaction::STATE_FINISHED);
+	CHECK_FALSE(outer_diagnostics.is_empty());
+	CHECK(loader->rollback_callback_count >= 1);
+	CHECK_EQ(loader->nested_error, ERR_ALREADY_IN_USE);
+	CHECK_FALSE(loader->nested_transaction.is_active());
+	CHECK(script->debug_get_member_indices().has(member));
+	CHECK_FALSE(script->debug_get_member_indices().has(replacement));
+	CHECK_EQ(
+			name_mangler_application_serialize(script),
+			serialized_baseline);
+	CHECK(TestFSNameManglerApplicationAccessor::cache_state_equals(
+			script, cache_baseline));
+	CHECK(TestFSNameManglerApplicationAccessor::parse_conformances_equal(
+			registry->get_file_conformances(conformance_source),
+			parse_conformance_baseline));
+	CHECK(TestFSNameManglerApplicationAccessor::runtime_conformances_equal(
+			registry->get_runtime_witnesses(conformance_source),
+			runtime_conformance_baseline));
+
+	loader->transaction_to_rollback = nullptr;
+	FSNameManglerApplication::Transaction after;
+	Vector<FSNameManglerApplication::Diagnostic> after_diagnostics;
+	REQUIRE_EQ(
+			after.begin(loader->roots, rename_map, after_diagnostics), OK);
+	CHECK(after.is_active());
+	CHECK(script->debug_get_member_indices().has(replacement));
+	CHECK_FALSE(script->debug_get_member_indices().has(member));
+	after.rollback();
+	CHECK_FALSE(after.is_active());
+	CHECK(script->debug_get_member_indices().has(member));
+	CHECK_FALSE(script->debug_get_member_indices().has(replacement));
+	CHECK_EQ(
+			name_mangler_application_serialize(script),
+			serialized_baseline);
 }
 
 TEST_CASE("[FoundryScript][NameManglerApplication] Enforces annotation owner keep policy on supplied maps") {
@@ -4265,6 +4559,170 @@ TEST_CASE("[FoundryScript][NameManglerApplication] Correlates runtime conformanc
 			"unmatched witness-bearing parse entry", unmatched_parse);
 }
 
+TEST_CASE("[FoundryScript][NameManglerApplication] Rejects mismatched conformance target representations atomically") {
+	const StringName witness_name = SNAME("target_integrity_witness");
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"trait TargetIntegrityTrait:\n"
+			"\tabstract func target_integrity_witness() -> int\n"
+			"\n"
+			"trait TargetIntegrityMarker:\n"
+			"\tpass\n"
+			"\n"
+			"class TargetIntegrityA:\n"
+			"\tpass\n"
+			"\n"
+			"class TargetIntegrityB:\n"
+			"\tfunc target_integrity_witness() -> int:\n"
+			"\t\treturn -1\n"
+			"\n"
+			"extend TargetIntegrityA uses TargetIntegrityTrait:\n"
+			"\tfunc target_integrity_witness() -> int:\n"
+			"\t\treturn 42\n"
+			"\n"
+			"extend TargetIntegrityA uses TargetIntegrityMarker:\n"
+			"\tpass\n");
+	const String source = script->get_script_path();
+	FSConformanceRegistry *const registry =
+			FSConformanceRegistry::get_singleton();
+	const Vector<FSConformanceRegistry::Conformance> parse_baseline =
+			registry->get_file_conformances(source);
+	const Vector<FSConformanceRegistry::RuntimeConformance>
+			runtime_baseline =
+					registry->get_runtime_witnesses(source);
+	NameManglerConformanceRestore registry_restore(
+			source, parse_baseline, runtime_baseline);
+	REQUIRE_EQ(parse_baseline.size(), 2);
+	REQUIRE_EQ(runtime_baseline.size(), 2);
+	const Ref<FoundryScript> target_a =
+			script->get_subclasses()[SNAME("TargetIntegrityA")];
+	const Ref<FoundryScript> target_b =
+			script->get_subclasses()[SNAME("TargetIntegrityB")];
+	REQUIRE(target_a.is_valid());
+	REQUIRE(target_b.is_valid());
+	REQUIRE(target_b->get_member_functions().has(witness_name));
+	FSFunction *const wrong_owner_function =
+			target_b->get_member_functions()[witness_name];
+	REQUIRE(wrong_owner_function != nullptr);
+
+	int witness_index = -1;
+	int marker_index = -1;
+	for (int i = 0; i < runtime_baseline.size(); i++) {
+		if (runtime_baseline[i].functions.is_empty()) {
+			marker_index = i;
+		} else {
+			witness_index = i;
+		}
+	}
+	REQUIRE_GE(witness_index, 0);
+	REQUIRE_GE(marker_index, 0);
+	REQUIRE(runtime_baseline[witness_index].functions.has(witness_name));
+	FSFunction *const valid_witness =
+			runtime_baseline[witness_index].functions[witness_name];
+	REQUIRE(valid_witness != nullptr);
+	REQUIRE_EQ(valid_witness->get_script(), target_a.ptr());
+	REQUIRE_EQ(wrong_owner_function->get_script(), target_b.ptr());
+	REQUIRE_EQ(
+			runtime_baseline[marker_index].target_script,
+			target_a.ptr());
+
+	FSNameManglerAnalysis::Input input;
+	input.scripts.push_back(script);
+	const FSNameManglerAnalysis::Result analysis =
+			FSNameManglerAnalysis::analyze(input);
+	REQUIRE_EQ(analysis.error, OK);
+	const String original_a = target_a->get_fully_qualified_name();
+	const String original_b = target_b->get_fully_qualified_name();
+	const Vector<uint8_t> serialized_baseline =
+			name_mangler_application_serialize(script);
+
+	const auto expect_integrity_rejected =
+			[&](const String &p_label,
+					const Vector<
+							FSConformanceRegistry::RuntimeConformance>
+							&p_malformed) {
+				CAPTURE(p_label);
+				registry->register_runtime_witnesses(
+						source, p_malformed);
+				FSNameManglerApplication::Transaction transaction;
+				Vector<FSNameManglerApplication::Diagnostic>
+						diagnostics;
+				CHECK_EQ(
+						transaction.begin(
+								input.scripts, analysis.rename_map,
+								diagnostics),
+						ERR_INVALID_PARAMETER);
+				CHECK_FALSE(transaction.is_active());
+				bool identifies_target_integrity = false;
+				for (const FSNameManglerApplication::Diagnostic
+								&diagnostic :
+						diagnostics) {
+					if (diagnostic.format().contains(
+								"target integrity")) {
+						identifies_target_integrity = true;
+						break;
+					}
+				}
+				CHECK(identifies_target_integrity);
+				CHECK_EQ(target_a->get_fully_qualified_name(), original_a);
+				CHECK_EQ(target_b->get_fully_qualified_name(), original_b);
+				CHECK_EQ(valid_witness->get_name(), witness_name);
+				CHECK_EQ(
+						wrong_owner_function->get_name(),
+						witness_name);
+				CHECK(
+						TestFSNameManglerApplicationAccessor::
+								parse_conformances_equal(
+										registry->get_file_conformances(
+												source),
+										parse_baseline));
+				CHECK(
+						TestFSNameManglerApplicationAccessor::
+								runtime_conformances_equal(
+										registry->get_runtime_witnesses(
+												source),
+										p_malformed));
+
+				FSBytecodeExporter exporter;
+				Vector<uint8_t> rejected_buffer;
+				ERR_PRINT_OFF;
+				const Error export_error =
+						exporter.serialize(
+								script, rejected_buffer);
+				ERR_PRINT_ON;
+				CHECK_EQ(
+						export_error,
+						ERR_INVALID_PARAMETER);
+
+				registry->register_runtime_witnesses(
+						source, runtime_baseline);
+				CHECK_EQ(
+						name_mangler_application_serialize(script),
+						serialized_baseline);
+			};
+
+	Vector<FSConformanceRegistry::RuntimeConformance>
+			wrong_target = runtime_baseline;
+	wrong_target.write[witness_index].target_script = target_b.ptr();
+	expect_integrity_rejected(
+			"witness entry target pointer disagrees with aliases",
+			wrong_target);
+
+	Vector<FSConformanceRegistry::RuntimeConformance>
+			wrong_marker_target = runtime_baseline;
+	wrong_marker_target.write[marker_index].target_script = target_b.ptr();
+	expect_integrity_rejected(
+			"zero-witness marker target pointer disagrees with aliases",
+			wrong_marker_target);
+
+	Vector<FSConformanceRegistry::RuntimeConformance>
+			wrong_witness_owner = runtime_baseline;
+	wrong_witness_owner.write[witness_index].functions[witness_name] =
+			wrong_owner_function;
+	expect_integrity_rejected(
+			"witness function owner disagrees with target pointer",
+			wrong_witness_owner);
+}
+
 TEST_CASE("[FoundryScript][NameManglerApplication] Rejects collisions and lifecycle misuse atomically") {
 	const Ref<FoundryScript> script = compile_bytecode_test_source(
 			"class_name PrivateMarkerCollisionRoot\n"
@@ -4654,9 +5112,21 @@ TEST_CASE("[FoundryScript][NameManglerApplication] Real generic trait graph keep
 	{
 		FSNameManglerApplication::Transaction transaction;
 		Vector<FSNameManglerApplication::Diagnostic> diagnostics;
-		REQUIRE_EQ(transaction.begin(
-						   roots, analysis.rename_map, diagnostics),
-				OK);
+		const Error begin_error = transaction.begin(
+				roots, analysis.rename_map, diagnostics);
+		String formatted_diagnostics;
+		for (const FSNameManglerApplication::Diagnostic &diagnostic :
+				diagnostics) {
+			if (!formatted_diagnostics.is_empty()) {
+				formatted_diagnostics += "\n";
+			}
+			formatted_diagnostics += diagnostic.format();
+		}
+		INFO(formatted_diagnostics);
+		REQUIRE_EQ(begin_error, OK);
+		if (begin_error != OK) {
+			return;
+		}
 		REQUIRE(diagnostics.is_empty());
 		CHECK_EQ(name_mangler_application_run(base, SNAME("enum_probe")), 1);
 		CHECK_EQ(name_mangler_application_run(caller, SNAME("run")), 84);

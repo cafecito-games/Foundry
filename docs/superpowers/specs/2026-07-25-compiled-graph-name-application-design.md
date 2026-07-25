@@ -103,8 +103,12 @@ transaction slot. A nested `begin()` from such a callback therefore fails instea
 apparently unused slot. A failed begin releases only the reservation it owns, moves to
 `STATE_FINISHED`, and never publishes a partial snapshot or mutates the graph. A successful begin
 moves to `STATE_ACTIVE`. `rollback()` is idempotent and non-failing, restores the graph and registry
-when active, releases a preparing reservation without restoring an unstaged graph, clears the
-snapshot, and moves to `STATE_FINISHED`. The destructor calls `rollback()`.
+when active, and cancels a preparing transaction without restoring an unstaged graph. Callback
+cancellation marks the transaction finished but retains its reservation and scratch data until the
+active `prepare()` stack unwinds; `begin()` then verifies its state, data, and global ownership
+before staging, clears the scratch state, releases the reservation, and returns `ERR_BUSY`. This
+prevents cancellation from invalidating the running preflight or reopening a nested transaction
+window. The destructor calls `rollback()`.
 
 The contract deliberately does not expose a commit operation: the live graph is always restored.
 The only durable output is the `.fsb` buffer produced while the transaction is active.
@@ -254,6 +258,11 @@ For every included `FoundryScript`, the transaction rewrites:
 Annotation usage `name` and `qualified_name` fields are serialized identity evidence, not annotation
 map keys. Both fields protect matching declaration atoms and reserve their spellings against use as
 replacements. They remain byte-for-byte unchanged while an unrelated safe declaration is staged.
+Analysis and application reserve the same observed-name set, including stale old-static keys and
+property names, member/default cache keys, member-line keys, cached `PropertyInfo.name` values,
+annotation-only owner keys, and annotation-only parameter keys. These cache-only names never become
+rename sources by themselves, but a generated `_fsb_<ordinal>` replacement skips them
+deterministically so an analysis-produced map cannot fail application preflight on the same graph.
 
 Static values, defaults, and constants are not textually rewritten. Script objects nested inside
 them observe their staged identities through their referenced `FoundryScript`; arbitrary String,
@@ -295,8 +304,14 @@ metadata, and temporarily re-registers the staged entries so both runtime dispat
 empty runtime trait identity defensively and expands it against exact parse target/witness matches,
 because legacy version-3 bytecode and manually registered state may contain that old representation.
 An explicit trait identity must select exactly one parse entry, while an empty-witness marker must
-still match its exact target aliases; the explicit target pointer is validated against the closed
-graph and preserved in the staged registry vector.
+still match its exact target aliases. Before mutation, the runtime target aliases must equal the
+correlated parse aliases and the explicit target pointer must reproduce those aliases exactly; every
+nonempty witness map must contain non-null functions whose script owner is that same target pointer.
+Native and builtin targets are the sole exception to pointer/alias equality: their single native or
+builtin alias is represented by the declaring `FoundryScript` stand-in used for code generation, and
+every witness must be owned by that stand-in. The exporter repeats this integrity check so malformed
+direct registry use cannot bypass Transaction preflight and serialize bytecode against a different
+member layout.
 
 Rollback re-registers the exact saved entries under the unchanged source path. Validation failure
 does not call the registry. Tests compare the full registry entry vectors and live dispatch before,
@@ -428,14 +443,20 @@ Subsequent focused RED/GREEN slices prove:
     reject protected root, icon, function-source, conformance-source, global-class, external-script,
     and external-resource paths;
 13. recursive member bindings, old-static metadata, signal metadata, encoded hints, and editor
-    caches protect foreign identities and stage included identities with exact rollback;
-14. callback re-entry during `STATE_PREPARING` is rejected atomically, annotation/reflection keep
-    policy is enforced for hand-authored maps, and cyclic Variant containers are visited once while
-    genuinely over-deep acyclic values remain conservatively protected; and
+    caches protect foreign identities and stage included identities with exact rollback, while
+    stale/cache-only `_fsb_<ordinal>` spellings reserve allocator replacements without becoming
+    sources;
+14. callback re-entry during `STATE_PREPARING` is rejected atomically, callback rollback cancels
+    preflight without staging or releasing ownership early, annotation/reflection keep policy is
+    enforced for hand-authored maps, and cyclic Variant containers are visited once while genuinely
+    over-deep acyclic values remain conservatively protected; and
 15. marker conformances compile, serialize, load, register, and execute with an explicit target and
     zero witnesses, including external target lifetime, deterministic immediate reserialization,
     byte-identical reserialization after VM operator-cache population, and legacy version-3
-    compatibility.
+    compatibility; and
+16. runtime conformance targets must match correlated parse aliases and witness owners before
+    staging or direct export, while valid nested/path targets and native/builtin codegen stand-ins
+    still serialize and load.
 
 Final verification runs the focused name-mangler application/analysis/keep-rules tests, bytecode and
 runtime suites, the broader Foundry Script family, and a macOS `dev_mode=yes` warnings-as-errors

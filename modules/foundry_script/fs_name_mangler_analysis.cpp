@@ -940,6 +940,8 @@ void FSNameManglerAnalysis::_collect_class(const FoundryScript *p_class, BuildSt
 	}
 	for (const KeyValue<StringName, FoundryScript::MemberInfo> &member :
 			p_class->member_indices) {
+		r_state.observed_names.insert(
+				StringName(member.value.property_info.name));
 		_collect_data_type(
 				member.value.data_type, source + " member type", r_state);
 		_collect_data_type(
@@ -951,6 +953,8 @@ void FSNameManglerAnalysis::_collect_class(const FoundryScript *p_class, BuildSt
 	}
 	for (const KeyValue<StringName, FoundryScript::MemberInfo> &static_variable : p_class->static_variables_indices) {
 		_add_candidate(static_variable.key, IDENTIFIER_MEMBER, r_state);
+		r_state.observed_names.insert(
+				StringName(static_variable.value.property_info.name));
 		_collect_data_type(
 				static_variable.value.data_type,
 				source + " static member type", r_state);
@@ -981,6 +985,9 @@ void FSNameManglerAnalysis::_collect_class(const FoundryScript *p_class, BuildSt
 	}
 	for (const KeyValue<StringName, FoundryScript::MemberInfo> &old_static :
 			p_class->old_static_variables_indices) {
+		r_state.observed_names.insert(old_static.key);
+		r_state.observed_names.insert(
+				StringName(old_static.value.property_info.name));
 		_collect_data_type(
 				old_static.value.data_type,
 				source + " old static member type", r_state);
@@ -1080,14 +1087,21 @@ void FSNameManglerAnalysis::_collect_class(const FoundryScript *p_class, BuildSt
 		_collect_variant(value, source, r_state);
 	}
 	for (const KeyValue<StringName, Variant> &default_value : p_class->member_default_values) {
+		r_state.observed_names.insert(default_value.key);
 		_collect_variant(default_value.value, source, r_state);
 	}
 	for (const KeyValue<StringName, Variant> &default_value :
 			p_class->member_default_values_cache) {
+		r_state.observed_names.insert(default_value.key);
 		_collect_variant(
 				default_value.value, source + " cached member default", r_state);
 	}
+	for (const KeyValue<StringName, int> &member_line :
+			p_class->member_lines) {
+		r_state.observed_names.insert(member_line.key);
+	}
 	for (const PropertyInfo &property : p_class->members_cache) {
+		r_state.observed_names.insert(StringName(property.name));
 		_collect_property_info(
 				property, source + " cached member property", r_state);
 	}
@@ -1123,22 +1137,28 @@ void FSNameManglerAnalysis::_collect_class(const FoundryScript *p_class, BuildSt
 		_add_evidence(p_class->local_name, KEEP_RULE, detail, r_state);
 	}
 	for (const KeyValue<StringName, Vector<FoundryScript::AnnotationUsage>> &entry : p_class->method_annotations) {
+		r_state.observed_names.insert(entry.key);
 		collect_annotations(entry.value, entry.key);
 	}
 	for (const KeyValue<StringName, Vector<FoundryScript::AnnotationUsage>> &entry : p_class->variable_annotations) {
+		r_state.observed_names.insert(entry.key);
 		collect_annotations(entry.value, entry.key);
 	}
 	for (const KeyValue<StringName, Vector<FoundryScript::AnnotationUsage>> &entry : p_class->signal_annotations) {
+		r_state.observed_names.insert(entry.key);
 		collect_annotations(entry.value, entry.key);
 	}
 	for (const KeyValue<StringName, Vector<FoundryScript::AnnotationUsage>> &entry : p_class->constant_annotations) {
+		r_state.observed_names.insert(entry.key);
 		collect_annotations(entry.value, entry.key);
 	}
 	const auto collect_parameter_annotations =
 			[&](const HashMap<StringName, HashMap<StringName, Vector<FoundryScript::AnnotationUsage>>> &p_annotations) {
 				for (const KeyValue<StringName, HashMap<StringName, Vector<FoundryScript::AnnotationUsage>>> &owner :
 						p_annotations) {
+					r_state.observed_names.insert(owner.key);
 					for (const KeyValue<StringName, Vector<FoundryScript::AnnotationUsage>> &parameter : owner.value) {
+						r_state.observed_names.insert(parameter.key);
 						collect_annotations(parameter.value);
 					}
 				}
