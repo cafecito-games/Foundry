@@ -2,6 +2,7 @@
 
 #ifdef TOOLS_ENABLED
 
+#include "modules/foundry_script/fs_conformance_registry.h"
 #include "modules/foundry_script/fs_name_mangler_analysis.h"
 #include "modules/foundry_script/fs_name_mangler_application.h"
 #include "modules/foundry_script/tests/test_bytecode_serialization.h"
@@ -9,6 +10,23 @@
 #include "tests/test_macros.h"
 
 namespace FSTests {
+
+class NameManglerRegistryRestore {
+	String source;
+	Vector<FSConformanceRegistry::RuntimeConformance> entries;
+
+public:
+	NameManglerRegistryRestore(
+			const String &p_source,
+			const Vector<FSConformanceRegistry::RuntimeConformance> &p_entries) :
+			source(p_source),
+			entries(p_entries) {}
+
+	~NameManglerRegistryRestore() {
+		FSConformanceRegistry::get_singleton()->register_runtime_witnesses(
+				source, entries);
+	}
+};
 
 static Vector<uint8_t> name_mangler_application_serialize(const Ref<FoundryScript> &p_script) {
 	FSBytecodeExporter exporter;
@@ -294,6 +312,162 @@ TEST_CASE("[FoundryScript][NameManglerApplication] Rejects protected mapped name
 		}
 		CHECK_EQ(name_mangler_application_serialize(script), baseline);
 	}
+}
+
+TEST_CASE("[FoundryScript][NameManglerApplication] Requires a closed graph before mutation") {
+	const Ref<FoundryScript> base = compile_bytecode_test_source(
+			"class_name PrivateMarkerApplicationBase\n"
+			"\n"
+			"var private_marker_base_value: int = 7\n"
+			"func private_marker_base_method() -> int:\n"
+			"\treturn private_marker_base_value\n");
+	const Ref<FoundryScript> derived = compile_bytecode_test_source(vformat(
+			"extends \"%s\"\n"
+			"\n"
+			"func private_marker_derived_method() -> int:\n"
+			"\treturn private_marker_base_method()\n",
+			base->get_script_path()));
+
+	FSNameManglerAnalysis::Input complete_input;
+	complete_input.scripts.push_back(base);
+	complete_input.scripts.push_back(derived);
+	const FSNameManglerAnalysis::Result analysis =
+			FSNameManglerAnalysis::analyze(complete_input);
+	REQUIRE_EQ(analysis.error, OK);
+	REQUIRE(analysis.rename_map.has(SNAME("private_marker_base_method")));
+
+	const Vector<uint8_t> base_baseline =
+			name_mangler_application_serialize(base);
+	const Vector<uint8_t> derived_baseline =
+			name_mangler_application_serialize(derived);
+	Vector<Ref<FoundryScript>> incomplete_roots;
+	incomplete_roots.push_back(derived);
+	FSNameManglerApplication::Transaction transaction;
+	Vector<FSNameManglerApplication::Diagnostic> diagnostics;
+	CHECK_EQ(transaction.begin(incomplete_roots, analysis.rename_map, diagnostics),
+			ERR_INVALID_PARAMETER);
+	CHECK_FALSE(transaction.is_active());
+	CHECK_EQ(transaction.get_state(),
+			FSNameManglerApplication::Transaction::STATE_FINISHED);
+	bool identifies_omitted_base = false;
+	for (const FSNameManglerApplication::Diagnostic &diagnostic : diagnostics) {
+		const String formatted = diagnostic.format();
+		if (formatted.contains("closed") &&
+				(formatted.contains(base->get_script_path()) ||
+						formatted.contains(base->get_fully_qualified_name()))) {
+			identifies_omitted_base = true;
+			break;
+		}
+	}
+	CHECK(identifies_omitted_base);
+	CHECK_EQ(name_mangler_application_serialize(base), base_baseline);
+	CHECK_EQ(name_mangler_application_serialize(derived), derived_baseline);
+}
+
+TEST_CASE("[FoundryScript][NameManglerApplication] Stages and restores the conformance registry") {
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"trait PrivateMarkerApplicationTrait:\n"
+			"\tabstract func private_marker_witness(value: int) -> int\n"
+			"\n"
+			"class PrivateMarkerApplicationTarget:\n"
+			"\tvar private_marker_target_value: int = 40\n"
+			"\n"
+			"extend PrivateMarkerApplicationTarget uses PrivateMarkerApplicationTrait:\n"
+			"\tfunc private_marker_witness(value: int) -> int:\n"
+			"\t\treturn private_marker_target_value + value\n");
+	const String source = script->get_script_path();
+	const Ref<FoundryScript> trait =
+			script->get_subclasses()[SNAME("PrivateMarkerApplicationTrait")];
+	const Ref<FoundryScript> target =
+			script->get_subclasses()[SNAME("PrivateMarkerApplicationTarget")];
+	const StringName original_trait = trait->get_trait_type_name();
+	const String original_target = target->get_fully_qualified_name();
+	const StringName original_method = SNAME("private_marker_witness");
+
+	const Vector<FSConformanceRegistry::RuntimeConformance> compiler_entries =
+			FSConformanceRegistry::get_singleton()->get_runtime_witnesses(source);
+	NameManglerRegistryRestore registry_restore(source, compiler_entries);
+	Vector<FSConformanceRegistry::RuntimeConformance> saved = compiler_entries;
+	REQUIRE_EQ(saved.size(), 1);
+	REQUIRE(saved[0].functions.has(original_method));
+	saved.write[0].trait_name = original_trait;
+	FSConformanceRegistry::get_singleton()->register_runtime_witnesses(source, saved);
+	FSFunction *const original_function = saved[0].functions[original_method];
+	REQUIRE(original_function != nullptr);
+	REQUIRE_EQ(FSConformanceRegistry::get_singleton()->find_witness_function(
+					   original_target, original_method),
+			original_function);
+
+	FSNameManglerAnalysis::Input input;
+	input.scripts.push_back(script);
+	const FSNameManglerAnalysis::Result analysis = FSNameManglerAnalysis::analyze(input);
+	REQUIRE_EQ(analysis.error, OK);
+	REQUIRE(analysis.rename_map.has(SNAME("PrivateMarkerApplicationTrait")));
+	REQUIRE(analysis.rename_map.has(SNAME("PrivateMarkerApplicationTarget")));
+	REQUIRE(analysis.rename_map.has(original_method));
+	const Vector<uint8_t> baseline = name_mangler_application_serialize(script);
+
+	FSNameManglerApplication::Transaction transaction;
+	Vector<FSNameManglerApplication::Diagnostic> diagnostics;
+	REQUIRE_EQ(transaction.begin(input.scripts, analysis.rename_map, diagnostics), OK);
+	REQUIRE(diagnostics.is_empty());
+
+	const StringName transformed_trait = trait->get_trait_type_name();
+	const String transformed_target = target->get_fully_qualified_name();
+	const StringName transformed_method = analysis.rename_map[original_method];
+	const Vector<FSConformanceRegistry::RuntimeConformance> staged =
+			FSConformanceRegistry::get_singleton()->get_runtime_witnesses(source);
+	REQUIRE_EQ(staged.size(), 1);
+	CHECK(staged[0].target_keys.has(transformed_target));
+	CHECK_FALSE(staged[0].target_keys.has(original_target));
+	CHECK_EQ(staged[0].trait_name, transformed_trait);
+	const HashMap<StringName, FSFunction *>::ConstIterator staged_function =
+			staged[0].functions.find(transformed_method);
+	REQUIRE(staged_function);
+	CHECK_FALSE(staged[0].functions.has(original_method));
+	if (staged_function) {
+		CHECK_EQ(staged_function->value, original_function);
+	}
+	CHECK_EQ(original_function->get_name(), transformed_method);
+	CHECK_EQ(FSConformanceRegistry::get_singleton()->find_witness_function(
+					 transformed_target, transformed_method),
+			original_function);
+	CHECK(FSConformanceRegistry::get_singleton()->find_witness_function(
+				  original_target, original_method) == nullptr);
+	CHECK(staged[0].target_keys.has(source));
+
+	transaction.rollback();
+	const Vector<FSConformanceRegistry::RuntimeConformance> restored =
+			FSConformanceRegistry::get_singleton()->get_runtime_witnesses(source);
+	REQUIRE_EQ(restored.size(), saved.size());
+	for (int entry_index = 0; entry_index < saved.size(); entry_index++) {
+		const FSConformanceRegistry::RuntimeConformance &expected =
+				saved[entry_index];
+		const FSConformanceRegistry::RuntimeConformance &actual =
+				restored[entry_index];
+		REQUIRE_EQ(actual.target_keys.size(), expected.target_keys.size());
+		for (int key_index = 0; key_index < expected.target_keys.size();
+				key_index++) {
+			CHECK_EQ(actual.target_keys[key_index],
+					expected.target_keys[key_index]);
+		}
+		CHECK_EQ(actual.trait_name, expected.trait_name);
+		REQUIRE_EQ(actual.functions.size(), expected.functions.size());
+		for (const KeyValue<StringName, FSFunction *> &function :
+				expected.functions) {
+			const HashMap<StringName, FSFunction *>::ConstIterator actual_function =
+					actual.functions.find(function.key);
+			REQUIRE(actual_function);
+			if (actual_function) {
+				CHECK_EQ(actual_function->value, function.value);
+			}
+		}
+	}
+	CHECK_EQ(original_function->get_name(), original_method);
+	CHECK_EQ(FSConformanceRegistry::get_singleton()->find_witness_function(
+					 original_target, original_method),
+			original_function);
+	CHECK_EQ(name_mangler_application_serialize(script), baseline);
 }
 
 } // namespace FSTests

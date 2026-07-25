@@ -30,6 +30,7 @@
 
 #include "fs_name_mangler_application.h"
 
+#include "fs_conformance_registry.h"
 #include "fs_utility_functions.h"
 
 #include "core/object/class_db.h"
@@ -119,22 +120,32 @@ struct FSNameManglerApplication::Transaction::Data {
 		HashMap<StringName, StringName> parameter_names;
 	};
 
+	struct RegistrySnapshot {
+		String source;
+		Vector<FSConformanceRegistry::RuntimeConformance> entries;
+		Vector<FSConformanceRegistry::RuntimeConformance> transformed_entries;
+	};
+
 	RBMap<StringName, StringName> rename_map;
 	Vector<ClassSnapshot> class_snapshots;
 	Vector<FunctionSnapshot> function_snapshots;
+	Vector<RegistrySnapshot> registry_snapshots;
 	HashMap<const FoundryScript *, int> class_snapshot_indices;
 	HashSet<const FoundryScript *> indexed_classes;
 	HashSet<FSFunction *> indexed_functions;
 	Vector<IdentityReplacement> identity_replacements;
+	Vector<String> script_paths;
 
 	void clear() {
 		rename_map.clear();
 		class_snapshots.clear();
 		function_snapshots.clear();
+		registry_snapshots.clear();
 		class_snapshot_indices.clear();
 		indexed_classes.clear();
 		indexed_functions.clear();
 		identity_replacements.clear();
+		script_paths.clear();
 	}
 
 	StringName rename_atomic(const StringName &p_name) const {
@@ -242,8 +253,19 @@ struct FSNameManglerApplication::Transaction::Data {
 
 		String prefix;
 		String body = p_identity;
-		if (body.begins_with("res://") || body.begins_with("user://")) {
-			const int nested_separator = body.find("::");
+		for (const String &script_path : script_paths) {
+			if (body == script_path) {
+				return body;
+			}
+			const String nested_prefix = script_path + "::";
+			if (body.begins_with(nested_prefix)) {
+				prefix = nested_prefix;
+				body = body.substr(nested_prefix.length());
+				break;
+			}
+		}
+		if (prefix.is_empty() && body.find("://") >= 0) {
+			const int nested_separator = body.find("::", body.find("://") + 3);
 			if (nested_separator < 0) {
 				return body;
 			}
@@ -723,6 +745,441 @@ struct FSNameManglerApplication::Transaction::Data {
 		}
 	}
 
+	bool snapshot_registries(Vector<Diagnostic> &r_diagnostics) {
+		RBMap<String, bool> sources;
+		for (const ClassSnapshot &snapshot : class_snapshots) {
+			if (!snapshot.script->registered_conformance_source.is_empty()) {
+				sources.insert(snapshot.script->registered_conformance_source, true);
+			}
+		}
+
+		FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
+		for (const KeyValue<String, bool> &source : sources) {
+			RegistrySnapshot snapshot;
+			snapshot.source = source.key;
+			snapshot.entries = registry->get_runtime_witnesses(snapshot.source);
+			for (const FSConformanceRegistry::RuntimeConformance &conformance :
+					snapshot.entries) {
+				for (const KeyValue<StringName, FSFunction *> &witness :
+						conformance.functions) {
+					if (witness.value == nullptr) {
+						Diagnostic diagnostic;
+						diagnostic.surface = "conformance registry";
+						diagnostic.source_name = witness.key;
+						diagnostic.message = vformat(
+								"Runtime conformance source `%s` contains a null witness.",
+								snapshot.source);
+						r_diagnostics.push_back(diagnostic);
+						return false;
+					}
+					snapshot_function(witness.value, witness.key);
+				}
+			}
+			registry_snapshots.push_back(snapshot);
+		}
+		return true;
+	}
+
+	void build_registry_plan() {
+		for (RegistrySnapshot &snapshot : registry_snapshots) {
+			snapshot.transformed_entries = snapshot.entries;
+			for (FSConformanceRegistry::RuntimeConformance &conformance :
+					snapshot.transformed_entries) {
+				for (String &target_key : conformance.target_keys) {
+					target_key = rewrite_identity(target_key);
+				}
+				conformance.trait_name =
+						StringName(rewrite_identity(String(conformance.trait_name)));
+				HashMap<StringName, FSFunction *> transformed_functions;
+				for (const KeyValue<StringName, FSFunction *> &witness :
+						conformance.functions) {
+					transformed_functions.insert(
+							rename_atomic(witness.key), witness.value);
+				}
+				conformance.functions = transformed_functions;
+			}
+		}
+	}
+
+	FoundryScript *get_root_script(FoundryScript *p_script) const {
+		if (p_script == nullptr) {
+			return nullptr;
+		}
+		while (p_script->_owner != nullptr) {
+			p_script = p_script->_owner;
+		}
+		return p_script;
+	}
+
+	bool validate_script_dependency(
+			Script *p_dependency,
+			const FoundryScript *p_referring,
+			const String &p_surface,
+			const HashSet<const FoundryScript *> &p_roots,
+			Vector<Diagnostic> &r_diagnostics) const {
+		FoundryScript *dependency = Object::cast_to<FoundryScript>(p_dependency);
+		if (dependency == nullptr) {
+			return true;
+		}
+		FoundryScript *dependency_root = get_root_script(dependency);
+		if (dependency_root != nullptr && p_roots.has(dependency_root)) {
+			return true;
+		}
+
+		Diagnostic diagnostic;
+		diagnostic.surface = "closed graph";
+		diagnostic.source_name =
+				p_referring != nullptr ? p_referring->local_name : StringName();
+		const String dependency_identity =
+				dependency->get_script_path() + "::" +
+				dependency->get_fully_qualified_name();
+		diagnostic.message = vformat(
+				"The closed graph omits Foundry Script dependency `%s` referenced by `%s` on %s.",
+				dependency_identity,
+				p_referring != nullptr ? p_referring->get_fully_qualified_name()
+									   : String("<registry>"),
+				p_surface);
+		r_diagnostics.push_back(diagnostic);
+		return false;
+	}
+
+	bool validate_container_type_closure(
+			const ContainerType &p_type,
+			const FoundryScript *p_referring,
+			const String &p_surface,
+			const HashSet<const FoundryScript *> &p_roots,
+			Vector<Diagnostic> &r_diagnostics,
+			int p_depth = 0) const {
+		if (p_depth > Variant::MAX_RECURSION_DEPTH) {
+			return true;
+		}
+		if (p_type.script.is_valid() &&
+				!validate_script_dependency(p_type.script.ptr(), p_referring,
+						p_surface, p_roots, r_diagnostics)) {
+			return false;
+		}
+		for (const ContainerType &element_type : p_type.element_types) {
+			if (!validate_container_type_closure(element_type, p_referring,
+						p_surface, p_roots, r_diagnostics, p_depth + 1)) {
+				return false;
+			}
+		}
+		for (const ContainerType &type_argument : p_type.type_arguments) {
+			if (!validate_container_type_closure(type_argument, p_referring,
+						p_surface, p_roots, r_diagnostics, p_depth + 1)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	bool validate_data_type_closure(
+			const FSDataType &p_type,
+			const FoundryScript *p_referring,
+			const String &p_surface,
+			const HashSet<const FoundryScript *> &p_roots,
+			Vector<Diagnostic> &r_diagnostics) const {
+		if (p_type.script_type != nullptr &&
+				!validate_script_dependency(p_type.script_type, p_referring,
+						p_surface, p_roots, r_diagnostics)) {
+			return false;
+		}
+		if (p_type.script_type_ref.is_valid() &&
+				!validate_script_dependency(p_type.script_type_ref.ptr(),
+						p_referring, p_surface, p_roots, r_diagnostics)) {
+			return false;
+		}
+		for (const FSDataType &element_type : p_type.container_element_types) {
+			if (!validate_data_type_closure(element_type, p_referring, p_surface,
+						p_roots, r_diagnostics)) {
+				return false;
+			}
+		}
+		for (const FSDataType &type_argument : p_type.type_arguments) {
+			if (!validate_data_type_closure(type_argument, p_referring, p_surface,
+						p_roots, r_diagnostics)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	bool validate_variant_closure(
+			const Variant &p_value,
+			const FoundryScript *p_referring,
+			const String &p_surface,
+			const HashSet<const FoundryScript *> &p_roots,
+			Vector<Diagnostic> &r_diagnostics,
+			int p_depth = 0) const {
+		if (p_depth > Variant::MAX_RECURSION_DEPTH) {
+			return true;
+		}
+		switch (p_value.get_type()) {
+			case Variant::ARRAY: {
+				const Array array = p_value;
+				if (!validate_container_type_closure(array.get_element_type(),
+							p_referring, p_surface, p_roots, r_diagnostics,
+							p_depth + 1)) {
+					return false;
+				}
+				for (const Variant &value : array) {
+					if (!validate_variant_closure(value, p_referring, p_surface,
+								p_roots, r_diagnostics, p_depth + 1)) {
+						return false;
+					}
+				}
+			} break;
+			case Variant::DICTIONARY: {
+				const Dictionary dictionary = p_value;
+				if (!validate_container_type_closure(dictionary.get_key_type(),
+							p_referring, p_surface, p_roots, r_diagnostics,
+							p_depth + 1) ||
+						!validate_container_type_closure(
+								dictionary.get_value_type(), p_referring,
+								p_surface, p_roots, r_diagnostics,
+								p_depth + 1)) {
+					return false;
+				}
+				const Array keys = dictionary.keys();
+				for (const Variant &key : keys) {
+					if (!validate_variant_closure(key, p_referring, p_surface,
+								p_roots, r_diagnostics, p_depth + 1) ||
+							!validate_variant_closure(dictionary[key], p_referring,
+									p_surface, p_roots, r_diagnostics,
+									p_depth + 1)) {
+						return false;
+					}
+				}
+			} break;
+			case Variant::OBJECT: {
+				Object *object = p_value;
+				if (Script *script = Object::cast_to<Script>(object)) {
+					return validate_script_dependency(script, p_referring,
+							p_surface, p_roots, r_diagnostics);
+				}
+				if (FSSpecializedClassHandle *specialized =
+								Object::cast_to<FSSpecializedClassHandle>(object)) {
+					if (!validate_script_dependency(
+								specialized->get_specialized_script().ptr(),
+								p_referring, p_surface, p_roots, r_diagnostics)) {
+						return false;
+					}
+					for (const ContainerType &type_argument :
+							specialized->get_type_arguments()) {
+						if (!validate_container_type_closure(type_argument,
+									p_referring, p_surface, p_roots,
+									r_diagnostics, p_depth + 1)) {
+							return false;
+						}
+					}
+				}
+			} break;
+			default:
+				break;
+		}
+		return true;
+	}
+
+	bool identity_is_included(const String &p_identity) const {
+		if (p_identity.is_empty()) {
+			return false;
+		}
+		for (const ClassSnapshot &snapshot : class_snapshots) {
+			if (p_identity == snapshot.script->get_script_path() ||
+					p_identity == String(snapshot.local_name) ||
+					p_identity == String(snapshot.global_name) ||
+					p_identity == snapshot.fully_qualified_name ||
+					p_identity == String(snapshot.trait_type_name)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	static bool identity_is_native_or_builtin(const String &p_identity) {
+		return ClassDB::class_exists(StringName(p_identity)) ||
+				Variant::get_type_by_name(p_identity) < Variant::VARIANT_MAX;
+	}
+
+	bool validate_identity_dependency(
+			const String &p_identity,
+			const FoundryScript *p_referring,
+			const String &p_surface,
+			Vector<Diagnostic> &r_diagnostics,
+			bool p_allow_native_or_builtin = false) const {
+		if (p_identity.is_empty() || identity_is_included(p_identity) ||
+				(p_allow_native_or_builtin &&
+						identity_is_native_or_builtin(p_identity))) {
+			return true;
+		}
+		Diagnostic diagnostic;
+		diagnostic.surface = "closed graph";
+		diagnostic.source_name =
+				p_referring != nullptr ? p_referring->local_name : StringName();
+		diagnostic.message = vformat(
+				"The closed graph cannot resolve %s identity `%s` referenced by `%s`.",
+				p_surface, p_identity,
+				p_referring != nullptr ? p_referring->get_fully_qualified_name()
+									   : String("<registry>"));
+		r_diagnostics.push_back(diagnostic);
+		return false;
+	}
+
+	bool validate_closed_graph(
+			const HashSet<const FoundryScript *> &p_roots,
+			Vector<Diagnostic> &r_diagnostics) const {
+		for (const ClassSnapshot &snapshot : class_snapshots) {
+			const FoundryScript *script = snapshot.script.ptr();
+			if (script->base.is_valid() &&
+					!validate_script_dependency(script->base.ptr(), script, "base",
+							p_roots, r_diagnostics)) {
+				return false;
+			}
+			for (const KeyValue<FoundryScript *,
+						 Vector<FoundryScript::TypeArgumentBinding>> &ancestor :
+					snapshot.type_parameter_bindings_by_ancestor) {
+				if (!validate_script_dependency(ancestor.key, script,
+							"ancestor type binding", p_roots, r_diagnostics)) {
+					return false;
+				}
+				for (const FoundryScript::TypeArgumentBinding &binding :
+						ancestor.value) {
+					if (!validate_data_type_closure(binding.fixed, script,
+								"ancestor type binding", p_roots,
+								r_diagnostics)) {
+						return false;
+					}
+				}
+			}
+			for (const FoundryScript::TypeArgumentBinding &binding :
+					snapshot.member_type_argument_bindings) {
+				if (!validate_data_type_closure(binding.fixed, script,
+							"member type binding", p_roots, r_diagnostics)) {
+					return false;
+				}
+			}
+			for (const KeyValue<StringName, FoundryScript::MemberInfo> &member :
+					snapshot.member_indices) {
+				if (!validate_data_type_closure(member.value.data_type, script,
+							"member type", p_roots, r_diagnostics) ||
+						!validate_data_type_closure(
+								member.value.type_argument_binding.fixed, script,
+								"member type binding", p_roots,
+								r_diagnostics)) {
+					return false;
+				}
+			}
+			for (const KeyValue<StringName, FoundryScript::MemberInfo> &member :
+					snapshot.static_variables_indices) {
+				if (!validate_data_type_closure(member.value.data_type, script,
+							"static member type", p_roots, r_diagnostics) ||
+						!validate_data_type_closure(
+								member.value.type_argument_binding.fixed, script,
+								"static member type binding", p_roots,
+								r_diagnostics)) {
+					return false;
+				}
+			}
+			for (const StringName &trait_name : snapshot.script_trait_list) {
+				if (!validate_identity_dependency(String(trait_name), script,
+							"trait", r_diagnostics)) {
+					return false;
+				}
+			}
+			for (const KeyValue<StringName,
+						 FoundryScript::AbstractTraitRequirement> &requirement :
+					snapshot.abstract_trait_requirements) {
+				if (!validate_data_type_closure(requirement.value.return_type,
+							script, "abstract requirement type", p_roots,
+							r_diagnostics)) {
+					return false;
+				}
+			}
+			for (const Variant &value : script->static_variables) {
+				if (!validate_variant_closure(value, script, "static value",
+							p_roots, r_diagnostics)) {
+					return false;
+				}
+			}
+			for (const KeyValue<StringName, Variant> &constant :
+					snapshot.constants) {
+				if (!validate_variant_closure(constant.value, script,
+							"constant value", p_roots, r_diagnostics)) {
+					return false;
+				}
+			}
+			for (const KeyValue<StringName, Variant> &default_value :
+					snapshot.member_default_values) {
+				if (!validate_variant_closure(default_value.value, script,
+							"member default value", p_roots, r_diagnostics)) {
+					return false;
+				}
+			}
+			for (const KeyValue<StringName, Variant> &default_value :
+					snapshot.member_default_values_cache) {
+				if (!validate_variant_closure(default_value.value, script,
+							"cached member default value", p_roots,
+							r_diagnostics)) {
+					return false;
+				}
+			}
+			for (const Ref<Script> &target : script->witness_target_scripts) {
+				if (!validate_script_dependency(target.ptr(), script,
+							"conformance target", p_roots, r_diagnostics)) {
+					return false;
+				}
+			}
+		}
+
+		for (const FunctionSnapshot &snapshot : function_snapshots) {
+			const FoundryScript *referring = snapshot.function->_script;
+			if (!validate_script_dependency(snapshot.function->_script, referring,
+						"function owner", p_roots, r_diagnostics)) {
+				return false;
+			}
+			for (const FSDataType &argument_type : snapshot.argument_types) {
+				if (!validate_data_type_closure(argument_type, referring,
+							"function argument type", p_roots, r_diagnostics)) {
+					return false;
+				}
+			}
+			if (!validate_data_type_closure(snapshot.return_type, referring,
+						"function return type", p_roots, r_diagnostics)) {
+				return false;
+			}
+			for (const Variant &constant : snapshot.function->constants) {
+				if (!validate_variant_closure(constant, referring,
+							"function constant", p_roots, r_diagnostics)) {
+					return false;
+				}
+			}
+			for (const Variant &default_argument :
+					snapshot.method_info.default_arguments) {
+				if (!validate_variant_closure(default_argument, referring,
+							"default argument", p_roots, r_diagnostics)) {
+					return false;
+				}
+			}
+		}
+
+		for (const RegistrySnapshot &snapshot : registry_snapshots) {
+			for (const FSConformanceRegistry::RuntimeConformance &conformance :
+					snapshot.entries) {
+				if (!validate_identity_dependency(String(conformance.trait_name),
+							nullptr, "conformance trait", r_diagnostics)) {
+					return false;
+				}
+				for (const String &target_key : conformance.target_keys) {
+					if (!validate_identity_dependency(target_key, nullptr,
+								"conformance target", r_diagnostics, true)) {
+						return false;
+					}
+				}
+			}
+		}
+		return true;
+	}
+
 	bool prepare(const Vector<Ref<FoundryScript>> &p_scripts,
 			const RBMap<StringName, StringName> &p_rename_map,
 			Vector<Diagnostic> &r_diagnostics) {
@@ -770,11 +1227,25 @@ struct FSNameManglerApplication::Transaction::Data {
 		for (const Ref<FoundryScript> &root : roots) {
 			snapshot_class(root, nullptr);
 		}
+		for (const ClassSnapshot &snapshot : class_snapshots) {
+			const String path = snapshot.script->get_script_path();
+			if (!path.is_empty() && !script_paths.has(path)) {
+				script_paths.push_back(path);
+			}
+		}
+		script_paths.sort();
 		build_identity_plan();
+		if (!snapshot_registries(r_diagnostics)) {
+			return false;
+		}
 		snapshot_functions();
+		if (!validate_closed_graph(root_set, r_diagnostics)) {
+			return false;
+		}
 		if (!validate_protected_names(r_diagnostics)) {
 			return false;
 		}
+		build_registry_plan();
 		return true;
 	}
 
@@ -976,6 +1447,11 @@ struct FSNameManglerApplication::Transaction::Data {
 		for (FunctionSnapshot &snapshot : function_snapshots) {
 			stage_function(snapshot);
 		}
+		FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
+		for (const RegistrySnapshot &snapshot : registry_snapshots) {
+			registry->register_runtime_witnesses(
+					snapshot.source, snapshot.transformed_entries);
+		}
 	}
 
 	void restore() {
@@ -1025,6 +1501,11 @@ struct FSNameManglerApplication::Transaction::Data {
 			script->members_cache = snapshot.members_cache;
 			script->member_default_values_cache =
 					snapshot.member_default_values_cache;
+		}
+
+		FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
+		for (const RegistrySnapshot &snapshot : registry_snapshots) {
+			registry->register_runtime_witnesses(snapshot.source, snapshot.entries);
 		}
 	}
 };
