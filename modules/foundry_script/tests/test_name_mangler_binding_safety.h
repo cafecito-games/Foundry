@@ -33,8 +33,12 @@
 #ifdef TOOLS_ENABLED
 
 #include "modules/foundry_script/fs_name_mangler_binding_safety.h"
+#include "modules/foundry_script/tests/fs_temporary_project_tree.h"
 #include "modules/foundry_script/tests/test_bytecode_serialization.h"
 
+#include "core/io/resource_loader.h"
+#include "core/io/resource_saver.h"
+#include "core/object/script_language.h"
 #include "scene/resources/animation.h"
 #include "scene/resources/animation_library.h"
 #include "scene/resources/packed_scene.h"
@@ -42,6 +46,27 @@
 #include "tests/test_macros.h"
 
 namespace FSTests {
+
+class BindingSafetyGlobalClassGuard {
+	StringName class_name;
+
+public:
+	BindingSafetyGlobalClassGuard(
+			const StringName &p_class_name,
+			const StringName &p_base,
+			const String &p_path) :
+			class_name(p_class_name) {
+		ScriptServer::remove_global_class(class_name);
+		ScriptServer::add_global_class(
+				class_name, p_base,
+				FSLanguage::get_singleton()->get_name(), p_path,
+				false, false, false);
+	}
+
+	~BindingSafetyGlobalClassGuard() {
+		ScriptServer::remove_global_class(class_name);
+	}
+};
 
 static bool binding_safety_has_scene_reason(
 		const FSNameManglerAnalysis::Result &p_result,
@@ -57,6 +82,35 @@ static bool binding_safety_has_scene_reason(
 		if (evidence.reason ==
 						FSNameManglerAnalysis::KEEP_SCENE_OR_RESOURCE &&
 				evidence.detail == p_detail) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static String binding_safety_snapshot(
+		const FSNameManglerBindingSafety::Result &p_result) {
+	String snapshot =
+			vformat("error=%d complete=%d\n", p_result.error, (int)p_result.complete);
+	for (const FSNameManglerBindingSafety::Evidence &evidence :
+			p_result.evidence) {
+		snapshot += vformat(
+				"%s|%d|%s|%s\n", evidence.name, evidence.kind,
+				evidence.source, evidence.owner);
+	}
+	for (const FSNameManglerBindingSafety::Diagnostic &diagnostic :
+			p_result.diagnostics) {
+		snapshot += "diagnostic|" + diagnostic.format() + "\n";
+	}
+	return snapshot;
+}
+
+static bool binding_safety_has_diagnostic(
+		const FSNameManglerBindingSafety::Result &p_result,
+		const String &p_text) {
+	for (const FSNameManglerBindingSafety::Diagnostic &diagnostic :
+			p_result.diagnostics) {
+		if (diagnostic.format().contains(p_text)) {
 			return true;
 		}
 	}
@@ -475,6 +529,246 @@ TEST_CASE("[FoundryScript][NameManglerBindingSafety] Animation keeps property an
 			result, SNAME("private_animation_control"),
 			FSNameManglerBindingSafety::BINDING_ANIMATION_METHOD,
 			"res://animation_scene.tscn"));
+}
+
+TEST_CASE("[FoundryScript][NameManglerBindingSafety] Acceptance text and binary resources have identical evidence") {
+	TemporaryProjectTree project(
+			"name_mangler_binding_safety_acceptance");
+	const Ref<FoundryScript> emitter_script =
+			compile_bytecode_test_source(
+					"extends Node\n"
+					"signal acceptance_signal\n"
+					"func private_emitter_name() -> void:\n"
+					"\tpass\n");
+	const Ref<FoundryScript> receiver_script =
+			compile_bytecode_test_source(
+					"extends Node\n"
+					"@export var acceptance_value: float\n"
+					"func acceptance_method() -> void:\n"
+					"\tpass\n"
+					"func private_receiver_name() -> void:\n"
+					"\tpass\n");
+	const Ref<FoundryScript> config_script =
+			compile_bytecode_test_source(
+					"class_name BindingAcceptanceConfig798 extends Resource\n"
+					"@export var config_value: int\n"
+					"var private_config_name: int\n");
+	BindingSafetyGlobalClassGuard global_class(
+			SNAME("BindingAcceptanceConfig798"), SNAME("Resource"),
+			config_script->get_script_path());
+
+	Ref<Animation> animation;
+	animation.instantiate();
+	const int value_track = animation->add_track(Animation::TYPE_VALUE);
+	animation->track_set_path(
+			value_track, NodePath("Receiver:acceptance_value"));
+	animation->track_insert_key(value_track, 0.0, 3.0);
+	const int method_track = animation->add_track(Animation::TYPE_METHOD);
+	animation->track_set_path(method_track, NodePath("Receiver"));
+	Dictionary method_key;
+	method_key["method"] = SNAME("acceptance_method");
+	method_key["args"] = Array();
+	animation->track_insert_key(method_track, 0.0, method_key);
+	Ref<AnimationLibrary> library;
+	library.instantiate();
+	REQUIRE_EQ(
+			library->add_animation(SNAME("acceptance"), animation), OK);
+
+	Ref<PackedScene> scene;
+	scene.instantiate();
+	const Ref<SceneState> state = scene->get_state();
+	const int node_type = state->add_name(SNAME("Node"));
+	const int player_type = state->add_name(SNAME("AnimationPlayer"));
+	const int root_node = state->add_node(
+			-1, -1, node_type, state->add_name(SNAME("Root")),
+			-1, -1, 60);
+	const int emitter = state->add_node(
+			root_node, root_node, node_type,
+			state->add_name(SNAME("Emitter")), -1, -1, 61);
+	state->add_node_property(
+			emitter, state->add_name(SNAME("script")),
+			state->add_value(emitter_script));
+	const int receiver = state->add_node(
+			root_node, root_node, node_type,
+			state->add_name(SNAME("Receiver")), -1, -1, 62);
+	state->add_node_property(
+			receiver, state->add_name(SNAME("script")),
+			state->add_value(receiver_script));
+	state->add_node_property(
+			receiver, state->add_name(SNAME("acceptance_value")),
+			state->add_value(2.0));
+	const int player = state->add_node(
+			root_node, root_node, player_type,
+			state->add_name(SNAME("AnimationPlayer")), -1, -1, 63);
+	state->add_node_property(
+			player, state->add_name(SNAME("root_node")),
+			state->add_value(NodePath("..")));
+	state->add_node_property(
+			player, state->add_name(SNAME("libraries/")),
+			state->add_value(library));
+	state->add_connection(
+			emitter, receiver, state->add_name(SNAME("acceptance_signal")),
+			state->add_name(SNAME("acceptance_method")),
+			Object::CONNECT_PERSIST, 0, {});
+
+	Ref<Resource> config;
+	config.instantiate();
+	config->set_script(config_script);
+	bool valid = false;
+	config->set(SNAME("config_value"), 9, &valid);
+	REQUIRE(valid);
+
+	const String text_scene_path = project.root.path_join("main.tscn");
+	const String binary_scene_path = project.root.path_join("main.scn");
+	const String text_resource_path = project.root.path_join("config.tres");
+	const String binary_resource_path = project.root.path_join("config.res");
+	REQUIRE_EQ(ResourceSaver::save(scene, text_scene_path), OK);
+	REQUIRE_EQ(ResourceSaver::save(scene, binary_scene_path), OK);
+	REQUIRE_EQ(ResourceSaver::save(config, text_resource_path), OK);
+	REQUIRE_EQ(ResourceSaver::save(config, binary_resource_path), OK);
+
+	Error load_error = OK;
+	const Ref<PackedScene> text_scene = ResourceLoader::load(
+			text_scene_path, "PackedScene",
+			ResourceFormatLoader::CACHE_MODE_IGNORE_DEEP, &load_error);
+	REQUIRE_EQ(load_error, OK);
+	REQUIRE(text_scene.is_valid());
+	const Ref<Resource> text_config = ResourceLoader::load(
+			text_resource_path, String(),
+			ResourceFormatLoader::CACHE_MODE_IGNORE_DEEP, &load_error);
+	REQUIRE_EQ(load_error, OK);
+	REQUIRE(text_config.is_valid());
+	const Ref<PackedScene> binary_scene = ResourceLoader::load(
+			binary_scene_path, "PackedScene",
+			ResourceFormatLoader::CACHE_MODE_IGNORE_DEEP, &load_error);
+	REQUIRE_EQ(load_error, OK);
+	REQUIRE(binary_scene.is_valid());
+	const Ref<Resource> binary_config = ResourceLoader::load(
+			binary_resource_path, String(),
+			ResourceFormatLoader::CACHE_MODE_IGNORE_DEEP, &load_error);
+	REQUIRE_EQ(load_error, OK);
+	REQUIRE(binary_config.is_valid());
+
+	const Dictionary text_scene_before =
+			text_scene->get_state()->get_bundled_scene();
+	const Dictionary binary_scene_before =
+			binary_scene->get_state()->get_bundled_scene();
+	FSNameManglerAnalysis::Input analysis_input;
+	analysis_input.scripts.push_back(emitter_script);
+	analysis_input.scripts.push_back(receiver_script);
+	analysis_input.scripts.push_back(config_script);
+	FSNameManglerBindingSafety::Input text_input;
+	text_input.add_resource(text_scene, "res://acceptance/main");
+	text_input.add_resource(text_config, "res://acceptance/config");
+	FSNameManglerBindingSafety::Input binary_input;
+	binary_input.add_resource(binary_config, "res://acceptance/config");
+	binary_input.add_resource(binary_scene, "res://acceptance/main");
+
+	const FSNameManglerBindingSafety::Result text_result =
+			FSNameManglerBindingSafety::collect(text_input, analysis_input);
+	const FSNameManglerBindingSafety::Result binary_result =
+			FSNameManglerBindingSafety::collect(binary_input, analysis_input);
+	INFO("Text result:\n", binding_safety_snapshot(text_result));
+	INFO("Binary result:\n", binding_safety_snapshot(binary_result));
+	REQUIRE_EQ(text_result.error, OK);
+	REQUIRE(text_result.complete);
+	REQUIRE_EQ(binary_result.error, OK);
+	REQUIRE(binary_result.complete);
+	CHECK_EQ(
+			binding_safety_snapshot(text_result),
+			binding_safety_snapshot(binary_result));
+	CHECK_EQ(
+			text_scene->get_state()->get_bundled_scene(),
+			text_scene_before);
+	CHECK_EQ(
+			binary_scene->get_state()->get_bundled_scene(),
+			binary_scene_before);
+
+	FSNameManglerAnalysis::Input applied_input = analysis_input;
+	REQUIRE_EQ(text_result.apply_to_input(applied_input), OK);
+	const FSNameManglerAnalysis::Result analysis =
+			FSNameManglerAnalysis::analyze(applied_input);
+	REQUIRE_EQ(analysis.error, OK);
+	CHECK_FALSE(analysis.rename_map.has(SNAME("acceptance_signal")));
+	CHECK_FALSE(analysis.rename_map.has(SNAME("acceptance_method")));
+	CHECK_FALSE(analysis.rename_map.has(SNAME("acceptance_value")));
+	CHECK_FALSE(
+			analysis.rename_map.has(SNAME("BindingAcceptanceConfig798")));
+	CHECK(analysis.rename_map.has(SNAME("private_emitter_name")));
+	CHECK(analysis.rename_map.has(SNAME("private_receiver_name")));
+	CHECK(analysis.rename_map.has(SNAME("private_config_name")));
+}
+
+TEST_CASE("[FoundryScript][NameManglerBindingSafety] Failure rejects invalid roots transactionally") {
+	Ref<Resource> resource;
+	resource.instantiate();
+	FSNameManglerBindingSafety::Input binding_input;
+	FSNameManglerBindingSafety::ResourceRoot null_root;
+	null_root.source = "res://a_null.tres";
+	binding_input.resources.push_back(null_root);
+	binding_input.add_resource(resource, "res://z_duplicate.tres");
+	binding_input.add_resource(resource, "res://z_duplicate.tres");
+	FSNameManglerAnalysis::Input analysis_input;
+
+	const FSNameManglerBindingSafety::Result result =
+			FSNameManglerBindingSafety::collect(
+					binding_input, analysis_input);
+	CHECK_EQ(result.error, ERR_INVALID_DATA);
+	CHECK_FALSE(result.complete);
+	REQUIRE_EQ(result.diagnostics.size(), 2);
+	CHECK(result.diagnostics[0].source == "res://a_null.tres");
+	CHECK(result.diagnostics[1].source == "res://z_duplicate.tres");
+	CHECK(binding_safety_has_diagnostic(result, "resource is null"));
+	CHECK(binding_safety_has_diagnostic(
+			result, "duplicate resource source"));
+
+	FSNameManglerBindingSafety::Evidence evidence;
+	evidence.name = SNAME("must_not_apply");
+	evidence.source = "res://z_duplicate.tres";
+	FSNameManglerBindingSafety::Result incomplete = result;
+	incomplete.evidence.push_back(evidence);
+	CHECK_EQ(incomplete.apply_to_input(analysis_input), ERR_INVALID_DATA);
+	CHECK(analysis_input.keep_evidence.is_empty());
+}
+
+TEST_CASE("[FoundryScript][NameManglerBindingSafety] Failure reports scene cycles placeholders and stale connections") {
+	Ref<PackedScene> cyclic_scene;
+	cyclic_scene.instantiate();
+	const Ref<SceneState> cyclic_state = cyclic_scene->get_state();
+	const int node_type = cyclic_state->add_name(SNAME("Node"));
+	const int root_node = cyclic_state->add_node(
+			-1, -1, node_type,
+			cyclic_state->add_name(SNAME("Root")), -1, -1, 70);
+	cyclic_state->add_node(
+			root_node, root_node, SceneState::TYPE_INSTANTIATED,
+			cyclic_state->add_name(SNAME("Cycle")),
+			cyclic_state->add_value(cyclic_scene), -1, 71);
+	cyclic_state->add_node(
+			root_node, root_node, SceneState::TYPE_INSTANTIATED,
+			cyclic_state->add_name(SNAME("Placeholder")),
+			cyclic_state->add_value("res://missing.tscn") |
+					SceneState::FLAG_INSTANCE_IS_PLACEHOLDER,
+			-1, 72);
+	cyclic_state->add_connection(
+			root_node, root_node, cyclic_state->add_name(SNAME("ready")),
+			cyclic_state->add_name(SNAME("missing_method")),
+			Object::CONNECT_PERSIST, 0, {});
+
+	FSNameManglerBindingSafety::Input binding_input;
+	binding_input.add_resource(cyclic_scene, "res://invalid_scene.tscn");
+	FSNameManglerAnalysis::Input analysis_input;
+	const FSNameManglerBindingSafety::Result result =
+			FSNameManglerBindingSafety::collect(
+					binding_input, analysis_input);
+	CHECK_EQ(result.error, ERR_INVALID_DATA);
+	CHECK_FALSE(result.complete);
+	CHECK(binding_safety_has_diagnostic(
+			result, "scene inheritance or instance cycle"));
+	CHECK(binding_safety_has_diagnostic(
+			result, "instance placeholder cannot be expanded"));
+	CHECK(binding_safety_has_diagnostic(
+			result, "missing_method"));
+	cyclic_state->clear();
 }
 
 } // namespace FSTests

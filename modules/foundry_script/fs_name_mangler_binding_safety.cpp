@@ -723,19 +723,23 @@ void collect_resource_bindings(
 	}
 	properties.sort_custom<PropertyInfoComparator>();
 
-	VirtualNode resource_node;
-	resource_node.path = p_context;
-	resource_node.native_type = p_resource->get_class_name();
-	resource_node.script = script;
 	for (const PropertyInfo &property : properties) {
 		if (property.name == CoreStringName(script)) {
 			continue;
 		}
-		collect_scene_declaration(
-				resource_node, property.name, DECLARATION_PROPERTY,
-				FSNameManglerBindingSafety::BINDING_SERIALIZED_PROPERTY,
-				p_source, p_context + "." + String(property.name),
-				p_domain, r_result);
+		const FoundryScript *declaration = find_foundry_declaration(
+				script, property.name, DECLARATION_PROPERTY);
+		const FoundryScript *owner =
+				resolve_domain_script(declaration, p_domain);
+		if (owner != nullptr) {
+			FSNameManglerBindingSafety::Evidence evidence;
+			evidence.name = property.name;
+			evidence.kind =
+					FSNameManglerBindingSafety::BINDING_SERIALIZED_PROPERTY;
+			evidence.source = p_source;
+			evidence.owner = get_script_owner(owner);
+			r_result.evidence.push_back(evidence);
+		}
 
 		bool valid = false;
 		const Variant value = p_resource->get(property.name, &valid);
@@ -783,6 +787,29 @@ void collect_variant_bindings(
 			break;
 		default:
 			break;
+	}
+}
+
+void collect_scene_property_values(
+		const VirtualScene &p_scene,
+		const String &p_source,
+		const ScriptDomain &p_domain,
+		FSNameManglerBindingSafety::Result &r_result) {
+	VariantTraversalState traversal;
+	for (const KeyValue<String, VirtualNode> &node_entry : p_scene.nodes) {
+		for (const KeyValue<StringName, VirtualProperty> &property :
+				node_entry.value.properties) {
+			if (property.key == CoreStringName(script)) {
+				continue;
+			}
+			collect_variant_bindings(
+					property.value.value, p_source,
+					vformat("node %s.%s",
+							node_entry.key.is_empty() ? String(".")
+													  : node_entry.key,
+							property.key),
+					p_domain, traversal, r_result);
+		}
 	}
 }
 
@@ -1109,6 +1136,8 @@ FSNameManglerBindingSafety::Result FSNameManglerBindingSafety::collect(
 					virtual_scene, root.source, domain, result);
 			collect_scene_connections(virtual_scene, domain, result);
 			collect_scene_animations(
+					virtual_scene, root.source, domain, result);
+			collect_scene_property_values(
 					virtual_scene, root.source, domain, result);
 		} else {
 			VariantTraversalState traversal;
