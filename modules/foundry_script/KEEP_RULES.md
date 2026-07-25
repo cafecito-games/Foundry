@@ -64,7 +64,8 @@ cannot contain those separators, so `*` and `**` have the same reach in member e
 ## Diagnostics
 
 Every diagnostic includes its source path and one-based line number. Malformed syntax is an error,
-and parsing is transactional: no partial rule set is published.
+and parsing is transactional: no partial rule set is published. Replacing an existing rule object
+with malformed text, an unreadable file, or invalid UTF-8 leaves its last valid rules unchanged.
 
 An exact duplicate rule is retained once and produces a warning at the duplicate line that names
 the original line. After rules are applied to a complete project graph, a retained rule that matched

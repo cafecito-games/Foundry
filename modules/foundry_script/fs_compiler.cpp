@@ -3159,6 +3159,32 @@ void FSCompiler::_collect_annotations(const List<FSParser::AnnotationNode *> &p_
 	}
 }
 
+void FSCompiler::_merge_annotation_usages(
+		HashMap<StringName, Vector<FoundryScript::AnnotationUsage>> &r_annotation_map,
+		const StringName &p_name, const Vector<FoundryScript::AnnotationUsage> &p_usages) {
+	if (p_usages.is_empty()) {
+		return;
+	}
+
+	Vector<FoundryScript::AnnotationUsage> &merged = r_annotation_map[p_name];
+	for (const FoundryScript::AnnotationUsage &usage : p_usages) {
+		bool duplicate = false;
+		for (const FoundryScript::AnnotationUsage &existing : merged) {
+			if (existing.name == usage.name &&
+					existing.qualified_name == usage.qualified_name &&
+					existing.args == usage.args &&
+					existing.kwargs == usage.kwargs &&
+					existing.is_builtin == usage.is_builtin) {
+				duplicate = true;
+				break;
+			}
+		}
+		if (!duplicate) {
+			merged.push_back(usage);
+		}
+	}
+}
+
 void FSCompiler::_collect_parameter_annotations(const Vector<FSParser::ParameterNode *> &p_parameters, const FSParser::ParameterNode *p_rest_parameter, HashMap<StringName, Vector<FoundryScript::AnnotationUsage>> &r_parameter_annotations) {
 	auto collect = [&](const FSParser::ParameterNode *p_parameter) {
 		if (p_parameter == nullptr || p_parameter->identifier == nullptr) {
@@ -4419,6 +4445,10 @@ Error FSCompiler::_compile_enum_functions(
 		HashMap<StringName, FSFunction *> &functions =
 				function->is_static ? function_set.static_functions : function_set.instance_functions;
 		functions.insert(function_name, compiled);
+
+		Vector<FoundryScript::AnnotationUsage> method_usages;
+		_collect_annotations(function->annotations, method_usages);
+		_merge_annotation_usages(p_script->method_annotations, function_name, method_usages);
 	}
 
 	return OK;
@@ -4464,9 +4494,8 @@ Error FSCompiler::_compile_class(FoundryScript *p_script, const FSParser::ClassN
 			// collected above. Keyed by name so an overriding method's annotations are effective.
 			Vector<FoundryScript::AnnotationUsage> method_usages;
 			_collect_annotations(function->annotations, method_usages);
-			if (!method_usages.is_empty()) {
-				p_script->method_annotations[function->identifier->name] = method_usages;
-			}
+			_merge_annotation_usages(
+					p_script->method_annotations, function->identifier->name, method_usages);
 
 			HashMap<StringName, Vector<FoundryScript::AnnotationUsage>> method_parameter_usages;
 			_collect_parameter_annotations(function->parameters, function->rest_parameter, method_parameter_usages);

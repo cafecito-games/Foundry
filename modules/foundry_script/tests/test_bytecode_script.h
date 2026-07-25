@@ -171,6 +171,18 @@ TEST_CASE("[FoundryScript][BytecodeScript] Members, signals, constants, annotati
 			"@keep_name enum Tint:\n"
 			"\tRED = 0\n"
 			"\tGREEN = 5\n"
+			"\t@keep_name func kept_enum_instance() -> void:\n"
+			"\t\tpass\n"
+			"\t@keep_name func shared_enum_escape() -> void:\n"
+			"\t\tpass\n"
+			"\n"
+			"@keep_name enum Shade:\n"
+			"\tLIGHT = 0\n"
+			"\tDARK = 1\n"
+			"\t@keep_name static func kept_enum_static() -> void:\n"
+			"\t\tpass\n"
+			"\t@keep_name static func shared_enum_escape() -> void:\n"
+			"\t\tpass\n"
 			"\n"
 			"@keep_name const GREETING = \"hello\"\n"
 			"\n"
@@ -229,17 +241,22 @@ TEST_CASE("[FoundryScript][BytecodeScript] Members, signals, constants, annotati
 	REQUIRE(speed_annotations.size() == original->get_variable_annotations()[SNAME("speed")].size());
 	CHECK(speed_annotations[0].name == SNAME("export"));
 	CHECK(speed_annotations[0].is_builtin);
-	const auto check_restored_keep_name = [](const Vector<FoundryScript::AnnotationUsage> &p_usages) {
-		REQUIRE_EQ(p_usages.size(), 1);
-		CHECK_EQ(p_usages[0].name, SNAME("keep_name"));
-		CHECK(p_usages[0].is_builtin);
+	const auto check_restored_keep_name = [](const Vector<FoundryScript::AnnotationUsage> *p_usages) {
+		REQUIRE(p_usages != nullptr);
+		REQUIRE_EQ(p_usages->size(), 1);
+		CHECK_EQ((*p_usages)[0].name, SNAME("keep_name"));
+		CHECK((*p_usages)[0].is_builtin);
 	};
-	check_restored_keep_name(restored->get_class_annotations());
-	check_restored_keep_name(restored->get_variable_annotations()[SNAME("health")]);
-	check_restored_keep_name(restored->get_method_annotations()[SNAME("take_damage")]);
-	check_restored_keep_name(restored->get_signal_annotations()[SNAME("damaged")]);
-	check_restored_keep_name(restored->get_constant_annotations()[SNAME("GREETING")]);
-	check_restored_keep_name(restored->get_constant_annotations()[SNAME("Tint")]);
+	check_restored_keep_name(&restored->get_class_annotations());
+	check_restored_keep_name(restored->get_variable_annotations().getptr(SNAME("health")));
+	check_restored_keep_name(restored->get_method_annotations().getptr(SNAME("take_damage")));
+	check_restored_keep_name(restored->get_signal_annotations().getptr(SNAME("damaged")));
+	check_restored_keep_name(restored->get_constant_annotations().getptr(SNAME("GREETING")));
+	check_restored_keep_name(restored->get_constant_annotations().getptr(SNAME("Tint")));
+	check_restored_keep_name(restored->get_constant_annotations().getptr(SNAME("Shade")));
+	check_restored_keep_name(restored->get_method_annotations().getptr(SNAME("kept_enum_instance")));
+	check_restored_keep_name(restored->get_method_annotations().getptr(SNAME("kept_enum_static")));
+	check_restored_keep_name(restored->get_method_annotations().getptr(SNAME("shared_enum_escape")));
 
 	// Method reflection.
 	CHECK(restored->has_method(SNAME("take_damage")));

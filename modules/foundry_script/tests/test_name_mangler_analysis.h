@@ -482,6 +482,12 @@ TEST_CASE("[FoundryScript][NameManglerAnalysis] keep_name and keep rules preserv
 			"\tpass\n"
 			"func unkept_dispatch() -> void:\n"
 			"\tpass\n"
+			"enum DynamicDispatch:\n"
+			"\tVALUE = 0\n"
+			"\t@keep_name func enum_instance_dispatch() -> void:\n"
+			"\t\tpass\n"
+			"\t@keep_name static func enum_static_dispatch() -> void:\n"
+			"\t\tpass\n"
 			"func invoke(suffix: String) -> void:\n"
 			"\tcall(\"annotated_\" + suffix)\n"
 			"\tcall(\"ruled_\" + suffix)\n"
@@ -507,9 +513,13 @@ TEST_CASE("[FoundryScript][NameManglerAnalysis] keep_name and keep rules preserv
 	const FSNameManglerAnalysis::Classification *annotated = result.find(SNAME("annotated_dispatch"));
 	const FSNameManglerAnalysis::Classification *ruled = result.find(SNAME("ruled_dispatch"));
 	const FSNameManglerAnalysis::Classification *unkept = result.find(SNAME("unkept_dispatch"));
+	const FSNameManglerAnalysis::Classification *enum_instance = result.find(SNAME("enum_instance_dispatch"));
+	const FSNameManglerAnalysis::Classification *enum_static = result.find(SNAME("enum_static_dispatch"));
 	REQUIRE(annotated != nullptr);
 	REQUIRE(ruled != nullptr);
 	REQUIRE(unkept != nullptr);
+	REQUIRE(enum_instance != nullptr);
+	REQUIRE(enum_static != nullptr);
 
 	bool annotated_detail_found = false;
 	for (const FSNameManglerAnalysis::KeepEvidence &evidence : annotated->keep_evidence) {
@@ -531,6 +541,10 @@ TEST_CASE("[FoundryScript][NameManglerAnalysis] keep_name and keep rules preserv
 	CHECK(ruled_detail_found);
 	CHECK_FALSE(result.rename_map.has(SNAME("annotated_dispatch")));
 	CHECK_FALSE(result.rename_map.has(SNAME("ruled_dispatch")));
+	CHECK(name_analysis_has_reason(result, SNAME("enum_instance_dispatch"), FSNameManglerAnalysis::KEEP_RULE));
+	CHECK(name_analysis_has_reason(result, SNAME("enum_static_dispatch"), FSNameManglerAnalysis::KEEP_RULE));
+	CHECK_FALSE(result.rename_map.has(SNAME("enum_instance_dispatch")));
+	CHECK_FALSE(result.rename_map.has(SNAME("enum_static_dispatch")));
 	CHECK(result.rename_map.has(SNAME("unkept_dispatch")));
 }
 

@@ -6162,6 +6162,16 @@ class_name KeepNameMetadataRoot
 @keep_name const KEPT_CONSTANT = 1
 @keep_name enum KeptEnum:
 	VALUE = 0
+	@keep_name func kept_enum_instance() -> void:
+		pass
+	@keep_name func shared_enum_escape() -> void:
+		pass
+@keep_name enum KeptStaticEnum:
+	VALUE = 0
+	@keep_name static func kept_enum_static() -> void:
+		pass
+	@keep_name static func shared_enum_escape() -> void:
+		pass
 @keep_name func kept_method() -> void:
 	pass
 @keep_name class KeptInner:
@@ -6219,7 +6229,11 @@ class_name KeepNameMetadataRoot
 	check_keep_name_usage(find_annotation_usages(script->get_signal_annotations(), SNAME("kept_signal")));
 	check_keep_name_usage(find_annotation_usages(script->get_constant_annotations(), SNAME("KEPT_CONSTANT")));
 	check_keep_name_usage(find_annotation_usages(script->get_constant_annotations(), SNAME("KeptEnum")));
+	check_keep_name_usage(find_annotation_usages(script->get_constant_annotations(), SNAME("KeptStaticEnum")));
 	check_keep_name_usage(find_annotation_usages(script->get_method_annotations(), SNAME("kept_method")));
+	check_keep_name_usage(find_annotation_usages(script->get_method_annotations(), SNAME("kept_enum_instance")));
+	check_keep_name_usage(find_annotation_usages(script->get_method_annotations(), SNAME("kept_enum_static")));
+	check_keep_name_usage(find_annotation_usages(script->get_method_annotations(), SNAME("shared_enum_escape")));
 
 	const Ref<FoundryScript> inner = script->get_subclasses()[SNAME("KeptInner")];
 	CHECK(inner.is_valid());

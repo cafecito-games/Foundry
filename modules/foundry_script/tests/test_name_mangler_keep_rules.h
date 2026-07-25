@@ -142,7 +142,7 @@ TEST_CASE("[FoundryScript][NameManglerKeepRules] Parses the supported subset tra
 		CAPTURE(test_case.text);
 		diagnostics.clear();
 		CHECK_EQ(FSNameManglerKeepRules::parse(test_case.text, source, rules, diagnostics), ERR_PARSE_ERROR);
-		CHECK_EQ(rules.get_rule_count(), 0);
+		CHECK_EQ(rules.get_rule_count(), 2);
 		CHECK_FALSE(diagnostics.is_empty());
 		if (!diagnostics.is_empty()) {
 			CHECK_EQ(diagnostics[0].severity, FSNameManglerKeepRules::DIAGNOSTIC_ERROR);
@@ -169,11 +169,22 @@ TEST_CASE("[FoundryScript][NameManglerKeepRules] Loads rules and reports read fa
 	CHECK_EQ(FSNameManglerKeepRules::load(path, rules, diagnostics), OK);
 	CHECK_EQ(rules.get_rule_count(), 1);
 	CHECK(diagnostics.is_empty());
+	{
+		Ref<FileAccess> file = FileAccess::open(path, FileAccess::WRITE);
+		CHECK(file.is_valid());
+		if (file.is_valid()) {
+			file->store_string("-keep class game.Player {\n\tbroken\n}\n");
+		}
+	}
+	CHECK_EQ(FSNameManglerKeepRules::load(path, rules, diagnostics), ERR_PARSE_ERROR);
+	CHECK_EQ(rules.get_rule_count(), 1);
+	CHECK_EQ(diagnostics.size(), 1);
+
 	CHECK_EQ(DirAccess::remove_absolute(path), OK);
 
 	diagnostics.clear();
 	CHECK_EQ(FSNameManglerKeepRules::load(path, rules, diagnostics), ERR_FILE_NOT_FOUND);
-	CHECK_EQ(rules.get_rule_count(), 0);
+	CHECK_EQ(rules.get_rule_count(), 1);
 	CHECK_EQ(diagnostics.size(), 1);
 	if (diagnostics.size() == 1) {
 		CHECK_EQ(diagnostics[0].severity, FSNameManglerKeepRules::DIAGNOSTIC_ERROR);

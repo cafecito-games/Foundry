@@ -215,7 +215,6 @@ String FSNameManglerKeepRules::Diagnostic::format() const {
 
 Error FSNameManglerKeepRules::parse(const String &p_text, const String &p_source,
 		FSNameManglerKeepRules &r_rules, Vector<Diagnostic> &r_diagnostics) {
-	r_rules.rules.clear();
 	r_diagnostics.clear();
 
 	Vector<Rule> parsed_rules;
@@ -336,7 +335,6 @@ Error FSNameManglerKeepRules::parse(const String &p_text, const String &p_source
 
 Error FSNameManglerKeepRules::load(const String &p_path, FSNameManglerKeepRules &r_rules,
 		Vector<Diagnostic> &r_diagnostics) {
-	r_rules.rules.clear();
 	r_diagnostics.clear();
 
 	Error open_error = OK;
@@ -346,7 +344,45 @@ Error FSNameManglerKeepRules::load(const String &p_path, FSNameManglerKeepRules 
 				vformat("Could not read keep-rules file (error %d).", open_error));
 		return open_error;
 	}
-	return parse(file->get_as_utf8_string(), p_path, r_rules, r_diagnostics);
+
+	const uint64_t length = file->get_length();
+	if (length > uint64_t(INT32_MAX)) {
+		append_diagnostic(r_diagnostics, DIAGNOSTIC_ERROR, p_path, 1,
+				"Could not read keep-rules file: file is too large.");
+		return ERR_OUT_OF_MEMORY;
+	}
+
+	Vector<uint8_t> bytes;
+	const Error resize_error = bytes.resize((int)length);
+	if (resize_error != OK) {
+		append_diagnostic(r_diagnostics, DIAGNOSTIC_ERROR, p_path, 1,
+				"Could not read keep-rules file: unable to allocate the file buffer.");
+		return resize_error;
+	}
+	if (length > 0 && file->get_buffer(bytes.ptrw(), length) != length) {
+		append_diagnostic(r_diagnostics, DIAGNOSTIC_ERROR, p_path, 1,
+				"Could not read keep-rules file.");
+		return ERR_FILE_CANT_READ;
+	}
+
+	String text;
+	if (length > 0) {
+		const Error decode_error =
+				text.append_utf8(reinterpret_cast<const char *>(bytes.ptr()), (int)length);
+		if (decode_error != OK) {
+			append_diagnostic(r_diagnostics, DIAGNOSTIC_ERROR, p_path, 1,
+					"Could not read keep-rules file: invalid UTF-8.");
+			return decode_error;
+		}
+	}
+
+	FSNameManglerKeepRules parsed_rules;
+	const Error parse_error = parse(text, p_path, parsed_rules, r_diagnostics);
+	if (parse_error != OK) {
+		return parse_error;
+	}
+	r_rules = parsed_rules;
+	return OK;
 }
 
 Error FSNameManglerKeepRules::apply_to_input(

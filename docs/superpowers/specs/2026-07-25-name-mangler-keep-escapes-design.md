@@ -163,9 +163,10 @@ warning.
 ## Diagnostics and determinism
 
 Malformed syntax is an error and makes `parse` or `load` return `ERR_PARSE_ERROR` without publishing
-partial rules. Examples include an unknown directive, missing `class`, empty or malformed glob,
-missing opening/closing brace, missing member semicolon, an empty member block, and unsupported
-inline block syntax.
+partial rules or replacing a previously valid rule set. Open/read failures and invalid UTF-8 likewise
+leave the caller's existing rules unchanged. Examples include an unknown directive, missing `class`,
+empty or malformed glob, missing opening/closing brace, missing member semicolon, an empty member
+block, and unsupported inline block syntax.
 
 Exact duplicate rules are accepted once and produce a warning pointing to the duplicate
 `source:line` and the original `source:line`. A valid rule that matches no declaration produces an
