@@ -44,6 +44,7 @@ class FoundryScript;
 class FSParser;
 class FSAnalyzer;
 #ifdef TOOLS_ENABLED
+class FSNameManglerApplication;
 class FSNameManglerAnalysis;
 class FSNameManglerKeepRules;
 #endif
@@ -225,6 +226,7 @@ private:
 	friend class FSBytecodeExporter;
 	friend class FSBytecodeLoader;
 #ifdef TOOLS_ENABLED
+	friend class FSNameManglerApplication;
 	friend class FSNameManglerAnalysis;
 	friend class FSNameManglerKeepRules;
 #endif

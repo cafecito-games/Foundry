@@ -420,7 +420,7 @@ void FSNameManglerAnalysis::_collect_class(const FoundryScript *p_class, BuildSt
 	const String source = p_class->get_script_path();
 	_collect_external_class_surface(p_class->base.ptr(), source + " external base", r_state);
 	_add_candidate(p_class->local_name, IDENTIFIER_CLASS, r_state);
-	_add_candidate(p_class->global_name, IDENTIFIER_CLASS, r_state);
+	r_state.observed_names.insert(p_class->global_name);
 	r_state.observed_names.insert(StringName(p_class->fully_qualified_name));
 
 	for (const StringName &member : p_class->members) {
@@ -529,7 +529,6 @@ void FSNameManglerAnalysis::_collect_class(const FoundryScript *p_class, BuildSt
 		}
 		const String detail = vformat("@keep_name on class %s", p_class->fully_qualified_name);
 		_add_evidence(p_class->local_name, KEEP_RULE, detail, r_state);
-		_add_evidence(p_class->global_name, KEEP_RULE, detail, r_state);
 	}
 	for (const KeyValue<StringName, Vector<FoundryScript::AnnotationUsage>> &entry : p_class->method_annotations) {
 		collect_annotations(entry.value, entry.key);

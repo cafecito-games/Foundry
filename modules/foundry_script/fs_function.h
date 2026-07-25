@@ -45,6 +45,7 @@
 class FSInstance;
 class FoundryScript;
 #ifdef TOOLS_ENABLED
+class FSNameManglerApplication;
 class FSNameManglerAnalysis;
 #endif
 
@@ -549,6 +550,7 @@ private:
 	friend class FSBytecodeLoader;
 	friend class FSBytecodeVerifier;
 #ifdef TOOLS_ENABLED
+	friend class FSNameManglerApplication;
 	friend class FSNameManglerAnalysis;
 #endif
 
