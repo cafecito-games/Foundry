@@ -13,9 +13,9 @@
 ### Task 1: Add the failing source and compiled-bytecode regression
 
 **Files:**
-- Create: `modules/foundry_script/tests/scripts/runtime/features/enum_host_functions_namespaced.fs`
-- Create: `modules/foundry_script/tests/scripts/runtime/features/enum_host_functions_namespaced.notest.fs`
-- Create: `modules/foundry_script/tests/scripts/runtime/features/enum_host_functions_namespaced.out`
+- Create: `modules/foundry_script/tests/scripts/runtime/enum_host_functions_namespaced/enum_host_functions_namespaced.fs`
+- Create: `modules/foundry_script/tests/scripts/runtime/enum_host_functions_namespaced/enum_host_functions_namespaced.notest.fs`
+- Create: `modules/foundry_script/tests/scripts/runtime/enum_host_functions_namespaced/enum_host_functions_namespaced.out`
 
 - [ ] **Step 1: Add the provider fixture**
 
@@ -152,9 +152,9 @@ record for zero failed tests.
 git add docs/superpowers/specs/2026-07-24-qualified-global-enum-compilation-design.md \
   docs/superpowers/plans/2026-07-24-qualified-global-enum-compilation.md \
   modules/foundry_script/fs_analyzer.cpp \
-  modules/foundry_script/tests/scripts/runtime/features/enum_host_functions_namespaced.fs \
-  modules/foundry_script/tests/scripts/runtime/features/enum_host_functions_namespaced.notest.fs \
-  modules/foundry_script/tests/scripts/runtime/features/enum_host_functions_namespaced.out
+  modules/foundry_script/tests/scripts/runtime/enum_host_functions_namespaced/enum_host_functions_namespaced.fs \
+  modules/foundry_script/tests/scripts/runtime/enum_host_functions_namespaced/enum_host_functions_namespaced.notest.fs \
+  modules/foundry_script/tests/scripts/runtime/enum_host_functions_namespaced/enum_host_functions_namespaced.out
 git commit -m "Compile qualified namespaced global enums"
 ```
 
@@ -184,4 +184,3 @@ Closes #1198
 Enable squash auto-merge, monitor required CI until GitHub reports the PR
 merged, verify issue #1198 closed and its Experiment project item is Done,
 then remove the worktree and local branch.
-

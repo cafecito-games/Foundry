@@ -75,4 +75,3 @@ execution. The compiled-bytecode fixture pass proves the caller compiles,
 serializes, loads, and dispatches against the provider. Existing focused tests
 for qualified global classes and namespace resolution remain in the regression
 set.
-
