@@ -570,6 +570,215 @@ void collect_scene_connections(
 	}
 }
 
+struct PropertyInfoComparator {
+	bool operator()(const PropertyInfo &p_left, const PropertyInfo &p_right) const {
+		return String(p_left.name) < String(p_right.name);
+	}
+};
+
+struct VariantTraversalState {
+	HashSet<const Resource *> resources;
+	HashSet<const void *> arrays;
+	HashSet<const void *> dictionaries;
+};
+
+void collect_variant_bindings(
+		const Variant &p_value,
+		const String &p_source,
+		const String &p_context,
+		const ScriptDomain &p_domain,
+		VariantTraversalState &r_traversal,
+		FSNameManglerBindingSafety::Result &r_result,
+		bool p_top_level_resource = false);
+
+void collect_script_class(
+		const Variant &p_script_value,
+		FSNameManglerBindingSafety::BindingKind p_kind,
+		const String &p_source,
+		const ScriptDomain &p_domain,
+		FSNameManglerBindingSafety::Result &r_result) {
+	const Ref<Script> script = p_script_value;
+	const FoundryScript *foundry_script =
+			Object::cast_to<FoundryScript>(script.ptr());
+	const FoundryScript *owner =
+			resolve_domain_script(foundry_script, p_domain);
+	if (owner == nullptr || owner->get_local_name().is_empty()) {
+		return;
+	}
+	FSNameManglerBindingSafety::Evidence evidence;
+	evidence.name = owner->get_local_name();
+	evidence.kind = p_kind;
+	evidence.source = p_source;
+	evidence.owner = get_script_owner(owner);
+	r_result.evidence.push_back(evidence);
+}
+
+void collect_array_bindings(
+		const Array &p_array,
+		const String &p_source,
+		const String &p_context,
+		const ScriptDomain &p_domain,
+		VariantTraversalState &r_traversal,
+		FSNameManglerBindingSafety::Result &r_result) {
+	if (p_array.is_typed()) {
+		collect_script_class(
+				p_array.get_typed_script(),
+				FSNameManglerBindingSafety::BINDING_TYPED_CONTAINER_SCRIPT_CLASS,
+				p_source, p_domain, r_result);
+	}
+	if (r_traversal.arrays.has(p_array.id())) {
+		return;
+	}
+	r_traversal.arrays.insert(p_array.id());
+	for (int i = 0; i < p_array.size(); i++) {
+		collect_variant_bindings(
+				p_array[i], p_source, vformat("%s[%d]", p_context, i),
+				p_domain, r_traversal, r_result);
+	}
+}
+
+void collect_dictionary_bindings(
+		const Dictionary &p_dictionary,
+		const String &p_source,
+		const String &p_context,
+		const ScriptDomain &p_domain,
+		VariantTraversalState &r_traversal,
+		FSNameManglerBindingSafety::Result &r_result) {
+	if (p_dictionary.is_typed_key()) {
+		collect_script_class(
+				p_dictionary.get_typed_key_script(),
+				FSNameManglerBindingSafety::BINDING_TYPED_CONTAINER_SCRIPT_CLASS,
+				p_source, p_domain, r_result);
+	}
+	if (p_dictionary.is_typed_value()) {
+		collect_script_class(
+				p_dictionary.get_typed_value_script(),
+				FSNameManglerBindingSafety::BINDING_TYPED_CONTAINER_SCRIPT_CLASS,
+				p_source, p_domain, r_result);
+	}
+	if (r_traversal.dictionaries.has(p_dictionary.id())) {
+		return;
+	}
+	r_traversal.dictionaries.insert(p_dictionary.id());
+	int entry_index = 0;
+	for (const KeyValue<Variant, Variant> &entry : p_dictionary) {
+		collect_variant_bindings(
+				entry.key, p_source,
+				vformat("%s key %d", p_context, entry_index),
+				p_domain, r_traversal, r_result);
+		collect_variant_bindings(
+				entry.value, p_source,
+				vformat("%s value %d", p_context, entry_index),
+				p_domain, r_traversal, r_result);
+		entry_index++;
+	}
+}
+
+void collect_resource_bindings(
+		const Ref<Resource> &p_resource,
+		const String &p_source,
+		const String &p_context,
+		const ScriptDomain &p_domain,
+		VariantTraversalState &r_traversal,
+		FSNameManglerBindingSafety::Result &r_result,
+		bool p_top_level) {
+	if (p_resource.is_null() ||
+			r_traversal.resources.has(p_resource.ptr())) {
+		return;
+	}
+	r_traversal.resources.insert(p_resource.ptr());
+
+	const Ref<Script> script = p_resource->get_script();
+	const FoundryScript *foundry_script =
+			Object::cast_to<FoundryScript>(script.ptr());
+	if (p_top_level && foundry_script != nullptr &&
+			!foundry_script->get_global_name().is_empty()) {
+		const FoundryScript *owner =
+				resolve_domain_script(foundry_script, p_domain);
+		if (owner != nullptr && !owner->get_local_name().is_empty()) {
+			FSNameManglerBindingSafety::Evidence evidence;
+			evidence.name = owner->get_local_name();
+			evidence.kind =
+					FSNameManglerBindingSafety::BINDING_RESOURCE_SCRIPT_CLASS;
+			evidence.source = p_source;
+			evidence.owner = get_script_owner(owner);
+			r_result.evidence.push_back(evidence);
+		}
+	}
+
+	List<PropertyInfo> property_list;
+	p_resource->get_property_list(&property_list);
+	Vector<PropertyInfo> properties;
+	for (const PropertyInfo &property : property_list) {
+		if (property.usage & PROPERTY_USAGE_STORAGE) {
+			properties.push_back(property);
+		}
+	}
+	properties.sort_custom<PropertyInfoComparator>();
+
+	VirtualNode resource_node;
+	resource_node.path = p_context;
+	resource_node.native_type = p_resource->get_class_name();
+	resource_node.script = script;
+	for (const PropertyInfo &property : properties) {
+		if (property.name == CoreStringName(script)) {
+			continue;
+		}
+		collect_scene_declaration(
+				resource_node, property.name, DECLARATION_PROPERTY,
+				FSNameManglerBindingSafety::BINDING_SERIALIZED_PROPERTY,
+				p_source, p_context + "." + String(property.name),
+				p_domain, r_result);
+
+		bool valid = false;
+		const Variant value = p_resource->get(property.name, &valid);
+		if (!valid) {
+			fail_collection(
+					r_result, p_source,
+					p_context + "." + String(property.name),
+					"storage property could not be read");
+			continue;
+		}
+		collect_variant_bindings(
+				value, p_source,
+				p_context + "." + String(property.name),
+				p_domain, r_traversal, r_result);
+	}
+}
+
+void collect_variant_bindings(
+		const Variant &p_value,
+		const String &p_source,
+		const String &p_context,
+		const ScriptDomain &p_domain,
+		VariantTraversalState &r_traversal,
+		FSNameManglerBindingSafety::Result &r_result,
+		bool p_top_level_resource) {
+	switch (p_value.get_type()) {
+		case Variant::OBJECT: {
+			const Ref<Resource> resource = p_value;
+			if (resource.is_valid() &&
+					!Object::cast_to<PackedScene>(resource.ptr())) {
+				collect_resource_bindings(
+						resource, p_source, p_context, p_domain,
+						r_traversal, r_result, p_top_level_resource);
+			}
+		} break;
+		case Variant::ARRAY:
+			collect_array_bindings(
+					p_value, p_source, p_context, p_domain,
+					r_traversal, r_result);
+			break;
+		case Variant::DICTIONARY:
+			collect_dictionary_bindings(
+					p_value, p_source, p_context, p_domain,
+					r_traversal, r_result);
+			break;
+		default:
+			break;
+	}
+}
+
 void sort_and_deduplicate(
 		FSNameManglerBindingSafety::Result &r_result) {
 	r_result.evidence.sort_custom<EvidenceComparator>();
@@ -693,6 +902,11 @@ FSNameManglerBindingSafety::Result FSNameManglerBindingSafety::collect(
 			collect_scene_properties(
 					virtual_scene, root.source, domain, result);
 			collect_scene_connections(virtual_scene, domain, result);
+		} else {
+			VariantTraversalState traversal;
+			collect_resource_bindings(
+					root.resource, root.source, "resource root", domain,
+					traversal, result, true);
 		}
 	}
 	sort_and_deduplicate(result);

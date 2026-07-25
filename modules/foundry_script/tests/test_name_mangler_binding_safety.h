@@ -329,6 +329,68 @@ TEST_CASE("[FoundryScript][NameManglerBindingSafety] Connection keeps script-own
 			"res://connections.tscn"));
 }
 
+TEST_CASE("[FoundryScript][NameManglerBindingSafety] Resource keeps owned properties and semantic class identities") {
+	const Ref<FoundryScript> resource_script = compile_bytecode_test_source(
+			"class_name BindingConfig798 extends Resource\n"
+			"@export var stored_value: int\n"
+			"@export var ordinary_text: String\n"
+			"@export var typed_items: Array\n"
+			"@export var cycle_data: Array\n"
+			"var private_control: int\n");
+	const Ref<FoundryScript> typed_script = compile_bytecode_test_source(
+			"class_name BindingTyped798 extends Resource\n"
+			"var typed_private_control: int\n");
+
+	Ref<Resource> resource;
+	resource.instantiate();
+	resource->set_script(resource_script);
+	bool valid = false;
+	resource->set(SNAME("stored_value"), 7, &valid);
+	REQUIRE(valid);
+	resource->set(SNAME("ordinary_text"), "private_control", &valid);
+	REQUIRE(valid);
+	Array typed_items;
+	typed_items.set_typed(
+			Variant::OBJECT, SNAME("Resource"), typed_script);
+	resource->set(SNAME("typed_items"), typed_items, &valid);
+	REQUIRE(valid);
+	Array cycle_data;
+	cycle_data.push_back(cycle_data);
+	resource->set(SNAME("cycle_data"), cycle_data, &valid);
+	REQUIRE(valid);
+
+	FSNameManglerAnalysis::Input analysis_input;
+	analysis_input.scripts.push_back(resource_script);
+	analysis_input.scripts.push_back(typed_script);
+	FSNameManglerBindingSafety::Input binding_input;
+	binding_input.add_resource(resource, "res://config.tres");
+
+	const FSNameManglerBindingSafety::Result result =
+			FSNameManglerBindingSafety::collect(binding_input, analysis_input);
+	REQUIRE_EQ(result.error, OK);
+	REQUIRE(result.complete);
+	CHECK(binding_safety_has_evidence(
+			result, SNAME("stored_value"),
+			FSNameManglerBindingSafety::BINDING_SERIALIZED_PROPERTY,
+			"res://config.tres"));
+	CHECK(binding_safety_has_evidence(
+			result, SNAME("BindingConfig798"),
+			FSNameManglerBindingSafety::BINDING_RESOURCE_SCRIPT_CLASS,
+			"res://config.tres"));
+	CHECK(binding_safety_has_evidence(
+			result, SNAME("BindingTyped798"),
+			FSNameManglerBindingSafety::BINDING_TYPED_CONTAINER_SCRIPT_CLASS,
+			"res://config.tres"));
+	CHECK_FALSE(binding_safety_has_evidence(
+			result, SNAME("private_control"),
+			FSNameManglerBindingSafety::BINDING_SERIALIZED_PROPERTY,
+			"res://config.tres"));
+	CHECK_FALSE(binding_safety_has_evidence(
+			result, SNAME("typed_private_control"),
+			FSNameManglerBindingSafety::BINDING_SERIALIZED_PROPERTY,
+			"res://config.tres"));
+}
+
 } // namespace FSTests
 
 #endif // TOOLS_ENABLED
