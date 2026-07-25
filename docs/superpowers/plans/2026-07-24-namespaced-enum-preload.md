@@ -145,4 +145,3 @@ until the exact verdict is `RESULT: clean`.
 Push `issue-1197`, open a PR against `develop` whose body ends with
 `Closes #1197`, enable squash auto-merge, and monitor checks until GitHub
 reports the PR merged.
-
