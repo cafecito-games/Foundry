@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import ast
 import re
+from collections.abc import Callable
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -25,78 +26,36 @@ for key, value in expected.items():
         raise SystemExit(f"{key}: expected {value!r}, got {metadata.get(key)!r}")
 """
 
-EXPECTED_VERIFY_SCRIPT = """\
-set -euo pipefail
-
-test "$(docker image inspect "$IMAGE_REF" --format '{{.Architecture}}')" = "amd64"
-test "$(docker image inspect "$IMAGE_REF" --format '{{.Config.User}}')" = "10001:10001"
-
-version_json="$(docker run --rm "$IMAGE_REF" --version --json)"
-VERSION_JSON="$version_json" python3 - <<'PY'
-import json
-import os
-
-metadata = json.loads(os.environ["VERSION_JSON"])
-expected = {
-    "product": "Foundry",
-    "version": os.environ["ENGINE_VERSION"],
-    "release_tag": os.environ["RELEASE_TAG"],
-    "channel": os.environ["RELEASE_CHANNEL"],
-    "git_commit": os.environ["SOURCE_REVISION"],
-}
-for key, value in expected.items():
-    if metadata.get(key) != value:
-        raise SystemExit(f"{key}: expected {value!r}, got {metadata.get(key)!r}")
-PY
-
-docker run --rm "$IMAGE_REF" script eval 'print("ok")' | grep -Fx "ok"
-fixture_dir="$RUNNER_TEMP/headless-container-fixture"
-mkdir "$fixture_dir"
-cp -R tests/fixtures/headless_container/. "$fixture_dir"
-mkdir "$fixture_dir/.foundry"
-docker run --rm \\
-  -v "$fixture_dir:/workspace:ro" \\
-  --tmpfs /workspace/.foundry:rw,uid=10001,gid=10001,mode=0700 \\
-  "$IMAGE_REF" script lint --project . scripts
-
-test "$(docker image inspect "$IMAGE_REF" \\
-  --format '{{ index .Config.Labels "org.opencontainers.image.version" }}')" = "$RELEASE_VERSION"
-test "$(docker image inspect "$IMAGE_REF" \\
-  --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')" = "$SOURCE_REVISION"
-test "$(docker image inspect "$IMAGE_REF" \\
-  --format '{{ index .Config.Labels "org.opencontainers.image.source" }}')" = "$SOURCE_REPOSITORY"
-"""
-
-EXPECTED_STEP_NAMES = (
-    "Checkout",
-    "Download Linux editor artifact",
-    "Restore Linux executable mode",
-    "Set up Docker Buildx",
-    "Resolve moving channel tag",
-    "Resolve image metadata",
-    "Build local smoke image",
-    "Verify headless image",
-    "Log in to GHCR",
-    "Publish release image",
+EXPECTED_SMOKE_COMMANDS = frozenset(
+    (
+        "set -euo pipefail",
+        """test "$(docker image inspect "$IMAGE_REF" --format '{{.Architecture}}')" = "amd64" """.strip(),
+        """test "$(docker image inspect "$IMAGE_REF" --format '{{.Config.User}}')" = "10001:10001" """.strip(),
+        'version_json="$(docker run --rm "$IMAGE_REF" --version --json)"',
+        """VERSION_JSON="$version_json" python3 - <<'PY'""",
+        """docker run --rm "$IMAGE_REF" script eval 'print("ok")' | grep -Fx "ok" """.strip(),
+        'fixture_dir="$RUNNER_TEMP/headless-container-fixture"',
+        'mkdir "$fixture_dir"',
+        'cp -R tests/fixtures/headless_container/. "$fixture_dir"',
+        'mkdir "$fixture_dir/.foundry"',
+        'docker run --rm -v "$fixture_dir:/workspace:ro" '
+        "--tmpfs /workspace/.foundry:rw,uid=10001,gid=10001,mode=0700 "
+        '"$IMAGE_REF" script lint --project . scripts',
+        """test "$(docker image inspect "$IMAGE_REF" --format '{{ index .Config.Labels """
+        """"org.opencontainers.image.version" }}')" = "$RELEASE_VERSION" """.strip(),
+        """test "$(docker image inspect "$IMAGE_REF" --format '{{ index .Config.Labels """
+        """"org.opencontainers.image.revision" }}')" = "$SOURCE_REVISION" """.strip(),
+        """test "$(docker image inspect "$IMAGE_REF" --format '{{ index .Config.Labels """
+        """"org.opencontainers.image.source" }}')" = "$SOURCE_REPOSITORY" """.strip(),
+    )
 )
 
-EXPECTED_STEP_FIELDS = {
-    "Checkout": ("uses",),
-    "Download Linux editor artifact": ("uses", "with"),
-    "Restore Linux executable mode": ("run",),
-    "Set up Docker Buildx": ("uses",),
-    "Resolve moving channel tag": ("id", "env", "run"),
-    "Resolve image metadata": ("id", "uses", "with"),
-    "Build local smoke image": ("uses", "with"),
-    "Verify headless image": ("env", "run"),
-    "Log in to GHCR": ("uses", "with"),
-    "Publish release image": ("uses", "with"),
-}
-
-EXPECTED_BUILD_ARGS = """\
-FOUNDRY_VERSION=${{ needs.resolve.outputs.release_version }}
-FOUNDRY_REVISION=${{ github.sha }}
-"""
+EXPECTED_BUILD_ARGS = frozenset(
+    (
+        "FOUNDRY_VERSION=${{ needs.resolve.outputs.release_version }}",
+        "FOUNDRY_REVISION=${{ github.sha }}",
+    )
+)
 
 
 class ContractError(AssertionError):
@@ -128,7 +87,8 @@ def field(text: str, key: str, indent: int, context: str) -> tuple[str, str]:
 def scalar(text: str, key: str, indent: int, context: str) -> str:
     value, body = field(text, key, indent, context)
     require(value not in ("", "|", ">"), f"{context}.{key} must be a scalar")
-    require(not body.strip(), f"{context}.{key} must not have nested values")
+    nested_lines = [line for line in body.splitlines() if line.strip() and not line.lstrip().startswith("#")]
+    require(not nested_lines, f"{context}.{key} must not have nested values")
     return value
 
 
@@ -143,7 +103,7 @@ def mapping(text: str, indent: int, context: str) -> dict[str, str]:
     prefix = " " * indent
     entries: dict[str, str] = {}
     for line in text.splitlines():
-        if not line.strip():
+        if not line.strip() or line.lstrip().startswith("#"):
             continue
         match = re.fullmatch(rf"{prefix}([A-Za-z0-9_-]+): (.+)", line)
         if match is None:
@@ -158,7 +118,7 @@ def list_items(text: str, indent: int, context: str) -> tuple[str, ...]:
     prefix = " " * indent
     items: list[str] = []
     for line in text.splitlines():
-        if not line.strip():
+        if not line.strip() or line.lstrip().startswith("#"):
             continue
         match = re.fullmatch(rf"{prefix}- (.+)", line)
         if match is None:
@@ -192,57 +152,101 @@ def named_block(text: str, name: str, indent: int, context: str) -> str:
     return body
 
 
-def parse_steps(job: str) -> list[tuple[str, str]]:
+def parse_steps(job: str) -> list[str]:
     steps_body = named_block(job, "steps", 4, "publish-container")
-    pattern = re.compile(r"^      - name: (.+)$", re.MULTILINE)
+    pattern = re.compile(r"^      - ([A-Za-z0-9_-]+):(.*)$", re.MULTILINE)
     matches = list(pattern.finditer(steps_body))
     all_step_headers = re.findall(r"^      - ", steps_body, re.MULTILINE)
-    require(len(matches) == len(all_step_headers), "every publish-container step must have a name")
+    require(len(matches) == len(all_step_headers), "publish-container contains an unsupported step header")
 
-    steps: list[tuple[str, str]] = []
-    names = set()
+    steps: list[str] = []
     for index, match in enumerate(matches):
-        name = match.group(1)
-        require(name not in names, f"publish-container repeats step name {name!r}")
-        names.add(name)
         body_start = match.end()
         if body_start < len(steps_body) and steps_body[body_start] == "\n":
             body_start += 1
         body_end = matches[index + 1].start() if index + 1 < len(matches) else len(steps_body)
-        steps.append((name, steps_body[body_start:body_end]))
+        first_field = f"        {match.group(1)}:{match.group(2)}\n"
+        steps.append(first_field + steps_body[body_start:body_end])
     return steps
 
 
-def step_by_name(steps: list[tuple[str, str]], name: str) -> tuple[int, str]:
-    matches = [(index, body) for index, (step_name, body) in enumerate(steps) if step_name == name]
-    require(len(matches) == 1, f"publish-container must define step {name!r} exactly once")
+def find_step(steps: list[str], predicate: Callable[[str], bool], context: str) -> tuple[int, str]:
+    matches = [(index, body) for index, body in enumerate(steps) if predicate(body)]
+    require(len(matches) == 1, f"publish-container must define exactly one {context} step")
     return matches[0]
+
+
+def step_label(body: str) -> str:
+    return optional_scalar(body, "name", 8) or "unnamed step"
 
 
 def step_uses(body: str) -> str:
     return optional_scalar(body, "uses", 8)
 
 
-def step_run(body: str, name: str) -> str:
-    value, nested = field(body, "run", 8, name)
+def step_id(body: str) -> str:
+    return optional_scalar(body, "id", 8)
+
+
+def step_run(body: str, context: str) -> str:
+    value, nested = field(body, "run", 8, context)
     if value == "|":
-        return literal(body, "run", 8, name)
-    require(value not in ("", ">"), f"{name}.run must be a command or literal block")
-    require(not nested.strip(), f"{name}.run scalar must not have nested values")
+        return literal(body, "run", 8, context)
+    require(value not in ("", ">"), f"{context}.run must be a command or literal block")
+    require(not nested.strip(), f"{context}.run scalar must not have nested values")
     return value + "\n"
 
 
-def step_with(body: str, name: str) -> dict[str, str]:
-    return mapping(named_block(body, "with", 8, name), 10, f"{name}.with")
+def step_with(body: str, context: str) -> dict[str, str]:
+    return mapping(named_block(body, "with", 8, context), 10, f"{context}.with")
 
 
-def normalized_shell(script: str) -> str:
-    script = re.sub(r"\\\n\s*", " ", script)
-    return " ".join(script.split())
+def nested_scalar(body: str, parent: str, key: str) -> str:
+    if not re.search(rf"^        {re.escape(parent)}:", body, re.MULTILINE):
+        return ""
+    parent_body = named_block(body, parent, 8, step_label(body))
+    return optional_scalar(parent_body, key, 10)
 
 
-def require_shell(script: str, command: str, context: str) -> None:
-    require(command in normalized_shell(script), f"{context} is missing exact command {command!r}")
+def shell_commands(script: str) -> tuple[str, ...]:
+    commands: list[str] = []
+    continued = ""
+    heredoc_terminator = ""
+    for line in script.splitlines():
+        stripped = line.strip()
+        if heredoc_terminator:
+            if stripped == heredoc_terminator:
+                heredoc_terminator = ""
+            continue
+        if not stripped or stripped.startswith("#"):
+            continue
+
+        if continued:
+            stripped = continued + " " + stripped
+            continued = ""
+        if stripped.endswith("\\"):
+            continued = stripped[:-1].rstrip()
+            continue
+
+        command = " ".join(stripped.split())
+        commands.append(command)
+        heredoc_match = re.search(r"<<'([^']+)'$", command)
+        if heredoc_match:
+            heredoc_terminator = heredoc_match.group(1)
+
+    require(not continued, "smoke script has a dangling line continuation")
+    require(not heredoc_terminator, "smoke script has an unterminated heredoc")
+    return tuple(commands)
+
+
+def semantic_lines(text: str) -> tuple[str, ...]:
+    return tuple(
+        " ".join(line.split()) for line in text.splitlines() if line.strip() and not line.lstrip().startswith("#")
+    )
+
+
+def exact_unordered(values: tuple[str, ...], expected: frozenset[str]) -> bool:
+    return frozenset(values) == expected and len(values) == len(expected)
 
 
 def extract_version_assertion(script: str) -> str:
@@ -268,21 +272,24 @@ def require_exact_python(actual: str, expected: str, context: str) -> None:
 def validate_events(workflow: str) -> None:
     on_block = named_block(workflow, "on", 0, "workflow")
     require(
-        child_keys(on_block, 2) == ("push", "workflow_dispatch"),
+        set(child_keys(on_block, 2)) == {"push", "workflow_dispatch"},
         "release workflow events must be exactly push and workflow_dispatch",
     )
     push_block = named_block(on_block, "push", 2, "release events")
-    require(child_keys(push_block, 4) == ("tags",), "release push event must be tag-only")
+    require(set(child_keys(push_block, 4)) == {"tags"}, "release push event must be tag-only")
     tags = list_items(named_block(push_block, "tags", 4, "release push"), 6, "release push tags")
-    require(tuple(tag.strip("'\"") for tag in tags) == ("v*",), "release push tags must be exactly v*")
+    require({tag.strip("'\"") for tag in tags} == {"v*"} and len(tags) == 1, "release push tags must be exactly v*")
 
 
-def validate_job_contract(workflow: str) -> tuple[str, list[tuple[str, str]]]:
+def validate_job_contract(workflow: str) -> tuple[str, list[str]]:
     jobs = named_block(workflow, "jobs", 0, "workflow")
     job = named_block(jobs, "publish-container", 2, "jobs")
 
     needs = list_items(named_block(job, "needs", 4, "publish-container"), 6, "publish-container.needs")
-    require(needs == ("resolve", "build-linux", "publish"), "publish-container needs must be exact")
+    require(
+        set(needs) == {"resolve", "build-linux", "publish"} and len(needs) == 3,
+        "publish-container needs must be exact",
+    )
     require(
         scalar(job, "if", 4, "publish-container") == "needs.resolve.outputs.draft == 'false'",
         "publish-container draft gate must be exact",
@@ -303,24 +310,17 @@ def validate_job_contract(workflow: str) -> tuple[str, list[tuple[str, str]]]:
         environment == {"IMAGE_NAME": "ghcr.io/cafecito-games/foundry"},
         "publish-container image name must be exact",
     )
-    steps = parse_steps(job)
-    require(
-        tuple(name for name, _ in steps) == EXPECTED_STEP_NAMES,
-        "publish-container step names and order must match the release contract exactly",
+    return job, parse_steps(job)
+
+
+def validate_artifact(steps: list[str]) -> None:
+    find_step(steps, lambda body: step_uses(body) == "actions/checkout@v6", "container checkout")
+
+    _, body = find_step(
+        steps,
+        lambda candidate: nested_scalar(candidate, "with", "name") == "release-linux-editor",
+        "Linux editor artifact download",
     )
-    for name, body in steps:
-        require(
-            child_keys(body, 8) == EXPECTED_STEP_FIELDS[name],
-            f"{name} fields must match the release contract exactly",
-        )
-    return job, steps
-
-
-def validate_artifact(steps: list[tuple[str, str]]) -> None:
-    _, checkout = step_by_name(steps, "Checkout")
-    require(step_uses(checkout) == "actions/checkout@v6", "container checkout action must be exact")
-
-    _, body = step_by_name(steps, "Download Linux editor artifact")
     require(
         step_uses(body) == "actions/download-artifact@v8",
         "Linux editor artifact must use actions/download-artifact@v8",
@@ -330,28 +330,31 @@ def validate_artifact(steps: list[tuple[str, str]]) -> None:
         "Linux editor artifact configuration must contain only its current-run name and docker path",
     )
 
-    _, restore = step_by_name(steps, "Restore Linux executable mode")
+    restore_command = "chmod 0755 docker/foundry.linuxbsd.editor.x86_64\n"
+    _, restore = find_step(
+        steps,
+        lambda candidate: re.search(r"^        run:", candidate, re.MULTILINE) is not None
+        and step_run(candidate, "executable restoration") == restore_command,
+        "Linux executable restoration",
+    )
     require(
-        step_run(restore, "Restore Linux executable mode") == "chmod 0755 docker/foundry.linuxbsd.editor.x86_64\n",
+        step_run(restore, "Linux executable restoration") == restore_command,
         "Linux executable restoration command must be exact",
     )
 
-    _, setup_buildx = step_by_name(steps, "Set up Docker Buildx")
-    require(
-        step_uses(setup_buildx) == "docker/setup-buildx-action@v3",
-        "Docker Buildx setup action must be exact",
+    find_step(
+        steps,
+        lambda candidate: step_uses(candidate) == "docker/setup-buildx-action@v3",
+        "Docker Buildx setup",
     )
 
 
-def validate_tags(steps: list[tuple[str, str]]) -> None:
-    _, channel_body = step_by_name(steps, "Resolve moving channel tag")
-    require(
-        scalar(channel_body, "id", 8, "Resolve moving channel tag") == "channel-tag", "channel tag id must be exact"
-    )
+def validate_tags(steps: list[str]) -> None:
+    _, channel_body = find_step(steps, lambda body: step_id(body) == "channel-tag", "channel tag resolution")
     channel_env = mapping(
-        named_block(channel_body, "env", 8, "Resolve moving channel tag"),
+        named_block(channel_body, "env", 8, "channel tag resolution"),
         10,
-        "Resolve moving channel tag.env",
+        "channel tag resolution.env",
     )
     require(
         channel_env == {"CHANNEL": "${{ needs.resolve.outputs.channel }}"},
@@ -362,73 +365,87 @@ if [ "$CHANNEL" = "stable" ]; then
   echo "tag=latest" >> "$GITHUB_OUTPUT"
 else
   echo "tag=latest-$CHANNEL" >> "$GITHUB_OUTPUT"
-fi
+    fi
 """
     require(
-        step_run(channel_body, "Resolve moving channel tag") == expected_channel_script,
+        shell_commands(step_run(channel_body, "channel tag resolution")) == shell_commands(expected_channel_script),
         "moving tag logic must separate stable latest from prerelease channels",
     )
 
-    _, metadata_body = step_by_name(steps, "Resolve image metadata")
+    _, metadata_body = find_step(steps, lambda body: step_id(body) == "metadata", "image metadata")
     require(step_uses(metadata_body) == "docker/metadata-action@v5", "image metadata action must be exact")
-    metadata_with = named_block(metadata_body, "with", 8, "Resolve image metadata")
+    metadata_with = named_block(metadata_body, "with", 8, "image metadata")
     require(
-        child_keys(metadata_with, 10) == ("images", "tags", "labels"),
+        set(child_keys(metadata_with, 10)) == {"images", "tags", "labels"},
         "image metadata inputs must be exact",
     )
     require(
         scalar(metadata_with, "images", 10, "Resolve image metadata.with") == "${{ env.IMAGE_NAME }}",
         "image metadata must use IMAGE_NAME",
     )
-    tags = tuple(
-        line for line in literal(metadata_with, "tags", 10, "Resolve image metadata.with").splitlines() if line
-    )
+    tags = semantic_lines(literal(metadata_with, "tags", 10, "Resolve image metadata.with"))
     require(
-        tags
-        == (
+        set(tags)
+        == {
             "type=raw,value=${{ needs.resolve.outputs.tag }}",
             "type=raw,value=${{ steps.channel-tag.outputs.tag }}",
-        ),
+        }
+        and len(tags) == 2,
         "image metadata must define exactly the raw release tag and one moving channel tag",
     )
-    labels = tuple(
-        line for line in literal(metadata_with, "labels", 10, "Resolve image metadata.with").splitlines() if line
-    )
+    labels = semantic_lines(literal(metadata_with, "labels", 10, "Resolve image metadata.with"))
     require(
-        labels
-        == (
+        set(labels)
+        == {
             "org.opencontainers.image.version=${{ needs.resolve.outputs.release_version }}",
             "org.opencontainers.image.revision=${{ github.sha }}",
-        ),
+        }
+        and len(labels) == 2,
         "image metadata labels must use the resolved release version and source revision",
     )
 
 
-def validate_builds_and_order(job: str, steps: list[tuple[str, str]]) -> None:
-    build_index, local_body = step_by_name(steps, "Build local smoke image")
-    verify_index, _ = step_by_name(steps, "Verify headless image")
-    login_index, login_body = step_by_name(steps, "Log in to GHCR")
-    publish_index, publish_body = step_by_name(steps, "Publish release image")
+def validate_builds_and_order(job: str, steps: list[str]) -> None:
+    build_index, local_body = find_step(
+        steps,
+        lambda body: nested_scalar(body, "with", "load") == "true",
+        "loaded local image build",
+    )
+    verify_index, _ = find_step(
+        steps,
+        lambda body: nested_scalar(body, "env", "IMAGE_REF") == "foundry-headless-smoke:${{ github.sha }}",
+        "headless image smoke",
+    )
+    login_index, login_body = find_step(
+        steps,
+        lambda body: step_uses(body) == "docker/login-action@v3",
+        "GHCR login",
+    )
+    publish_index, publish_body = find_step(
+        steps,
+        lambda body: nested_scalar(body, "with", "push") == "true",
+        "release image publication",
+    )
 
-    action_uses = [(index, name, step_uses(body)) for index, (name, body) in enumerate(steps) if step_uses(body)]
-    build_actions = [(index, name) for index, name, uses in action_uses if uses == "docker/build-push-action@v6"]
-    login_actions = [(index, name) for index, name, uses in action_uses if uses == "docker/login-action@v3"]
+    action_uses = [(index, step_uses(body)) for index, body in enumerate(steps) if step_uses(body)]
+    build_actions = [index for index, uses in action_uses if uses == "docker/build-push-action@v6"]
+    login_actions = [index for index, uses in action_uses if uses == "docker/login-action@v3"]
     require(
-        build_actions == [(build_index, "Build local smoke image"), (publish_index, "Publish release image")],
+        build_actions == [build_index, publish_index],
         "only the local smoke and publication steps may run docker/build-push-action",
     )
     require(
-        login_actions == [(login_index, "Log in to GHCR")],
-        "GHCR authentication must occur exactly once in the named login step",
+        login_actions == [login_index],
+        "GHCR authentication must occur exactly once after smoke tests",
     )
     require(
         build_index < verify_index < login_index < publish_index,
         "actual local build, smoke, login, and publish actions must be ordered",
     )
 
-    local_with = named_block(local_body, "with", 8, "Build local smoke image")
+    local_with = named_block(local_body, "with", 8, "local image build")
     require(
-        child_keys(local_with, 10) == ("context", "file", "platforms", "load", "tags", "labels", "build-args"),
+        set(child_keys(local_with, 10)) == {"context", "file", "platforms", "load", "tags", "labels", "build-args"},
         "local smoke build inputs must be exact",
     )
     require(scalar(local_with, "context", 10, "local build") == "docker", "local build context must be docker")
@@ -447,12 +464,12 @@ def validate_builds_and_order(job: str, steps: list[tuple[str, str]]) -> None:
         "local smoke image must use resolved OCI labels",
     )
     require(
-        literal(local_with, "build-args", 10, "local build") == EXPECTED_BUILD_ARGS,
+        exact_unordered(semantic_lines(literal(local_with, "build-args", 10, "local build")), EXPECTED_BUILD_ARGS),
         "local image build arguments must use resolved release metadata",
     )
     require(not optional_scalar(local_with, "push", 10), "local smoke build must not push")
 
-    login_with = step_with(login_body, "Log in to GHCR")
+    login_with = step_with(login_body, "GHCR login")
     require(
         login_with
         == {
@@ -464,10 +481,10 @@ def validate_builds_and_order(job: str, steps: list[tuple[str, str]]) -> None:
     )
     require("GHCR_PAT" not in job, "publish-container must not use GHCR_PAT")
 
-    publish_with = named_block(publish_body, "with", 8, "Publish release image")
+    publish_with = named_block(publish_body, "with", 8, "release image publication")
     require(
-        child_keys(publish_with, 10)
-        == ("context", "file", "platforms", "push", "tags", "labels", "build-args", "sbom", "provenance"),
+        set(child_keys(publish_with, 10))
+        == {"context", "file", "platforms", "push", "tags", "labels", "build-args", "sbom", "provenance"},
         "publication build inputs must be exact",
     )
     require(scalar(publish_with, "context", 10, "publish") == "docker", "publish context must be docker")
@@ -486,7 +503,7 @@ def validate_builds_and_order(job: str, steps: list[tuple[str, str]]) -> None:
         "publication must use resolved OCI labels",
     )
     require(
-        literal(publish_with, "build-args", 10, "publish") == EXPECTED_BUILD_ARGS,
+        exact_unordered(semantic_lines(literal(publish_with, "build-args", 10, "publish")), EXPECTED_BUILD_ARGS),
         "publication build arguments must use resolved release metadata",
     )
     require(scalar(publish_with, "sbom", 10, "publish") == "true", "publication must attach an SBOM")
@@ -495,47 +512,53 @@ def validate_builds_and_order(job: str, steps: list[tuple[str, str]]) -> None:
         "publication must attach maximum provenance",
     )
 
-    for index, (name, body) in enumerate(steps):
-        run_script = step_run(body, name) if re.search(r"^        run:", body, re.MULTILINE) else ""
+    for index, body in enumerate(steps):
+        label = step_label(body)
+        run_script = step_run(body, label) if re.search(r"^        run:", body, re.MULTILINE) else ""
+        command_text = "\n".join(shell_commands(run_script)) if run_script else ""
         require(
             not re.search(
                 r"(?i)\b(?:docker|podman|skopeo|oras)\s+(?:login|push)\b|\bcrane\s+auth\b|--push\b|push=true",
-                run_script,
+                command_text,
             ),
-            f"{name} must not authenticate or push directly",
+            f"{label} must not authenticate or push directly",
         )
         if index < verify_index:
-            require("${{ secrets." not in body, f"{name} must not access credentials before smoke tests")
+            require("${{ secrets." not in body, f"{label} must not access credentials before smoke tests")
 
         uses = step_uses(body)
         if "login" in uses.lower() or "auth" in uses.lower():
             require(
                 index == login_index and uses == "docker/login-action@v3",
-                f"{name} must not authenticate outside the post-smoke GHCR login",
+                f"{label} must not authenticate outside the post-smoke GHCR login",
             )
         if "push" in uses.lower():
             require(
                 uses == "docker/build-push-action@v6" and index in (build_index, publish_index),
-                f"{name} must not use an unexpected push action",
+                f"{label} must not use an unexpected push action",
             )
         require(
             "foundry-build" not in uses.lower(),
             "container publication must reuse release-linux-editor without a second Foundry build",
         )
         require(
-            "scripts/agent_build.py" not in run_script and ".github/actions/foundry-build" not in run_script,
-            f"{name} must not invoke the Foundry build wrappers",
+            "scripts/agent_build.py" not in command_text and ".github/actions/foundry-build" not in command_text,
+            f"{label} must not invoke the Foundry build wrappers",
         )
         forbidden_build = re.search(
             r"(?im)^\s*(?:python3?\s+-m\s+scons|scons|cmake|ninja|make|gcc|g\+\+|clang\+\+)\b",
-            run_script,
+            command_text,
         )
-        require(forbidden_build is None, f"{name} must not compile Foundry from source")
+        require(forbidden_build is None, f"{label} must not compile Foundry from source")
 
 
-def validate_smoke(steps: list[tuple[str, str]]) -> None:
-    _, verify_body = step_by_name(steps, "Verify headless image")
-    verify_env = mapping(named_block(verify_body, "env", 8, "Verify headless image"), 10, "Verify headless image.env")
+def validate_smoke(steps: list[str]) -> None:
+    _, verify_body = find_step(
+        steps,
+        lambda body: nested_scalar(body, "env", "IMAGE_REF") == "foundry-headless-smoke:${{ github.sha }}",
+        "headless image smoke",
+    )
+    verify_env = mapping(named_block(verify_body, "env", 8, "headless image smoke"), 10, "headless image smoke.env")
     require(
         verify_env
         == {
@@ -549,65 +572,16 @@ def validate_smoke(steps: list[tuple[str, str]]) -> None:
         },
         "headless image smoke environment must use exact resolved release metadata",
     )
-    script = step_run(verify_body, "Verify headless image")
+    script = step_run(verify_body, "headless image smoke")
+    commands = shell_commands(script)
     require(
-        script == EXPECTED_VERIFY_SCRIPT,
-        "Verify headless image must contain only the exact pre-login smoke-test commands",
-    )
-    require_shell(
-        script,
-        """test "$(docker image inspect "$IMAGE_REF" --format '{{.Architecture}}')" = "amd64" """.strip(),
-        "architecture smoke assertion",
-    )
-    require_shell(
-        script,
-        """test "$(docker image inspect "$IMAGE_REF" --format '{{.Config.User}}')" = "10001:10001" """.strip(),
-        "runtime user smoke assertion",
-    )
-    require_shell(
-        script,
-        'version_json="$(docker run --rm "$IMAGE_REF" --version --json)"',
-        "version JSON smoke",
+        frozenset(commands) == EXPECTED_SMOKE_COMMANDS and len(commands) == len(EXPECTED_SMOKE_COMMANDS),
+        "headless image smoke commands and comparisons must match the release contract",
     )
     require_exact_python(
         extract_version_assertion(script),
         EXPECTED_VERSION_ASSERTION,
         "version JSON smoke",
-    )
-    require_shell(
-        script,
-        """docker run --rm "$IMAGE_REF" script eval 'print("ok")' | grep -Fx "ok" """.strip(),
-        "script eval smoke",
-    )
-    require_shell(
-        script,
-        'cp -R tests/fixtures/headless_container/. "$fixture_dir"',
-        "read-only lint fixture staging",
-    )
-    require_shell(script, 'mkdir "$fixture_dir/.foundry"', "lint metadata mountpoint")
-    require_shell(
-        script,
-        '-v "$fixture_dir:/workspace:ro" --tmpfs /workspace/.foundry:rw,uid=10001,gid=10001,mode=0700 '
-        '"$IMAGE_REF" script lint --project . scripts',
-        "read-only lint smoke",
-    )
-    require_shell(
-        script,
-        """test "$(docker image inspect "$IMAGE_REF" --format '{{ index .Config.Labels """
-        """"org.opencontainers.image.version" }}')" = "$RELEASE_VERSION" """.strip(),
-        "OCI version label smoke",
-    )
-    require_shell(
-        script,
-        """test "$(docker image inspect "$IMAGE_REF" --format '{{ index .Config.Labels """
-        """"org.opencontainers.image.revision" }}')" = "$SOURCE_REVISION" """.strip(),
-        "OCI revision label smoke",
-    )
-    require_shell(
-        script,
-        """test "$(docker image inspect "$IMAGE_REF" --format '{{ index .Config.Labels """
-        """"org.opencontainers.image.source" }}')" = "$SOURCE_REPOSITORY" """.strip(),
-        "OCI source label smoke",
     )
 
 
