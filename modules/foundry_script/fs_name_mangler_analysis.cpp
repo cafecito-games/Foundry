@@ -32,6 +32,7 @@
 
 #ifdef TOOLS_ENABLED
 
+#include "fs_conformance_registry.h"
 #include "fs_function.h"
 
 #include "core/object/class_db.h"
@@ -184,6 +185,33 @@ void FSNameManglerAnalysis::_add_external_surface_name(
 	Vector<String> &sources = r_state.external_sources[p_name];
 	if (!sources.has(p_source)) {
 		sources.push_back(p_source);
+	}
+}
+
+bool FSNameManglerAnalysis::_is_included_class_identity(const String &p_identity, const BuildState &p_state) {
+	if (p_identity.is_empty()) {
+		return false;
+	}
+	for (const FoundryScript *included_class : p_state.included_classes) {
+		if (p_identity == String(included_class->local_name) ||
+				p_identity == String(included_class->global_name) ||
+				p_identity == included_class->fully_qualified_name ||
+				p_identity == included_class->get_script_path()) {
+			return true;
+		}
+	}
+	return false;
+}
+
+void FSNameManglerAnalysis::_collect_class_identity_reference(
+		const String &p_identity, const String &p_source, BuildState &r_state) {
+	if (p_identity.is_empty()) {
+		return;
+	}
+	const StringName identity = StringName(p_identity);
+	r_state.observed_names.insert(identity);
+	if (!_is_included_class_identity(p_identity, r_state)) {
+		_add_external_surface_name(identity, p_source, r_state);
 	}
 }
 
@@ -375,6 +403,9 @@ void FSNameManglerAnalysis::_collect_function(const FSFunction *p_function, Buil
 		r_state.observed_names.insert(key.method_name);
 		_record_reflection_use(key.method_name, key.class_name, source, r_state);
 	}
+	for (const FSFunction::ExportFixups::GlobalStore &global_store : p_function->export_fixups.global_stores) {
+		r_state.observed_names.insert(global_store.global_name);
+	}
 	for (const FSFunction *lambda : p_function->lambdas) {
 		_collect_function(lambda, r_state);
 	}
@@ -431,6 +462,39 @@ void FSNameManglerAnalysis::_collect_class(const FoundryScript *p_class, BuildSt
 		for (const KeyValue<StringName, FSFunction *> &method : enum_entry.value.static_functions) {
 			_add_candidate(method.key, IDENTIFIER_METHOD, r_state);
 			_collect_function(method.value, r_state);
+		}
+	}
+	for (const StringName &trait_name : p_class->script_trait_list) {
+		_collect_class_identity_reference(String(trait_name), source + " trait identity", r_state);
+	}
+	for (const KeyValue<StringName, FoundryScript::AbstractTraitRequirement> &requirement :
+			p_class->abstract_trait_requirements) {
+		_add_candidate(requirement.key, IDENTIFIER_METHOD, r_state);
+		for (const PropertyInfo &argument : requirement.value.method_info.arguments) {
+			r_state.observed_names.insert(argument.name);
+		}
+		for (const Variant &default_argument : requirement.value.method_info.default_arguments) {
+			_collect_variant(default_argument, source, r_state);
+		}
+	}
+	for (const FoundryScript::TypeParameter &type_parameter : p_class->type_parameters) {
+		r_state.observed_names.insert(type_parameter.name);
+	}
+	if (!p_class->registered_conformance_source.is_empty()) {
+		const Vector<FSConformanceRegistry::RuntimeConformance> conformances =
+				FSConformanceRegistry::get_singleton()->get_runtime_witnesses(
+						p_class->registered_conformance_source);
+		for (const FSConformanceRegistry::RuntimeConformance &conformance : conformances) {
+			for (const String &target_key : conformance.target_keys) {
+				_collect_class_identity_reference(
+						target_key, source + " conformance target identity", r_state);
+			}
+			_collect_class_identity_reference(
+					String(conformance.trait_name), source + " conformance trait identity", r_state);
+			for (const KeyValue<StringName, FSFunction *> &witness : conformance.functions) {
+				_add_candidate(witness.key, IDENTIFIER_METHOD, r_state);
+				_collect_function(witness.value, r_state);
+			}
 		}
 	}
 

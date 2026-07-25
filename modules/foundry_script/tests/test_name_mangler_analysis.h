@@ -35,6 +35,8 @@
 #include "modules/foundry_script/fs_name_mangler_analysis.h"
 #include "modules/foundry_script/tests/test_bytecode_serialization.h"
 
+#include "modules/foundry_script/fs_conformance_registry.h"
+
 #include "tests/test_macros.h"
 
 namespace FSTests {
@@ -126,9 +128,16 @@ TEST_CASE("[FoundryScript][NameManglerAnalysis] Classifies a compiled project co
 TEST_CASE("[FoundryScript][NameManglerAnalysis] Classifies local and qualified global class names") {
 	const Ref<FoundryScript> script = compile_bytecode_test_source(
 			"namespace name_analysis\n"
-			"class_name QualifiedCandidate\n");
+			"class_name QualifiedCandidate\n"
+			"class NestedCandidate[T]:\n"
+			"\tpass\n");
 	REQUIRE_EQ(script->get_local_name(), SNAME("QualifiedCandidate"));
 	REQUIRE_EQ(script->get_global_name(), SNAME("name_analysis.QualifiedCandidate"));
+	const Ref<FoundryScript> nested = script->get_subclasses()[SNAME("NestedCandidate")];
+	REQUIRE(nested.is_valid());
+	REQUIRE_EQ(nested->get_local_name(), SNAME("NestedCandidate"));
+	REQUIRE_FALSE(nested->get_fully_qualified_name().is_empty());
+	REQUIRE_NE(nested->get_fully_qualified_name(), String(nested->get_local_name()));
 
 	FSNameManglerAnalysis::Input input;
 	input.scripts.push_back(script);
@@ -148,6 +157,9 @@ TEST_CASE("[FoundryScript][NameManglerAnalysis] Classifies local and qualified g
 		CHECK(global->kinds.has(FSNameManglerAnalysis::IDENTIFIER_CLASS));
 	}
 	CHECK(result.rename_map.has(SNAME("name_analysis.QualifiedCandidate")));
+	CHECK(result.rename_map.has(SNAME("NestedCandidate")));
+	CHECK(result.find(StringName(nested->get_fully_qualified_name())) == nullptr);
+	CHECK(result.find(SNAME("T")) == nullptr);
 }
 
 TEST_CASE("[FoundryScript][NameManglerAnalysis] Recurses through constants and only treats NodePath subnames as evidence") {
@@ -261,6 +273,124 @@ TEST_CASE("[FoundryScript][NameManglerAnalysis] Parameter annotation values prov
 		CHECK_FALSE(result.rename_map.has(name));
 		CHECK(name_analysis_has_reason(result, name, FSNameManglerAnalysis::KEEP_STRING_LITERAL));
 	}
+}
+
+TEST_CASE("[FoundryScript][NameManglerAnalysis] Trait contracts and conformance dispatch keys are classified") {
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"trait SourceTrait:\n"
+			"\tabstract func source_witness() -> int\n"
+			"class Target:\n"
+			"\tpass\n"
+			"extend Target uses SourceTrait:\n"
+			"\tfunc source_witness() -> int:\n"
+			"\t\treturn 1\n"
+			"func ExternalConformanceTrait() -> void:\n"
+			"\tpass\n");
+
+	auto &requirements =
+			const_cast<HashMap<StringName, FoundryScript::AbstractTraitRequirement> &>(
+					script->get_abstract_trait_requirements());
+	FoundryScript::AbstractTraitRequirement requirement;
+	requirement.method_info.name = SNAME("requirement_only_method");
+	requirements.insert(requirement.method_info.name, requirement);
+
+	const String source = script->get_script_path();
+	Vector<FSConformanceRegistry::RuntimeConformance> conformances =
+			FSConformanceRegistry::get_singleton()->get_runtime_witnesses(source);
+	REQUIRE_FALSE(conformances.is_empty());
+	FSFunction *witness_function = nullptr;
+	if (!conformances.is_empty() && !conformances[0].functions.is_empty()) {
+		witness_function = conformances[0].functions.begin()->value;
+	}
+	REQUIRE(witness_function != nullptr);
+	if (!conformances.is_empty() && witness_function != nullptr) {
+		conformances.write[0].target_keys.clear();
+		conformances.write[0].target_keys.push_back("_fsb_0");
+		conformances.write[0].trait_name = SNAME("ExternalConformanceTrait");
+		conformances.write[0].functions.clear();
+		conformances.write[0].functions.insert(SNAME("registry_only_witness"), witness_function);
+		FSConformanceRegistry::get_singleton()->register_runtime_witnesses(source, conformances);
+	}
+
+	FSNameManglerAnalysis::Input input;
+	input.scripts.push_back(script);
+	const FSNameManglerAnalysis::Result result = FSNameManglerAnalysis::analyze(input);
+
+	REQUIRE(result.error == OK);
+	const FSNameManglerAnalysis::Classification *requirement_classification =
+			result.find(SNAME("requirement_only_method"));
+	REQUIRE(requirement_classification != nullptr);
+	if (requirement_classification != nullptr) {
+		CHECK(requirement_classification->kinds.has(FSNameManglerAnalysis::IDENTIFIER_METHOD));
+	}
+	const FSNameManglerAnalysis::Classification *witness_classification =
+			result.find(SNAME("registry_only_witness"));
+	REQUIRE(witness_classification != nullptr);
+	if (witness_classification != nullptr) {
+		CHECK(witness_classification->kinds.has(FSNameManglerAnalysis::IDENTIFIER_METHOD));
+	}
+	CHECK_FALSE(result.rename_map.has(SNAME("ExternalConformanceTrait")));
+	CHECK(name_analysis_has_reason(result, SNAME("ExternalConformanceTrait"),
+			FSNameManglerAnalysis::KEEP_EXTERNAL_OR_UNPROVABLE));
+	CHECK(result.find(SNAME("_fsb_0")) == nullptr);
+	for (const KeyValue<StringName, StringName> &rename : result.rename_map) {
+		CHECK_NE(rename.value, SNAME("_fsb_0"));
+	}
+}
+
+TEST_CASE("[FoundryScript][NameManglerAnalysis] Serialized global stores reserve replacement spellings") {
+	const String scene_path = TestUtils::get_temp_path("name_analysis_global_store.tscn");
+	{
+		Ref<FileAccess> scene_file = FileAccess::open(scene_path, FileAccess::WRITE);
+		REQUIRE(scene_file.is_valid());
+		scene_file->store_string("[gd_scene format=3]\n\n[node name=\"Root\" type=\"Node\"]\n");
+	}
+	const StringName autoload_name = SNAME("_fsb_0");
+	ProjectSettings::AutoloadInfo autoload;
+	autoload.name = autoload_name;
+	autoload.path = scene_path;
+	autoload.is_singleton = true;
+	ProjectSettings::get_singleton()->add_autoload(autoload);
+	FSLanguage::get_singleton()->add_global_constant(autoload_name, Variant());
+
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"var collision_candidate: int\n"
+			"func load_global() -> Variant:\n"
+			"\treturn _fsb_0\n");
+	ProjectSettings::get_singleton()->remove_autoload(autoload_name);
+	DirAccess::remove_absolute(scene_path);
+
+	const FSFunction *function = script->get_member_functions()[SNAME("load_global")];
+	FSNameManglerAnalysis::Input input;
+	input.scripts.push_back(script);
+	const FSNameManglerAnalysis::Result result = FSNameManglerAnalysis::analyze(input);
+	TestFSLanguageGlobalsAccessor::remove_global(autoload_name);
+
+	REQUIRE(function != nullptr);
+	if (function != nullptr) {
+		REQUIRE_EQ(function->export_fixups.global_stores.size(), 1);
+		CHECK_EQ(function->export_fixups.global_stores[0].global_name, autoload_name);
+		CHECK_EQ(function->get_global_names_count(), 0);
+	}
+	REQUIRE(result.error == OK);
+	REQUIRE(result.rename_map.has(SNAME("collision_candidate")));
+	CHECK_NE(result.rename_map[SNAME("collision_candidate")], autoload_name);
+}
+
+TEST_CASE("[FoundryScript][NameManglerAnalysis] Empty and invalid inputs have no partial map") {
+	const FSNameManglerAnalysis::Result empty = FSNameManglerAnalysis::analyze(FSNameManglerAnalysis::Input());
+	CHECK_EQ(empty.error, OK);
+	CHECK(empty.classifications.is_empty());
+	CHECK(empty.rename_map.is_empty());
+	CHECK(empty.keep_log.is_empty());
+
+	FSNameManglerAnalysis::Input invalid_input;
+	invalid_input.scripts.push_back(Ref<FoundryScript>());
+	const FSNameManglerAnalysis::Result invalid = FSNameManglerAnalysis::analyze(invalid_input);
+	CHECK_EQ(invalid.error, ERR_INVALID_PARAMETER);
+	CHECK(invalid.classifications.is_empty());
+	CHECK(invalid.rename_map.is_empty());
+	CHECK(invalid.keep_log.is_empty());
 }
 
 TEST_CASE("[FoundryScript][NameManglerAnalysis] Reflection enumeration keeps the relevant declaration set") {

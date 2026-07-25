@@ -74,6 +74,16 @@ The compiled representation intentionally stores enum declarations in the class 
 The analysis therefore uses one `ENUM_OR_CONSTANT` kind for these surviving keys. This is the exact
 surface #797 must rewrite; the distinction no longer changes the rename policy.
 
+Path-bearing and composite identity records are not additional flat candidates. Script paths,
+`fully_qualified_name` values, conformance target aliases, trait references, and generic
+type-parameter names are observed so replacement allocation cannot collide with them. The later
+#797 application pass must rewrite the mapped local/global class-name components inside structured
+identities while preserving their path, namespace, nesting, and generic syntax. In particular, it
+must not serialize an original terminal class segment merely because the complete FQCN is absent
+from `rename_map`. Abstract trait-requirement keys and conformance witness-map keys are method
+declarations, so they are `METHOD` candidates; unknown trait/target identity references instead
+provide conservative external-boundary evidence.
+
 If the same spelling appears in several classes or categories, it receives one aggregate
 classification. A global keep decision wins over all candidate occurrences because the output map
 is project-wide, not class-scoped.

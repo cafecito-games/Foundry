@@ -40,6 +40,13 @@
 
 // Read-only whole-program policy pass for the compiled-bytecode name mangler. Later export stages
 // supply external keep evidence and consume the ordered map; this class never mutates a script.
+//
+// `Result::rename_map` contains atomic declaration identifiers only. Structured identities such as
+// script paths, `fully_qualified_name`, conformance target aliases, and generic type-parameter names
+// are reserved for collision avoidance but are not flat map keys. A later mutation pass must rewrite
+// their declaration-name components structurally while preserving path/namespace syntax; it must not
+// serialize an original terminal class segment merely because the whole structured spelling is absent
+// from the map.
 class FSNameManglerAnalysis {
 public:
 	enum IdentifierKind {
@@ -110,6 +117,9 @@ private:
 	static void _add_string_evidence(const String &p_name, const String &p_source, BuildState &r_state);
 	static void _add_external_surface_name(
 			const StringName &p_name, const String &p_source, BuildState &r_state);
+	static bool _is_included_class_identity(const String &p_identity, const BuildState &p_state);
+	static void _collect_class_identity_reference(
+			const String &p_identity, const String &p_source, BuildState &r_state);
 	static void _record_reflection_use(
 			const StringName &p_method, const StringName &p_class, const String &p_source, BuildState &r_state);
 	static bool _collides_with_builtin_api(const StringName &p_name, const Vector<IdentifierKind> &p_kinds);
