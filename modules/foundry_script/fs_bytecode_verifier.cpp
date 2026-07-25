@@ -639,6 +639,14 @@ Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_me
 						CHECK_TABLE(shift + 3, global_names_count, "owner class");
 						CHECK_TABLE(shift + 4, global_names_count, "enum type");
 						CHECK_TABLE(shift + 5, global_names_count, "enum function");
+						VERIFY_FAIL_COND(p_function->global_names[code_ptr[shift + 2]] == StringName(),
+								"enum call owner script path is empty");
+						VERIFY_FAIL_COND(p_function->global_names[code_ptr[shift + 3]] == StringName(),
+								"enum call owner class is empty");
+						VERIFY_FAIL_COND(p_function->global_names[code_ptr[shift + 4]] == StringName(),
+								"enum call type is empty");
+						VERIFY_FAIL_COND(p_function->global_names[code_ptr[shift + 5]] == StringName(),
+								"enum call function is empty");
 						const int call_kind = code_ptr[shift + 6];
 						VERIFY_FAIL_COND(call_kind != 0 && call_kind != 1, "enum call kind is out of range");
 						highest_arg_index = (int64_t)argument_count + 1;

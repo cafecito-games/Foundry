@@ -1804,6 +1804,74 @@ Error FSBytecodeLoader::_read_class_body(StreamPeerBuffer *p_stream, FoundryScri
 		}
 	}
 
+	const uint32_t enum_count = p_stream->get_u32();
+	// Each enum entry has at least its string index and the two function-count fields.
+	ERR_FAIL_COND_V_MSG((int64_t)enum_count * 12 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
+			vformat("Truncated enum function table in compiled script '%s'.", script_path));
+	for (uint32_t enum_index = 0; enum_index < enum_count; enum_index++) {
+		String enum_type_name;
+		error = _get_string(p_stream->get_u32(), enum_type_name);
+		if (error != OK) {
+			return error;
+		}
+		const StringName enum_type = StringName(enum_type_name);
+		ERR_FAIL_COND_V_MSG(enum_type == StringName(), ERR_INVALID_DATA,
+				vformat("Unnamed enum function table in compiled script '%s'.", script_path));
+		ERR_FAIL_COND_V_MSG(p_script->enum_functions.has(enum_type), ERR_INVALID_DATA,
+				vformat("Duplicate enum function table '%s' in compiled script '%s'.", enum_type, script_path));
+		p_script->enum_functions.insert(enum_type, FoundryScript::EnumFunctionSet());
+		FoundryScript::EnumFunctionSet &function_set = p_script->enum_functions[enum_type];
+
+		// Enum functions belong to this exact class, including nested classes. Passing `p_script`
+		// through the ordinary function reader restores that owner for VM calls and lambda metadata;
+		// no separate target reference is needed because enum-call targets resolve from their
+		// serialized script/class identity at dispatch time.
+		const auto read_function_map = [&](HashMap<StringName, FSFunction *> &r_functions,
+											   const HashMap<StringName, FSFunction *> &p_other_functions,
+											   bool p_static) -> Error {
+			const uint32_t enum_function_count = p_stream->get_u32();
+			ERR_FAIL_COND_V_MSG((int64_t)enum_function_count * 5 > (int64_t)p_stream->get_available_bytes(),
+					ERR_INVALID_DATA,
+					vformat("Truncated enum '%s' function table in compiled script '%s'.", enum_type, script_path));
+			for (uint32_t function_index = 0; function_index < enum_function_count; function_index++) {
+				FSFunction *function = nullptr;
+				const Error function_error = read_function(p_stream, p_script, function, &lambda_entries);
+				if (function_error != OK) {
+					return function_error;
+				}
+				const StringName function_name = function->name;
+				if (function_name == StringName()) {
+					memdelete(function);
+					ERR_FAIL_V_MSG(ERR_INVALID_DATA,
+							vformat("Unnamed enum function in table '%s' of compiled script '%s'.", enum_type, script_path));
+				}
+				if (function->is_static() != p_static) {
+					memdelete(function);
+					ERR_FAIL_V_MSG(ERR_INVALID_DATA,
+							vformat("Enum function '%s.%s' has the wrong static call kind in compiled script '%s'.",
+									enum_type, function_name, script_path));
+				}
+				if (r_functions.has(function_name) || p_other_functions.has(function_name)) {
+					memdelete(function);
+					ERR_FAIL_V_MSG(ERR_INVALID_DATA,
+							vformat("Duplicate enum function '%s.%s' in compiled script '%s'.",
+									enum_type, function_name, script_path));
+				}
+				r_functions.insert(function_name, function);
+			}
+			return OK;
+		};
+
+		error = read_function_map(function_set.instance_functions, function_set.static_functions, false);
+		if (error != OK) {
+			return error;
+		}
+		error = read_function_map(function_set.static_functions, function_set.instance_functions, true);
+		if (error != OK) {
+			return error;
+		}
+	}
+
 	error = _read_optional_function(p_stream, p_script, p_script->implicit_initializer, &lambda_entries);
 	if (error != OK) {
 		return error;
