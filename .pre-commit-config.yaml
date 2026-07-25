@@ -13,6 +13,7 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
+      - id: check-yaml
       - id: check-executables-have-shebangs
       - id: check-shebang-scripts-are-executable
         exclude: (SConstruct|SCsub)$ # SCons files use shebangs for syntax highlighting only.
@@ -211,3 +212,17 @@ repos:
 #     - id: new-local-hook
 # To add external repo hooks, bring the indentation back to:
 # - repo: my-remote-hook
+
+      - id: foundry-headless-docker-contract
+        name: Foundry headless Docker contract
+        language: python
+        entry: python .github/scripts/test_foundry_headless_docker.py
+        pass_filenames: false
+        files: ^(?:\.gitignore$|docker(?:/|$)|tests/fixtures/headless_container(?:/|$)|\.github/scripts/test_foundry_headless_docker\.py$)
+
+      - id: foundry-release-container-workflow
+        name: Foundry release container workflow
+        language: python
+        entry: python .github/scripts/test_release_container_workflow.py
+        pass_filenames: false
+        files: ^(?:\.gitignore$|\.github/(?:workflows/release\.yml$|actionlint\.yaml$|scripts/(?:resolve_container_alias\.py$|test_(?:foundry_headless_docker|release_container_workflow)\.py$))|docker(?:/|$)|tests/fixtures/headless_container(?:/|$))
