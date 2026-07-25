@@ -32,6 +32,8 @@
 
 #ifdef TOOLS_ENABLED
 
+#include "modules/foundry_script/fs_cache.h"
+#include "modules/foundry_script/fs_name_mangler_application.h"
 #include "modules/foundry_script/fs_name_mangler_binding_safety.h"
 #include "modules/foundry_script/tests/fs_temporary_project_tree.h"
 #include "modules/foundry_script/tests/test_bytecode_serialization.h"
@@ -39,6 +41,7 @@
 #include "core/io/resource_loader.h"
 #include "core/io/resource_saver.h"
 #include "core/object/script_language.h"
+#include "scene/animation/animation_player.h"
 #include "scene/resources/animation.h"
 #include "scene/resources/animation_library.h"
 #include "scene/resources/packed_scene.h"
@@ -130,6 +133,113 @@ static bool binding_safety_has_evidence(
 		}
 	}
 	return false;
+}
+
+static bool binding_safety_has_applied_evidence(
+		const FSNameManglerBindingSafety::Result &p_binding_result,
+		const FSNameManglerAnalysis::Result &p_analysis_result,
+		const StringName &p_name,
+		FSNameManglerBindingSafety::BindingKind p_kind,
+		const String &p_source) {
+	for (const FSNameManglerBindingSafety::Evidence &evidence :
+			p_binding_result.evidence) {
+		if (evidence.name == p_name && evidence.kind == p_kind &&
+				evidence.source == p_source) {
+			return binding_safety_has_scene_reason(
+					p_analysis_result, p_name, evidence.detail());
+		}
+	}
+	return false;
+}
+
+static bool binding_safety_buffer_contains(
+		const Vector<uint8_t> &p_buffer, const String &p_text) {
+	const CharString needle = p_text.utf8();
+	if (needle.length() == 0 || needle.length() > p_buffer.size()) {
+		return false;
+	}
+	for (int offset = 0;
+			offset + needle.length() <= p_buffer.size(); offset++) {
+		if (memcmp(
+					p_buffer.ptr() + offset, needle.get_data(),
+					needle.length()) == 0) {
+			return true;
+		}
+	}
+	return false;
+}
+
+struct BindingSafetyRuntimeSnapshot {
+	double stored_value = 0.0;
+	double signal_value = 0.0;
+	double animation_value = 0.0;
+	int64_t config_value = 0;
+	StringName config_class;
+
+	bool operator==(const BindingSafetyRuntimeSnapshot &p_other) const {
+		return stored_value == p_other.stored_value &&
+				signal_value == p_other.signal_value &&
+				animation_value == p_other.animation_value &&
+				config_value == p_other.config_value &&
+				config_class == p_other.config_class;
+	}
+};
+
+static BindingSafetyRuntimeSnapshot binding_safety_run_runtime(
+		const Ref<PackedScene> &p_scene,
+		const Ref<Resource> &p_config,
+		bool p_expect_compiled_binary) {
+	BindingSafetyRuntimeSnapshot snapshot;
+	Node *runtime_root = p_scene->instantiate();
+	REQUIRE(runtime_root != nullptr);
+	Node *emitter =
+			runtime_root->get_node_or_null(NodePath("Emitter"));
+	Node *receiver =
+			runtime_root->get_node_or_null(NodePath("Receiver"));
+	AnimationPlayer *player = Object::cast_to<AnimationPlayer>(
+			runtime_root->get_node_or_null(NodePath("AnimationPlayer")));
+	CHECK(emitter != nullptr);
+	CHECK(receiver != nullptr);
+	CHECK(player != nullptr);
+	if (emitter == nullptr || receiver == nullptr || player == nullptr) {
+		memdelete(runtime_root);
+		return snapshot;
+	}
+
+	const Ref<FoundryScript> emitter_script = emitter->get_script();
+	const Ref<FoundryScript> receiver_script = receiver->get_script();
+	const Ref<FoundryScript> config_script = p_config->get_script();
+	CHECK(emitter_script.is_valid());
+	CHECK(receiver_script.is_valid());
+	CHECK(config_script.is_valid());
+	if (emitter_script.is_null() || receiver_script.is_null() ||
+			config_script.is_null()) {
+		memdelete(runtime_root);
+		return snapshot;
+	}
+	CHECK_EQ(
+			emitter_script->is_compiled_binary(),
+			p_expect_compiled_binary);
+	CHECK_EQ(
+			receiver_script->is_compiled_binary(),
+			p_expect_compiled_binary);
+	CHECK_EQ(
+			config_script->is_compiled_binary(),
+			p_expect_compiled_binary);
+
+	snapshot.stored_value = receiver->get(SNAME("acceptance_value"));
+	CHECK_EQ(
+			emitter->emit_signal(SNAME("acceptance_signal"), 5), OK);
+	snapshot.signal_value = receiver->get(SNAME("acceptance_value"));
+	receiver->set(SNAME("acceptance_value"), 2.0);
+	player->play(SNAME("acceptance"));
+	player->advance(0.1);
+	snapshot.animation_value = receiver->get(SNAME("acceptance_value"));
+	snapshot.config_value = p_config->get(SNAME("config_value"));
+	snapshot.config_class = config_script->get_global_name();
+
+	memdelete(runtime_root);
+	return snapshot;
 }
 
 TEST_CASE("[FoundryScript][NameManglerBindingSafety] Public result applies atomically") {
@@ -562,25 +672,37 @@ TEST_CASE("[FoundryScript][NameManglerBindingSafety] Animation keeps property an
 TEST_CASE("[FoundryScript][NameManglerBindingSafety] Acceptance text and binary resources have identical evidence") {
 	TemporaryProjectTree project(
 			"name_mangler_binding_safety_acceptance");
+	project.write_file(
+			"project.foundry",
+			"[application]\nconfig/name=\"BindingSafety798\"\n");
+	const String emitter_path = project.root.path_join("emitter.fs");
+	const String receiver_path = project.root.path_join("receiver.fs");
+	const String config_path = project.root.path_join("config.fs");
+	project.write_file(
+			"emitter.fs",
+			"extends Node\n"
+			"signal acceptance_signal(value: int)\n"
+			"func private_emitter_name() -> void:\n"
+			"\tpass\n");
+	project.write_file(
+			"receiver.fs",
+			"extends Node\n"
+			"@export var acceptance_value: float\n"
+			"func acceptance_method(value: int) -> void:\n"
+			"\tacceptance_value += value\n"
+			"func private_receiver_name() -> void:\n"
+			"\tpass\n");
+	project.write_file(
+			"config.fs",
+			"class_name BindingAcceptanceConfig798 extends Resource\n"
+			"@export var config_value: int\n"
+			"var private_config_name: int\n");
 	const Ref<FoundryScript> emitter_script =
-			compile_bytecode_test_source(
-					"extends Node\n"
-					"signal acceptance_signal\n"
-					"func private_emitter_name() -> void:\n"
-					"\tpass\n");
+			name_mangler_application_load_source(emitter_path);
 	const Ref<FoundryScript> receiver_script =
-			compile_bytecode_test_source(
-					"extends Node\n"
-					"@export var acceptance_value: float\n"
-					"func acceptance_method() -> void:\n"
-					"\tpass\n"
-					"func private_receiver_name() -> void:\n"
-					"\tpass\n");
+			name_mangler_application_load_source(receiver_path);
 	const Ref<FoundryScript> config_script =
-			compile_bytecode_test_source(
-					"class_name BindingAcceptanceConfig798 extends Resource\n"
-					"@export var config_value: int\n"
-					"var private_config_name: int\n");
+			name_mangler_application_load_source(config_path);
 	BindingSafetyGlobalClassGuard global_class(
 			SNAME("BindingAcceptanceConfig798"), SNAME("Resource"),
 			config_script->get_script_path());
@@ -591,12 +713,6 @@ TEST_CASE("[FoundryScript][NameManglerBindingSafety] Acceptance text and binary 
 	animation->track_set_path(
 			value_track, NodePath("Receiver:acceptance_value"));
 	animation->track_insert_key(value_track, 0.0, 3.0);
-	const int method_track = animation->add_track(Animation::TYPE_METHOD);
-	animation->track_set_path(method_track, NodePath("Receiver"));
-	Dictionary method_key;
-	method_key["method"] = SNAME("acceptance_method");
-	method_key["args"] = Array();
-	animation->track_insert_key(method_track, 0.0, method_key);
 	Ref<AnimationLibrary> library;
 	library.instantiate();
 	REQUIRE_EQ(
@@ -711,12 +827,49 @@ TEST_CASE("[FoundryScript][NameManglerBindingSafety] Acceptance text and binary 
 	CHECK_EQ(
 			binary_scene->get_state()->get_bundled_scene(),
 			binary_scene_before);
+	const BindingSafetyRuntimeSnapshot baseline_text =
+			binding_safety_run_runtime(text_scene, text_config, false);
+	const BindingSafetyRuntimeSnapshot baseline_binary =
+			binding_safety_run_runtime(binary_scene, binary_config, false);
+	CHECK(baseline_text == baseline_binary);
+	CHECK_EQ(baseline_text.stored_value, 2.0);
+	CHECK_EQ(baseline_text.signal_value, 7.0);
+	CHECK_EQ(baseline_text.animation_value, 3.0);
+	CHECK_EQ(baseline_text.config_value, 9);
+	CHECK_EQ(
+			baseline_text.config_class,
+			SNAME("BindingAcceptanceConfig798"));
 
 	FSNameManglerAnalysis::Input applied_input = analysis_input;
 	REQUIRE_EQ(text_result.apply_to_input(applied_input), OK);
 	const FSNameManglerAnalysis::Result analysis =
 			FSNameManglerAnalysis::analyze(applied_input);
 	REQUIRE_EQ(analysis.error, OK);
+	CHECK(binding_safety_has_applied_evidence(
+			text_result, analysis, SNAME("acceptance_signal"),
+			FSNameManglerBindingSafety::BINDING_CONNECTION_SIGNAL,
+			"res://acceptance/main"));
+	CHECK(binding_safety_has_applied_evidence(
+			text_result, analysis, SNAME("acceptance_method"),
+			FSNameManglerBindingSafety::BINDING_CONNECTION_METHOD,
+			"res://acceptance/main"));
+	CHECK(binding_safety_has_applied_evidence(
+			text_result, analysis, SNAME("acceptance_value"),
+			FSNameManglerBindingSafety::BINDING_SERIALIZED_PROPERTY,
+			"res://acceptance/main"));
+	CHECK(binding_safety_has_applied_evidence(
+			text_result, analysis, SNAME("acceptance_value"),
+			FSNameManglerBindingSafety::BINDING_ANIMATION_PROPERTY,
+			"res://acceptance/main"));
+	CHECK(binding_safety_has_applied_evidence(
+			text_result, analysis,
+			SNAME("BindingAcceptanceConfig798"),
+			FSNameManglerBindingSafety::BINDING_RESOURCE_SCRIPT_CLASS,
+			"res://acceptance/config"));
+	CHECK(binding_safety_has_applied_evidence(
+			text_result, analysis, SNAME("config_value"),
+			FSNameManglerBindingSafety::BINDING_SERIALIZED_PROPERTY,
+			"res://acceptance/config"));
 	CHECK_FALSE(analysis.rename_map.has(SNAME("acceptance_signal")));
 	CHECK_FALSE(analysis.rename_map.has(SNAME("acceptance_method")));
 	CHECK_FALSE(analysis.rename_map.has(SNAME("acceptance_value")));
@@ -725,6 +878,126 @@ TEST_CASE("[FoundryScript][NameManglerBindingSafety] Acceptance text and binary 
 	CHECK(analysis.rename_map.has(SNAME("private_emitter_name")));
 	CHECK(analysis.rename_map.has(SNAME("private_receiver_name")));
 	CHECK(analysis.rename_map.has(SNAME("private_config_name")));
+
+	FSNameManglerApplication::Transaction transaction;
+	Vector<FSNameManglerApplication::Diagnostic> application_diagnostics;
+	REQUIRE_EQ(
+			transaction.begin(
+					applied_input.scripts, analysis.rename_map,
+					application_diagnostics),
+			OK);
+	REQUIRE(application_diagnostics.is_empty());
+	const Vector<uint8_t> emitter_buffer =
+			name_mangler_application_serialize(emitter_script);
+	const Vector<uint8_t> receiver_buffer =
+			name_mangler_application_serialize(receiver_script);
+	const Vector<uint8_t> config_buffer =
+			name_mangler_application_serialize(config_script);
+	transaction.rollback();
+
+	CHECK(binding_safety_buffer_contains(
+			emitter_buffer, "acceptance_signal"));
+	CHECK(binding_safety_buffer_contains(
+			receiver_buffer, "acceptance_method"));
+	CHECK(binding_safety_buffer_contains(
+			receiver_buffer, "acceptance_value"));
+	CHECK(binding_safety_buffer_contains(
+			config_buffer, "BindingAcceptanceConfig798"));
+	CHECK(binding_safety_buffer_contains(config_buffer, "config_value"));
+	CHECK_FALSE(binding_safety_buffer_contains(
+			emitter_buffer, "private_emitter_name"));
+	CHECK_FALSE(binding_safety_buffer_contains(
+			receiver_buffer, "private_receiver_name"));
+	CHECK_FALSE(binding_safety_buffer_contains(
+			config_buffer, "private_config_name"));
+
+	const String emitter_binary_path =
+			emitter_path.get_basename() + ".fsb";
+	const String receiver_binary_path =
+			receiver_path.get_basename() + ".fsb";
+	const String config_binary_path =
+			config_path.get_basename() + ".fsb";
+	bytecode_write_file(emitter_binary_path, emitter_buffer);
+	bytecode_write_file(receiver_binary_path, receiver_buffer);
+	bytecode_write_file(config_binary_path, config_buffer);
+	bytecode_write_remap_file(emitter_path, emitter_binary_path);
+	bytecode_write_remap_file(receiver_path, receiver_binary_path);
+	bytecode_write_remap_file(config_path, config_binary_path);
+	REQUIRE_EQ(
+			ResourceLoader::path_remap(emitter_path),
+			emitter_binary_path);
+	REQUIRE_EQ(
+			ResourceLoader::path_remap(receiver_path),
+			receiver_binary_path);
+	REQUIRE_EQ(
+			ResourceLoader::path_remap(config_path),
+			config_binary_path);
+
+	CHECK_EQ(
+			text_scene->get_state()->get_bundled_scene(),
+			text_scene_before);
+	CHECK_EQ(
+			binary_scene->get_state()->get_bundled_scene(),
+			binary_scene_before);
+	CHECK_EQ(text_config->get(SNAME("config_value")), Variant(9));
+	CHECK_EQ(binary_config->get(SNAME("config_value")), Variant(9));
+
+	scene->set_path(String());
+	config->set_path(String());
+	text_scene->set_path(String());
+	binary_scene->set_path(String());
+	text_config->set_path(String());
+	binary_config->set_path(String());
+	FSCache::remove_script(emitter_path);
+	FSCache::remove_script(receiver_path);
+	FSCache::remove_script(config_path);
+	FSCache::remove_static_script(
+			emitter_script->get_fully_qualified_name());
+	FSCache::remove_static_script(
+			receiver_script->get_fully_qualified_name());
+	FSCache::remove_static_script(
+			config_script->get_fully_qualified_name());
+
+	const Ref<PackedScene> staged_text_scene = ResourceLoader::load(
+			text_scene_path, "PackedScene",
+			ResourceFormatLoader::CACHE_MODE_IGNORE_DEEP, &load_error);
+	REQUIRE_EQ(load_error, OK);
+	REQUIRE(staged_text_scene.is_valid());
+	const Ref<Resource> staged_text_config = ResourceLoader::load(
+			text_resource_path, String(),
+			ResourceFormatLoader::CACHE_MODE_IGNORE_DEEP, &load_error);
+	REQUIRE_EQ(load_error, OK);
+	REQUIRE(staged_text_config.is_valid());
+	const Ref<PackedScene> staged_binary_scene = ResourceLoader::load(
+			binary_scene_path, "PackedScene",
+			ResourceFormatLoader::CACHE_MODE_IGNORE_DEEP, &load_error);
+	REQUIRE_EQ(load_error, OK);
+	REQUIRE(staged_binary_scene.is_valid());
+	const Ref<Resource> staged_binary_config = ResourceLoader::load(
+			binary_resource_path, String(),
+			ResourceFormatLoader::CACHE_MODE_IGNORE_DEEP, &load_error);
+	REQUIRE_EQ(load_error, OK);
+	REQUIRE(staged_binary_config.is_valid());
+
+	const BindingSafetyRuntimeSnapshot staged_text =
+			binding_safety_run_runtime(
+					staged_text_scene, staged_text_config, true);
+	const BindingSafetyRuntimeSnapshot staged_binary =
+			binding_safety_run_runtime(
+					staged_binary_scene, staged_binary_config, true);
+	CHECK(staged_text == baseline_text);
+	CHECK(staged_binary == baseline_binary);
+	CHECK(staged_text == staged_binary);
+
+	FSCache::remove_script(emitter_path);
+	FSCache::remove_script(receiver_path);
+	FSCache::remove_script(config_path);
+	FSCache::remove_static_script(
+			emitter_script->get_fully_qualified_name());
+	FSCache::remove_static_script(
+			receiver_script->get_fully_qualified_name());
+	FSCache::remove_static_script(
+			config_script->get_fully_qualified_name());
 }
 
 TEST_CASE("[FoundryScript][NameManglerBindingSafety] Failure rejects invalid roots transactionally") {
