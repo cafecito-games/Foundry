@@ -117,7 +117,7 @@ private:
 	static void _collect_data_type(
 			const FSDataType &p_type, const String &p_source, BuildState &r_state, int p_depth = 0);
 	static void _collect_property_info(
-			const PropertyInfo &p_info, const String &p_source, BuildState &r_state);
+			const PropertyInfo &p_info, const String &p_source, BuildState &r_state, bool p_external_surface = false);
 	static void _collect_container_type(
 			const ContainerType &p_type, const String &p_source, BuildState &r_state, int p_depth = 0);
 	static void _index_global_protected_names(BuildState &r_state);

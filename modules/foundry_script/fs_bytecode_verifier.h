@@ -32,6 +32,7 @@
 
 #include "core/error/error_list.h"
 #include "core/string/ustring.h"
+#include "core/templates/vector.h"
 
 class FSFunction;
 
@@ -52,5 +53,6 @@ public:
 	// the owning class's flattened member count. It is an upper bound: a witness dispatched without
 	// an instance has an empty member space, but verifying against the class member count never
 	// rejects a well-formed function and keeps the check independent of any concrete instance.
-	static Error verify_function(const FSFunction *p_function, int p_member_address_count, const String &p_script_path);
+	static Error verify_function(const FSFunction *p_function, int p_member_address_count,
+			const String &p_script_path, Vector<int> *r_operator_cache_offsets = nullptr);
 };

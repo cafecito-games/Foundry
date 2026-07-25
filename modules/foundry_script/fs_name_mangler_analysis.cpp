@@ -39,6 +39,7 @@
 #include "core/config/engine.h"
 #include "core/io/resource_loader.h"
 #include "core/object/class_db.h"
+#include "core/string/char_utils.h"
 #include "core/variant/callable.h"
 
 struct FSNameManglerAnalysis::BuildState {
@@ -63,6 +64,7 @@ struct FSNameManglerAnalysis::BuildState {
 	HashSet<const FoundryScript *> visited_external_classes;
 	HashSet<const Script *> visited_external_scripts;
 	HashSet<const FSFunction *> visited_functions;
+	HashSet<const void *> visited_variant_containers;
 };
 
 namespace {
@@ -86,6 +88,54 @@ struct EvidenceComparator {
 bool evidence_matches(const FSNameManglerAnalysis::KeepEvidence &p_left,
 		const FSNameManglerAnalysis::KeepEvidence &p_right) {
 	return p_left.reason == p_right.reason && p_left.detail == p_right.detail;
+}
+
+bool is_type_bearing_hint(PropertyHint p_hint) {
+	switch (p_hint) {
+		case PROPERTY_HINT_RESOURCE_TYPE:
+		case PROPERTY_HINT_TYPE_STRING:
+		case PROPERTY_HINT_NODE_PATH_VALID_TYPES:
+		case PROPERTY_HINT_ARRAY_TYPE:
+		case PROPERTY_HINT_NODE_TYPE:
+		case PROPERTY_HINT_DICTIONARY_TYPE:
+		case PROPERTY_HINT_CALLABLE_TYPE:
+		case PROPERTY_HINT_COROUTINE_TYPE:
+			return true;
+		default:
+			return false;
+	}
+}
+
+Vector<String> get_encoded_type_identities(const String &p_text) {
+	Vector<String> identities;
+	int offset = 0;
+	while (offset < p_text.length()) {
+		while (offset < p_text.length() &&
+				!is_unicode_identifier_start(p_text[offset])) {
+			offset++;
+		}
+		if (offset >= p_text.length()) {
+			break;
+		}
+		const int start = offset;
+		while (offset < p_text.length()) {
+			const char32_t character = p_text[offset];
+			if (is_unicode_identifier_continue(character) ||
+					character == '.' || character == ':') {
+				offset++;
+				continue;
+			}
+			break;
+		}
+		String identity = p_text.substr(start, offset - start);
+		while (identity.ends_with(".") || identity.ends_with(":")) {
+			identity = identity.left(identity.length() - 1);
+		}
+		if (!identity.is_empty()) {
+			identities.push_back(identity);
+		}
+	}
+	return identities;
 }
 
 } // namespace
@@ -405,13 +455,15 @@ void FSNameManglerAnalysis::_collect_external_script_surface(
 	p_script->get_script_method_list(&methods);
 	for (const MethodInfo &method : methods) {
 		_add_protected_name(method.name, source + " method", r_state);
-		_add_protected_identity(
-				String(method.return_val.class_name), source + " return type",
-				r_state);
+		_collect_property_info(
+				method.return_val, source + " return type", r_state, true);
 		for (const PropertyInfo &argument : method.arguments) {
-			_add_protected_identity(
-					String(argument.class_name), source + " argument type",
-					r_state);
+			_collect_property_info(
+					argument, source + " argument type", r_state, true);
+		}
+		for (const Variant &default_argument : method.default_arguments) {
+			_collect_variant(
+					default_argument, source + " default argument", r_state);
 		}
 	}
 	List<PropertyInfo> properties;
@@ -419,17 +471,24 @@ void FSNameManglerAnalysis::_collect_external_script_surface(
 	for (const PropertyInfo &property : properties) {
 		_add_protected_name(
 				StringName(property.name), source + " property", r_state);
-		_add_protected_identity(
-				String(property.class_name), source + " property type",
-				r_state);
+		_collect_property_info(
+				property, source + " property type", r_state, true);
 	}
 	List<MethodInfo> signals;
 	p_script->get_script_signal_list(&signals);
 	for (const MethodInfo &signal : signals) {
 		_add_protected_name(signal.name, source + " signal", r_state);
+		_collect_property_info(
+				signal.return_val, source + " signal return type", r_state,
+				true);
 		for (const PropertyInfo &argument : signal.arguments) {
-			_add_protected_identity(
-					String(argument.class_name), source + " signal type",
+			_collect_property_info(
+					argument, source + " signal argument type", r_state,
+					true);
+		}
+		for (const Variant &default_argument : signal.default_arguments) {
+			_collect_variant(
+					default_argument, source + " signal default argument",
 					r_state);
 		}
 	}
@@ -515,12 +574,26 @@ void FSNameManglerAnalysis::_collect_data_type(
 
 void FSNameManglerAnalysis::_collect_property_info(
 		const PropertyInfo &p_info, const String &p_source,
-		BuildState &r_state) {
+		BuildState &r_state, bool p_external_surface) {
 	const String identity = p_info.class_name;
 	if (!identity.is_empty() &&
-			!_is_included_identity(identity, r_state)) {
+			(p_external_surface ||
+					!_is_included_identity(identity, r_state))) {
 		_add_protected_identity(
 				identity, p_source + " class identity", r_state);
+	}
+	if (!is_type_bearing_hint(p_info.hint) ||
+			p_info.hint_string.is_empty()) {
+		return;
+	}
+	for (const String &hint_identity :
+			get_encoded_type_identities(p_info.hint_string)) {
+		if (p_external_surface ||
+				!_is_included_identity(hint_identity, r_state)) {
+			_add_protected_identity(
+					hint_identity, p_source + " encoded type identity",
+					r_state);
+		}
 	}
 }
 
@@ -621,6 +694,8 @@ void FSNameManglerAnalysis::_index_global_protected_names(
 				ScriptServer::get_global_class_path(global_class);
 		_add_protected_name(
 				global_class, "external global script class", r_state);
+		_add_protected_path(
+				path, "external global script path", r_state);
 		Ref<Resource> resource = ResourceCache::get_ref(path);
 		if (resource.is_null() && ResourceLoader::exists(path)) {
 			resource = ResourceLoader::load(path);
@@ -633,9 +708,24 @@ void FSNameManglerAnalysis::_index_global_protected_names(
 
 void FSNameManglerAnalysis::_collect_variant(
 		const Variant &p_value, const String &p_source, BuildState &r_state, int p_depth) {
+	const bool is_array = p_value.get_type() == Variant::ARRAY;
+	const bool is_dictionary = p_value.get_type() == Variant::DICTIONARY;
+	const void *container_id = nullptr;
+	if (is_array) {
+		container_id = Array(p_value).id();
+	} else if (is_dictionary) {
+		container_id = Dictionary(p_value).id();
+	}
+	if (container_id != nullptr &&
+			r_state.visited_variant_containers.has(container_id)) {
+		return;
+	}
 	if (p_depth > Variant::MAX_RECURSION_DEPTH) {
 		r_state.unscannable_protected_surface = true;
 		return;
+	}
+	if (container_id != nullptr) {
+		r_state.visited_variant_containers.insert(container_id);
 	}
 
 	switch (p_value.get_type()) {
@@ -667,7 +757,7 @@ void FSNameManglerAnalysis::_collect_variant(
 			const Array array = p_value;
 			_collect_container_type(
 					array.get_element_type(), p_source + " typed Array",
-					r_state, p_depth + 1);
+					r_state);
 			for (int i = 0; i < array.size(); i++) {
 				_collect_variant(array[i], p_source, r_state, p_depth + 1);
 			}
@@ -676,12 +766,10 @@ void FSNameManglerAnalysis::_collect_variant(
 			const Dictionary dictionary = p_value;
 			_collect_container_type(
 					dictionary.get_key_type(),
-					p_source + " typed Dictionary key", r_state,
-					p_depth + 1);
+					p_source + " typed Dictionary key", r_state);
 			_collect_container_type(
 					dictionary.get_value_type(),
-					p_source + " typed Dictionary value", r_state,
-					p_depth + 1);
+					p_source + " typed Dictionary value", r_state);
 			for (int i = 0; i < dictionary.size(); i++) {
 				_collect_variant(dictionary.get_key_at_index(i), p_source, r_state, p_depth + 1);
 				_collect_variant(dictionary.get_value_at_index(i), p_source, r_state, p_depth + 1);
@@ -713,7 +801,7 @@ void FSNameManglerAnalysis::_collect_variant(
 					_collect_container_type(
 							type_argument,
 							p_source + " specialized type argument",
-							r_state, p_depth + 1);
+							r_state);
 				}
 			}
 		} break;
@@ -740,6 +828,8 @@ void FSNameManglerAnalysis::_collect_function(const FSFunction *p_function, Buil
 	r_state.visited_functions.insert(p_function);
 
 	const String source = p_function->source;
+	_add_protected_path(
+			source, source + " function source path", r_state);
 	r_state.observed_names.insert(p_function->name);
 	for (const PropertyInfo &argument : p_function->method_info.arguments) {
 		r_state.observed_names.insert(argument.name);
@@ -823,6 +913,13 @@ void FSNameManglerAnalysis::_collect_class(const FoundryScript *p_class, BuildSt
 	r_state.visited_classes.insert(p_class);
 
 	const String source = p_class->get_script_path();
+	_add_protected_path(
+			p_class->get_script_path(), source + " script path", r_state);
+	_add_protected_path(
+			p_class->simplified_icon_path, source + " icon path", r_state);
+	_add_protected_path(
+			p_class->registered_conformance_source,
+			source + " conformance source path", r_state);
 	_collect_external_class_surface(p_class->base.ptr(), source + " external base", r_state);
 	_add_candidate(p_class->local_name, IDENTIFIER_CLASS, r_state);
 	r_state.observed_names.insert(p_class->global_name);
@@ -845,6 +942,9 @@ void FSNameManglerAnalysis::_collect_class(const FoundryScript *p_class, BuildSt
 			p_class->member_indices) {
 		_collect_data_type(
 				member.value.data_type, source + " member type", r_state);
+		_collect_data_type(
+				member.value.type_argument_binding.fixed,
+				source + " member type argument binding", r_state);
 		_collect_property_info(
 				member.value.property_info, source + " member property",
 				r_state);
@@ -854,9 +954,43 @@ void FSNameManglerAnalysis::_collect_class(const FoundryScript *p_class, BuildSt
 		_collect_data_type(
 				static_variable.value.data_type,
 				source + " static member type", r_state);
+		_collect_data_type(
+				static_variable.value.type_argument_binding.fixed,
+				source + " static member type argument binding", r_state);
 		_collect_property_info(
 				static_variable.value.property_info,
 				source + " static member property", r_state);
+	}
+	for (const FoundryScript::TypeArgumentBinding &binding :
+			p_class->member_type_argument_bindings) {
+		_collect_data_type(
+				binding.fixed, source + " member type argument vector",
+				r_state);
+	}
+	for (const KeyValue<FoundryScript *,
+				 Vector<FoundryScript::TypeArgumentBinding>> &ancestor :
+			p_class->type_parameter_bindings_by_ancestor) {
+		_collect_external_script_surface(
+				ancestor.key, source + " ancestor type binding", r_state);
+		for (const FoundryScript::TypeArgumentBinding &binding :
+				ancestor.value) {
+			_collect_data_type(
+					binding.fixed, source + " ancestor type argument binding",
+					r_state);
+		}
+	}
+	for (const KeyValue<StringName, FoundryScript::MemberInfo> &old_static :
+			p_class->old_static_variables_indices) {
+		_collect_data_type(
+				old_static.value.data_type,
+				source + " old static member type", r_state);
+		_collect_data_type(
+				old_static.value.type_argument_binding.fixed,
+				source + " old static member type argument binding",
+				r_state);
+		_collect_property_info(
+				old_static.value.property_info,
+				source + " old static member property", r_state);
 	}
 	for (const KeyValue<StringName, Variant> &constant : p_class->constants) {
 		_add_candidate(constant.key, IDENTIFIER_ENUM_OR_CONSTANT, r_state);
@@ -864,10 +998,18 @@ void FSNameManglerAnalysis::_collect_class(const FoundryScript *p_class, BuildSt
 	}
 	for (const KeyValue<StringName, MethodInfo> &signal : p_class->_signals) {
 		_add_candidate(signal.key, IDENTIFIER_SIGNAL, r_state);
+		_collect_property_info(
+				signal.value.return_val, source + " signal return", r_state);
 		for (const PropertyInfo &argument : signal.value.arguments) {
 			r_state.observed_names.insert(argument.name);
 			_collect_property_info(
 					argument, source + " signal argument", r_state);
+		}
+		for (const Variant &default_argument :
+				signal.value.default_arguments) {
+			_collect_variant(
+					default_argument, source + " signal default argument",
+					r_state);
 		}
 	}
 	for (const KeyValue<StringName, FSFunction *> &method : p_class->member_functions) {
@@ -918,6 +1060,9 @@ void FSNameManglerAnalysis::_collect_class(const FoundryScript *p_class, BuildSt
 				FSConformanceRegistry::get_singleton()->get_runtime_witnesses(
 						p_class->registered_conformance_source);
 		for (const FSConformanceRegistry::RuntimeConformance &conformance : conformances) {
+			_collect_external_script_surface(
+					conformance.target_script,
+					source + " conformance target script", r_state);
 			for (const String &target_key : conformance.target_keys) {
 				_collect_class_identity_reference(
 						target_key, source + " conformance target identity", r_state);
@@ -936,6 +1081,15 @@ void FSNameManglerAnalysis::_collect_class(const FoundryScript *p_class, BuildSt
 	}
 	for (const KeyValue<StringName, Variant> &default_value : p_class->member_default_values) {
 		_collect_variant(default_value.value, source, r_state);
+	}
+	for (const KeyValue<StringName, Variant> &default_value :
+			p_class->member_default_values_cache) {
+		_collect_variant(
+				default_value.value, source + " cached member default", r_state);
+	}
+	for (const PropertyInfo &property : p_class->members_cache) {
+		_collect_property_info(
+				property, source + " cached member property", r_state);
 	}
 	_collect_variant(p_class->rpc_config, source, r_state);
 	for (const Variant &key : p_class->rpc_config.keys()) {
@@ -1151,9 +1305,21 @@ FSNameManglerAnalysis::Result FSNameManglerAnalysis::analyze(const Input &p_inpu
 			}
 		} else {
 			StringName replacement;
+			const auto replacement_occurs_in_protected_path =
+					[&](const StringName &p_replacement) {
+						const String replacement_text = p_replacement;
+						for (const KeyValue<String, Vector<String>> &path_entry :
+								state.protected_path_sources) {
+							if (path_entry.key.contains(replacement_text)) {
+								return true;
+							}
+						}
+						return false;
+					};
 			do {
 				replacement = StringName("_fsb_" + String::num_uint64(replacement_ordinal++, 36));
-			} while (state.observed_names.has(replacement));
+			} while (state.observed_names.has(replacement) ||
+					replacement_occurs_in_protected_path(replacement));
 			classification.replacement = replacement;
 			state.observed_names.insert(replacement);
 			result.rename_map.insert(name, replacement);

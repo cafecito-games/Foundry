@@ -4858,7 +4858,7 @@ Error FSCompiler::_compile_conformance_witnesses(FoundryScript *p_script, const 
 	Vector<FSConformanceRegistry::RuntimeConformance> runtime_entries;
 
 	for (const FSParser::ConformanceNode *conformance : p_class->conformances) {
-		if (conformance == nullptr || conformance->target == nullptr || conformance->witnesses.is_empty()) {
+		if (conformance == nullptr || conformance->target == nullptr) {
 			continue;
 		}
 
@@ -4927,6 +4927,7 @@ Error FSCompiler::_compile_conformance_witnesses(FoundryScript *p_script, const 
 			// skip runtime witness compilation rather than fail the whole script's compilation.
 			continue;
 		}
+		runtime_entry.target_script = target_script.ptr();
 		for (const FSParser::FunctionNode *witness : conformance->witnesses) {
 			if (witness == nullptr || witness->identifier == nullptr) {
 				continue;
@@ -4943,54 +4944,51 @@ Error FSCompiler::_compile_conformance_witnesses(FoundryScript *p_script, const 
 			runtime_entry.functions[witness->identifier->name] = compiled;
 		}
 
-		if (!runtime_entry.functions.is_empty()) {
-			// The version-3 witness section stores one trait identity per runtime entry. A single
-			// `extend` can declare several traits sharing one compiled witness set, so expand that
-			// set in source order. The entries intentionally share the same FSFunction pointers in
-			// memory; serialization writes one self-contained witness entry per trait without
-			// changing the wire layout.
-			HashSet<StringName> emitted_traits;
-			for (const FSParser::ClassNode::TraitUse &trait_use :
-					conformance->traits) {
-				ERR_FAIL_NULL_V_MSG(trait_use.resolved_trait,
-						ERR_COMPILATION_FAILED,
-						vformat(
-								"Cannot compile retroactive conformance in "
-								"'%s': a declared trait was not resolved.",
-								source_file));
-				const StringName trait_name =
-						fs_trait_identity_name(trait_use.resolved_trait);
-				ERR_FAIL_COND_V_MSG(trait_name == StringName(),
-						ERR_COMPILATION_FAILED,
-						vformat(
-								"Cannot compile retroactive conformance in "
-								"'%s': a declared trait has no runtime "
-								"identity.",
-								source_file));
-				ERR_FAIL_COND_V_MSG(emitted_traits.has(trait_name),
-						ERR_COMPILATION_FAILED,
-						vformat(
-								"Cannot compile retroactive conformance in "
-								"'%s': trait '%s' was declared more than "
-								"once.",
-								source_file, String(trait_name)));
-				emitted_traits.insert(trait_name);
-				FSConformanceRegistry::RuntimeConformance trait_entry =
-						runtime_entry;
-				trait_entry.trait_name = trait_name;
-				runtime_entries.push_back(trait_entry);
-			}
-			ERR_FAIL_COND_V_MSG(emitted_traits.is_empty(),
+		// The version-3 witness section stores one trait identity per runtime entry. A single
+		// `extend` can declare several traits sharing one (possibly empty) compiled witness set, so
+		// expand that set in source order. Marker conformances deliberately serialize a zero witness
+		// count without changing the wire layout.
+		HashSet<StringName> emitted_traits;
+		for (const FSParser::ClassNode::TraitUse &trait_use :
+				conformance->traits) {
+			ERR_FAIL_NULL_V_MSG(trait_use.resolved_trait,
 					ERR_COMPILATION_FAILED,
 					vformat(
 							"Cannot compile retroactive conformance in '%s': "
-							"no declared trait identity was emitted.",
+							"a declared trait was not resolved.",
 							source_file));
-			// Keep the target script alive for as long as these witnesses (whose `_script` points at it)
-			// live. Skip self-references to avoid a script holding a strong reference to itself.
-			if (target_script.ptr() != p_script && !p_script->witness_target_scripts.has(target_script)) {
-				p_script->witness_target_scripts.push_back(target_script);
-			}
+			const StringName trait_name =
+					fs_trait_identity_name(trait_use.resolved_trait);
+			ERR_FAIL_COND_V_MSG(trait_name == StringName(),
+					ERR_COMPILATION_FAILED,
+					vformat(
+							"Cannot compile retroactive conformance in "
+							"'%s': a declared trait has no runtime "
+							"identity.",
+							source_file));
+			ERR_FAIL_COND_V_MSG(emitted_traits.has(trait_name),
+					ERR_COMPILATION_FAILED,
+					vformat(
+							"Cannot compile retroactive conformance in "
+							"'%s': trait '%s' was declared more than "
+							"once.",
+							source_file, String(trait_name)));
+			emitted_traits.insert(trait_name);
+			FSConformanceRegistry::RuntimeConformance trait_entry =
+					runtime_entry;
+			trait_entry.trait_name = trait_name;
+			runtime_entries.push_back(trait_entry);
+		}
+		ERR_FAIL_COND_V_MSG(emitted_traits.is_empty(),
+				ERR_COMPILATION_FAILED,
+				vformat(
+						"Cannot compile retroactive conformance in '%s': "
+						"no declared trait identity was emitted.",
+						source_file));
+		// Keep an external target alive for every conformance, including markers without witnesses.
+		// Skip self-references to avoid a script holding a strong reference to itself.
+		if (target_script.ptr() != p_script && !p_script->witness_target_scripts.has(target_script)) {
+			p_script->witness_target_scripts.push_back(target_script);
 		}
 	}
 

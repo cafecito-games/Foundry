@@ -74,6 +74,7 @@ public:
 	public:
 		enum State {
 			STATE_UNUSED,
+			STATE_PREPARING,
 			STATE_ACTIVE,
 			STATE_FINISHED,
 		};
@@ -96,9 +97,13 @@ public:
 ```
 
 A transaction is single-use. `begin()` is valid only in `STATE_UNUSED`; any second call returns
-`ERR_ALREADY_IN_USE` with a diagnostic. A failed begin moves directly to `STATE_FINISHED` without
-ever becoming active or publishing a partial snapshot. A successful begin moves to `STATE_ACTIVE`.
-`rollback()` is idempotent and non-failing, restores the graph and registry when active, clears the
+`ERR_ALREADY_IN_USE` with a diagnostic. Before preflight invokes any resolver, ScriptServer, or
+language callback, `begin()` moves to `STATE_PREPARING` and reserves the process-wide active
+transaction slot. A nested `begin()` from such a callback therefore fails instead of observing an
+apparently unused slot. A failed begin releases only the reservation it owns, moves to
+`STATE_FINISHED`, and never publishes a partial snapshot or mutates the graph. A successful begin
+moves to `STATE_ACTIVE`. `rollback()` is idempotent and non-failing, restores the graph and registry
+when active, releases a preparing reservation without restoring an unstaged graph, clears the
 snapshot, and moves to `STATE_FINISHED`. The destructor calls `rollback()`.
 
 The contract deliberately does not expose a commit operation: the live graph is always restored.
@@ -132,7 +137,9 @@ The supplied roots must form a closed Foundry Script graph. Preflight traverses:
 - Foundry Script bases and nested classes;
 - Foundry Script references in constants, static/default values, containers, and specialized class
   handles;
-- script references in `FSDataType`, member type-argument bindings, and ancestor-binding keys;
+- script references in recursive `FSDataType`, member `TypeArgumentBinding::fixed`,
+  `member_type_argument_bindings`, ancestor binding keys and values, old-static metadata, signal
+  metadata and defaults, and editor/default-value caches;
 - witness target scripts and each conformance witness function's target script;
 - known trait identities and conformance target/trait identities; and
 - any other Foundry Script object reference that the existing `.fsb` writer will serialize.
@@ -148,11 +155,17 @@ belong to that graph. They recursively inspect `ContainerType`, `FSDataType`, `P
 `Variant` surfaces, including typed Array/Dictionary metadata, nested generic arguments,
 `PackedStringArray` values, external Script metadata, Resource paths, and specialized class
 handles. Numeric and geometric packed arrays are explicitly non-textual. A container cycle is
-visited once; exceeding the engine recursion limit makes the surface unscannable and protects every
+visited once and does not consume recursion budget again. Variant nesting and recursive
+`ContainerType`/`FSDataType` metadata use independent depth budgets, so a shallow typed descriptor
+inside a deep value is not rejected merely because of its enclosing Variant depth. A genuinely deep
+acyclic surface that exceeds its own engine recursion limit is unscannable and protects every
 candidate rather than silently omitting evidence.
 
 Resource paths identify files, not declarations. `res://`, `uid://`, and other serialized resource
 paths remain byte-for-byte unchanged even when a path segment happens to equal a mapped name.
+Analysis also reserves path substrings when allocating `_fsb_<ordinal>` replacements, so generated
+names cannot accidentally appear inside a protected root, icon, function-source, conformance-source,
+external-script, external-resource, or registered-global path.
 
 ## Map and Collision Validation
 
@@ -227,9 +240,11 @@ For every included `FoundryScript`, the transaction rewrites:
 - flattened `member_indices`, direct `members`, `static_variables_indices`, and editor/default-value
   maps keyed by those declarations;
 - every corresponding `MemberInfo::property_info.name`, project setter/getter name, recursive data
-  type, and type-argument binding;
+  type, and type-argument binding, including its recursive `fixed` type;
+- the slot-indexed `member_type_argument_bindings` mirror, ancestor-binding values, old-static data
+  type/binding/property metadata, member default-value metadata, and member/static editor caches;
 - `constants` keys, including the outer keys that hold named-enum dictionaries;
-- `_signals` keys and `MethodInfo` names;
+- `_signals` keys, `MethodInfo` names, return metadata, argument metadata, and default arguments;
 - `member_functions` keys, enum-table keys, enum function-map keys, and compiled function names;
 - `abstract_trait_requirements` keys and their `MethodInfo` names;
 - project-keyed RPC configuration entries, subject to the protected RPC rule below;
@@ -264,10 +279,14 @@ mirror pointers cannot drift.
 ### Trait conformances and witnesses
 
 The compiler registers one `RuntimeConformance` per declared trait in deterministic `uses` source
-order, copying the shared compiled witness-function map into each entry and setting a non-empty
-`trait_name`. This makes ordinary (non-mangled) version-3 bytecode self-sufficient for runtime
-membership after the parser registry is absent. A multi-trait conformance therefore writes one
-existing-format witness entry per trait; the wire layout and format version do not change.
+order, including marker traits whose shared witness-function map is empty. Every runtime entry
+carries the explicit non-owning target `FoundryScript *`, target aliases, and non-empty
+`trait_name`. The declaring script retains an external target strongly for as long as the registry
+borrows that pointer; a self target is not retained cyclically. This makes ordinary (non-mangled)
+version-3 bytecode self-sufficient for runtime membership after the parser registry is absent. A
+multi-trait conformance therefore writes one existing-format witness entry per trait, and a marker
+entry writes the already-supported zero witness count; the wire layout and format version do not
+change.
 
 The transaction snapshots every unique `registered_conformance_source` entry, rewrites known project
 target aliases and trait identities structurally, rewrites witness-map keys and witness function
@@ -275,6 +294,9 @@ metadata, and temporarily re-registers the staged entries so both runtime dispat
 `FSBytecodeExporter::_write_witness_section` see one coherent view. Correlation still accepts an
 empty runtime trait identity defensively and expands it against exact parse target/witness matches,
 because legacy version-3 bytecode and manually registered state may contain that old representation.
+An explicit trait identity must select exactly one parse entry, while an empty-witness marker must
+still match its exact target aliases; the explicit target pointer is validated against the closed
+graph and preserved in the staged registry vector.
 
 Rollback re-registers the exact saved entries under the unchanged source path. Validation failure
 does not call the registry. Tests compare the full registry entry vectors and live dispatch before,
@@ -283,7 +305,9 @@ during, and after staging.
 The loader keeps accepting legacy version-3 witness entries with an empty trait-name field. Their
 existing witness dispatch remains usable, but runtime `is`/`as`/typed membership cannot be recovered
 when no parser registration exists because those bytes contain no trait identity. New compiler and
-Transaction exports always populate the existing field.
+Transaction exports always populate the existing field. The loader registers zero-witness marker
+entries instead of dropping them, restores their explicit target pointer, and retains external
+targets on the loaded declaring script.
 
 ## MethodInfo Argument Safety
 
@@ -315,6 +339,8 @@ The application never rewrites:
 - global-store/autoload names or `named_globals`;
 - native class names, builtin type names, engine singleton names, or native signals/properties;
 - resource and script paths;
+- encoded `PropertyInfo::hint_string` type identities and full external Script method/property/signal
+  metadata, including return values, arguments, and defaults;
 - compiler-only names beginning with `@`; or
 - arbitrary string-like Variant payloads and annotation values.
 
@@ -328,6 +354,12 @@ Application repeats the same protected checks over the compiled graph's export f
 identities, recursive type/container metadata, external scripts/resources, and registry entries.
 This parity is intentional: a conservative analysis result must stage successfully, while an
 unsafe manually supplied map must fail before mutation.
+
+Hand-authored maps also obey the analysis keep policy. A declaration owner carrying builtin
+`@keep_name` or an export-family annotation protects its owner name, and use of the reflection
+enumeration APIs protects every compatible method, property, or signal owner rather than only the
+literal argument that happened to appear in source. These checks cover both map sources and
+replacement spellings.
 
 RPC method names are protected because they are named network dispatch. A valid #795 map never
 contains them. If a supplied map contains a source found in class or function RPC configuration,
@@ -354,6 +386,12 @@ registry state:
 
 Applying the same map to the same graph produces byte-identical staged buffers independent of input
 root order.
+
+Loaded function re-export has the same determinism requirement. The verifier's authoritative opcode
+boundary walk reconstructs every non-validated `OPCODE_OPERATOR` cache offset in tools builds, so
+the exporter masks the VM-populated operand signature, return type, and evaluator-pointer words
+even after loaded code has executed. No process-local pointer can enter a re-exported version-3
+buffer, and this reconstruction does not change the wire layout or format version.
 
 ## Test Strategy
 
@@ -385,7 +423,19 @@ Subsequent focused RED/GREEN slices prove:
 10. exported property names, metadata, and defaults remain stable across a staged multi-file graph
     and loaded buffers; and
 11. repeated transactions and reversed input-root order produce the same buffers and restore the
-    same live editor graph.
+    same live editor graph;
+12. replacement allocation avoids every protected path substring, while source/replacement maps
+    reject protected root, icon, function-source, conformance-source, global-class, external-script,
+    and external-resource paths;
+13. recursive member bindings, old-static metadata, signal metadata, encoded hints, and editor
+    caches protect foreign identities and stage included identities with exact rollback;
+14. callback re-entry during `STATE_PREPARING` is rejected atomically, annotation/reflection keep
+    policy is enforced for hand-authored maps, and cyclic Variant containers are visited once while
+    genuinely over-deep acyclic values remain conservatively protected; and
+15. marker conformances compile, serialize, load, register, and execute with an explicit target and
+    zero witnesses, including external target lifetime, deterministic immediate reserialization,
+    byte-identical reserialization after VM operator-cache population, and legacy version-3
+    compatibility.
 
 Final verification runs the focused name-mangler application/analysis/keep-rules tests, bytecode and
 runtime suites, the broader Foundry Script family, and a macOS `dev_mode=yes` warnings-as-errors

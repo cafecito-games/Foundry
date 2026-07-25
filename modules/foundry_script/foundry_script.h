@@ -281,10 +281,10 @@ private:
 	// layout); the script owns them solely for lifetime and frees them on reload/unload. The global
 	// `FSConformanceRegistry` borrows these pointers for runtime dispatch.
 	Vector<FSFunction *> witness_functions;
-	// Strong references to the target scripts the witnesses above were compiled against. A witness's
-	// `_script` is a raw pointer to its target; holding the target alive here for as long as the
-	// declaring script (and its witnesses) live prevents a dangling script during dispatch. The target
-	// never references the declaring script, so this introduces no reference cycle.
+	// Strong references to external target scripts for the conformances this script declares. Runtime
+	// conformance entries and their witnesses borrow the target pointer; holding it alive here prevents
+	// a dangling target even for marker conformances with no witness functions. The target never
+	// references the declaring script, so this introduces no reference cycle.
 	Vector<Ref<Script>> witness_target_scripts;
 	// Registry key under which this script's runtime witnesses were registered, so they can be dropped
 	// from the registry before the owned `FSFunction`s are freed. Empty when none were registered.

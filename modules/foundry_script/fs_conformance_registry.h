@@ -39,6 +39,7 @@
 #include "core/templates/vector.h"
 
 class FSFunction;
+class FoundryScript;
 
 // Process-global registry of retroactive trait conformances (`extend Target uses Trait: ...`).
 //
@@ -74,6 +75,9 @@ public:
 	using WitnessFunctionMap = HashMap<StringName, FSFunction *>;
 
 	struct RuntimeConformance {
+		// The target whose member layout witness functions use. This explicit pointer also preserves
+		// the target identity for marker conformances, whose function map is intentionally empty.
+		FoundryScript *target_script = nullptr;
 		Vector<String> target_keys;
 		StringName trait_name;
 		WitnessFunctionMap functions;

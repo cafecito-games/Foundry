@@ -51,6 +51,7 @@ public:
 	public:
 		enum State {
 			STATE_UNUSED,
+			STATE_PREPARING,
 			STATE_ACTIVE,
 			STATE_FINISHED,
 		};

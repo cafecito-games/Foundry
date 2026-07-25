@@ -1141,12 +1141,9 @@ Error FSBytecodeExporter::_write_witness_section(StreamPeerBuffer *r_stream, con
 	}
 	r_stream->put_u32((uint32_t)conformances.size());
 	for (const FSConformanceRegistry::RuntimeConformance &conformance : conformances) {
-		ERR_FAIL_COND_V_MSG(conformance.functions.is_empty(), ERR_INVALID_PARAMETER,
-				vformat("Cannot serialize script '%s' to compiled bytecode: it registered a conformance without witness functions.",
-						p_script->get_script_path()));
-		FoundryScript *target_script = conformance.functions.begin()->value->_script;
+		FoundryScript *target_script = conformance.target_script;
 		ERR_FAIL_NULL_V_MSG(target_script, ERR_INVALID_PARAMETER,
-				vformat("Cannot serialize script '%s' to compiled bytecode: a conformance witness has no target script.",
+				vformat("Cannot serialize script '%s' to compiled bytecode: a conformance has no target script.",
 						p_script->get_script_path()));
 		Error error = _encode_script_reference(r_stream, target_script);
 		if (error != OK) {

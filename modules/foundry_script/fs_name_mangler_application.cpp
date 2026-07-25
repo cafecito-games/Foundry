@@ -140,7 +140,10 @@ struct FSNameManglerApplication::Transaction::Data {
 	HashSet<StringName> project_sources;
 	HashSet<StringName> observed_names;
 	HashMap<StringName, String> global_protected_names;
+	HashMap<String, String> global_protected_paths;
 	bool unscannable_protected_surface = false;
+	HashSet<const void *> observed_variant_containers;
+	HashSet<const void *> validated_variant_containers;
 	Vector<IdentityReplacement> identity_replacements;
 	HashSet<String> included_identity_sources;
 	Vector<String> script_paths;
@@ -156,7 +159,10 @@ struct FSNameManglerApplication::Transaction::Data {
 		project_sources.clear();
 		observed_names.clear();
 		global_protected_names.clear();
+		global_protected_paths.clear();
 		unscannable_protected_surface = false;
+		observed_variant_containers.clear();
+		validated_variant_containers.clear();
 		identity_replacements.clear();
 		included_identity_sources.clear();
 		script_paths.clear();
@@ -650,6 +656,153 @@ struct FSNameManglerApplication::Transaction::Data {
 		return false;
 	}
 
+	static Vector<String> get_encoded_type_identities(const String &p_text) {
+		Vector<String> identities;
+		int offset = 0;
+		while (offset < p_text.length()) {
+			while (offset < p_text.length() &&
+					!is_unicode_identifier_start(p_text[offset])) {
+				offset++;
+			}
+			if (offset >= p_text.length()) {
+				break;
+			}
+			const int start = offset;
+			while (offset < p_text.length()) {
+				const char32_t character = p_text[offset];
+				if (is_unicode_identifier_continue(character) ||
+						character == '.' || character == ':') {
+					offset++;
+					continue;
+				}
+				break;
+			}
+			String identity = p_text.substr(start, offset - start);
+			while (identity.ends_with(".") || identity.ends_with(":")) {
+				identity = identity.left(identity.length() - 1);
+			}
+			if (!identity.is_empty()) {
+				identities.push_back(identity);
+			}
+		}
+		return identities;
+	}
+
+	static bool raw_property_info_contains_name(
+			const PropertyInfo &p_info, const StringName &p_name) {
+		if (identity_contains_name(String(p_info.class_name), p_name)) {
+			return true;
+		}
+		if (!is_type_bearing_hint(p_info.hint)) {
+			return false;
+		}
+		for (const String &identity :
+				get_encoded_type_identities(p_info.hint_string)) {
+			if (identity_contains_name(identity, p_name)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	static bool metadata_variant_contains_name_internal(
+			const Variant &p_value, const StringName &p_name,
+			HashSet<const void *> &r_visited_containers, int p_depth = 0) {
+		const bool is_array = p_value.get_type() == Variant::ARRAY;
+		const bool is_dictionary =
+				p_value.get_type() == Variant::DICTIONARY;
+		const void *container_id = nullptr;
+		if (is_array) {
+			container_id = Array(p_value).id();
+		} else if (is_dictionary) {
+			container_id = Dictionary(p_value).id();
+		}
+		if (container_id != nullptr &&
+				r_visited_containers.has(container_id)) {
+			return false;
+		}
+		if (p_depth > Variant::MAX_RECURSION_DEPTH) {
+			return true;
+		}
+		if (container_id != nullptr) {
+			r_visited_containers.insert(container_id);
+		}
+		switch (p_value.get_type()) {
+			case Variant::STRING:
+				return String(p_value) == String(p_name);
+			case Variant::STRING_NAME:
+				return StringName(p_value) == p_name;
+			case Variant::NODE_PATH: {
+				const NodePath path = p_value;
+				for (int i = 0; i < path.get_subname_count(); i++) {
+					if (path.get_subname(i) == p_name) {
+						return true;
+					}
+				}
+			} break;
+			case Variant::CALLABLE: {
+				const Callable callable = p_value;
+				if (callable.get_method() == p_name) {
+					return true;
+				}
+				for (const Variant &bound : callable.get_bound_arguments()) {
+					if (metadata_variant_contains_name_internal(
+								bound, p_name, r_visited_containers,
+								p_depth + 1)) {
+						return true;
+					}
+				}
+			} break;
+			case Variant::SIGNAL:
+				return Signal(p_value).get_name() == p_name;
+			case Variant::ARRAY:
+				for (const Variant &value : Array(p_value)) {
+					if (metadata_variant_contains_name_internal(
+								value, p_name, r_visited_containers,
+								p_depth + 1)) {
+						return true;
+					}
+				}
+				break;
+			case Variant::DICTIONARY: {
+				const Dictionary dictionary = p_value;
+				for (const Variant &key : dictionary.keys()) {
+					if (metadata_variant_contains_name_internal(
+								key, p_name, r_visited_containers,
+								p_depth + 1) ||
+							metadata_variant_contains_name_internal(
+									dictionary[key], p_name,
+									r_visited_containers, p_depth + 1)) {
+						return true;
+					}
+				}
+			} break;
+			case Variant::PACKED_STRING_ARRAY:
+				for (const String &value : PackedStringArray(p_value)) {
+					if (value == String(p_name)) {
+						return true;
+					}
+				}
+				break;
+			case Variant::OBJECT: {
+				Object *object = p_value;
+				Resource *resource = Object::cast_to<Resource>(object);
+				return resource != nullptr &&
+						resource->get_path().contains(String(p_name));
+			}
+			default:
+				break;
+		}
+		return false;
+	}
+
+	static bool metadata_variant_contains_name(
+			const Variant &p_value, const StringName &p_name) {
+		HashSet<const void *> visited_containers;
+		return metadata_variant_contains_name_internal(
+				p_value, p_name, visited_containers);
+	}
+
 	static bool external_script_contains_name(
 			Script *p_script, const StringName &p_name,
 			HashSet<const Script *> &r_visited, int p_depth) {
@@ -674,13 +827,19 @@ struct FSNameManglerApplication::Transaction::Data {
 		p_script->get_script_method_list(&methods);
 		for (const MethodInfo &method : methods) {
 			if (method.name == p_name ||
-					identity_contains_name(
-							String(method.return_val.class_name), p_name)) {
+					raw_property_info_contains_name(
+							method.return_val, p_name)) {
 				return true;
 			}
 			for (const PropertyInfo &argument : method.arguments) {
-				if (identity_contains_name(
-							String(argument.class_name), p_name)) {
+				if (raw_property_info_contains_name(argument, p_name)) {
+					return true;
+				}
+			}
+			for (const Variant &default_argument :
+					method.default_arguments) {
+				if (metadata_variant_contains_name(
+							default_argument, p_name)) {
 					return true;
 				}
 			}
@@ -689,16 +848,29 @@ struct FSNameManglerApplication::Transaction::Data {
 		p_script->get_script_property_list(&properties);
 		for (const PropertyInfo &property : properties) {
 			if (StringName(property.name) == p_name ||
-					identity_contains_name(
-							String(property.class_name), p_name)) {
+					raw_property_info_contains_name(property, p_name)) {
 				return true;
 			}
 		}
 		List<MethodInfo> signals;
 		p_script->get_script_signal_list(&signals);
 		for (const MethodInfo &signal : signals) {
-			if (signal.name == p_name) {
+			if (signal.name == p_name ||
+					raw_property_info_contains_name(
+							signal.return_val, p_name)) {
 				return true;
+			}
+			for (const PropertyInfo &argument : signal.arguments) {
+				if (raw_property_info_contains_name(argument, p_name)) {
+					return true;
+				}
+			}
+			for (const Variant &default_argument :
+					signal.default_arguments) {
+				if (metadata_variant_contains_name(
+							default_argument, p_name)) {
+					return true;
+				}
 			}
 		}
 		HashMap<StringName, Variant> constants;
@@ -754,10 +926,26 @@ struct FSNameManglerApplication::Transaction::Data {
 
 	bool variant_contains_name_internal(
 			const Variant &p_value, const StringName &p_name,
-			HashSet<const void *> &r_active_containers,
+			HashSet<const void *> &r_visited_containers,
 			HashSet<const Script *> &r_visited_scripts, int p_depth) const {
+		const bool is_array = p_value.get_type() == Variant::ARRAY;
+		const bool is_dictionary =
+				p_value.get_type() == Variant::DICTIONARY;
+		const void *container_id = nullptr;
+		if (is_array) {
+			container_id = Array(p_value).id();
+		} else if (is_dictionary) {
+			container_id = Dictionary(p_value).id();
+		}
+		if (container_id != nullptr &&
+				r_visited_containers.has(container_id)) {
+			return false;
+		}
 		if (p_depth > Variant::MAX_RECURSION_DEPTH) {
 			return true;
+		}
+		if (container_id != nullptr) {
+			r_visited_containers.insert(container_id);
 		}
 		switch (p_value.get_type()) {
 			case Variant::STRING:
@@ -780,7 +968,7 @@ struct FSNameManglerApplication::Transaction::Data {
 				for (const Variant &bound :
 						callable.get_bound_arguments()) {
 					if (variant_contains_name_internal(
-								bound, p_name, r_active_containers,
+								bound, p_name, r_visited_containers,
 								r_visited_scripts, p_depth + 1)) {
 						return true;
 					}
@@ -792,53 +980,39 @@ struct FSNameManglerApplication::Transaction::Data {
 				const Array array = p_value;
 				if (container_type_contains_name(
 							array.get_element_type(), p_name,
-							r_visited_scripts, p_depth + 1)) {
+							r_visited_scripts, 0)) {
 					return true;
 				}
-				const void *id = array.id();
-				if (r_active_containers.has(id)) {
-					return true;
-				}
-				r_active_containers.insert(id);
 				for (const Variant &value : array) {
 					if (variant_contains_name_internal(
-								value, p_name, r_active_containers,
+								value, p_name, r_visited_containers,
 								r_visited_scripts, p_depth + 1)) {
-						r_active_containers.erase(id);
 						return true;
 					}
 				}
-				r_active_containers.erase(id);
 			} break;
 			case Variant::DICTIONARY: {
 				const Dictionary dictionary = p_value;
 				if (container_type_contains_name(
 							dictionary.get_key_type(), p_name,
-							r_visited_scripts, p_depth + 1) ||
+							r_visited_scripts, 0) ||
 						container_type_contains_name(
 								dictionary.get_value_type(), p_name,
-								r_visited_scripts, p_depth + 1)) {
+								r_visited_scripts, 0)) {
 					return true;
 				}
-				const void *id = dictionary.id();
-				if (r_active_containers.has(id)) {
-					return true;
-				}
-				r_active_containers.insert(id);
 				const Array keys = dictionary.keys();
 				for (const Variant &key : keys) {
 					if (variant_contains_name_internal(
-								key, p_name, r_active_containers,
+								key, p_name, r_visited_containers,
 								r_visited_scripts, p_depth + 1) ||
 							variant_contains_name_internal(
 									dictionary[key], p_name,
-									r_active_containers,
+									r_visited_containers,
 									r_visited_scripts, p_depth + 1)) {
-						r_active_containers.erase(id);
 						return true;
 					}
 				}
-				r_active_containers.erase(id);
 			} break;
 			case Variant::PACKED_STRING_ARRAY: {
 				for (const String &value : PackedStringArray(p_value)) {
@@ -871,7 +1045,7 @@ struct FSNameManglerApplication::Transaction::Data {
 							specialized->get_type_arguments()) {
 						if (container_type_contains_name(
 									type_argument, p_name,
-									r_visited_scripts, p_depth + 1)) {
+									r_visited_scripts, 0)) {
 							return true;
 						}
 					}
@@ -896,10 +1070,10 @@ struct FSNameManglerApplication::Transaction::Data {
 
 	bool variant_contains_name(
 			const Variant &p_value, const StringName &p_name) const {
-		HashSet<const void *> active_containers;
+		HashSet<const void *> visited_containers;
 		HashSet<const Script *> visited_scripts;
 		return variant_contains_name_internal(
-				p_value, p_name, active_containers, visited_scripts, 0);
+				p_value, p_name, visited_containers, visited_scripts, 0);
 	}
 
 	bool annotation_usages_contain_name(
@@ -917,6 +1091,20 @@ struct FSNameManglerApplication::Transaction::Data {
 		return false;
 	}
 
+	static bool has_builtin_annotation(
+			const Vector<FoundryScript::AnnotationUsage> &p_usages,
+			const StringName &p_name, bool p_prefix = false) {
+		for (const FoundryScript::AnnotationUsage &usage : p_usages) {
+			if (usage.is_builtin &&
+					((p_prefix &&
+							 String(usage.name).begins_with(String(p_name))) ||
+							(!p_prefix && usage.name == p_name))) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	bool property_info_contains_name(
 			const PropertyInfo &p_info, const StringName &p_name) const {
 		const String class_identity = p_info.class_name;
@@ -925,11 +1113,14 @@ struct FSNameManglerApplication::Transaction::Data {
 				identity_contains_name(class_identity, p_name)) {
 			return true;
 		}
-		if (is_type_bearing_hint(p_info.hint) &&
-				!p_info.hint_string.is_empty() &&
-				!identity_is_included(p_info.hint_string) &&
-				identity_contains_name(p_info.hint_string, p_name)) {
-			return true;
+		if (is_type_bearing_hint(p_info.hint)) {
+			for (const String &identity :
+					get_encoded_type_identities(p_info.hint_string)) {
+				if (!identity_is_included(identity) &&
+						identity_contains_name(identity, p_name)) {
+					return true;
+				}
+			}
 		}
 		return false;
 	}
@@ -1000,6 +1191,114 @@ struct FSNameManglerApplication::Transaction::Data {
 		}
 	}
 
+	void add_global_protected_path(
+			const String &p_path, const String &p_surface) {
+		if (!p_path.is_empty() &&
+				!global_protected_paths.has(p_path)) {
+			global_protected_paths.insert(p_path, p_surface);
+		}
+	}
+
+	void add_global_protected_property_info(
+			const PropertyInfo &p_info, const String &p_surface) {
+		add_global_protected_identity(
+				String(p_info.class_name), p_surface + " class identity");
+		if (!is_type_bearing_hint(p_info.hint)) {
+			return;
+		}
+		for (const String &identity :
+				get_encoded_type_identities(p_info.hint_string)) {
+			add_global_protected_identity(
+					identity, p_surface + " encoded type identity");
+		}
+	}
+
+	void add_global_protected_variant(
+			const Variant &p_value, const String &p_surface,
+			HashSet<const void *> &r_visited_containers, int p_depth = 0) {
+		const bool is_array = p_value.get_type() == Variant::ARRAY;
+		const bool is_dictionary =
+				p_value.get_type() == Variant::DICTIONARY;
+		const void *container_id = nullptr;
+		if (is_array) {
+			container_id = Array(p_value).id();
+		} else if (is_dictionary) {
+			container_id = Dictionary(p_value).id();
+		}
+		if (container_id != nullptr &&
+				r_visited_containers.has(container_id)) {
+			return;
+		}
+		if (p_depth > Variant::MAX_RECURSION_DEPTH) {
+			unscannable_protected_surface = true;
+			return;
+		}
+		if (container_id != nullptr) {
+			r_visited_containers.insert(container_id);
+		}
+		switch (p_value.get_type()) {
+			case Variant::STRING:
+				add_global_protected_name(
+						StringName(String(p_value)), p_surface);
+				break;
+			case Variant::STRING_NAME:
+				add_global_protected_name(StringName(p_value), p_surface);
+				break;
+			case Variant::NODE_PATH: {
+				const NodePath path = p_value;
+				for (int i = 0; i < path.get_subname_count(); i++) {
+					add_global_protected_name(path.get_subname(i), p_surface);
+				}
+			} break;
+			case Variant::CALLABLE: {
+				const Callable callable = p_value;
+				add_global_protected_name(callable.get_method(), p_surface);
+				for (const Variant &bound : callable.get_bound_arguments()) {
+					add_global_protected_variant(
+							bound, p_surface, r_visited_containers,
+							p_depth + 1);
+				}
+			} break;
+			case Variant::SIGNAL:
+				add_global_protected_name(
+						Signal(p_value).get_name(), p_surface);
+				break;
+			case Variant::ARRAY:
+				for (const Variant &value : Array(p_value)) {
+					add_global_protected_variant(
+							value, p_surface, r_visited_containers,
+							p_depth + 1);
+				}
+				break;
+			case Variant::DICTIONARY: {
+				const Dictionary dictionary = p_value;
+				for (const Variant &key : dictionary.keys()) {
+					add_global_protected_variant(
+							key, p_surface, r_visited_containers,
+							p_depth + 1);
+					add_global_protected_variant(
+							dictionary[key], p_surface,
+							r_visited_containers, p_depth + 1);
+				}
+			} break;
+			case Variant::PACKED_STRING_ARRAY:
+				for (const String &value : PackedStringArray(p_value)) {
+					add_global_protected_name(StringName(value), p_surface);
+				}
+				break;
+			case Variant::OBJECT: {
+				Object *object = p_value;
+				if (Resource *resource =
+								Object::cast_to<Resource>(object)) {
+					add_global_protected_path(
+							resource->get_path(), p_surface + " resource path");
+				}
+			} break;
+			default:
+				break;
+		}
+	}
+
 	void index_external_script_names(
 			Script *p_script, const String &p_surface,
 			HashSet<const Script *> &r_visited, int p_depth = 0) {
@@ -1015,20 +1314,28 @@ struct FSNameManglerApplication::Transaction::Data {
 			return;
 		}
 		r_visited.insert(p_script);
+		add_global_protected_path(
+				p_script->get_path(), p_surface + " path");
 		add_global_protected_name(
 				p_script->get_global_name(), p_surface + " global name");
+		HashSet<const void *> visited_default_containers;
 		List<MethodInfo> methods;
 		p_script->get_script_method_list(&methods);
 		for (const MethodInfo &method : methods) {
 			add_global_protected_name(
 					method.name, p_surface + " method");
-			add_global_protected_identity(
-					String(method.return_val.class_name),
-					p_surface + " return type");
+			add_global_protected_property_info(
+					method.return_val, p_surface + " return type");
 			for (const PropertyInfo &argument : method.arguments) {
-				add_global_protected_identity(
-						String(argument.class_name),
-						p_surface + " argument type");
+				add_global_protected_property_info(
+						argument, p_surface + " argument type");
+			}
+			for (const Variant &default_argument :
+					method.default_arguments) {
+				add_global_protected_variant(
+						default_argument,
+						p_surface + " default argument",
+						visited_default_containers);
 			}
 		}
 		List<PropertyInfo> properties;
@@ -1036,15 +1343,27 @@ struct FSNameManglerApplication::Transaction::Data {
 		for (const PropertyInfo &property : properties) {
 			add_global_protected_name(
 					StringName(property.name), p_surface + " property");
-			add_global_protected_identity(
-					String(property.class_name),
-					p_surface + " property type");
+			add_global_protected_property_info(
+					property, p_surface + " property type");
 		}
 		List<MethodInfo> signals;
 		p_script->get_script_signal_list(&signals);
 		for (const MethodInfo &signal : signals) {
 			add_global_protected_name(
 					signal.name, p_surface + " signal");
+			add_global_protected_property_info(
+					signal.return_val, p_surface + " signal return type");
+			for (const PropertyInfo &argument : signal.arguments) {
+				add_global_protected_property_info(
+						argument, p_surface + " signal argument type");
+			}
+			for (const Variant &default_argument :
+					signal.default_arguments) {
+				add_global_protected_variant(
+						default_argument,
+						p_surface + " signal default argument",
+						visited_default_containers);
+			}
 		}
 		HashMap<StringName, Variant> constants;
 		p_script->get_constants(&constants);
@@ -1167,6 +1486,8 @@ struct FSNameManglerApplication::Transaction::Data {
 					global_class, "external global script class");
 			const String path =
 					ScriptServer::get_global_class_path(global_class);
+			add_global_protected_path(
+					path, "external global script path");
 			Ref<Resource> resource = ResourceCache::get_ref(path);
 			if (resource.is_null() && ResourceLoader::exists(path)) {
 				resource = ResourceLoader::load(path);
@@ -1188,6 +1509,13 @@ struct FSNameManglerApplication::Transaction::Data {
 		if (global_surface != nullptr) {
 			r_surface = *global_surface;
 			return true;
+		}
+		for (const KeyValue<String, String> &path :
+				global_protected_paths) {
+			if (path.key.contains(String(p_name))) {
+				r_surface = path.value;
+				return true;
+			}
 		}
 		if (ClassDB::class_exists(p_name)) {
 			r_surface = "native class identity";
@@ -1224,9 +1552,62 @@ struct FSNameManglerApplication::Transaction::Data {
 			}
 		}
 
+		bool reflects_methods = false;
+		bool reflects_properties = false;
+		bool reflects_signals = false;
+		const auto record_reflection =
+				[&](const StringName &p_method,
+						const StringName &p_class) {
+					if (p_method == SNAME("get_method_list") ||
+							(p_class == SNAME("FSReflection") &&
+									(p_method == SNAME("get_methods") ||
+											p_method ==
+													SNAME("get_method_descriptors")))) {
+						reflects_methods = true;
+					} else if (p_method == SNAME("get_property_list") ||
+							(p_class == SNAME("FSReflection") &&
+									(p_method == SNAME("get_properties") ||
+											p_method ==
+													SNAME("get_property_descriptors")))) {
+						reflects_properties = true;
+					} else if (p_method == SNAME("get_signal_list")) {
+						reflects_signals = true;
+					}
+				};
+		for (const FunctionSnapshot &snapshot : function_snapshots) {
+			for (const StringName &global_name : snapshot.global_names) {
+				record_reflection(global_name, StringName());
+			}
+			for (const FSFunction::ExportFixups::MethodBindKey &key :
+					snapshot.function->export_fixups.method_binds) {
+				record_reflection(key.method_name, key.class_name);
+			}
+		}
+
 		HashSet<const Script *> visited_external_scripts;
 		for (const ClassSnapshot &snapshot : class_snapshots) {
 			const FoundryScript *script = snapshot.script.ptr();
+			bool is_method_declaration =
+					snapshot.member_functions.has(p_name) ||
+					snapshot.abstract_trait_requirements.has(p_name);
+			for (const KeyValue<StringName,
+						 FoundryScript::EnumFunctionSet> &enum_entry :
+					snapshot.enum_functions) {
+				is_method_declaration =
+						is_method_declaration ||
+						enum_entry.value.instance_functions.has(p_name) ||
+						enum_entry.value.static_functions.has(p_name);
+			}
+			if ((reflects_methods && is_method_declaration) ||
+					(reflects_properties &&
+							(snapshot.members.has(p_name) ||
+									snapshot.member_indices.has(p_name) ||
+									snapshot.static_variables_indices.has(
+											p_name))) ||
+					(reflects_signals && snapshot.signals.has(p_name))) {
+				r_surface = "reflection enumeration";
+				return true;
+			}
 			const String script_path = script->get_script_path();
 			if (script_path.contains(String(p_name)) ||
 					script->simplified_icon_path.contains(String(p_name))) {
@@ -1236,6 +1617,40 @@ struct FSNameManglerApplication::Transaction::Data {
 			if (!script->registered_conformance_source.is_empty() &&
 					script->registered_conformance_source.contains(String(p_name))) {
 				r_surface = "conformance source path";
+				return true;
+			}
+			if (snapshot.local_name == p_name &&
+					has_builtin_annotation(
+							script->class_annotations,
+							SNAME("keep_name"))) {
+				r_surface = "@keep_name class declaration";
+				return true;
+			}
+			const auto annotation_owner_is_kept =
+					[&](const HashMap<StringName,
+								Vector<FoundryScript::AnnotationUsage>>
+									&p_annotations,
+							bool p_exported_property) {
+						const Vector<FoundryScript::AnnotationUsage> *usages =
+								p_annotations.getptr(p_name);
+						return usages != nullptr &&
+								(has_builtin_annotation(
+										 *usages, SNAME("keep_name")) ||
+										(p_exported_property &&
+												has_builtin_annotation(
+														*usages,
+														SNAME("export"),
+														true)));
+					};
+			if (annotation_owner_is_kept(
+						snapshot.method_annotations, false) ||
+					annotation_owner_is_kept(
+							snapshot.variable_annotations, true) ||
+					annotation_owner_is_kept(
+							snapshot.signal_annotations, false) ||
+					annotation_owner_is_kept(
+							snapshot.constant_annotations, false)) {
+				r_surface = "annotation-protected declaration";
 				return true;
 			}
 			if (script->native.is_valid()) {
@@ -1254,6 +1669,10 @@ struct FSNameManglerApplication::Transaction::Data {
 							member.value.property_info, p_name) ||
 						data_type_contains_name(
 								member.value.data_type, p_name,
+								visited_external_scripts) ||
+						data_type_contains_name(
+								member.value.type_argument_binding.fixed,
+								p_name,
 								visited_external_scripts)) {
 					r_surface = "member type metadata";
 					return true;
@@ -1265,8 +1684,56 @@ struct FSNameManglerApplication::Transaction::Data {
 							member.value.property_info, p_name) ||
 						data_type_contains_name(
 								member.value.data_type, p_name,
+								visited_external_scripts) ||
+						data_type_contains_name(
+								member.value.type_argument_binding.fixed,
+								p_name,
 								visited_external_scripts)) {
 					r_surface = "static member type metadata";
+					return true;
+				}
+			}
+			for (const FoundryScript::TypeArgumentBinding &binding :
+					snapshot.member_type_argument_bindings) {
+				if (data_type_contains_name(
+							binding.fixed, p_name,
+							visited_external_scripts)) {
+					r_surface = "member type-argument binding";
+					return true;
+				}
+			}
+			for (const KeyValue<FoundryScript *,
+						 Vector<FoundryScript::TypeArgumentBinding>>
+							&ancestor :
+					snapshot.type_parameter_bindings_by_ancestor) {
+				if (external_script_contains_name(
+							ancestor.key, p_name,
+							visited_external_scripts, 0)) {
+					r_surface = "ancestor type-argument binding";
+					return true;
+				}
+				for (const FoundryScript::TypeArgumentBinding &binding :
+						ancestor.value) {
+					if (data_type_contains_name(
+								binding.fixed, p_name,
+								visited_external_scripts)) {
+						r_surface = "ancestor type-argument binding";
+						return true;
+					}
+				}
+			}
+			for (const KeyValue<StringName, FoundryScript::MemberInfo>
+							&member :
+					snapshot.old_static_variables_indices) {
+				if (property_info_contains_name(
+							member.value.property_info, p_name) ||
+						data_type_contains_name(
+								member.value.data_type, p_name,
+								visited_external_scripts) ||
+						data_type_contains_name(
+								member.value.type_argument_binding.fixed,
+								p_name, visited_external_scripts)) {
+					r_surface = "old static member type metadata";
 					return true;
 				}
 			}
@@ -1519,6 +1986,22 @@ struct FSNameManglerApplication::Transaction::Data {
 				}
 			}
 		}
+		for (const RegistrySnapshot &snapshot : registry_snapshots) {
+			for (const FSConformanceRegistry::RuntimeConformance &conformance :
+					snapshot.entries) {
+				if (external_script_contains_name(
+							conformance.target_script, p_name,
+							visited_external_scripts, 0)) {
+					r_surface = "conformance target script";
+					return true;
+				}
+				if (reflects_methods &&
+						conformance.functions.has(p_name)) {
+					r_surface = "reflection enumeration";
+					return true;
+				}
+			}
+		}
 		return false;
 	}
 
@@ -1548,8 +2031,24 @@ struct FSNameManglerApplication::Transaction::Data {
 	}
 
 	void collect_observed_variant(const Variant &p_value, int p_depth = 0) {
+		const bool is_array = p_value.get_type() == Variant::ARRAY;
+		const bool is_dictionary =
+				p_value.get_type() == Variant::DICTIONARY;
+		const void *container_id = nullptr;
+		if (is_array) {
+			container_id = Array(p_value).id();
+		} else if (is_dictionary) {
+			container_id = Dictionary(p_value).id();
+		}
+		if (container_id != nullptr &&
+				observed_variant_containers.has(container_id)) {
+			return;
+		}
 		if (p_depth > Variant::MAX_RECURSION_DEPTH) {
 			return;
+		}
+		if (container_id != nullptr) {
+			observed_variant_containers.insert(container_id);
 		}
 		switch (p_value.get_type()) {
 			case Variant::STRING:
@@ -1649,6 +2148,7 @@ struct FSNameManglerApplication::Transaction::Data {
 	void collect_map_surfaces() {
 		project_sources.clear();
 		observed_names.clear();
+		observed_variant_containers.clear();
 
 		for (const ClassSnapshot &snapshot : class_snapshots) {
 			add_project_source(snapshot.local_name);
@@ -1998,6 +2498,16 @@ struct FSNameManglerApplication::Transaction::Data {
 			snapshot.entries = registry->get_runtime_witnesses(snapshot.source);
 			for (const FSConformanceRegistry::RuntimeConformance &conformance :
 					snapshot.entries) {
+				if (conformance.target_script == nullptr) {
+					Diagnostic diagnostic;
+					diagnostic.surface = "conformance registry";
+					diagnostic.source_name = conformance.trait_name;
+					diagnostic.message = vformat(
+							"Runtime conformance source `%s` has no target script.",
+							snapshot.source);
+					r_diagnostics.push_back(diagnostic);
+					return false;
+				}
 				for (const KeyValue<StringName, FSFunction *> &witness :
 						conformance.functions) {
 					if (witness.value == nullptr) {
@@ -2176,18 +2686,10 @@ struct FSNameManglerApplication::Transaction::Data {
 					parse_index++) {
 				const FSConformanceRegistry::Conformance &conformance =
 						snapshot.conformances[parse_index];
-				// The v3 witness section contains compiled functions and rejects
-				// empty runtime entries. A witnessless parse conformance therefore
-				// has nothing to correlate or serialize here; it is still staged in
-				// the parse registry above. Any parse entry that does own witnesses
-				// must correlate exactly so compiled bytecode cannot silently emit
-				// the wrong trait membership.
-				if (!conformance.witnesses.is_empty() &&
-						!matched_parse_entries.has(parse_index)) {
+				if (!matched_parse_entries.has(parse_index)) {
 					add_correlation_diagnostic(
 							snapshot, conformance.trait_name,
-							"a parse entry with witnesses has no matching "
-							"runtime entry.");
+							"a parse entry has no matching runtime entry.");
 					return false;
 				}
 			}
@@ -2324,24 +2826,32 @@ struct FSNameManglerApplication::Transaction::Data {
 			const String &p_surface,
 			const HashSet<const FoundryScript *> &p_roots,
 			Vector<Diagnostic> &r_diagnostics,
-			int p_depth = 0) const {
+			int p_depth = 0) {
+		const bool is_array = p_value.get_type() == Variant::ARRAY;
+		const bool is_dictionary =
+				p_value.get_type() == Variant::DICTIONARY;
+		const void *container_id = nullptr;
+		if (is_array) {
+			container_id = Array(p_value).id();
+		} else if (is_dictionary) {
+			container_id = Dictionary(p_value).id();
+		}
+		if (container_id != nullptr &&
+				validated_variant_containers.has(container_id)) {
+			return true;
+		}
 		if (p_depth > Variant::MAX_RECURSION_DEPTH) {
-			add_map_diagnostic(
-					r_diagnostics, "closed graph",
-					p_referring != nullptr ? p_referring->local_name
-										   : StringName(),
-					vformat(
-							"%s exceeds the supported Variant recursion "
-							"depth.",
-							p_surface));
-			return false;
+			unscannable_protected_surface = true;
+			return true;
+		}
+		if (container_id != nullptr) {
+			validated_variant_containers.insert(container_id);
 		}
 		switch (p_value.get_type()) {
 			case Variant::ARRAY: {
 				const Array array = p_value;
 				if (!validate_container_type_closure(array.get_element_type(),
-							p_referring, p_surface, p_roots, r_diagnostics,
-							p_depth + 1)) {
+							p_referring, p_surface, p_roots, r_diagnostics)) {
 					return false;
 				}
 				for (const Variant &value : array) {
@@ -2354,12 +2864,10 @@ struct FSNameManglerApplication::Transaction::Data {
 			case Variant::DICTIONARY: {
 				const Dictionary dictionary = p_value;
 				if (!validate_container_type_closure(dictionary.get_key_type(),
-							p_referring, p_surface, p_roots, r_diagnostics,
-							p_depth + 1) ||
+							p_referring, p_surface, p_roots, r_diagnostics) ||
 						!validate_container_type_closure(
 								dictionary.get_value_type(), p_referring,
-								p_surface, p_roots, r_diagnostics,
-								p_depth + 1)) {
+								p_surface, p_roots, r_diagnostics)) {
 					return false;
 				}
 				const Array keys = dictionary.keys();
@@ -2390,7 +2898,7 @@ struct FSNameManglerApplication::Transaction::Data {
 							specialized->get_type_arguments()) {
 						if (!validate_container_type_closure(type_argument,
 									p_referring, p_surface, p_roots,
-									r_diagnostics, p_depth + 1)) {
+									r_diagnostics)) {
 							return false;
 						}
 					}
@@ -2407,7 +2915,7 @@ struct FSNameManglerApplication::Transaction::Data {
 			const FoundryScript *p_referring,
 			const String &p_surface,
 			const HashSet<const FoundryScript *> &p_roots,
-			Vector<Diagnostic> &r_diagnostics) const {
+			Vector<Diagnostic> &r_diagnostics) {
 		for (const FoundryScript::AnnotationUsage &usage : p_usages) {
 			if (!validate_variant_closure(usage.args, p_referring, p_surface,
 						p_roots, r_diagnostics) ||
@@ -2593,7 +3101,8 @@ struct FSNameManglerApplication::Transaction::Data {
 
 	bool validate_closed_graph(
 			const HashSet<const FoundryScript *> &p_roots,
-			Vector<Diagnostic> &r_diagnostics) const {
+			Vector<Diagnostic> &r_diagnostics) {
+		validated_variant_containers.clear();
 		for (const ClassSnapshot &snapshot : class_snapshots) {
 			const FoundryScript *script = snapshot.script.ptr();
 			if (!validate_variant_closure(script->rpc_config, script,
@@ -2870,6 +3379,12 @@ struct FSNameManglerApplication::Transaction::Data {
 			}
 			for (const FSConformanceRegistry::RuntimeConformance &conformance :
 					snapshot.entries) {
+				if (!validate_script_dependency(
+							conformance.target_script, nullptr,
+							"conformance target", p_roots,
+							r_diagnostics)) {
+					return false;
+				}
 				if (!validate_identity_dependency(String(conformance.trait_name),
 							nullptr, "conformance trait", r_diagnostics)) {
 					return false;
@@ -3284,6 +3799,9 @@ Error FSNameManglerApplication::Transaction::_fail(const String &p_surface,
 	diagnostic.source_name = p_source_name;
 	diagnostic.message = p_message;
 	r_diagnostics.push_back(diagnostic);
+	if (active_name_mangler_transaction == this) {
+		active_name_mangler_transaction = nullptr;
+	}
 	state = STATE_FINISHED;
 	data->clear();
 	return p_error;
@@ -3312,7 +3830,12 @@ Error FSNameManglerApplication::Transaction::begin(
 				"Another compiled-graph name application transaction is active.",
 				ERR_ALREADY_IN_USE, r_diagnostics);
 	}
+	state = STATE_PREPARING;
+	active_name_mangler_transaction = this;
 	if (!data->prepare(p_scripts, p_rename_map, r_diagnostics)) {
+		if (active_name_mangler_transaction == this) {
+			active_name_mangler_transaction = nullptr;
+		}
 		state = STATE_FINISHED;
 		data->clear();
 		return ERR_INVALID_PARAMETER;
@@ -3320,15 +3843,16 @@ Error FSNameManglerApplication::Transaction::begin(
 
 	data->stage();
 	state = STATE_ACTIVE;
-	active_name_mangler_transaction = this;
 	return OK;
 }
 
 void FSNameManglerApplication::Transaction::rollback() {
-	if (state != STATE_ACTIVE) {
+	if (state != STATE_ACTIVE && state != STATE_PREPARING) {
 		return;
 	}
-	data->restore();
+	if (state == STATE_ACTIVE) {
+		data->restore();
+	}
 	data->clear();
 	if (active_name_mangler_transaction == this) {
 		active_name_mangler_transaction = nullptr;
