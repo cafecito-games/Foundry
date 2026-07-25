@@ -27,8 +27,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     mkdir -p /home/foundry/.config /home/foundry/.cache /home/foundry/.local/share /workspace && \
     chown -R 10001:10001 /home/foundry /workspace
 
-COPY --chown=10001:10001 foundry.linuxbsd.editor.x86_64 /usr/local/bin/foundry
-RUN chmod 0755 /usr/local/bin/foundry
+COPY --chown=10001:10001 --chmod=0755 foundry.linuxbsd.editor.x86_64 /usr/local/bin/foundry
 
 ENV HOME=/home/foundry \
     XDG_CONFIG_HOME=/home/foundry/.config \

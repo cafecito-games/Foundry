@@ -37,7 +37,13 @@ def main() -> None:
         require(dockerfile, package, "runtime packages")
     require(dockerfile, "groupadd --gid 10001 foundry", "non-root group")
     require(dockerfile, "useradd --uid 10001", "non-root user")
-    require(dockerfile, "COPY --chown=10001:10001 foundry.linuxbsd.editor.x86_64", "release binary copy")
+    require(
+        dockerfile,
+        "COPY --chown=10001:10001 --chmod=0755 foundry.linuxbsd.editor.x86_64",
+        "executable release binary copy",
+    )
+    if "RUN chmod 0755 /usr/local/bin/foundry" in dockerfile:
+        raise AssertionError("release binary must not create a separate chmod layer")
     require(dockerfile, "WORKDIR /workspace", "workspace")
     require(dockerfile, "USER 10001:10001", "runtime user")
     require(dockerfile, 'ENTRYPOINT ["/usr/local/bin/foundry", "--headless"]', "entrypoint")
