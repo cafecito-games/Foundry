@@ -56,18 +56,11 @@ public:
 		};
 
 	private:
-		struct ClassSnapshot {
-			Ref<FoundryScript> script;
-			StringName local_name;
-			StringName global_name;
-			String fully_qualified_name;
-		};
+		struct Data;
 
 		State state = STATE_UNUSED;
-		Vector<ClassSnapshot> class_snapshots;
+		Data *data = nullptr;
 
-		bool _index_class(const Ref<FoundryScript> &p_script,
-				HashSet<const FoundryScript *> &r_classes, Vector<Diagnostic> &r_diagnostics);
 		Error _fail(const String &p_surface, const StringName &p_source_name,
 				const String &p_message, Error p_error, Vector<Diagnostic> &r_diagnostics);
 
