@@ -54,7 +54,123 @@ TEST_CASE("[FoundryScript][BytecodeHardening] Format version is pinned") {
 	// The reader rejects any other version outright, so the on-disk layout and this constant move
 	// together. Bump FORMAT_VERSION in the same change as ANY layout change to the `.fsb` format
 	// (sections, field order/width, opcode operand layout, tag/fixup sets) and update this pin.
-	CHECK(FSBytecodeFormat::FORMAT_VERSION == 2);
+	CHECK(FSBytecodeFormat::FORMAT_VERSION == 3);
+}
+
+TEST_CASE("[FoundryScript][BytecodeHardening] Verifier validates every enum-call operand and identity") {
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"func placeholder() -> void:\n"
+			"\tpass\n");
+
+	struct EnumCallCase {
+		FSFunction::Opcode opcode;
+		bool has_target;
+		bool is_async;
+	};
+	const EnumCallCase opcode_cases[] = {
+		{ FSFunction::OPCODE_CALL_ENUM, false, false },
+		{ FSFunction::OPCODE_CALL_ENUM_RETURN, true, false },
+		{ FSFunction::OPCODE_CALL_ENUM_ASYNC, true, true },
+	};
+
+	for (const EnumCallCase &opcode_case : opcode_cases) {
+		FSByteCodeGenerator generator;
+		generator.write_start(script.ptr(), vformat("enum_call_%d", (int)opcode_case.opcode), true, Variant(), FSDataType());
+
+		const uint32_t receiver_index = generator.add_or_get_constant(1);
+		const FSCodeGenerator::Address base(FSCodeGenerator::Address::CONSTANT, receiver_index);
+		FSCodeGenerator::Address target;
+		if (opcode_case.has_target) {
+			const uint32_t target_index = generator.add_temporary(FSDataType());
+			target = FSCodeGenerator::Address(FSCodeGenerator::Address::TEMPORARY, target_index);
+		}
+		generator.write_enum_call(target, base, Vector<FSCodeGenerator::Address>(),
+				SNAME("res://enum_owner.fs"), SNAME("Owner"), SNAME("Status"), SNAME("resolve"),
+				false, opcode_case.is_async);
+		if (opcode_case.has_target) {
+			generator.pop_temporary();
+		}
+		FSFunction *function = generator.write_end();
+		REQUIRE(function != nullptr);
+
+		const Vector<int> valid = function->get_code();
+		REQUIRE(valid.size() == 11);
+		CHECK(valid[0] == opcode_case.opcode);
+		CHECK(bytecode_verify_with_code(script, function, valid) == OK);
+
+		Vector<int> truncated = valid;
+		truncated.resize(9);
+		CHECK(bytecode_verify_with_code(script, function, truncated) == ERR_INVALID_DATA);
+
+		Vector<int> negative_argument_count = valid;
+		negative_argument_count.write[4] = -1;
+		CHECK(bytecode_verify_with_code(script, function, negative_argument_count) == ERR_INVALID_DATA);
+
+		Vector<int> mismatched_argument_count = valid;
+		mismatched_argument_count.write[4] = 1;
+		CHECK(bytecode_verify_with_code(script, function, mismatched_argument_count) == ERR_INVALID_DATA);
+
+		const int out_of_range_stack =
+				FSFunction::ADDR_TYPE_STACK << FSFunction::ADDR_BITS | function->get_max_stack_size();
+		Vector<int> bad_receiver = valid;
+		bad_receiver.write[2] = out_of_range_stack;
+		CHECK(bytecode_verify_with_code(script, function, bad_receiver) == ERR_INVALID_DATA);
+		Vector<int> bad_target = valid;
+		bad_target.write[3] = out_of_range_stack;
+		CHECK(bytecode_verify_with_code(script, function, bad_target) == ERR_INVALID_DATA);
+
+		for (int identity = 0; identity < 4; identity++) {
+			Vector<int> bad_identity_index = valid;
+			bad_identity_index.write[5 + identity] = function->get_global_names_count();
+			CHECK(bytecode_verify_with_code(script, function, bad_identity_index) == ERR_INVALID_DATA);
+		}
+
+		Vector<int> negative_identity_index = valid;
+		negative_identity_index.write[5] = -1;
+		CHECK(bytecode_verify_with_code(script, function, negative_identity_index) == ERR_INVALID_DATA);
+
+		Vector<int> bad_call_kind = valid;
+		bad_call_kind.write[9] = 2;
+		CHECK(bytecode_verify_with_code(script, function, bad_call_kind) == ERR_INVALID_DATA);
+
+		memdelete(function);
+
+		// A table index can be in range while referring to an empty StringName. Such an identity can
+		// never resolve and must be rejected at load time instead of reaching the VM's runtime error.
+		for (int empty_identity = 0; empty_identity < 4; empty_identity++) {
+			StringName identity_names[] = {
+				SNAME("res://enum_owner.fs"),
+				SNAME("Owner"),
+				SNAME("Status"),
+				SNAME("resolve"),
+			};
+			identity_names[empty_identity] = StringName();
+
+			FSByteCodeGenerator empty_generator;
+			empty_generator.write_start(script.ptr(),
+					vformat("empty_enum_identity_%d_%d", (int)opcode_case.opcode, empty_identity),
+					true, Variant(), FSDataType());
+			const uint32_t empty_receiver_index = empty_generator.add_or_get_constant(1);
+			const FSCodeGenerator::Address empty_base(
+					FSCodeGenerator::Address::CONSTANT, empty_receiver_index);
+			FSCodeGenerator::Address empty_target;
+			if (opcode_case.has_target) {
+				const uint32_t empty_target_index = empty_generator.add_temporary(FSDataType());
+				empty_target = FSCodeGenerator::Address(
+						FSCodeGenerator::Address::TEMPORARY, empty_target_index);
+			}
+			empty_generator.write_enum_call(empty_target, empty_base, Vector<FSCodeGenerator::Address>(),
+					identity_names[0], identity_names[1], identity_names[2], identity_names[3],
+					false, opcode_case.is_async);
+			if (opcode_case.has_target) {
+				empty_generator.pop_temporary();
+			}
+			FSFunction *empty_function = empty_generator.write_end();
+			REQUIRE(empty_function != nullptr);
+			CHECK(bytecode_verify_with_code(script, empty_function, empty_function->get_code()) == ERR_INVALID_DATA);
+			memdelete(empty_function);
+		}
+	}
 }
 
 TEST_CASE("[FoundryScript][BytecodeHardening] Verifier rejects out-of-range operand addresses") {

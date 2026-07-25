@@ -717,6 +717,93 @@ TEST_CASE("[FoundryScript][BytecodeScript] Script-level lambda metadata rebuilds
 	CHECK((int64_t)bytecode_instance_call(instance, SNAME("lambda_total"), { 10 }) == 14);
 }
 
+TEST_CASE("[FoundryScript][BytecodeScript] Enum functions and their exact owners round-trip") {
+	const Ref<FoundryScript> original = compile_bytecode_test_source(
+			"enum Status:\n"
+			"\tUNKNOWN = 0\n"
+			"\tREADY = 7\n"
+			"\n"
+			"\tfunc render(prefix: String) -> String:\n"
+			"\t\tvar render_value := func(value: int) -> String:\n"
+			"\t\t\treturn prefix + str(value)\n"
+			"\t\treturn String(render_value.call(self))\n"
+			"\n"
+			"\tstatic func parse(value: int) -> Self:\n"
+			"\t\treturn READY if value > 0 else UNKNOWN\n"
+			"\n"
+			"class Nested:\n"
+			"\tenum Mode:\n"
+			"\t\tOFF = 0\n"
+			"\t\tON = 5\n"
+			"\n"
+			"\t\tfunc add(delta: int) -> int:\n"
+			"\t\t\treturn self + delta\n"
+			"\n"
+			"\t\tstatic func initial() -> Self:\n"
+			"\t\t\treturn ON\n"
+			"\n"
+			"func run() -> Array:\n"
+			"\tvar status: Status = Status.parse(1)\n"
+			"\tvar mode: Nested.Mode = Nested.Mode.initial()\n"
+			"\treturn [status.render(\"status:\"), mode.add(3)]\n");
+
+	FSFunction *original_render = original->get_enum_function(SNAME("Status"), SNAME("render"), false);
+	FSFunction *original_parse = original->get_enum_function(SNAME("Status"), SNAME("parse"), true);
+	REQUIRE(original_render != nullptr);
+	REQUIRE(original_parse != nullptr);
+	CHECK(original_render->get_script() == original.ptr());
+	CHECK(original_parse->get_script() == original.ptr());
+	REQUIRE(original_render->get_lambdas().size() == 1);
+
+	BytecodeTestResolver resolver;
+	const Ref<FoundryScript> restored = bytecode_round_trip_script(original, &resolver);
+	FSFunction *restored_render = restored->get_enum_function(SNAME("Status"), SNAME("render"), false);
+	FSFunction *restored_parse = restored->get_enum_function(SNAME("Status"), SNAME("parse"), true);
+	REQUIRE(restored_render != nullptr);
+	REQUIRE(restored_parse != nullptr);
+	if (restored_render == nullptr || restored_parse == nullptr) {
+		return;
+	}
+	CHECK(restored_render->get_script() == restored.ptr());
+	CHECK(restored_parse->get_script() == restored.ptr());
+	CHECK_FALSE(restored->get_member_functions().has(SNAME("render")));
+	CHECK_FALSE(restored->get_member_functions().has(SNAME("parse")));
+	REQUIRE(restored_render->get_lambdas().size() == 1);
+	const FoundryScript::LambdaInfo *restored_lambda_info =
+			restored->get_lambda_info().getptr(restored_render->get_lambdas()[0]);
+	REQUIRE(restored_lambda_info != nullptr);
+	CHECK(restored_lambda_info->capture_count == 1);
+
+	REQUIRE(original->get_subclasses().has(SNAME("Nested")));
+	REQUIRE(restored->get_subclasses().has(SNAME("Nested")));
+	const Ref<FoundryScript> original_nested = original->get_subclasses().find(SNAME("Nested"))->value;
+	const Ref<FoundryScript> restored_nested = restored->get_subclasses().find(SNAME("Nested"))->value;
+	FSFunction *original_add = original_nested->get_enum_function(SNAME("Mode"), SNAME("add"), false);
+	FSFunction *original_initial = original_nested->get_enum_function(SNAME("Mode"), SNAME("initial"), true);
+	FSFunction *restored_add = restored_nested->get_enum_function(SNAME("Mode"), SNAME("add"), false);
+	FSFunction *restored_initial = restored_nested->get_enum_function(SNAME("Mode"), SNAME("initial"), true);
+	REQUIRE(original_add != nullptr);
+	REQUIRE(original_initial != nullptr);
+	REQUIRE(restored_add != nullptr);
+	REQUIRE(restored_initial != nullptr);
+	if (original_add == nullptr || original_initial == nullptr || restored_add == nullptr || restored_initial == nullptr) {
+		return;
+	}
+	CHECK(original_add->get_script() == original_nested.ptr());
+	CHECK(original_initial->get_script() == original_nested.ptr());
+	CHECK(restored_add->get_script() == restored_nested.ptr());
+	CHECK(restored_initial->get_script() == restored_nested.ptr());
+	CHECK_FALSE(restored_nested->get_member_functions().has(SNAME("add")));
+	CHECK_FALSE(restored_nested->get_member_functions().has(SNAME("initial")));
+
+	const Variant instance_variant = bytecode_new_instance(restored);
+	Object *instance = instance_variant;
+	const Array result = bytecode_instance_call(instance, SNAME("run"), {});
+	REQUIRE(result.size() == 2);
+	CHECK((String)result[0] == "status:7");
+	CHECK((int64_t)result[1] == 8);
+}
+
 TEST_CASE("[FoundryScript][BytecodeScript] Named lambdas may shadow member function names") {
 	// A named lambda (grammar: `func`, [ identifier ], ...) may legally share its name with a
 	// member function; the loader must accept it, and its eventual destruction must not unregister
@@ -769,6 +856,9 @@ TEST_CASE("[FoundryScript][BytecodeScript] Duplicate function names in corrupt b
 		}
 	}
 	REQUIRE(patched);
+	if (!patched) {
+		return;
+	}
 
 	Ref<FoundryScript> target;
 	target.instantiate();
@@ -783,6 +873,94 @@ TEST_CASE("[FoundryScript][BytecodeScript] Duplicate function names in corrupt b
 	// The surviving first function stays registered and owned by the discarded script (its
 	// destructor frees it exactly once); the duplicate's deletion must not have unregistered it.
 	CHECK(target->get_member_functions().has(SNAME("alpha")));
+}
+
+TEST_CASE("[FoundryScript][BytecodeHardening] Duplicate enum function names in corrupt buffers fail cleanly") {
+	const Ref<FoundryScript> original = compile_bytecode_test_source(
+			"enum Status:\n"
+			"\tREADY = 1\n"
+			"\n"
+			"\tfunc alpha() -> int:\n"
+			"\t\treturn self\n"
+			"\n"
+			"\tstatic func bravo() -> Self:\n"
+			"\t\treturn READY\n");
+
+	FSBytecodeExporter exporter;
+	Vector<uint8_t> buffer;
+	REQUIRE(exporter.serialize(original, buffer) == OK);
+
+	// Rename the static function to the instance function's equal-length name. A valid enum cannot
+	// declare the same name twice across call kinds, so the reconstructed table must reject it.
+	const CharString marker = String("bravo").utf8();
+	const CharString replacement = String("alpha").utf8();
+	bool patched = false;
+	for (int i = 0; i + marker.length() <= buffer.size(); i++) {
+		if (memcmp(&buffer[i], marker.get_data(), marker.length()) == 0) {
+			memcpy(&buffer.write[i], replacement.get_data(), replacement.length());
+			patched = true;
+			break;
+		}
+	}
+	REQUIRE(patched);
+	if (!patched) {
+		return;
+	}
+
+	Ref<FoundryScript> target;
+	target.instantiate();
+	target->set_path_cache(original->get_script_path());
+	BytecodeTestResolver resolver;
+	FSBytecodeLoader loader;
+	loader.set_resolver(&resolver);
+	ERR_PRINT_OFF;
+	CHECK(loader.load_full(buffer, target) == ERR_INVALID_DATA);
+	ERR_PRINT_ON;
+	CHECK(!target->is_valid());
+}
+
+TEST_CASE("[FoundryScript][BytecodeHardening] Duplicate enum table references in corrupt buffers fail cleanly") {
+	const Ref<FoundryScript> original = compile_bytecode_test_source(
+			"enum Alpha:\n"
+			"\tVALUE = 1\n"
+			"\n"
+			"\tfunc first() -> int:\n"
+			"\t\treturn self\n"
+			"\n"
+			"enum Bravo:\n"
+			"\tVALUE = 2\n"
+			"\n"
+			"\tfunc second() -> int:\n"
+			"\t\treturn self\n");
+
+	FSBytecodeExporter exporter;
+	Vector<uint8_t> buffer;
+	REQUIRE(exporter.serialize(original, buffer) == OK);
+
+	// The string table deduplicates enum identities. Changing Bravo to Alpha therefore makes both
+	// serialized enum table entries refer to the same owner-local enum.
+	const CharString marker = String("Bravo").utf8();
+	const CharString replacement = String("Alpha").utf8();
+	bool patched = false;
+	for (int i = 0; i + marker.length() <= buffer.size(); i++) {
+		if (memcmp(&buffer[i], marker.get_data(), marker.length()) == 0) {
+			memcpy(&buffer.write[i], replacement.get_data(), replacement.length());
+			patched = true;
+			break;
+		}
+	}
+	REQUIRE(patched);
+
+	Ref<FoundryScript> target;
+	target.instantiate();
+	target->set_path_cache(original->get_script_path());
+	BytecodeTestResolver resolver;
+	FSBytecodeLoader loader;
+	loader.set_resolver(&resolver);
+	ERR_PRINT_OFF;
+	CHECK(loader.load_full(buffer, target) == ERR_INVALID_DATA);
+	ERR_PRINT_ON;
+	CHECK(!target->is_valid());
 }
 
 TEST_CASE("[FoundryScript][BytecodeHardening] Duplicate static-variable names in corrupt buffers fail cleanly") {

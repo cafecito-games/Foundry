@@ -372,7 +372,7 @@ bool FSTestRunner::generate_outputs() {
 }
 
 // Reads the runner directives from a fixture's leading lines. Directives are full-line comments
-// (`#debug-only`, `#once-per-process`, `#skip-compiled-bytecode`), one per line at the top of the file; the scan is
+// (`#debug-only`, `#once-per-process`), one per line at the top of the file; the scan is
 // order-independent and stops at the first non-directive line, so a fixture can carry several.
 static HashSet<String> read_fixture_directives(const String &p_path) {
 	HashSet<String> directives;
@@ -384,7 +384,7 @@ static HashSet<String> read_fixture_directives(const String &p_path) {
 	}
 	while (!fixture_file->eof_reached()) {
 		const String line = fixture_file->get_line();
-		if (line != "#debug-only" && line != "#once-per-process" && line != "#skip-compiled-bytecode") {
+		if (line != "#debug-only" && line != "#once-per-process") {
 			break;
 		}
 		directives.insert(line);
@@ -431,12 +431,6 @@ bool FSTestRunner::make_tests_for_dir(const String &p_dir) {
 				// pass-order independent: whichever corpus pass runs the fixture first consumes
 				// the once-only diagnostics, so exactly one non-skipping pass can ever match.
 				if (compiled_bytecode && directives.has("#once-per-process")) {
-					next = dir->get_next();
-					continue;
-				}
-				// Enum host function tables intentionally remain source-only in #1119. #1120 owns
-				// their compiled-bytecode persistence and will remove this explicit fixture sentinel.
-				if (compiled_bytecode && directives.has("#skip-compiled-bytecode")) {
 					next = dir->get_next();
 					continue;
 				}

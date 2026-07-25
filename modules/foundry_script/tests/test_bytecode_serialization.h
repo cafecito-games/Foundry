@@ -1529,6 +1529,20 @@ TEST_CASE("[FoundryScript][BytecodeCodec] Editor-only named globals are collecte
 
 	const Vector<StringName> unsupported = FSBytecodeExporter::collect_unsupported_named_globals(script);
 
+	// Enum functions live outside `member_functions`, but they and their lambdas are serialized just
+	// like member functions. A named global referenced only from that table must therefore be caught
+	// before an export template is built.
+	const Ref<FoundryScript> enum_script = compile_bytecode_test_source(
+			"enum Status:\n"
+			"\tREADY = 1\n"
+			"\n"
+			"\tfunc editor_value():\n"
+			"\t\tvar through_lambda = func():\n"
+			"\t\t\treturn BytecodeEditorOnlyGlobal\n"
+			"\t\treturn [BytecodeEditorOnlyGlobal, through_lambda.call()]\n");
+	const Vector<StringName> enum_unsupported =
+			FSBytecodeExporter::collect_unsupported_named_globals(enum_script);
+
 	// Under the export-compile flag the same autoload reference compiles to STORE_GLOBAL with a
 	// masked operand rebaked by name at .fsb load, so the validator has nothing left to flag.
 	FSLanguage::get_singleton()->set_compiling_for_export(true);
@@ -1545,6 +1559,11 @@ TEST_CASE("[FoundryScript][BytecodeCodec] Editor-only named globals are collecte
 
 	REQUIRE(unsupported.size() == 1);
 	CHECK(unsupported[0] == editor_only_name);
+	REQUIRE(enum_unsupported.size() == 1);
+	if (enum_unsupported.size() != 1) {
+		return;
+	}
+	CHECK(enum_unsupported[0] == editor_only_name);
 
 	CHECK(export_unsupported.is_empty());
 	REQUIRE(export_member_functions.has(SNAME("run")));

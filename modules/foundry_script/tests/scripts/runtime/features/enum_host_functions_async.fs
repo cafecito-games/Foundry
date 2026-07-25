@@ -1,6 +1,3 @@
-#skip-compiled-bytecode
-# #1120 removes this sentinel after enum host function tables persist in compiled bytecode.
-
 signal go
 
 enum AsyncStatus:

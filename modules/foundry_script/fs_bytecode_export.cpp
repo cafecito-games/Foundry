@@ -683,6 +683,14 @@ void FSBytecodeExporter::_collect_unsupported_named_globals_from_class(const Fou
 	for (const KeyValue<StringName, FSFunction *> &member_function : p_class->member_functions) {
 		_collect_unsupported_named_globals_from_function(member_function.value, r_names);
 	}
+	for (const KeyValue<StringName, FoundryScript::EnumFunctionSet> &enum_entry : p_class->enum_functions) {
+		for (const KeyValue<StringName, FSFunction *> &function : enum_entry.value.instance_functions) {
+			_collect_unsupported_named_globals_from_function(function.value, r_names);
+		}
+		for (const KeyValue<StringName, FSFunction *> &function : enum_entry.value.static_functions) {
+			_collect_unsupported_named_globals_from_function(function.value, r_names);
+		}
+	}
 	_collect_unsupported_named_globals_from_function(p_class->implicit_initializer, r_names);
 	_collect_unsupported_named_globals_from_function(p_class->implicit_ready, r_names);
 	_collect_unsupported_named_globals_from_function(p_class->static_initializer, r_names);
@@ -1059,6 +1067,53 @@ Error FSBytecodeExporter::_write_class_body(StreamPeerBuffer *r_stream, const Fo
 	for (const KeyValue<StringName, FSFunction *> &member_function : p_class->member_functions) {
 		r_stream->put_u8(member_function.value == p_class->initializer ? 1 : 0);
 		error = serialize_function(r_stream, member_function.value);
+		if (error != OK) {
+			return error;
+		}
+	}
+
+	// Enum functions are deliberately kept outside `member_functions`: the enum type and call kind
+	// select their exact table at runtime, so persisting them here preserves that dispatch boundary.
+	r_stream->put_u32((uint32_t)p_class->enum_functions.size());
+	for (const KeyValue<StringName, FoundryScript::EnumFunctionSet> &enum_entry : p_class->enum_functions) {
+		ERR_FAIL_COND_V_MSG(enum_entry.key == StringName(), ERR_INVALID_PARAMETER,
+				vformat("Cannot serialize an unnamed enum function table in script '%s'.", p_class->get_script_path()));
+		for (const KeyValue<StringName, FSFunction *> &instance_function : enum_entry.value.instance_functions) {
+			ERR_FAIL_COND_V_MSG(enum_entry.value.static_functions.has(instance_function.key), ERR_INVALID_PARAMETER,
+					vformat("Cannot serialize enum '%s' of script '%s': function '%s' appears in both the instance and static tables.",
+							enum_entry.key, p_class->get_script_path(), instance_function.key));
+		}
+
+		r_stream->put_u32(string_table.insert(enum_entry.key));
+		const auto write_function_map = [&](const HashMap<StringName, FSFunction *> &p_functions, bool p_static) -> Error {
+			r_stream->put_u32((uint32_t)p_functions.size());
+			for (const KeyValue<StringName, FSFunction *> &function_entry : p_functions) {
+				ERR_FAIL_NULL_V_MSG(function_entry.value, ERR_INVALID_PARAMETER,
+						vformat("Cannot serialize enum '%s' of script '%s': function '%s' is null.",
+								enum_entry.key, p_class->get_script_path(), function_entry.key));
+				ERR_FAIL_COND_V_MSG(function_entry.key == StringName() || function_entry.value->name != function_entry.key,
+						ERR_INVALID_PARAMETER,
+						vformat("Cannot serialize enum '%s' of script '%s': function table key '%s' does not match its compiled name '%s'.",
+								enum_entry.key, p_class->get_script_path(), function_entry.key, function_entry.value->name));
+				ERR_FAIL_COND_V_MSG(function_entry.value->_script != p_class, ERR_INVALID_PARAMETER,
+						vformat("Cannot serialize enum '%s' function '%s' of script '%s': its owning script is not the declaring class.",
+								enum_entry.key, function_entry.key, p_class->get_script_path()));
+				ERR_FAIL_COND_V_MSG(function_entry.value->is_static() != p_static, ERR_INVALID_PARAMETER,
+						vformat("Cannot serialize enum '%s' function '%s' of script '%s': its static call kind does not match its table.",
+								enum_entry.key, function_entry.key, p_class->get_script_path()));
+				const Error function_error = serialize_function(r_stream, function_entry.value);
+				if (function_error != OK) {
+					return function_error;
+				}
+			}
+			return OK;
+		};
+
+		error = write_function_map(enum_entry.value.instance_functions, false);
+		if (error != OK) {
+			return error;
+		}
+		error = write_function_map(enum_entry.value.static_functions, true);
 		if (error != OK) {
 			return error;
 		}

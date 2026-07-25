@@ -103,8 +103,9 @@ public:
 	// FSLanguage::get_reserved_global_names); anything else — typically an autoload singleton the
 	// editor session registered as a named global — would fail the opcode's map lookup in a
 	// template, so the export must refuse to ship the script. Walks every compiled function of
-	// the script graph: member functions, implicit/static initializers, conformance witnesses,
-	// nested lambdas, and all subclasses. Returned names are sorted for stable error messages.
+	// the script graph: member functions, enum functions, implicit/static initializers,
+	// conformance witnesses, nested lambdas, and all subclasses. Returned names are sorted for
+	// stable error messages.
 	static Vector<StringName> collect_unsupported_named_globals(const Ref<FoundryScript> &p_script);
 
 private:
