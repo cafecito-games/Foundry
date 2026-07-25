@@ -513,9 +513,9 @@ def validate_alias_policy() -> None:
     def release(
         tag_name: str,
         *,
-        draft: bool = False,
-        prerelease: bool = True,
-        published_at: str | None = "2026-07-25T12:00:00Z",
+        draft: object = False,
+        prerelease: object = True,
+        published_at: object = "2026-07-25T12:00:00Z",
     ) -> dict[str, object]:
         return {
             "tag_name": tag_name,
@@ -555,6 +555,33 @@ def validate_alias_policy() -> None:
     require(
         should_publish(stable_releases, "v2.0.0", "stable") is True,
         "draft and unpublished releases must not suppress the newest published alias",
+    )
+
+    current_alpha = release("v2.0.0-alpha.1")
+    malformed_releases = {
+        "string draft": release("v2.0.0-alpha.2", draft="false"),
+        "missing draft": {key: value for key, value in release("v2.0.0-alpha.2").items() if key != "draft"},
+        "string prerelease": release("v2.0.0-alpha.2", prerelease="true"),
+        "missing prerelease": {key: value for key, value in release("v2.0.0-alpha.2").items() if key != "prerelease"},
+        "numeric published_at": release("v2.0.0-alpha.1", published_at=1),
+        "empty published_at": release("v2.0.0-alpha.1", published_at=""),
+        "missing published_at": {
+            key: value for key, value in release("v2.0.0-alpha.1").items() if key != "published_at"
+        },
+    }
+    for label, malformed_release in malformed_releases.items():
+        releases = [[malformed_release, current_alpha]]
+        try:
+            should_publish(releases, "v2.0.0-alpha.1", "alpha")
+        except ValueError:
+            pass
+        else:
+            raise ContractError(f"moving alias freshness must reject matching-channel metadata with {label}")
+
+    unrelated_malformed_release = release("v9.0.0-beta.1", draft="false", prerelease="true", published_at=1)
+    require(
+        should_publish([[unrelated_malformed_release, current_alpha]], "v2.0.0-alpha.1", "alpha") is True,
+        "malformed metadata from another channel must not affect the current channel",
     )
 
     try:

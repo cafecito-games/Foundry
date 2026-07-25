@@ -66,9 +66,19 @@ def should_publish_moving_alias(
             key = release_key(tag_name, channel)
             if key is None:
                 continue
-            if release.get("draft") is not False or not release.get("published_at"):
+
+            for boolean_field in ("draft", "prerelease"):
+                if boolean_field not in release or type(release[boolean_field]) is not bool:
+                    raise ValueError(f"GitHub release {tag_name!r} has invalid {boolean_field!r} metadata.")
+            if "published_at" not in release:
+                raise ValueError(f"GitHub release {tag_name!r} has no 'published_at' metadata.")
+            published_at = release["published_at"]
+            if published_at is not None and (not isinstance(published_at, str) or not published_at.strip()):
+                raise ValueError(f"GitHub release {tag_name!r} has invalid 'published_at' metadata.")
+
+            if release["draft"] or published_at is None:
                 continue
-            if release.get("prerelease") is not (channel != "stable"):
+            if release["prerelease"] is not (channel != "stable"):
                 continue
 
             published_keys.append(key)
