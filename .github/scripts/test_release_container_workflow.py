@@ -59,6 +59,14 @@ EXPECTED_BUILD_ARGS = frozenset(
     )
 )
 
+EXPECTED_CONTAINER_GATE = (
+    "${{ !cancelled()"
+    " && needs.resolve.result == 'success'"
+    " && needs.build-linux.result == 'success'"
+    " && needs.resolve.outputs.draft == 'false'"
+    " && needs.publish.outputs.github_release_published == 'true' }}"
+)
+
 EXPECTED_FRESHNESS_SCRIPT = """\
 set -euo pipefail
 
@@ -171,6 +179,17 @@ def literal(text: str, key: str, indent: int, context: str) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+def folded_scalar(text: str, key: str, indent: int, context: str) -> str:
+    value, body = field(text, key, indent, context)
+    require(value == ">-", f"{context}.{key} must use a folded block")
+    content_prefix = " " * (indent + 2)
+    lines: list[str] = []
+    for line in body.splitlines():
+        require(line.startswith(content_prefix), f"{context}.{key} has invalid indentation")
+        lines.append(line[len(content_prefix) :].strip())
+    return " ".join(lines)
+
+
 def child_keys(text: str, indent: int) -> tuple[str, ...]:
     prefix = " " * indent
     return tuple(re.findall(rf"^{prefix}([A-Za-z0-9_-]+):(?: .*)?$", text, re.MULTILINE))
@@ -188,12 +207,12 @@ def named_block(text: str, name: str, indent: int, context: str) -> str:
     return body
 
 
-def parse_steps(job: str) -> list[str]:
-    steps_body = named_block(job, "steps", 4, "publish-container")
+def parse_steps(job: str, owner: str = "publish-container") -> list[str]:
+    steps_body = named_block(job, "steps", 4, owner)
     pattern = re.compile(r"^      - ([A-Za-z0-9_-]+):(.*)$", re.MULTILINE)
     matches = list(pattern.finditer(steps_body))
     all_step_headers = re.findall(r"^      - ", steps_body, re.MULTILINE)
-    require(len(matches) == len(all_step_headers), "publish-container contains an unsupported step header")
+    require(len(matches) == len(all_step_headers), f"{owner} contains an unsupported step header")
 
     steps: list[str] = []
     for index, match in enumerate(matches):
@@ -206,9 +225,14 @@ def parse_steps(job: str) -> list[str]:
     return steps
 
 
-def find_step(steps: list[str], predicate: Callable[[str], bool], context: str) -> tuple[int, str]:
+def find_step(
+    steps: list[str],
+    predicate: Callable[[str], bool],
+    context: str,
+    owner: str = "publish-container",
+) -> tuple[int, str]:
     matches = [(index, body) for index, body in enumerate(steps) if predicate(body)]
-    require(len(matches) == 1, f"publish-container must define exactly one {context} step")
+    require(len(matches) == 1, f"{owner} must define exactly one {context} step")
     return matches[0]
 
 
@@ -317,6 +341,26 @@ def validate_events(workflow: str) -> None:
     require({tag.strip("'\"") for tag in tags} == {"v*"} and len(tags) == 1, "release push tags must be exactly v*")
 
 
+def validate_publish_handoff(workflow: str) -> None:
+    jobs = named_block(workflow, "jobs", 0, "workflow")
+    publish = named_block(jobs, "publish", 2, "jobs")
+    outputs = mapping(named_block(publish, "outputs", 4, "publish"), 6, "publish.outputs")
+    require(
+        outputs == {"github_release_published": "${{ steps.github-release.outcome == 'success' }}"},
+        "publish must expose only the completed GitHub Release outcome",
+    )
+
+    publish_steps = parse_steps(publish, "publish")
+    _, release_step = find_step(
+        publish_steps,
+        lambda body: step_uses(body) == "softprops/action-gh-release@v2",
+        "GitHub Release publication",
+        "publish",
+    )
+    require_step_fields(release_step, {"id", "uses", "with"}, "GitHub Release publication")
+    require(step_id(release_step) == "github-release", "GitHub Release publication id must be stable")
+
+
 def validate_job_contract(workflow: str) -> tuple[str, list[str]]:
     jobs = named_block(workflow, "jobs", 0, "workflow")
     job = named_block(jobs, "publish-container", 2, "jobs")
@@ -327,8 +371,8 @@ def validate_job_contract(workflow: str) -> tuple[str, list[str]]:
         "publish-container needs must be exact",
     )
     require(
-        scalar(job, "if", 4, "publish-container") == "needs.resolve.outputs.draft == 'false'",
-        "publish-container draft gate must be exact",
+        folded_scalar(job, "if", 4, "publish-container") == EXPECTED_CONTAINER_GATE,
+        "publish-container gate must be exact",
     )
     require(scalar(job, "runs-on", 4, "publish-container") == "ubuntu-24.04", "container runner must be ubuntu-24.04")
 
@@ -819,6 +863,7 @@ def validate_smoke(steps: list[str]) -> None:
 
 def validate(workflow: str) -> None:
     validate_events(workflow)
+    validate_publish_handoff(workflow)
     job, steps = validate_job_contract(workflow)
     checkout_index, artifact_index, restore_index, setup_buildx_index = validate_artifact(steps)
     channel_index, freshness_index, metadata_index = validate_tags(steps)

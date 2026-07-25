@@ -1027,6 +1027,8 @@ jobs:
       - resolve
       - package
     runs-on: ubuntu-24.04
+    outputs:
+      github_release_published: ${{ steps.github-release.outcome == 'success' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -1064,6 +1066,7 @@ jobs:
           path: dist
 
       - name: Publish GitHub Release
+        id: github-release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.resolve.outputs.tag }}
@@ -1141,12 +1144,20 @@ jobs:
       - resolve
       - build-linux
       - publish
-    if: needs.resolve.outputs.draft == 'false'
+    if: >-
+      ${{
+        !cancelled()
+        && needs.resolve.result == 'success'
+        && needs.build-linux.result == 'success'
+        && needs.resolve.outputs.draft == 'false'
+        && needs.publish.outputs.github_release_published == 'true'
+      }}
     runs-on: ubuntu-24.04
     concurrency:
       group: release-container-${{ needs.resolve.outputs.channel }}
       cancel-in-progress: false
       queue: max
+    # BuildKit attaches registry provenance/SBOM directly; this job does not use actions/attest and needs no OIDC.
     permissions:
       contents: read
       packages: write
