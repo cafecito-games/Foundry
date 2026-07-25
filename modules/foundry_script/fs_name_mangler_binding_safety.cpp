@@ -180,6 +180,22 @@ const FoundryScript *resolve_domain_script(
 	return found ? found->value : nullptr;
 }
 
+bool script_is_in_domain(
+		const Ref<Script> &p_script, const ScriptDomain &p_domain) {
+	HashSet<const FoundryScript *> visited;
+	for (const FoundryScript *current =
+					Object::cast_to<FoundryScript>(p_script.ptr());
+			current != nullptr && !visited.has(current);
+			current = Object::cast_to<FoundryScript>(
+					current->get_base_script().ptr())) {
+		visited.insert(current);
+		if (resolve_domain_script(current, p_domain) != nullptr) {
+			return true;
+		}
+	}
+	return false;
+}
+
 bool script_declares(
 		const FoundryScript *p_script,
 		const StringName &p_name,
@@ -447,10 +463,25 @@ void expand_scene_state(
 	r_scene.active_states.erase(p_state.ptr());
 }
 
+struct NativePropertySurface {
+	bool has_property(
+			const StringName &p_native_type,
+			const StringName &p_property) const {
+		if (ClassDB::has_property(p_native_type, p_property)) {
+			return true;
+		}
+
+		const String property = p_property;
+		return property.begins_with("metadata/") &&
+				property.trim_prefix("metadata/").is_valid_ascii_identifier();
+	}
+};
+
 void collect_scene_properties(
 		const VirtualScene &p_scene,
 		const String &p_source,
 		const ScriptDomain &p_domain,
+		NativePropertySurface &r_native_properties,
 		FSNameManglerBindingSafety::Result &r_result) {
 	for (const KeyValue<String, VirtualNode> &node_entry : p_scene.nodes) {
 		const VirtualNode &node = node_entry.value;
@@ -483,7 +514,9 @@ void collect_scene_properties(
 			if ((node.script.is_valid() &&
 						script_has_declaration(node.script, property_entry.key,
 								DECLARATION_PROPERTY)) ||
-					ClassDB::has_property(node.native_type, property_entry.key)) {
+					r_native_properties.has_property(
+							node.native_type, property_entry.key) ||
+					!script_is_in_domain(node.script, p_domain)) {
 				continue;
 			}
 			fail_collection(r_result, p_source,
@@ -497,10 +530,12 @@ void collect_scene_properties(
 bool native_has_declaration(
 		const StringName &p_native_type,
 		const StringName &p_name,
-		DeclarationKind p_kind) {
+		DeclarationKind p_kind,
+		NativePropertySurface &r_native_properties) {
 	switch (p_kind) {
 		case DECLARATION_PROPERTY:
-			return ClassDB::has_property(p_native_type, p_name);
+			return r_native_properties.has_property(
+					p_native_type, p_name);
 		case DECLARATION_METHOD:
 			return ClassDB::has_method(p_native_type, p_name);
 		case DECLARATION_SIGNAL:
@@ -517,6 +552,7 @@ void collect_scene_declaration(
 		const String &p_source,
 		const String &p_context,
 		const ScriptDomain &p_domain,
+		NativePropertySurface &r_native_properties,
 		FSNameManglerBindingSafety::Result &r_result) {
 	const FoundryScript *declaration = find_foundry_declaration(
 			p_node.script, p_name, p_declaration_kind);
@@ -536,7 +572,12 @@ void collect_scene_declaration(
 				script_has_declaration(
 						p_node.script, p_name, p_declaration_kind)) ||
 			native_has_declaration(
-					p_node.native_type, p_name, p_declaration_kind)) {
+					p_node.native_type, p_name, p_declaration_kind,
+					r_native_properties)) {
+		return;
+	}
+	if (p_declaration_kind == DECLARATION_PROPERTY &&
+			!script_is_in_domain(p_node.script, p_domain)) {
 		return;
 	}
 	fail_collection(r_result, p_source, p_context,
@@ -546,6 +587,7 @@ void collect_scene_declaration(
 void collect_scene_connections(
 		const VirtualScene &p_scene,
 		const ScriptDomain &p_domain,
+		NativePropertySurface &r_native_properties,
 		FSNameManglerBindingSafety::Result &r_result) {
 	for (const VirtualConnection &connection : p_scene.connections) {
 		const RBMap<String, VirtualNode>::Element *source_node =
@@ -568,11 +610,13 @@ void collect_scene_connections(
 		collect_scene_declaration(
 				source_node->value(), connection.signal, DECLARATION_SIGNAL,
 				FSNameManglerBindingSafety::BINDING_CONNECTION_SIGNAL,
-				connection.source, context + " signal", p_domain, r_result);
+				connection.source, context + " signal", p_domain,
+				r_native_properties, r_result);
 		collect_scene_declaration(
 				target_node->value(), connection.method, DECLARATION_METHOD,
 				FSNameManglerBindingSafety::BINDING_CONNECTION_METHOD,
-				connection.source, context + " method", p_domain, r_result);
+				connection.source, context + " method", p_domain,
+				r_native_properties, r_result);
 	}
 }
 
@@ -586,6 +630,7 @@ struct VariantTraversalState {
 	HashSet<const Resource *> resources;
 	HashSet<const void *> arrays;
 	HashSet<const void *> dictionaries;
+	NativePropertySurface native_properties;
 };
 
 void collect_variant_bindings(
@@ -596,6 +641,14 @@ void collect_variant_bindings(
 		VariantTraversalState &r_traversal,
 		FSNameManglerBindingSafety::Result &r_result,
 		bool p_top_level_resource = false);
+
+void collect_packed_scene_bindings(
+		const Ref<PackedScene> &p_scene,
+		const String &p_source,
+		const String &p_context,
+		const ScriptDomain &p_domain,
+		VariantTraversalState &r_traversal,
+		FSNameManglerBindingSafety::Result &r_result);
 
 void collect_script_class(
 		const Variant &p_script_value,
@@ -763,8 +816,12 @@ void collect_variant_bindings(
 	switch (p_value.get_type()) {
 		case Variant::OBJECT: {
 			const Ref<Resource> resource = p_value;
-			if (resource.is_valid() &&
-					!Object::cast_to<PackedScene>(resource.ptr())) {
+			const Ref<PackedScene> scene = resource;
+			if (scene.is_valid()) {
+				collect_packed_scene_bindings(
+						scene, p_source, p_context, p_domain,
+						r_traversal, r_result);
+			} else if (resource.is_valid()) {
 				collect_resource_bindings(
 						resource, p_source, p_context, p_domain,
 						r_traversal, r_result, p_top_level_resource);
@@ -789,8 +846,8 @@ void collect_scene_property_values(
 		const VirtualScene &p_scene,
 		const String &p_source,
 		const ScriptDomain &p_domain,
+		VariantTraversalState &r_traversal,
 		FSNameManglerBindingSafety::Result &r_result) {
-	VariantTraversalState traversal;
 	for (const KeyValue<String, VirtualNode> &node_entry : p_scene.nodes) {
 		for (const KeyValue<StringName, VirtualProperty> &property :
 				node_entry.value.properties) {
@@ -803,7 +860,7 @@ void collect_scene_property_values(
 							node_entry.key.is_empty() ? String(".")
 													  : node_entry.key,
 							property.key),
-					p_domain, traversal, r_result);
+					p_domain, r_traversal, r_result);
 		}
 	}
 }
@@ -919,6 +976,7 @@ void collect_animation_property_path(
 		const String &p_source,
 		const String &p_context,
 		const ScriptDomain &p_domain,
+		NativePropertySurface &r_native_properties,
 		FSNameManglerBindingSafety::Result &r_result) {
 	const int subname_count = p_track_path.get_subname_count();
 	if (subname_count == 0) {
@@ -930,7 +988,7 @@ void collect_animation_property_path(
 	collect_scene_declaration(
 			p_target_node, node_property, DECLARATION_PROPERTY,
 			FSNameManglerBindingSafety::BINDING_ANIMATION_PROPERTY,
-			p_source, p_context, p_domain, r_result);
+			p_source, p_context, p_domain, r_native_properties, r_result);
 	if (subname_count == 1) {
 		return;
 	}
@@ -985,6 +1043,7 @@ void collect_animation(
 		const String &p_context,
 		const VirtualScene &p_scene,
 		const ScriptDomain &p_domain,
+		NativePropertySurface &r_native_properties,
 		FSNameManglerBindingSafety::Result &r_result) {
 	if (p_animation.is_null()) {
 		fail_collection(r_result, p_source, p_context,
@@ -1022,7 +1081,7 @@ void collect_animation(
 				track_type == Animation::TYPE_BEZIER) {
 			collect_animation_property_path(
 					target_node->value(), track_path, p_source,
-					track_context, p_domain, r_result);
+					track_context, p_domain, r_native_properties, r_result);
 			continue;
 		}
 		if (track_path.get_subname_count() != 0) {
@@ -1040,7 +1099,7 @@ void collect_animation(
 					DECLARATION_METHOD,
 					FSNameManglerBindingSafety::BINDING_ANIMATION_METHOD,
 					p_source, vformat("%s key %d", track_context, key_index),
-					p_domain, r_result);
+					p_domain, r_native_properties, r_result);
 		}
 	}
 }
@@ -1049,6 +1108,7 @@ void collect_scene_animations(
 		const VirtualScene &p_scene,
 		const String &p_source,
 		const ScriptDomain &p_domain,
+		NativePropertySurface &r_native_properties,
 		FSNameManglerBindingSafety::Result &r_result) {
 	for (const KeyValue<String, VirtualNode> &node_entry : p_scene.nodes) {
 		const VirtualNode &node = node_entry.value;
@@ -1106,10 +1166,46 @@ void collect_scene_animations(
 						p_source,
 						vformat("%s.%s animation %s", node.path,
 								property_name, animation_name),
-						p_scene, p_domain, r_result);
+						p_scene, p_domain, r_native_properties, r_result);
 			}
 		}
 	}
+}
+
+void collect_packed_scene_bindings(
+		const Ref<PackedScene> &p_scene,
+		const String &p_source,
+		const String &p_context,
+		const ScriptDomain &p_domain,
+		VariantTraversalState &r_traversal,
+		FSNameManglerBindingSafety::Result &r_result) {
+	if (p_scene.is_null() ||
+			r_traversal.resources.has(p_scene.ptr())) {
+		return;
+	}
+	r_traversal.resources.insert(p_scene.ptr());
+
+	const Ref<SceneState> state = p_scene->get_state();
+	if (state.is_null()) {
+		fail_collection(
+				r_result, p_source, p_context,
+				"PackedScene has no SceneState");
+		return;
+	}
+	VirtualScene virtual_scene;
+	expand_scene_state(
+			state, String(), p_source, virtual_scene, r_result);
+	collect_scene_properties(
+			virtual_scene, p_source, p_domain,
+			r_traversal.native_properties, r_result);
+	collect_scene_connections(
+			virtual_scene, p_domain,
+			r_traversal.native_properties, r_result);
+	collect_scene_animations(
+			virtual_scene, p_source, p_domain,
+			r_traversal.native_properties, r_result);
+	collect_scene_property_values(
+			virtual_scene, p_source, p_domain, r_traversal, r_result);
 }
 
 void sort_and_deduplicate(
@@ -1227,24 +1323,10 @@ FSNameManglerBindingSafety::Result FSNameManglerBindingSafety::collect(
 		}
 		previous_source = root.source;
 
-		const Ref<PackedScene> scene = root.resource;
-		if (scene.is_valid()) {
-			VirtualScene virtual_scene;
-			expand_scene_state(
-					scene->get_state(), String(), root.source, virtual_scene, result);
-			collect_scene_properties(
-					virtual_scene, root.source, domain, result);
-			collect_scene_connections(virtual_scene, domain, result);
-			collect_scene_animations(
-					virtual_scene, root.source, domain, result);
-			collect_scene_property_values(
-					virtual_scene, root.source, domain, result);
-		} else {
-			VariantTraversalState traversal;
-			collect_resource_bindings(
-					root.resource, root.source, "resource root", domain,
-					traversal, result, true);
-		}
+		VariantTraversalState traversal;
+		collect_variant_bindings(
+				root.resource, root.source, "resource root", domain,
+				traversal, result, true);
 	}
 	sort_and_deduplicate(result);
 	return result;

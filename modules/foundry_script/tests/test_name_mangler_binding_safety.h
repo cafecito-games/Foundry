@@ -562,6 +562,231 @@ TEST_CASE("[FoundryScript][NameManglerBindingSafety] Resource keeps owned proper
 			"res://config.tres"));
 }
 
+TEST_CASE("[FoundryScript][NameManglerBindingSafety] Resource traverses nested PackedScene bindings once") {
+	const Ref<FoundryScript> catalog_script = compile_bytecode_test_source(
+			"extends Resource\n"
+			"@export var nested_scene: PackedScene\n"
+			"@export var duplicate_scene: PackedScene\n");
+	const Ref<FoundryScript> emitter_script = compile_bytecode_test_source(
+			"extends Node\n"
+			"signal scene_signal\n");
+	const Ref<FoundryScript> receiver_script = compile_bytecode_test_source(
+			"extends Node\n"
+			"@export var stored_value: int\n"
+			"@export var catalog: Resource\n"
+			"var animated_value: float\n"
+			"func scene_method() -> void:\n"
+			"\tpass\n");
+
+	Ref<Animation> animation;
+	animation.instantiate();
+	const int value_track = animation->add_track(Animation::TYPE_VALUE);
+	animation->track_set_path(
+			value_track, NodePath("Receiver:animated_value"));
+	animation->track_insert_key(value_track, 0.0, 2.0);
+	Ref<AnimationLibrary> library;
+	library.instantiate();
+	REQUIRE_EQ(
+			library->add_animation(SNAME("nested"), animation), OK);
+
+	Ref<PackedScene> scene;
+	scene.instantiate();
+	const Ref<SceneState> state = scene->get_state();
+	const int node_type = state->add_name(SNAME("Node"));
+	const int player_type = state->add_name(SNAME("AnimationPlayer"));
+	const int root_node = state->add_node(
+			-1, -1, node_type, state->add_name(SNAME("Root")),
+			-1, -1, 45);
+	const int emitter = state->add_node(
+			root_node, root_node, node_type,
+			state->add_name(SNAME("Emitter")), -1, -1, 46);
+	state->add_node_property(
+			emitter, state->add_name(SNAME("script")),
+			state->add_value(emitter_script));
+	const int receiver = state->add_node(
+			root_node, root_node, node_type,
+			state->add_name(SNAME("Receiver")), -1, -1, 47);
+	state->add_node_property(
+			receiver, state->add_name(SNAME("script")),
+			state->add_value(receiver_script));
+	state->add_node_property(
+			receiver, state->add_name(SNAME("stored_value")),
+			state->add_value(11));
+	const int player = state->add_node(
+			root_node, root_node, player_type,
+			state->add_name(SNAME("AnimationPlayer")), -1, -1, 48);
+	state->add_node_property(
+			player, state->add_name(SNAME("root_node")),
+			state->add_value(NodePath("..")));
+	state->add_node_property(
+			player, state->add_name(SNAME("libraries/")),
+			state->add_value(library));
+	state->add_connection(
+			emitter, receiver, state->add_name(SNAME("scene_signal")),
+			state->add_name(SNAME("scene_method")),
+			Object::CONNECT_PERSIST, 0, {});
+
+	Ref<Resource> catalog;
+	catalog.instantiate();
+	catalog->set_script(catalog_script);
+	bool valid = false;
+	catalog->set(SNAME("nested_scene"), scene, &valid);
+	REQUIRE(valid);
+	catalog->set(SNAME("duplicate_scene"), scene, &valid);
+	REQUIRE(valid);
+	state->add_node_property(
+			receiver, state->add_name(SNAME("catalog")),
+			state->add_value(catalog));
+
+	FSNameManglerAnalysis::Input analysis_input;
+	analysis_input.scripts.push_back(catalog_script);
+	analysis_input.scripts.push_back(emitter_script);
+	analysis_input.scripts.push_back(receiver_script);
+	FSNameManglerBindingSafety::Input binding_input;
+	binding_input.add_resource(catalog, "res://catalog.tres");
+
+	const FSNameManglerBindingSafety::Result result =
+			FSNameManglerBindingSafety::collect(
+					binding_input, analysis_input);
+	INFO(binding_safety_snapshot(result));
+	REQUIRE_EQ(result.error, OK);
+	REQUIRE(result.complete);
+	REQUIRE_EQ(result.evidence.size(), 7);
+	CHECK(binding_safety_has_evidence(
+			result, SNAME("nested_scene"),
+			FSNameManglerBindingSafety::BINDING_SERIALIZED_PROPERTY,
+			"res://catalog.tres"));
+	CHECK(binding_safety_has_evidence(
+			result, SNAME("duplicate_scene"),
+			FSNameManglerBindingSafety::BINDING_SERIALIZED_PROPERTY,
+			"res://catalog.tres"));
+	CHECK(binding_safety_has_evidence(
+			result, SNAME("scene_signal"),
+			FSNameManglerBindingSafety::BINDING_CONNECTION_SIGNAL,
+			"res://catalog.tres"));
+	CHECK(binding_safety_has_evidence(
+			result, SNAME("scene_method"),
+			FSNameManglerBindingSafety::BINDING_CONNECTION_METHOD,
+			"res://catalog.tres"));
+	CHECK(binding_safety_has_evidence(
+			result, SNAME("stored_value"),
+			FSNameManglerBindingSafety::BINDING_SERIALIZED_PROPERTY,
+			"res://catalog.tres"));
+	CHECK(binding_safety_has_evidence(
+			result, SNAME("catalog"),
+			FSNameManglerBindingSafety::BINDING_SERIALIZED_PROPERTY,
+			"res://catalog.tres"));
+	CHECK(binding_safety_has_evidence(
+			result, SNAME("animated_value"),
+			FSNameManglerBindingSafety::BINDING_ANIMATION_PROPERTY,
+			"res://catalog.tres"));
+}
+
+TEST_CASE("[FoundryScript][NameManglerBindingSafety] Dynamic native scene properties stay native") {
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"extends Node\n"
+			"@export var script_value: int\n");
+	const Ref<FoundryScript> external_script = compile_bytecode_test_source(
+			"extends Node\n"
+			"@export var external_value: int\n");
+	Ref<Animation> animation;
+	animation.instantiate();
+	const int current_track = animation->add_track(Animation::TYPE_VALUE);
+	animation->track_set_path(
+			current_track, NodePath(".:current"));
+	animation->track_insert_key(current_track, 0.0, true);
+	Ref<AnimationLibrary> library;
+	library.instantiate();
+	REQUIRE_EQ(
+			library->add_animation(SNAME("dynamic_native"), animation), OK);
+
+	Ref<PackedScene> scene;
+	scene.instantiate();
+	const Ref<SceneState> state = scene->get_state();
+	const int listener_type =
+			state->add_name(SNAME("AudioListener2D"));
+	const int node_type = state->add_name(SNAME("Node"));
+	const int player_type =
+			state->add_name(SNAME("AnimationPlayer"));
+	const int root_node = state->add_node(
+			-1, -1, listener_type,
+			state->add_name(SNAME("Listener")), -1, -1, 49);
+	state->add_node_property(
+			root_node, state->add_name(SNAME("current")),
+			state->add_value(true));
+	state->add_node_property(
+			root_node, state->add_name(SNAME("metadata/native_tag")),
+			state->add_value("listener"));
+	const int scripted_node = state->add_node(
+			root_node, root_node, node_type,
+			state->add_name(SNAME("Scripted")), -1, -1, 50);
+	state->add_node_property(
+			scripted_node, state->add_name(SNAME("script")),
+			state->add_value(script));
+	state->add_node_property(
+			scripted_node, state->add_name(SNAME("script_value")),
+			state->add_value(3));
+	const int external_node = state->add_node(
+			root_node, root_node, node_type,
+			state->add_name(SNAME("External")), -1, -1, 51);
+	state->add_node_property(
+			external_node, state->add_name(SNAME("script")),
+			state->add_value(external_script));
+	state->add_node_property(
+			external_node, state->add_name(SNAME("external_dynamic_key")),
+			state->add_value(4));
+	const int player = state->add_node(
+			root_node, root_node, player_type,
+			state->add_name(SNAME("AnimationPlayer")), -1, -1, 52);
+	state->add_node_property(
+			player, state->add_name(SNAME("libraries/")),
+			state->add_value(library));
+
+	FSNameManglerAnalysis::Input analysis_input;
+	analysis_input.scripts.push_back(script);
+	FSNameManglerBindingSafety::Input binding_input;
+	binding_input.add_resource(
+			scene, "res://dynamic_native_properties.tscn");
+
+	const int object_count_before = ObjectDB::get_object_count();
+	const FSNameManglerBindingSafety::Result result =
+			FSNameManglerBindingSafety::collect(
+					binding_input, analysis_input);
+	INFO(binding_safety_snapshot(result));
+	REQUIRE_EQ(result.error, OK);
+	REQUIRE(result.complete);
+	CHECK_EQ(ObjectDB::get_object_count(), object_count_before);
+	REQUIRE_EQ(result.evidence.size(), 1);
+	CHECK(binding_safety_has_evidence(
+			result, SNAME("script_value"),
+			FSNameManglerBindingSafety::BINDING_SERIALIZED_PROPERTY,
+			"res://dynamic_native_properties.tscn"));
+	CHECK_FALSE(binding_safety_has_evidence(
+			result, SNAME("current"),
+			FSNameManglerBindingSafety::BINDING_SERIALIZED_PROPERTY,
+			"res://dynamic_native_properties.tscn"));
+	CHECK_FALSE(binding_safety_has_evidence(
+			result, SNAME("metadata/native_tag"),
+			FSNameManglerBindingSafety::BINDING_SERIALIZED_PROPERTY,
+			"res://dynamic_native_properties.tscn"));
+	CHECK_FALSE(binding_safety_has_evidence(
+			result, SNAME("external_dynamic_key"),
+			FSNameManglerBindingSafety::BINDING_SERIALIZED_PROPERTY,
+			"res://dynamic_native_properties.tscn"));
+
+	state->add_node_property(
+			scripted_node, state->add_name(SNAME("stale_script_value")),
+			state->add_value(4));
+	const FSNameManglerBindingSafety::Result stale_result =
+			FSNameManglerBindingSafety::collect(
+					binding_input, analysis_input);
+	CHECK_EQ(stale_result.error, ERR_INVALID_DATA);
+	CHECK_FALSE(stale_result.complete);
+	CHECK(binding_safety_has_diagnostic(
+			stale_result, "stale_script_value"));
+	CHECK_EQ(ObjectDB::get_object_count(), object_count_before);
+}
+
 TEST_CASE("[FoundryScript][NameManglerBindingSafety] Animation keeps property and method track bindings") {
 	const Ref<FoundryScript> target_script = compile_bytecode_test_source(
 			"extends Node\n"

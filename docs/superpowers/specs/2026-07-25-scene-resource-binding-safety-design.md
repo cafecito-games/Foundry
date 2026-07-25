@@ -24,7 +24,8 @@ against the resulting node/script ownership index.
 
 This approach works identically for text and binary serialization because both formats load into the
 same `PackedScene`/`SceneState` representation. It does not parse serialized text, does not depend on
-private writer syntax, does not create `ScriptInstance`s, and does not execute scene scripts.
+private writer syntax, does not instantiate a source `PackedScene`, does not create `ScriptInstance`s,
+and does not execute scene scripts.
 
 ### Instantiate a transient PackedScene
 
@@ -191,6 +192,16 @@ Every stored SceneState node property is checked against the node's final effect
 - a key with no provable script/native owner is a stale or ambiguous serialized binding and makes
   the result incomplete.
 
+Static native properties are validated through `ClassDB`, and engine-owned
+`metadata/<identifier>` storage is recognized structurally. The collector never instantiates a
+native node to discover dynamic `_get_property_list()` entries: constructors can depend on runtime
+singletons or execute extension code. An otherwise unknown property on a node with no in-domain
+Foundry Script cannot affect an in-domain rename and is ignored. The same spelling on a node with an
+in-domain script remains incomplete unless its script declaration, static native declaration, or
+metadata shape proves ownership. This deliberately means an unregistered dynamic native property on
+an in-domain scripted subclass fails closed; recognizing it would require executing a constructor or
+weakening stale script-property detection.
+
 This emits explicit scene/resource evidence for exported overrides even though the merged analysis
 layer independently keeps all `@export` members. It also covers storage-only script properties and
 inherited exported properties.
@@ -199,13 +210,19 @@ Generic non-PackedScene roots are traversed through their `PROPERTY_USAGE_STORAG
 The traversal:
 
 - validates and records script-owned stored property keys;
-- recursively visits `Resource`, Array, and Dictionary values using identity-based cycle
-  protection;
+- recursively visits `Resource`, `PackedScene`, Array, and Dictionary values using one root-scoped
+  identity traversal;
+- composes a nested `PackedScene` through the same pure `SceneState` path used for a top-level scene,
+  retaining the outer root source as evidence provenance;
 - inspects typed Array/Dictionary script types as semantic class identities; and
 - never treats an ordinary string, dictionary key, or NodePath segment as a declaration identity.
 
 The collector never calls `set`, saves, duplicates, or instantiates a source resource. Reading a
 stored generic Resource property uses the same `Object::get` surface the resource writer consumes.
+Resource-to-scene-to-resource cycles and repeated scene/resource DAG edges are identity-deduplicated
+within one root after each object's semantic surface is collected. Scene inheritance and instance
+expansion keeps its separate active `SceneState` stack because the same scene may validly be mounted
+at multiple paths and an active mount cycle is incomplete.
 
 Both text and binary resource writers serialize the global script class in the header of a top-level
 non-PackedScene scripted Resource. Therefore, when such a root has an in-domain script with a
