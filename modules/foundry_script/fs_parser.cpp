@@ -1124,6 +1124,10 @@ List<String> FSParser::get_dependencies() const {
 }
 
 FSParser::ClassNode *FSParser::find_class(const String &p_qualified_name) const {
+	if (p_qualified_name == head->fqcn) {
+		return head;
+	}
+
 	String first = p_qualified_name.get_slice("::", 0);
 
 	Vector<String> class_names;
