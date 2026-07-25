@@ -389,6 +389,9 @@ public:
 		OPCODE_CALL,
 		OPCODE_CALL_RETURN,
 		OPCODE_CALL_ASYNC,
+		OPCODE_CALL_ENUM,
+		OPCODE_CALL_ENUM_RETURN,
+		OPCODE_CALL_ENUM_ASYNC,
 		OPCODE_CALL_UTILITY,
 		OPCODE_CALL_UTILITY_VALIDATED,
 		OPCODE_CALL_FOUNDRY_SCRIPT_UTILITY,
@@ -721,6 +724,10 @@ public:
 #endif
 		Vector<uint8_t> stack;
 		int stack_size = 0;
+		// A witness-style call has no FSInstance from which `self` can be reconstructed after an
+		// await. Keep its explicit receiver alongside the copied non-reserved stack until resume.
+		Variant self_override;
+		bool has_self_override = false;
 		int ip = 0;
 		int line = 0;
 		int defarg = 0;

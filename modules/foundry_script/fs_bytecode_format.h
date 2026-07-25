@@ -52,7 +52,7 @@ class FSBytecodeFormat {
 public:
 	static constexpr uint8_t MAGIC[4] = { 'F', 'S', 'B', 'C' };
 	// Bump on ANY layout change; the reader rejects other versions outright.
-	static constexpr uint32_t FORMAT_VERSION = 1;
+	static constexpr uint32_t FORMAT_VERSION = 2;
 
 	enum SectionId : uint32_t {
 		SECTION_STRING_TABLE,

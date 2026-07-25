@@ -1034,7 +1034,24 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 				}
 			}
 
-			if (call->is_proxy_construct) {
+			if (call->enum_call_kind != FSParser::CallNode::ENUM_CALL_NONE) {
+				if (call->callee->type != FSParser::Node::SUBSCRIPT) {
+					_set_error("Compiler bug (please report): enum function call has no receiver subscript.", call);
+					r_error = ERR_BUG;
+					return FSCodeGenerator::Address();
+				}
+				const FSParser::SubscriptNode *subscript = static_cast<const FSParser::SubscriptNode *>(call->callee);
+				FSCodeGenerator::Address base = _parse_expression(codegen, r_error, subscript->base);
+				if (r_error) {
+					return FSCodeGenerator::Address();
+				}
+				gen->write_enum_call(result, base, arguments, StringName(call->enum_call_owner_script_path),
+						call->enum_call_owner_class, call->enum_call_enum_type, call->enum_call_function,
+						call->enum_call_kind == FSParser::CallNode::ENUM_CALL_STATIC, is_awaited);
+				if (base.mode == FSCodeGenerator::Address::TEMPORARY) {
+					gen->pop_temporary();
+				}
+			} else if (call->is_proxy_construct) {
 				// `create_proxy[T](handler)` lowers to `create_proxy_dynamic(T, handler)`. The
 				// type argument T (a trait/abstract type) yields the script the runtime uses to
 				// scan the proxied contract; the result is typed as T by the analyzer.
@@ -3878,6 +3895,19 @@ Error FSCompiler::_prepare_compilation(FoundryScript *p_script, const FSParser::
 		memdelete(E.value);
 	}
 	member_functions.clear();
+	RBSet<FSFunction *> old_enum_functions;
+	for (const KeyValue<StringName, FoundryScript::EnumFunctionSet> &enum_entry : p_script->enum_functions) {
+		for (const KeyValue<StringName, FSFunction *> &function : enum_entry.value.instance_functions) {
+			old_enum_functions.insert(function.value);
+		}
+		for (const KeyValue<StringName, FSFunction *> &function : enum_entry.value.static_functions) {
+			old_enum_functions.insert(function.value);
+		}
+	}
+	p_script->enum_functions.clear();
+	for (FSFunction *function : old_enum_functions) {
+		memdelete(function);
+	}
 
 	// Drop any compiled retroactive-conformance witnesses from a previous compilation of this script:
 	// unregister the borrowed pointers from the registry, free the owned functions, and release the
@@ -4343,7 +4373,68 @@ Error FSCompiler::_prepare_compilation(FoundryScript *p_script, const FSParser::
 	return OK;
 }
 
+Error FSCompiler::_compile_enum_functions(
+		FoundryScript *p_script, const FSParser::ClassNode *p_class, const FSParser::EnumNode *p_enum) {
+	if (p_enum == nullptr || p_enum->functions.is_empty()) {
+		return OK;
+	}
+	if (p_enum->identifier == nullptr) {
+		_set_error("Compiler bug (please report): an unnamed enum contains functions.", p_enum);
+		return ERR_BUG;
+	}
+
+	const StringName enum_type = p_enum->get_datatype().enum_type;
+	if (enum_type == StringName()) {
+		_set_error("Compiler bug (please report): enum function owner has no resolved enum type.", p_enum);
+		return ERR_BUG;
+	}
+
+	FoundryScript::EnumFunctionSet &function_set = p_script->enum_functions[enum_type];
+	for (const FSParser::FunctionNode *function : p_enum->functions) {
+		if (function == nullptr || function->identifier == nullptr) {
+			_set_error("Compiler bug (please report): enum function declaration is incomplete.", p_enum);
+			return ERR_BUG;
+		}
+
+		const StringName function_name = function->identifier->name;
+		if (function_set.instance_functions.has(function_name) || function_set.static_functions.has(function_name)) {
+			_set_error(vformat(R"ERR(Compiler bug (please report): duplicate enum function "%s.%s()".)ERR",
+							   enum_type, function_name),
+					function);
+			return ERR_ALREADY_EXISTS;
+		}
+
+		Error err = OK;
+		FSFunction *compiled = _parse_function(err, p_script, p_class, function, false, false, true);
+		if (err != OK || compiled == nullptr) {
+			return err != OK ? err : ERR_COMPILATION_FAILED;
+		}
+
+		HashMap<StringName, FSFunction *> &functions =
+				function->is_static ? function_set.static_functions : function_set.instance_functions;
+		functions.insert(function_name, compiled);
+	}
+
+	return OK;
+}
+
 Error FSCompiler::_compile_class(FoundryScript *p_script, const FSParser::ClassNode *p_class, bool p_keep_state) {
+	if (p_class->is_enum_file) {
+		Error err = _compile_enum_functions(p_script, p_class, p_class->enum_file_decl);
+		if (err != OK) {
+			return err;
+		}
+	}
+	for (const FSParser::ClassNode::Member &member : p_class->members) {
+		if (member.type != FSParser::ClassNode::Member::ENUM) {
+			continue;
+		}
+		Error err = _compile_enum_functions(p_script, p_class, member.m_enum);
+		if (err != OK) {
+			return err;
+		}
+	}
+
 	// Compile member functions, getters, and setters, including the bodies flattened in
 	// from applied traits. Trait functions are compiled against the implementing script
 	// so member accesses bind to the flattened member layout of this class.
@@ -4627,6 +4718,16 @@ FSCompiler::ScriptLambdaInfo FSCompiler::_get_script_lambda_replacement_info(Fou
 	for (const KeyValue<StringName, FSFunction *> &E : p_script->member_functions) {
 		info.member_function_infos.insert(E.key, _get_function_lambda_replacement_info(E.value));
 	}
+	for (const KeyValue<StringName, FoundryScript::EnumFunctionSet> &enum_entry : p_script->enum_functions) {
+		ScriptLambdaInfo::EnumFunctionLambdaInfo enum_info;
+		for (const KeyValue<StringName, FSFunction *> &function : enum_entry.value.instance_functions) {
+			enum_info.instance_function_infos.insert(function.key, _get_function_lambda_replacement_info(function.value));
+		}
+		for (const KeyValue<StringName, FSFunction *> &function : enum_entry.value.static_functions) {
+			enum_info.static_function_infos.insert(function.key, _get_function_lambda_replacement_info(function.value));
+		}
+		info.enum_function_infos.insert(enum_entry.key, enum_info);
+	}
 
 	for (const KeyValue<StringName, Ref<FoundryScript>> &KV : p_script->get_subclasses()) {
 		info.subclass_info.insert(KV.key, _get_script_lambda_replacement_info(KV.value.ptr()));
@@ -4682,6 +4783,18 @@ void FSCompiler::_get_function_ptr_replacements(HashMap<FSFunction *, FSFunction
 
 	for (const KeyValue<StringName, Vector<FunctionLambdaInfo>> &old_kv : p_old_info.member_function_infos) {
 		_get_function_ptr_replacements(r_replacements, old_kv.value, p_new_info != nullptr ? p_new_info->member_function_infos.getptr(old_kv.key) : nullptr);
+	}
+	for (const KeyValue<StringName, ScriptLambdaInfo::EnumFunctionLambdaInfo> &old_enum : p_old_info.enum_function_infos) {
+		const ScriptLambdaInfo::EnumFunctionLambdaInfo *new_enum =
+				p_new_info != nullptr ? p_new_info->enum_function_infos.getptr(old_enum.key) : nullptr;
+		for (const KeyValue<StringName, Vector<FunctionLambdaInfo>> &old_function : old_enum.value.instance_function_infos) {
+			_get_function_ptr_replacements(r_replacements, old_function.value,
+					new_enum != nullptr ? new_enum->instance_function_infos.getptr(old_function.key) : nullptr);
+		}
+		for (const KeyValue<StringName, Vector<FunctionLambdaInfo>> &old_function : old_enum.value.static_function_infos) {
+			_get_function_ptr_replacements(r_replacements, old_function.value,
+					new_enum != nullptr ? new_enum->static_function_infos.getptr(old_function.key) : nullptr);
+		}
 	}
 	for (int i = 0; i < p_old_info.other_function_infos.size(); ++i) {
 		const FunctionLambdaInfo &old_other_info = p_old_info.other_function_infos[i];

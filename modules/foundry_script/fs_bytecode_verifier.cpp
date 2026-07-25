@@ -498,6 +498,9 @@ Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_me
 			case FSFunction::OPCODE_CALL:
 			case FSFunction::OPCODE_CALL_RETURN:
 			case FSFunction::OPCODE_CALL_ASYNC:
+			case FSFunction::OPCODE_CALL_ENUM:
+			case FSFunction::OPCODE_CALL_ENUM_RETURN:
+			case FSFunction::OPCODE_CALL_ENUM_ASYNC:
 			case FSFunction::OPCODE_CALL_METHOD_BIND:
 			case FSFunction::OPCODE_CALL_METHOD_BIND_RET:
 			case FSFunction::OPCODE_CALL_BUILTIN_STATIC:
@@ -550,6 +553,11 @@ Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_me
 						break;
 					case FSFunction::OPCODE_CONSTRUCT_TYPED_DICTIONARY:
 						tail = 6;
+						break;
+					case FSFunction::OPCODE_CALL_ENUM:
+					case FSFunction::OPCODE_CALL_ENUM_RETURN:
+					case FSFunction::OPCODE_CALL_ENUM_ASYNC:
+						tail = 7;
 						break;
 					default:
 						tail = 3;
@@ -618,6 +626,21 @@ Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_me
 						const int argument_count = code_ptr[shift + 1];
 						VERIFY_FAIL_COND(argument_count < 0, "negative argument count");
 						CHECK_TABLE(shift + 2, global_names_count, "global name");
+						highest_arg_index = (int64_t)argument_count + 1;
+					} break;
+					case FSFunction::OPCODE_CALL_ENUM:
+					case FSFunction::OPCODE_CALL_ENUM_RETURN:
+					case FSFunction::OPCODE_CALL_ENUM_ASYNC: {
+						const int argument_count = code_ptr[shift + 1];
+						VERIFY_FAIL_COND(argument_count < 0, "negative argument count");
+						VERIFY_FAIL_COND(instruction_arg_count != argument_count + 2,
+								"enum call instruction argument count does not match argument count");
+						CHECK_TABLE(shift + 2, global_names_count, "owner script path");
+						CHECK_TABLE(shift + 3, global_names_count, "owner class");
+						CHECK_TABLE(shift + 4, global_names_count, "enum type");
+						CHECK_TABLE(shift + 5, global_names_count, "enum function");
+						const int call_kind = code_ptr[shift + 6];
+						VERIFY_FAIL_COND(call_kind != 0 && call_kind != 1, "enum call kind is out of range");
 						highest_arg_index = (int64_t)argument_count + 1;
 					} break;
 					case FSFunction::OPCODE_CALL_METHOD_BIND: {

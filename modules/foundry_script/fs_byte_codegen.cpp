@@ -1194,6 +1194,29 @@ void FSByteCodeGenerator::write_call_async(const Address &p_target, const Addres
 	ct.cleanup();
 }
 
+void FSByteCodeGenerator::write_enum_call(
+		const Address &p_target, const Address &p_base, const Vector<Address> &p_arguments,
+		const StringName &p_owner_script_path, const StringName &p_owner_class, const StringName &p_enum_type,
+		const StringName &p_function_name, bool p_static, bool p_async) {
+	const FSFunction::Opcode opcode = p_async ? FSFunction::OPCODE_CALL_ENUM_ASYNC
+											  : (p_target.mode == Address::NIL ? FSFunction::OPCODE_CALL_ENUM
+																			   : FSFunction::OPCODE_CALL_ENUM_RETURN);
+	append_opcode_and_argcount(opcode, 2 + p_arguments.size());
+	for (const Address &argument : p_arguments) {
+		append(argument);
+	}
+	append(p_base);
+	CallTarget ct = get_call_target(p_target);
+	append(ct.target);
+	append(p_arguments.size());
+	append(p_owner_script_path);
+	append(p_owner_class);
+	append(p_enum_type);
+	append(p_function_name);
+	append(p_static ? 1 : 0);
+	ct.cleanup();
+}
+
 void FSByteCodeGenerator::write_call_foundry_script_utility(const Address &p_target, const StringName &p_function, const Vector<Address> &p_arguments) {
 	append_opcode_and_argcount(FSFunction::OPCODE_CALL_FOUNDRY_SCRIPT_UTILITY, 1 + p_arguments.size());
 	FSUtilityFunctions::FunctionPtr gds_function = FSUtilityFunctions::get_function(p_function);
