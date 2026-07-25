@@ -46,8 +46,9 @@
 // - String/NodePath/signal-name constants.
 // - Engine API names inside pointer-fixup keys.
 //
-// Stripping these is a separate follow-up epic (an export-time whole-program name mangler); this
-// format only guarantees that nothing outside the list above leaks into the serialized bytes.
+// `FSNameManglerAnalysis` now provides the export-time whole-program classification and rename-map
+// contract for these names. Applying that map to compiled graphs and integrating it into resource
+// export remain follow-ups; this format's current serialization behavior is therefore unchanged.
 class FSBytecodeFormat {
 public:
 	static constexpr uint8_t MAGIC[4] = { 'F', 'S', 'B', 'C' };
