@@ -99,12 +99,14 @@ Published editor binaries and export templates are available from the
 
 ### Headless container
 
-Published releases are also available at `ghcr.io/cafecito-games/foundry` as a
-minimal `linux/amd64` image for Foundry Script tooling and project-owned test
-runners:
+Containers begin publishing with the first non-draft container-enabled release
+after this feature lands. They use `ghcr.io/cafecito-games/foundry`, a minimal
+`linux/amd64` image for Foundry Script tooling and project-owned test runners.
+Before using a command, choose an actually published exact or channel tag and
+set `FOUNDRY_IMAGE` to it:
 
 ```sh
-docker pull ghcr.io/cafecito-games/foundry:v0.1.0-alpha.9
+FOUNDRY_IMAGE='ghcr.io/cafecito-games/foundry:<published-exact-or-channel-tag>'
 ```
 
 Every image has an exact tag matching its Git release tag, including the leading
@@ -116,42 +118,50 @@ its working directory:
 
 ```sh
 docker run --rm \
-  -v "$PWD:/workspace" \
-  ghcr.io/cafecito-games/foundry:latest-alpha \
+  --tmpfs /workspace/.foundry:rw,uid=10001,gid=10001,mode=0700 \
+  -v "$PWD:/workspace:ro" \
+  "$FOUNDRY_IMAGE" \
   script lint .
 
 docker run --rm \
-  -v "$PWD:/workspace" \
-  ghcr.io/cafecito-games/foundry:latest-alpha \
+  --tmpfs /workspace/.foundry:rw,uid=10001,gid=10001,mode=0700 \
+  -v "$PWD:/workspace:ro" \
+  "$FOUNDRY_IMAGE" \
   project test --project . --runner res://tests/runner.fs
 
 docker run --rm \
-  ghcr.io/cafecito-games/foundry:latest-alpha \
+  "$FOUNDRY_IMAGE" \
   script eval 'print("ok")'
 ```
 
 The container runs as the non-root UID/GID `10001:10001`. Read-only commands
-work with readable bind mounts (for example, use `:ro` for linting). Commands
-that rewrite files require a writable bind mount. On a host whose checkout has
-a different owner, run mutating commands with the host UID/GID and a temporary
-writable home:
+work with readable bind mounts. The lint and project-test examples keep the
+project read-only and make only Foundry's `.foundry` metadata ephemeral and
+writable. Commands that rewrite files require a writable bind mount. On a host
+whose checkout has a different owner, run mutating commands with the host
+UID/GID and temporary writable home and XDG directories:
 
 ```sh
 docker run --rm \
   --user "$(id -u):$(id -g)" \
   -e HOME=/tmp/foundry-home \
+  -e XDG_CONFIG_HOME=/tmp/foundry-home/.config \
+  -e XDG_CACHE_HOME=/tmp/foundry-home/.cache \
+  -e XDG_DATA_HOME=/tmp/foundry-home/.local/share \
   -v "$PWD:/workspace" \
-  ghcr.io/cafecito-games/foundry:latest-alpha \
+  "$FOUNDRY_IMAGE" \
   script format --write .
 ```
 
 The initial image is `linux/amd64` only and contains Foundry plus its runtime
 libraries, not export templates, compilers, Git, or the internal engine test
 suite. The GHCR package is intended to be public. After its first publication,
-verify anonymous access from a shell that is not authenticated to GHCR:
+verify anonymous access from a shell that is not authenticated to GHCR. Set
+`PUBLISHED_EXACT_TAG` to an actually published exact tag, including its leading
+`v`:
 
 ```sh
-docker pull ghcr.io/cafecito-games/foundry:v0.1.0-alpha.9
+docker pull "ghcr.io/cafecito-games/foundry:${PUBLISHED_EXACT_TAG:?Set this to a published exact v tag}"
 ```
 
 If the pull fails, an organization administrator must switch the package

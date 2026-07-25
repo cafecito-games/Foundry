@@ -215,14 +215,14 @@ repos:
 
       - id: foundry-headless-docker-contract
         name: Foundry headless Docker contract
-        language: system
-        entry: python3 .github/scripts/test_foundry_headless_docker.py
+        language: python
+        entry: python .github/scripts/test_foundry_headless_docker.py
         pass_filenames: false
-        files: ^(\.gitignore|docker/|tests/fixtures/headless_container|\.github/scripts/test_foundry_headless_docker)
+        files: ^(?:\.gitignore$|docker(?:/|$)|tests/fixtures/headless_container(?:/|$)|\.github/scripts/test_foundry_headless_docker\.py$)
 
       - id: foundry-release-container-workflow
         name: Foundry release container workflow
-        language: system
-        entry: python3 .github/scripts/test_release_container_workflow.py
+        language: python
+        entry: python .github/scripts/test_release_container_workflow.py
         pass_filenames: false
-        files: ^(\.gitignore|\.github/(workflows/release\.yml|actionlint\.yaml|scripts/(resolve_container_alias|test_(foundry_headless_docker|release_container_workflow))\.py)|docker/|tests/fixtures/headless_container)
+        files: ^(?:\.gitignore$|\.github/(?:workflows/release\.yml$|actionlint\.yaml$|scripts/(?:resolve_container_alias\.py$|test_(?:foundry_headless_docker|release_container_workflow)\.py$))|docker(?:/|$)|tests/fixtures/headless_container(?:/|$))
