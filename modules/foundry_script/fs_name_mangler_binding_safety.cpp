@@ -33,6 +33,8 @@
 #ifdef TOOLS_ENABLED
 
 #include "core/object/class_db.h"
+#include "scene/resources/animation.h"
+#include "scene/resources/animation_library.h"
 #include "scene/resources/packed_scene.h"
 
 namespace {
@@ -458,6 +460,11 @@ void collect_scene_properties(
 			if (property_entry.key == CoreStringName(script)) {
 				continue;
 			}
+			if (ClassDB::is_parent_class(
+						node.native_type, SNAME("AnimationMixer")) &&
+					String(property_entry.key).begins_with("libraries/")) {
+				continue;
+			}
 			const FoundryScript *declaration = find_foundry_declaration(
 					node.script, property_entry.key, DECLARATION_PROPERTY);
 			if (declaration != nullptr) {
@@ -779,6 +786,205 @@ void collect_variant_bindings(
 	}
 }
 
+struct StringNameComparator {
+	bool operator()(const StringName &p_left, const StringName &p_right) const {
+		return String(p_left) < String(p_right);
+	}
+};
+
+bool resolve_relative_node_path(
+		const String &p_base,
+		const NodePath &p_relative,
+		const String &p_source,
+		const String &p_context,
+		FSNameManglerBindingSafety::Result &r_result,
+		String &r_path) {
+	if (p_relative.is_absolute()) {
+		fail_collection(r_result, p_source, p_context,
+				"animation path must be scene-relative");
+		return false;
+	}
+	Vector<String> components;
+	if (!p_base.is_empty()) {
+		const PackedStringArray base_components = p_base.split("/");
+		for (const String &component : base_components) {
+			if (!component.is_empty()) {
+				components.push_back(component);
+			}
+		}
+	}
+	for (int i = 0; i < p_relative.get_name_count(); i++) {
+		const String component = p_relative.get_name(i);
+		if (component == ".") {
+			continue;
+		}
+		if (component == "..") {
+			if (components.is_empty()) {
+				fail_collection(r_result, p_source, p_context,
+						"animation path escapes the composed scene");
+				return false;
+			}
+			components.remove_at(components.size() - 1);
+			continue;
+		}
+		if (component.is_empty()) {
+			fail_collection(r_result, p_source, p_context,
+					"animation path contains an empty node component");
+			return false;
+		}
+		components.push_back(component);
+	}
+	r_path.clear();
+	for (const String &component : components) {
+		if (!r_path.is_empty()) {
+			r_path += "/";
+		}
+		r_path += component;
+	}
+	return true;
+}
+
+void collect_animation(
+		const Ref<Animation> &p_animation,
+		const String &p_mixer_root,
+		const String &p_source,
+		const String &p_context,
+		const VirtualScene &p_scene,
+		const ScriptDomain &p_domain,
+		FSNameManglerBindingSafety::Result &r_result) {
+	if (p_animation.is_null()) {
+		fail_collection(r_result, p_source, p_context,
+				"animation is null");
+		return;
+	}
+	for (int track_index = 0;
+			track_index < p_animation->get_track_count(); track_index++) {
+		const Animation::TrackType track_type =
+				p_animation->track_get_type(track_index);
+		if (track_type != Animation::TYPE_VALUE &&
+				track_type != Animation::TYPE_BEZIER &&
+				track_type != Animation::TYPE_METHOD) {
+			continue;
+		}
+		const NodePath track_path =
+				p_animation->track_get_path(track_index);
+		const String track_context =
+				vformat("%s track %d", p_context, track_index);
+		String target_path;
+		if (!resolve_relative_node_path(
+					p_mixer_root, track_path, p_source, track_context,
+					r_result, target_path)) {
+			continue;
+		}
+		const RBMap<String, VirtualNode>::Element *target_node =
+				p_scene.nodes.find(target_path);
+		if (target_node == nullptr) {
+			fail_collection(r_result, p_source, track_context,
+					vformat("animation target \"%s\" is missing",
+							target_path.is_empty() ? String(".") : target_path));
+			continue;
+		}
+		if (track_type == Animation::TYPE_VALUE ||
+				track_type == Animation::TYPE_BEZIER) {
+			if (track_path.get_subname_count() == 0) {
+				fail_collection(r_result, p_source, track_context,
+						"property track has no property subname");
+				continue;
+			}
+			collect_scene_declaration(
+					target_node->value(), track_path.get_subname(0),
+					DECLARATION_PROPERTY,
+					FSNameManglerBindingSafety::BINDING_ANIMATION_PROPERTY,
+					p_source, track_context, p_domain, r_result);
+			continue;
+		}
+		if (track_path.get_subname_count() != 0) {
+			fail_collection(r_result, p_source, track_context,
+					"method track target cannot contain property subnames");
+			continue;
+		}
+		for (int key_index = 0;
+				key_index < p_animation->track_get_key_count(track_index);
+				key_index++) {
+			collect_scene_declaration(
+					target_node->value(),
+					p_animation->method_track_get_name(
+							track_index, key_index),
+					DECLARATION_METHOD,
+					FSNameManglerBindingSafety::BINDING_ANIMATION_METHOD,
+					p_source, vformat("%s key %d", track_context, key_index),
+					p_domain, r_result);
+		}
+	}
+}
+
+void collect_scene_animations(
+		const VirtualScene &p_scene,
+		const String &p_source,
+		const ScriptDomain &p_domain,
+		FSNameManglerBindingSafety::Result &r_result) {
+	for (const KeyValue<String, VirtualNode> &node_entry : p_scene.nodes) {
+		const VirtualNode &node = node_entry.value;
+		if (!ClassDB::is_parent_class(
+					node.native_type, SNAME("AnimationMixer"))) {
+			continue;
+		}
+		NodePath root_node_path("..");
+		const RBMap<StringName, VirtualProperty>::Element *root_property =
+				node.properties.find(SNAME("root_node"));
+		if (root_property != nullptr) {
+			if (root_property->value().value.get_type() !=
+					Variant::NODE_PATH) {
+				fail_collection(r_result, p_source, node.path,
+						"AnimationMixer root_node is not a NodePath");
+				continue;
+			}
+			root_node_path = root_property->value().value;
+		}
+		String mixer_root;
+		if (!resolve_relative_node_path(
+					node.path, root_node_path, p_source,
+					node.path + ".root_node", r_result, mixer_root)) {
+			continue;
+		}
+		if (!p_scene.nodes.has(mixer_root)) {
+			fail_collection(r_result, p_source, node.path,
+					"AnimationMixer root_node is missing from the composed scene");
+			continue;
+		}
+
+		for (const KeyValue<StringName, VirtualProperty> &property :
+				node.properties) {
+			const String property_name = property.key;
+			if (!property_name.begins_with("libraries/")) {
+				continue;
+			}
+			const Ref<AnimationLibrary> library = property.value.value;
+			if (library.is_null()) {
+				fail_collection(r_result, p_source,
+						node.path + "." + property_name,
+						"AnimationMixer library property is not an AnimationLibrary");
+				continue;
+			}
+			List<StringName> animation_list;
+			library->get_animation_list(&animation_list);
+			Vector<StringName> animation_names;
+			for (const StringName &animation_name : animation_list) {
+				animation_names.push_back(animation_name);
+			}
+			animation_names.sort_custom<StringNameComparator>();
+			for (const StringName &animation_name : animation_names) {
+				collect_animation(
+						library->get_animation(animation_name), mixer_root,
+						p_source,
+						vformat("%s.%s animation %s", node.path,
+								property_name, animation_name),
+						p_scene, p_domain, r_result);
+			}
+		}
+	}
+}
+
 void sort_and_deduplicate(
 		FSNameManglerBindingSafety::Result &r_result) {
 	r_result.evidence.sort_custom<EvidenceComparator>();
@@ -902,6 +1108,8 @@ FSNameManglerBindingSafety::Result FSNameManglerBindingSafety::collect(
 			collect_scene_properties(
 					virtual_scene, root.source, domain, result);
 			collect_scene_connections(virtual_scene, domain, result);
+			collect_scene_animations(
+					virtual_scene, root.source, domain, result);
 		} else {
 			VariantTraversalState traversal;
 			collect_resource_bindings(

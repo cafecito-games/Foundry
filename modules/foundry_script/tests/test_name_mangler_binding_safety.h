@@ -35,6 +35,8 @@
 #include "modules/foundry_script/fs_name_mangler_binding_safety.h"
 #include "modules/foundry_script/tests/test_bytecode_serialization.h"
 
+#include "scene/resources/animation.h"
+#include "scene/resources/animation_library.h"
 #include "scene/resources/packed_scene.h"
 
 #include "tests/test_macros.h"
@@ -389,6 +391,90 @@ TEST_CASE("[FoundryScript][NameManglerBindingSafety] Resource keeps owned proper
 			result, SNAME("typed_private_control"),
 			FSNameManglerBindingSafety::BINDING_SERIALIZED_PROPERTY,
 			"res://config.tres"));
+}
+
+TEST_CASE("[FoundryScript][NameManglerBindingSafety] Animation keeps property and method track bindings") {
+	const Ref<FoundryScript> target_script = compile_bytecode_test_source(
+			"extends Node\n"
+			"@export var animated_value: float\n"
+			"func animation_method() -> void:\n"
+			"\tpass\n"
+			"func private_animation_control() -> void:\n"
+			"\tpass\n");
+
+	Ref<Animation> animation;
+	animation.instantiate();
+	const int value_track = animation->add_track(Animation::TYPE_VALUE);
+	animation->track_set_path(
+			value_track, NodePath("Receiver:animated_value"));
+	animation->track_insert_key(value_track, 0.0, 1.0);
+	animation->track_set_enabled(value_track, false);
+	const int bezier_track = animation->add_track(Animation::TYPE_BEZIER);
+	animation->track_set_path(
+			bezier_track, NodePath("Receiver:animated_value"));
+	animation->bezier_track_insert_key(
+			bezier_track, 0.0, 1.0, Vector2(), Vector2());
+	const int method_track = animation->add_track(Animation::TYPE_METHOD);
+	animation->track_set_path(method_track, NodePath("Receiver"));
+	Dictionary method_key;
+	method_key["method"] = SNAME("animation_method");
+	method_key["args"] = Array();
+	animation->track_insert_key(method_track, 0.0, method_key);
+	const int native_track = animation->add_track(Animation::TYPE_VALUE);
+	animation->track_set_path(
+			native_track, NodePath("Receiver:process_mode"));
+	animation->track_insert_key(native_track, 0.0, 0);
+
+	Ref<AnimationLibrary> library;
+	library.instantiate();
+	REQUIRE_EQ(library->add_animation(SNAME("test"), animation), OK);
+
+	Ref<PackedScene> scene;
+	scene.instantiate();
+	const Ref<SceneState> state = scene->get_state();
+	const int node_type = state->add_name(SNAME("Node"));
+	const int player_type = state->add_name(SNAME("AnimationPlayer"));
+	const int root_node = state->add_node(
+			-1, -1, node_type,
+			state->add_name(SNAME("PrivateAnimationControl")),
+			-1, -1, 50);
+	const int receiver = state->add_node(
+			root_node, root_node, node_type,
+			state->add_name(SNAME("Receiver")), -1, -1, 51);
+	state->add_node_property(
+			receiver, state->add_name(SNAME("script")),
+			state->add_value(target_script));
+	const int player = state->add_node(
+			root_node, root_node, player_type,
+			state->add_name(SNAME("AnimationPlayer")), -1, -1, 52);
+	state->add_node_property(
+			player, state->add_name(SNAME("root_node")),
+			state->add_value(NodePath("..")));
+	state->add_node_property(
+			player, state->add_name(SNAME("libraries/")),
+			state->add_value(library));
+
+	FSNameManglerAnalysis::Input analysis_input;
+	analysis_input.scripts.push_back(target_script);
+	FSNameManglerBindingSafety::Input binding_input;
+	binding_input.add_resource(scene, "res://animation_scene.tscn");
+
+	const FSNameManglerBindingSafety::Result result =
+			FSNameManglerBindingSafety::collect(binding_input, analysis_input);
+	REQUIRE_EQ(result.error, OK);
+	REQUIRE(result.complete);
+	CHECK(binding_safety_has_evidence(
+			result, SNAME("animated_value"),
+			FSNameManglerBindingSafety::BINDING_ANIMATION_PROPERTY,
+			"res://animation_scene.tscn"));
+	CHECK(binding_safety_has_evidence(
+			result, SNAME("animation_method"),
+			FSNameManglerBindingSafety::BINDING_ANIMATION_METHOD,
+			"res://animation_scene.tscn"));
+	CHECK_FALSE(binding_safety_has_evidence(
+			result, SNAME("private_animation_control"),
+			FSNameManglerBindingSafety::BINDING_ANIMATION_METHOD,
+			"res://animation_scene.tscn"));
 }
 
 } // namespace FSTests
