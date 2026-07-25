@@ -128,6 +128,7 @@ class ExtendFSParser : public FSParser {
 	void update_document_links(const String &p_code);
 	void parse_class_symbol(const FSParser::ClassNode *p_class, LSP::DocumentSymbol &r_symbol);
 	void parse_function_symbol(const FSParser::FunctionNode *p_func, LSP::DocumentSymbol &r_symbol, const FSParser::ClassNode *p_owner_class = nullptr);
+	void append_enum_symbol_children(const FSParser::EnumNode *p_enum, LSP::DocumentSymbol &r_symbol);
 
 	Dictionary dump_function_api(const FSParser::FunctionNode *p_func) const;
 	Dictionary dump_class_api(const FSParser::ClassNode *p_class) const;

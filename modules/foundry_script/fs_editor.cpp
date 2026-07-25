@@ -1925,6 +1925,38 @@ static void _find_identifiers_in_suite(const FSParser::SuiteNode *p_suite, HashM
 
 static void _find_identifiers_in_base(const FSCompletionIdentifier &p_base, bool p_only_functions, bool p_types_only, bool p_add_braces, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result, int p_recursion_depth);
 
+static const FSParser::EnumNode *_get_script_enum_declaration(const FSParser::DataType &p_type) {
+	if (p_type.kind != FSParser::DataType::ENUM || p_type.class_type == nullptr) {
+		return nullptr;
+	}
+
+	if (p_type.class_type->is_enum_file) {
+		return p_type.class_type->enum_file_decl;
+	}
+
+	if (!p_type.class_type->has_member(p_type.enum_type)) {
+		return nullptr;
+	}
+
+	const FSParser::ClassNode::Member &member = p_type.class_type->get_member(p_type.enum_type);
+	return member.type == FSParser::ClassNode::Member::ENUM ? member.m_enum : nullptr;
+}
+
+static const FSParser::FunctionNode *_get_enum_function_for_receiver(const FSParser::DataType &p_type, const StringName &p_name) {
+	const FSParser::EnumNode *enum_declaration = _get_script_enum_declaration(p_type);
+	if (enum_declaration == nullptr || !enum_declaration->functions_indices.has(p_name)) {
+		return nullptr;
+	}
+
+	const int function_index = enum_declaration->functions_indices[p_name];
+	if (function_index < 0 || function_index >= enum_declaration->functions.size()) {
+		return nullptr;
+	}
+
+	const FSParser::FunctionNode *function = enum_declaration->functions[function_index];
+	return function != nullptr && function->is_static == p_type.is_meta_type ? function : nullptr;
+}
+
 static void _find_identifiers_in_class(const FSParser::ClassNode *p_class, bool p_only_functions, bool p_types_only, bool p_static, bool p_parent_only, bool p_add_braces, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result, int p_recursion_depth) {
 	ERR_FAIL_COND(p_recursion_depth > COMPLETION_RECURSION_LIMIT);
 
@@ -2200,6 +2232,32 @@ static void _find_identifiers_in_base(const FSCompletionIdentifier &p_base, bool
 			case FSParser::DataType::ENUM: {
 				if (p_types_only) {
 					return;
+				}
+
+				const FSParser::EnumNode *script_enum = _get_script_enum_declaration(base_type);
+				if (script_enum != nullptr) {
+					for (const FSParser::FunctionNode *function : script_enum->functions) {
+						if (function == nullptr || function->identifier == nullptr || function->is_static != base_type.is_meta_type) {
+							continue;
+						}
+						ScriptLanguage::CodeCompletionOption option(
+								function->identifier->name, ScriptLanguage::CODE_COMPLETION_KIND_FUNCTION,
+								p_recursion_depth + ScriptLanguage::LOCATION_OTHER_USER_CODE);
+						if (p_add_braces) {
+							if (!function->parameters.is_empty() || function->is_vararg()) {
+								option.insert_text += "(";
+								option.display += U"(\u2026)";
+							} else {
+								option.insert_text += "()";
+								option.display += "()";
+							}
+						}
+						r_result.insert(option.display, option);
+					}
+
+					if (!base_type.is_meta_type) {
+						return;
+					}
 				}
 
 				String type_str = base_type.native_type;
@@ -3574,6 +3632,14 @@ static bool _guess_identifier_type_from_base(FSParser::CompletionContext &p_cont
 
 				return false;
 			} break;
+			case FSParser::DataType::ENUM: {
+				const FSParser::FunctionNode *function = _get_enum_function_for_receiver(base_type, p_identifier);
+				if (function == nullptr) {
+					return false;
+				}
+				r_type = _callable_type_from_method_info(function->info);
+				return true;
+			} break;
 			case FSParser::DataType::BUILTIN: {
 				if (Variant::has_builtin_method(base_type.builtin_type, p_identifier)) {
 					r_type = _callable_type_from_method_info(Variant::get_builtin_method_info(base_type.builtin_type, p_identifier));
@@ -3735,6 +3801,14 @@ static bool _guess_method_return_type_from_base(FSParser::CompletionContext &p_c
 					return true;
 				}
 				return false;
+			} break;
+			case FSParser::DataType::ENUM: {
+				const FSParser::FunctionNode *function = _get_enum_function_for_receiver(base_type, p_method);
+				if (function == nullptr || !function->get_datatype().is_set() || function->get_datatype().is_variant()) {
+					return false;
+				}
+				r_type.type = function->get_datatype();
+				return true;
 			} break;
 			case FSParser::DataType::BUILTIN: {
 				Callable::CallError err;
@@ -5432,6 +5506,21 @@ static Error _lookup_symbol_from_base(const FSParser::DataType &p_base, const St
 				return ERR_CANT_RESOLVE;
 			} break;
 			case FSParser::DataType::ENUM: {
+				if (const FSParser::FunctionNode *function = _get_enum_function_for_receiver(base_type, p_symbol)) {
+					String doc_type_name;
+					String doc_enum_name;
+					FSDocGen::doctype_from_gdtype(FSAnalyzer::type_from_metatype(base_type), doc_type_name, doc_enum_name);
+
+					Error err = OK;
+					r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_METHOD;
+					r_result.class_name = doc_enum_name.is_empty() ? doc_type_name : doc_enum_name;
+					r_result.class_member = p_symbol;
+					r_result.script = FSCache::get_shallow_script(base_type.script_path, err);
+					r_result.script_path = base_type.script_path;
+					r_result.location = function->identifier->start_line;
+					return err;
+				}
+
 				if (base_type.is_meta_type) {
 					if (base_type.enum_values.has(p_symbol)) {
 						String doc_type_name;

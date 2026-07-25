@@ -936,10 +936,13 @@ func f():
 			ScriptServer::global_classes_clear();
 
 			String path = "res://lsp/global_enum.fs";
+			String user_path = "res://lsp/global_enum_user.fs";
 			String uri = workspace->get_file_uri(path);
+			String user_uri = workspace->get_file_uri(user_path);
 			StringName language = FSLanguage::get_singleton()->get_name();
 			ScriptServer::add_global_class("LspGlobalEnum", String(), language, path, false, false, false, true);
 			assert_no_errors_in(path);
+			assert_no_errors_in(user_path);
 
 			ExtendFSParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(path);
 			REQUIRE(parser);
@@ -948,14 +951,24 @@ func f():
 			CHECK_EQ(cls.kind, LSP::SymbolKind::Enum);
 			CHECK_EQ(cls.detail, "enum LspGlobalEnum");
 			CHECK(cls.documentation.contains("Global enum documentation."));
-			CHECK_EQ(cls.children.size(), 3);
-			if (cls.children.size() == 3) {
+			CHECK_EQ(cls.children.size(), 6);
+			if (cls.children.size() == 6) {
 				CHECK_EQ(cls.children[0].name, "ALPHA");
 				CHECK_EQ(cls.children[0].kind, LSP::SymbolKind::EnumMember);
 				CHECK_EQ(cls.children[1].name, "BETA");
 				CHECK_EQ(cls.children[1].kind, LSP::SymbolKind::EnumMember);
 				CHECK_EQ(cls.children[2].name, "GAMMA");
 				CHECK_EQ(cls.children[2].kind, LSP::SymbolKind::EnumMember);
+				CHECK_EQ(cls.children[3].name, "label");
+				CHECK_EQ(cls.children[3].kind, LSP::SymbolKind::Method);
+				CHECK_EQ(cls.children[3].detail, R"(func label(prefix: String = "") -> String)");
+				CHECK(cls.children[3].documentation.contains("Formats a global enum value."));
+				CHECK_EQ(cls.children[4].name, "parse");
+				CHECK_EQ(cls.children[4].kind, LSP::SymbolKind::Function);
+				CHECK_EQ(cls.children[4].detail, "static func parse(text: String) -> LspGlobalEnum");
+				CHECK_EQ(cls.children[5].name, "load");
+				CHECK_EQ(cls.children[5].kind, LSP::SymbolKind::Function);
+				CHECK_EQ(cls.children[5].detail, "static async func load(text: String) -> String");
 			}
 
 			Ref<FSTextDocument> text_document = proto->get_text_document();
@@ -972,17 +985,26 @@ func f():
 			if (root_symbol.has("children")) {
 				child_symbols = root_symbol["children"];
 			}
-			CHECK_EQ(child_symbols.size(), 3);
-			if (child_symbols.size() == 3) {
+			CHECK_EQ(child_symbols.size(), 6);
+			if (child_symbols.size() == 6) {
 				Dictionary alpha_symbol = child_symbols[0];
 				Dictionary beta_symbol = child_symbols[1];
 				Dictionary gamma_symbol = child_symbols[2];
+				Dictionary label_symbol = child_symbols[3];
+				Dictionary parse_symbol = child_symbols[4];
+				Dictionary load_symbol = child_symbols[5];
 				CHECK_EQ(String(alpha_symbol["name"]), "ALPHA");
 				CHECK_EQ(int(alpha_symbol["kind"]), LSP::SymbolKind::EnumMember);
 				CHECK_EQ(String(beta_symbol["name"]), "BETA");
 				CHECK_EQ(int(beta_symbol["kind"]), LSP::SymbolKind::EnumMember);
 				CHECK_EQ(String(gamma_symbol["name"]), "GAMMA");
 				CHECK_EQ(int(gamma_symbol["kind"]), LSP::SymbolKind::EnumMember);
+				CHECK_EQ(String(label_symbol["name"]), "label");
+				CHECK_EQ(int(label_symbol["kind"]), LSP::SymbolKind::Method);
+				CHECK_EQ(String(parse_symbol["name"]), "parse");
+				CHECK_EQ(int(parse_symbol["kind"]), LSP::SymbolKind::Function);
+				CHECK_EQ(String(load_symbol["name"]), "load");
+				CHECK_EQ(int(load_symbol["kind"]), LSP::SymbolKind::Function);
 			}
 
 			Variant hover_variant = text_document->hover(pos_in(uri, cls.selectionRange.start).to_json());
@@ -992,6 +1014,117 @@ func f():
 			String hover_value = hover_contents["value"];
 			CHECK(hover_value.contains("enum LspGlobalEnum"));
 			CHECK(hover_value.contains("Global enum documentation."));
+
+			const LSP::Range label_range = range(pos(10, 6), pos(10, 11));
+			const LSP::Range parse_range = range(pos(14, 13), pos(14, 18));
+			const LSP::DocumentSymbol *static_reference =
+					test_resolve_symbol_at(user_uri, pos(3, 30), uri, "parse", parse_range);
+			const LSP::DocumentSymbol *instance_reference =
+					test_resolve_symbol_at(user_uri, pos(4, 20), uri, "label", label_range);
+			REQUIRE(static_reference);
+			REQUIRE(instance_reference);
+
+			Variant static_hover_variant = text_document->hover(pos_in(user_uri, pos(3, 30)).to_json());
+			REQUIRE(static_hover_variant.get_type() == Variant::DICTIONARY);
+			Dictionary static_hover = static_hover_variant;
+			Dictionary static_hover_contents = static_hover["contents"];
+			CHECK(String(static_hover_contents["value"]).contains("static func parse(text: String) -> LspGlobalEnum"));
+			CHECK(String(static_hover_contents["value"]).contains("Parses a global enum value."));
+
+			Variant instance_hover_variant = text_document->hover(pos_in(user_uri, pos(4, 20)).to_json());
+			REQUIRE(instance_hover_variant.get_type() == Variant::DICTIONARY);
+			Dictionary instance_hover = instance_hover_variant;
+			Dictionary instance_hover_contents = instance_hover["contents"];
+			CHECK(String(instance_hover_contents["value"]).contains(R"(func label(prefix: String = "") -> String)"));
+			CHECK(String(instance_hover_contents["value"]).contains("Formats a global enum value."));
+
+			Array definitions = text_document->definition(pos_in(user_uri, pos(3, 30)).to_json());
+			REQUIRE_EQ(definitions.size(), 1);
+			if (definitions.size() == 1) {
+				Dictionary definition = definitions[0];
+				CHECK_EQ(String(definition["uri"]), uri);
+				Dictionary definition_range = definition["range"];
+				LSP::Range resolved_definition_range;
+				resolved_definition_range.load(definition_range);
+				CHECK_EQ(resolved_definition_range, static_reference->selectionRange);
+			}
+
+			Dictionary completion_params = pos_in(user_uri, pos(3, 33)).to_json();
+			Array completion_items = text_document->completion(completion_params);
+			Dictionary parse_completion;
+			for (int i = 0; i < completion_items.size(); i++) {
+				Dictionary completion = completion_items[i];
+				if (String(completion["label"]).begins_with("parse")) {
+					parse_completion = completion;
+					break;
+				}
+			}
+			REQUIRE(!parse_completion.is_empty());
+			Dictionary resolved_parse_completion = text_document->resolve(parse_completion);
+			CHECK_EQ(String(resolved_parse_completion["detail"]), "static func parse(text: String) -> LspGlobalEnum");
+			Dictionary completion_docs = resolved_parse_completion["documentation"];
+			CHECK(String(completion_docs["value"]).contains("Parses a global enum value."));
+
+			LSP::SignatureHelp static_signature_help;
+			CHECK_EQ(workspace->resolve_signature(pos_in(user_uri, pos(3, 38)), static_signature_help), OK);
+			REQUIRE_EQ(static_signature_help.signatures.size(), 1);
+			if (static_signature_help.signatures.size() == 1) {
+				const LSP::SignatureInformation &signature = static_signature_help.signatures[0];
+				CHECK_EQ(signature.label, "static func parse(text: String) -> LspGlobalEnum");
+				REQUIRE_EQ(signature.parameters.size(), 1);
+				CHECK_EQ(signature.parameters[0].label, "text: String");
+			}
+
+			LSP::SignatureHelp instance_signature_help;
+			CHECK_EQ(workspace->resolve_signature(pos_in(user_uri, pos(4, 25)), instance_signature_help), OK);
+			REQUIRE_EQ(instance_signature_help.signatures.size(), 1);
+			if (instance_signature_help.signatures.size() == 1) {
+				const LSP::SignatureInformation &signature = instance_signature_help.signatures[0];
+				CHECK_EQ(signature.label, R"(func label(prefix: String = "") -> String)");
+				REQUIRE_EQ(signature.parameters.size(), 1);
+				CHECK_EQ(signature.parameters[0].label, "prefix: String");
+			}
+		}
+
+		SUBCASE("A nested enum reports and resolves host functions") {
+			String path = "res://lsp/enum_host_functions.fs";
+			String uri = workspace->get_file_uri(path);
+			assert_no_errors_in(path);
+
+			ExtendFSParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(path);
+			REQUIRE(parser);
+			const LSP::DocumentSymbol *status = parser->get_member_symbol("Status");
+			REQUIRE(status);
+			CHECK_EQ(status->kind, LSP::SymbolKind::Enum);
+			REQUIRE_EQ(status->children.size(), 5);
+			if (status->children.size() == 5) {
+				CHECK_EQ(status->children[0].name, "READY");
+				CHECK_EQ(status->children[0].kind, LSP::SymbolKind::EnumMember);
+				CHECK_EQ(status->children[1].name, "DONE");
+				CHECK_EQ(status->children[1].kind, LSP::SymbolKind::EnumMember);
+				CHECK_EQ(status->children[2].name, "label");
+				CHECK_EQ(status->children[2].kind, LSP::SymbolKind::Method);
+				CHECK_EQ(status->children[2].detail, R"(func label(prefix: String = "") -> String)");
+				CHECK_EQ(status->children[3].name, "refresh");
+				CHECK_EQ(status->children[3].kind, LSP::SymbolKind::Method);
+				CHECK_EQ(status->children[3].detail, "async func refresh() -> String");
+				CHECK_EQ(status->children[4].name, "parse");
+				CHECK_EQ(status->children[4].kind, LSP::SymbolKind::Function);
+				CHECK_EQ(status->children[4].detail, "static func parse(text: String) -> enum_host_functions.fs.Status");
+			}
+
+			const LSP::Range parse_range = range(pos(15, 13), pos(15, 18));
+			const LSP::Range label_range = range(pos(7, 6), pos(7, 11));
+			test_resolve_symbol_at(uri, pos(19, 23), uri, "parse", parse_range);
+			test_resolve_symbol_at(uri, pos(20, 21), uri, "label", label_range);
+
+			Ref<FSTextDocument> text_document = proto->get_text_document();
+			Variant hover_variant = text_document->hover(pos_in(uri, pos(21, 24)).to_json());
+			REQUIRE(hover_variant.get_type() == Variant::DICTIONARY);
+			Dictionary hover = hover_variant;
+			Dictionary hover_contents = hover["contents"];
+			CHECK(String(hover_contents["value"]).contains("async func refresh() -> String"));
+			CHECK(String(hover_contents["value"]).contains("Refreshes this status asynchronously."));
 		}
 
 		SUBCASE("A namespaced global enum_name resolves hover by declaration identifier") {

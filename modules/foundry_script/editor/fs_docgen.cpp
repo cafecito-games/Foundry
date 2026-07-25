@@ -479,6 +479,79 @@ void FSDocGen::_generate_docs(FoundryScript *p_script, const GDP::ClassNode *p_c
 	doc.is_experimental = p_class->doc_data.is_experimental;
 	doc.experimental_message = p_class->doc_data.experimental_message;
 
+	auto add_method_doc = [&](const GDP::FunctionNode *p_function) {
+		ERR_FAIL_NULL(p_function);
+		ERR_FAIL_NULL(p_function->identifier);
+
+		const StringName &func_name = p_function->identifier->name;
+		p_script->member_lines[func_name] = p_function->start_line;
+
+		DocData::MethodDoc method_doc;
+		method_doc.name = func_name;
+		method_doc.description = p_function->doc_data.description;
+		method_doc.is_deprecated = p_function->doc_data.is_deprecated;
+		method_doc.deprecated_message = p_function->doc_data.deprecated_message;
+		method_doc.is_experimental = p_function->doc_data.is_experimental;
+		method_doc.experimental_message = p_function->doc_data.experimental_message;
+
+		if (p_function->is_vararg()) {
+			if (!method_doc.qualifiers.is_empty()) {
+				method_doc.qualifiers += " ";
+			}
+			method_doc.qualifiers += "vararg";
+			method_doc.rest_argument.name = p_function->rest_parameter->identifier->name;
+			_doctype_from_gdtype(p_function->rest_parameter->get_datatype(), method_doc.rest_argument.type, method_doc.rest_argument.enumeration);
+		}
+		if (p_function->is_abstract) {
+			if (!method_doc.qualifiers.is_empty()) {
+				method_doc.qualifiers += " ";
+			}
+			method_doc.qualifiers += "abstract";
+		}
+		if (p_function->is_noreturn) {
+			if (!method_doc.qualifiers.is_empty()) {
+				method_doc.qualifiers += " ";
+			}
+			method_doc.qualifiers += "noreturn";
+		}
+		if (p_function->is_static) {
+			if (!method_doc.qualifiers.is_empty()) {
+				method_doc.qualifiers += " ";
+			}
+			method_doc.qualifiers += "static";
+		}
+		if (p_function->is_coroutine) {
+			if (!method_doc.qualifiers.is_empty()) {
+				method_doc.qualifiers += " ";
+			}
+			method_doc.qualifiers += "async";
+		}
+
+		if (func_name == "_init") {
+			method_doc.return_type = "void";
+		} else if (p_function->return_type) {
+			// `p_function->return_type->get_datatype()` is a metatype.
+			_doctype_from_gdtype(p_function->get_datatype(), method_doc.return_type, method_doc.return_enum, true);
+		} else if (!p_function->body->has_return) {
+			// If no `return` statement, then return type is `void`, not `Variant`.
+			method_doc.return_type = "void";
+		} else {
+			method_doc.return_type = "Variant";
+		}
+
+		for (const GDP::ParameterNode *parameter : p_function->parameters) {
+			DocData::ArgumentDoc arg_doc;
+			arg_doc.name = parameter->identifier->name;
+			_doctype_from_gdtype(parameter->get_datatype(), arg_doc.type, arg_doc.enumeration);
+			if (parameter->initializer != nullptr) {
+				arg_doc.default_value = docvalue_from_expression(parameter->initializer, parameter->get_datatype());
+			}
+			method_doc.arguments.push_back(arg_doc);
+		}
+
+		doc.methods.push_back(method_doc);
+	};
+
 	auto add_enum_docs = [&](const GDP::EnumNode *p_enum, const String &p_description_fallback = String(), bool p_requires_resolved_values = false) {
 		ERR_FAIL_NULL(p_enum);
 		ERR_FAIL_NULL(p_enum->identifier);
@@ -518,6 +591,9 @@ void FSDocGen::_generate_docs(FoundryScript *p_script, const GDP::ClassNode *p_c
 
 	if (p_class->is_enum_file && p_class->enum_file_decl != nullptr) {
 		add_enum_docs(p_class->enum_file_decl, _description_from_class_doc_data(p_class->doc_data), true);
+		for (const GDP::FunctionNode *function : p_class->enum_file_decl->functions) {
+			add_method_doc(function);
+		}
 	}
 
 	for (const GDP::ClassNode::Member &member : p_class->members) {
@@ -553,75 +629,7 @@ void FSDocGen::_generate_docs(FoundryScript *p_script, const GDP::ClassNode *p_c
 			} break;
 
 			case GDP::ClassNode::Member::FUNCTION: {
-				const GDP::FunctionNode *m_func = member.function;
-				const StringName &func_name = m_func->identifier->name;
-
-				p_script->member_lines[func_name] = m_func->start_line;
-
-				DocData::MethodDoc method_doc;
-				method_doc.name = func_name;
-				method_doc.description = m_func->doc_data.description;
-				method_doc.is_deprecated = m_func->doc_data.is_deprecated;
-				method_doc.deprecated_message = m_func->doc_data.deprecated_message;
-				method_doc.is_experimental = m_func->doc_data.is_experimental;
-				method_doc.experimental_message = m_func->doc_data.experimental_message;
-
-				if (m_func->is_vararg()) {
-					if (!method_doc.qualifiers.is_empty()) {
-						method_doc.qualifiers += " ";
-					}
-					method_doc.qualifiers += "vararg";
-					method_doc.rest_argument.name = m_func->rest_parameter->identifier->name;
-					_doctype_from_gdtype(m_func->rest_parameter->get_datatype(), method_doc.rest_argument.type, method_doc.rest_argument.enumeration);
-				}
-				if (m_func->is_abstract) {
-					if (!method_doc.qualifiers.is_empty()) {
-						method_doc.qualifiers += " ";
-					}
-					method_doc.qualifiers += "abstract";
-				}
-				if (m_func->is_noreturn) {
-					if (!method_doc.qualifiers.is_empty()) {
-						method_doc.qualifiers += " ";
-					}
-					method_doc.qualifiers += "noreturn";
-				}
-				if (m_func->is_static) {
-					if (!method_doc.qualifiers.is_empty()) {
-						method_doc.qualifiers += " ";
-					}
-					method_doc.qualifiers += "static";
-				}
-				if (m_func->is_coroutine) {
-					if (!method_doc.qualifiers.is_empty()) {
-						method_doc.qualifiers += " ";
-					}
-					method_doc.qualifiers += "async";
-				}
-
-				if (func_name == "_init") {
-					method_doc.return_type = "void";
-				} else if (m_func->return_type) {
-					// `m_func->return_type->get_datatype()` is a metatype.
-					_doctype_from_gdtype(m_func->get_datatype(), method_doc.return_type, method_doc.return_enum, true);
-				} else if (!m_func->body->has_return) {
-					// If no `return` statement, then return type is `void`, not `Variant`.
-					method_doc.return_type = "void";
-				} else {
-					method_doc.return_type = "Variant";
-				}
-
-				for (const GDP::ParameterNode *p : m_func->parameters) {
-					DocData::ArgumentDoc arg_doc;
-					arg_doc.name = p->identifier->name;
-					_doctype_from_gdtype(p->get_datatype(), arg_doc.type, arg_doc.enumeration);
-					if (p->initializer != nullptr) {
-						arg_doc.default_value = docvalue_from_expression(p->initializer, p->get_datatype());
-					}
-					method_doc.arguments.push_back(arg_doc);
-				}
-
-				doc.methods.push_back(method_doc);
+				add_method_doc(member.function);
 			} break;
 
 			case GDP::ClassNode::Member::SIGNAL: {
