@@ -680,11 +680,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: editor
-            cache-name: release-android-editor
-            target: editor
-            publish-publication: ToolsRelease
-            template_scons_flags: ""
           - name: templates (debug)
             cache-name: release-android-template-debug
             target: template_debug
@@ -719,9 +714,8 @@ jobs:
       - name: Download Swappy
         run: python ./misc/scripts/install_swappy_android.py
 
-      # The editor ships arm64 only; the export templates must contain both
-      # arm32 and arm64 native libraries, so build both archs into bin/ before
-      # Gradle assembles the APKs.
+      # Export templates must contain both arm32 and arm64 native libraries, so
+      # build both architectures into bin/ before Gradle assembles the APKs.
       - name: Compilation (arm64)
         uses: ./.github/actions/foundry-build
         with:
@@ -730,7 +724,6 @@ jobs:
           target: ${{ matrix.target }}
 
       - name: Compilation (arm32)
-        if: matrix.target != 'editor'
         uses: ./.github/actions/foundry-build
         with:
           scons-flags: ${{ env.SCONS_FLAGS }} ${{ matrix.template_scons_flags }} arch=arm32
@@ -744,20 +737,11 @@ jobs:
         continue-on-error: true
 
       - name: Generate Foundry templates
-        if: matrix.target != 'editor'
         run: |
           cd platform/android/java
           ./gradlew generateFoundryTemplates
           cd ../../..
           ls -l bin/
-
-      - name: Generate Foundry editor
-        if: matrix.target == 'editor'
-        run: |
-          cd platform/android/java
-          ./gradlew generateFoundryEditor
-          cd ../../..
-          ls -l bin/android_editor_builds/
 
       - name: Publish Android library to Maven Central
         if: needs.resolve.outputs.draft == 'false'

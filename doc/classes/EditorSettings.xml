@@ -946,7 +946,6 @@
 		<member name="interface/editor/collapse_main_menu" type="bool" setter="" getter="">
 			If [code]true[/code], the main menu collapses into a [MenuButton].
 			[b]Note:[/b] This setting is only applicable on macOS when [member interface/editor/use_embedded_menu] is [code]true[/code].
-			[b]Note:[/b] Defaults to [code]true[/code] on the Android editor.
 		</member>
 		<member name="interface/editor/custom_display_scale" type="float" setter="" getter="">
 			The custom editor scale factor to use. This can be used for displays with very high DPI where a scale factor of 200% is not sufficient.
@@ -1254,10 +1253,6 @@
 			Specify the multiplier to apply to the scale for the editor gizmo handles to improve usability on touchscreen devices.
 			[b]Note:[/b] Defaults to [code]1[/code] on non-touchscreen devices.
 		</member>
-		<member name="interface/touchscreen/touch_actions_panel" type="int" setter="" getter="">
-			A touch-friendly panel that provides easy access to common actions such as save, delete, undo, and redo without requiring a keyboard.
-			[b]Note:[/b] Only available in the Android and XR editor.
-		</member>
 		<member name="network/connection/check_for_updates" type="int" setter="" getter="">
 			Specifies how the engine should check for updates.
 			- [b]Disable Update Checks[/b] will block the engine from checking updates (see also [member network/connection/network_mode]).
@@ -1322,13 +1317,6 @@
 		</member>
 		<member name="run/platforms/linuxbsd/prefer_wayland" type="bool" setter="" getter="">
 			If [code]true[/code], on Linux/BSD, the editor will check for Wayland first instead of X11 (if available).
-		</member>
-		<member name="run/window_placement/android_window" type="int" setter="" getter="">
-			Specifies how the Play window is launched relative to the Android editor.
-			- [b]Auto (based on screen size)[/b] (default) will automatically choose how to launch the Play window based on the device and screen metrics. Defaults to [b]Same as Editor[/b] on phones and [b]Side-by-side with Editor[/b] on tablets.
-			- [b]Same as Editor[/b] will launch the Play window in the same window as the Editor.
-			- [b]Side-by-side with Editor[/b] will launch the Play window side-by-side with the Editor window.
-			[b]Note:[/b] Only available in the Android editor.
 		</member>
 		<member name="run/window_placement/game_embed_mode" type="int" setter="" getter="">
 			Overrides game embedding setting for all newly opened projects. If enabled, game embedding settings are not saved.

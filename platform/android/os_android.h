@@ -2,7 +2,7 @@
 /*  os_android.h                                                          */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -91,11 +91,6 @@ public:
 	static const int DEFAULT_WINDOW_WIDTH = 800;
 	static const int DEFAULT_WINDOW_HEIGHT = 600;
 
-#ifdef TOOLS_ENABLED
-	Error sign_apk(const String &p_input_path, const String &p_output_path, const String &p_keystore_path, const String &p_keystore_user, const String &p_keystore_password);
-	Error verify_apk(const String &p_apk_path);
-#endif
-
 	virtual void initialize_core() override;
 	virtual void initialize() override;
 
@@ -173,10 +168,6 @@ public:
 
 	virtual Error setup_remote_filesystem(const String &p_server_host, int p_port, const String &p_password, String &r_project_path) override;
 
-	virtual void benchmark_begin_measure(const String &p_context, const String &p_what) override;
-	virtual void benchmark_end_measure(const String &p_context, const String &p_what) override;
-	virtual void benchmark_dump() override;
-
 	virtual void load_platform_foundry_extensions() const override;
 
 	virtual bool _check_internal_feature_support(const String &p_feature) override;
@@ -188,8 +179,4 @@ private:
 	String get_dynamic_libraries_path() const;
 	// Copy a dynamic library to the given location to make it accessible for loading.
 	bool copy_dynamic_library(const String &p_library_path, const String &p_target_dir, String *r_copy_path = nullptr);
-
-#ifdef TOOLS_ENABLED
-	static void _on_main_screen_changed(const String &p_screen_name);
-#endif
 };

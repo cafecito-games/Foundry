@@ -2,7 +2,7 @@
 /*  java_foundry_lib_jni.h                                                */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -61,10 +61,6 @@ JNIEXPORT void JNICALL Java_games_cafecito_foundry_FoundryLib_focusin(JNIEnv *en
 JNIEXPORT void JNICALL Java_games_cafecito_foundry_FoundryLib_focusout(JNIEnv *env, jclass clazz);
 JNIEXPORT jstring JNICALL Java_games_cafecito_foundry_FoundryLib_getGlobal(JNIEnv *env, jclass clazz, jstring path);
 JNIEXPORT jobjectArray JNICALL Java_games_cafecito_foundry_FoundryLib_getRendererInfo(JNIEnv *env, jclass clazz);
-JNIEXPORT jstring JNICALL Java_games_cafecito_foundry_FoundryLib_getEditorSetting(JNIEnv *env, jclass clazz, jstring p_setting_key);
-JNIEXPORT void JNICALL Java_games_cafecito_foundry_FoundryLib_setEditorSetting(JNIEnv *env, jclass clazz, jstring p_key, jobject p_data);
-JNIEXPORT jobject JNICALL Java_games_cafecito_foundry_FoundryLib_getEditorProjectMetadata(JNIEnv *env, jclass clazz, jstring p_section, jstring p_key, jobject p_default_value);
-JNIEXPORT void JNICALL Java_games_cafecito_foundry_FoundryLib_setEditorProjectMetadata(JNIEnv *env, jclass clazz, jstring p_section, jstring p_key, jobject p_data);
 JNIEXPORT void JNICALL Java_games_cafecito_foundry_FoundryLib_setVirtualKeyboardHeight(JNIEnv *env, jclass clazz, jint p_height);
 JNIEXPORT void JNICALL Java_games_cafecito_foundry_FoundryLib_requestPermissionResult(JNIEnv *env, jclass clazz, jstring p_permission, jboolean p_result);
 JNIEXPORT void JNICALL Java_games_cafecito_foundry_FoundryLib_onNightModeChanged(JNIEnv *env, jclass clazz);
@@ -75,7 +71,5 @@ JNIEXPORT void JNICALL Java_games_cafecito_foundry_FoundryLib_onRendererPaused(J
 JNIEXPORT void JNICALL Java_games_cafecito_foundry_FoundryLib_onScreenRotationChange(JNIEnv *env, jclass clazz, jint p_orientation);
 JNIEXPORT jboolean JNICALL Java_games_cafecito_foundry_FoundryLib_shouldDispatchInputToRenderThread(JNIEnv *env, jclass clazz);
 JNIEXPORT jstring JNICALL Java_games_cafecito_foundry_FoundryLib_getProjectResourceDir(JNIEnv *env, jclass clazz);
-JNIEXPORT jboolean JNICALL Java_games_cafecito_foundry_FoundryLib_isEditorHint(JNIEnv *env, jclass clazz);
-JNIEXPORT jboolean JNICALL Java_games_cafecito_foundry_FoundryLib_isProjectManagerHint(JNIEnv *env, jclass clazz);
 JNIEXPORT jboolean JNICALL Java_games_cafecito_foundry_FoundryLib_hasFeature(JNIEnv *env, jclass clazz, jstring p_feature);
 }

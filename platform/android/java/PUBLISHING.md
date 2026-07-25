@@ -1,13 +1,12 @@
 # Publishing the Foundry Android library to Maven Central
 
 The Foundry Android library is published to Maven Central under group
-`games.cafecito.foundry` with three artifacts:
+`games.cafecito.foundry` with two runtime artifacts:
 
 | Artifact | Coordinate | Contents |
 | --- | --- | --- |
 | Template (release) | `games.cafecito.foundry:foundry` | Runtime template AAR |
 | Template (debug) | `games.cafecito.foundry:foundry-debug` | Debug template AAR |
-| Editor / tools | `games.cafecito.foundry:foundry-tools` | Editor build AAR |
 
 Publishing is wired into `.github/workflows/release.yml` (the `build-android` job) and runs
 automatically on a tagged, non-draft release. This document covers the one-time account setup, the
@@ -108,9 +107,9 @@ The `build-android` job builds all three artifacts, signs them, and runs
 `closeAndReleaseSonatypeStagingRepository`. Artifacts are searchable on Central after ~10–30 minutes
 of sync.
 
-> Note: each of the three artifacts publishes from its own matrix leg, so a stable release
-> opens/closes three separate staging repositories rather than one atomic bundle. This is functional
-> (three independent artifacts) but not transactional.
+> Note: each artifact publishes from its own matrix leg, so a stable release
+> opens/closes two separate staging repositories rather than one atomic bundle.
+> This is functional (two independent artifacts) but not transactional.
 
 ### Local validation
 
@@ -134,6 +133,5 @@ repositories {
 dependencies {
     implementation "games.cafecito.foundry:foundry:0.1.0"
     // debugImplementation "games.cafecito.foundry:foundry-debug:0.1.0"
-    // "games.cafecito.foundry:foundry-tools:0.1.0"   // editor/tools build
 }
 ```

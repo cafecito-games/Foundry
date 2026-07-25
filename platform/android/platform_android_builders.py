@@ -16,13 +16,10 @@ def generate_android_binaries(target, source, env):
     else:
         gradle_process = ["./gradlew"]
 
-    if env["target"] == "editor":
-        gradle_process += ["generateFoundryEditor", "generateFoundryHorizonOSEditor", "generateFoundryPicoOSEditor"]
+    if env["module_mono_enabled"]:
+        gradle_process += ["generateFoundryMonoTemplates"]
     else:
-        if env["module_mono_enabled"]:
-            gradle_process += ["generateFoundryMonoTemplates"]
-        else:
-            gradle_process += ["generateFoundryTemplates"]
+        gradle_process += ["generateFoundryTemplates"]
     gradle_process += ["--quiet"]
 
     if env["debug_symbols"] and not env["separate_debug_symbols"]:

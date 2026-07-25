@@ -1,10 +1,7 @@
-#!/usr/bin/env python3
-
 from __future__ import annotations
 
 import pathlib
 import sys
-
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 failures: list[str] = []
@@ -42,6 +39,17 @@ def forbid_text(path: str, *fragments: str) -> None:
             failures.append(f"{path} still contains Android editor surface {fragment!r}")
 
 
+def forbid_text_in_section(path: str, start: str, end: str, *fragments: str) -> None:
+    contents = source(path)
+    if start not in contents or end not in contents:
+        failures.append(f"{path} must contain section boundaries {start!r} and {end!r}")
+        return
+    section = contents.split(start, 1)[1].split(end, 1)[0]
+    for fragment in fragments:
+        if fragment in section:
+            failures.append(f"{path} section {start.strip()!r} still contains Android editor surface {fragment!r}")
+
+
 # Removed application, library flavor, publication, and generated artifacts.
 forbid_path("platform/android/java/editor")
 forbid_path("platform/android/java/lib/src/main/java/games/cafecito/foundry/BuildProvider.java")
@@ -50,6 +58,8 @@ forbid_path("platform/android/java/lib/src/main/java/games/cafecito/foundry/util
 forbid_path("platform/android/editor")
 forbid_path("platform/android/export/android_editor_gradle_runner.cpp")
 forbid_path("platform/android/export/android_editor_gradle_runner.h")
+forbid_path("editor/gui/touch_actions_panel.cpp")
+forbid_path("editor/gui/touch_actions_panel.h")
 
 forbid_text("platform/android/java/settings.gradle", "include ':editor'")
 forbid_text(
@@ -182,8 +192,10 @@ forbid_text(
     "generateFoundryPicoOSEditor",
     "android_editor_builds",
 )
-forbid_text(
+forbid_text_in_section(
     ".github/workflows/release.yml",
+    "\n  build-android:\n",
+    "\n  build-ios:\n",
     "release-android-editor",
     "target: editor",
     "ToolsRelease",
@@ -193,6 +205,30 @@ forbid_text(
 )
 forbid_text("platform/android/java/PUBLISHING.md", "foundry-tools", "Editor / tools", "editor/tools build")
 forbid_text("doc/classes/EditorSettings.xml", "Android editor")
+forbid_text(
+    "platform/android/java/lib/src/main/java/games/cafecito/foundry/Foundry.kt",
+    "EDITOR_FLAVOR",
+    "isEditorBuild()",
+)
+forbid_text(
+    "platform/android/java/lib/src/main/java/games/cafecito/foundry/io/directory/DirectoryAccessHandler.kt",
+    "Foundry.isEditorBuild()",
+    "If this is an editor build",
+)
+forbid_text(
+    "platform/android/java/lib/src/main/java/games/cafecito/foundry/FoundryActivity.kt",
+    "BaseFoundryEditor",
+)
+forbid_text("platform/android/java_foundry_lib_jni.cpp", "editor/settings/editor_settings.h")
+forbid_text("platform/android/os_android.cpp", "#ifdef TOOLS_ENABLED", "#else // TOOLS_ENABLED")
+forbid_text(
+    "editor/settings/editor_settings.cpp",
+    "is_android_editor",
+    "run/window_placement/android_window",
+    "interface/touchscreen/touch_actions_panel",
+    'has_feature("xr_editor")',
+)
+forbid_text("editor/editor_node.cpp", "TouchActionsPanel", "_touch_actions_panel_mode_changed")
 
 # Preserved Gradle project, runtime library, export template, and publications.
 for path in (

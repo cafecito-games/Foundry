@@ -2,7 +2,7 @@
 /*  java_foundry_wrapper.cpp                                              */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -78,23 +78,12 @@ FoundryJavaWrapper::FoundryJavaWrapper(JNIEnv *p_env, jobject p_foundry_instance
 	_on_foundry_terminating = p_env->GetMethodID(foundry_class, "onFoundryTerminating", "()V");
 	_create_new_foundry_instance = p_env->GetMethodID(foundry_class, "createNewFoundryInstance", "([Ljava/lang/String;)I");
 	_get_render_view = p_env->GetMethodID(foundry_class, "getRenderView", "()Lgames/cafecito/foundry/FoundryRenderView;");
-	_begin_benchmark_measure = p_env->GetMethodID(foundry_class, "nativeBeginBenchmarkMeasure", "(Ljava/lang/String;Ljava/lang/String;)V");
-	_end_benchmark_measure = p_env->GetMethodID(foundry_class, "nativeEndBenchmarkMeasure", "(Ljava/lang/String;Ljava/lang/String;)V");
-	_dump_benchmark = p_env->GetMethodID(foundry_class, "nativeDumpBenchmark", "(Ljava/lang/String;)V");
 	_get_foundry_extension_list_config_file = p_env->GetMethodID(foundry_class, "getFoundryExtensionConfigFiles", "()[Ljava/lang/String;");
 	_check_internal_feature_support = p_env->GetMethodID(foundry_class, "checkInternalFeatureSupport", "(Ljava/lang/String;)Z");
-	_sign_apk = p_env->GetMethodID(foundry_class, "nativeSignApk", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)I");
-	_verify_apk = p_env->GetMethodID(foundry_class, "nativeVerifyApk", "(Ljava/lang/String;)I");
 	_enable_immersive_mode = p_env->GetMethodID(foundry_class, "nativeEnableImmersiveMode", "(Z)V");
 	_is_in_immersive_mode = p_env->GetMethodID(foundry_class, "isInImmersiveMode", "()Z");
 	_set_window_color = p_env->GetMethodID(foundry_class, "setWindowColor", "(Ljava/lang/String;)V");
-	_on_editor_workspace_selected = p_env->GetMethodID(foundry_class, "nativeOnEditorWorkspaceSelected", "(Ljava/lang/String;)V");
 	_get_activity = p_env->GetMethodID(foundry_class, "getActivity", "()Landroid/app/Activity;");
-	_build_env_connect = p_env->GetMethodID(foundry_class, "nativeBuildEnvConnect", "(Lgames/cafecito/foundry/variant/Callable;)Z");
-	_build_env_disconnect = p_env->GetMethodID(foundry_class, "nativeBuildEnvDisconnect", "()V");
-	_build_env_execute = p_env->GetMethodID(foundry_class, "nativeBuildEnvExecute", "(Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lgames/cafecito/foundry/variant/Callable;Lgames/cafecito/foundry/variant/Callable;)I");
-	_build_env_cancel = p_env->GetMethodID(foundry_class, "nativeBuildEnvCancel", "(I)V");
-	_build_env_clean_project = p_env->GetMethodID(foundry_class, "nativeBuildEnvCleanProject", "(Ljava/lang/String;Ljava/lang/String;Lgames/cafecito/foundry/variant/Callable;)V");
 }
 
 FoundryJavaWrapper::~FoundryJavaWrapper() {
@@ -490,40 +479,6 @@ int FoundryJavaWrapper::create_new_foundry_instance(const List<String> &args) {
 	}
 }
 
-void FoundryJavaWrapper::begin_benchmark_measure(const String &p_context, const String &p_label) {
-	if (_begin_benchmark_measure) {
-		JNIEnv *env = get_jni_env();
-		ERR_FAIL_NULL(env);
-		jstring j_context = env->NewStringUTF(p_context.utf8().get_data());
-		jstring j_label = env->NewStringUTF(p_label.utf8().get_data());
-		env->CallVoidMethod(foundry_instance, _begin_benchmark_measure, j_context, j_label);
-		env->DeleteLocalRef(j_context);
-		env->DeleteLocalRef(j_label);
-	}
-}
-
-void FoundryJavaWrapper::end_benchmark_measure(const String &p_context, const String &p_label) {
-	if (_end_benchmark_measure) {
-		JNIEnv *env = get_jni_env();
-		ERR_FAIL_NULL(env);
-		jstring j_context = env->NewStringUTF(p_context.utf8().get_data());
-		jstring j_label = env->NewStringUTF(p_label.utf8().get_data());
-		env->CallVoidMethod(foundry_instance, _end_benchmark_measure, j_context, j_label);
-		env->DeleteLocalRef(j_context);
-		env->DeleteLocalRef(j_label);
-	}
-}
-
-void FoundryJavaWrapper::dump_benchmark(const String &benchmark_file) {
-	if (_dump_benchmark) {
-		JNIEnv *env = get_jni_env();
-		ERR_FAIL_NULL(env);
-		jstring j_benchmark_file = env->NewStringUTF(benchmark_file.utf8().get_data());
-		env->CallVoidMethod(foundry_instance, _dump_benchmark, j_benchmark_file);
-		env->DeleteLocalRef(j_benchmark_file);
-	}
-}
-
 bool FoundryJavaWrapper::check_internal_feature_support(const String &p_feature) const {
 	if (_check_internal_feature_support) {
 		JNIEnv *env = get_jni_env();
@@ -535,45 +490,6 @@ bool FoundryJavaWrapper::check_internal_feature_support(const String &p_feature)
 		return result;
 	} else {
 		return false;
-	}
-}
-
-Error FoundryJavaWrapper::sign_apk(const String &p_input_path, const String &p_output_path, const String &p_keystore_path, const String &p_keystore_user, const String &p_keystore_password) {
-	if (_sign_apk) {
-		JNIEnv *env = get_jni_env();
-		ERR_FAIL_NULL_V(env, ERR_UNCONFIGURED);
-
-		jstring j_input_path = env->NewStringUTF(p_input_path.utf8().get_data());
-		jstring j_output_path = env->NewStringUTF(p_output_path.utf8().get_data());
-		jstring j_keystore_path = env->NewStringUTF(p_keystore_path.utf8().get_data());
-		jstring j_keystore_user = env->NewStringUTF(p_keystore_user.utf8().get_data());
-		jstring j_keystore_password = env->NewStringUTF(p_keystore_password.utf8().get_data());
-
-		int result = env->CallIntMethod(foundry_instance, _sign_apk, j_input_path, j_output_path, j_keystore_path, j_keystore_user, j_keystore_password);
-
-		env->DeleteLocalRef(j_input_path);
-		env->DeleteLocalRef(j_output_path);
-		env->DeleteLocalRef(j_keystore_path);
-		env->DeleteLocalRef(j_keystore_user);
-		env->DeleteLocalRef(j_keystore_password);
-
-		return static_cast<Error>(result);
-	} else {
-		return ERR_UNCONFIGURED;
-	}
-}
-
-Error FoundryJavaWrapper::verify_apk(const String &p_apk_path) {
-	if (_verify_apk) {
-		JNIEnv *env = get_jni_env();
-		ERR_FAIL_NULL_V(env, ERR_UNCONFIGURED);
-
-		jstring j_apk_path = env->NewStringUTF(p_apk_path.utf8().get_data());
-		int result = env->CallIntMethod(foundry_instance, _verify_apk, j_apk_path);
-		env->DeleteLocalRef(j_apk_path);
-		return static_cast<Error>(result);
-	} else {
-		return ERR_UNCONFIGURED;
 	}
 }
 
@@ -602,96 +518,5 @@ void FoundryJavaWrapper::set_window_color(const Color &p_color) {
 		String color = "#" + p_color.to_html(false);
 		jstring jStrColor = env->NewStringUTF(color.utf8().get_data());
 		env->CallVoidMethod(foundry_instance, _set_window_color, jStrColor);
-	}
-}
-
-void FoundryJavaWrapper::on_editor_workspace_selected(const String &p_workspace) {
-	if (_on_editor_workspace_selected) {
-		JNIEnv *env = get_jni_env();
-		ERR_FAIL_NULL(env);
-
-		jstring j_workspace = env->NewStringUTF(p_workspace.utf8().get_data());
-		env->CallVoidMethod(foundry_instance, _on_editor_workspace_selected, j_workspace);
-	}
-}
-
-bool FoundryJavaWrapper::build_env_connect(const Callable &p_callback) {
-	if (_build_env_connect) {
-		JNIEnv *env = get_jni_env();
-		ERR_FAIL_NULL_V(env, false);
-
-		jobject j_callback = callable_to_jcallable(env, p_callback);
-		jboolean result = env->CallBooleanMethod(foundry_instance, _build_env_connect, j_callback);
-		env->DeleteLocalRef(j_callback);
-
-		return result;
-	}
-
-	return false;
-}
-
-void FoundryJavaWrapper::build_env_disconnect() {
-	if (_build_env_disconnect) {
-		JNIEnv *env = get_jni_env();
-		ERR_FAIL_NULL(env);
-
-		env->CallVoidMethod(foundry_instance, _build_env_disconnect);
-	}
-}
-
-int FoundryJavaWrapper::build_env_execute(const String &p_build_tool, const List<String> &p_arguments, const String &p_project_path, const String &p_gradle_build_directory, const Callable &p_output_callback, const Callable &p_result_callback) {
-	if (_build_env_execute) {
-		JNIEnv *env = get_jni_env();
-		ERR_FAIL_NULL_V(env, -1);
-
-		jstring j_build_tool = env->NewStringUTF(p_build_tool.utf8().get_data());
-		jobjectArray j_args = env->NewObjectArray(p_arguments.size(), env->FindClass("java/lang/String"), nullptr);
-		for (int i = 0; i < p_arguments.size(); i++) {
-			jstring j_arg = env->NewStringUTF(p_arguments.get(i).utf8().get_data());
-			env->SetObjectArrayElement(j_args, i, j_arg);
-			env->DeleteLocalRef(j_arg);
-		}
-		jstring j_project_path = env->NewStringUTF(p_project_path.utf8().get_data());
-		jstring j_gradle_build_directory = env->NewStringUTF(p_gradle_build_directory.utf8().get_data());
-		jobject j_output_callback = callable_to_jcallable(env, p_output_callback);
-		jobject j_result_callback = callable_to_jcallable(env, p_result_callback);
-
-		jint result = env->CallIntMethod(foundry_instance, _build_env_execute, j_build_tool, j_args, j_project_path, j_gradle_build_directory, j_output_callback, j_result_callback);
-
-		env->DeleteLocalRef(j_build_tool);
-		env->DeleteLocalRef(j_args);
-		env->DeleteLocalRef(j_project_path);
-		env->DeleteLocalRef(j_gradle_build_directory);
-		env->DeleteLocalRef(j_output_callback);
-		env->DeleteLocalRef(j_result_callback);
-
-		return result;
-	}
-
-	return -1;
-}
-
-void FoundryJavaWrapper::build_env_cancel(int p_job_id) {
-	if (_build_env_cancel) {
-		JNIEnv *env = get_jni_env();
-		ERR_FAIL_NULL(env);
-		env->CallVoidMethod(foundry_instance, _build_env_cancel, p_job_id);
-	}
-}
-
-void FoundryJavaWrapper::build_env_clean_project(const String &p_project_path, const String &p_gradle_build_directory, const Callable &p_callback) {
-	if (_build_env_clean_project) {
-		JNIEnv *env = get_jni_env();
-		ERR_FAIL_NULL(env);
-
-		jstring j_project_path = env->NewStringUTF(p_project_path.utf8().get_data());
-		jstring j_gradle_build_directory = env->NewStringUTF(p_gradle_build_directory.utf8().get_data());
-		jobject j_callback = callable_to_jcallable(env, p_callback);
-
-		env->CallVoidMethod(foundry_instance, _build_env_clean_project, j_project_path, j_gradle_build_directory, j_callback);
-
-		env->DeleteLocalRef(j_project_path);
-		env->DeleteLocalRef(j_gradle_build_directory);
-		env->DeleteLocalRef(j_callback);
 	}
 }

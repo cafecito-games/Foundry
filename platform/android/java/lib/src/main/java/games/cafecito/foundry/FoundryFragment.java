@@ -2,7 +2,7 @@
 /*  FoundryFragment.java                                                  */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -66,9 +66,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
-import games.cafecito.foundry.error.Error;
 import games.cafecito.foundry.plugin.FoundryPlugin;
-import games.cafecito.foundry.utils.BenchmarkUtils;
 
 /**
  * Base fragment for Android apps intending to use Foundry for part of the app's UI.
@@ -163,7 +161,6 @@ public class FoundryFragment extends Fragment implements IDownloaderClient, Foun
 
 	@Override
 	public void onCreate(Bundle icicle) {
-		BenchmarkUtils.beginBenchmarkMeasure("Startup", "FoundryFragment::onCreate");
 		super.onCreate(icicle);
 
 		if (parentHost != null) {
@@ -173,7 +170,6 @@ public class FoundryFragment extends Fragment implements IDownloaderClient, Foun
 			foundry = Foundry.getInstance(requireContext());
 		}
 		performEngineInitialization();
-		BenchmarkUtils.endBenchmarkMeasure("Startup", "FoundryFragment::onCreate");
 	}
 
 	private void performEngineInitialization() {
@@ -466,41 +462,10 @@ public class FoundryFragment extends Fragment implements IDownloaderClient, Foun
 	}
 
 	@Override
-	public Error signApk(@NonNull String inputPath, @NonNull String outputPath, @NonNull String keystorePath, @NonNull String keystoreUser, @NonNull String keystorePassword) {
-		if (parentHost != null) {
-			return parentHost.signApk(inputPath, outputPath, keystorePath, keystoreUser, keystorePassword);
-		}
-		return Error.ERR_UNAVAILABLE;
-	}
-
-	@Override
-	public Error verifyApk(@NonNull String apkPath) {
-		if (parentHost != null) {
-			return parentHost.verifyApk(apkPath);
-		}
-		return Error.ERR_UNAVAILABLE;
-	}
-
-	@Override
 	public boolean supportsFeature(String featureTag) {
 		if (parentHost != null) {
 			return parentHost.supportsFeature(featureTag);
 		}
 		return false;
-	}
-
-	@Override
-	public void onEditorWorkspaceSelected(String workspace) {
-		if (parentHost != null) {
-			parentHost.onEditorWorkspaceSelected(workspace);
-		}
-	}
-
-	@Override
-	public BuildProvider getBuildProvider() {
-		if (parentHost != null) {
-			return parentHost.getBuildProvider();
-		}
-		return null;
 	}
 }

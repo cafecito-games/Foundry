@@ -61,7 +61,7 @@ abstract class FoundryActivity : FragmentActivity(), FoundryHost {
 		@JvmStatic
 		protected val EXTRA_NEW_LAUNCH = "new_launch_requested"
 
-		// This window must not match those in BaseFoundryEditor.RUN_GAME_INFO etc
+		// Default window ID for exported game instances.
 		@JvmStatic
 		private final val DEFAULT_WINDOW_ID = 664;
 	}

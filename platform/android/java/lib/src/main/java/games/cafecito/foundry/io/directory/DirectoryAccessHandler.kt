@@ -87,16 +87,10 @@ class DirectoryAccessHandler(context: Context) {
 				}
 
 				// 'Resources' access type takes precedence as it is simple to handle:
-				// if we receive a 'Resources' access type and this is a template build,
-				// we provide a 'Resources' directory handler.
-				// If this is an editor build, 'Resources' refers to the opened project resources
-				// and so we provide a 'Filesystem' directory handler.
+				// if we receive a 'Resources' access type, we provide a 'Resources'
+				// directory handler.
 				if (accessType == ACCESS_RESOURCES) {
-					return if (Foundry.isEditorBuild()) {
-						ACCESS_FILESYSTEM
-					} else {
-						ACCESS_RESOURCES
-					}
+					return ACCESS_RESOURCES
 				} else {
 					// We've received a 'Filesystem' or 'Userdata' access type. On Android, this
 					// may refer to:

@@ -2,7 +2,7 @@
 /*  java_foundry_lib_jni.cpp                                              */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -45,7 +45,6 @@
 #include "thread_jandroid.h"
 #include "tts_android.h"
 
-#include "core/config/engine.h"
 #include "core/config/project_settings.h"
 #include "core/input/input.h"
 #include "core/os/main_loop.h"
@@ -58,10 +57,6 @@
 #ifndef XR_DISABLED
 #include "servers/xr/xr_server.h"
 #endif // XR_DISABLED
-
-#ifdef TOOLS_ENABLED
-#include "editor/settings/editor_settings.h"
-#endif
 
 #include <android/asset_manager_jni.h>
 #include <android/input.h>
@@ -498,62 +493,6 @@ JNIEXPORT jobjectArray JNICALL Java_games_cafecito_foundry_FoundryLib_getRendere
 	return result;
 }
 
-JNIEXPORT jstring JNICALL Java_games_cafecito_foundry_FoundryLib_getEditorSetting(JNIEnv *env, jclass clazz, jstring p_setting_key) {
-	String editor_setting_value = "";
-#ifdef TOOLS_ENABLED
-	String foundry_setting_key = jstring_to_string(p_setting_key, env);
-	Variant editor_setting = EDITOR_GET(foundry_setting_key);
-	editor_setting_value = (editor_setting.get_type() == Variant::NIL) ? "" : editor_setting;
-#else
-	WARN_PRINT("Access to the Editor Settings in only available on Editor builds");
-#endif
-
-	return env->NewStringUTF(editor_setting_value.utf8().get_data());
-}
-
-JNIEXPORT void JNICALL Java_games_cafecito_foundry_FoundryLib_setEditorSetting(JNIEnv *env, jclass clazz, jstring p_key, jobject p_data) {
-#ifdef TOOLS_ENABLED
-	if (EditorSettings::get_singleton() != nullptr) {
-		String key = jstring_to_string(p_key, env);
-		Variant data = _jobject_to_variant(env, p_data);
-		EditorSettings::get_singleton()->set(key, data);
-	}
-#else
-	WARN_PRINT("Access to the Editor Settings in only available on Editor builds");
-#endif
-}
-
-JNIEXPORT jobject JNICALL Java_games_cafecito_foundry_FoundryLib_getEditorProjectMetadata(JNIEnv *env, jclass clazz, jstring p_section, jstring p_key, jobject p_default_value) {
-	jvalue result;
-
-#ifdef TOOLS_ENABLED
-	if (EditorSettings::get_singleton() != nullptr) {
-		String section = jstring_to_string(p_section, env);
-		String key = jstring_to_string(p_key, env);
-		Variant default_value = _jobject_to_variant(env, p_default_value);
-		Variant data = EditorSettings::get_singleton()->get_project_metadata(section, key, default_value);
-		result.l = _variant_to_jobject(env, data.get_type(), &data);
-	}
-#else
-	WARN_PRINT("Access to the Editor Settings Project Metadata is only available on Editor builds");
-#endif
-
-	return result.l;
-}
-
-JNIEXPORT void JNICALL Java_games_cafecito_foundry_FoundryLib_setEditorProjectMetadata(JNIEnv *env, jclass clazz, jstring p_section, jstring p_key, jobject p_data) {
-#ifdef TOOLS_ENABLED
-	if (EditorSettings::get_singleton() != nullptr) {
-		String section = jstring_to_string(p_section, env);
-		String key = jstring_to_string(p_key, env);
-		Variant data = _jobject_to_variant(env, p_data);
-		EditorSettings::get_singleton()->set_project_metadata(section, key, data);
-	}
-#else
-	WARN_PRINT("Access to the Editor Settings Project Metadata is only available on Editor builds");
-#endif
-}
-
 JNIEXPORT void JNICALL Java_games_cafecito_foundry_FoundryLib_onNightModeChanged(JNIEnv *env, jclass clazz) {
 	DisplayServerAndroid *ds = (DisplayServerAndroid *)DisplayServer::get_singleton();
 	if (ds) {
@@ -653,24 +592,6 @@ JNIEXPORT jstring JNICALL Java_games_cafecito_foundry_FoundryLib_getProjectResou
 	const String resource_dir = OS::get_singleton()->get_resource_dir();
 	return env->NewStringUTF(resource_dir.utf8().get_data());
 }
-JNIEXPORT jboolean JNICALL Java_games_cafecito_foundry_FoundryLib_isEditorHint(JNIEnv *env, jclass clazz) {
-	Engine *engine = Engine::get_singleton();
-	if (engine) {
-		return engine->is_editor_hint();
-	}
-	return false;
-}
-
-JNIEXPORT jboolean JNICALL Java_games_cafecito_foundry_FoundryLib_isProjectManagerHint(JNIEnv *env, jclass clazz) {
-	Engine *engine = Engine::get_singleton();
-	if (engine) {
-		// The Project Manager startup mode was removed; the projectless editor shell
-		// is now the project-selection surface this hint reports.
-		return engine->is_projectless_editor_shell_hint();
-	}
-	return false;
-}
-
 JNIEXPORT jboolean JNICALL Java_games_cafecito_foundry_FoundryLib_hasFeature(JNIEnv *env, jclass clazz, jstring p_feature) {
 	OS *os = OS::get_singleton();
 	if (os) {
