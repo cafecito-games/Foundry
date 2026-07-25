@@ -28,7 +28,7 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-package com.godot.game.test
+package games.cafecito.foundry.game.test
 
 import android.util.Log
 import android.widget.Toast

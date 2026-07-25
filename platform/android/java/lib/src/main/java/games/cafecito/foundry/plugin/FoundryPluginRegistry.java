@@ -2,7 +2,7 @@
 /*  FoundryPluginRegistry.java                                            */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -54,13 +54,9 @@ public final class FoundryPluginRegistry {
 	private static final String TAG = FoundryPluginRegistry.class.getSimpleName();
 
 	/**
-	 * Prefix used for version 1 of the Foundry plugin, mostly compatible with Foundry 3.x
+	 * Prefix used by version 1 of the Foundry Android plugin protocol.
 	 */
-	private static final String FOUNDRY_PLUGIN_V1_NAME_PREFIX = "org.godotengine.plugin.v1.";
-	/**
-	 * Prefix used for version 2 of the Foundry plugin, compatible with Foundry 4.2+
-	 */
-	private static final String FOUNDRY_PLUGIN_V2_NAME_PREFIX = "org.godotengine.plugin.v2.";
+	private static final String FOUNDRY_PLUGIN_NAME_PREFIX = "games.cafecito.foundry.plugin.v1.";
 
 	private static FoundryPluginRegistry instance;
 	private final ConcurrentHashMap<String, FoundryPlugin> registry;
@@ -123,6 +119,16 @@ public final class FoundryPluginRegistry {
 		return instance;
 	}
 
+	@Nullable
+	static String getPluginNameFromMetadata(String metadataName) {
+		if (!metadataName.startsWith(FOUNDRY_PLUGIN_NAME_PREFIX)) {
+			return null;
+		}
+
+		String pluginName = metadataName.substring(FOUNDRY_PLUGIN_NAME_PREFIX.length()).trim();
+		return pluginName.isEmpty() ? null : pluginName;
+	}
+
 	private void loadPlugins(Foundry foundry, Set<FoundryPlugin> runtimePlugins) {
 		// Register the runtime plugins
 		if (runtimePlugins != null && !runtimePlugins.isEmpty()) {
@@ -146,15 +152,9 @@ public final class FoundryPluginRegistry {
 
 			for (String metaDataName : metaData.keySet()) {
 				// Parse the meta-data looking for entry with the Foundry plugin name prefix.
-				String pluginName = null;
-				if (metaDataName.startsWith(FOUNDRY_PLUGIN_V2_NAME_PREFIX)) {
-					pluginName = metaDataName.substring(FOUNDRY_PLUGIN_V2_NAME_PREFIX.length()).trim();
-				} else if (metaDataName.startsWith(FOUNDRY_PLUGIN_V1_NAME_PREFIX)) {
-					pluginName = metaDataName.substring(FOUNDRY_PLUGIN_V1_NAME_PREFIX.length()).trim();
-					Log.w(TAG, "Foundry v1 plugin are deprecated in Foundry 4.2 and higher: " + pluginName);
-				}
+				String pluginName = getPluginNameFromMetadata(metaDataName);
 
-				if (!TextUtils.isEmpty(pluginName)) {
+				if (pluginName != null) {
 					Log.i(TAG, "Initializing Foundry plugin " + pluginName);
 
 					// Retrieve the plugin class full name.

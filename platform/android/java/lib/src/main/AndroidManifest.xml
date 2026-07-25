@@ -7,7 +7,7 @@
 
         <!-- Records the version of the Foundry library -->
         <meta-data
-            android:name="org.godotengine.library.version"
+            android:name="games.cafecito.foundry.library.version"
             android:value="${foundryLibraryVersion}" />
 
         <service android:name=".FoundryDownloaderService" />

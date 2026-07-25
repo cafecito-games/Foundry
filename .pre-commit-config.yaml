@@ -226,3 +226,10 @@ repos:
         entry: python .github/scripts/test_release_container_workflow.py
         pass_filenames: false
         files: ^(?:\.gitignore$|\.github/(?:workflows/release\.yml$|actionlint\.yaml$|scripts/(?:resolve_container_alias\.py$|test_(?:foundry_headless_docker|release_container_workflow)\.py$))|docker(?:/|$)|tests/fixtures/headless_container(?:/|$))
+
+      - id: foundry-android-runtime-identifiers
+        name: Foundry Android runtime identifiers
+        language: python
+        entry: python misc/scripts/test_android_runtime_identifiers.py
+        pass_filenames: false
+        files: ^(?:misc/scripts/test_android_runtime_identifiers\.py$|platform/android/(?:export/export_plugin\.cpp$|java/(?:app|lib)/))

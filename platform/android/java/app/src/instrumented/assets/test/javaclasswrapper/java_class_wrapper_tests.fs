@@ -26,7 +26,7 @@ func run_tests():
 
 
 func test_exceptions() -> bool:
-	var TestClass: JavaClass = JavaClassWrapper.wrap('com.godot.game.test.javaclasswrapper.TestClass')
+	var TestClass: JavaClass = JavaClassWrapper.wrap('games.cafecito.foundry.game.test.javaclasswrapper.TestClass')
 	#print(TestClass.get_java_method_list())
 
 	assert_equal(JavaClassWrapper.get_exception(), null)
@@ -39,7 +39,7 @@ func test_exceptions() -> bool:
 	return true
 
 func test_multiple_signatures() -> bool:
-	var TestClass: JavaClass = JavaClassWrapper.wrap('com.godot.game.test.javaclasswrapper.TestClass')
+	var TestClass: JavaClass = JavaClassWrapper.wrap('games.cafecito.foundry.game.test.javaclasswrapper.TestClass')
 
 	var ai := [1, 2]
 	assert_equal(TestClass.testMethod(1, ai), "IntArray: [1, 2]")
@@ -50,7 +50,7 @@ func test_multiple_signatures() -> bool:
 	var atstr: Array[String] = ["abc"]
 	assert_equal(TestClass.testMethod(3, atstr), "StringArray: [abc]")
 
-	var TestClass2: JavaClass = JavaClassWrapper.wrap('com.godot.game.test.javaclasswrapper.TestClass2')
+	var TestClass2: JavaClass = JavaClassWrapper.wrap('games.cafecito.foundry.game.test.javaclasswrapper.TestClass2')
 	var aobjl: Array[Object] = [
 		TestClass2.TestClass2(27),
 		TestClass2.TestClass2(135),
@@ -60,7 +60,7 @@ func test_multiple_signatures() -> bool:
 	return true
 
 func test_array_arguments() -> bool:
-	var TestClass: JavaClass = JavaClassWrapper.wrap('com.godot.game.test.javaclasswrapper.TestClass')
+	var TestClass: JavaClass = JavaClassWrapper.wrap('games.cafecito.foundry.game.test.javaclasswrapper.TestClass')
 
 	assert_equal(TestClass.testArgBoolArray([true, false, true]), "[true, false, true]")
 	assert_equal(TestClass.testArgByteArray(PackedByteArray([1, 2, 3])), "[1, 2, 3]")
@@ -79,7 +79,7 @@ func test_array_arguments() -> bool:
 	return true
 
 func test_array_return() -> bool:
-	var TestClass: JavaClass = JavaClassWrapper.wrap('com.godot.game.test.javaclasswrapper.TestClass')
+	var TestClass: JavaClass = JavaClassWrapper.wrap('games.cafecito.foundry.game.test.javaclasswrapper.TestClass')
 	#print(TestClass.get_java_method_list())
 
 	assert_equal(TestClass.testRetBoolArray(), [true, false, true])
@@ -107,8 +107,8 @@ func test_array_return() -> bool:
 	assert_equal(TestClass.testRetWrappedDoubleArray(), PackedFloat64Array([41.1, 42.2, 43.3]))
 
 	var obj_array = TestClass.testRetObjectArray()
-	assert_equal(str(obj_array[0]), '<JavaObject:com.godot.game.test.javaclasswrapper.TestClass2 "51">')
-	assert_equal(str(obj_array[1]), '<JavaObject:com.godot.game.test.javaclasswrapper.TestClass2 "52">')
+	assert_equal(str(obj_array[0]), '<JavaObject:games.cafecito.foundry.game.test.javaclasswrapper.TestClass2 "51">')
+	assert_equal(str(obj_array[1]), '<JavaObject:games.cafecito.foundry.game.test.javaclasswrapper.TestClass2 "52">')
 
 	assert_equal(TestClass.testRetStringArray(), PackedStringArray(["I", "am", "String"]))
 	assert_equal(TestClass.testRetCharSequenceArray(), PackedStringArray(["I", "am", "CharSequence"]))
@@ -116,7 +116,7 @@ func test_array_return() -> bool:
 	return true
 
 func test_dictionary() -> bool:
-	var TestClass: JavaClass = JavaClassWrapper.wrap('com.godot.game.test.javaclasswrapper.TestClass')
+	var TestClass: JavaClass = JavaClassWrapper.wrap('games.cafecito.foundry.game.test.javaclasswrapper.TestClass')
 	assert_equal(TestClass.testDictionary({a = 1, b = 2}), "{a=1, b=2}")
 	assert_equal(TestClass.testRetDictionary(), {a = 1, b = 2})
 	assert_equal(TestClass.testRetDictionaryArray(), [{a = 1, b = 2}])
@@ -124,9 +124,9 @@ func test_dictionary() -> bool:
 	return true
 
 func test_object_overload() -> bool:
-	var TestClass: JavaClass = JavaClassWrapper.wrap('com.godot.game.test.javaclasswrapper.TestClass')
-	var TestClass2: JavaClass = JavaClassWrapper.wrap('com.godot.game.test.javaclasswrapper.TestClass2')
-	var TestClass3: JavaClass = JavaClassWrapper.wrap('com.godot.game.test.javaclasswrapper.TestClass3')
+	var TestClass: JavaClass = JavaClassWrapper.wrap('games.cafecito.foundry.game.test.javaclasswrapper.TestClass')
+	var TestClass2: JavaClass = JavaClassWrapper.wrap('games.cafecito.foundry.game.test.javaclasswrapper.TestClass2')
+	var TestClass3: JavaClass = JavaClassWrapper.wrap('games.cafecito.foundry.game.test.javaclasswrapper.TestClass3')
 
 	var t2 = TestClass2.TestClass2(33)
 	var t3 = TestClass3.TestClass3("thirty three")
@@ -142,7 +142,7 @@ func test_object_overload() -> bool:
 	return true
 
 func test_variant_conversion_safe_from_stack_overflow() -> bool:
-	var TestClass: JavaClass = JavaClassWrapper.wrap('com.godot.game.test.javaclasswrapper.TestClass')
+	var TestClass: JavaClass = JavaClassWrapper.wrap('games.cafecito.foundry.game.test.javaclasswrapper.TestClass')
 	var arr: Array = [42]
 	var dict: Dictionary = {"arr": arr}
 	arr.append(dict)
@@ -151,7 +151,7 @@ func test_variant_conversion_safe_from_stack_overflow() -> bool:
 	return true
 
 func test_big_integers() -> bool:
-	var TestClass: JavaClass = JavaClassWrapper.wrap('com.godot.game.test.javaclasswrapper.TestClass')
+	var TestClass: JavaClass = JavaClassWrapper.wrap('games.cafecito.foundry.game.test.javaclasswrapper.TestClass')
 	assert_equal(TestClass.testArgLong(4242424242), "4242424242")
 	assert_equal(TestClass.testArgLong(-4242424242), "-4242424242")
 	assert_equal(TestClass.testDictionary({a = 4242424242, b = -4242424242}), "{a=4242424242, b=-4242424242}")

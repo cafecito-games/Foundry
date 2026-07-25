@@ -118,7 +118,7 @@ android {
 
     assetPacks = [":assetPackInstallTime"]
 
-    namespace = 'com.godot.game'
+    namespace = 'games.cafecito.foundry.game'
 
     defaultConfig {
         // The default ignore pattern for the 'assets' directory includes hidden files and directories which are used by Foundry projects.

@@ -149,7 +149,7 @@ public class DownloadThread {
             // -- FOUNDRY start --
             //wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, Constants.TAG);
             //wakeLock.acquire();
-            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "org.godot.game:wakelock");
+            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "games.cafecito.foundry:wakelock");
             wakeLock.acquire(20 * 60 * 1000L /*20 minutes*/);
             // -- FOUNDRY end --
 

@@ -28,7 +28,7 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-package com.godot.game.test.javaclasswrapper
+package games.cafecito.foundry.game.test.javaclasswrapper
 
 import games.cafecito.foundry.Dictionary
 import kotlin.collections.contentToString

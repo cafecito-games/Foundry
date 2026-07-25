@@ -2,7 +2,7 @@
 /*  FoundryPlugin.java                                                    */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -63,7 +63,7 @@ import games.cafecito.foundry.Foundry;
  * - The plugin must have a dependency on the Foundry Android library: `implementation "games.cafecito.foundry:foundry:<foundryLibVersion>"`
  * <p>
  * - The plugin must include a <meta-data> tag in its Android manifest with the following format:
- * <meta-data android:name="org.godotengine.plugin.v2.[PluginName]" android:value="[plugin.init.ClassFullName]" />
+ * <meta-data android:name="games.cafecito.foundry.plugin.v1.[PluginName]" android:value="[plugin.init.ClassFullName]" />
  * <p>
  * Where:
  * <p>
