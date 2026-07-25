@@ -26,8 +26,8 @@ The table has two levels:
 The owning `FoundryScript` is part of the identity. At a call site the VM first
 resolves the #1118 owner-class FQCN to the exact root or nested class script,
 then looks up the enum type, call kind, and function. Resolving the class before
-the enum name prevents nested classes that declare identically named enums from
-colliding.
+the enum name prevents an enum key from being resolved against a different
+owning class or script.
 
 Compiled functions are owned by this table and participate in every existing
 function-lifetime path:
@@ -120,7 +120,7 @@ Tests are added before implementation.
 Source-runtime fixtures cover:
 
 - same-file static and instance calls
-- nested classes with identical enum names
+- nested class enum calls
 - cross-file calls through a `.notest.fs` dependency
 - async static and instance calls with `await`
 

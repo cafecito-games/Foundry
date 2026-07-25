@@ -1,9 +1,20 @@
 enum_name Issue1119RemoteStatus:
-	WAITING = 31
-	READY = 32
+	INFO = 31
+	WARN = 32
+	ERROR = 33
 
-	func describe() -> String:
-		return "remote:" + str(self)
+	func name() -> String:
+		match self:
+			INFO:
+				return "info"
+			WARN:
+				return "warn"
+			_:
+				return "error"
 
-	static func parse(ready: bool) -> Self:
-		return READY if ready else WAITING
+	static func parse(text: String) -> Self:
+		if text == "warn":
+			return WARN
+		if text == "error":
+			return ERROR
+		return INFO

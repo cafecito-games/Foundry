@@ -1318,6 +1318,17 @@ void FoundryScript::_clear_partial_bytecode_link_state() {
 		functions_to_delete.insert(entry.value);
 	}
 	member_functions.clear();
+	for (const KeyValue<StringName, EnumFunctionSet> &enum_entry : enum_functions) {
+		for (const KeyValue<StringName, FSFunction *> &function : enum_entry.value.instance_functions) {
+			_erase_function_lambda_info(this, function.value);
+			functions_to_delete.insert(function.value);
+		}
+		for (const KeyValue<StringName, FSFunction *> &function : enum_entry.value.static_functions) {
+			_erase_function_lambda_info(this, function.value);
+			functions_to_delete.insert(function.value);
+		}
+	}
+	enum_functions.clear();
 
 	if (implicit_initializer != nullptr) {
 		_erase_function_lambda_info(this, implicit_initializer);
@@ -1676,6 +1687,18 @@ Vector<uint8_t> FoundryScript::get_as_binary_tokens() const {
 
 const HashMap<StringName, FSFunction *> &FoundryScript::debug_get_member_functions() const {
 	return member_functions;
+}
+
+FSFunction *FoundryScript::get_enum_function(
+		const StringName &p_enum_type, const StringName &p_function, bool p_static) const {
+	const EnumFunctionSet *function_set = enum_functions.getptr(p_enum_type);
+	if (function_set == nullptr) {
+		return nullptr;
+	}
+	const HashMap<StringName, FSFunction *> &functions =
+			p_static ? function_set->static_functions : function_set->instance_functions;
+	FSFunction *const *function = functions.getptr(p_function);
+	return function != nullptr ? *function : nullptr;
 }
 
 StringName FoundryScript::debug_get_member_by_index(int p_idx) const {
@@ -2091,6 +2114,15 @@ void FoundryScript::clear() {
 		functions_to_clear.insert(E.value);
 	}
 	member_functions.clear();
+	for (const KeyValue<StringName, EnumFunctionSet> &enum_entry : enum_functions) {
+		for (const KeyValue<StringName, FSFunction *> &function : enum_entry.value.instance_functions) {
+			functions_to_clear.insert(function.value);
+		}
+		for (const KeyValue<StringName, FSFunction *> &function : enum_entry.value.static_functions) {
+			functions_to_clear.insert(function.value);
+		}
+	}
+	enum_functions.clear();
 
 	// Drop borrowed pointers from the conformance registry before freeing the compiled witnesses, so a
 	// concurrent or subsequent runtime dispatch never sees a dangling `FSFunction *`.
@@ -3050,12 +3082,22 @@ void FSLanguage::finish() {
 	}
 	for (Ref<FoundryScript> &scr : scripts_to_clear) {
 		if (scr.is_valid()) {
-			for (KeyValue<StringName, FSFunction *> &E : scr->member_functions) {
-				FSFunction *func = E.value;
-				for (int i = 0; i < func->argument_types.size(); i++) {
-					func->argument_types.write[i].script_type_ref = Ref<Script>();
+			const auto clear_function_script_type_refs = [](FSFunction *p_function) {
+				for (int i = 0; i < p_function->argument_types.size(); i++) {
+					p_function->argument_types.write[i].script_type_ref = Ref<Script>();
 				}
-				func->return_type.script_type_ref = Ref<Script>();
+				p_function->return_type.script_type_ref = Ref<Script>();
+			};
+			for (KeyValue<StringName, FSFunction *> &E : scr->member_functions) {
+				clear_function_script_type_refs(E.value);
+			}
+			for (KeyValue<StringName, FoundryScript::EnumFunctionSet> &enum_entry : scr->enum_functions) {
+				for (KeyValue<StringName, FSFunction *> &function : enum_entry.value.instance_functions) {
+					clear_function_script_type_refs(function.value);
+				}
+				for (KeyValue<StringName, FSFunction *> &function : enum_entry.value.static_functions) {
+					clear_function_script_type_refs(function.value);
+				}
 			}
 			for (KeyValue<StringName, FoundryScript::MemberInfo> &E : scr->member_indices) {
 				E.value.data_type.script_type_ref = Ref<Script>();

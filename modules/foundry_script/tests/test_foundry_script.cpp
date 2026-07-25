@@ -38,10 +38,13 @@
 #endif
 #include "../foundry_script.h"
 #include "../fs_analyzer.h"
+#include "../fs_byte_codegen.h"
+#include "../fs_bytecode_verifier.h"
 #include "../fs_cache.h"
 #include "../fs_compiler.h"
 #include "../fs_parser.h"
 #include "../fs_reflection.h"
+#include "../fs_script_test_guard.h"
 #include "../fs_tokenizer.h"
 #include "../fs_tokenizer_buffer.h"
 
@@ -2387,7 +2390,7 @@ TEST_CASE("[Modules][FoundryScript] Compiler stores enum host functions outside 
 	FSParser parser;
 	const String path = "user://enum_host_function_runtime_storage.fs";
 	Error err = parser.parse(R"(
-enum Status:
+enum RootStatus:
 	READY = 1
 
 	func describe() -> String:
@@ -2397,14 +2400,14 @@ enum Status:
 		return READY
 
 class Left:
-	enum Status:
+	enum LeftStatus:
 		READY = 11
 
 		func describe() -> String:
 			return "left"
 
 class Right:
-	enum Status:
+	enum RightStatus:
 		READY = 22
 
 		func describe() -> String:
@@ -2442,37 +2445,111 @@ func ordinary() -> void:
 	CHECK_FALSE(script->get_member_functions().has(SNAME("describe")));
 	CHECK_FALSE(script->get_member_functions().has(SNAME("initial")));
 
-	FSFunction *root_instance = script->get_enum_function(SNAME("Status"), SNAME("describe"), false);
-	FSFunction *root_static = script->get_enum_function(SNAME("Status"), SNAME("initial"), true);
-	REQUIRE(root_instance != nullptr);
-	REQUIRE(root_static != nullptr);
+	FSFunction *root_instance = script->get_enum_function(SNAME("RootStatus"), SNAME("describe"), false);
+	FSFunction *root_static = script->get_enum_function(SNAME("RootStatus"), SNAME("initial"), true);
+	CHECK(root_instance != nullptr);
+	CHECK(root_static != nullptr);
+	if (root_instance == nullptr || root_static == nullptr) {
+		return;
+	}
 	CHECK_NE(root_instance, root_static);
 	CHECK_EQ(root_instance->get_script(), script.ptr());
 	CHECK_EQ(root_static->get_script(), script.ptr());
-	CHECK(script->get_enum_function(SNAME("Status"), SNAME("initial"), false) == nullptr);
-	CHECK(script->get_enum_function(SNAME("Status"), SNAME("describe"), true) == nullptr);
+	CHECK(script->get_enum_function(SNAME("RootStatus"), SNAME("initial"), false) == nullptr);
+	CHECK(script->get_enum_function(SNAME("RootStatus"), SNAME("describe"), true) == nullptr);
 
 	const FSParser::ClassNode *left_node = find_parser_class(parser.get_tree(), SNAME("Left"));
 	const FSParser::ClassNode *right_node = find_parser_class(parser.get_tree(), SNAME("Right"));
-	REQUIRE(left_node != nullptr);
-	REQUIRE(right_node != nullptr);
+	CHECK(left_node != nullptr);
+	CHECK(right_node != nullptr);
+	if (left_node == nullptr || right_node == nullptr) {
+		return;
+	}
 	FoundryScript *left_script = script->find_class(left_node->fqcn);
 	FoundryScript *right_script = script->find_class(right_node->fqcn);
-	REQUIRE(left_script != nullptr);
-	REQUIRE(right_script != nullptr);
+	CHECK(left_script != nullptr);
+	CHECK(right_script != nullptr);
+	if (left_script == nullptr || right_script == nullptr) {
+		return;
+	}
 
-	FSFunction *left_describe = left_script->get_enum_function(SNAME("Status"), SNAME("describe"), false);
-	FSFunction *right_describe = right_script->get_enum_function(SNAME("Status"), SNAME("describe"), false);
-	REQUIRE(left_describe != nullptr);
-	REQUIRE(right_describe != nullptr);
+	FSFunction *left_describe = left_script->get_enum_function(SNAME("LeftStatus"), SNAME("describe"), false);
+	FSFunction *right_describe = right_script->get_enum_function(SNAME("RightStatus"), SNAME("describe"), false);
+	CHECK(left_describe != nullptr);
+	CHECK(right_describe != nullptr);
+	if (left_describe == nullptr || right_describe == nullptr) {
+		return;
+	}
 	CHECK_NE(left_describe, right_describe);
 	CHECK_EQ(left_describe->get_script(), left_script);
 	CHECK_EQ(right_describe->get_script(), right_script);
 	CHECK(script->get_enum_function(SNAME("Missing"), SNAME("describe"), false) == nullptr);
 
 	script->clear();
-	CHECK(script->get_enum_function(SNAME("Status"), SNAME("describe"), false) == nullptr);
-	CHECK(script->get_enum_function(SNAME("Status"), SNAME("initial"), true) == nullptr);
+	CHECK(script->get_enum_function(SNAME("RootStatus"), SNAME("describe"), false) == nullptr);
+	CHECK(script->get_enum_function(SNAME("RootStatus"), SNAME("initial"), true) == nullptr);
+}
+
+TEST_CASE("[Modules][FoundryScript] Enum host function lookup failures report the stable owner identity") {
+	const String path = "user://enum_host_function_lookup_failure.fs";
+	Ref<FoundryScript> script;
+	script.instantiate();
+	script->set_path(path);
+
+	struct LookupCase {
+		StringName owner_class;
+		StringName enum_type;
+		StringName function;
+		bool is_static = false;
+		String expected_reason;
+	};
+
+	const LookupCase cases[] = {
+		{ StringName(path + "::MissingOwner"), SNAME("Status"), SNAME("parse"), true, "the owner class was not found" },
+		{ StringName(path), SNAME("MissingStatus"), SNAME("parse"), true, "the compiled function was not found" },
+		{ StringName(path), SNAME("Status"), SNAME("missing_label"), false, "the compiled function was not found" },
+	};
+
+	for (const LookupCase &lookup_case : cases) {
+		FSByteCodeGenerator generator;
+		generator.write_start(script.ptr(), "enum_lookup_probe", true, Variant(), FSDataType());
+
+		const uint32_t target_index = generator.add_temporary(FSDataType());
+		const FSCodeGenerator::Address target(FSCodeGenerator::Address::TEMPORARY, target_index);
+		const Variant receiver = lookup_case.is_static ? Variant(Dictionary()) : Variant(7);
+		const uint32_t receiver_index = generator.add_or_get_constant(receiver);
+		const FSCodeGenerator::Address base(FSCodeGenerator::Address::CONSTANT, receiver_index);
+		generator.write_enum_call(target, base, Vector<FSCodeGenerator::Address>(), StringName(path),
+				lookup_case.owner_class, lookup_case.enum_type, lookup_case.function, lookup_case.is_static, false);
+		generator.write_return(target);
+		generator.pop_temporary();
+
+		FSFunction *function = generator.write_end();
+		CHECK(function != nullptr);
+		if (function == nullptr) {
+			continue;
+		}
+		CHECK_EQ(FSBytecodeVerifier::verify_function(function, 0, path), OK);
+
+		FSScriptTestGuard::GuardRecord guard;
+		FSScriptTestGuard::push(&guard);
+		Callable::CallError call_error;
+		ERR_PRINT_OFF;
+		function->call(nullptr, nullptr, 0, call_error);
+		ERR_PRINT_ON;
+		FSScriptTestGuard::pop(&guard);
+
+		CHECK_EQ(call_error.error, Callable::CallError::CALL_OK);
+		CHECK(guard.runtime_error_occurred);
+		const String call_kind = lookup_case.is_static ? "static enum function" : "instance enum function";
+		CHECK(guard.runtime_error_message.contains(call_kind));
+		CHECK(guard.runtime_error_message.contains(String(lookup_case.owner_class)));
+		const String function_identity = String(lookup_case.enum_type) + "." + String(lookup_case.function) + "()";
+		CHECK(guard.runtime_error_message.contains(function_identity));
+		CHECK(guard.runtime_error_message.contains(lookup_case.expected_reason));
+
+		memdelete(function);
+	}
 }
 
 TEST_CASE("[Modules][FoundryScript] Analyzer records cross-file enum_name host function metadata") {

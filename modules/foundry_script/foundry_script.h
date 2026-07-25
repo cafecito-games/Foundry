@@ -257,6 +257,13 @@ private:
 
 	HashMap<StringName, Variant> constants;
 	HashMap<StringName, FSFunction *> member_functions;
+	// Named enum functions belong to the exact class script that declares the enum, but they are
+	// not ordinary class members and must not leak into member reflection/dynamic dispatch.
+	struct EnumFunctionSet {
+		HashMap<StringName, FSFunction *> instance_functions;
+		HashMap<StringName, FSFunction *> static_functions;
+	};
+	HashMap<StringName, EnumFunctionSet> enum_functions;
 	// Compiled witness functions for retroactive conformances (`extend Target uses Trait: ...`) this
 	// script declares. They are NOT this class's own methods (they dispatch on the *target* instance's
 	// layout); the script owns them solely for lifetime and frees them on reload/unload. The global
@@ -467,6 +474,7 @@ public:
 	const Ref<FSNativeClass> &get_native() const { return native; }
 
 	_FORCE_INLINE_ const HashMap<StringName, FSFunction *> &get_member_functions() const { return member_functions; }
+	FSFunction *get_enum_function(const StringName &p_enum_type, const StringName &p_function, bool p_static) const;
 	_FORCE_INLINE_ const HashMap<StringName, AbstractTraitRequirement> &get_abstract_trait_requirements() const { return abstract_trait_requirements; }
 
 	// Passive annotation metadata (custom and built-in). Class annotations are direct-only; method/variable tables

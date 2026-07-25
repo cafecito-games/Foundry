@@ -63,10 +63,16 @@ class FSCompiler {
 	};
 
 	struct ScriptLambdaInfo {
+		struct EnumFunctionLambdaInfo {
+			HashMap<StringName, Vector<FunctionLambdaInfo>> instance_function_infos;
+			HashMap<StringName, Vector<FunctionLambdaInfo>> static_function_infos;
+		};
+
 		Vector<FunctionLambdaInfo> implicit_initializer_info;
 		Vector<FunctionLambdaInfo> implicit_ready_info;
 		Vector<FunctionLambdaInfo> static_initializer_info;
 		HashMap<StringName, Vector<FunctionLambdaInfo>> member_function_infos;
+		HashMap<StringName, EnumFunctionLambdaInfo> enum_function_infos;
 		Vector<FunctionLambdaInfo> other_function_infos;
 		HashMap<StringName, ScriptLambdaInfo> subclass_info;
 	};
@@ -179,6 +185,8 @@ class FSCompiler {
 	static void _collect_parameter_annotations(const Vector<FSParser::ParameterNode *> &p_parameters, const FSParser::ParameterNode *p_rest_parameter, HashMap<StringName, Vector<FoundryScript::AnnotationUsage>> &r_parameter_annotations);
 	void _collect_trait_abstract_requirements(const FSParser::ClassNode *p_class, FoundryScript *p_script);
 	FSFunction *_parse_function(Error &r_error, FoundryScript *p_script, const FSParser::ClassNode *p_class, const FSParser::FunctionNode *p_func, bool p_for_ready = false, bool p_for_lambda = false, bool p_skip_member_register = false);
+	Error _compile_enum_functions(
+			FoundryScript *p_script, const FSParser::ClassNode *p_class, const FSParser::EnumNode *p_enum);
 	Error _compile_conformance_witnesses(FoundryScript *p_script, const FSParser::ClassNode *p_class);
 	FSFunction *_make_static_initializer(Error &r_error, FoundryScript *p_script, const FSParser::ClassNode *p_class);
 	Error _parse_setter_getter(FoundryScript *p_script, const FSParser::ClassNode *p_class, const FSParser::VariableNode *p_variable, bool p_is_setter);

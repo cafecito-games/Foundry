@@ -548,6 +548,9 @@ public:
 	virtual void write_call(const Address &p_target, const Address &p_base, const StringName &p_function_name, const Vector<Address> &p_arguments) override;
 	virtual void write_super_call(const Address &p_target, const StringName &p_function_name, const Vector<Address> &p_arguments) override;
 	virtual void write_call_async(const Address &p_target, const Address &p_base, const StringName &p_function_name, const Vector<Address> &p_arguments) override;
+	virtual void write_enum_call(const Address &p_target, const Address &p_base, const Vector<Address> &p_arguments,
+			const StringName &p_owner_script_path, const StringName &p_owner_class, const StringName &p_enum_type,
+			const StringName &p_function_name, bool p_static, bool p_async) override;
 	virtual void write_call_utility(const Address &p_target, const StringName &p_function, const Vector<Address> &p_arguments) override;
 	void write_call_builtin_type(const Address &p_target, const Address &p_base, Variant::Type p_type, const StringName &p_method, bool p_is_static, const Vector<Address> &p_arguments);
 	virtual void write_call_foundry_script_utility(const Address &p_target, const StringName &p_function, const Vector<Address> &p_arguments) override;

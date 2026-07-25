@@ -29,6 +29,7 @@
 /**************************************************************************/
 
 #include "foundry_script.h"
+#include "fs_cache.h"
 #include "fs_conformance_registry.h"
 #include "fs_function.h"
 #include "fs_lambda_callable.h"
@@ -727,6 +728,9 @@ void (*type_init_function_table[])(Variant *) = {
 		&&OPCODE_CALL,                                   \
 		&&OPCODE_CALL_RETURN,                            \
 		&&OPCODE_CALL_ASYNC,                             \
+		&&OPCODE_CALL_ENUM,                              \
+		&&OPCODE_CALL_ENUM_RETURN,                       \
+		&&OPCODE_CALL_ENUM_ASYNC,                        \
 		&&OPCODE_CALL_UTILITY,                           \
 		&&OPCODE_CALL_UTILITY_VALIDATED,                 \
 		&&OPCODE_CALL_FOUNDRY_SCRIPT_UTILITY,            \
@@ -987,6 +991,9 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 		script = p_state->script;
 		p_instance = p_state->instance;
 		defarg = p_state->defarg;
+		if (p_state->has_self_override) {
+			p_self_override = &p_state->self_override;
+		}
 
 		// Responsibility for the stack is moved from `FSFunctionState` to this method. Reset
 		// `stack_size` so `_clear_stack()` does not destroy the same slots again after this call
@@ -2887,6 +2894,113 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 			}
 			DISPATCH_OPCODE;
 
+			OPCODE(OPCODE_CALL_ENUM_ASYNC)
+			OPCODE(OPCODE_CALL_ENUM_RETURN)
+			OPCODE(OPCODE_CALL_ENUM) {
+				const bool call_ret = (_code_ptr[ip]) != OPCODE_CALL_ENUM;
+#ifdef DEBUG_ENABLED
+				const bool call_async = (_code_ptr[ip]) == OPCODE_CALL_ENUM_ASYNC;
+#endif
+				LOAD_INSTRUCTION_ARGS
+				CHECK_SPACE(7 + instr_arg_count);
+
+				ip += instr_arg_count;
+
+				const int argc = _code_ptr[ip + 1];
+				GD_ERR_BREAK(argc < 0);
+
+				const int owner_path_idx = _code_ptr[ip + 2];
+				const int owner_class_idx = _code_ptr[ip + 3];
+				const int enum_type_idx = _code_ptr[ip + 4];
+				const int function_idx = _code_ptr[ip + 5];
+				GD_ERR_BREAK(owner_path_idx < 0 || owner_path_idx >= _global_names_count);
+				GD_ERR_BREAK(owner_class_idx < 0 || owner_class_idx >= _global_names_count);
+				GD_ERR_BREAK(enum_type_idx < 0 || enum_type_idx >= _global_names_count);
+				GD_ERR_BREAK(function_idx < 0 || function_idx >= _global_names_count);
+
+				const String owner_path = String(_global_names_ptr[owner_path_idx]);
+				const StringName owner_class = _global_names_ptr[owner_class_idx];
+				const StringName enum_type = _global_names_ptr[enum_type_idx];
+				const StringName function_name = _global_names_ptr[function_idx];
+				const int call_kind = _code_ptr[ip + 6];
+				GD_ERR_BREAK(call_kind != 0 && call_kind != 1);
+				const bool is_static = call_kind == 1;
+
+				const String call_identity = vformat("%s enum function \"%s.%s()\" owned by class \"%s\" in script \"%s\"",
+						is_static ? "static" : "instance", enum_type, function_name, owner_class, owner_path);
+
+				if (owner_path.is_empty() || owner_class == StringName() ||
+						enum_type == StringName() || function_name == StringName()) {
+					err_text = "Cannot resolve " + call_identity + ": its compiled owner identity is incomplete.";
+					OPCODE_BREAK;
+				}
+
+				GET_INSTRUCTION_ARG(base, argc);
+				if (!is_static && base->get_type() != Variant::INT) {
+					err_text = vformat("Cannot call %s: the receiver is %s instead of an enum integer.",
+							call_identity, Variant::get_type_name(base->get_type()));
+					OPCODE_BREAK;
+				}
+
+				FoundryScript *current_root = script != nullptr ? script->get_root_script() : nullptr;
+				Ref<FoundryScript> loaded_owner_root;
+				FoundryScript *owner_root = nullptr;
+				if (current_root != nullptr &&
+						FoundryScript::is_canonically_equal_paths(owner_path, current_root->get_script_path())) {
+					owner_root = current_root;
+				} else {
+					Error load_error = OK;
+					loaded_owner_root = FSCache::get_full_script(owner_path, load_error,
+							script != nullptr ? script->get_script_path() : String());
+					if (load_error != OK || loaded_owner_root.is_null()) {
+						err_text = vformat("Cannot resolve %s: the owner script could not be loaded (error %d).",
+								call_identity, int(load_error));
+						OPCODE_BREAK;
+					}
+					owner_root = loaded_owner_root.ptr();
+				}
+
+				FoundryScript *owner_script = owner_root->find_class(String(owner_class));
+				if (owner_script == nullptr) {
+					err_text = "Cannot resolve " + call_identity + ": the owner class was not found.";
+					OPCODE_BREAK;
+				}
+
+				FSFunction *enum_function = owner_script->get_enum_function(enum_type, function_name, is_static);
+				if (enum_function == nullptr) {
+					err_text = "Cannot resolve " + call_identity + ": the compiled function was not found.";
+					OPCODE_BREAK;
+				}
+
+				const Variant **argptrs = (const Variant **)instruction_args;
+				Callable::CallError err;
+				Variant result = is_static
+						? enum_function->call(nullptr, argptrs, argc, err)
+						: enum_function->call_witness(*base, argptrs, argc, err);
+				if (err.error != Callable::CallError::CALL_OK) {
+					err_text = _get_call_error(call_identity, argptrs, argc, result, err);
+					OPCODE_BREAK;
+				}
+
+				if (call_ret) {
+					GET_INSTRUCTION_ARG(ret, argc + 1);
+					*ret = result;
+#ifdef DEBUG_ENABLED
+					if (!call_async && ret->get_type() == Variant::OBJECT) {
+						bool was_freed = false;
+						Object *result_object = ret->get_validated_object_with_check(was_freed);
+						if (result_object != nullptr && result_object->is_class_ptr(ScriptFunctionState::get_class_ptr_static())) {
+							err_text = R"(Trying to call an async function without "await".)";
+							OPCODE_BREAK;
+						}
+					}
+#endif
+				}
+
+				ip += 7;
+			}
+			DISPATCH_OPCODE;
+
 			OPCODE(OPCODE_CALL_METHOD_BIND)
 			OPCODE(OPCODE_CALL_METHOD_BIND_RET) {
 				bool call_ret = (_code_ptr[ip]) == OPCODE_CALL_METHOD_BIND_RET;
@@ -3477,6 +3591,10 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 						memnew_placement(&gdfs->state.stack.write[sizeof(Variant) * i], Variant(stack[i]));
 					}
 					gdfs->state.stack_size = _stack_size;
+					gdfs->state.has_self_override = p_self_override != nullptr;
+					if (p_self_override != nullptr) {
+						gdfs->state.self_override = *p_self_override;
+					}
 					gdfs->state.ip = ip + 2;
 					gdfs->state.line = line;
 					gdfs->state.script = _script;

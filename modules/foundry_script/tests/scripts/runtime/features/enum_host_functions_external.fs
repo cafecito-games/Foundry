@@ -4,7 +4,8 @@
 const _REMOTE_ENUM_FILE = preload("enum_host_functions_external.notest.fs")
 
 func test() -> void:
-	var waiting: Issue1119RemoteStatus = Issue1119RemoteStatus.parse(false)
-	var ready: Issue1119RemoteStatus = Issue1119RemoteStatus.parse(true)
-	print(waiting.describe())
-	print(ready.describe())
+	print(Issue1119RemoteStatus.INFO.name())
+	print(Issue1119RemoteStatus.WARN.name())
+	print(Issue1119RemoteStatus.ERROR.name())
+	print(Issue1119RemoteStatus.parse("warn").name())
+	print(Issue1119RemoteStatus.parse("error").name())

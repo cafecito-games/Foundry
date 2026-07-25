@@ -871,6 +871,42 @@ void FSFunction::disassemble(const Vector<String> &p_code_lines) const {
 
 				incr = 5 + argc;
 			} break;
+			case OPCODE_CALL_ENUM:
+			case OPCODE_CALL_ENUM_RETURN:
+			case OPCODE_CALL_ENUM_ASYNC: {
+				const bool ret = (_code_ptr[ip]) == OPCODE_CALL_ENUM_RETURN;
+				const bool async = (_code_ptr[ip]) == OPCODE_CALL_ENUM_ASYNC;
+				const int instr_var_args = _code_ptr[++ip];
+				const int argc = _code_ptr[ip + 1 + instr_var_args];
+				const String owner_path = _global_names_ptr[_code_ptr[ip + 2 + instr_var_args]];
+				const StringName owner_class = _global_names_ptr[_code_ptr[ip + 3 + instr_var_args]];
+				const StringName enum_type = _global_names_ptr[_code_ptr[ip + 4 + instr_var_args]];
+				const StringName function_name = _global_names_ptr[_code_ptr[ip + 5 + instr_var_args]];
+				const bool is_static = _code_ptr[ip + 6 + instr_var_args] == 1;
+
+				if (ret) {
+					text += "call-enum-ret ";
+				} else if (async) {
+					text += "call-enum-async ";
+				} else {
+					text += "call-enum ";
+				}
+				if (ret || async) {
+					text += DADDR(2 + argc) + " = ";
+				}
+				text += is_static ? "static " : "instance ";
+				text += owner_path + "::" + String(owner_class) + "." + String(enum_type) + "." + String(function_name);
+				text += "(";
+				for (int i = 0; i < argc; i++) {
+					if (i > 0) {
+						text += ", ";
+					}
+					text += DADDR(1 + i);
+				}
+				text += ") receiver=" + DADDR(1 + argc);
+
+				incr = 10 + argc;
+			} break;
 			case OPCODE_CALL_METHOD_BIND:
 			case OPCODE_CALL_METHOD_BIND_RET: {
 				bool ret = (_code_ptr[ip]) == OPCODE_CALL_METHOD_BIND_RET;

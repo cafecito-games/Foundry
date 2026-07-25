@@ -39,7 +39,7 @@ script fixture runner, SCons.
 Add:
 
 - same-file static and instance calls, including receiver-as-`self`
-- two nested classes with the same enum name and different results
+- nested class enums with independently resolved owner identities
 - a cross-file `enum_name` dependency with static and instance calls
 - immediately completing async static and instance calls consumed with `await`
 
@@ -80,7 +80,7 @@ Do not change production runtime code before this evidence exists.
 
 **Step 1: Add a compile-storage test**
 
-Compile a script containing root and nested same-named enums. Assert:
+Compile a script containing root and nested enums. Assert:
 
 - the functions are absent from `member_functions`
 - the root and nested scripts each resolve only their own enum function

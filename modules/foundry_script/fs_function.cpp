@@ -31,9 +31,9 @@
 #include "fs_function.h"
 
 #include "foundry_script.h"
+#include "fs_conformance_registry.h"
 #include "fs_script_test_execution.h"
 #include "fs_script_test_guard.h"
-#include "fs_conformance_registry.h"
 
 bool FSDataType::_script_conforms_to_trait(const Ref<Script> &p_base, const StringName &p_trait) {
 	if (p_base.is_null() || p_trait == StringName()) {
@@ -511,6 +511,11 @@ Variant FSFunctionState::resume(const Variant &p_arg) {
 	state.result = p_arg;
 	Callable::CallError err;
 	Variant ret = function->call(nullptr, nullptr, 0, err, &state);
+	// A resumed function either completed or copied the override into its next suspended state.
+	// Release this state's copy promptly instead of retaining a builtin/object receiver through
+	// the first-state chain.
+	state.self_override = Variant();
+	state.has_self_override = false;
 
 	bool completed = true;
 
@@ -545,6 +550,8 @@ void FSFunctionState::_clear_stack() {
 		}
 		state.stack_size = 0;
 	}
+	state.self_override = Variant();
+	state.has_self_override = false;
 }
 
 void FSFunctionState::_clear_connections() {

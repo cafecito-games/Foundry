@@ -2,7 +2,7 @@
 # #1120 removes this sentinel after enum host function tables persist in compiled bytecode.
 
 class Left:
-	enum Status:
+	enum LeftStatus:
 		READY = 11
 
 		func describe() -> String:
@@ -13,7 +13,7 @@ class Left:
 
 
 class Right:
-	enum Status:
+	enum RightStatus:
 		READY = 22
 
 		func describe() -> String:
@@ -24,7 +24,7 @@ class Right:
 
 
 func test() -> void:
-	var left: Left.Status = Left.Status.initial()
-	var right: Right.Status = Right.Status.initial()
+	var left: Left.LeftStatus = Left.LeftStatus.initial()
+	var right: Right.RightStatus = Right.RightStatus.initial()
 	print(left.describe())
 	print(right.describe())

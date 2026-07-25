@@ -1,3 +1,6 @@
 FS_TEST_OK
-remote:31
-remote:32
+info
+warn
+error
+warn
+error
