@@ -6150,6 +6150,126 @@ func custom_and_builtin(unused: int) -> void:
 	}
 }
 
+TEST_CASE("[Modules][FoundryScript] keep_name metadata covers supported declarations") {
+	ScopedFSNativeGlobals native_globals;
+	FSParser parser;
+	Error err = parser.parse(R"(
+@keep_name
+class_name KeepNameMetadataRoot
+
+@keep_name var kept_member: int
+@keep_name signal kept_signal
+@keep_name const KEPT_CONSTANT = 1
+@keep_name enum KeptEnum:
+	VALUE = 0
+	@keep_name func kept_enum_instance() -> void:
+		pass
+	@keep_name func shared_enum_escape() -> void:
+		pass
+@keep_name enum KeptStaticEnum:
+	VALUE = 0
+	@keep_name static func kept_enum_static() -> void:
+		pass
+	@keep_name static func shared_enum_escape() -> void:
+		pass
+@keep_name func kept_method() -> void:
+	pass
+@keep_name class KeptInner:
+	pass
+)",
+			"user://keep_name_metadata.fs", false);
+
+	String parser_error_messages;
+	for (const FSParser::ParserError &parser_error : parser.get_errors()) {
+		parser_error_messages += parser_error.message + "\n";
+	}
+	INFO(parser_error_messages);
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	FSAnalyzer analyzer(&parser);
+	err = analyzer.analyze();
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	FSCompiler compiler;
+	Ref<FoundryScript> script;
+	script.instantiate();
+	script->set_path("user://keep_name_metadata.fs");
+
+	err = compiler.compile(&parser, script.ptr(), false);
+	INFO(compiler.get_error());
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	const auto check_keep_name_usage = [](const Vector<FoundryScript::AnnotationUsage> *p_usages) {
+		CHECK(p_usages != nullptr);
+		if (p_usages == nullptr) {
+			return;
+		}
+		CHECK_EQ(p_usages->size(), 1);
+		if (p_usages->is_empty()) {
+			return;
+		}
+		CHECK_EQ((*p_usages)[0].name, SNAME("keep_name"));
+		CHECK_EQ((*p_usages)[0].qualified_name, SNAME("keep_name"));
+		CHECK((*p_usages)[0].is_builtin);
+		CHECK((*p_usages)[0].args.is_empty());
+		CHECK((*p_usages)[0].kwargs.is_empty());
+	};
+
+	check_keep_name_usage(&script->get_class_annotations());
+	check_keep_name_usage(find_annotation_usages(script->get_variable_annotations(), SNAME("kept_member")));
+	check_keep_name_usage(find_annotation_usages(script->get_signal_annotations(), SNAME("kept_signal")));
+	check_keep_name_usage(find_annotation_usages(script->get_constant_annotations(), SNAME("KEPT_CONSTANT")));
+	check_keep_name_usage(find_annotation_usages(script->get_constant_annotations(), SNAME("KeptEnum")));
+	check_keep_name_usage(find_annotation_usages(script->get_constant_annotations(), SNAME("KeptStaticEnum")));
+	check_keep_name_usage(find_annotation_usages(script->get_method_annotations(), SNAME("kept_method")));
+	check_keep_name_usage(find_annotation_usages(script->get_method_annotations(), SNAME("kept_enum_instance")));
+	check_keep_name_usage(find_annotation_usages(script->get_method_annotations(), SNAME("kept_enum_static")));
+	check_keep_name_usage(find_annotation_usages(script->get_method_annotations(), SNAME("shared_enum_escape")));
+
+	const Ref<FoundryScript> inner = script->get_subclasses()[SNAME("KeptInner")];
+	CHECK(inner.is_valid());
+	if (inner.is_valid()) {
+		check_keep_name_usage(&inner->get_class_annotations());
+	}
+
+	List<MethodInfo> public_annotations;
+	FSLanguage::get_singleton()->get_public_annotations(&public_annotations);
+	bool found_public_keep_name = false;
+	for (const MethodInfo &annotation : public_annotations) {
+		if (annotation.name == SNAME("@keep_name")) {
+			found_public_keep_name = true;
+			break;
+		}
+	}
+	CHECK(found_public_keep_name);
+}
+
+TEST_CASE("[Modules][FoundryScript] keep_name does not expand custom enum annotation targets") {
+	FSParser parser;
+	const Error err = parser.parse(
+			"annotation marker targets CONSTANT\n"
+			"@marker enum Marked:\n"
+			"\tVALUE = 0\n",
+			"user://keep_name_custom_enum_target.fs", false);
+
+	String parser_error_messages;
+	for (const FSParser::ParserError &parser_error : parser.get_errors()) {
+		parser_error_messages += parser_error.message + "\n";
+	}
+	INFO(parser_error_messages);
+	CHECK_EQ(err, ERR_PARSE_ERROR);
+	CHECK(parser_error_messages.contains(R"(Annotation "@marker" cannot be applied to a enum.)"));
+}
+
 TEST_CASE("[Modules][FoundryScript] FSAnnotation descriptor snapshots annotation metadata") {
 	FoundryScript::AnnotationUsage usage;
 	usage.name = SNAME("timeout");

@@ -162,22 +162,37 @@ static Variant bytecode_new_instance(const Ref<FoundryScript> &p_script) {
 
 TEST_CASE("[FoundryScript][BytecodeScript] Members, signals, constants, annotations, and rpc round-trip") {
 	const Ref<FoundryScript> original = compile_bytecode_test_source(
-			"signal health_changed(amount: int)\n"
-			"signal damaged\n"
+			"@keep_name\n"
+			"extends RefCounted\n"
 			"\n"
-			"enum Tint:\n"
+			"signal health_changed(amount: int)\n"
+			"@keep_name signal damaged\n"
+			"\n"
+			"@keep_name enum Tint:\n"
 			"\tRED = 0\n"
 			"\tGREEN = 5\n"
+			"\t@keep_name func kept_enum_instance() -> void:\n"
+			"\t\tpass\n"
+			"\t@keep_name func shared_enum_escape() -> void:\n"
+			"\t\tpass\n"
 			"\n"
-			"const GREETING = \"hello\"\n"
+			"@keep_name enum Shade:\n"
+			"\tLIGHT = 0\n"
+			"\tDARK = 1\n"
+			"\t@keep_name static func kept_enum_static() -> void:\n"
+			"\t\tpass\n"
+			"\t@keep_name static func shared_enum_escape() -> void:\n"
+			"\t\tpass\n"
+			"\n"
+			"@keep_name const GREETING = \"hello\"\n"
 			"\n"
 			"@export var speed: float = 2.5\n"
-			"var health: int = 10\n"
+			"@keep_name var health: int = 10\n"
 			"\n"
 			"func _init() -> void:\n"
 			"\thealth = 12\n"
 			"\n"
-			"func take_damage(amount: int) -> int:\n"
+			"@keep_name func take_damage(amount: int) -> int:\n"
 			"\thealth -= amount\n"
 			"\thealth_changed.emit(health)\n"
 			"\tdamaged.emit()\n"
@@ -216,13 +231,32 @@ TEST_CASE("[FoundryScript][BytecodeScript] Members, signals, constants, annotati
 	CHECK((int64_t)tint_dictionary[StringName("GREEN")] == 5);
 
 	// Annotation usage maps.
+	CHECK(restored->get_class_annotations().size() == original->get_class_annotations().size());
 	CHECK(restored->get_variable_annotations().size() == original->get_variable_annotations().size());
 	CHECK(restored->get_method_annotations().size() == original->get_method_annotations().size());
+	CHECK(restored->get_signal_annotations().size() == original->get_signal_annotations().size());
+	CHECK(restored->get_constant_annotations().size() == original->get_constant_annotations().size());
 	REQUIRE(restored->get_variable_annotations().has(SNAME("speed")));
 	const Vector<FoundryScript::AnnotationUsage> &speed_annotations = restored->get_variable_annotations()[SNAME("speed")];
 	REQUIRE(speed_annotations.size() == original->get_variable_annotations()[SNAME("speed")].size());
 	CHECK(speed_annotations[0].name == SNAME("export"));
 	CHECK(speed_annotations[0].is_builtin);
+	const auto check_restored_keep_name = [](const Vector<FoundryScript::AnnotationUsage> *p_usages) {
+		REQUIRE(p_usages != nullptr);
+		REQUIRE_EQ(p_usages->size(), 1);
+		CHECK_EQ((*p_usages)[0].name, SNAME("keep_name"));
+		CHECK((*p_usages)[0].is_builtin);
+	};
+	check_restored_keep_name(&restored->get_class_annotations());
+	check_restored_keep_name(restored->get_variable_annotations().getptr(SNAME("health")));
+	check_restored_keep_name(restored->get_method_annotations().getptr(SNAME("take_damage")));
+	check_restored_keep_name(restored->get_signal_annotations().getptr(SNAME("damaged")));
+	check_restored_keep_name(restored->get_constant_annotations().getptr(SNAME("GREETING")));
+	check_restored_keep_name(restored->get_constant_annotations().getptr(SNAME("Tint")));
+	check_restored_keep_name(restored->get_constant_annotations().getptr(SNAME("Shade")));
+	check_restored_keep_name(restored->get_method_annotations().getptr(SNAME("kept_enum_instance")));
+	check_restored_keep_name(restored->get_method_annotations().getptr(SNAME("kept_enum_static")));
+	check_restored_keep_name(restored->get_method_annotations().getptr(SNAME("shared_enum_escape")));
 
 	// Method reflection.
 	CHECK(restored->has_method(SNAME("take_damage")));

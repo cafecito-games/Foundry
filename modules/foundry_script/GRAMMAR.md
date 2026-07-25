@@ -446,6 +446,8 @@ function_annotation = ANNOTATION, [ "(", [ annotation_args ], ")" ], [ NEWLINE ]
 - An **unnamed** enum (`enum:`) injects its values as constants into the enclosing
   class; a **named** enum (`enum Dir:`) defines an enum type. Only named enums may
   contain functions.
+- Named enum declarations use the constant annotation target. This currently allows the
+  built-in `@keep_name` annotation; enum values remain unsupported annotation targets.
 - Every enum value must provide an explicit integer expression (`NAME = expression`).
   Values do not receive implicit numbers, and enum members are separated by newlines
   rather than commas. Commas remain valid inside an enum value expression.
@@ -1008,6 +1010,7 @@ The parser pre-registers the following built-in annotations (`register_annotatio
 | `@icon` | script | `icon_path` |
 | `@static_unload` | script | — |
 | `@autoload` | script | `depends_on`, `order_id` (named args allowed) |
+| `@keep_name` | class, variable, function, signal, constant, named enum | — |
 | `@noreturn` | function | — |
 | `@onready` | variable | — |
 | `@export` | variable | — |
