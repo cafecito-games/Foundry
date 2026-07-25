@@ -168,6 +168,10 @@ FSParser::FSParser() {
 				AnnotationInfo::SCRIPT,
 				&FSParser::autoload_annotation,
 				varray(Array(), 0));
+		register_annotation(MethodInfo("@keep_name"),
+				AnnotationInfo::CLASS | AnnotationInfo::VARIABLE | AnnotationInfo::FUNCTION |
+						AnnotationInfo::SIGNAL | AnnotationInfo::CONSTANT,
+				&FSParser::keep_name_annotation);
 		register_annotation(MethodInfo("@noreturn"), AnnotationInfo::FUNCTION, &FSParser::noreturn_annotation);
 		// Onready annotation.
 		register_annotation(MethodInfo("@onready"), AnnotationInfo::VARIABLE, &FSParser::onready_annotation);
@@ -1603,11 +1607,14 @@ void FSParser::parse_type_parameters(Vector<TypeParameterNode *> &r_type_paramet
 	consume(FSTokenizer::Token::BRACKET_CLOSE, R"(Expected closing "]" after type parameters.)");
 }
 
-List<FSParser::AnnotationNode *> FSParser::parse_class_member_annotations(AnnotationInfo::TargetKind p_target, const String &p_member_kind) {
+List<FSParser::AnnotationNode *> FSParser::parse_class_member_annotations(AnnotationInfo::TargetKind p_target,
+		const String &p_member_kind, const StringName &p_exclusive_builtin) {
 	List<AnnotationNode *> annotations;
 	while (!annotation_stack.is_empty()) {
 		AnnotationNode *last_annotation = annotation_stack.back()->get();
-		if (last_annotation->applies_to(p_target)) {
+		const bool is_allowed_builtin = p_exclusive_builtin == StringName() ||
+				(!last_annotation->is_custom && last_annotation->name == p_exclusive_builtin);
+		if (is_allowed_builtin && last_annotation->applies_to(p_target)) {
 			annotations.push_front(last_annotation);
 			annotation_stack.pop_back();
 		} else {
@@ -1674,9 +1681,12 @@ void FSParser::finalize_class_member(T *p_member, List<AnnotationNode *> &p_anno
 }
 
 template <typename T>
-void FSParser::parse_class_member(T *(FSParser::*p_parse_function)(const DeclarationModifiers &), AnnotationInfo::TargetKind p_target, const String &p_member_kind, const DeclarationModifiers &p_modifiers) {
+void FSParser::parse_class_member(T *(FSParser::*p_parse_function)(const DeclarationModifiers &),
+		AnnotationInfo::TargetKind p_target, const String &p_member_kind,
+		const DeclarationModifiers &p_modifiers, const StringName &p_exclusive_builtin) {
 	advance();
-	List<AnnotationNode *> annotations = parse_class_member_annotations(p_target, p_member_kind);
+	List<AnnotationNode *> annotations =
+			parse_class_member_annotations(p_target, p_member_kind, p_exclusive_builtin);
 	T *member = (this->*p_parse_function)(p_modifiers);
 	finalize_class_member(member, annotations, p_member_kind);
 }
@@ -2085,7 +2095,8 @@ void FSParser::parse_class_body(bool p_is_multiline) {
 				break;
 			case FSTokenizer::Token::ENUM:
 				validate_declaration_modifiers(modifiers, "enums", false, false, false, false, in_trait);
-				parse_class_member(&FSParser::parse_enum, AnnotationInfo::NONE, "enum", modifiers);
+				parse_class_member(&FSParser::parse_enum, AnnotationInfo::CONSTANT, "enum", modifiers,
+						SNAME("@keep_name"));
 				break;
 			case FSTokenizer::Token::ANNOTATION: {
 				advance();
@@ -6526,6 +6537,10 @@ bool FSParser::export_tool_button_annotation(AnnotationNode *p_annotation, Node 
 #endif // TOOLS_ENABLED
 
 	return true; // Only available in editor.
+}
+
+bool FSParser::keep_name_annotation(AnnotationNode *, Node *, ClassNode *) {
+	return true;
 }
 
 template <PropertyUsageFlags t_usage>

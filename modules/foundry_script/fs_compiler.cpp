@@ -4300,6 +4300,12 @@ Error FSCompiler::_prepare_compilation(FoundryScript *p_script, const FSParser::
 				StringName name = enum_n->identifier->name;
 
 				p_script->constants.insert(name, enum_n->dictionary);
+
+				Vector<FoundryScript::AnnotationUsage> enum_usages;
+				_collect_annotations(enum_n->annotations, enum_usages);
+				if (!enum_usages.is_empty()) {
+					p_script->constant_annotations[name] = enum_usages;
+				}
 			} break;
 
 			case FSParser::ClassNode::Member::GROUP: {

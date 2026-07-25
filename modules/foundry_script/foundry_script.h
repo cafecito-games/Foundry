@@ -45,6 +45,7 @@ class FSParser;
 class FSAnalyzer;
 #ifdef TOOLS_ENABLED
 class FSNameManglerAnalysis;
+class FSNameManglerKeepRules;
 #endif
 
 class FSNativeClass : public RefCounted {
@@ -225,6 +226,7 @@ private:
 	friend class FSBytecodeLoader;
 #ifdef TOOLS_ENABLED
 	friend class FSNameManglerAnalysis;
+	friend class FSNameManglerKeepRules;
 #endif
 	friend class FSDocGen;
 	friend class FSLambdaCallable;

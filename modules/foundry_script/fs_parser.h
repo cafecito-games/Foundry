@@ -1939,11 +1939,14 @@ private:
 	bool parse_trait_use(ClassNode::TraitUse &r_trait_use);
 	void parse_type_parameters(Vector<TypeParameterNode *> &r_type_parameters);
 	void parse_class_body(bool p_is_multiline);
-	List<AnnotationNode *> parse_class_member_annotations(AnnotationInfo::TargetKind p_target, const String &p_member_kind);
+	List<AnnotationNode *> parse_class_member_annotations(AnnotationInfo::TargetKind p_target,
+			const String &p_member_kind, const StringName &p_exclusive_builtin = StringName());
 	template <typename T>
 	void finalize_class_member(T *p_member, List<AnnotationNode *> &p_annotations, const String &p_member_kind);
 	template <typename T>
-	void parse_class_member(T *(FSParser::*p_parse_function)(const DeclarationModifiers &), AnnotationInfo::TargetKind p_target, const String &p_member_kind, const DeclarationModifiers &p_modifiers);
+	void parse_class_member(T *(FSParser::*p_parse_function)(const DeclarationModifiers &),
+			AnnotationInfo::TargetKind p_target, const String &p_member_kind,
+			const DeclarationModifiers &p_modifiers, const StringName &p_exclusive_builtin = StringName());
 	void parse_function_class_member(const DeclarationModifiers &p_modifiers);
 	AnnotationDeclarationNode *parse_annotation_declaration();
 	ConformanceNode *parse_conformance();
@@ -1968,6 +1971,7 @@ private:
 	bool icon_annotation(AnnotationNode *p_annotation, Node *p_target, ClassNode *p_class);
 	bool static_unload_annotation(AnnotationNode *p_annotation, Node *p_target, ClassNode *p_class);
 	bool autoload_annotation(AnnotationNode *p_annotation, Node *p_target, ClassNode *p_class);
+	bool keep_name_annotation(AnnotationNode *p_annotation, Node *p_target, ClassNode *p_class);
 	bool noreturn_annotation(AnnotationNode *p_annotation, Node *p_target, ClassNode *p_class);
 	bool onready_annotation(AnnotationNode *p_annotation, Node *p_target, ClassNode *p_class);
 	template <PropertyHint t_hint, Variant::Type t_type>

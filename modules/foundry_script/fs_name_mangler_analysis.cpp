@@ -510,24 +510,38 @@ void FSNameManglerAnalysis::_collect_class(const FoundryScript *p_class, BuildSt
 		_add_evidence(method_name, KEEP_RPC, source, r_state);
 	}
 
-	const auto collect_annotations = [&](const Vector<FoundryScript::AnnotationUsage> &p_usages) {
+	const auto collect_annotations = [&](const Vector<FoundryScript::AnnotationUsage> &p_usages,
+											 const StringName &p_declaration_name = StringName()) {
 		for (const FoundryScript::AnnotationUsage &usage : p_usages) {
 			_collect_variant(usage.args, source, r_state);
 			_collect_variant(usage.kwargs, source, r_state);
+			if (p_declaration_name != StringName() && usage.is_builtin && usage.name == SNAME("keep_name")) {
+				_add_evidence(p_declaration_name, KEEP_RULE,
+						vformat("@keep_name on %s::%s", p_class->fully_qualified_name, p_declaration_name),
+						r_state);
+			}
 		}
 	};
 	collect_annotations(p_class->class_annotations);
+	for (const FoundryScript::AnnotationUsage &usage : p_class->class_annotations) {
+		if (!usage.is_builtin || usage.name != SNAME("keep_name")) {
+			continue;
+		}
+		const String detail = vformat("@keep_name on class %s", p_class->fully_qualified_name);
+		_add_evidence(p_class->local_name, KEEP_RULE, detail, r_state);
+		_add_evidence(p_class->global_name, KEEP_RULE, detail, r_state);
+	}
 	for (const KeyValue<StringName, Vector<FoundryScript::AnnotationUsage>> &entry : p_class->method_annotations) {
-		collect_annotations(entry.value);
+		collect_annotations(entry.value, entry.key);
 	}
 	for (const KeyValue<StringName, Vector<FoundryScript::AnnotationUsage>> &entry : p_class->variable_annotations) {
-		collect_annotations(entry.value);
+		collect_annotations(entry.value, entry.key);
 	}
 	for (const KeyValue<StringName, Vector<FoundryScript::AnnotationUsage>> &entry : p_class->signal_annotations) {
-		collect_annotations(entry.value);
+		collect_annotations(entry.value, entry.key);
 	}
 	for (const KeyValue<StringName, Vector<FoundryScript::AnnotationUsage>> &entry : p_class->constant_annotations) {
-		collect_annotations(entry.value);
+		collect_annotations(entry.value, entry.key);
 	}
 	const auto collect_parameter_annotations =
 			[&](const HashMap<StringName, HashMap<StringName, Vector<FoundryScript::AnnotationUsage>>> &p_annotations) {

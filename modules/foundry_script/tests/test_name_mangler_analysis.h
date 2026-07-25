@@ -33,6 +33,7 @@
 #ifdef TOOLS_ENABLED
 
 #include "modules/foundry_script/fs_name_mangler_analysis.h"
+#include "modules/foundry_script/fs_name_mangler_keep_rules.h"
 #include "modules/foundry_script/tests/test_bytecode_serialization.h"
 
 #include "modules/foundry_script/fs_conformance_registry.h"
@@ -470,6 +471,67 @@ TEST_CASE("[FoundryScript][NameManglerAnalysis] Project ordering and keep eviden
 	CHECK(name_analysis_has_reason(kept, SNAME("shared_name"), FSNameManglerAnalysis::KEEP_RULE));
 	REQUIRE(kept.keep_log.size() == 1);
 	CHECK_EQ(kept.keep_log[0], "Keeping \"shared_name\": explicit keep rule (keep-names.cfg:4).");
+}
+
+TEST_CASE("[FoundryScript][NameManglerAnalysis] keep_name and keep rules preserve dynamic dispatch escapes") {
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"@keep_name\n"
+			"func annotated_dispatch() -> void:\n"
+			"\tpass\n"
+			"func ruled_dispatch() -> void:\n"
+			"\tpass\n"
+			"func unkept_dispatch() -> void:\n"
+			"\tpass\n"
+			"func invoke(suffix: String) -> void:\n"
+			"\tcall(\"annotated_\" + suffix)\n"
+			"\tcall(\"ruled_\" + suffix)\n"
+			"\tcall(\"unkept_\" + suffix)\n");
+
+	FSNameManglerKeepRules rules;
+	Vector<FSNameManglerKeepRules::Diagnostic> diagnostics;
+	CHECK_EQ(FSNameManglerKeepRules::parse(
+					 "-keepclassmembers class ** {\n"
+					 "\truled_dispatch;\n"
+					 "}\n",
+					 "res://analysis-keep.pro", rules, diagnostics),
+			OK);
+	CHECK(diagnostics.is_empty());
+
+	FSNameManglerAnalysis::Input input;
+	input.scripts.push_back(script);
+	CHECK_EQ(rules.apply_to_input(input, diagnostics), OK);
+	CHECK(diagnostics.is_empty());
+	const FSNameManglerAnalysis::Result result = FSNameManglerAnalysis::analyze(input);
+	REQUIRE(result.error == OK);
+
+	const FSNameManglerAnalysis::Classification *annotated = result.find(SNAME("annotated_dispatch"));
+	const FSNameManglerAnalysis::Classification *ruled = result.find(SNAME("ruled_dispatch"));
+	const FSNameManglerAnalysis::Classification *unkept = result.find(SNAME("unkept_dispatch"));
+	REQUIRE(annotated != nullptr);
+	REQUIRE(ruled != nullptr);
+	REQUIRE(unkept != nullptr);
+
+	bool annotated_detail_found = false;
+	for (const FSNameManglerAnalysis::KeepEvidence &evidence : annotated->keep_evidence) {
+		if (evidence.reason == FSNameManglerAnalysis::KEEP_RULE &&
+				evidence.detail.contains("@keep_name") &&
+				evidence.detail.ends_with("::annotated_dispatch")) {
+			annotated_detail_found = true;
+		}
+	}
+	bool ruled_detail_found = false;
+	for (const FSNameManglerAnalysis::KeepEvidence &evidence : ruled->keep_evidence) {
+		if (evidence.reason == FSNameManglerAnalysis::KEEP_RULE &&
+				evidence.detail.begins_with("res://analysis-keep.pro:1 -keepclassmembers") &&
+				evidence.detail.ends_with("::ruled_dispatch")) {
+			ruled_detail_found = true;
+		}
+	}
+	CHECK(annotated_detail_found);
+	CHECK(ruled_detail_found);
+	CHECK_FALSE(result.rename_map.has(SNAME("annotated_dispatch")));
+	CHECK_FALSE(result.rename_map.has(SNAME("ruled_dispatch")));
+	CHECK(result.rename_map.has(SNAME("unkept_dispatch")));
 }
 
 TEST_CASE("[FoundryScript][NameManglerAnalysis] Incomplete and external graph boundaries are kept") {

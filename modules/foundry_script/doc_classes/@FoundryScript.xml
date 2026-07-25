@@ -724,6 +724,13 @@
 				[b]Note:[/b] Unlike most other annotations, the argument of the [annotation @icon] annotation must be a string literal (constant expressions are not supported).
 			</description>
 		</annotation>
+		<annotation name="@keep_name">
+			<return type="void" />
+			<description>
+				Prevents the annotated class, member variable, method, signal, constant, or named enum declaration from being renamed by compiled-bytecode name mangling. Use it for names reached through dynamic strings that whole-program analysis cannot infer, such as [code]call("action_" + suffix)[/code].
+				The annotation is passive metadata until name mangling is enabled for an export. It does not change ordinary script behavior.
+			</description>
+		</annotation>
 		<annotation name="@noreturn">
 			<return type="void" />
 			<description>
