@@ -46,8 +46,13 @@ struct FSNameManglerAnalysis::BuildState {
 	HashMap<StringName, Aggregate> candidates;
 	HashSet<StringName> observed_names;
 	HashMap<String, Vector<String>> string_sources;
+	HashMap<StringName, Vector<String>> external_sources;
+	Vector<String> method_reflection_sources;
+	Vector<String> property_reflection_sources;
+	Vector<String> signal_reflection_sources;
 	HashSet<const FoundryScript *> included_classes;
 	HashSet<const FoundryScript *> visited_classes;
+	HashSet<const FoundryScript *> visited_external_classes;
 	HashSet<const FSFunction *> visited_functions;
 };
 
@@ -170,6 +175,46 @@ void FSNameManglerAnalysis::_add_string_evidence(
 	}
 }
 
+void FSNameManglerAnalysis::_add_external_surface_name(
+		const StringName &p_name, const String &p_source, BuildState &r_state) {
+	if (!_is_candidate_name(p_name)) {
+		return;
+	}
+	r_state.observed_names.insert(p_name);
+	Vector<String> &sources = r_state.external_sources[p_name];
+	if (!sources.has(p_source)) {
+		sources.push_back(p_source);
+	}
+}
+
+void FSNameManglerAnalysis::_record_reflection_use(
+		const StringName &p_method, const StringName &p_class, const String &p_source, BuildState &r_state) {
+	Vector<String> *sources = nullptr;
+	if (p_method == SNAME("get_method_list") ||
+			(p_class == SNAME("FSReflection") &&
+					(p_method == SNAME("get_methods") || p_method == SNAME("get_method_descriptors")))) {
+		sources = &r_state.method_reflection_sources;
+	} else if (p_method == SNAME("get_property_list") ||
+			(p_class == SNAME("FSReflection") &&
+					(p_method == SNAME("get_properties") || p_method == SNAME("get_property_descriptors")))) {
+		sources = &r_state.property_reflection_sources;
+	} else if (p_method == SNAME("get_signal_list")) {
+		sources = &r_state.signal_reflection_sources;
+	}
+	if (sources == nullptr) {
+		return;
+	}
+
+	String detail = p_source;
+	if (!detail.is_empty()) {
+		detail += " calls ";
+	}
+	detail += String(p_method);
+	if (!sources->has(detail)) {
+		sources->push_back(detail);
+	}
+}
+
 void FSNameManglerAnalysis::_index_class(const FoundryScript *p_class, BuildState &r_state) {
 	if (p_class == nullptr || r_state.included_classes.has(p_class)) {
 		return;
@@ -177,6 +222,60 @@ void FSNameManglerAnalysis::_index_class(const FoundryScript *p_class, BuildStat
 	r_state.included_classes.insert(p_class);
 	for (const KeyValue<StringName, Ref<FoundryScript>> &subclass : p_class->subclasses) {
 		_index_class(subclass.value.ptr(), r_state);
+	}
+}
+
+void FSNameManglerAnalysis::_collect_external_class_surface(
+		const FoundryScript *p_class, const String &p_source, BuildState &r_state) {
+	if (p_class == nullptr || r_state.included_classes.has(p_class) ||
+			r_state.visited_external_classes.has(p_class)) {
+		return;
+	}
+	r_state.visited_external_classes.insert(p_class);
+
+	const String script_path = p_class->get_script_path();
+	const String source = script_path.is_empty() ? p_source : "external script " + script_path;
+	_add_external_surface_name(p_class->local_name, source, r_state);
+	_add_external_surface_name(p_class->global_name, source, r_state);
+	_add_external_surface_name(StringName(p_class->fully_qualified_name), source, r_state);
+	for (const StringName &member : p_class->members) {
+		_add_external_surface_name(member, source, r_state);
+	}
+	for (const KeyValue<StringName, FoundryScript::MemberInfo> &member : p_class->static_variables_indices) {
+		_add_external_surface_name(member.key, source, r_state);
+	}
+	for (const KeyValue<StringName, Variant> &constant : p_class->constants) {
+		_add_external_surface_name(constant.key, source, r_state);
+		_collect_variant(constant.value, source, r_state);
+	}
+	for (const KeyValue<StringName, MethodInfo> &signal : p_class->_signals) {
+		_add_external_surface_name(signal.key, source, r_state);
+	}
+	for (const KeyValue<StringName, FSFunction *> &method : p_class->member_functions) {
+		_add_external_surface_name(method.key, source, r_state);
+	}
+	for (const KeyValue<StringName, FoundryScript::EnumFunctionSet> &enum_entry : p_class->enum_functions) {
+		_add_external_surface_name(enum_entry.key, source, r_state);
+		for (const KeyValue<StringName, FSFunction *> &method : enum_entry.value.instance_functions) {
+			_add_external_surface_name(method.key, source, r_state);
+		}
+		for (const KeyValue<StringName, FSFunction *> &method : enum_entry.value.static_functions) {
+			_add_external_surface_name(method.key, source, r_state);
+		}
+	}
+	for (const KeyValue<StringName, FoundryScript::AbstractTraitRequirement> &requirement :
+			p_class->abstract_trait_requirements) {
+		_add_external_surface_name(requirement.key, source, r_state);
+	}
+	for (const Variant &value : p_class->static_variables) {
+		_collect_variant(value, source, r_state);
+	}
+	for (const KeyValue<StringName, Variant> &default_value : p_class->member_default_values) {
+		_collect_variant(default_value.value, source, r_state);
+	}
+	_collect_external_class_surface(p_class->base.ptr(), source, r_state);
+	for (const KeyValue<StringName, Ref<FoundryScript>> &subclass : p_class->subclasses) {
+		_collect_external_class_surface(subclass.value.ptr(), source, r_state);
 	}
 }
 
@@ -230,6 +329,11 @@ void FSNameManglerAnalysis::_collect_variant(
 				_add_string_evidence(string, p_source, r_state);
 			}
 		} break;
+		case Variant::OBJECT: {
+			Object *object = p_value;
+			const FoundryScript *script = Object::cast_to<FoundryScript>(object);
+			_collect_external_class_surface(script, p_source, r_state);
+		} break;
 		default:
 			break;
 	}
@@ -255,6 +359,7 @@ void FSNameManglerAnalysis::_collect_function(const FSFunction *p_function, Buil
 	}
 	for (const StringName &global_name : p_function->global_names) {
 		r_state.observed_names.insert(global_name);
+		_record_reflection_use(global_name, StringName(), source, r_state);
 	}
 	for (const FSFunction::ExportFixups::TypedNameKey &key : p_function->export_fixups.setters) {
 		r_state.observed_names.insert(key.name);
@@ -268,6 +373,7 @@ void FSNameManglerAnalysis::_collect_function(const FSFunction *p_function, Buil
 	for (const FSFunction::ExportFixups::MethodBindKey &key : p_function->export_fixups.method_binds) {
 		r_state.observed_names.insert(key.class_name);
 		r_state.observed_names.insert(key.method_name);
+		_record_reflection_use(key.method_name, key.class_name, source, r_state);
 	}
 	for (const FSFunction *lambda : p_function->lambdas) {
 		_collect_function(lambda, r_state);
@@ -281,6 +387,7 @@ void FSNameManglerAnalysis::_collect_class(const FoundryScript *p_class, BuildSt
 	r_state.visited_classes.insert(p_class);
 
 	const String source = p_class->get_script_path();
+	_collect_external_class_surface(p_class->base.ptr(), source + " external base", r_state);
 	_add_candidate(p_class->local_name, IDENTIFIER_CLASS, r_state);
 	r_state.observed_names.insert(p_class->global_name);
 	r_state.observed_names.insert(StringName(p_class->fully_qualified_name));
@@ -437,6 +544,27 @@ FSNameManglerAnalysis::Result FSNameManglerAnalysis::analyze(const Input &p_inpu
 		const StringName name = StringName(string_entry.key);
 		for (const String &source : string_entry.value) {
 			_add_evidence(name, KEEP_STRING_LITERAL, source, state);
+		}
+	}
+	for (const KeyValue<StringName, Vector<String>> &external_entry : state.external_sources) {
+		for (const String &source : external_entry.value) {
+			_add_evidence(external_entry.key, KEEP_EXTERNAL_OR_UNPROVABLE, source, state);
+		}
+	}
+	for (const KeyValue<StringName, BuildState::Aggregate> &candidate : state.candidates) {
+		const auto add_reflection_evidence = [&](const Vector<String> &p_sources) {
+			for (const String &source : p_sources) {
+				_add_evidence(candidate.key, KEEP_REFLECTION, source, state);
+			}
+		};
+		if (candidate.value.kinds.has((int)IDENTIFIER_METHOD)) {
+			add_reflection_evidence(state.method_reflection_sources);
+		}
+		if (candidate.value.kinds.has((int)IDENTIFIER_MEMBER)) {
+			add_reflection_evidence(state.property_reflection_sources);
+		}
+		if (candidate.value.kinds.has((int)IDENTIFIER_SIGNAL)) {
+			add_reflection_evidence(state.signal_reflection_sources);
 		}
 	}
 	if (!p_input.complete_project_graph) {

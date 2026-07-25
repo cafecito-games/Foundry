@@ -101,11 +101,17 @@ private:
 	static bool _is_candidate_name(const StringName &p_name);
 	static void _index_class(const FoundryScript *p_class, BuildState &r_state);
 	static void _collect_class(const FoundryScript *p_class, BuildState &r_state);
+	static void _collect_external_class_surface(
+			const FoundryScript *p_class, const String &p_source, BuildState &r_state);
 	static void _collect_function(const FSFunction *p_function, BuildState &r_state);
 	static void _collect_variant(const Variant &p_value, const String &p_source, BuildState &r_state, int p_depth = 0);
 	static void _add_candidate(const StringName &p_name, IdentifierKind p_kind, BuildState &r_state);
 	static void _add_evidence(const StringName &p_name, KeepReason p_reason, const String &p_detail, BuildState &r_state);
 	static void _add_string_evidence(const String &p_name, const String &p_source, BuildState &r_state);
+	static void _add_external_surface_name(
+			const StringName &p_name, const String &p_source, BuildState &r_state);
+	static void _record_reflection_use(
+			const StringName &p_method, const StringName &p_class, const String &p_source, BuildState &r_state);
 	static bool _collides_with_builtin_api(const StringName &p_name, const Vector<IdentifierKind> &p_kinds);
 };
 
