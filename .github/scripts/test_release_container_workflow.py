@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Native child #1214 adds continuous pre-commit wiring after this contract lands.
 from __future__ import annotations
 
 import ast

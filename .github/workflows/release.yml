@@ -1157,7 +1157,7 @@ jobs:
       group: release-container-${{ needs.resolve.outputs.channel }}
       cancel-in-progress: false
       queue: max
-    # BuildKit attaches registry provenance/SBOM directly; this job does not use actions/attest and needs no OIDC.
+    # Registry-attached BuildKit attestations use package auth, not OIDC permissions for the separate actions/attest.
     permissions:
       contents: read
       packages: write
@@ -1237,6 +1237,8 @@ jobs:
 
       - name: Build local smoke image
         uses: docker/build-push-action@v6
+        # The local and registry exports share this builder and identical context/Dockerfile/platform/args/labels.
+        # load: true makes the image runnable for pre-auth smoke; the local exporter cannot retain SBOM/provenance.
         with:
           context: docker
           file: docker/foundry-headless.Dockerfile
@@ -1307,6 +1309,8 @@ jobs:
 
       - name: Publish release image
         uses: docker/build-push-action@v6
+        # Reuse BuildKit's content-addressed cached graph for the registry export and add SBOM/provenance.
+        # This is a second image export, not a second Foundry compilation.
         with:
           context: docker
           file: docker/foundry-headless.Dockerfile
