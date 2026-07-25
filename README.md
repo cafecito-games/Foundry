@@ -26,8 +26,9 @@ Claude and Codex). This is primarily a personal project built around my own
 tastes for what the language and tooling should look like. It may be useful to
 others, or it may not be. **Support, stability, and backwards compatibility are
 not guaranteed** — treat it as experimental and don't ship production games on
-it without understanding that caveat. Builds will eventually be published here
-for anyone who wants to try them out.
+it without understanding that caveat. Published builds are available from
+[Foundry releases](https://github.com/cafecito-games/Foundry/releases) for
+anyone who wants to try them out.
 
 ## Foundry Script
 
@@ -146,9 +147,15 @@ docker run --rm \
 
 The initial image is `linux/amd64` only and contains Foundry plus its runtime
 libraries, not export templates, compilers, Git, or the internal engine test
-suite. The GHCR package is intended to be public; after its first publication,
-an organization administrator must confirm that the package visibility is
-Public in GitHub Packages.
+suite. The GHCR package is intended to be public. After its first publication,
+verify anonymous access from a shell that is not authenticated to GHCR:
+
+```sh
+docker pull ghcr.io/cafecito-games/foundry:v0.1.0-alpha.9
+```
+
+If the pull fails, an organization administrator must switch the package
+visibility to Public in GitHub Packages.
 
 ## About Godot
 
