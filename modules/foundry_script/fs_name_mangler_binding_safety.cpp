@@ -382,10 +382,9 @@ void expand_scene_state(
 			new_node.native_type = node_type;
 			r_scene.nodes.insert(node_path, new_node);
 			node_entry = r_scene.nodes.find(node_path);
-		} else if (!node_type.is_empty() &&
-				node_entry->value().native_type != node_type) {
+		} else if (!node_type.is_empty()) {
 			fail_collection(r_result, p_source, node_path,
-					"concrete node row collides with a different node type");
+					"concrete node row collides with an existing virtual node");
 			continue;
 		}
 		VirtualNode &node = node_entry->value();
@@ -667,17 +666,13 @@ void collect_dictionary_bindings(
 		return;
 	}
 	r_traversal.dictionaries.insert(p_dictionary.id());
-	int entry_index = 0;
 	for (const KeyValue<Variant, Variant> &entry : p_dictionary) {
 		collect_variant_bindings(
-				entry.key, p_source,
-				vformat("%s key %d", p_context, entry_index),
+				entry.key, p_source, p_context + " key",
 				p_domain, r_traversal, r_result);
 		collect_variant_bindings(
-				entry.value, p_source,
-				vformat("%s value %d", p_context, entry_index),
+				entry.value, p_source, p_context + " value",
 				p_domain, r_traversal, r_result);
-		entry_index++;
 	}
 }
 
@@ -871,6 +866,118 @@ bool resolve_relative_node_path(
 	return true;
 }
 
+bool resource_has_property(
+		const Ref<Resource> &p_resource, const StringName &p_name) {
+	List<PropertyInfo> properties;
+	p_resource->get_property_list(&properties);
+	for (const PropertyInfo &property : properties) {
+		if (property.name == p_name) {
+			return true;
+		}
+	}
+	return false;
+}
+
+void collect_animation_resource_declaration(
+		const Ref<Resource> &p_resource,
+		const StringName &p_name,
+		const String &p_source,
+		const String &p_context,
+		const ScriptDomain &p_domain,
+		FSNameManglerBindingSafety::Result &r_result) {
+	const Ref<Script> script = p_resource->get_script();
+	const FoundryScript *declaration = find_foundry_declaration(
+			script, p_name, DECLARATION_PROPERTY);
+	if (declaration != nullptr) {
+		const FoundryScript *owner =
+				resolve_domain_script(declaration, p_domain);
+		if (owner != nullptr) {
+			FSNameManglerBindingSafety::Evidence evidence;
+			evidence.name = p_name;
+			evidence.kind =
+					FSNameManglerBindingSafety::BINDING_ANIMATION_PROPERTY;
+			evidence.source = p_source;
+			evidence.owner = get_script_owner(owner);
+			r_result.evidence.push_back(evidence);
+		}
+		return;
+	}
+	if ((script.is_valid() &&
+				script_has_declaration(
+						script, p_name, DECLARATION_PROPERTY)) ||
+			ClassDB::has_property(p_resource->get_class_name(), p_name) ||
+			resource_has_property(p_resource, p_name)) {
+		return;
+	}
+	fail_collection(r_result, p_source, p_context,
+			vformat("\"%s\" has no script or native Resource owner", p_name));
+}
+
+void collect_animation_property_path(
+		const VirtualNode &p_target_node,
+		const NodePath &p_track_path,
+		const String &p_source,
+		const String &p_context,
+		const ScriptDomain &p_domain,
+		FSNameManglerBindingSafety::Result &r_result) {
+	const int subname_count = p_track_path.get_subname_count();
+	if (subname_count == 0) {
+		fail_collection(r_result, p_source, p_context,
+				"property track has no property subname");
+		return;
+	}
+	const StringName node_property = p_track_path.get_subname(0);
+	collect_scene_declaration(
+			p_target_node, node_property, DECLARATION_PROPERTY,
+			FSNameManglerBindingSafety::BINDING_ANIMATION_PROPERTY,
+			p_source, p_context, p_domain, r_result);
+	if (subname_count == 1) {
+		return;
+	}
+
+	const RBMap<StringName, VirtualProperty>::Element *stored_property =
+			p_target_node.properties.find(node_property);
+	if (stored_property == nullptr) {
+		fail_collection(r_result, p_source, p_context,
+				vformat("resource-valued property \"%s\" is not serialized",
+						node_property));
+		return;
+	}
+	Ref<Resource> current_resource = stored_property->value().value;
+	if (current_resource.is_null()) {
+		fail_collection(r_result, p_source, p_context,
+				vformat("property \"%s\" is not a Resource", node_property));
+		return;
+	}
+	for (int subname_index = 1;
+			subname_index < subname_count; subname_index++) {
+		const StringName property_name =
+				p_track_path.get_subname(subname_index);
+		collect_animation_resource_declaration(
+				current_resource, property_name, p_source, p_context,
+				p_domain, r_result);
+		if (subname_index == subname_count - 1) {
+			return;
+		}
+		bool valid = false;
+		const Variant next_value =
+				current_resource->get(property_name, &valid);
+		if (!valid) {
+			fail_collection(r_result, p_source, p_context,
+					vformat("resource property \"%s\" could not be read",
+							property_name));
+			return;
+		}
+		current_resource = next_value;
+		if (current_resource.is_null()) {
+			fail_collection(r_result, p_source, p_context,
+					vformat("resource property \"%s\" is not a Resource",
+							property_name));
+			return;
+		}
+	}
+}
+
 void collect_animation(
 		const Ref<Animation> &p_animation,
 		const String &p_mixer_root,
@@ -913,16 +1020,9 @@ void collect_animation(
 		}
 		if (track_type == Animation::TYPE_VALUE ||
 				track_type == Animation::TYPE_BEZIER) {
-			if (track_path.get_subname_count() == 0) {
-				fail_collection(r_result, p_source, track_context,
-						"property track has no property subname");
-				continue;
-			}
-			collect_scene_declaration(
-					target_node->value(), track_path.get_subname(0),
-					DECLARATION_PROPERTY,
-					FSNameManglerBindingSafety::BINDING_ANIMATION_PROPERTY,
-					p_source, track_context, p_domain, r_result);
+			collect_animation_property_path(
+					target_node->value(), track_path, p_source,
+					track_context, p_domain, r_result);
 			continue;
 		}
 		if (track_path.get_subname_count() != 0) {

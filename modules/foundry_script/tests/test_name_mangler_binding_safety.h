@@ -451,10 +451,21 @@ TEST_CASE("[FoundryScript][NameManglerBindingSafety] Animation keeps property an
 	const Ref<FoundryScript> target_script = compile_bytecode_test_source(
 			"extends Node\n"
 			"@export var animated_value: float\n"
+			"@export var nested_resource: Resource\n"
 			"func animation_method() -> void:\n"
 			"\tpass\n"
 			"func private_animation_control() -> void:\n"
 			"\tpass\n");
+	const Ref<FoundryScript> nested_script =
+			compile_bytecode_test_source(
+					"extends Resource\n"
+					"@export var nested_value: float\n");
+	Ref<Resource> nested_resource;
+	nested_resource.instantiate();
+	nested_resource->set_script(nested_script);
+	bool nested_valid = false;
+	nested_resource->set(SNAME("nested_value"), 4.0, &nested_valid);
+	REQUIRE(nested_valid);
 
 	Ref<Animation> animation;
 	animation.instantiate();
@@ -478,6 +489,11 @@ TEST_CASE("[FoundryScript][NameManglerBindingSafety] Animation keeps property an
 	animation->track_set_path(
 			native_track, NodePath("Receiver:process_mode"));
 	animation->track_insert_key(native_track, 0.0, 0);
+	const int nested_track = animation->add_track(Animation::TYPE_VALUE);
+	animation->track_set_path(
+			nested_track,
+			NodePath("Receiver:nested_resource:nested_value"));
+	animation->track_insert_key(nested_track, 0.0, 5.0);
 
 	Ref<AnimationLibrary> library;
 	library.instantiate();
@@ -498,6 +514,9 @@ TEST_CASE("[FoundryScript][NameManglerBindingSafety] Animation keeps property an
 	state->add_node_property(
 			receiver, state->add_name(SNAME("script")),
 			state->add_value(target_script));
+	state->add_node_property(
+			receiver, state->add_name(SNAME("nested_resource")),
+			state->add_value(nested_resource));
 	const int player = state->add_node(
 			root_node, root_node, player_type,
 			state->add_name(SNAME("AnimationPlayer")), -1, -1, 52);
@@ -510,6 +529,7 @@ TEST_CASE("[FoundryScript][NameManglerBindingSafety] Animation keeps property an
 
 	FSNameManglerAnalysis::Input analysis_input;
 	analysis_input.scripts.push_back(target_script);
+	analysis_input.scripts.push_back(nested_script);
 	FSNameManglerBindingSafety::Input binding_input;
 	binding_input.add_resource(scene, "res://animation_scene.tscn");
 
@@ -524,6 +544,14 @@ TEST_CASE("[FoundryScript][NameManglerBindingSafety] Animation keeps property an
 	CHECK(binding_safety_has_evidence(
 			result, SNAME("animation_method"),
 			FSNameManglerBindingSafety::BINDING_ANIMATION_METHOD,
+			"res://animation_scene.tscn"));
+	CHECK(binding_safety_has_evidence(
+			result, SNAME("nested_resource"),
+			FSNameManglerBindingSafety::BINDING_ANIMATION_PROPERTY,
+			"res://animation_scene.tscn"));
+	CHECK(binding_safety_has_evidence(
+			result, SNAME("nested_value"),
+			FSNameManglerBindingSafety::BINDING_ANIMATION_PROPERTY,
 			"res://animation_scene.tscn"));
 	CHECK_FALSE(binding_safety_has_evidence(
 			result, SNAME("private_animation_control"),
@@ -769,6 +797,30 @@ TEST_CASE("[FoundryScript][NameManglerBindingSafety] Failure reports scene cycle
 	CHECK(binding_safety_has_diagnostic(
 			result, "missing_method"));
 	cyclic_state->clear();
+
+	Ref<PackedScene> collision_scene;
+	collision_scene.instantiate();
+	const Ref<SceneState> collision_state = collision_scene->get_state();
+	const int collision_type = collision_state->add_name(SNAME("Node"));
+	const int collision_root = collision_state->add_node(
+			-1, -1, collision_type,
+			collision_state->add_name(SNAME("Root")), -1, -1, 80);
+	collision_state->add_node(
+			collision_root, collision_root, collision_type,
+			collision_state->add_name(SNAME("Duplicate")), -1, -1, 81);
+	collision_state->add_node(
+			collision_root, collision_root, collision_type,
+			collision_state->add_name(SNAME("Duplicate")), -1, -1, 82);
+	FSNameManglerBindingSafety::Input collision_input;
+	collision_input.add_resource(
+			collision_scene, "res://collision_scene.tscn");
+	const FSNameManglerBindingSafety::Result collision_result =
+			FSNameManglerBindingSafety::collect(
+					collision_input, analysis_input);
+	CHECK_EQ(collision_result.error, ERR_INVALID_DATA);
+	CHECK_FALSE(collision_result.complete);
+	CHECK(binding_safety_has_diagnostic(
+			collision_result, "collides"));
 }
 
 } // namespace FSTests
