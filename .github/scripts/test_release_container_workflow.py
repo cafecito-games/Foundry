@@ -319,11 +319,15 @@ def validate_job_contract(workflow: str) -> tuple[str, list[str]]:
     return job, parse_steps(job)
 
 
-def validate_artifact(steps: list[str]) -> None:
-    _, checkout = find_step(steps, lambda body: step_uses(body) == "actions/checkout@v6", "container checkout")
+def validate_artifact(steps: list[str]) -> tuple[int, int, int, int]:
+    checkout_index, checkout = find_step(
+        steps,
+        lambda body: step_uses(body) == "actions/checkout@v6",
+        "container checkout",
+    )
     require_step_fields(checkout, {"uses"}, "container checkout")
 
-    _, body = find_step(
+    artifact_index, body = find_step(
         steps,
         lambda candidate: nested_scalar(candidate, "with", "name") == "release-linux-editor",
         "Linux editor artifact download",
@@ -339,7 +343,7 @@ def validate_artifact(steps: list[str]) -> None:
     )
 
     restore_command = "chmod 0755 docker/foundry.linuxbsd.editor.x86_64\n"
-    _, restore = find_step(
+    restore_index, restore = find_step(
         steps,
         lambda candidate: re.search(r"^        run:", candidate, re.MULTILINE) is not None
         and step_run(candidate, "executable restoration") == restore_command,
@@ -351,16 +355,21 @@ def validate_artifact(steps: list[str]) -> None:
         "Linux executable restoration command must be exact",
     )
 
-    _, setup_buildx = find_step(
+    setup_buildx_index, setup_buildx = find_step(
         steps,
         lambda candidate: step_uses(candidate) == "docker/setup-buildx-action@v3",
         "Docker Buildx setup",
     )
     require_step_fields(setup_buildx, {"uses"}, "Docker Buildx setup")
+    return checkout_index, artifact_index, restore_index, setup_buildx_index
 
 
-def validate_tags(steps: list[str]) -> None:
-    _, channel_body = find_step(steps, lambda body: step_id(body) == "channel-tag", "channel tag resolution")
+def validate_tags(steps: list[str]) -> tuple[int, int]:
+    channel_index, channel_body = find_step(
+        steps,
+        lambda body: step_id(body) == "channel-tag",
+        "channel tag resolution",
+    )
     require_step_fields(channel_body, {"id", "env", "run"}, "channel tag resolution")
     channel_env = mapping(
         named_block(channel_body, "env", 8, "channel tag resolution"),
@@ -383,7 +392,11 @@ else
         "moving tag logic must separate stable latest from prerelease channels",
     )
 
-    _, metadata_body = find_step(steps, lambda body: step_id(body) == "metadata", "image metadata")
+    metadata_index, metadata_body = find_step(
+        steps,
+        lambda body: step_id(body) == "metadata",
+        "image metadata",
+    )
     require_step_fields(metadata_body, {"id", "uses", "with"}, "image metadata")
     require(step_uses(metadata_body) == "docker/metadata-action@v5", "image metadata action must be exact")
     metadata_with = named_block(metadata_body, "with", 8, "image metadata")
@@ -415,9 +428,10 @@ else
         and len(labels) == 2,
         "image metadata labels must use the resolved release version and source revision",
     )
+    return channel_index, metadata_index
 
 
-def validate_builds_and_order(job: str, steps: list[str]) -> None:
+def validate_builds_and_order(job: str, steps: list[str]) -> tuple[int, int, int, int]:
     build_index, local_body = find_step(
         steps,
         lambda body: nested_scalar(body, "with", "load") == "true",
@@ -566,6 +580,7 @@ def validate_builds_and_order(job: str, steps: list[str]) -> None:
             command_text,
         )
         require(forbidden_build is None, f"{label} must not compile Foundry from source")
+    return build_index, verify_index, login_index, publish_index
 
 
 def validate_smoke(steps: list[str]) -> None:
@@ -624,9 +639,18 @@ def validate_smoke(steps: list[str]) -> None:
 def validate(workflow: str) -> None:
     validate_events(workflow)
     job, steps = validate_job_contract(workflow)
-    validate_artifact(steps)
-    validate_tags(steps)
-    validate_builds_and_order(job, steps)
+    checkout_index, artifact_index, restore_index, setup_buildx_index = validate_artifact(steps)
+    channel_index, metadata_index = validate_tags(steps)
+    build_index, _, _, _ = validate_builds_and_order(job, steps)
+    require(
+        checkout_index < artifact_index < restore_index < build_index,
+        "checkout, artifact download, executable restoration, and local build must be ordered",
+    )
+    require(setup_buildx_index < build_index, "Docker Buildx setup must precede the local image build")
+    require(
+        channel_index < metadata_index < build_index,
+        "channel tag resolution, image metadata, and local image build must be ordered",
+    )
     validate_smoke(steps)
 
 
