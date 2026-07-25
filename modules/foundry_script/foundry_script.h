@@ -43,6 +43,9 @@
 class FoundryScript;
 class FSParser;
 class FSAnalyzer;
+#ifdef TOOLS_ENABLED
+class FSNameManglerAnalysis;
+#endif
 
 class FSNativeClass : public RefCounted {
 	FOUNDRY_CLASS(FSNativeClass, RefCounted);
@@ -220,6 +223,9 @@ private:
 	friend class FSCompiler;
 	friend class FSBytecodeExporter;
 	friend class FSBytecodeLoader;
+#ifdef TOOLS_ENABLED
+	friend class FSNameManglerAnalysis;
+#endif
 	friend class FSDocGen;
 	friend class FSLambdaCallable;
 	friend class FSLambdaSelfCallable;

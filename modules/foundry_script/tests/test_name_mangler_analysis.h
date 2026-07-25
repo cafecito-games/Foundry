@@ -60,12 +60,14 @@ TEST_CASE("[FoundryScript][NameManglerAnalysis] Classifies a compiled project co
 			"var private_member: int\n"
 			"signal scene_signal\n"
 			"signal private_signal\n"
-			"enum Mode { IDLE, ACTIVE }\n"
+			"enum Mode:\n"
+			"\tIDLE = 0\n"
+			"\tACTIVE = 1\n"
 			"class PrivateNested:\n"
 			"\tvar nested_member: int\n"
 			"@rpc func remote_call() -> void:\n"
 			"\tpass\n"
-			"func _process(_delta: double) -> void:\n"
+			"func _process(_delta: float) -> void:\n"
 			"\tpass\n"
 			"func scene_handler() -> void:\n"
 			"\tpass\n"
@@ -99,6 +101,28 @@ TEST_CASE("[FoundryScript][NameManglerAnalysis] Classifies a compiled project co
 	CHECK(name_analysis_has_reason(result, SNAME("remote_call"), FSNameManglerAnalysis::KEEP_RPC));
 	CHECK(name_analysis_has_reason(result, SNAME("_process"), FSNameManglerAnalysis::KEEP_NATIVE_VIRTUAL));
 	CHECK(name_analysis_has_reason(result, SNAME("string_named"), FSNameManglerAnalysis::KEEP_STRING_LITERAL));
+}
+
+TEST_CASE("[FoundryScript][NameManglerAnalysis] Recurses through constants and only treats NodePath subnames as evidence") {
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"var literal_kept: int\n"
+			"var nodepath_property: int\n"
+			"const NESTED = [{ \"names\": [\"literal_kept\"] }]\n"
+			"const PROPERTY_PATH = NodePath(\"Child:nodepath_property\")\n"
+			"const NODE_ONLY_PATH = NodePath(\"private_node_segment\")\n"
+			"func private_node_segment() -> void:\n"
+			"\tpass\n");
+
+	FSNameManglerAnalysis::Input input;
+	input.scripts.push_back(script);
+	const FSNameManglerAnalysis::Result result = FSNameManglerAnalysis::analyze(input);
+
+	REQUIRE(result.error == OK);
+	CHECK_FALSE(result.rename_map.has(SNAME("literal_kept")));
+	CHECK_FALSE(result.rename_map.has(SNAME("nodepath_property")));
+	CHECK(result.rename_map.has(SNAME("private_node_segment")));
+	CHECK(name_analysis_has_reason(result, SNAME("literal_kept"), FSNameManglerAnalysis::KEEP_STRING_LITERAL));
+	CHECK(name_analysis_has_reason(result, SNAME("nodepath_property"), FSNameManglerAnalysis::KEEP_STRING_LITERAL));
 }
 
 } // namespace FSTests
