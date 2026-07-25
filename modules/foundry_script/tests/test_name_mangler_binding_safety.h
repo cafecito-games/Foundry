@@ -208,12 +208,15 @@ static BindingSafetyRuntimeSnapshot binding_safety_run_runtime(
 
 	const Ref<FoundryScript> emitter_script = emitter->get_script();
 	const Ref<FoundryScript> receiver_script = receiver->get_script();
+	const Ref<FoundryScript> base_script =
+			receiver_script.is_valid() ? Ref<FoundryScript>(receiver_script->get_base_script()) : Ref<FoundryScript>();
 	const Ref<FoundryScript> config_script = p_config->get_script();
 	CHECK(emitter_script.is_valid());
 	CHECK(receiver_script.is_valid());
+	CHECK(base_script.is_valid());
 	CHECK(config_script.is_valid());
 	if (emitter_script.is_null() || receiver_script.is_null() ||
-			config_script.is_null()) {
+			base_script.is_null() || config_script.is_null()) {
 		memdelete(runtime_root);
 		return snapshot;
 	}
@@ -224,17 +227,19 @@ static BindingSafetyRuntimeSnapshot binding_safety_run_runtime(
 			receiver_script->is_compiled_binary(),
 			p_expect_compiled_binary);
 	CHECK_EQ(
+			base_script->is_compiled_binary(),
+			p_expect_compiled_binary);
+	CHECK_EQ(
 			config_script->is_compiled_binary(),
 			p_expect_compiled_binary);
 
-	snapshot.stored_value = receiver->get(SNAME("acceptance_value"));
+	snapshot.stored_value = receiver->get(SNAME("inherited_override"));
 	CHECK_EQ(
 			emitter->emit_signal(SNAME("acceptance_signal"), 5), OK);
-	snapshot.signal_value = receiver->get(SNAME("acceptance_value"));
-	receiver->set(SNAME("acceptance_value"), 2.0);
+	snapshot.signal_value = receiver->get(SNAME("inherited_override"));
 	player->play(SNAME("acceptance"));
 	player->advance(0.1);
-	snapshot.animation_value = receiver->get(SNAME("acceptance_value"));
+	snapshot.animation_value = receiver->get(SNAME("animated_value"));
 	snapshot.config_value = p_config->get(SNAME("config_value"));
 	snapshot.config_class = config_script->get_global_name();
 
@@ -642,11 +647,32 @@ TEST_CASE("[FoundryScript][NameManglerBindingSafety] Animation keeps property an
 	analysis_input.scripts.push_back(nested_script);
 	FSNameManglerBindingSafety::Input binding_input;
 	binding_input.add_resource(scene, "res://animation_scene.tscn");
+	const int track_count_before = animation->get_track_count();
+	const NodePath value_path_before =
+			animation->track_get_path(value_track);
+	const Variant value_key_before =
+			animation->track_get_key_value(value_track, 0);
+	const Variant method_key_before =
+			animation->track_get_key_value(method_track, 0);
+	const Variant nested_value_before =
+			nested_resource->get(SNAME("nested_value"));
 
 	const FSNameManglerBindingSafety::Result result =
 			FSNameManglerBindingSafety::collect(binding_input, analysis_input);
 	REQUIRE_EQ(result.error, OK);
 	REQUIRE(result.complete);
+	CHECK_EQ(animation->get_track_count(), track_count_before);
+	CHECK_EQ(animation->track_get_path(value_track), value_path_before);
+	CHECK_EQ(
+			animation->track_get_key_value(value_track, 0),
+			value_key_before);
+	CHECK_EQ(
+			animation->track_get_key_value(method_track, 0),
+			method_key_before);
+	CHECK_FALSE(animation->track_is_enabled(value_track));
+	CHECK_EQ(
+			nested_resource->get(SNAME("nested_value")),
+			nested_value_before);
 	CHECK(binding_safety_has_evidence(
 			result, SNAME("animated_value"),
 			FSNameManglerBindingSafety::BINDING_ANIMATION_PROPERTY,
@@ -675,9 +701,16 @@ TEST_CASE("[FoundryScript][NameManglerBindingSafety] Acceptance text and binary 
 	project.write_file(
 			"project.foundry",
 			"[application]\nconfig/name=\"BindingSafety798\"\n");
+	const String base_path = project.root.path_join("base.fs");
 	const String emitter_path = project.root.path_join("emitter.fs");
 	const String receiver_path = project.root.path_join("receiver.fs");
 	const String config_path = project.root.path_join("config.fs");
+	project.write_file(
+			"base.fs",
+			"extends Node\n"
+			"@export var inherited_override: int\n"
+			"func private_base_name() -> void:\n"
+			"\tpass\n");
 	project.write_file(
 			"emitter.fs",
 			"extends Node\n"
@@ -686,17 +719,21 @@ TEST_CASE("[FoundryScript][NameManglerBindingSafety] Acceptance text and binary 
 			"\tpass\n");
 	project.write_file(
 			"receiver.fs",
-			"extends Node\n"
-			"@export var acceptance_value: float\n"
-			"func acceptance_method(value: int) -> void:\n"
-			"\tacceptance_value += value\n"
-			"func private_receiver_name() -> void:\n"
-			"\tpass\n");
+			vformat(
+					"extends \"%s\"\n"
+					"var animated_value: float\n"
+					"func acceptance_method(value: int) -> void:\n"
+					"\tinherited_override += value\n"
+					"func private_receiver_name() -> void:\n"
+					"\tpass\n",
+					base_path));
 	project.write_file(
 			"config.fs",
 			"class_name BindingAcceptanceConfig798 extends Resource\n"
 			"@export var config_value: int\n"
 			"var private_config_name: int\n");
+	const Ref<FoundryScript> base_script =
+			name_mangler_application_load_source(base_path);
 	const Ref<FoundryScript> emitter_script =
 			name_mangler_application_load_source(emitter_path);
 	const Ref<FoundryScript> receiver_script =
@@ -711,7 +748,7 @@ TEST_CASE("[FoundryScript][NameManglerBindingSafety] Acceptance text and binary 
 	animation.instantiate();
 	const int value_track = animation->add_track(Animation::TYPE_VALUE);
 	animation->track_set_path(
-			value_track, NodePath("Receiver:acceptance_value"));
+			value_track, NodePath("Receiver:animated_value"));
 	animation->track_insert_key(value_track, 0.0, 3.0);
 	Ref<AnimationLibrary> library;
 	library.instantiate();
@@ -739,8 +776,8 @@ TEST_CASE("[FoundryScript][NameManglerBindingSafety] Acceptance text and binary 
 			receiver, state->add_name(SNAME("script")),
 			state->add_value(receiver_script));
 	state->add_node_property(
-			receiver, state->add_name(SNAME("acceptance_value")),
-			state->add_value(2.0));
+			receiver, state->add_name(SNAME("inherited_override")),
+			state->add_value(2));
 	const int player = state->add_node(
 			root_node, root_node, player_type,
 			state->add_name(SNAME("AnimationPlayer")), -1, -1, 63);
@@ -798,6 +835,7 @@ TEST_CASE("[FoundryScript][NameManglerBindingSafety] Acceptance text and binary 
 	const Dictionary binary_scene_before =
 			binary_scene->get_state()->get_bundled_scene();
 	FSNameManglerAnalysis::Input analysis_input;
+	analysis_input.scripts.push_back(base_script);
 	analysis_input.scripts.push_back(emitter_script);
 	analysis_input.scripts.push_back(receiver_script);
 	analysis_input.scripts.push_back(config_script);
@@ -854,11 +892,11 @@ TEST_CASE("[FoundryScript][NameManglerBindingSafety] Acceptance text and binary 
 			FSNameManglerBindingSafety::BINDING_CONNECTION_METHOD,
 			"res://acceptance/main"));
 	CHECK(binding_safety_has_applied_evidence(
-			text_result, analysis, SNAME("acceptance_value"),
+			text_result, analysis, SNAME("inherited_override"),
 			FSNameManglerBindingSafety::BINDING_SERIALIZED_PROPERTY,
 			"res://acceptance/main"));
 	CHECK(binding_safety_has_applied_evidence(
-			text_result, analysis, SNAME("acceptance_value"),
+			text_result, analysis, SNAME("animated_value"),
 			FSNameManglerBindingSafety::BINDING_ANIMATION_PROPERTY,
 			"res://acceptance/main"));
 	CHECK(binding_safety_has_applied_evidence(
@@ -872,9 +910,11 @@ TEST_CASE("[FoundryScript][NameManglerBindingSafety] Acceptance text and binary 
 			"res://acceptance/config"));
 	CHECK_FALSE(analysis.rename_map.has(SNAME("acceptance_signal")));
 	CHECK_FALSE(analysis.rename_map.has(SNAME("acceptance_method")));
-	CHECK_FALSE(analysis.rename_map.has(SNAME("acceptance_value")));
+	CHECK_FALSE(analysis.rename_map.has(SNAME("inherited_override")));
+	CHECK_FALSE(analysis.rename_map.has(SNAME("animated_value")));
 	CHECK_FALSE(
 			analysis.rename_map.has(SNAME("BindingAcceptanceConfig798")));
+	CHECK(analysis.rename_map.has(SNAME("private_base_name")));
 	CHECK(analysis.rename_map.has(SNAME("private_emitter_name")));
 	CHECK(analysis.rename_map.has(SNAME("private_receiver_name")));
 	CHECK(analysis.rename_map.has(SNAME("private_config_name")));
@@ -887,6 +927,8 @@ TEST_CASE("[FoundryScript][NameManglerBindingSafety] Acceptance text and binary 
 					application_diagnostics),
 			OK);
 	REQUIRE(application_diagnostics.is_empty());
+	const Vector<uint8_t> base_buffer =
+			name_mangler_application_serialize(base_script);
 	const Vector<uint8_t> emitter_buffer =
 			name_mangler_application_serialize(emitter_script);
 	const Vector<uint8_t> receiver_buffer =
@@ -900,10 +942,14 @@ TEST_CASE("[FoundryScript][NameManglerBindingSafety] Acceptance text and binary 
 	CHECK(binding_safety_buffer_contains(
 			receiver_buffer, "acceptance_method"));
 	CHECK(binding_safety_buffer_contains(
-			receiver_buffer, "acceptance_value"));
+			base_buffer, "inherited_override"));
+	CHECK(binding_safety_buffer_contains(
+			receiver_buffer, "animated_value"));
 	CHECK(binding_safety_buffer_contains(
 			config_buffer, "BindingAcceptanceConfig798"));
 	CHECK(binding_safety_buffer_contains(config_buffer, "config_value"));
+	CHECK_FALSE(binding_safety_buffer_contains(
+			base_buffer, "private_base_name"));
 	CHECK_FALSE(binding_safety_buffer_contains(
 			emitter_buffer, "private_emitter_name"));
 	CHECK_FALSE(binding_safety_buffer_contains(
@@ -911,18 +957,25 @@ TEST_CASE("[FoundryScript][NameManglerBindingSafety] Acceptance text and binary 
 	CHECK_FALSE(binding_safety_buffer_contains(
 			config_buffer, "private_config_name"));
 
+	const String base_binary_path =
+			base_path.get_basename() + ".fsb";
 	const String emitter_binary_path =
 			emitter_path.get_basename() + ".fsb";
 	const String receiver_binary_path =
 			receiver_path.get_basename() + ".fsb";
 	const String config_binary_path =
 			config_path.get_basename() + ".fsb";
+	bytecode_write_file(base_binary_path, base_buffer);
 	bytecode_write_file(emitter_binary_path, emitter_buffer);
 	bytecode_write_file(receiver_binary_path, receiver_buffer);
 	bytecode_write_file(config_binary_path, config_buffer);
+	bytecode_write_remap_file(base_path, base_binary_path);
 	bytecode_write_remap_file(emitter_path, emitter_binary_path);
 	bytecode_write_remap_file(receiver_path, receiver_binary_path);
 	bytecode_write_remap_file(config_path, config_binary_path);
+	REQUIRE_EQ(
+			ResourceLoader::path_remap(base_path),
+			base_binary_path);
 	REQUIRE_EQ(
 			ResourceLoader::path_remap(emitter_path),
 			emitter_binary_path);
@@ -948,9 +1001,12 @@ TEST_CASE("[FoundryScript][NameManglerBindingSafety] Acceptance text and binary 
 	binary_scene->set_path(String());
 	text_config->set_path(String());
 	binary_config->set_path(String());
+	FSCache::remove_script(base_path);
 	FSCache::remove_script(emitter_path);
 	FSCache::remove_script(receiver_path);
 	FSCache::remove_script(config_path);
+	FSCache::remove_static_script(
+			base_script->get_fully_qualified_name());
 	FSCache::remove_static_script(
 			emitter_script->get_fully_qualified_name());
 	FSCache::remove_static_script(
@@ -989,9 +1045,12 @@ TEST_CASE("[FoundryScript][NameManglerBindingSafety] Acceptance text and binary 
 	CHECK(staged_binary == baseline_binary);
 	CHECK(staged_text == staged_binary);
 
+	FSCache::remove_script(base_path);
 	FSCache::remove_script(emitter_path);
 	FSCache::remove_script(receiver_path);
 	FSCache::remove_script(config_path);
+	FSCache::remove_static_script(
+			base_script->get_fully_qualified_name());
 	FSCache::remove_static_script(
 			emitter_script->get_fully_qualified_name());
 	FSCache::remove_static_script(
