@@ -2,7 +2,7 @@
 /*  os_android.cpp                                                        */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -45,10 +45,6 @@
 #include "core/profiling/profiling.h"
 #include "drivers/unix/dir_access_unix.h"
 #include "drivers/unix/file_access_unix.h"
-#ifdef TOOLS_ENABLED
-#include "editor/editor_node.h"
-#include "editor/run/game_view_plugin.h"
-#endif
 #include "main/main.h"
 #include "scene/main/scene_tree.h"
 #include "servers/rendering/rendering_server.h"
@@ -75,14 +71,6 @@ String _remove_symlink(const String &dir) {
 	return dir_without_symlink;
 }
 
-#ifdef TOOLS_ENABLED
-_FORCE_INLINE_ static GameViewPlugin *_get_game_view_plugin() {
-	ERR_FAIL_NULL_V(EditorNode::get_singleton(), nullptr);
-	ERR_FAIL_NULL_V(EditorNode::get_singleton()->get_editor_main_screen(), nullptr);
-	return Object::cast_to<GameViewPlugin>(EditorNode::get_singleton()->get_editor_main_screen()->get_plugin_by_name("Game"));
-}
-#endif
-
 class AndroidLogger : public Logger {
 public:
 	virtual void logv(const char *p_format, va_list p_list, bool p_err) {
@@ -100,29 +88,21 @@ void OS_Android::alert(const String &p_alert, const String &p_title) {
 void OS_Android::initialize_core() {
 	OS_Unix::initialize_core();
 
-#ifdef TOOLS_ENABLED
-	FileAccess::make_default<FileAccessUnix>(FileAccess::ACCESS_RESOURCES);
-#else // TOOLS_ENABLED
 	FileAccess::make_default<FileAccessAndroid>(FileAccess::ACCESS_RESOURCES);
 #if defined(OVERRIDE_PATH_ENABLED)
 	if (use_apk_expansion) {
 		FileAccess::make_default<FileAccessUnix>(FileAccess::ACCESS_RESOURCES);
 	}
 #endif // defined(OVERRIDE_PATH_ENABLED)
-#endif // TOOLS_ENABLED
 	FileAccess::make_default<FileAccessUnix>(FileAccess::ACCESS_USERDATA);
 	FileAccess::make_default<FileAccessFilesystemJAndroid>(FileAccess::ACCESS_FILESYSTEM);
 
-#ifdef TOOLS_ENABLED
-	DirAccess::make_default<DirAccessUnix>(DirAccess::ACCESS_RESOURCES);
-#else // TOOLS_ENABLED
 	DirAccess::make_default<DirAccessJAndroid>(DirAccess::ACCESS_RESOURCES);
 #if defined(OVERRIDE_PATH_ENABLED)
 	if (use_apk_expansion) {
 		DirAccess::make_default<DirAccessUnix>(DirAccess::ACCESS_RESOURCES);
 	}
 #endif // defined(OVERRIDE_PATH_ENABLED)
-#endif // TOOLS_ENABLED
 	DirAccess::make_default<DirAccessUnix>(DirAccess::ACCESS_USERDATA);
 	DirAccess::make_default<DirAccessJAndroid>(DirAccess::ACCESS_FILESYSTEM);
 
@@ -355,15 +335,6 @@ void OS_Android::main_loop_begin() {
 	if (main_loop) {
 		main_loop->initialize();
 	}
-
-#ifdef TOOLS_ENABLED
-	if (Engine::get_singleton()->is_editor_hint()) {
-		GameViewPlugin *game_view_plugin = _get_game_view_plugin();
-		if (game_view_plugin != nullptr) {
-			game_view_plugin->connect("main_screen_changed", callable_mp_static(&OS_Android::_on_main_screen_changed));
-		}
-	}
-#endif
 }
 
 bool OS_Android::main_loop_iterate(bool *r_should_swap_buffers) {
@@ -388,15 +359,6 @@ bool OS_Android::main_loop_iterate(bool *r_should_swap_buffers) {
 }
 
 void OS_Android::main_loop_end() {
-#ifdef TOOLS_ENABLED
-	if (Engine::get_singleton()->is_editor_hint()) {
-		GameViewPlugin *game_view_plugin = _get_game_view_plugin();
-		if (game_view_plugin != nullptr) {
-			game_view_plugin->disconnect("main_screen_changed", callable_mp_static(&OS_Android::_on_main_screen_changed));
-		}
-	}
-#endif
-
 	if (main_loop) {
 		SceneTree *scene_tree = Object::cast_to<SceneTree>(main_loop);
 		if (scene_tree) {
@@ -405,14 +367,6 @@ void OS_Android::main_loop_end() {
 		main_loop->finalize();
 	}
 }
-
-#ifdef TOOLS_ENABLED
-void OS_Android::_on_main_screen_changed(const String &p_screen_name) {
-	if (OS_Android::get_singleton() != nullptr && OS_Android::get_singleton()->get_foundry_java() != nullptr) {
-		OS_Android::get_singleton()->get_foundry_java()->on_editor_workspace_selected(p_screen_name);
-	}
-}
-#endif
 
 void OS_Android::main_loop_focusout() {
 	DisplayServerAndroid::get_singleton()->send_window_event(DisplayServer::WINDOW_EVENT_FOCUS_OUT);
@@ -435,15 +389,11 @@ Error OS_Android::shell_open(const String &p_uri) {
 }
 
 String OS_Android::get_resource_dir() const {
-#ifdef TOOLS_ENABLED
-	return OS_Unix::get_resource_dir();
-#else
 	if (remote_fs_dir.is_empty()) {
 		return "/"; // Android has its own filesystem for resources inside the APK
 	} else {
 		return remote_fs_dir;
 	}
-#endif
 }
 
 String OS_Android::get_locale() const {
@@ -823,37 +773,6 @@ void OS_Android::vibrate_handheld(int p_duration_ms, float p_amplitude) {
 String OS_Android::get_config_path() const {
 	return OS::get_user_data_dir().path_join("config");
 }
-
-void OS_Android::benchmark_begin_measure(const String &p_context, const String &p_what) {
-#ifdef TOOLS_ENABLED
-	foundry_java->begin_benchmark_measure(p_context, p_what);
-#endif
-}
-
-void OS_Android::benchmark_end_measure(const String &p_context, const String &p_what) {
-#ifdef TOOLS_ENABLED
-	foundry_java->end_benchmark_measure(p_context, p_what);
-#endif
-}
-
-void OS_Android::benchmark_dump() {
-#ifdef TOOLS_ENABLED
-	if (!is_use_benchmark_set()) {
-		return;
-	}
-	foundry_java->dump_benchmark(get_benchmark_file());
-#endif
-}
-
-#ifdef TOOLS_ENABLED
-Error OS_Android::sign_apk(const String &p_input_path, const String &p_output_path, const String &p_keystore_path, const String &p_keystore_user, const String &p_keystore_password) {
-	return foundry_java->sign_apk(p_input_path, p_output_path, p_keystore_path, p_keystore_user, p_keystore_password);
-}
-
-Error OS_Android::verify_apk(const String &p_apk_path) {
-	return foundry_java->verify_apk(p_apk_path);
-}
-#endif
 
 bool OS_Android::_check_internal_feature_support(const String &p_feature) {
 	if (p_feature == "macos" || p_feature == "web_ios" || p_feature == "web_macos" || p_feature == "windows") {

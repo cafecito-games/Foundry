@@ -6,7 +6,6 @@ plugins {
 ext {
     DEBUG_PUBLISH_ARTIFACT_ID = 'foundry-debug'
     PUBLISH_ARTIFACT_ID = 'foundry'
-    TOOLS_PUBLISH_ARTIFACT_ID = 'foundry-tools'
 }
 
 apply from: "../scripts/publish-module.gradle"
@@ -57,7 +56,6 @@ android {
 
     flavorDimensions = ["products"]
     productFlavors {
-        editor {}
         template {}
     }
 
@@ -83,10 +81,6 @@ android {
         dev.jniLibs.srcDirs = ['libs/dev']
         release.jniLibs.srcDirs = ['libs/release']
 
-        // Editor jni library
-        editorRelease.jniLibs.srcDirs = ['libs/tools/release']
-        editorDebug.jniLibs.srcDirs = ['libs/tools/debug']
-        editorDev.jniLibs.srcDirs = ['libs/tools/dev']
     }
 
     libraryVariants.all { variant ->
@@ -103,8 +97,7 @@ android {
         boolean devBuild = buildType == "dev"
         boolean debugSymbols = devBuild
         boolean runTests = devBuild
-        boolean storeRelease = buildType == "release"
-        boolean productionBuild = storeRelease
+        boolean productionBuild = buildType == "release"
 
         def sconsTarget = flavorName
         if (sconsTarget == "template") {
@@ -169,7 +162,7 @@ android {
             def taskName = getSconsTaskName(flavorName, buildType, selectedAbi)
             tasks.create(name: taskName, type: Exec) {
                 executable sconsExecutableFile.absolutePath
-                args "--directory=${pathToRootDir}", "platform=android", "store_release=${storeRelease}", "production=${productionBuild}", "dev_mode=${devBuild}", "dev_build=${devBuild}", "debug_symbols=${debugSymbols}", "tests=${runTests}", "target=${sconsTarget}", "arch=${selectedAbi}", "-j" + Runtime.runtime.availableProcessors()
+                args "--directory=${pathToRootDir}", "platform=android", "production=${productionBuild}", "dev_mode=${devBuild}", "dev_build=${devBuild}", "debug_symbols=${debugSymbols}", "tests=${runTests}", "target=${sconsTarget}", "arch=${selectedAbi}", "-j" + Runtime.runtime.availableProcessors()
             }
 
             // Schedule the tasks so the generated libs are present before the aar file is packaged.
@@ -183,10 +176,6 @@ android {
             withJavadocJar()
         }
         singleVariant("templateRelease") {
-            withSourcesJar()
-            withJavadocJar()
-        }
-        singleVariant("editorRelease") {
             withSourcesJar()
             withJavadocJar()
         }

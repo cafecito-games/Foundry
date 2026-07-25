@@ -56,7 +56,6 @@ import androidx.core.view.WindowInsetsAnimationCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.google.android.vending.expansion.downloader.*
-import games.cafecito.foundry.error.Error
 import games.cafecito.foundry.input.FoundryEditText
 import games.cafecito.foundry.input.FoundryInputHandler
 import games.cafecito.foundry.io.FilePicker
@@ -71,16 +70,10 @@ import games.cafecito.foundry.utils.FoundryNetUtils
 import games.cafecito.foundry.utils.PermissionsUtil
 import games.cafecito.foundry.utils.PermissionsUtil.requestPermission
 import games.cafecito.foundry.utils.addTranslucentSystemBarFlagsCompat
-import games.cafecito.foundry.utils.beginBenchmarkMeasure
-import games.cafecito.foundry.utils.benchmarkFile
-import games.cafecito.foundry.utils.dumpBenchmark
-import games.cafecito.foundry.utils.endBenchmarkMeasure
 import games.cafecito.foundry.utils.getLongVersionCodeCompat
 import games.cafecito.foundry.utils.getVibratorServiceCompat
 import games.cafecito.foundry.utils.turnScreenOnCompat
-import games.cafecito.foundry.utils.useBenchmark
 import games.cafecito.foundry.utils.vibrateCompat
-import games.cafecito.foundry.variant.Callable as FoundryCallable
 import games.cafecito.foundry.xr.XRMode
 import java.io.File
 import java.io.FileInputStream
@@ -114,15 +107,6 @@ class Foundry private constructor(val context: Context) {
 		}
 
 		private const val EXIT_RENDERER_TIMEOUT_IN_MS = 1500L
-
-		// Supported build flavors
-		private const val EDITOR_FLAVOR = "editor"
-		private const val TEMPLATE_FLAVOR = "template"
-
-		/**
-		 * @return true if this is an editor build, false if this is a template build
-		 */
-		internal fun isEditorBuild() = BuildConfig.FLAVOR == EDITOR_FLAVOR
 	}
 
 	/**
@@ -252,8 +236,7 @@ class Foundry private constructor(val context: Context) {
 
 		darkMode = context.resources?.configuration?.uiMode?.and(Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
 
-		beginBenchmarkMeasure("Startup", "Foundry::initEngine")
-		try {
+		run {
 			this.primaryHost = host
 
 			Log.v(TAG, "Initializing Foundry plugin registry")
@@ -299,16 +282,10 @@ class Foundry private constructor(val context: Context) {
 					editor.apply()
 					i++
 				} else if (commandLine[i] == "--benchmark") {
-					useBenchmark = true
 					newArgs.add(commandLine[i])
 				} else if (hasExtra && commandLine[i] == "--benchmark-file") {
-					useBenchmark = true
 					newArgs.add(commandLine[i])
-
-					// Retrieve the filepath
-					benchmarkFile = commandLine[i + 1]
 					newArgs.add(commandLine[i + 1])
-
 					i++
 				} else if (commandLine[i].trim().isNotEmpty()) {
 					newArgs.add(commandLine[i])
@@ -372,8 +349,6 @@ class Foundry private constructor(val context: Context) {
 					Log.v(TAG, "Foundry native layer setup completed")
 				}
 			}
-		} finally {
-			endBenchmarkMeasure("Startup", "Foundry::initEngine")
 		}
 		return isNativeInitialized()
 	}
@@ -413,12 +388,7 @@ class Foundry private constructor(val context: Context) {
 			ViewCompat.setOnApplyWindowInsetsListener(rootView) { v: View, insets: WindowInsetsCompat ->
 				v.post {
 					if (useImmersive.get()) {
-						if (isEditorBuild()) {
-							val windowInsets = insets.getInsets(WindowInsetsCompat.Type.displayCutout())
-							v.setPadding(windowInsets.left, windowInsets.top, windowInsets.right, windowInsets.bottom)
-						} else {
-							v.setPadding(0, 0, 0, 0)
-						}
+						v.setPadding(0, 0, 0, 0)
 					} else {
 						val windowInsets = insets.getInsets(getInsetType())
 						v.setPadding(windowInsets.left, windowInsets.top, windowInsets.right, windowInsets.bottom)
@@ -430,7 +400,7 @@ class Foundry private constructor(val context: Context) {
 	}
 
 	private fun getInsetType(): Int {
-		return if (!useImmersive.get() || isEditorBuild()) {
+		return if (!useImmersive.get()) {
 			WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
 		} else {
 			WindowInsetsCompat.Type.systemBars()
@@ -462,8 +432,7 @@ class Foundry private constructor(val context: Context) {
 			val hasStatusBar = if (activity.theme.resolveAttribute(android.R.attr.windowFullscreen, fullScreenThemeValue, true) && fullScreenThemeValue.type == TypedValue.TYPE_INT_BOOLEAN) {
 				fullScreenThemeValue.data == 0
 			} else {
-				// Fallback to checking the editor build
-				!isEditorBuild()
+				true
 			}
 
 			val types = if (hasStatusBar) {
@@ -542,7 +511,6 @@ class Foundry private constructor(val context: Context) {
 			throw IllegalStateException("initEngine(...) must be invoked successfully prior to initializing the render view")
 		}
 
-		beginBenchmarkMeasure("Startup", "Foundry::onInitRenderView")
 		Log.v(TAG, "OnInitRenderView: $host")
 		try {
 			this.primaryHost = host
@@ -577,9 +545,7 @@ class Foundry private constructor(val context: Context) {
 
 			// Check whether the render view should be made transparent
 			val shouldBeTransparent =
-				!isProjectManagerHint() &&
-					!isEditorHint() &&
-					java.lang.Boolean.parseBoolean(FoundryLib.getGlobal("display/window/per_pixel_transparency/allowed"))
+				java.lang.Boolean.parseBoolean(FoundryLib.getGlobal("display/window/per_pixel_transparency/allowed"))
 			Log.d(TAG, "Render view should be transparent: $shouldBeTransparent")
 			renderView = if (usesVulkan()) {
 				if (meetsVulkanRequirements(context.packageManager)) {
@@ -687,8 +653,6 @@ class Foundry private constructor(val context: Context) {
 				containerLayout?.removeAllViews()
 				containerLayout = null
 			}
-
-			endBenchmarkMeasure("Startup", "Foundry::onInitRenderView")
 		}
 		return containerLayout
 	}
@@ -1182,16 +1146,6 @@ class Foundry private constructor(val context: Context) {
 	}
 
 	/**
-	 * Returns true if this is the Foundry editor.
-	 */
-	fun isEditorHint() = isEditorBuild() && FoundryLib.isEditorHint()
-
-	/**
-	 * Returns true if this is the Foundry project manager.
-	 */
-	fun isProjectManagerHint() = isEditorBuild() && FoundryLib.isProjectManagerHint()
-
-	/**
 	 * Returns true if the feature for the given feature tag is supported in the currently running instance, depending
 	 * on the platform, build, etc.
 	 *
@@ -1281,101 +1235,6 @@ class Foundry private constructor(val context: Context) {
 	@Keep
 	private fun createNewFoundryInstance(args: Array<String>): Int {
 		return primaryHost?.onNewFoundryInstanceRequested(args) ?: -1
-	}
-
-	@Keep
-	private fun nativeBeginBenchmarkMeasure(scope: String, label: String) {
-		beginBenchmarkMeasure(scope, label)
-	}
-
-	@Keep
-	private fun nativeEndBenchmarkMeasure(scope: String, label: String) {
-		endBenchmarkMeasure(scope, label)
-	}
-
-	@Keep
-	private fun nativeDumpBenchmark(benchmarkFile: String) {
-		dumpBenchmark(fileAccessHandler, benchmarkFile)
-	}
-
-	@Keep
-	private fun nativeSignApk(inputPath: String,
-							  outputPath: String,
-							  keystorePath: String,
-							  keystoreUser: String,
-							  keystorePassword: String): Int {
-		val signResult = primaryHost?.signApk(inputPath, outputPath, keystorePath, keystoreUser, keystorePassword) ?: Error.ERR_UNAVAILABLE
-		return signResult.toNativeValue()
-	}
-
-	@Keep
-	private fun nativeVerifyApk(apkPath: String): Int {
-		val verifyResult = primaryHost?.verifyApk(apkPath) ?: Error.ERR_UNAVAILABLE
-		return verifyResult.toNativeValue()
-	}
-
-	@Keep
-	private fun nativeOnEditorWorkspaceSelected(workspace: String) {
-		primaryHost?.onEditorWorkspaceSelected(workspace)
-	}
-
-	@Keep
-	private fun nativeBuildEnvConnect(callback: FoundryCallable): Boolean {
-		try {
-			val buildProvider = primaryHost?.getBuildProvider()
-			return buildProvider?.buildEnvConnect(callback) ?: false
-		} catch (e: Exception) {
-			Log.e(TAG, "Unable to connect to build environment", e)
-			return false
-		}
-	}
-
-	@Keep
-	private fun nativeBuildEnvDisconnect() {
-		try {
-			val buildProvider = primaryHost?.getBuildProvider()
-			buildProvider?.buildEnvDisconnect()
-		} catch (e: Exception) {
-			Log.e(TAG, "Unable to disconnect from build environment", e)
-		}
-	}
-
-	@Keep
-	private fun nativeBuildEnvExecute(buildTool: String, arguments: Array<String>, projectPath: String, buildDir: String, outputCallback: FoundryCallable, resultCallback: FoundryCallable): Int {
-		try {
-			val buildProvider = primaryHost?.getBuildProvider()
-			return buildProvider?.buildEnvExecute(
-				buildTool,
-				arguments,
-				projectPath,
-				buildDir,
-				outputCallback,
-				resultCallback
-			) ?: -1
-		} catch (e: Exception) {
-			Log.e(TAG, "Unable to execute Gradle command in build environment", e);
-			return -1
-		}
-	}
-
-	@Keep
-	private fun nativeBuildEnvCancel(jobId: Int) {
-		try {
-			val buildProvider = primaryHost?.getBuildProvider()
-			buildProvider?.buildEnvCancel(jobId)
-		} catch (e: Exception) {
-			Log.e(TAG, "Unable to cancel command in build environment", e)
-		}
-	}
-
-	@Keep
-	private fun nativeBuildEnvCleanProject(projectPath: String, buildDir: String, callback: FoundryCallable) {
-		try {
-			val buildProvider = primaryHost?.getBuildProvider()
-			buildProvider?.buildEnvCleanProject(projectPath, buildDir, callback)
-		} catch(e: Exception) {
-			Log.e(TAG, "Unable to clean project in build environment", e)
-		}
 	}
 
 }

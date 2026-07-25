@@ -23,7 +23,6 @@ rootProject.name = "Foundry"
 include ':app'
 include ':lib'
 include ':nativeSrcsConfigs'
-include ':editor'
 
 include ':assetPackInstallTime'
 project(':assetPackInstallTime').projectDir = file("app/assetPackInstallTime")

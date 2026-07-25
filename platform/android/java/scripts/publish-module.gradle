@@ -81,43 +81,6 @@ afterEvaluate {
                     }
                 }
             }
-            toolsRelease(MavenPublication) {
-                from components.editorRelease
-
-                // The coordinates of the library, being set from variables that
-                // we'll set up later
-                groupId ossrhGroupId
-                artifactId TOOLS_PUBLISH_ARTIFACT_ID
-                version PUBLISH_VERSION
-
-                // Mostly self-explanatory metadata
-                pom {
-                    name = TOOLS_PUBLISH_ARTIFACT_ID
-                    description = 'Foundry Engine Tools Android Library - Editor Build'
-                    url = 'https://www.cafecito.games/'
-                    licenses {
-                        license {
-                            name = 'MIT License'
-                            url = 'https://github.com/cafecito-games/Foundry/blob/develop/LICENSE.txt'
-                        }
-                    }
-                    developers {
-                        developer {
-                            id = 'cafecito-games'
-                            name = 'CafecitoGames'
-                            email = 'csueiras@gmail.com'
-                        }
-                    }
-
-                    // Version control info - if you're using GitHub, follow the
-                    // format as seen here
-                    scm {
-                        connection = 'scm:git:github.com/cafecito-games/Foundry.git'
-                        developerConnection = 'scm:git:ssh://github.com/cafecito-games/Foundry.git'
-                        url = 'https://github.com/cafecito-games/Foundry/tree/develop'
-                    }
-                }
-            }
         }
     }
 }

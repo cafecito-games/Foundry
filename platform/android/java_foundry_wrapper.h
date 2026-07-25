@@ -2,7 +2,7 @@
 /*  java_foundry_wrapper.h                                                */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -73,22 +73,11 @@ private:
 	jmethodID _on_foundry_terminating = nullptr;
 	jmethodID _create_new_foundry_instance = nullptr;
 	jmethodID _get_render_view = nullptr;
-	jmethodID _begin_benchmark_measure = nullptr;
-	jmethodID _end_benchmark_measure = nullptr;
-	jmethodID _dump_benchmark = nullptr;
 	jmethodID _check_internal_feature_support = nullptr;
-	jmethodID _sign_apk = nullptr;
-	jmethodID _verify_apk = nullptr;
 	jmethodID _enable_immersive_mode = nullptr;
 	jmethodID _is_in_immersive_mode = nullptr;
 	jmethodID _set_window_color = nullptr;
-	jmethodID _on_editor_workspace_selected = nullptr;
 	jmethodID _get_activity = nullptr;
-	jmethodID _build_env_connect = nullptr;
-	jmethodID _build_env_disconnect = nullptr;
-	jmethodID _build_env_execute = nullptr;
-	jmethodID _build_env_cancel = nullptr;
-	jmethodID _build_env_clean_project = nullptr;
 
 public:
 	FoundryJavaWrapper(JNIEnv *p_env, jobject p_foundry_instance);
@@ -126,9 +115,6 @@ public:
 	void vibrate(int p_duration_ms, float p_amplitude = -1.0);
 	String get_input_fallback_mapping();
 	int create_new_foundry_instance(const List<String> &args);
-	void begin_benchmark_measure(const String &p_context, const String &p_label);
-	void end_benchmark_measure(const String &p_context, const String &p_label);
-	void dump_benchmark(const String &benchmark_file);
 
 	// Return the list of foundry_extensions config file.
 	Vector<String> get_foundry_extension_list_config_file() const;
@@ -136,20 +122,8 @@ public:
 	// Return true if the given feature is supported.
 	bool check_internal_feature_support(const String &p_feature) const;
 
-	// Sign and verify apks
-	Error sign_apk(const String &p_input_path, const String &p_output_path, const String &p_keystore_path, const String &p_keystore_user, const String &p_keystore_password);
-	Error verify_apk(const String &p_apk_path);
-
 	void enable_immersive_mode(bool p_enabled);
 	bool is_in_immersive_mode();
 
 	void set_window_color(const Color &p_color);
-
-	void on_editor_workspace_selected(const String &p_workspace);
-
-	bool build_env_connect(const Callable &p_callback);
-	void build_env_disconnect();
-	int build_env_execute(const String &p_build_tool, const List<String> &p_arguments, const String &p_project_path, const String &p_gradle_build_directory, const Callable &p_output_callback, const Callable &p_result_callback);
-	void build_env_cancel(int p_job_id);
-	void build_env_clean_project(const String &p_project_path, const String &p_gradle_build_directory, const Callable &p_callback);
 };

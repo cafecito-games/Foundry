@@ -2,7 +2,7 @@
 /*  export.cpp                                                            */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -51,9 +51,6 @@ void register_android_exporter() {
 	EDITOR_DEF_BASIC("export/android/debug_keystore_pass", DEFAULT_ANDROID_KEYSTORE_DEBUG_PASSWORD);
 	EditorSettings::get_singleton()->add_property_hint(PropertyInfo(Variant::STRING, "export/android/debug_keystore_pass", PROPERTY_HINT_PASSWORD));
 
-#ifdef ANDROID_ENABLED
-	EDITOR_DEF_BASIC("export/android/install_exported_apk", !OS::get_singleton()->has_feature("horizonos"));
-#else
 	EDITOR_DEF_BASIC("export/android/java_sdk_path", OS::get_singleton()->get_environment("JAVA_HOME"));
 	EditorSettings::get_singleton()->add_property_hint(PropertyInfo(Variant::STRING, "export/android/java_sdk_path", PROPERTY_HINT_GLOBAL_DIR));
 
@@ -81,7 +78,6 @@ void register_android_exporter() {
 
 	EDITOR_DEF("export/android/use_wifi_for_remote_debug", false);
 	EDITOR_DEF("export/android/wifi_remote_debug_host", "localhost");
-#endif
 
 	Ref<EditorExportPlatformAndroid> exporter = Ref<EditorExportPlatformAndroid>(memnew(EditorExportPlatformAndroid));
 	EditorExport::get_singleton()->add_export_platform(exporter);

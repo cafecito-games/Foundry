@@ -33,7 +33,6 @@ def get_opts():
             'Target platform (android-<api>, e.g. "android-' + str(get_min_target_api()) + '")',
             "android-" + str(get_min_target_api()),
         ),
-        BoolVariable("store_release", "Editor build for Google Play Store (for official builds only)", False),
         BoolVariable(
             ("generate_android_binaries", "generate_apk"),
             "Generate APK, AAB & AAR binaries after building Android library by calling Gradle",
@@ -115,6 +114,10 @@ def detect_swappy():
 
 
 def configure(env: "SConsEnvironment"):
+    if env.editor_build:
+        print_error("Android does not support target=editor; use target=template_debug or target=template_release.")
+        sys.exit(255)
+
     # Validate arch.
     supported_arches = ["x86_32", "x86_64", "arm32", "arm64"]
     validate_arch(env["arch"], get_name(), supported_arches)
