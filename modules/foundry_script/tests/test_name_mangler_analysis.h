@@ -123,6 +123,33 @@ TEST_CASE("[FoundryScript][NameManglerAnalysis] Classifies a compiled project co
 	CHECK(name_analysis_has_reason(result, SNAME("string_named"), FSNameManglerAnalysis::KEEP_STRING_LITERAL));
 }
 
+TEST_CASE("[FoundryScript][NameManglerAnalysis] Classifies local and qualified global class names") {
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"namespace name_analysis\n"
+			"class_name QualifiedCandidate\n");
+	REQUIRE_EQ(script->get_local_name(), SNAME("QualifiedCandidate"));
+	REQUIRE_EQ(script->get_global_name(), SNAME("name_analysis.QualifiedCandidate"));
+
+	FSNameManglerAnalysis::Input input;
+	input.scripts.push_back(script);
+	const FSNameManglerAnalysis::Result result = FSNameManglerAnalysis::analyze(input);
+
+	REQUIRE(result.error == OK);
+	const FSNameManglerAnalysis::Classification *local = result.find(SNAME("QualifiedCandidate"));
+	REQUIRE(local != nullptr);
+	if (local != nullptr) {
+		CHECK(local->kinds.has(FSNameManglerAnalysis::IDENTIFIER_CLASS));
+	}
+	CHECK(result.rename_map.has(SNAME("QualifiedCandidate")));
+	const FSNameManglerAnalysis::Classification *global =
+			result.find(SNAME("name_analysis.QualifiedCandidate"));
+	REQUIRE(global != nullptr);
+	if (global != nullptr) {
+		CHECK(global->kinds.has(FSNameManglerAnalysis::IDENTIFIER_CLASS));
+	}
+	CHECK(result.rename_map.has(SNAME("name_analysis.QualifiedCandidate")));
+}
+
 TEST_CASE("[FoundryScript][NameManglerAnalysis] Recurses through constants and only treats NodePath subnames as evidence") {
 	const Ref<FoundryScript> script = compile_bytecode_test_source(
 			"var literal_kept: int\n"

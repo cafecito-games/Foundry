@@ -389,7 +389,7 @@ void FSNameManglerAnalysis::_collect_class(const FoundryScript *p_class, BuildSt
 	const String source = p_class->get_script_path();
 	_collect_external_class_surface(p_class->base.ptr(), source + " external base", r_state);
 	_add_candidate(p_class->local_name, IDENTIFIER_CLASS, r_state);
-	r_state.observed_names.insert(p_class->global_name);
+	_add_candidate(p_class->global_name, IDENTIFIER_CLASS, r_state);
 	r_state.observed_names.insert(StringName(p_class->fully_qualified_name));
 
 	for (const StringName &member : p_class->members) {
