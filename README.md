@@ -93,8 +93,62 @@ for repository conventions.
 
 ### Binary downloads
 
-Pre-built Foundry binaries are not yet published. Until they are, build from
-source as above.
+Published editor binaries and export templates are available from the
+[Foundry releases](https://github.com/cafecito-games/Foundry/releases).
+
+### Headless container
+
+Published releases are also available at `ghcr.io/cafecito-games/foundry` as a
+minimal `linux/amd64` image for Foundry Script tooling and project-owned test
+runners:
+
+```sh
+docker pull ghcr.io/cafecito-games/foundry:v0.1.0-alpha.9
+```
+
+Every image has an exact tag matching its Git release tag, including the leading
+`v`. Moving tags are channel-specific: `latest-alpha`, `latest-beta`, and
+`latest-rc` track prereleases, while `latest` tracks stable releases only.
+
+The image automatically passes `--headless` to Foundry and uses `/workspace` as
+its working directory:
+
+```sh
+docker run --rm \
+  -v "$PWD:/workspace" \
+  ghcr.io/cafecito-games/foundry:latest-alpha \
+  script lint .
+
+docker run --rm \
+  -v "$PWD:/workspace" \
+  ghcr.io/cafecito-games/foundry:latest-alpha \
+  project test --project . --runner res://tests/runner.fs
+
+docker run --rm \
+  ghcr.io/cafecito-games/foundry:latest-alpha \
+  script eval 'print("ok")'
+```
+
+The container runs as the non-root UID/GID `10001:10001`. Read-only commands
+work with readable bind mounts (for example, use `:ro` for linting). Commands
+that rewrite files require a writable bind mount. On a host whose checkout has
+a different owner, run mutating commands with the host UID/GID and a temporary
+writable home:
+
+```sh
+docker run --rm \
+  --user "$(id -u):$(id -g)" \
+  -e HOME=/tmp/foundry-home \
+  -v "$PWD:/workspace" \
+  ghcr.io/cafecito-games/foundry:latest-alpha \
+  script format --write .
+```
+
+The initial image is `linux/amd64` only and contains Foundry plus its runtime
+libraries, not export templates, compilers, Git, or the internal engine test
+suite. The GHCR package is intended to be public; after its first publication,
+an organization administrator must confirm that the package visibility is
+Public in GitHub Packages.
 
 ## About Godot
 
