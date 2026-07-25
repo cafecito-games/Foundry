@@ -44,29 +44,29 @@ bool FSDataType::_script_conforms_to_trait(const Ref<Script> &p_base, const Stri
 	while (script.is_valid()) {
 		// The registry keys a target by its FQCN, global class name, and script path; try each alias.
 		const FoundryScript *foundry_script = Object::cast_to<FoundryScript>(script.ptr());
-		if (foundry_script != nullptr && registry->has_conformance(foundry_script->get_fully_qualified_name(), p_trait)) {
+		if (foundry_script != nullptr && registry->has_conformance(foundry_script->get_fully_qualified_name(), p_trait, true)) {
 			return true;
 		}
 		const StringName global_name = script->get_global_name();
-		if (global_name != StringName() && registry->has_conformance(String(global_name), p_trait)) {
+		if (global_name != StringName() && registry->has_conformance(String(global_name), p_trait, true)) {
 			return true;
 		}
 		const String script_path = script->get_path();
-		if (!script_path.is_empty() && registry->has_conformance(script_path, p_trait)) {
+		if (!script_path.is_empty() && registry->has_conformance(script_path, p_trait, true)) {
 			return true;
 		}
 		script = script->get_base_script();
 	}
 	// A conformance declared on the value's native base class (`extend Node uses ...`) applies to any
 	// script extending that class.
-	return registry->native_class_conforms(p_base->get_instance_base_type(), p_trait);
+	return registry->native_class_conforms(p_base->get_instance_base_type(), p_trait, true);
 }
 
 bool FSDataType::_native_class_conforms_to_trait(const StringName &p_native_class, const StringName &p_trait) {
 	if (p_native_class == StringName() || p_trait == StringName()) {
 		return false;
 	}
-	return FSConformanceRegistry::get_singleton()->native_class_conforms(p_native_class, p_trait);
+	return FSConformanceRegistry::get_singleton()->native_class_conforms(p_native_class, p_trait, true);
 }
 
 static FSDataType _gdtype_from_container_type(const ContainerType &p_container_type, bool p_is_type_handle) {

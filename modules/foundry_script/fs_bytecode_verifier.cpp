@@ -42,8 +42,12 @@
 			vformat("Malformed compiled function '%s' in script '%s': %s.", String(function_name), p_script_path, \
 					String(m_reason)))
 
-Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_member_address_count, const String &p_script_path) {
+Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_member_address_count,
+		const String &p_script_path, Vector<int> *r_operator_cache_offsets) {
 	ERR_FAIL_NULL_V(p_function, ERR_INVALID_PARAMETER);
+	if (r_operator_cache_offsets != nullptr) {
+		r_operator_cache_offsets->clear();
+	}
 
 	const String function_name = p_function->name;
 	const Vector<int> &code = p_function->code;
@@ -90,6 +94,7 @@ Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_me
 	// Every jump/branch/iterate target and default-argument entry, validated after the walk once all
 	// instruction boundaries are known (targets may point forward).
 	LocalVector<int> jump_targets;
+	Vector<int> operator_cache_offsets;
 
 	// Validates a packed address operand at an already-in-bounds code offset.
 	const auto check_address = [&](int p_operand_offset) -> bool {
@@ -126,6 +131,7 @@ Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_me
 				CHECK_ADDR(ip + 1);
 				CHECK_ADDR(ip + 2);
 				CHECK_ADDR(ip + 3);
+				operator_cache_offsets.push_back(ip);
 				ip += length;
 			} break;
 			case FSFunction::OPCODE_OPERATOR_VALIDATED: {
@@ -785,5 +791,8 @@ Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_me
 #undef COLLECT_JUMP
 #undef VERIFY_FAIL_COND
 
+	if (r_operator_cache_offsets != nullptr) {
+		*r_operator_cache_offsets = operator_cache_offsets;
+	}
 	return OK;
 }

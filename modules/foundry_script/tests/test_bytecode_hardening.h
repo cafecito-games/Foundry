@@ -680,6 +680,18 @@ TEST_CASE("[FoundryScript][BytecodeHardening] Executed operator inline cache is 
 	// The round-tripped function re-heals its cache on first run and computes the same result.
 	const Variant restored_result = bytecode_call_function(restored, arguments);
 	CHECK((int64_t)restored_result == 5);
+	const Vector<int> &restored_operator_offsets =
+			restored->export_fixups.operator_cache_offsets;
+	REQUIRE_EQ(restored_operator_offsets.size(), 1);
+	if (restored_operator_offsets.size() == 1) {
+		CHECK_EQ(restored_operator_offsets[0], operator_offset);
+	}
+
+	// A loaded function must retain the symbolic cache descriptor too. Otherwise exporting it after
+	// execution would persist the process-local signature, return type, and raw evaluator pointer.
+	const Vector<uint8_t> restored_payload =
+			bytecode_serialize_function_payload(exporter, restored);
+	CHECK_EQ(restored_payload, payload);
 
 	bytecode_destroy_restored_function(script, restored);
 }

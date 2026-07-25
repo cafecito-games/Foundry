@@ -43,10 +43,10 @@
 //
 // `Result::rename_map` contains atomic declaration identifiers only. Structured identities such as
 // script paths, `fully_qualified_name`, conformance target aliases, and generic type-parameter names
-// are reserved for collision avoidance but are not flat map keys. A later mutation pass must rewrite
-// their declaration-name components structurally while preserving path/namespace syntax; it must not
-// serialize an original terminal class segment merely because the whole structured spelling is absent
-// from the map.
+// are reserved for collision avoidance but are not flat map keys. `FSNameManglerApplication`
+// rebuilds those identities from mapped atomic declaration-name components while preserving
+// path/namespace syntax; it never treats a complete registered-global or FQCN spelling as one map
+// source.
 class FSNameManglerAnalysis {
 public:
 	enum IdentifierKind {
@@ -110,19 +110,33 @@ private:
 	static void _collect_class(const FoundryScript *p_class, BuildState &r_state);
 	static void _collect_external_class_surface(
 			const FoundryScript *p_class, const String &p_source, BuildState &r_state);
+	static void _collect_external_script_surface(
+			const Script *p_script, const String &p_source, BuildState &r_state, int p_depth = 0);
 	static void _collect_function(const FSFunction *p_function, BuildState &r_state);
 	static void _collect_variant(const Variant &p_value, const String &p_source, BuildState &r_state, int p_depth = 0);
+	static void _collect_data_type(
+			const FSDataType &p_type, const String &p_source, BuildState &r_state, int p_depth = 0);
+	static void _collect_property_info(
+			const PropertyInfo &p_info, const String &p_source, BuildState &r_state, bool p_external_surface = false);
+	static void _collect_container_type(
+			const ContainerType &p_type, const String &p_source, BuildState &r_state, int p_depth = 0);
+	static void _index_global_protected_names(BuildState &r_state);
 	static void _add_candidate(const StringName &p_name, IdentifierKind p_kind, BuildState &r_state);
 	static void _add_evidence(const StringName &p_name, KeepReason p_reason, const String &p_detail, BuildState &r_state);
 	static void _add_string_evidence(const String &p_name, const String &p_source, BuildState &r_state);
+	static void _add_protected_name(
+			const StringName &p_name, const String &p_source, BuildState &r_state);
+	static void _add_protected_identity(
+			const String &p_identity, const String &p_source, BuildState &r_state);
+	static void _add_protected_path(
+			const String &p_path, const String &p_source, BuildState &r_state);
 	static void _add_external_surface_name(
 			const StringName &p_name, const String &p_source, BuildState &r_state);
-	static bool _is_included_class_identity(const String &p_identity, const BuildState &p_state);
+	static bool _is_included_identity(const String &p_identity, const BuildState &p_state);
 	static void _collect_class_identity_reference(
 			const String &p_identity, const String &p_source, BuildState &r_state);
 	static void _record_reflection_use(
 			const StringName &p_method, const StringName &p_class, const String &p_source, BuildState &r_state);
-	static bool _collides_with_builtin_api(const StringName &p_name, const Vector<IdentifierKind> &p_kinds);
 };
 
 #endif // TOOLS_ENABLED

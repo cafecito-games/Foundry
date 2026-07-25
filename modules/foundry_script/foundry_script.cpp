@@ -1912,7 +1912,7 @@ void FoundryScript::get_script_trait_list(List<StringName> *r_traits) const {
 	_get_script_trait_list(r_traits, seen, true);
 }
 
-bool FoundryScript::has_script_trait(const StringName &p_trait) const {
+bool FoundryScript::_has_script_trait(const StringName &p_trait, bool p_include_runtime) const {
 	// A trait conforms to its own identity. This is normally unobservable because
 	// traits cannot be instantiated, but a dynamic proxy whose `get_script()` is the
 	// trait itself must satisfy `proxy is ThatTrait`.
@@ -1930,27 +1930,35 @@ bool FoundryScript::has_script_trait(const StringName &p_trait) const {
 	// than this script's own `script_trait_list`, so consult it by every identity alias the
 	// registry keys a target by (FQCN / global class name / script path).
 	const FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
-	if (registry->has_conformance(get_fully_qualified_name(), p_trait)) {
+	if (registry->has_conformance(get_fully_qualified_name(), p_trait, p_include_runtime)) {
 		return true;
 	}
 	const StringName script_global_name = get_global_name();
-	if (script_global_name != StringName() && registry->has_conformance(String(script_global_name), p_trait)) {
+	if (script_global_name != StringName() && registry->has_conformance(String(script_global_name), p_trait, p_include_runtime)) {
 		return true;
 	}
 	const String script_path = get_script_path();
-	if (!script_path.is_empty() && registry->has_conformance(script_path, p_trait)) {
+	if (!script_path.is_empty() && registry->has_conformance(script_path, p_trait, p_include_runtime)) {
 		return true;
 	}
 
 	if (base.is_valid()) {
-		return base->has_script_trait(p_trait);
+		return base->_has_script_trait(p_trait, p_include_runtime);
 	}
 #ifdef TOOLS_ENABLED
 	else if (base_cache.is_valid()) {
-		return base_cache->has_script_trait(p_trait);
+		return base_cache->_has_script_trait(p_trait, p_include_runtime);
 	}
 #endif
 	return false;
+}
+
+bool FoundryScript::has_script_trait(const StringName &p_trait) const {
+	return _has_script_trait(p_trait, true);
+}
+
+bool FoundryScript::has_script_trait_parse(const StringName &p_trait) const {
+	return _has_script_trait(p_trait, false);
 }
 
 TypedArray<FSTypeParameter> FoundryScript::_get_type_parameter_list() const {

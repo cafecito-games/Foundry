@@ -270,6 +270,7 @@ TEST_CASE("[FoundryScript][NameManglerKeepRules] Matches canonical class identit
 	CHECK(keep_rules_has_reason(result, SNAME("root_single")));
 	CHECK(keep_rules_has_reason(result, SNAME("root_recursive")));
 	CHECK(keep_rules_has_reason(result, SNAME("Player")));
+	CHECK(result.find(SNAME("game.actors.Player")) == nullptr);
 	CHECK(keep_rules_has_reason(result, SNAME("global_member")));
 	CHECK(keep_rules_has_reason(result, SNAME("nested_member")));
 	CHECK(keep_rules_has_reason(result, SNAME("shared_escape")));

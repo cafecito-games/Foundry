@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  fs_bytecode_verifier.h                                                */
+/*  fs_name_mangler_application.h                                         */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -30,29 +30,56 @@
 
 #pragma once
 
+#include "foundry_script.h"
+
 #include "core/error/error_list.h"
-#include "core/string/ustring.h"
-#include "core/templates/vector.h"
+#include "core/templates/rb_map.h"
 
-class FSFunction;
+#ifdef TOOLS_ENABLED
 
-// Link-time bounds checker for a deserialized `.fsb` opcode stream. The release VM performs no
-// bounds checking on the instruction stream (`GET_VARIANT_PTR` is unchecked without `DEBUG_ENABLED`,
-// and `GD_ERR_BREAK` compiles to nothing), so a hostile or corrupted `.fsb` that passed the loader's
-// structural checks could still make the VM read or write out of bounds at execution time. The
-// verifier walks every deserialized function's opcode stream once — mirroring the exact per-opcode
-// operand layout the VM uses to advance `ip` — and rejects any instruction whose length overruns the
-// code, any operand address outside its address space (stack/constant/member), any jump target
-// outside the code (and, more strictly, not landing on an instruction boundary), and any table index
-// (operators, setters/getters, keyed/indexed setters/getters, builtin methods, constructors,
-// utilities, script utilities, method binds, lambdas, global names, the language global array) that
-// is out of range for its table. It runs in all builds and has no `DEBUG_ENABLED` dependency.
-class FSBytecodeVerifier {
+class FSNameManglerApplication {
 public:
-	// `p_member_address_count` is the size of the member address space the function may reference —
-	// the owning class's flattened member count. It is an upper bound: a witness dispatched without
-	// an instance has an empty member space, but verifying against the class member count never
-	// rejects a well-formed function and keeps the check independent of any concrete instance.
-	static Error verify_function(const FSFunction *p_function, int p_member_address_count,
-			const String &p_script_path, Vector<int> *r_operator_cache_offsets = nullptr);
+	struct Diagnostic {
+		String surface;
+		StringName source_name;
+		String message;
+
+		String format() const;
+	};
+
+	class Transaction {
+	public:
+		enum State {
+			STATE_UNUSED,
+			STATE_PREPARING,
+			STATE_ACTIVE,
+			STATE_FINISHED,
+		};
+
+	private:
+		struct Data;
+
+		State state = STATE_UNUSED;
+		Data *data = nullptr;
+
+		Error _fail(const String &p_surface, const StringName &p_source_name,
+				const String &p_message, Error p_error, Vector<Diagnostic> &r_diagnostics);
+
+	public:
+		Error begin(const Vector<Ref<FoundryScript>> &p_scripts,
+				const RBMap<StringName, StringName> &p_rename_map,
+				Vector<Diagnostic> &r_diagnostics);
+		void rollback();
+		bool is_active() const;
+		State get_state() const;
+
+		Transaction();
+		~Transaction();
+		Transaction(const Transaction &) = delete;
+		Transaction &operator=(const Transaction &) = delete;
+		Transaction(Transaction &&) = delete;
+		Transaction &operator=(Transaction &&) = delete;
+	};
 };
+
+#endif // TOOLS_ENABLED

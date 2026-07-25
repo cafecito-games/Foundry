@@ -412,12 +412,8 @@ Error FSNameManglerKeepRules::apply_to_input(
 				const String detail =
 						vformat("%s:%d %s matched class %s", rule.source, rule.line, directive, identity);
 				const StringName local_name = script_class->get_local_name();
-				const StringName global_name = script_class->get_global_name();
 				if (local_name != StringName()) {
 					r_input.add_keep(local_name, FSNameManglerAnalysis::KEEP_RULE, detail);
-				}
-				if (global_name != StringName() && global_name != local_name) {
-					r_input.add_keep(global_name, FSNameManglerAnalysis::KEEP_RULE, detail);
 				}
 			}
 

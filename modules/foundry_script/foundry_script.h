@@ -44,6 +44,7 @@ class FoundryScript;
 class FSParser;
 class FSAnalyzer;
 #ifdef TOOLS_ENABLED
+class FSNameManglerApplication;
 class FSNameManglerAnalysis;
 class FSNameManglerKeepRules;
 #endif
@@ -119,6 +120,7 @@ class TestFSTraitReflectionAccessor;
 class TestFSGenericReflectionAccessor;
 class TestFSLanguageGlobalsAccessor;
 class TestFSBytecodeScriptAccessor;
+class TestFSNameManglerApplicationAccessor;
 } //namespace FSTests
 #endif // TESTS_ENABLED
 
@@ -225,6 +227,7 @@ private:
 	friend class FSBytecodeExporter;
 	friend class FSBytecodeLoader;
 #ifdef TOOLS_ENABLED
+	friend class FSNameManglerApplication;
 	friend class FSNameManglerAnalysis;
 	friend class FSNameManglerKeepRules;
 #endif
@@ -237,6 +240,7 @@ private:
 	friend class FSTests::TestFSTraitReflectionAccessor;
 	friend class FSTests::TestFSGenericReflectionAccessor;
 	friend class FSTests::TestFSBytecodeScriptAccessor;
+	friend class FSTests::TestFSNameManglerApplicationAccessor;
 #endif // TESTS_ENABLED
 
 	Ref<FSNativeClass> native;
@@ -277,10 +281,10 @@ private:
 	// layout); the script owns them solely for lifetime and frees them on reload/unload. The global
 	// `FSConformanceRegistry` borrows these pointers for runtime dispatch.
 	Vector<FSFunction *> witness_functions;
-	// Strong references to the target scripts the witnesses above were compiled against. A witness's
-	// `_script` is a raw pointer to its target; holding the target alive here for as long as the
-	// declaring script (and its witnesses) live prevents a dangling script during dispatch. The target
-	// never references the declaring script, so this introduces no reference cycle.
+	// Strong references to external target scripts for the conformances this script declares. Runtime
+	// conformance entries and their witnesses borrow the target pointer; holding it alive here prevents
+	// a dangling target even for marker conformances with no witness functions. The target never
+	// references the declaring script, so this introduces no reference cycle.
 	Vector<Ref<Script>> witness_target_scripts;
 	// Registry key under which this script's runtime witnesses were registered, so they can be dropped
 	// from the registry before the owned `FSFunction`s are freed. Empty when none were registered.
@@ -432,6 +436,7 @@ private:
 	void _get_script_method_list(List<MethodInfo> *r_list, bool p_include_base) const;
 	void _get_script_signal_list(List<MethodInfo> *r_list, bool p_include_base) const;
 	void _get_script_trait_list(List<StringName> *r_list, HashSet<StringName> &r_seen, bool p_include_base) const;
+	bool _has_script_trait(const StringName &p_trait, bool p_include_runtime) const;
 
 protected:
 	bool _get(const StringName &p_name, Variant &r_ret) const;
@@ -505,6 +510,9 @@ public:
 	virtual bool has_script_signal(const StringName &p_signal) const override;
 	virtual void get_script_signal_list(List<MethodInfo> *r_signals) const override;
 	virtual bool has_script_trait(const StringName &p_trait) const override;
+	// Frontend checks must ignore serialized runtime membership left alive while a source file is
+	// being reanalyzed; runtime Script API checks use `has_script_trait()` above.
+	bool has_script_trait_parse(const StringName &p_trait) const;
 	virtual void get_script_trait_list(List<StringName> *r_traits) const override;
 
 	// Generic reflection: declared type parameters of this class and their optional bounds.

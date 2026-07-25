@@ -1177,8 +1177,15 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 
 	// Bounds-check the opcode stream before it is ever handed to the release VM, which performs no
 	// such checks. Members were read before functions in the class body, so `member_indices` already
-	// holds the class's flattened member count that member-address operands may reference.
+	// holds the class's flattened member count that member-address operands may reference. In tools
+	// builds the same authoritative instruction walk also restores the non-validated operator cache
+	// descriptors, so re-export can mask process-local VM cache words after the loaded function runs.
+#ifdef TOOLS_ENABLED
+	error = FSBytecodeVerifier::verify_function(p_function, p_script->member_indices.size(), script_path,
+			&restored_fixups.operator_cache_offsets);
+#else
 	error = FSBytecodeVerifier::verify_function(p_function, p_script->member_indices.size(), script_path);
+#endif
 	if (error != OK) {
 		return error;
 	}
@@ -1929,6 +1936,7 @@ Error FSBytecodeLoader::_read_witness_section(StreamPeerBuffer *p_stream, Foundr
 				vformat("Malformed conformance target in compiled script '%s'.", script_path));
 
 		FSConformanceRegistry::RuntimeConformance conformance;
+		conformance.target_script = target_script;
 		const uint32_t target_key_count = p_stream->get_u32();
 		ERR_FAIL_COND_V_MSG((int64_t)target_key_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 				vformat("Truncated conformance section in compiled script '%s'.", script_path));
@@ -1946,6 +1954,9 @@ Error FSBytecodeLoader::_read_witness_section(StreamPeerBuffer *p_stream, Foundr
 			return error;
 		}
 		conformance.trait_name = StringName(trait_name);
+		// Legacy version-3 writers emitted an empty trait name. Keep accepting those entries so their
+		// witnesses still dispatch; the runtime membership index deliberately cannot index an identity
+		// that is absent from the file.
 
 		const uint32_t witness_count = p_stream->get_u32();
 		ERR_FAIL_COND_V_MSG((int64_t)witness_count * 5 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
@@ -1975,13 +1986,11 @@ Error FSBytecodeLoader::_read_witness_section(StreamPeerBuffer *p_stream, Foundr
 			conformance.functions[StringName(method_name)] = witness;
 		}
 
-		if (!conformance.functions.is_empty()) {
-			conformances.push_back(conformance);
-			// Keep the target alive as long as the witnesses whose `_script` points at it live. A
-			// self-reference is skipped to avoid the script holding a strong reference to itself.
-			if (target_script != p_script && !p_script->witness_target_scripts.has(target_reference)) {
-				p_script->witness_target_scripts.push_back(target_reference);
-			}
+		conformances.push_back(conformance);
+		// Keep every external conformance target alive, including markers without witnesses. A
+		// self-reference is skipped to avoid the script holding a strong reference to itself.
+		if (target_script != p_script && !p_script->witness_target_scripts.has(target_reference)) {
+			p_script->witness_target_scripts.push_back(target_reference);
 		}
 	}
 

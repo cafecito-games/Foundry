@@ -37,10 +37,11 @@ serialize these tables, so no new `.fsb` section or parallel metadata channel is
 
 `FSNameManglerAnalysis` reads the compiled metadata while collecting each declaration. A matching
 built-in usage adds `KEEP_RULE` evidence with a stable detail naming `@keep_name` and the qualified
-declaration. A class usage adds evidence for every atomic class candidate that #795 emits for that
-class (local and registered global names where present). The analysis map is intentionally atomic
-and project-wide: evidence on one qualified declaration therefore keeps the same atomic spelling
-wherever it occurs in the closed input graph.
+declaration. A class usage adds evidence only for that class's atomic `local_name`; its registered
+global and fully-qualified spellings remain structured match/diagnostic identities and never become
+flat analysis-map keys. The analysis map is intentionally atomic and project-wide: evidence on one
+qualified declaration therefore keeps the same local-name spelling wherever it occurs in the closed
+input graph.
 
 The built-in registration automatically feeds the existing annotation completion enumeration. The
 normative grammar's built-in annotation table and `@FoundryScript` class documentation describe the

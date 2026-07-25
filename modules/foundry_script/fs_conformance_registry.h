@@ -39,6 +39,7 @@
 #include "core/templates/vector.h"
 
 class FSFunction;
+class FoundryScript;
 
 // Process-global registry of retroactive trait conformances (`extend Target uses Trait: ...`).
 //
@@ -74,10 +75,23 @@ public:
 	using WitnessFunctionMap = HashMap<StringName, FSFunction *>;
 
 	struct RuntimeConformance {
+		// The target whose member layout witness functions use. This explicit pointer also preserves
+		// the target identity for marker conformances, whose function map is intentionally empty.
+		FoundryScript *target_script = nullptr;
 		Vector<String> target_keys;
 		StringName trait_name;
 		WitnessFunctionMap functions;
 	};
+
+	// Validates that a runtime entry cannot serialize witnesses against a different member layout
+	// than the target its authoritative aliases denote. Native and builtin targets deliberately use
+	// the declaring FoundryScript as a codegen stand-in; that is the only pointer/alias mismatch
+	// accepted. Every non-null witness must be owned by the selected target representation.
+	static bool validate_runtime_conformance_target(
+			const RuntimeConformance &p_conformance,
+			const FoundryScript *p_declaring_script,
+			const Vector<String> &p_authoritative_target_keys,
+			String &r_error);
 
 private:
 	static FSConformanceRegistry *singleton;
@@ -102,6 +116,10 @@ private:
 	// Flattened runtime lookup: target alias key -> method name -> compiled witness function (borrowed).
 	HashMap<String, WitnessFunctionMap> runtime_index;
 
+	// Runtime-loaded bytecode has no parser tree, so its serialized trait identities also provide the
+	// membership index used by `is`/`as` and typed assignment checks.
+	HashMap<String, HashMap<StringName, String>> runtime_trait_index;
+
 	void _rebuild_runtime_index();
 
 public:
@@ -116,17 +134,19 @@ public:
 	void clear();
 
 	// True when some target alias `p_target_key` declares an external conformance to `p_trait_name`.
-	bool has_conformance(const String &p_target_key, const StringName &p_trait_name) const;
+	// Analyzer/type-system callers use the parse registry alone. Runtime checks for bytecode-loaded
+	// scripts opt into serialized runtime membership with `p_include_runtime`.
+	bool has_conformance(const String &p_target_key, const StringName &p_trait_name, bool p_include_runtime = false) const;
 
 	// True when `p_native_class` (a ClassDB-registered engine class) or any of its ancestors declares
 	// an external conformance to `p_trait_name`. Native conformances are keyed by the bare class name,
 	// and inheritance is honored by walking `ClassDB::get_parent_class` so a subclass instance satisfies
 	// a conformance declared on a base class (e.g. a `Sprite2D` value satisfies `extend Node2D uses ...`).
-	bool native_class_conforms(const StringName &p_native_class, const StringName &p_trait_name) const;
+	bool native_class_conforms(const StringName &p_native_class, const StringName &p_trait_name, bool p_include_runtime = false) const;
 
 	// True when the builtin value type `p_type` (keyed by `Variant::get_type_name`) declares an external
 	// conformance to `p_trait_name`. Builtins have no inheritance chain, so this is an exact-key lookup.
-	bool builtin_type_conforms(Variant::Type p_type, const StringName &p_trait_name) const;
+	bool builtin_type_conforms(Variant::Type p_type, const StringName &p_trait_name, bool p_include_runtime = false) const;
 
 	// The declaring file of the (target, trait) conformance, or an empty string when none exists.
 	// Useful for diagnosing cross-file duplicate conformances.
@@ -134,6 +154,10 @@ public:
 
 	// The witnesses for the (target, trait) conformance, or an empty map when none exists.
 	WitnessMap get_witnesses(const String &p_target_key, const StringName &p_trait_name) const;
+
+	// Every analyzed conformance `p_source_file` registered, exactly as registered. The parser-owned
+	// witness nodes remain borrowed from the declaring file's parse tree.
+	Vector<Conformance> get_file_conformances(const String &p_source_file) const;
 
 	// The declaring file and trait identity of a witness for `(target, method)`, or empty values when
 	// none exists. Used for diagnosing cross-file witness method-name collisions.

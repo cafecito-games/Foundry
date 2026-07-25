@@ -213,7 +213,15 @@ static bool _class_has_trait(const FSParser::ClassNode *p_class, const FSParser:
 		if (current->base_type.kind == FSParser::DataType::CLASS) {
 			current = current->base_type.class_type;
 		} else if (current->base_type.kind == FSParser::DataType::SCRIPT && current->base_type.script_type.is_valid()) {
-			if (current->base_type.script_type->has_script_trait(trait_name)) {
+			const FoundryScript *foundry_script =
+					Object::cast_to<FoundryScript>(
+							current->base_type.script_type.ptr());
+			if ((foundry_script != nullptr &&
+						foundry_script->has_script_trait_parse(
+								trait_name)) ||
+					(foundry_script == nullptr &&
+							current->base_type.script_type
+									->has_script_trait(trait_name))) {
 				return true;
 			}
 			return registry->has_conformance(current->base_type.script_path, trait_name) ||
@@ -405,7 +413,15 @@ FSTypeCompatibility::Result FSTypeCompatibility::check(const FSParser::DataType 
 		}
 		if (p_source.kind == FSParser::DataType::SCRIPT && p_source.script_type.is_valid() && !p_source.is_meta_type) {
 			const StringName trait_name = fs_trait_identity_name(p_target.class_type);
-			result.compatible = p_source.script_type->has_script_trait(trait_name);
+			const FoundryScript *foundry_script =
+					Object::cast_to<FoundryScript>(
+							p_source.script_type.ptr());
+			result.compatible =
+					foundry_script != nullptr
+					? foundry_script->has_script_trait_parse(
+							  trait_name)
+					: p_source.script_type->has_script_trait(
+							  trait_name);
 			if (!result.compatible) {
 				// A retroactively-conformed script type carries its conformance in the registry, not in
 				// the compiled script's own trait set. A conformance declared on the script's native base

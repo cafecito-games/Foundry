@@ -126,7 +126,7 @@ TEST_CASE("[FoundryScript][NameManglerAnalysis] Classifies a compiled project co
 	CHECK(name_analysis_has_reason(result, SNAME("string_named"), FSNameManglerAnalysis::KEEP_STRING_LITERAL));
 }
 
-TEST_CASE("[FoundryScript][NameManglerAnalysis] Classifies local and qualified global class names") {
+TEST_CASE("[FoundryScript][NameManglerAnalysis] Class candidates are atomic and identities stay structured") {
 	const Ref<FoundryScript> script = compile_bytecode_test_source(
 			"namespace name_analysis\n"
 			"class_name QualifiedCandidate\n"
@@ -144,21 +144,10 @@ TEST_CASE("[FoundryScript][NameManglerAnalysis] Classifies local and qualified g
 	input.scripts.push_back(script);
 	const FSNameManglerAnalysis::Result result = FSNameManglerAnalysis::analyze(input);
 
-	REQUIRE(result.error == OK);
-	const FSNameManglerAnalysis::Classification *local = result.find(SNAME("QualifiedCandidate"));
-	REQUIRE(local != nullptr);
-	if (local != nullptr) {
-		CHECK(local->kinds.has(FSNameManglerAnalysis::IDENTIFIER_CLASS));
-	}
+	REQUIRE_EQ(result.error, OK);
 	CHECK(result.rename_map.has(SNAME("QualifiedCandidate")));
-	const FSNameManglerAnalysis::Classification *global =
-			result.find(SNAME("name_analysis.QualifiedCandidate"));
-	REQUIRE(global != nullptr);
-	if (global != nullptr) {
-		CHECK(global->kinds.has(FSNameManglerAnalysis::IDENTIFIER_CLASS));
-	}
-	CHECK(result.rename_map.has(SNAME("name_analysis.QualifiedCandidate")));
 	CHECK(result.rename_map.has(SNAME("NestedCandidate")));
+	CHECK(result.find(SNAME("name_analysis.QualifiedCandidate")) == nullptr);
 	CHECK(result.find(StringName(nested->get_fully_qualified_name())) == nullptr);
 	CHECK(result.find(SNAME("T")) == nullptr);
 }

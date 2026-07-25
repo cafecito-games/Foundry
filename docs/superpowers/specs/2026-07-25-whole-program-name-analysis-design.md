@@ -54,7 +54,8 @@ Its `Result` contains:
 
 - classifications sorted by original name;
 - each name's sorted identifier kinds, sorted/deduplicated keep evidence, and optional replacement;
-- an `RBMap<StringName, StringName>` containing only mangled names;
+- an `RBMap<StringName, StringName>` whose keys are only atomic declaration identifiers and whose
+  values are their mangled replacements;
 - stable human-readable keep-log lines, one per kept name/reason pair.
 
 The pass returns an empty successful result for an empty project. A null script root is invalid
@@ -64,7 +65,8 @@ input and returns `ERR_INVALID_PARAMETER` without a partial map.
 
 The walker visits each compiled class once, including nested classes, and collects these names:
 
-- non-empty local/global class identifiers;
+- non-empty atomic local class identifiers; registered-global and fully-qualified spellings are
+  structured aliases, not additional candidates;
 - current-class instance and static members, excluding compiler-only names beginning with `@`;
 - member methods and enum-host methods, excluding compiler-only names beginning with `@`;
 - declared signals;
@@ -77,10 +79,12 @@ surface #797 must rewrite; the distinction no longer changes the rename policy.
 Path-bearing and composite identity records are not additional flat candidates. Script paths,
 `fully_qualified_name` values, conformance target aliases, trait references, and generic
 type-parameter names are observed so replacement allocation cannot collide with them. The later
-#797 application pass must rewrite the mapped local/global class-name components inside structured
-identities while preserving their path, namespace, nesting, and generic syntax. In particular, it
-must not serialize an original terminal class segment merely because the complete FQCN is absent
-from `rename_map`. Abstract trait-requirement keys and conformance witness-map keys are method
+#797 application pass rewrites mapped atomic class-name components inside structured identities
+while preserving their path, namespace, nesting, and generic syntax. Registered-global and FQCN
+values are rebuilt from the same atomic class decision; neither complete spelling is ever looked up
+as a flat key. In particular, the application must not serialize an original terminal class
+segment merely because the complete FQCN is absent from `rename_map`. Abstract trait-requirement
+keys and conformance witness-map keys are method
 declarations, so they are `METHOD` candidates; unknown trait/target identity references instead
 provide conservative external-boundary evidence.
 
