@@ -238,14 +238,27 @@ mirror pointers cannot drift.
 
 ### Trait conformances and witnesses
 
+The compiler registers one `RuntimeConformance` per declared trait in deterministic `uses` source
+order, copying the shared compiled witness-function map into each entry and setting a non-empty
+`trait_name`. This makes ordinary (non-mangled) version-3 bytecode self-sufficient for runtime
+membership after the parser registry is absent. A multi-trait conformance therefore writes one
+existing-format witness entry per trait; the wire layout and format version do not change.
+
 The transaction snapshots every unique `registered_conformance_source` entry, rewrites known project
 target aliases and trait identities structurally, rewrites witness-map keys and witness function
 metadata, and temporarily re-registers the staged entries so both runtime dispatch and
-`FSBytecodeExporter::_write_witness_section` see one coherent view.
+`FSBytecodeExporter::_write_witness_section` see one coherent view. Correlation still accepts an
+empty runtime trait identity defensively and expands it against exact parse target/witness matches,
+because legacy version-3 bytecode and manually registered state may contain that old representation.
 
 Rollback re-registers the exact saved entries under the unchanged source path. Validation failure
 does not call the registry. Tests compare the full registry entry vectors and live dispatch before,
 during, and after staging.
+
+The loader keeps accepting legacy version-3 witness entries with an empty trait-name field. Their
+existing witness dispatch remains usable, but runtime `is`/`as`/typed membership cannot be recovered
+when no parser registration exists because those bytes contain no trait identity. New compiler and
+Transaction exports always populate the existing field.
 
 ## MethodInfo Argument Safety
 
@@ -342,7 +355,7 @@ build.
   connections (#798);
 - export-preset settings, a mangling toggle, keep-file selection, graph discovery orchestration, or
   export-plugin integration (#799);
-- changing the `.fsb` wire format or loader semantics;
+- changing the `.fsb` wire layout or format version;
 - renaming function-local bytecode/debug variables or generic type-parameter declarations; and
 - absorbing the final integrated corpus/leak project owned by #800 beyond focused #797 acceptance
   fixtures.

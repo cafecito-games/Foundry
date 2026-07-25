@@ -113,6 +113,27 @@ public:
 	}
 };
 
+class BytecodeConformanceRegistryRestore {
+	String source;
+	Vector<FSConformanceRegistry::Conformance> parse_entries;
+	Vector<FSConformanceRegistry::RuntimeConformance> runtime_entries;
+
+public:
+	explicit BytecodeConformanceRegistryRestore(const String &p_source) :
+			source(p_source),
+			parse_entries(FSConformanceRegistry::get_singleton()
+							->get_file_conformances(p_source)),
+			runtime_entries(FSConformanceRegistry::get_singleton()
+							->get_runtime_witnesses(p_source)) {}
+
+	~BytecodeConformanceRegistryRestore() {
+		FSConformanceRegistry::get_singleton()->register_file_conformances(
+				source, parse_entries);
+		FSConformanceRegistry::get_singleton()->register_runtime_witnesses(
+				source, runtime_entries);
+	}
+};
+
 // Serializes the compiled script, then rebuilds it from the bytes onto a fresh FoundryScript with
 // the same path (the production loader keeps the original resource path when a `.fs` is remapped to
 // its `.fsb`) through load_skeleton followed by load_full.
@@ -606,10 +627,13 @@ TEST_CASE("[FoundryScript][BytecodeScript] Conformance witnesses re-register wit
 			"trait Pingable:\n"
 			"\tabstract func ping() -> int\n"
 			"\n"
+			"trait Trackable:\n"
+			"\tabstract func ping() -> int\n"
+			"\n"
 			"class Gadget:\n"
 			"\tvar power: int = 21\n"
 			"\n"
-			"extend Gadget uses Pingable:\n"
+			"extend Gadget uses Pingable, Trackable:\n"
 			"\tfunc ping() -> int:\n"
 			"\t\treturn power * 2\n"
 			"\n"
@@ -620,26 +644,52 @@ TEST_CASE("[FoundryScript][BytecodeScript] Conformance witnesses re-register wit
 			"func run() -> int:\n"
 			"\tvar gadget := Gadget.new()\n"
 			"\tvar pingable: Pingable = gadget\n"
-			"\treturn pingable.ping() + Speaker.new().ping()\n");
+			"\tvar widened: Object = gadget\n"
+			"\tif not widened is Pingable or not widened is Trackable:\n"
+			"\t\treturn -1\n"
+			"\tvar trackable := widened as Trackable\n"
+			"\treturn pingable.ping() + trackable.ping() + "
+			"Speaker.new().ping()\n");
 	const String script_path = original->get_script_path();
 	const Ref<FoundryScript> original_gadget = original->get_subclasses().find(SNAME("Gadget"))->value;
 	const String gadget_key = original_gadget->get_fully_qualified_name();
+	const Ref<FoundryScript> original_pingable =
+			original->get_subclasses().find(SNAME("Pingable"))->value;
+	const Ref<FoundryScript> original_trackable =
+			original->get_subclasses().find(SNAME("Trackable"))->value;
+	const StringName pingable_trait =
+			original_pingable->get_trait_type_name();
+	const StringName trackable_trait =
+			original_trackable->get_trait_type_name();
+	BytecodeConformanceRegistryRestore registry_restore(script_path);
+	const Vector<FSConformanceRegistry::RuntimeConformance>
+			compiled_conformances =
+					FSConformanceRegistry::get_singleton()
+							->get_runtime_witnesses(script_path);
+	REQUIRE_EQ(compiled_conformances.size(), 2);
+	CHECK_EQ(compiled_conformances[0].trait_name, pingable_trait);
+	CHECK_EQ(compiled_conformances[1].trait_name, trackable_trait);
 
 	// Sanity: the compiled fixture dispatches through the registry.
 	{
 		const Variant instance_variant = bytecode_new_instance(original);
 		Object *instance = instance_variant;
-		CHECK((int64_t)bytecode_instance_call(instance, SNAME("run"), {}) == 47);
+		CHECK((int64_t)bytecode_instance_call(instance, SNAME("run"), {}) == 89);
 	}
 
 	FSBytecodeExporter exporter;
 	Vector<uint8_t> buffer;
 	REQUIRE(exporter.serialize(original, buffer) == OK);
 
-	// Drop the compile-time registration so the assertion below can only be satisfied by the
-	// loader's own re-registration.
+	// Drop both compile-time registrations so membership and dispatch below can only come from the
+	// ordinary, non-Transaction bytecode buffer and the loader's own re-registration.
+	FSConformanceRegistry::get_singleton()->clear_file(script_path);
 	FSConformanceRegistry::get_singleton()->clear_runtime_witnesses(script_path);
 	CHECK(FSConformanceRegistry::get_singleton()->find_witness_function(gadget_key, SNAME("ping")) == nullptr);
+	CHECK_FALSE(FSConformanceRegistry::get_singleton()->has_conformance(
+			gadget_key, pingable_trait, true));
+	CHECK_FALSE(FSConformanceRegistry::get_singleton()->has_conformance(
+			gadget_key, trackable_trait, true));
 
 	Ref<FoundryScript> restored;
 	restored.instantiate();
@@ -656,10 +706,20 @@ TEST_CASE("[FoundryScript][BytecodeScript] Conformance witnesses re-register wit
 	CHECK(TestFSBytecodeScriptAccessor::get_witness_functions(restored).has(registered_witness));
 	CHECK(!TestFSBytecodeScriptAccessor::get_witness_functions(original).has(registered_witness));
 
-	// The trait identity survived on the loaded trait class, the direct `uses` trait list survived
-	// on the implementer, and runtime dispatch through the restored graph reaches the witness.
+	// The trait identities survived on the loaded trait classes, the direct `uses` trait list
+	// survived on the implementer, and runtime membership plus dispatch through the restored graph
+	// come solely from the loaded witness section.
 	REQUIRE(restored->get_subclasses().has(SNAME("Pingable")));
 	CHECK(restored->get_subclasses().find(SNAME("Pingable"))->value->is_trait_type());
+	REQUIRE(restored->get_subclasses().has(SNAME("Trackable")));
+	CHECK(restored->get_subclasses().find(SNAME("Trackable"))->value->is_trait_type());
+	REQUIRE(restored->get_subclasses().has(SNAME("Gadget")));
+	const Ref<FoundryScript> restored_gadget =
+			restored->get_subclasses().find(SNAME("Gadget"))->value;
+	CHECK_FALSE(restored_gadget->has_script_trait_parse(pingable_trait));
+	CHECK_FALSE(restored_gadget->has_script_trait_parse(trackable_trait));
+	CHECK(restored_gadget->has_script_trait(pingable_trait));
+	CHECK(restored_gadget->has_script_trait(trackable_trait));
 	REQUIRE(restored->get_subclasses().has(SNAME("Speaker")));
 	const Ref<FoundryScript> original_speaker = original->get_subclasses().find(SNAME("Speaker"))->value;
 	const Ref<FoundryScript> restored_speaker = restored->get_subclasses().find(SNAME("Speaker"))->value;
@@ -671,7 +731,7 @@ TEST_CASE("[FoundryScript][BytecodeScript] Conformance witnesses re-register wit
 	}
 	const Variant instance_variant = bytecode_new_instance(restored);
 	Object *instance = instance_variant;
-	CHECK((int64_t)bytecode_instance_call(instance, SNAME("run"), {}) == 47);
+	CHECK((int64_t)bytecode_instance_call(instance, SNAME("run"), {}) == 89);
 }
 
 TEST_CASE("[FoundryScript][BytecodeScript] Builtin conformance witnesses re-register with the registry") {
@@ -687,6 +747,17 @@ TEST_CASE("[FoundryScript][BytecodeScript] Builtin conformance witnesses re-regi
 			"\tvar value: Pingable = 41\n"
 			"\treturn value.ping()\n");
 	const String script_path = original->get_script_path();
+	const Ref<FoundryScript> original_pingable =
+			original->get_subclasses().find(SNAME("Pingable"))->value;
+	const StringName pingable_trait =
+			original_pingable->get_trait_type_name();
+	BytecodeConformanceRegistryRestore registry_restore(script_path);
+	const Vector<FSConformanceRegistry::RuntimeConformance>
+			compiled_conformances =
+					FSConformanceRegistry::get_singleton()
+							->get_runtime_witnesses(script_path);
+	REQUIRE_EQ(compiled_conformances.size(), 1);
+	CHECK_EQ(compiled_conformances[0].trait_name, pingable_trait);
 
 	{
 		const Variant instance_variant = bytecode_new_instance(original);
@@ -698,8 +769,12 @@ TEST_CASE("[FoundryScript][BytecodeScript] Builtin conformance witnesses re-regi
 	Vector<uint8_t> buffer;
 	REQUIRE(exporter.serialize(original, buffer) == OK);
 
+	FSConformanceRegistry::get_singleton()->clear_file(script_path);
 	FSConformanceRegistry::get_singleton()->clear_runtime_witnesses(script_path);
 	CHECK(FSConformanceRegistry::get_singleton()->find_builtin_witness_function(Variant::INT, SNAME("ping")) == nullptr);
+	CHECK_FALSE(
+			FSConformanceRegistry::get_singleton()->builtin_type_conforms(
+					Variant::INT, pingable_trait, true));
 
 	Ref<FoundryScript> restored;
 	restored.instantiate();
@@ -712,6 +787,11 @@ TEST_CASE("[FoundryScript][BytecodeScript] Builtin conformance witnesses re-regi
 	FSFunction *registered_witness = FSConformanceRegistry::get_singleton()->find_builtin_witness_function(Variant::INT, SNAME("ping"));
 	REQUIRE(registered_witness != nullptr);
 	CHECK(TestFSBytecodeScriptAccessor::get_witness_functions(restored).has(registered_witness));
+	CHECK_FALSE(
+			FSConformanceRegistry::get_singleton()->builtin_type_conforms(
+					Variant::INT, pingable_trait));
+	CHECK(FSConformanceRegistry::get_singleton()->builtin_type_conforms(
+			Variant::INT, pingable_trait, true));
 
 	const Variant instance_variant = bytecode_new_instance(restored);
 	Object *instance = instance_variant;

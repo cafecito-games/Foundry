@@ -1946,6 +1946,9 @@ Error FSBytecodeLoader::_read_witness_section(StreamPeerBuffer *p_stream, Foundr
 			return error;
 		}
 		conformance.trait_name = StringName(trait_name);
+		// Legacy version-3 writers emitted an empty trait name. Keep accepting those entries so their
+		// witnesses still dispatch; the runtime membership index deliberately cannot index an identity
+		// that is absent from the file.
 
 		const uint32_t witness_count = p_stream->get_u32();
 		ERR_FAIL_COND_V_MSG((int64_t)witness_count * 5 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,

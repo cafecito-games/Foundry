@@ -1732,10 +1732,25 @@ TEST_CASE("[FoundryScript][NameManglerApplication] Correlates runtime conformanc
 			FSConformanceRegistry::get_singleton();
 	const Vector<FSConformanceRegistry::Conformance> parse_entries =
 			registry->get_file_conformances(source);
-	const Vector<FSConformanceRegistry::RuntimeConformance> runtime_entries =
-			registry->get_runtime_witnesses(source);
-	NameManglerRegistryRestore registry_restore(source, runtime_entries);
+	const Vector<FSConformanceRegistry::RuntimeConformance>
+			compiler_entries =
+					registry->get_runtime_witnesses(source);
+	NameManglerRegistryRestore registry_restore(source, compiler_entries);
 	REQUIRE_EQ(parse_entries.size(), 2);
+	REQUIRE_EQ(compiler_entries.size(), 2);
+	REQUIRE_NE(compiler_entries[0].trait_name, StringName());
+	REQUIRE_NE(compiler_entries[1].trait_name, StringName());
+	REQUIRE_EQ(compiler_entries[0].functions.size(), 1);
+	REQUIRE_EQ(compiler_entries[1].functions.size(), 1);
+	// Preserve coverage for legacy/defensive empty-trait correlation: old version-3 files and
+	// manually registered runtime state can still present one shared witness entry without an
+	// identity, which the Transaction expands against the exact parse registrations.
+	Vector<FSConformanceRegistry::RuntimeConformance> runtime_entries;
+	FSConformanceRegistry::RuntimeConformance shared_entry =
+			compiler_entries[0];
+	shared_entry.trait_name = StringName();
+	runtime_entries.push_back(shared_entry);
+	registry->register_runtime_witnesses(source, runtime_entries);
 	REQUIRE_EQ(runtime_entries.size(), 1);
 	REQUIRE_EQ(runtime_entries[0].trait_name, StringName());
 	REQUIRE_EQ(runtime_entries[0].functions.size(), 1);
