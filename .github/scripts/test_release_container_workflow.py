@@ -584,6 +584,26 @@ def validate_alias_policy() -> None:
         "malformed metadata from another channel must not affect the current channel",
     )
 
+    semantic_mismatches = (
+        ("alpha", "v2.0.0-alpha.1", "v2.0.0-alpha.2", False, True),
+        ("beta", "v2.0.0-beta.1", "v2.0.0-beta.2", False, True),
+        ("rc", "v2.0.0-rc.1", "v2.0.0-rc.2", False, True),
+        ("stable", "v2.0.0", "v3.0.0", True, False),
+    )
+    for channel, current_tag, newer_tag, newer_prerelease, current_prerelease in semantic_mismatches:
+        releases = [
+            [
+                release(newer_tag, prerelease=newer_prerelease),
+                release(current_tag, prerelease=current_prerelease),
+            ]
+        ]
+        try:
+            should_publish(releases, current_tag, channel)
+        except ValueError:
+            pass
+        else:
+            raise ContractError(f"moving alias freshness must reject {channel} prerelease/tag disagreement")
+
     try:
         should_publish(alpha_releases, "2.0.0-alpha.2", "alpha")
     except ValueError:

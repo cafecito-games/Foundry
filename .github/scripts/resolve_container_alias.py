@@ -75,10 +75,10 @@ def should_publish_moving_alias(
             published_at = release["published_at"]
             if published_at is not None and (not isinstance(published_at, str) or not published_at.strip()):
                 raise ValueError(f"GitHub release {tag_name!r} has invalid 'published_at' metadata.")
+            if release["prerelease"] is not (channel != "stable"):
+                raise ValueError(f"GitHub release {tag_name!r} has prerelease metadata that disagrees with its tag.")
 
             if release["draft"] or published_at is None:
-                continue
-            if release["prerelease"] is not (channel != "stable"):
                 continue
 
             published_keys.append(key)
