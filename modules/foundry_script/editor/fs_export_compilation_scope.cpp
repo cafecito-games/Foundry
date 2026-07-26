@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  fs_editor_export_plugin.h                                             */
+/*  fs_export_compilation_scope.cpp                                       */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -28,30 +28,56 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-#pragma once
+#include "fs_export_compilation_scope.h"
 
-#include "editor/export/editor_export_plugin.h"
+#ifdef TOOLS_ENABLED
 
-class EditorExportFoundryScript : public EditorExportPlugin {
-	FOUNDRY_CLASS(EditorExportFoundryScript, EditorExportPlugin);
+#include "../foundry_script.h"
+#include "../fs_cache.h"
 
-	static constexpr EditorExportPreset::ScriptExportMode DEFAULT_SCRIPT_MODE = EditorExportPreset::MODE_SCRIPT_COMPILED_BYTECODE;
-	EditorExportPreset::ScriptExportMode script_mode = DEFAULT_SCRIPT_MODE;
-	bool export_debug = true;
+bool FSExportCompilationScope::active = false;
 
-	// Export plugin callbacks cannot return an error; an EXPORT_MESSAGE_ERROR on the platform is
-	// what fails the export (see EditorExportPlatform::export_project_files).
-	void _add_export_error(const String &p_message);
-	String _describe_script_errors(const String &p_path, Error p_fallback_error);
-	void _check_resource_for_built_in_script(const String &p_path);
-	bool _is_native_resource_file(const String &p_path);
-	void _export_file_compiled_bytecode(const String &p_path);
+FSExportCompilationScope::FSExportCompilationScope(bool p_release_profile) {
+	ERR_FAIL_COND_MSG(active, "Foundry Script export compilation scopes cannot be nested.");
 
-protected:
-	virtual void _export_begin(const HashSet<String> &p_features, bool p_debug, const String &p_path, int p_flags) override;
-	virtual void _export_end() override;
-	virtual void _export_file(const String &p_path, const String &p_type, const HashSet<String> &p_features) override;
+	FSLanguage *language = FSLanguage::get_singleton();
+	ERR_FAIL_NULL(language);
 
-public:
-	virtual String get_name() const override { return "FoundryScript"; }
-};
+	active = true;
+	owns_scope = true;
+	compiling_for_export_previous = language->is_compiling_for_export();
+	language->set_compiling_for_export(true);
+	FSCache::begin_script_reload_recording();
+
+	if (p_release_profile) {
+		call_stack_tracking_previous = language->should_track_call_stack();
+		language->set_track_call_stack(false);
+		call_stack_tracking_overridden = true;
+	}
+}
+
+FSExportCompilationScope::~FSExportCompilationScope() {
+	if (!owns_scope) {
+		return;
+	}
+
+	FSLanguage *language = FSLanguage::get_singleton();
+	if (language != nullptr) {
+		language->set_compiling_for_export(compiling_for_export_previous);
+		if (call_stack_tracking_overridden) {
+			language->set_track_call_stack(call_stack_tracking_previous);
+		}
+	}
+
+	const Vector<String> reloaded_paths = FSCache::end_script_reload_recording();
+	for (const String &path : reloaded_paths) {
+		Error error = OK;
+		FSCache::get_full_script(path, error, String(), true);
+		if (error != OK) {
+			WARN_PRINT(vformat("Could not recompile \"%s\" for the editor session after compiled-bytecode export compilation: %s.", path, error_names[error]));
+		}
+	}
+	active = false;
+}
+
+#endif // TOOLS_ENABLED

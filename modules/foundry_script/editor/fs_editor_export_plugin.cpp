@@ -30,6 +30,8 @@
 
 #include "fs_editor_export_plugin.h"
 
+#include "fs_export_compilation_scope.h"
+
 #include "../foundry_script.h"
 #include "../fs_bytecode_export.h"
 #include "../fs_cache.h"
@@ -40,30 +42,6 @@
 #include "core/io/file_access.h"
 #include "core/io/resource_loader.h"
 #include "editor/export/editor_export.h"
-
-EditorExportFoundryScript::CompiledBytecodeExportScope::CompiledBytecodeExportScope(bool p_release_profile) {
-	FSLanguage::get_singleton()->set_compiling_for_export(true);
-	FSCache::begin_script_reload_recording();
-	if (p_release_profile) {
-		call_stack_tracking_previous = FSLanguage::get_singleton()->should_track_call_stack();
-		FSLanguage::get_singleton()->set_track_call_stack(false);
-		call_stack_tracking_overridden = true;
-	}
-}
-
-EditorExportFoundryScript::CompiledBytecodeExportScope::~CompiledBytecodeExportScope() {
-	FSLanguage::get_singleton()->set_compiling_for_export(false);
-	if (call_stack_tracking_overridden) {
-		FSLanguage::get_singleton()->set_track_call_stack(call_stack_tracking_previous);
-	}
-	for (const String &path : FSCache::end_script_reload_recording()) {
-		Error error = OK;
-		FSCache::get_full_script(path, error, String(), true);
-		if (error != OK) {
-			WARN_PRINT(vformat("Could not recompile \"%s\" for the editor session after the compiled-bytecode export: %s.", path, error_names[error]));
-		}
-	}
-}
 
 void EditorExportFoundryScript::_add_export_error(const String &p_message) {
 	Ref<EditorExportPlatform> platform = get_export_platform();
@@ -134,7 +112,12 @@ void EditorExportFoundryScript::_export_file_compiled_bytecode(const String &p_p
 	// a fresh compile under the current call-stack-tracking flag instead of reusing bytecode
 	// the editor session compiled earlier. Export-only compiler flags are scoped to this file
 	// so @tool scripts that tick during the export never execute placeholder-global bytecode.
-	CompiledBytecodeExportScope export_scope(!export_debug);
+	FSExportCompilationScope export_scope(!export_debug);
+	if (!export_scope.is_valid()) {
+		skip();
+		_add_export_error(TTR("Another Foundry Script export compilation is already active."));
+		return;
+	}
 	Error error = OK;
 	Ref<FoundryScript> script = FSCache::get_full_script(p_path, error, String(), true);
 	if (error != OK || script.is_null() || !script->is_valid()) {

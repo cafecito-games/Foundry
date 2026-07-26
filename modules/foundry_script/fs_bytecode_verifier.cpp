@@ -43,10 +43,14 @@
 					String(m_reason)))
 
 Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_member_address_count,
-		const String &p_script_path, Vector<int> *r_operator_cache_offsets) {
+		const String &p_script_path, Vector<int> *r_operator_cache_offsets,
+		Vector<StringName> *r_named_globals) {
 	ERR_FAIL_NULL_V(p_function, ERR_INVALID_PARAMETER);
 	if (r_operator_cache_offsets != nullptr) {
 		r_operator_cache_offsets->clear();
+	}
+	if (r_named_globals != nullptr) {
+		r_named_globals->clear();
 	}
 
 	const String function_name = p_function->name;
@@ -428,6 +432,13 @@ Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_me
 				VERIFY_FAIL_COND(ip + 3 > code_size, "instruction overruns code");
 				CHECK_ADDR(ip + 1);
 				CHECK_TABLE(ip + 2, global_names_count, "global name");
+				if (r_named_globals != nullptr) {
+					const StringName global_name =
+							p_function->get_global_name(code_ptr[ip + 2]);
+					if (!r_named_globals->has(global_name)) {
+						r_named_globals->push_back(global_name);
+					}
+				}
 				ip += 3;
 			} break;
 			case FSFunction::OPCODE_TYPE_ADJUST_BOOL:
