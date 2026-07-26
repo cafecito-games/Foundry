@@ -884,7 +884,8 @@ bool EditorExportPlatform::_export_customize_scene_resources(Node *p_root, Node 
 	return changed;
 }
 
-String EditorExportPlatform::_export_customize(const String &p_path, LocalVector<Ref<EditorExportPlugin>> &customize_resources_plugins, LocalVector<Ref<EditorExportPlugin>> &customize_scenes_plugins, HashMap<String, FileExportCache> &export_cache, const String &export_base_path, bool p_force_save) {
+String EditorExportPlatform::_export_customize(const String &p_path, LocalVector<Ref<EditorExportPlugin>> &customize_resources_plugins, LocalVector<Ref<EditorExportPlugin>> &customize_scenes_plugins, HashMap<String, FileExportCache> &export_cache, const String &export_base_path, bool p_force_save, bool &r_was_plugin_customized) {
+	r_was_plugin_customized = false;
 	if (!p_force_save && customize_resources_plugins.is_empty() && customize_scenes_plugins.is_empty()) {
 		return p_path; // do none
 	}
@@ -900,6 +901,7 @@ String EditorExportPlatform::_export_customize(const String &p_path, LocalVector
 			if (fec.source_modified_time == mod_time) {
 				// Cached (modified time matches).
 				fec.used = true;
+				r_was_plugin_customized = fec.was_plugin_customized;
 				return fec.saved_path.is_empty() ? p_path : fec.saved_path;
 			}
 
@@ -912,6 +914,7 @@ String EditorExportPlatform::_export_customize(const String &p_path, LocalVector
 				// Cached (md5 matches).
 				fec.source_modified_time = mod_time;
 				fec.used = true;
+				r_was_plugin_customized = fec.was_plugin_customized;
 				return fec.saved_path.is_empty() ? p_path : fec.saved_path;
 			}
 		}
@@ -1004,6 +1007,8 @@ String EditorExportPlatform::_export_customize(const String &p_path, LocalVector
 	}
 
 	fec.saved_path = save_path;
+	fec.was_plugin_customized = modified;
+	r_was_plugin_customized = modified;
 
 	export_cache[p_path] = fec;
 
@@ -1480,6 +1485,19 @@ Error EditorExportPlatform::_export_project_files_with_manifest(const Ref<Editor
 		}
 	};
 
+	auto validate_customized_export_file = [&](const String &p_source_path, const String &p_export_path, bool p_was_plugin_customized) {
+		if (!p_was_plugin_customized || p_export_path == p_source_path) {
+			return OK;
+		}
+
+		const Error validation_err = validate_late_export_file(p_export_path);
+		if (validation_err != OK) {
+			finish_customization();
+			clear_export_plugin_state();
+		}
+		return validation_err;
+	};
+
 	EditorExportPlugin::ExportFileManifest manifest;
 	for (const String &path : paths) {
 		manifest.source_paths.push_back(path);
@@ -1530,12 +1548,21 @@ Error EditorExportPlatform::_export_project_files_with_manifest(const Ref<Editor
 			String l = f->get_line();
 			while (l != String()) {
 				Vector<String> fields = l.split("::");
-				if (fields.size() == 4) {
+				if (fields.size() >= 4) {
 					FileExportCache fec;
 					const String &path = fields[0];
 					fec.source_md5 = fields[1].strip_edges();
 					fec.source_modified_time = fields[2].strip_edges().to_int();
 					fec.saved_path = fields[3];
+					if (fields.size() >= 5) {
+						fec.was_plugin_customized = fields[4].strip_edges().to_int() != 0;
+					} else {
+						// Older cache entries did not distinguish plugin modifications from
+						// representation-only conversion. Assume customization whenever a
+						// relevant plugin is active so a stale modified resource cannot bypass
+						// late validation after an engine upgrade.
+						fec.was_plugin_customized = !customize_resources_plugins.is_empty() || !customize_scenes_plugins.is_empty();
+					}
 					fec.used = false; // Assume unused until used.
 					export_cache[path] = fec;
 				}
@@ -1635,7 +1662,12 @@ Error EditorExportPlatform::_export_project_files_with_manifest(const Ref<Editor
 			}
 
 			// Before doing this, try to see if it can be customized.
-			String export_path = _export_customize(path, customize_resources_plugins, customize_scenes_plugins, export_cache, export_base_path, false);
+			bool was_plugin_customized = false;
+			String export_path = _export_customize(path, customize_resources_plugins, customize_scenes_plugins, export_cache, export_base_path, false, was_plugin_customized);
+			err = validate_customized_export_file(path, export_path, was_plugin_customized);
+			if (err != OK) {
+				return err;
+			}
 
 			if (export_path != path) {
 				// It was actually customized.
@@ -1750,7 +1782,12 @@ Error EditorExportPlatform::_export_project_files_with_manifest(const Ref<Editor
 			} else {
 				// Customization only happens if plugins did not take care of it before.
 				bool force_binary = convert_text_to_binary && (path.has_extension("tres") || path.has_extension("tscn"));
-				export_path = _export_customize(path, customize_resources_plugins, customize_scenes_plugins, export_cache, export_base_path, force_binary);
+				bool was_plugin_customized = false;
+				export_path = _export_customize(path, customize_resources_plugins, customize_scenes_plugins, export_cache, export_base_path, force_binary, was_plugin_customized);
+				err = validate_customized_export_file(path, export_path, was_plugin_customized);
+				if (err != OK) {
+					return err;
+				}
 
 				if (export_path != path) {
 					// Add a remap entry.
@@ -1776,7 +1813,7 @@ Error EditorExportPlatform::_export_project_files_with_manifest(const Ref<Editor
 		if (f.is_valid()) {
 			for (const KeyValue<String, FileExportCache> &E : export_cache) {
 				if (E.value.used) { // May be old, unused
-					String l = E.key + "::" + E.value.source_md5 + "::" + itos(E.value.source_modified_time) + "::" + E.value.saved_path;
+					String l = E.key + "::" + E.value.source_md5 + "::" + itos(E.value.source_modified_time) + "::" + E.value.saved_path + "::" + itos(E.value.was_plugin_customized);
 					f->store_line(l);
 				}
 			}

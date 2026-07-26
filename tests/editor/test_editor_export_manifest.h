@@ -34,6 +34,7 @@
 
 #include "editor/export/editor_export_platform.h"
 #include "editor/export/editor_export_plugin.h"
+#include "editor/file_system/editor_file_system.h"
 
 #include "core/os/os.h"
 #include "tests/core/config/test_project_settings.h"
@@ -43,6 +44,9 @@ namespace TestEditorExportManifest {
 
 static const String IMPORTED_PATH = "res://tests/editor/fixtures/export_manifest/imported.keepdata";
 static const String SKIPPED_PATH = "res://tests/editor/fixtures/export_manifest/skipped.skipdata";
+static const String CUSTOMIZED_IMPORTED_RESOURCE_PATH = "res://tests/editor/fixtures/export_manifest/customized_imported_resource.tres";
+static const String CUSTOMIZED_RESOURCE_PATH = "res://tests/editor/fixtures/export_manifest/customized_resource.tres";
+static const String CUSTOMIZED_SCENE_PATH = "res://tests/editor/fixtures/export_manifest/customized_scene.tscn";
 
 class ScopedManifestExportScratch {
 	String saved_project_data_dir_name;
@@ -109,6 +113,37 @@ public:
 	}
 };
 
+class ScopedManifestEditorFileSystem {
+	EditorFileSystem *editor_file_system = nullptr;
+	Error setup_error = OK;
+
+public:
+	ScopedManifestEditorFileSystem() {
+		if (EditorFileSystem::get_singleton() != nullptr) {
+			setup_error = ERR_ALREADY_IN_USE;
+			return;
+		}
+
+		editor_file_system = memnew(EditorFileSystem);
+		if (EditorFileSystem::get_singleton() != editor_file_system) {
+			setup_error = ERR_CANT_CREATE;
+		}
+	}
+
+	~ScopedManifestEditorFileSystem() {
+		if (editor_file_system == nullptr) {
+			return;
+		}
+
+		memdelete(editor_file_system);
+		CHECK(EditorFileSystem::get_singleton() == nullptr);
+	}
+
+	Error get_setup_error() const {
+		return setup_error;
+	}
+};
+
 struct SaveCapture {
 	Vector<String> paths;
 
@@ -132,6 +167,8 @@ public:
 	Error late_validation_error = OK;
 	bool customize_resources = false;
 	bool customize_scenes = false;
+	String customize_resource_path;
+	String customize_scene_path;
 	String prepare_generated_path;
 	String export_generated_path;
 
@@ -159,6 +196,19 @@ protected:
 	virtual bool _begin_customize_scenes(const Ref<EditorExportPlatform> &p_platform, const Vector<String> &p_features) override {
 		events->push_back("begin_scenes:" + plugin_name);
 		return customize_scenes;
+	}
+
+	virtual Ref<Resource> _customize_resource(const Ref<Resource> &p_resource, const String &p_path) override {
+		events->push_back("customize_resource:" + plugin_name + ":" + p_path);
+		if (p_path == customize_resource_path) {
+			return p_resource;
+		}
+		return Ref<Resource>();
+	}
+
+	virtual Node *_customize_scene(Node *p_root, const String &p_path) override {
+		events->push_back("customize_scene:" + plugin_name + ":" + p_path);
+		return p_path == customize_scene_path ? p_root : nullptr;
 	}
 
 	virtual void _end_customize_resources() override {
@@ -221,15 +271,80 @@ public:
 	virtual Error export_project(const Ref<EditorExportPreset> &p_preset, bool p_debug, const String &p_path, BitField<EditorExportPlatform::DebugFlags> p_flags = 0) override { return OK; }
 	virtual void get_platform_features(List<String> *r_features) const override {}
 
-	Error export_candidates(const Ref<EditorExportPreset> &p_preset, const HashSet<String> &p_paths, const Vector<Ref<EditorExportPlugin>> &p_plugins, SaveCapture &r_capture) {
-		ScopedManifestExportScratch scratch;
-		REQUIRE_EQ(scratch.get_setup_error(), OK);
+	Error export_candidates_in_current_environment(const Ref<EditorExportPreset> &p_preset, const HashSet<String> &p_paths, const Vector<Ref<EditorExportPlugin>> &p_plugins, SaveCapture &r_capture) {
 		const Error error = _export_project_files_with_manifest(p_preset, false, p_paths, p_plugins, SaveCapture::save, nullptr, &r_capture, nullptr);
 		const String workspace_cache_path = DirAccess::create(DirAccess::ACCESS_FILESYSTEM)->get_current_dir().path_join("exported");
 		CHECK_FALSE(DirAccess::dir_exists_absolute(workspace_cache_path));
 		return error;
 	}
+
+	Error export_candidates(const Ref<EditorExportPreset> &p_preset, const HashSet<String> &p_paths, const Vector<Ref<EditorExportPlugin>> &p_plugins, SaveCapture &r_capture) {
+		ScopedManifestExportScratch scratch;
+		REQUIRE_EQ(scratch.get_setup_error(), OK);
+		if (scratch.get_setup_error() != OK) {
+			return scratch.get_setup_error();
+		}
+
+		ScopedManifestEditorFileSystem editor_file_system;
+		REQUIRE_EQ(editor_file_system.get_setup_error(), OK);
+		if (editor_file_system.get_setup_error() != OK) {
+			return editor_file_system.get_setup_error();
+		}
+
+		return export_candidates_in_current_environment(
+				p_preset, p_paths, p_plugins, r_capture);
+	}
 };
+
+static Error downgrade_customization_cache_to_legacy_format() {
+	const String cache_root_path =
+			ProjectSettings::get_singleton()
+					->get_project_data_path()
+					.path_join("exported");
+	Ref<DirAccess> cache_root = DirAccess::open(cache_root_path);
+	CHECK(cache_root.is_valid());
+	if (cache_root.is_null()) {
+		return ERR_FILE_NOT_FOUND;
+	}
+
+	const PackedStringArray cache_directories =
+			cache_root->get_directories();
+	CHECK_EQ(cache_directories.size(), 1);
+	if (cache_directories.size() != 1) {
+		return ERR_INVALID_DATA;
+	}
+
+	const String cache_path =
+			cache_root_path.path_join(cache_directories[0])
+					.path_join("file_cache");
+	Ref<FileAccess> cache = FileAccess::open(cache_path, FileAccess::READ);
+	CHECK(cache.is_valid());
+	if (cache.is_null()) {
+		return ERR_FILE_CANT_OPEN;
+	}
+
+	const Vector<String> lines = cache->get_as_text().split(
+			"\n", false);
+	cache.unref();
+	String legacy_contents;
+	for (const String &line : lines) {
+		const Vector<String> fields = line.split("::", true);
+		CHECK_GE(fields.size(), 5);
+		if (fields.size() < 5) {
+			return ERR_INVALID_DATA;
+		}
+		legacy_contents += fields[0] + "::" + fields[1] + "::" +
+				fields[2] + "::" + fields[3] + "\n";
+	}
+
+	cache = FileAccess::open(cache_path, FileAccess::WRITE);
+	CHECK(cache.is_valid());
+	if (cache.is_null()) {
+		return ERR_FILE_CANT_OPEN;
+	}
+	cache->store_string(legacy_contents);
+	return OK;
+}
 
 TEST_CASE("[Editor][ExportManifest] Native hooks receive owned manifest snapshots") {
 	Vector<String> events;
@@ -364,6 +479,230 @@ TEST_CASE("[Editor][ExportManifest] Only files pending before preparation are ex
 	CHECK_EQ(alpha->prepared_generated, Vector<String>({ "res://generated/initial.bin" }));
 	CHECK_EQ(alpha->validated_late_paths, Vector<String>({ "res://generated/from_prepare.fsb" }));
 	CHECK_EQ(bravo->validated_late_paths, Vector<String>({ "res://generated/from_prepare.fsb" }));
+}
+
+TEST_CASE("[Editor][ExportManifest] Customized scene and resource outputs are rejected before export save") {
+	auto run_rejected_customization = [](const String &p_source_path,
+											  bool p_scene,
+											  const String &p_output_extension) {
+		Ref<TestManifestExportPlatform> platform =
+				memnew(TestManifestExportPlatform);
+		Ref<EditorExportPreset> preset = platform->create_preset();
+
+		Vector<String> events;
+		Ref<RecordingManifestPlugin> bravo =
+				memnew(RecordingManifestPlugin("Bravo", &events));
+		Ref<RecordingManifestPlugin> alpha =
+				memnew(RecordingManifestPlugin("Alpha", &events));
+		if (p_scene) {
+			alpha->customize_scenes = true;
+			alpha->customize_scene_path = p_source_path;
+		} else {
+			alpha->customize_resources = true;
+			alpha->customize_resource_path = p_source_path;
+		}
+		bravo->late_validation_error = ERR_INVALID_DATA;
+
+		Vector<Ref<EditorExportPlugin>> plugins;
+		plugins.push_back(bravo);
+		plugins.push_back(alpha);
+		HashSet<String> paths;
+		paths.insert(p_source_path);
+
+		SaveCapture capture;
+		CHECK_EQ(platform->export_candidates(
+						 preset, paths, plugins, capture),
+				ERR_INVALID_DATA);
+		REQUIRE_EQ(alpha->validated_late_paths.size(), 1);
+		REQUIRE_EQ(bravo->validated_late_paths.size(), 1);
+		if (alpha->validated_late_paths.size() != 1 ||
+				bravo->validated_late_paths.size() != 1) {
+			return;
+		}
+		const String customized_path =
+				alpha->validated_late_paths[0];
+		CHECK_EQ(bravo->validated_late_paths[0], customized_path);
+		CHECK_NE(customized_path, p_source_path);
+		CHECK_EQ(customized_path.get_extension(), p_output_extension);
+		CHECK_EQ(capture.paths.find(customized_path), -1);
+		if (FileAccess::exists(p_source_path + ".import")) {
+			CHECK_EQ(capture.paths.find(p_source_path + ".import"), -1);
+		}
+		CHECK_NE(events.find(
+						 p_scene ? "end_scenes:Alpha" : "end_resources:Alpha"),
+				-1);
+	};
+
+	SUBCASE("resource") {
+		run_rejected_customization(
+				CUSTOMIZED_RESOURCE_PATH, false, "res");
+	}
+	SUBCASE("scene") {
+		run_rejected_customization(
+				CUSTOMIZED_SCENE_PATH, true, "scn");
+	}
+	SUBCASE("imported resource") {
+		run_rejected_customization(
+				CUSTOMIZED_IMPORTED_RESOURCE_PATH, false, "res");
+	}
+}
+
+TEST_CASE("[Editor][ExportManifest] Cached customized outputs remain rejectable and legacy caches fail safe") {
+	auto run_cached_rejection = [](bool p_downgrade_to_legacy) {
+		Ref<TestManifestExportPlatform> platform =
+				memnew(TestManifestExportPlatform);
+		Ref<EditorExportPreset> preset = platform->create_preset();
+		Vector<String> events;
+		Ref<RecordingManifestPlugin> bravo =
+				memnew(RecordingManifestPlugin("Bravo", &events));
+		Ref<RecordingManifestPlugin> alpha =
+				memnew(RecordingManifestPlugin("Alpha", &events));
+		alpha->customize_resources = true;
+		alpha->customize_resource_path = CUSTOMIZED_RESOURCE_PATH;
+
+		Vector<Ref<EditorExportPlugin>> plugins;
+		plugins.push_back(bravo);
+		plugins.push_back(alpha);
+		HashSet<String> paths;
+		paths.insert(CUSTOMIZED_RESOURCE_PATH);
+
+		ScopedManifestExportScratch scratch;
+		REQUIRE_EQ(scratch.get_setup_error(), OK);
+		if (scratch.get_setup_error() != OK) {
+			return;
+		}
+		ScopedManifestEditorFileSystem editor_file_system;
+		REQUIRE_EQ(editor_file_system.get_setup_error(), OK);
+		if (editor_file_system.get_setup_error() != OK) {
+			return;
+		}
+
+		SaveCapture warm_capture;
+		CHECK_EQ(platform->export_candidates_in_current_environment(
+						 preset, paths, plugins, warm_capture),
+				OK);
+		REQUIRE_EQ(alpha->validated_late_paths.size(), 1);
+		REQUIRE_EQ(bravo->validated_late_paths.size(), 1);
+		if (alpha->validated_late_paths.size() != 1 ||
+				bravo->validated_late_paths.size() != 1) {
+			return;
+		}
+		const String customized_path =
+				alpha->validated_late_paths[0];
+		CHECK_NE(warm_capture.paths.find(customized_path), -1);
+
+		if (p_downgrade_to_legacy) {
+			const Error downgrade_error =
+					downgrade_customization_cache_to_legacy_format();
+			REQUIRE_EQ(downgrade_error, OK);
+			if (downgrade_error != OK) {
+				return;
+			}
+		}
+
+		alpha->validated_late_paths.clear();
+		bravo->validated_late_paths.clear();
+		bravo->late_validation_error = ERR_INVALID_DATA;
+		events.clear();
+		SaveCapture rejected_capture;
+		CHECK_EQ(platform->export_candidates_in_current_environment(
+						 preset, paths, plugins, rejected_capture),
+				ERR_INVALID_DATA);
+		CHECK_EQ(alpha->validated_late_paths,
+				Vector<String>({ customized_path }));
+		CHECK_EQ(bravo->validated_late_paths,
+				Vector<String>({ customized_path }));
+		CHECK_EQ(rejected_capture.paths.find(customized_path), -1);
+		CHECK_EQ(events.find("customize_resource:Alpha:" +
+						 CUSTOMIZED_RESOURCE_PATH),
+				-1);
+	};
+
+	SUBCASE("persisted customization metadata") {
+		run_cached_rejection(false);
+	}
+	SUBCASE("legacy cache entry") {
+		run_cached_rejection(true);
+	}
+}
+
+TEST_CASE("[Editor][ExportManifest] Allowed customization and unchanged manifest roots still save") {
+	SUBCASE("allowed customized output") {
+		Ref<TestManifestExportPlatform> platform =
+				memnew(TestManifestExportPlatform);
+		Ref<EditorExportPreset> preset = platform->create_preset();
+		Vector<String> events;
+		Ref<RecordingManifestPlugin> alpha =
+				memnew(RecordingManifestPlugin("Alpha", &events));
+		alpha->customize_resources = true;
+		alpha->customize_resource_path = CUSTOMIZED_RESOURCE_PATH;
+
+		Vector<Ref<EditorExportPlugin>> plugins;
+		plugins.push_back(alpha);
+		HashSet<String> paths;
+		paths.insert(CUSTOMIZED_RESOURCE_PATH);
+		SaveCapture capture;
+		CHECK_EQ(platform->export_candidates(
+						 preset, paths, plugins, capture),
+				OK);
+		REQUIRE_EQ(alpha->validated_late_paths.size(), 1);
+		if (alpha->validated_late_paths.size() != 1) {
+			return;
+		}
+		const String customized_path =
+				alpha->validated_late_paths[0];
+		CHECK_EQ(customized_path.get_extension(), "res");
+		CHECK_NE(capture.paths.find(customized_path), -1);
+	}
+
+	SUBCASE("unchanged source root") {
+		Ref<TestManifestExportPlatform> platform =
+				memnew(TestManifestExportPlatform);
+		Ref<EditorExportPreset> preset = platform->create_preset();
+		Vector<String> events;
+		Ref<RecordingManifestPlugin> bravo =
+				memnew(RecordingManifestPlugin("Bravo", &events));
+		bravo->customize_scenes = true;
+		bravo->late_validation_error = ERR_INVALID_DATA;
+
+		Vector<Ref<EditorExportPlugin>> plugins;
+		plugins.push_back(bravo);
+		HashSet<String> paths;
+		paths.insert(IMPORTED_PATH);
+		SaveCapture capture;
+		CHECK_EQ(platform->export_candidates(
+						 preset, paths, plugins, capture),
+				OK);
+		CHECK(bravo->validated_late_paths.is_empty());
+		CHECK_NE(capture.paths.find(IMPORTED_PATH), -1);
+	}
+
+	SUBCASE("representation-only conversion") {
+		Ref<TestManifestExportPlatform> platform =
+				memnew(TestManifestExportPlatform);
+		Ref<EditorExportPreset> preset = platform->create_preset();
+		Vector<String> events;
+		Ref<RecordingManifestPlugin> bravo =
+				memnew(RecordingManifestPlugin("Bravo", &events));
+		bravo->late_validation_error = ERR_INVALID_DATA;
+
+		Vector<Ref<EditorExportPlugin>> plugins;
+		plugins.push_back(bravo);
+		HashSet<String> paths;
+		paths.insert(CUSTOMIZED_SCENE_PATH);
+		SaveCapture capture;
+		CHECK_EQ(platform->export_candidates(
+						 preset, paths, plugins, capture),
+				OK);
+		CHECK(bravo->validated_late_paths.is_empty());
+		bool found_binary_scene = false;
+		for (const String &path : capture.paths) {
+			if (path.get_extension() == "scn") {
+				found_binary_scene = true;
+			}
+		}
+		CHECK(found_binary_scene);
+	}
 }
 
 } // namespace TestEditorExportManifest

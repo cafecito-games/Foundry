@@ -325,6 +325,32 @@ struct NameManglerExportFixture {
 		REQUIRE_EQ(ResourceSaver::save(scene, path), OK);
 		return path;
 	}
+
+	String write_built_in_script_scene(const String &p_relative_path) {
+		const String path = tree.root.path_join(p_relative_path);
+		Ref<FoundryScript> script;
+		script.instantiate();
+		script->set_path_cache(path + "::FoundryScript_name_mangler_export");
+		script->set_source_code(
+				"extends Node\n"
+				"func embedded_marker() -> int:\n"
+				"\treturn 7\n");
+		REQUIRE_EQ(script->reload(), OK);
+		REQUIRE(script->is_built_in());
+
+		Node *root_node = memnew(Node);
+		root_node->set_name("Root");
+		root_node->set_script(script);
+		REQUIRE_EQ(root_node->get_script(), script);
+
+		Ref<PackedScene> scene;
+		scene.instantiate();
+		REQUIRE_EQ(scene->pack(root_node), OK);
+		const Error save_error = ResourceSaver::save(scene, path);
+		memdelete(root_node);
+		REQUIRE_EQ(save_error, OK);
+		return path;
+	}
 };
 
 struct NameManglerExportGlobalGuard {
@@ -1477,6 +1503,42 @@ TEST_CASE("[FoundryScript][NameManglerExport][Plugin] Late validation rejects on
 	CHECK_EQ(plugin->validate_late_for_test(
 					 "res://generated/not_sealed.fsb", error),
 			OK);
+}
+
+TEST_CASE("[FoundryScript][NameManglerExport][Plugin] Built-in scripts fail closed with or without mangling") {
+	NameManglerExportFixture fixture("plugin_built_in_scripts");
+	const Vector<String> scene_paths = {
+		fixture.write_built_in_script_scene("built_in.tscn"),
+		fixture.write_built_in_script_scene("built_in.scn"),
+	};
+	for (const String &scene_path : scene_paths) {
+		HashSet<StringName> classes_used;
+		ResourceLoader::get_classes_used(scene_path, &classes_used);
+		REQUIRE(classes_used.has(SNAME("FoundryScript")));
+	}
+
+	Ref<NameManglerExportTestPlatform> platform =
+			memnew(NameManglerExportTestPlatform);
+	for (const bool name_mangling_enabled : { false, true }) {
+		for (const String &scene_path : scene_paths) {
+			platform->clear_messages();
+			Ref<EditorExportPreset> preset = platform->create_preset();
+			preset->set_script_export_mode(
+					EditorExportPreset::MODE_SCRIPT_COMPILED_BYTECODE);
+			preset->set_script_name_mangling_enabled(
+					name_mangling_enabled);
+			Ref<TestEditorExportFoundryScript> plugin =
+					memnew(TestEditorExportFoundryScript);
+			NameManglerExportPluginEndGuard end_guard(plugin);
+			plugin->begin_for_test(preset);
+
+			plugin->export_file_for_test(scene_path);
+			CHECK(plugin->is_skipped_for_test());
+			CHECK_EQ(plugin->get_output_count_for_test(), 0);
+			CHECK(name_mangler_export_last_message_contains(
+					platform, "contains a built-in script"));
+		}
+	}
 }
 
 TEST_CASE("[FoundryScript][NameManglerExport][Plugin] Preparation is one shot and emits the prepared cache") {

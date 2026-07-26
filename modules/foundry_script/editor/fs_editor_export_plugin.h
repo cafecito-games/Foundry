@@ -51,8 +51,8 @@ class EditorExportFoundryScript : public EditorExportPlugin {
 	void _add_export_error(const String &p_message);
 	void _clear_name_mangling_state();
 	String _describe_script_errors(const String &p_path, Error p_fallback_error);
-	void _check_resource_for_built_in_script(const String &p_path);
 	bool _is_native_resource_file(const String &p_path);
+	bool _validate_native_resource_for_compiled_bytecode(const String &p_path);
 	void _export_file_mangled_bytecode(const String &p_path);
 	void _export_file_compiled_bytecode(const String &p_path);
 

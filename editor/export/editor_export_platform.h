@@ -153,6 +153,7 @@ private:
 		uint64_t source_modified_time = 0;
 		String source_md5;
 		String saved_path;
+		bool was_plugin_customized = false;
 		bool used = false;
 	};
 
@@ -162,7 +163,7 @@ private:
 	bool _export_customize_scene_resources(Node *p_root, Node *p_node, LocalVector<Ref<EditorExportPlugin>> &customize_resources_plugins);
 	bool _is_editable_ancestor(Node *p_root, Node *p_node);
 
-	String _export_customize(const String &p_path, LocalVector<Ref<EditorExportPlugin>> &customize_resources_plugins, LocalVector<Ref<EditorExportPlugin>> &customize_scenes_plugins, HashMap<String, FileExportCache> &export_cache, const String &export_base_path, bool p_force_save);
+	String _export_customize(const String &p_path, LocalVector<Ref<EditorExportPlugin>> &customize_resources_plugins, LocalVector<Ref<EditorExportPlugin>> &customize_scenes_plugins, HashMap<String, FileExportCache> &export_cache, const String &export_base_path, bool p_force_save, bool &r_was_plugin_customized);
 
 protected:
 	struct ExportNotifier {

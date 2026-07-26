@@ -86,13 +86,19 @@ String EditorExportFoundryScript::_describe_script_errors(const String &p_path, 
 	return error_names[p_fallback_error];
 }
 
-void EditorExportFoundryScript::_check_resource_for_built_in_script(const String &p_path) {
+bool EditorExportFoundryScript::_validate_native_resource_for_compiled_bytecode(const String &p_path) {
+	if (!_is_native_resource_file(p_path)) {
+		return true;
+	}
+
 	HashSet<StringName> classes_used;
 	ResourceLoader::get_classes_used(p_path, &classes_used);
 	if (classes_used.has(SNAME("FoundryScript"))) {
 		skip();
 		_add_export_error(vformat(TTR("\"%s\" contains a built-in script, which cannot be exported as compiled bytecode. Save the script to its own .fs file."), p_path));
+		return false;
 	}
+	return true;
 }
 
 bool EditorExportFoundryScript::_is_native_resource_file(const String &p_path) {
@@ -147,6 +153,10 @@ void EditorExportFoundryScript::_export_file_mangled_bytecode(const String &p_pa
 }
 
 void EditorExportFoundryScript::_export_file_compiled_bytecode(const String &p_path) {
+	if (!_validate_native_resource_for_compiled_bytecode(p_path)) {
+		return;
+	}
+
 	if (name_mangling_enabled) {
 		_export_file_mangled_bytecode(p_path);
 		return;
@@ -154,9 +164,6 @@ void EditorExportFoundryScript::_export_file_compiled_bytecode(const String &p_p
 
 	const String extension = p_path.get_extension();
 	if (extension != "fs") {
-		if (_is_native_resource_file(p_path)) {
-			_check_resource_for_built_in_script(p_path);
-		}
 		return;
 	}
 
