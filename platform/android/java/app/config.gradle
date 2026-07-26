@@ -95,16 +95,21 @@ ext.getFoundryLibraryVersionName = { ->
 }
 
 ext.getFoundryEngineRevision = { ->
-    def result = providers.exec {
-        workingDir rootProject.file("../../..")
-        commandLine "git", "rev-parse", "--verify", "HEAD"
-        ignoreExitValue = true
-    }
-    if (result.result.get().exitValue == 0) {
-        def revision = result.standardOutput.asText.get().trim()
-        if (revision ==~ /[0-9a-f]{40}/) {
-            return revision
+    try {
+        def result = providers.exec {
+            workingDir rootProject.file("../../..")
+            commandLine "git", "rev-parse", "--verify", "HEAD"
+            ignoreExitValue = true
         }
+        if (result.result.get().exitValue == 0) {
+            def revision = result.standardOutput.asText.get().trim()
+            if (revision ==~ /[0-9a-f]{40}/) {
+                return revision
+            }
+        }
+    } catch (Exception ignored) {
+        // Process start failures (for example, Git absent from PATH) use the same
+        // deterministic non-release revision as a non-Git source archive.
     }
     return "0000000000000000000000000000000000000000"
 }

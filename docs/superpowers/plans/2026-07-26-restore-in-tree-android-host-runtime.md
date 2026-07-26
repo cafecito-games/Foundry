@@ -269,3 +269,110 @@
   Report base/HEAD SHAs, commits and changed files, captured RED/GREEN evidence, every fresh verification result,
   exact environmental skips, and required follow-up work. Do not push, open a PR, update the epic ledger, or run
   final Cursor review in this workstream handoff.
+
+### Quality remediation: preserve existing Android callers
+
+The initial implementation restored the in-tree host, but quality review found that it removed the existing
+workflow/SCons Gradle property contract before Workstream 2 had migrated those callers. The following steps amend
+the implementation without moving ownership back out of this repository. The stable
+`WS2_REMOVE_ANDROID_RUNTIME_COMPAT_BRIDGE` marker identifies every temporary compatibility surface that Workstream
+2 must remove after callers have migrated.
+
+#### Task 6: Specify the temporary caller bridge and revision-safe staging
+
+**Files:**
+- Modify: `tests/python_build/test_android_gradle_runtime_contract.py`
+- Modify: `tests/python_build/test_android_runtime_contract.py`
+- Modify: `tests/python_build/test_android_runtime_surface.py`
+- Modify: `misc/scripts/test_android_runtime_identifiers.py`
+- Add: `tests/python_build/test_android_native_staging.py`
+
+- [x] **Step 1: Add RED caller-compatibility contracts**
+
+  Require `generateFoundryTemplates` to default to all four ABIs and to accept the current
+  `foundryAndroidSource`, `foundryAndroidFetch`, `foundryNativeRoot`, `foundryNativeBundle`, and
+  `foundryRuntimeScratch` properties. Keep source/fetch as temporary compatibility signals only: neither property
+  may build an external runtime AAR. Require native-root and native-bundle inputs to validate the exact
+  debug/dev/release × four-ABI matrix, and require native-root mode to preserve the existing downstream
+  `foundry-native.zip` bundle format in runtime scratch.
+
+- [x] **Step 2: Add RED staging regressions**
+
+  Require the library source sets to consume only a fresh input/revision/ABI-scoped staging directory. Test a
+  full-matrix stage followed by a changed-input subset stage and assert that no stale ABI or mixed-provenance
+  payload survives. Direct `:lib` development builds may select an ABI subset; production template generation must
+  always select all four.
+
+- [x] **Step 3: Add RED bundle compatibility tests**
+
+  Exercise the existing public `foundry-android-native-bundle` schema used by scripts and workflows. Test
+  validation/extraction of its exact 12-cell, four-ABI matrix and rejection of stale revisions, malformed cells,
+  and unsafe archive paths. Do not create a second public bundle format.
+
+- [x] **Step 4: Capture RED**
+
+  Run the focused Python contract modules and identifier guard. Record failures for the missing bridge/stager,
+  stale persistent `lib/libs` staging, one-ABI default, and missing Workstream 2 removal marker before production
+  edits.
+
+#### Task 7: Implement the bridge and safe staging
+
+**Files:**
+- Add: `platform/android/android_native_bundle.py`
+- Add: `platform/android/android_native_staging.py`
+- Modify: `platform/android/java/lib/build.gradle`
+- Modify: `platform/android/java/build.gradle`
+- Modify: `platform/android/java/app/config.gradle`
+
+- [x] **Step 1: Restore the existing bundle implementation in-tree**
+
+  Preserve the established deterministic bundle schema, manifest, compatibility document, ELF/JNI validation, and
+  extraction semantics. Validate the exact current engine revision, JNI contract, build types, ABIs, and library
+  names.
+
+- [x] **Step 2: Add a single native-input staging command**
+
+  Support mutually exclusive native-root, native-bundle, and local-SCons modes. Native-root mode validates all 12
+  provenance cells and writes `foundry-native.zip` in the requested scratch directory. Native-bundle mode validates
+  and extracts the existing format. Local mode stages selected current-revision cells. Always create a fresh
+  input/revision/ABI-scoped output containing exactly the selected ABIs and atomically replace any previous output.
+
+- [x] **Step 3: Wire Gradle to staged inputs**
+
+  Make all four ABIs the default. Enforce all four for `generateFoundryTemplates`, retain ABI subsets for direct
+  library development tasks, and use a revision/input-scoped staging path as the only `jniLibs` source. Keep the
+  legacy properties and their stable removal marker until Workstream 2 migrates every caller.
+
+- [x] **Step 4: Make revision fallback process-start safe**
+
+  Catch both non-zero Git results and process-start failures in `getFoundryEngineRevision()`, returning the
+  deterministic zero SHA. Verify Gradle configuration with a `PATH` that contains Java but no Git.
+
+- [x] **Step 5: Run focused GREEN**
+
+  Run all modified Python tests, the identifier guard, native-root and native-bundle integration staging against
+  the current 12 cells, the no-Git configuration test, and the library/app Gradle contract tasks.
+
+#### Task 8: Correct provenance documentation and re-verify
+
+**Files:**
+- Modify: `platform/android/java/THIRDPARTY.md`
+- Modify: `platform/android/ANDROID_RUNTIME.md`
+
+- [x] **Step 1: Correct third-party provenance**
+
+  Preserve unrelated entries while documenting downloader and licensing sources under `lib/src/main/java` and
+  `lib/src/main/aidl`. Replace vague modification text with the donor's precise Handler/resource/locale/lint,
+  immutable `PendingIntent`, asynchronous preference, and debug-check descriptions.
+
+- [x] **Step 2: Document the compatibility bridge**
+
+  Explain local/native-root/native-bundle modes, the exact public bundle format, four-ABI production requirement,
+  fresh staging semantics, and `foundry-native.zip` scratch output. Mark the bridge for Workstream 2 removal with
+  `WS2_REMOVE_ANDROID_RUNTIME_COMPAT_BRIDGE`.
+
+- [ ] **Step 3: Final verification and handoff**
+
+  Repeat the complete focused Python, Gradle, artifact, JNI, and API 36 acceptance gates from final HEAD. Check
+  worktree/donor/ledger hygiene, commit focused corrections, and report `READY_FOR_QUALITY_REREVIEW` with exact
+  evidence. Do not push, open a PR, run Cursor review, or update `.epic-1241-status.md`.

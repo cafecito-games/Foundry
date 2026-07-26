@@ -17,10 +17,10 @@ dependencies {
 def pathToRootDir = "../../../../"
 def foundryLibraryVersion = getFoundryLibraryVersionName()
 def foundryEngineRevision = getFoundryEngineRevision()
+def supportedAbis = ["arm32", "arm64", "x86_32", "x86_64"]
 def selectedAbis = providers.gradleProperty("selectedAbis").map { value ->
     value.split(",").collect { it.trim() }.findAll { !it.isEmpty() }
-}.orElse(["arm64"]).get()
-def supportedAbis = ["arm32", "arm64", "x86_32", "x86_64"]
+}.orElse(supportedAbis).get()
 def androidAbiBySconsArch = [
     arm32: "armeabi-v7a",
     arm64: "arm64-v8a",
@@ -28,6 +28,31 @@ def androidAbiBySconsArch = [
     x86_64: "x86_64",
 ]
 def supportedBuildTypes = ["debug", "dev", "release"]
+def pythonExecutable = providers.gradleProperty("pythonExecutable").orElse("python3")
+def nativeStagingTool = rootProject.file("../android_native_staging.py")
+def foundryNativeRoot = providers.gradleProperty("foundryNativeRoot").orNull
+def foundryNativeBundle = providers.gradleProperty("foundryNativeBundle").orNull
+def foundryRuntimeScratch = providers.gradleProperty("foundryRuntimeScratch").orNull
+def usesPrebuiltNativeInput = foundryNativeRoot != null || foundryNativeBundle != null
+if (foundryNativeRoot != null && foundryNativeBundle != null) {
+    throw new GradleException("Use only one of foundryNativeRoot or foundryNativeBundle.")
+}
+if (usesPrebuiltNativeInput && foundryRuntimeScratch == null) {
+    throw new GradleException("foundryRuntimeScratch is required with a prebuilt native input.")
+}
+def foundryNativeInputIdentity = foundryNativeRoot != null
+    ? "root:${file(foundryNativeRoot).absolutePath}"
+    : (foundryNativeBundle != null
+        ? "bundle:${file(foundryNativeBundle).absolutePath}"
+        : "local:${file("${pathToRootDir}bin/android-native").absolutePath}")
+def foundryNativeInputDigest = java.security.MessageDigest.getInstance("SHA-256").digest(
+    "${foundryEngineRevision}\u0000${foundryNativeInputIdentity}\u0000${selectedAbis.join(',')}".getBytes("UTF-8")
+)
+def foundryNativeInputKey = foundryNativeInputDigest.encodeHex().toString().substring(0, 20)
+// Each revision/input/selection gets a fresh whole stage; source sets never consume persistent lib/libs.
+def androidNativeStage = file(
+    "build/android-native-stage/${foundryEngineRevision}/${foundryNativeInputKey}/${selectedAbis.join('-')}"
+)
 
 def getSconsTaskName = { String flavor, String buildType, String abi ->
     return "compileFoundryNativeLibs" + flavor.capitalize() + buildType.capitalize() + abi.capitalize()
@@ -105,9 +130,9 @@ android {
     }
 
     sourceSets {
-        debug.jniLibs.srcDirs = ['libs/debug']
-        dev.jniLibs.srcDirs = ['libs/dev']
-        release.jniLibs.srcDirs = ['libs/release']
+        debug.jniLibs.srcDirs = [new File(androidNativeStage, "debug")]
+        dev.jniLibs.srcDirs = [new File(androidNativeStage, "dev")]
+        release.jniLibs.srcDirs = [new File(androidNativeStage, "release")]
     }
 
     libraryVariants.all { variant ->
@@ -130,26 +155,29 @@ android {
         }
 
         if (!selectedAbis.isEmpty()) {
+            List<Object> nativeProducerTasks = []
             File sconsExecutableFile = null
-            def sconsName = "scons"
-            def sconsExts = (org.gradle.internal.os.OperatingSystem.current().isWindows()
-                ? [".bat", ".cmd", ".ps1", ".exe"]
-                : [""])
-            for (ext in sconsExts) {
-                String sconsNameExt = sconsName + ext
-                sconsExecutableFile = org.gradle.internal.os.OperatingSystem.current().findInPath(sconsNameExt)
-                if (sconsExecutableFile != null) {
-                    break
+            if (!usesPrebuiltNativeInput) {
+                def sconsName = "scons"
+                def sconsExts = (org.gradle.internal.os.OperatingSystem.current().isWindows()
+                    ? [".bat", ".cmd", ".ps1", ".exe"]
+                    : [""])
+                for (ext in sconsExts) {
+                    String sconsNameExt = sconsName + ext
+                    sconsExecutableFile = org.gradle.internal.os.OperatingSystem.current().findInPath(sconsNameExt)
+                    if (sconsExecutableFile != null) {
+                        break
+                    }
+                    List<File> allOptions =
+                        org.gradle.internal.os.OperatingSystem.current().findAllInPath(sconsNameExt)
+                    if (!allOptions.isEmpty()) {
+                        sconsExecutableFile = allOptions.get(0)
+                        break
+                    }
                 }
-                List<File> allOptions =
-                    org.gradle.internal.os.OperatingSystem.current().findAllInPath(sconsNameExt)
-                if (!allOptions.isEmpty()) {
-                    sconsExecutableFile = allOptions.get(0)
-                    break
+                if (sconsExecutableFile == null) {
+                    throw new GradleException("Unable to find executable path for the '$sconsName' command.")
                 }
-            }
-            if (sconsExecutableFile == null) {
-                throw new GradleException("Unable to find executable path for the '$sconsName' command.")
             }
 
             for (String selectedAbi : selectedAbis) {
@@ -158,41 +186,76 @@ android {
                 }
                 String androidAbi = androidAbiBySconsArch[selectedAbi]
 
-                def taskName = getSconsTaskName(flavorName, buildType, selectedAbi)
-                tasks.create(name: taskName, type: Exec) {
-                    executable sconsExecutableFile.absolutePath
-                    args "--directory=${pathToRootDir}",
-                        "platform=android",
-                        "production=${productionBuild}",
-                        "dev_mode=${devBuild}",
-                        "dev_build=${devBuild}",
-                        "debug_symbols=${devBuild}",
-                        "tests=no",
-                        "swappy=yes",
-                        "target=${sconsTarget}",
-                        "arch=${selectedAbi}",
-                        "-j" + Runtime.runtime.availableProcessors()
+                if (!usesPrebuiltNativeInput) {
+                    def taskName = getSconsTaskName(flavorName, buildType, selectedAbi)
+                    def nativeTask = tasks.create(name: taskName, type: Exec) {
+                        executable sconsExecutableFile.absolutePath
+                        args "--directory=${pathToRootDir}",
+                            "platform=android",
+                            "production=${productionBuild}",
+                            "dev_mode=${devBuild}",
+                            "dev_build=${devBuild}",
+                            "debug_symbols=${devBuild}",
+                            "tests=no",
+                            "swappy=yes",
+                            "target=${sconsTarget}",
+                            "arch=${selectedAbi}",
+                            "-j" + Runtime.runtime.availableProcessors()
 
-                    doLast {
-                        File nativeCell = file(
-                            "${pathToRootDir}bin/android-native/${foundryEngineRevision}/${buildType}/${androidAbi}"
-                        )
-                        for (String library : ["libfoundry_android.so", "libc++_shared.so"]) {
-                            if (!new File(nativeCell, library).isFile()) {
-                                throw new GradleException("Missing native library: ${new File(nativeCell, library)}")
+                        doLast {
+                            File nativeCell = file(
+                                "${pathToRootDir}bin/android-native/${foundryEngineRevision}/${buildType}/${androidAbi}"
+                            )
+                            for (String library : ["libfoundry_android.so", "libc++_shared.so"]) {
+                                if (!new File(nativeCell, library).isFile()) {
+                                    throw new GradleException(
+                                        "Missing native library: ${new File(nativeCell, library)}"
+                                    )
+                                }
                             }
                         }
-                        delete("libs/${buildType}/${androidAbi}")
-                        copy {
-                            from(nativeCell)
-                            include("libfoundry_android.so", "libc++_shared.so")
-                            into("libs/${buildType}/${androidAbi}")
-                        }
                     }
+                    nativeProducerTasks.add(nativeTask)
                 }
-
-                tasks["merge${flavorName.capitalize()}${buildType.capitalize()}JniLibFolders"].dependsOn taskName
             }
+
+            String stageTaskName = "stageFoundryNative${flavorName.capitalize()}${buildType.capitalize()}"
+            def stageTask = tasks.register(stageTaskName, Exec) {
+                dependsOn nativeProducerTasks
+                inputs.file(nativeStagingTool)
+                outputs.dir(new File(androidNativeStage, buildType))
+                outputs.upToDateWhen { false }
+                List<String> command = [
+                    pythonExecutable.get(),
+                    nativeStagingTool.absolutePath,
+                    "--revision", foundryEngineRevision,
+                    "--engine-version", foundryLibraryVersion,
+                    "--bindings-version", foundryLibraryVersion,
+                    "--build-type", buildType,
+                    "--selected-abis", selectedAbis.collect { androidAbiBySconsArch[it] }.join(","),
+                    "--output", new File(androidNativeStage, buildType).absolutePath,
+                ]
+                if (foundryNativeRoot != null) {
+                    command += ["--native-root", file(foundryNativeRoot).absolutePath]
+                } else if (foundryNativeBundle != null) {
+                    command += ["--native-bundle", file(foundryNativeBundle).absolutePath]
+                } else {
+                    command += [
+                        "--local-root",
+                        file("${pathToRootDir}bin/android-native/${foundryEngineRevision}").absolutePath,
+                    ]
+                }
+                if (foundryRuntimeScratch != null) {
+                    command += ["--runtime-scratch", file(foundryRuntimeScratch).absolutePath]
+                }
+                commandLine command
+            }
+            if (usesPrebuiltNativeInput && buildType == "dev") {
+                stageTask.configure { mustRunAfter "stageFoundryNative${flavorName.capitalize()}Debug" }
+            } else if (usesPrebuiltNativeInput && buildType == "release") {
+                stageTask.configure { mustRunAfter "stageFoundryNative${flavorName.capitalize()}Dev" }
+            }
+            tasks["merge${flavorName.capitalize()}${buildType.capitalize()}JniLibFolders"].dependsOn stageTask
         }
     }
 }

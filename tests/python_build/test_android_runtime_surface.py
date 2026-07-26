@@ -106,14 +106,17 @@ forbid_text(
     "android-editor-",
     ":editor:",
     "prepareFoundryAndroidRuntime",
+    "../android_runtime_build.py",
+    "../foundry_android_runtime.json",
+)
+require_text(
+    "platform/android/java/build.gradle",
     "foundryAndroidSource",
     "foundryAndroidFetch",
     "foundryNativeRoot",
     "foundryNativeBundle",
     "foundryRuntimeScratch",
-    "../android_runtime_build.py",
-    "../android_runtime_contract.py",
-    "../foundry_android_runtime.json",
+    "WS2_REMOVE_ANDROID_RUNTIME_COMPAT_BRIDGE",
 )
 forbid_text(
     "platform/android/java/lib/build.gradle",
@@ -121,7 +124,6 @@ forbid_text(
     "signing",
     "MavenPublication",
     "publishing {",
-    "foundryNativeBundle",
     "compatibility/foundry-engine.json",
     "Foundry-Android",
 )
@@ -240,6 +242,7 @@ require_text(
     'dependsOn ":app:assemble${capitalizedEdition}${capitalizedTarget}"',
     "task generateFoundryTemplates",
     "task generateFoundryMonoTemplates",
+    "WS2_REMOVE_ANDROID_RUNTIME_COMPAT_BRIDGE",
 )
 require_text(
     "platform/android/java/lib/build.gradle",

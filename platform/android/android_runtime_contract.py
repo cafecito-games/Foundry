@@ -455,10 +455,36 @@ def validate_native_matrix(root: Path, revision: str, tree: str) -> tuple[Native
     if unexpected:
         raise ContractError(f"unexpected native cell: {unexpected[0][0]}/{unexpected[0][1]}")
 
+    return validate_native_cells(
+        root,
+        revision=revision,
+        tree=tree,
+        pairs=tuple((specification.build_type, specification.abi) for specification in MATRIX),
+    )
+
+
+def validate_native_cells(
+    root: Path,
+    *,
+    revision: str,
+    tree: str,
+    pairs: tuple[tuple[str, str], ...],
+) -> tuple[NativeCell, ...]:
+    """Validate a selected set of native cells after its producer has finished."""
+
+    _sha(revision, "expected Foundry revision")
+    _sha(tree, "expected Foundry tree")
+    if not pairs:
+        raise ContractError("at least one Android native cell is required")
+    if len(set(pairs)) != len(pairs):
+        raise ContractError("Android native cell selection contains duplicates")
+    specifications = tuple(build_spec(build_type, abi) for build_type, abi in pairs)
     cells: list[NativeCell] = []
     expected_names = {*LIBRARY_NAMES, "provenance.json"}
-    for specification in MATRIX:
+    for specification in specifications:
         directory = root / specification.build_type / specification.abi
+        if directory.is_symlink() or not directory.is_dir():
+            raise ContractError(f"native cell does not exist: {directory}")
         actual_names = {path.name for path in directory.iterdir()}
         extra_names = sorted(actual_names - expected_names)
         if extra_names:

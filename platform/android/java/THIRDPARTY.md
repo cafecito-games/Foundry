@@ -1,6 +1,6 @@
 # Third-party libraries
 
-This file list third-party libraries used in the Android source folder,
+This file lists third-party libraries used in the Android source folder,
 with their provenance and, when relevant, modifications made to those files.
 
 ## com.google.android.vending.expansion.downloader
@@ -11,10 +11,15 @@ with their provenance and, when relevant, modifications made to those files.
 
 Overwrite all files under:
 
-- `lib/src/com/google/android/vending/expansion/downloader`
+- `lib/src/main/java/com/google/android/vending/expansion/downloader`
 
-Some files have been modified for yet unclear reasons.
-See the `lib/patches/com.google.android.vending.expansion.downloader.patch` file.
+Local changes avoid Handler ownership leaks, use the Foundry resource package,
+make numeric formatting locale-stable, and preserve modern Android lint and
+runtime behavior. The target-SDK-36 host also makes the downloader retry
+`PendingIntent` immutable. See
+`lib/patches/com.google.android.vending.expansion.downloader.patch`.
+The Apache-2.0 license text is distributed at
+`lib/src/main/resources/META-INF/foundry/LICENSES/Apache-2.0.txt`.
 
 ## com.google.android.vending.licensing
 
@@ -24,11 +29,14 @@ See the `lib/patches/com.google.android.vending.expansion.downloader.patch` file
 
 Overwrite all files under:
 
-- `lib/aidl/com/android/vending/licensing`
-- `lib/src/com/google/android/vending/licensing`
+- `lib/src/main/aidl/com/android/vending/licensing`
+- `lib/src/main/java/com/google/android/vending/licensing`
 
-Some files have been modified to silence linter errors or fix downstream issues.
-See the `lib/patches/com.google.android.vending.licensing.patch` file.
+Local changes preserve asynchronous preference behavior and replace a disabled
+Java assertion with a debug-only runtime check. See
+`lib/patches/com.google.android.vending.licensing.patch`.
+The Apache-2.0 license text is distributed at
+`lib/src/main/resources/META-INF/foundry/LICENSES/Apache-2.0.txt`.
 
 ## com.android.apksig
 

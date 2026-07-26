@@ -98,12 +98,19 @@ def check_standalone_boundary(failures: list[str]) -> None:
         "MavenPublication",
         "nexusPublishing",
         "prepareFoundryAndroidRuntime",
-        "foundryAndroidSource",
-        "foundryAndroidFetch",
-        "foundryNativeBundle",
     )
     for path in active_gradle:
         reject_contains(path, forbidden, failures)
+    bridge = JAVA_ROOT / "build.gradle"
+    for identifier in (
+        "foundryAndroidSource",
+        "foundryAndroidFetch",
+        "foundryNativeRoot",
+        "foundryNativeBundle",
+        "foundryRuntimeScratch",
+        "WS2_REMOVE_ANDROID_RUNTIME_COMPAT_BRIDGE",
+    ):
+        require_contains(bridge, identifier, failures)
 
 
 def check_app_source_surface(failures: list[str]) -> None:

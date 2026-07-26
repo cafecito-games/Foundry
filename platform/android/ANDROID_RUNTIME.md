@@ -82,10 +82,43 @@ cd platform/android/java
   -PselectedAbis=arm32,arm64,x86_32,x86_64
 ```
 
-For a build whose native libraries were created separately, place each ABI's
-`libfoundry_android.so` and `libc++_shared.so` under the corresponding
-`platform/android/java/lib/libs/<build-type>/<android-abi>/` directory and pass
-`-PselectedAbis=` to skip Gradle-scheduled SCons tasks.
+Gradle stages JNI inputs into a fresh path scoped by engine revision, native
+input identity, and ABI selection. The stage is replaced as a whole, so a
+full-matrix build followed by a development subset cannot retain stale ABIs or
+mix payload provenance. Direct `:lib` development tasks may pass an ABI subset;
+`generateFoundryTemplates` and `generateFoundryMonoTemplates` require all four
+ABIs and use all four by default.
+
+### Temporary caller compatibility
+
+`WS2_REMOVE_ANDROID_RUNTIME_COMPAT_BRIDGE` marks a temporary bridge for the
+existing CI and SCons callers. Workstream 2 will remove it only after migrating
+all callers. It accepts:
+
+- `-PfoundryNativeRoot=<root>` for an exact, provenance-validated 12-cell
+  matrix;
+- `-PfoundryNativeBundle=<zip>` for the existing
+  `foundry-android-native-bundle` schema-version-1 format;
+- `-PfoundryRuntimeScratch=<ignored-directory>` for validated bridge outputs;
+- the legacy `foundryAndroidSource` or `foundryAndroidFetch` signal, which is
+  accepted for caller compatibility but never builds an external host AAR.
+
+Exactly one native root or native bundle may be supplied. Native-root mode
+creates the downstream `foundry-native.zip` in runtime scratch. Bundle mode
+validates and extracts that same public format; it does not introduce a second
+archive contract. With neither property, the in-tree library schedules local
+SCons cells and validates their current-revision provenance before staging.
+
+For example, the current workflow contract is:
+
+```sh
+cd platform/android/java
+./gradlew --no-daemon generateFoundryTemplates \
+  -PfoundryAndroidSource=/prefetched/Foundry-Android \
+  -PfoundryNativeRoot=/scratch/android-native \
+  -PfoundryRuntimeScratch=/scratch/foundry-runtime
+test -f /scratch/foundry-runtime/foundry-native.zip
+```
 
 ## JVM, lint, AIDL, and instrumented tests
 

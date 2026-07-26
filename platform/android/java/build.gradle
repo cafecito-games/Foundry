@@ -19,6 +19,35 @@ def binDir = new File(foundryEngineSource, "bin")
 def sourceTemplateDestination = new File(binDir, "android_source.zip")
 def pythonExecutable = providers.gradleProperty("pythonExecutable").orElse("python3")
 def sourceTemplateTool = rootProject.file("../android_source_template.py")
+def supportedAbis = ["arm32", "arm64", "x86_32", "x86_64"]
+def selectedAbis = providers.gradleProperty("selectedAbis").map { value ->
+    value.split(",").collect { it.trim() }.findAll { !it.isEmpty() }
+}.orElse(supportedAbis).get()
+
+// WS2_REMOVE_ANDROID_RUNTIME_COMPAT_BRIDGE: Workstream 2 must migrate the
+// workflows and SCons callers before removing these legacy property names.
+def foundryAndroidSource = providers.gradleProperty("foundryAndroidSource").orNull
+def foundryAndroidFetch = providers.gradleProperty("foundryAndroidFetch").orNull
+def foundryNativeRoot = providers.gradleProperty("foundryNativeRoot").orNull
+def foundryNativeBundle = providers.gradleProperty("foundryNativeBundle").orNull
+def foundryRuntimeScratch = providers.gradleProperty("foundryRuntimeScratch").orNull
+
+if (foundryNativeRoot != null && foundryNativeBundle != null) {
+    throw new GradleException("Use only one of foundryNativeRoot or foundryNativeBundle.")
+}
+if ((foundryNativeRoot != null || foundryNativeBundle != null) && foundryRuntimeScratch == null) {
+    throw new GradleException("foundryRuntimeScratch is required with a prebuilt native input.")
+}
+
+def validateProductionNativeMatrix = tasks.register("validateProductionNativeMatrix") {
+    doLast {
+        if (selectedAbis as Set != supportedAbis as Set || selectedAbis.size() != supportedAbis.size()) {
+            throw new GradleException(
+                "Production template generation requires all four Android ABIs: ${supportedAbis.join(',')}"
+            )
+        }
+    }
+}
 
 def clearAndroidSourceTemplateOutput = tasks.register("clearAndroidSourceTemplateOutput", Delete) {
     delete foundrySourceTemplateRoot
@@ -119,11 +148,13 @@ def promoteMonoAndroidSourceTemplate = tasks.register("promoteMonoAndroidSourceT
 }
 
 task generateFoundryTemplates {
+    dependsOn validateProductionNativeMatrix
     dependsOn runtimeAarTasks
     dependsOn promoteStandardAndroidSourceTemplate
 }
 
 task generateFoundryMonoTemplates {
+    dependsOn validateProductionNativeMatrix
     dependsOn runtimeAarTasks
     dependsOn promoteMonoAndroidSourceTemplate
 }

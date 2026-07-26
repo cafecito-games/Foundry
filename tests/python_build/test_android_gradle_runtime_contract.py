@@ -22,7 +22,10 @@ LIB_AIDL = JAVA_ROOT / "lib/src/main/aidl"
 LIB_RESOURCES = JAVA_ROOT / "lib/src/main/res"
 LIB_TESTS = JAVA_ROOT / "lib/src/test"
 LIB_ANDROID_TESTS = JAVA_ROOT / "lib/src/androidTest"
+THIRDPARTY = JAVA_ROOT / "THIRDPARTY.md"
 WRAPPER = JAVA_ROOT / "gradle/wrapper/gradle-wrapper.properties"
+NATIVE_BUNDLE_TOOL = REPO_ROOT / "platform/android/android_native_bundle.py"
+NATIVE_STAGING_TOOL = REPO_ROOT / "platform/android/android_native_staging.py"
 SOURCE_TEMPLATE_TOOL = REPO_ROOT / "platform/android/android_source_template.py"
 ANDROID_README = REPO_ROOT / "platform/android/README.md"
 ANDROID_RUNTIME_DOC = REPO_ROOT / "platform/android/ANDROID_RUNTIME.md"
@@ -165,10 +168,20 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
             "FOUNDRY_ENGINE_REVISION",
             "FOUNDRY_JNI_CONTRACT_VERSION",
             '"swappy=yes"',
-            'bin/android-native/${foundryEngineRevision}/${buildType}/${androidAbi}',
-            'into("libs/${buildType}/${androidAbi}")',
+            "bin/android-native/${foundryEngineRevision}/${buildType}/${androidAbi}",
+            "supportedAbis",
+            "orElse(supportedAbis)",
+            "androidNativeStage",
+            "../android_native_staging.py",
         ):
             self.assertIn(fragment, build)
+        for stale in (
+            "debug.jniLibs.srcDirs = ['libs/debug']",
+            "dev.jniLibs.srcDirs = ['libs/dev']",
+            "release.jniLibs.srcDirs = ['libs/release']",
+            'into("libs/${buildType}/${androidAbi}")',
+        ):
+            self.assertNotIn(stale, build)
 
     def test_internal_runtime_source_trees_are_complete(self) -> None:
         required = (
@@ -184,8 +197,7 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
             LIB_TESTS / "java/games/cafecito/foundry/RuntimeIdentityTest.java",
             LIB_TESTS / "java/games/cafecito/foundry/plugin/FoundryPluginRegistryTest.java",
             LIB_ANDROID_TESTS / "java/games/cafecito/foundry/RuntimeIdentityInstrumentedTest.kt",
-            LIB_ANDROID_TESTS
-            / "java/games/cafecito/foundry/plugin/FoundryPluginProtocolInstrumentedTest.java",
+            LIB_ANDROID_TESTS / "java/games/cafecito/foundry/plugin/FoundryPluginProtocolInstrumentedTest.java",
         )
         missing = [str(path.relative_to(REPO_ROOT)) for path in required if not path.is_file()]
         self.assertEqual([], missing)
@@ -201,15 +213,13 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
         ):
             self.assertIn(metadata, manifest)
 
-        downloader = read(
-            LIB_JAVA / "com/google/android/vending/expansion/downloader/impl/DownloaderService.java"
-        )
+        downloader = read(LIB_JAVA / "com/google/android/vending/expansion/downloader/impl/DownloaderService.java")
         service = read(LIB_JAVA / "games/cafecito/foundry/service/FoundryService.kt")
         compat = read(LIB_JAVA / "games/cafecito/foundry/utils/AndroidRuntimeCompat.kt")
         self.assertIn("PendingIntent.FLAG_ONE_SHOT | PendingIntent.FLAG_IMMUTABLE", downloader)
         self.assertIn("Build.VERSION_CODES.BAKLAVA", service)
         self.assertIn("hostInputTransferToken != null", service)
-        self.assertIn('@RequiresApi(Build.VERSION_CODES.R)', compat)
+        self.assertIn("@RequiresApi(Build.VERSION_CODES.R)", compat)
         self.assertIn('@SuppressLint("MissingPermission")', compat)
 
         for resource in (
@@ -246,17 +256,13 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
             self.assertIn(declaration, read(LIB_JAVA / relative_path))
             self.assertIn(export, native_sources)
 
-    def test_active_gradle_has_no_standalone_preparation_or_publication_logic(self) -> None:
+    def test_active_gradle_keeps_only_the_temporary_caller_bridge(self) -> None:
         active = "\n".join(read(path) for path in ACTIVE_GRADLE_FILES)
 
         for fragment in (
             "prepareFoundryAndroidRuntime",
-            "foundryAndroidSource",
-            "foundryAndroidFetch",
             "foundryRuntimeAarRoot",
-            "foundryNativeBundle",
             "../android_runtime_build.py",
-            "../android_runtime_contract.py",
             "../foundry_android_runtime.json",
             "io.github.gradle-nexus.publish-plugin",
             "maven-publish",
@@ -267,6 +273,76 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
             "Foundry-Android",
         ):
             self.assertNotIn(fragment, active)
+        for fragment in (
+            "foundryAndroidSource",
+            "foundryAndroidFetch",
+            "foundryNativeRoot",
+            "foundryNativeBundle",
+            "foundryRuntimeScratch",
+            "WS2_REMOVE_ANDROID_RUNTIME_COMPAT_BRIDGE",
+        ):
+            self.assertIn(fragment, active)
+        self.assertTrue(NATIVE_BUNDLE_TOOL.is_file())
+        self.assertTrue(NATIVE_STAGING_TOOL.is_file())
+
+    def test_production_template_generation_requires_the_four_abi_matrix(self) -> None:
+        root_build = read(ROOT_BUILD)
+        library_build = read(LIB_BUILD)
+
+        for fragment in (
+            "generateFoundryTemplates",
+            "generateFoundryMonoTemplates",
+            "supportedAbis",
+            "selectedAbis",
+            "all four Android ABIs",
+        ):
+            self.assertIn(fragment, root_build)
+        self.assertIn('def supportedAbis = ["arm32", "arm64", "x86_32", "x86_64"]', library_build)
+        self.assertIn("orElse(supportedAbis)", library_build)
+
+    def test_native_staging_is_revision_and_input_scoped(self) -> None:
+        build = read(LIB_BUILD)
+
+        for fragment in (
+            "foundryEngineRevision",
+            "foundryNativeInputKey",
+            "selectedAbis",
+            "build/android-native-stage",
+            "--output",
+        ):
+            self.assertIn(fragment, build)
+        self.assertNotIn('delete("libs/${buildType}/${androidAbi}")', build)
+
+    def test_revision_fallback_handles_missing_git_executable(self) -> None:
+        config = read(APP_CONFIG)
+
+        self.assertIn("getFoundryEngineRevision", config)
+        self.assertIn("try {", config)
+        self.assertIn("catch (Exception ignored)", config)
+        self.assertIn("0000000000000000000000000000000000000000", config)
+
+    def test_third_party_provenance_describes_the_in_tree_sources_precisely(self) -> None:
+        third_party = read(THIRDPARTY)
+
+        for fragment in (
+            "lib/src/main/java/com/google/android/vending/expansion/downloader",
+            "lib/src/main/aidl/com/android/vending/licensing",
+            "lib/src/main/java/com/google/android/vending/licensing",
+            "Handler ownership leaks",
+            "Foundry resource package",
+            "locale-stable",
+            "PendingIntent",
+            "immutable",
+            "asynchronous preference behavior",
+            "debug-only runtime check",
+        ):
+            self.assertIn(fragment, third_party)
+        for stale in (
+            "lib/src/com/google",
+            "lib/aidl/com/android",
+            "yet unclear",
+        ):
+            self.assertNotIn(stale, third_party)
 
     def test_wrapper_verifies_the_gradle_distribution(self) -> None:
         wrapper = read(WRAPPER)
@@ -407,13 +483,17 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
             "Source ZIP",
             "Device runtime",
             "Editor exporter",
+            "foundry-native.zip",
+            "foundryNativeRoot",
+            "foundryNativeBundle",
+            "WS2_REMOVE_ANDROID_RUNTIME_COMPAT_BRIDGE",
+            "fresh",
         ):
             self.assertIn(fragment, runtime_doc)
         for forbidden in (
             "Foundry-Android repository",
             "--source-repository",
             "--allow-fetch",
-            "--native-bundle",
             "sole Maven publisher",
         ):
             self.assertNotIn(forbidden, runtime_doc)
