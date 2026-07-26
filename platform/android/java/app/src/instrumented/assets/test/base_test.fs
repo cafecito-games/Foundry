@@ -1,4 +1,4 @@
-abstract class_name BaseTest
+abstract extends RefCounted
 
 var _test_started := 0
 var _test_completed := 0

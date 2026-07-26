@@ -217,6 +217,70 @@ jobs:
           name: ${{ matrix.artifact_name }}
           path: ${{ runner.temp }}/android-native-artifact
 
+  compile-instrumented-assets:
+    needs: validate-runtime-contracts
+    runs-on: ubuntu-24.04
+    name: Compile exact Android instrumented assets
+    timeout-minutes: 60
+    steps:
+      - name: Checkout Foundry
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.checkout-ref || github.sha }}
+          submodules: recursive
+
+      - name: Restore Foundry build cache
+        uses: ./.github/actions/foundry-cache-restore
+        with:
+          cache-name: linuxbsd-editor-android-instrumented-assets
+        continue-on-error: true
+
+      - name: Setup Python and SCons
+        uses: ./.github/actions/foundry-deps
+
+      - name: Build exact host editor
+        uses: ./.github/actions/foundry-build
+        with:
+          platform: linuxbsd
+          target: editor
+          preserve-source-tree: true
+          scons-flags: >-
+            module_text_server_fb_enabled=yes
+            tests=no
+            dev_mode=yes
+            dev_build=yes
+
+      - name: Save Foundry build cache
+        uses: ./.github/actions/foundry-cache-save
+        with:
+          cache-name: linuxbsd-editor-android-instrumented-assets
+        continue-on-error: true
+
+      - name: Export compiled instrumented assets
+        run: |
+          set -euo pipefail
+          mkdir -p .test_scratch/android-instrumented-assets
+          cp -R platform/android/java/app/src/instrumented/assets \
+            "${RUNNER_TEMP}/android-instrumented-project"
+          rm -rf "${RUNNER_TEMP}/android-instrumented-project/.godot" \
+            "${RUNNER_TEMP}/android-instrumented-project/.foundry"
+          ./bin/foundry.linuxbsd.editor.dev.x86_64 --headless project export \
+            --project "${RUNNER_TEMP}/android-instrumented-project" \
+            --preset "Android Instrumented Assets" \
+            --output "${RUNNER_TEMP}/android-instrumented-assets-raw.zip" \
+            --mode pack
+          python3 platform/android/android_device_acceptance.py prepare-compiled-assets \
+            --source "${RUNNER_TEMP}/android-instrumented-assets-raw.zip" \
+            --output .test_scratch/android-instrumented-assets/android-instrumented-assets.zip
+          python3 platform/android/android_device_acceptance.py inspect-compiled-assets \
+            --compiled-assets .test_scratch/android-instrumented-assets/android-instrumented-assets.zip
+
+      - name: Upload compiled instrumented assets
+        uses: ./.github/actions/upload-artifact
+        with:
+          name: android-instrumented-assets
+          path: .test_scratch/android-instrumented-assets/android-instrumented-assets.zip
+
   assemble-android:
     needs:
       - validate-runtime-contracts
@@ -276,6 +340,7 @@ jobs:
   device-acceptance:
     needs:
       - assemble-android
+      - compile-instrumented-assets
     runs-on: ubuntu-24.04
     name: Verify Android runtime on an emulator
     timeout-minutes: 120
@@ -297,6 +362,12 @@ jobs:
         with:
           name: android-templates-assembled
           path: .test_scratch/android-templates-assembled
+
+      - name: Download compiled instrumented assets
+        uses: actions/download-artifact@v8
+        with:
+          name: android-instrumented-assets
+          path: .test_scratch/android-instrumented-assets
 
       - name: Install Android emulator
         run: |
@@ -353,6 +424,7 @@ jobs:
           set -euo pipefail
           python3 platform/android/android_device_acceptance.py source-template \
             --source-template .test_scratch/android-templates-assembled/android_source.zip \
+            --compiled-assets .test_scratch/android-instrumented-assets/android-instrumented-assets.zip \
             --work-dir "${RUNNER_TEMP}/android-device-acceptance-work" \
             --evidence-dir "${RUNNER_TEMP}/android-device-acceptance-evidence" \
             --adb "${ANDROID_HOME}/platform-tools/adb" \

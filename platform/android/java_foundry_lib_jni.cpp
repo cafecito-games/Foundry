@@ -41,7 +41,6 @@
 #include "jni_utils.h"
 #include "net_socket_android.h"
 #include "os_android.h"
-#include "plugin/foundry_plugin_jni.h"
 #include "thread_jandroid.h"
 #include "tts_android.h"
 
@@ -89,10 +88,6 @@ static void _terminate(JNIEnv *env, bool p_restart = false) {
 	}
 
 	step.set(STEP_TERMINATED); // Ensure no further steps are attempted and no further events are sent
-
-	// lets cleanup
-	// Unregister android plugins
-	unregister_plugins_singletons();
 
 	if (java_class_wrapper) {
 		memdelete(java_class_wrapper);

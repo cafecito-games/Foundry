@@ -171,65 +171,6 @@ ext.getExportFormat = {
     return exportFormat
 }
 
-/**
- * Parse the project properties for the 'plugins_maven_repos' property and return the list
- * of maven repos.
- */
-ext.getFoundryPluginsMavenRepos = { ->
-    Set<String> mavenRepos = []
-
-    // Retrieve the list of maven repos.
-    if (project.hasProperty("plugins_maven_repos")) {
-        String mavenReposProperty = project.property("plugins_maven_repos")
-        if (mavenReposProperty != null && !mavenReposProperty.trim().isEmpty()) {
-            for (String mavenRepoUrl : mavenReposProperty.split(VALUE_SEPARATOR_REGEX)) {
-                mavenRepos += mavenRepoUrl.trim()
-            }
-        }
-    }
-
-    return mavenRepos
-}
-
-/**
- * Parse the project properties for the 'plugins_remote_binaries' property and return
- * it for inclusion in the build dependencies.
- */
-ext.getFoundryPluginsRemoteBinaries = { ->
-    Set<String> remoteDeps = []
-
-    // Retrieve the list of remote plugins binaries.
-    if (project.hasProperty("plugins_remote_binaries")) {
-        String remoteDepsList = project.property("plugins_remote_binaries")
-        if (remoteDepsList != null && !remoteDepsList.trim().isEmpty()) {
-            for (String dep: remoteDepsList.split(VALUE_SEPARATOR_REGEX)) {
-                remoteDeps += dep.trim()
-            }
-        }
-    }
-    return remoteDeps
-}
-
-/**
- * Parse the project properties for the 'plugins_local_binaries' property and return
- * their binaries for inclusion in the build dependencies.
- */
-ext.getFoundryPluginsLocalBinaries = { ->
-    Set<String> binDeps = []
-
-    // Retrieve the list of local plugins binaries.
-    if (project.hasProperty("plugins_local_binaries")) {
-        String pluginsList = project.property("plugins_local_binaries")
-        if (pluginsList != null && !pluginsList.trim().isEmpty()) {
-            for (String plugin : pluginsList.split(VALUE_SEPARATOR_REGEX)) {
-                binDeps += plugin.trim()
-            }
-        }
-    }
-
-    return binDeps
-}
-
 ext.getDebugKeystoreFile = { ->
     String keystoreFile = project.hasProperty("debug_keystore_file") ? project.property("debug_keystore_file") : ""
     if (keystoreFile == null || keystoreFile.isEmpty()) {
@@ -335,4 +276,15 @@ ext.shouldUseLegacyPackaging = { ->
 ext.getAddonsDirectory = { ->
     String addonsDirectory = project.hasProperty("addons_directory") ? project.property("addons_directory") : ""
     return addonsDirectory
+}
+
+ext.getOpenXRLoaderVersion = { ->
+    String version = project.hasProperty("openxr_loader_version") ? project.property("openxr_loader_version") : ""
+    if (version == null || version.isEmpty()) {
+        return ""
+    }
+    if (!(version ==~ /\d+\.\d+\.\d+/)) {
+        throw new GradleException("Invalid OpenXR Android loader version: $version")
+    }
+    return version
 }

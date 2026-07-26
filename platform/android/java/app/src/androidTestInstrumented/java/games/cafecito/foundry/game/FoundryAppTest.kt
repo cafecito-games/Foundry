@@ -33,6 +33,7 @@ package games.cafecito.foundry.game
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.SystemClock
 import android.util.Log
 import androidx.test.core.app.ActivityScenario
 import androidx.test.espresso.Espresso
@@ -40,8 +41,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import games.cafecito.foundry.Foundry
 import games.cafecito.foundry.FoundryActivity.Companion.EXTRA_COMMAND_LINE_PARAMS
-import games.cafecito.foundry.game.test.FoundryAppInstrumentedTestPlugin
-import games.cafecito.foundry.plugin.FoundryPluginRegistry
+import games.cafecito.foundry.game.test.FoundryAppInstrumentedTestBridge
 import org.junit.Test
 import org.junit.runner.RunWith
 import kotlin.test.assertEquals
@@ -52,6 +52,12 @@ import kotlin.test.assertTrue
 
 /**
  * This instrumented test will launch the `instrumented` version of FoundryApp and run a set of tests against it.
+ *
+ * Every method requires Android Test Orchestrator process isolation.
+ *
+ * The Foundry runtime is a process-lifetime singleton, so app/build.gradle also
+ * enables per-test package clearing. Running this whole class in one direct
+ * instrumentation process is unsupported and can preserve terminated state.
  */
 @RunWith(AndroidJUnit4::class)
 class FoundryAppTest {
@@ -63,63 +69,85 @@ class FoundryAppTest {
 		private const val FOUNDRY_APP_CLASS_NAME = "games.cafecito.foundry.game.FoundryApp"
 
 		private val TEST_COMMAND_LINE_PARAMS = arrayOf("This is a test")
+		private const val ENGINE_EVENT_TIMEOUT_MS = 30_000L
 	}
 
-	private fun getTestPlugin(): FoundryAppInstrumentedTestPlugin? {
-		return FoundryPluginRegistry.getPluginRegistry()
-			.getPlugin("FoundryAppInstrumentedTestPlugin") as FoundryAppInstrumentedTestPlugin?
+	private fun waitForMainLoopStarted() {
+		assertTrue(
+			FoundryAppInstrumentedTestBridge.waitForMainLoopStarted(ENGINE_EVENT_TIMEOUT_MS),
+			"Timed out waiting for the Foundry main loop script bridge to start."
+		)
+	}
+
+	private fun waitForHostMainLoopStarted(foundry: Foundry) {
+		assertTrue(
+			waitForRunStatus(foundry, Foundry.RunStatus.STARTED, ENGINE_EVENT_TIMEOUT_MS),
+			"Timed out waiting for the Foundry main loop to start."
+		)
+	}
+
+	private fun waitForRunStatus(foundry: Foundry, expected: Foundry.RunStatus, timeoutMillis: Long): Boolean {
+		val deadline = SystemClock.elapsedRealtime() + timeoutMillis
+		do {
+			if (foundry.runStatus == expected) {
+				return true
+			}
+			SystemClock.sleep(10L)
+		} while (SystemClock.elapsedRealtime() < deadline)
+		return foundry.runStatus == expected
+	}
+
+	private fun resetBridge() {
+		FoundryAppInstrumentedTestBridge.reset(
+			InstrumentationRegistry.getInstrumentation().targetContext
+		)
 	}
 
 	/**
-	 * Boots the runtime and proves that only the canonical Foundry plugin protocol is discovered.
+	 * Boots the runtime without manifest-based Android plugin discovery.
 	 */
 	@Test
-	fun runtimeBootsWithCanonicalPluginProtocol() {
+	fun runtimeBootsWithoutLegacyPluginMetadata() {
+		resetBridge()
 		ActivityScenario.launch(FoundryApp::class.java).use { scenario ->
+			val foundry = Foundry.getInstance(InstrumentationRegistry.getInstrumentation().targetContext)
+			waitForHostMainLoopStarted(foundry)
+			waitForMainLoopStarted()
 			scenario.onActivity { activity ->
-				val testPlugin = getTestPlugin()
-				assertNotNull(testPlugin)
-				testPlugin.waitForFoundryMainLoopStarted()
-
 				val metadata = activity.packageManager
 					.getApplicationInfo(activity.packageName, PackageManager.GET_META_DATA)
 					.metaData
-				assertEquals(
-					"games.cafecito.foundry.game.test.FoundryAppInstrumentedTestPlugin",
-					metadata.getString(
-						"games.cafecito.foundry.plugin.v1.FoundryAppInstrumentedTestPlugin"
-					)
-				)
-				assertTrue(metadata.containsKey("org.godotengine.plugin.v1.Legacy"))
-				assertTrue(metadata.containsKey("org.godotengine.plugin.v2.Legacy"))
-
-				val registry = FoundryPluginRegistry.getPluginRegistry()
-				assertNotNull(registry.getPlugin("FoundryAppInstrumentedTestPlugin"))
-				assertNull(registry.getPlugin("Legacy"))
-				assertFalse(registry.getAllPlugins().isEmpty())
+				assertFalse(metadata.keySet().any { it.contains(".plugin.") })
 			}
 		}
 	}
 
 	/**
-	 * Runs the JavaClassWrapper tests via the FoundryAppInstrumentedTestPlugin.
+	 * Runs the JavaClassWrapper tests via the explicit instrumented test bridge.
 	 */
 	@Test
 	fun runJavaClassWrapperTests() {
+		resetBridge()
 		ActivityScenario.launch(FoundryApp::class.java).use { scenario ->
+			val foundry = Foundry.getInstance(InstrumentationRegistry.getInstrumentation().targetContext)
+			waitForHostMainLoopStarted(foundry)
 			scenario.onActivity { activity ->
-				val testPlugin = getTestPlugin()
-				assertNotNull(testPlugin)
-
 				Log.d(TAG, "Waiting for the Foundry main loop to start...")
-				testPlugin.waitForFoundryMainLoopStarted()
+				waitForMainLoopStarted()
 
 				Log.d(TAG, "Running JavaClassWrapper tests...")
-				val result = testPlugin.runJavaClassWrapperTests()
-				assertNotNull(result)
-				result.exceptionOrNull()?.let { throw it }
-				assertTrue(result.isSuccess)
-				Log.d(TAG, "Passed ${result.getOrNull()} tests")
+				val testLabel = "javaclasswrapper_tests"
+				FoundryAppInstrumentedTestBridge.requestTest(testLabel)
+				assertTrue(
+					FoundryAppInstrumentedTestBridge.waitForTest(testLabel, ENGINE_EVENT_TIMEOUT_MS),
+					"Timed out waiting for $testLabel."
+				)
+				assertEquals(
+					0,
+					FoundryAppInstrumentedTestBridge.getTestFailures(testLabel),
+					FoundryAppInstrumentedTestBridge.getTestFailureMessage(testLabel)
+				)
+				Log.d(TAG, "Passed ${FoundryAppInstrumentedTestBridge.getTestPasses(testLabel)} tests")
 			}
 		}
 	}
@@ -129,19 +157,26 @@ class FoundryAppTest {
 	 */
 	@Test
 	fun runFileAccessTests() {
+		resetBridge()
 		ActivityScenario.launch(FoundryApp::class.java).use { scenario ->
+			val foundry = Foundry.getInstance(InstrumentationRegistry.getInstrumentation().targetContext)
+			waitForHostMainLoopStarted(foundry)
 			scenario.onActivity { activity ->
-				val testPlugin = getTestPlugin()
-				assertNotNull(testPlugin)
-
 				Log.d(TAG, "Waiting for the Foundry main loop to start...")
-				testPlugin.waitForFoundryMainLoopStarted()
+				waitForMainLoopStarted()
 
 				Log.d(TAG, "Running FileAccess tests...")
-				val result = testPlugin.runFileAccessTests()
-				assertNotNull(result)
-				result.exceptionOrNull()?.let { throw it }
-				assertTrue(result.isSuccess)
+				val testLabel = "file_access_tests"
+				FoundryAppInstrumentedTestBridge.requestTest(testLabel)
+				assertTrue(
+					FoundryAppInstrumentedTestBridge.waitForTest(testLabel, ENGINE_EVENT_TIMEOUT_MS),
+					"Timed out waiting for $testLabel."
+				)
+				assertEquals(
+					0,
+					FoundryAppInstrumentedTestBridge.getTestFailures(testLabel),
+					FoundryAppInstrumentedTestBridge.getTestFailureMessage(testLabel)
+				)
 			}
 		}
 	}
@@ -211,23 +246,23 @@ class FoundryAppTest {
 	 */
 	@Test
 	fun testGameNotQuittingOnBackPress() {
+		resetBridge()
 		ActivityScenario.launch(FoundryApp::class.java).use { scenario ->
-			val testPlugin = getTestPlugin()
-			assertNotNull(testPlugin)
-
+			val foundry = Foundry.getInstance(InstrumentationRegistry.getInstrumentation().targetContext)
+			waitForHostMainLoopStarted(foundry)
 			Log.d(TAG, "Waiting for the Foundry main loop to start...")
-			testPlugin.waitForFoundryMainLoopStarted()
+			waitForMainLoopStarted()
 
 			// Disable 'quit_on_go_back'.
-			testPlugin.updateQuitOnGoBack(false)
+			FoundryAppInstrumentedTestBridge.requestQuitOnGoBack(false)
+			assertTrue(FoundryAppInstrumentedTestBridge.waitForQuitOnGoBackApplied(ENGINE_EVENT_TIMEOUT_MS))
 
 			// Trigger the back press event.
 			Espresso.pressBackUnconditionally()
 
 			Log.d(TAG, "Waiting for the engine to terminate...")
-			testPlugin.waitForEngineTermination(5_000L)
+			assertFalse(FoundryAppInstrumentedTestBridge.waitForEngineTermination(5_000L))
 
-			val foundry = Foundry.getInstance(InstrumentationRegistry.getInstrumentation().targetContext)
 			assertTrue { foundry.runStatus != Foundry.RunStatus.TERMINATING }
 		}
 	}
@@ -237,24 +272,27 @@ class FoundryAppTest {
 	 */
 	@Test
 	fun testGameQuittingOnBackPress() {
+		resetBridge()
 		ActivityScenario.launch(FoundryApp::class.java).use { scenario ->
-			val testPlugin = getTestPlugin()
-			assertNotNull(testPlugin)
-
+			val foundry = Foundry.getInstance(InstrumentationRegistry.getInstrumentation().targetContext)
+			waitForHostMainLoopStarted(foundry)
 			Log.d(TAG, "Waiting for the Foundry main loop to start...")
-			testPlugin.waitForFoundryMainLoopStarted()
+			waitForMainLoopStarted()
 
 			// Enable 'quit_on_go_back'.
-			testPlugin.updateQuitOnGoBack(true)
+			FoundryAppInstrumentedTestBridge.requestQuitOnGoBack(true)
+			assertTrue(FoundryAppInstrumentedTestBridge.waitForQuitOnGoBackApplied(ENGINE_EVENT_TIMEOUT_MS))
 
 			// Trigger the back press event.
 			Espresso.pressBackUnconditionally()
 
 			Log.d(TAG, "Waiting for the engine to terminate...")
-			testPlugin.waitForEngineTermination(5_000L)
+			assertTrue(FoundryAppInstrumentedTestBridge.waitForEngineTermination(ENGINE_EVENT_TIMEOUT_MS))
 
-			val foundry = Foundry.getInstance(InstrumentationRegistry.getInstrumentation().targetContext)
-			assertTrue { foundry.runStatus == Foundry.RunStatus.TERMINATING }
+			assertTrue(
+				waitForRunStatus(foundry, Foundry.RunStatus.TERMINATING, ENGINE_EVENT_TIMEOUT_MS),
+				"Timed out waiting for the Foundry host to enter TERMINATING."
+			)
 		}
 	}
 }

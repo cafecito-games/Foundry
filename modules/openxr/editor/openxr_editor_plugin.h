@@ -2,7 +2,7 @@
 /*  openxr_editor_plugin.h                                                */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -43,7 +43,6 @@ class OpenXRExportPlugin : public EditorExportPlugin {
 public:
 	virtual String get_name() const override { return "OpenXRExportPlugin"; }
 	virtual bool supports_platform(const Ref<EditorExportPlatform> &p_export_platform) const override;
-	virtual PackedStringArray get_android_dependencies(const Ref<EditorExportPlatform> &p_export_platform, bool p_debug) const override;
 
 protected:
 	virtual String _get_export_option_warning(const Ref<EditorExportPlatform> &p_export_platform, const String &p_option_name) const override;

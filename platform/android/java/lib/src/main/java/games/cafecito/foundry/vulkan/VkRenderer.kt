@@ -34,7 +34,6 @@ package games.cafecito.foundry.vulkan
 import android.util.Log
 import android.view.Surface
 import games.cafecito.foundry.FoundryLib
-import games.cafecito.foundry.plugin.FoundryPluginRegistry
 
 /**
  * Responsible to setting up and driving the Vulkan rendering logic.
@@ -55,17 +54,11 @@ internal class VkRenderer {
 		private val TAG = VkRenderer::class.java.simpleName
 	}
 
-	private val pluginRegistry: FoundryPluginRegistry = FoundryPluginRegistry.getPluginRegistry()
-
 	/**
 	 * Called when the surface is created and signals the beginning of rendering.
 	 */
 	fun onVkSurfaceCreated(surface: Surface) {
 		FoundryLib.newcontext(surface)
-
-		for (plugin in pluginRegistry.getAllPlugins()) {
-			plugin.onVkSurfaceCreated(surface)
-		}
 	}
 
 	/**
@@ -73,10 +66,6 @@ internal class VkRenderer {
 	 */
 	fun onVkSurfaceChanged(surface: Surface, width: Int, height: Int) {
 		FoundryLib.resize(surface, width, height)
-
-		for (plugin in pluginRegistry.getAllPlugins()) {
-			plugin.onVkSurfaceChanged(surface, width, height)
-		}
 	}
 
 	/**
@@ -84,9 +73,6 @@ internal class VkRenderer {
 	 */
 	fun onVkDrawFrame() {
 		FoundryLib.step()
-		for (plugin in pluginRegistry.getAllPlugins()) {
-			plugin.onVkDrawFrame()
-		}
 	}
 
 	/**

@@ -61,9 +61,6 @@ import games.cafecito.foundry.input.FoundryInputHandler
 import games.cafecito.foundry.io.FilePicker
 import games.cafecito.foundry.io.directory.DirectoryAccessHandler
 import games.cafecito.foundry.io.file.FileAccessHandler
-import games.cafecito.foundry.plugin.AndroidRuntimePlugin
-import games.cafecito.foundry.plugin.FoundryPlugin
-import games.cafecito.foundry.plugin.FoundryPluginRegistry
 import games.cafecito.foundry.tts.FoundryTTS
 import games.cafecito.foundry.utils.DialogUtils
 import games.cafecito.foundry.utils.FoundryNetUtils
@@ -121,8 +118,6 @@ class Foundry private constructor(val context: Context) {
 	private val mSensorManager: SensorManager? by lazy { context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager }
 	private val mClipboard: ClipboardManager? by lazy { context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager }
 	private val vibratorService: Vibrator? by lazy { getVibratorServiceCompat(context) }
-	private val pluginRegistry: FoundryPluginRegistry by lazy { FoundryPluginRegistry.getPluginRegistry() }
-
 	private val accelerometerEnabled = AtomicBoolean(false)
 	private val mAccelerometer: Sensor? by lazy { mSensorManager?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER) }
 
@@ -226,7 +221,7 @@ class Foundry private constructor(val context: Context) {
 	 * @throws IllegalArgumentException exception if the specified expansion pack (if any)
 	 * is invalid.
 	 */
-	fun initEngine(host: FoundryHost?, commandLineParams: List<String>, hostPlugins: Set<FoundryPlugin> = Collections.emptySet()): Boolean {
+	fun initEngine(host: FoundryHost?, commandLineParams: List<String>): Boolean {
 		if (isNativeInitialized()) {
 			Log.d(TAG, "Engine already initialized")
 			return true
@@ -238,11 +233,6 @@ class Foundry private constructor(val context: Context) {
 
 		run {
 			this.primaryHost = host
-
-			Log.v(TAG, "Initializing Foundry plugin registry")
-			val runtimePlugins = mutableSetOf<FoundryPlugin>(AndroidRuntimePlugin(this))
-			runtimePlugins.addAll(hostPlugins)
-			FoundryPluginRegistry.initializePluginRegistry(this, runtimePlugins)
 
 			// check for apk expansion API
 			commandLine.addAll(commandLineParams)
@@ -630,23 +620,9 @@ class Foundry private constructor(val context: Context) {
 			})
 
 			renderView?.queueOnRenderThread {
-				for (plugin in pluginRegistry.allPlugins) {
-					plugin.onRegisterPluginWithFoundryNative()
-				}
 				setKeepScreenOn(java.lang.Boolean.parseBoolean(FoundryLib.getGlobal("display/window/energy_saving/keep_screen_on")))
 			}
 
-			// Include the returned non-null views in the Foundry view hierarchy.
-			for (plugin in pluginRegistry.allPlugins) {
-				val pluginView = plugin.onMainCreate(activity)
-				if (pluginView != null) {
-					if (plugin.shouldBeOnTop()) {
-						containerLayout?.addView(pluginView)
-					} else {
-						containerLayout?.addView(pluginView, 0)
-					}
-				}
-			}
 			renderViewInitialized = true
 		} finally {
 			if (!renderViewInitialized) {
@@ -675,9 +651,6 @@ class Foundry private constructor(val context: Context) {
 
 		renderView?.onActivityResumed()
 		registerSensorsIfNeeded()
-		for (plugin in pluginRegistry.allPlugins) {
-			plugin.onMainResume()
-		}
 	}
 
 	private fun registerSensorsIfNeeded() {
@@ -708,9 +681,6 @@ class Foundry private constructor(val context: Context) {
 
 		renderView?.onActivityPaused()
 		mSensorManager?.unregisterListener(foundryInputHandler)
-		for (plugin in pluginRegistry.allPlugins) {
-			plugin.onMainPause()
-		}
 	}
 
 	fun onStop(host: FoundryHost) {
@@ -727,10 +697,6 @@ class Foundry private constructor(val context: Context) {
 			return
 		}
 		Log.v(TAG, "OnDestroy: $primaryHost")
-
-		for (plugin in pluginRegistry.allPlugins) {
-			plugin.onMainDestroy()
-		}
 
 		if (renderView?.blockingExitRenderer(EXIT_RENDERER_TIMEOUT_IN_MS) != true) {
 			Log.w(TAG, "Unable to exit the renderer within $EXIT_RENDERER_TIMEOUT_IN_MS ms... Force quitting the process.")
@@ -767,9 +733,6 @@ class Foundry private constructor(val context: Context) {
 	 * Activity result callback
 	 */
 	fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-		for (plugin in pluginRegistry.allPlugins) {
-			plugin.onMainActivityResult(requestCode, resultCode, data)
-		}
 		runOnRenderThread {
 			FilePicker.handleActivityResult(context, requestCode, resultCode, data)
 		}
@@ -783,9 +746,6 @@ class Foundry private constructor(val context: Context) {
 		permissions: Array<String?>,
 		grantResults: IntArray
 	) {
-		for (plugin in pluginRegistry.allPlugins) {
-			plugin.onMainRequestPermissionsResult(requestCode, permissions, grantResults)
-		}
 		runOnRenderThread {
 			for (i in permissions.indices) {
 				FoundryLib.requestPermissionResult(
@@ -823,9 +783,6 @@ class Foundry private constructor(val context: Context) {
 			}
 		}
 
-		for (plugin in pluginRegistry.allPlugins) {
-			plugin.onFoundrySetupCompleted()
-		}
 		primaryHost?.onFoundrySetupCompleted()
 	}
 
@@ -845,9 +802,6 @@ class Foundry private constructor(val context: Context) {
 			registerSensorsIfNeeded()
 		}
 
-		for (plugin in pluginRegistry.allPlugins) {
-			plugin.onFoundryMainLoopStarted()
-		}
 		primaryHost?.onFoundryMainLoopStarted()
 	}
 
@@ -859,9 +813,6 @@ class Foundry private constructor(val context: Context) {
 		Log.v(TAG, "OnFoundryTerminating")
 		_runStatus.set(RunStatus.TERMINATING)
 
-		for (plugin in pluginRegistry.allPlugins) {
-			plugin.onFoundryTerminating()
-		}
 		runOnTerminate.get()?.run()
 	}
 
@@ -1101,9 +1052,6 @@ class Foundry private constructor(val context: Context) {
 	}
 
 	fun onBackPressed() {
-		for (plugin in pluginRegistry.allPlugins) {
-			plugin.onMainBackPressed()
-		}
 		runOnRenderThread { FoundryLib.back() }
 	}
 
@@ -1156,23 +1104,14 @@ class Foundry private constructor(val context: Context) {
 	}
 
 	/**
-	 * Internal method used to query whether the host or the registered plugins supports a given feature.
+	 * Internal method used to query whether the host supports a given feature.
 	 *
 	 * This is invoked by the native code, and should not be confused with [hasFeature] which is the Android version of
 	 * https://docs.godotengine.org/en/stable/classes/class_os.html#class-os-method-has-feature
 	 */
 	@Keep
 	private fun checkInternalFeatureSupport(feature: String): Boolean {
-		if (primaryHost?.supportsFeature(feature) == true) {
-			return true
-		}
-
-		for (plugin in pluginRegistry.allPlugins) {
-			if (plugin.supportsFeature(feature)) {
-				return true
-			}
-		}
-		return false
+		return primaryHost?.supportsFeature(feature) == true
 	}
 
 	/**
@@ -1180,12 +1119,7 @@ class Foundry private constructor(val context: Context) {
 	 */
 	@Keep
 	private fun getFoundryExtensionConfigFiles(): Array<String> {
-		val configFiles = mutableSetOf<String>()
-		for (plugin in pluginRegistry.allPlugins) {
-			configFiles.addAll(plugin.pluginFoundryExtensionLibrariesPaths)
-		}
-
-		return configFiles.toTypedArray()
+		return emptyArray()
 	}
 
 	@Keep

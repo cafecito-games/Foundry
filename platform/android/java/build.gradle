@@ -64,7 +64,16 @@ def runtimeAarTasks = generateRuntimeAarTasks()
 def zipGradleBuild = tasks.register("zipGradleBuild", Zip) {
     dependsOn runtimeAarTasks
     mustRunAfter clearAndroidSourceTemplateOutput
-    from(fileTree(dir: "app", excludes: ["**/build/**", "**/.gradle/**", "**/*.iml", "libs/**"]))
+    from(fileTree(
+        dir: "app",
+        excludes: [
+            "**/build/**",
+            "**/.gradle/**",
+            "**/*.iml",
+            "libs/**",
+            "src/instrumented/assets/**",
+        ],
+    ))
     from(fileTree(dir: ".", includes: ["gradlew", "gradlew.bat", "gradle/**"]))
     runtimeBuildTypes.each { String target ->
         from("lib/build/outputs/aar/foundry-${target}.aar") {

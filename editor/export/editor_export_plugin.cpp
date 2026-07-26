@@ -2,7 +2,7 @@
 /*  editor_export_plugin.cpp                                              */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -244,24 +244,6 @@ PackedStringArray EditorExportPlugin::get_export_features(const Ref<EditorExport
 	return _get_export_features(p_export_platform, p_debug);
 }
 
-PackedStringArray EditorExportPlugin::get_android_dependencies(const Ref<EditorExportPlatform> &p_export_platform, bool p_debug) const {
-	PackedStringArray ret;
-	FOUNDRY_VIRTUAL_CALL(_get_android_dependencies, p_export_platform, p_debug, ret);
-	return ret;
-}
-
-PackedStringArray EditorExportPlugin::get_android_dependencies_maven_repos(const Ref<EditorExportPlatform> &p_export_platform, bool p_debug) const {
-	PackedStringArray ret;
-	FOUNDRY_VIRTUAL_CALL(_get_android_dependencies_maven_repos, p_export_platform, p_debug, ret);
-	return ret;
-}
-
-PackedStringArray EditorExportPlugin::get_android_libraries(const Ref<EditorExportPlatform> &p_export_platform, bool p_debug) const {
-	PackedStringArray ret;
-	FOUNDRY_VIRTUAL_CALL(_get_android_libraries, p_export_platform, p_debug, ret);
-	return ret;
-}
-
 String EditorExportPlugin::get_android_manifest_activity_element_contents(const Ref<EditorExportPlatform> &p_export_platform, bool p_debug) const {
 	String ret;
 	FOUNDRY_VIRTUAL_CALL(_get_android_manifest_activity_element_contents, p_export_platform, p_debug, ret);
@@ -387,9 +369,6 @@ void EditorExportPlugin::_bind_methods() {
 
 	FOUNDRY_VIRTUAL_BIND(_supports_platform, "platform");
 
-	FOUNDRY_VIRTUAL_BIND(_get_android_dependencies, "platform", "debug");
-	FOUNDRY_VIRTUAL_BIND(_get_android_dependencies_maven_repos, "platform", "debug");
-	FOUNDRY_VIRTUAL_BIND(_get_android_libraries, "platform", "debug");
 	FOUNDRY_VIRTUAL_BIND(_get_android_manifest_activity_element_contents, "platform", "debug");
 	FOUNDRY_VIRTUAL_BIND(_get_android_manifest_application_element_contents, "platform", "debug");
 	FOUNDRY_VIRTUAL_BIND(_get_android_manifest_element_contents, "platform", "debug");

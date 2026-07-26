@@ -29,10 +29,12 @@ only the application ID. Runtime manifest metadata records the Foundry library
 version, engine version, 40-character engine revision, and JNI contract
 version. `BuildConfig` exposes the same values to JVM and instrumented tests.
 
-The host retains the canonical
-`games.cafecito.foundry.plugin.v1.` metadata protocol until the dedicated
-plugin-removal workstream removes that legacy surface. It does not accept the
-old `org.godotengine` prefixes.
+The host does not scan application manifests for Android plugin initializer
+classes and does not register Java methods or signals through reflection.
+Native extensions use the FoundryExtension loading path. Source-template
+projects may still include explicit project-local JAR or AAR dependencies from
+`res://addons`; those artifacts are normal build inputs, not dynamically
+discovered host plugins.
 
 ## Android and toolchain levels
 
@@ -135,9 +137,24 @@ platform/android/java/gradlew -p platform/android/java --no-daemon \
   -PselectedAbis=
 ```
 
-Lint is abort-on-error. The unit suite covers runtime identity, canonical
-types, command-line parsing, and plugin metadata parsing. The retained Android
-test APK covers runtime identity and the canonical plugin protocol.
+Lint is abort-on-error. The JVM unit suite covers runtime identity, canonical
+types, and command-line parsing. The retained library Android test APK covers
+runtime identity and canonical types. The application instrumented suite uses
+an explicit JavaClassWrapper test bridge for Foundry Script interop and file
+access, and separately covers runtime boot, launcher variants, command-line
+arguments, back-press behavior, and engine termination.
+
+The API 36 source-template smoke first uses an exact-checkout Linux editor to
+export `app/src/instrumented/assets` as a compiled resource ZIP. The export
+contains `.fsb` bytecode and remaps, and the device job replaces the source
+template's raw assets with that ZIP before building either APK. Production
+templates intentionally omit the Foundry Script front-end, and `.fsb` files
+are guarded by the exact engine version and revision, so checked-in bytecode
+or raw `.fs` sources are not valid substitutes. The focused host assertion
+observes `RunStatus.STARTED` directly, while the compiled script bridge remains
+available to the retained JavaClassWrapper, file-access, and quit tests. If
+Gradle or instrumentation fails, `android_device_acceptance.py` captures
+logcat before uninstalling the application and test packages.
 
 Compile the application and its own instrumented suite with:
 
@@ -223,6 +240,7 @@ both the canonical and custom application-ID scenarios:
 ```sh
 python3 platform/android/android_device_acceptance.py source-template \
   --source-template bin/android_source.zip \
+  --compiled-assets .test_scratch/android-instrumented-assets/android-instrumented-assets.zip \
   --work-dir .test_scratch/android-device-acceptance \
   --evidence-dir .test_scratch/android-device-evidence \
   --adb "${ANDROID_SDK_ROOT}/platform-tools/adb" \

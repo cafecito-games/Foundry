@@ -17,7 +17,7 @@ import time
 import zipfile
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from types import ModuleType
 from typing import Any, Protocol
 from xml.etree import ElementTree
@@ -31,8 +31,18 @@ APPLICATION_ID_PATTERN = re.compile(r"^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$")
 DEFAULT_APPLICATION_ID = "games.cafecito.foundry.game"
 CUSTOM_APPLICATION_ID = "dev.example.foundryacceptance"
 SUPPORTED_ABIS = frozenset({"arm64-v8a", "armeabi-v7a", "x86", "x86_64"})
-INSTRUMENTATION_TEST = "games.cafecito.foundry.game.FoundryAppTest#runtimeBootsWithCanonicalPluginProtocol"
-INSTRUMENTATION_CLASS, INSTRUMENTATION_METHOD = INSTRUMENTATION_TEST.split("#", 1)
+INSTRUMENTATION_CLASS = "games.cafecito.foundry.game.FoundryAppTest"
+INSTRUMENTATION_METHODS = (
+    "runtimeBootsWithoutLegacyPluginMetadata",
+    "runJavaClassWrapperTests",
+    "runFileAccessTests",
+    "testImplicitFoundryAppLauncherLaunch",
+    "testExplicitFoundryAppLauncherLaunch",
+    "testExplicitFoundryAppLaunch",
+    "testGameNotQuittingOnBackPress",
+    "testGameQuittingOnBackPress",
+)
+INSTRUMENTATION_TEST = INSTRUMENTATION_CLASS
 STANDARD_APK = Path("build/outputs/apk/standard/debug/android_debug.apk")
 JUNIT_REPORT_ROOT = Path("build/outputs/androidTest-results/connected")
 RUNTIME_FAILURE_PATTERNS = (
@@ -42,8 +52,45 @@ RUNTIME_FAILURE_PATTERNS = (
     "FATAL EXCEPTION",
     'couldn\'t find "libfoundry_android.so"',
 )
+STANDARD_SMOKE_READY_MARKER = "Foundry Android standard runtime smoke ready"
 SOURCE_TEMPLATE_TOOL_PATH = Path(__file__).resolve().with_name("android_source_template.py")
+COMPILED_ASSET_REQUIRED_PATHS = frozenset(
+    {
+        "project.binary",
+        "main.fsb",
+        "main.fs.remap",
+        "main.tscn.remap",
+        "test/base_test.fsb",
+        "test/base_test.fs.remap",
+        "test/file_access/file_access_tests.fsb",
+        "test/file_access/file_access_tests.fs.remap",
+        "test/javaclasswrapper/java_class_wrapper_tests.fsb",
+        "test/javaclasswrapper/java_class_wrapper_tests.fs.remap",
+    }
+)
+MAX_COMPILED_ASSET_ENTRY_BYTES = 16 * 1024 * 1024
+MAX_COMPILED_ASSET_TOTAL_BYTES = 64 * 1024 * 1024
+PROCESS_STABILITY_OBSERVATIONS = 3
+COMPILED_ASSET_REMAP_TARGETS = {
+    "main.fs.remap": "res://main.fsb",
+    "test/base_test.fs.remap": "res://test/base_test.fsb",
+    "test/file_access/file_access_tests.fs.remap": "res://test/file_access/file_access_tests.fsb",
+    "test/javaclasswrapper/java_class_wrapper_tests.fs.remap": (
+        "res://test/javaclasswrapper/java_class_wrapper_tests.fsb"
+    ),
+}
 _source_template_tool: ModuleType | None = None
+
+
+def _remap_target(contents: bytes, name: str) -> str:
+    try:
+        text_contents = contents.decode("utf-8", errors="strict")
+    except UnicodeError as error:
+        raise AcceptanceError(f"Android compiled acceptance remap {name} is not valid UTF-8") from error
+    targets = re.findall(r'(?m)^path="([^"]+)"\s*$', text_contents)
+    if len(targets) != 1:
+        raise AcceptanceError(f"Android compiled acceptance remap {name} must contain exactly one path")
+    return targets[0]
 
 
 @dataclass(frozen=True)
@@ -195,8 +242,171 @@ def _load_source_template_tool() -> ModuleType:
     return module
 
 
-def stage_scenario(source_template: Path, destination: Path) -> Path:
-    """Validate and extract one source template, then add the smoke assets."""
+def _inspect_compiled_assets(compiled_assets: Path) -> tuple[str, ...]:
+    compiled_assets = compiled_assets.absolute()
+    if not compiled_assets.is_file() or compiled_assets.is_symlink():
+        raise AcceptanceError(f"Android compiled acceptance assets are not a regular file: {compiled_assets}")
+
+    names: list[str] = []
+    seen: set[str] = set()
+    total_size = 0
+    try:
+        with zipfile.ZipFile(compiled_assets) as archive:
+            for entry in archive.infolist():
+                name = entry.filename
+                path = PurePosixPath(name)
+                mode = entry.external_attr >> 16
+                if (
+                    not name
+                    or "\\" in name
+                    or path.is_absolute()
+                    or any(part in ("", ".", "..") for part in path.parts)
+                    or name in seen
+                    or stat.S_ISLNK(mode)
+                    or entry.flag_bits & 0x1
+                ):
+                    raise AcceptanceError(f"Android compiled acceptance assets contain an unsafe path: {name!r}")
+                seen.add(name)
+                if entry.is_dir():
+                    continue
+                if (
+                    path.suffix in (".fs", ".fsc")
+                    or "project.foundry" == name
+                    or "export_presets.cfg" == name
+                    or ".godot" in path.parts
+                    or (path.parts[0] == ".foundry" and path.parts[:2] != (".foundry", "exported"))
+                ):
+                    raise AcceptanceError(f"Android compiled acceptance assets contain raw Foundry Script data: {name}")
+                if entry.file_size > MAX_COMPILED_ASSET_ENTRY_BYTES:
+                    raise AcceptanceError(f"Android compiled acceptance asset is too large: {name}")
+                total_size += entry.file_size
+                if total_size > MAX_COMPILED_ASSET_TOTAL_BYTES:
+                    raise AcceptanceError("Android compiled acceptance assets exceed the size limit")
+                names.append(name)
+
+            for remap, target in COMPILED_ASSET_REMAP_TARGETS.items():
+                if remap in seen:
+                    actual_target = _remap_target(archive.read(remap), remap)
+                    if actual_target != target:
+                        raise AcceptanceError(
+                            f"Android compiled acceptance remap {remap} does not target {target}"
+                        )
+            if "main.tscn.remap" in seen:
+                scene_target = _remap_target(archive.read("main.tscn.remap"), "main.tscn.remap")
+                scene_path = scene_target[len("res://") :] if scene_target.startswith("res://") else scene_target
+                if (
+                    not scene_target.startswith("res://.foundry/exported/")
+                    or not scene_target.endswith(".scn")
+                    or scene_path not in seen
+                ):
+                    raise AcceptanceError(
+                        "Android compiled acceptance main scene remap does not target an exported scene"
+                    )
+    except AcceptanceError:
+        raise
+    except (OSError, UnicodeError, zipfile.BadZipFile) as error:
+        raise AcceptanceError(f"unable to inspect Android compiled acceptance assets: {error}") from error
+
+    missing = sorted(COMPILED_ASSET_REQUIRED_PATHS.difference(names))
+    if missing:
+        raise AcceptanceError("Android compiled acceptance assets are missing required paths: " + ", ".join(missing))
+    if not any(name.startswith(".foundry/exported/") and name.endswith(".scn") for name in names):
+        raise AcceptanceError("Android compiled acceptance assets are missing the exported main scene")
+    return tuple(names)
+
+
+def prepare_compiled_assets(source: Path, output: Path) -> tuple[str, ...]:
+    """Sanitize one raw exact-build export into a deterministic runtime-only ZIP."""
+    source = source.absolute()
+    output = output.absolute()
+    if not source.is_file() or source.is_symlink():
+        raise AcceptanceError(f"raw Android compiled acceptance export is not a regular file: {source}")
+    if output.exists() or output.is_symlink():
+        raise AcceptanceError(f"Android compiled acceptance output already exists: {output}")
+
+    selected: dict[str, bytes] = {}
+    total_size = 0
+    try:
+        with zipfile.ZipFile(source) as archive:
+            for entry in archive.infolist():
+                name = entry.filename
+                path = PurePosixPath(name)
+                mode = entry.external_attr >> 16
+                if (
+                    not name
+                    or "\\" in name
+                    or path.is_absolute()
+                    or any(part in ("", ".", "..") for part in path.parts)
+                    or name in selected
+                    or stat.S_ISLNK(mode)
+                    or entry.flag_bits & 0x1
+                ):
+                    raise AcceptanceError(f"raw Android compiled acceptance export contains an unsafe path: {name!r}")
+                if entry.is_dir():
+                    continue
+                if path.suffix in (".fs", ".fsc") or name in ("project.foundry", "export_presets.cfg"):
+                    raise AcceptanceError(f"raw Android compiled acceptance export contains source data: {name}")
+                if ".godot" in path.parts:
+                    continue
+                if path.parts[0] == ".foundry" and path.parts[:2] != (".foundry", "exported"):
+                    continue
+                if entry.file_size > MAX_COMPILED_ASSET_ENTRY_BYTES:
+                    raise AcceptanceError(f"raw Android compiled acceptance asset is too large: {name}")
+                total_size += entry.file_size
+                if total_size > MAX_COMPILED_ASSET_TOTAL_BYTES:
+                    raise AcceptanceError("raw Android compiled acceptance assets exceed the size limit")
+                selected[name] = archive.read(entry)
+    except AcceptanceError:
+        raise
+    except (OSError, UnicodeError, zipfile.BadZipFile) as error:
+        raise AcceptanceError(f"unable to prepare Android compiled acceptance assets: {error}") from error
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    temporary = output.with_name(f".{output.name}.tmp")
+    try:
+        with zipfile.ZipFile(temporary, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            for name in sorted(selected):
+                entry = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+                entry.compress_type = zipfile.ZIP_DEFLATED
+                entry.external_attr = (stat.S_IFREG | 0o644) << 16
+                archive.writestr(entry, selected[name])
+        os.replace(temporary, output)
+        return _inspect_compiled_assets(output)
+    except AcceptanceError:
+        output.unlink(missing_ok=True)
+        raise
+    except OSError as error:
+        output.unlink(missing_ok=True)
+        raise AcceptanceError(f"unable to write Android compiled acceptance assets: {error}") from error
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _extract_compiled_assets(
+    compiled_assets: Path,
+    names: Sequence[str],
+    destination: Path,
+) -> None:
+    if destination.exists():
+        shutil.rmtree(destination)
+    destination.mkdir(parents=True)
+    try:
+        with zipfile.ZipFile(compiled_assets) as archive:
+            for name in names:
+                target = destination / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with archive.open(name) as source, target.open("wb") as output:
+                    shutil.copyfileobj(source, output)
+    except (OSError, zipfile.BadZipFile, KeyError) as error:
+        raise AcceptanceError(f"unable to stage Android compiled acceptance assets: {error}") from error
+
+
+def stage_scenario(
+    source_template: Path,
+    compiled_assets: Path,
+    destination: Path,
+) -> Path:
+    """Validate and extract one source template, then overlay exact-build compiled smoke assets."""
     destination = destination.absolute()
     if destination.exists() or destination.is_symlink():
         raise AcceptanceError(f"Android acceptance scenario already exists: {destination}")
@@ -206,6 +416,7 @@ def stage_scenario(source_template: Path, destination: Path) -> Path:
         names = inspector.inspect_source_template(source_template)
     except RuntimeError as error:
         raise AcceptanceError(f"invalid Android source template: {error}") from error
+    compiled_names = _inspect_compiled_assets(compiled_assets)
 
     try:
         destination.mkdir(parents=True)
@@ -216,16 +427,11 @@ def stage_scenario(source_template: Path, destination: Path) -> Path:
                 with archive.open(name) as source, target.open("wb") as output:
                     shutil.copyfileobj(source, output)
 
-        instrumented_assets = destination / "src/instrumented/assets"
-        if not instrumented_assets.is_dir():
-            raise AcceptanceError(
-                "Android source template is missing instrumented smoke assets: src/instrumented/assets"
-            )
-        shutil.copytree(
-            instrumented_assets,
+        for target in (
             destination / "src/main/assets",
-            dirs_exist_ok=True,
-        )
+            destination / "src/instrumented/assets",
+        ):
+            _extract_compiled_assets(compiled_assets, compiled_names, target)
         gradlew = destination / "gradlew"
         gradlew.chmod(gradlew.stat().st_mode | stat.S_IXUSR)
     except AcceptanceError:
@@ -261,9 +467,12 @@ def gradle_acceptance_command(
 
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
-    with path.open("rb") as source:
-        for chunk in iter(lambda: source.read(1024 * 1024), b""):
-            digest.update(chunk)
+    try:
+        with path.open("rb") as source:
+            for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                digest.update(chunk)
+    except OSError as error:
+        raise AcceptanceError(f"unable to hash {path}: {error}") from error
     return digest.hexdigest()
 
 
@@ -380,10 +589,12 @@ def _device_context(
     return {"serial": serial, "abi": abi}
 
 
-def _require_instrumentation_result(scenario: Path) -> Path:
+def _require_instrumentation_results(scenario: Path) -> tuple[Path, ...]:
     report_root = scenario / JUNIT_REPORT_ROOT
     reports = sorted(report_root.rglob("*.xml")) if report_root.is_dir() else []
-    matches: list[tuple[Path, ElementTree.Element]] = []
+    matches: dict[str, list[tuple[Path, ElementTree.Element]]] = {
+        method: [] for method in INSTRUMENTATION_METHODS
+    }
     for report in reports:
         try:
             root = ElementTree.parse(report).getroot()
@@ -392,21 +603,30 @@ def _require_instrumentation_result(scenario: Path) -> Path:
         for test_case in root.iter():
             if test_case.tag.rsplit("}", 1)[-1] != "testcase":
                 continue
-            if (
-                test_case.attrib.get("classname") == INSTRUMENTATION_CLASS
-                and test_case.attrib.get("name") == INSTRUMENTATION_METHOD
-            ):
-                matches.append((report, test_case))
-    if len(matches) != 1:
+            method = test_case.attrib.get("name")
+            if test_case.attrib.get("classname") == INSTRUMENTATION_CLASS and method in matches:
+                matches[method].append((report, test_case))
+    missing = [method for method, cases in matches.items() if not cases]
+    duplicates = [method for method, cases in matches.items() if len(cases) > 1]
+    if missing:
         raise AcceptanceError(
-            f"Android instrumentation did not report exactly one {INSTRUMENTATION_TEST} test case; found {len(matches)}"
+            "Android instrumentation is missing required test cases: " + ", ".join(missing)
         )
-    report, test_case = matches[0]
-    outcomes = {child.tag.rsplit("}", 1)[-1] for child in test_case}
-    failed = outcomes.intersection({"error", "failure", "skipped"})
-    if failed:
-        raise AcceptanceError(f"Android instrumentation {INSTRUMENTATION_TEST} did not pass: {sorted(failed)}")
-    return report
+    if duplicates:
+        raise AcceptanceError(
+            "Android instrumentation reported duplicate required test cases: " + ", ".join(duplicates)
+        )
+    matched_reports: set[Path] = set()
+    for method in INSTRUMENTATION_METHODS:
+        report, test_case = matches[method][0]
+        matched_reports.add(report)
+        outcomes = {child.tag.rsplit("}", 1)[-1] for child in test_case}
+        failed = outcomes.intersection({"error", "failure", "skipped"})
+        if failed:
+            raise AcceptanceError(
+                f"Android instrumentation {INSTRUMENTATION_CLASS}#{method} did not pass: {sorted(failed)}"
+            )
+    return tuple(sorted(matched_reports))
 
 
 def _cleanup_packages(
@@ -481,7 +701,75 @@ def _wait_for_process(
     pids = result.stdout.split()
     if len(pids) != 1 or not pids[0].isdigit():
         raise AcceptanceError(f"Android process {application_id} reported invalid PID output: {result.stdout!r}")
-    return pids[0]
+    pid = pids[0]
+    for observation in range(2, PROCESS_STABILITY_OBSERVATIONS + 1):
+        if poll_interval > 0:
+            time.sleep(poll_interval)
+        probe = runner.run(
+            _adb(adb, serial, "shell", "pidof", application_id),
+            cwd=None,
+            timeout=15,
+            description=f"confirming Android process stability for {application_id}",
+            check=False,
+        )
+        observed_pids = probe.stdout.split() if probe.returncode == 0 else []
+        if observed_pids != [pid]:
+            raise AcceptanceError(
+                f"Android process {application_id} did not remain stable "
+                f"through observation {observation}/{PROCESS_STABILITY_OBSERVATIONS}; "
+                f"expected PID {pid}, found {(probe.stdout + probe.stderr).strip()!r}"
+            )
+    return pid
+
+
+def _wait_for_runtime_marker(
+    *,
+    adb: Path,
+    serial: str,
+    application_id: str,
+    pid: str,
+    marker: str,
+    runner: Runner,
+    timeout: float,
+    poll_interval: float,
+) -> None:
+    def require_same_process(context: str) -> None:
+        probe = runner.run(
+            _adb(adb, serial, "shell", "pidof", application_id),
+            cwd=None,
+            timeout=15,
+            description=f"confirming Android process {context} for {application_id}",
+            check=False,
+        )
+        observed_pids = probe.stdout.split() if probe.returncode == 0 else []
+        if observed_pids != [pid]:
+            raise AcceptanceError(
+                f"Android process {application_id} did not remain stable {context}; "
+                f"expected PID {pid}, found {(probe.stdout + probe.stderr).strip()!r}"
+            )
+
+    def marker_probe() -> CommandResult:
+        require_same_process("while waiting for required runtime marker")
+        result = runner.run(
+            _adb(adb, serial, "logcat", f"--pid={pid}", "-d", "-v", "threadtime"),
+            cwd=None,
+            timeout=60,
+            description=f"reading Android runtime marker for {application_id}",
+            check=False,
+        )
+        failures = runtime_log_failures(result.stdout + result.stderr)
+        if failures:
+            raise AcceptanceError(f"Android package {application_id} logged forbidden runtime failures: {failures}")
+        return result
+
+    _wait_for_probe(
+        marker_probe,
+        lambda result: marker in (result.stdout + result.stderr),
+        timeout=timeout,
+        poll_interval=poll_interval,
+        description=f"waiting for required runtime marker {marker!r} from {application_id}",
+    )
+    require_same_process("after observing required runtime marker")
 
 
 def _verify_apk_on_device(
@@ -495,6 +783,7 @@ def _verify_apk_on_device(
     runner: Runner,
     process_timeout: float,
     poll_interval: float,
+    required_runtime_marker: str | None,
 ) -> dict[str, Any]:
     application_id = validate_application_id(application_id)
     apk = apk.absolute()
@@ -559,6 +848,18 @@ def _verify_apk_on_device(
         suffix = f"; runtime failures: {failures}" if failures else ""
         raise AcceptanceError(f"{error}{suffix}") from error
 
+    if required_runtime_marker is not None:
+        _wait_for_runtime_marker(
+            adb=adb,
+            serial=serial,
+            application_id=application_id,
+            pid=pid,
+            marker=required_runtime_marker,
+            runner=runner,
+            timeout=process_timeout,
+            poll_interval=poll_interval,
+        )
+
     full_logcat, process_logcat = _capture_logcat(adb, serial, pid, runner)
     if process_logcat is None:
         raise AcceptanceError(f"Android package {application_id} did not produce process-filtered logcat")
@@ -567,6 +868,10 @@ def _verify_apk_on_device(
     failures = runtime_log_failures(process_logcat)
     if failures:
         raise AcceptanceError(f"Android package {application_id} logged forbidden runtime failures: {failures}")
+    if required_runtime_marker is not None and required_runtime_marker not in process_logcat:
+        raise AcceptanceError(
+            f"Android package {application_id} did not log required runtime marker: {required_runtime_marker!r}"
+        )
     return {
         "apk": str(apk),
         "apk_sha256": _sha256(apk),
@@ -581,6 +886,7 @@ def _verify_apk_on_device(
 def run_source_template_acceptance(
     *,
     source_template: Path,
+    compiled_assets: Path,
     work_dir: Path,
     evidence_dir: Path,
     adb: Path,
@@ -596,13 +902,17 @@ def run_source_template_acceptance(
     evidence_dir = _create_owned_directory(evidence_dir, "Android acceptance evidence directory")
     command_runner: Runner = runner if runner is not None else SubprocessRunner(evidence_dir)
     source_template = source_template.absolute()
+    compiled_assets = compiled_assets.absolute()
     report: dict[str, Any] = {
         "mode": "source-template",
         "schema_version": 1,
         "source_template": str(source_template),
-        "source_template_sha256": _sha256(source_template),
+        "compiled_assets": str(compiled_assets),
     }
     try:
+        _inspect_compiled_assets(compiled_assets)
+        report["source_template_sha256"] = _sha256(source_template)
+        report["compiled_assets_sha256"] = _sha256(compiled_assets)
         device = _device_context(
             adb,
             requested_serial,
@@ -616,21 +926,34 @@ def run_source_template_acceptance(
             ("canonical", DEFAULT_APPLICATION_ID),
             ("custom", CUSTOM_APPLICATION_ID),
         ):
-            scenario = stage_scenario(source_template, work_dir / name)
+            scenario = stage_scenario(source_template, compiled_assets, work_dir / name)
             _cleanup_packages(adb, device["serial"], application_id, command_runner)
             try:
-                command_runner.run(
-                    gradle_acceptance_command(
-                        scenario / "gradlew",
-                        device["abi"],
-                        application_id,
-                    ),
-                    cwd=scenario,
-                    timeout=1800,
-                    description=f"running {name} Android Gradle acceptance",
-                    env={"ANDROID_SERIAL": device["serial"]},
-                )
-                junit_report = _require_instrumentation_result(scenario)
+                try:
+                    command_runner.run(
+                        gradle_acceptance_command(
+                            scenario / "gradlew",
+                            device["abi"],
+                            application_id,
+                        ),
+                        cwd=scenario,
+                        timeout=1800,
+                        description=f"running {name} Android Gradle acceptance",
+                        env={"ANDROID_SERIAL": device["serial"]},
+                    )
+                    junit_reports = _require_instrumentation_results(scenario)
+                except AcceptanceError:
+                    full_logcat, _ = _capture_logcat(
+                        adb,
+                        device["serial"],
+                        None,
+                        command_runner,
+                    )
+                    (evidence_dir / f"{name}-instrumentation-failure-logcat.txt").write_text(
+                        full_logcat,
+                        encoding="utf-8",
+                    )
+                    raise
                 scenario_report = _verify_apk_on_device(
                     apk=scenario / STANDARD_APK,
                     application_id=application_id,
@@ -641,12 +964,14 @@ def run_source_template_acceptance(
                     runner=command_runner,
                     process_timeout=process_timeout,
                     poll_interval=poll_interval,
+                    required_runtime_marker=STANDARD_SMOKE_READY_MARKER,
                 )
                 scenario_report.update(
                     {
                         "instrumentation_passed": True,
-                        "instrumentation_report": str(junit_report),
-                        "instrumentation_test": INSTRUMENTATION_TEST,
+                        "instrumentation_reports": [str(report) for report in junit_reports],
+                        "instrumentation_test": INSTRUMENTATION_CLASS,
+                        "instrumentation_tests": list(INSTRUMENTATION_METHODS),
                         "scenario": name,
                     }
                 )
@@ -703,6 +1028,7 @@ def run_apk_acceptance(
                         runner=command_runner,
                         process_timeout=process_timeout,
                         poll_interval=poll_interval,
+                        required_runtime_marker=None,
                     )
                 )
             finally:
@@ -745,8 +1071,20 @@ def _parser() -> argparse.ArgumentParser:
         help="build, instrument, install, and start the generated source template",
     )
     source.add_argument("--source-template", required=True, type=Path)
+    source.add_argument("--compiled-assets", required=True, type=Path)
     source.add_argument("--work-dir", required=True, type=Path)
     _add_device_arguments(source)
+    inspect_assets = commands.add_parser(
+        "inspect-compiled-assets",
+        help="validate one exact-build compiled Android acceptance asset archive",
+    )
+    inspect_assets.add_argument("--compiled-assets", required=True, type=Path)
+    prepare_assets = commands.add_parser(
+        "prepare-compiled-assets",
+        help="sanitize one raw exact-build export into runtime-only compiled assets",
+    )
+    prepare_assets.add_argument("--source", required=True, type=Path)
+    prepare_assets.add_argument("--output", required=True, type=Path)
     apks = commands.add_parser(
         "verify-apks",
         help="install and start already-exported APKs",
@@ -764,6 +1102,27 @@ def _require_executable(path: Path, description: str) -> None:
 def main() -> int:
     arguments = _parser().parse_args()
     try:
+        if arguments.command == "prepare-compiled-assets":
+            paths = prepare_compiled_assets(arguments.source, arguments.output)
+            report = {
+                "compiled_assets": str(arguments.output.absolute()),
+                "compiled_assets_sha256": _sha256(arguments.output.absolute()),
+                "paths": paths,
+                "schema_version": 1,
+            }
+            print(json.dumps(report, sort_keys=True))
+            return 0
+        if arguments.command == "inspect-compiled-assets":
+            compiled_assets = arguments.compiled_assets.absolute()
+            paths = _inspect_compiled_assets(compiled_assets)
+            report = {
+                "compiled_assets": str(compiled_assets),
+                "compiled_assets_sha256": _sha256(compiled_assets),
+                "paths": paths,
+                "schema_version": 1,
+            }
+            print(json.dumps(report, sort_keys=True))
+            return 0
         _require_executable(arguments.adb, "adb")
         _require_executable(arguments.apkanalyzer, "apkanalyzer")
         common = {
@@ -778,6 +1137,7 @@ def main() -> int:
         if arguments.command == "source-template":
             report = run_source_template_acceptance(
                 source_template=arguments.source_template,
+                compiled_assets=arguments.compiled_assets,
                 work_dir=arguments.work_dir,
                 **common,
             )

@@ -36,9 +36,6 @@ import androidx.annotation.Nullable;
 
 import java.util.Collections;
 import java.util.List;
-import java.util.Set;
-
-import games.cafecito.foundry.plugin.FoundryPlugin;
 
 /**
  * Denotate a component (e.g: Activity, Fragment) that hosts the {@link Foundry} engine.
@@ -104,13 +101,6 @@ public interface FoundryHost {
 	 * Provide access to the hosted {@link Foundry} engine.
 	 */
 	Foundry getFoundry();
-
-	/**
-	 * Returns a set of {@link FoundryPlugin} to be registered with the hosted {@link Foundry} engine.
-	 */
-	default Set<FoundryPlugin> getHostPlugins(Foundry engine) {
-		return Collections.emptySet();
-	}
 
 	/**
 	 * Returns whether the given feature tag is supported.

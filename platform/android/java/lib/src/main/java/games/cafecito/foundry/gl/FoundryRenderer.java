@@ -2,7 +2,7 @@
 /*  FoundryRenderer.java                                                  */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -36,8 +36,6 @@ import javax.microedition.khronos.egl.EGLConfig;
 import javax.microedition.khronos.opengles.GL10;
 
 import games.cafecito.foundry.FoundryLib;
-import games.cafecito.foundry.plugin.FoundryPlugin;
-import games.cafecito.foundry.plugin.FoundryPluginRegistry;
 
 /**
  * Foundry's GL renderer implementation.
@@ -45,12 +43,7 @@ import games.cafecito.foundry.plugin.FoundryPluginRegistry;
 public class FoundryRenderer implements GLSurfaceView.Renderer {
 	private final String TAG = FoundryRenderer.class.getSimpleName();
 
-	private final FoundryPluginRegistry pluginRegistry;
 	private boolean activityJustResumed = false;
-
-	public FoundryRenderer() {
-		this.pluginRegistry = FoundryPluginRegistry.getPluginRegistry();
-	}
 
 	public boolean onDrawFrame(GL10 gl) {
 		if (activityJustResumed) {
@@ -59,10 +52,6 @@ public class FoundryRenderer implements GLSurfaceView.Renderer {
 		}
 
 		boolean swapBuffers = FoundryLib.step();
-		for (FoundryPlugin plugin : pluginRegistry.getAllPlugins()) {
-			plugin.onGLDrawFrame(gl);
-		}
-
 		return swapBuffers;
 	}
 
@@ -74,16 +63,10 @@ public class FoundryRenderer implements GLSurfaceView.Renderer {
 
 	public void onSurfaceChanged(GL10 gl, int width, int height) {
 		FoundryLib.resize(null, width, height);
-		for (FoundryPlugin plugin : pluginRegistry.getAllPlugins()) {
-			plugin.onGLSurfaceChanged(gl, width, height);
-		}
 	}
 
 	public void onSurfaceCreated(GL10 gl, EGLConfig config) {
 		FoundryLib.newcontext(null);
-		for (FoundryPlugin plugin : pluginRegistry.getAllPlugins()) {
-			plugin.onGLSurfaceCreated(gl, config);
-		}
 	}
 
 	public void onActivityResumed() {

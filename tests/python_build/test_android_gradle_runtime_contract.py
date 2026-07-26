@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import re
 import stat
 import sys
 import tempfile
@@ -28,8 +29,23 @@ NATIVE_CONTRACT_TOOL = REPO_ROOT / "platform/android/android_native_contract.py"
 NATIVE_STAGING_TOOL = REPO_ROOT / "platform/android/android_native_staging.py"
 JNI_CONTRACT_TOOL = REPO_ROOT / "platform/android/android_jni_contract.py"
 SOURCE_TEMPLATE_TOOL = REPO_ROOT / "platform/android/android_source_template.py"
+DEVICE_ACCEPTANCE_TOOL = REPO_ROOT / "platform/android/android_device_acceptance.py"
 ANDROID_README = REPO_ROOT / "platform/android/README.md"
 ANDROID_RUNTIME_DOC = REPO_ROOT / "platform/android/ANDROID_RUNTIME.md"
+FOUNDRY_EXTENSION_EXPORT_PLUGIN = REPO_ROOT / "editor/export/foundry_extension_export_plugin.h"
+DISPLAY_SERVER_DOC = REPO_ROOT / "doc/classes/DisplayServer.xml"
+EDITOR_EXPORT_PLUGIN_HEADER = REPO_ROOT / "editor/export/editor_export_plugin.h"
+EDITOR_EXPORT_PLUGIN_SOURCE = REPO_ROOT / "editor/export/editor_export_plugin.cpp"
+EDITOR_EXPORT_PLUGIN_DOC = REPO_ROOT / "doc/classes/EditorExportPlugin.xml"
+ANDROID_EXPORT_PLATFORM_DOC = REPO_ROOT / "platform/android/doc_classes/EditorExportPlatformAndroid.xml"
+OPENXR_EXPORT_PLUGIN_HEADER = REPO_ROOT / "modules/openxr/editor/openxr_editor_plugin.h"
+OPENXR_EXPORT_PLUGIN_SOURCE = REPO_ROOT / "modules/openxr/editor/openxr_editor_plugin.cpp"
+APP_INSTRUMENTED_TEST = JAVA_ROOT / "app/src/androidTestInstrumented/java/games/cafecito/foundry/game/FoundryAppTest.kt"
+INSTRUMENTED_ASSETS = JAVA_ROOT / "app/src/instrumented/assets"
+INSTRUMENTED_EXPORT_PRESET = INSTRUMENTED_ASSETS / "export_presets.cfg"
+INSTRUMENTED_MAIN = INSTRUMENTED_ASSETS / "main.fs"
+INSTRUMENTED_FILE_ACCESS_TESTS = INSTRUMENTED_ASSETS / "test/file_access/file_access_tests.fs"
+INSTRUMENTED_JAVACLASSWRAPPER_TESTS = INSTRUMENTED_ASSETS / "test/javaclasswrapper/java_class_wrapper_tests.fs"
 PRE_COMMIT = REPO_ROOT / ".pre-commit-config.yaml"
 ACTIVE_GRADLE_FILES = (
     SETTINGS,
@@ -39,6 +55,39 @@ ACTIVE_GRADLE_FILES = (
     LIB_BUILD,
     JAVA_ROOT / "app/assetPackInstallTime/build.gradle",
     JAVA_ROOT / "nativeSrcsConfigs/build.gradle",
+)
+LEGACY_PLUGIN_PATHS = (
+    REPO_ROOT / "platform/android/plugin/foundry_plugin_jni.h",
+    REPO_ROOT / "platform/android/plugin/foundry_plugin_jni.cpp",
+    REPO_ROOT / "platform/android/export/foundry_plugin_config.h",
+    REPO_ROOT / "platform/android/export/foundry_plugin_config.cpp",
+    REPO_ROOT / "platform/android/api/jni_singleton.h",
+    LIB_JAVA / "games/cafecito/foundry/plugin/FoundryPlugin.java",
+    LIB_JAVA / "games/cafecito/foundry/plugin/FoundryPluginRegistry.java",
+    LIB_JAVA / "games/cafecito/foundry/plugin/UsedByFoundry.java",
+    LIB_JAVA / "games/cafecito/foundry/plugin/SignalInfo.java",
+    LIB_JAVA / "games/cafecito/foundry/plugin/AndroidRuntimePlugin.kt",
+    LIB_TESTS / "java/games/cafecito/foundry/plugin/FoundryPluginRegistryTest.java",
+    LIB_ANDROID_TESTS / "java/games/cafecito/foundry/plugin/FoundryPluginProtocolInstrumentedTest.java",
+    JAVA_ROOT / "app/src/instrumented/java/games/cafecito/foundry/game/test/FoundryAppInstrumentedTestPlugin.kt",
+)
+LEGACY_PLUGIN_TOKENS = (
+    "FoundryPlugin",
+    "FoundryPluginRegistry",
+    "UsedByFoundry",
+    "SignalInfo",
+    "AndroidRuntimePlugin",
+    "games.cafecito.foundry.plugin.v1.",
+    "Java_games_cafecito_foundry_plugin_FoundryPlugin_",
+    "Class.forName(",
+    "getDeclaredMethods(",
+    "plugins_maven_repos",
+    "plugins_remote_binaries",
+    "plugins_local_binaries",
+    "getFoundryPluginsMavenRepos",
+    "getFoundryPluginsRemoteBinaries",
+    "getFoundryPluginsLocalBinaries",
+    "-keep class games.cafecito.foundry.plugin.**",
 )
 WRAPPER_SHA256 = "f397b287023acdba1e9f6fc5ea72d22dd63669d59ed4a289a29b1a76eee151c6"
 EXPECTED_SOURCE_AARS = {
@@ -76,6 +125,18 @@ def load_source_template_tool() -> ModuleType:
     return module
 
 
+def load_device_acceptance_tool() -> ModuleType:
+    if not DEVICE_ACCEPTANCE_TOOL.is_file():
+        raise AssertionError(f"missing Android device acceptance tool: {DEVICE_ACCEPTANCE_TOOL}")
+    spec = importlib.util.spec_from_file_location("android_device_acceptance", DEVICE_ACCEPTANCE_TOOL)
+    if spec is None or spec.loader is None:
+        raise AssertionError(f"could not load Android device acceptance tool: {DEVICE_ACCEPTANCE_TOOL}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 def write_source_template(path: Path, entries: dict[str, bytes]) -> None:
     with zipfile.ZipFile(path, "w") as archive:
         for name, contents in entries.items():
@@ -83,6 +144,172 @@ def write_source_template(path: Path, entries: dict[str, bytes]) -> None:
 
 
 class AndroidGradleRuntimeContractTests(unittest.TestCase):
+    def test_legacy_android_plugin_model_is_absent(self) -> None:
+        present = [str(path.relative_to(REPO_ROOT)) for path in LEGACY_PLUGIN_PATHS if path.exists()]
+        self.assertEqual([], present)
+
+        active_sources = (
+            REPO_ROOT / "platform/android/SCsub",
+            REPO_ROOT / "platform/android/api/api.cpp",
+            REPO_ROOT / "platform/android/java_foundry_lib_jni.cpp",
+            REPO_ROOT / "platform/android/java_foundry_wrapper.cpp",
+            REPO_ROOT / "platform/android/java_foundry_wrapper.h",
+            REPO_ROOT / "platform/android/export/export_plugin.cpp",
+            JAVA_ROOT / "app/build.gradle",
+            JAVA_ROOT / "app/config.gradle",
+            JAVA_ROOT / "app/src/instrumented/AndroidManifest.xml",
+            *LIB_JAVA.rglob("*.java"),
+            *LIB_JAVA.rglob("*.kt"),
+        )
+        active = "\n".join(read(path) for path in active_sources)
+        for token in LEGACY_PLUGIN_TOKENS:
+            with self.subTest(token=token):
+                self.assertNotIn(token, active)
+
+    def test_openxr_loader_uses_a_fixed_host_capability_not_generic_plugin_dependencies(self) -> None:
+        removed_api = (
+            "get_android_dependencies",
+            "get_android_dependencies_maven_repos",
+            "get_android_libraries",
+        )
+        for path in (
+            EDITOR_EXPORT_PLUGIN_HEADER,
+            EDITOR_EXPORT_PLUGIN_SOURCE,
+            EDITOR_EXPORT_PLUGIN_DOC,
+            OPENXR_EXPORT_PLUGIN_HEADER,
+            OPENXR_EXPORT_PLUGIN_SOURCE,
+        ):
+            contents = read(path)
+            for method in removed_api:
+                with self.subTest(path=path, method=method):
+                    self.assertNotIn(method, contents)
+
+        openxr = read(OPENXR_EXPORT_PLUGIN_SOURCE)
+        exporter = read(REPO_ROOT / "platform/android/export/export_plugin.cpp")
+        config = read(APP_CONFIG)
+        app = read(APP_BUILD)
+        self.assertIn("openxr_loader_for_android:", openxr)
+        self.assertIn("openxr_loader_for_android:", exporter)
+        self.assertIn("-Popenxr_loader_version=", exporter)
+        self.assertIn("getOpenXRLoaderVersion", config)
+        self.assertIn("org.khronos.openxr:openxr_loader_for_android:${openXRLoaderVersion}", app)
+        self.assertNotIn("_get_deprecated_plugins_names", exporter)
+        self.assertNotIn("_get_deprecated_plugins_names", read(REPO_ROOT / "platform/android/export/export_plugin.h"))
+        self.assertNotIn("tutorials/platform/android/android_plugin.html", read(EDITOR_EXPORT_PLUGIN_DOC))
+        self.assertNotIn("Android plugins documentation index", read(ANDROID_EXPORT_PLATFORM_DOC))
+
+    def test_runtime_documentation_describes_current_non_plugin_coverage(self) -> None:
+        documentation = read(ANDROID_RUNTIME_DOC)
+        self.assertNotIn("plugin metadata parsing", documentation)
+        self.assertNotIn("canonical plugin protocol", documentation)
+        self.assertNotIn("host lifecycle behavior", documentation)
+        self.assertNotIn("host callbacks", documentation)
+        self.assertIn("explicit JavaClassWrapper test bridge", documentation)
+
+    def test_runtime_documentation_passes_compiled_assets_to_source_template_acceptance(self) -> None:
+        documentation = read(ANDROID_RUNTIME_DOC)
+        source_template_example = documentation.split(
+            "python3 platform/android/android_device_acceptance.py source-template",
+            1,
+        )[1].split("```", 1)[0]
+        self.assertIn("--compiled-assets", source_template_example)
+
+    def test_device_acceptance_requires_every_instrumented_test_method(self) -> None:
+        instrumented_test = read(APP_INSTRUMENTED_TEST)
+        kotlin_methods = tuple(
+            re.findall(
+                r"(?m)^\s*@Test\s*\n\s*fun\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(",
+                instrumented_test,
+            )
+        )
+        acceptance = load_device_acceptance_tool()
+        self.assertEqual(kotlin_methods, acceptance.INSTRUMENTATION_METHODS)
+
+    def test_removed_android_aar_plugin_export_path_fails_closed(self) -> None:
+        plugin = read(FOUNDRY_EXTENSION_EXPORT_PLUGIN)
+        legacy_branch = plugin.split('get_value("configuration", "android_aar_plugin"', 1)[1].split(
+            "ERR_FAIL_COND_MSG(!config->has_section_key",
+            1,
+        )[0]
+        self.assertNotIn("skip();", legacy_branch)
+        self.assertIn("EXPORT_MESSAGE_ERROR", legacy_branch)
+        self.assertIn("is no longer supported", legacy_branch)
+
+    def test_saf_documentation_routes_persistable_permissions_to_android_host_code(self) -> None:
+        documentation = read(DISPLAY_SERVER_DOC)
+        self.assertIn("ContentResolver.takePersistableUriPermission", documentation)
+        self.assertIn("Android host code", documentation)
+
+    def test_back_press_termination_waits_for_the_host_status_transition(self) -> None:
+        instrumented_test = read(APP_INSTRUMENTED_TEST)
+        self.assertIn("waitForRunStatus", instrumented_test)
+        self.assertIn(
+            "waitForRunStatus(foundry, Foundry.RunStatus.TERMINATING",
+            instrumented_test,
+        )
+        self.assertNotIn(
+            "assertTrue { foundry.runStatus == Foundry.RunStatus.TERMINATING }",
+            instrumented_test,
+        )
+
+    def test_runtime_smoke_observes_the_host_main_loop_without_script_frontend(self) -> None:
+        instrumented_test = read(APP_INSTRUMENTED_TEST)
+        smoke = instrumented_test.split("fun runtimeBootsWithoutLegacyPluginMetadata()", 1)[1].split("/**", 1)[0]
+        wait = "waitForHostMainLoopStarted(foundry)"
+        self.assertIn(
+            "waitForRunStatus(foundry, Foundry.RunStatus.STARTED",
+            instrumented_test,
+        )
+        self.assertIn("waitForMainLoopStarted()", smoke)
+        self.assertLess(smoke.index(wait), smoke.index("waitForMainLoopStarted()"))
+        self.assertLess(smoke.index("waitForMainLoopStarted()"), smoke.index("scenario.onActivity"))
+
+        export_preset = read(INSTRUMENTED_EXPORT_PRESET)
+        self.assertIn('name="Android Instrumented Assets"', export_preset)
+        self.assertIn('platform="Android"', export_preset)
+        self.assertIn("script_export_mode=3", export_preset)
+
+        root_build = read(ROOT_BUILD)
+        self.assertIn('"src/instrumented/assets/**"', root_build)
+
+    def test_standard_smoke_does_not_resolve_the_instrumented_bridge(self) -> None:
+        main_script = read(INSTRUMENTED_MAIN)
+        ready = main_script.split("func _ready():", 1)[1].split("func _process", 1)[0]
+        self.assertIn('"games.cafecito.foundry.game.BuildConfig"', ready)
+        standard = ready.split('if build_config.FLAVOR == "standard":', 1)[1].split(
+            "_test_bridge =",
+            1,
+        )[0]
+        self.assertNotIn("FoundryAppInstrumentedTestBridge", standard)
+        self.assertIn("Foundry Android standard runtime smoke ready", standard)
+        bridge_missing = ready.split("if _test_bridge == null:", 1)[1]
+        self.assertIn("get_tree().quit()", bridge_missing)
+
+    def test_instrumentation_uses_process_isolation_between_engine_tests(self) -> None:
+        app_build = read(APP_BUILD)
+        self.assertIn("execution 'ANDROIDX_TEST_ORCHESTRATOR'", app_build)
+        self.assertIn("clearPackageData: 'true'", app_build)
+
+    def test_instrumented_runner_does_not_depend_on_editor_global_class_cache(self) -> None:
+        main_script = read(INSTRUMENTED_MAIN)
+        self.assertIn(
+            'preload("res://test/file_access/file_access_tests.fs")',
+            main_script,
+        )
+        self.assertIn(
+            'preload("res://test/javaclasswrapper/java_class_wrapper_tests.fs")',
+            main_script,
+        )
+        self.assertNotIn("var test_instance: BaseTest", main_script)
+        self.assertIn(
+            'extends "res://test/base_test.fs"',
+            read(INSTRUMENTED_FILE_ACCESS_TESTS),
+        )
+        self.assertIn(
+            'extends "res://test/base_test.fs"',
+            read(INSTRUMENTED_JAVACLASSWRAPPER_TESTS),
+        )
+
     def test_settings_include_the_internal_runtime_library(self) -> None:
         settings = read(SETTINGS)
 
@@ -196,9 +423,9 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
             LIB_RESOURCES / "values/strings.xml",
             LIB_RESOURCES / "xml/foundry_provider_paths.xml",
             LIB_TESTS / "java/games/cafecito/foundry/RuntimeIdentityTest.java",
-            LIB_TESTS / "java/games/cafecito/foundry/plugin/FoundryPluginRegistryTest.java",
             LIB_ANDROID_TESTS / "java/games/cafecito/foundry/RuntimeIdentityInstrumentedTest.kt",
-            LIB_ANDROID_TESTS / "java/games/cafecito/foundry/plugin/FoundryPluginProtocolInstrumentedTest.java",
+            JAVA_ROOT
+            / "app/src/instrumented/java/games/cafecito/foundry/game/test/FoundryAppInstrumentedTestBridge.java",
         )
         missing = [str(path.relative_to(REPO_ROOT)) for path in required if not path.is_file()]
         self.assertEqual([], missing)
@@ -234,10 +461,6 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
             "games/cafecito/foundry/FoundryLib.java": (
                 "native boolean initialize(",
                 "Java_games_cafecito_foundry_FoundryLib_initialize",
-            ),
-            "games/cafecito/foundry/plugin/FoundryPlugin.java": (
-                "native boolean nativeRegisterSingleton(",
-                "Java_games_cafecito_foundry_plugin_FoundryPlugin_nativeRegisterSingleton",
             ),
             "games/cafecito/foundry/utils/DialogUtils.kt": (
                 "external fun dialogCallback(",
@@ -478,7 +701,8 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
             "android_device_acceptance.py verify-apks",
             "games.cafecito.foundry.game",
             "dev.example.foundryacceptance",
-            "games.cafecito.foundry.plugin.v1.",
+            "does not scan application manifests",
+            "FoundryExtension loading path",
             "compiled Java/Kotlin native declarations",
             "libfoundry_android.so",
             "Acceptance evidence map",
