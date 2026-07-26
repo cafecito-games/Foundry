@@ -55,12 +55,12 @@ namespace FSTests {
 class TestFSBytecodeScriptAccessor {
 public:
 	static uint8_t get_self_reflection_kinds(const FSFunction *p_function) {
-		return p_function != nullptr ? p_function->self_reflection_kinds : FSFunction::REFLECTION_NONE;
+		return p_function != nullptr ? p_function->self_reflection_kinds : uint8_t(FSFunction::REFLECTION_NONE);
 	}
 
 	static uint8_t get_unresolved_reflection_kinds(
 			const FSFunction *p_function) {
-		return p_function != nullptr ? p_function->unresolved_reflection_kinds : FSFunction::REFLECTION_NONE;
+		return p_function != nullptr ? p_function->unresolved_reflection_kinds : uint8_t(FSFunction::REFLECTION_NONE);
 	}
 
 	static Variant get_static_variable(const Ref<FoundryScript> &p_script, const StringName &p_name) {
