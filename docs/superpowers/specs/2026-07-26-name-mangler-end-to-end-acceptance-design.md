@@ -152,6 +152,14 @@ embedding the complete reflected method name. Dynamic dispatch builds target
 names from separate prefix and suffix literals. One target is protected by
 `@keep_name`; the other is protected by the preset's keep-rules file.
 
+The reflector is an independent script with no inheritance, preload,
+annotation, or typed reference to the generic base that owns the private leak
+controls. Before relying on the controls, the focused acceptance test must
+prove the reflection policy is scoped: the reflector's method is retained
+while the base's private member and method remain rename candidates. If that
+precondition fails, the test must stop and the implementation must be
+investigated rather than weakening either assertion.
+
 The main script prints exactly one normalized line:
 
 ```text
@@ -169,6 +177,12 @@ The safe project uses distinctive private member and method identifiers only
 as declarations and direct compiled references. Their complete spellings
 never appear in a string literal, transcript, error, resource field, or scene
 binding.
+
+Both controls are owned by the generic base, which is outside the independent
+reflector script's reflection-wide keep closure. No reflective enumeration is
+performed on the base, its derived instance, or a type that inherits either
+control. The acceptance therefore never asks one identifier to be both
+reflection-kept and mangled away.
 
 The unmangled pack is first required to contain both controls, proving the
 markers are observable in ordinary `.fsb` output and the negative checks are
@@ -257,4 +271,3 @@ An independent read-only acceptance-matrix reviewer will compare the
 implementation and evidence against issue #800 and epic #786. Fresh Cursor
 reviews against fetched `origin/develop` must then converge to `RESULT: clean`
 before the PR is eligible for auto-merge.
-
