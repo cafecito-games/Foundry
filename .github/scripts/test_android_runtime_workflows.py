@@ -186,6 +186,8 @@ class AndroidRuntimeWorkflowTests(unittest.TestCase):
         for command in (
             "test_android_runtime_contract",
             "test_android_runtime_build",
+            "tests.python_build.test_android_jni_contract",
+            "tests.python_build.test_android_native_staging",
             "tests.python_build.test_android_gradle_behavioral",
             "test_android_gradle_runtime_contract",
             "test_android_device_acceptance",
@@ -273,6 +275,9 @@ class AndroidRuntimeWorkflowTests(unittest.TestCase):
         ):
             self.assertIn(path, self.pre_commit)
         self.assertNotIn("foundry_android_runtime", self.pre_commit)
+        self.assertIn("- id: foundry-android-native-contracts", self.pre_commit)
+        self.assertIn("tests.python_build.test_android_jni_contract", self.pre_commit)
+        self.assertIn("tests.python_build.test_android_native_staging", self.pre_commit)
 
 
 if __name__ == "__main__":

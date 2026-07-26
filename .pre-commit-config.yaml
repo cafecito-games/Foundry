@@ -238,6 +238,22 @@ repos:
             tests/python_build/test_android_runtime_surface\.py
           )$
 
+      - id: foundry-android-native-contracts
+        name: Foundry Android native contracts
+        language: python
+        entry: python -m unittest
+        args:
+          - tests.python_build.test_android_jni_contract
+          - tests.python_build.test_android_native_staging
+        pass_filenames: false
+        files: |
+          (?x)^(
+            \.pre-commit-config\.yaml|
+            platform/android/(?:android_jni_contract|android_native_contract|android_native_staging)\.py|
+            platform/android/java/lib/(?:build\.gradle|src/.*)|
+            tests/python_build/(?:android_native_test_support|test_android_(?:jni_contract|native_staging|runtime_contract))\.py
+          )$
+
       - id: foundry-android-runtime-workflows
         name: Foundry Android runtime workflows
         language: python
