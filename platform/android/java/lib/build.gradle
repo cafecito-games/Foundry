@@ -29,8 +29,11 @@ def androidAbiBySconsArch = [
 ]
 def supportedBuildTypes = ["debug", "dev", "release"]
 def pythonExecutable = providers.gradleProperty("pythonExecutable").orElse("python3")
+def jniContractTool = rootProject.file("../android_jni_contract.py")
 def nativeContractTool = rootProject.file("../android_native_contract.py")
 def nativeStagingTool = rootProject.file("../android_native_staging.py")
+def foundrySourceRoot = file(pathToRootDir)
+def androidNativeStagingRoot = file("build/android-native-stage")
 def foundryNativeRoot = providers.gradleProperty("foundryNativeRoot").orNull
 def usesPrebuiltNativeInput = foundryNativeRoot != null
 def foundryNativeInputIdentity = foundryNativeRoot != null
@@ -211,18 +214,30 @@ android {
             }
 
             String stageTaskName = "stageFoundryNative${flavorName.capitalize()}${buildType.capitalize()}"
+            String compileJarTaskName =
+                "bundleLibCompileToJar${flavorName.capitalize()}${buildType.capitalize()}"
+            File compiledClassesJar = file(
+                "build/intermediates/compile_library_classes_jar/${flavorName}${buildType.capitalize()}/" +
+                "${compileJarTaskName}/classes.jar"
+            )
             def stageTask = tasks.register(stageTaskName, Exec) {
                 dependsOn nativeProducerTasks
+                dependsOn compileJarTaskName
+                inputs.file(jniContractTool)
                 inputs.file(nativeContractTool)
                 inputs.file(nativeStagingTool)
+                inputs.file(compiledClassesJar)
                 outputs.dir(new File(androidNativeStage, buildType))
                 outputs.upToDateWhen { false }
                 List<String> command = [
                     pythonExecutable.get(),
                     nativeStagingTool.absolutePath,
                     "--revision", foundryEngineRevision,
+                    "--source-root", foundrySourceRoot.absolutePath,
+                    "--classes-jar", compiledClassesJar.absolutePath,
                     "--build-type", buildType,
                     "--selected-abis", selectedAbis.collect { androidAbiBySconsArch[it] }.join(","),
+                    "--staging-root", androidNativeStagingRoot.absolutePath,
                     "--output", new File(androidNativeStage, buildType).absolutePath,
                 ]
                 if (foundryNativeRoot != null) {

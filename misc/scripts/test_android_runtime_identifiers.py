@@ -12,6 +12,7 @@ ANDROID_ROOT = REPO_ROOT / "platform/android"
 JAVA_ROOT = ANDROID_ROOT / "java"
 APP_ROOT = JAVA_ROOT / "app"
 NATIVE_CONTRACT = ANDROID_ROOT / "android_native_contract.py"
+JNI_CONTRACT = ANDROID_ROOT / "android_jni_contract.py"
 
 APP_IMPLEMENTATION_PACKAGE = "games.cafecito.foundry.game"
 PLUGIN_METADATA_PREFIX = "games.cafecito.foundry.plugin.v1."
@@ -70,6 +71,7 @@ def load_native_contract(failures: list[str]) -> ModuleType | None:
 
 def check_internal_boundary(failures: list[str]) -> None:
     required = (
+        JNI_CONTRACT,
         NATIVE_CONTRACT,
         ANDROID_ROOT / "android_native_staging.py",
         JAVA_ROOT / "lib/build.gradle",

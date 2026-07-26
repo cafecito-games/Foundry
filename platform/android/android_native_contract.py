@@ -314,7 +314,18 @@ def read_elf(contents: bytes, description: str) -> ElfInfo:
     return ElfInfo(elf_class=elf_class, machine=machine, exported_symbols=tuple(sorted(exported)))
 
 
-def _inspect_native_artifacts(cells: tuple[NativeCell, ...]) -> None:
+def _inspect_native_artifacts(
+    cells: tuple[NativeCell, ...],
+    expected_foundry_jni: tuple[str, ...],
+) -> None:
+    if not expected_foundry_jni:
+        raise ContractError("compiled Foundry classes declare no native methods")
+    if len(set(expected_foundry_jni)) != len(expected_foundry_jni):
+        raise ContractError("compiled Foundry JNI declarations contain duplicates")
+    invalid_expected = sorted(symbol for symbol in expected_foundry_jni if not symbol.startswith(JNI_PREFIX))
+    if invalid_expected:
+        raise ContractError(f"compiled declaration has invalid Foundry JNI symbol: {invalid_expected[0]}")
+    expected_foundry = set(expected_foundry_jni)
     foundry_surfaces: set[tuple[str, ...]] = set()
     required_external = set(REQUIRED_EXTERNAL_JNI_SYMBOLS)
     for cell in cells:
@@ -351,6 +362,12 @@ def _inspect_native_artifacts(cells: tuple[NativeCell, ...]) -> None:
                 raise ContractError(f"missing required external JNI symbol in {description}: {missing_external[0]}")
             if not foundry_symbols:
                 raise ContractError(f"{description} exports no Foundry JNI symbols")
+            missing_foundry = sorted(expected_foundry - set(foundry_symbols))
+            if missing_foundry:
+                raise ContractError(f"missing declared JNI symbol in {description}: {missing_foundry[0]}")
+            undeclared_foundry = sorted(set(foundry_symbols) - expected_foundry)
+            if undeclared_foundry:
+                raise ContractError(f"undeclared JNI symbol in {description}: {undeclared_foundry[0]}")
             foundry_surfaces.add(foundry_symbols)
 
     if len(foundry_surfaces) != 1:
@@ -512,7 +529,13 @@ def _actual_cell_pairs(root: Path) -> set[tuple[str, str]]:
     return pairs
 
 
-def validate_native_matrix(root: Path, revision: str, tree: str) -> tuple[NativeCell, ...]:
+def validate_native_matrix(
+    root: Path,
+    revision: str,
+    tree: str,
+    *,
+    expected_foundry_jni: tuple[str, ...],
+) -> tuple[NativeCell, ...]:
     """Validate exactly one complete 3x4 native matrix and its provenance."""
 
     _sha(revision, "expected Foundry revision")
@@ -531,6 +554,7 @@ def validate_native_matrix(root: Path, revision: str, tree: str) -> tuple[Native
         revision=revision,
         tree=tree,
         pairs=tuple((specification.build_type, specification.abi) for specification in MATRIX),
+        expected_foundry_jni=expected_foundry_jni,
     )
 
 
@@ -540,6 +564,7 @@ def validate_native_cells(
     revision: str,
     tree: str,
     pairs: tuple[tuple[str, str], ...],
+    expected_foundry_jni: tuple[str, ...],
 ) -> tuple[NativeCell, ...]:
     """Validate a selected set of native cells after its producer has finished."""
 
@@ -591,5 +616,5 @@ def validate_native_cells(
             )
         )
     validated = tuple(cells)
-    _inspect_native_artifacts(validated)
+    _inspect_native_artifacts(validated, expected_foundry_jni)
     return validated

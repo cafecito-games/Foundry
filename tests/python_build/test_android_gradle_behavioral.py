@@ -18,6 +18,7 @@ from tests.python_build.android_native_test_support import (
 REPO_ROOT = Path(__file__).resolve().parents[2]
 JAVA_SOURCE = REPO_ROOT / "platform/android/java"
 ANDROID_TOOLS = (
+    "android_jni_contract.py",
     "android_native_contract.py",
     "android_native_staging.py",
     "android_source_template.py",
@@ -259,11 +260,11 @@ class AndroidGradleBehavioralTests(unittest.TestCase):
     def test_missing_git_uses_zero_revision_during_real_gradle_configuration(self) -> None:
         no_git_path = self.workspace / "no-git-path"
         no_git_path.mkdir()
-        for name in ("basename", "dirname", "sed", "sh", "uname", "xargs"):
-            executable = shutil.which(name)
-            if executable is None:
+        for name in ("basename", "dirname", "javap", "sed", "sh", "uname", "xargs"):
+            executable = self.java_home / "bin/javap" if name == "javap" else Path(shutil.which(name) or "")
+            if not executable.is_file():
                 self.fail(f"required Gradle wrapper utility is unavailable: {name}")
-            (no_git_path / name).symlink_to(Path(executable).resolve())
+            (no_git_path / name).symlink_to(executable.resolve())
         self.assertIsNone(shutil.which("git", path=str(no_git_path)))
 
         result = self.run_gradle(
@@ -280,6 +281,22 @@ class AndroidGradleBehavioralTests(unittest.TestCase):
             f'FOUNDRY_ENGINE_REVISION = "{ZERO_REVISION}"',
             build_config.read_text(encoding="utf-8"),
         )
+
+        zero_root = self.workspace / "zero-native-root"
+        populate_native_matrix(
+            zero_root,
+            revision=ZERO_REVISION,
+            tree=ZERO_REVISION,
+        )
+        stage_result = self.run_gradle(
+            ":lib:stageFoundryNativeTemplateDebug",
+            properties={
+                "foundryNativeRoot": str(zero_root),
+                "selectedAbis": ",".join(ALL_SCONS_ABIS),
+            },
+            path=str(no_git_path),
+        )
+        self.assert_gradle_succeeded(stage_result)
 
     def test_changed_input_subset_uses_new_scope_without_stale_abis(self) -> None:
         first_root = self.create_native_root("first-native-root", b":first")

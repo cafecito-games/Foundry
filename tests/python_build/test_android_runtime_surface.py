@@ -235,6 +235,7 @@ for path in (
 ):
     forbid_path(path)
 require_path("platform/android/android_native_contract.py")
+require_path("platform/android/android_jni_contract.py")
 
 require_text(
     "platform/android/java/settings.gradle",

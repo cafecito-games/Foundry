@@ -11,6 +11,7 @@ REMOVED_PATHS = (
     "platform/android/android_native_bundle.py",
 )
 REQUIRED_PATHS = (
+    "platform/android/android_jni_contract.py",
     "platform/android/android_native_contract.py",
     "platform/android/android_native_staging.py",
     "platform/android/java/lib/build.gradle",

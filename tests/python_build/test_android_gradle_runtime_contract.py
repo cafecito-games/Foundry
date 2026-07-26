@@ -26,6 +26,7 @@ THIRDPARTY = JAVA_ROOT / "THIRDPARTY.md"
 WRAPPER = JAVA_ROOT / "gradle/wrapper/gradle-wrapper.properties"
 NATIVE_CONTRACT_TOOL = REPO_ROOT / "platform/android/android_native_contract.py"
 NATIVE_STAGING_TOOL = REPO_ROOT / "platform/android/android_native_staging.py"
+JNI_CONTRACT_TOOL = REPO_ROOT / "platform/android/android_jni_contract.py"
 SOURCE_TEMPLATE_TOOL = REPO_ROOT / "platform/android/android_source_template.py"
 ANDROID_README = REPO_ROOT / "platform/android/README.md"
 ANDROID_RUNTIME_DOC = REPO_ROOT / "platform/android/ANDROID_RUNTIME.md"
@@ -281,6 +282,7 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
         self.assertIn("foundryNativeRoot", read(LIB_BUILD))
         self.assertTrue(NATIVE_CONTRACT_TOOL.is_file())
         self.assertTrue(NATIVE_STAGING_TOOL.is_file())
+        self.assertTrue(JNI_CONTRACT_TOOL.is_file())
         self.assertFalse((REPO_ROOT / "platform/android/android_native_bundle.py").exists())
 
     def test_production_template_generation_requires_the_four_abi_matrix(self) -> None:
@@ -306,9 +308,14 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
             "foundryNativeInputKey",
             "selectedAbis",
             "build/android-native-stage",
+            "--source-root",
+            "--classes-jar",
+            "--staging-root",
             "--output",
         ):
             self.assertIn(fragment, build)
+        self.assertIn("bundleLibCompileToJar", build)
+        self.assertIn("android_jni_contract.py", build)
         self.assertNotIn('delete("libs/${buildType}/${androidAbi}")', build)
 
     def test_revision_fallback_handles_missing_git_executable(self) -> None:

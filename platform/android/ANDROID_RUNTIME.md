@@ -89,14 +89,22 @@ mix payload provenance. Direct `:lib` development tasks may pass an ABI subset;
 `generateFoundryTemplates` and `generateFoundryMonoTemplates` require all four
 ABIs and use all four by default.
 
+The staging tool accepts only lexical outputs contained by its dedicated
+`android-native-stage` root. Root and output ownership markers, symlink checks,
+and transactional backup/restore prevent an unsafe or failed replacement from
+deleting an arbitrary directory.
+
 ### Foundry-owned native inputs
 
 `platform/android/android_native_contract.py` validates the exact 12-cell
 debug/dev/release by four-ABI matrix before Gradle consumes a prebuilt native
 root. Validation covers canonical provenance, the current Foundry revision and
 tree, library hashes and sizes, ELF class and machine, required external JNI
-exports, rejection of stale JNI identities, and an identical Foundry JNI
-surface across every `libfoundry_android.so`.
+exports, rejection of stale JNI identities, and exact agreement between every
+`libfoundry_android.so` and the native declarations derived from the compiled
+Java/Kotlin classes. The expected tree is resolved independently as
+`<revision>^{tree}` from the checked-out Foundry repository; input provenance
+never supplies its own expected identity.
 
 CI passes `-PfoundryNativeRoot=<root>` after downloading the cells built by the
 same Foundry workflow. With no property, the in-tree library schedules local
@@ -179,24 +187,21 @@ package.
 
 ## Compiled JNI and artifact verification
 
-Source ownership tests require representative native declarations to retain
-matching `Java_games_cafecito_foundry_*` C++ exports. For release evidence,
-inspect the compiled Java/Kotlin native declarations rather than relying only
-on source spelling:
+`android_jni_contract.py` runs `javap` over every Foundry class in the compiled
+classes JAR and derives exact JNI names from the
+compiled Java/Kotlin native declarations using the JNI mangling rules:
 
 ```sh
-javap -p -s \
-  -classpath platform/android/java/lib/build/intermediates/compile_library_classes_jar/templateDebug/bundleLibCompileToJarTemplateDebug/classes.jar \
-  games.cafecito.foundry.FoundryLib \
-  games.cafecito.foundry.plugin.FoundryPlugin \
-  games.cafecito.foundry.utils.DialogUtils \
-  games.cafecito.foundry.variant.Callable
+python3 platform/android/android_jni_contract.py \
+  --classes-jar platform/android/java/lib/build/intermediates/compile_library_classes_jar/templateDebug/bundleLibCompileToJarTemplateDebug/classes.jar
 ```
 
+Every Gradle staging task depends on the corresponding compiled classes JAR.
 `android_native_contract.py` reads each ELF dynamic symbol table directly and
-requires the same `Java_games_cafecito_foundry_*` export surface in every cell.
-Compare those compiled exports with the declarations above. Inspect the three
-AARs and APKs with `jar tf`, `unzip -l`, and `apkanalyzer`; require:
+rejects missing declared exports and undeclared extra exports in every native
+cell. CI and release therefore compare all 12 cells with compiled declarations
+before packaging. Inspect the three AARs and APKs with `jar tf`, `unzip -l`,
+and `apkanalyzer`; require:
 
 - `games/cafecito/foundry/Foundry.class`, `FoundryLib.class`, and host support
   classes;

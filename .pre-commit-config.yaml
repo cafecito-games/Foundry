@@ -231,7 +231,7 @@ repos:
           (?x)^(
             \.pre-commit-config\.yaml|
             misc/scripts/test_android_runtime_identifiers\.py|
-            platform/android/(?:android_native_contract\.py|android_native_staging\.py|SCsub)|
+            platform/android/(?:android_jni_contract\.py|android_native_contract\.py|android_native_staging\.py|SCsub)|
             platform/android/export/export_plugin\.cpp|
             platform/android/java/(?:app/|lib(?:/|$)|build\.gradle|settings\.gradle)|
             platform/android/java_foundry_(?:lib_jni|wrapper)\.cpp|
@@ -250,7 +250,7 @@ repos:
             \.github/scripts/test_android_runtime_workflows\.py|
             \.github/workflows/(android_builds|android_java_check|release)\.yml|
             misc/scripts/test_release_resolver\.py|
-            platform/android/(?:android_native_contract|android_native_staging|platform_android_builders)\.py|
+            platform/android/(?:android_jni_contract|android_native_contract|android_native_staging|platform_android_builders)\.py|
             platform/android/java/(?:build|lib/build)\.gradle|
             tests/python_build/test_android_runtime_surface\.py
           )$
