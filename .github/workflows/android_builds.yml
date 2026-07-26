@@ -26,6 +26,7 @@ jobs:
           python3 -m unittest \
             tests.python_build.test_android_runtime_contract \
             tests.python_build.test_android_runtime_build \
+            tests.python_build.test_android_gradle_behavioral \
             tests.python_build.test_android_gradle_runtime_contract \
             tests.python_build.test_android_device_acceptance -v
           python3 tests/python_build/test_android_runtime_surface.py

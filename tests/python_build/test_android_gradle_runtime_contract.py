@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import importlib.util
-import re
 import stat
 import sys
 import tempfile
@@ -16,7 +15,17 @@ SETTINGS = JAVA_ROOT / "settings.gradle"
 ROOT_BUILD = JAVA_ROOT / "build.gradle"
 APP_BUILD = JAVA_ROOT / "app/build.gradle"
 APP_CONFIG = JAVA_ROOT / "app/config.gradle"
+LIB_BUILD = JAVA_ROOT / "lib/build.gradle"
+LIB_MANIFEST = JAVA_ROOT / "lib/src/main/AndroidManifest.xml"
+LIB_JAVA = JAVA_ROOT / "lib/src/main/java"
+LIB_AIDL = JAVA_ROOT / "lib/src/main/aidl"
+LIB_RESOURCES = JAVA_ROOT / "lib/src/main/res"
+LIB_TESTS = JAVA_ROOT / "lib/src/test"
+LIB_ANDROID_TESTS = JAVA_ROOT / "lib/src/androidTest"
+THIRDPARTY = JAVA_ROOT / "THIRDPARTY.md"
 WRAPPER = JAVA_ROOT / "gradle/wrapper/gradle-wrapper.properties"
+NATIVE_BUNDLE_TOOL = REPO_ROOT / "platform/android/android_native_bundle.py"
+NATIVE_STAGING_TOOL = REPO_ROOT / "platform/android/android_native_staging.py"
 SOURCE_TEMPLATE_TOOL = REPO_ROOT / "platform/android/android_source_template.py"
 ANDROID_README = REPO_ROOT / "platform/android/README.md"
 ANDROID_RUNTIME_DOC = REPO_ROOT / "platform/android/ANDROID_RUNTIME.md"
@@ -26,6 +35,7 @@ ACTIVE_GRADLE_FILES = (
     ROOT_BUILD,
     APP_BUILD,
     APP_CONFIG,
+    LIB_BUILD,
     JAVA_ROOT / "app/assetPackInstallTime/build.gradle",
     JAVA_ROOT / "nativeSrcsConfigs/build.gradle",
 )
@@ -72,67 +82,40 @@ def write_source_template(path: Path, entries: dict[str, bytes]) -> None:
 
 
 class AndroidGradleRuntimeContractTests(unittest.TestCase):
-    def test_settings_keep_application_and_native_ide_modules_without_runtime_library(self) -> None:
+    def test_settings_include_the_internal_runtime_library(self) -> None:
         settings = read(SETTINGS)
 
         self.assertIn("include ':app'", settings)
+        self.assertIn("include ':lib'", settings)
         self.assertIn("include ':nativeSrcsConfigs'", settings)
         self.assertIn("include ':assetPackInstallTime'", settings)
-        self.assertNotIn("include ':lib'", settings)
         self.assertNotIn("io.github.gradle-nexus.publish-plugin", settings)
 
-    def test_root_build_prepares_one_explicit_standalone_runtime(self) -> None:
+    def test_root_build_assembles_the_internal_runtime(self) -> None:
         build = read(ROOT_BUILD)
 
-        self.assertIn('tasks.register("prepareFoundryAndroidRuntime", Exec)', build)
         for fragment in (
-            "../android_runtime_build.py",
-            "../android_runtime_contract.py",
-            "../foundry_android_runtime.json",
-            "'prepare'",
-            "'--engine-source'",
-            "'--scratch'",
-            "'--output-aars'",
-            "'--source-repository'",
-            "'--allow-fetch'",
-            "'--native-root'",
-            "'--native-bundle'",
-            "foundryAndroidSource",
-            "foundryAndroidFetch",
-            "foundryNativeRoot",
-            "foundryNativeBundle",
-            "foundryRuntimeScratch",
-            "inputs.file",
-            "outputs.dir",
+            'dependsOn ":lib:assembleTemplate${capitalizedTarget}"',
+            'from("lib/build/outputs/aar/foundry-${target}.aar")',
+            'into("libs/${target}")',
+            '"libs/**"',
+            'dependsOn ":app:assemble${capitalizedEdition}${capitalizedTarget}"',
+            "foundry-debug.aar",
+            "foundry-dev.aar",
+            "foundry-release.aar",
         ):
             self.assertIn(fragment, build)
 
-        self.assertRegex(
-            build,
-            r"generateFoundryTemplates\s*\{[^}]*dependsOn\s+prepareFoundryAndroidRuntime",
-        )
-        self.assertRegex(
-            build,
-            r"generateFoundryMonoTemplates\s*\{[^}]*dependsOn\s+prepareFoundryAndroidRuntime",
-        )
-        self.assertIn("exactly one standalone source", build)
-        self.assertIn("exactly one native root or bundle", build)
-        self.assertIn("def hasStandaloneSource = !sourceValue.isEmpty()", build)
-        self.assertIn("if (hasStandaloneSource == fetchValue)", build)
-
-    def test_app_variants_consume_generated_or_packaged_standalone_aars(self) -> None:
+    def test_app_consumes_internal_project_with_exported_template_fallback(self) -> None:
         app = read(APP_BUILD)
 
-        self.assertIn("foundryRuntimeAarRoot", app)
+        self.assertIn('implementation project(":lib")', app)
         for build_type in ("debug", "dev", "release"):
             self.assertIn(f"{build_type}Implementation", app)
-            self.assertIn(f"foundryRuntimeAarRoot/{build_type}", app)
-        self.assertIn("prepareFoundryAndroidRuntime", app)
-        self.assertRegex(app, r"task\.name\.startsWith\(\"assemble\"\)")
-        self.assertRegex(app, r"task\.name\.startsWith\(\"merge\"\)")
-        self.assertNotIn('project(":lib")', app)
+            self.assertIn(f"libs/{build_type}", app)
         self.assertNotIn('project(":godot:lib")', app)
-        self.assertNotIn("copyDebugAARToAppModule", app)
+        self.assertNotIn("foundryRuntimeAarRoot", app)
+        self.assertNotIn("prepareFoundryAndroidRuntime", app)
 
     def test_template_and_diagnostic_artifact_names_stay_stable(self) -> None:
         build = read(ROOT_BUILD)
@@ -147,7 +130,8 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
             "foundry-release.aar",
         ):
             self.assertIn(filename, build)
-        self.assertIn('into "libs"', build)
+        self.assertIn('into("libs/${target}")', build)
+        self.assertNotIn('into("app/libs/${target}")', build)
 
     def test_apk_copy_tasks_freeze_and_require_each_variant_output(self) -> None:
         build = read(ROOT_BUILD)
@@ -162,31 +146,211 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
             self.assertIn(fragment, build)
         self.assertNotIn('from("app/build/outputs/apk/${edition}/${target}")', build)
 
-    def test_active_gradle_has_no_in_tree_runtime_or_publication_logic(self) -> None:
+    def test_internal_library_build_preserves_runtime_compilation_contract(self) -> None:
+        build = read(LIB_BUILD)
+
+        for fragment in (
+            "id 'com.android.library'",
+            "id 'org.jetbrains.kotlin.android'",
+            "namespace = 'games.cafecito.foundry'",
+            "compileSdkVersion versions.compileSdk",
+            "minSdkVersion versions.minSdk",
+            "targetSdkVersion versions.targetSdk",
+            "testInstrumentationRunner",
+            "aidl = true",
+            "buildConfig = true",
+            "template {}",
+            "abortOnError true",
+            "testImplementation",
+            "androidTestImplementation",
+            "FOUNDRY_BINDINGS_VERSION",
+            "FOUNDRY_ENGINE_VERSION",
+            "FOUNDRY_ENGINE_REVISION",
+            "FOUNDRY_JNI_CONTRACT_VERSION",
+            '"swappy=yes"',
+            "bin/android-native/${foundryEngineRevision}/${buildType}/${androidAbi}",
+            "supportedAbis",
+            "orElse(supportedAbis)",
+            "androidNativeStage",
+            "../android_native_staging.py",
+        ):
+            self.assertIn(fragment, build)
+        for stale in (
+            "debug.jniLibs.srcDirs = ['libs/debug']",
+            "dev.jniLibs.srcDirs = ['libs/dev']",
+            "release.jniLibs.srcDirs = ['libs/release']",
+            'into("libs/${buildType}/${androidAbi}")',
+        ):
+            self.assertNotIn(stale, build)
+
+    def test_internal_runtime_source_trees_are_complete(self) -> None:
+        required = (
+            LIB_MANIFEST,
+            LIB_JAVA / "games/cafecito/foundry/Foundry.kt",
+            LIB_JAVA / "games/cafecito/foundry/FoundryLib.java",
+            LIB_JAVA / "games/cafecito/foundry/service/FoundryService.kt",
+            LIB_AIDL / "com/android/vending/licensing/ILicenseResultListener.aidl",
+            LIB_AIDL / "com/android/vending/licensing/ILicensingService.aidl",
+            LIB_RESOURCES / "layout/foundry_app_layout.xml",
+            LIB_RESOURCES / "values/strings.xml",
+            LIB_RESOURCES / "xml/foundry_provider_paths.xml",
+            LIB_TESTS / "java/games/cafecito/foundry/RuntimeIdentityTest.java",
+            LIB_TESTS / "java/games/cafecito/foundry/plugin/FoundryPluginRegistryTest.java",
+            LIB_ANDROID_TESTS / "java/games/cafecito/foundry/RuntimeIdentityInstrumentedTest.kt",
+            LIB_ANDROID_TESTS / "java/games/cafecito/foundry/plugin/FoundryPluginProtocolInstrumentedTest.java",
+        )
+        missing = [str(path.relative_to(REPO_ROOT)) for path in required if not path.is_file()]
+        self.assertEqual([], missing)
+
+    def test_runtime_preserves_identity_api36_resources_and_jni_names(self) -> None:
+        manifest = read(LIB_MANIFEST)
+        for metadata in (
+            "games.cafecito.foundry.library.version",
+            "games.cafecito.foundry.engine.version",
+            "games.cafecito.foundry.engine.revision",
+            "games.cafecito.foundry.jni.contract",
+            ".FoundryDownloaderAlarmReceiver",
+        ):
+            self.assertIn(metadata, manifest)
+
+        downloader = read(LIB_JAVA / "com/google/android/vending/expansion/downloader/impl/DownloaderService.java")
+        service = read(LIB_JAVA / "games/cafecito/foundry/service/FoundryService.kt")
+        compat = read(LIB_JAVA / "games/cafecito/foundry/utils/AndroidRuntimeCompat.kt")
+        self.assertIn("PendingIntent.FLAG_ONE_SHOT | PendingIntent.FLAG_IMMUTABLE", downloader)
+        self.assertIn("Build.VERSION_CODES.BAKLAVA", service)
+        self.assertIn("hostInputTransferToken != null", service)
+        self.assertIn("@RequiresApi(Build.VERSION_CODES.R)", compat)
+        self.assertIn('@SuppressLint("MissingPermission")', compat)
+
+        for resource in (
+            JAVA_ROOT / "lib/src/main/resources/META-INF/foundry/LICENSE.txt",
+            JAVA_ROOT / "lib/src/main/resources/META-INF/foundry/LICENSES/Apache-2.0.txt",
+            JAVA_ROOT / "lib/src/main/resources/META-INF/foundry/NOTICE",
+        ):
+            self.assertTrue(resource.is_file(), resource)
+
+        declaration_exports = {
+            "games/cafecito/foundry/FoundryLib.java": (
+                "native boolean initialize(",
+                "Java_games_cafecito_foundry_FoundryLib_initialize",
+            ),
+            "games/cafecito/foundry/plugin/FoundryPlugin.java": (
+                "native boolean nativeRegisterSingleton(",
+                "Java_games_cafecito_foundry_plugin_FoundryPlugin_nativeRegisterSingleton",
+            ),
+            "games/cafecito/foundry/utils/DialogUtils.kt": (
+                "external fun dialogCallback(",
+                "Java_games_cafecito_foundry_utils_DialogUtils_dialogCallback",
+            ),
+            "games/cafecito/foundry/variant/Callable.kt": (
+                "external fun nativeCall(",
+                "Java_games_cafecito_foundry_variant_Callable_nativeCall",
+            ),
+        }
+        native_sources = "\n".join(
+            path.read_text(encoding="utf-8", errors="replace")
+            for path in (REPO_ROOT / "platform/android").rglob("*")
+            if path.is_file() and path.suffix in {".c", ".cc", ".cpp", ".h"} and "thirdparty" not in path.parts
+        )
+        for relative_path, (declaration, export) in declaration_exports.items():
+            self.assertIn(declaration, read(LIB_JAVA / relative_path))
+            self.assertIn(export, native_sources)
+
+    def test_active_gradle_keeps_only_the_temporary_caller_bridge(self) -> None:
         active = "\n".join(read(path) for path in ACTIVE_GRADLE_FILES)
 
         for fragment in (
-            "../../../version.py",
-            "getFoundryPublishVersion",
-            "generateFoundryLibraryVersion",
-            "lib/libs",
-            "compileFoundryNativeLibs",
-            "generateNativeLibs",
+            "prepareFoundryAndroidRuntime",
+            "foundryRuntimeAarRoot",
+            "../android_runtime_build.py",
+            "../foundry_android_runtime.json",
             "io.github.gradle-nexus.publish-plugin",
+            "maven-publish",
+            "MavenPublication",
             "publish-root.gradle",
             "publish-module.gradle",
             "nexusPublishing",
+            "Foundry-Android",
         ):
             self.assertNotIn(fragment, active)
-        self.assertIsNone(re.search(r"executable\s+.*scons", active, re.IGNORECASE))
+        for fragment in (
+            "foundryAndroidSource",
+            "foundryAndroidFetch",
+            "foundryNativeRoot",
+            "foundryNativeBundle",
+            "foundryRuntimeScratch",
+            "WS2_REMOVE_ANDROID_RUNTIME_COMPAT_BRIDGE",
+        ):
+            self.assertIn(fragment, active)
+        self.assertTrue(NATIVE_BUNDLE_TOOL.is_file())
+        self.assertTrue(NATIVE_STAGING_TOOL.is_file())
 
-    def test_wrapper_verifies_the_pinned_standalone_distribution(self) -> None:
+    def test_production_template_generation_requires_the_four_abi_matrix(self) -> None:
+        root_build = read(ROOT_BUILD)
+        library_build = read(LIB_BUILD)
+
+        for fragment in (
+            "generateFoundryTemplates",
+            "generateFoundryMonoTemplates",
+            "supportedAbis",
+            "selectedAbis",
+            "all four Android ABIs",
+        ):
+            self.assertIn(fragment, root_build)
+        self.assertIn('def supportedAbis = ["arm32", "arm64", "x86_32", "x86_64"]', library_build)
+        self.assertIn("orElse(supportedAbis)", library_build)
+
+    def test_native_staging_is_revision_and_input_scoped(self) -> None:
+        build = read(LIB_BUILD)
+
+        for fragment in (
+            "foundryEngineRevision",
+            "foundryNativeInputKey",
+            "selectedAbis",
+            "build/android-native-stage",
+            "--output",
+        ):
+            self.assertIn(fragment, build)
+        self.assertNotIn('delete("libs/${buildType}/${androidAbi}")', build)
+
+    def test_revision_fallback_handles_missing_git_executable(self) -> None:
+        config = read(APP_CONFIG)
+
+        self.assertIn("getFoundryEngineRevision", config)
+        self.assertIn("try {", config)
+        self.assertIn("catch (Exception ignored)", config)
+        self.assertIn("0000000000000000000000000000000000000000", config)
+
+    def test_third_party_provenance_describes_the_in_tree_sources_precisely(self) -> None:
+        third_party = read(THIRDPARTY)
+
+        for fragment in (
+            "lib/src/main/java/com/google/android/vending/expansion/downloader",
+            "lib/src/main/aidl/com/android/vending/licensing",
+            "lib/src/main/java/com/google/android/vending/licensing",
+            "Handler ownership leaks",
+            "Foundry resource package",
+            "locale-stable",
+            "PendingIntent",
+            "immutable",
+            "asynchronous preference behavior",
+            "debug-only runtime check",
+        ):
+            self.assertIn(fragment, third_party)
+        for stale in (
+            "lib/src/com/google",
+            "lib/aidl/com/android",
+            "yet unclear",
+        ):
+            self.assertNotIn(stale, third_party)
+
+    def test_wrapper_verifies_the_gradle_distribution(self) -> None:
         wrapper = read(WRAPPER)
 
         self.assertIn(f"distributionSha256Sum={STANDALONE_WRAPPER_SHA256}", wrapper)
         self.assertIn("gradle-8.11.1-bin.zip", wrapper)
 
-    def test_source_template_inspector_accepts_only_packaged_standalone_aars(self) -> None:
+    def test_source_template_inspector_accepts_only_packaged_internal_aars(self) -> None:
         tool = load_source_template_tool()
         with tempfile.TemporaryDirectory() as temporary:
             archive = Path(temporary) / "android_source.zip"
@@ -264,10 +428,10 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
 
         for fragment in (
             "../android_source_template.py",
-            "'promote'",
-            "'--archive'",
-            "'--destination'",
-            "foundryAndroidSourceTemplate",
+            '"promote"',
+            '"--archive"',
+            '"--destination"',
+            "androidSourceTemplate",
             'tasks.register("clearAndroidSourceTemplateOutput", Delete)',
             "mustRunAfter clearAndroidSourceTemplateOutput",
             'tasks.register("promoteAndroidSourceTemplate", Exec)',
@@ -280,23 +444,17 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
         self.assertNotIn("destinationDirectory = binDir", build)
         self.assertNotIn("finalizedBy zipGradleBuild", build)
 
-    def test_android_runtime_documentation_covers_authoritative_and_offline_flows(self) -> None:
+    def test_android_runtime_documentation_covers_internal_build_and_acceptance(self) -> None:
         readme = read(ANDROID_README)
         runtime_doc = read(ANDROID_RUNTIME_DOC)
 
         self.assertIn("ANDROID_RUNTIME.md", readme)
-        pin = read(REPO_ROOT / "platform/android/foundry_android_runtime.json")
         for fragment in (
-            "platform/android/foundry_android_runtime.json",
-            "https://github.com/cafecito-games/Foundry-Android.git",
-            '"revision":',
-            '"tree":',
-            "--source-repository",
-            "--allow-fetch",
-            "--native-root",
-            "--native-bundle",
-            "--scratch",
-            "--output-aars",
+            "platform/android/java/lib",
+            "internal",
+            ":lib:testTemplateDebugUnitTest",
+            ":lib:lintTemplateDebug",
+            ":lib:assembleTemplateDebugAndroidTest",
             "production=no dev_mode=no dev_build=no debug_symbols=no",
             "production=no dev_mode=yes dev_build=yes debug_symbols=yes",
             "production=yes dev_mode=no dev_build=no debug_symbols=no",
@@ -308,12 +466,7 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
             "android_dev.apk",
             "android_release.apk",
             "android_source.zip",
-            "Foundry-Android is the sole Maven publisher",
-            "clean Foundry checkout",
-            "provenance.json",
-            "offline",
-            "non-authoritative",
-            "#1224",
+            "not published to Maven",
             "device or emulator",
             "android_source_template.py inspect",
             "android_device_acceptance.py source-template",
@@ -321,9 +474,8 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
             "games.cafecito.foundry.game",
             "dev.example.foundryacceptance",
             "games.cafecito.foundry.plugin.v1.",
-            "tools/verify_jni_contract.py",
             "compiled Java/Kotlin native declarations",
-            "every native payload",
+            "libfoundry_android.so",
             "Acceptance evidence map",
             "JNI declarations/exports",
             "AAR identity/content",
@@ -331,10 +483,20 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
             "Source ZIP",
             "Device runtime",
             "Editor exporter",
-            "Release alignment checklist",
+            "foundry-native.zip",
+            "foundryNativeRoot",
+            "foundryNativeBundle",
+            "WS2_REMOVE_ANDROID_RUNTIME_COMPAT_BRIDGE",
+            "fresh",
         ):
             self.assertIn(fragment, runtime_doc)
-        self.assertIn('"revision":', pin)
+        for forbidden in (
+            "Foundry-Android repository",
+            "--source-repository",
+            "--allow-fetch",
+            "sole Maven publisher",
+        ):
+            self.assertNotIn(forbidden, runtime_doc)
 
     def test_pre_commit_routes_the_android_device_acceptance_surface(self) -> None:
         pre_commit = read(PRE_COMMIT)

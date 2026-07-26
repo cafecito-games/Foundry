@@ -20,6 +20,7 @@ pluginManagement {
 rootProject.name = "Foundry"
 
 include ':app'
+include ':lib'
 include ':nativeSrcsConfigs'
 
 include ':assetPackInstallTime'

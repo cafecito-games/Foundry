@@ -77,6 +77,43 @@ ext.getExportTargetSdkVersion = { ->
     }
 }
 
+ext.getFoundryLibraryVersionName = { ->
+    File versionFile = rootProject.file("../../../version.py")
+    List<String> requiredKeys = ["major", "minor", "patch", "status", "module_config"]
+    Map<String, String> values = [:]
+    if (versionFile.isFile()) {
+        versionFile.eachLine { line ->
+            def matcher = line =~ /^\s*([A-Za-z_]+)\s*=\s*["']?([^"'\s]*)["']?\s*$/
+            if (matcher.matches() && requiredKeys.contains(matcher[0][1])) {
+                values[matcher[0][1]] = matcher[0][2]
+            }
+        }
+    }
+
+    def version = requiredKeys.collect { values[it] }.findAll { it != null && !it.isEmpty() }.join(".")
+    return version.isEmpty() ? "custom_build" : version
+}
+
+ext.getFoundryEngineRevision = { ->
+    try {
+        def result = providers.exec {
+            workingDir rootProject.file("../../..")
+            commandLine "git", "rev-parse", "--verify", "HEAD"
+            ignoreExitValue = true
+        }
+        if (result.result.get().exitValue == 0) {
+            def revision = result.standardOutput.asText.get().trim()
+            if (revision ==~ /[0-9a-f]{40}/) {
+                return revision
+            }
+        }
+    } catch (Exception ignored) {
+        // Process start failures (for example, Git absent from PATH) use the same
+        // deterministic non-release revision as a non-Git source archive.
+    }
+    return "0000000000000000000000000000000000000000"
+}
+
 final String VALUE_SEPARATOR_REGEX = "\\|"
 
 // get the list of ABIs the project should be exported to

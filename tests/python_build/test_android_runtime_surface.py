@@ -17,7 +17,7 @@ def source(path: str) -> str:
 
 def require_path(path: str) -> None:
     if not (ROOT / path).exists():
-        failures.append(f"required Android path is missing: {path}")
+        failures.append(f"required Android runtime path is missing: {path}")
 
 
 def forbid_path(path: str) -> None:
@@ -50,15 +50,36 @@ def forbid_text_in_section(path: str, start: str, end: str, *fragments: str) -> 
             failures.append(f"{path} section {start.strip()!r} still contains removed Android surface {fragment!r}")
 
 
-# Foundry owns the native producer and app template only. The Java/Kotlin/AIDL
-# runtime and its Maven publication are owned by the pinned Foundry-Android repo.
+# Foundry owns its native producer, application template, and Java/Kotlin/AIDL
+# host runtime. Publication remains outside the engine repository.
 for path in (
-    "platform/android/java/lib",
     "platform/android/java/scripts/publish-module.gradle",
     "platform/android/java/scripts/publish-root.gradle",
     "platform/android/java/PUBLISHING.md",
 ):
     forbid_path(path)
+
+for path in (
+    "platform/android/java/lib/build.gradle",
+    "platform/android/java/lib/src/main/AndroidManifest.xml",
+    "platform/android/java/lib/src/main/aidl/com/android/vending/licensing/ILicenseResultListener.aidl",
+    "platform/android/java/lib/src/main/aidl/com/android/vending/licensing/ILicensingService.aidl",
+    "platform/android/java/lib/src/main/java/games/cafecito/foundry/Foundry.kt",
+    "platform/android/java/lib/src/main/java/games/cafecito/foundry/FoundryHost.java",
+    "platform/android/java/lib/src/main/java/games/cafecito/foundry/FoundryLib.java",
+    "platform/android/java/lib/src/main/java/games/cafecito/foundry/service/FoundryService.kt",
+    "platform/android/java/lib/src/main/res/layout/foundry_app_layout.xml",
+    "platform/android/java/lib/src/main/res/values/strings.xml",
+    "platform/android/java/lib/src/main/res/xml/foundry_provider_paths.xml",
+    "platform/android/java/lib/src/main/resources/META-INF/foundry/LICENSE.txt",
+    "platform/android/java/lib/src/main/resources/META-INF/foundry/NOTICE",
+    "platform/android/java/lib/src/test/java/games/cafecito/foundry/RuntimeIdentityTest.java",
+    "platform/android/java/lib/src/test/java/games/cafecito/foundry/plugin/FoundryPluginRegistryTest.java",
+    "platform/android/java/lib/src/test/java/games/cafecito/foundry/utils/CommandLineFileParserTest.kt",
+    "platform/android/java/lib/src/androidTest/java/games/cafecito/foundry/RuntimeIdentityInstrumentedTest.kt",
+    "platform/android/java/lib/src/androidTest/java/games/cafecito/foundry/plugin/FoundryPluginProtocolInstrumentedTest.java",
+):
+    require_path(path)
 
 # Removed on-device editor application and native host surfaces.
 for path in (
@@ -71,7 +92,7 @@ for path in (
 ):
     forbid_path(path)
 
-forbid_text("platform/android/java/settings.gradle", "include ':editor'", "include ':lib'")
+forbid_text("platform/android/java/settings.gradle", "include ':editor'")
 forbid_text(
     "platform/android/java/build.gradle",
     '"editor"',
@@ -84,7 +105,27 @@ forbid_text(
     "cleanFoundryEditor",
     "android-editor-",
     ":editor:",
-    "lib/libs",
+    "prepareFoundryAndroidRuntime",
+    "../android_runtime_build.py",
+    "../foundry_android_runtime.json",
+)
+require_text(
+    "platform/android/java/build.gradle",
+    "foundryAndroidSource",
+    "foundryAndroidFetch",
+    "foundryNativeRoot",
+    "foundryNativeBundle",
+    "foundryRuntimeScratch",
+    "WS2_REMOVE_ANDROID_RUNTIME_COMPAT_BRIDGE",
+)
+forbid_text(
+    "platform/android/java/lib/build.gradle",
+    "maven-publish",
+    "signing",
+    "MavenPublication",
+    "publishing {",
+    "compatibility/foundry-engine.json",
+    "Foundry-Android",
 )
 forbid_text(
     "platform/android/platform_android_builders.py",
@@ -189,22 +230,39 @@ for path in (
 require_text(
     "platform/android/java/settings.gradle",
     "include ':app'",
+    "include ':lib'",
     "include ':nativeSrcsConfigs'",
 )
 require_text(
     "platform/android/java/build.gradle",
-    "prepareFoundryAndroidRuntime",
-    "foundryRuntimeAarRoot",
+    'dependsOn ":lib:assembleTemplate${capitalizedTarget}"',
+    'dependsOn ":app:assemble${capitalizedEdition}${capitalizedTarget}"',
+    "foundry-${target}.aar",
+    'into("libs/${target}")',
     'dependsOn ":app:assemble${capitalizedEdition}${capitalizedTarget}"',
     "task generateFoundryTemplates",
     "task generateFoundryMonoTemplates",
+    "WS2_REMOVE_ANDROID_RUNTIME_COMPAT_BRIDGE",
+)
+require_text(
+    "platform/android/java/lib/build.gradle",
+    "id 'com.android.library'",
+    "id 'org.jetbrains.kotlin.android'",
+    "namespace = 'games.cafecito.foundry'",
+    "compileSdkVersion versions.compileSdk",
+    "targetSdkVersion versions.targetSdk",
+    "testInstrumentationRunner",
+    "aidl = true",
+    "template {}",
+    "abortOnError true",
+    "FOUNDRY_BINDINGS_VERSION",
+    "FOUNDRY_ENGINE_VERSION",
+    "FOUNDRY_ENGINE_REVISION",
+    "FOUNDRY_JNI_CONTRACT_VERSION",
 )
 require_text(
     "platform/android/java/app/build.gradle",
-    "debugImplementation",
-    "devImplementation",
-    "releaseImplementation",
-    "foundryRuntimeAarRoot",
+    'implementation project(":lib")',
     "getFoundryPluginsMavenRepos",
     "getFoundryPluginsRemoteBinaries",
     "getFoundryPluginsLocalBinaries",
@@ -212,8 +270,31 @@ require_text(
 )
 forbid_text(
     "platform/android/java/app/build.gradle",
-    'implementation project(":lib")',
     'implementation project(":godot:lib")',
+    "foundryRuntimeAarRoot",
+    "prepareFoundryAndroidRuntime",
+)
+require_text(
+    "platform/android/java/lib/src/main/AndroidManifest.xml",
+    "games.cafecito.foundry.library.version",
+    "games.cafecito.foundry.engine.version",
+    "games.cafecito.foundry.engine.revision",
+    "games.cafecito.foundry.jni.contract",
+    ".FoundryDownloaderAlarmReceiver",
+)
+require_text(
+    "platform/android/java/lib/src/main/java/com/google/android/vending/expansion/downloader/impl/DownloaderService.java",
+    "PendingIntent.FLAG_ONE_SHOT | PendingIntent.FLAG_IMMUTABLE",
+)
+require_text(
+    "platform/android/java/lib/src/main/java/games/cafecito/foundry/service/FoundryService.kt",
+    "Build.VERSION_CODES.BAKLAVA",
+    "hostInputTransferToken != null",
+)
+require_text(
+    "platform/android/java/lib/src/main/java/games/cafecito/foundry/utils/AndroidRuntimeCompat.kt",
+    '@RequiresApi(Build.VERSION_CODES.R)',
+    '@SuppressLint("MissingPermission")',
 )
 require_text(
     "platform/android/export/export_plugin.cpp",

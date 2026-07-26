@@ -1,0 +1,16 @@
+Foundry Android
+Copyright (c) 2014-present Godot Engine contributors.
+Copyright (c) 2007-2014 Juan Linietsky and Ariel Manzur.
+
+This distribution includes modified Android runtime code from the Godot Engine,
+licensed under the MIT License.
+
+This distribution also includes modified source from the Google Play APK
+Expansion and Google Play Licensing libraries. Those files are licensed under
+the Apache License, Version 2.0. Their provenance and local patch records are
+documented in THIRDPARTY.md and platform/android/java/lib/patches/.
+
+Native Android templates include Swappy frame-pacing code.
+Copyright 2019 The Android Open Source Project.
+Swappy is licensed under the Apache License, Version 2.0; provenance is
+documented in THIRDPARTY.md.

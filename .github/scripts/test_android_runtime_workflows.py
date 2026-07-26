@@ -192,6 +192,7 @@ class AndroidRuntimeWorkflowTests(unittest.TestCase):
         for command in (
             "test_android_runtime_contract",
             "test_android_runtime_build",
+            "tests.python_build.test_android_gradle_behavioral",
             "test_android_gradle_runtime_contract",
             "test_android_device_acceptance",
             "test_android_runtime_surface.py",

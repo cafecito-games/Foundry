@@ -72,13 +72,45 @@ def load_runtime_contract(failures: list[str]) -> ModuleType | None:
 
 
 def check_standalone_boundary(failures: list[str]) -> None:
+    required = (
+        JAVA_ROOT / "lib/build.gradle",
+        JAVA_ROOT / "lib/src/main/AndroidManifest.xml",
+        JAVA_ROOT / "lib/src/main/java/games/cafecito/foundry/Foundry.kt",
+        JAVA_ROOT / "lib/src/main/aidl/com/android/vending/licensing/ILicensingService.aidl",
+    )
+    failures.extend(f"{relative(path)} must exist" for path in required if not path.is_file())
+
     removed = (
-        JAVA_ROOT / "lib",
         JAVA_ROOT / "scripts/publish-module.gradle",
         JAVA_ROOT / "scripts/publish-root.gradle",
         JAVA_ROOT / "PUBLISHING.md",
     )
     failures.extend(f"{relative(path)} must not exist" for path in removed if path.exists())
+
+    active_gradle = (
+        JAVA_ROOT / "settings.gradle",
+        JAVA_ROOT / "build.gradle",
+        JAVA_ROOT / "app/build.gradle",
+        JAVA_ROOT / "lib/build.gradle",
+    )
+    forbidden = (
+        "maven-publish",
+        "MavenPublication",
+        "nexusPublishing",
+        "prepareFoundryAndroidRuntime",
+    )
+    for path in active_gradle:
+        reject_contains(path, forbidden, failures)
+    bridge = JAVA_ROOT / "build.gradle"
+    for identifier in (
+        "foundryAndroidSource",
+        "foundryAndroidFetch",
+        "foundryNativeRoot",
+        "foundryNativeBundle",
+        "foundryRuntimeScratch",
+        "WS2_REMOVE_ANDROID_RUNTIME_COMPAT_BRIDGE",
+    ):
+        require_contains(bridge, identifier, failures)
 
 
 def check_app_source_surface(failures: list[str]) -> None:
