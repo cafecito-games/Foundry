@@ -39,6 +39,7 @@
 #include "../fs_bytecode_loader.h"
 #include "../fs_cache.h"
 #include "../fs_name_mangler_analysis.h"
+#include "../fs_name_mangler_application.h"
 #include "../fs_name_mangler_binding_safety.h"
 #include "../fs_name_mangler_keep_rules.h"
 #include "../fs_parser.h"
@@ -142,6 +143,23 @@ void add_rule_diagnostics(
 								? "warning"
 								: "error",
 						source_diagnostic.message));
+	}
+}
+
+void add_application_diagnostics(
+		const Vector<FSNameManglerApplication::Diagnostic> &p_diagnostics,
+		Vector<FSNameManglerExport::Diagnostic> &r_diagnostics) {
+	for (const FSNameManglerApplication::Diagnostic &source_diagnostic :
+			p_diagnostics) {
+		String message;
+		if (!source_diagnostic.source_name.is_empty()) {
+			message = vformat(
+					"`%s`: ", source_diagnostic.source_name);
+		}
+		message += source_diagnostic.message;
+		add_stage_diagnostic(
+				r_diagnostics, "application",
+				source_diagnostic.surface, message);
 	}
 }
 
@@ -490,9 +508,8 @@ FSNameManglerExport::Result FSNameManglerExport::prepare(
 	}
 
 	sort_and_deduplicate_diagnostics(failed_result.diagnostics);
-	Result result;
-	result.keep_log = analysis.keep_log;
-	result.diagnostics = failed_result.diagnostics;
+	RBMap<String, PreparedScript> staged_scripts;
+	HashMap<String, String> source_by_output_path;
 	for (const KeyValue<String, DiscoveredScript> &entry : graph.scripts) {
 		PreparedScript prepared;
 		prepared.source_path = entry.key;
@@ -503,31 +520,120 @@ FSNameManglerExport::Result FSNameManglerExport::prepare(
 			prepared.output_path = entry.key.get_basename() + ".fsb";
 			prepared.remap = true;
 		}
+
+		if (const String *existing_source =
+						source_by_output_path.getptr(prepared.output_path)) {
+			failed_result.error = ERR_ALREADY_EXISTS;
+			add_stage_diagnostic(
+					failed_result.diagnostics, "serialization", entry.key,
+					vformat(
+							"Prepared output path \"%s\" collides with script \"%s\".",
+							prepared.output_path, *existing_source));
+			sort_and_deduplicate_diagnostics(
+					failed_result.diagnostics);
+			return failed_result;
+		}
+		source_by_output_path.insert(
+				prepared.output_path, entry.key);
+		staged_scripts.insert(entry.key, prepared);
+	}
+	if (staged_scripts.size() != graph.scripts.size()) {
+		failed_result.error = ERR_INVALID_DATA;
+		add_stage_diagnostic(
+				failed_result.diagnostics, "serialization", String(),
+				"Not every manifest script produced one prepared cache entry.");
+		sort_and_deduplicate_diagnostics(
+				failed_result.diagnostics);
+		return failed_result;
+	}
+	if (staged_scripts.is_empty()) {
+		Result result;
+		result.keep_log = analysis.keep_log;
+		result.diagnostics = failed_result.diagnostics;
+		return result;
+	}
+
+	// Keep this transaction window deliberately narrow: every load, analysis pass, metadata
+	// decision, diagnostic conversion, and publication happens before or after it. While the live
+	// graph carries replacement names, only ordered fresh-exporter serialization is allowed.
+	FSNameManglerApplication::Transaction transaction;
+	Vector<FSNameManglerApplication::Diagnostic>
+			application_diagnostics;
+	const Error application_error = transaction.begin(
+			analysis_input.scripts, analysis.rename_map,
+			application_diagnostics);
+	if (application_error != OK ||
+			!application_diagnostics.is_empty()) {
+		transaction.rollback();
+		failed_result.error = application_error != OK
+				? application_error
+				: ERR_INVALID_DATA;
+		add_application_diagnostics(
+				application_diagnostics, failed_result.diagnostics);
+		if (application_diagnostics.is_empty()) {
+			add_stage_diagnostic(
+					failed_result.diagnostics, "application", String(),
+					vformat("Name application failed: %s.",
+							error_names[failed_result.error]));
+		}
+		sort_and_deduplicate_diagnostics(
+				failed_result.diagnostics);
+		return failed_result;
+	}
+
+	Error serialization_error = OK;
+	String serialization_failure_source;
+	bool serialization_buffer_empty = false;
+	for (const KeyValue<String, DiscoveredScript> &entry : graph.scripts) {
+		PreparedScript &prepared = staged_scripts[entry.key];
 		FSBytecodeExporter exporter;
-		const Error serialization_error = exporter.serialize(
+		serialization_error = exporter.serialize(
 				entry.value.script, prepared.bytes,
 				entry.value.annotated_static_unload);
 		if (serialization_error != OK || prepared.bytes.is_empty()) {
-			Result failed_serialization;
-			failed_serialization.error = serialization_error != OK
-					? serialization_error
-					: ERR_INVALID_DATA;
-			failed_serialization.diagnostics = result.diagnostics;
-			Diagnostic diagnostic;
-			diagnostic.stage = "serialization";
-			diagnostic.source = entry.key;
-			diagnostic.message = vformat(
-					"Script could not be staged as compiled bytecode: %s.",
-					serialization_error == OK
-							? "serializer produced no data"
-							: error_names[serialization_error]);
-			failed_serialization.diagnostics.push_back(diagnostic);
-			sort_and_deduplicate_diagnostics(
-					failed_serialization.diagnostics);
-			return failed_serialization;
+			serialization_failure_source = entry.key;
+			serialization_buffer_empty = prepared.bytes.is_empty();
+			break;
 		}
-		result.scripts.insert(entry.key, prepared);
 	}
+	transaction.rollback();
+
+	if (serialization_error != OK || serialization_buffer_empty) {
+		failed_result.error = serialization_error != OK
+				? serialization_error
+				: ERR_INVALID_DATA;
+		add_stage_diagnostic(
+				failed_result.diagnostics, "serialization",
+				serialization_failure_source,
+				vformat(
+						"Script could not be staged as compiled bytecode: %s.",
+						serialization_error == OK
+								? "serializer produced no data"
+								: error_names[serialization_error]));
+		sort_and_deduplicate_diagnostics(
+				failed_result.diagnostics);
+		return failed_result;
+	}
+
+	for (const KeyValue<String, PreparedScript> &entry :
+			staged_scripts) {
+		if (entry.value.bytes.is_empty()) {
+			failed_result.error = ERR_INVALID_DATA;
+			add_stage_diagnostic(
+					failed_result.diagnostics, "serialization", entry.key,
+					"Prepared cache entry has no bytecode.");
+		}
+	}
+	if (failed_result.error != OK) {
+		sort_and_deduplicate_diagnostics(
+				failed_result.diagnostics);
+		return failed_result;
+	}
+
+	Result result;
+	result.keep_log = analysis.keep_log;
+	result.diagnostics = failed_result.diagnostics;
+	result.scripts = staged_scripts;
 	return result;
 }
 

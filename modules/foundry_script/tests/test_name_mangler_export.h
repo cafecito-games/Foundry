@@ -40,7 +40,10 @@
 #include "modules/foundry_script/fs_bytecode_export.h"
 #include "modules/foundry_script/fs_bytecode_loader.h"
 #include "modules/foundry_script/fs_cache.h"
+#include "modules/foundry_script/fs_name_mangler_analysis.h"
+#include "modules/foundry_script/fs_name_mangler_application.h"
 #include "modules/foundry_script/fs_tokenizer_buffer.h"
+#include "modules/foundry_script/tests/test_bytecode_serialization.h"
 
 #include "core/config/project_settings.h"
 #include "core/io/file_access.h"
@@ -229,6 +232,72 @@ static bool name_mangler_export_has_keep(
 	}
 	return false;
 }
+
+static Vector<uint8_t> name_mangler_export_serialize(
+		const Ref<FoundryScript> &p_script,
+		bool p_annotated_static_unload = false) {
+	FSBytecodeExporter exporter;
+	Vector<uint8_t> buffer;
+	REQUIRE_EQ(
+			exporter.serialize(
+					p_script, buffer, p_annotated_static_unload),
+			OK);
+	REQUIRE_FALSE(buffer.is_empty());
+	return buffer;
+}
+
+static Ref<FoundryScript> name_mangler_export_load_prepared(
+		const Vector<uint8_t> &p_buffer, const String &p_path) {
+	Ref<FoundryScript> script;
+	script.instantiate();
+	script->set_path_cache(p_path);
+	BytecodeTestResolver resolver;
+	FSBytecodeLoader loader;
+	loader.set_resolver(&resolver);
+	REQUIRE_EQ(loader.load_full(p_buffer, script), OK);
+	REQUIRE(script->is_valid());
+	return script;
+}
+
+static int64_t name_mangler_export_run(
+		const Ref<FoundryScript> &p_script, const StringName &p_method) {
+	Callable::CallError call_error;
+	const Variant instance_variant =
+			p_script->_new(nullptr, 0, call_error);
+	REQUIRE_EQ(
+			call_error.error, Callable::CallError::CALL_OK);
+	Object *instance = instance_variant;
+	REQUIRE(instance != nullptr);
+	const Variant result =
+			instance->callp(p_method, nullptr, 0, call_error);
+	CHECK_EQ(call_error.error, Callable::CallError::CALL_OK);
+	return result;
+}
+
+struct NameManglerExportConstantGuard {
+	Ref<FoundryScript> script;
+	StringName name;
+
+	NameManglerExportConstantGuard(
+			const Ref<FoundryScript> &p_script,
+			const StringName &p_name, const Variant &p_value) :
+			script(p_script), name(p_name) {
+		HashMap<StringName, Variant> &constants =
+				const_cast<HashMap<StringName, Variant> &>(
+						script->get_constants());
+		REQUIRE_FALSE(constants.has(name));
+		constants.insert(name, p_value);
+	}
+
+	~NameManglerExportConstantGuard() {
+		if (script.is_valid()) {
+			HashMap<StringName, Variant> &constants =
+					const_cast<HashMap<StringName, Variant> &>(
+							script->get_constants());
+			constants.erase(name);
+		}
+	}
+};
 
 TEST_CASE("[FoundryScript][NameManglerExport][Graph] Invalid roots fail transactionally in stable order") {
 	FSNameManglerExport::Input input;
@@ -880,6 +949,332 @@ TEST_CASE("[FoundryScript][NameManglerExport][Evidence] Incomplete binding safet
 				result.diagnostics[1].message.contains("missing_");
 		CHECK(mentions_missing_binding);
 	}
+}
+
+TEST_CASE("[FoundryScript][NameManglerExport][Serialize] Prepared bytes are mangled deterministic and executable while live scripts roll back") {
+	NameManglerExportFixture fixture("serialize_deterministic");
+	const String alpha_path = fixture.write_source(
+			"alpha.fs",
+			"extends RefCounted\n"
+			"var facade_private_value: float = 1.5\n"
+			"func facade_private_compute() -> int:\n"
+			"\tvar vector := Vector2(facade_private_value, 2.5)\n"
+			"\tvector.x = 3.0\n"
+			"\tvar values := {}\n"
+			"\tvalues[\"value\"] = vector.x + vector.y\n"
+			"\tvar left: Variant = 1\n"
+			"\tvar right: Variant = 2\n"
+			"\treturn int(values[\"value\"] + (left + right))\n"
+			"@keep_name\n"
+			"func run() -> int:\n"
+			"\treturn facade_private_compute()\n");
+	const String zulu_path = fixture.write_source(
+			"zulu.fs",
+			"extends RefCounted\n"
+			"var second_private_value: int = 40\n"
+			"func second_private_compute() -> int:\n"
+			"\treturn second_private_value + 2\n"
+			"@keep_name\n"
+			"func run() -> int:\n"
+			"\treturn second_private_compute()\n");
+	Error error = OK;
+	const Ref<FoundryScript> alpha_script = FSCache::get_full_script(
+			alpha_path, error, String(), true);
+	REQUIRE_EQ(error, OK);
+	REQUIRE(alpha_script.is_valid());
+	const Ref<FoundryScript> zulu_script = FSCache::get_full_script(
+			zulu_path, error, String(), true);
+	REQUIRE_EQ(error, OK);
+	REQUIRE(zulu_script.is_valid());
+	const Vector<uint8_t> alpha_baseline =
+			name_mangler_export_serialize(alpha_script);
+	const Vector<uint8_t> zulu_baseline =
+			name_mangler_export_serialize(zulu_script);
+	REQUIRE(bytecode_buffer_contains(
+			alpha_baseline, "facade_private_compute"));
+	REQUIRE(bytecode_buffer_contains(
+			alpha_baseline, "facade_private_value"));
+	REQUIRE(bytecode_buffer_contains(
+			zulu_baseline, "second_private_compute"));
+
+	FSNameManglerExport::Input forward_input;
+	forward_input.manifest_paths.push_back(alpha_path);
+	forward_input.manifest_paths.push_back(zulu_path);
+	const FSNameManglerExport::Result forward =
+			FSNameManglerExport::prepare(forward_input);
+	const FSNameManglerExport::Result repeated =
+			FSNameManglerExport::prepare(forward_input);
+
+	FSNameManglerExport::Input reverse_input;
+	reverse_input.manifest_paths.push_back(zulu_path);
+	reverse_input.manifest_paths.push_back(alpha_path);
+	const FSNameManglerExport::Result reverse =
+			FSNameManglerExport::prepare(reverse_input);
+
+	REQUIRE_EQ(forward.error, OK);
+	REQUIRE_EQ(repeated.error, OK);
+	REQUIRE_EQ(reverse.error, OK);
+	CHECK(forward.diagnostics.is_empty());
+	CHECK(repeated.diagnostics.is_empty());
+	CHECK(reverse.diagnostics.is_empty());
+	CHECK_EQ(forward.keep_log, repeated.keep_log);
+	CHECK_EQ(forward.keep_log, reverse.keep_log);
+	REQUIRE_EQ(forward.scripts.size(), 2);
+	REQUIRE_EQ(repeated.scripts.size(), 2);
+	REQUIRE_EQ(reverse.scripts.size(), 2);
+	for (const KeyValue<String, FSNameManglerExport::PreparedScript> &entry :
+			forward.scripts) {
+		REQUIRE(repeated.scripts.has(entry.key));
+		REQUIRE(reverse.scripts.has(entry.key));
+		CHECK_EQ(repeated.scripts[entry.key].source_path,
+				entry.value.source_path);
+		CHECK_EQ(reverse.scripts[entry.key].output_path,
+				entry.value.output_path);
+		CHECK_EQ(reverse.scripts[entry.key].remap, entry.value.remap);
+		CHECK_EQ(repeated.scripts[entry.key].bytes, entry.value.bytes);
+		CHECK_EQ(reverse.scripts[entry.key].bytes, entry.value.bytes);
+	}
+
+	const Vector<uint8_t> &prepared_alpha =
+			forward.scripts[alpha_path].bytes;
+	CHECK(bytecode_buffer_contains(prepared_alpha, "run"));
+	CHECK_FALSE(bytecode_buffer_contains(
+			prepared_alpha, "facade_private_compute"));
+	CHECK_FALSE(bytecode_buffer_contains(
+			prepared_alpha, "facade_private_value"));
+	const Ref<FoundryScript> loaded_alpha =
+			name_mangler_export_load_prepared(
+					prepared_alpha, alpha_path);
+	CHECK_EQ(name_mangler_export_run(
+					 loaded_alpha, SNAME("run")),
+			8);
+	CHECK_EQ(name_mangler_export_serialize(loaded_alpha),
+			prepared_alpha);
+
+	const Ref<FoundryScript> restored_alpha =
+			FSCache::get_cached_script(alpha_path);
+	const Ref<FoundryScript> restored_zulu =
+			FSCache::get_cached_script(zulu_path);
+	REQUIRE(restored_alpha.is_valid());
+	REQUIRE(restored_zulu.is_valid());
+	CHECK(restored_alpha->is_valid());
+	CHECK(restored_zulu->is_valid());
+	CHECK(restored_alpha->get_member_functions().has(
+			SNAME("facade_private_compute")));
+	CHECK(restored_zulu->get_member_functions().has(
+			SNAME("second_private_compute")));
+	CHECK_EQ(name_mangler_export_serialize(restored_alpha),
+			alpha_baseline);
+	CHECK_EQ(name_mangler_export_serialize(restored_zulu),
+			zulu_baseline);
+}
+
+TEST_CASE("[FoundryScript][NameManglerExport][Serialize] Loaded bytecode rebakes operator caches and preserves static unload") {
+	NameManglerExportFixture fixture("serialize_loaded_bytecode");
+	const String bytecode_path = fixture.write_bytecode(
+			"loaded.fsb",
+			"extends RefCounted\n"
+			"static var loaded_private_static: int = 40\n"
+			"func loaded_private_compute() -> int:\n"
+			"\tvar left: Variant = 1\n"
+			"\tvar right: Variant = 2\n"
+			"\treturn loaded_private_static + int(left + right)\n"
+			"@keep_name\n"
+			"func run() -> int:\n"
+			"\treturn loaded_private_compute()\n",
+			true);
+	Error error = OK;
+	const Ref<FoundryScript> loaded_script =
+			FSCache::get_full_script(
+					bytecode_path, error, String(), true);
+	REQUIRE_EQ(error, OK);
+	REQUIRE(loaded_script.is_valid());
+	CHECK_EQ(name_mangler_export_run(
+					 loaded_script, SNAME("run")),
+			43);
+	const Vector<uint8_t> loaded_baseline =
+			name_mangler_export_serialize(loaded_script, true);
+
+	FSNameManglerExport::Input input;
+	input.manifest_paths.push_back(bytecode_path);
+	const FSNameManglerExport::Result result =
+			FSNameManglerExport::prepare(input);
+	REQUIRE_EQ(result.error, OK);
+	CHECK(result.diagnostics.is_empty());
+	REQUIRE_EQ(result.scripts.size(), 1);
+	REQUIRE(result.scripts.has(bytecode_path));
+	const Vector<uint8_t> &prepared =
+			result.scripts[bytecode_path].bytes;
+	CHECK_FALSE(bytecode_buffer_contains(
+			prepared, "loaded_private_compute"));
+	CHECK_FALSE(bytecode_buffer_contains(
+			prepared, "loaded_private_static"));
+	Vector<String> dependencies;
+	FSBytecodeLoader flag_loader;
+	REQUIRE_EQ(flag_loader.read_dependencies(
+					   prepared, dependencies),
+			OK);
+	CHECK(flag_loader.get_has_static_data());
+	CHECK(flag_loader.get_annotated_static_unload());
+
+	const Ref<FoundryScript> prepared_script =
+			name_mangler_export_load_prepared(
+					prepared, bytecode_path);
+	CHECK_EQ(name_mangler_export_run(
+					 prepared_script, SNAME("run")),
+			43);
+	CHECK_EQ(name_mangler_export_serialize(
+					 prepared_script, true),
+			prepared);
+	const Ref<FoundryScript> restored =
+			FSCache::get_cached_script(bytecode_path);
+	REQUIRE(restored.is_valid());
+	CHECK(restored->get_member_functions().has(
+			SNAME("loaded_private_compute")));
+	CHECK_EQ(name_mangler_export_run(restored, SNAME("run")), 43);
+	CHECK_EQ(name_mangler_export_serialize(restored, true),
+			loaded_baseline);
+}
+
+TEST_CASE("[FoundryScript][NameManglerExport][Serialize] Application failure returns no bytes and leaves the active owner intact") {
+	NameManglerExportFixture fixture("serialize_application_failure");
+	const String owner_path = fixture.write_source(
+			"owner.fs",
+			"extends RefCounted\n"
+			"var owner_private_value: int = 1\n"
+			"func owner_private_method() -> int:\n"
+			"\treturn owner_private_value\n");
+	const String target_path = fixture.write_source(
+			"target.fs",
+			"extends RefCounted\n"
+			"func target_private_method() -> int:\n"
+			"\treturn 2\n");
+	Error error = OK;
+	const Ref<FoundryScript> owner_script = FSCache::get_full_script(
+			owner_path, error, String(), true);
+	REQUIRE_EQ(error, OK);
+	REQUIRE(owner_script.is_valid());
+	const Ref<FoundryScript> target_script = FSCache::get_full_script(
+			target_path, error, String(), true);
+	REQUIRE_EQ(error, OK);
+	REQUIRE(target_script.is_valid());
+	const Vector<uint8_t> owner_baseline =
+			name_mangler_export_serialize(owner_script);
+	const Vector<uint8_t> target_baseline =
+			name_mangler_export_serialize(target_script);
+	FSNameManglerAnalysis::Input owner_input;
+	owner_input.scripts.push_back(owner_script);
+	const FSNameManglerAnalysis::Result owner_analysis =
+			FSNameManglerAnalysis::analyze(owner_input);
+	REQUIRE_EQ(owner_analysis.error, OK);
+	REQUIRE_FALSE(owner_analysis.rename_map.is_empty());
+
+	FSNameManglerApplication::Transaction owner_transaction;
+	Vector<FSNameManglerApplication::Diagnostic> owner_diagnostics;
+	REQUIRE_EQ(owner_transaction.begin(
+					   owner_input.scripts,
+					   owner_analysis.rename_map,
+					   owner_diagnostics),
+			OK);
+	REQUIRE(owner_transaction.is_active());
+
+	FSNameManglerExport::Input input;
+	input.manifest_paths.push_back(target_path);
+	const FSNameManglerExport::Result result =
+			FSNameManglerExport::prepare(input);
+	CHECK_EQ(result.error, ERR_ALREADY_IN_USE);
+	CHECK(result.scripts.is_empty());
+	CHECK(result.keep_log.is_empty());
+	REQUIRE_FALSE(result.diagnostics.is_empty());
+	if (!result.diagnostics.is_empty()) {
+		CHECK_EQ(result.diagnostics[0].stage, "application");
+	}
+	CHECK(owner_transaction.is_active());
+	const Ref<FoundryScript> restored_target =
+			FSCache::get_cached_script(target_path);
+	REQUIRE(restored_target.is_valid());
+	CHECK(restored_target->get_member_functions().has(
+			SNAME("target_private_method")));
+	CHECK_EQ(name_mangler_export_serialize(restored_target),
+			target_baseline);
+
+	owner_transaction.rollback();
+	CHECK_FALSE(owner_transaction.is_active());
+	CHECK(owner_script->get_member_functions().has(
+			SNAME("owner_private_method")));
+	CHECK_EQ(name_mangler_export_serialize(owner_script),
+			owner_baseline);
+}
+
+TEST_CASE("[FoundryScript][NameManglerExport][Serialize] Later serialization failure discards earlier buffers and rolls back every root") {
+	NameManglerExportFixture fixture("serialize_late_failure");
+	const String alpha_path = fixture.write_source(
+			"alpha.fs",
+			"extends RefCounted\n"
+			"func alpha_private_marker() -> int:\n"
+			"\treturn 1\n");
+	const String zulu_path = fixture.write_bytecode(
+			"zulu.fsb",
+			"extends RefCounted\n"
+			"func zulu_private_marker() -> int:\n"
+			"\treturn 2\n",
+			false);
+	Error error = OK;
+	const Ref<FoundryScript> alpha_script = FSCache::get_full_script(
+			alpha_path, error, String(), true);
+	REQUIRE_EQ(error, OK);
+	REQUIRE(alpha_script.is_valid());
+	const Ref<FoundryScript> zulu_script = FSCache::get_full_script(
+			zulu_path, error, String(), true);
+	REQUIRE_EQ(error, OK);
+	REQUIRE(zulu_script.is_valid());
+	const Vector<uint8_t> alpha_baseline =
+			name_mangler_export_serialize(alpha_script);
+	const Vector<uint8_t> zulu_baseline =
+			name_mangler_export_serialize(zulu_script);
+
+	Ref<RefCounted> callable_target;
+	callable_target.instantiate();
+	const StringName live_constant =
+			SNAME("zulu_live_callable");
+	FSNameManglerExport::Result result;
+	{
+		NameManglerExportConstantGuard constant_guard(
+				zulu_script, live_constant,
+				Callable(callable_target.ptr(),
+						SNAME("get_instance_id")));
+		FSNameManglerExport::Input input;
+		input.manifest_paths.push_back(zulu_path);
+		input.manifest_paths.push_back(alpha_path);
+		ERR_PRINT_OFF;
+		result = FSNameManglerExport::prepare(input);
+		ERR_PRINT_ON;
+	}
+
+	CHECK_EQ(result.error, ERR_INVALID_PARAMETER);
+	CHECK(result.scripts.is_empty());
+	CHECK(result.keep_log.is_empty());
+	REQUIRE_FALSE(result.diagnostics.is_empty());
+	if (!result.diagnostics.is_empty()) {
+		CHECK_EQ(result.diagnostics[0].stage, "serialization");
+		CHECK_EQ(result.diagnostics[0].source, zulu_path);
+	}
+	const Ref<FoundryScript> restored_alpha =
+			FSCache::get_cached_script(alpha_path);
+	const Ref<FoundryScript> restored_zulu =
+			FSCache::get_cached_script(zulu_path);
+	REQUIRE(restored_alpha.is_valid());
+	REQUIRE(restored_zulu.is_valid());
+	CHECK(restored_alpha->is_valid());
+	CHECK(restored_zulu->is_valid());
+	CHECK(restored_alpha->get_member_functions().has(
+			SNAME("alpha_private_marker")));
+	CHECK(restored_zulu->get_member_functions().has(
+			SNAME("zulu_private_marker")));
+	CHECK_EQ(name_mangler_export_serialize(restored_alpha),
+			alpha_baseline);
+	CHECK_EQ(name_mangler_export_serialize(restored_zulu),
+			zulu_baseline);
 }
 
 } // namespace FSTests
