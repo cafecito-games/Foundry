@@ -12,11 +12,43 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[2]
 
 BUILD_TYPES = ("debug", "dev", "release")
+BUILD_SPECS = {
+    "debug": {
+        "target": "template_debug",
+        "production": False,
+        "dev_mode": False,
+        "dev_build": False,
+        "debug_symbols": False,
+        "tests": False,
+    },
+    "dev": {
+        "target": "template_debug",
+        "production": False,
+        "dev_mode": True,
+        "dev_build": True,
+        "debug_symbols": True,
+        "tests": False,
+    },
+    "release": {
+        "target": "template_release",
+        "production": True,
+        "dev_mode": False,
+        "dev_build": False,
+        "debug_symbols": False,
+        "tests": False,
+    },
+}
 ABI_SPECS = {
     "armeabi-v7a": {"elf_class": 32, "elf_machine": 40},
     "arm64-v8a": {"elf_class": 64, "elf_machine": 183},
     "x86": {"elf_class": 32, "elf_machine": 3},
     "x86_64": {"elf_class": 64, "elf_machine": 62},
+}
+SCONS_ARCHES = {
+    "armeabi-v7a": "arm32",
+    "arm64-v8a": "arm64",
+    "x86": "x86_32",
+    "x86_64": "x86_64",
 }
 LIBRARIES = ("libfoundry_android.so", "libc++_shared.so")
 FOUNDRY_SYMBOLS = (
@@ -254,6 +286,7 @@ def populate_native_inputs(
     foundry_symbols: tuple[str, ...] = FOUNDRY_SYMBOLS,
     external_jni_symbols: tuple[str, ...] = EXTERNAL_JNI_SYMBOLS,
     wrong_abi_path: str | None = None,
+    payload_suffix: bytes = b"",
 ) -> None:
     for build_type in BUILD_TYPES:
         for abi, abi_spec in ABI_SPECS.items():
@@ -270,7 +303,51 @@ def populate_native_inputs(
                         effective_spec["elf_machine"],
                         symbols,
                     )
+                    + payload_suffix
                 )
+
+
+def populate_native_matrix(
+    root: Path,
+    *,
+    revision: str,
+    tree: str,
+    payload_suffix: bytes = b"",
+) -> None:
+    """Create a deterministic valid 12-cell native root for Gradle behavior tests."""
+
+    populate_native_inputs(root, payload_suffix=payload_suffix)
+    for build_type in BUILD_TYPES:
+        build_spec = BUILD_SPECS[build_type]
+        for abi in ABI_SPECS:
+            directory = root / build_type / abi
+            libraries = []
+            for library in sorted(LIBRARIES):
+                contents = (directory / library).read_bytes()
+                libraries.append(
+                    {
+                        "path": library,
+                        "sha256": sha256(contents),
+                        "size": len(contents),
+                    }
+                )
+            provenance = {
+                "build": {
+                    "abi": abi,
+                    "arch": SCONS_ARCHES[abi],
+                    "build_type": build_type,
+                    **build_spec,
+                    "swappy": True,
+                },
+                "engine": {
+                    "dirty": False,
+                    "revision": revision,
+                    "tree": tree,
+                },
+                "libraries": libraries,
+                "schema_version": 1,
+            }
+            (directory / "provenance.json").write_bytes(canonical_json(provenance))
 
 
 def run_tool(tool: str, *arguments: str) -> subprocess.CompletedProcess[str]:

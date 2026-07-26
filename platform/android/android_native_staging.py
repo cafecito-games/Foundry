@@ -136,7 +136,7 @@ def replace_staged_build_type(
     selected_abis: tuple[str, ...],
     output: Path,
 ) -> None:
-    """Atomically replace a stage with exactly one selected build-type payload."""
+    """Prepare a complete selected build-type payload, then replace its owned stage as a whole."""
 
     _validate_abis(selected_abis)
     if build_type not in contract.BUILD_TYPES:
@@ -257,7 +257,7 @@ def prepare(
     native_bundle: Path | None,
     runtime_scratch: Path | None,
 ) -> None:
-    """Validate one caller mode and atomically create its exact JNI stage."""
+    """Validate one caller mode and replace its revision-scoped JNI stage as a whole."""
 
     _validate_abis(selected_abis)
     modes = (local_root is not None, native_root is not None, native_bundle is not None)

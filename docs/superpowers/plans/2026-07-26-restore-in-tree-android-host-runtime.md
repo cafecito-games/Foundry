@@ -335,7 +335,8 @@ the implementation without moving ownership back out of this repository. The sta
   Support mutually exclusive native-root, native-bundle, and local-SCons modes. Native-root mode validates all 12
   provenance cells and writes `foundry-native.zip` in the requested scratch directory. Native-bundle mode validates
   and extracts the existing format. Local mode stages selected current-revision cells. Always create a fresh
-  input/revision/ABI-scoped output containing exactly the selected ABIs and atomically replace any previous output.
+  input/revision/ABI-scoped output containing exactly the selected ABIs. Prepare the complete temporary tree first,
+  then replace the previously owned output directory as a whole; do not describe delete-then-`os.replace` as atomic.
 
 - [x] **Step 3: Wire Gradle to staged inputs**
 
@@ -376,3 +377,71 @@ the implementation without moving ownership back out of this repository. The sta
   Repeat the complete focused Python, Gradle, artifact, JNI, and API 36 acceptance gates from final HEAD. Check
   worktree/donor/ledger hygiene, commit focused corrections, and report `READY_FOR_QUALITY_REREVIEW` with exact
   evidence. Do not push, open a PR, run Cursor review, or update `.epic-1241-status.md`.
+
+### Quality rereview remediation: execute the real Gradle caller contract
+
+The first quality remediation added helper-level and source-string contracts, but did not durably invoke the
+checked-in Gradle wrapper. These steps add scratch-isolated behavioral coverage of the public properties and
+observable staging paths.
+
+#### Task 9: Add real-Gradle behavioral coverage
+
+**Files:**
+- Modify: `tests/python_build/android_native_bundle_test_support.py`
+- Add: `tests/python_build/test_android_gradle_behavioral.py`
+- Modify: `platform/android/android_native_staging.py`
+- Modify: `docs/superpowers/plans/2026-07-26-restore-in-tree-android-host-runtime.md`
+
+- [x] **Step 1: Build deterministic scratch fixtures**
+
+  Copy the checked-in Gradle project without ignored build outputs into `FOUNDRY_TEST_SCRATCH`, initialize a
+  deterministic minimal Git checkout, and generate exact debug/dev/release × four-ABI ELF/provenance matrices with
+  the existing native bundle fixture support. All Gradle project caches, generated sources, stages, and packages
+  must remain inside that disposable scratch mirror.
+
+- [x] **Step 2: Invoke native-root and native-bundle staging through Gradle**
+
+  Invoke the repository's exact `platform/android/java/gradlew` with `-p` pointing at the scratch project. Run
+  `:lib:stageFoundryNativeTemplateDebug` with `foundryNativeRoot`, then run it with the emitted
+  `foundry-native.zip` through `foundryNativeBundle`. Assert the existing bundle schema, 12-cell/24-file manifest,
+  compatibility revision, scratch outputs, computed revision/input/ABI path, and exact staged ABI/library set.
+
+- [x] **Step 3: Exercise production rejection and no-Git fallback**
+
+  Execute `generateFoundryTemplates` with an exact synthetic native root and incomplete `selectedAbis`, requiring
+  the four-ABI production diagnostic. Execute real BuildConfig generation with a `PATH` containing the Gradle
+  wrapper utilities but no Git, requiring the deterministic 40-zero revision.
+
+- [x] **Step 4: Exercise changed-input subset staging**
+
+  Stage a full four-ABI matrix, then stage a differently marked valid matrix with an arm64-only selection. Assert
+  distinct computed input/ABI scopes and that the second stage contains only the two arm64 libraries with the new
+  payload marker.
+
+- [x] **Step 5: Capture mutation-based RED evidence**
+
+  Each probe below temporarily changed one production contract, let the test copy that mutation into its isolated
+  fixture, ran the named test, and restored the production file immediately:
+
+  - Native-root property probe:
+    `python3 -m unittest tests.python_build.test_android_gradle_behavioral.AndroidGradleBehavioralTests.test_native_root_and_existing_bundle_stage_through_real_gradle`
+    failed in 7.612s after renaming the consumed property, because Gradle incorrectly entered local SCons mode:
+    `No SConstruct file found` and `compileFoundryNativeLibsTemplateDebugArm32 FAILED`.
+  - Production validation probe:
+    `python3 -m unittest tests.python_build.test_android_gradle_behavioral.AndroidGradleBehavioralTests.test_production_generation_rejects_incomplete_selected_abis`
+    failed in 35.234s after bypassing `validateProductionNativeMatrix` with
+    `AssertionError: 0 == 0`, proving the incomplete-ABI build otherwise completed.
+  - Missing-Git fallback probe:
+    `python3 -m unittest tests.python_build.test_android_gradle_behavioral.AndroidGradleBehavioralTests.test_missing_git_uses_zero_revision_during_real_gradle_configuration`
+    failed in 5.997s after changing the fallback to 40 ones: the generated BuildConfig contained that value instead
+    of the required 40-zero revision.
+  - Staging-scope probe:
+    `python3 -m unittest tests.python_build.test_android_gradle_behavioral.AndroidGradleBehavioralTests.test_changed_input_subset_uses_new_scope_without_stale_abis`
+    failed in 12.932s after removing input/ABI values from the Gradle stage path: the expected full stage contained
+    zero of eight libraries.
+
+- [x] **Step 6: Run GREEN and the complete focused verification**
+
+  Run the four behavioral tests together, all prior Python/workflow contracts, Ruff format/check, mypy, relevant
+  direct Gradle caller gates, and final worktree/donor/ledger hygiene. Commit only after every mutation is restored
+  and `git diff --check` passes.
