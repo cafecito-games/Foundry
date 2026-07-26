@@ -34,7 +34,7 @@ SUPPORTED_ABIS = frozenset({"arm64-v8a", "armeabi-v7a", "x86", "x86_64"})
 INSTRUMENTATION_TEST = "games.cafecito.foundry.game.FoundryAppTest#runtimeBootsWithCanonicalPluginProtocol"
 INSTRUMENTATION_CLASS, INSTRUMENTATION_METHOD = INSTRUMENTATION_TEST.split("#", 1)
 STANDARD_APK = Path("build/outputs/apk/standard/debug/android_debug.apk")
-JUNIT_REPORT_ROOT = Path("build/outputs/androidTest-results/connected/instrumentedDebug")
+JUNIT_REPORT_ROOT = Path("build/outputs/androidTest-results/connected")
 RUNTIME_FAILURE_PATTERNS = (
     "UnsatisfiedLinkError",
     "NoClassDefFoundError",

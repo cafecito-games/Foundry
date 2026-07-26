@@ -79,7 +79,7 @@ class FakeRunner:
                 self.apk_ids[apk.resolve()] = application_id
                 report = (
                     cwd
-                    / "build/outputs/androidTest-results/connected/instrumentedDebug"
+                    / "build/outputs/androidTest-results/connected/debug/flavors/instrumented"
                     / "TEST-foundry-acceptance.xml"
                 )
                 report.parent.mkdir(parents=True)

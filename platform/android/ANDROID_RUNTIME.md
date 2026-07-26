@@ -259,7 +259,8 @@ Each successful mode atomically writes `report.json`. Failures write
 stdout/stderr is retained under `commands/`, per-application full and
 PID-filtered output is written as `<application-id>-logcat.txt`, and the source
 mode records the exact JUnit XML under
-`<work-dir>/<scenario>/build/outputs/androidTest-results/connected/instrumentedDebug/`.
+`<work-dir>/<scenario>/build/outputs/androidTest-results/connected/` (AGP may
+nest the report by build type and flavor).
 CI uploads this evidence together with the emulator log even when a step fails.
 
 ## Acceptance evidence map
