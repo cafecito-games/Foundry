@@ -31,16 +31,7 @@ optimized builds, Foundry command-first test CLI.
 - Modify: `modules/foundry_script/tests/test_script_runner.h`
 - Test: `modules/foundry_script/tests/test_script_runner.h`
 
-- [ ] **Step 1: Add the scratch-path test dependency**
-
-Add the test utility include beside the existing test includes:
-
-```cpp
-#include "tests/test_macros.h"
-#include "tests/test_utils.h"
-```
-
-- [ ] **Step 2: Write the failing direct-case regression**
+- [ ] **Step 1: Write the failing direct-case regression**
 
 Add a direct `TEST_CASE` after `ScriptRunnerProjectFixture`:
 
@@ -50,7 +41,7 @@ TEST_CASE("[Modules][FoundryScript][ScriptRunner][Lifecycle] Direct fixture tear
 	TestProjectSettingsRestoreScope restore_process_settings;
 
 	ProjectSettings *settings = ProjectSettings::get_singleton();
-	const String expected_resource_path = TestUtils::get_temp_path("script_runner_pre_test_project");
+	const String expected_resource_path;
 	const bool expected_project_loaded = false;
 	const String expected_app_name = "ScriptRunnerBeforeDirectCase";
 	TestProjectSettingsInternalsAccessor::resource_path() = expected_resource_path;
@@ -75,7 +66,11 @@ TEST_CASE("[Modules][FoundryScript][ScriptRunner][Lifecycle] Direct fixture tear
 }
 ```
 
-- [ ] **Step 3: Build the unchanged branch with the new test**
+Use an empty path deliberately: it is the canonical projectless pre-test state, and
+`OS::get_resource_dir()` mirrors any nonempty `ProjectSettings::resource_path`, causing
+`ProjectSettings::setup()` to reuse that root instead of resolving the fixture path.
+
+- [ ] **Step 2: Build the unchanged branch with the new test**
 
 Run:
 
@@ -85,7 +80,7 @@ python3 scripts/agent_build.py
 
 Expected: build succeeds so the test can execute against the current lifecycle.
 
-- [ ] **Step 4: Run the direct regression to verify RED**
+- [ ] **Step 3: Run the direct regression to verify RED**
 
 Run:
 
@@ -112,7 +107,6 @@ Add:
 #include "core/io/resource.h"
 #include "modules/foundry_script/fs_cache.h"
 #include "tests/core/config/test_project_settings.h"
-#include "tests/test_utils.h"
 
 #include "test_suite_language_fixture.h"
 ```
@@ -127,7 +121,7 @@ TEST_CASE("Empty-suite ownership survives repeated cases and tears down before a
 	TestProjectSettingsRestoreScope restore_process_settings;
 
 	ProjectSettings *settings = ProjectSettings::get_singleton();
-	const String expected_resource_path = TestUtils::get_temp_path("empty_suite_pre_test_project");
+	const String expected_resource_path;
 	const bool expected_project_loaded = false;
 	const String expected_app_name = "BeforeEmptySuite";
 	TestProjectSettingsInternalsAccessor::resource_path() = expected_resource_path;
@@ -179,6 +173,9 @@ TEST_CASE("Empty-suite ownership survives repeated cases and tears down before a
 }
 ```
 
+The empty path has the same projectless meaning here and allows `init_language(String(root))` to
+activate the staged fixture project before the listener restores the exact empty state.
+
 - [ ] **Step 3: Strengthen named direct-init teardown restoration**
 
 Replace the current `finish_language tears down direct init() state` body with:
@@ -189,7 +186,7 @@ TEST_CASE("finish_language restores exact project settings after named-suite ini
 	TestProjectSettingsRestoreScope restore_process_settings;
 
 	ProjectSettings *settings = ProjectSettings::get_singleton();
-	const String expected_resource_path = TestUtils::get_temp_path("named_suite_pre_test_project");
+	const String expected_resource_path;
 	const bool expected_project_loaded = false;
 	const String expected_app_name = "BeforeNamedSuite";
 	TestProjectSettingsInternalsAccessor::resource_path() = expected_resource_path;
