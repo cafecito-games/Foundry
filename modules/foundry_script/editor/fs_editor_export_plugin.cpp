@@ -65,6 +65,7 @@ void EditorExportFoundryScript::_add_export_error(const String &p_message) {
 void EditorExportFoundryScript::_clear_name_mangling_state() {
 	name_mangling_prepared = false;
 	mangled_scripts.clear();
+	pending_mangled_output_authorizations.clear();
 }
 
 String EditorExportFoundryScript::_describe_script_errors(const String &p_path, Error p_fallback_error) {
@@ -133,6 +134,12 @@ void EditorExportFoundryScript::_export_file_mangled_bytecode(const String &p_pa
 		return;
 	}
 
+	if (pending_mangled_output_authorizations.has(prepared.output_path)) {
+		skip();
+		_add_export_error(vformat(TTR("Script \"%s\" still has an unconsumed late-file authorization for \"%s\"."), p_path, prepared.output_path));
+		return;
+	}
+	pending_mangled_output_authorizations.insert(prepared.output_path);
 	add_file(prepared.output_path, prepared.bytes, prepared.remap);
 	if (!prepared.remap) {
 		skip();
@@ -268,7 +275,13 @@ Error EditorExportFoundryScript::_prepare_export_file_manifest(const ExportFileM
 
 Error EditorExportFoundryScript::_validate_late_export_file(const String &p_path, String &r_error) const {
 	r_error.clear();
-	if (!name_mangling_enabled || !name_mangling_prepared || !FSNameManglerExport::is_sensitive_generated_path(p_path)) {
+	if (!name_mangling_enabled || !name_mangling_prepared) {
+		return OK;
+	}
+	if (pending_mangled_output_authorizations.erase(p_path)) {
+		return OK;
+	}
+	if (!FSNameManglerExport::is_sensitive_generated_path(p_path)) {
 		return OK;
 	}
 	r_error = vformat(TTR("Generated file \"%s\" cannot be added after the Foundry Script name-mangling manifest is sealed."), p_path);

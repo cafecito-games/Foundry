@@ -43,6 +43,7 @@ class EditorExportFoundryScript : public EditorExportPlugin {
 	bool name_mangling_enabled = false;
 	bool name_mangling_prepared = false;
 	RBMap<String, FSNameManglerExport::PreparedScript> mangled_scripts;
+	mutable HashSet<String> pending_mangled_output_authorizations;
 
 	// Export plugin callbacks cannot return an error; an EXPORT_MESSAGE_ERROR on the platform is
 	// what fails the export (see EditorExportPlatform::export_project_files).

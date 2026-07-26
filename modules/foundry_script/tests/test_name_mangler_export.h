@@ -49,6 +49,7 @@
 
 #include "core/config/project_settings.h"
 #include "core/io/file_access.h"
+#include "core/io/file_access_pack.h"
 #include "core/io/resource_loader.h"
 #include "core/io/resource_saver.h"
 #include "core/os/os.h"
@@ -1531,6 +1532,20 @@ TEST_CASE("[FoundryScript][NameManglerExport][Plugin] Preparation is one shot an
 			prepared.bytes);
 	CHECK_EQ(plugin->get_output_remap_for_test(0), prepared.remap);
 	CHECK_FALSE(plugin->is_skipped_for_test());
+
+	error.clear();
+	CHECK_EQ(plugin->validate_late_for_test(prepared.output_path, error),
+			OK);
+	CHECK(error.is_empty());
+	error.clear();
+	CHECK_EQ(plugin->validate_late_for_test(prepared.output_path, error),
+			ERR_INVALID_DATA);
+	CHECK(error.contains(prepared.output_path));
+	error.clear();
+	CHECK_EQ(plugin->validate_late_for_test(
+					 "res://foreign_generated.fsb", error),
+			ERR_INVALID_DATA);
+	CHECK(error.contains("res://foreign_generated.fsb"));
 }
 
 TEST_CASE("[FoundryScript][NameManglerExport][Plugin] Source token and bytecode callbacks use exact cached metadata") {
@@ -1737,6 +1752,337 @@ TEST_CASE("[FoundryScript][NameManglerExport][Plugin] Disabled mode preserves le
 	CHECK_EQ(with_missing_rules.remap, baseline.remap);
 	CHECK_EQ(with_missing_rules.skipped, baseline.skipped);
 	CHECK_EQ(platform->get_message_count(), 0);
+}
+
+struct NameManglerPackProcessResult {
+	Error error = FAILED;
+	int exit_code = -1;
+	String output;
+};
+
+static NameManglerPackProcessResult name_mangler_export_run_process(
+		const List<String> &p_arguments,
+		const String &p_working_directory = String()) {
+	NameManglerPackProcessResult result;
+	Vector<uint8_t> stdout_bytes;
+	Vector<uint8_t> stderr_bytes;
+	Dictionary pipe_info = OS::get_singleton()->execute_with_pipe(
+			OS::get_singleton()->get_executable_path(), p_arguments,
+			false, p_working_directory, Dictionary(), false);
+	if (pipe_info.is_empty()) {
+		return result;
+	}
+
+	Ref<FileAccess> stdout_pipe = pipe_info["stdio"];
+	Ref<FileAccess> stderr_pipe = pipe_info["stderr"];
+	const OS::ProcessID pid = pipe_info["pid"];
+	auto pump = [](const Ref<FileAccess> &p_pipe,
+						Vector<uint8_t> &r_bytes) {
+		if (p_pipe.is_null() || !p_pipe->is_open()) {
+			return;
+		}
+		const uint64_t available = p_pipe->get_length();
+		if (available == 0) {
+			return;
+		}
+		Vector<uint8_t> chunk;
+		chunk.resize(available);
+		const uint64_t read =
+				p_pipe->get_buffer(chunk.ptrw(), available);
+		const int old_size = r_bytes.size();
+		r_bytes.resize(old_size + read);
+		if (read > 0) {
+			memcpy(r_bytes.ptrw() + old_size, chunk.ptr(), read);
+		}
+	};
+
+	const uint64_t deadline =
+			OS::get_singleton()->get_ticks_msec() + 180000;
+	while (OS::get_singleton()->get_ticks_msec() < deadline) {
+		pump(stdout_pipe, stdout_bytes);
+		pump(stderr_pipe, stderr_bytes);
+		if (!OS::get_singleton()->is_process_running(pid)) {
+			pump(stdout_pipe, stdout_bytes);
+			pump(stderr_pipe, stderr_bytes);
+			result.error = OK;
+			break;
+		}
+		OS::get_singleton()->delay_usec(20000);
+	}
+	if (result.error != OK &&
+			OS::get_singleton()->is_process_running(pid)) {
+		OS::get_singleton()->kill(pid);
+	}
+	if (stdout_pipe.is_valid()) {
+		stdout_pipe->close();
+	}
+	if (stderr_pipe.is_valid()) {
+		stderr_pipe->close();
+	}
+	result.exit_code =
+			OS::get_singleton()->get_process_exit_code(pid);
+	result.output = String::utf8(
+			(const char *)stdout_bytes.ptr(), stdout_bytes.size());
+	result.output += String::utf8(
+			(const char *)stderr_bytes.ptr(), stderr_bytes.size());
+	return result;
+}
+
+struct NameManglerPackMount {
+	bool owns_packed_data = false;
+
+	Error mount(const String &p_path) {
+		PackedData *packed_data = PackedData::get_singleton();
+		ERR_FAIL_NULL_V(packed_data, ERR_UNAVAILABLE);
+		ERR_FAIL_COND_V(!packed_data->get_file_paths().is_empty(),
+				ERR_ALREADY_IN_USE);
+		owns_packed_data = true;
+		return packed_data->add_pack(p_path, false, 0);
+	}
+
+	Vector<uint8_t> read(const String &p_path) const {
+		PackedData *packed_data = PackedData::get_singleton();
+		ERR_FAIL_NULL_V(packed_data, Vector<uint8_t>());
+		Ref<FileAccess> file = packed_data->try_open_path(p_path);
+		ERR_FAIL_COND_V(file.is_null(), Vector<uint8_t>());
+		Vector<uint8_t> bytes;
+		bytes.resize(file->get_length());
+		if (!bytes.is_empty()) {
+			file->get_buffer(bytes.ptrw(), bytes.size());
+		}
+		return bytes;
+	}
+
+	~NameManglerPackMount() {
+		if (owns_packed_data &&
+				PackedData::get_singleton() != nullptr) {
+			PackedData::get_singleton()->clear();
+		}
+	}
+};
+
+TEST_CASE("[FoundryScript][NameManglerExport][Pack] Command-first export runs a real mangled pack") {
+	TemporaryProjectTree project(
+			"fs_name_mangler_export_pack_" +
+			itos(OS::get_singleton()->get_ticks_usec()));
+	project.write_file(
+			"project.foundry",
+			"[application]\n"
+			"config/name=\"Name Mangler Pack Acceptance\"\n"
+			"run/main_scene=\"res://main.tscn\"\n"
+			"\n"
+			"[rendering]\n"
+			"renderer/rendering_method=\"gl_compatibility\"\n");
+	project.write_file(
+			"export_presets.cfg",
+			"[preset.0]\n"
+			"name=\"Mangled\"\n"
+			"platform=\"Linux\"\n"
+			"runnable=false\n"
+			"dedicated_server=false\n"
+			"custom_features=\"\"\n"
+			"export_filter=\"all_resources\"\n"
+			"include_filter=\"\"\n"
+			"exclude_filter=\"\"\n"
+			"export_path=\"\"\n"
+			"script_export_mode=3\n"
+			"script_name_mangling_enabled=true\n"
+			"script_name_mangling_keep_rules=\"res://name-mangler.pro\"\n"
+			"\n"
+			"[preset.0.options]\n"
+			"custom_template/debug=\"\"\n"
+			"custom_template/release=\"\"\n");
+	project.write_file(
+			"name-mangler.pro",
+			"-keepclassmembers class ** {\n"
+			"\trule_kept;\n"
+			"}\n");
+	project.write_file(
+			"base.fs",
+			"extends Node\n"
+			"@export var inherited_override: int = 0\n"
+			"func pack_private_unkept_marker(value: int) -> int:\n"
+			"\treturn value + 1\n");
+	project.write_file(
+			"emitter.fs",
+			"extends Node\n"
+			"signal scene_signal(value: int)\n"
+			"func fire() -> void:\n"
+			"\tscene_signal.emit(7)\n");
+	project.write_file(
+			"receiver.fs",
+			"extends \"res://base.fs\"\n"
+			"var connection_value: int = 0\n"
+			"var animated_value: float = 0.0\n"
+			"func scene_handler(value: int) -> void:\n"
+			"\tconnection_value = value\n"
+			"func rule_kept(value: int) -> int:\n"
+			"\treturn value + 5\n"
+			"func cross_file_value() -> int:\n"
+			"\treturn pack_private_unkept_marker(40)\n");
+	project.write_file(
+			"payload.fs",
+			"extends Resource\n"
+			"@export var stored_value: int = 0\n");
+	project.write_file(
+			"payload.tres",
+			"[gd_resource type=\"Resource\" load_steps=2 format=3]\n"
+			"\n"
+			"[ext_resource type=\"Script\" path=\"res://payload.fs\" id=\"1_payload\"]\n"
+			"\n"
+			"[resource]\n"
+			"script = ExtResource(\"1_payload\")\n"
+			"stored_value = 11\n");
+	project.write_file(
+			"main.fs",
+			"extends Node\n"
+			"const EmitterScript = preload(\"res://emitter.fs\")\n"
+			"const ReceiverScript = preload(\"res://receiver.fs\")\n"
+			"const PayloadScript = preload(\"res://payload.fs\")\n"
+			"@onready var emitter: EmitterScript = $Emitter\n"
+			"@onready var receiver: ReceiverScript = $Receiver\n"
+			"@onready var animation_player: AnimationPlayer = $AnimationPlayer\n"
+			"func _ready() -> void:\n"
+			"\temitter.fire()\n"
+			"\tanimation_player.play(\"probe\")\n"
+			"\tanimation_player.advance(0.1)\n"
+			"\tvar payload := load(\"res://payload.tres\") as PayloadScript\n"
+			"\tvar dynamic_value: int = receiver.call(\"rule_kept\", 5)\n"
+			"\tvar valid := receiver.connection_value == 7\n"
+			"\tvalid = valid and receiver.inherited_override == 23\n"
+			"\tvalid = valid and receiver.animated_value == 9.0\n"
+			"\tvalid = valid and payload != null and payload.stored_value == 11\n"
+			"\tvalid = valid and dynamic_value == 10\n"
+			"\tvalid = valid and receiver.cross_file_value() == 41\n"
+			"\tif valid:\n"
+			"\t\tprint(\"NAME_MANGLER_PACK_RUNTIME_OK\")\n"
+			"\t\tget_tree().quit(0)\n"
+			"\telse:\n"
+			"\t\tpush_error(\"NAME_MANGLER_PACK_RUNTIME_FAILED\")\n"
+			"\t\tget_tree().quit(1)\n");
+	project.write_file(
+			"main.tscn",
+			"[gd_scene load_steps=8 format=3]\n"
+			"\n"
+			"[ext_resource type=\"Script\" path=\"res://main.fs\" id=\"1_main\"]\n"
+			"[ext_resource type=\"Script\" path=\"res://emitter.fs\" id=\"2_emitter\"]\n"
+			"[ext_resource type=\"Script\" path=\"res://receiver.fs\" id=\"3_receiver\"]\n"
+			"\n"
+			"[sub_resource type=\"Animation\" id=\"Animation_reset\"]\n"
+			"resource_name = \"RESET\"\n"
+			"length = 0.0\n"
+			"tracks/0/type = \"value\"\n"
+			"tracks/0/path = NodePath(\"Receiver:animated_value\")\n"
+			"tracks/0/keys = {\"times\": PackedFloat32Array(0), \"transitions\": PackedFloat32Array(1), \"update\": 0, \"values\": [0.0]}\n"
+			"\n"
+			"[sub_resource type=\"Animation\" id=\"Animation_probe\"]\n"
+			"resource_name = \"probe\"\n"
+			"length = 0.1\n"
+			"tracks/0/type = \"value\"\n"
+			"tracks/0/path = NodePath(\"Receiver:animated_value\")\n"
+			"tracks/0/keys = {\"times\": PackedFloat32Array(0), \"transitions\": PackedFloat32Array(1), \"update\": 0, \"values\": [9.0]}\n"
+			"\n"
+			"[sub_resource type=\"AnimationLibrary\" id=\"AnimationLibrary_main\"]\n"
+			"_data = {\"RESET\": SubResource(\"Animation_reset\"), \"probe\": SubResource(\"Animation_probe\")}\n"
+			"\n"
+			"[node name=\"Main\" type=\"Node\"]\n"
+			"script = ExtResource(\"1_main\")\n"
+			"\n"
+			"[node name=\"Emitter\" type=\"Node\" parent=\".\"]\n"
+			"script = ExtResource(\"2_emitter\")\n"
+			"\n"
+			"[node name=\"Receiver\" type=\"Node\" parent=\".\"]\n"
+			"script = ExtResource(\"3_receiver\")\n"
+			"inherited_override = 23\n"
+			"\n"
+			"[node name=\"AnimationPlayer\" type=\"AnimationPlayer\" parent=\".\"]\n"
+			"libraries/ = SubResource(\"AnimationLibrary_main\")\n"
+			"\n"
+			"[connection signal=\"scene_signal\" from=\"Emitter\" to=\"Receiver\" method=\"scene_handler\"]\n");
+
+	const String pack_path = project.root.path_join("mangled.pck");
+	List<String> export_arguments;
+	export_arguments.push_back("--headless");
+	export_arguments.push_back("project");
+	export_arguments.push_back("export");
+	export_arguments.push_back("--project");
+	export_arguments.push_back(project.root);
+	export_arguments.push_back("--preset");
+	export_arguments.push_back("Mangled");
+	export_arguments.push_back("--output");
+	export_arguments.push_back(pack_path);
+	export_arguments.push_back("--mode");
+	export_arguments.push_back("pack");
+	const NameManglerPackProcessResult export_result =
+			name_mangler_export_run_process(export_arguments);
+	INFO("Export output:\n", export_result.output);
+	REQUIRE_EQ(export_result.error, OK);
+	REQUIRE_EQ(export_result.exit_code, 0);
+	REQUIRE(FileAccess::exists(pack_path));
+	if (export_result.error != OK || export_result.exit_code != 0 ||
+			!FileAccess::exists(pack_path)) {
+		return;
+	}
+
+	const String runtime_root = project.root.path_join("runtime");
+	const Error make_runtime_error =
+			DirAccess::make_dir_recursive_absolute(runtime_root);
+	REQUIRE_EQ(make_runtime_error, OK);
+	if (make_runtime_error != OK) {
+		return;
+	}
+	const String runtime_pack = runtime_root.path_join(
+			OS::get_singleton()->get_executable_path().get_file() + ".pck");
+	Ref<DirAccess> filesystem =
+			DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+	REQUIRE(filesystem.is_valid());
+	if (filesystem.is_null()) {
+		return;
+	}
+	const Error copy_error = filesystem->copy(pack_path, runtime_pack);
+	REQUIRE_EQ(copy_error, OK);
+	if (copy_error != OK) {
+		return;
+	}
+	List<String> runtime_arguments;
+	runtime_arguments.push_back("--headless");
+	runtime_arguments.push_back("project");
+	runtime_arguments.push_back("run");
+	const NameManglerPackProcessResult runtime_result =
+			name_mangler_export_run_process(
+					runtime_arguments, runtime_root);
+	INFO("Runtime output:\n", runtime_result.output);
+	REQUIRE_EQ(runtime_result.error, OK);
+	if (runtime_result.error != OK) {
+		return;
+	}
+	CHECK_EQ(runtime_result.exit_code, 0);
+	CHECK(runtime_result.output.contains(
+			"NAME_MANGLER_PACK_RUNTIME_OK"));
+
+	NameManglerPackMount mount;
+	REQUIRE_EQ(mount.mount(pack_path), OK);
+	PackedData *packed_data = PackedData::get_singleton();
+	REQUIRE(packed_data != nullptr);
+	const Vector<String> script_stems = {
+		"base", "emitter", "receiver", "payload", "main"
+	};
+	for (const String &stem : script_stems) {
+		const String source_path = "res://" + stem + ".fs";
+		const String bytecode_path = "res://" + stem + ".fsb";
+		CHECK_FALSE(packed_data->has_path(source_path));
+		REQUIRE(packed_data->has_path(bytecode_path));
+	}
+	const Vector<uint8_t> receiver_bytes =
+			mount.read("res://receiver.fsb");
+	REQUIRE_FALSE(receiver_bytes.is_empty());
+	CHECK(bytecode_buffer_contains(receiver_bytes, "scene_handler"));
+	CHECK(bytecode_buffer_contains(receiver_bytes, "rule_kept"));
+	CHECK(bytecode_buffer_contains(receiver_bytes, "animated_value"));
+	CHECK(bytecode_buffer_contains(
+			receiver_bytes, "inherited_override"));
+	CHECK_FALSE(bytecode_buffer_contains(
+			receiver_bytes, "pack_private_unkept_marker"));
 }
 
 } // namespace FSTests
