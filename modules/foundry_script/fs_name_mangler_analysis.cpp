@@ -67,6 +67,12 @@ struct FSNameManglerAnalysis::BuildState {
 	HashMap<const FoundryScript *, HashSet<StringName>> method_declarations;
 	HashMap<const FoundryScript *, HashSet<StringName>> property_declarations;
 	HashMap<const FoundryScript *, HashSet<StringName>> signal_declarations;
+	HashMap<const FoundryScript *, HashSet<StringName>>
+			scoped_method_reflection_names;
+	HashMap<const FoundryScript *, HashSet<StringName>>
+			scoped_property_reflection_names;
+	HashMap<const FoundryScript *, HashSet<StringName>>
+			scoped_signal_reflection_names;
 	bool unscannable_protected_surface = false;
 	HashSet<const FoundryScript *> included_classes;
 	HashSet<String> included_identities;
@@ -1330,39 +1336,88 @@ FSNameManglerAnalysis::Result FSNameManglerAnalysis::analyze(const Input &p_inpu
 					state);
 		}
 	}
+	for (const FoundryScript *receiver : state.included_classes) {
+		HashSet<StringName> visible_methods;
+		HashSet<StringName> visible_properties;
+		HashSet<StringName> visible_signals;
+		HashSet<const FoundryScript *> visited;
+		const FoundryScript *current = receiver;
+		while (current != nullptr &&
+				state.included_classes.has(current) &&
+				!visited.has(current)) {
+			visited.insert(current);
+			const HashSet<StringName> *methods =
+					state.method_declarations.getptr(current);
+			if (methods != nullptr) {
+				for (const StringName &name : *methods) {
+					visible_methods.insert(name);
+				}
+			}
+			const HashSet<StringName> *properties =
+					state.property_declarations.getptr(current);
+			if (properties != nullptr) {
+				for (const StringName &name : *properties) {
+					visible_properties.insert(name);
+				}
+			}
+			const HashSet<StringName> *signals =
+					state.signal_declarations.getptr(current);
+			if (signals != nullptr) {
+				for (const StringName &name : *signals) {
+					visible_signals.insert(name);
+				}
+			}
+			current = current->base.ptr();
+		}
+
+		visited.clear();
+		current = receiver;
+		while (current != nullptr &&
+				state.included_classes.has(current) &&
+				!visited.has(current)) {
+			visited.insert(current);
+			HashSet<StringName> &method_names =
+					state.scoped_method_reflection_names[current];
+			for (const StringName &name : visible_methods) {
+				method_names.insert(name);
+			}
+			HashSet<StringName> &property_names =
+					state.scoped_property_reflection_names[current];
+			for (const StringName &name : visible_properties) {
+				property_names.insert(name);
+			}
+			HashSet<StringName> &signal_names =
+					state.scoped_signal_reflection_names[current];
+			for (const StringName &name : visible_signals) {
+				signal_names.insert(name);
+			}
+			current = current->base.ptr();
+		}
+	}
 	const auto reflection_name_is_visible =
 			[&](const FoundryScript *p_owner, uint8_t p_kind,
 					const StringName &p_name) {
-				HashSet<const FoundryScript *> visited;
-				const FoundryScript *current = p_owner;
-				while (current != nullptr &&
-						state.included_classes.has(current) &&
-						!visited.has(current)) {
-					visited.insert(current);
-					const HashSet<StringName> *declarations = nullptr;
-					switch (p_kind) {
-						case FSFunction::REFLECTION_METHODS:
-							declarations =
-									state.method_declarations.getptr(current);
-							break;
-						case FSFunction::REFLECTION_PROPERTIES:
-							declarations =
-									state.property_declarations.getptr(current);
-							break;
-						case FSFunction::REFLECTION_SIGNALS:
-							declarations =
-									state.signal_declarations.getptr(current);
-							break;
-						default:
-							break;
-					}
-					if (declarations != nullptr &&
-							declarations->has(p_name)) {
-						return true;
-					}
-					current = current->base.ptr();
+				const HashSet<StringName> *names = nullptr;
+				switch (p_kind) {
+					case FSFunction::REFLECTION_METHODS:
+						names =
+								state.scoped_method_reflection_names.getptr(
+										p_owner);
+						break;
+					case FSFunction::REFLECTION_PROPERTIES:
+						names =
+								state.scoped_property_reflection_names.getptr(
+										p_owner);
+						break;
+					case FSFunction::REFLECTION_SIGNALS:
+						names =
+								state.scoped_signal_reflection_names.getptr(
+										p_owner);
+						break;
+					default:
+						break;
 				}
-				return false;
+				return names != nullptr && names->has(p_name);
 			};
 	for (const KeyValue<StringName, BuildState::Aggregate> &candidate :
 			state.candidates) {

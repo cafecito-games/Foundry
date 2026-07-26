@@ -2733,6 +2733,111 @@ TEST_CASE("[FoundryScript][NameMangler][Reflection][Application] Scoped retentio
 	CHECK(unresolved_reflection_diagnostic);
 }
 
+TEST_CASE("[FoundryScript][NameMangler][Reflection][Application] Base-owned self enumeration rejects derived declaration maps") {
+	const StringName derived_names[] = {
+		SNAME("reflection_dynamic_derived_method_1237"),
+		SNAME("reflection_dynamic_derived_property_1237"),
+		SNAME("reflection_dynamic_derived_signal_1237"),
+	};
+	const StringName unrelated_names[] = {
+		SNAME("reflection_dynamic_unrelated_method_1237"),
+		SNAME("reflection_dynamic_unrelated_property_1237"),
+		SNAME("reflection_dynamic_unrelated_signal_1237"),
+	};
+	const Ref<FoundryScript> base = compile_bytecode_test_source(
+			"extends RefCounted\n"
+			"var reflection_dynamic_base_property_1237: int\n"
+			"signal reflection_dynamic_base_signal_1237\n"
+			"func reflection_dynamic_base_method_1237() -> void:\n"
+			"\tpass\n"
+			"func inspect_reflection_dynamic_methods_1237() -> void:\n"
+			"\tget_method_list()\n"
+			"func inspect_reflection_dynamic_properties_1237() -> void:\n"
+			"\tget_property_list()\n"
+			"func inspect_reflection_dynamic_signals_1237() -> void:\n"
+			"\tget_signal_list()\n");
+	const Ref<FoundryScript> derived = compile_bytecode_test_source(vformat(
+			"extends \"%s\"\n"
+			"var reflection_dynamic_derived_property_1237: int\n"
+			"signal reflection_dynamic_derived_signal_1237\n"
+			"func reflection_dynamic_derived_method_1237() -> void:\n"
+			"\tpass\n",
+			base->get_script_path()));
+	const Ref<FoundryScript> unrelated = compile_bytecode_test_source(
+			"extends RefCounted\n"
+			"var reflection_dynamic_unrelated_property_1237: int\n"
+			"signal reflection_dynamic_unrelated_signal_1237\n"
+			"func reflection_dynamic_unrelated_method_1237() -> void:\n"
+			"\tpass\n");
+	Vector<Ref<FoundryScript>> roots;
+	roots.push_back(base);
+	roots.push_back(derived);
+	roots.push_back(unrelated);
+	const Vector<uint8_t> base_baseline =
+			name_mangler_application_serialize(base);
+	const Vector<uint8_t> derived_baseline =
+			name_mangler_application_serialize(derived);
+	const Vector<uint8_t> unrelated_baseline =
+			name_mangler_application_serialize(unrelated);
+
+	for (int i = 0; i < 3; i++) {
+		CAPTURE(derived_names[i]);
+		RBMap<StringName, StringName> invalid_map;
+		invalid_map.insert(
+				derived_names[i],
+				StringName(vformat(
+						"_fsb_reflection_dynamic_derived_%d_1237", i)));
+		FSNameManglerApplication::Transaction transaction;
+		Vector<FSNameManglerApplication::Diagnostic> diagnostics;
+		CHECK_EQ(
+				transaction.begin(roots, invalid_map, diagnostics),
+				ERR_INVALID_PARAMETER);
+		CHECK_FALSE(transaction.is_active());
+		if (transaction.is_active()) {
+			transaction.rollback();
+		}
+		bool reflection_diagnostic = false;
+		for (const FSNameManglerApplication::Diagnostic &diagnostic :
+				diagnostics) {
+			if (diagnostic.surface == "reflection enumeration") {
+				reflection_diagnostic = true;
+				break;
+			}
+		}
+		CHECK(reflection_diagnostic);
+		CHECK_EQ(name_mangler_application_serialize(base), base_baseline);
+		CHECK_EQ(
+				name_mangler_application_serialize(derived),
+				derived_baseline);
+		CHECK_EQ(
+				name_mangler_application_serialize(unrelated),
+				unrelated_baseline);
+	}
+
+	RBMap<StringName, StringName> unrelated_map;
+	for (int i = 0; i < 3; i++) {
+		unrelated_map.insert(
+				unrelated_names[i],
+				StringName(vformat(
+						"_fsb_reflection_dynamic_unrelated_%d_1237", i)));
+	}
+	FSNameManglerApplication::Transaction unrelated_transaction;
+	Vector<FSNameManglerApplication::Diagnostic> unrelated_diagnostics;
+	REQUIRE_EQ(
+			unrelated_transaction.begin(
+					roots, unrelated_map, unrelated_diagnostics),
+			OK);
+	CHECK(unrelated_transaction.is_active());
+	unrelated_transaction.rollback();
+	CHECK_EQ(name_mangler_application_serialize(base), base_baseline);
+	CHECK_EQ(
+			name_mangler_application_serialize(derived),
+			derived_baseline);
+	CHECK_EQ(
+			name_mangler_application_serialize(unrelated),
+			unrelated_baseline);
+}
+
 TEST_CASE("[FoundryScript][NameManglerApplication] Rejects packed and typed-container names atomically") {
 	const StringName packed_name = SNAME("private_marker_packed_name");
 	const StringName array_path = SNAME("private_marker_array_path");
