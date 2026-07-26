@@ -1,16 +1,36 @@
 extends Node2D
 
-var _plugin_name = "FoundryAppInstrumentedTestPlugin"
-var _android_plugin
+var _test_bridge: JavaClass
 
 func _ready():
-	if Engine.has_singleton(_plugin_name):
-		_android_plugin = Engine.get_singleton(_plugin_name)
-		_android_plugin.connect("launch_tests", _launch_tests)
-		_android_plugin.connect("update_quit_on_go_back", _update_quit_on_go_back)
-	else:
-		printerr("Couldn't find plugin " + _plugin_name)
+	_test_bridge = JavaClassWrapper.wrap(
+			"games.cafecito.foundry.game.test.FoundryAppInstrumentedTestBridge"
+	)
+	if _test_bridge == null:
+		printerr("Couldn't resolve the instrumented test bridge")
 		get_tree().quit()
+		return
+	_test_bridge.notifyMainLoopStarted()
+
+
+func _process(_delta: float) -> void:
+	if _test_bridge == null:
+		return
+
+	var test_label: String = _test_bridge.takeRequestedTest()
+	if not test_label.is_empty():
+		_launch_tests(test_label)
+
+	var quit_on_go_back: int = _test_bridge.takeRequestedQuitOnGoBack()
+	if quit_on_go_back >= 0:
+		get_tree().quit_on_go_back = quit_on_go_back == 1
+		_test_bridge.notifyQuitOnGoBackApplied()
+
+
+func _exit_tree() -> void:
+	if _test_bridge != null:
+		_test_bridge.notifyEngineTerminating()
+
 
 func _launch_tests(test_label: String) -> void:
 	var test_instance: BaseTest = null
@@ -24,44 +44,10 @@ func _launch_tests(test_label: String) -> void:
 		test_instance.__reset_tests()
 		test_instance.run_tests()
 		var incomplete_tests = test_instance._test_started - test_instance._test_completed
-		_android_plugin.onTestsCompleted(test_label, test_instance._test_completed, test_instance._test_assert_failures + incomplete_tests)
+		_test_bridge.onTestsCompleted(
+				test_label,
+				test_instance._test_completed,
+				test_instance._test_assert_failures + incomplete_tests
+		)
 	else:
-		_android_plugin.onTestsFailed(test_label, "Unable to launch tests")
-
-
-func _update_quit_on_go_back(quit_on_go_back: bool) -> void:
-	get_tree().quit_on_go_back = quit_on_go_back
-
-
-func _on_plugin_toast_button_pressed() -> void:
-	if _android_plugin:
-		_android_plugin.helloWorld()
-
-func _on_vibration_button_pressed() -> void:
-	var android_runtime = Engine.get_singleton("AndroidRuntime")
-	if android_runtime:
-		print("Checking if the device supports vibration")
-		var vibrator_service = android_runtime.getApplicationContext().getSystemService("vibrator")
-		if vibrator_service:
-			if vibrator_service.hasVibrator():
-				print("Vibration is supported on device! Vibrating now...")
-				var VibrationEffect = JavaClassWrapper.wrap("android.os.VibrationEffect")
-				var effect = VibrationEffect.createOneShot(500, VibrationEffect.DEFAULT_AMPLITUDE)
-				vibrator_service.vibrate(effect)
-			else:
-				printerr("Vibration is not supported on device")
-		else:
-			printerr("Unable to retrieve the vibrator service")
-	else:
-		printerr("Couldn't find AndroidRuntime singleton")
-
-func _on_gd_script_toast_button_pressed() -> void:
-	var android_runtime = Engine.get_singleton("AndroidRuntime")
-	if android_runtime:
-		var activity = android_runtime.getActivity()
-
-		var toastCallable = func ():
-			var ToastClass = JavaClassWrapper.wrap("android.widget.Toast")
-			ToastClass.makeText(activity, "Toast from FoundryScript", ToastClass.LENGTH_LONG).show()
-
-		activity.runOnUiThread(android_runtime.createRunnableFromFoundryCallable(toastCallable))
+		_test_bridge.onTestsFailed(test_label, "Unable to launch tests")

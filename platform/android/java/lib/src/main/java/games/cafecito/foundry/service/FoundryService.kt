@@ -342,7 +342,7 @@ open class FoundryService : Service() {
 		Log.d(TAG, "Performing engine initialization")
 		try {
 			// Initialize the Foundry instance
-			if (!foundry.initEngine(foundryHost, foundryHost.commandLine, foundryHost.getHostPlugins(foundry))) {
+			if (!foundry.initEngine(foundryHost, foundryHost.commandLine)) {
 				throw IllegalStateException("Unable to initialize Foundry engine layer")
 			}
 

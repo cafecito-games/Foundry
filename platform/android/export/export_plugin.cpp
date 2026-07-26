@@ -3354,19 +3354,6 @@ String EditorExportPlatformAndroid::_get_plugins_names(const Ref<EditorExportPre
 	return plugins_names;
 }
 
-String EditorExportPlatformAndroid::_resolve_export_plugin_android_library_path(const String &p_android_library_path) const {
-	String absolute_path;
-	if (!p_android_library_path.is_empty()) {
-		if (p_android_library_path.is_absolute_path()) {
-			absolute_path = ProjectSettings::get_singleton()->globalize_path(p_android_library_path);
-		} else {
-			const String export_plugin_absolute_path = String("res://addons/").path_join(p_android_library_path);
-			absolute_path = ProjectSettings::get_singleton()->globalize_path(export_plugin_absolute_path);
-		}
-	}
-	return absolute_path;
-}
-
 bool EditorExportPlatformAndroid::_is_clean_build_required(const Ref<EditorExportPreset> &p_preset) {
 	bool first_build = last_gradle_build_time == 0;
 	bool have_plugins_changed = false;
@@ -3650,29 +3637,9 @@ Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportP
 		String zipalign_flag = "true";
 		String compress_native_libraries_flag = bool_to_string(p_preset->get("gradle_build/compress_native_libraries"));
 
-		Vector<String> android_libraries;
-		Vector<String> android_dependencies;
-		Vector<String> android_dependencies_maven_repos;
-
 		bool has_dotnet_project = false;
 		Vector<Ref<EditorExportPlugin>> export_plugins = EditorExport::get_singleton()->get_export_plugins();
 		for (int i = 0; i < export_plugins.size(); i++) {
-			if (export_plugins[i]->supports_platform(Ref<EditorExportPlatform>(this))) {
-				PackedStringArray export_plugin_android_libraries = export_plugins[i]->get_android_libraries(Ref<EditorExportPlatform>(this), p_debug);
-				for (int k = 0; k < export_plugin_android_libraries.size(); k++) {
-					const String resolved_android_library_path = _resolve_export_plugin_android_library_path(export_plugin_android_libraries[k]);
-					if (!resolved_android_library_path.is_empty()) {
-						android_libraries.push_back(resolved_android_library_path);
-					}
-				}
-
-				PackedStringArray export_plugin_android_dependencies = export_plugins[i]->get_android_dependencies(Ref<EditorExportPlatform>(this), p_debug);
-				android_dependencies.append_array(export_plugin_android_dependencies);
-
-				PackedStringArray export_plugin_android_dependencies_maven_repos = export_plugins[i]->get_android_dependencies_maven_repos(Ref<EditorExportPlatform>(this), p_debug);
-				android_dependencies_maven_repos.append_array(export_plugin_android_dependencies_maven_repos);
-			}
-
 			PackedStringArray features = export_plugins[i]->get_export_features(Ref<EditorExportPlatform>(this), p_debug);
 			if (features.has("dotnet")) {
 				has_dotnet_project = true;
@@ -3680,9 +3647,6 @@ Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportP
 		}
 
 		bool clean_build_required = _is_clean_build_required(p_preset);
-		String combined_android_libraries = String("|").join(android_libraries);
-		String combined_android_dependencies = String("|").join(android_dependencies);
-		String combined_android_dependencies_maven_repos = String("|").join(android_dependencies_maven_repos);
 
 		List<String> cmdline;
 		cmdline.push_back("validateJavaVersion");
@@ -3711,9 +3675,6 @@ Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportP
 		cmdline.push_back("-Pexport_version_min_sdk=" + min_sdk_version); // argument to specify the min sdk.
 		cmdline.push_back("-Pexport_version_target_sdk=" + target_sdk_version); // argument to specify the target sdk.
 		cmdline.push_back("-Pexport_enabled_abis=" + enabled_abi_string); // argument to specify enabled ABIs.
-		cmdline.push_back("-Pplugins_local_binaries=" + combined_android_libraries); // argument to specify the list of android libraries provided by plugins.
-		cmdline.push_back("-Pplugins_remote_binaries=" + combined_android_dependencies); // argument to specify the list of android dependencies provided by plugins.
-		cmdline.push_back("-Pplugins_maven_repos=" + combined_android_dependencies_maven_repos); // argument to specify the list of maven repos for android dependencies provided by plugins.
 		cmdline.push_back("-Pperform_zipalign=" + zipalign_flag); // argument to specify whether the build should be zipaligned.
 		cmdline.push_back("-Pperform_signing=" + sign_flag); // argument to specify whether the build should be signed.
 		cmdline.push_back("-Pcompress_native_libraries=" + compress_native_libraries_flag); // argument to specify whether the build should compress native libraries.

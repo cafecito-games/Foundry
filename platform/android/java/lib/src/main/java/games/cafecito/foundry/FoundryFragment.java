@@ -64,9 +64,6 @@ import com.google.android.vending.expansion.downloader.IStub;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
-import java.util.Set;
-
-import games.cafecito.foundry.plugin.FoundryPlugin;
 
 /**
  * Base fragment for Android apps intending to use Foundry for part of the app's UI.
@@ -174,7 +171,7 @@ public class FoundryFragment extends Fragment implements IDownloaderClient, Foun
 
 	private void performEngineInitialization() {
 		try {
-			if (!foundry.initEngine(this, getCommandLine(), getHostPlugins(foundry))) {
+			if (!foundry.initEngine(this, getCommandLine())) {
 				throw new IllegalStateException("Unable to initialize Foundry engine");
 			}
 
@@ -450,15 +447,6 @@ public class FoundryFragment extends Fragment implements IDownloaderClient, Foun
 			return parentHost.onNewFoundryInstanceRequested(args);
 		}
 		return -1;
-	}
-
-	@Override
-	@CallSuper
-	public Set<FoundryPlugin> getHostPlugins(Foundry engine) {
-		if (parentHost != null) {
-			return parentHost.getHostPlugins(engine);
-		}
-		return Collections.emptySet();
 	}
 
 	@Override

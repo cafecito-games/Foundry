@@ -84,7 +84,7 @@ class FakeRunner:
                 )
                 report.parent.mkdir(parents=True)
                 test_name = (
-                    "anotherTest" if self.failure == "missing-junit" else "runtimeBootsWithCanonicalPluginProtocol"
+                    "anotherTest" if self.failure == "missing-junit" else "runtimeBootsWithoutLegacyPluginMetadata"
                 )
                 failure = "<failure>failed</failure>" if self.failure == "failed-junit" else ""
                 report.write_text(
@@ -276,7 +276,7 @@ class AndroidDeviceAcceptanceTests(unittest.TestCase):
             (
                 "-Pandroid.testInstrumentationRunnerArguments.class="
                 "games.cafecito.foundry.game.FoundryAppTest"
-                "#runtimeBootsWithCanonicalPluginProtocol"
+                "#runtimeBootsWithoutLegacyPluginMetadata"
             ),
             custom,
         )

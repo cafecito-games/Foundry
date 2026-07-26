@@ -40,6 +40,37 @@ ACTIVE_GRADLE_FILES = (
     JAVA_ROOT / "app/assetPackInstallTime/build.gradle",
     JAVA_ROOT / "nativeSrcsConfigs/build.gradle",
 )
+LEGACY_PLUGIN_PATHS = (
+    REPO_ROOT / "platform/android/plugin/foundry_plugin_jni.h",
+    REPO_ROOT / "platform/android/plugin/foundry_plugin_jni.cpp",
+    REPO_ROOT / "platform/android/api/jni_singleton.h",
+    LIB_JAVA / "games/cafecito/foundry/plugin/FoundryPlugin.java",
+    LIB_JAVA / "games/cafecito/foundry/plugin/FoundryPluginRegistry.java",
+    LIB_JAVA / "games/cafecito/foundry/plugin/UsedByFoundry.java",
+    LIB_JAVA / "games/cafecito/foundry/plugin/SignalInfo.java",
+    LIB_JAVA / "games/cafecito/foundry/plugin/AndroidRuntimePlugin.kt",
+    LIB_TESTS / "java/games/cafecito/foundry/plugin/FoundryPluginRegistryTest.java",
+    LIB_ANDROID_TESTS / "java/games/cafecito/foundry/plugin/FoundryPluginProtocolInstrumentedTest.java",
+    JAVA_ROOT / "app/src/instrumented/java/games/cafecito/foundry/game/test/FoundryAppInstrumentedTestPlugin.kt",
+)
+LEGACY_PLUGIN_TOKENS = (
+    "FoundryPlugin",
+    "FoundryPluginRegistry",
+    "UsedByFoundry",
+    "SignalInfo",
+    "AndroidRuntimePlugin",
+    "games.cafecito.foundry.plugin.v1.",
+    "Java_games_cafecito_foundry_plugin_FoundryPlugin_",
+    "Class.forName(",
+    "getDeclaredMethods(",
+    "plugins_maven_repos",
+    "plugins_remote_binaries",
+    "plugins_local_binaries",
+    "getFoundryPluginsMavenRepos",
+    "getFoundryPluginsRemoteBinaries",
+    "getFoundryPluginsLocalBinaries",
+    "-keep class games.cafecito.foundry.plugin.**",
+)
 WRAPPER_SHA256 = "f397b287023acdba1e9f6fc5ea72d22dd63669d59ed4a289a29b1a76eee151c6"
 EXPECTED_SOURCE_AARS = {
     "libs/debug/foundry-debug.aar",
@@ -83,6 +114,28 @@ def write_source_template(path: Path, entries: dict[str, bytes]) -> None:
 
 
 class AndroidGradleRuntimeContractTests(unittest.TestCase):
+    def test_legacy_android_plugin_model_is_absent(self) -> None:
+        present = [str(path.relative_to(REPO_ROOT)) for path in LEGACY_PLUGIN_PATHS if path.exists()]
+        self.assertEqual([], present)
+
+        active_sources = (
+            REPO_ROOT / "platform/android/SCsub",
+            REPO_ROOT / "platform/android/api/api.cpp",
+            REPO_ROOT / "platform/android/java_foundry_lib_jni.cpp",
+            REPO_ROOT / "platform/android/java_foundry_wrapper.cpp",
+            REPO_ROOT / "platform/android/java_foundry_wrapper.h",
+            REPO_ROOT / "platform/android/export/export_plugin.cpp",
+            JAVA_ROOT / "app/build.gradle",
+            JAVA_ROOT / "app/config.gradle",
+            JAVA_ROOT / "app/src/instrumented/AndroidManifest.xml",
+            *LIB_JAVA.rglob("*.java"),
+            *LIB_JAVA.rglob("*.kt"),
+        )
+        active = "\n".join(read(path) for path in active_sources)
+        for token in LEGACY_PLUGIN_TOKENS:
+            with self.subTest(token=token):
+                self.assertNotIn(token, active)
+
     def test_settings_include_the_internal_runtime_library(self) -> None:
         settings = read(SETTINGS)
 
@@ -196,9 +249,9 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
             LIB_RESOURCES / "values/strings.xml",
             LIB_RESOURCES / "xml/foundry_provider_paths.xml",
             LIB_TESTS / "java/games/cafecito/foundry/RuntimeIdentityTest.java",
-            LIB_TESTS / "java/games/cafecito/foundry/plugin/FoundryPluginRegistryTest.java",
             LIB_ANDROID_TESTS / "java/games/cafecito/foundry/RuntimeIdentityInstrumentedTest.kt",
-            LIB_ANDROID_TESTS / "java/games/cafecito/foundry/plugin/FoundryPluginProtocolInstrumentedTest.java",
+            JAVA_ROOT
+            / "app/src/instrumented/java/games/cafecito/foundry/game/test/FoundryAppInstrumentedTestBridge.java",
         )
         missing = [str(path.relative_to(REPO_ROOT)) for path in required if not path.is_file()]
         self.assertEqual([], missing)
@@ -234,10 +287,6 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
             "games/cafecito/foundry/FoundryLib.java": (
                 "native boolean initialize(",
                 "Java_games_cafecito_foundry_FoundryLib_initialize",
-            ),
-            "games/cafecito/foundry/plugin/FoundryPlugin.java": (
-                "native boolean nativeRegisterSingleton(",
-                "Java_games_cafecito_foundry_plugin_FoundryPlugin_nativeRegisterSingleton",
             ),
             "games/cafecito/foundry/utils/DialogUtils.kt": (
                 "external fun dialogCallback(",
@@ -478,7 +527,8 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
             "android_device_acceptance.py verify-apks",
             "games.cafecito.foundry.game",
             "dev.example.foundryacceptance",
-            "games.cafecito.foundry.plugin.v1.",
+            "does not scan application manifests",
+            "FoundryExtension loading path",
             "compiled Java/Kotlin native declarations",
             "libfoundry_android.so",
             "Acceptance evidence map",

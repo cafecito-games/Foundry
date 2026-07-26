@@ -240,8 +240,6 @@ public:
 
 	String _get_plugins_names(const Ref<EditorExportPreset> &p_preset) const;
 
-	String _resolve_export_plugin_android_library_path(const String &p_android_library_path) const;
-
 	bool _is_clean_build_required(const Ref<EditorExportPreset> &p_preset);
 
 	String get_apk_expansion_fullpath(const Ref<EditorExportPreset> &p_preset, const String &p_path);

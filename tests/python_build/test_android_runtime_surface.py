@@ -74,12 +74,58 @@ for path in (
     "platform/android/java/lib/src/main/resources/META-INF/foundry/LICENSE.txt",
     "platform/android/java/lib/src/main/resources/META-INF/foundry/NOTICE",
     "platform/android/java/lib/src/test/java/games/cafecito/foundry/RuntimeIdentityTest.java",
-    "platform/android/java/lib/src/test/java/games/cafecito/foundry/plugin/FoundryPluginRegistryTest.java",
     "platform/android/java/lib/src/test/java/games/cafecito/foundry/utils/CommandLineFileParserTest.kt",
     "platform/android/java/lib/src/androidTest/java/games/cafecito/foundry/RuntimeIdentityInstrumentedTest.kt",
-    "platform/android/java/lib/src/androidTest/java/games/cafecito/foundry/plugin/FoundryPluginProtocolInstrumentedTest.java",
+    "platform/android/java/app/src/instrumented/java/games/cafecito/foundry/game/test/FoundryAppInstrumentedTestBridge.java",
 ):
     require_path(path)
+
+# The legacy Android plugin model is not part of the in-tree host runtime.
+for path in (
+    "platform/android/plugin/foundry_plugin_jni.h",
+    "platform/android/plugin/foundry_plugin_jni.cpp",
+    "platform/android/api/jni_singleton.h",
+    "doc/classes/JNISingleton.xml",
+    "platform/android/java/lib/src/main/java/games/cafecito/foundry/plugin/FoundryPlugin.java",
+    "platform/android/java/lib/src/main/java/games/cafecito/foundry/plugin/FoundryPluginRegistry.java",
+    "platform/android/java/lib/src/main/java/games/cafecito/foundry/plugin/UsedByFoundry.java",
+    "platform/android/java/lib/src/main/java/games/cafecito/foundry/plugin/SignalInfo.java",
+    "platform/android/java/lib/src/main/java/games/cafecito/foundry/plugin/AndroidRuntimePlugin.kt",
+    "platform/android/java/lib/src/test/java/games/cafecito/foundry/plugin/FoundryPluginRegistryTest.java",
+    "platform/android/java/lib/src/androidTest/java/games/cafecito/foundry/plugin/FoundryPluginProtocolInstrumentedTest.java",
+    "platform/android/java/app/src/instrumented/java/games/cafecito/foundry/game/test/FoundryAppInstrumentedTestPlugin.kt",
+):
+    forbid_path(path)
+
+for path in (
+    "platform/android/SCsub",
+    "platform/android/api/api.cpp",
+    "platform/android/java_foundry_lib_jni.cpp",
+    "platform/android/export/export_plugin.cpp",
+    "platform/android/java/app/build.gradle",
+    "platform/android/java/app/config.gradle",
+    "platform/android/java/app/src/instrumented/AndroidManifest.xml",
+    "platform/android/java/lib/src/main/java/games/cafecito/foundry/Foundry.kt",
+    "platform/android/java/lib/src/main/java/games/cafecito/foundry/FoundryHost.java",
+    "platform/android/java/lib/src/main/java/games/cafecito/foundry/FoundryFragment.java",
+    "platform/android/java/lib/src/main/java/games/cafecito/foundry/gl/FoundryRenderer.java",
+    "platform/android/java/lib/src/main/java/games/cafecito/foundry/vulkan/VkRenderer.kt",
+):
+    forbid_text(
+        path,
+        "FoundryPlugin",
+        "FoundryPluginRegistry",
+        "AndroidRuntimePlugin",
+        "games.cafecito.foundry.plugin.v1.",
+        "foundry_plugin_jni",
+        "plugins_maven_repos",
+        "plugins_remote_binaries",
+        "plugins_local_binaries",
+        "getFoundryPluginsMavenRepos",
+        "getFoundryPluginsRemoteBinaries",
+        "getFoundryPluginsLocalBinaries",
+        "-keep class games.cafecito.foundry.plugin.**",
+    )
 
 # Removed on-device editor application and native host surfaces.
 for path in (
@@ -280,9 +326,7 @@ require_text(
 require_text(
     "platform/android/java/app/build.gradle",
     'implementation project(":lib")',
-    "getFoundryPluginsMavenRepos",
-    "getFoundryPluginsRemoteBinaries",
-    "getFoundryPluginsLocalBinaries",
+    "fileTree(dir: \"$addonsDirectory\", include: ['*.jar', '*.aar'])",
     "libopenxr_loader.so",
 )
 forbid_text(

@@ -15,11 +15,14 @@ NATIVE_CONTRACT = ANDROID_ROOT / "android_native_contract.py"
 JNI_CONTRACT = ANDROID_ROOT / "android_jni_contract.py"
 
 APP_IMPLEMENTATION_PACKAGE = "games.cafecito.foundry.game"
-PLUGIN_METADATA_PREFIX = "games.cafecito.foundry.plugin.v1."
 OLD_RUNTIME_IDENTIFIERS = (
     "com.godot",
     "org.godotengine",
     "org.godot.game",
+)
+LEGACY_PLUGIN_IDENTIFIERS = (
+    "games.cafecito.foundry.plugin.v1.",
+    "FoundryAppInstrumentedTestPlugin",
 )
 
 
@@ -117,25 +120,10 @@ def check_internal_boundary(failures: list[str]) -> None:
 
 def check_app_source_surface(failures: list[str]) -> None:
     source_suffixes = {".java", ".kt", ".aidl", ".xml", ".gradle", ".fs"}
-    legacy_protocol_fixtures = {
-        APP_ROOT / "src/androidTestInstrumented/java/games/cafecito/foundry/game/FoundryAppTest.kt": (
-            '"org.godotengine.plugin.v1.Legacy"',
-            '"org.godotengine.plugin.v2.Legacy"',
-        ),
-        APP_ROOT / "src/instrumented/AndroidManifest.xml": (
-            'android:name="org.godotengine.plugin.v1.Legacy"',
-            'android:name="org.godotengine.plugin.v2.Legacy"',
-        ),
-    }
     for path in APP_ROOT.rglob("*"):
         if not path.is_file() or path.suffix not in source_suffixes or "build" in path.parts:
             continue
-        reject_contains(
-            path,
-            OLD_RUNTIME_IDENTIFIERS,
-            failures,
-            legacy_protocol_fixtures.get(path, ()),
-        )
+        reject_contains(path, OLD_RUNTIME_IDENTIFIERS + LEGACY_PLUGIN_IDENTIFIERS, failures)
 
         if path.suffix in {".java", ".kt", ".aidl"}:
             for package_name in re.findall(r"(?m)^package\s+([A-Za-z0-9_.]+)\s*;?", path.read_text()):
@@ -163,6 +151,9 @@ def check_exact_app_contract(failures: list[str]) -> None:
     instrumented_manifest = APP_ROOT / "src/instrumented/AndroidManifest.xml"
     app_source = APP_ROOT / "src/main/java/games/cafecito/foundry/game/FoundryApp.java"
     app_test = APP_ROOT / "src/androidTestInstrumented/java/games/cafecito/foundry/game/FoundryAppTest.kt"
+    instrumented_bridge = (
+        APP_ROOT / "src/instrumented/java/games/cafecito/foundry/game/test/FoundryAppInstrumentedTestBridge.java"
+    )
     instrumented_scene = APP_ROOT / "src/instrumented/assets/main.tscn"
     exporter = ANDROID_ROOT / "export/export_plugin.cpp"
 
@@ -179,35 +170,11 @@ def check_exact_app_contract(failures: list[str]) -> None:
         f'android:targetActivity="{APP_IMPLEMENTATION_PACKAGE}.FoundryApp"',
         failures,
     )
-    require_contains(
-        instrumented_manifest,
-        f'android:name="{PLUGIN_METADATA_PREFIX}FoundryAppInstrumentedTestPlugin"',
-        failures,
-    )
-    require_contains(
-        instrumented_manifest,
-        f'android:value="{APP_IMPLEMENTATION_PACKAGE}.test.FoundryAppInstrumentedTestPlugin"',
-        failures,
-    )
-    require_contains(
-        instrumented_manifest,
-        'android:name="org.godotengine.plugin.v1.Legacy"',
-        failures,
-    )
-    require_contains(
-        instrumented_manifest,
-        'android:name="org.godotengine.plugin.v2.Legacy"',
-        failures,
-    )
+    require_contains(instrumented_manifest, "<application/>", failures)
     require_contains(app_source, f"package {APP_IMPLEMENTATION_PACKAGE};", failures)
-    require_contains(app_test, "runtimeBootsWithCanonicalPluginProtocol", failures)
-    require_contains(
-        app_test,
-        '"games.cafecito.foundry.plugin.v1.FoundryAppInstrumentedTestPlugin"',
-        failures,
-    )
-    require_contains(app_test, '"org.godotengine.plugin.v1.Legacy"', failures)
-    require_contains(app_test, '"org.godotengine.plugin.v2.Legacy"', failures)
+    require_contains(app_test, "runtimeBootsWithoutLegacyPluginMetadata", failures)
+    require_contains(app_test, 'it.contains(".plugin.")', failures)
+    require_contains(instrumented_bridge, "public final class FoundryAppInstrumentedTestBridge", failures)
     require_contains(instrumented_scene, 'path="res://main.fs"', failures)
     require_contains(exporter, f'"/{APP_IMPLEMENTATION_PACKAGE}.FoundryAppLauncher"', failures)
 

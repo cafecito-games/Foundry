@@ -158,14 +158,13 @@ func test_big_integers() -> bool:
 	return true
 
 func test_callable() -> bool:
-	var android_runtime = Engine.get_singleton("AndroidRuntime")
-	assert_true(android_runtime != null)
+	var TestClass: JavaClass = JavaClassWrapper.wrap('games.cafecito.foundry.game.test.javaclasswrapper.TestClass')
 
 	var cb1_data := {called = false}
 	var cb1 = func():
 		cb1_data['called'] = true
 		return null
-	android_runtime.createRunnableFromFoundryCallable(cb1).run()
+	TestClass.callFoundryCallable(cb1)
 	assert_equal(cb1_data['called'], true)
 
 	return true

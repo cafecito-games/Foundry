@@ -13,16 +13,6 @@ allprojects {
         gradlePluginPortal()
         maven { url "https://plugins.gradle.org/m2/" }
         maven { url "https://central.sonatype.com/repository/maven-snapshots/"}
-
-        // Foundry user plugins custom maven repos
-        String[] mavenRepos = getFoundryPluginsMavenRepos()
-        if (mavenRepos != null && mavenRepos.size() > 0) {
-            for (String repoUrl : mavenRepos) {
-                maven {
-                    url repoUrl
-                }
-            }
-        }
     }
 }
 
@@ -53,38 +43,6 @@ dependencies {
         debugImplementation fileTree(dir: 'libs/debug', include: ['*.aar'])
         devImplementation fileTree(dir: 'libs/dev', include: ['*.aar'])
         releaseImplementation fileTree(dir: 'libs/release', include: ['*.aar'])
-    }
-
-    // Foundry user plugins remote dependencies
-    String[] remoteDeps = getFoundryPluginsRemoteBinaries()
-    if (remoteDeps != null && remoteDeps.size() > 0) {
-        def platformPattern = /^\s*(platform|enforcedPlatform)\s*\(\s*['"]*(\S+)['"]*\s*\)$/
-        for (String dep : remoteDeps) {
-            def matcher = dep =~ platformPattern
-            if (matcher) {
-                switch (matcher[0][1]) {
-                    case "platform":
-                        implementation platform(matcher[0][2])
-                        break
-
-                    case "enforcedPlatform":
-                        implementation enforcedPlatform(matcher[0][2])
-                        break
-
-                    default:
-                        throw new GradleException("Invalid remote platform dependency: $dep")
-                        break
-                }
-            } else {
-                implementation dep
-            }
-        }
-    }
-
-    // Foundry user plugins local dependencies
-    String[] pluginsBinaries = getFoundryPluginsLocalBinaries()
-    if (pluginsBinaries != null && pluginsBinaries.size() > 0) {
-        implementation files(pluginsBinaries)
     }
 
     // Automatically pick up local dependencies in res://addons

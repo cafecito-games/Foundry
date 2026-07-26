@@ -31,6 +31,7 @@
 package games.cafecito.foundry.game.test.javaclasswrapper
 
 import games.cafecito.foundry.Dictionary
+import games.cafecito.foundry.variant.Callable
 import kotlin.collections.contentToString
 import kotlin.collections.joinToString
 
@@ -55,6 +56,11 @@ class TestClass {
 				is CharArray -> value.joinToString(prefix = "[", postfix = "]")
 				else -> value.toString()
 			}
+		}
+
+		@JvmStatic
+		fun callFoundryCallable(callable: Callable): Any? {
+			return callable.call()
 		}
 
 		@JvmStatic

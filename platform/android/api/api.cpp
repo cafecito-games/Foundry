@@ -2,7 +2,7 @@
 /*  api.cpp                                                               */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -31,7 +31,6 @@
 #include "api.h"
 
 #include "java_class_wrapper.h"
-#include "jni_singleton.h"
 
 #include "core/config/engine.h"
 
@@ -45,7 +44,6 @@ void register_android_api() {
 	// `platform/android/java_foundry_lib_jni.cpp#Java_games_cafecito_foundry_FoundryLib_setup`
 	java_class_wrapper = memnew(JavaClassWrapper);
 #endif
-	FOUNDRY_REGISTER_CLASS(JNISingleton);
 	FOUNDRY_REGISTER_CLASS(JavaClass);
 	FOUNDRY_REGISTER_CLASS(JavaObject);
 	FOUNDRY_REGISTER_CLASS(JavaClassWrapper);

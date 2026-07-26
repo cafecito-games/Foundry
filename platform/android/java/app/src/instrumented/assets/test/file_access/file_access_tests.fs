@@ -2,6 +2,12 @@ class_name FileAccessTests
 extends BaseTest
 
 const FILE_CONTENT = "This is a test for reading / writing to the "
+var _test_bridge: JavaClass
+
+func _init():
+	_test_bridge = JavaClassWrapper.wrap(
+			"games.cafecito.foundry.game.test.FoundryAppInstrumentedTestBridge"
+	)
 
 func run_tests():
 	print("FileAccess tests starting...")
@@ -36,37 +42,25 @@ func _test_dir_access(dir_path: String, data_file_content: String) -> bool:
 	return true
 
 func test_obb_dir_access() -> bool:
-	var android_runtime = Engine.get_singleton("AndroidRuntime")
-	assert_true(android_runtime != null)
-
-	var app_context = android_runtime.getApplicationContext()
+	var app_context = _test_bridge.getApplicationContext()
 	var obb_dir: String = app_context.getObbDir().getCanonicalPath()
 	_test_dir_access(obb_dir, FILE_CONTENT + "obb dir.")
 	return true
 
 func test_internal_app_dir_access() -> bool:
-	var android_runtime = Engine.get_singleton("AndroidRuntime")
-	assert_true(android_runtime != null)
-
-	var app_context = android_runtime.getApplicationContext()
+	var app_context = _test_bridge.getApplicationContext()
 	var internal_app_dir: String = app_context.getFilesDir().getCanonicalPath()
 	_test_dir_access(internal_app_dir, FILE_CONTENT + "internal app dir.")
 	return true
 
 func test_internal_cache_dir_access() -> bool:
-	var android_runtime = Engine.get_singleton("AndroidRuntime")
-	assert_true(android_runtime != null)
-
-	var app_context = android_runtime.getApplicationContext()
+	var app_context = _test_bridge.getApplicationContext()
 	var internal_cache_dir: String = app_context.getCacheDir().getCanonicalPath()
 	_test_dir_access(internal_cache_dir, FILE_CONTENT + "internal cache dir.")
 	return true
 
 func test_external_app_dir_access() -> bool:
-	var android_runtime = Engine.get_singleton("AndroidRuntime")
-	assert_true(android_runtime != null)
-
-	var app_context = android_runtime.getApplicationContext()
+	var app_context = _test_bridge.getApplicationContext()
 	var external_app_dir: String = app_context.getExternalFilesDir("").getCanonicalPath()
 	_test_dir_access(external_app_dir, FILE_CONTENT + "external app dir.")
 	return true

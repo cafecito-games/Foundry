@@ -29,10 +29,12 @@ only the application ID. Runtime manifest metadata records the Foundry library
 version, engine version, 40-character engine revision, and JNI contract
 version. `BuildConfig` exposes the same values to JVM and instrumented tests.
 
-The host retains the canonical
-`games.cafecito.foundry.plugin.v1.` metadata protocol until the dedicated
-plugin-removal workstream removes that legacy surface. It does not accept the
-old `org.godotengine` prefixes.
+The host does not scan application manifests for Android plugin initializer
+classes and does not register Java methods or signals through reflection.
+Native extensions use the FoundryExtension loading path. Source-template
+projects may still include explicit project-local JAR or AAR dependencies from
+`res://addons`; those artifacts are normal build inputs, not dynamically
+discovered host plugins.
 
 ## Android and toolchain levels
 
