@@ -2,7 +2,7 @@
 /*  editor_export_plugin.h                                                */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -159,9 +159,6 @@ protected:
 
 	FOUNDRY_VIRTUAL1RC(bool, _supports_platform, const Ref<EditorExportPlatform> &);
 
-	FOUNDRY_VIRTUAL2RC(PackedStringArray, _get_android_dependencies, const Ref<EditorExportPlatform> &, bool);
-	FOUNDRY_VIRTUAL2RC(PackedStringArray, _get_android_dependencies_maven_repos, const Ref<EditorExportPlatform> &, bool);
-	FOUNDRY_VIRTUAL2RC(PackedStringArray, _get_android_libraries, const Ref<EditorExportPlatform> &, bool);
 	FOUNDRY_VIRTUAL2RC(String, _get_android_manifest_activity_element_contents, const Ref<EditorExportPlatform> &, bool);
 	FOUNDRY_VIRTUAL2RC(String, _get_android_manifest_application_element_contents, const Ref<EditorExportPlatform> &, bool);
 	FOUNDRY_VIRTUAL2RC(String, _get_android_manifest_element_contents, const Ref<EditorExportPlatform> &, bool);
@@ -191,9 +188,6 @@ public:
 	virtual bool supports_platform(const Ref<EditorExportPlatform> &p_export_platform) const;
 	PackedStringArray get_export_features(const Ref<EditorExportPlatform> &p_export_platform, bool p_debug) const;
 
-	virtual PackedStringArray get_android_dependencies(const Ref<EditorExportPlatform> &p_export_platform, bool p_debug) const;
-	virtual PackedStringArray get_android_dependencies_maven_repos(const Ref<EditorExportPlatform> &p_export_platform, bool p_debug) const;
-	virtual PackedStringArray get_android_libraries(const Ref<EditorExportPlatform> &p_export_platform, bool p_debug) const;
 	virtual String get_android_manifest_activity_element_contents(const Ref<EditorExportPlatform> &p_export_platform, bool p_debug) const;
 	virtual String get_android_manifest_application_element_contents(const Ref<EditorExportPlatform> &p_export_platform, bool p_debug) const;
 	virtual String get_android_manifest_element_contents(const Ref<EditorExportPlatform> &p_export_platform, bool p_debug) const;

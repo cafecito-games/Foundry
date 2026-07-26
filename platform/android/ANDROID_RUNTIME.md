@@ -138,8 +138,10 @@ platform/android/java/gradlew -p platform/android/java --no-daemon \
 ```
 
 Lint is abort-on-error. The unit suite covers runtime identity, canonical
-types, command-line parsing, and plugin metadata parsing. The retained Android
-test APK covers runtime identity and the canonical plugin protocol.
+types, command-line parsing, and host lifecycle behavior. The retained Android
+test APK covers runtime identity, while the application instrumented suite uses
+an explicit JavaClassWrapper test bridge for Foundry Script interop, file
+access, host callbacks, and startup/termination coverage.
 
 Compile the application and its own instrumented suite with:
 

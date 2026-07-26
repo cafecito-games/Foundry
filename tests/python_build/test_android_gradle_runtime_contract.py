@@ -30,6 +30,12 @@ JNI_CONTRACT_TOOL = REPO_ROOT / "platform/android/android_jni_contract.py"
 SOURCE_TEMPLATE_TOOL = REPO_ROOT / "platform/android/android_source_template.py"
 ANDROID_README = REPO_ROOT / "platform/android/README.md"
 ANDROID_RUNTIME_DOC = REPO_ROOT / "platform/android/ANDROID_RUNTIME.md"
+EDITOR_EXPORT_PLUGIN_HEADER = REPO_ROOT / "editor/export/editor_export_plugin.h"
+EDITOR_EXPORT_PLUGIN_SOURCE = REPO_ROOT / "editor/export/editor_export_plugin.cpp"
+EDITOR_EXPORT_PLUGIN_DOC = REPO_ROOT / "doc/classes/EditorExportPlugin.xml"
+ANDROID_EXPORT_PLATFORM_DOC = REPO_ROOT / "platform/android/doc_classes/EditorExportPlatformAndroid.xml"
+OPENXR_EXPORT_PLUGIN_HEADER = REPO_ROOT / "modules/openxr/editor/openxr_editor_plugin.h"
+OPENXR_EXPORT_PLUGIN_SOURCE = REPO_ROOT / "modules/openxr/editor/openxr_editor_plugin.cpp"
 PRE_COMMIT = REPO_ROOT / ".pre-commit-config.yaml"
 ACTIVE_GRADLE_FILES = (
     SETTINGS,
@@ -135,6 +141,44 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
         for token in LEGACY_PLUGIN_TOKENS:
             with self.subTest(token=token):
                 self.assertNotIn(token, active)
+
+    def test_openxr_loader_uses_a_fixed_host_capability_not_generic_plugin_dependencies(self) -> None:
+        removed_api = (
+            "get_android_dependencies",
+            "get_android_dependencies_maven_repos",
+            "get_android_libraries",
+        )
+        for path in (
+            EDITOR_EXPORT_PLUGIN_HEADER,
+            EDITOR_EXPORT_PLUGIN_SOURCE,
+            EDITOR_EXPORT_PLUGIN_DOC,
+            OPENXR_EXPORT_PLUGIN_HEADER,
+            OPENXR_EXPORT_PLUGIN_SOURCE,
+        ):
+            contents = read(path)
+            for method in removed_api:
+                with self.subTest(path=path, method=method):
+                    self.assertNotIn(method, contents)
+
+        openxr = read(OPENXR_EXPORT_PLUGIN_SOURCE)
+        exporter = read(REPO_ROOT / "platform/android/export/export_plugin.cpp")
+        config = read(APP_CONFIG)
+        app = read(APP_BUILD)
+        self.assertIn("openxr_loader_for_android:", openxr)
+        self.assertIn("openxr_loader_for_android:", exporter)
+        self.assertIn("-Popenxr_loader_version=", exporter)
+        self.assertIn("getOpenXRLoaderVersion", config)
+        self.assertIn("org.khronos.openxr:openxr_loader_for_android:${openXRLoaderVersion}", app)
+        self.assertNotIn("_get_deprecated_plugins_names", exporter)
+        self.assertNotIn("_get_deprecated_plugins_names", read(REPO_ROOT / "platform/android/export/export_plugin.h"))
+        self.assertNotIn("tutorials/platform/android/android_plugin.html", read(EDITOR_EXPORT_PLUGIN_DOC))
+        self.assertNotIn("Android plugins documentation index", read(ANDROID_EXPORT_PLATFORM_DOC))
+
+    def test_runtime_documentation_describes_current_non_plugin_coverage(self) -> None:
+        documentation = read(ANDROID_RUNTIME_DOC)
+        self.assertNotIn("plugin metadata parsing", documentation)
+        self.assertNotIn("canonical plugin protocol", documentation)
+        self.assertIn("explicit JavaClassWrapper test bridge", documentation)
 
     def test_settings_include_the_internal_runtime_library(self) -> None:
         settings = read(SETTINGS)

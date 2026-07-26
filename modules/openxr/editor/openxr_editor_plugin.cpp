@@ -2,7 +2,7 @@
 /*  openxr_editor_plugin.cpp                                              */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -68,26 +68,6 @@ String OpenXRExportPlugin::_get_export_option_warning(const Ref<EditorExportPlat
 	return String();
 }
 
-PackedStringArray OpenXRExportPlugin::get_android_dependencies(const Ref<EditorExportPlatform> &p_export_platform, bool p_debug) const {
-	PackedStringArray ret;
-
-	if (!supports_platform(p_export_platform)) {
-		return ret;
-	}
-
-	if (is_openxr_mode()) {
-		// Loader is always identified by the full API version even if we're initializing for OpenXR 1.0.
-		int major = XR_VERSION_MAJOR(XR_CURRENT_API_VERSION);
-		int minor = XR_VERSION_MINOR(XR_CURRENT_API_VERSION);
-		int patch = XR_VERSION_PATCH(XR_CURRENT_API_VERSION);
-		String openxr_loader = "org.khronos.openxr:openxr_loader_for_android:" + String::num_int64(major) + "." + String::num_int64(minor) + "." + String::num_int64(patch);
-
-		ret.push_back(openxr_loader);
-	}
-
-	return ret;
-}
-
 PackedStringArray OpenXRExportPlugin::_get_export_features(const Ref<EditorExportPlatform> &p_export_platform, bool p_debug) const {
 	PackedStringArray features;
 
@@ -95,7 +75,12 @@ PackedStringArray OpenXRExportPlugin::_get_export_features(const Ref<EditorExpor
 		return features;
 	}
 
-	// Placeholder for now
+	// The Android exporter recognizes this fixed engine-owned capability. It
+	// forwards only the version; Gradle owns the immutable Maven coordinate.
+	int major = XR_VERSION_MAJOR(XR_CURRENT_API_VERSION);
+	int minor = XR_VERSION_MINOR(XR_CURRENT_API_VERSION);
+	int patch = XR_VERSION_PATCH(XR_CURRENT_API_VERSION);
+	features.push_back("openxr_loader_for_android:" + String::num_int64(major) + "." + String::num_int64(minor) + "." + String::num_int64(patch));
 
 	return features;
 }

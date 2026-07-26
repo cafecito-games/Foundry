@@ -277,3 +277,14 @@ ext.getAddonsDirectory = { ->
     String addonsDirectory = project.hasProperty("addons_directory") ? project.property("addons_directory") : ""
     return addonsDirectory
 }
+
+ext.getOpenXRLoaderVersion = { ->
+    String version = project.hasProperty("openxr_loader_version") ? project.property("openxr_loader_version") : ""
+    if (version == null || version.isEmpty()) {
+        return ""
+    }
+    if (!(version ==~ /\d+\.\d+\.\d+/)) {
+        throw new GradleException("Invalid OpenXR Android loader version: $version")
+    }
+    return version
+}

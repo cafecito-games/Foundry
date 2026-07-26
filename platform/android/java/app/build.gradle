@@ -51,6 +51,13 @@ dependencies {
         implementation fileTree(dir: "$addonsDirectory", include: ['*.jar', '*.aar'])
     }
 
+    // OpenXR is an engine-owned export capability. Only the version crosses
+    // the exporter boundary; the artifact coordinate and repositories are fixed.
+    String openXRLoaderVersion = getOpenXRLoaderVersion()
+    if (!openXRLoaderVersion.isEmpty()) {
+        implementation "org.khronos.openxr:openxr_loader_for_android:${openXRLoaderVersion}"
+    }
+
     // .NET dependencies
     String jar = '../../../../modules/mono/thirdparty/libSystem.Security.Cryptography.Native.Android.jar'
     if (file(jar).exists()) {

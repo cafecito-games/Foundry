@@ -298,6 +298,35 @@ class AndroidGradleBehavioralTests(unittest.TestCase):
         )
         self.assert_gradle_succeeded(stage_result)
 
+    def test_openxr_loader_is_a_fixed_version_only_dependency(self) -> None:
+        valid = self.run_gradle(
+            ":app:dependencies",
+            "--configuration",
+            "standardDebugRuntimeClasspath",
+            properties={
+                "openxr_loader_version": "1.1.54",
+                "selectedAbis": "",
+            },
+        )
+        self.assert_gradle_succeeded(valid)
+        self.assertIn(
+            "org.khronos.openxr:openxr_loader_for_android:1.1.54",
+            valid.stdout + valid.stderr,
+        )
+
+        invalid = self.run_gradle(
+            ":app:help",
+            properties={
+                "openxr_loader_version": "1.1.54@attacker",
+                "selectedAbis": "",
+            },
+        )
+        self.assertNotEqual(0, invalid.returncode)
+        self.assertIn(
+            "Invalid OpenXR Android loader version: 1.1.54@attacker",
+            invalid.stdout + invalid.stderr,
+        )
+
     def test_changed_input_subset_uses_new_scope_without_stale_abis(self) -> None:
         first_root = self.create_native_root("first-native-root", b":first")
         second_root = self.create_native_root("second-native-root", b":second")

@@ -1932,12 +1932,6 @@ String EditorExportPlatformAndroid::get_export_option_warning(const EditorExport
 			if (bool(p_preset->get("gesture/swipe_to_dismiss")) && !gradle_build_enabled) {
 				return TTR("\"Use Gradle Build\" is required to enable \"Swipe to dismiss\".");
 			}
-		} else if (p_name == "gradle_build/use_gradle_build") {
-			bool gradle_build_enabled = p_preset->get("gradle_build/use_gradle_build");
-			String enabled_deprecated_plugins_names = _get_deprecated_plugins_names(Ref<EditorExportPreset>(p_preset));
-			if (!enabled_deprecated_plugins_names.is_empty() && !gradle_build_enabled) {
-				return TTR("\"Use Gradle Build\" must be enabled to use the plugins.");
-			}
 		} else if (p_name == "gradle_build/compress_native_libraries") {
 			bool gradle_build_enabled = p_preset->get("gradle_build/use_gradle_build");
 			if (bool(p_preset->get("gradle_build/compress_native_libraries")) && !gradle_build_enabled) {
@@ -3333,13 +3327,6 @@ String EditorExportPlatformAndroid::join_abis(const Vector<EditorExportPlatformA
 	return ret;
 }
 
-String EditorExportPlatformAndroid::_get_deprecated_plugins_names(const Ref<EditorExportPreset> &p_preset) const {
-	Vector<String> names;
-
-	String plugins_names = String("|").join(names);
-	return plugins_names;
-}
-
 String EditorExportPlatformAndroid::_get_plugins_names(const Ref<EditorExportPreset> &p_preset) const {
 	Vector<String> names;
 
@@ -3638,11 +3625,34 @@ Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportP
 		String compress_native_libraries_flag = bool_to_string(p_preset->get("gradle_build/compress_native_libraries"));
 
 		bool has_dotnet_project = false;
+		String openxr_loader_version;
+		const String openxr_loader_feature_prefix = "openxr_loader_for_android:";
 		Vector<Ref<EditorExportPlugin>> export_plugins = EditorExport::get_singleton()->get_export_plugins();
 		for (int i = 0; i < export_plugins.size(); i++) {
 			PackedStringArray features = export_plugins[i]->get_export_features(Ref<EditorExportPlatform>(this), p_debug);
 			if (features.has("dotnet")) {
 				has_dotnet_project = true;
+			}
+			for (const String &feature : features) {
+				if (!feature.begins_with(openxr_loader_feature_prefix)) {
+					continue;
+				}
+
+				String candidate = feature.substr(openxr_loader_feature_prefix.length());
+				PackedStringArray components = candidate.split(".");
+				bool valid_version = components.size() == 3;
+				for (const String &component : components) {
+					valid_version = valid_version && component.is_valid_int() && component.to_int() >= 0;
+				}
+				if (!valid_version) {
+					add_message(EXPORT_MESSAGE_ERROR, TTR("Export"), vformat(TTR("Invalid OpenXR Android loader version: %s."), candidate));
+					return ERR_INVALID_DATA;
+				}
+				if (!openxr_loader_version.is_empty() && openxr_loader_version != candidate) {
+					add_message(EXPORT_MESSAGE_ERROR, TTR("Export"), vformat(TTR("Conflicting OpenXR Android loader versions: %s and %s."), openxr_loader_version, candidate));
+					return ERR_INVALID_DATA;
+				}
+				openxr_loader_version = candidate;
 			}
 		}
 
@@ -3675,6 +3685,9 @@ Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportP
 		cmdline.push_back("-Pexport_version_min_sdk=" + min_sdk_version); // argument to specify the min sdk.
 		cmdline.push_back("-Pexport_version_target_sdk=" + target_sdk_version); // argument to specify the target sdk.
 		cmdline.push_back("-Pexport_enabled_abis=" + enabled_abi_string); // argument to specify enabled ABIs.
+		if (!openxr_loader_version.is_empty()) {
+			cmdline.push_back("-Popenxr_loader_version=" + openxr_loader_version); // fixed engine-owned OpenXR loader version.
+		}
 		cmdline.push_back("-Pperform_zipalign=" + zipalign_flag); // argument to specify whether the build should be zipaligned.
 		cmdline.push_back("-Pperform_signing=" + sign_flag); // argument to specify whether the build should be signed.
 		cmdline.push_back("-Pcompress_native_libraries=" + compress_native_libraries_flag); // argument to specify whether the build should compress native libraries.
