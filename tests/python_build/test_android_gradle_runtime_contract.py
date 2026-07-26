@@ -37,6 +37,10 @@ ANDROID_EXPORT_PLATFORM_DOC = REPO_ROOT / "platform/android/doc_classes/EditorEx
 OPENXR_EXPORT_PLUGIN_HEADER = REPO_ROOT / "modules/openxr/editor/openxr_editor_plugin.h"
 OPENXR_EXPORT_PLUGIN_SOURCE = REPO_ROOT / "modules/openxr/editor/openxr_editor_plugin.cpp"
 APP_INSTRUMENTED_TEST = JAVA_ROOT / "app/src/androidTestInstrumented/java/games/cafecito/foundry/game/FoundryAppTest.kt"
+INSTRUMENTED_ASSETS = JAVA_ROOT / "app/src/instrumented/assets"
+INSTRUMENTED_MAIN = INSTRUMENTED_ASSETS / "main.fs"
+INSTRUMENTED_FILE_ACCESS_TESTS = INSTRUMENTED_ASSETS / "test/file_access/file_access_tests.fs"
+INSTRUMENTED_JAVACLASSWRAPPER_TESTS = INSTRUMENTED_ASSETS / "test/javaclasswrapper/java_class_wrapper_tests.fs"
 PRE_COMMIT = REPO_ROOT / ".pre-commit-config.yaml"
 ACTIVE_GRADLE_FILES = (
     SETTINGS,
@@ -195,6 +199,26 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
         self.assertNotIn(
             "assertTrue { foundry.runStatus == Foundry.RunStatus.TERMINATING }",
             instrumented_test,
+        )
+
+    def test_instrumented_runner_does_not_depend_on_editor_global_class_cache(self) -> None:
+        main_script = read(INSTRUMENTED_MAIN)
+        self.assertIn(
+            'preload("res://test/file_access/file_access_tests.fs")',
+            main_script,
+        )
+        self.assertIn(
+            'preload("res://test/javaclasswrapper/java_class_wrapper_tests.fs")',
+            main_script,
+        )
+        self.assertNotIn("var test_instance: BaseTest", main_script)
+        self.assertIn(
+            'extends "res://test/base_test.fs"',
+            read(INSTRUMENTED_FILE_ACCESS_TESTS),
+        )
+        self.assertIn(
+            'extends "res://test/base_test.fs"',
+            read(INSTRUMENTED_JAVACLASSWRAPPER_TESTS),
         )
 
     def test_settings_include_the_internal_runtime_library(self) -> None:

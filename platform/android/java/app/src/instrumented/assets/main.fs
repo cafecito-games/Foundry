@@ -1,5 +1,8 @@
 extends Node2D
 
+const FILE_ACCESS_TESTS = preload("res://test/file_access/file_access_tests.fs")
+const JAVACLASSWRAPPER_TESTS = preload("res://test/javaclasswrapper/java_class_wrapper_tests.fs")
+
 var _test_bridge: JavaClass
 
 func _ready():
@@ -33,12 +36,12 @@ func _exit_tree() -> void:
 
 
 func _launch_tests(test_label: String) -> void:
-	var test_instance: BaseTest = null
+	var test_instance = null
 	match test_label:
 		"javaclasswrapper_tests":
-			test_instance = JavaClassWrapperTests.new()
+			test_instance = JAVACLASSWRAPPER_TESTS.new()
 		"file_access_tests":
-			test_instance = FileAccessTests.new()
+			test_instance = FILE_ACCESS_TESTS.new()
 
 	if test_instance:
 		test_instance.__reset_tests()

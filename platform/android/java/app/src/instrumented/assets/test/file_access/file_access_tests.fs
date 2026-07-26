@@ -1,5 +1,5 @@
 class_name FileAccessTests
-extends BaseTest
+extends "res://test/base_test.fs"
 
 const FILE_CONTENT = "This is a test for reading / writing to the "
 var _test_bridge: JavaClass

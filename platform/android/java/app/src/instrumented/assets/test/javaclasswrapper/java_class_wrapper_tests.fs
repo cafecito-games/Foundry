@@ -1,5 +1,5 @@
 class_name JavaClassWrapperTests
-extends BaseTest
+extends "res://test/base_test.fs"
 
 func run_tests():
 	print("JavaClassWrapper tests starting..")
