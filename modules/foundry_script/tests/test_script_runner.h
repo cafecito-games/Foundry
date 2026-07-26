@@ -52,11 +52,8 @@ struct ScriptRunnerProjectFixture {
 
 	explicit ScriptRunnerProjectFixture() {
 		const String scripts_path = String(test_runner_scripts_root);
-		const Error err = ProjectSettings::get_singleton()->setup(scripts_path, String(), true);
-		REQUIRE_MESSAGE(err == OK, "Failed to set up test runner project.");
-		if (!is_fs_language_active()) {
-			init_language(scripts_path);
-		}
+		init_language(scripts_path);
+		REQUIRE_MESSAGE(is_fs_language_active(), "Failed to initialize the test runner project.");
 	}
 };
 
