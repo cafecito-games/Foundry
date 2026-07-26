@@ -1,51 +1,35 @@
-"""Contracts shared by Foundry's Android native producer and runtime consumer."""
+"""Contracts for Foundry-owned Android native cells and JNI artifacts."""
 
 from __future__ import annotations
 
 import hashlib
 import json
 import re
-import shutil
+import struct
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, TypedDict
 
 SCHEMA_VERSION = 1
-ENGINE_COMPATIBILITY_POLICY = "exact-native-source-revision"
 SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 LIBRARY_NAMES = ("libc++_shared.so", "libfoundry_android.so")
-REQUIRED_SOURCE_PATHS = (
-    "compatibility/foundry-engine.json",
-    "gradlew",
-    "runtime/build.gradle",
-    "tools/native_bundle.py",
-    "tools/sync_engine_pin.py",
-    "tools/verify_jni_contract.py",
+JNI_PREFIX = "Java_games_cafecito_foundry_"
+ELF_ABIS = {
+    "arm64-v8a": {"elf_class": 64, "elf_machine": 183},
+    "armeabi-v7a": {"elf_class": 32, "elf_machine": 40},
+    "x86": {"elf_class": 32, "elf_machine": 3},
+    "x86_64": {"elf_class": 64, "elf_machine": 62},
+}
+REQUIRED_EXTERNAL_JNI_SYMBOLS = (
+    "Java_com_google_androidgamesdk_ChoreographerCallback_nOnChoreographer",
+    "Java_com_google_androidgamesdk_SwappyDisplayManager_nSetSupportedRefreshPeriods",
+    "Java_com_google_androidgamesdk_SwappyDisplayManager_nOnRefreshPeriodChanged",
 )
-OUTPUT_KEYS = ("debug", "dev", "release")
 
 
 class ContractError(RuntimeError):
-    """A malformed or incompatible Android runtime build input."""
-
-
-@dataclass(frozen=True)
-class RuntimePin:
-    repository: str
-    source_revision: str
-    source_tree: str
-    bindings_version: str
-    jni_contract_version: int
-    engine_compatibility_policy: str
-    required_paths: tuple[str, ...]
-    outputs: tuple[tuple[str, str], ...]
-
-    def output_path(self, build_type: str) -> str:
-        for name, path in self.outputs:
-            if name == build_type:
-                return path
-        raise ContractError(f"runtime pin has no output for build type: {build_type}")
+    """A malformed or incompatible Foundry-owned Android native input."""
 
 
 @dataclass(frozen=True)
@@ -83,6 +67,13 @@ class NativeCell:
     arch: str
     directory: Path
     libraries: tuple[Path, Path]
+
+
+@dataclass(frozen=True)
+class ElfInfo:
+    elf_class: int
+    machine: int
+    exported_symbols: tuple[str, ...]
 
 
 class BuildTypeOptions(TypedDict):
@@ -154,95 +145,6 @@ def _sha(value: object, description: str) -> str:
     return value
 
 
-def _safe_relative_path(value: object, description: str) -> str:
-    if not isinstance(value, str) or not value:
-        raise ContractError(f"{description} must be a non-empty relative path")
-    path = Path(value)
-    if path.is_absolute() or ".." in path.parts or path.as_posix() != value:
-        raise ContractError(f"{description} must be a normalized relative path")
-    return value
-
-
-def load_pin(path: Path) -> RuntimePin:
-    """Load and strictly validate the tracked standalone-source pin."""
-
-    if not path.is_file():
-        raise ContractError(f"runtime pin does not exist: {path}")
-    raw = path.read_bytes()
-    try:
-        value = json.loads(raw)
-    except (UnicodeDecodeError, json.JSONDecodeError) as error:
-        raise ContractError(f"unable to parse runtime pin {path}: {error}") from error
-    if raw != canonical_json(value):
-        raise ContractError(f"runtime pin is not canonical JSON: {path}")
-
-    root = _exact_keys(
-        value,
-        {
-            "bindings",
-            "engine_compatibility",
-            "jni_contract_version",
-            "outputs",
-            "required_paths",
-            "schema_version",
-            "source",
-        },
-        "runtime pin",
-    )
-    if root["schema_version"] != SCHEMA_VERSION:
-        raise ContractError(f"unsupported runtime pin schema: {root['schema_version']!r}")
-
-    source = _exact_keys(root["source"], {"repository", "revision", "tree"}, "runtime pin source")
-    repository = source["repository"]
-    if not isinstance(repository, str) or not repository.startswith("https://") or not repository.endswith(".git"):
-        raise ContractError("runtime pin source.repository must be an HTTPS Git URL")
-    revision = _sha(source["revision"], "runtime pin source.revision")
-    tree = _sha(source["tree"], "runtime pin source.tree")
-
-    bindings = _exact_keys(root["bindings"], {"version"}, "runtime pin bindings")
-    bindings_version = bindings["version"]
-    if not isinstance(bindings_version, str) or not bindings_version:
-        raise ContractError("runtime pin bindings.version must be a non-empty string")
-
-    contract_version = root["jni_contract_version"]
-    if not isinstance(contract_version, int) or isinstance(contract_version, bool) or contract_version < 1:
-        raise ContractError("runtime pin JNI contract must be a positive integer")
-
-    compatibility = _exact_keys(
-        root["engine_compatibility"],
-        {"policy"},
-        "runtime pin engine compatibility",
-    )
-    policy = compatibility["policy"]
-    if policy != ENGINE_COMPATIBILITY_POLICY:
-        raise ContractError(
-            f"runtime pin engine compatibility policy must be {ENGINE_COMPATIBILITY_POLICY!r}, got {policy!r}"
-        )
-
-    required_paths_value = root["required_paths"]
-    if not isinstance(required_paths_value, list):
-        raise ContractError("runtime pin required_paths must be an array")
-    required_paths = tuple(_safe_relative_path(value, "runtime pin required path") for value in required_paths_value)
-    if required_paths != REQUIRED_SOURCE_PATHS:
-        raise ContractError("runtime pin required_paths must be the sorted authoritative standalone tool paths")
-
-    outputs_value = _exact_keys(root["outputs"], set(OUTPUT_KEYS), "runtime pin outputs")
-    outputs = tuple(
-        (build_type, _safe_relative_path(outputs_value[build_type], f"runtime pin output {build_type}"))
-        for build_type in OUTPUT_KEYS
-    )
-    return RuntimePin(
-        repository=repository,
-        source_revision=revision,
-        source_tree=tree,
-        bindings_version=bindings_version,
-        jni_contract_version=contract_version,
-        engine_compatibility_policy=policy,
-        required_paths=required_paths,
-        outputs=outputs,
-    )
-
-
 def _git(repository: Path, *arguments: str) -> str:
     try:
         result = subprocess.run(
@@ -262,7 +164,7 @@ def source_identity(repository: Path, revision: str) -> tuple[str, str]:
     """Resolve an exact commit and its tree in a Git repository."""
 
     if not repository.is_dir():
-        raise ContractError(f"standalone source repository does not exist: {repository}")
+        raise ContractError(f"Foundry source repository does not exist: {repository}")
     commit = _git(repository, "rev-parse", "--verify", f"{revision}^{{commit}}")
     tree = _git(repository, "rev-parse", "--verify", f"{commit}^{{tree}}")
     return _sha(commit, "resolved source revision"), _sha(tree, "resolved source tree")
@@ -284,6 +186,175 @@ def _hash_file(path: Path) -> tuple[int, str]:
             size += len(contents)
             digest.update(contents)
     return size, digest.hexdigest()
+
+
+def _bounded_slice(contents: bytes, offset: int, size: int, description: str) -> bytes:
+    if offset < 0 or size < 0 or offset + size > len(contents):
+        raise ContractError(f"invalid ELF {description} bounds")
+    return contents[offset : offset + size]
+
+
+def _unpack_from(format_string: str, contents: bytes, offset: int, description: str) -> tuple[Any, ...]:
+    size = struct.calcsize(format_string)
+    return struct.unpack(format_string, _bounded_slice(contents, offset, size, description))
+
+
+def _string_at(table: bytes, offset: int) -> str:
+    if offset < 0 or offset >= len(table):
+        raise ContractError("invalid ELF dynamic string offset")
+    end = table.find(b"\0", offset)
+    if end < 0:
+        raise ContractError("unterminated ELF dynamic string")
+    try:
+        return table[offset:end].decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise ContractError("ELF dynamic symbol name is not UTF-8") from error
+
+
+def read_elf(contents: bytes, description: str) -> ElfInfo:
+    """Read the ABI and exported dynamic symbols from one little-endian ELF."""
+
+    if len(contents) < 16 or contents[:4] != b"\x7fELF":
+        raise ContractError(f"{description} is not an ELF file")
+    class_byte = contents[4]
+    data_byte = contents[5]
+    if class_byte not in (1, 2):
+        raise ContractError(f"{description} has unsupported ELF class byte {class_byte}")
+    if data_byte != 1:
+        raise ContractError(f"{description} must be a little-endian ELF file")
+    elf_class = 32 if class_byte == 1 else 64
+
+    if elf_class == 64:
+        header_format = "<HHIQQQIHHHHHH"
+        section_format = "<IIQQQQIIQQ"
+        symbol_format = "<IBBHQQ"
+    else:
+        header_format = "<HHIIIIIHHHHHH"
+        section_format = "<IIIIIIIIII"
+        symbol_format = "<IIIBBH"
+    header = _unpack_from(header_format, contents, 16, f"header for {description}")
+    machine = int(header[1])
+    section_offset = int(header[5])
+    section_entry_size = int(header[10])
+    section_count = int(header[11])
+    expected_section_entry_size = struct.calcsize(section_format)
+    if section_offset == 0 or section_count == 0:
+        raise ContractError(f"{description} has no ELF section table")
+    if section_entry_size != expected_section_entry_size:
+        raise ContractError(f"{description} has unexpected ELF section entry size {section_entry_size}")
+    _bounded_slice(
+        contents,
+        section_offset,
+        section_entry_size * section_count,
+        f"section table for {description}",
+    )
+
+    sections = [
+        _unpack_from(
+            section_format,
+            contents,
+            section_offset + index * section_entry_size,
+            f"section {index} for {description}",
+        )
+        for index in range(section_count)
+    ]
+    dynamic_symbol_sections = [section for section in sections if int(section[1]) == 11]
+    if not dynamic_symbol_sections:
+        raise ContractError(f"{description} has no ELF dynamic symbol table")
+
+    exported: set[str] = set()
+    expected_symbol_size = struct.calcsize(symbol_format)
+    for section in dynamic_symbol_sections:
+        symbol_offset = int(section[4])
+        symbol_size = int(section[5])
+        string_table_index = int(section[6])
+        symbol_entry_size = int(section[9])
+        if not 0 <= string_table_index < len(sections):
+            raise ContractError(f"{description} has an invalid ELF dynamic string-table link")
+        if symbol_entry_size != expected_symbol_size or symbol_size % symbol_entry_size:
+            raise ContractError(f"{description} has an invalid ELF dynamic symbol entry size")
+        string_section = sections[string_table_index]
+        string_table = _bounded_slice(
+            contents,
+            int(string_section[4]),
+            int(string_section[5]),
+            f"dynamic string table for {description}",
+        )
+        symbol_table = _bounded_slice(
+            contents,
+            symbol_offset,
+            symbol_size,
+            f"dynamic symbol table for {description}",
+        )
+        for offset in range(0, len(symbol_table), symbol_entry_size):
+            symbol = struct.unpack(symbol_format, symbol_table[offset : offset + symbol_entry_size])
+            if elf_class == 64:
+                name_offset, info, other, section_index = (
+                    int(symbol[0]),
+                    int(symbol[1]),
+                    int(symbol[2]),
+                    int(symbol[3]),
+                )
+            else:
+                name_offset, info, other, section_index = (
+                    int(symbol[0]),
+                    int(symbol[3]),
+                    int(symbol[4]),
+                    int(symbol[5]),
+                )
+            if name_offset == 0 or section_index == 0:
+                continue
+            binding = info >> 4
+            visibility = other & 0x03
+            if binding not in (1, 2) or visibility not in (0, 3):
+                continue
+            name = _string_at(string_table, name_offset)
+            if name:
+                exported.add(name)
+    return ElfInfo(elf_class=elf_class, machine=machine, exported_symbols=tuple(sorted(exported)))
+
+
+def _inspect_native_artifacts(cells: tuple[NativeCell, ...]) -> None:
+    foundry_surfaces: set[tuple[str, ...]] = set()
+    required_external = set(REQUIRED_EXTERNAL_JNI_SYMBOLS)
+    for cell in cells:
+        abi_specification = ELF_ABIS[cell.abi]
+        for library in cell.libraries:
+            description = f"{cell.build_type}/{cell.abi}/{library.name}"
+            elf = read_elf(library.read_bytes(), description)
+            expected_class = abi_specification["elf_class"]
+            expected_machine = abi_specification["elf_machine"]
+            if elf.elf_class != expected_class:
+                raise ContractError(
+                    f"ELF class mismatch for {description}: expected {expected_class}, found {elf.elf_class}"
+                )
+            if elf.machine != expected_machine:
+                raise ContractError(
+                    f"ELF machine mismatch for {description}: expected {expected_machine}, found {elf.machine}"
+                )
+
+            jni_symbols = tuple(symbol for symbol in elf.exported_symbols if symbol.startswith("Java_"))
+            if library.name == "libc++_shared.so":
+                if jni_symbols:
+                    raise ContractError(f"unexpected JNI symbol in {description}: {jni_symbols[0]}")
+                continue
+
+            foundry_symbols = tuple(symbol for symbol in jni_symbols if symbol.startswith(JNI_PREFIX))
+            external_symbols = set(jni_symbols) - set(foundry_symbols)
+            extra_external = sorted(external_symbols - required_external)
+            if extra_external:
+                if extra_external[0].startswith("Java_org_godotengine_"):
+                    raise ContractError(f"stale JNI symbol in {description}: {extra_external[0]}")
+                raise ContractError(f"unallowlisted external JNI symbol in {description}: {extra_external[0]}")
+            missing_external = sorted(required_external - external_symbols)
+            if missing_external:
+                raise ContractError(f"missing required external JNI symbol in {description}: {missing_external[0]}")
+            if not foundry_symbols:
+                raise ContractError(f"{description} exports no Foundry JNI symbols")
+            foundry_surfaces.add(foundry_symbols)
+
+    if len(foundry_surfaces) != 1:
+        raise ContractError("libfoundry_android.so JNI surface mismatch across the native matrix")
 
 
 def build_spec(build_type: str, abi: str) -> BuildSpec:
@@ -450,10 +521,10 @@ def validate_native_matrix(root: Path, revision: str, tree: str) -> tuple[Native
     actual_pairs = _actual_cell_pairs(root)
     missing = sorted(expected_pairs - actual_pairs)
     if missing:
-        raise ContractError(f"missing native cell: {missing[0][0]}/{missing[0][1]}")
+        raise ContractError(f"native matrix mismatch: missing cell {missing[0][0]}/{missing[0][1]}")
     unexpected = sorted(actual_pairs - expected_pairs)
     if unexpected:
-        raise ContractError(f"unexpected native cell: {unexpected[0][0]}/{unexpected[0][1]}")
+        raise ContractError(f"native matrix mismatch: unexpected cell {unexpected[0][0]}/{unexpected[0][1]}")
 
     return validate_native_cells(
         root,
@@ -519,19 +590,6 @@ def validate_native_cells(
                 libraries=libraries,
             )
         )
-    return tuple(cells)
-
-
-def stage_native_payload(cells: tuple[NativeCell, ...], output: Path) -> None:
-    """Copy validated payload files into the standalone native-bundle layout."""
-
-    if output.exists():
-        raise ContractError(f"native staging output already exists: {output}")
-    output.mkdir(parents=True)
-    for cell in cells:
-        directory = output / cell.build_type / cell.abi
-        directory.mkdir(parents=True)
-        for library in cell.libraries:
-            if library.is_symlink() or not library.is_file():
-                raise ContractError(f"validated native library changed before staging: {library}")
-            shutil.copyfile(library, directory / library.name)
+    validated = tuple(cells)
+    _inspect_native_artifacts(validated)
+    return validated

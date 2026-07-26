@@ -24,7 +24,7 @@ LIB_TESTS = JAVA_ROOT / "lib/src/test"
 LIB_ANDROID_TESTS = JAVA_ROOT / "lib/src/androidTest"
 THIRDPARTY = JAVA_ROOT / "THIRDPARTY.md"
 WRAPPER = JAVA_ROOT / "gradle/wrapper/gradle-wrapper.properties"
-NATIVE_BUNDLE_TOOL = REPO_ROOT / "platform/android/android_native_bundle.py"
+NATIVE_CONTRACT_TOOL = REPO_ROOT / "platform/android/android_native_contract.py"
 NATIVE_STAGING_TOOL = REPO_ROOT / "platform/android/android_native_staging.py"
 SOURCE_TEMPLATE_TOOL = REPO_ROOT / "platform/android/android_source_template.py"
 ANDROID_README = REPO_ROOT / "platform/android/README.md"
@@ -39,7 +39,7 @@ ACTIVE_GRADLE_FILES = (
     JAVA_ROOT / "app/assetPackInstallTime/build.gradle",
     JAVA_ROOT / "nativeSrcsConfigs/build.gradle",
 )
-STANDALONE_WRAPPER_SHA256 = "f397b287023acdba1e9f6fc5ea72d22dd63669d59ed4a289a29b1a76eee151c6"
+WRAPPER_SHA256 = "f397b287023acdba1e9f6fc5ea72d22dd63669d59ed4a289a29b1a76eee151c6"
 EXPECTED_SOURCE_AARS = {
     "libs/debug/foundry-debug.aar",
     "libs/dev/foundry-dev.aar",
@@ -256,7 +256,7 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
             self.assertIn(declaration, read(LIB_JAVA / relative_path))
             self.assertIn(export, native_sources)
 
-    def test_active_gradle_keeps_only_the_temporary_caller_bridge(self) -> None:
+    def test_active_gradle_accepts_only_foundry_owned_native_inputs(self) -> None:
         active = "\n".join(read(path) for path in ACTIVE_GRADLE_FILES)
 
         for fragment in (
@@ -271,19 +271,17 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
             "publish-module.gradle",
             "nexusPublishing",
             "Foundry-Android",
-        ):
-            self.assertNotIn(fragment, active)
-        for fragment in (
             "foundryAndroidSource",
             "foundryAndroidFetch",
-            "foundryNativeRoot",
             "foundryNativeBundle",
             "foundryRuntimeScratch",
             "WS2_REMOVE_ANDROID_RUNTIME_COMPAT_BRIDGE",
         ):
-            self.assertIn(fragment, active)
-        self.assertTrue(NATIVE_BUNDLE_TOOL.is_file())
+            self.assertNotIn(fragment, active)
+        self.assertIn("foundryNativeRoot", read(LIB_BUILD))
+        self.assertTrue(NATIVE_CONTRACT_TOOL.is_file())
         self.assertTrue(NATIVE_STAGING_TOOL.is_file())
+        self.assertFalse((REPO_ROOT / "platform/android/android_native_bundle.py").exists())
 
     def test_production_template_generation_requires_the_four_abi_matrix(self) -> None:
         root_build = read(ROOT_BUILD)
@@ -347,7 +345,7 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
     def test_wrapper_verifies_the_gradle_distribution(self) -> None:
         wrapper = read(WRAPPER)
 
-        self.assertIn(f"distributionSha256Sum={STANDALONE_WRAPPER_SHA256}", wrapper)
+        self.assertIn(f"distributionSha256Sum={WRAPPER_SHA256}", wrapper)
         self.assertIn("gradle-8.11.1-bin.zip", wrapper)
 
     def test_source_template_inspector_accepts_only_packaged_internal_aars(self) -> None:
@@ -483,18 +481,21 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
             "Source ZIP",
             "Device runtime",
             "Editor exporter",
-            "foundry-native.zip",
+            "android_native_contract.py",
             "foundryNativeRoot",
-            "foundryNativeBundle",
-            "WS2_REMOVE_ANDROID_RUNTIME_COMPAT_BRIDGE",
+            "12-cell",
             "fresh",
         ):
             self.assertIn(fragment, runtime_doc)
         for forbidden in (
-            "Foundry-Android repository",
+            "Foundry-Android",
             "--source-repository",
             "--allow-fetch",
             "sole Maven publisher",
+            "foundryNativeBundle",
+            "foundryRuntimeScratch",
+            "foundry-native.zip",
+            "WS2_REMOVE_ANDROID_RUNTIME_COMPAT_BRIDGE",
         ):
             self.assertNotIn(forbidden, runtime_doc)
 

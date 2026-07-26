@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 from typing import cast
 
-import android_runtime_contract as contract
+import android_native_contract as contract
 
 
 def _node_path(node) -> Path:
@@ -66,39 +66,11 @@ def write_android_native_provenance(target, source, env):
     return 0
 
 
-def _runtime_gradle_properties(env) -> list[str]:
-    source_repository = str(env.get("foundry_android_source", "") or "")
-    allow_fetch = bool(env.get("foundry_android_fetch", False))
-    if bool(source_repository) == allow_fetch:
-        raise contract.ContractError(
-            "Android template generation requires exactly one standalone source input: "
-            "foundry_android_source=<git-repository> or foundry_android_fetch=yes"
-        )
-
+def _native_gradle_properties(env) -> list[str]:
     native_root = str(env.get("foundry_native_root", "") or "")
-    native_bundle = str(env.get("foundry_native_bundle", "") or "")
-    if bool(native_root) == bool(native_bundle):
-        raise contract.ContractError(
-            "Android template generation requires exactly one native root or bundle: "
-            "foundry_native_root=<complete-cell-root> or foundry_native_bundle=<bundle.zip>"
-        )
-
-    scratch = str(env.get("foundry_runtime_scratch", "") or "")
-    if not scratch:
-        raise contract.ContractError(
-            "Android template generation requires runtime scratch: foundry_runtime_scratch=<ignored-directory>"
-        )
-
-    properties = [f"-PfoundryRuntimeScratch={scratch}"]
-    if source_repository:
-        properties.append(f"-PfoundryAndroidSource={source_repository}")
-    else:
-        properties.append("-PfoundryAndroidFetch=true")
     if native_root:
-        properties.append(f"-PfoundryNativeRoot={native_root}")
-    else:
-        properties.append(f"-PfoundryNativeBundle={native_bundle}")
-    return properties
+        return [f"-PfoundryNativeRoot={native_root}"]
+    return []
 
 
 def generate_android_binaries(target, source, env):
@@ -118,7 +90,7 @@ def generate_android_binaries(target, source, env):
     else:
         gradle_process += ["generateFoundryTemplates"]
     gradle_process += ["--quiet"]
-    gradle_process += _runtime_gradle_properties(env)
+    gradle_process += _native_gradle_properties(env)
 
     if env["debug_symbols"] and not env["separate_debug_symbols"]:
         gradle_process += ["-PdoNotStrip=true"]

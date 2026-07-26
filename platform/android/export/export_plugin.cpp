@@ -220,7 +220,7 @@ static const char *MISMATCHED_VERSIONS_MESSAGE = "Android build version mismatch
 
 static const char *FOUNDRY_EXTENSION_LIBS_PATH = "libs/foundryextensionlibs.json";
 
-// This template string must match Foundry-Android 'runtime/src/main/res/mipmap-anydpi-v26/icon.xml'.
+// This template string must match platform/android/java/lib/src/main/res/mipmap-anydpi-v26/icon.xml.
 static const String ICON_XML_TEMPLATE =
 		"<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
 		"<adaptive-icon xmlns:android=\"http://schemas.android.com/apk/res/android\">\n"

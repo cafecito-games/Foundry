@@ -1,30 +1,29 @@
 from __future__ import annotations
 
 import importlib.util
+import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 from types import ModuleType
 
-from tests.python_build.android_native_bundle_test_support import create_bundle
+from tests.python_build.android_native_test_support import ABI_SPECS, LIBRARIES, populate_native_matrix
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 STAGING_PATH = REPO_ROOT / "platform/android/android_native_staging.py"
-BUNDLE_PATH = REPO_ROOT / "platform/android/android_native_bundle.py"
-CONTRACT_PATH = REPO_ROOT / "platform/android/android_runtime_contract.py"
+CONTRACT_PATH = REPO_ROOT / "platform/android/android_native_contract.py"
 REVISION = "1" * 40
 TREE = "2" * 40
-ALL_ABIS = ("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
-LIBRARIES = ("libc++_shared.so", "libfoundry_android.so")
+ALL_ABIS = tuple(sorted(ABI_SPECS))
 
 
 def load_module(name: str, path: Path) -> ModuleType:
     if not path.is_file():
-        raise AssertionError(f"missing Android native bridge module: {path}")
+        raise AssertionError(f"missing internal Android native module: {path}")
     spec = importlib.util.spec_from_file_location(name, path)
     if spec is None or spec.loader is None:
-        raise AssertionError(f"could not load Android native bridge module: {path}")
+        raise AssertionError(f"could not load internal Android native module: {path}")
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module
     spec.loader.exec_module(module)
@@ -32,31 +31,12 @@ def load_module(name: str, path: Path) -> ModuleType:
 
 
 class AndroidNativeStagingTests(unittest.TestCase):
-    bundle: ModuleType
     staging: ModuleType
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls.bundle = load_module("android_native_bundle", BUNDLE_PATH)
-        load_module("android_runtime_contract", CONTRACT_PATH)
+        load_module("android_native_contract", CONTRACT_PATH)
         cls.staging = load_module("android_native_staging_for_test", STAGING_PATH)
-
-    def test_bridge_preserves_the_existing_public_bundle_format(self) -> None:
-        self.assertEqual("foundry-android-native-bundle", self.bundle.BUNDLE_FORMAT)
-        self.assertEqual(1, self.bundle.BUNDLE_SCHEMA_VERSION)
-        self.assertEqual("WS2_REMOVE_ANDROID_RUNTIME_COMPAT_BRIDGE", self.staging.WS2_REMOVAL_MARKER)
-
-    def test_compatibility_document_describes_exactly_twelve_cells(self) -> None:
-        document = self.staging.create_compatibility(
-            revision=REVISION,
-            engine_version="0.1.0-dev",
-            bindings_version="0.1.0-dev",
-        )
-
-        self.assertEqual(["debug", "dev", "release"], document["native"]["build_types"])
-        self.assertEqual(list(ALL_ABIS), list(document["native"]["abis"]))
-        self.assertEqual(["libfoundry_android.so", "libc++_shared.so"], document["native"]["libraries"])
-        self.assertEqual(12, len(self.bundle.expected_matrix(document)))
 
     def test_subset_restage_removes_stale_abis_and_old_input_bytes(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -85,10 +65,7 @@ class AndroidNativeStagingTests(unittest.TestCase):
             )
 
             files = sorted(path.relative_to(output).as_posix() for path in output.rglob("*") if path.is_file())
-            self.assertEqual(
-                [f"arm64-v8a/{library}" for library in LIBRARIES],
-                files,
-            )
+            self.assertEqual(sorted(f"arm64-v8a/{library}" for library in LIBRARIES), files)
             for path in output.rglob("*.so"):
                 self.assertTrue(path.read_text(encoding="utf-8").startswith("new:"))
 
@@ -110,7 +87,7 @@ class AndroidNativeStagingTests(unittest.TestCase):
             first,
             self.staging.staging_key(
                 revision=REVISION,
-                input_identity="bundle:/native/two.zip",
+                input_identity="root:/native/two",
                 selected_abis=ALL_ABIS,
             ),
         )
@@ -123,23 +100,64 @@ class AndroidNativeStagingTests(unittest.TestCase):
             ),
         )
 
-    def test_bundle_bridge_rejects_wrong_current_engine_version(self) -> None:
+    def test_native_root_validates_all_cells_before_staging_a_subset(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            _, _, native_bundle = create_bundle(root)
-            with self.assertRaisesRegex(self.staging.StagingError, "engine version mismatch"):
+            native_root = root / "native"
+            populate_native_matrix(native_root, revision=REVISION, tree=TREE)
+            output = root / "stage"
+
+            self.staging.prepare(
+                revision=REVISION,
+                build_type="debug",
+                selected_abis=("arm64-v8a",),
+                output=output,
+                local_root=None,
+                native_root=native_root,
+            )
+
+            self.assertEqual(
+                sorted(f"arm64-v8a/{library}" for library in LIBRARIES),
+                sorted(path.relative_to(output).as_posix() for path in output.rglob("*.so")),
+            )
+
+            (native_root / "release/x86_64/provenance.json").unlink()
+            with self.assertRaisesRegex(self.staging.StagingError, "missing file.*provenance.json"):
                 self.staging.prepare(
-                    revision="a" * 40,
-                    engine_version="9.9.9",
-                    bindings_version="ignored",
+                    revision=REVISION,
+                    build_type="debug",
+                    selected_abis=("arm64-v8a",),
+                    output=output,
+                    local_root=None,
+                    native_root=native_root,
+                )
+
+    def test_prepare_requires_exactly_one_internal_input_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with self.assertRaisesRegex(self.staging.StagingError, "exactly one"):
+                self.staging.prepare(
+                    revision=REVISION,
                     build_type="debug",
                     selected_abis=("arm64-v8a",),
                     output=root / "stage",
                     local_root=None,
                     native_root=None,
-                    native_bundle=native_bundle,
-                    runtime_scratch=root / "scratch",
                 )
+
+    def test_cli_exposes_only_local_and_native_root_inputs(self) -> None:
+        result = subprocess.run(
+            [sys.executable, STAGING_PATH, "--help"],
+            cwd=REPO_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertIn("--local-root", result.stdout)
+        self.assertIn("--native-root", result.stdout)
+        self.assertNotIn("--native-bundle", result.stdout)
+        self.assertNotIn("--runtime-scratch", result.stdout)
 
 
 if __name__ == "__main__":

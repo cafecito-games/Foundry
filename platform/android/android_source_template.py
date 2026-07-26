@@ -96,7 +96,7 @@ def inspect_source_template(archive_path: Path) -> tuple[str, ...]:
             if name.endswith(".aar") and name not in EXPECTED_AARS:
                 raise SourceTemplateError(f"source template contains an unexpected AAR: {name}")
             if name in EXPECTED_AARS and info.file_size == 0:
-                raise SourceTemplateError(f"source template contains an empty standalone runtime AAR: {name}")
+                raise SourceTemplateError(f"source template contains an empty in-tree host AAR: {name}")
 
         missing = sorted(REQUIRED_FILES - files)
         if missing:

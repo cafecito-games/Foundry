@@ -5,8 +5,8 @@ using [Gradle](https://gradle.org/) as a build system.
 
 ## Documentation
 
-- [Standalone Android runtime integration](ANDROID_RUNTIME.md)
-  - Ownership, pinning, native matrix production, offline inputs, template assembly, and release verification.
+- [In-tree Android host runtime](ANDROID_RUNTIME.md)
+  - Ownership, native matrix production, deterministic validation, template assembly, and device acceptance.
 - [Compiling for Android](https://docs.godotengine.org/en/latest/engine_details/development/compiling/compiling_for_android.html)
   - Instructions on building this platform port from source.
 - [Exporting for Android](https://docs.godotengine.org/en/latest/tutorials/export/exporting_for_android.html)
