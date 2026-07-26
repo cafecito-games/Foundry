@@ -94,7 +94,8 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
         for fragment in (
             'dependsOn ":lib:assembleTemplate${capitalizedTarget}"',
             'from("lib/build/outputs/aar/foundry-${target}.aar")',
-            'into("app/libs/${target}")',
+            'into("libs/${target}")',
+            '"libs/**"',
             'dependsOn ":app:assemble${capitalizedEdition}${capitalizedTarget}"',
             "foundry-debug.aar",
             "foundry-dev.aar",
@@ -126,7 +127,8 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
             "foundry-release.aar",
         ):
             self.assertIn(filename, build)
-        self.assertIn('into("app/libs/${target}")', build)
+        self.assertIn('into("libs/${target}")', build)
+        self.assertNotIn('into("app/libs/${target}")', build)
 
     def test_apk_copy_tasks_freeze_and_require_each_variant_output(self) -> None:
         build = read(ROOT_BUILD)

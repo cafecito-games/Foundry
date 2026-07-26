@@ -236,7 +236,7 @@ require_text(
     'dependsOn ":lib:assembleTemplate${capitalizedTarget}"',
     'dependsOn ":app:assemble${capitalizedEdition}${capitalizedTarget}"',
     "foundry-${target}.aar",
-    'into("app/libs/${target}")',
+    'into("libs/${target}")',
     'dependsOn ":app:assemble${capitalizedEdition}${capitalizedTarget}"',
     "task generateFoundryTemplates",
     "task generateFoundryMonoTemplates",

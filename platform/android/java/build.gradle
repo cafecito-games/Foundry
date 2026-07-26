@@ -26,26 +26,19 @@ def clearAndroidSourceTemplateOutput = tasks.register("clearAndroidSourceTemplat
 }
 
 /**
- * Copy each internally built host AAR into the exported app source template and engine bin directory.
+ * Copy each internally built host AAR into the engine bin directory.
  */
 def generateRuntimeAarTasks = {
-    return runtimeBuildTypes.collectMany { String target ->
+    return runtimeBuildTypes.collect { String target ->
         String capitalizedTarget = target.capitalize()
         def sourceAar = file("lib/build/outputs/aar/foundry-${target}.aar")
 
-        def copyToApp = tasks.register("copy${capitalizedTarget}AARToAppModule", Copy) {
-            dependsOn ":lib:assembleTemplate${capitalizedTarget}"
-            inputs.file(sourceAar)
-            from("lib/build/outputs/aar/foundry-${target}.aar")
-            into("app/libs/${target}")
-        }
-        def copyToBin = tasks.register("copy${capitalizedTarget}AARToBin", Copy) {
+        return tasks.register("copy${capitalizedTarget}AARToBin", Copy) {
             dependsOn ":lib:assembleTemplate${capitalizedTarget}"
             inputs.file(sourceAar)
             from("lib/build/outputs/aar/foundry-${target}.aar")
             into(binDir)
         }
-        return [copyToApp, copyToBin]
     }
 }
 
@@ -57,8 +50,13 @@ def runtimeAarTasks = generateRuntimeAarTasks()
 def zipGradleBuild = tasks.register("zipGradleBuild", Zip) {
     dependsOn runtimeAarTasks
     mustRunAfter clearAndroidSourceTemplateOutput
-    from(fileTree(dir: "app", excludes: ["**/build/**", "**/.gradle/**", "**/*.iml"]))
+    from(fileTree(dir: "app", excludes: ["**/build/**", "**/.gradle/**", "**/*.iml", "libs/**"]))
     from(fileTree(dir: ".", includes: ["gradlew", "gradlew.bat", "gradle/**"]))
+    runtimeBuildTypes.each { String target ->
+        from("lib/build/outputs/aar/foundry-${target}.aar") {
+            into("libs/${target}")
+        }
+    }
     include "**/*"
     archiveFileName = "android_source.zip"
     destinationDirectory = foundrySourceTemplateRoot
