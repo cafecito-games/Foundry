@@ -44,6 +44,11 @@
 
 class FSInstance;
 class FoundryScript;
+#ifdef TESTS_ENABLED
+namespace FSTests {
+class TestFSBytecodeScriptAccessor;
+}
+#endif // TESTS_ENABLED
 #ifdef TOOLS_ENABLED
 class FSNameManglerApplication;
 class FSNameManglerAnalysis;
@@ -579,6 +584,9 @@ private:
 	friend class FSNameManglerApplication;
 	friend class FSNameManglerAnalysis;
 #endif
+#ifdef TESTS_ENABLED
+	friend class FSTests::TestFSBytecodeScriptAccessor;
+#endif // TESTS_ENABLED
 
 	StringName name;
 	StringName source;

@@ -54,6 +54,15 @@ namespace FSTests {
 // (0 = NONE, 1 = FIXED, 2 = OPEN) because the nested type is private.
 class TestFSBytecodeScriptAccessor {
 public:
+	static uint8_t get_self_reflection_kinds(const FSFunction *p_function) {
+		return p_function != nullptr ? p_function->self_reflection_kinds : FSFunction::REFLECTION_NONE;
+	}
+
+	static uint8_t get_unresolved_reflection_kinds(
+			const FSFunction *p_function) {
+		return p_function != nullptr ? p_function->unresolved_reflection_kinds : FSFunction::REFLECTION_NONE;
+	}
+
 	static Variant get_static_variable(const Ref<FoundryScript> &p_script, const StringName &p_name) {
 		const FoundryScript::MemberInfo *member_info = p_script->static_variables_indices.getptr(p_name);
 		if (member_info == nullptr || member_info->index < 0 || member_info->index >= p_script->static_variables.size()) {
@@ -1118,6 +1127,108 @@ TEST_CASE("[FoundryScript][NameMangler][Reflection][Bytecode] Receiver scope sur
 		CAPTURE(unrelated_names[i]);
 		CHECK(source_analysis.rename_map.has(unrelated_names[i]));
 		CHECK(restored_analysis.rename_map.has(unrelated_names[i]));
+	}
+}
+
+TEST_CASE("[FoundryScript][NameMangler][Reflection][Bytecode] Unresolved receiver scope survives serialization") {
+	const StringName inspected_method =
+			SNAME("reflection_unresolved_method_1237");
+	const StringName inspected_property =
+			SNAME("reflection_unresolved_property_1237");
+	const StringName inspected_signal =
+			SNAME("reflection_unresolved_signal_1237");
+	const StringName inspect_function =
+			SNAME("inspect_unresolved_reflection_1237");
+	const Ref<FoundryScript> original = compile_bytecode_test_source(
+			"extends RefCounted\n"
+			"func inspect_unresolved_reflection_1237(target: Object) -> void:\n"
+			"\ttarget.get_method_list()\n"
+			"\ttarget.get_property_list()\n"
+			"\ttarget.get_signal_list()\n");
+	BytecodeTestResolver resolver;
+	const Ref<FoundryScript> restored =
+			bytecode_round_trip_script(original, &resolver);
+	REQUIRE(original->get_member_functions().has(inspect_function));
+	REQUIRE(restored->get_member_functions().has(inspect_function));
+	const FSFunction *source_function =
+			original->get_member_functions()[inspect_function];
+	const FSFunction *restored_function =
+			restored->get_member_functions()[inspect_function];
+	const uint8_t expected_unresolved =
+			FSFunction::REFLECTION_METHODS |
+			FSFunction::REFLECTION_PROPERTIES |
+			FSFunction::REFLECTION_SIGNALS;
+	CHECK_EQ(
+			TestFSBytecodeScriptAccessor::get_self_reflection_kinds(
+					source_function),
+			FSFunction::REFLECTION_NONE);
+	CHECK_EQ(
+			TestFSBytecodeScriptAccessor::get_self_reflection_kinds(
+					restored_function),
+			FSFunction::REFLECTION_NONE);
+	CHECK_EQ(
+			TestFSBytecodeScriptAccessor::get_unresolved_reflection_kinds(
+					source_function),
+			expected_unresolved);
+	CHECK_EQ(
+			TestFSBytecodeScriptAccessor::get_unresolved_reflection_kinds(
+					restored_function),
+			expected_unresolved);
+
+	const Ref<FoundryScript> declarations = compile_bytecode_test_source(
+			"extends RefCounted\n"
+			"var reflection_unresolved_property_1237: int\n"
+			"signal reflection_unresolved_signal_1237\n"
+			"func reflection_unresolved_method_1237() -> void:\n"
+			"\tpass\n");
+	FSNameManglerAnalysis::Input source_input;
+	source_input.scripts.push_back(original);
+	source_input.scripts.push_back(declarations);
+	const FSNameManglerAnalysis::Result source_analysis =
+			FSNameManglerAnalysis::analyze(source_input);
+	FSNameManglerAnalysis::Input restored_input;
+	restored_input.scripts.push_back(restored);
+	restored_input.scripts.push_back(declarations);
+	const FSNameManglerAnalysis::Result restored_analysis =
+			FSNameManglerAnalysis::analyze(restored_input);
+	REQUIRE_EQ(source_analysis.error, OK);
+	REQUIRE_EQ(restored_analysis.error, OK);
+	REQUIRE_EQ(
+			source_analysis.rename_map.size(),
+			restored_analysis.rename_map.size());
+	for (const KeyValue<StringName, StringName> &rename :
+			source_analysis.rename_map) {
+		REQUIRE(restored_analysis.rename_map.has(rename.key));
+		CHECK_EQ(restored_analysis.rename_map[rename.key], rename.value);
+	}
+	const auto has_reflection_reason =
+			[](const FSNameManglerAnalysis::Result &p_result,
+					const StringName &p_name) {
+				const FSNameManglerAnalysis::Classification *classification =
+						p_result.find(p_name);
+				if (classification == nullptr) {
+					return false;
+				}
+				for (const FSNameManglerAnalysis::KeepEvidence &evidence :
+						classification->keep_evidence) {
+					if (evidence.reason ==
+							FSNameManglerAnalysis::KEEP_REFLECTION) {
+						return true;
+					}
+				}
+				return false;
+			};
+	const StringName inspected_names[] = {
+		inspected_method,
+		inspected_property,
+		inspected_signal,
+	};
+	for (const StringName &name : inspected_names) {
+		CAPTURE(name);
+		CHECK_FALSE(source_analysis.rename_map.has(name));
+		CHECK_FALSE(restored_analysis.rename_map.has(name));
+		CHECK(has_reflection_reason(source_analysis, name));
+		CHECK(has_reflection_reason(restored_analysis, name));
 	}
 }
 
