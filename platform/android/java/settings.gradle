@@ -7,7 +7,6 @@ pluginManagement {
         id 'com.android.library' version versions.androidGradlePlugin
         id 'com.android.asset-pack' version versions.androidGradlePlugin
         id 'org.jetbrains.kotlin.android' version versions.kotlinVersion
-        id 'io.github.gradle-nexus.publish-plugin' version versions.nexusPublishVersion
     }
     repositories {
         google()
@@ -21,7 +20,6 @@ pluginManagement {
 rootProject.name = "Foundry"
 
 include ':app'
-include ':lib'
 include ':nativeSrcsConfigs'
 
 include ':assetPackInstallTime'

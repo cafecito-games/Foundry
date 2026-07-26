@@ -6,6 +6,10 @@ plugins {
 
 apply from: 'config.gradle'
 
+def foundryRuntimeAarRoot = rootProject.ext.has("foundryRuntimeAarRoot")
+    ? rootProject.ext.foundryRuntimeAarRoot
+    : file("libs")
+
 allprojects {
     repositories {
         google()
@@ -45,17 +49,11 @@ dependencies {
     implementation "androidx.core:core-splashscreen:$versions.splashscreenVersion"
     implementation "androidx.documentfile:documentfile:$versions.documentfileVersion"
 
-    if (rootProject.findProject(":lib")) {
-        implementation project(":lib")
-    } else if (rootProject.findProject(":godot:lib")) {
-        implementation project(":godot:lib")
-    } else {
-        // Foundry gradle build mode. In this scenario this project is the only one around and the Foundry
-        // library is available through the pre-generated foundry-lib.*.aar android archive files.
-        debugImplementation fileTree(dir: 'libs/debug', include: ['**/*.jar', '*.aar'])
-        devImplementation fileTree(dir: 'libs/dev', include: ['**/*.jar', '*.aar'])
-        releaseImplementation fileTree(dir: 'libs/release', include: ['**/*.jar', '*.aar'])
-    }
+    // The engine build consumes generated standalone AARs from its build directory. Exported
+    // source templates fall back to the self-contained app/libs payload embedded in the ZIP.
+    debugImplementation fileTree(dir: "$foundryRuntimeAarRoot/debug", include: ['*.aar'])
+    devImplementation fileTree(dir: "$foundryRuntimeAarRoot/dev", include: ['*.aar'])
+    releaseImplementation fileTree(dir: "$foundryRuntimeAarRoot/release", include: ['*.aar'])
 
     // Foundry user plugins remote dependencies
     String[] remoteDeps = getFoundryPluginsRemoteBinaries()
@@ -341,16 +339,13 @@ tasks.withType( com.android.build.gradle.internal.tasks.MergeNativeLibsTask) {
     }
 }
 
-/*
-When they're scheduled to run, the copy*AARToAppModule tasks generate dependencies for the 'app'
-module, so we're ensuring the ':app:preBuild' task is set to run after those tasks.
- */
-if (rootProject.tasks.findByPath("copyDebugAARToAppModule") != null) {
-    preBuild.mustRunAfter(rootProject.tasks.named("copyDebugAARToAppModule"))
-}
-if (rootProject.tasks.findByPath("copyDevAARToAppModule") != null) {
-    preBuild.mustRunAfter(rootProject.tasks.named("copyDevAARToAppModule"))
-}
-if (rootProject.tasks.findByPath("copyReleaseAARToAppModule") != null) {
-    preBuild.mustRunAfter(rootProject.tasks.named("copyReleaseAARToAppModule"))
+def prepareFoundryAndroidRuntime = rootProject.tasks.findByPath(":prepareFoundryAndroidRuntime")
+if (prepareFoundryAndroidRuntime != null) {
+    tasks.configureEach { task ->
+        if (task.name == "preBuild"
+            || task.name.startsWith("assemble")
+            || task.name.startsWith("merge")) {
+            task.dependsOn prepareFoundryAndroidRuntime
+        }
+    }
 }

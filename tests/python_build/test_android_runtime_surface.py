@@ -237,7 +237,7 @@ forbid_text(
 )
 forbid_text("editor/editor_node.cpp", "TouchActionsPanel", "_touch_actions_panel_mode_changed")
 
-# Preserved Gradle project, runtime library, export template, and publications.
+# Preserved Gradle application/IDE projects and the runtime sources pending standalone cleanup.
 for path in (
     "platform/android/java/app",
     "platform/android/java/lib",
@@ -260,13 +260,13 @@ for path in (
 require_text(
     "platform/android/java/settings.gradle",
     "include ':app'",
-    "include ':lib'",
     "include ':nativeSrcsConfigs'",
 )
+forbid_text("platform/android/java/settings.gradle", "include ':lib'")
 require_text(
     "platform/android/java/build.gradle",
-    'supportedFlavors = ["template"]',
-    'dependsOn ":lib:assembleTemplate${capitalizedTarget}"',
+    "prepareFoundryAndroidRuntime",
+    "foundryRuntimeAarRoot",
     'dependsOn ":app:assemble${capitalizedEdition}${capitalizedTarget}"',
     "task generateFoundryTemplates",
     "task generateFoundryMonoTemplates",
@@ -287,11 +287,19 @@ require_text(
 )
 require_text(
     "platform/android/java/app/build.gradle",
-    'implementation project(":lib")',
+    "debugImplementation",
+    "devImplementation",
+    "releaseImplementation",
+    "foundryRuntimeAarRoot",
     "getFoundryPluginsMavenRepos",
     "getFoundryPluginsRemoteBinaries",
     "getFoundryPluginsLocalBinaries",
     "libopenxr_loader.so",
+)
+forbid_text(
+    "platform/android/java/app/build.gradle",
+    'implementation project(":lib")',
+    'implementation project(":godot:lib")',
 )
 
 # Preserved runtime plugin, XR, service, and desktop exporter behavior.
