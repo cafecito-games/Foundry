@@ -52,13 +52,39 @@ struct ScriptRunnerProjectFixture {
 
 	explicit ScriptRunnerProjectFixture() {
 		const String scripts_path = String(test_runner_scripts_root);
-		const Error err = ProjectSettings::get_singleton()->setup(scripts_path, String(), true);
-		REQUIRE_MESSAGE(err == OK, "Failed to set up test runner project.");
-		if (!is_fs_language_active()) {
-			init_language(scripts_path);
-		}
+		init_language(scripts_path);
+		REQUIRE_MESSAGE(is_fs_language_active(), "Failed to initialize the test runner project.");
 	}
 };
+
+TEST_CASE("[Modules][FoundryScript][ScriptRunner][Lifecycle] Direct fixture teardown restores exact project settings") {
+	finish_language();
+	TestProjectSettingsRestoreScope restore_process_settings;
+
+	ProjectSettings *settings = ProjectSettings::get_singleton();
+	const String expected_resource_path;
+	const bool expected_project_loaded = false;
+	const String expected_app_name = "ScriptRunnerBeforeDirectCase";
+	TestProjectSettingsInternalsAccessor::resource_path() = expected_resource_path;
+	TestProjectSettingsInternalsAccessor::project_loaded() = expected_project_loaded;
+	settings->set_setting("application/config/name", expected_app_name);
+
+	{
+		ScriptRunnerProjectFixture project;
+		CHECK(is_fs_language_active());
+		CHECK_NE(settings->get_resource_path(), expected_resource_path);
+	}
+
+	CHECK_EQ(settings->get_resource_path(), expected_resource_path);
+	CHECK_EQ(settings->is_project_loaded(), expected_project_loaded);
+	CHECK_EQ(String(GLOBAL_GET("application/config/name")), expected_app_name);
+
+	finish_language();
+	CHECK_FALSE(is_fs_language_active());
+	CHECK_EQ(settings->get_resource_path(), expected_resource_path);
+	CHECK_EQ(settings->is_project_loaded(), expected_project_loaded);
+	CHECK_EQ(String(GLOBAL_GET("application/config/name")), expected_app_name);
+}
 
 TEST_CASE("[Modules][FoundryScript][ScriptRunner] Script runner hook is registered as script-extensible") {
 	CHECK(FSScriptExtensibleNativeHooks::is_allowed_override(SNAME("ScriptRunner"), SNAME("run")));

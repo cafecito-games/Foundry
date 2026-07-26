@@ -65,8 +65,10 @@ namespace FSTests {
 // (parser/tokenizer cases, non-FoundryScript suites) are untouched.
 struct FSLanguageSuiteFixture : public doctest::IReporter {
 	// Name of the suite whose case last brought the language up, or empty when no
-	// suite currently owns it.
+	// named suite owns it. Direct TEST_CASE declarations legitimately use an empty
+	// suite name, so ownership is tracked separately below.
 	String owner_suite;
+	bool has_owner_suite = false;
 	// Suite of the case currently executing, captured at `test_case_start` because
 	// `test_case_end` does not carry the test metadata.
 	String current_suite;
@@ -78,9 +80,10 @@ struct FSLanguageSuiteFixture : public doctest::IReporter {
 
 		// A different suite is starting: tear down the language the previous suite
 		// left up so this suite (or its own `init_language()` call) starts fresh.
-		if (is_fs_language_active() && !owner_suite.is_empty() && owner_suite != current_suite) {
+		if (is_fs_language_active() && has_owner_suite && owner_suite != current_suite) {
 			finish_language();
 			owner_suite = String();
+			has_owner_suite = false;
 		}
 
 #ifdef DEBUG_ENABLED
@@ -103,8 +106,9 @@ struct FSLanguageSuiteFixture : public doctest::IReporter {
 
 		// First case in this suite to bring the language up claims ownership so the
 		// teardown above can fire when control later leaves the suite.
-		if (owner_suite.is_empty()) {
+		if (!has_owner_suite) {
 			owner_suite = current_suite;
+			has_owner_suite = true;
 		}
 
 		if (is_language_initialized()) {
@@ -119,6 +123,7 @@ struct FSLanguageSuiteFixture : public doctest::IReporter {
 			finish_language();
 		}
 		owner_suite = String();
+		has_owner_suite = false;
 	}
 
 	void report_query(const doctest::QueryData &) override {}
