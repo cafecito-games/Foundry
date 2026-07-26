@@ -21,6 +21,12 @@ def selectedAbis = providers.gradleProperty("selectedAbis").map { value ->
     value.split(",").collect { it.trim() }.findAll { !it.isEmpty() }
 }.orElse(["arm64"]).get()
 def supportedAbis = ["arm32", "arm64", "x86_32", "x86_64"]
+def androidAbiBySconsArch = [
+    arm32: "armeabi-v7a",
+    arm64: "arm64-v8a",
+    x86_32: "x86",
+    x86_64: "x86_64",
+]
 def supportedBuildTypes = ["debug", "dev", "release"]
 
 def getSconsTaskName = { String flavor, String buildType, String abi ->
@@ -150,6 +156,7 @@ android {
                 if (!supportedAbis.contains(selectedAbi)) {
                     throw new GradleException("Invalid selected abi: $selectedAbi")
                 }
+                String androidAbi = androidAbiBySconsArch[selectedAbi]
 
                 def taskName = getSconsTaskName(flavorName, buildType, selectedAbi)
                 tasks.create(name: taskName, type: Exec) {
@@ -161,9 +168,27 @@ android {
                         "dev_build=${devBuild}",
                         "debug_symbols=${devBuild}",
                         "tests=no",
+                        "swappy=yes",
                         "target=${sconsTarget}",
                         "arch=${selectedAbi}",
                         "-j" + Runtime.runtime.availableProcessors()
+
+                    doLast {
+                        File nativeCell = file(
+                            "${pathToRootDir}bin/android-native/${foundryEngineRevision}/${buildType}/${androidAbi}"
+                        )
+                        for (String library : ["libfoundry_android.so", "libc++_shared.so"]) {
+                            if (!new File(nativeCell, library).isFile()) {
+                                throw new GradleException("Missing native library: ${new File(nativeCell, library)}")
+                            }
+                        }
+                        delete("libs/${buildType}/${androidAbi}")
+                        copy {
+                            from(nativeCell)
+                            include("libfoundry_android.so", "libc++_shared.so")
+                            into("libs/${buildType}/${androidAbi}")
+                        }
+                    }
                 }
 
                 tasks["merge${flavorName.capitalize()}${buildType.capitalize()}JniLibFolders"].dependsOn taskName

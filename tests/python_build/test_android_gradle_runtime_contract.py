@@ -162,6 +162,9 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
             "FOUNDRY_ENGINE_VERSION",
             "FOUNDRY_ENGINE_REVISION",
             "FOUNDRY_JNI_CONTRACT_VERSION",
+            '"swappy=yes"',
+            'bin/android-native/${foundryEngineRevision}/${buildType}/${androidAbi}',
+            'into("libs/${buildType}/${androidAbi}")',
         ):
             self.assertIn(fragment, build)
 
