@@ -60,7 +60,7 @@ static const int APP_CATEGORY_VIDEO = 8;
 static const int APP_CATEGORY_UNDEFINED = 9;
 
 // Supported XR modes.
-// This should match the entries in 'platform/android/java/lib/src/main/java/games/cafecito/foundry/xr/XRMode.java'
+// This should match the entries in Foundry-Android 'runtime/src/main/java/games/cafecito/foundry/xr/XRMode.java'.
 static const int XR_MODE_REGULAR = 0;
 static const int XR_MODE_OPENXR = 1;
 
