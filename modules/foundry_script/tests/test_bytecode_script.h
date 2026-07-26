@@ -41,6 +41,7 @@
 #include "fs_test_runner_suite.h"
 
 #include "modules/foundry_script/fs_conformance_registry.h"
+#include "modules/foundry_script/fs_name_mangler_analysis.h"
 
 #include "core/io/resource_loader.h"
 #include "core/io/resource_saver.h"
@@ -53,6 +54,15 @@ namespace FSTests {
 // (0 = NONE, 1 = FIXED, 2 = OPEN) because the nested type is private.
 class TestFSBytecodeScriptAccessor {
 public:
+	static uint8_t get_self_reflection_kinds(const FSFunction *p_function) {
+		return p_function != nullptr ? p_function->self_reflection_kinds : uint8_t(FSFunction::REFLECTION_NONE);
+	}
+
+	static uint8_t get_unresolved_reflection_kinds(
+			const FSFunction *p_function) {
+		return p_function != nullptr ? p_function->unresolved_reflection_kinds : uint8_t(FSFunction::REFLECTION_NONE);
+	}
+
 	static Variant get_static_variable(const Ref<FoundryScript> &p_script, const StringName &p_name) {
 		const FoundryScript::MemberInfo *member_info = p_script->static_variables_indices.getptr(p_name);
 		if (member_info == nullptr || member_info->index < 0 || member_info->index >= p_script->static_variables.size()) {
@@ -1044,6 +1054,305 @@ TEST_CASE("[FoundryScript][BytecodeScript] Script-level lambda metadata rebuilds
 	const Variant instance_variant = bytecode_new_instance(restored);
 	Object *instance = instance_variant;
 	CHECK((int64_t)bytecode_instance_call(instance, SNAME("lambda_total"), { 10 }) == 14);
+}
+
+TEST_CASE("[FoundryScript][NameMangler][Reflection][Bytecode] Receiver scope survives serialization") {
+	const StringName owner_method =
+			SNAME("reflection_bytecode_owner_method_1237");
+	const StringName owner_property =
+			SNAME("reflection_bytecode_owner_property_1237");
+	const StringName owner_signal =
+			SNAME("reflection_bytecode_owner_signal_1237");
+	const StringName unrelated_method =
+			SNAME("reflection_bytecode_unrelated_method_1237");
+	const StringName unrelated_property =
+			SNAME("reflection_bytecode_unrelated_property_1237");
+	const StringName unrelated_signal =
+			SNAME("reflection_bytecode_unrelated_signal_1237");
+	const Ref<FoundryScript> original = compile_bytecode_test_source(
+			"extends RefCounted\n"
+			"var reflection_bytecode_owner_property_1237: int\n"
+			"signal reflection_bytecode_owner_signal_1237\n"
+			"func reflection_bytecode_owner_method_1237() -> void:\n"
+			"\tpass\n"
+			"func inspect_reflection_bytecode_1237() -> void:\n"
+			"\tget_method_list()\n"
+			"\tget_property_list()\n"
+			"\tget_signal_list()\n");
+	BytecodeTestResolver resolver;
+	const Ref<FoundryScript> restored =
+			bytecode_round_trip_script(original, &resolver);
+	const Ref<FoundryScript> unrelated = compile_bytecode_test_source(
+			"extends RefCounted\n"
+			"var reflection_bytecode_unrelated_property_1237: int\n"
+			"signal reflection_bytecode_unrelated_signal_1237\n"
+			"func reflection_bytecode_unrelated_method_1237() -> void:\n"
+			"\tpass\n");
+
+	FSNameManglerAnalysis::Input source_input;
+	source_input.scripts.push_back(original);
+	source_input.scripts.push_back(unrelated);
+	const FSNameManglerAnalysis::Result source_analysis =
+			FSNameManglerAnalysis::analyze(source_input);
+	FSNameManglerAnalysis::Input restored_input;
+	restored_input.scripts.push_back(restored);
+	restored_input.scripts.push_back(unrelated);
+	const FSNameManglerAnalysis::Result restored_analysis =
+			FSNameManglerAnalysis::analyze(restored_input);
+	REQUIRE_EQ(source_analysis.error, OK);
+	REQUIRE_EQ(restored_analysis.error, OK);
+	REQUIRE_EQ(
+			source_analysis.rename_map.size(),
+			restored_analysis.rename_map.size());
+	for (const KeyValue<StringName, StringName> &rename :
+			source_analysis.rename_map) {
+		REQUIRE(restored_analysis.rename_map.has(rename.key));
+		CHECK_EQ(restored_analysis.rename_map[rename.key], rename.value);
+	}
+
+	const StringName owner_names[] = {
+		owner_method,
+		owner_property,
+		owner_signal,
+	};
+	const StringName unrelated_names[] = {
+		unrelated_method,
+		unrelated_property,
+		unrelated_signal,
+	};
+	for (int i = 0; i < 3; i++) {
+		CAPTURE(owner_names[i]);
+		CHECK_FALSE(source_analysis.rename_map.has(owner_names[i]));
+		CHECK_FALSE(restored_analysis.rename_map.has(owner_names[i]));
+		CAPTURE(unrelated_names[i]);
+		CHECK(source_analysis.rename_map.has(unrelated_names[i]));
+		CHECK(restored_analysis.rename_map.has(unrelated_names[i]));
+	}
+}
+
+TEST_CASE("[FoundryScript][NameMangler][Reflection][Bytecode] Unresolved receiver scope survives serialization") {
+	const StringName inspected_method =
+			SNAME("reflection_unresolved_method_1237");
+	const StringName inspected_property =
+			SNAME("reflection_unresolved_property_1237");
+	const StringName inspected_signal =
+			SNAME("reflection_unresolved_signal_1237");
+	const StringName inspect_function =
+			SNAME("inspect_unresolved_reflection_1237");
+	const Ref<FoundryScript> original = compile_bytecode_test_source(
+			"extends RefCounted\n"
+			"func inspect_unresolved_reflection_1237(target: Object) -> void:\n"
+			"\ttarget.get_method_list()\n"
+			"\ttarget.get_property_list()\n"
+			"\ttarget.get_signal_list()\n");
+	BytecodeTestResolver resolver;
+	const Ref<FoundryScript> restored =
+			bytecode_round_trip_script(original, &resolver);
+	REQUIRE(original->get_member_functions().has(inspect_function));
+	REQUIRE(restored->get_member_functions().has(inspect_function));
+	const FSFunction *source_function =
+			original->get_member_functions()[inspect_function];
+	const FSFunction *restored_function =
+			restored->get_member_functions()[inspect_function];
+	const uint8_t expected_unresolved =
+			FSFunction::REFLECTION_METHODS |
+			FSFunction::REFLECTION_PROPERTIES |
+			FSFunction::REFLECTION_SIGNALS;
+	CHECK_EQ(
+			TestFSBytecodeScriptAccessor::get_self_reflection_kinds(
+					source_function),
+			FSFunction::REFLECTION_NONE);
+	CHECK_EQ(
+			TestFSBytecodeScriptAccessor::get_self_reflection_kinds(
+					restored_function),
+			FSFunction::REFLECTION_NONE);
+	CHECK_EQ(
+			TestFSBytecodeScriptAccessor::get_unresolved_reflection_kinds(
+					source_function),
+			expected_unresolved);
+	CHECK_EQ(
+			TestFSBytecodeScriptAccessor::get_unresolved_reflection_kinds(
+					restored_function),
+			expected_unresolved);
+
+	const Ref<FoundryScript> declarations = compile_bytecode_test_source(
+			"extends RefCounted\n"
+			"var reflection_unresolved_property_1237: int\n"
+			"signal reflection_unresolved_signal_1237\n"
+			"func reflection_unresolved_method_1237() -> void:\n"
+			"\tpass\n");
+	FSNameManglerAnalysis::Input source_input;
+	source_input.scripts.push_back(original);
+	source_input.scripts.push_back(declarations);
+	const FSNameManglerAnalysis::Result source_analysis =
+			FSNameManglerAnalysis::analyze(source_input);
+	FSNameManglerAnalysis::Input restored_input;
+	restored_input.scripts.push_back(restored);
+	restored_input.scripts.push_back(declarations);
+	const FSNameManglerAnalysis::Result restored_analysis =
+			FSNameManglerAnalysis::analyze(restored_input);
+	REQUIRE_EQ(source_analysis.error, OK);
+	REQUIRE_EQ(restored_analysis.error, OK);
+	REQUIRE_EQ(
+			source_analysis.rename_map.size(),
+			restored_analysis.rename_map.size());
+	for (const KeyValue<StringName, StringName> &rename :
+			source_analysis.rename_map) {
+		REQUIRE(restored_analysis.rename_map.has(rename.key));
+		CHECK_EQ(restored_analysis.rename_map[rename.key], rename.value);
+	}
+	const auto has_reflection_reason =
+			[](const FSNameManglerAnalysis::Result &p_result,
+					const StringName &p_name) {
+				const FSNameManglerAnalysis::Classification *classification =
+						p_result.find(p_name);
+				if (classification == nullptr) {
+					return false;
+				}
+				for (const FSNameManglerAnalysis::KeepEvidence &evidence :
+						classification->keep_evidence) {
+					if (evidence.reason ==
+							FSNameManglerAnalysis::KEEP_REFLECTION) {
+						return true;
+					}
+				}
+				return false;
+			};
+	const StringName inspected_names[] = {
+		inspected_method,
+		inspected_property,
+		inspected_signal,
+	};
+	for (const StringName &name : inspected_names) {
+		CAPTURE(name);
+		CHECK_FALSE(source_analysis.rename_map.has(name));
+		CHECK_FALSE(restored_analysis.rename_map.has(name));
+		CHECK(has_reflection_reason(source_analysis, name));
+		CHECK(has_reflection_reason(restored_analysis, name));
+	}
+}
+
+TEST_CASE("[FoundryScript][NameMangler][Reflection][Bytecode] Base-owned self scope includes dynamic descendants") {
+	const StringName derived_method =
+			SNAME("reflection_dynamic_derived_method_1237");
+	const StringName derived_property =
+			SNAME("reflection_dynamic_derived_property_1237");
+	const StringName derived_signal =
+			SNAME("reflection_dynamic_derived_signal_1237");
+	const StringName unrelated_method =
+			SNAME("reflection_dynamic_unrelated_method_1237");
+	const StringName unrelated_property =
+			SNAME("reflection_dynamic_unrelated_property_1237");
+	const StringName unrelated_signal =
+			SNAME("reflection_dynamic_unrelated_signal_1237");
+	const Ref<FoundryScript> source_base = compile_bytecode_test_source(
+			"extends RefCounted\n"
+			"var reflection_dynamic_base_property_1237: int\n"
+			"signal reflection_dynamic_base_signal_1237\n"
+			"func reflection_dynamic_base_method_1237() -> void:\n"
+			"\tpass\n"
+			"func reflection_dynamic_has_method_1237(name: String) -> bool:\n"
+			"\tfor descriptor in get_method_list():\n"
+			"\t\tif str(descriptor.name) == name:\n"
+			"\t\t\treturn true\n"
+			"\treturn false\n"
+			"func reflection_dynamic_has_property_1237(name: String) -> bool:\n"
+			"\tfor descriptor in get_property_list():\n"
+			"\t\tif str(descriptor.name) == name:\n"
+			"\t\t\treturn true\n"
+			"\treturn false\n"
+			"func reflection_dynamic_has_signal_1237(name: String) -> bool:\n"
+			"\tfor descriptor in get_signal_list():\n"
+			"\t\tif str(descriptor.name) == name:\n"
+			"\t\t\treturn true\n"
+			"\treturn false\n");
+	const Ref<FoundryScript> source_derived =
+			compile_bytecode_test_source(vformat(
+					"extends \"%s\"\n"
+					"var reflection_dynamic_derived_property_1237: int\n"
+					"signal reflection_dynamic_derived_signal_1237\n"
+					"func reflection_dynamic_derived_method_1237() -> void:\n"
+					"\tpass\n",
+					source_base->get_script_path()));
+	const Ref<FoundryScript> unrelated = compile_bytecode_test_source(
+			"extends RefCounted\n"
+			"var reflection_dynamic_unrelated_property_1237: int\n"
+			"signal reflection_dynamic_unrelated_signal_1237\n"
+			"func reflection_dynamic_unrelated_method_1237() -> void:\n"
+			"\tpass\n");
+
+	BytecodeTestResolver base_resolver;
+	const Ref<FoundryScript> restored_base =
+			bytecode_round_trip_script(source_base, &base_resolver);
+	BytecodeTestResolver derived_resolver;
+	derived_resolver.scripts.insert(
+			restored_base->get_script_path() + "::" +
+					restored_base->get_fully_qualified_name(),
+			restored_base);
+	const Ref<FoundryScript> restored_derived =
+			bytecode_round_trip_script(source_derived, &derived_resolver);
+	REQUIRE(restored_derived->get_base() == restored_base);
+
+	const Ref<FoundryScript> runtime_scripts[] = {
+		source_derived,
+		restored_derived,
+	};
+	for (const Ref<FoundryScript> &runtime_script : runtime_scripts) {
+		const Variant instance_variant = bytecode_new_instance(runtime_script);
+		Object *instance = instance_variant;
+		CAPTURE(runtime_script->is_compiled_binary());
+		CHECK((bool)bytecode_instance_call(
+				instance, SNAME("reflection_dynamic_has_method_1237"),
+				{ String(derived_method) }));
+		CHECK((bool)bytecode_instance_call(
+				instance, SNAME("reflection_dynamic_has_property_1237"),
+				{ String(derived_property) }));
+		CHECK((bool)bytecode_instance_call(
+				instance, SNAME("reflection_dynamic_has_signal_1237"),
+				{ String(derived_signal) }));
+	}
+
+	FSNameManglerAnalysis::Input source_input;
+	source_input.scripts.push_back(source_base);
+	source_input.scripts.push_back(source_derived);
+	source_input.scripts.push_back(unrelated);
+	const FSNameManglerAnalysis::Result source_analysis =
+			FSNameManglerAnalysis::analyze(source_input);
+	FSNameManglerAnalysis::Input restored_input;
+	restored_input.scripts.push_back(restored_base);
+	restored_input.scripts.push_back(restored_derived);
+	restored_input.scripts.push_back(unrelated);
+	const FSNameManglerAnalysis::Result restored_analysis =
+			FSNameManglerAnalysis::analyze(restored_input);
+	REQUIRE_EQ(source_analysis.error, OK);
+	REQUIRE_EQ(restored_analysis.error, OK);
+	REQUIRE_EQ(
+			source_analysis.rename_map.size(),
+			restored_analysis.rename_map.size());
+	for (const KeyValue<StringName, StringName> &rename :
+			source_analysis.rename_map) {
+		REQUIRE(restored_analysis.rename_map.has(rename.key));
+		CHECK_EQ(restored_analysis.rename_map[rename.key], rename.value);
+	}
+
+	const StringName derived_names[] = {
+		derived_method,
+		derived_property,
+		derived_signal,
+	};
+	const StringName unrelated_names[] = {
+		unrelated_method,
+		unrelated_property,
+		unrelated_signal,
+	};
+	for (int i = 0; i < 3; i++) {
+		CAPTURE(derived_names[i]);
+		CHECK_FALSE(source_analysis.rename_map.has(derived_names[i]));
+		CHECK_FALSE(restored_analysis.rename_map.has(derived_names[i]));
+		CAPTURE(unrelated_names[i]);
+		CHECK(source_analysis.rename_map.has(unrelated_names[i]));
+		CHECK(restored_analysis.rename_map.has(unrelated_names[i]));
+	}
 }
 
 TEST_CASE("[FoundryScript][BytecodeScript] Enum functions and their exact owners round-trip") {

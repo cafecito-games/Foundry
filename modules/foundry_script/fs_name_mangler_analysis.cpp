@@ -48,15 +48,31 @@ struct FSNameManglerAnalysis::BuildState {
 		Vector<KeepEvidence> evidence;
 	};
 
+	struct ScopedReflectionUse {
+		const FoundryScript *owner = nullptr;
+		uint8_t kind = FSFunction::REFLECTION_NONE;
+		String detail;
+	};
+
 	HashMap<StringName, Aggregate> candidates;
 	HashSet<StringName> observed_names;
 	HashMap<String, Vector<String>> string_sources;
 	HashMap<StringName, Vector<String>> protected_sources;
 	HashMap<String, Vector<String>> protected_path_sources;
 	HashMap<StringName, Vector<String>> external_sources;
-	Vector<String> method_reflection_sources;
-	Vector<String> property_reflection_sources;
-	Vector<String> signal_reflection_sources;
+	Vector<String> unresolved_method_reflection_sources;
+	Vector<String> unresolved_property_reflection_sources;
+	Vector<String> unresolved_signal_reflection_sources;
+	Vector<ScopedReflectionUse> scoped_reflection_uses;
+	HashMap<const FoundryScript *, HashSet<StringName>> method_declarations;
+	HashMap<const FoundryScript *, HashSet<StringName>> property_declarations;
+	HashMap<const FoundryScript *, HashSet<StringName>> signal_declarations;
+	HashMap<const FoundryScript *, HashSet<StringName>>
+			scoped_method_reflection_names;
+	HashMap<const FoundryScript *, HashSet<StringName>>
+			scoped_property_reflection_names;
+	HashMap<const FoundryScript *, HashSet<StringName>>
+			scoped_signal_reflection_names;
 	bool unscannable_protected_surface = false;
 	HashSet<const FoundryScript *> included_classes;
 	HashSet<String> included_identities;
@@ -298,16 +314,18 @@ void FSNameManglerAnalysis::_collect_class_identity_reference(
 void FSNameManglerAnalysis::_record_reflection_use(
 		const StringName &p_method, const StringName &p_class, const String &p_source, BuildState &r_state) {
 	Vector<String> *sources = nullptr;
-	if (p_method == SNAME("get_method_list") ||
-			(p_class == SNAME("FSReflection") &&
-					(p_method == SNAME("get_methods") || p_method == SNAME("get_method_descriptors")))) {
-		sources = &r_state.method_reflection_sources;
-	} else if (p_method == SNAME("get_property_list") ||
-			(p_class == SNAME("FSReflection") &&
-					(p_method == SNAME("get_properties") || p_method == SNAME("get_property_descriptors")))) {
-		sources = &r_state.property_reflection_sources;
-	} else if (p_method == SNAME("get_signal_list")) {
-		sources = &r_state.signal_reflection_sources;
+	switch (FSFunction::get_reflection_kind(p_method, p_class)) {
+		case FSFunction::REFLECTION_METHODS:
+			sources = &r_state.unresolved_method_reflection_sources;
+			break;
+		case FSFunction::REFLECTION_PROPERTIES:
+			sources = &r_state.unresolved_property_reflection_sources;
+			break;
+		case FSFunction::REFLECTION_SIGNALS:
+			sources = &r_state.unresolved_signal_reflection_sources;
+			break;
+		default:
+			break;
 	}
 	if (sources == nullptr) {
 		return;
@@ -853,9 +871,48 @@ void FSNameManglerAnalysis::_collect_function(const FSFunction *p_function, Buil
 	for (const Variant &constant : p_function->constants) {
 		_collect_variant(constant, source, r_state);
 	}
+	const auto record_reflection_kind =
+			[&](uint8_t p_kind, const StringName &p_method) {
+				if ((p_function->unresolved_reflection_kinds & p_kind) != 0) {
+					_record_reflection_use(
+							p_method, StringName(), source, r_state);
+				}
+				if ((p_function->self_reflection_kinds & p_kind) == 0) {
+					return;
+				}
+				const FoundryScript *owner = p_function->_script;
+				if (owner == nullptr ||
+						!r_state.included_classes.has(owner)) {
+					_record_reflection_use(
+							p_method, StringName(), source, r_state);
+					return;
+				}
+				BuildState::ScopedReflectionUse use;
+				use.owner = owner;
+				use.kind = p_kind;
+				use.detail = source;
+				if (!use.detail.is_empty()) {
+					use.detail += " calls ";
+				}
+				use.detail += String(p_method) + " on self";
+				for (const BuildState::ScopedReflectionUse &existing :
+						r_state.scoped_reflection_uses) {
+					if (existing.owner == use.owner &&
+							existing.kind == use.kind &&
+							existing.detail == use.detail) {
+						return;
+					}
+				}
+				r_state.scoped_reflection_uses.push_back(use);
+			};
+	record_reflection_kind(
+			FSFunction::REFLECTION_METHODS, SNAME("get_method_list"));
+	record_reflection_kind(
+			FSFunction::REFLECTION_PROPERTIES, SNAME("get_property_list"));
+	record_reflection_kind(
+			FSFunction::REFLECTION_SIGNALS, SNAME("get_signal_list"));
 	for (const StringName &global_name : p_function->global_names) {
 		r_state.observed_names.insert(global_name);
-		_record_reflection_use(global_name, StringName(), source, r_state);
 	}
 	for (const FSFunction::ExportFixups::TypedNameKey &key : p_function->export_fixups.setters) {
 		_add_protected_name(
@@ -876,7 +933,6 @@ void FSNameManglerAnalysis::_collect_function(const FSFunction *p_function, Buil
 				r_state);
 		_add_protected_name(
 				key.method_name, source + " MethodBind method", r_state);
-		_record_reflection_use(key.method_name, key.class_name, source, r_state);
 	}
 	for (const StringName &utility :
 			p_function->export_fixups.utilities) {
@@ -927,6 +983,7 @@ void FSNameManglerAnalysis::_collect_class(const FoundryScript *p_class, BuildSt
 
 	for (const StringName &member : p_class->members) {
 		_add_candidate(member, IDENTIFIER_MEMBER, r_state);
+		r_state.property_declarations[p_class].insert(member);
 		const HashMap<StringName, Vector<FoundryScript::AnnotationUsage>>::ConstIterator annotations =
 				p_class->variable_annotations.find(member);
 		if (annotations) {
@@ -940,6 +997,7 @@ void FSNameManglerAnalysis::_collect_class(const FoundryScript *p_class, BuildSt
 	}
 	for (const KeyValue<StringName, FoundryScript::MemberInfo> &member :
 			p_class->member_indices) {
+		r_state.property_declarations[p_class].insert(member.key);
 		r_state.observed_names.insert(
 				StringName(member.value.property_info.name));
 		_collect_data_type(
@@ -953,6 +1011,7 @@ void FSNameManglerAnalysis::_collect_class(const FoundryScript *p_class, BuildSt
 	}
 	for (const KeyValue<StringName, FoundryScript::MemberInfo> &static_variable : p_class->static_variables_indices) {
 		_add_candidate(static_variable.key, IDENTIFIER_MEMBER, r_state);
+		r_state.property_declarations[p_class].insert(static_variable.key);
 		r_state.observed_names.insert(
 				StringName(static_variable.value.property_info.name));
 		_collect_data_type(
@@ -1005,6 +1064,7 @@ void FSNameManglerAnalysis::_collect_class(const FoundryScript *p_class, BuildSt
 	}
 	for (const KeyValue<StringName, MethodInfo> &signal : p_class->_signals) {
 		_add_candidate(signal.key, IDENTIFIER_SIGNAL, r_state);
+		r_state.signal_declarations[p_class].insert(signal.key);
 		_collect_property_info(
 				signal.value.return_val, source + " signal return", r_state);
 		for (const PropertyInfo &argument : signal.value.arguments) {
@@ -1021,16 +1081,19 @@ void FSNameManglerAnalysis::_collect_class(const FoundryScript *p_class, BuildSt
 	}
 	for (const KeyValue<StringName, FSFunction *> &method : p_class->member_functions) {
 		_add_candidate(method.key, IDENTIFIER_METHOD, r_state);
+		r_state.method_declarations[p_class].insert(method.key);
 		_collect_function(method.value, r_state);
 	}
 	for (const KeyValue<StringName, FoundryScript::EnumFunctionSet> &enum_entry : p_class->enum_functions) {
 		_add_candidate(enum_entry.key, IDENTIFIER_ENUM_OR_CONSTANT, r_state);
 		for (const KeyValue<StringName, FSFunction *> &method : enum_entry.value.instance_functions) {
 			_add_candidate(method.key, IDENTIFIER_METHOD, r_state);
+			r_state.method_declarations[p_class].insert(method.key);
 			_collect_function(method.value, r_state);
 		}
 		for (const KeyValue<StringName, FSFunction *> &method : enum_entry.value.static_functions) {
 			_add_candidate(method.key, IDENTIFIER_METHOD, r_state);
+			r_state.method_declarations[p_class].insert(method.key);
 			_collect_function(method.value, r_state);
 		}
 	}
@@ -1040,6 +1103,7 @@ void FSNameManglerAnalysis::_collect_class(const FoundryScript *p_class, BuildSt
 	for (const KeyValue<StringName, FoundryScript::AbstractTraitRequirement> &requirement :
 			p_class->abstract_trait_requirements) {
 		_add_candidate(requirement.key, IDENTIFIER_METHOD, r_state);
+		r_state.method_declarations[p_class].insert(requirement.key);
 		for (const PropertyInfo &argument : requirement.value.method_info.arguments) {
 			r_state.observed_names.insert(argument.name);
 			_collect_property_info(
@@ -1078,6 +1142,10 @@ void FSNameManglerAnalysis::_collect_class(const FoundryScript *p_class, BuildSt
 					String(conformance.trait_name), source + " conformance trait identity", r_state);
 			for (const KeyValue<StringName, FSFunction *> &witness : conformance.functions) {
 				_add_candidate(witness.key, IDENTIFIER_METHOD, r_state);
+				if (conformance.target_script != nullptr) {
+					r_state.method_declarations[conformance.target_script]
+							.insert(witness.key);
+				}
 				_collect_function(witness.value, r_state);
 			}
 		}
@@ -1268,20 +1336,129 @@ FSNameManglerAnalysis::Result FSNameManglerAnalysis::analyze(const Input &p_inpu
 					state);
 		}
 	}
-	for (const KeyValue<StringName, BuildState::Aggregate> &candidate : state.candidates) {
-		const auto add_reflection_evidence = [&](const Vector<String> &p_sources) {
-			for (const String &source : p_sources) {
-				_add_evidence(candidate.key, KEEP_REFLECTION, source, state);
+	for (const FoundryScript *receiver : state.included_classes) {
+		HashSet<StringName> visible_methods;
+		HashSet<StringName> visible_properties;
+		HashSet<StringName> visible_signals;
+		HashSet<const FoundryScript *> visited;
+		const FoundryScript *current = receiver;
+		while (current != nullptr &&
+				state.included_classes.has(current) &&
+				!visited.has(current)) {
+			visited.insert(current);
+			const HashSet<StringName> *methods =
+					state.method_declarations.getptr(current);
+			if (methods != nullptr) {
+				for (const StringName &name : *methods) {
+					visible_methods.insert(name);
+				}
 			}
-		};
+			const HashSet<StringName> *properties =
+					state.property_declarations.getptr(current);
+			if (properties != nullptr) {
+				for (const StringName &name : *properties) {
+					visible_properties.insert(name);
+				}
+			}
+			const HashSet<StringName> *signals =
+					state.signal_declarations.getptr(current);
+			if (signals != nullptr) {
+				for (const StringName &name : *signals) {
+					visible_signals.insert(name);
+				}
+			}
+			current = current->base.ptr();
+		}
+
+		visited.clear();
+		current = receiver;
+		while (current != nullptr &&
+				state.included_classes.has(current) &&
+				!visited.has(current)) {
+			visited.insert(current);
+			HashSet<StringName> &method_names =
+					state.scoped_method_reflection_names[current];
+			for (const StringName &name : visible_methods) {
+				method_names.insert(name);
+			}
+			HashSet<StringName> &property_names =
+					state.scoped_property_reflection_names[current];
+			for (const StringName &name : visible_properties) {
+				property_names.insert(name);
+			}
+			HashSet<StringName> &signal_names =
+					state.scoped_signal_reflection_names[current];
+			for (const StringName &name : visible_signals) {
+				signal_names.insert(name);
+			}
+			current = current->base.ptr();
+		}
+	}
+	const auto reflection_name_is_visible =
+			[&](const FoundryScript *p_owner, uint8_t p_kind,
+					const StringName &p_name) {
+				const HashSet<StringName> *names = nullptr;
+				switch (p_kind) {
+					case FSFunction::REFLECTION_METHODS:
+						names =
+								state.scoped_method_reflection_names.getptr(
+										p_owner);
+						break;
+					case FSFunction::REFLECTION_PROPERTIES:
+						names =
+								state.scoped_property_reflection_names.getptr(
+										p_owner);
+						break;
+					case FSFunction::REFLECTION_SIGNALS:
+						names =
+								state.scoped_signal_reflection_names.getptr(
+										p_owner);
+						break;
+					default:
+						break;
+				}
+				return names != nullptr && names->has(p_name);
+			};
+	for (const KeyValue<StringName, BuildState::Aggregate> &candidate :
+			state.candidates) {
+		const auto add_reflection_evidence =
+				[&](const Vector<String> &p_sources) {
+					for (const String &source : p_sources) {
+						_add_evidence(
+								candidate.key, KEEP_REFLECTION, source,
+								state);
+					}
+				};
 		if (candidate.value.kinds.has((int)IDENTIFIER_METHOD)) {
-			add_reflection_evidence(state.method_reflection_sources);
+			add_reflection_evidence(
+					state.unresolved_method_reflection_sources);
 		}
 		if (candidate.value.kinds.has((int)IDENTIFIER_MEMBER)) {
-			add_reflection_evidence(state.property_reflection_sources);
+			add_reflection_evidence(
+					state.unresolved_property_reflection_sources);
 		}
 		if (candidate.value.kinds.has((int)IDENTIFIER_SIGNAL)) {
-			add_reflection_evidence(state.signal_reflection_sources);
+			add_reflection_evidence(
+					state.unresolved_signal_reflection_sources);
+		}
+		for (const BuildState::ScopedReflectionUse &use :
+				state.scoped_reflection_uses) {
+			const bool compatible =
+					(use.kind == FSFunction::REFLECTION_METHODS &&
+							candidate.value.kinds.has(
+									(int)IDENTIFIER_METHOD)) ||
+					(use.kind == FSFunction::REFLECTION_PROPERTIES &&
+							candidate.value.kinds.has(
+									(int)IDENTIFIER_MEMBER)) ||
+					(use.kind == FSFunction::REFLECTION_SIGNALS &&
+							candidate.value.kinds.has(
+									(int)IDENTIFIER_SIGNAL));
+			if (compatible &&
+					reflection_name_is_visible(
+							use.owner, use.kind, candidate.key)) {
+				_add_evidence(
+						candidate.key, KEEP_REFLECTION, use.detail, state);
+			}
 		}
 	}
 	if (!p_input.complete_project_graph) {

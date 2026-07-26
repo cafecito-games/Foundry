@@ -70,6 +70,7 @@ struct FSNameManglerApplication::Transaction::Data {
 	struct ClassSnapshot {
 		Ref<FoundryScript> script;
 		FoundryScript *parent = nullptr;
+		FoundryScript *base = nullptr;
 
 		StringName trait_type_name;
 		StringName local_name;
@@ -110,9 +111,13 @@ struct FSNameManglerApplication::Transaction::Data {
 
 	struct FunctionSnapshot {
 		FSFunction *function = nullptr;
+		FoundryScript *reflection_owner = nullptr;
 		StringName owner_name;
 		bool lambda = false;
 		bool safe_arguments = false;
+		uint8_t self_reflection_kinds = FSFunction::REFLECTION_NONE;
+		uint8_t unresolved_reflection_kinds =
+				FSFunction::REFLECTION_NONE;
 
 		StringName name;
 		Vector<FSDataType> argument_types;
@@ -136,6 +141,12 @@ struct FSNameManglerApplication::Transaction::Data {
 	Vector<FunctionSnapshot> function_snapshots;
 	Vector<RegistrySnapshot> registry_snapshots;
 	HashMap<const FoundryScript *, int> class_snapshot_indices;
+	HashMap<const FoundryScript *, HashSet<StringName>>
+			scoped_method_reflection_names;
+	HashMap<const FoundryScript *, HashSet<StringName>>
+			scoped_property_reflection_names;
+	HashMap<const FoundryScript *, HashSet<StringName>>
+			scoped_signal_reflection_names;
 	HashSet<const FoundryScript *> indexed_classes;
 	HashSet<FSFunction *> indexed_functions;
 	HashSet<StringName> project_sources;
@@ -155,6 +166,9 @@ struct FSNameManglerApplication::Transaction::Data {
 		function_snapshots.clear();
 		registry_snapshots.clear();
 		class_snapshot_indices.clear();
+		scoped_method_reflection_names.clear();
+		scoped_property_reflection_names.clear();
+		scoped_signal_reflection_names.clear();
 		indexed_classes.clear();
 		indexed_functions.clear();
 		project_sources.clear();
@@ -558,6 +572,7 @@ struct FSNameManglerApplication::Transaction::Data {
 		ClassSnapshot snapshot;
 		snapshot.script = p_script;
 		snapshot.parent = p_parent;
+		snapshot.base = p_script->base.ptr();
 		snapshot.trait_type_name = p_script->trait_type_name;
 		snapshot.local_name = p_script->local_name;
 		snapshot.global_name = p_script->global_name;
@@ -613,8 +628,13 @@ struct FSNameManglerApplication::Transaction::Data {
 
 		FunctionSnapshot snapshot;
 		snapshot.function = p_function;
+		snapshot.reflection_owner = p_function->_script;
 		snapshot.owner_name = p_owner_name;
 		snapshot.lambda = p_lambda;
+		snapshot.self_reflection_kinds =
+				p_function->self_reflection_kinds;
+		snapshot.unresolved_reflection_kinds =
+				p_function->unresolved_reflection_kinds;
 		snapshot.safe_arguments = p_lambda ||
 				(p_owner_name != StringName() && rename_map.has(p_owner_name));
 		snapshot.name = p_function->name;
@@ -1553,62 +1573,134 @@ struct FSNameManglerApplication::Transaction::Data {
 			}
 		}
 
-		bool reflects_methods = false;
-		bool reflects_properties = false;
-		bool reflects_signals = false;
-		const auto record_reflection =
-				[&](const StringName &p_method,
-						const StringName &p_class) {
-					if (p_method == SNAME("get_method_list") ||
-							(p_class == SNAME("FSReflection") &&
-									(p_method == SNAME("get_methods") ||
-											p_method ==
-													SNAME("get_method_descriptors")))) {
-						reflects_methods = true;
-					} else if (p_method == SNAME("get_property_list") ||
-							(p_class == SNAME("FSReflection") &&
-									(p_method == SNAME("get_properties") ||
-											p_method ==
-													SNAME("get_property_descriptors")))) {
-						reflects_properties = true;
-					} else if (p_method == SNAME("get_signal_list")) {
-						reflects_signals = true;
+		const auto class_declares_reflected_name =
+				[&](const ClassSnapshot &p_snapshot, uint8_t p_kind) {
+					switch (p_kind) {
+						case FSFunction::REFLECTION_METHODS: {
+							if (p_snapshot.member_functions.has(p_name) ||
+									p_snapshot.abstract_trait_requirements.has(
+											p_name)) {
+								return true;
+							}
+							for (const KeyValue<StringName,
+										 FoundryScript::EnumFunctionSet>
+											&enum_entry :
+									p_snapshot.enum_functions) {
+								if (enum_entry.value.instance_functions.has(
+											p_name) ||
+										enum_entry.value.static_functions.has(
+												p_name)) {
+									return true;
+								}
+							}
+						} break;
+						case FSFunction::REFLECTION_PROPERTIES:
+							return p_snapshot.members.has(p_name) ||
+									p_snapshot.member_indices.has(p_name) ||
+									p_snapshot.static_variables_indices.has(
+											p_name);
+						case FSFunction::REFLECTION_SIGNALS:
+							return p_snapshot.signals.has(p_name);
+						default:
+							break;
 					}
+					return false;
 				};
+		const auto registry_declares_reflected_name =
+				[&](const FoundryScript *p_owner, uint8_t p_kind) {
+					if (p_kind != FSFunction::REFLECTION_METHODS) {
+						return false;
+					}
+					for (const RegistrySnapshot &registry :
+							registry_snapshots) {
+						for (const FSConformanceRegistry::RuntimeConformance
+										&conformance :
+								registry.entries) {
+							if (conformance.target_script == p_owner &&
+									conformance.functions.has(p_name)) {
+								return true;
+							}
+						}
+					}
+					return false;
+				};
+		const auto project_declares_reflected_name =
+				[&](uint8_t p_kind) {
+					for (const ClassSnapshot &snapshot : class_snapshots) {
+						if (class_declares_reflected_name(snapshot, p_kind) ||
+								registry_declares_reflected_name(
+										snapshot.script.ptr(), p_kind)) {
+							return true;
+						}
+					}
+					return false;
+				};
+		const auto reflection_name_is_visible =
+				[&](const FoundryScript *p_owner, uint8_t p_kind) {
+					const HashSet<StringName> *names = nullptr;
+					switch (p_kind) {
+						case FSFunction::REFLECTION_METHODS:
+							names =
+									scoped_method_reflection_names.getptr(
+											p_owner);
+							break;
+						case FSFunction::REFLECTION_PROPERTIES:
+							names =
+									scoped_property_reflection_names.getptr(
+											p_owner);
+							break;
+						case FSFunction::REFLECTION_SIGNALS:
+							names =
+									scoped_signal_reflection_names.getptr(
+											p_owner);
+							break;
+						default:
+							break;
+					}
+					return names != nullptr && names->has(p_name);
+				};
+
+		uint8_t unresolved_reflection_kinds =
+				FSFunction::REFLECTION_NONE;
 		for (const FunctionSnapshot &snapshot : function_snapshots) {
-			for (const StringName &global_name : snapshot.global_names) {
-				record_reflection(global_name, StringName());
+			unresolved_reflection_kinds |=
+					snapshot.unresolved_reflection_kinds;
+			if (snapshot.self_reflection_kinds !=
+							FSFunction::REFLECTION_NONE &&
+					(snapshot.reflection_owner == nullptr ||
+							!class_snapshot_indices.has(
+									snapshot.reflection_owner))) {
+				unresolved_reflection_kinds |=
+						snapshot.self_reflection_kinds;
 			}
-			for (const FSFunction::ExportFixups::MethodBindKey &key :
-					snapshot.function->export_fixups.method_binds) {
-				record_reflection(key.method_name, key.class_name);
+		}
+		const uint8_t reflection_kinds[] = {
+			FSFunction::REFLECTION_METHODS,
+			FSFunction::REFLECTION_PROPERTIES,
+			FSFunction::REFLECTION_SIGNALS,
+		};
+		for (const uint8_t kind : reflection_kinds) {
+			if ((unresolved_reflection_kinds & kind) != 0 &&
+					project_declares_reflected_name(kind)) {
+				r_surface = "reflection enumeration";
+				return true;
+			}
+			for (const FunctionSnapshot &snapshot : function_snapshots) {
+				if ((snapshot.self_reflection_kinds & kind) != 0 &&
+						snapshot.reflection_owner != nullptr &&
+						class_snapshot_indices.has(
+								snapshot.reflection_owner) &&
+						reflection_name_is_visible(
+								snapshot.reflection_owner, kind)) {
+					r_surface = "reflection enumeration";
+					return true;
+				}
 			}
 		}
 
 		HashSet<const Script *> visited_external_scripts;
 		for (const ClassSnapshot &snapshot : class_snapshots) {
 			const FoundryScript *script = snapshot.script.ptr();
-			bool is_method_declaration =
-					snapshot.member_functions.has(p_name) ||
-					snapshot.abstract_trait_requirements.has(p_name);
-			for (const KeyValue<StringName,
-						 FoundryScript::EnumFunctionSet> &enum_entry :
-					snapshot.enum_functions) {
-				is_method_declaration =
-						is_method_declaration ||
-						enum_entry.value.instance_functions.has(p_name) ||
-						enum_entry.value.static_functions.has(p_name);
-			}
-			if ((reflects_methods && is_method_declaration) ||
-					(reflects_properties &&
-							(snapshot.members.has(p_name) ||
-									snapshot.member_indices.has(p_name) ||
-									snapshot.static_variables_indices.has(
-											p_name))) ||
-					(reflects_signals && snapshot.signals.has(p_name))) {
-				r_surface = "reflection enumeration";
-				return true;
-			}
 			const String script_path = script->get_script_path();
 			if (script_path.contains(String(p_name)) ||
 					script->simplified_icon_path.contains(String(p_name))) {
@@ -1994,11 +2086,6 @@ struct FSNameManglerApplication::Transaction::Data {
 							conformance.target_script, p_name,
 							visited_external_scripts, 0)) {
 					r_surface = "conformance target script";
-					return true;
-				}
-				if (reflects_methods &&
-						conformance.functions.has(p_name)) {
-					r_surface = "reflection enumeration";
 					return true;
 				}
 			}
@@ -2543,6 +2630,127 @@ struct FSNameManglerApplication::Transaction::Data {
 			registry_snapshots.push_back(snapshot);
 		}
 		return true;
+	}
+
+	void build_scoped_reflection_names() {
+		scoped_method_reflection_names.clear();
+		scoped_property_reflection_names.clear();
+		scoped_signal_reflection_names.clear();
+
+		const auto add_class_declarations =
+				[&](const ClassSnapshot &p_snapshot,
+						HashSet<StringName> &r_methods,
+						HashSet<StringName> &r_properties,
+						HashSet<StringName> &r_signals) {
+					for (const KeyValue<StringName, FSFunction *> &method :
+							p_snapshot.member_functions) {
+						r_methods.insert(method.key);
+					}
+					for (const KeyValue<StringName,
+								 FoundryScript::AbstractTraitRequirement>
+									&requirement :
+							p_snapshot.abstract_trait_requirements) {
+						r_methods.insert(requirement.key);
+					}
+					for (const KeyValue<StringName,
+								 FoundryScript::EnumFunctionSet> &enum_entry :
+							p_snapshot.enum_functions) {
+						for (const KeyValue<StringName, FSFunction *> &method :
+								enum_entry.value.instance_functions) {
+							r_methods.insert(method.key);
+						}
+						for (const KeyValue<StringName, FSFunction *> &method :
+								enum_entry.value.static_functions) {
+							r_methods.insert(method.key);
+						}
+					}
+					for (const StringName &member : p_snapshot.members) {
+						r_properties.insert(member);
+					}
+					for (const KeyValue<StringName, FoundryScript::MemberInfo>
+									&member : p_snapshot.member_indices) {
+						r_properties.insert(member.key);
+					}
+					for (const KeyValue<StringName, FoundryScript::MemberInfo>
+									&member :
+							p_snapshot.static_variables_indices) {
+						r_properties.insert(member.key);
+					}
+					for (const KeyValue<StringName, MethodInfo> &signal :
+							p_snapshot.signals) {
+						r_signals.insert(signal.key);
+					}
+				};
+		const auto add_registry_methods =
+				[&](const FoundryScript *p_owner,
+						HashSet<StringName> &r_methods) {
+					for (const RegistrySnapshot &registry :
+							registry_snapshots) {
+						for (const FSConformanceRegistry::RuntimeConformance
+										&conformance :
+								registry.entries) {
+							if (conformance.target_script != p_owner) {
+								continue;
+							}
+							for (const KeyValue<StringName, FSFunction *>
+											&method :
+									conformance.functions) {
+								r_methods.insert(method.key);
+							}
+						}
+					}
+				};
+		const auto merge_names =
+				[](const HashSet<StringName> &p_source,
+						HashSet<StringName> &r_target) {
+					for (const StringName &name : p_source) {
+						r_target.insert(name);
+					}
+				};
+
+		for (const ClassSnapshot &receiver : class_snapshots) {
+			HashSet<StringName> visible_methods;
+			HashSet<StringName> visible_properties;
+			HashSet<StringName> visible_signals;
+			HashSet<const FoundryScript *> visited;
+			const FoundryScript *current = receiver.script.ptr();
+			while (current != nullptr && !visited.has(current)) {
+				visited.insert(current);
+				const int *snapshot_index =
+						class_snapshot_indices.getptr(current);
+				if (snapshot_index == nullptr) {
+					break;
+				}
+				const ClassSnapshot &snapshot =
+						class_snapshots[*snapshot_index];
+				add_class_declarations(
+						snapshot, visible_methods, visible_properties,
+						visible_signals);
+				add_registry_methods(current, visible_methods);
+				current = snapshot.base;
+			}
+
+			visited.clear();
+			current = receiver.script.ptr();
+			while (current != nullptr && !visited.has(current)) {
+				visited.insert(current);
+				const int *snapshot_index =
+						class_snapshot_indices.getptr(current);
+				if (snapshot_index == nullptr) {
+					break;
+				}
+				merge_names(
+						visible_methods,
+						scoped_method_reflection_names[current]);
+				merge_names(
+						visible_properties,
+						scoped_property_reflection_names[current]);
+				merge_names(
+						visible_signals,
+						scoped_signal_reflection_names[current]);
+				current = class_snapshots[*snapshot_index].base;
+			}
+		}
 	}
 
 	bool build_registry_plan(Vector<Diagnostic> &r_diagnostics) {
@@ -3498,6 +3706,7 @@ struct FSNameManglerApplication::Transaction::Data {
 			return false;
 		}
 		snapshot_functions();
+		build_scoped_reflection_names();
 		if (!validate_closed_graph(root_set, r_diagnostics)) {
 			return false;
 		}

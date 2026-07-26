@@ -1156,7 +1156,27 @@ FSByteCodeGenerator::CallTarget FSByteCodeGenerator::get_call_target(const FSCod
 	}
 }
 
+#ifdef TOOLS_ENABLED
+void FSByteCodeGenerator::record_reflection_call(
+		const StringName &p_method, const StringName &p_class,
+		bool p_receiver_is_self) {
+	const uint8_t kind = FSFunction::get_reflection_kind(p_method, p_class);
+	if (kind == FSFunction::REFLECTION_NONE) {
+		return;
+	}
+	if (p_receiver_is_self && p_class != SNAME("FSReflection")) {
+		function->self_reflection_kinds |= kind;
+	} else {
+		function->unresolved_reflection_kinds |= kind;
+	}
+}
+#endif
+
 void FSByteCodeGenerator::write_call(const Address &p_target, const Address &p_base, const StringName &p_function_name, const Vector<Address> &p_arguments) {
+#ifdef TOOLS_ENABLED
+	record_reflection_call(
+			p_function_name, StringName(), p_base.mode == Address::SELF);
+#endif
 	append_opcode_and_argcount(p_target.mode == Address::NIL ? FSFunction::OPCODE_CALL : FSFunction::OPCODE_CALL_RETURN, 2 + p_arguments.size());
 	for (int i = 0; i < p_arguments.size(); i++) {
 		append(p_arguments[i]);
@@ -1170,6 +1190,9 @@ void FSByteCodeGenerator::write_call(const Address &p_target, const Address &p_b
 }
 
 void FSByteCodeGenerator::write_super_call(const Address &p_target, const StringName &p_function_name, const Vector<Address> &p_arguments) {
+#ifdef TOOLS_ENABLED
+	record_reflection_call(p_function_name, StringName(), true);
+#endif
 	append_opcode_and_argcount(FSFunction::OPCODE_CALL_SELF_BASE, 1 + p_arguments.size());
 	for (int i = 0; i < p_arguments.size(); i++) {
 		append(p_arguments[i]);
@@ -1182,6 +1205,10 @@ void FSByteCodeGenerator::write_super_call(const Address &p_target, const String
 }
 
 void FSByteCodeGenerator::write_call_async(const Address &p_target, const Address &p_base, const StringName &p_function_name, const Vector<Address> &p_arguments) {
+#ifdef TOOLS_ENABLED
+	record_reflection_call(
+			p_function_name, StringName(), p_base.mode == Address::SELF);
+#endif
 	append_opcode_and_argcount(FSFunction::OPCODE_CALL_ASYNC, 2 + p_arguments.size());
 	for (int i = 0; i < p_arguments.size(); i++) {
 		append(p_arguments[i]);
@@ -1363,6 +1390,10 @@ void FSByteCodeGenerator::write_call_builtin_type_static(const Address &p_target
 void FSByteCodeGenerator::write_call_native_static(const Address &p_target, const StringName &p_class, const StringName &p_method, const Vector<Address> &p_arguments) {
 	MethodBind *method = ClassDB::get_method(p_class, p_method);
 
+#ifdef TOOLS_ENABLED
+	record_reflection_call(p_method, p_class, false);
+#endif
+
 	// Perform regular call.
 	append_opcode_and_argcount(FSFunction::OPCODE_CALL_NATIVE_STATIC, p_arguments.size() + 1);
 	for (int i = 0; i < p_arguments.size(); i++) {
@@ -1382,6 +1413,11 @@ void FSByteCodeGenerator::write_call_native_static(const Address &p_target, cons
 void FSByteCodeGenerator::write_call_native_static_validated(const FSCodeGenerator::Address &p_target, MethodBind *p_method, const Vector<FSCodeGenerator::Address> &p_arguments) {
 	Variant::Type return_type = Variant::NIL;
 	bool has_return = p_method->has_return();
+
+#ifdef TOOLS_ENABLED
+	record_reflection_call(
+			p_method->get_name(), p_method->get_instance_class(), false);
+#endif
 
 	if (has_return) {
 		PropertyInfo return_info = p_method->get_return_info();
@@ -1413,6 +1449,11 @@ void FSByteCodeGenerator::write_call_native_static_validated(const FSCodeGenerat
 }
 
 void FSByteCodeGenerator::write_call_method_bind(const Address &p_target, const Address &p_base, MethodBind *p_method, const Vector<Address> &p_arguments) {
+#ifdef TOOLS_ENABLED
+	record_reflection_call(
+			p_method->get_name(), p_method->get_instance_class(),
+			p_base.mode == Address::SELF);
+#endif
 	append_opcode_and_argcount(p_target.mode == Address::NIL ? FSFunction::OPCODE_CALL_METHOD_BIND : FSFunction::OPCODE_CALL_METHOD_BIND_RET, 2 + p_arguments.size());
 	for (int i = 0; i < p_arguments.size(); i++) {
 		append(p_arguments[i]);
@@ -1431,6 +1472,12 @@ void FSByteCodeGenerator::write_call_method_bind(const Address &p_target, const 
 void FSByteCodeGenerator::write_call_method_bind_validated(const Address &p_target, const Address &p_base, MethodBind *p_method, const Vector<Address> &p_arguments) {
 	Variant::Type return_type = Variant::NIL;
 	bool has_return = p_method->has_return();
+
+#ifdef TOOLS_ENABLED
+	record_reflection_call(
+			p_method->get_name(), p_method->get_instance_class(),
+			p_base.mode == Address::SELF);
+#endif
 
 	if (has_return) {
 		PropertyInfo return_info = p_method->get_return_info();
@@ -1463,6 +1510,9 @@ void FSByteCodeGenerator::write_call_method_bind_validated(const Address &p_targ
 }
 
 void FSByteCodeGenerator::write_call_self(const Address &p_target, const StringName &p_function_name, const Vector<Address> &p_arguments) {
+#ifdef TOOLS_ENABLED
+	record_reflection_call(p_function_name, StringName(), true);
+#endif
 	append_opcode_and_argcount(p_target.mode == Address::NIL ? FSFunction::OPCODE_CALL : FSFunction::OPCODE_CALL_RETURN, 2 + p_arguments.size());
 	for (int i = 0; i < p_arguments.size(); i++) {
 		append(p_arguments[i]);
@@ -1476,6 +1526,9 @@ void FSByteCodeGenerator::write_call_self(const Address &p_target, const StringN
 }
 
 void FSByteCodeGenerator::write_call_self_async(const Address &p_target, const StringName &p_function_name, const Vector<Address> &p_arguments) {
+#ifdef TOOLS_ENABLED
+	record_reflection_call(p_function_name, StringName(), true);
+#endif
 	append_opcode_and_argcount(FSFunction::OPCODE_CALL_ASYNC, 2 + p_arguments.size());
 	for (int i = 0; i < p_arguments.size(); i++) {
 		append(p_arguments[i]);
@@ -1489,6 +1542,10 @@ void FSByteCodeGenerator::write_call_self_async(const Address &p_target, const S
 }
 
 void FSByteCodeGenerator::write_call_script_function(const Address &p_target, const Address &p_base, const StringName &p_function_name, const Vector<Address> &p_arguments) {
+#ifdef TOOLS_ENABLED
+	record_reflection_call(
+			p_function_name, StringName(), p_base.mode == Address::SELF);
+#endif
 	append_opcode_and_argcount(p_target.mode == Address::NIL ? FSFunction::OPCODE_CALL : FSFunction::OPCODE_CALL_RETURN, 2 + p_arguments.size());
 	for (int i = 0; i < p_arguments.size(); i++) {
 		append(p_arguments[i]);

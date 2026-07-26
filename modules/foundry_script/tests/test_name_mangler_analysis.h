@@ -424,6 +424,174 @@ TEST_CASE("[FoundryScript][NameManglerAnalysis] Reflection enumeration keeps the
 	}
 }
 
+TEST_CASE("[FoundryScript][NameMangler][Reflection][Analysis] Self enumeration scopes retention to the receiver hierarchy") {
+	const StringName base_method = SNAME("reflection_scope_base_method_1237");
+	const StringName owner_method = SNAME("reflection_scope_owner_method_1237");
+	const StringName unrelated_method = SNAME("reflection_scope_unrelated_method_1237");
+	const StringName shared_method = SNAME("reflection_scope_shared_method_1237");
+
+	const Ref<FoundryScript> base = compile_bytecode_test_source(
+			"extends RefCounted\n"
+			"func reflection_scope_base_method_1237() -> void:\n"
+			"\tpass\n");
+	const Ref<FoundryScript> owner = compile_bytecode_test_source(vformat(
+			"extends \"%s\"\n"
+			"func reflection_scope_owner_method_1237() -> void:\n"
+			"\tpass\n"
+			"func reflection_scope_shared_method_1237() -> void:\n"
+			"\tpass\n"
+			"func inspect_reflection_scope_1237() -> void:\n"
+			"\tget_method_list()\n",
+			base->get_script_path()));
+	const Ref<FoundryScript> unrelated = compile_bytecode_test_source(
+			"extends RefCounted\n"
+			"func reflection_scope_unrelated_method_1237() -> void:\n"
+			"\tpass\n"
+			"func reflection_scope_shared_method_1237() -> void:\n"
+			"\tpass\n");
+
+	FSNameManglerAnalysis::Input forward_input;
+	forward_input.scripts.push_back(base);
+	forward_input.scripts.push_back(owner);
+	forward_input.scripts.push_back(unrelated);
+	const FSNameManglerAnalysis::Result forward =
+			FSNameManglerAnalysis::analyze(forward_input);
+
+	FSNameManglerAnalysis::Input reverse_input;
+	reverse_input.scripts.push_back(unrelated);
+	reverse_input.scripts.push_back(owner);
+	reverse_input.scripts.push_back(base);
+	const FSNameManglerAnalysis::Result reverse =
+			FSNameManglerAnalysis::analyze(reverse_input);
+
+	REQUIRE_EQ(forward.error, OK);
+	REQUIRE_EQ(reverse.error, OK);
+	CHECK_EQ(name_analysis_snapshot(forward), name_analysis_snapshot(reverse));
+	CHECK_FALSE(forward.rename_map.has(base_method));
+	CHECK(name_analysis_has_reason(
+			forward, base_method, FSNameManglerAnalysis::KEEP_REFLECTION));
+	CHECK_FALSE(forward.rename_map.has(owner_method));
+	CHECK(name_analysis_has_reason(
+			forward, owner_method, FSNameManglerAnalysis::KEEP_REFLECTION));
+	CHECK(forward.rename_map.has(unrelated_method));
+	CHECK_FALSE(name_analysis_has_reason(
+			forward, unrelated_method, FSNameManglerAnalysis::KEEP_REFLECTION));
+	CHECK_FALSE(forward.rename_map.has(shared_method));
+	CHECK(name_analysis_has_reason(
+			forward, shared_method, FSNameManglerAnalysis::KEEP_REFLECTION));
+
+	const StringName unresolved_method_a =
+			SNAME("reflection_scope_unresolved_method_a_1237");
+	const StringName unresolved_method_b =
+			SNAME("reflection_scope_unresolved_method_b_1237");
+	const Ref<FoundryScript> unresolved_declarations =
+			compile_bytecode_test_source(
+					"extends RefCounted\n"
+					"func reflection_scope_unresolved_method_a_1237() -> void:\n"
+					"\tpass\n"
+					"func reflection_scope_unresolved_method_b_1237() -> void:\n"
+					"\tpass\n");
+	const Ref<FoundryScript> unresolved_caller =
+			compile_bytecode_test_source(
+					"extends RefCounted\n"
+					"func inspect_unresolved_scope_1237(target: Object) -> void:\n"
+					"\ttarget.get_method_list()\n");
+	FSNameManglerAnalysis::Input unresolved_input;
+	unresolved_input.scripts.push_back(unresolved_declarations);
+	unresolved_input.scripts.push_back(unresolved_caller);
+	const FSNameManglerAnalysis::Result unresolved =
+			FSNameManglerAnalysis::analyze(unresolved_input);
+	REQUIRE_EQ(unresolved.error, OK);
+	CHECK_FALSE(unresolved.rename_map.has(unresolved_method_a));
+	CHECK_FALSE(unresolved.rename_map.has(unresolved_method_b));
+	CHECK(name_analysis_has_reason(
+			unresolved, unresolved_method_a,
+			FSNameManglerAnalysis::KEEP_REFLECTION));
+	CHECK(name_analysis_has_reason(
+			unresolved, unresolved_method_b,
+			FSNameManglerAnalysis::KEEP_REFLECTION));
+}
+
+TEST_CASE("[FoundryScript][NameMangler][Reflection][Analysis] Base-owned self enumeration keeps derived declarations") {
+	const StringName derived_method =
+			SNAME("reflection_dynamic_derived_method_1237");
+	const StringName derived_property =
+			SNAME("reflection_dynamic_derived_property_1237");
+	const StringName derived_signal =
+			SNAME("reflection_dynamic_derived_signal_1237");
+	const StringName unrelated_method =
+			SNAME("reflection_dynamic_unrelated_method_1237");
+	const StringName unrelated_property =
+			SNAME("reflection_dynamic_unrelated_property_1237");
+	const StringName unrelated_signal =
+			SNAME("reflection_dynamic_unrelated_signal_1237");
+
+	const Ref<FoundryScript> base = compile_bytecode_test_source(
+			"extends RefCounted\n"
+			"var reflection_dynamic_base_property_1237: int\n"
+			"signal reflection_dynamic_base_signal_1237\n"
+			"func reflection_dynamic_base_method_1237() -> void:\n"
+			"\tpass\n"
+			"func inspect_reflection_dynamic_methods_1237() -> void:\n"
+			"\tget_method_list()\n"
+			"func inspect_reflection_dynamic_properties_1237() -> void:\n"
+			"\tget_property_list()\n"
+			"func inspect_reflection_dynamic_signals_1237() -> void:\n"
+			"\tget_signal_list()\n");
+	const Ref<FoundryScript> derived = compile_bytecode_test_source(vformat(
+			"extends \"%s\"\n"
+			"var reflection_dynamic_derived_property_1237: int\n"
+			"signal reflection_dynamic_derived_signal_1237\n"
+			"func reflection_dynamic_derived_method_1237() -> void:\n"
+			"\tpass\n",
+			base->get_script_path()));
+	const Ref<FoundryScript> unrelated = compile_bytecode_test_source(
+			"extends RefCounted\n"
+			"var reflection_dynamic_unrelated_property_1237: int\n"
+			"signal reflection_dynamic_unrelated_signal_1237\n"
+			"func reflection_dynamic_unrelated_method_1237() -> void:\n"
+			"\tpass\n");
+
+	FSNameManglerAnalysis::Input forward_input;
+	forward_input.scripts.push_back(base);
+	forward_input.scripts.push_back(derived);
+	forward_input.scripts.push_back(unrelated);
+	const FSNameManglerAnalysis::Result forward =
+			FSNameManglerAnalysis::analyze(forward_input);
+	FSNameManglerAnalysis::Input reverse_input;
+	reverse_input.scripts.push_back(unrelated);
+	reverse_input.scripts.push_back(derived);
+	reverse_input.scripts.push_back(base);
+	const FSNameManglerAnalysis::Result reverse =
+			FSNameManglerAnalysis::analyze(reverse_input);
+	REQUIRE_EQ(forward.error, OK);
+	REQUIRE_EQ(reverse.error, OK);
+	CHECK_EQ(name_analysis_snapshot(forward), name_analysis_snapshot(reverse));
+
+	const StringName derived_names[] = {
+		derived_method,
+		derived_property,
+		derived_signal,
+	};
+	const StringName unrelated_names[] = {
+		unrelated_method,
+		unrelated_property,
+		unrelated_signal,
+	};
+	for (int i = 0; i < 3; i++) {
+		CAPTURE(derived_names[i]);
+		CHECK_FALSE(forward.rename_map.has(derived_names[i]));
+		CHECK(name_analysis_has_reason(
+				forward, derived_names[i],
+				FSNameManglerAnalysis::KEEP_REFLECTION));
+		CAPTURE(unrelated_names[i]);
+		CHECK(forward.rename_map.has(unrelated_names[i]));
+		CHECK_FALSE(name_analysis_has_reason(
+				forward, unrelated_names[i],
+				FSNameManglerAnalysis::KEEP_REFLECTION));
+	}
+}
+
 TEST_CASE("[FoundryScript][NameManglerAnalysis] Project ordering and keep evidence produce one stable global decision") {
 	const Ref<FoundryScript> first = compile_bytecode_test_source(
 			"var shared_name: int\n"
