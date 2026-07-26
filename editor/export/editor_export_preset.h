@@ -101,6 +101,8 @@ private:
 
 	String script_key;
 	ScriptExportMode script_mode = MODE_SCRIPT_COMPILED_BYTECODE;
+	bool script_name_mangling_enabled = false;
+	String script_name_mangling_keep_rules;
 
 	void _save_presets_if_available() const;
 	void _emit_presets_runnable_changed_if_available() const;
@@ -208,6 +210,12 @@ public:
 
 	void set_script_export_mode(ScriptExportMode p_mode);
 	ScriptExportMode get_script_export_mode() const;
+	void set_script_name_mangling_enabled(bool p_enabled);
+	bool is_script_name_mangling_enabled() const;
+	void set_script_name_mangling_keep_rules(const String &p_path);
+	String get_script_name_mangling_keep_rules() const;
+	bool is_script_name_mangling_available() const;
+	void copy_script_name_mangling_settings_from(const Ref<EditorExportPreset> &p_source);
 
 	Variant _get_or_env(const StringName &p_name, const String &p_env_var) const {
 		return get_or_env(p_name, p_env_var);

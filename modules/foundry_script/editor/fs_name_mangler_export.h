@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  fs_bytecode_verifier.h                                                */
+/*  fs_name_mangler_export.h                                              */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -30,35 +30,51 @@
 
 #pragma once
 
+#ifdef TOOLS_ENABLED
+
 #include "core/error/error_list.h"
-#include "core/string/string_name.h"
 #include "core/string/ustring.h"
+#include "core/templates/rb_map.h"
 #include "core/templates/vector.h"
 
-class FSFunction;
-
-// Link-time bounds checker for a deserialized `.fsb` opcode stream. The release VM performs no
-// bounds checking on the instruction stream (`GET_VARIANT_PTR` is unchecked without `DEBUG_ENABLED`,
-// and `GD_ERR_BREAK` compiles to nothing), so a hostile or corrupted `.fsb` that passed the loader's
-// structural checks could still make the VM read or write out of bounds at execution time. The
-// verifier walks every deserialized function's opcode stream once — mirroring the exact per-opcode
-// operand layout the VM uses to advance `ip` — and rejects any instruction whose length overruns the
-// code, any operand address outside its address space (stack/constant/member), any jump target
-// outside the code (and, more strictly, not landing on an instruction boundary), and any table index
-// (operators, setters/getters, keyed/indexed setters/getters, builtin methods, constructors,
-// utilities, script utilities, method binds, lambdas, global names, the language global array) that
-// is out of range for its table. It runs in all builds and has no `DEBUG_ENABLED` dependency.
-class FSBytecodeVerifier {
+class FSNameManglerExport {
 public:
-	// `p_member_address_count` is the size of the member address space the function may reference —
-	// the owning class's flattened member count. It is an upper bound: a witness dispatched without
-	// an instance has an empty member space, but verifying against the class member count never
-	// rejects a well-formed function and keeps the check independent of any concrete instance.
-	// Tools callers may also recover the names used by OPCODE_STORE_NAMED_GLOBAL while this
-	// authoritative instruction walk has both verified the operand and resolved its global-name
-	// table entry. This restores export-validation evidence after a `.fsb` round trip without
-	// duplicating the opcode layout or changing the bytecode format.
-	static Error verify_function(const FSFunction *p_function, int p_member_address_count,
-			const String &p_script_path, Vector<int> *r_operator_cache_offsets = nullptr,
-			Vector<StringName> *r_named_globals = nullptr);
+	enum DiagnosticSeverity {
+		DIAGNOSTIC_WARNING,
+		DIAGNOSTIC_ERROR,
+	};
+
+	struct Input {
+		Vector<String> manifest_paths;
+		String keep_rules_path;
+		bool release_profile = false;
+	};
+
+	struct PreparedScript {
+		String source_path;
+		String output_path;
+		Vector<uint8_t> bytes;
+		bool remap = false;
+	};
+
+	struct Diagnostic {
+		DiagnosticSeverity severity = DIAGNOSTIC_ERROR;
+		String stage;
+		String source;
+		String message;
+
+		String format() const;
+	};
+
+	struct Result {
+		Error error = OK;
+		RBMap<String, PreparedScript> scripts;
+		Vector<String> keep_log;
+		Vector<Diagnostic> diagnostics;
+	};
+
+	static Result prepare(const Input &p_input);
+	static bool is_sensitive_generated_path(const String &p_path);
 };
+
+#endif // TOOLS_ENABLED

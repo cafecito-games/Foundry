@@ -77,5 +77,29 @@ canonical order, and unmatched warnings follow retained rule order, so output is
 
 ## Export integration
 
-The parser and matcher accept any caller-supplied text or file path. Project and export-preset
-settings that select the keep-rules path are intentionally deferred to issue #799.
+Keep rules supplement the exporter's automatic static-analysis, scene/resource, RPC, and
+serialized-binding evidence. They are needed only for names reached through patterns the complete
+graph cannot prove, such as a dynamically assembled method name.
+
+In an export preset's **Scripts** section, configure:
+
+```text
+FoundryScript Export Mode = Compiled bytecode
+Mangle names = On
+Keep-rules file = res://path/to/mangling.keep
+```
+
+The path may be empty, in which case no manual rules are loaded. A nonempty path is resolved as a
+project resource path. A missing or unreadable file, invalid UTF-8, malformed syntax, or rule
+application error aborts the export; no partially mangled or ordinary-bytecode fallback is emitted.
+Parser and application diagnostics retain their source path and line information in the
+**Compiled Script Export** message category.
+
+The keep-rules path is retained when **Mangle names** is turned off, but it is ignored and ordinary
+compiled-bytecode output is preserved. Name mangling itself is valid only with the **Compiled
+bytecode** script export mode.
+
+The exporter seals the complete effective source manifest before applying these rules. A later
+plugin-generated or plugin-customized script, native scene, or native resource is outside that graph
+and aborts before export save. For the full preset, manifest, built-in-script, and diagnostics
+contract, see [Name-mangled compiled-bytecode exports](README.md#name-mangled-compiled-bytecode-exports).

@@ -35,13 +35,29 @@
 #include "editor_export_preset.h"
 #include "scene/main/node.h"
 
+#ifdef TESTS_ENABLED
+namespace FSTests {
+class TestEditorExportFoundryScript;
+}
+#endif
+
 class EditorExportPlugin : public RefCounted {
 	FOUNDRY_CLASS(EditorExportPlugin, RefCounted);
 
 	friend class EditorExport;
 	friend class EditorExportPlatform;
 	friend class EditorExportPreset;
+#ifdef TESTS_ENABLED
+	friend class FSTests::TestEditorExportFoundryScript;
+#endif
 
+public:
+	struct ExportFileManifest {
+		Vector<String> source_paths;
+		Vector<String> generated_paths;
+	};
+
+private:
 	String export_base_path;
 	Ref<EditorExportPreset> export_preset;
 
@@ -108,6 +124,9 @@ protected:
 	void add_macos_plugin_file(const String &p_path);
 
 	void skip();
+
+	virtual Error _prepare_export_file_manifest(const ExportFileManifest &p_manifest, String &r_error);
+	virtual Error _validate_late_export_file(const String &p_path, String &r_error) const;
 
 	virtual void _export_file(const String &p_path, const String &p_type, const HashSet<String> &p_features);
 	virtual void _export_begin(const HashSet<String> &p_features, bool p_debug, const String &p_path, int p_flags);

@@ -220,6 +220,14 @@ void EditorExportPlugin::_end_customize_resources() {
 	FOUNDRY_VIRTUAL_CALL(_end_customize_resources);
 }
 
+Error EditorExportPlugin::_prepare_export_file_manifest(const ExportFileManifest &p_manifest, String &r_error) {
+	return OK;
+}
+
+Error EditorExportPlugin::_validate_late_export_file(const String &p_path, String &r_error) const {
+	return OK;
+}
+
 String EditorExportPlugin::get_name() const {
 	String ret;
 	FOUNDRY_VIRTUAL_CALL(_get_name, ret);

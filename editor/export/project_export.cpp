@@ -436,6 +436,11 @@ void ProjectExportDialog::_edit_preset(int p_index) {
 
 	int script_export_mode = int(current->get_script_export_mode());
 	script_mode->select(script_export_mode);
+	script_name_mangling->set_pressed(current->is_script_name_mangling_enabled());
+	if (!updating_script_name_mangling_keep_rules) {
+		script_name_mangling_keep_rules->set_text(current->get_script_name_mangling_keep_rules());
+	}
+	_update_script_name_mangling_controls();
 
 	updating = false;
 }
@@ -717,6 +722,41 @@ void ProjectExportDialog::_script_export_mode_changed(EditorExportPreset::Script
 	_update_current_preset();
 }
 
+void ProjectExportDialog::_script_name_mangling_changed(bool p_enabled) {
+	if (updating) {
+		return;
+	}
+
+	Ref<EditorExportPreset> current = get_current_preset();
+	ERR_FAIL_COND(current.is_null());
+
+	current->set_script_name_mangling_enabled(p_enabled);
+	_update_current_preset();
+}
+
+void ProjectExportDialog::_script_name_mangling_keep_rules_changed(const String &p_path) {
+	if (updating) {
+		return;
+	}
+
+	Ref<EditorExportPreset> current = get_current_preset();
+	ERR_FAIL_COND(current.is_null());
+
+	current->set_script_name_mangling_keep_rules(p_path);
+	updating_script_name_mangling_keep_rules = true;
+	_update_current_preset();
+	updating_script_name_mangling_keep_rules = false;
+}
+
+void ProjectExportDialog::_update_script_name_mangling_controls() {
+	Ref<EditorExportPreset> current = get_current_preset();
+	ERR_FAIL_COND(current.is_null());
+
+	const bool available = current->is_script_name_mangling_available();
+	script_name_mangling->set_disabled(!available);
+	script_name_mangling_keep_rules->set_editable(available && current->is_script_name_mangling_enabled());
+}
+
 void ProjectExportDialog::_duplicate_preset() {
 	Ref<EditorExportPreset> current = get_current_preset();
 	if (current.is_null()) {
@@ -772,6 +812,7 @@ void ProjectExportDialog::_duplicate_preset() {
 	preset->set_enc_directory(current->get_enc_directory());
 	preset->set_script_encryption_key(current->get_script_encryption_key());
 	preset->set_script_export_mode(current->get_script_export_mode());
+	preset->copy_script_name_mangling_settings_from(current);
 
 	for (const KeyValue<StringName, Variant> &E : current->get_values()) {
 		preset->set(E.key, E.value);
@@ -1929,6 +1970,17 @@ ProjectExportDialog::ProjectExportDialog() {
 	script_mode->add_item(TTR("Compressed binary tokens (smaller files)"), (int)EditorExportPreset::MODE_SCRIPT_BINARY_TOKENS_COMPRESSED);
 	script_mode->add_item(TTR("Compiled bytecode (no source shipped)"), (int)EditorExportPreset::MODE_SCRIPT_COMPILED_BYTECODE);
 	script_mode->connect(SceneStringName(item_selected), callable_mp(this, &ProjectExportDialog::_script_export_mode_changed));
+
+	script_name_mangling = memnew(CheckButton);
+	script_name_mangling->set_text(TTR("Mangle names"));
+	script_name_mangling->set_tooltip_text(TTR("Rename eligible Foundry Script symbols in compiled bytecode exports."));
+	script_name_mangling->connect(SceneStringName(toggled), callable_mp(this, &ProjectExportDialog::_script_name_mangling_changed));
+	script_vb->add_child(script_name_mangling);
+
+	script_name_mangling_keep_rules = memnew(LineEdit);
+	script_name_mangling_keep_rules->set_placeholder(TTR("Optional keep-rules resource path"));
+	script_name_mangling_keep_rules->connect(SceneStringName(text_changed), callable_mp(this, &ProjectExportDialog::_script_name_mangling_keep_rules_changed));
+	script_vb->add_margin_child(TTR("Keep-rules file:"), script_name_mangling_keep_rules);
 
 	sections->add_child(script_vb);
 

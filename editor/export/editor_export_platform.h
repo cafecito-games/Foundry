@@ -153,6 +153,8 @@ private:
 		uint64_t source_modified_time = 0;
 		String source_md5;
 		String saved_path;
+		bool was_plugin_customized = false;
+		bool requires_recompute = false;
 		bool used = false;
 	};
 
@@ -162,7 +164,7 @@ private:
 	bool _export_customize_scene_resources(Node *p_root, Node *p_node, LocalVector<Ref<EditorExportPlugin>> &customize_resources_plugins);
 	bool _is_editable_ancestor(Node *p_root, Node *p_node);
 
-	String _export_customize(const String &p_path, LocalVector<Ref<EditorExportPlugin>> &customize_resources_plugins, LocalVector<Ref<EditorExportPlugin>> &customize_scenes_plugins, HashMap<String, FileExportCache> &export_cache, const String &export_base_path, bool p_force_save);
+	String _export_customize(const String &p_path, LocalVector<Ref<EditorExportPlugin>> &customize_resources_plugins, LocalVector<Ref<EditorExportPlugin>> &customize_scenes_plugins, HashMap<String, FileExportCache> &export_cache, const String &export_base_path, bool p_force_save, bool &r_was_plugin_customized);
 
 protected:
 	struct ExportNotifier {
@@ -172,6 +174,7 @@ protected:
 
 	HashSet<String> get_features(const Ref<EditorExportPreset> &p_preset, bool p_debug) const;
 	static Error _collect_autoload_export_paths(const Ref<EditorExportPreset> &p_preset, Vector<String> &r_paths);
+	Error _export_project_files_with_manifest(const Ref<EditorExportPreset> &p_preset, bool p_debug, const HashSet<String> &p_paths, const Vector<Ref<EditorExportPlugin>> &p_export_plugins, EditorExportSaveFunction p_save_func, EditorExportRemoveFunction p_remove_func, void *p_udata, EditorExportSaveSharedObject p_so_func = nullptr);
 
 	Dictionary _find_export_template(const String &p_template_file_name) const {
 		Dictionary ret;

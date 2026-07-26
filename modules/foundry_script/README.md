@@ -127,6 +127,48 @@ Certain types of FoundryScripts behave slightly differently. For example, autolo
 Tool scripts, declared with the `@tool` annotation on a FoundryScript file, run in the editor itself as opposed to just when the game is launched. This leads to a significant increase in complexity, as many things that can be changed in the editor may affect a currently executing tool script.
 
 
+## Name-mangled compiled-bytecode exports
+
+Name mangling is an opt-in export-preset feature that renames eligible Foundry Script declarations
+consistently across the complete exported project. It prepares and serializes the whole script graph
+as one transaction; it never falls back to partially mangled or ordinary bytecode after a failure.
+
+To enable it, open the Export dialog, select a preset, and configure its **Scripts** section:
+
+```text
+FoundryScript Export Mode = Compiled bytecode
+Mangle names = On
+Keep-rules file = res://path/to/mangling.keep
+```
+
+The keep-rules path is optional. An empty path uses the automatic static-analysis, scene/resource,
+RPC, and serialized-binding evidence without adding manual rules. See
+[Foundry Script name-mangler keep rules](KEEP_RULES.md) for the supported syntax and matching
+identities. A configured file that is missing, unreadable, malformed, or invalid UTF-8 aborts the
+export with an actionable diagnostic.
+
+**Mangle names** is available only with **Compiled bytecode**. An enabled toggle combined with any
+other script export mode is an invalid preset; it does not fall back to text, binary tokens, or
+unmangled bytecode. Turning the toggle off retains but ignores the keep-rules path and preserves the
+ordinary compiled-bytecode output paths and bytes.
+
+Before writing output, the exporter seals the preset's effective source manifest, including selected
+resources, dependencies, autoloads, accepted imported sources, and already-pending generated files.
+After preparation, a plugin-generated or plugin-customized `.fs`, `.fsc`, `.fsb`, `.tscn`, `.scn`,
+`.tres`, or `.res` is rejected before its export save because it was not part of the analyzed graph.
+Cached customization output is subject to the same check. Ordinary text-to-binary representation
+conversion of an analyzed `.tscn` or `.tres` remains supported because it does not semantically
+customize the resource.
+
+Scenes and resources containing a built-in Foundry Script cannot be exported as compiled bytecode,
+with or without name mangling. Save each embedded script as an external `.fs` file before exporting.
+
+Preparation, analysis, keep-rule, built-in-script, and serialization failures appear as
+**Compiled Script Export** errors. Generic sealed-manifest vetoes appear as **Export file manifest**
+errors. Successful keep decisions are emitted as deterministic informational messages so retained
+names can be audited.
+
+
 ## Other
 
 There are many other classes in the FoundryScript module. Here is a brief overview of some of them:

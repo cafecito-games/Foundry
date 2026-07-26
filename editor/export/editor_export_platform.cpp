@@ -884,22 +884,28 @@ bool EditorExportPlatform::_export_customize_scene_resources(Node *p_root, Node 
 	return changed;
 }
 
-String EditorExportPlatform::_export_customize(const String &p_path, LocalVector<Ref<EditorExportPlugin>> &customize_resources_plugins, LocalVector<Ref<EditorExportPlugin>> &customize_scenes_plugins, HashMap<String, FileExportCache> &export_cache, const String &export_base_path, bool p_force_save) {
+String EditorExportPlatform::_export_customize(const String &p_path, LocalVector<Ref<EditorExportPlugin>> &customize_resources_plugins, LocalVector<Ref<EditorExportPlugin>> &customize_scenes_plugins, HashMap<String, FileExportCache> &export_cache, const String &export_base_path, bool p_force_save, bool &r_was_plugin_customized) {
+	r_was_plugin_customized = false;
 	if (!p_force_save && customize_resources_plugins.is_empty() && customize_scenes_plugins.is_empty()) {
 		return p_path; // do none
 	}
+
+	String stale_cached_path;
 
 	// Check if a cache exists
 	if (export_cache.has(p_path)) {
 		FileExportCache &fec = export_cache[p_path];
 
-		if (fec.saved_path.is_empty() || FileAccess::exists(fec.saved_path)) {
+		if (fec.requires_recompute) {
+			stale_cached_path = fec.saved_path;
+		} else if (fec.saved_path.is_empty() || FileAccess::exists(fec.saved_path)) {
 			// Destination file exists (was not erased) or not needed
 
 			uint64_t mod_time = FileAccess::get_modified_time(p_path);
 			if (fec.source_modified_time == mod_time) {
 				// Cached (modified time matches).
 				fec.used = true;
+				r_was_plugin_customized = fec.was_plugin_customized;
 				return fec.saved_path.is_empty() ? p_path : fec.saved_path;
 			}
 
@@ -912,6 +918,7 @@ String EditorExportPlatform::_export_customize(const String &p_path, LocalVector
 				// Cached (md5 matches).
 				fec.source_modified_time = mod_time;
 				fec.used = true;
+				r_was_plugin_customized = fec.was_plugin_customized;
 				return fec.saved_path.is_empty() ? p_path : fec.saved_path;
 			}
 		}
@@ -1004,6 +1011,18 @@ String EditorExportPlatform::_export_customize(const String &p_path, LocalVector
 	}
 
 	fec.saved_path = save_path;
+	fec.was_plugin_customized = modified;
+	fec.requires_recompute = false;
+	r_was_plugin_customized = modified;
+
+	if (!stale_cached_path.is_empty() && stale_cached_path != save_path &&
+			stale_cached_path.get_base_dir().simplify_path() == export_base_path.simplify_path() &&
+			FileAccess::exists(stale_cached_path)) {
+		const Error remove_error = DirAccess::remove_absolute(stale_cached_path);
+		if (remove_error != OK) {
+			WARN_PRINT_ED(vformat("Could not remove stale export customization cache file \"%s\".", stale_cached_path));
+		}
+	}
 
 	export_cache[p_path] = fec;
 
@@ -1224,14 +1243,7 @@ Error EditorExportPlatform::_export_project_files(const Ref<EditorExportPreset> 
 }
 
 Error EditorExportPlatform::export_project_files(const Ref<EditorExportPreset> &p_preset, bool p_debug, EditorExportSaveFunction p_save_func, EditorExportRemoveFunction p_remove_func, void *p_udata, EditorExportSaveSharedObject p_so_func) {
-	// Export plugin callbacks return void, so an error message added through `add_message()` is
-	// the only way a plugin can veto the export (e.g. a script that must not ship as source
-	// failed to compile). Snapshot the message count so any error reported below fails the export.
-	const int initial_message_count = get_message_count();
-
-	//figure out paths of files that will be exported
 	HashSet<String> paths;
-	Vector<String> path_remaps;
 
 	if (p_preset->get_export_filter() == EditorExportPreset::EXPORT_ALL_RESOURCES) {
 		//find stuff
@@ -1276,6 +1288,51 @@ Error EditorExportPlatform::export_project_files(const Ref<EditorExportPreset> &
 
 	// Ignore import files, since these are automatically added to the jar later with the resources
 	_edit_filter_list(paths, String("*.import"), true);
+
+	Vector<Ref<EditorExportPlugin>> export_plugins;
+	EditorExport *editor_export = EditorExport::get_singleton();
+	if (editor_export != nullptr) {
+		export_plugins = editor_export->get_export_plugins();
+	}
+
+	return _export_project_files_with_manifest(p_preset, p_debug, paths, export_plugins, p_save_func, p_remove_func, p_udata, p_so_func);
+}
+
+Error EditorExportPlatform::_export_project_files_with_manifest(const Ref<EditorExportPreset> &p_preset, bool p_debug, const HashSet<String> &p_paths, const Vector<Ref<EditorExportPlugin>> &p_export_plugins, EditorExportSaveFunction p_save_func, EditorExportRemoveFunction p_remove_func, void *p_udata, EditorExportSaveSharedObject p_so_func) {
+	// Export plugin callbacks return void, so an error message added through `add_message()` is
+	// the only way a plugin can veto the export (e.g. a script that must not ship as source
+	// failed to compile). Snapshot the message count so any error reported below fails the export.
+	const int initial_message_count = get_message_count();
+
+	HashSet<String> paths = p_paths;
+	Vector<String> path_remaps;
+
+	HashMap<String, Ref<ConfigFile>> import_configs;
+	Vector<String> candidate_paths;
+	for (const String &path : paths) {
+		candidate_paths.push_back(path);
+	}
+	candidate_paths.sort();
+
+	for (const String &path : candidate_paths) {
+		if (!FileAccess::exists(path + ".import")) {
+			continue;
+		}
+
+		Ref<ConfigFile> config;
+		config.instantiate();
+		Error import_err = config->load(path + ".import");
+		if (import_err != OK) {
+			ERR_PRINT("Could not parse: '" + path + "', not exported.");
+			paths.erase(path);
+			continue;
+		}
+
+		import_configs.insert(path, config);
+		if (String(config->get_value("remap", "importer")) == "skip") {
+			paths.erase(path);
+		}
+	}
 
 	// Get encryption filters.
 	bool enc_pck = p_preset->get_enc_pck();
@@ -1337,11 +1394,7 @@ Error EditorExportPlatform::export_project_files(const Ref<EditorExportPreset> &
 	EditorExportSaveProxy save_proxy(p_save_func, p_remove_func != nullptr);
 
 	Error err = OK;
-	Vector<Ref<EditorExportPlugin>> export_plugins;
-	EditorExport *editor_export = EditorExport::get_singleton();
-	if (editor_export != nullptr) {
-		export_plugins = editor_export->get_export_plugins();
-	}
+	Vector<Ref<EditorExportPlugin>> export_plugins = p_export_plugins;
 
 	struct SortByName {
 		bool operator()(const Ref<EditorExportPlugin> &left, const Ref<EditorExportPlugin> &right) const {
@@ -1349,7 +1402,25 @@ Error EditorExportPlatform::export_project_files(const Ref<EditorExportPreset> &
 		}
 	};
 
-	auto add_shared_objects_and_extra_files_from_export_plugins = [&]() {
+	// Always sort by name, so if for some reason plugins are re-arranged, the lifecycle stays deterministic.
+	export_plugins.sort_custom<SortByName>();
+
+	auto validate_late_export_file = [&](const String &p_path) {
+		for (int i = 0; i < export_plugins.size(); i++) {
+			String validation_error;
+			Error validation_err = export_plugins[i]->_validate_late_export_file(p_path, validation_error);
+			if (validation_err != OK) {
+				if (validation_error.is_empty()) {
+					validation_error = error_names[validation_err];
+				}
+				add_message(EXPORT_MESSAGE_ERROR, TTR("Export file manifest"), vformat(TTR("Export plugin \"%s\" rejected late generated file \"%s\": %s"), export_plugins[i]->get_name(), p_path, validation_error));
+				return validation_err;
+			}
+		}
+		return OK;
+	};
+
+	auto add_shared_objects_and_extra_files_from_export_plugins = [&](const Vector<int> *p_preparation_extra_counts = nullptr) {
 		for (int i = 0; i < export_plugins.size(); i++) {
 			if (p_so_func) {
 				for (int j = 0; j < export_plugins[i]->shared_objects.size(); j++) {
@@ -1360,6 +1431,13 @@ Error EditorExportPlatform::export_project_files(const Ref<EditorExportPreset> &
 				}
 			}
 			for (int j = 0; j < export_plugins[i]->extra_files.size(); j++) {
+				const bool was_pending_before_preparation = p_preparation_extra_counts != nullptr && j < (*p_preparation_extra_counts)[i];
+				if (!was_pending_before_preparation) {
+					err = validate_late_export_file(export_plugins[i]->extra_files[j].path);
+					if (err != OK) {
+						return err;
+					}
+				}
 				err = save_proxy.save_file(p_preset, p_udata, export_plugins[i]->extra_files[j].path, export_plugins[i]->extra_files[j].data, 0, paths.size(), enc_in_filters, enc_ex_filters, key, seed, false);
 				if (err != OK) {
 					return err;
@@ -1371,9 +1449,6 @@ Error EditorExportPlatform::export_project_files(const Ref<EditorExportPreset> &
 
 		return OK;
 	};
-
-	// Always sort by name, to so if for some reason they are re-arranged, it still works.
-	export_plugins.sort_custom<SortByName>();
 
 	HashSet<String> features = get_features(p_preset, p_debug);
 	PackedStringArray features_psa;
@@ -1405,9 +1480,74 @@ Error EditorExportPlatform::export_project_files(const Ref<EditorExportPreset> &
 		}
 	}
 
+	bool customization_finished = false;
+	auto finish_customization = [&]() {
+		if (customization_finished) {
+			return;
+		}
+		for (Ref<EditorExportPlugin> &plugin : customize_resources_plugins) {
+			plugin->_end_customize_resources();
+		}
+		for (Ref<EditorExportPlugin> &plugin : customize_scenes_plugins) {
+			plugin->_end_customize_scenes();
+		}
+		customization_finished = true;
+	};
+
+	auto clear_export_plugin_state = [&]() {
+		for (int i = 0; i < export_plugins.size(); i++) {
+			export_plugins.write[i]->_clear();
+		}
+	};
+
+	auto validate_customized_export_file = [&](const String &p_source_path, const String &p_export_path, bool p_was_plugin_customized) {
+		if (!p_was_plugin_customized || p_export_path == p_source_path) {
+			return OK;
+		}
+
+		const Error validation_err = validate_late_export_file(p_export_path);
+		if (validation_err != OK) {
+			finish_customization();
+			clear_export_plugin_state();
+		}
+		return validation_err;
+	};
+
+	EditorExportPlugin::ExportFileManifest manifest;
+	for (const String &path : paths) {
+		manifest.source_paths.push_back(path);
+	}
+	manifest.source_paths.sort();
+
+	Vector<int> preparation_extra_counts;
+	preparation_extra_counts.resize(export_plugins.size());
+	for (int i = 0; i < export_plugins.size(); i++) {
+		preparation_extra_counts.write[i] = export_plugins[i]->extra_files.size();
+		for (int j = 0; j < preparation_extra_counts[i]; j++) {
+			manifest.generated_paths.push_back(export_plugins[i]->extra_files[j].path);
+		}
+	}
+	manifest.generated_paths.sort();
+
+	for (int i = 0; i < export_plugins.size(); i++) {
+		String preparation_error;
+		err = export_plugins[i]->_prepare_export_file_manifest(manifest, preparation_error);
+		if (err != OK) {
+			if (preparation_error.is_empty()) {
+				preparation_error = error_names[err];
+			}
+			add_message(EXPORT_MESSAGE_ERROR, TTR("Export file manifest"), vformat(TTR("Export plugin \"%s\" could not prepare the export file manifest: %s"), export_plugins[i]->get_name(), preparation_error));
+			finish_customization();
+			clear_export_plugin_state();
+			return err;
+		}
+	}
+
 	// Add any files that might've been defined during the initial steps of the export plugins.
-	err = add_shared_objects_and_extra_files_from_export_plugins();
+	err = add_shared_objects_and_extra_files_from_export_plugins(&preparation_extra_counts);
 	if (err != OK) {
+		finish_customization();
+		clear_export_plugin_state();
 		return err;
 	}
 
@@ -1423,12 +1563,20 @@ Error EditorExportPlatform::export_project_files(const Ref<EditorExportPreset> &
 			String l = f->get_line();
 			while (l != String()) {
 				Vector<String> fields = l.split("::");
-				if (fields.size() == 4) {
+				if (fields.size() >= 4) {
 					FileExportCache fec;
 					const String &path = fields[0];
 					fec.source_md5 = fields[1].strip_edges();
 					fec.source_modified_time = fields[2].strip_edges().to_int();
 					fec.saved_path = fields[3];
+					if (fields.size() >= 5) {
+						fec.was_plugin_customized = fields[4].strip_edges().to_int() != 0;
+					} else {
+						// Older cache entries did not distinguish plugin modifications from
+						// representation-only conversion. When a relevant plugin is active,
+						// recompute instead of guessing which behavior produced the cached file.
+						fec.requires_recompute = !customize_resources_plugins.is_empty() || !customize_scenes_plugins.is_empty();
+					}
 					fec.used = false; // Assume unused until used.
 					export_cache[path] = fec;
 				}
@@ -1452,26 +1600,15 @@ Error EditorExportPlatform::export_project_files(const Ref<EditorExportPreset> &
 	// for continue statements without accidentally skipping an increment.
 	int idx = total > 0 ? -1 : 0;
 
-	for (const String &path : paths) {
+	for (const String &path : manifest.source_paths) {
 		idx++;
 		String type = ResourceLoader::get_resource_type(path);
 
-		bool has_import_file = FileAccess::exists(path + ".import");
+		const Ref<ConfigFile> *cached_import_config = import_configs.getptr(path);
+		bool has_import_file = cached_import_config != nullptr;
 		Ref<ConfigFile> config;
 		if (has_import_file) {
-			config.instantiate();
-			err = config->load(path + ".import");
-			if (err != OK) {
-				ERR_PRINT("Could not parse: '" + path + "', not exported.");
-				continue;
-			}
-
-			String importer_type = config->get_value("remap", "importer");
-
-			if (importer_type == "skip") {
-				// Skip file.
-				continue;
-			}
+			config = *cached_import_config;
 		}
 
 		bool do_export = true;
@@ -1480,6 +1617,14 @@ Error EditorExportPlatform::export_project_files(const Ref<EditorExportPreset> &
 				export_plugins.write[i]->_export_file_script(path, type, features_psa);
 			} else {
 				export_plugins.write[i]->_export_file(path, type, features);
+			}
+			for (int j = 0; j < export_plugins[i]->extra_files.size(); j++) {
+				err = validate_late_export_file(export_plugins[i]->extra_files[j].path);
+				if (err != OK) {
+					finish_customization();
+					clear_export_plugin_state();
+					return err;
+				}
 			}
 			if (p_so_func) {
 				for (int j = 0; j < export_plugins[i]->shared_objects.size(); j++) {
@@ -1531,7 +1676,12 @@ Error EditorExportPlatform::export_project_files(const Ref<EditorExportPreset> &
 			}
 
 			// Before doing this, try to see if it can be customized.
-			String export_path = _export_customize(path, customize_resources_plugins, customize_scenes_plugins, export_cache, export_base_path, false);
+			bool was_plugin_customized = false;
+			String export_path = _export_customize(path, customize_resources_plugins, customize_scenes_plugins, export_cache, export_base_path, false, was_plugin_customized);
+			err = validate_customized_export_file(path, export_path, was_plugin_customized);
+			if (err != OK) {
+				return err;
+			}
 
 			if (export_path != path) {
 				// It was actually customized.
@@ -1646,7 +1796,12 @@ Error EditorExportPlatform::export_project_files(const Ref<EditorExportPreset> &
 			} else {
 				// Customization only happens if plugins did not take care of it before.
 				bool force_binary = convert_text_to_binary && (path.has_extension("tres") || path.has_extension("tscn"));
-				export_path = _export_customize(path, customize_resources_plugins, customize_scenes_plugins, export_cache, export_base_path, force_binary);
+				bool was_plugin_customized = false;
+				export_path = _export_customize(path, customize_resources_plugins, customize_scenes_plugins, export_cache, export_base_path, force_binary, was_plugin_customized);
+				err = validate_customized_export_file(path, export_path, was_plugin_customized);
+				if (err != OK) {
+					return err;
+				}
 
 				if (export_path != path) {
 					// Add a remap entry.
@@ -1672,26 +1827,20 @@ Error EditorExportPlatform::export_project_files(const Ref<EditorExportPreset> &
 		if (f.is_valid()) {
 			for (const KeyValue<String, FileExportCache> &E : export_cache) {
 				if (E.value.used) { // May be old, unused
-					String l = E.key + "::" + E.value.source_md5 + "::" + itos(E.value.source_modified_time) + "::" + E.value.saved_path;
+					String l = E.key + "::" + E.value.source_md5 + "::" + itos(E.value.source_modified_time) + "::" + E.value.saved_path + "::" + itos(E.value.was_plugin_customized);
 					f->store_line(l);
 				}
 			}
 		} else {
 			ERR_PRINT("Error opening export file cache: " + fcache);
 		}
-
-		for (Ref<EditorExportPlugin> &plugin : customize_resources_plugins) {
-			plugin->_end_customize_resources();
-		}
-
-		for (Ref<EditorExportPlugin> &plugin : customize_scenes_plugins) {
-			plugin->_end_customize_scenes();
-		}
 	}
+	finish_customization();
 
 	// Add any files that might've been defined during the final steps of the export plugins.
-	err = add_shared_objects_and_extra_files_from_export_plugins();
+	err = add_shared_objects_and_extra_files_from_export_plugins(nullptr);
 	if (err != OK) {
+		clear_export_plugin_state();
 		return err;
 	}
 
@@ -2532,24 +2681,33 @@ Vector<String> EditorExportPlatform::gen_export_flags(BitField<EditorExportPlatf
 bool EditorExportPlatform::can_export(const Ref<EditorExportPreset> &p_preset, String &r_error, bool &r_missing_templates, bool p_debug) const {
 	bool valid = true;
 
+	if (p_preset->is_script_name_mangling_enabled() && !p_preset->is_script_name_mangling_available()) {
+		r_error += TTR("Foundry Script name mangling requires the Compiled bytecode script export mode.\n");
+		valid = false;
+	}
+
 	String templates_error;
-	valid = valid && has_valid_export_configuration(p_preset, templates_error, r_missing_templates, p_debug);
+	const bool export_configuration_valid = has_valid_export_configuration(p_preset, templates_error, r_missing_templates, p_debug);
+	valid = valid && export_configuration_valid;
 
 	if (!templates_error.is_empty()) {
 		r_error += templates_error;
 	}
 
 	String export_plugins_warning;
-	Vector<Ref<EditorExportPlugin>> export_plugins = EditorExport::get_singleton()->get_export_plugins();
-	for (int i = 0; i < export_plugins.size(); i++) {
-		Ref<EditorExportPlatform> export_platform = Ref<EditorExportPlatform>(this);
-		if (!export_plugins[i]->supports_platform(export_platform)) {
-			continue;
-		}
+	EditorExport *editor_export = EditorExport::get_singleton();
+	if (editor_export != nullptr) {
+		Vector<Ref<EditorExportPlugin>> export_plugins = editor_export->get_export_plugins();
+		for (int i = 0; i < export_plugins.size(); i++) {
+			Ref<EditorExportPlatform> export_platform = Ref<EditorExportPlatform>(this);
+			if (!export_plugins[i]->supports_platform(export_platform)) {
+				continue;
+			}
 
-		String plugin_warning = export_plugins.write[i]->_has_valid_export_configuration(export_platform, p_preset);
-		if (!plugin_warning.is_empty()) {
-			export_plugins_warning += plugin_warning;
+			String plugin_warning = export_plugins.write[i]->_has_valid_export_configuration(export_platform, p_preset);
+			if (!plugin_warning.is_empty()) {
+				export_plugins_warning += plugin_warning;
+			}
 		}
 	}
 
@@ -2558,7 +2716,8 @@ bool EditorExportPlatform::can_export(const Ref<EditorExportPreset> &p_preset, S
 	}
 
 	String project_configuration_error;
-	valid = valid && has_valid_project_configuration(p_preset, project_configuration_error);
+	const bool project_configuration_valid = has_valid_project_configuration(p_preset, project_configuration_error);
+	valid = valid && project_configuration_valid;
 
 	if (!project_configuration_error.is_empty()) {
 		r_error += project_configuration_error;

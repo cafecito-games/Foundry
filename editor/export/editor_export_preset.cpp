@@ -126,6 +126,11 @@ void EditorExportPreset::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_encrypt_directory"), &EditorExportPreset::get_enc_directory);
 	ClassDB::bind_method(D_METHOD("get_encryption_key"), &EditorExportPreset::get_script_encryption_key);
 	ClassDB::bind_method(D_METHOD("get_script_export_mode"), &EditorExportPreset::get_script_export_mode);
+	ClassDB::bind_method(D_METHOD("set_script_name_mangling_enabled", "enabled"), &EditorExportPreset::set_script_name_mangling_enabled);
+	ClassDB::bind_method(D_METHOD("is_script_name_mangling_enabled"), &EditorExportPreset::is_script_name_mangling_enabled);
+	ClassDB::bind_method(D_METHOD("set_script_name_mangling_keep_rules", "path"), &EditorExportPreset::set_script_name_mangling_keep_rules);
+	ClassDB::bind_method(D_METHOD("get_script_name_mangling_keep_rules"), &EditorExportPreset::get_script_name_mangling_keep_rules);
+	ClassDB::bind_method(D_METHOD("is_script_name_mangling_available"), &EditorExportPreset::is_script_name_mangling_available);
 
 	ClassDB::bind_method(D_METHOD("get_or_env", "name", "env_var"), &EditorExportPreset::_get_or_env);
 	ClassDB::bind_method(D_METHOD("get_version", "name", "windows_version"), &EditorExportPreset::get_version);
@@ -577,6 +582,36 @@ void EditorExportPreset::set_script_export_mode(ScriptExportMode p_mode) {
 
 EditorExportPreset::ScriptExportMode EditorExportPreset::get_script_export_mode() const {
 	return script_mode;
+}
+
+void EditorExportPreset::set_script_name_mangling_enabled(bool p_enabled) {
+	script_name_mangling_enabled = p_enabled;
+	_save_presets_if_available();
+}
+
+bool EditorExportPreset::is_script_name_mangling_enabled() const {
+	return script_name_mangling_enabled;
+}
+
+void EditorExportPreset::set_script_name_mangling_keep_rules(const String &p_path) {
+	script_name_mangling_keep_rules = p_path;
+	_save_presets_if_available();
+}
+
+String EditorExportPreset::get_script_name_mangling_keep_rules() const {
+	return script_name_mangling_keep_rules;
+}
+
+bool EditorExportPreset::is_script_name_mangling_available() const {
+	return script_mode == MODE_SCRIPT_COMPILED_BYTECODE;
+}
+
+void EditorExportPreset::copy_script_name_mangling_settings_from(const Ref<EditorExportPreset> &p_source) {
+	ERR_FAIL_COND(p_source.is_null());
+
+	script_name_mangling_enabled = p_source->script_name_mangling_enabled;
+	script_name_mangling_keep_rules = p_source->script_name_mangling_keep_rules;
+	_save_presets_if_available();
 }
 
 Variant EditorExportPreset::get_or_env(const StringName &p_name, const String &p_env_var, bool *r_valid) const {

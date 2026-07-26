@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  fs_editor_export_plugin.h                                             */
+/*  fs_export_compilation_scope.h                                         */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -30,40 +30,27 @@
 
 #pragma once
 
-#include "fs_name_mangler_export.h"
+#ifdef TOOLS_ENABLED
 
-#include "editor/export/editor_export_plugin.h"
+// Compiles scripts with export-only bytecode settings, then restores every script touched by the
+// cache to ordinary editor bytecode. FSCache supports one reload-recording window, so this scope
+// deliberately rejects nesting and cannot be copied or moved.
+class FSExportCompilationScope {
+	static bool active;
 
-class EditorExportFoundryScript : public EditorExportPlugin {
-	FOUNDRY_CLASS(EditorExportFoundryScript, EditorExportPlugin);
-
-	static constexpr EditorExportPreset::ScriptExportMode DEFAULT_SCRIPT_MODE = EditorExportPreset::MODE_SCRIPT_COMPILED_BYTECODE;
-	EditorExportPreset::ScriptExportMode script_mode = DEFAULT_SCRIPT_MODE;
-	bool export_debug = true;
-	bool name_mangling_enabled = false;
-	bool name_mangling_prepared = false;
-	RBMap<String, FSNameManglerExport::PreparedScript> mangled_scripts;
-	mutable HashSet<String> pending_mangled_output_authorizations;
-
-	// Export plugin callbacks cannot return an error; an EXPORT_MESSAGE_ERROR on the platform is
-	// what fails the export (see EditorExportPlatform::export_project_files).
-	void _add_export_info(const String &p_message);
-	void _add_export_warning(const String &p_message);
-	void _add_export_error(const String &p_message);
-	void _clear_name_mangling_state();
-	String _describe_script_errors(const String &p_path, Error p_fallback_error);
-	bool _is_native_resource_file(const String &p_path);
-	bool _validate_native_resource_for_compiled_bytecode(const String &p_path);
-	void _export_file_mangled_bytecode(const String &p_path);
-	void _export_file_compiled_bytecode(const String &p_path);
-
-protected:
-	virtual Error _prepare_export_file_manifest(const ExportFileManifest &p_manifest, String &r_error) override;
-	virtual Error _validate_late_export_file(const String &p_path, String &r_error) const override;
-	virtual void _export_begin(const HashSet<String> &p_features, bool p_debug, const String &p_path, int p_flags) override;
-	virtual void _export_end() override;
-	virtual void _export_file(const String &p_path, const String &p_type, const HashSet<String> &p_features) override;
+	bool owns_scope = false;
+	bool compiling_for_export_previous = false;
+	bool call_stack_tracking_overridden = false;
+	bool call_stack_tracking_previous = false;
 
 public:
-	virtual String get_name() const override { return "FoundryScript"; }
+	explicit FSExportCompilationScope(bool p_release_profile);
+	~FSExportCompilationScope();
+
+	FSExportCompilationScope(const FSExportCompilationScope &) = delete;
+	FSExportCompilationScope &operator=(const FSExportCompilationScope &) = delete;
+
+	bool is_valid() const { return owns_scope; }
 };
+
+#endif // TOOLS_ENABLED

@@ -610,8 +610,9 @@ Error FSBytecodeExporter::serialize_function(StreamPeerBuffer *r_stream, const F
 		r_stream->put_u32(string_table.insert(global_store.global_name));
 	}
 
-	// `named_globals` is deliberately not serialized: it exists for export-time validation of
-	// OPCODE_STORE_NAMED_GLOBAL names, which dispatch by name at runtime and need no relinking.
+	// `named_globals` has no separate serialized fixup table: OPCODE_STORE_NAMED_GLOBAL already
+	// carries a verified global-name-table operand. The loader's authoritative verifier walk
+	// reconstructs this validation index from those operands after a `.fsb` round trip.
 
 	ERR_FAIL_COND_V_MSG(!p_function->lambdas.is_empty() && p_function->_script == nullptr, ERR_INVALID_PARAMETER,
 			vformat("Cannot serialize compiled function '%s': it has lambdas but no owning script.", p_function->name));

@@ -192,6 +192,9 @@ class ProjectExportDialog : public ConfirmationDialog {
 	LineEdit *seed_input = nullptr;
 
 	OptionButton *script_mode = nullptr;
+	CheckButton *script_name_mangling = nullptr;
+	LineEdit *script_name_mangling_keep_rules = nullptr;
+	bool updating_script_name_mangling_keep_rules = false;
 
 	void _open_export_template_manager();
 
@@ -219,6 +222,9 @@ class ProjectExportDialog : public ConfirmationDialog {
 	bool _validate_script_encryption_key(const String &p_key);
 
 	void _script_export_mode_changed(EditorExportPreset::ScriptExportMode p_mode);
+	void _script_name_mangling_changed(bool p_enabled);
+	void _script_name_mangling_keep_rules_changed(const String &p_path);
+	void _update_script_name_mangling_controls();
 
 	void _open_key_help_link();
 
