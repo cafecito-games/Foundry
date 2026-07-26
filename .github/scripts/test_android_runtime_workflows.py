@@ -1,20 +1,17 @@
 #!/usr/bin/env python3
-"""Static contracts for authoritative Foundry Android CI and release builds."""
+"""Static contracts for authoritative in-tree Foundry Android CI and releases."""
 
 from __future__ import annotations
 
-import json
 import re
 import unittest
 from pathlib import Path
-from typing import Any, cast
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ANDROID_WORKFLOW = REPO_ROOT / ".github/workflows/android_builds.yml"
 ANDROID_JAVA_WORKFLOW = REPO_ROOT / ".github/workflows/android_java_check.yml"
 RELEASE_WORKFLOW = REPO_ROOT / ".github/workflows/release.yml"
 PRE_COMMIT = REPO_ROOT / ".pre-commit-config.yaml"
-RUNTIME_PIN = REPO_ROOT / "platform/android/foundry_android_runtime.json"
 FOUNDRY_BUILD_ACTION = REPO_ROOT / ".github/actions/foundry-build/action.yml"
 
 ABIS = {
@@ -58,6 +55,18 @@ MATRIX_FIELDS = {
     "debug_symbols",
     "artifact_name",
 }
+FORBIDDEN_EXTERNAL_COUPLING = (
+    "cafecito-games/Foundry-Android",
+    "foundry_android_runtime",
+    "android_runtime_build.py",
+    "foundryAndroidSource",
+    "foundryAndroidFetch",
+    "foundryNativeBundle",
+    "foundryRuntimeScratch",
+    "foundry-native.zip",
+    "standalone runtime",
+    "standalone-runtime",
+)
 
 
 def _job(workflow: str, name: str) -> str:
@@ -108,18 +117,14 @@ class AndroidRuntimeWorkflowTests(unittest.TestCase):
     release: str
     pre_commit: str
     foundry_build_action: str
-    pin: dict[str, Any]
-    standalone_revision: str
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls.android = ANDROID_WORKFLOW.read_text()
-        cls.android_java = ANDROID_JAVA_WORKFLOW.read_text()
-        cls.release = RELEASE_WORKFLOW.read_text()
-        cls.pre_commit = PRE_COMMIT.read_text()
-        cls.foundry_build_action = FOUNDRY_BUILD_ACTION.read_text()
-        cls.pin = cast(dict[str, Any], json.loads(RUNTIME_PIN.read_text()))
-        cls.standalone_revision = cast(str, cls.pin["source"]["revision"])
+        cls.android = ANDROID_WORKFLOW.read_text(encoding="utf-8")
+        cls.android_java = ANDROID_JAVA_WORKFLOW.read_text(encoding="utf-8")
+        cls.release = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+        cls.pre_commit = PRE_COMMIT.read_text(encoding="utf-8")
+        cls.foundry_build_action = FOUNDRY_BUILD_ACTION.read_text(encoding="utf-8")
 
     def assert_matrix(self, workflow: str, job_name: str, artifact_prefix: str) -> None:
         job = _job(workflow, job_name)
@@ -135,14 +140,7 @@ class AndroidRuntimeWorkflowTests(unittest.TestCase):
             }
             self.assertEqual(expected, entry)
 
-        for field in (
-            "arch",
-            "target",
-            "production",
-            "dev_mode",
-            "dev_build",
-            "debug_symbols",
-        ):
+        for field in ("arch", "target", "production", "dev_mode", "dev_build", "debug_symbols"):
             self.assertIn(f"${{{{ matrix.{field} }}}}", job)
         self.assertIn("${{ matrix.artifact_name }}", job)
         self.assertIn("tests=no", job)
@@ -164,14 +162,9 @@ class AndroidRuntimeWorkflowTests(unittest.TestCase):
     ) -> str:
         job = _job(workflow, job_name)
         self.assertIn(native_job, job)
-        self.assertIn("git rev-parse HEAD", job)
-        self.assertIn("repository: cafecito-games/Foundry-Android", job)
-        self.assertIn(f"ref: {self.standalone_revision}", job)
         self.assertIn(f"pattern: '{artifact_pattern}'", job)
         self.assertIn("merge-multiple: true", job)
-        self.assertIn("-PfoundryAndroidSource=", job)
         self.assertIn("-PfoundryNativeRoot=", job)
-        self.assertIn("-PfoundryRuntimeScratch=", job)
         self.assertIn("./gradlew --no-daemon generateFoundryTemplates", job)
         for output in (
             "android_debug.apk",
@@ -181,9 +174,10 @@ class AndroidRuntimeWorkflowTests(unittest.TestCase):
             "foundry-debug.aar",
             "foundry-dev.aar",
             "foundry-release.aar",
-            "foundry-native.zip",
         ):
             self.assertIn(output, job)
+        for fragment in FORBIDDEN_EXTERNAL_COUPLING:
+            self.assertNotIn(fragment, job)
         return job
 
     def test_authoritative_workflow_builds_and_assembles_complete_matrix(self) -> None:
@@ -192,6 +186,8 @@ class AndroidRuntimeWorkflowTests(unittest.TestCase):
         for command in (
             "test_android_runtime_contract",
             "test_android_runtime_build",
+            "tests.python_build.test_android_jni_contract",
+            "tests.python_build.test_android_native_staging",
             "tests.python_build.test_android_gradle_behavioral",
             "test_android_gradle_runtime_contract",
             "test_android_device_acceptance",
@@ -205,13 +201,13 @@ class AndroidRuntimeWorkflowTests(unittest.TestCase):
             native_job="build-android-native",
             artifact_pattern="android-native-*",
         )
-        self.assertIn("name: android-runtime-assembled", assembly)
+        self.assertIn("name: android-templates-assembled", assembly)
 
-    def test_device_acceptance_runs_assembled_runtime_on_an_emulator(self) -> None:
+    def test_device_acceptance_runs_assembled_runtime_on_api_36(self) -> None:
         job = _job(self.android, "device-acceptance")
         self.assertIn("- assemble-android", job)
         self.assertIn("timeout-minutes: 120", job)
-        self.assertIn("name: android-runtime-assembled", job)
+        self.assertIn("name: android-templates-assembled", job)
         self.assertIn("system-images;android-36;default;x86_64", job)
         self.assertIn("sudo chmod 666 /dev/kvm", job)
         self.assertIn("sys.boot_completed", job)
@@ -225,19 +221,14 @@ class AndroidRuntimeWorkflowTests(unittest.TestCase):
         job = _job(self.android_java, "android")
         self.assertIn("uses: ./.github/workflows/android_builds.yml", job)
         self.assertIn("checkout-ref: ${{ github.event.pull_request.head.sha || github.sha }}", job)
-        for stale in (
-            "foundry-build",
-            "generateFoundryTemplates",
-            "foundry-lib.template_debug.aar",
-            "steps:",
-        ):
+        for stale in ("foundry-build", "generateFoundryTemplates", "foundry-lib.template_debug.aar", "steps:"):
             self.assertNotIn(stale, job)
 
     def test_android_native_builds_preserve_clean_source_identity(self) -> None:
         self.assertIn("preserve-source-tree:", self.foundry_build_action)
         self.assertIn('inputs.preserve-source-tree }}" != "true"', self.foundry_build_action)
 
-    def test_release_uses_complete_matrix_and_assembly_gate(self) -> None:
+    def test_release_uses_complete_matrix_and_in_tree_assembly_gate(self) -> None:
         self.assert_matrix(self.release, "build-android-native", "release-android-native-")
         assembly = self.assert_assembly_contract(
             self.release,
@@ -252,12 +243,16 @@ class AndroidRuntimeWorkflowTests(unittest.TestCase):
             r"(?s)name: release-android-template-release.*?path:\s*\|.*?"
             r"android_release\.apk.*?android_source\.zip",
         )
+        self.assertNotIn("release-android-runtime", assembly)
         package = _job(self.release, "package")
         self.assertIn("- assemble-android", package)
         self.assertNotIn("- build-android", package)
 
-    def test_release_has_no_foundry_android_maven_publication(self) -> None:
-        forbidden = (
+    def test_workflows_have_no_standalone_runtime_coupling_or_publication(self) -> None:
+        for workflow in (self.android, self.android_java, self.release):
+            for fragment in FORBIDDEN_EXTERNAL_COUPLING:
+                self.assertNotIn(fragment, workflow)
+        for fragment in (
             ":lib:publish",
             "Publish Android library to Maven",
             "closeAndReleaseSonatypeStagingRepository",
@@ -265,9 +260,8 @@ class AndroidRuntimeWorkflowTests(unittest.TestCase):
             "OSSRH_PASSWORD",
             "SONATYPE_STAGING_PROFILE_ID",
             "publish-publication",
-        )
-        present = [snippet for snippet in forbidden if snippet in self.release]
-        self.assertEqual([], present)
+        ):
+            self.assertNotIn(fragment, self.release)
 
     def test_pre_commit_runs_workflow_contract_for_relevant_files(self) -> None:
         self.assertIn("- id: foundry-android-runtime-workflows", self.pre_commit)
@@ -277,9 +271,13 @@ class AndroidRuntimeWorkflowTests(unittest.TestCase):
             "android_builds",
             "android_java_check",
             "release",
-            "foundry_android_runtime",
+            "android_native_contract",
         ):
             self.assertIn(path, self.pre_commit)
+        self.assertNotIn("foundry_android_runtime", self.pre_commit)
+        self.assertIn("- id: foundry-android-native-contracts", self.pre_commit)
+        self.assertIn("tests.python_build.test_android_jni_contract", self.pre_commit)
+        self.assertIn("tests.python_build.test_android_native_staging", self.pre_commit)
 
 
 if __name__ == "__main__":

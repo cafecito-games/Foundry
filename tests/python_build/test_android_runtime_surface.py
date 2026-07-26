@@ -111,9 +111,12 @@ forbid_text(
 )
 require_text(
     "platform/android/java/build.gradle",
+    'dependsOn ":lib:assembleTemplate${capitalizedTarget}"',
+)
+forbid_text(
+    "platform/android/java/build.gradle",
     "foundryAndroidSource",
     "foundryAndroidFetch",
-    "foundryNativeRoot",
     "foundryNativeBundle",
     "foundryRuntimeScratch",
     "WS2_REMOVE_ANDROID_RUNTIME_COMPAT_BRIDGE",
@@ -223,9 +226,16 @@ for path in (
     "platform/android/java/nativeSrcsConfigs",
     "platform/android/java/app/src/main/AndroidManifest.xml",
     "platform/android/export/export_plugin.cpp",
-    "platform/android/foundry_android_runtime.json",
 ):
     require_path(path)
+for path in (
+    "platform/android/foundry_android_runtime.json",
+    "platform/android/android_runtime_build.py",
+    "platform/android/android_native_bundle.py",
+):
+    forbid_path(path)
+require_path("platform/android/android_native_contract.py")
+require_path("platform/android/android_jni_contract.py")
 
 require_text(
     "platform/android/java/settings.gradle",
@@ -242,6 +252,13 @@ require_text(
     'dependsOn ":app:assemble${capitalizedEdition}${capitalizedTarget}"',
     "task generateFoundryTemplates",
     "task generateFoundryMonoTemplates",
+)
+forbid_text(
+    "platform/android/java/build.gradle",
+    "foundryAndroidSource",
+    "foundryAndroidFetch",
+    "foundryNativeBundle",
+    "foundryRuntimeScratch",
     "WS2_REMOVE_ANDROID_RUNTIME_COMPAT_BRIDGE",
 )
 require_text(
@@ -293,7 +310,7 @@ require_text(
 )
 require_text(
     "platform/android/java/lib/src/main/java/games/cafecito/foundry/utils/AndroidRuntimeCompat.kt",
-    '@RequiresApi(Build.VERSION_CODES.R)',
+    "@RequiresApi(Build.VERSION_CODES.R)",
     '@SuppressLint("MissingPermission")',
 )
 require_text(

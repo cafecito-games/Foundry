@@ -13,7 +13,7 @@ on:
 jobs:
   validate-runtime-contracts:
     runs-on: ubuntu-24.04
-    name: Validate standalone Android runtime contracts
+    name: Validate in-tree Android host contracts
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -26,6 +26,8 @@ jobs:
           python3 -m unittest \
             tests.python_build.test_android_runtime_contract \
             tests.python_build.test_android_runtime_build \
+            tests.python_build.test_android_jni_contract \
+            tests.python_build.test_android_native_staging \
             tests.python_build.test_android_gradle_behavioral \
             tests.python_build.test_android_gradle_runtime_contract \
             tests.python_build.test_android_device_acceptance -v
@@ -220,7 +222,7 @@ jobs:
       - validate-runtime-contracts
       - build-android-native
     runs-on: ubuntu-24.04
-    name: Assemble Android templates with standalone runtime
+    name: Assemble Android templates with in-tree host
     timeout-minutes: 60
     steps:
       - name: Checkout Foundry
@@ -228,13 +230,6 @@ jobs:
         with:
           ref: ${{ inputs.checkout-ref || github.sha }}
           submodules: recursive
-
-      - name: Checkout pinned standalone runtime
-        uses: actions/checkout@v6
-        with:
-          repository: cafecito-games/Foundry-Android
-          ref: b8c46c807d467fcd1667b7d4cb04d07a09a08860
-          path: .test_scratch/foundry-android-source
 
       - name: Set up Java 17
         uses: actions/setup-java@v5
@@ -249,19 +244,14 @@ jobs:
           path: .test_scratch/android-native
           merge-multiple: true
 
-      - name: Assemble and verify standalone runtime
+      - name: Assemble and verify in-tree host
         run: |
           set -euo pipefail
-          ENGINE_REVISION="$(git rev-parse HEAD)"
           test "$(find .test_scratch/android-native -name provenance.json -type f | wc -l | tr -d ' ')" = "12"
           cd platform/android/java
           ./gradlew --no-daemon generateFoundryTemplates \
-            -PfoundryAndroidSource="${GITHUB_WORKSPACE}/.test_scratch/foundry-android-source" \
-            -PfoundryNativeRoot="${GITHUB_WORKSPACE}/.test_scratch/android-native" \
-            -PfoundryRuntimeScratch="${RUNNER_TEMP}/foundry-android-runtime"
+            -PfoundryNativeRoot="${GITHUB_WORKSPACE}/.test_scratch/android-native"
           cd ../../..
-          cp "${RUNNER_TEMP}/foundry-android-runtime/foundry-native.zip" bin/foundry-native.zip
-          test -n "${ENGINE_REVISION}"
           test -f bin/android_debug.apk
           test -f bin/android_dev.apk
           test -f bin/android_release.apk
@@ -269,12 +259,11 @@ jobs:
           test -f bin/foundry-debug.aar
           test -f bin/foundry-dev.aar
           test -f bin/foundry-release.aar
-          test -f bin/foundry-native.zip
 
-      - name: Upload assembled Android runtime
+      - name: Upload assembled Android templates
         uses: ./.github/actions/upload-artifact
         with:
-          name: android-runtime-assembled
+          name: android-templates-assembled
           path: |
             bin/android_debug.apk
             bin/android_dev.apk
@@ -283,7 +272,6 @@ jobs:
             bin/foundry-debug.aar
             bin/foundry-dev.aar
             bin/foundry-release.aar
-            bin/foundry-native.zip
 
   device-acceptance:
     needs:
@@ -304,11 +292,11 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Download assembled Android runtime
+      - name: Download assembled Android templates
         uses: actions/download-artifact@v8
         with:
-          name: android-runtime-assembled
-          path: .test_scratch/android-runtime-assembled
+          name: android-templates-assembled
+          path: .test_scratch/android-templates-assembled
 
       - name: Install Android emulator
         run: |
@@ -364,7 +352,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 platform/android/android_device_acceptance.py source-template \
-            --source-template .test_scratch/android-runtime-assembled/android_source.zip \
+            --source-template .test_scratch/android-templates-assembled/android_source.zip \
             --work-dir "${RUNNER_TEMP}/android-device-acceptance-work" \
             --evidence-dir "${RUNNER_TEMP}/android-device-acceptance-evidence" \
             --adb "${ANDROID_HOME}/platform-tools/adb" \

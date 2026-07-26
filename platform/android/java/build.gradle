@@ -24,21 +24,6 @@ def selectedAbis = providers.gradleProperty("selectedAbis").map { value ->
     value.split(",").collect { it.trim() }.findAll { !it.isEmpty() }
 }.orElse(supportedAbis).get()
 
-// WS2_REMOVE_ANDROID_RUNTIME_COMPAT_BRIDGE: Workstream 2 must migrate the
-// workflows and SCons callers before removing these legacy property names.
-def foundryAndroidSource = providers.gradleProperty("foundryAndroidSource").orNull
-def foundryAndroidFetch = providers.gradleProperty("foundryAndroidFetch").orNull
-def foundryNativeRoot = providers.gradleProperty("foundryNativeRoot").orNull
-def foundryNativeBundle = providers.gradleProperty("foundryNativeBundle").orNull
-def foundryRuntimeScratch = providers.gradleProperty("foundryRuntimeScratch").orNull
-
-if (foundryNativeRoot != null && foundryNativeBundle != null) {
-    throw new GradleException("Use only one of foundryNativeRoot or foundryNativeBundle.")
-}
-if ((foundryNativeRoot != null || foundryNativeBundle != null) && foundryRuntimeScratch == null) {
-    throw new GradleException("foundryRuntimeScratch is required with a prebuilt native input.")
-}
-
 def validateProductionNativeMatrix = tasks.register("validateProductionNativeMatrix") {
     doLast {
         if (selectedAbis as Set != supportedAbis as Set || selectedAbis.size() != supportedAbis.size()) {

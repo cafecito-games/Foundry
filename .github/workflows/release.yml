@@ -877,13 +877,6 @@ jobs:
           ref: ${{ github.sha }}
           submodules: recursive
 
-      - name: Checkout pinned standalone runtime
-        uses: actions/checkout@v6
-        with:
-          repository: cafecito-games/Foundry-Android
-          ref: b8c46c807d467fcd1667b7d4cb04d07a09a08860
-          path: .test_scratch/foundry-android-source
-
       - name: Set up Java 17
         uses: actions/setup-java@v5
         with:
@@ -897,19 +890,14 @@ jobs:
           path: .test_scratch/android-native
           merge-multiple: true
 
-      - name: Assemble and verify standalone runtime
+      - name: Assemble and verify in-tree host
         run: |
           set -euo pipefail
-          ENGINE_REVISION="$(git rev-parse HEAD)"
           test "$(find .test_scratch/android-native -name provenance.json -type f | wc -l | tr -d ' ')" = "12"
           cd platform/android/java
           ./gradlew --no-daemon generateFoundryTemplates \
-            -PfoundryAndroidSource="${GITHUB_WORKSPACE}/.test_scratch/foundry-android-source" \
-            -PfoundryNativeRoot="${GITHUB_WORKSPACE}/.test_scratch/android-native" \
-            -PfoundryRuntimeScratch="${RUNNER_TEMP}/foundry-android-runtime"
+            -PfoundryNativeRoot="${GITHUB_WORKSPACE}/.test_scratch/android-native"
           cd ../../..
-          cp "${RUNNER_TEMP}/foundry-android-runtime/foundry-native.zip" bin/foundry-native.zip
-          test -n "${ENGINE_REVISION}"
           test -f bin/android_debug.apk
           test -f bin/android_dev.apk
           test -f bin/android_release.apk
@@ -917,7 +905,6 @@ jobs:
           test -f bin/foundry-debug.aar
           test -f bin/foundry-dev.aar
           test -f bin/foundry-release.aar
-          test -f bin/foundry-native.zip
 
       - name: Upload debug Android template
         uses: ./.github/actions/upload-artifact
@@ -932,17 +919,6 @@ jobs:
           path: |
             bin/android_release.apk
             bin/android_source.zip
-
-      - name: Upload standalone Android diagnostics
-        uses: ./.github/actions/upload-artifact
-        with:
-          name: release-android-runtime
-          path: |
-            bin/android_dev.apk
-            bin/foundry-debug.aar
-            bin/foundry-dev.aar
-            bin/foundry-release.aar
-            bin/foundry-native.zip
 
   build-ios:
     needs: resolve

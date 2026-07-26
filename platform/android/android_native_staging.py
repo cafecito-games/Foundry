@@ -1,102 +1,32 @@
 #!/usr/bin/env python3
-"""Validate and stage Foundry-owned Android native inputs for the in-tree host."""
+"""Validate and stage Foundry-owned Android native cells for the in-tree host."""
 
 from __future__ import annotations
 
 import argparse
 import hashlib
-import json
 import os
 import shutil
 import sys
 import tempfile
-import zipfile
 from pathlib import Path
-from typing import Any
+from typing import cast
 
-import android_native_bundle as bundle
-import android_runtime_contract as contract
+import android_jni_contract as jni_contract
+import android_native_contract as contract
 
-WS2_REMOVAL_MARKER = "WS2_REMOVE_ANDROID_RUNTIME_COMPAT_BRIDGE"
-FOUNDRY_REPOSITORY = "https://github.com/cafecito-games/Foundry"
 SUPPORTED_ABIS = tuple(sorted(contract.ABIS))
-ELF_ABIS = {
-    "arm64-v8a": {"elf_class": 64, "elf_machine": 183},
-    "armeabi-v7a": {"elf_class": 32, "elf_machine": 40},
-    "x86": {"elf_class": 32, "elf_machine": 3},
-    "x86_64": {"elf_class": 64, "elf_machine": 62},
-}
-EXTERNAL_JNI_ALLOWLIST = [
-    {
-        "component": "Swappy (Android Game SDK)",
-        "owner": "Google LLC",
-        "symbol": "Java_com_google_androidgamesdk_ChoreographerCallback_nOnChoreographer",
-    },
-    {
-        "component": "Swappy (Android Game SDK)",
-        "owner": "Google LLC",
-        "symbol": "Java_com_google_androidgamesdk_SwappyDisplayManager_nOnRefreshPeriodChanged",
-    },
-    {
-        "component": "Swappy (Android Game SDK)",
-        "owner": "Google LLC",
-        "symbol": "Java_com_google_androidgamesdk_SwappyDisplayManager_nSetSupportedRefreshPeriods",
-    },
-]
+ZERO_SHA = "0" * 40
+STAGING_ROOT_NAME = "android-native-stage"
+ROOT_MARKER_NAME = ".foundry-android-native-stage-root"
+ROOT_MARKER_CONTENTS = b"foundry-android-native-stage-root-v1\n"
+OUTPUT_MARKER_SUFFIX = ".foundry-android-native-stage"
+OUTPUT_MARKER_CONTENTS = b"foundry-android-native-stage-output-v1\n"
+REPOSITORY_ROOT = Path(__file__).absolute().parents[2]
 
 
 class StagingError(RuntimeError):
-    """A native caller-bridge input failed closed."""
-
-
-def create_compatibility(
-    *,
-    revision: str,
-    engine_version: str,
-    bindings_version: str,
-) -> dict[str, Any]:
-    """Create the compatibility document embedded by the existing public bundle."""
-
-    if contract.SHA_PATTERN.fullmatch(revision) is None:
-        raise StagingError("engine revision must be a lowercase 40-character Git SHA")
-    if not engine_version or not bindings_version:
-        raise StagingError("engine and bindings versions must be non-empty")
-    return {
-        "bindings": {"version": bindings_version},
-        "engine": {
-            "repository": FOUNDRY_REPOSITORY,
-            "revision": revision,
-            "version": engine_version,
-            "version_components": _version_components(engine_version),
-        },
-        "jni_contract_version": 1,
-        "native": {
-            "abis": ELF_ABIS,
-            "build_types": sorted(contract.BUILD_TYPES),
-            "external_jni_allowlist": EXTERNAL_JNI_ALLOWLIST,
-            "libraries": ["libfoundry_android.so", "libc++_shared.so"],
-        },
-        "schema_version": 1,
-    }
-
-
-def _version_components(version: str) -> dict[str, object]:
-    pieces = version.replace("-", ".").split(".")
-    numeric: list[int] = []
-    while pieces and len(numeric) < 3:
-        piece = pieces.pop(0)
-        if not piece.isdigit():
-            break
-        numeric.append(int(piece))
-    while len(numeric) < 3:
-        numeric.append(0)
-    return {
-        "major": numeric[0],
-        "minor": numeric[1],
-        "module_config": "",
-        "patch": numeric[2],
-        "status": ".".join(pieces) or "custom",
-    }
+    """A Foundry-owned native input could not be staged safely."""
 
 
 def staging_key(
@@ -122,11 +52,114 @@ def _validate_abis(selected_abis: tuple[str, ...]) -> None:
         raise StagingError(f"unsupported Android ABI: {unsupported[0]}")
 
 
-def _remove_owned_path(path: Path) -> None:
-    if path.is_symlink() or path.is_file():
-        path.unlink()
-    elif path.is_dir():
-        shutil.rmtree(path)
+def trusted_tree(source_root: Path, revision: str) -> str:
+    """Resolve the expected tree from the checked-out Foundry source."""
+
+    if contract.SHA_PATTERN.fullmatch(revision) is None:
+        raise StagingError("trusted Foundry revision must be a lowercase 40-character Git SHA")
+    if revision == ZERO_SHA:
+        return ZERO_SHA
+    try:
+        resolved_revision, tree = contract.source_identity(source_root, revision)
+    except contract.ContractError as error:
+        raise StagingError(f"unable to resolve trusted Foundry tree: {error}") from error
+    if resolved_revision != revision:
+        raise StagingError(f"trusted Foundry revision mismatch: expected {revision}, resolved {resolved_revision}")
+    return cast(str, tree)
+
+
+def _absolute_lexical(path: Path, description: str) -> Path:
+    if any(part == ".." for part in path.parts):
+        raise StagingError(f"{description} contains traversal: {path}")
+    if not path.is_absolute():
+        raise StagingError(f"{description} must be absolute: {path}")
+    return Path(os.path.abspath(path))
+
+
+def _reject_symlink_components(path: Path, description: str) -> None:
+    candidates = (path, *path.parents)
+    for candidate in candidates:
+        if candidate.is_symlink():
+            raise StagingError(f"{description} contains symbolic link: {candidate}")
+
+
+def _root_marker(staging_root: Path) -> Path:
+    return staging_root / ROOT_MARKER_NAME
+
+
+def _output_marker(output: Path) -> Path:
+    return output.parent / f".{output.name}{OUTPUT_MARKER_SUFFIX}"
+
+
+def _validate_marker(path: Path, expected: bytes, description: str) -> None:
+    if path.is_symlink() or not path.is_file():
+        raise StagingError(f"{description} is not owned by Foundry: {path}")
+    try:
+        contents = path.read_bytes()
+    except OSError as error:
+        raise StagingError(f"unable to read {description} ownership marker {path}: {error}") from error
+    if contents != expected:
+        raise StagingError(f"{description} has an invalid ownership marker: {path}")
+
+
+def _contains_user_data(path: Path) -> bool:
+    for candidate in path.rglob("*"):
+        if candidate.is_symlink() or not candidate.is_dir():
+            return True
+    return False
+
+
+def _prepare_staging_root(staging_root: Path) -> Path:
+    root = _absolute_lexical(staging_root, "native staging root")
+    unsafe_roots = {
+        Path(root.anchor),
+        Path.home().absolute(),
+        Path(tempfile.gettempdir()).absolute(),
+        REPOSITORY_ROOT,
+    }
+    if root in unsafe_roots or root.name != STAGING_ROOT_NAME:
+        raise StagingError(f"refusing unsafe native staging root: {root}")
+    _reject_symlink_components(root, "native staging root")
+    marker = _root_marker(root)
+    if root.exists():
+        if not root.is_dir():
+            raise StagingError(f"native staging root is not a directory: {root}")
+        if not marker.exists() and not marker.is_symlink() and not _contains_user_data(root):
+            # Gradle may materialize an empty source-set directory before Exec.
+            # Claiming an empty tree cannot discard user data; non-empty trees fail closed.
+            marker.write_bytes(ROOT_MARKER_CONTENTS)
+        _validate_marker(marker, ROOT_MARKER_CONTENTS, "native staging root")
+        return root
+    if not root.parent.is_dir():
+        raise StagingError(f"native staging root parent does not exist: {root.parent}")
+    root.mkdir()
+    try:
+        marker.write_bytes(ROOT_MARKER_CONTENTS)
+    except OSError:
+        root.rmdir()
+        raise
+    return root
+
+
+def _validate_output(staging_root: Path, output: Path) -> tuple[Path, Path]:
+    target = _absolute_lexical(output, "native staging output")
+    try:
+        relative = target.relative_to(staging_root)
+    except ValueError as error:
+        raise StagingError(f"native staging output is not contained within its owned root: {target}") from error
+    if not relative.parts:
+        raise StagingError(f"refusing unsafe native staging output: {target}")
+    _reject_symlink_components(target, "native staging output")
+    marker = _output_marker(target)
+    if target.exists():
+        if not target.is_dir():
+            raise StagingError(f"native staging output exists and is not an owned directory: {target}")
+        if not marker.exists() and not marker.is_symlink() and not _contains_user_data(target):
+            marker.write_bytes(OUTPUT_MARKER_CONTENTS)
+        _validate_marker(marker, OUTPUT_MARKER_CONTENTS, "native staging output")
+    elif marker.exists() or marker.is_symlink():
+        raise StagingError(f"native staging output marker exists without its owned directory: {marker}")
+    return target, marker
 
 
 def replace_staged_build_type(
@@ -134,18 +167,21 @@ def replace_staged_build_type(
     input_root: Path,
     build_type: str,
     selected_abis: tuple[str, ...],
+    staging_root: Path,
     output: Path,
 ) -> None:
-    """Prepare a complete selected build-type payload, then replace its owned stage as a whole."""
+    """Prepare a complete selected payload, then replace its owned stage as a whole."""
 
     _validate_abis(selected_abis)
     if build_type not in contract.BUILD_TYPES:
         raise StagingError(f"unsupported Android build type: {build_type}")
-    output = output.resolve()
-    if output == Path(output.anchor) or output == Path.home().resolve():
-        raise StagingError(f"refusing unsafe native staging output: {output}")
+    owned_root = _prepare_staging_root(staging_root)
+    output, output_marker = _validate_output(owned_root, output)
     output.parent.mkdir(parents=True, exist_ok=True)
+    _reject_symlink_components(output.parent, "native staging output parent")
     temporary = Path(tempfile.mkdtemp(prefix=f".{output.name}.", dir=output.parent))
+    backup: Path | None = None
+    created_marker = False
     try:
         for abi in selected_abis:
             source = input_root / build_type / abi
@@ -156,177 +192,73 @@ def replace_staged_build_type(
                 if path.is_symlink() or not path.is_file():
                     raise StagingError(f"native staging input is missing library: {path}")
                 shutil.copyfile(path, destination / library)
-        if output.exists() or output.is_symlink():
-            _remove_owned_path(output)
-        os.replace(temporary, output)
+        if output.exists():
+            backup = Path(tempfile.mkdtemp(prefix=f".{output.name}.backup.", dir=output.parent))
+            backup.rmdir()
+            os.replace(output, backup)
+        else:
+            output_marker.write_bytes(OUTPUT_MARKER_CONTENTS)
+            created_marker = True
+        try:
+            os.replace(temporary, output)
+        except BaseException:
+            if backup is not None:
+                os.replace(backup, output)
+                backup = None
+            elif created_marker:
+                output_marker.unlink(missing_ok=True)
+            raise
+        if backup is not None:
+            shutil.rmtree(backup)
+            backup = None
     finally:
         if temporary.exists():
             shutil.rmtree(temporary)
 
 
-def _tree_from_cell(root: Path, build_type: str, abi: str) -> str:
-    provenance = root / build_type / abi / "provenance.json"
-    try:
-        value = json.loads(provenance.read_bytes())
-        tree = value["engine"]["tree"]
-    except (OSError, KeyError, TypeError, json.JSONDecodeError) as error:
-        raise StagingError(f"unable to read native provenance tree from {provenance}: {error}") from error
-    if not isinstance(tree, str) or contract.SHA_PATTERN.fullmatch(tree) is None:
-        raise StagingError(f"native provenance contains an invalid tree: {provenance}")
-    return tree
-
-
-def _write_compatibility(path: Path, compatibility: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(bundle.canonical_json(compatibility))
-
-
-def _native_root_fingerprint(root: Path, cells: tuple[contract.NativeCell, ...]) -> str:
-    digest = hashlib.sha256()
-    digest.update(str(root.resolve()).encode())
-    for cell in cells:
-        provenance = cell.directory / "provenance.json"
-        digest.update(f"\0{cell.build_type}/{cell.abi}\0".encode())
-        digest.update(hashlib.sha256(provenance.read_bytes()).digest())
-    return digest.hexdigest()
-
-
-def _create_bundle_from_cells(
-    compatibility: dict[str, Any],
-    cells: tuple[contract.NativeCell, ...],
-    output: Path,
-) -> None:
-    payloads: dict[str, bytes] = {}
-    records: list[dict[str, Any]] = []
-    for cell in cells:
-        for library in ("libfoundry_android.so", "libc++_shared.so"):
-            path = f"{cell.build_type}/{cell.abi}/{library}"
-            contents = (cell.directory / library).read_bytes()
-            payloads[path] = contents
-            records.append(bundle.inspect_payload(path=path, contents=contents, compatibility=compatibility))
-    records.sort(key=lambda record: record["path"])
-    bundle.verify_consistent_jni_surface(records)
-    manifest = {
-        "bundle_version": compatibility["bindings"]["version"],
-        "compatibility": compatibility,
-        "files": records,
-        "format": bundle.BUNDLE_FORMAT,
-        "matrix": bundle.expected_matrix(compatibility),
-        "schema_version": bundle.BUNDLE_SCHEMA_VERSION,
-    }
-    bundle._write_bundle_zip(output, manifest, payloads)
-
-
-def _embedded_bundle_compatibility(path: Path, revision: str, engine_version: str) -> dict[str, Any]:
-    if path.is_symlink() or not path.is_file():
-        raise StagingError(f"native bundle does not exist: {path}")
-    try:
-        with zipfile.ZipFile(path) as archive:
-            manifest, _ = bundle._load_manifest(archive)
-            compatibility = manifest["compatibility"]
-    except (OSError, KeyError, TypeError, zipfile.BadZipFile, bundle.BundleError) as error:
-        raise StagingError(f"unable to read native bundle compatibility: {error}") from error
-    if not isinstance(compatibility, dict):
-        raise StagingError("native bundle compatibility metadata must be an object")
-    bundle.validate_compatibility_shape(compatibility)
-    if compatibility["engine"]["version_components"] != _version_components(engine_version):
-        raise StagingError(
-            "native bundle engine version mismatch: "
-            f"bundle records {compatibility['engine']['version']!r}, expected {engine_version!r}"
-        )
-    expected = create_compatibility(
-        revision=revision,
-        engine_version=compatibility["engine"]["version"],
-        bindings_version=compatibility["bindings"]["version"],
-    )
-    if compatibility != expected:
-        raise StagingError("native bundle compatibility does not match the in-tree Android contract")
-    return compatibility
-
-
 def prepare(
     *,
     revision: str,
-    engine_version: str,
-    bindings_version: str,
+    tree: str,
+    expected_foundry_jni: tuple[str, ...],
     build_type: str,
     selected_abis: tuple[str, ...],
+    staging_root: Path,
     output: Path,
     local_root: Path | None,
     native_root: Path | None,
-    native_bundle: Path | None,
-    runtime_scratch: Path | None,
 ) -> None:
-    """Validate one caller mode and replace its revision-scoped JNI stage as a whole."""
+    """Validate one internal input mode and replace its scoped JNI stage."""
 
     _validate_abis(selected_abis)
-    modes = (local_root is not None, native_root is not None, native_bundle is not None)
-    if sum(modes) != 1:
-        raise StagingError("provide exactly one of --local-root, --native-root, or --native-bundle")
-
-    if native_bundle is not None:
-        if runtime_scratch is None:
-            raise StagingError("--runtime-scratch is required with --native-bundle")
-        runtime_scratch.mkdir(parents=True, exist_ok=True)
-        compatibility = _embedded_bundle_compatibility(native_bundle, revision, engine_version)
-        compatibility_path = runtime_scratch / "foundry-engine.json"
-        _write_compatibility(compatibility_path, compatibility)
-        extracted_root = Path(tempfile.mkdtemp(prefix=".native-extracted.", dir=runtime_scratch))
-        try:
-            extracted_build_type = extracted_root / build_type
-            bundle.extract_bundle(native_bundle, compatibility_path, build_type, extracted_build_type)
-            replace_staged_build_type(
-                input_root=extracted_root,
-                build_type=build_type,
-                selected_abis=selected_abis,
-                output=output,
-            )
-        finally:
-            if extracted_root.exists():
-                shutil.rmtree(extracted_root)
-        return
+    if (local_root is None) == (native_root is None):
+        raise StagingError("provide exactly one of --local-root or --native-root")
 
     root = native_root if native_root is not None else local_root
     assert root is not None
-    tree = _tree_from_cell(root, build_type, selected_abis[0])
-    if native_root is not None:
-        if runtime_scratch is None:
-            raise StagingError("--runtime-scratch is required with --native-root")
-        runtime_scratch.mkdir(parents=True, exist_ok=True)
-        cells = contract.validate_native_matrix(root, revision, tree)
-        compatibility = create_compatibility(
-            revision=revision,
-            engine_version=engine_version,
-            bindings_version=bindings_version,
-        )
-        compatibility_path = runtime_scratch / "foundry-engine.json"
-        _write_compatibility(compatibility_path, compatibility)
-        output_bundle = runtime_scratch / "foundry-native.zip"
-        fingerprint = _native_root_fingerprint(root, cells)
-        fingerprint_path = runtime_scratch / "native-root-input.json"
-        expected_record = {"fingerprint": fingerprint, "revision": revision}
-        cached_record: object = None
-        if fingerprint_path.is_file():
-            try:
-                cached_record = json.loads(fingerprint_path.read_bytes())
-            except (OSError, json.JSONDecodeError):
-                cached_record = None
-        if cached_record == expected_record and output_bundle.is_file():
-            bundle.validate_bundle(output_bundle, compatibility_path)
+    try:
+        if native_root is not None:
+            contract.validate_native_matrix(
+                root,
+                revision,
+                tree,
+                expected_foundry_jni=expected_foundry_jni,
+            )
         else:
-            _create_bundle_from_cells(compatibility, cells, output_bundle)
-            fingerprint_path.write_bytes(contract.canonical_json(expected_record))
-    else:
-        contract.validate_native_cells(
-            root,
-            revision=revision,
-            tree=tree,
-            pairs=tuple((build_type, abi) for abi in selected_abis),
-        )
+            contract.validate_native_cells(
+                root,
+                revision=revision,
+                tree=tree,
+                pairs=tuple((build_type, abi) for abi in selected_abis),
+                expected_foundry_jni=expected_foundry_jni,
+            )
+    except contract.ContractError as error:
+        raise StagingError(str(error)) from error
     replace_staged_build_type(
         input_root=root,
         build_type=build_type,
         selected_abis=selected_abis,
+        staging_root=staging_root,
         output=output,
     )
 
@@ -334,35 +266,35 @@ def prepare(
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--revision", required=True)
-    parser.add_argument("--engine-version", required=True)
-    parser.add_argument("--bindings-version", required=True)
+    parser.add_argument("--source-root", required=True, type=Path)
+    parser.add_argument("--classes-jar", required=True, type=Path)
     parser.add_argument("--build-type", choices=sorted(contract.BUILD_TYPES), required=True)
     parser.add_argument("--selected-abis", required=True)
+    parser.add_argument("--staging-root", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     modes = parser.add_mutually_exclusive_group(required=True)
     modes.add_argument("--local-root", type=Path)
     modes.add_argument("--native-root", type=Path)
-    modes.add_argument("--native-bundle", type=Path)
-    parser.add_argument("--runtime-scratch", type=Path)
     return parser
 
 
 def main() -> int:
     arguments = build_parser().parse_args()
     try:
+        tree = trusted_tree(arguments.source_root, arguments.revision)
+        expected_foundry_jni = jni_contract.derive_declared_jni_symbols(arguments.classes_jar)
         prepare(
             revision=arguments.revision,
-            engine_version=arguments.engine_version,
-            bindings_version=arguments.bindings_version,
+            tree=tree,
+            expected_foundry_jni=expected_foundry_jni,
             build_type=arguments.build_type,
             selected_abis=tuple(value for value in arguments.selected_abis.split(",") if value),
+            staging_root=arguments.staging_root,
             output=arguments.output,
             local_root=arguments.local_root,
             native_root=arguments.native_root,
-            native_bundle=arguments.native_bundle,
-            runtime_scratch=arguments.runtime_scratch,
         )
-    except (StagingError, contract.ContractError, bundle.BundleError, OSError) as error:
+    except (StagingError, contract.ContractError, jni_contract.JniContractError, OSError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
     return 0

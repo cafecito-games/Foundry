@@ -231,11 +231,27 @@ repos:
           (?x)^(
             \.pre-commit-config\.yaml|
             misc/scripts/test_android_runtime_identifiers\.py|
-            platform/android/(?:android_runtime_contract\.py|foundry_android_runtime\.json|SCsub)|
+            platform/android/(?:android_jni_contract\.py|android_native_contract\.py|android_native_staging\.py|SCsub)|
             platform/android/export/export_plugin\.cpp|
             platform/android/java/(?:app/|lib(?:/|$)|build\.gradle|settings\.gradle)|
             platform/android/java_foundry_(?:lib_jni|wrapper)\.cpp|
             tests/python_build/test_android_runtime_surface\.py
+          )$
+
+      - id: foundry-android-native-contracts
+        name: Foundry Android native contracts
+        language: python
+        entry: python -m unittest
+        args:
+          - tests.python_build.test_android_jni_contract
+          - tests.python_build.test_android_native_staging
+        pass_filenames: false
+        files: |
+          (?x)^(
+            \.pre-commit-config\.yaml|
+            platform/android/(?:android_jni_contract|android_native_contract|android_native_staging)\.py|
+            platform/android/java/lib/(?:build\.gradle|src/.*)|
+            tests/python_build/(?:android_native_test_support|test_android_(?:jni_contract|native_staging|runtime_contract))\.py
           )$
 
       - id: foundry-android-runtime-workflows
@@ -250,7 +266,8 @@ repos:
             \.github/scripts/test_android_runtime_workflows\.py|
             \.github/workflows/(android_builds|android_java_check|release)\.yml|
             misc/scripts/test_release_resolver\.py|
-            platform/android/foundry_android_runtime\.json|
+            platform/android/(?:android_jni_contract|android_native_contract|android_native_staging|platform_android_builders)\.py|
+            platform/android/java/(?:build|lib/build)\.gradle|
             tests/python_build/test_android_runtime_surface\.py
           )$
 

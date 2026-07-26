@@ -1,30 +1,26 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
-import zipfile
 from pathlib import Path
-from typing import Any
 
-from tests.python_build.android_native_bundle_test_support import (
+from tests.python_build.android_native_test_support import (
     ABI_SPECS,
     LIBRARIES,
-    canonical_json,
     populate_native_matrix,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 JAVA_SOURCE = REPO_ROOT / "platform/android/java"
 ANDROID_TOOLS = (
-    "android_native_bundle.py",
+    "android_jni_contract.py",
+    "android_native_contract.py",
     "android_native_staging.py",
-    "android_runtime_contract.py",
     "android_source_template.py",
 )
 ALL_SCONS_ABIS = ("arm32", "arm64", "x86_32", "x86_64")
@@ -224,28 +220,15 @@ class AndroidGradleBehavioralTests(unittest.TestCase):
             f"Gradle failed:\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}",
         )
 
-    def test_native_root_and_existing_bundle_stage_through_real_gradle(self) -> None:
+    def test_native_root_stages_through_real_gradle(self) -> None:
         native_root = self.create_native_root("native-root", b":root")
-        root_scratch = self.workspace / "root-scratch"
         full_properties = {
             "foundryNativeRoot": str(native_root),
-            "foundryRuntimeScratch": str(root_scratch),
             "selectedAbis": ",".join(ALL_SCONS_ABIS),
         }
 
         root_result = self.run_gradle(":lib:stageFoundryNativeTemplateDebug", properties=full_properties)
         self.assert_gradle_succeeded(root_result)
-
-        bundle_path = root_scratch / "foundry-native.zip"
-        compatibility_path = root_scratch / "foundry-engine.json"
-        self.assertTrue(bundle_path.is_file())
-        self.assertTrue(compatibility_path.is_file())
-        with zipfile.ZipFile(bundle_path) as archive:
-            manifest: dict[str, Any] = json.loads(archive.read("manifest.json"))
-            self.assertEqual("foundry-android-native-bundle", manifest["format"])
-            self.assertEqual(self.revision, manifest["compatibility"]["engine"]["revision"])
-            self.assertEqual(12, len(manifest["matrix"]))
-            self.assertEqual(24, len(manifest["files"]))
 
         root_stage = expected_stage(
             self.java_root,
@@ -258,39 +241,12 @@ class AndroidGradleBehavioralTests(unittest.TestCase):
             staged_libraries(root_stage),
         )
 
-        bundle_scratch = self.workspace / "bundle-scratch"
-        subset = ("arm64",)
-        bundle_result = self.run_gradle(
-            ":lib:stageFoundryNativeTemplateDebug",
-            properties={
-                "foundryNativeBundle": str(bundle_path),
-                "foundryRuntimeScratch": str(bundle_scratch),
-                "selectedAbis": ",".join(subset),
-            },
-        )
-        self.assert_gradle_succeeded(bundle_result)
-        bundle_stage = expected_stage(
-            self.java_root,
-            revision=self.revision,
-            input_identity=f"bundle:{bundle_path.resolve()}",
-            selected_abis=subset,
-        )
-        self.assertEqual(
-            [f"arm64-v8a/{library}" for library in sorted(LIBRARIES)],
-            staged_libraries(bundle_stage),
-        )
-        self.assertEqual(
-            canonical_json(manifest["compatibility"]),
-            (bundle_scratch / "foundry-engine.json").read_bytes(),
-        )
-
     def test_production_generation_rejects_incomplete_selected_abis(self) -> None:
         native_root = self.create_native_root("production-native-root", b":production")
         result = self.run_gradle(
             "generateFoundryTemplates",
             properties={
                 "foundryNativeRoot": str(native_root),
-                "foundryRuntimeScratch": str(self.workspace / "production-scratch"),
                 "selectedAbis": "arm64",
             },
         )
@@ -304,11 +260,11 @@ class AndroidGradleBehavioralTests(unittest.TestCase):
     def test_missing_git_uses_zero_revision_during_real_gradle_configuration(self) -> None:
         no_git_path = self.workspace / "no-git-path"
         no_git_path.mkdir()
-        for name in ("basename", "dirname", "sed", "sh", "uname", "xargs"):
-            executable = shutil.which(name)
-            if executable is None:
+        for name in ("basename", "dirname", "javap", "sed", "sh", "uname", "xargs"):
+            executable = self.java_home / "bin/javap" if name == "javap" else Path(shutil.which(name) or "")
+            if not executable.is_file():
                 self.fail(f"required Gradle wrapper utility is unavailable: {name}")
-            (no_git_path / name).symlink_to(Path(executable).resolve())
+            (no_git_path / name).symlink_to(executable.resolve())
         self.assertIsNone(shutil.which("git", path=str(no_git_path)))
 
         result = self.run_gradle(
@@ -326,6 +282,22 @@ class AndroidGradleBehavioralTests(unittest.TestCase):
             build_config.read_text(encoding="utf-8"),
         )
 
+        zero_root = self.workspace / "zero-native-root"
+        populate_native_matrix(
+            zero_root,
+            revision=ZERO_REVISION,
+            tree=ZERO_REVISION,
+        )
+        stage_result = self.run_gradle(
+            ":lib:stageFoundryNativeTemplateDebug",
+            properties={
+                "foundryNativeRoot": str(zero_root),
+                "selectedAbis": ",".join(ALL_SCONS_ABIS),
+            },
+            path=str(no_git_path),
+        )
+        self.assert_gradle_succeeded(stage_result)
+
     def test_changed_input_subset_uses_new_scope_without_stale_abis(self) -> None:
         first_root = self.create_native_root("first-native-root", b":first")
         second_root = self.create_native_root("second-native-root", b":second")
@@ -336,7 +308,6 @@ class AndroidGradleBehavioralTests(unittest.TestCase):
             ":lib:stageFoundryNativeTemplateDebug",
             properties={
                 "foundryNativeRoot": str(first_root),
-                "foundryRuntimeScratch": str(self.workspace / "first-scratch"),
                 "selectedAbis": ",".join(first_selection),
             },
         )
@@ -345,7 +316,6 @@ class AndroidGradleBehavioralTests(unittest.TestCase):
             ":lib:stageFoundryNativeTemplateDebug",
             properties={
                 "foundryNativeRoot": str(second_root),
-                "foundryRuntimeScratch": str(self.workspace / "second-scratch"),
                 "selectedAbis": ",".join(second_selection),
             },
         )

@@ -29,22 +29,16 @@ def androidAbiBySconsArch = [
 ]
 def supportedBuildTypes = ["debug", "dev", "release"]
 def pythonExecutable = providers.gradleProperty("pythonExecutable").orElse("python3")
+def jniContractTool = rootProject.file("../android_jni_contract.py")
+def nativeContractTool = rootProject.file("../android_native_contract.py")
 def nativeStagingTool = rootProject.file("../android_native_staging.py")
+def foundrySourceRoot = file(pathToRootDir)
+def androidNativeStagingRoot = file("build/android-native-stage")
 def foundryNativeRoot = providers.gradleProperty("foundryNativeRoot").orNull
-def foundryNativeBundle = providers.gradleProperty("foundryNativeBundle").orNull
-def foundryRuntimeScratch = providers.gradleProperty("foundryRuntimeScratch").orNull
-def usesPrebuiltNativeInput = foundryNativeRoot != null || foundryNativeBundle != null
-if (foundryNativeRoot != null && foundryNativeBundle != null) {
-    throw new GradleException("Use only one of foundryNativeRoot or foundryNativeBundle.")
-}
-if (usesPrebuiltNativeInput && foundryRuntimeScratch == null) {
-    throw new GradleException("foundryRuntimeScratch is required with a prebuilt native input.")
-}
+def usesPrebuiltNativeInput = foundryNativeRoot != null
 def foundryNativeInputIdentity = foundryNativeRoot != null
     ? "root:${file(foundryNativeRoot).absolutePath}"
-    : (foundryNativeBundle != null
-        ? "bundle:${file(foundryNativeBundle).absolutePath}"
-        : "local:${file("${pathToRootDir}bin/android-native").absolutePath}")
+    : "local:${file("${pathToRootDir}bin/android-native").absolutePath}"
 def foundryNativeInputDigest = java.security.MessageDigest.getInstance("SHA-256").digest(
     "${foundryEngineRevision}\u0000${foundryNativeInputIdentity}\u0000${selectedAbis.join(',')}".getBytes("UTF-8")
 )
@@ -220,33 +214,39 @@ android {
             }
 
             String stageTaskName = "stageFoundryNative${flavorName.capitalize()}${buildType.capitalize()}"
+            String compileJarTaskName =
+                "bundleLibCompileToJar${flavorName.capitalize()}${buildType.capitalize()}"
+            File compiledClassesJar = file(
+                "build/intermediates/compile_library_classes_jar/${flavorName}${buildType.capitalize()}/" +
+                "${compileJarTaskName}/classes.jar"
+            )
             def stageTask = tasks.register(stageTaskName, Exec) {
                 dependsOn nativeProducerTasks
+                dependsOn compileJarTaskName
+                inputs.file(jniContractTool)
+                inputs.file(nativeContractTool)
                 inputs.file(nativeStagingTool)
+                inputs.file(compiledClassesJar)
                 outputs.dir(new File(androidNativeStage, buildType))
                 outputs.upToDateWhen { false }
                 List<String> command = [
                     pythonExecutable.get(),
                     nativeStagingTool.absolutePath,
                     "--revision", foundryEngineRevision,
-                    "--engine-version", foundryLibraryVersion,
-                    "--bindings-version", foundryLibraryVersion,
+                    "--source-root", foundrySourceRoot.absolutePath,
+                    "--classes-jar", compiledClassesJar.absolutePath,
                     "--build-type", buildType,
                     "--selected-abis", selectedAbis.collect { androidAbiBySconsArch[it] }.join(","),
+                    "--staging-root", androidNativeStagingRoot.absolutePath,
                     "--output", new File(androidNativeStage, buildType).absolutePath,
                 ]
                 if (foundryNativeRoot != null) {
                     command += ["--native-root", file(foundryNativeRoot).absolutePath]
-                } else if (foundryNativeBundle != null) {
-                    command += ["--native-bundle", file(foundryNativeBundle).absolutePath]
                 } else {
                     command += [
                         "--local-root",
                         file("${pathToRootDir}bin/android-native/${foundryEngineRevision}").absolutePath,
                     ]
-                }
-                if (foundryRuntimeScratch != null) {
-                    command += ["--runtime-scratch", file(foundryRuntimeScratch).absolutePath]
                 }
                 commandLine command
             }

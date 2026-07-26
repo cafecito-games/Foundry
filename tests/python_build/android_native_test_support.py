@@ -3,13 +3,8 @@ from __future__ import annotations
 import hashlib
 import json
 import struct
-import subprocess
-import sys
-import zipfile
 from pathlib import Path
 from typing import Any
-
-ROOT = Path(__file__).resolve().parents[2]
 
 BUILD_TYPES = ("debug", "dev", "release")
 BUILD_SPECS = {
@@ -52,8 +47,52 @@ SCONS_ARCHES = {
 }
 LIBRARIES = ("libfoundry_android.so", "libc++_shared.so")
 FOUNDRY_SYMBOLS = (
+    "Java_games_cafecito_foundry_FoundryLib_accelerometer",
+    "Java_games_cafecito_foundry_FoundryLib_back",
+    "Java_games_cafecito_foundry_FoundryLib_dispatchMouseEvent",
+    "Java_games_cafecito_foundry_FoundryLib_dispatchTouchEvent",
+    "Java_games_cafecito_foundry_FoundryLib_filePickerCallback",
+    "Java_games_cafecito_foundry_FoundryLib_focusin",
+    "Java_games_cafecito_foundry_FoundryLib_focusout",
+    "Java_games_cafecito_foundry_FoundryLib_getGlobal",
+    "Java_games_cafecito_foundry_FoundryLib_getProjectResourceDir",
+    "Java_games_cafecito_foundry_FoundryLib_getRendererInfo",
+    "Java_games_cafecito_foundry_FoundryLib_gravity",
+    "Java_games_cafecito_foundry_FoundryLib_gyroscope",
+    "Java_games_cafecito_foundry_FoundryLib_hardwareKeyboardConnected",
+    "Java_games_cafecito_foundry_FoundryLib_hasFeature",
+    "Java_games_cafecito_foundry_FoundryLib_initialize",
+    "Java_games_cafecito_foundry_FoundryLib_joyaxis",
+    "Java_games_cafecito_foundry_FoundryLib_joybutton",
+    "Java_games_cafecito_foundry_FoundryLib_joyconnectionchanged",
+    "Java_games_cafecito_foundry_FoundryLib_joyhat",
+    "Java_games_cafecito_foundry_FoundryLib_key",
+    "Java_games_cafecito_foundry_FoundryLib_magnetometer",
+    "Java_games_cafecito_foundry_FoundryLib_magnify",
+    "Java_games_cafecito_foundry_FoundryLib_newcontext",
+    "Java_games_cafecito_foundry_FoundryLib_onNightModeChanged",
+    "Java_games_cafecito_foundry_FoundryLib_onRendererPaused",
+    "Java_games_cafecito_foundry_FoundryLib_onRendererResumed",
+    "Java_games_cafecito_foundry_FoundryLib_onScreenRotationChange",
+    "Java_games_cafecito_foundry_FoundryLib_ondestroy",
+    "Java_games_cafecito_foundry_FoundryLib_pan",
+    "Java_games_cafecito_foundry_FoundryLib_requestPermissionResult",
+    "Java_games_cafecito_foundry_FoundryLib_resize",
+    "Java_games_cafecito_foundry_FoundryLib_setVirtualKeyboardHeight",
+    "Java_games_cafecito_foundry_FoundryLib_setup",
+    "Java_games_cafecito_foundry_FoundryLib_shouldDispatchInputToRenderThread",
     "Java_games_cafecito_foundry_FoundryLib_step",
+    "Java_games_cafecito_foundry_FoundryLib_ttsCallback",
+    "Java_games_cafecito_foundry_plugin_FoundryPlugin_nativeEmitSignal",
+    "Java_games_cafecito_foundry_plugin_FoundryPlugin_nativeRegisterMethod",
+    "Java_games_cafecito_foundry_plugin_FoundryPlugin_nativeRegisterSignal",
     "Java_games_cafecito_foundry_plugin_FoundryPlugin_nativeRegisterSingleton",
+    "Java_games_cafecito_foundry_utils_DialogUtils_dialogCallback",
+    "Java_games_cafecito_foundry_utils_DialogUtils_inputDialogCallback",
+    "Java_games_cafecito_foundry_variant_Callable_nativeCall",
+    "Java_games_cafecito_foundry_variant_Callable_nativeCallObject",
+    "Java_games_cafecito_foundry_variant_Callable_nativeCallObjectDeferred",
+    "Java_games_cafecito_foundry_variant_Callable_releaseNativePointer",
 )
 EXTERNAL_JNI_EXPORTS = (
     {
@@ -77,39 +116,6 @@ EXTERNAL_JNI_SYMBOLS = tuple(entry["symbol"] for entry in EXTERNAL_JNI_EXPORTS)
 
 def canonical_json(value: Any) -> bytes:
     return (json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True) + "\n").encode()
-
-
-def sample_compatibility() -> dict[str, Any]:
-    return {
-        "bindings": {"version": "0.1.0-dev-SNAPSHOT"},
-        "engine": {
-            "repository": "https://github.com/cafecito-games/Foundry",
-            "revision": "a" * 40,
-            "version": "0.1.0-dev",
-            "version_components": {
-                "major": 0,
-                "minor": 1,
-                "module_config": "",
-                "patch": 0,
-                "status": "dev",
-            },
-        },
-        "jni_contract_version": 1,
-        "native": {
-            "abis": ABI_SPECS,
-            "build_types": list(BUILD_TYPES),
-            "external_jni_allowlist": list(EXTERNAL_JNI_EXPORTS),
-            "libraries": list(LIBRARIES),
-        },
-        "schema_version": 1,
-    }
-
-
-def write_compatibility(path: Path, value: dict[str, Any] | None = None) -> dict[str, Any]:
-    compatibility = value or sample_compatibility()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(canonical_json(compatibility))
-    return compatibility
 
 
 def _align(value: int, alignment: int) -> int:
@@ -312,11 +318,12 @@ def populate_native_matrix(
     *,
     revision: str,
     tree: str,
+    foundry_symbols: tuple[str, ...] = FOUNDRY_SYMBOLS,
     payload_suffix: bytes = b"",
 ) -> None:
     """Create a deterministic valid 12-cell native root for Gradle behavior tests."""
 
-    populate_native_inputs(root, payload_suffix=payload_suffix)
+    populate_native_inputs(root, foundry_symbols=foundry_symbols, payload_suffix=payload_suffix)
     for build_type in BUILD_TYPES:
         build_spec = BUILD_SPECS[build_type]
         for abi in ABI_SPECS:
@@ -348,69 +355,6 @@ def populate_native_matrix(
                 "schema_version": 1,
             }
             (directory / "provenance.json").write_bytes(canonical_json(provenance))
-
-
-def run_tool(tool: str, *arguments: str) -> subprocess.CompletedProcess[str]:
-    if tool == "native_bundle.py":
-        tool = "android_native_bundle.py"
-    return subprocess.run(
-        [sys.executable, str(ROOT / "platform" / "android" / tool), *arguments],
-        cwd=ROOT,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-
-
-def create_bundle(
-    workspace: Path,
-    *,
-    foundry_symbols: tuple[str, ...] = FOUNDRY_SYMBOLS,
-) -> tuple[Path, Path, Path]:
-    compatibility = workspace / "compatibility.json"
-    native_root = workspace / "native"
-    bundle = workspace / "foundry-native.zip"
-    write_compatibility(compatibility)
-    populate_native_inputs(native_root, foundry_symbols=foundry_symbols)
-    result = run_tool(
-        "native_bundle.py",
-        "create",
-        "--compatibility",
-        str(compatibility),
-        "--input-root",
-        str(native_root),
-        "--output",
-        str(bundle),
-    )
-    if result.returncode != 0:
-        raise AssertionError(f"bundle creation failed:\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}")
-    return compatibility, native_root, bundle
-
-
-def rewrite_zip(
-    source: Path,
-    destination: Path,
-    *,
-    replace: dict[str, bytes] | None = None,
-    remove: set[str] | None = None,
-    additions: list[tuple[zipfile.ZipInfo | str, bytes]] | None = None,
-) -> None:
-    replacements = replace or {}
-    removals = remove or set()
-    with zipfile.ZipFile(source) as source_zip:
-        with zipfile.ZipFile(destination, "w") as destination_zip:
-            for info in source_zip.infolist():
-                if info.filename in removals:
-                    continue
-                contents = replacements.get(info.filename, source_zip.read(info))
-                copied = zipfile.ZipInfo(info.filename, info.date_time)
-                copied.compress_type = info.compress_type
-                copied.create_system = info.create_system
-                copied.external_attr = info.external_attr
-                copied.flag_bits = info.flag_bits
-                destination_zip.writestr(copied, contents)
-            for name_or_info, contents in additions or []:
-                destination_zip.writestr(name_or_info, contents)
 
 
 def sha256(contents: bytes) -> str:

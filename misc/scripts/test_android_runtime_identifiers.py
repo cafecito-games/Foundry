@@ -11,13 +11,11 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 ANDROID_ROOT = REPO_ROOT / "platform/android"
 JAVA_ROOT = ANDROID_ROOT / "java"
 APP_ROOT = JAVA_ROOT / "app"
-RUNTIME_PIN = ANDROID_ROOT / "foundry_android_runtime.json"
-RUNTIME_CONTRACT = ANDROID_ROOT / "android_runtime_contract.py"
+NATIVE_CONTRACT = ANDROID_ROOT / "android_native_contract.py"
+JNI_CONTRACT = ANDROID_ROOT / "android_jni_contract.py"
 
 APP_IMPLEMENTATION_PACKAGE = "games.cafecito.foundry.game"
 PLUGIN_METADATA_PREFIX = "games.cafecito.foundry.plugin.v1."
-STANDALONE_REPOSITORY = "https://github.com/cafecito-games/Foundry-Android.git"
-
 OLD_RUNTIME_IDENTIFIERS = (
     "com.godot",
     "org.godotengine",
@@ -56,23 +54,26 @@ def reject_contains(
         failures.append(f"{relative(path)} contains stale runtime identifiers: {hits}")
 
 
-def load_runtime_contract(failures: list[str]) -> ModuleType | None:
-    spec = importlib.util.spec_from_file_location("android_runtime_contract", RUNTIME_CONTRACT)
+def load_native_contract(failures: list[str]) -> ModuleType | None:
+    spec = importlib.util.spec_from_file_location("android_native_contract", NATIVE_CONTRACT)
     if spec is None or spec.loader is None:
-        failures.append(f"could not load canonical runtime contract at {relative(RUNTIME_CONTRACT)}")
+        failures.append(f"could not load internal native contract at {relative(NATIVE_CONTRACT)}")
         return None
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     try:
         spec.loader.exec_module(module)
     except Exception as error:  # noqa: BLE001 - contract import diagnostics belong in this check.
-        failures.append(f"could not import canonical runtime contract: {error}")
+        failures.append(f"could not import internal native contract: {error}")
         return None
     return module
 
 
-def check_standalone_boundary(failures: list[str]) -> None:
+def check_internal_boundary(failures: list[str]) -> None:
     required = (
+        JNI_CONTRACT,
+        NATIVE_CONTRACT,
+        ANDROID_ROOT / "android_native_staging.py",
         JAVA_ROOT / "lib/build.gradle",
         JAVA_ROOT / "lib/src/main/AndroidManifest.xml",
         JAVA_ROOT / "lib/src/main/java/games/cafecito/foundry/Foundry.kt",
@@ -84,6 +85,10 @@ def check_standalone_boundary(failures: list[str]) -> None:
         JAVA_ROOT / "scripts/publish-module.gradle",
         JAVA_ROOT / "scripts/publish-root.gradle",
         JAVA_ROOT / "PUBLISHING.md",
+        ANDROID_ROOT / "foundry_android_runtime.json",
+        ANDROID_ROOT / "android_runtime_build.py",
+        ANDROID_ROOT / "android_runtime_contract.py",
+        ANDROID_ROOT / "android_native_bundle.py",
     )
     failures.extend(f"{relative(path)} must not exist" for path in removed if path.exists())
 
@@ -98,19 +103,16 @@ def check_standalone_boundary(failures: list[str]) -> None:
         "MavenPublication",
         "nexusPublishing",
         "prepareFoundryAndroidRuntime",
-    )
-    for path in active_gradle:
-        reject_contains(path, forbidden, failures)
-    bridge = JAVA_ROOT / "build.gradle"
-    for identifier in (
+        "Foundry-Android",
         "foundryAndroidSource",
         "foundryAndroidFetch",
-        "foundryNativeRoot",
         "foundryNativeBundle",
         "foundryRuntimeScratch",
         "WS2_REMOVE_ANDROID_RUNTIME_COMPAT_BRIDGE",
-    ):
-        require_contains(bridge, identifier, failures)
+    )
+    for path in active_gradle:
+        reject_contains(path, forbidden, failures)
+    require_contains(JAVA_ROOT / "lib/build.gradle", "foundryNativeRoot", failures)
 
 
 def check_app_source_surface(failures: list[str]) -> None:
@@ -210,18 +212,18 @@ def check_exact_app_contract(failures: list[str]) -> None:
     require_contains(exporter, f'"/{APP_IMPLEMENTATION_PACKAGE}.FoundryAppLauncher"', failures)
 
 
-def check_runtime_pin(failures: list[str]) -> None:
-    contract = load_runtime_contract(failures)
+def check_native_contract(failures: list[str]) -> None:
+    contract = load_native_contract(failures)
     if contract is None:
         return
-    try:
-        pin = contract.load_pin(RUNTIME_PIN)
-    except Exception as error:  # noqa: BLE001 - surface the canonical validator's exact diagnostic.
-        failures.append(f"{relative(RUNTIME_PIN)} violates the canonical runtime contract: {error}")
-        return
-    if pin.repository != STANDALONE_REPOSITORY:
-        failures.append(f"{relative(RUNTIME_PIN)} must identify {STANDALONE_REPOSITORY!r}, got {pin.repository!r}")
-    reject_contains(RUNTIME_PIN, OLD_RUNTIME_IDENTIFIERS, failures)
+    if len(contract.MATRIX) != 12:
+        failures.append(f"{relative(NATIVE_CONTRACT)} must describe exactly 12 native cells")
+    if set(contract.BUILD_TYPES) != {"debug", "dev", "release"}:
+        failures.append(f"{relative(NATIVE_CONTRACT)} must describe debug, dev, and release native cells")
+    if set(contract.ABIS) != {"armeabi-v7a", "arm64-v8a", "x86", "x86_64"}:
+        failures.append(f"{relative(NATIVE_CONTRACT)} must describe all four Android ABIs")
+    if set(contract.LIBRARY_NAMES) != {"libfoundry_android.so", "libc++_shared.so"}:
+        failures.append(f"{relative(NATIVE_CONTRACT)} must validate both native libraries")
 
 
 def check_jni_contract(failures: list[str]) -> None:
@@ -243,10 +245,10 @@ def check_jni_contract(failures: list[str]) -> None:
 
 def main() -> int:
     failures: list[str] = []
-    check_standalone_boundary(failures)
+    check_internal_boundary(failures)
     check_app_source_surface(failures)
     check_exact_app_contract(failures)
-    check_runtime_pin(failures)
+    check_native_contract(failures)
     check_jni_contract(failures)
 
     if failures:

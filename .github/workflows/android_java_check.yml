@@ -1,6 +1,6 @@
 name: 🤖 Android Java Check
 
-# Android changes use the same complete native matrix and standalone-runtime
+# Android changes use the same complete native matrix and in-tree host
 # assembly gate as reusable platform CI. Keeping one workflow prevents a
 # one-architecture Java check from drifting into a second build authority.
 on:
