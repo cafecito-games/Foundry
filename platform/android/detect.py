@@ -39,6 +39,31 @@ def get_opts():
             False,
         ),
         BoolVariable("swappy", "Use Swappy Frame Pacing library", False),
+        (
+            "foundry_android_source",
+            "Prefetched Foundry-Android Git repository used by generate_android_binaries",
+            "",
+        ),
+        BoolVariable(
+            "foundry_android_fetch",
+            "Allow generate_android_binaries to fetch the exact pinned Foundry-Android commit",
+            False,
+        ),
+        (
+            "foundry_native_root",
+            "Complete revision-matched Android native cell root used by generate_android_binaries",
+            "",
+        ),
+        (
+            "foundry_native_bundle",
+            "Prebuilt revision-matched Android native bundle used by generate_android_binaries",
+            "",
+        ),
+        (
+            "foundry_runtime_scratch",
+            "Ignored scratch directory used by generate_android_binaries",
+            "",
+        ),
     ]
 
 

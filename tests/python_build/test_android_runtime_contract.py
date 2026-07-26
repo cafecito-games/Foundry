@@ -10,9 +10,11 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import ModuleType
+from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MODULE_PATH = REPO_ROOT / "platform/android/android_runtime_contract.py"
+BUILDERS_PATH = REPO_ROOT / "platform/android/platform_android_builders.py"
 PIN_PATH = REPO_ROOT / "platform/android/foundry_android_runtime.json"
 REVISION = "1" * 40
 TREE = "2" * 40
@@ -57,6 +59,19 @@ def load_contract() -> ModuleType:
     spec = importlib.util.spec_from_file_location("android_runtime_contract", MODULE_PATH)
     if spec is None or spec.loader is None:
         raise AssertionError(f"unable to load Android runtime contract module: {MODULE_PATH}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_builders() -> ModuleType:
+    if not BUILDERS_PATH.is_file():
+        raise AssertionError(f"missing Android platform builders module: {BUILDERS_PATH}")
+    sys.path.insert(0, str(BUILDERS_PATH.parent))
+    spec = importlib.util.spec_from_file_location("platform_android_builders_for_test", BUILDERS_PATH)
+    if spec is None or spec.loader is None:
+        raise AssertionError(f"unable to load Android platform builders module: {BUILDERS_PATH}")
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
@@ -338,6 +353,131 @@ class NativeMatrixTests(unittest.TestCase):
 
         with self.assertRaisesRegex(self.contract.ContractError, "symbolic link"):
             self.contract.validate_native_matrix(root, REVISION, TREE)
+
+
+class NativeProvenanceBuilderTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.contract = load_contract()
+        self.builders = load_builders()
+        self.assertTrue(
+            hasattr(self.builders, "write_android_native_provenance"),
+            "platform_android_builders must expose write_android_native_provenance",
+        )
+        self.temporary = tempfile.TemporaryDirectory()
+        self.workspace = Path(self.temporary.name)
+
+    def tearDown(self) -> None:
+        self.temporary.cleanup()
+
+    def make_environment(
+        self,
+        *,
+        build_type: str = "debug",
+        abi: str = "arm64-v8a",
+        dirty: bool = False,
+    ) -> dict[str, object]:
+        return {
+            "android_native_abi": abi,
+            "android_native_build_type": build_type,
+            "arch": ABI_SPECS[abi],
+            "foundry_android_source_dirty": dirty,
+            "foundry_android_source_revision": REVISION,
+            "foundry_android_source_tree": TREE,
+            "swappy": True,
+            **BUILD_SPECS[build_type],
+        }
+
+    def test_scons_action_writes_canonical_provenance_for_all_twelve_cells(self) -> None:
+        for build_type in sorted(BUILD_SPECS):
+            for abi in sorted(ABI_SPECS):
+                with self.subTest(build_type=build_type, abi=abi):
+                    directory = self.workspace / build_type / abi
+                    directory.mkdir(parents=True)
+                    sources = []
+                    for name in LIBRARIES:
+                        path = directory / name
+                        path.write_bytes(f"actual:{build_type}:{abi}:{name}\n".encode())
+                        sources.append(path)
+                    target = directory / "provenance.json"
+
+                    self.builders.write_android_native_provenance(
+                        [target],
+                        sources,
+                        self.make_environment(build_type=build_type, abi=abi),
+                    )
+
+                    raw = target.read_bytes()
+                    value = json.loads(raw)
+                    self.assertEqual(canonical_json(value), raw)
+                    self.assertEqual(REVISION, value["engine"]["revision"])
+                    self.assertEqual(TREE, value["engine"]["tree"])
+                    self.assertFalse(value["engine"]["dirty"])
+                    self.assertEqual(
+                        {
+                            "abi": abi,
+                            "arch": ABI_SPECS[abi],
+                            "build_type": build_type,
+                            "swappy": True,
+                            **BUILD_SPECS[build_type],
+                        },
+                        value["build"],
+                    )
+                    self.assertEqual(
+                        [library_record(directory / name) for name in sorted(LIBRARIES)],
+                        value["libraries"],
+                    )
+
+    def test_scons_action_records_dirty_source_but_rejects_false_build_labels(self) -> None:
+        directory = self.workspace / "debug/arm64-v8a"
+        directory.mkdir(parents=True)
+        sources = []
+        for name in LIBRARIES:
+            path = directory / name
+            path.write_bytes(f"actual:{name}\n".encode())
+            sources.append(path)
+        target = directory / "provenance.json"
+        dirty = self.make_environment(dirty=True)
+
+        self.builders.write_android_native_provenance([target], sources, dirty)
+        self.assertTrue(json.loads(target.read_bytes())["engine"]["dirty"])
+
+        wrong = self.make_environment()
+        wrong["production"] = True
+        with self.assertRaisesRegex(self.contract.ContractError, "build configuration mismatch"):
+            self.builders.write_android_native_provenance([target], sources, wrong)
+
+    def test_generate_binaries_forwards_only_explicit_runtime_inputs(self) -> None:
+        environment = {
+            "debug_symbols": False,
+            "foundry_android_fetch": False,
+            "foundry_android_source": "/prefetched/Foundry-Android",
+            "foundry_native_bundle": "",
+            "foundry_native_root": "/native/matrix",
+            "foundry_runtime_scratch": "/scratch/runtime",
+            "module_mono_enabled": False,
+            "separate_debug_symbols": False,
+        }
+        with mock.patch.object(self.builders.subprocess, "run") as run:
+            self.builders.generate_android_binaries([], [], environment)
+
+        arguments = run.call_args.args[0]
+        self.assertIn("-PfoundryAndroidSource=/prefetched/Foundry-Android", arguments)
+        self.assertNotIn("-PfoundryAndroidFetch=true", arguments)
+        self.assertIn("-PfoundryNativeRoot=/native/matrix", arguments)
+        self.assertNotIn("-PfoundryNativeBundle=", " ".join(arguments))
+        self.assertIn("-PfoundryRuntimeScratch=/scratch/runtime", arguments)
+        self.assertTrue(run.call_args.kwargs["check"])
+
+        for missing, diagnostic in (
+            ("foundry_android_source", "standalone source"),
+            ("foundry_native_root", "native root or bundle"),
+            ("foundry_runtime_scratch", "runtime scratch"),
+        ):
+            with self.subTest(missing=missing):
+                invalid = dict(environment)
+                invalid[missing] = ""
+                with self.assertRaisesRegex(self.contract.ContractError, diagnostic):
+                    self.builders.generate_android_binaries([], [], invalid)
 
 
 if __name__ == "__main__":

@@ -105,6 +105,13 @@ forbid_text(
     "editor/editor_utils_jni.cpp",
     'lib_tools_dir = "tools/"',
     "android-editor-",
+    "#platform/android/java/lib/libs/",
+)
+require_text(
+    "platform/android/SCsub",
+    "#bin/android-native/",
+    "provenance.json",
+    "write_android_native_provenance",
 )
 forbid_text("platform/android/detect.py", "store_release")
 require_text("platform/android/detect.py", "Android does not support target=editor")

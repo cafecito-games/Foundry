@@ -323,6 +323,7 @@ def create_native_provenance(
         revision=revision,
         tree=tree,
         directory=library_directory,
+        allow_dirty=True,
     )
     return value
 
@@ -379,6 +380,7 @@ def _validate_provenance_value(
     revision: str,
     tree: str,
     directory: Path,
+    allow_dirty: bool = False,
 ) -> None:
     root = _exact_keys(
         value,
@@ -388,7 +390,9 @@ def _validate_provenance_value(
     if root["schema_version"] != SCHEMA_VERSION:
         raise ContractError(f"unsupported native provenance schema: {root['schema_version']!r}")
     engine = _exact_keys(root["engine"], {"dirty", "revision", "tree"}, "native provenance engine")
-    if engine["dirty"] is not False:
+    if not isinstance(engine["dirty"], bool):
+        raise ContractError(f"native provenance dirty state must be a boolean in {directory}")
+    if engine["dirty"] and not allow_dirty:
         raise ContractError(f"native cell was built from dirty Foundry source: {directory}")
     if engine["revision"] != revision:
         raise ContractError(
