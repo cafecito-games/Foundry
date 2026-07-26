@@ -55,9 +55,12 @@ void FoundryExtensionExportPlugin::_export_file(const String &p_path, const Stri
 	// Check whether this FoundryExtension should be exported.
 	bool android_aar_plugin = config->get_value("configuration", "android_aar_plugin", false);
 	if (android_aar_plugin && p_features.has("android")) {
-		// The foundry_extension configuration and Android .so files will be provided by the Android aar
-		// plugin it's part of, so we abort here.
-		skip();
+		get_export_platform()->add_message(
+				EditorExportPlatform::EXPORT_MESSAGE_ERROR,
+				TTR("FoundryExtension"),
+				vformat(
+						TTR("\"android_aar_plugin\" is no longer supported for Android exports: \"%s\". Package Java AAR/JAR dependencies under res://addons and configure native Android libraries as a regular FoundryExtension."),
+						p_path));
 		return;
 	}
 

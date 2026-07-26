@@ -6,6 +6,17 @@ const JAVACLASSWRAPPER_TESTS = preload("res://test/javaclasswrapper/java_class_w
 var _test_bridge: JavaClass
 
 func _ready():
+	var build_config: JavaClass = JavaClassWrapper.wrap(
+			"games.cafecito.foundry.game.BuildConfig"
+	)
+	if build_config == null:
+		printerr("Couldn't resolve the Android application BuildConfig")
+		get_tree().quit()
+		return
+	if build_config.FLAVOR == "standard":
+		print("Foundry Android standard runtime smoke ready")
+		return
+
 	_test_bridge = JavaClassWrapper.wrap(
 			"games.cafecito.foundry.game.test.FoundryAppInstrumentedTestBridge"
 	)

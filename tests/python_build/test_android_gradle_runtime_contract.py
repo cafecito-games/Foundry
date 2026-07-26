@@ -30,6 +30,8 @@ JNI_CONTRACT_TOOL = REPO_ROOT / "platform/android/android_jni_contract.py"
 SOURCE_TEMPLATE_TOOL = REPO_ROOT / "platform/android/android_source_template.py"
 ANDROID_README = REPO_ROOT / "platform/android/README.md"
 ANDROID_RUNTIME_DOC = REPO_ROOT / "platform/android/ANDROID_RUNTIME.md"
+FOUNDRY_EXTENSION_EXPORT_PLUGIN = REPO_ROOT / "editor/export/foundry_extension_export_plugin.h"
+DISPLAY_SERVER_DOC = REPO_ROOT / "doc/classes/DisplayServer.xml"
 EDITOR_EXPORT_PLUGIN_HEADER = REPO_ROOT / "editor/export/editor_export_plugin.h"
 EDITOR_EXPORT_PLUGIN_SOURCE = REPO_ROOT / "editor/export/editor_export_plugin.cpp"
 EDITOR_EXPORT_PLUGIN_DOC = REPO_ROOT / "doc/classes/EditorExportPlugin.xml"
@@ -38,6 +40,7 @@ OPENXR_EXPORT_PLUGIN_HEADER = REPO_ROOT / "modules/openxr/editor/openxr_editor_p
 OPENXR_EXPORT_PLUGIN_SOURCE = REPO_ROOT / "modules/openxr/editor/openxr_editor_plugin.cpp"
 APP_INSTRUMENTED_TEST = JAVA_ROOT / "app/src/androidTestInstrumented/java/games/cafecito/foundry/game/FoundryAppTest.kt"
 INSTRUMENTED_ASSETS = JAVA_ROOT / "app/src/instrumented/assets"
+INSTRUMENTED_EXPORT_PRESET = INSTRUMENTED_ASSETS / "export_presets.cfg"
 INSTRUMENTED_MAIN = INSTRUMENTED_ASSETS / "main.fs"
 INSTRUMENTED_FILE_ACCESS_TESTS = INSTRUMENTED_ASSETS / "test/file_access/file_access_tests.fs"
 INSTRUMENTED_JAVACLASSWRAPPER_TESTS = INSTRUMENTED_ASSETS / "test/javaclasswrapper/java_class_wrapper_tests.fs"
@@ -189,6 +192,21 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
         self.assertNotIn("host callbacks", documentation)
         self.assertIn("explicit JavaClassWrapper test bridge", documentation)
 
+    def test_removed_android_aar_plugin_export_path_fails_closed(self) -> None:
+        plugin = read(FOUNDRY_EXTENSION_EXPORT_PLUGIN)
+        legacy_branch = plugin.split('get_value("configuration", "android_aar_plugin"', 1)[1].split(
+            "ERR_FAIL_COND_MSG(!config->has_section_key",
+            1,
+        )[0]
+        self.assertNotIn("skip();", legacy_branch)
+        self.assertIn("EXPORT_MESSAGE_ERROR", legacy_branch)
+        self.assertIn("is no longer supported", legacy_branch)
+
+    def test_saf_documentation_routes_persistable_permissions_to_android_host_code(self) -> None:
+        documentation = read(DISPLAY_SERVER_DOC)
+        self.assertIn("ContentResolver.takePersistableUriPermission", documentation)
+        self.assertIn("Android host code", documentation)
+
     def test_back_press_termination_waits_for_the_host_status_transition(self) -> None:
         instrumented_test = read(APP_INSTRUMENTED_TEST)
         self.assertIn("waitForRunStatus", instrumented_test)
@@ -200,6 +218,44 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
             "assertTrue { foundry.runStatus == Foundry.RunStatus.TERMINATING }",
             instrumented_test,
         )
+
+    def test_runtime_smoke_observes_the_host_main_loop_without_script_frontend(self) -> None:
+        instrumented_test = read(APP_INSTRUMENTED_TEST)
+        smoke = instrumented_test.split("fun runtimeBootsWithoutLegacyPluginMetadata()", 1)[1].split("/**", 1)[0]
+        wait = "waitForHostMainLoopStarted(foundry)"
+        self.assertIn(
+            "waitForRunStatus(foundry, Foundry.RunStatus.STARTED",
+            instrumented_test,
+        )
+        self.assertIn("waitForMainLoopStarted()", smoke)
+        self.assertLess(smoke.index(wait), smoke.index("waitForMainLoopStarted()"))
+        self.assertLess(smoke.index("waitForMainLoopStarted()"), smoke.index("scenario.onActivity"))
+
+        export_preset = read(INSTRUMENTED_EXPORT_PRESET)
+        self.assertIn('name="Android Instrumented Assets"', export_preset)
+        self.assertIn('platform="Android"', export_preset)
+        self.assertIn("script_export_mode=3", export_preset)
+
+        root_build = read(ROOT_BUILD)
+        self.assertIn('"src/instrumented/assets/**"', root_build)
+
+    def test_standard_smoke_does_not_resolve_the_instrumented_bridge(self) -> None:
+        main_script = read(INSTRUMENTED_MAIN)
+        ready = main_script.split("func _ready():", 1)[1].split("func _process", 1)[0]
+        self.assertIn('"games.cafecito.foundry.game.BuildConfig"', ready)
+        standard = ready.split('if build_config.FLAVOR == "standard":', 1)[1].split(
+            "_test_bridge =",
+            1,
+        )[0]
+        self.assertNotIn("FoundryAppInstrumentedTestBridge", standard)
+        self.assertIn("Foundry Android standard runtime smoke ready", standard)
+        bridge_missing = ready.split("if _test_bridge == null:", 1)[1]
+        self.assertIn("get_tree().quit()", bridge_missing)
+
+    def test_instrumentation_uses_process_isolation_between_engine_tests(self) -> None:
+        app_build = read(APP_BUILD)
+        self.assertIn("execution 'ANDROIDX_TEST_ORCHESTRATOR'", app_build)
+        self.assertIn("clearPackageData: 'true'", app_build)
 
     def test_instrumented_runner_does_not_depend_on_editor_global_class_cache(self) -> None:
         main_script = read(INSTRUMENTED_MAIN)

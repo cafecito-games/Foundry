@@ -1,4 +1,3 @@
-class_name JavaClassWrapperTests
 extends "res://test/base_test.fs"
 
 func run_tests():

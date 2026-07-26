@@ -52,6 +52,12 @@ import kotlin.test.assertTrue
 
 /**
  * This instrumented test will launch the `instrumented` version of FoundryApp and run a set of tests against it.
+ *
+ * Every method requires Android Test Orchestrator process isolation.
+ *
+ * The Foundry runtime is a process-lifetime singleton, so app/build.gradle also
+ * enables per-test package clearing. Running this whole class in one direct
+ * instrumentation process is unsupported and can preserve terminated state.
  */
 @RunWith(AndroidJUnit4::class)
 class FoundryAppTest {
@@ -69,6 +75,13 @@ class FoundryAppTest {
 	private fun waitForMainLoopStarted() {
 		assertTrue(
 			FoundryAppInstrumentedTestBridge.waitForMainLoopStarted(ENGINE_EVENT_TIMEOUT_MS),
+			"Timed out waiting for the Foundry main loop script bridge to start."
+		)
+	}
+
+	private fun waitForHostMainLoopStarted(foundry: Foundry) {
+		assertTrue(
+			waitForRunStatus(foundry, Foundry.RunStatus.STARTED, ENGINE_EVENT_TIMEOUT_MS),
 			"Timed out waiting for the Foundry main loop to start."
 		)
 	}
@@ -97,9 +110,10 @@ class FoundryAppTest {
 	fun runtimeBootsWithoutLegacyPluginMetadata() {
 		resetBridge()
 		ActivityScenario.launch(FoundryApp::class.java).use { scenario ->
+			val foundry = Foundry.getInstance(InstrumentationRegistry.getInstrumentation().targetContext)
+			waitForHostMainLoopStarted(foundry)
+			waitForMainLoopStarted()
 			scenario.onActivity { activity ->
-				waitForMainLoopStarted()
-
 				val metadata = activity.packageManager
 					.getApplicationInfo(activity.packageName, PackageManager.GET_META_DATA)
 					.metaData
@@ -115,6 +129,8 @@ class FoundryAppTest {
 	fun runJavaClassWrapperTests() {
 		resetBridge()
 		ActivityScenario.launch(FoundryApp::class.java).use { scenario ->
+			val foundry = Foundry.getInstance(InstrumentationRegistry.getInstrumentation().targetContext)
+			waitForHostMainLoopStarted(foundry)
 			scenario.onActivity { activity ->
 				Log.d(TAG, "Waiting for the Foundry main loop to start...")
 				waitForMainLoopStarted()
@@ -143,6 +159,8 @@ class FoundryAppTest {
 	fun runFileAccessTests() {
 		resetBridge()
 		ActivityScenario.launch(FoundryApp::class.java).use { scenario ->
+			val foundry = Foundry.getInstance(InstrumentationRegistry.getInstrumentation().targetContext)
+			waitForHostMainLoopStarted(foundry)
 			scenario.onActivity { activity ->
 				Log.d(TAG, "Waiting for the Foundry main loop to start...")
 				waitForMainLoopStarted()
@@ -230,6 +248,8 @@ class FoundryAppTest {
 	fun testGameNotQuittingOnBackPress() {
 		resetBridge()
 		ActivityScenario.launch(FoundryApp::class.java).use { scenario ->
+			val foundry = Foundry.getInstance(InstrumentationRegistry.getInstrumentation().targetContext)
+			waitForHostMainLoopStarted(foundry)
 			Log.d(TAG, "Waiting for the Foundry main loop to start...")
 			waitForMainLoopStarted()
 
@@ -243,7 +263,6 @@ class FoundryAppTest {
 			Log.d(TAG, "Waiting for the engine to terminate...")
 			assertFalse(FoundryAppInstrumentedTestBridge.waitForEngineTermination(5_000L))
 
-			val foundry = Foundry.getInstance(InstrumentationRegistry.getInstrumentation().targetContext)
 			assertTrue { foundry.runStatus != Foundry.RunStatus.TERMINATING }
 		}
 	}
@@ -255,6 +274,8 @@ class FoundryAppTest {
 	fun testGameQuittingOnBackPress() {
 		resetBridge()
 		ActivityScenario.launch(FoundryApp::class.java).use { scenario ->
+			val foundry = Foundry.getInstance(InstrumentationRegistry.getInstrumentation().targetContext)
+			waitForHostMainLoopStarted(foundry)
 			Log.d(TAG, "Waiting for the Foundry main loop to start...")
 			waitForMainLoopStarted()
 
@@ -268,7 +289,6 @@ class FoundryAppTest {
 			Log.d(TAG, "Waiting for the engine to terminate...")
 			assertTrue(FoundryAppInstrumentedTestBridge.waitForEngineTermination(ENGINE_EVENT_TIMEOUT_MS))
 
-			val foundry = Foundry.getInstance(InstrumentationRegistry.getInstrumentation().targetContext)
 			assertTrue(
 				waitForRunStatus(foundry, Foundry.RunStatus.TERMINATING, ENGINE_EVENT_TIMEOUT_MS),
 				"Timed out waiting for the Foundry host to enter TERMINATING."

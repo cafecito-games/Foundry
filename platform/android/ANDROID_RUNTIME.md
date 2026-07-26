@@ -144,6 +144,18 @@ an explicit JavaClassWrapper test bridge for Foundry Script interop and file
 access, and separately covers runtime boot, launcher variants, command-line
 arguments, back-press behavior, and engine termination.
 
+The API 36 source-template smoke first uses an exact-checkout Linux editor to
+export `app/src/instrumented/assets` as a compiled resource ZIP. The export
+contains `.fsb` bytecode and remaps, and the device job replaces the source
+template's raw assets with that ZIP before building either APK. Production
+templates intentionally omit the Foundry Script front-end, and `.fsb` files
+are guarded by the exact engine version and revision, so checked-in bytecode
+or raw `.fs` sources are not valid substitutes. The focused host assertion
+observes `RunStatus.STARTED` directly, while the compiled script bridge remains
+available to the retained JavaClassWrapper, file-access, and quit tests. If
+Gradle or instrumentation fails, `android_device_acceptance.py` captures
+logcat before uninstalling the application and test packages.
+
 Compile the application and its own instrumented suite with:
 
 ```sh

@@ -794,6 +794,7 @@
 				[b]Note:[/b] On Android, this method uses the Android Storage Access Framework (SAF).
 				The file picker returns a URI instead of a filesystem path. This URI can be passed directly to [FileAccess] to perform read/write operations.
 				When using [constant FILE_DIALOG_MODE_OPEN_DIR], it returns a tree URI that grants full access to the selected directory. File operations inside this directory can be performed by passing a path on the form [code]treeUri#relative/path/to/file[/code] to [FileAccess].
+				To retain access across app restarts, Android host code must call [code]ContentResolver.takePersistableUriPermission[/code] for the returned URI. Release retained access with [code]ContentResolver.releasePersistableUriPermission[/code]. The engine no longer exposes an Android plugin singleton for managing these permissions.
 			</description>
 		</method>
 		<method name="file_dialog_with_options_show">

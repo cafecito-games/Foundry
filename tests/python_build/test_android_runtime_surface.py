@@ -240,12 +240,24 @@ forbid_text("platform/android/os_android.cpp", "#ifdef TOOLS_ENABLED", "#else //
 forbid_text(
     ".github/workflows/android_builds.yml",
     "android-editor",
-    "target: editor",
     "Generate Foundry editor",
     "generateFoundryEditor",
     "generateFoundryHorizonOSEditor",
     "generateFoundryPicoOSEditor",
     "android_editor_builds",
+)
+forbid_text_in_section(
+    ".github/workflows/android_builds.yml",
+    "\n  build-android-native:\n",
+    "\n  compile-instrumented-assets:\n",
+    "target: editor",
+)
+require_text(
+    ".github/workflows/android_builds.yml",
+    "Compile exact Android instrumented assets",
+    "platform: linuxbsd",
+    "target: editor",
+    "--mode pack",
 )
 forbid_text_in_section(
     ".github/workflows/release.yml",

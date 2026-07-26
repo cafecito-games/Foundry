@@ -35,6 +35,8 @@ class FakeRunner:
         self.environments: list[dict[str, str] | None] = []
         self.apk_ids: dict[Path, str] = {}
         self.devices_calls = 0
+        self.pid_calls: dict[str, int] = {}
+        self.filtered_logcat_calls = 0
 
     def run(
         self,
@@ -83,16 +85,18 @@ class FakeRunner:
                     / "TEST-foundry-acceptance.xml"
                 )
                 report.parent.mkdir(parents=True)
-                test_name = (
-                    "anotherTest" if self.failure == "missing-junit" else "runtimeBootsWithoutLegacyPluginMetadata"
-                )
-                failure = "<failure>failed</failure>" if self.failure == "failed-junit" else ""
-                report.write_text(
-                    (
-                        '<testsuite tests="1" failures="0">'
+                test_names = list(self.tool.INSTRUMENTATION_METHODS)
+                if self.failure == "missing-junit":
+                    test_names.pop()
+                test_cases = []
+                for index, test_name in enumerate(test_names):
+                    failure = "<failure>failed</failure>" if self.failure == "failed-junit" and index == 0 else ""
+                    test_cases.append(
                         '<testcase classname="games.cafecito.foundry.game.FoundryAppTest" '
-                        f'name="{test_name}">{failure}</testcase></testsuite>'
-                    ),
+                        f'name="{test_name}">{failure}</testcase>'
+                    )
+                report.write_text(
+                    f'<testsuite tests="{len(test_cases)}" failures="0">' + "".join(test_cases) + "</testsuite>",
                     encoding="utf-8",
                 )
         elif len(arguments) >= 4 and arguments[1:3] == ("manifest", "application-id"):
@@ -109,11 +113,21 @@ class FakeRunner:
         elif "am" in arguments and "start" in arguments:
             stdout = "Status: timeout\n" if self.failure == "start" else "Status: ok\nActivity: FoundryAppLauncher\n"
         elif "pidof" in arguments:
-            if self.failure == "process-timeout":
+            application_id = arguments[-1]
+            self.pid_calls[application_id] = self.pid_calls.get(application_id, 0) + 1
+            if self.failure == "process-timeout" or (
+                self.failure == "process-exits" and self.pid_calls[application_id] > 1
+            ) or (
+                self.failure == "process-exits-while-ready"
+                and self.pid_calls[application_id] > self.tool.PROCESS_STABILITY_OBSERVATIONS
+            ):
                 returncode = 1
             else:
                 stdout = "4242\n"
         elif "logcat" in arguments and "-d" in arguments:
+            filtered = any(argument.startswith("--pid=") for argument in arguments)
+            if filtered:
+                self.filtered_logcat_calls += 1
             if self.failure is not None and self.failure.startswith("runtime-log:"):
                 stdout = f"{self.failure.partition(':')[2]}\n"
             elif (
@@ -122,8 +136,12 @@ class FakeRunner:
                 and not any(argument.startswith("--pid=") for argument in arguments)
             ):
                 stdout = f"{self.failure.partition(':')[2]}\n"
+            elif self.failure == "missing-ready-marker":
+                stdout = "Foundry process running without project readiness\n"
+            elif self.failure == "delayed-ready-marker" and filtered and self.filtered_logcat_calls == 1:
+                stdout = "Foundry process starting\n"
             else:
-                stdout = "Foundry ready\n"
+                stdout = "Foundry Android standard runtime smoke ready\n"
         elif "uninstall" in arguments:
             stdout = "Success\n"
 
@@ -150,6 +168,7 @@ class AndroidDeviceAcceptanceTests(unittest.TestCase):
         self.workspace = Path(self.temporary_directory.name)
         self.acceptance_run_index = 0
         self.source_template = self.workspace / "android_source.zip"
+        self.compiled_assets = self.workspace / "android-instrumented-assets.zip"
         self.source_entries = {
             "build.gradle": b"plugins { id 'com.android.application' }\n",
             "config.gradle": b"ext.versions = [:]\n",
@@ -159,19 +178,43 @@ class AndroidDeviceAcceptanceTests(unittest.TestCase):
             "settings.gradle": b'rootProject.name = "FoundryAcceptance"\n',
             "src/main/AndroidManifest.xml": b"<manifest />\n",
             "src/main/assets/.gitignore": b"*\n",
-            "src/instrumented/assets/project.foundry": b"foundry project",
-            "src/instrumented/assets/scenes/main.tscn": b"foundry scene",
+            "src/instrumented/assets/project.foundry": b"instrumented project",
+            "src/instrumented/assets/main.fs": b"extends Node\n",
             "libs/debug/foundry-debug.aar": b"debug aar",
             "libs/dev/foundry-dev.aar": b"dev aar",
             "libs/release/foundry-release.aar": b"release aar",
         }
         self.write_source_template(self.source_entries)
+        self.write_compiled_assets(
+            {
+                "project.binary": b"compiled project",
+                "main.fsb": b"compiled main",
+                "main.fs.remap": b'path="res://main.fsb"\n',
+                "main.tscn.remap": b'path="res://.foundry/exported/main.scn"\n',
+                ".foundry/exported/main.scn": b"compiled scene",
+                "test/base_test.fsb": b"compiled base test",
+                "test/base_test.fs.remap": b'path="res://test/base_test.fsb"\n',
+                "test/file_access/file_access_tests.fsb": b"compiled file tests",
+                "test/file_access/file_access_tests.fs.remap": (
+                    b'path="res://test/file_access/file_access_tests.fsb"\n'
+                ),
+                "test/javaclasswrapper/java_class_wrapper_tests.fsb": b"compiled wrapper tests",
+                "test/javaclasswrapper/java_class_wrapper_tests.fs.remap": (
+                    b'path="res://test/javaclasswrapper/java_class_wrapper_tests.fsb"\n'
+                ),
+            }
+        )
 
     def tearDown(self) -> None:
         self.temporary_directory.cleanup()
 
     def write_source_template(self, entries: dict[str, bytes]) -> None:
         with zipfile.ZipFile(self.source_template, "w") as archive:
+            for name, contents in entries.items():
+                archive.writestr(name, contents)
+
+    def write_compiled_assets(self, entries: dict[str, bytes]) -> None:
+        with zipfile.ZipFile(self.compiled_assets, "w") as archive:
             for name, contents in entries.items():
                 archive.writestr(name, contents)
 
@@ -219,18 +262,102 @@ class AndroidDeviceAcceptanceTests(unittest.TestCase):
     def test_stage_scenario_preserves_template_and_adds_smoke_assets(self) -> None:
         scenario = self.tool.stage_scenario(
             self.source_template,
+            self.compiled_assets,
             self.workspace / "canonical",
         )
         self.assertTrue((scenario / "libs/debug/foundry-debug.aar").is_file())
         self.assertEqual(
-            b"foundry project",
-            (scenario / "src/main/assets/project.foundry").read_bytes(),
+            b"compiled project",
+            (scenario / "src/main/assets/project.binary").read_bytes(),
         )
         self.assertEqual(
-            b"foundry scene",
-            (scenario / "src/main/assets/scenes/main.tscn").read_bytes(),
+            b"compiled main",
+            (scenario / "src/main/assets/main.fsb").read_bytes(),
         )
+        self.assertEqual(
+            b"compiled project",
+            (scenario / "src/instrumented/assets/project.binary").read_bytes(),
+        )
+        self.assertFalse((scenario / "src/instrumented/assets/main.fs").exists())
+        self.assertFalse((scenario / "src/main/assets/project.foundry").exists())
         self.assertTrue((scenario / "gradlew").stat().st_mode & stat.S_IXUSR)
+
+    def test_stage_scenario_rejects_raw_or_incomplete_compiled_assets(self) -> None:
+        self.write_compiled_assets({"main.fs": b"extends Node\n"})
+        with self.assertRaisesRegex(self.tool.AcceptanceError, "raw Foundry Script"):
+            self.tool.stage_scenario(
+                self.source_template,
+                self.compiled_assets,
+                self.workspace / "raw-assets",
+            )
+
+        self.write_compiled_assets({"project.binary": b"compiled project"})
+        with self.assertRaisesRegex(self.tool.AcceptanceError, "missing required"):
+            self.tool.stage_scenario(
+                self.source_template,
+                self.compiled_assets,
+                self.workspace / "incomplete-assets",
+            )
+
+    def test_prepare_compiled_assets_removes_caches_and_is_deterministic(self) -> None:
+        raw = self.workspace / "raw-compiled-assets.zip"
+        with zipfile.ZipFile(self.compiled_assets) as archive:
+            entries = {name: archive.read(name) for name in archive.namelist()}
+        entries.update(
+            {
+                ".godot/global_script_class_cache.cfg": b"stale",
+                ".foundry/global_script_class_cache.cfg": b"generated",
+                ".foundry/uid_cache.bin": b"generated",
+            }
+        )
+        with zipfile.ZipFile(raw, "w") as archive:
+            for name, contents in reversed(tuple(entries.items())):
+                archive.writestr(name, contents)
+
+        first = self.workspace / "prepared-first.zip"
+        second = self.workspace / "prepared-second.zip"
+        first_names = self.tool.prepare_compiled_assets(raw, first)
+        second_names = self.tool.prepare_compiled_assets(raw, second)
+
+        self.assertEqual(first_names, second_names)
+        self.assertEqual(first.read_bytes(), second.read_bytes())
+        self.assertFalse(any(name.startswith(".godot/") for name in first_names))
+        self.assertFalse(
+            any(name.startswith(".foundry/") and not name.startswith(".foundry/exported/") for name in first_names)
+        )
+
+    def test_compiled_assets_require_exact_valid_remap_targets(self) -> None:
+        with zipfile.ZipFile(self.compiled_assets) as archive:
+            entries = {name: archive.read(name) for name in archive.namelist()}
+        mutations = (
+            (
+                "substring-bypass",
+                "main.fs.remap",
+                b'# res://main.fsb\npath="res://wrong.fsb"\n',
+                "does not target",
+            ),
+            (
+                "invalid-utf8",
+                "main.fs.remap",
+                b"\xff\xfe",
+                "not valid UTF-8",
+            ),
+            (
+                "missing-scene",
+                "main.tscn.remap",
+                b'path="res://.foundry/exported/missing.scn"\n',
+                "does not target an exported scene",
+            ),
+        )
+        for label, path, contents, message in mutations:
+            with self.subTest(label=label):
+                self.write_compiled_assets({**entries, path: contents})
+                with self.assertRaisesRegex(self.tool.AcceptanceError, message):
+                    self.tool.stage_scenario(
+                        self.source_template,
+                        self.compiled_assets,
+                        self.workspace / label,
+                    )
 
     def test_stage_scenario_rejects_unsafe_or_symbolic_link_entries(self) -> None:
         unsafe_entries = {**self.source_entries, "../escaped": b"unsafe"}
@@ -238,6 +365,7 @@ class AndroidDeviceAcceptanceTests(unittest.TestCase):
         with self.assertRaises(self.tool.AcceptanceError):
             self.tool.stage_scenario(
                 self.source_template,
+                self.compiled_assets,
                 self.workspace / "unsafe",
             )
 
@@ -250,6 +378,7 @@ class AndroidDeviceAcceptanceTests(unittest.TestCase):
         with self.assertRaises(self.tool.AcceptanceError):
             self.tool.stage_scenario(
                 self.source_template,
+                self.compiled_assets,
                 self.workspace / "linked",
             )
 
@@ -276,7 +405,6 @@ class AndroidDeviceAcceptanceTests(unittest.TestCase):
             (
                 "-Pandroid.testInstrumentationRunnerArguments.class="
                 "games.cafecito.foundry.game.FoundryAppTest"
-                "#runtimeBootsWithoutLegacyPluginMetadata"
             ),
             custom,
         )
@@ -294,12 +422,15 @@ class AndroidDeviceAcceptanceTests(unittest.TestCase):
         failure: str | None = None,
         *,
         boot_timeout: float = 0.0,
+        process_timeout: float = 0.0,
+        poll_interval: float = 0.0,
     ) -> tuple[dict[str, Any], FakeRunner, Path]:
         self.acceptance_run_index += 1
         evidence_dir = self.workspace / f"evidence-{self.acceptance_run_index}"
         runner = FakeRunner(self.tool, failure)
         report = self.tool.run_source_template_acceptance(
             source_template=self.source_template,
+            compiled_assets=self.compiled_assets,
             work_dir=self.workspace / f"work-{self.acceptance_run_index}",
             evidence_dir=evidence_dir,
             adb=Path("/sdk/platform-tools/adb"),
@@ -307,8 +438,8 @@ class AndroidDeviceAcceptanceTests(unittest.TestCase):
             requested_serial="emulator-5554",
             runner=runner,
             boot_timeout=boot_timeout,
-            process_timeout=0.0,
-            poll_interval=0.0,
+            process_timeout=process_timeout,
+            poll_interval=poll_interval,
         )
         return report, runner, evidence_dir
 
@@ -324,6 +455,12 @@ class AndroidDeviceAcceptanceTests(unittest.TestCase):
             [scenario["application_id"] for scenario in report["scenarios"]],
         )
         self.assertTrue(all(scenario["instrumentation_passed"] for scenario in report["scenarios"]))
+        self.assertTrue(
+            all(
+                scenario["instrumentation_tests"] == list(self.tool.INSTRUMENTATION_METHODS)
+                for scenario in report["scenarios"]
+            )
+        )
         self.assertTrue(all(scenario["start_status"] == "ok" for scenario in report["scenarios"]))
         self.assertTrue(all(scenario["pid"] == "4242" for scenario in report["scenarios"]))
         self.assertTrue(all(len(scenario["apk_sha256"]) == 64 for scenario in report["scenarios"]))
@@ -345,12 +482,14 @@ class AndroidDeviceAcceptanceTests(unittest.TestCase):
 
     def test_acceptance_requires_the_named_passing_junit_case(self) -> None:
         for failure, message in (
-            ("missing-junit", "did not report exactly one"),
+            ("missing-junit", "missing required test cases"),
             ("failed-junit", "did not pass"),
         ):
             with self.subTest(failure=failure):
+                evidence_dir = self.workspace / f"evidence-{self.acceptance_run_index + 1}"
                 with self.assertRaisesRegex(self.tool.AcceptanceError, message):
                     self.run_acceptance(failure)
+                self.assertTrue((evidence_dir / "canonical-instrumentation-failure-logcat.txt").is_file())
 
     def test_acceptance_rejects_boot_manifest_install_start_process_and_log_failures(self) -> None:
         for failure, message in (
@@ -359,6 +498,9 @@ class AndroidDeviceAcceptanceTests(unittest.TestCase):
             ("install", "INSTALL_FAILED"),
             ("start", "did not start successfully"),
             ("process-timeout", "waiting for Android process"),
+            ("process-exits", "did not remain stable"),
+            ("process-exits-while-ready", "while waiting for required runtime marker"),
+            ("missing-ready-marker", "required runtime marker"),
         ):
             with self.subTest(failure=failure):
                 with self.assertRaisesRegex(self.tool.AcceptanceError, message):
@@ -368,6 +510,24 @@ class AndroidDeviceAcceptanceTests(unittest.TestCase):
             with self.subTest(signature=signature):
                 with self.assertRaisesRegex(self.tool.AcceptanceError, "forbidden runtime failures"):
                     self.run_acceptance(f"runtime-log:{signature}")
+
+    def test_acceptance_waits_for_delayed_runtime_readiness_and_reconfirms_the_pid(self) -> None:
+        report, runner, _ = self.run_acceptance(
+            "delayed-ready-marker",
+            process_timeout=0.1,
+        )
+        self.assertTrue(all(scenario["start_status"] == "ok" for scenario in report["scenarios"]))
+        self.assertGreaterEqual(runner.filtered_logcat_calls, 4)
+        self.assertTrue(
+            all(
+                observations >= self.tool.PROCESS_STABILITY_OBSERVATIONS + 2
+                for observations in runner.pid_calls.values()
+            )
+        )
+        self.assertGreaterEqual(
+            max(runner.pid_calls.values()),
+            self.tool.PROCESS_STABILITY_OBSERVATIONS + 3,
+        )
 
     def test_acceptance_ignores_unrelated_system_runtime_failures_after_process_starts(self) -> None:
         try:
@@ -421,6 +581,7 @@ class AndroidDeviceAcceptanceTests(unittest.TestCase):
         with self.assertRaises(self.tool.AcceptanceError):
             self.tool.run_source_template_acceptance(
                 source_template=self.source_template,
+                compiled_assets=self.compiled_assets,
                 work_dir=self.workspace / "work",
                 evidence_dir=self.workspace / "evidence",
                 adb=Path("/sdk/platform-tools/adb"),
@@ -442,8 +603,40 @@ class AndroidDeviceAcceptanceTests(unittest.TestCase):
         )
 
     def test_gradle_failure_is_reported_without_claiming_device_success(self) -> None:
+        evidence_dir = self.workspace / "gradle-failure-evidence"
+        runner = FakeRunner(self.tool, "gradle")
         with self.assertRaisesRegex(self.tool.AcceptanceError, "Gradle acceptance failed"):
-            self.run_acceptance("gradle")
+            self.tool.run_source_template_acceptance(
+                source_template=self.source_template,
+                compiled_assets=self.compiled_assets,
+                work_dir=self.workspace / "gradle-failure-work",
+                evidence_dir=evidence_dir,
+                adb=Path("/sdk/platform-tools/adb"),
+                apkanalyzer=Path("/sdk/cmdline-tools/latest/bin/apkanalyzer"),
+                requested_serial="emulator-5554",
+                runner=runner,
+                boot_timeout=0.0,
+                process_timeout=0.0,
+                poll_interval=0.0,
+            )
+        logcat = evidence_dir / "canonical-instrumentation-failure-logcat.txt"
+        self.assertEqual(
+            "Foundry Android standard runtime smoke ready\n",
+            logcat.read_text(encoding="utf-8"),
+        )
+        gradle_index = next(index for index, command in enumerate(runner.commands) if command[0].endswith("gradlew"))
+        logcat_index = next(
+            index
+            for index, command in enumerate(runner.commands)
+            if "logcat" in command and "-d" in command
+        )
+        cleanup_index = next(
+            index
+            for index, command in enumerate(runner.commands[gradle_index + 1 :], gradle_index + 1)
+            if "uninstall" in command
+        )
+        self.assertLess(gradle_index, logcat_index)
+        self.assertLess(logcat_index, cleanup_index)
 
 
 if __name__ == "__main__":

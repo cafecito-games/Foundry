@@ -1,4 +1,3 @@
-class_name FileAccessTests
 extends "res://test/base_test.fs"
 
 const FILE_CONTENT = "This is a test for reading / writing to the "
