@@ -129,6 +129,7 @@ def check_exact_app_contract(failures: list[str]) -> None:
     instrumented_manifest = APP_ROOT / "src/instrumented/AndroidManifest.xml"
     app_source = APP_ROOT / "src/main/java/games/cafecito/foundry/game/FoundryApp.java"
     app_test = APP_ROOT / "src/androidTestInstrumented/java/games/cafecito/foundry/game/FoundryAppTest.kt"
+    instrumented_scene = APP_ROOT / "src/instrumented/assets/main.tscn"
     exporter = ANDROID_ROOT / "export/export_plugin.cpp"
 
     require_contains(app_build, f"namespace = '{APP_IMPLEMENTATION_PACKAGE}'", failures)
@@ -173,6 +174,7 @@ def check_exact_app_contract(failures: list[str]) -> None:
     )
     require_contains(app_test, '"org.godotengine.plugin.v1.Legacy"', failures)
     require_contains(app_test, '"org.godotengine.plugin.v2.Legacy"', failures)
+    require_contains(instrumented_scene, 'path="res://main.fs"', failures)
     require_contains(exporter, f'"/{APP_IMPLEMENTATION_PACKAGE}.FoundryAppLauncher"', failures)
 
 
