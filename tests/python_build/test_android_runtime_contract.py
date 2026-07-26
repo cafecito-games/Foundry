@@ -10,6 +10,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import ModuleType
+from typing import Any, cast
 from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -125,11 +126,11 @@ def create_matrix(root: Path) -> None:
             (directory / "provenance.json").write_bytes(canonical_json(provenance(build_type, abi, directory)))
 
 
-def read_provenance(root: Path, build_type: str, abi: str) -> dict[str, object]:
-    return json.loads((root / build_type / abi / "provenance.json").read_bytes())
+def read_provenance(root: Path, build_type: str, abi: str) -> dict[str, Any]:
+    return cast(dict[str, Any], json.loads((root / build_type / abi / "provenance.json").read_bytes()))
 
 
-def write_provenance(root: Path, build_type: str, abi: str, value: dict[str, object]) -> None:
+def write_provenance(root: Path, build_type: str, abi: str, value: dict[str, Any]) -> None:
     (root / build_type / abi / "provenance.json").write_bytes(canonical_json(value))
 
 

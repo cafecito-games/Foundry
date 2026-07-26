@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Contracts shared by Foundry's Android native producer and runtime consumer."""
 
 from __future__ import annotations
@@ -10,7 +9,7 @@ import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 
 SCHEMA_VERSION = 1
 ENGINE_COMPATIBILITY_POLICY = "exact-native-source-revision"
@@ -86,7 +85,15 @@ class NativeCell:
     libraries: tuple[Path, Path]
 
 
-BUILD_TYPES = {
+class BuildTypeOptions(TypedDict):
+    target: str
+    production: bool
+    dev_mode: bool
+    dev_build: bool
+    debug_symbols: bool
+
+
+BUILD_TYPES: dict[str, BuildTypeOptions] = {
     "debug": {
         "debug_symbols": False,
         "dev_build": False,
@@ -476,7 +483,7 @@ def validate_native_matrix(root: Path, revision: str, tree: str) -> tuple[Native
             tree=tree,
             directory=directory,
         )
-        libraries = tuple(directory / name for name in LIBRARY_NAMES)
+        libraries = (directory / LIBRARY_NAMES[0], directory / LIBRARY_NAMES[1])
         cells.append(
             NativeCell(
                 build_type=specification.build_type,

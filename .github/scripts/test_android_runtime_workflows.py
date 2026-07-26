@@ -7,6 +7,7 @@ import json
 import re
 import unittest
 from pathlib import Path
+from typing import Any, cast
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ANDROID_WORKFLOW = REPO_ROOT / ".github/workflows/android_builds.yml"
@@ -102,6 +103,14 @@ def _native_matrix(job: str) -> dict[tuple[str, str], dict[str, str]]:
 
 
 class AndroidRuntimeWorkflowTests(unittest.TestCase):
+    android: str
+    android_java: str
+    release: str
+    pre_commit: str
+    foundry_build_action: str
+    pin: dict[str, Any]
+    standalone_revision: str
+
     @classmethod
     def setUpClass(cls) -> None:
         cls.android = ANDROID_WORKFLOW.read_text()
@@ -109,8 +118,8 @@ class AndroidRuntimeWorkflowTests(unittest.TestCase):
         cls.release = RELEASE_WORKFLOW.read_text()
         cls.pre_commit = PRE_COMMIT.read_text()
         cls.foundry_build_action = FOUNDRY_BUILD_ACTION.read_text()
-        cls.pin = json.loads(RUNTIME_PIN.read_text())
-        cls.standalone_revision = cls.pin["source"]["revision"]
+        cls.pin = cast(dict[str, Any], json.loads(RUNTIME_PIN.read_text()))
+        cls.standalone_revision = cast(str, cls.pin["source"]["revision"])
 
     def assert_matrix(self, workflow: str, job_name: str, artifact_prefix: str) -> None:
         job = _job(workflow, job_name)

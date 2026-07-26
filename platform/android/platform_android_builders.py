@@ -5,6 +5,7 @@ from __future__ import annotations
 import subprocess
 import sys
 from pathlib import Path
+from typing import cast
 
 import android_runtime_contract as contract
 
@@ -16,7 +17,7 @@ def _node_path(node) -> Path:
 def get_foundry_source_identity(repository) -> tuple[str, str, bool]:
     """Resolve the exact Foundry source identity used by an Android SCons build."""
 
-    return contract.foundry_identity(Path(repository))
+    return cast(tuple[str, str, bool], contract.foundry_identity(Path(repository)))
 
 
 def write_android_native_provenance(target, source, env):
