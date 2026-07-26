@@ -33,13 +33,30 @@ GitHub CLI, and Cursor Agent.
   `modules/foundry_script/tests/test_name_mangler_acceptance.h`: generated
   scratch projects, export/run/read helpers, semantic transcript checks,
   leak/keep checks, determinism checks, and unsafe-dispatch checks.
+- Modify `modules/foundry_script/fs_function.h`,
+  `modules/foundry_script/fs_byte_codegen.{h,cpp}`,
+  `modules/foundry_script/fs_bytecode_verifier.{h,cpp}`, and
+  `modules/foundry_script/fs_bytecode_loader.cpp`: preserve whether a
+  reflection enumeration receiver is the current script instance, and recover
+  the same metadata after a bytecode round trip without changing the `.fsb`
+  format.
+- Modify `modules/foundry_script/fs_name_mangler_analysis.cpp` and
+  `modules/foundry_script/fs_name_mangler_application.cpp`: scope resolvable
+  reflection retention/defense to the receiver class and included inheritance
+  closure while keeping unresolved receivers conservative.
+- Modify
+  `modules/foundry_script/tests/test_name_mangler_analysis.h`,
+  `modules/foundry_script/tests/test_name_mangler_application.h`, and relevant
+  bytecode tests: narrow RED/GREEN coverage for issue #1237.
 - Keep
   `docs/superpowers/specs/2026-07-26-name-mangler-end-to-end-acceptance-design.md`
   as the normative design.
 
-No production file is planned to change. If an acceptance assertion exposes a
-real defect, stop after root-cause analysis and amend this plan with the exact
-owning production file and regression slice before implementing the fix.
+The first acceptance RED exposed issue #1237: reflection evidence and
+application defense were project-wide even when `get_method_list()` had a
+known, unrelated receiver class. The production scope above is the diagnosed
+fix. Any additional acceptance failure still requires root-cause analysis and
+another explicit plan amendment before changing production.
 
 ## Task 1: Establish the Baseline and Extract Shared Test Utilities
 
@@ -233,7 +250,160 @@ git add modules/foundry_script/tests/fs_name_mangler_export_test_utils.h \
 git commit -m "Share name mangler pack test utilities"
 ```
 
-## Task 2: Add Safe ON/OFF Parity, Leak, Keep, and Determinism Acceptance
+## Task 2: Scope Reflection Retention to Receiver Classes (#1237)
+
+**Files:**
+
+- Modify: `modules/foundry_script/fs_function.h`
+- Modify: `modules/foundry_script/fs_byte_codegen.h`
+- Modify: `modules/foundry_script/fs_byte_codegen.cpp`
+- Modify: `modules/foundry_script/fs_bytecode_verifier.h`
+- Modify: `modules/foundry_script/fs_bytecode_verifier.cpp`
+- Modify: `modules/foundry_script/fs_bytecode_loader.cpp`
+- Modify: `modules/foundry_script/fs_name_mangler_analysis.cpp`
+- Modify: `modules/foundry_script/fs_name_mangler_application.cpp`
+- Modify: `modules/foundry_script/tests/test_name_mangler_analysis.h`
+- Modify: `modules/foundry_script/tests/test_name_mangler_application.h`
+- Modify relevant bytecode test coverage if required by the recovered metadata.
+
+- [ ] **Step 1: Add narrow RED analysis coverage**
+
+Add a two-root regression where one script calls `get_method_list()` on its
+known `self` receiver and owns a reflected method, while an independent script
+owns a distinct private method. Require:
+
+- the reflected owner's method is kept with `KEEP_REFLECTION`;
+- a method inherited by the reflected receiver is also kept;
+- the unrelated private method remains in `rename_map`;
+- reversing root order gives the same classifications, map, and keep log; and
+- an unresolved or non-self reflection receiver remains project-wide and
+  conservatively keeps compatible declarations.
+
+Use unique spellings so the project-wide atomic-name policy does not conflate
+the declarations. A spelling that occurs both on a reflected receiver and
+elsewhere must still be kept globally because the rename map is keyed by
+atomic name.
+
+Name the focused case:
+
+```text
+[FoundryScript][NameMangler][Reflection][Analysis] Self enumeration scopes retention to the receiver hierarchy
+```
+
+- [ ] **Step 2: Add matching RED application-defense coverage**
+
+Build reflected and unrelated roots and require:
+
+- the analysis-produced map, including the unrelated private rename, stages
+  and rolls back successfully;
+- a hand-authored map for the reflected receiver's visible method is rejected
+  atomically as `reflection enumeration`; and
+- a hand-authored map for the unrelated private method stages and rolls back
+  successfully.
+
+Cover method, property, and signal enumeration where the fixture can remain
+narrow. Require inherited visibility for at least the method case and
+conservative rejection for an unresolved receiver.
+
+Name the focused case:
+
+```text
+[FoundryScript][NameMangler][Reflection][Application] Scoped retention accepts unrelated private maps
+```
+
+- [ ] **Step 3: Run the focused tests and preserve the real RED**
+
+Run:
+
+```sh
+python3 scripts/agent_build.py --test \
+  --case "*NameMangler*Reflection*" \
+  --progress-file /tmp/issue1237-reflection-red.jsonl
+```
+
+Expected before the production fix: the unrelated same-kind declaration is
+kept by analysis and/or rejected by application preflight. Record the first
+causal assertion, not later cascade failures.
+
+- [ ] **Step 4: Preserve resolvable receiver metadata without a format bump**
+
+Record per-function reflection-use scope during bytecode generation:
+
+- calls whose native reflection receiver address is `self` record the matching
+  method/property/signal enumeration as self-scoped;
+- calls whose receiver is another value, the `FSReflection` singleton, or
+  otherwise cannot be proven retain an unresolved/conservative flag.
+
+Do not serialize a new field or bump the `.fsb` version. Extend the
+authoritative verifier walk to recover the same flags from loaded bytecode
+using the verified opcode, receiver address, and method-bind/global-name
+tables, and have the loader store that recovered metadata on `FSFunction`.
+Add a focused round-trip assertion proving source-compiled and restored
+functions expose identical reflection-scope flags.
+
+Name the focused bytecode case:
+
+```text
+[FoundryScript][NameMangler][Reflection][Bytecode] Receiver scope survives serialization
+```
+
+- [ ] **Step 5: Scope analysis and application to the included class closure**
+
+In analysis, replace kind-only project vectors for resolvable self reflection
+with records keyed by the owning `FoundryScript`. Add `KEEP_REFLECTION` only
+when the candidate is declared on that class or an included Foundry Script
+base visible to it. Keep unresolved reflection sources project-wide.
+
+Mirror the exact rule in application preflight over the original snapshots:
+the analysis-produced map must stage, a protected receiver/base declaration
+must still be rejected, and an unrelated declaration must no longer be
+reported as a protected reflection surface. Do not weaken external,
+incomplete-graph, string, RPC, native, scene/resource, annotation, or keep-rule
+conservatism.
+
+- [ ] **Step 6: Run RED-to-GREEN verification**
+
+Run:
+
+```sh
+python3 scripts/agent_build.py --test \
+  --case "*NameMangler*Reflection*" \
+  --progress-file /tmp/issue1237-reflection-green.jsonl
+./bin/foundry.macos.editor.dev.arm64 --headless test run \
+  --case "*NameManglerAnalysis*" --force-colors
+./bin/foundry.macos.editor.dev.arm64 --headless test run \
+  --case "*NameManglerApplication*" --force-colors
+./bin/foundry.macos.editor.dev.arm64 --headless test run \
+  --case "*Bytecode*" --force-colors
+git diff --check
+```
+
+Expected: every focused summary is successful, including restored-bytecode
+scope metadata, inherited reflection safety, unrelated private renames, and
+conservative unknown receivers.
+
+- [ ] **Step 7: Commit the production fix**
+
+Commit only the #1237 production and focused regression files:
+
+```sh
+git add modules/foundry_script/fs_function.h \
+  modules/foundry_script/fs_byte_codegen.h \
+  modules/foundry_script/fs_byte_codegen.cpp \
+  modules/foundry_script/fs_bytecode_verifier.h \
+  modules/foundry_script/fs_bytecode_verifier.cpp \
+  modules/foundry_script/fs_bytecode_loader.cpp \
+  modules/foundry_script/fs_name_mangler_analysis.cpp \
+  modules/foundry_script/fs_name_mangler_application.cpp \
+  modules/foundry_script/tests/test_name_mangler_analysis.h \
+  modules/foundry_script/tests/test_name_mangler_application.h
+git commit -m "Scope reflection retention to receiver classes"
+```
+
+If the implementation needs another focused bytecode test file, include it in
+the same commit and report it explicitly.
+
+## Task 3: Add Safe ON/OFF Parity, Leak, Keep, and Determinism Acceptance
 
 **Files:**
 
@@ -548,7 +718,7 @@ func _ready() -> void:
 	var ruled_value: int = receiver.call("ruled_" + suffix, 1)
 	var reflection_value := AcceptanceReflector.new().reflection_count()
 	var rpc_value := receiver.rpc_surface(39)
-	var rpc_config_count := receiver.get_node_rpc_config().size()
+	var rpc_config_count: int = int(receiver.get_script().get_rpc_config().size())
 	var trait_result := widened.trait_value(2)
 	print(vformat(
 			"NAME_MANGLER_ACCEPTANCE|declared=%d|scene=%d|scene_export=%d|resource_export=%d|rpc=%d|rpc_config=%d|trait=%d|reflection=%d|annotated=%d|rule=%d|ready=%d",
@@ -764,7 +934,7 @@ git add modules/foundry_script/tests/test_name_mangler_acceptance.h
 git commit -m "Prove name mangler export parity"
 ```
 
-## Task 3: Add Explicit Unsafe Computed-Dispatch Failure Acceptance
+## Task 4: Add Explicit Unsafe Computed-Dispatch Failure Acceptance
 
 **Files:**
 
@@ -925,7 +1095,7 @@ git add modules/foundry_script/tests/test_name_mangler_acceptance.h
 git commit -m "Cover unsafe name mangler dispatch"
 ```
 
-## Task 4: Independent Acceptance-Matrix Audit
+## Task 5: Independent Acceptance-Matrix Audit
 
 **Files:**
 
@@ -937,7 +1107,7 @@ git commit -m "Cover unsafe name mangler dispatch"
 
 - [ ] **Step 1: Start one bounded high-reasoning read-only reviewer**
 
-Dispatch a separate `gpt-5.6-sol` high/xhigh agent after Tasks 2 and 3 are
+Dispatch a separate `gpt-5.6-sol` high/xhigh agent after Tasks 3 and 4 are
 implemented. Give it only this bounded job:
 
 ```text
@@ -974,7 +1144,7 @@ Expected: reviewer reports `COMPLIANT`, or a follow-up issue exists and the
 epic orchestrator explicitly schedules it before epic closure. Commit each
 test-backed in-scope correction with an imperative subject.
 
-## Task 5: Strict and Full Verification
+## Task 6: Strict and Full Verification
 
 **Files:**
 
@@ -1053,7 +1223,7 @@ Expected: only intentional committed design, plan, and test files differ;
 status is clean; no generated pack, runtime, `.foundry`, `.uid`, or scratch
 artifact is tracked.
 
-## Task 6: Cursor Convergence, PR, CI, Merge, and Cleanup
+## Task 7: Cursor Convergence, PR, CI, Merge, and Cleanup
 
 **Files:**
 
@@ -1097,9 +1267,10 @@ gh pr create --repo cafecito-games/Foundry --base develop \
 
 The PR body must summarize the semantic parity corpus, unsafe dispatch proof,
 leak/keep assertions, repeat-export determinism, exact test evidence, Cursor
-rounds, and independent audit. End it with:
+rounds, independent audit, and the scoped-reflection #1237 fix. End it with:
 
 ```text
+Closes #1237
 Closes #800
 ```
 
@@ -1121,6 +1292,8 @@ After merge:
 ```sh
 gh issue view 800 --repo cafecito-games/Foundry \
   --json state,projectItems,url
+gh issue view 1237 --repo cafecito-games/Foundry \
+  --json state,projectItems,url
 git -C /Users/christian/CafecitoGames/Foundry fetch origin develop
 git -C /Users/christian/CafecitoGames/Foundry worktree remove \
   /Users/christian/CafecitoGames/Foundry/.worktrees/issue-800
@@ -1132,7 +1305,7 @@ if git -C /Users/christian/CafecitoGames/Foundry ls-remote \
 fi
 ```
 
-Expected: #800 is closed, its Experiment status is Done, the PR is merged, and
-the worktree plus local/remote branch are absent. Report the merge SHA, Cursor
-rounds, independent audit result, verification counts, follow-ups (or none),
-and cleanup result to the epic orchestrator.
+Expected: #800 and #1237 are closed, both Experiment statuses are Done, the PR
+is merged, and the worktree plus local/remote branch are absent. Report the
+merge SHA, Cursor rounds, independent audit result, verification counts,
+follow-ups (or none), and cleanup result to the epic orchestrator.
