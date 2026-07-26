@@ -39,6 +39,7 @@
 #include "core/os/os.h"
 #include "tests/core/config/test_project_settings.h"
 #include "tests/test_macros.h"
+#include "tests/test_utils.h"
 
 namespace TestEditorExportManifest {
 
@@ -50,12 +51,17 @@ static const String CUSTOMIZED_RESOURCE_PATH = "res://tests/editor/fixtures/expo
 static const String CUSTOMIZED_SCENE_PATH = "res://tests/editor/fixtures/export_manifest/customized_scene.tscn";
 
 class ScopedManifestExportScratch {
+	TestProjectSettingsRestoreScope restore_project_settings;
 	String saved_project_data_dir_name;
 	String scoped_root;
 	Error setup_error = OK;
 
 public:
 	ScopedManifestExportScratch() {
+		TestProjectSettingsInternalsAccessor::resource_path() =
+				TestUtils::get_executable_dir()
+						.get_base_dir()
+						.simplify_path();
 		saved_project_data_dir_name = ProjectSettings::get_singleton()->get_project_data_dir_name();
 
 		Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
@@ -405,6 +411,52 @@ TEST_CASE("[Editor][ExportManifest] Native hooks receive owned manifest snapshot
 	CHECK_EQ(plugin->prepared_generated.size(), 1);
 }
 
+TEST_CASE("[Editor][ExportManifest] Fixture-backed exports scope and restore the checkout resource root") {
+	const String original_resource_root =
+			ProjectSettings::get_singleton()->get_resource_path();
+	const String stale_resource_root =
+			TestUtils::get_executable_dir()
+					.get_base_dir()
+					.path_join("modules/foundry_script/tests/scripts");
+	REQUIRE(DirAccess::dir_exists_absolute(stale_resource_root));
+
+	{
+		TestProjectSettingsRestoreScope restore_project_settings;
+		TestProjectSettingsInternalsAccessor::resource_path() =
+				stale_resource_root;
+
+		Ref<TestManifestExportPlatform> platform =
+				memnew(TestManifestExportPlatform);
+		Ref<EditorExportPreset> preset = platform->create_preset();
+		Vector<String> events;
+		Ref<RecordingManifestPlugin> plugin =
+				memnew(RecordingManifestPlugin("Plugin", &events));
+		Vector<Ref<EditorExportPlugin>> plugins;
+		plugins.push_back(plugin);
+
+		HashSet<String> paths;
+		paths.insert(IMPORTED_PATH);
+		paths.insert(SKIPPED_PATH);
+
+		SaveCapture capture;
+		CHECK_EQ(platform->export_candidates(
+						 preset, paths, plugins, capture),
+				OK);
+		CHECK_EQ(
+				ProjectSettings::get_singleton()->get_resource_path(),
+				stale_resource_root);
+		CHECK_EQ(
+				plugin->prepared_sources,
+				Vector<String>({ IMPORTED_PATH }));
+		CHECK_NE(capture.paths.find(IMPORTED_PATH), -1);
+		CHECK_EQ(capture.paths.find(SKIPPED_PATH), -1);
+	}
+
+	CHECK_EQ(
+			ProjectSettings::get_singleton()->get_resource_path(),
+			original_resource_root);
+}
+
 TEST_CASE("[Editor][ExportManifest] Preparation sees a sorted effective manifest and aborts before output") {
 	Ref<TestManifestExportPlatform> platform = memnew(TestManifestExportPlatform);
 	Ref<EditorExportPreset> preset = platform->create_preset();
@@ -450,6 +502,10 @@ TEST_CASE("[Editor][ExportManifest] Preparation sees a sorted effective manifest
 	CHECK_EQ(alpha->prepared_sources.find(SKIPPED_PATH), -1);
 	CHECK_EQ(alpha->prepared_sources.find("res://manifest/excluded.tres"), -1);
 
+	REQUIRE_GE(events.size(), 6);
+	if (events.size() < 6) {
+		return;
+	}
 	CHECK_EQ(events[0], "begin_resources:Alpha");
 	CHECK_EQ(events[1], "begin_scenes:Alpha");
 	CHECK_EQ(events[2], "begin_resources:Bravo");
