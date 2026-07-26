@@ -495,6 +495,24 @@ static String name_mangler_acceptance_transcript(
 	return transcript;
 }
 
+static String name_mangler_acceptance_missing_call_diagnostic(
+		const String &p_output, const String &p_target) {
+	const String lower_target = p_target.to_lower();
+	for (const String &raw_line : p_output.split("\n")) {
+		const String line = raw_line.strip_edges();
+		const String lower_line = line.to_lower();
+		const bool has_missing_call_meaning =
+				lower_line.contains("nonexistent function") ||
+				lower_line.contains("invalid call") ||
+				lower_line.contains("method not found");
+		if (lower_line.contains(lower_target) &&
+				has_missing_call_meaning) {
+			return line;
+		}
+	}
+	return String();
+}
+
 static RBMap<String, Vector<uint8_t>>
 name_mangler_acceptance_read_scripts(const String &p_pack_path) {
 	RBMap<String, Vector<uint8_t>> scripts;
@@ -1031,11 +1049,12 @@ TEST_CASE("[FoundryScript][NameManglerAcceptance][DynamicDispatch] Unescaped com
 					project.root.path_join("runtime"));
 	INFO("Unsafe runtime:\n", runtime_result.output);
 	REQUIRE_EQ(runtime_result.error, OK);
-	const String lower_output = runtime_result.output.to_lower();
-	CHECK(lower_output.contains("unsafe_dynamic_target"));
-	CHECK(lower_output.contains("nonexistent function") ||
-			lower_output.contains("invalid call") ||
-			lower_output.contains("method not found"));
+	REQUIRE_EQ(runtime_result.exit_code, 0);
+	const String missing_call_diagnostic =
+			name_mangler_acceptance_missing_call_diagnostic(
+					runtime_result.output,
+					"unsafe_dynamic_target");
+	CHECK_FALSE(missing_call_diagnostic.is_empty());
 	CHECK_FALSE(runtime_result.output.contains(
 			"UNSAFE_DYNAMIC_TARGET_EXECUTED"));
 
@@ -1048,8 +1067,10 @@ TEST_CASE("[FoundryScript][NameManglerAcceptance][DynamicDispatch] Unescaped com
 }
 ```
 
-The diagnostic phrase assertion is intentionally narrow to explicit
-missing-call forms. Do not replace it with an exit-code-only assertion.
+The diagnostic assertion is intentionally narrow: one output line must contain
+both the exact reconstructed target and an explicit missing-call form. The
+scheduled next-frame shutdown must also exit cleanly. Do not replace either
+proof with an exit-code-only assertion.
 
 - [ ] **Step 3: Run and capture RED or confirmed behavior**
 
