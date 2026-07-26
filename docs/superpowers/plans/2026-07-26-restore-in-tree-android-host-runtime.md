@@ -1,0 +1,271 @@
+# Restore In-Tree Android Host Runtime Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Restore Foundry's current Java/Kotlin/AIDL Android application host as the internal `platform/android/java/lib` module and reconnect the engine's Android template build to it.
+
+**Architecture:** Foundry owns and compiles the host runtime from `:lib`; `:app` uses a Gradle project dependency whenever it is built in this repository. The generated custom-build source template remains self-contained by copying the three internally built AAR variants into `app/libs`, but standalone repository preparation, Maven publication, signing, compatibility metadata, and native-bundle extraction are not part of `:lib`. Runtime sources, resources, identity metadata, API 36 fixes, tests, and JNI names come from the read-only `Foundry-Android/runtime` donor.
+
+**Tech Stack:** Python `unittest` ownership contracts, Gradle 8.11.1/AGP 8.9.1, Java 17, Kotlin 2.1.21, Android API 36, AIDL, SCons Android native builds
+
+---
+
+### Task 1: Define the restored ownership contract
+
+**Files:**
+- Modify: `tests/python_build/test_android_runtime_surface.py`
+- Modify: `tests/python_build/test_android_gradle_runtime_contract.py`
+- Modify: `misc/scripts/test_android_runtime_identifiers.py`
+
+- [ ] **Step 1: Require the in-tree runtime surface**
+
+  Replace the standalone-owner assertions with exact checks for `platform/android/java/lib/build.gradle`, the main
+  Java/Kotlin tree, the two licensing AIDL files, layouts/strings/provider resources, notices, JVM tests, Android
+  tests, `include ':lib'`, and the internal app dependency:
+
+  ```python
+  for path in (
+      "platform/android/java/lib/build.gradle",
+      "platform/android/java/lib/src/main/java/games/cafecito/foundry/Foundry.kt",
+      "platform/android/java/lib/src/main/aidl/com/android/vending/licensing/ILicensingService.aidl",
+      "platform/android/java/lib/src/main/res/layout/foundry_app_layout.xml",
+      "platform/android/java/lib/src/test/java/games/cafecito/foundry/RuntimeIdentityTest.java",
+      "platform/android/java/lib/src/androidTest/java/games/cafecito/foundry/RuntimeIdentityInstrumentedTest.kt",
+  ):
+      require_path(path)
+  require_text("platform/android/java/settings.gradle", "include ':lib'")
+  require_text("platform/android/java/app/build.gradle", 'implementation project(":lib")')
+  ```
+
+- [ ] **Step 2: Reject standalone preparation and publication**
+
+  Assert that active Gradle files contain none of `prepareFoundryAndroidRuntime`, `foundryAndroidSource`,
+  `foundryAndroidFetch`, `foundryRuntimeAarRoot`, `maven-publish`, `signing`, `MavenPublication`,
+  `nexusPublishing`, `foundryNativeBundle`, or donor repository URLs. Require the root copy tasks to depend on
+  `:lib:assembleTemplateDebug`, `:lib:assembleTemplateDev`, and `:lib:assembleTemplateRelease`, and require the
+  stable `foundry-debug.aar`, `foundry-dev.aar`, and `foundry-release.aar` source-template payloads.
+
+- [ ] **Step 3: Preserve identity, JNI, and application-ID guards**
+
+  Change `misc/scripts/test_android_runtime_identifiers.py` to require the in-tree runtime rather than reject it.
+  Extend the Python contract to require `games.cafecito.foundry` namespace/manifest metadata, the API 36
+  `BAKLAVA` host-token guard, immutable downloader alarm, canonical JNI declarations, canonical C++ exports,
+  and the default/custom application-ID acceptance inputs.
+
+- [ ] **Step 4: Run the focused contracts and capture RED**
+
+  Run:
+
+  ```sh
+  python3 -m unittest \
+    tests.python_build.test_android_runtime_surface \
+    tests.python_build.test_android_gradle_runtime_contract
+  python3 misc/scripts/test_android_runtime_identifiers.py
+  ```
+
+  Expected: failures report missing `platform/android/java/lib`, missing `include ':lib'` and project dependency,
+  and forbidden standalone runtime preparation. Record this output before restoring production files.
+
+- [ ] **Step 5: Commit the RED contracts and plan**
+
+  ```sh
+  git add docs/superpowers/plans/2026-07-26-restore-in-tree-android-host-runtime.md \
+    tests/python_build/test_android_runtime_surface.py \
+    tests/python_build/test_android_gradle_runtime_contract.py \
+    misc/scripts/test_android_runtime_identifiers.py
+  git commit -m "Test in-tree Android runtime ownership"
+  ```
+
+### Task 2: Restore the current host runtime as internal `:lib`
+
+**Files:**
+- Create: `platform/android/java/lib/build.gradle`
+- Restore/update: `platform/android/java/lib/patches/**`
+- Restore/update: `platform/android/java/lib/src/main/**`
+- Restore/update: `platform/android/java/lib/src/test/**`
+- Create: `platform/android/java/lib/src/androidTest/**`
+
+- [ ] **Step 1: Restore the donor runtime content**
+
+  Restore the former in-tree runtime tree, then apply every semantic difference found in the read-only donor:
+  runtime/manifest compatibility metadata and alarm receiver, immutable downloader `PendingIntent`, API 36
+  `SurfaceControlViewHost` token guard, lint annotations, provider-path notice, JVM identity test, Android identity
+  and plugin-protocol tests, and packaged license/notice resources. Do not copy `runtime/build/`, standalone lint
+  patch application, repository compatibility files, native bundle tools, or release/publication files.
+
+- [ ] **Step 2: Implement the internal library Gradle module**
+
+  Configure `com.android.library` and Kotlin only, with namespace `games.cafecito.foundry`, API 36/min API 24,
+  Java/Kotlin 17, AIDL and BuildConfig, `template` flavor, debug/dev/release types, strict lint, JVM default values,
+  unit/instrumented dependencies, and `libs/{debug,dev,release}` JNI inputs. Populate:
+
+  ```groovy
+  buildConfigField 'String', 'FOUNDRY_BINDINGS_VERSION', "\"${getFoundryLibraryVersionName()}\""
+  buildConfigField 'String', 'FOUNDRY_ENGINE_VERSION', "\"${getFoundryLibraryVersionName()}\""
+  buildConfigField 'String', 'FOUNDRY_ENGINE_REVISION', "\"${getFoundryEngineRevision()}\""
+  buildConfigField 'int', 'FOUNDRY_JNI_CONTRACT_VERSION', '1'
+  ```
+
+  Name AAR outputs `foundry-debug.aar`, `foundry-dev.aar`, and `foundry-release.aar`. Keep SCons native compile tasks
+  scoped to the selected ABIs and merge tasks; do not add publication, signing, external repository, compatibility
+  metadata, native-bundle extraction, or standalone artifact inspection.
+
+- [ ] **Step 3: Restore engine-owned version helpers**
+
+  Add `getFoundryLibraryVersionName()` and `getFoundryEngineRevision()` to
+  `platform/android/java/app/config.gradle`, deriving the library version from the repository `version.py` and the
+  revision from the current Git checkout with a deterministic non-release fallback.
+
+- [ ] **Step 4: Run GREEN library compilation/tests**
+
+  Run:
+
+  ```sh
+  platform/android/java/gradlew -p platform/android/java \
+    :lib:testTemplateDebugUnitTest \
+    :lib:lintTemplateDebug \
+    :lib:compileTemplateDebugJavaWithJavac \
+    :lib:compileTemplateDebugKotlin \
+    :lib:compileTemplateDebugAidl \
+    :lib:assembleTemplateDebugAndroidTest \
+    -PselectedAbis=
+  ```
+
+  Expected: all tasks succeed without fetching or reading `Foundry-Android`.
+
+- [ ] **Step 5: Commit the restored host module**
+
+  ```sh
+  git add platform/android/java/lib platform/android/java/app/config.gradle
+  git commit -m "Restore Foundry Android host module"
+  ```
+
+### Task 3: Reconnect the engine Gradle graph
+
+**Files:**
+- Modify: `platform/android/java/settings.gradle`
+- Modify: `platform/android/java/build.gradle`
+- Modify: `platform/android/java/app/build.gradle`
+
+- [ ] **Step 1: Include and consume `:lib`**
+
+  Add `include ':lib'`. In `:app`, select `implementation project(":lib")` for the engine Gradle graph while
+  preserving the exported app-only fallback to `libs/debug`, `libs/dev`, and `libs/release`.
+
+- [ ] **Step 2: Replace standalone preparation with internal copy dependencies**
+
+  Remove standalone source/fetch/native bundle properties and `prepareFoundryAndroidRuntime`. Make each root AAR
+  copy task depend on `:lib:assembleTemplate<BuildType>`, copy the stable internally generated AAR to
+  `app/libs/<build-type>` and `bin/`, and retain the staged/inspected `android_source.zip` promotion path.
+
+- [ ] **Step 3: Run focused GREEN contracts**
+
+  Run:
+
+  ```sh
+  python3 -m unittest \
+    tests.python_build.test_android_runtime_surface \
+    tests.python_build.test_android_gradle_runtime_contract
+  python3 misc/scripts/test_android_runtime_identifiers.py
+  ```
+
+  Expected: all ownership, Gradle, identity, application-ID, and JNI source contracts pass.
+
+- [ ] **Step 4: Compile the app and retained instrumented tests**
+
+  Run:
+
+  ```sh
+  platform/android/java/gradlew -p platform/android/java \
+    :app:compileStandardDebugJavaWithJavac \
+    :app:compileStandardDebugKotlin \
+    :app:compileInstrumentedDebugAndroidTestKotlin \
+    :app:assembleInstrumentedDebugAndroidTest \
+    -PselectedAbis=
+  ```
+
+  Expected: Java, Kotlin, AIDL-backed host references, and the instrumented-test APK compile successfully.
+
+- [ ] **Step 5: Commit the internal Gradle graph**
+
+  ```sh
+  git add platform/android/java/settings.gradle \
+    platform/android/java/build.gradle \
+    platform/android/java/app/build.gradle
+  git commit -m "Reconnect Android templates to in-tree host"
+  ```
+
+### Task 4: Document and inspect the restored runtime
+
+**Files:**
+- Modify: `platform/android/ANDROID_RUNTIME.md`
+- Generated verification outputs only: `platform/android/java/{app,lib}/build/**`, `bin/android_*.apk`
+
+- [ ] **Step 1: Rewrite runtime ownership/build documentation**
+
+  Document `:lib` as the internal host owner, the debug/dev/release and four-ABI matrix, internal AAR source-template
+  packaging, unit/lint/instrumented commands, JNI declaration/export checks, default/custom application-ID
+  acceptance, and the API 36 emulator gate. Remove instructions that fetch, pin, publish, or prepare
+  `Foundry-Android`.
+
+- [ ] **Step 2: Build all template variants**
+
+  Build or reuse the exact four native ABI payloads, then run:
+
+  ```sh
+  platform/android/java/gradlew -p platform/android/java \
+    :app:assembleStandardDebug \
+    :app:assembleStandardDev \
+    :app:assembleStandardRelease
+  ```
+
+  Expected: all three template APKs build from internal `:lib`.
+
+- [ ] **Step 3: Inspect artifacts**
+
+  Use `unzip -l`, `jar tf`, `javap`, `nm`, and `apkanalyzer` to verify the three AAR/APK variants contain canonical
+  host classes/resources, compiled native declarations, matching `Java_games_cafecito_foundry_*` exports,
+  `libfoundry_android.so` plus `libc++_shared.so`, and all four ABI directories. Process manifests once with the
+  canonical application ID and once with `-Pexport_package_name=dev.example.foundryacceptance`.
+
+- [ ] **Step 4: Run API 36 device acceptance when available**
+
+  If exactly one API 36 emulator/device is ready, run
+  `platform/android/android_device_acceptance.py source-template` for canonical/custom application IDs. If the SDK,
+  system image, hardware acceleration, or device is unavailable, capture the exact command and environmental
+  diagnostic as an explicit skip; do not weaken compilation or artifact gates.
+
+- [ ] **Step 5: Commit the documentation**
+
+  ```sh
+  git add platform/android/ANDROID_RUNTIME.md
+  git commit -m "Document the in-tree Android runtime"
+  ```
+
+### Task 5: Fresh verification and handoff
+
+**Files:**
+- Verify all issue changes; do not touch `.epic-1241-status.md`.
+
+- [ ] **Step 1: Run the complete focused verification**
+
+  Rerun both Python contract modules, the identifier guard, `:lib:testTemplateDebugUnitTest`,
+  `:lib:lintTemplateDebug`, Java/Kotlin/AIDL compilation, retained instrumented-test assembly, all three standard
+  app variants, source-template inspection, JNI parity checks, and four-ABI artifact inspection from the final HEAD.
+
+- [ ] **Step 2: Check repository hygiene**
+
+  Run `git diff --check`, inspect `git status --short`, confirm `custom.py` still has its exact required contents,
+  confirm `Foundry-Android` is unchanged, and confirm the epic ledger is untouched.
+
+- [ ] **Step 3: Self-review and commit any verified corrections**
+
+  Review `git diff origin/develop...HEAD` for scope, donor semantic parity, stale standalone ownership, Maven
+  publication, missing resources/tests, and accidental generated files. Fix any in-scope defect through a new
+  red/green cycle and commit it separately.
+
+- [ ] **Step 4: Report `READY_FOR_SPEC_REVIEW`**
+
+  Report base/HEAD SHAs, commits and changed files, captured RED/GREEN evidence, every fresh verification result,
+  exact environmental skips, and required follow-up work. Do not push, open a PR, update the epic ledger, or run
+  final Cursor review in this workstream handoff.
