@@ -15,7 +15,10 @@ def supportedEditions = ["standard", "mono"]
 def foundryEngineSource = rootProject.file("../../..")
 def foundryRuntimeAarRoot = layout.buildDirectory.dir("foundryAndroidRuntime/aars").get().asFile
 def foundryDefaultRuntimeScratch = layout.buildDirectory.dir("foundryAndroidRuntime/scratch").get().asFile
+def foundrySourceTemplateRoot = layout.buildDirectory.dir("foundryAndroidSourceTemplate").get().asFile
+def stagedSourceTemplate = new File(foundrySourceTemplateRoot, "android_source.zip")
 def binDir = new File(foundryEngineSource, "bin")
+def sourceTemplateDestination = new File(binDir, "android_source.zip")
 
 // Exposed to :app. The exported source template does not define this value and falls back to app/libs.
 ext.foundryRuntimeAarRoot = foundryRuntimeAarRoot
@@ -35,10 +38,17 @@ def runtimeScratch = providers.gradleProperty("foundryRuntimeScratch")
 def runtimeDriver = rootProject.file("../android_runtime_build.py")
 def runtimeContract = rootProject.file("../android_runtime_contract.py")
 def runtimePin = rootProject.file("../foundry_android_runtime.json")
+def sourceTemplateTool = rootProject.file("../android_source_template.py")
+
+def clearAndroidSourceTemplateOutput = tasks.register("clearAndroidSourceTemplateOutput", Delete) {
+    delete foundrySourceTemplateRoot
+    delete sourceTemplateDestination
+}
 
 def prepareFoundryAndroidRuntime = tasks.register("prepareFoundryAndroidRuntime", Exec) {
     group = "foundry android"
     description = "Build and validate the pinned standalone Foundry Android runtime AARs."
+    mustRunAfter clearAndroidSourceTemplateOutput
 
     inputs.file(runtimeDriver)
     inputs.file(runtimeContract)
@@ -125,7 +135,7 @@ def copyFoundryRuntimeAarsToBin = tasks.register("copyFoundryRuntimeAarsToBin", 
  * Generate the self-contained custom-build source template. The tracked app directory becomes
  * the ZIP root, so runtime AARs are overlaid under its libs directory.
  */
-task zipGradleBuild(type: Zip) {
+def zipGradleBuild = tasks.register("zipGradleBuild", Zip) {
     dependsOn prepareFoundryAndroidRuntime
     from(fileTree(dir: "app", excludes: ["**/build/**", "**/.gradle/**", "**/*.iml"]))
     from(fileTree(dir: ".", includes: ["gradlew", "gradlew.bat", "gradle/**"]))
@@ -134,7 +144,7 @@ task zipGradleBuild(type: Zip) {
     }
     include "**/*"
     archiveFileName = "android_source.zip"
-    destinationDirectory = binDir
+    destinationDirectory = foundrySourceTemplateRoot
 }
 
 /**
@@ -162,18 +172,49 @@ def generateBuildTasks = { String edition = "standard" ->
     return buildTasks
 }
 
+def standardBuildTasks = generateBuildTasks()
+def monoBuildTasks = generateBuildTasks("mono")
+
+def promoteAndroidSourceTemplate = tasks.register("promoteAndroidSourceTemplate", Exec) {
+    group = "foundry android"
+    description = "Inspect and atomically promote the staged Android source template."
+    dependsOn clearAndroidSourceTemplateOutput
+    dependsOn zipGradleBuild
+    mustRunAfter standardBuildTasks
+    mustRunAfter monoBuildTasks
+    inputs.file(sourceTemplateTool)
+    inputs.file(stagedSourceTemplate)
+    outputs.file(sourceTemplateDestination)
+    outputs.upToDateWhen { false }
+    commandLine(
+        pythonExecutable.get(),
+        sourceTemplateTool.absolutePath,
+        'promote',
+        '--archive', stagedSourceTemplate.absolutePath,
+        '--destination', sourceTemplateDestination.absolutePath,
+    )
+}
+
+def promoteStandardAndroidSourceTemplate = tasks.register("promoteStandardAndroidSourceTemplate") {
+    dependsOn standardBuildTasks
+    dependsOn promoteAndroidSourceTemplate
+}
+
+def promoteMonoAndroidSourceTemplate = tasks.register("promoteMonoAndroidSourceTemplate") {
+    dependsOn monoBuildTasks
+    dependsOn promoteAndroidSourceTemplate
+}
+
 task generateFoundryTemplates {
     dependsOn prepareFoundryAndroidRuntime
     dependsOn copyFoundryRuntimeAarsToBin
-    dependsOn generateBuildTasks()
-    finalizedBy zipGradleBuild
+    dependsOn promoteStandardAndroidSourceTemplate
 }
 
 task generateFoundryMonoTemplates {
     dependsOn prepareFoundryAndroidRuntime
     dependsOn copyFoundryRuntimeAarsToBin
-    dependsOn generateBuildTasks("mono")
-    finalizedBy zipGradleBuild
+    dependsOn promoteMonoAndroidSourceTemplate
 }
 
 task clean(type: Delete) {
@@ -182,6 +223,7 @@ task clean(type: Delete) {
 
 task cleanFoundryTemplates(type: Delete) {
     delete foundryRuntimeAarRoot.parentFile
+    delete foundrySourceTemplateRoot
     delete "app/build"
 
     delete new File(binDir, "android_debug.apk")
