@@ -4,9 +4,7 @@ default_language_version:
 exclude: |
   (?x)^(
     .*thirdparty/.*|
-    .*-(dll|dylib|so)_wrap\.[ch]|
-    platform/android/java/editor/src/main/java/com/android/.*|
-    platform/android/java/lib/src/main/java/com/google/.*
+    .*-(dll|dylib|so)_wrap\.[ch]
   )$
 
 repos:
@@ -166,10 +164,7 @@ repos:
         exclude: |
           (?x)^(
             core/math/bvh_.*\.inc|
-            platform/(?!android|ios|linuxbsd|macos|web|windows)\w+/.*|
-            platform/android/java/lib/src/main/java/org/godotengine/godot/gl/GLSurfaceView\.java|
-            platform/android/java/lib/src/main/java/org/godotengine/godot/gl/EGLLogWrapper\.java|
-            platform/android/java/lib/src/main/java/org/godotengine/godot/utils/ProcessPhoenix\.java
+            platform/(?!android|ios|linuxbsd|macos|web|windows)\w+/.*
           )$
 
       - id: header-guards
@@ -232,4 +227,29 @@ repos:
         language: python
         entry: python misc/scripts/test_android_runtime_identifiers.py
         pass_filenames: false
-        files: ^(?:misc/scripts/test_android_runtime_identifiers\.py$|platform/android/(?:export/export_plugin\.cpp$|java/(?:app|lib)/))
+        files: |
+          (?x)^(
+            \.pre-commit-config\.yaml|
+            misc/scripts/test_android_runtime_identifiers\.py|
+            platform/android/(?:android_runtime_contract\.py|foundry_android_runtime\.json|SCsub)|
+            platform/android/export/export_plugin\.cpp|
+            platform/android/java/(?:app/|lib(?:/|$)|build\.gradle|settings\.gradle)|
+            platform/android/java_foundry_(?:lib_jni|wrapper)\.cpp|
+            tests/python_build/test_android_runtime_surface\.py
+          )$
+
+      - id: foundry-android-runtime-workflows
+        name: Foundry Android runtime workflows
+        language: python
+        entry: python .github/scripts/test_android_runtime_workflows.py
+        pass_filenames: false
+        files: |
+          (?x)^(
+            \.pre-commit-config\.yaml|
+            \.github/actions/foundry-build/action\.yml|
+            \.github/scripts/test_android_runtime_workflows\.py|
+            \.github/workflows/(android_builds|android_java_check|release)\.yml|
+            misc/scripts/test_release_resolver\.py|
+            platform/android/foundry_android_runtime\.json|
+            tests/python_build/test_android_runtime_surface\.py
+          )$

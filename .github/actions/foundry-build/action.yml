@@ -5,18 +5,16 @@ inputs:
   target:
     description: Build target (editor, template_release, template_debug).
     default: editor
-    type: choice
-    options: [editor, template_debug, template_release]
   platform:
     description: Target platform.
-    type: string
   scons-flags:
     description: Additional SCons flags.
-    type: string
   scons-cache:
     description: The SCons cache path.
     default: ${{ github.workspace }}/.scons_cache/
-    type: string
+  preserve-source-tree:
+    description: Keep tracked source directories intact for revision-sensitive builds.
+    default: "false"
 
 runs:
   using: composite
@@ -26,7 +24,7 @@ runs:
       run: |
         echo "Building with flags:" platform=${{ inputs.platform }} target=${{ inputs.target }} ${{ inputs.scons-flags }} "cache_path=${{ inputs.scons-cache }}" redirect_build_objects=no
 
-        if [ "${{ inputs.target }}" != "editor" ]; then
+        if [ "${{ inputs.target }}" != "editor" ] && [ "${{ inputs.preserve-source-tree }}" != "true" ]; then
           # Ensure we don't include editor code in export template builds.
           rm -rf editor
         fi

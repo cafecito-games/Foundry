@@ -153,7 +153,7 @@ def test_release_workflow_wires_manual_publish_mode() -> None:
     workflow = RELEASE_WORKFLOW.read_text()
     required_snippets = [
         "description: Release mode. Draft builds assets only; "
-        "publish creates the tag and publishes Maven/GitHub release.",
+        "publish creates the tag and publishes the GitHub release.",
         "MODE_INPUT: ${{ inputs.mode }}",
         "CHANNEL_INPUT: ${{ inputs.channel }}",
         "python3 .github/scripts/resolve_release.py",
@@ -179,6 +179,9 @@ def test_release_workflow_wires_manual_publish_mode() -> None:
         "inputs.status",
         "VERSION_INPUT",
         "STATUS_INPUT",
+        ":lib:publish",
+        "OSSRH_USERNAME",
+        "SONATYPE_STAGING_PROFILE_ID",
     ]
     present = [snippet for snippet in forbidden_snippets if snippet in workflow]
     if present:

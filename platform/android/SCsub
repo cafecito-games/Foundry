@@ -87,12 +87,31 @@ if lib_arch_dir != "" and host_subpath != "":
     else:  # Release
         lib_type_dir = "release"
 
-    jni_libs_dir = "#platform/android/java/lib/libs/" + lib_type_dir + "/"
+    source_revision, source_tree, source_dirty = platform_android_builders.get_foundry_source_identity(
+        env_android.Dir("#").abspath
+    )
+    env_android["android_native_abi"] = lib_arch_dir
+    env_android["android_native_build_type"] = lib_type_dir
+    env_android["foundry_android_source_dirty"] = source_dirty
+    env_android["foundry_android_source_revision"] = source_revision
+    env_android["foundry_android_source_tree"] = source_tree
+
+    jni_libs_dir = "#bin/android-native/" + source_revision + "/" + lib_type_dir + "/"
     out_dir = jni_libs_dir + lib_arch_dir
-    env_android.CommandNoCache(out_dir + "/libfoundry_android.so", lib, Move("$TARGET", "$SOURCE"))
+    foundry_native_library = env_android.CommandNoCache(
+        out_dir + "/libfoundry_android.so", lib, Move("$TARGET", "$SOURCE")
+    )
 
     stl_lib_path = f"{env['ANDROID_NDK_ROOT']}/toolchains/llvm/prebuilt/{host_subpath}/sysroot/usr/lib/{triple_target_dir}/libc++_shared.so"
-    env_android.CommandNoCache(out_dir + "/libc++_shared.so", stl_lib_path, Copy("$TARGET", "$SOURCE"))
+    cpp_native_library = env_android.CommandNoCache(
+        out_dir + "/libc++_shared.so", stl_lib_path, Copy("$TARGET", "$SOURCE")
+    )
+    provenance = env_android.CommandNoCache(
+        out_dir + "/provenance.json",
+        foundry_native_library + cpp_native_library,
+        env.Run(platform_android_builders.write_android_native_provenance),
+    )
+    env_android.AlwaysBuild(provenance)
 
     if env["debug_symbols"] and env["separate_debug_symbols"]:
         debug_symbols_zip_file = "#bin/android-template-" + lib_type_dir + "-native-symbols.zip"
@@ -101,6 +120,8 @@ if lib_arch_dir != "" and host_subpath != "":
     if env["generate_android_binaries"]:
         env_android.AlwaysBuild(
             env_android.CommandNoCache(
-                "generate_android_binaries", lib, env.Run(platform_android_builders.generate_android_binaries)
+                "generate_android_binaries",
+                provenance,
+                env.Run(platform_android_builders.generate_android_binaries),
             )
         )

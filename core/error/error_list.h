@@ -2,7 +2,7 @@
 /*  error_list.h                                                          */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -40,7 +40,7 @@
  * - Are added to the Error enum in core/error/error_list.h
  * - Have a description added to error_names in core/error/error_list.cpp
  * - Are bound with BIND_CORE_ENUM_CONSTANT() in core/core_constants.cpp
- * - Have a matching Android version in platform/android/java/lib/src/main/java/org/godotengine/godot/error/Error.kt
+ * - Have a matching Android version in Foundry-Android runtime/src/main/java/games/cafecito/foundry/error/Error.kt
  */
 
 enum Error {

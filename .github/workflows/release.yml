@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: Release mode. Draft builds assets only; publish creates the tag and publishes Maven/GitHub release.
+        description: Release mode. Draft builds assets only; publish creates the tag and publishes the GitHub release.
         required: true
         default: draft
         type: choice
@@ -346,7 +346,14 @@ jobs:
           rm -f "$CERT_PATH"
 
           security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | sed 's/"//g')
+          EXISTING_KEYCHAINS=()
+          while IFS= read -r keychain; do
+            keychain="${keychain//\"/}"
+            if [ -n "$keychain" ]; then
+              EXISTING_KEYCHAINS+=("$keychain")
+            fi
+          done < <(security list-keychains -d user)
+          security list-keychains -d user -s "$KEYCHAIN_PATH" "${EXISTING_KEYCHAINS[@]}"
 
       # codesign fails silently if bundle_sign_identity doesn't match anything
       # in the keychain (SCons doesn't check its exit code), which previously
@@ -660,10 +667,10 @@ jobs:
         with:
           name: ${{ matrix.cache-name }}
 
-  build-android:
+  build-android-native:
     needs: resolve
     runs-on: ubuntu-24.04
-    name: Android ${{ matrix.name }}
+    name: Android native ${{ matrix.build_type }} / ${{ matrix.abi }}
     timeout-minutes: 120
     env:
       FOUNDRY_VERSION: ${{ needs.resolve.outputs.version }}
@@ -675,26 +682,207 @@ jobs:
       FOUNDRY_BUILD_ID: gh
       FOUNDRY_EXTENSION_INTERFACE_FORMAT: 1
       FOUNDRY_EXTENSION_ABI_REVISION: 7
-      SCONS_FLAGS: production=yes module_text_server_fb_enabled=yes tests=no swappy=yes
+      SCONS_FLAGS: >-
+        module_text_server_fb_enabled=yes
+        tests=no
+        swappy=yes
+        foundry_script_frontend=no
     strategy:
       fail-fast: false
       matrix:
         include:
-          - name: templates (debug)
-            cache-name: release-android-template-debug
+          - build_type: debug
+            abi: armeabi-v7a
+            arch: arm32
             target: template_debug
-            publish-publication: TemplateDebug
-            template_scons_flags: foundry_script_frontend=no
-          - name: templates (release)
-            cache-name: release-android-template-release
+            production: "no"
+            dev_mode: "no"
+            dev_build: "no"
+            debug_symbols: "no"
+            artifact_name: release-android-native-debug-armeabi-v7a
+          - build_type: debug
+            abi: arm64-v8a
+            arch: arm64
+            target: template_debug
+            production: "no"
+            dev_mode: "no"
+            dev_build: "no"
+            debug_symbols: "no"
+            artifact_name: release-android-native-debug-arm64-v8a
+          - build_type: debug
+            abi: x86
+            arch: x86_32
+            target: template_debug
+            production: "no"
+            dev_mode: "no"
+            dev_build: "no"
+            debug_symbols: "no"
+            artifact_name: release-android-native-debug-x86
+          - build_type: debug
+            abi: x86_64
+            arch: x86_64
+            target: template_debug
+            production: "no"
+            dev_mode: "no"
+            dev_build: "no"
+            debug_symbols: "no"
+            artifact_name: release-android-native-debug-x86_64
+          - build_type: dev
+            abi: armeabi-v7a
+            arch: arm32
+            target: template_debug
+            production: "no"
+            dev_mode: "yes"
+            dev_build: "yes"
+            debug_symbols: "yes"
+            artifact_name: release-android-native-dev-armeabi-v7a
+          - build_type: dev
+            abi: arm64-v8a
+            arch: arm64
+            target: template_debug
+            production: "no"
+            dev_mode: "yes"
+            dev_build: "yes"
+            debug_symbols: "yes"
+            artifact_name: release-android-native-dev-arm64-v8a
+          - build_type: dev
+            abi: x86
+            arch: x86_32
+            target: template_debug
+            production: "no"
+            dev_mode: "yes"
+            dev_build: "yes"
+            debug_symbols: "yes"
+            artifact_name: release-android-native-dev-x86
+          - build_type: dev
+            abi: x86_64
+            arch: x86_64
+            target: template_debug
+            production: "no"
+            dev_mode: "yes"
+            dev_build: "yes"
+            debug_symbols: "yes"
+            artifact_name: release-android-native-dev-x86_64
+          - build_type: release
+            abi: armeabi-v7a
+            arch: arm32
             target: template_release
-            publish-publication: TemplateRelease
-            template_scons_flags: foundry_script_frontend=no
+            production: "yes"
+            dev_mode: "no"
+            dev_build: "no"
+            debug_symbols: "no"
+            artifact_name: release-android-native-release-armeabi-v7a
+          - build_type: release
+            abi: arm64-v8a
+            arch: arm64
+            target: template_release
+            production: "yes"
+            dev_mode: "no"
+            dev_build: "no"
+            debug_symbols: "no"
+            artifact_name: release-android-native-release-arm64-v8a
+          - build_type: release
+            abi: x86
+            arch: x86_32
+            target: template_release
+            production: "yes"
+            dev_mode: "no"
+            dev_build: "no"
+            debug_symbols: "no"
+            artifact_name: release-android-native-release-x86
+          - build_type: release
+            abi: x86_64
+            arch: x86_64
+            target: template_release
+            production: "yes"
+            dev_mode: "no"
+            dev_build: "no"
+            debug_symbols: "no"
+            artifact_name: release-android-native-release-x86_64
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
+          ref: ${{ github.sha }}
           submodules: recursive
+
+      - name: Resolve exact engine revision
+        id: engine
+        run: echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Foundry build cache
+        uses: ./.github/actions/foundry-cache-restore
+        with:
+          cache-name: ${{ matrix.artifact_name }}
+        continue-on-error: true
+
+      - name: Setup Python and SCons
+        uses: ./.github/actions/foundry-deps
+
+      - name: Download Swappy
+        run: python3 misc/scripts/install_swappy_android.py
+
+      - name: Compile exact native cell
+        uses: ./.github/actions/foundry-build
+        with:
+          platform: android
+          target: ${{ matrix.target }}
+          preserve-source-tree: true
+          scons-flags: >-
+            ${{ env.SCONS_FLAGS }}
+            arch=${{ matrix.arch }}
+            production=${{ matrix.production }}
+            dev_mode=${{ matrix.dev_mode }}
+            dev_build=${{ matrix.dev_build }}
+            debug_symbols=${{ matrix.debug_symbols }}
+
+      - name: Save Foundry build cache
+        uses: ./.github/actions/foundry-cache-save
+        with:
+          cache-name: ${{ matrix.artifact_name }}
+        continue-on-error: true
+
+      - name: Stage native cell with provenance
+        env:
+          ENGINE_REVISION: ${{ steps.engine.outputs.revision }}
+        run: |
+          set -euo pipefail
+          CELL="bin/android-native/${ENGINE_REVISION}/${{ matrix.build_type }}/${{ matrix.abi }}"
+          DEST="${RUNNER_TEMP}/android-native-artifact/${{ matrix.build_type }}/${{ matrix.abi }}"
+          test -f "${CELL}/libc++_shared.so"
+          test -f "${CELL}/libfoundry_android.so"
+          test -f "${CELL}/provenance.json"
+          mkdir -p "${DEST}"
+          cp "${CELL}/libc++_shared.so" "${DEST}/"
+          cp "${CELL}/libfoundry_android.so" "${DEST}/"
+          cp "${CELL}/provenance.json" "${DEST}/"
+
+      - name: Upload native cell
+        uses: ./.github/actions/upload-artifact
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ runner.temp }}/android-native-artifact
+
+  assemble-android:
+    needs:
+      - resolve
+      - build-android-native
+    runs-on: ubuntu-24.04
+    name: Assemble Android release templates
+    timeout-minutes: 60
+    steps:
+      - name: Checkout Foundry
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          submodules: recursive
+
+      - name: Checkout pinned standalone runtime
+        uses: actions/checkout@v6
+        with:
+          repository: cafecito-games/Foundry-Android
+          ref: b8c46c807d467fcd1667b7d4cb04d07a09a08860
+          path: .test_scratch/foundry-android-source
 
       - name: Set up Java 17
         uses: actions/setup-java@v5
@@ -702,71 +890,59 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Restore Foundry build cache
-        uses: ./.github/actions/foundry-cache-restore
+      - name: Download every native cell
+        uses: actions/download-artifact@v8
         with:
-          cache-name: ${{ matrix.cache-name }}
-        continue-on-error: true
+          pattern: 'release-android-native-*'
+          path: .test_scratch/android-native
+          merge-multiple: true
 
-      - name: Setup Python and SCons
-        uses: ./.github/actions/foundry-deps
-
-      - name: Download Swappy
-        run: python ./misc/scripts/install_swappy_android.py
-
-      # Export templates must contain both arm32 and arm64 native libraries, so
-      # build both architectures into bin/ before Gradle assembles the APKs.
-      - name: Compilation (arm64)
-        uses: ./.github/actions/foundry-build
-        with:
-          scons-flags: ${{ env.SCONS_FLAGS }} ${{ matrix.template_scons_flags }} arch=arm64
-          platform: android
-          target: ${{ matrix.target }}
-
-      - name: Compilation (arm32)
-        uses: ./.github/actions/foundry-build
-        with:
-          scons-flags: ${{ env.SCONS_FLAGS }} ${{ matrix.template_scons_flags }} arch=arm32
-          platform: android
-          target: ${{ matrix.target }}
-
-      - name: Save Foundry build cache
-        uses: ./.github/actions/foundry-cache-save
-        with:
-          cache-name: ${{ matrix.cache-name }}
-        continue-on-error: true
-
-      - name: Generate Foundry templates
+      - name: Assemble and verify standalone runtime
         run: |
+          set -euo pipefail
+          ENGINE_REVISION="$(git rev-parse HEAD)"
+          test "$(find .test_scratch/android-native -name provenance.json -type f | wc -l | tr -d ' ')" = "12"
           cd platform/android/java
-          ./gradlew generateFoundryTemplates
+          ./gradlew --no-daemon generateFoundryTemplates \
+            -PfoundryAndroidSource="${GITHUB_WORKSPACE}/.test_scratch/foundry-android-source" \
+            -PfoundryNativeRoot="${GITHUB_WORKSPACE}/.test_scratch/android-native" \
+            -PfoundryRuntimeScratch="${RUNNER_TEMP}/foundry-android-runtime"
           cd ../../..
-          ls -l bin/
+          cp "${RUNNER_TEMP}/foundry-android-runtime/foundry-native.zip" bin/foundry-native.zip
+          test -n "${ENGINE_REVISION}"
+          test -f bin/android_debug.apk
+          test -f bin/android_dev.apk
+          test -f bin/android_release.apk
+          test -f bin/android_source.zip
+          test -f bin/foundry-debug.aar
+          test -f bin/foundry-dev.aar
+          test -f bin/foundry-release.aar
+          test -f bin/foundry-native.zip
 
-      - name: Publish Android library to Maven Central
-        if: needs.resolve.outputs.draft == 'false'
-        working-directory: platform/android/java
-        env:
-          OSSRH_GROUP_ID: games.cafecito.foundry
-          OSSRH_USERNAME: ${{ secrets.OSSRH_USERNAME }}
-          OSSRH_PASSWORD: ${{ secrets.OSSRH_PASSWORD }}
-          SONATYPE_STAGING_PROFILE_ID: ${{ secrets.SONATYPE_STAGING_PROFILE_ID }}
-          SIGNING_KEY_ID: ${{ secrets.SIGNING_KEY_ID }}
-          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
-          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
-        run: |
-          PUB="${{ matrix.publish-publication }}"
-          if [ "${{ needs.resolve.outputs.status }}" = "stable" ]; then
-            ./gradlew ":lib:publish${PUB}PublicationToSonatypeRepository" closeAndReleaseSonatypeStagingRepository --no-daemon
-          else
-            # dev/prerelease → SNAPSHOT publish (snapshots auto-route to the snapshot repo; no close/release)
-            ./gradlew ":lib:publish${PUB}PublicationToSonatypeRepository" --no-daemon
-          fi
-
-      - name: Upload artifact
+      - name: Upload debug Android template
         uses: ./.github/actions/upload-artifact
         with:
-          name: ${{ matrix.cache-name }}
+          name: release-android-template-debug
+          path: bin/android_debug.apk
+
+      - name: Upload release Android template and source
+        uses: ./.github/actions/upload-artifact
+        with:
+          name: release-android-template-release
+          path: |
+            bin/android_release.apk
+            bin/android_source.zip
+
+      - name: Upload standalone Android diagnostics
+        uses: ./.github/actions/upload-artifact
+        with:
+          name: release-android-runtime
+          path: |
+            bin/android_dev.apk
+            bin/foundry-debug.aar
+            bin/foundry-dev.aar
+            bin/foundry-release.aar
+            bin/foundry-native.zip
 
   build-ios:
     needs: resolve
@@ -904,7 +1080,7 @@ jobs:
       - build-macos-editor
       - build-macos-templates
       - build-web
-      - build-android
+      - assemble-android
       - assemble-ios
     runs-on: ubuntu-24.04
     steps:
