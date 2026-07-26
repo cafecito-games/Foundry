@@ -13,31 +13,11 @@ allprojects {
 def runtimeBuildTypes = ["debug", "dev", "release"]
 def supportedEditions = ["standard", "mono"]
 def foundryEngineSource = rootProject.file("../../..")
-def foundryRuntimeAarRoot = layout.buildDirectory.dir("foundryAndroidRuntime/aars").get().asFile
-def foundryDefaultRuntimeScratch = layout.buildDirectory.dir("foundryAndroidRuntime/scratch").get().asFile
-def foundrySourceTemplateRoot = layout.buildDirectory.dir("foundryAndroidSourceTemplate").get().asFile
+def foundrySourceTemplateRoot = layout.buildDirectory.dir("androidSourceTemplate").get().asFile
 def stagedSourceTemplate = new File(foundrySourceTemplateRoot, "android_source.zip")
 def binDir = new File(foundryEngineSource, "bin")
 def sourceTemplateDestination = new File(binDir, "android_source.zip")
-
-// Exposed to :app. The exported source template does not define this value and falls back to app/libs.
-ext.foundryRuntimeAarRoot = foundryRuntimeAarRoot
-
 def pythonExecutable = providers.gradleProperty("pythonExecutable").orElse("python3")
-def standaloneSource = providers.gradleProperty("foundryAndroidSource")
-def allowStandaloneFetch = providers.gradleProperty("foundryAndroidFetch").map { value ->
-    if (!(value.toLowerCase() in ["true", "false"])) {
-        throw new GradleException("foundryAndroidFetch must be true or false")
-    }
-    return Boolean.parseBoolean(value)
-}.orElse(false)
-def nativeRoot = providers.gradleProperty("foundryNativeRoot")
-def nativeBundle = providers.gradleProperty("foundryNativeBundle")
-def runtimeScratch = providers.gradleProperty("foundryRuntimeScratch")
-
-def runtimeDriver = rootProject.file("../android_runtime_build.py")
-def runtimeContract = rootProject.file("../android_runtime_contract.py")
-def runtimePin = rootProject.file("../foundry_android_runtime.json")
 def sourceTemplateTool = rootProject.file("../android_source_template.py")
 
 def clearAndroidSourceTemplateOutput = tasks.register("clearAndroidSourceTemplateOutput", Delete) {
@@ -45,103 +25,40 @@ def clearAndroidSourceTemplateOutput = tasks.register("clearAndroidSourceTemplat
     delete sourceTemplateDestination
 }
 
-def prepareFoundryAndroidRuntime = tasks.register("prepareFoundryAndroidRuntime", Exec) {
-    group = "foundry android"
-    description = "Build and validate the pinned standalone Foundry Android runtime AARs."
-    mustRunAfter clearAndroidSourceTemplateOutput
+/**
+ * Copy each internally built host AAR into the exported app source template and engine bin directory.
+ */
+def generateRuntimeAarTasks = {
+    return runtimeBuildTypes.collectMany { String target ->
+        String capitalizedTarget = target.capitalize()
+        def sourceAar = file("lib/build/outputs/aar/foundry-${target}.aar")
 
-    inputs.file(runtimeDriver)
-    inputs.file(runtimeContract)
-    inputs.file(runtimePin)
-    inputs.property("foundryAndroidSource", standaloneSource.orElse(""))
-    inputs.property("foundryAndroidFetch", allowStandaloneFetch)
-    inputs.property("foundryNativeRoot", nativeRoot.orElse(""))
-    inputs.property("foundryNativeBundle", nativeBundle.orElse(""))
-    inputs.property("foundryRuntimeScratch", runtimeScratch.orElse(""))
-    inputs.files(providers.provider {
-        def nativeInputs = []
-        if (nativeRoot.isPresent() && !nativeRoot.get().trim().isEmpty()) {
-            nativeInputs += rootProject.file(nativeRoot.get())
+        def copyToApp = tasks.register("copy${capitalizedTarget}AARToAppModule", Copy) {
+            dependsOn ":lib:assembleTemplate${capitalizedTarget}"
+            inputs.file(sourceAar)
+            from("lib/build/outputs/aar/foundry-${target}.aar")
+            into("app/libs/${target}")
         }
-        if (nativeBundle.isPresent() && !nativeBundle.get().trim().isEmpty()) {
-            nativeInputs += rootProject.file(nativeBundle.get())
+        def copyToBin = tasks.register("copy${capitalizedTarget}AARToBin", Copy) {
+            dependsOn ":lib:assembleTemplate${capitalizedTarget}"
+            inputs.file(sourceAar)
+            from("lib/build/outputs/aar/foundry-${target}.aar")
+            into(binDir)
         }
-        return nativeInputs
-    })
-    outputs.dir(foundryRuntimeAarRoot)
-    outputs.upToDateWhen { false }
-
-    doFirst {
-        def sourceValue = standaloneSource.isPresent() ? standaloneSource.get().trim() : ""
-        def fetchValue = allowStandaloneFetch.get()
-        def hasStandaloneSource = !sourceValue.isEmpty()
-        if (hasStandaloneSource == fetchValue) {
-            throw new GradleException(
-                "Android runtime preparation requires exactly one standalone source: " +
-                "-PfoundryAndroidSource=<git-repository> or -PfoundryAndroidFetch=true."
-            )
-        }
-
-        def nativeRootValue = nativeRoot.isPresent() ? nativeRoot.get().trim() : ""
-        def nativeBundleValue = nativeBundle.isPresent() ? nativeBundle.get().trim() : ""
-        if (nativeRootValue.isEmpty() == nativeBundleValue.isEmpty()) {
-            throw new GradleException(
-                "Android runtime preparation requires exactly one native root or bundle: " +
-                "-PfoundryNativeRoot=<complete-cell-root> or -PfoundryNativeBundle=<bundle.zip>."
-            )
-        }
-
-        def scratchDirectory = runtimeScratch.isPresent() && !runtimeScratch.get().trim().isEmpty()
-            ? rootProject.file(runtimeScratch.get())
-            : foundryDefaultRuntimeScratch
-        def command = [
-            pythonExecutable.get(),
-            runtimeDriver.absolutePath,
-            'prepare',
-            '--pin', runtimePin.absolutePath,
-            '--engine-source', foundryEngineSource.absolutePath,
-            '--scratch', scratchDirectory.absolutePath,
-            '--output-aars', foundryRuntimeAarRoot.absolutePath,
-        ]
-        if (!sourceValue.isEmpty()) {
-            command += ['--source-repository', rootProject.file(sourceValue).absolutePath]
-        } else {
-            command += ['--allow-fetch']
-        }
-        if (!nativeRootValue.isEmpty()) {
-            command += ['--native-root', rootProject.file(nativeRootValue).absolutePath]
-        } else {
-            command += ['--native-bundle', rootProject.file(nativeBundleValue).absolutePath]
-        }
-        commandLine(command)
+        return [copyToApp, copyToBin]
     }
 }
 
-def copyFoundryRuntimeAarsToBin = tasks.register("copyFoundryRuntimeAarsToBin", Copy) {
-    dependsOn prepareFoundryAndroidRuntime
-    from(new File(foundryRuntimeAarRoot, "debug")) {
-        include "foundry-debug.aar"
-    }
-    from(new File(foundryRuntimeAarRoot, "dev")) {
-        include "foundry-dev.aar"
-    }
-    from(new File(foundryRuntimeAarRoot, "release")) {
-        include "foundry-release.aar"
-    }
-    into(binDir)
-}
+def runtimeAarTasks = generateRuntimeAarTasks()
 
 /**
- * Generate the self-contained custom-build source template. The tracked app directory becomes
- * the ZIP root, so runtime AARs are overlaid under its libs directory.
+ * Generate the self-contained custom-build source template from the app and internal host AARs.
  */
 def zipGradleBuild = tasks.register("zipGradleBuild", Zip) {
-    dependsOn prepareFoundryAndroidRuntime
+    dependsOn runtimeAarTasks
+    mustRunAfter clearAndroidSourceTemplateOutput
     from(fileTree(dir: "app", excludes: ["**/build/**", "**/.gradle/**", "**/*.iml"]))
     from(fileTree(dir: ".", includes: ["gradlew", "gradlew.bat", "gradle/**"]))
-    from(foundryRuntimeAarRoot) {
-        into "libs"
-    }
     include "**/*"
     archiveFileName = "android_source.zip"
     destinationDirectory = foundrySourceTemplateRoot
@@ -187,9 +104,9 @@ def promoteAndroidSourceTemplate = tasks.register("promoteAndroidSourceTemplate"
     commandLine(
         pythonExecutable.get(),
         sourceTemplateTool.absolutePath,
-        'promote',
-        '--archive', stagedSourceTemplate.absolutePath,
-        '--destination', sourceTemplateDestination.absolutePath,
+        "promote",
+        "--archive", stagedSourceTemplate.absolutePath,
+        "--destination", sourceTemplateDestination.absolutePath,
     )
 }
 
@@ -204,14 +121,12 @@ def promoteMonoAndroidSourceTemplate = tasks.register("promoteMonoAndroidSourceT
 }
 
 task generateFoundryTemplates {
-    dependsOn prepareFoundryAndroidRuntime
-    dependsOn copyFoundryRuntimeAarsToBin
+    dependsOn runtimeAarTasks
     dependsOn promoteStandardAndroidSourceTemplate
 }
 
 task generateFoundryMonoTemplates {
-    dependsOn prepareFoundryAndroidRuntime
-    dependsOn copyFoundryRuntimeAarsToBin
+    dependsOn runtimeAarTasks
     dependsOn promoteMonoAndroidSourceTemplate
 }
 
@@ -220,8 +135,10 @@ task clean(type: Delete) {
 }
 
 task cleanFoundryTemplates(type: Delete) {
-    delete foundryRuntimeAarRoot.parentFile
     delete foundrySourceTemplateRoot
+    delete "lib/libs"
+    delete "lib/build"
+    delete "app/libs"
     delete "app/build"
 
     delete new File(binDir, "android_debug.apk")

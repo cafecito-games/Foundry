@@ -347,10 +347,10 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
 
         for fragment in (
             "../android_source_template.py",
-            "'promote'",
-            "'--archive'",
-            "'--destination'",
-            "foundryAndroidSourceTemplate",
+            '"promote"',
+            '"--archive"',
+            '"--destination"',
+            "androidSourceTemplate",
             'tasks.register("clearAndroidSourceTemplateOutput", Delete)',
             "mustRunAfter clearAndroidSourceTemplateOutput",
             'tasks.register("promoteAndroidSourceTemplate", Exec)',
