@@ -2733,6 +2733,83 @@ TEST_CASE("[FoundryScript][NameMangler][Reflection][Application] Scoped retentio
 	CHECK(unresolved_reflection_diagnostic);
 }
 
+TEST_CASE("[FoundryScript][NameMangler][Reflection][Application] Registry witnesses follow target ownership") {
+	const StringName target_name =
+			SNAME("RegistryReflectionTarget1237");
+	const StringName witness_name =
+			SNAME("registry_reflection_witness_1237");
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"trait RegistryReflectionTrait1237:\n"
+			"\tabstract func registry_reflection_witness_1237() -> int\n"
+			"class RegistryReflectionTarget1237:\n"
+			"\tfunc inspect_registry_reflection_1237() -> void:\n"
+			"\t\tget_method_list()\n"
+			"extend RegistryReflectionTarget1237 uses RegistryReflectionTrait1237:\n"
+			"\tfunc registry_reflection_witness_1237() -> int:\n"
+			"\t\treturn 42\n");
+	REQUIRE(script->get_subclasses().has(target_name));
+	const Ref<FoundryScript> target =
+			script->get_subclasses()[target_name];
+
+	const Vector<FSConformanceRegistry::RuntimeConformance> conformances =
+			FSConformanceRegistry::get_singleton()->get_runtime_witnesses(
+					script->get_script_path());
+	REQUIRE_EQ(conformances.size(), 1);
+	CHECK_EQ(conformances[0].target_script, target.ptr());
+	REQUIRE(conformances[0].functions.has(witness_name));
+	FSFunction *const witness =
+			conformances[0].functions[witness_name];
+	REQUIRE(witness != nullptr);
+	CHECK_EQ(witness->get_script(), target.ptr());
+
+	// A retroactive witness is lifetime-owned by the declaring root, but is compiled against the
+	// target and remains a callp fallback rather than a target member_function. The mangler's
+	// conservative scoped policy still treats its registry name as target-visible when that target
+	// self-enumerates, so analysis and application must agree on the target ownership.
+	CHECK_FALSE(target->get_member_functions().has(witness_name));
+
+	FSNameManglerAnalysis::Input input;
+	input.scripts.push_back(script);
+	const FSNameManglerAnalysis::Result analysis =
+			FSNameManglerAnalysis::analyze(input);
+	REQUIRE_EQ(analysis.error, OK);
+	const FSNameManglerAnalysis::Classification *classification =
+			analysis.find(witness_name);
+	REQUIRE(classification != nullptr);
+	bool has_reflection_evidence = false;
+	for (const FSNameManglerAnalysis::KeepEvidence &evidence :
+			classification->keep_evidence) {
+		if (evidence.reason ==
+				FSNameManglerAnalysis::KEEP_REFLECTION) {
+			has_reflection_evidence = true;
+			break;
+		}
+	}
+	CHECK(has_reflection_evidence);
+	CHECK_FALSE(analysis.rename_map.has(witness_name));
+
+	RBMap<StringName, StringName> invalid_map;
+	invalid_map.insert(
+			witness_name,
+			SNAME("_fsb_registry_reflection_witness_1237"));
+	FSNameManglerApplication::Transaction transaction;
+	Vector<FSNameManglerApplication::Diagnostic> diagnostics;
+	CHECK_EQ(
+			transaction.begin(
+					input.scripts, invalid_map, diagnostics),
+			ERR_INVALID_PARAMETER);
+	CHECK_FALSE(transaction.is_active());
+	bool has_reflection_diagnostic = false;
+	for (const FSNameManglerApplication::Diagnostic &diagnostic :
+			diagnostics) {
+		if (diagnostic.surface == "reflection enumeration") {
+			has_reflection_diagnostic = true;
+			break;
+		}
+	}
+	CHECK(has_reflection_diagnostic);
+}
+
 TEST_CASE("[FoundryScript][NameMangler][Reflection][Application] Base-owned self enumeration rejects derived declaration maps") {
 	const StringName derived_names[] = {
 		SNAME("reflection_dynamic_derived_method_1237"),
