@@ -144,6 +144,32 @@ name_mangler_acceptance_read_scripts(const String &p_pack_path) {
 	return scripts;
 }
 
+static void name_mangler_acceptance_require_script_inventory(
+		const RBMap<String, Vector<uint8_t>> &p_scripts,
+		const String &p_label) {
+	static constexpr int expected_path_count = 7;
+	static const char *expected_paths[expected_path_count] = {
+		"res://acceptance_base.fsb",
+		"res://acceptance_derived.fsb",
+		"res://acceptance_trait.fsb",
+		"res://emitter.fsb",
+		"res://main.fsb",
+		"res://payload.fsb",
+		"res://reflector.fsb",
+	};
+	CAPTURE(p_label);
+	REQUIRE_EQ(p_scripts.size(), expected_path_count);
+	if (p_scripts.size() != expected_path_count) {
+		return;
+	}
+	int index = 0;
+	for (const KeyValue<String, Vector<uint8_t>> &entry : p_scripts) {
+		CAPTURE(index);
+		CHECK_EQ(entry.key, expected_paths[index]);
+		index++;
+	}
+}
+
 static bool name_mangler_acceptance_contains(
 		const RBMap<String, Vector<uint8_t>> &p_scripts,
 		const String &p_marker) {
@@ -476,9 +502,12 @@ TEST_CASE("[FoundryScript][NameManglerAcceptance][Parity] Real exports preserve 
 			name_mangler_acceptance_read_scripts(mangled_a_pack);
 	const RBMap<String, Vector<uint8_t>> mangled_b_scripts =
 			name_mangler_acceptance_read_scripts(mangled_b_pack);
-	REQUIRE_FALSE(unmangled_scripts.is_empty());
-	REQUIRE_EQ(mangled_a_scripts.size(), unmangled_scripts.size());
-	REQUIRE_EQ(mangled_b_scripts.size(), mangled_a_scripts.size());
+	name_mangler_acceptance_require_script_inventory(
+			unmangled_scripts, "Unmangled");
+	name_mangler_acceptance_require_script_inventory(
+			mangled_a_scripts, "Mangled A");
+	name_mangler_acceptance_require_script_inventory(
+			mangled_b_scripts, "Mangled B");
 	for (const KeyValue<String, Vector<uint8_t>> &entry :
 			mangled_a_scripts) {
 		const bool has_path = mangled_b_scripts.has(entry.key);
