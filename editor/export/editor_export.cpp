@@ -98,6 +98,8 @@ void EditorExport::_save() {
 		config->set_value(section, "encrypt_pck", preset->get_enc_pck());
 		config->set_value(section, "encrypt_directory", preset->get_enc_directory());
 		config->set_value(section, "script_export_mode", preset->get_script_export_mode());
+		config->set_value(section, "script_name_mangling_enabled", preset->is_script_name_mangling_enabled());
+		config->set_value(section, "script_name_mangling_keep_rules", preset->get_script_name_mangling_keep_rules());
 		credentials->set_value(section, "script_encryption_key", preset->get_script_encryption_key());
 
 		String option_section = "preset." + itos(i) + ".options";
@@ -337,6 +339,8 @@ void EditorExport::load_config() {
 		preset->set_exclude_filter(config->get_value(section, "exclude_filter"));
 		preset->set_export_path(config->get_value(section, "export_path", ""));
 		preset->set_script_export_mode(config->get_value(section, "script_export_mode", EditorExportPreset::MODE_SCRIPT_COMPILED_BYTECODE));
+		preset->set_script_name_mangling_enabled(config->get_value(section, "script_name_mangling_enabled", false));
+		preset->set_script_name_mangling_keep_rules(config->get_value(section, "script_name_mangling_keep_rules", String()));
 		preset->set_patches(config->get_value(section, "patches", Vector<String>()));
 
 		if (config->has_section_key(section, "patch_delta_encoding")) {

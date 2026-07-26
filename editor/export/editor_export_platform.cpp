@@ -2532,24 +2532,33 @@ Vector<String> EditorExportPlatform::gen_export_flags(BitField<EditorExportPlatf
 bool EditorExportPlatform::can_export(const Ref<EditorExportPreset> &p_preset, String &r_error, bool &r_missing_templates, bool p_debug) const {
 	bool valid = true;
 
+	if (p_preset->is_script_name_mangling_enabled() && !p_preset->is_script_name_mangling_available()) {
+		r_error += TTR("Foundry Script name mangling requires the Compiled bytecode script export mode.\n");
+		valid = false;
+	}
+
 	String templates_error;
-	valid = valid && has_valid_export_configuration(p_preset, templates_error, r_missing_templates, p_debug);
+	const bool export_configuration_valid = has_valid_export_configuration(p_preset, templates_error, r_missing_templates, p_debug);
+	valid = valid && export_configuration_valid;
 
 	if (!templates_error.is_empty()) {
 		r_error += templates_error;
 	}
 
 	String export_plugins_warning;
-	Vector<Ref<EditorExportPlugin>> export_plugins = EditorExport::get_singleton()->get_export_plugins();
-	for (int i = 0; i < export_plugins.size(); i++) {
-		Ref<EditorExportPlatform> export_platform = Ref<EditorExportPlatform>(this);
-		if (!export_plugins[i]->supports_platform(export_platform)) {
-			continue;
-		}
+	EditorExport *editor_export = EditorExport::get_singleton();
+	if (editor_export != nullptr) {
+		Vector<Ref<EditorExportPlugin>> export_plugins = editor_export->get_export_plugins();
+		for (int i = 0; i < export_plugins.size(); i++) {
+			Ref<EditorExportPlatform> export_platform = Ref<EditorExportPlatform>(this);
+			if (!export_plugins[i]->supports_platform(export_platform)) {
+				continue;
+			}
 
-		String plugin_warning = export_plugins.write[i]->_has_valid_export_configuration(export_platform, p_preset);
-		if (!plugin_warning.is_empty()) {
-			export_plugins_warning += plugin_warning;
+			String plugin_warning = export_plugins.write[i]->_has_valid_export_configuration(export_platform, p_preset);
+			if (!plugin_warning.is_empty()) {
+				export_plugins_warning += plugin_warning;
+			}
 		}
 	}
 
@@ -2558,7 +2567,8 @@ bool EditorExportPlatform::can_export(const Ref<EditorExportPreset> &p_preset, S
 	}
 
 	String project_configuration_error;
-	valid = valid && has_valid_project_configuration(p_preset, project_configuration_error);
+	const bool project_configuration_valid = has_valid_project_configuration(p_preset, project_configuration_error);
+	valid = valid && project_configuration_valid;
 
 	if (!project_configuration_error.is_empty()) {
 		r_error += project_configuration_error;
