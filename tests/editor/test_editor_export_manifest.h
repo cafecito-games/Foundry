@@ -346,6 +346,45 @@ static Error downgrade_customization_cache_to_legacy_format() {
 	return OK;
 }
 
+static Error read_customization_cache_fields(const String &p_source_path, Vector<String> &r_fields) {
+	const String cache_root_path =
+			ProjectSettings::get_singleton()
+					->get_project_data_path()
+					.path_join("exported");
+	Ref<DirAccess> cache_root = DirAccess::open(cache_root_path);
+	CHECK(cache_root.is_valid());
+	if (cache_root.is_null()) {
+		return ERR_FILE_NOT_FOUND;
+	}
+
+	const PackedStringArray cache_directories =
+			cache_root->get_directories();
+	CHECK_EQ(cache_directories.size(), 1);
+	if (cache_directories.size() != 1) {
+		return ERR_INVALID_DATA;
+	}
+
+	const String cache_path =
+			cache_root_path.path_join(cache_directories[0])
+					.path_join("file_cache");
+	Ref<FileAccess> cache = FileAccess::open(cache_path, FileAccess::READ);
+	CHECK(cache.is_valid());
+	if (cache.is_null()) {
+		return ERR_FILE_CANT_OPEN;
+	}
+
+	const Vector<String> lines = cache->get_as_text().split(
+			"\n", false);
+	for (const String &line : lines) {
+		const Vector<String> fields = line.split("::", true);
+		if (!fields.is_empty() && fields[0] == p_source_path) {
+			r_fields = fields;
+			return OK;
+		}
+	}
+	return ERR_DOES_NOT_EXIST;
+}
+
 TEST_CASE("[Editor][ExportManifest] Native hooks receive owned manifest snapshots") {
 	Vector<String> events;
 	Ref<RecordingManifestPlugin> plugin = memnew(RecordingManifestPlugin("Plugin", &events));
@@ -547,7 +586,7 @@ TEST_CASE("[Editor][ExportManifest] Customized scene and resource outputs are re
 	}
 }
 
-TEST_CASE("[Editor][ExportManifest] Cached customized outputs remain rejectable and legacy caches fail safe") {
+TEST_CASE("[Editor][ExportManifest] Cached customized outputs remain rejectable and legacy caches recompute") {
 	auto run_cached_rejection = [](bool p_downgrade_to_legacy) {
 		Ref<TestManifestExportPlatform> platform =
 				memnew(TestManifestExportPlatform);
@@ -613,9 +652,14 @@ TEST_CASE("[Editor][ExportManifest] Cached customized outputs remain rejectable 
 		CHECK_EQ(bravo->validated_late_paths,
 				Vector<String>({ customized_path }));
 		CHECK_EQ(rejected_capture.paths.find(customized_path), -1);
-		CHECK_EQ(events.find("customize_resource:Alpha:" +
-						 CUSTOMIZED_RESOURCE_PATH),
-				-1);
+		const int customize_event = events.find(
+				"customize_resource:Alpha:" +
+				CUSTOMIZED_RESOURCE_PATH);
+		if (p_downgrade_to_legacy) {
+			CHECK_NE(customize_event, -1);
+		} else {
+			CHECK_EQ(customize_event, -1);
+		}
 	};
 
 	SUBCASE("persisted customization metadata") {
@@ -624,6 +668,94 @@ TEST_CASE("[Editor][ExportManifest] Cached customized outputs remain rejectable 
 	SUBCASE("legacy cache entry") {
 		run_cached_rejection(true);
 	}
+}
+
+TEST_CASE("[Editor][ExportManifest] Legacy pure-conversion caches recompute no-op customization provenance") {
+	Ref<TestManifestExportPlatform> platform =
+			memnew(TestManifestExportPlatform);
+	Ref<EditorExportPreset> preset = platform->create_preset();
+	Vector<String> events;
+	Ref<RecordingManifestPlugin> bravo =
+			memnew(RecordingManifestPlugin("Bravo", &events));
+	Ref<RecordingManifestPlugin> alpha =
+			memnew(RecordingManifestPlugin("Alpha", &events));
+	alpha->customize_resources = true;
+
+	Vector<Ref<EditorExportPlugin>> plugins;
+	plugins.push_back(bravo);
+	plugins.push_back(alpha);
+	HashSet<String> paths;
+	paths.insert(CUSTOMIZED_RESOURCE_PATH);
+
+	ScopedManifestExportScratch scratch;
+	REQUIRE_EQ(scratch.get_setup_error(), OK);
+	if (scratch.get_setup_error() != OK) {
+		return;
+	}
+	ScopedManifestEditorFileSystem editor_file_system;
+	REQUIRE_EQ(editor_file_system.get_setup_error(), OK);
+	if (editor_file_system.get_setup_error() != OK) {
+		return;
+	}
+
+	SaveCapture warm_capture;
+	CHECK_EQ(platform->export_candidates_in_current_environment(
+					 preset, paths, plugins, warm_capture),
+			OK);
+	CHECK(alpha->validated_late_paths.is_empty());
+	CHECK(bravo->validated_late_paths.is_empty());
+
+	const Error downgrade_error =
+			downgrade_customization_cache_to_legacy_format();
+	REQUIRE_EQ(downgrade_error, OK);
+	if (downgrade_error != OK) {
+		return;
+	}
+
+	events.clear();
+	bravo->late_validation_error = ERR_INVALID_DATA;
+	SaveCapture recomputed_capture;
+	CHECK_EQ(platform->export_candidates_in_current_environment(
+					 preset, paths, plugins, recomputed_capture),
+			OK);
+	CHECK_NE(events.find("customize_resource:Alpha:" +
+					 CUSTOMIZED_RESOURCE_PATH),
+			-1);
+	CHECK(alpha->validated_late_paths.is_empty());
+	CHECK(bravo->validated_late_paths.is_empty());
+
+	bool found_binary_resource = false;
+	for (const String &path : recomputed_capture.paths) {
+		if (path.get_extension() == "res") {
+			found_binary_resource = true;
+		}
+	}
+	CHECK(found_binary_resource);
+
+	Vector<String> cache_fields;
+	const Error cache_read_error =
+			read_customization_cache_fields(
+					CUSTOMIZED_RESOURCE_PATH, cache_fields);
+	REQUIRE_EQ(cache_read_error, OK);
+	if (cache_read_error != OK) {
+		return;
+	}
+	REQUIRE_EQ(cache_fields.size(), 5);
+	if (cache_fields.size() != 5) {
+		return;
+	}
+	CHECK_EQ(cache_fields[4], "0");
+
+	events.clear();
+	SaveCapture cached_capture;
+	CHECK_EQ(platform->export_candidates_in_current_environment(
+					 preset, paths, plugins, cached_capture),
+			OK);
+	CHECK_EQ(events.find("customize_resource:Alpha:" +
+					 CUSTOMIZED_RESOURCE_PATH),
+			-1);
+	CHECK(alpha->validated_late_paths.is_empty());
+	CHECK(bravo->validated_late_paths.is_empty());
 }
 
 TEST_CASE("[Editor][ExportManifest] Allowed customization and unchanged manifest roots still save") {

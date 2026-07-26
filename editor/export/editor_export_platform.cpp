@@ -890,11 +890,15 @@ String EditorExportPlatform::_export_customize(const String &p_path, LocalVector
 		return p_path; // do none
 	}
 
+	String stale_cached_path;
+
 	// Check if a cache exists
 	if (export_cache.has(p_path)) {
 		FileExportCache &fec = export_cache[p_path];
 
-		if (fec.saved_path.is_empty() || FileAccess::exists(fec.saved_path)) {
+		if (fec.requires_recompute) {
+			stale_cached_path = fec.saved_path;
+		} else if (fec.saved_path.is_empty() || FileAccess::exists(fec.saved_path)) {
 			// Destination file exists (was not erased) or not needed
 
 			uint64_t mod_time = FileAccess::get_modified_time(p_path);
@@ -1008,7 +1012,17 @@ String EditorExportPlatform::_export_customize(const String &p_path, LocalVector
 
 	fec.saved_path = save_path;
 	fec.was_plugin_customized = modified;
+	fec.requires_recompute = false;
 	r_was_plugin_customized = modified;
+
+	if (!stale_cached_path.is_empty() && stale_cached_path != save_path &&
+			stale_cached_path.get_base_dir().simplify_path() == export_base_path.simplify_path() &&
+			FileAccess::exists(stale_cached_path)) {
+		const Error remove_error = DirAccess::remove_absolute(stale_cached_path);
+		if (remove_error != OK) {
+			WARN_PRINT_ED(vformat("Could not remove stale export customization cache file \"%s\".", stale_cached_path));
+		}
+	}
 
 	export_cache[p_path] = fec;
 
@@ -1558,10 +1572,9 @@ Error EditorExportPlatform::_export_project_files_with_manifest(const Ref<Editor
 						fec.was_plugin_customized = fields[4].strip_edges().to_int() != 0;
 					} else {
 						// Older cache entries did not distinguish plugin modifications from
-						// representation-only conversion. Assume customization whenever a
-						// relevant plugin is active so a stale modified resource cannot bypass
-						// late validation after an engine upgrade.
-						fec.was_plugin_customized = !customize_resources_plugins.is_empty() || !customize_scenes_plugins.is_empty();
+						// representation-only conversion. When a relevant plugin is active,
+						// recompute instead of guessing which behavior produced the cached file.
+						fec.requires_recompute = !customize_resources_plugins.is_empty() || !customize_scenes_plugins.is_empty();
 					}
 					fec.used = false; // Assume unused until used.
 					export_cache[path] = fec;

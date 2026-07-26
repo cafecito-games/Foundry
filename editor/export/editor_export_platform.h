@@ -154,6 +154,7 @@ private:
 		String source_md5;
 		String saved_path;
 		bool was_plugin_customized = false;
+		bool requires_recompute = false;
 		bool used = false;
 	};
 
