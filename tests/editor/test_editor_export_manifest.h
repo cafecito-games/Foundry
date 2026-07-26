@@ -35,12 +35,79 @@
 #include "editor/export/editor_export_platform.h"
 #include "editor/export/editor_export_plugin.h"
 
+#include "core/os/os.h"
+#include "tests/core/config/test_project_settings.h"
 #include "tests/test_macros.h"
 
 namespace TestEditorExportManifest {
 
 static const String IMPORTED_PATH = "res://tests/editor/fixtures/export_manifest/imported.keepdata";
 static const String SKIPPED_PATH = "res://tests/editor/fixtures/export_manifest/skipped.skipdata";
+
+class ScopedManifestExportScratch {
+	String saved_project_data_dir_name;
+	String scoped_root;
+	Error setup_error = OK;
+
+public:
+	ScopedManifestExportScratch() {
+		saved_project_data_dir_name = ProjectSettings::get_singleton()->get_project_data_dir_name();
+
+		Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+		String resource_root = ProjectSettings::get_singleton()->get_resource_path();
+		if (resource_root.is_empty()) {
+			resource_root = filesystem->get_current_dir();
+		}
+		resource_root = resource_root.simplify_path();
+
+		String scratch_root = resource_root.path_join(".test_scratch");
+		if (OS::get_singleton()->has_environment("FOUNDRY_TEST_SCRATCH")) {
+			const String configured_root = OS::get_singleton()->get_environment("FOUNDRY_TEST_SCRATCH");
+			if (!configured_root.is_empty()) {
+				scratch_root = configured_root;
+			}
+		}
+		scratch_root = scratch_root.simplify_path();
+
+		String relative_scratch_root = resource_root.path_to(scratch_root).trim_suffix("/");
+		if (relative_scratch_root.is_absolute_path() || relative_scratch_root == ".." || relative_scratch_root.begins_with("../")) {
+			setup_error = ERR_INVALID_PARAMETER;
+			return;
+		}
+
+		scoped_root = scratch_root.path_join("editor_export_manifest_process_" + itos(OS::get_singleton()->get_process_id()));
+		const String project_data_path = scoped_root.path_join(".foundry");
+		setup_error = filesystem->make_dir_recursive(project_data_path);
+		if (setup_error != OK) {
+			return;
+		}
+
+		TestProjectSettingsInternalsAccessor::project_data_dir_name() = resource_root.path_to(project_data_path).trim_suffix("/");
+	}
+
+	~ScopedManifestExportScratch() {
+		TestProjectSettingsInternalsAccessor::project_data_dir_name() = saved_project_data_dir_name;
+		if (scoped_root.is_empty()) {
+			return;
+		}
+
+		Ref<DirAccess> cleanup = DirAccess::open(scoped_root);
+		if (cleanup.is_null()) {
+			return;
+		}
+		cleanup->set_include_hidden(true);
+		const Error erase_error = cleanup->erase_contents_recursive();
+		CHECK_EQ(erase_error, OK);
+		cleanup.unref();
+		if (erase_error == OK) {
+			CHECK_EQ(DirAccess::remove_absolute(scoped_root), OK);
+		}
+	}
+
+	Error get_setup_error() const {
+		return setup_error;
+	}
+};
 
 struct SaveCapture {
 	Vector<String> paths;
@@ -155,7 +222,12 @@ public:
 	virtual void get_platform_features(List<String> *r_features) const override {}
 
 	Error export_candidates(const Ref<EditorExportPreset> &p_preset, const HashSet<String> &p_paths, const Vector<Ref<EditorExportPlugin>> &p_plugins, SaveCapture &r_capture) {
-		return _export_project_files_with_manifest(p_preset, false, p_paths, p_plugins, SaveCapture::save, nullptr, &r_capture, nullptr);
+		ScopedManifestExportScratch scratch;
+		REQUIRE_EQ(scratch.get_setup_error(), OK);
+		const Error error = _export_project_files_with_manifest(p_preset, false, p_paths, p_plugins, SaveCapture::save, nullptr, &r_capture, nullptr);
+		const String workspace_cache_path = DirAccess::create(DirAccess::ACCESS_FILESYSTEM)->get_current_dir().path_join("exported");
+		CHECK_FALSE(DirAccess::dir_exists_absolute(workspace_cache_path));
+		return error;
 	}
 };
 

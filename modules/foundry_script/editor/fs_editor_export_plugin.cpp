@@ -41,7 +41,17 @@
 #include "core/config/project_settings.h"
 #include "core/io/file_access.h"
 #include "core/io/resource_loader.h"
+#include "core/string/print_string.h"
 #include "editor/export/editor_export.h"
+
+void EditorExportFoundryScript::_add_export_info(const String &p_message) {
+	Ref<EditorExportPlatform> platform = get_export_platform();
+	if (platform.is_valid()) {
+		platform->add_message(EditorExportPlatform::EXPORT_MESSAGE_INFO, TTR("Compiled Script Export"), p_message);
+	} else {
+		print_line(p_message);
+	}
+}
 
 void EditorExportFoundryScript::_add_export_error(const String &p_message) {
 	Ref<EditorExportPlatform> platform = get_export_platform();
@@ -50,6 +60,11 @@ void EditorExportFoundryScript::_add_export_error(const String &p_message) {
 	} else {
 		ERR_PRINT(p_message);
 	}
+}
+
+void EditorExportFoundryScript::_clear_name_mangling_state() {
+	name_mangling_prepared = false;
+	mangled_scripts.clear();
 }
 
 String EditorExportFoundryScript::_describe_script_errors(const String &p_path, Error p_fallback_error) {
@@ -98,7 +113,38 @@ bool EditorExportFoundryScript::_is_native_resource_file(const String &p_path) {
 	return (magic[2] == 'R' && magic[3] == 'C') || (magic[2] == 'C' && magic[3] == 'C');
 }
 
+void EditorExportFoundryScript::_export_file_mangled_bytecode(const String &p_path) {
+	const String extension = p_path.get_extension().to_lower();
+	if (extension != "fs" && extension != "fsc" && extension != "fsb") {
+		return;
+	}
+
+	const RBMap<String, FSNameManglerExport::PreparedScript>::Element *entry = mangled_scripts.find(p_path);
+	if (!name_mangling_prepared || entry == nullptr) {
+		skip();
+		_add_export_error(vformat(TTR("Script \"%s\" has no prepared cache entry for name-mangled export."), p_path));
+		return;
+	}
+
+	const FSNameManglerExport::PreparedScript &prepared = entry->value();
+	if (prepared.source_path != p_path || prepared.output_path.is_empty() || prepared.bytes.is_empty()) {
+		skip();
+		_add_export_error(vformat(TTR("Script \"%s\" has an invalid prepared cache entry for name-mangled export."), p_path));
+		return;
+	}
+
+	add_file(prepared.output_path, prepared.bytes, prepared.remap);
+	if (!prepared.remap) {
+		skip();
+	}
+}
+
 void EditorExportFoundryScript::_export_file_compiled_bytecode(const String &p_path) {
+	if (name_mangling_enabled) {
+		_export_file_mangled_bytecode(p_path);
+		return;
+	}
+
 	const String extension = p_path.get_extension();
 	if (extension != "fs") {
 		if (_is_native_resource_file(p_path)) {
@@ -168,17 +214,83 @@ void EditorExportFoundryScript::_export_file_compiled_bytecode(const String &p_p
 	add_file(p_path.get_basename() + ".fsb", buffer, true);
 }
 
+Error EditorExportFoundryScript::_prepare_export_file_manifest(const ExportFileManifest &p_manifest, String &r_error) {
+	r_error.clear();
+	if (!name_mangling_enabled) {
+		return OK;
+	}
+	if (name_mangling_prepared) {
+		return OK;
+	}
+	if (script_mode != EditorExportPreset::MODE_SCRIPT_COMPILED_BYTECODE) {
+		_clear_name_mangling_state();
+		r_error = TTR("Foundry Script name mangling requires the Compiled bytecode script export mode.");
+		return ERR_INVALID_PARAMETER;
+	}
+
+	for (const String &path : p_manifest.generated_paths) {
+		if (FSNameManglerExport::is_sensitive_generated_path(path)) {
+			_clear_name_mangling_state();
+			r_error = vformat(TTR("Generated file \"%s\" cannot be included after Foundry Script name mangling begins."), path);
+			return ERR_INVALID_DATA;
+		}
+	}
+
+	FSNameManglerExport::Input input;
+	input.manifest_paths = p_manifest.source_paths;
+	input.release_profile = !export_debug;
+	const Ref<EditorExportPreset> &preset = get_export_preset();
+	if (preset.is_valid()) {
+		input.keep_rules_path = preset->get_script_name_mangling_keep_rules();
+	}
+
+	const FSNameManglerExport::Result result = FSNameManglerExport::prepare(input);
+	for (const String &message : result.keep_log) {
+		_add_export_info(message);
+	}
+	for (const FSNameManglerExport::Diagnostic &diagnostic : result.diagnostics) {
+		_add_export_error(diagnostic.format());
+	}
+	if (result.error != OK || !result.diagnostics.is_empty()) {
+		_clear_name_mangling_state();
+		if (!result.diagnostics.is_empty()) {
+			r_error = result.diagnostics[0].format();
+		} else {
+			r_error = vformat(TTR("Foundry Script name mangling preparation failed: %s."), error_names[result.error]);
+		}
+		return result.error != OK ? result.error : ERR_INVALID_DATA;
+	}
+
+	mangled_scripts = result.scripts;
+	name_mangling_prepared = true;
+	return OK;
+}
+
+Error EditorExportFoundryScript::_validate_late_export_file(const String &p_path, String &r_error) const {
+	r_error.clear();
+	if (!name_mangling_enabled || !name_mangling_prepared || !FSNameManglerExport::is_sensitive_generated_path(p_path)) {
+		return OK;
+	}
+	r_error = vformat(TTR("Generated file \"%s\" cannot be added after the Foundry Script name-mangling manifest is sealed."), p_path);
+	return ERR_INVALID_DATA;
+}
+
 void EditorExportFoundryScript::_export_begin(const HashSet<String> &p_features, bool p_debug, const String &p_path, int p_flags) {
+	_clear_name_mangling_state();
+	name_mangling_enabled = false;
 	export_debug = p_debug;
 	script_mode = DEFAULT_SCRIPT_MODE;
 
 	const Ref<EditorExportPreset> &preset = get_export_preset();
 	if (preset.is_valid()) {
 		script_mode = preset->get_script_export_mode();
+		name_mangling_enabled = preset->is_script_name_mangling_enabled();
 	}
 }
 
 void EditorExportFoundryScript::_export_end() {
+	_clear_name_mangling_state();
+	name_mangling_enabled = false;
 	script_mode = DEFAULT_SCRIPT_MODE;
 }
 

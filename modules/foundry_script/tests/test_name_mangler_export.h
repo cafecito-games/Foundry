@@ -32,10 +32,12 @@
 
 #ifdef TOOLS_ENABLED
 
+#include "modules/foundry_script/editor/fs_editor_export_plugin.h"
 #include "modules/foundry_script/editor/fs_name_mangler_export.h"
 
 #include "fs_temporary_project_tree.h"
 
+#include "editor/export/editor_export_platform.h"
 #include "modules/foundry_script/foundry_script.h"
 #include "modules/foundry_script/fs_bytecode_export.h"
 #include "modules/foundry_script/fs_bytecode_loader.h"
@@ -56,6 +58,125 @@
 #include "tests/test_macros.h"
 
 namespace FSTests {
+
+class NameManglerExportTestPlatform : public EditorExportPlatform {
+	FOUNDRY_SOFTCLASS(NameManglerExportTestPlatform, EditorExportPlatform);
+
+public:
+	virtual void get_preset_features(const Ref<EditorExportPreset> &p_preset,
+			List<String> *r_features) const override {}
+	virtual void get_export_options(List<ExportOption> *r_options) const override {}
+	virtual String get_name() const override { return "NameManglerExportTest"; }
+	virtual String get_os_name() const override { return "NameManglerExportTest"; }
+	virtual Ref<Texture2D> get_logo() const override { return Ref<Texture2D>(); }
+	virtual bool has_valid_export_configuration(
+			const Ref<EditorExportPreset> &p_preset, String &r_error,
+			bool &r_missing_templates, bool p_debug = false) const override {
+		r_missing_templates = false;
+		return true;
+	}
+	virtual bool has_valid_project_configuration(
+			const Ref<EditorExportPreset> &p_preset,
+			String &r_error) const override {
+		return true;
+	}
+	virtual List<String> get_binary_extensions(
+			const Ref<EditorExportPreset> &p_preset) const override {
+		return List<String>();
+	}
+	virtual Error export_project(const Ref<EditorExportPreset> &p_preset,
+			bool p_debug, const String &p_path,
+			BitField<EditorExportPlatform::DebugFlags> p_flags = 0) override {
+		return OK;
+	}
+	virtual void get_platform_features(
+			List<String> *r_features) const override {}
+};
+
+class TestEditorExportFoundryScript : public EditorExportFoundryScript {
+	FOUNDRY_SOFTCLASS(
+			TestEditorExportFoundryScript, EditorExportFoundryScript);
+
+public:
+	void begin_for_test(const Ref<EditorExportPreset> &p_preset,
+			bool p_debug = false) {
+		set_export_preset(p_preset);
+		_export_begin(HashSet<String>(), p_debug, String(), 0);
+	}
+
+	Error prepare_for_test(const ExportFileManifest &p_manifest,
+			String &r_error) {
+		return _prepare_export_file_manifest(p_manifest, r_error);
+	}
+
+	Error validate_late_for_test(const String &p_path,
+			String &r_error) const {
+		return _validate_late_export_file(p_path, r_error);
+	}
+
+	void export_file_for_test(const String &p_path) {
+		_export_file(p_path, ResourceLoader::get_resource_type(p_path),
+				HashSet<String>());
+	}
+
+	void clear_output_for_test() {
+		_clear();
+	}
+
+	int get_output_count_for_test() const {
+		return extra_files.size();
+	}
+
+	String get_output_path_for_test(int p_index) const {
+		ERR_FAIL_INDEX_V(p_index, extra_files.size(), String());
+		return extra_files[p_index].path;
+	}
+
+	Vector<uint8_t> get_output_bytes_for_test(int p_index) const {
+		ERR_FAIL_INDEX_V(
+				p_index, extra_files.size(), Vector<uint8_t>());
+		return extra_files[p_index].data;
+	}
+
+	bool get_output_remap_for_test(int p_index) const {
+		ERR_FAIL_INDEX_V(p_index, extra_files.size(), false);
+		return extra_files[p_index].remap;
+	}
+
+	bool is_skipped_for_test() const {
+		return skipped;
+	}
+
+	void end_for_test() {
+		_export_end();
+		_clear();
+	}
+};
+
+struct NameManglerExportPluginEndGuard {
+	Ref<TestEditorExportFoundryScript> plugin;
+
+	explicit NameManglerExportPluginEndGuard(
+			const Ref<TestEditorExportFoundryScript> &p_plugin) :
+			plugin(p_plugin) {}
+
+	~NameManglerExportPluginEndGuard() {
+		if (plugin.is_valid()) {
+			plugin->end_for_test();
+		}
+	}
+};
+
+static bool name_mangler_export_last_message_contains(
+		const Ref<NameManglerExportTestPlatform> &p_platform,
+		const String &p_fragment) {
+	if (p_platform.is_null() || p_platform->get_message_count() == 0) {
+		return false;
+	}
+	return p_platform
+			->get_message(p_platform->get_message_count() - 1)
+			.text.contains(p_fragment);
+}
 
 struct NameManglerExportFixture {
 	TemporaryProjectTree tree;
@@ -1275,6 +1396,347 @@ TEST_CASE("[FoundryScript][NameManglerExport][Serialize] Later serialization fai
 			alpha_baseline);
 	CHECK_EQ(name_mangler_export_serialize(restored_zulu),
 			zulu_baseline);
+}
+
+TEST_CASE("[FoundryScript][NameManglerExport][Plugin] Preparation validates mode and the sealed generated manifest") {
+	Ref<NameManglerExportTestPlatform> platform =
+			memnew(NameManglerExportTestPlatform);
+	Ref<EditorExportPreset> preset = platform->create_preset();
+	preset->set_script_name_mangling_enabled(true);
+
+	Ref<TestEditorExportFoundryScript> plugin =
+			memnew(TestEditorExportFoundryScript);
+	NameManglerExportPluginEndGuard end_guard(plugin);
+	preset->set_script_export_mode(EditorExportPreset::MODE_SCRIPT_TEXT);
+	plugin->begin_for_test(preset);
+
+	EditorExportPlugin::ExportFileManifest manifest;
+	String error;
+	CHECK_EQ(plugin->prepare_for_test(manifest, error), ERR_INVALID_PARAMETER);
+	CHECK_EQ(error,
+			"Foundry Script name mangling requires the Compiled bytecode script export mode.");
+
+	preset->set_script_export_mode(
+			EditorExportPreset::MODE_SCRIPT_COMPILED_BYTECODE);
+	const Vector<String> sensitive_extensions = {
+		"fs", "fsc", "fsb", "tscn", "scn", "tres", "res"
+	};
+	for (const String &extension : sensitive_extensions) {
+		plugin->begin_for_test(preset);
+		manifest.generated_paths = {
+			"res://generated/pending." + extension
+		};
+		error.clear();
+		CHECK_EQ(
+				plugin->prepare_for_test(manifest, error), ERR_INVALID_DATA);
+		CHECK(error.contains(manifest.generated_paths[0]));
+	}
+
+	plugin->begin_for_test(preset);
+	manifest.generated_paths = { "res://generated/pending.bin" };
+	error.clear();
+	CHECK_EQ(plugin->prepare_for_test(manifest, error), OK);
+	CHECK(error.is_empty());
+}
+
+TEST_CASE("[FoundryScript][NameManglerExport][Plugin] Late validation rejects only sensitive files after preparation") {
+	Ref<NameManglerExportTestPlatform> platform =
+			memnew(NameManglerExportTestPlatform);
+	Ref<EditorExportPreset> preset = platform->create_preset();
+	preset->set_script_export_mode(
+			EditorExportPreset::MODE_SCRIPT_COMPILED_BYTECODE);
+	preset->set_script_name_mangling_enabled(true);
+	Ref<TestEditorExportFoundryScript> plugin =
+			memnew(TestEditorExportFoundryScript);
+	NameManglerExportPluginEndGuard end_guard(plugin);
+	plugin->begin_for_test(preset);
+
+	EditorExportPlugin::ExportFileManifest manifest;
+	String error;
+	REQUIRE_EQ(plugin->prepare_for_test(manifest, error), OK);
+	const Vector<String> sensitive_extensions = {
+		"fs", "fsc", "fsb", "tscn", "scn", "tres", "res"
+	};
+	for (const String &extension : sensitive_extensions) {
+		error.clear();
+		const String path = "res://generated/late." + extension;
+		CHECK_EQ(
+				plugin->validate_late_for_test(path, error), ERR_INVALID_DATA);
+		CHECK(error.contains(path));
+	}
+	error.clear();
+	CHECK_EQ(
+			plugin->validate_late_for_test(
+					"res://generated/late.bin", error),
+			OK);
+	CHECK(error.is_empty());
+
+	plugin->begin_for_test(preset);
+	error.clear();
+	CHECK_EQ(plugin->validate_late_for_test(
+					 "res://generated/not_sealed.fsb", error),
+			OK);
+}
+
+TEST_CASE("[FoundryScript][NameManglerExport][Plugin] Preparation is one shot and emits the prepared cache") {
+	NameManglerExportFixture fixture("plugin_prepared_cache");
+	const String source_path = fixture.write_source(
+			"alpha.fs",
+			"extends RefCounted\n"
+			"func alpha_private_marker() -> int:\n"
+			"\treturn 11\n");
+	const String rules_path =
+			fixture.tree.root.path_join("keep_rules.pro");
+	fixture.tree.write_file("keep_rules.pro", "# intentionally empty\n");
+
+	FSNameManglerExport::Input reference_input;
+	reference_input.manifest_paths.push_back(source_path);
+	reference_input.keep_rules_path = rules_path;
+	reference_input.release_profile = true;
+	const FSNameManglerExport::Result reference =
+			FSNameManglerExport::prepare(reference_input);
+	REQUIRE_EQ(reference.error, OK);
+	REQUIRE(reference.scripts.has(source_path));
+
+	Ref<NameManglerExportTestPlatform> platform =
+			memnew(NameManglerExportTestPlatform);
+	Ref<EditorExportPreset> preset = platform->create_preset();
+	preset->set_script_export_mode(
+			EditorExportPreset::MODE_SCRIPT_COMPILED_BYTECODE);
+	preset->set_script_name_mangling_enabled(true);
+	preset->set_script_name_mangling_keep_rules(rules_path);
+	Ref<TestEditorExportFoundryScript> plugin =
+			memnew(TestEditorExportFoundryScript);
+	NameManglerExportPluginEndGuard end_guard(plugin);
+	plugin->begin_for_test(preset);
+
+	EditorExportPlugin::ExportFileManifest manifest;
+	manifest.source_paths.push_back(source_path);
+	String error;
+	REQUIRE_EQ(plugin->prepare_for_test(manifest, error), OK);
+	REQUIRE_EQ(DirAccess::remove_absolute(rules_path), OK);
+	CHECK_EQ(plugin->prepare_for_test(manifest, error), OK);
+
+	const FSNameManglerExport::PreparedScript &prepared =
+			reference.scripts[source_path];
+	plugin->clear_output_for_test();
+	plugin->export_file_for_test(source_path);
+	CHECK_EQ(plugin->get_output_count_for_test(), 1);
+	if (plugin->get_output_count_for_test() != 1) {
+		return;
+	}
+	CHECK_EQ(plugin->get_output_path_for_test(0),
+			prepared.output_path);
+	CHECK_EQ(plugin->get_output_bytes_for_test(0),
+			prepared.bytes);
+	CHECK_EQ(plugin->get_output_remap_for_test(0), prepared.remap);
+	CHECK_FALSE(plugin->is_skipped_for_test());
+}
+
+TEST_CASE("[FoundryScript][NameManglerExport][Plugin] Source token and bytecode callbacks use exact cached metadata") {
+	NameManglerExportFixture fixture("plugin_formats");
+	const String source_path = fixture.write_source(
+			"source.fs",
+			"extends RefCounted\n"
+			"func source_private_marker() -> int:\n"
+			"\treturn 1\n");
+	const String token_path = fixture.write_tokens(
+			"tokens.fsc",
+			"extends RefCounted\n"
+			"func token_private_marker() -> int:\n"
+			"\treturn 2\n");
+	const String bytecode_path = fixture.write_bytecode(
+			"compiled.fsb",
+			"extends RefCounted\n"
+			"func bytecode_private_marker() -> int:\n"
+			"\treturn 3\n",
+			true);
+	Vector<String> paths = { source_path, token_path, bytecode_path };
+
+	FSNameManglerExport::Input reference_input;
+	reference_input.manifest_paths = paths;
+	reference_input.release_profile = true;
+	const FSNameManglerExport::Result reference =
+			FSNameManglerExport::prepare(reference_input);
+	REQUIRE_EQ(reference.error, OK);
+	REQUIRE_EQ(reference.scripts.size(), 3);
+
+	Ref<NameManglerExportTestPlatform> platform =
+			memnew(NameManglerExportTestPlatform);
+	Ref<EditorExportPreset> preset = platform->create_preset();
+	preset->set_script_export_mode(
+			EditorExportPreset::MODE_SCRIPT_COMPILED_BYTECODE);
+	preset->set_script_name_mangling_enabled(true);
+	Ref<TestEditorExportFoundryScript> plugin =
+			memnew(TestEditorExportFoundryScript);
+	NameManglerExportPluginEndGuard end_guard(plugin);
+	plugin->begin_for_test(preset);
+
+	EditorExportPlugin::ExportFileManifest manifest;
+	manifest.source_paths = paths;
+	String error;
+	REQUIRE_EQ(plugin->prepare_for_test(manifest, error), OK);
+
+	for (const String &path : paths) {
+		const FSNameManglerExport::PreparedScript &prepared =
+				reference.scripts[path];
+		plugin->clear_output_for_test();
+		plugin->export_file_for_test(path);
+		CHECK_EQ(plugin->get_output_count_for_test(), 1);
+		if (plugin->get_output_count_for_test() != 1) {
+			return;
+		}
+		CHECK_EQ(plugin->get_output_path_for_test(0),
+				prepared.output_path);
+		CHECK_EQ(plugin->get_output_bytes_for_test(0),
+				prepared.bytes);
+		CHECK_EQ(plugin->get_output_remap_for_test(0),
+				prepared.remap);
+		CHECK_EQ(plugin->is_skipped_for_test(), !prepared.remap);
+	}
+}
+
+TEST_CASE("[FoundryScript][NameManglerExport][Plugin] Missing cache entries fail closed and lifecycle boundaries discard bytes") {
+	NameManglerExportFixture fixture("plugin_lifecycle");
+	const String alpha_path = fixture.write_source(
+			"alpha.fs",
+			"extends RefCounted\n"
+			"func alpha_private_marker() -> int:\n"
+			"\treturn 1\n");
+	const String beta_path = fixture.write_source(
+			"beta.fs",
+			"extends RefCounted\n"
+			"func beta_private_marker() -> int:\n"
+			"\treturn 2\n");
+
+	Ref<NameManglerExportTestPlatform> platform =
+			memnew(NameManglerExportTestPlatform);
+	Ref<EditorExportPreset> preset = platform->create_preset();
+	preset->set_script_export_mode(
+			EditorExportPreset::MODE_SCRIPT_COMPILED_BYTECODE);
+	preset->set_script_name_mangling_enabled(true);
+	Ref<TestEditorExportFoundryScript> plugin =
+			memnew(TestEditorExportFoundryScript);
+	NameManglerExportPluginEndGuard end_guard(plugin);
+	plugin->begin_for_test(preset);
+
+	EditorExportPlugin::ExportFileManifest manifest;
+	manifest.source_paths.push_back(alpha_path);
+	String error;
+	REQUIRE_EQ(plugin->prepare_for_test(manifest, error), OK);
+
+	plugin->clear_output_for_test();
+	ERR_PRINT_OFF;
+	plugin->export_file_for_test(beta_path);
+	ERR_PRINT_ON;
+	CHECK(plugin->is_skipped_for_test());
+	CHECK_EQ(plugin->get_output_count_for_test(), 0);
+	CHECK(name_mangler_export_last_message_contains(
+			platform, "prepared cache entry"));
+
+	platform->clear_messages();
+	plugin->begin_for_test(preset);
+	ERR_PRINT_OFF;
+	plugin->export_file_for_test(alpha_path);
+	ERR_PRINT_ON;
+	CHECK(name_mangler_export_last_message_contains(
+			platform, "prepared cache entry"));
+	CHECK(plugin->is_skipped_for_test());
+	CHECK_EQ(plugin->get_output_count_for_test(), 0);
+
+	platform->clear_messages();
+	manifest.generated_paths = { "res://generated/late.fsb" };
+	error.clear();
+	CHECK_EQ(plugin->prepare_for_test(manifest, error), ERR_INVALID_DATA);
+	ERR_PRINT_OFF;
+	plugin->export_file_for_test(alpha_path);
+	ERR_PRINT_ON;
+	CHECK(name_mangler_export_last_message_contains(
+			platform, "prepared cache entry"));
+	CHECK(plugin->is_skipped_for_test());
+	CHECK_EQ(plugin->get_output_count_for_test(), 0);
+
+	platform->clear_messages();
+	plugin->begin_for_test(preset);
+	manifest.generated_paths.clear();
+	REQUIRE_EQ(plugin->prepare_for_test(manifest, error), OK);
+	plugin->end_for_test();
+	plugin->begin_for_test(preset);
+	ERR_PRINT_OFF;
+	plugin->export_file_for_test(alpha_path);
+	ERR_PRINT_ON;
+	CHECK(name_mangler_export_last_message_contains(
+			platform, "prepared cache entry"));
+	CHECK(plugin->is_skipped_for_test());
+	CHECK_EQ(plugin->get_output_count_for_test(), 0);
+}
+
+TEST_CASE("[FoundryScript][NameManglerExport][Plugin] Disabled mode preserves legacy bytes and ignores keep rules") {
+	NameManglerExportFixture fixture("plugin_disabled");
+	const String source_path = fixture.write_source(
+			"legacy.fs",
+			"extends RefCounted\n"
+			"func legacy_private_marker() -> int:\n"
+			"\treturn 7\n");
+
+	Ref<NameManglerExportTestPlatform> platform =
+			memnew(NameManglerExportTestPlatform);
+	struct DisabledOutput {
+		String path;
+		Vector<uint8_t> bytes;
+		bool remap = false;
+		bool skipped = false;
+	};
+	auto export_disabled = [&](const String &p_rules_path) {
+		Ref<EditorExportPreset> preset = platform->create_preset();
+		preset->set_script_export_mode(
+				EditorExportPreset::MODE_SCRIPT_COMPILED_BYTECODE);
+		preset->set_script_name_mangling_enabled(false);
+		preset->set_script_name_mangling_keep_rules(p_rules_path);
+		Ref<TestEditorExportFoundryScript> plugin =
+				memnew(TestEditorExportFoundryScript);
+		NameManglerExportPluginEndGuard end_guard(plugin);
+		plugin->begin_for_test(preset);
+		EditorExportPlugin::ExportFileManifest manifest;
+		manifest.source_paths.push_back(source_path);
+		String error;
+		const Error preparation_error =
+				plugin->prepare_for_test(manifest, error);
+		CHECK_EQ(preparation_error, OK);
+		DisabledOutput output;
+		if (preparation_error != OK) {
+			return output;
+		}
+		plugin->clear_output_for_test();
+		plugin->export_file_for_test(source_path);
+		CHECK_EQ(plugin->get_output_count_for_test(), 1);
+		if (plugin->get_output_count_for_test() != 1) {
+			return output;
+		}
+		output.path = plugin->get_output_path_for_test(0);
+		output.bytes = plugin->get_output_bytes_for_test(0);
+		output.remap = plugin->get_output_remap_for_test(0);
+		output.skipped = plugin->is_skipped_for_test();
+		return output;
+	};
+
+	const DisabledOutput baseline = export_disabled(String());
+	const String output_path = source_path.get_basename() + ".fsb";
+	CHECK_EQ(baseline.path, output_path);
+	CHECK_FALSE(baseline.bytes.is_empty());
+	CHECK(baseline.remap);
+	CHECK_FALSE(baseline.skipped);
+
+	const String missing_rules =
+			fixture.tree.root.path_join("missing_keep_rules.pro");
+	CHECK_FALSE(FileAccess::exists(missing_rules));
+	const DisabledOutput with_missing_rules =
+			export_disabled(missing_rules);
+	CHECK_EQ(with_missing_rules.path, baseline.path);
+	CHECK_EQ(with_missing_rules.bytes, baseline.bytes);
+	CHECK_EQ(with_missing_rules.remap, baseline.remap);
+	CHECK_EQ(with_missing_rules.skipped, baseline.skipped);
+	CHECK_EQ(platform->get_message_count(), 0);
 }
 
 } // namespace FSTests

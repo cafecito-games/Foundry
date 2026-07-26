@@ -35,12 +35,21 @@
 #include "editor_export_preset.h"
 #include "scene/main/node.h"
 
+#ifdef TESTS_ENABLED
+namespace FSTests {
+class TestEditorExportFoundryScript;
+}
+#endif
+
 class EditorExportPlugin : public RefCounted {
 	FOUNDRY_CLASS(EditorExportPlugin, RefCounted);
 
 	friend class EditorExport;
 	friend class EditorExportPlatform;
 	friend class EditorExportPreset;
+#ifdef TESTS_ENABLED
+	friend class FSTests::TestEditorExportFoundryScript;
+#endif
 
 public:
 	struct ExportFileManifest {
