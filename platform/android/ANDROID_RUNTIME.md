@@ -1,39 +1,61 @@
-# Standalone Android runtime integration
+# In-tree Android host runtime
 
-Foundry owns the Android C++ platform, JNI implementation, exporter, application
-template, and native-library production. The separate
-[Foundry-Android repository](https://github.com/cafecito-games/Foundry-Android)
-owns the Java, Kotlin, AIDL, resources, manifest, runtime tests, AAR assembly,
-and Maven publication. Foundry consumes its AARs as immutable build outputs; it
-does not keep a second copy of runtime source or publication logic.
+Foundry owns its Android application host in
+`platform/android/java/lib`. This internal Gradle module contains the Java,
+Kotlin, AIDL, manifest, resources, lifecycle, rendering, input, storage,
+services, JVM tests, and instrumented tests used by the Android platform and
+export templates. The native implementation and JNI exports remain under
+`platform/android/`.
 
-`platform/android/foundry_android_runtime.json` is the canonical bridge between
-the repositories. It pins:
+The host module is not published to Maven. The engine Gradle graph includes
+`:lib`, and `:app` uses `implementation project(":lib")`. A custom-build source
+template is an app-only Gradle project, so `android_source.zip` carries the
+three AARs built from this same in-tree source under:
 
-- `"repository": "https://github.com/cafecito-games/Foundry-Android.git"`;
-- an exact standalone `"revision":` and Git `"tree":`;
-- the bindings version and JNI contract version;
-- the compatibility policy and required standalone tools;
-- the exact debug, dev, and release AAR output paths.
+```text
+libs/debug/foundry-debug.aar
+libs/dev/foundry-dev.aar
+libs/release/foundry-release.aar
+```
 
-Foundry-Android is the sole Maven publisher. Foundry release jobs build and
-package the pinned standalone runtime but never publish its Maven coordinates.
+Those AARs are an export format, not a separate source owner.
 
-## Authoritative native matrix
+## Runtime identities
 
-An authoritative runtime build begins from a clean Foundry checkout. Every
-native cell records the exact Foundry commit, Git tree, build settings, ABI,
-library sizes, and SHA-256 hashes in `provenance.json`. A dirty checkout, a
-revision or tree mismatch, a mislabeled cell, an unexpected file, or a changed
-library hash fails validation.
+The implementation namespace and JNI namespace are
+`games.cafecito.foundry`. The export-template implementation package and
+default application ID are `games.cafecito.foundry.game`; a project may replace
+only the application ID. Runtime manifest metadata records the Foundry library
+version, engine version, 40-character engine revision, and JNI contract
+version. `BuildConfig` exposes the same values to JVM and instrumented tests.
 
-The complete matrix is three build types by four Android ABIs:
+The host retains the canonical
+`games.cafecito.foundry.plugin.v1.` metadata protocol until the dedicated
+plugin-removal workstream removes that legacy surface. It does not accept the
+old `org.godotengine` prefixes.
 
-| Runtime | Target | Required SCons flags |
-| --- | --- | --- |
-| debug | `template_debug` | `production=no dev_mode=no dev_build=no debug_symbols=no` |
-| dev | `template_debug` | `production=no dev_mode=yes dev_build=yes debug_symbols=yes` |
-| release | `template_release` | `production=yes dev_mode=no dev_build=no debug_symbols=no` |
+## Android and toolchain levels
+
+The root app configuration is authoritative for both `:app` and `:lib`:
+
+- Android compile and target API: 36;
+- minimum API: 24;
+- Android build tools: 36.1.0;
+- NDK: 29.0.14206865;
+- Java and Kotlin bytecode: 17.
+
+API 36 compatibility includes the predictive-back behavior already used by
+the app, `InputTransferToken` selection guarded by
+`Build.VERSION_CODES.BAKLAVA`, an immutable downloader alarm
+`PendingIntent`, and explicit lint annotations on version- or
+permission-sensitive compatibility helpers.
+
+Set `ANDROID_HOME` or `ANDROID_SDK_ROOT` to an SDK containing those components
+before invoking Gradle.
+
+## Native matrix
+
+Debug, dev, and release AARs and APKs require all four Android ABI payloads:
 
 | Android ABI | SCons `arch` |
 | --- | --- |
@@ -42,91 +64,70 @@ The complete matrix is three build types by four Android ABIs:
 | `x86` | `x86_32` |
 | `x86_64` | `x86_64` |
 
-Each cell also requires `platform=android tests=no swappy=yes` and the target
-shown above. For example, the debug ARM64 cell is:
+| Runtime | Target | Required SCons flags |
+| --- | --- | --- |
+| debug | `template_debug` | `production=no dev_mode=no dev_build=no debug_symbols=no` |
+| dev | `template_debug` | `production=no dev_mode=yes dev_build=yes debug_symbols=yes` |
+| release | `template_release` | `production=yes dev_mode=no dev_build=no debug_symbols=no` |
+
+Each cell also uses `platform=android tests=no swappy=yes`. The internal Gradle
+module can schedule the matrix directly:
 
 ```sh
-scons platform=android target=template_debug arch=arm64 \
-  production=no dev_mode=no dev_build=no debug_symbols=no \
-  tests=no swappy=yes
+cd platform/android/java
+./gradlew --no-daemon \
+  :lib:assembleTemplateDebug \
+  :lib:assembleTemplateDev \
+  :lib:assembleTemplateRelease \
+  -PselectedAbis=arm32,arm64,x86_32,x86_64
 ```
 
-Repeat with every row in both tables. SCons writes each result under:
+For a build whose native libraries were created separately, place each ABI's
+`libfoundry_android.so` and `libc++_shared.so` under the corresponding
+`platform/android/java/lib/libs/<build-type>/<android-abi>/` directory and pass
+`-PselectedAbis=` to skip Gradle-scheduled SCons tasks.
 
-```text
-bin/android-native/<foundry-revision>/<build-type>/<abi>/
-├── libfoundry_android.so
-├── libc++_shared.so
-└── provenance.json
-```
+## JVM, lint, AIDL, and instrumented tests
 
-The consumer accepts only the full 12-cell root. A partial matrix can be useful
-for narrow local compilation, but it is non-authoritative and cannot produce a
-release-ready AAR set or source template.
-
-## Prepare the pinned runtime
-
-The driver exports the exact pinned standalone Git object, derives compatibility
-metadata from the clean Foundry checkout, validates or creates the native
-bundle with the pinned standalone tool, runs the standalone Gradle verification
-suite, and promotes all three AARs only after success.
-
-For an offline build with a prefetched standalone Git repository and the full
-native root:
+Run the focused host verification from the repository root:
 
 ```sh
-python3 platform/android/android_runtime_build.py prepare \
-  --pin platform/android/foundry_android_runtime.json \
-  --engine-source . \
-  --scratch .test_scratch/android-runtime \
-  --output-aars platform/android/java/build/foundryAndroidRuntime/aars \
-  --source-repository /absolute/path/to/Foundry-Android \
-  --native-root "bin/android-native/$(git rev-parse HEAD)"
+platform/android/java/gradlew -p platform/android/java --no-daemon \
+  :lib:testTemplateDebugUnitTest \
+  :lib:lintTemplateDebug \
+  :lib:compileTemplateDebugJavaWithJavac \
+  :lib:compileTemplateDebugKotlin \
+  :lib:compileTemplateDebugAidl \
+  :lib:assembleTemplateDebugAndroidTest \
+  -PselectedAbis=
 ```
 
-The standalone repository must contain the pinned commit as a Git object. Its
-working tree is not copied: the driver exports the exact revision and checks
-its tree, bindings version, JNI contract, and required tools.
+Lint is abort-on-error. The unit suite covers runtime identity, canonical
+types, command-line parsing, and plugin metadata parsing. The retained Android
+test APK covers runtime identity and the canonical plugin protocol.
 
-There are two explicit alternatives:
+Compile the application and its own instrumented suite with:
 
-- Replace `--source-repository` with `--allow-fetch` to opt in to fetching only
-  the repository and exact commit from the pin. Network access is never
-  implicit.
-- Replace `--native-root` with `--native-bundle /absolute/path/to/foundry-native.zip`
-  to consume a prebuilt complete bundle. The pinned standalone verifier still
-  checks its compatibility metadata, matrix, ABI identity, and hashes.
-
-Exactly one source option and exactly one native option are required. `--scratch`
-and `--output-aars` must be outside the source tree or Git-ignored; generated
-runtime source is never written into tracked paths. Successful AAR output is:
-
-```text
-platform/android/java/build/foundryAndroidRuntime/aars/
-├── debug/foundry-debug.aar
-├── dev/foundry-dev.aar
-└── release/foundry-release.aar
+```sh
+platform/android/java/gradlew -p platform/android/java --no-daemon \
+  :app:compileStandardDebugJavaWithJavac \
+  :app:compileStandardDebugKotlin \
+  :app:compileInstrumentedDebugAndroidTestKotlin \
+  :app:assembleInstrumentedDebugAndroidTest \
+  -PselectedAbis=
 ```
 
 ## Build export templates
 
-Gradle exposes the same explicit inputs as project properties:
+With all native cells present, build the stable template artifacts:
 
 ```sh
 cd platform/android/java
 ./gradlew --no-daemon generateFoundryTemplates \
-  -PfoundryAndroidSource=/absolute/path/to/Foundry-Android \
-  -PfoundryNativeRoot=/absolute/path/to/bin/android-native/<foundry-revision> \
-  -PfoundryRuntimeScratch=/absolute/path/to/ignored/runtime-scratch
+  -PselectedAbis=arm32,arm64,x86_32,x86_64
 ```
 
-For an opted-in network build, use `-PfoundryAndroidFetch=true` instead of
-`-PfoundryAndroidSource`. For a prebuilt bundle, use
-`-PfoundryNativeBundle=/absolute/path/to/foundry-native.zip` instead of
-`-PfoundryNativeRoot`. These alternatives preserve the same offline and
-provenance checks as the Python driver.
-
-The stable artifacts remain:
+The result is:
 
 ```text
 bin/android_debug.apk
@@ -139,16 +140,8 @@ bin/foundry-release.aar
 ```
 
 `android_source.zip` is staged outside `bin/`, inspected, and atomically
-promoted only after all three requested APK variants succeed. It must contain
-exactly these standalone AAR paths at its root:
-
-```text
-libs/debug/foundry-debug.aar
-libs/dev/foundry-dev.aar
-libs/release/foundry-release.aar
-```
-
-Inspect the final archive independently before promotion or release:
+promoted only after its AAR and application-template contract passes. Inspect
+it independently with:
 
 ```sh
 python3 platform/android/android_source_template.py inspect \
@@ -156,65 +149,46 @@ python3 platform/android/android_source_template.py inspect \
 ```
 
 The inspector rejects missing, empty, extra, or legacy AARs; unsafe paths;
-symbolic links; and runtime Java/Kotlin/AIDL source outside the application
-package. This prevents stale in-tree runtime code from re-entering the custom
-build template.
-
-## Update the standalone pin
-
-Pin changes are explicit compatibility changes, not floating dependency
-updates:
-
-1. Fetch the intended Foundry-Android commit into a local repository.
-2. Resolve and record the exact commit and tree:
-
-   ```sh
-   git -C /absolute/path/to/Foundry-Android rev-parse --verify <revision>^{commit}
-   git -C /absolute/path/to/Foundry-Android rev-parse --verify <revision>^{tree}
-   ```
-
-3. Review that revision's `compatibility/foundry-engine.json`,
-   `tools/native_bundle.py`, `tools/sync_engine_pin.py`, and
-   `tools/verify_jni_contract.py`. Update the pin's bindings or JNI contract
-   only with the corresponding reviewed compatibility change.
-4. Replace `"revision":` and `"tree":` in
-   `platform/android/foundry_android_runtime.json`, preserving canonical
-   one-line sorted JSON.
-5. Rebuild the full 12-cell matrix from the exact Foundry commit, run the
-   preparation driver, generate the templates, and inspect
-   `bin/android_source.zip`.
-
-The driver rejects dirty Foundry source, mixed native revisions, pin drift, and
-incompatible standalone inputs before Gradle assembles an AAR.
+symbolic links; and host Java/Kotlin/AIDL source outside the application
+package.
 
 ## Compiled JNI and artifact verification
 
-Runtime preparation invokes the pinned standalone tools rather than inferring
-compatibility from source names. `tools/verify_jni_contract.py` reads the
-compiled Java/Kotlin native declarations from the runtime classes JAR with
-`javap`, applies JNI escaping and overload rules, and compares that exact set
-with every native payload in the validated 12-cell bundle. A missing or stale
-Foundry JNI symbol fails the build.
+Source ownership tests require representative native declarations to retain
+matching `Java_games_cafecito_foundry_*` C++ exports. For release evidence,
+inspect the compiled Java/Kotlin native declarations rather than relying only
+on source spelling:
 
-The standalone `tools/inspect_artifacts.py` gate independently opens every
-debug, dev, and release AAR and publication. It checks compiled
-`BuildConfig.class` values, classes, manifests, resources, every packaged ELF,
-sources, documentation, POM and module metadata, and rejects stale runtime
-identities. License, notice, and native provenance records are required
-evidence; they are not treated as stale product identifiers.
+```sh
+javap -p -s \
+  -classpath platform/android/java/lib/build/intermediates/compile_library_classes_jar/templateDebug/bundleLibCompileToJarTemplateDebug/classes.jar \
+  games.cafecito.foundry.FoundryLib \
+  games.cafecito.foundry.plugin.FoundryPlugin \
+  games.cafecito.foundry.utils.DialogUtils \
+  games.cafecito.foundry.variant.Callable
+```
+
+For every ABI, use `nm` on the unstripped or dynamic symbol table of
+`libfoundry_android.so` and compare its `Java_games_cafecito_foundry_*` exports
+with the compiled declarations. Inspect the three AARs and APKs with `jar tf`,
+`unzip -l`, and `apkanalyzer`; require:
+
+- `games/cafecito/foundry/Foundry.class`, `FoundryLib.class`, and host support
+  classes;
+- the Foundry layouts, strings, provider paths, mipmaps, license, and notice;
+- the two licensing AIDL-generated interfaces;
+- both `libfoundry_android.so` and `libc++_shared.so`;
+- `armeabi-v7a`, `arm64-v8a`, `x86`, and `x86_64`;
+- the requested application ID and fixed Foundry implementation classes.
 
 ## Device or emulator acceptance
 
-Issue #1224 closes the previous device-validation boundary with a reproducible
-exported-game gate.
+Use an API 36 device or emulator whose ABI is one of the four supported ABIs.
+Java 17, `adb`, `apkanalyzer`, and a freshly generated
+`bin/android_source.zip` are required.
 
-Use an API 36 device or emulator whose ABI is one of `armeabi-v7a`,
-`arm64-v8a`, `x86`, or `x86_64`. Java 17, `adb`, `apkanalyzer`, the matching
-system image, and a freshly assembled `android_source.zip` are required. The
-work and evidence directories are owned by one run and must not already exist.
-
-The source-template mode builds and instruments isolated canonical and custom
-application-ID scenarios, then installs and starts each standard APK:
+The source-template acceptance mode builds, instruments, installs, and starts
+both the canonical and custom application-ID scenarios:
 
 ```sh
 python3 platform/android/android_device_acceptance.py source-template \
@@ -222,27 +196,16 @@ python3 platform/android/android_device_acceptance.py source-template \
   --work-dir .test_scratch/android-device-acceptance \
   --evidence-dir .test_scratch/android-device-evidence \
   --adb "${ANDROID_SDK_ROOT}/platform-tools/adb" \
-  --apkanalyzer "${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/apkanalyzer" \
-  --serial emulator-5554
+  --apkanalyzer "${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/apkanalyzer"
 ```
 
-The canonical scenario deliberately omits the Gradle package override and must
-produce `games.cafecito.foundry.game`. The second scenario explicitly overrides
-the package with `dev.example.foundryacceptance`. For both, the driver requires
-the focused JUnit case, verifies the manifest application ID with
-`apkanalyzer`, installs the APK, requires `am start -W` to report `Status: ok`,
-waits for one live process, and scans both complete and PID-filtered logcat for
-linkage, class-loading, native-library, and fatal-exception failures.
+The canonical scenario omits the package override and must produce
+`games.cafecito.foundry.game`. The custom scenario uses
+`dev.example.foundryacceptance`. Both require the named JUnit result, a
+successful activity start, one live process, and logs free of linkage,
+class-loading, native-library, and fatal-exception failures.
 
-Plugin discovery recognizes exactly
-`games.cafecito.foundry.plugin.v1.*`. The focused instrumented fixture presents
-that canonical key plus `org.godotengine.plugin.v1.Legacy` and
-`org.godotengine.plugin.v2.Legacy`; after the Foundry main loop starts, only the
-canonical plugin may be registered. The legacy entries are negative test data
-and must never become supported aliases.
-
-To verify APKs produced through the real command-first editor exporter, use a
-fresh evidence directory:
+To verify APKs produced through the real command-first editor exporter:
 
 ```sh
 python3 platform/android/android_device_acceptance.py verify-apks \
@@ -250,62 +213,25 @@ python3 platform/android/android_device_acceptance.py verify-apks \
   --apk dev.example.foundryacceptance=.test_scratch/android-cli-export/custom.apk \
   --evidence-dir .test_scratch/android-cli-export-evidence \
   --adb "${ANDROID_SDK_ROOT}/platform-tools/adb" \
-  --apkanalyzer "${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/apkanalyzer" \
-  --serial emulator-5554
+  --apkanalyzer "${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/apkanalyzer"
 ```
-
-Each successful mode atomically writes `report.json`. Failures write
-`failure.json` when the evidence directory is available. Real command
-stdout/stderr is retained under `commands/`, per-application full and
-PID-filtered output is written as `<application-id>-logcat.txt`, and the source
-mode records the exact JUnit XML under
-`<work-dir>/<scenario>/build/outputs/androidTest-results/connected/` (AGP may
-nest the report by build type and flavor).
-CI uploads this evidence together with the emulator log even when a step fails.
 
 ## Acceptance evidence map
 
 | Completion criterion | Authoritative proof |
 | --- | --- |
-| Native build types and ABIs | The clean 3×4 `android_builds.yml` matrix, each cell's `provenance.json`, and standalone native-bundle validation prove all twelve payloads and ELF identities. |
-| JNI declarations/exports | Pinned standalone `tools/verify_jni_contract.py` compares compiled Java/Kotlin native declarations with every native payload. |
-| AAR identity/content | Standalone Gradle tests and `tools/inspect_artifacts.py` inspect all three direct AARs and release publication artifacts. |
-| APK identity/content | Template assembly plus `apkanalyzer manifest application-id` prove the canonical and custom IDs in the installed bytes. |
-| Source ZIP | `android_source_template.py inspect` proves the promoted archive has only the three standalone AARs and safe application-template content. |
-| Plugin protocol | `runtimeBootsWithCanonicalPluginProtocol` boots the activity and accepts `games.cafecito.foundry.plugin.v1.*` while rejecting both legacy variants. |
-| Device runtime | `android_device_acceptance.py source-template` provides named JUnit, install, start, PID, and clean-log evidence for both application IDs. |
-| Editor exporter | Command-first `project export` for both presets followed by `android_device_acceptance.py verify-apks` proves the real exporter path. |
-| Compiled/runtime identifiers | Engine identifier guards and standalone artifact inspection reject stale names in classes, resources, metadata, JNI, and ELF payloads while retaining license and provenance evidence. |
+| Runtime ownership | Python contracts require `:lib`, its source trees, and the internal `:app` dependency while rejecting external preparation/publication. |
+| Java/Kotlin/AIDL | Focused compile tasks and `:lib:testTemplateDebugUnitTest`. |
+| Lint | `:lib:lintTemplateDebug` with abort-on-error. |
+| Instrumented tests | Both retained Android test APKs assemble; an API 36 device run supplies execution evidence. |
+| Native build types and ABIs | Three AAR/APK variants contain both native libraries for all four ABI directories. |
+| JNI declarations/exports | `javap` proves compiled declarations and `nm` proves matching exports in every native payload. |
+| AAR identity/content | `jar tf` and `unzip -l` prove canonical classes, resources, metadata, notices, and native libraries. |
+| APK identity/content | `apkanalyzer manifest application-id` proves canonical and custom IDs in built bytes. |
+| Source ZIP | `android_source_template.py inspect` proves the three internal AAR payloads and safe app-only source. |
+| Device runtime | `android_device_acceptance.py source-template` records JUnit, install, start, PID, and log evidence for both IDs. |
+| Editor exporter | Command-first exports followed by `android_device_acceptance.py verify-apks`. |
 
-## Release alignment checklist
-
-Bindings, engine source, JNI, and publication versions move as one reviewed
-compatibility set. Use this order:
-
-1. Choose the clean Foundry engine revision and intended bindings version.
-   Update native/JNI sources first and keep the JNI contract version unchanged
-   unless the compiled declarations and exports intentionally change.
-2. In Foundry-Android, run `tools/sync_engine_pin.py` against that exact public
-   engine revision. Review `compatibility/foundry-engine.json`, including the
-   engine version components, bindings version, JNI contract, ABI map, and
-   external JNI allowlist.
-3. Build all twelve native cells from the same clean Foundry revision. Run
-   standalone preparation so `tools/verify_jni_contract.py`, native-bundle
-   validation, all JVM/instrumented compilation, and artifact inspection pass.
-4. Generate all Foundry templates, inspect the final source ZIP, and run the
-   emulator source-template gate for both application IDs.
-5. Build the strict Foundry editor, export the minimal project through the
-   command-first CLI with both IDs, and run the APK-only device gate.
-6. For a non-snapshot standalone release, tag Foundry-Android exactly
-   `v<bindings.version>`. Its release workflow must publish immutable Central
-   coordinates successfully before creating the standalone GitHub release; do
-   not retry after Central has accepted an upload without checking its recorded
-   deployment ID.
-7. Pin the exact released standalone commit and tree in
-   `platform/android/foundry_android_runtime.json`, rerun the complete matrix,
-   artifact, device, exporter, and release-package gates, then release Foundry.
-   Foundry-Android remains the sole Maven publisher.
-
-No individual layer substitutes for another: a green matrix is not a device
-boot, a compiled instrumented APK is not an executed JUnit result, and a direct
-Gradle APK is not proof of the editor exporter path.
+No individual layer substitutes for another: compilation is not a device boot,
+a green matrix is not JNI parity, and a direct Gradle APK is not proof of the
+editor exporter path.
