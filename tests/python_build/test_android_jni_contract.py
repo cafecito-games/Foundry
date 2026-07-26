@@ -50,9 +50,25 @@ public final class Fixture {
             + "\n",
             encoding="utf-8",
         )
+        unicode_source = source.with_name("Café.java")
+        unicode_source.write_text(
+            """
+package games.cafecito.foundry;
+final class Café {
+    static native void mélodie(int value);
+    static native void mélodie(String[] values);
+}
+""".strip()
+            + "\n",
+            encoding="utf-8",
+        )
         classes = root / "classes"
         classes.mkdir()
-        subprocess.run(["javac", "-d", classes, source], check=True, capture_output=True)
+        subprocess.run(
+            ["javac", "-encoding", "UTF-8", "-d", classes, source, unicode_source],
+            check=True,
+            capture_output=True,
+        )
         archive = root / "classes.jar"
         with zipfile.ZipFile(archive, "w") as output:
             for path in sorted(classes.rglob("*.class")):
@@ -67,12 +83,26 @@ public final class Fixture {
 
         self.assertEqual(
             (
+                "Java_games_cafecito_foundry_Caf_000e9_m_000e9lodie__I",
+                "Java_games_cafecito_foundry_Caf_000e9_m_000e9lodie___3Ljava_lang_String_2",
                 "Java_games_cafecito_foundry_Fixture_00024Inner_nested",
                 "Java_games_cafecito_foundry_Fixture_ping",
                 "Java_games_cafecito_foundry_Fixture_under_1score",
             ),
             symbols,
         )
+
+    def test_rejects_unparsed_native_declarations_in_javap_output(self) -> None:
+        output = """
+public final class games.cafecito.foundry.Fixture {
+  public static native void ping();
+    descriptor: ()V
+  public static native void malformed;
+}
+"""
+
+        with self.assertRaisesRegex(self.contract.JniContractError, "unable to parse native declaration"):
+            self.contract._parse_declarations(output)
 
     def test_rejects_empty_or_non_jar_compiled_declaration_input(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

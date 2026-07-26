@@ -12,8 +12,9 @@ from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
-CLASS_DECLARATION = re.compile(r"\b(?:class|interface|enum)\s+([A-Za-z0-9_.$]+)")
-NATIVE_METHOD = re.compile(r"\bnative\b.*\s([A-Za-z0-9_$]+)\(")
+CLASS_DECLARATION = re.compile(r"\b(?:class|interface|enum)\s+([^\s<{]+)")
+NATIVE_KEYWORD = re.compile(r"\bnative\b")
+NATIVE_METHOD = re.compile(r"\bnative\b[^(]*\s([^\s(]+)\(")
 DESCRIPTOR = re.compile(r"^\s*descriptor:\s*(\([^)]*\).+)$")
 FOUNDRY_CLASS_PREFIX = "games.cafecito.foundry."
 
@@ -90,13 +91,18 @@ def _parse_declarations(output: str) -> tuple[NativeDeclaration, ...]:
     for line in output.splitlines():
         class_match = CLASS_DECLARATION.search(line)
         if class_match:
+            if pending_method is not None:
+                raise JniContractError("javap omitted a descriptor for a compiled native declaration")
             current_class = class_match.group(1)
-            pending_method = None
             continue
         method_match = NATIVE_METHOD.search(line)
-        if method_match:
+        if NATIVE_KEYWORD.search(line):
+            if method_match is None:
+                raise JniContractError(f"unable to parse native declaration from javap output: {line.strip()}")
             if current_class is None:
                 raise JniContractError("javap reported a native method before its declaring class")
+            if pending_method is not None:
+                raise JniContractError("javap omitted a descriptor for a compiled native declaration")
             pending_method = method_match.group(1)
             continue
         descriptor_match = DESCRIPTOR.match(line)
