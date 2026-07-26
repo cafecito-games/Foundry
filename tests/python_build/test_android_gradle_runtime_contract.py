@@ -148,6 +148,19 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
             self.assertIn(filename, build)
         self.assertIn('into "libs"', build)
 
+    def test_apk_copy_tasks_freeze_and_require_each_variant_output(self) -> None:
+        build = read(ROOT_BUILD)
+
+        for fragment in (
+            "return runtimeBuildTypes.collect { String target ->",
+            'def sourceApk = file("app/build/outputs/apk/${edition}/${target}/android_${filenameSuffix}.apk")',
+            'dependsOn ":app:assemble${capitalizedEdition}${capitalizedTarget}"',
+            "inputs.file(sourceApk)",
+            "from(sourceApk)",
+        ):
+            self.assertIn(fragment, build)
+        self.assertNotIn('from("app/build/outputs/apk/${edition}/${target}")', build)
+
     def test_active_gradle_has_no_in_tree_runtime_or_publication_logic(self) -> None:
         active = "\n".join(read(path) for path in ACTIVE_GRADLE_FILES)
 

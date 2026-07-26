@@ -155,21 +155,19 @@ def generateBuildTasks = { String edition = "standard" ->
         throw new GradleException("Invalid build edition: $edition")
     }
 
-    def buildTasks = []
-    for (String target : runtimeBuildTypes) {
+    return runtimeBuildTypes.collect { String target ->
         String capitalizedTarget = target.capitalize()
         String capitalizedEdition = edition.capitalize()
         String taskName = "copy${capitalizedEdition}${capitalizedTarget}BinaryToBin"
-        buildTasks += tasks.register(taskName, Copy) {
-            String filenameSuffix = edition == "mono" ? "${edition}${capitalizedTarget}" : target
+        String filenameSuffix = edition == "mono" ? "${edition}${capitalizedTarget}" : target
+        def sourceApk = file("app/build/outputs/apk/${edition}/${target}/android_${filenameSuffix}.apk")
+        return tasks.register(taskName, Copy) {
             dependsOn ":app:assemble${capitalizedEdition}${capitalizedTarget}"
-            from("app/build/outputs/apk/${edition}/${target}") {
-                include "android_${filenameSuffix}.apk"
-            }
+            inputs.file(sourceApk)
+            from(sourceApk)
             into binDir
         }
     }
-    return buildTasks
 }
 
 def standardBuildTasks = generateBuildTasks()
