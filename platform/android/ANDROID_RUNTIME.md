@@ -240,6 +240,7 @@ both the canonical and custom application-ID scenarios:
 ```sh
 python3 platform/android/android_device_acceptance.py source-template \
   --source-template bin/android_source.zip \
+  --compiled-assets .test_scratch/android-instrumented-assets/android-instrumented-assets.zip \
   --work-dir .test_scratch/android-device-acceptance \
   --evidence-dir .test_scratch/android-device-evidence \
   --adb "${ANDROID_SDK_ROOT}/platform-tools/adb" \

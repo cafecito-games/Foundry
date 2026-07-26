@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import re
 import stat
 import sys
 import tempfile
@@ -28,6 +29,7 @@ NATIVE_CONTRACT_TOOL = REPO_ROOT / "platform/android/android_native_contract.py"
 NATIVE_STAGING_TOOL = REPO_ROOT / "platform/android/android_native_staging.py"
 JNI_CONTRACT_TOOL = REPO_ROOT / "platform/android/android_jni_contract.py"
 SOURCE_TEMPLATE_TOOL = REPO_ROOT / "platform/android/android_source_template.py"
+DEVICE_ACCEPTANCE_TOOL = REPO_ROOT / "platform/android/android_device_acceptance.py"
 ANDROID_README = REPO_ROOT / "platform/android/README.md"
 ANDROID_RUNTIME_DOC = REPO_ROOT / "platform/android/ANDROID_RUNTIME.md"
 FOUNDRY_EXTENSION_EXPORT_PLUGIN = REPO_ROOT / "editor/export/foundry_extension_export_plugin.h"
@@ -123,6 +125,18 @@ def load_source_template_tool() -> ModuleType:
     return module
 
 
+def load_device_acceptance_tool() -> ModuleType:
+    if not DEVICE_ACCEPTANCE_TOOL.is_file():
+        raise AssertionError(f"missing Android device acceptance tool: {DEVICE_ACCEPTANCE_TOOL}")
+    spec = importlib.util.spec_from_file_location("android_device_acceptance", DEVICE_ACCEPTANCE_TOOL)
+    if spec is None or spec.loader is None:
+        raise AssertionError(f"could not load Android device acceptance tool: {DEVICE_ACCEPTANCE_TOOL}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 def write_source_template(path: Path, entries: dict[str, bytes]) -> None:
     with zipfile.ZipFile(path, "w") as archive:
         for name, contents in entries.items():
@@ -191,6 +205,25 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
         self.assertNotIn("host lifecycle behavior", documentation)
         self.assertNotIn("host callbacks", documentation)
         self.assertIn("explicit JavaClassWrapper test bridge", documentation)
+
+    def test_runtime_documentation_passes_compiled_assets_to_source_template_acceptance(self) -> None:
+        documentation = read(ANDROID_RUNTIME_DOC)
+        source_template_example = documentation.split(
+            "python3 platform/android/android_device_acceptance.py source-template",
+            1,
+        )[1].split("```", 1)[0]
+        self.assertIn("--compiled-assets", source_template_example)
+
+    def test_device_acceptance_requires_every_instrumented_test_method(self) -> None:
+        instrumented_test = read(APP_INSTRUMENTED_TEST)
+        kotlin_methods = tuple(
+            re.findall(
+                r"(?m)^\s*@Test\s*\n\s*fun\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(",
+                instrumented_test,
+            )
+        )
+        acceptance = load_device_acceptance_tool()
+        self.assertEqual(kotlin_methods, acceptance.INSTRUMENTATION_METHODS)
 
     def test_removed_android_aar_plugin_export_path_fails_closed(self) -> None:
         plugin = read(FOUNDRY_EXTENSION_EXPORT_PLUGIN)
