@@ -201,7 +201,7 @@ forbid_text(
 )
 forbid_text_in_section(
     ".github/workflows/release.yml",
-    "\n  build-android:\n",
+    "\n  build-android-native:\n",
     "\n  build-ios:\n",
     "release-android-editor",
     "target: editor",

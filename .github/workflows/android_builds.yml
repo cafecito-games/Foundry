@@ -1,61 +1,238 @@
 name: 🤖 Android Builds
+
 on:
   workflow_call:
     inputs:
       checkout-ref:
-        description: Git ref or SHA to check out. Defaults to the workflow ref.
+        description: Git ref or SHA to check out. Defaults to the workflow commit.
         required: false
         type: string
         default: ""
   workflow_dispatch:
 
-# Global Settings
-env:
-  SCONS_FLAGS: >-
-    dev_mode=yes
-    module_text_server_fb_enabled=yes
-    tests=no
-    swappy=yes
-
 jobs:
-  validate-runtime-surface:
+  validate-runtime-contracts:
     runs-on: ubuntu-24.04
-    name: Validate runtime-only Android surface
+    name: Validate standalone Android runtime contracts
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          ref: ${{ inputs.checkout-ref || github.ref }}
+          ref: ${{ inputs.checkout-ref || github.sha }}
           submodules: recursive
 
-      - name: Validate Android runtime-only source contract
-        run: python3 tests/python_build/test_android_runtime_surface.py
+      - name: Validate Android runtime contracts
+        run: |
+          python3 -m unittest \
+            tests.python_build.test_android_runtime_contract \
+            tests.python_build.test_android_runtime_build \
+            tests.python_build.test_android_gradle_runtime_contract -v
+          python3 tests/python_build/test_android_runtime_surface.py
+          python3 .github/scripts/test_android_runtime_workflows.py
 
-  build-android:
-    needs: validate-runtime-surface
+  build-android-native:
+    needs: validate-runtime-contracts
     runs-on: ubuntu-24.04
-    name: ${{ matrix.name }}
-    timeout-minutes: 60
+    name: Android native ${{ matrix.build_type }} / ${{ matrix.abi }}
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
         include:
-          - name: Template arm32 (target=template_debug, arch=arm32)
-            cache-name: android-template-arm32
+          - build_type: debug
+            abi: armeabi-v7a
+            arch: arm32
             target: template_debug
-            scons-flags: arch=arm32
-
-          - name: Template arm64 (target=template_debug, arch=arm64)
-            cache-name: android-template-arm64
+            production: no
+            dev_mode: no
+            dev_build: no
+            debug_symbols: no
+            artifact_name: android-native-debug-armeabi-v7a
+          - build_type: debug
+            abi: arm64-v8a
+            arch: arm64
             target: template_debug
-            scons-flags: arch=arm64
-
+            production: no
+            dev_mode: no
+            dev_build: no
+            debug_symbols: no
+            artifact_name: android-native-debug-arm64-v8a
+          - build_type: debug
+            abi: x86
+            arch: x86_32
+            target: template_debug
+            production: no
+            dev_mode: no
+            dev_build: no
+            debug_symbols: no
+            artifact_name: android-native-debug-x86
+          - build_type: debug
+            abi: x86_64
+            arch: x86_64
+            target: template_debug
+            production: no
+            dev_mode: no
+            dev_build: no
+            debug_symbols: no
+            artifact_name: android-native-debug-x86_64
+          - build_type: dev
+            abi: armeabi-v7a
+            arch: arm32
+            target: template_debug
+            production: no
+            dev_mode: yes
+            dev_build: yes
+            debug_symbols: yes
+            artifact_name: android-native-dev-armeabi-v7a
+          - build_type: dev
+            abi: arm64-v8a
+            arch: arm64
+            target: template_debug
+            production: no
+            dev_mode: yes
+            dev_build: yes
+            debug_symbols: yes
+            artifact_name: android-native-dev-arm64-v8a
+          - build_type: dev
+            abi: x86
+            arch: x86_32
+            target: template_debug
+            production: no
+            dev_mode: yes
+            dev_build: yes
+            debug_symbols: yes
+            artifact_name: android-native-dev-x86
+          - build_type: dev
+            abi: x86_64
+            arch: x86_64
+            target: template_debug
+            production: no
+            dev_mode: yes
+            dev_build: yes
+            debug_symbols: yes
+            artifact_name: android-native-dev-x86_64
+          - build_type: release
+            abi: armeabi-v7a
+            arch: arm32
+            target: template_release
+            production: yes
+            dev_mode: no
+            dev_build: no
+            debug_symbols: no
+            artifact_name: android-native-release-armeabi-v7a
+          - build_type: release
+            abi: arm64-v8a
+            arch: arm64
+            target: template_release
+            production: yes
+            dev_mode: no
+            dev_build: no
+            debug_symbols: no
+            artifact_name: android-native-release-arm64-v8a
+          - build_type: release
+            abi: x86
+            arch: x86_32
+            target: template_release
+            production: yes
+            dev_mode: no
+            dev_build: no
+            debug_symbols: no
+            artifact_name: android-native-release-x86
+          - build_type: release
+            abi: x86_64
+            arch: x86_64
+            target: template_release
+            production: yes
+            dev_mode: no
+            dev_build: no
+            debug_symbols: no
+            artifact_name: android-native-release-x86_64
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          ref: ${{ inputs.checkout-ref || github.ref }}
+          ref: ${{ inputs.checkout-ref || github.sha }}
           submodules: recursive
+
+      - name: Resolve exact engine revision
+        id: engine
+        run: echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Foundry build cache
+        uses: ./.github/actions/foundry-cache-restore
+        with:
+          cache-name: ${{ matrix.artifact_name }}
+        continue-on-error: true
+
+      - name: Setup Python and SCons
+        uses: ./.github/actions/foundry-deps
+
+      - name: Download Swappy
+        run: python3 misc/scripts/install_swappy_android.py
+
+      - name: Compile exact native cell
+        uses: ./.github/actions/foundry-build
+        with:
+          platform: android
+          target: ${{ matrix.target }}
+          preserve-source-tree: true
+          scons-flags: >-
+            module_text_server_fb_enabled=yes
+            tests=no
+            swappy=yes
+            arch=${{ matrix.arch }}
+            production=${{ matrix.production }}
+            dev_mode=${{ matrix.dev_mode }}
+            dev_build=${{ matrix.dev_build }}
+            debug_symbols=${{ matrix.debug_symbols }}
+
+      - name: Save Foundry build cache
+        uses: ./.github/actions/foundry-cache-save
+        with:
+          cache-name: ${{ matrix.artifact_name }}
+        continue-on-error: true
+
+      - name: Stage native cell with provenance
+        env:
+          ENGINE_REVISION: ${{ steps.engine.outputs.revision }}
+        run: |
+          set -euo pipefail
+          CELL="bin/android-native/${ENGINE_REVISION}/${{ matrix.build_type }}/${{ matrix.abi }}"
+          DEST="${RUNNER_TEMP}/android-native-artifact/${{ matrix.build_type }}/${{ matrix.abi }}"
+          test -f "${CELL}/libc++_shared.so"
+          test -f "${CELL}/libfoundry_android.so"
+          test -f "${CELL}/provenance.json"
+          mkdir -p "${DEST}"
+          cp "${CELL}/libc++_shared.so" "${DEST}/"
+          cp "${CELL}/libfoundry_android.so" "${DEST}/"
+          cp "${CELL}/provenance.json" "${DEST}/"
+
+      - name: Upload native cell
+        uses: ./.github/actions/upload-artifact
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ runner.temp }}/android-native-artifact
+
+  assemble-android:
+    needs:
+      - validate-runtime-contracts
+      - build-android-native
+    runs-on: ubuntu-24.04
+    name: Assemble Android templates with standalone runtime
+    timeout-minutes: 60
+    steps:
+      - name: Checkout Foundry
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.checkout-ref || github.sha }}
+          submodules: recursive
+
+      - name: Checkout pinned standalone runtime
+        uses: actions/checkout@v6
+        with:
+          repository: cafecito-games/Foundry-Android
+          ref: b8c46c807d467fcd1667b7d4cb04d07a09a08860
+          path: .test_scratch/foundry-android-source
 
       - name: Set up Java 17
         uses: actions/setup-java@v5
@@ -63,39 +240,45 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Restore Foundry build cache
-        uses: ./.github/actions/foundry-cache-restore
+      - name: Download every native cell
+        uses: actions/download-artifact@v8
         with:
-          cache-name: ${{ matrix.cache-name }}
-        continue-on-error: true
+          pattern: 'android-native-*'
+          path: .test_scratch/android-native
+          merge-multiple: true
 
-      - name: Setup Python and SCons
-        uses: ./.github/actions/foundry-deps
-
-      - name: Download Swappy
-        run: python ./misc/scripts/install_swappy_android.py
-
-      - name: Compilation
-        uses: ./.github/actions/foundry-build
-        with:
-          scons-flags: ${{ env.SCONS_FLAGS }} ${{ matrix.scons-flags }}
-          platform: android
-          target: ${{ matrix.target }}
-
-      - name: Save Foundry build cache
-        uses: ./.github/actions/foundry-cache-save
-        with:
-          cache-name: ${{ matrix.cache-name }}
-        continue-on-error: true
-
-      - name: Generate Foundry templates
+      - name: Assemble and verify standalone runtime
         run: |
+          set -euo pipefail
+          ENGINE_REVISION="$(git rev-parse HEAD)"
+          test "$(find .test_scratch/android-native -name provenance.json -type f | wc -l | tr -d ' ')" = "12"
           cd platform/android/java
-          ./gradlew generateFoundryTemplates
+          ./gradlew --no-daemon generateFoundryTemplates \
+            -PfoundryAndroidSource="${GITHUB_WORKSPACE}/.test_scratch/foundry-android-source" \
+            -PfoundryNativeRoot="${GITHUB_WORKSPACE}/.test_scratch/android-native" \
+            -PfoundryRuntimeScratch="${RUNNER_TEMP}/foundry-android-runtime"
           cd ../../..
-          ls -l bin/
+          cp "${RUNNER_TEMP}/foundry-android-runtime/foundry-native.zip" bin/foundry-native.zip
+          test -n "${ENGINE_REVISION}"
+          test -f bin/android_debug.apk
+          test -f bin/android_dev.apk
+          test -f bin/android_release.apk
+          test -f bin/android_source.zip
+          test -f bin/foundry-debug.aar
+          test -f bin/foundry-dev.aar
+          test -f bin/foundry-release.aar
+          test -f bin/foundry-native.zip
 
-      - name: Upload artifact
+      - name: Upload assembled Android runtime
         uses: ./.github/actions/upload-artifact
         with:
-          name: ${{ matrix.cache-name }}
+          name: android-runtime-assembled
+          path: |
+            bin/android_debug.apk
+            bin/android_dev.apk
+            bin/android_release.apk
+            bin/android_source.zip
+            bin/foundry-debug.aar
+            bin/foundry-dev.aar
+            bin/foundry-release.aar
+            bin/foundry-native.zip
