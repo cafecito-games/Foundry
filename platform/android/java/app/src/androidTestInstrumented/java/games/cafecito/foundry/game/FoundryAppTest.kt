@@ -32,6 +32,7 @@ package games.cafecito.foundry.game
 
 import android.content.ComponentName
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.util.Log
 import androidx.test.core.app.ActivityScenario
 import androidx.test.espresso.Espresso
@@ -44,6 +45,7 @@ import games.cafecito.foundry.plugin.FoundryPluginRegistry
 import org.junit.Test
 import org.junit.runner.RunWith
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -66,6 +68,37 @@ class FoundryAppTest {
 	private fun getTestPlugin(): FoundryAppInstrumentedTestPlugin? {
 		return FoundryPluginRegistry.getPluginRegistry()
 			.getPlugin("FoundryAppInstrumentedTestPlugin") as FoundryAppInstrumentedTestPlugin?
+	}
+
+	/**
+	 * Boots the runtime and proves that only the canonical Foundry plugin protocol is discovered.
+	 */
+	@Test
+	fun runtimeBootsWithCanonicalPluginProtocol() {
+		ActivityScenario.launch(FoundryApp::class.java).use { scenario ->
+			scenario.onActivity { activity ->
+				val testPlugin = getTestPlugin()
+				assertNotNull(testPlugin)
+				testPlugin.waitForFoundryMainLoopStarted()
+
+				val metadata = activity.packageManager
+					.getApplicationInfo(activity.packageName, PackageManager.GET_META_DATA)
+					.metaData
+				assertEquals(
+					"games.cafecito.foundry.game.test.FoundryAppInstrumentedTestPlugin",
+					metadata.getString(
+						"games.cafecito.foundry.plugin.v1.FoundryAppInstrumentedTestPlugin"
+					)
+				)
+				assertTrue(metadata.containsKey("org.godotengine.plugin.v1.Legacy"))
+				assertTrue(metadata.containsKey("org.godotengine.plugin.v2.Legacy"))
+
+				val registry = FoundryPluginRegistry.getPluginRegistry()
+				assertNotNull(registry.getPlugin("FoundryAppInstrumentedTestPlugin"))
+				assertNull(registry.getPlugin("Legacy"))
+				assertFalse(registry.getAllPlugins().isEmpty())
+			}
+		}
 	}
 
 	/**

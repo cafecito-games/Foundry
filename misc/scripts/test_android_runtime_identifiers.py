@@ -42,8 +42,15 @@ def require_contains(path: Path, expected: str, failures: list[str]) -> None:
         failures.append(f"{relative(path)} is missing {expected!r}")
 
 
-def reject_contains(path: Path, forbidden: tuple[str, ...], failures: list[str]) -> None:
+def reject_contains(
+    path: Path,
+    forbidden: tuple[str, ...],
+    failures: list[str],
+    allowed_literals: tuple[str, ...] = (),
+) -> None:
     text = require_file(path, failures)
+    for literal in allowed_literals:
+        text = text.replace(literal, "")
     hits = [identifier for identifier in forbidden if identifier in text]
     if hits:
         failures.append(f"{relative(path)} contains stale runtime identifiers: {hits}")
@@ -76,10 +83,25 @@ def check_standalone_boundary(failures: list[str]) -> None:
 
 def check_app_source_surface(failures: list[str]) -> None:
     source_suffixes = {".java", ".kt", ".aidl", ".xml", ".gradle", ".fs"}
+    legacy_protocol_fixtures = {
+        APP_ROOT / "src/androidTestInstrumented/java/games/cafecito/foundry/game/FoundryAppTest.kt": (
+            '"org.godotengine.plugin.v1.Legacy"',
+            '"org.godotengine.plugin.v2.Legacy"',
+        ),
+        APP_ROOT / "src/instrumented/AndroidManifest.xml": (
+            'android:name="org.godotengine.plugin.v1.Legacy"',
+            'android:name="org.godotengine.plugin.v2.Legacy"',
+        ),
+    }
     for path in APP_ROOT.rglob("*"):
         if not path.is_file() or path.suffix not in source_suffixes or "build" in path.parts:
             continue
-        reject_contains(path, OLD_RUNTIME_IDENTIFIERS, failures)
+        reject_contains(
+            path,
+            OLD_RUNTIME_IDENTIFIERS,
+            failures,
+            legacy_protocol_fixtures.get(path, ()),
+        )
 
         if path.suffix in {".java", ".kt", ".aidl"}:
             for package_name in re.findall(r"(?m)^package\s+([A-Za-z0-9_.]+)\s*;?", path.read_text()):
@@ -106,6 +128,8 @@ def check_exact_app_contract(failures: list[str]) -> None:
     app_manifest = APP_ROOT / "src/main/AndroidManifest.xml"
     instrumented_manifest = APP_ROOT / "src/instrumented/AndroidManifest.xml"
     app_source = APP_ROOT / "src/main/java/games/cafecito/foundry/game/FoundryApp.java"
+    app_test = APP_ROOT / "src/androidTestInstrumented/java/games/cafecito/foundry/game/FoundryAppTest.kt"
+    instrumented_scene = APP_ROOT / "src/instrumented/assets/main.tscn"
     exporter = ANDROID_ROOT / "export/export_plugin.cpp"
 
     require_contains(app_build, f"namespace = '{APP_IMPLEMENTATION_PACKAGE}'", failures)
@@ -131,7 +155,26 @@ def check_exact_app_contract(failures: list[str]) -> None:
         f'android:value="{APP_IMPLEMENTATION_PACKAGE}.test.FoundryAppInstrumentedTestPlugin"',
         failures,
     )
+    require_contains(
+        instrumented_manifest,
+        'android:name="org.godotengine.plugin.v1.Legacy"',
+        failures,
+    )
+    require_contains(
+        instrumented_manifest,
+        'android:name="org.godotengine.plugin.v2.Legacy"',
+        failures,
+    )
     require_contains(app_source, f"package {APP_IMPLEMENTATION_PACKAGE};", failures)
+    require_contains(app_test, "runtimeBootsWithCanonicalPluginProtocol", failures)
+    require_contains(
+        app_test,
+        '"games.cafecito.foundry.plugin.v1.FoundryAppInstrumentedTestPlugin"',
+        failures,
+    )
+    require_contains(app_test, '"org.godotengine.plugin.v1.Legacy"', failures)
+    require_contains(app_test, '"org.godotengine.plugin.v2.Legacy"', failures)
+    require_contains(instrumented_scene, 'path="res://main.fs"', failures)
     require_contains(exporter, f'"/{APP_IMPLEMENTATION_PACKAGE}.FoundryAppLauncher"', failures)
 
 

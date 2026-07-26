@@ -26,7 +26,8 @@ jobs:
           python3 -m unittest \
             tests.python_build.test_android_runtime_contract \
             tests.python_build.test_android_runtime_build \
-            tests.python_build.test_android_gradle_runtime_contract -v
+            tests.python_build.test_android_gradle_runtime_contract \
+            tests.python_build.test_android_device_acceptance -v
           python3 tests/python_build/test_android_runtime_surface.py
           python3 .github/scripts/test_android_runtime_workflows.py
 
@@ -282,3 +283,99 @@ jobs:
             bin/foundry-dev.aar
             bin/foundry-release.aar
             bin/foundry-native.zip
+
+  device-acceptance:
+    needs:
+      - assemble-android
+    runs-on: ubuntu-24.04
+    name: Verify Android runtime on an emulator
+    timeout-minutes: 120
+    steps:
+      - name: Checkout Foundry
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.checkout-ref || github.sha }}
+          submodules: recursive
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Download assembled Android runtime
+        uses: actions/download-artifact@v8
+        with:
+          name: android-runtime-assembled
+          path: .test_scratch/android-runtime-assembled
+
+      - name: Install Android emulator
+        run: |
+          set -euo pipefail
+          "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" \
+            "platform-tools" \
+            "emulator" \
+            "platforms;android-36" \
+            "build-tools;36.1.0" \
+            "system-images;android-36;default;x86_64"
+          test -c /dev/kvm
+          sudo chmod 666 /dev/kvm
+          test -r /dev/kvm
+          test -w /dev/kvm
+
+      - name: Create and launch acceptance emulator
+        run: |
+          set -euo pipefail
+          export ANDROID_AVD_HOME="${RUNNER_TEMP}/android-avd"
+          echo "ANDROID_AVD_HOME=${ANDROID_AVD_HOME}" >> "${GITHUB_ENV}"
+          mkdir -p "${ANDROID_AVD_HOME}"
+          echo no | "${ANDROID_HOME}/cmdline-tools/latest/bin/avdmanager" create avd --force \
+            --name foundry-acceptance \
+            --package "system-images;android-36;default;x86_64"
+          nohup "${ANDROID_HOME}/emulator/emulator" \
+            -avd foundry-acceptance \
+            -no-window \
+            -no-audio \
+            -no-boot-anim \
+            -no-snapshot \
+            -wipe-data \
+            -gpu swiftshader_indirect \
+            > "${RUNNER_TEMP}/foundry-emulator.log" 2>&1 &
+
+      - name: Wait for observable emulator boot
+        run: |
+          set -euo pipefail
+          "${ANDROID_HOME}/platform-tools/adb" start-server
+          attempt=1
+          while test "${attempt}" -le 180; do
+            if test "$("${ANDROID_HOME}/platform-tools/adb" -s emulator-5554 shell \
+              getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1"; then
+              "${ANDROID_HOME}/platform-tools/adb" -s emulator-5554 devices -l
+              exit 0
+            fi
+            sleep 2
+            attempt=$((attempt + 1))
+          done
+          "${ANDROID_HOME}/platform-tools/adb" devices -l
+          exit 1
+
+      - name: Run source-template device acceptance
+        run: |
+          set -euo pipefail
+          python3 platform/android/android_device_acceptance.py source-template \
+            --source-template .test_scratch/android-runtime-assembled/android_source.zip \
+            --work-dir "${RUNNER_TEMP}/android-device-acceptance-work" \
+            --evidence-dir "${RUNNER_TEMP}/android-device-acceptance-evidence" \
+            --adb "${ANDROID_HOME}/platform-tools/adb" \
+            --apkanalyzer "${ANDROID_HOME}/cmdline-tools/latest/bin/apkanalyzer" \
+            --process-timeout 120 \
+            --serial emulator-5554
+
+      - name: Upload Android device acceptance evidence
+        if: always()
+        uses: ./.github/actions/upload-artifact
+        with:
+          name: android-device-acceptance-evidence
+          path: |
+            ${{ runner.temp }}/android-device-acceptance-evidence
+            ${{ runner.temp }}/foundry-emulator.log

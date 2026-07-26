@@ -1,0 +1,794 @@
+#!/usr/bin/env python3
+"""Run Foundry Android source-template and exported-APK acceptance checks."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import importlib.util
+import json
+import os
+import re
+import shutil
+import stat
+import subprocess
+import sys
+import time
+import zipfile
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
+from pathlib import Path
+from types import ModuleType
+from typing import Any, Protocol
+from xml.etree import ElementTree
+
+
+class AcceptanceError(Exception):
+    """Android device acceptance failed."""
+
+
+APPLICATION_ID_PATTERN = re.compile(r"^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$")
+DEFAULT_APPLICATION_ID = "games.cafecito.foundry.game"
+CUSTOM_APPLICATION_ID = "dev.example.foundryacceptance"
+SUPPORTED_ABIS = frozenset({"arm64-v8a", "armeabi-v7a", "x86", "x86_64"})
+INSTRUMENTATION_TEST = "games.cafecito.foundry.game.FoundryAppTest#runtimeBootsWithCanonicalPluginProtocol"
+INSTRUMENTATION_CLASS, INSTRUMENTATION_METHOD = INSTRUMENTATION_TEST.split("#", 1)
+STANDARD_APK = Path("build/outputs/apk/standard/debug/android_debug.apk")
+JUNIT_REPORT_ROOT = Path("build/outputs/androidTest-results/connected")
+RUNTIME_FAILURE_PATTERNS = (
+    "UnsatisfiedLinkError",
+    "NoClassDefFoundError",
+    "ClassNotFoundException",
+    "FATAL EXCEPTION",
+    'couldn\'t find "libfoundry_android.so"',
+)
+SOURCE_TEMPLATE_TOOL_PATH = Path(__file__).resolve().with_name("android_source_template.py")
+_source_template_tool: ModuleType | None = None
+
+
+@dataclass(frozen=True)
+class CommandResult:
+    """Captured subprocess output."""
+
+    argv: tuple[str, ...]
+    returncode: int
+    stdout: str
+    stderr: str
+
+
+class Runner(Protocol):
+    """Command execution boundary used by real runs and deterministic tests."""
+
+    def run(
+        self,
+        argv: Sequence[str],
+        *,
+        cwd: Path | None,
+        timeout: float,
+        description: str,
+        check: bool = True,
+        env: dict[str, str] | None = None,
+    ) -> CommandResult: ...
+
+
+class SubprocessRunner:
+    """Run commands without a shell and retain one log per invocation."""
+
+    def __init__(self, evidence_dir: Path) -> None:
+        self.evidence_dir = evidence_dir
+        self.command_dir = evidence_dir / "commands"
+        self.command_dir.mkdir(parents=True, exist_ok=True)
+        self.command_index = 0
+
+    def _write_log(
+        self,
+        description: str,
+        result: CommandResult,
+    ) -> None:
+        self.command_index += 1
+        slug = re.sub(r"[^a-z0-9]+", "-", description.lower()).strip("-") or "command"
+        path = self.command_dir / f"{self.command_index:03d}-{slug}.log"
+        path.write_text(
+            (
+                f"argv: {json.dumps(list(result.argv))}\n"
+                f"returncode: {result.returncode}\n"
+                "\nstdout:\n"
+                f"{result.stdout}"
+                "\nstderr:\n"
+                f"{result.stderr}"
+            ),
+            encoding="utf-8",
+        )
+
+    def run(
+        self,
+        argv: Sequence[str],
+        *,
+        cwd: Path | None,
+        timeout: float,
+        description: str,
+        check: bool = True,
+        env: dict[str, str] | None = None,
+    ) -> CommandResult:
+        arguments = tuple(str(argument) for argument in argv)
+        command_env = None
+        if env is not None:
+            command_env = os.environ.copy()
+            command_env.update(env)
+        try:
+            completed = subprocess.run(
+                list(arguments),
+                cwd=cwd,
+                env=command_env,
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=timeout,
+            )
+            result = CommandResult(
+                argv=arguments,
+                returncode=completed.returncode,
+                stdout=completed.stdout,
+                stderr=completed.stderr,
+            )
+        except subprocess.TimeoutExpired as error:
+            stdout = error.stdout.decode(errors="replace") if isinstance(error.stdout, bytes) else (error.stdout or "")
+            stderr = error.stderr.decode(errors="replace") if isinstance(error.stderr, bytes) else (error.stderr or "")
+            result = CommandResult(arguments, 124, stdout, stderr)
+            self._write_log(description, result)
+            raise AcceptanceError(f"{description} timed out after {timeout:g} seconds") from error
+        except OSError as error:
+            result = CommandResult(arguments, 127, "", str(error))
+            self._write_log(description, result)
+            raise AcceptanceError(f"{description} could not start: {error}") from error
+
+        self._write_log(description, result)
+        if check and result.returncode != 0:
+            raise AcceptanceError(
+                f"{description} failed with exit {result.returncode}:\n{result.stdout}{result.stderr}"
+            )
+        return result
+
+
+def validate_application_id(value: str) -> str:
+    """Return one valid lowercase reverse-DNS Android application ID."""
+    if APPLICATION_ID_PATTERN.fullmatch(value) is None:
+        raise AcceptanceError(f"invalid Android application ID: {value!r}")
+    return value
+
+
+def select_device(output: str, requested_serial: str | None) -> str:
+    """Resolve exactly one ready adb device, or one explicitly requested device."""
+    ready = [
+        fields[0] for line in output.splitlines()[1:] if len(fields := line.split()) >= 2 and fields[1] == "device"
+    ]
+    if requested_serial is not None:
+        if requested_serial not in ready:
+            raise AcceptanceError(f"requested Android device is not ready: {requested_serial}")
+        return requested_serial
+    if len(ready) != 1:
+        raise AcceptanceError(f"expected exactly one ready Android device, found {len(ready)}")
+    return ready[0]
+
+
+def runtime_log_failures(contents: str) -> list[str]:
+    """Return fatal runtime signatures present in one captured Android log."""
+    return [signature for signature in RUNTIME_FAILURE_PATTERNS if signature in contents]
+
+
+def _load_source_template_tool() -> ModuleType:
+    global _source_template_tool
+    if _source_template_tool is not None:
+        return _source_template_tool
+    spec = importlib.util.spec_from_file_location(
+        "_foundry_android_source_template",
+        SOURCE_TEMPLATE_TOOL_PATH,
+    )
+    if spec is None or spec.loader is None:
+        raise AcceptanceError(f"unable to load source-template inspector: {SOURCE_TEMPLATE_TOOL_PATH}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    _source_template_tool = module
+    return module
+
+
+def stage_scenario(source_template: Path, destination: Path) -> Path:
+    """Validate and extract one source template, then add the smoke assets."""
+    destination = destination.absolute()
+    if destination.exists() or destination.is_symlink():
+        raise AcceptanceError(f"Android acceptance scenario already exists: {destination}")
+
+    inspector = _load_source_template_tool()
+    try:
+        names = inspector.inspect_source_template(source_template)
+    except RuntimeError as error:
+        raise AcceptanceError(f"invalid Android source template: {error}") from error
+
+    try:
+        destination.mkdir(parents=True)
+        with zipfile.ZipFile(source_template) as archive:
+            for name in names:
+                target = destination / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with archive.open(name) as source, target.open("wb") as output:
+                    shutil.copyfileobj(source, output)
+
+        instrumented_assets = destination / "src/instrumented/assets"
+        if not instrumented_assets.is_dir():
+            raise AcceptanceError(
+                "Android source template is missing instrumented smoke assets: src/instrumented/assets"
+            )
+        shutil.copytree(
+            instrumented_assets,
+            destination / "src/main/assets",
+            dirs_exist_ok=True,
+        )
+        gradlew = destination / "gradlew"
+        gradlew.chmod(gradlew.stat().st_mode | stat.S_IXUSR)
+    except AcceptanceError:
+        raise
+    except (OSError, zipfile.BadZipFile) as error:
+        raise AcceptanceError(f"unable to stage Android acceptance scenario: {error}") from error
+    return destination
+
+
+def gradle_acceptance_command(
+    gradlew: Path,
+    abi: str,
+    application_id: str,
+) -> list[str]:
+    """Build the standard APK and run the focused instrumented smoke."""
+    if abi not in SUPPORTED_ABIS:
+        raise AcceptanceError(f"unsupported Android device ABI: {abi!r}")
+    validate_application_id(application_id)
+    command = [
+        str(gradlew),
+        "--no-daemon",
+        "assembleStandardDebug",
+        "connectedInstrumentedDebugAndroidTest",
+        f"-Pexport_enabled_abis={abi}|",
+        "-Pperform_signing=true",
+        "-Pperform_zipalign=true",
+        f"-Pandroid.testInstrumentationRunnerArguments.class={INSTRUMENTATION_TEST}",
+    ]
+    if application_id != DEFAULT_APPLICATION_ID:
+        command.append(f"-Pexport_package_name={application_id}")
+    return command
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _create_owned_directory(path: Path, description: str) -> Path:
+    path = path.absolute()
+    if path.exists() or path.is_symlink():
+        raise AcceptanceError(f"{description} already exists: {path}")
+    try:
+        path.mkdir(parents=True)
+    except OSError as error:
+        raise AcceptanceError(f"unable to create {description} {path}: {error}") from error
+    return path
+
+
+def _write_json_atomic(path: Path, value: dict[str, Any]) -> None:
+    temporary = path.with_name(f".{path.name}.tmp")
+    try:
+        temporary.write_text(
+            json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n",
+            encoding="utf-8",
+        )
+        os.replace(temporary, path)
+    except OSError as error:
+        raise AcceptanceError(f"unable to write Android acceptance report {path}: {error}") from error
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _adb(adb: Path, serial: str, *arguments: str) -> list[str]:
+    return [str(adb), "-s", serial, *arguments]
+
+
+def _wait_for_probe(
+    probe: Callable[[], CommandResult],
+    ready: Callable[[CommandResult], bool],
+    *,
+    timeout: float,
+    poll_interval: float,
+    description: str,
+    sleeper: Callable[[float], None] = time.sleep,
+    monotonic: Callable[[], float] = time.monotonic,
+) -> CommandResult:
+    deadline = monotonic() + max(timeout, 0.0)
+    last = CommandResult((), 1, "", "")
+    while True:
+        last = probe()
+        if ready(last):
+            return last
+        if monotonic() >= deadline:
+            raise AcceptanceError(
+                f"{description} timed out after {timeout:g} seconds; "
+                f"last output: {(last.stdout + last.stderr).strip()!r}"
+            )
+        sleeper(max(poll_interval, 0.0))
+
+
+def _device_context(
+    adb: Path,
+    requested_serial: str | None,
+    runner: Runner,
+    *,
+    boot_timeout: float,
+    poll_interval: float,
+) -> dict[str, str]:
+    def device_ready(result: CommandResult) -> bool:
+        if result.returncode != 0:
+            return False
+        try:
+            select_device(result.stdout, requested_serial)
+        except AcceptanceError:
+            return False
+        return True
+
+    devices = _wait_for_probe(
+        lambda: runner.run(
+            [str(adb), "devices", "-l"],
+            cwd=None,
+            timeout=30,
+            description="listing Android devices",
+            check=False,
+        ),
+        device_ready,
+        timeout=boot_timeout,
+        poll_interval=poll_interval,
+        description=(
+            f"waiting for requested Android device {requested_serial} to register"
+            if requested_serial is not None
+            else "waiting for exactly one Android device to register"
+        ),
+    )
+    serial = select_device(devices.stdout, requested_serial)
+    _wait_for_probe(
+        lambda: runner.run(
+            _adb(adb, serial, "shell", "getprop", "sys.boot_completed"),
+            cwd=None,
+            timeout=15,
+            description="reading Android boot status",
+            check=False,
+        ),
+        lambda result: result.returncode == 0 and result.stdout.strip() == "1",
+        timeout=boot_timeout,
+        poll_interval=poll_interval,
+        description=f"waiting for Android device {serial} to finish booting",
+    )
+    abi_result = runner.run(
+        _adb(adb, serial, "shell", "getprop", "ro.product.cpu.abi"),
+        cwd=None,
+        timeout=15,
+        description="reading Android device ABI",
+    )
+    abi = abi_result.stdout.strip()
+    if abi not in SUPPORTED_ABIS:
+        raise AcceptanceError(f"connected Android device reports unsupported ABI: {abi!r}")
+    return {"serial": serial, "abi": abi}
+
+
+def _require_instrumentation_result(scenario: Path) -> Path:
+    report_root = scenario / JUNIT_REPORT_ROOT
+    reports = sorted(report_root.rglob("*.xml")) if report_root.is_dir() else []
+    matches: list[tuple[Path, ElementTree.Element]] = []
+    for report in reports:
+        try:
+            root = ElementTree.parse(report).getroot()
+        except (OSError, ElementTree.ParseError) as error:
+            raise AcceptanceError(f"unable to parse Android instrumentation report {report}: {error}") from error
+        for test_case in root.iter():
+            if test_case.tag.rsplit("}", 1)[-1] != "testcase":
+                continue
+            if (
+                test_case.attrib.get("classname") == INSTRUMENTATION_CLASS
+                and test_case.attrib.get("name") == INSTRUMENTATION_METHOD
+            ):
+                matches.append((report, test_case))
+    if len(matches) != 1:
+        raise AcceptanceError(
+            f"Android instrumentation did not report exactly one {INSTRUMENTATION_TEST} test case; found {len(matches)}"
+        )
+    report, test_case = matches[0]
+    outcomes = {child.tag.rsplit("}", 1)[-1] for child in test_case}
+    failed = outcomes.intersection({"error", "failure", "skipped"})
+    if failed:
+        raise AcceptanceError(f"Android instrumentation {INSTRUMENTATION_TEST} did not pass: {sorted(failed)}")
+    return report
+
+
+def _cleanup_packages(
+    adb: Path,
+    serial: str,
+    application_id: str,
+    runner: Runner,
+) -> None:
+    packages = (
+        application_id,
+        f"{application_id}.instrumented",
+        f"{application_id}.instrumented.test",
+    )
+    for package in packages:
+        runner.run(
+            _adb(adb, serial, "uninstall", package),
+            cwd=None,
+            timeout=60,
+            description=f"uninstalling Android package {package}",
+            check=False,
+        )
+
+
+def _capture_logcat(
+    adb: Path,
+    serial: str,
+    pid: str | None,
+    runner: Runner,
+) -> tuple[str, str | None]:
+    full = runner.run(
+        _adb(adb, serial, "logcat", "-d", "-v", "threadtime"),
+        cwd=None,
+        timeout=60,
+        description="capturing full Android logcat",
+        check=False,
+    )
+    full_contents = full.stdout + full.stderr
+    if pid is None:
+        return full_contents, None
+    filtered = runner.run(
+        _adb(adb, serial, "logcat", f"--pid={pid}", "-d", "-v", "threadtime"),
+        cwd=None,
+        timeout=60,
+        description=f"capturing Android logcat for process {pid}",
+        check=False,
+    )
+    return full_contents, filtered.stdout + filtered.stderr
+
+
+def _wait_for_process(
+    adb: Path,
+    serial: str,
+    application_id: str,
+    runner: Runner,
+    *,
+    timeout: float,
+    poll_interval: float,
+) -> str:
+    result = _wait_for_probe(
+        lambda: runner.run(
+            _adb(adb, serial, "shell", "pidof", application_id),
+            cwd=None,
+            timeout=15,
+            description=f"reading process ID for {application_id}",
+            check=False,
+        ),
+        lambda probe: probe.returncode == 0 and bool(probe.stdout.strip()),
+        timeout=timeout,
+        poll_interval=poll_interval,
+        description=f"waiting for Android process {application_id}",
+    )
+    pids = result.stdout.split()
+    if len(pids) != 1 or not pids[0].isdigit():
+        raise AcceptanceError(f"Android process {application_id} reported invalid PID output: {result.stdout!r}")
+    return pids[0]
+
+
+def _verify_apk_on_device(
+    *,
+    apk: Path,
+    application_id: str,
+    evidence_dir: Path,
+    adb: Path,
+    apkanalyzer: Path,
+    serial: str,
+    runner: Runner,
+    process_timeout: float,
+    poll_interval: float,
+) -> dict[str, Any]:
+    application_id = validate_application_id(application_id)
+    apk = apk.absolute()
+    if not apk.is_file():
+        raise AcceptanceError(f"Android acceptance APK does not exist: {apk}")
+
+    manifest = runner.run(
+        [str(apkanalyzer), "manifest", "application-id", str(apk)],
+        cwd=None,
+        timeout=60,
+        description=f"reading application ID from {apk.name}",
+    )
+    manifest_application_id = manifest.stdout.strip()
+    if manifest_application_id != application_id:
+        raise AcceptanceError(
+            f"Android APK application ID mismatch: expected {application_id!r}, found {manifest_application_id!r}"
+        )
+
+    runner.run(
+        _adb(adb, serial, "install", "-r", str(apk)),
+        cwd=None,
+        timeout=180,
+        description=f"installing Android package {application_id}",
+    )
+    runner.run(
+        _adb(adb, serial, "shell", "am", "force-stop", application_id),
+        cwd=None,
+        timeout=30,
+        description=f"stopping Android package {application_id}",
+        check=False,
+    )
+    runner.run(
+        _adb(adb, serial, "logcat", "-c"),
+        cwd=None,
+        timeout=30,
+        description="clearing Android logcat",
+        check=False,
+    )
+    component = f"{application_id}/games.cafecito.foundry.game.FoundryAppLauncher"
+    start = runner.run(
+        _adb(adb, serial, "shell", "am", "start", "-W", "-n", component),
+        cwd=None,
+        timeout=60,
+        description=f"starting Android package {application_id}",
+    )
+    start_output = start.stdout + start.stderr
+    if re.search(r"(?m)^Status:\s*ok\s*$", start_output) is None:
+        raise AcceptanceError(f"Android package {application_id} did not start successfully:\n{start_output}")
+
+    try:
+        pid = _wait_for_process(
+            adb,
+            serial,
+            application_id,
+            runner,
+            timeout=process_timeout,
+            poll_interval=poll_interval,
+        )
+    except AcceptanceError as error:
+        full_logcat, _ = _capture_logcat(adb, serial, None, runner)
+        failures = runtime_log_failures(full_logcat)
+        suffix = f"; runtime failures: {failures}" if failures else ""
+        raise AcceptanceError(f"{error}{suffix}") from error
+
+    full_logcat, process_logcat = _capture_logcat(adb, serial, pid, runner)
+    if process_logcat is None:
+        raise AcceptanceError(f"Android package {application_id} did not produce process-filtered logcat")
+    (evidence_dir / f"{application_id}-logcat.txt").write_text(full_logcat, encoding="utf-8")
+    (evidence_dir / f"{application_id}-process-logcat.txt").write_text(process_logcat, encoding="utf-8")
+    failures = runtime_log_failures(process_logcat)
+    if failures:
+        raise AcceptanceError(f"Android package {application_id} logged forbidden runtime failures: {failures}")
+    return {
+        "apk": str(apk),
+        "apk_sha256": _sha256(apk),
+        "application_id": application_id,
+        "manifest_application_id": manifest_application_id,
+        "pid": pid,
+        "runtime_log_failures": failures,
+        "start_status": "ok",
+    }
+
+
+def run_source_template_acceptance(
+    *,
+    source_template: Path,
+    work_dir: Path,
+    evidence_dir: Path,
+    adb: Path,
+    apkanalyzer: Path,
+    requested_serial: str | None,
+    runner: Runner | None = None,
+    boot_timeout: float = 300,
+    process_timeout: float = 30,
+    poll_interval: float = 2,
+) -> dict[str, Any]:
+    """Build, instrument, install, and start canonical and custom-ID APKs."""
+    work_dir = _create_owned_directory(work_dir, "Android acceptance work directory")
+    evidence_dir = _create_owned_directory(evidence_dir, "Android acceptance evidence directory")
+    command_runner: Runner = runner if runner is not None else SubprocessRunner(evidence_dir)
+    source_template = source_template.absolute()
+    report: dict[str, Any] = {
+        "mode": "source-template",
+        "schema_version": 1,
+        "source_template": str(source_template),
+        "source_template_sha256": _sha256(source_template),
+    }
+    try:
+        device = _device_context(
+            adb,
+            requested_serial,
+            command_runner,
+            boot_timeout=boot_timeout,
+            poll_interval=poll_interval,
+        )
+        report["device"] = device
+        scenarios: list[dict[str, Any]] = []
+        for name, application_id in (
+            ("canonical", DEFAULT_APPLICATION_ID),
+            ("custom", CUSTOM_APPLICATION_ID),
+        ):
+            scenario = stage_scenario(source_template, work_dir / name)
+            _cleanup_packages(adb, device["serial"], application_id, command_runner)
+            try:
+                command_runner.run(
+                    gradle_acceptance_command(
+                        scenario / "gradlew",
+                        device["abi"],
+                        application_id,
+                    ),
+                    cwd=scenario,
+                    timeout=1800,
+                    description=f"running {name} Android Gradle acceptance",
+                    env={"ANDROID_SERIAL": device["serial"]},
+                )
+                junit_report = _require_instrumentation_result(scenario)
+                scenario_report = _verify_apk_on_device(
+                    apk=scenario / STANDARD_APK,
+                    application_id=application_id,
+                    evidence_dir=evidence_dir,
+                    adb=adb,
+                    apkanalyzer=apkanalyzer,
+                    serial=device["serial"],
+                    runner=command_runner,
+                    process_timeout=process_timeout,
+                    poll_interval=poll_interval,
+                )
+                scenario_report.update(
+                    {
+                        "instrumentation_passed": True,
+                        "instrumentation_report": str(junit_report),
+                        "instrumentation_test": INSTRUMENTATION_TEST,
+                        "scenario": name,
+                    }
+                )
+                scenarios.append(scenario_report)
+            finally:
+                _cleanup_packages(adb, device["serial"], application_id, command_runner)
+        report["scenarios"] = scenarios
+        _write_json_atomic(evidence_dir / "report.json", report)
+        return report
+    except AcceptanceError as error:
+        failure = {**report, "error": str(error), "status": "failed"}
+        _write_json_atomic(evidence_dir / "failure.json", failure)
+        raise
+
+
+def run_apk_acceptance(
+    *,
+    apks: Sequence[tuple[str, Path]],
+    evidence_dir: Path,
+    adb: Path,
+    apkanalyzer: Path,
+    requested_serial: str | None,
+    runner: Runner | None = None,
+    boot_timeout: float = 300,
+    process_timeout: float = 30,
+    poll_interval: float = 2,
+) -> dict[str, Any]:
+    """Install and start already-exported APKs using the same runtime checks."""
+    evidence_dir = _create_owned_directory(evidence_dir, "Android acceptance evidence directory")
+    command_runner: Runner = runner if runner is not None else SubprocessRunner(evidence_dir)
+    report: dict[str, Any] = {"mode": "verify-apks", "schema_version": 1}
+    try:
+        device = _device_context(
+            adb,
+            requested_serial,
+            command_runner,
+            boot_timeout=boot_timeout,
+            poll_interval=poll_interval,
+        )
+        report["device"] = device
+        scenarios: list[dict[str, Any]] = []
+        for application_id, apk in apks:
+            application_id = validate_application_id(application_id)
+            _cleanup_packages(adb, device["serial"], application_id, command_runner)
+            try:
+                scenarios.append(
+                    _verify_apk_on_device(
+                        apk=apk,
+                        application_id=application_id,
+                        evidence_dir=evidence_dir,
+                        adb=adb,
+                        apkanalyzer=apkanalyzer,
+                        serial=device["serial"],
+                        runner=command_runner,
+                        process_timeout=process_timeout,
+                        poll_interval=poll_interval,
+                    )
+                )
+            finally:
+                _cleanup_packages(adb, device["serial"], application_id, command_runner)
+        report["scenarios"] = scenarios
+        _write_json_atomic(evidence_dir / "report.json", report)
+        return report
+    except AcceptanceError as error:
+        failure = {**report, "error": str(error), "status": "failed"}
+        _write_json_atomic(evidence_dir / "failure.json", failure)
+        raise
+
+
+def _parse_apk(value: str) -> tuple[str, Path]:
+    application_id, separator, path = value.partition("=")
+    if not separator or not path:
+        raise argparse.ArgumentTypeError("--apk must use APPLICATION_ID=PATH")
+    try:
+        validate_application_id(application_id)
+    except AcceptanceError as error:
+        raise argparse.ArgumentTypeError(str(error)) from error
+    return application_id, Path(path)
+
+
+def _add_device_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--evidence-dir", required=True, type=Path)
+    parser.add_argument("--adb", required=True, type=Path)
+    parser.add_argument("--apkanalyzer", required=True, type=Path)
+    parser.add_argument("--serial")
+    parser.add_argument("--boot-timeout", type=float, default=300)
+    parser.add_argument("--process-timeout", type=float, default=30)
+    parser.add_argument("--poll-interval", type=float, default=2)
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    commands = parser.add_subparsers(dest="command", required=True)
+    source = commands.add_parser(
+        "source-template",
+        help="build, instrument, install, and start the generated source template",
+    )
+    source.add_argument("--source-template", required=True, type=Path)
+    source.add_argument("--work-dir", required=True, type=Path)
+    _add_device_arguments(source)
+    apks = commands.add_parser(
+        "verify-apks",
+        help="install and start already-exported APKs",
+    )
+    apks.add_argument("--apk", required=True, action="append", type=_parse_apk)
+    _add_device_arguments(apks)
+    return parser
+
+
+def _require_executable(path: Path, description: str) -> None:
+    if not path.is_file() or not os.access(path, os.X_OK):
+        raise AcceptanceError(f"{description} is not executable: {path}")
+
+
+def main() -> int:
+    arguments = _parser().parse_args()
+    try:
+        _require_executable(arguments.adb, "adb")
+        _require_executable(arguments.apkanalyzer, "apkanalyzer")
+        common = {
+            "evidence_dir": arguments.evidence_dir,
+            "adb": arguments.adb,
+            "apkanalyzer": arguments.apkanalyzer,
+            "requested_serial": arguments.serial,
+            "boot_timeout": arguments.boot_timeout,
+            "process_timeout": arguments.process_timeout,
+            "poll_interval": arguments.poll_interval,
+        }
+        if arguments.command == "source-template":
+            report = run_source_template_acceptance(
+                source_template=arguments.source_template,
+                work_dir=arguments.work_dir,
+                **common,
+            )
+        else:
+            report = run_apk_acceptance(apks=arguments.apk, **common)
+    except AcceptanceError as error:
+        print(f"Android device acceptance failed: {error}", file=sys.stderr)
+        return 2
+    print(json.dumps(report, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

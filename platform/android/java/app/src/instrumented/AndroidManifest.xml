@@ -4,6 +4,12 @@
         <meta-data
             android:name="games.cafecito.foundry.plugin.v1.FoundryAppInstrumentedTestPlugin"
             android:value="games.cafecito.foundry.game.test.FoundryAppInstrumentedTestPlugin"/>
+        <meta-data
+            android:name="org.godotengine.plugin.v1.Legacy"
+            android:value="games.cafecito.foundry.game.test.FoundryAppInstrumentedTestPlugin"/>
+        <meta-data
+            android:name="org.godotengine.plugin.v2.Legacy"
+            android:value="games.cafecito.foundry.game.test.FoundryAppInstrumentedTestPlugin"/>
     </application>
 
 </manifest>

@@ -253,3 +253,26 @@ repos:
             platform/android/foundry_android_runtime\.json|
             tests/python_build/test_android_runtime_surface\.py
           )$
+
+      - id: foundry-android-device-acceptance
+        name: Foundry Android device acceptance
+        language: python
+        entry: python -m unittest
+        args:
+          - tests.python_build.test_android_gradle_runtime_contract
+          - tests.python_build.test_android_device_acceptance
+        pass_filenames: false
+        files: |
+          (?x)^(
+            \.pre-commit-config\.yaml|
+            \.github/scripts/test_android_runtime_workflows\.py|
+            \.github/workflows/android_builds\.yml|
+            misc/scripts/test_android_runtime_identifiers\.py|
+            platform/android/ANDROID_RUNTIME\.md|
+            platform/android/android_device_acceptance\.py|
+            platform/android/java/app/src/androidTestInstrumented/.*/FoundryAppTest\.kt|
+            platform/android/java/app/src/instrumented/AndroidManifest\.xml|
+            platform/android/java/app/src/instrumented/assets/.*|
+            tests/python_build/test_android_device_acceptance\.py|
+            tests/python_build/test_android_gradle_runtime_contract\.py
+          )$

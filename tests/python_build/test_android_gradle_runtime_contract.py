@@ -20,6 +20,7 @@ WRAPPER = JAVA_ROOT / "gradle/wrapper/gradle-wrapper.properties"
 SOURCE_TEMPLATE_TOOL = REPO_ROOT / "platform/android/android_source_template.py"
 ANDROID_README = REPO_ROOT / "platform/android/README.md"
 ANDROID_RUNTIME_DOC = REPO_ROOT / "platform/android/ANDROID_RUNTIME.md"
+PRE_COMMIT = REPO_ROOT / ".pre-commit-config.yaml"
 ACTIVE_GRADLE_FILES = (
     SETTINGS,
     ROOT_BUILD,
@@ -315,9 +316,43 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
             "#1224",
             "device or emulator",
             "android_source_template.py inspect",
+            "android_device_acceptance.py source-template",
+            "android_device_acceptance.py verify-apks",
+            "games.cafecito.foundry.game",
+            "dev.example.foundryacceptance",
+            "games.cafecito.foundry.plugin.v1.",
+            "tools/verify_jni_contract.py",
+            "compiled Java/Kotlin native declarations",
+            "every native payload",
+            "Acceptance evidence map",
+            "JNI declarations/exports",
+            "AAR identity/content",
+            "APK identity/content",
+            "Source ZIP",
+            "Device runtime",
+            "Editor exporter",
+            "Release alignment checklist",
         ):
             self.assertIn(fragment, runtime_doc)
         self.assertIn('"revision":', pin)
+
+    def test_pre_commit_routes_the_android_device_acceptance_surface(self) -> None:
+        pre_commit = read(PRE_COMMIT)
+
+        self.assertIn("- id: foundry-android-device-acceptance", pre_commit)
+        self.assertIn("tests.python_build.test_android_device_acceptance", pre_commit)
+        self.assertIn("tests.python_build.test_android_gradle_runtime_contract", pre_commit)
+        for fragment in (
+            "android_device_acceptance",
+            "test_android_device_acceptance",
+            "FoundryAppTest",
+            "AndroidManifest",
+            "platform/android/java/app/src/instrumented/assets/",
+            "ANDROID_RUNTIME",
+            "android_builds",
+            "test_android_runtime_workflows",
+        ):
+            self.assertIn(fragment, pre_commit)
 
 
 if __name__ == "__main__":
