@@ -272,6 +272,10 @@ Use `effective_paths` for both the manifest and main file loop so analysis and o
 Do not resolve imported destinations into new manifest identities: later Resource loading follows
 the source path's remap.
 
+Cache the parsed import configs/decisions at sealing and reuse them in the main loop. Snapshot each
+plugin's pending `ExtraFile` count before preparation; files appended by preparation itself are
+post-seal and therefore go through late validation.
+
 - [ ] **Step 5: Validate every post-seal generated file**
 
 Factor one local helper that calls every plugin's `_validate_late_export_file(path, error)` before a

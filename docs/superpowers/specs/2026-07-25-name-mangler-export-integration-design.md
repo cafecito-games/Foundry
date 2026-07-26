@@ -103,6 +103,13 @@ as generated paths. The Foundry integration rejects a generated `.fs`, `.fsc`, `
 `.scn`, `.tres`, or `.res` because its in-memory bytes are not an authoritative on-disk root that
 the analysis APIs can compile or load. Other generated file types do not affect script-name safety.
 
+The platform snapshots each plugin's pending-file count before invoking preparation. Only those
+exact entries are pre-seal files. An entry added from inside a preparation hook is post-seal and
+must pass late-file validation; it cannot escape merely because it shares the first output drain
+with the snapshotted entries. Import sidecars are parsed once while sealing and the cached decision
+is reused for output, so a plugin cannot observe one imported-source set during preparation and a
+different set during emission.
+
 Once preparation succeeds, the manifest is sealed. Any later generated path with one of those
 sensitive extensions is rejected through the late-file hook. This covers additions from later
 per-file plugins, resource/scene customization completion, and other final extra-file drains. A

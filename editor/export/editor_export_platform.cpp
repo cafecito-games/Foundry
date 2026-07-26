@@ -1224,14 +1224,7 @@ Error EditorExportPlatform::_export_project_files(const Ref<EditorExportPreset> 
 }
 
 Error EditorExportPlatform::export_project_files(const Ref<EditorExportPreset> &p_preset, bool p_debug, EditorExportSaveFunction p_save_func, EditorExportRemoveFunction p_remove_func, void *p_udata, EditorExportSaveSharedObject p_so_func) {
-	// Export plugin callbacks return void, so an error message added through `add_message()` is
-	// the only way a plugin can veto the export (e.g. a script that must not ship as source
-	// failed to compile). Snapshot the message count so any error reported below fails the export.
-	const int initial_message_count = get_message_count();
-
-	//figure out paths of files that will be exported
 	HashSet<String> paths;
-	Vector<String> path_remaps;
 
 	if (p_preset->get_export_filter() == EditorExportPreset::EXPORT_ALL_RESOURCES) {
 		//find stuff
@@ -1276,6 +1269,50 @@ Error EditorExportPlatform::export_project_files(const Ref<EditorExportPreset> &
 
 	// Ignore import files, since these are automatically added to the jar later with the resources
 	_edit_filter_list(paths, String("*.import"), true);
+
+	Vector<Ref<EditorExportPlugin>> export_plugins;
+	EditorExport *editor_export = EditorExport::get_singleton();
+	if (editor_export != nullptr) {
+		export_plugins = editor_export->get_export_plugins();
+	}
+
+	return _export_project_files_with_manifest(p_preset, p_debug, paths, export_plugins, p_save_func, p_remove_func, p_udata, p_so_func);
+}
+
+Error EditorExportPlatform::_export_project_files_with_manifest(const Ref<EditorExportPreset> &p_preset, bool p_debug, const HashSet<String> &p_paths, const Vector<Ref<EditorExportPlugin>> &p_export_plugins, EditorExportSaveFunction p_save_func, EditorExportRemoveFunction p_remove_func, void *p_udata, EditorExportSaveSharedObject p_so_func) {
+	// Export plugin callbacks return void, so an error message added through `add_message()` is
+	// the only way a plugin can veto the export (e.g. a script that must not ship as source
+	// failed to compile). Snapshot the message count so any error reported below fails the export.
+	const int initial_message_count = get_message_count();
+
+	HashSet<String> paths = p_paths;
+	Vector<String> path_remaps;
+
+	HashMap<String, Ref<ConfigFile>> import_configs;
+	Vector<String> candidate_paths;
+	for (const String &path : paths) {
+		candidate_paths.push_back(path);
+	}
+	candidate_paths.sort();
+
+	for (const String &path : candidate_paths) {
+		if (!FileAccess::exists(path + ".import")) {
+			continue;
+		}
+
+		Ref<ConfigFile> config;
+		config.instantiate();
+		Error import_err = config->load(path + ".import");
+		if (import_err != OK) {
+			add_message(EXPORT_MESSAGE_ERROR, TTR("Export file manifest"), vformat(TTR("Could not parse import metadata for \"%s\"."), path));
+			return import_err;
+		}
+
+		import_configs.insert(path, config);
+		if (String(config->get_value("remap", "importer")) == "skip") {
+			paths.erase(path);
+		}
+	}
 
 	// Get encryption filters.
 	bool enc_pck = p_preset->get_enc_pck();
@@ -1337,11 +1374,7 @@ Error EditorExportPlatform::export_project_files(const Ref<EditorExportPreset> &
 	EditorExportSaveProxy save_proxy(p_save_func, p_remove_func != nullptr);
 
 	Error err = OK;
-	Vector<Ref<EditorExportPlugin>> export_plugins;
-	EditorExport *editor_export = EditorExport::get_singleton();
-	if (editor_export != nullptr) {
-		export_plugins = editor_export->get_export_plugins();
-	}
+	Vector<Ref<EditorExportPlugin>> export_plugins = p_export_plugins;
 
 	struct SortByName {
 		bool operator()(const Ref<EditorExportPlugin> &left, const Ref<EditorExportPlugin> &right) const {
@@ -1349,7 +1382,25 @@ Error EditorExportPlatform::export_project_files(const Ref<EditorExportPreset> &
 		}
 	};
 
-	auto add_shared_objects_and_extra_files_from_export_plugins = [&]() {
+	// Always sort by name, so if for some reason plugins are re-arranged, the lifecycle stays deterministic.
+	export_plugins.sort_custom<SortByName>();
+
+	auto validate_late_export_file = [&](const String &p_path) {
+		for (int i = 0; i < export_plugins.size(); i++) {
+			String validation_error;
+			Error validation_err = export_plugins[i]->_validate_late_export_file(p_path, validation_error);
+			if (validation_err != OK) {
+				if (validation_error.is_empty()) {
+					validation_error = error_names[validation_err];
+				}
+				add_message(EXPORT_MESSAGE_ERROR, TTR("Export file manifest"), vformat(TTR("Export plugin \"%s\" rejected late generated file \"%s\": %s"), export_plugins[i]->get_name(), p_path, validation_error));
+				return validation_err;
+			}
+		}
+		return OK;
+	};
+
+	auto add_shared_objects_and_extra_files_from_export_plugins = [&](const Vector<int> *p_preparation_extra_counts = nullptr) {
 		for (int i = 0; i < export_plugins.size(); i++) {
 			if (p_so_func) {
 				for (int j = 0; j < export_plugins[i]->shared_objects.size(); j++) {
@@ -1360,6 +1411,13 @@ Error EditorExportPlatform::export_project_files(const Ref<EditorExportPreset> &
 				}
 			}
 			for (int j = 0; j < export_plugins[i]->extra_files.size(); j++) {
+				const bool was_pending_before_preparation = p_preparation_extra_counts != nullptr && j < (*p_preparation_extra_counts)[i];
+				if (!was_pending_before_preparation) {
+					err = validate_late_export_file(export_plugins[i]->extra_files[j].path);
+					if (err != OK) {
+						return err;
+					}
+				}
 				err = save_proxy.save_file(p_preset, p_udata, export_plugins[i]->extra_files[j].path, export_plugins[i]->extra_files[j].data, 0, paths.size(), enc_in_filters, enc_ex_filters, key, seed, false);
 				if (err != OK) {
 					return err;
@@ -1371,9 +1429,6 @@ Error EditorExportPlatform::export_project_files(const Ref<EditorExportPreset> &
 
 		return OK;
 	};
-
-	// Always sort by name, to so if for some reason they are re-arranged, it still works.
-	export_plugins.sort_custom<SortByName>();
 
 	HashSet<String> features = get_features(p_preset, p_debug);
 	PackedStringArray features_psa;
@@ -1405,9 +1460,61 @@ Error EditorExportPlatform::export_project_files(const Ref<EditorExportPreset> &
 		}
 	}
 
+	bool customization_finished = false;
+	auto finish_customization = [&]() {
+		if (customization_finished) {
+			return;
+		}
+		for (Ref<EditorExportPlugin> &plugin : customize_resources_plugins) {
+			plugin->_end_customize_resources();
+		}
+		for (Ref<EditorExportPlugin> &plugin : customize_scenes_plugins) {
+			plugin->_end_customize_scenes();
+		}
+		customization_finished = true;
+	};
+
+	auto clear_export_plugin_state = [&]() {
+		for (int i = 0; i < export_plugins.size(); i++) {
+			export_plugins.write[i]->_clear();
+		}
+	};
+
+	EditorExportPlugin::ExportFileManifest manifest;
+	for (const String &path : paths) {
+		manifest.source_paths.push_back(path);
+	}
+	manifest.source_paths.sort();
+
+	Vector<int> preparation_extra_counts;
+	preparation_extra_counts.resize(export_plugins.size());
+	for (int i = 0; i < export_plugins.size(); i++) {
+		preparation_extra_counts.write[i] = export_plugins[i]->extra_files.size();
+		for (int j = 0; j < preparation_extra_counts[i]; j++) {
+			manifest.generated_paths.push_back(export_plugins[i]->extra_files[j].path);
+		}
+	}
+	manifest.generated_paths.sort();
+
+	for (int i = 0; i < export_plugins.size(); i++) {
+		String preparation_error;
+		err = export_plugins[i]->_prepare_export_file_manifest(manifest, preparation_error);
+		if (err != OK) {
+			if (preparation_error.is_empty()) {
+				preparation_error = error_names[err];
+			}
+			add_message(EXPORT_MESSAGE_ERROR, TTR("Export file manifest"), vformat(TTR("Export plugin \"%s\" could not prepare the export file manifest: %s"), export_plugins[i]->get_name(), preparation_error));
+			finish_customization();
+			clear_export_plugin_state();
+			return err;
+		}
+	}
+
 	// Add any files that might've been defined during the initial steps of the export plugins.
-	err = add_shared_objects_and_extra_files_from_export_plugins();
+	err = add_shared_objects_and_extra_files_from_export_plugins(&preparation_extra_counts);
 	if (err != OK) {
+		finish_customization();
+		clear_export_plugin_state();
 		return err;
 	}
 
@@ -1452,26 +1559,15 @@ Error EditorExportPlatform::export_project_files(const Ref<EditorExportPreset> &
 	// for continue statements without accidentally skipping an increment.
 	int idx = total > 0 ? -1 : 0;
 
-	for (const String &path : paths) {
+	for (const String &path : manifest.source_paths) {
 		idx++;
 		String type = ResourceLoader::get_resource_type(path);
 
-		bool has_import_file = FileAccess::exists(path + ".import");
+		const Ref<ConfigFile> *cached_import_config = import_configs.getptr(path);
+		bool has_import_file = cached_import_config != nullptr;
 		Ref<ConfigFile> config;
 		if (has_import_file) {
-			config.instantiate();
-			err = config->load(path + ".import");
-			if (err != OK) {
-				ERR_PRINT("Could not parse: '" + path + "', not exported.");
-				continue;
-			}
-
-			String importer_type = config->get_value("remap", "importer");
-
-			if (importer_type == "skip") {
-				// Skip file.
-				continue;
-			}
+			config = *cached_import_config;
 		}
 
 		bool do_export = true;
@@ -1480,6 +1576,14 @@ Error EditorExportPlatform::export_project_files(const Ref<EditorExportPreset> &
 				export_plugins.write[i]->_export_file_script(path, type, features_psa);
 			} else {
 				export_plugins.write[i]->_export_file(path, type, features);
+			}
+			for (int j = 0; j < export_plugins[i]->extra_files.size(); j++) {
+				err = validate_late_export_file(export_plugins[i]->extra_files[j].path);
+				if (err != OK) {
+					finish_customization();
+					clear_export_plugin_state();
+					return err;
+				}
 			}
 			if (p_so_func) {
 				for (int j = 0; j < export_plugins[i]->shared_objects.size(); j++) {
@@ -1679,19 +1783,13 @@ Error EditorExportPlatform::export_project_files(const Ref<EditorExportPreset> &
 		} else {
 			ERR_PRINT("Error opening export file cache: " + fcache);
 		}
-
-		for (Ref<EditorExportPlugin> &plugin : customize_resources_plugins) {
-			plugin->_end_customize_resources();
-		}
-
-		for (Ref<EditorExportPlugin> &plugin : customize_scenes_plugins) {
-			plugin->_end_customize_scenes();
-		}
 	}
+	finish_customization();
 
 	// Add any files that might've been defined during the final steps of the export plugins.
-	err = add_shared_objects_and_extra_files_from_export_plugins();
+	err = add_shared_objects_and_extra_files_from_export_plugins(nullptr);
 	if (err != OK) {
+		clear_export_plugin_state();
 		return err;
 	}
 

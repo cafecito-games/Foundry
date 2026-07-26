@@ -172,6 +172,7 @@ protected:
 
 	HashSet<String> get_features(const Ref<EditorExportPreset> &p_preset, bool p_debug) const;
 	static Error _collect_autoload_export_paths(const Ref<EditorExportPreset> &p_preset, Vector<String> &r_paths);
+	Error _export_project_files_with_manifest(const Ref<EditorExportPreset> &p_preset, bool p_debug, const HashSet<String> &p_paths, const Vector<Ref<EditorExportPlugin>> &p_export_plugins, EditorExportSaveFunction p_save_func, EditorExportRemoveFunction p_remove_func, void *p_udata, EditorExportSaveSharedObject p_so_func = nullptr);
 
 	Dictionary _find_export_template(const String &p_template_file_name) const {
 		Dictionary ret;
