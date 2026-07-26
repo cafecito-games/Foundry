@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+
+	<files-path
+		name="filesRoot"
+		path="/" />
+
+	<!--
+		Required by FoundryIO.openURI(String) for arbitrary absolute and file://
+		public paths. The provider is non-exported and grants read access only to
+		the exact URI selected by the runtime.
+	-->
+	<external-path
+		name="public"
+		path="." />
+
+	<external-files-path
+		name="app"
+		path="." />
+</paths>

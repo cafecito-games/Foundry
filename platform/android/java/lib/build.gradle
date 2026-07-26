@@ -1,0 +1,173 @@
+plugins {
+    id 'com.android.library'
+    id 'org.jetbrains.kotlin.android'
+}
+
+dependencies {
+    implementation "androidx.core:core:$versions.coreVersion"
+    implementation "androidx.fragment:fragment:$versions.fragmentVersion"
+    implementation "androidx.documentfile:documentfile:$versions.documentfileVersion"
+
+    testImplementation "junit:junit:4.13.2"
+
+    androidTestImplementation "androidx.test.ext:junit:$versions.junitVersion"
+    androidTestImplementation "androidx.test:runner:$versions.testRunnerVersion"
+}
+
+def pathToRootDir = "../../../../"
+def foundryLibraryVersion = getFoundryLibraryVersionName()
+def foundryEngineRevision = getFoundryEngineRevision()
+def selectedAbis = providers.gradleProperty("selectedAbis").map { value ->
+    value.split(",").collect { it.trim() }.findAll { !it.isEmpty() }
+}.orElse(["arm64"]).get()
+def supportedAbis = ["arm32", "arm64", "x86_32", "x86_64"]
+def supportedBuildTypes = ["debug", "dev", "release"]
+
+def getSconsTaskName = { String flavor, String buildType, String abi ->
+    return "compileFoundryNativeLibs" + flavor.capitalize() + buildType.capitalize() + abi.capitalize()
+}
+
+android {
+    compileSdkVersion versions.compileSdk
+    buildToolsVersion versions.buildTools
+    ndkVersion versions.ndkVersion
+
+    defaultConfig {
+        minSdkVersion versions.minSdk
+        targetSdkVersion versions.targetSdk
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+
+        manifestPlaceholders = [
+            foundryLibraryVersion: foundryLibraryVersion,
+            foundryEngineVersion: foundryLibraryVersion,
+            foundryEngineRevision: foundryEngineRevision,
+            foundryJniContractVersion: "1",
+        ]
+
+        buildConfigField 'String', 'FOUNDRY_BINDINGS_VERSION', "\"${foundryLibraryVersion}\""
+        buildConfigField 'String', 'FOUNDRY_ENGINE_VERSION', "\"${foundryLibraryVersion}\""
+        buildConfigField 'String', 'FOUNDRY_ENGINE_REVISION', "\"${foundryEngineRevision}\""
+        buildConfigField 'int', 'FOUNDRY_JNI_CONTRACT_VERSION', '1'
+    }
+
+    namespace = 'games.cafecito.foundry'
+
+    compileOptions {
+        sourceCompatibility versions.javaVersion
+        targetCompatibility versions.javaVersion
+    }
+
+    kotlinOptions {
+        jvmTarget = versions.javaVersion
+    }
+
+    buildFeatures {
+        aidl = true
+        buildConfig = true
+    }
+
+    buildTypes {
+        dev {
+            initWith debug
+            matchingFallbacks = ['debug']
+        }
+    }
+
+    flavorDimensions = ["products"]
+    productFlavors {
+        template {}
+    }
+
+    testOptions {
+        unitTests.returnDefaultValues = true
+    }
+
+    lintOptions {
+        abortOnError true
+        disable 'MissingTranslation', 'UnusedResources'
+    }
+
+    packagingOptions {
+        exclude 'META-INF/LICENSE'
+        exclude 'META-INF/NOTICE'
+
+        if (shouldNotStrip()) {
+            jniLibs {
+                keepDebugSymbols += '**/*.so'
+            }
+        }
+    }
+
+    sourceSets {
+        debug.jniLibs.srcDirs = ['libs/debug']
+        dev.jniLibs.srcDirs = ['libs/dev']
+        release.jniLibs.srcDirs = ['libs/release']
+    }
+
+    libraryVariants.all { variant ->
+        def flavorName = variant.getFlavorName()
+        if (flavorName != "template") {
+            throw new GradleException("Invalid product flavor: $flavorName")
+        }
+
+        def buildType = variant.buildType.name
+        if (!supportedBuildTypes.contains(buildType)) {
+            throw new GradleException("Invalid build type: $buildType")
+        }
+
+        boolean devBuild = buildType == "dev"
+        boolean productionBuild = buildType == "release"
+        String sconsTarget = productionBuild ? "template_release" : "template_debug"
+
+        variant.outputs.all { output ->
+            output.outputFileName = "foundry-${buildType}.aar"
+        }
+
+        if (!selectedAbis.isEmpty()) {
+            File sconsExecutableFile = null
+            def sconsName = "scons"
+            def sconsExts = (org.gradle.internal.os.OperatingSystem.current().isWindows()
+                ? [".bat", ".cmd", ".ps1", ".exe"]
+                : [""])
+            for (ext in sconsExts) {
+                String sconsNameExt = sconsName + ext
+                sconsExecutableFile = org.gradle.internal.os.OperatingSystem.current().findInPath(sconsNameExt)
+                if (sconsExecutableFile != null) {
+                    break
+                }
+                List<File> allOptions =
+                    org.gradle.internal.os.OperatingSystem.current().findAllInPath(sconsNameExt)
+                if (!allOptions.isEmpty()) {
+                    sconsExecutableFile = allOptions.get(0)
+                    break
+                }
+            }
+            if (sconsExecutableFile == null) {
+                throw new GradleException("Unable to find executable path for the '$sconsName' command.")
+            }
+
+            for (String selectedAbi : selectedAbis) {
+                if (!supportedAbis.contains(selectedAbi)) {
+                    throw new GradleException("Invalid selected abi: $selectedAbi")
+                }
+
+                def taskName = getSconsTaskName(flavorName, buildType, selectedAbi)
+                tasks.create(name: taskName, type: Exec) {
+                    executable sconsExecutableFile.absolutePath
+                    args "--directory=${pathToRootDir}",
+                        "platform=android",
+                        "production=${productionBuild}",
+                        "dev_mode=${devBuild}",
+                        "dev_build=${devBuild}",
+                        "debug_symbols=${devBuild}",
+                        "tests=no",
+                        "target=${sconsTarget}",
+                        "arch=${selectedAbi}",
+                        "-j" + Runtime.runtime.availableProcessors()
+                }
+
+                tasks["merge${flavorName.capitalize()}${buildType.capitalize()}JniLibFolders"].dependsOn taskName
+            }
+        }
+    }
+}
