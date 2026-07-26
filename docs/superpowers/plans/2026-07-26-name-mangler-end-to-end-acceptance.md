@@ -450,8 +450,7 @@ static NameManglerPackProcessResult name_mangler_acceptance_export(
 }
 
 static NameManglerPackProcessResult name_mangler_acceptance_run(
-		const String &p_pack_path, const String &p_runtime_root,
-		bool p_quit_after_two_frames = false) {
+		const String &p_pack_path, const String &p_runtime_root) {
 	NameManglerPackProcessResult failed;
 	const Error make_error =
 			DirAccess::make_dir_recursive_absolute(p_runtime_root);
@@ -475,10 +474,6 @@ static NameManglerPackProcessResult name_mangler_acceptance_run(
 
 	List<String> arguments;
 	arguments.push_back("--headless");
-	if (p_quit_after_two_frames) {
-		arguments.push_back("--quit-after");
-		arguments.push_back("2");
-	}
 	arguments.push_back("project");
 	arguments.push_back("run");
 	return name_mangler_export_run_process(arguments, p_runtime_root);
@@ -988,12 +983,14 @@ extends Node
 func unsafe_dynamic_target() -> void:
 	print("UNSAFE_DYNAMIC_TARGET_EXECUTED")
 
+func _exit_after_probe() -> void:
+	get_tree().quit(0)
+
 func _ready() -> void:
+	get_tree().process_frame.connect(_exit_after_probe, CONNECT_ONE_SHOT)
 	var parts := PackedStringArray(["unsafe_dynamic_", "target"])
 	var target := parts[0] + parts[1]
 	call(target)
-	print("UNSAFE_DYNAMIC_CALL_RETURNED")
-	get_tree().quit(0)
 ```
 
 `main.tscn`:
@@ -1031,8 +1028,7 @@ TEST_CASE("[FoundryScript][NameManglerAcceptance][DynamicDispatch] Unescaped com
 	const NameManglerPackProcessResult runtime_result =
 			name_mangler_acceptance_run(
 					pack_path,
-					project.root.path_join("runtime"),
-					true);
+					project.root.path_join("runtime"));
 	INFO("Unsafe runtime:\n", runtime_result.output);
 	REQUIRE_EQ(runtime_result.error, OK);
 	const String lower_output = runtime_result.output.to_lower();

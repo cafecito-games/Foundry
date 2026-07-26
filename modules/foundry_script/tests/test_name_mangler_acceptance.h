@@ -61,8 +61,7 @@ static NameManglerPackProcessResult name_mangler_acceptance_export(
 }
 
 static NameManglerPackProcessResult name_mangler_acceptance_run(
-		const String &p_pack_path, const String &p_runtime_root,
-		bool p_quit_after_two_frames = false) {
+		const String &p_pack_path, const String &p_runtime_root) {
 	NameManglerPackProcessResult failed;
 	const Error make_error =
 			DirAccess::make_dir_recursive_absolute(p_runtime_root);
@@ -86,10 +85,6 @@ static NameManglerPackProcessResult name_mangler_acceptance_run(
 
 	List<String> arguments;
 	arguments.push_back("--headless");
-	if (p_quit_after_two_frames) {
-		arguments.push_back("--quit-after");
-		arguments.push_back("2");
-	}
 	arguments.push_back("project");
 	arguments.push_back("run");
 	return name_mangler_export_run_process(arguments, p_runtime_root);
@@ -332,6 +327,60 @@ static void name_mangler_acceptance_write_safe_project(
 			"[connection signal=\"scene_surface_signal\" from=\"Emitter\" to=\"Receiver\" method=\"scene_handler\"]\n");
 }
 
+static void name_mangler_acceptance_write_unsafe_project(
+		TemporaryProjectTree &p_project) {
+	p_project.write_file(
+			"project.foundry",
+			"[application]\n"
+			"config/name=\"Name Mangler Unsafe Dispatch Acceptance\"\n"
+			"run/main_scene=\"res://main.tscn\"\n"
+			"\n"
+			"[rendering]\n"
+			"renderer/rendering_method=\"gl_compatibility\"\n");
+	p_project.write_file(
+			"export_presets.cfg",
+			"[preset.0]\n"
+			"name=\"Mangled\"\n"
+			"platform=\"Linux\"\n"
+			"runnable=false\n"
+			"dedicated_server=false\n"
+			"custom_features=\"\"\n"
+			"export_filter=\"all_resources\"\n"
+			"include_filter=\"\"\n"
+			"exclude_filter=\"\"\n"
+			"export_path=\"\"\n"
+			"script_export_mode=3\n"
+			"script_name_mangling_enabled=true\n"
+			"script_name_mangling_keep_rules=\"\"\n"
+			"\n"
+			"[preset.0.options]\n"
+			"custom_template/debug=\"\"\n"
+			"custom_template/release=\"\"\n");
+	p_project.write_file(
+			"main.fs",
+			"extends Node\n"
+			"\n"
+			"func unsafe_dynamic_target() -> void:\n"
+			"\tprint(\"UNSAFE_DYNAMIC_TARGET_EXECUTED\")\n"
+			"\n"
+			"func _exit_after_probe() -> void:\n"
+			"\tget_tree().quit(0)\n"
+			"\n"
+			"func _ready() -> void:\n"
+			"\tget_tree().process_frame.connect(_exit_after_probe, CONNECT_ONE_SHOT)\n"
+			"\tvar parts := PackedStringArray([\"unsafe_dynamic_\", \"target\"])\n"
+			"\tvar target := parts[0] + parts[1]\n"
+			"\tcall(target)\n");
+	p_project.write_file(
+			"main.tscn",
+			"[gd_scene load_steps=2 format=3]\n"
+			"\n"
+			"[ext_resource type=\"Script\" path=\"res://main.fs\" id=\"1_main\"]\n"
+			"\n"
+			"[node name=\"Main\" type=\"Node\"]\n"
+			"script = ExtResource(\"1_main\")\n");
+}
+
 TEST_CASE("[FoundryScript][NameManglerAcceptance][Parity] Real exports preserve semantics strip names and repeat deterministically") {
 	TemporaryProjectTree project(
 			"fs_name_mangler_acceptance_safe_" +
@@ -464,6 +513,52 @@ TEST_CASE("[FoundryScript][NameManglerAcceptance][Parity] Real exports preserve 
 				mangled_a_scripts[expectation.path],
 				expectation.marker));
 	}
+}
+
+TEST_CASE("[FoundryScript][NameManglerAcceptance][DynamicDispatch] Unescaped computed calls fail with the reconstructed target") {
+	TemporaryProjectTree project(
+			"fs_name_mangler_acceptance_unsafe_" +
+			itos(OS::get_singleton()->get_ticks_usec()));
+	name_mangler_acceptance_write_unsafe_project(project);
+	const String pack_path = project.root.path_join("unsafe.pck");
+	const NameManglerPackProcessResult export_result =
+			name_mangler_acceptance_export(
+					project.root, "Mangled", pack_path);
+	INFO("Unsafe export:\n", export_result.output);
+	REQUIRE_EQ(export_result.error, OK);
+	REQUIRE_EQ(export_result.exit_code, 0);
+	if (export_result.error != OK || export_result.exit_code != 0) {
+		return;
+	}
+
+	const NameManglerPackProcessResult runtime_result =
+			name_mangler_acceptance_run(
+					pack_path,
+					project.root.path_join("runtime"));
+	INFO("Unsafe runtime:\n", runtime_result.output);
+	REQUIRE_EQ(runtime_result.error, OK);
+	if (runtime_result.error != OK) {
+		return;
+	}
+	const String lower_output = runtime_result.output.to_lower();
+	CHECK(lower_output.contains("unsafe_dynamic_target"));
+	const bool has_missing_call_diagnostic =
+			lower_output.contains("nonexistent function") ||
+			lower_output.contains("invalid call") ||
+			lower_output.contains("method not found");
+	CHECK(has_missing_call_diagnostic);
+	CHECK_FALSE(runtime_result.output.contains(
+			"UNSAFE_DYNAMIC_TARGET_EXECUTED"));
+
+	const RBMap<String, Vector<uint8_t>> scripts =
+			name_mangler_acceptance_read_scripts(pack_path);
+	REQUIRE(scripts.has("res://main.fsb"));
+	if (!scripts.has("res://main.fsb")) {
+		return;
+	}
+	CHECK_FALSE(bytecode_buffer_contains(
+			scripts["res://main.fsb"],
+			"unsafe_dynamic_target"));
 }
 
 } // namespace FSTests
