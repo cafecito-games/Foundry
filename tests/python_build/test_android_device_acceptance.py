@@ -114,11 +114,16 @@ class FakeRunner:
             else:
                 stdout = "4242\n"
         elif "logcat" in arguments and "-d" in arguments:
-            stdout = (
-                f"{self.failure.partition(':')[2]}\n"
-                if self.failure is not None and self.failure.startswith("runtime-log:")
-                else "Foundry ready\n"
-            )
+            if self.failure is not None and self.failure.startswith("runtime-log:"):
+                stdout = f"{self.failure.partition(':')[2]}\n"
+            elif (
+                self.failure is not None
+                and self.failure.startswith("system-runtime-log:")
+                and not any(argument.startswith("--pid=") for argument in arguments)
+            ):
+                stdout = f"{self.failure.partition(':')[2]}\n"
+            else:
+                stdout = "Foundry ready\n"
         elif "uninstall" in arguments:
             stdout = "Success\n"
 
@@ -363,6 +368,14 @@ class AndroidDeviceAcceptanceTests(unittest.TestCase):
             with self.subTest(signature=signature):
                 with self.assertRaisesRegex(self.tool.AcceptanceError, "forbidden runtime failures"):
                     self.run_acceptance(f"runtime-log:{signature}")
+
+    def test_acceptance_ignores_unrelated_system_runtime_failures_after_process_starts(self) -> None:
+        try:
+            report, _, _ = self.run_acceptance("system-runtime-log:FATAL EXCEPTION: unrelated")
+        except self.tool.AcceptanceError as error:
+            self.fail(f"unrelated system logcat failed acceptance: {error}")
+
+        self.assertTrue(all(not scenario["runtime_log_failures"] for scenario in report["scenarios"]))
 
     def test_acceptance_waits_for_requested_device_registration(self) -> None:
         report, runner, _ = self.run_acceptance("device-delayed", boot_timeout=0.1)

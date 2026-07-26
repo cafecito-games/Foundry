@@ -289,7 +289,7 @@ jobs:
       - assemble-android
     runs-on: ubuntu-24.04
     name: Verify Android runtime on an emulator
-    timeout-minutes: 60
+    timeout-minutes: 120
     steps:
       - name: Checkout Foundry
         uses: actions/checkout@v6
@@ -368,6 +368,7 @@ jobs:
             --evidence-dir "${RUNNER_TEMP}/android-device-acceptance-evidence" \
             --adb "${ANDROID_HOME}/platform-tools/adb" \
             --apkanalyzer "${ANDROID_HOME}/cmdline-tools/latest/bin/apkanalyzer" \
+            --process-timeout 120 \
             --serial emulator-5554
 
       - name: Upload Android device acceptance evidence

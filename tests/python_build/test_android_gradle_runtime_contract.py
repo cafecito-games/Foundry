@@ -347,6 +347,7 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
             "test_android_device_acceptance",
             "FoundryAppTest",
             "AndroidManifest",
+            "platform/android/java/app/src/instrumented/assets/",
             "ANDROID_RUNTIME",
             "android_builds",
             "test_android_runtime_workflows",

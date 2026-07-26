@@ -272,6 +272,7 @@ repos:
             platform/android/android_device_acceptance\.py|
             platform/android/java/app/src/androidTestInstrumented/.*/FoundryAppTest\.kt|
             platform/android/java/app/src/instrumented/AndroidManifest\.xml|
+            platform/android/java/app/src/instrumented/assets/.*|
             tests/python_build/test_android_device_acceptance\.py|
             tests/python_build/test_android_gradle_runtime_contract\.py
           )$

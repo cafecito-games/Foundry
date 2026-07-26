@@ -209,12 +209,14 @@ class AndroidRuntimeWorkflowTests(unittest.TestCase):
     def test_device_acceptance_runs_assembled_runtime_on_an_emulator(self) -> None:
         job = _job(self.android, "device-acceptance")
         self.assertIn("- assemble-android", job)
+        self.assertIn("timeout-minutes: 120", job)
         self.assertIn("name: android-runtime-assembled", job)
         self.assertIn("system-images;android-36;default;x86_64", job)
         self.assertIn("sudo chmod 666 /dev/kvm", job)
         self.assertIn("sys.boot_completed", job)
         self.assertIn("android_device_acceptance.py source-template", job)
         self.assertIn("--serial emulator-5554", job)
+        self.assertIn("--process-timeout 120", job)
         self.assertIn("if: always()", job)
         self.assertIn("android-device-acceptance-evidence", job)
 

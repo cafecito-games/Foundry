@@ -435,7 +435,7 @@ def _capture_logcat(
     serial: str,
     pid: str | None,
     runner: Runner,
-) -> str:
+) -> tuple[str, str | None]:
     full = runner.run(
         _adb(adb, serial, "logcat", "-d", "-v", "threadtime"),
         cwd=None,
@@ -443,8 +443,9 @@ def _capture_logcat(
         description="capturing full Android logcat",
         check=False,
     )
+    full_contents = full.stdout + full.stderr
     if pid is None:
-        return full.stdout + full.stderr
+        return full_contents, None
     filtered = runner.run(
         _adb(adb, serial, "logcat", f"--pid={pid}", "-d", "-v", "threadtime"),
         cwd=None,
@@ -452,7 +453,7 @@ def _capture_logcat(
         description=f"capturing Android logcat for process {pid}",
         check=False,
     )
-    return full.stdout + full.stderr + filtered.stdout + filtered.stderr
+    return full_contents, filtered.stdout + filtered.stderr
 
 
 def _wait_for_process(
@@ -553,15 +554,17 @@ def _verify_apk_on_device(
             poll_interval=poll_interval,
         )
     except AcceptanceError as error:
-        logcat = _capture_logcat(adb, serial, None, runner)
-        failures = runtime_log_failures(logcat)
+        full_logcat, _ = _capture_logcat(adb, serial, None, runner)
+        failures = runtime_log_failures(full_logcat)
         suffix = f"; runtime failures: {failures}" if failures else ""
         raise AcceptanceError(f"{error}{suffix}") from error
 
-    logcat = _capture_logcat(adb, serial, pid, runner)
-    log_path = evidence_dir / f"{application_id}-logcat.txt"
-    log_path.write_text(logcat, encoding="utf-8")
-    failures = runtime_log_failures(logcat)
+    full_logcat, process_logcat = _capture_logcat(adb, serial, pid, runner)
+    if process_logcat is None:
+        raise AcceptanceError(f"Android package {application_id} did not produce process-filtered logcat")
+    (evidence_dir / f"{application_id}-logcat.txt").write_text(full_logcat, encoding="utf-8")
+    (evidence_dir / f"{application_id}-process-logcat.txt").write_text(process_logcat, encoding="utf-8")
+    failures = runtime_log_failures(process_logcat)
     if failures:
         raise AcceptanceError(f"Android package {application_id} logged forbidden runtime failures: {failures}")
     return {
