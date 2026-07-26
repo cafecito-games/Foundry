@@ -44,13 +44,21 @@
 
 Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_member_address_count,
 		const String &p_script_path, Vector<int> *r_operator_cache_offsets,
-		Vector<StringName> *r_named_globals) {
+		Vector<StringName> *r_named_globals,
+		uint8_t *r_self_reflection_kinds,
+		uint8_t *r_unresolved_reflection_kinds) {
 	ERR_FAIL_NULL_V(p_function, ERR_INVALID_PARAMETER);
 	if (r_operator_cache_offsets != nullptr) {
 		r_operator_cache_offsets->clear();
 	}
 	if (r_named_globals != nullptr) {
 		r_named_globals->clear();
+	}
+	if (r_self_reflection_kinds != nullptr) {
+		*r_self_reflection_kinds = FSFunction::REFLECTION_NONE;
+	}
+	if (r_unresolved_reflection_kinds != nullptr) {
+		*r_unresolved_reflection_kinds = FSFunction::REFLECTION_NONE;
 	}
 
 	const String function_name = p_function->name;
@@ -99,6 +107,24 @@ Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_me
 	// instruction boundaries are known (targets may point forward).
 	LocalVector<int> jump_targets;
 	Vector<int> operator_cache_offsets;
+	uint8_t self_reflection_kinds = FSFunction::REFLECTION_NONE;
+	uint8_t unresolved_reflection_kinds = FSFunction::REFLECTION_NONE;
+
+	const auto record_reflection_call =
+			[&](const StringName &p_method, const StringName &p_class,
+					int p_receiver, bool p_has_receiver) {
+				const uint8_t kind =
+						FSFunction::get_reflection_kind(p_method, p_class);
+				if (kind == FSFunction::REFLECTION_NONE) {
+					return;
+				}
+				if (p_has_receiver && p_receiver == FSFunction::ADDR_SELF &&
+						p_class != SNAME("FSReflection")) {
+					self_reflection_kinds |= kind;
+				} else {
+					unresolved_reflection_kinds |= kind;
+				}
+			};
 
 	// Validates a packed address operand at an already-in-bounds code offset.
 	const auto check_address = [&](int p_operand_offset) -> bool {
@@ -590,6 +616,11 @@ Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_me
 				// Read the argument count and any table index at the exact per-opcode offsets the VM
 				// uses (relative to `shift`), then bound the highest `instruction_args` index used.
 				int64_t highest_arg_index = -1;
+				StringName reflection_method;
+				StringName reflection_class;
+				int reflection_receiver_offset = -1;
+				bool reflection_call = false;
+				bool reflection_has_receiver = false;
 				switch (opcode) {
 					case FSFunction::OPCODE_CONSTRUCT: {
 						const int argument_count = code_ptr[shift + 1];
@@ -636,6 +667,12 @@ Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_me
 						const int argument_count = code_ptr[shift + 1];
 						VERIFY_FAIL_COND(argument_count < 0, "negative argument count");
 						CHECK_TABLE(shift + 2, global_names_count, "global name");
+						reflection_method =
+								p_function->global_names[code_ptr[shift + 2]];
+						reflection_receiver_offset =
+								ip + 2 + argument_count;
+						reflection_call = true;
+						reflection_has_receiver = true;
 						highest_arg_index = argument_count;
 					} break;
 					case FSFunction::OPCODE_CALL_RETURN:
@@ -643,6 +680,12 @@ Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_me
 						const int argument_count = code_ptr[shift + 1];
 						VERIFY_FAIL_COND(argument_count < 0, "negative argument count");
 						CHECK_TABLE(shift + 2, global_names_count, "global name");
+						reflection_method =
+								p_function->global_names[code_ptr[shift + 2]];
+						reflection_receiver_offset =
+								ip + 2 + argument_count;
+						reflection_call = true;
+						reflection_has_receiver = true;
 						highest_arg_index = (int64_t)argument_count + 1;
 					} break;
 					case FSFunction::OPCODE_CALL_ENUM:
@@ -672,6 +715,16 @@ Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_me
 						const int argument_count = code_ptr[shift + 1];
 						VERIFY_FAIL_COND(argument_count < 0, "negative argument count");
 						CHECK_TABLE(shift + 2, methods_count, "method bind");
+						MethodBind *method =
+								p_function->methods[code_ptr[shift + 2]];
+						if (method != nullptr) {
+							reflection_method = method->get_name();
+							reflection_class = method->get_instance_class();
+							reflection_call = true;
+							reflection_has_receiver = true;
+							reflection_receiver_offset =
+									ip + 2 + argument_count;
+						}
 						highest_arg_index = argument_count;
 					} break;
 					case FSFunction::OPCODE_CALL_METHOD_BIND_RET:
@@ -680,6 +733,16 @@ Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_me
 						const int argument_count = code_ptr[shift + 1];
 						VERIFY_FAIL_COND(argument_count < 0, "negative argument count");
 						CHECK_TABLE(shift + 2, methods_count, "method bind");
+						MethodBind *method =
+								p_function->methods[code_ptr[shift + 2]];
+						if (method != nullptr) {
+							reflection_method = method->get_name();
+							reflection_class = method->get_instance_class();
+							reflection_call = true;
+							reflection_has_receiver = true;
+							reflection_receiver_offset =
+									ip + 2 + argument_count;
+						}
 						highest_arg_index = (int64_t)argument_count + 1;
 					} break;
 					case FSFunction::OPCODE_CALL_BUILTIN_STATIC: {
@@ -700,6 +763,13 @@ Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_me
 						CHECK_TABLE(shift + 1, methods_count, "method bind");
 						const int argument_count = code_ptr[shift + 2];
 						VERIFY_FAIL_COND(argument_count < 0, "negative argument count");
+						MethodBind *method =
+								p_function->methods[code_ptr[shift + 1]];
+						if (method != nullptr) {
+							reflection_method = method->get_name();
+							reflection_class = method->get_instance_class();
+							reflection_call = true;
+						}
 						highest_arg_index = argument_count;
 					} break;
 					case FSFunction::OPCODE_CALL_NATIVE_STATIC_VALIDATED_RETURN:
@@ -707,6 +777,13 @@ Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_me
 						const int argument_count = code_ptr[shift + 1];
 						VERIFY_FAIL_COND(argument_count < 0, "negative argument count");
 						CHECK_TABLE(shift + 2, methods_count, "method bind");
+						MethodBind *method =
+								p_function->methods[code_ptr[shift + 2]];
+						if (method != nullptr) {
+							reflection_method = method->get_name();
+							reflection_class = method->get_instance_class();
+							reflection_call = true;
+						}
 						highest_arg_index = argument_count;
 					} break;
 					case FSFunction::OPCODE_CALL_BUILTIN_TYPE_VALIDATED: {
@@ -737,6 +814,10 @@ Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_me
 						const int argument_count = code_ptr[shift + 1];
 						VERIFY_FAIL_COND(argument_count < 0, "negative argument count");
 						CHECK_TABLE(shift + 2, global_names_count, "global name");
+						reflection_method =
+								p_function->global_names[code_ptr[shift + 2]];
+						reflection_call = true;
+						reflection_has_receiver = true;
 						highest_arg_index = argument_count;
 					} break;
 					case FSFunction::OPCODE_CREATE_LAMBDA:
@@ -751,6 +832,15 @@ Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_me
 				}
 				VERIFY_FAIL_COND(highest_arg_index >= (int64_t)instruction_arg_count,
 						"instruction argument index is out of range");
+				if (reflection_call) {
+					const int receiver =
+							reflection_receiver_offset >= 0
+							? code_ptr[reflection_receiver_offset]
+							: FSFunction::ADDR_SELF;
+					record_reflection_call(
+							reflection_method, reflection_class, receiver,
+							reflection_has_receiver);
+				}
 
 				ip += length;
 			} break;
@@ -804,6 +894,12 @@ Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_me
 
 	if (r_operator_cache_offsets != nullptr) {
 		*r_operator_cache_offsets = operator_cache_offsets;
+	}
+	if (r_self_reflection_kinds != nullptr) {
+		*r_self_reflection_kinds = self_reflection_kinds;
+	}
+	if (r_unresolved_reflection_kinds != nullptr) {
+		*r_unresolved_reflection_kinds = unresolved_reflection_kinds;
 	}
 	return OK;
 }

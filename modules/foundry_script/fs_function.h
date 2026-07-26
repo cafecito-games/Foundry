@@ -534,6 +534,32 @@ public:
 		ADDR_NIL = ADDR_STACK_NIL | (ADDR_TYPE_STACK << ADDR_BITS),
 	};
 
+	enum ReflectionKind : uint8_t {
+		REFLECTION_NONE = 0,
+		REFLECTION_METHODS = 1 << 0,
+		REFLECTION_PROPERTIES = 1 << 1,
+		REFLECTION_SIGNALS = 1 << 2,
+	};
+
+	static uint8_t get_reflection_kind(const StringName &p_method, const StringName &p_class = StringName()) {
+		if (p_method == SNAME("get_method_list") ||
+				(p_class == SNAME("FSReflection") &&
+						(p_method == SNAME("get_methods") ||
+								p_method == SNAME("get_method_descriptors")))) {
+			return REFLECTION_METHODS;
+		}
+		if (p_method == SNAME("get_property_list") ||
+				(p_class == SNAME("FSReflection") &&
+						(p_method == SNAME("get_properties") ||
+								p_method == SNAME("get_property_descriptors")))) {
+			return REFLECTION_PROPERTIES;
+		}
+		if (p_method == SNAME("get_signal_list")) {
+			return REFLECTION_SIGNALS;
+		}
+		return REFLECTION_NONE;
+	}
+
 	struct StackDebug {
 		int line;
 		int pos;
@@ -713,6 +739,8 @@ public:
 	ExportFixups export_fixups;
 
 private:
+	uint8_t self_reflection_kinds = REFLECTION_NONE;
+	uint8_t unresolved_reflection_kinds = REFLECTION_NONE;
 #endif // TOOLS_ENABLED
 
 	String _get_call_error(const String &p_where, const Variant **p_argptrs, int p_argcount, const Variant &p_ret, const Callable::CallError &p_err) const;

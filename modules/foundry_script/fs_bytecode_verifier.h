@@ -60,5 +60,7 @@ public:
 	// duplicating the opcode layout or changing the bytecode format.
 	static Error verify_function(const FSFunction *p_function, int p_member_address_count,
 			const String &p_script_path, Vector<int> *r_operator_cache_offsets = nullptr,
-			Vector<StringName> *r_named_globals = nullptr);
+			Vector<StringName> *r_named_globals = nullptr,
+			uint8_t *r_self_reflection_kinds = nullptr,
+			uint8_t *r_unresolved_reflection_kinds = nullptr);
 };

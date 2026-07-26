@@ -2505,6 +2505,234 @@ TEST_CASE("[FoundryScript][NameManglerApplication] Enforces reflection-wide keep
 	}
 }
 
+TEST_CASE("[FoundryScript][NameMangler][Reflection][Application] Scoped retention accepts unrelated private maps") {
+	const StringName base_method =
+			SNAME("reflection_application_base_method_1237");
+	const StringName owner_method =
+			SNAME("reflection_application_owner_method_1237");
+	const StringName unrelated_method =
+			SNAME("reflection_application_unrelated_method_1237");
+	const Ref<FoundryScript> base = compile_bytecode_test_source(
+			"extends RefCounted\n"
+			"func reflection_application_base_method_1237() -> void:\n"
+			"\tpass\n");
+	const Ref<FoundryScript> owner = compile_bytecode_test_source(vformat(
+			"extends \"%s\"\n"
+			"func reflection_application_owner_method_1237() -> void:\n"
+			"\tpass\n"
+			"func inspect_reflection_application_1237() -> void:\n"
+			"\tget_method_list()\n",
+			base->get_script_path()));
+	const Ref<FoundryScript> unrelated = compile_bytecode_test_source(
+			"extends RefCounted\n"
+			"func reflection_application_unrelated_method_1237() -> void:\n"
+			"\tpass\n");
+
+	FSNameManglerAnalysis::Input unrelated_input;
+	unrelated_input.scripts.push_back(unrelated);
+	const FSNameManglerAnalysis::Result unrelated_analysis =
+			FSNameManglerAnalysis::analyze(unrelated_input);
+	REQUIRE_EQ(unrelated_analysis.error, OK);
+	REQUIRE(unrelated_analysis.rename_map.has(unrelated_method));
+	RBMap<StringName, StringName> unrelated_analysis_map;
+	unrelated_analysis_map.insert(
+			unrelated_method,
+			unrelated_analysis.rename_map[unrelated_method]);
+
+	Vector<Ref<FoundryScript>> method_roots;
+	method_roots.push_back(base);
+	method_roots.push_back(owner);
+	method_roots.push_back(unrelated);
+	const Vector<uint8_t> base_baseline =
+			name_mangler_application_serialize(base);
+	const Vector<uint8_t> owner_baseline =
+			name_mangler_application_serialize(owner);
+	const Vector<uint8_t> unrelated_baseline =
+			name_mangler_application_serialize(unrelated);
+	{
+		FSNameManglerApplication::Transaction transaction;
+		Vector<FSNameManglerApplication::Diagnostic> diagnostics;
+		CHECK_EQ(
+				transaction.begin(
+						method_roots, unrelated_analysis_map, diagnostics),
+				OK);
+		CHECK(transaction.is_active());
+		if (transaction.is_active()) {
+			transaction.rollback();
+		}
+	}
+	CHECK_EQ(name_mangler_application_serialize(base), base_baseline);
+	CHECK_EQ(name_mangler_application_serialize(owner), owner_baseline);
+	CHECK_EQ(
+			name_mangler_application_serialize(unrelated),
+			unrelated_baseline);
+
+	const StringName protected_methods[] = {
+		base_method,
+		owner_method,
+	};
+	for (int i = 0; i < 2; i++) {
+		CAPTURE(protected_methods[i]);
+		RBMap<StringName, StringName> invalid_map =
+				unrelated_analysis_map;
+		invalid_map.insert(
+				protected_methods[i],
+				StringName(vformat(
+						"_fsb_reflection_application_protected_%d_1237",
+						i)));
+		FSNameManglerApplication::Transaction transaction;
+		Vector<FSNameManglerApplication::Diagnostic> diagnostics;
+		CHECK_EQ(
+				transaction.begin(method_roots, invalid_map, diagnostics),
+				ERR_INVALID_PARAMETER);
+		CHECK_FALSE(transaction.is_active());
+		bool reflection_diagnostic = false;
+		for (const FSNameManglerApplication::Diagnostic &diagnostic :
+				diagnostics) {
+			if (diagnostic.surface == "reflection enumeration") {
+				reflection_diagnostic = true;
+				break;
+			}
+		}
+		CHECK(reflection_diagnostic);
+	}
+	CHECK_EQ(name_mangler_application_serialize(base), base_baseline);
+	CHECK_EQ(name_mangler_application_serialize(owner), owner_baseline);
+	CHECK_EQ(
+			name_mangler_application_serialize(unrelated),
+			unrelated_baseline);
+
+	struct NarrowCase {
+		const char *owner_source;
+		const char *unrelated_source;
+		StringName owner_name;
+		StringName unrelated_name;
+	};
+	const NarrowCase narrow_cases[] = {
+		{
+				"extends RefCounted\n"
+				"var reflection_application_owner_property_1237: int\n"
+				"func inspect_reflection_application_property_1237() -> void:\n"
+				"\tget_property_list()\n",
+				"extends RefCounted\n"
+				"var reflection_application_unrelated_property_1237: int\n",
+				SNAME("reflection_application_owner_property_1237"),
+				SNAME("reflection_application_unrelated_property_1237"),
+		},
+		{
+				"extends RefCounted\n"
+				"signal reflection_application_owner_signal_1237\n"
+				"func inspect_reflection_application_signal_1237() -> void:\n"
+				"\tget_signal_list()\n",
+				"extends RefCounted\n"
+				"signal reflection_application_unrelated_signal_1237\n",
+				SNAME("reflection_application_owner_signal_1237"),
+				SNAME("reflection_application_unrelated_signal_1237"),
+		},
+	};
+	for (const NarrowCase &test_case : narrow_cases) {
+		CAPTURE(test_case.owner_name);
+		const Ref<FoundryScript> narrow_owner =
+				compile_bytecode_test_source(test_case.owner_source);
+		const Ref<FoundryScript> narrow_unrelated =
+				compile_bytecode_test_source(test_case.unrelated_source);
+		FSNameManglerAnalysis::Input narrow_analysis_input;
+		narrow_analysis_input.scripts.push_back(narrow_unrelated);
+		const FSNameManglerAnalysis::Result narrow_analysis =
+				FSNameManglerAnalysis::analyze(narrow_analysis_input);
+		REQUIRE_EQ(narrow_analysis.error, OK);
+		REQUIRE(
+				narrow_analysis.rename_map.has(test_case.unrelated_name));
+		RBMap<StringName, StringName> narrow_unrelated_map;
+		narrow_unrelated_map.insert(
+				test_case.unrelated_name,
+				narrow_analysis.rename_map[test_case.unrelated_name]);
+		Vector<Ref<FoundryScript>> narrow_roots;
+		narrow_roots.push_back(narrow_owner);
+		narrow_roots.push_back(narrow_unrelated);
+		const Vector<uint8_t> narrow_owner_baseline =
+				name_mangler_application_serialize(narrow_owner);
+		const Vector<uint8_t> narrow_unrelated_baseline =
+				name_mangler_application_serialize(narrow_unrelated);
+		{
+			FSNameManglerApplication::Transaction transaction;
+			Vector<FSNameManglerApplication::Diagnostic> diagnostics;
+			CHECK_EQ(
+					transaction.begin(
+							narrow_roots, narrow_unrelated_map,
+							diagnostics),
+					OK);
+			CHECK(transaction.is_active());
+			if (transaction.is_active()) {
+				transaction.rollback();
+			}
+		}
+		{
+			RBMap<StringName, StringName> invalid_map =
+					narrow_unrelated_map;
+			invalid_map.insert(
+					test_case.owner_name,
+					SNAME("_fsb_reflection_application_owner_1237"));
+			FSNameManglerApplication::Transaction transaction;
+			Vector<FSNameManglerApplication::Diagnostic> diagnostics;
+			CHECK_EQ(
+					transaction.begin(
+							narrow_roots, invalid_map, diagnostics),
+					ERR_INVALID_PARAMETER);
+			CHECK_FALSE(transaction.is_active());
+		}
+		CHECK_EQ(
+				name_mangler_application_serialize(narrow_owner),
+				narrow_owner_baseline);
+		CHECK_EQ(
+				name_mangler_application_serialize(narrow_unrelated),
+				narrow_unrelated_baseline);
+	}
+
+	const StringName unresolved_method =
+			SNAME("reflection_application_unresolved_method_1237");
+	const Ref<FoundryScript> unresolved_declaration =
+			compile_bytecode_test_source(
+					"extends RefCounted\n"
+					"func reflection_application_unresolved_method_1237() -> void:\n"
+					"\tpass\n");
+	const Ref<FoundryScript> unresolved_caller =
+			compile_bytecode_test_source(
+					"extends RefCounted\n"
+					"func inspect_reflection_application_unresolved_1237(target: Object) -> void:\n"
+					"\ttarget.get_method_list()\n");
+	FSNameManglerAnalysis::Input unresolved_analysis_input;
+	unresolved_analysis_input.scripts.push_back(unresolved_declaration);
+	const FSNameManglerAnalysis::Result unresolved_analysis =
+			FSNameManglerAnalysis::analyze(unresolved_analysis_input);
+	REQUIRE_EQ(unresolved_analysis.error, OK);
+	REQUIRE(unresolved_analysis.rename_map.has(unresolved_method));
+	RBMap<StringName, StringName> unresolved_map;
+	unresolved_map.insert(
+			unresolved_method,
+			unresolved_analysis.rename_map[unresolved_method]);
+	Vector<Ref<FoundryScript>> unresolved_roots;
+	unresolved_roots.push_back(unresolved_declaration);
+	unresolved_roots.push_back(unresolved_caller);
+	FSNameManglerApplication::Transaction unresolved_transaction;
+	Vector<FSNameManglerApplication::Diagnostic> unresolved_diagnostics;
+	CHECK_EQ(
+			unresolved_transaction.begin(
+					unresolved_roots, unresolved_map,
+					unresolved_diagnostics),
+			ERR_INVALID_PARAMETER);
+	CHECK_FALSE(unresolved_transaction.is_active());
+	bool unresolved_reflection_diagnostic = false;
+	for (const FSNameManglerApplication::Diagnostic &diagnostic :
+			unresolved_diagnostics) {
+		if (diagnostic.surface == "reflection enumeration") {
+			unresolved_reflection_diagnostic = true;
+			break;
+		}
+	}
+	CHECK(unresolved_reflection_diagnostic);
+}
+
 TEST_CASE("[FoundryScript][NameManglerApplication] Rejects packed and typed-container names atomically") {
 	const StringName packed_name = SNAME("private_marker_packed_name");
 	const StringName array_path = SNAME("private_marker_array_path");

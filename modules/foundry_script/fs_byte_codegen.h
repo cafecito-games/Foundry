@@ -139,6 +139,10 @@ class FSByteCodeGenerator : public FSCodeGenerator {
 			r_descriptors.push_back(p_descriptor);
 		}
 	}
+
+	void record_reflection_call(
+			const StringName &p_method, const StringName &p_class,
+			bool p_receiver_is_self);
 #endif
 
 #ifdef DEBUG_ENABLED

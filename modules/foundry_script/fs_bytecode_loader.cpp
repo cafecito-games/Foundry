@@ -1180,10 +1180,13 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 	// holds the class's flattened member count that member-address operands may reference. In tools
 	// builds the same authoritative instruction walk also restores the non-validated operator cache
 	// descriptors, so re-export can mask process-local VM cache words after the loaded function runs,
-	// and the named-global validation index, so a loaded `.fsb` cannot bypass export checks.
+	// the named-global validation index, so a loaded `.fsb` cannot bypass export checks, and
+	// receiver-scoped reflection evidence, so name mangling sees the same surface as source codegen.
 #ifdef TOOLS_ENABLED
 	error = FSBytecodeVerifier::verify_function(p_function, p_script->member_indices.size(), script_path,
-			&restored_fixups.operator_cache_offsets, &restored_fixups.named_globals);
+			&restored_fixups.operator_cache_offsets, &restored_fixups.named_globals,
+			&p_function->self_reflection_kinds,
+			&p_function->unresolved_reflection_kinds);
 #else
 	error = FSBytecodeVerifier::verify_function(p_function, p_script->member_indices.size(), script_path);
 #endif

@@ -41,6 +41,7 @@
 #include "fs_test_runner_suite.h"
 
 #include "modules/foundry_script/fs_conformance_registry.h"
+#include "modules/foundry_script/fs_name_mangler_analysis.h"
 
 #include "core/io/resource_loader.h"
 #include "core/io/resource_saver.h"
@@ -1044,6 +1045,80 @@ TEST_CASE("[FoundryScript][BytecodeScript] Script-level lambda metadata rebuilds
 	const Variant instance_variant = bytecode_new_instance(restored);
 	Object *instance = instance_variant;
 	CHECK((int64_t)bytecode_instance_call(instance, SNAME("lambda_total"), { 10 }) == 14);
+}
+
+TEST_CASE("[FoundryScript][NameMangler][Reflection][Bytecode] Receiver scope survives serialization") {
+	const StringName owner_method =
+			SNAME("reflection_bytecode_owner_method_1237");
+	const StringName owner_property =
+			SNAME("reflection_bytecode_owner_property_1237");
+	const StringName owner_signal =
+			SNAME("reflection_bytecode_owner_signal_1237");
+	const StringName unrelated_method =
+			SNAME("reflection_bytecode_unrelated_method_1237");
+	const StringName unrelated_property =
+			SNAME("reflection_bytecode_unrelated_property_1237");
+	const StringName unrelated_signal =
+			SNAME("reflection_bytecode_unrelated_signal_1237");
+	const Ref<FoundryScript> original = compile_bytecode_test_source(
+			"extends RefCounted\n"
+			"var reflection_bytecode_owner_property_1237: int\n"
+			"signal reflection_bytecode_owner_signal_1237\n"
+			"func reflection_bytecode_owner_method_1237() -> void:\n"
+			"\tpass\n"
+			"func inspect_reflection_bytecode_1237() -> void:\n"
+			"\tget_method_list()\n"
+			"\tget_property_list()\n"
+			"\tget_signal_list()\n");
+	BytecodeTestResolver resolver;
+	const Ref<FoundryScript> restored =
+			bytecode_round_trip_script(original, &resolver);
+	const Ref<FoundryScript> unrelated = compile_bytecode_test_source(
+			"extends RefCounted\n"
+			"var reflection_bytecode_unrelated_property_1237: int\n"
+			"signal reflection_bytecode_unrelated_signal_1237\n"
+			"func reflection_bytecode_unrelated_method_1237() -> void:\n"
+			"\tpass\n");
+
+	FSNameManglerAnalysis::Input source_input;
+	source_input.scripts.push_back(original);
+	source_input.scripts.push_back(unrelated);
+	const FSNameManglerAnalysis::Result source_analysis =
+			FSNameManglerAnalysis::analyze(source_input);
+	FSNameManglerAnalysis::Input restored_input;
+	restored_input.scripts.push_back(restored);
+	restored_input.scripts.push_back(unrelated);
+	const FSNameManglerAnalysis::Result restored_analysis =
+			FSNameManglerAnalysis::analyze(restored_input);
+	REQUIRE_EQ(source_analysis.error, OK);
+	REQUIRE_EQ(restored_analysis.error, OK);
+	REQUIRE_EQ(
+			source_analysis.rename_map.size(),
+			restored_analysis.rename_map.size());
+	for (const KeyValue<StringName, StringName> &rename :
+			source_analysis.rename_map) {
+		REQUIRE(restored_analysis.rename_map.has(rename.key));
+		CHECK_EQ(restored_analysis.rename_map[rename.key], rename.value);
+	}
+
+	const StringName owner_names[] = {
+		owner_method,
+		owner_property,
+		owner_signal,
+	};
+	const StringName unrelated_names[] = {
+		unrelated_method,
+		unrelated_property,
+		unrelated_signal,
+	};
+	for (int i = 0; i < 3; i++) {
+		CAPTURE(owner_names[i]);
+		CHECK_FALSE(source_analysis.rename_map.has(owner_names[i]));
+		CHECK_FALSE(restored_analysis.rename_map.has(owner_names[i]));
+		CAPTURE(unrelated_names[i]);
+		CHECK(source_analysis.rename_map.has(unrelated_names[i]));
+		CHECK(restored_analysis.rename_map.has(unrelated_names[i]));
+	}
 }
 
 TEST_CASE("[FoundryScript][BytecodeScript] Enum functions and their exact owners round-trip") {
