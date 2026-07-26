@@ -327,6 +327,42 @@ class AndroidGradleBehavioralTests(unittest.TestCase):
             invalid.stdout + invalid.stderr,
         )
 
+    def test_nested_addon_archives_are_runtime_dependencies(self) -> None:
+        addons = self.workspace / "addons"
+        nested = addons / "vendor" / "example"
+        nested.mkdir(parents=True)
+        (nested / "nested-addon.jar").write_bytes(b"nested addon")
+        init_script = self.workspace / "assert-nested-addon.gradle"
+        init_script.write_text(
+            """
+gradle.projectsEvaluated {
+    def appProject = rootProject.project(":app")
+    appProject.tasks.register("assertNestedAddonDependency") {
+        doLast {
+            def matches = appProject.configurations.implementation.dependencies
+                .findAll { it instanceof org.gradle.api.artifacts.FileCollectionDependency }
+                .collectMany { it.files.files as List }
+                .findAll { it.name == "nested-addon.jar" }
+            if (matches.size() != 1) {
+                throw new GradleException("nested-addon.jar is not a runtime dependency")
+            }
+        }
+    }
+}
+""",
+            encoding="utf-8",
+        )
+        result = self.run_gradle(
+            ":app:assertNestedAddonDependency",
+            "--init-script",
+            str(init_script),
+            properties={
+                "addons_directory": str(addons),
+                "selectedAbis": "",
+            },
+        )
+        self.assert_gradle_succeeded(result)
+
     def test_changed_input_subset_uses_new_scope_without_stale_abis(self) -> None:
         first_root = self.create_native_root("first-native-root", b":first")
         second_root = self.create_native_root("second-native-root", b":second")

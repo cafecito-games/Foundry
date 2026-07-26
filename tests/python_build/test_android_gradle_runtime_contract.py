@@ -36,6 +36,7 @@ EDITOR_EXPORT_PLUGIN_DOC = REPO_ROOT / "doc/classes/EditorExportPlugin.xml"
 ANDROID_EXPORT_PLATFORM_DOC = REPO_ROOT / "platform/android/doc_classes/EditorExportPlatformAndroid.xml"
 OPENXR_EXPORT_PLUGIN_HEADER = REPO_ROOT / "modules/openxr/editor/openxr_editor_plugin.h"
 OPENXR_EXPORT_PLUGIN_SOURCE = REPO_ROOT / "modules/openxr/editor/openxr_editor_plugin.cpp"
+APP_INSTRUMENTED_TEST = JAVA_ROOT / "app/src/androidTestInstrumented/java/games/cafecito/foundry/game/FoundryAppTest.kt"
 PRE_COMMIT = REPO_ROOT / ".pre-commit-config.yaml"
 ACTIVE_GRADLE_FILES = (
     SETTINGS,
@@ -49,6 +50,8 @@ ACTIVE_GRADLE_FILES = (
 LEGACY_PLUGIN_PATHS = (
     REPO_ROOT / "platform/android/plugin/foundry_plugin_jni.h",
     REPO_ROOT / "platform/android/plugin/foundry_plugin_jni.cpp",
+    REPO_ROOT / "platform/android/export/foundry_plugin_config.h",
+    REPO_ROOT / "platform/android/export/foundry_plugin_config.cpp",
     REPO_ROOT / "platform/android/api/jni_singleton.h",
     LIB_JAVA / "games/cafecito/foundry/plugin/FoundryPlugin.java",
     LIB_JAVA / "games/cafecito/foundry/plugin/FoundryPluginRegistry.java",
@@ -178,7 +181,21 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
         documentation = read(ANDROID_RUNTIME_DOC)
         self.assertNotIn("plugin metadata parsing", documentation)
         self.assertNotIn("canonical plugin protocol", documentation)
+        self.assertNotIn("host lifecycle behavior", documentation)
+        self.assertNotIn("host callbacks", documentation)
         self.assertIn("explicit JavaClassWrapper test bridge", documentation)
+
+    def test_back_press_termination_waits_for_the_host_status_transition(self) -> None:
+        instrumented_test = read(APP_INSTRUMENTED_TEST)
+        self.assertIn("waitForRunStatus", instrumented_test)
+        self.assertIn(
+            "waitForRunStatus(foundry, Foundry.RunStatus.TERMINATING",
+            instrumented_test,
+        )
+        self.assertNotIn(
+            "assertTrue { foundry.runStatus == Foundry.RunStatus.TERMINATING }",
+            instrumented_test,
+        )
 
     def test_settings_include_the_internal_runtime_library(self) -> None:
         settings = read(SETTINGS)

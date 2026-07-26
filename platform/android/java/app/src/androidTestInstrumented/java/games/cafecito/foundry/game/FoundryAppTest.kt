@@ -33,6 +33,7 @@ package games.cafecito.foundry.game
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.SystemClock
 import android.util.Log
 import androidx.test.core.app.ActivityScenario
 import androidx.test.espresso.Espresso
@@ -70,6 +71,17 @@ class FoundryAppTest {
 			FoundryAppInstrumentedTestBridge.waitForMainLoopStarted(ENGINE_EVENT_TIMEOUT_MS),
 			"Timed out waiting for the Foundry main loop to start."
 		)
+	}
+
+	private fun waitForRunStatus(foundry: Foundry, expected: Foundry.RunStatus, timeoutMillis: Long): Boolean {
+		val deadline = SystemClock.elapsedRealtime() + timeoutMillis
+		do {
+			if (foundry.runStatus == expected) {
+				return true
+			}
+			SystemClock.sleep(10L)
+		} while (SystemClock.elapsedRealtime() < deadline)
+		return foundry.runStatus == expected
 	}
 
 	private fun resetBridge() {
@@ -257,7 +269,10 @@ class FoundryAppTest {
 			assertTrue(FoundryAppInstrumentedTestBridge.waitForEngineTermination(ENGINE_EVENT_TIMEOUT_MS))
 
 			val foundry = Foundry.getInstance(InstrumentationRegistry.getInstrumentation().targetContext)
-			assertTrue { foundry.runStatus == Foundry.RunStatus.TERMINATING }
+			assertTrue(
+				waitForRunStatus(foundry, Foundry.RunStatus.TERMINATING, ENGINE_EVENT_TIMEOUT_MS),
+				"Timed out waiting for the Foundry host to enter TERMINATING."
+			)
 		}
 	}
 }

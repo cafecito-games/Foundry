@@ -84,6 +84,8 @@ for path in (
 for path in (
     "platform/android/plugin/foundry_plugin_jni.h",
     "platform/android/plugin/foundry_plugin_jni.cpp",
+    "platform/android/export/foundry_plugin_config.h",
+    "platform/android/export/foundry_plugin_config.cpp",
     "platform/android/api/jni_singleton.h",
     "doc/classes/JNISingleton.xml",
     "platform/android/java/lib/src/main/java/games/cafecito/foundry/plugin/FoundryPlugin.java",
@@ -326,7 +328,7 @@ require_text(
 require_text(
     "platform/android/java/app/build.gradle",
     'implementation project(":lib")',
-    "fileTree(dir: \"$addonsDirectory\", include: ['*.jar', '*.aar'])",
+    "fileTree(dir: \"$addonsDirectory\", include: ['**/*.jar', '**/*.aar'])",
     "libopenxr_loader.so",
 )
 forbid_text(

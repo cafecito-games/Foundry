@@ -137,11 +137,12 @@ platform/android/java/gradlew -p platform/android/java --no-daemon \
   -PselectedAbis=
 ```
 
-Lint is abort-on-error. The unit suite covers runtime identity, canonical
-types, command-line parsing, and host lifecycle behavior. The retained Android
-test APK covers runtime identity, while the application instrumented suite uses
-an explicit JavaClassWrapper test bridge for Foundry Script interop, file
-access, host callbacks, and startup/termination coverage.
+Lint is abort-on-error. The JVM unit suite covers runtime identity, canonical
+types, and command-line parsing. The retained library Android test APK covers
+runtime identity and canonical types. The application instrumented suite uses
+an explicit JavaClassWrapper test bridge for Foundry Script interop and file
+access, and separately covers runtime boot, launcher variants, command-line
+arguments, back-press behavior, and engine termination.
 
 Compile the application and its own instrumented suite with:
 

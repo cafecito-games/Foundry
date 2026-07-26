@@ -48,7 +48,7 @@ dependencies {
     // Automatically pick up local dependencies in res://addons
     String addonsDirectory = getAddonsDirectory()
     if (addonsDirectory != null && !addonsDirectory.isBlank()) {
-        implementation fileTree(dir: "$addonsDirectory", include: ['*.jar', '*.aar'])
+        implementation fileTree(dir: "$addonsDirectory", include: ['**/*.jar', '**/*.aar'])
     }
 
     // OpenXR is an engine-owned export capability. Only the version crosses
