@@ -38,8 +38,12 @@
 #include "../fs_bytecode_export.h"
 #include "../fs_bytecode_loader.h"
 #include "../fs_cache.h"
+#include "../fs_name_mangler_analysis.h"
+#include "../fs_name_mangler_binding_safety.h"
+#include "../fs_name_mangler_keep_rules.h"
 #include "../fs_parser.h"
 
+#include "core/config/project_settings.h"
 #include "core/io/file_access.h"
 #include "core/io/resource_loader.h"
 
@@ -97,6 +101,50 @@ void add_graph_diagnostic(Vector<FSNameManglerExport::Diagnostic> &r_diagnostics
 	r_diagnostics.push_back(diagnostic);
 }
 
+void add_stage_diagnostic(
+		Vector<FSNameManglerExport::Diagnostic> &r_diagnostics,
+		const String &p_stage, const String &p_source,
+		const String &p_message) {
+	FSNameManglerExport::Diagnostic diagnostic;
+	diagnostic.stage = p_stage;
+	diagnostic.source = p_source;
+	diagnostic.message = p_message;
+	r_diagnostics.push_back(diagnostic);
+}
+
+void add_binding_diagnostics(
+		const Vector<FSNameManglerBindingSafety::Diagnostic> &p_diagnostics,
+		Vector<FSNameManglerExport::Diagnostic> &r_diagnostics) {
+	for (const FSNameManglerBindingSafety::Diagnostic &source_diagnostic :
+			p_diagnostics) {
+		String message = source_diagnostic.context;
+		if (!source_diagnostic.message.is_empty()) {
+			if (!message.is_empty()) {
+				message += ": ";
+			}
+			message += source_diagnostic.message;
+		}
+		add_stage_diagnostic(r_diagnostics, "binding",
+				source_diagnostic.source, message);
+	}
+}
+
+void add_rule_diagnostics(
+		const Vector<FSNameManglerKeepRules::Diagnostic> &p_diagnostics,
+		Vector<FSNameManglerExport::Diagnostic> &r_diagnostics) {
+	for (const FSNameManglerKeepRules::Diagnostic &source_diagnostic :
+			p_diagnostics) {
+		add_stage_diagnostic(
+				r_diagnostics, "rules", source_diagnostic.source,
+				vformat("line %d: %s: %s", source_diagnostic.line,
+						source_diagnostic.severity ==
+										FSNameManglerKeepRules::DIAGNOSTIC_WARNING
+								? "warning"
+								: "error",
+						source_diagnostic.message));
+	}
+}
+
 void sort_and_deduplicate_diagnostics(Vector<FSNameManglerExport::Diagnostic> &r_diagnostics) {
 	r_diagnostics.sort_custom<ExportDiagnosticComparator>();
 	for (int i = r_diagnostics.size() - 1; i > 0; i--) {
@@ -117,6 +165,14 @@ Vector<String> sorted_unique_paths(const Vector<String> &p_paths) {
 		}
 	}
 	return paths;
+}
+
+String resolve_keep_rules_path(const String &p_path) {
+	String normalized_path = p_path.replace("\\", "/").simplify_path();
+	if (normalized_path.is_relative_path()) {
+		normalized_path = "res://" + normalized_path;
+	}
+	return ProjectSettings::get_singleton()->globalize_path(normalized_path);
 }
 
 String compile_error_message(const String &p_source_path, Error p_error,
@@ -343,7 +399,100 @@ FSNameManglerExport::Result FSNameManglerExport::prepare(
 		return failed_result;
 	}
 
+	FSNameManglerAnalysis::Input analysis_input;
+	analysis_input.complete_project_graph = true;
+	for (const KeyValue<String, DiscoveredScript> &entry : graph.scripts) {
+		analysis_input.scripts.push_back(entry.value.script);
+	}
+
+	FSNameManglerBindingSafety::Input binding_input;
+	for (const DiscoveredResource &resource : graph.resources) {
+		binding_input.add_resource(resource.resource, resource.source_path);
+	}
+	const FSNameManglerBindingSafety::Result binding =
+			FSNameManglerBindingSafety::collect(
+					binding_input, analysis_input);
+	add_binding_diagnostics(
+			binding.diagnostics, failed_result.diagnostics);
+	Error binding_apply_error = OK;
+	if (binding.error == OK && binding.complete) {
+		binding_apply_error = binding.apply_to_input(analysis_input);
+	}
+	if (binding.error != OK || !binding.complete ||
+			binding_apply_error != OK) {
+		failed_result.error =
+				binding.error != OK
+				? binding.error
+				: binding_apply_error != OK
+				? binding_apply_error
+				: ERR_INVALID_DATA;
+		if (binding.diagnostics.is_empty()) {
+			add_stage_diagnostic(
+					failed_result.diagnostics, "binding", String(),
+					"Binding evidence collection was incomplete.");
+		}
+		sort_and_deduplicate_diagnostics(
+				failed_result.diagnostics);
+		return failed_result;
+	}
+
+	if (!p_input.keep_rules_path.is_empty()) {
+		const String rules_path =
+				resolve_keep_rules_path(p_input.keep_rules_path);
+		FSNameManglerKeepRules rules;
+		Vector<FSNameManglerKeepRules::Diagnostic> rule_diagnostics;
+		const Error load_error = FSNameManglerKeepRules::load(
+				rules_path, rules, rule_diagnostics);
+		if (load_error != OK) {
+			add_rule_diagnostics(
+					rule_diagnostics, failed_result.diagnostics);
+			failed_result.error = load_error;
+			if (rule_diagnostics.is_empty()) {
+				add_stage_diagnostic(
+						failed_result.diagnostics, "rules", rules_path,
+						vformat("Keep rules could not be loaded: %s.",
+								error_names[load_error]));
+			}
+			sort_and_deduplicate_diagnostics(
+					failed_result.diagnostics);
+			return failed_result;
+		}
+
+		const Error apply_error =
+				rules.apply_to_input(analysis_input, rule_diagnostics);
+		add_rule_diagnostics(
+				rule_diagnostics, failed_result.diagnostics);
+		if (apply_error != OK) {
+			failed_result.error = apply_error;
+			if (rule_diagnostics.is_empty()) {
+				add_stage_diagnostic(
+						failed_result.diagnostics, "rules", rules_path,
+						vformat("Keep rules could not be applied: %s.",
+								error_names[apply_error]));
+			}
+			sort_and_deduplicate_diagnostics(
+					failed_result.diagnostics);
+			return failed_result;
+		}
+	}
+
+	const FSNameManglerAnalysis::Result analysis =
+			FSNameManglerAnalysis::analyze(analysis_input);
+	if (analysis.error != OK) {
+		failed_result.error = analysis.error;
+		add_stage_diagnostic(
+				failed_result.diagnostics, "analysis", String(),
+				vformat("Name analysis failed: %s.",
+						error_names[analysis.error]));
+		sort_and_deduplicate_diagnostics(
+				failed_result.diagnostics);
+		return failed_result;
+	}
+
+	sort_and_deduplicate_diagnostics(failed_result.diagnostics);
 	Result result;
+	result.keep_log = analysis.keep_log;
+	result.diagnostics = failed_result.diagnostics;
 	for (const KeyValue<String, DiscoveredScript> &entry : graph.scripts) {
 		PreparedScript prepared;
 		prepared.source_path = entry.key;
@@ -363,6 +512,7 @@ FSNameManglerExport::Result FSNameManglerExport::prepare(
 			failed_serialization.error = serialization_error != OK
 					? serialization_error
 					: ERR_INVALID_DATA;
+			failed_serialization.diagnostics = result.diagnostics;
 			Diagnostic diagnostic;
 			diagnostic.stage = "serialization";
 			diagnostic.source = entry.key;
@@ -372,6 +522,8 @@ FSNameManglerExport::Result FSNameManglerExport::prepare(
 							? "serializer produced no data"
 							: error_names[serialization_error]);
 			failed_serialization.diagnostics.push_back(diagnostic);
+			sort_and_deduplicate_diagnostics(
+					failed_serialization.diagnostics);
 			return failed_serialization;
 		}
 		result.scripts.insert(entry.key, prepared);

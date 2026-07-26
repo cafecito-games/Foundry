@@ -45,7 +45,11 @@
 #include "core/config/project_settings.h"
 #include "core/io/file_access.h"
 #include "core/io/resource_loader.h"
+#include "core/io/resource_saver.h"
 #include "core/os/os.h"
+#include "scene/resources/animation.h"
+#include "scene/resources/animation_library.h"
+#include "scene/resources/packed_scene.h"
 #include "tests/test_macros.h"
 
 namespace FSTests {
@@ -124,6 +128,78 @@ struct NameManglerExportFixture {
 		}
 		file->store_buffer(p_buffer.ptr(), p_buffer.size());
 	}
+
+	String write_evidence_scene(const String &p_relative_path,
+			const String &p_emitter_path, const String &p_receiver_path,
+			const StringName &p_signal = SNAME("scene_signal"),
+			const StringName &p_method = SNAME("scene_handler")) {
+		Error error = OK;
+		const Ref<FoundryScript> emitter_script = FSCache::get_full_script(
+				p_emitter_path, error, String(), true);
+		REQUIRE_EQ(error, OK);
+		REQUIRE(emitter_script.is_valid());
+		const Ref<FoundryScript> receiver_script = FSCache::get_full_script(
+				p_receiver_path, error, String(), true);
+		REQUIRE_EQ(error, OK);
+		REQUIRE(receiver_script.is_valid());
+
+		Ref<Animation> animation;
+		animation.instantiate();
+		const int value_track = animation->add_track(Animation::TYPE_VALUE);
+		animation->track_set_path(
+				value_track, NodePath("Receiver:animated_value"));
+		animation->track_insert_key(value_track, 0.0, 2.0);
+		const int method_track = animation->add_track(Animation::TYPE_METHOD);
+		animation->track_set_path(method_track, NodePath("Receiver"));
+		Dictionary method_key;
+		method_key["method"] = SNAME("animation_handler");
+		method_key["args"] = Array();
+		animation->track_insert_key(method_track, 0.0, method_key);
+		Ref<AnimationLibrary> library;
+		library.instantiate();
+		REQUIRE_EQ(library->add_animation(SNAME("evidence"), animation), OK);
+
+		Ref<PackedScene> scene;
+		scene.instantiate();
+		const Ref<SceneState> state = scene->get_state();
+		const int node_type = state->add_name(SNAME("Node"));
+		const int player_type =
+				state->add_name(SNAME("AnimationPlayer"));
+		const int root_node = state->add_node(
+				-1, -1, node_type, state->add_name(SNAME("Root")),
+				-1, -1, 70);
+		const int emitter_node = state->add_node(
+				root_node, root_node, node_type,
+				state->add_name(SNAME("Emitter")), -1, -1, 71);
+		state->add_node_property(
+				emitter_node, state->add_name(SNAME("script")),
+				state->add_value(emitter_script));
+		const int receiver_node = state->add_node(
+				root_node, root_node, node_type,
+				state->add_name(SNAME("Receiver")), -1, -1, 72);
+		state->add_node_property(
+				receiver_node, state->add_name(SNAME("script")),
+				state->add_value(receiver_script));
+		state->add_node_property(
+				receiver_node, state->add_name(SNAME("stored_value")),
+				state->add_value(11));
+		const int player_node = state->add_node(
+				root_node, root_node, player_type,
+				state->add_name(SNAME("AnimationPlayer")), -1, -1, 73);
+		state->add_node_property(
+				player_node, state->add_name(SNAME("root_node")),
+				state->add_value(NodePath("..")));
+		state->add_node_property(
+				player_node, state->add_name(SNAME("libraries/")),
+				state->add_value(library));
+		state->add_connection(
+				emitter_node, receiver_node, state->add_name(p_signal),
+				state->add_name(p_method), Object::CONNECT_PERSIST, 0, {});
+
+		const String path = tree.root.path_join(p_relative_path);
+		REQUIRE_EQ(ResourceSaver::save(scene, path), OK);
+		return path;
+	}
 };
 
 struct NameManglerExportGlobalGuard {
@@ -139,6 +215,20 @@ struct NameManglerExportGlobalGuard {
 		}
 	}
 };
+
+static bool name_mangler_export_has_keep(
+		const FSNameManglerExport::Result &p_result,
+		const StringName &p_name, const String &p_detail_fragment = String()) {
+	const String prefix = vformat("Keeping \"%s\": ", p_name);
+	for (const String &line : p_result.keep_log) {
+		if (line.begins_with(prefix) &&
+				(p_detail_fragment.is_empty() ||
+						line.contains(p_detail_fragment))) {
+			return true;
+		}
+	}
+	return false;
+}
 
 TEST_CASE("[FoundryScript][NameManglerExport][Graph] Invalid roots fail transactionally in stable order") {
 	FSNameManglerExport::Input input;
@@ -609,6 +699,186 @@ TEST_CASE("[FoundryScript][NameManglerExport][Graph] Reversed manifests produce 
 			return;
 		}
 		CHECK_EQ(reverse.scripts[entry.key].bytes, entry.value.bytes);
+	}
+}
+
+TEST_CASE("[FoundryScript][NameManglerExport][Evidence] Scene bindings and configured rules compose before analysis") {
+	NameManglerExportFixture fixture("evidence_composition");
+	const String emitter_path = fixture.write_source(
+			"emitter.fs",
+			"extends Node\n"
+			"signal scene_signal\n"
+			"func private_emitter_helper() -> void:\n"
+			"\tpass\n");
+	const String receiver_path = fixture.write_source(
+			"receiver.fs",
+			"extends Node\n"
+			"@export var stored_value: int\n"
+			"var animated_value: float\n"
+			"func scene_handler() -> void:\n"
+			"\tpass\n"
+			"func animation_handler() -> void:\n"
+			"\tpass\n"
+			"func rule_kept() -> void:\n"
+			"\tpass\n"
+			"func private_helper() -> void:\n"
+			"\tpass\n");
+	const String scene_path = fixture.write_evidence_scene(
+			"main.tscn", emitter_path, receiver_path);
+	fixture.tree.write_file(
+			"name-mangler.pro",
+			"-keepclassmembers class ** {\n"
+			"\trule_kept;\n"
+			"}\n");
+	const String rules_path =
+			fixture.tree.root.path_join("name-mangler.pro");
+
+	FSNameManglerExport::Input input;
+	input.manifest_paths.push_back(receiver_path);
+	input.manifest_paths.push_back(scene_path);
+	input.manifest_paths.push_back(emitter_path);
+	input.keep_rules_path = rules_path;
+	const FSNameManglerExport::Result result =
+			FSNameManglerExport::prepare(input);
+
+	INFO("Diagnostics:");
+	for (const FSNameManglerExport::Diagnostic &diagnostic :
+			result.diagnostics) {
+		INFO(diagnostic.format());
+	}
+	CHECK_EQ(result.error, OK);
+	CHECK(result.diagnostics.is_empty());
+	REQUIRE_EQ(result.scripts.size(), 2);
+	CHECK(result.scripts.has(emitter_path));
+	CHECK(result.scripts.has(receiver_path));
+	CHECK(name_mangler_export_has_keep(
+			result, SNAME("scene_signal"),
+			"scene/resource reference (connection signal in " +
+					scene_path));
+	CHECK(name_mangler_export_has_keep(
+			result, SNAME("scene_handler"),
+			"scene/resource reference (connection method in " +
+					scene_path));
+	CHECK(name_mangler_export_has_keep(
+			result, SNAME("stored_value"),
+			"scene/resource reference (serialized property in " +
+					scene_path));
+	CHECK(name_mangler_export_has_keep(
+			result, SNAME("animated_value"),
+			"scene/resource reference (animation property in " +
+					scene_path));
+	CHECK(name_mangler_export_has_keep(
+			result, SNAME("animation_handler"),
+			"scene/resource reference (animation method in " +
+					scene_path));
+	CHECK(name_mangler_export_has_keep(
+			result, SNAME("rule_kept"), "explicit keep rule"));
+	CHECK_FALSE(name_mangler_export_has_keep(
+			result, SNAME("private_helper")));
+	CHECK_FALSE(name_mangler_export_has_keep(
+			result, SNAME("private_emitter_helper")));
+}
+
+TEST_CASE("[FoundryScript][NameManglerExport][Evidence] Configured rules fail closed while an omitted path is ignored") {
+	NameManglerExportFixture fixture("rules_fail_closed");
+	const String source_path = fixture.write_source(
+			"rules.fs",
+			"extends RefCounted\n"
+			"func private_helper() -> void:\n"
+			"\tpass\n");
+	fixture.tree.write_file(
+			"malformed.pro",
+			"-keepclassmembers class ** {\n"
+			"\tmissing_semicolon\n"
+			"}\n");
+	const String malformed_path =
+			fixture.tree.root.path_join("malformed.pro");
+	const String missing_path =
+			fixture.tree.root.path_join("missing.pro");
+
+	FSNameManglerExport::Input malformed_input;
+	malformed_input.manifest_paths.push_back(source_path);
+	malformed_input.keep_rules_path = malformed_path;
+	const FSNameManglerExport::Result malformed =
+			FSNameManglerExport::prepare(malformed_input);
+	CHECK_EQ(malformed.error, ERR_PARSE_ERROR);
+	CHECK(malformed.scripts.is_empty());
+	REQUIRE_EQ(malformed.diagnostics.size(), 1);
+	if (malformed.diagnostics.size() == 1) {
+		CHECK_EQ(malformed.diagnostics[0].stage, "rules");
+		CHECK_EQ(malformed.diagnostics[0].source, malformed_path);
+		CHECK(malformed.diagnostics[0].message.contains(
+				"must end with `;`"));
+	}
+
+	FSNameManglerExport::Input missing_input;
+	missing_input.manifest_paths.push_back(source_path);
+	missing_input.keep_rules_path = missing_path;
+	const FSNameManglerExport::Result missing =
+			FSNameManglerExport::prepare(missing_input);
+	CHECK_EQ(missing.error, ERR_FILE_NOT_FOUND);
+	CHECK(missing.scripts.is_empty());
+	REQUIRE_EQ(missing.diagnostics.size(), 1);
+	if (missing.diagnostics.size() == 1) {
+		CHECK_EQ(missing.diagnostics[0].stage, "rules");
+		CHECK_EQ(missing.diagnostics[0].source, missing_path);
+		CHECK(missing.diagnostics[0].message.contains(
+				"Could not read keep-rules file"));
+	}
+
+	FSNameManglerExport::Input omitted_input;
+	omitted_input.manifest_paths.push_back(source_path);
+	const FSNameManglerExport::Result omitted =
+			FSNameManglerExport::prepare(omitted_input);
+	CHECK_EQ(omitted.error, OK);
+	CHECK(omitted.diagnostics.is_empty());
+	REQUIRE_EQ(omitted.scripts.size(), 1);
+	CHECK(omitted.scripts.has(source_path));
+	CHECK_FALSE(name_mangler_export_has_keep(
+			omitted, SNAME("private_helper")));
+}
+
+TEST_CASE("[FoundryScript][NameManglerExport][Evidence] Incomplete binding safety rejects all prepared scripts") {
+	NameManglerExportFixture fixture("incomplete_binding");
+	const String emitter_path = fixture.write_source(
+			"emitter.fs",
+			"extends Node\n"
+			"signal scene_signal\n");
+	const String receiver_path = fixture.write_source(
+			"receiver.fs",
+			"extends Node\n"
+			"func private_helper() -> void:\n"
+			"\tpass\n"
+			"func animation_handler() -> void:\n"
+			"\tpass\n"
+			"var animated_value: float\n"
+			"@export var stored_value: int\n");
+	const String scene_path = fixture.write_evidence_scene(
+			"stale.tscn", emitter_path, receiver_path,
+			SNAME("missing_signal"), SNAME("missing_handler"));
+
+	FSNameManglerExport::Input input;
+	input.manifest_paths.push_back(scene_path);
+	input.manifest_paths.push_back(receiver_path);
+	input.manifest_paths.push_back(emitter_path);
+	const FSNameManglerExport::Result result =
+			FSNameManglerExport::prepare(input);
+
+	CHECK_NE(result.error, OK);
+	CHECK(result.scripts.is_empty());
+	CHECK(result.keep_log.is_empty());
+	REQUIRE_EQ(result.diagnostics.size(), 2);
+	if (result.diagnostics.size() == 2) {
+		CHECK_EQ(result.diagnostics[0].stage, "binding");
+		CHECK_EQ(result.diagnostics[0].source, scene_path);
+		CHECK_EQ(result.diagnostics[1].stage, "binding");
+		CHECK_EQ(result.diagnostics[1].source, scene_path);
+		CHECK(result.diagnostics[0].message <=
+				result.diagnostics[1].message);
+		const bool mentions_missing_binding =
+				result.diagnostics[0].message.contains("missing_") ||
+				result.diagnostics[1].message.contains("missing_");
+		CHECK(mentions_missing_binding);
 	}
 }
 
