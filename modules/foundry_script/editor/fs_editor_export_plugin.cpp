@@ -53,6 +53,15 @@ void EditorExportFoundryScript::_add_export_info(const String &p_message) {
 	}
 }
 
+void EditorExportFoundryScript::_add_export_warning(const String &p_message) {
+	Ref<EditorExportPlatform> platform = get_export_platform();
+	if (platform.is_valid()) {
+		platform->add_message(EditorExportPlatform::EXPORT_MESSAGE_WARNING, TTR("Compiled Script Export"), p_message);
+	} else {
+		WARN_PRINT(p_message);
+	}
+}
+
 void EditorExportFoundryScript::_add_export_error(const String &p_message) {
 	Ref<EditorExportPlatform> platform = get_export_platform();
 	if (platform.is_valid()) {
@@ -262,13 +271,21 @@ Error EditorExportFoundryScript::_prepare_export_file_manifest(const ExportFileM
 	for (const String &message : result.keep_log) {
 		_add_export_info(message);
 	}
+	String first_error_diagnostic;
 	for (const FSNameManglerExport::Diagnostic &diagnostic : result.diagnostics) {
-		_add_export_error(diagnostic.format());
+		if (diagnostic.severity == FSNameManglerExport::DIAGNOSTIC_WARNING) {
+			_add_export_warning(diagnostic.format());
+		} else {
+			if (first_error_diagnostic.is_empty()) {
+				first_error_diagnostic = diagnostic.format();
+			}
+			_add_export_error(diagnostic.format());
+		}
 	}
-	if (result.error != OK || !result.diagnostics.is_empty()) {
+	if (result.error != OK || !first_error_diagnostic.is_empty()) {
 		_clear_name_mangling_state();
-		if (!result.diagnostics.is_empty()) {
-			r_error = result.diagnostics[0].format();
+		if (!first_error_diagnostic.is_empty()) {
+			r_error = first_error_diagnostic;
 		} else {
 			r_error = vformat(TTR("Foundry Script name mangling preparation failed: %s."), error_names[result.error]);
 		}

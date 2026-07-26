@@ -39,6 +39,11 @@
 
 class FSNameManglerExport {
 public:
+	enum DiagnosticSeverity {
+		DIAGNOSTIC_WARNING,
+		DIAGNOSTIC_ERROR,
+	};
+
 	struct Input {
 		Vector<String> manifest_paths;
 		String keep_rules_path;
@@ -53,6 +58,7 @@ public:
 	};
 
 	struct Diagnostic {
+		DiagnosticSeverity severity = DIAGNOSTIC_ERROR;
 		String stage;
 		String source;
 		String message;

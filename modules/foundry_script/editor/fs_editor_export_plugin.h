@@ -48,6 +48,7 @@ class EditorExportFoundryScript : public EditorExportPlugin {
 	// Export plugin callbacks cannot return an error; an EXPORT_MESSAGE_ERROR on the platform is
 	// what fails the export (see EditorExportPlatform::export_project_files).
 	void _add_export_info(const String &p_message);
+	void _add_export_warning(const String &p_message);
 	void _add_export_error(const String &p_message);
 	void _clear_name_mangling_state();
 	String _describe_script_errors(const String &p_path, Error p_fallback_error);

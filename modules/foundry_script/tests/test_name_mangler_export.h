@@ -1022,6 +1022,8 @@ TEST_CASE("[FoundryScript][NameManglerExport][Evidence] Configured rules fail cl
 	CHECK(malformed.scripts.is_empty());
 	REQUIRE_EQ(malformed.diagnostics.size(), 1);
 	if (malformed.diagnostics.size() == 1) {
+		CHECK_EQ(malformed.diagnostics[0].severity,
+				FSNameManglerExport::DIAGNOSTIC_ERROR);
 		CHECK_EQ(malformed.diagnostics[0].stage, "rules");
 		CHECK_EQ(malformed.diagnostics[0].source, malformed_path);
 		CHECK(malformed.diagnostics[0].message.contains(
@@ -1037,6 +1039,8 @@ TEST_CASE("[FoundryScript][NameManglerExport][Evidence] Configured rules fail cl
 	CHECK(missing.scripts.is_empty());
 	REQUIRE_EQ(missing.diagnostics.size(), 1);
 	if (missing.diagnostics.size() == 1) {
+		CHECK_EQ(missing.diagnostics[0].severity,
+				FSNameManglerExport::DIAGNOSTIC_ERROR);
 		CHECK_EQ(missing.diagnostics[0].stage, "rules");
 		CHECK_EQ(missing.diagnostics[0].source, missing_path);
 		CHECK(missing.diagnostics[0].message.contains(
@@ -1608,6 +1612,69 @@ TEST_CASE("[FoundryScript][NameManglerExport][Plugin] Preparation is one shot an
 					 "res://foreign_generated.fsb", error),
 			ERR_INVALID_DATA);
 	CHECK(error.contains("res://foreign_generated.fsb"));
+}
+
+TEST_CASE("[FoundryScript][NameManglerExport][Plugin] Warning-only keep rules do not veto preparation") {
+	NameManglerExportFixture fixture("plugin_warning_rules");
+	const String source_path = fixture.write_source(
+			"warning.fs",
+			"extends RefCounted\n"
+			"func warning_private_marker() -> int:\n"
+			"\treturn 13\n");
+	fixture.tree.write_file(
+			"warning_rules.pro",
+			"-keep class missing.WarningOnly\n");
+	const String rules_path =
+			fixture.tree.root.path_join("warning_rules.pro");
+
+	FSNameManglerExport::Input reference_input;
+	reference_input.manifest_paths.push_back(source_path);
+	reference_input.keep_rules_path = rules_path;
+	reference_input.release_profile = true;
+	const FSNameManglerExport::Result reference =
+			FSNameManglerExport::prepare(reference_input);
+	REQUIRE_EQ(reference.error, OK);
+	REQUIRE_EQ(reference.diagnostics.size(), 1);
+	if (reference.diagnostics.size() != 1) {
+		return;
+	}
+	CHECK_EQ(reference.diagnostics[0].severity,
+			FSNameManglerExport::DIAGNOSTIC_WARNING);
+	CHECK(reference.diagnostics[0].message.contains("warning"));
+	REQUIRE(reference.scripts.has(source_path));
+
+	Ref<NameManglerExportTestPlatform> platform =
+			memnew(NameManglerExportTestPlatform);
+	Ref<EditorExportPreset> preset = platform->create_preset();
+	preset->set_script_export_mode(
+			EditorExportPreset::MODE_SCRIPT_COMPILED_BYTECODE);
+	preset->set_script_name_mangling_enabled(true);
+	preset->set_script_name_mangling_keep_rules(rules_path);
+	Ref<TestEditorExportFoundryScript> plugin =
+			memnew(TestEditorExportFoundryScript);
+	NameManglerExportPluginEndGuard end_guard(plugin);
+	plugin->begin_for_test(preset);
+
+	EditorExportPlugin::ExportFileManifest manifest;
+	manifest.source_paths.push_back(source_path);
+	String error;
+	ERR_PRINT_OFF;
+	const Error preparation_error =
+			plugin->prepare_for_test(manifest, error);
+	ERR_PRINT_ON;
+	CHECK_EQ(preparation_error, OK);
+	CHECK(error.is_empty());
+	REQUIRE_EQ(platform->get_message_count(), 1);
+	if (platform->get_message_count() != 1) {
+		return;
+	}
+	CHECK_EQ(platform->get_message(0).msg_type,
+			EditorExportPlatform::EXPORT_MESSAGE_WARNING);
+	CHECK(platform->get_message(0).text.contains("warning"));
+
+	plugin->clear_output_for_test();
+	plugin->export_file_for_test(source_path);
+	CHECK_EQ(plugin->get_output_count_for_test(), 1);
 }
 
 TEST_CASE("[FoundryScript][NameManglerExport][Plugin] Source token and bytecode callbacks use exact cached metadata") {

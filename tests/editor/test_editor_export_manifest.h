@@ -43,6 +43,7 @@
 namespace TestEditorExportManifest {
 
 static const String IMPORTED_PATH = "res://tests/editor/fixtures/export_manifest/imported.keepdata";
+static const String MALFORMED_IMPORTED_PATH = "res://tests/editor/fixtures/export_manifest/malformed.keepdata";
 static const String SKIPPED_PATH = "res://tests/editor/fixtures/export_manifest/skipped.skipdata";
 static const String CUSTOMIZED_IMPORTED_RESOURCE_PATH = "res://tests/editor/fixtures/export_manifest/customized_imported_resource.tres";
 static const String CUSTOMIZED_RESOURCE_PATH = "res://tests/editor/fixtures/export_manifest/customized_resource.tres";
@@ -463,6 +464,34 @@ TEST_CASE("[Editor][ExportManifest] Preparation sees a sorted effective manifest
 	CHECK_EQ(message.msg_type, EditorExportPlatform::EXPORT_MESSAGE_ERROR);
 	CHECK(message.text.contains("Bravo"));
 	CHECK(message.text.contains("manifest preparation rejected"));
+}
+
+TEST_CASE("[Editor][ExportManifest] Malformed import metadata excludes only the affected path") {
+	Ref<TestManifestExportPlatform> platform =
+			memnew(TestManifestExportPlatform);
+	Ref<EditorExportPreset> preset = platform->create_preset();
+
+	Vector<String> events;
+	Ref<RecordingManifestPlugin> plugin =
+			memnew(RecordingManifestPlugin("Plugin", &events));
+	Vector<Ref<EditorExportPlugin>> plugins;
+	plugins.push_back(plugin);
+
+	HashSet<String> paths;
+	paths.insert(IMPORTED_PATH);
+	paths.insert(MALFORMED_IMPORTED_PATH);
+
+	SaveCapture capture;
+	ERR_PRINT_OFF;
+	const Error export_error =
+			platform->export_candidates(preset, paths, plugins, capture);
+	ERR_PRINT_ON;
+	CHECK_EQ(export_error, OK);
+	CHECK_EQ(plugin->prepared_sources, Vector<String>({ IMPORTED_PATH }));
+	CHECK_NE(capture.paths.find(IMPORTED_PATH), -1);
+	CHECK_EQ(capture.paths.find(MALFORMED_IMPORTED_PATH), -1);
+	CHECK_EQ(capture.paths.find(MALFORMED_IMPORTED_PATH + ".import"), -1);
+	CHECK_EQ(platform->get_message_count(), 0);
 }
 
 TEST_CASE("[Editor][ExportManifest] Late generated files are rejected before their save callback") {

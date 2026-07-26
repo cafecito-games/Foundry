@@ -59,6 +59,9 @@ struct ExportDiagnosticComparator {
 		if (p_left.source != p_right.source) {
 			return p_left.source < p_right.source;
 		}
+		if (p_left.severity != p_right.severity) {
+			return p_left.severity < p_right.severity;
+		}
 		return p_left.message < p_right.message;
 	}
 };
@@ -105,8 +108,11 @@ void add_graph_diagnostic(Vector<FSNameManglerExport::Diagnostic> &r_diagnostics
 void add_stage_diagnostic(
 		Vector<FSNameManglerExport::Diagnostic> &r_diagnostics,
 		const String &p_stage, const String &p_source,
-		const String &p_message) {
+		const String &p_message,
+		FSNameManglerExport::DiagnosticSeverity p_severity =
+				FSNameManglerExport::DIAGNOSTIC_ERROR) {
 	FSNameManglerExport::Diagnostic diagnostic;
+	diagnostic.severity = p_severity;
 	diagnostic.stage = p_stage;
 	diagnostic.source = p_source;
 	diagnostic.message = p_message;
@@ -142,7 +148,11 @@ void add_rule_diagnostics(
 										FSNameManglerKeepRules::DIAGNOSTIC_WARNING
 								? "warning"
 								: "error",
-						source_diagnostic.message));
+						source_diagnostic.message),
+				source_diagnostic.severity ==
+								FSNameManglerKeepRules::DIAGNOSTIC_WARNING
+						? FSNameManglerExport::DIAGNOSTIC_WARNING
+						: FSNameManglerExport::DIAGNOSTIC_ERROR);
 	}
 }
 
@@ -168,7 +178,8 @@ void sort_and_deduplicate_diagnostics(Vector<FSNameManglerExport::Diagnostic> &r
 	for (int i = r_diagnostics.size() - 1; i > 0; i--) {
 		const FSNameManglerExport::Diagnostic &left = r_diagnostics[i - 1];
 		const FSNameManglerExport::Diagnostic &right = r_diagnostics[i];
-		if (left.stage == right.stage && left.source == right.source && left.message == right.message) {
+		if (left.severity == right.severity && left.stage == right.stage &&
+				left.source == right.source && left.message == right.message) {
 			r_diagnostics.remove_at(i);
 		}
 	}

@@ -1323,8 +1323,9 @@ Error EditorExportPlatform::_export_project_files_with_manifest(const Ref<Editor
 		config.instantiate();
 		Error import_err = config->load(path + ".import");
 		if (import_err != OK) {
-			add_message(EXPORT_MESSAGE_ERROR, TTR("Export file manifest"), vformat(TTR("Could not parse import metadata for \"%s\"."), path));
-			return import_err;
+			ERR_PRINT("Could not parse: '" + path + "', not exported.");
+			paths.erase(path);
+			continue;
 		}
 
 		import_configs.insert(path, config);
