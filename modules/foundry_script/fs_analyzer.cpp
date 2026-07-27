@@ -9361,12 +9361,19 @@ bool FSAnalyzer::find_global_tuple_meta_type(const StringName &p_name, FSParser:
 
 	StringName global_name = p_name;
 	if (!ScriptServer::is_global_class(global_name)) {
-		StringName imported_name;
-		bool namespace_error = false;
-		if (!get_imported_global_class(p_name, p_source, imported_name, namespace_error) || namespace_error) {
-			return false;
+		// The declaring file's own namespace wins over imports, matching how a type annotation
+		// resolves a bare global name.
+		StringName namespace_candidate;
+		if (get_global_class_in_namespace(parser->head->namespace_name, p_name, namespace_candidate)) {
+			global_name = namespace_candidate;
+		} else {
+			StringName imported_name;
+			bool namespace_error = false;
+			if (!get_imported_global_class(p_name, p_source, imported_name, namespace_error) || namespace_error) {
+				return false;
+			}
+			global_name = imported_name;
 		}
-		global_name = imported_name;
 	}
 	if (!ScriptServer::is_global_class(global_name)) {
 		return false;

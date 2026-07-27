@@ -201,7 +201,10 @@ static FSDataType _data_type_from_tuple_descriptor(const Variant &p_descriptor) 
 	const Dictionary descriptor = p_descriptor;
 	FSDataType type;
 	if (!descriptor.get("is_tuple", false)) {
-		type = FSDataType::from_container_type(_container_type_from_descriptor(descriptor));
+		const ContainerType container_type = _container_type_from_descriptor(descriptor);
+		type = descriptor.get("is_type_handle", false)
+				? FSDataType::from_type_handle_container_type(container_type)
+				: FSDataType::from_container_type(container_type);
 		type.is_nullable = descriptor.get("is_nullable", false);
 		return type;
 	}

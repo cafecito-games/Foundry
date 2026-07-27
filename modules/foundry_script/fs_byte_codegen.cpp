@@ -45,6 +45,11 @@ Variant FSByteCodeGenerator::make_container_type_descriptor(const FSDataType &p_
 	if (p_type.is_nullable) {
 		descriptor["is_nullable"] = true;
 	}
+	if (p_type.is_type_handle) {
+		// A `Type[T]` element tests class handles, not instances, so the distinction has to survive
+		// the round trip through the descriptor.
+		descriptor["is_type_handle"] = true;
+	}
 
 	Array element_types;
 	for (const FSDataType &element_type : p_type.container_element_types) {
