@@ -1621,7 +1621,6 @@ void FSPrinter::print_enum(const FSParser::EnumNode *p_enum) {
 		write("pass");
 		newline();
 	} else if (!p_enum->values.is_empty()) {
-		int last_value_end_line = 0;
 		for (int i = 0; i < p_enum->values.size(); i++) {
 			const FSParser::EnumNode::Value &value = p_enum->values[i];
 			flush_trivia_until(value.line);
@@ -1658,13 +1657,16 @@ void FSPrinter::print_enum(const FSParser::EnumNode *p_enum) {
 			const int value_end_line = value.custom_value != nullptr ? value.custom_value->end_line : payload_end_line;
 			emit_trailing_comment(value_end_line);
 			last_emitted_line = MAX(last_emitted_line, value_end_line);
-			last_value_end_line = value_end_line;
 		}
 		if (p_enum->functions.is_empty()) {
-			// The last value's true emitted extent, not its identifier line: a multi-line
-			// `= expr` or payload case ends several source lines after `value.line`, and a
-			// comment trailing that member must still be reachable by this flush.
-			flush_trivia_until(last_value_end_line + 2);
+			// Indentation-based, like a block's tail comments, rather than a fixed
+			// line-count flush: the last value's true emitted extent (not its identifier
+			// line) can be several source lines past `value.line` for a multi-line
+			// `= expr` or payload case, so a comment immediately trailing it must still be
+			// reachable. But a fixed lookahead would also swallow a dedented comment that
+			// documents the *next* declaration, so indentation decides where the enum's
+			// own trailing comments end.
+			flush_block_tail_comments();
 		}
 	}
 	if (!p_enum->values.is_empty() && !p_enum->functions.is_empty()) {
@@ -1683,11 +1685,19 @@ void FSPrinter::print_enum(const FSParser::EnumNode *p_enum) {
 		flush_trivia_until(p_enum->functions[p_enum->functions.size() - 1]->end_line + 2);
 	}
 	indent_level--;
-	if (p_enum->end_line > last_emitted_line) {
+	// `end_line` can land exactly on a comment line that dedents out of the enum body
+	// (the tokenizer attaches the comment-only line's own NEWLINE to the node before
+	// the real DEDENT); jumping the cursor onto it here, or past it with the blank-line
+	// advance below, would silently drop that comment instead of leaving it for the
+	// next declaration's own leading trivia. Only advance over it when it is not itself
+	// unconsumed trivia.
+	if (p_enum->end_line > last_emitted_line && !is_trivia_line(p_enum->end_line)) {
 		last_emitted_line = p_enum->end_line;
 	}
 	newline();
-	last_emitted_line++;
+	if (!is_trivia_line(last_emitted_line + 1)) {
+		last_emitted_line++;
+	}
 }
 
 void FSPrinter::print_tuple(const FSParser::TupleNode *p_tuple) {
