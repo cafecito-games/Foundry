@@ -275,6 +275,74 @@ class FoundryJavaDocumentationTests(unittest.TestCase):
             )
         )
 
+    def test_command_first_acceptance_harness_is_explicit_and_targeted(self) -> None:
+        self.assertTrue(
+            hasattr(
+                FoundryJavaAndroidIntegrationTests,
+                "test_command_first_source_template_acceptance",
+            )
+        )
+        source = Path(__file__).read_text(encoding="utf-8")
+        for fragment in (
+            "FOUNDRY_JAVA_COMMAND_FIRST_ACCEPTANCE",
+            "FOUNDRY_EDITOR_BINARY",
+            "FOUNDRY_ANDROID_SOURCE_TEMPLATE",
+            "FOUNDRY_JAVA_COMMAND_FIRST_OUTPUT",
+            "--install-android-build-template",
+            "foundry-java-default-debug.apk",
+            "foundry-java-custom-release.apk",
+            "foundry-java-command-first-evidence.json",
+        ):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, source)
+
+    def test_android_ci_runs_command_first_apks_on_api_36(self) -> None:
+        workflow = ANDROID_BUILDS_WORKFLOW.read_text(encoding="utf-8")
+        command_job_marker = "\n  foundry-java-command-first:\n"
+        compile_job_marker = "\n  compile-instrumented-assets:\n"
+        assemble_job_marker = "\n  assemble-android:\n"
+        device_job_marker = "\n  device-acceptance:\n"
+        self.assertEqual(1, workflow.count(command_job_marker))
+        self.assertEqual(1, workflow.count(device_job_marker))
+        compile_job = workflow.split(compile_job_marker, maxsplit=1)[1].split(assemble_job_marker, maxsplit=1)[0]
+        command_job = workflow.split(command_job_marker, maxsplit=1)[1].split(device_job_marker, maxsplit=1)[0]
+        device_job = workflow.split(device_job_marker, maxsplit=1)[1]
+        self.assertIn("name: linuxbsd-editor-foundry-java-command-first", compile_job)
+        self.assertIn("path: bin/foundry.linuxbsd.editor.dev.x86_64", compile_job)
+        for fragment in (
+            "validate-foundry-java-export",
+            "assemble-android",
+            "compile-instrumented-assets",
+            "linuxbsd-editor-foundry-java-command-first",
+            "repository: cafecito-games/Foundry-Java",
+            f"ref: {EXACT_FOUNDRY_JAVA_COMMIT}",
+            "FOUNDRY_JAVA_COMMAND_FIRST_ACCEPTANCE: '1'",
+            "FOUNDRY_EDITOR_BINARY:",
+            "FOUNDRY_ANDROID_SOURCE_TEMPLATE:",
+            "FOUNDRY_JAVA_COMMAND_FIRST_OUTPUT:",
+            "platforms;android-36",
+            "build-tools;36.1.0",
+            ("FoundryJavaAndroidIntegrationTests.test_command_first_source_template_acceptance"),
+            "foundry-java-command-first-exports",
+        ):
+            with self.subTest(job="command-first", fragment=fragment):
+                self.assertIn(fragment, command_job)
+        for fragment in (
+            "foundry-java-command-first",
+            "foundry-java-command-first-exports",
+            "system-images;android-36;default;x86_64",
+            "android_device_acceptance.py verify-apks",
+            (
+                "--apk games.cafecito.foundry.game="
+                ".test_scratch/foundry-java-command-first/foundry-java-default-debug.apk"
+            ),
+            ("--apk dev.example.foundryjava=.test_scratch/foundry-java-command-first/foundry-java-custom-release.apk"),
+            "foundry-java-command-first-device-evidence",
+            "if: always()",
+        ):
+            with self.subTest(job="device", fragment=fragment):
+                self.assertIn(fragment, device_job)
+
 
 class FoundryJavaFinalArtifactInspectorTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -1681,6 +1749,216 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
         self.local_debug_evidence[requested_abi] = evidence
         return evidence
 
+    @staticmethod
+    def _required_command_first_path(name: str) -> Path:
+        value = os.environ.get(name)
+        if value is None or not value.strip():
+            raise AssertionError(f"{name} must name an explicit path")
+        return Path(value).expanduser().absolute()
+
+    @classmethod
+    def _android_sdk_tool(cls, name: str) -> Path:
+        candidates = (
+            cls.android_sdk / "cmdline-tools/latest/bin" / name,
+            *sorted(
+                cls.android_sdk.glob(f"build-tools/*/{name}"),
+                reverse=True,
+            ),
+        )
+        for candidate in candidates:
+            if candidate.is_file() and os.access(candidate, os.X_OK):
+                return candidate
+        raise AssertionError(f"Android SDK tool is unavailable: {name}")
+
+    def _write_command_first_project(
+        self,
+        project: Path,
+        *,
+        application_id: str,
+        source_template: Path,
+        keystore: Path,
+    ) -> None:
+        project.mkdir(parents=True)
+        project.joinpath("project.foundry").write_text(
+            textwrap.dedent(
+                """\
+                [application]
+                config/name="Foundry Java Command First"
+
+                [rendering]
+                renderer/rendering_method="gl_compatibility"
+                renderer/rendering_method.mobile="gl_compatibility"
+                textures/vram_compression/import_etc2_astc=true
+                """
+            ),
+            encoding="utf-8",
+        )
+        FoundryJavaExporterContractTests._write_export_preset(
+            project,
+            plugin_local=self.plugin_jar,
+            local_artifacts=(self.binding_aar, self.runtime_jar, self.module_jar),
+            use_gradle=True,
+            extra_options=(
+                f'gradle_build/android_source_template="{source_template}"',
+                "gradle_build/export_format=0",
+                'gradle_build/target_sdk="36"',
+                f'package/unique_name="{application_id}"',
+                "package/signed=true",
+                f'keystore/debug="{keystore}"',
+                'keystore/debug_user="foundry-java-acceptance"',
+                'keystore/debug_password="foundry-java-acceptance"',
+                f'keystore/release="{keystore}"',
+                'keystore/release_user="foundry-java-acceptance"',
+                'keystore/release_password="foundry-java-acceptance"',
+                "architectures/armeabi-v7a=false",
+                "architectures/arm64-v8a=false",
+                "architectures/x86=false",
+                "architectures/x86_64=true",
+            ),
+        )
+
+    def _run_command_first_export(
+        self,
+        editor: Path,
+        project: Path,
+        output: Path,
+        *,
+        mode: str,
+    ) -> subprocess.CompletedProcess[str]:
+        return run_bounded_subprocess(
+            [
+                str(editor),
+                "--headless",
+                "project",
+                "export",
+                "--project",
+                str(project),
+                "--preset",
+                "Android",
+                "--output",
+                str(output),
+                "--mode",
+                mode,
+                "--install-android-build-template",
+            ],
+            cwd=project,
+            environment={
+                **self._environment(),
+                "FOUNDRY_TEST_SCRATCH": str(self.workspace),
+            },
+            timeout=900,
+        )
+
+    def _assert_command_first_apk(
+        self,
+        project: Path,
+        apk: Path,
+        *,
+        application_id: str,
+        build_type: str,
+        expected_configuration: bytes,
+        expected_index: bytes,
+    ) -> dict[str, object]:
+        inspector = load_device_acceptance_module()
+        evidence = inspector.inspect_foundry_java_apk(
+            apk,
+            requested_abis=("x86_64",),
+            enabled=True,
+        )
+        expected_configuration_sha256 = hashlib.sha256(expected_configuration).hexdigest()
+        expected_index_sha256 = hashlib.sha256(expected_index).hexdigest()
+        self.assertEqual(
+            ("lib/x86_64/libfoundry_java.so",),
+            evidence["bridge_entries"],
+        )
+        self.assertEqual(
+            expected_configuration_sha256,
+            evidence["configuration_sha256"],
+        )
+        self.assertEqual(
+            expected_index_sha256,
+            evidence["registry_index_sha256"],
+        )
+        with zipfile.ZipFile(apk) as archive:
+            self.assertEqual(
+                expected_configuration,
+                archive.read("assets/FoundryJava.foundryextension"),
+            )
+            self.assertEqual(
+                expected_index,
+                archive.read("assets/foundry_java/registry-index-v2.txt"),
+            )
+
+        apkanalyzer = self._android_sdk_tool("apkanalyzer")
+        application_id_result = run_bounded_subprocess(
+            [str(apkanalyzer), "manifest", "application-id", str(apk)],
+            cwd=project,
+            environment=self._environment(),
+            timeout=60,
+        )
+        self.assertEqual(
+            0,
+            application_id_result.returncode,
+            application_id_result.stdout + application_id_result.stderr,
+        )
+        self.assertEqual(application_id, application_id_result.stdout.strip())
+        manifest = run_bounded_subprocess(
+            [str(apkanalyzer), "manifest", "print", str(apk)],
+            cwd=project,
+            environment=self._environment(),
+            timeout=60,
+        )
+        manifest_output = manifest.stdout + manifest.stderr
+        self.assertEqual(0, manifest.returncode, manifest_output)
+        self.assertIn(
+            "games.cafecito.foundry.generated.FoundryGeneratedStartupProvider",
+            manifest_output,
+        )
+        authority = f"{application_id}.foundry-java-startup"
+        self.assertIn(authority, manifest_output)
+
+        signing = run_bounded_subprocess(
+            [str(self._android_sdk_tool("apksigner")), "verify", "--verbose", str(apk)],
+            cwd=project,
+            environment=self._environment(),
+            timeout=60,
+        )
+        self.assertEqual(
+            0,
+            signing.returncode,
+            signing.stdout + signing.stderr,
+        )
+
+        retained_classes: tuple[str, ...] = ()
+        if build_type == "release":
+            mapping = project / "android/build/build/outputs/mapping/standardRelease/mapping.txt"
+            mapping_text = mapping.read_text(encoding="utf-8")
+            retained_classes = (
+                "games.cafecito.foundry.generated.FoundryGeneratedStartupProvider",
+                "games.cafecito.foundry.generated.FoundryGeneratedBootstrap",
+                "example.DemoExtension",
+            )
+            for retained_class in retained_classes:
+                self.assertIn(
+                    f"{retained_class} -> {retained_class}:",
+                    mapping_text,
+                )
+
+        return {
+            "apk": apk.name,
+            "apk_sha256": hashlib.sha256(apk.read_bytes()).hexdigest(),
+            "application_id": application_id,
+            "build_type": build_type,
+            "requested_abis": list(evidence["requested_abis"]),
+            "bridge_entries": list(evidence["bridge_entries"]),
+            "host_entries": list(evidence["host_entries"]),
+            "configuration_sha256": evidence["configuration_sha256"],
+            "registry_index_sha256": evidence["registry_index_sha256"],
+            "provider_authority": authority,
+            "retained_classes": list(retained_classes),
+            "signed": True,
+        }
+
     def _build_twice(
         self,
         app: Path,
@@ -1710,6 +1988,143 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
         after = snapshot()
         self.assertEqual(before, after)
         return first, second
+
+    def test_command_first_source_template_acceptance(self) -> None:
+        if os.environ.get("FOUNDRY_JAVA_COMMAND_FIRST_ACCEPTANCE") != "1":
+            raise unittest.SkipTest(
+                "Set FOUNDRY_JAVA_COMMAND_FIRST_ACCEPTANCE=1 with explicit editor, source-template, and output paths"
+            )
+        editor = self._required_command_first_path("FOUNDRY_EDITOR_BINARY")
+        source_template = self._required_command_first_path("FOUNDRY_ANDROID_SOURCE_TEMPLATE")
+        output = self._required_command_first_path("FOUNDRY_JAVA_COMMAND_FIRST_OUTPUT")
+        self.assertTrue(editor.is_file() and os.access(editor, os.X_OK), editor)
+        self.assertTrue(source_template.is_file() and not source_template.is_symlink(), source_template)
+        output.mkdir(parents=True, exist_ok=True)
+        self.assertTrue(output.is_dir() and not output.is_symlink(), output)
+        evidence_path = output / "foundry-java-command-first-evidence.json"
+        evidence_path.unlink(missing_ok=True)
+
+        source_entries = load_source_template_module().inspect_source_template(source_template)
+        with zipfile.ZipFile(source_template) as source_archive:
+            for host_aar in sorted(load_source_template_module().EXPECTED_AARS):
+                with self.subTest(host_aar=host_aar):
+                    with zipfile.ZipFile(io.BytesIO(source_archive.read(host_aar))) as archive:
+                        nested_entries = tuple(archive.namelist())
+                    self.assertFalse(
+                        any(
+                            "foundry-java" in entry.lower()
+                            or "foundryjava" in entry.lower()
+                            or "libfoundry_java.so" in entry
+                            for entry in nested_entries
+                        ),
+                        host_aar,
+                    )
+
+        keystore = self.workspace / "foundry-java-command-first.jks"
+        keytool = self.java_home / "bin/keytool"
+        keytool_result = run_bounded_subprocess(
+            [
+                str(keytool),
+                "-genkeypair",
+                "-noprompt",
+                "-keystore",
+                str(keystore),
+                "-storepass",
+                "foundry-java-acceptance",
+                "-keypass",
+                "foundry-java-acceptance",
+                "-alias",
+                "foundry-java-acceptance",
+                "-dname",
+                "CN=Foundry Java Acceptance,O=Cafecito Games,C=US",
+                "-keyalg",
+                "RSA",
+                "-keysize",
+                "2048",
+                "-validity",
+                "365",
+            ],
+            cwd=self.workspace,
+            environment=self._environment(),
+            timeout=60,
+        )
+        self.assertEqual(
+            0,
+            keytool_result.returncode,
+            keytool_result.stdout + keytool_result.stderr,
+        )
+        self.assertTrue(keystore.is_file())
+
+        expected_configuration = self._binding_configuration()
+        expected_index = (
+            "format=2\n"
+            "api_sha256=85e91174c1a8a48629223d6459bb2ef595ad1da405b2ce88435c24fe221aec51\n"
+            "generator_version=1\n"
+            "runtime_contract_version=1\n"
+            "bridge_contract_version=1\n"
+            "module=demo|example.DemoExtension\n"
+        ).encode()
+        scenarios = (
+            (
+                "default-debug",
+                "games.cafecito.foundry.game",
+                "debug",
+                output / "foundry-java-default-debug.apk",
+            ),
+            (
+                "custom-release",
+                "dev.example.foundryjava",
+                "release",
+                output / "foundry-java-custom-release.apk",
+            ),
+        )
+        exports: dict[str, dict[str, object]] = {}
+        for name, application_id, mode, apk in scenarios:
+            with self.subTest(name=name):
+                apk.unlink(missing_ok=True)
+                project = self.workspace / f"command-first-{name}"
+                self._write_command_first_project(
+                    project,
+                    application_id=application_id,
+                    source_template=source_template,
+                    keystore=keystore,
+                )
+                result = self._run_command_first_export(
+                    editor,
+                    project,
+                    apk,
+                    mode=mode,
+                )
+                command_output = result.stdout + result.stderr
+                self.assertEqual(0, result.returncode, command_output)
+                self.assertTrue(apk.is_file(), apk)
+                exports[name] = self._assert_command_first_apk(
+                    project,
+                    apk,
+                    application_id=application_id,
+                    build_type=mode,
+                    expected_configuration=expected_configuration,
+                    expected_index=expected_index,
+                )
+
+        evidence = {
+            "schema_version": 1,
+            "foundry_java_commit": EXACT_FOUNDRY_JAVA_COMMIT,
+            "editor": str(editor),
+            "source_template": {
+                "name": source_template.name,
+                "sha256": hashlib.sha256(source_template.read_bytes()).hexdigest(),
+                "entries": list(source_entries),
+            },
+            "expected_configuration_sha256": hashlib.sha256(expected_configuration).hexdigest(),
+            "expected_registry_index_sha256": hashlib.sha256(expected_index).hexdigest(),
+            "exports": exports,
+        }
+        evidence_path.write_text(
+            json.dumps(evidence, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        self.assertEqual(evidence, json.loads(evidence_path.read_text(encoding="utf-8")))
 
     def test_rejects_opaque_descriptor_mutations(self) -> None:
         descriptor_path = "META-INF/foundry-java/modules/demo.descriptor"

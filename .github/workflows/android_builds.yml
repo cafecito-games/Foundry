@@ -316,6 +316,12 @@ jobs:
           name: android-instrumented-assets
           path: .test_scratch/android-instrumented-assets/android-instrumented-assets.zip
 
+      - name: Upload command-first editor
+        uses: ./.github/actions/upload-artifact
+        with:
+          name: linuxbsd-editor-foundry-java-command-first
+          path: bin/foundry.linuxbsd.editor.dev.x86_64
+
   assemble-android:
     needs:
       - validate-runtime-contracts
@@ -372,10 +378,85 @@ jobs:
             bin/foundry-dev.aar
             bin/foundry-release.aar
 
+  foundry-java-command-first:
+    needs:
+      - validate-foundry-java-export
+      - assemble-android
+      - compile-instrumented-assets
+    runs-on: ubuntu-24.04
+    name: Export Foundry-Java APKs through the command-first editor
+    timeout-minutes: 60
+    env:
+      FOUNDRY_JAVA_COMMAND_FIRST_ACCEPTANCE: '1'
+      FOUNDRY_JAVA_REPO: ${{ github.workspace }}/foundry-java-dependency
+      FOUNDRY_EDITOR_BINARY: ${{ github.workspace }}/.test_scratch/foundry-java-editor/foundry.linuxbsd.editor.dev.x86_64
+      FOUNDRY_ANDROID_SOURCE_TEMPLATE: ${{ github.workspace }}/.test_scratch/android-templates-assembled/android_source.zip
+      FOUNDRY_JAVA_COMMAND_FIRST_OUTPUT: ${{ github.workspace }}/.test_scratch/foundry-java-command-first
+      FOUNDRY_TEST_SCRATCH: ${{ github.workspace }}/.test_scratch
+    steps:
+      - name: Checkout Foundry
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.checkout-ref || github.sha }}
+          submodules: recursive
+
+      - name: Checkout exact Foundry-Java
+        uses: actions/checkout@v6
+        with:
+          repository: cafecito-games/Foundry-Java
+          ref: 0db6970116de257fffffffe2a55e89543d4a12b5
+          path: foundry-java-dependency
+          persist-credentials: false
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Install Android API 36 build dependencies
+        run: |
+          set -euo pipefail
+          "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" \
+            "platform-tools" \
+            "platforms;android-36" \
+            "build-tools;36.1.0"
+
+      - name: Download command-first editor
+        uses: actions/download-artifact@v8
+        with:
+          name: linuxbsd-editor-foundry-java-command-first
+          path: .test_scratch/foundry-java-editor
+
+      - name: Download assembled Android source template
+        uses: actions/download-artifact@v8
+        with:
+          name: android-templates-assembled
+          path: .test_scratch/android-templates-assembled
+
+      - name: Run positive command-first Foundry-Java acceptance
+        run: |
+          set -euo pipefail
+          chmod +x "${FOUNDRY_EDITOR_BINARY}"
+          python3 -m unittest -v \
+            tests.python_build.test_android_foundry_java_export.FoundryJavaAndroidIntegrationTests.test_command_first_source_template_acceptance
+
+      - name: Upload command-first APKs and evidence
+        if: always()
+        uses: ./.github/actions/upload-artifact
+        with:
+          name: foundry-java-command-first-exports
+          path: |
+            .test_scratch/foundry-java-command-first/foundry-java-default-debug.apk
+            .test_scratch/foundry-java-command-first/foundry-java-custom-release.apk
+            .test_scratch/foundry-java-command-first/foundry-java-command-first-evidence.json
+
   device-acceptance:
     needs:
       - assemble-android
       - compile-instrumented-assets
+      - foundry-java-command-first
     runs-on: ubuntu-24.04
     name: Verify Android runtime on an emulator
     timeout-minutes: 120
@@ -403,6 +484,12 @@ jobs:
         with:
           name: android-instrumented-assets
           path: .test_scratch/android-instrumented-assets
+
+      - name: Download command-first Foundry-Java APKs
+        uses: actions/download-artifact@v8
+        with:
+          name: foundry-java-command-first-exports
+          path: .test_scratch/foundry-java-command-first
 
       - name: Install Android emulator
         run: |
@@ -467,6 +554,18 @@ jobs:
             --process-timeout 120 \
             --serial emulator-5554
 
+      - name: Run command-first Foundry-Java APK acceptance
+        run: |
+          set -euo pipefail
+          python3 platform/android/android_device_acceptance.py verify-apks \
+            --apk games.cafecito.foundry.game=.test_scratch/foundry-java-command-first/foundry-java-default-debug.apk \
+            --apk dev.example.foundryjava=.test_scratch/foundry-java-command-first/foundry-java-custom-release.apk \
+            --evidence-dir "${RUNNER_TEMP}/foundry-java-command-first-device-evidence" \
+            --adb "${ANDROID_HOME}/platform-tools/adb" \
+            --apkanalyzer "${ANDROID_HOME}/cmdline-tools/latest/bin/apkanalyzer" \
+            --process-timeout 120 \
+            --serial emulator-5554
+
       - name: Upload Android device acceptance evidence
         if: always()
         uses: ./.github/actions/upload-artifact
@@ -474,4 +573,5 @@ jobs:
           name: android-device-acceptance-evidence
           path: |
             ${{ runner.temp }}/android-device-acceptance-evidence
+            ${{ runner.temp }}/foundry-java-command-first-device-evidence
             ${{ runner.temp }}/foundry-emulator.log
