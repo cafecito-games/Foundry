@@ -2873,11 +2873,16 @@ FSParser::TupleNode *FSParser::parse_tuple(const DeclarationModifiers &p_modifie
 	}
 	tuple_node->identifier = parse_identifier();
 
-	if (!consume(FSTokenizer::Token::PARENTHESIS_OPEN, R"(Expected "(" after tuple name.)")) {
+	if (!check(FSTokenizer::Token::PARENTHESIS_OPEN)) {
+		push_error(R"(Expected "(" after tuple name.)");
 		complete_extents(tuple_node);
 		return tuple_node;
 	}
+	// Enable multiline mode before consuming the open paren, so the tokenizer suppresses
+	// NEWLINE/INDENT/DEDENT for the token it scans immediately after it (matching how the
+	// expression-level Pratt driver handles grouping/call parentheses).
 	push_multiline(true);
+	advance();
 
 	HashMap<StringName, int> field_names;
 	if (!check(FSTokenizer::Token::PARENTHESIS_CLOSE)) {

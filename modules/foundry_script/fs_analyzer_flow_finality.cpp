@@ -2,7 +2,7 @@
 /*  fs_analyzer_flow_finality.cpp                                         */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -781,6 +781,12 @@ void FSAnalyzer::FlowFinalityContext::collect_local_finals(const FSParser::Node 
 				collect_local_finals(array->elements[i], r_finals, r_finals_by_name);
 			}
 		} break;
+		case FSParser::Node::TUPLE_LITERAL: {
+			const FSParser::TupleLiteralNode *tuple_literal = static_cast<const FSParser::TupleLiteralNode *>(p_node);
+			for (int i = 0; i < tuple_literal->elements.size(); i++) {
+				collect_local_finals(tuple_literal->elements[i], r_finals, r_finals_by_name);
+			}
+		} break;
 		case FSParser::Node::DICTIONARY: {
 			const FSParser::DictionaryNode *dictionary = static_cast<const FSParser::DictionaryNode *>(p_node);
 			for (int i = 0; i < dictionary->elements.size(); i++) {
@@ -1025,6 +1031,12 @@ void FSAnalyzer::FlowFinalityContext::check_final_reads_in_expression(const FSPa
 				check_final_reads_in_expression(array->elements[i], p_finals, p_finals_by_name, p_scope, p_state, p_flattened_trait_body);
 			}
 		} break;
+		case FSParser::Node::TUPLE_LITERAL: {
+			const FSParser::TupleLiteralNode *tuple_literal = static_cast<const FSParser::TupleLiteralNode *>(p_expression);
+			for (int i = 0; i < tuple_literal->elements.size(); i++) {
+				check_final_reads_in_expression(tuple_literal->elements[i], p_finals, p_finals_by_name, p_scope, p_state, p_flattened_trait_body);
+			}
+		} break;
 		case FSParser::Node::DICTIONARY: {
 			const FSParser::DictionaryNode *dictionary = static_cast<const FSParser::DictionaryNode *>(p_expression);
 			for (int i = 0; i < dictionary->elements.size(); i++) {
@@ -1205,6 +1217,12 @@ void FSAnalyzer::FlowFinalityContext::scan_illegal_final_writes(const FSParser::
 			const FSParser::ArrayNode *array = static_cast<const FSParser::ArrayNode *>(p_node);
 			for (int i = 0; i < array->elements.size(); i++) {
 				scan_illegal_final_writes(array->elements[i], p_finals, p_finals_by_name, p_scope, p_in_init, p_flattened_trait_body);
+			}
+		} break;
+		case FSParser::Node::TUPLE_LITERAL: {
+			const FSParser::TupleLiteralNode *tuple_literal = static_cast<const FSParser::TupleLiteralNode *>(p_node);
+			for (int i = 0; i < tuple_literal->elements.size(); i++) {
+				scan_illegal_final_writes(tuple_literal->elements[i], p_finals, p_finals_by_name, p_scope, p_in_init, p_flattened_trait_body);
 			}
 		} break;
 		case FSParser::Node::DICTIONARY: {

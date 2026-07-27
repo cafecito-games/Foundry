@@ -1667,19 +1667,22 @@ void FSPrinter::print_tuple(const FSParser::TupleNode *p_tuple) {
 	if (p_tuple->identifier != nullptr) {
 		write(p_tuple->identifier->name);
 	}
-	write("(");
-	for (int i = 0; i < p_tuple->fields.size(); i++) {
-		if (i > 0) {
-			write(", ");
-		}
-		const FSParser::TupleNode::Field &field = p_tuple->fields[i];
-		if (field.identifier != nullptr) {
-			write(field.identifier->name);
-			write(": ");
-		}
-		print_type(field.type);
-	}
-	write(")");
+	// Reuse the generic delimited-list layout so a tuple declaration authored across
+	// several lines keeps that layout (rather than being silently collapsed to one line)
+	// and any full-line comments between fields are interleaved instead of dropped.
+	print_delimited_items(
+			"(", ")", p_tuple->fields.size(), node_was_authored_multiline(p_tuple),
+			p_tuple->start_line, p_tuple->end_line,
+			[&](int p_index) {
+				const FSParser::TupleNode::Field &field = p_tuple->fields[p_index];
+				if (field.identifier != nullptr) {
+					write(field.identifier->name);
+					write(": ");
+				}
+				print_type(field.type);
+			},
+			[&](int p_index) { return p_tuple->fields[p_index].line; },
+			[&](int p_index) { return p_tuple->fields[p_index].type->end_line; });
 	newline();
 	last_emitted_line = MAX(last_emitted_line, p_tuple->end_line);
 }
