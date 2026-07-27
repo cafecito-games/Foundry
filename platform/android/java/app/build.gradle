@@ -1,10 +1,66 @@
 // Gradle build config for Foundry Engine's Android port.
+buildscript {
+    String marker = project.findProperty("foundry_java_registry_marker") ?: ""
+    if (marker == "registry-index-v2") {
+        String pluginKind = project.findProperty("foundry_java_gradle_plugin_kind") ?: ""
+        String pluginArtifact = project.findProperty("foundry_java_gradle_plugin") ?: ""
+        if (!(pluginKind in ["maven", "local"]) || pluginArtifact.isEmpty()) {
+            throw new GradleException(
+                "foundry_java_gradle_plugin_kind and foundry_java_gradle_plugin must select exactly one Maven or local Gradle plugin"
+            )
+        }
+        if (pluginKind == "maven" &&
+                (!(pluginArtifact ==~ /[A-Za-z0-9_.-]+:[A-Za-z0-9_.-]+:[A-Za-z0-9_.-]+/) ||
+                    pluginArtifact.contains("+") ||
+                    pluginArtifact.toLowerCase(Locale.ROOT).contains("latest"))) {
+            throw new GradleException(
+                "foundry_java_gradle_plugin must use an exact Maven group:artifact:version coordinate; found '$pluginArtifact'"
+            )
+        }
+        List<String> repositoryUrls =
+            (project.findProperty("foundry_java_maven_repositories") ?: "")
+                .split("\\|")
+                .findAll { !it.isEmpty() }
+                .sort()
+        repositories {
+            repositoryUrls.each { String repositoryUrl ->
+                URI uri = new URI(repositoryUrl)
+                if (!(uri.scheme in ["http", "https", "file"])) {
+                    throw new GradleException(
+                        "foundry_java_maven_repositories must use HTTP(S) or file URLs; found '$repositoryUrl'"
+                    )
+                }
+                maven { url uri }
+            }
+        }
+        dependencies {
+            if (pluginKind == "maven") {
+                classpath pluginArtifact
+            } else {
+                File pluginFile = project.file(pluginArtifact)
+                if (!pluginFile.isFile() || !pluginFile.name.endsWith(".jar")) {
+                    throw new GradleException(
+                        "foundry_java_gradle_plugin must be a regular local JAR file: $pluginArtifact"
+                    )
+                }
+                classpath files(pluginFile)
+            }
+        }
+    }
+}
+
 plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.android'
 }
 
 apply from: 'config.gradle'
+
+validateFoundryJavaExport()
+
+if (getFoundryJavaEnabled()) {
+    apply plugin: "games.cafecito.foundry.java"
+}
 
 allprojects {
     repositories {
@@ -13,6 +69,11 @@ allprojects {
         gradlePluginPortal()
         maven { url "https://plugins.gradle.org/m2/" }
         maven { url "https://central.sonatype.com/repository/maven-snapshots/"}
+        if (getFoundryJavaEnabled()) {
+            getFoundryJavaMavenRepositories().each { String repositoryUrl ->
+                maven { url repositoryUrl }
+            }
+        }
     }
 }
 
@@ -34,6 +95,15 @@ dependencies {
     implementation "androidx.fragment:fragment:$versions.fragmentVersion"
     implementation "androidx.core:core-splashscreen:$versions.splashscreenVersion"
     implementation "androidx.documentfile:documentfile:$versions.documentfileVersion"
+
+    if (getFoundryJavaEnabled()) {
+        getFoundryJavaMavenArtifacts().each { String artifact ->
+            implementation artifact
+        }
+        getFoundryJavaLocalArtifacts().each { File artifact ->
+            implementation files(artifact)
+        }
+    }
 
     if (rootProject.findProject(":lib")) {
         implementation project(":lib")
@@ -62,6 +132,12 @@ dependencies {
     String jar = '../../../../modules/mono/thirdparty/libSystem.Security.Cryptography.Native.Android.jar'
     if (file(jar).exists()) {
         monoImplementation files(jar)
+    }
+}
+
+if (getFoundryJavaEnabled()) {
+    foundryJava {
+        requestedAbis.set(getExportEnabledABIs() as Set)
     }
 }
 
