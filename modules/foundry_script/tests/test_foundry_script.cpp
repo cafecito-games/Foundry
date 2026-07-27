@@ -402,6 +402,115 @@ TEST_CASE("[Modules][FoundryScript] Tokenizer treats a value after a .tuple attr
 	}
 }
 
+TEST_CASE("[Modules][FoundryScript] Tokenizer treats a value after a keyword-named attribute as ending a value") {
+	// `can_precede_bin_op()` special-cased only `TUPLE`/`USES` among the ~40 keyword tokens that
+	// `is_node_name()` accepts as attribute names. Any other keyword-named attribute
+	// (`class`, `trait`, `return`, ...) still mis-lexed a following `+`/`-`/`.<digit>` as the start
+	// of a signed number or float literal instead of a binary operator or tuple index, because the
+	// parser only re-spells these tokens to `IDENTIFIER` when it later consumes the attribute, not
+	// at tokenize time. The fix must key off attribute *position* (immediately after `PERIOD`), not
+	// blanket-treat every keyword as a value token everywhere.
+	FSTokenizerText class_plus_tokenizer;
+	class_plus_tokenizer.set_source_code("self.class+1");
+	FSTokenizer::Token::Type class_plus_expected_types[] = {
+		FSTokenizer::Token::SELF,
+		FSTokenizer::Token::PERIOD,
+		FSTokenizer::Token::CLASS,
+		FSTokenizer::Token::PLUS,
+		FSTokenizer::Token::LITERAL,
+	};
+	for (const FSTokenizer::Token::Type expected_type : class_plus_expected_types) {
+		FSTokenizer::Token token = class_plus_tokenizer.scan();
+		CHECK(token.type == expected_type);
+	}
+
+	FSTokenizerText class_index_tokenizer;
+	class_index_tokenizer.set_source_code("self.class.0");
+	FSTokenizer::Token::Type class_index_expected_types[] = {
+		FSTokenizer::Token::SELF,
+		FSTokenizer::Token::PERIOD,
+		FSTokenizer::Token::CLASS,
+		FSTokenizer::Token::PERIOD,
+		FSTokenizer::Token::LITERAL,
+	};
+	for (const FSTokenizer::Token::Type expected_type : class_index_expected_types) {
+		FSTokenizer::Token token = class_index_tokenizer.scan();
+		CHECK(token.type == expected_type);
+		if (token.type == FSTokenizer::Token::LITERAL) {
+			CHECK(token.literal.get_type() == Variant::INT);
+			CHECK_EQ(int64_t(token.literal), 0);
+		}
+	}
+
+	FSTokenizerText trait_plus_tokenizer;
+	trait_plus_tokenizer.set_source_code("self.trait+1");
+	FSTokenizer::Token::Type trait_plus_expected_types[] = {
+		FSTokenizer::Token::SELF,
+		FSTokenizer::Token::PERIOD,
+		FSTokenizer::Token::TRAIT,
+		FSTokenizer::Token::PLUS,
+		FSTokenizer::Token::LITERAL,
+	};
+	for (const FSTokenizer::Token::Type expected_type : trait_plus_expected_types) {
+		FSTokenizer::Token token = trait_plus_tokenizer.scan();
+		CHECK(token.type == expected_type);
+	}
+
+	FSTokenizerText trait_index_tokenizer;
+	trait_index_tokenizer.set_source_code("self.trait.0");
+	FSTokenizer::Token::Type trait_index_expected_types[] = {
+		FSTokenizer::Token::SELF,
+		FSTokenizer::Token::PERIOD,
+		FSTokenizer::Token::TRAIT,
+		FSTokenizer::Token::PERIOD,
+		FSTokenizer::Token::LITERAL,
+	};
+	for (const FSTokenizer::Token::Type expected_type : trait_index_expected_types) {
+		FSTokenizer::Token token = trait_index_tokenizer.scan();
+		CHECK(token.type == expected_type);
+		if (token.type == FSTokenizer::Token::LITERAL) {
+			CHECK(token.literal.get_type() == Variant::INT);
+			CHECK_EQ(int64_t(token.literal), 0);
+		}
+	}
+
+	// The `class`/`trait` attribute access must also keep parsing, matching how `.tuple` parses.
+	FSParser parser;
+	Error err = parser.parse(R"(
+func _ready():
+	return self.class
+)",
+			"user://class_attribute_name.fs", false);
+	CHECK_EQ(err, OK);
+}
+
+TEST_CASE("[Modules][FoundryScript] Tokenizer keeps non-attribute keyword uses unaffected by the attribute fix") {
+	// The attribute-position fix must not regress the pre-existing, deliberate exclusions for
+	// `match`/`when` used as clause-leading keywords, nor change ordinary statement-position uses
+	// of keywords like `return` that were never in attribute position.
+	FSTokenizerText match_tokenizer;
+	match_tokenizer.set_source_code("match -2:");
+
+	FSTokenizer::Token match_keyword = match_tokenizer.scan();
+	CHECK(match_keyword.type == FSTokenizer::Token::MATCH);
+
+	FSTokenizer::Token match_signed_literal = match_tokenizer.scan();
+	CHECK(match_signed_literal.type == FSTokenizer::Token::LITERAL);
+	CHECK(match_signed_literal.literal.get_type() == Variant::INT);
+	CHECK_EQ(int64_t(match_signed_literal.literal), -2);
+
+	FSTokenizerText return_tokenizer;
+	return_tokenizer.set_source_code("return -1");
+
+	FSTokenizer::Token return_keyword = return_tokenizer.scan();
+	CHECK(return_keyword.type == FSTokenizer::Token::RETURN);
+
+	FSTokenizer::Token return_signed_literal = return_tokenizer.scan();
+	CHECK(return_signed_literal.type == FSTokenizer::Token::LITERAL);
+	CHECK(return_signed_literal.literal.get_type() == Variant::INT);
+	CHECK_EQ(int64_t(return_signed_literal.literal), -1);
+}
+
 TEST_CASE("[Modules][FoundryScript] Tokenizer rejects an exponent on a tuple index") {
 	// `x.0e5` is not a valid tuple index (only a bare decimal integer is); the tokenizer must
 	// report an error rather than silently reinterpreting it as a float.

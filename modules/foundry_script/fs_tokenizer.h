@@ -248,6 +248,12 @@ class FSTokenizerText : public FSTokenizer {
 	Token last_token;
 	Token last_newline;
 	int pending_indents = 0;
+	// Whether `last_token` is a keyword token (e.g. `class`, `trait`, `return`) emitted in
+	// attribute position, i.e. immediately after a `PERIOD`. `FSParser::parse_attribute` re-spells
+	// any `is_node_name()`-accepted token to `IDENTIFIER` when consuming an attribute name, so such
+	// a token behaves like an ordinary identifier value for the purposes of the `+`/`-`/`.<digit>`
+	// disambiguation, even though `Token::can_precede_bin_op()` does not recognize its raw type.
+	bool last_token_is_keyword_attribute = false;
 	List<int> indent_stack;
 	List<List<int>> indent_stack_stack; // For lambdas, which require manipulating the indentation point.
 	List<char32_t> paren_stack;
@@ -267,6 +273,12 @@ class FSTokenizerText : public FSTokenizer {
 	_FORCE_INLINE_ bool _is_at_end() { return position >= length; }
 	_FORCE_INLINE_ char32_t _peek(int p_offset = 0) { return position + p_offset >= 0 && position + p_offset < length ? _current[p_offset] : '\0'; }
 	int indent_level() const { return indent_stack.size(); }
+	// Whether the last emitted token can precede a binary operator (or `.<digit>` tuple index)
+	// rather than the start of a signed number or float literal. Combines
+	// `Token::can_precede_bin_op()` with `last_token_is_keyword_attribute` so that keyword tokens
+	// spelled in attribute position (`self.class`, `self.trait`, ...) are treated as value tokens
+	// too, matching how the parser re-spells them to `IDENTIFIER`.
+	bool _last_token_precedes_bin_op() const { return last_token.can_precede_bin_op() || last_token_is_keyword_attribute; }
 	bool has_error() const { return !error_stack.is_empty(); }
 	Token pop_error();
 	char32_t _advance();
