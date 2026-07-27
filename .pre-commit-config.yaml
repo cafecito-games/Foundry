@@ -250,12 +250,16 @@ repos:
             \.pre-commit-config\.yaml|
             \.github/workflows/android_builds\.yml|
             platform/android/ANDROID_RUNTIME\.md|
+            platform/android/android_device_acceptance\.py|
             platform/android/android_source_template\.py|
             platform/android/doc_classes/EditorExportPlatformAndroid\.xml|
             platform/android/export/export_plugin\.(?:cpp|h)|
             platform/android/java/app/(?:build|config)\.gradle|
+            platform/android/java/app/settings\.gradle|
             tests/fixtures/android_foundry_java/.*|
-            tests/python_build/test_android_foundry_java_export\.py
+            tests/python_build/test_android_device_acceptance\.py|
+            tests/python_build/test_android_foundry_java_export\.py|
+            tests/python_build/test_android_gradle_(?:behavioral|runtime_contract)\.py
           )$
 
       - id: foundry-android-native-contracts

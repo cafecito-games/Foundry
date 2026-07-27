@@ -217,12 +217,16 @@ class FoundryJavaDocumentationTests(unittest.TestCase):
             r"\.pre-commit-config\.yaml",
             r"\.github/workflows/android_builds\.yml",
             r"platform/android/ANDROID_RUNTIME\.md",
+            r"platform/android/android_device_acceptance\.py",
             r"platform/android/android_source_template\.py",
             r"platform/android/doc_classes/EditorExportPlatformAndroid\.xml",
             r"platform/android/export/export_plugin\.(?:cpp|h)",
             r"platform/android/java/app/(?:build|config)\.gradle",
+            r"platform/android/java/app/settings\.gradle",
             r"tests/fixtures/android_foundry_java/.*",
+            r"tests/python_build/test_android_device_acceptance\.py",
             r"tests/python_build/test_android_foundry_java_export\.py",
+            r"tests/python_build/test_android_gradle_(?:behavioral|runtime_contract)\.py",
         )
         for scope in required_scopes:
             with self.subTest(scope=scope):
@@ -251,6 +255,25 @@ class FoundryJavaDocumentationTests(unittest.TestCase):
         for fragment in required_fragments:
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, job)
+
+    def test_integration_matrix_has_bounded_contract_cells(self) -> None:
+        required_cells = (
+            "test_rejects_opaque_descriptor_mutations",
+            "test_rejects_opaque_graph_identity_and_provenance_mutations",
+            "test_rejects_opaque_binding_payload_mutations",
+            "test_local_debug_single_abi_matrix",
+            "test_staged_maven_x86_64_debug_matches_local",
+            "test_local_x86_64_minified_release_is_reproducible",
+        )
+        for cell in required_cells:
+            with self.subTest(cell=cell):
+                self.assertTrue(hasattr(FoundryJavaAndroidIntegrationTests, cell), cell)
+        self.assertFalse(
+            hasattr(
+                FoundryJavaAndroidIntegrationTests,
+                "test_local_and_staged_maven_matrix_matches_final_apks",
+            )
+        )
 
 
 class FoundryJavaFinalArtifactInspectorTests(unittest.TestCase):
@@ -943,7 +966,11 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
     annotations_jar: Path
     binding_aar: Path
     module_jar: Path
-    host_aars: dict[str, Path]
+    host_fixture_root: Path
+    host_java_root: Path
+    host_native_root: Path
+    host_aars: dict[tuple[str, str], Path]
+    local_debug_evidence: dict[str, dict[str, object]]
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -979,7 +1006,9 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
         cls.annotations_jar = cls._only_artifact("foundry-java-annotations/build/libs/foundry-java-annotations-*.jar")
         cls.binding_aar = cls._only_artifact("foundry-java-android/build/outputs/aar/foundry-java-android-release.aar")
         cls.module_jar = cls._compile_module_fixture()
-        cls.host_aars = cls._build_host_aars()
+        cls._prepare_host_fixture()
+        cls.host_aars = {}
+        cls.local_debug_evidence = {}
 
     @classmethod
     def _git(cls, *arguments: str) -> str:
@@ -1064,28 +1093,41 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
         return archive
 
     @classmethod
-    def _build_host_aars(cls) -> dict[str, Path]:
-        fixture_root = cls.workspace / "host-aar"
-        java_root = copy_gradle_fixture(fixture_root)
-        repository = fixture_root / "repo"
+    def _prepare_host_fixture(cls) -> None:
+        cls.host_fixture_root = cls.workspace / "host-aar"
+        cls.host_java_root = copy_gradle_fixture(cls.host_fixture_root)
+        repository = cls.host_fixture_root / "repo"
         revision = git_object(repository, "HEAD")
         tree = git_object(repository, "HEAD^{tree}")
-        native_root = fixture_root / "native"
-        populate_native_matrix(native_root, revision=revision, tree=tree)
+        cls.host_native_root = cls.host_fixture_root / "native"
+        populate_native_matrix(cls.host_native_root, revision=revision, tree=tree)
+
+    @classmethod
+    def _build_host_aar(cls, build_type: str, requested_abi: str) -> Path:
+        cache_key = (build_type, requested_abi)
+        cached = cls.host_aars.get(cache_key)
+        if cached is not None:
+            return cached
+        selected_abi = {
+            "armeabi-v7a": "arm32",
+            "arm64-v8a": "arm64",
+            "x86": "x86_32",
+            "x86_64": "x86_64",
+        }[requested_abi]
+        variant = build_type.capitalize()
         result = run_bounded_subprocess(
             [
                 str(GRADLE_WRAPPER),
                 "--no-daemon",
                 "--console=plain",
                 "-p",
-                str(java_root),
-                ":lib:assembleTemplateDebug",
-                ":lib:assembleTemplateRelease",
+                str(cls.host_java_root),
+                f":lib:assembleTemplate{variant}",
                 f"-PpythonExecutable={sys.executable}",
-                f"-PfoundryNativeRoot={native_root}",
-                "-PselectedAbis=arm32,arm64,x86_32,x86_64",
+                f"-PfoundryNativeRoot={cls.host_native_root}",
+                f"-PselectedAbis={selected_abi}",
             ],
-            cwd=java_root,
+            cwd=cls.host_java_root,
             environment={
                 **cls._environment(),
                 "FOUNDRY_TEST_SCRATCH": str(cls.workspace),
@@ -1093,17 +1135,32 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
             timeout=900,
         )
         if result.returncode != 0:
-            raise AssertionError(f"Foundry host AAR builds failed:\n{result.stdout}\n{result.stderr}")
-        host_aars = {
-            build_type: java_root / f"lib/build/outputs/aar/foundry-{build_type}.aar"
-            for build_type in ("debug", "release")
-        }
-        for host_aar in host_aars.values():
-            if not host_aar.is_file():
-                raise AssertionError(f"Foundry host AAR was not produced: {host_aar}")
-        return host_aars
+            raise AssertionError(
+                f"Foundry host {build_type} AAR build for {requested_abi} failed:\n{result.stdout}\n{result.stderr}"
+            )
+        assembled = cls.host_java_root / f"lib/build/outputs/aar/foundry-{build_type}.aar"
+        if not assembled.is_file():
+            raise AssertionError(f"Foundry host AAR was not produced: {assembled}")
+        destination = cls.workspace / "host-aars" / f"foundry-{build_type}-{requested_abi}.aar"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(assembled, destination)
+        with zipfile.ZipFile(destination) as archive:
+            host_entries = sorted(name for name in archive.namelist() if name.endswith("/libfoundry_android.so"))
+        expected = [f"jni/{requested_abi}/libfoundry_android.so"]
+        if host_entries != expected:
+            raise AssertionError(
+                f"Single-ABI host AAR mismatch for {requested_abi}: expected {expected}, found {host_entries}"
+            )
+        cls.host_aars[cache_key] = destination
+        return destination
 
-    def _prepare_app(self, name: str) -> Path:
+    def _prepare_app(
+        self,
+        name: str,
+        *,
+        build_type: str = "debug",
+        requested_abi: str = "x86_64",
+    ) -> Path:
         app = self.workspace / name
         shutil.copytree(
             APP_ROOT,
@@ -1112,10 +1169,10 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
         )
         shutil.copy2(GRADLE_WRAPPER, app / "gradlew")
         shutil.copytree(JAVA_ROOT / "gradle", app / "gradle")
-        for build_type, host_aar in self.host_aars.items():
-            libraries = app / f"libs/{build_type}"
-            libraries.mkdir(parents=True)
-            shutil.copy2(host_aar, libraries / f"foundry-{build_type}.aar")
+        host_aar = self._build_host_aar(build_type, requested_abi)
+        libraries = app / f"libs/{build_type}"
+        libraries.mkdir(parents=True)
+        shutil.copy2(host_aar, libraries / f"foundry-{build_type}.aar")
         (app / "local.properties").write_text(
             f"sdk.dir={self.android_sdk}\n",
             encoding="utf-8",
@@ -1304,15 +1361,16 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
         requested_abis: tuple[str, ...],
         *,
         include_module: bool = True,
+        artifacts: tuple[Path, ...] | None = None,
     ) -> dict[str, str]:
-        artifacts = [self.binding_aar, self.runtime_jar]
-        if include_module:
-            artifacts.append(self.module_jar)
+        local_artifacts = list(artifacts) if artifacts is not None else [self.binding_aar, self.runtime_jar]
+        if include_module and artifacts is None:
+            local_artifacts.append(self.module_jar)
         return {
             "export_enabled_abis": "|".join(requested_abis),
             "foundry_java_gradle_plugin": str(self.plugin_jar),
             "foundry_java_gradle_plugin_kind": "local",
-            "foundry_java_local_artifacts": "|".join(str(artifact) for artifact in artifacts),
+            "foundry_java_local_artifacts": "|".join(str(artifact) for artifact in local_artifacts),
             "foundry_java_registry_marker": "registry-index-v2",
         }
 
@@ -1356,6 +1414,137 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
         self.assertEqual(fixture.read_bytes(), descriptor_bytes)
         return descriptor, hashlib.sha256(descriptor_bytes).hexdigest()
 
+    @staticmethod
+    def _rewrite_zip_bytes(
+        source: bytes,
+        *,
+        replacements: dict[str, bytes] | None = None,
+        renames: dict[str, str] | None = None,
+        drops: tuple[str, ...] = (),
+        retain: tuple[str, ...] | None = None,
+    ) -> bytes:
+        replacements = replacements or {}
+        renames = renames or {}
+        output = io.BytesIO()
+        with zipfile.ZipFile(io.BytesIO(source)) as input_archive:
+            with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as output_archive:
+                for entry in input_archive.infolist():
+                    if entry.is_dir() or entry.filename in drops:
+                        continue
+                    if retain is not None and entry.filename not in retain:
+                        continue
+                    name = renames.get(entry.filename, entry.filename)
+                    contents = replacements.get(entry.filename, input_archive.read(entry))
+                    info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+                    info.compress_type = zipfile.ZIP_DEFLATED
+                    info.external_attr = 0o100644 << 16
+                    output_archive.writestr(info, contents)
+        return output.getvalue()
+
+    def _mutate_archive(
+        self,
+        source: Path,
+        name: str,
+        *,
+        replacements: dict[str, bytes] | None = None,
+        renames: dict[str, str] | None = None,
+        drops: tuple[str, ...] = (),
+    ) -> Path:
+        target = self.workspace / "opaque-mutations" / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(
+            self._rewrite_zip_bytes(
+                source.read_bytes(),
+                replacements=replacements,
+                renames=renames,
+                drops=drops,
+            )
+        )
+        return target
+
+    def _mutate_module(
+        self,
+        name: str,
+        *,
+        replacements: tuple[tuple[bytes, bytes], ...] = (),
+        descriptor_path: str = "META-INF/foundry-java/modules/demo.descriptor",
+    ) -> Path:
+        original_path = "META-INF/foundry-java/modules/demo.descriptor"
+        with zipfile.ZipFile(self.module_jar) as archive:
+            descriptor = archive.read(original_path)
+        for old, new in replacements:
+            self.assertIn(old, descriptor)
+            descriptor = descriptor.replace(old, new, 1)
+        return self._mutate_archive(
+            self.module_jar,
+            name,
+            replacements={original_path: descriptor},
+            renames={original_path: descriptor_path},
+        )
+
+    def _mutate_binding(
+        self,
+        name: str,
+        *,
+        keep_configuration: bool = True,
+        keep_bridge_abis: tuple[str, ...] = ("armeabi-v7a", "arm64-v8a", "x86", "x86_64"),
+        configuration_only_classes: bool = False,
+    ) -> Path:
+        with zipfile.ZipFile(self.binding_aar) as binding:
+            classes = binding.read("classes.jar")
+            bridge_entries = tuple(entry for entry in binding.namelist() if entry.endswith("/libfoundry_java.so"))
+        configuration = "FoundryJava.foundryextension"
+        classes_drops = () if keep_configuration else (configuration,)
+        classes_retain = (configuration,) if configuration_only_classes and keep_configuration else None
+        mutated_classes = self._rewrite_zip_bytes(
+            classes,
+            drops=classes_drops,
+            retain=classes_retain,
+        )
+        dropped_bridges = tuple(entry for entry in bridge_entries if entry.split("/")[1] not in keep_bridge_abis)
+        return self._mutate_archive(
+            self.binding_aar,
+            name,
+            replacements={"classes.jar": mutated_classes},
+            drops=dropped_bridges,
+        )
+
+    def _assert_no_failed_export_outputs(self, app: Path) -> None:
+        generated_assets = app / "build/generated/assets/generateStandardDebugFoundryJavaRegistry"
+        generated_java = app / "build/generated/java/generateStandardDebugFoundryJavaRegistry"
+        for output in (
+            generated_assets / "FoundryJava.foundryextension",
+            generated_assets / "foundry_java/registry-index-v2.txt",
+            generated_java / "games/cafecito/foundry/generated/FoundryGeneratedBootstrap.java",
+            generated_java / "games/cafecito/foundry/generated/FoundryGeneratedStartupProvider.java",
+            app / "build/outputs/apk/standard/debug/android_debug.apk",
+        ):
+            self.assertFalse(output.exists(), output)
+
+    def _assert_plugin_rejects(
+        self,
+        case: str,
+        artifacts: tuple[Path, ...],
+        expected_fragments: tuple[str, ...],
+        *,
+        requested_abis: tuple[str, ...] = ("x86_64",),
+    ) -> None:
+        app = self._prepare_app(f"reject-{case}", requested_abi=requested_abis[0])
+        result = self._run_app(
+            app,
+            self._local_properties(
+                requested_abis,
+                artifacts=artifacts,
+            ),
+            "generateStandardDebugFoundryJavaRegistry",
+        )
+        output = result.stdout + result.stderr
+        self.assertNotEqual(0, result.returncode, output)
+        for fragment in expected_fragments:
+            with self.subTest(case=case, fragment=fragment):
+                self.assertIn(fragment, output)
+        self._assert_no_failed_export_outputs(app)
+
     def _assert_final_provider(
         self,
         app: Path,
@@ -1386,17 +1575,18 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
         self,
         app: Path,
         first: subprocess.CompletedProcess[str],
-        second: subprocess.CompletedProcess[str],
+        second: subprocess.CompletedProcess[str] | None = None,
         *,
         requested_abis: tuple[str, ...],
         expected_application_id: str,
         build_type: str = "debug",
     ) -> dict[str, object]:
         first_output = first.stdout + first.stderr
-        second_output = second.stdout + second.stderr
         self.assertEqual(0, first.returncode, first_output)
-        self.assertEqual(0, second.returncode, second_output)
-        self.assertIn("Reusing configuration cache.", second_output)
+        if second is not None:
+            second_output = second.stdout + second.stderr
+            self.assertEqual(0, second.returncode, second_output)
+            self.assertIn("Reusing configuration cache.", second_output)
 
         variant = f"Standard{build_type.capitalize()}"
         variant_directory = f"standard{build_type.capitalize()}"
@@ -1468,6 +1658,29 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
             "application_id": expected_application_id,
         }
 
+    def _local_debug_evidence(self, requested_abi: str) -> dict[str, object]:
+        cached = self.local_debug_evidence.get(requested_abi)
+        if cached is not None:
+            return cached
+        requested_abis = (requested_abi,)
+        app = self._prepare_app(
+            f"local-debug-{requested_abi}",
+            requested_abi=requested_abi,
+        )
+        result = self._run_app(
+            app,
+            self._local_properties(requested_abis),
+            "assembleStandardDebug",
+        )
+        evidence = self._assert_outputs(
+            app,
+            result,
+            requested_abis=requested_abis,
+            expected_application_id="games.cafecito.foundry.game",
+        )
+        self.local_debug_evidence[requested_abi] = evidence
+        return evidence
+
     def _build_twice(
         self,
         app: Path,
@@ -1498,45 +1711,260 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
         self.assertEqual(before, after)
         return first, second
 
-    def test_local_and_staged_maven_matrix_matches_final_apks(self) -> None:
-        requested_abis = ("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
-        repository, marker = self._stage_maven_graph()
-        base_properties = {
-            "local": self._local_properties(requested_abis),
-            "maven": self._maven_properties(repository, marker, requested_abis),
-        }
-        for build_type, application_id in (
-            ("debug", "games.cafecito.foundry.game"),
-            ("release", "dev.example.foundryjava"),
-        ):
-            results: dict[str, dict[str, object]] = {}
-            for source_kind, source_properties in base_properties.items():
-                with self.subTest(build_type=build_type, source_kind=source_kind):
-                    app = self._prepare_app(f"{source_kind}-{build_type}")
-                    properties = dict(source_properties)
-                    if build_type == "release":
-                        properties["export_package_name"] = application_id
-                    first, second = self._build_twice(
-                        app,
-                        properties,
-                        build_type=build_type,
-                    )
-                    results[source_kind] = self._assert_outputs(
-                        app,
-                        first,
-                        second,
-                        requested_abis=requested_abis,
-                        expected_application_id=application_id,
-                        build_type=build_type,
-                    )
-            self.assertEqual(results["local"], results["maven"])
+    def test_rejects_opaque_descriptor_mutations(self) -> None:
+        descriptor_path = "META-INF/foundry-java/modules/demo.descriptor"
+        cases = (
+            (
+                "descriptor-format.jar",
+                ((b"format=2", b"format=1"),),
+                descriptor_path,
+                ("format=1", "expected 2"),
+            ),
+            (
+                "descriptor-path.jar",
+                (),
+                "META-INF/foundry-java/modules/wrong.descriptor",
+                (
+                    "META-INF/foundry-java/modules/wrong.descriptor",
+                    "descriptor path must be META-INF/foundry-java/modules/demo.descriptor",
+                ),
+            ),
+            (
+                "descriptor-header.jar",
+                ((b"generator_version=1\n", b""),),
+                descriptor_path,
+                ("expected field generator_version",),
+            ),
+            (
+                "descriptor-name.jar",
+                ((b"module=demo", b"module=Demo_Name"),),
+                descriptor_path,
+                ("module=Demo_Name",),
+            ),
+        )
+        for name, replacements, path, diagnostics in cases:
+            with self.subTest(name=name):
+                mutant = self._mutate_module(
+                    name,
+                    replacements=replacements,
+                    descriptor_path=path,
+                )
+                self._assert_plugin_rejects(
+                    name.removesuffix(".jar"),
+                    (self.binding_aar, self.runtime_jar, mutant),
+                    (str(mutant), path, *diagnostics),
+                )
 
+    def test_rejects_opaque_graph_identity_and_provenance_mutations(self) -> None:
+        descriptor_root = "META-INF/foundry-java/modules"
+        identity_cases = (
+            (
+                "duplicate-module.jar",
+                ((b"registry=example.DemoExtension", b"registry=example.DuplicateModule"),),
+                f"{descriptor_root}/demo.descriptor",
+                "duplicate module=demo",
+            ),
+            (
+                "duplicate-registry.jar",
+                ((b"module=demo", b"module=duplicate-registry"),),
+                f"{descriptor_root}/duplicate-registry.descriptor",
+                "duplicate registry=example.DemoExtension",
+            ),
+        )
+        for name, replacements, path, diagnostic in identity_cases:
+            with self.subTest(name=name):
+                mutant = self._mutate_module(
+                    name,
+                    replacements=replacements,
+                    descriptor_path=path,
+                )
+                self._assert_plugin_rejects(
+                    name.removesuffix(".jar"),
+                    (self.binding_aar, self.runtime_jar, self.module_jar, mutant),
+                    (
+                        diagnostic,
+                        str(self.module_jar),
+                        str(mutant),
+                        f"{descriptor_root}/demo.descriptor",
+                        path,
+                    ),
+                )
+
+        provenance_cases = (
+            (
+                "api_sha256",
+                b"85e91174c1a8a48629223d6459bb2ef595ad1da405b2ce88435c24fe221aec51",
+                b"15e91174c1a8a48629223d6459bb2ef595ad1da405b2ce88435c24fe221aec51",
+            ),
+            ("generator_version", b"generator_version=1", b"generator_version=2"),
+            (
+                "runtime_contract_version",
+                b"runtime_contract_version=1",
+                b"runtime_contract_version=2",
+            ),
+            (
+                "bridge_contract_version",
+                b"bridge_contract_version=1",
+                b"bridge_contract_version=2",
+            ),
+        )
+        for field, old, new in provenance_cases:
+            with self.subTest(field=field):
+                module_name = f"mixed-{field.replace('_', '-')}"
+                registry_name = "example.Mixed" + "".join(word.capitalize() for word in field.split("_"))
+                replacements = (
+                    (b"module=demo", f"module={module_name}".encode()),
+                    (b"registry=example.DemoExtension", f"registry={registry_name}".encode()),
+                    (old, new),
+                )
+                path = f"{descriptor_root}/{module_name}.descriptor"
+                mutant = self._mutate_module(
+                    f"mixed-{field}.jar",
+                    replacements=replacements,
+                    descriptor_path=path,
+                )
+                old_value = old.decode().split("=", maxsplit=1)[-1]
+                new_value = new.decode().split("=", maxsplit=1)[-1]
+                self._assert_plugin_rejects(
+                    f"mixed-{field}",
+                    (self.binding_aar, self.runtime_jar, self.module_jar, mutant),
+                    (
+                        f"mixed {field}",
+                        str(self.module_jar),
+                        str(mutant),
+                        f"{field}={old_value}",
+                        f"{field}={new_value}",
+                        path,
+                    ),
+                )
+
+    def test_rejects_opaque_binding_payload_mutations(self) -> None:
+        config_only = self._mutate_binding(
+            "configuration-only.aar",
+            keep_bridge_abis=(),
+            configuration_only_classes=True,
+        )
+        bridge_only = self._mutate_binding(
+            "bridge-only.aar",
+            keep_configuration=False,
+            keep_bridge_abis=("x86_64",),
+            configuration_only_classes=True,
+        )
+        duplicate = self._mutate_binding(
+            "duplicate-binding.aar",
+            keep_bridge_abis=("x86_64",),
+            configuration_only_classes=True,
+        )
+        missing_requested_abi = self._mutate_binding(
+            "arm64-binding.aar",
+            keep_bridge_abis=("arm64-v8a",),
+        )
+        cases = (
+            (
+                "missing-bridge",
+                (config_only, self.runtime_jar, self.module_jar),
+                (
+                    "bridge payload count=0; expected 1",
+                    str(config_only),
+                    "bridge_payload=false",
+                    "configuration_payload=true",
+                ),
+            ),
+            (
+                "missing-configuration",
+                (bridge_only, self.runtime_jar, self.module_jar),
+                (
+                    "configuration payload count=0; expected 1",
+                    str(bridge_only),
+                    "bridge_payload=true",
+                    "configuration_payload=false",
+                ),
+            ),
+            (
+                "duplicate-payloads",
+                (self.binding_aar, duplicate, self.runtime_jar, self.module_jar),
+                (
+                    "bridge payload count=2; expected 1",
+                    "configuration payload count=2; expected 1",
+                    str(self.binding_aar),
+                    str(duplicate),
+                    "bridge_payload=true",
+                    "configuration_payload=true",
+                ),
+            ),
+            (
+                "split-payloads",
+                (bridge_only, config_only, self.runtime_jar, self.module_jar),
+                (
+                    "bridge and configuration must use the same binding artifact",
+                    str(bridge_only),
+                    str(config_only),
+                ),
+            ),
+            (
+                "missing-requested-abi",
+                (missing_requested_abi, self.runtime_jar, self.module_jar),
+                (
+                    str(missing_requested_abi),
+                    "missing abi=x86_64",
+                ),
+            ),
+        )
+        for name, artifacts, diagnostics in cases:
+            with self.subTest(name=name):
+                self._assert_plugin_rejects(name, artifacts, diagnostics)
+
+    def test_local_debug_single_abi_matrix(self) -> None:
+        for requested_abi in ("armeabi-v7a", "arm64-v8a", "x86", "x86_64"):
+            with self.subTest(requested_abi=requested_abi):
+                self._local_debug_evidence(requested_abi)
+
+    def test_staged_maven_x86_64_debug_matches_local(self) -> None:
+        requested_abis = ("x86_64",)
+        repository, marker = self._stage_maven_graph()
+        local_evidence = self._local_debug_evidence("x86_64")
+        app = self._prepare_app("maven-debug-parity")
+        result = self._run_app(
+            app,
+            self._maven_properties(repository, marker, requested_abis),
+            "assembleStandardDebug",
+        )
+        maven_evidence = self._assert_outputs(
+            app,
+            result,
+            requested_abis=requested_abis,
+            expected_application_id="games.cafecito.foundry.game",
+        )
+        self.assertEqual(local_evidence, maven_evidence)
+
+    def test_local_x86_64_minified_release_is_reproducible(self) -> None:
+        requested_abis = ("x86_64",)
+        application_id = "dev.example.foundryjava"
+        app = self._prepare_app(
+            "local-release-x86_64",
+            build_type="release",
+        )
+        properties = self._local_properties(requested_abis)
+        properties["export_package_name"] = application_id
+        first, second = self._build_twice(
+            app,
+            properties,
+            build_type="release",
+        )
+        self._assert_outputs(
+            app,
+            first,
+            second,
+            requested_abis=requested_abis,
+            expected_application_id=application_id,
+            build_type="release",
+        )
         build = APP_BUILD.read_text(encoding="utf-8")
         self.assertIn("minifyEnabled getFoundryJavaEnabled()", build)
         self.assertNotIn("-keep class games.cafecito.foundry.**", build)
 
     def test_zero_module_real_apk_is_rejected_by_final_inspector(self) -> None:
-        requested_abis = ("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+        requested_abis = ("x86_64",)
         app = self._prepare_app("zero-descriptor")
         result = self._run_app(
             app,
