@@ -6,6 +6,7 @@ import os
 import shutil
 import signal
 import subprocess
+import sys
 import tempfile
 import textwrap
 import threading
@@ -14,6 +15,13 @@ import zipfile
 from pathlib import Path
 from types import ModuleType
 
+from tests.python_build.android_native_test_support import populate_native_matrix
+from tests.python_build.test_android_gradle_behavioral import (
+    copy_gradle_fixture,
+    find_android_sdk,
+    git_object,
+)
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 EXPORTER = REPO_ROOT / "platform/android/export/export_plugin.cpp"
@@ -21,7 +29,12 @@ APP_BUILD = REPO_ROOT / "platform/android/java/app/build.gradle"
 APP_CONFIG = REPO_ROOT / "platform/android/java/app/config.gradle"
 SOURCE_TEMPLATE_TOOL = REPO_ROOT / "platform/android/android_source_template.py"
 GRADLE_WRAPPER = REPO_ROOT / "platform/android/java/gradlew"
+JAVA_ROOT = REPO_ROOT / "platform/android/java"
 APP_ROOT = REPO_ROOT / "platform/android/java/app"
+INTEGRATION_FIXTURE = REPO_ROOT / "tests/fixtures/android_foundry_java"
+EXACT_FOUNDRY_JAVA_COMMIT = "7eb98b37845b42ff67f3da1427bd78ebef19668f"
+FOUNDRY_JAVA_GROUP = "games.cafecito.foundry"
+FOUNDRY_JAVA_VERSION = "0.1.0-SNAPSHOT"
 
 EXPORT_OPTIONS = (
     "gradle_build/foundry_java/enabled",
@@ -570,6 +583,482 @@ class FoundryJavaGradlePropertyTests(unittest.TestCase):
         )
         repository_line = next(line for line in output.splitlines() if line.startswith("FIXTURE_REPOSITORIES="))
         self.assertLess(repository_line.index("maven-a"), repository_line.index("maven-z"))
+
+
+def find_java_17_home() -> Path:
+    candidates = [
+        Path(value)
+        for value in (
+            os.environ.get("JAVA_HOME", ""),
+            "/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home",
+            "/usr/local/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home",
+        )
+        if value
+    ]
+    for candidate in candidates:
+        release = candidate / "release"
+        if not (candidate / "bin/java").is_file() or not release.is_file():
+            continue
+        if 'JAVA_VERSION="17.' in release.read_text(encoding="utf-8"):
+            return candidate
+    raise AssertionError("Foundry-Java Android integration tests require a Java 17 JDK")
+
+
+class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
+    workspace_manager: tempfile.TemporaryDirectory[str]
+    workspace: Path
+    foundry_java_repo: Path
+    java_home: Path
+    android_sdk: Path
+    plugin_jar: Path
+    runtime_jar: Path
+    api_model_jar: Path
+    annotations_jar: Path
+    binding_aar: Path
+    module_jar: Path
+    host_aar: Path
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        configured_repository = os.environ.get("FOUNDRY_JAVA_REPO")
+        cls.foundry_java_repo = (
+            Path(configured_repository).resolve()
+            if configured_repository
+            else (REPO_ROOT.parent / "Foundry-Java").resolve()
+        )
+        if not (cls.foundry_java_repo / ".git").exists():
+            raise unittest.SkipTest(
+                "Foundry-Java checkout is unavailable; set FOUNDRY_JAVA_REPO to run integration tests"
+            )
+        head = cls._git("rev-parse", "HEAD")
+        if head != EXACT_FOUNDRY_JAVA_COMMIT:
+            raise AssertionError(
+                "Foundry-Java integration must use exact merged commit "
+                f"{EXACT_FOUNDRY_JAVA_COMMIT}; found {head} at {cls.foundry_java_repo}"
+            )
+
+        cls.java_home = find_java_17_home()
+        cls.android_sdk = find_android_sdk()
+        cls.workspace_manager = tempfile.TemporaryDirectory(
+            prefix="foundry-java-android-integration.",
+            dir=test_scratch_directory(),
+        )
+        cls.addClassCleanup(cls.workspace_manager.cleanup)
+        cls.workspace = Path(cls.workspace_manager.name)
+        cls._build_exact_foundry_java()
+        cls.plugin_jar = cls._only_artifact("foundry-java-gradle-plugin/build/libs/foundry-java-gradle-plugin-*.jar")
+        cls.runtime_jar = cls._only_artifact("foundry-java-runtime/build/libs/foundry-java-runtime-*.jar")
+        cls.api_model_jar = cls._only_artifact("foundry-java-api-model/build/libs/foundry-java-api-model-*.jar")
+        cls.annotations_jar = cls._only_artifact("foundry-java-annotations/build/libs/foundry-java-annotations-*.jar")
+        cls.binding_aar = cls._only_artifact("foundry-java-android/build/outputs/aar/foundry-java-android-release.aar")
+        cls.module_jar = cls._compile_module_fixture()
+        cls.host_aar = cls._build_host_aar()
+
+    @classmethod
+    def _git(cls, *arguments: str) -> str:
+        result = run_bounded_subprocess(
+            ["git", *arguments],
+            cwd=cls.foundry_java_repo,
+            timeout=30,
+        )
+        if result.returncode != 0:
+            raise AssertionError(result.stdout + result.stderr)
+        return result.stdout.strip()
+
+    @classmethod
+    def _environment(cls) -> dict[str, str]:
+        return {
+            **os.environ,
+            "ANDROID_HOME": str(cls.android_sdk),
+            "ANDROID_SDK_ROOT": str(cls.android_sdk),
+            "JAVA_HOME": str(cls.java_home),
+        }
+
+    @classmethod
+    def _build_exact_foundry_java(cls) -> None:
+        result = run_bounded_subprocess(
+            [
+                str(cls.foundry_java_repo / "gradlew"),
+                "--no-daemon",
+                ":foundry-java-gradle-plugin:jar",
+                ":foundry-java-runtime:jar",
+                ":foundry-java-android:assembleRelease",
+            ],
+            cwd=cls.foundry_java_repo,
+            environment=cls._environment(),
+            timeout=900,
+        )
+        if result.returncode != 0:
+            raise AssertionError(f"Exact Foundry-Java dependency build failed:\n{result.stdout}\n{result.stderr}")
+
+    @classmethod
+    def _only_artifact(cls, pattern: str) -> Path:
+        matches = sorted(cls.foundry_java_repo.glob(pattern))
+        if len(matches) != 1:
+            raise AssertionError(f"Expected one exact dependency artifact for {pattern}: {matches}")
+        return matches[0].resolve()
+
+    @classmethod
+    def _compile_module_fixture(cls) -> Path:
+        classes = cls.workspace / "module-classes"
+        classes.mkdir()
+        sources = sorted((INTEGRATION_FIXTURE / "module/src/main/java").rglob("*.java"))
+        result = run_bounded_subprocess(
+            [
+                str(cls.java_home / "bin/javac"),
+                "--release",
+                "17",
+                "-classpath",
+                str(cls.runtime_jar),
+                "-d",
+                str(classes),
+                *[str(source) for source in sources],
+            ],
+            cwd=cls.workspace,
+            environment=cls._environment(),
+            timeout=60,
+        )
+        if result.returncode != 0:
+            raise AssertionError(f"Module fixture compilation failed:\n{result.stdout}\n{result.stderr}")
+
+        archive = cls.workspace / "foundry-java-demo-module-1.0.0.jar"
+        entries: list[tuple[str, Path]] = []
+        for root in (
+            classes,
+            INTEGRATION_FIXTURE / "module/src/main/resources",
+        ):
+            entries.extend((path.relative_to(root).as_posix(), path) for path in root.rglob("*") if path.is_file())
+        with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as output:
+            for name, source in sorted(entries):
+                info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+                info.compress_type = zipfile.ZIP_DEFLATED
+                info.external_attr = 0o100644 << 16
+                output.writestr(info, source.read_bytes())
+        return archive
+
+    @classmethod
+    def _build_host_aar(cls) -> Path:
+        fixture_root = cls.workspace / "host-aar"
+        java_root = copy_gradle_fixture(fixture_root)
+        repository = fixture_root / "repo"
+        revision = git_object(repository, "HEAD")
+        tree = git_object(repository, "HEAD^{tree}")
+        native_root = fixture_root / "native"
+        populate_native_matrix(native_root, revision=revision, tree=tree)
+        result = run_bounded_subprocess(
+            [
+                str(GRADLE_WRAPPER),
+                "--no-daemon",
+                "--console=plain",
+                "-p",
+                str(java_root),
+                ":lib:assembleTemplateDebug",
+                f"-PpythonExecutable={sys.executable}",
+                f"-PfoundryNativeRoot={native_root}",
+                "-PselectedAbis=arm64",
+            ],
+            cwd=java_root,
+            environment={
+                **cls._environment(),
+                "FOUNDRY_TEST_SCRATCH": str(cls.workspace),
+            },
+            timeout=900,
+        )
+        if result.returncode != 0:
+            raise AssertionError(f"Foundry host AAR build failed:\n{result.stdout}\n{result.stderr}")
+        host_aar = java_root / "lib/build/outputs/aar/foundry-debug.aar"
+        if not host_aar.is_file():
+            raise AssertionError(f"Foundry host AAR was not produced: {host_aar}")
+        return host_aar
+
+    def _prepare_app(self, name: str) -> Path:
+        app = self.workspace / name
+        shutil.copytree(
+            APP_ROOT,
+            app,
+            ignore=shutil.ignore_patterns("build", ".gradle", ".kotlin", "libs"),
+        )
+        shutil.copy2(GRADLE_WRAPPER, app / "gradlew")
+        shutil.copytree(JAVA_ROOT / "gradle", app / "gradle")
+        debug_libs = app / "libs/debug"
+        debug_libs.mkdir(parents=True)
+        shutil.copy2(self.host_aar, debug_libs / "foundry-debug.aar")
+        (app / "local.properties").write_text(
+            f"sdk.dir={self.android_sdk}\n",
+            encoding="utf-8",
+        )
+        return app
+
+    def _run_app(
+        self,
+        app: Path,
+        properties: dict[str, str],
+        *tasks: str,
+    ) -> subprocess.CompletedProcess[str]:
+        command = [
+            str(app / "gradlew"),
+            "--no-daemon",
+            "--console=plain",
+            "--configuration-cache",
+            *tasks,
+            *[f"-P{name}={value}" for name, value in sorted(properties.items())],
+        ]
+        return run_bounded_subprocess(
+            command,
+            cwd=app,
+            environment={
+                **self._environment(),
+                "FOUNDRY_TEST_SCRATCH": str(self.workspace),
+            },
+            timeout=900,
+        )
+
+    @staticmethod
+    def _pom(
+        group: str,
+        artifact: str,
+        version: str,
+        *,
+        packaging: str | None = None,
+        dependencies: tuple[tuple[str, str, str, str], ...] = (),
+    ) -> str:
+        packaging_xml = f"\n  <packaging>{packaging}</packaging>" if packaging else ""
+        dependencies_xml = ""
+        if dependencies:
+            rendered = []
+            for dependency_group, dependency_artifact, dependency_version, scope in dependencies:
+                rendered.append(
+                    textwrap.dedent(
+                        f"""
+                          <dependency>
+                            <groupId>{dependency_group}</groupId>
+                            <artifactId>{dependency_artifact}</artifactId>
+                            <version>{dependency_version}</version>
+                            <scope>{scope}</scope>
+                          </dependency>
+                        """
+                    ).rstrip()
+                )
+            dependencies_xml = "\n  <dependencies>\n" + "\n".join(rendered) + "\n  </dependencies>"
+        return (
+            textwrap.dedent(
+                f"""
+                <project xmlns="http://maven.apache.org/POM/4.0.0">
+                  <modelVersion>4.0.0</modelVersion>
+                  <groupId>{group}</groupId>
+                  <artifactId>{artifact}</artifactId>
+                  <version>{version}</version>{packaging_xml}{dependencies_xml}
+                </project>
+                """
+            ).strip()
+            + "\n"
+        )
+
+    @classmethod
+    def _stage_maven(
+        cls,
+        repository: Path,
+        group: str,
+        artifact: str,
+        version: str,
+        *,
+        source: Path | None = None,
+        extension: str = "jar",
+        packaging: str | None = None,
+        dependencies: tuple[tuple[str, str, str, str], ...] = (),
+    ) -> None:
+        root = repository / Path(*group.split(".")) / artifact / version
+        root.mkdir(parents=True, exist_ok=True)
+        if source is not None:
+            shutil.copy2(source, root / f"{artifact}-{version}.{extension}")
+        (root / f"{artifact}-{version}.pom").write_text(
+            cls._pom(
+                group,
+                artifact,
+                version,
+                packaging=packaging,
+                dependencies=dependencies,
+            ),
+            encoding="utf-8",
+        )
+
+    def _stage_maven_graph(self) -> tuple[Path, str]:
+        repository = self.workspace / "maven-repository"
+        runtime = (FOUNDRY_JAVA_GROUP, "foundry-java-runtime", FOUNDRY_JAVA_VERSION, "compile")
+        annotations = (
+            FOUNDRY_JAVA_GROUP,
+            "foundry-java-annotations",
+            FOUNDRY_JAVA_VERSION,
+            "runtime",
+        )
+        api_model = (
+            FOUNDRY_JAVA_GROUP,
+            "foundry-java-api-model",
+            FOUNDRY_JAVA_VERSION,
+            "compile",
+        )
+        plugin = (
+            FOUNDRY_JAVA_GROUP,
+            "foundry-java-gradle-plugin",
+            FOUNDRY_JAVA_VERSION,
+            "compile",
+        )
+        self._stage_maven(
+            repository,
+            FOUNDRY_JAVA_GROUP,
+            "foundry-java-annotations",
+            FOUNDRY_JAVA_VERSION,
+            source=self.annotations_jar,
+        )
+        self._stage_maven(
+            repository,
+            FOUNDRY_JAVA_GROUP,
+            "foundry-java-api-model",
+            FOUNDRY_JAVA_VERSION,
+            source=self.api_model_jar,
+            dependencies=(annotations,),
+        )
+        self._stage_maven(
+            repository,
+            FOUNDRY_JAVA_GROUP,
+            "foundry-java-runtime",
+            FOUNDRY_JAVA_VERSION,
+            source=self.runtime_jar,
+            dependencies=(api_model, annotations),
+        )
+        self._stage_maven(
+            repository,
+            FOUNDRY_JAVA_GROUP,
+            "foundry-java-android",
+            FOUNDRY_JAVA_VERSION,
+            source=self.binding_aar,
+            extension="aar",
+            packaging="aar",
+            dependencies=(runtime,),
+        )
+        self._stage_maven(
+            repository,
+            FOUNDRY_JAVA_GROUP,
+            "foundry-java-gradle-plugin",
+            FOUNDRY_JAVA_VERSION,
+            source=self.plugin_jar,
+        )
+        marker_group = "games.cafecito.foundry.java"
+        marker_artifact = "games.cafecito.foundry.java.gradle.plugin"
+        self._stage_maven(
+            repository,
+            marker_group,
+            marker_artifact,
+            FOUNDRY_JAVA_VERSION,
+            packaging="pom",
+            dependencies=(plugin,),
+        )
+        self._stage_maven(
+            repository,
+            "test.fixture",
+            "foundry-java-demo-module",
+            "1.0.0",
+            source=self.module_jar,
+            dependencies=(runtime,),
+        )
+        return (
+            repository,
+            f"{marker_group}:{marker_artifact}:{FOUNDRY_JAVA_VERSION}",
+        )
+
+    def _assert_debug_outputs(
+        self,
+        app: Path,
+        first: subprocess.CompletedProcess[str],
+        second: subprocess.CompletedProcess[str],
+    ) -> None:
+        first_output = first.stdout + first.stderr
+        second_output = second.stdout + second.stderr
+        self.assertEqual(0, first.returncode, first_output)
+        self.assertEqual(0, second.returncode, second_output)
+        self.assertIn("Reusing configuration cache.", second_output)
+
+        generated = app / "build/generated/assets/generateStandardDebugFoundryJavaRegistry"
+        index = generated / "foundry_java/registry-index-v2.txt"
+        configuration = generated / "FoundryJava.foundryextension"
+        bootstrap = (
+            app
+            / "build/generated/java/generateStandardDebugFoundryJavaRegistry"
+            / "games/cafecito/foundry/generated/FoundryGeneratedBootstrap.java"
+        )
+        self.assertIn("module=demo|example.DemoExtension", index.read_text(encoding="utf-8"))
+        self.assertIn("example.DemoExtension.PROVIDER", bootstrap.read_text(encoding="utf-8"))
+        with zipfile.ZipFile(self.binding_aar) as binding:
+            self.assertEqual(binding.read("FoundryJava.foundryextension"), configuration.read_bytes())
+
+        apk = app / "build/outputs/apk/standard/debug/android_debug.apk"
+        with zipfile.ZipFile(apk) as archive:
+            names = archive.namelist()
+            self.assertEqual(
+                ["assets/FoundryJava.foundryextension"],
+                sorted(name for name in names if name.endswith("FoundryJava.foundryextension")),
+            )
+            self.assertIn("assets/foundry_java/registry-index-v2.txt", names)
+            self.assertEqual(
+                ["lib/arm64-v8a/libfoundry_java.so"],
+                sorted(name for name in names if name.endswith("/libfoundry_java.so")),
+            )
+            self.assertEqual(
+                ["lib/arm64-v8a/libfoundry_android.so"],
+                sorted(name for name in names if name.endswith("/libfoundry_android.so")),
+            )
+
+    def _build_twice(
+        self,
+        app: Path,
+        properties: dict[str, str],
+    ) -> tuple[subprocess.CompletedProcess[str], subprocess.CompletedProcess[str]]:
+        first = self._run_app(app, properties, "assembleStandardDebug")
+        if first.returncode != 0:
+            self.fail(first.stdout + first.stderr)
+        generated = app / "build/generated/assets/generateStandardDebugFoundryJavaRegistry"
+        before = {
+            path.relative_to(generated).as_posix(): path.read_bytes() for path in generated.rglob("*") if path.is_file()
+        }
+        second = self._run_app(app, properties, "assembleStandardDebug")
+        after = {
+            path.relative_to(generated).as_posix(): path.read_bytes() for path in generated.rglob("*") if path.is_file()
+        }
+        self.assertEqual(before, after)
+        return first, second
+
+    def test_exact_local_inputs(self) -> None:
+        app = self._prepare_app("local-app")
+        properties = {
+            "export_enabled_abis": "arm64-v8a",
+            "foundry_java_gradle_plugin": str(self.plugin_jar),
+            "foundry_java_gradle_plugin_kind": "local",
+            "foundry_java_local_artifacts": "|".join(
+                (str(self.binding_aar), str(self.runtime_jar), str(self.module_jar))
+            ),
+            "foundry_java_registry_marker": "registry-index-v2",
+        }
+        first, second = self._build_twice(app, properties)
+        self._assert_debug_outputs(app, first, second)
+
+    def test_exact_staged_maven_inputs(self) -> None:
+        repository, marker = self._stage_maven_graph()
+        app = self._prepare_app("maven-app")
+        properties = {
+            "export_enabled_abis": "arm64-v8a",
+            "foundry_java_gradle_plugin": marker,
+            "foundry_java_gradle_plugin_kind": "maven",
+            "foundry_java_maven_artifacts": "|".join(
+                (
+                    f"{FOUNDRY_JAVA_GROUP}:foundry-java-android:{FOUNDRY_JAVA_VERSION}",
+                    "test.fixture:foundry-java-demo-module:1.0.0",
+                )
+            ),
+            "foundry_java_maven_repositories": repository.resolve().as_uri(),
+            "foundry_java_registry_marker": "registry-index-v2",
+        }
+        first, second = self._build_twice(app, properties)
+        self._assert_debug_outputs(app, first, second)
 
 
 class FoundryJavaExporterContractTests(unittest.TestCase):
