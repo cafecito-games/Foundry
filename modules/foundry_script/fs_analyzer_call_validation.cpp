@@ -983,7 +983,7 @@ void FSAnalyzer::CallSiteValidationContext::validate_call_arg(const List<FSParse
 			}
 			if (!type_handle_error.is_empty()) {
 				analyzer->push_error(type_handle_error, p_call->arguments[i]);
-			} else if (nullable_mismatch || !analyzer->is_type_compatible(arg_type, par_type)) {
+			} else if (nullable_mismatch || !FSTypeCompatibility::allows_runtime_narrowing(par_type, arg_type)) {
 				analyzer->push_error(make_invalid_argument_error(
 								   p_call->function_name,
 								   i + 1,
@@ -1069,7 +1069,7 @@ void FSAnalyzer::CallSiteValidationContext::validate_callable_array_literal_args
 			}
 			if (!type_handle_error.is_empty()) {
 				analyzer->push_error(type_handle_error, argument);
-			} else if (nullable_mismatch || !analyzer->is_type_compatible(arg_type, par_type)) {
+			} else if (nullable_mismatch || !FSTypeCompatibility::allows_runtime_narrowing(par_type, arg_type)) {
 				analyzer->push_error(make_invalid_argument_error(
 								   p_function,
 								   i + 1,

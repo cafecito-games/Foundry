@@ -475,6 +475,11 @@ private:
 	void reduce_preload(FSParser::PreloadNode *p_preload);
 	void reduce_self(FSParser::SelfNode *p_self);
 	void reduce_subscript(FSParser::SubscriptNode *p_subscript, bool p_can_be_pseudo_type = false);
+	void reduce_tuple_index_access(FSParser::SubscriptNode *p_subscript);
+	void reduce_tuple_field_access(FSParser::SubscriptNode *p_subscript, const FSParser::DataType &p_base_type);
+	bool find_named_tuple_meta_type(const FSParser::DataType &p_base_type, bool p_is_self, const StringName &p_name,
+			const FSParser::Node *p_source, FSParser::DataType &r_tuple_meta_type);
+	void reduce_call_tuple_construction(FSParser::CallNode *p_call, const FSParser::DataType &p_tuple_meta_type);
 	void reduce_ternary_op(FSParser::TernaryOpNode *p_ternary_op, bool p_is_root = false);
 	void reduce_type_test(FSParser::TypeTestNode *p_type_test);
 	void reduce_unary_op(FSParser::UnaryOpNode *p_unary_op);
@@ -487,6 +492,10 @@ private:
 	Variant make_call_reduced_value(FSParser::CallNode *p_call, bool &is_reduced);
 
 	// Helpers.
+	// Builds a TUPLE DataType. `p_tuple_name` is empty for an unnamed (structural) tuple; a named
+	// tuple additionally carries the declaring script path so nominal identity survives imports.
+	static FSParser::DataType make_tuple_type(const StringName &p_tuple_name, const String &p_owner_fqcn, const String &p_script_path,
+			const Vector<FSParser::DataType> &p_element_types, const Vector<StringName> &p_field_names, bool p_meta);
 	Array make_array_from_element_datatype(const FSParser::DataType &p_element_datatype, const FSParser::Node *p_source_node = nullptr);
 	Dictionary make_dictionary_from_element_datatype(const FSParser::DataType &p_key_element_datatype, const FSParser::DataType &p_value_element_datatype, const FSParser::Node *p_source_node = nullptr);
 	ContainerType make_container_type_from_datatype(const FSParser::DataType &p_datatype, const FSParser::Node *p_source_node);

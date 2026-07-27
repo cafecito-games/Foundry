@@ -3665,6 +3665,7 @@ bool class_has_native_base_virtual_method(const FSParser::ClassNode *p_class, co
 				return native_class_has_virtual_method(base_type.native_type, p_function_name);
 			case FSParser::DataType::BUILTIN:
 			case FSParser::DataType::ENUM:
+			case FSParser::DataType::TUPLE:
 			case FSParser::DataType::TYPE_PARAMETER:
 			case FSParser::DataType::VARIANT:
 			case FSParser::DataType::RESOLVING:
@@ -3722,6 +3723,7 @@ bool class_has_base_function(const FSParser::ClassNode *p_class, const StringNam
 				return native_class_has_function(base_type.native_type, p_function_name);
 			case FSParser::DataType::BUILTIN:
 			case FSParser::DataType::ENUM:
+			case FSParser::DataType::TUPLE:
 			case FSParser::DataType::TYPE_PARAMETER:
 			case FSParser::DataType::VARIANT:
 			case FSParser::DataType::RESOLVING:
@@ -6551,6 +6553,7 @@ StringName native_base_name_for_class(
 			}
 			case FSParser::DataType::BUILTIN:
 			case FSParser::DataType::ENUM:
+			case FSParser::DataType::TUPLE:
 			case FSParser::DataType::TYPE_PARAMETER:
 			case FSParser::DataType::VARIANT:
 			case FSParser::DataType::RESOLVING:

@@ -1123,9 +1123,19 @@ void FSAnalyzer::resolve_class_member(FSParser::ClassNode *p_class, int p_index,
 				resolve_variable(member.variable, false);
 				resolve_pending_lambda_bodies();
 
+				// Tuples have no inspector representation, so exporting one is rejected before the
+				// export annotation runs (it would otherwise report the erased Array type).
+				const bool rejects_export = member.variable->get_datatype().kind == FSParser::DataType::TUPLE;
+
 				// Apply annotations.
 				for (FSParser::AnnotationNode *&E : member.variable->annotations) {
 					if (E->name != SNAME("@warning_ignore")) {
+						if (rejects_export && String(E->name).begins_with("@export")) {
+							push_error(vformat(R"(Cannot export a tuple-typed property: "%s" has type "%s".)",
+											   member.variable->identifier->name, member.variable->get_datatype().to_string()),
+									E);
+							continue;
+						}
 						resolve_annotation(E, FSParser::AnnotationDeclarationNode::TARGET_VARIABLE);
 						E->apply(parser, member.variable, p_class);
 					}
@@ -1278,17 +1288,30 @@ void FSAnalyzer::resolve_class_member(FSParser::ClassNode *p_class, int p_index,
 			case FSParser::ClassNode::Member::GROUP:
 				// No-op, but needed to silence warnings.
 				break;
-			case FSParser::ClassNode::Member::TUPLE:
-				// Named-tuple declarations do not have a resolved interface yet; typing
-				// (DataType::Kind::TUPLE, construction, field access) is a follow-up change.
-				// Still resolve each field's declared type so an unknown/invalid field type
-				// (e.g. `tuple Foo(x: NoSuchType, y: int)`) is caught here rather than
-				// silently accepted.
+			case FSParser::ClassNode::Member::TUPLE: {
 				check_class_member_name_conflict(p_class, member.m_tuple->identifier->name, member.m_tuple);
+
+				// Marking the declaration as resolving turns a by-value self-containing tuple
+				// (`tuple Node(value: int, child: Node)`) into a cycle error at the field that
+				// closes the loop, instead of an infinite resolution.
+				member.m_tuple->set_datatype(resolving_datatype);
+
+				Vector<FSParser::DataType> element_types;
+				Vector<StringName> field_names;
 				for (int i = 0; i < member.m_tuple->fields.size(); i++) {
-					resolve_datatype(member.m_tuple->fields[i].type);
+					const FSParser::TupleNode::Field &field = member.m_tuple->fields[i];
+					element_types.push_back(type_from_metatype(resolve_datatype(field.type)));
+					field_names.push_back(field.identifier != nullptr ? field.identifier->name : StringName());
 				}
-				break;
+				member.m_tuple->set_datatype(make_tuple_type(member.m_tuple->identifier->name, p_class->fqcn,
+						parser->script_path, element_types, field_names, true));
+
+				// Apply annotations.
+				for (FSParser::AnnotationNode *&E : member.m_tuple->annotations) {
+					resolve_annotation(E);
+					E->apply(parser, member.m_tuple, p_class);
+				}
+			} break;
 			case FSParser::ClassNode::Member::UNDEFINED:
 				ERR_PRINT("Trying to resolve undefined member.");
 				break;

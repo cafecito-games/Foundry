@@ -116,6 +116,7 @@ public:
 			SCRIPT,
 			CLASS, // FoundryScript.
 			ENUM, // Enumeration.
+			TUPLE, // Fixed-size immutable aggregate, named (`tuple Vec2(...)`) or unnamed (`(int, String)`).
 			TYPE_PARAMETER, // Generic type parameter, e.g. `T` in `class Box[T]`.
 			VARIANT, // Can be any type.
 			RESOLVING, // Currently resolving.
@@ -165,6 +166,11 @@ public:
 		bool callable_is_over_bound = false; // Set when bind()/bindv() bound more arguments than a fixed-arity target accepts, making any invocation fail.
 		HashMap<StringName, int64_t> enum_values; // For enums.
 
+		// For TUPLE kind. Element types live in `container_element_types`, so generic substitution
+		// recurses through them for free.
+		StringName tuple_name; // Empty for an unnamed (structural) tuple.
+		Vector<StringName> tuple_field_names; // Parallel to the elements; an empty entry is a positional field.
+
 		// For TYPE_PARAMETER kind.
 		StringName type_parameter_name;
 		int type_parameter_index = -1; // Ordinal position in its declaring scope.
@@ -175,6 +181,9 @@ public:
 		Vector<DataType> type_arguments;
 
 		_FORCE_INLINE_ bool is_type_parameter() const { return kind == TYPE_PARAMETER; }
+		_FORCE_INLINE_ bool is_tuple() const { return kind == TUPLE; }
+		// Index of the tuple field declared with p_name, or -1 when there is no such named field.
+		int get_tuple_field_index(const StringName &p_name) const;
 		_FORCE_INLINE_ bool has_type_arguments() const { return !type_arguments.is_empty(); }
 
 		// Returns a copy of p_type with every TYPE_PARAMETER replaced by its bound argument from p_bindings,
@@ -277,6 +286,13 @@ public:
 				case ENUM: // Enums use native_type to identify the enum and its base class.
 					equal = native_type == p_other.native_type;
 					break;
+				case TUPLE:
+					// Named tuples are nominal (`native_type` carries the class-qualified name); unnamed
+					// tuples are structural, so their identity is exactly their element shape.
+					equal = native_type == p_other.native_type && script_path == p_other.script_path &&
+							tuple_field_names == p_other.tuple_field_names &&
+							container_element_types == p_other.container_element_types;
+					break;
 				case SCRIPT:
 					equal = script_type == p_other.script_type;
 					break;
@@ -335,6 +351,8 @@ public:
 			method_unbound_argument_count = p_other.method_unbound_argument_count;
 			callable_is_over_bound = p_other.callable_is_over_bound;
 			enum_values = p_other.enum_values;
+			tuple_name = p_other.tuple_name;
+			tuple_field_names = p_other.tuple_field_names;
 			container_element_types = p_other.container_element_types;
 			type_parameter_name = p_other.type_parameter_name;
 			type_parameter_index = p_other.type_parameter_index;
@@ -692,6 +710,10 @@ public:
 		// `create_proxy_dynamic(T, handler)` utility call, materializing T's script
 		// from the `[T]` type argument.
 		bool is_proxy_construct = false;
+		// Set by the analyzer when the callee is a named tuple declaration rather than a function, so
+		// the compiler builds the tuple value instead of dispatching a call. The result datatype alone
+		// cannot decide this: an ordinary function may also return a tuple.
+		bool is_tuple_construction = false;
 		// Set by the analyzer when this calls a method whose typed-container return needs retyping at the
 		// assignment target. Generic method elements (`-> Array[T]`) are erased at runtime; inherited
 		// `Self` container returns are compiled against the declaring class while the static call type is
@@ -992,9 +1014,9 @@ public:
 					case GROUP:
 						return DataType();
 					case TUPLE:
-						// Named-tuple typing (DataType::Kind::TUPLE) is added by a later change;
-						// the declaration itself carries no runtime-visible type yet.
-						return DataType();
+						// The declaration carries the tuple's meta type; `type_from_metatype()`
+						// turns it into the instance type at use sites.
+						return m_tuple->get_datatype();
 					case UNDEFINED:
 						return DataType();
 				}

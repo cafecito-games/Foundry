@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 3: Cannot assign a value of type (int, int) to variable "plain" with specified type Array.
