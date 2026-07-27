@@ -115,7 +115,10 @@ static void _append_trait_unique(Vector<FSParser::ClassNode *> &r_traits, FSPars
 // `Dictionary[String, (int, int)]` are caught too, not just a bare `Message` or `(int, int)`
 // property. `r_found_type` receives the offending element type for diagnostics.
 static bool _export_type_contains_tuple_or_tagged_union(const FSParser::DataType &p_type, FSParser::DataType &r_found_type) {
-	if (p_type.is_tuple() || p_type.is_tagged_union_type()) {
+	// A tagged union's own metatype (e.g. `@export var x = Message`, exported as a Dictionary of
+	// case tags, same as a plain int-backed enum) is not a tagged-union *value* and stays supported.
+	const bool is_rejected_tagged_union_value = p_type.is_tagged_union_type() && !p_type.is_meta_type;
+	if (p_type.is_tuple() || is_rejected_tagged_union_value) {
 		r_found_type = p_type;
 		return true;
 	}
@@ -1166,8 +1169,16 @@ void FSAnalyzer::resolve_class_member(FSParser::ClassNode *p_class, int p_index,
 				// Array type). This also catches them nested in an exported `Array`/`Dictionary`,
 				// where they would otherwise reach the inspector as bogus int-enum or Array metadata.
 				const FSParser::DataType member_variable_datatype = member.variable->get_datatype();
+				FSParser::DataType export_check_datatype = member_variable_datatype;
+				if (export_check_datatype.is_variant() && member.variable->initializer != nullptr && member.variable->initializer->get_datatype().is_set()) {
+					// `@export` itself infers the exported type from the initializer when the
+					// declared type is `Variant` (see `FSParser::export_annotations`); mirror that
+					// here so a `Variant`-declared property initialized to a tuple or tagged-union
+					// value is still caught instead of reaching the enum export path unchecked.
+					export_check_datatype = member.variable->initializer->get_datatype();
+				}
 				FSParser::DataType rejected_export_datatype;
-				const bool rejects_export = _export_type_contains_tuple_or_tagged_union(member_variable_datatype, rejected_export_datatype);
+				const bool rejects_export = _export_type_contains_tuple_or_tagged_union(export_check_datatype, rejected_export_datatype);
 
 				// Apply annotations.
 				for (FSParser::AnnotationNode *&E : member.variable->annotations) {
@@ -1175,11 +1186,11 @@ void FSAnalyzer::resolve_class_member(FSParser::ClassNode *p_class, int p_index,
 						if (rejects_export && String(E->name).begins_with("@export")) {
 							if (rejected_export_datatype.is_tuple()) {
 								push_error(vformat(R"(Cannot export a tuple-typed property: "%s" has type "%s".)",
-												   member.variable->identifier->name, member_variable_datatype.to_string()),
+												   member.variable->identifier->name, export_check_datatype.to_string()),
 										E);
 							} else {
 								push_error(vformat(R"(Cannot export a tagged-union-typed property: "%s" has type "%s".)",
-												   member.variable->identifier->name, member_variable_datatype.to_string()),
+												   member.variable->identifier->name, export_check_datatype.to_string()),
 										E);
 							}
 							continue;
