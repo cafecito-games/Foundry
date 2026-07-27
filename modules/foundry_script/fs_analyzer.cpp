@@ -9749,6 +9749,8 @@ Variant FSAnalyzer::make_expression_reduced_value(FSParser::ExpressionNode *p_ex
 	switch (p_expression->type) {
 		case FSParser::Node::ARRAY:
 			return make_array_reduced_value(static_cast<FSParser::ArrayNode *>(p_expression), is_reduced);
+		case FSParser::Node::TUPLE_LITERAL:
+			return make_tuple_literal_reduced_value(static_cast<FSParser::TupleLiteralNode *>(p_expression), is_reduced);
 		case FSParser::Node::DICTIONARY:
 			return make_dictionary_reduced_value(static_cast<FSParser::DictionaryNode *>(p_expression), is_reduced);
 		case FSParser::Node::SUBSCRIPT:
@@ -9768,6 +9770,29 @@ Variant FSAnalyzer::make_array_reduced_value(FSParser::ArrayNode *p_array, bool 
 	array.resize(p_array->elements.size());
 	for (int i = 0; i < p_array->elements.size(); i++) {
 		FSParser::ExpressionNode *element = p_array->elements[i];
+
+		bool is_element_value_reduced = false;
+		Variant element_value = make_expression_reduced_value(element, is_element_value_reduced);
+		if (!is_element_value_reduced) {
+			return Variant();
+		}
+
+		array[i] = element_value;
+	}
+
+	array.make_read_only();
+
+	is_reduced = true;
+	return array;
+}
+
+Variant FSAnalyzer::make_tuple_literal_reduced_value(FSParser::TupleLiteralNode *p_tuple_literal, bool &is_reduced) {
+	// Tuple values erase to a plain (read-only) Array at runtime, matching how a tuple
+	// literal is compiled; see the design doc. Static tuple typing is a follow-up change.
+	Array array;
+	array.resize(p_tuple_literal->elements.size());
+	for (int i = 0; i < p_tuple_literal->elements.size(); i++) {
+		FSParser::ExpressionNode *element = p_tuple_literal->elements[i];
 
 		bool is_element_value_reduced = false;
 		Variant element_value = make_expression_reduced_value(element, is_element_value_reduced);

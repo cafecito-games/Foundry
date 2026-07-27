@@ -481,6 +481,7 @@ private:
 
 	Variant make_expression_reduced_value(FSParser::ExpressionNode *p_expression, bool &is_reduced);
 	Variant make_array_reduced_value(FSParser::ArrayNode *p_array, bool &is_reduced);
+	Variant make_tuple_literal_reduced_value(FSParser::TupleLiteralNode *p_tuple_literal, bool &is_reduced);
 	Variant make_dictionary_reduced_value(FSParser::DictionaryNode *p_dictionary, bool &is_reduced);
 	Variant make_subscript_reduced_value(FSParser::SubscriptNode *p_subscript, bool &is_reduced);
 	Variant make_call_reduced_value(FSParser::CallNode *p_call, bool &is_reduced);

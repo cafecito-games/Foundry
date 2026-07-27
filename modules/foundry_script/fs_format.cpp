@@ -1737,14 +1737,15 @@ void FSPrinter::print_type(const FSParser::TypeNode *p_type) {
 		return;
 	}
 	if (p_type->is_tuple) {
-		write("(");
-		for (int i = 0; i < p_type->tuple_element_types.size(); i++) {
-			if (i > 0) {
-				write(", ");
-			}
-			print_type(p_type->tuple_element_types[i]);
-		}
-		write(")");
+		// Reuse the generic delimited-list layout (see `print_tuple`) so a tuple type
+		// authored across several lines keeps that layout and interior comments between
+		// element types are preserved instead of dropped.
+		print_delimited_items(
+				"(", ")", p_type->tuple_element_types.size(), node_was_authored_multiline(p_type),
+				p_type->start_line, p_type->end_line,
+				[&](int p_index) { print_type(p_type->tuple_element_types[p_index]); },
+				[&](int p_index) { return p_type->tuple_element_types[p_index]->start_line; },
+				[&](int p_index) { return p_type->tuple_element_types[p_index]->end_line; });
 		if (p_type->is_nullable) {
 			write("?");
 		}
