@@ -2,7 +2,7 @@
 /*  fs_format.h                                                           */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -196,6 +196,7 @@ private:
 	void print_constant(const FSParser::ConstantNode *p_constant);
 	void print_signal(const FSParser::SignalNode *p_signal);
 	void print_enum(const FSParser::EnumNode *p_enum);
+	void print_tuple(const FSParser::TupleNode *p_tuple);
 	// Emits each annotation on its own line, keeping a comment on an annotation line
 	// (inline) and a full-line comment between annotations or between the last
 	// annotation and the annotated node (when `p_target_line` is the node's line).
@@ -294,6 +295,7 @@ private:
 	void print_cast(const FSParser::CastNode *p_cast);
 	void print_await(const FSParser::AwaitNode *p_await);
 	void print_array(const FSParser::ArrayNode *p_array);
+	void print_tuple_literal(const FSParser::TupleLiteralNode *p_tuple_literal);
 	void print_dictionary(const FSParser::DictionaryNode *p_dictionary);
 	void print_lambda(const FSParser::LambdaNode *p_lambda);
 	void print_preload(const FSParser::PreloadNode *p_preload);

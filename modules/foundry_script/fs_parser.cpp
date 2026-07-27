@@ -2045,7 +2045,8 @@ void FSParser::parse_class_body(bool p_is_multiline) {
 				token.type == FSTokenizer::Token::FUNC ||
 				token.type == FSTokenizer::Token::CLASS ||
 				token.type == FSTokenizer::Token::TRAIT ||
-				token.type == FSTokenizer::Token::ENUM;
+				token.type == FSTokenizer::Token::ENUM ||
+				token.type == FSTokenizer::Token::TUPLE;
 		const bool disallowed_enum_file_member = current_class->is_enum_file &&
 				(token.type == FSTokenizer::Token::VAR ||
 						token.type == FSTokenizer::Token::TK_CONST ||
@@ -2054,6 +2055,7 @@ void FSParser::parse_class_body(bool p_is_multiline) {
 						token.type == FSTokenizer::Token::CLASS ||
 						token.type == FSTokenizer::Token::TRAIT ||
 						token.type == FSTokenizer::Token::ENUM ||
+						token.type == FSTokenizer::Token::TUPLE ||
 						token.type == FSTokenizer::Token::ANNOTATION ||
 						token.type == FSTokenizer::Token::PASS ||
 						starts_annotation_declaration ||
@@ -2096,6 +2098,11 @@ void FSParser::parse_class_body(bool p_is_multiline) {
 			case FSTokenizer::Token::ENUM:
 				validate_declaration_modifiers(modifiers, "enums", false, false, false, false, in_trait);
 				parse_class_member(&FSParser::parse_enum, AnnotationInfo::CONSTANT, "enum", modifiers,
+						SNAME("@keep_name"));
+				break;
+			case FSTokenizer::Token::TUPLE:
+				validate_declaration_modifiers(modifiers, "tuples", false, false, false, false, in_trait);
+				parse_class_member(&FSParser::parse_tuple, AnnotationInfo::CONSTANT, "tuple", modifiers,
 						SNAME("@keep_name"));
 				break;
 			case FSTokenizer::Token::ANNOTATION: {
@@ -2855,6 +2862,70 @@ FSParser::EnumNode *FSParser::parse_enum(const DeclarationModifiers &p_modifiers
 	complete_extents(enum_node);
 
 	return enum_node;
+}
+
+FSParser::TupleNode *FSParser::parse_tuple(const DeclarationModifiers &p_modifiers) {
+	TupleNode *tuple_node = alloc_node<TupleNode>();
+
+	if (!consume(FSTokenizer::Token::IDENTIFIER, R"(Expected tuple name after "tuple".)")) {
+		complete_extents(tuple_node);
+		return tuple_node;
+	}
+	tuple_node->identifier = parse_identifier();
+
+	if (!consume(FSTokenizer::Token::PARENTHESIS_OPEN, R"(Expected "(" after tuple name.)")) {
+		complete_extents(tuple_node);
+		return tuple_node;
+	}
+	push_multiline(true);
+
+	HashMap<StringName, int> field_names;
+	if (!check(FSTokenizer::Token::PARENTHESIS_CLOSE)) {
+		do {
+			if (check(FSTokenizer::Token::PARENTHESIS_CLOSE)) {
+				break; // Allow for trailing comma.
+			}
+
+			TupleNode::Field field;
+			field.line = current.start_line;
+			field.start_column = current.start_column;
+
+			// A field is either `name: Type` (named) or a bare `Type` (positional).
+			if (check(FSTokenizer::Token::IDENTIFIER) && peek().type == FSTokenizer::Token::COLON) {
+				advance();
+				field.identifier = parse_identifier();
+				consume(FSTokenizer::Token::COLON, R"(Expected ":" after tuple field name.)");
+			}
+			field.type = parse_type(false);
+
+			if (field.type == nullptr) {
+				push_error(R"(Expected a field type in tuple declaration.)");
+				break;
+			}
+			field.end_column = previous.end_column;
+
+			if (field.identifier != nullptr) {
+				if (field_names.has(field.identifier->name)) {
+					push_error(vformat(R"(Tuple field "%s" was already declared.)", field.identifier->name), field.identifier);
+				} else {
+					field_names[field.identifier->name] = tuple_node->fields.size();
+				}
+			}
+
+			tuple_node->fields.push_back(field);
+		} while (match(FSTokenizer::Token::COMMA));
+	}
+
+	pop_multiline();
+	consume(FSTokenizer::Token::PARENTHESIS_CLOSE, R"*(Expected closing ")" after tuple fields.)*");
+
+	if (tuple_node->fields.size() < 2) {
+		push_error(R"(A tuple declaration must have at least two fields.)", tuple_node);
+	}
+
+	complete_extents(tuple_node);
+	end_statement("tuple declaration");
+	return tuple_node;
 }
 
 bool FSParser::parse_function_signature(FunctionNode *p_function, SuiteNode *p_body, const String &p_type, int p_signature_start) {
@@ -4643,15 +4714,67 @@ FSParser::ExpressionNode *FSParser::parse_dictionary(ExpressionNode *p_previous_
 }
 
 FSParser::ExpressionNode *FSParser::parse_grouping(ExpressionNode *p_previous_operand, bool p_can_assign) {
-	ExpressionNode *grouped = parse_expression(false);
-	pop_multiline();
-	if (grouped == nullptr) {
-		push_error(R"(Expected grouping expression.)");
-		consume(FSTokenizer::Token::PARENTHESIS_CLOSE, R"*(Expected closing ")" after grouping expression.)*");
-	} else {
-		consume(FSTokenizer::Token::PARENTHESIS_CLOSE, R"*(Expected closing ")" after grouping expression.)*");
+	// `previous` is the `(` token itself: the Pratt driver already consumed it before invoking
+	// this prefix rule. Anchor a tuple literal's extents here since `alloc_node()` (used once we
+	// know it is a tuple, not a grouping) would otherwise anchor to whatever token `previous`
+	// has become by then.
+	const FSTokenizer::Token open_paren = previous;
+
+	if (check(FSTokenizer::Token::PARENTHESIS_CLOSE)) {
+		// `()` is neither a valid grouping nor a valid tuple literal.
+		push_error(R"(A tuple literal cannot be empty.)");
+		advance();
+		pop_multiline();
+		TupleLiteralNode *empty_tuple = alloc_node<TupleLiteralNode>();
+		reset_extents(empty_tuple, open_paren);
+		update_extents(empty_tuple);
+		complete_extents(empty_tuple);
+		return empty_tuple;
 	}
-	return grouped;
+
+	ExpressionNode *first_element = parse_expression(false);
+	if (first_element == nullptr) {
+		push_error(R"(Expected grouping expression.)");
+		pop_multiline();
+		consume(FSTokenizer::Token::PARENTHESIS_CLOSE, R"*(Expected closing ")" after grouping expression.)*");
+		return nullptr;
+	}
+
+	if (!check(FSTokenizer::Token::COMMA)) {
+		// Ordinary expression grouping: `(a)` evaluates to `a` itself.
+		pop_multiline();
+		consume(FSTokenizer::Token::PARENTHESIS_CLOSE, R"*(Expected closing ")" after grouping expression.)*");
+		return first_element;
+	}
+
+	// Tuple literal: `(a, b, ...)`, arity >= 2. Trailing commas are allowed once arity >= 2;
+	// a single trailing comma after one element (`(a,)`) is a hard error, never a 1-tuple.
+	TupleLiteralNode *tuple_literal = alloc_node<TupleLiteralNode>();
+	reset_extents(tuple_literal, open_paren);
+	tuple_literal->elements.push_back(first_element);
+
+	while (match(FSTokenizer::Token::COMMA)) {
+		if (check(FSTokenizer::Token::PARENTHESIS_CLOSE)) {
+			break; // Trailing comma.
+		}
+		ExpressionNode *element = parse_expression(false);
+		if (element == nullptr) {
+			push_error(R"(Expected expression after "," in tuple literal.)");
+			break;
+		}
+		tuple_literal->elements.push_back(element);
+	}
+
+	pop_multiline();
+	consume(FSTokenizer::Token::PARENTHESIS_CLOSE, R"*(Expected closing ")" after tuple literal.)*");
+
+	if (tuple_literal->elements.size() == 1) {
+		push_error(R"(A single-element tuple literal is not allowed; either drop the trailing comma or add a second element.)", tuple_literal);
+	}
+
+	update_extents(tuple_literal);
+	complete_extents(tuple_literal);
+	return tuple_literal;
 }
 
 FSParser::ExpressionNode *FSParser::parse_attribute(ExpressionNode *p_previous_operand, bool p_can_assign) {
@@ -4675,6 +4798,23 @@ FSParser::ExpressionNode *FSParser::parse_attribute(ExpressionNode *p_previous_o
 	}
 
 	attribute->base = p_previous_operand;
+
+	// Tuple index access (`t.0`): the tokenizer already lexes a digit directly following a
+	// value-preceded `.` as a bare decimal-integer `LITERAL`, never a float, so this is
+	// unambiguous here.
+	if (check(FSTokenizer::Token::LITERAL) && current.literal.get_type() == Variant::INT) {
+		advance();
+		LiteralNode *index_literal = alloc_node<LiteralNode>();
+		index_literal->value = previous.literal;
+		update_extents(index_literal);
+		complete_extents(index_literal);
+
+		attribute->is_tuple_index = true;
+		attribute->index = index_literal;
+
+		complete_extents(attribute);
+		return attribute;
+	}
 
 	if (current.is_node_name()) {
 		current.type = FSTokenizer::Token::IDENTIFIER;
@@ -5215,6 +5355,42 @@ FSParser::TypeNode *FSParser::parse_type(bool p_allow_void, CompletionType p_for
 	} else {
 		make_completion_context(p_allow_void ? COMPLETION_TYPE_NAME_OR_VOID : COMPLETION_TYPE_NAME, type);
 	}
+
+	// Unnamed tuple type: `(int, String)`. Structural, arity >= 2; `type_chain` stays empty.
+	if (check(FSTokenizer::Token::PARENTHESIS_OPEN)) {
+		advance();
+		push_multiline(true);
+		type->is_tuple = true;
+
+		if (check(FSTokenizer::Token::PARENTHESIS_CLOSE)) {
+			push_error(R"(A tuple type cannot be empty.)");
+		} else {
+			do {
+				if (check(FSTokenizer::Token::PARENTHESIS_CLOSE)) {
+					break; // Allow for trailing comma.
+				}
+				TypeNode *element_type = parse_type(false);
+				if (element_type == nullptr) {
+					push_error(R"(Expected a tuple element type.)");
+					break;
+				}
+				type->tuple_element_types.push_back(element_type);
+			} while (match(FSTokenizer::Token::COMMA));
+		}
+
+		pop_multiline();
+		consume(FSTokenizer::Token::PARENTHESIS_CLOSE, R"*(Expected closing ")" after tuple type.)*");
+
+		if (type->tuple_element_types.size() == 1) {
+			push_error(R"(A tuple type must have at least two element types.)");
+		}
+		if (match(FSTokenizer::Token::QUESTION_MARK)) {
+			type->is_nullable = true;
+		}
+		complete_extents(type);
+		return type;
+	}
+
 	if (!match(FSTokenizer::Token::IDENTIFIER)) {
 		if (match(FSTokenizer::Token::TK_VOID)) {
 			if (p_allow_void) {
@@ -7174,6 +7350,9 @@ void FSParser::TreePrinter::print_class(ClassNode *p_class) {
 				break; // Nothing. Will be printed by enum.
 			case ClassNode::Member::GROUP:
 				break; // Nothing. Groups are only used by inspector.
+			case ClassNode::Member::TUPLE:
+				print_tuple(m.m_tuple);
+				break;
 			case ClassNode::Member::UNDEFINED:
 				push_line("<unknown member>");
 				break;
@@ -7267,6 +7446,9 @@ void FSParser::TreePrinter::print_expression(ExpressionNode *p_expression) {
 			break;
 		case Node::TERNARY_OPERATOR:
 			print_ternary_op(static_cast<TernaryOpNode *>(p_expression));
+			break;
+		case Node::TUPLE_LITERAL:
+			print_tuple_literal(static_cast<TupleLiteralNode *>(p_expression));
 			break;
 		case Node::TYPE_TEST:
 			print_type_test(static_cast<TypeTestNode *>(p_expression));
@@ -7556,6 +7738,9 @@ void FSParser::TreePrinter::print_subscript(SubscriptNode *p_subscript) {
 	if (p_subscript->is_attribute) {
 		push_text(".");
 		print_identifier(p_subscript->attribute);
+	} else if (p_subscript->is_tuple_index) {
+		push_text(".");
+		print_expression(p_subscript->index);
 	} else {
 		push_text("[ ");
 		print_expression(p_subscript->index);
@@ -7632,7 +7817,59 @@ void FSParser::TreePrinter::print_ternary_op(TernaryOpNode *p_ternary_op) {
 	push_text(")");
 }
 
+void FSParser::TreePrinter::print_tuple(TupleNode *p_tuple) {
+	push_text("Tuple ");
+	if (p_tuple->identifier != nullptr) {
+		print_identifier(p_tuple->identifier);
+	} else {
+		push_text("<unnamed>");
+	}
+
+	push_line(" (");
+	increase_indent();
+	for (int i = 0; i < p_tuple->fields.size(); i++) {
+		const TupleNode::Field &field = p_tuple->fields[i];
+		if (field.identifier != nullptr) {
+			print_identifier(field.identifier);
+			push_text(" : ");
+		}
+		if (field.type != nullptr) {
+			print_type(field.type);
+		} else {
+			push_text("<missing type>");
+		}
+		push_line(" ,");
+	}
+	decrease_indent();
+	push_line(")");
+}
+
+void FSParser::TreePrinter::print_tuple_literal(TupleLiteralNode *p_tuple_literal) {
+	push_text("( ");
+	for (int i = 0; i < p_tuple_literal->elements.size(); i++) {
+		if (i > 0) {
+			push_text(" , ");
+		}
+		print_expression(p_tuple_literal->elements[i]);
+	}
+	push_text(" )");
+}
+
 void FSParser::TreePrinter::print_type(TypeNode *p_type) {
+	if (p_type->is_tuple) {
+		push_text("( ");
+		for (int i = 0; i < p_type->tuple_element_types.size(); i++) {
+			if (i > 0) {
+				push_text(" , ");
+			}
+			print_type(p_type->tuple_element_types[i]);
+		}
+		push_text(" )");
+		if (p_type->is_nullable) {
+			push_text("?");
+		}
+		return;
+	}
 	if (p_type->type_chain.is_empty()) {
 		push_text("Void");
 	} else {

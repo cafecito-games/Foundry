@@ -2,7 +2,7 @@
 /*  fs_compiler.cpp                                                       */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -893,6 +893,33 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 			} else {
 				gen->write_construct_array(result, values);
 			}
+
+			for (int i = 0; i < values.size(); i++) {
+				if (values[i].mode == FSCodeGenerator::Address::TEMPORARY) {
+					gen->pop_temporary();
+				}
+			}
+
+			return result;
+		} break;
+		case FSParser::Node::TUPLE_LITERAL: {
+			// Tuple values erase to a plain Array at runtime (see the design doc); a dedicated,
+			// read-only construction opcode is a follow-up change alongside static tuple typing.
+			const FSParser::TupleLiteralNode *tn = static_cast<const FSParser::TupleLiteralNode *>(p_expression);
+			Vector<FSCodeGenerator::Address> values;
+
+			FSDataType tuple_type = _gdtype_from_datatype(tn->get_datatype(), codegen.script);
+			FSCodeGenerator::Address result = codegen.add_temporary(tuple_type);
+
+			for (int i = 0; i < tn->elements.size(); i++) {
+				FSCodeGenerator::Address val = _parse_expression(codegen, r_error, tn->elements[i]);
+				if (r_error) {
+					return FSCodeGenerator::Address();
+				}
+				values.push_back(val);
+			}
+
+			gen->write_construct_array(result, values);
 
 			for (int i = 0; i < values.size(); i++) {
 				if (values[i].mode == FSCodeGenerator::Address::TEMPORARY) {

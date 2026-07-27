@@ -1,0 +1,2 @@
+FS_TEST_PARSER_ERROR
+A single-element tuple literal is not allowed; either drop the trailing comma or add a second element.

@@ -3481,6 +3481,11 @@ String style_order_member_name(const FSParser::ClassNode::Member &p_member) {
 			return p_member.enum_value.identifier != nullptr ? String(p_member.enum_value.identifier->name) : String();
 		case FSParser::ClassNode::Member::GROUP:
 			return p_member.annotation != nullptr ? String(p_member.annotation->export_info.name) : String();
+		case FSParser::ClassNode::Member::TUPLE:
+			if (p_member.m_tuple == nullptr || p_member.m_tuple->identifier == nullptr) {
+				return String();
+			}
+			return String(p_member.m_tuple->identifier->name);
 		case FSParser::ClassNode::Member::UNDEFINED:
 			return String();
 	}
@@ -3790,6 +3795,7 @@ StyleOrderBucket get_style_order_bucket(
 			return is_private_style_order_name(member_name) ? StyleOrderBucket::PRIVATE_METHOD : StyleOrderBucket::PUBLIC_METHOD;
 		}
 		case FSParser::ClassNode::Member::CLASS:
+		case FSParser::ClassNode::Member::TUPLE:
 			return StyleOrderBucket::INNER_TYPE;
 		case FSParser::ClassNode::Member::GROUP:
 			return StyleOrderBucket::EXPORTED_VARIABLE;
@@ -5797,6 +5803,8 @@ StringName get_override_member_name(const FSParser::ClassNode::Member &p_member)
 			return p_member.m_enum != nullptr ? get_identifier_name_or_empty(p_member.m_enum->identifier) : StringName();
 		case FSParser::ClassNode::Member::ENUM_VALUE:
 			return get_identifier_name_or_empty(p_member.enum_value.identifier);
+		case FSParser::ClassNode::Member::TUPLE:
+			return p_member.m_tuple != nullptr ? get_identifier_name_or_empty(p_member.m_tuple->identifier) : StringName();
 		case FSParser::ClassNode::Member::GROUP:
 			return StringName();
 		case FSParser::ClassNode::Member::UNDEFINED:

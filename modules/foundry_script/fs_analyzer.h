@@ -2,7 +2,7 @@
 /*  fs_analyzer.h                                                         */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -460,6 +460,7 @@ private:
 	// Reduction functions.
 	void reduce_expression(FSParser::ExpressionNode *p_expression, bool p_is_root = false);
 	void reduce_array(FSParser::ArrayNode *p_array);
+	void reduce_tuple_literal(FSParser::TupleLiteralNode *p_tuple_literal);
 	void reduce_assignment(FSParser::AssignmentNode *p_assignment);
 	void reduce_await(FSParser::AwaitNode *p_await);
 	void reduce_binary_op(FSParser::BinaryOpNode *p_binary_op);

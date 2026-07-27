@@ -2,7 +2,7 @@
 /*  fs_extend_parser.cpp                                                  */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -475,6 +475,39 @@ void ExtendFSParser::parse_class_symbol(const FSParser::ClassNode *p_class, LSP:
 			case ClassNode::Member::CLASS: {
 				LSP::DocumentSymbol symbol;
 				parse_class_symbol(m.m_class, symbol);
+				r_symbol.children.push_back(symbol);
+			} break;
+			case ClassNode::Member::TUPLE: {
+				LSP::DocumentSymbol symbol;
+				symbol.name = m.m_tuple->identifier != nullptr ? String(m.m_tuple->identifier->name) : String();
+				symbol.kind = LSP::SymbolKind::Struct;
+				symbol.range = range_of_node(m.m_tuple);
+				if (m.m_tuple->identifier != nullptr) {
+					symbol.selectionRange = range_of_node(m.m_tuple->identifier);
+				}
+				symbol.documentation = m.m_tuple->doc_data.description;
+				symbol.uri = uri;
+				symbol.script_path = path;
+
+				symbol.detail = "tuple " + symbol.name;
+
+				for (int j = 0; j < m.m_tuple->fields.size(); j++) {
+					const FSParser::TupleNode::Field &field = m.m_tuple->fields[j];
+					if (field.identifier == nullptr) {
+						continue;
+					}
+					LSP::DocumentSymbol field_symbol;
+					field_symbol.name = field.identifier->name;
+					field_symbol.kind = LSP::SymbolKind::Field;
+					field_symbol.deprecated = false;
+					field_symbol.range.start = FoundryPosition(field.line, field.start_column).to_lsp(lines);
+					field_symbol.range.end = FoundryPosition(field.line, field.end_column).to_lsp(lines);
+					field_symbol.selectionRange = range_of_node(field.identifier);
+					field_symbol.uri = uri;
+					field_symbol.script_path = path;
+					symbol.children.push_back(field_symbol);
+				}
+
 				r_symbol.children.push_back(symbol);
 			} break;
 			case ClassNode::Member::GROUP:
@@ -1102,6 +1135,10 @@ Dictionary ExtendFSParser::dump_class_api(const FSParser::ClassNode *p_class) co
 					methods.append(dump_function_api(m.function));
 				}
 			} break;
+			case ClassNode::Member::TUPLE:
+				// Tuple declarations do not have a dedicated API bucket yet; they are omitted
+				// from this legacy dump like other type-only declarations without a value.
+				break;
 			case ClassNode::Member::GROUP:
 				break; // No-op, but silences warnings.
 			case ClassNode::Member::UNDEFINED:

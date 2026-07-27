@@ -2,7 +2,7 @@
 /*  fs_analyzer_surface.cpp                                               */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -181,6 +181,7 @@ static bool _member_is_visible_outer_class_surface(const FSParser::ClassNode::Me
 		case FSParser::ClassNode::Member::ENUM:
 		case FSParser::ClassNode::Member::ENUM_VALUE:
 		case FSParser::ClassNode::Member::CLASS:
+		case FSParser::ClassNode::Member::TUPLE:
 			return true;
 		case FSParser::ClassNode::Member::VARIABLE:
 		case FSParser::ClassNode::Member::FUNCTION:
@@ -1276,6 +1277,11 @@ void FSAnalyzer::resolve_class_member(FSParser::ClassNode *p_class, int p_index,
 				break;
 			case FSParser::ClassNode::Member::GROUP:
 				// No-op, but needed to silence warnings.
+				break;
+			case FSParser::ClassNode::Member::TUPLE:
+				// Named-tuple declarations do not have a resolved interface yet; typing
+				// (DataType::Kind::TUPLE, construction, field access) is a follow-up change.
+				check_class_member_name_conflict(p_class, member.m_tuple->identifier->name, member.m_tuple);
 				break;
 			case FSParser::ClassNode::Member::UNDEFINED:
 				ERR_PRINT("Trying to resolve undefined member.");

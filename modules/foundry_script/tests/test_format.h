@@ -2,7 +2,7 @@
 /*  test_format.h                                                         */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -620,11 +620,14 @@ static bool node_eq(const FSParser::Node *p_a, const FSParser::Node *p_b) {
 		case Node::SUBSCRIPT: {
 			const FSParser::SubscriptNode *a = static_cast<const FSParser::SubscriptNode *>(p_a);
 			const FSParser::SubscriptNode *b = static_cast<const FSParser::SubscriptNode *>(p_b);
-			if (a->is_attribute != b->is_attribute || !node_eq(a->base, b->base)) {
+			if (a->is_attribute != b->is_attribute || a->is_tuple_index != b->is_tuple_index || !node_eq(a->base, b->base)) {
 				return false;
 			}
 			if (a->is_attribute) {
 				return identifier_name(a->attribute) == identifier_name(b->attribute);
+			}
+			if (a->is_tuple_index) {
+				return node_eq(a->index, b->index);
 			}
 			if (a->type_argument_is_nullable.size() != b->type_argument_is_nullable.size()) {
 				return false;
@@ -653,9 +656,30 @@ static bool node_eq(const FSParser::Node *p_a, const FSParser::Node *p_b) {
 			return identifier_chain_eq(a->type_chain, b->type_chain) &&
 					node_vector_eq(a->container_types, b->container_types) &&
 					a->has_signature == b->has_signature && a->signature_is_async == b->signature_is_async &&
-					a->is_nullable == b->is_nullable &&
+					a->is_nullable == b->is_nullable && a->is_tuple == b->is_tuple &&
+					node_vector_eq(a->tuple_element_types, b->tuple_element_types) &&
 					node_vector_eq(a->signature_parameter_types, b->signature_parameter_types) &&
 					node_eq(a->signature_return_type, b->signature_return_type);
+		}
+		case Node::TUPLE_LITERAL: {
+			const FSParser::TupleLiteralNode *a = static_cast<const FSParser::TupleLiteralNode *>(p_a);
+			const FSParser::TupleLiteralNode *b = static_cast<const FSParser::TupleLiteralNode *>(p_b);
+			return node_vector_eq(a->elements, b->elements);
+		}
+		case Node::TUPLE: {
+			const FSParser::TupleNode *a = static_cast<const FSParser::TupleNode *>(p_a);
+			const FSParser::TupleNode *b = static_cast<const FSParser::TupleNode *>(p_b);
+			if (identifier_name(a->identifier) != identifier_name(b->identifier) ||
+					a->fields.size() != b->fields.size()) {
+				return false;
+			}
+			for (int i = 0; i < a->fields.size(); i++) {
+				if (identifier_name(a->fields[i].identifier) != identifier_name(b->fields[i].identifier) ||
+						!node_eq(a->fields[i].type, b->fields[i].type)) {
+					return false;
+				}
+			}
+			return true;
 		}
 		case Node::TYPE_PARAMETER: {
 			const FSParser::TypeParameterNode *a = static_cast<const FSParser::TypeParameterNode *>(p_a);

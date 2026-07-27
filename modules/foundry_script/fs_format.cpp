@@ -2,7 +2,7 @@
 /*  fs_format.cpp                                                         */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -863,6 +863,8 @@ const FSParser::Node *FSPrinter::member_node(const FSParser::ClassNode::Member &
 			return p_member.enum_value.parent_enum;
 		case FSParser::ClassNode::Member::GROUP:
 			return p_member.annotation;
+		case FSParser::ClassNode::Member::TUPLE:
+			return p_member.m_tuple;
 		case FSParser::ClassNode::Member::UNDEFINED:
 			return nullptr;
 	}
@@ -898,6 +900,9 @@ int FSPrinter::member_start_line(const FSParser::ClassNode::Member &p_member) {
 			break;
 		case FSParser::ClassNode::Member::GROUP:
 			annotations = &p_member.annotation->annotations;
+			break;
+		case FSParser::ClassNode::Member::TUPLE:
+			annotations = &p_member.m_tuple->annotations;
 			break;
 		default:
 			break;
@@ -1288,6 +1293,10 @@ void FSPrinter::print_member(const FSParser::ClassNode::Member &p_member) {
 				print_enum(p_member.enum_value.parent_enum);
 			}
 			break;
+		case FSParser::ClassNode::Member::TUPLE:
+			print_annotations(p_member.m_tuple->annotations, p_member.m_tuple->start_line);
+			print_tuple(p_member.m_tuple);
+			break;
 		case FSParser::ClassNode::Member::GROUP:
 			print_annotations(p_member.annotation->annotations);
 			write_indent();
@@ -1652,6 +1661,29 @@ void FSPrinter::print_enum(const FSParser::EnumNode *p_enum) {
 	last_emitted_line++;
 }
 
+void FSPrinter::print_tuple(const FSParser::TupleNode *p_tuple) {
+	write_indent();
+	write("tuple ");
+	if (p_tuple->identifier != nullptr) {
+		write(p_tuple->identifier->name);
+	}
+	write("(");
+	for (int i = 0; i < p_tuple->fields.size(); i++) {
+		if (i > 0) {
+			write(", ");
+		}
+		const FSParser::TupleNode::Field &field = p_tuple->fields[i];
+		if (field.identifier != nullptr) {
+			write(field.identifier->name);
+			write(": ");
+		}
+		print_type(field.type);
+	}
+	write(")");
+	newline();
+	last_emitted_line = MAX(last_emitted_line, p_tuple->end_line);
+}
+
 void FSPrinter::print_parameter(const FSParser::ParameterNode *p_parameter) {
 	for (const FSParser::AnnotationNode *annotation : p_parameter->annotations) {
 		print_annotation_inline(annotation);
@@ -1699,6 +1731,20 @@ void FSPrinter::print_type_parameters(const Vector<FSParser::TypeParameterNode *
 
 void FSPrinter::print_type(const FSParser::TypeNode *p_type) {
 	if (p_type == nullptr) {
+		return;
+	}
+	if (p_type->is_tuple) {
+		write("(");
+		for (int i = 0; i < p_type->tuple_element_types.size(); i++) {
+			if (i > 0) {
+				write(", ");
+			}
+			print_type(p_type->tuple_element_types[i]);
+		}
+		write(")");
+		if (p_type->is_nullable) {
+			write("?");
+		}
 		return;
 	}
 	if (p_type->type_chain.is_empty()) {
@@ -2187,6 +2233,9 @@ void FSPrinter::print_expression(const FSParser::ExpressionNode *p_expression) {
 		case FSParser::Node::ARRAY:
 			print_array(static_cast<const FSParser::ArrayNode *>(p_expression));
 			break;
+		case FSParser::Node::TUPLE_LITERAL:
+			print_tuple_literal(static_cast<const FSParser::TupleLiteralNode *>(p_expression));
+			break;
 		case FSParser::Node::DICTIONARY:
 			print_dictionary(static_cast<const FSParser::DictionaryNode *>(p_expression));
 			break;
@@ -2344,6 +2393,11 @@ void FSPrinter::print_subscript(const FSParser::SubscriptNode *p_subscript) {
 		}
 		return;
 	}
+	if (p_subscript->is_tuple_index) {
+		write(".");
+		print_expression(p_subscript->index);
+		return;
+	}
 	write("[");
 	if (!p_subscript->type_arguments.is_empty()) {
 		for (int i = 0; i < p_subscript->type_arguments.size(); i++) {
@@ -2379,6 +2433,15 @@ void FSPrinter::print_array(const FSParser::ArrayNode *p_array) {
 			[&](int p_index) { print_expression(p_array->elements[p_index]); },
 			[&](int p_index) { return p_array->elements[p_index]->start_line; },
 			[&](int p_index) { return p_array->elements[p_index]->end_line; });
+}
+
+void FSPrinter::print_tuple_literal(const FSParser::TupleLiteralNode *p_tuple_literal) {
+	print_delimited_items(
+			"(", ")", p_tuple_literal->elements.size(), node_was_authored_multiline(p_tuple_literal),
+			p_tuple_literal->start_line, p_tuple_literal->end_line,
+			[&](int p_index) { print_expression(p_tuple_literal->elements[p_index]); },
+			[&](int p_index) { return p_tuple_literal->elements[p_index]->start_line; },
+			[&](int p_index) { return p_tuple_literal->elements[p_index]->end_line; });
 }
 
 void FSPrinter::print_dictionary(const FSParser::DictionaryNode *p_dictionary) {

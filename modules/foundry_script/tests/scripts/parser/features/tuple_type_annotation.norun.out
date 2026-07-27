@@ -1,0 +1,2 @@
+FS_TEST_OK
+~~ WARNING at line 9: (UNUSED_PARAMETER) The parameter "pair" is never used in the function "consume_pair()". If this is intended, prefix it with an underscore: "_pair".
