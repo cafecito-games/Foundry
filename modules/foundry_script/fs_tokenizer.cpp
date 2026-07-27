@@ -126,6 +126,7 @@ static const char *token_names[] = {
 	"trait", // TRAIT,
 	"trait_name", // TRAIT_NAME,
 	"tuple", // TUPLE,
+	"tuple_name", // TUPLE_NAME,
 	"uses", // USES,
 	"var", // VAR,
 	"void", // TK_VOID,
@@ -283,6 +284,7 @@ bool FSTokenizer::Token::is_node_name() const {
 		case TRAIT:
 		case TRAIT_NAME:
 		case TUPLE:
+		case TUPLE_NAME:
 		case USES:
 		case UNDERSCORE:
 		case VAR:
@@ -595,6 +597,7 @@ FSTokenizer::Token FSTokenizerText::annotation() {
 	KEYWORD("trait", Token::TRAIT)           \
 	KEYWORD("trait_name", Token::TRAIT_NAME) \
 	KEYWORD("tuple", Token::TUPLE)           \
+	KEYWORD("tuple_name", Token::TUPLE_NAME) \
 	KEYWORD_GROUP('u')                       \
 	KEYWORD("uses", Token::USES)             \
 	KEYWORD_GROUP('v')                       \

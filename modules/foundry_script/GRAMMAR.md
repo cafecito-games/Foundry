@@ -140,7 +140,7 @@ or
 pass      preload
 return
 self      signal    static    super
-trait     trait_name tuple
+trait     trait_name tuple     tuple_name
 uses
 var       void
 while     when
@@ -293,7 +293,7 @@ A `.fs` file is an implicit class (the **head class**). The top-level form is:
 program        = { script_annotation | string NEWLINE },
                  [ namespace_decl ], { import_decl },
                  { head_modifier },
-                 [ class_name_decl | trait_name_decl | enum_name_decl ],
+                 [ class_name_decl | trait_name_decl | enum_name_decl | tuple_name_decl ],
                  [ extends_decl [ uses_decl ] | uses_decl ],
                  { class_annotation | string NEWLINE },
                  class_body ;
@@ -306,9 +306,9 @@ Ordering rules enforced by `parse_program` (`fs_parser.cpp`):
    class or the first inner declaration.
 2. `namespace` (at most once) must come before any `import`.
 3. `import` declarations follow `namespace`.
-4. `class_name`/`trait_name`/`enum_name` are mutually exclusive and may be used at most
-   once. `final`/`abstract` may precede `class_name`/`trait_name`/`extends` to mark the head
-   class (a trait cannot be `final`).
+4. `class_name`/`trait_name`/`enum_name`/`tuple_name` are mutually exclusive and may be
+   used at most once. `final`/`abstract` may precede `class_name`/`trait_name`/`extends` to
+   mark the head class (a trait cannot be `final`).
 5. `extends` may be used once and must come before `uses`.
 6. The class body follows.
 
@@ -331,10 +331,16 @@ class_name_decl = "class_name", identifier, [ type_parameters ],
 trait_name_decl = "trait_name", identifier, [ type_parameters ],
                   [ extends_decl [ uses_decl ] | uses_decl ], NEWLINE ;
 enum_name_decl = "enum_name", identifier, ":", enum_body ;   (* whole-file enum *)
+tuple_name_decl = "tuple_name", identifier,
+                  "(", tuple_field, { ",", tuple_field }, [ "," ], ")", NEWLINE ;
 ```
 
 `extends`/`uses` may appear on the same line as `class_name`/`trait_name`. An `enum_name`
-file may contain only the enum declaration.
+file may contain only the enum declaration, and a `tuple_name` file may contain only its
+tuple declaration (§4.4a describes the field list). A `tuple_name` file declares a global
+tuple type rather than a script: it has no base class, and the declared name is registered
+as a global type (qualified by `namespace` when present) that other files reference by name
+or through `import`.
 
 ### 3.3 Extends and uses
 
@@ -521,8 +527,9 @@ tuple_field     = [ identifier, ":" ], type ;   (* a bare type is a positional f
   error. A trailing comma is allowed once arity is >= 2.
 - A named field's identifier must be unique within the declaration; a duplicate name is a
   parse error.
-- `tuple` is a fully reserved keyword token; unlike `enum`, a tuple declaration has no
-  unnamed/file-level form in this grammar version.
+- `tuple` is a fully reserved keyword token. The whole-file form uses the separate
+  `tuple_name` keyword (§3.2), which keeps a head-position `tuple` declaration an ordinary
+  class-body member.
 - Named tuple declarations use the constant annotation target, matching named enums; this
   currently allows the built-in `@keep_name` annotation.
 

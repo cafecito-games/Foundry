@@ -1911,7 +1911,12 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 							push_error(vformat(R"(Could not parse global class "%s" from "%s".)", first, ScriptServer::get_global_class_path(first)), p_type);
 							return bad_type;
 						}
-						result = ref->get_parser()->head->get_datatype();
+						FSParser::ClassNode *global_head = ref->get_parser()->head;
+						if (global_head != nullptr && global_head->is_tuple_file) {
+							result = ref->get_analyzer()->make_global_tuple_type_from_current_parser(first, global_head);
+						} else {
+							result = global_head->get_datatype();
+						}
 					} else {
 						result = make_script_meta_type(ResourceLoader::load(path, "Script"));
 					}
@@ -5972,6 +5977,10 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 			reduce_call_tuple_construction(p_call, tuple_meta_type);
 			return;
 		}
+		if (!shadowed_by_local && is_self && find_global_tuple_meta_type(p_call->function_name, p_call, tuple_meta_type)) {
+			reduce_call_tuple_construction(p_call, tuple_meta_type);
+			return;
+		}
 	}
 
 	// Tuples are immutable and expose no methods; the underlying Array is an erasure detail.
@@ -6492,7 +6501,13 @@ FSParser::DataType FSAnalyzer::make_global_class_meta_type(const StringName &p_c
 			return type;
 		}
 
-		return ref->get_parser()->head->get_datatype();
+		FSParser::ClassNode *global_head = ref->get_parser()->head;
+		if (global_head != nullptr && global_head->is_tuple_file) {
+			// A `tuple_name` file has no script body: its global name denotes the tuple type itself,
+			// resolved in the declaring file's own analyzer so its field types resolve in that scope.
+			return ref->get_analyzer()->make_global_tuple_type_from_current_parser(p_class_name, global_head);
+		}
+		return global_head->get_datatype();
 	} else {
 		return make_script_meta_type(ResourceLoader::load(path, "Script"));
 	}
@@ -6526,6 +6541,55 @@ FSParser::DataType FSAnalyzer::make_global_enum_type_from_current_parser(const S
 	enum_type.class_type = head;
 	enum_type.script_path = parser->script_path;
 	return resolve_enum_values(enum_node, enum_type, head);
+}
+
+FSParser::DataType FSAnalyzer::make_global_tuple_type_from_current_parser(const StringName &p_global_name, const FSParser::Node *p_source) {
+	FSParser::DataType error_type;
+	error_type.type_source = FSParser::DataType::UNDETECTED;
+	error_type.kind = FSParser::DataType::VARIANT;
+
+	FSParser::ClassNode *head = parser->head;
+	FSParser::TupleNode *tuple_node = head != nullptr ? head->tuple_file_decl : nullptr;
+	if (head == nullptr || !head->is_tuple_file || tuple_node == nullptr || tuple_node->identifier == nullptr) {
+		push_error(vformat(R"(Global tuple "%s" does not refer to a "tuple_name" file.)", p_global_name), p_source);
+		return error_type;
+	}
+
+	if (tuple_node->get_datatype().is_resolving()) {
+		push_error(vformat(R"(Tuple "%s" cannot contain itself by value.)", p_global_name), p_source);
+		return error_type;
+	}
+	if (tuple_node->get_datatype().is_set()) {
+		return tuple_node->get_datatype();
+	}
+
+	// Marking the declaration as resolving turns a by-value cycle across files into an error at the
+	// field that closes the loop, exactly like a class-body tuple declaration.
+	FSParser::DataType resolving_datatype;
+	resolving_datatype.kind = FSParser::DataType::RESOLVING;
+	tuple_node->set_datatype(resolving_datatype);
+
+	FSParser::ClassNode *previous_class = parser->current_class;
+	parser->current_class = head;
+	Vector<FSParser::DataType> element_types;
+	Vector<StringName> field_names;
+	for (int i = 0; i < tuple_node->fields.size(); i++) {
+		const FSParser::TupleNode::Field &field = tuple_node->fields[i];
+		element_types.push_back(type_from_metatype(resolve_datatype(field.type)));
+		field_names.push_back(field.identifier != nullptr ? field.identifier->name : StringName());
+	}
+	parser->current_class = previous_class;
+
+	// The nominal identity of a whole-file tuple is its global name, so every script that references
+	// it names the same type. It is computed from the declaration rather than from the reference so a
+	// namespaced tuple keeps one identity however it is imported.
+	const StringName global_name = head->qualified_global_name.is_empty()
+			? tuple_node->identifier->name
+			: StringName(head->qualified_global_name);
+	FSParser::DataType tuple_type = make_tuple_type(global_name, String(), parser->script_path,
+			element_types, field_names, true);
+	tuple_node->set_datatype(tuple_type);
+	return tuple_type;
 }
 
 FSParser::DataType FSAnalyzer::make_global_enum_type_from_path(const StringName &p_global_name, const String &p_path, const FSParser::Node *p_source) {
@@ -9271,6 +9335,58 @@ bool FSAnalyzer::find_named_tuple_meta_type(const FSParser::DataType &p_base_typ
 		candidate = p_is_self ? candidate->outer : nullptr;
 	}
 	return false;
+}
+
+// Resolves `Vec2(1, 2)` where `Vec2` is a whole-file tuple declared in another script, reached either
+// by its global name or through an imported namespace. Any member of the current scope with that name
+// shadows the global one, so an ordinary call is never rerouted into tuple construction.
+bool FSAnalyzer::find_global_tuple_meta_type(const StringName &p_name, FSParser::Node *p_source,
+		FSParser::DataType &r_tuple_meta_type) {
+	if (p_name == StringName()) {
+		return false;
+	}
+
+	List<FSParser::ClassNode *> scope_classes;
+	get_class_node_current_scope_classes(parser->current_class, &scope_classes, p_source);
+	for (FSParser::ClassNode *scope_class : scope_classes) {
+		if (scope_class->members_indices.has(p_name) ||
+				(scope_class->identifier != nullptr && scope_class->identifier->name == p_name)) {
+			return false;
+		}
+	}
+
+	StringName global_name = p_name;
+	if (!ScriptServer::is_global_class(global_name)) {
+		StringName imported_name;
+		bool namespace_error = false;
+		if (!get_imported_global_class(p_name, p_source, imported_name, namespace_error) || namespace_error) {
+			return false;
+		}
+		global_name = imported_name;
+	}
+	if (!ScriptServer::is_global_class(global_name)) {
+		return false;
+	}
+
+	const String path = ScriptServer::get_global_class_path(global_name);
+	if (path.get_extension() != FSLanguage::get_singleton()->get_extension()) {
+		return false;
+	}
+
+	// The declaring file is parsed before deciding, so a non-tuple global class leaves the call alone
+	// instead of reporting an error from here.
+	Ref<FSParserRef> ref;
+	Error err = dependency_parser_access.raise_depended_parser_for(path, FSParserRef::INHERITANCE_SOLVED, ref);
+	if (err != OK || ref.is_null() || ref->get_parser() == nullptr) {
+		return false;
+	}
+	FSParser::ClassNode *global_head = ref->get_parser()->head;
+	if (global_head == nullptr || !global_head->is_tuple_file) {
+		return false;
+	}
+
+	r_tuple_meta_type = ref->get_analyzer()->make_global_tuple_type_from_current_parser(global_name, global_head);
+	return r_tuple_meta_type.kind == FSParser::DataType::TUPLE;
 }
 
 // Checks `Vec2(a, b)` against the declaration: positional arguments only, exact arity, element-wise
