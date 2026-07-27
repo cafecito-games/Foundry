@@ -369,6 +369,7 @@ member          = { declaration_modifier },
                   | inner_class_decl
                   | trait_decl
                   | enum_decl
+                  | tuple_decl
                   | annotation_declaration
                   | conformance_declaration
                   | class_annotation
@@ -391,6 +392,7 @@ legal depends on the member (`validate_declaration_modifiers`):
 | `class`   |  yes  |   yes    |   no   |  no   | |
 | `trait`   |  no   |   yes    |   no   |  no   | |
 | `enum`    |  no   |    no    |   no   |  no   | |
+| `tuple`   |  no   |    no    |   no   |  no   | |
 
 `final`+`abstract` is always contradictory. `abstract`+`static` is only allowed inside a
 trait.
@@ -485,6 +487,27 @@ A property combines a backing variable with a getter and/or setter. Two styles e
 inline bodies (`get:` / `set(value):` with indented blocks) and pointer style
 (`get = method`, `set = method`). `get` and `set` may appear in either order. The style is
 chosen by whether `=` follows the accessor name.
+
+### 4.4a Tuple declarations
+
+```ebnf
+tuple_decl      = "tuple", identifier, "(", tuple_field, { ",", tuple_field }, [ "," ], ")",
+                   NEWLINE ;
+tuple_field     = [ identifier, ":" ], type ;   (* a bare type is a positional field *)
+```
+
+- Declares a named, fixed-arity tuple type at class-body level (single-line; no indented
+  body). Each field is either **named** (`x: float`) or **positional** (a bare type, e.g.
+  `int`); the two forms may be mixed freely in one declaration
+  (`tuple Player(name: String, int, bool)`).
+- Arity must be at least 2: a tuple declaration with fewer than two fields is a parse
+  error. A trailing comma is allowed once arity is >= 2.
+- A named field's identifier must be unique within the declaration; a duplicate name is a
+  parse error.
+- `tuple` is a fully reserved keyword token; unlike `enum`, a tuple declaration has no
+  unnamed/file-level form in this grammar version.
+- Named tuple declarations use the constant annotation target, matching named enums; this
+  currently allows the built-in `@keep_name` annotation.
 
 ### 4.5 Functions and parameters
 
@@ -673,6 +696,7 @@ primary =
     | "PI" | "TAU" | "INF" | "NAN"
     | unary_op
     | "(", expression, ")"                          (* grouping *)
+    | tuple_literal
     | array_literal
     | dictionary_literal
     | lambda
@@ -681,6 +705,9 @@ primary =
     | get_node
     | "super", super_tail                            (* only as call base *)
     ;
+
+tuple_literal = "(", expression, ",", expression, { ",", expression }, [ "," ], ")" ;
+                                                      (* arity >= 2; see §9 for `(a)` vs `(a,)` *)
 
 unary_op = ( "-" | "+" | "~" | "not" | "!" ), expression ;
 ```
@@ -696,7 +723,7 @@ The token → prefix-rule mapping (`get_rule`):
 | `MINUS`/`PLUS`     | unary sign (`PREC_SIGN`)                         |
 | `TILDE`            | bitwise complement (`PREC_BIT_NOT`)             |
 | `NOT`/`BANG`       | logical not (`PREC_LOGIC_NOT`)                  |
-| `PARENTHESIS_OPEN` | grouping                                        |
+| `PARENTHESIS_OPEN` | grouping, or a tuple literal if a `,` follows the first element |
 | `BRACKET_OPEN`     | array literal                                   |
 | `BRACE_OPEN`       | dictionary literal                              |
 | `FUNC`             | lambda                                          |
@@ -798,6 +825,19 @@ attribute_access = expression, ".", identifier ;
 ```
 
 A broad set of keywords is accepted as the attribute name (node-name rule).
+
+#### Tuple index access
+
+```ebnf
+tuple_index_access = expression, ".", decimal_integer_literal ;
+```
+
+Valid on any expression, not only a tuple-typed one. The tokenizer already lexes a digit
+directly following a value-preceded `.` as a bare decimal-integer `LITERAL` rather than a
+float (§2.6, §9), so `t.0` is unambiguous: `t . 0`. The parser folds this shape into the
+same subscript node as `attribute_access`/`subscript` (marked distinctly so later passes can
+tell `t.0` apart from `t[0]`), not a separate expression kind. `t.0.1` is nested member
+access (`(t.0).1`), never a float.
 
 #### Subscript and use-site type arguments
 
@@ -968,9 +1008,13 @@ Rules:
 ```ebnf
 type =
       "void"                                         (* only where allowed: return type *)
-    | type_name, [ type_suffix ], [ "?" ] ;
+    | type_name, [ type_suffix ], [ "?" ]
+    | tuple_type ;
 
 type_name = identifier, { ".", identifier } ;        (* dotted, e.g. MyEnum, A.B *)
+
+tuple_type = "(", type, ",", type, { ",", type }, [ "," ], ")", [ "?" ] ;
+                                                      (* unnamed, structural; arity >= 2 *)
 
 type_suffix =
       collection_args                                (* Array[int], Dictionary[String, int] *)
@@ -998,6 +1042,10 @@ Details (`parse_type`):
 - **`Coroutine[T]`** — exactly one result type (`void` allowed) — the typed handle to an
   in-flight async computation.
 - **`Type[T]`** — exactly one represented instance type (a class/type handle).
+- **Unnamed tuple type `(T1, T2, ...)`** — structural, arity >= 2; a trailing comma is
+  allowed once arity is >= 2. An empty `()` or single-element `(T)` tuple type is a parse
+  error (`(T)` alone is never a type-position grouping — unlike the expression grammar,
+  there is no ambiguity to preserve). Nesting is allowed: `((int, int), bool)`.
 - Inner type nesting is depth-bounded to avoid stack overflow on pathological input.
 
 Types appear in: variable/constant/parameter annotations, `for` loop variable annotations,
@@ -1071,10 +1119,15 @@ are written in `##` doc comments and produce errors if used as annotations.
   `PERIOD` then a plain decimal-integer literal (tuple index access), so `t.0`, `t.0.1`, and
   `(f()).0` are all member access, while `.5` at the start of an expression is still the float
   `0.5`.
-- **`(a)` is grouping; `(a,)` is an error.** A single parenthesized expression is always
-  ordinary grouping, never a 1-tuple; FoundryScript has no 1-tuples, so a lone trailing comma
-  inside otherwise-empty parentheses around one element is a hard parse error rather than
-  silently becoming a tuple or a no-op.
+- **`(a)` is grouping; `(a,)` and `()` are errors.** A single parenthesized expression is
+  always ordinary grouping, never a 1-tuple; FoundryScript has no 1-tuples or empty tuples, so
+  a lone trailing comma around one element (`(a,)`) and an empty parenthesized pair (`()`) in
+  expression position are both hard parse errors rather than silently becoming a tuple or a
+  no-op. The parser only commits to the tuple-literal shape once it sees a `,` after the
+  first element; `(a, b)`, `(a, b,)`, ... are tuple literals (arity >= 2, trailing comma
+  allowed). The same arity-2 minimum and error shapes apply to the unnamed tuple *type*
+  `(T1, T2)` in type position (§7) and to a `tuple Name(...)` *declaration* (§4.4a) — an empty
+  or single-field tuple type/declaration is a parse error there too.
 
 ---
 

@@ -1057,6 +1057,12 @@ void collect_callsite_parameter_type_in_expression(
 				collect_callsite_parameter_type_in_expression(p_workspace, p_path, p_parser, element, p_target_symbol, p_parameter_index, p_parse_results, r_state);
 			}
 		} break;
+		case FSParser::Node::TUPLE_LITERAL: {
+			const FSParser::TupleLiteralNode *tuple_literal = static_cast<const FSParser::TupleLiteralNode *>(p_expression);
+			for (const FSParser::ExpressionNode *element : tuple_literal->elements) {
+				collect_callsite_parameter_type_in_expression(p_workspace, p_path, p_parser, element, p_target_symbol, p_parameter_index, p_parse_results, r_state);
+			}
+		} break;
 		case FSParser::Node::ASSIGNMENT: {
 			const FSParser::AssignmentNode *assignment = static_cast<const FSParser::AssignmentNode *>(p_expression);
 			collect_callsite_parameter_type_in_expression(p_workspace, p_path, p_parser, assignment->assignee, p_target_symbol, p_parameter_index, p_parse_results, r_state);
@@ -1540,6 +1546,12 @@ void collect_extract_method_expr_reads(
 		case FSParser::Node::ARRAY: {
 			const FSParser::ArrayNode *array = static_cast<const FSParser::ArrayNode *>(p_expression);
 			for (const FSParser::ExpressionNode *element : array->elements) {
+				collect_extract_method_expr_reads(element, p_location, r_state);
+			}
+		} break;
+		case FSParser::Node::TUPLE_LITERAL: {
+			const FSParser::TupleLiteralNode *tuple_literal = static_cast<const FSParser::TupleLiteralNode *>(p_expression);
+			for (const FSParser::ExpressionNode *element : tuple_literal->elements) {
 				collect_extract_method_expr_reads(element, p_location, r_state);
 			}
 		} break;
@@ -2517,6 +2529,14 @@ bool find_inline_variable_target_in_expression(const RefactorLocation &p_locatio
 				}
 			}
 		} break;
+		case FSParser::Node::TUPLE_LITERAL: {
+			const FSParser::TupleLiteralNode *tuple_literal = static_cast<const FSParser::TupleLiteralNode *>(p_expression);
+			for (const FSParser::ExpressionNode *element : tuple_literal->elements) {
+				if (find_inline_variable_target_in_expression(p_location, p_lines, element, r_variable, r_function)) {
+					return true;
+				}
+			}
+		} break;
 		case FSParser::Node::ASSIGNMENT: {
 			const FSParser::AssignmentNode *assignment = static_cast<const FSParser::AssignmentNode *>(p_expression);
 			return find_inline_variable_target_in_expression(p_location, p_lines, assignment->assignee, r_variable, r_function) ||
@@ -2738,6 +2758,12 @@ void collect_inline_variable_uses_in_expression(const FSParser::ExpressionNode *
 				collect_inline_variable_uses_in_expression(element, p_expression, false, p_target, p_target_function, p_current_function, r_collection);
 			}
 		} break;
+		case FSParser::Node::TUPLE_LITERAL: {
+			const FSParser::TupleLiteralNode *tuple_literal = static_cast<const FSParser::TupleLiteralNode *>(p_expression);
+			for (const FSParser::ExpressionNode *element : tuple_literal->elements) {
+				collect_inline_variable_uses_in_expression(element, p_expression, false, p_target, p_target_function, p_current_function, r_collection);
+			}
+		} break;
 		case FSParser::Node::ASSIGNMENT: {
 			const FSParser::AssignmentNode *assignment = static_cast<const FSParser::AssignmentNode *>(p_expression);
 			collect_inline_variable_uses_in_expression(assignment->assignee, p_expression, true, p_target, p_target_function, p_current_function, r_collection);
@@ -2905,6 +2931,15 @@ bool expression_has_side_effects(const FSParser::ExpressionNode *p_expression) {
 		case FSParser::Node::ARRAY: {
 			const FSParser::ArrayNode *array = static_cast<const FSParser::ArrayNode *>(p_expression);
 			for (const FSParser::ExpressionNode *element : array->elements) {
+				if (expression_has_side_effects(element)) {
+					return true;
+				}
+			}
+			return false;
+		}
+		case FSParser::Node::TUPLE_LITERAL: {
+			const FSParser::TupleLiteralNode *tuple_literal = static_cast<const FSParser::TupleLiteralNode *>(p_expression);
+			for (const FSParser::ExpressionNode *element : tuple_literal->elements) {
 				if (expression_has_side_effects(element)) {
 					return true;
 				}
@@ -3481,6 +3516,11 @@ String style_order_member_name(const FSParser::ClassNode::Member &p_member) {
 			return p_member.enum_value.identifier != nullptr ? String(p_member.enum_value.identifier->name) : String();
 		case FSParser::ClassNode::Member::GROUP:
 			return p_member.annotation != nullptr ? String(p_member.annotation->export_info.name) : String();
+		case FSParser::ClassNode::Member::TUPLE:
+			if (p_member.m_tuple == nullptr || p_member.m_tuple->identifier == nullptr) {
+				return String();
+			}
+			return String(p_member.m_tuple->identifier->name);
 		case FSParser::ClassNode::Member::UNDEFINED:
 			return String();
 	}
@@ -3790,6 +3830,7 @@ StyleOrderBucket get_style_order_bucket(
 			return is_private_style_order_name(member_name) ? StyleOrderBucket::PRIVATE_METHOD : StyleOrderBucket::PUBLIC_METHOD;
 		}
 		case FSParser::ClassNode::Member::CLASS:
+		case FSParser::ClassNode::Member::TUPLE:
 			return StyleOrderBucket::INNER_TYPE;
 		case FSParser::ClassNode::Member::GROUP:
 			return StyleOrderBucket::EXPORTED_VARIABLE;
@@ -5797,6 +5838,8 @@ StringName get_override_member_name(const FSParser::ClassNode::Member &p_member)
 			return p_member.m_enum != nullptr ? get_identifier_name_or_empty(p_member.m_enum->identifier) : StringName();
 		case FSParser::ClassNode::Member::ENUM_VALUE:
 			return get_identifier_name_or_empty(p_member.enum_value.identifier);
+		case FSParser::ClassNode::Member::TUPLE:
+			return p_member.m_tuple != nullptr ? get_identifier_name_or_empty(p_member.m_tuple->identifier) : StringName();
 		case FSParser::ClassNode::Member::GROUP:
 			return StringName();
 		case FSParser::ClassNode::Member::UNDEFINED:
@@ -7024,6 +7067,7 @@ bool cast_expression_needs_parentheses(const FSParser::ExpressionNode *p_express
 		case FSParser::Node::PRELOAD:
 		case FSParser::Node::SELF:
 		case FSParser::Node::SUBSCRIPT:
+		case FSParser::Node::TUPLE_LITERAL:
 			return false;
 		default:
 			return true;
@@ -7215,6 +7259,12 @@ void collect_cast_candidates_in_expression(const Vector<String> &p_lines, const 
 		case FSParser::Node::ARRAY: {
 			const FSParser::ArrayNode *array = static_cast<const FSParser::ArrayNode *>(p_expression);
 			for (const FSParser::ExpressionNode *element : array->elements) {
+				collect_cast_candidates_in_expression(p_lines, element, r_candidates);
+			}
+		} break;
+		case FSParser::Node::TUPLE_LITERAL: {
+			const FSParser::TupleLiteralNode *tuple_literal = static_cast<const FSParser::TupleLiteralNode *>(p_expression);
+			for (const FSParser::ExpressionNode *element : tuple_literal->elements) {
 				collect_cast_candidates_in_expression(p_lines, element, r_candidates);
 			}
 		} break;

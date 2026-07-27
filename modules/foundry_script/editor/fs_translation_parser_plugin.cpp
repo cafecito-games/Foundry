@@ -2,7 +2,7 @@
 /*  fs_translation_parser_plugin.cpp                                      */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -245,6 +245,12 @@ void FSEditorTranslationParserPlugin::_assess_expression(const FSParser::Express
 			const FSParser::ArrayNode *array_node = static_cast<const FSParser::ArrayNode *>(p_expression);
 			for (int i = 0; i < array_node->elements.size(); i++) {
 				_assess_expression(array_node->elements[i]);
+			}
+		} break;
+		case FSParser::Node::TUPLE_LITERAL: {
+			const FSParser::TupleLiteralNode *tuple_literal_node = static_cast<const FSParser::TupleLiteralNode *>(p_expression);
+			for (int i = 0; i < tuple_literal_node->elements.size(); i++) {
+				_assess_expression(tuple_literal_node->elements[i]);
 			}
 		} break;
 		case FSParser::Node::ASSIGNMENT: {

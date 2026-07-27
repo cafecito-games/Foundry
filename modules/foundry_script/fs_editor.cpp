@@ -2,7 +2,7 @@
 /*  fs_editor.cpp                                                         */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -2027,6 +2027,12 @@ static void _find_identifiers_in_class(const FSParser::ClassNode *p_class, bool 
 						}
 						option = ScriptLanguage::CodeCompletionOption(member.signal->identifier->name, ScriptLanguage::CODE_COMPLETION_KIND_SIGNAL, location);
 						break;
+					case FSParser::ClassNode::Member::TUPLE:
+						if (p_only_functions || member.m_tuple->identifier == nullptr) {
+							continue;
+						}
+						option = ScriptLanguage::CodeCompletionOption(member.m_tuple->identifier->name, ScriptLanguage::CODE_COMPLETION_KIND_CLASS, location);
+						break;
 					case FSParser::ClassNode::Member::GROUP:
 						break; // No-op, but silences warnings.
 					case FSParser::ClassNode::Member::UNDEFINED:
@@ -3541,6 +3547,10 @@ static bool _guess_identifier_type_from_base(FSParser::CompletionContext &p_cont
 							r_type.type.class_type = member.m_class;
 							r_type.type.is_meta_type = true;
 							return true;
+						case FSParser::ClassNode::Member::TUPLE:
+							// Tuple typing (DataType::Kind::TUPLE) is a follow-up change; no
+							// static type can be guessed for a tuple-type name yet.
+							return false;
 						case FSParser::ClassNode::Member::GROUP:
 							return false; // No-op, but silences warnings.
 						case FSParser::ClassNode::Member::UNDEFINED:
@@ -5214,6 +5224,11 @@ static Error _set_lookup_result_from_class_member(const FSParser::DataType &p_ba
 			break;
 		case FSParser::ClassNode::Member::ENUM_VALUE:
 			r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_CONSTANT;
+			break;
+		case FSParser::ClassNode::Member::TUPLE:
+			// A named tuple is a type declaration like a class; its own doc type name is
+			// resolved once tuple typing (DataType::Kind::TUPLE) lands.
+			r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS;
 			break;
 	}
 

@@ -2,7 +2,7 @@
 /*  fs_analyzer.cpp                                                       */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -1632,6 +1632,19 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 		return false;
 	};
 
+	if (p_type->is_tuple) {
+		// Unnamed tuple types (`(int, String)`) parse today, but their real static typing
+		// (DataType::Kind::TUPLE, element-wise compatibility, immutability) is a follow-up
+		// change. Resolve element types just enough to catch unrelated errors inside them, but
+		// erase the tuple type itself to Variant rather than mistaking its empty `type_chain`
+		// for `void`.
+		for (int i = 0; i < p_type->tuple_element_types.size(); i++) {
+			resolve_datatype(p_type->tuple_element_types[i]);
+		}
+		result.kind = FSParser::DataType::VARIANT;
+		return finalize_datatype(result);
+	}
+
 	if (p_type->type_chain.is_empty()) {
 		// void.
 		result.kind = FSParser::DataType::BUILTIN;
@@ -2459,6 +2472,7 @@ void FSAnalyzer::resolve_node(FSParser::Node *p_node, bool p_is_root) {
 		case FSParser::Node::SELF:
 		case FSParser::Node::SUBSCRIPT:
 		case FSParser::Node::TERNARY_OPERATOR:
+		case FSParser::Node::TUPLE_LITERAL:
 		case FSParser::Node::TYPE_TEST:
 		case FSParser::Node::UNARY_OPERATOR:
 			reduce_expression(static_cast<FSParser::ExpressionNode *>(p_node), p_is_root);
@@ -2472,6 +2486,7 @@ void FSAnalyzer::resolve_node(FSParser::Node *p_node, bool p_is_root) {
 		case FSParser::Node::FUNCTION:
 		case FSParser::Node::PASS:
 		case FSParser::Node::SIGNAL:
+		case FSParser::Node::TUPLE:
 		case FSParser::Node::TYPE_PARAMETER:
 			// Nothing to do. Custom annotation declarations are resolved in a later pass.
 			break;
@@ -4585,6 +4600,9 @@ void FSAnalyzer::reduce_expression(FSParser::ExpressionNode *p_expression, bool 
 		case FSParser::Node::TERNARY_OPERATOR:
 			reduce_ternary_op(static_cast<FSParser::TernaryOpNode *>(p_expression), p_is_root);
 			break;
+		case FSParser::Node::TUPLE_LITERAL:
+			reduce_tuple_literal(static_cast<FSParser::TupleLiteralNode *>(p_expression));
+			break;
 		case FSParser::Node::TYPE_TEST:
 			reduce_type_test(static_cast<FSParser::TypeTestNode *>(p_expression));
 			break;
@@ -4614,6 +4632,7 @@ void FSAnalyzer::reduce_expression(FSParser::ExpressionNode *p_expression, bool 
 		case FSParser::Node::RETURN:
 		case FSParser::Node::SIGNAL:
 		case FSParser::Node::SUITE:
+		case FSParser::Node::TUPLE:
 		case FSParser::Node::TYPE:
 		case FSParser::Node::TYPE_PARAMETER:
 		case FSParser::Node::VARIABLE:
@@ -4628,6 +4647,23 @@ void FSAnalyzer::reduce_expression(FSParser::ExpressionNode *p_expression, bool 
 		dummy.kind = FSParser::DataType::VARIANT;
 		p_expression->set_datatype(dummy);
 	}
+}
+
+void FSAnalyzer::reduce_tuple_literal(FSParser::TupleLiteralNode *p_tuple_literal) {
+	for (int i = 0; i < p_tuple_literal->elements.size(); i++) {
+		reduce_expression(p_tuple_literal->elements[i]);
+	}
+
+	// Tuple values erase to a plain Array at runtime (see the design doc). Static tuple typing
+	// (arity/element-wise checking, immutability) lands with DataType::Kind::TUPLE in a
+	// follow-up change; for now a tuple literal type-checks like an ordinary array literal.
+	FSParser::DataType tuple_type;
+	tuple_type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+	tuple_type.kind = FSParser::DataType::BUILTIN;
+	tuple_type.builtin_type = Variant::ARRAY;
+	tuple_type.is_constant = true;
+
+	p_tuple_literal->set_datatype(tuple_type);
 }
 
 void FSAnalyzer::reduce_array(FSParser::ArrayNode *p_array) {
@@ -9713,6 +9749,8 @@ Variant FSAnalyzer::make_expression_reduced_value(FSParser::ExpressionNode *p_ex
 	switch (p_expression->type) {
 		case FSParser::Node::ARRAY:
 			return make_array_reduced_value(static_cast<FSParser::ArrayNode *>(p_expression), is_reduced);
+		case FSParser::Node::TUPLE_LITERAL:
+			return make_tuple_literal_reduced_value(static_cast<FSParser::TupleLiteralNode *>(p_expression), is_reduced);
 		case FSParser::Node::DICTIONARY:
 			return make_dictionary_reduced_value(static_cast<FSParser::DictionaryNode *>(p_expression), is_reduced);
 		case FSParser::Node::SUBSCRIPT:
@@ -9732,6 +9770,29 @@ Variant FSAnalyzer::make_array_reduced_value(FSParser::ArrayNode *p_array, bool 
 	array.resize(p_array->elements.size());
 	for (int i = 0; i < p_array->elements.size(); i++) {
 		FSParser::ExpressionNode *element = p_array->elements[i];
+
+		bool is_element_value_reduced = false;
+		Variant element_value = make_expression_reduced_value(element, is_element_value_reduced);
+		if (!is_element_value_reduced) {
+			return Variant();
+		}
+
+		array[i] = element_value;
+	}
+
+	array.make_read_only();
+
+	is_reduced = true;
+	return array;
+}
+
+Variant FSAnalyzer::make_tuple_literal_reduced_value(FSParser::TupleLiteralNode *p_tuple_literal, bool &is_reduced) {
+	// Tuple values erase to a plain (read-only) Array at runtime, matching how a tuple
+	// literal is compiled; see the design doc. Static tuple typing is a follow-up change.
+	Array array;
+	array.resize(p_tuple_literal->elements.size());
+	for (int i = 0; i < p_tuple_literal->elements.size(); i++) {
+		FSParser::ExpressionNode *element = p_tuple_literal->elements[i];
 
 		bool is_element_value_reduced = false;
 		Variant element_value = make_expression_reduced_value(element, is_element_value_reduced);

@@ -97,6 +97,8 @@ public:
 	struct SuiteNode;
 	struct TernaryOpNode;
 	struct TraitNode;
+	struct TupleLiteralNode;
+	struct TupleNode;
 	struct TypeNode;
 	struct TypeParameterNode;
 	struct TypeTestNode;
@@ -423,6 +425,8 @@ public:
 			SUBSCRIPT,
 			SUITE,
 			TERNARY_OPERATOR,
+			TUPLE,
+			TUPLE_LITERAL,
 			TYPE,
 			TYPE_PARAMETER,
 			TYPE_TEST,
@@ -539,6 +543,16 @@ public:
 
 		ArrayNode() {
 			type = ARRAY;
+		}
+	};
+
+	// An unnamed tuple literal: `(a, b)`, arity >= 2. `(a)` remains ordinary expression
+	// grouping (parsed as `a` itself, never this node) and `(a,)` is a hard parse error.
+	struct TupleLiteralNode : public ExpressionNode {
+		Vector<ExpressionNode *> elements;
+
+		TupleLiteralNode() {
+			type = TUPLE_LITERAL;
 		}
 	};
 
@@ -773,6 +787,32 @@ public:
 		}
 	};
 
+	// A named tuple declaration: `tuple Name(x: float, y: float)`. Fields may be named
+	// (`x: float`) or positional (a bare type). Element order is significant: `.0`-style
+	// index access always follows declaration order regardless of naming.
+	struct TupleNode : public Node {
+		struct Field {
+			IdentifierNode *identifier = nullptr; // Null for a positional field.
+			TypeNode *type = nullptr;
+			int line = 0;
+			int start_column = 0;
+			int end_column = 0;
+#ifdef TOOLS_ENABLED
+			MemberDocData doc_data;
+#endif // TOOLS_ENABLED
+		};
+
+		IdentifierNode *identifier = nullptr;
+		Vector<Field> fields;
+#ifdef TOOLS_ENABLED
+		MemberDocData doc_data;
+#endif // TOOLS_ENABLED
+
+		TupleNode() {
+			type = TUPLE;
+		}
+	};
+
 	struct ClassNode : public Node {
 		struct TraitUse {
 			Vector<IdentifierNode *> name;
@@ -805,6 +845,7 @@ public:
 				ENUM,
 				ENUM_VALUE, // For unnamed enums.
 				GROUP, // For member grouping.
+				TUPLE,
 			};
 
 			Type type = UNDEFINED;
@@ -817,6 +858,7 @@ public:
 				VariableNode *variable;
 				EnumNode *m_enum;
 				AnnotationNode *annotation;
+				TupleNode *m_tuple;
 			};
 			EnumNode::Value enum_value;
 
@@ -842,6 +884,9 @@ public:
 						return enum_value.identifier->name;
 					case GROUP:
 						return annotation->export_info.name;
+					case TUPLE:
+						// All tuple-type members have an id.
+						return m_tuple->identifier->name;
 				}
 				return "";
 			}
@@ -866,6 +911,8 @@ public:
 						return "enum value";
 					case GROUP:
 						return "group";
+					case TUPLE:
+						return "tuple";
 				}
 				return "";
 			}
@@ -888,6 +935,8 @@ public:
 						return signal->start_line;
 					case GROUP:
 						return annotation->start_line;
+					case TUPLE:
+						return m_tuple->start_line;
 					case UNDEFINED:
 						ERR_FAIL_V_MSG(-1, "Reaching undefined member type.");
 				}
@@ -911,6 +960,10 @@ public:
 					case SIGNAL:
 						return signal->get_datatype();
 					case GROUP:
+						return DataType();
+					case TUPLE:
+						// Named-tuple typing (DataType::Kind::TUPLE) is added by a later change;
+						// the declaration itself carries no runtime-visible type yet.
 						return DataType();
 					case UNDEFINED:
 						return DataType();
@@ -936,6 +989,8 @@ public:
 						return signal;
 					case GROUP:
 						return annotation;
+					case TUPLE:
+						return m_tuple;
 					case UNDEFINED:
 						return nullptr;
 				}
@@ -975,6 +1030,10 @@ public:
 			Member(AnnotationNode *p_annotation) {
 				type = GROUP;
 				annotation = p_annotation;
+			}
+			Member(TupleNode *p_tuple) {
+				type = TUPLE;
+				m_tuple = p_tuple;
 			}
 		};
 
@@ -1402,6 +1461,9 @@ public:
 		};
 
 		bool is_attribute = false;
+		// Set for a tuple-index access (`t.0`), distinguishing it from an ordinary subscript
+		// (`arr[0]`). `is_attribute` is false and `index` holds the integer-literal index node.
+		bool is_tuple_index = false;
 
 		// Use-site type-argument list for generics, e.g. `Pair[int, String]` or `id[Node?]`.
 		// Populated only when the subscript brackets carry more than one comma-separated argument
@@ -1539,6 +1601,10 @@ public:
 		bool signature_is_async = false; // Set when the type was written as AsyncCallable.
 		bool is_coroutine = false; // Set when the type was written as Coroutine[T].
 		bool is_nullable = false;
+		// Set when the type was written as an unnamed tuple type, `(int, String)`. `type_chain`
+		// is empty in this case; the element types live in `tuple_element_types` instead.
+		bool is_tuple = false;
+		Vector<TypeNode *> tuple_element_types;
 
 		TypeNode *get_container_type_or_null(int p_index) const {
 			return p_index >= 0 && p_index < container_types.size() ? container_types[p_index] : nullptr;
@@ -1956,6 +2022,7 @@ private:
 	void parse_annotation_declaration_targets(AnnotationDeclarationNode *p_annotation_declaration);
 	SignalNode *parse_signal(const DeclarationModifiers &p_modifiers);
 	EnumNode *parse_enum(const DeclarationModifiers &p_modifiers);
+	TupleNode *parse_tuple(const DeclarationModifiers &p_modifiers);
 	void finalize_enum_function(EnumNode *p_enum, FunctionNode *p_function,
 			List<AnnotationNode *> &p_annotations, int &r_min_doc_line, bool p_store);
 	ParameterNode *parse_parameter(bool p_allow_annotations = true);
@@ -2129,6 +2196,8 @@ public:
 		void print_subscript(SubscriptNode *p_subscript);
 		void print_suite(SuiteNode *p_suite);
 		void print_ternary_op(TernaryOpNode *p_ternary_op);
+		void print_tuple(TupleNode *p_tuple);
+		void print_tuple_literal(TupleLiteralNode *p_tuple_literal);
 		void print_type(TypeNode *p_type);
 		void print_type_parameters(const Vector<TypeParameterNode *> &p_type_parameters);
 		void print_type_test(TypeTestNode *p_type_test);
