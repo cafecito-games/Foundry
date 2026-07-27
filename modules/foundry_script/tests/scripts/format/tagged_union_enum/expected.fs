@@ -9,3 +9,11 @@ enum Message:
 enum Small:
 	Empty
 	Single(value: int)
+
+enum Multiline:
+	Big(
+		x: int,
+		# y comment
+		y: int,
+	)  # closing comment
+	Small

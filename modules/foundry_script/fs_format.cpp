@@ -1628,7 +1628,9 @@ void FSPrinter::print_enum(const FSParser::EnumNode *p_enum) {
 			write(value.identifier->name);
 			int payload_end_line = value.line;
 			if (value.has_payload()) {
-				payload_end_line = value.payload_fields[value.payload_fields.size() - 1].type->end_line;
+				// `payload_close_line` (the actual ")" line) rather than the last field's line, so
+				// a comment attached to the closing delimiter itself is not silently dropped.
+				payload_end_line = value.payload_close_line;
 				print_delimited_items(
 						"(", ")", value.payload_fields.size(), payload_end_line > value.line,
 						value.line, payload_end_line,

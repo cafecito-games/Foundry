@@ -777,6 +777,10 @@ public:
 			EnumNode *parent_enum = nullptr;
 			// Payload fields for a tagged-union case; empty for a payload-less case.
 			Vector<PayloadField> payload_fields;
+			// Source line of the payload's closing ")"; 0 when there is no payload. Tracked
+			// separately from the last field's line so formatting can interleave a comment
+			// attached to the closing delimiter itself.
+			int payload_close_line = 0;
 			int index = -1;
 			bool resolved = false;
 			int64_t value = 0;

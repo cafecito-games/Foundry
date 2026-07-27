@@ -2685,6 +2685,11 @@ void FSParser::parse_enum_case_payload(EnumNode::Value &r_value) {
 		} while (match(FSTokenizer::Token::COMMA));
 	}
 
+	if (r_value.payload_fields.is_empty()) {
+		push_error(R"(An enum case payload must have at least one field.)");
+	}
+
+	r_value.payload_close_line = current.start_line;
 	pop_multiline();
 	consume(FSTokenizer::Token::PARENTHESIS_CLOSE, R"*(Expected closing ")" after enum case payload fields.)*");
 }
@@ -2772,8 +2777,12 @@ FSParser::EnumNode *FSParser::parse_enum(const DeclarationModifiers &p_modifiers
 			continue;
 		}
 
+		// A case literally named `async` is a value (`async = 1`) or a payload case
+		// (`async(value: int)`), not the start of an `async func` declaration.
 		const bool contextual_async_modifier = current.type == FSTokenizer::Token::IDENTIFIER &&
-				current.get_identifier() == StringName("async") && peek().type != FSTokenizer::Token::EQUAL;
+				current.get_identifier() == StringName("async") &&
+				peek().type != FSTokenizer::Token::EQUAL &&
+				peek().type != FSTokenizer::Token::PARENTHESIS_OPEN;
 		const bool starts_function_declaration = check(FSTokenizer::Token::FUNC) ||
 				check(FSTokenizer::Token::STATIC) ||
 				check(FSTokenizer::Token::ABSTRACT) ||
@@ -2848,7 +2857,9 @@ FSParser::EnumNode *FSParser::parse_enum(const DeclarationModifiers &p_modifiers
 			if (check(FSTokenizer::Token::PARENTHESIS_OPEN)) {
 				parse_enum_case_payload(item);
 				item.end_column = previous.end_column;
-				enum_node->is_tagged_union = true;
+				if (item.has_payload()) {
+					enum_node->is_tagged_union = true;
+				}
 			}
 
 			if (check(FSTokenizer::Token::EQUAL)) {
