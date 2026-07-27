@@ -707,11 +707,25 @@ FSParser::DataType FSAnalyzer::resolve_enum_values(FSParser::EnumNode *p_enum,
 	current_enum = p_enum;
 
 	FSParser::DataType enum_type = p_enum_type;
+	enum_type.is_tagged_union = p_enum->is_tagged_union;
 	Dictionary dictionary;
 	for (int i = 0; i < p_enum->values.size(); i++) {
 		FSParser::EnumNode::Value &element = p_enum->values.write[i];
 
-		if (element.custom_value) {
+		if (enum_type.is_tagged_union) {
+			// Tags are ordinal by declaration order; explicit values are already rejected by the parser.
+			element.value = i;
+			element.resolved = true;
+
+			if (element.has_payload()) {
+				FSParser::DataType::EnumCasePayload payload;
+				for (const FSParser::EnumNode::PayloadField &field : element.payload_fields) {
+					payload.field_names.push_back(field.identifier != nullptr ? field.identifier->name : StringName());
+					payload.field_types.push_back(type_from_metatype(resolve_datatype(field.type)));
+				}
+				enum_type.enum_case_payloads[element.identifier->name] = payload;
+			}
+		} else if (element.custom_value) {
 			reduce_expression(element.custom_value);
 			if (!element.custom_value->is_constant) {
 				push_error(R"(Enum values must be constant.)", element.custom_value);
@@ -1270,7 +1284,14 @@ void FSAnalyzer::resolve_class_member(FSParser::ClassNode *p_class, int p_index,
 					}
 				} else {
 					check_class_member_name_conflict(p_class, member.enum_value.identifier->name, member.enum_value.parent_enum);
-					push_error(R"(Enum values must have an explicit integer value.)", member.enum_value.identifier);
+					if (member.enum_value.parent_enum != nullptr && member.enum_value.parent_enum->is_tagged_union) {
+						// A tagged union's cases are only reachable as `Enum.Case`, so an unnamed enum has
+						// no way to spell them.
+						push_error(R"(Payload-carrying cases require a named enum; an unnamed enum cannot qualify its cases.)",
+								member.enum_value.identifier);
+					} else {
+						push_error(R"(Enum values must have an explicit integer value.)", member.enum_value.identifier);
+					}
 				}
 
 				// Also update the original references.

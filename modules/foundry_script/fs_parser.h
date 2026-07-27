@@ -166,6 +166,21 @@ public:
 		bool callable_is_over_bound = false; // Set when bind()/bindv() bound more arguments than a fixed-arity target accepts, making any invocation fail.
 		HashMap<StringName, int64_t> enum_values; // For enums.
 
+		// Payload fields of one tagged-union case, in declaration order. Field names are an
+		// analyzer-only convenience: the runtime representation is positional.
+		struct EnumCasePayload {
+			Vector<StringName> field_names;
+			Vector<DataType> field_types;
+		};
+
+		// For ENUM kind. A tagged union is an enum where at least one case declares a payload; its
+		// values are read-only Arrays (`[tag, payload...]`) rather than ints, so `builtin_type` is
+		// ARRAY for a value and DICTIONARY for the meta type. `enum_values` still maps each case to
+		// its ordinal tag.
+		bool is_tagged_union = false;
+		HashMap<StringName, EnumCasePayload> enum_case_payloads; // Only cases that declare a payload.
+		StringName enum_case_name; // Set on a case-constructor pseudo-type, e.g. an un-called `Message.Move`.
+
 		// For TUPLE kind. Element types live in `container_element_types`, so generic substitution
 		// recurses through them for free.
 		StringName tuple_name; // Empty for an unnamed (structural) tuple.
@@ -182,6 +197,11 @@ public:
 
 		_FORCE_INLINE_ bool is_type_parameter() const { return kind == TYPE_PARAMETER; }
 		_FORCE_INLINE_ bool is_tuple() const { return kind == TUPLE; }
+		_FORCE_INLINE_ bool is_tagged_union_type() const { return kind == ENUM && is_tagged_union; }
+		// Payload of the named case, or nullptr when the case is payload-less or unknown.
+		_FORCE_INLINE_ const EnumCasePayload *get_enum_case_payload(const StringName &p_case_name) const {
+			return enum_case_payloads.getptr(p_case_name);
+		}
 		// Index of the tuple field declared with p_name, or -1 when there is no such named field.
 		int get_tuple_field_index(const StringName &p_name) const;
 		_FORCE_INLINE_ bool has_type_arguments() const { return !type_arguments.is_empty(); }
@@ -284,7 +304,9 @@ public:
 							container_element_types == p_other.container_element_types;
 					break;
 				case ENUM: // Enums use native_type to identify the enum and its base class.
-					equal = native_type == p_other.native_type;
+					// A tagged-union case constructor (`Message.Move` un-called) is a distinct
+					// pseudo-type from a value of the union itself, so the case name participates.
+					equal = native_type == p_other.native_type && enum_case_name == p_other.enum_case_name;
 					break;
 				case TUPLE:
 					// Named tuples are nominal (`native_type` carries the class-qualified name); unnamed
@@ -351,6 +373,9 @@ public:
 			method_unbound_argument_count = p_other.method_unbound_argument_count;
 			callable_is_over_bound = p_other.callable_is_over_bound;
 			enum_values = p_other.enum_values;
+			is_tagged_union = p_other.is_tagged_union;
+			enum_case_payloads = p_other.enum_case_payloads;
+			enum_case_name = p_other.enum_case_name;
 			tuple_name = p_other.tuple_name;
 			tuple_field_names = p_other.tuple_field_names;
 			container_element_types = p_other.container_element_types;
@@ -714,6 +739,11 @@ public:
 		// the compiler builds the tuple value instead of dispatching a call. The result datatype alone
 		// cannot decide this: an ordinary function may also return a tuple.
 		bool is_tuple_construction = false;
+		// Set by the analyzer when the callee is a payload-carrying case of a tagged union
+		// (`Message.Move(1, 2)`) rather than a function, so the compiler builds the case value
+		// `[tag, payload...]` instead of dispatching a call. `enum_case_tag` is the case's ordinal tag.
+		bool is_enum_case_construction = false;
+		int64_t enum_case_tag = 0;
 		// Set by the analyzer when this calls a method whose typed-container return needs retyping at the
 		// assignment target. Generic method elements (`-> Array[T]`) are erased at runtime; inherited
 		// `Self` container returns are compiled against the declaring class while the static call type is
