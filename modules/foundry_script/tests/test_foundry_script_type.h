@@ -2164,6 +2164,45 @@ TEST_CASE("[Modules][FoundryScript] Analyzer preserves legacy nullable flows unt
 	CHECK(analyze_source("func get_node(maybe: Node?) -> Node?:\n\treturn maybe\n", true) == OK);
 }
 
+TEST_CASE("[Modules][FoundryScript] Analyzer widens a type parameter to its own nullable form") {
+	const String initializer_source = "class Holder[T]:\n\tfunc widen(value: T) -> void:\n\t\tvar widened: T? = value\n\t\tprint(widened)\n";
+	const String assignment_source = "class Holder[T]:\n\tvar stored: T?\n\tfunc store(value: T) -> void:\n\t\tstored = value\n";
+	const String argument_source = "class Holder[T]:\n\tfunc accepts_nullable(value: T?) -> void:\n\t\tprint(value)\n\tfunc pass_through(value: T) -> void:\n\t\taccepts_nullable(value)\n";
+	const String return_source = "class Holder[T]:\n\tfunc widen(value: T) -> T?:\n\t\treturn value\n";
+
+	// Widening is safe in both modes: it can never introduce an unexpected null.
+	CHECK(analyze_source(initializer_source) == OK);
+	CHECK(analyze_source(initializer_source, true) == OK);
+	CHECK(analyze_source(assignment_source) == OK);
+	CHECK(analyze_source(assignment_source, true) == OK);
+	CHECK(analyze_source(argument_source) == OK);
+	CHECK(analyze_source(argument_source, true) == OK);
+	CHECK(analyze_source(return_source) == OK);
+	CHECK(analyze_source(return_source, true) == OK);
+}
+
+TEST_CASE("[Modules][FoundryScript] Analyzer rejects narrowing a nullable type parameter under strict null") {
+	// The unsafe direction (`T?` -> `T`) is still caught by the strict-null gate, which runs before
+	// the type parameter branch of the compatibility check.
+	check_legacy_ok_strict_null_rejected("class Holder[T]:\n\tfunc narrow(value: T?) -> void:\n\t\tvar narrowed: T = value\n\t\tprint(narrowed)\n");
+	check_legacy_ok_strict_null_rejected("class Holder[T]:\n\tvar stored: T\n\tfunc store(value: T?) -> void:\n\t\tstored = value\n");
+	check_legacy_ok_strict_null_rejected("class Holder[T]:\n\tfunc accepts_value(value: T) -> void:\n\t\tprint(value)\n\tfunc pass_through(value: T?) -> void:\n\t\taccepts_value(value)\n");
+	check_legacy_ok_strict_null_rejected("class Holder[T]:\n\tfunc narrow(value: T?) -> T:\n\t\treturn value\n");
+}
+
+TEST_CASE("[Modules][FoundryScript] Analyzer keeps distinct type parameters incompatible when nullable") {
+	const String assignment_source = "class Pair[T, U]:\n\tvar second: U?\n\tfunc store_first(value: T) -> void:\n\t\tsecond = value\n";
+	const String argument_source = "class Pair[T, U]:\n\tfunc accepts_second(value: U?) -> void:\n\t\tprint(value)\n\tfunc pass_first(value: T) -> void:\n\t\taccepts_second(value)\n";
+	const String return_source = "class Pair[T, U]:\n\tfunc as_second(value: T) -> U?:\n\t\treturn value\n";
+
+	CHECK(analyze_source(assignment_source) != OK);
+	CHECK(analyze_source(assignment_source, true) != OK);
+	CHECK(analyze_source(argument_source) != OK);
+	CHECK(analyze_source(argument_source, true) != OK);
+	CHECK(analyze_source(return_source) != OK);
+	CHECK(analyze_source(return_source, true) != OK);
+}
+
 TEST_CASE("[Modules][FoundryScript] Analyzer narrows nullable locals after null checks") {
 	const String source_prefix = "func accept_node(node: Node) -> void:\n\tpass\n";
 	const String if_not_null_source = source_prefix + "func test(node: Node?) -> void:\n\tif node != null:\n\t\taccept_node(node)\n";
