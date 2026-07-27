@@ -246,6 +246,10 @@ FSDataType FSDataType::from_type_handle_container_type(const ContainerType &p_co
 	return _gdtype_from_container_type(p_container_type, true);
 }
 
+FSDataType FSDataType::from_container_type(const ContainerType &p_container_type) {
+	return _gdtype_from_container_type(p_container_type, false);
+}
+
 Variant FSFunction::get_constant(int p_idx) const {
 	ERR_FAIL_INDEX_V(p_idx, constants.size(), "<errconst>");
 	return constants[p_idx];
