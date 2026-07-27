@@ -82,8 +82,17 @@ struct TemporaryProjectTree {
 		// session) race on the same staged project tree: one process's `remove_recursive` +
 		// `copy_dir` in `stage_project_copy` can interleave with another's, corrupting the
 		// staged files each currently-running test depends on.
-		const String scoped_directory = vformat("foundry-tests-%d", OS::get_singleton()->get_process_id());
-		return OS::get_singleton()->get_temp_path().path_join(scoped_directory).simplify_path();
+		static const String scoped_root = [] {
+			const String base = OS::get_singleton()->get_temp_path().simplify_path();
+			// Sweep scratch directories left behind by processes that are no longer
+			// running (crashed, killed, or otherwise never reached their own cleanup) so
+			// direct, `FOUNDRY_TEST_SCRATCH`-less invocations don't accumulate one staged
+			// project copy per past run.
+			reap_dead_process_scratch_dirs(base);
+			const String directory_name = vformat("foundry-tests-%d", OS::get_singleton()->get_process_id());
+			return base.path_join(directory_name).simplify_path();
+		}();
+		return scoped_root;
 	}
 
 	static String get_test_scratch_path(const String &p_name) {
@@ -141,6 +150,33 @@ struct TemporaryProjectTree {
 		}
 		dir->list_dir_end();
 		DirAccess::remove_absolute(p_path);
+	}
+
+private:
+	// Removes `foundry-tests-<pid>` directories under `p_base` whose owning process has
+	// exited, so scratch directories from earlier direct test invocations are reclaimed
+	// the next time any `foundry` test process starts.
+	static void reap_dead_process_scratch_dirs(const String &p_base) {
+		Ref<DirAccess> dir = DirAccess::open(p_base);
+		if (dir.is_null()) {
+			return;
+		}
+		dir->list_dir_begin();
+		for (String entry = dir->get_next(); !entry.is_empty(); entry = dir->get_next()) {
+			if (!dir->current_is_dir() || !entry.begins_with("foundry-tests-")) {
+				continue;
+			}
+			const String pid_text = entry.trim_prefix("foundry-tests-");
+			if (!pid_text.is_valid_int()) {
+				continue;
+			}
+			const OS::ProcessID owning_pid = pid_text.to_int();
+			if (owning_pid == OS::get_singleton()->get_process_id() || OS::get_singleton()->is_process_running(owning_pid)) {
+				continue;
+			}
+			remove_recursive(p_base.path_join(entry));
+		}
+		dir->list_dir_end();
 	}
 };
 
