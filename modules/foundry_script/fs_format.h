@@ -138,6 +138,9 @@ private:
 	// before the next node, emitting full-line comments at the current indent and
 	// normalizing the blank lines that separate them.
 	String normalize_comment_text(const String &p_raw) const;
+	// Column width of one indent level for `line_indent_columns` and for measuring
+	// `indent_level` against source-line indentation.
+	static constexpr int TAB_WIDTH_COLUMNS = 4;
 	// Leading-whitespace width of source line `p_line` (1-based) in columns (tabs
 	// expand to a 4-wide tab stop, spaces count as one); 0 if out of range. Used for
 	// relative-depth comparisons that must work for tab- or space-indented sources.

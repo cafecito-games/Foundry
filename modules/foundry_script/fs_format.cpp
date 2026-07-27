@@ -589,12 +589,11 @@ int FSPrinter::line_indent_columns(int p_line) const {
 	// Leading-whitespace width in columns, so the measure is comparable whatever the
 	// source uses (tabs, spaces, or a mix): a tab advances to the next tab stop and a
 	// space counts as one column. Used only for relative depth comparisons.
-	const int tab_width = 4;
 	const String &line = source_lines[p_line - 1];
 	int columns = 0;
 	for (int i = 0; i < line.length(); i++) {
 		if (line[i] == '\t') {
-			columns += tab_width - (columns % tab_width);
+			columns += TAB_WIDTH_COLUMNS - (columns % TAB_WIDTH_COLUMNS);
 		} else if (line[i] == ' ') {
 			columns += 1;
 		} else {
@@ -741,12 +740,17 @@ void FSPrinter::emit_trailing_comment(int p_line) {
 // Emits the comments that trail the last statement of a block body, taken from
 // the lines immediately following the last emitted line (a blank line or a
 // non-trivia line ends the run). A trailing full-line comment belongs to this body
-// only when its source indentation is at least the body's own (measured from the
-// last emitted body statement, so it is correct whether the source is tab- or
-// space-indented); a shallower comment (e.g. a column-0 doc comment before the next
-// member) belongs to the following node and is left for its leading-trivia flush.
+// only when its source indentation is at least the body's own; a shallower comment
+// (e.g. a column-0 doc comment before the next member) belongs to the following
+// node and is left for its leading-trivia flush.
+//
+// The body's own indentation is measured from `indent_level` -- the depth this body
+// is actually printed at -- rather than from the last emitted source line's own
+// text, which can be unreliable when that line sits inside a bracketed,
+// whitespace-insensitive context (e.g. a multi-line call or collection whose
+// closing delimiter was authored at an arbitrary column).
 void FSPrinter::flush_block_tail_comments() {
-	const int body_columns = line_indent_columns(last_emitted_line);
+	const int body_columns = indent_level * TAB_WIDTH_COLUMNS;
 	int line = last_emitted_line + 1;
 	while (is_trivia_line(line) && line_indent_columns(line) >= body_columns) {
 		emit_trivia_line(line);
@@ -2404,8 +2408,13 @@ void FSPrinter::print_call(const FSParser::CallNode *p_call) {
 	} else if (!String(p_call->function_name).is_empty()) {
 		write(p_call->function_name);
 	}
+	// The call's own opening line, not `p_call->start_line`: for a call on a
+	// multi-line callee (`foo(1,\n\t2,\n)(  # note`) the node's start line is
+	// inherited from the callee's start, several lines before its "(" actually
+	// prints. The callee's end line is where the printed "(" always follows.
+	const int open_line = p_call->callee != nullptr ? p_call->callee->end_line : p_call->start_line;
 	print_argument_list(p_call->arguments, p_call->argument_names, node_was_authored_multiline(p_call),
-			p_call->start_line, p_call->end_line);
+			open_line, p_call->end_line);
 }
 
 // Prints a parenthesized argument list, honoring the author's single- or
