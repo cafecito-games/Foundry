@@ -302,7 +302,15 @@ FSTypeCompatibility::Result FSTypeCompatibility::check(const FSParser::DataType 
 		// when they denote the same parameter; mixing a parameter with a concrete type is accepted with a
 		// runtime check, mirroring how the runtime defensively accepts any value for an erased parameter.
 		if (p_target.kind == FSParser::DataType::TYPE_PARAMETER && p_source.kind == FSParser::DataType::TYPE_PARAMETER) {
-			result.compatible = p_target == p_source;
+			// Nullability is deliberately excluded from this identity comparison so `T` widens to `T?`
+			// the same way `Node` widens to `Node?`. The unsafe direction (`T?` into `T`) is already
+			// rejected by the strict-null gate above, which runs before this branch, so ignoring
+			// nullability here cannot admit an unexpected null.
+			FSParser::DataType target_identity = p_target;
+			FSParser::DataType source_identity = p_source;
+			target_identity.is_nullable = false;
+			source_identity.is_nullable = false;
+			result.compatible = target_identity == source_identity;
 		} else {
 			result.compatible = true;
 			result.requires_runtime_check = true;

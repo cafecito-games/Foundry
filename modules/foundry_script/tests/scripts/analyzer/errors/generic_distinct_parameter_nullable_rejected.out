@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 7: Value of type "T" cannot be assigned to a variable of type "U?".

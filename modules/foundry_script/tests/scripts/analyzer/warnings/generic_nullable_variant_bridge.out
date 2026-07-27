@@ -1,0 +1,4 @@
+FS_TEST_OK
+~~ WARNING at line 10: (UNSAFE_CALL_ARGUMENT) The argument 1 of the function "accepts_nullable()" requires the subtype "T?" but the supertype "Variant" was provided.
+1
+2
