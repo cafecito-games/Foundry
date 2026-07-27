@@ -140,7 +140,7 @@ or
 pass      preload
 return
 self      signal    static    super
-trait     trait_name
+trait     trait_name tuple
 uses
 var       void
 while     when
@@ -207,6 +207,13 @@ Rules and constraints enforced by the tokenizer:
 - A letter immediately following a number is an "invalid numeric notation" error.
 - Decimal literals with a `.` or exponent become floats; otherwise integers. Hex/bin become
   integers.
+- A digit is only the start of a number when the preceding token cannot end a value
+  (`Token::can_precede_bin_op()` is false), mirroring the `+`/`-` sign-number rule. After a
+  value token (`IDENTIFIER`, a literal, `)`, `]`, or a numeric constant keyword), `.` followed
+  by a digit is a `PERIOD` token (tuple index access, e.g. `t.0`), not the start of a float.
+- A digit immediately following a `PERIOD` token lexes as a decimal integer **only**: no
+  fractional part, exponent, base prefix, or trailing letter is allowed, so `t.0.1` is nested
+  member access (`t`, `.`, `0`, `.`, `1`) and `t.0e5`/`t.0x1` are lexer errors.
 
 #### 2.6.2 Strings
 
@@ -1058,6 +1065,16 @@ are written in `##` doc comments and produce errors if used as annotations.
 - **Multiline mode** inside brackets and around lambda bodies suspends layout-token
   generation; a re-implementation must replicate this to handle multi-line literals,
   argument lists, and lambdas.
+- **`.` after a value token is always member access, never a float.** `.` followed by a digit
+  only starts a number literal when the previous token cannot end a value; after an
+  `IDENTIFIER`, a literal, `)`, `]`, or a numeric constant keyword, `.<digit>` lexes as
+  `PERIOD` then a plain decimal-integer literal (tuple index access), so `t.0`, `t.0.1`, and
+  `(f()).0` are all member access, while `.5` at the start of an expression is still the float
+  `0.5`.
+- **`(a)` is grouping; `(a,)` is an error.** A single parenthesized expression is always
+  ordinary grouping, never a 1-tuple; FoundryScript has no 1-tuples, so a lone trailing comma
+  inside otherwise-empty parentheses around one element is a hard parse error rather than
+  silently becoming a tuple or a no-op.
 
 ---
 

@@ -77,8 +77,205 @@ TEST_CASE("[Modules][FoundryScript] Language reserved words include hard trait d
 	CHECK_FALSE(reserved_words.has("uses"));
 }
 
+TEST_CASE("[Modules][FoundryScript] Language reserved words include tuple") {
+	Vector<String> reserved_words = FSLanguage::get_singleton()->get_reserved_words();
+	int tuple_count = 0;
+	for (const String &word : reserved_words) {
+		if (word == "tuple") {
+			tuple_count++;
+		}
+	}
+	CHECK(tuple_count == 1);
+}
+
+TEST_CASE("[Modules][FoundryScript] Tokenizer emits TUPLE for the tuple keyword") {
+	FSTokenizerText tokenizer;
+	tokenizer.set_source_code("tuple");
+	FSTokenizer::Token token = tokenizer.scan();
+	CHECK(token.type == FSTokenizer::Token::TUPLE);
+	CHECK_EQ(token.get_name(), String("tuple"));
+}
+
+TEST_CASE("[Modules][FoundryScript] Tokenizer lexes a digit after a value token as a tuple index") {
+	// After an IDENTIFIER (a value token), `.<digit>` is a `PERIOD` followed by a plain
+	// decimal-integer literal, not the start of a float. This is what makes `t.0` tuple index
+	// access viable instead of unconditionally lexing as the float `0.0`.
+	FSTokenizerText tokenizer;
+	tokenizer.set_source_code("t.0");
+
+	FSTokenizer::Token identifier = tokenizer.scan();
+	CHECK(identifier.type == FSTokenizer::Token::IDENTIFIER);
+	CHECK_EQ(String(identifier.literal), String("t"));
+
+	FSTokenizer::Token period = tokenizer.scan();
+	CHECK(period.type == FSTokenizer::Token::PERIOD);
+
+	FSTokenizer::Token index = tokenizer.scan();
+	CHECK(index.type == FSTokenizer::Token::LITERAL);
+	CHECK(index.literal.get_type() == Variant::INT);
+	CHECK_EQ(int64_t(index.literal), 0);
+
+	// The tokenizer inserts an implicit trailing NEWLINE before TK_EOF.
+	FSTokenizer::Token newline = tokenizer.scan();
+	CHECK(newline.type == FSTokenizer::Token::NEWLINE);
+
+	FSTokenizer::Token eof = tokenizer.scan();
+	CHECK(eof.type == FSTokenizer::Token::TK_EOF);
+}
+
+TEST_CASE("[Modules][FoundryScript] Tokenizer lexes chained tuple indices as nested member access") {
+	// `x.0.1` must lex as `x`, `.`, `0`, `.`, `1` (nested tuple index access), not `x` followed
+	// by the float `0.1`.
+	FSTokenizerText tokenizer;
+	tokenizer.set_source_code("x.0.1");
+
+	FSTokenizer::Token::Type expected_types[] = {
+		FSTokenizer::Token::IDENTIFIER,
+		FSTokenizer::Token::PERIOD,
+		FSTokenizer::Token::LITERAL,
+		FSTokenizer::Token::PERIOD,
+		FSTokenizer::Token::LITERAL,
+		FSTokenizer::Token::NEWLINE, // Implicit trailing newline before TK_EOF.
+		FSTokenizer::Token::TK_EOF,
+	};
+	for (const FSTokenizer::Token::Type expected_type : expected_types) {
+		FSTokenizer::Token token = tokenizer.scan();
+		CHECK(token.type == expected_type);
+		if (token.type == FSTokenizer::Token::LITERAL) {
+			CHECK(token.literal.get_type() == Variant::INT);
+		}
+	}
+
+	FSTokenizerText reparsed;
+	reparsed.set_source_code("x.0.1");
+	reparsed.scan(); // x
+	reparsed.scan(); // .
+	FSTokenizer::Token first_index = reparsed.scan();
+	CHECK_EQ(int64_t(first_index.literal), 0);
+	reparsed.scan(); // .
+	FSTokenizer::Token second_index = reparsed.scan();
+	CHECK_EQ(int64_t(second_index.literal), 1);
+}
+
+TEST_CASE("[Modules][FoundryScript] Tokenizer leaves ordinary float literals unaffected by tuple index lexing") {
+	struct Case {
+		const char *source;
+		double expected_value;
+	};
+	const Case cases[] = {
+		{ ".5", 0.5 },
+		{ "1.0", 1.0 },
+		{ "0.5e3", 500.0 },
+	};
+
+	for (const Case &test_case : cases) {
+		FSTokenizerText tokenizer;
+		tokenizer.set_source_code(test_case.source);
+		FSTokenizer::Token token = tokenizer.scan();
+		CHECK_MESSAGE(token.type == FSTokenizer::Token::LITERAL, test_case.source);
+		CHECK(token.literal.get_type() == Variant::FLOAT);
+		CHECK_EQ(double(token.literal), test_case.expected_value);
+
+		// The tokenizer inserts an implicit trailing NEWLINE before TK_EOF.
+		FSTokenizer::Token newline = tokenizer.scan();
+		CHECK(newline.type == FSTokenizer::Token::NEWLINE);
+
+		FSTokenizer::Token eof = tokenizer.scan();
+		CHECK(eof.type == FSTokenizer::Token::TK_EOF);
+	}
+}
+
+TEST_CASE("[Modules][FoundryScript] Tokenizer treats a tuple index after grouping close as member access") {
+	// `(f()).0` must behave like member access after `)`, exactly like after any other value
+	// token, rather than lexing `.0` as a float.
+	FSTokenizerText tokenizer;
+	tokenizer.set_source_code("(f()).0");
+
+	FSTokenizer::Token::Type expected_types[] = {
+		FSTokenizer::Token::PARENTHESIS_OPEN,
+		FSTokenizer::Token::IDENTIFIER,
+		FSTokenizer::Token::PARENTHESIS_OPEN,
+		FSTokenizer::Token::PARENTHESIS_CLOSE,
+		FSTokenizer::Token::PARENTHESIS_CLOSE,
+		FSTokenizer::Token::PERIOD,
+		FSTokenizer::Token::LITERAL,
+		FSTokenizer::Token::NEWLINE, // Implicit trailing newline before TK_EOF.
+		FSTokenizer::Token::TK_EOF,
+	};
+	for (const FSTokenizer::Token::Type expected_type : expected_types) {
+		FSTokenizer::Token token = tokenizer.scan();
+		CHECK(token.type == expected_type);
+		if (token.type == FSTokenizer::Token::LITERAL) {
+			CHECK(token.literal.get_type() == Variant::INT);
+			CHECK_EQ(int64_t(token.literal), 0);
+		}
+	}
+}
+
+TEST_CASE("[Modules][FoundryScript] Tokenizer treats whitespace before a tuple index as member access") {
+	// Whitespace between the base expression and `.` does not change disambiguation: only real
+	// tokens update `last_token`, so `x .0` is still member access, matching `x.0`.
+	FSTokenizerText tokenizer;
+	tokenizer.set_source_code("x .0");
+
+	FSTokenizer::Token identifier = tokenizer.scan();
+	CHECK(identifier.type == FSTokenizer::Token::IDENTIFIER);
+
+	FSTokenizer::Token period = tokenizer.scan();
+	CHECK(period.type == FSTokenizer::Token::PERIOD);
+
+	FSTokenizer::Token index = tokenizer.scan();
+	CHECK(index.type == FSTokenizer::Token::LITERAL);
+	CHECK(index.literal.get_type() == Variant::INT);
+	CHECK_EQ(int64_t(index.literal), 0);
+}
+
+TEST_CASE("[Modules][FoundryScript] Tokenizer rejects an exponent on a tuple index") {
+	// `x.0e5` is not a valid tuple index (only a bare decimal integer is); the tokenizer must
+	// report an error rather than silently reinterpreting it as a float.
+	FSTokenizerText tokenizer;
+	tokenizer.set_source_code("x.0e5");
+
+	FSTokenizer::Token identifier = tokenizer.scan();
+	CHECK(identifier.type == FSTokenizer::Token::IDENTIFIER);
+
+	FSTokenizer::Token period = tokenizer.scan();
+	CHECK(period.type == FSTokenizer::Token::PERIOD);
+
+	FSTokenizer::Token index = tokenizer.scan();
+	CHECK(index.type == FSTokenizer::Token::LITERAL);
+	CHECK(index.literal.get_type() == Variant::INT);
+	CHECK_EQ(int64_t(index.literal), 0);
+
+	FSTokenizer::Token error = tokenizer.scan();
+	CHECK(error.type == FSTokenizer::Token::ERROR);
+	CHECK(String(error.literal).contains("tuple index"));
+}
+
+TEST_CASE("[Modules][FoundryScript] Tokenizer rejects a hex prefix on a tuple index") {
+	// `x.0x1` is not a valid tuple index; the leading `0` must not be reinterpreted as a
+	// hexadecimal prefix once it follows a `.` that disambiguated to member access.
+	FSTokenizerText tokenizer;
+	tokenizer.set_source_code("x.0x1");
+
+	FSTokenizer::Token identifier = tokenizer.scan();
+	CHECK(identifier.type == FSTokenizer::Token::IDENTIFIER);
+
+	FSTokenizer::Token period = tokenizer.scan();
+	CHECK(period.type == FSTokenizer::Token::PERIOD);
+
+	FSTokenizer::Token index = tokenizer.scan();
+	CHECK(index.type == FSTokenizer::Token::LITERAL);
+	CHECK(index.literal.get_type() == Variant::INT);
+	CHECK_EQ(int64_t(index.literal), 0);
+
+	FSTokenizer::Token error = tokenizer.scan();
+	CHECK(error.type == FSTokenizer::Token::ERROR);
+	CHECK(String(error.literal).contains("tuple index"));
+}
+
 TEST_CASE("[Modules][FoundryScript] Tokenizer emits ENUM_NAME for the enum_name keyword") {
-	CHECK_EQ(FSTokenizerBuffer::TOKENIZER_VERSION, 106);
+	CHECK_EQ(FSTokenizerBuffer::TOKENIZER_VERSION, 107);
 
 	FSTokenizerText tokenizer;
 	tokenizer.set_source_code("enum_name");

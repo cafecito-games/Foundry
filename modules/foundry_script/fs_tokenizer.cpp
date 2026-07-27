@@ -2,7 +2,7 @@
 /*  fs_tokenizer.cpp                                                      */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -125,6 +125,7 @@ static const char *token_names[] = {
 	"super", // SUPER,
 	"trait", // TRAIT,
 	"trait_name", // TRAIT_NAME,
+	"tuple", // TUPLE,
 	"uses", // USES,
 	"var", // VAR,
 	"void", // TK_VOID,
@@ -566,6 +567,7 @@ FSTokenizer::Token FSTokenizerText::annotation() {
 	KEYWORD_GROUP('t')                       \
 	KEYWORD("trait", Token::TRAIT)           \
 	KEYWORD("trait_name", Token::TRAIT_NAME) \
+	KEYWORD("tuple", Token::TUPLE)           \
 	KEYWORD_GROUP('u')                       \
 	KEYWORD("uses", Token::USES)             \
 	KEYWORD_GROUP('v')                       \
@@ -715,6 +717,10 @@ FSTokenizer::Token FSTokenizerText::number() {
 	bool need_digits = false;
 	bool (*digit_check_func)(char32_t) = is_digit;
 
+	// A digit immediately following a `PERIOD` token is a tuple index (`t.0`), never a float
+	// literal: no fractional part, exponent, non-decimal prefix, or type suffix is allowed.
+	const bool is_tuple_index = last_token.type == Token::PERIOD;
+
 	// Sign before hexadecimal or binary.
 	if ((_peek(-1) == '+' || _peek(-1) == '-') && _peek() == '0') {
 		_advance();
@@ -722,7 +728,7 @@ FSTokenizer::Token FSTokenizerText::number() {
 
 	if (_peek(-1) == '.') {
 		has_decimal = true;
-	} else if (_peek(-1) == '0') {
+	} else if (!is_tuple_index && _peek(-1) == '0') {
 		if (_peek() == 'x' || _peek() == 'X') {
 			// Hexadecimal.
 			base = 16;
@@ -763,7 +769,9 @@ FSTokenizer::Token FSTokenizerText::number() {
 	}
 
 	// It might be a ".." token (instead of decimal point) so we check if it's not.
-	if (_peek() == '.' && _peek(1) != '.') {
+	// A tuple index never has a fractional part: `x.0.1` is nested member access, not `x` followed
+	// by the float `0.1`.
+	if (!is_tuple_index && _peek() == '.' && _peek(1) != '.') {
 		if (base == 10 && !has_decimal) {
 			has_decimal = true;
 		} else if (base == 10) {
@@ -813,7 +821,7 @@ FSTokenizer::Token FSTokenizerText::number() {
 			}
 		}
 	}
-	if (base == 10) {
+	if (base == 10 && !is_tuple_index) {
 		if (_peek() == 'e' || _peek() == 'E') {
 			has_exponent = true;
 			_advance();
@@ -855,7 +863,11 @@ FSTokenizer::Token FSTokenizerText::number() {
 	}
 
 	// Detect extra decimal point.
-	if (!has_error && has_decimal && _peek() == '.' && _peek(1) != '.') {
+	if (is_tuple_index && (is_unicode_identifier_start(_peek()) || is_unicode_identifier_continue(_peek()))) {
+		// A tuple index is a bare decimal integer; no exponent, prefix, or suffix is allowed.
+		push_error(R"(Expected a tuple index after ".": only a decimal integer is allowed.)");
+		has_error = true;
+	} else if (!has_error && has_decimal && _peek() == '.' && _peek(1) != '.') {
 		Token error = make_error("Cannot use a decimal point twice in a number.");
 		error.start_column = column;
 		error.end_column = column + 1;
@@ -1547,10 +1559,12 @@ FSTokenizer::Token FSTokenizerText::scan() {
 					return make_token(Token::PERIOD_PERIOD_PERIOD);
 				}
 				return make_token(Token::PERIOD_PERIOD);
-			} else if (is_digit(_peek())) {
+			} else if (is_digit(_peek()) && !last_token.can_precede_bin_op()) {
 				// Number starting with '.'.
 				return number();
 			} else {
+				// After a value token (identifier, literal, `)`/`]`, etc.) a following digit is a
+				// tuple index (`t.0`), not the start of a float literal.
 				return make_token(Token::PERIOD);
 			}
 		case '+':
