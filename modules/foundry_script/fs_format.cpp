@@ -589,12 +589,11 @@ int FSPrinter::line_indent_columns(int p_line) const {
 	// Leading-whitespace width in columns, so the measure is comparable whatever the
 	// source uses (tabs, spaces, or a mix): a tab advances to the next tab stop and a
 	// space counts as one column. Used only for relative depth comparisons.
-	const int tab_width = 4;
 	const String &line = source_lines[p_line - 1];
 	int columns = 0;
 	for (int i = 0; i < line.length(); i++) {
 		if (line[i] == '\t') {
-			columns += tab_width - (columns % tab_width);
+			columns += TAB_WIDTH_COLUMNS - (columns % TAB_WIDTH_COLUMNS);
 		} else if (line[i] == ' ') {
 			columns += 1;
 		} else {
@@ -741,12 +740,18 @@ void FSPrinter::emit_trailing_comment(int p_line) {
 // Emits the comments that trail the last statement of a block body, taken from
 // the lines immediately following the last emitted line (a blank line or a
 // non-trivia line ends the run). A trailing full-line comment belongs to this body
-// only when its source indentation is at least the body's own (measured from the
-// last emitted body statement, so it is correct whether the source is tab- or
-// space-indented); a shallower comment (e.g. a column-0 doc comment before the next
-// member) belongs to the following node and is left for its leading-trivia flush.
-void FSPrinter::flush_block_tail_comments() {
-	const int body_columns = line_indent_columns(last_emitted_line);
+// only when its source indentation is at least the body's own (measured from
+// `p_body_reference_line` when given, otherwise from the last emitted source
+// line); a shallower comment (e.g. a column-0 doc comment before the next member)
+// belongs to the following node and is left for its leading-trivia flush.
+//
+// `p_body_reference_line` lets a caller supply a line it knows is governed by
+// ordinary INDENT/DEDENT structure (never inside a bracket, where indentation is
+// whitespace-insensitive and the author is free to put a closing delimiter at any
+// column). Measuring columns per level would assume a fixed indent width, which
+// would misclassify a file consistently indented some other way (two-space, etc.).
+void FSPrinter::flush_block_tail_comments(int p_body_reference_line) {
+	const int body_columns = line_indent_columns(p_body_reference_line > 0 ? p_body_reference_line : last_emitted_line);
 	int line = last_emitted_line + 1;
 	while (is_trivia_line(line) && line_indent_columns(line) >= body_columns) {
 		emit_trivia_line(line);
@@ -1659,7 +1664,20 @@ void FSPrinter::print_enum(const FSParser::EnumNode *p_enum) {
 			last_emitted_line = MAX(last_emitted_line, value_end_line);
 		}
 		if (p_enum->functions.is_empty()) {
-			flush_trivia_until(p_enum->values[p_enum->values.size() - 1].line + 2);
+			// Indentation-based, like a block's tail comments, rather than a fixed
+			// line-count flush: the last value's true emitted extent (not its identifier
+			// line) can be several source lines past `value.line` for a multi-line
+			// `= expr` or payload case, so a comment immediately trailing it must still be
+			// reachable. But a fixed lookahead would also swallow a dedented comment that
+			// documents the *next* declaration, so indentation decides where the enum's
+			// own trailing comments end.
+			//
+			// The last value's own identifier line -- not its emitted extent -- anchors
+			// that indentation measurement: a payload's closing delimiter sits inside its
+			// own parentheses, a whitespace-insensitive context the author may indent
+			// however they like, while the identifier line is ordinary INDENT/DEDENT-
+			// governed enum-body text.
+			flush_block_tail_comments(p_enum->values[p_enum->values.size() - 1].line);
 		}
 	}
 	if (!p_enum->values.is_empty() && !p_enum->functions.is_empty()) {
@@ -1678,11 +1696,19 @@ void FSPrinter::print_enum(const FSParser::EnumNode *p_enum) {
 		flush_trivia_until(p_enum->functions[p_enum->functions.size() - 1]->end_line + 2);
 	}
 	indent_level--;
-	if (p_enum->end_line > last_emitted_line) {
+	// `end_line` can land exactly on a comment line that dedents out of the enum body
+	// (the tokenizer attaches the comment-only line's own NEWLINE to the node before
+	// the real DEDENT); jumping the cursor onto it here, or past it with the blank-line
+	// advance below, would silently drop that comment instead of leaving it for the
+	// next declaration's own leading trivia. Only advance over it when it is not itself
+	// unconsumed trivia.
+	if (p_enum->end_line > last_emitted_line && !is_trivia_line(p_enum->end_line)) {
 		last_emitted_line = p_enum->end_line;
 	}
 	newline();
-	last_emitted_line++;
+	if (!is_trivia_line(last_emitted_line + 1)) {
+		last_emitted_line++;
+	}
 }
 
 void FSPrinter::print_tuple(const FSParser::TupleNode *p_tuple) {
@@ -2389,8 +2415,13 @@ void FSPrinter::print_call(const FSParser::CallNode *p_call) {
 	} else if (!String(p_call->function_name).is_empty()) {
 		write(p_call->function_name);
 	}
+	// The call's own opening line, not `p_call->start_line`: for a call on a
+	// multi-line callee (`foo(1,\n\t2,\n)(  # note`) the node's start line is
+	// inherited from the callee's start, several lines before its "(" actually
+	// prints. The callee's end line is where the printed "(" always follows.
+	const int open_line = p_call->callee != nullptr ? p_call->callee->end_line : p_call->start_line;
 	print_argument_list(p_call->arguments, p_call->argument_names, node_was_authored_multiline(p_call),
-			p_call->start_line, p_call->end_line);
+			open_line, p_call->end_line);
 }
 
 // Prints a parenthesized argument list, honoring the author's single- or

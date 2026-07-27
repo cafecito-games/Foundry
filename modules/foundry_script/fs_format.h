@@ -138,6 +138,10 @@ private:
 	// before the next node, emitting full-line comments at the current indent and
 	// normalizing the blank lines that separate them.
 	String normalize_comment_text(const String &p_raw) const;
+	// Tab-stop width used only to expand a literal tab character when measuring
+	// leading whitespace; not an assumption about how many columns one logical
+	// indent level occupies (that varies by source file).
+	static constexpr int TAB_WIDTH_COLUMNS = 4;
 	// Leading-whitespace width of source line `p_line` (1-based) in columns (tabs
 	// expand to a 4-wide tab stop, spaces count as one); 0 if out of range. Used for
 	// relative-depth comparisons that must work for tab- or space-indented sources.
@@ -171,7 +175,11 @@ private:
 	// (no trailing newline), for an inline comment after an item inside a multi-line
 	// collection (`1,  # note`). No-op when the line has no unconsumed inline comment.
 	void append_inline_comment(int p_line);
-	void flush_block_tail_comments();
+	// `p_body_reference_line` (optional, 0 to fall back to the last emitted source
+	// line): a line known to be governed by ordinary INDENT/DEDENT structure, used to
+	// measure the body's indentation instead of trusting the last emitted line's own
+	// text, which can sit inside a bracketed, whitespace-insensitive context.
+	void flush_block_tail_comments(int p_body_reference_line = 0);
 	void flush_tail_comments();
 
 	static const FSParser::Node *member_node(const FSParser::ClassNode::Member &p_member);
@@ -267,8 +275,20 @@ private:
 			write(p_close);
 			return;
 		}
-		if (p_open_line > last_emitted_line) {
-			last_emitted_line = p_open_line;
+		// A comment can trail the opening delimiter itself (`(  # note`), before any
+		// item; that has to be appended here, before the fallback below marks
+		// `p_open_line` consumed and leaves it with nowhere to be emitted. But skip
+		// both this and the cursor advance when the first item starts on that same
+		// line -- a nested delimiter opening immediately (`foo(bar(  # note`) -- so a
+		// comment that actually trails *that* inner opener is left unconsumed for its
+		// own `print_delimited_items` call to claim, instead of being pulled onto this
+		// outer delimiter (or marked consumed with nowhere to go) first.
+		const bool open_line_shared_with_first_item = p_count > 0 && p_item_start_line(0) == p_open_line;
+		if (!open_line_shared_with_first_item) {
+			append_inline_comment(p_open_line);
+			if (p_open_line > last_emitted_line) {
+				last_emitted_line = p_open_line;
+			}
 		}
 		indent_level++;
 		for (int i = 0; i < p_count; i++) {
