@@ -5950,8 +5950,25 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 
 	// A named tuple declaration is callable as its own constructor, e.g. `Vec2(1.0, 2.0)`.
 	{
+		// A local variable, constant, parameter, or bind of the same name shadows the declaration, so
+		// the call stays an ordinary (callable) invocation on that value.
+		bool shadowed_by_local = false;
+		if (is_self && p_call->callee != nullptr && p_call->callee->type == FSParser::Node::IDENTIFIER) {
+			switch (static_cast<const FSParser::IdentifierNode *>(p_call->callee)->source) {
+				case FSParser::IdentifierNode::LOCAL_VARIABLE:
+				case FSParser::IdentifierNode::LOCAL_CONSTANT:
+				case FSParser::IdentifierNode::FUNCTION_PARAMETER:
+				case FSParser::IdentifierNode::LOCAL_ITERATOR:
+				case FSParser::IdentifierNode::LOCAL_BIND:
+					shadowed_by_local = true;
+					break;
+				default:
+					break;
+			}
+		}
+
 		FSParser::DataType tuple_meta_type;
-		if (find_named_tuple_meta_type(base_type, is_self, p_call->function_name, p_call, tuple_meta_type)) {
+		if (!shadowed_by_local && find_named_tuple_meta_type(base_type, is_self, p_call->function_name, p_call, tuple_meta_type)) {
 			reduce_call_tuple_construction(p_call, tuple_meta_type);
 			return;
 		}
@@ -9260,6 +9277,7 @@ bool FSAnalyzer::find_named_tuple_meta_type(const FSParser::DataType &p_base_typ
 // types. The result is the named tuple's instance type.
 void FSAnalyzer::reduce_call_tuple_construction(FSParser::CallNode *p_call, const FSParser::DataType &p_tuple_meta_type) {
 	call_site_validation.reject_named_call_arguments(p_call);
+	p_call->is_tuple_construction = true;
 
 	const FSParser::DataType tuple_type = type_from_metatype(p_tuple_meta_type);
 	const int expected_count = tuple_type.container_element_types.size();

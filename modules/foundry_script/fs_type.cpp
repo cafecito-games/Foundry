@@ -317,10 +317,24 @@ FSTypeCompatibility::Result FSTypeCompatibility::check(const FSParser::DataType 
 		if (p_target.kind != FSParser::DataType::TUPLE || p_source.kind != FSParser::DataType::TUPLE) {
 			return result;
 		}
+		if (p_target.is_meta_type != p_source.is_meta_type) {
+			// A tuple declaration handle is not one of its values.
+			return result;
+		}
 		if (p_target.tuple_name != StringName()) {
 			// A named tuple is nominal: only the same declaration satisfies it. Building one from an
-			// unnamed tuple (or from a different named tuple) requires explicit construction.
-			result.compatible = p_target.native_type == p_source.native_type && p_target.script_path == p_source.script_path;
+			// unnamed tuple (or from a different named tuple) requires explicit construction. The
+			// element check keeps two specializations of a generic declaration distinct.
+			if (p_target.native_type != p_source.native_type || p_target.script_path != p_source.script_path ||
+					p_target.container_element_types.size() != p_source.container_element_types.size()) {
+				return result;
+			}
+			for (int i = 0; i < p_target.container_element_types.size(); i++) {
+				if (!_datatype_invariant_equal(p_target.container_element_types[i], p_source.container_element_types[i])) {
+					return result;
+				}
+			}
+			result.compatible = true;
 			return result;
 		}
 		// An unnamed target is structural: arity plus invariant elements. A named source erases to it.

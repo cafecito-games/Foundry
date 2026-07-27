@@ -1017,21 +1017,33 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 
 			// `Vec2(1.0, 2.0)` constructs a named tuple, not a method call: there is no such member to
 			// dispatch to. It erases to the same Array as an unnamed tuple literal.
-			if (call->get_datatype().kind == FSParser::DataType::TUPLE) {
+			if (call->is_tuple_construction) {
+				const FSParser::DataType tuple_datatype = call->get_datatype();
 				Vector<FSCodeGenerator::Address> values;
-				FSCodeGenerator::Address tuple_result = codegen.add_temporary(_gdtype_from_datatype(call->get_datatype(), codegen.script));
+				int tuple_temporaries_to_pop = 0;
+				FSCodeGenerator::Address tuple_result = codegen.add_temporary(_gdtype_from_datatype(tuple_datatype, codegen.script));
 				for (int i = 0; i < call->arguments.size(); i++) {
 					FSCodeGenerator::Address value = _parse_expression(codegen, r_error, call->arguments[i]);
 					if (r_error) {
 						return FSCodeGenerator::Address();
 					}
+					if (value.mode == FSCodeGenerator::Address::TEMPORARY) {
+						tuple_temporaries_to_pop++;
+					}
+					// The analyzer accepts implicit conversions and dynamic arguments for a typed field,
+					// so each element is converted to its declared type before it enters the tuple.
+					const FSDataType field_type = _gdtype_from_datatype(tuple_datatype.get_container_element_type_or_variant(i), codegen.script);
+					if (field_type.has_type()) {
+						FSCodeGenerator::Address converted = codegen.add_temporary(field_type);
+						tuple_temporaries_to_pop++;
+						gen->write_assign_with_conversion(converted, value);
+						value = converted;
+					}
 					values.push_back(value);
 				}
 				gen->write_construct_array(tuple_result, values);
-				for (int i = 0; i < values.size(); i++) {
-					if (values[i].mode == FSCodeGenerator::Address::TEMPORARY) {
-						gen->pop_temporary();
-					}
+				for (int i = 0; i < tuple_temporaries_to_pop; i++) {
+					gen->pop_temporary();
 				}
 				return tuple_result;
 			}

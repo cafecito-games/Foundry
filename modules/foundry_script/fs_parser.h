@@ -710,6 +710,10 @@ public:
 		// `create_proxy_dynamic(T, handler)` utility call, materializing T's script
 		// from the `[T]` type argument.
 		bool is_proxy_construct = false;
+		// Set by the analyzer when the callee is a named tuple declaration rather than a function, so
+		// the compiler builds the tuple value instead of dispatching a call. The result datatype alone
+		// cannot decide this: an ordinary function may also return a tuple.
+		bool is_tuple_construction = false;
 		// Set by the analyzer when this calls a method whose typed-container return needs retyping at the
 		// assignment target. Generic method elements (`-> Array[T]`) are erased at runtime; inherited
 		// `Self` container returns are compiled against the declaring class while the static call type is
