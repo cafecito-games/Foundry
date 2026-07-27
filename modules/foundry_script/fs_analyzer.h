@@ -480,6 +480,7 @@ private:
 	bool find_named_tuple_meta_type(const FSParser::DataType &p_base_type, bool p_is_self, const StringName &p_name,
 			const FSParser::Node *p_source, FSParser::DataType &r_tuple_meta_type);
 	void reduce_call_tuple_construction(FSParser::CallNode *p_call, const FSParser::DataType &p_tuple_meta_type);
+	void reduce_call_enum_case_construction(FSParser::CallNode *p_call, const FSParser::DataType &p_enum_meta_type);
 	void reduce_ternary_op(FSParser::TernaryOpNode *p_ternary_op, bool p_is_root = false);
 	void reduce_type_test(FSParser::TypeTestNode *p_type_test);
 	void reduce_unary_op(FSParser::UnaryOpNode *p_unary_op);

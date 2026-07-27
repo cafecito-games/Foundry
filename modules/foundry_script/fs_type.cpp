@@ -375,8 +375,10 @@ FSTypeCompatibility::Result FSTypeCompatibility::check(const FSParser::DataType 
 			result.compatible = Variant::can_convert_strict(p_source.builtin_type, p_target.builtin_type);
 			result.uses_implicit_conversion = result.compatible;
 		}
-		if (!result.compatible && p_target.builtin_type == Variant::INT && p_source.kind == FSParser::DataType::ENUM && !p_source.is_meta_type) {
-			// Enum value is also integer.
+		if (!result.compatible && p_target.builtin_type == Variant::INT && p_source.kind == FSParser::DataType::ENUM &&
+				!p_source.is_meta_type && !p_source.is_tagged_union) {
+			// An int-backed enum value is also an integer. A tagged-union value is a read-only
+			// `[tag, payload...]` Array, so it is deliberately not int-compatible.
 			result.compatible = true;
 		}
 		if (result.compatible && p_source.kind == FSParser::DataType::BUILTIN && p_target.builtin_type == p_source.builtin_type && _is_signature_builtin_type(p_target.builtin_type)) {
@@ -427,7 +429,10 @@ FSTypeCompatibility::Result FSTypeCompatibility::check(const FSParser::DataType 
 	}
 
 	if (p_target.kind == FSParser::DataType::ENUM) {
-		if (p_source.kind == FSParser::DataType::BUILTIN && p_source.builtin_type == Variant::INT) {
+		if (p_source.kind == FSParser::DataType::BUILTIN && p_source.builtin_type == Variant::INT &&
+				!p_target.is_tagged_union) {
+			// An int can stand in for an int-backed enum value, but never for a tagged-union value:
+			// no integer carries a case tag plus its payload.
 			result.compatible = true;
 			return result;
 		}

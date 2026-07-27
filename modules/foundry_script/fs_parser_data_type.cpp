@@ -494,8 +494,9 @@ static bool _signature_type_is_encodable(const FSParser::DataType &p_type) {
 		case FSParser::DataType::ENUM:
 			// Global, native-class, and built-in enums encode an identity the decoder rebuilds exactly; a
 			// script/class enum has no such name in the flat grammar (mirroring the non-global script/class
-			// leaf limitation) and must cross untyped to avoid a false mismatch.
-			return _enum_signature_leaf_round_trips(_encode_signature_leaf_name(p_type));
+			// leaf limitation) and must cross untyped to avoid a false mismatch. A tagged union's payload
+			// shape has no spelling at all, so it would decode back as an int-backed enum.
+			return !p_type.is_tagged_union && _enum_signature_leaf_round_trips(_encode_signature_leaf_name(p_type));
 		case FSParser::DataType::TUPLE:
 			// The flat hint grammar has no tuple spelling, so a tuple slot would decode back as a
 			// bare Array and turn a valid call into a false strict mismatch. Cross untyped instead.

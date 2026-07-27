@@ -1,0 +1,4 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 10: Cannot assign a value of type tagged_union_assigned_to_int_enum.fs.Command to variable "level" with specified type tagged_union_assigned_to_int_enum.fs.Severity.
+>> ERROR at line 11: Cannot assign a value of type "tagged_union_assigned_to_int_enum.fs.Severity" as "tagged_union_assigned_to_int_enum.fs.Command".
+>> ERROR at line 11: Cannot assign a value of type tagged_union_assigned_to_int_enum.fs.Severity to variable "message" with specified type tagged_union_assigned_to_int_enum.fs.Command.

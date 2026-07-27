@@ -1283,6 +1283,10 @@ static bool _signature_slot_is_comparison_safe(const FSParser::DataType &p_type)
 	}
 	switch (p_type.kind) {
 		case FSParser::DataType::ENUM: {
+			if (p_type.is_tagged_union) {
+				// A tagged union has no flat-hint spelling, so it never round-trips as a comparable slot.
+				return false;
+			}
 			FSParser::DataType reconstructed;
 			return _resolve_hint_enum_leaf(String(p_type.native_type).replace("::", "."), reconstructed);
 		}
@@ -3938,11 +3942,15 @@ void FSAnalyzer::resolve_assignable(FSParser::AssignableNode *p_assignable, cons
 		}
 	} else if (!is_parameter && specified_type.kind == FSParser::DataType::ENUM && p_assignable->initializer == nullptr) {
 		// Warn about enum variables without default value. Unless the enum defines the "0" value, then it's fine.
+		// A tagged union never has a usable implicit default: its values are case Arrays, so the case
+		// with tag 0 is not what an uninitialized variable holds.
 		bool has_zero_value = false;
-		for (const KeyValue<StringName, int64_t> &kv : specified_type.enum_values) {
-			if (kv.value == 0) {
-				has_zero_value = true;
-				break;
+		if (!specified_type.is_tagged_union) {
+			for (const KeyValue<StringName, int64_t> &kv : specified_type.enum_values) {
+				if (kv.value == 0) {
+					has_zero_value = true;
+					break;
+				}
 			}
 		}
 		if (!has_zero_value) {
@@ -4213,7 +4221,10 @@ void FSAnalyzer::check_match_exhaustiveness(FSParser::MatchNode *p_match) {
 	bool is_finite_domain = false;
 	HashMap<StringName, int64_t> domain_values;
 	String type_name;
-	if (match_type.kind == FSParser::DataType::ENUM) {
+	// A tagged union also has a finite case domain, but its cases are Array values rather than int
+	// constants, so the int-constant coverage analysis below cannot see them. Case-aware
+	// exhaustiveness arrives with the tagged-union match patterns.
+	if (match_type.kind == FSParser::DataType::ENUM && !match_type.is_tagged_union) {
 		is_finite_domain = true;
 		domain_values = match_type.enum_values;
 		type_name = match_type.enum_type;
@@ -4738,7 +4749,9 @@ void FSAnalyzer::update_const_expression_builtin_type(FSParser::ExpressionNode *
 	}
 
 	FSParser::DataType expression_type = p_expression->get_datatype();
-	bool is_enum_cast = p_is_cast && p_type.kind == FSParser::DataType::ENUM && p_type.is_meta_type == false && expression_type.builtin_type == Variant::INT;
+	// An int constant may be cast into an int-backed enum, but never into a tagged union.
+	bool is_enum_cast = p_is_cast && p_type.kind == FSParser::DataType::ENUM && !p_type.is_meta_type &&
+			!p_type.is_tagged_union && expression_type.builtin_type == Variant::INT;
 	if (!is_enum_cast && !is_type_compatible(p_type, expression_type, true, p_expression)) {
 		push_error(vformat(R"(Cannot %s a value of type "%s" as "%s".)", p_usage, expression_type.to_string(), p_type.to_string()), p_expression);
 		return;
@@ -5432,7 +5445,14 @@ void FSAnalyzer::reduce_binary_op(FSParser::BinaryOpNode *p_binary_op) {
 		bool valid = false;
 		result = get_operation_type(p_binary_op->variant_op, left_type, right_type, valid, p_binary_op);
 		if (!valid) {
-			push_error(vformat(R"(Invalid operands "%s" and "%s" for "%s" operator.)", left_type.to_string(), right_type.to_string(), Variant::get_operator_name(p_binary_op->variant_op)), p_binary_op);
+			const FSParser::DataType &union_type = left_type.is_tagged_union_type() && !left_type.is_meta_type ? left_type : right_type;
+			if (union_type.is_tagged_union_type() && !union_type.is_meta_type) {
+				push_error(vformat(R"*(Operator "%s" is not available on tagged union "%s"; its cases carry payloads, so its values are not integers. Match on the case first.)*",
+								   Variant::get_operator_name(p_binary_op->variant_op), union_type.enum_type),
+						p_binary_op);
+			} else {
+				push_error(vformat(R"(Invalid operands "%s" and "%s" for "%s" operator.)", left_type.to_string(), right_type.to_string(), Variant::get_operator_name(p_binary_op->variant_op)), p_binary_op);
+			}
 		} else if (!result.is_hard_type()) {
 			mark_node_unsafe(p_binary_op);
 		}
@@ -5974,6 +5994,13 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 		}
 	}
 
+	// A payload-carrying case of a tagged union is callable as its own constructor, e.g. `Message.Move(1, 2)`.
+	if (base_type.is_set() && base_type.kind == FSParser::DataType::ENUM && base_type.is_meta_type &&
+			base_type.is_tagged_union && base_type.get_enum_case_payload(p_call->function_name) != nullptr) {
+		reduce_call_enum_case_construction(p_call, base_type);
+		return;
+	}
+
 	// Tuples are immutable and expose no methods; the underlying Array is an erasure detail.
 	if (base_type.is_set() && base_type.kind == FSParser::DataType::TUPLE) {
 		push_error(vformat(R"*(Cannot call "%s()" on tuple "%s"; tuples are immutable and expose no methods.)*",
@@ -6301,10 +6328,11 @@ void FSAnalyzer::reduce_cast(FSParser::CastNode *p_cast) {
 #endif // DEBUG_ENABLED
 		} else {
 			bool valid = false;
-			if (op_type.builtin_type == Variant::INT && cast_type.kind == FSParser::DataType::ENUM) {
+			// A tagged union is not int-backed, so neither direction of the int/enum cast applies to it.
+			if (op_type.builtin_type == Variant::INT && cast_type.kind == FSParser::DataType::ENUM && !cast_type.is_tagged_union) {
 				mark_node_unsafe(p_cast);
 				valid = true;
-			} else if (op_type.kind == FSParser::DataType::ENUM && cast_type.builtin_type == Variant::INT) {
+			} else if (op_type.kind == FSParser::DataType::ENUM && !op_type.is_tagged_union && cast_type.builtin_type == Variant::INT) {
 				valid = true;
 			} else if (op_type.kind == FSParser::DataType::BUILTIN && cast_type.kind == FSParser::DataType::BUILTIN) {
 				valid = Variant::can_convert(op_type.builtin_type, cast_type.builtin_type);
@@ -6313,7 +6341,15 @@ void FSAnalyzer::reduce_cast(FSParser::CastNode *p_cast) {
 			}
 
 			if (!valid) {
-				push_error(vformat(R"(Invalid cast. Cannot convert from "%s" to "%s".)", op_type.to_string(), cast_type.to_string()), p_cast->cast_type);
+				const bool operand_is_union_to_int = op_type.is_tagged_union_type() && cast_type.builtin_type == Variant::INT;
+				const bool int_to_union = cast_type.is_tagged_union_type() && op_type.builtin_type == Variant::INT;
+				if (operand_is_union_to_int || int_to_union) {
+					push_error(vformat(R"(Tagged union "%s" is not int-backed, because its cases carry payloads; it cannot be converted to or from "int".)",
+									   operand_is_union_to_int ? op_type.enum_type : cast_type.enum_type),
+							p_cast->cast_type);
+				} else {
+					push_error(vformat(R"(Invalid cast. Cannot convert from "%s" to "%s".)", op_type.to_string(), cast_type.to_string()), p_cast->cast_type);
+				}
 			}
 		}
 	}
@@ -8285,7 +8321,26 @@ void FSAnalyzer::reduce_identifier_from_base(FSParser::IdentifierNode *p_identif
 	if (base.kind == FSParser::DataType::ENUM) {
 		if (base.is_meta_type) {
 			if (base.enum_values.has(name)) {
-				p_identifier->set_datatype(type_from_metatype(base));
+				FSParser::DataType case_type = type_from_metatype(base);
+				if (base.is_tagged_union) {
+					const FSParser::DataType::EnumCasePayload *payload = base.get_enum_case_payload(name);
+					if (payload != nullptr) {
+						// An un-called payload case is a constructor pseudo-type, never a value. The
+						// construction form is handled in reduce_call before this path is reached.
+						case_type.is_pseudo_type = true;
+						case_type.enum_case_name = name;
+						p_identifier->set_datatype(case_type);
+						push_error(vformat(R"*(Enum case "%s.%s" carries a payload and must be constructed, e.g. "%s.%s(...)".)*",
+										   base.enum_type, name, base.enum_type, name),
+								p_identifier);
+						return;
+					}
+					// A payload-less case of a tagged union is a value of the union, not an integer
+					// constant, so its tag is deliberately not folded in here.
+					p_identifier->set_datatype(case_type);
+					return;
+				}
+				p_identifier->set_datatype(case_type);
 				p_identifier->is_constant = true;
 				p_identifier->reduced_value = base.enum_values[name];
 				return;
@@ -8309,6 +8364,27 @@ void FSAnalyzer::reduce_identifier_from_base(FSParser::IdentifierNode *p_identif
 
 		if (base.is_meta_type) {
 			// Enum does not have this value or static function.
+			return;
+		}
+
+		if (base.is_tagged_union) {
+			// Payload fields exist per case, not on the union, so they are only reachable after the
+			// case is known. Name the field explicitly when it belongs to some case of this union.
+			bool is_payload_field = false;
+			for (const KeyValue<StringName, FSParser::DataType::EnumCasePayload> &payload : base.enum_case_payloads) {
+				if (payload.value.field_names.has(name)) {
+					is_payload_field = true;
+					break;
+				}
+			}
+			if (is_payload_field) {
+				push_error(vformat(R"*(Cannot access payload field "%s" on tagged union "%s" directly; it belongs to a single case, so match on the case first.)*",
+								   name, base.enum_type),
+						p_identifier);
+			} else {
+				push_error(vformat(R"*(Cannot get property "%s" from a value of tagged union "%s".)*", name, base.enum_type),
+						p_identifier);
+			}
 			return;
 		}
 
@@ -8705,6 +8781,16 @@ void FSAnalyzer::reduce_identifier(FSParser::IdentifierNode *p_identifier, bool 
 					}
 				}
 				p_identifier->set_datatype(type);
+
+				if (current_enum->is_tagged_union) {
+					if (element.has_payload()) {
+						push_error(vformat(R"*(Enum case "%s" carries a payload and must be constructed, e.g. "%s(...)".)*",
+										   element.identifier->name, element.identifier->name),
+								p_identifier);
+					}
+					// A tagged-union case is a value, not an integer constant, so its tag is not folded in.
+					return;
+				}
 
 				if (element.resolved) {
 					p_identifier->is_constant = true;
@@ -9311,6 +9397,51 @@ void FSAnalyzer::reduce_call_tuple_construction(FSParser::CallNode *p_call, cons
 	}
 
 	p_call->set_datatype(tuple_type);
+}
+
+void FSAnalyzer::reduce_call_enum_case_construction(FSParser::CallNode *p_call, const FSParser::DataType &p_enum_meta_type) {
+	call_site_validation.reject_named_call_arguments(p_call);
+
+	const StringName case_name = p_call->function_name;
+	const FSParser::DataType::EnumCasePayload *payload = p_enum_meta_type.get_enum_case_payload(case_name);
+	ERR_FAIL_NULL(payload);
+
+	const FSParser::DataType case_value_type = type_from_metatype(p_enum_meta_type);
+	const int64_t *tag = p_enum_meta_type.enum_values.getptr(case_name);
+	p_call->is_enum_case_construction = true;
+	p_call->enum_case_tag = tag != nullptr ? *tag : 0;
+
+	const int expected_count = payload->field_types.size();
+	if (p_call->arguments.size() != expected_count) {
+		push_error(vformat(R"*(Enum case "%s.%s" expects %d argument(s), but %d were given.)*",
+						   p_enum_meta_type.enum_type, case_name, expected_count, p_call->arguments.size()),
+				p_call);
+		p_call->set_datatype(case_value_type);
+		return;
+	}
+
+	for (int i = 0; i < expected_count; i++) {
+		const FSParser::DataType field_type = payload->field_types[i];
+		FSParser::ExpressionNode *argument = p_call->arguments[i];
+		const FSParser::DataType argument_type = argument->get_datatype();
+		if (!argument_type.is_set()) {
+			continue;
+		}
+		if (!is_type_compatible(field_type, argument_type, true)) {
+			push_error(vformat(R"*(Invalid argument %d for enum case "%s.%s": should be "%s" but is "%s".)*",
+							   i + 1, p_enum_meta_type.enum_type, case_name, field_type.to_string(), argument_type.to_string()),
+					argument);
+			continue;
+		}
+		if (argument->is_constant) {
+			// Widens a constant to the declared field type (e.g. an int literal into a float field).
+			update_const_expression_builtin_type(argument, field_type, "pass");
+		} else if (!field_type.is_variant() && (argument_type.is_variant() || !argument_type.is_hard_type())) {
+			mark_node_unsafe(p_call);
+		}
+	}
+
+	p_call->set_datatype(case_value_type);
 }
 
 void FSAnalyzer::reduce_subscript(FSParser::SubscriptNode *p_subscript, bool p_can_be_pseudo_type) {
@@ -10247,7 +10378,9 @@ Variant FSAnalyzer::make_variable_default_value(FSParser::VariableNode *p_variab
 				} else {
 					VariantInternal::initialize(&result, datatype.builtin_type);
 				}
-			} else if (datatype.kind == FSParser::DataType::ENUM) {
+			} else if (datatype.kind == FSParser::DataType::ENUM && !datatype.is_tagged_union) {
+				// A tagged-union value is a case Array, so no integer stands in as its default; it
+				// starts out null like any other type without a constructible zero value.
 				result = 0;
 			}
 		}
@@ -10379,7 +10512,9 @@ FSParser::DataType FSAnalyzer::type_from_metatype(const FSParser::DataType &p_me
 	result.is_meta_type = false;
 	result.is_pseudo_type = false;
 	if (p_meta_type.kind == FSParser::DataType::ENUM) {
-		result.builtin_type = Variant::INT;
+		// A tagged union's values are read-only `[tag, payload...]` Arrays, so they are deliberately
+		// not integers and fail every int-context type check.
+		result.builtin_type = p_meta_type.is_tagged_union ? Variant::ARRAY : Variant::INT;
 	} else {
 		result.is_constant = false;
 	}
@@ -12022,18 +12157,31 @@ FSParser::DataType FSAnalyzer::get_operation_type(Variant::Operator p_operation,
 	Variant::Type a_type = p_a.builtin_type;
 	Variant::Type b_type = p_b.builtin_type;
 
+	// A tagged-union value is a read-only `[tag, payload...]` Array, so it is never an integer.
 	if (p_a.kind == FSParser::DataType::ENUM) {
 		if (p_a.is_meta_type) {
 			a_type = Variant::DICTIONARY;
 		} else {
-			a_type = Variant::INT;
+			a_type = p_a.is_tagged_union ? Variant::ARRAY : Variant::INT;
 		}
 	}
 	if (p_b.kind == FSParser::DataType::ENUM) {
 		if (p_b.is_meta_type) {
 			b_type = Variant::DICTIONARY;
 		} else {
-			b_type = Variant::INT;
+			b_type = p_b.is_tagged_union ? Variant::ARRAY : Variant::INT;
+		}
+	}
+
+	// The Array erasure is a representation detail, not part of the union's surface: only identity
+	// comparison is meaningful on a case value. Concatenation, containment, and the other Array
+	// operators would otherwise leak through and silently produce a plain Array.
+	if ((p_a.is_tagged_union_type() && !p_a.is_meta_type) || (p_b.is_tagged_union_type() && !p_b.is_meta_type)) {
+		if (p_operation != Variant::OP_EQUAL && p_operation != Variant::OP_NOT_EQUAL) {
+			r_valid = !(p_a.is_hard_type() && p_b.is_hard_type());
+			FSParser::DataType invalid;
+			invalid.kind = FSParser::DataType::VARIANT;
+			return invalid;
 		}
 	}
 
@@ -12076,7 +12224,8 @@ FSParser::DataType FSAnalyzer::get_operation_type(Variant::Operator p_operation,
 bool FSAnalyzer::is_type_compatible(const FSParser::DataType &p_target, const FSParser::DataType &p_source, bool p_allow_implicit_conversion, const FSParser::Node *p_source_node) {
 #ifdef DEBUG_ENABLED
 	if (p_source_node) {
-		if (p_target.kind == FSParser::DataType::ENUM) {
+		// A tagged union rejects ints outright, so the "cast it" advice would be wrong there.
+		if (p_target.kind == FSParser::DataType::ENUM && !p_target.is_tagged_union) {
 			if (p_source.kind == FSParser::DataType::BUILTIN && p_source.builtin_type == Variant::INT) {
 				parser->push_warning(p_source_node, FSWarning::INT_AS_ENUM_WITHOUT_CAST);
 			}

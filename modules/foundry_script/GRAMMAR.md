@@ -475,6 +475,15 @@ function_annotation = ANNOTATION, [ "(", [ annotation_args ], ")" ], [ NEWLINE ]
   (`enum Message: Quit \n Move(x: int, y: int)`). Whether an enum is a tagged union is
   only known once its whole body has been parsed, so this rule is validated after the
   body, not case-by-case during parsing.
+- A tagged union must be a **named** enum (`enum Name:` or `enum_name Name:`), because
+  its cases are only reachable as `Name.Case`; payload cases in an unnamed enum are a
+  semantic error.
+- A tagged union's values are `[tag, payload...]` read-only arrays, not integers, so a
+  case value never participates in integer contexts (arithmetic, bitwise operators,
+  `int` conversions, or assignment to an int-backed enum). A payload-less case is a
+  value on its own; a payload-carrying case is only usable when constructed with its
+  declared field types (`Name.Case(argument, ...)`), and its payload fields are not
+  reachable directly on a value of the union type.
 - Enum values must appear before enum functions. A functions-only named enum is valid.
   Enum functions reuse ordinary function signatures and bodies, allow `static` and
   `async`, and reject `abstract` and `final`. Variables, constants, signals, nested
