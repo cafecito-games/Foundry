@@ -5608,6 +5608,7 @@ static Error _lookup_symbol_from_base(const FSParser::DataType &p_base, const St
 
 				return ERR_CANT_RESOLVE;
 			} break;
+			case FSParser::DataType::TUPLE:
 			case FSParser::DataType::TYPE_PARAMETER:
 			case FSParser::DataType::RESOLVING:
 			case FSParser::DataType::UNRESOLVED: {

@@ -307,6 +307,16 @@ FSDataType FSCompiler::_gdtype_from_datatype(const FSParser::DataType &p_datatyp
 			result.kind = FSDataType::BUILTIN;
 			result.builtin_type = p_datatype.builtin_type;
 		} break;
+		case FSParser::DataType::TUPLE: {
+			// Tuple elements are heterogeneous, so there is no typed-array container to describe:
+			// every tuple erases to a plain, untyped Array at runtime. Returning directly skips the
+			// container-element loop below, which would otherwise turn `(float, float)` into a
+			// typed `Array[float]` that no tuple value could satisfy.
+			result.kind = FSDataType::BUILTIN;
+			result.builtin_type = Variant::ARRAY;
+			result.is_nullable = p_datatype.is_nullable;
+			return result;
+		}
 		case FSParser::DataType::NATIVE: {
 			if (p_handle_metatype && p_datatype.is_meta_type && !p_datatype.is_type_handle_annotation) {
 				result.kind = FSDataType::NATIVE;

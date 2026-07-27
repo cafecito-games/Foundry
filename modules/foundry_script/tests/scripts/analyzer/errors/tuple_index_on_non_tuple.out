@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 3: Cannot use tuple index access on a value of type "int".

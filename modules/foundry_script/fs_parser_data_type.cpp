@@ -2,7 +2,7 @@
 /*  fs_parser_data_type.cpp                                               */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -183,6 +183,26 @@ String FSParser::DataType::to_string() const {
 			// native_type contains either the native class defining the enum
 			// or the fully qualified class name of the script defining the enum
 			result = String(native_type).get_file(); // Remove path, keep filename
+			break;
+		}
+		case TUPLE: {
+			if (tuple_name != StringName()) {
+				result = tuple_name.operator String();
+				break;
+			}
+			// An unnamed tuple prints its structural shape, including field names when the type came
+			// from a named declaration that was erased, e.g. `(x: float, y: float)`.
+			String elements;
+			for (int i = 0; i < container_element_types.size(); i++) {
+				if (i > 0) {
+					elements += ", ";
+				}
+				if (i < tuple_field_names.size() && tuple_field_names[i] != StringName()) {
+					elements += String(tuple_field_names[i]) + ": ";
+				}
+				elements += container_element_types[i].to_string();
+			}
+			result = vformat("(%s)", elements);
 			break;
 		}
 		case TYPE_PARAMETER:
@@ -476,6 +496,9 @@ static bool _signature_type_is_encodable(const FSParser::DataType &p_type) {
 			// script/class enum has no such name in the flat grammar (mirroring the non-global script/class
 			// leaf limitation) and must cross untyped to avoid a false mismatch.
 			return _enum_signature_leaf_round_trips(_encode_signature_leaf_name(p_type));
+		case FSParser::DataType::TUPLE:
+			// The flat hint grammar has no tuple spelling, so a tuple slot would decode back as a
+			// bare Array and turn a valid call into a false strict mismatch. Cross untyped instead.
 		case FSParser::DataType::TYPE_PARAMETER:
 		case FSParser::DataType::RESOLVING:
 		case FSParser::DataType::UNRESOLVED:
@@ -569,6 +592,7 @@ PropertyInfo FSParser::DataType::to_property_info(const String &p_name) const {
 						result.hint = PROPERTY_HINT_ARRAY_TYPE;
 						result.hint_string = String(elem_type.native_type).replace("::", ".");
 						break;
+					case TUPLE:
 					case TYPE_PARAMETER:
 					case VARIANT:
 					case RESOLVING:
@@ -708,6 +732,11 @@ PropertyInfo FSParser::DataType::to_property_info(const String &p_name) const {
 				result.class_name = String(native_type).replace("::", ".");
 			}
 			break;
+		case TUPLE:
+			// Tuples erase to a read-only Array at runtime; the precise shape only exists statically,
+			// so no container hint is emitted.
+			result.type = Variant::ARRAY;
+			break;
 		case TYPE_PARAMETER:
 			// Type parameters are erased to Variant outside the type checker.
 		case VARIANT:
@@ -759,10 +788,42 @@ FSParser::DataType FSParser::DataType::get_typed_container_type() const {
 	return type;
 }
 
+int FSParser::DataType::get_tuple_field_index(const StringName &p_name) const {
+	if (p_name == StringName()) {
+		return -1;
+	}
+	for (int i = 0; i < tuple_field_names.size(); i++) {
+		if (tuple_field_names[i] == p_name) {
+			return i;
+		}
+	}
+	return -1;
+}
+
 bool FSParser::DataType::can_reference(const FSParser::DataType &p_other) const {
 	if (p_other.is_meta_type) {
 		return false;
-	} else if (builtin_type != p_other.builtin_type) {
+	}
+
+	// Tuple identity is erased at runtime (every tuple is a read-only Array), so a tuple test is
+	// structural: the shape must match element for element. A tuple never references a plain Array
+	// and vice versa, otherwise the immutability guarantee would leak through `is`.
+	if (kind == TUPLE || p_other.kind == TUPLE) {
+		if (kind != TUPLE || p_other.kind != TUPLE) {
+			return false;
+		}
+		if (container_element_types.size() != p_other.container_element_types.size()) {
+			return false;
+		}
+		for (int i = 0; i < container_element_types.size(); i++) {
+			if (!container_element_types[i].can_reference(p_other.container_element_types[i])) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	if (builtin_type != p_other.builtin_type) {
 		return false;
 	} else if (builtin_type != Variant::OBJECT) {
 		return true;

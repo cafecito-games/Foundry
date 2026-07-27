@@ -2,7 +2,7 @@
 /*  fs_docgen.cpp                                                         */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -221,6 +221,11 @@ void FSDocGen::_doctype_from_gdtype(const GDType &p_gdtype, String &r_type, Stri
 					r_enum = _get_script_name(r_enum);
 				}
 			}
+			return;
+		case GDType::TUPLE:
+			// Tuples erase to a read-only Array at runtime and have no class-reference page of
+			// their own, so documentation refers to the erasure target.
+			r_type = "Array";
 			return;
 		case GDType::TYPE_PARAMETER:
 			r_type = p_gdtype.type_parameter_name;

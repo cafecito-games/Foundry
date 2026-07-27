@@ -2,7 +2,7 @@
 /*  fs_type.cpp                                                           */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -310,6 +310,43 @@ FSTypeCompatibility::Result FSTypeCompatibility::check(const FSParser::DataType 
 		return result;
 	}
 
+	if (p_target.kind == FSParser::DataType::TUPLE || p_source.kind == FSParser::DataType::TUPLE) {
+		// Tuples are their own family. They erase to a read-only Array at runtime, so this branch must
+		// run before the builtin branch below, which would otherwise let `Variant::can_convert_strict`
+		// silently trade a tuple for a mutable Array and lose the immutability guarantee.
+		if (p_target.kind != FSParser::DataType::TUPLE || p_source.kind != FSParser::DataType::TUPLE) {
+			return result;
+		}
+		if (p_target.tuple_name != StringName()) {
+			// A named tuple is nominal: only the same declaration satisfies it. Building one from an
+			// unnamed tuple (or from a different named tuple) requires explicit construction.
+			result.compatible = p_target.tuple_name == p_source.tuple_name && p_target.script_path == p_source.script_path;
+			return result;
+		}
+		// An unnamed target is structural: arity plus invariant elements. A named source erases to it.
+		if (p_target.container_element_types.size() != p_source.container_element_types.size()) {
+			return result;
+		}
+		Options element_options = p_options;
+		element_options.allow_implicit_conversion = false;
+		for (int i = 0; i < p_target.container_element_types.size(); i++) {
+			// Elements are invariant in v1, so both directions must hold. Going through `check` (rather
+			// than plain equality) keeps a dynamic element flowing with a runtime check instead of
+			// rejecting it outright, matching how every other slot treats Variant.
+			const Result forward = check(p_target.container_element_types[i], p_source.container_element_types[i], element_options);
+			if (!forward.compatible) {
+				return result;
+			}
+			const Result backward = check(p_source.container_element_types[i], p_target.container_element_types[i], element_options);
+			if (!backward.compatible) {
+				return result;
+			}
+			result.requires_runtime_check = result.requires_runtime_check || forward.requires_runtime_check;
+		}
+		result.compatible = true;
+		return result;
+	}
+
 	if (p_target.kind == FSParser::DataType::BUILTIN) {
 		result.compatible = p_source.kind == FSParser::DataType::BUILTIN && p_target.builtin_type == p_source.builtin_type;
 		if (!result.compatible && p_options.allow_implicit_conversion) {
@@ -492,6 +529,7 @@ FSTypeCompatibility::Result FSTypeCompatibility::check(const FSParser::DataType 
 				src_script = base->base_type.script_type;
 			}
 			break;
+		case FSParser::DataType::TUPLE:
 		case FSParser::DataType::TYPE_PARAMETER:
 		case FSParser::DataType::VARIANT:
 		case FSParser::DataType::BUILTIN:
@@ -575,6 +613,7 @@ FSTypeCompatibility::Result FSTypeCompatibility::check(const FSParser::DataType 
 				}
 				return result;
 			}
+		case FSParser::DataType::TUPLE:
 		case FSParser::DataType::TYPE_PARAMETER:
 		case FSParser::DataType::VARIANT:
 		case FSParser::DataType::BUILTIN:
@@ -591,6 +630,13 @@ bool FSTypeCompatibility::is_compatible(const FSParser::DataType &p_target, cons
 	Options options;
 	options.allow_implicit_conversion = p_allow_implicit_conversion;
 	return check(p_target, p_source, options).compatible;
+}
+
+bool FSTypeCompatibility::allows_runtime_narrowing(const FSParser::DataType &p_narrow, const FSParser::DataType &p_wide) {
+	if (p_narrow.kind == FSParser::DataType::TUPLE || p_wide.kind == FSParser::DataType::TUPLE) {
+		return false;
+	}
+	return is_compatible(p_wide, p_narrow);
 }
 
 static bool _datatype_invariant_equal(const FSParser::DataType &p_a, const FSParser::DataType &p_b) {
@@ -632,6 +678,9 @@ static bool _datatype_invariant_equal(const FSParser::DataType &p_a, const FSPar
 			equal = p_a.type_parameter_name == p_b.type_parameter_name &&
 					p_a.type_parameter_scope == p_b.type_parameter_scope &&
 					p_a.type_parameter_index == p_b.type_parameter_index;
+			break;
+		case FSParser::DataType::TUPLE:
+			equal = p_a.tuple_name == p_b.tuple_name && p_a.script_path == p_b.script_path;
 			break;
 		case FSParser::DataType::RESOLVING:
 		case FSParser::DataType::UNRESOLVED:

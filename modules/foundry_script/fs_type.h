@@ -2,7 +2,7 @@
 /*  fs_type.h                                                             */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -55,4 +55,11 @@ public:
 	static Result check(const FSParser::DataType &p_target, const FSParser::DataType &p_source);
 	static Result check(const FSParser::DataType &p_target, const FSParser::DataType &p_source, const Options &p_options);
 	static bool is_compatible(const FSParser::DataType &p_target, const FSParser::DataType &p_source, bool p_allow_implicit_conversion = false);
+
+	// Whether a statically incompatible assignment from p_wide to p_narrow may still be accepted with
+	// a runtime-checked conversion. This is the usual supertype-to-subtype case, where the runtime can
+	// verify the value really is the narrower type. Tuples are excluded: every tuple erases to the same
+	// read-only Array, so no runtime evidence distinguishes a named tuple from its unnamed erasure and
+	// the "check" would silently accept unnamed -> named or named A -> named B.
+	static bool allows_runtime_narrowing(const FSParser::DataType &p_narrow, const FSParser::DataType &p_wide);
 };

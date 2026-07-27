@@ -1288,6 +1288,7 @@ static bool _signature_slot_is_comparison_safe(const FSParser::DataType &p_type)
 		}
 		case FSParser::DataType::SCRIPT:
 		case FSParser::DataType::CLASS:
+		case FSParser::DataType::TUPLE:
 		case FSParser::DataType::TYPE_PARAMETER:
 		case FSParser::DataType::RESOLVING:
 		case FSParser::DataType::UNRESOLVED:
@@ -1462,6 +1463,22 @@ static String _make_type_handle_argument_error(
 			expected_type);
 }
 
+FSParser::DataType FSAnalyzer::make_tuple_type(const StringName &p_tuple_name, const String &p_script_path,
+		const Vector<FSParser::DataType> &p_element_types, const Vector<StringName> &p_field_names, bool p_meta) {
+	FSParser::DataType type;
+	type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+	type.kind = FSParser::DataType::TUPLE;
+	// Every tuple erases to a read-only Array at runtime; the precise shape is static-only.
+	type.builtin_type = Variant::ARRAY;
+	type.tuple_name = p_tuple_name;
+	type.script_path = p_script_path;
+	type.container_element_types = p_element_types;
+	type.tuple_field_names = p_field_names;
+	type.is_meta_type = p_meta;
+	type.is_constant = p_meta;
+	return type;
+}
+
 // In enum types, native_type is used to store the class (native or otherwise) that the enum belongs to.
 // This disambiguates between similarly named enums in base classes or outer classes
 static FSParser::DataType make_enum_type(const StringName &p_enum_name, const String &p_base_name, const bool p_meta = false) {
@@ -1633,15 +1650,13 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 	};
 
 	if (p_type->is_tuple) {
-		// Unnamed tuple types (`(int, String)`) parse today, but their real static typing
-		// (DataType::Kind::TUPLE, element-wise compatibility, immutability) is a follow-up
-		// change. Resolve element types just enough to catch unrelated errors inside them, but
-		// erase the tuple type itself to Variant rather than mistaking its empty `type_chain`
-		// for `void`.
+		// An unnamed tuple type (`(int, String)`) is structural: its identity is exactly the
+		// element list, so it carries no name and no field names.
+		Vector<FSParser::DataType> element_types;
 		for (int i = 0; i < p_type->tuple_element_types.size(); i++) {
-			resolve_datatype(p_type->tuple_element_types[i]);
+			element_types.push_back(type_from_metatype(resolve_datatype(p_type->tuple_element_types[i])));
 		}
-		result.kind = FSParser::DataType::VARIANT;
+		result = make_tuple_type(StringName(), String(), element_types, Vector<StringName>(), false);
 		return finalize_datatype(result);
 	}
 
@@ -1930,6 +1945,14 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 							break;
 						case FSParser::ClassNode::Member::ENUM:
 							result = member.get_datatype();
+							found = true;
+							break;
+						case FSParser::ClassNode::Member::TUPLE:
+							result = member.get_datatype();
+							if (result.is_resolving()) {
+								push_error(vformat(R"(Tuple "%s" cannot contain itself by value.)", first), p_type);
+								return bad_type;
+							}
 							found = true;
 							break;
 						case FSParser::ClassNode::Member::CONSTANT:
@@ -3861,7 +3884,7 @@ void FSAnalyzer::resolve_assignable(FSParser::AssignableNode *p_assignable, cons
 				}
 				if (!type_handle_error.is_empty()) {
 					push_error(type_handle_error, p_assignable->initializer);
-				} else if (!nullable_mismatch && !is_constant && is_type_compatible(initializer_type, specified_type)) {
+				} else if (!nullable_mismatch && !is_constant && FSTypeCompatibility::allows_runtime_narrowing(specified_type, initializer_type)) {
 					mark_node_unsafe(p_assignable->initializer);
 					p_assignable->use_conversion_assign = true;
 				} else {
@@ -4654,16 +4677,23 @@ void FSAnalyzer::reduce_tuple_literal(FSParser::TupleLiteralNode *p_tuple_litera
 		reduce_expression(p_tuple_literal->elements[i]);
 	}
 
-	// Tuple values erase to a plain Array at runtime (see the design doc). Static tuple typing
-	// (arity/element-wise checking, immutability) lands with DataType::Kind::TUPLE in a
-	// follow-up change; for now a tuple literal type-checks like an ordinary array literal.
-	FSParser::DataType tuple_type;
-	tuple_type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
-	tuple_type.kind = FSParser::DataType::BUILTIN;
-	tuple_type.builtin_type = Variant::ARRAY;
-	tuple_type.is_constant = true;
+	// A tuple literal is always unnamed: its type is exactly the inferred element shape. A named
+	// tuple is only produced by explicitly calling its declaration.
+	Vector<FSParser::DataType> element_types;
+	for (int i = 0; i < p_tuple_literal->elements.size(); i++) {
+		FSParser::DataType element_type = p_tuple_literal->elements[i]->get_datatype();
+		if (!element_type.is_set() || !element_type.is_hard_type()) {
+			// A dynamic element keeps the slot open so the tuple stays assignable to any shape
+			// that matches in the remaining positions.
+			element_type = FSParser::DataType::get_variant_type();
+		}
+		element_type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+		element_type.is_constant = false;
+		element_type.is_meta_type = false;
+		element_types.push_back(element_type);
+	}
 
-	p_tuple_literal->set_datatype(tuple_type);
+	p_tuple_literal->set_datatype(make_tuple_type(StringName(), String(), element_types, Vector<StringName>(), false));
 }
 
 void FSAnalyzer::reduce_array(FSParser::ArrayNode *p_array) {
@@ -5028,6 +5058,20 @@ void FSAnalyzer::reduce_assignment(FSParser::AssignmentNode *p_assignment) {
 
 	mark_coroutine_handle_capture(p_assignment->assigned_value, assignee_type);
 
+	if (p_assignment->assignee->type == FSParser::Node::SUBSCRIPT) {
+		// Tuples are immutable, so no element write is legal: `t.0 = v`, `t.x = v` and `t[0] = v`
+		// are all rejected here rather than degrading to the generic read-only diagnostic.
+		const FSParser::SubscriptNode *assignee_subscript = static_cast<FSParser::SubscriptNode *>(p_assignment->assignee);
+		if (assignee_subscript->base != nullptr) {
+			const FSParser::DataType base_type = assignee_subscript->base->get_datatype();
+			if (base_type.is_set() && base_type.kind == FSParser::DataType::TUPLE && !base_type.is_meta_type) {
+				push_error(vformat(R"(Cannot assign to an element of tuple "%s"; tuples are immutable.)", base_type.to_string()),
+						p_assignment->assignee);
+				return;
+			}
+		}
+	}
+
 	if (assignee_type.is_constant) {
 		push_error("Cannot assign a new value to a constant.", p_assignment->assignee);
 		return;
@@ -5192,7 +5236,7 @@ void FSAnalyzer::reduce_assignment(FSParser::AssignmentNode *p_assignment) {
 					}
 					if (!type_handle_error.is_empty()) {
 						push_error(type_handle_error, p_assignment->assigned_value);
-					} else if (!nullable_mismatch && is_type_compatible(op_type, assignee_type)) {
+					} else if (!nullable_mismatch && FSTypeCompatibility::allows_runtime_narrowing(assignee_type, op_type)) {
 						// hard non-variant assignee and maybe compatible result
 						p_assignment->use_conversion_assign = true;
 					} else {
@@ -5895,6 +5939,24 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 		// TODO: Could check if Callable here too.
 		p_call->set_datatype(call_type);
 		mark_node_unsafe(p_call);
+		return;
+	}
+
+	// A named tuple declaration is callable as its own constructor, e.g. `Vec2(1.0, 2.0)`.
+	{
+		FSParser::DataType tuple_meta_type;
+		if (find_named_tuple_meta_type(base_type, is_self, p_call->function_name, p_call, tuple_meta_type)) {
+			reduce_call_tuple_construction(p_call, tuple_meta_type);
+			return;
+		}
+	}
+
+	// Tuples are immutable and expose no methods; the underlying Array is an erasure detail.
+	if (base_type.is_set() && base_type.kind == FSParser::DataType::TUPLE) {
+		push_error(vformat(R"*(Cannot call "%s()" on tuple "%s"; tuples are immutable and expose no methods.)*",
+						   p_call->function_name, base_type.to_string()),
+				p_call);
+		p_call->set_datatype(call_type);
 		return;
 	}
 
@@ -7310,6 +7372,10 @@ static bool _datatype_strict_identity_equal(const FSParser::DataType &p_a, const
 			equal = p_a.class_type == p_b.class_type ||
 					(p_a.class_type != nullptr && p_b.class_type != nullptr &&
 							p_a.class_type->fqcn == p_b.class_type->fqcn);
+			break;
+		case FSParser::DataType::TUPLE:
+			equal = p_a.tuple_name == p_b.tuple_name && p_a.script_path == p_b.script_path &&
+					p_a.tuple_field_names == p_b.tuple_field_names;
 			break;
 		case FSParser::DataType::TYPE_PARAMETER:
 			equal = p_a.type_parameter_name == p_b.type_parameter_name &&
@@ -9061,6 +9127,158 @@ void FSAnalyzer::reduce_self(FSParser::SelfNode *p_self) {
 	mark_lambda_use_self();
 }
 
+// Handles `t.0`-style tuple index access. The parser only sets `is_tuple_index` when the index is a
+// bare integer literal directly after a value token, so the index is always a constant here.
+void FSAnalyzer::reduce_tuple_index_access(FSParser::SubscriptNode *p_subscript) {
+	FSParser::DataType result_type;
+	result_type.kind = FSParser::DataType::VARIANT;
+
+	const FSParser::DataType base_type = p_subscript->base->get_datatype();
+	const FSParser::DataType index_type = p_subscript->index->get_datatype();
+	const bool has_constant_index = p_subscript->index->is_constant && p_subscript->index->reduced_value.get_type() == Variant::INT;
+
+	if (base_type.kind == FSParser::DataType::TUPLE) {
+		const int64_t index = has_constant_index ? p_subscript->index->reduced_value.operator int64_t() : 0;
+		if (base_type.is_meta_type) {
+			push_error(vformat(R"(Cannot index the tuple type "%s"; construct a value first.)", base_type.to_string()), p_subscript);
+		} else if (!has_constant_index && index_type.is_hard_type() && !index_type.is_variant() &&
+				!(index_type.kind == FSParser::DataType::BUILTIN && index_type.builtin_type == Variant::INT)) {
+			push_error(vformat(R"(Only an integer can index tuple "%s", but received "%s".)", base_type.to_string(), index_type.to_string()),
+					p_subscript->index);
+		} else if (has_constant_index && (index < 0 || index >= base_type.container_element_types.size())) {
+			push_error(vformat(R"(Tuple index %d is out of range for "%s", which has %d element(s).)",
+							   index, base_type.to_string(), base_type.container_element_types.size()),
+					p_subscript->index);
+		} else if (!has_constant_index) {
+			// A dynamic index cannot select an element type statically, since tuple elements are
+			// heterogeneous.
+			mark_node_unsafe(p_subscript);
+		} else {
+			result_type = base_type.get_container_element_type(index);
+			result_type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+			// A tuple element is only readable: writing through it is rejected in `reduce_assignment`,
+			// and the runtime Array is read-only.
+			result_type.is_read_only = true;
+		}
+	} else if (base_type.is_variant() || !base_type.is_hard_type()) {
+		// A dynamic base lowers to a runtime indexed get.
+		if (strict_dynamic_checks) {
+			push_error("Cannot use tuple index access on Variant in strict dynamic mode.", p_subscript->base);
+		} else {
+			mark_node_unsafe(p_subscript);
+		}
+	} else {
+		push_error(vformat(R"(Cannot use tuple index access on a value of type "%s".)", base_type.to_string()), p_subscript);
+	}
+
+	p_subscript->set_datatype(result_type);
+}
+
+// Handles `t.name` where the base is statically a tuple. Field names only exist statically, so an
+// unknown name is an error rather than a dynamic property lookup.
+void FSAnalyzer::reduce_tuple_field_access(FSParser::SubscriptNode *p_subscript, const FSParser::DataType &p_base_type) {
+	FSParser::DataType result_type;
+	result_type.kind = FSParser::DataType::VARIANT;
+
+	if (p_base_type.is_meta_type) {
+		push_error(vformat(R"(Cannot access member "%s" on the tuple type "%s"; construct a value first.)",
+						   p_subscript->attribute->name, p_base_type.to_string()),
+				p_subscript->attribute);
+		p_subscript->set_datatype(result_type);
+		return;
+	}
+
+	const int field_index = p_base_type.get_tuple_field_index(p_subscript->attribute->name);
+	if (field_index < 0) {
+		push_error(vformat(R"(Tuple "%s" has no field named "%s".)", p_base_type.to_string(), p_subscript->attribute->name),
+				p_subscript->attribute);
+		p_subscript->set_datatype(result_type);
+		return;
+	}
+
+	result_type = p_base_type.get_container_element_type(field_index);
+	result_type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+	result_type.is_read_only = true;
+	p_subscript->attribute->set_datatype(result_type);
+	p_subscript->set_datatype(result_type);
+}
+
+// Resolves p_name to a named-tuple declaration reachable from the call's base, so `Vec2(1, 2)` and
+// `Outer.Vec2(1, 2)` both find the declaration. Returns the declaration's meta type.
+bool FSAnalyzer::find_named_tuple_meta_type(const FSParser::DataType &p_base_type, bool p_is_self, const StringName &p_name,
+		const FSParser::Node *p_source, FSParser::DataType &r_tuple_meta_type) {
+	if (p_name == StringName()) {
+		return false;
+	}
+
+	// A bare name is looked up in the enclosing class and then outwards through its lexical scopes;
+	// a qualified name only looks at the named class itself.
+	FSParser::ClassNode *candidate = p_is_self ? parser->current_class : nullptr;
+	if (!p_is_self) {
+		if (p_base_type.kind != FSParser::DataType::CLASS) {
+			return false;
+		}
+		candidate = p_base_type.class_type;
+	}
+
+	while (candidate != nullptr) {
+		if (candidate->has_member(p_name)) {
+			if (candidate->get_member(p_name).type != FSParser::ClassNode::Member::TUPLE) {
+				// A same-named member of another kind shadows any outer tuple declaration.
+				return false;
+			}
+			resolve_class_member(candidate, p_name, p_source);
+			const FSParser::DataType tuple_type = candidate->get_member(p_name).get_datatype();
+			if (!tuple_type.is_set() || tuple_type.kind != FSParser::DataType::TUPLE) {
+				return false;
+			}
+			r_tuple_meta_type = tuple_type;
+			return true;
+		}
+		candidate = p_is_self ? candidate->outer : nullptr;
+	}
+	return false;
+}
+
+// Checks `Vec2(a, b)` against the declaration: positional arguments only, exact arity, element-wise
+// types. The result is the named tuple's instance type.
+void FSAnalyzer::reduce_call_tuple_construction(FSParser::CallNode *p_call, const FSParser::DataType &p_tuple_meta_type) {
+	call_site_validation.reject_named_call_arguments(p_call);
+
+	const FSParser::DataType tuple_type = type_from_metatype(p_tuple_meta_type);
+	const int expected_count = tuple_type.container_element_types.size();
+	if (p_call->arguments.size() != expected_count) {
+		push_error(vformat(R"*(Tuple "%s" expects %d argument(s), but %d were given.)*",
+						   tuple_type.to_string(), expected_count, p_call->arguments.size()),
+				p_call);
+		p_call->set_datatype(tuple_type);
+		return;
+	}
+
+	for (int i = 0; i < expected_count; i++) {
+		const FSParser::DataType field_type = tuple_type.get_container_element_type(i);
+		FSParser::ExpressionNode *argument = p_call->arguments[i];
+		const FSParser::DataType argument_type = argument->get_datatype();
+		if (!argument_type.is_set()) {
+			continue;
+		}
+		if (!is_type_compatible(field_type, argument_type, true)) {
+			push_error(vformat(R"*(Invalid argument %d for tuple "%s": should be "%s" but is "%s".)*",
+							   i + 1, tuple_type.to_string(), field_type.to_string(), argument_type.to_string()),
+					argument);
+			continue;
+		}
+		if (argument->is_constant) {
+			// Widens a constant to the declared field type (e.g. an int literal into a float field).
+			update_const_expression_builtin_type(argument, field_type, "pass");
+		} else if (!field_type.is_variant() && (argument_type.is_variant() || !argument_type.is_hard_type())) {
+			mark_node_unsafe(p_call);
+		}
+	}
+
+	p_call->set_datatype(tuple_type);
+}
+
 void FSAnalyzer::reduce_subscript(FSParser::SubscriptNode *p_subscript, bool p_can_be_pseudo_type) {
 	if (p_subscript->base == nullptr) {
 		return;
@@ -9170,6 +9388,11 @@ void FSAnalyzer::reduce_subscript(FSParser::SubscriptNode *p_subscript, bool p_c
 
 		FSParser::DataType base_type = p_subscript->base->get_datatype();
 		bool valid = false;
+
+		if (base_type.is_set() && base_type.kind == FSParser::DataType::TUPLE) {
+			reduce_tuple_field_access(p_subscript, base_type);
+			return;
+		}
 
 		// If the base is a metatype, use the analyzer instead.
 		if (p_subscript->base->is_constant && !base_type.is_meta_type) {
@@ -9344,6 +9567,11 @@ void FSAnalyzer::reduce_subscript(FSParser::SubscriptNode *p_subscript, bool p_c
 		}
 
 		reduce_expression(p_subscript->index);
+
+		if (p_subscript->is_tuple_index || p_subscript->base->get_datatype().kind == FSParser::DataType::TUPLE) {
+			reduce_tuple_index_access(p_subscript);
+			return;
+		}
 
 		if (p_subscript->base->is_constant && p_subscript->index->is_constant) {
 			// Just try to get it.
