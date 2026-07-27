@@ -2629,6 +2629,12 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				}
 				// Tuples are immutable values: the read-only Array is the runtime backstop that keeps a
 				// tuple that escaped into a Variant from being mutated, and makes it a valid Dictionary key.
+				// The freeze is deliberately shallow. Elements are stored by value, and a nested tuple is
+				// itself built by this opcode, so a tuple of scalars and tuples is fully immutable. An
+				// element that is a shared reference (Array, Dictionary, object) keeps its own mutability:
+				// freezing it would mutate a container the caller still owns. Such an element makes the
+				// tuple's content hash unstable exactly like using that container as a Dictionary key
+				// directly does, which is the pre-existing engine contract for reference elements.
 				tuple.make_read_only();
 
 				GET_INSTRUCTION_ARG(dst, argc);

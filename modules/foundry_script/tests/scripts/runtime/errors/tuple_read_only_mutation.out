@@ -4,3 +4,5 @@ FS_TEST_RUNTIME_ERROR
 >> ERROR: Condition "_p->read_only" is true.
 >>   Array is in read-only state.
 [1, 2]
+>> SCRIPT ERROR at runtime/errors/tuple_read_only_mutation.fs:10 on subtest_nested_element_assignment(): Invalid assignment on read-only value (on base: 'Array').
+[[1, 2], 3]
