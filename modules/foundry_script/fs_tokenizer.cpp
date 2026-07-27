@@ -441,6 +441,12 @@ FSTokenizer::Token FSTokenizerText::make_token(Token::Type p_type) {
 		}
 	}
 
+	// `p_type != Token::IDENTIFIER` excludes plain identifiers, which `Token::can_precede_bin_op()`
+	// already recognizes directly; this only needs to cover the keyword tokens that
+	// `Token::is_node_name()` accepts as attribute names but `can_precede_bin_op()` does not,
+	// because the parser re-spells them to `IDENTIFIER` only when consuming the attribute, not at
+	// tokenize time.
+	last_token_is_keyword_attribute = p_type != Token::IDENTIFIER && token.is_node_name() && last_token.type == Token::PERIOD;
 	last_token = token;
 	return token;
 }
@@ -736,6 +742,7 @@ void FSTokenizerText::newline(bool p_make_token) {
 			// regardless of why layout tokens are being suppressed, so it stays correct in both
 			// the parser's per-bracket toggling and the buffer exporter's whole-file toggling.
 			last_token = newline;
+			last_token_is_keyword_attribute = false;
 		}
 	}
 
@@ -1594,7 +1601,7 @@ FSTokenizer::Token FSTokenizerText::scan() {
 					return make_token(Token::PERIOD_PERIOD_PERIOD);
 				}
 				return make_token(Token::PERIOD_PERIOD);
-			} else if (is_digit(_peek()) && !last_token.can_precede_bin_op()) {
+			} else if (is_digit(_peek()) && !_last_token_precedes_bin_op()) {
 				// Number starting with '.'.
 				return number();
 			} else {
@@ -1606,7 +1613,7 @@ FSTokenizer::Token FSTokenizerText::scan() {
 			if (_peek() == '=') {
 				_advance();
 				return make_token(Token::PLUS_EQUAL);
-			} else if (is_digit(_peek()) && !last_token.can_precede_bin_op()) {
+			} else if (is_digit(_peek()) && !_last_token_precedes_bin_op()) {
 				// Number starting with '+'.
 				return number();
 			} else {
@@ -1616,7 +1623,7 @@ FSTokenizer::Token FSTokenizerText::scan() {
 			if (_peek() == '=') {
 				_advance();
 				return make_token(Token::MINUS_EQUAL);
-			} else if (is_digit(_peek()) && !last_token.can_precede_bin_op()) {
+			} else if (is_digit(_peek()) && !_last_token_precedes_bin_op()) {
 				// Number starting with '-'.
 				return number();
 			} else if (_peek() == '>') {
