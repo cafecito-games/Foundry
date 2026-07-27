@@ -199,6 +199,10 @@ bool FSTokenizer::Token::can_precede_bin_op() const {
 		case MATCH:
 		case WHEN:
 		case USES:
+		// `tuple` is accepted as an attribute name (`is_node_name()`), so `self.tuple` ends in a
+		// raw `TUPLE` token even though the parser treats it as an identifier attribute; without
+		// this, `self.tuple+1` and `self.tuple.0` would misdisambiguate the following `+`/`.`.
+		case TUPLE:
 			return true;
 		default:
 			return false;

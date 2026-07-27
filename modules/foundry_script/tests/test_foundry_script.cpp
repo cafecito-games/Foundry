@@ -307,6 +307,44 @@ func _ready():
 	CHECK_EQ(err, OK);
 }
 
+TEST_CASE("[Modules][FoundryScript] Tokenizer treats a value after a .tuple attribute as ending a value") {
+	// The raw tokenizer emits a `TUPLE` token for the `.tuple` attribute name (the parser only
+	// re-spells it as `IDENTIFIER` when consuming it), so `TUPLE` must count as a value token for
+	// disambiguation: `self.tuple+1` needs `+` to stay a binary operator, and `self.tuple.0`
+	// needs the second `.` to stay member access (tuple index), not a float.
+	FSTokenizerText plus_tokenizer;
+	plus_tokenizer.set_source_code("self.tuple+1");
+	FSTokenizer::Token::Type plus_expected_types[] = {
+		FSTokenizer::Token::SELF,
+		FSTokenizer::Token::PERIOD,
+		FSTokenizer::Token::TUPLE,
+		FSTokenizer::Token::PLUS,
+		FSTokenizer::Token::LITERAL,
+	};
+	for (const FSTokenizer::Token::Type expected_type : plus_expected_types) {
+		FSTokenizer::Token token = plus_tokenizer.scan();
+		CHECK(token.type == expected_type);
+	}
+
+	FSTokenizerText index_tokenizer;
+	index_tokenizer.set_source_code("self.tuple.0");
+	FSTokenizer::Token::Type index_expected_types[] = {
+		FSTokenizer::Token::SELF,
+		FSTokenizer::Token::PERIOD,
+		FSTokenizer::Token::TUPLE,
+		FSTokenizer::Token::PERIOD,
+		FSTokenizer::Token::LITERAL,
+	};
+	for (const FSTokenizer::Token::Type expected_type : index_expected_types) {
+		FSTokenizer::Token token = index_tokenizer.scan();
+		CHECK(token.type == expected_type);
+		if (token.type == FSTokenizer::Token::LITERAL) {
+			CHECK(token.literal.get_type() == Variant::INT);
+			CHECK_EQ(int64_t(token.literal), 0);
+		}
+	}
+}
+
 TEST_CASE("[Modules][FoundryScript] Tokenizer rejects an exponent on a tuple index") {
 	// `x.0e5` is not a valid tuple index (only a bare decimal integer is); the tokenizer must
 	// report an error rather than silently reinterpreting it as a float.
