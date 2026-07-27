@@ -248,6 +248,7 @@ repos:
         files: |
           (?x)^(
             \.pre-commit-config\.yaml|
+            \.github/workflows/android_builds\.yml|
             platform/android/ANDROID_RUNTIME\.md|
             platform/android/android_source_template\.py|
             platform/android/doc_classes/EditorExportPlatformAndroid\.xml|

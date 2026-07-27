@@ -34,6 +34,41 @@ jobs:
           python3 tests/python_build/test_android_runtime_surface.py
           python3 .github/scripts/test_android_runtime_workflows.py
 
+  validate-foundry-java-export:
+    runs-on: ubuntu-24.04
+    name: Validate exact Foundry-Java Android export matrix
+    timeout-minutes: 60
+    env:
+      FOUNDRY_JAVA_REPO: ${{ github.workspace }}/foundry-java-dependency
+      FOUNDRY_TEST_SCRATCH: ${{ github.workspace }}/.test_scratch
+    steps:
+      - name: Checkout Foundry
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.checkout-ref || github.sha }}
+          submodules: recursive
+
+      - name: Checkout exact Foundry-Java
+        uses: actions/checkout@v6
+        with:
+          repository: cafecito-games/Foundry-Java
+          ref: 0db6970116de257fffffffe2a55e89543d4a12b5
+          path: foundry-java-dependency
+          persist-credentials: false
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Run exact Foundry-Java Android export matrix
+        run: |
+          python3 -m unittest -v \
+            tests.python_build.test_android_foundry_java_export.FoundryJavaDocumentationTests.test_android_ci_runs_the_exact_foundry_java_matrix_without_skipping \
+            tests.python_build.test_android_foundry_java_export.FoundryJavaAndroidIntegrationTests
+
   build-android-native:
     needs: validate-runtime-contracts
     runs-on: ubuntu-24.04

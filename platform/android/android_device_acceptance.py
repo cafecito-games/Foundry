@@ -245,9 +245,17 @@ def inspect_foundry_java_apk(
                     "Foundry-Java APK bridge entries differ from the requested ABI set: "
                     f"expected {list(expected_bridges)}, found {list(bridge_entries)}"
                 )
+            host_entries = tuple(sorted(name for name in names if name.endswith("/libfoundry_android.so")))
+            expected_hosts = tuple(f"lib/{abi}/libfoundry_android.so" for abi in requested)
+            if host_entries != expected_hosts:
+                raise AcceptanceError(
+                    "Foundry-Java APK host entries differ from the requested ABI set: "
+                    f"expected {list(expected_hosts)}, found {list(host_entries)}"
+                )
             return {
                 "requested_abis": requested,
                 "bridge_entries": bridge_entries,
+                "host_entries": host_entries,
                 "configuration_sha256": hashlib.sha256(archive.read(configuration)).hexdigest(),
                 "registry_index_sha256": hashlib.sha256(archive.read(registry_index)).hexdigest(),
             }

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 import http.server
 import importlib.util
+import io
+import json
 import os
 import shutil
 import signal
@@ -11,6 +14,7 @@ import tempfile
 import textwrap
 import threading
 import unittest
+import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
 from types import ModuleType
@@ -36,7 +40,8 @@ INTEGRATION_FIXTURE = REPO_ROOT / "tests/fixtures/android_foundry_java"
 ANDROID_RUNTIME_GUIDE = REPO_ROOT / "platform/android/ANDROID_RUNTIME.md"
 ANDROID_EXPORT_CLASS_REFERENCE = REPO_ROOT / "platform/android/doc_classes/EditorExportPlatformAndroid.xml"
 PRE_COMMIT_CONFIG = REPO_ROOT / ".pre-commit-config.yaml"
-EXACT_FOUNDRY_JAVA_COMMIT = "7eb98b37845b42ff67f3da1427bd78ebef19668f"
+ANDROID_BUILDS_WORKFLOW = REPO_ROOT / ".github/workflows/android_builds.yml"
+EXACT_FOUNDRY_JAVA_COMMIT = "0db6970116de257fffffffe2a55e89543d4a12b5"
 FOUNDRY_JAVA_GROUP = "games.cafecito.foundry"
 FOUNDRY_JAVA_VERSION = "0.1.0-SNAPSHOT"
 
@@ -204,10 +209,13 @@ class FoundryJavaDocumentationTests(unittest.TestCase):
 
     def test_pre_commit_runs_the_contract_on_every_owned_surface(self) -> None:
         config = PRE_COMMIT_CONFIG.read_text(encoding="utf-8")
-        self.assertIn("- id: foundry-java-android-export", config)
-        self.assertIn("tests.python_build.test_android_foundry_java_export", config)
+        hook_marker = "\n      - id: foundry-java-android-export\n"
+        self.assertEqual(1, config.count(hook_marker))
+        hook = config.split(hook_marker, maxsplit=1)[1].split("\n      - id:", maxsplit=1)[0]
+        self.assertIn("tests.python_build.test_android_foundry_java_export", hook)
         required_scopes = (
             r"\.pre-commit-config\.yaml",
+            r"\.github/workflows/android_builds\.yml",
             r"platform/android/ANDROID_RUNTIME\.md",
             r"platform/android/android_source_template\.py",
             r"platform/android/doc_classes/EditorExportPlatformAndroid\.xml",
@@ -218,7 +226,31 @@ class FoundryJavaDocumentationTests(unittest.TestCase):
         )
         for scope in required_scopes:
             with self.subTest(scope=scope):
-                self.assertIn(scope, config)
+                self.assertIn(scope, hook)
+
+    def test_android_ci_runs_the_exact_foundry_java_matrix_without_skipping(self) -> None:
+        workflow = ANDROID_BUILDS_WORKFLOW.read_text(encoding="utf-8")
+        job_marker = "\n  validate-foundry-java-export:\n"
+        self.assertEqual(1, workflow.count(job_marker))
+        job = workflow.split(job_marker, maxsplit=1)[1].split("\n  build-android-native:", maxsplit=1)[0]
+        self.assertNotIn("\n    needs:", job)
+        required_fragments = (
+            "repository: cafecito-games/Foundry-Java",
+            f"ref: {EXACT_FOUNDRY_JAVA_COMMIT}",
+            "path: foundry-java-dependency",
+            "FOUNDRY_JAVA_REPO: ${{ github.workspace }}/foundry-java-dependency",
+            "actions/setup-java@v5",
+            "java-version: '17'",
+            (
+                "tests.python_build.test_android_foundry_java_export."
+                "FoundryJavaDocumentationTests."
+                "test_android_ci_runs_the_exact_foundry_java_matrix_without_skipping"
+            ),
+            "tests.python_build.test_android_foundry_java_export.FoundryJavaAndroidIntegrationTests",
+        )
+        for fragment in required_fragments:
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, job)
 
 
 class FoundryJavaFinalArtifactInspectorTests(unittest.TestCase):
@@ -261,6 +293,10 @@ class FoundryJavaFinalArtifactInspectorTests(unittest.TestCase):
             ("lib/arm64-v8a/libfoundry_java.so",),
             evidence["bridge_entries"],
         )
+        self.assertEqual(
+            ("lib/arm64-v8a/libfoundry_android.so",),
+            evidence["host_entries"],
+        )
         self.assertEqual(64, len(evidence["configuration_sha256"]))
         self.assertEqual(64, len(evidence["registry_index_sha256"]))
 
@@ -279,6 +315,7 @@ class FoundryJavaFinalArtifactInspectorTests(unittest.TestCase):
             "assets/FoundryJava.foundryextension",
             "assets/foundry_java/registry-index-v2.txt",
             "lib/arm64-v8a/libfoundry_java.so",
+            "lib/arm64-v8a/libfoundry_android.so",
         )
         cases = (
             (
@@ -289,13 +326,13 @@ class FoundryJavaFinalArtifactInspectorTests(unittest.TestCase):
             ),
             (
                 "missing-index.apk",
-                (valid[0], valid[2]),
+                (valid[0], *valid[2:]),
                 ("arm64-v8a",),
                 "exactly one assets/foundry_java/registry-index-v2.txt",
             ),
             (
                 "missing-bridge.apk",
-                valid[:2],
+                (valid[0], valid[1], valid[3]),
                 ("arm64-v8a",),
                 "bridge entries differ",
             ),
@@ -304,6 +341,18 @@ class FoundryJavaFinalArtifactInspectorTests(unittest.TestCase):
                 (*valid, "lib/x86_64/libfoundry_java.so"),
                 ("arm64-v8a",),
                 "bridge entries differ",
+            ),
+            (
+                "missing-host.apk",
+                valid[:3],
+                ("arm64-v8a",),
+                "host entries differ",
+            ),
+            (
+                "unrequested-host.apk",
+                (*valid, "lib/x86_64/libfoundry_android.so"),
+                ("arm64-v8a",),
+                "host entries differ",
             ),
             (
                 "empty-abis.apk",
@@ -818,7 +867,7 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
     annotations_jar: Path
     binding_aar: Path
     module_jar: Path
-    host_aar: Path
+    host_aars: dict[str, Path]
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -854,7 +903,7 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
         cls.annotations_jar = cls._only_artifact("foundry-java-annotations/build/libs/foundry-java-annotations-*.jar")
         cls.binding_aar = cls._only_artifact("foundry-java-android/build/outputs/aar/foundry-java-android-release.aar")
         cls.module_jar = cls._compile_module_fixture()
-        cls.host_aar = cls._build_host_aar()
+        cls.host_aars = cls._build_host_aars()
 
     @classmethod
     def _git(cls, *arguments: str) -> str:
@@ -939,7 +988,7 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
         return archive
 
     @classmethod
-    def _build_host_aar(cls) -> Path:
+    def _build_host_aars(cls) -> dict[str, Path]:
         fixture_root = cls.workspace / "host-aar"
         java_root = copy_gradle_fixture(fixture_root)
         repository = fixture_root / "repo"
@@ -955,9 +1004,10 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
                 "-p",
                 str(java_root),
                 ":lib:assembleTemplateDebug",
+                ":lib:assembleTemplateRelease",
                 f"-PpythonExecutable={sys.executable}",
                 f"-PfoundryNativeRoot={native_root}",
-                "-PselectedAbis=arm64",
+                "-PselectedAbis=arm32,arm64,x86_32,x86_64",
             ],
             cwd=java_root,
             environment={
@@ -967,11 +1017,15 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
             timeout=900,
         )
         if result.returncode != 0:
-            raise AssertionError(f"Foundry host AAR build failed:\n{result.stdout}\n{result.stderr}")
-        host_aar = java_root / "lib/build/outputs/aar/foundry-debug.aar"
-        if not host_aar.is_file():
-            raise AssertionError(f"Foundry host AAR was not produced: {host_aar}")
-        return host_aar
+            raise AssertionError(f"Foundry host AAR builds failed:\n{result.stdout}\n{result.stderr}")
+        host_aars = {
+            build_type: java_root / f"lib/build/outputs/aar/foundry-{build_type}.aar"
+            for build_type in ("debug", "release")
+        }
+        for host_aar in host_aars.values():
+            if not host_aar.is_file():
+                raise AssertionError(f"Foundry host AAR was not produced: {host_aar}")
+        return host_aars
 
     def _prepare_app(self, name: str) -> Path:
         app = self.workspace / name
@@ -982,9 +1036,10 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
         )
         shutil.copy2(GRADLE_WRAPPER, app / "gradlew")
         shutil.copytree(JAVA_ROOT / "gradle", app / "gradle")
-        debug_libs = app / "libs/debug"
-        debug_libs.mkdir(parents=True)
-        shutil.copy2(self.host_aar, debug_libs / "foundry-debug.aar")
+        for build_type, host_aar in self.host_aars.items():
+            libraries = app / f"libs/{build_type}"
+            libraries.mkdir(parents=True)
+            shutil.copy2(host_aar, libraries / f"foundry-{build_type}.aar")
         (app / "local.properties").write_text(
             f"sdk.dir={self.android_sdk}\n",
             encoding="utf-8",
@@ -1168,86 +1223,31 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
             f"{marker_group}:{marker_artifact}:{FOUNDRY_JAVA_VERSION}",
         )
 
-    def _assert_debug_outputs(
+    def _local_properties(
         self,
-        app: Path,
-        first: subprocess.CompletedProcess[str],
-        second: subprocess.CompletedProcess[str],
-    ) -> None:
-        first_output = first.stdout + first.stderr
-        second_output = second.stdout + second.stderr
-        self.assertEqual(0, first.returncode, first_output)
-        self.assertEqual(0, second.returncode, second_output)
-        self.assertIn("Reusing configuration cache.", second_output)
-
-        generated = app / "build/generated/assets/generateStandardDebugFoundryJavaRegistry"
-        index = generated / "foundry_java/registry-index-v2.txt"
-        configuration = generated / "FoundryJava.foundryextension"
-        bootstrap = (
-            app
-            / "build/generated/java/generateStandardDebugFoundryJavaRegistry"
-            / "games/cafecito/foundry/generated/FoundryGeneratedBootstrap.java"
-        )
-        self.assertIn("module=demo|example.DemoExtension", index.read_text(encoding="utf-8"))
-        self.assertIn("example.DemoExtension.PROVIDER", bootstrap.read_text(encoding="utf-8"))
-        with zipfile.ZipFile(self.binding_aar) as binding:
-            self.assertEqual(binding.read("FoundryJava.foundryextension"), configuration.read_bytes())
-
-        apk = app / "build/outputs/apk/standard/debug/android_debug.apk"
-        with zipfile.ZipFile(apk) as archive:
-            names = archive.namelist()
-            self.assertEqual(
-                ["assets/FoundryJava.foundryextension"],
-                sorted(name for name in names if name.endswith("FoundryJava.foundryextension")),
-            )
-            self.assertIn("assets/foundry_java/registry-index-v2.txt", names)
-            self.assertEqual(
-                ["lib/arm64-v8a/libfoundry_java.so"],
-                sorted(name for name in names if name.endswith("/libfoundry_java.so")),
-            )
-            self.assertEqual(
-                ["lib/arm64-v8a/libfoundry_android.so"],
-                sorted(name for name in names if name.endswith("/libfoundry_android.so")),
-            )
-
-    def _build_twice(
-        self,
-        app: Path,
-        properties: dict[str, str],
-    ) -> tuple[subprocess.CompletedProcess[str], subprocess.CompletedProcess[str]]:
-        first = self._run_app(app, properties, "assembleStandardDebug")
-        if first.returncode != 0:
-            self.fail(first.stdout + first.stderr)
-        generated = app / "build/generated/assets/generateStandardDebugFoundryJavaRegistry"
-        before = {
-            path.relative_to(generated).as_posix(): path.read_bytes() for path in generated.rglob("*") if path.is_file()
-        }
-        second = self._run_app(app, properties, "assembleStandardDebug")
-        after = {
-            path.relative_to(generated).as_posix(): path.read_bytes() for path in generated.rglob("*") if path.is_file()
-        }
-        self.assertEqual(before, after)
-        return first, second
-
-    def test_exact_local_inputs(self) -> None:
-        app = self._prepare_app("local-app")
-        properties = {
-            "export_enabled_abis": "arm64-v8a",
+        requested_abis: tuple[str, ...],
+        *,
+        include_module: bool = True,
+    ) -> dict[str, str]:
+        artifacts = [self.binding_aar, self.runtime_jar]
+        if include_module:
+            artifacts.append(self.module_jar)
+        return {
+            "export_enabled_abis": "|".join(requested_abis),
             "foundry_java_gradle_plugin": str(self.plugin_jar),
             "foundry_java_gradle_plugin_kind": "local",
-            "foundry_java_local_artifacts": "|".join(
-                (str(self.binding_aar), str(self.runtime_jar), str(self.module_jar))
-            ),
+            "foundry_java_local_artifacts": "|".join(str(artifact) for artifact in artifacts),
             "foundry_java_registry_marker": "registry-index-v2",
         }
-        first, second = self._build_twice(app, properties)
-        self._assert_debug_outputs(app, first, second)
 
-    def test_exact_staged_maven_inputs(self) -> None:
-        repository, marker = self._stage_maven_graph()
-        app = self._prepare_app("maven-app")
-        properties = {
-            "export_enabled_abis": "arm64-v8a",
+    def _maven_properties(
+        self,
+        repository: Path,
+        marker: str,
+        requested_abis: tuple[str, ...],
+    ) -> dict[str, str]:
+        return {
+            "export_enabled_abis": "|".join(requested_abis),
             "foundry_java_gradle_plugin": marker,
             "foundry_java_gradle_plugin_kind": "maven",
             "foundry_java_maven_artifacts": "|".join(
@@ -1259,8 +1259,236 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
             "foundry_java_maven_repositories": repository.resolve().as_uri(),
             "foundry_java_registry_marker": "registry-index-v2",
         }
-        first, second = self._build_twice(app, properties)
-        self._assert_debug_outputs(app, first, second)
+
+    def _binding_configuration(self) -> bytes:
+        with zipfile.ZipFile(self.binding_aar) as binding:
+            classes_entries = [name for name in binding.namelist() if name == "classes.jar"]
+            self.assertEqual(["classes.jar"], classes_entries)
+            classes = binding.read("classes.jar")
+        with zipfile.ZipFile(io.BytesIO(classes)) as classes_jar:
+            configuration_entries = [name for name in classes_jar.namelist() if name == "FoundryJava.foundryextension"]
+            self.assertEqual(["FoundryJava.foundryextension"], configuration_entries)
+            return classes_jar.read("FoundryJava.foundryextension")
+
+    def _module_descriptor_evidence(self) -> tuple[str, str]:
+        descriptor = "META-INF/foundry-java/modules/demo.descriptor"
+        with zipfile.ZipFile(self.module_jar) as module:
+            descriptor_entries = [name for name in module.namelist() if name.endswith(".descriptor")]
+            self.assertEqual([descriptor], descriptor_entries)
+            descriptor_bytes = module.read(descriptor)
+        fixture = INTEGRATION_FIXTURE / "module/src/main/resources" / descriptor
+        self.assertEqual(fixture.read_bytes(), descriptor_bytes)
+        return descriptor, hashlib.sha256(descriptor_bytes).hexdigest()
+
+    def _assert_final_provider(
+        self,
+        app: Path,
+        *,
+        variant: str,
+        expected_application_id: str,
+    ) -> None:
+        merged_root = app / "build/intermediates/merged_manifest" / variant
+        manifests = sorted(merged_root.rglob("AndroidManifest.xml"))
+        self.assertEqual(1, len(manifests), manifests)
+        root = ET.parse(manifests[0]).getroot()
+        android = "{http://schemas.android.com/apk/res/android}"
+        provider_class = "games.cafecito.foundry.generated.FoundryGeneratedStartupProvider"
+        providers = [
+            provider for provider in root.findall(".//provider") if provider.get(f"{android}name") == provider_class
+        ]
+        self.assertEqual(1, len(providers))
+        provider = providers[0]
+        self.assertEqual(
+            f"{expected_application_id}.foundry-java-startup",
+            provider.get(f"{android}authorities"),
+        )
+        self.assertEqual("false", provider.get(f"{android}exported"))
+        self.assertEqual("100", provider.get(f"{android}initOrder"))
+        self.assertIsNone(provider.get(f"{android}process"))
+
+    def _assert_outputs(
+        self,
+        app: Path,
+        first: subprocess.CompletedProcess[str],
+        second: subprocess.CompletedProcess[str],
+        *,
+        requested_abis: tuple[str, ...],
+        expected_application_id: str,
+        build_type: str = "debug",
+    ) -> dict[str, object]:
+        first_output = first.stdout + first.stderr
+        second_output = second.stdout + second.stderr
+        self.assertEqual(0, first.returncode, first_output)
+        self.assertEqual(0, second.returncode, second_output)
+        self.assertIn("Reusing configuration cache.", second_output)
+
+        variant = f"Standard{build_type.capitalize()}"
+        variant_directory = f"standard{build_type.capitalize()}"
+        generated = app / f"build/generated/assets/generate{variant}FoundryJavaRegistry"
+        index = generated / "foundry_java/registry-index-v2.txt"
+        configuration = generated / "FoundryJava.foundryextension"
+        generated_java = app / f"build/generated/java/generate{variant}FoundryJavaRegistry"
+        bootstrap = generated_java / "games/cafecito/foundry/generated/FoundryGeneratedBootstrap.java"
+        startup_provider = generated_java / "games/cafecito/foundry/generated/FoundryGeneratedStartupProvider.java"
+        self.assertIn("module=demo|example.DemoExtension", index.read_text(encoding="utf-8"))
+        self.assertIn("example.DemoExtension.PROVIDER", bootstrap.read_text(encoding="utf-8"))
+        self.assertIn(
+            "return FoundryGeneratedBootstrap.bootstrap();",
+            startup_provider.read_text(encoding="utf-8"),
+        )
+        binding_configuration = self._binding_configuration()
+        self.assertEqual(binding_configuration, configuration.read_bytes())
+        descriptor_name, descriptor_sha256 = self._module_descriptor_evidence()
+
+        apk = app / f"build/outputs/apk/standard/{build_type}/android_{build_type}.apk"
+        evidence = load_device_acceptance_module().inspect_foundry_java_apk(
+            apk,
+            requested_abis=requested_abis,
+            enabled=True,
+        )
+        sorted_abis = tuple(sorted(requested_abis))
+        expected_bridges = tuple(f"lib/{abi}/libfoundry_java.so" for abi in sorted_abis)
+        expected_hosts = tuple(f"lib/{abi}/libfoundry_android.so" for abi in sorted_abis)
+        self.assertEqual(sorted_abis, evidence["requested_abis"])
+        self.assertEqual(expected_bridges, evidence["bridge_entries"])
+        self.assertEqual(expected_hosts, evidence["host_entries"])
+        self.assertEqual(
+            hashlib.sha256(binding_configuration).hexdigest(),
+            evidence["configuration_sha256"],
+        )
+        self.assertEqual(
+            hashlib.sha256(index.read_bytes()).hexdigest(),
+            evidence["registry_index_sha256"],
+        )
+
+        metadata = json.loads(
+            (app / f"build/outputs/apk/standard/{build_type}/output-metadata.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(expected_application_id, metadata["applicationId"])
+        self._assert_final_provider(
+            app,
+            variant=variant_directory,
+            expected_application_id=expected_application_id,
+        )
+
+        if build_type == "release":
+            mapping = app / "build/outputs/mapping/standardRelease/mapping.txt"
+            mapping_text = mapping.read_text(encoding="utf-8")
+            for retained_class in (
+                "games.cafecito.foundry.generated.FoundryGeneratedStartupProvider",
+                "games.cafecito.foundry.generated.FoundryGeneratedBootstrap",
+                "example.DemoExtension",
+            ):
+                self.assertIn(
+                    f"{retained_class} -> {retained_class}:",
+                    mapping_text,
+                )
+
+        return {
+            "requested_abis": evidence["requested_abis"],
+            "bridge_entries": evidence["bridge_entries"],
+            "host_entries": evidence["host_entries"],
+            "configuration_sha256": evidence["configuration_sha256"],
+            "registry_index_sha256": evidence["registry_index_sha256"],
+            "descriptor_name": descriptor_name,
+            "descriptor_sha256": descriptor_sha256,
+            "application_id": expected_application_id,
+        }
+
+    def _build_twice(
+        self,
+        app: Path,
+        properties: dict[str, str],
+        *,
+        build_type: str = "debug",
+    ) -> tuple[subprocess.CompletedProcess[str], subprocess.CompletedProcess[str]]:
+        variant = f"Standard{build_type.capitalize()}"
+        first = self._run_app(app, properties, f"assemble{variant}")
+        if first.returncode != 0:
+            self.fail(first.stdout + first.stderr)
+        generated_roots = {
+            "assets": app / f"build/generated/assets/generate{variant}FoundryJavaRegistry",
+            "java": app / f"build/generated/java/generate{variant}FoundryJavaRegistry",
+        }
+
+        def snapshot() -> dict[str, bytes]:
+            return {
+                f"{kind}/{path.relative_to(root).as_posix()}": path.read_bytes()
+                for kind, root in generated_roots.items()
+                for path in root.rglob("*")
+                if path.is_file()
+            }
+
+        before = snapshot()
+        second = self._run_app(app, properties, f"assemble{variant}")
+        after = snapshot()
+        self.assertEqual(before, after)
+        return first, second
+
+    def test_local_and_staged_maven_matrix_matches_final_apks(self) -> None:
+        requested_abis = ("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+        repository, marker = self._stage_maven_graph()
+        base_properties = {
+            "local": self._local_properties(requested_abis),
+            "maven": self._maven_properties(repository, marker, requested_abis),
+        }
+        for build_type, application_id in (
+            ("debug", "games.cafecito.foundry.game"),
+            ("release", "dev.example.foundryjava"),
+        ):
+            results: dict[str, dict[str, object]] = {}
+            for source_kind, source_properties in base_properties.items():
+                with self.subTest(build_type=build_type, source_kind=source_kind):
+                    app = self._prepare_app(f"{source_kind}-{build_type}")
+                    properties = dict(source_properties)
+                    if build_type == "release":
+                        properties["export_package_name"] = application_id
+                    first, second = self._build_twice(
+                        app,
+                        properties,
+                        build_type=build_type,
+                    )
+                    results[source_kind] = self._assert_outputs(
+                        app,
+                        first,
+                        second,
+                        requested_abis=requested_abis,
+                        expected_application_id=application_id,
+                        build_type=build_type,
+                    )
+            self.assertEqual(results["local"], results["maven"])
+
+        build = APP_BUILD.read_text(encoding="utf-8")
+        self.assertIn("minifyEnabled getFoundryJavaEnabled()", build)
+        self.assertNotIn("-keep class games.cafecito.foundry.**", build)
+
+    def test_zero_module_real_apk_is_rejected_by_final_inspector(self) -> None:
+        requested_abis = ("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+        app = self._prepare_app("zero-descriptor")
+        result = self._run_app(
+            app,
+            self._local_properties(requested_abis, include_module=False),
+            "assembleStandardDebug",
+        )
+        output = result.stdout + result.stderr
+        self.assertEqual(0, result.returncode, output)
+
+        generated_assets = app / "build/generated/assets/generateStandardDebugFoundryJavaRegistry"
+        generated_java = app / "build/generated/java/generateStandardDebugFoundryJavaRegistry"
+        self.assertFalse((generated_assets / "FoundryJava.foundryextension").exists())
+        self.assertFalse((generated_assets / "foundry_java/registry-index-v2.txt").exists())
+        self.assertFalse((generated_java / "games/cafecito/foundry/generated/FoundryGeneratedBootstrap.java").exists())
+        apk = app / "build/outputs/apk/standard/debug/android_debug.apk"
+        inspector = load_device_acceptance_module()
+        with self.assertRaisesRegex(
+            inspector.AcceptanceError,
+            "exactly one assets/FoundryJava.foundryextension; found 0",
+        ):
+            inspector.inspect_foundry_java_apk(
+                apk,
+                requested_abis=requested_abis,
+                enabled=True,
+            )
 
 
 class FoundryJavaExporterContractTests(unittest.TestCase):
