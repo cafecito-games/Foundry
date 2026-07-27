@@ -758,10 +758,25 @@ public:
 	};
 
 	struct EnumNode : public Node {
+		// A payload field belonging to a tagged-union case, e.g. `x: int` in `Move(x: int, y: int)`.
+		// Names are required on every payload field in v1.
+		struct PayloadField {
+			IdentifierNode *identifier = nullptr;
+			TypeNode *type = nullptr;
+			int line = 0;
+			int start_column = 0;
+			int end_column = 0;
+#ifdef TOOLS_ENABLED
+			MemberDocData doc_data;
+#endif // TOOLS_ENABLED
+		};
+
 		struct Value {
 			IdentifierNode *identifier = nullptr;
 			ExpressionNode *custom_value = nullptr;
 			EnumNode *parent_enum = nullptr;
+			// Payload fields for a tagged-union case; empty for a payload-less case.
+			Vector<PayloadField> payload_fields;
 			int index = -1;
 			bool resolved = false;
 			int64_t value = 0;
@@ -771,6 +786,10 @@ public:
 #ifdef TOOLS_ENABLED
 			MemberDocData doc_data;
 #endif // TOOLS_ENABLED
+
+			bool has_payload() const {
+				return !payload_fields.is_empty();
+			}
 		};
 
 		IdentifierNode *identifier = nullptr;
@@ -778,6 +797,9 @@ public:
 		Vector<FunctionNode *> functions;
 		HashMap<StringName, int> functions_indices;
 		Variant dictionary;
+		// True iff any case declares a payload, i.e. this enum is a tagged union. Tags are then
+		// ordinal by declaration order and explicit `= value` on any case is a parser error.
+		bool is_tagged_union = false;
 #ifdef TOOLS_ENABLED
 		MemberDocData doc_data;
 #endif // TOOLS_ENABLED
@@ -2025,6 +2047,7 @@ private:
 	TupleNode *parse_tuple(const DeclarationModifiers &p_modifiers);
 	void finalize_enum_function(EnumNode *p_enum, FunctionNode *p_function,
 			List<AnnotationNode *> &p_annotations, int &r_min_doc_line, bool p_store);
+	void parse_enum_case_payload(EnumNode::Value &r_value);
 	ParameterNode *parse_parameter(bool p_allow_annotations = true);
 	FunctionNode *parse_function_declaration(const DeclarationModifiers &p_modifiers);
 	bool parse_function_signature(FunctionNode *p_function, SuiteNode *p_body, const String &p_type, int p_signature_start);
