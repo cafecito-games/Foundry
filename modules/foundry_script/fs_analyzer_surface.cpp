@@ -1137,17 +1137,27 @@ void FSAnalyzer::resolve_class_member(FSParser::ClassNode *p_class, int p_index,
 				resolve_variable(member.variable, false);
 				resolve_pending_lambda_bodies();
 
-				// Tuples have no inspector representation, so exporting one is rejected before the
-				// export annotation runs (it would otherwise report the erased Array type).
-				const bool rejects_export = member.variable->get_datatype().kind == FSParser::DataType::TUPLE;
+				// Tuples and tagged unions have no inspector representation, so exporting either is
+				// rejected before the export annotation runs (it would otherwise report the erased
+				// Array type).
+				const FSParser::DataType member_variable_datatype = member.variable->get_datatype();
+				const bool rejects_tuple_export = member_variable_datatype.is_tuple();
+				const bool rejects_tagged_union_export = member_variable_datatype.is_tagged_union_type();
+				const bool rejects_export = rejects_tuple_export || rejects_tagged_union_export;
 
 				// Apply annotations.
 				for (FSParser::AnnotationNode *&E : member.variable->annotations) {
 					if (E->name != SNAME("@warning_ignore")) {
 						if (rejects_export && String(E->name).begins_with("@export")) {
-							push_error(vformat(R"(Cannot export a tuple-typed property: "%s" has type "%s".)",
-											   member.variable->identifier->name, member.variable->get_datatype().to_string()),
-									E);
+							if (rejects_tuple_export) {
+								push_error(vformat(R"(Cannot export a tuple-typed property: "%s" has type "%s".)",
+												   member.variable->identifier->name, member_variable_datatype.to_string()),
+										E);
+							} else {
+								push_error(vformat(R"(Cannot export a tagged-union-typed property: "%s" has type "%s".)",
+												   member.variable->identifier->name, member_variable_datatype.enum_type),
+										E);
+							}
 							continue;
 						}
 						resolve_annotation(E, FSParser::AnnotationDeclarationNode::TARGET_VARIABLE);
