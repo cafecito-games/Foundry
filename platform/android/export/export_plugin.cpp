@@ -2049,6 +2049,79 @@ static Error _foundry_java_scan_archive(const String &p_path, bool &r_contains_h
 	return OK;
 }
 
+Error EditorExportPlatformAndroid::_inspect_foundry_java_artifact(const String &p_path, const Vector<ABI> &p_enabled_abis, int p_export_format, String &r_error) const {
+	const String artifact_kind = p_export_format == EXPORT_FORMAT_AAB ? "AAB" : "APK";
+	const String root = p_export_format == EXPORT_FORMAT_AAB ? "base/" : "";
+	const String configuration = root + "assets/FoundryJava.foundryextension";
+	const String registry_index = root + "assets/foundry_java/registry-index-v2.txt";
+
+	Ref<FileAccess> artifact_file;
+	zlib_filefunc_def io = zipio_create_io(&artifact_file);
+	unzFile artifact = unzOpen2(p_path.utf8().get_data(), &io);
+	if (!artifact) {
+		r_error = vformat(TTR("Unable to inspect final Foundry-Java %s: archive could not be opened."), artifact_kind);
+		return ERR_FILE_CORRUPT;
+	}
+
+	int configuration_count = 0;
+	int registry_index_count = 0;
+	Vector<String> bridge_entries;
+	int result = unzGoToFirstFile(artifact);
+	while (result == UNZ_OK) {
+		unz_file_info64 info;
+		String entry;
+		if (foundry_unzip_get_current_file_info(artifact, info, entry) != UNZ_OK) {
+			r_error = vformat(TTR("Unable to inspect final Foundry-Java %s: archive entry metadata could not be read."), artifact_kind);
+			unzClose(artifact);
+			return ERR_FILE_CORRUPT;
+		}
+		if (entry == configuration) {
+			configuration_count++;
+		}
+		if (entry == registry_index) {
+			registry_index_count++;
+		}
+		if (entry.ends_with("/libfoundry_java.so")) {
+			bridge_entries.push_back(entry);
+		}
+		result = unzGoToNextFile(artifact);
+	}
+	if (result != UNZ_END_OF_LIST_OF_FILE) {
+		r_error = vformat(TTR("Unable to inspect final Foundry-Java %s: archive traversal failed."), artifact_kind);
+		unzClose(artifact);
+		return ERR_FILE_CORRUPT;
+	}
+	if (unzClose(artifact) != UNZ_OK) {
+		r_error = vformat(TTR("Unable to inspect final Foundry-Java %s: archive could not be closed cleanly."), artifact_kind);
+		return ERR_FILE_CORRUPT;
+	}
+
+	if (configuration_count != 1) {
+		r_error = vformat(TTR("Final Foundry-Java %s must contain exactly one %s; found %d."), artifact_kind, configuration, configuration_count);
+		return ERR_INVALID_DATA;
+	}
+	if (registry_index_count != 1) {
+		r_error = vformat(TTR("Final Foundry-Java %s must contain exactly one %s; found %d."), artifact_kind, registry_index, registry_index_count);
+		return ERR_INVALID_DATA;
+	}
+
+	Vector<String> expected_bridges;
+	for (const ABI &abi : p_enabled_abis) {
+		expected_bridges.push_back(root + "lib/" + abi.abi + "/libfoundry_java.so");
+	}
+	bridge_entries.sort();
+	expected_bridges.sort();
+	if (bridge_entries != expected_bridges) {
+		r_error = vformat(
+				TTR("Final Foundry-Java %s bridge entries differ from the requested ABI set: expected [%s], found [%s]."),
+				artifact_kind,
+				String(", ").join(expected_bridges),
+				String(", ").join(bridge_entries));
+		return ERR_INVALID_DATA;
+	}
+	return OK;
+}
+
 Error EditorExportPlatformAndroid::_get_foundry_java_export_config(const EditorExportPreset *p_preset, FoundryJavaExportConfig &r_config, String &r_error) const {
 	static const String ENABLED_OPTION = "gradle_build/foundry_java/enabled";
 	static const String USE_GRADLE_OPTION = "gradle_build/use_gradle_build";
@@ -4190,6 +4263,15 @@ Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportP
 			return ERR_CANT_CREATE;
 		} else {
 			print_verbose(copy_binary_output);
+		}
+
+		if (foundry_java.enabled) {
+			String final_artifact_error;
+			err = _inspect_foundry_java_artifact(p_path, enabled_abis, export_format, final_artifact_error);
+			if (err != OK) {
+				add_message(EXPORT_MESSAGE_ERROR, TTR("Export"), final_artifact_error);
+				return err;
+			}
 		}
 
 		print_verbose("Successfully completed Android gradle build.");

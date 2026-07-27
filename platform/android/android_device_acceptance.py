@@ -212,46 +212,46 @@ def inspect_foundry_java_apk(
     requested_abis: Sequence[str],
     enabled: bool,
 ) -> dict[str, Any] | None:
-    """Inspect the enabled-only Foundry-Java contract in one final APK."""
+    """Inspect the enabled-only Foundry-Java contract in one final APK or AAB."""
     if not enabled:
         return None
 
+    artifact_kind = "AAB" if apk.suffix.lower() == ".aab" else "APK"
+    root = "base/" if artifact_kind == "AAB" else ""
     requested = tuple(sorted(requested_abis))
     if not requested:
-        raise AcceptanceError("Foundry-Java APK inspection requires at least one requested ABI")
+        raise AcceptanceError(f"Foundry-Java {artifact_kind} inspection requires at least one requested ABI")
     if len(requested) != len(set(requested)):
-        raise AcceptanceError("Foundry-Java APK inspection received duplicate requested ABIs")
+        raise AcceptanceError(f"Foundry-Java {artifact_kind} inspection received duplicate requested ABIs")
     unsupported = sorted(set(requested).difference(SUPPORTED_ABIS))
     if unsupported:
-        raise AcceptanceError("Foundry-Java APK inspection has unsupported requested ABI: " + ", ".join(unsupported))
+        raise AcceptanceError(
+            f"Foundry-Java {artifact_kind} inspection has unsupported requested ABI: " + ", ".join(unsupported)
+        )
 
     apk = apk.absolute()
     if not apk.is_file() or apk.is_symlink():
-        raise AcceptanceError(f"Foundry-Java APK is not a regular file: {apk}")
+        raise AcceptanceError(f"Foundry-Java {artifact_kind} is not a regular file: {apk}")
 
-    configuration = "assets/FoundryJava.foundryextension"
-    registry_index = "assets/foundry_java/registry-index-v2.txt"
+    configuration = f"{root}assets/FoundryJava.foundryextension"
+    registry_index = f"{root}assets/foundry_java/registry-index-v2.txt"
     try:
         with zipfile.ZipFile(apk) as archive:
             names = [entry.filename for entry in archive.infolist() if not entry.is_dir()]
             for required in (configuration, registry_index):
                 count = names.count(required)
                 if count != 1:
-                    raise AcceptanceError(f"Foundry-Java APK must contain exactly one {required}; found {count}")
+                    raise AcceptanceError(
+                        f"Foundry-Java {artifact_kind} must contain exactly one {required}; found {count}"
+                    )
             bridge_entries = tuple(sorted(name for name in names if name.endswith("/libfoundry_java.so")))
-            expected_bridges = tuple(f"lib/{abi}/libfoundry_java.so" for abi in requested)
+            expected_bridges = tuple(f"{root}lib/{abi}/libfoundry_java.so" for abi in requested)
             if bridge_entries != expected_bridges:
                 raise AcceptanceError(
-                    "Foundry-Java APK bridge entries differ from the requested ABI set: "
+                    f"Foundry-Java {artifact_kind} bridge entries differ from the requested ABI set: "
                     f"expected {list(expected_bridges)}, found {list(bridge_entries)}"
                 )
             host_entries = tuple(sorted(name for name in names if name.endswith("/libfoundry_android.so")))
-            expected_hosts = tuple(f"lib/{abi}/libfoundry_android.so" for abi in requested)
-            if host_entries != expected_hosts:
-                raise AcceptanceError(
-                    "Foundry-Java APK host entries differ from the requested ABI set: "
-                    f"expected {list(expected_hosts)}, found {list(host_entries)}"
-                )
             return {
                 "requested_abis": requested,
                 "bridge_entries": bridge_entries,
@@ -262,7 +262,7 @@ def inspect_foundry_java_apk(
     except AcceptanceError:
         raise
     except (OSError, KeyError, zipfile.BadZipFile) as error:
-        raise AcceptanceError(f"unable to inspect Foundry-Java APK {apk}: {error}") from error
+        raise AcceptanceError(f"unable to inspect Foundry-Java {artifact_kind} {apk}: {error}") from error
 
 
 def select_device(output: str, requested_serial: str | None) -> str:

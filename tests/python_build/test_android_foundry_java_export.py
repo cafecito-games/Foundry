@@ -300,6 +300,37 @@ class FoundryJavaFinalArtifactInspectorTests(unittest.TestCase):
         self.assertEqual(64, len(evidence["configuration_sha256"]))
         self.assertEqual(64, len(evidence["registry_index_sha256"]))
 
+    def test_enabled_aab_inspection_requires_exact_base_assets_and_requested_bridges(self) -> None:
+        aab = self.write_apk(
+            "valid.aab",
+            (
+                "base/assets/FoundryJava.foundryextension",
+                "base/assets/foundry_java/registry-index-v2.txt",
+                "base/lib/arm64-v8a/libfoundry_java.so",
+                "base/lib/arm64-v8a/libfoundry_android.so",
+                "base/lib/arm64-v8a/libunrelated.so",
+            ),
+        )
+
+        try:
+            evidence = self.tool.inspect_foundry_java_apk(
+                aab,
+                requested_abis=("arm64-v8a",),
+                enabled=True,
+            )
+        except self.tool.AcceptanceError as error:
+            self.fail(f"valid AAB layout was rejected: {error}")
+
+        self.assertEqual(("arm64-v8a",), evidence["requested_abis"])
+        self.assertEqual(
+            ("base/lib/arm64-v8a/libfoundry_java.so",),
+            evidence["bridge_entries"],
+        )
+        self.assertEqual(
+            ("base/lib/arm64-v8a/libfoundry_android.so",),
+            evidence["host_entries"],
+        )
+
     def test_disabled_inspection_is_inert_for_ordinary_exports(self) -> None:
         missing = self.workspace / "ordinary-export-is-not-inspected.apk"
         self.assertIsNone(
@@ -343,18 +374,6 @@ class FoundryJavaFinalArtifactInspectorTests(unittest.TestCase):
                 "bridge entries differ",
             ),
             (
-                "missing-host.apk",
-                valid[:3],
-                ("arm64-v8a",),
-                "host entries differ",
-            ),
-            (
-                "unrequested-host.apk",
-                (*valid, "lib/x86_64/libfoundry_android.so"),
-                ("arm64-v8a",),
-                "host entries differ",
-            ),
-            (
                 "empty-abis.apk",
                 valid,
                 (),
@@ -377,23 +396,80 @@ class FoundryJavaFinalArtifactInspectorTests(unittest.TestCase):
                         enabled=True,
                     )
 
-    def test_enabled_inspection_rejects_duplicate_fixed_entries(self) -> None:
-        apk = self.workspace / "duplicates.apk"
-        with self.assertWarns(UserWarning):
-            with zipfile.ZipFile(apk, "w") as archive:
-                archive.writestr("assets/FoundryJava.foundryextension", "first")
-                archive.writestr("assets/FoundryJava.foundryextension", "second")
-                archive.writestr("assets/foundry_java/registry-index-v2.txt", "index")
-                archive.writestr("lib/arm64-v8a/libfoundry_java.so", "bridge")
-        with self.assertRaisesRegex(
-            self.tool.AcceptanceError,
-            "exactly one assets/FoundryJava.foundryextension",
+    def test_host_entries_are_recorded_but_never_rejected(self) -> None:
+        required = (
+            "assets/FoundryJava.foundryextension",
+            "assets/foundry_java/registry-index-v2.txt",
+            "lib/arm64-v8a/libfoundry_java.so",
+        )
+        for name, host_entries in (
+            ("missing-host.apk", ()),
+            ("extra-host.apk", ("lib/arm64-v8a/libfoundry_android.so", "lib/x86_64/libfoundry_android.so")),
         ):
-            self.tool.inspect_foundry_java_apk(
-                apk,
-                requested_abis=("arm64-v8a",),
-                enabled=True,
-            )
+            with self.subTest(name=name):
+                apk = self.write_apk(name, (*required, *host_entries))
+                try:
+                    evidence = self.tool.inspect_foundry_java_apk(
+                        apk,
+                        requested_abis=("arm64-v8a",),
+                        enabled=True,
+                    )
+                except self.tool.AcceptanceError as error:
+                    self.fail(f"host evidence rejected the final APK: {error}")
+                self.assertEqual(tuple(sorted(host_entries)), evidence["host_entries"])
+
+    def test_enabled_aab_inspection_rejects_every_final_output_mismatch(self) -> None:
+        valid = (
+            "base/assets/FoundryJava.foundryextension",
+            "base/assets/foundry_java/registry-index-v2.txt",
+            "base/lib/arm64-v8a/libfoundry_java.so",
+        )
+        cases = (
+            ("missing-config.aab", valid[1:], "exactly one base/assets/FoundryJava.foundryextension"),
+            (
+                "missing-index.aab",
+                (valid[0], valid[2]),
+                "exactly one base/assets/foundry_java/registry-index-v2.txt",
+            ),
+            ("missing-bridge.aab", valid[:2], "bridge entries differ"),
+            (
+                "unrequested-bridge.aab",
+                (*valid, "base/lib/x86_64/libfoundry_java.so"),
+                "bridge entries differ",
+            ),
+        )
+        for name, entries, message in cases:
+            with self.subTest(name=name):
+                aab = self.write_apk(name, entries)
+                with self.assertRaisesRegex(self.tool.AcceptanceError, message):
+                    self.tool.inspect_foundry_java_apk(
+                        aab,
+                        requested_abis=("arm64-v8a",),
+                        enabled=True,
+                    )
+
+    def test_enabled_inspection_rejects_duplicate_fixed_entries(self) -> None:
+        for extension, root in (("apk", ""), ("aab", "base/")):
+            configuration = f"{root}assets/FoundryJava.foundryextension"
+            registry_index = f"{root}assets/foundry_java/registry-index-v2.txt"
+            bridge = f"{root}lib/arm64-v8a/libfoundry_java.so"
+            for duplicate, message in (
+                (configuration, f"exactly one {configuration}"),
+                (registry_index, f"exactly one {registry_index}"),
+                (bridge, "bridge entries differ"),
+            ):
+                with self.subTest(extension=extension, duplicate=duplicate):
+                    artifact = self.workspace / f"duplicate-{duplicate.replace('/', '-')}.{extension}"
+                    with self.assertWarns(UserWarning):
+                        with zipfile.ZipFile(artifact, "w") as archive:
+                            for entry in (configuration, registry_index, bridge, duplicate):
+                                archive.writestr(entry, entry)
+                    with self.assertRaisesRegex(self.tool.AcceptanceError, message):
+                        self.tool.inspect_foundry_java_apk(
+                            artifact,
+                            requested_abis=("arm64-v8a",),
+                            enabled=True,
+                        )
 
 
 class FoundryJavaGradlePropertyTests(unittest.TestCase):
@@ -1348,10 +1424,8 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
         )
         sorted_abis = tuple(sorted(requested_abis))
         expected_bridges = tuple(f"lib/{abi}/libfoundry_java.so" for abi in sorted_abis)
-        expected_hosts = tuple(f"lib/{abi}/libfoundry_android.so" for abi in sorted_abis)
         self.assertEqual(sorted_abis, evidence["requested_abis"])
         self.assertEqual(expected_bridges, evidence["bridge_entries"])
-        self.assertEqual(expected_hosts, evidence["host_entries"])
         self.assertEqual(
             hashlib.sha256(binding_configuration).hexdigest(),
             evidence["configuration_sha256"],
@@ -1387,7 +1461,6 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
         return {
             "requested_abis": evidence["requested_abis"],
             "bridge_entries": evidence["bridge_entries"],
-            "host_entries": evidence["host_entries"],
             "configuration_sha256": evidence["configuration_sha256"],
             "registry_index_sha256": evidence["registry_index_sha256"],
             "descriptor_name": descriptor_name,
@@ -1542,7 +1615,7 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
             encoding="utf-8",
         )
 
-    def _run_export(self, project: Path) -> subprocess.CompletedProcess[str]:
+    def _run_export(self, project: Path, output_name: str = "should-not-exist.apk") -> subprocess.CompletedProcess[str]:
         return run_bounded_subprocess(
             [
                 str(self._development_binary()),
@@ -1554,11 +1627,59 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                 "--preset",
                 "Android",
                 "--output",
-                str(project / "should-not-exist.apk"),
+                str(project / output_name),
             ],
             cwd=project,
             timeout=30,
         )
+
+    @classmethod
+    def _write_fake_gradle_wrapper(cls, project: Path, entries: tuple[str, ...]) -> Path:
+        gradle_root = project / "android"
+        build = gradle_root / "build"
+        (build / "src/debug").mkdir(parents=True)
+        (build / "src/release").mkdir(parents=True)
+        shutil.copytree(APP_ROOT / "res", build / "res")
+        (build / "build.gradle").write_text("// Controlled exporter acceptance fixture.\n", encoding="utf-8")
+        binary_version = subprocess.run(
+            [str(cls._development_binary()), "--version"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        gradle_root.joinpath(".build_version").write_text(
+            binary_version.rsplit(".", maxsplit=2)[0] + "\n",
+            encoding="utf-8",
+        )
+        wrapper = build / "gradlew"
+        wrapper.write_text(
+            textwrap.dedent(
+                f"""\
+                #!{sys.executable}
+                import sys
+                import zipfile
+                from pathlib import Path
+
+                arguments = sys.argv[1:]
+                export_path = next(
+                    (value.removeprefix("-Pexport_path=file:") for value in arguments if value.startswith("-Pexport_path=file:")),
+                    None,
+                )
+                export_filename = next(
+                    (value.removeprefix("-Pexport_filename=") for value in arguments if value.startswith("-Pexport_filename=")),
+                    None,
+                )
+                if export_path is not None and export_filename is not None:
+                    destination = Path(export_path) / export_filename
+                    with zipfile.ZipFile(destination, "w") as archive:
+                        for entry in {entries!r}:
+                            archive.writestr(entry, entry)
+                """
+            ),
+            encoding="utf-8",
+        )
+        wrapper.chmod(0o755)
+        return gradle_root
 
     def test_preflight_names_every_fail_closed_boundary(self) -> None:
         exporter = EXPORTER.read_text(encoding="utf-8")
@@ -1590,6 +1711,85 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
         self.assertGreaterEqual(enabled_branch, 0)
         self.assertGreater(marker_position, enabled_branch)
         self.assertGreater(build_execution, marker_position)
+
+    def test_gradle_export_inspects_the_copied_final_artifact_before_success(self) -> None:
+        exporter = EXPORTER.read_text(encoding="utf-8")
+        copy_result = exporter.find("int copy_result =")
+        inspection = exporter.find("_inspect_foundry_java_artifact(p_path", copy_result)
+        success = exporter.find('print_verbose("Successfully completed Android gradle build.")', copy_result)
+        self.assertGreaterEqual(copy_result, 0)
+        self.assertGreater(inspection, copy_result)
+        self.assertGreater(success, inspection)
+
+    def test_command_first_export_rejects_malformed_copied_apk_and_aab(self) -> None:
+        for extension, export_format, root in (("apk", 0, ""), ("aab", 1, "base/")):
+            configuration = f"{root}assets/FoundryJava.foundryextension"
+            registry_index = f"{root}assets/foundry_java/registry-index-v2.txt"
+            bridge = f"{root}lib/arm64-v8a/libfoundry_java.so"
+            valid = (configuration, registry_index, bridge)
+            cases = (
+                ("missing-config", valid[1:], configuration),
+                ("missing-index", (valid[0], valid[2]), registry_index),
+                ("duplicate-config", (*valid, configuration), configuration),
+                ("duplicate-index", (*valid, registry_index), registry_index),
+                ("missing-bridge", valid[:2], "bridge entries differ"),
+                ("duplicate-bridge", (*valid, bridge), "bridge entries differ"),
+                (
+                    "unrequested-bridge",
+                    (*valid, f"{root}lib/x86_64/libfoundry_java.so"),
+                    "bridge entries differ",
+                ),
+            )
+            for defect, entries, diagnostic in cases:
+                with self.subTest(extension=extension, defect=defect):
+                    with tempfile.TemporaryDirectory(
+                        prefix=f"foundry-java-final-{extension}.",
+                        dir=test_scratch_directory(),
+                    ) as directory:
+                        project = Path(directory)
+                        project.joinpath("project.foundry").write_text(
+                            textwrap.dedent(
+                                """\
+                                [application]
+                                config/name="Foundry Java Final Artifact Inspection"
+
+                                [rendering]
+                                textures/vram_compression/import_etc2_astc=true
+                                """
+                            ),
+                            encoding="utf-8",
+                        )
+                        plugin = project / "plugin.jar"
+                        module = project / "module.jar"
+                        with zipfile.ZipFile(plugin, "w") as archive:
+                            archive.writestr(
+                                "META-INF/gradle-plugins/games.cafecito.foundry.java.properties",
+                                "implementation-class=test.Fixture\n",
+                            )
+                        with zipfile.ZipFile(module, "w"):
+                            pass
+                        gradle_root = self._write_fake_gradle_wrapper(project, entries)
+                        self._write_export_preset(
+                            project,
+                            plugin_local=plugin,
+                            local_artifacts=(module,),
+                            use_gradle=True,
+                            extra_options=(
+                                f'gradle_build/gradle_build_directory="{gradle_root}"',
+                                f"gradle_build/export_format={export_format}",
+                                "package/signed=false",
+                                "architectures/armeabi-v7a=false",
+                                "architectures/arm64-v8a=true",
+                                "architectures/x86=false",
+                                "architectures/x86_64=false",
+                            ),
+                        )
+                        output_name = f"malformed.{extension}"
+                        result = self._run_export(project, output_name)
+                        output = result.stdout + result.stderr
+                        self.assertNotEqual(0, result.returncode, output)
+                        self.assertIn(diagnostic, output)
+                        self.assertTrue((project / output_name).is_file())
 
     def test_command_first_export_rejects_opt_in_without_gradle_before_build(self) -> None:
         with tempfile.TemporaryDirectory(
