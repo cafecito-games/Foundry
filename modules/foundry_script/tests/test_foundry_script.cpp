@@ -231,13 +231,18 @@ TEST_CASE("[Modules][FoundryScript] Tokenizer treats whitespace before a tuple i
 }
 
 TEST_CASE("[Modules][FoundryScript] Tokenizer keeps a tuple index inside a suppressed multiline newline") {
-	// Inside `(...)`/`[...]`/`{...}` the parser puts the tokenizer in multiline mode so physical
-	// newlines are not surfaced as `NEWLINE` tokens. `newline()` must not clobber `last_token`
-	// with the suppressed newline in that mode, or a tuple index split across a line inside
-	// grouping (`t` on one line, `.0` on the next) would wrongly disambiguate as a float.
+	// Inside `(...)`/`[...]`/`{...}` the parser puts the tokenizer in multiline mode (right after
+	// scanning the opening bracket, matching `FSParser::parse_precedence`) so physical newlines
+	// are not surfaced as `NEWLINE` tokens. `newline()` must not clobber `last_token` with the
+	// suppressed newline while genuinely nested inside a bracket, or a tuple index split across a
+	// line inside grouping (`t` on one line, `.0` on the next) would wrongly disambiguate as a
+	// float.
 	FSTokenizerText tokenizer;
+	tokenizer.set_source_code("(\nt\n.0\n)");
+
+	FSTokenizer::Token open = tokenizer.scan();
+	CHECK(open.type == FSTokenizer::Token::PARENTHESIS_OPEN);
 	tokenizer.set_multiline_mode(true);
-	tokenizer.set_source_code("t\n.0");
 
 	FSTokenizer::Token identifier = tokenizer.scan();
 	CHECK(identifier.type == FSTokenizer::Token::IDENTIFIER);
@@ -249,6 +254,37 @@ TEST_CASE("[Modules][FoundryScript] Tokenizer keeps a tuple index inside a suppr
 	CHECK(index.type == FSTokenizer::Token::LITERAL);
 	CHECK(index.literal.get_type() == Variant::INT);
 	CHECK_EQ(int64_t(index.literal), 0);
+}
+
+TEST_CASE("[Modules][FoundryScript] Compiled token buffer resets sign disambiguation at statement newlines") {
+	// FSTokenizerBuffer::parse_code_string forces multiline mode on for the whole file to omit
+	// NEWLINE tokens from the compiled buffer, even across ordinary statement boundaries (unlike
+	// the parser, which only enables it while genuinely nested inside a bracket). A signed number
+	// that starts a new statement/line, with no other token in between, must still lex as a
+	// single signed literal there, not as a binary operator continuing the previous line's value.
+	Vector<uint8_t> buffer = FSTokenizerBuffer::parse_code_string("1\n-2\n", FSTokenizerBuffer::COMPRESS_NONE);
+
+	FSTokenizerBuffer decoder;
+	CHECK_EQ(decoder.set_code_buffer(buffer), OK);
+
+	Vector<FSTokenizer::Token> literals;
+	FSTokenizer::Token token = decoder.scan();
+	while (token.type != FSTokenizer::Token::TK_EOF) {
+		if (token.type == FSTokenizer::Token::LITERAL) {
+			literals.push_back(token);
+		} else {
+			// A `MINUS` token here would mean `1` and `-2` were merged into a single
+			// `1 - 2` binary expression instead of staying two separate statements.
+			CHECK_MESSAGE(token.type != FSTokenizer::Token::MINUS, "sign must not lex as a binary operator across a statement boundary");
+		}
+		token = decoder.scan();
+	}
+
+	CHECK_EQ(literals.size(), 2);
+	if (literals.size() == 2) {
+		CHECK_EQ(int64_t(literals[0].literal), 1);
+		CHECK_EQ(int64_t(literals[1].literal), -2);
+	}
 }
 
 TEST_CASE("[Modules][FoundryScript] Tokenizer treats a tuple index after a uses-spelled identifier as member access") {

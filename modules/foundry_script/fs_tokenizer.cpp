@@ -722,12 +722,19 @@ void FSTokenizerText::newline(bool p_make_token) {
 		newline.end_column = column;
 		pending_newline = true;
 		last_newline = newline;
-		if (!multiline_mode) {
-			// In multiline mode this NEWLINE is never actually surfaced to the caller (`scan()`
-			// silently skips it), so it must not overwrite `last_token`: doing so would corrupt
-			// the `+`/`-`/tuple-index disambiguation that inspects the last real token, treating
-			// a value on the previous physical line (inside `(...)`/`[...]`/`{...}`) as if it
-			// could no longer precede a binary operator.
+		if (paren_stack.is_empty()) {
+			// This newline is not nested inside an unclosed `(`/`[`/`{`, so it really does end a
+			// statement/line and must reset `last_token` for the `+`/`-`/tuple-index
+			// disambiguation that inspects the last real token.
+			//
+			// Deliberately keyed on `paren_stack`, not `multiline_mode`: the parser only sets
+			// `multiline_mode` while inside brackets, but `FSTokenizerBuffer::parse_code_string`
+			// forces `multiline_mode` on for an entire file to omit `NEWLINE` tokens from the
+			// compiled buffer, even across ordinary statement boundaries. Gating on
+			// `multiline_mode` there would leave `last_token` stuck on the previous statement's
+			// last token forever. `paren_stack` reflects the tokenizer's own bracket nesting
+			// regardless of why layout tokens are being suppressed, so it stays correct in both
+			// the parser's per-bracket toggling and the buffer exporter's whole-file toggling.
 			last_token = newline;
 		}
 	}
