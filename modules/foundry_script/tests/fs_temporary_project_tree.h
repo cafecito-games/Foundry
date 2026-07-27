@@ -42,6 +42,11 @@
 #include <csignal>
 #endif // UNIX_ENABLED
 
+#ifdef WINDOWS_ENABLED
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif // WINDOWS_ENABLED
+
 namespace FSTests {
 
 // Builds a throwaway project tree on disk under the shared test scratch path and removes it on
@@ -166,21 +171,34 @@ private:
 	// the sole reason to delete.
 	static constexpr uint64_t STALE_SCRATCH_AGE_SECONDS = 12 * 60 * 60;
 
-	// True only when POSIX can prove `p_pid` no longer names a running process. Unlike
-	// `OS::is_process_running()` (implemented via `waitpid`, which only reports on the
-	// caller's own child processes), `kill(pid, 0)` works for any process on the system:
-	// it fails with `ESRCH` exactly when no such process exists. Every other outcome
-	// (the process exists, or exists but is owned by another user) must be treated as
-	// "still alive" so a live but unrelated sibling `foundry` test process is never
-	// mistaken for dead.
+	// True only when the platform can prove `p_pid` no longer names a running process, for
+	// any process on the system, not just this one's own children. `OS::is_process_running()`
+	// cannot be reused here: on Unix it is implemented via `waitpid` and on Windows it looks
+	// up the engine's own child-process table, so both only answer for processes this
+	// engine instance itself started. A live but unrelated sibling `foundry` test process
+	// must never be mistaken for dead, so every ambiguous outcome (permission denied, an
+	// unsupported platform) is treated as "still alive".
 	static bool process_is_definitely_dead(int64_t p_pid) {
 #ifdef UNIX_ENABLED
+		// `kill(pid, 0)` sends no signal; it only probes whether `pid` exists and is
+		// visible to this user. `ESRCH` is the only outcome that proves the process is
+		// gone; `EPERM` means it exists but is owned by someone else.
 		return ::kill((pid_t)p_pid, 0) != 0 && errno == ESRCH;
+#elif defined(WINDOWS_ENABLED)
+		// `OpenProcess` fails for a PID no process on the system currently holds, which is
+		// enough on its own to prove `p_pid` is gone (unlike `GetExitCodeProcess`, this
+		// does not require having started or otherwise tracked the process).
+		HANDLE process_handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, (DWORD)p_pid);
+		if (process_handle == nullptr) {
+			return GetLastError() == ERROR_INVALID_PARAMETER;
+		}
+		CloseHandle(process_handle);
+		return false;
 #else
 		// Without a reliable cross-process liveness check, never claim a directory is
 		// safe to delete based on age alone.
 		return false;
-#endif // UNIX_ENABLED
+#endif
 	}
 
 	// Removes `foundry-tests-<pid>` directories under `p_base` whose owning process is
