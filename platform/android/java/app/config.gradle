@@ -311,6 +311,11 @@ ext.getFoundryJavaEnabled = { ->
 
 ext.parseFoundryJavaList = { String propertyName ->
     String raw = project.hasProperty(propertyName) ? project.property(propertyName) : ""
+    if (raw.contains("\r") || raw.contains("\n")) {
+        throw new GradleException(
+            "$propertyName must not contain carriage returns or newlines"
+        )
+    }
     if (raw.isEmpty()) {
         return []
     }
@@ -364,10 +369,16 @@ ext.getFoundryJavaMavenArtifacts = { ->
 
 ext.getFoundryJavaLocalArtifacts = { ->
     return parseFoundryJavaList("foundry_java_local_artifacts").collect { String path ->
+        String lowerPath = path.toLowerCase(Locale.ROOT)
+        if (!(lowerPath.endsWith(".jar") || lowerPath.endsWith(".aar"))) {
+            throw new GradleException(
+                "foundry_java_local_artifacts entry must be a regular .jar or .aar file: $path"
+            )
+        }
         File artifact = file(path)
         if (!artifact.isFile()) {
             throw new GradleException(
-                "foundry_java_local_artifacts entry must be a regular file: $path"
+                "foundry_java_local_artifacts entry must be a regular .jar or .aar file: $path"
             )
         }
         return artifact

@@ -53,6 +53,38 @@ def load_source_template_module() -> ModuleType:
     return module
 
 
+def run_bounded_subprocess(
+    command: list[str],
+    *,
+    cwd: Path,
+    environment: dict[str, str] | None = None,
+    timeout: int = 60,
+) -> subprocess.CompletedProcess[str]:
+    process = subprocess.Popen(
+        command,
+        cwd=cwd,
+        env=environment,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired as error:
+        os.killpg(process.pid, signal.SIGTERM)
+        try:
+            stdout, stderr = process.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            os.killpg(process.pid, signal.SIGKILL)
+            stdout, stderr = process.communicate()
+        raise AssertionError(
+            f"Subprocess did not terminate within {timeout} seconds and its process group was stopped:\n"
+            f"{stdout}\n{stderr}"
+        ) from error
+    return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+
+
 class FoundryJavaExportSurfaceTests(unittest.TestCase):
     def test_exporter_exposes_only_the_versioned_explicit_handoff(self) -> None:
         exporter = EXPORTER.read_text(encoding="utf-8")
@@ -99,6 +131,7 @@ class FoundryJavaGradlePropertyTests(unittest.TestCase):
     workspace: Path
     plugin: Path
     artifact: Path
+    plain_artifact: Path
     maven_repository_a: Path
     maven_repository_z: Path
     network_probe: http.server.ThreadingHTTPServer
@@ -108,9 +141,12 @@ class FoundryJavaGradlePropertyTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.workspace_manager = tempfile.TemporaryDirectory(prefix="foundry-java-gradle-properties.")
+        cls.addClassCleanup(cls.workspace_manager.cleanup)
         cls.workspace = Path(cls.workspace_manager.name)
         cls.plugin = cls.workspace / "plugin.jar"
         cls.artifact = cls.workspace / "module.jar"
+        cls.plain_artifact = cls.workspace / "module.txt"
+        cls.plain_artifact.write_text("not an archive\n", encoding="utf-8")
         cls.maven_repository_a = cls.workspace / "maven-a"
         cls.maven_repository_z = cls.workspace / "maven-z"
         cls.network_requests = []
@@ -133,6 +169,7 @@ class FoundryJavaGradlePropertyTests(unittest.TestCase):
             daemon=True,
         )
         cls.network_probe_thread.start()
+        cls.addClassCleanup(cls._stop_network_probe)
         cls._build_fixture_plugin()
         for archive_path in (cls.artifact,):
             with zipfile.ZipFile(archive_path, "w"):
@@ -154,11 +191,10 @@ class FoundryJavaGradlePropertyTests(unittest.TestCase):
             )
 
     @classmethod
-    def tearDownClass(cls) -> None:
+    def _stop_network_probe(cls) -> None:
         cls.network_probe.shutdown()
         cls.network_probe.server_close()
         cls.network_probe_thread.join(timeout=5)
-        cls.workspace_manager.cleanup()
 
     @classmethod
     def _build_fixture_plugin(cls) -> None:
@@ -234,12 +270,10 @@ class FoundryJavaGradlePropertyTests(unittest.TestCase):
             encoding="utf-8",
         )
 
-        wrapper_result = subprocess.run(
+        wrapper_result = run_bounded_subprocess(
             [str(GRADLE_WRAPPER), "--version"],
             cwd=APP_ROOT,
-            check=False,
-            capture_output=True,
-            text=True,
+            timeout=30,
         )
         if wrapper_result.returncode != 0:
             raise AssertionError(wrapper_result.stdout + wrapper_result.stderr)
@@ -257,7 +291,7 @@ class FoundryJavaGradlePropertyTests(unittest.TestCase):
         jar = shutil.which("jar")
         if javac is None or jar is None:
             raise AssertionError("A JDK with javac and jar is required for the Gradle fixture")
-        compile_result = subprocess.run(
+        compile_result = run_bounded_subprocess(
             [
                 javac,
                 "-classpath",
@@ -266,9 +300,8 @@ class FoundryJavaGradlePropertyTests(unittest.TestCase):
                 str(classes_root),
                 str(source_file),
             ],
-            check=False,
-            capture_output=True,
-            text=True,
+            cwd=cls.workspace,
+            timeout=30,
         )
         if compile_result.returncode != 0:
             raise AssertionError(compile_result.stdout + compile_result.stderr)
@@ -278,11 +311,10 @@ class FoundryJavaGradlePropertyTests(unittest.TestCase):
             "implementation-class=test.fixture.FoundryJavaFixturePlugin\n",
             encoding="utf-8",
         )
-        jar_result = subprocess.run(
+        jar_result = run_bounded_subprocess(
             [jar, "--create", "--file", str(cls.plugin), "-C", str(classes_root), "."],
-            check=False,
-            capture_output=True,
-            text=True,
+            cwd=cls.workspace,
+            timeout=30,
         )
         if jar_result.returncode != 0:
             raise AssertionError(jar_result.stdout + jar_result.stderr)
@@ -317,13 +349,14 @@ class FoundryJavaGradlePropertyTests(unittest.TestCase):
         self,
         properties: dict[str, str],
         tasks: tuple[str, ...] = ("help",),
+        project_root: Path = APP_ROOT,
     ) -> subprocess.CompletedProcess[str]:
         command = [
             str(GRADLE_WRAPPER),
             "--no-daemon",
             "--console=plain",
             "-p",
-            str(APP_ROOT),
+            str(project_root),
             *tasks,
             *[f"-P{name}={value}" for name, value in sorted(properties.items())],
         ]
@@ -332,28 +365,11 @@ class FoundryJavaGradlePropertyTests(unittest.TestCase):
         if java is None:
             self.fail("A Java runtime is required for the Android Gradle property tests")
         environment.setdefault("JAVA_HOME", str(Path(java).resolve().parent.parent))
-        process = subprocess.Popen(
+        return run_bounded_subprocess(
             command,
-            cwd=APP_ROOT,
-            env=environment,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            start_new_session=True,
+            cwd=project_root,
+            environment=environment,
         )
-        try:
-            stdout, stderr = process.communicate(timeout=60)
-        except subprocess.TimeoutExpired:
-            os.killpg(process.pid, signal.SIGTERM)
-            try:
-                stdout, stderr = process.communicate(timeout=5)
-            except subprocess.TimeoutExpired:
-                os.killpg(process.pid, signal.SIGKILL)
-                stdout, stderr = process.communicate()
-            self.fail(
-                f"Gradle did not terminate within 60 seconds and its process group was stopped:\n{stdout}\n{stderr}"
-            )
-        return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
 
     def assert_gradle_failed_with(self, properties: dict[str, str], message: str) -> None:
         result = self.run_gradle(properties)
@@ -375,6 +391,18 @@ class FoundryJavaGradlePropertyTests(unittest.TestCase):
 
     def test_values_without_the_registry_marker_are_inert(self) -> None:
         self.network_requests.clear()
+        isolated_app = self.workspace / "ordinary-app"
+        shutil.copytree(
+            APP_ROOT,
+            isolated_app,
+            ignore=shutil.ignore_patterns("build", ".gradle"),
+        )
+        stale_generated = isolated_app / "build/generated/foundryJava/assets"
+        stale_generated.mkdir(parents=True)
+        stale_generated.joinpath("FoundryJava.foundryextension").write_text(
+            "stale",
+            encoding="utf-8",
+        )
         result = self.run_gradle(
             {
                 "foundry_java_gradle_plugin": "test.fixture:unreachable-plugin:1.0.0",
@@ -382,7 +410,8 @@ class FoundryJavaGradlePropertyTests(unittest.TestCase):
                 "foundry_java_maven_repositories": f"http://127.0.0.1:{self.network_probe.server_port}/repository",
                 "foundry_java_maven_artifacts": "invalid",
             },
-            tasks=("tasks", "--all", "dependencies"),
+            tasks=("clean", "tasks", "--all", "dependencies"),
+            project_root=isolated_app,
         )
         self.assertEqual(
             0,
@@ -397,6 +426,20 @@ class FoundryJavaGradlePropertyTests(unittest.TestCase):
         self.assertNotIn("FIXTURE_PLUGIN_APPLIED", output)
         self.assertNotIn("Could not resolve", output)
         self.assertEqual([], self.network_requests, output)
+        self.assertFalse((isolated_app / "build/generated/foundryJava").exists())
+        self.assertEqual(
+            [],
+            [
+                path
+                for path in isolated_app.rglob("*")
+                if path.name
+                in {
+                    "FoundryJava.foundryextension",
+                    "FoundryJavaRegistryBootstrap.java",
+                    "registry-index-v2.txt",
+                }
+            ],
+        )
 
     def enabled_local_properties(self) -> dict[str, str]:
         return {
@@ -435,7 +478,7 @@ class FoundryJavaGradlePropertyTests(unittest.TestCase):
     def test_missing_local_application_artifact_fails_deterministically(self) -> None:
         properties = self.enabled_local_properties()
         properties["foundry_java_local_artifacts"] = str(self.workspace / "missing.jar")
-        self.assert_gradle_failed_with(properties, "must be a regular file")
+        self.assert_gradle_failed_with(properties, "must be a regular .jar or .aar file")
 
     def test_enabled_export_requires_an_application_artifact(self) -> None:
         properties = self.enabled_local_properties()
@@ -464,8 +507,16 @@ class FoundryJavaGradlePropertyTests(unittest.TestCase):
                 "contains a blank entry",
             ),
             (
+                {"foundry_java_maven_artifacts": " test.fixture:module:1.0.0\n"},
+                "must not contain carriage returns or newlines",
+            ),
+            (
                 {"foundry_java_local_artifacts": str(self.workspace / "missing.jar")},
-                "must be a regular file",
+                "must be a regular .jar or .aar file",
+            ),
+            (
+                {"foundry_java_local_artifacts": str(self.plain_artifact)},
+                "must be a regular .jar or .aar file",
             ),
             (
                 {
