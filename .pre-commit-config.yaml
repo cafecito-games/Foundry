@@ -238,6 +238,25 @@ repos:
             tests/python_build/test_android_runtime_surface\.py
           )$
 
+      - id: foundry-java-android-export
+        name: Foundry-Java Android export contracts
+        language: python
+        entry: python -m unittest
+        args:
+          - tests.python_build.test_android_foundry_java_export
+        pass_filenames: false
+        files: |
+          (?x)^(
+            \.pre-commit-config\.yaml|
+            platform/android/ANDROID_RUNTIME\.md|
+            platform/android/android_source_template\.py|
+            platform/android/doc_classes/EditorExportPlatformAndroid\.xml|
+            platform/android/export/export_plugin\.(?:cpp|h)|
+            platform/android/java/app/(?:build|config)\.gradle|
+            tests/fixtures/android_foundry_java/.*|
+            tests/python_build/test_android_foundry_java_export\.py
+          )$
+
       - id: foundry-android-native-contracts
         name: Foundry Android native contracts
         language: python

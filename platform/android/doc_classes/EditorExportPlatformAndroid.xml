@@ -65,6 +65,24 @@
 		<member name="gradle_build/export_format" type="int" setter="" getter="">
 			Application export format (*.apk or *.aab).
 		</member>
+		<member name="gradle_build/foundry_java/enabled" type="bool" setter="" getter="">
+			If [code]true[/code], enables explicit Foundry-Java extensions for this Gradle export. Exactly one Maven or local plugin source and at least one Maven or local application artifact are required. The fixed [code]registry-index-v2[/code] contract applies plugin ID [code]games.cafecito.foundry.java[/code].
+		</member>
+		<member name="gradle_build/foundry_java/gradle_plugin_local" type="String" setter="" getter="">
+			Path to the local Foundry-Java Gradle plugin JAR. The path and every ancestor must be regular, must not be symbolic links, and cannot be combined with [member EditorExportPlatformAndroid.gradle_build/foundry_java/gradle_plugin_maven].
+		</member>
+		<member name="gradle_build/foundry_java/gradle_plugin_maven" type="String" setter="" getter="">
+			Exact [code]group:artifact:version[/code] coordinate for the Foundry-Java Gradle plugin, such as its [code]games.cafecito.foundry.java[/code] marker coordinate. Dynamic versions are rejected.
+		</member>
+		<member name="gradle_build/foundry_java/local_artifacts" type="Array" setter="" getter="">
+			Regular local JAR and AAR application artifacts for an offline Foundry-Java export. Typical inputs are the binding AAR, runtime JAR, and extension module JARs. These inputs cannot contain the Foundry host library and are not embedded in the Android source template.
+		</member>
+		<member name="gradle_build/foundry_java/maven_artifacts" type="PackedStringArray" setter="" getter="">
+			Exact [code]group:artifact:version[/code] application dependency coordinates for the Foundry-Java export. Maven and local application artifacts may be combined.
+		</member>
+		<member name="gradle_build/foundry_java/maven_repositories" type="PackedStringArray" setter="" getter="">
+			Explicit HTTP(S) or [code]file:[/code] Maven repository URLs used to resolve the Foundry-Java plugin and application artifacts. An enabled export generates exactly one [code]FoundryJava.foundryextension[/code] and one registry index.
+		</member>
 		<member name="gradle_build/gradle_build_directory" type="String" setter="" getter="">
 			Path to the Gradle build directory. If left empty, then [code]res://android[/code] will be used.
 		</member>

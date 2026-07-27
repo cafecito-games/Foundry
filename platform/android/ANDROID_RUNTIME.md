@@ -36,6 +36,67 @@ projects may still include explicit project-local JAR or AAR dependencies from
 `res://addons`; those artifacts are normal build inputs, not dynamically
 discovered host plugins.
 
+## Optional Foundry-Java extensions
+
+Foundry-Java is an explicit, opt-in Gradle export path. Ordinary exports remain
+unchanged: with `gradle_build/foundry_java/enabled` disabled, the exporter
+passes no Foundry-Java properties, resolves no plugin or artifact, and produces
+no Foundry-Java task or generated output. Enabling it requires
+`gradle_build/use_gradle_build` and exactly one plugin source:
+
+- `gradle_build/foundry_java/gradle_plugin_maven`: one exact
+  `group:artifact:version` coordinate;
+- `gradle_build/foundry_java/gradle_plugin_local`: one regular local plugin
+  JAR with no symbolic-link path component.
+
+At least one application input is also required. Exact Maven inputs use
+`gradle_build/foundry_java/maven_repositories` and
+`gradle_build/foundry_java/maven_artifacts`; offline archives use
+`gradle_build/foundry_java/local_artifacts`. Maven and local application inputs
+may be combined, but Maven and local plugin sources may not. For example:
+
+```text
+gradle_build/foundry_java/gradle_plugin_maven =
+  games.cafecito.foundry.java:games.cafecito.foundry.java.gradle.plugin:0.1.0
+gradle_build/foundry_java/maven_repositories =
+  ["https://repo.maven.apache.org/maven2"]
+gradle_build/foundry_java/maven_artifacts =
+  ["games.cafecito.foundry:foundry-java-android:0.1.0",
+   "com.example:my-foundry-extension:1.0.0"]
+```
+
+An offline build instead sets `gradle_plugin_local` to the exact
+Foundry-Java plugin JAR and lists the binding AAR, runtime JAR, and extension
+module JARs in `local_artifacts`. Local archives are external export inputs;
+they are never embedded in `android_source.zip`.
+
+The exporter passes the fixed `registry-index-v2` marker and Gradle applies
+only plugin ID `games.cafecito.foundry.java`. The plugin owns descriptor,
+binding-payload, provenance, and requested-ABI validation. A zero descriptor
+opt-in is rejected and leaves no generated outputs. A valid build produces
+exactly:
+
+```text
+assets/FoundryJava.foundryextension
+assets/foundry_java/registry-index-v2.txt
+lib/<requested-abi>/libfoundry_java.so
+```
+
+The existing architecture selection remains authoritative:
+
+| Foundry SCons architecture | Android ABI |
+| --- | --- |
+| `arm32` | `armeabi-v7a` |
+| `arm64` | `arm64-v8a` |
+| `x86_32` | `x86` |
+| `x86_64` | `x86_64` |
+
+Foundry continues to own and package its ordinary host
+`libfoundry_android.so`; the binding AAR may not contain that host library.
+Foundry-Android is only a read-only source donor for this migration. It is not
+a dependency, is never packaged or published by this path, and must not be
+modified, renamed, archived, deleted, or republished.
+
 ## Android and toolchain levels
 
 The root app configuration is authoritative for both `:app` and `:lib`:

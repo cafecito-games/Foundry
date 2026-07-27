@@ -32,6 +32,9 @@ GRADLE_WRAPPER = REPO_ROOT / "platform/android/java/gradlew"
 JAVA_ROOT = REPO_ROOT / "platform/android/java"
 APP_ROOT = REPO_ROOT / "platform/android/java/app"
 INTEGRATION_FIXTURE = REPO_ROOT / "tests/fixtures/android_foundry_java"
+ANDROID_RUNTIME_GUIDE = REPO_ROOT / "platform/android/ANDROID_RUNTIME.md"
+ANDROID_EXPORT_CLASS_REFERENCE = REPO_ROOT / "platform/android/doc_classes/EditorExportPlatformAndroid.xml"
+PRE_COMMIT_CONFIG = REPO_ROOT / ".pre-commit-config.yaml"
 EXACT_FOUNDRY_JAVA_COMMIT = "7eb98b37845b42ff67f3da1427bd78ebef19668f"
 FOUNDRY_JAVA_GROUP = "games.cafecito.foundry"
 FOUNDRY_JAVA_VERSION = "0.1.0-SNAPSHOT"
@@ -143,6 +146,65 @@ class FoundryJavaExportSurfaceTests(unittest.TestCase):
             ),
             inspector.FORBIDDEN_BINDING_FRAGMENTS,
         )
+
+
+class FoundryJavaDocumentationTests(unittest.TestCase):
+    def test_runtime_guide_documents_the_complete_opt_in_contract(self) -> None:
+        guide = ANDROID_RUNTIME_GUIDE.read_text(encoding="utf-8")
+        required_fragments = (
+            "## Optional Foundry-Java extensions",
+            "gradle_build/foundry_java/enabled",
+            "gradle_build/foundry_java/gradle_plugin_maven",
+            "gradle_build/foundry_java/gradle_plugin_local",
+            "gradle_build/foundry_java/maven_repositories",
+            "gradle_build/foundry_java/maven_artifacts",
+            "gradle_build/foundry_java/local_artifacts",
+            "registry-index-v2",
+            "games.cafecito.foundry.java",
+            "games.cafecito.foundry:foundry-java-android:",
+            "FoundryJava.foundryextension",
+            "assets/foundry_java/registry-index-v2.txt",
+            "arm32",
+            "arm64",
+            "x86_32",
+            "x86_64",
+            "zero descriptor",
+            "Foundry-Android",
+            "read-only source donor",
+        )
+        for fragment in required_fragments:
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, guide)
+        self.assertIn("ordinary exports remain", guide.lower())
+        self.assertIn("unchanged:", guide.lower())
+        self.assertRegex(guide.lower(), r"not\s+a dependency")
+
+    def test_class_reference_documents_all_six_export_options(self) -> None:
+        class_reference = ANDROID_EXPORT_CLASS_REFERENCE.read_text(encoding="utf-8")
+        for option in EXPORT_OPTIONS:
+            with self.subTest(option=option):
+                self.assertIn(f'<member name="{option}"', class_reference)
+        self.assertIn("registry-index-v2", class_reference)
+        self.assertIn("games.cafecito.foundry.java", class_reference)
+        self.assertIn("FoundryJava.foundryextension", class_reference)
+
+    def test_pre_commit_runs_the_contract_on_every_owned_surface(self) -> None:
+        config = PRE_COMMIT_CONFIG.read_text(encoding="utf-8")
+        self.assertIn("- id: foundry-java-android-export", config)
+        self.assertIn("tests.python_build.test_android_foundry_java_export", config)
+        required_scopes = (
+            r"\.pre-commit-config\.yaml",
+            r"platform/android/ANDROID_RUNTIME\.md",
+            r"platform/android/android_source_template\.py",
+            r"platform/android/doc_classes/EditorExportPlatformAndroid\.xml",
+            r"platform/android/export/export_plugin\.(?:cpp|h)",
+            r"platform/android/java/app/(?:build|config)\.gradle",
+            r"tests/fixtures/android_foundry_java/.*",
+            r"tests/python_build/test_android_foundry_java_export\.py",
+        )
+        for scope in required_scopes:
+            with self.subTest(scope=scope):
+                self.assertIn(scope, config)
 
 
 class FoundryJavaGradlePropertyTests(unittest.TestCase):
