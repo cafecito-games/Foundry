@@ -109,6 +109,30 @@ static void _append_trait_unique(Vector<FSParser::ClassNode *> &r_traits, FSPars
 	}
 }
 
+// Tuples and tagged unions both erase to Array at runtime and have no inspector representation
+// in v1 (`@export` of either is a v1-deferred feature, not just of the top-level property type).
+// This walks into `Array`/`Dictionary` container element types so `Array[Message]` or
+// `Dictionary[String, (int, int)]` are caught too, not just a bare `Message` or `(int, int)`
+// property. `r_found_type` receives the offending element type for diagnostics.
+static bool _export_type_contains_tuple_or_tagged_union(const FSParser::DataType &p_type, FSParser::DataType &r_found_type) {
+	if (p_type.is_tuple() || p_type.is_tagged_union_type()) {
+		r_found_type = p_type;
+		return true;
+	}
+	if (p_type.kind == FSParser::DataType::BUILTIN && p_type.builtin_type == Variant::ARRAY && p_type.has_container_element_type(0)) {
+		return _export_type_contains_tuple_or_tagged_union(p_type.get_container_element_type(0), r_found_type);
+	}
+	if (p_type.kind == FSParser::DataType::BUILTIN && p_type.builtin_type == Variant::DICTIONARY && p_type.has_container_element_types()) {
+		if (_export_type_contains_tuple_or_tagged_union(p_type.get_container_element_type_or_variant(0), r_found_type)) {
+			return true;
+		}
+		if (_export_type_contains_tuple_or_tagged_union(p_type.get_container_element_type_or_variant(1), r_found_type)) {
+			return true;
+		}
+	}
+	return false;
+}
+
 static bool _datatype_alpha_equal(const FSParser::DataType &p_a, const FSParser::DataType &p_b) {
 	if (!(p_a == p_b)) {
 		return false;
@@ -1139,23 +1163,23 @@ void FSAnalyzer::resolve_class_member(FSParser::ClassNode *p_class, int p_index,
 
 				// Tuples and tagged unions have no inspector representation, so exporting either is
 				// rejected before the export annotation runs (it would otherwise report the erased
-				// Array type).
+				// Array type). This also catches them nested in an exported `Array`/`Dictionary`,
+				// where they would otherwise reach the inspector as bogus int-enum or Array metadata.
 				const FSParser::DataType member_variable_datatype = member.variable->get_datatype();
-				const bool rejects_tuple_export = member_variable_datatype.is_tuple();
-				const bool rejects_tagged_union_export = member_variable_datatype.is_tagged_union_type();
-				const bool rejects_export = rejects_tuple_export || rejects_tagged_union_export;
+				FSParser::DataType rejected_export_datatype;
+				const bool rejects_export = _export_type_contains_tuple_or_tagged_union(member_variable_datatype, rejected_export_datatype);
 
 				// Apply annotations.
 				for (FSParser::AnnotationNode *&E : member.variable->annotations) {
 					if (E->name != SNAME("@warning_ignore")) {
 						if (rejects_export && String(E->name).begins_with("@export")) {
-							if (rejects_tuple_export) {
+							if (rejected_export_datatype.is_tuple()) {
 								push_error(vformat(R"(Cannot export a tuple-typed property: "%s" has type "%s".)",
 												   member.variable->identifier->name, member_variable_datatype.to_string()),
 										E);
 							} else {
 								push_error(vformat(R"(Cannot export a tagged-union-typed property: "%s" has type "%s".)",
-												   member.variable->identifier->name, member_variable_datatype.enum_type),
+												   member.variable->identifier->name, member_variable_datatype.to_string()),
 										E);
 							}
 							continue;
