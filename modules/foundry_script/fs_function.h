@@ -2,7 +2,7 @@
 /*  fs_function.h                                                         */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -392,6 +392,7 @@ public:
 		OPCODE_CONSTRUCT_VALIDATED, // Only for basic types!
 		OPCODE_CONSTRUCT_ARRAY,
 		OPCODE_CONSTRUCT_TYPED_ARRAY,
+		OPCODE_CONSTRUCT_TUPLE, // Builds the read-only Array a tuple value erases to.
 		OPCODE_CONSTRUCT_DICTIONARY,
 		OPCODE_CONSTRUCT_TYPED_DICTIONARY,
 		OPCODE_CONSTRUCT_SPECIALIZED, // Instantiate a generic script with reified type arguments.

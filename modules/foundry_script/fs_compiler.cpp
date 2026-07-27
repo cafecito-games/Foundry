@@ -913,8 +913,8 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 			return result;
 		} break;
 		case FSParser::Node::TUPLE_LITERAL: {
-			// Tuple values erase to a plain Array at runtime (see the design doc); a dedicated,
-			// read-only construction opcode is a follow-up change alongside static tuple typing.
+			// Tuple values erase to a read-only Array at runtime (see the design doc), so that a tuple
+			// that escapes into a Variant stays immutable and hashable.
 			const FSParser::TupleLiteralNode *tn = static_cast<const FSParser::TupleLiteralNode *>(p_expression);
 			Vector<FSCodeGenerator::Address> values;
 
@@ -929,7 +929,7 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 				values.push_back(val);
 			}
 
-			gen->write_construct_array(result, values);
+			gen->write_construct_tuple(result, values);
 
 			for (int i = 0; i < values.size(); i++) {
 				if (values[i].mode == FSCodeGenerator::Address::TEMPORARY) {
@@ -1016,7 +1016,7 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 			const FSParser::CallNode *call = static_cast<const FSParser::CallNode *>(p_expression);
 
 			// `Vec2(1.0, 2.0)` constructs a named tuple, not a method call: there is no such member to
-			// dispatch to. It erases to the same Array as an unnamed tuple literal.
+			// dispatch to. It erases to the same read-only Array as an unnamed tuple literal.
 			if (call->is_tuple_construction) {
 				const FSParser::DataType tuple_datatype = call->get_datatype();
 				Vector<FSCodeGenerator::Address> values;
@@ -1041,7 +1041,7 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 					}
 					values.push_back(value);
 				}
-				gen->write_construct_array(tuple_result, values);
+				gen->write_construct_tuple(tuple_result, values);
 				for (int i = 0; i < tuple_temporaries_to_pop; i++) {
 					gen->pop_temporary();
 				}
