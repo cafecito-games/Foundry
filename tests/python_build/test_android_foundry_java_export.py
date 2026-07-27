@@ -28,6 +28,7 @@ EXPORTER = REPO_ROOT / "platform/android/export/export_plugin.cpp"
 APP_BUILD = REPO_ROOT / "platform/android/java/app/build.gradle"
 APP_CONFIG = REPO_ROOT / "platform/android/java/app/config.gradle"
 SOURCE_TEMPLATE_TOOL = REPO_ROOT / "platform/android/android_source_template.py"
+DEVICE_ACCEPTANCE_TOOL = REPO_ROOT / "platform/android/android_device_acceptance.py"
 GRADLE_WRAPPER = REPO_ROOT / "platform/android/java/gradlew"
 JAVA_ROOT = REPO_ROOT / "platform/android/java"
 APP_ROOT = REPO_ROOT / "platform/android/java/app"
@@ -65,6 +66,19 @@ def load_source_template_module() -> ModuleType:
     if spec is None or spec.loader is None:
         raise AssertionError(f"Unable to load {SOURCE_TEMPLATE_TOOL}")
     module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_device_acceptance_module() -> ModuleType:
+    spec = importlib.util.spec_from_file_location(
+        "android_device_acceptance_foundry_java",
+        DEVICE_ACCEPTANCE_TOOL,
+    )
+    if spec is None or spec.loader is None:
+        raise AssertionError(f"Unable to load {DEVICE_ACCEPTANCE_TOOL}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -205,6 +219,132 @@ class FoundryJavaDocumentationTests(unittest.TestCase):
         for scope in required_scopes:
             with self.subTest(scope=scope):
                 self.assertIn(scope, config)
+
+
+class FoundryJavaFinalArtifactInspectorTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tool = load_device_acceptance_module()
+        self.workspace_manager = tempfile.TemporaryDirectory(
+            prefix="foundry-java-apk-inspector.",
+            dir=test_scratch_directory(),
+        )
+        self.addCleanup(self.workspace_manager.cleanup)
+        self.workspace = Path(self.workspace_manager.name)
+
+    def write_apk(self, name: str, entries: tuple[str, ...]) -> Path:
+        apk = self.workspace / name
+        with zipfile.ZipFile(apk, "w") as archive:
+            for entry in entries:
+                archive.writestr(entry, f"{entry}\n")
+        return apk
+
+    def test_enabled_inspection_requires_exact_assets_and_requested_bridges(self) -> None:
+        apk = self.write_apk(
+            "valid.apk",
+            (
+                "assets/FoundryJava.foundryextension",
+                "assets/foundry_java/registry-index-v2.txt",
+                "lib/arm64-v8a/libfoundry_java.so",
+                "lib/arm64-v8a/libfoundry_android.so",
+                "lib/arm64-v8a/libunrelated.so",
+            ),
+        )
+
+        evidence = self.tool.inspect_foundry_java_apk(
+            apk,
+            requested_abis=("arm64-v8a",),
+            enabled=True,
+        )
+
+        self.assertEqual(("arm64-v8a",), evidence["requested_abis"])
+        self.assertEqual(
+            ("lib/arm64-v8a/libfoundry_java.so",),
+            evidence["bridge_entries"],
+        )
+        self.assertEqual(64, len(evidence["configuration_sha256"]))
+        self.assertEqual(64, len(evidence["registry_index_sha256"]))
+
+    def test_disabled_inspection_is_inert_for_ordinary_exports(self) -> None:
+        missing = self.workspace / "ordinary-export-is-not-inspected.apk"
+        self.assertIsNone(
+            self.tool.inspect_foundry_java_apk(
+                missing,
+                requested_abis=(),
+                enabled=False,
+            )
+        )
+
+    def test_enabled_inspection_rejects_every_final_output_mismatch(self) -> None:
+        valid = (
+            "assets/FoundryJava.foundryextension",
+            "assets/foundry_java/registry-index-v2.txt",
+            "lib/arm64-v8a/libfoundry_java.so",
+        )
+        cases = (
+            (
+                "missing-config.apk",
+                valid[1:],
+                ("arm64-v8a",),
+                "exactly one assets/FoundryJava.foundryextension",
+            ),
+            (
+                "missing-index.apk",
+                (valid[0], valid[2]),
+                ("arm64-v8a",),
+                "exactly one assets/foundry_java/registry-index-v2.txt",
+            ),
+            (
+                "missing-bridge.apk",
+                valid[:2],
+                ("arm64-v8a",),
+                "bridge entries differ",
+            ),
+            (
+                "unrequested-bridge.apk",
+                (*valid, "lib/x86_64/libfoundry_java.so"),
+                ("arm64-v8a",),
+                "bridge entries differ",
+            ),
+            (
+                "empty-abis.apk",
+                valid,
+                (),
+                "at least one requested ABI",
+            ),
+            (
+                "unsupported-abi.apk",
+                valid,
+                ("mips",),
+                "unsupported requested ABI",
+            ),
+        )
+        for name, entries, requested_abis, message in cases:
+            with self.subTest(name=name):
+                apk = self.write_apk(name, entries)
+                with self.assertRaisesRegex(self.tool.AcceptanceError, message):
+                    self.tool.inspect_foundry_java_apk(
+                        apk,
+                        requested_abis=requested_abis,
+                        enabled=True,
+                    )
+
+    def test_enabled_inspection_rejects_duplicate_fixed_entries(self) -> None:
+        apk = self.workspace / "duplicates.apk"
+        with self.assertWarns(UserWarning):
+            with zipfile.ZipFile(apk, "w") as archive:
+                archive.writestr("assets/FoundryJava.foundryextension", "first")
+                archive.writestr("assets/FoundryJava.foundryextension", "second")
+                archive.writestr("assets/foundry_java/registry-index-v2.txt", "index")
+                archive.writestr("lib/arm64-v8a/libfoundry_java.so", "bridge")
+        with self.assertRaisesRegex(
+            self.tool.AcceptanceError,
+            "exactly one assets/FoundryJava.foundryextension",
+        ):
+            self.tool.inspect_foundry_java_apk(
+                apk,
+                requested_abis=("arm64-v8a",),
+                enabled=True,
+            )
 
 
 class FoundryJavaGradlePropertyTests(unittest.TestCase):

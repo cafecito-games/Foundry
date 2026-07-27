@@ -206,6 +206,57 @@ def validate_application_id(value: str) -> str:
     return value
 
 
+def inspect_foundry_java_apk(
+    apk: Path,
+    *,
+    requested_abis: Sequence[str],
+    enabled: bool,
+) -> dict[str, Any] | None:
+    """Inspect the enabled-only Foundry-Java contract in one final APK."""
+    if not enabled:
+        return None
+
+    requested = tuple(sorted(requested_abis))
+    if not requested:
+        raise AcceptanceError("Foundry-Java APK inspection requires at least one requested ABI")
+    if len(requested) != len(set(requested)):
+        raise AcceptanceError("Foundry-Java APK inspection received duplicate requested ABIs")
+    unsupported = sorted(set(requested).difference(SUPPORTED_ABIS))
+    if unsupported:
+        raise AcceptanceError("Foundry-Java APK inspection has unsupported requested ABI: " + ", ".join(unsupported))
+
+    apk = apk.absolute()
+    if not apk.is_file() or apk.is_symlink():
+        raise AcceptanceError(f"Foundry-Java APK is not a regular file: {apk}")
+
+    configuration = "assets/FoundryJava.foundryextension"
+    registry_index = "assets/foundry_java/registry-index-v2.txt"
+    try:
+        with zipfile.ZipFile(apk) as archive:
+            names = [entry.filename for entry in archive.infolist() if not entry.is_dir()]
+            for required in (configuration, registry_index):
+                count = names.count(required)
+                if count != 1:
+                    raise AcceptanceError(f"Foundry-Java APK must contain exactly one {required}; found {count}")
+            bridge_entries = tuple(sorted(name for name in names if name.endswith("/libfoundry_java.so")))
+            expected_bridges = tuple(f"lib/{abi}/libfoundry_java.so" for abi in requested)
+            if bridge_entries != expected_bridges:
+                raise AcceptanceError(
+                    "Foundry-Java APK bridge entries differ from the requested ABI set: "
+                    f"expected {list(expected_bridges)}, found {list(bridge_entries)}"
+                )
+            return {
+                "requested_abis": requested,
+                "bridge_entries": bridge_entries,
+                "configuration_sha256": hashlib.sha256(archive.read(configuration)).hexdigest(),
+                "registry_index_sha256": hashlib.sha256(archive.read(registry_index)).hexdigest(),
+            }
+    except AcceptanceError:
+        raise
+    except (OSError, KeyError, zipfile.BadZipFile) as error:
+        raise AcceptanceError(f"unable to inspect Foundry-Java APK {apk}: {error}") from error
+
+
 def select_device(output: str, requested_serial: str | None) -> str:
     """Resolve exactly one ready adb device, or one explicitly requested device."""
     ready = [
@@ -288,9 +339,7 @@ def _inspect_compiled_assets(compiled_assets: Path) -> tuple[str, ...]:
                 if remap in seen:
                     actual_target = _remap_target(archive.read(remap), remap)
                     if actual_target != target:
-                        raise AcceptanceError(
-                            f"Android compiled acceptance remap {remap} does not target {target}"
-                        )
+                        raise AcceptanceError(f"Android compiled acceptance remap {remap} does not target {target}")
             if "main.tscn.remap" in seen:
                 scene_target = _remap_target(archive.read("main.tscn.remap"), "main.tscn.remap")
                 scene_path = scene_target[len("res://") :] if scene_target.startswith("res://") else scene_target
@@ -592,9 +641,7 @@ def _device_context(
 def _require_instrumentation_results(scenario: Path) -> tuple[Path, ...]:
     report_root = scenario / JUNIT_REPORT_ROOT
     reports = sorted(report_root.rglob("*.xml")) if report_root.is_dir() else []
-    matches: dict[str, list[tuple[Path, ElementTree.Element]]] = {
-        method: [] for method in INSTRUMENTATION_METHODS
-    }
+    matches: dict[str, list[tuple[Path, ElementTree.Element]]] = {method: [] for method in INSTRUMENTATION_METHODS}
     for report in reports:
         try:
             root = ElementTree.parse(report).getroot()
@@ -609,9 +656,7 @@ def _require_instrumentation_results(scenario: Path) -> tuple[Path, ...]:
     missing = [method for method, cases in matches.items() if not cases]
     duplicates = [method for method, cases in matches.items() if len(cases) > 1]
     if missing:
-        raise AcceptanceError(
-            "Android instrumentation is missing required test cases: " + ", ".join(missing)
-        )
+        raise AcceptanceError("Android instrumentation is missing required test cases: " + ", ".join(missing))
     if duplicates:
         raise AcceptanceError(
             "Android instrumentation reported duplicate required test cases: " + ", ".join(duplicates)
