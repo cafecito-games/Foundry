@@ -21,3 +21,12 @@ func skipped() -> String:
 func immutable_bindings() -> int:
 	const (first, second) = (2, 3)
 	return first + second
+
+func compound_assignment() -> int:
+	var (count, _) = (1, 2)
+	count += 1
+	return count
+
+func object_binding(pair: (RefCounted, int)) -> RefCounted:
+	var (object, _) = pair
+	return object

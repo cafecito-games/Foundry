@@ -2342,6 +2342,13 @@ FSParser::VariableDestructureNode *FSParser::parse_variable_destructure(bool p_i
 			if (destructure->initializer == nullptr) {
 				push_error(R"(Expected expression for the destructuring initial value after "=".)");
 			}
+			for (int i = 0; i < destructure->bindings.size(); i++) {
+				if (destructure->bindings[i] != nullptr) {
+					// The declaration writes every binding, exactly like an ordinary initialized
+					// local, so later reads and compound assignments are not "unassigned".
+					destructure->bindings[i]->assignments++;
+				}
+			}
 		}
 	}
 
