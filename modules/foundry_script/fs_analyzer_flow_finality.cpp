@@ -728,6 +728,17 @@ void FSAnalyzer::FlowFinalityContext::collect_local_finals(const FSParser::Node 
 			}
 			collect_local_finals(variable->initializer, r_finals, r_finals_by_name);
 		} break;
+		case FSParser::Node::VARIABLE_DESTRUCTURE: {
+			const FSParser::VariableDestructureNode *destructure = static_cast<const FSParser::VariableDestructureNode *>(p_node);
+			for (int i = 0; i < destructure->bindings.size(); i++) {
+				const FSParser::VariableNode *binding = destructure->bindings[i];
+				if (binding != nullptr && binding->is_final) {
+					r_finals.insert(binding);
+					r_finals_by_name[binding->identifier->name] = binding;
+				}
+			}
+			collect_local_finals(destructure->initializer, r_finals, r_finals_by_name);
+		} break;
 		case FSParser::Node::LAMBDA: {
 			const FSParser::LambdaNode *lambda = static_cast<const FSParser::LambdaNode *>(p_node);
 			// A lambda body is its own scope; analyze it independently rather than folding its locals
@@ -1177,6 +1188,10 @@ void FSAnalyzer::FlowFinalityContext::scan_illegal_final_writes(const FSParser::
 			const FSParser::VariableNode *variable = static_cast<const FSParser::VariableNode *>(p_node);
 			scan_illegal_final_writes(variable->initializer, p_finals, p_finals_by_name, p_scope, p_in_init, p_flattened_trait_body);
 		} break;
+		case FSParser::Node::VARIABLE_DESTRUCTURE: {
+			const FSParser::VariableDestructureNode *destructure = static_cast<const FSParser::VariableDestructureNode *>(p_node);
+			scan_illegal_final_writes(destructure->initializer, p_finals, p_finals_by_name, p_scope, p_in_init, p_flattened_trait_body);
+		} break;
 		case FSParser::Node::RETURN: {
 			const FSParser::ReturnNode *return_node = static_cast<const FSParser::ReturnNode *>(p_node);
 			scan_illegal_final_writes(return_node->return_value, p_finals, p_finals_by_name, p_scope, p_in_init, p_flattened_trait_body);
@@ -1413,6 +1428,22 @@ void FSAnalyzer::FlowFinalityContext::analyze_final_definite_assignment_statemen
 				r_state.assigned.insert(variable);
 				r_state.maybe_assigned.insert(variable);
 				r_assigned_anywhere.insert(variable);
+			}
+		} break;
+		case FSParser::Node::VARIABLE_DESTRUCTURE: {
+			const FSParser::VariableDestructureNode *destructure = static_cast<const FSParser::VariableDestructureNode *>(p_statement);
+			check_final_reads_in_expression(destructure->initializer, p_finals, p_finals_by_name, p_scope, r_state, p_flattened_trait_body);
+			// The declaration itself is the single write site of every `const` binding it declares.
+			if (p_scope == FinalAssignmentScope::LOCAL && destructure->initializer != nullptr) {
+				for (int i = 0; i < destructure->bindings.size(); i++) {
+					const FSParser::VariableNode *binding = destructure->bindings[i];
+					if (binding == nullptr || !p_finals.has(binding)) {
+						continue;
+					}
+					r_state.assigned.insert(binding);
+					r_state.maybe_assigned.insert(binding);
+					r_assigned_anywhere.insert(binding);
+				}
 			}
 		} break;
 		case FSParser::Node::ASSERT: {

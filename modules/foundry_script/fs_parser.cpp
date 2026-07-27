@@ -2297,6 +2297,60 @@ FSParser::VariableNode *FSParser::parse_variable(bool p_is_static, bool p_allow_
 	return variable;
 }
 
+// Parses `var (x, y) = expr` / `const (x, _) = expr`, entered with `(` as the current token. Each
+// name becomes a plain local so the rest of the front-end treats destructured bindings exactly like
+// ordinary locals; `_` bindings are stored as null slots and never enter the scope.
+FSParser::VariableDestructureNode *FSParser::parse_variable_destructure(bool p_is_const) {
+	VariableDestructureNode *destructure = alloc_node<VariableDestructureNode>();
+	destructure->is_const = p_is_const;
+
+	advance(); // Past "(".
+
+	bool bindings_valid = true;
+	if (!check(FSTokenizer::Token::PARENTHESIS_CLOSE)) {
+		do {
+			if (check(FSTokenizer::Token::PARENTHESIS_CLOSE)) {
+				break; // Trailing comma.
+			}
+			if (match(FSTokenizer::Token::UNDERSCORE)) {
+				destructure->bindings.push_back(nullptr);
+				continue;
+			}
+			if (!consume(FSTokenizer::Token::IDENTIFIER, R"(Expected a binding name or "_" in the destructuring declaration.)")) {
+				bindings_valid = false;
+				break;
+			}
+			VariableNode *binding = alloc_node<VariableNode>();
+			reset_extents(binding, previous);
+			binding->identifier = parse_identifier();
+			binding->export_info.name = binding->identifier->name;
+			// A `const` binding is written exactly once, by this declaration; reuse the `final`
+			// analysis that already rejects every later write.
+			binding->is_final = p_is_const;
+			binding->infer_datatype = true;
+			complete_extents(binding);
+			destructure->bindings.push_back(binding);
+		} while (match(FSTokenizer::Token::COMMA));
+	}
+
+	if (bindings_valid) {
+		consume(FSTokenizer::Token::PARENTHESIS_CLOSE, R"*(Expected ")" after the destructuring binding list.)*");
+		if (destructure->bindings.size() < 2) {
+			push_error("A destructuring declaration must bind at least two elements.");
+		} else if (consume(FSTokenizer::Token::EQUAL, R"(Expected "=" after the destructuring binding list.)")) {
+			destructure->initializer = parse_expression(false);
+			if (destructure->initializer == nullptr) {
+				push_error(R"(Expected expression for the destructuring initial value after "=".)");
+			}
+		}
+	}
+
+	complete_extents(destructure);
+	end_statement("destructuring declaration");
+
+	return destructure;
+}
+
 FSParser::VariableNode *FSParser::parse_property(VariableNode *p_variable, bool p_need_indent) {
 	if (p_need_indent) {
 		if (!consume(FSTokenizer::Token::INDENT, R"(Expected indented block for property after ":".)")) {
@@ -3371,6 +3425,21 @@ FSParser::SuiteNode *FSParser::parse_suite(const String &p_context, SuiteNode *p
 				current_suite->add_local(variable, current_function);
 				break;
 			}
+			case Node::VARIABLE_DESTRUCTURE: {
+				VariableDestructureNode *destructure = static_cast<VariableDestructureNode *>(statement);
+				for (int i = 0; i < destructure->bindings.size(); i++) {
+					VariableNode *binding = destructure->bindings[i];
+					if (binding == nullptr) {
+						continue; // A `_` slot binds nothing.
+					}
+					const SuiteNode::Local &local = current_suite->get_local(binding->identifier->name);
+					if (local.type != SuiteNode::Local::UNDEFINED) {
+						push_error(vformat(R"(There is already a %s named "%s" declared in this scope.)", local.get_name(), binding->identifier->name), binding->identifier);
+					}
+					current_suite->add_local(binding, current_function);
+				}
+				break;
+			}
 			case Node::CONSTANT: {
 				ConstantNode *constant = static_cast<ConstantNode *>(statement);
 				const SuiteNode::Local &local = current_suite->get_local(constant->identifier->name);
@@ -3450,7 +3519,11 @@ FSParser::Node *FSParser::parse_statement() {
 			break;
 		case FSTokenizer::Token::VAR:
 			advance();
-			result = parse_variable(false, false);
+			if (check(FSTokenizer::Token::PARENTHESIS_OPEN)) {
+				result = parse_variable_destructure(false);
+			} else {
+				result = parse_variable(false, false);
+			}
 			break;
 		case FSTokenizer::Token::FINAL:
 			advance();
@@ -3466,7 +3539,11 @@ FSParser::Node *FSParser::parse_statement() {
 			break;
 		case FSTokenizer::Token::TK_CONST:
 			advance();
-			result = parse_constant(DeclarationModifiers());
+			if (check(FSTokenizer::Token::PARENTHESIS_OPEN)) {
+				result = parse_variable_destructure(true);
+			} else {
+				result = parse_constant(DeclarationModifiers());
+			}
 			break;
 		case FSTokenizer::Token::IF:
 			advance();
@@ -7850,6 +7927,9 @@ void FSParser::TreePrinter::print_statement(Node *p_statement) {
 		case Node::VARIABLE:
 			print_variable(static_cast<VariableNode *>(p_statement));
 			break;
+		case Node::VARIABLE_DESTRUCTURE:
+			print_variable_destructure(static_cast<VariableDestructureNode *>(p_statement));
+			break;
 		case Node::CONSTANT:
 			print_constant(static_cast<ConstantNode *>(p_statement));
 			break;
@@ -8099,6 +8179,37 @@ void FSParser::TreePrinter::print_variable(VariableNode *p_variable) {
 		}
 	}
 
+	decrease_indent();
+	push_line();
+}
+
+void FSParser::TreePrinter::print_variable_destructure(VariableDestructureNode *p_destructure) {
+	for (const AnnotationNode *E : p_destructure->annotations) {
+		print_annotation(E);
+	}
+
+	push_text(p_destructure->is_const ? "Constant Destructure (" : "Variable Destructure (");
+	for (int i = 0; i < p_destructure->bindings.size(); i++) {
+		if (i > 0) {
+			push_text(", ");
+		}
+		if (p_destructure->bindings[i] == nullptr) {
+			push_text("_");
+		} else {
+			print_identifier(p_destructure->bindings[i]->identifier);
+		}
+	}
+	push_text(")");
+
+	increase_indent();
+	push_line();
+	push_text("= ");
+	if (p_destructure->initializer == nullptr) {
+		push_text("<missing>");
+	} else {
+		print_expression(p_destructure->initializer);
+	}
+	push_line();
 	decrease_indent();
 	push_line();
 }

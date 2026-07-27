@@ -443,6 +443,7 @@ private:
 	void warn_unreachable_after_noreturn_in_statement(const FSParser::Node *p_statement);
 	void resolve_assignable(FSParser::AssignableNode *p_assignable, const char *p_kind);
 	void resolve_variable(FSParser::VariableNode *p_variable, bool p_is_local);
+	void resolve_variable_destructure(FSParser::VariableDestructureNode *p_destructure);
 	void resolve_constant(FSParser::ConstantNode *p_constant, bool p_is_local);
 	void resolve_parameter(FSParser::ParameterNode *p_parameter);
 	void resolve_if(FSParser::IfNode *p_if);

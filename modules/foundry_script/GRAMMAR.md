@@ -940,6 +940,7 @@ statement =
       pass_stmt
     | var_decl_stmt
     | const_stmt
+    | destructure_stmt
     | if_stmt
     | for_stmt
     | while_stmt
@@ -970,6 +971,11 @@ var_decl_stmt   = [ "final" ], "var", identifier,
                   [ ":", ( type | (* inferred *) ) ], [ "=", expression ], NEWLINE ;
 const_stmt      = "const", identifier, [ ":", [ type ] ], "=", expression, NEWLINE ;
 
+destructure_stmt = ( "var" | "const" ), "(", destructure_binding,
+                   ",", destructure_binding, { ",", destructure_binding }, [ "," ],
+                   ")", "=", expression, NEWLINE ;
+destructure_binding = identifier | "_" ;
+
 assert_stmt     = "assert", "(", expression, [ ",", expression [ "," ] ], ")", NEWLINE ;
 
 if_stmt         = "if", expression, ":", block,
@@ -989,6 +995,18 @@ Notes:
 
 - Local `var` may be `final var`. Local `final const` is rejected (`const` is already
   immutable).
+- A destructuring declaration is a statement only; it has no class-body form. It is chosen
+  over `var_decl_stmt`/`const_stmt` purely by a `(` following `var`/`const`.
+- It must bind at least two elements (matching the arity-2 minimum of every other tuple
+  form), a trailing comma is allowed, and an initializer is mandatory. A `_` binding
+  discards its element instead of declaring a name; repeating `_` is allowed.
+- Bindings carry no type annotation: each takes the static type of the tuple element it
+  reads. The initializer must be a statically known tuple of exactly the bound arity;
+  `Variant` and every non-tuple type are rejected.
+- `const` bindings are write-once locals (enforced by the same analysis as `final var`),
+  not compile-time constants: their values come from a runtime tuple.
+- Nested destructuring, per-binding annotations, and destructuring in `for` are not part of
+  the language.
 - `for` may bind a typed loop variable (`for i: int in ...`).
 - `assert` takes a condition and an optional message.
 - Statement-level expressions are typically calls, assignments, or `await`; a bare
@@ -1152,8 +1170,9 @@ are written in `##` doc comments and produce errors if used as annotations.
   no-op. The parser only commits to the tuple-literal shape once it sees a `,` after the
   first element; `(a, b)`, `(a, b,)`, ... are tuple literals (arity >= 2, trailing comma
   allowed). The same arity-2 minimum and error shapes apply to the unnamed tuple *type*
-  `(T1, T2)` in type position (§7) and to a `tuple Name(...)` *declaration* (§4.4a) — an empty
-  or single-field tuple type/declaration is a parse error there too.
+  `(T1, T2)` in type position (§7) and to a `tuple Name(...)` *declaration* (§4.4a) and to a
+  destructuring declaration's binding list (§6) — an empty or single-element tuple type,
+  declaration, or binding list is a parse error there too.
 
 ---
 

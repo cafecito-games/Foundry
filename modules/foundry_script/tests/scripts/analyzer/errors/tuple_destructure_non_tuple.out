@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 2: Cannot destructure a value of type "Array"; only a tuple with a statically known shape can be destructured.

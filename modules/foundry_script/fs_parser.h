@@ -104,6 +104,7 @@ public:
 	struct TypeTestNode;
 	struct UnaryOpNode;
 	struct VariableNode;
+	struct VariableDestructureNode;
 	struct WhileNode;
 
 	class DataType {
@@ -475,6 +476,7 @@ public:
 			TYPE_TEST,
 			UNARY_OPERATOR,
 			VARIABLE,
+			VARIABLE_DESTRUCTURE,
 			WHILE,
 		};
 
@@ -1769,6 +1771,20 @@ public:
 		}
 	};
 
+	// A destructuring declaration (`var (x, y) = pair` / `const (name, hp) = player`). Each binding is
+	// a regular local variable so name resolution, typing, and code generation reuse the ordinary
+	// local machinery; a `_` slot is stored as a null entry, meaning "skip this element".
+	struct VariableDestructureNode : public Node {
+		Vector<VariableNode *> bindings;
+		ExpressionNode *initializer = nullptr;
+		// `const` bindings are write-once locals, enforced by the same analysis as `final var`.
+		bool is_const = false;
+
+		VariableDestructureNode() {
+			type = VARIABLE_DESTRUCTURE;
+		}
+	};
+
 	struct WhileNode : public Node {
 		ExpressionNode *condition = nullptr;
 		SuiteNode *loop = nullptr;
@@ -2138,6 +2154,7 @@ private:
 	Node *parse_statement();
 	VariableNode *parse_variable(const DeclarationModifiers &p_modifiers);
 	VariableNode *parse_variable(bool p_is_static, bool p_allow_property, bool p_is_final = false);
+	VariableDestructureNode *parse_variable_destructure(bool p_is_const);
 	VariableNode *parse_property(VariableNode *p_variable, bool p_need_indent);
 	void parse_property_getter(VariableNode *p_variable);
 	void parse_property_setter(VariableNode *p_variable);
@@ -2286,6 +2303,7 @@ public:
 		void print_type_test(TypeTestNode *p_type_test);
 		void print_unary_op(UnaryOpNode *p_unary_op);
 		void print_variable(VariableNode *p_variable);
+		void print_variable_destructure(VariableDestructureNode *p_destructure);
 		void print_while(WhileNode *p_while);
 
 	public:

@@ -1657,6 +1657,18 @@ void collect_extract_method_stmt_reads(
 			}
 			collect_extract_method_expr_reads(constant->initializer, p_location, r_state);
 		} break;
+		case FSParser::Node::VARIABLE_DESTRUCTURE: {
+			const FSParser::VariableDestructureNode *destructure = static_cast<const FSParser::VariableDestructureNode *>(p_statement);
+			if (r_state.reads_after == nullptr) {
+				for (int i = 0; i < destructure->bindings.size(); i++) {
+					const FSParser::VariableNode *binding = destructure->bindings[i];
+					if (binding != nullptr && binding->identifier != nullptr) {
+						extract_method_add_local(r_state.declared_inside, binding->identifier->name, binding->get_datatype());
+					}
+				}
+			}
+			collect_extract_method_expr_reads(destructure->initializer, p_location, r_state);
+		} break;
 		case FSParser::Node::ASSIGNMENT:
 			collect_extract_method_expr_reads(
 					static_cast<const FSParser::AssignmentNode *>(p_statement),
