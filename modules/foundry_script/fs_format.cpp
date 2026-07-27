@@ -1621,6 +1621,7 @@ void FSPrinter::print_enum(const FSParser::EnumNode *p_enum) {
 		write("pass");
 		newline();
 	} else if (!p_enum->values.is_empty()) {
+		int last_value_end_line = 0;
 		for (int i = 0; i < p_enum->values.size(); i++) {
 			const FSParser::EnumNode::Value &value = p_enum->values[i];
 			flush_trivia_until(value.line);
@@ -1657,9 +1658,13 @@ void FSPrinter::print_enum(const FSParser::EnumNode *p_enum) {
 			const int value_end_line = value.custom_value != nullptr ? value.custom_value->end_line : payload_end_line;
 			emit_trailing_comment(value_end_line);
 			last_emitted_line = MAX(last_emitted_line, value_end_line);
+			last_value_end_line = value_end_line;
 		}
 		if (p_enum->functions.is_empty()) {
-			flush_trivia_until(p_enum->values[p_enum->values.size() - 1].line + 2);
+			// The last value's true emitted extent, not its identifier line: a multi-line
+			// `= expr` or payload case ends several source lines after `value.line`, and a
+			// comment trailing that member must still be reachable by this flush.
+			flush_trivia_until(last_value_end_line + 2);
 		}
 	}
 	if (!p_enum->values.is_empty() && !p_enum->functions.is_empty()) {

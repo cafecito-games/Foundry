@@ -267,6 +267,10 @@ private:
 			write(p_close);
 			return;
 		}
+		// A comment can trail the opening delimiter itself (`(  # note`), before any
+		// item; that has to be appended here, before the fallback below marks
+		// `p_open_line` consumed and leaves it with nowhere to be emitted.
+		append_inline_comment(p_open_line);
 		if (p_open_line > last_emitted_line) {
 			last_emitted_line = p_open_line;
 		}
