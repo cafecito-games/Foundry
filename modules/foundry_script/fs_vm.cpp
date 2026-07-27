@@ -1412,10 +1412,14 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				const int arity = _code_ptr[ip + 4];
 
 				bool result = false;
-				if (value->get_type() == Variant::ARRAY && VariantInternal::get_array(value)->size() == arity) {
-					// The arity check above is the cheap rejection; only a candidate of the right shape
-					// pays for rebuilding the element types and testing them one by one.
-					result = _data_type_from_tuple_descriptor(*type_info).is_type(*value);
+				if (value->get_type() == Variant::ARRAY) {
+					// The arity check is the cheap rejection; only a candidate of the right shape pays
+					// for rebuilding the element types and testing them one by one.
+					result = VariantInternal::get_array(value)->size() == arity &&
+							_data_type_from_tuple_descriptor(*type_info).is_type(*value);
+				} else if (value->get_type() == Variant::NIL) {
+					// A nullable tuple type accepts null; the flag travels on the descriptor.
+					result = _data_type_from_tuple_descriptor(*type_info).is_nullable;
 				}
 
 				*dst = result;

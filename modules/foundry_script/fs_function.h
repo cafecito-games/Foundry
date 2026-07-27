@@ -221,7 +221,15 @@ public:
 					return false;
 				}
 				for (int i = 0; i < container_element_types.size(); i++) {
-					if (!container_element_types[i].is_type(array[i])) {
+					const FSDataType &element_type = container_element_types[i];
+					const Variant element = array[i];
+					// Object kinds accept null for assignment compatibility, which an `is` test must
+					// not: `null is Node` is false, so a null element only satisfies a nullable slot.
+					if (element.get_type() == Variant::NIL && !element_type.is_nullable &&
+							(element_type.kind == NATIVE || element_type.kind == SCRIPT || element_type.kind == FOUNDRY_SCRIPT)) {
+						return false;
+					}
+					if (!element_type.is_type(element)) {
 						return false;
 					}
 				}

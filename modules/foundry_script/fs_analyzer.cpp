@@ -1901,7 +1901,11 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 				result = make_global_enum_type_from_path(first, path, p_type);
 			} else {
 				if (FoundryScript::is_canonically_equal_paths(parser->script_path, ScriptServer::get_global_class_path(first))) {
-					result = parser->head->get_datatype();
+					// A `tuple_name` file naming itself is a by-value cycle; resolving through the
+					// declaration (rather than the head class) is what reports it.
+					result = parser->head != nullptr && parser->head->is_tuple_file
+							? make_global_tuple_type_from_current_parser(first, p_type)
+							: parser->head->get_datatype();
 				} else {
 					String path = ScriptServer::get_global_class_path(first);
 					String ext = path.get_extension();
