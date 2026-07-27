@@ -1266,10 +1266,12 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
 class FoundryJavaExporterContractTests(unittest.TestCase):
     @staticmethod
     def _development_binary() -> Path:
-        binaries = sorted((REPO_ROOT / "bin").glob("foundry.*editor.dev*"))
+        binaries = [
+            path for path in (REPO_ROOT / "bin").glob("foundry.*editor*") if path.is_file() and os.access(path, os.X_OK)
+        ]
         if not binaries:
             raise unittest.SkipTest("A development editor binary is required for command-first export validation")
-        return binaries[0]
+        return max(binaries, key=lambda path: path.stat().st_mtime_ns)
 
     @staticmethod
     def _write_export_preset(
@@ -1278,6 +1280,7 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
         plugin_local: Path | None = None,
         local_artifacts: tuple[Path, ...] = (),
         use_gradle: bool,
+        extra_options: tuple[str, ...] = (),
     ) -> None:
         options = [
             f"gradle_build/use_gradle_build={'true' if use_gradle else 'false'}",
@@ -1288,6 +1291,7 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
         if local_artifacts:
             encoded_paths = ", ".join(f'"{path}"' for path in local_artifacts)
             options.append(f"gradle_build/foundry_java/local_artifacts=PackedStringArray({encoded_paths})")
+        options.extend(extra_options)
         options_text = "\n".join(options)
         project.joinpath("export_presets.cfg").write_text(
             textwrap.dedent(
@@ -1331,15 +1335,20 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
     def test_preflight_names_every_fail_closed_boundary(self) -> None:
         exporter = EXPORTER.read_text(encoding="utf-8")
         for fragment in (
-            "Foundry-Java requires a Gradle Android export.",
-            "Foundry-Java Maven coordinates must be exact group:artifact:version values.",
-            "Foundry-Java Maven repositories must use HTTP(S) or file URLs.",
-            "Foundry-Java local artifacts must be regular .jar or .aar files.",
-            "Foundry-Java local artifact paths must not traverse a symbolic link.",
-            "Foundry-Java values must not contain carriage returns, newlines, or '|'.",
-            "Foundry-Java exports must select exactly one Maven or local Gradle plugin.",
-            "Foundry-Java exports require at least one Maven or local application artifact.",
-            "Foundry-Java local artifacts must not contain libfoundry_android.so",
+            "Invalid export option %s value '%s': %s.",
+            "must be an exact group:artifact:version value",
+            "must use an HTTP(S) or file URL",
+            "must name a regular .jar or .aar file",
+            "must not traverse a symbolic link",
+            "must not contain carriage returns, newlines, or '|'",
+            "must select exactly one Maven or local Gradle plugin",
+            "require at least one Maven or local application artifact",
+            "contains forbidden libfoundry_android.so",
+            "resolves to a duplicate local artifact",
+            "archive entry name is too long",
+            "archive entry name contains an embedded NUL byte",
+            "archive entry name is not valid UTF-8",
+            "archive could not be opened",
         ):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, exporter)
@@ -1369,9 +1378,97 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
             result = self._run_export(project)
             output = result.stdout + result.stderr
             self.assertNotEqual(0, result.returncode, output)
-            self.assertIn("Foundry-Java requires a Gradle Android export.", output)
+            self.assertIn("gradle_build/foundry_java/enabled", output)
+            self.assertIn("gradle_build/use_gradle_build", output)
+            self.assertIn("value 'true'", output)
+            self.assertIn("value is 'false'", output)
             self.assertFalse(output_path.exists())
             self.assertNotIn("Starting a Gradle Daemon", output)
+
+    def test_command_first_export_diagnostics_name_exact_option_and_value(self) -> None:
+        with tempfile.TemporaryDirectory(
+            prefix="foundry-java-option-preflight.",
+            dir=test_scratch_directory(),
+        ) as directory:
+            project = Path(directory)
+            project.joinpath("project.foundry").write_text(
+                '[application]\nconfig/name="Foundry Java Option Preflight"\n',
+                encoding="utf-8",
+            )
+            plugin = project / "plugin.jar"
+            module = project / "module.jar"
+            with zipfile.ZipFile(plugin, "w") as archive:
+                archive.writestr(
+                    "META-INF/gradle-plugins/games.cafecito.foundry.java.properties",
+                    "implementation-class=test.Fixture\n",
+                )
+            with zipfile.ZipFile(module, "w"):
+                pass
+            missing = project / "missing-module.jar"
+
+            cases = (
+                (
+                    None,
+                    (),
+                    ('gradle_build/foundry_java/gradle_plugin_maven="not-coordinate"',),
+                    ("gradle_build/foundry_java/gradle_plugin_maven", "not-coordinate"),
+                ),
+                (
+                    plugin,
+                    (module,),
+                    ('gradle_build/foundry_java/gradle_plugin_maven="test:plugin:1.0"',),
+                    (
+                        "gradle_build/foundry_java/gradle_plugin_maven",
+                        "test:plugin:1.0",
+                        "gradle_build/foundry_java/gradle_plugin_local",
+                        str(plugin),
+                    ),
+                ),
+                (
+                    plugin,
+                    (module,),
+                    ('gradle_build/foundry_java/maven_repositories=PackedStringArray("ftp://repo.invalid")',),
+                    ("gradle_build/foundry_java/maven_repositories", "ftp://repo.invalid"),
+                ),
+                (
+                    plugin,
+                    (module,),
+                    ('gradle_build/foundry_java/maven_artifacts=PackedStringArray("not-coordinate")',),
+                    ("gradle_build/foundry_java/maven_artifacts", "not-coordinate"),
+                ),
+                (
+                    plugin,
+                    (missing,),
+                    (),
+                    ("gradle_build/foundry_java/local_artifacts", str(missing)),
+                ),
+                (
+                    plugin,
+                    (),
+                    (),
+                    (
+                        "gradle_build/foundry_java/maven_artifacts",
+                        "gradle_build/foundry_java/local_artifacts",
+                        "<empty>",
+                    ),
+                ),
+            )
+            for plugin_local, local_artifacts, extra_options, expected in cases:
+                with self.subTest(expected=expected):
+                    self._write_export_preset(
+                        project,
+                        plugin_local=plugin_local,
+                        local_artifacts=local_artifacts,
+                        use_gradle=True,
+                        extra_options=extra_options,
+                    )
+                    result = self._run_export(project)
+                    output = result.stdout + result.stderr
+                    self.assertNotEqual(0, result.returncode, output)
+                    for fragment in expected:
+                        self.assertIn(fragment, output)
+                    self.assertFalse((project / "should-not-exist.apk").exists())
+                    self.assertNotIn("Starting a Gradle Daemon", output)
 
     def test_command_first_export_rejects_unsafe_local_archives_before_build(self) -> None:
         with tempfile.TemporaryDirectory(
@@ -1411,15 +1508,30 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
             shutil.copyfile(module, parent_module)
             linked_directory = project / "linked-artifacts"
             linked_directory.symlink_to(real_directory, target_is_directory=True)
+            hardlink_module = project / "hardlink-module.jar"
+            os.link(module, hardlink_module)
 
             cases = (
-                ((host_archives[0],), "must not contain libfoundry_android.so"),
-                ((host_archives[1],), "must not contain libfoundry_android.so"),
-                ((linked_module,), "must not traverse a symbolic link"),
-                ((linked_directory / parent_module.name,), "must not traverse a symbolic link"),
-                ((module, project / "sub/../module.jar"), "must be non-empty and unique"),
+                ((host_archives[0],), "gradle_build/foundry_java/local_artifacts", str(host_archives[0])),
+                ((host_archives[1],), "gradle_build/foundry_java/local_artifacts", str(host_archives[1])),
+                ((linked_module,), "gradle_build/foundry_java/local_artifacts", str(linked_module)),
+                (
+                    (linked_directory / parent_module.name,),
+                    "gradle_build/foundry_java/local_artifacts",
+                    str(linked_directory / parent_module.name),
+                ),
+                (
+                    (module, project / "sub/../module.jar"),
+                    "gradle_build/foundry_java/local_artifacts",
+                    str(project / "sub/../module.jar"),
+                ),
+                (
+                    (module, hardlink_module),
+                    "gradle_build/foundry_java/local_artifacts",
+                    str(hardlink_module),
+                ),
             )
-            for local_artifacts, message in cases:
+            for local_artifacts, option, value in cases:
                 with self.subTest(local_artifacts=local_artifacts):
                     self._write_export_preset(
                         project,
@@ -1430,8 +1542,139 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                     result = self._run_export(project)
                     output = result.stdout + result.stderr
                     self.assertNotEqual(0, result.returncode, output)
-                    self.assertIn(message, output)
-                    self.assertEqual(1, output.count(message), output)
+                    self.assertIn(option, output)
+                    self.assertIn(value, output)
+                    self.assertFalse((project / "should-not-exist.apk").exists())
+                    self.assertNotIn("Starting a Gradle Daemon", output)
+
+    def test_command_first_export_rejects_unreadable_archive_metadata_before_build(self) -> None:
+        with tempfile.TemporaryDirectory(
+            prefix="foundry-java-archive-preflight.",
+            dir=test_scratch_directory(),
+        ) as directory:
+            project = Path(directory)
+            project.joinpath("project.foundry").write_text(
+                '[application]\nconfig/name="Foundry Java Archive Preflight"\n',
+                encoding="utf-8",
+            )
+            valid_plugin = project / "plugin.jar"
+            valid_module = project / "module.jar"
+            with zipfile.ZipFile(valid_plugin, "w") as archive:
+                archive.writestr(
+                    "META-INF/gradle-plugins/games.cafecito.foundry.java.properties",
+                    "implementation-class=test.Fixture\n",
+                )
+            with zipfile.ZipFile(valid_module, "w"):
+                pass
+
+            oversized_plugin = project / "oversized-plugin.jar"
+            with zipfile.ZipFile(oversized_plugin, "w") as archive:
+                archive.writestr("x" * 16384, b"oversized")
+            maximum_oversized_plugin = project / "maximum-oversized-plugin.jar"
+            with zipfile.ZipFile(maximum_oversized_plugin, "w") as archive:
+                archive.writestr("x" * 65535, b"maximum-oversized")
+            corrupt_plugin = project / "corrupt-plugin.jar"
+            corrupt_plugin.write_bytes(b"not a ZIP archive")
+            hidden_host_plugin = project / "hidden-host-plugin.jar"
+            with zipfile.ZipFile(hidden_host_plugin, "w") as archive:
+                archive.writestr("jni/arm64-v8a/libfoundry_android.so", b"hidden-host")
+            hidden_host_bytes = bytearray(hidden_host_plugin.read_bytes())
+            hidden_host_eocd = hidden_host_bytes.rfind(b"PK\x05\x06")
+            self.assertGreaterEqual(hidden_host_eocd, 0)
+            hidden_host_bytes[hidden_host_eocd + 8 : hidden_host_eocd + 12] = b"\x00\x00\x00\x00"
+            hidden_host_plugin.write_bytes(hidden_host_bytes)
+            traversal_plugin = project / "traversal-plugin.jar"
+            with zipfile.ZipFile(traversal_plugin, "w") as archive:
+                archive.writestr("first-entry", b"valid")
+            traversal_bytes = bytearray(traversal_plugin.read_bytes())
+            eocd = traversal_bytes.rfind(b"PK\x05\x06")
+            self.assertGreaterEqual(eocd, 0)
+            traversal_bytes[eocd + 8 : eocd + 12] = b"\x02\x00\x02\x00"
+            traversal_plugin.write_bytes(traversal_bytes)
+            truncated_module = project / "truncated-module.jar"
+            truncated_module.write_bytes(valid_module.read_bytes()[:-8])
+            invalid_utf8_module = project / "invalid-utf8-module.jar"
+            with zipfile.ZipFile(invalid_utf8_module, "w") as archive:
+                archive.writestr("invalid-name.jar", b"invalid")
+            invalid_bytes = invalid_utf8_module.read_bytes().replace(
+                b"invalid-name.jar",
+                b"\xffnvalid-name.jar",
+            )
+            invalid_utf8_module.write_bytes(invalid_bytes)
+            embedded_nul_module = project / "embedded-nul-module.jar"
+            with zipfile.ZipFile(embedded_nul_module, "w") as archive:
+                archive.writestr("embedded-nul.jar", b"invalid")
+            embedded_nul_bytes = embedded_nul_module.read_bytes().replace(
+                b"embedded-nul.jar",
+                b"embedded\x00nul.jar",
+            )
+            embedded_nul_module.write_bytes(embedded_nul_bytes)
+
+            cases = (
+                (
+                    oversized_plugin,
+                    (valid_module,),
+                    "gradle_build/foundry_java/gradle_plugin_local",
+                    "archive entry name is too long",
+                ),
+                (
+                    maximum_oversized_plugin,
+                    (valid_module,),
+                    "gradle_build/foundry_java/gradle_plugin_local",
+                    "archive entry name is too long",
+                ),
+                (
+                    corrupt_plugin,
+                    (valid_module,),
+                    "gradle_build/foundry_java/gradle_plugin_local",
+                    "archive could not be opened",
+                ),
+                (
+                    hidden_host_plugin,
+                    (valid_module,),
+                    "gradle_build/foundry_java/gradle_plugin_local",
+                    "archive entry count does not match its non-empty central directory",
+                ),
+                (
+                    traversal_plugin,
+                    (valid_module,),
+                    "gradle_build/foundry_java/gradle_plugin_local",
+                    "archive traversal failed",
+                ),
+                (
+                    valid_plugin,
+                    (truncated_module,),
+                    "gradle_build/foundry_java/local_artifacts",
+                    "archive could not be opened",
+                ),
+                (
+                    valid_plugin,
+                    (invalid_utf8_module,),
+                    "gradle_build/foundry_java/local_artifacts",
+                    "archive entry name is not valid UTF-8",
+                ),
+                (
+                    valid_plugin,
+                    (embedded_nul_module,),
+                    "gradle_build/foundry_java/local_artifacts",
+                    "archive entry name contains an embedded NUL byte",
+                ),
+            )
+            for plugin, local_artifacts, option, diagnostic in cases:
+                with self.subTest(plugin=plugin, local_artifacts=local_artifacts):
+                    self._write_export_preset(
+                        project,
+                        plugin_local=plugin,
+                        local_artifacts=local_artifacts,
+                        use_gradle=True,
+                    )
+                    result = self._run_export(project)
+                    output = result.stdout + result.stderr
+                    self.assertNotEqual(0, result.returncode, output)
+                    self.assertIn(option, output)
+                    offending = plugin if plugin != valid_plugin else local_artifacts[0]
+                    self.assertIn(str(offending), output)
+                    self.assertIn(diagnostic, output)
                     self.assertFalse((project / "should-not-exist.apk").exists())
                     self.assertNotIn("Starting a Gradle Daemon", output)
 
