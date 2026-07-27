@@ -740,17 +740,18 @@ void FSPrinter::emit_trailing_comment(int p_line) {
 // Emits the comments that trail the last statement of a block body, taken from
 // the lines immediately following the last emitted line (a blank line or a
 // non-trivia line ends the run). A trailing full-line comment belongs to this body
-// only when its source indentation is at least the body's own; a shallower comment
-// (e.g. a column-0 doc comment before the next member) belongs to the following
-// node and is left for its leading-trivia flush.
+// only when its source indentation is at least the body's own (measured from
+// `p_body_reference_line` when given, otherwise from the last emitted source
+// line); a shallower comment (e.g. a column-0 doc comment before the next member)
+// belongs to the following node and is left for its leading-trivia flush.
 //
-// The body's own indentation is measured from `indent_level` -- the depth this body
-// is actually printed at -- rather than from the last emitted source line's own
-// text, which can be unreliable when that line sits inside a bracketed,
-// whitespace-insensitive context (e.g. a multi-line call or collection whose
-// closing delimiter was authored at an arbitrary column).
-void FSPrinter::flush_block_tail_comments() {
-	const int body_columns = indent_level * TAB_WIDTH_COLUMNS;
+// `p_body_reference_line` lets a caller supply a line it knows is governed by
+// ordinary INDENT/DEDENT structure (never inside a bracket, where indentation is
+// whitespace-insensitive and the author is free to put a closing delimiter at any
+// column). Measuring columns per level would assume a fixed indent width, which
+// would misclassify a file consistently indented some other way (two-space, etc.).
+void FSPrinter::flush_block_tail_comments(int p_body_reference_line) {
+	const int body_columns = line_indent_columns(p_body_reference_line > 0 ? p_body_reference_line : last_emitted_line);
 	int line = last_emitted_line + 1;
 	while (is_trivia_line(line) && line_indent_columns(line) >= body_columns) {
 		emit_trivia_line(line);
@@ -1670,7 +1671,13 @@ void FSPrinter::print_enum(const FSParser::EnumNode *p_enum) {
 			// reachable. But a fixed lookahead would also swallow a dedented comment that
 			// documents the *next* declaration, so indentation decides where the enum's
 			// own trailing comments end.
-			flush_block_tail_comments();
+			//
+			// The last value's own identifier line -- not its emitted extent -- anchors
+			// that indentation measurement: a payload's closing delimiter sits inside its
+			// own parentheses, a whitespace-insensitive context the author may indent
+			// however they like, while the identifier line is ordinary INDENT/DEDENT-
+			// governed enum-body text.
+			flush_block_tail_comments(p_enum->values[p_enum->values.size() - 1].line);
 		}
 	}
 	if (!p_enum->values.is_empty() && !p_enum->functions.is_empty()) {
