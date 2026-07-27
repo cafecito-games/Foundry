@@ -85,6 +85,12 @@ def run_bounded_subprocess(
     return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
 
 
+def test_scratch_directory() -> Path:
+    scratch = Path(os.environ.get("FOUNDRY_TEST_SCRATCH", REPO_ROOT / ".test_scratch"))
+    scratch.mkdir(parents=True, exist_ok=True)
+    return scratch
+
+
 class FoundryJavaExportSurfaceTests(unittest.TestCase):
     def test_exporter_exposes_only_the_versioned_explicit_handoff(self) -> None:
         exporter = EXPORTER.read_text(encoding="utf-8")
@@ -564,6 +570,179 @@ class FoundryJavaGradlePropertyTests(unittest.TestCase):
         )
         repository_line = next(line for line in output.splitlines() if line.startswith("FIXTURE_REPOSITORIES="))
         self.assertLess(repository_line.index("maven-a"), repository_line.index("maven-z"))
+
+
+class FoundryJavaExporterContractTests(unittest.TestCase):
+    @staticmethod
+    def _development_binary() -> Path:
+        binaries = sorted((REPO_ROOT / "bin").glob("foundry.*editor.dev*"))
+        if not binaries:
+            raise unittest.SkipTest("A development editor binary is required for command-first export validation")
+        return binaries[0]
+
+    @staticmethod
+    def _write_export_preset(
+        project: Path,
+        *,
+        plugin_local: Path | None = None,
+        local_artifacts: tuple[Path, ...] = (),
+        use_gradle: bool,
+    ) -> None:
+        options = [
+            f"gradle_build/use_gradle_build={'true' if use_gradle else 'false'}",
+            "gradle_build/foundry_java/enabled=true",
+        ]
+        if plugin_local is not None:
+            options.append(f'gradle_build/foundry_java/gradle_plugin_local="{plugin_local}"')
+        if local_artifacts:
+            encoded_paths = ", ".join(f'"{path}"' for path in local_artifacts)
+            options.append(f"gradle_build/foundry_java/local_artifacts=PackedStringArray({encoded_paths})")
+        options_text = "\n".join(options)
+        project.joinpath("export_presets.cfg").write_text(
+            textwrap.dedent(
+                f"""
+                [preset.0]
+
+                name="Android"
+                platform="Android"
+                runnable=false
+                export_filter="all_resources"
+                include_filter=""
+                exclude_filter=""
+
+                [preset.0.options]
+
+                {options_text}
+                """
+            ).strip()
+            + "\n",
+            encoding="utf-8",
+        )
+
+    def _run_export(self, project: Path) -> subprocess.CompletedProcess[str]:
+        return run_bounded_subprocess(
+            [
+                str(self._development_binary()),
+                "--headless",
+                "project",
+                "export",
+                "--project",
+                str(project),
+                "--preset",
+                "Android",
+                "--output",
+                str(project / "should-not-exist.apk"),
+            ],
+            cwd=project,
+            timeout=30,
+        )
+
+    def test_preflight_names_every_fail_closed_boundary(self) -> None:
+        exporter = EXPORTER.read_text(encoding="utf-8")
+        for fragment in (
+            "Foundry-Java requires a Gradle Android export.",
+            "Foundry-Java Maven coordinates must be exact group:artifact:version values.",
+            "Foundry-Java Maven repositories must use HTTP(S) or file URLs.",
+            "Foundry-Java local artifacts must be regular .jar or .aar files.",
+            "Foundry-Java local artifact paths must not traverse a symbolic link.",
+            "Foundry-Java values must not contain carriage returns, newlines, or '|'.",
+            "Foundry-Java exports must select exactly one Maven or local Gradle plugin.",
+            "Foundry-Java exports require at least one Maven or local application artifact.",
+            "Foundry-Java local artifacts must not contain libfoundry_android.so",
+        ):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, exporter)
+
+    def test_properties_are_emitted_only_inside_the_enabled_branch(self) -> None:
+        exporter = EXPORTER.read_text(encoding="utf-8")
+        marker = 'cmdline.push_back("-Pfoundry_java_registry_marker=registry-index-v2")'
+        enabled_branch = exporter.find("if (foundry_java.enabled)")
+        marker_position = exporter.find(marker)
+        build_execution = exporter.find("execute_and_show_output", marker_position)
+        self.assertGreaterEqual(enabled_branch, 0)
+        self.assertGreater(marker_position, enabled_branch)
+        self.assertGreater(build_execution, marker_position)
+
+    def test_command_first_export_rejects_opt_in_without_gradle_before_build(self) -> None:
+        with tempfile.TemporaryDirectory(
+            prefix="foundry-java-export-preflight.",
+            dir=test_scratch_directory(),
+        ) as directory:
+            project = Path(directory)
+            project.joinpath("project.foundry").write_text(
+                '[application]\nconfig/name="Foundry Java Export Preflight"\n',
+                encoding="utf-8",
+            )
+            self._write_export_preset(project, use_gradle=False)
+            output_path = project / "should-not-exist.apk"
+            result = self._run_export(project)
+            output = result.stdout + result.stderr
+            self.assertNotEqual(0, result.returncode, output)
+            self.assertIn("Foundry-Java requires a Gradle Android export.", output)
+            self.assertFalse(output_path.exists())
+            self.assertNotIn("Starting a Gradle Daemon", output)
+
+    def test_command_first_export_rejects_unsafe_local_archives_before_build(self) -> None:
+        with tempfile.TemporaryDirectory(
+            prefix="foundry-java-local-preflight.",
+            dir=test_scratch_directory(),
+        ) as directory:
+            project = Path(directory)
+            project.joinpath("project.foundry").write_text(
+                '[application]\nconfig/name="Foundry Java Local Preflight"\n',
+                encoding="utf-8",
+            )
+            plugin = project / "plugin.jar"
+            module = project / "module.jar"
+            with zipfile.ZipFile(plugin, "w") as archive:
+                archive.writestr(
+                    "META-INF/gradle-plugins/games.cafecito.foundry.java.properties",
+                    "implementation-class=test.Fixture\n",
+                )
+            with zipfile.ZipFile(module, "w"):
+                pass
+
+            host_archives = []
+            for name, entry in (
+                ("root-host.jar", "libfoundry_android.so"),
+                ("nested-host.aar", "jni/arm64-v8a/libfoundry_android.so"),
+            ):
+                archive_path = project / name
+                with zipfile.ZipFile(archive_path, "w") as archive:
+                    archive.writestr(entry, b"host")
+                host_archives.append(archive_path)
+
+            linked_module = project / "linked-module.jar"
+            linked_module.symlink_to(module)
+            real_directory = project / "real-artifacts"
+            real_directory.mkdir()
+            parent_module = real_directory / "parent-module.jar"
+            shutil.copyfile(module, parent_module)
+            linked_directory = project / "linked-artifacts"
+            linked_directory.symlink_to(real_directory, target_is_directory=True)
+
+            cases = (
+                ((host_archives[0],), "must not contain libfoundry_android.so"),
+                ((host_archives[1],), "must not contain libfoundry_android.so"),
+                ((linked_module,), "must not traverse a symbolic link"),
+                ((linked_directory / parent_module.name,), "must not traverse a symbolic link"),
+                ((module, project / "sub/../module.jar"), "must be non-empty and unique"),
+            )
+            for local_artifacts, message in cases:
+                with self.subTest(local_artifacts=local_artifacts):
+                    self._write_export_preset(
+                        project,
+                        plugin_local=plugin,
+                        local_artifacts=local_artifacts,
+                        use_gradle=True,
+                    )
+                    result = self._run_export(project)
+                    output = result.stdout + result.stderr
+                    self.assertNotEqual(0, result.returncode, output)
+                    self.assertIn(message, output)
+                    self.assertEqual(1, output.count(message), output)
+                    self.assertFalse((project / "should-not-exist.apk").exists())
+                    self.assertNotIn("Starting a Gradle Daemon", output)
 
 
 if __name__ == "__main__":

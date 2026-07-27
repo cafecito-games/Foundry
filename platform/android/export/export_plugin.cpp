@@ -1897,6 +1897,225 @@ Vector<EditorExportPlatformAndroid::ABI> EditorExportPlatformAndroid::get_enable
 	return enabled_abis;
 }
 
+static bool _is_exact_foundry_java_coordinate(const String &p_coordinate) {
+	PackedStringArray parts = p_coordinate.split(":");
+	if (parts.size() != 3 || p_coordinate.contains("+") || p_coordinate.contains("[") || p_coordinate.contains("]") || p_coordinate.to_lower().contains("latest")) {
+		return false;
+	}
+	for (const String &part : parts) {
+		if (part.is_empty()) {
+			return false;
+		}
+		for (int i = 0; i < part.length(); i++) {
+			const char32_t character = part[i];
+			if (!(is_ascii_alphanumeric_char(character) || character == '.' || character == '_' || character == '-')) {
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
+static bool _foundry_java_path_has_symlink(const String &p_path) {
+	Ref<DirAccess> dir = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+	ERR_FAIL_COND_V(dir.is_null(), true);
+
+	const String with_normalized_separators = p_path.replace("\\", "/");
+	PackedStringArray components = with_normalized_separators.split("/", false);
+	String current = with_normalized_separators.begins_with("/") ? "/" : "";
+	for (const String &component : components) {
+		if (component == ".") {
+			continue;
+		}
+		if (component == "..") {
+			current = current.get_base_dir();
+			continue;
+		}
+		current = current.is_empty() ? component : current.path_join(component);
+		if (dir->is_link(current)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static bool _foundry_java_archive_contains_host_library(const String &p_path, String &r_entry) {
+	Ref<FileAccess> archive_file;
+	zlib_filefunc_def io = zipio_create_io(&archive_file);
+	unzFile archive = unzOpen2(p_path.utf8().get_data(), &io);
+	if (!archive) {
+		return false;
+	}
+
+	int result = unzGoToFirstFile(archive);
+	while (result == UNZ_OK) {
+		char filename[16384];
+		unz_file_info info;
+		memset(&info, 0, sizeof(info));
+		if (unzGetCurrentFileInfo(archive, &info, filename, sizeof(filename), nullptr, 0, nullptr, 0) != UNZ_OK) {
+			break;
+		}
+		const String entry = String::utf8(filename);
+		if (entry == "libfoundry_android.so" || entry.ends_with("/libfoundry_android.so")) {
+			r_entry = entry;
+			unzClose(archive);
+			return true;
+		}
+		result = unzGoToNextFile(archive);
+	}
+	unzClose(archive);
+	return false;
+}
+
+Error EditorExportPlatformAndroid::_get_foundry_java_export_config(const EditorExportPreset *p_preset, FoundryJavaExportConfig &r_config, String &r_error) const {
+	r_config = FoundryJavaExportConfig();
+	r_config.enabled = bool(p_preset->get("gradle_build/foundry_java/enabled"));
+	if (!r_config.enabled) {
+		return OK;
+	}
+	if (!bool(p_preset->get("gradle_build/use_gradle_build"))) {
+		r_error = TTR("Foundry-Java requires a Gradle Android export.");
+		return ERR_INVALID_PARAMETER;
+	}
+
+	const String plugin_maven_raw = p_preset->get("gradle_build/foundry_java/gradle_plugin_maven");
+	const String plugin_local_raw = p_preset->get("gradle_build/foundry_java/gradle_plugin_local");
+	if (plugin_maven_raw.contains("|") || plugin_maven_raw.contains("\n") || plugin_maven_raw.contains("\r") ||
+			plugin_local_raw.contains("|") || plugin_local_raw.contains("\n") || plugin_local_raw.contains("\r")) {
+		r_error = TTR("Foundry-Java values must not contain carriage returns, newlines, or '|'.");
+		return ERR_INVALID_PARAMETER;
+	}
+	const String plugin_maven = plugin_maven_raw.strip_edges();
+	const String plugin_local = plugin_local_raw.strip_edges();
+	if (plugin_maven.is_empty() == plugin_local.is_empty()) {
+		r_error = TTR("Foundry-Java exports must select exactly one Maven or local Gradle plugin.");
+		return ERR_INVALID_PARAMETER;
+	}
+	if (!plugin_maven.is_empty()) {
+		if (!_is_exact_foundry_java_coordinate(plugin_maven)) {
+			r_error = TTR("Foundry-Java Maven coordinates must be exact group:artifact:version values.");
+			return ERR_INVALID_PARAMETER;
+		}
+		r_config.plugin_kind = "maven";
+		r_config.plugin = plugin_maven;
+	} else {
+		r_config.plugin_kind = "local";
+		const String globalized_plugin = ProjectSettings::get_singleton()->globalize_path(plugin_local);
+		if (_foundry_java_path_has_symlink(globalized_plugin)) {
+			r_error = TTR("Foundry-Java local artifact paths must not traverse a symbolic link.");
+			return ERR_INVALID_PARAMETER;
+		}
+		r_config.plugin = globalized_plugin.simplify_path();
+		if (!FileAccess::exists(r_config.plugin) || DirAccess::exists(r_config.plugin) || !r_config.plugin.to_lower().ends_with(".jar")) {
+			r_error = TTR("Foundry-Java local artifacts must be regular .jar or .aar files.");
+			return ERR_INVALID_PARAMETER;
+		}
+		String forbidden_entry;
+		if (_foundry_java_archive_contains_host_library(r_config.plugin, forbidden_entry)) {
+			r_error = vformat(TTR("Foundry-Java local artifacts must not contain libfoundry_android.so: %s (%s)."), r_config.plugin, forbidden_entry);
+			return ERR_INVALID_PARAMETER;
+		}
+	}
+
+	r_config.repositories = p_preset->get("gradle_build/foundry_java/maven_repositories");
+	r_config.maven_artifacts = p_preset->get("gradle_build/foundry_java/maven_artifacts");
+	const Variant local_artifacts_value = p_preset->get("gradle_build/foundry_java/local_artifacts");
+	if (local_artifacts_value.get_type() == Variant::PACKED_STRING_ARRAY) {
+		r_config.local_artifacts = local_artifacts_value;
+	} else if (local_artifacts_value.get_type() == Variant::ARRAY) {
+		const Array local_artifacts = local_artifacts_value;
+		for (const Variant &artifact : local_artifacts) {
+			if (artifact.get_type() != Variant::STRING) {
+				r_error = TTR("Foundry-Java local artifacts must be regular .jar or .aar files.");
+				return ERR_INVALID_PARAMETER;
+			}
+			r_config.local_artifacts.push_back(artifact);
+		}
+	} else {
+		r_error = TTR("Foundry-Java local artifacts must be regular .jar or .aar files.");
+		return ERR_INVALID_PARAMETER;
+	}
+	HashSet<String> seen;
+	for (int i = 0; i < r_config.repositories.size(); i++) {
+		const String raw = r_config.repositories[i];
+		const String value = raw.strip_edges();
+		if (raw.contains("|") || raw.contains("\n") || raw.contains("\r")) {
+			r_error = TTR("Foundry-Java values must not contain carriage returns, newlines, or '|'.");
+			return ERR_INVALID_PARAMETER;
+		}
+		if (value.is_empty() || seen.has(value)) {
+			r_error = TTR("Foundry-Java Maven repositories must be non-empty and unique.");
+			return ERR_INVALID_PARAMETER;
+		}
+		seen.insert(value);
+		if (!(value.begins_with("https://") || value.begins_with("http://") || value.begins_with("file://"))) {
+			r_error = TTR("Foundry-Java Maven repositories must use HTTP(S) or file URLs.");
+			return ERR_INVALID_PARAMETER;
+		}
+		r_config.repositories.set(i, value);
+	}
+	r_config.repositories.sort();
+
+	seen.clear();
+	for (int i = 0; i < r_config.maven_artifacts.size(); i++) {
+		const String raw = r_config.maven_artifacts[i];
+		const String value = raw.strip_edges();
+		if (raw.contains("|") || raw.contains("\n") || raw.contains("\r")) {
+			r_error = TTR("Foundry-Java values must not contain carriage returns, newlines, or '|'.");
+			return ERR_INVALID_PARAMETER;
+		}
+		if (seen.has(value) || !_is_exact_foundry_java_coordinate(value)) {
+			r_error = TTR("Foundry-Java Maven coordinates must be exact group:artifact:version values.");
+			return ERR_INVALID_PARAMETER;
+		}
+		seen.insert(value);
+		r_config.maven_artifacts.set(i, value);
+	}
+	r_config.maven_artifacts.sort();
+
+	seen.clear();
+	for (int i = 0; i < r_config.local_artifacts.size(); i++) {
+		const String raw = r_config.local_artifacts[i];
+		const String original = raw.strip_edges();
+		if (raw.contains("|") || raw.contains("\n") || raw.contains("\r")) {
+			r_error = TTR("Foundry-Java values must not contain carriage returns, newlines, or '|'.");
+			return ERR_INVALID_PARAMETER;
+		}
+		if (original.is_empty()) {
+			r_error = TTR("Foundry-Java local artifacts must be non-empty and unique.");
+			return ERR_INVALID_PARAMETER;
+		}
+		const String globalized_path = ProjectSettings::get_singleton()->globalize_path(original);
+		if (_foundry_java_path_has_symlink(globalized_path)) {
+			r_error = TTR("Foundry-Java local artifact paths must not traverse a symbolic link.");
+			return ERR_INVALID_PARAMETER;
+		}
+		const String path = globalized_path.simplify_path();
+		if (seen.has(path)) {
+			r_error = TTR("Foundry-Java local artifacts must be non-empty and unique.");
+			return ERR_INVALID_PARAMETER;
+		}
+		seen.insert(path);
+		if (!FileAccess::exists(path) || DirAccess::exists(path) || !(path.to_lower().ends_with(".jar") || path.to_lower().ends_with(".aar"))) {
+			r_error = TTR("Foundry-Java local artifacts must be regular .jar or .aar files.");
+			return ERR_INVALID_PARAMETER;
+		}
+		String forbidden_entry;
+		if (_foundry_java_archive_contains_host_library(path, forbidden_entry)) {
+			r_error = vformat(TTR("Foundry-Java local artifacts must not contain libfoundry_android.so: %s (%s)."), path, forbidden_entry);
+			return ERR_INVALID_PARAMETER;
+		}
+		r_config.local_artifacts.set(i, path);
+	}
+	r_config.local_artifacts.sort();
+
+	if (r_config.maven_artifacts.is_empty() && r_config.local_artifacts.is_empty()) {
+		r_error = TTR("Foundry-Java exports require at least one Maven or local application artifact.");
+		return ERR_INVALID_PARAMETER;
+	}
+	return OK;
+}
+
 void EditorExportPlatformAndroid::get_preset_features(const Ref<EditorExportPreset> &p_preset, List<String> *r_features) const {
 	r_features->push_back("etc2");
 	r_features->push_back("astc");
@@ -1914,7 +2133,13 @@ void EditorExportPlatformAndroid::get_preset_features(const Ref<EditorExportPres
 
 String EditorExportPlatformAndroid::get_export_option_warning(const EditorExportPreset *p_preset, const StringName &p_name) const {
 	if (p_preset) {
-		if (p_name == ("apk_expansion/public_key")) {
+		if (String(p_name).begins_with("gradle_build/foundry_java/")) {
+			FoundryJavaExportConfig config;
+			String error;
+			if (_get_foundry_java_export_config(p_preset, config, error) != OK) {
+				return error;
+			}
+		} else if (p_name == ("apk_expansion/public_key")) {
 			bool apk_expansion = p_preset->get("apk_expansion/enable");
 			String apk_expansion_pkey = p_preset->get("apk_expansion/public_key");
 			if (apk_expansion && apk_expansion_pkey.is_empty()) {
@@ -2018,6 +2243,18 @@ void EditorExportPlatformAndroid::get_export_options(List<ExportOption> *r_optio
 	r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "custom_template/release", PROPERTY_HINT_GLOBAL_FILE, "*.apk"), ""));
 
 	r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "gradle_build/use_gradle_build"), false, true, false));
+	r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "gradle_build/foundry_java/enabled"), false, true, false));
+	r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "gradle_build/foundry_java/gradle_plugin_maven", PROPERTY_HINT_PLACEHOLDER_TEXT, "group:artifact:version"), ""));
+	r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "gradle_build/foundry_java/gradle_plugin_local", PROPERTY_HINT_GLOBAL_FILE, "*.jar"), ""));
+	r_options->push_back(ExportOption(PropertyInfo(Variant::PACKED_STRING_ARRAY, "gradle_build/foundry_java/maven_repositories"), PackedStringArray()));
+	r_options->push_back(ExportOption(PropertyInfo(Variant::PACKED_STRING_ARRAY, "gradle_build/foundry_java/maven_artifacts"), PackedStringArray()));
+	r_options->push_back(ExportOption(
+			PropertyInfo(
+					Variant::ARRAY,
+					"gradle_build/foundry_java/local_artifacts",
+					PROPERTY_HINT_ARRAY_TYPE,
+					vformat("%d/%d:*.jar,*.aar", Variant::STRING, PROPERTY_HINT_GLOBAL_FILE)),
+			Array()));
 	r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "gradle_build/gradle_build_directory", PROPERTY_HINT_PLACEHOLDER_TEXT, "res://android"), "", false, false));
 	r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "gradle_build/android_source_template", PROPERTY_HINT_GLOBAL_FILE, "*.zip"), ""));
 	r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "gradle_build/compress_native_libraries"), false, false, true));
@@ -2106,6 +2343,9 @@ bool EditorExportPlatformAndroid::get_export_option_visibility(const EditorExpor
 	}
 
 	bool advanced_options_enabled = p_preset->are_advanced_options_enabled();
+	if (p_option.begins_with("gradle_build/foundry_java/") && p_option != "gradle_build/foundry_java/enabled") {
+		return bool(p_preset->get("gradle_build/foundry_java/enabled"));
+	}
 	if (p_option == "graphics/opengl_debug" ||
 			p_option == "gradle_build/custom_theme_attributes" ||
 			p_option == "command_line/extra_args" ||
@@ -2932,10 +3172,19 @@ bool EditorExportPlatformAndroid::has_valid_export_configuration(const Ref<Edito
 bool EditorExportPlatformAndroid::has_valid_project_configuration(const Ref<EditorExportPreset> &p_preset, String &r_error) const {
 	String err;
 	bool valid = true;
+	FoundryJavaExportConfig foundry_java;
+	String foundry_java_error;
+	if (_get_foundry_java_export_config(p_preset.ptr(), foundry_java, foundry_java_error) != OK) {
+		err += foundry_java_error + "\n";
+		valid = false;
+	}
 
 	List<ExportOption> options;
 	get_export_options(&options);
 	for (const EditorExportPlatform::ExportOption &E : options) {
+		if (String(E.option.name).begins_with("gradle_build/foundry_java/")) {
+			continue;
+		}
 		if (get_export_option_visibility(p_preset.ptr(), E.option.name)) {
 			String warn = get_export_option_warning(p_preset.ptr(), E.option.name);
 			if (!warn.is_empty()) {
@@ -3430,6 +3679,13 @@ Error EditorExportPlatformAndroid::_generate_sparse_pck_metadata(const Ref<Edito
 
 Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportPreset> &p_preset, bool p_debug, const String &p_path, int export_format, bool should_sign, BitField<EditorExportPlatform::DebugFlags> p_flags) {
 	ExportNotifier notifier(*this, p_preset, p_debug, p_path, p_flags);
+	FoundryJavaExportConfig foundry_java;
+	String foundry_java_error;
+	Error foundry_java_config_error = _get_foundry_java_export_config(p_preset.ptr(), foundry_java, foundry_java_error);
+	if (foundry_java_config_error != OK) {
+		add_message(EXPORT_MESSAGE_ERROR, TTR("Export"), foundry_java_error);
+		return foundry_java_config_error;
+	}
 
 	const String base_dir = p_path.get_base_dir();
 	if (!DirAccess::exists(base_dir)) {
@@ -3685,6 +3941,20 @@ Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportP
 		cmdline.push_back("-Pexport_version_min_sdk=" + min_sdk_version); // argument to specify the min sdk.
 		cmdline.push_back("-Pexport_version_target_sdk=" + target_sdk_version); // argument to specify the target sdk.
 		cmdline.push_back("-Pexport_enabled_abis=" + enabled_abi_string); // argument to specify enabled ABIs.
+		if (foundry_java.enabled) {
+			cmdline.push_back("-Pfoundry_java_registry_marker=registry-index-v2");
+			cmdline.push_back("-Pfoundry_java_gradle_plugin_kind=" + foundry_java.plugin_kind);
+			cmdline.push_back("-Pfoundry_java_gradle_plugin=" + foundry_java.plugin);
+			if (!foundry_java.repositories.is_empty()) {
+				cmdline.push_back("-Pfoundry_java_maven_repositories=" + String("|").join(foundry_java.repositories));
+			}
+			if (!foundry_java.maven_artifacts.is_empty()) {
+				cmdline.push_back("-Pfoundry_java_maven_artifacts=" + String("|").join(foundry_java.maven_artifacts));
+			}
+			if (!foundry_java.local_artifacts.is_empty()) {
+				cmdline.push_back("-Pfoundry_java_local_artifacts=" + String("|").join(foundry_java.local_artifacts));
+			}
+		}
 		if (!openxr_loader_version.is_empty()) {
 			cmdline.push_back("-Popenxr_loader_version=" + openxr_loader_version); // fixed engine-owned OpenXR loader version.
 		}
