@@ -1,0 +1,2 @@
+FS_TEST_PARSER_ERROR
+An enum case payload must have at least one field.

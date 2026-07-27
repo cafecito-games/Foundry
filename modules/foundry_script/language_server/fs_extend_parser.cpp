@@ -211,7 +211,7 @@ void ExtendFSParser::append_enum_symbol_children(const FSParser::EnumNode *p_enu
 		child.kind = LSP::SymbolKind::EnumMember;
 		child.deprecated = false;
 		child.range.start = FoundryPosition(value.line, value.start_column).to_lsp(lines);
-		child.range.end = FoundryPosition(value.line, value.end_column).to_lsp(lines);
+		child.range.end = FoundryPosition(value.end_line, value.end_column).to_lsp(lines);
 		child.selectionRange = range_of_node(value.identifier);
 		child.documentation = value.doc_data.description;
 		child.uri = uri;
@@ -438,7 +438,7 @@ void ExtendFSParser::parse_class_symbol(const FSParser::ClassNode *p_class, LSP:
 				symbol.kind = LSP::SymbolKind::EnumMember;
 				symbol.deprecated = false;
 				symbol.range.start = FoundryPosition(m.enum_value.line, m.enum_value.start_column).to_lsp(lines);
-				symbol.range.end = FoundryPosition(m.enum_value.line, m.enum_value.end_column).to_lsp(lines);
+				symbol.range.end = FoundryPosition(m.enum_value.end_line, m.enum_value.end_column).to_lsp(lines);
 				symbol.selectionRange = range_of_node(m.enum_value.identifier);
 				symbol.documentation = m.enum_value.doc_data.description;
 				symbol.uri = uri;

@@ -1626,13 +1626,37 @@ void FSPrinter::print_enum(const FSParser::EnumNode *p_enum) {
 			flush_trivia_until(value.line);
 			write_indent();
 			write(value.identifier->name);
-			write(" = ");
+			int payload_end_line = value.line;
+			if (value.has_payload()) {
+				// `payload_close_line` (the actual ")" line) rather than the last field's line, so
+				// a comment attached to the closing delimiter itself is not silently dropped.
+				payload_end_line = value.payload_close_line;
+				print_delimited_items(
+						"(", ")", value.payload_fields.size(), payload_end_line > value.line,
+						value.line, payload_end_line,
+						[&](int p_index) {
+							const FSParser::EnumNode::PayloadField &field = value.payload_fields[p_index];
+							if (field.identifier != nullptr) {
+								write(field.identifier->name);
+								write(": ");
+							}
+							print_type(field.type);
+						},
+						[&](int p_index) { return value.payload_fields[p_index].line; },
+						[&](int p_index) { return value.payload_fields[p_index].type->end_line; });
+			}
+			// A case in a tagged union never carries an explicit value: tags are ordinal by
+			// declaration order. Every case in a non-tagged enum still requires one.
 			if (value.custom_value != nullptr) {
+				write(" = ");
 				print_expression(value.custom_value);
+			} else if (!p_enum->is_tagged_union) {
+				write(" = ");
 			}
 			newline();
-			emit_trailing_comment(value.custom_value != nullptr ? value.custom_value->end_line : value.line);
-			last_emitted_line = MAX(last_emitted_line, value.custom_value != nullptr ? value.custom_value->end_line : value.line);
+			const int value_end_line = value.custom_value != nullptr ? value.custom_value->end_line : payload_end_line;
+			emit_trailing_comment(value_end_line);
+			last_emitted_line = MAX(last_emitted_line, value_end_line);
 		}
 		if (p_enum->functions.is_empty()) {
 			flush_trivia_until(p_enum->values[p_enum->values.size() - 1].line + 2);

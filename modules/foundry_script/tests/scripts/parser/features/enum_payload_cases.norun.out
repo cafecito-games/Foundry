@@ -1,0 +1,4 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 7: Enum values must have an explicit integer value.
+>> ERROR at line 8: Enum values must have an explicit integer value.
+>> ERROR at line 9: Enum values must have an explicit integer value.

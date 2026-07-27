@@ -2640,6 +2640,60 @@ void FSParser::finalize_enum_function(EnumNode *p_enum, FunctionNode *p_function
 	p_enum->functions.push_back(p_function);
 }
 
+void FSParser::parse_enum_case_payload(EnumNode::Value &r_value) {
+	// Enable multiline mode before consuming the open paren, so the tokenizer suppresses
+	// NEWLINE/INDENT/DEDENT for the token it scans immediately after it (matching how tuple
+	// declaration fields and other parenthesized lists are parsed).
+	push_multiline(true);
+	advance(); // Consume "(".
+
+	HashMap<StringName, int> field_names;
+	if (!check(FSTokenizer::Token::PARENTHESIS_CLOSE)) {
+		do {
+			if (check(FSTokenizer::Token::PARENTHESIS_CLOSE)) {
+				break; // Allow for trailing comma.
+			}
+
+			EnumNode::PayloadField field;
+			field.line = current.start_line;
+			field.start_column = current.start_column;
+
+			if (check(FSTokenizer::Token::IDENTIFIER) && peek().type == FSTokenizer::Token::COLON) {
+				advance();
+				field.identifier = parse_identifier();
+				consume(FSTokenizer::Token::COLON, R"(Expected ":" after enum case payload field name.)");
+			} else {
+				push_error(R"*(Enum case payload fields must be named, e.g. "Move(x: int, y: int)".)*");
+			}
+			field.type = parse_type(false);
+
+			if (field.type == nullptr) {
+				push_error(R"(Expected a field type in enum case payload.)");
+				break;
+			}
+			field.end_column = previous.end_column;
+
+			if (field.identifier != nullptr) {
+				if (field_names.has(field.identifier->name)) {
+					push_error(vformat(R"(Enum case payload field "%s" was already declared.)", field.identifier->name), field.identifier);
+				} else {
+					field_names[field.identifier->name] = r_value.payload_fields.size();
+				}
+			}
+
+			r_value.payload_fields.push_back(field);
+		} while (match(FSTokenizer::Token::COMMA));
+	}
+
+	if (r_value.payload_fields.is_empty()) {
+		push_error(R"(An enum case payload must have at least one field.)");
+	}
+
+	r_value.payload_close_line = current.start_line;
+	pop_multiline();
+	consume(FSTokenizer::Token::PARENTHESIS_CLOSE, R"*(Expected closing ")" after enum case payload fields.)*");
+}
+
 FSParser::EnumNode *FSParser::parse_enum(const DeclarationModifiers &p_modifiers) {
 	EnumNode *enum_node = alloc_node<EnumNode>();
 	bool named = false;
@@ -2723,8 +2777,17 @@ FSParser::EnumNode *FSParser::parse_enum(const DeclarationModifiers &p_modifiers
 			continue;
 		}
 
+		// `async` is only a genuine function modifier when it leads into another modifier
+		// or `func`; a case literally named `async` may be a bare tagged-union case
+		// (`async` alone), a value (`async = 1`), or a payload case (`async(value: int)`),
+		// none of which start with another modifier token or `func`.
 		const bool contextual_async_modifier = current.type == FSTokenizer::Token::IDENTIFIER &&
-				current.get_identifier() == StringName("async") && peek().type != FSTokenizer::Token::EQUAL;
+				current.get_identifier() == StringName("async") &&
+				(peek().type == FSTokenizer::Token::FUNC ||
+						peek().type == FSTokenizer::Token::STATIC ||
+						peek().type == FSTokenizer::Token::ABSTRACT ||
+						peek().type == FSTokenizer::Token::FINAL ||
+						(peek().type == FSTokenizer::Token::IDENTIFIER && peek().get_identifier() == StringName("async")));
 		const bool starts_function_declaration = check(FSTokenizer::Token::FUNC) ||
 				check(FSTokenizer::Token::STATIC) ||
 				check(FSTokenizer::Token::ABSTRACT) ||
@@ -2783,6 +2846,7 @@ FSParser::EnumNode *FSParser::parse_enum(const DeclarationModifiers &p_modifiers
 			item.identifier = identifier;
 			item.parent_enum = enum_node;
 			item.line = previous.start_line;
+			item.end_line = previous.start_line;
 			item.start_column = previous.start_column;
 			item.end_column = previous.end_column;
 
@@ -2796,16 +2860,26 @@ FSParser::EnumNode *FSParser::parse_enum(const DeclarationModifiers &p_modifiers
 
 			elements[item.identifier->name] = item.line;
 
-			if (!consume(FSTokenizer::Token::EQUAL, R"(Expected "=" and an integer value after enum key.)")) {
-				// Keep the partially parsed value so tools can still inspect the enum after
-				// reporting the syntax error, but never synthesize an implicit value.
-			} else {
+			if (check(FSTokenizer::Token::PARENTHESIS_OPEN)) {
+				parse_enum_case_payload(item);
+				item.end_line = item.payload_close_line;
+				item.end_column = previous.end_column;
+				if (item.has_payload()) {
+					enum_node->is_tagged_union = true;
+				}
+			}
+
+			if (check(FSTokenizer::Token::EQUAL)) {
+				advance();
 				ExpressionNode *value = parse_expression(false);
 				if (value == nullptr) {
 					push_error(R"(Expected expression value after "=".)");
 				}
 				item.custom_value = value;
 			}
+			// Whether a missing "=" is an error depends on whether the enum ends up a tagged
+			// union, which is only known once the whole body has been parsed (a later case may
+			// still introduce a payload). Validated in a second pass below.
 
 			item.index = enum_node->values.size();
 			enum_node->values.push_back(item);
@@ -2829,6 +2903,21 @@ FSParser::EnumNode *FSParser::parse_enum(const DeclarationModifiers &p_modifiers
 	}
 	if (!annotation_stack.is_empty()) {
 		parse_class_member_annotations(AnnotationInfo::NONE, "enum body");
+	}
+
+	// Whether the enum is a tagged union is only known once the whole body has been parsed (a
+	// later case may still introduce a payload), so explicit-value validation for every case is
+	// deferred to this single second pass instead of running inline in the loop above.
+	for (const EnumNode::Value &value : enum_node->values) {
+		if (enum_node->is_tagged_union) {
+			// Tags are ordinal by declaration order in a tagged union; explicit values would let
+			// them drift, so they are rejected for every case, payload-bearing or not.
+			if (value.custom_value != nullptr) {
+				push_error(R"(Explicit values are not allowed in a tagged union; case tags are ordinal by declaration order.)", value.custom_value);
+			}
+		} else if (value.custom_value == nullptr) {
+			push_error(R"(Expected "=" and an integer value after enum key.)", value.identifier);
+		}
 	}
 
 #ifdef TOOLS_ENABLED

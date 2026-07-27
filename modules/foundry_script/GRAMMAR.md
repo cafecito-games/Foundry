@@ -442,7 +442,9 @@ enum_body       = NEWLINE, INDENT,
                   | enum_value_line, { enum_value_line }, { enum_function_decl }
                   | enum_function_decl, { enum_function_decl } ),
                   DEDENT ;
-enum_value_line = identifier, "=", expression, NEWLINE ;
+enum_value_line = identifier, [ enum_case_payload ], [ "=", expression ], NEWLINE ;
+enum_case_payload = "(", enum_payload_field, { ",", enum_payload_field }, [ "," ], ")" ;
+enum_payload_field = identifier, ":", type ;   (* names are required on payload fields *)
 enum_function_decl = { function_annotation }, { enum_function_modifier }, function_decl ;
 enum_function_modifier = "static" | "async" ;
 function_annotation = ANNOTATION, [ "(", [ annotation_args ], ")" ], [ NEWLINE ] ;
@@ -457,16 +459,31 @@ function_annotation = ANNOTATION, [ "(", [ annotation_args ], ")" ], [ NEWLINE ]
   contain functions.
 - Named enum declarations use the constant annotation target. This currently allows the
   built-in `@keep_name` annotation; enum values remain unsupported annotation targets.
-- Every enum value must provide an explicit integer expression (`NAME = expression`).
-  Values do not receive implicit numbers, and enum members are separated by newlines
-  rather than commas. Commas remain valid inside an enum value expression.
+- Every enum value in a plain (non-tagged-union) enum must provide an explicit integer
+  expression (`NAME = expression`). Values do not receive implicit numbers, and enum
+  members are separated by newlines rather than commas. Commas remain valid inside an
+  enum value expression.
+- A case may declare a **payload**: a parenthesized, comma-separated field list
+  (`Move(x: int, y: int)`), reusing the tuple field form (§4.4a) except every payload
+  field must be named — a bare (positional) payload field is a parse error, as is a
+  duplicate field name within one case's payload. A trailing comma is allowed once the
+  payload has at least one field.
+- If **any** case in an enum declares a payload, the whole enum is a **tagged union**
+  and `= expression` is a parse error on *every* case, payload-bearing or not — case
+  tags are ordinal by declaration order (0-based), not explicit values. Cases with and
+  without a payload may be freely mixed within one tagged union
+  (`enum Message: Quit \n Move(x: int, y: int)`). Whether an enum is a tagged union is
+  only known once its whole body has been parsed, so this rule is validated after the
+  body, not case-by-case during parsing.
 - Enum values must appear before enum functions. A functions-only named enum is valid.
   Enum functions reuse ordinary function signatures and bodies, allow `static` and
   `async`, and reject `abstract` and `final`. Variables, constants, signals, nested
-  classes/enums/traits, and conformances are not valid enum-body declarations.
+  classes/enums/traits, and conformances are not valid enum-body declarations. Enum
+  functions remain supported on a tagged union.
 - An empty enum uses `pass` as its only body statement (`enum Empty:` followed by
   an indented `pass`).
-- `enum_name` (§3.2) declares a file-level named enum using the same indented body.
+- `enum_name` (§3.2) declares a file-level named enum using the same indented body,
+  including payload cases.
 
 #### Property accessors
 
