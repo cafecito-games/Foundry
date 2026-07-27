@@ -2,7 +2,7 @@
 /*  fs_temporary_project_tree.h                                           */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -76,7 +76,14 @@ struct TemporaryProjectTree {
 				return configured_root.simplify_path();
 			}
 		}
-		return OS::get_singleton()->get_temp_path().path_join("foundry-tests").simplify_path();
+		// Without an explicit `FOUNDRY_TEST_SCRATCH`, fall back to a directory scoped to this
+		// process. A fixed shared path would let two `foundry` test processes running
+		// concurrently on the same machine (e.g. separate worktrees during a multi-agent
+		// session) race on the same staged project tree: one process's `remove_recursive` +
+		// `copy_dir` in `stage_project_copy` can interleave with another's, corrupting the
+		// staged files each currently-running test depends on.
+		const String scoped_directory = vformat("foundry-tests-%d", OS::get_singleton()->get_process_id());
+		return OS::get_singleton()->get_temp_path().path_join(scoped_directory).simplify_path();
 	}
 
 	static String get_test_scratch_path(const String &p_name) {
