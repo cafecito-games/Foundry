@@ -397,6 +397,12 @@ struct TemporaryScriptFile {
 		path = p_path;
 		Ref<FileAccess> file = FileAccess::open(path, FileAccess::WRITE);
 		REQUIRE_MESSAGE(file.is_valid(), vformat("Cannot write '%s'", path));
+		// doctest's REQUIRE does not unwind the stack in this engine's `-fno-exceptions`
+		// builds; a failed REQUIRE above still falls through to this line, so guard the
+		// dereference explicitly instead of crashing the whole test process on a null file.
+		if (file.is_null()) {
+			return;
+		}
 		file->store_string(p_source);
 	}
 

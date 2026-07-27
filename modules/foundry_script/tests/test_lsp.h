@@ -2,7 +2,7 @@
 /*  test_lsp.h                                                            */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -251,6 +251,12 @@ FSLanguageProtocol *initialize(const String &p_root) {
 	Error err = OK;
 	Ref<DirAccess> dir(DirAccess::open(p_root, &err));
 	REQUIRE_MESSAGE(err == OK, "Could not open specified root directory");
+	// doctest's REQUIRE does not unwind the stack in this engine's `-fno-exceptions`
+	// builds; a failed REQUIRE above still falls through to this line, so guard the
+	// dereference explicitly instead of crashing the whole test process on a null `dir`.
+	if (dir.is_null()) {
+		return nullptr;
+	}
 	String absolute_root = dir->get_current_dir();
 	init_language(absolute_root);
 
