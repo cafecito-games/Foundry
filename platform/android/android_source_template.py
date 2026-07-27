@@ -43,6 +43,11 @@ FORBIDDEN_PREFIXES = (
     "platform/android/java/lib/",
     "runtime/",
 )
+FORBIDDEN_BINDING_FRAGMENTS = (
+    "foundry-java",
+    "FoundryJava.foundryextension",
+    "foundry_java/registry-index-v2.txt",
+)
 
 
 class SourceTemplateError(RuntimeError):
@@ -91,6 +96,8 @@ def inspect_source_template(archive_path: Path) -> tuple[str, ...]:
 
             if name.startswith(FORBIDDEN_PREFIXES):
                 raise SourceTemplateError(f"source template contains a forbidden in-tree runtime path: {name}")
+            if any(fragment in name for fragment in FORBIDDEN_BINDING_FRAGMENTS):
+                raise SourceTemplateError(f"source template contains a forbidden Foundry-Java binding path: {name}")
             if PurePosixPath(name).suffix in SOURCE_SUFFIXES and APP_SOURCE_PATTERN.match(name) is None:
                 raise SourceTemplateError(f"source template contains runtime source outside the app package: {name}")
             if name.endswith(".aar") and name not in EXPECTED_AARS:

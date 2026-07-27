@@ -602,6 +602,18 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
                 **VALID_SOURCE_TEMPLATE,
                 "src/main/java/games/cafecito/foundry/Foundry.kt": b"package games.cafecito.foundry\n",
             },
+            "binding jar": {
+                **VALID_SOURCE_TEMPLATE,
+                "libs/debug/foundry-java-module.jar": b"binding",
+            },
+            "binding config": {
+                **VALID_SOURCE_TEMPLATE,
+                "src/main/assets/FoundryJava.foundryextension": b"[configuration]\n",
+            },
+            "binding registry": {
+                **VALID_SOURCE_TEMPLATE,
+                "src/main/assets/foundry_java/registry-index-v2.txt": b"module\n",
+            },
             "unsafe path": {
                 **VALID_SOURCE_TEMPLATE,
                 "../runtime/Foundry.kt": b"unsafe",
