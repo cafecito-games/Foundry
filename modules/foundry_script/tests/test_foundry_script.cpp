@@ -230,6 +230,83 @@ TEST_CASE("[Modules][FoundryScript] Tokenizer treats whitespace before a tuple i
 	CHECK_EQ(int64_t(index.literal), 0);
 }
 
+TEST_CASE("[Modules][FoundryScript] Tokenizer keeps a tuple index inside a suppressed multiline newline") {
+	// Inside `(...)`/`[...]`/`{...}` the parser puts the tokenizer in multiline mode so physical
+	// newlines are not surfaced as `NEWLINE` tokens. `newline()` must not clobber `last_token`
+	// with the suppressed newline in that mode, or a tuple index split across a line inside
+	// grouping (`t` on one line, `.0` on the next) would wrongly disambiguate as a float.
+	FSTokenizerText tokenizer;
+	tokenizer.set_multiline_mode(true);
+	tokenizer.set_source_code("t\n.0");
+
+	FSTokenizer::Token identifier = tokenizer.scan();
+	CHECK(identifier.type == FSTokenizer::Token::IDENTIFIER);
+
+	FSTokenizer::Token period = tokenizer.scan();
+	CHECK(period.type == FSTokenizer::Token::PERIOD);
+
+	FSTokenizer::Token index = tokenizer.scan();
+	CHECK(index.type == FSTokenizer::Token::LITERAL);
+	CHECK(index.literal.get_type() == Variant::INT);
+	CHECK_EQ(int64_t(index.literal), 0);
+}
+
+TEST_CASE("[Modules][FoundryScript] Tokenizer treats a tuple index after a keyword-spelled identifier as member access") {
+	// `match`, `when`, and `uses` are keyword tokens that are still accepted as ordinary
+	// identifiers (`Token::is_identifier()`); a value spelled with one of these names must
+	// disambiguate a following `.<digit>` as member access exactly like any other identifier.
+	const char *sources[] = { "match.0", "when.0", "uses.0" };
+	const FSTokenizer::Token::Type keyword_types[] = {
+		FSTokenizer::Token::MATCH,
+		FSTokenizer::Token::WHEN,
+		FSTokenizer::Token::USES,
+	};
+
+	for (int i = 0; i < 3; i++) {
+		FSTokenizerText tokenizer;
+		tokenizer.set_source_code(sources[i]);
+
+		FSTokenizer::Token keyword = tokenizer.scan();
+		CHECK_MESSAGE(keyword.type == keyword_types[i], sources[i]);
+
+		FSTokenizer::Token period = tokenizer.scan();
+		CHECK_MESSAGE(period.type == FSTokenizer::Token::PERIOD, sources[i]);
+
+		FSTokenizer::Token index = tokenizer.scan();
+		CHECK_MESSAGE(index.type == FSTokenizer::Token::LITERAL, sources[i]);
+		CHECK(index.literal.get_type() == Variant::INT);
+		CHECK_EQ(int64_t(index.literal), 0);
+	}
+}
+
+TEST_CASE("[Modules][FoundryScript] TUPLE keyword is still valid as a node name and attribute name") {
+	// `tuple` must remain usable after `$`/`.` even though it is now a dedicated keyword token,
+	// matching how other hard keywords like `trait`/`trait_name` stay valid there.
+	FSTokenizerText tokenizer;
+	tokenizer.set_source_code("tuple");
+	FSTokenizer::Token token = tokenizer.scan();
+	CHECK(token.type == FSTokenizer::Token::TUPLE);
+	CHECK(token.is_node_name());
+
+	FSParser parser;
+	Error err = parser.parse(R"(
+func _ready():
+	return $tuple
+)",
+			"user://tuple_node_name.fs", false);
+	CHECK_EQ(err, OK);
+
+	// `.tuple` attribute access must also keep parsing: `parse_attribute` re-spells node-name
+	// keyword tokens as `IDENTIFIER` using the same `is_node_name()` set.
+	FSParser attribute_parser;
+	err = attribute_parser.parse(R"(
+func _ready():
+	return self.tuple
+)",
+			"user://tuple_attribute_name.fs", false);
+	CHECK_EQ(err, OK);
+}
+
 TEST_CASE("[Modules][FoundryScript] Tokenizer rejects an exponent on a tuple index") {
 	// `x.0e5` is not a valid tuple index (only a bare decimal integer is); the tokenizer must
 	// report an error rather than silently reinterpreting it as a float.

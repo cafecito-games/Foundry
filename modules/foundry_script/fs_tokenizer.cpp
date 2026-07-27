@@ -193,6 +193,12 @@ bool FSTokenizer::Token::can_precede_bin_op() const {
 		case CONST_TAU:
 		case CONST_INF:
 		case CONST_NAN:
+		// `match`, `when`, and `uses` are keyword tokens that are still valid as identifiers
+		// (see `is_identifier()`), so a value spelled with one of these names can precede a
+		// binary operator too, exactly like any other identifier.
+		case MATCH:
+		case WHEN:
+		case USES:
 			return true;
 		default:
 			return false;
@@ -262,6 +268,7 @@ bool FSTokenizer::Token::is_node_name() const {
 		case SUPER:
 		case TRAIT:
 		case TRAIT_NAME:
+		case TUPLE:
 		case USES:
 		case UNDERSCORE:
 		case VAR:
@@ -700,8 +707,15 @@ void FSTokenizerText::newline(bool p_make_token) {
 		newline.start_column = column - 1;
 		newline.end_column = column;
 		pending_newline = true;
-		last_token = newline;
 		last_newline = newline;
+		if (!multiline_mode) {
+			// In multiline mode this NEWLINE is never actually surfaced to the caller (`scan()`
+			// silently skips it), so it must not overwrite `last_token`: doing so would corrupt
+			// the `+`/`-`/tuple-index disambiguation that inspects the last real token, treating
+			// a value on the previous physical line (inside `(...)`/`[...]`/`{...}`) as if it
+			// could no longer precede a binary operator.
+			last_token = newline;
+		}
 	}
 
 	// Increment line/column counters.
