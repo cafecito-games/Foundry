@@ -2,7 +2,7 @@
 /*  fs_container_inference.cpp                                            */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -268,6 +268,7 @@ bool is_expression_node(Node::Type p_type) {
 		case Node::SELF:
 		case Node::SUBSCRIPT:
 		case Node::TERNARY_OPERATOR:
+		case Node::TUPLE_LITERAL:
 		case Node::TYPE_TEST:
 		case Node::UNARY_OPERATOR:
 			return true;
@@ -1342,6 +1343,12 @@ private:
 			case Node::ARRAY: {
 				const FSParser::ArrayNode *array = static_cast<const FSParser::ArrayNode *>(p_value);
 				for (const FSParser::ExpressionNode *element : array->elements) {
+					scan_value(element);
+				}
+			} break;
+			case Node::TUPLE_LITERAL: {
+				const FSParser::TupleLiteralNode *tuple_literal = static_cast<const FSParser::TupleLiteralNode *>(p_value);
+				for (const FSParser::ExpressionNode *element : tuple_literal->elements) {
 					scan_value(element);
 				}
 			} break;
@@ -2475,6 +2482,12 @@ private:
 			case Node::ARRAY: {
 				const FSParser::ArrayNode *array = static_cast<const FSParser::ArrayNode *>(p_value);
 				for (const FSParser::ExpressionNode *element : array->elements) {
+					scan_value(element);
+				}
+			} break;
+			case Node::TUPLE_LITERAL: {
+				const FSParser::TupleLiteralNode *tuple_literal = static_cast<const FSParser::TupleLiteralNode *>(p_value);
+				for (const FSParser::ExpressionNode *element : tuple_literal->elements) {
 					scan_value(element);
 				}
 			} break;
