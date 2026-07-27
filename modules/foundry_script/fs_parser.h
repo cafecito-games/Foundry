@@ -785,6 +785,10 @@ public:
 			bool resolved = false;
 			int64_t value = 0;
 			int line = 0;
+			// Line of the last token that belongs to this case (its own line for a bare or
+			// `= expression` case; the payload's closing ")" line for a payload case). `line`
+			// alone is not enough once a payload can span multiple source lines.
+			int end_line = 0;
 			int start_column = 0;
 			int end_column = 0;
 #ifdef TOOLS_ENABLED

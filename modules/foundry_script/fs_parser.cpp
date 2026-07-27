@@ -2777,12 +2777,17 @@ FSParser::EnumNode *FSParser::parse_enum(const DeclarationModifiers &p_modifiers
 			continue;
 		}
 
-		// A case literally named `async` is a value (`async = 1`) or a payload case
-		// (`async(value: int)`), not the start of an `async func` declaration.
+		// `async` is only a genuine function modifier when it leads into another modifier
+		// or `func`; a case literally named `async` may be a bare tagged-union case
+		// (`async` alone), a value (`async = 1`), or a payload case (`async(value: int)`),
+		// none of which start with another modifier token or `func`.
 		const bool contextual_async_modifier = current.type == FSTokenizer::Token::IDENTIFIER &&
 				current.get_identifier() == StringName("async") &&
-				peek().type != FSTokenizer::Token::EQUAL &&
-				peek().type != FSTokenizer::Token::PARENTHESIS_OPEN;
+				(peek().type == FSTokenizer::Token::FUNC ||
+						peek().type == FSTokenizer::Token::STATIC ||
+						peek().type == FSTokenizer::Token::ABSTRACT ||
+						peek().type == FSTokenizer::Token::FINAL ||
+						(peek().type == FSTokenizer::Token::IDENTIFIER && peek().get_identifier() == StringName("async")));
 		const bool starts_function_declaration = check(FSTokenizer::Token::FUNC) ||
 				check(FSTokenizer::Token::STATIC) ||
 				check(FSTokenizer::Token::ABSTRACT) ||
@@ -2841,6 +2846,7 @@ FSParser::EnumNode *FSParser::parse_enum(const DeclarationModifiers &p_modifiers
 			item.identifier = identifier;
 			item.parent_enum = enum_node;
 			item.line = previous.start_line;
+			item.end_line = previous.start_line;
 			item.start_column = previous.start_column;
 			item.end_column = previous.end_column;
 
@@ -2856,6 +2862,7 @@ FSParser::EnumNode *FSParser::parse_enum(const DeclarationModifiers &p_modifiers
 
 			if (check(FSTokenizer::Token::PARENTHESIS_OPEN)) {
 				parse_enum_case_payload(item);
+				item.end_line = item.payload_close_line;
 				item.end_column = previous.end_column;
 				if (item.has_payload()) {
 					enum_node->is_tagged_union = true;
