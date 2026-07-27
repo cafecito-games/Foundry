@@ -1303,8 +1303,8 @@ void FSAnalyzer::resolve_class_member(FSParser::ClassNode *p_class, int p_index,
 					element_types.push_back(type_from_metatype(resolve_datatype(field.type)));
 					field_names.push_back(field.identifier != nullptr ? field.identifier->name : StringName());
 				}
-				member.m_tuple->set_datatype(make_tuple_type(member.m_tuple->identifier->name, parser->script_path,
-						element_types, field_names, true));
+				member.m_tuple->set_datatype(make_tuple_type(member.m_tuple->identifier->name, p_class->fqcn,
+						parser->script_path, element_types, field_names, true));
 
 				// Apply annotations.
 				for (FSParser::AnnotationNode *&E : member.m_tuple->annotations) {

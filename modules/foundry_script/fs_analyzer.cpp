@@ -1463,7 +1463,7 @@ static String _make_type_handle_argument_error(
 			expected_type);
 }
 
-FSParser::DataType FSAnalyzer::make_tuple_type(const StringName &p_tuple_name, const String &p_script_path,
+FSParser::DataType FSAnalyzer::make_tuple_type(const StringName &p_tuple_name, const String &p_owner_fqcn, const String &p_script_path,
 		const Vector<FSParser::DataType> &p_element_types, const Vector<StringName> &p_field_names, bool p_meta) {
 	FSParser::DataType type;
 	type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
@@ -1471,6 +1471,12 @@ FSParser::DataType FSAnalyzer::make_tuple_type(const StringName &p_tuple_name, c
 	// Every tuple erases to a read-only Array at runtime; the precise shape is static-only.
 	type.builtin_type = Variant::ARRAY;
 	type.tuple_name = p_tuple_name;
+	// `native_type` carries the nominal identity, qualified by the declaring class so two tuples of
+	// the same simple name in different classes of one script stay distinct. `tuple_name` is only
+	// the display name. Empty for an unnamed (structural) tuple.
+	if (p_tuple_name != StringName()) {
+		type.native_type = p_owner_fqcn.is_empty() ? String(p_tuple_name) : p_owner_fqcn + ENUM_SEPARATOR + String(p_tuple_name);
+	}
 	type.script_path = p_script_path;
 	type.container_element_types = p_element_types;
 	type.tuple_field_names = p_field_names;
@@ -1656,7 +1662,7 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 		for (int i = 0; i < p_type->tuple_element_types.size(); i++) {
 			element_types.push_back(type_from_metatype(resolve_datatype(p_type->tuple_element_types[i])));
 		}
-		result = make_tuple_type(StringName(), String(), element_types, Vector<StringName>(), false);
+		result = make_tuple_type(StringName(), String(), String(), element_types, Vector<StringName>(), false);
 		return finalize_datatype(result);
 	}
 
@@ -4693,7 +4699,7 @@ void FSAnalyzer::reduce_tuple_literal(FSParser::TupleLiteralNode *p_tuple_litera
 		element_types.push_back(element_type);
 	}
 
-	p_tuple_literal->set_datatype(make_tuple_type(StringName(), String(), element_types, Vector<StringName>(), false));
+	p_tuple_literal->set_datatype(make_tuple_type(StringName(), String(), String(), element_types, Vector<StringName>(), false));
 }
 
 void FSAnalyzer::reduce_array(FSParser::ArrayNode *p_array) {
@@ -7374,7 +7380,7 @@ static bool _datatype_strict_identity_equal(const FSParser::DataType &p_a, const
 							p_a.class_type->fqcn == p_b.class_type->fqcn);
 			break;
 		case FSParser::DataType::TUPLE:
-			equal = p_a.tuple_name == p_b.tuple_name && p_a.script_path == p_b.script_path &&
+			equal = p_a.native_type == p_b.native_type && p_a.script_path == p_b.script_path &&
 					p_a.tuple_field_names == p_b.tuple_field_names;
 			break;
 		case FSParser::DataType::TYPE_PARAMETER:
@@ -8519,6 +8525,16 @@ void FSAnalyzer::reduce_identifier_from_base(FSParser::IdentifierNode *p_identif
 					return;
 				}
 
+				case FSParser::ClassNode::Member::TUPLE: {
+					// A tuple declaration is a type handle, so a qualified `Outer.Vec2` resolves like a
+					// nested class. Specializing through the base keeps `(T, int)` bound when the
+					// declaring class is generic.
+					p_identifier->set_datatype(substitute_member_type(
+							member.get_datatype(), specialize_ancestor_type(base, script_class), nullptr, &self_type));
+					p_identifier->source = FSParser::IdentifierNode::MEMBER_CLASS;
+					return;
+				}
+
 				default: {
 					// Do nothing
 				}
@@ -9232,7 +9248,7 @@ bool FSAnalyzer::find_named_tuple_meta_type(const FSParser::DataType &p_base_typ
 			if (!tuple_type.is_set() || tuple_type.kind != FSParser::DataType::TUPLE) {
 				return false;
 			}
-			r_tuple_meta_type = tuple_type;
+			r_tuple_meta_type = p_is_self ? tuple_type : substitute_member_type(tuple_type, p_base_type, nullptr, nullptr);
 			return true;
 		}
 		candidate = p_is_self ? candidate->outer : nullptr;

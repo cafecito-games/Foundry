@@ -494,7 +494,7 @@ private:
 	// Helpers.
 	// Builds a TUPLE DataType. `p_tuple_name` is empty for an unnamed (structural) tuple; a named
 	// tuple additionally carries the declaring script path so nominal identity survives imports.
-	static FSParser::DataType make_tuple_type(const StringName &p_tuple_name, const String &p_script_path,
+	static FSParser::DataType make_tuple_type(const StringName &p_tuple_name, const String &p_owner_fqcn, const String &p_script_path,
 			const Vector<FSParser::DataType> &p_element_types, const Vector<StringName> &p_field_names, bool p_meta);
 	Array make_array_from_element_datatype(const FSParser::DataType &p_element_datatype, const FSParser::Node *p_source_node = nullptr);
 	Dictionary make_dictionary_from_element_datatype(const FSParser::DataType &p_key_element_datatype, const FSParser::DataType &p_value_element_datatype, const FSParser::Node *p_source_node = nullptr);

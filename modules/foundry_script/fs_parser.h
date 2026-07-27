@@ -287,9 +287,9 @@ public:
 					equal = native_type == p_other.native_type;
 					break;
 				case TUPLE:
-					// Named tuples are nominal (name plus declaring script); unnamed tuples are
-					// structural, so their identity is exactly their element shape.
-					equal = tuple_name == p_other.tuple_name && script_path == p_other.script_path &&
+					// Named tuples are nominal (`native_type` carries the class-qualified name); unnamed
+					// tuples are structural, so their identity is exactly their element shape.
+					equal = native_type == p_other.native_type && script_path == p_other.script_path &&
 							tuple_field_names == p_other.tuple_field_names &&
 							container_element_types == p_other.container_element_types;
 					break;

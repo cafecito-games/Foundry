@@ -1014,6 +1014,27 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 		} break;
 		case FSParser::Node::CALL: {
 			const FSParser::CallNode *call = static_cast<const FSParser::CallNode *>(p_expression);
+
+			// `Vec2(1.0, 2.0)` constructs a named tuple, not a method call: there is no such member to
+			// dispatch to. It erases to the same Array as an unnamed tuple literal.
+			if (call->get_datatype().kind == FSParser::DataType::TUPLE) {
+				Vector<FSCodeGenerator::Address> values;
+				FSCodeGenerator::Address tuple_result = codegen.add_temporary(_gdtype_from_datatype(call->get_datatype(), codegen.script));
+				for (int i = 0; i < call->arguments.size(); i++) {
+					FSCodeGenerator::Address value = _parse_expression(codegen, r_error, call->arguments[i]);
+					if (r_error) {
+						return FSCodeGenerator::Address();
+					}
+					values.push_back(value);
+				}
+				gen->write_construct_array(tuple_result, values);
+				for (int i = 0; i < values.size(); i++) {
+					if (values[i].mode == FSCodeGenerator::Address::TEMPORARY) {
+						gen->pop_temporary();
+					}
+				}
+				return tuple_result;
+			}
 			// Compile the call as async (store the live function-state handle without suspending and
 			// skip the debug missing-await guard) when it is the operand of an `await`, or when the
 			// analyzer marked its result as captured into a statically `Coroutine[T]`-typed slot.
@@ -1479,6 +1500,26 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 			FSCodeGenerator::Address base = _parse_expression(codegen, r_error, subscript->base);
 			if (r_error) {
 				return FSCodeGenerator::Address();
+			}
+
+			// A named tuple field (`point.x`) is a static name for an element position. Tuples erase to
+			// an Array, which has no such property, so the access is emitted as a constant index.
+			if (subscript->is_attribute && subscript->attribute != nullptr) {
+				const FSParser::DataType base_datatype = subscript->base->get_datatype();
+				if (base_datatype.kind == FSParser::DataType::TUPLE) {
+					const int field_index = base_datatype.get_tuple_field_index(subscript->attribute->name);
+					if (field_index < 0) {
+						_set_error("Compiler bug (please report): unresolved tuple field access.", subscript);
+						r_error = ERR_COMPILATION_FAILED;
+						return FSCodeGenerator::Address();
+					}
+					const FSCodeGenerator::Address field_index_address = codegen.add_constant(field_index);
+					gen->write_get(result, field_index_address, base);
+					if (base.mode == FSCodeGenerator::Address::TEMPORARY) {
+						gen->pop_temporary();
+					}
+					return result;
+				}
 			}
 
 			bool named = subscript->is_attribute;

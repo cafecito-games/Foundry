@@ -320,7 +320,7 @@ FSTypeCompatibility::Result FSTypeCompatibility::check(const FSParser::DataType 
 		if (p_target.tuple_name != StringName()) {
 			// A named tuple is nominal: only the same declaration satisfies it. Building one from an
 			// unnamed tuple (or from a different named tuple) requires explicit construction.
-			result.compatible = p_target.tuple_name == p_source.tuple_name && p_target.script_path == p_source.script_path;
+			result.compatible = p_target.native_type == p_source.native_type && p_target.script_path == p_source.script_path;
 			return result;
 		}
 		// An unnamed target is structural: arity plus invariant elements. A named source erases to it.
@@ -680,7 +680,7 @@ static bool _datatype_invariant_equal(const FSParser::DataType &p_a, const FSPar
 					p_a.type_parameter_index == p_b.type_parameter_index;
 			break;
 		case FSParser::DataType::TUPLE:
-			equal = p_a.tuple_name == p_b.tuple_name && p_a.script_path == p_b.script_path;
+			equal = p_a.native_type == p_b.native_type && p_a.script_path == p_b.script_path;
 			break;
 		case FSParser::DataType::RESOLVING:
 		case FSParser::DataType::UNRESOLVED:
