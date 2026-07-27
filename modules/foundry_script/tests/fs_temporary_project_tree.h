@@ -153,28 +153,41 @@ struct TemporaryProjectTree {
 	}
 
 private:
-	// Removes `foundry-tests-<pid>` directories under `p_base` whose owning process has
-	// exited, so scratch directories from earlier direct test invocations are reclaimed
-	// the next time any `foundry` test process starts.
+	// A `foundry-tests-<pid>` directory untouched for this long is assumed to belong to a
+	// finished (or crashed) process rather than one that is still staging its project, so
+	// it is safe to reclaim. `OS::is_process_running()` cannot answer that question here:
+	// it is implemented in terms of `waitpid`, which only reports on the caller's own
+	// child processes, so a live but unrelated sibling `foundry` test process would be
+	// misidentified as dead and have its in-progress scratch tree deleted out from under
+	// it, reintroducing the exact cross-process race this reaper exists to prevent.
+	static constexpr uint64_t STALE_SCRATCH_AGE_SECONDS = 12 * 60 * 60;
+
+	// Removes `foundry-tests-<pid>` directories under `p_base` that have not been touched
+	// in `STALE_SCRATCH_AGE_SECONDS`, so scratch directories from earlier direct test
+	// invocations are reclaimed the next time any `foundry` test process starts.
 	static void reap_dead_process_scratch_dirs(const String &p_base) {
 		Ref<DirAccess> dir = DirAccess::open(p_base);
 		if (dir.is_null()) {
 			return;
 		}
+		const uint64_t now = OS::get_singleton()->get_unix_time();
 		dir->list_dir_begin();
 		for (String entry = dir->get_next(); !entry.is_empty(); entry = dir->get_next()) {
-			if (!dir->current_is_dir() || !entry.begins_with("foundry-tests-")) {
+			const String child = p_base.path_join(entry);
+			// Never follow a symlink here: a planted (or merely stale, from a different
+			// tool) symlink named `foundry-tests-<n>` in the shared system temp directory
+			// must not cause a recursive delete outside the scratch area.
+			if (!dir->current_is_dir() || dir->is_link(child) || !entry.begins_with("foundry-tests-")) {
 				continue;
 			}
-			const String pid_text = entry.trim_prefix("foundry-tests-");
-			if (!pid_text.is_valid_int()) {
+			if (!entry.trim_prefix("foundry-tests-").is_valid_int()) {
 				continue;
 			}
-			const OS::ProcessID owning_pid = pid_text.to_int();
-			if (owning_pid == OS::get_singleton()->get_process_id() || OS::get_singleton()->is_process_running(owning_pid)) {
+			const uint64_t modified_time = FileAccess::get_modified_time(child);
+			if (modified_time != 0 && now >= modified_time && now - modified_time < STALE_SCRATCH_AGE_SECONDS) {
 				continue;
 			}
-			remove_recursive(p_base.path_join(entry));
+			remove_recursive(child);
 		}
 		dir->list_dir_end();
 	}
