@@ -251,32 +251,53 @@ TEST_CASE("[Modules][FoundryScript] Tokenizer keeps a tuple index inside a suppr
 	CHECK_EQ(int64_t(index.literal), 0);
 }
 
-TEST_CASE("[Modules][FoundryScript] Tokenizer treats a tuple index after a keyword-spelled identifier as member access") {
-	// `match`, `when`, and `uses` are keyword tokens that are still accepted as ordinary
-	// identifiers (`Token::is_identifier()`); a value spelled with one of these names must
-	// disambiguate a following `.<digit>` as member access exactly like any other identifier.
-	const char *sources[] = { "match.0", "when.0", "uses.0" };
-	const FSTokenizer::Token::Type keyword_types[] = {
-		FSTokenizer::Token::MATCH,
-		FSTokenizer::Token::WHEN,
-		FSTokenizer::Token::USES,
-	};
+TEST_CASE("[Modules][FoundryScript] Tokenizer treats a tuple index after a uses-spelled identifier as member access") {
+	// `uses` is a keyword token that is still accepted as an ordinary identifier
+	// (`Token::is_identifier()`) and, unlike `match`/`when`, never leads a clause followed by a
+	// general expression, so a value spelled `uses` can safely disambiguate a following
+	// `.<digit>` as member access exactly like any other identifier.
+	FSTokenizerText tokenizer;
+	tokenizer.set_source_code("uses.0");
 
-	for (int i = 0; i < 3; i++) {
-		FSTokenizerText tokenizer;
-		tokenizer.set_source_code(sources[i]);
+	FSTokenizer::Token keyword = tokenizer.scan();
+	CHECK(keyword.type == FSTokenizer::Token::USES);
 
-		FSTokenizer::Token keyword = tokenizer.scan();
-		CHECK_MESSAGE(keyword.type == keyword_types[i], sources[i]);
+	FSTokenizer::Token period = tokenizer.scan();
+	CHECK(period.type == FSTokenizer::Token::PERIOD);
 
-		FSTokenizer::Token period = tokenizer.scan();
-		CHECK_MESSAGE(period.type == FSTokenizer::Token::PERIOD, sources[i]);
+	FSTokenizer::Token index = tokenizer.scan();
+	CHECK(index.type == FSTokenizer::Token::LITERAL);
+	CHECK(index.literal.get_type() == Variant::INT);
+	CHECK_EQ(int64_t(index.literal), 0);
+}
 
-		FSTokenizer::Token index = tokenizer.scan();
-		CHECK_MESSAGE(index.type == FSTokenizer::Token::LITERAL, sources[i]);
-		CHECK(index.literal.get_type() == Variant::INT);
-		CHECK_EQ(int64_t(index.literal), 0);
-	}
+TEST_CASE("[Modules][FoundryScript] Tokenizer keeps signed numbers after match/when clause keywords") {
+	// `match` and `when` are valid identifiers (`Token::is_identifier()`) but are far more
+	// commonly clause-leading keywords immediately followed by an arbitrary expression, which
+	// may itself start with a unary sign (`match -2 ** 2:`, `pattern when -x > 0:`). They must
+	// NOT be treated as value tokens for dot-digit/sign disambiguation, or the leading sign would
+	// flip from part of the number to a binary operator and change which branch is selected.
+	FSTokenizerText match_tokenizer;
+	match_tokenizer.set_source_code("match -2");
+
+	FSTokenizer::Token match_keyword = match_tokenizer.scan();
+	CHECK(match_keyword.type == FSTokenizer::Token::MATCH);
+
+	FSTokenizer::Token signed_literal = match_tokenizer.scan();
+	CHECK(signed_literal.type == FSTokenizer::Token::LITERAL);
+	CHECK(signed_literal.literal.get_type() == Variant::INT);
+	CHECK_EQ(int64_t(signed_literal.literal), -2);
+
+	FSTokenizerText when_tokenizer;
+	when_tokenizer.set_source_code("when -2");
+
+	FSTokenizer::Token when_keyword = when_tokenizer.scan();
+	CHECK(when_keyword.type == FSTokenizer::Token::WHEN);
+
+	FSTokenizer::Token when_signed_literal = when_tokenizer.scan();
+	CHECK(when_signed_literal.type == FSTokenizer::Token::LITERAL);
+	CHECK(when_signed_literal.literal.get_type() == Variant::INT);
+	CHECK_EQ(int64_t(when_signed_literal.literal), -2);
 }
 
 TEST_CASE("[Modules][FoundryScript] TUPLE keyword is still valid as a node name and attribute name") {

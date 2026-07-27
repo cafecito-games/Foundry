@@ -193,15 +193,25 @@ bool FSTokenizer::Token::can_precede_bin_op() const {
 		case CONST_TAU:
 		case CONST_INF:
 		case CONST_NAN:
-		// `match`, `when`, and `uses` are keyword tokens that are still valid as identifiers
-		// (see `is_identifier()`), so a value spelled with one of these names can precede a
-		// binary operator too, exactly like any other identifier.
-		case MATCH:
-		case WHEN:
+		// `uses` is a keyword token that is still valid as an identifier (see `is_identifier()`),
+		// so a value spelled `uses` can precede a binary operator too, exactly like any other
+		// identifier. `uses` never leads a clause followed by a general expression (it is always
+		// followed by a bare trait name), so this cannot misinterpret a signed-number clause.
+		//
+		// `match` and `when` are deliberately NOT included here even though they are also valid
+		// identifiers: both are far more commonly used as clause-leading keywords immediately
+		// followed by an arbitrary expression that may itself start with a unary `+`/`-`
+		// (`match -2 ** 2:`, `pattern when -x > 0:`). Treating them as value tokens would flip
+		// that leading sign from part of the number to a binary operator, changing which branch
+		// is selected. The rare case of `match`/`when` used as a bare identifier immediately
+		// followed by `+`/`-`/`.<digit>` keeps the pre-existing (unfixed) lexing.
 		case USES:
 		// `tuple` is accepted as an attribute name (`is_node_name()`), so `self.tuple` ends in a
 		// raw `TUPLE` token even though the parser treats it as an identifier attribute; without
 		// this, `self.tuple+1` and `self.tuple.0` would misdisambiguate the following `+`/`.`.
+		// Unlike `match`/`when`, `tuple` never leads a clause followed by a general expression in
+		// the current grammar (a `tuple Name(...)` declaration is always followed by an
+		// identifier), so there is no equivalent conflict.
 		case TUPLE:
 			return true;
 		default:
