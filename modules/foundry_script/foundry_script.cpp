@@ -3598,6 +3598,7 @@ Vector<String> FSLanguage::get_reserved_words() const {
 		// Do not add `async` here: it is contextual and remains a valid identifier outside function modifiers.
 		"trait",
 		"trait_name",
+		"tuple",
 		"var",
 		// Other keywords.
 		"await",

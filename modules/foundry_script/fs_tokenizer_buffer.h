@@ -2,7 +2,7 @@
 /*  fs_tokenizer_buffer.h                                                 */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -39,7 +39,7 @@ public:
 		COMPRESS_ZSTD,
 	};
 
-	static constexpr uint32_t TOKENIZER_VERSION = 106;
+	static constexpr uint32_t TOKENIZER_VERSION = 107;
 	static constexpr uint32_t TOKEN_BYTE_MASK = 0x80;
 	static constexpr uint32_t TOKEN_BITS = 8;
 	static constexpr uint32_t TOKEN_MASK = (1 << (TOKEN_BITS - 1)) - 1;

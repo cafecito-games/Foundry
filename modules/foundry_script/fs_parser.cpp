@@ -5765,6 +5765,7 @@ FSParser::ParseRule *FSParser::get_rule(FSTokenizer::Token::Type p_token_type) {
 		{ &FSParser::parse_call,						nullptr,                                        PREC_NONE }, // SUPER,
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // TRAIT,
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // TRAIT_NAME,
+		{ nullptr,                                          nullptr,                                        PREC_NONE }, // TUPLE,
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // USES,
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // VAR,
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // TK_VOID,
