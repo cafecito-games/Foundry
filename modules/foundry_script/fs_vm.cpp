@@ -2,7 +2,7 @@
 /*  fs_vm.cpp                                                             */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -722,6 +722,7 @@ void (*type_init_function_table[])(Variant *) = {
 		&&OPCODE_CONSTRUCT_VALIDATED,                    \
 		&&OPCODE_CONSTRUCT_ARRAY,                        \
 		&&OPCODE_CONSTRUCT_TYPED_ARRAY,                  \
+		&&OPCODE_CONSTRUCT_TUPLE,                        \
 		&&OPCODE_CONSTRUCT_DICTIONARY,                   \
 		&&OPCODE_CONSTRUCT_TYPED_DICTIONARY,             \
 		&&OPCODE_CONSTRUCT_SPECIALIZED,                  \
@@ -2611,6 +2612,31 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				*dst = array;
 
 				ip += 4;
+			}
+			DISPATCH_OPCODE;
+
+			OPCODE(OPCODE_CONSTRUCT_TUPLE) {
+				LOAD_INSTRUCTION_ARGS
+				CHECK_SPACE(1 + instr_arg_count);
+				ip += instr_arg_count;
+
+				int argc = _code_ptr[ip + 1];
+				Array tuple;
+				tuple.resize(argc);
+
+				for (int i = 0; i < argc; i++) {
+					tuple[i] = *(instruction_args[i]);
+				}
+				// Tuples are immutable values: the read-only Array is the runtime backstop that keeps a
+				// tuple that escaped into a Variant from being mutated, and makes it a valid Dictionary key.
+				tuple.make_read_only();
+
+				GET_INSTRUCTION_ARG(dst, argc);
+				*dst = Variant(); // Clear potential previous typed array.
+
+				*dst = tuple;
+
+				ip += 2;
 			}
 			DISPATCH_OPCODE;
 

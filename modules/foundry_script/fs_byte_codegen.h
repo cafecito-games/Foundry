@@ -2,7 +2,7 @@
 /*  fs_byte_codegen.h                                                     */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -571,6 +571,7 @@ public:
 	virtual void write_construct(const Address &p_target, Variant::Type p_type, const Vector<Address> &p_arguments) override;
 	virtual void write_construct_array(const Address &p_target, const Vector<Address> &p_arguments) override;
 	virtual void write_construct_typed_array(const Address &p_target, const FSDataType &p_element_type, const Vector<Address> &p_arguments) override;
+	virtual void write_construct_tuple(const Address &p_target, const Vector<Address> &p_arguments) override;
 	virtual void write_construct_dictionary(const Address &p_target, const Vector<Address> &p_arguments) override;
 	virtual void write_construct_typed_dictionary(const Address &p_target, const FSDataType &p_key_type, const FSDataType &p_value_type, const Vector<Address> &p_arguments) override;
 	virtual void write_construct_specialized(const Address &p_target, const Address &p_base, const Address &p_expected_base, const Vector<FSDataType> &p_type_arguments, const Vector<Address> &p_arguments) override;

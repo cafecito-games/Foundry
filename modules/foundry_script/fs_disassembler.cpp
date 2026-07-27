@@ -2,7 +2,7 @@
 /*  fs_disassembler.cpp                                                   */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -697,6 +697,24 @@ void FSFunction::disassemble(const Vector<String> &p_code_lines) const {
 				}
 
 				text += "]";
+
+				incr += 3 + argc;
+			} break;
+			case OPCODE_CONSTRUCT_TUPLE: {
+				int instr_var_args = _code_ptr[++ip];
+				int argc = _code_ptr[ip + 1 + instr_var_args];
+				text += "make_tuple ";
+				text += DADDR(1 + argc);
+				text += " = (";
+
+				for (int i = 0; i < argc; i++) {
+					if (i > 0) {
+						text += ", ";
+					}
+					text += DADDR(1 + i);
+				}
+
+				text += ")";
 
 				incr += 3 + argc;
 			} break;

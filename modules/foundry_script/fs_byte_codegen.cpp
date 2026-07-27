@@ -2,7 +2,7 @@
 /*  fs_byte_codegen.cpp                                                   */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -1633,6 +1633,17 @@ void FSByteCodeGenerator::write_construct(const Address &p_target, Variant::Type
 
 void FSByteCodeGenerator::write_construct_array(const Address &p_target, const Vector<Address> &p_arguments) {
 	append_opcode_and_argcount(FSFunction::OPCODE_CONSTRUCT_ARRAY, 1 + p_arguments.size());
+	for (int i = 0; i < p_arguments.size(); i++) {
+		append(p_arguments[i]);
+	}
+	CallTarget ct = get_call_target(p_target);
+	append(ct.target);
+	append(p_arguments.size());
+	ct.cleanup();
+}
+
+void FSByteCodeGenerator::write_construct_tuple(const Address &p_target, const Vector<Address> &p_arguments) {
+	append_opcode_and_argcount(FSFunction::OPCODE_CONSTRUCT_TUPLE, 1 + p_arguments.size());
 	for (int i = 0; i < p_arguments.size(); i++) {
 		append(p_arguments[i]);
 	}

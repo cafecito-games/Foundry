@@ -1,0 +1,6 @@
+FS_TEST_RUNTIME_ERROR
+~~ WARNING at line 7: (UNSAFE_METHOD_ACCESS) The method "append()" is not present on the inferred type "Variant" (but may be present on a subtype).
+>> SCRIPT ERROR at runtime/errors/tuple_read_only_mutation.fs:4 on subtest_element_assignment(): Invalid assignment on read-only value (on base: 'Array').
+>> ERROR: Condition "_p->read_only" is true.
+>>   Array is in read-only state.
+[1, 2]

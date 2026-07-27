@@ -2,7 +2,7 @@
 /*  fs_bytecode_verifier.cpp                                              */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -535,6 +535,7 @@ Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_me
 			case FSFunction::OPCODE_CONSTRUCT_VALIDATED:
 			case FSFunction::OPCODE_CONSTRUCT_ARRAY:
 			case FSFunction::OPCODE_CONSTRUCT_TYPED_ARRAY:
+			case FSFunction::OPCODE_CONSTRUCT_TUPLE:
 			case FSFunction::OPCODE_CONSTRUCT_DICTIONARY:
 			case FSFunction::OPCODE_CONSTRUCT_TYPED_DICTIONARY:
 			case FSFunction::OPCODE_CONSTRUCT_SPECIALIZED:
@@ -587,6 +588,7 @@ Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_me
 				int tail = 3;
 				switch (opcode) {
 					case FSFunction::OPCODE_CONSTRUCT_ARRAY:
+					case FSFunction::OPCODE_CONSTRUCT_TUPLE:
 					case FSFunction::OPCODE_CONSTRUCT_DICTIONARY:
 						tail = 2;
 						break;
@@ -633,7 +635,8 @@ Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_me
 						CHECK_TABLE(shift + 2, constructors_count, "constructor");
 						highest_arg_index = argument_count;
 					} break;
-					case FSFunction::OPCODE_CONSTRUCT_ARRAY: {
+					case FSFunction::OPCODE_CONSTRUCT_ARRAY:
+					case FSFunction::OPCODE_CONSTRUCT_TUPLE: {
 						const int argument_count = code_ptr[shift + 1];
 						VERIFY_FAIL_COND(argument_count < 0, "negative argument count");
 						highest_arg_index = argument_count;
