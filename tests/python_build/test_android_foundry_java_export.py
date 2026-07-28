@@ -8,6 +8,7 @@ import json
 import os
 import shutil
 import signal
+import struct
 import subprocess
 import sys
 import tempfile
@@ -3352,6 +3353,9 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
         force_zip64: bool = False,
         force_local_zip64_sizes: bool = False,
         streaming_data_descriptor: bool = False,
+        data_descriptor_mutation: str | None = None,
+        apk_signing_block_mutation: str | None = None,
+        store_entry_payloads: bool = False,
         lock_output_directory: bool = False,
         sfx_prefix: bytes = b"",
         corrupt_entry_payload: str | None = None,
@@ -3438,14 +3442,26 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                             with zipfile.ZipFile(
                                 NonSeekableWriter(output),
                                 "w",
-                                compression=zipfile.ZIP_DEFLATED if entry_payload_sizes is not None else zipfile.ZIP_STORED,
+                                compression=(
+                                    zipfile.ZIP_STORED
+                                    if {store_entry_payloads!r}
+                                    else zipfile.ZIP_DEFLATED
+                                    if entry_payload_sizes is not None
+                                    else zipfile.ZIP_STORED
+                                ),
                             ) as archive:
                                 write_entries(archive)
                     else:
                         with zipfile.ZipFile(
                             destination,
                             "w",
-                            compression=zipfile.ZIP_DEFLATED if entry_payload_sizes is not None else zipfile.ZIP_STORED,
+                            compression=(
+                                zipfile.ZIP_STORED
+                                if {store_entry_payloads!r}
+                                else zipfile.ZIP_DEFLATED
+                                if entry_payload_sizes is not None
+                                else zipfile.ZIP_STORED
+                            ),
                         ) as archive:
                             write_entries(archive)
                     entry_name_replacement = {entry_name_replacement!r}
@@ -3489,6 +3505,241 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                         )
                         if not local_flags & 0x0008 or b"PK\\x07\\x08" not in streaming_contents:
                             raise RuntimeError("streaming ZIP did not emit a real data descriptor")
+                    data_descriptor_mutation = {data_descriptor_mutation!r}
+                    if data_descriptor_mutation is not None:
+                        contents = bytearray(destination.read_bytes())
+                        eocd = contents.rfind(b"PK\\x05\\x06")
+                        if eocd < 0:
+                            raise RuntimeError("streaming ZIP has no classic ZIP end record")
+                        central_offset = int.from_bytes(contents[eocd + 16 : eocd + 20], "little")
+                        central_entries = []
+                        central_cursor = central_offset
+                        while central_cursor < eocd and contents[central_cursor : central_cursor + 4] == b"PK\\x01\\x02":
+                            central_entries.append(central_cursor)
+                            central_cursor += (
+                                46
+                                + int.from_bytes(contents[central_cursor + 28 : central_cursor + 30], "little")
+                                + int.from_bytes(contents[central_cursor + 30 : central_cursor + 32], "little")
+                                + int.from_bytes(contents[central_cursor + 32 : central_cursor + 34], "little")
+                            )
+                        if not central_entries:
+                            raise RuntimeError("streaming ZIP has no central directory entries")
+                        local_entries = [
+                            int.from_bytes(contents[central_entry + 42 : central_entry + 46], "little")
+                            for central_entry in central_entries
+                        ]
+                        final_central_entry = central_entries[-1]
+                        local_entry = local_entries[-1]
+                        compressed_size = int.from_bytes(
+                            contents[final_central_entry + 20 : final_central_entry + 24],
+                            "little",
+                        )
+                        filename_size = int.from_bytes(contents[local_entry + 26 : local_entry + 28], "little")
+                        extra_size = int.from_bytes(contents[local_entry + 28 : local_entry + 30], "little")
+                        descriptor_start = local_entry + 30 + filename_size + extra_size + compressed_size
+                        descriptor_end = descriptor_start + 16
+                        if (
+                            contents[descriptor_start : descriptor_start + 4] != b"PK\\x07\\x08"
+                            or descriptor_end != central_offset
+                        ):
+                            raise RuntimeError("streaming ZIP final entry has no classic signed data descriptor")
+                        if data_descriptor_mutation in (
+                            "missing-next-header-prefix",
+                            "wrong-width-trailing",
+                            "unsigned-signature-crc",
+                        ):
+                            if len(central_entries) < 2:
+                                raise RuntimeError("streaming ZIP mutation requires two entries")
+                            first_central_entry = central_entries[0]
+                            first_local_entry = local_entries[0]
+                            second_local_entry = local_entries[1]
+                            first_compressed_size = int.from_bytes(
+                                contents[first_central_entry + 20 : first_central_entry + 24],
+                                "little",
+                            )
+                            first_uncompressed_size = int.from_bytes(
+                                contents[first_central_entry + 24 : first_central_entry + 28],
+                                "little",
+                            )
+                            first_filename_size = int.from_bytes(
+                                contents[first_local_entry + 26 : first_local_entry + 28],
+                                "little",
+                            )
+                            first_extra_size = int.from_bytes(
+                                contents[first_local_entry + 28 : first_local_entry + 30],
+                                "little",
+                            )
+                            first_descriptor_start = (
+                                first_local_entry
+                                + 30
+                                + first_filename_size
+                                + first_extra_size
+                                + first_compressed_size
+                            )
+                            first_descriptor_end = first_descriptor_start + 16
+                            if (
+                                contents[first_descriptor_start : first_descriptor_start + 4] != b"PK\\x07\\x08"
+                                or first_descriptor_end != second_local_entry
+                            ):
+                                raise RuntimeError("streaming ZIP first entry has no classic signed data descriptor")
+                            if data_descriptor_mutation == "missing-next-header-prefix":
+                                next_header_values = 0x00080014
+                                if (
+                                    first_compressed_size != next_header_values
+                                    or first_uncompressed_size != next_header_values
+                                    or int.from_bytes(
+                                        contents[second_local_entry + 4 : second_local_entry + 8],
+                                        "little",
+                                    )
+                                    != next_header_values
+                                ):
+                                    raise RuntimeError("next-header collision fixture has unexpected entry metadata")
+                                contents[first_central_entry + 16 : first_central_entry + 20] = (
+                                    0x04034B50
+                                ).to_bytes(4, "little")
+                                contents[second_local_entry + 8 : second_local_entry + 10] = (20).to_bytes(
+                                    2,
+                                    "little",
+                                )
+                                contents[second_local_entry + 10 : second_local_entry + 12] = (8).to_bytes(
+                                    2,
+                                    "little",
+                                )
+                                second_central_entry = central_entries[1]
+                                contents[second_central_entry + 10 : second_central_entry + 12] = (20).to_bytes(
+                                    2,
+                                    "little",
+                                )
+                                contents[second_central_entry + 12 : second_central_entry + 14] = (8).to_bytes(
+                                    2,
+                                    "little",
+                                )
+                                del contents[first_descriptor_start:first_descriptor_end]
+                                local_offset_delta = -16
+                            elif data_descriptor_mutation == "wrong-width-trailing":
+                                if first_compressed_size != 0 or first_uncompressed_size != 0:
+                                    raise RuntimeError("wrong-width fixture requires an empty first entry")
+                                contents[first_descriptor_end:first_descriptor_end] = b"\\x00" * 8
+                                local_offset_delta = 8
+                            else:
+                                contents[first_central_entry + 16 : first_central_entry + 20] = (
+                                    0x08074B50
+                                ).to_bytes(4, "little")
+                                contents[first_descriptor_start + 4 : first_descriptor_start + 8] = (
+                                    0x08074B50
+                                ).to_bytes(4, "little")
+                                del contents[first_descriptor_start : first_descriptor_start + 4]
+                                local_offset_delta = -4
+
+                            eocd = contents.rfind(b"PK\\x05\\x06")
+                            adjusted_central_offset = central_offset + local_offset_delta
+                            contents[eocd + 16 : eocd + 20] = adjusted_central_offset.to_bytes(4, "little")
+                            adjusted_central_entries = []
+                            central_cursor = adjusted_central_offset
+                            while (
+                                central_cursor < eocd
+                                and contents[central_cursor : central_cursor + 4] == b"PK\\x01\\x02"
+                            ):
+                                adjusted_central_entries.append(central_cursor)
+                                central_cursor += (
+                                    46
+                                    + int.from_bytes(contents[central_cursor + 28 : central_cursor + 30], "little")
+                                    + int.from_bytes(contents[central_cursor + 30 : central_cursor + 32], "little")
+                                    + int.from_bytes(contents[central_cursor + 32 : central_cursor + 34], "little")
+                                )
+                            if len(adjusted_central_entries) != len(central_entries):
+                                raise RuntimeError("streaming ZIP mutation lost central directory entries")
+                            for adjusted_central_entry in adjusted_central_entries[1:]:
+                                local_offset = int.from_bytes(
+                                    contents[adjusted_central_entry + 42 : adjusted_central_entry + 46],
+                                    "little",
+                                )
+                                contents[adjusted_central_entry + 42 : adjusted_central_entry + 46] = (
+                                    local_offset + local_offset_delta
+                                ).to_bytes(4, "little")
+                        elif data_descriptor_mutation == "truncated":
+                            del contents[descriptor_start + 8 : descriptor_end]
+                            eocd = contents.rfind(b"PK\\x05\\x06")
+                            contents[eocd + 16 : eocd + 20] = (central_offset - 8).to_bytes(4, "little")
+                        elif data_descriptor_mutation == "mismatched":
+                            contents[descriptor_start + 4] ^= 0x01
+                        elif data_descriptor_mutation == "central-overlap":
+                            contents[final_central_entry + 20 : final_central_entry + 24] = (
+                                compressed_size + 8
+                            ).to_bytes(4, "little")
+                        elif data_descriptor_mutation == "unsigned":
+                            del contents[descriptor_start : descriptor_start + 4]
+                            eocd = contents.rfind(b"PK\\x05\\x06")
+                            contents[eocd + 16 : eocd + 20] = (central_offset - 4).to_bytes(4, "little")
+                        else:
+                            raise RuntimeError(f"unknown data descriptor mutation: {{data_descriptor_mutation}}")
+                        destination.write_bytes(contents)
+                    apk_signing_block_mutation = {apk_signing_block_mutation!r}
+                    if apk_signing_block_mutation is not None:
+                        contents = bytearray(destination.read_bytes())
+                        eocd = contents.rfind(b"PK\\x05\\x06")
+                        if eocd < 0:
+                            raise RuntimeError("APK Signing Block fixture has no classic ZIP end record")
+                        central_offset = int.from_bytes(contents[eocd + 16 : eocd + 20], "little")
+                        pair_value = b"Foundry-Java structural fixture"
+                        pair = struct.pack("<Q", 4 + len(pair_value)) + struct.pack("<I", 0x7109871A) + pair_value
+                        block_size = len(pair) + 8 + 16
+                        signing_block = bytearray(
+                            struct.pack("<Q", block_size)
+                            + pair
+                            + struct.pack("<Q", block_size)
+                            + b"APK Sig Block 42"
+                        )
+                        alignment_padding = bytearray()
+                        if apk_signing_block_mutation in (
+                            "valid-aligned",
+                            "aligned-nonzero-gap",
+                            "aligned-oversized-gap",
+                            "aligned-unaligned-gap",
+                        ):
+                            padding_size = (-central_offset) % 4096
+                            if padding_size == 0:
+                                raise RuntimeError("APK Signing Block alignment fixture requires nonzero padding")
+                            if apk_signing_block_mutation == "aligned-oversized-gap":
+                                padding_size += 4096
+                            elif apk_signing_block_mutation == "aligned-unaligned-gap":
+                                padding_size = padding_size - 1 if padding_size > 1 else 2
+                            alignment_padding = bytearray(padding_size)
+                            if apk_signing_block_mutation == "aligned-nonzero-gap":
+                                alignment_padding[-1] = 0x01
+                            if apk_signing_block_mutation == "aligned-unaligned-gap":
+                                if (central_offset + padding_size) % 4096 == 0:
+                                    raise RuntimeError("APK Signing Block unaligned fixture is unexpectedly aligned")
+                            elif (central_offset + padding_size) % 4096 != 0:
+                                raise RuntimeError("APK Signing Block fixture failed 4096-byte alignment")
+                        if apk_signing_block_mutation in (
+                            "valid",
+                            "valid-aligned",
+                            "aligned-nonzero-gap",
+                            "aligned-oversized-gap",
+                            "aligned-unaligned-gap",
+                        ):
+                            pass
+                        elif apk_signing_block_mutation == "leading-size":
+                            signing_block[0:8] = (block_size + 1).to_bytes(8, "little")
+                        elif apk_signing_block_mutation == "pair-size":
+                            signing_block[8:16] = (len(pair) + 1).to_bytes(8, "little")
+                        elif apk_signing_block_mutation == "magic":
+                            signing_block[-1] ^= 0x01
+                        else:
+                            raise RuntimeError(
+                                f"unknown APK Signing Block mutation: {{apk_signing_block_mutation}}"
+                            )
+                        signing_block_prefix = alignment_padding + signing_block
+                        contents[central_offset:central_offset] = signing_block_prefix
+                        eocd = contents.rfind(b"PK\\x05\\x06")
+                        contents[eocd + 16 : eocd + 20] = (
+                            central_offset + len(signing_block_prefix)
+                        ).to_bytes(
+                            4,
+                            "little",
+                        )
+                        destination.write_bytes(contents)
                     corrupt_entry_payload = {corrupt_entry_payload!r}
                     if corrupt_entry_payload is not None:
                         with zipfile.ZipFile(destination) as archive:
@@ -4401,6 +4652,269 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                         self.assertFalse((project / output_name).exists())
                         self.assertEqual(b"preserve unrelated output\n", unrelated_sentinel.read_bytes())
 
+    def test_command_first_export_rejects_malformed_data_descriptors(self) -> None:
+        for extension, export_format, root in (("apk", 0, ""), ("aab", 1, "base/")):
+            valid_entries = (
+                f"{root}assets/FoundryJava.foundryextension",
+                f"{root}assets/foundry_java/registry-index-v2.txt",
+                f"{root}lib/arm64-v8a/libfoundry_java.so",
+            )
+            cases = (
+                ("missing", valid_entries, None, False, "bit3-local-sentinels", None, False),
+                ("truncated", valid_entries, None, False, None, "truncated", True),
+                ("mismatched", valid_entries, None, False, None, "mismatched", True),
+                ("central-overlap", valid_entries, None, False, None, "central-overlap", True),
+                (
+                    "missing-next-header-prefix",
+                    (
+                        f"{root}assets/unrequested-descriptor-collision.bin",
+                        f"{root}assets/unrequested-next-header.bin",
+                        *valid_entries,
+                    ),
+                    (0x00080014, 1, 1, 1, 1),
+                    True,
+                    None,
+                    "missing-next-header-prefix",
+                    True,
+                ),
+                (
+                    "wrong-width-trailing",
+                    (f"{root}assets/unrequested-wrong-width.bin", *valid_entries),
+                    (0, 1, 1, 1),
+                    True,
+                    None,
+                    "wrong-width-trailing",
+                    True,
+                ),
+            )
+            for (
+                defect,
+                entries,
+                entry_payload_sizes,
+                store_entry_payloads,
+                central_directory_mutation,
+                data_descriptor_mutation,
+                streaming_data_descriptor,
+            ) in cases:
+                with self.subTest(extension=extension, defect=defect):
+                    with tempfile.TemporaryDirectory(
+                        prefix=f"foundry-java-final-descriptor-{defect}-{extension}.",
+                        dir=test_scratch_directory(),
+                    ) as directory:
+                        project = Path(directory)
+                        project.joinpath("project.foundry").write_text(
+                            textwrap.dedent(
+                                """\
+                                [application]
+                                config/name="Foundry Java Final Data Descriptor Integrity"
+
+                                [rendering]
+                                textures/vram_compression/import_etc2_astc=true
+                                """
+                            ),
+                            encoding="utf-8",
+                        )
+                        plugin = project / "plugin.jar"
+                        module = project / "module.jar"
+                        with zipfile.ZipFile(plugin, "w") as archive:
+                            archive.writestr(
+                                "META-INF/gradle-plugins/games.cafecito.foundry.java.properties",
+                                "implementation-class=test.Fixture\n",
+                            )
+                        with zipfile.ZipFile(module, "w"):
+                            pass
+                        gradle_root = self._write_fake_gradle_wrapper(
+                            project,
+                            entries,
+                            entry_payload_sizes=entry_payload_sizes,
+                            store_entry_payloads=store_entry_payloads,
+                            central_directory_mutation=central_directory_mutation,
+                            streaming_data_descriptor=streaming_data_descriptor,
+                            data_descriptor_mutation=data_descriptor_mutation,
+                        )
+                        self._write_export_preset(
+                            project,
+                            plugin_local=plugin,
+                            local_artifacts=(module,),
+                            use_gradle=True,
+                            extra_options=(
+                                f'gradle_build/gradle_build_directory="{gradle_root}"',
+                                f"gradle_build/export_format={export_format}",
+                                "package/signed=false",
+                                "architectures/armeabi-v7a=false",
+                                "architectures/arm64-v8a=true",
+                                "architectures/x86=false",
+                                "architectures/x86_64=false",
+                            ),
+                        )
+
+                        output_name = f"malformed-data-descriptor-{defect}.{extension}"
+                        result = self._run_export(project, output_name)
+                        output = result.stdout + result.stderr
+                        self.assertNotEqual(0, result.returncode, output)
+                        self.assertIn("central directory metadata is corrupt", output)
+                        self.assertFalse((project / output_name).exists())
+
+    def test_command_first_export_rejects_malformed_apk_signing_blocks(self) -> None:
+        valid_entries = (
+            "assets/FoundryJava.foundryextension",
+            "assets/foundry_java/registry-index-v2.txt",
+            "lib/arm64-v8a/libfoundry_java.so",
+        )
+        for defect in (
+            "leading-size",
+            "pair-size",
+            "magic",
+            "aligned-nonzero-gap",
+            "aligned-oversized-gap",
+            "aligned-unaligned-gap",
+        ):
+            with self.subTest(defect=defect):
+                with tempfile.TemporaryDirectory(
+                    prefix=f"foundry-java-final-apk-signing-block-{defect}.",
+                    dir=test_scratch_directory(),
+                ) as directory:
+                    project = Path(directory)
+                    project.joinpath("project.foundry").write_text(
+                        textwrap.dedent(
+                            """\
+                            [application]
+                            config/name="Foundry Java APK Signing Block Integrity"
+
+                            [rendering]
+                            textures/vram_compression/import_etc2_astc=true
+                            """
+                        ),
+                        encoding="utf-8",
+                    )
+                    plugin = project / "plugin.jar"
+                    module = project / "module.jar"
+                    with zipfile.ZipFile(plugin, "w") as archive:
+                        archive.writestr(
+                            "META-INF/gradle-plugins/games.cafecito.foundry.java.properties",
+                            "implementation-class=test.Fixture\n",
+                        )
+                    with zipfile.ZipFile(module, "w"):
+                        pass
+                    gradle_root = self._write_fake_gradle_wrapper(
+                        project,
+                        valid_entries,
+                        streaming_data_descriptor=True,
+                        apk_signing_block_mutation=defect,
+                    )
+                    self._write_export_preset(
+                        project,
+                        plugin_local=plugin,
+                        local_artifacts=(module,),
+                        use_gradle=True,
+                        extra_options=(
+                            f'gradle_build/gradle_build_directory="{gradle_root}"',
+                            "gradle_build/export_format=0",
+                            "package/signed=false",
+                            "architectures/armeabi-v7a=false",
+                            "architectures/arm64-v8a=true",
+                            "architectures/x86=false",
+                            "architectures/x86_64=false",
+                        ),
+                    )
+
+                    output_name = f"malformed-apk-signing-block-{defect}.apk"
+                    result = self._run_export(project, output_name)
+                    output = result.stdout + result.stderr
+                    self.assertNotEqual(0, result.returncode, output)
+                    self.assertIn("central directory metadata is corrupt", output)
+                    self.assertFalse((project / output_name).exists())
+
+    def test_command_first_export_rejects_apk_signing_block_outside_apk(self) -> None:
+        def insert_signing_block(path: Path, *, aligned: bool) -> None:
+            contents = bytearray(path.read_bytes())
+            eocd = contents.rfind(b"PK\x05\x06")
+            if eocd < 0:
+                raise RuntimeError("APK Signing Block input fixture has no classic ZIP end record")
+            central_offset = int.from_bytes(contents[eocd + 16 : eocd + 20], "little")
+            pair_value = b"Foundry-Java structural fixture"
+            pair = struct.pack("<Q", 4 + len(pair_value)) + struct.pack("<I", 0x7109871A) + pair_value
+            block_size = len(pair) + 8 + 16
+            signing_block = struct.pack("<Q", block_size) + pair + struct.pack("<Q", block_size) + b"APK Sig Block 42"
+            padding_size = (-central_offset) % 4096 if aligned else 0
+            if aligned and padding_size == 0:
+                raise RuntimeError("aligned input fixture requires nonzero APK Signing Block padding")
+            signing_block_prefix = b"\x00" * padding_size + signing_block
+            contents[central_offset:central_offset] = signing_block_prefix
+            eocd = contents.rfind(b"PK\x05\x06")
+            contents[eocd + 16 : eocd + 20] = (central_offset + len(signing_block_prefix)).to_bytes(4, "little")
+            path.write_bytes(contents)
+
+        for location, aligned in (
+            ("aab", False),
+            ("input", False),
+            ("aab-aligned", True),
+            ("input-aligned", True),
+        ):
+            with self.subTest(location=location):
+                with tempfile.TemporaryDirectory(
+                    prefix=f"foundry-java-apk-signing-block-{location}.",
+                    dir=test_scratch_directory(),
+                ) as directory:
+                    project = Path(directory)
+                    project.joinpath("project.foundry").write_text(
+                        textwrap.dedent(
+                            """\
+                            [application]
+                            config/name="Foundry Java APK Signing Block Scope"
+
+                            [rendering]
+                            textures/vram_compression/import_etc2_astc=true
+                            """
+                        ),
+                        encoding="utf-8",
+                    )
+                    plugin = project / "plugin.jar"
+                    module = project / "module.jar"
+                    with zipfile.ZipFile(plugin, "w") as archive:
+                        archive.writestr(
+                            "META-INF/gradle-plugins/games.cafecito.foundry.java.properties",
+                            "implementation-class=test.Fixture\n",
+                        )
+                    with zipfile.ZipFile(module, "w"):
+                        pass
+                    is_input = location.startswith("input")
+                    is_aab = location.startswith("aab")
+                    if is_input:
+                        insert_signing_block(plugin, aligned=aligned)
+                    root = "base/" if is_aab else ""
+                    gradle_root = self._write_fake_gradle_wrapper(
+                        project,
+                        (
+                            f"{root}assets/FoundryJava.foundryextension",
+                            f"{root}assets/foundry_java/registry-index-v2.txt",
+                            f"{root}lib/arm64-v8a/libfoundry_java.so",
+                        ),
+                        apk_signing_block_mutation=("valid-aligned" if aligned else "valid") if is_aab else None,
+                    )
+                    self._write_export_preset(
+                        project,
+                        plugin_local=plugin,
+                        local_artifacts=(module,),
+                        use_gradle=True,
+                        extra_options=(
+                            f'gradle_build/gradle_build_directory="{gradle_root}"',
+                            f"gradle_build/export_format={1 if is_aab else 0}",
+                            "package/signed=false",
+                            "architectures/armeabi-v7a=false",
+                            "architectures/arm64-v8a=true",
+                            "architectures/x86=false",
+                            "architectures/x86_64=false",
+                        ),
+                    )
+
+                    output_name = f"apk-signing-block-{location}.{'aab' if is_aab else 'apk'}"
+                    result = self._run_export(project, output_name)
+                    output = result.stdout + result.stderr
+                    self.assertNotEqual(0, result.returncode, output)
+                    self.assertIn("archive central directory metadata is corrupt", output)
+                    self.assertFalse((project / output_name).exists())
+
     def test_command_first_export_accepts_valid_zip64_final_archive_metadata(self) -> None:
         for extension, export_format, root in (("apk", 0, ""), ("aab", 1, "base/")):
             compatibility_cases = (
@@ -4412,10 +4926,21 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                     b"Foundry-Java SFX fixture\n" if extension == "aab" else b"",
                 ),
                 ("zip64-local-sizes", False, True, None, b""),
-                ("bit3-local-sentinels", False, False, "bit3-local-sentinels", b""),
                 ("streaming-data-descriptor", False, False, None, b""),
+                ("streaming-zip64-data-descriptor", False, True, None, b""),
+                ("streaming-unsigned-data-descriptor", False, False, None, b""),
+                ("streaming-unsigned-signature-crc", False, False, None, b""),
                 ("central-digital-signature", False, False, "central-digital-signature", b""),
             )
+            if extension == "apk":
+                compatibility_cases += (
+                    ("apk-signing-block-signed-descriptor", False, False, None, b""),
+                    ("apk-signing-block-unsigned-descriptor", False, False, None, b""),
+                    ("apk-signing-block-no-descriptor", False, False, None, b""),
+                    ("apk-signing-block-aligned-signed-descriptor", False, False, None, b""),
+                    ("apk-signing-block-aligned-unsigned-descriptor", False, False, None, b""),
+                    ("apk-signing-block-aligned-no-descriptor", False, False, None, b""),
+                )
             for (
                 compatibility,
                 force_zip64,
@@ -4431,7 +4956,35 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                         compatibility=compatibility,
                         force_zip64=force_zip64,
                         force_local_zip64_sizes=force_local_zip64_sizes,
-                        streaming_data_descriptor=compatibility == "streaming-data-descriptor",
+                        streaming_data_descriptor=(
+                            compatibility.startswith("streaming-")
+                            or compatibility
+                            in (
+                                "apk-signing-block-signed-descriptor",
+                                "apk-signing-block-unsigned-descriptor",
+                                "apk-signing-block-aligned-signed-descriptor",
+                                "apk-signing-block-aligned-unsigned-descriptor",
+                            )
+                        ),
+                        data_descriptor_mutation=(
+                            "unsigned"
+                            if compatibility
+                            in (
+                                "streaming-unsigned-data-descriptor",
+                                "apk-signing-block-unsigned-descriptor",
+                                "apk-signing-block-aligned-unsigned-descriptor",
+                            )
+                            else "unsigned-signature-crc"
+                            if compatibility == "streaming-unsigned-signature-crc"
+                            else None
+                        ),
+                        apk_signing_block_mutation=(
+                            "valid-aligned"
+                            if compatibility.startswith("apk-signing-block-aligned-")
+                            else "valid"
+                            if compatibility.startswith("apk-signing-block-")
+                            else None
+                        ),
                         central_directory_mutation=central_directory_mutation,
                         sfx_prefix=sfx_prefix,
                     )
@@ -4446,6 +4999,8 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
         force_zip64: bool,
         force_local_zip64_sizes: bool,
         streaming_data_descriptor: bool,
+        data_descriptor_mutation: str | None,
+        apk_signing_block_mutation: str | None,
         central_directory_mutation: str | None,
         sfx_prefix: bytes,
     ) -> None:
@@ -4478,13 +5033,22 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
             gradle_root = self._write_fake_gradle_wrapper(
                 project,
                 (
+                    *(
+                        (f"{root}assets/unrequested-signature-crc.bin",)
+                        if data_descriptor_mutation == "unsigned-signature-crc"
+                        else ()
+                    ),
                     f"{root}assets/FoundryJava.foundryextension",
                     f"{root}assets/foundry_java/registry-index-v2.txt",
                     f"{root}lib/arm64-v8a/libfoundry_java.so",
                 ),
+                entry_payload_sizes=(1, 1, 1, 1) if data_descriptor_mutation == "unsigned-signature-crc" else None,
+                store_entry_payloads=data_descriptor_mutation == "unsigned-signature-crc",
                 force_zip64=force_zip64,
                 force_local_zip64_sizes=force_local_zip64_sizes,
                 streaming_data_descriptor=streaming_data_descriptor,
+                data_descriptor_mutation=data_descriptor_mutation,
+                apk_signing_block_mutation=apk_signing_block_mutation,
                 central_directory_mutation=central_directory_mutation,
                 sfx_prefix=sfx_prefix,
             )

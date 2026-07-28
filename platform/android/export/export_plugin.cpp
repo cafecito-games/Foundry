@@ -1980,16 +1980,24 @@ static constexpr uint64_t FOUNDRY_JAVA_MAX_FINAL_ARTIFACT_REQUIRED_ENTRY_UNCOMPR
 static constexpr uint64_t FOUNDRY_JAVA_MAX_FINAL_ARTIFACT_REQUIRED_ENTRIES_UNCOMPRESSED_BYTES = 512 * 1024 * 1024;
 static constexpr uint64_t FOUNDRY_JAVA_MAX_ARCHIVE_ENTRY_NAME_BYTES = 16383;
 static constexpr uint64_t FOUNDRY_JAVA_MAX_ARCHIVE_ENTRY_NAMES_BYTES = 16 * 1024 * 1024;
+static constexpr uint64_t FOUNDRY_JAVA_MAX_APK_SIGNING_BLOCK_BYTES = 128 * 1024 * 1024;
+static constexpr uint64_t FOUNDRY_JAVA_APK_SIGNING_BLOCK_ALIGNMENT = 4096;
+static constexpr uint64_t FOUNDRY_JAVA_MAX_APK_SIGNING_BLOCK_PADDING_BYTES =
+		FOUNDRY_JAVA_APK_SIGNING_BLOCK_ALIGNMENT - 1;
 static constexpr uint64_t FOUNDRY_JAVA_LOCAL_FILE_ENTRY_SIZE = 30;
 static constexpr uint64_t FOUNDRY_JAVA_CENTRAL_DIRECTORY_ENTRY_SIZE = 46;
 static constexpr uint64_t FOUNDRY_JAVA_CLASSIC_END_OF_CENTRAL_DIRECTORY_SIZE = 22;
 static constexpr uint64_t FOUNDRY_JAVA_MAX_ZIP_COMMENT_BYTES = 65535;
 static constexpr uint32_t FOUNDRY_JAVA_LOCAL_FILE_ENTRY_SIGNATURE = 0x04034b50;
+static constexpr uint32_t FOUNDRY_JAVA_DATA_DESCRIPTOR_SIGNATURE = 0x08074b50;
 static constexpr uint32_t FOUNDRY_JAVA_CENTRAL_DIRECTORY_ENTRY_SIGNATURE = 0x02014b50;
 static constexpr uint32_t FOUNDRY_JAVA_CENTRAL_DIRECTORY_DIGITAL_SIGNATURE = 0x05054b50;
 static constexpr uint32_t FOUNDRY_JAVA_CLASSIC_END_OF_CENTRAL_DIRECTORY_SIGNATURE = 0x06054b50;
 static constexpr uint32_t FOUNDRY_JAVA_ZIP64_END_OF_CENTRAL_DIRECTORY_SIGNATURE = 0x06064b50;
 static constexpr uint32_t FOUNDRY_JAVA_ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR_SIGNATURE = 0x07064b50;
+static constexpr uint8_t FOUNDRY_JAVA_APK_SIGNING_BLOCK_MAGIC[16] = {
+	'A', 'P', 'K', ' ', 'S', 'i', 'g', ' ', 'B', 'l', 'o', 'c', 'k', ' ', '4', '2'
+};
 
 enum FoundryJavaCentralDirectoryConsistency {
 	FOUNDRY_JAVA_CENTRAL_DIRECTORY_CLEAN,
@@ -2001,6 +2009,12 @@ enum FoundryJavaZip64ExtentResult {
 	FOUNDRY_JAVA_ZIP64_EXTENT_NOT_PRESENT,
 	FOUNDRY_JAVA_ZIP64_EXTENT_VALID,
 	FOUNDRY_JAVA_ZIP64_EXTENT_CORRUPT,
+};
+
+enum FoundryJavaApkSigningBlockResult {
+	FOUNDRY_JAVA_APK_SIGNING_BLOCK_NOT_PRESENT,
+	FOUNDRY_JAVA_APK_SIGNING_BLOCK_VALID,
+	FOUNDRY_JAVA_APK_SIGNING_BLOCK_CORRUPT,
 };
 
 static String _foundry_java_safe_diagnostic_value(const String &p_value) {
@@ -2145,6 +2159,15 @@ static bool _foundry_java_read_archive_uint32(const Ref<FileAccess> &p_archive_f
 		return false;
 	}
 	r_value = _foundry_java_decode_uint32(bytes);
+	return true;
+}
+
+static bool _foundry_java_read_archive_uint64(const Ref<FileAccess> &p_archive_file, uint64_t p_position, uint64_t &r_value) {
+	uint8_t bytes[8];
+	if (!_foundry_java_read_archive_bytes(p_archive_file, p_position, bytes, sizeof(bytes))) {
+		return false;
+	}
+	r_value = _foundry_java_decode_uint64(bytes);
 	return true;
 }
 
@@ -2326,11 +2349,28 @@ static bool _foundry_java_find_central_directory_extent(
 	return false;
 }
 
+struct FoundryJavaLocalEntryRecord {
+	uint64_t local_header_position = 0;
+	uint64_t payload_end = 0;
+	bool uses_data_descriptor = false;
+	bool descriptor_uses_zip64 = false;
+	uint32_t crc = 0;
+	uint64_t compressed_size = 0;
+	uint64_t uncompressed_size = 0;
+};
+
+struct FoundryJavaLocalEntryRecordComparator {
+	_FORCE_INLINE_ bool operator()(const FoundryJavaLocalEntryRecord &p_left, const FoundryJavaLocalEntryRecord &p_right) const {
+		return p_left.local_header_position < p_right.local_header_position;
+	}
+};
+
 struct FoundryJavaCentralDirectoryContext {
 	bool initialized = false;
 	uint64_t byte_before_zip = 0;
 	uint64_t central_directory_start = 0;
 	uint64_t central_directory_end = 0;
+	Vector<FoundryJavaLocalEntryRecord> local_entries;
 };
 
 static bool _foundry_java_resolve_zip64_entry_values(
@@ -2406,6 +2446,106 @@ static bool _foundry_java_resolve_zip64_entry_values(
 	return !needs_zip64 || found_zip64;
 }
 
+static bool _foundry_java_validate_structure_gap(
+		const Ref<FileAccess> &p_archive_file,
+		uint64_t p_candidate_end,
+		uint64_t p_next_structure,
+		bool p_allow_apk_signing_block_padding) {
+	if (p_candidate_end == p_next_structure) {
+		return true;
+	}
+	if (!p_allow_apk_signing_block_padding ||
+			p_candidate_end > p_next_structure ||
+			p_next_structure % FOUNDRY_JAVA_APK_SIGNING_BLOCK_ALIGNMENT != 0) {
+		return false;
+	}
+
+	const uint64_t padding_size = p_next_structure - p_candidate_end;
+	if (padding_size == 0 || padding_size > FOUNDRY_JAVA_MAX_APK_SIGNING_BLOCK_PADDING_BYTES) {
+		return false;
+	}
+	uint8_t padding[256];
+	uint64_t padding_cursor = p_candidate_end;
+	while (padding_cursor < p_next_structure) {
+		const uint64_t read_size = MIN(uint64_t(sizeof(padding)), p_next_structure - padding_cursor);
+		if (!_foundry_java_read_archive_bytes(
+					p_archive_file,
+					padding_cursor,
+					padding,
+					read_size)) {
+			return false;
+		}
+		for (uint64_t i = 0; i < read_size; i++) {
+			if (padding[i] != 0) {
+				return false;
+			}
+		}
+		padding_cursor += read_size;
+	}
+	return true;
+}
+
+static bool _foundry_java_validate_data_descriptor(
+		const Ref<FileAccess> &p_archive_file,
+		uint64_t p_descriptor_start,
+		uint64_t p_next_structure,
+		bool p_allow_apk_signing_block_padding,
+		bool p_uses_zip64,
+		uint32_t p_crc,
+		uint64_t p_compressed_size,
+		uint64_t p_uncompressed_size) {
+	if (p_archive_file.is_null() || p_descriptor_start >= p_next_structure ||
+			(!p_uses_zip64 && (p_compressed_size > UINT32_MAX || p_uncompressed_size > UINT32_MAX))) {
+		return false;
+	}
+
+	uint32_t first_value = 0;
+	if (!_foundry_java_read_archive_uint32(p_archive_file, p_descriptor_start, first_value)) {
+		return false;
+	}
+
+	uint64_t value_starts[2] = { p_descriptor_start, p_descriptor_start };
+	int value_start_count = 1;
+	if (first_value == FOUNDRY_JAVA_DATA_DESCRIPTOR_SIGNATURE) {
+		if (!_foundry_java_checked_add(p_descriptor_start, sizeof(uint32_t), value_starts[0])) {
+			return false;
+		}
+		value_starts[1] = p_descriptor_start;
+		value_start_count = 2;
+	}
+
+	const uint64_t descriptor_values_size =
+			sizeof(uint32_t) + (p_uses_zip64 ? 2 * sizeof(uint64_t) : 2 * sizeof(uint32_t));
+	for (int i = 0; i < value_start_count; i++) {
+		uint64_t descriptor_end = 0;
+		if (!_foundry_java_checked_add(value_starts[i], descriptor_values_size, descriptor_end) ||
+				!_foundry_java_validate_structure_gap(
+						p_archive_file,
+						descriptor_end,
+						p_next_structure,
+						p_allow_apk_signing_block_padding)) {
+			continue;
+		}
+
+		uint8_t descriptor[sizeof(uint32_t) + 2 * sizeof(uint64_t)];
+		if (!_foundry_java_read_archive_bytes(
+					p_archive_file,
+					value_starts[i],
+					descriptor,
+					descriptor_values_size) ||
+				_foundry_java_decode_uint32(descriptor) != p_crc) {
+			continue;
+		}
+		const uint64_t descriptor_compressed_size = p_uses_zip64 ? _foundry_java_decode_uint64(descriptor + sizeof(uint32_t)) : _foundry_java_decode_uint32(descriptor + sizeof(uint32_t));
+		const uint64_t descriptor_uncompressed_size = p_uses_zip64 ? _foundry_java_decode_uint64(descriptor + sizeof(uint32_t) + sizeof(uint64_t)) : _foundry_java_decode_uint32(descriptor + sizeof(uint32_t) + sizeof(uint32_t));
+		if (descriptor_compressed_size == p_compressed_size &&
+				descriptor_uncompressed_size == p_uncompressed_size) {
+			return true;
+		}
+	}
+	return false;
+}
+
 static bool _foundry_java_validate_central_directory_entry(
 		const Ref<FileAccess> &p_archive_file,
 		uint64_t p_entry_start,
@@ -2413,7 +2553,8 @@ static bool _foundry_java_validate_central_directory_entry(
 		uint64_t p_central_directory_end,
 		uint64_t p_byte_before_zip,
 		uint64_t &r_entry_end,
-		const unz_file_info64 *p_info = nullptr) {
+		const unz_file_info64 *p_info = nullptr,
+		FoundryJavaLocalEntryRecord *r_local_entry = nullptr) {
 	uint8_t header[FOUNDRY_JAVA_CENTRAL_DIRECTORY_ENTRY_SIZE];
 	if (!_foundry_java_read_archive_bytes(p_archive_file, p_entry_start, header, sizeof(header)) ||
 			_foundry_java_decode_uint32(header) != FOUNDRY_JAVA_CENTRAL_DIRECTORY_ENTRY_SIGNATURE) {
@@ -2494,6 +2635,8 @@ static bool _foundry_java_validate_central_directory_entry(
 	}
 	const uint16_t local_filename_size = _foundry_java_decode_uint16(local_header + 26);
 	const uint16_t local_extra_size = _foundry_java_decode_uint16(local_header + 28);
+	const uint32_t raw_local_compressed_size = _foundry_java_decode_uint32(local_header + 18);
+	const uint32_t raw_local_uncompressed_size = _foundry_java_decode_uint32(local_header + 22);
 	uint64_t local_filename_position = 0;
 	uint64_t local_filename_end = 0;
 	uint64_t local_extra_end = 0;
@@ -2519,8 +2662,8 @@ static bool _foundry_java_validate_central_directory_entry(
 	const bool uses_data_descriptor = (central_flags & 0x0008) != 0;
 	if (!_foundry_java_resolve_zip64_entry_values(
 				local_extra,
-				uses_data_descriptor ? 0 : _foundry_java_decode_uint32(local_header + 22),
-				uses_data_descriptor ? 0 : _foundry_java_decode_uint32(local_header + 18),
+				uses_data_descriptor ? 0 : raw_local_uncompressed_size,
+				uses_data_descriptor ? 0 : raw_local_compressed_size,
 				0,
 				0,
 				false,
@@ -2556,6 +2699,21 @@ static bool _foundry_java_validate_central_directory_entry(
 		}
 	}
 
+	if (r_local_entry) {
+		r_local_entry->local_header_position = local_header_position;
+		r_local_entry->payload_end = local_payload_end;
+		r_local_entry->uses_data_descriptor = uses_data_descriptor;
+		r_local_entry->descriptor_uses_zip64 =
+				raw_compressed_size == UINT32_MAX ||
+				raw_uncompressed_size == UINT32_MAX ||
+				raw_local_compressed_size == UINT32_MAX ||
+				raw_local_uncompressed_size == UINT32_MAX ||
+				central_compressed_size > UINT32_MAX ||
+				central_uncompressed_size > UINT32_MAX;
+		r_local_entry->crc = central_crc;
+		r_local_entry->compressed_size = central_compressed_size;
+		r_local_entry->uncompressed_size = central_uncompressed_size;
+	}
 	r_entry_end = entry_end;
 	return true;
 }
@@ -2590,25 +2748,156 @@ static bool _foundry_java_validate_current_central_directory_entry(
 		return false;
 	}
 
-	return _foundry_java_validate_central_directory_entry(
-			p_archive_file,
-			entry_start,
-			r_context.central_directory_start,
-			r_context.central_directory_end,
-			r_context.byte_before_zip,
-			r_entry_end,
-			&p_info);
+	FoundryJavaLocalEntryRecord local_entry;
+	if (!_foundry_java_validate_central_directory_entry(
+				p_archive_file,
+				entry_start,
+				r_context.central_directory_start,
+				r_context.central_directory_end,
+				r_context.byte_before_zip,
+				r_entry_end,
+				&p_info,
+				&local_entry) ||
+			uint64_t(r_context.local_entries.size()) >= p_global_info.number_entry) {
+		return false;
+	}
+	r_context.local_entries.push_back(local_entry);
+	return true;
+}
+
+static FoundryJavaApkSigningBlockResult _foundry_java_find_apk_signing_block_start(
+		const Ref<FileAccess> &p_archive_file,
+		uint64_t p_central_directory_start,
+		uint64_t &r_signing_block_start) {
+	r_signing_block_start = p_central_directory_start;
+	constexpr uint64_t SIGNING_BLOCK_TRAILER_SIZE =
+			sizeof(uint64_t) + sizeof(FOUNDRY_JAVA_APK_SIGNING_BLOCK_MAGIC);
+	if (p_archive_file.is_null() || p_central_directory_start < SIGNING_BLOCK_TRAILER_SIZE) {
+		return FOUNDRY_JAVA_APK_SIGNING_BLOCK_NOT_PRESENT;
+	}
+
+	uint8_t trailer[SIGNING_BLOCK_TRAILER_SIZE];
+	const uint64_t trailer_start = p_central_directory_start - SIGNING_BLOCK_TRAILER_SIZE;
+	if (!_foundry_java_read_archive_bytes(
+				p_archive_file,
+				trailer_start,
+				trailer,
+				sizeof(trailer))) {
+		return FOUNDRY_JAVA_APK_SIGNING_BLOCK_CORRUPT;
+	}
+	if (memcmp(
+				trailer + sizeof(uint64_t),
+				FOUNDRY_JAVA_APK_SIGNING_BLOCK_MAGIC,
+				sizeof(FOUNDRY_JAVA_APK_SIGNING_BLOCK_MAGIC)) != 0) {
+		return FOUNDRY_JAVA_APK_SIGNING_BLOCK_NOT_PRESENT;
+	}
+
+	const uint64_t trailing_block_size = _foundry_java_decode_uint64(trailer);
+	constexpr uint64_t MIN_PAIR_SIZE = sizeof(uint64_t) + sizeof(uint32_t);
+	constexpr uint64_t MIN_BLOCK_SIZE = sizeof(uint64_t) + MIN_PAIR_SIZE + SIGNING_BLOCK_TRAILER_SIZE;
+	uint64_t total_block_size = 0;
+	if (trailing_block_size > FOUNDRY_JAVA_MAX_APK_SIGNING_BLOCK_BYTES - sizeof(uint64_t) ||
+			!_foundry_java_checked_add(trailing_block_size, sizeof(uint64_t), total_block_size) ||
+			total_block_size < MIN_BLOCK_SIZE ||
+			total_block_size > p_central_directory_start) {
+		return FOUNDRY_JAVA_APK_SIGNING_BLOCK_CORRUPT;
+	}
+
+	const uint64_t signing_block_start = p_central_directory_start - total_block_size;
+	uint64_t leading_block_size = 0;
+	if (!_foundry_java_read_archive_uint64(p_archive_file, signing_block_start, leading_block_size) ||
+			leading_block_size != trailing_block_size) {
+		return FOUNDRY_JAVA_APK_SIGNING_BLOCK_CORRUPT;
+	}
+
+	uint64_t pair_cursor = signing_block_start + sizeof(uint64_t);
+	const uint64_t pairs_end = trailer_start;
+	bool found_pair = false;
+	while (pair_cursor < pairs_end) {
+		uint64_t pair_size = 0;
+		if (pairs_end - pair_cursor < sizeof(uint64_t) ||
+				!_foundry_java_read_archive_uint64(p_archive_file, pair_cursor, pair_size)) {
+			return FOUNDRY_JAVA_APK_SIGNING_BLOCK_CORRUPT;
+		}
+		pair_cursor += sizeof(uint64_t);
+		if (pair_size < sizeof(uint32_t) || pair_size > pairs_end - pair_cursor) {
+			return FOUNDRY_JAVA_APK_SIGNING_BLOCK_CORRUPT;
+		}
+		pair_cursor += pair_size;
+		found_pair = true;
+	}
+	if (!found_pair || pair_cursor != pairs_end) {
+		return FOUNDRY_JAVA_APK_SIGNING_BLOCK_CORRUPT;
+	}
+
+	r_signing_block_start = signing_block_start;
+	return FOUNDRY_JAVA_APK_SIGNING_BLOCK_VALID;
+}
+
+static bool _foundry_java_validate_local_entry_boundaries(
+		const Ref<FileAccess> &p_archive_file,
+		const FoundryJavaCentralDirectoryContext &p_context,
+		bool p_allow_apk_signing_block) {
+	if (!p_context.initialized || p_archive_file.is_null() || p_context.local_entries.is_empty()) {
+		return false;
+	}
+
+	uint64_t final_structure = p_context.central_directory_start;
+	bool allow_final_signing_block_padding = false;
+	if (p_allow_apk_signing_block) {
+		const FoundryJavaApkSigningBlockResult signing_block_result =
+				_foundry_java_find_apk_signing_block_start(
+						p_archive_file,
+						p_context.central_directory_start,
+						final_structure);
+		if (signing_block_result == FOUNDRY_JAVA_APK_SIGNING_BLOCK_CORRUPT) {
+			return false;
+		}
+		allow_final_signing_block_padding = signing_block_result == FOUNDRY_JAVA_APK_SIGNING_BLOCK_VALID;
+	}
+
+	Vector<FoundryJavaLocalEntryRecord> local_entries = p_context.local_entries;
+	local_entries.sort_custom<FoundryJavaLocalEntryRecordComparator>();
+	for (int i = 0; i < local_entries.size(); i++) {
+		const FoundryJavaLocalEntryRecord &entry = local_entries[i];
+		const uint64_t next_structure =
+				i + 1 < local_entries.size() ? local_entries[i + 1].local_header_position : final_structure;
+		const bool allow_signing_block_padding =
+				i + 1 == local_entries.size() && allow_final_signing_block_padding;
+		if (entry.local_header_position >= next_structure || entry.payload_end > next_structure) {
+			return false;
+		}
+		if (entry.uses_data_descriptor &&
+				!_foundry_java_validate_data_descriptor(
+						p_archive_file,
+						entry.payload_end,
+						next_structure,
+						allow_signing_block_padding,
+						entry.descriptor_uses_zip64,
+						entry.crc,
+						entry.compressed_size,
+						entry.uncompressed_size)) {
+			return false;
+		}
+		if (!entry.uses_data_descriptor &&
+				!_foundry_java_validate_structure_gap(
+						p_archive_file,
+						entry.payload_end,
+						next_structure,
+						allow_signing_block_padding)) {
+			return false;
+		}
+	}
+	return true;
 }
 
 static FoundryJavaCentralDirectoryConsistency _foundry_java_check_central_directory_tail(
 		const Ref<FileAccess> &p_archive_file,
 		const FoundryJavaCentralDirectoryContext &p_context,
-		uint64_t p_entry_end) {
-	if (!p_context.initialized || p_archive_file.is_null()) {
-		return FOUNDRY_JAVA_CENTRAL_DIRECTORY_CORRUPT;
-	}
+		uint64_t p_entry_end,
+		bool p_allow_apk_signing_block) {
 	if (p_entry_end == p_context.central_directory_end) {
-		return FOUNDRY_JAVA_CENTRAL_DIRECTORY_CLEAN;
+		return _foundry_java_validate_local_entry_boundaries(p_archive_file, p_context, p_allow_apk_signing_block) ? FOUNDRY_JAVA_CENTRAL_DIRECTORY_CLEAN : FOUNDRY_JAVA_CENTRAL_DIRECTORY_CORRUPT;
 	}
 
 	uint32_t next_signature = 0;
@@ -2637,7 +2926,7 @@ static FoundryJavaCentralDirectoryConsistency _foundry_java_check_central_direct
 		if (_foundry_java_checked_add(p_entry_end, sizeof(uint32_t) + sizeof(uint16_t), signature_end) &&
 				_foundry_java_checked_add(signature_end, _foundry_java_decode_uint16(signature_size_bytes), signature_end) &&
 				signature_end == p_context.central_directory_end) {
-			return FOUNDRY_JAVA_CENTRAL_DIRECTORY_CLEAN;
+			return _foundry_java_validate_local_entry_boundaries(p_archive_file, p_context, p_allow_apk_signing_block) ? FOUNDRY_JAVA_CENTRAL_DIRECTORY_CLEAN : FOUNDRY_JAVA_CENTRAL_DIRECTORY_CORRUPT;
 		}
 	}
 	return FOUNDRY_JAVA_CENTRAL_DIRECTORY_CORRUPT;
@@ -2922,7 +3211,11 @@ static Error _foundry_java_scan_open_archive(
 		entries_scanned++;
 		if (entries_scanned == global_info.number_entry) {
 			const FoundryJavaCentralDirectoryConsistency consistency =
-					_foundry_java_check_central_directory_tail(p_archive_file, central_directory_context, central_directory_entry_end);
+					_foundry_java_check_central_directory_tail(
+							p_archive_file,
+							central_directory_context,
+							central_directory_entry_end,
+							false);
 			if (consistency == FOUNDRY_JAVA_CENTRAL_DIRECTORY_UNREPORTED_ENTRY) {
 				r_error = _foundry_java_archive_error(p_context, TTR("archive entry count does not match its central directory"));
 				unzClose(p_archive);
@@ -3149,7 +3442,11 @@ Error EditorExportPlatformAndroid::_inspect_foundry_java_artifact(const String &
 		}
 		if (entries_scanned == global_info.number_entry) {
 			const FoundryJavaCentralDirectoryConsistency consistency =
-					_foundry_java_check_central_directory_tail(artifact_file, central_directory_context, central_directory_entry_end);
+					_foundry_java_check_central_directory_tail(
+							artifact_file,
+							central_directory_context,
+							central_directory_entry_end,
+							artifact_kind == "APK");
 			if (consistency == FOUNDRY_JAVA_CENTRAL_DIRECTORY_UNREPORTED_ENTRY) {
 				r_error = vformat(TTR("Unable to inspect final Foundry-Java %s: archive entry count does not match its central directory."), artifact_kind);
 				unzClose(artifact);
