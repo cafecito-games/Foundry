@@ -4477,6 +4477,9 @@ func structural() -> (Vector2i, int):
 
 func nested() -> Array[(int, int)]:
 	return [(1, 2)]
+
+func nested_named() -> Array[PlayerWorldPosition]:
+	return [PlayerWorldPosition(Vector2i(1, 2), 3)]
 )",
 			"res://tuple_docgen_signature.fs", false);
 	CHECK_EQ(err, OK);
@@ -4530,6 +4533,14 @@ func nested() -> Array[(int, int)]:
 	// Nesting composes with the existing synthetic container spellings.
 	CHECK_EQ(methods["nested"].return_type, "(int, int)[]");
 	CHECK(methods["nested"].return_tuple.is_empty());
+
+	// A named tuple nested inside a container has no channel to carry its link target, so it is
+	// spelled structurally rather than rendered as a name the class reference cannot resolve.
+	CHECK(methods.has("nested_named"));
+	if (methods.has("nested_named")) {
+		CHECK_EQ(methods["nested_named"].return_type, "(Vector2i, int)[]");
+		CHECK(methods["nested_named"].return_tuple.is_empty());
+	}
 }
 
 TEST_CASE("[Modules][FoundryScript] Docgen qualifies tuple link targets by declaration site") {

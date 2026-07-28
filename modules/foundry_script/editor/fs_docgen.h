@@ -45,6 +45,10 @@ class FSDocGen {
 	static void _populate_singletons_from_autoload_index();
 	static String _qualified_declared_type_name(const StringName &p_native_type);
 	static void _doctype_from_gdtype(const GDType &p_gdtype, String &r_type, String &r_enum, String &r_tuple, bool p_is_return = false);
+	// Spells a type that appears inside another type's spelling, where no separate metadata channel
+	// can travel with it.
+	static void _doctype_from_gdtype_nested(const GDType &p_gdtype, String &r_type, String &r_enum);
+	static String _structural_tuple_spelling(const GDType &p_gdtype);
 	static String _docvalue_from_variant(const Variant &p_variant, int p_recursion_level = 1);
 	static void _generate_docs(FoundryScript *p_script, const GDP::ClassNode *p_class);
 

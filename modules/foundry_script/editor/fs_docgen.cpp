@@ -120,6 +120,32 @@ String FSDocGen::_qualified_declared_type_name(const StringName &p_native_type) 
 	return qualified;
 }
 
+String FSDocGen::_structural_tuple_spelling(const GDType &p_gdtype) {
+	String spelling = "(";
+	for (int i = 0; i < p_gdtype.container_element_types.size(); i++) {
+		if (i > 0) {
+			spelling += ", ";
+		}
+		String element_type;
+		String element_enum;
+		_doctype_from_gdtype_nested(p_gdtype.container_element_types[i], element_type, element_enum);
+		spelling += element_type.is_empty() ? String("Variant") : element_type;
+	}
+	return spelling + ")";
+}
+
+void FSDocGen::_doctype_from_gdtype_nested(const GDType &p_gdtype, String &r_type, String &r_enum) {
+	String nested_tuple;
+	_doctype_from_gdtype(p_gdtype, r_type, r_enum, nested_tuple);
+	if (!nested_tuple.is_empty()) {
+		// Only one tuple channel travels with a documented type, and it describes the outermost
+		// type. A nested named tuple therefore has nowhere to carry its link target, so it is
+		// spelled structurally: rendering the name without the channel would emit a dead
+		// class-style help link, exactly as an enum nested in `Coroutine[T]` collapses to `int`.
+		r_type = _structural_tuple_spelling(p_gdtype);
+	}
+}
+
 void FSDocGen::_doctype_from_gdtype(const GDType &p_gdtype, String &r_type, String &r_enum, String &r_tuple, bool p_is_return) {
 	if (!p_gdtype.is_hard_type()) {
 		r_type = "Variant";
@@ -140,8 +166,7 @@ void FSDocGen::_doctype_from_gdtype(const GDType &p_gdtype, String &r_type, Stri
 				// in a separate metadata field that the wrapped `Coroutine[T]` spelling cannot
 				// carry, and embedding it here would emit a dead class-style help link.
 				String element_enum;
-				String element_tuple;
-				_doctype_from_gdtype(result_type, element, element_enum, element_tuple);
+				_doctype_from_gdtype_nested(result_type, element, element_enum);
 				if (element.is_empty()) {
 					element = "Variant";
 				}
@@ -157,11 +182,7 @@ void FSDocGen::_doctype_from_gdtype(const GDType &p_gdtype, String &r_type, Stri
 				return;
 			}
 			if (p_gdtype.builtin_type == Variant::ARRAY && p_gdtype.has_container_element_type(0)) {
-				// The tuple channel identifies the outermost type only, so an element-level
-				// channel is dropped here: the container spelling already carries the element's
-				// rendered name.
-				String element_tuple;
-				_doctype_from_gdtype(p_gdtype.get_container_element_type(0), r_type, r_enum, element_tuple);
+				_doctype_from_gdtype_nested(p_gdtype.get_container_element_type(0), r_type, r_enum);
 				if (!r_enum.is_empty()) {
 					r_type = "int[]";
 					r_enum += "[]";
@@ -174,10 +195,8 @@ void FSDocGen::_doctype_from_gdtype(const GDType &p_gdtype, String &r_type, Stri
 			}
 			if (p_gdtype.builtin_type == Variant::DICTIONARY && p_gdtype.has_container_element_types()) {
 				String key, value;
-				String element_tuple;
-				_doctype_from_gdtype(p_gdtype.get_container_element_type_or_variant(0), key, r_enum, element_tuple);
-				element_tuple = String();
-				_doctype_from_gdtype(p_gdtype.get_container_element_type_or_variant(1), value, r_enum, element_tuple);
+				_doctype_from_gdtype_nested(p_gdtype.get_container_element_type_or_variant(0), key, r_enum);
+				_doctype_from_gdtype_nested(p_gdtype.get_container_element_type_or_variant(1), value, r_enum);
 				if (key != "Variant" || value != "Variant") {
 					r_type = "Dictionary[" + key + ", " + value + "]";
 					return;
@@ -255,21 +274,7 @@ void FSDocGen::_doctype_from_gdtype(const GDType &p_gdtype, String &r_type, Stri
 			}
 			// An unnamed tuple is structural: spell the parenthesized element list, recursing so
 			// nested containers compose with the existing synthetic spellings.
-			{
-				String spelling = "(";
-				for (int i = 0; i < p_gdtype.container_element_types.size(); i++) {
-					if (i > 0) {
-						spelling += ", ";
-					}
-					String element_type;
-					String element_enum;
-					String element_tuple;
-					_doctype_from_gdtype(p_gdtype.container_element_types[i], element_type, element_enum, element_tuple);
-					spelling += element_type.is_empty() ? String("Variant") : element_type;
-				}
-				spelling += ")";
-				r_type = spelling;
-			}
+			r_type = _structural_tuple_spelling(p_gdtype);
 			return;
 		case GDType::TYPE_PARAMETER:
 			r_type = p_gdtype.type_parameter_name;
@@ -632,11 +637,12 @@ void FSDocGen::_generate_docs(FoundryScript *p_script, const GDP::ClassNode *p_c
 			if (field.identifier != nullptr) {
 				field_doc.name = field.identifier->name;
 			}
-			String field_tuple;
+			// A field type is rendered inside the declaration signature, where no tuple channel
+			// travels with it, so it is spelled like any other nested position.
 			if (tuple_type.is_tuple() && i < tuple_type.container_element_types.size()) {
-				_doctype_from_gdtype(tuple_type.container_element_types[i], field_doc.type, field_doc.enumeration, field_tuple);
+				_doctype_from_gdtype_nested(tuple_type.container_element_types[i], field_doc.type, field_doc.enumeration);
 			} else if (field.type != nullptr) {
-				_doctype_from_gdtype(FSAnalyzer::type_from_metatype(field.type->get_datatype()), field_doc.type, field_doc.enumeration, field_tuple);
+				_doctype_from_gdtype_nested(FSAnalyzer::type_from_metatype(field.type->get_datatype()), field_doc.type, field_doc.enumeration);
 			}
 			if (field_doc.type.is_empty()) {
 				field_doc.type = "Variant";
