@@ -1,1 +1,3 @@
-var x = 1 + 2  # note
+var x = (  # note
+	1 + 2
+)

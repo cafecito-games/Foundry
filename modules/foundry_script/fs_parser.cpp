@@ -5219,17 +5219,20 @@ FSParser::ExpressionNode *FSParser::parse_grouping(ExpressionNode *p_previous_op
 
 	if (!check(FSTokenizer::Token::COMMA)) {
 		// Ordinary expression grouping: `(a)` evaluates to `a` itself. The grouping
-		// carries no semantic effect, so it gets no AST node of its own; but an
-		// inline comment trailing the opening delimiter (`(  # note`) would
-		// otherwise have nowhere left to attach once that delimiter is gone, so
-		// stash its line on the surviving expression for the formatter to recover.
-		// An already-set line (a nested grouping around this same expression)
-		// takes precedence, since it sits closer to the actual content.
+		// carries no semantic effect, so it gets no AST node of its own; but a
+		// comment inside the parens (trailing the opening delimiter, or on its own
+		// line before the closing one) would otherwise have nowhere left to attach
+		// once the delimiters are gone, so record this level's span for the
+		// formatter to check. Nested redundant groupings (`((a))`) each record
+		// their own span here, outermost last, since this same call chain visits
+		// the innermost one first and every enclosing `parse_grouping` call adds
+		// its own span on top as it unwinds.
 		pop_multiline();
 		consume(FSTokenizer::Token::PARENTHESIS_CLOSE, R"*(Expected closing ")" after grouping expression.)*");
-		if (first_element->grouping_comment_line == 0) {
-			first_element->grouping_comment_line = open_paren.start_line;
-		}
+		ExpressionNode::GroupingSpan span;
+		span.open_line = open_paren.start_line;
+		span.close_line = previous.start_line;
+		first_element->redundant_groupings.push_back(span);
 		return first_element;
 	}
 

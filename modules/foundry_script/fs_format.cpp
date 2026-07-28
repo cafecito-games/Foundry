@@ -800,6 +800,14 @@ bool FSPrinter::has_full_line_comment_between(int p_after, int p_before) const {
 	return false;
 }
 
+bool FSPrinter::has_inline_comment(int p_line) const {
+	if (p_line <= last_emitted_line) {
+		return false; // Already consumed.
+	}
+	HashMap<int, FSTokenizer::CommentData>::ConstIterator found = comments.find(p_line);
+	return found && !found->value.new_line;
+}
+
 void FSPrinter::flush_trivia_until(int p_until_line) {
 	int line = last_emitted_line + 1;
 	while (line < p_until_line) {
@@ -2346,6 +2354,46 @@ void FSPrinter::print_expression(const FSParser::ExpressionNode *p_expression) {
 	if (p_expression == nullptr) {
 		return;
 	}
+	// A redundant parenthesized grouping this expression was the sole content of
+	// carries no semantic effect and is normally never re-printed. But when one of
+	// its levels held a comment, that comment has nowhere else to attach (the
+	// grouping itself has no AST node), so re-wrap this expression's printed text
+	// in real, multi-line parentheses -- never by appending the comment straight
+	// after the collapsed text, which would silently comment out whatever the
+	// caller writes next on that same line (an enclosing operator, a call's
+	// closing delimiter, ...). Check every recorded level (outermost first, since
+	// that is the one a caller can safely wrap around) and use the first one that
+	// actually carries a comment.
+	int wrap_open_line = 0;
+	int wrap_close_line = 0;
+	for (int i = p_expression->redundant_groupings.size() - 1; i >= 0; i--) {
+		const FSParser::ExpressionNode::GroupingSpan &span = p_expression->redundant_groupings[i];
+		const bool open_has_comment = has_inline_comment(span.open_line);
+		const bool close_has_comment = has_inline_comment(span.close_line);
+		if (open_has_comment || close_has_comment || has_full_line_comment_between(span.open_line, span.close_line)) {
+			wrap_open_line = span.open_line;
+			wrap_close_line = span.close_line;
+			break;
+		}
+	}
+	if (wrap_open_line > 0) {
+		write("(");
+		// A comment can trail the opening delimiter itself (`(  # note`); claim it
+		// here, before the fallback below marks the line consumed with nowhere to
+		// go. But skip this (and leave the line for the content's own trailing-
+		// comment check below) when the content starts on that same source line --
+		// the comment then trails the content, not the bare opening delimiter.
+		if (wrap_open_line != p_expression->start_line) {
+			append_inline_comment(wrap_open_line);
+			if (wrap_open_line > last_emitted_line) {
+				last_emitted_line = wrap_open_line;
+			}
+		}
+		indent_level++;
+		flush_inner_comments(p_expression->start_line);
+		newline();
+		write_indent();
+	}
 	switch (p_expression->type) {
 		case FSParser::Node::LITERAL:
 			print_literal(static_cast<const FSParser::LiteralNode *>(p_expression));
@@ -2404,13 +2452,20 @@ void FSPrinter::print_expression(const FSParser::ExpressionNode *p_expression) {
 		default:
 			ERR_FAIL_MSG("FSPrinter: unhandled expression node type " + itos(p_expression->type) + ".");
 	}
-	// A redundant grouping this expression was the sole content of is never
-	// re-printed (the parens carried no semantic effect), but an inline comment
-	// that trailed its now-gone opening delimiter still needs somewhere to land;
-	// append it right after this expression's own (collapsed) text. A no-op when
-	// that line has no comment, or it was already consumed.
-	if (p_expression->grouping_comment_line > 0) {
-		append_inline_comment(p_expression->grouping_comment_line);
+	if (wrap_open_line > 0) {
+		append_inline_comment(p_expression->end_line);
+		if (p_expression->end_line > last_emitted_line) {
+			last_emitted_line = p_expression->end_line;
+		}
+		flush_inner_comments(wrap_close_line);
+		indent_level--;
+		newline();
+		write_indent();
+		write(")");
+		append_inline_comment(wrap_close_line);
+		if (wrap_close_line > last_emitted_line) {
+			last_emitted_line = wrap_close_line;
+		}
 	}
 }
 

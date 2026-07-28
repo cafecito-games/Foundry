@@ -507,15 +507,24 @@ public:
 		// compiler can emit the class object directly. The registered name is dotted
 		// (`ns.Foo`), which a bare-identifier lookup cannot match. Empty otherwise.
 		StringName resolved_global_class;
-		// Source line of a redundant parenthesized grouping's opening delimiter
-		// (`(`) this expression was the sole content of, e.g. `(  # note\n  1 + 2\n)`.
-		// The grouping carries no semantic effect and has no dedicated AST node --
-		// `parse_grouping` returns this expression directly -- so an inline comment
-		// trailing that opening delimiter has nowhere else to attach; the formatter
-		// reattaches it here once it finishes printing this expression's own
-		// (collapsed) text. 0 when this expression was not the direct content of a
+		// One entry per redundant parenthesized grouping this expression was the
+		// sole content of, outermost last, e.g. `(  # note\n  1 + 2\n)` records one
+		// entry with `open_line`/`close_line` at the `(`/`)`. Such a grouping
+		// carries no semantic effect and gets no dedicated AST node -- each
+		// `parse_grouping` call drops it and returns this expression directly --
+		// so a comment trailing an opening delimiter, or sitting on its own line
+		// inside the parens, would have nowhere left to attach. The formatter
+		// checks every recorded level for a comment and, when at least one has
+		// one, re-wraps this expression's printed text in real parentheses (using
+		// the outermost level's lines) instead of ever appending the comment to
+		// text that has not been written yet -- which would silently comment that
+		// text out. Empty when this expression was never the direct content of a
 		// dropped grouping.
-		int grouping_comment_line = 0;
+		struct GroupingSpan {
+			int open_line = 0;
+			int close_line = 0;
+		};
+		Vector<GroupingSpan> redundant_groupings;
 
 		virtual bool is_expression() const override { return true; }
 		virtual ~ExpressionNode() {}

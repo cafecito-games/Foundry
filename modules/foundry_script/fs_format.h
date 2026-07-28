@@ -159,6 +159,10 @@ private:
 	// True when a full-line comment sits strictly between `p_after` and `p_before`.
 	// Lets an *empty* multi-line collection keep an interior comment (`[\n\t# c\n]`).
 	bool has_full_line_comment_between(int p_after, int p_before) const;
+	// True when source line `p_line` carries an unconsumed inline (not full-line)
+	// comment -- a query-only counterpart to `append_inline_comment`/
+	// `emit_trailing_comment` that does not itself consume it.
+	bool has_inline_comment(int p_line) const;
 	// The source line of the `else` keyword, found as the only non-comment,
 	// non-blank line between the true block's end and the else block's first
 	// statement. The parser records no node for `else`, and the else suite's
