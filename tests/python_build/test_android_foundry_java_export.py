@@ -174,6 +174,26 @@ class FoundryJavaExportSurfaceTests(unittest.TestCase):
         self.assertIn("if (getFoundryJavaEnabled())", build)
         self.assertNotIn('implementation "games.cafecito.foundry:', build)
 
+    def test_foundry_java_application_repositories_precede_public_repositories(self) -> None:
+        build = APP_BUILD.read_text(encoding="utf-8")
+        application_repositories = build.split("allprojects {", maxsplit=1)[1].split(
+            "configurations {",
+            maxsplit=1,
+        )[0]
+        configured_repository = application_repositories.index("getFoundryJavaMavenRepositories()")
+        for public_repository in (
+            "google()",
+            "mavenCentral()",
+            "gradlePluginPortal()",
+            'maven { url "https://plugins.gradle.org/m2/" }',
+            'maven { url "https://central.sonatype.com/repository/maven-snapshots/"}',
+        ):
+            with self.subTest(public_repository=public_repository):
+                self.assertLess(
+                    configured_repository,
+                    application_repositories.index(public_repository),
+                )
+
     def test_source_template_embeds_only_foundry_host_aars(self) -> None:
         inspector = load_source_template_module()
         self.assertEqual(
@@ -1360,6 +1380,71 @@ class FoundryJavaGradlePropertyTests(unittest.TestCase):
         )
         repository_line = next(line for line in output.splitlines() if line.startswith("FIXTURE_REPOSITORIES="))
         self.assertLess(repository_line.index("maven-a"), repository_line.index("maven-z"))
+
+    def test_configured_repository_wins_application_artifact_provenance(self) -> None:
+        coordinate = ("test.fixture", "repository-provenance", "1.0.0")
+        public_repository = self.workspace / "maven-public"
+        configured_jar = self.workspace / "configured-provenance.jar"
+        public_jar = self.workspace / "public-provenance.jar"
+        with zipfile.ZipFile(configured_jar, "w") as archive:
+            archive.writestr("provenance.txt", "configured\n")
+        with zipfile.ZipFile(public_jar, "w") as archive:
+            archive.writestr("provenance.txt", "public\n")
+        self._stage_maven_artifact(self.maven_repository_a, *coordinate, configured_jar)
+        self._stage_maven_artifact(public_repository, *coordinate, public_jar)
+
+        isolated_app = self.workspace / "repository-provenance-app"
+        shutil.copytree(
+            APP_ROOT,
+            isolated_app,
+            ignore=shutil.ignore_patterns("build", ".gradle"),
+        )
+        build_file = isolated_app / "build.gradle"
+        build = build_file.read_text(encoding="utf-8")
+        self.assertEqual(1, build.count("mavenCentral()"))
+        build = build.replace(
+            "mavenCentral()",
+            f'maven {{ url "{public_repository.resolve().as_uri()}" }}',
+        )
+        build_file.write_text(
+            build
+            + textwrap.dedent(
+                """
+
+                tasks.register("verifyFoundryJavaApplicationArtifactProvenance") {
+                    doLast {
+                        String coordinate = getFoundryJavaMavenArtifacts().get(0)
+                        File artifact = configurations.detachedConfiguration(
+                            dependencies.create(coordinate)
+                        ).singleFile
+                        java.util.zip.ZipFile archive = new java.util.zip.ZipFile(artifact)
+                        try {
+                            println "FIXTURE_APPLICATION_PROVENANCE=" +
+                                archive.getInputStream(archive.getEntry("provenance.txt")).getText("UTF-8").trim()
+                        } finally {
+                            archive.close()
+                        }
+                    }
+                }
+                """
+            ),
+            encoding="utf-8",
+        )
+        result = self.run_gradle(
+            {
+                "foundry_java_registry_marker": "registry-index-v2",
+                "foundry_java_gradle_plugin_kind": "local",
+                "foundry_java_gradle_plugin": str(self.plugin),
+                "foundry_java_maven_repositories": self.maven_repository_a.resolve().as_uri(),
+                "foundry_java_maven_artifacts": ":".join(coordinate),
+            },
+            tasks=("verifyFoundryJavaApplicationArtifactProvenance",),
+            project_root=isolated_app,
+        )
+        output = result.stdout + result.stderr
+        self.assertEqual(0, result.returncode, output)
+        self.assertIn("FIXTURE_APPLICATION_PROVENANCE=configured", output)
+        self.assertNotIn("FIXTURE_APPLICATION_PROVENANCE=public", output)
 
 
 def find_java_17_home() -> Path:

@@ -31,16 +31,16 @@ if (getFoundryJavaEnabled()) {
 
 allprojects {
     repositories {
-        google()
-        mavenCentral()
-        gradlePluginPortal()
-        maven { url "https://plugins.gradle.org/m2/" }
-        maven { url "https://central.sonatype.com/repository/maven-snapshots/"}
         if (getFoundryJavaEnabled()) {
             getFoundryJavaMavenRepositories().each { String repositoryUrl ->
                 maven { url repositoryUrl }
             }
         }
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+        maven { url "https://plugins.gradle.org/m2/" }
+        maven { url "https://central.sonatype.com/repository/maven-snapshots/"}
     }
 }
 
