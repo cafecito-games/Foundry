@@ -1940,7 +1940,12 @@ static bool _foundry_java_path_has_symlink(const String &p_path) {
 
 	const String with_normalized_separators = p_path.replace("\\", "/");
 	PackedStringArray components = with_normalized_separators.split("/", false);
-	String current = with_normalized_separators.begins_with("/") ? "/" : "";
+	String current;
+	if (with_normalized_separators.is_network_share_path()) {
+		current = "//";
+	} else if (with_normalized_separators.begins_with("/")) {
+		current = "/";
+	}
 	for (const String &component : components) {
 		if (component == ".") {
 			continue;

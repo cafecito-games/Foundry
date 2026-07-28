@@ -256,6 +256,19 @@ class FoundryJavaExportSurfaceTests(unittest.TestCase):
         self.assertGreater(process_events, redaction_guard_end)
         self.assertGreater(main_iteration, redaction_guard_end)
 
+    def test_symlink_validation_preserves_windows_unc_roots(self) -> None:
+        exporter = EXPORTER.read_text(encoding="utf-8")
+        checker_start = exporter.index("static bool _foundry_java_path_has_symlink(")
+        checker_end = exporter.index(
+            "static constexpr uint64_t FOUNDRY_JAVA_MAX_INPUT_ARCHIVE_ENTRIES",
+            checker_start,
+        )
+        checker = exporter[checker_start:checker_end]
+        network_root = checker.index("if (with_normalized_separators.is_network_share_path())")
+        component_loop = checker.index("for (const String &component : components)")
+        self.assertIn('current = "//";', checker)
+        self.assertLess(network_root, component_loop)
+
 
 class FoundryJavaSourceTemplateResourceTests(unittest.TestCase):
     @staticmethod
