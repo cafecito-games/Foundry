@@ -1664,7 +1664,11 @@ Error DocTools::save_classes(const String &p_default_path, const HashMap<String,
 			// Modules are nested deep, so change the path to reference the same schema everywhere.
 			schema_path = save_path.contains("modules/") ? "../../../doc/class.xsd" : "../class.xsd";
 		} else {
-			schema_path = "https://raw.githubusercontent.com/godotengine/godot/master/doc/class.xsd";
+			// FoundryScript doc generation writes to an arbitrary, out-of-tree directory
+			// (`--fs-docs`), so a relative path can't resolve; point at this fork's own schema
+			// instead of an upstream one that doesn't know about Foundry-specific elements like
+			// `<enums>` and `<payload_field>`.
+			schema_path = "https://raw.githubusercontent.com/cafecito-games/Foundry/develop/doc/class.xsd";
 		}
 		header += vformat(
 				R"( xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="%s">)",
