@@ -457,7 +457,7 @@ private:
 #endif
 	void resolve_match_branch(FSParser::MatchBranchNode *p_match_branch, FSParser::ExpressionNode *p_match_test);
 	void resolve_match_pattern(FSParser::PatternNode *p_match_pattern, FSParser::ExpressionNode *p_match_test, const FSParser::DataType *p_match_test_type = nullptr);
-	void resolve_match_case_pattern(FSParser::PatternNode *p_match_pattern);
+	void resolve_match_case_pattern(FSParser::PatternNode *p_match_pattern, const FSParser::DataType *p_match_test_type);
 	void resolve_return(FSParser::ReturnNode *p_return);
 
 	// Reduction functions.

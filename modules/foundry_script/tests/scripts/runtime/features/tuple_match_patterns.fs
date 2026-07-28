@@ -47,10 +47,13 @@ func test():
 		[var a, var b]:
 			prints("array pattern", a, b)
 
-	# A grouped pattern is the pattern itself.
+	# A grouped pattern is the pattern itself, binds included.
 	match 3:
 		(3):
 			print("grouped literal")
+	match 7:
+		(var grouped_bind):
+			print(grouped_bind)
 
 	# The rest pattern only exists for arrays; a tuple has a fixed arity.
 	match (1, 2, 3):

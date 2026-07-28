@@ -4224,6 +4224,13 @@ FSParser::PatternNode *FSParser::parse_match_pattern(PatternNode *p_root_pattern
 						return pattern;
 					}
 
+					// The grouping node is dropped, so any bind it collected as the root pattern moves to
+					// the pattern that takes its place; the branch reads its binds off that node.
+					if (p_root_pattern == nullptr) {
+						for (const KeyValue<StringName, IdentifierNode *> &E : pattern->binds) {
+							first_element->binds[E.key] = E.value;
+						}
+					}
 					complete_extents(pattern);
 					return first_element;
 				}

@@ -4624,7 +4624,7 @@ void FSAnalyzer::resolve_match_pattern(FSParser::PatternNode *p_match_pattern, F
 			result = p_match_pattern->get_datatype();
 		} break;
 		case FSParser::PatternNode::PT_ENUM_CASE:
-			resolve_match_case_pattern(p_match_pattern);
+			resolve_match_case_pattern(p_match_pattern, has_match_test_type ? &match_test_type : nullptr);
 			result = p_match_pattern->case_datatype;
 			break;
 		case FSParser::PatternNode::PT_WILDCARD:
@@ -4641,7 +4641,7 @@ void FSAnalyzer::resolve_match_pattern(FSParser::PatternNode *p_match_pattern, F
 
 // Resolves `Message.Move(x, _)`: the case reference is resolved like the right-hand side of `is`, then
 // each payload field type is propagated into the matching sub-pattern.
-void FSAnalyzer::resolve_match_case_pattern(FSParser::PatternNode *p_match_pattern) {
+void FSAnalyzer::resolve_match_case_pattern(FSParser::PatternNode *p_match_pattern, const FSParser::DataType *p_match_test_type) {
 	FSParser::DataType case_type = type_from_metatype(resolve_datatype(p_match_pattern->case_type));
 	p_match_pattern->case_datatype = case_type;
 
@@ -4650,6 +4650,15 @@ void FSAnalyzer::resolve_match_case_pattern(FSParser::PatternNode *p_match_patte
 		if (!case_type.is_tagged_union_type() || case_type.enum_case_name == StringName()) {
 			push_error(R"*(Only a tagged-union case can match payload values, e.g. "Message.Move(x, y)".)*", p_match_pattern);
 		} else {
+			// Cases erase to `[tag, payload...]`, so a case of an unrelated union with the same tag and
+			// arity would match at runtime. Reject it whenever the subject's type says it cannot occur.
+			FSParser::DataType union_type = case_type;
+			union_type.enum_case_name = StringName();
+			if (p_match_test_type != nullptr && p_match_test_type->is_hard_type() &&
+					!is_type_compatible(union_type, *p_match_test_type) && !is_type_compatible(*p_match_test_type, union_type)) {
+				push_error(vformat(R"(Pattern matches a case of "%s", but the "match" subject is of type "%s".)", union_type.to_string(), p_match_test_type->to_string()), p_match_pattern);
+			}
+
 			payload = case_type.get_enum_case_payload(case_type.enum_case_name);
 			if (payload == nullptr) {
 				push_error(vformat(R"(Case "%s" carries no payload, so it cannot match payload values.)", case_type.enum_case_name), p_match_pattern);
