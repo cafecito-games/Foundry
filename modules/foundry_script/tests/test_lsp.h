@@ -937,6 +937,45 @@ func f():
 			CHECK_EQ(cls.detail, "trait LspGlobalTrait");
 		}
 
+		SUBCASE("Tuple declarations are reported with fields") {
+			String path = "res://lsp/tuples.fs";
+			assert_no_errors_in(path);
+			ExtendFSParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(path);
+			REQUIRE(parser);
+
+			const LSP::DocumentSymbol *position = parser->get_member_symbol("PlayerWorldPosition");
+			REQUIRE(position);
+			CHECK_EQ(position->kind, LSP::SymbolKind::Struct);
+			CHECK_EQ(position->detail, "tuple PlayerWorldPosition");
+			CHECK(position->documentation.contains("Player position in the world."));
+			REQUIRE(position->children.size() == 2);
+			CHECK_EQ(position->children[0].name, "vec");
+			CHECK_EQ(position->children[0].kind, LSP::SymbolKind::Field);
+			CHECK_EQ(position->children[1].name, "zone");
+			CHECK_EQ(position->children[1].kind, LSP::SymbolKind::Field);
+
+			// A positional field has no name, so it contributes no child symbol.
+			const LSP::DocumentSymbol *pair = parser->get_member_symbol("Pair");
+			REQUIRE(pair);
+			CHECK_EQ(pair->kind, LSP::SymbolKind::Struct);
+			CHECK(pair->children.is_empty());
+		}
+
+		SUBCASE("A global tuple_name file is reported as a tuple with fields") {
+			String path = "res://lsp/global_tuple.fs";
+			assert_no_errors_in(path);
+			ExtendFSParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(path);
+			REQUIRE(parser);
+			LSP::DocumentSymbol cls = parser->get_symbols();
+			CHECK_EQ(cls.kind, LSP::SymbolKind::Struct);
+			CHECK_EQ(cls.detail, "tuple LspGlobalTuple");
+			REQUIRE(cls.children.size() == 2);
+			CHECK_EQ(cls.children[0].name, "x");
+			CHECK_EQ(cls.children[0].kind, LSP::SymbolKind::Field);
+			CHECK_EQ(cls.children[1].name, "y");
+			CHECK_EQ(cls.children[1].kind, LSP::SymbolKind::Field);
+		}
+
 		SUBCASE("A global enum_name file is reported as an enum with members") {
 			LSPGlobalScriptClassBackup global_class_backup;
 			ScriptServer::global_classes_clear();

@@ -2376,6 +2376,28 @@ static void _find_identifiers_in_base(const FSCompletionIdentifier &p_base, bool
 
 				return;
 			} break;
+			case FSParser::DataType::TUPLE: {
+				// A tuple value exposes exactly its elements: the declared field name where the
+				// declaration gave one, plus the positional index that always addresses it.
+				if (p_types_only || p_only_functions || base_type.is_meta_type) {
+					return;
+				}
+
+				for (int i = 0; i < base_type.container_element_types.size(); i++) {
+					if (i < base_type.tuple_field_names.size() && base_type.tuple_field_names[i] != StringName()) {
+						ScriptLanguage::CodeCompletionOption named_option(
+								base_type.tuple_field_names[i], ScriptLanguage::CODE_COMPLETION_KIND_MEMBER,
+								p_recursion_depth + ScriptLanguage::LOCATION_LOCAL);
+						r_result.insert(named_option.display, named_option);
+					}
+					ScriptLanguage::CodeCompletionOption index_option(
+							itos(i), ScriptLanguage::CODE_COMPLETION_KIND_MEMBER,
+							p_recursion_depth + ScriptLanguage::LOCATION_LOCAL);
+					r_result.insert(index_option.display, index_option);
+				}
+
+				return;
+			} break;
 			default: {
 				return;
 			} break;

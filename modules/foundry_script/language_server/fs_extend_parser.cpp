@@ -228,6 +228,28 @@ void ExtendFSParser::append_enum_symbol_children(const FSParser::EnumNode *p_enu
 	}
 }
 
+void ExtendFSParser::append_tuple_symbol_fields(const FSParser::TupleNode *p_tuple, LSP::DocumentSymbol &r_symbol) {
+	const String uri = get_uri();
+
+	for (int i = 0; i < p_tuple->fields.size(); i++) {
+		const FSParser::TupleNode::Field &field = p_tuple->fields[i];
+		if (field.identifier == nullptr) {
+			// A positional field has no name to report as its own symbol.
+			continue;
+		}
+		LSP::DocumentSymbol field_symbol;
+		field_symbol.name = field.identifier->name;
+		field_symbol.kind = LSP::SymbolKind::Field;
+		field_symbol.deprecated = false;
+		field_symbol.range.start = FoundryPosition(field.line, field.start_column).to_lsp(lines);
+		field_symbol.range.end = FoundryPosition(field.line, field.end_column).to_lsp(lines);
+		field_symbol.selectionRange = range_of_node(field.identifier);
+		field_symbol.uri = uri;
+		field_symbol.script_path = path;
+		r_symbol.children.push_back(field_symbol);
+	}
+}
+
 void ExtendFSParser::parse_class_symbol(const FSParser::ClassNode *p_class, LSP::DocumentSymbol &r_symbol) {
 	const String uri = get_uri();
 
@@ -283,6 +305,23 @@ void ExtendFSParser::parse_class_symbol(const FSParser::ClassNode *p_class, LSP:
 		r_symbol.detail = "enum " + r_symbol.name;
 
 		append_enum_symbol_children(enum_node, r_symbol);
+		return;
+	}
+
+	if (p_class->is_tuple_file && p_class->tuple_file_decl != nullptr) {
+		const FSParser::TupleNode *tuple_node = p_class->tuple_file_decl;
+		const StringName global_name = p_class->get_global_name();
+		if (global_name != StringName()) {
+			r_symbol.name = global_name;
+		}
+		r_symbol.kind = LSP::SymbolKind::Struct;
+		r_symbol.range = range_of_node(tuple_node);
+		if (tuple_node->identifier != nullptr) {
+			r_symbol.selectionRange = range_of_node(tuple_node->identifier);
+		}
+		r_symbol.detail = "tuple " + r_symbol.name;
+
+		append_tuple_symbol_fields(tuple_node, r_symbol);
 		return;
 	}
 
@@ -491,22 +530,7 @@ void ExtendFSParser::parse_class_symbol(const FSParser::ClassNode *p_class, LSP:
 
 				symbol.detail = "tuple " + symbol.name;
 
-				for (int j = 0; j < m.m_tuple->fields.size(); j++) {
-					const FSParser::TupleNode::Field &field = m.m_tuple->fields[j];
-					if (field.identifier == nullptr) {
-						continue;
-					}
-					LSP::DocumentSymbol field_symbol;
-					field_symbol.name = field.identifier->name;
-					field_symbol.kind = LSP::SymbolKind::Field;
-					field_symbol.deprecated = false;
-					field_symbol.range.start = FoundryPosition(field.line, field.start_column).to_lsp(lines);
-					field_symbol.range.end = FoundryPosition(field.line, field.end_column).to_lsp(lines);
-					field_symbol.selectionRange = range_of_node(field.identifier);
-					field_symbol.uri = uri;
-					field_symbol.script_path = path;
-					symbol.children.push_back(field_symbol);
-				}
+				append_tuple_symbol_fields(m.m_tuple, symbol);
 
 				r_symbol.children.push_back(symbol);
 			} break;

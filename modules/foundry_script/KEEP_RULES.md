@@ -49,6 +49,17 @@ Class globs match the complete `FoundryScript::fully_qualified_name`:
 Member globs match only an atomic member, method, signal, constant, named-enum, or enum-method name.
 They never match a concatenated `Class.member` spelling.
 
+## Tuples
+
+A tuple value is a positional read-only `Array` at runtime, so a tuple declaration contributes no
+runtime identity. Its field names are analyzer-only and are never mangled and never matched by a
+member glob: writing a rule for a tuple field name matches nothing and produces the usual
+unmatched-rule warning. Field access compiles to an index, so renaming a field in source is safe and
+invisible to keep rules.
+
+A whole-file `tuple_name` declaration registers a global class, so its type name is a class identity
+and follows the class rules above; a class-body `tuple` declaration has no identity to keep.
+
 ## Glob matching
 
 Matching is case-sensitive and covers the complete string:
